@@ -83,7 +83,8 @@ cmake --build build-neverc --target neverc
 ### Testen
 
 ```bash
-tests/neverc/run_tests.sh build-neverc
+cmake --build build-neverc --target neverc-tests
+ctest --test-dir build-neverc --output-on-failure
 ```
 
 ### Verifizieren
