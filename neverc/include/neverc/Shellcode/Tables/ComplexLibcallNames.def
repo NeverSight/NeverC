@@ -1,0 +1,9 @@
+#ifndef NEVERC_NAME
+#error "define NEVERC_NAME(name) before including this file"
+#endif
+NEVERC_NAME(__muldc3)
+NEVERC_NAME(__divdc3)
+NEVERC_NAME(__mulsc3)
+NEVERC_NAME(__divsc3)
+NEVERC_NAME(__mulxc3)
+NEVERC_NAME(__divxc3)

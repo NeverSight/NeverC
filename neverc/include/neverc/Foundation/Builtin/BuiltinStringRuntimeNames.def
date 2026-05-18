@@ -1,0 +1,18 @@
+#ifndef NEVERC_BUILTIN_STRING_RUNTIME_NAME
+#error "define NEVERC_BUILTIN_STRING_RUNTIME_NAME(variable) before including this file"
+#endif
+#define NEVERC_BSF_RT_INNER_0(NameId)
+#define NEVERC_BSF_RT_INNER_1(NameId)                                          \
+  NEVERC_BUILTIN_STRING_RUNTIME_NAME(NameId##FunctionName)
+#define NEVERC_BSF_RT_DISPATCH2(IsPublic, NameId)                              \
+  NEVERC_BSF_RT_INNER_##IsPublic(NameId)
+#define NEVERC_BSF_RT_DISPATCH(IsPublic, NameId)                               \
+  NEVERC_BSF_RT_DISPATCH2(IsPublic, NameId)
+#define NEVERC_BUILTIN_STRING_FN(NameId, Spelling, IsPublic)                   \
+  NEVERC_BSF_RT_DISPATCH(IsPublic, NameId)
+#include "neverc/Foundation/Builtin/BuiltinStringRoster.def"
+#undef NEVERC_BUILTIN_STRING_FN
+#undef NEVERC_BSF_RT_DISPATCH
+#undef NEVERC_BSF_RT_DISPATCH2
+#undef NEVERC_BSF_RT_INNER_1
+#undef NEVERC_BSF_RT_INNER_0

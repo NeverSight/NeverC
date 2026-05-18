@@ -1,0 +1,112 @@
+**Langues**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+<div align="center">
+
+# NeverC
+
+**Compilateur C23 orienté recherche en sécurité, construit sur LLVM**
+
+Éditeur de liens intégré · Pipeline shellcode · Type `string` intégré
+
+[![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#fonctionnalités)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#compilation-croisée-vers-windows)
+[![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#fonctionnalités)
+
+[Documentation](docs/README.fr.md) · [Guide shellcode](docs/shellcode-compiler/README.fr.md) · [String intégré](docs/builtin-string/README.fr.md)
+
+</div>
+
+---
+
+> **Note :** GitHub affiche toujours `README.md` (anglais) en page d'accueil du dépôt (pas de détection automatique). Utilisez les liens de langue ci-dessus ; dans la [documentation](docs/README.fr.md) et le [guide shellcode](docs/shellcode-compiler/README.fr.md), gardez la même locale via la barre de langue et le fil d'Ariane.
+
+## Vue d'ensemble
+
+NeverC compile du C standard en binaires hébergés, exécutables freestanding et shellcode indépendant de la position — le tout depuis une seule chaîne d'outils. Cible **x86_64** et **AArch64** (petit-boutien uniquement).
+
+## Fonctionnalités
+
+- **[Compilateur shellcode](docs/shellcode-compiler/README.fr.md)** — pipeline IR/MIR multi-étapes, extraction multiplateforme, résolution d'imports/syscalls, mode noyau, audit d'octets interdits, architecture de plugins
+- **Éditeur de liens intégré** — COFF, ELF et Mach-O dans un seul binaire ; pas de `ld` ou `link.exe` externe
+- **Compilation croisée** — PE Windows depuis macOS/Linux avec SDK MSVC fourni
+- **[Type `string` intégré](docs/builtin-string/README.fr.md)** — string à sémantique de valeur avec syntaxe de méthodes pointées, gestion mémoire automatique et support UTF-8 natif
+- **Build LLVM allégé** — backends x86_64 / AArch64 uniquement ; chemins C++/ObjC/OpenMP retirés
+
+## Exemple rapide
+
+```c
+#include <unistd.h>
+
+int main(void) {
+    string msg = "Hello " + "NeverC!";
+    write(1, msg.c_str(), msg.len);
+    return 0;
+}
+```
+
+```bash
+# shellcode macOS arm64
+neverc -fshellcode -mshellcode-syscall hello.c -o hello.bin
+
+# Compilation croisée vers Linux x86_64 — même source
+neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
+```
+
+Voir l'**[index de documentation](docs/README.fr.md)** pour la conception détaillée, la matrice des plateformes, la référence CLI et les exemples.
+
+## Compilation
+
+### Prérequis
+
+- CMake 3.20+
+- Ninja
+- Compilateur hôte C++17 (GCC, Clang ou MSVC)
+
+### Configuration
+
+```bash
+cmake -B build-neverc -G Ninja \
+  -C neverc/cmake/caches/NeverC.cmake \
+  -DCMAKE_BUILD_TYPE=Release \
+  llvm
+```
+
+### Build
+
+```bash
+cmake --build build-neverc --target neverc
+```
+
+`ccache` / `sccache` est détecté et activé automatiquement s'il est présent.
+
+### Tests
+
+```bash
+tests/neverc/run_tests.sh build-neverc
+```
+
+### Vérification
+
+```bash
+./build-neverc/bin/neverc --version
+echo 'int main(void) { return 0; }' > /tmp/hello.c
+./build-neverc/bin/neverc -c /tmp/hello.c -o /tmp/hello.o
+```
+
+## Compilation croisée vers Windows
+
+Après avoir placé un splat SDK [xwin](https://github.com/Jake-Shadle/xwin) dans `build-neverc/sdk/msvc/` :
+
+```bash
+./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
+  -o hello.exe hello.c -lkernel32
+```
+
+Pour le shellcode Windows (`-fshellcode`, résolution PEB, etc.), voir la [documentation du compilateur shellcode](docs/shellcode-compiler/README.fr.md).
+
+## Licence
+
+[AGPL-3.0](LICENSE)
+
+Les composants LLVM conservent la licence [Apache-2.0 WITH LLVM-exception](llvm/LICENSE.TXT).

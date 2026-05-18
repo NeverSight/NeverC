@@ -1,0 +1,23 @@
+N:ralph
+D:Self-referential completion loop. Runs agent on same task across turns with fresh context each iteration until completion promise detected or max iterations reached.
+G:ralph ralph-loop loop completion self-referential gemini-cli opencode multi-turn
+U[4]:
+1:Long-running tasks that stop early
+2:Autonomous multi-turn iteration without manual intervention
+3:Self-correcting workflows across agent turns
+4:Tasks requiring strict completion signaling
+S[5]{n,action,details}:
+1:run-once,Start loop,/ralph "<task>" --completion-promise="DONE" --max-iterations=100
+2:agent-works,Agent executes,Modifies files runs tests writes code in current turn
+3:hook-intercepts,AfterAgent hook fires,Checks output for completion promise tag
+4:loop-or-stop,Evaluate state,If promise not found: clear context start new turn with same prompt; if found or max reached: stop
+5:cancel,Stop anytime,/ralph:cancel cleans up all state files
+R[5]:
+1:Context cleared each iteration — agent reads current file state not stale chat history
+2:File state persists across iterations — work accumulates in files and git
+3:Always set --max-iterations as safety net against infinite loops
+4:Use --completion-promise for verifiable done criteria
+5:Ghost protection: prompt mismatch on new task silently cleans up loop state
+E[2]{desc,in,out}:
+1:{TDD loop,/ralph "Implement auth with TDD. Write tests first then implement. When all tests green output DONE" --completion-promise="DONE" --max-iterations=15,Agent iterates: write tests → implement → run tests → fix failures → repeat until all pass then outputs DONE}
+2:{Refactor with cap,/ralph "Refactor payment module for clarity" --max-iterations=5,Agent refactors across up to 5 turns stopping when it outputs completion promise or reaches limit}

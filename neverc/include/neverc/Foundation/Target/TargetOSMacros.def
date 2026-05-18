@@ -1,0 +1,11 @@
+#ifndef TARGET_OS
+#define TARGET_OS(Name, Predicate)
+#endif
+
+TARGET_OS(TARGET_OS_WIN32, Triple.isOSWindows())
+TARGET_OS(TARGET_OS_WINDOWS, Triple.isOSWindows())
+TARGET_OS(TARGET_OS_LINUX, Triple.isOSLinux())
+TARGET_OS(TARGET_OS_MAC, Triple.isOSDarwin())
+TARGET_OS(TARGET_OS_OSX, Triple.isMacOSX())
+
+#undef TARGET_OS

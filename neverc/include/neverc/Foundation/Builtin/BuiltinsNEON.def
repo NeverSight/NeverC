@@ -1,0 +1,9 @@
+// The format of this database matches neverc/Foundation/Builtin/Builtins.def.
+
+#define GET_NEON_BUILTINS
+#include "neverc/Foundation/arm_neon.td.h"
+#include "neverc/Foundation/arm_fp16.td.h"
+#undef GET_NEON_BUILTINS
+
+#undef BUILTIN
+#undef TARGET_BUILTIN

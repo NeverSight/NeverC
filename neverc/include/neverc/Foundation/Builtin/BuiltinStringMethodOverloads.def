@@ -1,0 +1,16 @@
+#ifndef NEVERC_BUILTIN_STRING_METHOD_OVERLOAD
+#error "define NEVERC_BUILTIN_STRING_METHOD_OVERLOAD(method, arity, helper) before including this file"
+#endif
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("find",              2, FindFromFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("rfind",             2, RfindToFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("find_first_of",     2, FindFirstOfFromFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("find_last_of",      2, FindLastOfToFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("find_first_not_of", 2, FindFirstNotOfFromFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("find_last_not_of",  2, FindLastNotOfToFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("compare", 3, CompareSubstrFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("compare", 5, CompareSubstr2FunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("copy", 3, CopyFromFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("insert", 3, InsertCharFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("append", 2, AppendCharFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("replace", 4, ReplaceCharFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_OVERLOAD("assign", 2, AssignCharFunctionName)

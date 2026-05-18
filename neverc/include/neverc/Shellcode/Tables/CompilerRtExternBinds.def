@@ -1,0 +1,19 @@
+#ifndef NEVERC_COMPILER_RT_EXTERN_BIND
+#error "define NEVERC_COMPILER_RT_EXTERN_BIND(externName, helperSlot, factory) before including this file"
+#endif
+NEVERC_COMPILER_RT_EXTERN_BIND(__udivti3, UDivTi3, getOrCreateUDivTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(_udivti3, UDivTi3, getOrCreateUDivTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(__divti3, DivTi3, getOrCreateDivTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(_divti3, DivTi3, getOrCreateDivTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(__umodti3, UModTi3, getOrCreateUModTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(_umodti3, UModTi3, getOrCreateUModTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(__modti3, ModTi3, getOrCreateModTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(_modti3, ModTi3, getOrCreateModTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(__ashlti3, AShlTi3, createAShlTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(_ashlti3, AShlTi3, createAShlTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(__lshrti3, LShrTi3, createLShrTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(_lshrti3, LShrTi3, createLShrTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(__ashrti3, AShrTi3, createAShrTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(_ashrti3, AShrTi3, createAShrTi3)
+NEVERC_COMPILER_RT_EXTERN_BIND(__udivmodti4, UDivModTi4, getOrCreateUDivModTi4)
+NEVERC_COMPILER_RT_EXTERN_BIND(_udivmodti4, UDivModTi4, getOrCreateUDivModTi4)

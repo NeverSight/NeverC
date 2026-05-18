@@ -1,0 +1,94 @@
+#ifndef DEBUGOPT
+#define DEBUGOPT(Name, Bits, Default) \
+CODEGENOPT(Name, Bits, Default)
+#endif
+
+#ifndef VALUE_DEBUGOPT
+#  define VALUE_DEBUGOPT(Name, Bits, Default) \
+VALUE_CODEGENOPT(Name, Bits, Default)
+#endif
+
+#ifndef ENUM_DEBUGOPT
+#  define ENUM_DEBUGOPT(Name, Type, Bits, Default) \
+ENUM_CODEGENOPT(Name, Type, Bits, Default)
+#endif
+
+#ifndef BENIGN_DEBUGOPT
+#define BENIGN_DEBUGOPT(Name, Bits, Default) \
+DEBUGOPT(Name, Bits, Default)
+#endif
+
+#ifndef BENIGN_VALUE_DEBUGOPT
+#  define BENIGN_VALUE_DEBUGOPT(Name, Bits, Default) \
+VALUE_DEBUGOPT(Name, Bits, Default)
+#endif
+
+#ifndef BENIGN_ENUM_DEBUGOPT
+#  define BENIGN_ENUM_DEBUGOPT(Name, Type, Bits, Default) \
+ENUM_DEBUGOPT(Name, Type, Bits, Default)
+#endif
+
+BENIGN_ENUM_DEBUGOPT(CompressDebugSections, llvm::DebugCompressionType, 2,
+                     llvm::DebugCompressionType::None)
+DEBUGOPT(Dwarf64, 1, 0) ///< -gdwarf64.
+BENIGN_DEBUGOPT(EnableDIPreservationVerify, 1, 0) ///< Enable di preservation
+                                                  ///< verify each (it means
+                                                  ///< check the original debug
+                                                  ///< info metadata
+                                                  ///< preservation).
+BENIGN_DEBUGOPT(ForceDwarfFrameSection , 1, 0) ///< Set when -fforce-dwarf-frame
+                                               ///< is enabled.
+
+///< Set when -femit-dwarf-unwind is passed.
+BENIGN_ENUM_DEBUGOPT(EmitDwarfUnwind, llvm::EmitDwarfUnwindType, 2,
+                     llvm::EmitDwarfUnwindType::Default)
+
+BENIGN_DEBUGOPT(NoDwarfDirectoryAsm , 1, 0) ///< Set when -fno-dwarf-directory-asm
+                                            ///< is enabled.
+
+BENIGN_DEBUGOPT(NoInlineLineTables, 1, 0) ///< Whether debug info should contain
+                                          ///< inline line tables.
+
+DEBUGOPT(DebugStrictDwarf, 1, 1) ///< Whether or not to use strict DWARF info.
+
+/// Control the Assignment Tracking debug info feature.
+BENIGN_ENUM_DEBUGOPT(AssignmentTrackingMode, AssignmentTrackingOpts, 2,
+                     AssignmentTrackingOpts::Disabled)
+
+DEBUGOPT(DebugColumnInfo, 1, 0) ///< Whether or not to use column information
+                                ///< in debug info.
+
+/// Set debug info source file hashing algorithm.
+ENUM_DEBUGOPT(DebugSrcHash, DebugSrcHashKind, 2, DSH_MD5)
+
+DEBUGOPT(SplitDwarfInlining, 1, 1) ///< Whether to include inlining info in the
+                                   ///< skeleton CU to allow for symbolication
+                                   ///< of inline stack frames without .dwo files.
+
+/// The kind of generated debug info.
+ENUM_DEBUGOPT(DebugInfo, llvm::codegenoptions::DebugInfoKind, 4,
+              llvm::codegenoptions::NoDebugInfo)
+
+/// Tune the debug info for this debugger.
+ENUM_DEBUGOPT(DebuggerTuning, llvm::DebuggerKind, 3,
+                llvm::DebuggerKind::Default)
+
+/// Dwarf version. Version zero indicates to LLVM that no DWARF should be
+/// emitted.
+VALUE_DEBUGOPT(DwarfVersion, 3, 0)
+
+/// Whether to emit .debug_gnu_pubnames section instead of .debug_pubnames.
+DEBUGOPT(DebugNameTable, 2, 0)
+
+/// Whether to use DWARF base address specifiers in .debug_ranges.
+DEBUGOPT(DebugRangesBaseAddress, 1, 0)
+
+/// Whether to embed source in DWARF debug line section.
+DEBUGOPT(EmbedSource, 1, 0)
+
+#undef DEBUGOPT
+#undef ENUM_DEBUGOPT
+#undef VALUE_DEBUGOPT
+#undef BENIGN_DEBUGOPT
+#undef BENIGN_ENUM_DEBUGOPT
+#undef BENIGN_VALUE_DEBUGOPT

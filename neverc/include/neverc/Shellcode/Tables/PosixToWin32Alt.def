@@ -1,0 +1,19 @@
+#ifndef NEVERC_POSIX_WIN32
+#error "define NEVERC_POSIX_WIN32(bareName, win32Name) before including this file"
+#endif
+NEVERC_POSIX_WIN32(write,      "WriteFile")
+NEVERC_POSIX_WIN32(read,       "ReadFile")
+NEVERC_POSIX_WIN32(exit,       "ExitProcess")
+NEVERC_POSIX_WIN32(_exit,      "ExitProcess")
+NEVERC_POSIX_WIN32(exit_group, "ExitProcess")
+NEVERC_POSIX_WIN32(getpid,     "GetCurrentProcessId")
+NEVERC_POSIX_WIN32(sleep,      "Sleep")
+NEVERC_POSIX_WIN32(open,       "CreateFileA")
+NEVERC_POSIX_WIN32(close,      "CloseHandle")
+NEVERC_POSIX_WIN32(unlink,     "DeleteFileA")
+NEVERC_POSIX_WIN32(rmdir,      "RemoveDirectoryA")
+NEVERC_POSIX_WIN32(mkdir,      "CreateDirectoryA")
+NEVERC_POSIX_WIN32(rename,     "MoveFileA")
+NEVERC_POSIX_WIN32(mmap,       "VirtualAlloc")
+NEVERC_POSIX_WIN32(munmap,     "VirtualFree")
+NEVERC_POSIX_WIN32(mprotect,   "VirtualProtect")

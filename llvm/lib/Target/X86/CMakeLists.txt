@@ -1,0 +1,89 @@
+add_llvm_component_group(X86 HAS_JIT)
+
+add_custom_target(X86CommonTableGen)
+
+set(sources
+  X86ArgumentStackSlotRebase.cpp
+  X86AsmPrinter.cpp
+  X86AvoidTrailingCall.cpp
+  X86CallFrameOptimization.cpp
+  X86CallingConv.cpp
+  X86CmovConversion.cpp
+  X86DomainReassignment.cpp
+  X86LowerTileCopy.cpp
+  X86LowerAMXType.cpp
+  X86LowerAMXIntrinsics.cpp
+  X86TileConfig.cpp
+  X86FastPreTileConfig.cpp
+  X86FastTileConfig.cpp
+  X86PreTileConfig.cpp
+  X86ExpandPseudo.cpp
+  X86FixupBWInsts.cpp
+  X86FixupLEAs.cpp
+  X86FixupInstTuning.cpp
+  X86FixupVectorConstants.cpp
+  X86AvoidStoreForwardingBlocks.cpp
+  X86DynAllocaExpander.cpp
+  X86FixupSetCC.cpp
+  X86FlagsCopyLowering.cpp
+  X86FloatingPoint.cpp
+  X86FrameLowering.cpp
+  X86ISelDAGToDAG.cpp
+  X86ISelLowering.cpp
+  X86ISelLoweringCall.cpp
+  X86IndirectBranchTracking.cpp
+  X86IndirectThunks.cpp
+  X86InterleavedAccess.cpp
+  X86InstCombineIntrinsic.cpp
+  X86InstrFMA3Info.cpp
+  X86InstrFoldTables.cpp
+  X86InstrInfo.cpp
+  X86EvexToVex.cpp
+  X86LoadValueInjectionLoadHardening.cpp
+  X86LoadValueInjectionRetHardening.cpp
+  X86MCInstLower.cpp
+  X86MachineFunctionInfo.cpp
+  X86MacroFusion.cpp
+  X86OptimizeLEAs.cpp
+  X86PadShortFunction.cpp
+  X86PartialReduction.cpp
+  X86RegisterInfo.cpp
+  X86ReturnThunks.cpp
+  X86SelectionDAGInfo.cpp
+  X86ShuffleDecodeConstantPool.cpp
+  X86SpeculativeLoadHardening.cpp
+  X86SpeculativeExecutionSideEffectSuppression.cpp
+  X86Subtarget.cpp
+  X86TargetMachine.cpp
+  X86TargetObjectFile.cpp
+  X86TargetTransformInfo.cpp
+  X86VZeroUpper.cpp
+  X86InsertWait.cpp
+  )
+
+add_llvm_target(X86CodeGen ${sources}
+  LINK_COMPONENTS
+  Analysis
+  AsmPrinter
+  CFGuard
+  CodeGen
+  CodeGenTypes
+  Core
+  Instrumentation
+  MC
+  ProfileData
+  SelectionDAG
+  Support
+  Target
+  TargetParser
+  TransformUtils
+  X86Desc
+  X86Info
+
+  ADD_TO_COMPONENT
+  X86
+  )
+
+add_subdirectory(AsmParser)
+add_subdirectory(MCTargetDesc)
+add_subdirectory(TargetInfo)

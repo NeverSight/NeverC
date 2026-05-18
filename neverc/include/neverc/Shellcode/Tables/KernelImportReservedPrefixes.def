@@ -1,0 +1,8 @@
+#ifndef NEVERC_KERN_IMPORT_RESERVED_PREFIX
+#error "define NEVERC_KERN_IMPORT_RESERVED_PREFIX(prefix) before including this file"
+#endif
+#define NEVERC_SHELLCODE_INTERNAL_RUNTIME_PREFIX(prefix)                       \
+  NEVERC_KERN_IMPORT_RESERVED_PREFIX(prefix)
+#include "neverc/Shellcode/Tables/ShellcodeInternalRuntimePrefixes.def"
+#include "neverc/Shellcode/Tables/UserExtra_ShellcodeInternalRuntimePrefixes.def"
+#undef NEVERC_SHELLCODE_INTERNAL_RUNTIME_PREFIX

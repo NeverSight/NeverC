@@ -1,0 +1,18 @@
+#ifndef UNQUAL_TYPELOC
+#  define UNQUAL_TYPELOC(Class, Base) TYPELOC(Class, Base)
+#endif
+
+#ifndef ABSTRACT_TYPELOC
+#  define ABSTRACT_TYPELOC(Class, Base) UNQUAL_TYPELOC(Class, Base)
+#endif
+
+TYPELOC(Qualified, TypeLoc)
+#define TYPE(Class, Base) UNQUAL_TYPELOC(Class, Base##Loc)
+#define ABSTRACT_TYPE(Class, Base) ABSTRACT_TYPELOC(Class, Base##Loc)
+#include "neverc/Tree/TypeNodes.td.h"
+
+#undef DECLARATOR_TYPELOC
+#undef TYPESPEC_TYPELOC
+#undef ABSTRACT_TYPELOC
+#undef UNQUAL_TYPELOC
+#undef TYPELOC

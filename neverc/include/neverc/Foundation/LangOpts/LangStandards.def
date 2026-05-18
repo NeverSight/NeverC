@@ -1,0 +1,95 @@
+#ifndef LANGSTANDARD
+#error "LANGSTANDARD must be defined before including this file"
+#endif
+
+/// LANGSTANDARD(IDENT, NAME, LANG, DESC, FEATURES)
+///
+/// \param IDENT - The name of the standard as an identifier.
+/// \param NAME - The name of the standard.
+/// \param LANG - The Language for which this is a standard.
+/// \param DESC - A short description of the standard.
+/// \param FEATURES - The standard features as flags, these are enums from the
+/// neverc::frontend namespace, which is assumed to be available.
+
+/// LANGSTANDARD_ALIAS(IDENT, ALIAS)
+/// \param IDENT - The name of the standard as an identifier.
+/// \param ALIAS - The alias of the standard.
+
+/// LANGSTANDARD_ALIAS_DEPR(IDENT, ALIAS)
+/// Same as LANGSTANDARD_ALIAS, but for a deprecated alias.
+
+#ifndef LANGSTANDARD_ALIAS
+#define LANGSTANDARD_ALIAS(IDENT, ALIAS)
+#endif
+
+#ifndef LANGSTANDARD_ALIAS_DEPR
+#define LANGSTANDARD_ALIAS_DEPR(IDENT, ALIAS) LANGSTANDARD_ALIAS(IDENT, ALIAS)
+#endif
+
+// C89-ish modes.
+LANGSTANDARD(c89, "c89",
+             C, "ISO C 1990", 0)
+LANGSTANDARD_ALIAS(c89, "c90")
+LANGSTANDARD_ALIAS(c89, "iso9899:1990")
+
+LANGSTANDARD(c94, "iso9899:199409",
+             C, "ISO C 1990 with amendment 1",
+             Digraphs)
+
+LANGSTANDARD(gnu89, "gnu89",
+             C, "ISO C 1990 with GNU extensions",
+             LineComment | Digraphs | GNUMode)
+LANGSTANDARD_ALIAS(gnu89, "gnu90")
+
+// C99-ish modes
+LANGSTANDARD(c99, "c99",
+             C, "ISO C 1999",
+             LineComment | C99 | Digraphs | HexFloat)
+LANGSTANDARD_ALIAS(c99, "iso9899:1999")
+LANGSTANDARD_ALIAS_DEPR(c99, "c9x")
+LANGSTANDARD_ALIAS_DEPR(c99, "iso9899:199x")
+
+LANGSTANDARD(gnu99, "gnu99",
+             C, "ISO C 1999 with GNU extensions",
+             LineComment | C99 | Digraphs | GNUMode | HexFloat)
+LANGSTANDARD_ALIAS_DEPR(gnu99, "gnu9x")
+
+// C11 modes
+LANGSTANDARD(c11, "c11",
+             C, "ISO C 2011",
+             LineComment | C99 | C11 | Digraphs | HexFloat)
+LANGSTANDARD_ALIAS(c11, "iso9899:2011")
+LANGSTANDARD_ALIAS_DEPR(c11, "c1x")
+LANGSTANDARD_ALIAS_DEPR(c11, "iso9899:201x")
+
+LANGSTANDARD(gnu11, "gnu11",
+             C, "ISO C 2011 with GNU extensions",
+             LineComment | C99 | C11 | Digraphs | GNUMode | HexFloat)
+LANGSTANDARD_ALIAS_DEPR(gnu11, "gnu1x")
+
+// C17 modes
+LANGSTANDARD(c17, "c17",
+             C, "ISO C 2017",
+             LineComment | C99 | C11 | C17 | Digraphs | HexFloat)
+LANGSTANDARD_ALIAS(c17, "iso9899:2017")
+LANGSTANDARD_ALIAS(c17, "c18")
+LANGSTANDARD_ALIAS(c17, "iso9899:2018")
+LANGSTANDARD(gnu17, "gnu17",
+             C, "ISO C 2017 with GNU extensions",
+             LineComment | C99 | C11 | C17 | Digraphs | GNUMode | HexFloat)
+LANGSTANDARD_ALIAS(gnu17, "gnu18")
+
+// C23 modes (published as ISO/IEC 9899:2024)
+LANGSTANDARD(c23, "c23",
+             C, "ISO C 2024",
+             LineComment | C99 | C11 | C17 | C23 | Digraphs | HexFloat)
+LANGSTANDARD_ALIAS(c23, "iso9899:2024")
+LANGSTANDARD_ALIAS_DEPR(c23, "c2x")
+LANGSTANDARD(gnu23, "gnu23",
+             C, "ISO C 2024 with GNU extensions",
+             LineComment | C99 | C11 | C17 | C23 | Digraphs | GNUMode | HexFloat)
+LANGSTANDARD_ALIAS_DEPR(gnu23, "gnu2x")
+
+#undef LANGSTANDARD
+#undef LANGSTANDARD_ALIAS
+#undef LANGSTANDARD_ALIAS_DEPR

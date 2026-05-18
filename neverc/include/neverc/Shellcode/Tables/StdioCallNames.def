@@ -1,0 +1,23 @@
+#ifndef NEVERC_NAME
+#error "define NEVERC_NAME(name) before including this file"
+#endif
+NEVERC_NAME(printf)
+NEVERC_NAME(fprintf)
+NEVERC_NAME(sprintf)
+NEVERC_NAME(snprintf)
+NEVERC_NAME(vprintf)
+NEVERC_NAME(vfprintf)
+NEVERC_NAME(vsprintf)
+NEVERC_NAME(vsnprintf)
+NEVERC_NAME(puts)
+NEVERC_NAME(fputs)
+NEVERC_NAME(putchar)
+NEVERC_NAME(fputc)
+NEVERC_NAME(getchar)
+NEVERC_NAME(fgetc)
+NEVERC_NAME(gets)
+NEVERC_NAME(fgets)
+NEVERC_NAME(scanf)
+NEVERC_NAME(sscanf)
+NEVERC_NAME(fscanf)
+NEVERC_NAME(perror)

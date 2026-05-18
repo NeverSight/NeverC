@@ -1,0 +1,13 @@
+#ifndef NEVERC_NAME
+#error "define NEVERC_NAME(name) before including this file"
+#endif
+NEVERC_NAME(__addtf3)
+NEVERC_NAME(__subtf3)
+NEVERC_NAME(__multf3)
+NEVERC_NAME(__divtf3)
+NEVERC_NAME(__floatsitf)
+NEVERC_NAME(__floatunsitf)
+NEVERC_NAME(__fixtfsi)
+NEVERC_NAME(__fixunstfsi)
+NEVERC_NAME(__extenddftf2)
+NEVERC_NAME(__trunctfdf2)

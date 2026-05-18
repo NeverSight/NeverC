@@ -1,0 +1,55 @@
+name: macos-arm64-neverc-build
+
+permissions:
+  contents: write
+  
+on: [push, pull_request]
+
+jobs:
+  build:
+    # Version tags use release-pgo-macos.yml (PGO release build).
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name != github.repository))
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+    env:
+      BUILD_TYPE: Release
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v3
+      with:
+          path: neverc
+          submodules: 'recursive'
+          
+    - name: Setup build deps
+      run: |
+          brew install ninja cmake p7zip
+
+    - name: Build neverc
+      run: |
+        cmake -GNinja -Bbuild \
+        -DCMAKE_INSTALL_PREFIX=install \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+        -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0 \
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+        -C neverc/neverc/cmake/caches/NeverC.cmake \
+        neverc/llvm
+        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+        
+    - name: Package neverc
+      run: 7z a macos-arm64-neverc.zip install
+    
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-arm64-neverc
+        path: macos-arm64-neverc.zip
+    

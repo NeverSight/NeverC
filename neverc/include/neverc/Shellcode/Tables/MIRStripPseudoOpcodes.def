@@ -1,0 +1,20 @@
+#ifndef NEVERC_MIR_STRIP_PSEUDO
+#error "define NEVERC_MIR_STRIP_PSEUDO(opcode, category) before including this file"
+#endif
+NEVERC_MIR_STRIP_PSEUDO(CFI_INSTRUCTION, "unwind/CFI metadata")
+NEVERC_MIR_STRIP_PSEUDO(EH_LABEL,        "exception-handling label")
+NEVERC_MIR_STRIP_PSEUDO(GC_LABEL,         "GC label")
+NEVERC_MIR_STRIP_PSEUDO(STATEPOINT,    "GC statepoint")
+NEVERC_MIR_STRIP_PSEUDO(STACKMAP,      "stackmap")
+NEVERC_MIR_STRIP_PSEUDO(PATCHPOINT,    "patchpoint")
+NEVERC_MIR_STRIP_PSEUDO(PSEUDO_PROBE,  "pseudo-probe / sample-pgo")
+NEVERC_MIR_STRIP_PSEUDO(PATCHABLE_OP,                "patchable op")
+NEVERC_MIR_STRIP_PSEUDO(PATCHABLE_FUNCTION_ENTER,    "patchable function enter")
+NEVERC_MIR_STRIP_PSEUDO(PATCHABLE_RET,               "patchable return")
+NEVERC_MIR_STRIP_PSEUDO(PATCHABLE_FUNCTION_EXIT,     "patchable function exit")
+NEVERC_MIR_STRIP_PSEUDO(PATCHABLE_TAIL_CALL,         "patchable tail call")
+NEVERC_MIR_STRIP_PSEUDO(PATCHABLE_EVENT_CALL,        "patchable event call")
+NEVERC_MIR_STRIP_PSEUDO(PATCHABLE_TYPED_EVENT_CALL,  "patchable typed event call")
+NEVERC_MIR_STRIP_PSEUDO(FENTRY_CALL, "-mfentry call sled")
+NEVERC_MIR_STRIP_PSEUDO(LOCAL_ESCAPE, "MS SEH escape helper")
+NEVERC_MIR_STRIP_PSEUDO(JUMP_TABLE_DEBUG_INFO, "jump-table debug info")

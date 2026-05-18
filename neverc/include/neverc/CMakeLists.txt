@@ -1,0 +1,5 @@
+add_subdirectory(Tree)
+add_subdirectory(Foundation)
+add_subdirectory(Invoke)
+add_subdirectory(Syntax)
+add_subdirectory(Analyze)

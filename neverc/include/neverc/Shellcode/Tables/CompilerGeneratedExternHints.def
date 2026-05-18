@@ -1,0 +1,27 @@
+#ifndef NEVERC_EXTERN_HINT
+#error "define NEVERC_EXTERN_HINT(name, message) before including this file"
+#endif
+NEVERC_EXTERN_HINT(__security_cookie,
+                   "MSVC security cookie leaked through /GS; shellcode mode "
+                   "already forces /GS-, do not re-enable it in user flags")
+NEVERC_EXTERN_HINT(__security_check_cookie,
+                   "MSVC security cookie leaked through /GS; shellcode mode "
+                   "already forces /GS-, do not re-enable it in user flags")
+NEVERC_EXTERN_HINT(__security_check_cookie_common,
+                   "MSVC security cookie leaked through /GS; shellcode mode "
+                   "already forces /GS-, do not re-enable it in user flags")
+NEVERC_EXTERN_HINT(__chkstk,
+                   "stack-probe call emitted; shrink the stack frame or keep "
+                   "-mno-stack-arg-probe on the compile line")
+NEVERC_EXTERN_HINT(___chkstk_ms,
+                   "stack-probe call emitted; shrink the stack frame or keep "
+                   "-mno-stack-arg-probe on the compile line")
+NEVERC_EXTERN_HINT(__chkstk_ms,
+                   "stack-probe call emitted; shrink the stack frame or keep "
+                   "-mno-stack-arg-probe on the compile line")
+NEVERC_EXTERN_HINT(__stack_chk_guard,
+                   "stack-protector emitted; shellcode mode already uses "
+                   "-fno-stack-protector, do not re-enable")
+NEVERC_EXTERN_HINT(__stack_chk_fail,
+                   "stack-protector emitted; shellcode mode already uses "
+                   "-fno-stack-protector, do not re-enable")

@@ -1,0 +1,6 @@
+#ifndef NEVERC_BUILTIN_STRING_METHOD_RECEIVER
+#error "define NEVERC_BUILTIN_STRING_METHOD_RECEIVER(method, kind) before including this file"
+#endif
+NEVERC_BUILTIN_STRING_METHOD_RECEIVER("assign",   Receiver)
+NEVERC_BUILTIN_STRING_METHOD_RECEIVER("swap",     All)
+NEVERC_BUILTIN_STRING_METHOD_RECEIVER("capacity", Receiver)

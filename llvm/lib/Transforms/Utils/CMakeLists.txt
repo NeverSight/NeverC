@@ -1,0 +1,69 @@
+add_llvm_component_library(LLVMTransformUtils
+  AssumeBundleBuilder.cpp
+  BasicBlockUtils.cpp
+  BreakCriticalEdges.cpp
+  BuildLibCalls.cpp
+  BypassSlowDivision.cpp
+  CallPromotionUtils.cpp
+  CanonicalizeAliases.cpp
+  CanonicalizeFreezeInLoops.cpp
+  CloneFunction.cpp
+  CloneModule.cpp
+  CodeLayout.cpp
+  CtorUtils.cpp
+  Debugify.cpp
+  EntryExitInstrumenter.cpp
+  Evaluator.cpp
+
+  GlobalStatus.cpp
+  InlineFunction.cpp
+  InjectTLIMappings.cpp
+  IntegerDivision.cpp
+  LCSSA.cpp
+  LibCallsShrinkWrap.cpp
+  Local.cpp
+  LoopPeel.cpp
+  LoopRotationUtils.cpp
+  LoopSimplify.cpp
+  LoopUnroll.cpp
+  LoopUnrollRuntime.cpp
+  LoopUtils.cpp
+  LoopVersioning.cpp
+  LowerAtomic.cpp
+  LowerGlobalDtors.cpp
+  LowerInvoke.cpp
+  LowerMemIntrinsics.cpp
+  MemoryOpRemark.cpp
+  MemoryTaggingSupport.cpp
+  Mem2Reg.cpp
+  MisExpect.cpp
+  ModuleUtils.cpp
+  MoveAutoInit.cpp
+  NameAnonGlobals.cpp
+  PredicateInfo.cpp
+  PromoteMemoryToRegister.cpp
+  RelLookupTableConverter.cpp
+  ScalarEvolutionExpander.cpp
+  SCCPSolver.cpp
+  SSAUpdater.cpp
+  SimplifyCFG.cpp
+  SimplifyIndVar.cpp
+  SimplifyLibCalls.cpp
+  SizeOpts.cpp
+
+  ValueMapper.cpp
+  VNCoercion.cpp
+
+  ADDITIONAL_HEADER_DIRS
+  ${LLVM_MAIN_INCLUDE_DIR}/llvm/Transforms
+  ${LLVM_MAIN_INCLUDE_DIR}/llvm/Transforms/Utils
+
+  DEPENDS
+  intrinsics_gen
+
+  LINK_COMPONENTS
+  Analysis
+  Core
+  Support
+  TargetParser
+  )

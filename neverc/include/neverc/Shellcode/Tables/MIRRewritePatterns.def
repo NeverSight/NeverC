@@ -1,0 +1,11 @@
+#ifndef NEVERC_MIR_REWRITE_PATTERN
+#error "define NEVERC_MIR_REWRITE_PATTERN(id, display, arch, function) before including this file"
+#endif
+NEVERC_MIR_REWRITE_PATTERN(AArch64CPIAsFmovImm,
+                           "aarch64-cpi-fp-to-fmov-imm",
+                           aarch64,
+                           tryRewriteAArch64CPIAsFmovImm)
+NEVERC_MIR_REWRITE_PATTERN(X86ZeroFPCPIAsXorps,
+                           "x86-cpi-zero-fp-to-xorps",
+                           x86_64,
+                           tryRewriteX86ZeroFPCPIAsXorps)

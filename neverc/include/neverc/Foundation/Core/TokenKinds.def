@@ -1,0 +1,552 @@
+#ifndef TOK
+#define TOK(X)
+#endif
+#ifndef PUNCTUATOR
+#define PUNCTUATOR(X,Y) TOK(X)
+#endif
+#ifndef KEYWORD
+#define KEYWORD(X,Y) TOK(kw_ ## X)
+#endif
+#ifndef C99_KEYWORD
+#define C99_KEYWORD(X,Y) KEYWORD(X,KEYC99|(Y))
+#endif
+#ifndef C23_KEYWORD
+#define C23_KEYWORD(X,Y) KEYWORD(X,KEYC23|(Y))
+#endif
+#ifndef UNARY_EXPR_OR_TYPE_TRAIT
+#define UNARY_EXPR_OR_TYPE_TRAIT(I,E,K) KEYWORD(I,K)
+#endif
+#ifndef ALIAS
+#define ALIAS(X,Y,Z)
+#endif
+#ifndef PPKEYWORD
+#define PPKEYWORD(X)
+#endif
+#ifndef TESTING_KEYWORD
+#define TESTING_KEYWORD(X, L) KEYWORD(X, L)
+#endif
+#ifndef ANNOTATION
+#define ANNOTATION(X) TOK(annot_ ## X)
+#endif
+#ifndef PRAGMA_ANNOTATION
+#define PRAGMA_ANNOTATION(X) ANNOTATION(X)
+#endif
+#ifndef INTERESTING_IDENTIFIER
+#define INTERESTING_IDENTIFIER(X)
+#endif
+
+//===----------------------------------------------------------------------===//
+// Preprocessor keywords.
+//===----------------------------------------------------------------------===//
+
+// These have meaning after a '#' at the start of a line. These define enums in
+// the tok::pp_* namespace.  Note that IdentifierInfo::getPPKeywordID must be
+// manually updated if something is added here.
+PPKEYWORD(not_keyword)
+
+// C99 6.10.1 - Conditional Inclusion.
+PPKEYWORD(if)
+PPKEYWORD(ifdef)
+PPKEYWORD(ifndef)
+PPKEYWORD(elif)
+PPKEYWORD(elifdef)
+PPKEYWORD(elifndef)
+PPKEYWORD(else)
+PPKEYWORD(endif)
+PPKEYWORD(defined)
+
+// C99 6.10.2 - Source File Inclusion.
+PPKEYWORD(include)
+PPKEYWORD(__include_macros)
+
+// C99 6.10.3 - Macro Replacement.
+PPKEYWORD(define)
+PPKEYWORD(undef)
+
+// C99 6.10.4 - Line Control.
+PPKEYWORD(line)
+
+// C99 6.10.5 - Error Directive.
+PPKEYWORD(error)
+
+// C99 6.10.6 - Pragma Directive.
+PPKEYWORD(pragma)
+
+// GNU Extensions.
+PPKEYWORD(import)
+PPKEYWORD(include_next)
+PPKEYWORD(warning)
+PPKEYWORD(ident)
+PPKEYWORD(sccs)
+PPKEYWORD(assert)
+PPKEYWORD(unassert)
+
+// NeverC extensions
+PPKEYWORD(__public_macro)
+PPKEYWORD(__private_macro)
+
+//===----------------------------------------------------------------------===//
+// Language keywords.
+//===----------------------------------------------------------------------===//
+
+// These define members of the tok::* namespace.
+
+TOK(unknown)             // Not a token.
+TOK(eof)                 // End of file.
+TOK(eod)                 // End of preprocessing directive (end of line inside a
+                         // directive).
+
+// C99 6.4.9: Comments.
+TOK(comment)             // Comment (only in -E -C[C] mode)
+
+// C99 6.4.2: Identifiers.
+TOK(identifier)          // abcde123
+TOK(raw_identifier)      // Used only in raw lexing mode.
+
+// C99 6.4.4.1: Integer Constants
+// C99 6.4.4.2: Floating Constants
+TOK(numeric_constant)    // 0x123
+
+// C99 6.4.4: Character Constants
+TOK(char_constant)       // 'a'
+TOK(wide_char_constant)  // L'b'
+
+// C23 / Unicode Character Constants
+TOK(utf8_char_constant)  // u8'a'
+TOK(utf16_char_constant) // u'a'
+TOK(utf32_char_constant) // U'a'
+
+// C99 6.4.5: String Literals.
+TOK(string_literal)      // "foo"
+TOK(wide_string_literal) // L"foo"
+
+// C11 6.4.7: Header Names
+TOK(header_name)         // <foo>, or "foo" lexed as a header-name
+
+// C11 Unicode String Literals.
+TOK(utf8_string_literal) // u8"foo"
+TOK(utf16_string_literal)// u"foo"
+TOK(utf32_string_literal)// U"foo"
+
+// C99 6.4.6: Punctuators.
+PUNCTUATOR(l_square,            "[")
+PUNCTUATOR(r_square,            "]")
+PUNCTUATOR(l_paren,             "(")
+PUNCTUATOR(r_paren,             ")")
+PUNCTUATOR(l_brace,             "{")
+PUNCTUATOR(r_brace,             "}")
+PUNCTUATOR(period,              ".")
+PUNCTUATOR(ellipsis,            "...")
+PUNCTUATOR(amp,                 "&")
+PUNCTUATOR(ampamp,              "&&")
+PUNCTUATOR(ampequal,            "&=")
+PUNCTUATOR(star,                "*")
+PUNCTUATOR(starequal,           "*=")
+PUNCTUATOR(plus,                "+")
+PUNCTUATOR(plusplus,            "++")
+PUNCTUATOR(plusequal,           "+=")
+PUNCTUATOR(minus,               "-")
+PUNCTUATOR(arrow,               "->")
+PUNCTUATOR(minusminus,          "--")
+PUNCTUATOR(minusequal,          "-=")
+PUNCTUATOR(tilde,               "~")
+PUNCTUATOR(exclaim,             "!")
+PUNCTUATOR(exclaimequal,        "!=")
+PUNCTUATOR(slash,               "/")
+PUNCTUATOR(slashequal,          "/=")
+PUNCTUATOR(percent,             "%")
+PUNCTUATOR(percentequal,        "%=")
+PUNCTUATOR(less,                "<")
+PUNCTUATOR(lessless,            "<<")
+PUNCTUATOR(lessequal,           "<=")
+PUNCTUATOR(lesslessequal,       "<<=")
+PUNCTUATOR(greater,             ">")
+PUNCTUATOR(greatergreater,      ">>")
+PUNCTUATOR(greaterequal,        ">=")
+PUNCTUATOR(greatergreaterequal, ">>=")
+PUNCTUATOR(caret,               "^")
+PUNCTUATOR(caretequal,          "^=")
+PUNCTUATOR(pipe,                "|")
+PUNCTUATOR(pipepipe,            "||")
+PUNCTUATOR(pipeequal,           "|=")
+PUNCTUATOR(question,            "?")
+PUNCTUATOR(colon,               ":")
+PUNCTUATOR(semi,                ";")
+PUNCTUATOR(equal,               "=")
+PUNCTUATOR(equalequal,          "==")
+PUNCTUATOR(comma,               ",")
+PUNCTUATOR(hash,                "#")
+PUNCTUATOR(hashhash,            "##")
+PUNCTUATOR(hashat,              "#@")
+
+// '::' is used by inline-asm parsing and the preprocessor.
+PUNCTUATOR(coloncolon,          "::")
+
+// C99 6.4.1: Keywords.  These turn into kw_* tokens.
+// Flags allowed:
+//   KEYALL   - This is a keyword in all variants of C, or it is a keyword
+//              in the implementation namespace that should always be
+//              treated as a keyword
+//   KEYC99   - This is a keyword introduced to C in C99
+//   KEYC11   - This is a keyword introduced to C in C11
+//   KEYC23   - This is a keyword introduced to C in C23
+//   KEYGNU   - This is a keyword if GNU extensions are enabled
+//   KEYMS    - This is a keyword if Microsoft extensions are enabled
+//   KEYMSCOMPAT - This is a keyword if Microsoft compatibility mode is enabled
+//   KEYNOMS18 - This is a keyword that must never be enabled under
+//               MSVC <= v18.
+//   BOOLSUPPORT - This is a keyword if 'bool' is a built-in type
+//   WCHARSUPPORT - This is a keyword if 'wchar_t' is a built-in type
+//   CHAR8SUPPORT - This is a keyword if 'char8_t' is a built-in type
+//   KEYFIXEDPOINT - This is a keyword according to the N1169 fixed point
+//                   extension.
+//
+KEYWORD(auto                        , KEYALL)
+KEYWORD(break                       , KEYALL)
+KEYWORD(case                        , KEYALL)
+KEYWORD(char                        , KEYALL)
+KEYWORD(const                       , KEYALL)
+KEYWORD(continue                    , KEYALL)
+KEYWORD(default                     , KEYALL)
+KEYWORD(do                          , KEYALL)
+KEYWORD(double                      , KEYALL)
+KEYWORD(else                        , KEYALL)
+KEYWORD(enum                        , KEYALL)
+KEYWORD(extern                      , KEYALL)
+KEYWORD(float                       , KEYALL)
+KEYWORD(for                         , KEYALL)
+KEYWORD(goto                        , KEYALL)
+KEYWORD(if                          , KEYALL)
+KEYWORD(int                         , KEYALL)
+KEYWORD(_ExtInt                     , KEYALL)
+KEYWORD(_BitInt                     , KEYALL)
+KEYWORD(long                        , KEYALL)
+KEYWORD(register                    , KEYALL)
+KEYWORD(return                      , KEYALL)
+KEYWORD(short                       , KEYALL)
+KEYWORD(signed                      , KEYALL)
+UNARY_EXPR_OR_TYPE_TRAIT(sizeof, SizeOf, KEYALL)
+KEYWORD(static                      , KEYALL)
+KEYWORD(struct                      , KEYALL)
+KEYWORD(switch                      , KEYALL)
+KEYWORD(typedef                     , KEYALL)
+KEYWORD(union                       , KEYALL)
+KEYWORD(unsigned                    , KEYALL)
+KEYWORD(void                        , KEYALL)
+KEYWORD(volatile                    , KEYALL)
+KEYWORD(while                       , KEYALL)
+KEYWORD(_Alignas                    , KEYALL)
+KEYWORD(_Alignof                    , KEYALL)
+KEYWORD(_Atomic                     , KEYALL)
+KEYWORD(_Bool                       , KEYALL)
+KEYWORD(_Complex                    , KEYALL)
+KEYWORD(_Generic                    , KEYALL)
+KEYWORD(_Imaginary                  , KEYALL)
+KEYWORD(_Noreturn                   , KEYALL)
+KEYWORD(_Static_assert              , KEYALL)
+KEYWORD(_Thread_local               , KEYALL)
+KEYWORD(__func__                    , KEYALL)
+
+
+// GNU/C extensions.
+KEYWORD(asm                         , KEYGNU)
+KEYWORD(bool                        , BOOLSUPPORT|KEYC23)
+KEYWORD(false                       , BOOLSUPPORT|KEYC23)
+KEYWORD(true                        , BOOLSUPPORT|KEYC23)
+KEYWORD(wchar_t                     , WCHARSUPPORT)
+
+// C99 Keywords.
+C99_KEYWORD(restrict                    , 0)
+C99_KEYWORD(inline                      , KEYGNU)
+
+
+// C23 keywords (also available as extensions in earlier C modes).
+C23_KEYWORD(alignas                 , 0)
+UNARY_EXPR_OR_TYPE_TRAIT(alignof, AlignOf, KEYC23)
+C23_KEYWORD(constexpr               , 0)
+C23_KEYWORD(nullptr                 , 0)
+C23_KEYWORD(static_assert           , KEYMSCOMPAT)
+C23_KEYWORD(thread_local            , 0)
+
+KEYWORD(char8_t                     , CHAR8SUPPORT)
+
+// C11 Extension
+KEYWORD(_Float16                    , KEYALL)
+
+// C23 keywords
+C23_KEYWORD(typeof                  , KEYGNU)
+C23_KEYWORD(typeof_unqual           , 0)
+
+// ISO/IEC JTC1 SC22 WG14 N1169 Extension
+KEYWORD(_Accum                      , KEYFIXEDPOINT)
+KEYWORD(_Fract                      , KEYFIXEDPOINT)
+KEYWORD(_Sat                        , KEYFIXEDPOINT)
+
+// GNU Extensions (in impl-reserved namespace)
+KEYWORD(_Decimal32                  , KEYALL)
+KEYWORD(_Decimal64                  , KEYALL)
+KEYWORD(_Decimal128                 , KEYALL)
+// __alignof returns the preferred alignment of a type, the alignment
+// NeverC will attempt to give an object of the type if allowed by ABI.
+UNARY_EXPR_OR_TYPE_TRAIT(__alignof, PreferredAlignOf, KEYALL)
+KEYWORD(__attribute                 , KEYALL)
+KEYWORD(__builtin_choose_expr       , KEYALL)
+KEYWORD(__builtin_offsetof          , KEYALL)
+KEYWORD(__builtin_FILE              , KEYALL)
+KEYWORD(__builtin_FILE_NAME         , KEYALL)
+KEYWORD(__builtin_FUNCTION          , KEYALL)
+KEYWORD(__builtin_FUNCSIG           , KEYMS)
+KEYWORD(__builtin_LINE              , KEYALL)
+KEYWORD(__builtin_COLUMN            , KEYALL)
+
+KEYWORD(__builtin_types_compatible_p , KEYALL)
+KEYWORD(__builtin_va_arg            , KEYALL)
+KEYWORD(__extension__               , KEYALL)
+KEYWORD(__float128                  , KEYALL)
+KEYWORD(__fp16                      , KEYALL)
+KEYWORD(__imag                      , KEYALL)
+KEYWORD(__int128                    , KEYALL)
+KEYWORD(__label__                   , KEYALL)
+KEYWORD(__real                      , KEYALL)
+KEYWORD(__thread                    , KEYALL)
+KEYWORD(__FUNCTION__                , KEYALL)
+KEYWORD(__PRETTY_FUNCTION__         , KEYALL)
+KEYWORD(__auto_type                 , KEYALL)
+
+// MS Extensions
+KEYWORD(__FUNCDNAME__               , KEYMS)
+KEYWORD(__FUNCSIG__                 , KEYMS)
+KEYWORD(L__FUNCTION__               , KEYMS)
+KEYWORD(L__FUNCSIG__                , KEYMS)
+
+// Apple Extension.
+KEYWORD(__private_extern__          , KEYALL)
+
+// Extension that will be enabled for Microsoft and PS4, but can be
+// disabled via '-fno-declspec'.
+KEYWORD(__declspec                  , 0)
+
+// Microsoft Extension.
+KEYWORD(__cdecl                     , KEYALL)
+KEYWORD(cdecl                       , KEYALL)
+KEYWORD(__stdcall                   , KEYALL)
+KEYWORD(__fastcall                  , KEYALL)
+KEYWORD(__regcall                   , KEYALL)
+KEYWORD(__vectorcall                , KEYALL)
+KEYWORD(__forceinline               , KEYMS)
+KEYWORD(__unaligned                 , KEYMS)
+
+// ARM NEON extensions.
+KEYWORD(__bf16                      , KEYALL)
+
+// Alternate spelling for various tokens.  There are GCC extensions in all
+// languages, but should not be disabled in strict conformance mode.
+ALIAS("__alignof__"  , __alignof  , KEYALL)
+ALIAS("__asm"        , asm        , KEYALL)
+ALIAS("__asm__"      , asm        , KEYALL)
+ALIAS("__attribute__", __attribute, KEYALL)
+ALIAS("__complex"    , _Complex   , KEYALL)
+ALIAS("__complex__"  , _Complex   , KEYALL)
+ALIAS("__const"      , const      , KEYALL)
+ALIAS("__const__"    , const      , KEYALL)
+ALIAS("__imag__"     , __imag     , KEYALL)
+ALIAS("__inline"     , inline     , KEYALL)
+ALIAS("__inline__"   , inline     , KEYALL)
+ALIAS("__real__"     , __real     , KEYALL)
+ALIAS("__restrict"   , restrict   , KEYALL)
+ALIAS("__restrict__" , restrict   , KEYALL)
+ALIAS("__signed"     , signed     , KEYALL)
+ALIAS("__signed__"   , signed     , KEYALL)
+ALIAS("__typeof"     , typeof     , KEYALL)
+ALIAS("__typeof__"   , typeof     , KEYALL)
+ALIAS("__volatile"   , volatile   , KEYALL)
+ALIAS("__volatile__" , volatile   , KEYALL)
+
+// Type nullability.
+KEYWORD(_Nonnull                 , KEYALL)
+KEYWORD(_Nullable                , KEYALL)
+KEYWORD(_Null_unspecified        , KEYALL)
+
+// Microsoft extensions which should be disabled in strict conformance mode
+KEYWORD(__ptr64                       , KEYMS)
+KEYWORD(__ptr32                       , KEYMS)
+KEYWORD(__sptr                        , KEYMS)
+KEYWORD(__uptr                        , KEYMS)
+KEYWORD(__w64                         , KEYMS)
+KEYWORD(__uuidof                      , KEYMS)
+KEYWORD(__try                         , KEYMS)
+KEYWORD(__finally                     , KEYMS)
+KEYWORD(__leave                       , KEYMS)
+KEYWORD(__int64                       , KEYMS)
+KEYWORD(__if_exists                   , KEYMS)
+KEYWORD(__if_not_exists               , KEYMS)
+ALIAS("__int8"           , char       , KEYMS)
+ALIAS("__int16"          , short      , KEYMS)
+ALIAS("__int32"          , int        , KEYMS)
+ALIAS("__wchar_t"        , wchar_t    , KEYMS)
+ALIAS("__builtin_alignof", __alignof  , KEYMS)
+
+// Microsoft single-underscore prefixed aliases for double-underscore prefixed
+// keywords.
+ALIAS("_asm"             , asm          , KEYMS)
+ALIAS("_alignof"         , __alignof    , KEYMS)
+ALIAS("_cdecl"           , __cdecl      , KEYMS)
+ALIAS("_declspec"        , __declspec   , KEYMS)
+ALIAS("_fastcall"        , __fastcall   , KEYMS)
+ALIAS("_finally"         , __finally    , KEYMSCOMPAT)
+ALIAS("_forceinline"     , __forceinline, KEYMSCOMPAT)
+ALIAS("_inline"          , inline       , KEYMS)
+ALIAS("_int8"            , char         , KEYMS)
+ALIAS("_int16"           , short        , KEYMS)
+ALIAS("_int32"           , int          , KEYMS)
+ALIAS("_int64"           , __int64      , KEYMS)
+ALIAS("_leave"           , __leave      , KEYMSCOMPAT)
+ALIAS("_ptr32"           , __ptr32      , KEYMSCOMPAT)
+ALIAS("_ptr64"           , __ptr64      , KEYMSCOMPAT)
+ALIAS("_restrict"        , restrict     , KEYMSCOMPAT)
+ALIAS("_stdcall"         , __stdcall    , KEYMS)
+ALIAS("_try"             , __try        , KEYMSCOMPAT)
+ALIAS("_vectorcall"      , __vectorcall , KEYMS)
+ALIAS("_unaligned"       , __unaligned  , KEYMSCOMPAT)
+ALIAS("_uptr"            , __uptr       , KEYMSCOMPAT)
+ALIAS("_uuidof"          , __uuidof     , KEYMS)
+ALIAS("_w64"             , __w64        , KEYMSCOMPAT)
+
+// NeverC Rust-style integer types (off by default; enable with -fneverc-types).
+// Default-off avoids colliding with third-party C headers that define u8/u32/etc.
+// as macros or typedefs.
+KEYWORD(i8                              , KEYNEVERC)
+KEYWORD(i16                             , KEYNEVERC)
+KEYWORD(i32                             , KEYNEVERC)
+KEYWORD(i64                             , KEYNEVERC)
+KEYWORD(i128                            , KEYNEVERC)
+KEYWORD(u8                              , KEYNEVERC)
+KEYWORD(u16                             , KEYNEVERC)
+KEYWORD(u32                             , KEYNEVERC)
+KEYWORD(u64                             , KEYNEVERC)
+KEYWORD(u128                            , KEYNEVERC)
+KEYWORD(isize                           , KEYNEVERC)
+KEYWORD(usize                           , KEYNEVERC)
+
+// NeverC Extensions.
+KEYWORD(__builtin_convertvector          , KEYALL)
+UNARY_EXPR_OR_TYPE_TRAIT(__builtin_vectorelements, VectorElements, KEYALL)
+KEYWORD(__builtin_bit_cast               , KEYALL)
+KEYWORD(__builtin_available              , KEYALL)
+
+// Keywords defined by Attr.td.
+#ifndef KEYWORD_ATTRIBUTE
+#define KEYWORD_ATTRIBUTE(X) KEYWORD(X, KEYALL)
+#endif
+#include "neverc/Foundation/AttrTokenKinds.td.h"
+
+
+//===----------------------------------------------------------------------===//
+// Interesting identifiers.
+//===----------------------------------------------------------------------===//
+INTERESTING_IDENTIFIER(not_interesting)
+INTERESTING_IDENTIFIER(FILE)
+INTERESTING_IDENTIFIER(jmp_buf)
+INTERESTING_IDENTIFIER(sigjmp_buf)
+INTERESTING_IDENTIFIER(ucontext_t)
+INTERESTING_IDENTIFIER(float_t)
+INTERESTING_IDENTIFIER(double_t)
+
+ANNOTATION(typename)     // annotation for a typedef name (possibly qualified)
+
+// Annotation for #pragma unused(...)
+// For each argument inside the parentheses the pragma handler will produce
+// one 'pragma_unused' annotation token followed by the argument token.
+PRAGMA_ANNOTATION(pragma_unused)
+
+// Annotation for #pragma GCC visibility...
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_vis)
+
+// Annotation for #pragma pack...
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_pack)
+
+// Annotation for #pragma neverc __debug parser_crash...
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_parser_crash)
+
+// Annotation for #pragma neverc __debug dump...
+// The lexer produces these so that the parser and semantic analysis can
+// look up and dump the operand.
+PRAGMA_ANNOTATION(pragma_dump)
+
+// Annotation for #pragma ms_struct...
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_msstruct)
+
+// Annotation for #pragma align...
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_align)
+
+// Annotation for #pragma weak id
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_weak)
+
+// Annotation for #pragma weak id = id
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_weakalias)
+
+// Annotation for #pragma STDC FP_CONTRACT...
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_fp_contract)
+
+// Annotations for #pragma STDC FENV_ACCESS and #pragma fenv_access (MS compat)
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_fenv_access)
+PRAGMA_ANNOTATION(pragma_fenv_access_ms)
+
+// Annotation for #pragma STDC FENV_ROUND
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_fenv_round)
+
+// Annotation for #pragma STDC CX_LIMITED_RANGE
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_cx_limited_range)
+
+// Annotation for #pragma float_control
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_float_control)
+
+// Annotation for all microsoft #pragmas...
+// The lexer produces these so that they only take effect when the parser
+// handles them.
+PRAGMA_ANNOTATION(pragma_ms_pragma)
+
+// Annotations for loop pragma directives #pragma neverc loop ...
+// The lexer produces these so that they only take effect when the parser
+PRAGMA_ANNOTATION(pragma_fp)
+
+// Annotation for the attribute pragma directives - #pragma neverc attribute ...
+PRAGMA_ANNOTATION(pragma_attribute)
+
+
+#undef PRAGMA_ANNOTATION
+#undef ANNOTATION
+#undef TESTING_KEYWORD
+#undef PPKEYWORD
+#undef ALIAS
+#undef UNARY_EXPR_OR_TYPE_TRAIT
+#undef KEYWORD
+#undef PUNCTUATOR
+#undef TOK
+#undef C99_KEYWORD
+#undef C23_KEYWORD
+#undef INTERESTING_IDENTIFIER

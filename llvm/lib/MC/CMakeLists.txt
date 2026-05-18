@@ -1,0 +1,63 @@
+add_llvm_component_library(LLVMMC
+  ConstantPools.cpp
+  ELFObjectWriter.cpp
+  MCAsmBackend.cpp
+  MCAsmInfo.cpp
+  MCAsmInfoCOFF.cpp
+  MCAsmInfoDarwin.cpp
+  MCAsmInfoELF.cpp
+  MCAsmStreamer.cpp
+  MCAssembler.cpp
+  MCCodeEmitter.cpp
+  MCContext.cpp
+  MCDwarf.cpp
+  MCELFObjectTargetWriter.cpp
+  MCELFStreamer.cpp
+  MCExpr.cpp
+  MCFragment.cpp
+  MCInst.cpp
+  MCInstPrinter.cpp
+  MCInstrAnalysis.cpp
+  MCInstrDesc.cpp
+  MCLinkerOptimizationHint.cpp
+  MCMachOStreamer.cpp
+  MCMachObjectTargetWriter.cpp
+  MCNullStreamer.cpp
+  MCObjectFileInfo.cpp
+  MCObjectStreamer.cpp
+  MCObjectWriter.cpp
+  MCPseudoProbe.cpp
+  MCRegisterInfo.cpp
+  MCSchedule.cpp
+  MCSection.cpp
+  MCSectionCOFF.cpp
+  MCSectionELF.cpp
+  MCSectionMachO.cpp
+  MCStreamer.cpp
+  MCSubtargetInfo.cpp
+  MCSymbol.cpp
+  MCSymbolELF.cpp
+  MCTargetOptions.cpp
+  MCTargetOptionsCommandFlags.cpp
+  MCValue.cpp
+  MCWin64EH.cpp
+  MCWinCOFFStreamer.cpp
+  MCWinEH.cpp
+  MachObjectWriter.cpp
+  StringTableBuilder.cpp
+  TargetRegistry.cpp
+  WinCOFFObjectWriter.cpp
+
+  ADDITIONAL_HEADER_DIRS
+  ${LLVM_MAIN_INCLUDE_DIR}/llvm/MC
+
+  LINK_COMPONENTS
+  Support
+  TargetParser
+  BinaryFormat
+
+  DEPENDS
+  intrinsics_gen
+  )
+
+add_subdirectory(MCParser)

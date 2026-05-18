@@ -1,0 +1,19 @@
+#ifndef NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD
+#error "define NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD(method, arity, helper) before including this file"
+#endif
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("find",          1, FindCharFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("find",          2, FindCharFromFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("rfind",         1, RfindCharFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("rfind",         2, RfindCharToFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("find_first_of", 1, FindCharFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("find_first_of", 2, FindCharFromFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("find_last_of",  1, RfindCharFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("find_last_of",  2, RfindCharToFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("find_first_not_of", 1, FindCharNotFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("find_first_not_of", 2, FindCharNotFromFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("find_last_not_of",  1, RfindCharNotFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("find_last_not_of",  2, RfindCharNotToFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("contains",      1, ContainsCharFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("starts_with",   1, StartsWithCharFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("ends_with",     1, EndsWithCharFunctionName)
+NEVERC_BUILTIN_STRING_METHOD_CHAR_OVERLOAD("count",         1, CountCharFunctionName)

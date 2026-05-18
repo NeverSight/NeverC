@@ -1,0 +1,12 @@
+#ifndef NEVERC_PREFIX
+#error "define NEVERC_PREFIX(prefix) before including this file"
+#endif
+NEVERC_PREFIX(__udiv)
+NEVERC_PREFIX(__sdiv)
+NEVERC_PREFIX(__umod)
+NEVERC_PREFIX(__smod)
+NEVERC_PREFIX(__ashl)
+NEVERC_PREFIX(__ashr)
+NEVERC_PREFIX(__lshr)
+NEVERC_PREFIX(__mul)
+NEVERC_PREFIX(__div)

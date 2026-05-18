@@ -1,0 +1,9 @@
+// The format of this database matches neverc/Foundation/Builtin/Builtins.def.
+
+#define GET_SVE_BUILTINS
+#include "neverc/Foundation/arm_sve_builtins.td.h"
+#include "neverc/Foundation/Builtin/BuiltinsAArch64NeonSVEBridge.def"
+#undef GET_SVE_BUILTINS
+
+#undef BUILTIN
+#undef TARGET_BUILTIN

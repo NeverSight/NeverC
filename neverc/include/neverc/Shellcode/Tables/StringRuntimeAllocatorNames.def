@@ -1,0 +1,7 @@
+#ifndef NEVERC_STRING_RUNTIME_ALLOCATOR
+#error "define NEVERC_STRING_RUNTIME_ALLOCATOR(name, role) before including this file"
+#endif
+NEVERC_STRING_RUNTIME_ALLOCATOR(malloc, alloc)
+NEVERC_STRING_RUNTIME_ALLOCATOR(__builtin_malloc, alloc)
+NEVERC_STRING_RUNTIME_ALLOCATOR(free, free)
+NEVERC_STRING_RUNTIME_ALLOCATOR(__builtin_free, free)

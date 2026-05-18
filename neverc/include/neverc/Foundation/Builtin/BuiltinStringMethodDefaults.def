@@ -1,0 +1,7 @@
+#ifndef NEVERC_BUILTIN_STRING_METHOD_DEFAULT
+#error "define NEVERC_BUILTIN_STRING_METHOD_DEFAULT(method, arity, kind) before including this file"
+#endif
+NEVERC_BUILTIN_STRING_METHOD_DEFAULT("substr", 1, SizeAllOnes)
+NEVERC_BUILTIN_STRING_METHOD_DEFAULT("erase", 1, SizeAllOnes)
+NEVERC_BUILTIN_STRING_METHOD_DEFAULT("resize", 1, CharZero)
+NEVERC_BUILTIN_STRING_METHOD_DEFAULT("utf8_substr", 1, SizeAllOnes)

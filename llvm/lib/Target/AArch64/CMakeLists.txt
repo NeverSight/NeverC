@@ -1,0 +1,88 @@
+add_llvm_component_group(AArch64 HAS_JIT)
+
+add_custom_target(AArch64CommonTableGen)
+
+add_llvm_target(AArch64CodeGen
+  GISel/AArch64CallLowering.cpp
+  GISel/AArch64GlobalISelUtils.cpp
+  GISel/AArch64InstructionSelector.cpp
+  GISel/AArch64LegalizerInfo.cpp
+  GISel/AArch64O0PreLegalizerCombiner.cpp
+  GISel/AArch64PreLegalizerCombiner.cpp
+  GISel/AArch64PostLegalizerCombiner.cpp
+  GISel/AArch64PostLegalizerLowering.cpp
+  GISel/AArch64PostSelectOptimize.cpp
+  GISel/AArch64RegisterBankInfo.cpp
+  AArch64A57FPLoadBalancing.cpp
+  AArch64AsmPrinter.cpp
+  AArch64BranchTargets.cpp
+  AArch64CallingConvention.cpp
+  AArch64CleanupLocalDynamicTLSPass.cpp
+  AArch64CollectLOH.cpp
+  AArch64CondBrTuning.cpp
+  AArch64ConditionalCompares.cpp
+  AArch64DeadRegisterDefinitionsPass.cpp
+  AArch64ExpandImm.cpp
+  AArch64ExpandPseudoInsts.cpp
+  AArch64A53Fix835769.cpp
+  AArch64FrameLowering.cpp
+  AArch64GlobalsTagging.cpp
+  AArch64CompressJumpTables.cpp
+  AArch64ConditionOptimizer.cpp
+  AArch64RedundantCopyElimination.cpp
+  AArch64ISelDAGToDAG.cpp
+  AArch64ISelLowering.cpp
+  AArch64InstrInfo.cpp
+  AArch64LoadStoreOptimizer.cpp
+  AArch64MachineFunctionInfo.cpp
+  AArch64MachineScheduler.cpp
+  AArch64MacroFusion.cpp
+  AArch64MIPeepholeOpt.cpp
+  AArch64MCInstLower.cpp
+  AArch64PointerAuth.cpp
+  AArch64PromoteConstant.cpp
+  AArch64RegisterInfo.cpp
+  AArch64SLSHardening.cpp
+  AArch64SelectionDAGInfo.cpp
+  AArch64SpeculationHardening.cpp
+  AArch64StackTagging.cpp
+  AArch64StackTaggingPreRA.cpp
+  AArch64StorePairSuppress.cpp
+  AArch64Subtarget.cpp
+  AArch64TargetMachine.cpp
+  AArch64TargetObjectFile.cpp
+  AArch64TargetTransformInfo.cpp
+  SMEABIPass.cpp
+  SVEIntrinsicOpts.cpp
+  AArch64SIMDInstrOpt.cpp
+
+  DEPENDS
+  intrinsics_gen
+
+  LINK_COMPONENTS
+  AArch64Desc
+  AArch64Info
+  AArch64Utils
+  Analysis
+  AsmPrinter
+  CFGuard
+  CodeGen
+  CodeGenTypes
+  Core
+  GlobalISel
+  MC
+  Scalar
+  SelectionDAG
+  Support
+  Target
+  TargetParser
+  TransformUtils
+
+  ADD_TO_COMPONENT
+  AArch64
+  )
+
+add_subdirectory(AsmParser)
+add_subdirectory(MCTargetDesc)
+add_subdirectory(TargetInfo)
+add_subdirectory(Utils)

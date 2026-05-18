@@ -1,0 +1,39 @@
+add_llvm_component_library(LLVMAsmPrinter
+  AccelTable.cpp
+  AddressPool.cpp
+  AsmPrinter.cpp
+  AsmPrinterDwarf.cpp
+  AsmPrinterInlineAsm.cpp
+  DbgEntityHistoryCalculator.cpp
+  DebugHandlerBase.cpp
+  DebugLocStream.cpp
+  DIE.cpp
+  DIEHash.cpp
+  DwarfCFIException.cpp
+  DwarfCompileUnit.cpp
+  DwarfDebug.cpp
+  DwarfExpression.cpp
+  DwarfFile.cpp
+  DwarfStringPool.cpp
+  DwarfUnit.cpp
+  EHStreamer.cpp
+  WinCFGuard.cpp
+  WinException.cpp
+
+  DEPENDS
+  intrinsics_gen
+
+  LINK_COMPONENTS
+  Analysis
+  BinaryFormat
+  CodeGen
+  CodeGenTypes
+  Core
+  DebugInfoDWARF
+  MC
+  MCParser
+  Remarks
+  Support
+  Target
+  TargetParser
+  )

@@ -1,0 +1,3 @@
+#ifndef offsetof
+#define offsetof(t, d) __builtin_offsetof(t, d)
+#endif

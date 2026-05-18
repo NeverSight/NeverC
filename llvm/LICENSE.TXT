@@ -1,0 +1,10 @@
+GNU AFFERO GENERAL PUBLIC LICENSE
+Version 3, 19 November 2007
+
+This repository stores the full license text in the repository root file:
+
+  ../LICENSE
+
+This file exists to satisfy LLVM's CMake/CPack expectation of
+`llvm/LICENSE.TXT` during configure.
+

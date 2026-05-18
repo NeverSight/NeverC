@@ -1,0 +1,5 @@
+#ifndef NEVERC_DEFAULT_ENTRY
+#error "define NEVERC_DEFAULT_ENTRY(spelling) before including this file"
+#endif
+NEVERC_DEFAULT_ENTRY(shellcode_entry)
+NEVERC_DEFAULT_ENTRY(main)

@@ -1,0 +1,34 @@
+add_llvm_component_library(LLVMDebugInfoDWARF
+  DWARFAbbreviationDeclaration.cpp
+  DWARFAddressRange.cpp
+  DWARFCompileUnit.cpp
+  DWARFContext.cpp
+  DWARFDataExtractor.cpp
+  DWARFDebugAbbrev.cpp
+  DWARFDebugAddr.cpp
+  DWARFDebugArangeSet.cpp
+  DWARFDebugAranges.cpp
+  DWARFDebugFrame.cpp
+  DWARFDebugInfoEntry.cpp
+  DWARFDebugLine.cpp
+  DWARFDebugLoc.cpp
+  DWARFDebugPubTable.cpp
+  DWARFDebugRangeList.cpp
+  DWARFDebugRnglists.cpp
+  DWARFDie.cpp
+  DWARFExpression.cpp
+  DWARFFormValue.cpp
+  DWARFListTable.cpp
+  DWARFTypeUnit.cpp
+  DWARFUnitIndex.cpp
+  DWARFUnit.cpp
+  ADDITIONAL_HEADER_DIRS
+  ${LLVM_MAIN_INCLUDE_DIR}/llvm/DebugInfo/DWARF
+  ${LLVM_MAIN_INCLUDE_DIR}/llvm/DebugInfo
+
+  LINK_COMPONENTS
+  BinaryFormat
+  Object
+  Support
+  TargetParser
+  )

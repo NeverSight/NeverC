@@ -1,0 +1,220 @@
+# Profile-guided release build for macOS arm64.
+# Triggered only on version tags; produces the official GitHub Release artifact.
+#
+# PR / branch pushes use macos-arm64-neverc-build.yml (fast, no PGO).
+name: macos-arm64-neverc-release-pgo
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  pgo-profile:
+    name: PGO generate + train
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install deps
+        run: brew install ninja cmake
+
+      - name: Build instrumented neverc
+        run: ./tools/build_pgo.sh generate
+
+      - name: Download PGO training workloads
+        run: |
+          set -euo pipefail
+
+          # SQLite amalgamation (single 260k-line TU — exercises the full pipeline)
+          SQLITE_VER=3460100
+          SQLITE_YEAR=2024
+          mkdir -p ci-pgo-workloads/sqlite
+          curl -fsSL \
+            "https://www.sqlite.org/${SQLITE_YEAR}/sqlite-amalgamation-${SQLITE_VER}.zip" \
+            -o /tmp/sqlite-amalgamation.zip
+          unzip -j /tmp/sqlite-amalgamation.zip \
+            "sqlite-amalgamation-${SQLITE_VER}/sqlite3.c" \
+            -d ci-pgo-workloads/sqlite
+
+          # Redis (many medium-sized files — exercises multi-file, header-heavy paths)
+          REDIS_VER=7.2.5
+          curl -fsSL \
+            "https://github.com/redis/redis/archive/refs/tags/${REDIS_VER}.tar.gz" \
+            -o /tmp/redis.tar.gz
+          mkdir -p ci-pgo-workloads/redis
+          tar xzf /tmp/redis.tar.gz -C ci-pgo-workloads/redis --strip-components=1
+
+          # zlib (small files — exercises quick-compile paths)
+          ZLIB_VER=1.3.1
+          curl -fsSL \
+            "https://github.com/madler/zlib/releases/download/v${ZLIB_VER}/zlib-${ZLIB_VER}.tar.gz" \
+            -o /tmp/zlib.tar.gz
+          mkdir -p ci-pgo-workloads/zlib
+          tar xzf /tmp/zlib.tar.gz -C ci-pgo-workloads/zlib --strip-components=1
+
+          # curl (medium project with many headers — exercises include-heavy paths)
+          CURL_VER=8.7.1
+          curl -fsSL \
+            "https://github.com/curl/curl/releases/download/curl-$(echo $CURL_VER | tr '.' '_')/curl-${CURL_VER}.tar.gz" \
+            -o /tmp/curl.tar.gz
+          mkdir -p ci-pgo-workloads/curl
+          tar xzf /tmp/curl.tar.gz -C ci-pgo-workloads/curl --strip-components=1
+
+      - name: Collect PGO profiles
+        run: |
+          set -euo pipefail
+          NC="${GITHUB_WORKSPACE}/build-pgo-gen/bin/neverc"
+          PROFILE_DIR="${GITHUB_WORKSPACE}/pgo-profiles"
+          LLVM_PROFDATA="$(xcrun --find llvm-profdata)"
+
+          SQLITE="${GITHUB_WORKSPACE}/ci-pgo-workloads/sqlite/sqlite3.c"
+          REDIS_SRC="${GITHUB_WORKSPACE}/ci-pgo-workloads/redis/src"
+          ZLIB_SRC="${GITHUB_WORKSPACE}/ci-pgo-workloads/zlib"
+          CURL_SRC="${GITHUB_WORKSPACE}/ci-pgo-workloads/curl"
+
+          rm -rf "$PROFILE_DIR"
+          mkdir -p "$PROFILE_DIR"
+
+          train() {
+            local profraw="$1"
+            shift
+            LLVM_PROFILE_FILE="$profraw" "$NC" "$@" 2>/dev/null || true
+          }
+
+          # ── SQLite (all pipeline stages) ──
+          echo "Training on SQLite (all pipeline stages)..."
+          train "$PROFILE_DIR/sqlite_preproc.profraw" \
+            -E -w -fno-neverc-types -o /dev/null "$SQLITE"
+          train "$PROFILE_DIR/sqlite_sema.profraw" \
+            -fsyntax-only -w -fno-neverc-types "$SQLITE"
+          train "$PROFILE_DIR/sqlite_irgen.profraw" \
+            -emit-llvm -S -w -fno-neverc-types -o /dev/null "$SQLITE"
+          for opt in O0 O2 O3; do
+            train "$PROFILE_DIR/sqlite_${opt}.profraw" \
+              -c "-${opt}" -w -fno-neverc-types -o /dev/null "$SQLITE"
+          done
+
+          # ── Redis (multi-file O2) ──
+          if [ -d "$REDIS_SRC" ]; then
+            redis_count=0
+            echo "Training on Redis..."
+            for f in "$REDIS_SRC"/*.c; do
+              redis_count=$((redis_count + 1))
+              train "$PROFILE_DIR/redis_$(basename "$f" .c).profraw" \
+                -c -O2 -w -fno-neverc-types -o /dev/null "$f"
+            done
+            echo "  Compiled $redis_count Redis files."
+          fi
+
+          # ── zlib (small files O2) ──
+          if [ -d "$ZLIB_SRC" ]; then
+            zlib_count=0
+            echo "Training on zlib..."
+            for f in "$ZLIB_SRC"/*.c; do
+              zlib_count=$((zlib_count + 1))
+              train "$PROFILE_DIR/zlib_$(basename "$f" .c).profraw" \
+                -c -O2 -w -fno-neverc-types -o /dev/null "$f"
+            done
+            echo "  Compiled $zlib_count zlib files."
+          fi
+
+          # ── curl (medium project, include-heavy) ──
+          if [ -d "$CURL_SRC/lib" ]; then
+            curl_count=0
+            echo "Training on curl..."
+            for f in "$CURL_SRC"/lib/*.c; do
+              curl_count=$((curl_count + 1))
+              train "$PROFILE_DIR/curl_$(basename "$f" .c).profraw" \
+                -c -O2 -w -fno-neverc-types \
+                -I"$CURL_SRC/include" -I"$CURL_SRC/lib" -DBUILDING_LIBCURL \
+                -o /dev/null "$f"
+            done
+            echo "  Compiled $curl_count curl files."
+          fi
+
+          # ── In-repo tests ──
+          echo "Training on in-repo tests..."
+          test_count=0
+          while IFS= read -r -d '' f; do
+            test_count=$((test_count + 1))
+            tag=$(echo "$f" | tr '/' '_')
+            train "$PROFILE_DIR/test_${tag}.profraw" \
+              -c -O2 -w -fno-neverc-types -o /dev/null "$f"
+          done < <(find tests -name '*.c' -print0)
+          echo "  Compiled $test_count test files."
+
+          # ── Merge ──
+          profraw_count=$(ls "$PROFILE_DIR"/*.profraw | wc -l | tr -d ' ')
+          if [ "$profraw_count" -eq 0 ]; then
+            echo "ERROR: no .profraw files generated" >&2
+            exit 1
+          fi
+
+          echo "Merging $profraw_count profiles..."
+          "$LLVM_PROFDATA" merge \
+            -output="${PROFILE_DIR}/merged.profdata" \
+            "$PROFILE_DIR"/*.profraw
+          ls -lh "${PROFILE_DIR}/merged.profdata"
+
+      - name: Generate order file
+        run: ./tools/build_pgo.sh orderfile
+
+      - name: Upload profile data
+        uses: actions/upload-artifact@v4
+        with:
+          name: neverc-pgo-profdata
+          path: |
+            pgo-profiles/merged.profdata
+            pgo-profiles/neverc.order
+          retention-days: 7
+
+  pgo-release:
+    name: PGO use + package + release
+    needs: pgo-profile
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install deps
+        run: brew install ninja cmake p7zip
+
+      - name: Download profile data
+        uses: actions/download-artifact@v4
+        with:
+          name: neverc-pgo-profdata
+          path: pgo-profiles
+
+      - name: Build PGO-optimised neverc
+        run: ./tools/build_pgo.sh use
+
+      - name: Install neverc
+        run: |
+          cmake --install build-pgo-use --prefix "${GITHUB_WORKSPACE}/install"
+
+      - name: Package
+        run: 7z a macos-arm64-neverc-pgo.zip install
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-neverc-pgo
+          path: macos-arm64-neverc-pgo.zip
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
+          files: macos-arm64-neverc-pgo.zip
+          generate_release_notes: true

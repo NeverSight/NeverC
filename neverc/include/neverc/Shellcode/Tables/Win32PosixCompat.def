@@ -1,0 +1,18 @@
+#ifndef NEVERC_WIN32_POSIX_COMPAT
+#error "define NEVERC_WIN32_POSIX_COMPAT(bareName, wrapperBuilder) before including this file"
+#endif
+NEVERC_WIN32_POSIX_COMPAT(write,      createPosixWriteWrapper)
+NEVERC_WIN32_POSIX_COMPAT(read,       createPosixReadWrapper)
+NEVERC_WIN32_POSIX_COMPAT(exit,       createPosixExitWrapper)
+NEVERC_WIN32_POSIX_COMPAT(_exit,      createPosixExitWrapper)
+NEVERC_WIN32_POSIX_COMPAT(exit_group, createPosixExitWrapper)
+NEVERC_WIN32_POSIX_COMPAT(mmap,       createPosixMmapWrapper)
+NEVERC_WIN32_POSIX_COMPAT(munmap,     createPosixMunmapWrapper)
+NEVERC_WIN32_POSIX_COMPAT(mprotect,   createPosixMprotectWrapper)
+NEVERC_WIN32_POSIX_COMPAT(getpid,     createPosixGetpidWrapper)
+NEVERC_WIN32_POSIX_COMPAT(close,      createPosixCloseWrapper)
+NEVERC_WIN32_POSIX_COMPAT(sleep,      createPosixSleepWrapper)
+NEVERC_WIN32_POSIX_COMPAT(unlink,     createPosixUnlinkWrapper)
+NEVERC_WIN32_POSIX_COMPAT(rmdir,      createPosixRmdirWrapper)
+NEVERC_WIN32_POSIX_COMPAT(mkdir,      createPosixMkdirWrapper)
+NEVERC_WIN32_POSIX_COMPAT(rename,     createPosixRenameWrapper)
