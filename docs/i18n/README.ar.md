@@ -47,9 +47,9 @@ int main(void) {
 }
 ```
 
-```bash
-# مرّر -target دائماً: يحدد OS/المعمارية/ABI للمخرجات، وليس نظام المضيف
+> **ملاحظة:** يتطلب نوع **`string`** المدمج **`-fbuiltin-string`** للثنائيات المُستضافة العادية. يُفعَّل تلقائيًا مع **`-fshellcode`**.
 
+```bash
 # macOS arm64
 neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
 
@@ -104,11 +104,11 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## التجميع المتقاطع إلى Windows
 
-بعد وضع splat SDK من [xwin](https://github.com/Jake-Shadle/xwin) في `build-neverc/sdk/msvc/`:
+وضع splat SDK من [xwin](https://github.com/Jake-Shadle/xwin) في `build-neverc/sdk/msvc/`.
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -o hello.exe hello.c -lkernel32
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
 لـ shellcode على Windows (`-fshellcode`، حل الاستيراد عبر PEB، إلخ): [توثيق مُجمِّع shellcode](../shellcode-compiler/README.ar.md).

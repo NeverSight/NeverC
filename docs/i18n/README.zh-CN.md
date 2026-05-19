@@ -45,9 +45,9 @@ int main(void) {
 }
 ```
 
-```bash
-# 务必指定 -target：选择产物 OS/架构/ABI，与编译机 host 无关
+> **说明：** 内置 **`string`** 在普通宿主程序里需要显式加 **`-fbuiltin-string`**；使用 **`-fshellcode`** 时会自动打开。
 
+```bash
 # macOS arm64
 neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
 
@@ -102,11 +102,11 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## 交叉编译到 Windows
 
-将 [xwin](https://github.com/Jake-Shadle/xwin) SDK splat 置于 `build-neverc/sdk/msvc/` 后：
+将 [xwin](https://github.com/Jake-Shadle/xwin) SDK splat 置于 `build-neverc/sdk/msvc/`。
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -o hello.exe hello.c -lkernel32
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
 Windows shellcode（`-fshellcode`、PEB 导入解析等）详见 [shellcode 编译器文档](../shellcode-compiler/README.zh-CN.md)。

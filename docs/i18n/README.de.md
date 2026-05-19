@@ -45,9 +45,9 @@ int main(void) {
 }
 ```
 
-```bash
-# Immer -target angeben: Ziel-OS/Arch/ABI, unabhängig vom Compiler-Host
+> **Hinweis:** Der eingebaute **`string`**-Typ erfordert **`-fbuiltin-string`** bei normalen gehosteten Binärdateien. **`-fshellcode`** aktiviert ihn automatisch.
 
+```bash
 # macOS arm64
 neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
 
@@ -102,11 +102,11 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## Cross-Kompilierung nach Windows
 
-[xwin](https://github.com/Jake-Shadle/xwin)-SDK-Splat nach `build-neverc/sdk/msvc/` legen, dann:
+[xwin](https://github.com/Jake-Shadle/xwin)-SDK-Splat nach `build-neverc/sdk/msvc/` legen.
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -o hello.exe hello.c -lkernel32
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
 Windows-Shellcode (`-fshellcode`, PEB-Importauflösung usw.): [Shellcode-Compiler-Dokumentation](../shellcode-compiler/README.de.md).

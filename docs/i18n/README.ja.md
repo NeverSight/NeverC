@@ -45,9 +45,9 @@ int main(void) {
 }
 ```
 
-```bash
-# 常に -target を指定（出力 ABI/OS を選ぶ。ホスト OS とは無関係）
+> **注：** 組み込み **`string`** 型は通常のホスト型バイナリでは **`-fbuiltin-string`** が必要です。**`-fshellcode`** では自動的に有効になります。
 
+```bash
 # macOS arm64
 neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
 
@@ -102,11 +102,11 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## Windows へのクロスコンパイル
 
-[xwin](https://github.com/Jake-Shadle/xwin) SDK splat を `build-neverc/sdk/msvc/` に配置後：
+[xwin](https://github.com/Jake-Shadle/xwin) SDK splat を `build-neverc/sdk/msvc/` に配置。
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -o hello.exe hello.c -lkernel32
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
 Windows shellcode（`-fshellcode`、PEB インポート解決など）は [shellcode コンパイラドキュメント](../shellcode-compiler/README.ja.md) を参照。

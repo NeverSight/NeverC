@@ -45,9 +45,9 @@ int main(void) {
 }
 ```
 
-```bash
-# Всегда указывайте -target: выбирает ABI целевой ОС/архитектуры, а не хоста.
+> **Примечание:** Встроенный тип **`string`** требует **`-fbuiltin-string`** для обычных hosted-бинарников. **`-fshellcode`** включает его автоматически.
 
+```bash
 # macOS arm64
 neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
 
@@ -102,11 +102,11 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## Кросс-компиляция под Windows
 
-После размещения splat SDK [xwin](https://github.com/Jake-Shadle/xwin) в `build-neverc/sdk/msvc/`:
+Разместить splat SDK [xwin](https://github.com/Jake-Shadle/xwin) в `build-neverc/sdk/msvc/`.
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -o hello.exe hello.c -lkernel32
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
 Shellcode для Windows (`-fshellcode`, разрешение через PEB и т.д.): [документация компилятора shellcode](../shellcode-compiler/README.ru.md).

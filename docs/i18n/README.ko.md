@@ -45,9 +45,9 @@ int main(void) {
 }
 ```
 
-```bash
-# 반드시 -target 지정: 출력 OS/아키텍처/ABI 선택 (호스트와 무관)
+> **참고:** 내장 **`string`** 타입은 일반 호스트 바이너리에서 **`-fbuiltin-string`** 이 필요합니다. **`-fshellcode`** 는 자동으로 활성화합니다.
 
+```bash
 # macOS arm64
 neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
 
@@ -102,11 +102,11 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## Windows로 크로스 컴파일
 
-[xwin](https://github.com/Jake-Shadle/xwin) SDK splat을 `build-neverc/sdk/msvc/`에 배치한 뒤:
+[xwin](https://github.com/Jake-Shadle/xwin) SDK splat을 `build-neverc/sdk/msvc/`에 배치.
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -o hello.exe hello.c -lkernel32
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
 Windows shellcode(`-fshellcode`, PEB 임포트 해석 등)는 [shellcode 컴파일러 문서](../shellcode-compiler/README.ko.md)를 참조하세요.
