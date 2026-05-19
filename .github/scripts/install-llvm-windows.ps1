@@ -1,30 +1,85 @@
-# Install LLVM release build on Windows CI (NSIS installer).
+# Install latest LLVM release (NSIS) on Windows CI.
 # Usage: pwsh -File .github/scripts/install-llvm-windows.ps1
 $ErrorActionPreference = 'Stop'
 
-$LLVM_VER = if ($env:LLVM_VER) { $env:LLVM_VER } else { '20.1.8' }
-$LLVM_ROOT = if ($env:LLVM_ROOT) { $env:LLVM_ROOT } else { 'C:\LLVM' }
-# From https://github.com/llvm/llvm-project/releases/tag/llvmorg-20.1.8
-$ExpectedSize = 385658654
+function Resolve-LlvmVersion {
+    if ($env:LLVM_VER) {
+        return $env:LLVM_VER
+    }
 
+    $headers = @{
+        'Accept'        = 'application/vnd.github+json'
+        'User-Agent'    = 'neverc-ci'
+    }
+    if ($env:GITHUB_TOKEN) {
+        $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)"
+    }
+
+    $releases = Invoke-RestMethod `
+        -Uri 'https://api.github.com/repos/llvm/llvm-project/releases?per_page=40' `
+        -Headers $headers
+
+    $candidates = @()
+    foreach ($release in $releases) {
+        if ($release.prerelease) { continue }
+        if ($release.tag_name -match '^llvmorg-(\d+\.\d+\.\d+)$') {
+            $candidates += [PSCustomObject]@{
+                Version = $Matches[1]
+                Key     = ($Matches[1].Split('.') | ForEach-Object { [int]$_ })
+            }
+        }
+    }
+    if ($candidates.Count -eq 0) {
+        throw 'no stable llvmorg release found'
+    }
+    $latest = $candidates | Sort-Object { $_.Key[0] }, { $_.Key[1] }, { $_.Key[2] } | Select-Object -Last 1
+    $ver = $latest.Version
+    Write-Host "Resolved LLVM_VER=$ver"
+    $env:LLVM_VER = $ver
+    if ($env:GITHUB_ENV) {
+        Add-Content -Path $env:GITHUB_ENV -Value "LLVM_VER=$ver"
+    }
+    return $ver
+}
+
+function Get-LlvmWindowsAsset {
+    param([string]$Version)
+    $headers = @{ 'User-Agent' = 'neverc-ci' }
+    if ($env:GITHUB_TOKEN) {
+        $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)"
+    }
+    $release = Invoke-RestMethod `
+        -Uri "https://api.github.com/repos/llvm/llvm-project/releases/tags/llvmorg-$Version" `
+        -Headers $headers
+    $name = "LLVM-$Version-win64.exe"
+    $asset = $release.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
+    if (-not $asset) {
+        throw "release asset not found: $name"
+    }
+    return $asset
+}
+
+$LLVM_VER = Resolve-LlvmVersion
+$LLVM_ROOT = if ($env:LLVM_ROOT) { $env:LLVM_ROOT } else { 'C:\LLVM' }
 $clang = Join-Path $LLVM_ROOT 'bin\clang.exe'
+
 if (Test-Path $clang) {
     Write-Host "LLVM already present at $LLVM_ROOT"
 } else {
-    $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VER/LLVM-$LLVM_VER-win64.exe"
+    $asset = Get-LlvmWindowsAsset -Version $LLVM_VER
+    $url = $asset.browser_download_url
+    $expectedSize = [int64]$asset.size
     $installer = Join-Path $env:RUNNER_TEMP "llvm-$LLVM_VER-win64.exe"
 
-    Write-Host "Downloading LLVM $LLVM_VER (~$([math]::Round($ExpectedSize / 1MB)) MB)..."
-    # curl.exe ships with windows-latest; more reliable than Git Bash curl for large binaries.
-    # ~386 MB; allow up to 30 min then fail instead of hanging the whole job.
+    Write-Host "Downloading LLVM $LLVM_VER ($([math]::Round($expectedSize / 1MB)) MB)..."
     & curl.exe -fsSL --retry 5 --retry-delay 10 --retry-all-errors `
         --connect-timeout 30 --max-time 1800 `
         -o $installer `
         $url
 
     $size = (Get-Item -LiteralPath $installer).Length
-    if ($size -lt [int64]($ExpectedSize * 0.99)) {
-        throw "LLVM download incomplete: $size bytes (expected ~$ExpectedSize)"
+    if ($size -lt [int64]($expectedSize * 0.99)) {
+        throw "LLVM download incomplete: $size bytes (expected ~$expectedSize)"
     }
 
     if (Test-Path $LLVM_ROOT) {
@@ -32,7 +87,6 @@ if (Test-Path $clang) {
     }
 
     Write-Host "Running silent installer -> $LLVM_ROOT"
-    # NSIS: /D= must be last; no quotes; no trailing backslash.
     $proc = Start-Process -FilePath $installer -ArgumentList '/S', "/D=$LLVM_ROOT" -Wait -PassThru
     if ($proc.ExitCode -ne 0) {
         throw "LLVM installer failed with exit code $($proc.ExitCode)"
@@ -52,7 +106,8 @@ foreach ($line in @(
         "PGO_CLANG=$clangUnix",
         "PGO_CLANGXX=$clangxxUnix",
         "CC=$clangUnix",
-        "CXX=$clangxxUnix"
+        "CXX=$clangxxUnix",
+        "LLVM_ROOT=$($LLVM_ROOT -replace '\\', '/')"
     )) {
     Add-Content -Path $env:GITHUB_ENV -Value $line
 }

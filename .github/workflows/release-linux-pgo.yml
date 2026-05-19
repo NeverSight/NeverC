@@ -24,17 +24,17 @@ jobs:
       - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
 
-      - name: Download PGO-optimised Clang
-        run: |
-          LLVM_VER=20.1.8
-          curl -fsSL \
-            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-Linux-X64.tar.xz" \
-            -o /tmp/llvm.tar.xz
-          mkdir -p /tmp/llvm-pgo
-          tar xf /tmp/llvm.tar.xz -C /tmp/llvm-pgo --strip-components=1
-          echo "CC=/tmp/llvm-pgo/bin/clang" >> "$GITHUB_ENV"
-          echo "CXX=/tmp/llvm-pgo/bin/clang++" >> "$GITHUB_ENV"
-          /tmp/llvm-pgo/bin/clang --version
+      - name: Resolve latest LLVM version
+        run: bash ./.github/scripts/resolve-llvm-version.sh
+
+      - name: Cache LLVM toolchain
+        uses: actions/cache@v4
+        with:
+          path: /tmp/llvm-pgo
+          key: llvm-${{ env.LLVM_VER }}-linux-x64
+
+      - name: Install PGO-optimised Clang
+        run: bash ./.github/scripts/install-llvm-linux.sh
 
       - name: Build instrumented neverc
         run: ./tools/build_pgo.sh generate
@@ -159,16 +159,17 @@ jobs:
       - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full
 
-      - name: Download PGO-optimised Clang
-        run: |
-          LLVM_VER=20.1.8
-          curl -fsSL \
-            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-Linux-X64.tar.xz" \
-            -o /tmp/llvm.tar.xz
-          mkdir -p /tmp/llvm-pgo
-          tar xf /tmp/llvm.tar.xz -C /tmp/llvm-pgo --strip-components=1
-          echo "CC=/tmp/llvm-pgo/bin/clang" >> "$GITHUB_ENV"
-          echo "CXX=/tmp/llvm-pgo/bin/clang++" >> "$GITHUB_ENV"
+      - name: Resolve latest LLVM version
+        run: bash ./.github/scripts/resolve-llvm-version.sh
+
+      - name: Cache LLVM toolchain
+        uses: actions/cache@v4
+        with:
+          path: /tmp/llvm-pgo
+          key: llvm-${{ env.LLVM_VER }}-linux-x64
+
+      - name: Install PGO-optimised Clang
+        run: bash ./.github/scripts/install-llvm-linux.sh
 
       - name: Download profile data
         uses: actions/download-artifact@v4

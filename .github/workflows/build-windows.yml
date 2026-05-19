@@ -16,7 +16,6 @@ jobs:
     timeout-minutes: 360
     env:
       BUILD_TYPE: Release
-      LLVM_VER: '20.1.8'
     steps:
     - name: Checkout Repo
       uses: actions/checkout@v4
@@ -26,6 +25,10 @@ jobs:
 
     - name: Setup build deps
       run: choco install ninja cmake 7zip -y
+
+    - name: Resolve latest LLVM version
+      shell: bash
+      run: bash ./neverc/.github/scripts/resolve-llvm-version.sh
 
     - name: Cache LLVM toolchain
       uses: actions/cache@v4

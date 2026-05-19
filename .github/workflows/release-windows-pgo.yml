@@ -15,8 +15,6 @@ jobs:
     name: PGO generate + train
     runs-on: windows-latest
     timeout-minutes: 180
-    env:
-      LLVM_VER: '20.1.8'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,6 +23,10 @@ jobs:
 
       - name: Setup build deps
         run: choco install ninja cmake -y
+
+      - name: Resolve latest LLVM version
+        shell: bash
+        run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain
         uses: actions/cache@v4
@@ -142,8 +144,6 @@ jobs:
     needs: pgo-profile
     runs-on: windows-latest
     timeout-minutes: 180
-    env:
-      LLVM_VER: '20.1.8'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -152,6 +152,10 @@ jobs:
 
       - name: Setup build deps
         run: choco install ninja cmake 7zip -y
+
+      - name: Resolve latest LLVM version
+        shell: bash
+        run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain
         uses: actions/cache@v4
