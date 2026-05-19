@@ -46,10 +46,12 @@ int main(void) {
 ```
 
 ```bash
-# macOS arm64 shellcode
-neverc -fshellcode -mshellcode-syscall hello.c -o hello.bin
+# 常に -target を指定（出力 ABI/OS を選ぶ。ホスト OS とは無関係）
 
-# Linux x86_64 へクロスコンパイル — 同じソース
+# macOS arm64
+neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
+
+# Linux x86_64 — 同じソース
 neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
 ```
 

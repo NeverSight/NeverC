@@ -46,10 +46,12 @@ int main(void) {
 ```
 
 ```bash
-# macOS arm64 shellcode
-neverc -fshellcode -mshellcode-syscall hello.c -o hello.bin
+# 반드시 -target 지정: 출력 OS/아키텍처/ABI 선택 (호스트와 무관)
 
-# Linux x86_64로 크로스 컴파일 — 같은 소스
+# macOS arm64
+neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
+
+# Linux x86_64 — 같은 소스
 neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
 ```
 

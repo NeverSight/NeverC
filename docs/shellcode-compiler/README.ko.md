@@ -39,41 +39,43 @@ C 소스를 **위치 독립·제로 재배치·제로 데이터 섹션** 플랫 
 ## 빠른 시작
 
 ```bash
-# 1) Pure computation shellcode — no system calls (defaults to macos arm64)
-neverc -fshellcode add.c -o add.bin
+# Always pass -target — output triple is independent of the compiler host.
 
-# 2) libSystem hello world — auto-replaces write/exit with svc #0x80
-neverc -fshellcode -mshellcode-syscall hello.c -o hello.bin
+# 1) Pure computation shellcode — no system calls
+neverc -fshellcode -target arm64-apple-macos add.c -o add.bin
 
-# 3) Cross-compile to Linux arm64: svc #0 + x8=nr
+# 2) Darwin hello world — write/exit → svc #0x80
+neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
+
+# 3) Linux arm64: svc #0 + x8=nr
 neverc -fshellcode -target aarch64-linux-gnu -mshellcode-syscall \
        hello.c -o hello_linux_arm64.bin
 
-# 4) Cross-compile to Linux x86_64: syscall + rax=nr
+# 4) Linux x86_64: syscall + rax=nr
 neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall \
        hello.c -o hello_linux_x64.bin
 
-# 5) Cross-compile to Windows x86_64 (requires PEB walk for API calls)
+# 5) Windows x86_64 (PEB walk for API calls)
 neverc -fshellcode -target x86_64-pc-windows-msvc \
        -mshellcode-win-peb-import win.c -o win.bin
 
-# 6) Custom entry symbol name (cross-platform)
-neverc -fshellcode -fshellcode-entry=shellcode_main kernel.c -o k.bin
+# 6) Custom entry symbol
+neverc -fshellcode -target arm64-apple-macos -fshellcode-entry=shellcode_main kernel.c -o k.bin
 
-# 7) Keep intermediate object file for audit with otool / llvm-objdump / dumpbin
-neverc -fshellcode -fshellcode-keep-obj=/tmp/dump.obj x.c -o x.bin
+# 7) Keep intermediate object for audit (otool / llvm-objdump / dumpbin)
+neverc -fshellcode -target arm64-apple-macos -fshellcode-keep-obj=/tmp/dump.obj x.c -o x.bin
 
-# 8) Forbid null / CR / LF in output; compilation fails if hit, .bin not written
-neverc -fshellcode -fshellcode-bad-bytes=00,0a,0d x.c -o x.bin
+# 8) Reject forbidden bytes in final .bin
+neverc -fshellcode -target arm64-apple-macos -fshellcode-bad-bytes=00,0a,0d x.c -o x.bin
 
-# 9) Use built-in profile; equivalent to forbidding 00/0a/0d
-neverc -fshellcode -fshellcode-bad-byte-profile=http-newline x.c -o x.bin
+# 9) Built-in bad-byte profile (same as forbidding 00/0a/0d)
+neverc -fshellcode -target arm64-apple-macos -fshellcode-bad-byte-profile=http-newline x.c -o x.bin
 
-# 10) Run (macOS loader does MAP_JIT + RWX + i-cache flush)
+# 10) Run on macOS (platform-specific loader)
 ./loader_arm64_macos add.bin 3 4   # exit code = 7
 
-# 11) -v prints extractor summary: bin size + patched reloc count
-neverc -v -fshellcode fib.c -o fib.bin
+# 11) Verbose extractor summary
+neverc -v -fshellcode -target arm64-apple-macos fib.c -o fib.bin
 #   shellcode-extractor: wrote 64 bytes to 'fib.bin'
 #   shellcode-extractor: target   = arm64-apple-macos (Mach-O)
 #   shellcode-extractor: entry symbol = _main

@@ -46,10 +46,12 @@ int main(void) {
 ```
 
 ```bash
-# macOS arm64 shellcode
-neverc -fshellcode -mshellcode-syscall hello.c -o hello.bin
+# 务必指定 -target：选择产物 OS/架构/ABI，与编译机 host 无关
 
-# 交叉编译到 Linux x86_64——同一份源码
+# macOS arm64
+neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
+
+# Linux x86_64——同一份源码
 neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
 ```
 

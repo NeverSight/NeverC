@@ -48,10 +48,12 @@ int main(void) {
 ```
 
 ```bash
-# shellcode macOS arm64
-neverc -fshellcode -mshellcode-syscall hello.c -o hello.bin
+# مرّر -target دائماً: يحدد OS/المعمارية/ABI للمخرجات، وليس نظام المضيف
 
-# تجميع متقاطع إلى Linux x86_64 — نفس المصدر
+# macOS arm64
+neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
+
+# Linux x86_64 — نفس المصدر
 neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
 ```
 

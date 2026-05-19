@@ -46,10 +46,12 @@ int main(void) {
 ```
 
 ```bash
-# shellcode macOS arm64
-neverc -fshellcode -mshellcode-syscall hello.c -o hello.bin
+# Passare sempre -target: sceglie l'ABI OS/arch di output, non la macchina host.
 
-# Cross-compilazione verso Linux x86_64 — stesso sorgente
+# macOS arm64
+neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
+
+# Linux x86_64 — stesso sorgente
 neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
 ```
 
