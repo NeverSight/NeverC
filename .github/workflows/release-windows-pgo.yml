@@ -28,6 +28,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          LLVM_VERIFY_ASSET_SUFFIX: win64.exe
         run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain
@@ -159,6 +160,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          LLVM_VERIFY_ASSET_SUFFIX: win64.exe
         run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain

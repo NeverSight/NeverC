@@ -28,6 +28,7 @@ jobs:
     - name: Resolve latest LLVM version
       env:
         GITHUB_TOKEN: ${{ github.token }}
+        LLVM_VERIFY_ASSET_SUFFIX: Linux-X64.tar.xz
       run: bash ./neverc/.github/scripts/resolve-llvm-version.sh
 
     - name: Cache LLVM toolchain
