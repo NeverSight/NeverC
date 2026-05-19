@@ -1,8 +1,7 @@
 #ifndef __STDCKDINT_H
 #define __STDCKDINT_H
 
-/* If we're hosted, fall back to the system's stdckdint.h. FreeBSD, for
- * example, already has a compatible stdckdint.h header.
+/* If we're hosted, fall back to the system's stdckdint.h.
  *
  * The `stdckdint.h` header requires C 23 or newer.
  */

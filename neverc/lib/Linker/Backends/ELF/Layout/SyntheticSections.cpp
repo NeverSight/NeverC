@@ -578,7 +578,7 @@ DynamicSection<ELFT>::DynamicSection()
                        ".dynamic") {
   this->entsize = 16;
 
-  // .dynamic section is not writable on Fuchsia OS which passes -z rodynamic.
+  // .dynamic section is not writable when -z rodynamic is passed.
   if (config->zRodynamic)
     this->flags = SHF_ALLOC;
 }
@@ -695,9 +695,9 @@ DynamicSection<ELFT>::computeContents() {
   // the pointer into this entry.
   //
   // DT_DEBUG is the only .dynamic entry that needs to be written to. Some
-  // systems (currently only Fuchsia OS) provide other means to give the
-  // debugger this information. Such systems may choose make .dynamic read-only.
-  // If the target is such a system (used -z rodynamic) don't write DT_DEBUG.
+  // systems provide other means to give the debugger this information. Such
+  // systems may choose make .dynamic read-only. If -z rodynamic is passed,
+  // don't write DT_DEBUG.
   if (!config->shared && !config->zRodynamic)
     addInt(DT_DEBUG, 0);
 

@@ -1995,9 +1995,9 @@ template <class ELFT> void OutputWriter<ELFT>::fixSectionAlignments() {
       // Technically this is not required, but as of 2019, some dynamic loaders
       // don't handle p_vaddr%p_align != 0 correctly, e.g. older glibc on x86
       // doesn't make runtime address congruent to p_vaddr modulo
-      // p_align for dynamic TLS blocks (PR/24606), FreeBSD rtld has the same
-      // bug, musl (TLS Variant 1 architectures) before 1.1.23 handled TLS
-      // blocks correctly. We need to keep the workaround for a while.
+      // p_align for dynamic TLS blocks (PR/24606), musl (TLS Variant 1
+      // architectures) before 1.1.23 handled TLS blocks correctly. We need to
+      // keep the workaround for a while.
       else if (Out::tlsPhdr && Out::tlsPhdr->firstSec == p->firstSec)
         cmd->addrExpr = [] {
           return alignToPowerOf2(script->getDot(), config->maxPageSize) +

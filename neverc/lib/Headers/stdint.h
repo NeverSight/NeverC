@@ -1,10 +1,5 @@
 #ifndef __NEVERC_STDINT_H
-// AIX system headers need stdint.h to be re-enterable while _STD_TYPES_T
-// is defined until an inclusion of it without _STD_TYPES_T occurs, in which
-// case the header guard macro is defined.
-#if !defined(_AIX) || !defined(_STD_TYPES_T) || !defined(__STDC_HOSTED__)
 #define __NEVERC_STDINT_H
-#endif
 
 /* If we're hosted, fall back to the system's stdint.h, which might have
  * additional definitions.

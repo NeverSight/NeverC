@@ -1,10 +1,10 @@
 #ifndef __NEVERC_FLOAT_H
 #define __NEVERC_FLOAT_H
 
-/* Fall back to the system's float.h on Darwin, MSVC, and AIX to allow
+/* Fall back to the system's float.h on Darwin and MSVC to allow
  * additional definitions and implementation-defined values.
  */
-#if (defined(__APPLE__) || defined(_MSC_VER) || defined(_AIX)) &&              \
+#if (defined(__APPLE__) || defined(_MSC_VER)) &&                               \
     __STDC_HOSTED__ && __has_include_next(<float.h>)
 
 /* Prior to Apple's 10.7 SDK, float.h SDK header used to apply an extra level
@@ -25,8 +25,7 @@
 #undef DBL_MANT_DIG
 #undef LDBL_MANT_DIG
 #if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) ||              \
-    !defined(__STRICT_ANSI__) ||                                               \
-    (__STDC_HOSTED__ && defined(_AIX) && defined(_ALL_SOURCE))
+    !defined(__STRICT_ANSI__)
 #undef DECIMAL_DIG
 #endif
 #undef FLT_DIG
@@ -54,8 +53,7 @@
 #undef DBL_MIN
 #undef LDBL_MIN
 #if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L) ||              \
-    !defined(__STRICT_ANSI__) ||                                               \
-    (__STDC_HOSTED__ && defined(_AIX) && defined(_ALL_SOURCE))
+    !defined(__STRICT_ANSI__)
 #undef FLT_TRUE_MIN
 #undef DBL_TRUE_MIN
 #undef LDBL_TRUE_MIN
@@ -81,8 +79,7 @@
 #define LDBL_MANT_DIG __LDBL_MANT_DIG__
 
 #if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) ||              \
-    !defined(__STRICT_ANSI__) ||                                               \
-    (__STDC_HOSTED__ && defined(_AIX) && defined(_ALL_SOURCE))
+    !defined(__STRICT_ANSI__)
 #define DECIMAL_DIG __DECIMAL_DIG__
 #endif
 
@@ -119,8 +116,7 @@
 #define LDBL_MIN __LDBL_MIN__
 
 #if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L) ||              \
-    !defined(__STRICT_ANSI__) ||                                               \
-    (__STDC_HOSTED__ && defined(_AIX) && defined(_ALL_SOURCE))
+    !defined(__STRICT_ANSI__)
 #define FLT_TRUE_MIN __FLT_DENORM_MIN__
 #define DBL_TRUE_MIN __DBL_DENORM_MIN__
 #define LDBL_TRUE_MIN __LDBL_DENORM_MIN__

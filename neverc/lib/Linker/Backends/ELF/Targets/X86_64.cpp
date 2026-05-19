@@ -85,7 +85,6 @@ X86_64::X86_64() {
   nopInstrs = nopInstructions;
 
   // Align to the large page size (known as a superpage or huge page).
-  // FreeBSD automatically promotes large, superpage-aligned allocations.
   defaultImageBase = 0x200000;
 }
 
