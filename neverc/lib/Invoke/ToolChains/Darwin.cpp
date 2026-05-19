@@ -569,38 +569,47 @@ unsigned DarwinNeverC::GetDefaultDwarfVersion() const {
 void MachO::AddLinkRuntimeLib(const ArgList &Args, ArgStringList &CmdArgs,
                               llvm::StringRef Component,
                               RuntimeLinkOptions Opts, bool IsShared) const {
-  llvm::SmallString<64> DarwinLibName = llvm::StringRef("libclang_rt.");
-  // On Darwin the builtins component is not in the library name
-  if (Component != "builtins") {
-    DarwinLibName += Component;
-    if (!(Opts & RLO_IsEmbedded))
-      DarwinLibName += "_";
-  }
+  auto buildDarwinLibName = [&](llvm::StringRef Prefix) {
+    llvm::SmallString<64> Name(Prefix);
+    // On Darwin the builtins component is not in the library name
+    if (Component != "builtins") {
+      Name += Component;
+      if (!(Opts & RLO_IsEmbedded))
+        Name += "_";
+    }
+    Name += getOSLibraryNameSuffix();
+    Name += IsShared ? "_dynamic.dylib" : ".a";
+    return Name;
+  };
 
-  DarwinLibName += getOSLibraryNameSuffix();
-  DarwinLibName += IsShared ? "_dynamic.dylib" : ".a";
   llvm::SmallString<128> Dir(getDriver().ResourceDir);
   llvm::sys::path::append(Dir, "lib", "darwin");
   if (Opts & RLO_IsEmbedded)
     llvm::sys::path::append(Dir, "macho_embedded");
 
   llvm::SmallString<128> P(Dir);
-  llvm::sys::path::append(P, DarwinLibName);
+  bool LinkedRuntime = false;
+  for (llvm::StringRef Prefix :
+       {llvm::StringRef("libneverc_rt."), llvm::StringRef("libclang_rt.")}) {
+    llvm::SmallString<128> Candidate(P);
+    llvm::sys::path::append(Candidate, buildDarwinLibName(Prefix));
+    if ((Opts & RLO_AlwaysLink) || getVFS().exists(Candidate)) {
+      CmdArgs.push_back(Args.MakeArgString(Candidate));
+      LinkedRuntime = true;
+      break;
+    }
+  }
 
   // For now, allow missing resource libraries to support developers who may
   // not have compiler-rt checked out or integrated into their build (unless
   // we explicitly force linking with this library).
-  if ((Opts & RLO_AlwaysLink) || getVFS().exists(P)) {
-    const char *LibArg = Args.MakeArgString(P);
-    CmdArgs.push_back(LibArg);
-  }
 
   // Adding the rpaths might negatively interact when other rpaths are involved,
   // so we should make sure we add the rpaths last, after all user-specified
   // rpaths. This is currently true from this place, but we need to be
   // careful if this function is ever called before user's rpaths are emitted.
-  if (Opts & RLO_AddRPath) {
-    assert(DarwinLibName.ends_with(".dylib") && "must be a dynamic library");
+  if ((Opts & RLO_AddRPath) && LinkedRuntime) {
+    assert(IsShared && "must be a dynamic library");
 
     // Add @executable_path to rpath to support having the dylib copied with
     // the executable.

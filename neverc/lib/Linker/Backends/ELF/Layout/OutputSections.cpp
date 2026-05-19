@@ -578,14 +578,14 @@ void OutputSection::finalize() {
 // crtbegin files.
 //
 // GCC uses crtbegin[<empty>|S|T].o.
-// compiler-rt provides clang_rt.crtbegin[-<arch>|<empty>].o.
+// compiler-rt / NeverC runtime may use neverc_rt.* or legacy clang_rt.* names.
 
 namespace {
 bool isCrt(StringRef s, StringRef beginEnd) {
   s = sys::path::filename(s);
   if (!s.consume_back(".o"))
     return false;
-  if (s.consume_front("clang_rt."))
+  if (s.consume_front("neverc_rt.") || s.consume_front("clang_rt."))
     return s.consume_front(beginEnd);
   return s.consume_front(beginEnd) && s.size() <= 1;
 }

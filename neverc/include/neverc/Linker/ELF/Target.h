@@ -240,7 +240,7 @@ inline void write64(void *p, uint64_t v) {
 } // namespace elf
 } // namespace linker
 
-#ifdef __clang__
+#if defined(__neverc__) || defined(__clang__)
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
 #define dispatchByFormat(f, ...)                                               \

@@ -635,6 +635,8 @@ void initializePredefinedMacros(const TargetInfo &TI,
         getLockFreeValue(TI.getPointerWidth(LangAS::Default), TI));
 #undef DEFINE_LOCK_FREE_MACRO
   };
+  addLockFreeMacros("__NEVERC_ATOMIC_");
+  // Legacy spellings for third-party headers that still expect Clang names.
   addLockFreeMacros("__CLANG_ATOMIC_");
   if (LangOpts.GNUCVersion)
     addLockFreeMacros("__GCC_ATOMIC_");

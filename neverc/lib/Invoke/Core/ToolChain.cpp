@@ -389,6 +389,38 @@ std::string ToolChain::buildCompilerRTBasename(const llvm::opt::ArgList &Args,
     llvm::StringRef Arch = getArchNameForCompilerRTLib(*this);
     ArchAndEnv = ("-" + Arch).str();
   }
+  return (Prefix + llvm::Twine("neverc_rt.") + Component + ArchAndEnv + Suffix)
+      .str();
+}
+
+static std::string buildLegacyCompilerRTBasename(const ToolChain &TC,
+                                               const llvm::opt::ArgList &Args,
+                                               llvm::StringRef Component,
+                                               ToolChain::FileType Type,
+                                               bool AddArch) {
+  const llvm::Triple &TT = TC.getTriple();
+  bool IsMSVCWindows = TT.isWindowsMSVCEnvironment();
+
+  const char *Prefix =
+      IsMSVCWindows || Type == ToolChain::FT_Object ? "" : "lib";
+  const char *Suffix;
+  switch (Type) {
+  case ToolChain::FT_Object:
+    Suffix = IsMSVCWindows ? ".obj" : ".o";
+    break;
+  case ToolChain::FT_Static:
+    Suffix = IsMSVCWindows ? ".lib" : ".a";
+    break;
+  case ToolChain::FT_Shared:
+    Suffix = TT.isOSWindows() ? ".lib" : ".so";
+    break;
+  }
+
+  std::string ArchAndEnv;
+  if (AddArch) {
+    llvm::StringRef Arch = getArchNameForCompilerRTLib(TC);
+    ArchAndEnv = ("-" + Arch).str();
+  }
   return (Prefix + llvm::Twine("clang_rt.") + Component + ArchAndEnv + Suffix)
       .str();
 }
@@ -396,23 +428,37 @@ std::string ToolChain::buildCompilerRTBasename(const llvm::opt::ArgList &Args,
 std::string ToolChain::getCompilerRT(const ArgList &Args,
                                      llvm::StringRef Component,
                                      FileType Type) const {
-  // Check for runtime files in the new layout without the architecture first.
-  std::string CRTBasename =
-      buildCompilerRTBasename(Args, Component, Type, /*AddArch=*/false);
-  for (const auto &LibPath : getLibraryPaths()) {
-    llvm::SmallString<128> P(LibPath);
-    llvm::sys::path::append(P, CRTBasename);
-    if (getVFS().exists(P))
-      return std::string(P.str());
+  auto findRuntime = [&](llvm::StringRef Basename) -> std::string {
+    for (const auto &LibPath : getLibraryPaths()) {
+      llvm::SmallString<128> P(LibPath);
+      llvm::sys::path::append(P, Basename);
+      if (getVFS().exists(P))
+        return std::string(P.str());
+    }
+    llvm::SmallString<128> Path(getCompilerRTPath());
+    llvm::sys::path::append(Path, Basename);
+    return std::string(Path.str());
+  };
+
+  for (bool AddArch : {false, true}) {
+    std::string CRTBasename =
+        buildCompilerRTBasename(Args, Component, Type, AddArch);
+    std::string Path = findRuntime(CRTBasename);
+    if (getVFS().exists(Path))
+      return Path;
   }
 
-  // Fall back to the old expected compiler-rt name if the new one does not
-  // exist.
-  CRTBasename =
-      buildCompilerRTBasename(Args, Component, Type, /*AddArch=*/true);
-  llvm::SmallString<128> Path(getCompilerRTPath());
-  llvm::sys::path::append(Path, CRTBasename);
-  return std::string(Path.str());
+  for (bool AddArch : {false, true}) {
+    std::string CRTBasename =
+        buildLegacyCompilerRTBasename(*this, Args, Component, Type, AddArch);
+    std::string Path = findRuntime(CRTBasename);
+    if (getVFS().exists(Path))
+      return Path;
+  }
+
+  return findRuntime(
+      buildLegacyCompilerRTBasename(*this, Args, Component, Type,
+                                    /*AddArch=*/true));
 }
 
 const char *ToolChain::getCompilerRTArgString(const llvm::opt::ArgList &Args,
