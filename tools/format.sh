@@ -8,8 +8,8 @@
 #   JOBS=16 ./format.sh      # parallel jobs (default: 8)
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 
 : "${JOBS:=8}"
 
