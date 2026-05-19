@@ -36,11 +36,11 @@ NeverC compile du C standard en binaires hébergés, exécutables freestanding e
 ## Exemple rapide
 
 ```c
-#include <unistd.h>
+#include <stdio.h>
 
 int main(void) {
     string msg = "Hello " + "NeverC!";
-    write(1, msg.c_str(), msg.len);
+    printf("%s\n", msg.c_str());
     return 0;
 }
 ```

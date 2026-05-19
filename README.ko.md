@@ -36,11 +36,11 @@ NeverC는 표준 C를 호스트 바이너리, 프리스탠딩 실행 파일, 위
 ## 빠른 예제
 
 ```c
-#include <unistd.h>
+#include <stdio.h>
 
 int main(void) {
     string msg = "Hello " + "NeverC!";
-    write(1, msg.c_str(), msg.len);
+    printf("%s\n", msg.c_str());
     return 0;
 }
 ```

@@ -36,11 +36,11 @@ NeverC 將標準 C 編譯為宿主二進位、獨立可執行檔與位置無關 
 ## 快速範例
 
 ```c
-#include <unistd.h>
+#include <stdio.h>
 
 int main(void) {
     string msg = "Hello " + "NeverC!";
-    write(1, msg.c_str(), msg.len);
+    printf("%s\n", msg.c_str());
     return 0;
 }
 ```
