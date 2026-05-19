@@ -6,13 +6,18 @@
 #  lives in `linker_declare_backend`.  Callers just supply the sources
 #  + backend-specific LLVM components.
 #
-#  Note: Mach-O needs libunwind's public headers to parse compact unwind
-#  sections; expose them via `include_directories` before declaring the
-#  backend so the generated target picks them up.
+#  Note: Mach-O needs mach-o/compact_unwind_encoding.h to parse compact unwind
+#  sections.  Prefer libunwind when present (full llvm-project checkout);
+#  otherwise use the vendored copy under include/ so Linux CI can build the
+#  Mach-O backend without the macOS SDK.
 #
 #===----------------------------------------------------------------------===#
 
-include_directories(${LLVM_MAIN_SRC_DIR}/../libunwind/include)
+set(_NEVERC_MACHO_UNWIND_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+if(EXISTS "${LLVM_MAIN_SRC_DIR}/../libunwind/include/mach-o/compact_unwind_encoding.h")
+  set(_NEVERC_MACHO_UNWIND_INCLUDE "${LLVM_MAIN_SRC_DIR}/../libunwind/include")
+endif()
+include_directories(${_NEVERC_MACHO_UNWIND_INCLUDE})
 
 linker_declare_backend(
   NAME MachO
