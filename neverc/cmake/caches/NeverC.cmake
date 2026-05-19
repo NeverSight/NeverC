@@ -76,6 +76,7 @@ set(LLVM_APPEND_VC_REV OFF CACHE BOOL "")
 set(NEVERC_DETECT_HOST_LINK_VERSION OFF CACHE BOOL "")
 set(NEVERC_ENABLE_ORDER_FILE OFF CACHE BOOL "")
 set(NEVERC_ENABLE_MIMALLOC ON CACHE BOOL "")
+set(NEVERC_STRIP_BINARY ON CACHE BOOL "")
 
 # Full LTO for the final neverc binary: interprocedural optimisation.
 # Disabled under MSVC (uses /LTCG instead) and when cross-compiling

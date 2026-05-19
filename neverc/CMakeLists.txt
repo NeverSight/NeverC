@@ -408,6 +408,23 @@ if(NEVERC_ENABLE_MIMALLOC)
   neverc_link_mimalloc(neverc)
 endif()
 
+option(NEVERC_STRIP_BINARY "Strip local symbols from the neverc binary after linking" OFF)
+if(NEVERC_STRIP_BINARY AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  find_program(NEVERC_STRIP_PROG NAMES strip llvm-strip)
+  if(NEVERC_STRIP_PROG)
+    if(APPLE)
+      set(_strip_flags -x)
+    elseif(UNIX)
+      set(_strip_flags --strip-unneeded)
+    else()
+      set(_strip_flags "")
+    endif()
+    add_custom_command(TARGET neverc POST_BUILD
+      COMMAND "${NEVERC_STRIP_PROG}" ${_strip_flags} "$<TARGET_FILE:neverc>"
+      COMMENT "Stripping neverc binary")
+  endif()
+endif()
+
 set(NEVERC_LINKS_TO_CREATE "" CACHE STRING "" FORCE)
 
 if(NEVERC_PLUGIN_SUPPORT)
