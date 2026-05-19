@@ -13,6 +13,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
+#ifdef __linux__
+#include <sys/sendfile.h>
+#endif
 #include <time.h>
 #include <limits.h>
 #include <dirent.h>
@@ -1478,6 +1481,59 @@ int csupport_copy_file_apfs(const char *from, const char *to) {
   return -1;
 #endif
 }
+
+/* -- copy between file descriptors -- */
+
+#ifndef _WIN32
+int csupport_copy_fd(int read_fd, int write_fd) {
+#if defined(__linux__)
+  struct stat st;
+  if (fstat(read_fd, &st) == 0 && S_ISREG(st.st_mode)) {
+    off_t off = 0;
+    size_t remaining = (size_t)st.st_size;
+    while (remaining > 0) {
+      ssize_t n = sendfile(write_fd, read_fd, &off, remaining);
+      if (n < 0) {
+        if (errno == EINTR) continue;
+        if (errno == EINVAL || errno == ENOSYS)
+          break;
+        return errno;
+      }
+      if (n == 0) break;
+      remaining -= (size_t)n;
+    }
+    if (remaining == 0) return 0;
+    lseek(read_fd, off, SEEK_SET);
+  }
+#endif
+  char buf[4096];
+  for (;;) {
+    ssize_t nr = read(read_fd, buf, sizeof(buf));
+    if (nr == 0) break;
+    if (nr < 0) {
+      if (errno == EINTR) continue;
+      return errno;
+    }
+    char *p = buf;
+    ssize_t rem = nr;
+    while (rem > 0) {
+      ssize_t nw = write(write_fd, p, (size_t)rem);
+      if (nw < 0) {
+        if (errno == EINTR) continue;
+        return errno;
+      }
+      p += nw;
+      rem -= nw;
+    }
+  }
+  return 0;
+}
+#else
+int csupport_copy_fd(int read_fd, int write_fd) {
+  (void)read_fd; (void)write_fd;
+  return -1;
+}
+#endif
 
 /* -- Apple findModulesAndOffsets for stack traces -- */
 
