@@ -25,6 +25,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <assert.h>
+#include <cmath>
 #include <limits.h>
 #include <optional>
 #include <stdlib.h>
@@ -3554,7 +3555,7 @@ inline APInt APInt::sqrt() const {
   if (magnitude < 52) {
     return APInt(
         BitWidth,
-        uint64_t(::round(::sqrt(double(isSingleWord() ? U.VAL : U.pVal[0])))));
+        uint64_t(std::round(std::sqrt(double(isSingleWord() ? U.VAL : U.pVal[0])))));
   }
   unsigned nbits = BitWidth, i = 4;
   APInt testy(BitWidth, 16);
