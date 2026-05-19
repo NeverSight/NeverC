@@ -326,60 +326,6 @@ enum {
 //
 
 
-#ifndef __OPEN_SOURCE__
-//
-// armv7k
-//
-// 1-bit: start
-// 1-bit: has lsda
-// 2-bit: personality index
-//
-// 4-bits: 1=frame, 2=frame+dregs, 4=dwarf
-//
-enum {
-  UNWIND_ARM_MODE_MASK                         = 0x0F000000,
-  UNWIND_ARM_MODE_FRAME                        = 0x01000000,
-  UNWIND_ARM_MODE_FRAME_D                      = 0x02000000,
-  UNWIND_ARM_MODE_DWARF                        = 0x04000000,
-
-  UNWIND_ARM_FRAME_STACK_ADJUST_MASK           = 0x00C00000,
-
-  UNWIND_ARM_FRAME_FIRST_PUSH_R4               = 0x00000001,
-  UNWIND_ARM_FRAME_FIRST_PUSH_R5               = 0x00000002,
-  UNWIND_ARM_FRAME_FIRST_PUSH_R6               = 0x00000004,
-
-  UNWIND_ARM_FRAME_SECOND_PUSH_R8              = 0x00000008,
-  UNWIND_ARM_FRAME_SECOND_PUSH_R9              = 0x00000010,
-  UNWIND_ARM_FRAME_SECOND_PUSH_R10             = 0x00000020,
-  UNWIND_ARM_FRAME_SECOND_PUSH_R11             = 0x00000040,
-  UNWIND_ARM_FRAME_SECOND_PUSH_R12             = 0x00000080,
-
-  UNWIND_ARM_FRAME_D_REG_COUNT_MASK            = 0x00000700,
-
-  UNWIND_ARM_DWARF_SECTION_OFFSET              = 0x00FFFFFF,
-};
-// For armv7k there are three modes for the compact unwind encoding:
-// UNWIND_ARM_MODE_FRAME:
-//    This is a standard arm prolog where lr/r7 are immediately pushed on the
-//    stack.  As part of that first push r4, r5, or r6 can be also pushed
-//    and if so the FIRST_PUSH bit is set in the compact unwind. Additionally
-//    there can be a second push multiple which can save r8 through r12.
-//    If that is used, the registers saved is recorded with a SECOND_PUSH bit.
-//    Lastly, for var-args support, the prolog may save r1, r2, r3 to the
-//    stack before the frame push.  If that is done the STACK_ADJUST_MASK
-//    records that the stack pointer must be adjust (e.g 0x00800000 means
-//    the stack pointer was adjusted 8 bytes down and the unwinder would
-//    need to add back 8 bytes to SP when unwinding through this function.
-// UNWIND_ARM_MODE_FRAME_D:
-//    This is the same as UNWIND_ARM_MODE_FRAME, except that additionally
-//    some D registers were saved.  The D_REG_COUNT_MASK contains which
-//    set if D registers were saved and where.  There are currently 8 (0-7)
-//    possible D register save patterns supported.
-// UNWIND_ARM_MODE_DWARF:
-//    No compact unwind encoding is available.  Instead the low 24-bits of the
-//    compact encoding is the offset of the dwarf FDE in the __eh_frame section.
-//    The offset only exists in final linked images. It is zero in object files.
-#endif
 
 
 

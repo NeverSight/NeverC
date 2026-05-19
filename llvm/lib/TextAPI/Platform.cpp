@@ -24,10 +24,6 @@ PlatformType mapToPlatformType(PlatformType Platform, bool WantSim) {
     return Platform;
   case PLATFORM_IOS:
     return WantSim ? PLATFORM_IOSSIMULATOR : PLATFORM_IOS;
-  case PLATFORM_TVOS:
-    return WantSim ? PLATFORM_TVOSSIMULATOR : PLATFORM_TVOS;
-  case PLATFORM_WATCHOS:
-    return WantSim ? PLATFORM_WATCHOSSIMULATOR : PLATFORM_WATCHOS;
   }
 }
 
@@ -41,13 +37,6 @@ PlatformType mapToPlatformType(const Triple &Target) {
     if (Target.isSimulatorEnvironment())
       return PLATFORM_IOSSIMULATOR;
     return PLATFORM_IOS;
-  case Triple::TvOS:
-    return Target.isSimulatorEnvironment() ? PLATFORM_TVOSSIMULATOR
-                                           : PLATFORM_TVOS;
-  case Triple::WatchOS:
-    return Target.isSimulatorEnvironment() ? PLATFORM_WATCHOSSIMULATOR
-                                           : PLATFORM_WATCHOS;
-    // TODO: add bridgeOS & driverKit once in llvm::Triple
   }
 }
 
@@ -88,22 +77,12 @@ std::string getOSAndEnvironmentName(PlatformType Platform,
     return "macos" + Version;
   case PLATFORM_IOS:
     return "ios" + Version;
-  case PLATFORM_TVOS:
-    return "tvos" + Version;
-  case PLATFORM_WATCHOS:
-    return "watchos" + Version;
-  case PLATFORM_BRIDGEOS:
-    return "bridgeos" + Version;
   case PLATFORM_MACCATALYST:
     return "ios" + Version + "-macabi";
   case PLATFORM_IOSSIMULATOR:
     return "ios" + Version + "-simulator";
-  case PLATFORM_TVOSSIMULATOR:
-    return "tvos" + Version + "-simulator";
-  case PLATFORM_WATCHOSSIMULATOR:
-    return "watchos" + Version + "-simulator";
-  case PLATFORM_DRIVERKIT:
-    return "driverkit" + Version;
+  default:
+    break;
   }
   llvm_unreachable("Unknown llvm::MachO::PlatformType enum");
 }

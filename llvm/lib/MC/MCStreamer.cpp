@@ -1128,10 +1128,6 @@ getMachoVersionMinLoadCommandType(const Triple &Target) {
     return MCVM_OSXVersionMin;
   case Triple::IOS:
     return MCVM_IOSVersionMin;
-  case Triple::TvOS:
-    return MCVM_TvOSVersionMin;
-  case Triple::WatchOS:
-    return MCVM_WatchOSVersionMin;
   default:
     break;
   }
@@ -1145,13 +1141,7 @@ static VersionTuple getMachoBuildVersionSupportedOS(const Triple &Target) {
   case Triple::Darwin:
     return VersionTuple(10, 14);
   case Triple::IOS:
-  case Triple::TvOS:
     return VersionTuple(12);
-  case Triple::WatchOS:
-    return VersionTuple(5);
-  case Triple::DriverKit:
-    // DriverKit always uses the build version load command.
-    return VersionTuple();
   default:
     break;
   }
@@ -1168,14 +1158,6 @@ getMachoBuildVersionPlatformType(const Triple &Target) {
   case Triple::IOS:
     return Target.isSimulatorEnvironment() ? MachO::PLATFORM_IOSSIMULATOR
                                            : MachO::PLATFORM_IOS;
-  case Triple::TvOS:
-    return Target.isSimulatorEnvironment() ? MachO::PLATFORM_TVOSSIMULATOR
-                                           : MachO::PLATFORM_TVOS;
-  case Triple::WatchOS:
-    return Target.isSimulatorEnvironment() ? MachO::PLATFORM_WATCHOSSIMULATOR
-                                           : MachO::PLATFORM_WATCHOS;
-  case Triple::DriverKit:
-    return MachO::PLATFORM_DRIVERKIT;
   default:
     break;
   }
@@ -1197,14 +1179,7 @@ void MCStreamer::emitVersionForTarget(const Triple &Target,
     Target.getMacOSXVersion(Version);
     break;
   case Triple::IOS:
-  case Triple::TvOS:
     Version = Target.getiOSVersion();
-    break;
-  case Triple::WatchOS:
-    Version = Target.getWatchOSVersion();
-    break;
-  case Triple::DriverKit:
-    Version = Target.getDriverKitVersion();
     break;
   default:
     llvm_unreachable("unexpected OS type");

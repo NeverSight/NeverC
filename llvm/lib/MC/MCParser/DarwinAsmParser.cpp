@@ -141,10 +141,6 @@ public:
     addDirectiveHandler<&DarwinAsmParser::parseSectionDirectiveTLV>(".tlv");
 
     addDirectiveHandler<&DarwinAsmParser::parseSectionDirectiveIdent>(".ident");
-    addDirectiveHandler<&DarwinAsmParser::parseWatchOSVersionMin>(
-        ".watchos_version_min");
-    addDirectiveHandler<&DarwinAsmParser::parseTvOSVersionMin>(
-        ".tvos_version_min");
     addDirectiveHandler<&DarwinAsmParser::parseIOSVersionMin>(
         ".ios_version_min");
     addDirectiveHandler<&DarwinAsmParser::parseMacOSXVersionMin>(
@@ -301,12 +297,6 @@ public:
                               MachO::S_THREAD_LOCAL_INIT_FUNCTION_POINTERS);
   }
 
-  bool parseWatchOSVersionMin(StringRef Directive, SMLoc Loc) {
-    return parseVersionMin(Directive, Loc, MCVM_WatchOSVersionMin);
-  }
-  bool parseTvOSVersionMin(StringRef Directive, SMLoc Loc) {
-    return parseVersionMin(Directive, Loc, MCVM_TvOSVersionMin);
-  }
   bool parseIOSVersionMin(StringRef Directive, SMLoc Loc) {
     return parseVersionMin(Directive, Loc, MCVM_IOSVersionMin);
   }
@@ -958,10 +948,6 @@ void DarwinAsmParser::checkVersion(StringRef Directive, StringRef Arg,
 
 static Triple::OSType getOSTypeFromMCVM(MCVersionMinType Type) {
   switch (Type) {
-  case MCVM_WatchOSVersionMin:
-    return Triple::WatchOS;
-  case MCVM_TvOSVersionMin:
-    return Triple::TvOS;
   case MCVM_IOSVersionMin:
     return Triple::IOS;
   case MCVM_OSXVersionMin:
@@ -973,8 +959,6 @@ static Triple::OSType getOSTypeFromMCVM(MCVersionMinType Type) {
 /// parseVersionMin
 ///   ::= .ios_version_min parseVersion parseSDKVersion
 ///   |   .macosx_version_min parseVersion parseSDKVersion
-///   |   .tvos_version_min parseVersion parseSDKVersion
-///   |   .watchos_version_min parseVersion parseSDKVersion
 bool DarwinAsmParser::parseVersionMin(StringRef Directive, SMLoc Loc,
                                       MCVersionMinType Type) {
   unsigned Major;
@@ -1004,28 +988,16 @@ static Triple::OSType getOSTypeFromPlatform(MachO::PlatformType Type) {
     return Triple::MacOSX;
   case MachO::PLATFORM_IOS:
     return Triple::IOS;
-  case MachO::PLATFORM_TVOS:
-    return Triple::TvOS;
-  case MachO::PLATFORM_WATCHOS:
-    return Triple::WatchOS;
-  case MachO::PLATFORM_BRIDGEOS: /* silence warning */
-    break;
-  case MachO::PLATFORM_DRIVERKIT:
-    return Triple::DriverKit;
   case MachO::PLATFORM_MACCATALYST:
     return Triple::IOS;
-  case MachO::PLATFORM_IOSSIMULATOR: /* silence warning */
-    break;
-  case MachO::PLATFORM_TVOSSIMULATOR: /* silence warning */
-    break;
-  case MachO::PLATFORM_WATCHOSSIMULATOR: /* silence warning */
-    break;
+  case MachO::PLATFORM_IOSSIMULATOR:
+    return Triple::IOS;
   }
   llvm_unreachable("Invalid mach-o platform type");
 }
 
 /// parseBuildVersion
-///   ::= .build_version (macos|ios|tvos|watchos), parseVersion parseSDKVersion
+///   ::= .build_version (macos|ios), parseVersion parseSDKVersion
 bool DarwinAsmParser::parseBuildVersion(StringRef Directive, SMLoc Loc) {
   StringRef PlatformName;
   SMLoc PlatformLoc = getTok().getLoc();

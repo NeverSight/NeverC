@@ -57,24 +57,8 @@ void ScalarTraits<PlatformSet>::output(const PlatformSet &Values, void *IO,
   case PLATFORM_IOS:
     OS << "ios";
     break;
-  case PLATFORM_WATCHOSSIMULATOR:
-    [[fallthrough]];
-  case PLATFORM_WATCHOS:
-    OS << "watchos";
-    break;
-  case PLATFORM_TVOSSIMULATOR:
-    [[fallthrough]];
-  case PLATFORM_TVOS:
-    OS << "tvos";
-    break;
-  case PLATFORM_BRIDGEOS:
-    OS << "bridgeos";
-    break;
   case PLATFORM_MACCATALYST:
     OS << "maccatalyst";
-    break;
-  case PLATFORM_DRIVERKIT:
-    OS << "driverkit";
     break;
   }
 }
@@ -97,12 +81,8 @@ StringRef ScalarTraits<PlatformSet>::input(StringRef Scalar, void *IO,
   auto Platform = StringSwitch<PlatformType>(Scalar)
                       .Case("macosx", PLATFORM_MACOS)
                       .Case("ios", PLATFORM_IOS)
-                      .Case("watchos", PLATFORM_WATCHOS)
-                      .Case("tvos", PLATFORM_TVOS)
-                      .Case("bridgeos", PLATFORM_BRIDGEOS)
                       .Case("iosmac", PLATFORM_MACCATALYST)
                       .Case("maccatalyst", PLATFORM_MACCATALYST)
-                      .Case("driverkit", PLATFORM_DRIVERKIT)
                       .Default(PLATFORM_UNKNOWN);
 
   if (Platform == PLATFORM_MACCATALYST)

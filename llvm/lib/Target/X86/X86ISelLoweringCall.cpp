@@ -485,7 +485,7 @@ unsigned X86TargetLowering::getAddressSpace() const {
 }
 
 static bool hasStackGuardSlotTLS(const Triple &TargetTriple) {
-  return TargetTriple.isOSGlibc() || TargetTriple.isOSFuchsia() ||
+  return TargetTriple.isOSGlibc() ||
          (TargetTriple.isAndroid() && !TargetTriple.isAndroidVersionLT(17));
 }
 

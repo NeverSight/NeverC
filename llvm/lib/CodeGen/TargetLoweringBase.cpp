@@ -108,7 +108,7 @@ static bool darwinHasSinCos(const Triple &TT) {
   // iOS < 7.0 has no sincos_stret.
   if (TT.isiOS())
     return !TT.isOSVersionLT(7, 0);
-  // Any other darwin such as WatchOS/TvOS is new enough.
+  // Any other darwin is new enough.
   return true;
 }
 
@@ -150,17 +150,13 @@ void TargetLoweringBase::InitLibcalls(const Triple &TT) {
     setLibcallName(RTLIB::FPROUND_F32_F16, "__gnu_f2h_ieee");
   }
 
-  if (TT.isGNUEnvironment() || TT.isOSFuchsia() ||
+  if (TT.isGNUEnvironment() ||
       (TT.isAndroid() && !TT.isAndroidVersionLT(9))) {
     setLibcallName(RTLIB::SINCOS_F32, "sincosf");
     setLibcallName(RTLIB::SINCOS_F64, "sincos");
     setLibcallName(RTLIB::SINCOS_F80, "sincosl");
     setLibcallName(RTLIB::SINCOS_F128, "sincosl");
     setLibcallName(RTLIB::SINCOS_PPCF128, "sincosl");
-  }
-
-  if (TT.isOSOpenBSD()) {
-    setLibcallName(RTLIB::STACKPROTECTOR_CHECK_FAIL, nullptr);
   }
 
   if (TT.isOSWindows() && !TT.isOSCygMing()) {
@@ -1964,17 +1960,7 @@ bool TargetLoweringBase::isLegalAddressingMode(const DataLayout &DL,
 //  Stack Protector
 //===----------------------------------------------------------------------===//
 
-// For OpenBSD return its special guard variable. Otherwise return nullptr,
-// so that SelectionDAG handle SSP.
 Value *TargetLoweringBase::getIRStackGuard(IRBuilderBase &IRB) const {
-  if (getTargetMachine().getTargetTriple().isOSOpenBSD()) {
-    Module &M = *IRB.GetInsertBlock()->getParent()->getParent();
-    PointerType *PtrTy = PointerType::getUnqual(M.getContext());
-    Constant *C = M.getOrInsertGlobal("__guard_local", PtrTy);
-    if (GlobalVariable *G = dyn_cast_or_null<GlobalVariable>(C))
-      G->setVisibility(GlobalValue::HiddenVisibility);
-    return C;
-  }
   return nullptr;
 }
 
@@ -1986,10 +1972,8 @@ void TargetLoweringBase::insertSSPDeclarations(Module &M) const {
                                   false, GlobalVariable::ExternalLinkage,
                                   nullptr, "__stack_chk_guard");
 
-    // FreeBSD has "__stack_chk_guard" defined externally on libc.so
     if (M.getDirectAccessExternalData() &&
         !TM.getTargetTriple().isWindowsGNUEnvironment() &&
-        !TM.getTargetTriple().isOSFreeBSD() &&
         !TM.getTargetTriple().isOSDarwin())
       GV->setDSOLocal(true);
   }

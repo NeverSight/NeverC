@@ -322,7 +322,7 @@ KEYWORD(L__FUNCSIG__                , KEYMS)
 // Apple Extension.
 KEYWORD(__private_extern__          , KEYALL)
 
-// Extension that will be enabled for Microsoft and PS4, but can be
+// Extension that will be enabled for Microsoft, but can be
 // disabled via '-fno-declspec'.
 KEYWORD(__declspec                  , 0)
 

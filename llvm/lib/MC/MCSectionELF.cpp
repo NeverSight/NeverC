@@ -104,11 +104,6 @@ void MCSectionELF::printSwitchToSection(const MCAsmInfo &MAI, const Triple &T,
   if (Flags & ELF::SHF_GNU_RETAIN)
     OS << 'R';
 
-  // If there are os-specific flags, print them.
-  if (T.isOSSolaris())
-    if (Flags & ELF::SHF_SUNW_NODISCARD)
-      OS << 'R';
-
   // If there are target-specific flags, print them.
   Triple::ArchType Arch = T.getArch();
   if (Arch == Triple::x86_64) {

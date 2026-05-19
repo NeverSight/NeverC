@@ -506,7 +506,7 @@ ParsedTargetAttr TargetInfo::parseTargetAttr(llvm::StringRef Features) const {
 TargetInfo::CallingConvKind
 TargetInfo::getCallingConvKind(bool ABICompat4) const {
   if (ABICompat4)
-    return CCK_NeverCABI4OrPS4;
+    return CCK_NeverCABI4;
   return CCK_Default;
 }
 

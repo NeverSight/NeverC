@@ -106,9 +106,7 @@ static bool hasBcmp(const Triple &TT) {
   // implementations of the libc still have it.
   if (TT.isOSLinux())
     return TT.isGNUEnvironment() || TT.isMusl();
-  // Both NetBSD and OpenBSD are planning to remove the function. Windows does
-  // not have it.
-  return TT.isOSFreeBSD() || TT.isOSSolaris();
+  return false;
 }
 
 static bool isCallingConvCCompatible(CallingConv::ID CC, StringRef TT,
@@ -171,7 +169,7 @@ static void initialize(TargetLibraryInfoImpl &TLI, const Triple &T,
   TLI.setIntSize(32);
 
   // memset_pattern{4,8,16} is only available on iOS 3.0 and Mac OS X 10.5 and
-  // later. All versions of watchOS support it.
+  // later.
   if (T.isMacOSX()) {
     // available IO unlocked variants on Mac OS X
     TLI.setAvailable(LibFunc_getc_unlocked);
@@ -191,7 +189,7 @@ static void initialize(TargetLibraryInfoImpl &TLI, const Triple &T,
       TLI.setUnavailable(LibFunc_memset_pattern8);
       TLI.setUnavailable(LibFunc_memset_pattern16);
     }
-  } else if (!T.isWatchOS()) {
+  } else {
     TLI.setUnavailable(LibFunc_memset_pattern4);
     TLI.setUnavailable(LibFunc_memset_pattern8);
     TLI.setUnavailable(LibFunc_memset_pattern16);
@@ -490,11 +488,8 @@ static void initialize(TargetLibraryInfoImpl &TLI, const Triple &T,
     }
     break;
   case Triple::IOS:
-  case Triple::TvOS:
-  case Triple::WatchOS:
     TLI.setUnavailable(LibFunc_exp10l);
-    if (!T.isWatchOS() &&
-        (T.isOSVersionLT(7, 0) || (T.isOSVersionLT(9, 0) && T.isX86()))) {
+    if (T.isOSVersionLT(7, 0) || (T.isOSVersionLT(9, 0) && T.isX86())) {
       TLI.setUnavailable(LibFunc_exp10);
       TLI.setUnavailable(LibFunc_exp10f);
     } else {
@@ -516,49 +511,32 @@ static void initialize(TargetLibraryInfoImpl &TLI, const Triple &T,
     TLI.setUnavailable(LibFunc_exp10l);
   }
 
-  // ffsl is available on at least Darwin, Mac OS X, iOS, FreeBSD, and
-  // Linux (GLIBC):
-  // http://developer.apple.com/library/mac/#documentation/Darwin/Reference/ManPages/man3/ffsl.3.html
-  // http://svn.freebsd.org/base/head/lib/libc/string/ffsl.c
-  // http://www.gnu.org/software/gnulib/manual/html_node/ffsl.html
+  // ffsl is available on at least Darwin, Mac OS X, iOS, and Linux (GLIBC).
   switch (T.getOS()) {
   case Triple::Darwin:
   case Triple::MacOSX:
   case Triple::IOS:
-  case Triple::TvOS:
-  case Triple::WatchOS:
-  case Triple::FreeBSD:
   case Triple::Linux:
     break;
   default:
     TLI.setUnavailable(LibFunc_ffsl);
   }
 
-  // ffsll is available on at least FreeBSD and Linux (GLIBC):
-  // http://svn.freebsd.org/base/head/lib/libc/string/ffsll.c
-  // http://www.gnu.org/software/gnulib/manual/html_node/ffsll.html
+  // ffsll is available on at least Linux (GLIBC) and Darwin.
   switch (T.getOS()) {
   case Triple::Darwin:
   case Triple::MacOSX:
   case Triple::IOS:
-  case Triple::TvOS:
-  case Triple::WatchOS:
-  case Triple::FreeBSD:
   case Triple::Linux:
     break;
   default:
     TLI.setUnavailable(LibFunc_ffsll);
   }
 
-  // The following functions are available on at least FreeBSD:
-  // http://svn.freebsd.org/base/head/lib/libc/string/fls.c
-  // http://svn.freebsd.org/base/head/lib/libc/string/flsl.c
-  // http://svn.freebsd.org/base/head/lib/libc/string/flsll.c
-  if (!T.isOSFreeBSD()) {
-    TLI.setUnavailable(LibFunc_fls);
-    TLI.setUnavailable(LibFunc_flsl);
-    TLI.setUnavailable(LibFunc_flsll);
-  }
+  // fls/flsl/flsll are not available on NeverC's supported platforms by default.
+  TLI.setUnavailable(LibFunc_fls);
+  TLI.setUnavailable(LibFunc_flsl);
+  TLI.setUnavailable(LibFunc_flsll);
 
   // The following functions are only available on GNU/Linux (using glibc).
   // Linux variants without glibc (eg: bionic, musl) may have some subset.

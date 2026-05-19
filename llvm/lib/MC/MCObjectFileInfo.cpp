@@ -285,11 +285,7 @@ void MCObjectFileInfo::initELFMCObjectFileInfo(const Triple &T, bool Large) {
                                ? ELF::SHT_X86_64_UNWIND
                                : ELF::SHT_PROGBITS;
 
-  // Solaris requires different flags for .eh_frame to seemingly every other
-  // platform.
   unsigned EHSectionFlags = ELF::SHF_ALLOC;
-  if (T.isOSSolaris() && T.getArch() != Triple::x86_64)
-    EHSectionFlags |= ELF::SHF_WRITE;
 
   // ELF
   BSSSection = Ctx->getELFSection(".bss", ELF::SHT_NOBITS,

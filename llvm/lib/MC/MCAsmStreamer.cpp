@@ -554,10 +554,6 @@ void MCAsmStreamer::emitDataRegion(MCDataRegionType Kind) {
 
 static const char *getVersionMinDirective(MCVersionMinType Type) {
   switch (Type) {
-  case MCVM_WatchOSVersionMin:
-    return ".watchos_version_min";
-  case MCVM_TvOSVersionMin:
-    return ".tvos_version_min";
   case MCVM_IOSVersionMin:
     return ".ios_version_min";
   case MCVM_OSXVersionMin:

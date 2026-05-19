@@ -613,17 +613,9 @@ BasicBlock *StackProtector::CreateFailBB() {
   if (F->getSubprogram())
     B.SetCurrentDebugLocation(
         DILocation::get(Context, 0, 0, F->getSubprogram()));
-  FunctionCallee StackChkFail;
+  FunctionCallee StackChkFail =
+      M->getOrInsertFunction("__stack_chk_fail", Type::getVoidTy(Context));
   SmallVector<Value *, 1> Args;
-  if (Trip.isOSOpenBSD()) {
-    StackChkFail = M->getOrInsertFunction("__stack_smash_handler",
-                                          Type::getVoidTy(Context),
-                                          PointerType::getUnqual(Context));
-    Args.push_back(B.CreateGlobalStringPtr(F->getName(), "SSH"));
-  } else {
-    StackChkFail =
-        M->getOrInsertFunction("__stack_chk_fail", Type::getVoidTy(Context));
-  }
   cast<Function>(StackChkFail.getCallee())->addFnAttr(Attribute::NoReturn);
   B.CreateCall(StackChkFail, Args);
   B.CreateUnreachable();

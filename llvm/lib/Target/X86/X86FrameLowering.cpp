@@ -2504,8 +2504,7 @@ void X86FrameLowering::adjustForSegmentedStacks(
 
   if (MF.getFunction().isVarArg())
     report_fatal_error("Segmented stacks do not support vararg functions.");
-  if (!STI.isTargetLinux() && !STI.isTargetDarwin() && !STI.isTargetWin64() &&
-      !STI.isTargetFreeBSD() && !STI.isTargetDragonFly())
+  if (!STI.isTargetLinux() && !STI.isTargetDarwin() && !STI.isTargetWin64())
     report_fatal_error("Segmented stacks not supported on this platform.");
 
   // Eventually StackSize will be calculated by a link-time pass; which will
@@ -2550,12 +2549,6 @@ void X86FrameLowering::adjustForSegmentedStacks(
   } else if (STI.isTargetWin64()) {
     TlsReg = X86::GS;
     TlsOffset = 0x28;
-  } else if (STI.isTargetFreeBSD()) {
-    TlsReg = X86::FS;
-    TlsOffset = 0x18;
-  } else if (STI.isTargetDragonFly()) {
-    TlsReg = X86::FS;
-    TlsOffset = 0x20;
   } else {
     report_fatal_error("Segmented stacks not supported on this platform.");
   }

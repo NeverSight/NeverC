@@ -70,17 +70,8 @@ public:
   }
 
   static uint8_t getOSABI(Triple::OSType OSType) {
-    switch (OSType) {
-    case Triple::HermitCore:
-      return ELF::ELFOSABI_STANDALONE;
-    case Triple::PS4:
-    case Triple::FreeBSD:
-      return ELF::ELFOSABI_FREEBSD;
-    case Triple::Solaris:
-      return ELF::ELFOSABI_SOLARIS;
-    default:
-      return ELF::ELFOSABI_NONE;
-    }
+    (void)OSType;
+    return ELF::ELFOSABI_NONE;
   }
 
   virtual unsigned getRelocType(MCContext &Ctx, const MCValue &Target,

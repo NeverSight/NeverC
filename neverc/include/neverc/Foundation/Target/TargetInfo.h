@@ -1019,7 +1019,7 @@ public:
     }
   }
 
-  enum CallingConvKind { CCK_Default, CCK_NeverCABI4OrPS4, CCK_MicrosoftWin64 };
+  enum CallingConvKind { CCK_Default, CCK_NeverCABI4, CCK_MicrosoftWin64 };
 
   virtual CallingConvKind getCallingConvKind(bool ABICompat4) const;
 

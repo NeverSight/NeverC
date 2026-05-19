@@ -26,7 +26,7 @@
 #include <Availability.h>
 #include <os/signpost.h>
 #define SIGNPOSTS_AVAILABLE()                                                  \
-  __builtin_available(macos 10.14, iOS 12, tvOS 12, watchOS 5, *)
+  __builtin_available(macos 10.14, iOS 12, *)
 #endif
 
 namespace llvm {
