@@ -24,6 +24,7 @@
 .DS_store
 # windows executable files
 *.exe
+*.bin
 
 # Ignore the user specified CMake presets in subproject directories.
 /*/CMakeUserPresets.json
