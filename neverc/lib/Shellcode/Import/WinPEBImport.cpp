@@ -1,5 +1,6 @@
 #include "neverc/Shellcode/Import/WinPEBImport.h"
 #include "ExtractorCommon.h"
+#include "neverc/Shellcode/Import/PtrCacheHelpers.h"
 #include "neverc/Shellcode/Import/WinImportTables.h"
 #include "neverc/Shellcode/Pipeline/ShellcodeIRHelperNames.h"
 #include "llvm/ADT/DenseMap.h"
@@ -17,6 +18,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
+#include <random>
 
 using namespace llvm;
 
@@ -394,9 +396,11 @@ Function *getOrCreateResolver(Module &M, const TargetDesc &T) {
 }
 
 Function *createWrapper(Module &M, const TargetDesc &T, Function &Decl,
-                        Function *Resolver, StringRef Dll) {
+                        Function *Resolver, StringRef Dll, uint64_t Seed) {
   LLVMContext &Ctx = M.getContext();
   FunctionType *FTy = Decl.getFunctionType();
+  PointerType *PtrTy = PointerType::getUnqual(Ctx);
+  Type *I64 = Type::getInt64Ty(Ctx);
 
   Function *Wrap =
       Function::Create(FTy, GlobalValue::InternalLinkage,
@@ -405,21 +409,54 @@ Function *createWrapper(Module &M, const TargetDesc &T, Function &Decl,
   Wrap->addFnAttr(Attribute::NoUnwind);
   Wrap->setDSOLocal(true);
 
-  BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", Wrap);
-  IRBuilder<> B(Entry);
+  GlobalVariable *CacheSlot = ptrcache::getOrCreateCacheSlot(M, Decl.getName(), Dll);
+  Function *Encrypt = ptrcache::getOrCreatePtrEncrypt(M, T, Seed, ptrcache::KeySource::PEB);
+  Function *Decrypt = ptrcache::getOrCreatePtrDecrypt(M, T, Seed, ptrcache::KeySource::PEB);
 
+  BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", Wrap);
+  BasicBlock *FastPath = BasicBlock::Create(Ctx, "fast", Wrap);
+  BasicBlock *SlowPath = BasicBlock::Create(Ctx, "slow", Wrap);
+  BasicBlock *DoCall = BasicBlock::Create(Ctx, "docall", Wrap);
+
+  // --- entry: atomic load cache, branch on zero ---
+  IRBuilder<> B(Entry);
+  auto *Cached = B.CreateLoad(I64, CacheSlot, "cached");
+  Cached->setAtomic(AtomicOrdering::Monotonic);
+  Cached->setAlignment(Align(8));
+  Value *IsZero = B.CreateICmpEQ(Cached, ConstantInt::get(I64, 0), "empty");
+
+  MDBuilder MDB(Ctx);
+  auto *Br = B.CreateCondBr(IsZero, SlowPath, FastPath);
+  Br->setMetadata(LLVMContext::MD_prof, MDB.createBranchWeights(1, 2000));
+
+  // --- fast path: decrypt cached pointer ---
+  B.SetInsertPoint(FastPath);
+  Value *DecryptedFn = B.CreateCall(Decrypt, {Cached}, "dec.fn");
+  B.CreateBr(DoCall);
+
+  // --- slow path: PEB resolve → encrypt → cmpxchg ---
+  B.SetInsertPoint(SlowPath);
   uint32_t DllH = hashDllName(Dll);
   uint32_t ApiH = ror13Hash(Decl.getName());
-  Value *DllHashV = B.getInt32(DllH);
-  Value *ApiHashV = B.getInt32(ApiH);
-  Value *FnPtr = B.CreateCall(Resolver->getFunctionType(), Resolver,
-                              {DllHashV, ApiHashV}, "fn");
+  Value *RawFn = B.CreateCall(Resolver->getFunctionType(), Resolver,
+                              {B.getInt32(DllH), B.getInt32(ApiH)}, "raw.fn");
+  Value *Encrypted = B.CreateCall(Encrypt, {RawFn}, "enc.fn");
+  B.CreateAtomicCmpXchg(CacheSlot, ConstantInt::get(I64, 0), Encrypted,
+                        Align(8), AtomicOrdering::Release,
+                        AtomicOrdering::Monotonic);
+  B.CreateBr(DoCall);
+
+  // --- common call: PHI merge + dispatch ---
+  B.SetInsertPoint(DoCall);
+  PHINode *FnPhi = B.CreatePHI(PtrTy, 2, "fn.ptr");
+  FnPhi->addIncoming(DecryptedFn, FastPath);
+  FnPhi->addIncoming(RawFn, SlowPath);
 
   SmallVector<Value *, 8> CallArgs;
   for (Argument &A : Wrap->args())
     CallArgs.push_back(&A);
 
-  CallInst *Call = B.CreateCall(FTy, FnPtr, CallArgs);
+  CallInst *Call = B.CreateCall(FTy, FnPhi, CallArgs);
   Call->setCallingConv(Decl.getCallingConv());
 
   if (FTy->getReturnType()->isVoidTy())
@@ -1011,13 +1048,19 @@ PreservedAnalyses WinPEBImportPass::run(Module &M, ModuleAnalysisManager &) {
   if (ToReplace.empty())
     return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
 
+  std::random_device RD;
+  std::mt19937_64 Gen(RD());
+  uint64_t Seed = Gen();
+  if (Seed == 0)
+    Seed = 0xDEAD'C0DE'CAFE'BABE;
+
   Function *Resolver = getOrCreateResolver(M, Target);
 
   DenseMap<StringRef, Function *> ByName;
   for (auto &[Decl, Dll] : ToReplace) {
     Function *&Slot = ByName[Decl->getName()];
     if (!Slot)
-      Slot = createWrapper(M, Target, *Decl, Resolver, Dll);
+      Slot = createWrapper(M, Target, *Decl, Resolver, Dll, Seed);
     Decl->replaceAllUsesWith(Slot);
     Decl->eraseFromParent();
   }
