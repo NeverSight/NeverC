@@ -1,0 +1,199 @@
+# Profile-guided release build for Linux x86_64.
+# Triggered only on version tags; produces the official GitHub Release artifact.
+name: linux-x64-neverc-release-pgo
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  pgo-profile:
+    name: PGO generate + train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+
+      - name: Download PGO-optimised Clang
+        run: |
+          LLVM_VER=20.1.8
+          curl -fsSL \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-Linux-X64.tar.xz" \
+            -o /tmp/llvm.tar.xz
+          mkdir -p /tmp/llvm-pgo
+          tar xf /tmp/llvm.tar.xz -C /tmp/llvm-pgo --strip-components=1
+          echo "CC=/tmp/llvm-pgo/bin/clang" >> "$GITHUB_ENV"
+          echo "CXX=/tmp/llvm-pgo/bin/clang++" >> "$GITHUB_ENV"
+          /tmp/llvm-pgo/bin/clang --version
+
+      - name: Build instrumented neverc
+        run: ./tools/build_pgo.sh generate
+
+      - name: Download PGO training workloads
+        run: |
+          set -euo pipefail
+
+          SQLITE_VER=3460100
+          SQLITE_YEAR=2024
+          mkdir -p ci-pgo-workloads/sqlite
+          curl -fsSL \
+            "https://www.sqlite.org/${SQLITE_YEAR}/sqlite-amalgamation-${SQLITE_VER}.zip" \
+            -o /tmp/sqlite-amalgamation.zip
+          unzip -j /tmp/sqlite-amalgamation.zip \
+            "sqlite-amalgamation-${SQLITE_VER}/sqlite3.c" \
+            -d ci-pgo-workloads/sqlite
+
+          REDIS_VER=7.2.5
+          curl -fsSL \
+            "https://github.com/redis/redis/archive/refs/tags/${REDIS_VER}.tar.gz" \
+            -o /tmp/redis.tar.gz
+          mkdir -p ci-pgo-workloads/redis
+          tar xzf /tmp/redis.tar.gz -C ci-pgo-workloads/redis --strip-components=1
+
+          ZLIB_VER=1.3.1
+          curl -fsSL \
+            "https://github.com/madler/zlib/releases/download/v${ZLIB_VER}/zlib-${ZLIB_VER}.tar.gz" \
+            -o /tmp/zlib.tar.gz
+          mkdir -p ci-pgo-workloads/zlib
+          tar xzf /tmp/zlib.tar.gz -C ci-pgo-workloads/zlib --strip-components=1
+
+          CURL_VER=8.7.1
+          curl -fsSL \
+            "https://github.com/curl/curl/releases/download/curl-$(echo $CURL_VER | tr '.' '_')/curl-${CURL_VER}.tar.gz" \
+            -o /tmp/curl.tar.gz
+          mkdir -p ci-pgo-workloads/curl
+          tar xzf /tmp/curl.tar.gz -C ci-pgo-workloads/curl --strip-components=1
+
+      - name: Collect PGO profiles
+        run: |
+          set -euo pipefail
+          NC="${GITHUB_WORKSPACE}/build-pgo-gen/bin/neverc"
+          PROFILE_DIR="${GITHUB_WORKSPACE}/pgo-profiles"
+          LLVM_PROFDATA="/tmp/llvm-pgo/bin/llvm-profdata"
+
+          SQLITE="${GITHUB_WORKSPACE}/ci-pgo-workloads/sqlite/sqlite3.c"
+          REDIS_SRC="${GITHUB_WORKSPACE}/ci-pgo-workloads/redis/src"
+          ZLIB_SRC="${GITHUB_WORKSPACE}/ci-pgo-workloads/zlib"
+          CURL_SRC="${GITHUB_WORKSPACE}/ci-pgo-workloads/curl"
+
+          rm -rf "$PROFILE_DIR"
+          mkdir -p "$PROFILE_DIR"
+
+          train() {
+            local profraw="$1"
+            shift
+            LLVM_PROFILE_FILE="$profraw" "$NC" "$@" 2>/dev/null || true
+          }
+
+          echo "Training on SQLite..."
+          train "$PROFILE_DIR/sqlite_preproc.profraw" -E -w -fno-neverc-types -o /dev/null "$SQLITE"
+          train "$PROFILE_DIR/sqlite_sema.profraw" -fsyntax-only -w -fno-neverc-types "$SQLITE"
+          train "$PROFILE_DIR/sqlite_irgen.profraw" -emit-llvm -S -w -fno-neverc-types -o /dev/null "$SQLITE"
+          for opt in O0 O2 O3; do
+            train "$PROFILE_DIR/sqlite_${opt}.profraw" -c "-${opt}" -w -fno-neverc-types -o /dev/null "$SQLITE"
+          done
+
+          if [ -d "$REDIS_SRC" ]; then
+            echo "Training on Redis..."
+            for f in "$REDIS_SRC"/*.c; do
+              train "$PROFILE_DIR/redis_$(basename "$f" .c).profraw" -c -O2 -w -fno-neverc-types -o /dev/null "$f"
+            done
+          fi
+
+          if [ -d "$ZLIB_SRC" ]; then
+            echo "Training on zlib..."
+            for f in "$ZLIB_SRC"/*.c; do
+              train "$PROFILE_DIR/zlib_$(basename "$f" .c).profraw" -c -O2 -w -fno-neverc-types -o /dev/null "$f"
+            done
+          fi
+
+          if [ -d "$CURL_SRC/lib" ]; then
+            echo "Training on curl..."
+            for f in "$CURL_SRC"/lib/*.c; do
+              train "$PROFILE_DIR/curl_$(basename "$f" .c).profraw" \
+                -c -O2 -w -fno-neverc-types \
+                -I"$CURL_SRC/include" -I"$CURL_SRC/lib" -DBUILDING_LIBCURL \
+                -o /dev/null "$f"
+            done
+          fi
+
+          echo "Training on in-repo tests..."
+          while IFS= read -r -d '' f; do
+            tag=$(echo "$f" | tr '/' '_')
+            train "$PROFILE_DIR/test_${tag}.profraw" -c -O2 -w -fno-neverc-types -o /dev/null "$f"
+          done < <(find tests -name '*.c' -print0)
+
+          profraw_count=$(ls "$PROFILE_DIR"/*.profraw | wc -l | tr -d ' ')
+          echo "Merging $profraw_count profiles..."
+          "$LLVM_PROFDATA" merge -output="${PROFILE_DIR}/merged.profdata" "$PROFILE_DIR"/*.profraw
+          ls -lh "${PROFILE_DIR}/merged.profdata"
+
+      - name: Upload profile data
+        uses: actions/upload-artifact@v4
+        with:
+          name: neverc-pgo-profdata-linux
+          path: pgo-profiles/merged.profdata
+          retention-days: 7
+
+  pgo-release:
+    name: PGO use + package + release
+    needs: pgo-profile
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full
+
+      - name: Download PGO-optimised Clang
+        run: |
+          LLVM_VER=20.1.8
+          curl -fsSL \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-Linux-X64.tar.xz" \
+            -o /tmp/llvm.tar.xz
+          mkdir -p /tmp/llvm-pgo
+          tar xf /tmp/llvm.tar.xz -C /tmp/llvm-pgo --strip-components=1
+          echo "CC=/tmp/llvm-pgo/bin/clang" >> "$GITHUB_ENV"
+          echo "CXX=/tmp/llvm-pgo/bin/clang++" >> "$GITHUB_ENV"
+
+      - name: Download profile data
+        uses: actions/download-artifact@v4
+        with:
+          name: neverc-pgo-profdata-linux
+          path: pgo-profiles
+
+      - name: Build PGO-optimised neverc
+        run: ./tools/build_pgo.sh use
+
+      - name: Install neverc
+        run: cmake --install build-pgo-use --prefix "${GITHUB_WORKSPACE}/install"
+
+      - name: Package
+        run: 7z a linux-x64-neverc-pgo.zip install
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-neverc-pgo
+          path: linux-x64-neverc-pgo.zip
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
+          files: linux-x64-neverc-pgo.zip
+          generate_release_notes: true

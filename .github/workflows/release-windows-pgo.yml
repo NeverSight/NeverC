@@ -1,0 +1,206 @@
+# Profile-guided release build for Windows x86_64.
+# Triggered only on version tags; produces the official GitHub Release artifact.
+name: windows-x64-neverc-release-pgo
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  pgo-profile:
+    name: PGO generate + train
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup build deps
+        run: choco install ninja cmake -y
+
+      - name: Download PGO-optimised Clang
+        shell: bash
+        run: |
+          LLVM_VER=20.1.8
+          curl -fsSL \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-win64.exe" \
+            -o /tmp/llvm-installer.exe
+          /tmp/llvm-installer.exe /S /D=C:\\LLVM
+          echo "CC=C:/LLVM/bin/clang.exe" >> "$GITHUB_ENV"
+          echo "CXX=C:/LLVM/bin/clang++.exe" >> "$GITHUB_ENV"
+          echo "C:/LLVM/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Clang
+        run: clang --version
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build instrumented neverc
+        shell: bash
+        run: |
+          cmake -S llvm -B build-pgo-gen -G Ninja \
+            -C neverc/cmake/caches/NeverC.cmake \
+            -DNEVERC_ENABLE_LTO=OFF \
+            -DNEVERC_ENABLE_MIMALLOC=OFF \
+            -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-generate -DNEVERC_PGO_TRAINING -ffunction-sections -fdata-sections" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-generate -DNEVERC_PGO_TRAINING -ffunction-sections -fdata-sections" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate"
+          cmake --build build-pgo-gen --target neverc --parallel $NUMBER_OF_PROCESSORS
+
+      - name: Download PGO training workloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQLITE_VER=3460100
+          SQLITE_YEAR=2024
+          mkdir -p ci-pgo-workloads/sqlite
+          curl -fsSL \
+            "https://www.sqlite.org/${SQLITE_YEAR}/sqlite-amalgamation-${SQLITE_VER}.zip" \
+            -o /tmp/sqlite-amalgamation.zip
+          unzip -j /tmp/sqlite-amalgamation.zip \
+            "sqlite-amalgamation-${SQLITE_VER}/sqlite3.c" \
+            -d ci-pgo-workloads/sqlite
+
+          REDIS_VER=7.2.5
+          curl -fsSL \
+            "https://github.com/redis/redis/archive/refs/tags/${REDIS_VER}.tar.gz" \
+            -o /tmp/redis.tar.gz
+          mkdir -p ci-pgo-workloads/redis
+          tar xzf /tmp/redis.tar.gz -C ci-pgo-workloads/redis --strip-components=1
+
+          ZLIB_VER=1.3.1
+          curl -fsSL \
+            "https://github.com/madler/zlib/releases/download/v${ZLIB_VER}/zlib-${ZLIB_VER}.tar.gz" \
+            -o /tmp/zlib.tar.gz
+          mkdir -p ci-pgo-workloads/zlib
+          tar xzf /tmp/zlib.tar.gz -C ci-pgo-workloads/zlib --strip-components=1
+
+      - name: Collect PGO profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          NC="${GITHUB_WORKSPACE}/build-pgo-gen/bin/neverc.exe"
+          PROFILE_DIR="${GITHUB_WORKSPACE}/pgo-profiles"
+          LLVM_PROFDATA="C:/LLVM/bin/llvm-profdata.exe"
+
+          SQLITE="${GITHUB_WORKSPACE}/ci-pgo-workloads/sqlite/sqlite3.c"
+          REDIS_SRC="${GITHUB_WORKSPACE}/ci-pgo-workloads/redis/src"
+          ZLIB_SRC="${GITHUB_WORKSPACE}/ci-pgo-workloads/zlib"
+
+          rm -rf "$PROFILE_DIR"
+          mkdir -p "$PROFILE_DIR"
+
+          train() {
+            local profraw="$1"; shift
+            LLVM_PROFILE_FILE="$profraw" "$NC" "$@" 2>/dev/null || true
+          }
+
+          echo "Training on SQLite..."
+          train "$PROFILE_DIR/sqlite_preproc.profraw" -E -w -fno-neverc-types -o NUL "$SQLITE"
+          train "$PROFILE_DIR/sqlite_sema.profraw" -fsyntax-only -w -fno-neverc-types "$SQLITE"
+          for opt in O0 O2 O3; do
+            train "$PROFILE_DIR/sqlite_${opt}.profraw" -c "-${opt}" -w -fno-neverc-types -o NUL "$SQLITE"
+          done
+
+          if [ -d "$REDIS_SRC" ]; then
+            echo "Training on Redis..."
+            for f in "$REDIS_SRC"/*.c; do
+              train "$PROFILE_DIR/redis_$(basename "$f" .c).profraw" -c -O2 -w -fno-neverc-types -o NUL "$f"
+            done
+          fi
+
+          if [ -d "$ZLIB_SRC" ]; then
+            echo "Training on zlib..."
+            for f in "$ZLIB_SRC"/*.c; do
+              train "$PROFILE_DIR/zlib_$(basename "$f" .c).profraw" -c -O2 -w -fno-neverc-types -o NUL "$f"
+            done
+          fi
+
+          echo "Training on in-repo tests..."
+          while IFS= read -r -d '' f; do
+            tag=$(echo "$f" | tr '/' '_')
+            train "$PROFILE_DIR/test_${tag}.profraw" -c -O2 -w -fno-neverc-types -o NUL "$f"
+          done < <(find tests -name '*.c' -print0)
+
+          profraw_count=$(ls "$PROFILE_DIR"/*.profraw | wc -l | tr -d ' ')
+          echo "Merging $profraw_count profiles..."
+          "$LLVM_PROFDATA" merge -output="${PROFILE_DIR}/merged.profdata" "$PROFILE_DIR"/*.profraw
+
+      - name: Upload profile data
+        uses: actions/upload-artifact@v4
+        with:
+          name: neverc-pgo-profdata-windows
+          path: pgo-profiles/merged.profdata
+          retention-days: 7
+
+  pgo-release:
+    name: PGO use + package + release
+    needs: pgo-profile
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup build deps
+        run: choco install ninja cmake 7zip -y
+
+      - name: Download PGO-optimised Clang
+        shell: bash
+        run: |
+          LLVM_VER=20.1.8
+          curl -fsSL \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-win64.exe" \
+            -o /tmp/llvm-installer.exe
+          /tmp/llvm-installer.exe /S /D=C:\\LLVM
+          echo "CC=C:/LLVM/bin/clang.exe" >> "$GITHUB_ENV"
+          echo "CXX=C:/LLVM/bin/clang++.exe" >> "$GITHUB_ENV"
+          echo "C:/LLVM/bin" >> "$GITHUB_PATH"
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Download profile data
+        uses: actions/download-artifact@v4
+        with:
+          name: neverc-pgo-profdata-windows
+          path: pgo-profiles
+
+      - name: Build PGO-optimised neverc
+        shell: bash
+        run: |
+          PROFDATA="${GITHUB_WORKSPACE}/pgo-profiles/merged.profdata"
+          cmake -S llvm -B build-pgo-use -G Ninja \
+            -C neverc/cmake/caches/NeverC.cmake \
+            -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=${PROFDATA} -ffunction-sections -fdata-sections" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=${PROFDATA} -ffunction-sections -fdata-sections" \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,--gc-sections"
+          cmake --build build-pgo-use --target neverc --parallel $NUMBER_OF_PROCESSORS
+
+      - name: Install neverc
+        run: cmake --install build-pgo-use --prefix "$env:GITHUB_WORKSPACE\install"
+
+      - name: Package
+        run: 7z a windows-x64-neverc-pgo.zip install
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-neverc-pgo
+          path: windows-x64-neverc-pgo.zip
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
+          files: windows-x64-neverc-pgo.zip
+          generate_release_notes: true

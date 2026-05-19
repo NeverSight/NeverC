@@ -1,0 +1,61 @@
+name: linux-x64-neverc-build
+
+permissions:
+  contents: write
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name != github.repository))
+    runs-on: ubuntu-latest
+    env:
+      BUILD_TYPE: Release
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+      with:
+        path: neverc
+        submodules: 'recursive'
+
+    - name: Setup build deps
+      run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full
+
+    - name: Download PGO-optimised Clang
+      run: |
+        LLVM_VER=20.1.8
+        curl -fsSL \
+          "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-Linux-X64.tar.xz" \
+          -o /tmp/llvm.tar.xz
+        mkdir -p /tmp/llvm-pgo
+        tar xf /tmp/llvm.tar.xz -C /tmp/llvm-pgo --strip-components=1
+        echo "PGO_CLANG=/tmp/llvm-pgo/bin/clang" >> "$GITHUB_ENV"
+        echo "PGO_CLANGXX=/tmp/llvm-pgo/bin/clang++" >> "$GITHUB_ENV"
+        /tmp/llvm-pgo/bin/clang --version
+
+    - name: Build neverc
+      run: |
+        cmake -GNinja -Bbuild \
+        -DCMAKE_C_COMPILER=${{ env.PGO_CLANG }} \
+        -DCMAKE_CXX_COMPILER=${{ env.PGO_CLANGXX }} \
+        -DCMAKE_INSTALL_PREFIX=install \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+        -C neverc/neverc/cmake/caches/NeverC.cmake \
+        neverc/llvm
+        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+
+    - name: Package neverc
+      run: 7z a linux-x64-neverc.zip install
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-x64-neverc
+        path: linux-x64-neverc.zip
