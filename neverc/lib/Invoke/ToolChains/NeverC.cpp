@@ -2502,6 +2502,9 @@ void processVSRuntimeLibrary(const Driver &D, const ArgList &Args,
         IsDLL ? (IsDebug ? "--dependent-lib=ucrtd" : "--dependent-lib=ucrt")
               : (IsDebug ? "--dependent-lib=libucrtd" : "--dependent-lib=libucrt"));
 
+    CmdArgs.push_back("--dependent-lib=legacy_stdio_definitions");
+    CmdArgs.push_back("-D_NO_CRT_STDIO_INLINE");
+
     // This provides POSIX compatibility (maps 'open' to '_open'), which most
     // users want.  The /Za flag to cl.exe turns this off, but it's not
     // implemented in neverc.

@@ -686,8 +686,10 @@ void LinkerDriver::assignExportOrdinals() {
 
 void LinkerDriver::checkFailIfMismatch(StringRef arg, InputFile *source) {
   auto [k, v] = arg.split('=');
-  if (k.empty() || v.empty())
+  if (k.empty())
     fatal("--failifmismatch: invalid argument: " + arg);
+  if (v.empty())
+    return;
   std::pair<StringRef, InputFile *> existing = ctx.config.mustMatch[k];
   if (!existing.first.empty() && v != existing.first) {
     std::string sourceStr = source ? toString(source) : "cmd-line";

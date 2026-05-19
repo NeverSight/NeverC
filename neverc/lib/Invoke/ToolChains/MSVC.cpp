@@ -106,6 +106,7 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                                : (IsDebug ? "--defaultlib=libucrtd"
                                           : "--defaultlib=libucrt"));
 
+      CmdArgs.push_back("--defaultlib=legacy_stdio_definitions");
       CmdArgs.push_back("--defaultlib=oldnames");
     }
   }
