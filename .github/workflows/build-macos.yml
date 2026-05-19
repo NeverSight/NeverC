@@ -28,12 +28,25 @@ jobs:
           submodules: 'recursive'
           
     - name: Setup build deps
+      run: brew install ninja cmake p7zip
+
+    - name: Download PGO-optimised Clang
       run: |
-          brew install ninja cmake p7zip
+        LLVM_VER=20.1.8
+        curl -fsSL \
+          "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-macOS-ARM64.tar.xz" \
+          -o /tmp/llvm.tar.xz
+        mkdir -p /tmp/llvm-pgo
+        tar xf /tmp/llvm.tar.xz -C /tmp/llvm-pgo --strip-components=1
+        echo "PGO_CLANG=/tmp/llvm-pgo/bin/clang" >> "$GITHUB_ENV"
+        echo "PGO_CLANGXX=/tmp/llvm-pgo/bin/clang++" >> "$GITHUB_ENV"
+        /tmp/llvm-pgo/bin/clang --version
 
     - name: Build neverc
       run: |
         cmake -GNinja -Bbuild \
+        -DCMAKE_C_COMPILER=${{ env.PGO_CLANG }} \
+        -DCMAKE_CXX_COMPILER=${{ env.PGO_CLANGXX }} \
         -DCMAKE_INSTALL_PREFIX=install \
         -DLLVM_ENABLE_ASSERTIONS=OFF \
         -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
