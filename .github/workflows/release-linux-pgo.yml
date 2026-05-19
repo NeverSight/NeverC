@@ -25,6 +25,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
 
       - name: Resolve latest LLVM version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain
@@ -160,6 +162,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full
 
       - name: Resolve latest LLVM version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain

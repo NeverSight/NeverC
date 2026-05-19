@@ -26,6 +26,8 @@ jobs:
 
       - name: Resolve latest LLVM version
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain
@@ -155,6 +157,8 @@ jobs:
 
       - name: Resolve latest LLVM version
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain
