@@ -4,7 +4,6 @@
 #include "neverc/Shellcode/Import/PtrCacheHelpers.h"
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -15,7 +14,6 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/raw_ostream.h"
 #include <random>
@@ -97,6 +95,7 @@ Function *injectResolverParams(Module &M, Function *Entry,
 
   CallInst *CI = B.CreateCall(Entry, FwdArgs);
   CI->setCallingConv(Entry->getCallingConv());
+  CI->setDoesNotThrow();
 
   if (OldTy->getReturnType()->isVoidTy())
     B.CreateRetVoid();
@@ -122,54 +121,36 @@ Function *getOrCreateKernelWrapper(Module &M, Function &Decl,
 
   Function *Wrap =
       Function::Create(FTy, GlobalValue::InternalLinkage, WrapName, &M);
+  Wrap->setCallingConv(Decl.getCallingConv());
   Wrap->addFnAttr(Attribute::AlwaysInline);
   Wrap->addFnAttr(Attribute::NoUnwind);
+  Wrap->addFnAttr(Attribute::NoRecurse);
   Wrap->setDSOLocal(true);
 
   StringRef Bare = stripLeadingUnderscore(Decl.getName());
   GlobalVariable *CacheSlot =
-      ptrcache::getOrCreateCacheSlot(M, Bare, "kern");
-  Function *Encrypt = ptrcache::getOrCreatePtrEncrypt(
-      M, Target, Seed, ptrcache::KeySource::SeedOnly);
-  Function *Decrypt = ptrcache::getOrCreatePtrDecrypt(
-      M, Target, Seed, ptrcache::KeySource::SeedOnly);
+      ptrcache::getOrCreateCacheSlot(M, Bare, "kern", Target.TextSectionName);
 
   BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", Wrap);
-  BasicBlock *FastBB = BasicBlock::Create(Ctx, "fast", Wrap);
-  BasicBlock *SlowBB = BasicBlock::Create(Ctx, "slow", Wrap);
-  BasicBlock *DoCall = BasicBlock::Create(Ctx, "docall", Wrap);
-
   IRBuilder<> B(Entry);
-  auto *Cached = B.CreateLoad(I64, CacheSlot, "kcached");
-  Cached->setAtomic(AtomicOrdering::Monotonic);
-  Cached->setAlignment(Align(8));
-  Value *IsZero = B.CreateICmpEQ(Cached, ConstantInt::get(I64, 0), "kempty");
-  MDBuilder MDB(Ctx);
-  auto *Br = B.CreateCondBr(IsZero, SlowBB, FastBB);
-  Br->setMetadata(LLVMContext::MD_prof, MDB.createBranchWeights(1, 2000));
 
-  B.SetInsertPoint(FastBB);
-  Value *DecFn = B.CreateCall(Decrypt, {Cached}, "kdec.fn");
-  B.CreateBr(DoCall);
-
-  B.SetInsertPoint(SlowBB);
-  Value *Resolver =
-      B.CreateLoad(PtrTy, ResolverGV, KernelResolverABI::IRNames::ResolverLoad);
-  Value *Cookie =
-      B.CreateLoad(PtrTy, CookieGV, KernelResolverABI::IRNames::CookieLoad);
-  FunctionType *ResolverTy = FunctionType::get(PtrTy, {I64, PtrTy}, false);
-  Value *HashV = ConstantInt::get(I64, KernelResolverABI::hashName(Bare));
-  Value *RawFn = B.CreateCall(ResolverTy, Resolver, {HashV, Cookie},
-                              KernelResolverABI::IRNames::ResolvedCallee);
-  Value *EncFn = B.CreateCall(Encrypt, {RawFn}, "kenc.fn");
-  B.CreateAtomicCmpXchg(CacheSlot, ConstantInt::get(I64, 0), EncFn, Align(8),
-                        AtomicOrdering::Release, AtomicOrdering::Monotonic);
-  B.CreateBr(DoCall);
-
-  B.SetInsertPoint(DoCall);
-  PHINode *FnPhi = B.CreatePHI(PtrTy, 2, "kfn.ptr");
-  FnPhi->addIncoming(DecFn, FastBB);
-  FnPhi->addIncoming(RawFn, SlowBB);
+  PHINode *FnPhi = ptrcache::emitCacheFastSlowPath(
+      B, M, Target, Wrap, CacheSlot, Seed, ptrcache::KeySource::SeedOnly,
+      [&](IRBuilder<> &SB) -> Value * {
+        Value *Resolver = SB.CreateLoad(
+            PtrTy, ResolverGV, KernelResolverABI::IRNames::ResolverLoad);
+        Value *Cookie = SB.CreateLoad(
+            PtrTy, CookieGV, KernelResolverABI::IRNames::CookieLoad);
+        FunctionType *ResolverTy =
+            FunctionType::get(PtrTy, {I64, PtrTy}, false);
+        Value *HashV =
+            ConstantInt::get(I64, KernelResolverABI::hashName(Bare));
+        CallInst *RawFn = SB.CreateCall(
+            ResolverTy, Resolver, {HashV, Cookie},
+            KernelResolverABI::IRNames::ResolvedCallee);
+        RawFn->setDoesNotThrow();
+        return RawFn;
+      });
 
   SmallVector<Value *, 8> CallArgs;
   for (Argument &A : Wrap->args())
@@ -187,27 +168,13 @@ Function *getOrCreateKernelWrapper(Module &M, Function &Decl,
   return Wrap;
 }
 
-void collectAllKernelCalls(
-    Module &M, const SmallDenseSet<Function *, 8> &Externs,
-    DenseMap<Function *, SmallVector<CallInst *, 4>> &CallMap) {
-  for (Function &F : M) {
-    if (F.isDeclaration())
-      continue;
-    for (BasicBlock &BB : F) {
-      for (Instruction &I : BB) {
-        auto *CI = dyn_cast<CallInst>(&I);
-        if (!CI)
-          continue;
-        Value *Callee = CI->getCalledOperand();
-        if (!Callee)
-          continue;
-        auto *CalledFn = dyn_cast<Function>(Callee->stripPointerCasts());
-        if (!CalledFn || !Externs.contains(CalledFn))
-          continue;
-        CallMap[CalledFn].push_back(CI);
-      }
-    }
+bool hasDirectCallUse(const Function &F) {
+  for (const Use &U : F.uses()) {
+    if (auto *CB = dyn_cast<CallBase>(U.getUser()))
+      if (CB->getCalledOperand()->stripPointerCasts() == &F)
+        return true;
   }
+  return false;
 }
 
 void reportAddressTakenKernelExtern(const Function &Ext) {
@@ -224,14 +191,13 @@ bool eraseExternIfUnused(Function *Ext) {
   return true;
 }
 
-unsigned rewriteDirectKernelCalls(Module &M, Function &Decl,
-                                  GlobalVariable *ResolverGV,
-                                  GlobalVariable *CookieGV,
-                                  const TargetDesc &Target, uint64_t Seed) {
+void rewriteDirectKernelCalls(Module &M, Function &Decl,
+                              GlobalVariable *ResolverGV,
+                              GlobalVariable *CookieGV,
+                              const TargetDesc &Target, uint64_t Seed) {
   Function *Wrap = getOrCreateKernelWrapper(M, Decl, ResolverGV, CookieGV,
                                             Target, Seed);
   Decl.replaceAllUsesWith(Wrap);
-  return Decl.getNumUses();
 }
 
 } // namespace
@@ -255,15 +221,10 @@ PreservedAnalyses KernelImportPass::run(Module &M, ModuleAnalysisManager &) {
   if (Externs.empty())
     return PreservedAnalyses::all();
 
-  SmallDenseSet<Function *, 8> ExternSet(Externs.begin(), Externs.end());
-  DenseMap<Function *, SmallVector<CallInst *, 4>> CallMap;
-  collectAllKernelCalls(M, ExternSet, CallMap);
-
   SmallVector<Function *, 8> DirectExterns;
   SmallDenseSet<Function *, 8> DirectExternSet;
   for (Function *Ext : Externs) {
-    auto It = CallMap.find(Ext);
-    if (It != CallMap.end() && !It->second.empty()) {
+    if (hasDirectCallUse(*Ext)) {
       DirectExterns.push_back(Ext);
       DirectExternSet.insert(Ext);
     }
@@ -290,9 +251,13 @@ PreservedAnalyses KernelImportPass::run(Module &M, ModuleAnalysisManager &) {
   auto *ResolverGV = new GlobalVariable(
       M, PtrTy, /*isConstant=*/false, GlobalValue::InternalLinkage,
       ConstantPointerNull::get(PtrTy), KernelResolverABI::ResolverGlobalName);
+  ResolverGV->setAlignment(Align(8));
+  ResolverGV->setSection(Target.TextSectionName);
   auto *CookieGV = new GlobalVariable(
       M, PtrTy, /*isConstant=*/false, GlobalValue::InternalLinkage,
       ConstantPointerNull::get(PtrTy), KernelResolverABI::CookieGlobalName);
+  CookieGV->setAlignment(Align(8));
+  CookieGV->setSection(Target.TextSectionName);
 
   injectResolverParams(M, Entry, ResolverGV, CookieGV);
 
@@ -304,9 +269,7 @@ PreservedAnalyses KernelImportPass::run(Module &M, ModuleAnalysisManager &) {
 
   for (Function *Ext : DirectExterns) {
     rewriteDirectKernelCalls(M, *Ext, ResolverGV, CookieGV, Target, Seed);
-    if (eraseExternIfUnused(Ext))
-      continue;
-    reportAddressTakenKernelExtern(*Ext);
+    eraseExternIfUnused(Ext);
   }
 
   for (Function *Ext : Externs) {

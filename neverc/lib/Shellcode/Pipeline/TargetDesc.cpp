@@ -64,7 +64,7 @@ const char *const kAArch64WindowsKernelInjectFlags[] = {
 
 constexpr StringRef kTCBReadAsmX86_64Win = "movq %gs:0x60, $0";
 constexpr StringRef kTCBReadAsmAArch64Win = "ldr $0, [x18, #0x60]";
-constexpr StringRef kTCBReadConstraintDefault = "=r,~{memory}";
+constexpr StringRef kTCBReadConstraintDefault = "=r";
 
 } // namespace
 

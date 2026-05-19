@@ -3,10 +3,8 @@
 #include "neverc/Shellcode/Import/PtrCacheHelpers.h"
 #include "neverc/Shellcode/Import/WinImportTables.h"
 #include "neverc/Shellcode/Pipeline/ShellcodeIRHelperNames.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -14,7 +12,6 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
@@ -26,18 +23,6 @@ namespace neverc {
 namespace shellcode {
 
 namespace {
-
-void setInternalResolverAttrs(Function *F) {
-  AttrBuilder AB(F->getContext());
-  AB.addAttribute(Attribute::NoUnwind);
-  AB.addAttribute(Attribute::WillReturn);
-  AB.addAttribute(Attribute::NoSync);
-  AB.addAttribute(Attribute::NoRecurse);
-  AB.addAttribute(Attribute::NoFree);
-  AB.addAttribute(Attribute::MustProgress);
-  F->addFnAttrs(AB);
-  F->setDSOLocal(true);
-}
 
 uint32_t ror13Hash(StringRef Name) {
   uint32_t H = 0;
@@ -52,18 +37,6 @@ uint32_t ror13Hash(StringRef Name) {
 
 uint32_t hashDllName(StringRef Name) { return ror13Hash(Name); }
 
-Value *emitReadPEB(IRBuilder<> &B, const TargetDesc &T) {
-  LLVMContext &Ctx = B.getContext();
-  PointerType *PtrTy = PointerType::getUnqual(Ctx);
-  FunctionType *FTy = FunctionType::get(PtrTy, {}, false);
-
-  InlineAsm *Asm =
-      InlineAsm::get(FTy, T.TCBReadAsm.str(), T.TCBReadConstraint.str(),
-                     /*hasSideEffects=*/true,
-                     /*isAlignStack=*/false, InlineAsm::AD_ATT);
-  return B.CreateCall(FTy, Asm);
-}
-
 Function *getOrCreateBaseHashHelper(Module &M) {
   StringRef Name = ir::kNevercWinBasehash;
   if (Function *F = M.getFunction(Name))
@@ -76,7 +49,10 @@ Function *getOrCreateBaseHashHelper(Module &M) {
 
   FunctionType *FTy = FunctionType::get(I32, {PtrTy, I32}, false);
   Function *F = Function::Create(FTy, GlobalValue::InternalLinkage, Name, &M);
-  setInternalResolverAttrs(F);
+  ptrcache::setHelperAttrs(F);
+  F->setMemoryEffects(MemoryEffects::argMemOnly(ModRefInfo::Ref));
+  F->addParamAttr(0, Attribute::NoCapture);
+  F->addParamAttr(0, Attribute::ReadOnly);
 
   BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", F);
   BasicBlock *Loop = BasicBlock::Create(Ctx, "loop", F);
@@ -139,7 +115,10 @@ Function *getOrCreateCStrHashHelper(Module &M) {
 
   FunctionType *FTy = FunctionType::get(I32, {PtrTy}, false);
   Function *F = Function::Create(FTy, GlobalValue::InternalLinkage, Name, &M);
-  setInternalResolverAttrs(F);
+  ptrcache::setHelperAttrs(F);
+  F->setMemoryEffects(MemoryEffects::argMemOnly(ModRefInfo::Ref));
+  F->addParamAttr(0, Attribute::NoCapture);
+  F->addParamAttr(0, Attribute::ReadOnly);
 
   BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", F);
   BasicBlock *Loop = BasicBlock::Create(Ctx, "loop", F);
@@ -196,7 +175,11 @@ Function *getOrCreateFindExportHelper(Module &M) {
 
   FunctionType *FTy = FunctionType::get(PtrTy, {PtrTy, I32}, false);
   Function *F = Function::Create(FTy, GlobalValue::InternalLinkage, Name, &M);
-  setInternalResolverAttrs(F);
+  ptrcache::setHelperAttrs(F);
+  F->setMemoryEffects(MemoryEffects::argMemOnly(ModRefInfo::Ref));
+  F->addParamAttr(0, Attribute::NoCapture);
+  F->addParamAttr(0, Attribute::ReadOnly);
+  F->addParamAttr(0, Attribute::NonNull);
 
   BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", F);
   BasicBlock *Loop = BasicBlock::Create(Ctx, "loop", F);
@@ -224,7 +207,9 @@ Function *getOrCreateFindExportHelper(Module &M) {
   Value *HasExports =
       B.CreateICmpNE(ExpDirRva, ConstantInt::get(I32, 0), "has_exports");
   BasicBlock *HaveExports = BasicBlock::Create(Ctx, "have_exports", F);
-  B.CreateCondBr(HasExports, HaveExports, Miss);
+  MDBuilder EMDB(Ctx);
+  auto *EBr = B.CreateCondBr(HasExports, HaveExports, Miss);
+  EBr->setMetadata(LLVMContext::MD_prof, EMDB.createBranchWeights(2000, 1));
 
   B.SetInsertPoint(HaveExports);
   Value *ExpDir = B.CreateInBoundsGEP(I8, DllBase, ExpDirRva, "exp_dir");
@@ -262,7 +247,8 @@ Function *getOrCreateFindExportHelper(Module &M) {
   Value *NameRvaPtr = B.CreateInBoundsGEP(I32, AddrNames, I, "name_rva.ptr");
   Value *NameRva = B.CreateLoad(I32, NameRvaPtr, "name_rva");
   Value *NameStr = B.CreateInBoundsGEP(I8, DllBase, NameRva, "name_str");
-  Value *H = B.CreateCall(CStrHash, {NameStr}, "h");
+  CallInst *H = B.CreateCall(CStrHash, {NameStr}, "h");
+  H->setDoesNotThrow();
   Value *Match = B.CreateICmpEQ(H, Want);
   Value *NextI = B.CreateNUWAdd(I, ConstantInt::get(I32, 1));
   I->addIncoming(NextI, Cmp);
@@ -296,7 +282,8 @@ Function *getOrCreateFindModuleHelper(Module &M, const TargetDesc &T) {
 
   FunctionType *FTy = FunctionType::get(PtrTy, {I32}, false);
   Function *F = Function::Create(FTy, GlobalValue::InternalLinkage, Name, &M);
-  setInternalResolverAttrs(F);
+  ptrcache::setHelperAttrs(F);
+  F->setMemoryEffects(MemoryEffects::readOnly());
 
   BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", F);
   BasicBlock *Loop = BasicBlock::Create(Ctx, "loop", F);
@@ -311,7 +298,7 @@ Function *getOrCreateFindModuleHelper(Module &M, const TargetDesc &T) {
 
   IRBuilder<> B(Entry);
 
-  Value *PEB = emitReadPEB(B, T);
+  Value *PEB = ptrcache::emitReadPEB(B, T);
   Value *LdrPtr =
       B.CreateInBoundsGEP(I8, PEB, ConstantInt::get(I32, 0x18), "ldr.ptr");
   Value *Ldr = B.CreateLoad(PtrTy, LdrPtr, "ldr");
@@ -338,7 +325,8 @@ Function *getOrCreateFindModuleHelper(Module &M, const TargetDesc &T) {
   Value *BufPtrSlot =
       B.CreateInBoundsGEP(I8, Cur, ConstantInt::get(I32, 0x50), "bdn_buf_slot");
   Value *BufPtr = B.CreateLoad(PtrTy, BufPtrSlot, "bdn_buf");
-  Value *H = B.CreateCall(BaseHash, {BufPtr, LenChars}, "h");
+  CallInst *H = B.CreateCall(BaseHash, {BufPtr, LenChars}, "h");
+  H->setDoesNotThrow();
   Value *Match = B.CreateICmpEQ(H, Want);
   Value *NextFlink = B.CreateLoad(PtrTy, Cur, "next_flink");
   Cur->addIncoming(NextFlink, Chk);
@@ -367,7 +355,8 @@ Function *getOrCreateResolver(Module &M, const TargetDesc &T) {
 
   FunctionType *FTy = FunctionType::get(PtrTy, {I32, I32}, false);
   Function *F = Function::Create(FTy, GlobalValue::InternalLinkage, Name, &M);
-  setInternalResolverAttrs(F);
+  ptrcache::setHelperAttrs(F);
+  F->setMemoryEffects(MemoryEffects::readOnly());
 
   BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", F);
   BasicBlock *Have = BasicBlock::Create(Ctx, "have_base", F);
@@ -382,12 +371,17 @@ Function *getOrCreateResolver(Module &M, const TargetDesc &T) {
   Function *FindExport = getOrCreateFindExportHelper(M);
 
   IRBuilder<> B(Entry);
-  Value *DllBase = B.CreateCall(FindModule, {DllHash}, "dll.base");
+  CallInst *DllBase = B.CreateCall(FindModule, {DllHash}, "dll.base");
+  DllBase->setDoesNotThrow();
   Value *BaseIsNull = B.CreateICmpEQ(DllBase, ConstantPointerNull::get(PtrTy));
-  B.CreateCondBr(BaseIsNull, Miss, Have);
+  MDBuilder RMDB(Ctx);
+  auto *RBr = B.CreateCondBr(BaseIsNull, Miss, Have);
+  RBr->setMetadata(LLVMContext::MD_prof, RMDB.createBranchWeights(1, 2000));
 
   B.SetInsertPoint(Have);
-  Value *Fn = B.CreateCall(FindExport, {DllBase, ApiHash}, "fn");
+  CallInst *Fn = B.CreateCall(FindExport, {DllBase, ApiHash}, "fn");
+  Fn->setDoesNotThrow();
+  Fn->addParamAttr(0, Attribute::NonNull);
   B.CreateRet(Fn);
 
   B.SetInsertPoint(Miss);
@@ -399,58 +393,34 @@ Function *createWrapper(Module &M, const TargetDesc &T, Function &Decl,
                         Function *Resolver, StringRef Dll, uint64_t Seed) {
   LLVMContext &Ctx = M.getContext();
   FunctionType *FTy = Decl.getFunctionType();
-  PointerType *PtrTy = PointerType::getUnqual(Ctx);
-  Type *I64 = Type::getInt64Ty(Ctx);
 
   Function *Wrap =
       Function::Create(FTy, GlobalValue::InternalLinkage,
                        Twine(ir::kScWinPrefix) + Decl.getName(), &M);
+  Wrap->setCallingConv(Decl.getCallingConv());
   Wrap->addFnAttr(Attribute::AlwaysInline);
   Wrap->addFnAttr(Attribute::NoUnwind);
+  Wrap->addFnAttr(Attribute::NoRecurse);
   Wrap->setDSOLocal(true);
 
-  GlobalVariable *CacheSlot = ptrcache::getOrCreateCacheSlot(M, Decl.getName(), Dll);
-  Function *Encrypt = ptrcache::getOrCreatePtrEncrypt(M, T, Seed, ptrcache::KeySource::PEB);
-  Function *Decrypt = ptrcache::getOrCreatePtrDecrypt(M, T, Seed, ptrcache::KeySource::PEB);
+  GlobalVariable *CacheSlot =
+      ptrcache::getOrCreateCacheSlot(M, Decl.getName(), Dll,
+                                     T.TextSectionName);
 
   BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", Wrap);
-  BasicBlock *FastPath = BasicBlock::Create(Ctx, "fast", Wrap);
-  BasicBlock *SlowPath = BasicBlock::Create(Ctx, "slow", Wrap);
-  BasicBlock *DoCall = BasicBlock::Create(Ctx, "docall", Wrap);
-
-  // --- entry: atomic load cache, branch on zero ---
   IRBuilder<> B(Entry);
-  auto *Cached = B.CreateLoad(I64, CacheSlot, "cached");
-  Cached->setAtomic(AtomicOrdering::Monotonic);
-  Cached->setAlignment(Align(8));
-  Value *IsZero = B.CreateICmpEQ(Cached, ConstantInt::get(I64, 0), "empty");
 
-  MDBuilder MDB(Ctx);
-  auto *Br = B.CreateCondBr(IsZero, SlowPath, FastPath);
-  Br->setMetadata(LLVMContext::MD_prof, MDB.createBranchWeights(1, 2000));
-
-  // --- fast path: decrypt cached pointer ---
-  B.SetInsertPoint(FastPath);
-  Value *DecryptedFn = B.CreateCall(Decrypt, {Cached}, "dec.fn");
-  B.CreateBr(DoCall);
-
-  // --- slow path: PEB resolve → encrypt → cmpxchg ---
-  B.SetInsertPoint(SlowPath);
   uint32_t DllH = hashDllName(Dll);
   uint32_t ApiH = ror13Hash(Decl.getName());
-  Value *RawFn = B.CreateCall(Resolver->getFunctionType(), Resolver,
-                              {B.getInt32(DllH), B.getInt32(ApiH)}, "raw.fn");
-  Value *Encrypted = B.CreateCall(Encrypt, {RawFn}, "enc.fn");
-  B.CreateAtomicCmpXchg(CacheSlot, ConstantInt::get(I64, 0), Encrypted,
-                        Align(8), AtomicOrdering::Release,
-                        AtomicOrdering::Monotonic);
-  B.CreateBr(DoCall);
-
-  // --- common call: PHI merge + dispatch ---
-  B.SetInsertPoint(DoCall);
-  PHINode *FnPhi = B.CreatePHI(PtrTy, 2, "fn.ptr");
-  FnPhi->addIncoming(DecryptedFn, FastPath);
-  FnPhi->addIncoming(RawFn, SlowPath);
+  PHINode *FnPhi = ptrcache::emitCacheFastSlowPath(
+      B, M, T, Wrap, CacheSlot, Seed, ptrcache::KeySource::PEB,
+      [&](IRBuilder<> &SB) -> Value * {
+        CallInst *RawFn = SB.CreateCall(
+            Resolver->getFunctionType(), Resolver,
+            {SB.getInt32(DllH), SB.getInt32(ApiH)}, "raw.fn");
+        RawFn->setDoesNotThrow();
+        return RawFn;
+      });
 
   SmallVector<Value *, 8> CallArgs;
   for (Argument &A : Wrap->args())
@@ -458,12 +428,55 @@ Function *createWrapper(Module &M, const TargetDesc &T, Function &Decl,
 
   CallInst *Call = B.CreateCall(FTy, FnPhi, CallArgs);
   Call->setCallingConv(Decl.getCallingConv());
+  Call->setDoesNotThrow();
 
   if (FTy->getReturnType()->isVoidTy())
     B.CreateRetVoid();
   else
     B.CreateRet(Call);
   return Wrap;
+}
+
+Function *createVarargResolver(Module &M, const TargetDesc &T, Function &Decl,
+                               Function *Resolver, StringRef Dll,
+                               uint64_t Seed) {
+  LLVMContext &Ctx = M.getContext();
+  PointerType *PtrTy = PointerType::getUnqual(Ctx);
+
+  std::string Name = (Twine("__sc_resolve_") + Decl.getName()).str();
+  if (Function *F = M.getFunction(Name))
+    return F;
+
+  FunctionType *FTy = FunctionType::get(PtrTy, {}, false);
+  Function *Res =
+      Function::Create(FTy, GlobalValue::InternalLinkage, Name, &M);
+  Res->addFnAttr(Attribute::AlwaysInline);
+  Res->addFnAttr(Attribute::NoUnwind);
+  Res->addFnAttr(Attribute::NoRecurse);
+  Res->addFnAttr(Attribute::WillReturn);
+  Res->addFnAttr(Attribute::MustProgress);
+  Res->setDSOLocal(true);
+
+  GlobalVariable *CacheSlot = ptrcache::getOrCreateCacheSlot(
+      M, Decl.getName(), Dll, T.TextSectionName);
+
+  BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", Res);
+  IRBuilder<> B(Entry);
+
+  uint32_t DllH = hashDllName(Dll);
+  uint32_t ApiH = ror13Hash(Decl.getName());
+  PHINode *FnPhi = ptrcache::emitCacheFastSlowPath(
+      B, M, T, Res, CacheSlot, Seed, ptrcache::KeySource::PEB,
+      [&](IRBuilder<> &SB) -> Value * {
+        CallInst *RawFn = SB.CreateCall(
+            Resolver->getFunctionType(), Resolver,
+            {SB.getInt32(DllH), SB.getInt32(ApiH)}, "raw.fn");
+        RawFn->setDoesNotThrow();
+        return RawFn;
+      });
+
+  B.CreateRet(FnPhi);
+  return Res;
 }
 
 Function *createPosixWrap(Module &M, Function &Decl, const Twine &WrapName,
@@ -476,6 +489,7 @@ Function *createPosixWrap(Module &M, Function &Decl, const Twine &WrapName,
       Function::Create(FTy, GlobalValue::InternalLinkage, WrapName, &M);
   Wrap->addFnAttr(Attribute::AlwaysInline);
   Wrap->addFnAttr(Attribute::NoUnwind);
+  Wrap->addFnAttr(Attribute::NoRecurse);
   Wrap->setDSOLocal(true);
   BasicBlock::Create(M.getContext(), "entry", Wrap);
   return Wrap;
@@ -497,8 +511,8 @@ Function *emitFdToHandleHelper(Module &M) {
   FunctionType *FTy = FunctionType::get(PtrTy, {I32}, false);
   Function *F = Function::Create(FTy, GlobalValue::InternalLinkage, Name, &M);
   F->addFnAttr(Attribute::AlwaysInline);
-  F->addFnAttr(Attribute::NoUnwind);
-  F->setDSOLocal(true);
+  ptrcache::setHelperAttrs(F);
+  F->setMemoryEffects(MemoryEffects::readOnly());
 
   BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", F);
   IRBuilder<> B(Entry);
@@ -506,7 +520,8 @@ Function *emitFdToHandleHelper(Module &M) {
   Value *Fd = F->getArg(0);
   Value *StdId = B.CreateSub(ConstantInt::get(I32, static_cast<uint32_t>(-10)),
                              Fd, "std_id");
-  Value *Handle = B.CreateCall(GshTy, GetStdHandle, {StdId}, "handle");
+  CallInst *Handle = B.CreateCall(GshTy, GetStdHandle, {StdId}, "handle");
+  Handle->setDoesNotThrow();
   B.CreateRet(Handle);
   return F;
 }
@@ -597,7 +612,8 @@ Function *createPosixWriteWrapper(Module &M, Function &Decl) {
 
   if (Fd->getType() != I32)
     Fd = B.CreateTrunc(Fd, I32);
-  Value *Handle = B.CreateCall(FdHelper, {Fd}, "h");
+  CallInst *Handle = B.CreateCall(FdHelper, {Fd}, "h");
+  Handle->setDoesNotThrow();
 
   Value *DwCount = Count;
   if (DwCount->getType() != I32)
@@ -606,9 +622,10 @@ Function *createPosixWriteWrapper(Module &M, Function &Decl) {
   Value *Written = B.CreateAlloca(I32, nullptr, "written");
   B.CreateStore(ConstantInt::get(I32, 0), Written);
 
-  Value *Ok = B.CreateCall(
+  CallInst *Ok = B.CreateCall(
       WfTy, WriteFile,
       {Handle, Buf, DwCount, Written, ConstantPointerNull::get(PtrTy)}, "ok");
+  Ok->setDoesNotThrow();
 
   Value *NWritten = B.CreateLoad(I32, Written, "n_written");
   emitBoolAndCountAsPosixReturn(B, Ok, NWritten, FTy->getReturnType());
@@ -646,7 +663,8 @@ Function *createPosixReadWrapper(Module &M, Function &Decl) {
 
   if (Fd->getType() != I32)
     Fd = B.CreateTrunc(Fd, I32);
-  Value *Handle = B.CreateCall(FdHelper, {Fd}, "h");
+  CallInst *Handle = B.CreateCall(FdHelper, {Fd}, "h");
+  Handle->setDoesNotThrow();
 
   Value *DwCount = Count;
   if (DwCount->getType() != I32)
@@ -655,9 +673,10 @@ Function *createPosixReadWrapper(Module &M, Function &Decl) {
   Value *NRead = B.CreateAlloca(I32, nullptr, "nread");
   B.CreateStore(ConstantInt::get(I32, 0), NRead);
 
-  Value *Ok = B.CreateCall(
+  CallInst *Ok = B.CreateCall(
       RfTy, ReadFile,
       {Handle, Buf, DwCount, NRead, ConstantPointerNull::get(PtrTy)}, "ok");
+  Ok->setDoesNotThrow();
 
   Value *NReadVal = B.CreateLoad(I32, NRead, "n_read");
   emitBoolAndCountAsPosixReturn(B, Ok, NReadVal, FTy->getReturnType());
@@ -688,7 +707,9 @@ Function *createPosixExitWrapper(Module &M, Function &Decl) {
   if (Code->getType() != I32)
     Code = B.CreateTrunc(Code, I32);
 
-  B.CreateCall(EpTy, ExitProcess, {Code});
+  auto *EpCall = B.CreateCall(EpTy, ExitProcess, {Code});
+  EpCall->setDoesNotThrow();
+  EpCall->setDoesNotReturn();
   B.CreateUnreachable();
   return Wrap;
 }
@@ -703,8 +724,8 @@ Function *emitProtToPageHelper(Module &M) {
   FunctionType *FTy = FunctionType::get(I32, {I32}, false);
   Function *F = Function::Create(FTy, GlobalValue::InternalLinkage, Name, &M);
   F->addFnAttr(Attribute::AlwaysInline);
-  F->addFnAttr(Attribute::NoUnwind);
-  F->setDSOLocal(true);
+  ptrcache::setHelperAttrs(F);
+  F->setMemoryEffects(MemoryEffects::none());
 
   BasicBlock *Entry = BasicBlock::Create(Ctx, "entry", F);
   IRBuilder<> B(Entry);
@@ -758,10 +779,12 @@ Function *createPosixMmapWrapper(Module &M, Function &Decl) {
   if (Prot->getType() != I32)
     Prot = B.CreateTrunc(Prot, I32);
 
-  Value *PageProt = B.CreateCall(ProtHelper, {Prot}, "page_prot");
+  CallInst *PageProt = B.CreateCall(ProtHelper, {Prot}, "page_prot");
+  PageProt->setDoesNotThrow();
   Value *AllocType = ConstantInt::get(I32, 0x3000); // MEM_COMMIT | MEM_RESERVE
-  Value *Result =
+  CallInst *Result =
       B.CreateCall(VaTy, VirtualAlloc, {Addr, Len, AllocType, PageProt}, "mem");
+  Result->setDoesNotThrow();
   emitMmapResultAsPosixReturn(B, Result, FTy->getReturnType());
   return Wrap;
 }
@@ -787,7 +810,8 @@ Function *createPosixMunmapWrapper(Module &M, Function &Decl) {
   Value *Zero = ConstantInt::get(I64, 0);
   Value *MemRelease = ConstantInt::get(I32, 0x8000);
 
-  Value *Ret = B.CreateCall(VfTy, VirtualFree, {Addr, Zero, MemRelease}, "ok");
+  CallInst *Ret = B.CreateCall(VfTy, VirtualFree, {Addr, Zero, MemRelease}, "ok");
+  Ret->setDoesNotThrow();
   emitBoolAsPosixStatusReturn(B, Ret, FTy->getReturnType());
   return Wrap;
 }
@@ -817,12 +841,14 @@ Function *createPosixMprotectWrapper(Module &M, Function &Decl) {
   if (Prot->getType() != I32)
     Prot = B.CreateTrunc(Prot, I32);
 
-  Value *PageProt = B.CreateCall(ProtHelper, {Prot}, "page_prot");
+  CallInst *PageProt = B.CreateCall(ProtHelper, {Prot}, "page_prot");
+  PageProt->setDoesNotThrow();
   Value *OldProt = B.CreateAlloca(I32, nullptr, "old_prot");
   B.CreateStore(ConstantInt::get(I32, 0), OldProt);
 
-  Value *Ret =
+  CallInst *Ret =
       B.CreateCall(VpTy, VirtualProtect, {Addr, Len, PageProt, OldProt}, "ok");
+  Ret->setDoesNotThrow();
   emitBoolAsPosixStatusReturn(B, Ret, FTy->getReturnType());
   return Wrap;
 }
@@ -843,7 +869,8 @@ Function *createPosixGetpidWrapper(Module &M, Function &Decl) {
       M.getOrInsertFunction("GetCurrentProcessId", CanonFTy).getCallee());
 
   IRBuilder<> B(&Wrap->getEntryBlock());
-  Value *Pid = B.CreateCall(CanonFTy, GetCurrentProcessId, {}, "pid");
+  CallInst *Pid = B.CreateCall(CanonFTy, GetCurrentProcessId, {}, "pid");
+  Pid->setDoesNotThrow();
   Type *RetTy = FTy->getReturnType();
   if (RetTy != Pid->getType())
     B.CreateRet(B.CreateSExtOrTrunc(Pid, RetTy));
@@ -872,8 +899,10 @@ Function *createPosixCloseWrapper(Module &M, Function &Decl) {
   Value *Fd = Wrap->getArg(0);
   if (Fd->getType() != I32)
     Fd = B.CreateTrunc(Fd, I32);
-  Value *Handle = B.CreateCall(FdHelper, {Fd}, "h");
-  Value *Ok = B.CreateCall(ChTy, CloseHandle, {Handle}, "ok");
+  CallInst *Handle = B.CreateCall(FdHelper, {Fd}, "h");
+  Handle->setDoesNotThrow();
+  CallInst *Ok = B.CreateCall(ChTy, CloseHandle, {Handle}, "ok");
+  Ok->setDoesNotThrow();
   emitBoolAsPosixStatusReturn(B, Ok, FTy->getReturnType());
   return Wrap;
 }
@@ -896,7 +925,8 @@ Function *createPosixSleepWrapper(Module &M, Function &Decl) {
   if (Secs->getType() != I32)
     Secs = B.CreateTrunc(Secs, I32);
   Value *Ms = B.CreateMul(Secs, ConstantInt::get(I32, 1000), "ms");
-  B.CreateCall(SlTy, WinSleep, {Ms});
+  auto *SlpCall = B.CreateCall(SlTy, WinSleep, {Ms});
+  SlpCall->setDoesNotThrow();
 
   Type *RetTy = FTy->getReturnType();
   if (RetTy->isVoidTy())
@@ -919,7 +949,8 @@ Function *createSimpleBoolBridgeWrapper(
 
   IRBuilder<> B(&Wrap->getEntryBlock());
   SmallVector<Value *, 4> Args = FormWin32Args(B, Wrap);
-  Value *Ok = B.CreateCall(Win32FTy, Win32Fn, Args, "ok");
+  CallInst *Ok = B.CreateCall(Win32FTy, Win32Fn, Args, "ok");
+  Ok->setDoesNotThrow();
   emitBoolAsPosixStatusReturn(B, Ok, FTy->getReturnType());
   return Wrap;
 }
@@ -1056,13 +1087,36 @@ PreservedAnalyses WinPEBImportPass::run(Module &M, ModuleAnalysisManager &) {
 
   Function *Resolver = getOrCreateResolver(M, Target);
 
-  DenseMap<StringRef, Function *> ByName;
   for (auto &[Decl, Dll] : ToReplace) {
-    Function *&Slot = ByName[Decl->getName()];
-    if (!Slot)
-      Slot = createWrapper(M, Target, *Decl, Resolver, Dll, Seed);
-    Decl->replaceAllUsesWith(Slot);
-    Decl->eraseFromParent();
+    if (Decl->getFunctionType()->isVarArg()) {
+      Function *Resolve =
+          createVarargResolver(M, Target, *Decl, Resolver, Dll, Seed);
+      SmallVector<CallBase *, 4> Calls;
+      for (Use &U : Decl->uses()) {
+        if (auto *CB = dyn_cast<CallBase>(U.getUser()))
+          if (CB->getCalledOperand()->stripPointerCasts() == Decl)
+            Calls.push_back(CB);
+      }
+      for (CallBase *CB : Calls) {
+        IRBuilder<> B(CB);
+        CallInst *Fn = B.CreateCall(Resolve, {}, "resolved");
+        Fn->setDoesNotThrow();
+        CB->setCalledOperand(Fn);
+      }
+      Decl->removeDeadConstantUsers();
+      if (Decl->use_empty()) {
+        Decl->eraseFromParent();
+      } else {
+        errs() << "neverc: warning: vararg function '" << Decl->getName()
+               << "' has address-taken uses that cannot be rewritten; "
+                  "indirect calls through the taken address will not use "
+                  "the cached/encrypted import path\n";
+      }
+    } else {
+      Function *Wrap = createWrapper(M, Target, *Decl, Resolver, Dll, Seed);
+      Decl->replaceAllUsesWith(Wrap);
+      Decl->eraseFromParent();
+    }
   }
   return PreservedAnalyses::none();
 }

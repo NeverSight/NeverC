@@ -10,7 +10,9 @@
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
+#include <cassert>
 
 namespace neverc {
 namespace shellcode {
@@ -33,10 +35,13 @@ inline llvm::Value *emitReadPEB(llvm::IRBuilder<> &B, const TargetDesc &T) {
   llvm::PointerType *PtrTy = llvm::PointerType::getUnqual(Ctx);
   llvm::FunctionType *FTy = llvm::FunctionType::get(PtrTy, {}, false);
   llvm::InlineAsm *Asm = llvm::InlineAsm::get(
-      FTy, T.TCBReadAsm.str(), T.TCBReadConstraint.str(),
-      /*hasSideEffects=*/true, /*isAlignStack=*/false,
+      FTy, T.TCBReadAsm, T.TCBReadConstraint,
+      /*hasSideEffects=*/false, /*isAlignStack=*/false,
       llvm::InlineAsm::AD_ATT);
-  return B.CreateCall(FTy, Asm);
+  llvm::CallInst *Call = B.CreateCall(FTy, Asm);
+  Call->setDoesNotThrow();
+  Call->addRetAttr(llvm::Attribute::NonNull);
+  return Call;
 }
 
 enum class KeySource {
@@ -59,6 +64,10 @@ inline llvm::Function *getOrCreateDeriveKey(llvm::Module &M,
       FTy, llvm::GlobalValue::InternalLinkage, Name, &M);
   F->addFnAttr(llvm::Attribute::AlwaysInline);
   setHelperAttrs(F);
+  // The PEB read via inline asm (gs:0x60 / x18) is not modeled in LLVM's
+  // memory system (hasSideEffects=false, no ~{memory} clobber), so none()
+  // is correct and lets LLVM CSE redundant derive_key() calls.
+  F->setMemoryEffects(llvm::MemoryEffects::none());
 
   llvm::BasicBlock *Entry = llvm::BasicBlock::Create(Ctx, "entry", F);
   llvm::IRBuilder<> B(Entry);
@@ -91,12 +100,14 @@ inline llvm::Function *getOrCreatePtrEncrypt(llvm::Module &M,
       FTy, llvm::GlobalValue::InternalLinkage, Name, &M);
   F->addFnAttr(llvm::Attribute::AlwaysInline);
   setHelperAttrs(F);
+  F->setMemoryEffects(llvm::MemoryEffects::none());
 
   llvm::BasicBlock *Entry = llvm::BasicBlock::Create(Ctx, "entry", F);
   llvm::IRBuilder<> B(Entry);
 
   llvm::Function *DK = getOrCreateDeriveKey(M, T, Seed, Source);
-  llvm::Value *Key = B.CreateCall(DK, {}, "key");
+  llvm::CallInst *Key = B.CreateCall(DK, {}, "key");
+  Key->setDoesNotThrow();
   llvm::Value *Plain = B.CreatePtrToInt(F->getArg(0), I64, "plain");
   llvm::Value *Enc = B.CreateXor(Plain, Key, "enc");
   B.CreateRet(Enc);
@@ -119,12 +130,14 @@ inline llvm::Function *getOrCreatePtrDecrypt(llvm::Module &M,
       FTy, llvm::GlobalValue::InternalLinkage, Name, &M);
   F->addFnAttr(llvm::Attribute::AlwaysInline);
   setHelperAttrs(F);
+  F->setMemoryEffects(llvm::MemoryEffects::none());
 
   llvm::BasicBlock *Entry = llvm::BasicBlock::Create(Ctx, "entry", F);
   llvm::IRBuilder<> B(Entry);
 
   llvm::Function *DK = getOrCreateDeriveKey(M, T, Seed, Source);
-  llvm::Value *Key = B.CreateCall(DK, {}, "key");
+  llvm::CallInst *Key = B.CreateCall(DK, {}, "key");
+  Key->setDoesNotThrow();
   llvm::Value *Dec = B.CreateXor(F->getArg(0), Key, "dec");
   llvm::Value *Ptr = B.CreateIntToPtr(Dec, PtrTy, "ptr");
   B.CreateRet(Ptr);
@@ -133,7 +146,8 @@ inline llvm::Function *getOrCreatePtrDecrypt(llvm::Module &M,
 
 inline llvm::GlobalVariable *getOrCreateCacheSlot(llvm::Module &M,
                                                   llvm::StringRef ApiName,
-                                                  llvm::StringRef Prefix) {
+                                                  llvm::StringRef Prefix,
+                                                  llvm::StringRef TextSection) {
   llvm::Type *I64 = llvm::Type::getInt64Ty(M.getContext());
   std::string SlotName =
       (llvm::Twine(ir::kScCachePrefix) + Prefix + "_" + ApiName).str();
@@ -145,8 +159,79 @@ inline llvm::GlobalVariable *getOrCreateCacheSlot(llvm::Module &M,
                                       llvm::ConstantInt::get(I64, 0), SlotName);
   GV->setAlignment(llvm::Align(8));
   GV->setDSOLocal(true);
-  GV->setSection(".text");
+  GV->setSection(TextSection);
   return GV;
+}
+
+/// Emit the cache fast/slow path pattern shared by PEB-import and
+/// kernel-import wrappers.  B must be positioned in the function's
+/// entry block.  \p resolveEmitter is called with B positioned in
+/// the slow-path block and must return a ptr-typed Value* (the raw
+/// resolved function pointer, or null on failure).  On return, B is
+/// positioned in the merge block after the PHI.
+template <typename ResolveEmitter>
+llvm::PHINode *emitCacheFastSlowPath(llvm::IRBuilder<> &B, llvm::Module &M,
+                                     const TargetDesc &T, llvm::Function *F,
+                                     llvm::GlobalVariable *CacheSlot,
+                                     uint64_t Seed, KeySource KS,
+                                     ResolveEmitter emit) {
+  assert(B.GetInsertBlock()->getParent() == F &&
+         "IRBuilder must be positioned inside the target function");
+  assert(B.GetInsertBlock()->empty() &&
+         "entry block must be empty before emitCacheFastSlowPath");
+
+  llvm::LLVMContext &Ctx = M.getContext();
+  llvm::PointerType *PtrTy = llvm::PointerType::getUnqual(Ctx);
+  llvm::Type *I64 = llvm::Type::getInt64Ty(Ctx);
+
+  llvm::Function *Encrypt = getOrCreatePtrEncrypt(M, T, Seed, KS);
+  llvm::Function *Decrypt = getOrCreatePtrDecrypt(M, T, Seed, KS);
+
+  llvm::BasicBlock *FastBB = llvm::BasicBlock::Create(Ctx, "fast", F);
+  llvm::BasicBlock *SlowBB = llvm::BasicBlock::Create(Ctx, "slow", F);
+  llvm::BasicBlock *StoreBB = llvm::BasicBlock::Create(Ctx, "store", F);
+  llvm::BasicBlock *MergeBB = llvm::BasicBlock::Create(Ctx, "merge", F);
+
+  auto *Cached = B.CreateLoad(I64, CacheSlot, "cached");
+  Cached->setAtomic(llvm::AtomicOrdering::Monotonic);
+  Cached->setAlignment(llvm::Align(8));
+  llvm::Value *IsZero =
+      B.CreateICmpEQ(Cached, llvm::ConstantInt::get(I64, 0), "empty");
+  llvm::MDBuilder MDB(Ctx);
+  auto *Br = B.CreateCondBr(IsZero, SlowBB, FastBB);
+  Br->setMetadata(llvm::LLVMContext::MD_prof,
+                  MDB.createBranchWeights(1, 2000));
+
+  B.SetInsertPoint(FastBB);
+  llvm::CallInst *DecFn = B.CreateCall(Decrypt, {Cached}, "dec.fn");
+  DecFn->setDoesNotThrow();
+  B.CreateBr(MergeBB);
+
+  B.SetInsertPoint(SlowBB);
+  llvm::Value *RawFn = emit(B);
+  llvm::Value *IsNull =
+      B.CreateICmpEQ(RawFn, llvm::ConstantPointerNull::get(PtrTy));
+  auto *NullBr = B.CreateCondBr(IsNull, MergeBB, StoreBB);
+  NullBr->setMetadata(llvm::LLVMContext::MD_prof,
+                      MDB.createBranchWeights(1, 2000));
+  llvm::BasicBlock *SlowExit = B.GetInsertBlock();
+
+  B.SetInsertPoint(StoreBB);
+  llvm::CallInst *EncFn = B.CreateCall(Encrypt, {RawFn}, "enc.fn");
+  EncFn->setDoesNotThrow();
+  auto *CX = B.CreateAtomicCmpXchg(
+      CacheSlot, llvm::ConstantInt::get(I64, 0), EncFn, llvm::Align(8),
+      llvm::AtomicOrdering::Release, llvm::AtomicOrdering::Monotonic);
+  CX->setWeak(true);
+  B.CreateBr(MergeBB);
+
+  B.SetInsertPoint(MergeBB);
+  llvm::PHINode *FnPhi = B.CreatePHI(PtrTy, 3, "fn.ptr");
+  FnPhi->addIncoming(DecFn, FastBB);
+  FnPhi->addIncoming(RawFn, SlowExit);
+  FnPhi->addIncoming(RawFn, StoreBB);
+
+  return FnPhi;
 }
 
 } // namespace ptrcache
