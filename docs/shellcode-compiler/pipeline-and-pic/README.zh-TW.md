@@ -50,7 +50,7 @@ IR 和 MIR 全域回呼均使用**註冊一次、執行時讀取當前 `Shellcod
 
 交叉編譯到 Windows 目標時，NeverC 支援兩種 SDK 來源，**無硬編碼絕對路徑**：
 
-1. **建構樹捆綁的 SDK**（建議）：使用者和測試腳本將 `build-neverc/sdk` 作為 SDK 根。NeverC 自動偵測安裝目錄中的 `sdk/msvc/`，並在 `MSVCToolChain::AddClangSystemIncludeArgs` / `Linker::ConstructJob` 中注入 include/lib 路徑。典型佈局：
+1. **建構樹捆綁的 SDK**（建議）：使用者和測試腳本將 `build-neverc/sdk` 作為 SDK 根。NeverC 自動偵測安裝目錄中的 `sdk/msvc/`，並在 `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob` 中注入 include/lib 路徑。典型佈局：
 
    ```
    build-neverc/bin/neverc

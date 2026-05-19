@@ -82,7 +82,7 @@ Aggiungere un controllo di cross-compilazione in `tests/neverc/ShellcodeCrossTar
 ## Problemi noti multipiattaforma
 
 - **Endianness**: NeverC supporta solo little-endian (LE).
-- **Differenze ABI**: Win64 vs System V AMD64 hanno registri argomento completamente diversi. Gestito a livello frontend Clang.
+- **Differenze ABI**: Win64 vs System V AMD64 hanno registri argomento completamente diversi. Gestito a livello frontend NeverC.
 - **Numeri syscall**: Diversi per architettura su Linux, Android uguale a Linux, Darwin ha propri numeri BSD, Windows senza numeri stabili (PEB walk).
 - **Coerenza cache**: ARM richiede flush esplicito i-cache; x86 no.
 - **SELinux / W^X**: Android vincolato da SELinux `execmem`; iOS non-jailbroken rifiuta completamente `mmap(RWX)`.

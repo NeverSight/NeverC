@@ -100,7 +100,7 @@ For an entirely new object format (e.g., WASM modules):
 ## Known Cross-Platform Gotchas
 
 - **Endianness**: NeverC only supports little-endian (LE), covering all mainstream targets.
-- **ABI differences**: Win64 (rcx/rdx/r8/r9) vs System V AMD64 (rdi/rsi/rdx/rcx/r8/r9) have completely different argument registers. This is handled at the Clang frontend layer; the shellcode pipeline does not need to care.
+- **ABI differences**: Win64 (rcx/rdx/r8/r9) vs System V AMD64 (rdi/rsi/rdx/rcx/r8/r9) have completely different argument registers. This is handled at the NeverC frontend layer; the shellcode pipeline does not need to care.
 - **Syscall numbers**: differ per architecture on Linux, Android matches Linux, Darwin has its own BSD numbers, Windows has no stable numbers (hence PEB walk). Indexed by (OS, arch) in the table.
 - **Cache coherency**: ARM requires explicit i-cache flush; x86 does not. macOS arm64 JIT also needs `pthread_jit_write_protect_np`; Linux arm64 uses `__builtin___clear_cache`; Windows uses `FlushInstructionCache` (no-op on x86).
 - **SELinux / W^X**: Android is constrained by SELinux `execmem`; iOS on non-jailbroken devices completely rejects `mmap(RWX)`, requiring `MAP_JIT` + code signing.

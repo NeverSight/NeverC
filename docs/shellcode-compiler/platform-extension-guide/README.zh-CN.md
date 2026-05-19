@@ -100,7 +100,7 @@ Windows 没有稳定的 syscall ABI；对 `WriteFile` / `CreateThread` / `Virtua
 ## 已知跨平台注意事项
 
 - **字节序**：NeverC 仅支持小端（LE），覆盖所有主流目标。
-- **ABI 差异**：Win64（rcx/rdx/r8/r9）与 System V AMD64（rdi/rsi/rdx/rcx/r8/r9）有完全不同的参数寄存器。这在 Clang 前端层处理；shellcode 流水线无需关心。
+- **ABI 差异**：Win64（rcx/rdx/r8/r9）与 System V AMD64（rdi/rsi/rdx/rcx/r8/r9）有完全不同的参数寄存器。这在 NeverC 前端层处理；shellcode 流水线无需关心。
 - **系统调用号**：Linux 上不同架构不同，Android 与 Linux 相同，Darwin 有自己的 BSD 号码，Windows 没有稳定号码（因此用 PEB walk）。按 (OS, arch) 在表中索引。
 - **缓存一致性**：ARM 需要显式 i-cache flush；x86 不需要。macOS arm64 JIT 还需要 `pthread_jit_write_protect_np`；Linux arm64 使用 `__builtin___clear_cache`；Windows 使用 `FlushInstructionCache`（x86 上为空操作）。
 - **SELinux / W^X**：Android 受 SELinux `execmem` 约束；非越狱 iOS 完全拒绝 `mmap(RWX)`，需要 `MAP_JIT` + 代码签名。

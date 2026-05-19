@@ -93,7 +93,7 @@ Ajouter un test de compilation croisée dans `tests/neverc/ShellcodeCrossTargetT
 ## Pièges multiplateformes connus
 
 - **Endianness** : NeverC ne supporte que little-endian (LE).
-- **Différences ABI** : Win64 vs System V AMD64 ont des registres d'arguments complètement différents. Géré au niveau frontend Clang.
+- **Différences ABI** : Win64 vs System V AMD64 ont des registres d'arguments complètement différents. Géré au niveau frontend NeverC.
 - **Numéros syscall** : Différents par architecture sous Linux, Android identique à Linux, Darwin a ses propres numéros BSD, Windows sans numéros stables (PEB walk).
 - **Cohérence de cache** : ARM nécessite un flush i-cache explicite ; x86 non.
 - **SELinux / W^X** : Android contraint par SELinux `execmem` ; iOS non-jailbreaké rejette complètement `mmap(RWX)`.

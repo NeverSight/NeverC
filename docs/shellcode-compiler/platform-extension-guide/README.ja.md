@@ -100,7 +100,7 @@ Windows には安定した syscall ABI がない；`WriteFile` / `CreateThread` 
 ## 既知のクロスプラットフォーム注意点
 
 - **エンディアン**：NeverC はリトルエンディアン（LE）のみ対応、全主要ターゲットをカバー。
-- **ABI 差分**：Win64（rcx/rdx/r8/r9）vs System V AMD64（rdi/rsi/rdx/rcx/r8/r9）で引数レジスタが完全に異なる。Clang フロントエンド層で処理；shellcode パイプラインは関知不要。
+- **ABI 差分**：Win64（rcx/rdx/r8/r9）vs System V AMD64（rdi/rsi/rdx/rcx/r8/r9）で引数レジスタが完全に異なる。NeverC フロントエンド層で処理；shellcode パイプラインは関知不要。
 - **syscall 番号**：Linux ではアーキテクチャ毎に異なる、Android は Linux と同一、Darwin は独自の BSD 番号、Windows は安定番号なし（PEB walk）。テーブルで (OS, arch) 索引。
 - **キャッシュ整合性**：ARM は明示的 i-cache flush 必須；x86 は不要。macOS arm64 JIT は `pthread_jit_write_protect_np` も必要；Linux arm64 は `__builtin___clear_cache`；Windows は `FlushInstructionCache`（x86 では no-op）。
 - **SELinux / W^X**：Android は SELinux `execmem` で制約；非脱獄 iOS は `mmap(RWX)` を完全拒否、`MAP_JIT` + コード署名が必要。

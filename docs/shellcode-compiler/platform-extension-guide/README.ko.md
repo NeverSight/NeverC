@@ -100,7 +100,7 @@ Windows에는 안정적인 syscall ABI가 없습니다; `WriteFile` / `CreateThr
 ## 알려진 크로스 플랫폼 주의사항
 
 - **엔디안**: NeverC는 리틀 엔디안(LE)만 지원, 모든 주류 타겟 커버.
-- **ABI 차이**: Win64(rcx/rdx/r8/r9) vs System V AMD64(rdi/rsi/rdx/rcx/r8/r9)는 완전히 다른 인수 레지스터. Clang 프론트엔드 레이어에서 처리; shellcode 파이프라인은 관여 불필요.
+- **ABI 차이**: Win64(rcx/rdx/r8/r9) vs System V AMD64(rdi/rsi/rdx/rcx/r8/r9)는 완전히 다른 인수 레지스터. NeverC 프론트엔드 레이어에서 처리; shellcode 파이프라인은 관여 불필요.
 - **syscall 번호**: Linux에서 아키텍처별 상이, Android는 Linux와 동일, Darwin은 자체 BSD 번호, Windows는 안정적 번호 없음(PEB walk). 테이블에서 (OS, arch)로 인덱스.
 - **캐시 일관성**: ARM은 명시적 i-cache flush 필요; x86은 불필요. macOS arm64 JIT는 `pthread_jit_write_protect_np`도 필요; Linux arm64는 `__builtin___clear_cache`; Windows는 `FlushInstructionCache` (x86에서 no-op).
 - **SELinux / W^X**: Android는 SELinux `execmem`으로 제약; 비탈옥 iOS는 `mmap(RWX)` 완전 거부, `MAP_JIT` + 코드 서명 필요.

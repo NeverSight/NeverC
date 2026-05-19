@@ -50,7 +50,7 @@ Both IR and MIR global callbacks use a **register-once, read-current-`ShellcodeO
 
 When cross-compiling for Windows targets, NeverC supports two SDK sources with **no hardcoded absolute paths**:
 
-1. **Bundled SDK with the build tree** (recommended): users and test scripts treat `build-neverc/sdk` as the SDK root. NeverC auto-detects `sdk/msvc/` within the installation directory and injects include/lib paths in `MSVCToolChain::AddClangSystemIncludeArgs` / `Linker::ConstructJob`. Typical layout:
+1. **Bundled SDK with the build tree** (recommended): users and test scripts treat `build-neverc/sdk` as the SDK root. NeverC auto-detects `sdk/msvc/` within the installation directory and injects include/lib paths in `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob`. Typical layout:
 
    ```
    build-neverc/bin/neverc
