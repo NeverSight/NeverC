@@ -53,6 +53,9 @@ neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hell
 
 # Linux x86_64 — même source
 neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
+
+# Windows x86_64
+neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
 ```
 
 Voir l'**[index de documentation](docs/README.fr.md)** pour la conception détaillée, la matrice des plateformes, la référence CLI et les exemples.

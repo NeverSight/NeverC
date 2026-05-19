@@ -53,6 +53,9 @@ neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hell
 
 # Linux x86_64 — 같은 소스
 neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
+
+# Windows x86_64
+neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
 ```
 
 상세 설계, 플랫폼 매트릭스, CLI 참조, 예제는 **[문서 색인](docs/README.ko.md)** 을 참조하세요.
