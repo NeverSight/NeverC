@@ -172,7 +172,7 @@ Total cost:
 1. `TargetDesc.cpp::describeTriple` — one row (~15 lines)
 2. `SyscallTables_<OS>_<arch>.def` — syscall numbers (skip for Windows)
 3. Corresponding extractor arch switch — one case + reloc table
-4. Test files — one line each in `run_cross_target_tests.sh`
+4. Test files — one case each in `tests/neverc/ShellcodeCrossTargetTests.cpp`
 
 IR/MIR passes require zero changes. Kernel context is free — `KernelImportPass` uses a unified `__neverc_kern_resolve` interface.
 

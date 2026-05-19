@@ -25,7 +25,7 @@
  *     -> base64) keeps the single-ownership contract and round-trips
  *     back through the inverse path.
  *
- * Combined with the macOS `leaks --atExit` gate in run_tests.sh,
+ * Combined with the macOS `leaks --atExit` gate in the test suite,
  * this file proves no helper leaks an owned `string` on either the
  * happy path or the strict-decode failure tail.
  */

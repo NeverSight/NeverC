@@ -412,7 +412,7 @@ Before committing any "performance optimization" to the compiler's own C++ code:
 - [ ] `grep -r 'LLVM_IS_LITTLE_ENDIAN' neverc/` — must return 0 hits
 - [ ] No `#if` range guards on `tok::TokenKind` numeric values
 - [ ] No hand-written byte-copy patterns for `Len < 8`
-- [ ] Run full test suite (`./run_tests.sh`) — not just the first section
+- [ ] Run full test suite (`ctest --test-dir build-neverc`) — not just the first section
 - [ ] Test `#(42)` stringification: `echo '#define S(x) #x\nS(42)' | neverc -E -xc -` must produce `"42"`
 - [ ] Test `int`-returning functions with `string` params get headerless forward declarations
 

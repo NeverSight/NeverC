@@ -34,7 +34,7 @@
  *   4. Round-trips a Chinese / supplementary-plane payload through
  *      `printf("%s", s.c_str())` so the test also covers the
  *      "qstring s1 = u8\"你好\"" CJK output ergonomic the user
- *      mentioned (output checked via the run_tests.sh stdout grep).
+ *      mentioned (output checked via the test suite stdout grep).
  *
  *   5. Spot-checks the typed `neverc_string_*` direct call still
  *      works -- `neverc_string_eq(a, b)` should agree with `a == b`.
@@ -249,7 +249,7 @@ int main(void) {
     if ("MZXW6YTBOI======".from_base32() != "foobar") r = 1;
     if ("hello world".url_encode() != "hello%20world") r = 1;
 
-    /* ---- (4) CJK round-trip + stdout for the run_tests.sh grep. */
+    /* ---- (4) CJK round-trip + stdout for the test suite grep. */
 
     string greet = u8"你好";
     /* 6 bytes (UTF-8), 2 codepoints (CJK). */

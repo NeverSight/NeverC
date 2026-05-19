@@ -32,7 +32,7 @@
  *
  *   3. Lifetime: every owned temporary (clone(), substr(), etc.) is
  *      consumed by the helper exactly once.  Combined with the
- *      `leaks --atExit` gate further down in run_tests.sh, any
+ *      `leaks --atExit` gate in the test suite, any
  *      double-free / leak in the new helpers would surface as a
  *      hard test failure.
  *

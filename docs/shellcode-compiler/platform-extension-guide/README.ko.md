@@ -92,7 +92,7 @@ Windows에는 안정적인 syscall ABI가 없습니다; `WriteFile` / `CreateThr
 
 ### 5. 테스트 업데이트
 
-- `run_cross_target_tests.sh`에 `cross_compile_check` 행 추가
+- `tests/neverc/ShellcodeCrossTargetTests.cpp`에 크로스 컴파일 체크 추가
 - CI에서 해당 플랫폼 실행 가능하면 loader 왕복 테스트 추가
 
 ---

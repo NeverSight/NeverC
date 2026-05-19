@@ -6,7 +6,7 @@
  *
  * NeverC adaption:
  *   - The preprocessed output is verified directly by the NeverC test driver
- *     (tests/neverc/run_tests.sh) via `pp_check_n2836`, asserting that both
+ *     (tests/neverc/ConformanceTests.cpp) via `pp_check_n2836`, asserting that both
  *     the stringified copyright literal and the bare macro expansion survive
  *     preprocessing intact.
  *   - The -verify diagnostics run is exercised by `cc1_verify` in the driver

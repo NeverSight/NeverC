@@ -92,7 +92,7 @@ Windows には安定した syscall ABI がない；`WriteFile` / `CreateThread` 
 
 ### 5. テストを更新
 
-- `run_cross_target_tests.sh` に `cross_compile_check` 行を追加
+- `tests/neverc/ShellcodeCrossTargetTests.cpp` にクロスコンパイルチェックを追加
 - CI でそのプラットフォーム実行可能なら loader ラウンドトリップテストを追加
 
 ---

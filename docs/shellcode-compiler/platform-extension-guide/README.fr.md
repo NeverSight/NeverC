@@ -86,7 +86,7 @@ Référence `loader_linux.c` et `loader_windows.c`. Typiquement : `mmap(RWX) →
 
 ### 5. Mettre à jour les tests
 
-Ajouter ligne `cross_compile_check` dans `run_cross_target_tests.sh`.
+Ajouter un test de compilation croisée dans `tests/neverc/ShellcodeCrossTargetTests.cpp`.
 
 ---
 

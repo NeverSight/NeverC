@@ -172,7 +172,7 @@ ExecutionLevel 与 (OS, arch) 正交：
 1. `TargetDesc.cpp::describeTriple` — 一行（约 15 行）
 2. `SyscallTables_<OS>_<arch>.def` — 系统调用号（Windows 跳过）
 3. 对应提取器架构 switch — 一个 case + reloc 表
-4. 测试文件 — `run_cross_target_tests.sh` 中各一行
+4. 测试文件 — `tests/neverc/ShellcodeCrossTargetTests.cpp` 中各一个 case
 
 IR/MIR pass 需要零改动。内核上下文免费 — `KernelImportPass` 使用统一的 `__neverc_kern_resolve` 接口。
 

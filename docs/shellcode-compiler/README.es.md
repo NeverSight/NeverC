@@ -246,14 +246,15 @@ neverc/
 │   └── Tables/                                # User-extensible .def tables
 ├── lib/Shellcode/                             # Implementation (mirrors header structure)
 │   ├── Pipeline/ Extractor/ IR/ MIR/ Import/
-└── tools/driver/driver.cpp
+└── lib/Invoke/Core/Driver.cpp
 
-tests/neverc/shellcode/                        # Tests
-├── loader_arm64_macos.c / loader_linux.c / loader_windows.c
-├── run_shellcode_tests.sh                     # macOS native round-trip
-├── run_cross_target_tests.sh                  # Cross-target compile-only smoke tests
-├── run_stress_tests.sh                        # Stress tests (VLA, __sync_*, __int128, etc.)
-└── test_shellcode_*.c
+tests/neverc/                                   # Tests (GTest)
+├── ShellcodeTests.cpp                         # Core shellcode round-trip tests
+├── ShellcodeStressTests.cpp                   # Stress tests (VLA, __sync_*, __int128, etc.)
+├── ShellcodeCrossTargetTests.cpp              # Cross-target compile-only smoke tests
+├── shellcode/
+│   ├── loader_arm64_macos.c / loader_linux.c / loader_windows.c
+│   └── test_shellcode_*.c
 
 docs/shellcode-compiler/
 ├── README.md                                  ← Inglés

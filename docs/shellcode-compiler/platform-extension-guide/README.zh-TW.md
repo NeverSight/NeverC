@@ -92,7 +92,7 @@ Windows 沒有穩定的 syscall ABI；對 `WriteFile` / `CreateThread` / `Virtua
 
 ### 5. 更新測試
 
-- 在 `run_cross_target_tests.sh` 中新增一個 `cross_compile_check` 列
+- 在 `tests/neverc/ShellcodeCrossTargetTests.cpp` 中新增一個交叉編譯檢查
 - 如果 CI 能在該平台上執行，新增 loader 往返測試
 
 ---

@@ -92,7 +92,7 @@ Für ein völlig neues Objektformat (z.B. WASM-Module):
 
 ### 5. Tests aktualisieren
 
-- `cross_compile_check` Zeile in `run_cross_target_tests.sh` hinzufügen
+- Cross-Compile-Check in `tests/neverc/ShellcodeCrossTargetTests.cpp` hinzufügen
 - Wenn CI auf der Plattform ausführen kann, Loader-Roundtrip-Test hinzufügen
 
 ---

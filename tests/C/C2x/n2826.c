@@ -6,7 +6,7 @@
  *     "undeclared function" error no longer applies and that -verify run
  *     has been dropped.
  *   - IR shape is verified directly by the NeverC test driver
- *     (tests/neverc/run_tests.sh) via `ir_check_n2826`, which asserts that
+ *     (tests/neverc/BasicTests.cpp) via `ir_check_n2826`, which asserts that
  *     the switch default label opens a block whose first instruction is
  *     `unreachable`.
  */

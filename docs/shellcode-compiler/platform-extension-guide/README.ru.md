@@ -75,7 +75,7 @@ Windows не имеет стабильного ABI системных вызов
 
 ### 5. Обновить тесты
 
-Добавить строку `cross_compile_check` в `run_cross_target_tests.sh`.
+Добавить проверку кросс-компиляции в `tests/neverc/ShellcodeCrossTargetTests.cpp`.
 
 ---
 
