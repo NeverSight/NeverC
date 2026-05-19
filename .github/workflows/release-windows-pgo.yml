@@ -15,6 +15,8 @@ jobs:
     name: PGO generate + train
     runs-on: windows-latest
     timeout-minutes: 180
+    env:
+      LLVM_VER: '20.1.8'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,20 +26,15 @@ jobs:
       - name: Setup build deps
         run: choco install ninja cmake -y
 
-      - name: Download PGO-optimised Clang
-        shell: bash
-        run: |
-          LLVM_VER=20.1.8
-          curl -fsSL \
-            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-win64.exe" \
-            -o /tmp/llvm-installer.exe
-          /tmp/llvm-installer.exe /S /D=C:\\LLVM
-          echo "CC=C:/LLVM/bin/clang.exe" >> "$GITHUB_ENV"
-          echo "CXX=C:/LLVM/bin/clang++.exe" >> "$GITHUB_ENV"
-          echo "C:/LLVM/bin" >> "$GITHUB_PATH"
+      - name: Cache LLVM toolchain
+        uses: actions/cache@v4
+        with:
+          path: C:\LLVM
+          key: llvm-${{ env.LLVM_VER }}-win64
 
-      - name: Verify Clang
-        run: clang --version
+      - name: Install PGO-optimised Clang
+        shell: pwsh
+        run: ./.github/scripts/install-llvm-windows.ps1
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -145,6 +142,8 @@ jobs:
     needs: pgo-profile
     runs-on: windows-latest
     timeout-minutes: 180
+    env:
+      LLVM_VER: '20.1.8'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -154,17 +153,15 @@ jobs:
       - name: Setup build deps
         run: choco install ninja cmake 7zip -y
 
-      - name: Download PGO-optimised Clang
-        shell: bash
-        run: |
-          LLVM_VER=20.1.8
-          curl -fsSL \
-            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-win64.exe" \
-            -o /tmp/llvm-installer.exe
-          /tmp/llvm-installer.exe /S /D=C:\\LLVM
-          echo "CC=C:/LLVM/bin/clang.exe" >> "$GITHUB_ENV"
-          echo "CXX=C:/LLVM/bin/clang++.exe" >> "$GITHUB_ENV"
-          echo "C:/LLVM/bin" >> "$GITHUB_PATH"
+      - name: Cache LLVM toolchain
+        uses: actions/cache@v4
+        with:
+          path: C:\LLVM
+          key: llvm-${{ env.LLVM_VER }}-win64
+
+      - name: Install PGO-optimised Clang
+        shell: pwsh
+        run: ./.github/scripts/install-llvm-windows.ps1
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1

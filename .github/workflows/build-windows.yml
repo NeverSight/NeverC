@@ -13,8 +13,10 @@ jobs:
        (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name != github.repository))
     runs-on: windows-latest
+    timeout-minutes: 360
     env:
       BUILD_TYPE: Release
+      LLVM_VER: '20.1.8'
     steps:
     - name: Checkout Repo
       uses: actions/checkout@v4
@@ -25,21 +27,15 @@ jobs:
     - name: Setup build deps
       run: choco install ninja cmake 7zip -y
 
-    - name: Download PGO-optimised Clang
-      shell: bash
-      run: |
-        LLVM_VER=20.1.8
-        curl -fsSL \
-          "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-win64.exe" \
-          -o /tmp/llvm-installer.exe
-        # Silent install to C:\LLVM
-        /tmp/llvm-installer.exe /S /D=C:\\LLVM
-        echo "PGO_CLANG=C:/LLVM/bin/clang.exe" >> "$GITHUB_ENV"
-        echo "PGO_CLANGXX=C:/LLVM/bin/clang++.exe" >> "$GITHUB_ENV"
-        echo "C:/LLVM/bin" >> "$GITHUB_PATH"
+    - name: Cache LLVM toolchain
+      uses: actions/cache@v4
+      with:
+        path: C:\LLVM
+        key: llvm-${{ env.LLVM_VER }}-win64
 
-    - name: Verify Clang
-      run: clang --version
+    - name: Install PGO-optimised Clang
+      shell: pwsh
+      run: ./neverc/.github/scripts/install-llvm-windows.ps1
 
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
