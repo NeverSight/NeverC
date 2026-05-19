@@ -45,6 +45,13 @@ set(LLVM_LINK_LLVM_DYLIB OFF CACHE BOOL "")
 set(LLVM_BUILD_LLVM_DYLIB OFF CACHE BOOL "")
 set(LLVM_BUILD_LLVM_C_DYLIB OFF CACHE BOOL "")
 
+# Use lld on non-Apple Unix platforms.  It is faster than GNU ld, handles
+# LTO natively (no LLVMgold.so), and matches the linker used by the other
+# CI workflows (Windows uses link.exe, macOS uses ld64).
+if(NOT APPLE AND NOT MSVC)
+  set(LLVM_USE_LINKER lld CACHE STRING "" FORCE)
+endif()
+
 # The release artifact is a single neverc executable linked from static
 # libraries, so avoid PIC/unwind/debugging extras and the associated configure
 # probes by default.
@@ -84,11 +91,6 @@ set(NEVERC_STRIP_BINARY ON CACHE BOOL "")
 option(NEVERC_ENABLE_LTO "Enable Full LTO for the neverc binary" ON)
 if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING AND NOT MSVC)
   set(LLVM_ENABLE_LTO Full CACHE STRING "" FORCE)
-  # GNU ld requires LLVMgold.so for LTO, which is often missing from
-  # pre-built LLVM releases.  lld handles LTO natively; use it on Linux.
-  if(NOT APPLE)
-    set(LLVM_USE_LINKER lld CACHE STRING "" FORCE)
-  endif()
 endif()
 
 # Profile-Guided Optimisation (PGO) two-phase build.
