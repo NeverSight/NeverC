@@ -2490,6 +2490,18 @@ void processVSRuntimeLibrary(const Driver &D, const ArgList &Args,
   } else {
     CmdArgs.push_back(FlagForCRT.data());
 
+    bool IsDLL = RTOptionID == options::OPT_msvc_runtime_MD ||
+                 RTOptionID == options::OPT_msvc_runtime_MDd;
+    bool IsDebug = RTOptionID == options::OPT_msvc_runtime_MTd ||
+                   RTOptionID == options::OPT_msvc_runtime_MDd;
+
+    CmdArgs.push_back(
+        IsDLL ? (IsDebug ? "--dependent-lib=vcruntimed" : "--dependent-lib=vcruntime")
+              : (IsDebug ? "--dependent-lib=libvcruntimed" : "--dependent-lib=libvcruntime"));
+    CmdArgs.push_back(
+        IsDLL ? (IsDebug ? "--dependent-lib=ucrtd" : "--dependent-lib=ucrt")
+              : (IsDebug ? "--dependent-lib=libucrtd" : "--dependent-lib=libucrt"));
+
     // This provides POSIX compatibility (maps 'open' to '_open'), which most
     // users want.  The /Za flag to cl.exe turns this off, but it's not
     // implemented in neverc.

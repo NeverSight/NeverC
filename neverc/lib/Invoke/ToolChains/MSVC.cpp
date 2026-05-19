@@ -90,8 +90,22 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nostartfiles)) {
     if (!Args.hasArg(options::OPT_nodefaultlibs) &&
         !Args.hasArg(options::OPT_fms_omit_default_lib)) {
-      CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--defaultlib=") +
-                                           getMSVCRuntimeDefaultLib(Args)));
+      const char *CRTLib = getMSVCRuntimeDefaultLib(Args);
+      CmdArgs.push_back(
+          Args.MakeArgString(llvm::Twine("--defaultlib=") + CRTLib));
+
+      llvm::StringRef CRT(CRTLib);
+      bool IsDLL = CRT == "msvcrt" || CRT == "msvcrtd";
+      bool IsDebug = CRT == "libcmtd" || CRT == "msvcrtd";
+      CmdArgs.push_back(IsDLL ? (IsDebug ? "--defaultlib=vcruntimed"
+                                         : "--defaultlib=vcruntime")
+                               : (IsDebug ? "--defaultlib=libvcruntimed"
+                                          : "--defaultlib=libvcruntime"));
+      CmdArgs.push_back(IsDLL ? (IsDebug ? "--defaultlib=ucrtd"
+                                         : "--defaultlib=ucrt")
+                               : (IsDebug ? "--defaultlib=libucrtd"
+                                          : "--defaultlib=libucrt"));
+
       CmdArgs.push_back("--defaultlib=oldnames");
     }
   }
