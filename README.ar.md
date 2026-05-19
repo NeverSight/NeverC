@@ -53,7 +53,7 @@ int main(void) {
 # macOS arm64
 neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
 
-# Linux x86_64 — نفس المصدر
+# Linux x86_64
 neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
 
 # Windows x86_64
