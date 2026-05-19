@@ -84,6 +84,11 @@ set(NEVERC_STRIP_BINARY ON CACHE BOOL "")
 option(NEVERC_ENABLE_LTO "Enable Full LTO for the neverc binary" ON)
 if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING AND NOT MSVC)
   set(LLVM_ENABLE_LTO Full CACHE STRING "" FORCE)
+  # GNU ld requires LLVMgold.so for LTO, which is often missing from
+  # pre-built LLVM releases.  lld handles LTO natively; use it on Linux.
+  if(NOT APPLE)
+    set(LLVM_USE_LINKER lld CACHE STRING "" FORCE)
+  endif()
 endif()
 
 # Profile-Guided Optimisation (PGO) two-phase build.
