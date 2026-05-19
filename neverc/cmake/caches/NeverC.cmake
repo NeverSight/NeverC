@@ -45,11 +45,28 @@ set(LLVM_LINK_LLVM_DYLIB OFF CACHE BOOL "")
 set(LLVM_BUILD_LLVM_DYLIB OFF CACHE BOOL "")
 set(LLVM_BUILD_LLVM_C_DYLIB OFF CACHE BOOL "")
 
-# Use lld on non-Apple Unix platforms.  It is faster than GNU ld, handles
-# LTO natively (no LLVMgold.so), and matches the linker used by the other
-# CI workflows (Windows uses link.exe, macOS uses ld64).
-if(NOT APPLE AND NOT MSVC)
-  set(LLVM_USE_LINKER lld CACHE STRING "" FORCE)
+# Default to lld on every platform when available.  LLVM_ENABLE_LLD wires
+# -fuse-ld=lld on Unix/macOS and CMAKE_LINKER=lld-link on MSVC, so Full LTO
+# works without LLVMgold.so.  Linux/Windows always opt in; macOS falls back to
+# ld64 only when the host toolchain has no lld (e.g. bare Xcode clang).
+if(NOT CMAKE_CROSSCOMPILING)
+  set(_NEVERC_USE_LLD FALSE)
+  if(MSVC)
+    set(_NEVERC_USE_LLD TRUE)
+  else()
+    get_filename_component(_NEVERC_CXX_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    find_program(_NEVERC_LLD NAMES ld64.lld ld.lld lld
+      HINTS "${_NEVERC_CXX_DIR}" NO_DEFAULT_PATH)
+    if(NOT _NEVERC_LLD)
+      find_program(_NEVERC_LLD NAMES ld64.lld ld.lld lld)
+    endif()
+    if(_NEVERC_LLD OR NOT APPLE)
+      set(_NEVERC_USE_LLD TRUE)
+    endif()
+  endif()
+  if(_NEVERC_USE_LLD)
+    set(LLVM_ENABLE_LLD ON CACHE BOOL "" FORCE)
+  endif()
 endif()
 
 # The release artifact is a single neverc executable linked from static
