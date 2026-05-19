@@ -1,4 +1,3 @@
-// test_arch_64only_validation.c
 // Validates that the 64-bit-only architecture cleanup is correct:
 //   - ARM32 SubArch enums removed (v7/v6/v5/v4t/v8m_* deleted from Triple.h)
 //   - ARM32 Win64EH unwind opcodes removed

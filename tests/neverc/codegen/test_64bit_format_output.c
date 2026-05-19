@@ -1,4 +1,3 @@
-// test_64bit_format_output.c
 // Validates that MC layer changes to hardcode 64-bit object format
 // produce correct output. After removing is64Bit() branching from:
 //   - ELFObjectWriter (ELFCLASS64, Elf64_Ehdr, Elf64_Shdr, Elf64_Sym)

@@ -1,4 +1,4 @@
-// test_neverc_string_kernel.c - kernel/freestanding friendly string smoke test
+// kernel/freestanding friendly string smoke test
 // RUN: %neverc -std=c23 -DNEVERC_STRING_ALLOC=kernel_alloc -DNEVERC_STRING_FREE=kernel_free %s -o %t && %t
 
 /* The bump allocator below never recycles bytes (kernel_free is a no-op),

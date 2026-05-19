@@ -1,4 +1,3 @@
-// test_32bit_ops_in_64bit.c
 // Validates that 32-bit operations retained in the 64-bit-only cleanup
 // are legitimate and work correctly in x86_64 / AArch64 mode.
 //

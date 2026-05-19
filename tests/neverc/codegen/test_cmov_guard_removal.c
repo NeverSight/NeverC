@@ -1,4 +1,3 @@
-// test_cmov_guard_removal.c
 // Validates that removing canUseCMOV() guards from X86ISelLowering
 // hasn't broken codegen. On x86_64, CMOV is always available as a
 // baseline feature, so these guards were dead code.

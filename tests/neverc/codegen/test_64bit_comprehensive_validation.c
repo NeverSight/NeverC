@@ -1,4 +1,3 @@
-// test_64bit_comprehensive_validation.c
 // Validates that all 32-bit architecture removal (rounds 44-52) is safe.
 //
 // Covers:

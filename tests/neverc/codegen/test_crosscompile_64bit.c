@@ -1,4 +1,3 @@
-// test_crosscompile_64bit.c
 // Validates 64-bit object file generation across different targets after
 // hardcoding is64Bit()=true in ELF/MachO/COFF writers.
 //

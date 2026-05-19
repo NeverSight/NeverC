@@ -1,4 +1,4 @@
-// test_c11.c - C11 feature tests
+// C11 feature tests
 // RUN: %neverc -std=c11 -c %s -o %t.o && echo "PASS: c11 compile"
 // RUN: %neverc -std=c11 %s -o %t && %t && echo "PASS: c11 run"
 

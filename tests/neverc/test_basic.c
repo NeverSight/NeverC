@@ -1,4 +1,4 @@
-// test_basic.c - Basic C compilation and linking test
+// Basic C compilation and linking test
 // RUN: %neverc -c %s -o %t.o && echo "PASS: basic compile"
 // RUN: %neverc %s -o %t && %t && echo "PASS: basic run"
 

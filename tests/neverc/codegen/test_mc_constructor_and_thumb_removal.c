@@ -1,4 +1,3 @@
-// test_mc_constructor_and_thumb_removal.c
 // Validates correctness after this round of cleanup:
 //   1. MCELFObjectTargetWriter/MCMachObjectTargetWriter: Is64Bit ctor param removed
 //   2. ELFWriter::is64Bit() removed, all paths hardcoded 64-bit

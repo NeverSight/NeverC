@@ -1,4 +1,4 @@
-// test_emit_static_lib.c - In-process static archive emission test
+// In-process static archive emission test
 // RUN: %neverc -DSTATIC_LIB_MEMBER -c %s -o %t.member.o
 // RUN: %neverc --emit-static-lib %t.member.o -o %t.print.a -### 2>&1 | grep -F "(in-process archive)"
 // RUN: env PATH=/no-such-neverc-archive-tool %neverc --emit-static-lib %t.member.o -o %t.a

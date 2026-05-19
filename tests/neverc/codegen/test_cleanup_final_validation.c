@@ -1,4 +1,3 @@
-// test_cleanup_final_validation.c
 // Final validation for the 32-bit architecture cleanup (rounds 44-49).
 //
 // Exercises code paths that were modified by removing dead 32-bit branches:

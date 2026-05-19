@@ -1,4 +1,3 @@
-// test_nocmov_pseudo_removal.c
 // Validates that removing CMOV_GR16/CMOV_GR32 NoCMOV pseudos and the
 // NoCMOV predicate hasn't broken conditional-select lowering at -O0.
 //

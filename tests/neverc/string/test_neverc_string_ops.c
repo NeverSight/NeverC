@@ -1,4 +1,4 @@
-// test_neverc_string_ops.c - NeverC builtin string mutation/utility/capacity ops
+// NeverC builtin string mutation/utility/capacity ops
 // RUN: %neverc -std=c23 %s -o %t && %t
 
 int main(void) {

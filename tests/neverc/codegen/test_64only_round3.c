@@ -1,4 +1,3 @@
-// test_64only_round3.c
 // Validates round 3 of 64-bit-only cleanup:
 //   - isX86() simplified to only match x86_64 (Triple::x86 removed)
 //   - CMOV_GR16/CMOV_GR32 NoCMOV pseudos removed (x86_64 always has CMOV)

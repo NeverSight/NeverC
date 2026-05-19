@@ -1,4 +1,3 @@
-// test_objformat_64bit.c
 // Validates that ELF and Mach-O object files are correctly emitted as 64-bit
 // after simplifying is64Bit() dead branches in the MC layer.
 //

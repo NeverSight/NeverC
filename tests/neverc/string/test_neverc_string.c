@@ -1,4 +1,4 @@
-// test_neverc_string.c - NeverC builtin string smoke tests
+// NeverC builtin string smoke tests
 // RUN: %neverc -std=c23 %s -o %t && %t
 
 string global_label = "global";

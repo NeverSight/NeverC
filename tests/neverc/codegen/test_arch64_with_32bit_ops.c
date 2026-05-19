@@ -1,4 +1,3 @@
-// test_arch64_with_32bit_ops.c
 // Validates that 32-bit sub-operations work correctly in 64-bit-only mode
 // after all 32-bit architecture dead code has been removed.
 //

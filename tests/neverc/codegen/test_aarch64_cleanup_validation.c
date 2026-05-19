@@ -1,4 +1,3 @@
-// test_aarch64_cleanup_validation.c
 // Validates ARM64 codegen after ARM32 infrastructure removal:
 //   - ARM32 SEH unwind (1083 lines from MCWin64EH.cpp)
 //   - ThumbFunc tracking removed from MCAssembler/MCExpr/MCSymbolMachO

@@ -1,4 +1,3 @@
-// test_arm64_32bit_ops.c
 // Validates that ARM64 32-bit sub-register operations (W registers)
 // work correctly after removing ARM32 code from the MC layer.
 //

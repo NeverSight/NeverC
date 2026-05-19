@@ -1,4 +1,3 @@
-// test_arch_cleanup_round2.c
 // Validates that the second round of 32-bit architecture cleanup
 // hasn't broken 64-bit code generation or ABI behavior.
 //

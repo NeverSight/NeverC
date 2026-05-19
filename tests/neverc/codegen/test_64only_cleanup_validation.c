@@ -1,4 +1,3 @@
-// test_64only_cleanup_validation.c
 // Validates that the 64-bit-only cleanup changes are correct:
 //  1. CMOV is always available (canUseCMOV() removed, FeatureCMOV added to generic)
 //  2. Integer ABS uses CMOV (guard removed)

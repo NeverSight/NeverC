@@ -1,4 +1,4 @@
-// test_c23.c - C23 feature tests
+// C23 feature tests
 // RUN: %neverc -std=c23 -c %s -o %t.o && echo "PASS: c23 compile"
 // RUN: %neverc -std=c23 %s -o %t && %t && echo "PASS: c23 run"
 

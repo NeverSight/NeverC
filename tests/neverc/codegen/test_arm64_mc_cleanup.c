@@ -1,4 +1,3 @@
-// test_arm64_mc_cleanup.c
 // Validates that removing ARM 32-bit dead code hasn't broken AArch64 codegen:
 //
 //   - MCMachObjectTargetWriter: Is64Bit parameter removed (hardcoded true)

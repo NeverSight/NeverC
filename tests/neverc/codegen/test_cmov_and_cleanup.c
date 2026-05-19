@@ -1,4 +1,3 @@
-// test_cmov_and_cleanup.c
 // Validates that removing NoCMOV-gated CMOV pseudo instructions
 // (CMOV_GR32/CMOV_GR16) and all prior 32-bit cleanup hasn't broken
 // conditional-select lowering on x86_64 / AArch64.

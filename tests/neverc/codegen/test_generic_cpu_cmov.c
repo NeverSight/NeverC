@@ -1,4 +1,3 @@
-// test_generic_cpu_cmov.c
 // Validates that the "generic" CPU model has CMOV enabled (FeatureCMOV added
 // to X86.td generic processor definition), and that CMOV-dependent lowering
 // paths work correctly at both -O2 and -O0.

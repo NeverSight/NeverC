@@ -1,4 +1,4 @@
-// test_preprocessor.c - Preprocessor feature tests
+// Preprocessor feature tests
 // RUN: %neverc -std=c23 -c %s -o %t.o && echo "PASS: preprocessor compile"
 // RUN: %neverc -std=c23 %s -o %t && %t && echo "PASS: preprocessor run"
 

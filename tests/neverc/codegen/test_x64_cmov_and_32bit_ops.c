@@ -1,4 +1,3 @@
-// test_x64_cmov_and_32bit_ops.c
 // Validates the canUseCMOV() removal and 32-bit cleanup:
 //
 //   1. ABS lowering: removed canUseCMOV() guard from ISD::ABS Custom lowering

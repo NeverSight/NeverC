@@ -1,4 +1,3 @@
-// test_aarch64_32bit_ops_validation.c
 // Validates that 32-bit ARM cleanup didn't break AArch64:
 //
 //   1. W-register (32-bit) operations in AArch64 mode

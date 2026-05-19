@@ -1,4 +1,4 @@
-// test_lto.c - LTO compilation test
+// LTO compilation test
 // Tests that full LTO pipeline works: .c -> .bc -> link -> executable
 // RUN: %neverc -flto -c %s -o %t.o && echo "PASS: lto compile"
 // RUN: %neverc -flto -c %S/test_lto_helper.c -o %t_helper.o && echo "PASS: lto helper compile"

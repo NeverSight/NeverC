@@ -1,4 +1,4 @@
-// test_rust_integers.c - Rust-style fixed-width integer type tests
+// Rust-style fixed-width integer type tests
 // The Rust-style keywords are off by default; this suite opts in explicitly.
 // RUN: %neverc -std=c23 -fneverc-types -c %s -o %t.o && echo "PASS: rust integers compile"
 // RUN: %neverc -std=c23 -fneverc-types %s -o %t && %t && echo "PASS: rust integers run"

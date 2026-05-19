@@ -341,7 +341,6 @@ noreturn void test_noreturn(void) {
     __builtin_abort();
 }
 
-// --- Entry point ---
 int main(void) {
     test_basic_types();
     test_fixed_width();

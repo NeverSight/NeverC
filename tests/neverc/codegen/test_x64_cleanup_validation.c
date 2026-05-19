@@ -1,4 +1,3 @@
-// test_x64_cleanup_validation.c
 // Validates the x86_64-only cleanup: canUseCMOV() guards removed,
 // NoCMOV pseudo deleted, ABS/SDIV optimizations unconditional,
 // MC layer hardcoded to 64-bit, ARM32/Thumb infrastructure removed.

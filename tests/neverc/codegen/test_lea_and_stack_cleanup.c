@@ -1,4 +1,3 @@
-// test_lea_and_stack_cleanup.c
 // Validates correctness of LEA optimizations and stack handling after
 // the 32-bit cleanup. The classifyLEAReg fix (x86_64) changed how
 // LEA register classes are selected when converting ADD/SHL/INC/DEC

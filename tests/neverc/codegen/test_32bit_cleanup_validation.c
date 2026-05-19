@@ -1,4 +1,3 @@
-// test_32bit_cleanup_validation.c
 // Comprehensive validation of the 32-bit architecture cleanup round.
 //
 // Validates ALL affected code paths haven't broken 64-bit codegen:

@@ -1,4 +1,3 @@
-// test_mc_64bit_format.c
 // Validates that MC layer 64-bit-only changes are correct:
 //   1. Mach-O nlist_64 symbol format (16 bytes per entry, not 12)
 //   2. ELF64 symbol table entry format (Elf64_Sym layout)

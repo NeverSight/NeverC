@@ -1,4 +1,3 @@
-// test_mc_64bit_hardcode.c
 // Validates correctness after hardcoding is64Bit()=true in MC layer:
 //   1. ELF writer: SymbolTableWriter 64-bit format, WriteWord always uint64
 //   2. MachO writer: MH_MAGIC_64, LC_SEGMENT_64, nlist_64, Align(8) padding

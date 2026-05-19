@@ -1,4 +1,3 @@
-// test_64only_final_validation.c
 // Final validation that all 32-bit architecture removal is safe.
 //
 // This test exercises code paths affected by:

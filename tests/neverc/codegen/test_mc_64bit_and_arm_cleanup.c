@@ -1,4 +1,3 @@
-// test_mc_64bit_and_arm_cleanup.c
 // Validates MC layer 64-bit hardcoding and ARM 32-bit code removal:
 //
 //   - ELFObjectWriter: is64Bit() removed, always writes Elf64 format

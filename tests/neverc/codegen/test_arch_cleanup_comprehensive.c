@@ -1,4 +1,3 @@
-// test_arch_cleanup_comprehensive.c
 // Comprehensive validation for the 64-bit-only architecture cleanup.
 //
 // This test validates that all cleanup changes are safe:

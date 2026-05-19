@@ -1,4 +1,3 @@
-// test_64bit_cleanup_final.c
 // Validates the complete 32-bit architecture removal is safe.
 // All tests run in 64-bit mode; passes prove no 64-bit codegen is broken.
 // RUN: %neverc -O2 %s -o %t && %t

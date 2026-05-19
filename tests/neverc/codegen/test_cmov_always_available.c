@@ -1,4 +1,3 @@
-// test_cmov_always_available.c
 // Validates that CMOV-based optimizations work correctly after removing
 // the canUseCMOV() guards (CMOV is mandatory in x86_64).
 //

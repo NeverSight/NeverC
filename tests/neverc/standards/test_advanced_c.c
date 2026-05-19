@@ -1,4 +1,4 @@
-// test_advanced_c.c - Advanced C features (VLA, designated init, compound literals, etc.)
+// Advanced C features (VLA, designated init, compound literals, etc.)
 // RUN: %neverc -std=c11 -c %s -o %t.o && echo "PASS: advanced_c compile"
 // RUN: %neverc -std=c11 %s -o %t && %t && echo "PASS: advanced_c run"
 

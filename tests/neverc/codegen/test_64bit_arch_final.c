@@ -1,4 +1,3 @@
-// test_64bit_arch_final.c
 // Comprehensive validation that the 64-bit-only architecture cleanup
 // (ELF/Mach-O writer hardcoding, Thumb removal, ARM32 WinEH removal,
 //  NoCMOV pseudo removal, is64Bit() dead branch simplification)

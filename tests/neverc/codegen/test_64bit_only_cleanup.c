@@ -1,4 +1,3 @@
-// test_64bit_only_cleanup.c
 // Validates that 32-bit architecture cleanup hasn't broken 64-bit code generation.
 // Tests cover:
 //   1. Mixed 32/64-bit integer operations (EAX/W0 sub-register usage)
