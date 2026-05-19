@@ -16,6 +16,7 @@
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/Target/TargetMachine.h"
+#include <cstring>
 
 using namespace llvm;
 using namespace SwitchCG;

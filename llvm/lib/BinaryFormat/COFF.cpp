@@ -10,6 +10,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstring>
 
 // Maximum offsets for different string table entry encodings.
 enum : unsigned { Max7DecimalOffset = 9999999U };
