@@ -41,20 +41,26 @@ function( get_host_triple var )
     else()
       set( value "powerpc-ibm-aix" )
     endif()
-  else( MSVC )
-    if(CMAKE_HOST_SYSTEM_NAME STREQUAL Windows AND NOT MSYS)
-      message(WARNING "unable to determine host target triple")
+  elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL Windows AND NOT MSYS)
+    # Standalone Clang (GNU-like driver) on Windows — no MSVC, no MinGW.
+    if( CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "ARM64" OR
+        CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "AARCH64" )
+      set( value "aarch64-pc-windows-msvc" )
+    elseif( CMAKE_SIZEOF_VOID_P EQUAL 8 )
+      set( value "x86_64-pc-windows-msvc" )
     else()
-      set(config_guess ${LLVM_MAIN_SRC_DIR}/cmake/config.guess)
-      execute_process(COMMAND sh ${config_guess}
-        RESULT_VARIABLE TT_RV
-        OUTPUT_VARIABLE TT_OUT
-        OUTPUT_STRIP_TRAILING_WHITESPACE)
-      if( NOT TT_RV EQUAL 0 )
-        message(FATAL_ERROR "Failed to execute ${config_guess}")
-      endif( NOT TT_RV EQUAL 0 )
-      set( value ${TT_OUT} )
+      set( value "i686-pc-windows-msvc" )
     endif()
+  else( MSVC )
+    set(config_guess ${LLVM_MAIN_SRC_DIR}/cmake/config.guess)
+    execute_process(COMMAND sh ${config_guess}
+      RESULT_VARIABLE TT_RV
+      OUTPUT_VARIABLE TT_OUT
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if( NOT TT_RV EQUAL 0 )
+      message(FATAL_ERROR "Failed to execute ${config_guess}")
+    endif( NOT TT_RV EQUAL 0 )
+    set( value ${TT_OUT} )
   endif( MSVC )
   set( ${var} ${value} PARENT_SCOPE )
 endfunction( get_host_triple var )
