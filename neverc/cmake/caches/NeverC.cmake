@@ -69,6 +69,34 @@ if(NOT CMAKE_CROSSCOMPILING)
   endif()
 endif()
 
+# Official LLVM release clang on macOS emits object files that Xcode libtool
+# cannot archive (Producer: LLVM22.x vs Reader: Apple libtool).  Use llvm-ar from
+# the same toolchain when the host compiler is not Apple clang.
+if(CMAKE_HOST_APPLE AND CMAKE_CXX_COMPILER)
+  execute_process(
+    COMMAND "${CMAKE_CXX_COMPILER}" --version
+    OUTPUT_VARIABLE _NEVERC_CLANG_VERSION
+    ERROR_VARIABLE _NEVERC_CLANG_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(_NEVERC_CLANG_VERSION MATCHES "clang version"
+     AND NOT _NEVERC_CLANG_VERSION MATCHES "Apple")
+    set(NEVERC_USE_LLVM_AR ON CACHE BOOL
+        "Use llvm-ar instead of Xcode libtool for static libraries" FORCE)
+    get_filename_component(_NEVERC_COMPILER_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    find_program(_NEVERC_LLVM_AR NAMES llvm-ar
+      HINTS "${_NEVERC_COMPILER_DIR}" NO_DEFAULT_PATH)
+    find_program(_NEVERC_LLVM_RANLIB NAMES llvm-ranlib
+      HINTS "${_NEVERC_COMPILER_DIR}" NO_DEFAULT_PATH)
+    if(_NEVERC_LLVM_AR)
+      set(CMAKE_AR "${_NEVERC_LLVM_AR}" CACHE FILEPATH "" FORCE)
+    endif()
+    if(_NEVERC_LLVM_RANLIB)
+      set(CMAKE_RANLIB "${_NEVERC_LLVM_RANLIB}" CACHE FILEPATH "" FORCE)
+    endif()
+  endif()
+endif()
+
 # The release artifact is a single neverc executable linked from static
 # libraries, so avoid PIC/unwind/debugging extras and the associated configure
 # probes by default.

@@ -730,7 +730,8 @@ if (LLVM_BUILD_STATIC)
 endif()
 
 # Use libtool instead of ar if you are both on an Apple host, and targeting Apple.
-if(CMAKE_HOST_APPLE AND APPLE)
+# NeverC may set NEVERC_USE_LLVM_AR when building with upstream LLVM clang.
+if(CMAKE_HOST_APPLE AND APPLE AND NOT NEVERC_USE_LLVM_AR)
   include(UseLibtool)
 endif()
 
