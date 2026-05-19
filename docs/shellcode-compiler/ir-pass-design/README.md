@@ -24,8 +24,8 @@ This leads to the following pass division:
 | StringRuntimePass | Built-in `string` type runtime → stack-allocated arena variants | PipelineStart |
 | CompilerRtPass | `__udivti3` family + IR-level i128 div/rem → internal 128-bit long-division | PipelineStart |
 | SyscallStubPass | libc extern → target OS kernel trap wrapper, table-driven via `TargetDesc` | PipelineStart |
-| WinPEBImportPass | Win32 extern → PEB module walk + PE export resolver | PipelineStart |
-| KernelImportPass | Ring-0 extern → resolver-backed indirect call (kernel mode only) | PipelineStart |
+| WinPEBImportPass | Win32 extern → PEB module walk + PE export resolver + encrypted address cache | PipelineStart |
+| KernelImportPass | Ring-0 extern → resolver-backed indirect call + encrypted address cache (kernel mode only) | PipelineStart |
 | Data2TextPass (Phase 1) | Constant GV → immediates / stack chunk stores | PipelineStart |
 | *(LLVM standard optimizations)* | AlwaysInliner / SROA / InstCombine / SLP / ... | O-level |
 | Data2TextPass (Phase 2) | Split SROA-residual `store <N x i8> <const>`, consume late constants | OptimizerLast |
@@ -96,10 +96,15 @@ All templates and register constraints come from `TargetDesc` — the pass has z
 **Problem**: Windows has no stable syscall ABI; Win32 APIs must be resolved via PEB walk.
 
 **Solution**: for each extern matching the `WinImportTables` whitelist (~190 APIs across 6 DLLs):
-1. Generate an `always_inline` wrapper that calls `__neverc_win_resolve(dll_hash, api_hash)`
-2. The resolver is a real PEB → Ldr → InMemoryOrderModuleList walker with ROR-13 hash matching
-3. Only one inline asm instruction per platform: `movq %gs:0x60, $0` (x86_64) / `ldr $0, [x18, #0x60]` (arm64)
-4. All list traversal, PE header parsing, and hash comparison is pure LLVM IR
+1. Generate an `always_inline` wrapper with fast/slow path and encrypted address cache
+2. **Fast path** (cache hit): `atomic_load(cache) → decrypt → indirect call` (~10 instructions)
+3. **Slow path** (cache miss): full PEB → Ldr → InMemoryOrderModuleList walk with ROR-13 hash matching → `encrypt → cmpxchg` → call
+4. Only one inline asm instruction per platform: `movq %gs:0x60, $0` (x86_64) / `ldr $0, [x18, #0x60]` (arm64)
+5. All list traversal, PE header parsing, and hash comparison is pure LLVM IR
+6. Resolved addresses are XOR-encrypted with `PEB_BASE ^ COMPILE_TIME_SEED` before caching (anti-memory-scan)
+7. Cache slots are per-(DLL, API) global variables in `.text` section; thread-safe via `cmpxchg` (lock-free)
+
+**Pluggable encryption**: three functions (`__sc_derive_key`, `__sc_ptr_encrypt`, `__sc_ptr_decrypt`) can be overridden by user code to replace the default XOR scheme with custom encryption (AES, RC4, etc.)
 
 **Windows POSIX compat**: `WinPEBImportPass` bridges 13 POSIX function groups (write→WriteFile, mmap→VirtualAlloc, exit→ExitProcess, etc.) via `Win32PosixCompat.def`, enabling the same C source to compile across all 8 triples without `#ifdef`.
 
@@ -182,12 +187,15 @@ This ensures both "original code" and "optimizer-introduced code" are cleaned to
 
 ## 11. KernelImportPass (ring-0 only)
 
-Activated when `-mshellcode-context=kernel`. Automatically rewrites unresolved extern direct calls to resolver-backed indirect calls:
+Activated when `-mshellcode-context=kernel`. Automatically rewrites unresolved extern direct calls to resolver-backed indirect calls with encrypted address caching:
 
 1. When the module contains extern direct calls needing resolution, the entry signature is prepended with `(resolver, cookie)` implicit parameters
-2. Each callsite: `fn_ptr = resolver(FNV1a_hash(name), cookie); ((T*)fn_ptr)(args...)`
+2. Each API gets an `always_inline` wrapper with fast/slow path:
+   - **Fast path**: `atomic_load(cache) → decrypt → indirect call`
+   - **Slow path**: `resolver(FNV1a_hash(name), cookie) → encrypt → cmpxchg → call`
 3. Preserves variadic arguments (critical for `printk`)
 4. Address-taken externs are not wrapped; diagnostics direct users to pass pre-resolved function pointers
+5. Default encryption: XOR with compile-time seed (no PEB in kernel mode); user can override `__sc_derive_key` for KPCR-based keys
 
 See [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.md) for details.
 

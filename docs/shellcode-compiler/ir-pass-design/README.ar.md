@@ -19,7 +19,7 @@
 | ZeroRelocPass | Prep: توحيد الربط + alwaysinline. Stackify: المتغيرات العامة القابلة للتغيير → alloca |
 | IndirectBrPass | computed-goto → switch |
 | SyscallStubPass | libc extern → أفخاخ inline مدفوعة بـ TargetDesc + توافق POSIX + إصلاح K&R تلقائي |
-| WinPEBImportPass | Win32 extern → مُحلل PEB walk (~190 API) + توافق Windows POSIX |
+| WinPEBImportPass | Win32 extern → مُحلل PEB walk (~190 API) + ذاكرة تخزين مؤقت مشفرة للعناوين + توافق Windows POSIX |
 | MemIntrinPass | mem*/str*/abs → مساعدات حلقة بايت inline |
 | CompilerRtPass | `__int128` قسمة/باقي → قسمة طويلة inline |
 | Data2TextPass | المرحلة 1+2: GV ثابتة → فوريات/مكدس + تقسيم بقايا SROA |

@@ -17,7 +17,7 @@
 | ZeroRelocPass | Prep: унификация линковки + alwaysinline. Stackify: мутабельные глобалы → alloca |
 | IndirectBrPass | computed-goto → switch |
 | SyscallStubPass | libc extern → табличные inline-asm-трапы + совместимость POSIX + автоисправление K&R |
-| WinPEBImportPass | Win32 extern → PEB-walk-резолвер (~190 API) + Windows POSIX совместимость |
+| WinPEBImportPass | Win32 extern → PEB-walk-резолвер (~190 API) + зашифрованный кеш адресов + Windows POSIX совместимость |
 | MemIntrinPass | mem*/str*/abs → inline хелперы байтовых циклов |
 | CompilerRtPass | `__int128` div/mod → inline длинное деление |
 | Data2TextPass | Фаза 1+2: константные GV → немедленные/стек + split остатков SROA |
