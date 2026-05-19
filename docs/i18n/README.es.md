@@ -1,4 +1,4 @@
-**Idiomas**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+**Idiomas**: [English](../../README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
 <div align="center">
 
@@ -8,18 +8,18 @@
 
 Enlazador integrado · Pipeline shellcode · Tipo `string` integrado
 
-[![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#características)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#compilación-cruzada-a-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#características)
 
-[Documentación](docs/README.es.md) · [Guía shellcode](docs/shellcode-compiler/README.es.md) · [String integrado](docs/builtin-string/README.es.md)
+[Documentación](../README.es.md) · [Guía shellcode](../shellcode-compiler/README.es.md) · [String integrado](../builtin-string/README.es.md)
 
 </div>
 
 ---
 
-> **Nota:** GitHub siempre muestra `README.md` (inglés) como página principal del repositorio (sin detección automática de idioma). Use los enlaces de idioma arriba; en la [documentación](docs/README.es.md) y la [guía shellcode](docs/shellcode-compiler/README.es.md), mantenga el mismo idioma con la barra de idioma y las migas de pan.
+> **Nota:** GitHub siempre muestra `README.md` (inglés) como página principal del repositorio (sin detección automática de idioma). Use los enlaces de idioma arriba; en la [documentación](../README.es.md) y la [guía shellcode](../shellcode-compiler/README.es.md), mantenga el mismo idioma con la barra de idioma y las migas de pan.
 
 ## Descripción general
 
@@ -27,10 +27,10 @@ NeverC compila C estándar en binarios alojados, ejecutables freestanding y shel
 
 ## Características
 
-- **[Compilador de shellcode](docs/shellcode-compiler/README.es.md)** — pipeline IR/MIR multietapa, extracción multiplataforma, resolución de importaciones/syscalls, modo kernel, auditoría de bytes prohibidos, arquitectura de plugins
+- **[Compilador de shellcode](../shellcode-compiler/README.es.md)** — pipeline IR/MIR multietapa, extracción multiplataforma, resolución de importaciones/syscalls, modo kernel, auditoría de bytes prohibidos, arquitectura de plugins
 - **Enlazador integrado** — COFF, ELF y Mach-O en un solo binario; sin `ld` o `link.exe` externos
 - **Compilación cruzada** — PE de Windows desde macOS/Linux con SDK MSVC incluido
-- **[Tipo `string` integrado](docs/builtin-string/README.es.md)** — string con semántica de valor, sintaxis de métodos con punto, gestión automática de memoria y soporte nativo UTF-8
+- **[Tipo `string` integrado](../builtin-string/README.es.md)** — string con semántica de valor, sintaxis de métodos con punto, gestión automática de memoria y soporte nativo UTF-8
 - **Build LLVM ligero** — solo backends x86_64 / AArch64; rutas C++/ObjC/OpenMP eliminadas
 
 ## Ejemplo rápido
@@ -58,7 +58,7 @@ neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello
 neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
 ```
 
-Consulte el **[índice de documentación](docs/README.es.md)** para diseño detallado, matriz de plataformas, referencia CLI y ejemplos.
+Consulte el **[índice de documentación](../README.es.md)** para diseño detallado, matriz de plataformas, referencia CLI y ejemplos.
 
 ## Compilación
 
@@ -109,10 +109,10 @@ Tras colocar un splat de SDK [xwin](https://github.com/Jake-Shadle/xwin) en `bui
   -o hello.exe hello.c -lkernel32
 ```
 
-Para shellcode de Windows (`-fshellcode`, resolución PEB, etc.), véase la [documentación del compilador de shellcode](docs/shellcode-compiler/README.es.md).
+Para shellcode de Windows (`-fshellcode`, resolución PEB, etc.), véase la [documentación del compilador de shellcode](../shellcode-compiler/README.es.md).
 
 ## Licencia
 
-[AGPL-3.0](LICENSE)
+[AGPL-3.0](../../LICENSE)
 
-Los componentes LLVM conservan la licencia [Apache-2.0 WITH LLVM-exception](llvm/LICENSE.TXT).
+Los componentes LLVM conservan la licencia [Apache-2.0 WITH LLVM-exception](../../llvm/LICENSE.TXT).
