@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install latest LLVM release tarball on macOS CI.
+# Install latest LLVM.org release tarball on macOS (optional / local use).
+# CI workflows use Xcode Apple Clang instead — see build-macos.yml / release-macos-pgo.yml.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

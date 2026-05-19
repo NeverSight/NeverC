@@ -2,7 +2,7 @@ name: macos-arm64-neverc-build
 
 permissions:
   contents: write
-  
+
 on: [push, pull_request]
 
 jobs:
@@ -21,50 +21,44 @@ jobs:
     env:
       BUILD_TYPE: Release
     steps:
-    - name: Checkout Repo
-      uses: actions/checkout@v3
-      with:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+        with:
           path: neverc
           submodules: 'recursive'
-          
-    - name: Setup build deps
-      run: brew install ninja cmake p7zip
 
-    - name: Resolve latest LLVM version
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: bash ./neverc/.github/scripts/resolve-llvm-version.sh
+      - name: Select latest stable Xcode (Apple Clang)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
 
-    - name: Cache LLVM toolchain
-      uses: actions/cache@v4
-      with:
-        path: /tmp/llvm-pgo
-        key: llvm-${{ env.LLVM_VER }}-macos-arm64
+      - name: Show Apple toolchain
+        run: |
+          xcodebuild -version
+          clang --version
+          which clang
 
-    - name: Install PGO-optimised Clang
-      run: bash ./neverc/.github/scripts/install-llvm-macos.sh
+      - name: Setup build deps
+        run: brew install ninja cmake p7zip
 
-    - name: Build neverc
-      run: |
-        cmake -GNinja -Bbuild \
-        -DCMAKE_C_COMPILER=${{ env.PGO_CLANG }} \
-        -DCMAKE_CXX_COMPILER=${{ env.PGO_CLANGXX }} \
-        -DCMAKE_INSTALL_PREFIX=install \
-        -DLLVM_ENABLE_ASSERTIONS=OFF \
-        -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
-        -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0 \
-        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-        -C neverc/neverc/cmake/caches/NeverC.cmake \
-        neverc/llvm
-        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
-        cmake --build build --config ${{ env.BUILD_TYPE }} --target install
-        
-    - name: Package neverc
-      run: 7z a macos-arm64-neverc.zip install
-    
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-arm64-neverc
-        path: macos-arm64-neverc.zip
-    
+      - name: Build neverc
+        run: |
+          cmake -GNinja -Bbuild \
+            -DCMAKE_INSTALL_PREFIX=install \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+            -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0 \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -C neverc/neverc/cmake/caches/NeverC.cmake \
+            neverc/llvm
+          time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+          cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+
+      - name: Package neverc
+        run: 7z a macos-arm64-neverc.zip install
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-neverc
+          path: macos-arm64-neverc.zip
