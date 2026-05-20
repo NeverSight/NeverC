@@ -415,7 +415,9 @@ int csupport_fd_try_lock_for(int fd, int64_t timeout_ms) {
 #else /* Windows */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <io.h>
+#include <sys/stat.h>
 
 unsigned csupport_get_page_size(void) { return 4096; }
 int csupport_get_process_id(void) { return 0; }
@@ -478,7 +480,6 @@ void csupport_change_stdout_mode(int flags) {
     _setmode(1, _O_BINARY);
 }
 
-#include <fcntl.h>
 int csupport_fd_open(const char *filename, size_t filename_len,
                      int create_disp, int access, int flags, int *err_out) {
   (void)filename_len;
