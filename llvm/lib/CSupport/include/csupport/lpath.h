@@ -1598,7 +1598,7 @@ inline Expected<TempFile> TempFile::create(const Twine &Model, unsigned Mode,
 #else
   bool SetSignalHandler = true;
 #endif
-  if (SetSignalHandler && sys::RemoveFileOnSignal(ResultPath)) {
+  if (SetSignalHandler && sys::RemoveFileOnSignal(ResultPath, nullptr)) {
     // Make sure we delete the file when RemoveFileOnSignal fails.
     consumeError(Ret.discard());
     return errorCodeToError(make_error_code(errc::operation_not_permitted));
