@@ -397,6 +397,7 @@ inline void LLVMResetFatalErrorHandler() { llvm::remove_fatal_error_handler(); }
 
 #ifdef _WIN32
 
+#include "llvm/Support/Errc.h"
 #include <winerror.h>
 
 #define MAP_ERR_TO_COND(x, y)                                                  \
