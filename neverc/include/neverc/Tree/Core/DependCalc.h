@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_COMPUTEDEPENDENCE_H
-#define NEVERC_AST_COMPUTEDEPENDENCE_H
+#ifndef NEVERC_TREE_COMPUTEDEPENDENCE_H
+#define NEVERC_TREE_COMPUTEDEPENDENCE_H
 
 #include "neverc/Tree/Type/DependenceFlags.h"
 #include "llvm/ADT/ArrayRef.h"

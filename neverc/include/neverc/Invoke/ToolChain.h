@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_TOOLCHAIN_H
-#define NEVERC_DRIVER_TOOLCHAIN_H
+#ifndef NEVERC_INVOKE_TOOLCHAIN_H
+#define NEVERC_INVOKE_TOOLCHAIN_H
 
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Invoke/Action.h"
@@ -421,4 +421,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_DRIVER_TOOLCHAIN_H
+#endif // NEVERC_INVOKE_TOOLCHAIN_H

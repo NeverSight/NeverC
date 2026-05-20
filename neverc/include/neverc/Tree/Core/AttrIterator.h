@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_ATTRITERATOR_H
-#define NEVERC_AST_ATTRITERATOR_H
+#ifndef NEVERC_TREE_ATTRITERATOR_H
+#define NEVERC_TREE_ATTRITERATOR_H
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
@@ -101,4 +101,4 @@ inline SpecificAttr *getSpecificAttr(const Container &container) {
 
 } // namespace neverc
 
-#endif // NEVERC_AST_ATTRITERATOR_H
+#endif // NEVERC_TREE_ATTRITERATOR_H

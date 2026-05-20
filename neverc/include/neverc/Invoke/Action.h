@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_ACTION_H
-#define NEVERC_DRIVER_ACTION_H
+#ifndef NEVERC_INVOKE_ACTION_H
+#define NEVERC_INVOKE_ACTION_H
 
 #include "neverc/Invoke/Types.h"
 #include "neverc/Invoke/Util.h"
@@ -226,4 +226,4 @@ public:
 } // namespace driver
 } // namespace neverc
 
-#endif // NEVERC_DRIVER_ACTION_H
+#endif // NEVERC_INVOKE_ACTION_H

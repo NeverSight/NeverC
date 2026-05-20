@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_PREPOBSERVER_H
-#define NEVERC_LEX_PREPOBSERVER_H
+#ifndef NEVERC_SCAN_PREPOBSERVER_H
+#define NEVERC_SCAN_PREPOBSERVER_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Core/SourceManager.h"

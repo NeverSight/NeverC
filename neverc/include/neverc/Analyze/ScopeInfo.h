@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_SCOPEINFO_H
-#define NEVERC_SEMA_SCOPEINFO_H
+#ifndef NEVERC_ANALYZE_SCOPEINFO_H
+#define NEVERC_ANALYZE_SCOPEINFO_H
 
 #include "neverc/Analyze/CleanupInfo.h"
 #include "neverc/Foundation/Core/SourceLocation.h"
@@ -143,4 +143,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_SEMA_SCOPEINFO_H
+#endif // NEVERC_ANALYZE_SCOPEINFO_H

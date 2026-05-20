@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_MACRORECORD_H
-#define NEVERC_LEX_MACRORECORD_H
+#ifndef NEVERC_SCAN_MACRORECORD_H
+#define NEVERC_SCAN_MACRORECORD_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Scan/Token.h"
@@ -375,4 +375,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_LEX_MACROINFO_H
+#endif // NEVERC_SCAN_MACROINFO_H

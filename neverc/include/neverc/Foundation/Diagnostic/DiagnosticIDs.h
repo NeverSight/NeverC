@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_DIAGNOSTICIDS_H
-#define NEVERC_BASIC_DIAGNOSTICIDS_H
+#ifndef NEVERC_FOUNDATION_DIAGNOSTICIDS_H
+#define NEVERC_FOUNDATION_DIAGNOSTICIDS_H
 
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallVector.h"

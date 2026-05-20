@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_ATTR_H
-#define NEVERC_AST_ATTR_H
+#ifndef NEVERC_TREE_ATTR_H
+#define NEVERC_TREE_ATTR_H
 
 #include "neverc/Foundation/Attr/AttrKinds.h"
 #include "neverc/Foundation/Attr/AttributeCommonInfo.h"

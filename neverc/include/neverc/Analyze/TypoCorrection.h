@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_TYPOCORRECTION_H
-#define NEVERC_SEMA_TYPOCORRECTION_H
+#ifndef NEVERC_ANALYZE_TYPOCORRECTION_H
+#define NEVERC_ANALYZE_TYPOCORRECTION_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Diagnostic/PartialDiagnostic.h"
@@ -262,4 +262,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_SEMA_TYPOCORRECTION_H
+#endif // NEVERC_ANALYZE_TYPOCORRECTION_H

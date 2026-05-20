@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_STMTITERATOR_H
-#define NEVERC_AST_STMTITERATOR_H
+#ifndef NEVERC_TREE_STMTITERATOR_H
+#define NEVERC_TREE_STMTITERATOR_H
 
 #include <cassert>
 #include <cstddef>
@@ -137,4 +137,4 @@ inline StmtIterator cast_away_const(const ConstStmtIterator &RHS) {
 
 } // namespace neverc
 
-#endif // NEVERC_AST_STMTITERATOR_H
+#endif // NEVERC_TREE_STMTITERATOR_H

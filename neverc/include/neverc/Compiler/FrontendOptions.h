@@ -1,5 +1,5 @@
-#ifndef NEVERC_FRONTEND_FRONTENDOPTIONS_H
-#define NEVERC_FRONTEND_FRONTENDOPTIONS_H
+#ifndef NEVERC_COMPILER_FRONTENDOPTIONS_H
+#define NEVERC_COMPILER_FRONTENDOPTIONS_H
 
 #include "neverc/Foundation/LangOpts/LangStandard.h"
 #include "llvm/ADT/StringRef.h"
@@ -162,4 +162,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_FRONTEND_FRONTENDOPTIONS_H
+#endif // NEVERC_COMPILER_FRONTENDOPTIONS_H

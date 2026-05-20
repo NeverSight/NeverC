@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_TARGETBUILTINS_H
-#define NEVERC_BASIC_TARGETBUILTINS_H
+#ifndef NEVERC_FOUNDATION_TARGETBUILTINS_H
+#define NEVERC_FOUNDATION_TARGETBUILTINS_H
 
 #include "neverc/Foundation/Builtin/Builtins.h"
 #include "llvm/Support/MathExtras.h"

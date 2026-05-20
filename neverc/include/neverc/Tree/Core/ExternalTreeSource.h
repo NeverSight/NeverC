@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_EXTERNALTREESOURCE_H
-#define NEVERC_AST_EXTERNALTREESOURCE_H
+#ifndef NEVERC_TREE_EXTERNALTREESOURCE_H
+#define NEVERC_TREE_EXTERNALTREESOURCE_H
 
 #include "llvm/Support/PointerLikeTypeTraits.h"
 #include <cstdint>
@@ -74,4 +74,4 @@ struct PointerLikeTypeTraits<neverc::LatestDeclPtr<Owner, T>> {
 
 } // namespace llvm
 
-#endif // NEVERC_AST_EXTERNALTREESOURCE_H
+#endif // NEVERC_TREE_EXTERNALTREESOURCE_H

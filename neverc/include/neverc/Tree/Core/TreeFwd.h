@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_ASTFWD_H
-#define NEVERC_AST_ASTFWD_H
+#ifndef NEVERC_TREE_ASTFWD_H
+#define NEVERC_TREE_ASTFWD_H
 
 namespace neverc {
 

@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_LEXERCORE_H
-#define NEVERC_LEX_LEXERCORE_H
+#ifndef NEVERC_SCAN_LEXERCORE_H
+#define NEVERC_SCAN_LEXERCORE_H
 
 #include "neverc/Foundation/Core/FileEntry.h"
 #include "neverc/Foundation/Core/SourceLocation.h"
@@ -104,4 +104,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_LEX_LEXERCORE_H
+#endif // NEVERC_SCAN_LEXERCORE_H

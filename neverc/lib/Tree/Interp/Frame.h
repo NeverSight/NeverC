@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_INTERP_FRAME_H
-#define NEVERC_AST_INTERP_FRAME_H
+#ifndef NEVERC_TREE_INTERP_FRAME_H
+#define NEVERC_TREE_INTERP_FRAME_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "llvm/Support/raw_ostream.h"

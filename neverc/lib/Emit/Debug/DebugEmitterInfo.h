@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_CODEGEN_DEBUG_CGDEBUGINFO_H
-#define NEVERC_LIB_CODEGEN_DEBUG_CGDEBUGINFO_H
+#ifndef NEVERC_LIB_EMIT_DEBUG_DEBUGEMITTERINFO_H
+#define NEVERC_LIB_EMIT_DEBUG_DEBUGEMITTERINFO_H
 
 #include "Core/EmitterBuilder.h"
 #include "neverc/Foundation/Core/SourceLocation.h"
@@ -385,4 +385,4 @@ public:
 } // namespace Emit
 } // namespace neverc
 
-#endif // NEVERC_LIB_CODEGEN_DEBUG_CGDEBUGINFO_H
+#endif // NEVERC_LIB_EMIT_DEBUG_DEBUGEMITTERINFO_H

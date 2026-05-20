@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_INMEMORYFILESTORE_H
-#define NEVERC_DRIVER_INMEMORYFILESTORE_H
+#ifndef NEVERC_INVOKE_INMEMORYFILESTORE_H
+#define NEVERC_INVOKE_INMEMORYFILESTORE_H
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
@@ -48,4 +48,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_DRIVER_INMEMORYFILESTORE_H
+#endif // NEVERC_INVOKE_INMEMORYFILESTORE_H

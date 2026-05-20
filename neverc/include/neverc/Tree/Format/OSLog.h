@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_OSLOG_H
-#define NEVERC_AST_OSLOG_H
+#ifndef NEVERC_TREE_OSLOG_H
+#define NEVERC_TREE_OSLOG_H
 
 #include "neverc/Tree/Core/TreeContext.h"
 #include "neverc/Tree/Expr/Expr.h"

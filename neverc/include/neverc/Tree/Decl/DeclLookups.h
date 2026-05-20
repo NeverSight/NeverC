@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_DECLLOOKUPS_H
-#define NEVERC_AST_DECLLOOKUPS_H
+#ifndef NEVERC_TREE_DECLLOOKUPS_H
+#define NEVERC_TREE_DECLLOOKUPS_H
 
 #include "neverc/Tree/Core/TreeContext.h"
 #include "neverc/Tree/Decl/DeclBase.h"
@@ -63,4 +63,4 @@ inline DeclContext::lookups_range DeclContext::lookups() const {
 
 } // namespace neverc
 
-#endif // NEVERC_AST_DECLLOOKUPS_H
+#endif // NEVERC_TREE_DECLLOOKUPS_H

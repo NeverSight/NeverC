@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_REDECLARABLE_H
-#define NEVERC_AST_REDECLARABLE_H
+#ifndef NEVERC_TREE_REDECLARABLE_H
+#define NEVERC_TREE_REDECLARABLE_H
 
 #include "neverc/Tree/Core/ExternalTreeSource.h"
 #include "llvm/ADT/DenseMapInfo.h"
@@ -348,4 +348,4 @@ struct PointerLikeTypeTraits<neverc::CanonicalDeclPtr<decl_type>> {
 
 } // namespace llvm
 
-#endif // NEVERC_AST_REDECLARABLE_H
+#endif // NEVERC_TREE_REDECLARABLE_H

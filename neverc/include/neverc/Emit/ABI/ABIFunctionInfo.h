@@ -1,5 +1,5 @@
-#ifndef NEVERC_CODEGEN_ABI_ABIFUNCTIONINFO_H
-#define NEVERC_CODEGEN_ABI_ABIFUNCTIONINFO_H
+#ifndef NEVERC_EMIT_ABI_ABIFUNCTIONINFO_H
+#define NEVERC_EMIT_ABI_ABIFUNCTIONINFO_H
 
 #include "neverc/Tree/Core/CharUnits.h"
 #include "neverc/Tree/Decl/Decl.h"

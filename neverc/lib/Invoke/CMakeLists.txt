@@ -14,7 +14,7 @@ if(WIN32)
 endif()
 
 # Mainstream toolchains and archs only.
-set(NEVERC_DRIVER_TOOLCHAIN_SOURCES
+set(NEVERC_INVOKE_TOOLCHAIN_SOURCES
   ToolChains/CommonArgs.cpp
   ToolChains/Darwin.cpp
   ToolChains/Gnu.cpp
@@ -24,7 +24,7 @@ set(NEVERC_DRIVER_TOOLCHAIN_SOURCES
 )
 
 # Only X86, AArch64.
-set(NEVERC_DRIVER_ARCH_SOURCES
+set(NEVERC_INVOKE_ARCH_SOURCES
   ToolChains/Arch/AArch64.cpp
   ToolChains/Arch/X86.cpp
 )
@@ -43,8 +43,8 @@ add_neverc_library(nevercInvoke
   Option/DriverOptions.cpp
   Option/OptionUtils.cpp
   Option/Types.cpp
-  ${NEVERC_DRIVER_ARCH_SOURCES}
-  ${NEVERC_DRIVER_TOOLCHAIN_SOURCES}
+  ${NEVERC_INVOKE_ARCH_SOURCES}
+  ${NEVERC_INVOKE_TOOLCHAIN_SOURCES}
 
   DEPENDS
   NeverCDriverOptions

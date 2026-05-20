@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_DECLCONTEXTINTERNALS_H
-#define NEVERC_AST_DECLCONTEXTINTERNALS_H
+#ifndef NEVERC_TREE_DECLCONTEXTINTERNALS_H
+#define NEVERC_TREE_DECLCONTEXTINTERNALS_H
 
 #include "neverc/Tree/Core/TreeContext.h"
 #include "neverc/Tree/Decl/Decl.h"
@@ -246,4 +246,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_AST_DECLCONTEXTINTERNALS_H
+#endif // NEVERC_TREE_DECLCONTEXTINTERNALS_H

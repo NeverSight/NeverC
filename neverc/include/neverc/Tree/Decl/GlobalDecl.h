@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_GLOBALDECL_H
-#define NEVERC_AST_GLOBALDECL_H
+#ifndef NEVERC_TREE_GLOBALDECL_H
+#define NEVERC_TREE_GLOBALDECL_H
 
 #include "neverc/Tree/Core/Attr.h"
 #include "llvm/ADT/DenseMapInfo.h"
@@ -95,4 +95,4 @@ template <> struct DenseMapInfo<neverc::GlobalDecl> {
 
 } // namespace llvm
 
-#endif // NEVERC_AST_GLOBALDECL_H
+#endif // NEVERC_TREE_GLOBALDECL_H

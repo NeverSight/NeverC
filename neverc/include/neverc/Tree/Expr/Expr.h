@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_EXPR_H
-#define NEVERC_AST_EXPR_H
+#ifndef NEVERC_TREE_EXPR_H
+#define NEVERC_TREE_EXPR_H
 
 #include "neverc/Foundation/Core/CharInfo.h"
 #include "neverc/Foundation/Core/SyncScope.h"
@@ -4643,4 +4643,4 @@ inline const StreamingDiagnostic &operator<<(const StreamingDiagnostic &DB,
 
 } // end namespace neverc
 
-#endif // NEVERC_AST_EXPR_H
+#endif // NEVERC_TREE_EXPR_H

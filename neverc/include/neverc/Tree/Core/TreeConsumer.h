@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_ASTCONSUMER_H
-#define NEVERC_AST_ASTCONSUMER_H
+#ifndef NEVERC_TREE_ASTCONSUMER_H
+#define NEVERC_TREE_ASTCONSUMER_H
 
 namespace neverc {
 class TreeContext;

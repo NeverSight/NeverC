@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_DESIGNATOR_H
-#define NEVERC_SEMA_DESIGNATOR_H
+#ifndef NEVERC_ANALYZE_DESIGNATOR_H
+#define NEVERC_ANALYZE_DESIGNATOR_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "llvm/ADT/SmallVector.h"

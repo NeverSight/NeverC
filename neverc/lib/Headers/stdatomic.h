@@ -34,7 +34,7 @@
     __STDC_VERSION__ < 202311L &&                                              \
     !defined(_NEVERC_DISABLE_CRT_DEPRECATION_WARNINGS)
 /* ATOMIC_VAR_INIT was deprecated in C17. */
-#pragma clang deprecated(ATOMIC_VAR_INIT)
+#pragma neverc deprecated(ATOMIC_VAR_INIT)
 #endif
 #define atomic_init __c11_atomic_init
 

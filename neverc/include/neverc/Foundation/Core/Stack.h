@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_STACK_H
-#define NEVERC_BASIC_STACK_H
+#ifndef NEVERC_FOUNDATION_STACK_H
+#define NEVERC_FOUNDATION_STACK_H
 
 #include <cstddef>
 
@@ -31,4 +31,4 @@ inline void runWithSufficientStackSpace(llvm::function_ref<void()> Diag,
 }
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_STACK_H
+#endif // NEVERC_FOUNDATION_STACK_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_SEMACONSUMER_H
-#define NEVERC_SEMA_SEMACONSUMER_H
+#ifndef NEVERC_ANALYZE_SEMACONSUMER_H
+#define NEVERC_ANALYZE_SEMACONSUMER_H
 
 #include "neverc/Tree/Core/TreeConsumer.h"
 

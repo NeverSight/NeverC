@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_INTERP_STATE_H
-#define NEVERC_AST_INTERP_STATE_H
+#ifndef NEVERC_TREE_INTERP_STATE_H
+#define NEVERC_TREE_INTERP_STATE_H
 
 #include "neverc/Tree/Core/TreeDiag.h"
 #include "neverc/Tree/Expr/Expr.h"

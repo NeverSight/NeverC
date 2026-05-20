@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_CODEGEN_ABI_TARGETINFO_H
-#define NEVERC_LIB_CODEGEN_ABI_TARGETINFO_H
+#ifndef NEVERC_LIB_EMIT_ABI_TARGETINFO_H
+#define NEVERC_LIB_EMIT_ABI_TARGETINFO_H
 
 #include "Core/EmitterBuilder.h"
 #include "Core/EmitterValue.h"
@@ -173,4 +173,4 @@ createWinX86_64TargetCodeGenInfo(ModuleEmitter &ME, X86AVXABILevel AVXLevel);
 } // namespace Emit
 } // namespace neverc
 
-#endif // NEVERC_LIB_CODEGEN_ABI_TARGETINFO_H
+#endif // NEVERC_LIB_EMIT_ABI_TARGETINFO_H

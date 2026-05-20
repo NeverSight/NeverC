@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_CHARUNITS_H
-#define NEVERC_AST_CHARUNITS_H
+#ifndef NEVERC_TREE_CHARUNITS_H
+#define NEVERC_TREE_CHARUNITS_H
 
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/Support/Alignment.h"
@@ -179,4 +179,4 @@ template <> struct DenseMapInfo<neverc::CharUnits> {
 
 } // end namespace llvm
 
-#endif // NEVERC_AST_CHARUNITS_H
+#endif // NEVERC_TREE_CHARUNITS_H

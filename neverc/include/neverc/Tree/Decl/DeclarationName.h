@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_DECLARATIONNAME_H
-#define NEVERC_AST_DECLARATIONNAME_H
+#ifndef NEVERC_TREE_DECLARATIONNAME_H
+#define NEVERC_TREE_DECLARATIONNAME_H
 
 #include "neverc/Foundation/Core/IdentifierTable.h"
 #include "neverc/Foundation/Core/SourceLocation.h"
@@ -188,4 +188,4 @@ template <> struct PointerLikeTypeTraits<neverc::DeclarationName> {
 
 } // namespace llvm
 
-#endif // NEVERC_AST_DECLARATIONNAME_H
+#endif // NEVERC_TREE_DECLARATIONNAME_H

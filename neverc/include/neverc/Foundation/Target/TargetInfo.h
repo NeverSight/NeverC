@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_TARGETINFO_H
-#define NEVERC_BASIC_TARGETINFO_H
+#ifndef NEVERC_FOUNDATION_TARGETINFO_H
+#define NEVERC_FOUNDATION_TARGETINFO_H
 
 #include "neverc/Foundation/Core/AddressSpaces.h"
 #include "neverc/Foundation/Core/BitmaskEnum.h"

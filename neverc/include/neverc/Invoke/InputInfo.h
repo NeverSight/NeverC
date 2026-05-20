@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_INPUTINFO_H
-#define NEVERC_DRIVER_INPUTINFO_H
+#ifndef NEVERC_INVOKE_INPUTINFO_H
+#define NEVERC_INVOKE_INPUTINFO_H
 
 #include "neverc/Invoke/Action.h"
 #include "neverc/Invoke/Types.h"

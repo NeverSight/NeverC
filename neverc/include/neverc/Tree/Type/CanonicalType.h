@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_CANONICALTYPE_H
-#define NEVERC_AST_CANONICALTYPE_H
+#ifndef NEVERC_TREE_CANONICALTYPE_H
+#define NEVERC_TREE_CANONICALTYPE_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
@@ -412,4 +412,4 @@ CanProxy<Type> CanTypeIterator<InputIterator>::operator->() const {
 
 } // namespace neverc
 
-#endif // NEVERC_AST_CANONICALTYPE_H
+#endif // NEVERC_TREE_CANONICALTYPE_H

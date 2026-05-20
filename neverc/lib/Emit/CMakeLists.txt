@@ -37,7 +37,7 @@ if(MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES Clang
   endif()
 endif()
 
-set(NEVERC_CODEGEN_TARGET_SOURCES
+set(NEVERC_EMIT_TARGET_SOURCES
   Targets/AArch64.cpp
   Targets/X86.cpp
   )
@@ -54,7 +54,7 @@ add_neverc_library(nevercEmit
   ABI/ABIInfoImpl.cpp
   ABI/CABISupport.cpp
   ABI/TargetInfo.cpp
-  ${NEVERC_CODEGEN_TARGET_SOURCES}
+  ${NEVERC_EMIT_TARGET_SOURCES}
 
   Expr/ExprEmitter.cpp
   Expr/AggEmitter.cpp

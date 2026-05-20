@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_PARSEDATTRINFO_H
-#define NEVERC_BASIC_PARSEDATTRINFO_H
+#ifndef NEVERC_FOUNDATION_PARSEDATTRINFO_H
+#define NEVERC_FOUNDATION_PARSEDATTRINFO_H
 
 #include "neverc/Foundation/Attr/AttrSubjectMatchRules.h"
 #include "neverc/Foundation/Attr/AttributeCommonInfo.h"
@@ -115,4 +115,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_BASIC_PARSEDATTRINFO_H
+#endif // NEVERC_FOUNDATION_PARSEDATTRINFO_H

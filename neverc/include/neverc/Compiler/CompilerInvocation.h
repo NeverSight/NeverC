@@ -1,5 +1,5 @@
-#ifndef NEVERC_FRONTEND_COMPILERINVOCATION_H
-#define NEVERC_FRONTEND_COMPILERINVOCATION_H
+#ifndef NEVERC_COMPILER_COMPILERINVOCATION_H
+#define NEVERC_COMPILER_COMPILERINVOCATION_H
 
 #include "neverc/Compiler/DependencyOutputOptions.h"
 #include "neverc/Compiler/FrontendOptions.h"
@@ -249,4 +249,4 @@ llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> createVFSFromOverlayFiles(
 
 } // namespace neverc
 
-#endif // NEVERC_FRONTEND_COMPILERINVOCATION_H
+#endif // NEVERC_COMPILER_COMPILERINVOCATION_H

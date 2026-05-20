@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_STMTVISITOR_H
-#define NEVERC_AST_STMTVISITOR_H
+#ifndef NEVERC_TREE_STMTVISITOR_H
+#define NEVERC_TREE_STMTVISITOR_H
 
 #include "neverc/Tree/Decl/DeclC.h"
 #include "neverc/Tree/Expr/Expr.h"
@@ -215,4 +215,4 @@ class ConstStmtVisitor : public StmtVisitorBase<llvm::make_const_ptr, ImplClass,
 
 } // namespace neverc
 
-#endif // NEVERC_AST_STMTVISITOR_H
+#endif // NEVERC_TREE_STMTVISITOR_H

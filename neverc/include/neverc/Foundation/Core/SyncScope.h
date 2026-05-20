@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_SYNCSCOPE_H
-#define NEVERC_BASIC_SYNCSCOPE_H
+#ifndef NEVERC_FOUNDATION_SYNCSCOPE_H
+#define NEVERC_FOUNDATION_SYNCSCOPE_H
 
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "llvm/ADT/ArrayRef.h"

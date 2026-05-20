@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_CLWARNINGS_H
-#define NEVERC_BASIC_CLWARNINGS_H
+#ifndef NEVERC_FOUNDATION_CLWARNINGS_H
+#define NEVERC_FOUNDATION_CLWARNINGS_H
 
 #include <optional>
 
@@ -13,4 +13,4 @@ std::optional<diag::Group> diagGroupFromCLWarningID(unsigned);
 
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_CLWARNINGS_H
+#endif // NEVERC_FOUNDATION_CLWARNINGS_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_UNRESOLVEDSET_H
-#define NEVERC_AST_UNRESOLVEDSET_H
+#ifndef NEVERC_TREE_UNRESOLVEDSET_H
+#define NEVERC_TREE_UNRESOLVEDSET_H
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
@@ -85,4 +85,4 @@ class UnresolvedSet : public UnresolvedSetImpl {
 
 } // namespace neverc
 
-#endif // NEVERC_AST_UNRESOLVEDSET_H
+#endif // NEVERC_TREE_UNRESOLVEDSET_H

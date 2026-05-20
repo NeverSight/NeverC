@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_ADDRESSSPACES_H
-#define NEVERC_BASIC_ADDRESSSPACES_H
+#ifndef NEVERC_FOUNDATION_ADDRESSSPACES_H
+#define NEVERC_FOUNDATION_ADDRESSSPACES_H
 
 #include <cassert>
 
@@ -42,4 +42,4 @@ inline bool isPtrSizeAddressSpace(LangAS AS) {
 
 } // namespace neverc
 
-#endif // NEVERC_BASIC_ADDRESSSPACES_H
+#endif // NEVERC_FOUNDATION_ADDRESSSPACES_H

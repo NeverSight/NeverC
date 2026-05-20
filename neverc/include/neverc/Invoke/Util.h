@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_UTIL_H
-#define NEVERC_DRIVER_UTIL_H
+#ifndef NEVERC_INVOKE_UTIL_H
+#define NEVERC_INVOKE_UTIL_H
 
 #include "neverc/Linker/Core/Driver/Dispatcher.h"
 #include "llvm/ADT/DenseMap.h"

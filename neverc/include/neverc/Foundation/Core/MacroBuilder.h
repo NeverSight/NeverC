@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_MACROBUILDER_H
-#define NEVERC_BASIC_MACROBUILDER_H
+#ifndef NEVERC_FOUNDATION_MACROBUILDER_H
+#define NEVERC_FOUNDATION_MACROBUILDER_H
 
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"

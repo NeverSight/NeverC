@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_DIAGNOSTIC_H
-#define NEVERC_BASIC_DIAGNOSTIC_H
+#ifndef NEVERC_FOUNDATION_DIAGNOSTIC_H
+#define NEVERC_FOUNDATION_DIAGNOSTIC_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Core/Specifiers.h"
@@ -1323,4 +1323,4 @@ void EscapeStringForDiagnostic(llvm::StringRef Str,
                                llvm::SmallVectorImpl<char> &OutStr);
 } // namespace neverc
 
-#endif // NEVERC_BASIC_DIAGNOSTIC_H
+#endif // NEVERC_FOUNDATION_DIAGNOSTIC_H

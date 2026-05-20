@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_PASTEGUARD_H
-#define NEVERC_LEX_PASTEGUARD_H
+#ifndef NEVERC_SCAN_PASTEGUARD_H
+#define NEVERC_SCAN_PASTEGUARD_H
 
 #include "neverc/Foundation/Core/TokenKinds.h"
 #include <array>

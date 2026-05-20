@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_EXPANSIONLEXER_H
-#define NEVERC_LEX_EXPANSIONLEXER_H
+#ifndef NEVERC_SCAN_EXPANSIONLEXER_H
+#define NEVERC_SCAN_EXPANSIONLEXER_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Scan/Token.h"
@@ -106,4 +106,4 @@ private:
 
 } // namespace neverc
 
-#endif // NEVERC_LEX_EXPANSIONLEXER_H
+#endif // NEVERC_SCAN_EXPANSIONLEXER_H

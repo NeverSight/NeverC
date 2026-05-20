@@ -33,10 +33,6 @@ endforeach(lib)
 if(intrinsics_gen IN_LIST LLVM_COMMON_DEPENDS)
   list(REMOVE_ITEM LLVM_COMMON_DEPENDS intrinsics_gen)
 endif()
-if(omp_gen IN_LIST LLVM_COMMON_DEPENDS)
-  list(REMOVE_ITEM LLVM_COMMON_DEPENDS omp_gen)
-endif()
-
 #
 # Generate LLVMConfig.cmake for the build tree.
 #

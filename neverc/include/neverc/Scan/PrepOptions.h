@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_PREPOPTIONS_H_
-#define NEVERC_LEX_PREPOPTIONS_H_
+#ifndef NEVERC_SCAN_PREPOPTIONS_H_
+#define NEVERC_SCAN_PREPOPTIONS_H_
 
 #include "neverc/Foundation/Core/FileEntry.h"
 #include "llvm/ADT/StringRef.h"
@@ -36,4 +36,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_LEX_PREPOPTIONS_H_
+#endif // NEVERC_SCAN_PREPOPTIONS_H_

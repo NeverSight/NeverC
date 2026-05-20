@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_ASTCONTEXTALLOCATE_H
-#define NEVERC_AST_ASTCONTEXTALLOCATE_H
+#ifndef NEVERC_TREE_ASTCONTEXTALLOCATE_H
+#define NEVERC_TREE_ASTCONTEXTALLOCATE_H
 
 #include <cstddef>
 
@@ -21,4 +21,4 @@ void *operator new[](size_t Bytes, const neverc::TreeContext &C,
 void operator delete(void *Ptr, const neverc::TreeContext &C, size_t);
 void operator delete[](void *Ptr, const neverc::TreeContext &C, size_t);
 
-#endif // NEVERC_AST_ASTCONTEXTALLOCATE_H
+#endif // NEVERC_TREE_ASTCONTEXTALLOCATE_H

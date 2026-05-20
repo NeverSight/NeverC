@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_DIAGNOSTICOPTIONS_H
-#define NEVERC_BASIC_DIAGNOSTICOPTIONS_H
+#ifndef NEVERC_FOUNDATION_DIAGNOSTICOPTIONS_H
+#define NEVERC_FOUNDATION_DIAGNOSTICOPTIONS_H
 
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/Support/raw_ostream.h"
@@ -75,4 +75,4 @@ using TextDiagnosticFormat = DiagnosticOptions::TextDiagnosticFormat;
 
 } // namespace neverc
 
-#endif // NEVERC_BASIC_DIAGNOSTICOPTIONS_H
+#endif // NEVERC_FOUNDATION_DIAGNOSTICOPTIONS_H

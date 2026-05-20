@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_LITERALPARSER_H
-#define NEVERC_LEX_LITERALPARSER_H
+#ifndef NEVERC_SCAN_LITERALPARSER_H
+#define NEVERC_SCAN_LITERALPARSER_H
 
 #include "neverc/Foundation/Core/CharInfo.h"
 #include "neverc/Foundation/Core/TokenKinds.h"

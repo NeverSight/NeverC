@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_ATTRIBUTES_H
-#define NEVERC_BASIC_ATTRIBUTES_H
+#ifndef NEVERC_FOUNDATION_ATTRIBUTES_H
+#define NEVERC_FOUNDATION_ATTRIBUTES_H
 
 #include "neverc/Foundation/Attr/AttributeCommonInfo.h"
 
@@ -15,4 +15,4 @@ int hasAttribute(AttributeCommonInfo::Syntax Syntax,
 
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_ATTRIBUTES_H
+#endif // NEVERC_FOUNDATION_ATTRIBUTES_H

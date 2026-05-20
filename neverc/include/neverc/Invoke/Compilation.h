@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_COMPILATION_H
-#define NEVERC_DRIVER_COMPILATION_H
+#ifndef NEVERC_INVOKE_COMPILATION_H
+#define NEVERC_INVOKE_COMPILATION_H
 
 #include "neverc/Invoke/Action.h"
 #include "neverc/Invoke/Job.h"
@@ -193,4 +193,4 @@ public:
 } // namespace driver
 } // namespace neverc
 
-#endif // NEVERC_DRIVER_COMPILATION_H
+#endif // NEVERC_INVOKE_COMPILATION_H

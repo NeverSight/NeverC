@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_TOKENSCRATCH_H
-#define NEVERC_LEX_TOKENSCRATCH_H
+#ifndef NEVERC_SCAN_TOKENSCRATCH_H
+#define NEVERC_SCAN_TOKENSCRATCH_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 

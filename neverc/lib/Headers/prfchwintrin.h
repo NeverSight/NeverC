@@ -38,10 +38,10 @@ _m_prefetch(void *__P) {
 ///    A pointer specifying the memory address to be prefetched.
 static __inline__ void __attribute__((__always_inline__, __nodebug__))
 _m_prefetchw(volatile const void *__P) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcast-qual"
+#pragma neverc diagnostic push
+#pragma neverc diagnostic ignored "-Wcast-qual"
   __builtin_prefetch((const void *)__P, 1, 3 /* _MM_HINT_T0 */);
-#pragma clang diagnostic pop
+#pragma neverc diagnostic pop
 }
 
 #endif /* __PRFCHWINTRIN_H */

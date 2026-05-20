@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_OVERLOAD_H
-#define NEVERC_SEMA_OVERLOAD_H
+#ifndef NEVERC_ANALYZE_OVERLOAD_H
+#define NEVERC_ANALYZE_OVERLOAD_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Tree/Decl/Decl.h"
@@ -230,4 +230,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_SEMA_OVERLOAD_H
+#endif // NEVERC_ANALYZE_OVERLOAD_H

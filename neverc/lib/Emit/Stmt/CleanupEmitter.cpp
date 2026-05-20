@@ -1196,7 +1196,7 @@ namespace {
 /// "funclet" OperandBundle is required for noThrow intrinsics (see
 /// CallEmitter).
 llvm::InvokeInst *genSehScope(FunctionEmitter &FE,
-                              llvm::FunctionCallee &SehCppScope) {
+                              llvm::FunctionCallee &SehScope) {
   llvm::BasicBlock *InvokeDest = FE.getInvokeDest();
   if (!InvokeDest)
     return nullptr;
@@ -1204,10 +1204,10 @@ llvm::InvokeInst *genSehScope(FunctionEmitter &FE,
     return nullptr; // Not found the insert point.
   llvm::BasicBlock *Cont = FE.createBasicBlock("invoke.cont");
   llvm::SmallVector<llvm::OperandBundleDef, 1> BundleList =
-      FE.getBundlesForFunclet(SehCppScope.getCallee());
+      FE.getBundlesForFunclet(SehScope.getCallee());
   if (FE.CurrentFuncletPad)
     BundleList.emplace_back("funclet", FE.CurrentFuncletPad);
-  auto InvokeIst = FE.Builder.CreateInvoke(SehCppScope, Cont, InvokeDest,
+  auto InvokeIst = FE.Builder.CreateInvoke(SehScope, Cont, InvokeDest,
                                            std::nullopt, BundleList);
   FE.genBlock(Cont);
   return InvokeIst;
@@ -1217,16 +1217,16 @@ llvm::InvokeInst *genSehScope(FunctionEmitter &FE,
 llvm::InvokeInst *FunctionEmitter::genSehTryScopeBegin() {
   llvm::FunctionType *FTy =
       llvm::FunctionType::get(ME.VoidTy, /*isVarArg=*/false);
-  llvm::FunctionCallee SehCppScope =
+  llvm::FunctionCallee SehScope =
       ME.createRuntimeFunction(FTy, "llvm.seh.try.begin");
-  return genSehScope(*this, SehCppScope);
+  return genSehScope(*this, SehScope);
 }
 
 // Invoke a llvm.seh.try.end at the end of a SEH scope for -EHa
 llvm::InvokeInst *FunctionEmitter::genSehTryScopeEnd() {
   llvm::FunctionType *FTy =
       llvm::FunctionType::get(ME.VoidTy, /*isVarArg=*/false);
-  llvm::FunctionCallee SehCppScope =
+  llvm::FunctionCallee SehScope =
       ME.createRuntimeFunction(FTy, "llvm.seh.try.end");
-  return genSehScope(*this, SehCppScope);
+  return genSehScope(*this, SehScope);
 }

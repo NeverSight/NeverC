@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_DECLGROUP_H
-#define NEVERC_AST_DECLGROUP_H
+#ifndef NEVERC_TREE_DECLGROUP_H
+#define NEVERC_TREE_DECLGROUP_H
 
 #include "llvm/Support/TrailingObjects.h"
 #include <cassert>
@@ -135,4 +135,4 @@ template <> struct PointerLikeTypeTraits<neverc::DeclGroupRef> {
 
 } // namespace llvm
 
-#endif // NEVERC_AST_DECLGROUP_H
+#endif // NEVERC_TREE_DECLGROUP_H

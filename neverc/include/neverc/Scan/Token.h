@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_TOKEN_H
-#define NEVERC_LEX_TOKEN_H
+#ifndef NEVERC_SCAN_TOKEN_H
+#define NEVERC_SCAN_TOKEN_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Core/TokenKinds.h"
@@ -221,4 +221,4 @@ struct PPConditionalInfo {
 
 } // end namespace neverc
 
-#endif // NEVERC_LEX_TOKEN_H
+#endif // NEVERC_SCAN_TOKEN_H

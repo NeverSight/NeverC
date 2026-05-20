@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_IDENTIFIERTABLE_H
-#define NEVERC_BASIC_IDENTIFIERTABLE_H
+#ifndef NEVERC_FOUNDATION_IDENTIFIERTABLE_H
+#define NEVERC_FOUNDATION_IDENTIFIERTABLE_H
 
 #include "neverc/Foundation/Core/TokenKinds.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticIDs.h"
@@ -407,4 +407,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_BASIC_IDENTIFIERTABLE_H
+#endif // NEVERC_FOUNDATION_IDENTIFIERTABLE_H

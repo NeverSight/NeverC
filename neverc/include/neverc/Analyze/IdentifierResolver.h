@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_IDENTIFIERRESOLVER_H
-#define NEVERC_SEMA_IDENTIFIERRESOLVER_H
+#ifndef NEVERC_ANALYZE_IDENTIFIERRESOLVER_H
+#define NEVERC_ANALYZE_IDENTIFIERRESOLVER_H
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator_range.h"
@@ -145,4 +145,4 @@ private:
 
 } // namespace neverc
 
-#endif // NEVERC_SEMA_IDENTIFIERRESOLVER_H
+#endif // NEVERC_ANALYZE_IDENTIFIERRESOLVER_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_DECLVISITOR_H
-#define NEVERC_AST_DECLVISITOR_H
+#ifndef NEVERC_TREE_DECLVISITOR_H
+#define NEVERC_TREE_DECLVISITOR_H
 
 #include "neverc/Tree/Decl/DeclC.h"
 #include "llvm/ADT/STLExtras.h"
@@ -49,4 +49,4 @@ class ConstDeclVisitor
 
 } // namespace neverc
 
-#endif // NEVERC_AST_DECLVISITOR_H
+#endif // NEVERC_TREE_DECLVISITOR_H

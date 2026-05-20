@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_CODEGEN_CORE_TYPEEMITTERCACHE_H
-#define NEVERC_LIB_CODEGEN_CORE_TYPEEMITTERCACHE_H
+#ifndef NEVERC_LIB_EMIT_CORE_TYPEEMITTERCACHE_H
+#define NEVERC_LIB_EMIT_CORE_TYPEEMITTERCACHE_H
 
 #include "neverc/Foundation/Core/AddressSpaces.h"
 #include "neverc/Tree/Core/CharUnits.h"

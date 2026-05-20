@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_SOURCEMANAGERINTERNALS_H
-#define NEVERC_BASIC_SOURCEMANAGERINTERNALS_H
+#ifndef NEVERC_FOUNDATION_SOURCEMANAGERINTERNALS_H
+#define NEVERC_FOUNDATION_SOURCEMANAGERINTERNALS_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Core/SourceManager.h"
@@ -91,4 +91,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_BASIC_SOURCEMANAGERINTERNALS_H
+#endif // NEVERC_FOUNDATION_SOURCEMANAGERINTERNALS_H

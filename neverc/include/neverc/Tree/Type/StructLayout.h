@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_RECORDLAYOUT_H
-#define NEVERC_AST_RECORDLAYOUT_H
+#ifndef NEVERC_TREE_RECORDLAYOUT_H
+#define NEVERC_TREE_RECORDLAYOUT_H
 
 #include "neverc/Tree/Core/CharUnits.h"
 #include "neverc/Tree/Core/TreeVector.h"
@@ -55,4 +55,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_AST_RECORDLAYOUT_H
+#endif // NEVERC_TREE_RECORDLAYOUT_H

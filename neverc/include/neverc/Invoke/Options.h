@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_OPTIONS_H
-#define NEVERC_DRIVER_OPTIONS_H
+#ifndef NEVERC_INVOKE_OPTIONS_H
+#define NEVERC_INVOKE_OPTIONS_H
 
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"

@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_DELAYEDDIAGNOSTIC_H
-#define NEVERC_SEMA_DELAYEDDIAGNOSTIC_H
+#ifndef NEVERC_ANALYZE_DELAYEDDIAGNOSTIC_H
+#define NEVERC_ANALYZE_DELAYEDDIAGNOSTIC_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Tree/Decl/DeclBase.h"
@@ -110,4 +110,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_SEMA_DELAYEDDIAGNOSTIC_H
+#endif // NEVERC_ANALYZE_DELAYEDDIAGNOSTIC_H

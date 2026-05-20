@@ -1086,12 +1086,6 @@ function(add_llvm_pass_plugin name)
     if (TARGET intrinsics_gen)
       add_dependencies(obj.${name} intrinsics_gen)
     endif()
-    if (TARGET omp_gen)
-      add_dependencies(obj.${name} omp_gen)
-    endif()
-    if (TARGET acc_gen)
-      add_dependencies(obj.${name} acc_gen)
-    endif()
     set_property(GLOBAL APPEND PROPERTY LLVM_STATIC_EXTENSIONS ${name})
   elseif(NOT ARG_NO_MODULE)
     add_llvm_library(${name} MODULE ${ARG_UNPARSED_ARGUMENTS})
@@ -1567,19 +1561,6 @@ function(add_unittest_with_input_files test_suite test_name)
     ${CMAKE_CURRENT_BINARY_DIR}/llvm.srcdir.txt)
 
   add_unittest(${test_suite} ${test_name} ${ARGN})
-endfunction()
-
-# Generic support for adding a benchmark.
-function(add_benchmark benchmark_name)
-  if( NOT LLVM_BUILD_BENCHMARKS )
-    set(EXCLUDE_FROM_ALL ON)
-  endif()
-
-  add_llvm_executable(${benchmark_name} IGNORE_EXTERNALIZE_DEBUGINFO NO_INSTALL_RPATH ${ARGN})
-  set(outdir ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR})
-  set_output_directory(${benchmark_name} BINARY_DIR ${outdir} LIBRARY_DIR ${outdir})
-  set_property(TARGET ${benchmark_name} PROPERTY FOLDER "Utils")
-  target_link_libraries(${benchmark_name} PRIVATE benchmark)
 endfunction()
 
 # This function canonicalize the CMake variables passed by names

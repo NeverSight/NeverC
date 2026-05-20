@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_DECL_H
-#define NEVERC_AST_DECL_H
+#ifndef NEVERC_TREE_DECL_H
+#define NEVERC_TREE_DECL_H
 
 #include "neverc/Foundation/Core/AddressSpaces.h"
 #include "neverc/Foundation/Core/IdentifierTable.h"
@@ -2072,4 +2072,4 @@ inline bool IsEnumDeclComplete(EnumDecl *ED) { return ED->isComplete(); }
 
 } // namespace neverc
 
-#endif // NEVERC_AST_DECL_H
+#endif // NEVERC_TREE_DECL_H

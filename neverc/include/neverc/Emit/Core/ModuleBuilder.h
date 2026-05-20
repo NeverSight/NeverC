@@ -1,5 +1,5 @@
-#ifndef NEVERC_CODEGEN_MODULEBUILDER_H
-#define NEVERC_CODEGEN_MODULEBUILDER_H
+#ifndef NEVERC_EMIT_CORE_MODULEBUILDER_H
+#define NEVERC_EMIT_CORE_MODULEBUILDER_H
 
 #include "neverc/Tree/Core/TreeConsumer.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"

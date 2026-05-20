@@ -77,15 +77,6 @@
 /* Define to 1 if you have the <fenv.h> header file. */
 #cmakedefine HAVE_FENV_H ${HAVE_FENV_H}
 
-/* Define if libffi is available on this platform. */
-#cmakedefine HAVE_FFI_CALL ${HAVE_FFI_CALL}
-
-/* Define to 1 if you have the <ffi/ffi.h> header file. */
-#cmakedefine HAVE_FFI_FFI_H ${HAVE_FFI_FFI_H}
-
-/* Define to 1 if you have the <ffi.h> header file. */
-#cmakedefine HAVE_FFI_H ${HAVE_FFI_H}
-
 /* Define to 1 if you have the `futimens' function. */
 #cmakedefine HAVE_FUTIMENS ${HAVE_FUTIMENS}
 
@@ -103,15 +94,6 @@
 
 /* Define to 1 if you have the `isatty' function. */
 #cmakedefine HAVE_ISATTY 1
-
-/* Define to 1 if you have the `edit' library (-ledit). */
-#cmakedefine HAVE_LIBEDIT ${HAVE_LIBEDIT}
-
-/* Define to 1 if you have the `pfm' library (-lpfm). */
-#cmakedefine HAVE_LIBPFM ${HAVE_LIBPFM}
-
-/* Define to 1 if the `perf_branch_entry' struct has field cycles. */
-#cmakedefine LIBPFM_HAS_FIELD_CYCLES ${LIBPFM_HAS_FIELD_CYCLES}
 
 /* Define to 1 if you have the `psapi' library (-lpsapi). */
 #cmakedefine HAVE_LIBPSAPI ${HAVE_LIBPSAPI}
@@ -209,8 +191,8 @@
 /* Define to 1 if you have the <sys/types.h> header file. */
 #cmakedefine HAVE_SYS_TYPES_H ${HAVE_SYS_TYPES_H}
 
-/* Define if the setupterm() function is supported this platform. */
-#cmakedefine LLVM_ENABLE_TERMINFO ${LLVM_ENABLE_TERMINFO}
+/* Terminfo is disabled in NeverC. */
+/* #undef LLVM_ENABLE_TERMINFO */
 
 /* Define to 1 if you have the <termios.h> header file. */
 #cmakedefine HAVE_TERMIOS_H ${HAVE_TERMIOS_H}

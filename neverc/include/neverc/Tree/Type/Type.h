@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_TYPE_H
-#define NEVERC_AST_TYPE_H
+#ifndef NEVERC_TREE_TYPE_H
+#define NEVERC_TREE_TYPE_H
 
 #include "neverc/Foundation/Attr/AttrKinds.h"
 #include "neverc/Foundation/Core/AddressSpaces.h"
@@ -3602,4 +3602,4 @@ void FixedPointValueToString(llvm::SmallVectorImpl<char> &Str, llvm::APSInt Val,
 
 } // namespace neverc
 
-#endif // NEVERC_AST_TYPE_H
+#endif // NEVERC_TREE_TYPE_H

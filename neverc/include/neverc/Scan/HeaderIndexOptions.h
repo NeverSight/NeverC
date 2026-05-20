@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_HEADERINDEXOPTIONS_H
-#define NEVERC_LEX_HEADERINDEXOPTIONS_H
+#ifndef NEVERC_SCAN_HEADERINDEXOPTIONS_H
+#define NEVERC_SCAN_HEADERINDEXOPTIONS_H
 
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/StringRef.h"
@@ -122,4 +122,4 @@ inline void addHash(llvm::HashBuilder<HasherT, Endianness> &HBuilder,
 
 } // namespace neverc
 
-#endif // NEVERC_LEX_HEADERINDEXOPTIONS_H
+#endif // NEVERC_SCAN_HEADERINDEXOPTIONS_H

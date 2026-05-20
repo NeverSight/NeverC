@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_DEPENDENCEFLAGS_H
-#define NEVERC_AST_DEPENDENCEFLAGS_H
+#ifndef NEVERC_TREE_DEPENDENCEFLAGS_H
+#define NEVERC_TREE_DEPENDENCEFLAGS_H
 
 #include "neverc/Foundation/Core/BitmaskEnum.h"
 #include "llvm/ADT/BitmaskEnum.h"

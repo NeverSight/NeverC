@@ -14,12 +14,6 @@ module LLVM_Analysis {
   textual header "llvm/Analysis/VecFuncs.def"
 }
 
-module LLVM_AsmParser {
-  requires cplusplus
-  umbrella "llvm/AsmParser"
-  module * { export * }
-}
-
 module LLVM_CodeGenTypes {
   requires cplusplus
 
@@ -47,8 +41,6 @@ module LLVM_Backend {
   }
 }
 
-// FIXME: Make this as a submodule of LLVM_Backend again.
-//        Doing so causes a linker error in clang-format.
 module LLVM_Backend_Target {
   umbrella "llvm/Target"
   module * { export * }
@@ -217,7 +209,6 @@ module LLVM_Utils {
     module * { export * }
 
     // These are intended for textual inclusion.
-    textual header "llvm/TargetParser/ARMTargetParser.def"
     textual header "llvm/TargetParser/X86TargetParser.def"
   }
 

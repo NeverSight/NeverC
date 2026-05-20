@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_INCLUDEGUARDOPT_H
-#define NEVERC_LEX_INCLUDEGUARDOPT_H
+#ifndef NEVERC_SCAN_INCLUDEGUARDOPT_H
+#define NEVERC_SCAN_INCLUDEGUARDOPT_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 

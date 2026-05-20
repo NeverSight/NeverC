@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_DIRECTORYENTRY_H
-#define NEVERC_BASIC_DIRECTORYENTRY_H
+#ifndef NEVERC_FOUNDATION_DIRECTORYENTRY_H
+#define NEVERC_FOUNDATION_DIRECTORYENTRY_H
 
 #include "neverc/Foundation/Core/CustomizableOptional.h"
 #include "llvm/ADT/DenseMapInfo.h"
@@ -203,4 +203,4 @@ template <> struct DenseMapInfo<neverc::DirectoryEntryRef> {
 
 } // end namespace llvm
 
-#endif // NEVERC_BASIC_DIRECTORYENTRY_H
+#endif // NEVERC_FOUNDATION_DIRECTORYENTRY_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_DARWINSDKINFO_H
-#define NEVERC_BASIC_DARWINSDKINFO_H
+#ifndef NEVERC_FOUNDATION_DARWINSDKINFO_H
+#define NEVERC_FOUNDATION_DARWINSDKINFO_H
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Error.h"
@@ -122,4 +122,4 @@ parseDarwinSDKInfo(llvm::vfs::FileSystem &VFS, llvm::StringRef SDKRootPath);
 
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_DARWINSDKINFO_H
+#endif // NEVERC_FOUNDATION_DARWINSDKINFO_H

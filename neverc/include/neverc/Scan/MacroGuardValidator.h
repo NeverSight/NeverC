@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_MACROGUARDVALIDATOR_H
-#define NEVERC_LEX_MACROGUARDVALIDATOR_H
+#ifndef NEVERC_SCAN_MACROGUARDVALIDATOR_H
+#define NEVERC_SCAN_MACROGUARDVALIDATOR_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Scan/PrepObserver.h"

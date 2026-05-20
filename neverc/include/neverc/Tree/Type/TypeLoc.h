@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_TYPELOC_H
-#define NEVERC_AST_TYPELOC_H
+#ifndef NEVERC_TREE_TYPELOC_H
+#define NEVERC_TREE_TYPELOC_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Core/Specifiers.h"
@@ -1229,4 +1229,4 @@ class BitIntTypeLoc final
                                        BitIntType> {};
 } // namespace neverc
 
-#endif // NEVERC_AST_TYPELOC_H
+#endif // NEVERC_TREE_TYPELOC_H

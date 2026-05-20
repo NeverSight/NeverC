@@ -1,5 +1,5 @@
-#ifndef NEVERC_FRONTEND_COMPILERINSTANCE_H_
-#define NEVERC_FRONTEND_COMPILERINSTANCE_H_
+#ifndef NEVERC_COMPILER_COMPILERINSTANCE_H_
+#define NEVERC_COMPILER_COMPILERINSTANCE_H_
 
 #include "neverc/Compiler/CompilerInvocation.h"
 #include "neverc/Compiler/Utils.h"

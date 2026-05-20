@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_PATHENTRY_H
-#define NEVERC_LEX_PATHENTRY_H
+#ifndef NEVERC_SCAN_PATHENTRY_H
+#define NEVERC_SCAN_PATHENTRY_H
 
 #include "neverc/Foundation/Core/FileManager.h"
 #include "neverc/Foundation/Core/SourceManager.h"

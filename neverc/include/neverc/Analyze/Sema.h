@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_SEMA_H
-#define NEVERC_SEMA_SEMA_H
+#ifndef NEVERC_ANALYZE_SEMA_H
+#define NEVERC_ANALYZE_SEMA_H
 
 #include "neverc/Analyze/CleanupInfo.h"
 #include "neverc/Analyze/DeclSpec.h"

@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_MANGLE_H
-#define NEVERC_AST_MANGLE_H
+#ifndef NEVERC_TREE_MANGLE_H
+#define NEVERC_TREE_MANGLE_H
 
 #include "neverc/Tree/Decl/Decl.h"
 #include "neverc/Tree/Decl/GlobalDecl.h"

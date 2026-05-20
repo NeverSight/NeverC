@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_SEMAINTERNAL_H
-#define NEVERC_SEMA_SEMAINTERNAL_H
+#ifndef NEVERC_ANALYZE_SEMAINTERNAL_H
+#define NEVERC_ANALYZE_SEMAINTERNAL_H
 
 #include "neverc/Analyze/Lookup.h"
 #include "neverc/Analyze/Sema.h"

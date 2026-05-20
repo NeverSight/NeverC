@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_DIAGNOSTICSEMA_H
-#define NEVERC_BASIC_DIAGNOSTICSEMA_H
+#ifndef NEVERC_FOUNDATION_DIAGNOSTICSEMA_H
+#define NEVERC_FOUNDATION_DIAGNOSTICSEMA_H
 
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 
@@ -17,4 +17,4 @@ enum {
 } // end namespace diag
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_DIAGNOSTICSEMA_H
+#endif // NEVERC_FOUNDATION_DIAGNOSTICSEMA_H

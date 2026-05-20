@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_LOOKUP_H
-#define NEVERC_SEMA_LOOKUP_H
+#ifndef NEVERC_ANALYZE_LOOKUP_H
+#define NEVERC_ANALYZE_LOOKUP_H
 
 #include "neverc/Analyze/SemaNameLookupKinds.h"
 #include "neverc/Foundation/Core/SourceLocation.h"
@@ -325,4 +325,4 @@ private:
 
 } // namespace neverc
 
-#endif // NEVERC_SEMA_LOOKUP_H
+#endif // NEVERC_ANALYZE_LOOKUP_H

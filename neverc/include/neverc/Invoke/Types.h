@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_TYPES_H
-#define NEVERC_DRIVER_TYPES_H
+#ifndef NEVERC_INVOKE_TYPES_H
+#define NEVERC_INVOKE_TYPES_H
 
 #include "neverc/Invoke/Phases.h"
 #include "llvm/ADT/SmallVector.h"

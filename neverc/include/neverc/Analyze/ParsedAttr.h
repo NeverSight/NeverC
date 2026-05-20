@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_PARSEDATTR_H
-#define NEVERC_SEMA_PARSEDATTR_H
+#ifndef NEVERC_ANALYZE_PARSEDATTR_H
+#define NEVERC_ANALYZE_PARSEDATTR_H
 
 #include "neverc/Analyze/Ownership.h"
 #include "neverc/Foundation/Attr/AttrSubjectMatchRules.h"
@@ -801,4 +801,4 @@ inline const StreamingDiagnostic &operator<<(const StreamingDiagnostic &DB,
 
 } // namespace neverc
 
-#endif // NEVERC_SEMA_PARSEDATTR_H
+#endif // NEVERC_ANALYZE_PARSEDATTR_H

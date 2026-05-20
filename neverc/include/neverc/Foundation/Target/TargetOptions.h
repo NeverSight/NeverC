@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_TARGETOPTIONS_H
-#define NEVERC_BASIC_TARGETOPTIONS_H
+#ifndef NEVERC_FOUNDATION_TARGETOPTIONS_H
+#define NEVERC_FOUNDATION_TARGETOPTIONS_H
 
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/VersionTuple.h"

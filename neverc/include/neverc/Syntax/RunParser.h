@@ -1,5 +1,5 @@
-#ifndef NEVERC_PARSE_RUNPARSER_H
-#define NEVERC_PARSE_RUNPARSER_H
+#ifndef NEVERC_SYNTAX_RUNPARSER_H
+#define NEVERC_SYNTAX_RUNPARSER_H
 
 namespace neverc {
 class Sema;

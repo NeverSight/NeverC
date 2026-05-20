@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_TYPELOCVISITOR_H
-#define NEVERC_AST_TYPELOCVISITOR_H
+#ifndef NEVERC_TREE_TYPELOCVISITOR_H
+#define NEVERC_TREE_TYPELOCVISITOR_H
 
 #include "neverc/Tree/Type/TypeLoc.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -45,4 +45,4 @@ public:
 
 } // end namespace neverc
 
-#endif // NEVERC_AST_TYPELOCVISITOR_H
+#endif // NEVERC_TREE_TYPELOCVISITOR_H

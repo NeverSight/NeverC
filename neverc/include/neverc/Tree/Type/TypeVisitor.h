@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_TYPEVISITOR_H
-#define NEVERC_AST_TYPEVISITOR_H
+#ifndef NEVERC_TREE_TYPEVISITOR_H
+#define NEVERC_TREE_TYPEVISITOR_H
 
 #include "neverc/Tree/Type/Type.h"
 

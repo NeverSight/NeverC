@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_CODEGEN_ABI_ABIINFO_H
-#define NEVERC_LIB_CODEGEN_ABI_ABIINFO_H
+#ifndef NEVERC_LIB_EMIT_ABI_ABIINFO_H
+#define NEVERC_LIB_EMIT_ABI_ABIINFO_H
 
 #include "neverc/Tree/Core/CharUnits.h"
 #include "neverc/Tree/Type/Type.h"

@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_JOB_H
-#define NEVERC_DRIVER_JOB_H
+#ifndef NEVERC_INVOKE_JOB_H
+#define NEVERC_INVOKE_JOB_H
 
 #include "neverc/Invoke/DirectInvocationOpts.h"
 #include "neverc/Invoke/InputInfo.h"
@@ -288,4 +288,4 @@ public:
 } // namespace driver
 } // namespace neverc
 
-#endif // NEVERC_DRIVER_JOB_H
+#endif // NEVERC_INVOKE_JOB_H

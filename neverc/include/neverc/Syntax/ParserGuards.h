@@ -1,5 +1,5 @@
-#ifndef NEVERC_PARSE_PARSERGUARDS_H
-#define NEVERC_PARSE_PARSERGUARDS_H
+#ifndef NEVERC_SYNTAX_PARSERGUARDS_H
+#define NEVERC_SYNTAX_PARSERGUARDS_H
 
 #include "neverc/Analyze/DelayedDiagnostic.h"
 #include "neverc/Analyze/Sema.h"

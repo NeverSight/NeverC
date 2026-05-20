@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_CODEGEN_CORE_TBAAEMITTER_H
-#define NEVERC_LIB_CODEGEN_CORE_TBAAEMITTER_H
+#ifndef NEVERC_LIB_EMIT_CORE_TBAAEMITTER_H
+#define NEVERC_LIB_EMIT_CORE_TBAAEMITTER_H
 
 #include "neverc/Tree/Type/Type.h"
 #include "llvm/ADT/DenseMap.h"

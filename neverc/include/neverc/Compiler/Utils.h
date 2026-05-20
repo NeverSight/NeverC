@@ -1,5 +1,5 @@
-#ifndef NEVERC_FRONTEND_UTILS_H
-#define NEVERC_FRONTEND_UTILS_H
+#ifndef NEVERC_COMPILER_UTILS_H
+#define NEVERC_COMPILER_UTILS_H
 
 #include "neverc/Compiler/DependencyOutputOptions.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
@@ -93,4 +93,4 @@ void AttachHeaderIncludeGen(PrepEngine &PP,
 
 } // namespace neverc
 
-#endif // NEVERC_FRONTEND_UTILS_H
+#endif // NEVERC_COMPILER_UTILS_H

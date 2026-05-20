@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_CUSTOMIZABLEOPTIONAL_H
-#define NEVERC_BASIC_CUSTOMIZABLEOPTIONAL_H
+#ifndef NEVERC_FOUNDATION_CUSTOMIZABLEOPTIONAL_H
+#define NEVERC_FOUNDATION_CUSTOMIZABLEOPTIONAL_H
 
 #include "llvm/ADT/Hashing.h"
 #include "llvm/Support/Compiler.h"
@@ -267,4 +267,4 @@ constexpr bool operator>=(const T &X, const CustomizableOptional<T> &Y) {
 
 } // namespace neverc
 
-#endif // NEVERC_BASIC_CUSTOMIZABLEOPTIONAL_H
+#endif // NEVERC_FOUNDATION_CUSTOMIZABLEOPTIONAL_H

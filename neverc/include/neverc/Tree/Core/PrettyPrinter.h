@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_PRETTYPRINTER_H
-#define NEVERC_AST_PRETTYPRINTER_H
+#ifndef NEVERC_TREE_PRETTYPRINTER_H
+#define NEVERC_TREE_PRETTYPRINTER_H
 
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "llvm/ADT/StringRef.h"

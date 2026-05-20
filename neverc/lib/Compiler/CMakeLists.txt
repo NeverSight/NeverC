@@ -8,7 +8,7 @@ set(LLVM_LINK_COMPONENTS
   TargetParser
   )
 
-set(NEVERC_FRONTEND_SOURCES
+set(NEVERC_COMPILER_SOURCES
   Compiler/CompilerInstance.cpp
   Compiler/CompilerInvocation.cpp
   Compiler/FrontendOptions.cpp
@@ -32,7 +32,7 @@ set(NEVERC_FRONTEND_SOURCES
 
 
 add_neverc_library(nevercCompiler
-  ${NEVERC_FRONTEND_SOURCES}
+  ${NEVERC_COMPILER_SOURCES}
 
   DEPENDS
   NeverCDriverOptions

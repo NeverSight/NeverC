@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_DECLBASE_H
-#define NEVERC_AST_DECLBASE_H
+#ifndef NEVERC_TREE_DECLBASE_H
+#define NEVERC_TREE_DECLBASE_H
 
 #include "neverc/Foundation/Core/IdentifierTable.h"
 #include "neverc/Foundation/Core/SourceLocation.h"
@@ -1294,4 +1294,4 @@ struct cast_convert_val<const ::neverc::DeclContext, FromTy *, FromTy *> {
 
 } // namespace llvm
 
-#endif // NEVERC_AST_DECLBASE_H
+#endif // NEVERC_TREE_DECLBASE_H

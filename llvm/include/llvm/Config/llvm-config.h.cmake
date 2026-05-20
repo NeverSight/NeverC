@@ -63,14 +63,9 @@
 /* Define if this is Unixish platform */
 #cmakedefine LLVM_ON_UNIX ${LLVM_ON_UNIX}
 
-/* Define if we have the Intel JIT API runtime support library */
-#cmakedefine01 LLVM_USE_INTEL_JITEVENTS
-
-/* Define if we have the oprofile JIT-support library */
-#cmakedefine01 LLVM_USE_OPROFILE
-
-/* Define if we have the perf JIT-support library */
-#cmakedefine01 LLVM_USE_PERF
+#define LLVM_USE_INTEL_JITEVENTS 0
+#define LLVM_USE_OPROFILE 0
+#define LLVM_USE_PERF 0
 
 /* Major version of the LLVM API */
 #define LLVM_VERSION_MAJOR ${LLVM_VERSION_MAJOR}
@@ -89,13 +84,9 @@
  */
 #cmakedefine01 LLVM_FORCE_ENABLE_STATS
 
-/* Define if zlib compression is available */
-#cmakedefine01 LLVM_ENABLE_ZLIB
+#define LLVM_ENABLE_ZLIB 0
+#define LLVM_ENABLE_ZSTD 0
 
-/* Define if zstd compression is available */
-#cmakedefine01 LLVM_ENABLE_ZSTD
-
-/* Define if LLVM is using tflite */
 /* Define to 1 if you have the <sysexits.h> header file. */
 #cmakedefine HAVE_SYSEXITS_H ${HAVE_SYSEXITS_H}
 

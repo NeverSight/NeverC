@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_DECLSPEC_H
-#define NEVERC_SEMA_DECLSPEC_H
+#ifndef NEVERC_ANALYZE_DECLSPEC_H
+#define NEVERC_ANALYZE_DECLSPEC_H
 
 #include "neverc/Analyze/Ownership.h"
 #include "neverc/Analyze/ParsedAttr.h"
@@ -1046,4 +1046,4 @@ struct FieldDeclarator {
 
 } // end namespace neverc
 
-#endif // NEVERC_SEMA_DECLSPEC_H
+#endif // NEVERC_ANALYZE_DECLSPEC_H

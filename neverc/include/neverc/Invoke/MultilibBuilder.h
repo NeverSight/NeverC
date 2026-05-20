@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_MULTILIBBUILDER_H
-#define NEVERC_DRIVER_MULTILIBBUILDER_H
+#ifndef NEVERC_INVOKE_MULTILIBBUILDER_H
+#define NEVERC_INVOKE_MULTILIBBUILDER_H
 
 #include "neverc/Invoke/Multilib.h"
 
@@ -64,4 +64,4 @@ public:
 } // namespace driver
 } // namespace neverc
 
-#endif // NEVERC_DRIVER_MULTILIBBUILDER_H
+#endif // NEVERC_INVOKE_MULTILIBBUILDER_H

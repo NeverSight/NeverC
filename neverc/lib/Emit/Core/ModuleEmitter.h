@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_CODEGEN_CORE_MODULEEMITTER_H
-#define NEVERC_LIB_CODEGEN_CORE_MODULEEMITTER_H
+#ifndef NEVERC_LIB_EMIT_CORE_MODULEEMITTER_H
+#define NEVERC_LIB_EMIT_CORE_MODULEEMITTER_H
 
 #include "Core/TypeEmitter.h"
 #include "Core/TypeEmitterCache.h"
@@ -622,4 +622,4 @@ private:
 } // end namespace Emit
 } // end namespace neverc
 
-#endif // NEVERC_LIB_CODEGEN_CORE_CODEGENMODULE_H
+#endif // NEVERC_LIB_EMIT_CORE_MODULEEMITTER_H

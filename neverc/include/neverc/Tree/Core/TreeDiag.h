@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_TREEDIAG_H
-#define NEVERC_AST_TREEDIAG_H
+#ifndef NEVERC_TREE_TREEDIAG_H
+#define NEVERC_TREE_TREEDIAG_H
 
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticAST.h"

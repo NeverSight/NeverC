@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_ALLDIAGNOSTICS_H
-#define NEVERC_BASIC_ALLDIAGNOSTICS_H
+#ifndef NEVERC_FOUNDATION_ALLDIAGNOSTICS_H
+#define NEVERC_FOUNDATION_ALLDIAGNOSTICS_H
 
 #include "neverc/Foundation/Diagnostic/DiagnosticAST.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticDriver.h"

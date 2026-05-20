@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_STMT_H
-#define NEVERC_AST_STMT_H
+#ifndef NEVERC_TREE_STMT_H
+#define NEVERC_TREE_STMT_H
 
 #include "neverc/Foundation/Core/IdentifierTable.h"
 #include "neverc/Foundation/Core/SourceLocation.h"
@@ -2854,4 +2854,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_AST_STMT_H
+#endif // NEVERC_TREE_STMT_H

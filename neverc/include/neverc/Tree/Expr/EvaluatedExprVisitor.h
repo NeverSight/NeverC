@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_EVALUATEDEXPRVISITOR_H
-#define NEVERC_AST_EVALUATEDEXPRVISITOR_H
+#ifndef NEVERC_TREE_EVALUATEDEXPRVISITOR_H
+#define NEVERC_TREE_EVALUATEDEXPRVISITOR_H
 
 #include "neverc/Tree/Stmt/StmtVisitor.h"
 #include "llvm/ADT/STLExtras.h"
@@ -87,4 +87,4 @@ public:
 };
 } // namespace neverc
 
-#endif // NEVERC_AST_EVALUATEDEXPRVISITOR_H
+#endif // NEVERC_TREE_EVALUATEDEXPRVISITOR_H

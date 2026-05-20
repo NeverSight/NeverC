@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_FILEMANAGER_H
-#define NEVERC_BASIC_FILEMANAGER_H
+#ifndef NEVERC_FOUNDATION_FILEMANAGER_H
+#define NEVERC_FOUNDATION_FILEMANAGER_H
 
 #include "neverc/Foundation/Core/DirectoryEntry.h"
 #include "neverc/Foundation/Core/FileEntry.h"
@@ -163,4 +163,4 @@ public:
 
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_FILEMANAGER_H
+#endif // NEVERC_FOUNDATION_FILEMANAGER_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_APVALUE_H
-#define NEVERC_AST_APVALUE_H
+#ifndef NEVERC_TREE_APVALUE_H
+#define NEVERC_TREE_APVALUE_H
 
 #include "llvm/ADT/APFixedPoint.h"
 #include "llvm/ADT/APFloat.h"

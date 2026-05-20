@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_PRAGMADISPATCH_H
-#define NEVERC_LEX_PRAGMADISPATCH_H
+#ifndef NEVERC_SCAN_PRAGMADISPATCH_H
+#define NEVERC_SCAN_PRAGMADISPATCH_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "llvm/ADT/StringMap.h"
@@ -66,4 +66,4 @@ void prepare_PragmaString(llvm::SmallVectorImpl<char> &StrVal);
 
 } // namespace neverc
 
-#endif // NEVERC_LEX_PRAGMADISPATCH_H
+#endif // NEVERC_SCAN_PRAGMADISPATCH_H

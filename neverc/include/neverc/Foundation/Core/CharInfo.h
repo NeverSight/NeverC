@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_CHARINFO_H
-#define NEVERC_BASIC_CHARINFO_H
+#ifndef NEVERC_FOUNDATION_CHARINFO_H
+#define NEVERC_FOUNDATION_CHARINFO_H
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"

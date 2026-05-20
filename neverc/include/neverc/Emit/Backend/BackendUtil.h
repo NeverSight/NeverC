@@ -1,5 +1,5 @@
-#ifndef NEVERC_CODEGEN_BACKENDUTIL_H
-#define NEVERC_CODEGEN_BACKENDUTIL_H
+#ifndef NEVERC_EMIT_BACKEND_BACKENDUTIL_H
+#define NEVERC_EMIT_BACKEND_BACKENDUTIL_H
 
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/StringRef.h"

@@ -1,5 +1,5 @@
-#ifndef NEVERC_FRONTEND_TEXTDIAGNOSTICBUFFER_H
-#define NEVERC_FRONTEND_TEXTDIAGNOSTICBUFFER_H
+#ifndef NEVERC_COMPILER_TEXTDIAGNOSTICBUFFER_H
+#define NEVERC_COMPILER_TEXTDIAGNOSTICBUFFER_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
@@ -42,4 +42,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_FRONTEND_TEXTDIAGNOSTICBUFFER_H
+#endif // NEVERC_COMPILER_TEXTDIAGNOSTICBUFFER_H

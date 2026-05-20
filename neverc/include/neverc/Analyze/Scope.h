@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_SCOPE_H
-#define NEVERC_SEMA_SCOPE_H
+#ifndef NEVERC_ANALYZE_SCOPE_H
+#define NEVERC_ANALYZE_SCOPE_H
 
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 #include "neverc/Tree/Decl/Decl.h"
@@ -256,4 +256,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_SEMA_SCOPE_H
+#endif // NEVERC_ANALYZE_SCOPE_H

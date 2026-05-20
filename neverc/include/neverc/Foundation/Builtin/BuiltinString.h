@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_BUILTINSTRING_H
-#define NEVERC_BASIC_BUILTINSTRING_H
+#ifndef NEVERC_FOUNDATION_BUILTINSTRING_H
+#define NEVERC_FOUNDATION_BUILTINSTRING_H
 
 #include "neverc/Foundation/Builtin/BuiltinStringNames.h"
 #include "llvm/ADT/StringRef.h"

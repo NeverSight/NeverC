@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_HEADERINCLUDEFORMATKIND_H
-#define NEVERC_BASIC_HEADERINCLUDEFORMATKIND_H
+#ifndef NEVERC_FOUNDATION_HEADERINCLUDEFORMATKIND_H
+#define NEVERC_FOUNDATION_HEADERINCLUDEFORMATKIND_H
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <utility>
@@ -53,4 +53,4 @@ headerIncludeFilteringKindToString(HeaderIncludeFilteringKind K) {
 
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_HEADERINCLUDEFORMATKIND_H
+#endif // NEVERC_FOUNDATION_HEADERINCLUDEFORMATKIND_H

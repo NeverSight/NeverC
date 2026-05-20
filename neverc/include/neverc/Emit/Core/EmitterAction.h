@@ -1,5 +1,5 @@
-#ifndef NEVERC_CODEGEN_CORE_EMITTERACTION_H
-#define NEVERC_CODEGEN_CORE_EMITTERACTION_H
+#ifndef NEVERC_EMIT_CORE_EMITTERACTION_H
+#define NEVERC_EMIT_CORE_EMITTERACTION_H
 
 #include "neverc/Compiler/FrontendAction.h"
 #include <memory>

@@ -450,7 +450,7 @@ namespace {
 void canonicalizeAttrScope(llvm::StringRef &ScopeName) {
   if (ScopeName == "__gnu__")
     ScopeName = "gnu";
-  else if (ScopeName == "_NeverC")
+  else if (ScopeName == "_NeverC" || ScopeName == "clang")
     ScopeName = "neverc";
 }
 

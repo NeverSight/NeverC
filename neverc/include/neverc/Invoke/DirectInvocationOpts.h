@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_DIRECTINVOCATIONOPTS_H
-#define NEVERC_DRIVER_DIRECTINVOCATIONOPTS_H
+#ifndef NEVERC_INVOKE_DIRECTINVOCATIONOPTS_H
+#define NEVERC_INVOKE_DIRECTINVOCATIONOPTS_H
 
 #include "neverc/Foundation/LangOpts/CodeGenOptions.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
@@ -42,4 +42,4 @@ inline bool hasAnyDirectOpts(const DirectInvocationOpts &D) {
 } // namespace driver
 } // namespace neverc
 
-#endif // NEVERC_DRIVER_DIRECTINVOCATIONOPTS_H
+#endif // NEVERC_INVOKE_DIRECTINVOCATIONOPTS_H

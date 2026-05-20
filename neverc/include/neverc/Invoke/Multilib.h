@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_MULTILIB_H
-#define NEVERC_DRIVER_MULTILIB_H
+#ifndef NEVERC_INVOKE_MULTILIB_H
+#define NEVERC_INVOKE_MULTILIB_H
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
@@ -131,4 +131,4 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const MultilibSet &MS);
 } // namespace driver
 } // namespace neverc
 
-#endif // NEVERC_DRIVER_MULTILIB_H
+#endif // NEVERC_INVOKE_MULTILIB_H

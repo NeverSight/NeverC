@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_CODEGEN_CORE_TYPEEMITTER_H
-#define NEVERC_LIB_CODEGEN_CORE_TYPEEMITTER_H
+#ifndef NEVERC_LIB_EMIT_CORE_TYPEEMITTER_H
+#define NEVERC_LIB_EMIT_CORE_TYPEEMITTER_H
 
 #include "Stmt/CallEmitterInfo.h"
 #include "neverc/Emit/ABI/ABIFunctionInfo.h"

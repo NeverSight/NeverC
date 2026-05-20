@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_FORMATSTRING_H
-#define NEVERC_AST_FORMATSTRING_H
+#ifndef NEVERC_TREE_FORMATSTRING_H
+#define NEVERC_TREE_FORMATSTRING_H
 
 #include "neverc/Tree/Type/CanonicalType.h"
 #include <optional>

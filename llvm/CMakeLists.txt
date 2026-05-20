@@ -316,22 +316,6 @@ if(NOT LLVM_INSTALL_TOOLCHAIN_ONLY)
   set(CPACK_PACKAGE_VERSION_PATCH ${LLVM_VERSION_PATCH})
   set(CPACK_PACKAGE_VERSION ${PACKAGE_VERSION})
   set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.TXT")
-  if(WIN32 AND NOT UNIX)
-    set(CPACK_NSIS_COMPRESSOR "/SOLID lzma \r\n SetCompressorDictSize 32")
-    if(NOT DEFINED CPACK_PACKAGE_INSTALL_REGISTRY_KEY)
-      set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "LLVM")
-    endif()
-    set(CPACK_PACKAGE_ICON "${CMAKE_CURRENT_SOURCE_DIR}\\\\cmake\\\\nsis_logo.bmp")
-    set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}\\\\cmake\\\\nsis_icon.ico")
-    set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}\\\\cmake\\\\nsis_icon.ico")
-    set(CPACK_NSIS_MODIFY_PATH "ON")
-    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL "ON")
-    if( CMAKE_CL_64 )
-      if(NOT DEFINED CPACK_NSIS_INSTALL_ROOT)
-        set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
-      endif()
-    endif()
-  endif()
   include(CPack)
 endif()
 
@@ -445,16 +429,13 @@ if (MINGW)
 endif()
 option(LLVM_WINDOWS_PREFER_FORWARD_SLASH "Prefer path names with forward slashes on Windows." ${WINDOWS_PREFER_FORWARD_SLASH_DEFAULT})
 
-option(LLVM_ENABLE_FFI "Use libffi to call external functions from the interpreter" OFF)
-set(FFI_LIBRARY_DIR "" CACHE PATH "Additional directory, where CMake should search for libffi.so")
-set(FFI_INCLUDE_DIR "" CACHE PATH "Additional directory, where CMake should search for ffi.h or ffi/ffi.h")
+set(LLVM_ENABLE_FFI OFF)
 
 set(LLVM_TARGET_ARCH "host"
   CACHE STRING "Set target to use for LLVM JIT or use \"host\" for automatic detection.")
 
-option(LLVM_ENABLE_TERMINFO "Use terminfo database if available." OFF)
-
-option(LLVM_ENABLE_LIBEDIT "Use libedit if available." OFF)
+set(LLVM_ENABLE_TERMINFO OFF)
+set(LLVM_ENABLE_LIBEDIT OFF)
 
 # On z/OS, threads cannot be used because TLS is not supported.
 if (CMAKE_SYSTEM_NAME MATCHES "OS390")
@@ -463,11 +444,9 @@ else()
   option(LLVM_ENABLE_THREADS "Use threads if available." ON)
 endif()
 
-set(LLVM_ENABLE_ZLIB "OFF" CACHE STRING "Use zlib for compression/decompression if available. Can be ON, OFF, or FORCE_ON")
-
-set(LLVM_ENABLE_ZSTD "OFF" CACHE STRING "Use zstd for compression/decompression if available. Can be ON, OFF, or FORCE_ON")
-
-set(LLVM_USE_STATIC_ZSTD FALSE CACHE BOOL "Use static version of zstd. Can be TRUE, FALSE")
+set(LLVM_ENABLE_ZLIB OFF)
+set(LLVM_ENABLE_ZSTD OFF)
+set(LLVM_USE_STATIC_ZSTD FALSE)
 
 if( LLVM_TARGETS_TO_BUILD STREQUAL "all" )
   set( LLVM_TARGETS_TO_BUILD ${LLVM_ALL_TARGETS} )
@@ -535,20 +514,9 @@ set(LLVM_LOCAL_RPATH "" CACHE FILEPATH
 option(LLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN
        "Set to ON to only warn when using a toolchain which is about to be deprecated, instead of emitting an error." OFF)
 
-option(LLVM_USE_INTEL_JITEVENTS
-  "Use Intel JIT API to inform Intel(R) VTune(TM) Amplifier XE 2011 about JIT code"
-  OFF)
-
-if( LLVM_USE_INTEL_JITEVENTS )
-  # Verify we are on a supported platform
-  if( NOT CMAKE_SYSTEM_NAME MATCHES "Windows" AND NOT CMAKE_SYSTEM_NAME MATCHES "Linux" )
-    message(FATAL_ERROR
-      "Intel JIT API support is available on Linux and Windows only.")
-  endif()
-endif( LLVM_USE_INTEL_JITEVENTS )
-
-option(LLVM_USE_OPROFILE
-  "Use opagent JIT interface to inform OProfile about JIT code" OFF)
+set(LLVM_USE_INTEL_JITEVENTS OFF)
+set(LLVM_USE_OPROFILE OFF)
+set(LLVM_USE_PERF OFF)
 
 option(LLVM_EXTERNALIZE_DEBUGINFO
   "Generate dSYM files and strip executables and libraries (Darwin Only)" OFF)
@@ -558,23 +526,6 @@ option(LLVM_EXPERIMENTAL_DEBUGINFO_ITERATORS
 
 set(LLVM_CODESIGNING_IDENTITY "" CACHE STRING
   "Sign executables and dylibs with the given identity or skip if empty (Darwin Only)")
-
-# If enabled, verify we are on a platform that supports oprofile.
-if( LLVM_USE_OPROFILE )
-  if( NOT CMAKE_SYSTEM_NAME MATCHES "Linux" )
-    message(FATAL_ERROR "OProfile support is available on Linux only.")
-  endif( NOT CMAKE_SYSTEM_NAME MATCHES "Linux" )
-endif( LLVM_USE_OPROFILE )
-
-option(LLVM_USE_PERF
-  "Use perf JIT interface to inform perf about JIT code" OFF)
-
-# If enabled, verify we are on a platform that supports perf.
-if( LLVM_USE_PERF )
-  if( NOT CMAKE_SYSTEM_NAME MATCHES "Linux" )
-    message(FATAL_ERROR "perf support is available on Linux only.")
-  endif( NOT CMAKE_SYSTEM_NAME MATCHES "Linux" )
-endif( LLVM_USE_PERF )
 
 set(LLVM_USE_SANITIZER "" CACHE STRING
   "Define the sanitizer used to build binaries and tests.")
@@ -643,20 +594,15 @@ option(LLVM_INSTALL_GTEST
   "Install the llvm gtest library.  This should be on if you want to do
    stand-alone builds of the other projects and run their unit tests." OFF)
 
-option(LLVM_BUILD_BENCHMARKS "Add LLVM benchmark targets to the list of default
-targets. If OFF, benchmarks still could be built using Benchmarks target." OFF)
-option(LLVM_INCLUDE_BENCHMARKS "Generate benchmark targets. If OFF, benchmarks can't be built." OFF)
+set(LLVM_BUILD_BENCHMARKS OFF)
+set(LLVM_INCLUDE_BENCHMARKS OFF)
 
-option (LLVM_BUILD_DOCS "Build the llvm documentation." OFF)
-option (LLVM_INCLUDE_DOCS "Generate build targets for llvm documentation." OFF)
-option (LLVM_ENABLE_DOXYGEN "Use doxygen to generate llvm API documentation." OFF)
-option (LLVM_ENABLE_SPHINX "Use Sphinx to generate llvm documentation." OFF)
+set(LLVM_BUILD_DOCS OFF)
+set(LLVM_INCLUDE_DOCS OFF)
+set(LLVM_ENABLE_DOXYGEN OFF)
+set(LLVM_ENABLE_SPHINX OFF)
 
-set(LLVM_INSTALL_DOXYGEN_HTML_DIR "${CMAKE_INSTALL_DOCDIR}/llvm/doxygen-html"
-    CACHE STRING "Doxygen-generated HTML documentation install directory")
-
-option (LLVM_BUILD_EXTERNAL_COMPILER_RT
-  "Build compiler-rt as an external project." OFF)
+set(LLVM_BUILD_EXTERNAL_COMPILER_RT OFF)
 
 option (LLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO
   "Show target and host info when tools are invoked with --version." ON)
@@ -980,9 +926,7 @@ if( LLVM_INCLUDE_TESTS )
     add_subdirectory(unittests)
   endif()
 
-  if (WIN32)
-    # This utility is used to prevent crashing tests from calling Dr. Watson on
-    # Windows.
+  if (WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/utils/KillTheDoctor")
     add_subdirectory(utils/KillTheDoctor)
   endif()
 
@@ -1085,31 +1029,10 @@ endif()
 if(LLVM_ENABLE_PLUGINS OR LLVM_EXPORT_SYMBOLS_FOR_PLUGINS)
   process_llvm_pass_plugins(GEN_CONFIG)
 endif()
-if(LLVM_BUILD_INSTRUMENTED_COVERAGE)
-  include(CoverageReport)
-endif()
 
 # This allows us to deploy the Universal CRT DLLs by passing -DCMAKE_INSTALL_UCRT_LIBRARIES=ON to CMake
 if (MSVC AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_INSTALL_UCRT_LIBRARIES)
   include(InstallRequiredSystemLibraries)
 endif()
 
-if (LLVM_INCLUDE_BENCHMARKS)
-  # Override benchmark defaults so that when the library itself is updated these
-  # modifications are not lost.
-  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Disable benchmark testing" FORCE)
-  set(BENCHMARK_ENABLE_EXCEPTIONS OFF CACHE BOOL "Disable benchmark exceptions" FORCE)
-  set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Don't install benchmark" FORCE)
-  set(BENCHMARK_DOWNLOAD_DEPENDENCIES OFF CACHE BOOL "Don't download dependencies" FORCE)
-  set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "Disable Google Test in benchmark" FORCE)
-  set(BENCHMARK_ENABLE_WERROR ${LLVM_ENABLE_WERROR} CACHE BOOL
-    "Handle -Werror for Google Benchmark based on LLVM_ENABLE_WERROR" FORCE)
-  # Since LLVM requires C++11 it is safe to assume that std::regex is available.
-  set(HAVE_STD_REGEX ON CACHE BOOL "OK" FORCE)
-  add_subdirectory(${LLVM_THIRD_PARTY_DIR}/benchmark
-    ${CMAKE_CURRENT_BINARY_DIR}/third-party/benchmark)
-  if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks")
-    add_subdirectory(benchmarks)
-  endif()
-endif()
 

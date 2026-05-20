@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_CODEGEN_ABI_ABIINFOIMPL_H
-#define NEVERC_LIB_CODEGEN_ABI_ABIINFOIMPL_H
+#ifndef NEVERC_LIB_EMIT_ABI_ABIINFOIMPL_H
+#define NEVERC_LIB_EMIT_ABI_ABIINFOIMPL_H
 
 #include "ABI/ABIInfo.h"
 #include "ABI/EmitterABI.h"
@@ -65,4 +65,4 @@ Address genVAArgInstr(FunctionEmitter &FE, Address VAListAddr, QualType Ty,
 
 } // namespace neverc::CodeGen
 
-#endif // NEVERC_LIB_CODEGEN_ABI_ABIINFOIMPL_H
+#endif // NEVERC_LIB_EMIT_ABI_ABIINFOIMPL_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_TYPEORDERING_H
-#define NEVERC_AST_TYPEORDERING_H
+#ifndef NEVERC_TREE_TYPEORDERING_H
+#define NEVERC_TREE_TYPEORDERING_H
 
 #include "neverc/Tree/Type/CanonicalType.h"
 #include "neverc/Tree/Type/Type.h"

@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_VISIBILITY_H
-#define NEVERC_BASIC_VISIBILITY_H
+#ifndef NEVERC_FOUNDATION_VISIBILITY_H
+#define NEVERC_FOUNDATION_VISIBILITY_H
 
 #include "neverc/Foundation/Core/Linkage.h"
 #include "llvm/ADT/STLForwardCompat.h"
@@ -107,4 +107,4 @@ public:
 };
 } // namespace neverc
 
-#endif // NEVERC_BASIC_VISIBILITY_H
+#endif // NEVERC_FOUNDATION_VISIBILITY_H

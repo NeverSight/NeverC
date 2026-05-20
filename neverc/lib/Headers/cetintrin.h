@@ -34,11 +34,11 @@ static __inline__ unsigned int __DEFAULT_FN_ATTRS _rdsspd(unsigned int __a) {
 }
 
 static __inline__ unsigned int __DEFAULT_FN_ATTRS _rdsspd_i32(void) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wuninitialized"
+#pragma neverc diagnostic push
+#pragma neverc diagnostic ignored "-Wuninitialized"
   unsigned int t;
   return __builtin_ia32_rdsspd(t);
-#pragma clang diagnostic pop
+#pragma neverc diagnostic pop
 }
 
 #ifdef __x86_64__
@@ -48,11 +48,11 @@ static __inline__ unsigned long long
 }
 
 static __inline__ unsigned long long __DEFAULT_FN_ATTRS _rdsspq_i64(void) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wuninitialized"
+#pragma neverc diagnostic push
+#pragma neverc diagnostic ignored "-Wuninitialized"
   unsigned long long t;
   return __builtin_ia32_rdsspq(t);
-#pragma clang diagnostic pop
+#pragma neverc diagnostic pop
 }
 #endif /* __x86_64__ */
 

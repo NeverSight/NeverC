@@ -21,10 +21,10 @@
 ///    A pointer specifying the memory address to be prefetched.
 static __inline__ void __DEFAULT_FN_ATTRS
 _m_prefetchit0(volatile const void *__P) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcast-qual"
+#pragma neverc diagnostic push
+#pragma neverc diagnostic ignored "-Wcast-qual"
   __builtin_ia32_prefetchi((const void *)__P, 3 /* _MM_HINT_T0 */);
-#pragma clang diagnostic pop
+#pragma neverc diagnostic pop
 }
 
 /// Loads an instruction sequence containing the specified memory address into
@@ -41,10 +41,10 @@ _m_prefetchit0(volatile const void *__P) {
 ///    A pointer specifying the memory address to be prefetched.
 static __inline__ void __DEFAULT_FN_ATTRS
 _m_prefetchit1(volatile const void *__P) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcast-qual"
+#pragma neverc diagnostic push
+#pragma neverc diagnostic ignored "-Wcast-qual"
   __builtin_ia32_prefetchi((const void *)__P, 2 /* _MM_HINT_T1 */);
-#pragma clang diagnostic pop
+#pragma neverc diagnostic pop
 }
 #endif /* __x86_64__ */
 #undef __DEFAULT_FN_ATTRS

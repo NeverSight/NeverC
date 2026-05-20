@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_LOCINFOTYPE_H
-#define NEVERC_AST_LOCINFOTYPE_H
+#ifndef NEVERC_TREE_LOCINFOTYPE_H
+#define NEVERC_TREE_LOCINFOTYPE_H
 
 #include "neverc/Tree/Type/Type.h"
 
@@ -36,4 +36,4 @@ public:
 
 } // end namespace neverc
 
-#endif // NEVERC_AST_LOCINFOTYPE_H
+#endif // NEVERC_TREE_LOCINFOTYPE_H

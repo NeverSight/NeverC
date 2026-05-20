@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_PREPENGINE_H
-#define NEVERC_LEX_PREPENGINE_H
+#ifndef NEVERC_SCAN_PREPENGINE_H
+#define NEVERC_SCAN_PREPENGINE_H
 
 #include "neverc/Foundation/Core/IdentifierTable.h"
 #include "neverc/Foundation/Core/SourceLocation.h"
@@ -1324,4 +1324,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_LEX_PREPENGINE_H
+#endif // NEVERC_SCAN_PREPENGINE_H

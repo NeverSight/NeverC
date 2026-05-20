@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_WEAK_H
-#define NEVERC_SEMA_WEAK_H
+#ifndef NEVERC_ANALYZE_WEAK_H
+#define NEVERC_ANALYZE_WEAK_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "llvm/ADT/DenseMapInfo.h"
@@ -39,4 +39,4 @@ public:
 
 } // end namespace neverc
 
-#endif // NEVERC_SEMA_WEAK_H
+#endif // NEVERC_ANALYZE_WEAK_H

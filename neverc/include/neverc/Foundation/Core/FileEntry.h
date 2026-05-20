@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_FILEENTRY_H
-#define NEVERC_BASIC_FILEENTRY_H
+#ifndef NEVERC_FOUNDATION_FILEENTRY_H
+#define NEVERC_FOUNDATION_FILEENTRY_H
 
 #include "neverc/Foundation/Core/CustomizableOptional.h"
 #include "neverc/Foundation/Core/DirectoryEntry.h"
@@ -295,4 +295,4 @@ void FileEntryRef::closeFile() const { getFileEntry().closeFile(); }
 
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_FILEENTRY_H
+#endif // NEVERC_FOUNDATION_FILEENTRY_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_SOURCEMANAGER_H
-#define NEVERC_BASIC_SOURCEMANAGER_H
+#ifndef NEVERC_FOUNDATION_SOURCEMANAGER_H
+#define NEVERC_FOUNDATION_SOURCEMANAGER_H
 
 #include "neverc/Foundation/Core/FileEntry.h"
 #include "neverc/Foundation/Core/FileManager.h"
@@ -1256,4 +1256,4 @@ private:
 
 } // namespace neverc
 
-#endif // NEVERC_BASIC_SOURCEMANAGER_H
+#endif // NEVERC_FOUNDATION_SOURCEMANAGER_H

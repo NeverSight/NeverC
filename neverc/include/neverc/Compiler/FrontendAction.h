@@ -1,5 +1,5 @@
-#ifndef NEVERC_FRONTEND_FRONTENDACTION_H
-#define NEVERC_FRONTEND_FRONTENDACTION_H
+#ifndef NEVERC_COMPILER_FRONTENDACTION_H
+#define NEVERC_COMPILER_FRONTENDACTION_H
 
 #include "neverc/Compiler/FrontendOptions.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"

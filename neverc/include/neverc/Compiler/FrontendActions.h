@@ -1,5 +1,5 @@
-#ifndef NEVERC_FRONTEND_FRONTENDACTIONS_H
-#define NEVERC_FRONTEND_FRONTENDACTIONS_H
+#ifndef NEVERC_COMPILER_FRONTENDACTIONS_H
+#define NEVERC_COMPILER_FRONTENDACTIONS_H
 
 #include "neverc/Compiler/FrontendAction.h"
 #include "llvm/Support/raw_ostream.h"

@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_IGNOREEXPR_H
-#define NEVERC_AST_IGNOREEXPR_H
+#ifndef NEVERC_TREE_IGNOREEXPR_H
+#define NEVERC_TREE_IGNOREEXPR_H
 
 #include "neverc/Tree/Expr/Expr.h"
 
@@ -115,4 +115,4 @@ inline Expr *IgnoreParensSingleStep(Expr *E) {
 
 } // namespace neverc
 
-#endif // NEVERC_AST_IGNOREEXPR_H
+#endif // NEVERC_TREE_IGNOREEXPR_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_PRETTYDECLSTACKTRACE_H
-#define NEVERC_AST_PRETTYDECLSTACKTRACE_H
+#ifndef NEVERC_TREE_PRETTYDECLSTACKTRACE_H
+#define NEVERC_TREE_PRETTYDECLSTACKTRACE_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "llvm/Support/PrettyStackTrace.h"

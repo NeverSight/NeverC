@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_RECURSIVEASTVISITOR_H
-#define NEVERC_AST_RECURSIVEASTVISITOR_H
+#ifndef NEVERC_TREE_RECURSIVEASTVISITOR_H
+#define NEVERC_TREE_RECURSIVEASTVISITOR_H
 
 #include "neverc/Foundation/Core/Specifiers.h"
 #include "neverc/Tree/Core/Attr.h"
@@ -1108,4 +1108,4 @@ DEF_TRAVERSE_STMT(StringLiteral, {})
 
 } // end namespace neverc
 
-#endif // NEVERC_AST_RECURSIVEASTVISITOR_H
+#endif // NEVERC_TREE_RECURSIVEASTVISITOR_H

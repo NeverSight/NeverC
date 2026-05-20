@@ -1,5 +1,5 @@
-#ifndef NEVERC_PARSE_SYNTAXPARSER_H
-#define NEVERC_PARSE_SYNTAXPARSER_H
+#ifndef NEVERC_SYNTAX_SYNTAXPARSER_H
+#define NEVERC_SYNTAX_SYNTAXPARSER_H
 
 #include "neverc/Analyze/Sema.h"
 #include "neverc/Foundation/Core/OperatorPrecedence.h"

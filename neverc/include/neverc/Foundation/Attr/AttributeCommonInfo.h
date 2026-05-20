@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_ATTRIBUTECOMMONINFO_H
-#define NEVERC_BASIC_ATTRIBUTECOMMONINFO_H
+#ifndef NEVERC_FOUNDATION_ATTRIBUTECOMMONINFO_H
+#define NEVERC_FOUNDATION_ATTRIBUTECOMMONINFO_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Core/TokenKinds.h"
@@ -228,4 +228,4 @@ protected:
 };
 } // namespace neverc
 
-#endif // NEVERC_BASIC_ATTRIBUTECOMMONINFO_H
+#endif // NEVERC_FOUNDATION_ATTRIBUTECOMMONINFO_H

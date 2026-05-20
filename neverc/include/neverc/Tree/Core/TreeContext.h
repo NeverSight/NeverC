@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_ASTCONTEXT_H
-#define NEVERC_AST_ASTCONTEXT_H
+#ifndef NEVERC_TREE_ASTCONTEXT_H
+#define NEVERC_TREE_ASTCONTEXT_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Diagnostic/PartialDiagnostic.h"
@@ -1116,4 +1116,4 @@ inline void operator delete[](void *Ptr, const neverc::TreeContext &C, size_t) {
   C.Deallocate(Ptr);
 }
 
-#endif // NEVERC_AST_ASTCONTEXT_H
+#endif // NEVERC_TREE_ASTCONTEXT_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_INITIALIZATION_H
-#define NEVERC_SEMA_INITIALIZATION_H
+#ifndef NEVERC_ANALYZE_INITIALIZATION_H
+#define NEVERC_ANALYZE_INITIALIZATION_H
 
 #include "neverc/Analyze/Ownership.h"
 #include "neverc/Foundation/Core/IdentifierTable.h"
@@ -602,4 +602,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_SEMA_INITIALIZATION_H
+#endif // NEVERC_ANALYZE_INITIALIZATION_H

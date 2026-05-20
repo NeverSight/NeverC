@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_TREEVECTOR_H
-#define NEVERC_AST_TREEVECTOR_H
+#ifndef NEVERC_TREE_TREEVECTOR_H
+#define NEVERC_TREE_TREEVECTOR_H
 
 #include "neverc/Tree/Core/TreeContextAlloc.h"
 #include "llvm/ADT/PointerIntPair.h"
@@ -370,4 +370,4 @@ void TreeVector<T>::grow(const TreeContext &C, size_t MinSize) {
 
 } // namespace neverc
 
-#endif // NEVERC_AST_ASTVECTOR_H
+#endif // NEVERC_TREE_ASTVECTOR_H

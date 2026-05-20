@@ -9,8 +9,8 @@
 // Functions live in the global namespace to match their original definitions
 // (only the ``static`` storage class was removed).
 
-#ifndef NEVERC_LIB_CODEGEN_BUILTIN_CGBUILTINUTILS_H
-#define NEVERC_LIB_CODEGEN_BUILTIN_CGBUILTINUTILS_H
+#ifndef NEVERC_LIB_EMIT_BUILTIN_BUILTINEMITTERUTILS_H
+#define NEVERC_LIB_EMIT_BUILTIN_BUILTINEMITTERUTILS_H
 
 #include "Core/Address.h"
 #include "Core/FunctionEmitter.h"
@@ -41,4 +41,4 @@ translateAarch64ToMsvcIntrin(unsigned BuiltinID);
 std::optional<::neverc::Emit::FunctionEmitter::MSVCIntrin>
 translateX86ToMsvcIntrin(unsigned BuiltinID);
 
-#endif // NEVERC_LIB_CODEGEN_BUILTIN_CGBUILTINUTILS_H
+#endif // NEVERC_LIB_EMIT_BUILTIN_BUILTINEMITTERUTILS_H

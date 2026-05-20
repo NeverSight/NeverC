@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_SPECIFIERS_H
-#define NEVERC_BASIC_SPECIFIERS_H
+#ifndef NEVERC_FOUNDATION_SPECIFIERS_H
+#define NEVERC_FOUNDATION_SPECIFIERS_H
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/DataTypes.h"
@@ -165,4 +165,4 @@ llvm::StringRef getNullabilitySpelling(NullabilityKind kind,
 
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_SPECIFIERS_H
+#endif // NEVERC_FOUNDATION_SPECIFIERS_H

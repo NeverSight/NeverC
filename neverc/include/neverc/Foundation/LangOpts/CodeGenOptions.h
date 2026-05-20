@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_CODEGENOPTIONS_H
-#define NEVERC_BASIC_CODEGENOPTIONS_H
+#ifndef NEVERC_FOUNDATION_CODEGENOPTIONS_H
+#define NEVERC_FOUNDATION_CODEGENOPTIONS_H
 
 #include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/StringRef.h"

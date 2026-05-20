@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_LINKAGE_H
-#define NEVERC_BASIC_LINKAGE_H
+#ifndef NEVERC_FOUNDATION_LINKAGE_H
+#define NEVERC_FOUNDATION_LINKAGE_H
 
 #include "llvm/Support/ErrorHandling.h"
 #include <utility>
@@ -83,4 +83,4 @@ inline Linkage minLinkage(Linkage L1, Linkage L2) {
 
 } // namespace neverc
 
-#endif // NEVERC_BASIC_LINKAGE_H
+#endif // NEVERC_FOUNDATION_LINKAGE_H

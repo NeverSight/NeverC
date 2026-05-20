@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_DIAGNOSTICDRIVER_H
-#define NEVERC_BASIC_DIAGNOSTICDRIVER_H
+#ifndef NEVERC_FOUNDATION_DIAGNOSTICDRIVER_H
+#define NEVERC_FOUNDATION_DIAGNOSTICDRIVER_H
 
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 
@@ -17,4 +17,4 @@ enum {
 } // end namespace diag
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_DIAGNOSTICDRIVER_H
+#endif // NEVERC_FOUNDATION_DIAGNOSTICDRIVER_H

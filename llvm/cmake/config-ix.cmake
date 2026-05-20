@@ -135,10 +135,6 @@ if( NOT PURE_WINDOWS )
   set(HAVE_LIBRT 0)
 endif()
 
-# NeverC does not use libpfm performance counters.
-set(HAVE_LIBPFM 0)
-set(LIBPFM_HAS_FIELD_CYCLES 0)
-
 if(HAVE_LIBPTHREAD)
   # We want to find pthreads library and at the moment we do want to
   # have it reported as '-l<lib>' instead of '-pthread'.
@@ -149,50 +145,13 @@ if(HAVE_LIBPTHREAD)
   set(LLVM_PTHREAD_LIB ${CMAKE_THREAD_LIBS_INIT})
 endif()
 
-if(LLVM_ENABLE_ZLIB STREQUAL FORCE_ON)
-  find_package(ZLIB REQUIRED)
-  if(ZLIB_FOUND)
-    # Check if zlib we found is usable; for example, we may have found a 32-bit
-    # library on a 64-bit system which would result in a link-time failure.
-    cmake_push_check_state()
-    list(APPEND CMAKE_REQUIRED_INCLUDES ${ZLIB_INCLUDE_DIRS})
-    list(APPEND CMAKE_REQUIRED_LIBRARIES ${ZLIB_LIBRARY})
-    check_symbol_exists(compress2 zlib.h HAVE_ZLIB)
-    cmake_pop_check_state()
-    if(NOT HAVE_ZLIB)
-      message(FATAL_ERROR "Failed to configure zlib")
-    endif()
-  endif()
-  set(LLVM_ENABLE_ZLIB "${HAVE_ZLIB}")
-else()
-  set(HAVE_ZLIB 0)
-  set(LLVM_ENABLE_ZLIB 0)
-endif()
+set(HAVE_ZLIB 0)
+set(LLVM_ENABLE_ZLIB 0)
 
 set(zstd_FOUND 0)
-if(LLVM_ENABLE_ZSTD STREQUAL FORCE_ON)
-  find_package(zstd REQUIRED)
-  if(NOT zstd_FOUND)
-    message(FATAL_ERROR "Failed to configure zstd, but LLVM_ENABLE_ZSTD is FORCE_ON")
-  endif()
-endif()
-set(LLVM_ENABLE_ZSTD ${zstd_FOUND})
-
-if(LLVM_ENABLE_LIBEDIT STREQUAL FORCE_ON AND
-   NOT LLVM_USE_SANITIZER MATCHES "Memory.*|.*Address.*" AND NOT PURE_WINDOWS)
-  find_package(LibEdit REQUIRED)
-  set(HAVE_LIBEDIT "${LibEdit_FOUND}")
-else()
-  set(HAVE_LIBEDIT 0)
-endif()
-
-if(LLVM_ENABLE_TERMINFO STREQUAL FORCE_ON AND
-   NOT LLVM_USE_SANITIZER MATCHES "Memory.*" AND NOT PURE_WINDOWS)
-  find_package(Terminfo REQUIRED)
-  set(LLVM_ENABLE_TERMINFO "${Terminfo_FOUND}")
-else()
-  set(LLVM_ENABLE_TERMINFO 0)
-endif()
+set(LLVM_ENABLE_ZSTD 0)
+set(HAVE_LIBEDIT 0)
+set(LLVM_ENABLE_TERMINFO 0)
 
 # function checks
 if(APPLE)
@@ -404,23 +363,11 @@ function(llvm_find_program name)
   endif(LLVM_PATH_${NAME})
 endfunction()
 
-if (LLVM_ENABLE_DOXYGEN)
-  llvm_find_program(dot)
-endif ()
 
-if(LLVM_ENABLE_FFI)
-  set(FFI_REQUIRE_INCLUDE On)
-  if(LLVM_ENABLE_FFI STREQUAL FORCE_ON)
-    find_package(FFI REQUIRED)
-  else()
-    find_package(FFI)
-  endif()
-  set(LLVM_ENABLE_FFI "${FFI_FOUND}")
-else()
-  unset(HAVE_FFI_FFI_H CACHE)
-  unset(HAVE_FFI_H CACHE)
-  unset(HAVE_FFI_CALL CACHE)
-endif()
+set(LLVM_ENABLE_FFI 0)
+unset(HAVE_FFI_FFI_H CACHE)
+unset(HAVE_FFI_H CACHE)
+unset(HAVE_FFI_CALL CACHE)
 
 option(LLVM_ENABLE_PROC_RUSAGE_PROBE
   "Probe proc_pid_rusage for optional timer instruction counters." OFF)
@@ -605,27 +552,6 @@ else( LLVM_ENABLE_THREADS )
   message(STATUS "Threads disabled.")
 endif()
 
-if (LLVM_ENABLE_DOXYGEN)
-  message(STATUS "Doxygen enabled.")
-  find_package(Doxygen REQUIRED)
-
-  if (DOXYGEN_FOUND)
-    # If we find doxygen and we want to enable doxygen by default create a
-    # global aggregate doxygen target for generating llvm and any/all
-    # subprojects doxygen documentation.
-    if (LLVM_BUILD_DOCS)
-      add_custom_target(doxygen ALL)
-    endif()
-
-    option(LLVM_DOXYGEN_EXTERNAL_SEARCH "Enable doxygen external search." OFF)
-    if (LLVM_DOXYGEN_EXTERNAL_SEARCH)
-      set(LLVM_DOXYGEN_SEARCHENGINE_URL "" CACHE STRING "URL to use for external search.")
-      set(LLVM_DOXYGEN_SEARCH_MAPPINGS "" CACHE STRING "Doxygen Search Mappings")
-    endif()
-  endif()
-else()
-  message(STATUS "Doxygen disabled.")
-endif()
 
 set(GOLD_EXECUTABLE "" CACHE FILEPATH
     "Gold linker discovery is disabled in NeverC.")

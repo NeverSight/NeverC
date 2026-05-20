@@ -1,5 +1,5 @@
-#ifndef NEVERC_FRONTEND_DIAGNOSTICRENDERER_H
-#define NEVERC_FRONTEND_DIAGNOSTICRENDERER_H
+#ifndef NEVERC_COMPILER_DIAGNOSTICRENDERER_H
+#define NEVERC_COMPILER_DIAGNOSTICRENDERER_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
@@ -93,4 +93,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_FRONTEND_DIAGNOSTICRENDERER_H
+#endif // NEVERC_COMPILER_DIAGNOSTICRENDERER_H

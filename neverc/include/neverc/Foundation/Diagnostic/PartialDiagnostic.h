@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_PARTIALDIAGNOSTIC_H
-#define NEVERC_BASIC_PARTIALDIAGNOSTIC_H
+#ifndef NEVERC_FOUNDATION_PARTIALDIAGNOSTIC_H
+#define NEVERC_FOUNDATION_PARTIALDIAGNOSTIC_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
@@ -184,4 +184,4 @@ using PartialDiagnosticAt = std::pair<SourceLocation, PartialDiagnostic>;
 
 } // namespace neverc
 
-#endif // NEVERC_BASIC_PARTIALDIAGNOSTIC_H
+#endif // NEVERC_FOUNDATION_PARTIALDIAGNOSTIC_H

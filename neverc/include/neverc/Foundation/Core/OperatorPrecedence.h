@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_OPERATORPRECEDENCE_H
-#define NEVERC_BASIC_OPERATORPRECEDENCE_H
+#ifndef NEVERC_FOUNDATION_OPERATORPRECEDENCE_H
+#define NEVERC_FOUNDATION_OPERATORPRECEDENCE_H
 
 #include "neverc/Foundation/Core/TokenKinds.h"
 #include "llvm/Support/Compiler.h"
@@ -98,4 +98,4 @@ inline prec::Level getBinOpPrecedence(tok::TokenKind Kind) {
 
 } // end namespace neverc
 
-#endif // NEVERC_BASIC_OPERATORPRECEDENCE_H
+#endif // NEVERC_FOUNDATION_OPERATORPRECEDENCE_H

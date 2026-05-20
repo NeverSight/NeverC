@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_LANGOPTIONS_H
-#define NEVERC_BASIC_LANGOPTIONS_H
+#ifndef NEVERC_FOUNDATION_LANGOPTIONS_H
+#define NEVERC_FOUNDATION_LANGOPTIONS_H
 
 #include "neverc/Foundation/Core/Visibility.h"
 #include "neverc/Foundation/LangOpts/LangStandard.h"
@@ -569,4 +569,4 @@ FPOptions::getChangesFrom(const FPOptions &Base) const {
 
 } // namespace neverc
 
-#endif // NEVERC_BASIC_LANGOPTIONS_H
+#endif // NEVERC_FOUNDATION_LANGOPTIONS_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_CODEGEN_CORE_ADDRESS_H
-#define NEVERC_LIB_CODEGEN_CORE_ADDRESS_H
+#ifndef NEVERC_LIB_EMIT_CORE_ADDRESS_H
+#define NEVERC_LIB_EMIT_CORE_ADDRESS_H
 
 #include "neverc/Tree/Core/CharUnits.h"
 #include "llvm/ADT/PointerIntPair.h"

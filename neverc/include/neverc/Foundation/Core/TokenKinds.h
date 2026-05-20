@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_TOKENKINDS_H
-#define NEVERC_BASIC_TOKENKINDS_H
+#ifndef NEVERC_FOUNDATION_TOKENKINDS_H
+#define NEVERC_FOUNDATION_TOKENKINDS_H
 
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/Support/Compiler.h"

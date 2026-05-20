@@ -1,5 +1,5 @@
-#ifndef NEVERC_DRIVER_OPTIONUTILS_H
-#define NEVERC_DRIVER_OPTIONUTILS_H
+#ifndef NEVERC_INVOKE_OPTIONUTILS_H
+#define NEVERC_INVOKE_OPTIONUTILS_H
 
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 #include "llvm/Option/OptSpecifier.h"
@@ -40,4 +40,4 @@ inline uint64_t getLastArgUInt64Value(const llvm::opt::ArgList &Args,
 
 } // namespace neverc
 
-#endif // NEVERC_DRIVER_OPTIONUTILS_H
+#endif // NEVERC_INVOKE_OPTIONUTILS_H

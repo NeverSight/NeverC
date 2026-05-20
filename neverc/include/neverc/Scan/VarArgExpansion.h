@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_VARARGEXPANSION_H
-#define NEVERC_LEX_VARARGEXPANSION_H
+#ifndef NEVERC_SCAN_VARARGEXPANSION_H
+#define NEVERC_SCAN_VARARGEXPANSION_H
 
 #include "neverc/Scan/PrepEngine.h"
 #include "llvm/ADT/SmallVector.h"

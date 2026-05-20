@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_MACROARGSTORAGE_H
-#define NEVERC_LEX_MACROARGSTORAGE_H
+#ifndef NEVERC_SCAN_MACROARGSTORAGE_H
+#define NEVERC_SCAN_MACROARGSTORAGE_H
 
 #include "neverc/Scan/Token.h"
 #include "llvm/ADT/ArrayRef.h"

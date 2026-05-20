@@ -1,5 +1,5 @@
-#ifndef NEVERC_SEMA_OWNERSHIP_H
-#define NEVERC_SEMA_OWNERSHIP_H
+#ifndef NEVERC_ANALYZE_OWNERSHIP_H
+#define NEVERC_ANALYZE_OWNERSHIP_H
 
 #include "neverc/Tree/Expr/Expr.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -214,4 +214,4 @@ inline Stmt *AssertSuccess(StmtResult R) {
 
 } // namespace neverc
 
-#endif // NEVERC_SEMA_OWNERSHIP_H
+#endif // NEVERC_ANALYZE_OWNERSHIP_H

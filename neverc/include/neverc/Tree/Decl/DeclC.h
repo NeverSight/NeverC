@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_DECLC_H
-#define NEVERC_AST_DECLC_H
+#ifndef NEVERC_TREE_DECLC_H
+#define NEVERC_TREE_DECLC_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Core/Specifiers.h"
@@ -65,4 +65,4 @@ public:
 
 } // namespace neverc
 
-#endif // NEVERC_AST_DECLC_H
+#endif // NEVERC_TREE_DECLC_H

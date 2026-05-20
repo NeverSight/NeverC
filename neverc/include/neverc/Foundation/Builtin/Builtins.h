@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_BUILTINS_H
-#define NEVERC_BASIC_BUILTINS_H
+#ifndef NEVERC_FOUNDATION_BUILTINS_H
+#define NEVERC_FOUNDATION_BUILTINS_H
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringMap.h"

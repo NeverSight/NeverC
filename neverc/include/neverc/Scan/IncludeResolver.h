@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_INCLUDERESOLVER_H
-#define NEVERC_LEX_INCLUDERESOLVER_H
+#ifndef NEVERC_SCAN_INCLUDERESOLVER_H
+#define NEVERC_SCAN_INCLUDERESOLVER_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Foundation/Core/SourceManager.h"
@@ -380,4 +380,4 @@ void ApplyHeaderIndexOptions(IncludeResolver &HS,
 
 } // namespace neverc
 
-#endif // NEVERC_LEX_INCLUDERESOLVER_H
+#endif // NEVERC_SCAN_INCLUDERESOLVER_H

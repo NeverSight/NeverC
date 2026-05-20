@@ -1,5 +1,5 @@
-#ifndef NEVERC_BASIC_SOURCELOCATION_H
-#define NEVERC_BASIC_SOURCELOCATION_H
+#ifndef NEVERC_FOUNDATION_SOURCELOCATION_H
+#define NEVERC_FOUNDATION_SOURCELOCATION_H
 
 #include "neverc/Foundation/Core/FileEntry.h"
 #include "llvm/ADT/StringRef.h"
@@ -378,4 +378,4 @@ template <> struct FoldingSetTrait<neverc::SourceLocation, void> {
 
 } // namespace llvm
 
-#endif // NEVERC_BASIC_SOURCELOCATION_H
+#endif // NEVERC_FOUNDATION_SOURCELOCATION_H

@@ -1,5 +1,5 @@
-#ifndef NEVERC_CODEGEN_CONSTANTINITBUILDER_H
-#define NEVERC_CODEGEN_CONSTANTINITBUILDER_H
+#ifndef NEVERC_EMIT_DECL_CONSTANTINITBUILDER_H
+#define NEVERC_EMIT_DECL_CONSTANTINITBUILDER_H
 
 #include "neverc/Emit/Decl/ConstantInitFuture.h"
 #include "neverc/Tree/Core/CharUnits.h"

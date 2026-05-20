@@ -1,5 +1,5 @@
-#ifndef NEVERC_LEX_HEADERINDEX_H
-#define NEVERC_LEX_HEADERINDEX_H
+#ifndef NEVERC_SCAN_HEADERINDEX_H
+#define NEVERC_SCAN_HEADERINDEX_H
 
 #include "neverc/Foundation/Core/FileManager.h"
 #include "neverc/Scan/HeaderIndexTypes.h"

@@ -1,5 +1,5 @@
-#ifndef NEVERC_AST_OPTIONALDIAGNOSTIC_H
-#define NEVERC_AST_OPTIONALDIAGNOSTIC_H
+#ifndef NEVERC_TREE_OPTIONALDIAGNOSTIC_H
+#define NEVERC_TREE_OPTIONALDIAGNOSTIC_H
 
 #include "neverc/Foundation/Diagnostic/PartialDiagnostic.h"
 #include "neverc/Tree/Core/APValue.h"
