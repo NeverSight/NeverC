@@ -1805,6 +1805,8 @@ SDValue X86TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
         ByValTemporaries[ArgIdx] = Src;
       } else {
         assert(Copy == CopyViaTemp && "unexpected enum value");
+        // Record Temp so the second loop copies it to the final destination
+        // after all outgoing writes are safely sequenced.
         MachineFrameInfo &MFI = MF.getFrameInfo();
         int TempFrameIdx = MFI.CreateStackObject(Flags.getByValSize(),
                                                  Flags.getNonZeroByValAlign(),
@@ -1815,6 +1817,7 @@ SDValue X86TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
         SDValue CopyChain =
             CreateCopyOfByValArgument(Src, Temp, Chain, Flags, DAG, dl);
         ByValCopyChains.push_back(CopyChain);
+        ByValTemporaries[ArgIdx] = Temp;
       }
     }
     if (!ByValCopyChains.empty())
