@@ -49,7 +49,18 @@ function(neverc_fetch_mimalloc)
     GIT_SHALLOW    TRUE
     GIT_PROGRESS   FALSE
   )
+  # mimalloc's upstream CMake always emits install() rules.
+  # We only need the static library for linking and do not want mimalloc
+  # headers/cmake/pkgconfig files in the parent project's install tree.
+  set(_neverc_prev_skip_install_rules "${CMAKE_SKIP_INSTALL_RULES}")
+  set(CMAKE_SKIP_INSTALL_RULES ON)
   FetchContent_MakeAvailable(mimalloc)
+  if(DEFINED _neverc_prev_skip_install_rules)
+    set(CMAKE_SKIP_INSTALL_RULES "${_neverc_prev_skip_install_rules}")
+  else()
+    unset(CMAKE_SKIP_INSTALL_RULES)
+  endif()
+  unset(_neverc_prev_skip_install_rules)
 
   if(NOT TARGET mimalloc-static)
     message(FATAL_ERROR
