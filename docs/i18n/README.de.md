@@ -71,10 +71,7 @@ Ausführliche Designnotizen, Plattformmatrix, CLI-Referenz und Beispiele: **[Dok
 ### Konfigurieren
 
 ```bash
-cmake -B build-neverc -G Ninja \
-  -C neverc/cmake/caches/NeverC.cmake \
-  -DCMAKE_BUILD_TYPE=Release \
-  llvm
+cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake
 ```
 
 ### Bauen

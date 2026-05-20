@@ -71,10 +71,7 @@ See the **[documentation index](docs/README.md)** for detailed design notes, pla
 ### Configure
 
 ```bash
-cmake -B build-neverc -G Ninja \
-  -C neverc/cmake/caches/NeverC.cmake \
-  -DCMAKE_BUILD_TYPE=Release \
-  llvm
+cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake
 ```
 
 ### Build

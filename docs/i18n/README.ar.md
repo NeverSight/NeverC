@@ -73,10 +73,7 @@ neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
 ### التكوين
 
 ```bash
-cmake -B build-neverc -G Ninja \
-  -C neverc/cmake/caches/NeverC.cmake \
-  -DCMAKE_BUILD_TYPE=Release \
-  llvm
+cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake
 ```
 
 ### التجميع

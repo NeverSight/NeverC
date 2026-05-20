@@ -71,10 +71,7 @@ Voir l'**[index de documentation](../README.fr.md)** pour la conception détaill
 ### Configuration
 
 ```bash
-cmake -B build-neverc -G Ninja \
-  -C neverc/cmake/caches/NeverC.cmake \
-  -DCMAKE_BUILD_TYPE=Release \
-  llvm
+cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake
 ```
 
 ### Build
