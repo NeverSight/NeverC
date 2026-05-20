@@ -5,12 +5,21 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#ifdef _WIN32
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
 #include <errno.h>
 
 int csupport_write_fd(int fd, const char *data, size_t len) {
   while (len > 0) {
+#ifdef _WIN32
+    unsigned int chunk = len > 0x7FFFFFFFu ? 0x7FFFFFFFu : (unsigned int)len;
+    int n = _write(fd, data, chunk);
+#else
     ssize_t n = write(fd, data, len);
+#endif
     if (n < 0) {
       if (errno == EINTR) continue;
       return -1;
