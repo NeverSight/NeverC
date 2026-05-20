@@ -78,6 +78,7 @@
 #endif
 
 #ifdef _WIN32
+#include <io.h>
 #define IS_SEP(c) ((c) == '/' || (c) == '\\')
 #else
 #define IS_SEP(c) ((c) == '/')

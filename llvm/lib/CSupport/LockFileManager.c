@@ -8,6 +8,8 @@
 #ifndef _WIN32
 #include <unistd.h>
 #include <fcntl.h>
+#else
+#include <process.h>
 #endif
 
 int csupport_lock_file_create(const char *path) {
@@ -25,7 +27,7 @@ int csupport_lock_file_create(const char *path) {
 #else
   FILE *f = fopen(path, "wx");
   if (!f) return 0;
-  fprintf(f, "%d", (int)getpid());
+  fprintf(f, "%d", (int)_getpid());
   fclose(f);
   return 1;
 #endif
