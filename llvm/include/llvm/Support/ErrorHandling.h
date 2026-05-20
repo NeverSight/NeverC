@@ -402,7 +402,7 @@ inline void LLVMResetFatalErrorHandler() { llvm::remove_fatal_error_handler(); }
 
 #define MAP_ERR_TO_COND(x, y)                                                  \
   case x:                                                                      \
-    return std::make_error_code(llvm::errc::y)
+    return llvm::make_error_code(llvm::errc::y)
 
 namespace llvm {
 
