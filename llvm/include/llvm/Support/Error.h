@@ -18,7 +18,6 @@
 #include "llvm/Config/abi-breaking.h"
 #include "llvm/Support/AlignOf.h"
 #include "llvm/Support/Compiler.h"
-#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/Format.h"
@@ -37,6 +36,13 @@
 #include <vector>
 
 namespace llvm {
+
+// Forward-declare dbgs() to avoid including Debug.h (which transitively pulls
+// in CommandLine.h → lcommand_lline.h → FileSystem.h, creating a cycle that
+// leaves Expected<T> / Error incomplete when FileSystem.h's inline impls are
+// parsed). Debug.h's full definition is still pulled in by the corresponding
+// .cpp TU when dbgs() is actually invoked.
+raw_ostream &dbgs();
 
 class ErrorSuccess;
 

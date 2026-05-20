@@ -1123,7 +1123,8 @@ inline errc_t createTemporaryFile(const Twine &Model, int &ResultFD,
                                   sys::fs::OpenFlags Flags = sys::fs::OF_None) {
   SmallString<128> Storage;
   StringRef P = Model.toNullTerminatedStringRef(Storage);
-  assert(P.find_first_of(separators(Style::native)) == StringRef::npos &&
+  assert(P.find_first_of(path::separators(path::Style::native)) ==
+             StringRef::npos &&
          "Model must be a simple filename.");
   // Use P.begin() so that createUniqueEntity doesn't need to recreate Storage.
   return createUniqueEntity(P.begin(), ResultFD, ResultPath, true, Type, Flags,

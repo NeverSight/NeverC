@@ -34,6 +34,13 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/circular_raw_ostream.h"
 
+// Forward-declare dbgs() before pulling in CommandLine.h: lcommand_lline.h
+// (included at the bottom of CommandLine.h) uses LLVM_DEBUG/dbgs() inline,
+// and would otherwise see dbgs() undeclared.
+namespace llvm {
+::llvm::raw_ostream &dbgs();
+} // namespace llvm
+
 #ifndef NDEBUG
 #include "llvm/Support/CommandLine.h"
 #endif
