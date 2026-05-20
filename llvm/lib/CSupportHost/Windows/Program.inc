@@ -124,6 +124,17 @@ bool MakeErrMsg(std::string *ErrMsg, const std::string &prefix) {
   return R != 0;
 }
 
+bool MakeErrMsg(SmallVectorImpl<char> *ErrMsg, const std::string &prefix) {
+  if (!ErrMsg)
+    return true;
+
+  std::string Message;
+  bool OK = MakeErrMsg(&Message, prefix);
+  ErrMsg->clear();
+  ErrMsg->append(Message.begin(), Message.end());
+  return OK;
+}
+
 static HANDLE RedirectIO(StringRef Path, int fd,
                          std::string *ErrMsg) {
   HANDLE h;
