@@ -1496,17 +1496,14 @@ static bool passingValueIsAlwaysUndefined(Value *V, Instruction *I,
 /// instructions \p I1 and \p I2 can and should be hoisted.
 static bool shouldHoistCommonInstructions(Instruction *I1, Instruction *I2,
                                           const TargetTransformInfo &TTI) {
-  // If we're going to hoist a call, make sure that the two instructions
-  // we're commoning/hoisting are both marked with musttail, or neither of
-  // them is marked as such. Otherwise, we might end up in a situation where
-  // we hoist from a block where the terminator is a `ret` to a block where
-  // the terminator is a `br`, and `musttail` calls expect to be followed by
-  // a return.
+  // Never hoist musttail calls: they must immediately precede a ret
+  // instruction, and hoisting would separate them with a branch.
   auto *C1 = dyn_cast<CallInst>(I1);
   auto *C2 = dyn_cast<CallInst>(I2);
-  if (C1 && C2)
-    if (C1->isMustTailCall() != C2->isMustTailCall())
-      return false;
+  if (C1 && C1->isMustTailCall())
+    return false;
+  if (C2 && C2->isMustTailCall())
+    return false;
 
   if (!TTI.isProfitableToHoist(I1) || !TTI.isProfitableToHoist(I2))
     return false;
