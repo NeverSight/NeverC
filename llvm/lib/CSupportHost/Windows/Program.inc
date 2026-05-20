@@ -32,12 +32,12 @@
 //===----------------------------------------------------------------------===//
 
 namespace llvm {
-ErrorOr<std::string> sys::findProgramByName(StringRef Name,
-                                            ArrayRef<StringRef> Paths) {
+ErrorOr<SmallString<256>> sys::findProgramByName(StringRef Name,
+                                                 ArrayRef<StringRef> Paths) {
   assert(!Name.empty() && "Must have a name!");
 
   if (Name.find_first_of("/\\") != StringRef::npos)
-    return std::string(Name);
+    return SmallString<256>(Name);
 
   const wchar_t *Path = nullptr;
   std::wstring PathStorage;
@@ -48,7 +48,7 @@ ErrorOr<std::string> sys::findProgramByName(StringRef Name,
         PathStorage.push_back(L';');
       StringRef P = Paths[i];
       SmallVector<wchar_t, MAX_PATH> TmpPath;
-      if (std::error_code EC = windows::UTF8ToUTF16(P, TmpPath))
+      if (std::error_code EC = sys::windows::UTF8ToUTF16(P, TmpPath))
         return EC;
       PathStorage.append(TmpPath.begin(), TmpPath.end());
     }
@@ -56,7 +56,7 @@ ErrorOr<std::string> sys::findProgramByName(StringRef Name,
   }
 
   SmallVector<wchar_t, MAX_PATH> U16Name;
-  if (std::error_code EC = windows::UTF8ToUTF16(Name, U16Name))
+  if (std::error_code EC = sys::windows::UTF8ToUTF16(Name, U16Name))
     return EC;
 
   SmallVector<StringRef, 12> PathExts;
@@ -76,7 +76,7 @@ ErrorOr<std::string> sys::findProgramByName(StringRef Name,
       // from its argument to such files because it thinks they already had one.
       SmallVector<wchar_t, MAX_PATH> U16NameExt;
       if (std::error_code EC =
-              windows::UTF8ToUTF16(Twine(Name + Ext).str(), U16NameExt))
+              sys::windows::UTF8ToUTF16(Twine(Name + Ext).str(), U16NameExt))
         return EC;
 
       Len = ::SearchPathW(Path, c_str(U16NameExt), nullptr, U16Result.size(),
@@ -89,7 +89,7 @@ ErrorOr<std::string> sys::findProgramByName(StringRef Name,
     U16Result.truncate(Len);
 
     if (std::error_code EC =
-            windows::UTF16ToUTF8(U16Result.data(), U16Result.size(), U8Result))
+            sys::windows::UTF16ToUTF8(U16Result.data(), U16Result.size(), U8Result))
       return EC;
 
     if (sys::fs::can_execute(U8Result))
@@ -102,7 +102,7 @@ ErrorOr<std::string> sys::findProgramByName(StringRef Name,
     return mapWindowsError(::GetLastError());
 
   llvm::sys::path::make_preferred(U8Result);
-  return std::string(U8Result.begin(), U8Result.end());
+  return SmallString<256>(U8Result.begin(), U8Result.end());
 }
 
 bool MakeErrMsg(std::string *ErrMsg, const std::string &prefix) {
@@ -149,7 +149,7 @@ static HANDLE RedirectIO(StringRef Path, int fd,
   SmallVector<wchar_t, 128> fnameUnicode;
   if (Path.empty()) {
     // Don't play long-path tricks on "NUL".
-    if (windows::UTF8ToUTF16(fname, fnameUnicode))
+    if (sys::windows::UTF8ToUTF16(fname, fnameUnicode))
       return INVALID_HANDLE_VALUE;
   } else {
     if (sys::windows::widenPath(fname, fnameUnicode))
@@ -167,6 +167,9 @@ static HANDLE RedirectIO(StringRef Path, int fd,
 }
 
 } // namespace llvm
+
+using namespace llvm;
+using namespace llvm::sys;
 
 bool Execute(ProcessInfo &PI, StringRef Program,
                     ArrayRef<StringRef> Args, ArrayRef<StringRef> Env,
@@ -193,7 +196,7 @@ bool Execute(ProcessInfo &PI, StringRef Program,
   auto Result = flattenWindowsCommandLine(Args);
   if (std::error_code ec = Result.getError()) {
     SetLastError(ec.value());
-    MakeErrMsg(ErrMsg, SmallString<256>("Unable to convert command-line to UTF-16"));
+    MakeErrMsg(ErrMsg, std::string("Unable to convert command-line to UTF-16"));
     return false;
   }
   SmallVector<wchar_t, 256> Command = *Result;
@@ -443,7 +446,7 @@ ErrorOr<SmallVector<wchar_t, 256>> sys::flattenWindowsCommandLine(ArrayRef<Strin
   }
 
   SmallVector<wchar_t, 256> CommandUtf16;
-  if (std::error_code ec = windows::UTF8ToUTF16(Command, CommandUtf16))
+  if (std::error_code ec = sys::windows::UTF8ToUTF16(Command, CommandUtf16))
     return ec;
 
   return CommandUtf16;
@@ -656,18 +659,18 @@ int llvm::sys::writeFileWithEncoding(StringRef FileName, StringRef Contents,
     SmallVector<wchar_t, 1> ArgsUTF16;
     SmallVector<char, 1> ArgsCurCP;
 
-    if ((EC = windows::UTF8ToUTF16(Contents, ArgsUTF16)))
+    if ((EC = sys::windows::UTF8ToUTF16(Contents, ArgsUTF16)))
       return EC.value();
 
-    if ((EC = windows::UTF16ToCurCP(ArgsUTF16.data(), ArgsUTF16.size(),
-                                    ArgsCurCP)))
+    if ((EC = sys::windows::UTF16ToCurCP(ArgsUTF16.data(), ArgsUTF16.size(),
+                                         ArgsCurCP)))
       return EC.value();
 
     OS.write(ArgsCurCP.data(), ArgsCurCP.size());
   } else if (Encoding == WEM_UTF16) {
     SmallVector<wchar_t, 1> ArgsUTF16;
 
-    if ((EC = windows::UTF8ToUTF16(Contents, ArgsUTF16)))
+    if ((EC = sys::windows::UTF8ToUTF16(Contents, ArgsUTF16)))
       return EC.value();
 
     // Endianness guessing

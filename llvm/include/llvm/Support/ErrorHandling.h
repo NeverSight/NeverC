@@ -402,11 +402,11 @@ inline void LLVMResetFatalErrorHandler() { llvm::remove_fatal_error_handler(); }
 
 #define MAP_ERR_TO_COND(x, y)                                                  \
   case x:                                                                      \
-    return (int)llvm::errc::y
+    return std::make_error_code(llvm::errc::y)
 
 namespace llvm {
 
-inline int mapWindowsError(unsigned EV) {
+inline std::error_code mapWindowsError(unsigned EV) {
   switch (EV) {
     MAP_ERR_TO_COND(ERROR_ACCESS_DENIED, permission_denied);
     MAP_ERR_TO_COND(ERROR_ALREADY_EXISTS, file_exists);
@@ -463,7 +463,7 @@ inline int mapWindowsError(unsigned EV) {
     MAP_ERR_TO_COND(WSAEMFILE, too_many_files_open);
     MAP_ERR_TO_COND(WSAENAMETOOLONG, filename_too_long);
   default:
-    return (int)EV;
+    return std::error_code(EV, std::system_category());
   }
 }
 

@@ -9,10 +9,11 @@
 #ifndef LLVM_SUPPORT_WINDOWSERROR_H
 #define LLVM_SUPPORT_WINDOWSERROR_H
 
+#include <system_error>
+
 namespace llvm {
-/// Map a Windows error code to a POSIX errno value.
-/// Returns 0 if the error code has no mapping.
-int mapWindowsError(unsigned EV);
+/// Map a Windows error code to a std::error_code.
+std::error_code mapWindowsError(unsigned EV);
 } // namespace llvm
 
 #endif

@@ -1916,9 +1916,11 @@ inline bool cl_detail::CommandLineParser::ParseCommandLineOptions(
   // Now that we know if -debug is specified, we can use it.
   // Note that if ReadResponseFiles == true, this must be done before the
   // memory allocated for the expanded command line is free()d below.
+#ifdef LLVM_DEBUG
   LLVM_DEBUG(dbgs() << "Args: ";
              for (int i = 0; i < argc; ++i) dbgs() << argv[i] << ' ';
              dbgs() << '\n';);
+#endif
 
   // Free all of the memory allocated to the map.  Command line options may only
   // be processed once!

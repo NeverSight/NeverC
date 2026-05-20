@@ -416,7 +416,7 @@ std::error_code is_local(int FD, bool &Result) {
   return is_local_internal(FinalPath, Result);
 }
 
-static std::error_code setDeleteDisposition(HANDLE Handle, bool Delete) {
+std::error_code setDeleteDisposition(HANDLE Handle, bool Delete) {
   // Clear the FILE_DISPOSITION_INFO flag first, before checking if it's a
   // network file. On Windows 7 the function realPathFromHandle() below fails
   // if the FILE_DISPOSITION_INFO flag was already set to 'DeleteFile = true' by
@@ -479,7 +479,7 @@ static std::error_code rename_internal(HANDLE FromHandle, const Twine &To,
   return std::error_code();
 }
 
-static std::error_code rename_handle(HANDLE FromHandle, const Twine &To) {
+std::error_code rename_handle(HANDLE FromHandle, const Twine &To) {
   SmallVector<wchar_t, 128> WideTo;
   if (std::error_code EC = widenPath(To, WideTo))
     return EC;

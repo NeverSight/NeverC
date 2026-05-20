@@ -1453,6 +1453,11 @@ namespace fs {
 
 using llvm::errc;
 
+#ifdef _WIN32
+std::error_code setDeleteDisposition(HANDLE Handle, bool Delete);
+std::error_code rename_handle(HANDLE FromHandle, const Twine &To);
+#endif
+
 inline TempFile::TempFile(StringRef Name, int FD) : TmpName(Name), FD(FD) {}
 inline TempFile::TempFile(TempFile &&Other) { *this = CMOVE(Other); }
 inline TempFile &TempFile::operator=(TempFile &&Other) {

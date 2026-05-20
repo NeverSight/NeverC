@@ -44,6 +44,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/VersionTuple.h"
 #include <cassert>
+#include <chrono>
 #include <string>
 #include <system_error>
 #include <windows.h>
@@ -182,7 +183,8 @@ inline std::chrono::nanoseconds toDuration(FILETIME Time) {
   return std::chrono::nanoseconds(100 * TimeInteger.QuadPart);
 }
 
-inline TimePoint<> toTimePoint(FILETIME Time) {
+inline std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>
+toTimePoint(FILETIME Time) {
   ULARGE_INTEGER TimeInteger;
   TimeInteger.LowPart = Time.dwLowDateTime;
   TimeInteger.HighPart = Time.dwHighDateTime;
@@ -191,10 +193,14 @@ inline TimePoint<> toTimePoint(FILETIME Time) {
   TimeInteger.QuadPart -= 11644473600ll * 10000000;
 
   // FILETIME's are # of 100 nanosecond ticks (1/10th of a microsecond)
-  return TimePoint<>(std::chrono::nanoseconds(100 * TimeInteger.QuadPart));
+  return std::chrono::time_point<std::chrono::system_clock,
+                                 std::chrono::nanoseconds>(
+      std::chrono::nanoseconds(100 * TimeInteger.QuadPart));
 }
 
-inline FILETIME toFILETIME(TimePoint<> TP) {
+inline FILETIME toFILETIME(
+    std::chrono::time_point<std::chrono::system_clock,
+                            std::chrono::nanoseconds> TP) {
   ULARGE_INTEGER TimeInteger;
   TimeInteger.QuadPart = TP.time_since_epoch().count() / 100;
   TimeInteger.QuadPart += 11644473600ll * 10000000;
