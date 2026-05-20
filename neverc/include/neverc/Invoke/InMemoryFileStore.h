@@ -5,6 +5,8 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include <atomic>
+#include <mutex>
 #include <optional>
 #include <shared_mutex>
 
