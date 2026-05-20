@@ -41,7 +41,7 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
 #include <unordered_map>
-#include <unordered_set>
+#include "llvm/ADT/SmallPtrSet.h"
 #include <utility>
 #include <vector>
 
@@ -1548,9 +1548,9 @@ public:
       : DisplayElement(Colour), Content(Content) {}
 
   // Iterator to the child nodes.  Required by GraphWriter.
-  using ChildIterator = std::unordered_set<DisplayNode *>::const_iterator;
-  ChildIterator children_begin() const { return Children.cbegin(); }
-  ChildIterator children_end() const { return Children.cend(); }
+  using ChildIterator = SmallPtrSet<DisplayNode *, 4>::const_iterator;
+  ChildIterator children_begin() const { return Children.begin(); }
+  ChildIterator children_end() const { return Children.end(); }
 
   // Iterator for the edges.  Required by GraphWriter.
   using EdgeIterator = std::vector<DisplayEdge *>::const_iterator;
@@ -1586,7 +1586,7 @@ protected:
   std::vector<DisplayEdge> Edges;
 
   std::vector<DisplayEdge *> EdgePtrs;
-  std::unordered_set<DisplayNode *> Children;
+  SmallPtrSet<DisplayNode *, 4> Children;
   std::unordered_map<const DisplayNode *, const DisplayEdge *> EdgeMap;
 
   // Safeguard adding of edges.

@@ -15,6 +15,7 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Parallel.h"
@@ -104,7 +105,7 @@ void removeEmptyPTLoad(SmallVector<PhdrEntry *, 0> &phdrs) {
 
   // Clear OutputSection::ptLoad for sections contained in removed
   // segments.
-  DenseSet<PhdrEntry *> removed(it, phdrs.end());
+  SmallPtrSet<PhdrEntry *, 8> removed(it, phdrs.end());
   for (OutputSection *sec : outputSections)
     if (removed.count(sec->ptLoad))
       sec->ptLoad = nullptr;
@@ -1436,7 +1437,7 @@ void removeUnusedSyntheticSections() {
         return !isa<SyntheticSection>(s);
       }).base();
 
-  DenseSet<InputSectionBase *> unused;
+  SmallPtrSet<InputSectionBase *, 8> unused;
   auto end =
       std::remove_if(start, ctx.inputSections.end(), [&](InputSectionBase *s) {
         auto *sec = cast<SyntheticSection>(s);
@@ -1575,7 +1576,7 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
     // We also need to scan the dynamic relocation tables of the other
     // partitions and add any referenced symbols to the partition's dynsym.
     for (Partition &part : MutableArrayRef<Partition>(partitions).slice(1)) {
-      DenseSet<Symbol *> syms;
+      SmallPtrSet<Symbol *, 16> syms;
       for (const SymbolTableEntry &e : part.dynSymTab->getSymbols())
         syms.insert(e.sym);
       for (DynamicReloc &reloc : part.relaDyn->relocs)

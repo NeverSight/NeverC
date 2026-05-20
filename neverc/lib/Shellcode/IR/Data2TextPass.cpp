@@ -2,7 +2,7 @@
 #include "neverc/Shellcode/IR/Data2TextABI.h"
 #include "neverc/Shellcode/Pipeline/ShellcodeIRHelperNames.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Constants.h"
@@ -284,9 +284,9 @@ struct GVUserAnalysis {
 
 GVUserAnalysis analyzeGVUsers(GlobalVariable &GV) {
   GVUserAnalysis Result;
-  SmallDenseSet<Function *, 4> SeenFns;
-  SmallDenseSet<ConstantExpr *, 8> SeenCEs;
-  SmallDenseSet<User *, 16> Visited;
+  SmallPtrSet<Function *, 4> SeenFns;
+  SmallPtrSet<ConstantExpr *, 8> SeenCEs;
+  SmallPtrSet<User *, 16> Visited;
   SmallVector<User *, 16> Stack;
   Stack.reserve(GV.getNumUses());
   for (User *U : GV.users())
@@ -539,7 +539,7 @@ bool eliminateConstantGlobals(Module &M) {
 
   StackifyContext Ctx{M, DL, decltype(StackifyContext::Cache)()};
 
-  DenseSet<GlobalVariable *> Handled;
+  SmallPtrSet<GlobalVariable *, 8> Handled;
   bool Progress = true;
   while (Progress) {
     Progress = false;

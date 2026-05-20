@@ -2,7 +2,7 @@
 #include "ExtractorCommon.h"
 #include "neverc/Shellcode/IR/ZeroRelocABI.h"
 #include "neverc/Shellcode/Pipeline/ShellcodeIRHelperNames.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -139,8 +139,8 @@ bool inlineFunctionIntoCallers(Function &F) {
 bool inlineNonEntryUsersOfMutableGlobals(ArrayRef<GlobalVariable *> Work,
                                          Function &Entry) {
   SmallVector<Function *, 16> Candidates;
-  DenseSet<Function *> Seen;
-  DenseSet<User *> Visited;
+  SmallPtrSet<Function *, 8> Seen;
+  SmallPtrSet<User *, 16> Visited;
   SmallVector<User *, 32> Stack;
   for (GlobalVariable *GV : Work) {
     for (User *U : GV->users())
@@ -209,8 +209,8 @@ bool stackifyMutableGlobals(Module &M, Function *Entry) {
 
   SmallVector<Instruction *, 16> DirectInstructionUsers;
   SmallVector<ConstantExpr *, 16> ConstantExprUsers;
-  DenseSet<User *> Visited;
-  DenseSet<ConstantExpr *> SeenCEs;
+  SmallPtrSet<User *, 16> Visited;
+  SmallPtrSet<ConstantExpr *, 8> SeenCEs;
   SmallVector<User *, 16> Stack;
 
   for (GlobalVariable *GV : Work) {

@@ -18,6 +18,7 @@
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/TinyPtrVector.h"
@@ -258,7 +259,7 @@ private:
   SourceLocation MaxTokensOverrideLoc;
 
 public:
-  using IncludedFilesSet = llvm::DenseSet<const FileEntry *>;
+  using IncludedFilesSet = llvm::SmallPtrSet<const FileEntry *, 16>;
 
 private:
   friend class MacroArgStorage;

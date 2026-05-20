@@ -3,7 +3,7 @@
 
 #include "neverc/Tree/Decl/Decl.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 
 namespace neverc {
@@ -23,7 +23,7 @@ class VarBypassDetector {
   // Lookup map to find scope for destinations.
   llvm::DenseMap<const Stmt *, unsigned> ToScopes;
   // Set of variables which were bypassed by some jump.
-  llvm::DenseSet<const VarDecl *> Bypasses;
+  llvm::SmallPtrSet<const VarDecl *, 8> Bypasses;
   // If true assume that all variables are being bypassed.
   bool AlwaysBypassed = false;
 

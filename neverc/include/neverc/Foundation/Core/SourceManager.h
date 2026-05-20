@@ -10,6 +10,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/PagedVector.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SmallVector.h"
@@ -419,7 +420,7 @@ class SourceManager : public llvm::RefCountedBase<SourceManager> {
     llvm::DenseMap<const FileEntry *, FileEntryRef> OverriddenFiles;
 
     /// Files that were overridden with a memory buffer.
-    llvm::DenseSet<const FileEntry *> OverriddenFilesWithBuffer;
+    llvm::SmallPtrSet<const FileEntry *, 4> OverriddenFilesWithBuffer;
   };
 
   std::unique_ptr<OverriddenFilesInfoTy> OverriddenFilesInfo;

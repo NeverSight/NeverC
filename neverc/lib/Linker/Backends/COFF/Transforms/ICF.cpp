@@ -4,8 +4,8 @@
 #include "Linker/COFF/Symbols.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Parallel.h"
 #include "llvm/Support/TimeProfiler.h"
@@ -287,8 +287,8 @@ void ICF::foldLeafSectionsEarly() {
     return a.hash < b.hash;
   });
 
-  DenseSet<SectionChunk *> removed;
-  DenseSet<SectionChunk *> loggedSelected;
+  SmallPtrSet<SectionChunk *, 32> removed;
+  SmallPtrSet<SectionChunk *, 16> loggedSelected;
   for (size_t i = 0; i < leaves.size();) {
     uint64_t hash = leaves[i].hash;
     size_t j = i + 1;

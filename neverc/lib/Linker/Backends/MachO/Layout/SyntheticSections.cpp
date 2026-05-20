@@ -9,7 +9,7 @@
 #include "Linker/MachO/Symbols.h"
 
 #include "Linker/Core/Runtime/Session.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/EndianStream.h"
@@ -1097,7 +1097,7 @@ void SymtabSection::emitStabs() {
   using SortingPair = std::pair<Defined *, int>;
   std::vector<StabsCandidate> stabsCandidates;
   SmallVector<ObjFile *> stabsFiles;
-  DenseSet<ObjFile *> seenStabsFiles;
+  SmallPtrSet<ObjFile *, 8> seenStabsFiles;
 
   for (const SymtabEntry &entry :
        concat<SymtabEntry>(localSymbols, externalSymbols)) {

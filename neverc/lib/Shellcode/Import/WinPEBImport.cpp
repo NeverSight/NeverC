@@ -3,7 +3,7 @@
 #include "neverc/Shellcode/Import/PtrCacheHelpers.h"
 #include "neverc/Shellcode/Import/WinImportTables.h"
 #include "neverc/Shellcode/Pipeline/ShellcodeIRHelperNames.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/Attributes.h"
@@ -1058,8 +1058,7 @@ PreservedAnalyses WinPEBImportPass::run(Module &M, ModuleAnalysisManager &) {
   }
 
   if (Changed) {
-    DenseSet<Function *> Already;
-    Already.reserve(ToReplace.size());
+    SmallPtrSet<Function *, 8> Already;
     for (auto &[D, _] : ToReplace)
       Already.insert(D);
     for (Function &F : M) {

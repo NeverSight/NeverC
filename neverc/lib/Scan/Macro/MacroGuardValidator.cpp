@@ -4,7 +4,7 @@
 #include "neverc/Foundation/Core/TokenKinds.h"
 #include "neverc/Scan/MacroRecord.h"
 #include "neverc/Scan/Token.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace neverc;
@@ -22,8 +22,7 @@ void MacroGuardValidator::MacroDefined(const Token &MacroNameTok,
   const unsigned NumTokens = MI->getNumTokens();
   const unsigned NumParams = Params.size();
 
-  llvm::DenseSet<const IdentifierInfo *> ParamSet;
-  ParamSet.reserve(NumParams);
+  llvm::SmallPtrSet<const IdentifierInfo *, 8> ParamSet;
   for (const auto *P : Params)
     ParamSet.insert(P);
 

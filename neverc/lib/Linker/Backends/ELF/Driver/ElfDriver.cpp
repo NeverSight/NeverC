@@ -23,6 +23,7 @@
 #include "Linker/ELF/Target.h"
 #include "neverc/Merge/Merger.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/LTO/LTO.h"
@@ -1944,7 +1945,7 @@ void markBuffersAsDontNeed() {
   if (ctx.memoryBuffers.empty())
     return;
 
-  DenseSet<const char *> bufs;
+  SmallPtrSet<const char *, 16> bufs;
   for (BitcodeFile *file : ctx.bitcodeFiles)
     bufs.insert(file->mb.getBufferStart());
   for (BitcodeFile *file : ctx.lazyBitcodeFiles)

@@ -38,6 +38,7 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterClassInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -190,7 +191,7 @@ public:
   /// appears. These are stored so we can do quick interval tests.
   unsigned StartInstIdx, LastInstIdx, KillInstIdx;
   /// All instructions in the chain.
-  std::set<MachineInstr *> Insts;
+  SmallPtrSet<MachineInstr *, 4> Insts;
   /// True if KillInst cannot be modified. If this is true,
   /// we cannot change LastInst's outgoing register.
   /// This will be true for tied values and regmasks.

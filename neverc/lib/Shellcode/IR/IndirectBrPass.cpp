@@ -1,5 +1,5 @@
 #include "neverc/Shellcode/IR/IndirectBrPass.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -37,7 +37,7 @@ struct LoadSource {
 };
 
 bool collectLoads(Value *Root, SmallVectorImpl<LoadSource> &Out) {
-  DenseSet<Value *> Visited;
+  SmallPtrSet<Value *, 8> Visited;
   SmallVector<std::pair<Value *, BasicBlock *>, 4> Stack;
   Stack.push_back({Root, nullptr});
   while (!Stack.empty()) {
@@ -145,7 +145,7 @@ GlobalVariable *matchPattern(IndirectBrInst &IBI, Value *&Idx, Type *&IdxTy,
     TableBBs.push_back(BA->getBasicBlock());
   }
 
-  DenseSet<BasicBlock *> IBISuccs;
+  SmallPtrSet<BasicBlock *, 4> IBISuccs;
   for (unsigned I = 0, N = IBI.getNumDestinations(); I < N; ++I)
     IBISuccs.insert(IBI.getDestination(I));
   for (BasicBlock *BB : TableBBs)

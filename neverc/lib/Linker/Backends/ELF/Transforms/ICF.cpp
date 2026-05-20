@@ -6,7 +6,7 @@
 #include "Linker/ELF/SymbolTable.h"
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Support/Parallel.h"
@@ -452,8 +452,8 @@ template <class ELFT> void ICF<ELFT>::foldLeafSectionsEarly() {
                  return a.hash < b.hash;
                });
 
-  DenseSet<InputSection *> removed;
-  DenseSet<InputSection *> printedSelected;
+  SmallPtrSet<InputSection *, 32> removed;
+  SmallPtrSet<InputSection *, 16> printedSelected;
   for (size_t i = 0; i < leafSections.size();) {
     uint64_t hash = leafSections[i].hash;
     size_t j = i + 1;

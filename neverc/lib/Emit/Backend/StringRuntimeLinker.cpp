@@ -1,7 +1,7 @@
 #include "Backend/StringRuntimeLinker.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Builtin/BuiltinStringNames.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -142,8 +142,8 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   // code.  Seed from user-referenced declarations whose names map to
   // a real RuntimeMod definition (no prefix matching: RuntimeMod's
   // function table is the authoritative roster).
-  DenseSet<Function *> Needed;
-  DenseSet<GlobalVariable *> NeededGlobals;
+  SmallPtrSet<Function *, 16> Needed;
+  SmallPtrSet<GlobalVariable *, 8> NeededGlobals;
   SmallVector<Function *, 32> Worklist;
 
   auto EnqueueIfNew = [&](Function *F) {
@@ -226,7 +226,7 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   // optimisations between the merge and downstream passes (none
   // today, but plenty of hooks coming) can leave dead runtime code
   // attached.
-  DenseSet<GlobalValue *> Live;
+  SmallPtrSet<GlobalValue *, 16> Live;
   SmallVector<GlobalValue *, 32> ReachWorklist;
 
   auto Enqueue = [&](GlobalValue *GV) {

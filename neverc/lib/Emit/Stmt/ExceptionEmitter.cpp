@@ -5,7 +5,7 @@
 #include "Stmt/CleanupEmitterInfo.h"
 #include "neverc/Tree/Core/Mangle.h"
 #include "neverc/Tree/Stmt/StmtVisitor.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -1329,12 +1329,12 @@ void FunctionEmitter::enterSEHTryStmt(const SEHTryStmt &S,
 
       if (NeedsGotoMapping) {
         // Scan the finally block for gotos so we can assign stable codes.
-        llvm::DenseSet<const LabelDecl *> Seen;
+        llvm::SmallPtrSet<const LabelDecl *, 4> Seen;
         struct GotoFinder : ConstStmtVisitor<GotoFinder> {
           llvm::SmallVectorImpl<const LabelDecl *> &Labels;
-          llvm::DenseSet<const LabelDecl *> &Seen;
+          llvm::SmallPtrSet<const LabelDecl *, 4> &Seen;
           GotoFinder(llvm::SmallVectorImpl<const LabelDecl *> &Labels,
-                     llvm::DenseSet<const LabelDecl *> &Seen)
+                     llvm::SmallPtrSet<const LabelDecl *, 4> &Seen)
               : Labels(Labels), Seen(Seen) {}
           void Visit(const Stmt *S) {
             ConstStmtVisitor<GotoFinder>::Visit(S);

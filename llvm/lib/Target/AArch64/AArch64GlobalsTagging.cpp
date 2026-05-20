@@ -20,7 +20,6 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
-#include <set>
 
 using namespace llvm;
 
@@ -120,9 +119,6 @@ public:
   bool runOnModule(Module &M) override;
 
   StringRef getPassName() const override { return "AArch64 Globals Tagging"; }
-
-private:
-  std::set<GlobalVariable *> GlobalsToTag;
 };
 } // anonymous namespace
 

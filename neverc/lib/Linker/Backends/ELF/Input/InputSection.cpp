@@ -8,6 +8,7 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Compression.h"
 #include "llvm/Support/Endian.h"
@@ -746,7 +747,7 @@ void InputSectionBase::relocate(uint8_t *buf, uint8_t *bufEnd) {
 // and replace them with calls to __morestack_non_split.
 namespace {
 void switchMorestackCallsToMorestackNonSplit(
-    DenseSet<Defined *> &prologues,
+    SmallPtrSetImpl<Defined *> &prologues,
     SmallVector<Relocation *, 0> &morestackCalls) {
 
   // If the target adjusted a function's prologue, all calls to
@@ -782,7 +783,7 @@ void switchMorestackCallsToMorestackNonSplit(
 }
 
 bool enclosingPrologueAttempted(uint64_t offset,
-                                const DenseSet<Defined *> &prologues) {
+                                const SmallPtrSetImpl<Defined *> &prologues) {
   for (Defined *f : prologues)
     if (f->value <= offset && offset < f->value + f->size)
       return true;
@@ -797,7 +798,7 @@ bool enclosingPrologueAttempted(uint64_t offset,
 template <class ELFT>
 void InputSectionBase::adjustSplitStackFunctionPrologues(uint8_t *buf,
                                                          uint8_t *end) {
-  DenseSet<Defined *> prologues;
+  SmallPtrSet<Defined *, 8> prologues;
   SmallVector<Relocation *, 0> morestackCalls;
 
   for (Relocation &rel : relocs()) {

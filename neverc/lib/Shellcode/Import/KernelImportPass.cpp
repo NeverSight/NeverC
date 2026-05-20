@@ -4,7 +4,7 @@
 #include "neverc/Shellcode/Import/PtrCacheHelpers.h"
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
@@ -222,7 +222,7 @@ PreservedAnalyses KernelImportPass::run(Module &M, ModuleAnalysisManager &) {
     return PreservedAnalyses::all();
 
   SmallVector<Function *, 8> DirectExterns;
-  SmallDenseSet<Function *, 8> DirectExternSet;
+  SmallPtrSet<Function *, 8> DirectExternSet;
   for (Function *Ext : Externs) {
     if (hasDirectCallUse(*Ext)) {
       DirectExterns.push_back(Ext);
