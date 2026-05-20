@@ -1449,6 +1449,10 @@ inline Error readNativeFileToEOF(file_t FileHandle,
 
 namespace llvm {
 namespace sys {
+
+bool RemoveFileOnSignal(StringRef Filename, std::string *ErrMsg = nullptr);
+void DontRemoveFileOnSignal(StringRef Filename);
+
 namespace fs {
 
 using llvm::errc;
