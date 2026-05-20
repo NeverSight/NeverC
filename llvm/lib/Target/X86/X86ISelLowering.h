@@ -961,6 +961,12 @@ bool mayFoldIntoZeroExtend(SDValue Op);
 //===--------------------------------------------------------------------===//
 //  X86 Implementation of the TargetLowering interface
 class X86TargetLowering final : public TargetLowering {
+  enum ByValCopyKind {
+    NoCopy,
+    CopyOnce,
+    CopyViaTemp,
+  };
+
 public:
   explicit X86TargetLowering(const X86TargetMachine &TM,
                              const X86Subtarget &STI);
@@ -1630,6 +1636,9 @@ private:
   SDValue LowerADDROFRETURNADDR(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFRAME_TO_ARGS_OFFSET(SDValue Op, SelectionDAG &DAG) const;
+  ByValCopyKind ByValNeedsCopyForTailCall(SelectionDAG &DAG, SDValue Src,
+                                          SDValue Dst,
+                                          ISD::ArgFlagsTy Flags) const;
   SDValue LowerEH_RETURN(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerEH_SJLJ_SETJMP(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const;
