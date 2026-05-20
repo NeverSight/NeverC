@@ -77,9 +77,10 @@ public:
     // empty buckets.
     if (empty())
       return end();
-    if (shouldReverseIterate<KeyT>())
+    if constexpr (shouldReverseIterate<KeyT>())
       return makeIterator(getBucketsEnd() - 1, getBuckets(), *this);
-    return makeIterator(getBuckets(), getBucketsEnd(), *this);
+    else
+      return makeIterator(getBuckets(), getBucketsEnd(), *this);
   }
   inline iterator end() {
     return makeIterator(getBucketsEnd(), getBucketsEnd(), *this, true);
@@ -87,9 +88,10 @@ public:
   inline const_iterator begin() const {
     if (empty())
       return end();
-    if (shouldReverseIterate<KeyT>())
+    if constexpr (shouldReverseIterate<KeyT>())
       return makeConstIterator(getBucketsEnd() - 1, getBuckets(), *this);
-    return makeConstIterator(getBuckets(), getBucketsEnd(), *this);
+    else
+      return makeConstIterator(getBuckets(), getBucketsEnd(), *this);
   }
   inline const_iterator end() const {
     return makeConstIterator(getBucketsEnd(), getBucketsEnd(), *this, true);
@@ -143,33 +145,20 @@ public:
   }
 
   /// Return true if the specified key is in the map, false otherwise.
-  bool contains(const_arg_type_t<KeyT> Val) const {
-    const BucketT *TheBucket;
-    return LookupBucketFor(Val, TheBucket);
+  [[nodiscard]] bool contains(const_arg_type_t<KeyT> Val) const {
+    return doFind(Val) != nullptr;
   }
 
   /// Return 1 if the specified key is in the map, 0 otherwise.
-  size_type count(const_arg_type_t<KeyT> Val) const {
+  [[nodiscard]] size_type count(const_arg_type_t<KeyT> Val) const {
     return contains(Val) ? 1 : 0;
   }
 
-  iterator find(const_arg_type_t<KeyT> Val) {
-    BucketT *TheBucket;
-    if (LookupBucketFor(Val, TheBucket))
-      return makeIterator(TheBucket,
-                          shouldReverseIterate<KeyT>() ? getBuckets()
-                                                       : getBucketsEnd(),
-                          *this, true);
-    return end();
+  [[nodiscard]] iterator find(const_arg_type_t<KeyT> Val) {
+    return find_as(Val);
   }
-  const_iterator find(const_arg_type_t<KeyT> Val) const {
-    const BucketT *TheBucket;
-    if (LookupBucketFor(Val, TheBucket))
-      return makeConstIterator(TheBucket,
-                               shouldReverseIterate<KeyT>() ? getBuckets()
-                                                            : getBucketsEnd(),
-                               *this, true);
-    return end();
+  [[nodiscard]] const_iterator find(const_arg_type_t<KeyT> Val) const {
+    return find_as(Val);
   }
 
   /// Alternate version of find() which allows a different, and possibly
@@ -177,38 +166,55 @@ public:
   /// The DenseMapInfo is responsible for supplying methods
   /// getHashValue(LookupKeyT) and isEqual(LookupKeyT, KeyT) for each key
   /// type used.
-  template <class LookupKeyT> iterator find_as(const LookupKeyT &Val) {
-    BucketT *TheBucket;
-    if (LookupBucketFor(Val, TheBucket))
-      return makeIterator(TheBucket,
-                          shouldReverseIterate<KeyT>() ? getBuckets()
-                                                       : getBucketsEnd(),
-                          *this, true);
+  template <class LookupKeyT>
+  [[nodiscard]] iterator find_as(const LookupKeyT &Val) {
+    if (BucketT *Bucket = doFind(Val)) {
+      if constexpr (shouldReverseIterate<KeyT>())
+        return makeIterator(Bucket, getBuckets(), *this, true);
+      else
+        return makeIterator(Bucket, getBucketsEnd(), *this, true);
+    }
     return end();
   }
   template <class LookupKeyT>
-  const_iterator find_as(const LookupKeyT &Val) const {
-    const BucketT *TheBucket;
-    if (LookupBucketFor(Val, TheBucket))
-      return makeConstIterator(TheBucket,
-                               shouldReverseIterate<KeyT>() ? getBuckets()
-                                                            : getBucketsEnd(),
-                               *this, true);
+  [[nodiscard]] const_iterator find_as(const LookupKeyT &Val) const {
+    if (const BucketT *Bucket = doFind(Val)) {
+      if constexpr (shouldReverseIterate<KeyT>())
+        return makeConstIterator(Bucket, getBuckets(), *this, true);
+      else
+        return makeConstIterator(Bucket, getBucketsEnd(), *this, true);
+    }
     return end();
   }
 
   /// lookup - Return the entry for the specified key, or a default
   /// constructed value if no such entry exists.
-  ValueT lookup(const_arg_type_t<KeyT> Val) const {
-    const BucketT *TheBucket;
-    if (LookupBucketFor(Val, TheBucket))
-      return TheBucket->getSecond();
+  [[nodiscard]] ValueT lookup(const_arg_type_t<KeyT> Val) const {
+    if (const BucketT *Bucket = doFind(Val))
+      return Bucket->getSecond();
     return ValueT();
+  }
+
+  /// Return the entry for the specified key, or \p Default. This variant is
+  /// useful, because `lookup` cannot be used with non-default-constructible
+  /// values.
+  template <typename U = ValueT>
+  [[nodiscard]] ValueT lookup_or(const_arg_type_t<KeyT> Val,
+                                 U &&Default) const {
+    if (const BucketT *Bucket = doFind(Val))
+      return Bucket->getSecond();
+    return Default;
   }
 
   /// at - Return the entry for the specified key, or abort if no such
   /// entry exists.
-  const ValueT &at(const_arg_type_t<KeyT> Val) const {
+  [[nodiscard]] ValueT &at(const_arg_type_t<KeyT> Val) {
+    auto Iter = this->find(std::move(Val));
+    assert(Iter != this->end() && "DenseMap::at failed due to a missing key");
+    return Iter->second;
+  }
+
+  [[nodiscard]] const ValueT &at(const_arg_type_t<KeyT> Val) const {
     auto Iter = this->find(std::move(Val));
     assert(Iter != this->end() && "DenseMap::at failed due to a missing key");
     return Iter->second;
@@ -326,8 +332,8 @@ public:
   }
 
   bool erase(const KeyT &Val) {
-    BucketT *TheBucket;
-    if (!LookupBucketFor(Val, TheBucket))
+    BucketT *TheBucket = doFind(Val);
+    if (!TheBucket)
       return false; // not in map.
 
     TheBucket->getSecond().~ValueT();
@@ -383,6 +389,10 @@ protected:
 
   void destroyAll() {
     if (getNumBuckets() == 0) // Nothing to do.
+      return;
+
+    if constexpr (std::is_trivially_destructible<KeyT>::value &&
+                  std::is_trivially_destructible<ValueT>::value)
       return;
 
     const KeyT EmptyKey = getEmptyKey(), TombstoneKey = getTombstoneKey();
@@ -485,21 +495,23 @@ protected:
 private:
   iterator makeIterator(BucketT *P, BucketT *E, DebugEpochBase &Epoch,
                         bool NoAdvance = false) {
-    if (shouldReverseIterate<KeyT>()) {
+    if constexpr (shouldReverseIterate<KeyT>()) {
       BucketT *B = P == getBucketsEnd() ? getBuckets() : P + 1;
       return iterator(B, E, Epoch, NoAdvance);
+    } else {
+      return iterator(P, E, Epoch, NoAdvance);
     }
-    return iterator(P, E, Epoch, NoAdvance);
   }
 
   const_iterator makeConstIterator(const BucketT *P, const BucketT *E,
                                    const DebugEpochBase &Epoch,
                                    const bool NoAdvance = false) const {
-    if (shouldReverseIterate<KeyT>()) {
+    if constexpr (shouldReverseIterate<KeyT>()) {
       const BucketT *B = P == getBucketsEnd() ? getBuckets() : P + 1;
       return const_iterator(B, E, Epoch, NoAdvance);
+    } else {
+      return const_iterator(P, E, Epoch, NoAdvance);
     }
-    return const_iterator(P, E, Epoch, NoAdvance);
   }
 
   unsigned getNumEntries() const {
@@ -604,6 +616,33 @@ private:
       decrementNumTombstones();
 
     return TheBucket;
+  }
+
+  template <typename LookupKeyT>
+  const BucketT *doFind(const LookupKeyT &Val) const {
+    const BucketT *BucketsPtr = getBuckets();
+    const unsigned NumBuckets = getNumBuckets();
+    if (NumBuckets == 0)
+      return nullptr;
+
+    const KeyT EmptyKey = KeyInfoT::getEmptyKey();
+    unsigned BucketNo = KeyInfoT::getHashValue(Val) & (NumBuckets - 1);
+    unsigned ProbeAmt = 1;
+    while (true) {
+      const BucketT *Bucket = BucketsPtr + BucketNo;
+      if (LLVM_LIKELY(KeyInfoT::isEqual(Val, Bucket->getFirst())))
+        return Bucket;
+      if (LLVM_LIKELY(KeyInfoT::isEqual(Bucket->getFirst(), EmptyKey)))
+        return nullptr;
+
+      BucketNo += ProbeAmt++;
+      BucketNo &= NumBuckets - 1;
+    }
+  }
+
+  template <typename LookupKeyT> BucketT *doFind(const LookupKeyT &Val) {
+    return const_cast<BucketT *>(
+        static_cast<const DenseMapBase *>(this)->doFind(Val));
   }
 
   /// LookupBucketFor - Lookup the appropriate bucket for Val, returning it in
@@ -1203,11 +1242,11 @@ public:
 
     if (NoAdvance)
       return;
-    if (shouldReverseIterate<KeyT>()) {
+    if constexpr (shouldReverseIterate<KeyT>()) {
       RetreatPastEmptyBuckets();
-      return;
+    } else {
+      AdvancePastEmptyBuckets();
     }
-    AdvancePastEmptyBuckets();
   }
 
   // Converting ctor from non-const iterators to const iterators. SFINAE'd out
@@ -1222,16 +1261,18 @@ public:
   reference operator*() const {
     assert(isHandleInSync() && "invalid iterator access!");
     assert(Ptr != End && "dereferencing end() iterator");
-    if (shouldReverseIterate<KeyT>())
+    if constexpr (shouldReverseIterate<KeyT>())
       return Ptr[-1];
-    return *Ptr;
+    else
+      return *Ptr;
   }
   pointer operator->() const {
     assert(isHandleInSync() && "invalid iterator access!");
     assert(Ptr != End && "dereferencing end() iterator");
-    if (shouldReverseIterate<KeyT>())
+    if constexpr (shouldReverseIterate<KeyT>())
       return &(Ptr[-1]);
-    return Ptr;
+    else
+      return Ptr;
   }
 
   friend bool operator==(const DenseMapIterator &LHS,
@@ -1251,13 +1292,13 @@ public:
   inline DenseMapIterator &operator++() { // Preincrement
     assert(isHandleInSync() && "invalid iterator access!");
     assert(Ptr != End && "incrementing end() iterator");
-    if (shouldReverseIterate<KeyT>()) {
+    if constexpr (shouldReverseIterate<KeyT>()) {
       --Ptr;
       RetreatPastEmptyBuckets();
-      return *this;
+    } else {
+      ++Ptr;
+      AdvancePastEmptyBuckets();
     }
-    ++Ptr;
-    AdvancePastEmptyBuckets();
     return *this;
   }
   DenseMapIterator operator++(int) { // Postincrement

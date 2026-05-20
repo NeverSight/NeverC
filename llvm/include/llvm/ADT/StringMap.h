@@ -540,7 +540,7 @@ inline unsigned StringMapImpl::LookupBucketFor(StringRef Name) {
   if (NumBuckets == 0)
     init(16);
   unsigned FullHashValue = llvm::xxh3_64bits(Name);
-  if (llvm::shouldReverseIterate())
+  if constexpr (llvm::shouldReverseIterate())
     FullHashValue = ~FullHashValue;
   unsigned BucketNo = FullHashValue & (NumBuckets - 1);
   unsigned *HashTable = detail::getHashTableSM(TheTable, NumBuckets);
@@ -609,7 +609,7 @@ inline int StringMapImpl::FindKey(StringRef Key) const {
   if (NumBuckets == 0)
     return -1;
   unsigned FullHashValue = llvm::xxh3_64bits(Key);
-  if (llvm::shouldReverseIterate())
+  if constexpr (llvm::shouldReverseIterate())
     FullHashValue = ~FullHashValue;
   unsigned BucketNo = FullHashValue & (NumBuckets - 1);
   unsigned *HashTable = detail::getHashTableSM(TheTable, NumBuckets);
