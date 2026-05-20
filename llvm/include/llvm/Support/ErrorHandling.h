@@ -153,7 +153,25 @@ void install_out_of_memory_new_handler();
 #endif
 
 #if LLVM_ENABLE_THREADS == 1
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#define LLVM_MUTEX_T SRWLOCK
+#define LLVM_MUTEX_INITIALIZER SRWLOCK_INIT
+#define LLVM_MUTEX_LOCK(m) AcquireSRWLockExclusive(m)
+#define LLVM_MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(m)
+#else
 #include <pthread.h>
+#define LLVM_MUTEX_T pthread_mutex_t
+#define LLVM_MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
+#define LLVM_MUTEX_LOCK(m) pthread_mutex_lock(m)
+#define LLVM_MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
+#endif
 #endif
 
 #ifdef __cplusplus
@@ -188,9 +206,8 @@ inline static llvm::fatal_error_handler_t BadAllocErrorHandler = 0;
 inline static void *BadAllocErrorHandlerUserData = 0;
 
 #if LLVM_ENABLE_THREADS == 1
-inline static pthread_mutex_t ErrorHandlerMutex = PTHREAD_MUTEX_INITIALIZER;
-inline static pthread_mutex_t BadAllocErrorHandlerMutex =
-    PTHREAD_MUTEX_INITIALIZER;
+inline static LLVM_MUTEX_T ErrorHandlerMutex = LLVM_MUTEX_INITIALIZER;
+inline static LLVM_MUTEX_T BadAllocErrorHandlerMutex = LLVM_MUTEX_INITIALIZER;
 #endif
 
 namespace llvm {
@@ -198,24 +215,24 @@ namespace llvm {
 inline void install_fatal_error_handler(fatal_error_handler_t handler,
                                         void *user_data) {
 #if LLVM_ENABLE_THREADS == 1
-  pthread_mutex_lock(&ErrorHandlerMutex);
+  LLVM_MUTEX_LOCK(&ErrorHandlerMutex);
 #endif
   assert(!ErrorHandler && "Error handler already registered!\n");
   ErrorHandler = handler;
   ErrorHandlerUserData = user_data;
 #if LLVM_ENABLE_THREADS == 1
-  pthread_mutex_unlock(&ErrorHandlerMutex);
+  LLVM_MUTEX_UNLOCK(&ErrorHandlerMutex);
 #endif
 }
 
 inline void remove_fatal_error_handler() {
 #if LLVM_ENABLE_THREADS == 1
-  pthread_mutex_lock(&ErrorHandlerMutex);
+  LLVM_MUTEX_LOCK(&ErrorHandlerMutex);
 #endif
   ErrorHandler = 0;
   ErrorHandlerUserData = 0;
 #if LLVM_ENABLE_THREADS == 1
-  pthread_mutex_unlock(&ErrorHandlerMutex);
+  LLVM_MUTEX_UNLOCK(&ErrorHandlerMutex);
 #endif
 }
 
@@ -232,12 +249,12 @@ inline void report_fatal_error(const Twine &Reason, bool GenCrashDiag) {
   void *handlerData = 0;
   {
 #if LLVM_ENABLE_THREADS == 1
-    pthread_mutex_lock(&ErrorHandlerMutex);
+    LLVM_MUTEX_LOCK(&ErrorHandlerMutex);
 #endif
     handler = ErrorHandler;
     handlerData = ErrorHandlerUserData;
 #if LLVM_ENABLE_THREADS == 1
-    pthread_mutex_unlock(&ErrorHandlerMutex);
+    LLVM_MUTEX_UNLOCK(&ErrorHandlerMutex);
 #endif
   }
 
@@ -245,13 +262,10 @@ inline void report_fatal_error(const Twine &Reason, bool GenCrashDiag) {
     handler(handlerData, Reason.str().c_str(), GenCrashDiag);
   } else {
     const char prefix[] = "LLVM ERROR: ";
-    ssize_t w1 = ::write(2, prefix, sizeof(prefix) - 1);
-    (void)w1;
+    (void)!::write(2, prefix, sizeof(prefix) - 1);
     std::string msg = Reason.str();
-    ssize_t w2 = ::write(2, msg.data(), msg.size());
-    (void)w2;
-    ssize_t w3 = ::write(2, "\n", 1);
-    (void)w3;
+    (void)!::write(2, msg.data(), msg.size());
+    (void)!::write(2, "\n", 1);
   }
 
   sys::RunInterruptHandlers();
@@ -265,24 +279,24 @@ inline void report_fatal_error(const Twine &Reason, bool GenCrashDiag) {
 inline void install_bad_alloc_error_handler(fatal_error_handler_t handler,
                                             void *user_data) {
 #if LLVM_ENABLE_THREADS == 1
-  pthread_mutex_lock(&BadAllocErrorHandlerMutex);
+  LLVM_MUTEX_LOCK(&BadAllocErrorHandlerMutex);
 #endif
   assert(!ErrorHandler && "Bad alloc error handler already registered!\n");
   BadAllocErrorHandler = handler;
   BadAllocErrorHandlerUserData = user_data;
 #if LLVM_ENABLE_THREADS == 1
-  pthread_mutex_unlock(&BadAllocErrorHandlerMutex);
+  LLVM_MUTEX_UNLOCK(&BadAllocErrorHandlerMutex);
 #endif
 }
 
 inline void remove_bad_alloc_error_handler() {
 #if LLVM_ENABLE_THREADS == 1
-  pthread_mutex_lock(&BadAllocErrorHandlerMutex);
+  LLVM_MUTEX_LOCK(&BadAllocErrorHandlerMutex);
 #endif
   BadAllocErrorHandler = 0;
   BadAllocErrorHandlerUserData = 0;
 #if LLVM_ENABLE_THREADS == 1
-  pthread_mutex_unlock(&BadAllocErrorHandlerMutex);
+  LLVM_MUTEX_UNLOCK(&BadAllocErrorHandlerMutex);
 #endif
 }
 
@@ -291,12 +305,12 @@ inline void report_bad_alloc_error(const char *Reason, bool GenCrashDiag) {
   void *HandlerData = 0;
   {
 #if LLVM_ENABLE_THREADS == 1
-    pthread_mutex_lock(&BadAllocErrorHandlerMutex);
+    LLVM_MUTEX_LOCK(&BadAllocErrorHandlerMutex);
 #endif
     Handler = BadAllocErrorHandler;
     HandlerData = BadAllocErrorHandlerUserData;
 #if LLVM_ENABLE_THREADS == 1
-    pthread_mutex_unlock(&BadAllocErrorHandlerMutex);
+    LLVM_MUTEX_UNLOCK(&BadAllocErrorHandlerMutex);
 #endif
   }
 
