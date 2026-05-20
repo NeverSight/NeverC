@@ -276,7 +276,25 @@ public:
 #include <setjmp.h>
 #include <stdlib.h>
 #if LLVM_ENABLE_THREADS == 1
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#define LLVM_CRC_MUTEX_T SRWLOCK
+#define LLVM_CRC_MUTEX_INITIALIZER SRWLOCK_INIT
+#define LLVM_CRC_MUTEX_LOCK(m) AcquireSRWLockExclusive(m)
+#define LLVM_CRC_MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(m)
+#else
 #include <pthread.h>
+#define LLVM_CRC_MUTEX_T pthread_mutex_t
+#define LLVM_CRC_MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
+#define LLVM_CRC_MUTEX_LOCK(m) pthread_mutex_lock(m)
+#define LLVM_CRC_MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
+#endif
 #endif
 
 #ifndef STRIP_CONST
@@ -352,8 +370,8 @@ CrashRecoveryContextImpl_HandleCrash(CrashRecoveryContextImpl *impl,
     longjmp(impl->JumpBuffer, 1);
 }
 
-inline pthread_mutex_t *getCrashRecoveryContextMutex() {
-  static pthread_mutex_t CrashRecoveryContextMutex = PTHREAD_MUTEX_INITIALIZER;
+inline LLVM_CRC_MUTEX_T *getCrashRecoveryContextMutex() {
+  static LLVM_CRC_MUTEX_T CrashRecoveryContextMutex = LLVM_CRC_MUTEX_INITIALIZER;
   return &CrashRecoveryContextMutex;
 }
 
@@ -408,23 +426,23 @@ inline CrashRecoveryContext *CrashRecoveryContext::GetCurrent() {
 }
 
 inline void CrashRecoveryContext::Enable() {
-  pthread_mutex_t *_crc_mtx = getCrashRecoveryContextMutex();
-  pthread_mutex_lock(_crc_mtx);
+  LLVM_CRC_MUTEX_T *_crc_mtx = getCrashRecoveryContextMutex();
+  LLVM_CRC_MUTEX_LOCK(_crc_mtx);
   if (!gCrashRecoveryEnabled) {
     gCrashRecoveryEnabled = true;
     installExceptionOrSignalHandlers();
   }
-  pthread_mutex_unlock(_crc_mtx);
+  LLVM_CRC_MUTEX_UNLOCK(_crc_mtx);
 }
 
 inline void CrashRecoveryContext::Disable() {
-  pthread_mutex_t *_crc_mtx = getCrashRecoveryContextMutex();
-  pthread_mutex_lock(_crc_mtx);
+  LLVM_CRC_MUTEX_T *_crc_mtx = getCrashRecoveryContextMutex();
+  LLVM_CRC_MUTEX_LOCK(_crc_mtx);
   if (gCrashRecoveryEnabled) {
     gCrashRecoveryEnabled = false;
     uninstallExceptionOrSignalHandlers();
   }
-  pthread_mutex_unlock(_crc_mtx);
+  LLVM_CRC_MUTEX_UNLOCK(_crc_mtx);
 }
 
 inline void

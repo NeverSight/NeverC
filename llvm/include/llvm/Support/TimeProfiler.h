@@ -168,7 +168,25 @@ struct TimeTraceScope {
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <chrono>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#define LLVM_TP_MUTEX_T SRWLOCK
+#define LLVM_TP_MUTEX_INITIALIZER SRWLOCK_INIT
+#define LLVM_TP_MUTEX_LOCK(m) AcquireSRWLockExclusive(m)
+#define LLVM_TP_MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(m)
+#else
 #include <pthread.h>
+#define LLVM_TP_MUTEX_T pthread_mutex_t
+#define LLVM_TP_MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
+#define LLVM_TP_MUTEX_LOCK(m) pthread_mutex_lock(m)
+#define LLVM_TP_MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
+#endif
 #include <system_error>
 
 // === Inline implementations (moved from cpp_bridge.cpp) ===
@@ -186,7 +204,7 @@ using std::chrono::time_point_cast;
 using microseconds = std::chrono::microseconds;
 
 struct TimeTraceProfilerInstances {
-  pthread_mutex_t Lock = PTHREAD_MUTEX_INITIALIZER;
+  LLVM_TP_MUTEX_T Lock = LLVM_TP_MUTEX_INITIALIZER;
   SmallVector<TimeTraceProfiler *, 8> List;
 };
 
@@ -304,7 +322,7 @@ struct TimeTraceProfiler {
   void write(raw_pwrite_stream &OS) {
     // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
     auto &Instances = getTimeTraceProfilerInstances();
-    pthread_mutex_lock(&Instances.Lock);
+    LLVM_TP_MUTEX_LOCK(&Instances.Lock);
     assert(Stack.empty() &&
            "All profiler sections should be ended when calling write");
     assert(llvm::all_of(Instances.List,
@@ -423,7 +441,7 @@ struct TimeTraceProfiler {
                     .count());
 
     J.objectEnd();
-    pthread_mutex_unlock(&Instances.Lock);
+    LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
   }
 
   SmallVector<TimeTraceProfilerEntry, 16> Stack;
@@ -457,21 +475,21 @@ inline void timeTraceProfilerCleanup() {
   TimeTraceProfilerInstance = 0;
 
   auto &Instances = getTimeTraceProfilerInstances();
-  pthread_mutex_lock(&Instances.Lock);
+  LLVM_TP_MUTEX_LOCK(&Instances.Lock);
   for (auto *TTP : Instances.List)
     delete TTP;
   Instances.List.clear();
-  pthread_mutex_unlock(&Instances.Lock);
+  LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
 }
 
 // Finish TimeTraceProfilerInstance on a worker thread.
 // This doesn't remove the instance, just moves the pointer to global vector.
 inline void timeTraceProfilerFinishThread() {
   auto &Instances = getTimeTraceProfilerInstances();
-  pthread_mutex_lock(&Instances.Lock);
+  LLVM_TP_MUTEX_LOCK(&Instances.Lock);
   Instances.List.push_back(TimeTraceProfilerInstance);
   TimeTraceProfilerInstance = 0;
-  pthread_mutex_unlock(&Instances.Lock);
+  LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
 }
 
 inline void timeTraceProfilerWrite(raw_pwrite_stream &OS) {

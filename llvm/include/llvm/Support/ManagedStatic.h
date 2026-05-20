@@ -16,7 +16,23 @@
 #include "llvm/Support/Threading.h"
 #include <assert.h>
 #include <atomic>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#define LLVM_MS_MUTEX_T CRITICAL_SECTION
+#define LLVM_MS_MUTEX_LOCK(m) EnterCriticalSection(m)
+#define LLVM_MS_MUTEX_UNLOCK(m) LeaveCriticalSection(m)
+#else
 #include <pthread.h>
+#define LLVM_MS_MUTEX_T pthread_mutex_t
+#define LLVM_MS_MUTEX_LOCK(m) pthread_mutex_lock(m)
+#define LLVM_MS_MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
+#endif
 #include <stddef.h>
 
 namespace llvm {
@@ -127,8 +143,15 @@ inline const ManagedStaticBase *&getStaticList() {
   return StaticList;
 }
 
-inline pthread_mutex_t *getManagedStaticMutex() {
-#ifdef __APPLE__
+inline LLVM_MS_MUTEX_T *getManagedStaticMutex() {
+#ifdef _WIN32
+  static CRITICAL_SECTION m;
+  static int m_initialized = 0;
+  if (!m_initialized) {
+    InitializeCriticalSection(&m);
+    m_initialized = 1;
+  }
+#elif defined(__APPLE__)
   static pthread_mutex_t m = PTHREAD_RECURSIVE_MUTEX_INITIALIZER;
 #else
   static pthread_mutex_t m;
@@ -151,8 +174,8 @@ ManagedStaticBase::RegisterManagedStatic(void *(*Creator)(),
                                          void (*Deleter)(void *)) const {
   assert(Creator);
   if (llvm_is_multithreaded()) {
-    pthread_mutex_t *_ms_mtx = detail::getManagedStaticMutex();
-    pthread_mutex_lock(_ms_mtx);
+    LLVM_MS_MUTEX_T *_ms_mtx = detail::getManagedStaticMutex();
+    LLVM_MS_MUTEX_LOCK(_ms_mtx);
     if (!Ptr.load(std::memory_order_relaxed)) {
       void *Tmp = Creator();
       Ptr.store(Tmp, std::memory_order_release);
@@ -160,7 +183,7 @@ ManagedStaticBase::RegisterManagedStatic(void *(*Creator)(),
       Next = detail::getStaticList();
       detail::getStaticList() = this;
     }
-    pthread_mutex_unlock(_ms_mtx);
+    LLVM_MS_MUTEX_UNLOCK(_ms_mtx);
   } else {
     assert(!Ptr && !DeleterFn && !Next &&
            "Partially initialized ManagedStatic!?");

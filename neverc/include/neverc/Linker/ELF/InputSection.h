@@ -11,6 +11,7 @@
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/DataTypes.h"
 
 namespace linker {
 namespace elf {

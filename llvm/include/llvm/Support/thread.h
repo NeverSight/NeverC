@@ -20,12 +20,14 @@
 #include <optional>
 
 #ifdef _WIN32
-typedef unsigned long DWORD;
-typedef void *PVOID;
-typedef PVOID HANDLE;
-extern "C" __declspec(dllimport) DWORD __stdcall
-GetActiveProcessorCount(DWORD GroupNumber);
-#define LLVM_ALL_PROCESSOR_GROUPS ((DWORD)0xFFFF)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#define LLVM_ALL_PROCESSOR_GROUPS ((WORD)0xFFFF)
 #endif
 
 #if LLVM_ENABLE_THREADS
@@ -147,9 +149,11 @@ public:
         return static_cast<unsigned>(n);
     }
 #elif defined(_WIN32)
-    DWORD n = GetActiveProcessorCount(LLVM_ALL_PROCESSOR_GROUPS);
-    if (n > 0)
-      return static_cast<unsigned>(n);
+    {
+      DWORD n = GetActiveProcessorCount(LLVM_ALL_PROCESSOR_GROUPS);
+      if (n > 0)
+        return static_cast<unsigned>(n);
+    }
 #endif
     unsigned n = std::thread::hardware_concurrency();
     return n > 0 ? n : 1;

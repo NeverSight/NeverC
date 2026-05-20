@@ -21,6 +21,14 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+// MSVC does not provide ssize_t in <sys/types.h>. Source it from <BaseTsd.h>'s
+// SSIZE_T so all LLVM headers that use ssize_t (e.g. raw_ostream's
+// raw_fd_stream::read) compile on Windows.
+#ifdef _WIN32
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
 // Set defaults for constants which we cannot find on some platforms.
 #if !defined(INT64_MAX)
 #define INT64_MAX 9223372036854775807LL

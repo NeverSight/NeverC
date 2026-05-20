@@ -25,7 +25,43 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#define LLVM_TPOOL_MUTEX_T SRWLOCK
+#define LLVM_TPOOL_MUTEX_INITIALIZER SRWLOCK_INIT
+#define LLVM_TPOOL_MUTEX_INIT(m) InitializeSRWLock(m)
+#define LLVM_TPOOL_MUTEX_DESTROY(m) ((void)0)
+#define LLVM_TPOOL_MUTEX_LOCK(m) AcquireSRWLockExclusive(m)
+#define LLVM_TPOOL_MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(m)
+#define LLVM_TPOOL_COND_T CONDITION_VARIABLE
+#define LLVM_TPOOL_COND_INITIALIZER CONDITION_VARIABLE_INIT
+#define LLVM_TPOOL_COND_INIT(c) InitializeConditionVariable(c)
+#define LLVM_TPOOL_COND_DESTROY(c) ((void)0)
+#define LLVM_TPOOL_COND_WAIT(c, m) SleepConditionVariableSRW((c), (m), INFINITE, 0)
+#define LLVM_TPOOL_COND_SIGNAL(c) WakeConditionVariable(c)
+#define LLVM_TPOOL_COND_BROADCAST(c) WakeAllConditionVariable(c)
+#else
 #include <pthread.h>
+#define LLVM_TPOOL_MUTEX_T pthread_mutex_t
+#define LLVM_TPOOL_MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
+#define LLVM_TPOOL_MUTEX_INIT(m) pthread_mutex_init((m), 0)
+#define LLVM_TPOOL_MUTEX_DESTROY(m) pthread_mutex_destroy(m)
+#define LLVM_TPOOL_MUTEX_LOCK(m) pthread_mutex_lock(m)
+#define LLVM_TPOOL_MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
+#define LLVM_TPOOL_COND_T pthread_cond_t
+#define LLVM_TPOOL_COND_INITIALIZER PTHREAD_COND_INITIALIZER
+#define LLVM_TPOOL_COND_INIT(c) pthread_cond_init((c), 0)
+#define LLVM_TPOOL_COND_DESTROY(c) pthread_cond_destroy(c)
+#define LLVM_TPOOL_COND_WAIT(c, m) pthread_cond_wait((c), (m))
+#define LLVM_TPOOL_COND_SIGNAL(c) pthread_cond_signal(c)
+#define LLVM_TPOOL_COND_BROADCAST(c) pthread_cond_broadcast(c)
+#endif
 #include <utility>
 
 #ifndef BRIDGE_MIN
@@ -161,14 +197,14 @@ private:
     auto R = createTaskAndFuture(Task);
 
     int requestedThreads;
-    pthread_mutex_lock(&QueueLock);
+    LLVM_TPOOL_MUTEX_LOCK(&QueueLock);
 
     // Don't allow enqueueing after disabling the pool
     assert(EnableFlag && "Queuing a thread during ThreadPool destruction");
     Tasks.emplace_back(std::make_pair(std::move(R.first), Group));
     requestedThreads = ActiveThreads + Tasks.size();
-    pthread_mutex_unlock(&QueueLock);
-    pthread_cond_signal(&QueueCondition);
+    LLVM_TPOOL_MUTEX_UNLOCK(&QueueLock);
+    LLVM_TPOOL_COND_SIGNAL(&QueueCondition);
     grow(requestedThreads);
     return R.second.share();
 
@@ -200,11 +236,11 @@ private:
   std::deque<std::pair<std::function<void()>, ThreadPoolTaskGroup *>> Tasks;
 
   /// Locking and signaling for accessing the Tasks queue.
-  pthread_mutex_t QueueLock = PTHREAD_MUTEX_INITIALIZER;
-  pthread_cond_t QueueCondition = PTHREAD_COND_INITIALIZER;
+  LLVM_TPOOL_MUTEX_T QueueLock = LLVM_TPOOL_MUTEX_INITIALIZER;
+  LLVM_TPOOL_COND_T QueueCondition = LLVM_TPOOL_COND_INITIALIZER;
 
   /// Signaling for job completion (all tasks or all tasks in a group).
-  pthread_cond_t CompletionCondition = PTHREAD_COND_INITIALIZER;
+  LLVM_TPOOL_COND_T CompletionCondition = LLVM_TPOOL_COND_INITIALIZER;
 
   /// Keep track of the number of thread actually busy
   unsigned ActiveThreads = 0;
@@ -278,9 +314,9 @@ namespace llvm {
 
 inline ThreadPool::ThreadPool(ThreadPoolStrategy S)
     : Strategy(S), MaxThreadCount(S.compute_thread_count()) {
-  pthread_mutex_init(&QueueLock, 0);
-  pthread_cond_init(&QueueCondition, 0);
-  pthread_cond_init(&CompletionCondition, 0);
+  LLVM_TPOOL_MUTEX_INIT(&QueueLock);
+  LLVM_TPOOL_COND_INIT(&QueueCondition);
+  LLVM_TPOOL_COND_INIT(&CompletionCondition);
 }
 
 inline void ThreadPool::grow(int requested) {
@@ -322,7 +358,7 @@ inline void ThreadPool::processTasks(ThreadPoolTaskGroup *WaitingForGroup) {
     llvm::unique_function<void()> Task;
     ThreadPoolTaskGroup *GroupOfTask;
     {
-      pthread_mutex_lock(&QueueLock);
+      LLVM_TPOOL_MUTEX_LOCK(&QueueLock);
       bool workCompletedForGroup = false; // Result of workCompletedUnlocked()
       for (;;) {
         if (!EnableFlag || !Tasks.empty())
@@ -332,15 +368,15 @@ inline void ThreadPool::processTasks(ThreadPoolTaskGroup *WaitingForGroup) {
           if (workCompletedForGroup)
             break;
         }
-        pthread_cond_wait(&QueueCondition, &QueueLock);
+        LLVM_TPOOL_COND_WAIT(&QueueCondition, &QueueLock);
       }
       // Exit condition
       if (!EnableFlag && Tasks.empty()) {
-        pthread_mutex_unlock(&QueueLock);
+        LLVM_TPOOL_MUTEX_UNLOCK(&QueueLock);
         return;
       }
       if (WaitingForGroup != 0 && workCompletedForGroup) {
-        pthread_mutex_unlock(&QueueLock);
+        LLVM_TPOOL_MUTEX_UNLOCK(&QueueLock);
         return;
       }
       // Yeah, we have a task, grab it and release the lock on the queue
@@ -356,7 +392,7 @@ inline void ThreadPool::processTasks(ThreadPoolTaskGroup *WaitingForGroup) {
       if (GroupOfTask != 0)
         ++ActiveGroups[GroupOfTask]; // Increment or set to 1 if new item
       Tasks.pop_front();
-      pthread_mutex_unlock(&QueueLock);
+      LLVM_TPOOL_MUTEX_UNLOCK(&QueueLock);
     }
 #ifndef NDEBUG
     if (CurrentThreadTaskGroups == 0) {
@@ -389,7 +425,7 @@ inline void ThreadPool::processTasks(ThreadPoolTaskGroup *WaitingForGroup) {
 
     bool Notify;
     bool NotifyGroup;
-    pthread_mutex_lock(&QueueLock);
+    LLVM_TPOOL_MUTEX_LOCK(&QueueLock);
     --ActiveThreads;
     if (GroupOfTask != 0) {
       auto A = ActiveGroups.find(GroupOfTask);
@@ -398,12 +434,12 @@ inline void ThreadPool::processTasks(ThreadPoolTaskGroup *WaitingForGroup) {
     }
     Notify = workCompletedUnlocked(GroupOfTask);
     NotifyGroup = GroupOfTask != 0 && Notify;
-    pthread_mutex_unlock(&QueueLock);
+    LLVM_TPOOL_MUTEX_UNLOCK(&QueueLock);
 
     if (Notify)
-      pthread_cond_broadcast(&CompletionCondition);
+      LLVM_TPOOL_COND_BROADCAST(&CompletionCondition);
     if (NotifyGroup)
-      pthread_cond_broadcast(&QueueCondition);
+      LLVM_TPOOL_COND_BROADCAST(&QueueCondition);
   }
 }
 
@@ -418,18 +454,18 @@ ThreadPool::workCompletedUnlocked(ThreadPoolTaskGroup *Group) const {
 
 inline void ThreadPool::wait() {
   assert(!isWorkerThread()); // Would deadlock waiting for itself.
-  pthread_mutex_lock(&QueueLock);
+  LLVM_TPOOL_MUTEX_LOCK(&QueueLock);
   while (!workCompletedUnlocked(0))
-    pthread_cond_wait(&CompletionCondition, &QueueLock);
-  pthread_mutex_unlock(&QueueLock);
+    LLVM_TPOOL_COND_WAIT(&CompletionCondition, &QueueLock);
+  LLVM_TPOOL_MUTEX_UNLOCK(&QueueLock);
 }
 
 inline void ThreadPool::wait(ThreadPoolTaskGroup &Group) {
   if (!isWorkerThread()) {
-    pthread_mutex_lock(&QueueLock);
+    LLVM_TPOOL_MUTEX_LOCK(&QueueLock);
     while (!workCompletedUnlocked(&Group))
-      pthread_cond_wait(&CompletionCondition, &QueueLock);
-    pthread_mutex_unlock(&QueueLock);
+      LLVM_TPOOL_COND_WAIT(&CompletionCondition, &QueueLock);
+    LLVM_TPOOL_MUTEX_UNLOCK(&QueueLock);
     return;
   }
   // Make sure to not deadlock waiting for oneself.
@@ -452,16 +488,16 @@ inline bool ThreadPool::isWorkerThread() const {
 
 // The destructor joins all threads, waiting for completion.
 inline ThreadPool::~ThreadPool() {
-  pthread_mutex_lock(&QueueLock);
+  LLVM_TPOOL_MUTEX_LOCK(&QueueLock);
   EnableFlag = false;
-  pthread_mutex_unlock(&QueueLock);
-  pthread_cond_broadcast(&QueueCondition);
+  LLVM_TPOOL_MUTEX_UNLOCK(&QueueLock);
+  LLVM_TPOOL_COND_BROADCAST(&QueueCondition);
   llvm::sys::ScopedReader LockGuard(ThreadsLock);
   for (auto &Worker : Threads)
     Worker.join();
-  pthread_mutex_destroy(&QueueLock);
-  pthread_cond_destroy(&QueueCondition);
-  pthread_cond_destroy(&CompletionCondition);
+  LLVM_TPOOL_MUTEX_DESTROY(&QueueLock);
+  LLVM_TPOOL_COND_DESTROY(&QueueCondition);
+  LLVM_TPOOL_COND_DESTROY(&CompletionCondition);
 }
 
 #else // LLVM_ENABLE_THREADS Disabled
@@ -497,9 +533,9 @@ inline bool ThreadPool::isWorkerThread() const {
 
 inline ThreadPool::~ThreadPool() {
   wait();
-  pthread_mutex_destroy(&QueueLock);
-  pthread_cond_destroy(&QueueCondition);
-  pthread_cond_destroy(&CompletionCondition);
+  LLVM_TPOOL_MUTEX_DESTROY(&QueueLock);
+  LLVM_TPOOL_COND_DESTROY(&QueueCondition);
+  LLVM_TPOOL_COND_DESTROY(&CompletionCondition);
 }
 
 #endif
