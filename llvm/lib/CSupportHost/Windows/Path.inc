@@ -935,7 +935,7 @@ static bool hasFlushBufferKernelBug() {
 static bool isEXE(StringRef Magic) {
   static const char PEMagic[] = {'P', 'E', '\0', '\0'};
   if (Magic.starts_with(StringRef("MZ")) && Magic.size() >= 0x3c + 4) {
-    uint32_t off = read32le(Magic.data() + 0x3c);
+    uint32_t off = support::endian::read32le(Magic.data() + 0x3c);
     // PE/COFF file, either EXE or DLL.
     if (Magic.substr(off).starts_with(StringRef(PEMagic, sizeof(PEMagic))))
       return true;

@@ -453,21 +453,22 @@ ErrorOr<SmallVector<wchar_t, 256>> sys::flattenWindowsCommandLine(ArrayRef<Strin
 }
 
 ProcessInfo sys::Wait(const ProcessInfo &PI,
-                      std::optional<unsigned> SecondsToWait,
-                      std::string *ErrMsg,
-                      std::optional<ProcessStatistics> *ProcStat,
+                      unsigned SecondsToWait,
+                      SmallVectorImpl<char> *ErrMsg,
+                      ProcessStatistics *ProcStat,
                       bool Polling) {
   assert(PI.Pid && "invalid pid to wait on, process not started?");
   assert((PI.Process && PI.Process != INVALID_HANDLE_VALUE) &&
          "invalid process handle to wait on, process not started?");
-  DWORD milliSecondsToWait = SecondsToWait ? *SecondsToWait * 1000 : INFINITE;
+  DWORD milliSecondsToWait =
+      SecondsToWait == UINT_MAX ? INFINITE : SecondsToWait * 1000;
 
   ProcessInfo WaitResult = PI;
   if (ProcStat)
-    ProcStat->reset();
+    *ProcStat = ProcessStatistics();
   DWORD WaitStatus = WaitForSingleObject(PI.Process, milliSecondsToWait);
   if (WaitStatus == WAIT_TIMEOUT) {
-    if (!Polling && *SecondsToWait > 0) {
+    if (!Polling && SecondsToWait > 0 && SecondsToWait != UINT_MAX) {
       if (!TerminateProcess(PI.Process, 1)) {
         if (ErrMsg)
           MakeErrMsg(ErrMsg, "Failed to terminate timed-out program");
@@ -532,15 +533,12 @@ ProcessInfo sys::Wait(const ProcessInfo &PI,
   return WaitResult;
 }
 
-bool sys::WaitMP(const std::vector<ProcessInfo *> &PIs, bool WaitAllMP,
-                 std::optional<unsigned> SecondsToWait, std::string *ErrMsg,
-                 std::optional<ProcessStatistics> *ProcStat, bool Polling) {
-    DWORD WaitTime = 0;
-    if (!SecondsToWait.has_value()) {
-        WaitTime = INFINITE;
-    } else if (SecondsToWait.value() > 0) {
-        WaitTime = SecondsToWait.value() * 1000;
-    }
+bool sys::WaitMP(ArrayRef<ProcessInfo *> PIs, bool WaitAllMP,
+                 unsigned SecondsToWait, SmallVectorImpl<char> *ErrMsg,
+                 ProcessStatistics *ProcStat, bool Polling) {
+    (void)ErrMsg;
+    (void)ProcStat;
+    DWORD WaitTime = SecondsToWait == UINT_MAX ? INFINITE : SecondsToWait * 1000;
 
     std::vector<HANDLE> Handles;
 
@@ -598,7 +596,7 @@ bool sys::WaitMP(const std::vector<ProcessInfo *> &PIs, bool WaitAllMP,
     return Done;
 }
 
-bool sys::CleanUpMP(const std::vector<ProcessInfo *> &PIs) {
+bool sys::CleanUpMP(ArrayRef<ProcessInfo *> PIs) {
     bool Done = true;
     std::vector<HANDLE> Handles;
 
