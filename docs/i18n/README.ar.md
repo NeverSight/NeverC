@@ -8,7 +8,7 @@
 
 **مُجمِّع C23 موجَّه لأبحاث الأمن على LLVM**
 
-مُرابط مدمج · مسار shellcode · أوقات تشغيل مدمجة (`string` · mimalloc)
+مُرابط مدمج · مسار shellcode · أوقات تشغيل مدمجة (`string` · `mimalloc`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#الميزات)

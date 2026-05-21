@@ -6,7 +6,7 @@
 
 **基于 LLVM 的安全研究向 C23 编译器**
 
-集成链接器 · Shellcode 流水线 · 内置运行时（`string` · mimalloc）
+集成链接器 · Shellcode 流水线 · 内置运行时（`string` · `mimalloc`）
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#特性)

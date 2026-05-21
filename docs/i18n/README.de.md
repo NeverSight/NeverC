@@ -6,7 +6,7 @@
 
 **Sicherheitsforschungsorientierter C23-Compiler auf LLVM-Basis**
 
-Integrierter Linker · Shellcode-Pipeline · Integrierte Laufzeiten (`string` · mimalloc)
+Integrierter Linker · Shellcode-Pipeline · Integrierte Laufzeiten (`string` · `mimalloc`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#funktionen)

@@ -6,7 +6,7 @@
 
 **Компилятор C23 для исследований безопасности на базе LLVM**
 
-Встроенный линкер · Конвейер shellcode · Встроенные среды выполнения (`string` · mimalloc)
+Встроенный линкер · Конвейер shellcode · Встроенные среды выполнения (`string` · `mimalloc`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#возможности)

@@ -6,7 +6,7 @@
 
 **Compilatore C23 orientato alla ricerca sulla sicurezza, costruito su LLVM**
 
-Linker integrato · Pipeline shellcode · Runtime integrati (`string` · mimalloc)
+Linker integrato · Pipeline shellcode · Runtime integrati (`string` · `mimalloc`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#funzionalità)

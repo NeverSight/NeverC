@@ -6,7 +6,7 @@
 
 **LLVM 기반의 보안 연구용 C23 컴파일러**
 
-통합 링커 · Shellcode 파이프라인 · 내장 런타임（`string` · mimalloc）
+통합 링커 · Shellcode 파이프라인 · 내장 런타임（`string` · `mimalloc`）
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#기능)

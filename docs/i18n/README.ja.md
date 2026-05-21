@@ -6,7 +6,7 @@
 
 **LLVM 上に構築されたセキュリティ研究向け C23 コンパイラ**
 
-統合リンカ · Shellcode パイプライン · 組み込みランタイム（`string` · mimalloc）
+統合リンカ · Shellcode パイプライン · 組み込みランタイム（`string` · `mimalloc`）
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#機能)
