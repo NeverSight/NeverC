@@ -118,6 +118,16 @@ Posizionare uno splat SDK [xwin](https://github.com/Jake-Shadle/xwin) in `build-
 
 Per shellcode Windows (`-fshellcode`, risoluzione PEB, ecc.), vedi la [documentazione del compilatore shellcode](../shellcode-compiler/README.it.md).
 
+## Contribuire
+
+Il branch di sviluppo predefinito è **`dev`**. Clonare il repository, eseguire checkout di `dev` prima di iniziare e aprire pull request verso `dev`.
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
 ## Licenza
 
 [AGPL-3.0](../../LICENSE)

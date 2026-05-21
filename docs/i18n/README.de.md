@@ -118,6 +118,16 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 Windows-Shellcode (`-fshellcode`, PEB-Importauflösung usw.): [Shellcode-Compiler-Dokumentation](../shellcode-compiler/README.de.md).
 
+## Mitwirken
+
+Der Standard-Entwicklungsbranch ist **`dev`**. Vor dem Start klonen und `dev` auschecken; Pull Requests bitte gegen `dev` öffnen.
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
 ## Lizenz
 
 [AGPL-3.0](../../LICENSE)

@@ -120,6 +120,16 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 لـ shellcode على Windows (`-fshellcode`، حل الاستيراد عبر PEB، إلخ): [توثيق مُجمِّع shellcode](../shellcode-compiler/README.ar.md).
 
+## المساهمة
+
+فرع التطوير الافتراضي هو **`dev`**. استنسخ المستودع وانتقل إلى `dev` قبل البدء، وافتح طلبات السحب (Pull Request) نحو `dev`.
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
 ## الترخيص
 
 [AGPL-3.0](../../LICENSE)

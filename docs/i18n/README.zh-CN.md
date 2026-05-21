@@ -118,6 +118,16 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 Windows shellcode（`-fshellcode`、PEB 导入解析等）详见 [shellcode 编译器文档](../shellcode-compiler/README.zh-CN.md)。
 
+## 贡献
+
+默认开发分支为 **`dev`**。开始工作前请克隆并检出该分支；向 `dev` 提交 Pull Request。
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
 ## 许可证
 
 [AGPL-3.0](../../LICENSE)

@@ -121,7 +121,7 @@ See [shellcode compiler docs](docs/shellcode-compiler/README.md) for Windows she
 ## Contributing
 
 The default development branch is **`dev`**. Clone and check it out before
-you start work; open pull requests against `dev`, not `main`.
+you start work; open pull requests against `dev`.
 
 ```bash
 git clone https://github.com/NeverSight/NeverC.git

@@ -118,6 +118,16 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 Windows shellcode（`-fshellcode`、PEB インポート解決など）は [shellcode コンパイラドキュメント](../shellcode-compiler/README.ja.md) を参照。
 
+## コントリビューション
+
+既定の開発ブランチは **`dev`** です。作業前に clone して checkout し、Pull Request は `dev` 向けに送ってください。
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
 ## ライセンス
 
 [AGPL-3.0](../../LICENSE)

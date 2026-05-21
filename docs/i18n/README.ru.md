@@ -118,6 +118,16 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 Shellcode для Windows (`-fshellcode`, разрешение через PEB и т.д.): [документация компилятора shellcode](../shellcode-compiler/README.ru.md).
 
+## Участие в разработке
+
+Ветка разработки по умолчанию — **`dev`**. Перед началом работы клонируйте репозиторий и переключитесь на `dev`; pull request отправляйте в `dev`.
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
 ## Лицензия
 
 [AGPL-3.0](../../LICENSE)

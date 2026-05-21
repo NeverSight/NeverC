@@ -118,6 +118,16 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 Windows shellcode(`-fshellcode`, PEB 임포트 해석 등)는 [shellcode 컴파일러 문서](../shellcode-compiler/README.ko.md)를 참조하세요.
 
+## 기여
+
+기본 개발 브랜치는 **`dev`** 입니다. 작업 전에 clone 후 checkout 하고, Pull Request는 `dev`로 보내 주세요.
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
 ## 라이선스
 
 [AGPL-3.0](../../LICENSE)
