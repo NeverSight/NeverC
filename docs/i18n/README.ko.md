@@ -31,6 +31,7 @@ NeverC는 표준 C를 호스트 바이너리, 프리스탠딩 실행 파일, 위
 - **통합 링커** — 단일 바이너리에서 COFF, ELF, Mach-O; 외부 `ld` / `link.exe` 불필요
 - **크로스 컴파일** — macOS/Linux에서 번들 MSVC SDK로 Windows PE 빌드
 - **[내장 런타임](../builtins/README.ko.md)** — 컴파일러 임베디드 LLVM bitcode 런타임: [`string`](../builtins/string/README.ko.md) (값 의미론 문자열, 자동 메모리 관리) 및 [`mimalloc`](../builtins/mimalloc/README.ko.md) (투명 고성능 할당자 오버라이드)
+- **[`.nc` 확장자](../nc-extension/README.ko.md)** — `.nc` 파일 확장자로 모든 NeverC 기능(`string`, Rust 스타일 정수 타입)을 자동 활성화, 추가 플래그 불필요
 - **경량 LLVM 빌드** — x86_64 / AArch64 백엔드만; C++/ObjC/OpenMP 경로 제거
 
 ## 빠른 예제
