@@ -4,6 +4,7 @@
 #include "neverc/Shellcode/Pipeline/Pipeline.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
@@ -73,16 +74,6 @@ const Incompat Incompats[] = {
      "__stack_chk_fail"},
 };
 
-int hexDigitValue(char C) {
-  if (C >= '0' && C <= '9')
-    return C - '0';
-  if (C >= 'a' && C <= 'f')
-    return 10 + C - 'a';
-  if (C >= 'A' && C <= 'F')
-    return 10 + C - 'A';
-  return -1;
-}
-
 void appendBadByte(ShellcodeOptions &Out, uint8_t Byte) {
   if (!llvm::is_contained(Out.BadBytes, Byte))
     Out.BadBytes.push_back(Byte);
@@ -96,13 +87,11 @@ bool parseHexByte(StringRef Token, uint8_t &Byte) {
     return false;
   unsigned Value = 0;
   for (char C : Token) {
-    int N = hexDigitValue(C);
-    if (N < 0)
+    unsigned N = llvm::hexDigitValue(C);
+    if (N == ~0U)
       return false;
-    Value = (Value << 4) | static_cast<unsigned>(N);
+    Value = (Value << 4) | N;
   }
-  if (Value > 0xFF)
-    return false;
   Byte = static_cast<uint8_t>(Value);
   return true;
 }
@@ -136,28 +125,7 @@ bool parseUnsignedDriverInt(StringRef Spec, uint64_t &Out) {
   Spec = Spec.trim();
   if (Spec.empty())
     return false;
-  unsigned Radix = 10;
-  if (Spec.consume_front("0x") || Spec.consume_front("0X"))
-    Radix = 16;
-  if (Spec.empty())
-    return false;
-  uint64_t Value = 0;
-  for (char C : Spec) {
-    int Digit = -1;
-    if (C >= '0' && C <= '9')
-      Digit = C - '0';
-    else if (Radix == 16 && C >= 'a' && C <= 'f')
-      Digit = 10 + (C - 'a');
-    else if (Radix == 16 && C >= 'A' && C <= 'F')
-      Digit = 10 + (C - 'A');
-    if (Digit < 0 || static_cast<unsigned>(Digit) >= Radix)
-      return false;
-    if (Value > (UINT64_MAX - static_cast<uint64_t>(Digit)) / Radix)
-      return false; // Overflow.
-    Value = Value * Radix + static_cast<uint64_t>(Digit);
-  }
-  Out = Value;
-  return true;
+  return !Spec.getAsInteger(0, Out);
 }
 
 bool parseMaxLengthArg(const llvm::opt::Arg *A, ShellcodeOptions &Out) {
