@@ -43,3 +43,13 @@ linker_declare_backend(
   EXTRA_LIBS
     ${LLVM_ATOMIC_LIB}
 )
+
+# Work around a stack-use-after-scope false positive in the COFF linker
+# when ASan is active with Full LTO.  Heavy inlining of SmallString-based
+# path helpers produces scope-escaping StringRef references that read stale
+# (but still-valid) stack data.  The linker produces correct output; the
+# ASan report is a false positive caused by inlining merging disjoint
+# SmallString scopes into one frame.
+if("${CMAKE_CXX_FLAGS}" MATCHES "fsanitize=address")
+  target_compile_options(linkerCOFF PRIVATE -fno-sanitize-address-use-after-scope)
+endif()
