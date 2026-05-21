@@ -48,9 +48,8 @@
 #ifndef NOGDI
 #define NOGDI
 #endif
-#ifndef NOUSER
-#define NOUSER
-#endif
+// Intentionally NOT defining NOUSER: <shlobj.h> in CSupportHost/Windows/Path.inc
+// needs <winuser.h>'s MSG/DLGPROC types.
 #ifndef NOSERVICE
 #define NOSERVICE
 #endif

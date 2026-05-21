@@ -1045,16 +1045,21 @@ add_compile_definitions(__STDC_CONSTANT_MACROS)
 add_compile_definitions(__STDC_FORMAT_MACROS)
 add_compile_definitions(__STDC_LIMIT_MACROS)
 
-# Suppress <windows.h>'s "kitchen sink" subsystem headers globally on
-# Windows. <wingdi.h> defines macros that collide with LLVM identifiers
-# (e.g. PASSTHROUGH used by Analysis/CaptureTracking.h), <winuser.h>
-# defines ERROR, and <minwindef.h> defines min/max. This codebase does
-# not use GDI/USER APIs, so excluding them is safe and far more robust
-# than gating each per-header <windows.h> include site individually —
-# whichever LLVM/STL header pulls <windows.h> in first wins, and we
-# cannot reorder transitive includes from the STL.
+# Suppress <windows.h>'s "kitchen sink" subsystem headers that collide
+# with LLVM identifiers, but only the ones we can actually do without:
+#   * NOGDI — <wingdi.h> defines PASSTHROUGH (and ERROR), which clobbers
+#     enums like UseCaptureKind::PASSTHROUGH.
+#   * NOMINMAX — <minwindef.h> defines min/max macros that break std::min
+#     and std::max.
+#   * WIN32_LEAN_AND_MEAN — strips Crypto/DDE/RPC/Shell/Sockets unless
+#     a TU asks for them explicitly. (Process.c / RandomNumberGenerator
+#     do that via <wincrypt.h>/<bcrypt.h>.)
+# We deliberately do NOT define NOUSER: <shlobj.h> (used by Path.inc for
+# SHGetFolderPathW) depends on <winuser.h>'s MSG/DLGPROC/LPMSG types, so
+# excluding it would break Shell32 usage. winuser.h's own macros are all
+# long-prefixed (WM_*, VK_*, SS_*) and don't collide with LLVM names.
 if(WIN32 AND NOT CYGWIN)
-  add_compile_definitions(NOGDI NOUSER NOMINMAX WIN32_LEAN_AND_MEAN)
+  add_compile_definitions(NOGDI NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
 # clang and gcc don't default-print colored diagnostics when invoked from Ninja.
