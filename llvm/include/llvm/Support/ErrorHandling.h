@@ -153,25 +153,16 @@ void install_out_of_memory_new_handler();
 #endif
 
 #if LLVM_ENABLE_THREADS == 1
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#define LLVM_MUTEX_T SRWLOCK
-#define LLVM_MUTEX_INITIALIZER SRWLOCK_INIT
-#define LLVM_MUTEX_LOCK(m) AcquireSRWLockExclusive(m)
-#define LLVM_MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(m)
-#else
-#include <pthread.h>
-#define LLVM_MUTEX_T pthread_mutex_t
-#define LLVM_MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
-#define LLVM_MUTEX_LOCK(m) pthread_mutex_lock(m)
-#define LLVM_MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
-#endif
+// std::mutex is the stable choice here: OS-level primitive that yields on
+// contention, constexpr default constructor (no static-init-order worry),
+// and — critically — neither libc++ nor MSVC STL pulls <windows.h> in
+// through <mutex> (they use opaque handle types), so we don't reintroduce
+// the IMAGE_*/PASSTHROUGH/min/max macro pollution that motivated this
+// header's earlier hand-rolled lock.
+#include <mutex>
+#define LLVM_MUTEX_T std::mutex
+#define LLVM_MUTEX_LOCK(m) (m)->lock()
+#define LLVM_MUTEX_UNLOCK(m) (m)->unlock()
 #endif
 
 #ifdef __cplusplus
@@ -206,8 +197,8 @@ inline static llvm::fatal_error_handler_t BadAllocErrorHandler = 0;
 inline static void *BadAllocErrorHandlerUserData = 0;
 
 #if LLVM_ENABLE_THREADS == 1
-inline static LLVM_MUTEX_T ErrorHandlerMutex = LLVM_MUTEX_INITIALIZER;
-inline static LLVM_MUTEX_T BadAllocErrorHandlerMutex = LLVM_MUTEX_INITIALIZER;
+inline static LLVM_MUTEX_T ErrorHandlerMutex;
+inline static LLVM_MUTEX_T BadAllocErrorHandlerMutex;
 #endif
 
 namespace llvm {

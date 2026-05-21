@@ -27,19 +27,16 @@
 
 #ifdef _WIN32
 // Windows SDK (winnt.h) defines many IMAGE_* macros that collide with the
-// COFF enum members declared below. Pull in <windef.h> NOW so that the
-// #undef block strips those macros up-front. winnt.h's own include guard
-// (_WINNT_) makes any later transitive #include <windows.h> a no-op, so
-// the macros stay dead for the rest of the translation unit — both at
-// our enum declarations below and at use sites in consumer .cpp files.
-//
-// <windef.h> is the minimum public header that brings in <winnt.h>. Using
-// it instead of <windows.h> avoids pulling in <wingdi.h>, <winuser.h>,
-// etc., whose macros (e.g. PASSTHROUGH, ERROR) also collide with LLVM
-// identifiers.
-#include <windef.h>
-// #undef every name we redefine as an enumerator. `#undef` on an
-// undefined macro is a harmless no-op.
+// COFF enum members declared below. We don't pull <winnt.h> in from here
+// — that drags in <windef.h>/<windows.h> and its avalanche of macros
+// (PASSTHROUGH, min/max, etc.) into every TU that includes this header.
+// Instead, just #undef the names: if winnt.h has already been included
+// transitively, this kills its macros before our enum declarations; if
+// winnt.h is included later, callers that touch COFF::IMAGE_* must
+// ensure the offending Windows headers aren't pulled in between (the
+// usual culprit is <windows.h> from another LLVM header — keep those
+// out of public headers).
+// `#undef` on an undefined macro is a harmless no-op.
 #undef IMAGE_FILE_MACHINE_UNKNOWN
 #undef IMAGE_FILE_MACHINE_AM33
 #undef IMAGE_FILE_MACHINE_AMD64
