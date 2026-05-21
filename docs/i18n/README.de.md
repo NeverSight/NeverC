@@ -13,7 +13,7 @@ Integrierter Linker · Shellcode-Pipeline · Integrierte Laufzeiten (`string` ·
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#cross-kompilierung-nach-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#funktionen)
 
-[Dokumentationsindex](../README.de.md) · [Shellcode-Leitfaden](../shellcode-compiler/README.de.md) · [Eingebauter String](../builtins/string/README.de.md)
+[Dokumentationsindex](../README.de.md) · [Shellcode-Leitfaden](../shellcode-compiler/README.de.md) · [Integrierte Laufzeiten](../builtins/README.de.md)
 
 </div>
 

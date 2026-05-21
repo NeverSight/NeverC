@@ -13,7 +13,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#windows-へのクロスコンパイル)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#機能)
 
-[ドキュメント索引](../README.ja.md) · [Shellcode ガイド](../shellcode-compiler/README.ja.md) · [組み込み文字列](../builtins/string/README.ja.md)
+[ドキュメント索引](../README.ja.md) · [Shellcode ガイド](../shellcode-compiler/README.ja.md) · [組み込みランタイム](../builtins/README.ja.md)
 
 </div>
 

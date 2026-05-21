@@ -13,7 +13,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#交叉編譯到-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#特色)
 
-[文件索引](../README.zh-TW.md) · [Shellcode 指南](../shellcode-compiler/README.zh-TW.md) · [內建字串](../builtins/string/README.zh-TW.md)
+[文件索引](../README.zh-TW.md) · [Shellcode 指南](../shellcode-compiler/README.zh-TW.md) · [內建執行時](../builtins/README.zh-TW.md)
 
 </div>
 

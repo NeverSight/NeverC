@@ -13,7 +13,7 @@ Enlazador integrado · Pipeline shellcode · Runtimes integrados (`string` · `m
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#compilación-cruzada-a-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#características)
 
-[Documentación](../README.es.md) · [Guía shellcode](../shellcode-compiler/README.es.md) · [String integrado](../builtins/string/README.es.md)
+[Documentación](../README.es.md) · [Guía shellcode](../shellcode-compiler/README.es.md) · [Runtimes integrados](../builtins/README.es.md)
 
 </div>
 

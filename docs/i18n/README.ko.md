@@ -13,7 +13,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#windows로-크로스-컴파일)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#기능)
 
-[문서 색인](../README.ko.md) · [Shellcode 가이드](../shellcode-compiler/README.ko.md) · [내장 문자열](../builtins/string/README.ko.md)
+[문서 색인](../README.ko.md) · [Shellcode 가이드](../shellcode-compiler/README.ko.md) · [내장 런타임](../builtins/README.ko.md)
 
 </div>
 

@@ -13,7 +13,7 @@ Linker integrato · Pipeline shellcode · Runtime integrati (`string` · `mimall
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#cross-compilazione-verso-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#funzionalità)
 
-[Documentazione](../README.it.md) · [Guida shellcode](../shellcode-compiler/README.it.md) · [String integrato](../builtins/string/README.it.md)
+[Documentazione](../README.it.md) · [Guida shellcode](../shellcode-compiler/README.it.md) · [Runtime integrati](../builtins/README.it.md)
 
 </div>
 

@@ -15,7 +15,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#التجميع-المتقاطع-إلى-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#الميزات)
 
-[التوثيق](../README.ar.md) · [دليل shellcode](../shellcode-compiler/README.ar.md) · [السلسلة المدمجة](../builtins/string/README.ar.md)
+[التوثيق](../README.ar.md) · [دليل shellcode](../shellcode-compiler/README.ar.md) · [أوقات التشغيل المدمجة](../builtins/README.ar.md)
 
 </div>
 

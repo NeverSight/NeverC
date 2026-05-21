@@ -13,7 +13,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#compilation-croisée-vers-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#fonctionnalités)
 
-[Documentation](../README.fr.md) · [Guide shellcode](../shellcode-compiler/README.fr.md) · [String intégré](../builtins/string/README.fr.md)
+[Documentation](../README.fr.md) · [Guide shellcode](../shellcode-compiler/README.fr.md) · [Runtimes intégrés](../builtins/README.fr.md)
 
 </div>
 
