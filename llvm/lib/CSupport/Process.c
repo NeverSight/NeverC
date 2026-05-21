@@ -512,6 +512,11 @@ int csupport_fd_open(const char *filename, size_t filename_len,
 }
 
 #include <windows.h>
+// <windows.h> doesn't pull in <wincrypt.h> under WIN32_LEAN_AND_MEAN (which
+// the build defines globally), but csupport_get_random_number() below uses
+// CryptAcquireContextW/CryptGenRandom/CryptReleaseContext, so request it
+// explicitly.
+#include <wincrypt.h>
 int csupport_fd_write_console(int fd, const char *ptr, size_t size) {
   HANDLE h = (HANDLE)_get_osfhandle(fd);
   if (GetFileType(h) != FILE_TYPE_CHAR)
