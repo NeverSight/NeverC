@@ -53,7 +53,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # deaktivieren
 |-------------|-------|
 | `-fno-builtin` | Kein CRT-Override-Szenario |
 | `-mkernel` | Kein Userspace-Heap im Kernel |
-| `-fshellcode-mode` | Kein Heap in Shellcode |
+| `-fshellcode-mode` | Ersetzt durch HeapArenaPass (Arena + OS-Fallback) |
 | `-ffreestanding` | Keine libc zum Überschreiben |
 
 ---

@@ -790,12 +790,11 @@ std::string getExternalSymbolHint(StringRef Name, const TargetDesc &Target,
            "unbounded sizes pass a heap pointer in from the loader instead";
 
   if (isHeapAllocatorName(Bare))
-    return "heap allocator call emitted; shellcode has no malloc/free runtime. "
-           "Either (a) size buffers at the entry function with stack arrays / "
-           "VLAs and thread the base pointer down, (b) carve a fixed-size "
-           "scratch arena out of `static char arena[N]` (the bytes go through "
-           "ZeroRelocPass into the stack), or (c) ask the loader to hand a "
-           "heap "
+    return "heap allocator call emitted; HeapArenaPass should have rewritten "
+           "this call. If -fno-shellcode-heap-arena was passed, re-enable it "
+           "(default) or: (a) size buffers with stack arrays / VLAs and thread "
+           "the base pointer down, (b) carve a fixed-size scratch arena out of "
+           "`static char arena[N]`, or (c) ask the loader to hand a heap "
            "pointer in via the entry function's argument";
 
   if (isBuiltinStringRuntimeName(Bare))

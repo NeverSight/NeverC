@@ -1840,6 +1840,19 @@ OPTION(prefix_1, "-fshellcode-bad-byte-rewrite", fshellcode_bad_byte_rewrite,
        "(Plugin.h::registerBadByteRewriteStrategy) and let them rewrite raw "
        ".text bytes into bad-byte-free equivalents (default).",
        nullptr, nullptr)
+OPTION(prefix_1, "-fshellcode-heap-arena", fshellcode_heap_arena,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Rewrite malloc/free/calloc/realloc calls into a stack-resident "
+       "arena allocator for small allocations (<= 64 KB). Large allocations "
+       "fall back to the OS allocator (msvcrt.dll via PEB walk on Windows, "
+       "mmap via syscall on Linux/macOS). Enabled by default in shellcode "
+       "mode.",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fno-shellcode-heap-arena", fno_shellcode_heap_arena,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Disable the shellcode heap arena pass; malloc/free calls will be "
+       "left as unresolved externals (original behaviour).",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fshellcode-bad-bytes=", fshellcode_bad_bytes_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
        "Reject the final shellcode .bin if it contains any byte in the "

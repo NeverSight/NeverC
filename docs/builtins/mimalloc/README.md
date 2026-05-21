@@ -107,7 +107,7 @@ The driver automatically suppresses `-fbuiltin-mimalloc` in these scenarios:
 |-------------|--------|
 | `-fno-builtin` | No CRT function override makes sense |
 | `-mkernel` | Kernel mode has no userspace heap; drivers use `ExAllocatePool2` |
-| `-fshellcode-mode` | Shellcode has no heap — uses stack arena |
+| `-fshellcode-mode` | Replaced by HeapArenaPass (arena + OS fallback) |
 | `-ffreestanding` | No libc to override |
 
 If both `-fbuiltin-mimalloc` and a suppression flag are present, the suppression wins silently (no warning emitted). The intent is fail-safe: the user's explicit mode choice takes priority.

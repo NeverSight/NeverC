@@ -46,4 +46,4 @@ Extraktor: „intra-.text PC-rel akzeptieren, alles andere ablehnen". 11 Hooks �
 
 ## 9–10. Erweiterung und Nicht-Ziele
 
-Kosten: 1 TargetDesc-Zeile + Syscall-Tabelle + Extraktor-Case + Tests. Nicht-Ziele: C++/ObjC, 32-bit, libc-Einbettung, absolute Adressen.
+Kosten: 1 TargetDesc-Zeile + Syscall-Tabelle + Extraktor-Case + Tests. Nicht-Ziele: C++/ObjC, 32-bit, libc-Einbettung (Heap-Allokation via `HeapArenaPass`), absolute Adressen.

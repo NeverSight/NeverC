@@ -89,7 +89,7 @@ ninja neverc                         # 階段 2：嵌入真實 bitcode
 | **平台 bitcode** | 單一（架構中性） | 按 OS 分（Linux / Darwin / Windows） |
 | **符號處理** | 全部內部化 | 覆蓋入口保持外部連結 |
 | **預處理器巨集** | *（無）* | `__NEVERC_MIMALLOC__` |
-| **Shellcode 模式** | 自動啟用，arena 重寫 | 被抑制（shellcode 無堆積） |
+| **Shellcode 模式** | 自動啟用，arena 重寫 | 被抑制（HeapArenaPass 處理堆積分配） |
 | **最佳化層級** | `-O0`（bitcode 編譯） | `-O2`（效能關鍵的配置器） |
 | **DCE** | 預合併裁剪 + 後合併標記清掃 | 無 DCE（whole-archive 語義） |
 
@@ -101,8 +101,27 @@ ninja neverc                         # 階段 2：嵌入真實 bitcode
 |------|------|------|
 | `-fno-builtin` | 抑制 `mimalloc` | 無 CRT 覆蓋場景 |
 | `-mkernel` | 抑制 `mimalloc` | 核心無使用者空間堆積 |
-| `-fshellcode-mode` | 抑制 `mimalloc` | shellcode 無堆積 |
+| `-fshellcode-mode` | 抑制 `mimalloc` | 由 HeapArenaPass 替代（基於 arena） |
 | `-ffreestanding` | 抑制 `mimalloc` | 無 libc 可覆蓋 |
+
+`string` 內建有自己的抑制邏輯（shellcode 流水線中 arena 重寫替換堆積分配）。
+
+### HeapArenaPass（Shellcode 堆積分配）
+
+當 `-fshellcode-mode` 啟用時，`mimalloc` 被抑制，但 `malloc`/`free`/`calloc`/`realloc` 呼叫會被 `HeapArenaPass` 自動改寫（預設開啟）。該 Pass 使用混合策略：
+
+- **小分配（≤ 64 KB）**：從與 `string` 內建執行時共享的堆疊上 arena 分配（bump allocator + free list 重用）。
+- **大分配（> 64 KB）或 arena OOM**：回退到 OS 分配器：
+  - **Windows**：`malloc`/`free` 透過 PEB walk 從 `msvcrt.dll` 解析（`-mshellcode-win-peb-import`）。
+  - **Linux / macOS / Android**：`mmap`/`munmap` 內聯為原生系統呼叫（`-mshellcode-syscall`）。
+  - **未啟用匯入 Pass**：僅使用 arena；OOM 傳回 `NULL`。
+
+透過驅動標誌控制：
+
+```bash
+neverc -fshellcode test.c -o test.bin                     # HeapArenaPass 開啟（預設）
+neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass 關閉（原始行為）
+```
 
 ---
 

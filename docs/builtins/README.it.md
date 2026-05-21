@@ -38,7 +38,7 @@ Tutte le funzionalità integrate condividono la stessa architettura a quattro li
 | **Bitcode per piattaforma** | Singolo (indipendente dall'architettura) | Per SO (Linux / Darwin / Windows) |
 | **Gestione simboli** | Tutti internalizzati | Punti di ingresso di override mantengono linkage esterno |
 | **Macro preprocessore** | *(nessuna)* | `__NEVERC_MIMALLOC__` |
-| **Modalità shellcode** | Auto-attivata, riscrittura arena | Soppressa (nessun heap in shellcode) |
+| **Modalità shellcode** | Auto-attivata, riscrittura arena | Soppressa (HeapArenaPass gestisce heap) |
 | **Livello di ottimizzazione** | `-O0` (compilazione bitcode) | `-O2` (allocatore critico per le prestazioni) |
 | **DCE** | Potatura pre-fusione + mark-and-sweep post-fusione | Nessun DCE (semantica archivio completo) |
 
@@ -50,8 +50,27 @@ Tutte le funzionalità integrate condividono la stessa architettura a quattro li
 |------------|---------|--------|
 | `-fno-builtin` | Sopprime mimalloc | Nessuno scenario di override CRT |
 | `-mkernel` | Sopprime mimalloc | Nessun heap userspace nel kernel |
-| `-fshellcode-mode` | Sopprime mimalloc | Nessun heap in shellcode |
+| `-fshellcode-mode` | Sopprime mimalloc | Sostituito da HeapArenaPass (basato su arena) |
 | `-ffreestanding` | Sopprime mimalloc | Nessuna libc da sovrascrivere |
+
+Il built-in `string` ha la propria logica di soppressione (la riscrittura dell'arena nella pipeline shellcode sostituisce l'allocazione heap).
+
+### HeapArenaPass (Allocazione Heap Shellcode)
+
+Quando `-fshellcode-mode` è attivo, `mimalloc` viene soppresso ma le chiamate `malloc`/`free`/`calloc`/`realloc` vengono automaticamente riscritte da `HeapArenaPass` (abilitato per impostazione predefinita). Il pass utilizza una strategia ibrida:
+
+- **Allocazioni piccole (≤ 64 KB)**: Servite da un'arena residente nello stack condivisa con il runtime built-in `string` (allocatore bump + riutilizzo lista libera).
+- **Allocazioni grandi (> 64 KB) o arena OOM**: Fallback all'allocatore del SO:
+  - **Windows**: `malloc`/`free` risolti da `msvcrt.dll` tramite PEB walk (`-mshellcode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap` inlineati come chiamate di sistema native (`-mshellcode-syscall`).
+  - **Nessun pass di importazione abilitato**: Solo arena; OOM restituisce `NULL`.
+
+Controllo tramite flag del driver:
+
+```bash
+neverc -fshellcode test.c -o test.bin                     # HeapArenaPass attivo (predefinito)
+neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass disattivo (comportamento originale)
+```
 
 ---
 

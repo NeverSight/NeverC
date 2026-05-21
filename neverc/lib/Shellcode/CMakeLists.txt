@@ -32,6 +32,7 @@ set(_neverc_shellcode_tables
   CompilerGeneratedExternHints
   Binary128HelperNames
   HeapAllocatorNames
+  HeapArenaRewriteTargets
   StringRuntimeAllocatorNames
   LibcInlineHelpers
   SetjmpNames
@@ -96,6 +97,7 @@ add_neverc_library(nevercShellcode
   IR/CompilerRtPass.cpp
   IR/Data2TextPass.cpp
   IR/ExternRewriter.cpp
+  IR/HeapArenaPass.cpp
   IR/IndirectBrPass.cpp
   IR/MemIntrinPass.cpp
   IR/StringRuntimePass.cpp

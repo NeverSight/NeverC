@@ -44,6 +44,8 @@ constexpr unsigned DriverOnlyOpts[] = {
     opts::OPT_fshellcode_bad_byte_profile_EQ,
     opts::OPT_fshellcode_bad_byte_rewrite,
     opts::OPT_fno_shellcode_bad_byte_rewrite,
+    opts::OPT_fshellcode_heap_arena,
+    opts::OPT_fno_shellcode_heap_arena,
     opts::OPT_fshellcode_charset_EQ,
     opts::OPT_fshellcode_max_length_EQ,
     opts::OPT_fshellcode_align_EQ,
@@ -310,6 +312,9 @@ bool collectOptions(const llvm::opt::InputArgList &Args,
   Out.BadByteRewrite = Args.hasFlag(opts::OPT_fshellcode_bad_byte_rewrite,
                                     opts::OPT_fno_shellcode_bad_byte_rewrite,
                                     /*Default=*/true);
+  Out.HeapArena = Args.hasFlag(opts::OPT_fshellcode_heap_arena,
+                               opts::OPT_fno_shellcode_heap_arena,
+                               /*Default=*/true);
   Out.Charset.clear();
   if (auto *A = Args.getLastArg(opts::OPT_fshellcode_charset_EQ)) {
     StringRef Name = StringRef(A->getValue()).trim();

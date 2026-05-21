@@ -23,4 +23,4 @@ Tutte le differenze convergono in una **matrice 3D**: 8 (OS, arch) × 2 Executio
 
 ## 2–10. Pipeline, PIC, User/Kernel, MIR, Estrattore, Hook, Estensione
 
-Ordine fisso con 11 hook di offuscamento. `isPICDefaultForced()` restituisce **true** universalmente. Costo nuova piattaforma: 1 riga TargetDesc + tabella syscall + case estrattore + test. Non-obiettivi: C++/ObjC, 32-bit, incorporamento libc, indirizzi assoluti.
+Ordine fisso con 11 hook di offuscamento. `isPICDefaultForced()` restituisce **true** universalmente. Costo nuova piattaforma: 1 riga TargetDesc + tabella syscall + case estrattore + test. Non-obiettivi: C++/ObjC, 32-bit, incorporamento libc (allocazione heap via `HeapArenaPass`), indirizzi assoluti.

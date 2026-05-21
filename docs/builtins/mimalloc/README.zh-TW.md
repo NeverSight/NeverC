@@ -67,7 +67,7 @@ neverc -fno-builtin-mimalloc main.c -o main
 |-------------|------|
 | `-fno-builtin` | 無 CRT 函式覆蓋場景 |
 | `-mkernel` | 核心模式無使用者空間堆積 |
-| `-fshellcode-mode` | shellcode 無堆積 |
+| `-fshellcode-mode` | 由 HeapArenaPass 替代（arena + OS 回退） |
 | `-ffreestanding` | 無 libc 可覆蓋 |
 
 ---

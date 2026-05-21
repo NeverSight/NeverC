@@ -53,7 +53,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # 無効化
 |----------------|------|
 | `-fno-builtin` | CRT 関数のオーバーライドシナリオなし |
 | `-mkernel` | カーネルモードにユーザー空間ヒープなし |
-| `-fshellcode-mode` | シェルコードにヒープなし |
+| `-fshellcode-mode` | HeapArenaPass で代替（arena + OS フォールバック） |
 | `-ffreestanding` | オーバーライドする libc なし |
 
 ---

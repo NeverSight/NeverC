@@ -46,4 +46,4 @@ Extractor: "aceptar PC-rel intra-.text, rechazar todo lo demás". 11 hooks en to
 
 ## 9–10. Extensión y no-objetivos
 
-Costo: 1 fila TargetDesc + tabla syscall + case extractor + tests. No-objetivos: C++/ObjC, 32-bit, incrustación libc, direcciones absolutas.
+Costo: 1 fila TargetDesc + tabla syscall + case extractor + tests. No-objetivos: C++/ObjC, 32-bit, incrustación libc (asignación heap vía `HeapArenaPass`), direcciones absolutas.

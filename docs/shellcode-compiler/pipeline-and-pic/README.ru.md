@@ -21,7 +21,7 @@ NeverC возвращает **true** из `Generic_GCC::isPICDefaultForced()`, `
 
 ### 2.1 Слой IR (`registerShellcodePasses`)
 
-Отвечает за сжатие семантики «обычного C» в форму **единственный вход, без независимой секции данных, без проблемных глобалов**: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (только ядро), `Data2TextPass` и др.
+Отвечает за сжатие семантики «обычного C» в форму **единственный вход, без независимой секции данных, без проблемных глобалов**: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `HeapArenaPass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (только ядро), `Data2TextPass` и др.
 
 **Принцип**: Задачи, решаемые в IR структурно, исправляются сначала в IR (пулы констант, BlockAddress, проваливание `memcpy` в libc, проваливание `__int128 /` в `__udivti3` и т.д.), упрощая байтовый поток для бэкенда и экстрактора. Для сценариев с высокой когнитивной нагрузкой, но безопасно интернализуемых, драйвер проактивно вводит правила (например, `long double` AArch64 Linux / Android / Windows понижается до binary64 в режиме shellcode). Только конструкции, не поддерживаемые без runtime, активируют диагностику MIR/экстрактора.
 

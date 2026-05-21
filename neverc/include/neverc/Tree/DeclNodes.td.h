@@ -106,6 +106,8 @@ FIELD(Field, DeclaratorDecl)
 FUNCTION(Function, DeclaratorDecl)
 #undef FUNCTION
 
+DECL_RANGE(Function, Function, Function)
+
 #ifndef VAR
 #define VAR(Type, Base) DECLARATOR(Type, Base)
 #endif

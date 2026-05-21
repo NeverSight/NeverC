@@ -296,3 +296,58 @@ TEST_F(ShellcodeTest, FinalizeBadByteAuditFail) {
       "bad-byte audit failed",
       {"-fshellcode-bad-bytes=00", "-fno-shellcode-bad-byte-rewrite"});
 }
+
+// HeapArenaPass tests
+TEST_F(ShellcodeTest, HeapArenaMalloc) {
+  shellcodeTest(
+      "heap_arena_malloc",
+      (testDir() / "shellcode/test_shellcode_heap_arena.c").string(), 0, 0,
+      10);
+}
+TEST_F(ShellcodeTest, HeapArenaCalloc) {
+  shellcodeTest(
+      "heap_arena_calloc",
+      (testDir() / "shellcode/test_shellcode_heap_calloc.c").string(), 0, 0,
+      0);
+}
+TEST_F(ShellcodeTest, HeapArenaRealloc) {
+  shellcodeTest(
+      "heap_arena_realloc",
+      (testDir() / "shellcode/test_shellcode_heap_realloc.c").string(), 0, 0,
+      15);
+}
+TEST_F(ShellcodeTest, HeapArenaMulti) {
+  shellcodeTest(
+      "heap_arena_multi",
+      (testDir() / "shellcode/test_shellcode_heap_multi.c").string(), 0, 0,
+      42);
+}
+TEST_F(ShellcodeTest, HeapArenaCrossCompile) {
+  shellcodeCrossCompile(
+      "heap_arena_cross",
+      (testDir() / "shellcode/test_shellcode_heap_arena.c").string());
+}
+TEST_F(ShellcodeTest, HeapArenaDisabled) {
+  shellcodeExpectFail(
+      "heap_arena_disabled",
+      (testDir() / "shellcode/test_shellcode_heap_arena.c").string(),
+      "heap allocator call emitted",
+      {"-fno-shellcode-heap-arena"});
+}
+TEST_F(ShellcodeTest, HeapArenaReallocWithSyscallFallback) {
+  ASSERT_TRUE(shellcodeCompileOnly(
+      "heap_arena_realloc_syscall",
+      (testDir() / "shellcode/test_shellcode_heap_realloc.c").string(),
+      {"-mshellcode-syscall"}));
+}
+TEST_F(ShellcodeTest, HeapArenaCrossCompileRealloc) {
+  shellcodeCrossCompile(
+      "heap_arena_realloc_cross",
+      (testDir() / "shellcode/test_shellcode_heap_realloc.c").string());
+}
+TEST_F(ShellcodeTest, HeapArenaBuiltinCalloc) {
+  shellcodeTest(
+      "heap_arena_builtin_calloc",
+      (testDir() / "shellcode/test_shellcode_heap_builtin_calloc.c").string(),
+      0, 0, 0);
+}

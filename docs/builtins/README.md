@@ -121,7 +121,7 @@ The pass parses the embedded bitcode, merges it into the user module via `llvm::
 | **Platform bitcode**   | Single (arch-neutral)                       | Per-OS (Linux / Darwin / Windows)      |
 | **Symbol handling**    | All internalized                            | Override entries keep external linkage |
 | **Preprocessor macro** | *(none)*                                    | `__NEVERC_MIMALLOC__`                  |
-| **Shellcode mode**     | Auto-enabled, arena rewrite                 | Suppressed (no heap in shellcode)      |
+| **Shellcode mode**     | Auto-enabled, arena rewrite                 | Suppressed (HeapArenaPass handles heap)|
 | **Optimization level** | `-O0` (bitcode compile)                     | `-O2` (performance-critical allocator) |
 | **DCE**                | Pre-merge prune + post-merge mark-and-sweep | No DCE (whole-archive semantics)       |
 
@@ -133,15 +133,32 @@ The pass parses the embedded bitcode, merges it into the user module via `llvm::
 Certain compilation modes are incompatible with built-in runtimes. The driver automatically suppresses them:
 
 
-| Condition          | Effect              | Reason                       |
-| ------------------ | ------------------- | ---------------------------- |
-| `-fno-builtin`     | Suppresses `mimalloc` | No CRT override scenario     |
-| `-mkernel`         | Suppresses `mimalloc` | Kernel has no userspace heap |
-| `-fshellcode-mode` | Suppresses `mimalloc` | No heap in shellcode         |
-| `-ffreestanding`   | Suppresses `mimalloc` | No libc to override          |
+| Condition          | Effect              | Reason                                 |
+| ------------------ | ------------------- | -------------------------------------- |
+| `-fno-builtin`     | Suppresses `mimalloc` | No CRT override scenario               |
+| `-mkernel`         | Suppresses `mimalloc` | Kernel has no userspace heap           |
+| `-fshellcode-mode` | Suppresses `mimalloc` | Replaced by HeapArenaPass (arena-based)|
+| `-ffreestanding`   | Suppresses `mimalloc` | No libc to override                    |
 
 
 The `string` built-in has its own suppression logic within the shellcode pipeline (arena rewrite replaces heap allocation).
+
+### HeapArenaPass (Shellcode Heap Allocation)
+
+When `-fshellcode-mode` is active, `mimalloc` is suppressed but `malloc`/`free`/`calloc`/`realloc` calls are automatically rewritten by `HeapArenaPass` (enabled by default). The pass uses a hybrid strategy:
+
+- **Small allocations (≤ 64 KB)**: Served from a stack-resident arena shared with the `string` built-in runtime (bump allocator + free list reuse).
+- **Large allocations (> 64 KB) or arena OOM**: Fall back to the OS allocator:
+  - **Windows**: `malloc`/`free` resolved from `msvcrt.dll` via PEB walk (`-mshellcode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap` inlined as native syscalls (`-mshellcode-syscall`).
+  - **No import pass enabled**: Arena-only; OOM returns `NULL`.
+
+Control via driver flags:
+
+```bash
+neverc -fshellcode test.c -o test.bin                     # HeapArenaPass ON (default)
+neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass OFF (original behaviour)
+```
 
 ---
 

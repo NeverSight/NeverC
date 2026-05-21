@@ -2535,7 +2535,7 @@ void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
   // -fbuiltin-mimalloc is suppressed when:
   //   - -fno-builtin is active (no CRT override makes sense)
   //   - -mkernel is active (implies -fno-builtin; no userspace heap)
-  //   - -fshellcode-mode is active (no heap in shellcode)
+  //   - -fshellcode-mode is active (HeapArenaPass handles heap)
   //   - -ffreestanding is active (no libc to override)
   bool SuppressMimalloc =
       Args.hasArg(options::OPT_fno_builtin) ||

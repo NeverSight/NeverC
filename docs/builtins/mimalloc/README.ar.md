@@ -53,7 +53,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # تعطيل
 |---------------|-------|
 | `-fno-builtin` | لا سيناريو تجاوز CRT |
 | `-mkernel` | لا كومة مساحة المستخدم في النواة |
-| `-fshellcode-mode` | لا كومة في الشلكود |
+| `-fshellcode-mode` | مستبدل بـ HeapArenaPass (ساحة + احتياطي OS) |
 | `-ffreestanding` | لا libc للتجاوز |
 
 ---

@@ -21,7 +21,7 @@ This policy does not distinguish whether `-fshellcode` is enabled or whether the
 
 ### 2.1 IR Layer (`registerShellcodePasses`)
 
-Responsible for compressing "normal C" semantics into a **single-entry, no independent data section, no problematic globals** shape: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (kernel only), `Data2TextPass`, etc.
+Responsible for compressing "normal C" semantics into a **single-entry, no independent data section, no problematic globals** shape: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `HeapArenaPass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (kernel only), `Data2TextPass`, etc.
 
 **Principle**: Problems solvable in IR using structured approaches should be fixed in IR first (constant pools, BlockAddress, `memcpy` falling through to libc, `__int128 /` falling through to `__udivti3`, etc.), making the byte stream seen by the backend and extractor simpler. For scenarios with high user cognitive burden that can be safely internalized, the driver proactively injects rules (e.g., AArch64 Linux / Android / Windows `long double` is downgraded to binary64 in shellcode mode). Only constructs that cannot be supported without a runtime trigger MIR / extractor diagnostics.
 

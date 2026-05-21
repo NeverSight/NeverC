@@ -24,5 +24,6 @@ Objectif en une phrase : **Éliminer tout dans le `.o` qui deviendrait une reloc
 | AllBlrPass | (optionnel) appels directs → indirects |
 | KernelImportPass | (ring-0) extern → appels indirects via résolveur |
 | StringRuntimePass | méthodes `string` intégrées → variantes arena pile |
+| HeapArenaPass | `malloc`/`free`/`calloc`/`realloc` → alloc arena + fallback OS pour grandes allocations |
 
 11 hooks d'obfuscation. Philosophie de diagnostic : 1 erreur = 1 diagnostic actionnable. Voir [plugin-interface.md §6](../plugin-interface/README.fr.md#6-registration-position-selection--pic-coverage-matrix) et [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.fr.md).

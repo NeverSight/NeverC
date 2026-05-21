@@ -40,7 +40,7 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | **プラットフォーム bitcode** | 単一（アーキテクチャ非依存） | OS 別（Linux / Darwin / Windows） |
 | **シンボル処理** | すべて内部化 | オーバーライドエントリは外部リンケージ維持 |
 | **プリプロセッサマクロ** | *（なし）* | `__NEVERC_MIMALLOC__` |
-| **シェルコードモード** | 自動有効化、アリーナ書き換え | 抑制（シェルコードにヒープなし） |
+| **シェルコードモード** | 自動有効化、アリーナ書き換え | 抑制（HeapArenaPass がヒープ処理） |
 | **最適化レベル** | `-O0`（bitcode コンパイル） | `-O2`（性能重要なアロケータ） |
 | **DCE** | マージ前プルーニング + マージ後マーク＆スイープ | DCE なし（ホールアーカイブセマンティクス） |
 
@@ -52,8 +52,27 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 |------|------|------|
 | `-fno-builtin` | mimalloc を抑制 | CRT オーバーライドのシナリオなし |
 | `-mkernel` | mimalloc を抑制 | カーネルにユーザー空間ヒープなし |
-| `-fshellcode-mode` | mimalloc を抑制 | シェルコードにヒープなし |
+| `-fshellcode-mode` | mimalloc を抑制 | HeapArenaPass で代替（アリーナベース） |
 | `-ffreestanding` | mimalloc を抑制 | オーバーライドする libc なし |
+
+`string` 組み込みには独自の抑制ロジックがあります（シェルコードパイプライン内でアリーナ書き換えがヒープ割り当てを置換）。
+
+### HeapArenaPass（シェルコードヒープ割り当て）
+
+`-fshellcode-mode` がアクティブな場合、`mimalloc` は抑制されますが、`malloc`/`free`/`calloc`/`realloc` 呼び出しは `HeapArenaPass` によって自動的に書き換えられます（デフォルト有効）。このパスはハイブリッド戦略を使用します：
+
+- **小さな割り当て（≤ 64 KB）**：`string` 組み込みランタイムと共有するスタック上アリーナから割り当て（バンプアロケータ + フリーリスト再利用）。
+- **大きな割り当て（> 64 KB）またはアリーナ OOM**：OS アロケータにフォールバック：
+  - **Windows**：`malloc`/`free` を PEB walk 経由で `msvcrt.dll` から解決（`-mshellcode-win-peb-import`）。
+  - **Linux / macOS / Android**：`mmap`/`munmap` をネイティブシステムコールとしてインライン化（`-mshellcode-syscall`）。
+  - **インポートパス未有効**：アリーナのみ；OOM は `NULL` を返す。
+
+ドライバフラグで制御：
+
+```bash
+neverc -fshellcode test.c -o test.bin                     # HeapArenaPass オン（デフォルト）
+neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass オフ（従来の動作）
+```
 
 ---
 

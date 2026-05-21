@@ -24,5 +24,6 @@
 | AllBlrPass | (опционально) прямые вызовы → непрямые |
 | KernelImportPass | (ring-0) extern → непрямые вызовы через резолвер |
 | StringRuntimePass | методы встроенного `string` → варианты на стековой арене |
+| HeapArenaPass | `malloc`/`free`/`calloc`/`realloc` → арена-аллокация + OS-фоллбэк для больших выделений |
 
 11 хуков обфускации. Философия диагностики: 1 ошибка = 1 действенная диагностика. См. [plugin-interface.md §6](../plugin-interface/README.ru.md#6-registration-position-selection--pic-coverage-matrix) и [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.ru.md).

@@ -126,7 +126,7 @@ With `-fshellcode`, the following common C patterns are **directly supported** w
 | Win32 headers | `<windows.h>` | Shellcode shim headers |
 | Large stack frames | `int arr[4096];` | `-mno-stack-arg-probe` |
 
-**Principle**: when users encounter unsupported C patterns, the compiler extends pass support internally rather than asking users to change code. Only patterns requiring a runtime (global constructors, `<stdio.h>`, libm transcendentals, heap allocation) trigger diagnostics, and every diagnostic includes the correct alternative.
+**Principle**: when users encounter unsupported C patterns, the compiler extends pass support internally rather than asking users to change code. Only patterns requiring a runtime (global constructors, `<stdio.h>`, libm transcendentals) trigger diagnostics; heap allocation (`malloc`/`free`/`calloc`/`realloc`) is now handled by `HeapArenaPass`, and every diagnostic includes the correct alternative.
 
 ## 6. MIR Layer: Fix / Fallback / Extract Three-Stage Pipeline
 
@@ -180,5 +180,5 @@ IR/MIR passes require zero changes. Kernel context is free — `KernelImportPass
 
 - **C++ / ObjC / Rust frontends**
 - **32-bit / big-endian / niche ISAs** (RISC-V / PowerPC / SPARC / MIPS)
-- **Embedding libc runtime in shellcode** (`<stdio.h>` / `<math.h>` / heap / setjmp / alloca / global constructors are explicitly rejected with actionable diagnostics)
+- **Embedding libc runtime in shellcode** (`<stdio.h>` / `<math.h>` / setjmp / alloca / global constructors are explicitly rejected with actionable diagnostics; `malloc`/`free`/`calloc`/`realloc` are handled by `HeapArenaPass`)
 - **Absolute address relocations** (all `_ABS*` / `_ADDR*` / GOT / TLS relocs hard fail)

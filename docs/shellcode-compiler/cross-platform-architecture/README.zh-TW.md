@@ -74,5 +74,5 @@
 
 - C++ / ObjC / Rust 前端
 - 32 位 / 大端 / 小眾 ISA
-- 在 shellcode 中嵌入 libc 執行階段
+- 在 shellcode 中嵌入 libc 執行階段（`malloc`/`free`/`calloc`/`realloc` 已由 `HeapArenaPass` 處理）
 - 絕對位址重定位

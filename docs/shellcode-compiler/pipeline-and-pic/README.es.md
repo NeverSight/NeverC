@@ -21,7 +21,7 @@ Esta política no distingue si `-fshellcode` está habilitado o si el contexto e
 
 ### 2.1 Capa IR (`registerShellcodePasses`)
 
-Responsable de comprimir la semántica "C normal" en una forma de **entrada única, sin sección de datos independiente, sin globales problemáticos**: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (solo kernel), `Data2TextPass`, etc.
+Responsable de comprimir la semántica "C normal" en una forma de **entrada única, sin sección de datos independiente, sin globales problemáticos**: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `HeapArenaPass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (solo kernel), `Data2TextPass`, etc.
 
 **Principio**: Los problemas solucionables en IR con enfoques estructurados se corrigen primero en IR (pools de constantes, BlockAddress, caída de `memcpy` a libc, caída de `__int128 /` a `__udivti3`, etc.), simplificando el flujo de bytes visto por el backend y el extractor. Para escenarios con alta carga cognitiva del usuario que pueden internalizarse de forma segura, el driver inyecta reglas proactivamente (ej. `long double` de AArch64 Linux / Android / Windows se degrada a binary64 en modo shellcode). Solo las construcciones que no pueden soportarse sin un runtime activan diagnósticos MIR/extractor.
 

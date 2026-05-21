@@ -38,7 +38,7 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | **bitcode المنصة** | واحد (مستقل عن البنية) | لكل نظام تشغيل (Linux / Darwin / Windows) |
 | **معالجة الرموز** | الكل مُداخل | نقاط دخول التجاوز تحتفظ بالربط الخارجي |
 | **ماكرو المعالج المسبق** | *(لا يوجد)* | `__NEVERC_MIMALLOC__` |
-| **وضع الشلكود** | تفعيل تلقائي، إعادة كتابة الحلبة | مكبوت (لا كومة في الشلكود) |
+| **وضع الشلكود** | تفعيل تلقائي، إعادة كتابة الحلبة | مكبوت (HeapArenaPass يتولى الكومة) |
 | **مستوى التحسين** | `-O0` (ترجمة bitcode) | `-O2` (مخصص حرج الأداء) |
 | **DCE** | تقليم قبل الدمج + مسح بعد الدمج | بدون DCE (دلالات الأرشيف الكامل) |
 
@@ -50,8 +50,27 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 |-------|---------|-------|
 | `-fno-builtin` | يكبت mimalloc | لا سيناريو تجاوز CRT |
 | `-mkernel` | يكبت mimalloc | لا كومة مساحة المستخدم في النواة |
-| `-fshellcode-mode` | يكبت mimalloc | لا كومة في الشلكود |
+| `-fshellcode-mode` | يكبت mimalloc | يُستبدل بـ HeapArenaPass (قائم على الساحة) |
 | `-ffreestanding` | يكبت mimalloc | لا libc للتجاوز |
+
+المكوّن المدمج `string` له منطق كبت خاص به (إعادة كتابة الساحة في خط أنابيب الشلكود تستبدل تخصيص الكومة).
+
+### HeapArenaPass (تخصيص كومة الشلكود)
+
+عند تفعيل `-fshellcode-mode`، يُكبت `mimalloc` لكن استدعاءات `malloc`/`free`/`calloc`/`realloc` تُعاد كتابتها تلقائياً بواسطة `HeapArenaPass` (مفعّل افتراضياً). يستخدم هذا التمرير استراتيجية هجينة:
+
+- **التخصيصات الصغيرة (≤ 64 كيلوبايت)**: تُخدم من ساحة مقيمة على المكدس مشتركة مع وقت تشغيل `string` المدمج (مخصص bump + إعادة استخدام قائمة حرة).
+- **التخصيصات الكبيرة (> 64 كيلوبايت) أو نفاد ساحة**: التراجع إلى مخصص نظام التشغيل:
+  - **Windows**: `malloc`/`free` تُحلّ من `msvcrt.dll` عبر PEB walk (`-mshellcode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap` تُضمّن كاستدعاءات نظام أصلية (`-mshellcode-syscall`).
+  - **لا تمرير استيراد مفعّل**: ساحة فقط؛ نفاد الذاكرة يُرجع `NULL`.
+
+التحكم عبر أعلام المشغّل:
+
+```bash
+neverc -fshellcode test.c -o test.bin                     # HeapArenaPass مفعّل (افتراضي)
+neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass معطّل (السلوك الأصلي)
+```
 
 ---
 

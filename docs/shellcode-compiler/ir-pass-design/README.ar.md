@@ -26,6 +26,7 @@
 | AllBlrPass | (اختياري) استدعاءات مباشرة → غير مباشرة |
 | KernelImportPass | (ring-0) extern → استدعاءات غير مباشرة عبر المُحلل |
 | StringRuntimePass | أساليب `string` المدمجة → متغيرات ساحة المكدس |
+| HeapArenaPass | `malloc`/`free`/`calloc`/`realloc` → تخصيص ساحة + احتياطي OS للتخصيصات الكبيرة |
 
 11 خطاف تشويش. فلسفة التشخيص: خطأ واحد = تشخيص واحد قابل للتنفيذ. راجع [plugin-interface.md §6](../plugin-interface/README.ar.md#6-registration-position-selection--pic-coverage-matrix) و[kernel-mode-shellcode.md](../kernel-mode-shellcode/README.ar.md).
 

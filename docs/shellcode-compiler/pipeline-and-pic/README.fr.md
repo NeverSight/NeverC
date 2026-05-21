@@ -21,7 +21,7 @@ Cette politique ne distingue pas si `-fshellcode` est activé ou si le contexte 
 
 ### 2.1 Couche IR (`registerShellcodePasses`)
 
-Responsable de la compression de la sémantique « C normal » en une forme **entrée unique, pas de section données indépendante, pas de globales problématiques** : `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (noyau uniquement), `Data2TextPass`, etc.
+Responsable de la compression de la sémantique « C normal » en une forme **entrée unique, pas de section données indépendante, pas de globales problématiques** : `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `HeapArenaPass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (noyau uniquement), `Data2TextPass`, etc.
 
 **Principe** : Les problèmes résolubles en IR avec des approches structurées sont corrigés d'abord en IR (pools de constantes, BlockAddress, passage de `memcpy` à libc, passage de `__int128 /` à `__udivti3`, etc.), simplifiant le flux d'octets vu par le backend et l'extracteur. Pour les scénarios à charge cognitive élevée mais internalisables en toute sécurité, le driver injecte proactivement des règles (ex. `long double` d'AArch64 Linux / Android / Windows dégradé en binary64 en mode shellcode). Seules les constructions impossibles à supporter sans runtime déclenchent les diagnostics MIR/extracteur.
 

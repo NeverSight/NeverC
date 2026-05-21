@@ -45,6 +45,7 @@ file after defining the expected macro.
 | `CompilerGeneratedExternHints.def`  | `ExtractorCommon.cpp` (`getExternalSymbolHint`) | `NEVERC_EXTERN_HINT(name, message)`       |
 | `Binary128HelperNames.def`          | `ExtractorCommon.cpp` (`isBinary128HelperName`) | `NEVERC_NAME(name)`               |
 | `HeapAllocatorNames.def`            | `ExtractorCommon.cpp` (`isHeapAllocatorName`) | `NEVERC_NAME(name)`                   |
+| `HeapArenaRewriteTargets.def`      | `HeapArenaPass.cpp` (`classifyHeapCall`) | `NEVERC_HEAP_ARENA_TARGET(name, kind)` |
 | `StringRuntimeAllocatorNames.def`   | `StringRuntimePass.cpp`              | `NEVERC_STRING_RUNTIME_ALLOCATOR(name, role)` |
 | `LibcInlineHelpers.def`             | `MemIntrinPass.cpp`                  | `NEVERC_LIBC_INLINE_HELPER(externName, helperSlot, factory)` |
 | `CompilerRtExternBinds.def`         | `CompilerRtPass.cpp`                 | `NEVERC_COMPILER_RT_EXTERN_BIND(externName, helperSlot, factory)` |

@@ -21,7 +21,7 @@ NeverC는 `Generic_GCC::isPICDefaultForced()`, `MachO::isPICDefaultForced()`, `M
 
 ### 2.1 IR 계층 (`registerShellcodePasses`)
 
-"일반 C" 시맨틱을 **단일 진입, 독립 데이터 섹션 없음, 문제 전역 변수 없음** 형태로 압축하는 역할: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass`(커널 전용), `Data2TextPass` 등.
+"일반 C" 시맨틱을 **단일 진입, 독립 데이터 섹션 없음, 문제 전역 변수 없음** 형태로 압축하는 역할: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `HeapArenaPass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass`(커널 전용), `Data2TextPass` 등.
 
 **원칙**: IR에서 구조적으로 해결 가능한 문제는 IR에서 먼저 수정(상수 풀, BlockAddress, `memcpy`의 libc 폴스루, `__int128 /`의 `__udivti3` 폴스루 등)하여 백엔드와 추출기가 보는 바이트 스트림을 단순화합니다. 사용자 인지 부담이 높지만 안전하게 내부화할 수 있는 시나리오에서는 드라이버가 적극적으로 규칙을 주입합니다(예: AArch64 Linux / Android / Windows의 `long double`을 shellcode 모드에서 binary64로 강등). 런타임 없이는 지원할 수 없는 구조만이 MIR / 추출기 진단을 트리거합니다.
 

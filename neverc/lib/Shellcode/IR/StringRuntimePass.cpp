@@ -500,6 +500,12 @@ bool anyRuntimeAllocatorCalls(ArrayRef<Function *> RuntimeFunctions,
 
 } // namespace
 
+void StringRuntimePass::ensureArenaInfrastructure(Module &M,
+                                                   uint64_t ArenaSize) {
+  getOrCreateStringAlloc(M, ArenaSize);
+  getOrCreateStringFree(M, /*ValidateArena=*/true, ArenaSize);
+}
+
 PreservedAnalyses StringRuntimePass::run(Module &M, ModuleAnalysisManager &) {
   SmallVector<Function *, 8> RuntimeFunctions;
   for (Function &F : M) {

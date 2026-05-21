@@ -1,0 +1,21 @@
+// Heap function names and their rewrite kind for HeapArenaPass.
+//
+// NEVERC_HEAP_ARENA_TARGET(name, kind)
+//   name — canonical (stripped) symbol name
+//   kind — one of: Malloc, Free, Calloc, Realloc
+//
+// HeapArenaPass rewrites these into arena alloc/free operations with
+// optional OS-level fallback for large allocations.
+
+#ifndef NEVERC_HEAP_ARENA_TARGET
+#error "define NEVERC_HEAP_ARENA_TARGET(name, kind) before including this file"
+#endif
+
+NEVERC_HEAP_ARENA_TARGET(malloc,            Malloc)
+NEVERC_HEAP_ARENA_TARGET(__builtin_malloc,  Malloc)
+NEVERC_HEAP_ARENA_TARGET(free,              Free)
+NEVERC_HEAP_ARENA_TARGET(__builtin_free,    Free)
+NEVERC_HEAP_ARENA_TARGET(calloc,            Calloc)
+NEVERC_HEAP_ARENA_TARGET(__builtin_calloc,  Calloc)
+NEVERC_HEAP_ARENA_TARGET(realloc,           Realloc)
+NEVERC_HEAP_ARENA_TARGET(__builtin_realloc, Realloc)

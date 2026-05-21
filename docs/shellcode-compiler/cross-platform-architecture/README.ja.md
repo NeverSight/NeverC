@@ -75,5 +75,5 @@
 
 - C++ / ObjC / Rust フロントエンド
 - 32 ビット / ビッグエンディアン / ニッチ ISA
-- shellcode への libc ランタイム組込み
+- shellcode への libc ランタイム組込み（`malloc`/`free`/`calloc`/`realloc` は `HeapArenaPass` で処理済み）
 - 絶対アドレス reloc

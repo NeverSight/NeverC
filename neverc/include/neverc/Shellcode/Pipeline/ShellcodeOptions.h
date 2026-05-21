@@ -25,6 +25,7 @@ struct ShellcodeOptions {
   std::optional<uint64_t> MaxLength;
   uint32_t Align = 1;
   std::optional<uint8_t> PadByte;
+  bool HeapArena = true;
   bool Verbose = false;
   std::string ObfuscateSpec;
   std::string MirObfuscateSpec;

@@ -21,7 +21,7 @@ Questa politica non distingue se `-fshellcode` è abilitato o se il contesto è 
 
 ### 2.1 Livello IR (`registerShellcodePasses`)
 
-Responsabile della compressione della semantica "C normale" in una forma **ingresso singolo, nessuna sezione dati indipendente, nessun globale problematico**: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (solo kernel), `Data2TextPass`, ecc.
+Responsabile della compressione della semantica "C normale" in una forma **ingresso singolo, nessuna sezione dati indipendente, nessun globale problematico**: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `HeapArenaPass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (solo kernel), `Data2TextPass`, ecc.
 
 **Principio**: I problemi risolvibili in IR con approcci strutturati vengono corretti prima in IR (pool di costanti, BlockAddress, fallthrough di `memcpy` a libc, fallthrough di `__int128 /` a `__udivti3`, ecc.), semplificando il flusso di byte visto dal backend e dall'estrattore. Per scenari con alto carico cognitivo utente ma internalizzabili in sicurezza, il driver inietta proattivamente regole (es. `long double` di AArch64 Linux / Android / Windows degradato a binary64 in modalità shellcode). Solo le costruzioni non supportabili senza runtime attivano diagnostiche MIR/estrattore.
 

@@ -53,7 +53,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # 비활성화
 |--------------|------|
 | `-fno-builtin` | CRT 함수 오버라이드 시나리오 없음 |
 | `-mkernel` | 커널 모드에 유저스페이스 힙 없음 |
-| `-fshellcode-mode` | 셸코드에 힙 없음 |
+| `-fshellcode-mode` | HeapArenaPass로 대체 (arena + OS 폴백) |
 | `-ffreestanding` | 오버라이드할 libc 없음 |
 
 ---

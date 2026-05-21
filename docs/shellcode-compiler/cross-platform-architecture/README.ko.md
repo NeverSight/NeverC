@@ -75,5 +75,5 @@
 
 - C++ / ObjC / Rust 프론트엔드
 - 32비트 / 빅엔디안 / 니치 ISA
-- shellcode에 libc 런타임 임베딩
+- shellcode에 libc 런타임 임베딩 (`malloc`/`free`/`calloc`/`realloc`은 `HeapArenaPass`에서 처리)
 - 절대 주소 재배치

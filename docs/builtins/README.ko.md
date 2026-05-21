@@ -40,7 +40,7 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | **플랫폼 bitcode** | 단일 (아키텍처 독립) | OS별 (Linux / Darwin / Windows) |
 | **심볼 처리** | 모두 내부화 | 오버라이드 진입점은 외부 링크 유지 |
 | **전처리기 매크로** | *(없음)* | `__NEVERC_MIMALLOC__` |
-| **셸코드 모드** | 자동 활성화, 아레나 재작성 | 억제 (셸코드에 힙 없음) |
+| **셸코드 모드** | 자동 활성화, 아레나 재작성 | 억제 (HeapArenaPass가 힙 처리) |
 | **최적화 레벨** | `-O0` (bitcode 컴파일) | `-O2` (성능 중요 할당자) |
 | **DCE** | 병합 전 프루닝 + 병합 후 마크 앤 스윕 | DCE 없음 (전체 아카이브 시맨틱스) |
 
@@ -52,8 +52,27 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 |------|------|------|
 | `-fno-builtin` | mimalloc 억제 | CRT 오버라이드 시나리오 없음 |
 | `-mkernel` | mimalloc 억제 | 커널에 유저스페이스 힙 없음 |
-| `-fshellcode-mode` | mimalloc 억제 | 셸코드에 힙 없음 |
+| `-fshellcode-mode` | mimalloc 억제 | HeapArenaPass로 대체 (아레나 기반) |
 | `-ffreestanding` | mimalloc 억제 | 오버라이드할 libc 없음 |
+
+`string` 내장에는 자체 억제 로직이 있습니다 (셸코드 파이프라인에서 아레나 재작성이 힙 할당을 대체).
+
+### HeapArenaPass (셸코드 힙 할당)
+
+`-fshellcode-mode`가 활성화되면, `mimalloc`은 억제되지만 `malloc`/`free`/`calloc`/`realloc` 호출은 `HeapArenaPass`에 의해 자동으로 재작성됩니다 (기본 활성화). 이 패스는 하이브리드 전략을 사용합니다:
+
+- **소규모 할당 (≤ 64 KB)**: `string` 내장 런타임과 공유하는 스택 상주 아레나에서 할당 (범프 할당자 + 프리 리스트 재사용).
+- **대규모 할당 (> 64 KB) 또는 아레나 OOM**: OS 할당자로 폴백:
+  - **Windows**: `malloc`/`free`를 PEB walk를 통해 `msvcrt.dll`에서 해결 (`-mshellcode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap`을 네이티브 시스콜로 인라인 (`-mshellcode-syscall`).
+  - **임포트 패스 미활성화**: 아레나 전용; OOM 시 `NULL` 반환.
+
+드라이버 플래그로 제어:
+
+```bash
+neverc -fshellcode test.c -o test.bin                     # HeapArenaPass 켜짐 (기본값)
+neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass 꺼짐 (기존 동작)
+```
 
 ---
 

@@ -21,7 +21,7 @@ Diese Richtlinie unterscheidet nicht, ob `-fshellcode` aktiviert ist oder ob der
 
 ### 2.1 IR-Schicht (`registerShellcodePasses`)
 
-Verantwortlich für die Komprimierung der „normalen C"-Semantik in eine **Einzeleingabe-, keine unabhängigen Datensektionen-, keine problematischen Globals**-Form: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (nur Kernel), `Data2TextPass` etc.
+Verantwortlich für die Komprimierung der „normalen C"-Semantik in eine **Einzeleingabe-, keine unabhängigen Datensektionen-, keine problematischen Globals**-Form: `ZeroRelocPass`, `IndirectBrPass`, `MemIntrinPass`, `StringRuntimePass`, `HeapArenaPass`, `CompilerRtPass`, `SyscallStubPass`, `WinPEBImportPass`, `KernelImportPass` (nur Kernel), `Data2TextPass` etc.
 
 **Prinzip**: Probleme, die in IR mit strukturierten Ansätzen lösbar sind, werden zuerst in IR behoben (Konstantenpools, BlockAddress, `memcpy`-Durchfall in libc, `__int128 /`-Durchfall in `__udivti3` etc.), wodurch der vom Backend und Extraktor gesehene Bytestream einfacher wird. Für Szenarien mit hoher Benutzerkognitionslast, die sicher internalisiert werden können, injiziert der Treiber proaktiv Regeln (z.B. AArch64 Linux / Android / Windows `long double` wird im Shellcode-Modus auf binary64 herabgestuft). Nur Konstrukte, die ohne Runtime nicht unterstützt werden können, lösen MIR-/Extraktor-Diagnosen aus.
 

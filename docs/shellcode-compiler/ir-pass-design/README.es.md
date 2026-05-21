@@ -24,5 +24,6 @@ Objetivo en una frase: **Eliminar todo en el `.o` que se convertiría en una rel
 | AllBlrPass | (opcional) llamadas directas → indirectas |
 | KernelImportPass | (ring-0) extern → llamadas indirectas vía resolver |
 | StringRuntimePass | métodos `string` integrado → variantes arena stack |
+| HeapArenaPass | `malloc`/`free`/`calloc`/`realloc` → alloc arena + fallback OS para asignaciones grandes |
 
 11 hooks de ofuscación. Filosofía de diagnóstico: 1 error = 1 diagnóstico accionable. Ver [plugin-interface.md §6](../plugin-interface/README.es.md#6-registration-position-selection--pic-coverage-matrix) y [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.es.md).

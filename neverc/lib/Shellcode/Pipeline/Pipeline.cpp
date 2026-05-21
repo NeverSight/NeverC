@@ -2,6 +2,7 @@
 #include "neverc/Shellcode/IR/AllBlrPass.h"
 #include "neverc/Shellcode/IR/CompilerRtPass.h"
 #include "neverc/Shellcode/IR/Data2TextPass.h"
+#include "neverc/Shellcode/IR/HeapArenaPass.h"
 #include "neverc/Shellcode/IR/IndirectBrPass.h"
 #include "neverc/Shellcode/IR/MemIntrinPass.h"
 #include "neverc/Shellcode/IR/StringRuntimePass.h"
@@ -96,6 +97,16 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
     MPM.addPass(MemIntrinPass());
     MPM.addPass(
         StringRuntimePass(StringRuntimePass::arenaSizeFor(Opts.Target.Level)));
+    if (Opts.HeapArena) {
+      HeapFallbackMode FB = HeapFallbackMode::None;
+      if (Opts.WindowsPEBImport)
+        FB = HeapFallbackMode::ExternalMalloc;
+      else if (Opts.SyscallInlining)
+        FB = HeapFallbackMode::Mmap;
+      MPM.addPass(HeapArenaPass(
+          StringRuntimePass::arenaSizeFor(Opts.Target.Level), FB,
+          Opts.Target.OS));
+    }
     MPM.addPass(CompilerRtPass());
 
     if (Opts.SyscallInlining)

@@ -107,7 +107,7 @@ int main(void) {
 |-------------|------|
 | `-fno-builtin` | 无 CRT 函数覆盖场景 |
 | `-mkernel` | 内核模式无用户空间堆；驱动使用 `ExAllocatePool2` |
-| `-fshellcode-mode` | shellcode 无堆——使用栈 arena |
+| `-fshellcode-mode` | 由 HeapArenaPass 替代（arena + OS 回退） |
 | `-ffreestanding` | 无 libc 可覆盖 |
 
 抑制标志与 `-fbuiltin-mimalloc` 同时存在时，抑制静默生效（不发出警告）。

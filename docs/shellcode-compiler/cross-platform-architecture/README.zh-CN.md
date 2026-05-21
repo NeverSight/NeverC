@@ -126,7 +126,7 @@ ExecutionLevel 与 (OS, arch) 正交：
 | Win32 头文件 | `<windows.h>` | Shellcode shim 头 |
 | 大栈帧 | `int arr[4096];` | `-mno-stack-arg-probe` |
 
-**原则**：当用户遇到不支持的 C 模式时，编译器内部扩展 pass 支持，而非要求用户改代码。只有需要运行时的模式（全局构造函数、`<stdio.h>`、libm 超越函数、堆分配）才触发诊断，且每条诊断都包含正确的替代方案。
+**原则**：当用户遇到不支持的 C 模式时，编译器内部扩展 pass 支持，而非要求用户改代码。只有需要运行时的模式（全局构造函数、`<stdio.h>`、libm 超越函数）才触发诊断；堆分配（`malloc`/`free`/`calloc`/`realloc`）现已由 `HeapArenaPass` 处理。每条诊断都包含正确的替代方案。
 
 ## 6. MIR 层：修复 / 回退 / 提取三阶段流水线
 

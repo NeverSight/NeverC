@@ -38,7 +38,7 @@ Alle integrierten Funktionen teilen die gleiche Vier-Schichten-Architektur:
 | **Plattform-Bitcode** | Einzeln (architekturunabhängig) | Pro OS (Linux / Darwin / Windows) |
 | **Symbolbehandlung** | Alle internalisiert | Override-Eintrittspunkte bleiben extern |
 | **Präprozessor-Makro** | *(keine)* | `__NEVERC_MIMALLOC__` |
-| **Shellcode-Modus** | Auto-aktiviert, Arena-Umschreibung | Unterdrückt (kein Heap in Shellcode) |
+| **Shellcode-Modus** | Auto-aktiviert, Arena-Umschreibung | Unterdrückt (HeapArenaPass übernimmt Heap) |
 | **Optimierungsstufe** | `-O0` (Bitcode-Kompilierung) | `-O2` (leistungskritischer Allokator) |
 | **DCE** | Pre-Merge-Pruning + Post-Merge-Mark-and-Sweep | Kein DCE (Gesamtarchiv-Semantik) |
 
@@ -50,8 +50,27 @@ Alle integrierten Funktionen teilen die gleiche Vier-Schichten-Architektur:
 |-----------|------------|-------|
 | `-fno-builtin` | Unterdrückt mimalloc | Kein CRT-Override-Szenario |
 | `-mkernel` | Unterdrückt mimalloc | Kein Userspace-Heap im Kernel |
-| `-fshellcode-mode` | Unterdrückt mimalloc | Kein Heap in Shellcode |
+| `-fshellcode-mode` | Unterdrückt mimalloc | Ersetzt durch HeapArenaPass (Arena-basiert) |
 | `-ffreestanding` | Unterdrückt mimalloc | Keine libc zum Überschreiben |
+
+Das `string`-Built-in hat eine eigene Unterdrückungslogik (Arena-Umschreibung in der Shellcode-Pipeline ersetzt Heap-Allokation).
+
+### HeapArenaPass (Shellcode-Heap-Allokation)
+
+Wenn `-fshellcode-mode` aktiv ist, wird `mimalloc` unterdrückt, aber `malloc`/`free`/`calloc`/`realloc`-Aufrufe werden automatisch von `HeapArenaPass` umgeschrieben (standardmäßig aktiviert). Der Pass verwendet eine hybride Strategie:
+
+- **Kleine Allokationen (≤ 64 KB)**: Bedient aus einer stack-residenten Arena, die mit dem `string`-Built-in-Runtime geteilt wird (Bump-Allocator + Free-List-Wiederverwendung).
+- **Große Allokationen (> 64 KB) oder Arena-OOM**: Fallback zum OS-Allokator:
+  - **Windows**: `malloc`/`free` über PEB-Walk aus `msvcrt.dll` aufgelöst (`-mshellcode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap` als native Systemaufrufe inlined (`-mshellcode-syscall`).
+  - **Kein Import-Pass aktiviert**: Nur Arena; OOM gibt `NULL` zurück.
+
+Steuerung über Treiber-Flags:
+
+```bash
+neverc -fshellcode test.c -o test.bin                     # HeapArenaPass AN (Standard)
+neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass AUS (ursprüngliches Verhalten)
+```
 
 ---
 

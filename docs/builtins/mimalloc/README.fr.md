@@ -53,7 +53,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # désactiver
 |----------------|--------|
 | `-fno-builtin` | Pas de scénario d'override CRT |
 | `-mkernel` | Pas de tas en espace utilisateur dans le noyau |
-| `-fshellcode-mode` | Pas de tas en shellcode |
+| `-fshellcode-mode` | Remplacé par HeapArenaPass (arène + fallback OS) |
 | `-ffreestanding` | Pas de libc à remplacer |
 
 ---

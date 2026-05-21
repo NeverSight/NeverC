@@ -25,6 +25,11 @@ struct StringRuntimePass : public llvm::PassInfoMixin<StringRuntimePass> {
                               llvm::ModuleAnalysisManager &MAM);
   static llvm::StringRef name() { return "StringRuntimePass"; }
 
+  /// Ensure the arena global, bump-alloc function, and free-list function
+  /// exist in @p M.  Safe to call multiple times — idempotent when the
+  /// infrastructure already has full definitions.
+  static void ensureArenaInfrastructure(llvm::Module &M, uint64_t ArenaSize);
+
 private:
   uint64_t ArenaSize;
 };

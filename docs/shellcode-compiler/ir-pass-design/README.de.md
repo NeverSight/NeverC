@@ -48,5 +48,16 @@ Automatische Umschreibung extern → Resolver-gestützte indirekte Aufrufe. Sieh
 ## 12. StringRuntimePass
 Eingebaute `string`-Methoden → Stack-Arena-Varianten.
 
-## 13. Fehlerdiagnose-Philosophie
+## 13. HeapArenaPass
+
+Schreibt `malloc`/`free`/`calloc`/`realloc`-Aufrufe im Shellcode in eine hybride Allokationsstrategie um (standardmäßig aktiviert, über `-fshellcode-heap-arena` / `-fno-shellcode-heap-arena` steuerbar):
+
+- **Kleine Allokationen (≤ 64 KB)**: Aus der `StringRuntimePass`-Stack-Arena (Bump-Allocator + Free-List-Wiederverwendung).
+- **Große Allokationen (> 64 KB) oder Arena-OOM**: Fallback zum OS-Allokator (Windows: msvcrt.dll, Linux/macOS: mmap-Syscall).
+
+**Sicherheit**: `free(NULL)` ist No-Op, `calloc` prüft Überlauf via `llvm.umul.with.overflow`, `realloc` liest die alte Blockgröße je nach Pointer-Herkunft (Arena / Fallback).
+
+---
+
+## 14. Fehlerdiagnose-Philosophie
 Jeder harte Fehler = genau **eine umsetzbare Diagnose**. Keine Kaskaden.

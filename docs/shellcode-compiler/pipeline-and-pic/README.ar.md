@@ -23,7 +23,7 @@ NeverC يُرجع **true** من `Generic_GCC::isPICDefaultForced()` و`MachO::is
 
 ### 2.1 طبقة IR (`registerShellcodePasses`)
 
-مسؤولة عن ضغط دلالات "C العادي" إلى شكل **مدخل واحد، بدون قسم بيانات مستقل، بدون متغيرات عامة مشكلة**: `ZeroRelocPass`، `IndirectBrPass`، `MemIntrinPass`، `StringRuntimePass`، `CompilerRtPass`، `SyscallStubPass`، `WinPEBImportPass`، `KernelImportPass` (النواة فقط)، `Data2TextPass`، إلخ.
+مسؤولة عن ضغط دلالات "C العادي" إلى شكل **مدخل واحد، بدون قسم بيانات مستقل، بدون متغيرات عامة مشكلة**: `ZeroRelocPass`، `IndirectBrPass`، `MemIntrinPass`، `StringRuntimePass`، `HeapArenaPass`، `CompilerRtPass`، `SyscallStubPass`، `WinPEBImportPass`، `KernelImportPass` (النواة فقط)، `Data2TextPass`، إلخ.
 
 **المبدأ**: المشاكل القابلة للحل في IR بأساليب هيكلية تُصلح أولاً في IR، مما يبسط تدفق البايتات الذي تراه الخلفية والمستخرج.
 

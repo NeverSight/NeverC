@@ -22,6 +22,7 @@ This leads to the following pass division:
 | IndirectBrPass | Computed goto `indirectbr` → `switch` | PipelineStart |
 | MemIntrinPass | `@llvm.mem*` + explicit mem*/str*/abs calls → internal byte-loop helpers | PipelineStart |
 | StringRuntimePass | Built-in `string` type runtime → stack-allocated arena variants | PipelineStart |
+| HeapArenaPass | `malloc`/`free`/`calloc`/`realloc` → arena alloc + OS fallback for large allocations | PipelineStart |
 | CompilerRtPass | `__udivti3` family + IR-level i128 div/rem → internal 128-bit long-division | PipelineStart |
 | SyscallStubPass | libc extern → target OS kernel trap wrapper, table-driven via `TargetDesc` | PipelineStart |
 | WinPEBImportPass | Win32 extern → PEB module walk + PE export resolver + encrypted address cache | PipelineStart |
@@ -207,7 +208,29 @@ Handles NeverC's built-in `string` type methods. When `string` values are used i
 
 ---
 
-## 13. Error Diagnostics Philosophy
+## 13. HeapArenaPass
+
+Rewrites `malloc`/`free`/`calloc`/`realloc` calls in shellcode into a hybrid allocation strategy (enabled by default, controlled via `-fshellcode-heap-arena` / `-fno-shellcode-heap-arena`):
+
+- **Small allocations (≤ 64 KB)**: Served from the `StringRuntimePass` stack-resident arena (bump allocator + free-list reuse). Shares the same `__sc_string_arena` global to avoid doubling stack usage.
+- **Large allocations (> 64 KB) or arena OOM**: Fall back to the OS allocator:
+  - **Windows**: `malloc`/`free` kept as extern symbols, resolved by `WinPEBImportPass` to `msvcrt.dll` via PEB walk.
+  - **Linux / macOS / Android**: `mmap`/`munmap` calls emitted, resolved by `SyscallStubPass` to inline syscalls.
+  - **No import pass enabled**: Arena-only; OOM returns `NULL`.
+
+**Pipeline position**: Must run **after** `StringRuntimePass` (shares the arena infrastructure) and **before** `SyscallStubPass` / `WinPEBImportPass` (fallback symbols need resolution).
+
+**Function classification**: Driven by `Tables/HeapArenaRewriteTargets.def`, covering both standard names (`malloc`, `free`, `calloc`, `realloc`) and GCC builtins (`__builtin_malloc`, etc.).
+
+**Safety features**:
+- `free(NULL)` is a no-op (null check before dispatch)
+- `calloc` checks for `count * size` overflow via `llvm.umul.with.overflow` and returns `NULL` on overflow
+- `realloc(NULL, n)` behaves as `malloc(n)`; `realloc(p, n)` with `p != NULL` reads the old block size from the appropriate header (arena header or fallback header) before copying
+- Fallback allocations prepend a size header for correct `realloc` copy-length computation
+
+---
+
+## 14. Error Diagnostics Philosophy
 
 Every hard error produces exactly **one actionable diagnostic**. The module-level `__neverc_shellcode_hard_error` metadata sentinel prevents cascade noise: once `reportError` sets the flag, subsequent phases (ZeroReloc Stackify validation, extractor audit) silently early-return.
 

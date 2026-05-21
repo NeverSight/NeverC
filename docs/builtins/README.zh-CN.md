@@ -117,7 +117,7 @@ if (LangOpts.BuiltinMimalloc) {
 | **平台 bitcode** | 单一（架构中性） | 按 OS 分（Linux / Darwin / Windows） |
 | **符号处理** | 全部内部化 | 覆盖入口保持外部链接 |
 | **预处理器宏** | *（无）* | `__NEVERC_MIMALLOC__` |
-| **Shellcode 模式** | 自动启用，arena 重写 | 被抑制（shellcode 无堆） |
+| **Shellcode 模式** | 自动启用，arena 重写 | 被抑制（HeapArenaPass 处理堆分配） |
 | **优化级别** | `-O0`（bitcode 编译） | `-O2`（性能关键的分配器） |
 | **DCE** | 预合并裁剪 + 后合并标记清扫 | 无 DCE（whole-archive 语义） |
 
@@ -131,10 +131,27 @@ if (LangOpts.BuiltinMimalloc) {
 |------|------|------|
 | `-fno-builtin` | 抑制 `mimalloc` | 无 CRT 覆盖场景 |
 | `-mkernel` | 抑制 `mimalloc` | 内核无用户空间堆 |
-| `-fshellcode-mode` | 抑制 `mimalloc` | shellcode 无堆 |
+| `-fshellcode-mode` | 抑制 `mimalloc` | 由 HeapArenaPass 替代（基于 arena） |
 | `-ffreestanding` | 抑制 `mimalloc` | 无 libc 可覆盖 |
 
 `string` 内置有自己的抑制逻辑（shellcode 流水线中 arena 重写替换堆分配）。
+
+### HeapArenaPass（Shellcode 堆分配）
+
+当 `-fshellcode-mode` 启用时，`mimalloc` 被抑制，但 `malloc`/`free`/`calloc`/`realloc` 调用会被 `HeapArenaPass` 自动改写（默认开启）。该 Pass 使用混合策略：
+
+- **小分配（≤ 64 KB）**：从与 `string` 内置运行时共享的栈上 arena 分配（bump allocator + free list 重用）。
+- **大分配（> 64 KB）或 arena OOM**：回退到 OS 分配器：
+  - **Windows**：`malloc`/`free` 通过 PEB walk 从 `msvcrt.dll` 解析（`-mshellcode-win-peb-import`）。
+  - **Linux / macOS / Android**：`mmap`/`munmap` 内联为原生系统调用（`-mshellcode-syscall`）。
+  - **未启用导入 Pass**：仅使用 arena；OOM 返回 `NULL`。
+
+通过驱动标志控制：
+
+```bash
+neverc -fshellcode test.c -o test.bin                     # HeapArenaPass 开启（默认）
+neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass 关闭（原始行为）
+```
 
 ---
 
