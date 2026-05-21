@@ -150,6 +150,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <string>
 #include <tuple>
 #include <utility>

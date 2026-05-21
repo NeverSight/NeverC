@@ -93,6 +93,7 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <string>
