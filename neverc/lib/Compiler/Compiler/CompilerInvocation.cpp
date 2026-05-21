@@ -2299,6 +2299,15 @@ bool CompilerInvocation::CreateFromArgsImpl(
                         Res.getFileSystemOpts().WorkingDir);
 
   ParseLangArgs(LangOpts, Args, DashX, T, Res.getPrepOpts().Includes, Diags);
+
+  for (const auto &Input : Res.getFrontendOpts().Inputs) {
+    if (llvm::sys::path::extension(Input.getFile()) == ".nc") {
+      LangOpts.NeverCTypes = 1;
+      LangOpts.BuiltinString = 1;
+      break;
+    }
+  }
+
   ParseCodeGenArgs(Res.getCodeGenOpts(), Args, DashX, Diags, T,
                    Res.getFrontendOpts().OutputFile, LangOpts);
 

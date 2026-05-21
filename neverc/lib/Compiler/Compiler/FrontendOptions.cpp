@@ -7,6 +7,7 @@ using namespace neverc;
 InputKind FrontendOptions::getInputKindForExtension(llvm::StringRef Extension) {
   return llvm::StringSwitch<InputKind>(Extension)
       .Case("c", Language::C)
+      .Case("nc", Language::C)
       .Cases("S", "s", Language::Asm)
       .Case("i", InputKind(Language::C).getPreprocessed())
       .Cases("ll", "bc", Language::LLVM_IR)

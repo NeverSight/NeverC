@@ -2512,11 +2512,28 @@ void processVSRuntimeLibrary(const Driver &D, const ArgList &Args,
   }
 }
 
-void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs) {
-  Args.addOptInFlag(CmdArgs, options::OPT_fneverc_types,
-                    options::OPT_fno_neverc_types);
-  Args.addOptInFlag(CmdArgs, options::OPT_fbuiltin_string,
-                    options::OPT_fno_builtin_string);
+bool hasNcExtension(const InputInfoList &Inputs) {
+  for (const InputInfo &I : Inputs) {
+    if (!I.getBaseInput())
+      continue;
+    if (llvm::sys::path::extension(I.getBaseInput()) == ".nc")
+      return true;
+  }
+  return false;
+}
+
+void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
+                           const InputInfoList &Inputs) {
+  bool IsNcInput = hasNcExtension(Inputs);
+  if (IsNcInput) {
+    CmdArgs.push_back("-fneverc-types");
+    CmdArgs.push_back("-fbuiltin-string");
+  } else {
+    Args.addOptInFlag(CmdArgs, options::OPT_fneverc_types,
+                      options::OPT_fno_neverc_types);
+    Args.addOptInFlag(CmdArgs, options::OPT_fbuiltin_string,
+                      options::OPT_fno_builtin_string);
+  }
 
   // -fbuiltin-mimalloc is suppressed when:
   //   - -fno-builtin is active (no CRT override makes sense)
@@ -2970,7 +2987,7 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-ffreestanding");
 
   Args.AddLastArg(CmdArgs, options::OPT_fno_knr_functions);
-  addNeverCFeatureFlags(Args, CmdArgs);
+  addNeverCFeatureFlags(Args, CmdArgs, Inputs);
 
   bool IsAsyncUnwindTablesDefault = TC.getDefaultUnwindTableLevel(Args) ==
                                     ToolChain::UnwindTableLevel::Asynchronous;
