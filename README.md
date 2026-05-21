@@ -48,31 +48,23 @@ int main(void) {
 > **Note:** The built-in **`string`** type requires **`-fbuiltin-string`** for normal hosted binaries. **`-fshellcode`** enables it automatically.
 
 ```bash
-# macOS arm64
-neverc -fshellcode -target arm64-apple-macos -mshellcode-syscall hello.c -o hello.bin
-
-# macOS x86_64
-neverc -fshellcode -target x86_64-apple-macos -mshellcode-syscall hello.c -o hello.bin
+# macOS arm64 / x86_64
+neverc -fshellcode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fshellcode -target x86_64-apple-macos hello.c -o hello.bin
 
 # iOS arm64
-neverc -fshellcode -target arm64-apple-ios -mshellcode-syscall hello.c -o hello.bin
+neverc -fshellcode -target arm64-apple-ios hello.c -o hello.bin
 
-# Linux x86_64
-neverc -fshellcode -target x86_64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
+# Linux x86_64 / arm64
+neverc -fshellcode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fshellcode -target aarch64-linux-gnu hello.c -o hello.bin
 
-# Linux arm64
-neverc -fshellcode -target aarch64-linux-gnu -mshellcode-syscall hello.c -o hello.bin
+# Android arm64 / x86_64
+neverc -fshellcode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fshellcode -target x86_64-linux-android hello.c -o hello.bin
 
-# Android arm64
-neverc -fshellcode -target aarch64-linux-android -mshellcode-syscall hello.c -o hello.bin
-
-# Android x86_64
-neverc -fshellcode -target x86_64-linux-android -mshellcode-syscall hello.c -o hello.bin
-
-# Windows x86_64
+# Windows x86_64 / arm64
 neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
-
-# Windows arm64
 neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
