@@ -49,18 +49,24 @@ function(neverc_fetch_mimalloc)
     GIT_SHALLOW    TRUE
     GIT_PROGRESS   FALSE
   )
-  # mimalloc's upstream CMake always emits install() rules.
-  # We only need the static library for linking and do not want mimalloc
-  # headers/cmake/pkgconfig files in the parent project's install tree.
-  set(_neverc_prev_skip_install_rules "${CMAKE_SKIP_INSTALL_RULES}")
-  set(CMAKE_SKIP_INSTALL_RULES ON)
+  # mimalloc's upstream CMake always emits install() rules; we only need
+  # the static library and don't want mimalloc headers/cmake/pkgconfig in
+  # the parent project's install tree.
+  #
+  # CMAKE_SKIP_INSTALL_RULES suppresses generation of the subdirectory's
+  # cmake_install.cmake while the parent still emits an include() of it,
+  # breaking `cmake --install`. Shadow install() with a no-op macro
+  # instead. The macro is gated on a cache flag so the parent project's
+  # own install() calls still reach the builtin (accessible via _install
+  # after the macro override) once the flag is cleared.
+  set(_NEVERC_SUPPRESS_INSTALL ON CACHE INTERNAL "" FORCE)
+  macro(install)
+    if(NOT _NEVERC_SUPPRESS_INSTALL)
+      _install(${ARGV})
+    endif()
+  endmacro()
   FetchContent_MakeAvailable(mimalloc)
-  if(DEFINED _neverc_prev_skip_install_rules)
-    set(CMAKE_SKIP_INSTALL_RULES "${_neverc_prev_skip_install_rules}")
-  else()
-    unset(CMAKE_SKIP_INSTALL_RULES)
-  endif()
-  unset(_neverc_prev_skip_install_rules)
+  set(_NEVERC_SUPPRESS_INSTALL OFF CACHE INTERNAL "" FORCE)
 
   if(NOT TARGET mimalloc-static)
     message(FATAL_ERROR
