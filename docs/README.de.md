@@ -1,6 +1,6 @@
 **Sprachen**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC-Projekt](../README.de.md)
+[← NeverC-Projekt](i18n/README.de.md)
 
 > **Tip:** Use the language bar above; links on this page point to the same locale (shellcode README and breadcrumbs).
 

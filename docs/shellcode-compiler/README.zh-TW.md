@@ -1,6 +1,6 @@
 **語言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← 文件索引](../README.zh-TW.md) · [← NeverC 專案主頁](../../README.zh-TW.md)
+[← 文件索引](../README.zh-TW.md) · [← NeverC 專案主頁](../../i18n/README.zh-TW.md)
 
 # NeverC Shellcode 編譯器
 

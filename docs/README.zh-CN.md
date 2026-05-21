@@ -1,6 +1,6 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 项目主页](../README.zh-CN.md)
+[← NeverC 项目主页](i18n/README.zh-CN.md)
 
 > 保持语言：使用上方语言栏；本索引内的 shellcode 等链接已指向对应中文页面。
 

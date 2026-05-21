@@ -1,6 +1,6 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← 문서 색인](../README.ko.md) · [← NeverC 프로젝트](../../README.ko.md)
+[← 문서 색인](../README.ko.md) · [← NeverC 프로젝트](../../i18n/README.ko.md)
 
 # NeverC Shellcode 컴파일러
 
