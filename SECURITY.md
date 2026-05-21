@@ -12,14 +12,14 @@ that is outside the scope of coordinated disclosure here.
 
 ## Supported Versions
 
-Security fixes are applied to the default branch (`main`) and, when
+Security fixes are applied to the default branch (`dev`) and, when
 practical, cherry-picked to the latest release tag. Pre-release or
 unsupported branches may not receive patches.
 
 | Version | Supported |
 |---------|-----------|
 | Latest release tag (`v*`) | Yes |
-| `main` | Yes |
+| `dev` | Yes |
 | Older tags | Best effort only |
 
 ---
@@ -109,7 +109,7 @@ We aim to:
 | Initial acknowledgement | Within **72 hours** |
 | Triage and severity assessment | Within **7 days** |
 | Fix or mitigation plan | Depends on complexity; critical issues prioritized |
-| Coordinated disclosure | After a fix is available on `main` and, when applicable, a release |
+| Coordinated disclosure | After a fix is available on `dev` and, when applicable, a release |
 
 We may ask for more information or offer a draft advisory for your review
 before publication.

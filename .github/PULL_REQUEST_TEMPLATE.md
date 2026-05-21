@@ -13,7 +13,7 @@ Please delete options that are not relevant, or add anything you think would be 
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] This change requires a documentation update
 
-**Please ONLY submit your pull request to the "dev" branch.
+**Please submit your pull request to the **`dev`** branch (repository default).
 You shoule disable your local clang-format. Otherwise it will affect other unrelated code.
 Put your code into the following website, then format it and copy it out.
 https://godbolt.org/**

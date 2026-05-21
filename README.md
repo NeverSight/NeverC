@@ -118,6 +118,17 @@ Place an [xwin](https://github.com/Jake-Shadle/xwin) SDK splat at `build-neverc/
 
 See [shellcode compiler docs](docs/shellcode-compiler/README.md) for Windows shellcode (`-fshellcode`, PEB import resolution, etc.).
 
+## Contributing
+
+The default development branch is **`dev`**. Clone and check it out before
+you start work; open pull requests against `dev`, not `main`.
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
 ## License
 
 [AGPL-3.0](LICENSE)
