@@ -38,6 +38,6 @@
 
 يوفر NeverC نوع قيمة `string` مدمجًا للغة C، يجمع بين سهولة استخدام `std::string` ودعم Unicode على مستوى `QString`. يُفعّل عبر `-fbuiltin-string` (تلقائيًا في وضع `-fshellcode`).
 
-**[السلسلة النصية المدمجة →](builtin-string/README.ar.md)**
+**[السلسلة النصية المدمجة →](builtins/string/README.ar.md)**
 
 </div>

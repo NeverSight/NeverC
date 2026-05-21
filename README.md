@@ -30,7 +30,7 @@ NeverC compiles standard C into hosted binaries, freestanding executables, and p
 - **[Shellcode compiler](docs/shellcode-compiler/README.md)** — multi-stage IR/MIR pipeline, cross-platform extraction, import/syscall lowering, kernel-mode support, bad-byte auditing, and a plugin architecture
 - **Integrated linker** — COFF, ELF, and Mach-O in one binary; no external `ld` or `link.exe`
 - **Cross-compilation** — build Windows PE from macOS/Linux with bundled MSVC SDK support
-- **[Built-in runtimes](docs/builtins/README.md)** — opt-in LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtin-string/README.md) (value-semantic string with dot-call methods and automatic memory management) and [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override)
+- **[Built-in runtimes](docs/builtins/README.md)** — opt-in LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string/README.md) (value-semantic string with dot-call methods and automatic memory management) and [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override)
 - **Lean LLVM build** — only x86_64 and AArch64 backends; C++/ObjC/OpenMP paths stripped
 
 ## Quick Example

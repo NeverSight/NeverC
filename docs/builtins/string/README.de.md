@@ -1,14 +1,14 @@
-**Языки**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+**Sprachen**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← Встроенная система времени выполнения NeverC](../builtins/README.ru.md) · [Документация NeverC](../README.ru.md)
+[← NeverC Integriertes Laufzeitsystem](../README.de.md) · [NeverC Dokumentation](../../README.de.md)
 
-# Встроенный тип `string` в NeverC
+# NeverC eingebauter `string`-Typ
 
-## Обзор
+## Übersicht
 
-NeverC предоставляет встроенный тип-значение `string` для языка C. Он сочетает дизайн интерфейса C++ `std::string` с поддержкой Unicode из Qt `QString`, обеспечивая безопасные и эффективные строковые операции в C-коде.
+NeverC bietet einen eingebauten `string`-Werttyp für C. Er vereint das Interface-Design von C++ `std::string` mit den Unicode-Fähigkeiten von Qt `QString` und ermöglicht sichere und effiziente String-Operationen in C-Code.
 
-**Включение:** Передайте `-fbuiltin-string` при компиляции (по умолчанию отключено). Режим `-fshellcode` включает автоматически.
+**Aktivierung:** `-fbuiltin-string` beim Kompilieren angeben (standardmäßig deaktiviert). Der `-fshellcode`-Modus aktiviert ihn automatisch.
 
 ```bash
 neverc -fbuiltin-string main.c -o main
@@ -33,9 +33,9 @@ printf("Content: %s\n", msg.c_str());
 
 ---
 
-## Основные концепции
+## Kernkonzepte
 
-### Определение типа
+### Typdefinition
 
 ```c
 typedef struct __neverc_string {
@@ -45,7 +45,7 @@ typedef struct __neverc_string {
 } string;
 ```
 
-### Модель владения: Owned vs Borrowed
+### Besitzmodell: Owned vs Borrowed
 
 The `cap` field serves double duty as both "capacity" and "ownership flag":
 
@@ -61,7 +61,7 @@ string c = a.to_upper();      // Owned: transformation produces new buffer
 string d = neverc_string_view(buf, len); // Borrowed: wraps external buffer
 ```
 
-### Автоматическое управление памятью
+### Automatische Speicherverwaltung
 
 The compiler automatically handles the lifetime of owned strings:
 
@@ -76,14 +76,14 @@ void example() {
 
 Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32_owned()` are also auto-released — Sema attaches `__neverc_wptr_cleanup` when it detects these initializations.
 
-### Гарантии безопасности
+### Sicherheitsgarantien
 
 - **Forged handle protection**: Handles with `len > 0 && data == NULL` are intercepted by `__neverc_string_invalid`, short-circuiting to the empty string
 - **Oversized handle protection**: Handles with `len > NEVERC_STRING_MAX_LEN` are similarly intercepted
 - **Temporary safety**: `.c_str()` and `.data()` on temporaries (prvalues) trigger compiler error `err_neverc_string_cstr_temporary`, preventing dangling pointers
 - **Zero-leak testing**: All string tests on macOS run under `leaks --atExit`, asserting "0 leaks"
 
-### Константы
+### Konstanten
 
 | Constant | Value | Description |
 |----------|-------|-------------|
@@ -92,7 +92,7 @@ Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32
 
 ---
 
-## Операторы
+## Operatoren
 
 Sema rewrites operators to corresponding runtime calls:
 
@@ -111,9 +111,9 @@ Sema rewrites operators to corresponding runtime calls:
 
 ---
 
-## Полный справочник API
+## Vollständige API-Referenz
 
-### Размер и доступ
+### Größe und Zugriff
 
 | Dot-call | Aliases | Runtime Function | Signature | Returns |
 |----------|---------|-----------------|-----------|---------|
@@ -127,7 +127,7 @@ Sema rewrites operators to corresponding runtime calls:
 
 > **Note**: `.c_str()` and `.data()` return borrowed pointers into the string's internal buffer. Using them on temporaries is a compile error.
 
-### Ёмкость
+### Kapazität
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -136,7 +136,7 @@ Sema rewrites operators to corresponding runtime calls:
 | `s.capacity()` | `neverc_string_capacity` | `(const string *s) → size_t` | Current capacity (passed via `&s`) |
 | `s.max_size()` | `neverc_string_max_size` | `(string s) → size_t` | Returns `NEVERC_STRING_MAX_LEN` |
 
-### Равенство и сравнение
+### Gleichheit und Vergleich
 
 | Dot-call | Runtime Function | Signature | Returns |
 |----------|-----------------|-----------|---------|
@@ -145,7 +145,7 @@ Sema rewrites operators to corresponding runtime calls:
 | `s.compare(pos, n, t)` | `neverc_string_compare_substr` | `(string a, size_t pos, size_t n, string b) → int` | Substring compare |
 | `s.compare(p1, n1, t, p2, n2)` | `neverc_string_compare_substr2` | `(string a, size_t p1, size_t n1, string b, size_t p2, size_t n2) → int` | Two-substring compare |
 
-#### Без учёта регистра ASCII
+#### ASCII Groß-/Kleinschreibung ignorieren
 
 Fold rule: `A-Z → a-z`, all other bytes (including `>= 0x80` UTF-8 continuation bytes) unchanged. Suitable for HTTP header matching, file extension comparison, etc.
 
@@ -166,7 +166,7 @@ string path = "photo.PNG";
 if (path.ends_with_ic(".png")) { /* matches */ }
 ```
 
-### Поиск
+### Suche
 
 All search functions support both string and char overloads — Sema dispatches automatically based on the first argument type.
 
@@ -181,7 +181,7 @@ All search functions support both string and char overloads — Sema dispatches 
 | `s.ends_with(t)` | `s.ends_with(ch)` | `neverc_string_ends_with` / `ends_with_char` | Suffix match |
 | `s.count(t)` | `s.count(ch)` | `neverc_string_count` / `count_char` | Occurrence count |
 
-#### Поиск по набору символов
+#### Zeichensatzsuche
 
 Internally uses a 256-bit bitmap for O(1) character set membership testing, yielding O(n+m) overall complexity.
 
@@ -194,7 +194,7 @@ Internally uses a 256-bit bitmap for O(1) character set membership testing, yiel
 
 Char overloads also work: `s.find_first_of('x')` is equivalent to `s.find('x')`, and `s.find_first_not_of(' ')` is the classic "skip leading spaces" idiom.
 
-### Подстрока и копирование
+### Teilstring und Kopie
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -203,13 +203,13 @@ Char overloads also work: `s.find_first_of('x')` is equivalent to `s.find('x')`,
 | `s.copy(out, n)` | `neverc_string_copy` | `(string s, char *out, size_t n) → size_t` | Copy to external buffer, returns bytes copied |
 | `s.copy(out, n, pos)` | `neverc_string_copy_from` | `(string s, char *out, size_t n, size_t pos) → size_t` | Copy starting from `pos` |
 
-### Мутация
+### Mutation
 
 Mutation follows the value-type "consume input + return new value" pattern: the function consumes the input string (releases its owned buffer) and returns a new owned string. The compiler automatically rewrites `s.append(x)` as `s = neverc_string_append(s, x)`, appearing as "in-place modification" from the user's perspective.
 
 Only `assign`, `swap`, and `capacity` use `string *` pointer receivers (see "Pointer Receiver Methods" below).
 
-#### Потребить + вернуть новое значение
+#### Verbrauchen + neuen Wert zurückgeben
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -239,7 +239,7 @@ Only `assign`, `swap`, and `capacity` use `string *` pointer receivers (see "Poi
 | `s.reverse()` | `neverc_string_reverse` | `(string s) → string` | Byte-level reversal |
 | `s.hash()` | `neverc_string_hash` | `(string s) → unsigned long long` | FNV-1a 64-bit hash |
 
-#### Методы с указателем-получателем
+#### Methoden mit Zeiger-Empfänger
 
 These methods need to operate directly on the caller's storage; Sema wraps the receiver as `&s`:
 
@@ -282,7 +282,7 @@ for (size_t i = 0; i < count; i++)
 neverc_string_split_free(parts, count);
 ```
 
-### Числовое преобразование
+### Numerische Konvertierung
 
 | Direction | Dot-call | Runtime Function | Signature |
 |-----------|----------|-----------------|-----------|
@@ -303,7 +303,7 @@ string s = "12345";
 ptrdiff_t v = s.to_int();  // 12345
 ```
 
-### Фабричные функции
+### Fabrikfunktionen
 
 Not used via dot-call; require the full `neverc_string_*` prefix:
 
@@ -322,7 +322,7 @@ Not used via dot-call; require the full `neverc_string_*` prefix:
 
 ---
 
-## Форматирование
+## Formatierung
 
 ### `s.format(...)` — printf-style Formatting
 
@@ -334,7 +334,7 @@ string msg = "Hello %S, number=%d".format(name, 42);
 // msg = "Hello World, number=42"
 ```
 
-#### Поддерживаемые спецификаторы формата
+#### Unterstützte Formatspezifizierer
 
 | Specifier | Type | Description |
 |-----------|------|-------------|
@@ -374,7 +374,7 @@ printf("Length: %zu\n", s.len);
 
 Internally always UTF-8 encoded. Byte-level operations (`s.len`, `s.at(i)`, `s.find(...)`, etc.) work in **bytes**; codepoint-level operations use the `utf8_*` family:
 
-### Операции с кодовыми точками
+### Codepoint-Operationen
 
 | Dot-call | Aliases | Runtime Function | Returns |
 |----------|---------|-----------------|---------|
@@ -392,7 +392,7 @@ printf("Bytes: %zu\n", s.len);          // 10
 printf("Chars: %zu\n", s.utf8_count()); // 6
 ```
 
-### Преобразование кодировок
+### Kodierungskonvertierung
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -419,7 +419,7 @@ MessageBoxW(NULL, ws, L"Title", MB_OK);
 
 ---
 
-## Байтовое кодирование
+## Byte-Kodierung
 
 All encoding methods consume the receiver and return a new owned string, supporting method chaining.
 
@@ -458,7 +458,7 @@ string hex = data.to_hex();             // "48656c6c6f2c204e657665724321"
 
 ---
 
-## Веб-кодеки
+## Web-Codecs
 
 HTML / JSON / CSV literal-level escaping/unescaping. Each pair maintains strict round-trip fidelity.
 
@@ -483,7 +483,7 @@ string escaped = json_val.json_escape();
 
 ---
 
-## Цепочка методов
+## Methodenverkettung
 
 All methods returning `string` support chaining. Intermediate values are auto-released with no leaks:
 
@@ -495,9 +495,9 @@ string cleaned = raw.url_decode().from_base64().trim();
 
 ---
 
-## Режимы компиляции
+## Kompilierungsmodi
 
-### Три режима работы
+### Drei Betriebsmodi
 
 | Mode | Description | String Function Body Source | Symbol Visibility |
 |------|-------------|---------------------------|-------------------|
@@ -507,7 +507,7 @@ string cleaned = raw.url_decode().from_base64().trim();
 
 The final output binary **exposes no `neverc_string_*` symbols**.
 
-### Флаги компилятора
+### Compiler-Flags
 
 | Flag | Description |
 |------|-------------|
@@ -516,7 +516,7 @@ The final output binary **exposes no `neverc_string_*` symbols**.
 | `-DNEVERC_STRING_ALLOC=xxx` | Custom allocator (triggers full source prelude) |
 | `-DNEVERC_STRING_FREE=xxx` | Custom free function |
 
-### Настраиваемые параметры
+### Konfigurierbare Parameter
 
 | Macro | Default | Description |
 |-------|---------|-------------|
@@ -530,11 +530,11 @@ The final output binary **exposes no `neverc_string_*` symbols**.
 
 ---
 
-## Режим Hosted: архитектура прекомпилированного Bitcode
+## Hosted-Modus: Vorkompilierte Bitcode-Architektur
 
 At compiler build time, string runtime functions are precompiled into LLVM bitcode and embedded in the compiler binary. When compiling user code, only a thin header (struct + macros + extern declarations) is injected, and the bitcode is merged after CodeGen via `llvm::Linker::linkModules()`.
 
-### Поток во время сборки
+### Ablauf zur Build-Zeit
 
 ```
 prelude .inc (11 fragments)
@@ -553,7 +553,7 @@ prelude .inc (11 fragments)
                                    (embedded in compiler binary)
 ```
 
-### Компиляция пользовательского кода
+### Kompilierung von Benutzercode
 
 ```
 user.c
@@ -586,7 +586,7 @@ user.c
 
 **Benefit:** Obfuscation passes can safely rename runtime functions without breaking the identification chain.
 
-### Процесс бутстрапа
+### Bootstrap-Prozess
 
 Bitcode generation uses a two-stage bootstrap:
 
@@ -596,7 +596,7 @@ ninja neverc-bootstrap-string-bc    # compile string runtime with neverc itself 
 ninja neverc                        # stage 2 (embed real bitcode)
 ```
 
-### Условия отката Bitcode
+### Bitcode-Fallback-Bedingungen
 
 | Condition | Reason |
 |-----------|--------|
@@ -606,7 +606,7 @@ ninja neverc                        # stage 2 (embed real bitcode)
 
 ---
 
-## Режим Shellcode
+## Shellcode-Modus
 
 Does not use bitcode merge; instead injects the full source prelude:
 
@@ -634,7 +634,7 @@ FrontendAction: inject full prelude
 
 ---
 
-## Диспетчеризация методов
+## Methodendispatch
 
 Sema rewrites dot-call syntax into C function calls via `buildNeverCStringRuntimeCall()`:
 
@@ -646,7 +646,7 @@ string result = s.find("hello");
 string result = neverc_string_find(s, __neverc_string_make_view("hello", 5));
 ```
 
-### 4-уровневый приоритет диспетчеризации
+### 4-Schichten-Dispatch-Priorität
 
 When the user writes `s.method(args...)`, Sema searches for the target function in this priority order:
 
@@ -655,7 +655,7 @@ When the user writes `s.method(args...)`, Sema searches for the target function 
 3. **Default argument completion** (`BuiltinStringMethodDefaults.def`): Appends default values (e.g., `s.substr(pos)` → `s.substr(pos, NPOS)`)
 4. **Default mapping** (`BuiltinStringMethodNames.def`): General method → runtime function mapping
 
-### Типы получателей
+### Empfängertypen
 
 Most methods pass the receiver by `string` value. A few require pointer semantics:
 
@@ -667,7 +667,7 @@ Most methods pass the receiver by `string` value. A few require pointer semantic
 
 ---
 
-## Видимость символов
+## Symbolsichtbarkeit
 
 | Compilation Mode | `neverc_string_*` Symbols in Final Binary |
 |-----------------|------------------------------------------|
@@ -678,7 +678,7 @@ Most methods pass the receiver by `string` value. A few require pointer semantic
 
 ---
 
-## Структура файлов
+## Dateistruktur
 
 ```
 neverc/
@@ -734,7 +734,7 @@ neverc/
     └── StringRuntimePass.cpp                   # Shellcode arena rewrite pass
 ```
 
-### Шаги для добавления новой runtime-функции
+### Schritte zum Hinzufügen einer neuen Runtime-Funktion
 
 1. Add a row to `BuiltinStringRoster.def`: `NEVERC_BUILTIN_STRING_FN(NameId, "neverc_string_xxx", 1)`
 2. Implement the function body in the corresponding `BuiltinStringPrelude/*.inc`

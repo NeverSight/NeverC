@@ -10,8 +10,8 @@
 
 | المدمج | العلم | الافتراضي | الوصف |
 |--------|-------|-----------|-------|
-| [**`string`**](../builtin-string/README.ar.md) | `-fbuiltin-string` | معطل | نوع سلسلة نصية بدلالة القيمة مع أساليب النقطة، إدارة تلقائية للذاكرة ودعم UTF-8 أصلي |
-| [**mimalloc**](mimalloc/README.ar.md) | `-fbuiltin-mimalloc` | معطل | مخصص ذاكرة عالي الأداء يستبدل بشفافية `malloc`/`free`/`calloc`/`realloc` |
+| [**`string`**](string/README.ar.md) | `-fbuiltin-string` | معطل | نوع سلسلة نصية بدلالة القيمة مع أساليب النقطة، إدارة تلقائية للذاكرة ودعم UTF-8 أصلي |
+| [**mimalloc**](mimalloc/README.ar.md) | `-fbuiltin-mimalloc` | **مفعّل** | مخصص ذاكرة عالي الأداء يستبدل بشفافية `malloc`/`free`/`calloc`/`realloc` |
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -37,7 +37,7 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | **استراتيجية الدمج** | حسب الطلب (BFS رسم بياني للاستدعاءات) | أرشيف كامل (جميع الرموز) |
 | **bitcode المنصة** | واحد (مستقل عن البنية) | لكل نظام تشغيل (Linux / Darwin / Windows) |
 | **معالجة الرموز** | الكل مُداخل | نقاط دخول التجاوز تحتفظ بالربط الخارجي |
-| **ماكرو المعالج المسبق** | `__NEVERC_BUILTIN_STRING__` | `__NEVERC_MIMALLOC__` |
+| **ماكرو المعالج المسبق** | *(لا يوجد)* | `__NEVERC_MIMALLOC__` |
 | **وضع الشلكود** | تفعيل تلقائي، إعادة كتابة الحلبة | مكبوت (لا كومة في الشلكود) |
 
 ---

@@ -36,4 +36,4 @@ Die Shellcode-Kompilierungspipeline ist NeverCs Hauptforschungsschwerpunkt. Arch
 
 NeverC bietet einen eingebauten `string`-Werttyp für C, der `std::string`-Ergonomie und `QString`-Unicode-Unterstützung vereint. Aktivierung über `-fbuiltin-string` (automatisch im `-fshellcode`-Modus).
 
-**[Eingebauter String →](builtin-string/README.de.md)**
+**[Eingebauter String →](builtins/string/README.de.md)**

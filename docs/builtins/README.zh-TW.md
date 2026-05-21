@@ -10,8 +10,8 @@ NeverC 透過可選的內建執行時擴展標準 C，這些執行時以 LLVM bi
 
 | 內建功能 | 旗標 | 預設 | 描述 |
 |---------|------|------|------|
-| [**`string`**](../builtin-string/README.zh-TW.md) | `-fbuiltin-string` | 關閉 | 值語義字串型別，支援點呼叫方法、自動記憶體管理和原生 UTF-8 |
-| [**mimalloc**](mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | 關閉 | 高效能記憶體配置器，透明替換 `malloc`/`free`/`calloc`/`realloc` |
+| [**`string`**](string/README.zh-TW.md) | `-fbuiltin-string` | 關閉 | 值語義字串型別，支援點呼叫方法、自動記憶體管理和原生 UTF-8 |
+| [**mimalloc**](mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | **開啟** | 高效能記憶體配置器，透明替換 `malloc`/`free`/`calloc`/`realloc` |
 
 兩個內建功能預設關閉，需要明確啟用。可以組合使用：
 
@@ -88,7 +88,7 @@ ninja neverc                         # 階段 2：嵌入真實 bitcode
 | **合併策略** | 按需（BFS 呼叫圖，裁剪未使用） | 全量合併（whole-archive） |
 | **平台 bitcode** | 單一（架構中性） | 按 OS 分（Linux / Darwin / Windows） |
 | **符號處理** | 全部內部化 | 覆蓋入口保持外部連結 |
-| **預處理器巨集** | `__NEVERC_BUILTIN_STRING__` | `__NEVERC_MIMALLOC__` |
+| **預處理器巨集** | *（無）* | `__NEVERC_MIMALLOC__` |
 | **Shellcode 模式** | 自動啟用，arena 重寫 | 被抑制（shellcode 無堆積） |
 
 ---

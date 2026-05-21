@@ -1,16 +1,14 @@
-<div dir="rtl">
+**言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-**اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+[← NeverC 組み込みランタイムシステム](../README.ja.md) · [NeverC ドキュメント](../../README.ja.md)
 
-[→ نظام وقت التشغيل المدمج في NeverC](../builtins/README.ar.md) · [وثائق NeverC](../README.ar.md)
+# NeverC 組み込み `string` 型
 
-# نوع `string` المدمج في NeverC
+## 概要
 
-## نظرة عامة
+NeverC は C 言語向けの組み込み `string` 値型を提供します。C++ `std::string` のインターフェース設計と Qt `QString` の Unicode 機能を融合し、C コードでも安全かつ効率的な文字列操作を可能にします。
 
-يوفر NeverC نوع قيمة `string` مدمجًا للغة C. يجمع بين تصميم واجهة `std::string` في C++ وإمكانيات Unicode في `QString` من Qt، مما يتيح عمليات سلاسل نصية آمنة وفعالة في كود C.
-
-**التفعيل:** مرر `-fbuiltin-string` عند الترجمة (معطل افتراضيًا). وضع `-fshellcode` يفعّله تلقائيًا.
+**有効化:** コンパイル時に `-fbuiltin-string` を指定（デフォルト無効）。`-fshellcode` モードでは自動有効。
 
 ```bash
 neverc -fbuiltin-string main.c -o main
@@ -24,20 +22,20 @@ printf("Char count: %zu\n", msg.utf8_count());
 printf("Content: %s\n", msg.c_str());
 ```
 
-### Key Features
+### 主な特徴
 
-- **Value semantics**: `string` is a `{ data, len, cap }` three-field struct, passed and returned by value
-- **Automatic memory management**: The compiler attaches `CleanupAttr` to automatically release owned strings on scope exit — no manual `free` needed
-- **Native UTF-8**: All literals (including `L"..."`, `u"..."`, `U"..."`) are folded to UTF-8 at compile time
-- **Borrowed views**: Literal assignment `string s = "hello"` produces a zero-allocation view (`cap == 0`) that does not own memory
-- **Dot-call syntax**: `s.find("abc")`, `s.to_upper().trim()` are rewritten by Sema into corresponding C function calls
-- **Namespace isolation**: All runtime symbols use the `neverc_string_*` prefix, avoiding collisions with user identifiers like `string_eq` or `STRING_NPOS`
+- **値セマンティクス**: `string` は `{ data, len, cap }` の3フィールド構造体で、値渡し・値返し
+- **自動メモリ管理**: コンパイラが `CleanupAttr` を付与し、スコープ終了時に owned string を自動解放 — 手動 `free` 不要
+- **ネイティブ UTF-8**: すべてのリテラル（`L"..."`、`u"..."`、`U"..."` 含む）がコンパイル時に UTF-8 に変換
+- **借用ビュー**: リテラル代入 `string s = "hello"` はゼロアロケーションのビュー（`cap == 0`）を生成、メモリを所有しない
+- **ドットコール構文**: `s.find("abc")`、`s.to_upper().trim()` は Sema により対応する C 関数呼び出しに書き換え
+- **名前空間隔離**: すべてのランタイムシンボルは `neverc_string_*` プレフィックスを使用、`string_eq` や `STRING_NPOS` などのユーザー識別子との衝突を回避
 
 ---
 
-## المفاهيم الأساسية
+## 核心概念
 
-### تعريف النوع
+### 型定義
 
 ```c
 typedef struct __neverc_string {
@@ -47,9 +45,9 @@ typedef struct __neverc_string {
 } string;
 ```
 
-### نموذج الملكية: Owned مقابل Borrowed
+### 所有権モデル: Owned vs Borrowed
 
-The `cap` field serves double duty as both "capacity" and "ownership flag":
+`cap` フィールドは「容量」と「所有権フラグ」の二重の役割：
 
 | State | `cap` | Meaning | Example |
 |-------|-------|---------|---------|
@@ -63,9 +61,9 @@ string c = a.to_upper();      // Owned: transformation produces new buffer
 string d = neverc_string_view(buf, len); // Borrowed: wraps external buffer
 ```
 
-### إدارة الذاكرة التلقائية
+### 自動メモリ管理
 
-The compiler automatically handles the lifetime of owned strings:
+コンパイラは owned string のライフタイムを自動管理：
 
 ```c
 void example() {
@@ -76,16 +74,16 @@ void example() {
 }   // scope exit: b, c auto-released; a needs no release (borrowed)
 ```
 
-Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32_owned()` are also auto-released — Sema attaches `__neverc_wptr_cleanup` when it detects these initializations.
+ワイド文字ポインタ（`w_str()`、`to_utf16_owned()`、`to_utf32_owned()` の戻り値）も自動解放 — Sema がこれらの初期化を検出時に `__neverc_wptr_cleanup` を付与。
 
-### ضمانات الأمان
+### 安全性保証
 
-- **Forged handle protection**: Handles with `len > 0 && data == NULL` are intercepted by `__neverc_string_invalid`, short-circuiting to the empty string
-- **Oversized handle protection**: Handles with `len > NEVERC_STRING_MAX_LEN` are similarly intercepted
-- **Temporary safety**: `.c_str()` and `.data()` on temporaries (prvalues) trigger compiler error `err_neverc_string_cstr_temporary`, preventing dangling pointers
-- **Zero-leak testing**: All string tests on macOS run under `leaks --atExit`, asserting "0 leaks"
+- **偽造ハンドル防護**: `len > 0 && data == NULL` のハンドルは `__neverc_string_invalid` で遮断、空文字列にショートサーキット
+- **オーバーサイズハンドル防護**: `len > NEVERC_STRING_MAX_LEN` のハンドルも同様に遮断
+- **一時値安全性**: 一時値（prvalue）に対する `.c_str()` と `.data()` はコンパイルエラー `err_neverc_string_cstr_temporary` を発生、ダングリングポインタを防止
+- **ゼロリークテスト**: macOS 上のすべての string テストは `leaks --atExit` 下で実行、"0 leaks" をアサート
 
-### الثوابت
+### 定数
 
 | Constant | Value | Description |
 |----------|-------|-------------|
@@ -94,9 +92,9 @@ Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32
 
 ---
 
-## العوامل
+## 演算子
 
-Sema rewrites operators to corresponding runtime calls:
+Sema は演算子を対応するランタイム呼び出しに書き換え：
 
 | Operator | Equivalent Call | Return Type |
 |----------|----------------|-------------|
@@ -113,9 +111,9 @@ Sema rewrites operators to corresponding runtime calls:
 
 ---
 
-## مرجع API الكامل
+## 完全 API リファレンス
 
-### الحجم والوصول
+### サイズとアクセス
 
 | Dot-call | Aliases | Runtime Function | Signature | Returns |
 |----------|---------|-----------------|-----------|---------|
@@ -127,9 +125,9 @@ Sema rewrites operators to corresponding runtime calls:
 | `s.front()` | — | `neverc_string_front` | `(string s) → char` | First byte |
 | `s.back()` | — | `neverc_string_back` | `(string s) → char` | Last byte |
 
-> **Note**: `.c_str()` and `.data()` return borrowed pointers into the string's internal buffer. Using them on temporaries is a compile error.
+> **注意**: `.c_str()` と `.data()` は string 内部バッファへの借用ポインタを返します。一時値への使用はコンパイルエラーになります。
 
-### السعة
+### 容量
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -138,7 +136,7 @@ Sema rewrites operators to corresponding runtime calls:
 | `s.capacity()` | `neverc_string_capacity` | `(const string *s) → size_t` | Current capacity (passed via `&s`) |
 | `s.max_size()` | `neverc_string_max_size` | `(string s) → size_t` | Returns `NEVERC_STRING_MAX_LEN` |
 
-### المساواة والمقارنة
+### 等価性と比較
 
 | Dot-call | Runtime Function | Signature | Returns |
 |----------|-----------------|-----------|---------|
@@ -147,9 +145,9 @@ Sema rewrites operators to corresponding runtime calls:
 | `s.compare(pos, n, t)` | `neverc_string_compare_substr` | `(string a, size_t pos, size_t n, string b) → int` | Substring compare |
 | `s.compare(p1, n1, t, p2, n2)` | `neverc_string_compare_substr2` | `(string a, size_t p1, size_t n1, string b, size_t p2, size_t n2) → int` | Two-substring compare |
 
-#### غير حساس لحالة الأحرف ASCII
+#### ASCII 大文字小文字不区別
 
-Fold rule: `A-Z → a-z`, all other bytes (including `>= 0x80` UTF-8 continuation bytes) unchanged. Suitable for HTTP header matching, file extension comparison, etc.
+折り畳みルール: `A-Z → a-z`、他のバイト（`>= 0x80` の UTF-8 継続バイト含む）は不変。HTTP ヘッダーマッチング、ファイル拡張子比較などに適用。
 
 | Dot-call | Runtime Function | Description |
 |----------|-----------------|-------------|
@@ -168,9 +166,9 @@ string path = "photo.PNG";
 if (path.ends_with_ic(".png")) { /* matches */ }
 ```
 
-### البحث
+### 検索
 
-All search functions support both string and char overloads — Sema dispatches automatically based on the first argument type.
+すべての検索関数は string と char の両方のオーバーロードをサポート — Sema が最初の引数の型に基づき自動ディスパッチ。
 
 | Dot-call | char overload | Runtime Function | Returns |
 |----------|---------------|-----------------|---------|
@@ -183,9 +181,9 @@ All search functions support both string and char overloads — Sema dispatches 
 | `s.ends_with(t)` | `s.ends_with(ch)` | `neverc_string_ends_with` / `ends_with_char` | Suffix match |
 | `s.count(t)` | `s.count(ch)` | `neverc_string_count` / `count_char` | Occurrence count |
 
-#### البحث بمجموعة الأحرف
+#### 文字集合検索
 
-Internally uses a 256-bit bitmap for O(1) character set membership testing, yielding O(n+m) overall complexity.
+内部で256ビットビットマップを使用し O(1) の文字集合メンバーシップテスト、全体計算量 O(n+m)。
 
 | Dot-call | With position | Runtime Function | Description |
 |----------|--------------|-----------------|-------------|
@@ -194,9 +192,9 @@ Internally uses a 256-bit bitmap for O(1) character set membership testing, yiel
 | `s.find_first_not_of(chars)` | `s.find_first_not_of(chars, pos)` | `neverc_string_find_first_not_of` / `_from` | First character **not in** `chars` |
 | `s.find_last_not_of(chars)` | `s.find_last_not_of(chars, pos)` | `neverc_string_find_last_not_of` / `_to` | Last character not in `chars` |
 
-Char overloads also work: `s.find_first_of('x')` is equivalent to `s.find('x')`, and `s.find_first_not_of(' ')` is the classic "skip leading spaces" idiom.
+char オーバーロードも利用可能: `s.find_first_of('x')` は `s.find('x')` と等価、`s.find_first_not_of(' ')` は定番の「先頭スペースをスキップ」イディオム。
 
-### سلسلة فرعية ونسخ
+### 部分文字列とコピー
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -205,13 +203,13 @@ Char overloads also work: `s.find_first_of('x')` is equivalent to `s.find('x')`,
 | `s.copy(out, n)` | `neverc_string_copy` | `(string s, char *out, size_t n) → size_t` | Copy to external buffer, returns bytes copied |
 | `s.copy(out, n, pos)` | `neverc_string_copy_from` | `(string s, char *out, size_t n, size_t pos) → size_t` | Copy starting from `pos` |
 
-### التعديل
+### 変更操作
 
-Mutation follows the value-type "consume input + return new value" pattern: the function consumes the input string (releases its owned buffer) and returns a new owned string. The compiler automatically rewrites `s.append(x)` as `s = neverc_string_append(s, x)`, appearing as "in-place modification" from the user's perspective.
+変更操作は値型の「入力を消費 + 新しい値を返す」パターンに従います: 関数は入力 string を消費（owned バッファを解放）し、新しい owned string を返します。コンパイラは `s.append(x)` を `s = neverc_string_append(s, x)` に自動書き換え、ユーザーから見ると「インプレース変更」に見えます。
 
-Only `assign`, `swap`, and `capacity` use `string *` pointer receivers (see "Pointer Receiver Methods" below).
+`assign`、`swap`、`capacity` のみが `string *` ポインタレシーバを使用（下記「ポインタレシーバメソッド」参照）。
 
-#### استهلاك + إرجاع قيمة جديدة
+#### 消費 + 新しい値を返す
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -241,9 +239,9 @@ Only `assign`, `swap`, and `capacity` use `string *` pointer receivers (see "Poi
 | `s.reverse()` | `neverc_string_reverse` | `(string s) → string` | Byte-level reversal |
 | `s.hash()` | `neverc_string_hash` | `(string s) → unsigned long long` | FNV-1a 64-bit hash |
 
-#### دوال بمستقبل مؤشر
+#### ポインタレシーバメソッド
 
-These methods need to operate directly on the caller's storage; Sema wraps the receiver as `&s`:
+これらのメソッドは呼び出し元のストレージを直接操作する必要があり、Sema はレシーバを `&s` にラップ：
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -284,7 +282,7 @@ for (size_t i = 0; i < count; i++)
 neverc_string_split_free(parts, count);
 ```
 
-### التحويل الرقمي
+### 数値変換
 
 | Direction | Dot-call | Runtime Function | Signature |
 |-----------|----------|-----------------|-----------|
@@ -295,7 +293,7 @@ neverc_string_split_free(parts, count);
 | string → int | `s.to_int()` | `neverc_string_to_int` | `(string s) → ptrdiff_t` |
 | string → uint | `s.to_uint()` | `neverc_string_to_uint` | `(string s) → size_t` |
 
-`to_int` / `to_uint` parse decimal digits only, stopping at the first non-digit character. `from_int_base` / `from_uint_base` support bases 2-36.
+`to_int` / `to_uint` は10進数字のみを解析、最初の非数字文字で停止。`from_int_base` / `from_uint_base` は 2-36 進数をサポート。
 
 ```c
 string hex = neverc_string_from_int_base(255, 16);  // "ff"
@@ -305,9 +303,9 @@ string s = "12345";
 ptrdiff_t v = s.to_int();  // 12345
 ```
 
-### دوال المصنع
+### ファクトリ関数
 
-Not used via dot-call; require the full `neverc_string_*` prefix:
+ドットコール経由では使用不可、完全な `neverc_string_*` プレフィックスが必要：
 
 | Runtime Function | Signature | Description |
 |-----------------|-----------|-------------|
@@ -324,11 +322,11 @@ Not used via dot-call; require the full `neverc_string_*` prefix:
 
 ---
 
-## التنسيق
+## フォーマット
 
-### `s.format(...)` — printf-style Formatting
+### `s.format(...)` — printf スタイルフォーマット
 
-`neverc_string_format` provides a libc-free printf subset:
+`neverc_string_format` は libc 非依存の printf サブセットを提供：
 
 ```c
 string name = "World";
@@ -336,7 +334,7 @@ string msg = "Hello %S, number=%d".format(name, 42);
 // msg = "Hello World, number=42"
 ```
 
-#### محددات التنسيق المدعومة
+#### サポートされるフォーマット指定子
 
 | Specifier | Type | Description |
 |-----------|------|-------------|
@@ -351,7 +349,7 @@ string msg = "Hello %S, number=%d".format(name, 42);
 | `%p` | `void *` | Pointer (lowercase hex with `0x` prefix) |
 | `%%` | — | Literal `%` |
 
-**`%s` vs `%S`:**
+**`%s` と `%S` の違い:**
 
 ```c
 string s = "NeverC";
@@ -360,9 +358,9 @@ string result = "hello %s, %S!".format(c, s);
 // %s takes const char *, %S takes string value
 ```
 
-### Using with Standard `printf`
+### 標準 `printf` との併用
 
-NeverC `string` cannot be passed directly to the C standard library's `printf`. Use `.c_str()` to convert:
+NeverC `string` は C 標準ライブラリの `printf` に直接渡せません。`.c_str()` で変換：
 
 ```c
 string s = "Hello World";
@@ -374,9 +372,9 @@ printf("Length: %zu\n", s.len);
 
 ## UTF-8 / Unicode
 
-Internally always UTF-8 encoded. Byte-level operations (`s.len`, `s.at(i)`, `s.find(...)`, etc.) work in **bytes**; codepoint-level operations use the `utf8_*` family:
+内部は常に UTF-8 エンコード。バイトレベル操作（`s.len`、`s.at(i)`、`s.find(...)` など）は**バイト**単位、コードポイントレベル操作は `utf8_*` ファミリーを使用：
 
-### عمليات نقاط الترميز
+### コードポイント操作
 
 | Dot-call | Aliases | Runtime Function | Returns |
 |----------|---------|-----------------|---------|
@@ -394,7 +392,7 @@ printf("Bytes: %zu\n", s.len);          // 10
 printf("Chars: %zu\n", s.utf8_count()); // 6
 ```
 
-### تحويل الترميز
+### エンコーディング変換
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -405,7 +403,7 @@ printf("Chars: %zu\n", s.utf8_count()); // 6
 | `s.w_str()` | `neverc_string_w_str` | `(string s) → wchar_t *` | Platform-adaptive: Windows=UTF-16, Linux/macOS=UTF-32 |
 | `s.to_latin1(out, cap)` | `neverc_string_to_latin1` | `(string s, char *out, size_t cap) → size_t` | Convert to Latin-1 (ISO-8859-1) |
 
-Pointers returned by `to_utf16_owned()`, `to_utf32_owned()`, and `w_str()` are **auto-released** (Sema attaches `__neverc_wptr_cleanup`). For manual release use `neverc_string_wfree(buf)`.
+`to_utf16_owned()`、`to_utf32_owned()`、`w_str()` の戻りポインタは**自動解放**（Sema が `__neverc_wptr_cleanup` を付与）。手動解放は `neverc_string_wfree(buf)` を使用。
 
 ```c
 // UTF-8 direct output (modern terminals support it natively)
@@ -421,9 +419,9 @@ MessageBoxW(NULL, ws, L"Title", MB_OK);
 
 ---
 
-## ترميز البايت
+## バイトエンコーディング
 
-All encoding methods consume the receiver and return a new owned string, supporting method chaining.
+すべてのエンコーディングメソッドはレシーバを消費し新しい owned string を返し、メソッドチェーンをサポート。
 
 ### Base64 / Base32 / Hex
 
@@ -447,7 +445,7 @@ string jwt_part = data.to_base64_url(); // URL-safe, no padding
 string hex = data.to_hex();             // "48656c6c6f2c204e657665724321"
 ```
 
-### URL / Form Encoding
+### URL / Form エンコーディング
 
 | Dot-call | Runtime Function | Standard | Description |
 |----------|-----------------|----------|-------------|
@@ -456,13 +454,13 @@ string hex = data.to_hex();             // "48656c6c6f2c204e657665724321"
 | `s.form_encode()` | `neverc_string_form_encode` | `application/x-www-form-urlencoded` | Space → `+`, `+` → `%2B` |
 | `s.form_decode()` | `neverc_string_form_decode` | same | `+` → space |
 
-> `url_encode` and `form_encode` are not interchangeable — form-encoded `+` decoded via `url_decode` stays as literal `+`.
+> `url_encode` と `form_encode` は互換性なし — `form_encode` でエンコードされた `+` を `url_decode` でデコードするとリテラル `+` のまま。
 
 ---
 
-## مُرمّزات الويب
+## Web コーデック
 
-HTML / JSON / CSV literal-level escaping/unescaping. Each pair maintains strict round-trip fidelity.
+HTML / JSON / CSV リテラルレベルのエスケープ/アンエスケープ。各ペアは厳密なラウンドトリップを維持。
 
 | Dot-call | Runtime Function | Standard | Description |
 |----------|-----------------|----------|-------------|
@@ -485,9 +483,9 @@ string escaped = json_val.json_escape();
 
 ---
 
-## تسلسل الدوال
+## メソッドチェーン
 
-All methods returning `string` support chaining. Intermediate values are auto-released with no leaks:
+`string` を返すすべてのメソッドはチェーンをサポート。中間値は自動解放、リーク無し：
 
 ```c
 string result = input.to_upper().trim().replace_all(" ", "_");
@@ -497,9 +495,9 @@ string cleaned = raw.url_decode().from_base64().trim();
 
 ---
 
-## أوضاع الترجمة
+## コンパイルモード
 
-### ثلاثة أوضاع تشغيل
+### 3つの動作モード
 
 | Mode | Description | String Function Body Source | Symbol Visibility |
 |------|-------------|---------------------------|-------------------|
@@ -507,9 +505,9 @@ string cleaned = raw.url_decode().from_base64().trim();
 | **Shellcode** | Position-independent flat binary | Full source prelude injection + arena rewrite | 0 symbols (AlwaysInliner) |
 | **LTO** | Link-time optimization | Same as Hosted, LTO DCE further prunes | 0 symbols |
 
-The final output binary **exposes no `neverc_string_*` symbols**.
+最終出力バイナリに**`neverc_string_*` シンボルは露出しません**。
 
-### أعلام المترجم
+### コンパイラフラグ
 
 | Flag | Description |
 |------|-------------|
@@ -518,7 +516,7 @@ The final output binary **exposes no `neverc_string_*` symbols**.
 | `-DNEVERC_STRING_ALLOC=xxx` | Custom allocator (triggers full source prelude) |
 | `-DNEVERC_STRING_FREE=xxx` | Custom free function |
 
-### معاملات قابلة للتكوين
+### 設定可能なパラメータ
 
 | Macro | Default | Description |
 |-------|---------|-------------|
@@ -532,11 +530,11 @@ The final output binary **exposes no `neverc_string_*` symbols**.
 
 ---
 
-## وضع Hosted: بنية Bitcode المُجمّعة مسبقًا
+## Hosted モード: プリコンパイル Bitcode アーキテクチャ
 
-At compiler build time, string runtime functions are precompiled into LLVM bitcode and embedded in the compiler binary. When compiling user code, only a thin header (struct + macros + extern declarations) is injected, and the bitcode is merged after CodeGen via `llvm::Linker::linkModules()`.
+コンパイラビルド時に string ランタイム関数は LLVM bitcode にプリコンパイルされ、コンパイラバイナリに埋め込まれます。ユーザーコードのコンパイル時には薄いヘッダー（struct + macros + extern 宣言）のみが注入され、CodeGen 後に `llvm::Linker::linkModules()` で bitcode がマージされます。
 
-### تدفق وقت البناء
+### ビルド時のフロー
 
 ```
 prelude .inc (11 fragments)
@@ -555,7 +553,7 @@ prelude .inc (11 fragments)
                                    (embedded in compiler binary)
 ```
 
-### ترجمة كود المستخدم
+### ユーザーコードのコンパイル
 
 ```
 user.c
@@ -582,15 +580,15 @@ user.c
   ▼ Output .o / bitcode
 ```
 
-### `kRuntimeFnAttr` — Cross-layer Function Identification
+### `kRuntimeFnAttr` — レイヤー横断の関数識別
 
-`StringRuntimeLinkerPass` is the only "name → attribute" conversion point in the entire codebase. All downstream IR passes identify runtime functions via `F.hasFnAttribute("neverc-string-runtime")` (a single bit check), eliminating string prefix matching.
+`StringRuntimeLinkerPass` はコードベース全体で唯一の「名前→属性」変換点。すべての下流 IR パスは `F.hasFnAttribute("neverc-string-runtime")`（単一ビットチェック）でランタイム関数を識別、文字列プレフィックスマッチングを排除。
 
-**Benefit:** Obfuscation passes can safely rename runtime functions without breaking the identification chain.
+**利点:** 難読化パスはランタイム関数を安全にリネームでき、識別チェーンを壊しません。
 
-### عملية التمهيد
+### ブートストラッププロセス
 
-Bitcode generation uses a two-stage bootstrap:
+Bitcode 生成は2段階ブートストラップを使用：
 
 ```bash
 ninja neverc                        # stage 1 (empty bitcode placeholder)
@@ -598,7 +596,7 @@ ninja neverc-bootstrap-string-bc    # compile string runtime with neverc itself 
 ninja neverc                        # stage 2 (embed real bitcode)
 ```
 
-### شروط الرجوع إلى Bitcode
+### Bitcode フォールバック条件
 
 | Condition | Reason |
 |-----------|--------|
@@ -608,9 +606,9 @@ ninja neverc                        # stage 2 (embed real bitcode)
 
 ---
 
-## وضع Shellcode
+## Shellcode モード
 
-Does not use bitcode merge; instead injects the full source prelude:
+bitcode マージを使用せず、完全なソース prelude を注入：
 
 ```
 FrontendAction: inject full prelude
@@ -628,17 +626,17 @@ FrontendAction: inject full prelude
     ▼ shellcode.bin
 ```
 
-`StringRuntimePass` rewrites `__builtin_malloc`/`__builtin_free` into a stack arena allocator:
-- All memory allocation happens on the stack, no external library linkage
-- Arena uses `{size, next, self, tag}` per-allocation headers for validation
-- User-mode arena defaults to 64 KB, kernel-mode to 4 KB
-- `AlwaysInliner` ultimately inlines all functions — zero standalone symbols in the shellcode
+`StringRuntimePass` は `__builtin_malloc`/`__builtin_free` をスタック arena アロケータに書き換え：
+- すべてのメモリ割り当てはスタック上、外部ライブラリリンケージなし
+- arena はバリデーション用に `{size, next, self, tag}` per-allocation ヘッダーを使用
+- ユーザーモード arena はデフォルト 64 KB、カーネルモードは 4 KB
+- `AlwaysInliner` は最終的にすべての関数をインライン化 — shellcode 内のスタンドアロンシンボルはゼロ
 
 ---
 
-## توزيع الدوال
+## メソッドディスパッチ
 
-Sema rewrites dot-call syntax into C function calls via `buildNeverCStringRuntimeCall()`:
+Sema は `buildNeverCStringRuntimeCall()` を通じてドットコール構文を C 関数呼び出しに書き換え：
 
 ```c
 // User writes
@@ -648,18 +646,18 @@ string result = s.find("hello");
 string result = neverc_string_find(s, __neverc_string_make_view("hello", 5));
 ```
 
-### أولوية التوزيع ذات الأربع طبقات
+### 4層ディスパッチ優先度
 
-When the user writes `s.method(args...)`, Sema searches for the target function in this priority order:
+ユーザーが `s.method(args...)` を書くと、Sema は以下の優先順序でターゲット関数を検索：
 
-1. **Char overload** (`BuiltinStringMethodCharOverloads.def`): Matches when first argument has integer/char type
-2. **Arity overload** (`BuiltinStringMethodOverloads.def`): Matches specialized versions by argument count
-3. **Default argument completion** (`BuiltinStringMethodDefaults.def`): Appends default values (e.g., `s.substr(pos)` → `s.substr(pos, NPOS)`)
-4. **Default mapping** (`BuiltinStringMethodNames.def`): General method → runtime function mapping
+1. **Char オーバーロード**（`BuiltinStringMethodCharOverloads.def`）: 最初の引数が整数/char 型の場合にマッチ
+2. **Arity オーバーロード**（`BuiltinStringMethodOverloads.def`）: 引数の数で特化版にマッチ
+3. **デフォルト引数補完**（`BuiltinStringMethodDefaults.def`）: デフォルト値を追加（例: `s.substr(pos)` → `s.substr(pos, NPOS)`）
+4. **デフォルトマッピング**（`BuiltinStringMethodNames.def`）: 汎用の method → ランタイム関数マッピング
 
-### أنواع المستقبِل
+### レシーバ型
 
-Most methods pass the receiver by `string` value. A few require pointer semantics:
+ほとんどのメソッドはレシーバを `string` 値で渡します。一部はポインタセマンティクスが必要：
 
 | Method | Receiver | Reason |
 |--------|----------|--------|
@@ -669,7 +667,7 @@ Most methods pass the receiver by `string` value. A few require pointer semantic
 
 ---
 
-## رؤية الرموز
+## シンボル可視性
 
 | Compilation Mode | `neverc_string_*` Symbols in Final Binary |
 |-----------------|------------------------------------------|
@@ -680,7 +678,7 @@ Most methods pass the receiver by `string` value. A few require pointer semantic
 
 ---
 
-## هيكل الملفات
+## ファイル構成
 
 ```
 neverc/
@@ -736,7 +734,7 @@ neverc/
     └── StringRuntimePass.cpp                   # Shellcode arena rewrite pass
 ```
 
-### خطوات إضافة دالة runtime جديدة
+### 新しいランタイム関数を追加する手順
 
 1. Add a row to `BuiltinStringRoster.def`: `NEVERC_BUILTIN_STRING_FN(NameId, "neverc_string_xxx", 1)`
 2. Implement the function body in the corresponding `BuiltinStringPrelude/*.inc`
@@ -744,5 +742,4 @@ neverc/
 4. (Optional) Add arity overloads in `BuiltinStringMethodOverloads.def`
 5. (Optional) Add char overloads in `BuiltinStringMethodCharOverloads.def`
 
-No other declaration sites need to change.
-</div>
+他の宣言箇所の変更は不要です。

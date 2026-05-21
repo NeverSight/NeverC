@@ -13,7 +13,7 @@ Enlazador integrado · Pipeline shellcode · Tipo `string` integrado
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#compilación-cruzada-a-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#características)
 
-[Documentación](../README.es.md) · [Guía shellcode](../shellcode-compiler/README.es.md) · [String integrado](../builtin-string/README.es.md)
+[Documentación](../README.es.md) · [Guía shellcode](../shellcode-compiler/README.es.md) · [String integrado](../builtins/string/README.es.md)
 
 </div>
 
@@ -30,7 +30,7 @@ NeverC compila C estándar en binarios alojados, ejecutables freestanding y shel
 - **[Compilador de shellcode](../shellcode-compiler/README.es.md)** — pipeline IR/MIR multietapa, extracción multiplataforma, resolución de importaciones/syscalls, modo kernel, auditoría de bytes prohibidos, arquitectura de plugins
 - **Enlazador integrado** — COFF, ELF y Mach-O en un solo binario; sin `ld` o `link.exe` externos
 - **Compilación cruzada** — PE de Windows desde macOS/Linux con SDK MSVC incluido
-- **[Tipo `string` integrado](../builtin-string/README.es.md)** — string con semántica de valor, sintaxis de métodos con punto, gestión automática de memoria y soporte nativo UTF-8
+- **[Tipo `string` integrado](../builtins/string/README.es.md)** — string con semántica de valor, sintaxis de métodos con punto, gestión automática de memoria y soporte nativo UTF-8
 - **Build LLVM ligero** — solo backends x86_64 / AArch64; rutas C++/ObjC/OpenMP eliminadas
 
 ## Ejemplo rápido

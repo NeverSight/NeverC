@@ -56,7 +56,7 @@ ninja neverc                         # Phase 3: Echtes Bitcode einbetten
 
 | Flag | Beschreibung |
 |------|-------------|
-| `-fbuiltin-mimalloc` | mimalloc-Override-Injektion aktivieren (standardmäßig aus) |
+| `-fbuiltin-mimalloc` | mimalloc-Override-Injektion aktivieren (standardmäßig an für Hosted-Builds) |
 | `-fno-builtin-mimalloc` | mimalloc-Injektion explizit deaktivieren |
 
 | Makro | Wert | Wann definiert |

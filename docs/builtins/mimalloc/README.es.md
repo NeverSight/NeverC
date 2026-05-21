@@ -56,7 +56,7 @@ ninja neverc                         # Etapa 3: Integrar bitcode real
 
 | Flag | Descripción |
 |------|-------------|
-| `-fbuiltin-mimalloc` | Activar inyección de override mimalloc (desactivado por defecto) |
+| `-fbuiltin-mimalloc` | Activar inyección de override mimalloc (activado por defecto para builds alojados) |
 | `-fno-builtin-mimalloc` | Desactivar explícitamente la inyección mimalloc |
 
 | Macro | Valor | Cuándo se define |

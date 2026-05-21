@@ -299,7 +299,7 @@ neverc/
 
 | Flag | Description |
 |------|-------------|
-| `-fbuiltin-mimalloc` | Enable mimalloc override injection (off by default) |
+| `-fbuiltin-mimalloc` | Enable mimalloc override injection (on by default for hosted builds) |
 | `-fno-builtin-mimalloc` | Explicitly disable mimalloc injection |
 
 ### Preprocessor Macro

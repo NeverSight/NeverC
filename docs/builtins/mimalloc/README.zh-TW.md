@@ -56,7 +56,7 @@ ninja neverc                         # 階段 3：嵌入真實 bitcode
 
 | 旗標 | 描述 |
 |------|------|
-| `-fbuiltin-mimalloc` | 啟用 mimalloc 覆蓋注入（預設關閉） |
+| `-fbuiltin-mimalloc` | 啟用 mimalloc 覆蓋注入（hosted 建置預設開啟） |
 | `-fno-builtin-mimalloc` | 明確停用 mimalloc 注入 |
 
 | 巨集 | 值 | 何時定義 |

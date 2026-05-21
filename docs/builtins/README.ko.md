@@ -10,8 +10,8 @@ NeverC는 옵트인 방식의 내장 런타임으로 표준 C를 확장합니다
 
 | 내장 기능 | 플래그 | 기본값 | 설명 |
 |----------|--------|--------|------|
-| [**`string`**](../builtin-string/README.ko.md) | `-fbuiltin-string` | 꺼짐 | 값 의미론 문자열 타입. 도트 호출 메서드, 자동 메모리 관리, 네이티브 UTF-8 |
-| [**mimalloc**](mimalloc/README.ko.md) | `-fbuiltin-mimalloc` | 꺼짐 | 고성능 메모리 할당자. `malloc`/`free`/`calloc`/`realloc` 투명 대체 |
+| [**`string`**](string/README.ko.md) | `-fbuiltin-string` | 꺼짐 | 값 의미론 문자열 타입. 도트 호출 메서드, 자동 메모리 관리, 네이티브 UTF-8 |
+| [**mimalloc**](mimalloc/README.ko.md) | `-fbuiltin-mimalloc` | **켜짐** | 고성능 메모리 할당자. `malloc`/`free`/`calloc`/`realloc` 투명 대체 |
 
 두 내장 기능은 기본적으로 비활성화되며 명시적 옵트인이 필요합니다. 조합 사용 가능:
 
@@ -39,7 +39,7 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | **병합 전략** | 온디맨드 (BFS 호출 그래프, 미사용 제거) | 전체 아카이브 (모든 심볼 유지) |
 | **플랫폼 bitcode** | 단일 (아키텍처 독립) | OS별 (Linux / Darwin / Windows) |
 | **심볼 처리** | 모두 내부화 | 오버라이드 진입점은 외부 링크 유지 |
-| **전처리기 매크로** | `__NEVERC_BUILTIN_STRING__` | `__NEVERC_MIMALLOC__` |
+| **전처리기 매크로** | *(없음)* | `__NEVERC_MIMALLOC__` |
 | **셸코드 모드** | 자동 활성화, 아레나 재작성 | 억제 (셸코드에 힙 없음) |
 
 ---

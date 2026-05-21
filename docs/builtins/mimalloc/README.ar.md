@@ -56,7 +56,7 @@ ninja neverc                         # المرحلة 3: تضمين bitcode ال
 
 | العلم | الوصف |
 |-------|-------|
-| `-fbuiltin-mimalloc` | تفعيل حقن تجاوز mimalloc (معطل افتراضياً) |
+| `-fbuiltin-mimalloc` | تفعيل حقن تجاوز mimalloc (مفعّل افتراضياً للبناءات المستضافة) |
 | `-fno-builtin-mimalloc` | تعطيل حقن mimalloc صراحة |
 
 | الماكرو | القيمة | متى يُعرَّف |

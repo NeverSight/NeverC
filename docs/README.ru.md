@@ -36,4 +36,4 @@
 
 NeverC предоставляет встроенный тип-значение `string` для C, сочетающий эргономику `std::string` и поддержку Unicode уровня `QString`. Включается через `-fbuiltin-string` (автоматически в режиме `-fshellcode`).
 
-**[Встроенная строка →](builtin-string/README.ru.md)**
+**[Встроенная строка →](builtins/string/README.ru.md)**

@@ -56,7 +56,7 @@ ninja neverc                         # 스테이지 3: 실제 bitcode 임베드
 
 | 플래그 | 설명 |
 |--------|------|
-| `-fbuiltin-mimalloc` | mimalloc 오버라이드 주입 활성화 (기본 꺼짐) |
+| `-fbuiltin-mimalloc` | mimalloc 오버라이드 주입 활성화 (호스트 빌드에서 기본 켜짐) |
 | `-fno-builtin-mimalloc` | mimalloc 주입 명시적 비활성화 |
 
 | 매크로 | 값 | 정의 조건 |

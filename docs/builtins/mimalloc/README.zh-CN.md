@@ -241,7 +241,7 @@ neverc/
 
 | 标志 | 描述 |
 |------|------|
-| `-fbuiltin-mimalloc` | 启用 mimalloc 覆盖注入（默认关闭） |
+| `-fbuiltin-mimalloc` | 启用 mimalloc 覆盖注入（hosted 构建默认开启） |
 | `-fno-builtin-mimalloc` | 显式禁用 mimalloc 注入 |
 
 ### 预处理器宏

@@ -10,8 +10,8 @@ NeverC étend le C standard avec des runtimes intégrés optionnels, embarqués 
 
 | Intégré | Drapeau | Défaut | Description |
 |---------|---------|--------|-------------|
-| [**`string`**](../builtin-string/README.fr.md) | `-fbuiltin-string` | Désactivé | Type chaîne à sémantique de valeur avec méthodes par appel pointé, gestion automatique de la mémoire et UTF-8 natif |
-| [**mimalloc**](mimalloc/README.fr.md) | `-fbuiltin-mimalloc` | Désactivé | Allocateur mémoire haute performance remplaçant de manière transparente `malloc`/`free`/`calloc`/`realloc` |
+| [**`string`**](string/README.fr.md) | `-fbuiltin-string` | Désactivé | Type chaîne à sémantique de valeur avec méthodes par appel pointé, gestion automatique de la mémoire et UTF-8 natif |
+| [**mimalloc**](mimalloc/README.fr.md) | `-fbuiltin-mimalloc` | **Activé** | Allocateur mémoire haute performance remplaçant de manière transparente `malloc`/`free`/`calloc`/`realloc` |
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -37,7 +37,7 @@ Tous les intégrés partagent la même architecture à quatre couches :
 | **Stratégie de fusion** | À la demande (BFS graphe d'appels) | Archive complète (tous les symboles) |
 | **Bitcode plateforme** | Unique (indépendant de l'architecture) | Par OS (Linux / Darwin / Windows) |
 | **Traitement des symboles** | Tous internalisés | Points d'entrée d'override restent externes |
-| **Macro préprocesseur** | `__NEVERC_BUILTIN_STRING__` | `__NEVERC_MIMALLOC__` |
+| **Macro préprocesseur** | *(aucune)* | `__NEVERC_MIMALLOC__` |
 | **Mode shellcode** | Auto-activé, réécriture arena | Supprimé (pas de tas en shellcode) |
 
 ---

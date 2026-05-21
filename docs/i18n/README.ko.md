@@ -13,7 +13,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#windows로-크로스-컴파일)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#기능)
 
-[문서 색인](../README.ko.md) · [Shellcode 가이드](../shellcode-compiler/README.ko.md) · [내장 문자열](../builtin-string/README.ko.md)
+[문서 색인](../README.ko.md) · [Shellcode 가이드](../shellcode-compiler/README.ko.md) · [내장 문자열](../builtins/string/README.ko.md)
 
 </div>
 
@@ -30,7 +30,7 @@ NeverC는 표준 C를 호스트 바이너리, 프리스탠딩 실행 파일, 위
 - **[Shellcode 컴파일러](../shellcode-compiler/README.ko.md)** — 다단계 IR/MIR 파이프라인, 크로스 플랫폼 추출, 임포트/시스템 콜 저하, 커널 모드, 배드 바이트 감사, 플러그인 아키텍처
 - **통합 링커** — 단일 바이너리에서 COFF, ELF, Mach-O; 외부 `ld` / `link.exe` 불필요
 - **크로스 컴파일** — macOS/Linux에서 번들 MSVC SDK로 Windows PE 빌드
-- **[내장 `string` 타입](../builtin-string/README.ko.md)** — 값 의미론 문자열, 점 표기 메서드 구문, 자동 메모리 관리, 네이티브 UTF-8 지원
+- **[내장 `string` 타입](../builtins/string/README.ko.md)** — 값 의미론 문자열, 점 표기 메서드 구문, 자동 메모리 관리, 네이티브 UTF-8 지원
 - **경량 LLVM 빌드** — x86_64 / AArch64 백엔드만; C++/ObjC/OpenMP 경로 제거
 
 ## 빠른 예제

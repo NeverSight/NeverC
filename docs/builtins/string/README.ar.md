@@ -1,14 +1,16 @@
-**Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+<div dir="rtl">
 
-[← NeverC Built-in Runtime System](../builtins/README.md) · [NeverC Documentation](../README.md)
+**اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# NeverC Built-in `string` Type
+[→ نظام وقت التشغيل المدمج في NeverC](../README.ar.md) · [وثائق NeverC](../../README.ar.md)
 
-## Overview
+# نوع `string` المدمج في NeverC
 
-NeverC provides a built-in `string` value type for C. It combines the interface design of C++ `std::string` with Qt `QString`'s Unicode capabilities, enabling safe and efficient string operations in C code.
+## نظرة عامة
 
-**Enabling:** Pass `-fbuiltin-string` at compile time (off by default). `-fshellcode` mode enables it automatically.
+يوفر NeverC نوع قيمة `string` مدمجًا للغة C. يجمع بين تصميم واجهة `std::string` في C++ وإمكانيات Unicode في `QString` من Qt، مما يتيح عمليات سلاسل نصية آمنة وفعالة في كود C.
+
+**التفعيل:** مرر `-fbuiltin-string` عند الترجمة (معطل افتراضيًا). وضع `-fshellcode` يفعّله تلقائيًا.
 
 ```bash
 neverc -fbuiltin-string main.c -o main
@@ -33,9 +35,9 @@ printf("Content: %s\n", msg.c_str());
 
 ---
 
-## Core Concepts
+## المفاهيم الأساسية
 
-### Type Definition
+### تعريف النوع
 
 ```c
 typedef struct __neverc_string {
@@ -45,7 +47,7 @@ typedef struct __neverc_string {
 } string;
 ```
 
-### Ownership Model: Owned vs Borrowed
+### نموذج الملكية: Owned مقابل Borrowed
 
 The `cap` field serves double duty as both "capacity" and "ownership flag":
 
@@ -61,7 +63,7 @@ string c = a.to_upper();      // Owned: transformation produces new buffer
 string d = neverc_string_view(buf, len); // Borrowed: wraps external buffer
 ```
 
-### Automatic Memory Management
+### إدارة الذاكرة التلقائية
 
 The compiler automatically handles the lifetime of owned strings:
 
@@ -76,14 +78,14 @@ void example() {
 
 Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32_owned()` are also auto-released — Sema attaches `__neverc_wptr_cleanup` when it detects these initializations.
 
-### Safety Guarantees
+### ضمانات الأمان
 
 - **Forged handle protection**: Handles with `len > 0 && data == NULL` are intercepted by `__neverc_string_invalid`, short-circuiting to the empty string
 - **Oversized handle protection**: Handles with `len > NEVERC_STRING_MAX_LEN` are similarly intercepted
 - **Temporary safety**: `.c_str()` and `.data()` on temporaries (prvalues) trigger compiler error `err_neverc_string_cstr_temporary`, preventing dangling pointers
 - **Zero-leak testing**: All string tests on macOS run under `leaks --atExit`, asserting "0 leaks"
 
-### Constants
+### الثوابت
 
 | Constant | Value | Description |
 |----------|-------|-------------|
@@ -92,7 +94,7 @@ Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32
 
 ---
 
-## Operators
+## العوامل
 
 Sema rewrites operators to corresponding runtime calls:
 
@@ -111,9 +113,9 @@ Sema rewrites operators to corresponding runtime calls:
 
 ---
 
-## Complete API Reference
+## مرجع API الكامل
 
-### Size & Access
+### الحجم والوصول
 
 | Dot-call | Aliases | Runtime Function | Signature | Returns |
 |----------|---------|-----------------|-----------|---------|
@@ -127,7 +129,7 @@ Sema rewrites operators to corresponding runtime calls:
 
 > **Note**: `.c_str()` and `.data()` return borrowed pointers into the string's internal buffer. Using them on temporaries is a compile error.
 
-### Capacity
+### السعة
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -136,7 +138,7 @@ Sema rewrites operators to corresponding runtime calls:
 | `s.capacity()` | `neverc_string_capacity` | `(const string *s) → size_t` | Current capacity (passed via `&s`) |
 | `s.max_size()` | `neverc_string_max_size` | `(string s) → size_t` | Returns `NEVERC_STRING_MAX_LEN` |
 
-### Equality & Comparison
+### المساواة والمقارنة
 
 | Dot-call | Runtime Function | Signature | Returns |
 |----------|-----------------|-----------|---------|
@@ -145,7 +147,7 @@ Sema rewrites operators to corresponding runtime calls:
 | `s.compare(pos, n, t)` | `neverc_string_compare_substr` | `(string a, size_t pos, size_t n, string b) → int` | Substring compare |
 | `s.compare(p1, n1, t, p2, n2)` | `neverc_string_compare_substr2` | `(string a, size_t p1, size_t n1, string b, size_t p2, size_t n2) → int` | Two-substring compare |
 
-#### ASCII Case-Insensitive
+#### غير حساس لحالة الأحرف ASCII
 
 Fold rule: `A-Z → a-z`, all other bytes (including `>= 0x80` UTF-8 continuation bytes) unchanged. Suitable for HTTP header matching, file extension comparison, etc.
 
@@ -166,7 +168,7 @@ string path = "photo.PNG";
 if (path.ends_with_ic(".png")) { /* matches */ }
 ```
 
-### Search
+### البحث
 
 All search functions support both string and char overloads — Sema dispatches automatically based on the first argument type.
 
@@ -181,7 +183,7 @@ All search functions support both string and char overloads — Sema dispatches 
 | `s.ends_with(t)` | `s.ends_with(ch)` | `neverc_string_ends_with` / `ends_with_char` | Suffix match |
 | `s.count(t)` | `s.count(ch)` | `neverc_string_count` / `count_char` | Occurrence count |
 
-#### Character Set Search
+#### البحث بمجموعة الأحرف
 
 Internally uses a 256-bit bitmap for O(1) character set membership testing, yielding O(n+m) overall complexity.
 
@@ -194,7 +196,7 @@ Internally uses a 256-bit bitmap for O(1) character set membership testing, yiel
 
 Char overloads also work: `s.find_first_of('x')` is equivalent to `s.find('x')`, and `s.find_first_not_of(' ')` is the classic "skip leading spaces" idiom.
 
-### Substring & Copy
+### سلسلة فرعية ونسخ
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -203,13 +205,13 @@ Char overloads also work: `s.find_first_of('x')` is equivalent to `s.find('x')`,
 | `s.copy(out, n)` | `neverc_string_copy` | `(string s, char *out, size_t n) → size_t` | Copy to external buffer, returns bytes copied |
 | `s.copy(out, n, pos)` | `neverc_string_copy_from` | `(string s, char *out, size_t n, size_t pos) → size_t` | Copy starting from `pos` |
 
-### Mutation
+### التعديل
 
 Mutation follows the value-type "consume input + return new value" pattern: the function consumes the input string (releases its owned buffer) and returns a new owned string. The compiler automatically rewrites `s.append(x)` as `s = neverc_string_append(s, x)`, appearing as "in-place modification" from the user's perspective.
 
 Only `assign`, `swap`, and `capacity` use `string *` pointer receivers (see "Pointer Receiver Methods" below).
 
-#### Consume + Return New Value
+#### استهلاك + إرجاع قيمة جديدة
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -239,7 +241,7 @@ Only `assign`, `swap`, and `capacity` use `string *` pointer receivers (see "Poi
 | `s.reverse()` | `neverc_string_reverse` | `(string s) → string` | Byte-level reversal |
 | `s.hash()` | `neverc_string_hash` | `(string s) → unsigned long long` | FNV-1a 64-bit hash |
 
-#### Pointer Receiver Methods
+#### دوال بمستقبل مؤشر
 
 These methods need to operate directly on the caller's storage; Sema wraps the receiver as `&s`:
 
@@ -282,7 +284,7 @@ for (size_t i = 0; i < count; i++)
 neverc_string_split_free(parts, count);
 ```
 
-### Numeric Conversion
+### التحويل الرقمي
 
 | Direction | Dot-call | Runtime Function | Signature |
 |-----------|----------|-----------------|-----------|
@@ -303,7 +305,7 @@ string s = "12345";
 ptrdiff_t v = s.to_int();  // 12345
 ```
 
-### Factory Functions
+### دوال المصنع
 
 Not used via dot-call; require the full `neverc_string_*` prefix:
 
@@ -322,7 +324,7 @@ Not used via dot-call; require the full `neverc_string_*` prefix:
 
 ---
 
-## Formatting
+## التنسيق
 
 ### `s.format(...)` — printf-style Formatting
 
@@ -334,7 +336,7 @@ string msg = "Hello %S, number=%d".format(name, 42);
 // msg = "Hello World, number=42"
 ```
 
-#### Supported Format Specifiers
+#### محددات التنسيق المدعومة
 
 | Specifier | Type | Description |
 |-----------|------|-------------|
@@ -374,7 +376,7 @@ printf("Length: %zu\n", s.len);
 
 Internally always UTF-8 encoded. Byte-level operations (`s.len`, `s.at(i)`, `s.find(...)`, etc.) work in **bytes**; codepoint-level operations use the `utf8_*` family:
 
-### Codepoint Operations
+### عمليات نقاط الترميز
 
 | Dot-call | Aliases | Runtime Function | Returns |
 |----------|---------|-----------------|---------|
@@ -392,7 +394,7 @@ printf("Bytes: %zu\n", s.len);          // 10
 printf("Chars: %zu\n", s.utf8_count()); // 6
 ```
 
-### Encoding Conversion
+### تحويل الترميز
 
 | Dot-call | Runtime Function | Signature | Description |
 |----------|-----------------|-----------|-------------|
@@ -419,7 +421,7 @@ MessageBoxW(NULL, ws, L"Title", MB_OK);
 
 ---
 
-## Byte Encoding
+## ترميز البايت
 
 All encoding methods consume the receiver and return a new owned string, supporting method chaining.
 
@@ -458,7 +460,7 @@ string hex = data.to_hex();             // "48656c6c6f2c204e657665724321"
 
 ---
 
-## Web Codecs
+## مُرمّزات الويب
 
 HTML / JSON / CSV literal-level escaping/unescaping. Each pair maintains strict round-trip fidelity.
 
@@ -483,7 +485,7 @@ string escaped = json_val.json_escape();
 
 ---
 
-## Method Chaining
+## تسلسل الدوال
 
 All methods returning `string` support chaining. Intermediate values are auto-released with no leaks:
 
@@ -495,9 +497,9 @@ string cleaned = raw.url_decode().from_base64().trim();
 
 ---
 
-## Compilation Modes
+## أوضاع الترجمة
 
-### Three Operating Modes
+### ثلاثة أوضاع تشغيل
 
 | Mode | Description | String Function Body Source | Symbol Visibility |
 |------|-------------|---------------------------|-------------------|
@@ -507,7 +509,7 @@ string cleaned = raw.url_decode().from_base64().trim();
 
 The final output binary **exposes no `neverc_string_*` symbols**.
 
-### Compiler Flags
+### أعلام المترجم
 
 | Flag | Description |
 |------|-------------|
@@ -516,7 +518,7 @@ The final output binary **exposes no `neverc_string_*` symbols**.
 | `-DNEVERC_STRING_ALLOC=xxx` | Custom allocator (triggers full source prelude) |
 | `-DNEVERC_STRING_FREE=xxx` | Custom free function |
 
-### Configurable Knobs
+### معاملات قابلة للتكوين
 
 | Macro | Default | Description |
 |-------|---------|-------------|
@@ -530,11 +532,11 @@ The final output binary **exposes no `neverc_string_*` symbols**.
 
 ---
 
-## Hosted Mode: Precompiled Bitcode Architecture
+## وضع Hosted: بنية Bitcode المُجمّعة مسبقًا
 
 At compiler build time, string runtime functions are precompiled into LLVM bitcode and embedded in the compiler binary. When compiling user code, only a thin header (struct + macros + extern declarations) is injected, and the bitcode is merged after CodeGen via `llvm::Linker::linkModules()`.
 
-### Build-time Flow
+### تدفق وقت البناء
 
 ```
 prelude .inc (11 fragments)
@@ -553,7 +555,7 @@ prelude .inc (11 fragments)
                                    (embedded in compiler binary)
 ```
 
-### User Code Compilation
+### ترجمة كود المستخدم
 
 ```
 user.c
@@ -586,7 +588,7 @@ user.c
 
 **Benefit:** Obfuscation passes can safely rename runtime functions without breaking the identification chain.
 
-### Bootstrap Process
+### عملية التمهيد
 
 Bitcode generation uses a two-stage bootstrap:
 
@@ -596,7 +598,7 @@ ninja neverc-bootstrap-string-bc    # compile string runtime with neverc itself 
 ninja neverc                        # stage 2 (embed real bitcode)
 ```
 
-### Bitcode Fallback Conditions
+### شروط الرجوع إلى Bitcode
 
 | Condition | Reason |
 |-----------|--------|
@@ -606,7 +608,7 @@ ninja neverc                        # stage 2 (embed real bitcode)
 
 ---
 
-## Shellcode Mode
+## وضع Shellcode
 
 Does not use bitcode merge; instead injects the full source prelude:
 
@@ -634,7 +636,7 @@ FrontendAction: inject full prelude
 
 ---
 
-## Method Dispatch
+## توزيع الدوال
 
 Sema rewrites dot-call syntax into C function calls via `buildNeverCStringRuntimeCall()`:
 
@@ -646,7 +648,7 @@ string result = s.find("hello");
 string result = neverc_string_find(s, __neverc_string_make_view("hello", 5));
 ```
 
-### 4-Layer Dispatch Priority
+### أولوية التوزيع ذات الأربع طبقات
 
 When the user writes `s.method(args...)`, Sema searches for the target function in this priority order:
 
@@ -655,7 +657,7 @@ When the user writes `s.method(args...)`, Sema searches for the target function 
 3. **Default argument completion** (`BuiltinStringMethodDefaults.def`): Appends default values (e.g., `s.substr(pos)` → `s.substr(pos, NPOS)`)
 4. **Default mapping** (`BuiltinStringMethodNames.def`): General method → runtime function mapping
 
-### Receiver Types
+### أنواع المستقبِل
 
 Most methods pass the receiver by `string` value. A few require pointer semantics:
 
@@ -667,7 +669,7 @@ Most methods pass the receiver by `string` value. A few require pointer semantic
 
 ---
 
-## Symbol Visibility
+## رؤية الرموز
 
 | Compilation Mode | `neverc_string_*` Symbols in Final Binary |
 |-----------------|------------------------------------------|
@@ -678,7 +680,7 @@ Most methods pass the receiver by `string` value. A few require pointer semantic
 
 ---
 
-## File Structure
+## هيكل الملفات
 
 ```
 neverc/
@@ -734,7 +736,7 @@ neverc/
     └── StringRuntimePass.cpp                   # Shellcode arena rewrite pass
 ```
 
-### Steps to Add a New Runtime Function
+### خطوات إضافة دالة runtime جديدة
 
 1. Add a row to `BuiltinStringRoster.def`: `NEVERC_BUILTIN_STRING_FN(NameId, "neverc_string_xxx", 1)`
 2. Implement the function body in the corresponding `BuiltinStringPrelude/*.inc`
@@ -743,3 +745,4 @@ neverc/
 5. (Optional) Add char overloads in `BuiltinStringMethodCharOverloads.def`
 
 No other declaration sites need to change.
+</div>

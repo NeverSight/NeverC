@@ -10,10 +10,10 @@ NeverC 通过可选的内置运行时扩展标准 C，这些运行时以 LLVM bi
 
 | 内置功能 | 标志 | 默认 | 描述 |
 |---------|------|------|------|
-| [**`string`**](../builtin-string/README.zh-CN.md) | `-fbuiltin-string` | 关闭 | 值语义字符串类型，支持点调用方法、自动内存管理和原生 UTF-8 |
-| [**mimalloc**](mimalloc/README.zh-CN.md) | `-fbuiltin-mimalloc` | 关闭 | 高性能内存分配器，透明替换 `malloc`/`free`/`calloc`/`realloc` |
+| [**`string`**](string/README.zh-CN.md) | `-fbuiltin-string` | 关闭 | 值语义字符串类型，支持点调用方法、自动内存管理和原生 UTF-8 |
+| [**mimalloc**](mimalloc/README.zh-CN.md) | `-fbuiltin-mimalloc` | **开启** | 高性能内存分配器，透明替换 `malloc`/`free`/`calloc`/`realloc` |
 
-两个内置功能默认关闭，需要显式启用。可以组合使用：
+`string` 内置需要显式启用；mimalloc 对所有 hosted 构建默认开启（内核、shellcode 和 freestanding 模式下自动抑制）。可以组合使用：
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -116,7 +116,7 @@ if (LangOpts.BuiltinMimalloc) {
 | **合并策略** | 按需（BFS 调用图，裁剪未使用） | 全量合并（whole-archive，所有符号保留） |
 | **平台 bitcode** | 单一（架构中性） | 按 OS 分（Linux / Darwin / Windows） |
 | **符号处理** | 全部内部化 | 覆盖入口保持外部链接 |
-| **预处理器宏** | `__NEVERC_BUILTIN_STRING__` | `__NEVERC_MIMALLOC__` |
+| **预处理器宏** | *（无）* | `__NEVERC_MIMALLOC__` |
 | **Shellcode 模式** | 自动启用，arena 重写 | 被抑制（shellcode 无堆） |
 | **优化级别** | `-O0`（bitcode 编译） | `-O2`（性能关键的分配器） |
 | **DCE** | 预合并裁剪 + 后合并标记清扫 | 无 DCE（whole-archive 语义） |

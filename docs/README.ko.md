@@ -36,4 +36,4 @@ Shellcode 컴파일 파이프라인은 NeverC의 핵심 연구 영역입니다. 
 
 NeverC는 C 언어를 위한 내장 `string` 값 타입을 제공합니다. `std::string`의 사용 편의성과 `QString` 수준의 Unicode 지원을 C에 제공합니다. `-fbuiltin-string`으로 활성화 (`-fshellcode` 모드에서는 자동 활성화).
 
-**[내장 문자열 →](builtin-string/README.ko.md)**
+**[내장 문자열 →](builtins/string/README.ko.md)**

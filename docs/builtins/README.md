@@ -8,12 +8,13 @@ NeverC extends standard C with opt-in built-in runtimes that are embedded direct
 
 ## Available Built-ins
 
-| Built-in | Flag | Default | Description |
-|----------|------|---------|-------------|
-| [**`string`**](../builtin-string/README.md) | `-fbuiltin-string` | Off | Value-semantic string type with dot-call methods, automatic memory management, and native UTF-8 |
-| [**mimalloc**](mimalloc/README.md) | `-fbuiltin-mimalloc` | Off | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
 
-Both built-ins are disabled by default and require explicit opt-in. They can be combined:
+| Built-in                                    | Flag                 | Default | Description                                                                                       |
+| ------------------------------------------- | -------------------- | ------- | ------------------------------------------------------------------------------------------------- |
+| `**[string](string/README.md)`** | `-fbuiltin-string`   | Off     | Value-semantic string type with dot-call methods, automatic memory management, and native UTF-8   |
+| **[mimalloc](mimalloc/README.md)**          | `-fbuiltin-mimalloc` | **On**  | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
+
+The `string` built-in requires explicit opt-in; mimalloc is enabled by default for all hosted builds (automatically suppressed in kernel, shellcode, and freestanding modes). They can be combined:
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -68,10 +69,12 @@ Driver flags (`-fbuiltin-<name>` / `-fno-builtin-<name>`) are declared in `Optio
 
 Each built-in has a header + implementation pair in `neverc/Foundation/Builtin/`:
 
-| Built-in | Header | Implementation |
-|----------|--------|----------------|
-| string | `BuiltinString.h` | `BuiltinString.cpp` |
+
+| Built-in | Header              | Implementation        |
+| -------- | ------------------- | --------------------- |
+| string   | `BuiltinString.h`   | `BuiltinString.cpp`   |
 | mimalloc | `BuiltinMimalloc.h` | `BuiltinMimalloc.cpp` |
+
 
 The API provides `getEmbeddedBitcode()` to retrieve the precompiled LLVM bitcode blob, and `isSupported()` to check platform availability.
 
@@ -111,15 +114,17 @@ The pass parses the embedded bitcode, merges it into the user module via `llvm::
 
 ## Design Differences Between Built-ins
 
-| Aspect | `string` | `mimalloc` |
-|--------|----------|------------|
-| **Merge strategy** | On-demand (BFS call graph, prune unused) | Whole-archive (all symbols preserved) |
-| **Platform bitcode** | Single (arch-neutral) | Per-OS (Linux / Darwin / Windows) |
-| **Symbol handling** | All internalized | Override entries keep external linkage |
-| **Preprocessor macro** | `__NEVERC_BUILTIN_STRING__` | `__NEVERC_MIMALLOC__` |
-| **Shellcode mode** | Auto-enabled, arena rewrite | Suppressed (no heap in shellcode) |
-| **Optimization level** | `-O0` (bitcode compile) | `-O2` (performance-critical allocator) |
-| **DCE** | Pre-merge prune + post-merge mark-and-sweep | No DCE (whole-archive semantics) |
+
+| Aspect                 | `string`                                    | `mimalloc`                             |
+| ---------------------- | ------------------------------------------- | -------------------------------------- |
+| **Merge strategy**     | On-demand (BFS call graph, prune unused)    | Whole-archive (all symbols preserved)  |
+| **Platform bitcode**   | Single (arch-neutral)                       | Per-OS (Linux / Darwin / Windows)      |
+| **Symbol handling**    | All internalized                            | Override entries keep external linkage |
+| **Preprocessor macro** | *(none)*                                    | `__NEVERC_MIMALLOC__`                  |
+| **Shellcode mode**     | Auto-enabled, arena rewrite                 | Suppressed (no heap in shellcode)      |
+| **Optimization level** | `-O0` (bitcode compile)                     | `-O2` (performance-critical allocator) |
+| **DCE**                | Pre-merge prune + post-merge mark-and-sweep | No DCE (whole-archive semantics)       |
+
 
 ---
 
@@ -127,12 +132,14 @@ The pass parses the embedded bitcode, merges it into the user module via `llvm::
 
 Certain compilation modes are incompatible with built-in runtimes. The driver automatically suppresses them:
 
-| Condition | Effect | Reason |
-|-----------|--------|--------|
-| `-fno-builtin` | Suppresses mimalloc | No CRT override scenario |
-| `-mkernel` | Suppresses mimalloc | Kernel has no userspace heap |
-| `-fshellcode-mode` | Suppresses mimalloc | No heap in shellcode |
-| `-ffreestanding` | Suppresses mimalloc | No libc to override |
+
+| Condition          | Effect              | Reason                       |
+| ------------------ | ------------------- | ---------------------------- |
+| `-fno-builtin`     | Suppresses mimalloc | No CRT override scenario     |
+| `-mkernel`         | Suppresses mimalloc | Kernel has no userspace heap |
+| `-fshellcode-mode` | Suppresses mimalloc | No heap in shellcode         |
+| `-ffreestanding`   | Suppresses mimalloc | No libc to override          |
+
 
 The `string` built-in has its own suppression logic within the shellcode pipeline (arena rewrite replaces heap allocation).
 
@@ -203,3 +210,4 @@ To add a new built-in runtime (e.g., a custom allocator, crypto library, or plat
 8. **Safety**: Add suppression logic in `addNeverCFeatureFlags()` for incompatible modes
 9. **Tests**: Add GTest cases + C test source files
 10. **Documentation**: Add `docs/builtins/foo/README.md` with i18n translations
+

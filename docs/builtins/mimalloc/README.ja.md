@@ -56,7 +56,7 @@ ninja neverc                         # ステージ 3：実際の bitcode を埋
 
 | フラグ | 説明 |
 |--------|------|
-| `-fbuiltin-mimalloc` | mimalloc オーバーライド注入を有効化（デフォルトオフ） |
+| `-fbuiltin-mimalloc` | mimalloc オーバーライド注入を有効化（ホステッドビルドではデフォルトオン） |
 | `-fno-builtin-mimalloc` | mimalloc 注入を明示的に無効化 |
 
 | マクロ | 値 | 定義条件 |

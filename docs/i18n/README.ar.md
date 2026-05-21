@@ -15,7 +15,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#التجميع-المتقاطع-إلى-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#الميزات)
 
-[التوثيق](../README.ar.md) · [دليل shellcode](../shellcode-compiler/README.ar.md) · [السلسلة المدمجة](../builtin-string/README.ar.md)
+[التوثيق](../README.ar.md) · [دليل shellcode](../shellcode-compiler/README.ar.md) · [السلسلة المدمجة](../builtins/string/README.ar.md)
 
 </div>
 
@@ -32,7 +32,7 @@
 - **[مُجمِّع shellcode](../shellcode-compiler/README.ar.md)** — مسار IR/MIR متعدد المراحل، استخراج متعدد المنصات، حل الاستيراد/استدعاءات النظام، وضع النواة، تدقيق البايتات المحظورة، بنية إضافات
 - **مُرابط مدمج** — COFF وELF وMach-O في ثنائي واحد؛ دون `ld` أو `link.exe` خارجي
 - **تجميع متقاطع** — PE لـ Windows من macOS/Linux مع MSVC SDK مضمّن
-- **[نوع `string` مدمج](../builtin-string/README.ar.md)** — سلسلة بدلالة القيمة مع صيغة طرق بالنقطة وإدارة ذاكرة تلقائية ودعم UTF-8 أصلي
+- **[نوع `string` مدمج](../builtins/string/README.ar.md)** — سلسلة بدلالة القيمة مع صيغة طرق بالنقطة وإدارة ذاكرة تلقائية ودعم UTF-8 أصلي
 - **بناء LLVM خفيف** — خلفية x86_64 / AArch64 فقط؛ إزالة مسارات C++/ObjC/OpenMP
 
 ## مثال سريع

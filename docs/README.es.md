@@ -36,4 +36,4 @@ El pipeline de compilación de shellcode es el foco principal de investigación 
 
 NeverC ofrece un tipo valor `string` integrado para C, combinando la ergonomía de `std::string` con el soporte Unicode de `QString`. Se activa con `-fbuiltin-string` (automático en modo `-fshellcode`).
 
-**[String integrado →](builtin-string/README.es.md)**
+**[String integrado →](builtins/string/README.es.md)**
