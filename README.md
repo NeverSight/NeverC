@@ -6,14 +6,14 @@
 
 **A security-research-oriented C23 compiler built on LLVM**
 
-Integrated linker · Shellcode pipeline · Built-in `string` type
+Integrated linker · Shellcode pipeline · Built-in runtimes (`string` · mimalloc)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#features)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#cross-compiling-to-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#features)
 
-[Documentation](docs/README.md) · [Shellcode Guide](docs/shellcode-compiler/README.md) · [Built-in String](docs/builtin-string/README.md)
+[Documentation](docs/README.md) · [Shellcode Guide](docs/shellcode-compiler/README.md) · [Built-in Runtimes](docs/builtins/README.md)
 
 </div>
 
@@ -30,7 +30,7 @@ NeverC compiles standard C into hosted binaries, freestanding executables, and p
 - **[Shellcode compiler](docs/shellcode-compiler/README.md)** — multi-stage IR/MIR pipeline, cross-platform extraction, import/syscall lowering, kernel-mode support, bad-byte auditing, and a plugin architecture
 - **Integrated linker** — COFF, ELF, and Mach-O in one binary; no external `ld` or `link.exe`
 - **Cross-compilation** — build Windows PE from macOS/Linux with bundled MSVC SDK support
-- **[Built-in `string` type](docs/builtin-string/README.md)** — value-semantic string with dotted method syntax, automatic memory management, and native UTF-8 backing
+- **[Built-in runtimes](docs/builtins/README.md)** — opt-in LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtin-string/README.md) (value-semantic string with dot-call methods and automatic memory management) and [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override)
 - **Lean LLVM build** — only x86_64 and AArch64 backends; C++/ObjC/OpenMP paths stripped
 
 ## Quick Example

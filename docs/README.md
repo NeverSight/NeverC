@@ -32,8 +32,13 @@ The shellcode compilation pipeline is NeverC's primary research focus. For archi
 
 ---
 
-## Built-in String Type
+## Built-in Runtimes
 
-NeverC ships a built-in `string` value type that brings `std::string` ergonomics and `QString`-parity Unicode support to C. Enabled via `-fbuiltin-string` (or automatically in `-fshellcode` mode).
+NeverC extends standard C with opt-in built-in runtimes embedded as LLVM bitcode. Each is controlled by a `-fbuiltin-<name>` flag.
 
-**[Built-in String →](builtin-string/README.md)**
+**[Built-in Runtime System →](builtins/README.md)**
+
+| Built-in | Flag | Description |
+|----------|------|-------------|
+| [Built-in String](builtin-string/README.md) | `-fbuiltin-string` | Value-semantic `string` type with dot-call methods, automatic memory management, and native UTF-8 |
+| [Built-in mimalloc](builtins/mimalloc/README.md) | `-fbuiltin-mimalloc` | Transparent high-performance allocator override for `malloc`/`free`/`calloc`/`realloc` |

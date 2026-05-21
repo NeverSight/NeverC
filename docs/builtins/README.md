@@ -1,0 +1,205 @@
+**Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+[← NeverC Documentation](../README.md)
+
+# NeverC Built-in Runtime System
+
+NeverC extends standard C with opt-in built-in runtimes that are embedded directly into the compiler binary as LLVM bitcode. When enabled via compiler flags, the corresponding runtime is merged into the user's IR at compile time — no external headers, libraries, or link-time dependencies required.
+
+## Available Built-ins
+
+| Built-in | Flag | Default | Description |
+|----------|------|---------|-------------|
+| [**`string`**](../builtin-string/README.md) | `-fbuiltin-string` | Off | Value-semantic string type with dot-call methods, automatic memory management, and native UTF-8 |
+| [**mimalloc**](mimalloc/README.md) | `-fbuiltin-mimalloc` | Off | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
+
+Both built-ins are disabled by default and require explicit opt-in. They can be combined:
+
+```bash
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
+```
+
+---
+
+## Architecture Overview
+
+All built-ins share the same four-layer architecture:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Compiler Build Time                         │
+│                                                                 │
+│  Source code ──→ neverc -c -emit-llvm ──→ .bc ──→ bin2c.py     │
+│                                            │                    │
+│                                   Embedded in compiler binary   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     User Compilation Time                       │
+│                                                                 │
+│  user.c ──→ Lexer/Parser/Sema/CodeGen ──→ IR Module            │
+│                                              │                  │
+│                          PipelineStartEP: RuntimeLinkerPass      │
+│                             │                                   │
+│                             ├─ Parse embedded bitcode           │
+│                             ├─ Merge into user Module           │
+│                             ├─ Internalize helper symbols       │
+│                             └─ Clean llvm.used                  │
+│                                              │                  │
+│                          Optimization pipeline                  │
+│                                              │                  │
+│                                           Output .o             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Layer 1: Language Options & Driver Flags
+
+Each built-in is controlled by a `LangOption` defined in `LangOptions.def`:
+
+```cpp
+LANGOPT(BuiltinString,   1, 0, "inject NeverC builtin string prelude")
+LANGOPT(BuiltinMimalloc, 1, 0, "inject mimalloc allocator override")
+```
+
+Driver flags (`-fbuiltin-<name>` / `-fno-builtin-<name>`) are declared in `Options.td.h` with corresponding `LANG_OPTION_WITH_MARSHALLING` entries. The driver passes them to the frontend via `addNeverCFeatureFlags()`.
+
+### Layer 2: Foundation API
+
+Each built-in has a header + implementation pair in `neverc/Foundation/Builtin/`:
+
+| Built-in | Header | Implementation |
+|----------|--------|----------------|
+| string | `BuiltinString.h` | `BuiltinString.cpp` |
+| mimalloc | `BuiltinMimalloc.h` | `BuiltinMimalloc.cpp` |
+
+The API provides `getEmbeddedBitcode()` to retrieve the precompiled LLVM bitcode blob, and `isSupported()` to check platform availability.
+
+### Layer 3: CMake Bootstrap Infrastructure
+
+Bitcode generation follows a two-stage bootstrap:
+
+```bash
+ninja neverc                         # Stage 1: empty bitcode placeholders
+ninja neverc-bootstrap-string-bc     # Compile string runtime with neverc
+ninja neverc-bootstrap-mimalloc-bc   # Compile mimalloc for all target OSes
+ninja neverc                         # Stage 2: embed real bitcode
+```
+
+The initial build uses empty placeholder headers (`static const unsigned char kXxxBitcode[] = {0};`) so compilation succeeds without bitcode. The bootstrap targets then use the freshly built neverc to compile the runtime sources into LLVM bitcode, convert them via `bin2c.py` into C header arrays, and trigger a recompile to embed the real data.
+
+### Layer 4: IR Merge Pass (PipelineStartEP)
+
+Each built-in registers a `ModulePass` at `PipelineStartEP` in `BackendUtil.cpp`:
+
+```cpp
+if (LangOpts.BuiltinString) {
+    PB.registerPipelineStartEPCallback([](ModulePassManager &MPM, OptimizationLevel) {
+        MPM.addPass(StringRuntimeLinkerPass());
+    });
+}
+if (LangOpts.BuiltinMimalloc) {
+    PB.registerPipelineStartEPCallback([](ModulePassManager &MPM, OptimizationLevel) {
+        MPM.addPass(MimallocRuntimeLinkerPass());
+    });
+}
+```
+
+The pass parses the embedded bitcode, merges it into the user module via `llvm::Linker::linkModules()`, internalizes helper symbols (keeping only the public API external), and cleans up `llvm.used` / `llvm.compiler.used`.
+
+---
+
+## Design Differences Between Built-ins
+
+| Aspect | `string` | `mimalloc` |
+|--------|----------|------------|
+| **Merge strategy** | On-demand (BFS call graph, prune unused) | Whole-archive (all symbols preserved) |
+| **Platform bitcode** | Single (arch-neutral) | Per-OS (Linux / Darwin / Windows) |
+| **Symbol handling** | All internalized | Override entries keep external linkage |
+| **Preprocessor macro** | `__NEVERC_BUILTIN_STRING__` | `__NEVERC_MIMALLOC__` |
+| **Shellcode mode** | Auto-enabled, arena rewrite | Suppressed (no heap in shellcode) |
+| **Optimization level** | `-O0` (bitcode compile) | `-O2` (performance-critical allocator) |
+| **DCE** | Pre-merge prune + post-merge mark-and-sweep | No DCE (whole-archive semantics) |
+
+---
+
+## Safety Interlocks
+
+Certain compilation modes are incompatible with built-in runtimes. The driver automatically suppresses them:
+
+| Condition | Effect | Reason |
+|-----------|--------|--------|
+| `-fno-builtin` | Suppresses mimalloc | No CRT override scenario |
+| `-mkernel` | Suppresses mimalloc | Kernel has no userspace heap |
+| `-fshellcode-mode` | Suppresses mimalloc | No heap in shellcode |
+| `-ffreestanding` | Suppresses mimalloc | No libc to override |
+
+The `string` built-in has its own suppression logic within the shellcode pipeline (arena rewrite replaces heap allocation).
+
+---
+
+## Preprocessor Macros
+
+When a built-in is active, a corresponding preprocessor macro is defined:
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+// mimalloc is active — malloc/free are transparently overridden
+#endif
+```
+
+This allows user code to conditionally compile based on which built-ins are enabled.
+
+---
+
+## File Structure
+
+```
+neverc/
+├── include/neverc/Foundation/
+│   ├── LangOpts/LangOptions.def          # LANGOPT declarations
+│   └── Builtin/
+│       ├── BuiltinString.h               # string API
+│       ├── BuiltinMimalloc.h             # mimalloc API
+│       └── ...
+│
+├── include/neverc/Invoke/
+│   └── Options.td.h                      # Driver flag declarations
+│
+├── lib/Foundation/
+│   ├── CMakeLists.txt                    # Bootstrap targets for all built-ins
+│   └── Builtin/
+│       ├── BuiltinString.cpp             # string bitcode embedding
+│       ├── BuiltinMimalloc.cpp           # mimalloc per-OS bitcode embedding
+│       ├── bin2c.py                      # .bc → C header converter (shared)
+│       ├── gen_string_runtime.py         # string source generator
+│       └── gen_mimalloc_source.py        # mimalloc source generator
+│
+├── lib/Emit/Backend/
+│   ├── BackendUtil.cpp                   # PipelineStartEP registration
+│   ├── StringRuntimeLinker.{h,cpp}       # string IR merge pass
+│   └── MimallocRuntimeLinker.{h,cpp}     # mimalloc IR merge pass
+│
+├── lib/Invoke/ToolChains/
+│   └── NeverC.cpp                        # addNeverCFeatureFlags()
+│
+└── lib/Compiler/Preprocessor/
+    └── InitPreprocessor.cpp              # __NEVERC_MIMALLOC__ macro
+```
+
+---
+
+## Adding a New Built-in
+
+To add a new built-in runtime (e.g., a custom allocator, crypto library, or platform abstraction):
+
+1. **LangOption**: Add `LANGOPT(BuiltinFoo, 1, 0, "description")` in `LangOptions.def`
+2. **Driver flags**: Add `-fbuiltin-foo` / `-fno-builtin-foo` OPTION + MARSHALLING entries in `Options.td.h`; wire through `addNeverCFeatureFlags()` in `NeverC.cpp`
+3. **Foundation API**: Create `BuiltinFoo.h` (with `getEmbeddedBitcode()` + `isSupported()`) and `BuiltinFoo.cpp`
+4. **Source generator**: Create `gen_foo_source.py` to produce a standalone C compilation unit
+5. **CMake**: Add placeholder headers, bootstrap targets, and the source file to `nevercFoundation` in `Foundation/CMakeLists.txt`
+6. **IR Pass**: Create `FooRuntimeLinkerPass` in `Emit/Backend/`, register at `PipelineStartEP` in `BackendUtil.cpp`
+7. **Preprocessor**: Define `__NEVERC_FOO__` in `InitPreprocessor.cpp`
+8. **Safety**: Add suppression logic in `addNeverCFeatureFlags()` for incompatible modes
+9. **Tests**: Add GTest cases + C test source files
+10. **Documentation**: Add `docs/builtins/foo/README.md` with i18n translations

@@ -1,0 +1,69 @@
+**Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+[← NeverC 문서](../README.ko.md)
+
+# NeverC 내장 런타임 시스템
+
+NeverC는 옵트인 방식의 내장 런타임으로 표준 C를 확장합니다. 이 런타임들은 LLVM bitcode로 컴파일러 바이너리에 직접 임베드됩니다. 컴파일러 플래그로 활성화하면, 해당 런타임이 컴파일 시 사용자 IR에 병합됩니다 — 외부 헤더, 라이브러리, 링크 시 의존성이 필요 없습니다.
+
+## 사용 가능한 내장 기능
+
+| 내장 기능 | 플래그 | 기본값 | 설명 |
+|----------|--------|--------|------|
+| [**`string`**](../builtin-string/README.ko.md) | `-fbuiltin-string` | 꺼짐 | 값 의미론 문자열 타입. 도트 호출 메서드, 자동 메모리 관리, 네이티브 UTF-8 |
+| [**mimalloc**](mimalloc/README.ko.md) | `-fbuiltin-mimalloc` | 꺼짐 | 고성능 메모리 할당자. `malloc`/`free`/`calloc`/`realloc` 투명 대체 |
+
+두 내장 기능은 기본적으로 비활성화되며 명시적 옵트인이 필요합니다. 조합 사용 가능:
+
+```bash
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
+```
+
+---
+
+## 아키텍처 개요
+
+모든 내장 기능은 동일한 4계층 아키텍처를 공유합니다:
+
+1. **언어 옵션 및 드라이버 플래그** — `LangOptions.def`에 `LangOption` 정의
+2. **Foundation API** — `getEmbeddedBitcode()` 및 `isSupported()` 제공
+3. **CMake 부트스트랩** — 2단계 부트스트랩으로 bitcode 생성
+4. **IR 병합 패스** — `PipelineStartEP`에서 bitcode를 사용자 모듈에 병합
+
+---
+
+## 내장 기능 간 설계 차이
+
+| 측면 | `string` | `mimalloc` |
+|------|----------|------------|
+| **병합 전략** | 온디맨드 (BFS 호출 그래프, 미사용 제거) | 전체 아카이브 (모든 심볼 유지) |
+| **플랫폼 bitcode** | 단일 (아키텍처 독립) | OS별 (Linux / Darwin / Windows) |
+| **심볼 처리** | 모두 내부화 | 오버라이드 진입점은 외부 링크 유지 |
+| **전처리기 매크로** | `__NEVERC_BUILTIN_STRING__` | `__NEVERC_MIMALLOC__` |
+| **셸코드 모드** | 자동 활성화, 아레나 재작성 | 억제 (셸코드에 힙 없음) |
+
+---
+
+## 안전 인터록
+
+| 조건 | 효과 | 이유 |
+|------|------|------|
+| `-fno-builtin` | mimalloc 억제 | CRT 오버라이드 시나리오 없음 |
+| `-mkernel` | mimalloc 억제 | 커널에 유저스페이스 힙 없음 |
+| `-fshellcode-mode` | mimalloc 억제 | 셸코드에 힙 없음 |
+| `-ffreestanding` | mimalloc 억제 | 오버라이드할 libc 없음 |
+
+---
+
+## 새 내장 기능 추가
+
+1. `LangOptions.def`에 `LANGOPT` 추가
+2. `Options.td.h`에 드라이버 플래그 추가
+3. Foundation API 생성 (`BuiltinFoo.h` + `.cpp`)
+4. 소스 생성기 작성
+5. CMake 부트스트랩 타겟 추가
+6. IR 패스 생성 및 `PipelineStartEP` 등록
+7. 전처리기 매크로 정의
+8. 안전 검사 추가
+9. 테스트 추가
+10. 문서 및 i18n 번역 추가
