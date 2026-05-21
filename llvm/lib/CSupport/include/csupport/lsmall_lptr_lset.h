@@ -5,7 +5,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* C declarations for SmallPtrSet - to be expanded as conversion progresses */
+
+void csupport_sps_erase_from_bucket(const void **cur_array,
+                                    unsigned cur_array_size,
+                                    const void **bucket);
+
 #ifdef __cplusplus
 }
 #endif

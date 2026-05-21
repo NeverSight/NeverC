@@ -253,9 +253,14 @@ public:
       PreservedIDs.erase(ID);
       NotPreservedAnalysisIDs.insert(ID);
     }
+    // Erase any ID in PreservedIDs not present in Arg.PreservedIDs. Collect
+    // first to avoid mutating PreservedIDs while iterating over it.
+    SmallVector<void *, 8> ToErase;
     for (auto *ID : PreservedIDs)
       if (!Arg.PreservedIDs.count(ID))
-        PreservedIDs.erase(ID);
+        ToErase.push_back(ID);
+    for (auto *ID : ToErase)
+      PreservedIDs.erase(ID);
   }
 
   /// Intersect this set with a temporary other set in place.
@@ -275,9 +280,12 @@ public:
       PreservedIDs.erase(ID);
       NotPreservedAnalysisIDs.insert(ID);
     }
+    SmallVector<void *, 8> ToErase;
     for (auto *ID : PreservedIDs)
       if (!Arg.PreservedIDs.count(ID))
-        PreservedIDs.erase(ID);
+        ToErase.push_back(ID);
+    for (auto *ID : ToErase)
+      PreservedIDs.erase(ID);
   }
 
   /// A checker object that makes it easy to query for whether an analysis or

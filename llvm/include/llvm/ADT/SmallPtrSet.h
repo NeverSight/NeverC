@@ -28,6 +28,10 @@
 #include <string.h>
 #include <utility>
 
+extern "C" void csupport_sps_erase_from_bucket(const void **cur_array,
+                                               unsigned cur_array_size,
+                                               const void **bucket);
+
 namespace llvm {
 
 /// SmallPtrSetImplBase - This is the common code shared among all the
@@ -42,11 +46,12 @@ namespace llvm {
 /// sets are often small.  In this case, no memory allocation is used, and only
 /// light-weight and cache-efficient scanning is used.
 ///
-/// Large sets use a classic exponentially-probed hash table.  Empty buckets are
-/// represented with an illegal pointer value (-1) to allow null pointers to be
-/// inserted.  Tombstones are represented with another illegal pointer value
-/// (-2), to allow deletion.  The hash table is resized when the table is 3/4 or
-/// more.  When this happens, the table is doubled in size.
+/// Large sets use a linear-probed hash table with deletion implemented using
+/// Knuth TAOCP 6.4 Algorithm R.  Empty buckets are represented with an illegal
+/// pointer value (-1) to allow null pointers to be inserted.  Small mode uses
+/// swap-with-last deletion.  No tombstones are used in either mode.  The hash
+/// table is resized when the table is 3/4 or more.  When this happens, the
+/// table is doubled in size.
 ///
 class SmallPtrSetImplBase : public DebugEpochBase {
   friend class SmallPtrSetIteratorImpl;
@@ -128,21 +133,10 @@ protected:
 
   PtrInsertResult insert_imp(const void *Ptr) {
     if (isSmall()) {
-      const void **LastTombstone = nullptr;
       for (const void **APtr = SmallArray, **E = SmallArray + NumNonEmpty;
            APtr != E; ++APtr) {
-        const void *Value = *APtr;
-        if (Value == Ptr)
+        if (*APtr == Ptr)
           return {APtr, false};
-        if (Value == getTombstoneMarker())
-          LastTombstone = APtr;
-      }
-
-      if (LastTombstone != nullptr) {
-        *LastTombstone = Ptr;
-        --NumTombstones;
-        incrementEpoch();
-        return {LastTombstone, true};
       }
 
       if (NumNonEmpty < CurArraySize) {
@@ -159,14 +153,26 @@ protected:
   /// that the derived class can check that the right type of pointer is passed
   /// in.
   bool erase_imp(const void *Ptr) {
-    const void *const *P = find_imp(Ptr);
-    if (P == EndPointer())
+    if (isSmall()) {
+      for (const void **APtr = SmallArray, **E = SmallArray + NumNonEmpty;
+           APtr != E; ++APtr) {
+        if (*APtr == Ptr) {
+          *APtr = SmallArray[--NumNonEmpty];
+          incrementEpoch();
+          return true;
+        }
+      }
+      return false;
+    }
+
+    auto *Bucket = FindBucketFor(Ptr);
+    if (*Bucket != Ptr)
       return false;
 
-    const void **Loc = const_cast<const void **>(P);
-    assert(*Loc == Ptr && "broken find!");
-    *Loc = getTombstoneMarker();
-    NumTombstones++;
+    csupport_sps_erase_from_bucket(CurArray, CurArraySize,
+                                   const_cast<const void **>(Bucket));
+    --NumNonEmpty;
+    incrementEpoch();
     return true;
   }
 
@@ -248,15 +254,13 @@ protected:
   void AdvanceIfNotValid() {
     assert(Bucket <= End);
     while (Bucket != End &&
-           (*Bucket == SmallPtrSetImplBase::getEmptyMarker() ||
-            *Bucket == SmallPtrSetImplBase::getTombstoneMarker()))
+           *Bucket == SmallPtrSetImplBase::getEmptyMarker())
       ++Bucket;
   }
   void RetreatIfNotValid() {
     assert(Bucket >= End);
     while (Bucket != End &&
-           (Bucket[-1] == SmallPtrSetImplBase::getEmptyMarker() ||
-            Bucket[-1] == SmallPtrSetImplBase::getTombstoneMarker())) {
+           Bucket[-1] == SmallPtrSetImplBase::getEmptyMarker()) {
       --Bucket;
     }
   }
@@ -541,20 +545,15 @@ SmallPtrSetImplBase::insert_imp_big(const void *Ptr) {
 }
 inline const void *const *
 SmallPtrSetImplBase::FindBucketFor(const void *Ptr) const {
-  unsigned Bucket =
-      DenseMapInfo<void *>::getHashValue(Ptr) & (CurArraySize - 1);
-  unsigned ArraySize = CurArraySize;
-  unsigned ProbeAmt = 1;
+  unsigned Mask = CurArraySize - 1;
+  unsigned Bucket = DenseMapInfo<void *>::getHashValue(Ptr) & Mask;
   const void *const *Array = CurArray;
-  const void *const *Tombstone = 0;
   while (true) {
     if (LLVM_LIKELY(Array[Bucket] == getEmptyMarker()))
-      return Tombstone ? Tombstone : Array + Bucket;
+      return Array + Bucket;
     if (LLVM_LIKELY(Array[Bucket] == Ptr))
       return Array + Bucket;
-    if (Array[Bucket] == getTombstoneMarker() && !Tombstone)
-      Tombstone = Array + Bucket;
-    Bucket = (Bucket + ProbeAmt++) & (ArraySize - 1);
+    Bucket = (Bucket + 1) & Mask;
   }
 }
 inline void SmallPtrSetImplBase::Grow(unsigned NewSize) {

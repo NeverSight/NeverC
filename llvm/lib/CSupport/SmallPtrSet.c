@@ -29,8 +29,8 @@ static unsigned ptr_hash(const void *ptr) {
 
 static const void **find_bucket_for(const void **arr, unsigned arr_size,
                                     const void *ptr) {
-  unsigned bucket = (unsigned)(ptr_hash(ptr) & (arr_size - 1));
-  unsigned probe = 1;
+  unsigned mask = arr_size - 1;
+  unsigned bucket = (unsigned)(ptr_hash(ptr) & mask);
   const void **tombstone = NULL;
   for (;;) {
     if (arr[bucket] == EMPTY_MARKER)
@@ -39,8 +39,24 @@ static const void **find_bucket_for(const void **arr, unsigned arr_size,
       return (arr + bucket);
     if (arr[bucket] == TOMBSTONE_MARKER && !tombstone)
       tombstone = (arr + bucket);
-    bucket = (bucket + probe++) & (arr_size - 1);
+    bucket = (bucket + 1) & mask;
   }
+}
+
+void csupport_sps_erase_from_bucket(const void **cur_array,
+                                    unsigned cur_array_size,
+                                    const void **bucket) {
+  unsigned mask = cur_array_size - 1;
+  unsigned i = (unsigned)(bucket - cur_array);
+  unsigned j = i;
+  while ((j = (j + 1) & mask), cur_array[j] != EMPTY_MARKER) {
+    unsigned ideal = ptr_hash(cur_array[j]) & mask;
+    if (((i - ideal) & mask) < ((j - ideal) & mask)) {
+      cur_array[i] = cur_array[j];
+      i = j;
+    }
+  }
+  cur_array[i] = EMPTY_MARKER;
 }
 
 void csupport_sps_shrink_and_clear(const void ***cur_array,

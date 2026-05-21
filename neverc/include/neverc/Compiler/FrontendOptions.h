@@ -154,8 +154,8 @@ public:
 public:
   FrontendOptions()
       : DisableFree(false), ShowHelp(false), ShowStats(false),
-        AppendStats(false), ShowVersion(false), UseTemporary(true),
-        TimeTraceGranularity(500) {}
+        AppendStats(false), PrintSupportedCPUs(false), ShowVersion(false),
+        UseTemporary(true), TimeTraceGranularity(500) {}
 
   static InputKind getInputKindForExtension(llvm::StringRef Extension);
 };

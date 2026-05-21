@@ -15,6 +15,8 @@
 #ifndef LLVM_ADT_SETOPERATIONS_H
 #define LLVM_ADT_SETOPERATIONS_H
 
+#include "llvm/ADT/SmallVector.h"
+
 namespace llvm {
 
 /// set_union(A, B) - Compute A := A u B, return whether A changed.
@@ -36,12 +38,15 @@ template <class S1Ty, class S2Ty> bool set_union(S1Ty &S1, const S2Ty &S2) {
 /// elements that are not contained in S2.
 ///
 template <class S1Ty, class S2Ty> void set_intersect(S1Ty &S1, const S2Ty &S2) {
-  for (typename S1Ty::iterator I = S1.begin(); I != S1.end();) {
-    const auto &E = *I;
-    ++I;
+  // Collect elements to erase first so the loop doesn't mutate S1 while
+  // iterating it. SmallPtrSet's iterator is invalidated by erase
+  // (swap-with-last in small mode), so the old pre-increment trick is UB.
+  SmallVector<typename S1Ty::value_type, 16> ToErase;
+  for (const auto &E : S1)
     if (!S2.count(E))
-      S1.erase(E); // Erase element if not in S2
-  }
+      ToErase.push_back(E);
+  for (const auto &E : ToErase)
+    S1.erase(E);
 }
 
 template <class S1Ty, class S2Ty>
