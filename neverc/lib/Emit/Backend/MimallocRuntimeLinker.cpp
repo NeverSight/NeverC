@@ -1,4 +1,5 @@
 #include "Backend/MimallocRuntimeLinker.h"
+#include "Backend/RuntimeLinkerUtils.h"
 #include "neverc/Foundation/Builtin/BuiltinMimalloc.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -31,16 +32,6 @@ bool isMallocOverrideSymbol(StringRef Name) {
          Name.starts_with("mi_");
 }
 
-void stripHostAttributes(Module &Mod) {
-  for (Function &F : Mod) {
-    if (F.isDeclaration())
-      continue;
-    F.removeFnAttr("target-cpu");
-    F.removeFnAttr("target-features");
-    F.removeFnAttr("tune-cpu");
-  }
-}
-
 } // namespace
 
 PreservedAnalyses
@@ -61,7 +52,7 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
 
   // Strip host-specific attributes from the precompiled bitcode so
   // functions inherit the user module's target defaults after merge.
-  stripHostAttributes(*MimallocMod);
+  stripHostTargetAttributes(*MimallocMod);
 
   // Capture names of all mimalloc definitions before the merge.
   // Must own the strings: linkModules destroys the source Module,

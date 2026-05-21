@@ -1,4 +1,5 @@
 #include "Backend/StringRuntimeLinker.h"
+#include "Backend/RuntimeLinkerUtils.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Builtin/BuiltinStringNames.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -20,31 +21,11 @@ namespace {
 
 constexpr StringLiteral kRuntimeFnAttr = BuiltinStringNames::RuntimeFnAttr;
 
-/// Stamp `kRuntimeFnAttr` on every definition in `Mod` and strip
-/// host-specific `target-cpu` / `target-features` attributes.
-///
-/// The precompiled bitcode is built on the host (e.g. arm64-apple-macos)
-/// and bakes the host's CPU name and feature set into per-function
-/// attributes.  When the user cross-compiles to a different arch
-/// (e.g. x86_64-apple-macos), the `Linker::linkModules` merge
-/// preserves those per-function attributes even though we reset the
-/// module-level triple via `setTargetTriple`.  The x86_64 backend
-/// then sees arm64 features it cannot handle, leading to
-/// `64-bit code requested on a subtarget that doesn't support it!`.
-///
-/// Stripping these attributes before the merge lets the merged
-/// functions inherit the user module's target defaults, which is
-/// correct: the runtime source is target-agnostic C with no
-/// architecture-specific intrinsics.
 void markAllAsRuntime(Module &Mod) {
-  for (Function &F : Mod) {
-    if (F.isDeclaration())
-      continue;
-    F.addFnAttr(kRuntimeFnAttr);
-    F.removeFnAttr("target-cpu");
-    F.removeFnAttr("target-features");
-    F.removeFnAttr("tune-cpu");
-  }
+  for (Function &F : Mod)
+    if (!F.isDeclaration())
+      F.addFnAttr(kRuntimeFnAttr);
+  stripHostTargetAttributes(Mod);
 }
 
 /// Visit every Function / GlobalVariable referenced by `U`'s operands
