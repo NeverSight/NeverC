@@ -38,7 +38,7 @@ int main(void) {
     u32 x = 42;
     i64 y = -100;
 
-    string msg = greeting + " x=" + neverc_string_format("%u", x);
+    string msg = greeting + " x=%u, y=%lld".format(x, y);
     printf("%s\n", msg.c_str());
     return 0;
 }
