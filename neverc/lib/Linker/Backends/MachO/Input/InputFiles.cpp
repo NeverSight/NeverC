@@ -12,6 +12,7 @@
 #include "Linker/MachO/Symbols.h"
 #include "Linker/MachO/SyntheticSections.h"
 #include "Linker/MachO/Target.h"
+#include "neverc/Foundation/OverrideNames.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
 
 #include "Linker/Core/Runtime/Session.h"
@@ -373,7 +374,7 @@ void ObjFile::parseSections(ArrayRef<SectionHeader> sectionHeaders) {
       // Skip __LLVM sections entirely: their symbols reference bitcode
       // metadata, not real code/data, so parsing them produces spurious
       // duplicate-symbol errors.
-    } else if (segname == segment_names::data && name == "__neverc_ovr") {
+    } else if (segname == segment_names::data && name == neverc::OverrideNames::MachOSectionName) {
       // NeverC override directory section. The emitter sets the section name
       // to "__DATA,__neverc_ovr"; segname is checked so an unrelated user
       // section in a different segment with the same name is left untouched.
@@ -2376,7 +2377,7 @@ void BitcodeFile::parse() {
   // LTO IR symbol table but are not inserted into the symbol table below
   // (nullptr slots), so BitcodeCompiler::add() can supply no-op LTO
   // resolutions and they are not emitted into native objects.
-  constexpr StringRef overridePrefix = "__neverc_ovr.";
+  constexpr StringRef overridePrefix = neverc::OverrideNames::SymbolPrefix;
   for (const auto &objSym : obj->symbols()) {
     StringRef name = objSym.getName();
     if (!name.consume_front(overridePrefix))
@@ -2415,7 +2416,7 @@ void BitcodeFile::parseLazy() {
     symtab->reserve(symCount);
   for (const auto &[i, objSym] : llvm::enumerate(obj->symbols())) {
     if (!objSym.isUndefined() &&
-        !objSym.getName().starts_with("__neverc_ovr.")) {
+        !objSym.getName().starts_with(neverc::OverrideNames::SymbolPrefix)) {
       symbols[i] = symtab->addLazyObject(saver().save(objSym.getName()), *this);
       if (!lazy)
         break;

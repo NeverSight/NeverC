@@ -6,6 +6,7 @@
 #include "Linker/COFF/SymbolTable.h"
 #include "Linker/COFF/Symbols.h"
 #include "Linker/Core/Support/Dwarf.h"
+#include "neverc/Foundation/OverrideNames.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/BinaryFormat/COFF.h"
@@ -204,7 +205,7 @@ SectionChunk *ObjFile::readSection(uint32_t sectionNumber,
     return nullptr;
   }
 
-  if (name == ".neverc.overrides") {
+  if (name == neverc::OverrideNames::ELFSectionName) {
     // LTO emits the section again into its native output, but the bitcode
     // source already populated overrideSymbols via marker symbols. Skip
     // re-parsing to avoid spurious "marked in multiple files" warnings.
@@ -749,7 +750,7 @@ void BitcodeFile::parse() {
   // LTO IR symbol table but are not inserted into the linker symbol table below
   // (nullptr slots), so BitcodeCompiler::add() can supply no-op LTO
   // resolutions and they are not emitted into native objects.
-  constexpr StringRef overridePrefix = "__neverc_ovr.";
+  constexpr StringRef overridePrefix = neverc::OverrideNames::SymbolPrefix;
   for (const lto::InputFile::Symbol &objSym : obj->symbols()) {
     StringRef name = objSym.getName();
     if (!name.consume_front(overridePrefix))
@@ -830,7 +831,7 @@ void BitcodeFile::parse() {
 
 void BitcodeFile::parseLazy() {
   for (const lto::InputFile::Symbol &sym : obj->symbols())
-    if (!sym.isUndefined() && !sym.getName().starts_with("__neverc_ovr."))
+    if (!sym.isUndefined() && !sym.getName().starts_with(neverc::OverrideNames::SymbolPrefix))
       ctx.symtab.addLazyObject(this, sym.getName());
 }
 

@@ -10,6 +10,7 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
+#include "neverc/Foundation/OverrideNames.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/STLExtras.h"
@@ -525,7 +526,7 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
     for (size_t i = 0; i != size; ++i) {
       const Elf_Shdr &sec = objSections[i];
       StringRef name = check(obj.getSectionName(sec, shstrtab));
-      if (name != ".neverc.overrides")
+      if (name != neverc::OverrideNames::ELFSectionName)
         continue;
       ArrayRef<uint8_t> data = check(this->getObj().getSectionContents(sec));
       StringRef payload(reinterpret_cast<const char *>(data.data()),
@@ -934,7 +935,8 @@ InputSectionBase *ObjFile<ELFT>::createInputSection(uint32_t idx,
   // `.neverc.overrides` content is parsed eagerly during ObjFile::parse(),
   // before symbol resolution. Just discard the section here so it never
   // reaches the final binary.
-  if (name == ".neverc.overrides" || name == ".neverc.overrides.marker")
+  if (name == neverc::OverrideNames::ELFSectionName ||
+      name == neverc::OverrideNames::ELFMarkerSectionName)
     return &InputSection::discarded;
 
   // The linker merges EH (exception handling) frames and creates a
@@ -1520,7 +1522,7 @@ void BitcodeFile::parse() {
   // into the linker symbol table below (nullptr slots), so
   // BitcodeCompiler::add() can hand LTO a no-op resolution. AsmPrinter does not
   // emit symbol records for these markers into native objects.
-  constexpr StringRef overridePrefix = "__neverc_ovr.";
+  constexpr StringRef overridePrefix = neverc::OverrideNames::SymbolPrefix;
   for (const auto &irSym : obj->symbols()) {
     StringRef name = irSym.getName();
     if (!name.consume_front(overridePrefix))
@@ -1559,7 +1561,7 @@ void BitcodeFile::parseLazy() {
   numSymbols = obj->symbols().size();
   symbols = std::make_unique<Symbol *[]>(numSymbols);
   for (auto [i, irSym] : llvm::enumerate(obj->symbols()))
-    if (!irSym.isUndefined() && !irSym.getName().starts_with("__neverc_ovr.")) {
+    if (!irSym.isUndefined() && !irSym.getName().starts_with(neverc::OverrideNames::SymbolPrefix)) {
       auto *sym = symtab.insert(saver().save(irSym.getName()));
       sym->resolve(LazyObject{*this});
       symbols[i] = sym;

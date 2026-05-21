@@ -12,6 +12,7 @@
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Builtin/BuiltinStringNames.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
+#include "neverc/Foundation/OverrideNames.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Core/Version.h"
 #include "neverc/Tree/Core/CharUnits.h"
@@ -1740,7 +1741,8 @@ void ModuleEmitter::emitOverrideSection() {
   auto *dataGV = new llvm::GlobalVariable(getModule(), data->getType(), true,
                                           llvm::GlobalValue::PrivateLinkage,
                                           data, "neverc.overrides.data");
-  dataGV->setSection(isMachO ? "__DATA,__neverc_ovr" : ".neverc.overrides");
+  dataGV->setSection(isMachO ? OverrideNames::MachOSectionSpec.data()
+                             : OverrideNames::ELFSectionName.data());
   dataGV->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   dataGV->setAlignment(llvm::Align(1));
   addUsedGlobal(dataGV);
@@ -1768,7 +1770,7 @@ void ModuleEmitter::emitOverrideSection() {
   // exactly as written here (no extra platform prefix mangling).
   llvm::Type *int8Ty = llvm::Type::getInt8Ty(getLLVMContext());
   for (const auto &name : mangledNames) {
-    std::string markerName = ("\01__neverc_ovr." + name);
+    std::string markerName = ("\01" + OverrideNames::SymbolPrefix + name).str();
     if (getModule().getNamedValue(markerName))
       continue;
     auto *marker =
