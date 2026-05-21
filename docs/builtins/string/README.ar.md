@@ -10,10 +10,13 @@
 
 يوفر NeverC نوع قيمة `string` مدمجًا للغة C. يجمع بين تصميم واجهة `std::string` في C++ وإمكانيات Unicode في `QString` من Qt، مما يتيح عمليات سلاسل نصية آمنة وفعالة في كود C.
 
-**التفعيل:** مرر `-fbuiltin-string` عند الترجمة (معطل افتراضيًا). وضع `-fshellcode` يفعّله تلقائيًا.
+**التفعيل:** مرر `-fbuiltin-string` عند الترجمة (معطل افتراضيًا). يُفعّل تلقائيًا في الحالات التالية:
+- ملف الإدخال بامتداد `.nc` (انظر [توثيق امتداد `.nc`](../../nc-extension/README.ar.md))
+- وضع `-fshellcode` نشط
 
 ```bash
-neverc -fbuiltin-string main.c -o main
+neverc hello.nc -o hello                # تلقائي — .nc يفعّله
+neverc -fbuiltin-string main.c -o main  # علم صريح لملفات .c
 ```
 
 ```c

@@ -219,3 +219,76 @@ TEST_F(DriverTest, WindowsGNUNoMSVCRuntime) {
   auto all = r.err + r.out;
   EXPECT_EQ(all.find("--dependent-lib=libcmt"), std::string::npos);
 }
+
+// ---- .nc extension auto-detection ----
+
+TEST_F(DriverTest, NcExtAutoFlags) {
+  auto ncSrc = tmpFile("nc_auto.nc");
+  writeFile(ncSrc, "int main(void) { return 0; }");
+  auto r = ncc({"-###", "-c", ncSrc.string()});
+  EXPECT_EQ(r.exitCode, 0) << r.err;
+  auto all = r.err + r.out;
+  EXPECT_NE(all.find("-fneverc-types"), std::string::npos)
+      << ".nc input should inject -fneverc-types\n" << all;
+  EXPECT_NE(all.find("-fbuiltin-string"), std::string::npos)
+      << ".nc input should inject -fbuiltin-string\n" << all;
+}
+
+TEST_F(DriverTest, CExtNoAutoFlags) {
+  auto cSrc = tmpFile("no_auto.c");
+  writeFile(cSrc, "int main(void) { return 0; }");
+  auto r = ncc({"-###", "-c", cSrc.string()});
+  EXPECT_EQ(r.exitCode, 0) << r.err;
+  auto all = r.err + r.out;
+  EXPECT_EQ(all.find("-fneverc-types"), std::string::npos)
+      << ".c input should not inject -fneverc-types\n" << all;
+  EXPECT_EQ(all.find("-fbuiltin-string"), std::string::npos)
+      << ".c input should not inject -fbuiltin-string\n" << all;
+}
+
+TEST_F(DriverTest, NcExtCrossTarget) {
+  auto ncSrc = tmpFile("nc_cross.nc");
+  writeFile(ncSrc, "int main(void) { return 0; }");
+  static const char *triples[] = {
+      "x86_64-linux-gnu",        "aarch64-linux-gnu",
+      "x86_64-pc-windows-msvc",  "aarch64-pc-windows-msvc",
+      "x86_64-apple-macos",      "arm64-apple-macos",
+      "aarch64-linux-android29",
+  };
+  for (auto *triple : triples) {
+    SCOPED_TRACE(triple);
+    auto r = ncc({"-###", "-target", triple, "-c", ncSrc.string()});
+    EXPECT_EQ(r.exitCode, 0) << r.err;
+    auto all = r.err + r.out;
+    EXPECT_NE(all.find("-fneverc-types"), std::string::npos)
+        << ".nc + " << triple << " should inject -fneverc-types\n" << all;
+    EXPECT_NE(all.find("-fbuiltin-string"), std::string::npos)
+        << ".nc + " << triple << " should inject -fbuiltin-string\n" << all;
+  }
+}
+
+TEST_F(DriverTest, NcExtWithShellcode) {
+  auto ncSrc = tmpFile("nc_shellcode.nc");
+  writeFile(ncSrc, "int entry(void) { return 0; }");
+  auto r = ncc({"-###", "-fshellcode", "--target=x86_64-linux-gnu",
+                ncSrc.string(), "-o", tmpFile("nc_shellcode.bin").string()});
+  EXPECT_EQ(r.exitCode, 0) << r.err;
+  auto all = r.err + r.out;
+  EXPECT_NE(all.find("-fneverc-types"), std::string::npos)
+      << ".nc + shellcode should inject -fneverc-types\n" << all;
+  EXPECT_NE(all.find("-fbuiltin-string"), std::string::npos)
+      << ".nc + shellcode should inject -fbuiltin-string\n" << all;
+}
+
+TEST_F(DriverTest, CExtExplicitFlagsStillWork) {
+  auto cSrc = tmpFile("explicit_flags.c");
+  writeFile(cSrc, "int main(void) { return 0; }");
+  auto r = ncc({"-###", "-fneverc-types", "-fbuiltin-string", "-c",
+                cSrc.string()});
+  EXPECT_EQ(r.exitCode, 0) << r.err;
+  auto all = r.err + r.out;
+  EXPECT_NE(all.find("-fneverc-types"), std::string::npos)
+      << "explicit -fneverc-types should pass through\n" << all;
+  EXPECT_NE(all.find("-fbuiltin-string"), std::string::npos)
+      << "explicit -fbuiltin-string should pass through\n" << all;
+}

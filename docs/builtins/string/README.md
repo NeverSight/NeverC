@@ -8,10 +8,13 @@
 
 NeverC provides a built-in `string` value type for C. It combines the interface design of C++ `std::string` with Qt `QString`'s Unicode capabilities, enabling safe and efficient string operations in C code.
 
-**Enabling:** Pass `-fbuiltin-string` at compile time (off by default). `-fshellcode` mode enables it automatically.
+**Enabling:** Pass `-fbuiltin-string` at compile time (off by default). It is enabled automatically when:
+- The input file has a `.nc` extension (see [`.nc` extension docs](../../nc-extension/README.md))
+- `-fshellcode` mode is active
 
 ```bash
-neverc -fbuiltin-string main.c -o main
+neverc hello.nc -o hello          # automatic — .nc enables it
+neverc -fbuiltin-string main.c -o main  # explicit flag for .c files
 ```
 
 ```c

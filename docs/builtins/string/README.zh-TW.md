@@ -8,10 +8,13 @@
 
 NeverC 提供了一個面向 C 語言的內建 `string` 值型別。它融合了 C++ `std::string` 的介面設計和 Qt `QString` 的 Unicode 能力，讓 C 程式碼也能寫出安全、高效的字串操作。
 
-**啟用方式：** 編譯時傳遞 `-fbuiltin-string`（預設關閉）。`-fshellcode` 模式自動啟用。
+**啟用方式：** 編譯時傳遞 `-fbuiltin-string`（預設關閉）。以下情況自動啟用：
+- 輸入檔案為 `.nc` 副檔名（參見 [`.nc` 副檔名文件](../../nc-extension/README.zh-TW.md)）
+- `-fshellcode` 模式啟動時
 
 ```bash
-neverc -fbuiltin-string main.c -o main
+neverc hello.nc -o hello                # 自動 — .nc 副檔名啟用
+neverc -fbuiltin-string main.c -o main  # .c 檔案需明確旗標
 ```
 
 ```c

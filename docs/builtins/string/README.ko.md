@@ -8,10 +8,13 @@
 
 NeverC는 C 언어를 위한 내장 `string` 값 타입을 제공합니다. C++ `std::string`의 인터페이스 설계와 Qt `QString`의 Unicode 기능을 결합하여 C 코드에서도 안전하고 효율적인 문자열 조작을 가능하게 합니다.
 
-**활성화:** 컴파일 시 `-fbuiltin-string` 전달 (기본 비활성화). `-fshellcode` 모드에서는 자동 활성화됩니다.
+**활성화:** 컴파일 시 `-fbuiltin-string` 전달 (기본 비활성화). 다음 경우 자동 활성화됩니다:
+- 입력 파일이 `.nc` 확장자인 경우 ([`.nc` 확장자 문서](../../nc-extension/README.ko.md) 참조)
+- `-fshellcode` 모드가 활성화된 경우
 
 ```bash
-neverc -fbuiltin-string main.c -o main
+neverc hello.nc -o hello                # 자동 — .nc 확장자가 활성화
+neverc -fbuiltin-string main.c -o main  # .c 파일에는 명시적 플래그 필요
 ```
 
 ```c

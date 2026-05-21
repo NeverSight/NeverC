@@ -212,6 +212,86 @@ TEST_F(BasicTest, BuiltinStringDCE) {
   }
 }
 
+// ---- .nc extension auto-detection ----
+
+TEST_F(BasicTest, NcExtStringAutoEnabled) {
+  auto src = (testDir() / "string" / "test_nc_ext_string.nc").string();
+  compileRunAndCheck("test_nc_ext_string", src, "-std=c23", 0,
+                     "test_nc_ext_string: ALL PASSED");
+}
+
+TEST_F(BasicTest, NcExtStringAutoEnabledDebug) {
+  auto src = (testDir() / "string" / "test_nc_ext_string.nc").string();
+  compileRunAndCheck("test_nc_ext_string_g", src, "-std=c23 -g", 0,
+                     "test_nc_ext_string: ALL PASSED");
+}
+
+TEST_F(BasicTest, NcExtNoExplicitFlag) {
+  auto ncSrc = tmpFile("no_flag.nc");
+  writeFile(ncSrc, R"(#include <stdio.h>
+int main(void) {
+    string s = "works";
+    printf("nc_no_flag: %s\n", s.len == 5 ? "ALL PASSED" : "FAILED");
+    return s.len != 5;
+})");
+  compileRunAndCheck("nc_no_flag", ncSrc.string(), "-std=c23", 0,
+                     "nc_no_flag: ALL PASSED");
+}
+
+TEST_F(BasicTest, CExtStringRequiresFlag) {
+  auto cSrc = tmpFile("c_needs_flag.c");
+  writeFile(cSrc, R"(int main(void) {
+    string s = "fail";
+    return 0;
+})");
+  auto args = splitFlags("-std=c23 -fsyntax-only");
+  for (auto &f : sysrootFlags()) args.push_back(f);
+  for (auto &f : archFlags()) args.push_back(f);
+  args.push_back(cSrc.string());
+  expectCommandFail("c_needs_flag", "undeclared identifier 'string'", args);
+}
+
+TEST_F(BasicTest, NcExtShellcodeString) {
+  auto ncSrc = tmpFile("nc_shellcode_str.nc");
+  writeFile(ncSrc, R"(int shellcode_entry(void) {
+    string s = "shellcode";
+    if (s.len != 9) return 1;
+    if (s != "shellcode") return 1;
+    string upper = s.to_upper();
+    if (upper != "SHELLCODE") return 1;
+    return 0;
+})");
+  auto bin = tmpFile("nc_shellcode_str.bin");
+  std::vector<std::string> args = {"-fshellcode", "-std=c23",
+                                   ncSrc.string(), "-o", bin.string()};
+  auto r = ncc(args);
+  EXPECT_EQ(r.exitCode, 0) << "nc+shellcode compile failed\n" << r.err;
+  EXPECT_TRUE(fs::exists(bin) && fileSize(bin) > 0)
+      << "nc+shellcode binary missing or empty";
+}
+
+TEST_F(BasicTest, NcExtShellcodeCrossCompile) {
+  auto ncSrc = tmpFile("nc_sc_cross.nc");
+  writeFile(ncSrc, R"(int shellcode_entry(void) {
+    string s = "cross";
+    return s.len != 5;
+})");
+  static const char *triples[] = {
+      "arm64-apple-macos",       "x86_64-apple-macos",
+      "aarch64-linux-gnu",       "x86_64-linux-gnu",
+      "aarch64-linux-android29", "x86_64-linux-android29",
+      "aarch64-pc-windows-msvc", "x86_64-pc-windows-msvc",
+  };
+  for (auto *triple : triples) {
+    SCOPED_TRACE(triple);
+    auto bin = tmpFile(std::string("nc_sc_") + triple + ".bin");
+    auto r = ncc({"-fshellcode", "-target", triple, ncSrc.string(), "-o",
+                  bin.string()});
+    EXPECT_TRUE(r.exitCode == 0 && fs::exists(bin) && fileSize(bin) > 0)
+        << ".nc shellcode cross-compile " << triple << " failed\n" << r.err;
+  }
+}
+
 TEST_F(BasicTest, AdvancedC) {
   compileRunAndCheck("test_advanced_c",
                      (testDir() / "standards" / "test_advanced_c.c").string(),
