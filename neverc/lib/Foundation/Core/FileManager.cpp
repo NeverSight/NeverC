@@ -858,7 +858,7 @@ ContentCache::getBufferOrNone(DiagnosticsEngine &Diag, FileManager &FM,
   llvm::StringRef BufStr = Buffer->getBuffer();
   const char *InvalidBOM = getInvalidBOM(BufStr);
 
-  auto moveBuffer = [this](const std::string &StrUtf8) {
+  auto moveBuffer = [this](llvm::StringRef StrUtf8) {
     auto NewBuf =
         llvm::WritableMemoryBuffer::getNewUninitMemBuffer(StrUtf8.size());
     if (NewBuf) {
@@ -872,7 +872,7 @@ ContentCache::getBufferOrNone(DiagnosticsEngine &Diag, FileManager &FM,
   if (InvalidBOM && checkBufUTF16(BufStr)) {
     if (llvm::convertUTF16ToUTF8String(
             llvm::ArrayRef<char>(BufStr.data(), BufStr.size()), StrUtf8)) {
-      moveBuffer(std::string(StrUtf8.data(), StrUtf8.size()));
+      moveBuffer(StrUtf8);
       BufStr = Buffer->getBuffer();
 
       // Verify it again.
