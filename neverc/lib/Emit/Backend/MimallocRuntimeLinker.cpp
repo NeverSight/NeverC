@@ -15,21 +15,11 @@ using namespace neverc;
 
 namespace {
 
-// malloc/free family symbols that mimalloc overrides.  These retain
-// external linkage so the system linker picks them up; everything
-// else becomes internal.
 bool isMallocOverrideSymbol(StringRef Name) {
-  // C allocation API that mimalloc overrides via MI_OVERRIDE.
-  // NeverC is a pure C compiler — no C++ operator new/delete needed.
-  return Name == "malloc" || Name == "free" || Name == "calloc" ||
-         Name == "realloc" || Name == "posix_memalign" ||
-         Name == "aligned_alloc" || Name == "memalign" ||
-         Name == "valloc" || Name == "pvalloc" ||
-         Name == "reallocf" || Name == "malloc_size" ||
-         Name == "malloc_usable_size" || Name == "malloc_good_size" ||
-         Name == "_malloc_default_zone" ||
-         // mimalloc public API (mi_malloc, mi_free, etc.)
-         Name.starts_with("mi_");
+#define NEVERC_MALLOC_OVERRIDE_EXACT(sym) if (Name == #sym) return true;
+#define NEVERC_MALLOC_OVERRIDE_PREFIX(pfx) if (Name.starts_with(#pfx)) return true;
+#include "neverc/Foundation/Builtin/MallocOverrideSymbols.def"
+  return false;
 }
 
 } // namespace

@@ -1,0 +1,38 @@
+// Malloc/free family symbols that mimalloc overrides via MI_OVERRIDE.
+// These retain external linkage after bitcode merge so the system linker
+// resolves them to mimalloc's implementations.
+//
+// NeverC is a pure C compiler — no C++ operator new/delete needed.
+//
+// NEVERC_MALLOC_OVERRIDE_EXACT(name)   — exact symbol name match
+// NEVERC_MALLOC_OVERRIDE_PREFIX(prefix) — prefix match (e.g. mi_*)
+
+#ifndef NEVERC_MALLOC_OVERRIDE_EXACT
+#define NEVERC_MALLOC_OVERRIDE_EXACT(name)
+#endif
+
+#ifndef NEVERC_MALLOC_OVERRIDE_PREFIX
+#define NEVERC_MALLOC_OVERRIDE_PREFIX(prefix)
+#endif
+
+// C allocation API
+NEVERC_MALLOC_OVERRIDE_EXACT(malloc)
+NEVERC_MALLOC_OVERRIDE_EXACT(free)
+NEVERC_MALLOC_OVERRIDE_EXACT(calloc)
+NEVERC_MALLOC_OVERRIDE_EXACT(realloc)
+NEVERC_MALLOC_OVERRIDE_EXACT(posix_memalign)
+NEVERC_MALLOC_OVERRIDE_EXACT(aligned_alloc)
+NEVERC_MALLOC_OVERRIDE_EXACT(memalign)
+NEVERC_MALLOC_OVERRIDE_EXACT(valloc)
+NEVERC_MALLOC_OVERRIDE_EXACT(pvalloc)
+NEVERC_MALLOC_OVERRIDE_EXACT(reallocf)
+NEVERC_MALLOC_OVERRIDE_EXACT(malloc_size)
+NEVERC_MALLOC_OVERRIDE_EXACT(malloc_usable_size)
+NEVERC_MALLOC_OVERRIDE_EXACT(malloc_good_size)
+NEVERC_MALLOC_OVERRIDE_EXACT(_malloc_default_zone)
+
+// mimalloc public API (mi_malloc, mi_free, mi_realloc, etc.)
+NEVERC_MALLOC_OVERRIDE_PREFIX(mi_)
+
+#undef NEVERC_MALLOC_OVERRIDE_EXACT
+#undef NEVERC_MALLOC_OVERRIDE_PREFIX
