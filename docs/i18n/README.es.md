@@ -45,7 +45,7 @@ int main(void) {
 }
 ```
 
-> **Nota:** El tipo **`string`** integrado requiere **`-fbuiltin-string`** para binarios alojados normales. **`-fshellcode`** lo habilita automáticamente.
+> **Nota:** El tipo **`string`** integrado requiere **`-fbuiltin-string`** para archivos `.c`. Se habilita automáticamente para [**archivos `.nc`**](../nc-extension/README.es.md) y en modo **`-fshellcode`**.
 
 ```bash
 # macOS arm64 / x86_64

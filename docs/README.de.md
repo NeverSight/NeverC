@@ -32,9 +32,17 @@ Die Shellcode-Kompilierungspipeline ist NeverCs Hauptforschungsschwerpunkt. Arch
 
 ---
 
+## Die `.nc` Dateierweiterung
+
+NeverC erkennt `.nc` als seine native Quelldateierweiterung. Mit `.nc` werden alle NeverC-Spracherweiterungen (`-fneverc-types`, `-fbuiltin-string`) automatisch aktiviert — keine zusätzlichen Flags erforderlich.
+
+**[`.nc`-Erweiterung →](nc-extension/README.de.md)**
+
+---
+
 ## Integrierte Laufzeiten
 
-NeverC erweitert Standard-C mit integrierten Laufzeiten als LLVM-Bitcode. Jede wird über ein `-fbuiltin-<name>`-Flag gesteuert.
+NeverC erweitert Standard-C mit integrierten Laufzeiten als LLVM-Bitcode. Jede wird über ein `-fbuiltin-<name>`-Flag gesteuert. `.nc`-Dateien aktivieren `string` automatisch.
 
 **[Integriertes Laufzeitsystem →](builtins/README.de.md)**
 

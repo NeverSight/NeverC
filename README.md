@@ -45,7 +45,7 @@ int main(void) {
 }
 ```
 
-> **Note:** The built-in **`string`** type requires **`-fbuiltin-string`** for normal hosted binaries. **`-fshellcode`** enables it automatically.
+> **Note:** The built-in **`string`** type requires **`-fbuiltin-string`** for `.c` files. It is enabled automatically for [**`.nc` files**](docs/nc-extension/README.md) and in **`-fshellcode`** mode.
 
 ```bash
 # macOS arm64 / x86_64

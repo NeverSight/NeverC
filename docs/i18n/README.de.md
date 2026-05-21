@@ -45,7 +45,7 @@ int main(void) {
 }
 ```
 
-> **Hinweis:** Der eingebaute **`string`**-Typ erfordert **`-fbuiltin-string`** bei normalen gehosteten Binärdateien. **`-fshellcode`** aktiviert ihn automatisch.
+> **Hinweis:** Der eingebaute **`string`**-Typ erfordert **`-fbuiltin-string`** für `.c`-Dateien. Er wird automatisch für [**`.nc`-Dateien**](../nc-extension/README.de.md) und im **`-fshellcode`**-Modus aktiviert.
 
 ```bash
 # macOS arm64 / x86_64

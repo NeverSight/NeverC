@@ -32,9 +32,17 @@ The shellcode compilation pipeline is NeverC's primary research focus. For archi
 
 ---
 
+## The `.nc` File Extension
+
+NeverC recognizes `.nc` as its native source file extension. When you use `.nc`, the compiler automatically enables all NeverC language extensions (`-fneverc-types`, `-fbuiltin-string`) — no extra flags needed.
+
+**[`.nc` Extension →](nc-extension/README.md)**
+
+---
+
 ## Built-in Runtimes
 
-NeverC extends standard C with opt-in built-in runtimes embedded as LLVM bitcode. Each is controlled by a `-fbuiltin-<name>` flag.
+NeverC extends standard C with opt-in built-in runtimes embedded as LLVM bitcode. Each is controlled by a `-fbuiltin-<name>` flag. For `.nc` files, `string` is enabled automatically.
 
 **[Built-in Runtime System →](builtins/README.md)**
 

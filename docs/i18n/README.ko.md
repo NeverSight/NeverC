@@ -45,7 +45,7 @@ int main(void) {
 }
 ```
 
-> **참고:** 내장 **`string`** 타입은 일반 호스트 바이너리에서 **`-fbuiltin-string`** 이 필요합니다. **`-fshellcode`** 는 자동으로 활성화합니다.
+> **참고:** 내장 **`string`** 타입은 `.c` 파일에서 **`-fbuiltin-string`** 이 필요합니다. [**`.nc` 파일**](../nc-extension/README.ko.md) 또는 **`-fshellcode`** 모드에서는 자동으로 활성화됩니다.
 
 ```bash
 # macOS arm64 / x86_64

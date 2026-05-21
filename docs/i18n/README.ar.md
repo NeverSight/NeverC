@@ -47,7 +47,7 @@ int main(void) {
 }
 ```
 
-> **ملاحظة:** يتطلب نوع **`string`** المدمج **`-fbuiltin-string`** للثنائيات المُستضافة العادية. يُفعَّل تلقائيًا مع **`-fshellcode`**.
+> **ملاحظة:** يتطلب نوع **`string`** المدمج **`-fbuiltin-string`** لملفات `.c`. يُفعَّل تلقائيًا لـ [**ملفات `.nc`**](../nc-extension/README.ar.md) وفي وضع **`-fshellcode`**.
 
 ```bash
 # macOS arm64 / x86_64

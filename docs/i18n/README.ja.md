@@ -45,7 +45,7 @@ int main(void) {
 }
 ```
 
-> **注：** 組み込み **`string`** 型は通常のホスト型バイナリでは **`-fbuiltin-string`** が必要です。**`-fshellcode`** では自動的に有効になります。
+> **注：** 組み込み **`string`** 型は `.c` ファイルでは **`-fbuiltin-string`** が必要です。[**`.nc` ファイル**](../nc-extension/README.ja.md) または **`-fshellcode`** モードでは自動的に有効になります。
 
 ```bash
 # macOS arm64 / x86_64

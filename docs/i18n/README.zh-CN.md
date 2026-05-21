@@ -45,7 +45,7 @@ int main(void) {
 }
 ```
 
-> **说明：** 内置 **`string`** 在普通宿主程序里需要显式加 **`-fbuiltin-string`**；使用 **`-fshellcode`** 时会自动打开。
+> **说明：** 内置 **`string`** 在 `.c` 文件中需要显式加 **`-fbuiltin-string`**。使用 [**`.nc` 文件**](../nc-extension/README.zh-CN.md) 或 **`-fshellcode`** 模式时自动启用。
 
 ```bash
 # macOS arm64 / x86_64

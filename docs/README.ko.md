@@ -32,9 +32,17 @@ Shellcode 컴파일 파이프라인은 NeverC의 핵심 연구 영역입니다. 
 
 ---
 
+## `.nc` 파일 확장자
+
+NeverC는 `.nc`를 네이티브 소스 파일 확장자로 인식합니다. `.nc`를 사용하면 모든 NeverC 언어 확장(`-fneverc-types`, `-fbuiltin-string`)이 자동으로 활성화됩니다 — 추가 플래그 불필요.
+
+**[`.nc` 확장자 →](nc-extension/README.ko.md)**
+
+---
+
 ## 내장 런타임
 
-NeverC는 LLVM bitcode로 임베디드된 내장 런타임으로 표준 C를 확장합니다. 각 `-fbuiltin-<name>` 플래그로 제어됩니다.
+NeverC는 LLVM bitcode로 임베디드된 내장 런타임으로 표준 C를 확장합니다. 각 `-fbuiltin-<name>` 플래그로 제어됩니다. `.nc` 파일에서는 `string`이 자동 활성화됩니다.
 
 **[내장 런타임 시스템 →](builtins/README.ko.md)**
 

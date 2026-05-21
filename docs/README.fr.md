@@ -32,9 +32,17 @@ Le pipeline de compilation shellcode est le cœur de la recherche NeverC. Archit
 
 ---
 
+## L'extension de fichier `.nc`
+
+NeverC reconnaît `.nc` comme son extension de fichier source native. Avec `.nc`, toutes les extensions du langage NeverC (`-fneverc-types`, `-fbuiltin-string`) sont activées automatiquement — aucun drapeau supplémentaire requis.
+
+**[Extension `.nc` →](nc-extension/README.fr.md)**
+
+---
+
 ## Runtimes Intégrés
 
-NeverC étend le C standard avec des runtimes intégrés sous forme de bitcode LLVM. Chacun est contrôlé par un drapeau `-fbuiltin-<name>`.
+NeverC étend le C standard avec des runtimes intégrés sous forme de bitcode LLVM. Chacun est contrôlé par un drapeau `-fbuiltin-<name>`. Les fichiers `.nc` activent `string` automatiquement.
 
 **[Système de Runtime Intégré →](builtins/README.fr.md)**
 
