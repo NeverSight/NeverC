@@ -43,6 +43,6 @@
 | المدمج | العلم | الوصف |
 |--------|-------|-------|
 | [السلسلة المدمجة](builtins/string/README.ar.md) | `-fbuiltin-string` | نوع `string` بدلالة القيمة، طرق بالنقطة، إدارة ذاكرة تلقائية، UTF-8 أصلي |
-| [mimalloc المدمج](builtins/mimalloc/README.ar.md) | `-fbuiltin-mimalloc` | تجاوز مخصص ذاكرة عالي الأداء شفاف `malloc`/`free`/`calloc`/`realloc` |
+| [mimalloc المدمج](builtins/mimalloc/README.ar.md) | `-fbuiltin-mimalloc` | تجاوز مخصص ذاكرة `mimalloc` عالي الأداء شفاف `malloc`/`free`/`calloc`/`realloc` |
 
 </div>

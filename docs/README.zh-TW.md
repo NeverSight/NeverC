@@ -41,4 +41,4 @@ NeverC 透過嵌入 LLVM bitcode 的內建執行時擴展標準 C，每個由 `-
 | 內建功能 | 旗標 | 描述 |
 |---------|------|------|
 | [內建字串](builtins/string/README.zh-TW.md) | `-fbuiltin-string` | 值語義 `string` 型別，點呼叫方法、自動記憶體管理和原生 UTF-8 |
-| [內建 mimalloc](builtins/mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | 透明高效能配置器覆蓋 `malloc`/`free`/`calloc`/`realloc` |
+| [內建 mimalloc](builtins/mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | 透明高效能 `mimalloc` 配置器覆蓋 `malloc`/`free`/`calloc`/`realloc` |

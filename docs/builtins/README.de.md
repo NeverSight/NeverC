@@ -11,7 +11,7 @@ NeverC erweitert Standard-C mit optionalen integrierten Laufzeiten, die als LLVM
 | Integriert | Flag | Standard | Beschreibung |
 |------------|------|----------|-------------|
 | [**`string`**](string/README.de.md) | `-fbuiltin-string` | Aus | Wertesemantischer String-Typ mit Punkt-Aufruf-Methoden, automatischer Speicherverwaltung und nativem UTF-8 |
-| [**mimalloc**](mimalloc/README.de.md) | `-fbuiltin-mimalloc` | **An** | Hochleistungs-Speicherallokator, der `malloc`/`free`/`calloc`/`realloc` transparent ersetzt |
+| [**`mimalloc`**](mimalloc/README.de.md) | `-fbuiltin-mimalloc` | **An** | Hochleistungs-Speicherallokator, der `malloc`/`free`/`calloc`/`realloc` transparent ersetzt |
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main

@@ -2,7 +2,7 @@
 
 [← Встроенная система времени выполнения NeverC](../README.ru.md)
 
-# Встроенный аллокатор mimalloc
+# Встроенный аллокатор `mimalloc`
 
 ## Обзор
 
@@ -20,7 +20,7 @@ neverc -fbuiltin-mimalloc main.c -o main
 
 ```bash
 neverc -fbuiltin-mimalloc hello.c -o hello                     # базовое
-neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # в сочетании со string
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # в сочетании со `string`
 neverc -fno-builtin-mimalloc main.c -o main                    # отключить
 ```
 
@@ -93,8 +93,8 @@ neverc/
 
 | Флаг | Описание |
 |------|----------|
-| `-fbuiltin-mimalloc` | Включить инъекцию переопределения mimalloc (включено по умолчанию для hosted-сборок) |
-| `-fno-builtin-mimalloc` | Явно отключить инъекцию mimalloc |
+| `-fbuiltin-mimalloc` | Включить инъекцию переопределения `mimalloc` (включено по умолчанию для hosted-сборок) |
+| `-fno-builtin-mimalloc` | Явно отключить инъекцию `mimalloc` |
 
 | Макрос | Значение | Когда определён |
 |--------|----------|----------------|

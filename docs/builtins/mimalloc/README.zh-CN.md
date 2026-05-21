@@ -2,7 +2,7 @@
 
 [← NeverC 内置运行时系统](../README.zh-CN.md)
 
-# 内置 mimalloc 分配器
+# 内置 `mimalloc` 分配器
 
 ## 概述
 
@@ -45,7 +45,7 @@ neverc -fbuiltin-mimalloc hello.c -o hello
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 ```
 
-两者同时启用时，字符串运行时的 `__builtin_malloc`/`__builtin_free` 调用由 mimalloc 提供服务。
+两者同时启用时，`string` 运行时的 `__builtin_malloc`/`__builtin_free` 调用由 `mimalloc` 提供服务。
 
 ### 禁用
 
@@ -215,7 +215,7 @@ neverc/
 │   └── Builtin/
 │       ├── BuiltinMimalloc.cpp         # 按 OS bitcode 分发
 │       ├── gen_mimalloc_source.py      # 生成各 OS 的单文件 wrapper
-│       └── bin2c.py                    # .bc → C 头文件（与 string 共享）
+│       └── bin2c.py                    # .bc → C 头文件（与 `string` 共享）
 │
 ├── lib/Emit/Backend/
 │   ├── MimallocRuntimeLinker.h         # Pass 声明
@@ -241,8 +241,8 @@ neverc/
 
 | 标志 | 描述 |
 |------|------|
-| `-fbuiltin-mimalloc` | 启用 mimalloc 覆盖注入（hosted 构建默认开启） |
-| `-fno-builtin-mimalloc` | 显式禁用 mimalloc 注入 |
+| `-fbuiltin-mimalloc` | 启用 `mimalloc` 覆盖注入（hosted 构建默认开启） |
+| `-fno-builtin-mimalloc` | 显式禁用 `mimalloc` 注入 |
 
 ### 预处理器宏
 

@@ -2,7 +2,7 @@
 
 [← NeverC 내장 런타임 시스템](../README.ko.md)
 
-# 내장 mimalloc 할당자
+# 내장 `mimalloc` 할당자
 
 ## 개요
 
@@ -20,7 +20,7 @@ neverc -fbuiltin-mimalloc main.c -o main
 
 ```bash
 neverc -fbuiltin-mimalloc hello.c -o hello                     # 기본
-neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # string과 조합
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # `string`과 조합
 neverc -fno-builtin-mimalloc main.c -o main                    # 비활성화
 ```
 
@@ -93,8 +93,8 @@ neverc/
 
 | 플래그 | 설명 |
 |--------|------|
-| `-fbuiltin-mimalloc` | mimalloc 오버라이드 주입 활성화 (호스트 빌드에서 기본 켜짐) |
-| `-fno-builtin-mimalloc` | mimalloc 주입 명시적 비활성화 |
+| `-fbuiltin-mimalloc` | `mimalloc` 오버라이드 주입 활성화 (호스트 빌드에서 기본 켜짐) |
+| `-fno-builtin-mimalloc` | `mimalloc` 주입 명시적 비활성화 |
 
 | 매크로 | 값 | 정의 조건 |
 |--------|----|---------| 

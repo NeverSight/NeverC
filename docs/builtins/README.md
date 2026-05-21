@@ -11,10 +11,10 @@ NeverC extends standard C with opt-in built-in runtimes that are embedded direct
 
 | Built-in                                    | Flag                 | Default | Description                                                                                       |
 | ------------------------------------------- | -------------------- | ------- | ------------------------------------------------------------------------------------------------- |
-| `**[string](string/README.md)`** | `-fbuiltin-string`   | Off     | Value-semantic string type with dot-call methods, automatic memory management, and native UTF-8   |
-| **[mimalloc](mimalloc/README.md)**          | `-fbuiltin-mimalloc` | **On**  | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
+| [**`string`**](string/README.md) | `-fbuiltin-string`   | Off     | Value-semantic string type with dot-call methods, automatic memory management, and native UTF-8   |
+| [**`mimalloc`**](mimalloc/README.md) | `-fbuiltin-mimalloc` | **On**  | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
 
-The `string` built-in requires explicit opt-in; mimalloc is enabled by default for all hosted builds (automatically suppressed in kernel, shellcode, and freestanding modes). They can be combined:
+The `string` built-in requires explicit opt-in; `mimalloc` is enabled by default for all hosted builds (automatically suppressed in kernel, shellcode, and freestanding modes). They can be combined:
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -72,8 +72,8 @@ Each built-in has a header + implementation pair in `neverc/Foundation/Builtin/`
 
 | Built-in | Header              | Implementation        |
 | -------- | ------------------- | --------------------- |
-| string   | `BuiltinString.h`   | `BuiltinString.cpp`   |
-| mimalloc | `BuiltinMimalloc.h` | `BuiltinMimalloc.cpp` |
+| `string`   | `BuiltinString.h`   | `BuiltinString.cpp`   |
+| `mimalloc` | `BuiltinMimalloc.h` | `BuiltinMimalloc.cpp` |
 
 
 The API provides `getEmbeddedBitcode()` to retrieve the precompiled LLVM bitcode blob, and `isSupported()` to check platform availability.
@@ -85,7 +85,7 @@ Bitcode generation follows a two-stage bootstrap:
 ```bash
 ninja neverc                         # Stage 1: empty bitcode placeholders
 ninja neverc-bootstrap-string-bc     # Compile string runtime with neverc
-ninja neverc-bootstrap-mimalloc-bc   # Compile mimalloc for all target OSes
+ninja neverc-bootstrap-mimalloc-bc   # Compile `mimalloc` for all target OSes
 ninja neverc                         # Stage 2: embed real bitcode
 ```
 
@@ -135,10 +135,10 @@ Certain compilation modes are incompatible with built-in runtimes. The driver au
 
 | Condition          | Effect              | Reason                       |
 | ------------------ | ------------------- | ---------------------------- |
-| `-fno-builtin`     | Suppresses mimalloc | No CRT override scenario     |
-| `-mkernel`         | Suppresses mimalloc | Kernel has no userspace heap |
-| `-fshellcode-mode` | Suppresses mimalloc | No heap in shellcode         |
-| `-ffreestanding`   | Suppresses mimalloc | No libc to override          |
+| `-fno-builtin`     | Suppresses `mimalloc` | No CRT override scenario     |
+| `-mkernel`         | Suppresses `mimalloc` | Kernel has no userspace heap |
+| `-fshellcode-mode` | Suppresses `mimalloc` | No heap in shellcode         |
+| `-ffreestanding`   | Suppresses `mimalloc` | No libc to override          |
 
 
 The `string` built-in has its own suppression logic within the shellcode pipeline (arena rewrite replaces heap allocation).

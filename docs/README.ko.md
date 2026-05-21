@@ -41,4 +41,4 @@ NeverC는 LLVM bitcode로 임베디드된 내장 런타임으로 표준 C를 확
 | 내장 기능 | 플래그 | 설명 |
 |----------|--------|------|
 | [내장 문자열](builtins/string/README.ko.md) | `-fbuiltin-string` | 값 의미론 `string` 타입, 도트 호출 메서드, 자동 메모리 관리, 네이티브 UTF-8 |
-| [내장 mimalloc](builtins/mimalloc/README.ko.md) | `-fbuiltin-mimalloc` | `malloc`/`free`/`calloc`/`realloc` 투명 고성능 할당자 오버라이드 |
+| [내장 mimalloc](builtins/mimalloc/README.ko.md) | `-fbuiltin-mimalloc` | `malloc`/`free`/`calloc`/`realloc` `mimalloc` 투명 고성능 할당자 오버라이드 |

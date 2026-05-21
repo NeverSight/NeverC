@@ -41,4 +41,4 @@ NeverC estende il C standard con runtime integrati come bitcode LLVM. Ciascuno Ã
 | Integrato | Flag | Descrizione |
 |-----------|------|-------------|
 | [String integrato](builtins/string/README.it.md) | `-fbuiltin-string` | Tipo `string` a semantica di valore, metodi con punto, gestione automatica della memoria, UTF-8 nativo |
-| [mimalloc integrato](builtins/mimalloc/README.it.md) | `-fbuiltin-mimalloc` | Sostituzione trasparente allocatore ad alte prestazioni `malloc`/`free`/`calloc`/`realloc` |
+| [mimalloc integrato](builtins/mimalloc/README.it.md) | `-fbuiltin-mimalloc` | Sostituzione trasparente allocatore `mimalloc` ad alte prestazioni `malloc`/`free`/`calloc`/`realloc` |

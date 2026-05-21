@@ -2,7 +2,7 @@
 
 [← NeverC 內建執行時系統](../README.zh-TW.md)
 
-# 內建 mimalloc 配置器
+# 內建 `mimalloc` 配置器
 
 ## 概述
 
@@ -107,8 +107,8 @@ neverc/
 
 | 旗標 | 描述 |
 |------|------|
-| `-fbuiltin-mimalloc` | 啟用 mimalloc 覆蓋注入（hosted 建置預設開啟） |
-| `-fno-builtin-mimalloc` | 明確停用 mimalloc 注入 |
+| `-fbuiltin-mimalloc` | 啟用 `mimalloc` 覆蓋注入（hosted 建置預設開啟） |
+| `-fno-builtin-mimalloc` | 明確停用 `mimalloc` 注入 |
 
 | 巨集 | 值 | 何時定義 |
 |------|----|---------| 

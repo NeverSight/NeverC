@@ -11,9 +11,9 @@ NeverC 通过可选的内置运行时扩展标准 C，这些运行时以 LLVM bi
 | 内置功能 | 标志 | 默认 | 描述 |
 |---------|------|------|------|
 | [**`string`**](string/README.zh-CN.md) | `-fbuiltin-string` | 关闭 | 值语义字符串类型，支持点调用方法、自动内存管理和原生 UTF-8 |
-| [**mimalloc**](mimalloc/README.zh-CN.md) | `-fbuiltin-mimalloc` | **开启** | 高性能内存分配器，透明替换 `malloc`/`free`/`calloc`/`realloc` |
+| [**`mimalloc`**](mimalloc/README.zh-CN.md) | `-fbuiltin-mimalloc` | **开启** | 高性能内存分配器，透明替换 `malloc`/`free`/`calloc`/`realloc` |
 
-`string` 内置需要显式启用；mimalloc 对所有 hosted 构建默认开启（内核、shellcode 和 freestanding 模式下自动抑制）。可以组合使用：
+`string` 内置需要显式启用；`mimalloc` 对所有 hosted 构建默认开启（内核、shellcode 和 freestanding 模式下自动抑制）。可以组合使用：
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -70,8 +70,8 @@ LANGOPT(BuiltinMimalloc, 1, 0, "inject mimalloc allocator override")
 
 | 内置功能 | 头文件 | 实现 |
 |---------|--------|------|
-| string | `BuiltinString.h` | `BuiltinString.cpp` |
-| mimalloc | `BuiltinMimalloc.h` | `BuiltinMimalloc.cpp` |
+| `string` | `BuiltinString.h` | `BuiltinString.cpp` |
+| `mimalloc` | `BuiltinMimalloc.h` | `BuiltinMimalloc.cpp` |
 
 API 提供 `getEmbeddedBitcode()` 用于获取预编译的 LLVM bitcode，以及 `isSupported()` 用于检查平台可用性。
 
@@ -82,7 +82,7 @@ Bitcode 生成遵循两阶段引导流程：
 ```bash
 ninja neverc                         # 阶段 1：空 bitcode 占位符
 ninja neverc-bootstrap-string-bc     # 使用 neverc 编译字符串运行时
-ninja neverc-bootstrap-mimalloc-bc   # 为所有目标 OS 编译 mimalloc
+ninja neverc-bootstrap-mimalloc-bc   # 为所有目标 OS 编译 `mimalloc`
 ninja neverc                         # 阶段 2：嵌入真实 bitcode
 ```
 
@@ -129,10 +129,10 @@ if (LangOpts.BuiltinMimalloc) {
 
 | 条件 | 效果 | 原因 |
 |------|------|------|
-| `-fno-builtin` | 抑制 mimalloc | 无 CRT 覆盖场景 |
-| `-mkernel` | 抑制 mimalloc | 内核无用户空间堆 |
-| `-fshellcode-mode` | 抑制 mimalloc | shellcode 无堆 |
-| `-ffreestanding` | 抑制 mimalloc | 无 libc 可覆盖 |
+| `-fno-builtin` | 抑制 `mimalloc` | 无 CRT 覆盖场景 |
+| `-mkernel` | 抑制 `mimalloc` | 内核无用户空间堆 |
+| `-fshellcode-mode` | 抑制 `mimalloc` | shellcode 无堆 |
+| `-ffreestanding` | 抑制 `mimalloc` | 无 libc 可覆盖 |
 
 `string` 内置有自己的抑制逻辑（shellcode 流水线中 arena 重写替换堆分配）。
 
@@ -144,7 +144,7 @@ if (LangOpts.BuiltinMimalloc) {
 
 ```c
 #ifdef __NEVERC_MIMALLOC__
-// mimalloc 已激活 — malloc/free 被透明覆盖
+// `mimalloc` 已激活 — malloc/free 被透明覆盖
 #endif
 ```
 

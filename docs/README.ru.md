@@ -41,4 +41,4 @@ NeverC расширяет стандартный C встроенными сре
 | Встроенная | Флаг | Описание |
 |-----------|------|----------|
 | [Встроенная строка](builtins/string/README.ru.md) | `-fbuiltin-string` | Тип `string` с семантикой значения, методы через точку, автоуправление памятью, нативный UTF-8 |
-| [Встроенный mimalloc](builtins/mimalloc/README.ru.md) | `-fbuiltin-mimalloc` | Прозрачная замена аллокатора высокой производительности `malloc`/`free`/`calloc`/`realloc` |
+| [Встроенный mimalloc](builtins/mimalloc/README.ru.md) | `-fbuiltin-mimalloc` | Прозрачная замена аллокатора `mimalloc` высокой производительности `malloc`/`free`/`calloc`/`realloc` |

@@ -11,9 +11,9 @@ NeverC 透過可選的內建執行時擴展標準 C，這些執行時以 LLVM bi
 | 內建功能 | 旗標 | 預設 | 描述 |
 |---------|------|------|------|
 | [**`string`**](string/README.zh-TW.md) | `-fbuiltin-string` | 關閉 | 值語義字串型別，支援點呼叫方法、自動記憶體管理和原生 UTF-8 |
-| [**mimalloc**](mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | **開啟** | 高效能記憶體配置器，透明替換 `malloc`/`free`/`calloc`/`realloc` |
+| [**`mimalloc`**](mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | **開啟** | 高效能記憶體配置器，透明替換 `malloc`/`free`/`calloc`/`realloc` |
 
-`string` 內建需要明確啟用；mimalloc 對所有 hosted 建置預設開啟（核心、shellcode 和 freestanding 模式下自動抑制）。可以組合使用：
+`string` 內建需要明確啟用；`mimalloc` 對所有 hosted 建置預設開啟（核心、shellcode 和 freestanding 模式下自動抑制）。可以組合使用：
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -71,7 +71,7 @@ LANGOPT(BuiltinMimalloc, 1, 0, "inject mimalloc allocator override")
 ```bash
 ninja neverc                         # 階段 1：空 bitcode 佔位符
 ninja neverc-bootstrap-string-bc     # 使用 neverc 編譯字串執行時
-ninja neverc-bootstrap-mimalloc-bc   # 為所有目標 OS 編譯 mimalloc
+ninja neverc-bootstrap-mimalloc-bc   # 為所有目標 OS 編譯 `mimalloc`
 ninja neverc                         # 階段 2：嵌入真實 bitcode
 ```
 
@@ -99,10 +99,10 @@ ninja neverc                         # 階段 2：嵌入真實 bitcode
 
 | 條件 | 效果 | 原因 |
 |------|------|------|
-| `-fno-builtin` | 抑制 mimalloc | 無 CRT 覆蓋場景 |
-| `-mkernel` | 抑制 mimalloc | 核心無使用者空間堆積 |
-| `-fshellcode-mode` | 抑制 mimalloc | shellcode 無堆積 |
-| `-ffreestanding` | 抑制 mimalloc | 無 libc 可覆蓋 |
+| `-fno-builtin` | 抑制 `mimalloc` | 無 CRT 覆蓋場景 |
+| `-mkernel` | 抑制 `mimalloc` | 核心無使用者空間堆積 |
+| `-fshellcode-mode` | 抑制 `mimalloc` | shellcode 無堆積 |
+| `-ffreestanding` | 抑制 `mimalloc` | 無 libc 可覆蓋 |
 
 ---
 
@@ -112,7 +112,7 @@ ninja neverc                         # 階段 2：嵌入真實 bitcode
 
 ```c
 #ifdef __NEVERC_MIMALLOC__
-// mimalloc 已啟動 — malloc/free 被透明覆蓋
+// `mimalloc` 已啟動 — malloc/free 被透明覆蓋
 #endif
 ```
 

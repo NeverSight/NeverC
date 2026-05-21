@@ -2,7 +2,7 @@
 
 [← NeverC Integriertes Laufzeitsystem](../README.de.md)
 
-# Integrierter mimalloc-Allokator
+# Integrierter `mimalloc`-Allokator
 
 ## Übersicht
 
@@ -20,7 +20,7 @@ neverc -fbuiltin-mimalloc main.c -o main
 
 ```bash
 neverc -fbuiltin-mimalloc hello.c -o hello                     # einfach
-neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # mit string kombiniert
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # mit `string` kombiniert
 neverc -fno-builtin-mimalloc main.c -o main                    # deaktivieren
 ```
 
@@ -93,8 +93,8 @@ neverc/
 
 | Flag | Beschreibung |
 |------|-------------|
-| `-fbuiltin-mimalloc` | mimalloc-Override-Injektion aktivieren (standardmäßig an für Hosted-Builds) |
-| `-fno-builtin-mimalloc` | mimalloc-Injektion explizit deaktivieren |
+| `-fbuiltin-mimalloc` | `mimalloc`-Override-Injektion aktivieren (standardmäßig an für Hosted-Builds) |
+| `-fno-builtin-mimalloc` | `mimalloc`-Injektion explizit deaktivieren |
 
 | Makro | Wert | Wann definiert |
 |-------|------|---------------|

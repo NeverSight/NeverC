@@ -2,7 +2,7 @@
 
 [→ نظام وقت التشغيل المدمج في NeverC](../README.ar.md)
 
-# مخصص الذاكرة mimalloc المدمج
+# مخصص الذاكرة `mimalloc` المدمج
 
 ## نظرة عامة
 
@@ -20,7 +20,7 @@ neverc -fbuiltin-mimalloc main.c -o main
 
 ```bash
 neverc -fbuiltin-mimalloc hello.c -o hello                     # أساسي
-neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # مع string
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # مع `string`
 neverc -fno-builtin-mimalloc main.c -o main                    # تعطيل
 ```
 
@@ -93,8 +93,8 @@ neverc/
 
 | العلم | الوصف |
 |-------|-------|
-| `-fbuiltin-mimalloc` | تفعيل حقن تجاوز mimalloc (مفعّل افتراضياً للبناءات المستضافة) |
-| `-fno-builtin-mimalloc` | تعطيل حقن mimalloc صراحة |
+| `-fbuiltin-mimalloc` | تفعيل حقن تجاوز `mimalloc` (مفعّل افتراضياً للبناءات المستضافة) |
+| `-fno-builtin-mimalloc` | تعطيل حقن `mimalloc` صراحة |
 
 | الماكرو | القيمة | متى يُعرَّف |
 |---------|--------|-------------|

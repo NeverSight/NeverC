@@ -2,7 +2,7 @@
 
 [← NeverC 組み込みランタイムシステム](../README.ja.md)
 
-# 組み込み mimalloc アロケータ
+# 組み込み `mimalloc` アロケータ
 
 ## 概要
 
@@ -20,7 +20,7 @@ neverc -fbuiltin-mimalloc main.c -o main
 
 ```bash
 neverc -fbuiltin-mimalloc hello.c -o hello                     # 基本
-neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # string と組み合わせ
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # `string` と組み合わせ
 neverc -fno-builtin-mimalloc main.c -o main                    # 無効化
 ```
 
@@ -93,8 +93,8 @@ neverc/
 
 | フラグ | 説明 |
 |--------|------|
-| `-fbuiltin-mimalloc` | mimalloc オーバーライド注入を有効化（ホステッドビルドではデフォルトオン） |
-| `-fno-builtin-mimalloc` | mimalloc 注入を明示的に無効化 |
+| `-fbuiltin-mimalloc` | `mimalloc` オーバーライド注入を有効化（ホステッドビルドではデフォルトオン） |
+| `-fno-builtin-mimalloc` | `mimalloc` 注入を明示的に無効化 |
 
 | マクロ | 値 | 定義条件 |
 |--------|----|---------| 

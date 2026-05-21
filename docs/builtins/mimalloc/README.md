@@ -2,7 +2,7 @@
 
 [← NeverC Built-in Runtime System](../README.md)
 
-# Built-in mimalloc Allocator
+# Built-in `mimalloc` Allocator
 
 ## Overview
 
@@ -45,7 +45,7 @@ neverc -fbuiltin-mimalloc hello.c -o hello
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 ```
 
-When both are enabled, the string runtime's `__builtin_malloc`/`__builtin_free` calls are served by mimalloc.
+When both are enabled, the `string` runtime's `__builtin_malloc`/`__builtin_free` calls are served by `mimalloc`.
 
 ### Disabling
 
@@ -87,7 +87,7 @@ int main(void) {
 | Windows x86_64 (MSVC) | `x86_64-pc-windows-msvc` | Supported |
 | Windows AArch64 (MSVC) | `aarch64-pc-windows-msvc` | Supported |
 
-Unsupported platforms (FreeBSD, etc.) silently skip mimalloc injection — no error is emitted, the binary simply uses the system allocator.
+Unsupported platforms (FreeBSD, etc.) silently skip `mimalloc` injection — no error is emitted, the binary simply uses the system allocator.
 
 ### OS-Specific Override Mechanisms
 
@@ -163,7 +163,7 @@ mimalloc uses OS-specific system calls (`mmap` on Linux, `vm_allocate` on macOS,
 
 ### Whole-Archive Semantics
 
-Unlike the string built-in (which prunes unused functions via call-graph BFS), mimalloc uses **whole-archive** merge — all functions are linked in. This is necessary because:
+Unlike the `string` built-in (which prunes unused functions via call-graph BFS), `mimalloc` uses **whole-archive** merge — all functions are linked in. This is necessary because:
 
 1. mimalloc's override mechanism requires the complete set of `malloc`/`free`/`calloc`/`realloc` entry points
 2. Internal helper functions are tightly interconnected
@@ -273,7 +273,7 @@ neverc/
 │   └── Builtin/
 │       ├── BuiltinMimalloc.cpp         # Per-OS bitcode dispatch (Linux/Darwin/iOS/Win32)
 │       ├── gen_mimalloc_source.py      # Generate single-file wrapper for each OS
-│       └── bin2c.py                    # .bc → C header (shared with string)
+│       └── bin2c.py                    # .bc → C header (shared with `string`)
 │
 ├── lib/Emit/Backend/
 │   ├── MimallocRuntimeLinker.h         # Pass declaration
@@ -299,8 +299,8 @@ neverc/
 
 | Flag | Description |
 |------|-------------|
-| `-fbuiltin-mimalloc` | Enable mimalloc override injection (on by default for hosted builds) |
-| `-fno-builtin-mimalloc` | Explicitly disable mimalloc injection |
+| `-fbuiltin-mimalloc` | Enable `mimalloc` override injection (on by default for hosted builds) |
+| `-fno-builtin-mimalloc` | Explicitly disable `mimalloc` injection |
 
 ### Preprocessor Macro
 
