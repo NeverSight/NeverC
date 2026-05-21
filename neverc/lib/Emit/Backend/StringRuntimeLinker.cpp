@@ -4,6 +4,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Module.h"
@@ -133,7 +134,9 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   // the merge.  GlobalVariable has no function-attribute equivalent;
   // capturing names while RuntimeMod is still isolated is the simplest
   // way to identify "this global came from the runtime" post-merge.
-  DenseSet<StringRef> RuntimeGlobalNames;
+  // Must own the strings: linkModules destroys the source Module,
+  // invalidating any StringRef into its ValueSymbolTable.
+  StringSet<> RuntimeGlobalNames;
   for (const GlobalVariable &GV : RuntimeMod->globals())
     if (!GV.isDeclaration())
       RuntimeGlobalNames.insert(GV.getName());

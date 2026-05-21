@@ -1,5 +1,6 @@
 #include "Backend/MimallocRuntimeLinker.h"
 #include "neverc/Foundation/Builtin/BuiltinMimalloc.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Module.h"
@@ -63,8 +64,10 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   stripHostAttributes(*MimallocMod);
 
   // Capture names of all mimalloc definitions before the merge.
-  DenseSet<StringRef> MimallocFnNames;
-  DenseSet<StringRef> MimallocGlobalNames;
+  // Must own the strings: linkModules destroys the source Module,
+  // invalidating any StringRef into its ValueSymbolTable.
+  StringSet<> MimallocFnNames;
+  StringSet<> MimallocGlobalNames;
   for (const Function &F : *MimallocMod)
     if (!F.isDeclaration())
       MimallocFnNames.insert(F.getName());
