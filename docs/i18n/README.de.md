@@ -6,7 +6,7 @@
 
 **Sicherheitsforschungsorientierter C23-Compiler auf LLVM-Basis**
 
-Integrierter Linker · Shellcode-Pipeline · Eingebauter `string`-Typ
+Integrierter Linker · Shellcode-Pipeline · Integrierte Laufzeiten (`string` · mimalloc)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#funktionen)
@@ -30,7 +30,7 @@ NeverC kompiliert Standard-C in gehostete Binärdateien, Freestanding-Executable
 - **[Shellcode-Compiler](../shellcode-compiler/README.de.md)** — mehrstufige IR/MIR-Pipeline, plattformübergreifende Extraktion, Import-/Syscall-Lowering, Kernelmodus, Bad-Byte-Audit, Plugin-Architektur
 - **Integrierter Linker** — COFF, ELF und Mach-O in einem Binary; kein externes `ld` oder `link.exe`
 - **Cross-Kompilierung** — Windows-PE von macOS/Linux mit gebündeltem MSVC-SDK
-- **[Eingebauter `string`-Typ](../builtins/string/README.de.md)** — Werttyp-String mit Punkt-Methodensyntax, automatischer Speicherverwaltung und nativer UTF-8-Unterstützung
+- **[Integrierte Laufzeiten](../builtins/README.de.md)** — in den Compiler eingebettete LLVM-Bitcode-Laufzeiten: [`string`](../builtins/string/README.de.md) (Werttyp-String, automatische Speicherverwaltung) und [`mimalloc`](../builtins/mimalloc/README.de.md) (transparenter Hochleistungs-Allokator-Override)
 - **Schlanker LLVM-Build** — nur x86_64 / AArch64-Backends; C++/ObjC/OpenMP-Pfade entfernt
 
 ## Schnellbeispiel

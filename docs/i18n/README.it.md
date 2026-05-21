@@ -6,7 +6,7 @@
 
 **Compilatore C23 orientato alla ricerca sulla sicurezza, costruito su LLVM**
 
-Linker integrato · Pipeline shellcode · Tipo `string` integrato
+Linker integrato · Pipeline shellcode · Runtime integrati (`string` · mimalloc)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#funzionalità)
@@ -30,7 +30,7 @@ NeverC compila C standard in binari ospitati, eseguibili freestanding e shellcod
 - **[Compilatore shellcode](../shellcode-compiler/README.it.md)** — pipeline IR/MIR multistadio, estrazione multipiattaforma, risoluzione import/syscall, modalità kernel, audit byte vietati, architettura a plugin
 - **Linker integrato** — COFF, ELF e Mach-O in un solo binario; nessun `ld` o `link.exe` esterno
 - **Cross-compilazione** — PE Windows da macOS/Linux con SDK MSVC incluso
-- **[Tipo `string` integrato](../builtins/string/README.it.md)** — string a semantica di valore con sintassi a metodi puntati, gestione automatica della memoria e supporto UTF-8 nativo
+- **[Runtime integrati](../builtins/README.it.md)** — runtime LLVM bitcode integrati nel compilatore: [`string`](../builtins/string/README.it.md) (stringa a semantica di valore, gestione automatica della memoria) e [`mimalloc`](../builtins/mimalloc/README.it.md) (sostituzione trasparente allocatore ad alte prestazioni)
 - **Build LLVM snella** — solo backend x86_64 / AArch64; percorsi C++/ObjC/OpenMP rimossi
 
 ## Esempio rapido

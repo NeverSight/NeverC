@@ -32,8 +32,13 @@
 
 ---
 
-## Встроенный тип `string`
+## Встроенные среды выполнения
 
-NeverC предоставляет встроенный тип-значение `string` для C, сочетающий эргономику `std::string` и поддержку Unicode уровня `QString`. Включается через `-fbuiltin-string` (автоматически в режиме `-fshellcode`).
+NeverC расширяет стандартный C встроенными средами выполнения в виде LLVM bitcode. Каждая управляется флагом `-fbuiltin-<name>`.
 
-**[Встроенная строка →](builtins/string/README.ru.md)**
+**[Система встроенных сред →](builtins/README.ru.md)**
+
+| Встроенная | Флаг | Описание |
+|-----------|------|----------|
+| [Встроенная строка](builtins/string/README.ru.md) | `-fbuiltin-string` | Тип `string` с семантикой значения, методы через точку, автоуправление памятью, нативный UTF-8 |
+| [Встроенный mimalloc](builtins/mimalloc/README.ru.md) | `-fbuiltin-mimalloc` | Прозрачная замена аллокатора высокой производительности `malloc`/`free`/`calloc`/`realloc` |

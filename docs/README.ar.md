@@ -34,10 +34,15 @@
 
 ---
 
-## نوع `string` المدمج
+## أوقات التشغيل المدمجة
 
-يوفر NeverC نوع قيمة `string` مدمجًا للغة C، يجمع بين سهولة استخدام `std::string` ودعم Unicode على مستوى `QString`. يُفعّل عبر `-fbuiltin-string` (تلقائيًا في وضع `-fshellcode`).
+يوسع NeverC لغة C القياسية بأوقات تشغيل مدمجة كـ LLVM bitcode. كل منها يُتحكم به عبر علم `-fbuiltin-<name>`.
 
-**[السلسلة النصية المدمجة →](builtins/string/README.ar.md)**
+**[نظام وقت التشغيل المدمج →](builtins/README.ar.md)**
+
+| المدمج | العلم | الوصف |
+|--------|-------|-------|
+| [السلسلة المدمجة](builtins/string/README.ar.md) | `-fbuiltin-string` | نوع `string` بدلالة القيمة، طرق بالنقطة، إدارة ذاكرة تلقائية، UTF-8 أصلي |
+| [mimalloc المدمج](builtins/mimalloc/README.ar.md) | `-fbuiltin-mimalloc` | تجاوز مخصص ذاكرة عالي الأداء شفاف `malloc`/`free`/`calloc`/`realloc` |
 
 </div>

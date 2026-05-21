@@ -32,8 +32,13 @@ Die Shellcode-Kompilierungspipeline ist NeverCs Hauptforschungsschwerpunkt. Arch
 
 ---
 
-## Eingebauter `string`-Typ
+## Integrierte Laufzeiten
 
-NeverC bietet einen eingebauten `string`-Werttyp für C, der `std::string`-Ergonomie und `QString`-Unicode-Unterstützung vereint. Aktivierung über `-fbuiltin-string` (automatisch im `-fshellcode`-Modus).
+NeverC erweitert Standard-C mit integrierten Laufzeiten als LLVM-Bitcode. Jede wird über ein `-fbuiltin-<name>`-Flag gesteuert.
 
-**[Eingebauter String →](builtins/string/README.de.md)**
+**[Integriertes Laufzeitsystem →](builtins/README.de.md)**
+
+| Integriert | Flag | Beschreibung |
+|------------|------|-------------|
+| [Integrierter String](builtins/string/README.de.md) | `-fbuiltin-string` | `string`-Werttyp mit Punkt-Aufruf-Methoden, automatischer Speicherverwaltung, nativem UTF-8 |
+| [Integriertes mimalloc](builtins/mimalloc/README.de.md) | `-fbuiltin-mimalloc` | Transparenter Hochleistungs-Allokator-Override für `malloc`/`free`/`calloc`/`realloc` |

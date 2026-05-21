@@ -32,8 +32,13 @@ La pipeline di compilazione shellcode è il focus principale di ricerca di Never
 
 ---
 
-## Tipo `string` integrato
+## Runtime Integrati
 
-NeverC fornisce un tipo valore `string` integrato per il C, unendo l'ergonomia di `std::string` al supporto Unicode di `QString`. Attivazione tramite `-fbuiltin-string` (automatico in modalità `-fshellcode`).
+NeverC estende il C standard con runtime integrati come bitcode LLVM. Ciascuno è controllato da un flag `-fbuiltin-<name>`.
 
-**[String integrato →](builtins/string/README.it.md)**
+**[Sistema Runtime Integrato →](builtins/README.it.md)**
+
+| Integrato | Flag | Descrizione |
+|-----------|------|-------------|
+| [String integrato](builtins/string/README.it.md) | `-fbuiltin-string` | Tipo `string` a semantica di valore, metodi con punto, gestione automatica della memoria, UTF-8 nativo |
+| [mimalloc integrato](builtins/mimalloc/README.it.md) | `-fbuiltin-mimalloc` | Sostituzione trasparente allocatore ad alte prestazioni `malloc`/`free`/`calloc`/`realloc` |

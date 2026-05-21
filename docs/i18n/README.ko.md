@@ -6,7 +6,7 @@
 
 **LLVM 기반의 보안 연구용 C23 컴파일러**
 
-통합 링커 · Shellcode 파이프라인 · 내장 `string` 타입
+통합 링커 · Shellcode 파이프라인 · 내장 런타임（`string` · mimalloc）
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#기능)
@@ -30,7 +30,7 @@ NeverC는 표준 C를 호스트 바이너리, 프리스탠딩 실행 파일, 위
 - **[Shellcode 컴파일러](../shellcode-compiler/README.ko.md)** — 다단계 IR/MIR 파이프라인, 크로스 플랫폼 추출, 임포트/시스템 콜 저하, 커널 모드, 배드 바이트 감사, 플러그인 아키텍처
 - **통합 링커** — 단일 바이너리에서 COFF, ELF, Mach-O; 외부 `ld` / `link.exe` 불필요
 - **크로스 컴파일** — macOS/Linux에서 번들 MSVC SDK로 Windows PE 빌드
-- **[내장 `string` 타입](../builtins/string/README.ko.md)** — 값 의미론 문자열, 점 표기 메서드 구문, 자동 메모리 관리, 네이티브 UTF-8 지원
+- **[내장 런타임](../builtins/README.ko.md)** — 컴파일러 임베디드 LLVM bitcode 런타임: [`string`](../builtins/string/README.ko.md) (값 의미론 문자열, 자동 메모리 관리) 및 [`mimalloc`](../builtins/mimalloc/README.ko.md) (투명 고성능 할당자 오버라이드)
 - **경량 LLVM 빌드** — x86_64 / AArch64 백엔드만; C++/ObjC/OpenMP 경로 제거
 
 ## 빠른 예제

@@ -32,8 +32,13 @@ Shellcode 컴파일 파이프라인은 NeverC의 핵심 연구 영역입니다. 
 
 ---
 
-## 내장 문자열 타입
+## 내장 런타임
 
-NeverC는 C 언어를 위한 내장 `string` 값 타입을 제공합니다. `std::string`의 사용 편의성과 `QString` 수준의 Unicode 지원을 C에 제공합니다. `-fbuiltin-string`으로 활성화 (`-fshellcode` 모드에서는 자동 활성화).
+NeverC는 LLVM bitcode로 임베디드된 내장 런타임으로 표준 C를 확장합니다. 각 `-fbuiltin-<name>` 플래그로 제어됩니다.
 
-**[내장 문자열 →](builtins/string/README.ko.md)**
+**[내장 런타임 시스템 →](builtins/README.ko.md)**
+
+| 내장 기능 | 플래그 | 설명 |
+|----------|--------|------|
+| [내장 문자열](builtins/string/README.ko.md) | `-fbuiltin-string` | 값 의미론 `string` 타입, 도트 호출 메서드, 자동 메모리 관리, 네이티브 UTF-8 |
+| [내장 mimalloc](builtins/mimalloc/README.ko.md) | `-fbuiltin-mimalloc` | `malloc`/`free`/`calloc`/`realloc` 투명 고성능 할당자 오버라이드 |

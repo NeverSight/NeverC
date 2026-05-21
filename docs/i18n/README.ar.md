@@ -8,7 +8,7 @@
 
 **مُجمِّع C23 موجَّه لأبحاث الأمن على LLVM**
 
-مُرابط مدمج · مسار shellcode · نوع `string` مدمج
+مُرابط مدمج · مسار shellcode · أوقات تشغيل مدمجة (`string` · mimalloc)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#الميزات)
@@ -32,7 +32,7 @@
 - **[مُجمِّع shellcode](../shellcode-compiler/README.ar.md)** — مسار IR/MIR متعدد المراحل، استخراج متعدد المنصات، حل الاستيراد/استدعاءات النظام، وضع النواة، تدقيق البايتات المحظورة، بنية إضافات
 - **مُرابط مدمج** — COFF وELF وMach-O في ثنائي واحد؛ دون `ld` أو `link.exe` خارجي
 - **تجميع متقاطع** — PE لـ Windows من macOS/Linux مع MSVC SDK مضمّن
-- **[نوع `string` مدمج](../builtins/string/README.ar.md)** — سلسلة بدلالة القيمة مع صيغة طرق بالنقطة وإدارة ذاكرة تلقائية ودعم UTF-8 أصلي
+- **[أوقات التشغيل المدمجة](../builtins/README.ar.md)** — أوقات تشغيل LLVM bitcode مدمجة في المترجم: [`string`](../builtins/string/README.ar.md) (سلسلة بدلالة القيمة، إدارة ذاكرة تلقائية) و [`mimalloc`](../builtins/mimalloc/README.ar.md) (تجاوز مخصص ذاكرة عالي الأداء شفاف)
 - **بناء LLVM خفيف** — خلفية x86_64 / AArch64 فقط؛ إزالة مسارات C++/ObjC/OpenMP
 
 ## مثال سريع
