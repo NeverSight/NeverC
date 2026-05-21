@@ -2300,12 +2300,11 @@ bool CompilerInvocation::CreateFromArgsImpl(
 
   ParseLangArgs(LangOpts, Args, DashX, T, Res.getPrepOpts().Includes, Diags);
 
-  for (const auto &Input : Res.getFrontendOpts().Inputs) {
-    if (llvm::sys::path::extension(Input.getFile()) == ".nc") {
-      LangOpts.NeverCTypes = 1;
-      LangOpts.BuiltinString = 1;
-      break;
-    }
+  if (llvm::any_of(Res.getFrontendOpts().Inputs, [](const FrontendInputFile &F) {
+        return llvm::sys::path::extension(F.getFile()) == ".nc";
+      })) {
+    LangOpts.NeverCTypes = 1;
+    LangOpts.BuiltinString = 1;
   }
 
   ParseCodeGenArgs(Res.getCodeGenOpts(), Args, DashX, Diags, T,
