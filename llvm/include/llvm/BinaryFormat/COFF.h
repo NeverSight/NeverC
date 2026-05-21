@@ -27,15 +27,60 @@
 
 #ifdef _WIN32
 // Windows SDK (winnt.h) defines many IMAGE_* macros that collide with the
-// COFF enum members declared below. We don't pull <winnt.h> in from here
-// — that drags in <windef.h>/<windows.h> and its avalanche of macros
-// (PASSTHROUGH, min/max, etc.) into every TU that includes this header.
-// Instead, just #undef the names: if winnt.h has already been included
-// transitively, this kills its macros before our enum declarations; if
-// winnt.h is included later, callers that touch COFF::IMAGE_* must
-// ensure the offending Windows headers aren't pulled in between (the
-// usual culprit is <windows.h> from another LLVM header — keep those
-// out of public headers).
+// COFF enum members declared below. The robust fix is to load <winnt.h>
+// up-front via <windows.h>, then #undef the IMAGE_* names. After this,
+// winnt.h's own _WINNT_ include guard makes any later transitive
+// #include <windows.h> (e.g., via the C++ stdlib on MSVC) a no-op for
+// winnt.h — so the IMAGE_* macros stay dead for the rest of every TU
+// that uses COFF::IMAGE_*.
+//
+// The trick is keeping <windows.h>'s footprint small: it transitively
+// pulls in <wingdi.h> (defines PASSTHROUGH, ERROR), <winuser.h>, and a
+// pile of others whose macros also clash with LLVM identifiers. Set
+// the full menu of NO* gates so only <winnt.h> + the basic types come
+// through.
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef NOGDI
+#define NOGDI
+#endif
+#ifndef NOUSER
+#define NOUSER
+#endif
+#ifndef NOSERVICE
+#define NOSERVICE
+#endif
+#ifndef NOMCX
+#define NOMCX
+#endif
+#ifndef NOIME
+#define NOIME
+#endif
+#ifndef NOSOUND
+#define NOSOUND
+#endif
+#ifndef NOCOMM
+#define NOCOMM
+#endif
+#ifndef NOKANJI
+#define NOKANJI
+#endif
+#ifndef NORPC
+#define NORPC
+#endif
+#ifndef NOPROXYSTUB
+#define NOPROXYSTUB
+#endif
+#ifndef NOTAPE
+#define NOTAPE
+#endif
+#include <windows.h>
+// Now strip the IMAGE_* macros so our enum declarations below — and the
+// use sites in consumer .cpp files — see plain identifiers.
 // `#undef` on an undefined macro is a harmless no-op.
 #undef IMAGE_FILE_MACHINE_UNKNOWN
 #undef IMAGE_FILE_MACHINE_AM33
