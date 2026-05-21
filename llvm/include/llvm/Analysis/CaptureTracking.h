@@ -16,6 +16,15 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 
+// Windows SDK's <wingdi.h> defines PASSTHROUGH as a macro (printer escape
+// code 19), which clobbers UseCaptureKind::PASSTHROUGH below. The CMake
+// build adds -DNOGDI globally to keep wingdi.h out, but defend locally
+// too in case this header is consumed by a TU that pulled <windows.h>
+// in before -DNOGDI took effect.
+#ifdef PASSTHROUGH
+#undef PASSTHROUGH
+#endif
+
 namespace llvm {
 
 class Value;

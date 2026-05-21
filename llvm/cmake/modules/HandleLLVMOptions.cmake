@@ -177,6 +177,15 @@ if(WIN32)
   else(CYGWIN)
     set(LLVM_ON_WIN32 1)
     set(LLVM_ON_UNIX 0)
+    # Suppress <windows.h>'s "kitchen sink" subsystem headers globally.
+    # wingdi.h defines macros that collide with LLVM identifiers (e.g.
+    # PASSTHROUGH used by Analysis/CaptureTracking.h), winuser.h defines
+    # ERROR, and minwindef.h defines min/max. This codebase doesn't use
+    # the GDI/USER APIs, so excluding them is safe and far more robust
+    # than gating each per-header <windows.h> include site individually —
+    # whichever LLVM/STL header pulls <windows.h> in first wins, and we
+    # can't reorder transitive includes.
+    add_compile_definitions(NOGDI NOUSER NOMINMAX WIN32_LEAN_AND_MEAN)
   endif(CYGWIN)
 elseif(FUCHSIA OR UNIX)
   set(LLVM_ON_WIN32 0)
