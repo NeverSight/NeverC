@@ -2513,13 +2513,10 @@ void processVSRuntimeLibrary(const Driver &D, const ArgList &Args,
 }
 
 bool hasNcExtension(const InputInfoList &Inputs) {
-  for (const InputInfo &I : Inputs) {
-    if (!I.getBaseInput())
-      continue;
-    if (llvm::sys::path::extension(I.getBaseInput()) == ".nc")
-      return true;
-  }
-  return false;
+  return llvm::any_of(Inputs, [](const InputInfo &I) {
+    return I.getBaseInput() &&
+           llvm::sys::path::extension(I.getBaseInput()) == ".nc";
+  });
 }
 
 void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
