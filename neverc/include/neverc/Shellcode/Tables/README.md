@@ -25,6 +25,10 @@ file after defining the expected macro.
 
 | File                                | Consumed by                          | Macro                                     |
 |-------------------------------------|--------------------------------------|-------------------------------------------|
+| `DefaultEntryNames.def`             | `ExtractorCommon.cpp` (`isDefaultEntryName`) | `NEVERC_DEFAULT_ENTRY(spelling)`     |
+| `ShellcodeIRHelperNames.def`        | multiple IR passes (`ZeroRelocPass`, `MemIntrinPass`, etc.) | `NEVERC_SHELLCODE_IR_HELPER(name)` |
+| `ShellcodeInternalRuntimePrefixes.def` | `ExtractorCommon.cpp` (`isShellcodeInternalRuntimeName`) | `NEVERC_SHELLCODE_INTERNAL_RUNTIME_PREFIX(prefix)` |
+| `KernelImportReservedPrefixes.def`  | `KernelImportPass.cpp`               | `NEVERC_KERNEL_IMPORT_RESERVED_PREFIX(prefix)` |
 | `Syscalls_Darwin.def`               | `SyscallTables.cpp`                  | `NEVERC_SYSCALL(name, number)`            |
 | `Syscalls_LinuxArm64.def`           | `SyscallTables.cpp`                  | `NEVERC_SYSCALL(name, number)`            |
 | `Syscalls_LinuxX86_64.def`          | `SyscallTables.cpp`                  | `NEVERC_SYSCALL(name, number)`            |
@@ -49,6 +53,7 @@ file after defining the expected macro.
 | `MIRRewritePatterns.def`            | `MIRPrepPass.cpp`                    | `NEVERC_MIR_REWRITE_PATTERN(id, display, arch, function)` |
 | `MIRRewriteOpcodes.def`             | `MIRPrepPass.cpp`                    | `NEVERC_MIR_REWRITE_OPCODE(pattern, role, opcode)` |
 | `Win32PosixCompat.def`              | `WinPEBImport.cpp`                   | `NEVERC_WIN32_POSIX_COMPAT(bareName, wrapperBuilder)` |
+| `MIRStripPseudoOpcodes.def`         | `MIRPrepPass.cpp`                    | `NEVERC_MIR_STRIP_PSEUDO(opcode, category)` |
 
 Each `.def` starts with a short comment block, an `#ifndef ... #error`
 guard that names the expected macro, and one row per entry.  No row
@@ -139,6 +144,17 @@ Tables you are likely to extend:
   compat wrapper builder.  New semantics still require C++ wrapper code,
   but the supported spelling list stays in a table instead of the pass
   dispatch logic.
+
+* `MIRStripPseudoOpcodes` — add a backend pseudo opcode to strip from
+  the MIR before shellcode emission.  The `opcode` must match a
+  `TargetOpcode::*` enumerator.
+* `DefaultEntryNames` — add alternative entry function names that
+  `ZeroRelocPass` and the extractors accept (e.g. `payload_main`).
+* `ShellcodeInternalRuntimePrefixes` — add a symbol prefix to exclude
+  from the external-symbol audit (e.g. `__my_runtime_`).  Every prefix
+  must start with `_` or `l`.
+* `KernelImportReservedPrefixes` — add a prefix reserved by the kernel
+  import resolution shim.
 
 ## Tables deliberately not externalised
 
