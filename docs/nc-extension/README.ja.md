@@ -20,7 +20,7 @@ NeverC は `.nc` をネイティブソースファイル拡張子として認識
 ソースファイルに `.nc` 拡張子を付けるだけです：
 
 ```bash
-# 自動 — -fbuiltin-string や -fneverc-types は不要
+# 自動 — 追加フラグ不要
 neverc hello.nc -o hello
 
 # 以下と同等：
@@ -52,7 +52,7 @@ int main(void) {
 
 Driver はコンパイラ呼び出しを構築する前に各入力ファイルの拡張子を検査します。`.nc` ファイルの場合、`-fneverc-types` と `-fbuiltin-string` が無条件にコマンドラインに注入されます — ユーザーが手動で渡す必要はありません。
 
-`.c` ファイルの場合、これらのフラグはオプトインのままです：ユーザーが明示的に `-fneverc-types` や `-fbuiltin-string` を渡す必要があります。
+`.c` ファイルでは、これらのフラグは任意のままです。必要なフラグ（`-fneverc-types`、`-fbuiltin-string`）を明示的に指定してください。
 
 ### 2. CompilerInvocation レイヤー
 

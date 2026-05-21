@@ -20,7 +20,7 @@ NeverC erkennt `.nc` als seine native Quelldateierweiterung. Wenn der Compiler e
 Benennen Sie Ihre Quelldatei einfach mit der Erweiterung `.nc`:
 
 ```bash
-# Automatisch — kein -fbuiltin-string oder -fneverc-types nötig
+# Automatisch — keine zusätzlichen Flags nötig
 neverc hello.nc -o hello
 
 # Äquivalent zu:
@@ -52,7 +52,7 @@ Die Erkennung erfolgt auf zwei Ebenen der Compiler-Pipeline:
 
 Der Driver überprüft die Erweiterung jeder Eingabedatei, bevor er den Compiler-Aufruf erstellt. Für `.nc`-Dateien werden `-fneverc-types` und `-fbuiltin-string` bedingungslos in die Befehlszeile eingefügt — der Benutzer muss sie nicht manuell übergeben.
 
-Für `.c`-Dateien bleiben diese Flags optional: Der Benutzer muss `-fneverc-types` und/oder `-fbuiltin-string` explizit übergeben.
+Für `.c`-Dateien bleiben diese Flags optional: Benötigte Flags (`-fneverc-types`, `-fbuiltin-string`) explizit setzen.
 
 ### 2. CompilerInvocation-Ebene
 

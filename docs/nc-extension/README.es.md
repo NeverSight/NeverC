@@ -20,7 +20,7 @@ NeverC reconoce `.nc` como su extensión de archivo fuente nativa. Cuando el com
 Simplemente nombre su archivo fuente con la extensión `.nc`:
 
 ```bash
-# Automático — no se necesitan -fbuiltin-string ni -fneverc-types
+# Automático — no se necesitan flags adicionales
 neverc hello.nc -o hello
 
 # Equivalente a:
@@ -52,7 +52,7 @@ La detección opera en dos niveles del pipeline del compilador:
 
 El driver inspecciona la extensión de cada archivo de entrada antes de construir la invocación del compilador. Para archivos `.nc`, `-fneverc-types` y `-fbuiltin-string` se inyectan incondicionalmente en la línea de comandos — el usuario no necesita pasarlos manualmente.
 
-Para archivos `.c`, estos flags permanecen opcionales: el usuario debe pasar explícitamente `-fneverc-types` y/o `-fbuiltin-string`.
+Para archivos `.c`, estos flags permanecen opcionales: pase explícitamente los flags que necesite (`-fneverc-types`, `-fbuiltin-string`).
 
 ### 2. Capa CompilerInvocation
 
