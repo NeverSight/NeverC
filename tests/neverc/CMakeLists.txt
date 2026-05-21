@@ -12,6 +12,7 @@ set(NEVERC_TEST_SOURCES
   ShellcodeCrossTargetTests.cpp
   DebugTests.cpp
   BenchmarkTests.cpp
+  MimallocTests.cpp
 )
 
 add_executable(neverc-tests ${NEVERC_TEST_SOURCES})

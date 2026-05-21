@@ -145,12 +145,101 @@ add_custom_target(neverc-bootstrap-string-bc
   COMMENT "[NeverC] Bootstrap: compiling string runtime with neverc itself"
 )
 
+# ---------------------------------------------------------------------------
+# BuiltinMimalloc precompiled bitcode (per-OS)
+# ---------------------------------------------------------------------------
+set(BUILTIN_MIMALLOC_SCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Builtin")
+
+# Per-OS placeholder headers — written once, overwritten by bootstrap.
+foreach(_mi_os linux darwin win)
+  set(_mi_hdr "${CMAKE_CURRENT_BINARY_DIR}/BuiltinMimallocBitcode_${_mi_os}.h")
+  if(NOT EXISTS "${_mi_hdr}")
+    file(WRITE "${_mi_hdr}"
+      "/* Empty placeholder — run 'ninja neverc-bootstrap-mimalloc-bc' to populate. */\n"
+      "static const unsigned char kMimallocBitcode_${_mi_os}[] = {0};\n"
+      "static const unsigned int kMimallocBitcode_${_mi_os}_len = 0;\n")
+  endif()
+  list(APPEND BUILTIN_MIMALLOC_BITCODE_HDRS "${_mi_hdr}")
+endforeach()
+
+# Bootstrap targets — require a first-stage neverc build and mimalloc source.
+# Usage:
+#   ninja neverc                          # stage 1
+#   ninja neverc-bootstrap-mimalloc-bc    # compile per-OS bitcode
+#   ninja neverc                          # stage 2 (embeds bitcode)
+#
+# The bitcode is compiled per-OS using the host triple (same approach as
+# BuiltinString).  mimalloc's source is arch-neutral C — the IR pass
+# resets data layout & triple at merge time, and strips host-specific
+# attributes, so cross-arch usage works for the same OS.
+if(TARGET mimalloc-static)
+  set(_MI_SRC_ROOT "${mimalloc_SOURCE_DIR}")
+
+  foreach(_mi_os linux darwin win)
+    if(_mi_os STREQUAL "linux")
+      set(_mi_triple "x86_64-unknown-linux-gnu")
+    elseif(_mi_os STREQUAL "darwin")
+      set(_mi_triple "arm64-apple-macosx11.0")
+    elseif(_mi_os STREQUAL "win")
+      set(_mi_triple "x86_64-pc-windows-msvc")
+    endif()
+
+    set(_mi_runtime_c
+        "${CMAKE_CURRENT_BINARY_DIR}/MimallocRuntime_${_mi_os}.c")
+    set(_mi_runtime_bc
+        "${CMAKE_CURRENT_BINARY_DIR}/neverc_mimalloc_${_mi_os}.bc")
+    set(_mi_bitcode_h
+        "${CMAKE_CURRENT_BINARY_DIR}/BuiltinMimallocBitcode_${_mi_os}.h")
+
+    add_custom_command(
+      OUTPUT "${_mi_runtime_c}"
+      COMMAND ${Python3_EXECUTABLE}
+              "${BUILTIN_MIMALLOC_SCRIPT_DIR}/gen_mimalloc_source.py"
+              "${_MI_SRC_ROOT}"
+              -o "${_mi_runtime_c}"
+              --os ${_mi_os}
+      DEPENDS "${BUILTIN_MIMALLOC_SCRIPT_DIR}/gen_mimalloc_source.py"
+      COMMENT "[NeverC] Generating MimallocRuntime_${_mi_os}.c"
+    )
+
+    add_custom_target(neverc-bootstrap-mimalloc-bc-${_mi_os}
+      COMMAND $<TARGET_FILE:neverc>
+              -c -emit-llvm -O2
+              -fno-builtin-mimalloc -fno-lto
+              -ffreestanding -std=gnu11
+              --target=${_mi_triple}
+              -I "${_MI_SRC_ROOT}/include"
+              -I "${_MI_SRC_ROOT}/src"
+              -w
+              "${_mi_runtime_c}"
+              -o "${_mi_runtime_bc}"
+      COMMAND ${Python3_EXECUTABLE}
+              "${BUILTIN_MIMALLOC_SCRIPT_DIR}/bin2c.py"
+              "${_mi_runtime_bc}"
+              -o "${_mi_bitcode_h}"
+              --name "kMimallocBitcode_${_mi_os}"
+      COMMAND ${CMAKE_COMMAND} -E touch
+              "${CMAKE_CURRENT_SOURCE_DIR}/Builtin/BuiltinMimalloc.cpp"
+      DEPENDS neverc "${_mi_runtime_c}"
+      COMMENT "[NeverC] Bootstrap: compiling mimalloc for ${_mi_os} (${_mi_triple})"
+    )
+  endforeach()
+
+  add_custom_target(neverc-bootstrap-mimalloc-bc
+    DEPENDS neverc-bootstrap-mimalloc-bc-linux
+            neverc-bootstrap-mimalloc-bc-darwin
+            neverc-bootstrap-mimalloc-bc-win
+    COMMENT "[NeverC] Bootstrap: all mimalloc per-OS bitcode targets"
+  )
+endif()
+
 add_neverc_library(nevercFoundation
   Core/Diagnostic.cpp
   Core/FileManager.cpp
   Core/IdentifierTable.cpp
   Core/LangOptions.cpp
   Builtin/BuiltinString.cpp
+  Builtin/BuiltinMimalloc.cpp
 
   Target/TargetInfo.cpp
   Target/AArch64.cpp
@@ -161,6 +250,7 @@ add_neverc_library(nevercFoundation
   ${version_inc}
   ${BUILTIN_STRING_THIN_DECLS}
   ${BUILTIN_STRING_BITCODE_H}
+  ${BUILTIN_MIMALLOC_BITCODE_HDRS}
 
   DEPENDS
   NeverCDriverOptions

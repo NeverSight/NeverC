@@ -1,6 +1,7 @@
 #include "neverc/Emit/Backend/BackendUtil.h"
 #include "Backend/BackendConsumer.h"
 #include "Backend/LinkInModulesPass.h"
+#include "Backend/MimallocRuntimeLinker.h"
 #include "Backend/StringRuntimeLinker.h"
 #include "neverc/Compiler/FrontendDiag.h"
 #include "neverc/Compiler/Utils.h"
@@ -460,6 +461,13 @@ void GenAssemblyHelper::runOptimizationPipeline(
     PB.registerPipelineStartEPCallback(
         [](ModulePassManager &MPM, OptimizationLevel) {
           MPM.addPass(StringRuntimeLinkerPass());
+        });
+  }
+
+  if (LangOpts.BuiltinMimalloc) {
+    PB.registerPipelineStartEPCallback(
+        [](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(MimallocRuntimeLinkerPass());
         });
   }
 

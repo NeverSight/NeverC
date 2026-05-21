@@ -86,6 +86,7 @@ add_neverc_library(nevercEmit
   Backend/ParallelCodeGenMerge.cpp
   Backend/LinkInModulesPass.cpp
   Backend/StringRuntimeLinker.cpp
+  Backend/MimallocRuntimeLinker.cpp
 
   DEPENDS
   intrinsics_gen

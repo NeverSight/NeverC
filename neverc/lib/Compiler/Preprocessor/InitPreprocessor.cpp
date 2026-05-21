@@ -682,6 +682,9 @@ void initializePredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro("__NEVERC__MACOS__");
   }
 
+  if (LangOpts.BuiltinMimalloc)
+    Builder.defineMacro("__NEVERC_MIMALLOC__", "1");
+
   // Target OS macro definitions.
   if (PPOpts.DefineTargetOSMacros) {
     const llvm::Triple &Triple = TI.getTriple();

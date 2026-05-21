@@ -479,6 +479,10 @@ OPTION(prefix_1, "-fbracket-depth", fbracket_depth, Separate, INVALID, INVALID,
 OPTION(prefix_1, "-fbuild-id=", fbuild_id_EQ, Joined, f_Group, INVALID, nullptr,
        LinkOption, DefaultVis, 0, "Set build ID style in the linked output",
        nullptr, "none,fast,md5,sha1,uuid")
+OPTION(prefix_1, "-fbuiltin-mimalloc", fbuiltin_mimalloc, Flag, f_Group,
+       INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
+       "Enable mimalloc allocator override injection via IR bitcode embedding",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fbuiltin-string", fbuiltin_string, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis | DefaultVis, 0,
        "Enable NeverC builtin string runtime prelude (value-typed `string`, "
@@ -1224,6 +1228,10 @@ OPTION(prefix_1, "-fno-bitfield-type-align", fno_bitfield_type_align, Flag,
 OPTION(prefix_1, "-fno-build-id", fno_build_id, Flag, f_Group, INVALID, nullptr,
        LinkOption, DefaultVis, 0, "Do not generate a build ID", nullptr,
        nullptr)
+OPTION(prefix_1, "-fno-builtin-mimalloc", fno_builtin_mimalloc, Flag, f_Group,
+       INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
+       "Disable mimalloc allocator override injection",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fno-builtin-string", fno_builtin_string, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
        "Disable NeverC builtin string runtime prelude (value-typed `string`, "
@@ -5590,6 +5598,26 @@ LANG_OPTION_WITH_MARSHALLING(
     "i8/i16/i32/i64/i128, isize/usize)",
     nullptr, nullptr, true, 0, LangOpts->NeverCTypes, false, false, false,
     makeBooleanOptionNormalizer(false, true, OPT_fneverc_types),
+    makeBooleanOptionDenormalizer(false), mergeForwardValue,
+    extractForwardValue, -1)
+#endif // LANG_OPTION_WITH_MARSHALLING
+#ifdef LANG_OPTION_WITH_MARSHALLING
+LANG_OPTION_WITH_MARSHALLING(
+    prefix_1, "-fbuiltin-mimalloc", fbuiltin_mimalloc, Flag, f_Group, INVALID,
+    nullptr, 0, DefaultVis | DefaultVis, 0,
+    "Enable mimalloc allocator override injection via IR bitcode embedding",
+    nullptr, nullptr, true, 1, LangOpts->BuiltinMimalloc, false, false, false,
+    makeBooleanOptionNormalizer(true, false, OPT_fno_builtin_mimalloc),
+    makeBooleanOptionDenormalizer(true), mergeForwardValue, extractForwardValue,
+    -1)
+#endif // LANG_OPTION_WITH_MARSHALLING
+#ifdef LANG_OPTION_WITH_MARSHALLING
+LANG_OPTION_WITH_MARSHALLING(
+    prefix_1, "-fno-builtin-mimalloc", fno_builtin_mimalloc, Flag, f_Group,
+    INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
+    "Disable mimalloc allocator override injection",
+    nullptr, nullptr, true, 1, LangOpts->BuiltinMimalloc, false, false, false,
+    makeBooleanOptionNormalizer(false, true, OPT_fbuiltin_mimalloc),
     makeBooleanOptionDenormalizer(false), mergeForwardValue,
     extractForwardValue, -1)
 #endif // LANG_OPTION_WITH_MARSHALLING

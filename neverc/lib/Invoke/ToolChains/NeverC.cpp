@@ -2517,6 +2517,20 @@ void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs) {
                     options::OPT_fno_neverc_types);
   Args.addOptInFlag(CmdArgs, options::OPT_fbuiltin_string,
                     options::OPT_fno_builtin_string);
+
+  // -fbuiltin-mimalloc is suppressed when:
+  //   - -fno-builtin is active (no CRT override makes sense)
+  //   - -mkernel is active (implies -fno-builtin; no userspace heap)
+  //   - -fshellcode-mode is active (no heap in shellcode)
+  //   - -ffreestanding is active (no libc to override)
+  bool SuppressMimalloc =
+      Args.hasArg(options::OPT_fno_builtin) ||
+      Args.hasArg(options::OPT_mkernel) ||
+      Args.hasArg(options::OPT_fshellcode_mode) ||
+      Args.hasArg(options::OPT_ffreestanding);
+  if (!SuppressMimalloc)
+    Args.addOptInFlag(CmdArgs, options::OPT_fbuiltin_mimalloc,
+                      options::OPT_fno_builtin_mimalloc);
 }
 
 /// Optionally embed the invocation command line into DWARF or a section.
