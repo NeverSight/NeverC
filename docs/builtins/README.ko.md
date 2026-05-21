@@ -41,6 +41,8 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | **심볼 처리** | 모두 내부화 | 오버라이드 진입점은 외부 링크 유지 |
 | **전처리기 매크로** | *(없음)* | `__NEVERC_MIMALLOC__` |
 | **셸코드 모드** | 자동 활성화, 아레나 재작성 | 억제 (셸코드에 힙 없음) |
+| **최적화 레벨** | `-O0` (bitcode 컴파일) | `-O2` (성능 중요 할당자) |
+| **DCE** | 병합 전 프루닝 + 병합 후 마크 앤 스윕 | DCE 없음 (전체 아카이브 시맨틱스) |
 
 ---
 
@@ -52,6 +54,52 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | `-mkernel` | mimalloc 억제 | 커널에 유저스페이스 힙 없음 |
 | `-fshellcode-mode` | mimalloc 억제 | 셸코드에 힙 없음 |
 | `-ffreestanding` | mimalloc 억제 | 오버라이드할 libc 없음 |
+
+---
+
+## 전처리기 매크로
+
+내장 기능이 활성 상태일 때, 해당 전처리기 매크로가 정의됩니다:
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+// mimalloc 활성 — malloc/free가 투명하게 오버라이드됨
+#endif
+```
+
+---
+
+## 파일 구조
+
+```
+neverc/
+├── include/neverc/Foundation/
+│   ├── LangOpts/LangOptions.def          # LANGOPT 선언
+│   └── Builtin/
+│       ├── BuiltinString.h               # string API
+│       ├── BuiltinMimalloc.h             # mimalloc API
+│       └── ...
+│
+├── lib/Foundation/
+│   ├── CMakeLists.txt                    # 모든 내장의 부트스트랩 타겟
+│   └── Builtin/
+│       ├── BuiltinString.cpp             # string bitcode 임베딩
+│       ├── BuiltinMimalloc.cpp           # mimalloc OS별 bitcode 임베딩
+│       ├── bin2c.py                      # .bc → C 헤더 변환기 (공유)
+│       ├── gen_string_runtime.py         # string 소스 생성기
+│       └── gen_mimalloc_source.py        # mimalloc 소스 생성기
+│
+├── lib/Emit/Backend/
+│   ├── BackendUtil.cpp                   # PipelineStartEP 등록
+│   ├── StringRuntimeLinker.{h,cpp}       # string IR 병합 패스
+│   └── MimallocRuntimeLinker.{h,cpp}     # mimalloc IR 병합 패스
+│
+├── lib/Invoke/ToolChains/
+│   └── NeverC.cpp                        # addNeverCFeatureFlags()
+│
+└── lib/Compiler/Preprocessor/
+    └── InitPreprocessor.cpp              # __NEVERC_MIMALLOC__ 매크로
+```
 
 ---
 

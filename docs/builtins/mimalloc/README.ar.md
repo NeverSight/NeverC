@@ -16,6 +16,22 @@ neverc -fbuiltin-mimalloc main.c -o main
 
 ---
 
+## الاستخدام
+
+```bash
+neverc -fbuiltin-mimalloc hello.c -o hello                     # أساسي
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # مع string
+neverc -fno-builtin-mimalloc main.c -o main                    # تعطيل
+```
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+    printf("يستخدم مخصص mimalloc\n");
+#endif
+```
+
+---
+
 ## دعم المنصات
 
 | المنصة | Triple | الحالة |
@@ -48,6 +64,27 @@ neverc -fbuiltin-mimalloc main.c -o main
 ninja neverc                         # المرحلة 1: عناصر نائبة bitcode فارغة
 ninja neverc-bootstrap-mimalloc-bc   # المرحلة 2: ترجمة bitcode لكل نظام تشغيل
 ninja neverc                         # المرحلة 3: تضمين bitcode الحقيقي
+```
+
+---
+
+## البنية
+
+يتم تضمين mimalloc كـ LLVM bitcode في ملف المترجم الثنائي. عند ترجمة كود المستخدم، يقوم Module Pass بدمج bitcode في IR قبل خط أنابيب التحسين. يُترجم بشكل منفصل لكل نظام تشغيل (Linux `mmap`، macOS `vm_allocate`، Windows `VirtualAlloc`)، يُحدد عبر target triple. دلالات **الأرشيف الكامل** — جميع الدوال تُربط.
+
+---
+
+## هيكل الملفات
+
+```
+neverc/
+├── include/neverc/Foundation/Builtin/BuiltinMimalloc.h
+├── lib/Foundation/Builtin/
+│   ├── BuiltinMimalloc.cpp / gen_mimalloc_source.py / bin2c.py
+├── lib/Emit/Backend/
+│   ├── MimallocRuntimeLinker.{h,cpp} / BackendUtil.cpp
+├── lib/Invoke/ToolChains/NeverC.cpp
+└── lib/Compiler/Preprocessor/InitPreprocessor.cpp
 ```
 
 ---

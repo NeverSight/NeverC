@@ -16,6 +16,36 @@ neverc -fbuiltin-mimalloc main.c -o main
 
 ---
 
+## 用法
+
+### 基本用法
+
+```bash
+neverc -fbuiltin-mimalloc hello.c -o hello
+```
+
+### 與內建字串組合
+
+```bash
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
+```
+
+### 停用
+
+```bash
+neverc -fno-builtin-mimalloc main.c -o main
+```
+
+### 編譯時偵測
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+    printf("使用 mimalloc 配置器\n");
+#endif
+```
+
+---
+
 ## 平台支援
 
 | 平台 | Triple | 狀態 |
@@ -48,6 +78,27 @@ neverc -fbuiltin-mimalloc main.c -o main
 ninja neverc                         # 階段 1：空 bitcode 佔位符
 ninja neverc-bootstrap-mimalloc-bc   # 階段 2：編譯按 OS 的 bitcode
 ninja neverc                         # 階段 3：嵌入真實 bitcode
+```
+
+---
+
+## 架構
+
+mimalloc 以 LLVM bitcode 形式嵌入編譯器二進位檔。使用者編譯時，Module Pass 在最佳化管線前將 bitcode 合併到使用者 IR。按 OS 分別編譯（Linux `mmap`、macOS `vm_allocate`、Windows `VirtualAlloc`），合併時根據 target triple 選擇。使用 **whole-archive** 語義——所有函式都被連結。覆蓋入口保持外部連結，內部輔助函式內部化。
+
+---
+
+## 檔案結構
+
+```
+neverc/
+├── include/neverc/Foundation/Builtin/BuiltinMimalloc.h
+├── lib/Foundation/Builtin/
+│   ├── BuiltinMimalloc.cpp / gen_mimalloc_source.py / bin2c.py
+├── lib/Emit/Backend/
+│   ├── MimallocRuntimeLinker.{h,cpp} / BackendUtil.cpp
+├── lib/Invoke/ToolChains/NeverC.cpp
+└── lib/Compiler/Preprocessor/InitPreprocessor.cpp
 ```
 
 ---

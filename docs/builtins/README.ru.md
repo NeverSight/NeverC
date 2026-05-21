@@ -39,6 +39,8 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | **Обработка символов** | Все интернализированы | Точки входа переопределения сохраняют внешнюю компоновку |
 | **Макрос препроцессора** | *(нет)* | `__NEVERC_MIMALLOC__` |
 | **Режим шеллкода** | Авто-активация, перезапись арены | Подавлен (нет кучи в шеллкоде) |
+| **Уровень оптимизации** | `-O0` (компиляция bitcode) | `-O2` (критичный для производительности аллокатор) |
+| **DCE** | Пред-слияние + пост-слияние mark-and-sweep | Без DCE (семантика полного архива) |
 
 ---
 
@@ -50,6 +52,33 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | `-mkernel` | Подавляет mimalloc | Нет кучи пользовательского пространства в ядре |
 | `-fshellcode-mode` | Подавляет mimalloc | Нет кучи в шеллкоде |
 | `-ffreestanding` | Подавляет mimalloc | Нет libc для переопределения |
+
+---
+
+## Макросы препроцессора
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+// mimalloc активен — malloc/free прозрачно переопределены
+#endif
+```
+
+---
+
+## Структура файлов
+
+```
+neverc/
+├── include/neverc/Foundation/Builtin/
+│   ├── BuiltinString.h / BuiltinMimalloc.h
+├── lib/Foundation/Builtin/
+│   ├── BuiltinString.cpp / BuiltinMimalloc.cpp
+│   ├── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
+├── lib/Emit/Backend/
+│   ├── BackendUtil.cpp / StringRuntimeLinker.{h,cpp} / MimallocRuntimeLinker.{h,cpp}
+├── lib/Invoke/ToolChains/NeverC.cpp
+└── lib/Compiler/Preprocessor/InitPreprocessor.cpp
+```
 
 ---
 

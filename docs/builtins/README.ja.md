@@ -41,6 +41,8 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | **シンボル処理** | すべて内部化 | オーバーライドエントリは外部リンケージ維持 |
 | **プリプロセッサマクロ** | *（なし）* | `__NEVERC_MIMALLOC__` |
 | **シェルコードモード** | 自動有効化、アリーナ書き換え | 抑制（シェルコードにヒープなし） |
+| **最適化レベル** | `-O0`（bitcode コンパイル） | `-O2`（性能重要なアロケータ） |
+| **DCE** | マージ前プルーニング + マージ後マーク＆スイープ | DCE なし（ホールアーカイブセマンティクス） |
 
 ---
 
@@ -52,6 +54,52 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | `-mkernel` | mimalloc を抑制 | カーネルにユーザー空間ヒープなし |
 | `-fshellcode-mode` | mimalloc を抑制 | シェルコードにヒープなし |
 | `-ffreestanding` | mimalloc を抑制 | オーバーライドする libc なし |
+
+---
+
+## プリプロセッサマクロ
+
+組み込み機能がアクティブな場合、対応するプリプロセッサマクロが定義されます：
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+// mimalloc がアクティブ — malloc/free が透過的にオーバーライド
+#endif
+```
+
+---
+
+## ファイル構成
+
+```
+neverc/
+├── include/neverc/Foundation/
+│   ├── LangOpts/LangOptions.def          # LANGOPT 宣言
+│   └── Builtin/
+│       ├── BuiltinString.h               # string API
+│       ├── BuiltinMimalloc.h             # mimalloc API
+│       └── ...
+│
+├── lib/Foundation/
+│   ├── CMakeLists.txt                    # 全組み込みのブートストラップターゲット
+│   └── Builtin/
+│       ├── BuiltinString.cpp             # string bitcode 埋め込み
+│       ├── BuiltinMimalloc.cpp           # mimalloc OS別 bitcode 埋め込み
+│       ├── bin2c.py                      # .bc → C ヘッダー変換器（共有）
+│       ├── gen_string_runtime.py         # string ソースジェネレータ
+│       └── gen_mimalloc_source.py        # mimalloc ソースジェネレータ
+│
+├── lib/Emit/Backend/
+│   ├── BackendUtil.cpp                   # PipelineStartEP 登録
+│   ├── StringRuntimeLinker.{h,cpp}       # string IR マージパス
+│   └── MimallocRuntimeLinker.{h,cpp}     # mimalloc IR マージパス
+│
+├── lib/Invoke/ToolChains/
+│   └── NeverC.cpp                        # addNeverCFeatureFlags()
+│
+└── lib/Compiler/Preprocessor/
+    └── InitPreprocessor.cpp              # __NEVERC_MIMALLOC__ マクロ
+```
 
 ---
 

@@ -13,7 +13,7 @@ NeverC 透過可選的內建執行時擴展標準 C，這些執行時以 LLVM bi
 | [**`string`**](string/README.zh-TW.md) | `-fbuiltin-string` | 關閉 | 值語義字串型別，支援點呼叫方法、自動記憶體管理和原生 UTF-8 |
 | [**mimalloc**](mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | **開啟** | 高效能記憶體配置器，透明替換 `malloc`/`free`/`calloc`/`realloc` |
 
-兩個內建功能預設關閉，需要明確啟用。可以組合使用：
+`string` 內建需要明確啟用；mimalloc 對所有 hosted 建置預設開啟（核心、shellcode 和 freestanding 模式下自動抑制）。可以組合使用：
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -90,6 +90,8 @@ ninja neverc                         # 階段 2：嵌入真實 bitcode
 | **符號處理** | 全部內部化 | 覆蓋入口保持外部連結 |
 | **預處理器巨集** | *（無）* | `__NEVERC_MIMALLOC__` |
 | **Shellcode 模式** | 自動啟用，arena 重寫 | 被抑制（shellcode 無堆積） |
+| **最佳化層級** | `-O0`（bitcode 編譯） | `-O2`（效能關鍵的配置器） |
+| **DCE** | 預合併裁剪 + 後合併標記清掃 | 無 DCE（whole-archive 語義） |
 
 ---
 
@@ -101,6 +103,52 @@ ninja neverc                         # 階段 2：嵌入真實 bitcode
 | `-mkernel` | 抑制 mimalloc | 核心無使用者空間堆積 |
 | `-fshellcode-mode` | 抑制 mimalloc | shellcode 無堆積 |
 | `-ffreestanding` | 抑制 mimalloc | 無 libc 可覆蓋 |
+
+---
+
+## 預處理器巨集
+
+當內建功能啟動時，會定義相應的預處理器巨集：
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+// mimalloc 已啟動 — malloc/free 被透明覆蓋
+#endif
+```
+
+---
+
+## 檔案結構
+
+```
+neverc/
+├── include/neverc/Foundation/
+│   ├── LangOpts/LangOptions.def          # LANGOPT 宣告
+│   └── Builtin/
+│       ├── BuiltinString.h               # string API
+│       ├── BuiltinMimalloc.h             # mimalloc API
+│       └── ...
+│
+├── lib/Foundation/
+│   ├── CMakeLists.txt                    # 所有內建功能的引導目標
+│   └── Builtin/
+│       ├── BuiltinString.cpp             # string bitcode 嵌入
+│       ├── BuiltinMimalloc.cpp           # mimalloc 按 OS bitcode 嵌入
+│       ├── bin2c.py                      # .bc → C 標頭檔轉換器（共用）
+│       ├── gen_string_runtime.py         # string 原始碼產生器
+│       └── gen_mimalloc_source.py        # mimalloc 原始碼產生器
+│
+├── lib/Emit/Backend/
+│   ├── BackendUtil.cpp                   # PipelineStartEP 註冊
+│   ├── StringRuntimeLinker.{h,cpp}       # string IR 合併 Pass
+│   └── MimallocRuntimeLinker.{h,cpp}     # mimalloc IR 合併 Pass
+│
+├── lib/Invoke/ToolChains/
+│   └── NeverC.cpp                        # addNeverCFeatureFlags()
+│
+└── lib/Compiler/Preprocessor/
+    └── InitPreprocessor.cpp              # __NEVERC_MIMALLOC__ 巨集
+```
 
 ---
 

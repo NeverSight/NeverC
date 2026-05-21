@@ -39,6 +39,8 @@ Tutte le funzionalità integrate condividono la stessa architettura a quattro li
 | **Gestione simboli** | Tutti internalizzati | Punti di ingresso di override mantengono linkage esterno |
 | **Macro preprocessore** | *(nessuna)* | `__NEVERC_MIMALLOC__` |
 | **Modalità shellcode** | Auto-attivata, riscrittura arena | Soppressa (nessun heap in shellcode) |
+| **Livello di ottimizzazione** | `-O0` (compilazione bitcode) | `-O2` (allocatore critico per le prestazioni) |
+| **DCE** | Potatura pre-fusione + mark-and-sweep post-fusione | Nessun DCE (semantica archivio completo) |
 
 ---
 
@@ -50,6 +52,33 @@ Tutte le funzionalità integrate condividono la stessa architettura a quattro li
 | `-mkernel` | Sopprime mimalloc | Nessun heap userspace nel kernel |
 | `-fshellcode-mode` | Sopprime mimalloc | Nessun heap in shellcode |
 | `-ffreestanding` | Sopprime mimalloc | Nessuna libc da sovrascrivere |
+
+---
+
+## Macro Preprocessore
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+// mimalloc è attivo — malloc/free sono sovrascritti in modo trasparente
+#endif
+```
+
+---
+
+## Struttura dei File
+
+```
+neverc/
+├── include/neverc/Foundation/Builtin/
+│   ├── BuiltinString.h / BuiltinMimalloc.h
+├── lib/Foundation/Builtin/
+│   ├── BuiltinString.cpp / BuiltinMimalloc.cpp
+│   ├── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
+├── lib/Emit/Backend/
+│   ├── BackendUtil.cpp / StringRuntimeLinker.{h,cpp} / MimallocRuntimeLinker.{h,cpp}
+├── lib/Invoke/ToolChains/NeverC.cpp
+└── lib/Compiler/Preprocessor/InitPreprocessor.cpp
+```
 
 ---
 

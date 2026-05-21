@@ -16,6 +16,22 @@ neverc -fbuiltin-mimalloc main.c -o main
 
 ---
 
+## Utilisation
+
+```bash
+neverc -fbuiltin-mimalloc hello.c -o hello                     # basique
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # combiné avec string
+neverc -fno-builtin-mimalloc main.c -o main                    # désactiver
+```
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+    printf("Utilisation de l'allocateur mimalloc\n");
+#endif
+```
+
+---
+
 ## Support des Plateformes
 
 | Plateforme | Triple | Statut |
@@ -48,6 +64,27 @@ neverc -fbuiltin-mimalloc main.c -o main
 ninja neverc                         # Étape 1 : placeholders bitcode vides
 ninja neverc-bootstrap-mimalloc-bc   # Étape 2 : compiler le bitcode par OS
 ninja neverc                         # Étape 3 : intégrer le vrai bitcode
+```
+
+---
+
+## Architecture
+
+mimalloc est intégré comme bitcode LLVM dans le binaire du compilateur. Lors de la compilation utilisateur, un Module Pass fusionne le bitcode dans l'IR avant le pipeline d'optimisation. Compilé séparément par OS (Linux `mmap`, macOS `vm_allocate`, Windows `VirtualAlloc`), sélectionné via le target triple. Sémantique **archive complète** — toutes les fonctions sont liées.
+
+---
+
+## Structure des Fichiers
+
+```
+neverc/
+├── include/neverc/Foundation/Builtin/BuiltinMimalloc.h
+├── lib/Foundation/Builtin/
+│   ├── BuiltinMimalloc.cpp / gen_mimalloc_source.py / bin2c.py
+├── lib/Emit/Backend/
+│   ├── MimallocRuntimeLinker.{h,cpp} / BackendUtil.cpp
+├── lib/Invoke/ToolChains/NeverC.cpp
+└── lib/Compiler/Preprocessor/InitPreprocessor.cpp
 ```
 
 ---

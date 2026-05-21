@@ -16,6 +16,22 @@ neverc -fbuiltin-mimalloc main.c -o main
 
 ---
 
+## 使い方
+
+```bash
+neverc -fbuiltin-mimalloc hello.c -o hello                     # 基本
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # string と組み合わせ
+neverc -fno-builtin-mimalloc main.c -o main                    # 無効化
+```
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+    printf("mimalloc アロケータを使用中\n");
+#endif
+```
+
+---
+
 ## プラットフォームサポート
 
 | プラットフォーム | Triple | ステータス |
@@ -48,6 +64,27 @@ neverc -fbuiltin-mimalloc main.c -o main
 ninja neverc                         # ステージ 1：空の bitcode プレースホルダー
 ninja neverc-bootstrap-mimalloc-bc   # ステージ 2：OS 別 bitcode をコンパイル
 ninja neverc                         # ステージ 3：実際の bitcode を埋め込み
+```
+
+---
+
+## アーキテクチャ
+
+mimalloc は LLVM bitcode としてコンパイラバイナリに埋め込まれます。ユーザーコンパイル時に Module Pass が最適化パイプライン前に bitcode をユーザー IR にマージします。OS ごとに別々にコンパイル（Linux `mmap`、macOS `vm_allocate`、Windows `VirtualAlloc`）され、マージ時に target triple に基づいて選択されます。**ホールアーカイブ**セマンティクス — 全関数がリンクされます。オーバーライドエントリは外部リンケージを維持し、内部ヘルパーは内部化されます。
+
+---
+
+## ファイル構成
+
+```
+neverc/
+├── include/neverc/Foundation/Builtin/BuiltinMimalloc.h
+├── lib/Foundation/Builtin/
+│   ├── BuiltinMimalloc.cpp / gen_mimalloc_source.py / bin2c.py
+├── lib/Emit/Backend/
+│   ├── MimallocRuntimeLinker.{h,cpp} / BackendUtil.cpp
+├── lib/Invoke/ToolChains/NeverC.cpp
+└── lib/Compiler/Preprocessor/InitPreprocessor.cpp
 ```
 
 ---

@@ -16,6 +16,22 @@ neverc -fbuiltin-mimalloc main.c -o main
 
 ---
 
+## 사용법
+
+```bash
+neverc -fbuiltin-mimalloc hello.c -o hello                     # 기본
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # string과 조합
+neverc -fno-builtin-mimalloc main.c -o main                    # 비활성화
+```
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+    printf("mimalloc 할당자 사용 중\n");
+#endif
+```
+
+---
+
 ## 플랫폼 지원
 
 | 플랫폼 | Triple | 상태 |
@@ -48,6 +64,27 @@ neverc -fbuiltin-mimalloc main.c -o main
 ninja neverc                         # 스테이지 1: 빈 bitcode 플레이스홀더
 ninja neverc-bootstrap-mimalloc-bc   # 스테이지 2: OS별 bitcode 컴파일
 ninja neverc                         # 스테이지 3: 실제 bitcode 임베드
+```
+
+---
+
+## 아키텍처
+
+mimalloc은 LLVM bitcode로 컴파일러 바이너리에 임베드됩니다. 사용자 컴파일 시 Module Pass가 최적화 파이프라인 전에 bitcode를 사용자 IR에 병합합니다. OS별로 별도 컴파일(Linux `mmap`, macOS `vm_allocate`, Windows `VirtualAlloc`)되며, 병합 시 target triple에 따라 선택됩니다. **전체 아카이브** 시맨틱스 — 모든 함수가 링크됩니다.
+
+---
+
+## 파일 구조
+
+```
+neverc/
+├── include/neverc/Foundation/Builtin/BuiltinMimalloc.h
+├── lib/Foundation/Builtin/
+│   ├── BuiltinMimalloc.cpp / gen_mimalloc_source.py / bin2c.py
+├── lib/Emit/Backend/
+│   ├── MimallocRuntimeLinker.{h,cpp} / BackendUtil.cpp
+├── lib/Invoke/ToolChains/NeverC.cpp
+└── lib/Compiler/Preprocessor/InitPreprocessor.cpp
 ```
 
 ---

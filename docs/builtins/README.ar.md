@@ -39,6 +39,8 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | **معالجة الرموز** | الكل مُداخل | نقاط دخول التجاوز تحتفظ بالربط الخارجي |
 | **ماكرو المعالج المسبق** | *(لا يوجد)* | `__NEVERC_MIMALLOC__` |
 | **وضع الشلكود** | تفعيل تلقائي، إعادة كتابة الحلبة | مكبوت (لا كومة في الشلكود) |
+| **مستوى التحسين** | `-O0` (ترجمة bitcode) | `-O2` (مخصص حرج الأداء) |
+| **DCE** | تقليم قبل الدمج + مسح بعد الدمج | بدون DCE (دلالات الأرشيف الكامل) |
 
 ---
 
@@ -50,6 +52,33 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 | `-mkernel` | يكبت mimalloc | لا كومة مساحة المستخدم في النواة |
 | `-fshellcode-mode` | يكبت mimalloc | لا كومة في الشلكود |
 | `-ffreestanding` | يكبت mimalloc | لا libc للتجاوز |
+
+---
+
+## ماكروهات المعالج المسبق
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+// mimalloc نشط — malloc/free يتم تجاوزهما بشفافية
+#endif
+```
+
+---
+
+## هيكل الملفات
+
+```
+neverc/
+├── include/neverc/Foundation/Builtin/
+│   ├── BuiltinString.h / BuiltinMimalloc.h
+├── lib/Foundation/Builtin/
+│   ├── BuiltinString.cpp / BuiltinMimalloc.cpp
+│   ├── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
+├── lib/Emit/Backend/
+│   ├── BackendUtil.cpp / StringRuntimeLinker.{h,cpp} / MimallocRuntimeLinker.{h,cpp}
+├── lib/Invoke/ToolChains/NeverC.cpp
+└── lib/Compiler/Preprocessor/InitPreprocessor.cpp
+```
 
 ---
 
