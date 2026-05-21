@@ -27,18 +27,17 @@
 
 #ifdef _WIN32
 // Windows SDK (winnt.h) defines many IMAGE_* macros that collide with the
-// COFF enum members declared below. Pull in <windows.h> NOW so that the
+// COFF enum members declared below. Pull in <windef.h> NOW so that the
 // #undef block strips those macros up-front. winnt.h's own include guard
 // (_WINNT_) makes any later transitive #include <windows.h> a no-op, so
 // the macros stay dead for the rest of the translation unit — both at
 // our enum declarations below and at use sites in consumer .cpp files.
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+//
+// <windef.h> is the minimum public header that brings in <winnt.h>. Using
+// it instead of <windows.h> avoids pulling in <wingdi.h>, <winuser.h>,
+// etc., whose macros (e.g. PASSTHROUGH, ERROR) also collide with LLVM
+// identifiers.
+#include <windef.h>
 // #undef every name we redefine as an enumerator. `#undef` on an
 // undefined macro is a harmless no-op.
 #undef IMAGE_FILE_MACHINE_UNKNOWN
