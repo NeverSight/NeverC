@@ -18,6 +18,10 @@
 #include "llvm/Support/DataTypes.h"
 #include <utility>
 
+#ifdef CONST
+#undef CONST
+#endif
+
 namespace llvm {
 
 class DIVariable;

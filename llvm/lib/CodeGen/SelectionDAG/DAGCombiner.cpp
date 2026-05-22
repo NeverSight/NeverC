@@ -69,6 +69,7 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <tuple>
