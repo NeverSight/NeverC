@@ -10,8 +10,10 @@
 #define LLVM_SUPPORT_PARALLEL_H
 
 #include "llvm/ADT/STLExtras.h"
+#include "csupport/cpp_compat_stl.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Threading.h"
 
