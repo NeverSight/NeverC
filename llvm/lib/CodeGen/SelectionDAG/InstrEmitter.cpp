@@ -744,7 +744,7 @@ void InstrEmitter::AddDbgValueLocationOps(
         AddOperand(MIB, V, (*MIB).getNumOperands(), &DbgValDesc, VRBaseMap,
                    /*IsDebug=*/true, /*IsClone=*/false, /*IsCloned=*/false);
     } break;
-    case SDDbgOperand::CONST:
+    case SDDbgOperand::Constant:
       MIB.add(GetMOForConstDbgOp(Op));
       break;
     }
@@ -767,7 +767,7 @@ InstrEmitter::EmitDbgInstrRef(SDDbgValue *SD,
   // Returns true if the given operand is not itself an instruction reference
   // but is a legal debug operand for a DBG_INSTR_REF.
   auto IsNonInstrRefOp = [](SDDbgOperand DbgOp) {
-    return DbgOp.getKind() == SDDbgOperand::CONST;
+    return DbgOp.getKind() == SDDbgOperand::Constant;
   };
 
   // If this variable location does not depend on any instructions or contains
@@ -846,7 +846,7 @@ InstrEmitter::EmitDbgInstrRef(SDDbgValue *SD,
 
       DefMI = &*MRI->def_instr_begin(VReg);
     } else {
-      assert(DbgOperand.getKind() == SDDbgOperand::CONST);
+      assert(DbgOperand.getKind() == SDDbgOperand::Constant);
       MOs.push_back(GetMOForConstDbgOp(DbgOperand));
       continue;
     }
@@ -923,7 +923,7 @@ InstrEmitter::EmitDbgValueFromSingleOp(SDDbgValue *SD,
   // See about constant-folding the expression.
   // Copy the location operand in case we replace it.
   SmallVector<SDDbgOperand, 1> LocationOps(1, SD->getLocationOps()[0]);
-  if (Expr && LocationOps[0].getKind() == SDDbgOperand::CONST) {
+  if (Expr && LocationOps[0].getKind() == SDDbgOperand::Constant) {
     const Value *V = LocationOps[0].getConst();
     if (auto *C = dyn_cast<ConstantInt>(V)) {
       std::tie(Expr, C) = Expr->constantFold(C);

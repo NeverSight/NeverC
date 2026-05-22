@@ -33,6 +33,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include <algorithm>
 #include <cassert>
+#include <numeric>
 #include <cstdint>
 #include <optional>
 #include <utility>

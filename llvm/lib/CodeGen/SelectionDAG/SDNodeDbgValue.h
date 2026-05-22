@@ -18,10 +18,6 @@
 #include "llvm/Support/DataTypes.h"
 #include <utility>
 
-#ifdef CONST
-#undef CONST
-#endif
-
 namespace llvm {
 
 class DIVariable;
@@ -36,7 +32,7 @@ class SDDbgOperand {
 public:
   enum Kind {
     SDNODE = 0,  ///< Value is the result of an expression.
-    CONST = 1,   ///< Value is a constant.
+    Constant = 1, ///< Value is a constant.
     FRAMEIX = 2, ///< Value is contents of a stack location.
     VREG = 3     ///< Value is a virtual register.
   };
@@ -56,7 +52,7 @@ public:
 
   /// Returns the Value* for a constant
   const Value *getConst() const {
-    assert(kind == CONST);
+    assert(kind == Constant);
     return u.Const;
   }
 
@@ -92,7 +88,7 @@ public:
     switch (kind) {
     case SDNODE:
       return getSDNode() == Other.getSDNode() && getResNo() == Other.getResNo();
-    case CONST:
+    case Constant:
       return getConst() == Other.getConst();
     case VREG:
       return getVReg() == Other.getVReg();
@@ -120,7 +116,7 @@ private:
     u.s.ResNo = R;
   }
   /// Constructor for constants.
-  SDDbgOperand(const Value *C) : kind(CONST) { u.Const = C; }
+  SDDbgOperand(const Value *C) : kind(Constant) { u.Const = C; }
   /// Constructor for virtual registers and frame indices.
   SDDbgOperand(unsigned VRegOrFrameIdx, Kind Kind) : kind(Kind) {
     assert((Kind == VREG || Kind == FRAMEIX) &&

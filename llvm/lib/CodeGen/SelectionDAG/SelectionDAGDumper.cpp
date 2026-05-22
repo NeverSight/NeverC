@@ -1291,7 +1291,7 @@ LLVM_DUMP_METHOD void SDDbgValue::print(raw_ostream &OS) const {
       else
         OS << "SDNODE";
       break;
-    case SDDbgOperand::CONST:
+    case SDDbgOperand::Constant:
       OS << "CONST";
       break;
     case SDDbgOperand::FRAMEIX:
