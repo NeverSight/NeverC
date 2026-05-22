@@ -32,8 +32,9 @@ namespace linker {
 namespace coff {
 namespace {
 
-const uint16_t SUBLANG_ENGLISH_US = 0x0409;
-const uint16_t RT_MANIFEST = 24;
+// Names chosen to avoid Windows SDK macros (SUBLANG_ENGLISH_US, RT_MANIFEST).
+constexpr uint16_t kManifestResLanguageEnUS = 0x0409;
+constexpr uint16_t kManifestResType = 24;
 
 class Executor {
 public:
@@ -452,14 +453,14 @@ void writeResEntryHeader(char *&buf, size_t manifestSize, int manifestID) {
   buf += sizeof(object::WinResHeaderPrefix);
 
   auto *iDs = reinterpret_cast<object::WinResIDs *>(buf);
-  iDs->setType(RT_MANIFEST);
+  iDs->setType(kManifestResType);
   iDs->setName(manifestID);
   buf += sizeof(object::WinResIDs);
 
   auto *suffix = reinterpret_cast<object::WinResHeaderSuffix *>(buf);
   suffix->DataVersion = 0;
   suffix->MemoryFlags = object::WIN_RES_PURE_MOVEABLE;
-  suffix->Language = SUBLANG_ENGLISH_US;
+  suffix->Language = kManifestResLanguageEnUS;
   suffix->Version = 0;
   suffix->Characteristics = 0;
   buf += sizeof(object::WinResHeaderSuffix);
