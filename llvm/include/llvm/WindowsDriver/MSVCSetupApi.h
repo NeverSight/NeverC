@@ -45,6 +45,10 @@
 
 // Enumerations
 //
+#ifndef MAXUINT
+#define MAXUINT ((unsigned int)~((unsigned int)0))
+#endif
+
 /// <summary>
 /// The state of an instance.
 /// </summary>
