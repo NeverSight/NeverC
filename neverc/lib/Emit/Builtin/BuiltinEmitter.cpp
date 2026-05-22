@@ -687,7 +687,7 @@ llvm::Value *FunctionEmitter::emitBuiltinObjectSize(const Expr *E,
 }
 
 namespace {
-struct BitTest {
+struct BuiltinBitTest {
   enum ActionKind : uint8_t { TestOnly, Complement, Reset, Set };
   enum InterlockingKind : uint8_t {
     Unlocked,
@@ -701,11 +701,11 @@ struct BitTest {
   InterlockingKind Interlocking;
   bool Is64Bit;
 
-  static BitTest decodeBitTestBuiltin(unsigned BuiltinID);
+  static BuiltinBitTest decodeBitTestBuiltin(unsigned BuiltinID);
 };
 } // namespace
 
-BitTest BitTest::decodeBitTestBuiltin(unsigned BuiltinID) {
+BuiltinBitTest BuiltinBuiltinBitTest::decodeBitTestBuiltin(unsigned BuiltinID) {
   switch (BuiltinID) {
     // Main portable variants.
   case Builtin::BI_bittest:
@@ -753,21 +753,21 @@ BitTest BitTest::decodeBitTestBuiltin(unsigned BuiltinID) {
 }
 
 namespace {
-char bitActionToX86BTCode(BitTest::ActionKind A) {
+char bitActionToX86BTCode(BuiltinBitTest::ActionKind A) {
   switch (A) {
-  case BitTest::TestOnly:
+  case BuiltinBitTest::TestOnly:
     return '\0';
-  case BitTest::Complement:
+  case BuiltinBitTest::Complement:
     return 'c';
-  case BitTest::Reset:
+  case BuiltinBitTest::Reset:
     return 'r';
-  case BitTest::Set:
+  case BuiltinBitTest::Set:
     return 's';
   }
   llvm_unreachable("invalid action");
 }
 
-llvm::Value *genX86BitTestIntrinsic(FunctionEmitter &FE, BitTest BT,
+llvm::Value *genX86BitTestIntrinsic(FunctionEmitter &FE, BuiltinBitTest BT,
                                     const CallExpr *E, Value *BitBase,
                                     Value *BitPos) {
   char Action = bitActionToX86BTCode(BT.Action);
@@ -775,7 +775,7 @@ llvm::Value *genX86BitTestIntrinsic(FunctionEmitter &FE, BitTest BT,
 
   llvm::SmallString<64> Asm;
   raw_svector_ostream AsmOS(Asm);
-  if (BT.Interlocking != BitTest::Unlocked)
+  if (BT.Interlocking != BuiltinBitTest::Unlocked)
     AsmOS << "lock ";
   AsmOS << "bt";
   if (Action)
@@ -799,17 +799,17 @@ llvm::Value *genX86BitTestIntrinsic(FunctionEmitter &FE, BitTest BT,
   return FE.Builder.CreateCall(IA, {BitBase, BitPos});
 }
 
-llvm::AtomicOrdering getBitTestAtomicOrdering(BitTest::InterlockingKind I) {
+llvm::AtomicOrdering getBitTestAtomicOrdering(BuiltinBitTest::InterlockingKind I) {
   switch (I) {
-  case BitTest::Unlocked:
+  case BuiltinBitTest::Unlocked:
     return llvm::AtomicOrdering::NotAtomic;
-  case BitTest::Sequential:
+  case BuiltinBitTest::Sequential:
     return llvm::AtomicOrdering::SequentiallyConsistent;
-  case BitTest::Acquire:
+  case BuiltinBitTest::Acquire:
     return llvm::AtomicOrdering::Acquire;
-  case BitTest::Release:
+  case BuiltinBitTest::Release:
     return llvm::AtomicOrdering::Release;
-  case BitTest::NoFence:
+  case BuiltinBitTest::NoFence:
     return llvm::AtomicOrdering::Monotonic;
   }
   llvm_unreachable("invalid interlocking");
@@ -820,7 +820,7 @@ llvm::Value *genBitTestIntrinsic(FunctionEmitter &FE, unsigned BuiltinID,
   Value *BitBase = FE.genScalarExpr(E->getArg(0));
   Value *BitPos = FE.genScalarExpr(E->getArg(1));
 
-  BitTest BT = BitTest::decodeBitTestBuiltin(BuiltinID);
+  BuiltinBitTest BT = BuiltinBitTest::decodeBitTestBuiltin(BuiltinID);
 
   // X86 has special BT, BTC, BTR, and BTS instructions that handle the array
   // indexing operation internally. Use them if possible.
@@ -843,7 +843,7 @@ llvm::Value *genBitTestIntrinsic(FunctionEmitter &FE, unsigned BuiltinID,
 
   // The updating instructions will need a mask.
   Value *Mask = nullptr;
-  if (BT.Action != BitTest::TestOnly) {
+  if (BT.Action != BuiltinBitTest::TestOnly) {
     Mask = FE.Builder.CreateShl(llvm::ConstantInt::get(FE.Int8Ty, 1), PosLow,
                                 "bittest.mask");
   }
@@ -853,7 +853,7 @@ llvm::Value *genBitTestIntrinsic(FunctionEmitter &FE, unsigned BuiltinID,
   Value *OldByte = nullptr;
   if (Ordering != llvm::AtomicOrdering::NotAtomic) {
     llvm::AtomicRMWInst::BinOp RMWOp = llvm::AtomicRMWInst::Or;
-    if (BT.Action == BitTest::Reset) {
+    if (BT.Action == BuiltinBitTest::Reset) {
       Mask = FE.Builder.CreateNot(Mask);
       RMWOp = llvm::AtomicRMWInst::And;
     }
@@ -862,16 +862,16 @@ llvm::Value *genBitTestIntrinsic(FunctionEmitter &FE, unsigned BuiltinID,
     OldByte = FE.Builder.CreateLoad(ByteAddr, "bittest.byte");
     Value *NewByte = nullptr;
     switch (BT.Action) {
-    case BitTest::TestOnly:
+    case BuiltinBitTest::TestOnly:
       // Don't store anything.
       break;
-    case BitTest::Complement:
+    case BuiltinBitTest::Complement:
       NewByte = FE.Builder.CreateXor(OldByte, Mask);
       break;
-    case BitTest::Reset:
+    case BuiltinBitTest::Reset:
       NewByte = FE.Builder.CreateAnd(OldByte, FE.Builder.CreateNot(Mask));
       break;
-    case BitTest::Set:
+    case BuiltinBitTest::Set:
       NewByte = FE.Builder.CreateOr(OldByte, Mask);
       break;
     }
