@@ -54,6 +54,7 @@
 #include <algorithm>
 #include <cassert>
 #include <iterator>
+#include <numeric>
 #include <utility>
 
 using namespace llvm;

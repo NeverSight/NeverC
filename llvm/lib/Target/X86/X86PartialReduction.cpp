@@ -25,6 +25,7 @@
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/KnownBits.h"
+#include <numeric>
 
 using namespace llvm;
 
