@@ -182,11 +182,8 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
       uint64_t RelocType = Reloc.getType();
       auto SymIt = Reloc.getSymbol();
       int64_t Addend = 0;
-      if (auto *ERel = dyn_cast<ELFObjectFileBase>(&Obj)) {
-        (void)ERel;
-        if (auto AddOrErr = cast<ELFRelocationRef>(Reloc).getAddend())
-          Addend = *AddOrErr;
-      }
+      if (auto AddOrErr = ELFRelocationRef(Reloc).getAddend())
+        Addend = *AddOrErr;
 
       StringRef Name = "<unknown>";
       bool IsDefined = false;
