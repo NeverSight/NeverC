@@ -75,6 +75,7 @@
 #include "llvm/Support/SuffixTree.h"
 #include "llvm/Support/raw_ostream.h"
 #include <functional>
+#include <numeric>
 #include <tuple>
 #include <vector>
 
