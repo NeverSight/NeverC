@@ -23,6 +23,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <algorithm>
+#include <numeric>
 
 using namespace llvm;
 using namespace LegalizeActions;
