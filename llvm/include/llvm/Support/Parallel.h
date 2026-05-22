@@ -21,6 +21,21 @@
 #include <functional>
 #include <mutex>
 
+#if LLVM_ENABLE_THREADS
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <process.h>
+#else
+#include <pthread.h>
+#endif
+#endif
+
 namespace llvm {
 
 namespace parallel {
@@ -308,6 +323,81 @@ namespace detail {
 
 namespace {
 
+// ── Platform-agnostic threading primitives ──────────────────────────
+#ifdef _WIN32
+
+using nc_mutex_t = SRWLOCK;
+using nc_cond_t  = CONDITION_VARIABLE;
+using nc_thread_t = HANDLE;
+
+inline void nc_mutex_init(nc_mutex_t &m)    { InitializeSRWLock(&m); }
+inline void nc_mutex_destroy(nc_mutex_t &)  {}
+inline void nc_mutex_lock(nc_mutex_t &m)    { AcquireSRWLockExclusive(&m); }
+inline void nc_mutex_unlock(nc_mutex_t &m)  { ReleaseSRWLockExclusive(&m); }
+
+inline void nc_cond_init(nc_cond_t &c)      { InitializeConditionVariable(&c); }
+inline void nc_cond_destroy(nc_cond_t &)    {}
+inline void nc_cond_signal(nc_cond_t &c)    { WakeConditionVariable(&c); }
+inline void nc_cond_broadcast(nc_cond_t &c) { WakeAllConditionVariable(&c); }
+inline void nc_cond_wait(nc_cond_t &c, nc_mutex_t &m) {
+  SleepConditionVariableSRW(&c, &m, INFINITE, 0);
+}
+
+inline bool nc_thread_is_self(nc_thread_t t) {
+  return GetThreadId(t) == GetCurrentThreadId();
+}
+inline void nc_thread_detach(nc_thread_t t) { CloseHandle(t); }
+inline void nc_thread_join(nc_thread_t t) {
+  WaitForSingleObject(t, INFINITE);
+  CloseHandle(t);
+}
+
+using nc_thread_func_t = unsigned (__stdcall *)(void *);
+inline nc_thread_t nc_thread_create(nc_thread_func_t fn, void *arg) {
+  return (HANDLE)_beginthreadex(0, 0, fn, arg, 0, 0);
+}
+
+#define NC_THREAD_ENTRY_RET  unsigned
+#define NC_THREAD_ENTRY_CALL __stdcall
+
+#else // POSIX
+
+using nc_mutex_t  = pthread_mutex_t;
+using nc_cond_t   = pthread_cond_t;
+using nc_thread_t = pthread_t;
+
+inline void nc_mutex_init(nc_mutex_t &m)    { pthread_mutex_init(&m, 0); }
+inline void nc_mutex_destroy(nc_mutex_t &m) { pthread_mutex_destroy(&m); }
+inline void nc_mutex_lock(nc_mutex_t &m)    { pthread_mutex_lock(&m); }
+inline void nc_mutex_unlock(nc_mutex_t &m)  { pthread_mutex_unlock(&m); }
+
+inline void nc_cond_init(nc_cond_t &c)      { pthread_cond_init(&c, 0); }
+inline void nc_cond_destroy(nc_cond_t &c)   { pthread_cond_destroy(&c); }
+inline void nc_cond_signal(nc_cond_t &c)    { pthread_cond_signal(&c); }
+inline void nc_cond_broadcast(nc_cond_t &c) { pthread_cond_broadcast(&c); }
+inline void nc_cond_wait(nc_cond_t &c, nc_mutex_t &m) {
+  pthread_cond_wait(&c, &m);
+}
+
+inline bool nc_thread_is_self(nc_thread_t t) {
+  return pthread_equal(t, pthread_self()) != 0;
+}
+inline void nc_thread_detach(nc_thread_t t) { pthread_detach(t); }
+inline void nc_thread_join(nc_thread_t t)   { pthread_join(t, 0); }
+
+using nc_thread_func_t = void *(*)(void *);
+inline nc_thread_t nc_thread_create(nc_thread_func_t fn, void *arg) {
+  nc_thread_t t;
+  pthread_create(&t, 0, fn, arg);
+  return t;
+}
+
+#define NC_THREAD_ENTRY_RET  void *
+#define NC_THREAD_ENTRY_CALL
+
+#endif // _WIN32
+// ────────────────────────────────────────────────────────────────────
+
 /// O(1) push_front + pop_back for move-only closures; replaces deque here.
 struct UniqueFunctionDeque {
   SmallVector<llvm::unique_function<void()>, 32> Data;
@@ -368,7 +458,7 @@ public:
     bool isInitial;
   };
 
-  static void *workerEntry(void *arg) {
+  static NC_THREAD_ENTRY_RET NC_THREAD_ENTRY_CALL workerEntry(void *arg) {
     WorkerArg *wa = (WorkerArg *)arg;
     ThreadPoolExecutor *self = wa->self;
     ThreadPoolStrategy S = wa->S;
@@ -382,66 +472,65 @@ public:
         child->S = S;
         child->ThreadID = I;
         child->isInitial = false;
-        pthread_t t;
-        pthread_create(&t, 0, &ThreadPoolExecutor::workerEntry, child);
+        nc_thread_t t =
+            nc_thread_create(&ThreadPoolExecutor::workerEntry, child);
         self->Threads.push_back(t);
         if (__atomic_load_n(&self->Stop, __ATOMIC_ACQUIRE))
           break;
       }
-      pthread_mutex_lock(&self->CreatedMtx);
+      nc_mutex_lock(self->CreatedMtx);
       self->ThreadsReady = true;
-      pthread_cond_signal(&self->CreatedCond);
-      pthread_mutex_unlock(&self->CreatedMtx);
+      nc_cond_signal(self->CreatedCond);
+      nc_mutex_unlock(self->CreatedMtx);
     }
     self->work(S, id);
     return 0;
   }
 
   explicit ThreadPoolExecutor(ThreadPoolStrategy S = hardware_concurrency()) {
-    pthread_mutex_init(&Mutex, 0);
-    pthread_cond_init(&Cond, 0);
-    pthread_mutex_init(&CreatedMtx, 0);
-    pthread_cond_init(&CreatedCond, 0);
+    nc_mutex_init(Mutex);
+    nc_cond_init(Cond);
+    nc_mutex_init(CreatedMtx);
+    nc_cond_init(CreatedCond);
     ThreadCount = S.compute_thread_count();
     Threads.reserve(ThreadCount);
     Threads.resize(1);
-    pthread_mutex_lock(&Mutex);
+    nc_mutex_lock(Mutex);
     WorkerArg *initArg = (WorkerArg *)malloc(sizeof(WorkerArg));
     initArg->self = this;
     initArg->S = S;
     initArg->ThreadID = 0;
     initArg->isInitial = true;
-    pthread_create(&Threads[0], 0, &ThreadPoolExecutor::workerEntry, initArg);
-    pthread_mutex_unlock(&Mutex);
+    Threads[0] = nc_thread_create(&ThreadPoolExecutor::workerEntry, initArg);
+    nc_mutex_unlock(Mutex);
   }
 
   void stop() {
-    pthread_mutex_lock(&Mutex);
+    nc_mutex_lock(Mutex);
     if (__atomic_load_n(&Stop, __ATOMIC_RELAXED)) {
-      pthread_mutex_unlock(&Mutex);
+      nc_mutex_unlock(Mutex);
       return;
     }
     __atomic_store_n(&Stop, true, __ATOMIC_RELEASE);
-    pthread_mutex_unlock(&Mutex);
-    pthread_cond_broadcast(&Cond);
-    pthread_mutex_lock(&CreatedMtx);
+    nc_mutex_unlock(Mutex);
+    nc_cond_broadcast(Cond);
+    nc_mutex_lock(CreatedMtx);
     while (!ThreadsReady)
-      pthread_cond_wait(&CreatedCond, &CreatedMtx);
-    pthread_mutex_unlock(&CreatedMtx);
+      nc_cond_wait(CreatedCond, CreatedMtx);
+    nc_mutex_unlock(CreatedMtx);
   }
 
   ~ThreadPoolExecutor() override {
     stop();
-    pthread_t self = pthread_self();
-    for (pthread_t &T : Threads)
-      if (pthread_equal(T, self))
-        pthread_detach(T);
+    for (nc_thread_t &T : Threads)
+      if (nc_thread_is_self(T))
+        nc_thread_detach(T);
       else
-        pthread_join(T, 0);
-    pthread_mutex_destroy(&Mutex);
-    pthread_cond_destroy(&Cond);
-    pthread_mutex_destroy(&CreatedMtx);
-    pthread_cond_destroy(&CreatedCond);
+        nc_thread_join(T);
+    nc_mutex_destroy(Mutex);
+    nc_cond_destroy(Cond);
+    nc_mutex_destroy(CreatedMtx);
+    nc_cond_destroy(CreatedCond);
   }
 
   struct Creator {
@@ -452,13 +541,13 @@ public:
   };
 
   void add(llvm::unique_function<void()> F, bool Sequential = false) override {
-    pthread_mutex_lock(&Mutex);
+    nc_mutex_lock(Mutex);
     if (Sequential)
       WorkQueueSequential.push_front(CMOVE(F));
     else
       WorkQueue.push_back(CMOVE(F));
-    pthread_mutex_unlock(&Mutex);
-    pthread_cond_signal(&Cond);
+    nc_mutex_unlock(Mutex);
+    nc_cond_signal(Cond);
   }
 
   size_t getThreadCount() const override { return ThreadCount; }
@@ -475,12 +564,12 @@ private:
     threadIndex = ThreadID;
     S.apply_thread_strategy(ThreadID);
     while (true) {
-      pthread_mutex_lock(&Mutex);
+      nc_mutex_lock(Mutex);
       while (!__atomic_load_n(&Stop, __ATOMIC_RELAXED) && !hasGeneralTasks() &&
              !hasSequentialTasks())
-        pthread_cond_wait(&Cond, &Mutex);
+        nc_cond_wait(Cond, Mutex);
       if (__atomic_load_n(&Stop, __ATOMIC_RELAXED)) {
-        pthread_mutex_unlock(&Mutex);
+        nc_mutex_unlock(Mutex);
         break;
       }
       bool Sequential = hasSequentialTasks();
@@ -496,7 +585,7 @@ private:
         Task = CMOVE(WorkQueue.back());
         WorkQueue.pop_back();
       }
-      pthread_mutex_unlock(&Mutex);
+      nc_mutex_unlock(Mutex);
       Task();
       if (Sequential)
         __atomic_store_n(&SeqQueueLocked, false, __ATOMIC_RELEASE);
@@ -507,12 +596,12 @@ private:
   bool SeqQueueLocked = false; /* accessed atomically via __atomic builtins */
   SmallVector<llvm::unique_function<void()>, 32> WorkQueue;
   UniqueFunctionDeque WorkQueueSequential;
-  pthread_mutex_t Mutex;
-  pthread_cond_t Cond;
-  pthread_mutex_t CreatedMtx;
-  pthread_cond_t CreatedCond;
+  nc_mutex_t Mutex;
+  nc_cond_t Cond;
+  nc_mutex_t CreatedMtx;
+  nc_cond_t CreatedCond;
   bool ThreadsReady = false;
-  SmallVector<pthread_t, 8> Threads;
+  SmallVector<nc_thread_t, 8> Threads;
   unsigned ThreadCount;
 };
 
