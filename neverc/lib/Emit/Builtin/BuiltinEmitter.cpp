@@ -705,7 +705,7 @@ struct BuiltinBitTest {
 };
 } // namespace
 
-BuiltinBitTest BuiltinBuiltinBitTest::decodeBitTestBuiltin(unsigned BuiltinID) {
+BuiltinBitTest BuiltinBitTest::decodeBitTestBuiltin(unsigned BuiltinID) {
   switch (BuiltinID) {
     // Main portable variants.
   case Builtin::BI_bittest:
