@@ -21,7 +21,6 @@ jobs:
       uses: actions/checkout@v4
       with:
         path: neverc
-        submodules: 'recursive'
 
     - name: Setup build deps
       run: choco install ninja cmake 7zip -y

@@ -20,8 +20,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
@@ -158,8 +156,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full
