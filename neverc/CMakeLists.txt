@@ -421,6 +421,24 @@ if(NEVERC_ENABLE_MIMALLOC)
   neverc_link_mimalloc(neverc)
 endif()
 
+# Windows CI links with -nostdlib (minimal CRT via --dependent-lib=msvcrt), so
+# Clang does not pull in compiler-rt automatically. Full LTO then needs explicit
+# builtins for helpers such as __udivti3 (e.g. from llvm::APInt::toString).
+if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  include(HandleCompilerRT)
+  find_compiler_rt_library(builtins NEVERC_COMPILER_RT_BUILTINS
+    TARGET "${LLVM_HOST_TRIPLE}")
+  if(NEVERC_COMPILER_RT_BUILTINS AND NOT NEVERC_COMPILER_RT_BUILTINS STREQUAL "NOTFOUND")
+    message(STATUS "NeverC: linking compiler-rt builtins: ${NEVERC_COMPILER_RT_BUILTINS}")
+    target_link_libraries(neverc PRIVATE "${NEVERC_COMPILER_RT_BUILTINS}")
+  elseif(LLVM_ENABLE_LTO)
+    message(FATAL_ERROR
+      "NeverC: could not find compiler-rt builtins for ${LLVM_HOST_TRIPLE}. "
+      "Required on Windows with LTO when the link uses -nostdlib "
+      "(undefined symbols such as __udivti3).")
+  endif()
+endif()
+
 option(NEVERC_STRIP_BINARY "Strip local symbols from the neverc binary after linking" OFF)
 if(NEVERC_STRIP_BINARY AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   find_program(NEVERC_STRIP_PROG NAMES strip llvm-strip)
