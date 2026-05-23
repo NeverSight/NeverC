@@ -83,15 +83,16 @@ inline InitLLVM::InitLLVM(int &Argc, const char **&Argv,
 #ifdef __MVS__
   SmallString<128> Banner(Argv[0]);
   Banner += ": ";
-  ExitOnError ExitOnErr(Banner.str());
+  ExitOnError ExitOnErr(std::string(Banner.str()));
   ExitOnErr(errorCodeToError(enableAutoConversion(STDERR_FILENO)));
   ExitOnErr(errorCodeToError(enableAutoConversion(STDOUT_FILENO)));
 #endif
 #ifdef _WIN32
   SmallString<128> Banner(Argv[0]);
   Banner += ": ";
-  ExitOnError ExitOnErr(Banner.str());
-  ExitOnErr(errorCodeToError(windows::GetCommandLineArguments(Args, Alloc)));
+  ExitOnError ExitOnErr(std::string(Banner.str()));
+  ExitOnErr(
+      errorCodeToError(sys::windows::GetCommandLineArguments(Args, Alloc)));
   Args.push_back(0);
   Argc = Args.size() - 1;
   Argv = Args.data();
