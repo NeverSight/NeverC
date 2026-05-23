@@ -1,5 +1,6 @@
 # Profile-guided release build for Linux x86_64.
-# Triggered only on version tags; produces the official GitHub Release artifact.
+# Tag push: full PGO pipeline + GitHub Release upload.
+# Manual dispatch: same pipeline but artifacts only (no release).
 name: linux-x64-neverc-release-pgo
 
 permissions:
@@ -9,6 +10,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   pgo-profile:
@@ -199,6 +201,7 @@ jobs:
           path: linux-x64-neverc-pgo.zip
 
       - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}

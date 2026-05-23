@@ -207,10 +207,14 @@ if(NOT MSVC)
   if(NOT NEVERC_PGO_MODE STREQUAL "generate")
     if(APPLE)
       set(NEVERC_GC_LINKER_FLAG "-Wl,-dead_strip")
+    elseif(WIN32)
+      # lld-link performs dead-code elimination by default; --gc-sections
+      # is an ELF linker flag that lld-link does not recognise.
+      set(NEVERC_GC_LINKER_FLAG "")
     else()
       set(NEVERC_GC_LINKER_FLAG "-Wl,--gc-sections")
     endif()
-    if(NOT CMAKE_EXE_LINKER_FLAGS MATCHES "${NEVERC_GC_LINKER_FLAG}")
+    if(NEVERC_GC_LINKER_FLAG AND NOT CMAKE_EXE_LINKER_FLAGS MATCHES "${NEVERC_GC_LINKER_FLAG}")
       set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${NEVERC_GC_LINKER_FLAG}"
           CACHE STRING "" FORCE)
     endif()

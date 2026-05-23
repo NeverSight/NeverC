@@ -1,5 +1,6 @@
 # Profile-guided release build for Windows x86_64.
-# Triggered only on version tags; produces the official GitHub Release artifact.
+# Tag push: full PGO pipeline + GitHub Release upload.
+# Manual dispatch: same pipeline but artifacts only (no release).
 name: windows-x64-neverc-release-pgo
 
 permissions:
@@ -9,6 +10,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   pgo-profile:
@@ -190,7 +192,7 @@ jobs:
             -C neverc/cmake/caches/NeverC.cmake \
             -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=${PROFDATA} -ffunction-sections -fdata-sections" \
             -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=${PROFDATA} -ffunction-sections -fdata-sections" \
-            -DCMAKE_EXE_LINKER_FLAGS="-Wl,--gc-sections"
+            -DCMAKE_EXE_LINKER_FLAGS=""
           cmake --build build-pgo-use --target neverc --parallel $NUMBER_OF_PROCESSORS
 
       - name: Install neverc
@@ -206,6 +208,7 @@ jobs:
           path: windows-x64-neverc-pgo.zip
 
       - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}

@@ -33,3 +33,5 @@ fi
   echo "CXX=${LLVM_ROOT}/bin/clang++"
   echo "LLVM_ROOT=${LLVM_ROOT}"
 } >> "${GITHUB_ENV:?GITHUB_ENV must be set}"
+
+echo "${LLVM_ROOT}/bin" >> "${GITHUB_PATH:?GITHUB_PATH must be set}"

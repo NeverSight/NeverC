@@ -1,5 +1,6 @@
 # Profile-guided release build for macOS arm64.
-# Triggered only on version tags; produces the official GitHub Release artifact.
+# Tag push: full PGO pipeline + GitHub Release upload.
+# Manual dispatch: same pipeline but artifacts only (no release).
 #
 # PR / branch pushes use macos-arm64-neverc-build.yml (fast, no PGO).
 name: macos-arm64-neverc-release-pgo
@@ -11,6 +12,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   pgo-profile:
@@ -233,6 +235,7 @@ jobs:
           path: macos-arm64-neverc-pgo.zip
 
       - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}

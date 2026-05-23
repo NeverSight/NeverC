@@ -40,7 +40,11 @@ find_profdata_tool() {
   fi
 }
 
-LLVM_PROFDATA="$(find_profdata_tool)"
+ensure_profdata_tool() {
+  if [ -z "${LLVM_PROFDATA:-}" ]; then
+    LLVM_PROFDATA="$(find_profdata_tool)"
+  fi
+}
 
 ts() { python3 -c 'import time; print(int(time.time()*1000))'; }
 
@@ -73,6 +77,7 @@ phase_train() {
   echo "  Phase 1b: Training — collecting profiles"
   echo "══════════════════════════════════════════════════════"
 
+  ensure_profdata_tool
   local NC="$BUILD_PGO_GEN/bin/neverc"
   if [ ! -x "$NC" ]; then
     echo "ERROR: instrumented neverc not found at $NC" >&2
@@ -158,6 +163,7 @@ phase_orderfile() {
   echo "  Phase 1c: Generating order file from PGO profile"
   echo "══════════════════════════════════════════════════════"
 
+  ensure_profdata_tool
   if [ ! -f "$PROFDATA" ]; then
     echo "ERROR: $PROFDATA not found. Run '$0 train' first." >&2
     exit 1

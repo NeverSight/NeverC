@@ -187,7 +187,7 @@ cmake -S "%REPO_ROOT%\llvm" -B "%BUILD_PGO_USE%" -G Ninja ^
     -C "%CACHE%" ^
     -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=%PROFDATA% -ffunction-sections -fdata-sections" ^
     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=%PROFDATA% -ffunction-sections -fdata-sections" ^
-    -DCMAKE_EXE_LINKER_FLAGS="-Wl,--gc-sections"
+    -DCMAKE_EXE_LINKER_FLAGS=""
 if errorlevel 1 exit /b 1
 
 cmake --build "%BUILD_PGO_USE%" --target neverc --parallel %JOBS%
