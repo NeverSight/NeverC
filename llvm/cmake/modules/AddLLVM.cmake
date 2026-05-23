@@ -641,8 +641,8 @@ function(llvm_add_library name)
       set_target_properties(${name}
         PROPERTIES
         # Since 4.0.0, the ABI version is indicated by the major version
-        SOVERSION ${LLVM_VERSION_MAJOR}${LLVM_VERSION_SUFFIX}
-        VERSION ${LLVM_VERSION_MAJOR}${LLVM_VERSION_SUFFIX})
+        SOVERSION ${LLVM_VERSION_MAJOR}
+        VERSION ${LLVM_VERSION_MAJOR})
     endif()
   endif()
 
@@ -664,8 +664,8 @@ function(llvm_add_library name)
       if(${output_name} STREQUAL "output_name-NOTFOUND")
         set(output_name ${name})
       endif()
-      set(library_name ${output_name}-${LLVM_VERSION_MAJOR}${LLVM_VERSION_SUFFIX})
-      set(api_name ${output_name}-${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.${LLVM_VERSION_PATCH}${LLVM_VERSION_SUFFIX})
+      set(library_name ${output_name}-${LLVM_VERSION_MAJOR})
+      set(api_name ${output_name}-${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.${LLVM_VERSION_PATCH})
       set_target_properties(${name} PROPERTIES OUTPUT_NAME ${library_name})
       if(UNIX)
         llvm_install_library_symlink(${api_name} ${library_name} SHARED
