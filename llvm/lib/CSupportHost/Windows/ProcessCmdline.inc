@@ -120,7 +120,7 @@ std::error_code GetCommandLineArguments(SmallVectorImpl<const char *> &Args,
     return EC;
   sys::path::make_preferred(Arg0);
   sys::path::append(Arg0, Filename);
-  Args[0] = Saver.save(Arg0).data();
+  Args[0] = Saver.save(StringRef(Arg0)).data();
   return std::error_code();
 }
 
