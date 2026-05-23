@@ -1,6 +1,7 @@
 add_llvm_component_library(LLVMMC
   ConstantPools.cpp
   ELFObjectWriter.cpp
+  MCAsmMacro.cpp
   MCAsmBackend.cpp
   MCAsmInfo.cpp
   MCAsmInfoCOFF.cpp

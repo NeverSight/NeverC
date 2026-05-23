@@ -136,7 +136,7 @@ bool MakeErrMsg(SmallVectorImpl<char> *ErrMsg, const std::string &prefix) {
 }
 
 static HANDLE RedirectIO(StringRef Path, int fd,
-                         std::string *ErrMsg) {
+                         SmallVectorImpl<char> *ErrMsg) {
   HANDLE h;
   if (!Path.data()) {
     if (!DuplicateHandle(GetCurrentProcess(), (HANDLE)_get_osfhandle(fd),
@@ -185,11 +185,11 @@ using namespace llvm::sys;
 bool Execute(ProcessInfo &PI, StringRef Program,
                     ArrayRef<StringRef> Args, ArrayRef<StringRef> Env,
                     ArrayRef<StringRef> Redirects,
-                    unsigned MemoryLimit, std::string *ErrMsg,
+                    unsigned MemoryLimit, SmallVectorImpl<char> *ErrMsg,
                     BitVector *AffinityMask) {
   if (!sys::fs::can_execute(Program)) {
     if (ErrMsg)
-      *ErrMsg = "program not executable";
+      MakeErrMsg(ErrMsg, "program not executable");
     return false;
   }
 

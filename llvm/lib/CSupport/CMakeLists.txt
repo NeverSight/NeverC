@@ -132,6 +132,8 @@ add_llvm_component_library(LLVMSupport
   PARTIAL_SOURCES_INTENDED
   ${LLVM_C_SUPPORT_SOURCES}
   ${CMAKE_CURRENT_SOURCE_DIR}/../CSupportHost/support_cpp.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../CSupportHost/SmallVectorInst.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../CSupportHost/COM.cpp
 
   $<TARGET_OBJECTS:LLVMSupportBlake3>
 

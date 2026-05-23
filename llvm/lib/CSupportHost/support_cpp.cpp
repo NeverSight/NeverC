@@ -72,6 +72,7 @@ bool withColorDefaultAutoDetect(const raw_ostream &OS) {
 #endif
 #ifdef _WIN32
 #include "Windows/Program.inc"
+#include "Windows/ProcessCmdline.inc"
 #endif
 
 /* --- Signal handler platform includes --- */
