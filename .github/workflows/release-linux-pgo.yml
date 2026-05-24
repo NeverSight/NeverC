@@ -202,4 +202,3 @@ jobs:
         with:
           prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
           files: linux-x64-neverc-pgo.zip
-          generate_release_notes: true
