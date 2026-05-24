@@ -71,6 +71,14 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 詳細設計說明、平台矩陣、CLI 參考與範例見 **[文件索引](../README.zh-TW.md)**。
 
+## macOS 預編譯產物
+
+發布產物是 ad‑hoc 簽名（沒有 Apple Developer ID，未經公證）。若是透過瀏覽器下載的，解壓後執行一次清除 quarantine 屬性即可：
+
+```bash
+xattr -dr com.apple.quarantine /path/to/extracted/install
+```
+
 ## 建置
 
 ### 需求

@@ -71,6 +71,14 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 상세 설계, 플랫폼 매트릭스, CLI 참조, 예제는 **[문서 색인](../README.ko.md)** 을 참조하세요.
 
+## 사전 빌드된 macOS 바이너리
+
+릴리스는 ad‑hoc 서명만 포함합니다 (Apple Developer ID 없음, 공증 없음). 브라우저로 다운로드한 경우, 압축 해제 후 quarantine 속성을 한 번만 제거하세요:
+
+```bash
+xattr -dr com.apple.quarantine /path/to/extracted/install
+```
+
 ## 빌드
 
 ### 요구 사항

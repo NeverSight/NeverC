@@ -71,6 +71,14 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 詳細な設計、プラットフォームマトリクス、CLI リファレンス、例は **[ドキュメント索引](../README.ja.md)** を参照。
 
+## ビルド済み macOS バイナリ
+
+リリースは ad‑hoc 署名のみ（Apple Developer ID なし、公証なし）です。ブラウザでダウンロードした場合は、展開後に一度だけ quarantine 属性を削除してください：
+
+```bash
+xattr -dr com.apple.quarantine /path/to/extracted/install
+```
+
 ## ビルド
 
 ### 要件

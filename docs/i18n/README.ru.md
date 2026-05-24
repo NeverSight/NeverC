@@ -71,6 +71,14 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 Подробности: **[индекс документации](../README.ru.md)** — дизайн, матрица платформ, справочник CLI, примеры.
 
+## Готовые бинарники macOS
+
+Релиз подписан в ad‑hoc (без Apple Developer ID, без нотаризации). Если вы скачали его через браузер, после распаковки достаточно один раз снять атрибут quarantine:
+
+```bash
+xattr -dr com.apple.quarantine /path/to/extracted/install
+```
+
 ## Сборка
 
 ### Требования

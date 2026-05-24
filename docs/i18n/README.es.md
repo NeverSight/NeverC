@@ -71,6 +71,14 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 Consulte el **[índice de documentación](../README.es.md)** para diseño detallado, matriz de plataformas, referencia CLI y ejemplos.
 
+## Binarios macOS precompilados
+
+La release está firmada en ad-hoc (sin Apple Developer ID, sin notarización). Si la descargó vía navegador, elimine una sola vez el atributo quarantine tras extraer:
+
+```bash
+xattr -dr com.apple.quarantine /path/to/extracted/install
+```
+
 ## Compilación
 
 ### Requisitos

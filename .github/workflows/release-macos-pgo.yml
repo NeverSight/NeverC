@@ -237,3 +237,12 @@ jobs:
           prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
           files: macos-arm64-neverc-pgo.zip
           generate_release_notes: true
+          body: |
+            ### macOS quick start
+
+            The binary is ad-hoc signed (no Apple Developer ID, not notarized).
+            After extracting the archive, clear the quarantine attribute once:
+
+            ```bash
+            xattr -dr com.apple.quarantine /path/to/extracted/install
+            ```
