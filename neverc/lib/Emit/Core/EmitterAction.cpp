@@ -234,6 +234,11 @@ bool EmitterConsumer::LinkInModules(llvm::Module *M, bool ShouldLinkFiles) {
     if (!LM.Internalize && !ShouldLinkFiles)
       continue;
 
+    CurLinkModule = LM.Module.get();
+
+    if (Error E = CurLinkModule->materializeAll())
+      return false;
+
     if (LM.PropagateAttrs)
       for (Function &F : *LM.Module) {
         // Skip intrinsics. Keep consistent with how intrinsics are created
@@ -244,7 +249,6 @@ bool EmitterConsumer::LinkInModules(llvm::Module *M, bool ShouldLinkFiles) {
             F, CodeGenOpts, LangOpts, TargetOpts, LM.Internalize);
       }
 
-    CurLinkModule = LM.Module.get();
     bool Err;
 
     auto DoLink = [&](auto &Mod) {
@@ -260,18 +264,10 @@ bool EmitterConsumer::LinkInModules(llvm::Module *M, bool ShouldLinkFiles) {
         Err = Linker::linkModules(*M, std::move(Mod), LM.LinkFlags);
     };
 
-    // Create a Clone to move to the linker, which preserves the original
-    // linking modules, allowing them to be linked again in the future
     if (ClRelinkBuiltinBitcodePostop) {
-      if (Error E = CurLinkModule->materializeAll())
-        return false;
-
       std::unique_ptr<llvm::Module> Clone = llvm::CloneModule(*LM.Module);
-
       DoLink(Clone);
-    }
-    // Otherwise we can link (and clean up) the original modules
-    else {
+    } else {
       DoLink(LM.Module);
     }
   }
