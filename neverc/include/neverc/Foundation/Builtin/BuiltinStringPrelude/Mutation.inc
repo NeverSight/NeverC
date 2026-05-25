@@ -8,11 +8,8 @@ static string neverc_string_append_char(string s, __SIZE_TYPE__ count,
                                              char ch) {
   if (__neverc_string_invalid(s))
     return __neverc_string_consume(s);
-  if (count == 0) {
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
-  }
+  if (count == 0)
+    return __neverc_string_own_or_copy(s);
   if (s.len > NEVERC_STRING_MAX_LEN - count)
     return __neverc_string_consume(s);
   __SIZE_TYPE__ new_len = s.len + count;
@@ -74,11 +71,8 @@ static string neverc_string_insert_char(string s, __SIZE_TYPE__ pos,
     return __neverc_string_consume(s);
   if (pos > s.len)
     pos = s.len;
-  if (count == 0) {
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
-  }
+  if (count == 0)
+    return __neverc_string_own_or_copy(s);
   if (s.len > NEVERC_STRING_MAX_LEN - count)
     return __neverc_string_consume(s);
   __SIZE_TYPE__ new_len = s.len + count;
@@ -110,9 +104,7 @@ static string neverc_string_insert(string s, __SIZE_TYPE__ pos,
     pos = s.len;
   if (other.len == 0) {
     neverc_string_free(other);
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
+    return __neverc_string_own_or_copy(s);
   }
   if (s.len > NEVERC_STRING_MAX_LEN - other.len)
     return __neverc_string_consume2(s, other);
@@ -143,11 +135,8 @@ static string neverc_string_erase(string s, __SIZE_TYPE__ pos,
                                       __SIZE_TYPE__ count) {
   if (__neverc_string_invalid(s) || s.len == 0)
     return __neverc_string_consume(s);
-  if (pos >= s.len) {
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
-  }
+  if (pos >= s.len)
+    return __neverc_string_own_or_copy(s);
   __SIZE_TYPE__ remaining = s.len - pos;
   if (count > remaining)
     count = remaining;
@@ -310,11 +299,8 @@ static string neverc_string_pad_left(string s, __SIZE_TYPE__ width,
                                           char ch) {
   if (__neverc_string_invalid(s))
     return __neverc_string_consume(s);
-  if (width <= s.len) {
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
-  }
+  if (width <= s.len)
+    return __neverc_string_own_or_copy(s);
   if (width > NEVERC_STRING_MAX_LEN)
     return __neverc_string_consume(s);
   __SIZE_TYPE__ pad = width - s.len;
@@ -339,11 +325,8 @@ static string neverc_string_pad_right(string s, __SIZE_TYPE__ width,
                                            char ch) {
   if (__neverc_string_invalid(s))
     return __neverc_string_consume(s);
-  if (width <= s.len) {
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
-  }
+  if (width <= s.len)
+    return __neverc_string_own_or_copy(s);
   if (width > NEVERC_STRING_MAX_LEN)
     return __neverc_string_consume(s);
   if (s.cap > width) {
@@ -371,11 +354,7 @@ static string neverc_string_replace_all(string s, string from,
   }
   if (from.len == 0 || from.len > s.len) {
     __neverc_string_release2(from, to);
-    if (s.cap)
-      return s;
-    string copy = __neverc_string_make_owned(s.data, s.len);
-    neverc_string_free(s);
-    return copy;
+    return __neverc_string_own_or_copy(s);
   }
 
   __SIZE_TYPE__ matches = 0;
@@ -392,11 +371,7 @@ static string neverc_string_replace_all(string s, string from,
   }
   if (matches == 0) {
     __neverc_string_release2(from, to);
-    if (s.cap)
-      return s;
-    string copy = __neverc_string_make_owned(s.data, s.len);
-    neverc_string_free(s);
-    return copy;
+    return __neverc_string_own_or_copy(s);
   }
 
   if (from.len == to.len && s.cap) {

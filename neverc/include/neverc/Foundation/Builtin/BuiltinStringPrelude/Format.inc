@@ -57,11 +57,6 @@ __neverc_string_format_x64(char *out, unsigned long long value) {
   return n;
 }
 
-static __inline__ __SIZE_TYPE__
-__neverc_string_format_cstr_len(const char *s) {
-  return s ? (__SIZE_TYPE__)__builtin_strlen(s) : 0;
-}
-
 struct __neverc_format_spec {
 
   int left_align;
@@ -285,7 +280,7 @@ static string neverc_string_format(string fmt, ...) {
     }
     case 's': {
       const char *str = __builtin_va_arg(ap, const char *);
-      rendered = str ? __neverc_string_format_cstr_len(str) : 6u;
+      rendered = str ? __neverc_string_cstr_len(str) : 6u;
       if (sp.has_precision && sp.precision < rendered)
         rendered = sp.precision;
       break;
@@ -436,7 +431,7 @@ static string neverc_string_format(string fmt, ...) {
         src_len = 6u;
       } else {
         src = str;
-        src_len = __neverc_string_format_cstr_len(str);
+        src_len = __neverc_string_cstr_len(str);
       }
       if (sp.has_precision && sp.precision < src_len)
         src_len = sp.precision;

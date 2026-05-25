@@ -37,7 +37,7 @@ static string neverc_string_html_escape(string s) {
   }
 
   if (total == s.len)
-    return __neverc_string_borrow_copy(s, s.data, s.len);
+    return __neverc_string_own_or_copy(s);
 
   char *p = __neverc_string_alloc_payload(total);
   if (!p)
@@ -234,7 +234,7 @@ static string neverc_string_json_escape(string s) {
     total += need;
   }
   if (total == s.len)
-    return __neverc_string_borrow_copy(s, s.data, s.len);
+    return __neverc_string_own_or_copy(s);
 
   char *p = __neverc_string_alloc_payload(total);
   if (!p)

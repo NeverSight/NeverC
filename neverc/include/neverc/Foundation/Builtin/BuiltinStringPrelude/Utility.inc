@@ -69,11 +69,8 @@ static string neverc_string_to_lower(string s) {
       break;
     }
   }
-  if (first_upper == s.len) {
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
-  }
+  if (first_upper == s.len)
+    return __neverc_string_own_or_copy(s);
   if (s.cap) {
     char *buf = (char *)s.data;
     for (__SIZE_TYPE__ i = first_upper; i < s.len; i++)
@@ -102,11 +99,8 @@ static string neverc_string_to_upper(string s) {
       break;
     }
   }
-  if (first_lower == s.len) {
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
-  }
+  if (first_lower == s.len)
+    return __neverc_string_own_or_copy(s);
   if (s.cap) {
     char *buf = (char *)s.data;
     for (__SIZE_TYPE__ i = first_lower; i < s.len; i++)
@@ -133,11 +127,8 @@ static string neverc_string_ltrim(string s) {
     start++;
   if (start >= s.len)
     return __neverc_string_consume(s);
-  if (start == 0) {
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
-  }
+  if (start == 0)
+    return __neverc_string_own_or_copy(s);
   return __neverc_string_borrow_copy(s, s.data + start, s.len - start);
 }
 
@@ -149,11 +140,8 @@ static string neverc_string_rtrim(string s) {
     end--;
   if (end == 0)
     return __neverc_string_consume(s);
-  if (end == s.len) {
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
-  }
+  if (end == s.len)
+    return __neverc_string_own_or_copy(s);
   return __neverc_string_borrow_copy(s, s.data, end);
 }
 
@@ -168,11 +156,8 @@ static string neverc_string_trim(string s) {
     end--;
   if (start >= end)
     return __neverc_string_consume(s);
-  if (start == 0 && end == s.len) {
-    if (s.cap)
-      return s;
-    return __neverc_string_borrow_copy(s, s.data, s.len);
-  }
+  if (start == 0 && end == s.len)
+    return __neverc_string_own_or_copy(s);
   return __neverc_string_borrow_copy(s, s.data + start, end - start);
 }
 
@@ -183,38 +168,6 @@ static string neverc_string_trim(string s) {
 #ifndef NEVERC_STRING_INT_BASE_BUF
 #define NEVERC_STRING_INT_BASE_BUF 66
 #endif
-
-static string neverc_string_from_int(__PTRDIFF_TYPE__ val) {
-  char buf[NEVERC_STRING_INT_BUF];
-  int neg = val < 0;
-  __SIZE_TYPE__ uval;
-  if (neg)
-    uval = (__SIZE_TYPE__)(-(val + 1)) + 1;
-  else
-    uval = (__SIZE_TYPE__)val;
-  int pos = NEVERC_STRING_INT_BUF - 1;
-  buf[pos] = 0;
-  do {
-    buf[--pos] = (char)('0' + (int)(uval % 10));
-    uval /= 10;
-  } while (uval);
-  if (neg)
-    buf[--pos] = '-';
-  return __neverc_string_make_owned(
-      buf + pos, (__SIZE_TYPE__)(NEVERC_STRING_INT_BUF - 1 - pos));
-}
-
-static string neverc_string_from_uint(__SIZE_TYPE__ val) {
-  char buf[NEVERC_STRING_INT_BUF];
-  int pos = NEVERC_STRING_INT_BUF - 1;
-  buf[pos] = 0;
-  do {
-    buf[--pos] = (char)('0' + (int)(val % 10));
-    val /= 10;
-  } while (val);
-  return __neverc_string_make_owned(
-      buf + pos, (__SIZE_TYPE__)(NEVERC_STRING_INT_BUF - 1 - pos));
-}
 
 static __inline__ char __neverc_string_base_digit(int n) {
   return n < 10 ? (char)('0' + n) : (char)('a' + (n - 10));
@@ -259,6 +212,14 @@ static string neverc_string_from_uint_base(__SIZE_TYPE__ val, int base) {
   return __neverc_string_make_owned(
       buf + pos,
       (__SIZE_TYPE__)(NEVERC_STRING_INT_BASE_BUF - 1 - pos));
+}
+
+static string neverc_string_from_int(__PTRDIFF_TYPE__ val) {
+  return neverc_string_from_int_base(val, 10);
+}
+
+static string neverc_string_from_uint(__SIZE_TYPE__ val) {
+  return neverc_string_from_uint_base(val, 10);
 }
 
 static __PTRDIFF_TYPE__ neverc_string_to_int(string s) {
@@ -368,21 +329,13 @@ static string neverc_string_split_first(string s, string sep) {
 
   if (sep.len == 0) {
     neverc_string_free(sep);
-    if (s.cap)
-      return s;
-    string out = __neverc_string_make_owned(s.data, s.len);
-    neverc_string_free(s);
-    return out;
+    return __neverc_string_own_or_copy(s);
   }
   __SIZE_TYPE__ pos =
       __neverc_string_find_raw(s.data, s.len, sep.data, sep.len);
   if (pos == NEVERC_STRING_NPOS) {
     neverc_string_free(sep);
-    if (s.cap)
-      return s;
-    string out = __neverc_string_make_owned(s.data, s.len);
-    neverc_string_free(s);
-    return out;
+    return __neverc_string_own_or_copy(s);
   }
   string out = __neverc_string_make_owned(s.data, pos);
   __neverc_string_release2(s, sep);
@@ -396,11 +349,7 @@ static string neverc_string_split_rest(string s, string sep) {
   }
   if (sep.len == 0) {
     neverc_string_free(sep);
-    if (s.cap)
-      return s;
-    string out = __neverc_string_make_owned(s.data, s.len);
-    neverc_string_free(s);
-    return out;
+    return __neverc_string_own_or_copy(s);
   }
   __SIZE_TYPE__ pos =
       __neverc_string_find_raw(s.data, s.len, sep.data, sep.len);
@@ -425,11 +374,7 @@ static string neverc_string_split_before_last(string s,
       __neverc_string_rfind_raw(s.data, s.len, sep.data, sep.len);
   if (pos == NEVERC_STRING_NPOS) {
     neverc_string_free(sep);
-    if (s.cap)
-      return s;
-    string out = __neverc_string_make_owned(s.data, s.len);
-    neverc_string_free(s);
-    return out;
+    return __neverc_string_own_or_copy(s);
   }
   string out = __neverc_string_make_owned(s.data, pos);
   __neverc_string_release2(s, sep);
@@ -443,11 +388,7 @@ static string neverc_string_split_after_last(string s, string sep) {
   }
   if (sep.len == 0) {
     neverc_string_free(sep);
-    if (s.cap)
-      return s;
-    string out = __neverc_string_make_owned(s.data, s.len);
-    neverc_string_free(s);
-    return out;
+    return __neverc_string_own_or_copy(s);
   }
   __SIZE_TYPE__ pos =
       __neverc_string_rfind_raw(s.data, s.len, sep.data, sep.len);

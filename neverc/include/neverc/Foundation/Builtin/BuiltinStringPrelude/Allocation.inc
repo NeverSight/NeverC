@@ -128,6 +128,12 @@ static __inline__ string __neverc_string_borrow_copy(string s,
   return copy;
 }
 
+static __inline__ string __neverc_string_own_or_copy(string s) {
+  if (s.cap)
+    return s;
+  return __neverc_string_borrow_copy(s, s.data, s.len);
+}
+
 static __inline__ string __neverc_string_cat(string a, string b) {
   if (__neverc_string_invalid(a) || __neverc_string_invalid(b))
     return __neverc_string_consume2(a, b);
