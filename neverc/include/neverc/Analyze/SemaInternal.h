@@ -36,6 +36,10 @@ ExprResult buildNeverCStringEncryptedLiteral(Sema &S, Scope *Sc, Expr *Base,
                                              SourceLocation LParenLoc,
                                              SourceLocation RParenLoc);
 
+/// If \p E is a call to `__neverc_string_decrypt_literal(enc, len, key)`,
+/// return the CallExpr; otherwise return nullptr.
+const CallExpr *getDecryptLiteralCall(const Expr *E);
+
 inline bool
 FTIHasSingleVoidParameter(const DeclaratorChunk::FunctionTypeInfo &FTI) {
   return FTI.NumParams == 1 && !FTI.isVariadic &&

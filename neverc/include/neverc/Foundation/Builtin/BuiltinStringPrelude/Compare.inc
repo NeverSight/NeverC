@@ -35,6 +35,30 @@ static int neverc_string_eq(string a, string b) {
   return equal;
 }
 
+static __attribute__((always_inline)) int
+__neverc_string_decrypt_equals(string s, const char *enc,
+                               __SIZE_TYPE__ len, __SIZE_TYPE__ key) {
+  int equal;
+  if (s.len != len) {
+    equal = 0;
+  } else if (len == 0) {
+    equal = (s.len == 0) ? 1 : 0;
+  } else if (NEVERC_UNLIKELY(__neverc_string_invalid(s))) {
+    equal = 0;
+  } else {
+    equal = 1;
+    volatile __SIZE_TYPE__ vkey = key;
+    for (__SIZE_TYPE__ i = 0; i < len; i++) {
+      if (s.data[i] != NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i)) {
+        equal = 0;
+        break;
+      }
+    }
+  }
+  neverc_string_free(s);
+  return equal;
+}
+
 static int neverc_string_compare_substr(string a, __SIZE_TYPE__ pos,
                                              __SIZE_TYPE__ count, string b) {
   int result = 0;
@@ -112,6 +136,57 @@ static __inline__ int neverc_string_ends_with_char(string s, char ch) {
 static __inline__ unsigned char __neverc_ascii_lower(unsigned char c) {
 
   return c | (((unsigned char)(c - 'A') < 26u) << 5);
+}
+
+static __attribute__((always_inline)) int
+__neverc_string_decrypt_compare(string s, const char *enc,
+                                __SIZE_TYPE__ len, __SIZE_TYPE__ key) {
+  int result = 0;
+  if (NEVERC_UNLIKELY(__neverc_string_invalid(s))) {
+    result = (s.len > len) - (s.len < len);
+  } else {
+    volatile __SIZE_TYPE__ vkey = key;
+    __SIZE_TYPE__ common = s.len < len ? s.len : len;
+    for (__SIZE_TYPE__ i = 0; i < common; i++) {
+      unsigned char sb = (unsigned char)s.data[i];
+      unsigned char db = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i);
+      if (sb != db) {
+        result = (sb > db) - (sb < db);
+        goto done;
+      }
+    }
+    if (s.len != len)
+      result = (s.len > len) - (s.len < len);
+  }
+done:
+  neverc_string_free(s);
+  return result;
+}
+
+static __attribute__((always_inline)) int
+__neverc_string_decrypt_equals_ic(string s, const char *enc,
+                                  __SIZE_TYPE__ len, __SIZE_TYPE__ key) {
+  int equal;
+  if (s.len != len) {
+    equal = 0;
+  } else if (len == 0) {
+    equal = (s.len == 0) ? 1 : 0;
+  } else if (NEVERC_UNLIKELY(__neverc_string_invalid(s))) {
+    equal = 0;
+  } else {
+    equal = 1;
+    volatile __SIZE_TYPE__ vkey = key;
+    for (__SIZE_TYPE__ i = 0; i < len; i++) {
+      unsigned char sb = (unsigned char)s.data[i];
+      unsigned char db = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i);
+      if (sb != db && __neverc_ascii_lower(sb) != __neverc_ascii_lower(db)) {
+        equal = 0;
+        break;
+      }
+    }
+  }
+  neverc_string_free(s);
+  return equal;
 }
 
 static int neverc_string_eq_ic(string a, string b) {

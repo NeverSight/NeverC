@@ -106,4 +106,28 @@ __neverc_string_decrypt_literal(const char *enc, __SIZE_TYPE__ len,
   return (string){p, len, len + 1};
 }
 
+static __attribute__((always_inline)) int
+__neverc_string_decrypt_equals(string s, const char *enc,
+                               __SIZE_TYPE__ len, __SIZE_TYPE__ key) {
+  int equal;
+  if (s.len != len) {
+    equal = 0;
+  } else if (len == 0) {
+    equal = (s.len == 0) ? 1 : 0;
+  } else if (NEVERC_UNLIKELY(__neverc_string_invalid(s))) {
+    equal = 0;
+  } else {
+    equal = 1;
+    volatile __SIZE_TYPE__ vkey = key;
+    for (__SIZE_TYPE__ i = 0; i < len; i++) {
+      if (s.data[i] != NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i)) {
+        equal = 0;
+        break;
+      }
+    }
+  }
+  neverc_string_free(s);
+  return equal;
+}
+
 )thin_header"

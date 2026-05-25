@@ -8,6 +8,7 @@
 
 #include "neverc/Analyze/Lookup.h"
 #include "neverc/Analyze/SemaInternal.h"
+#include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Tree/Core/TreeContext.h"
@@ -166,6 +167,18 @@ ExprResult neverc::buildNeverCStringEncryptedLiteral(Sema &S, Scope *Sc,
   return buildNeverCStringRuntimeCall(S, Sc, LParenLoc,
                                       "__neverc_string_decrypt_literal",
                                       Args, RParenLoc);
+}
+
+const CallExpr *neverc::getDecryptLiteralCall(const Expr *E) {
+  const auto *CE = dyn_cast<CallExpr>(E->IgnoreParenImpCasts());
+  if (!CE)
+    return nullptr;
+  const auto *Callee = CE->getDirectCallee();
+  if (!Callee)
+    return nullptr;
+  if (Callee->getName() == BuiltinString::getDecryptLiteralFunctionName())
+    return CE;
+  return nullptr;
 }
 
 ExprResult neverc::buildNeverCStringRuntimeCall(Sema &S, Scope *Sc,

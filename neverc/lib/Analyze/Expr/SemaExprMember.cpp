@@ -714,6 +714,55 @@ Sema::OnBuiltinStringMethodCall(Scope *S, Expr *Base, SourceLocation OpLoc,
     break;
   }
 
+  // Decrypt-and-compare optimization: when a string argument to a
+  // comparison/search method is a `__neverc_string_decrypt_literal(enc,
+  // len, key)` call, replace the method with its zero-allocation decrypt
+  // variant that XOR-decrypts and compares byte-by-byte without ever
+  // materialising the plaintext in memory.
+  if (CallArgs.size() >= 2) {
+    using namespace BuiltinString;
+    using namespace BuiltinStringNames;
+    struct DecryptRewrite {
+      llvm::StringRef OriginalName;
+      llvm::StringRef (*GetDecryptName)();
+    };
+    const DecryptRewrite kRewrites[] = {
+        {EqualFunctionName,        getDecryptEqualsFunctionName},
+        {CompareFunctionName,      getDecryptCompareFunctionName},
+        {EqualIcFunctionName,      getDecryptEqualsIcFunctionName},
+        {StartsWithFunctionName,   getDecryptStartsWithFunctionName},
+        {EndsWithFunctionName,     getDecryptEndsWithFunctionName},
+        {ContainsFunctionName,     getDecryptContainsFunctionName},
+        {StartsWithIcFunctionName, getDecryptStartsWithIcFunctionName},
+        {EndsWithIcFunctionName,   getDecryptEndsWithIcFunctionName},
+        {ContainsIcFunctionName,   getDecryptContainsIcFunctionName},
+        {FindFunctionName,         getDecryptFindFunctionName},
+        {FindFromFunctionName,     getDecryptFindFromFunctionName},
+        {RfindFunctionName,        getDecryptRfindFunctionName},
+        {RfindToFunctionName,      getDecryptRfindToFunctionName},
+        {FindIcFunctionName,       getDecryptFindIcFunctionName},
+        {CountFunctionName,        getDecryptCountFunctionName},
+    };
+
+    for (const auto &R : kRewrites) {
+      if (FunctionName != R.OriginalName)
+        continue;
+      const CallExpr *DC = getDecryptLiteralCall(CallArgs[1]);
+      if (!DC || DC->getNumArgs() != 3)
+        break;
+      llvm::SmallVector<Expr *, 6> NewArgs;
+      NewArgs.push_back(CallArgs[0]);
+      NewArgs.push_back(const_cast<Expr *>(DC->getArg(0)));
+      NewArgs.push_back(const_cast<Expr *>(DC->getArg(1)));
+      NewArgs.push_back(const_cast<Expr *>(DC->getArg(2)));
+      for (unsigned I = 2, N = CallArgs.size(); I < N; ++I)
+        NewArgs.push_back(CallArgs[I]);
+      return buildNeverCStringRuntimeCall(*this, S, LParenLoc,
+                                          R.GetDecryptName(), NewArgs,
+                                          RParenLoc);
+    }
+  }
+
   return buildNeverCStringRuntimeCall(*this, S, LParenLoc, FunctionName,
                                       CallArgs, RParenLoc);
 }

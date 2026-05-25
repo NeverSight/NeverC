@@ -5521,7 +5521,35 @@ ExprResult buildNeverCStringCompare(Sema &S, SourceLocation OpLoc,
   // Equality ops route through `neverc_string_eq` for the cheaper
   // "len-mismatch short-circuit + memcmp" fast path; the !=
   // form is the logical negation of the eq result.
+  //
+  // When one operand is a `"literal".encrypt()` call (lowered to
+  // `__neverc_string_decrypt_literal(enc, len, key)`), we bypass the
+  // full decrypt+compare path and emit `__neverc_string_decrypt_equals`
+  // instead.  This avoids the heap allocation entirely: the encrypted
+  // bytes are XOR'd and compared one-at-a-time against the other
+  // string, so plaintext never materialises in memory.
   if (BinaryOperator::isEqualityOp(Opc)) {
+    const CallExpr *DecryptCall = getDecryptLiteralCall(RHS);
+    Expr *OtherOperand = LHS;
+    if (!DecryptCall) {
+      DecryptCall = getDecryptLiteralCall(LHS);
+      OtherOperand = RHS;
+    }
+
+    if (DecryptCall && DecryptCall->getNumArgs() == 3) {
+      Expr *DecryptArgs[] = {
+          OtherOperand,
+          const_cast<Expr *>(DecryptCall->getArg(0)),
+          const_cast<Expr *>(DecryptCall->getArg(1)),
+          const_cast<Expr *>(DecryptCall->getArg(2))};
+      ExprResult Eq = buildNeverCStringRuntimeCall(
+          S, /*Scope=*/nullptr, OpLoc,
+          BuiltinString::getDecryptEqualsFunctionName(), DecryptArgs, OpLoc);
+      if (Eq.isInvalid() || Opc == BO_EQ)
+        return Eq;
+      return S.FormUnaryOp(/*Scope=*/nullptr, OpLoc, UO_LNot, Eq.get());
+    }
+
     ExprResult Eq = buildNeverCStringRuntimeCall(
         S, /*Scope=*/nullptr, OpLoc, BuiltinString::getEqualFunctionName(),
         Args, OpLoc);
@@ -5531,11 +5559,42 @@ ExprResult buildNeverCStringCompare(Sema &S, SourceLocation OpLoc,
   }
 
   // Relational ops (`<`, `>`, `<=`, `>=`) match std::string semantics:
-  // they reduce to `neverc_string_compare(a, b) <op> 0`, so we reuse the
-  // regular integer comparison machinery against the -1 / 0 / +1
-  // result.  This keeps lexicographic ordering identical to
-  // `s.compare(t)` and lets the dispatcher cover all six comparison
-  // ops with a single rewrite path.
+  // they reduce to `neverc_string_compare(a, b) <op> 0`.  When one
+  // operand is a decrypt_literal call, use the zero-allocation
+  // `__neverc_string_decrypt_compare` variant.
+  {
+    const CallExpr *DecryptCall = getDecryptLiteralCall(RHS);
+    Expr *OtherOperand = LHS;
+    bool DecryptOnLHS = false;
+    if (!DecryptCall) {
+      DecryptCall = getDecryptLiteralCall(LHS);
+      OtherOperand = RHS;
+      DecryptOnLHS = true;
+    }
+    if (DecryptCall && DecryptCall->getNumArgs() == 3) {
+      Expr *DecryptArgs[] = {
+          OtherOperand,
+          const_cast<Expr *>(DecryptCall->getArg(0)),
+          const_cast<Expr *>(DecryptCall->getArg(1)),
+          const_cast<Expr *>(DecryptCall->getArg(2))};
+      ExprResult Cmp = buildNeverCStringRuntimeCall(
+          S, /*Scope=*/nullptr, OpLoc,
+          BuiltinString::getDecryptCompareFunctionName(), DecryptArgs, OpLoc);
+      if (Cmp.isInvalid())
+        return Cmp;
+      ExprResult Zero = S.OnIntegerConstant(OpLoc, /*Val=*/0);
+      if (Zero.isInvalid())
+        return ExprError();
+      // decrypt_compare(other, enc) returns compare(other, decrypted).
+      // When encrypt was on the LHS, the original expression is
+      // `decrypted <op> other`, i.e. `compare(decrypted, other) <op> 0`.
+      // Since we computed compare(other, decrypted), flip the operator.
+      BinaryOperatorKind FinalOpc =
+          DecryptOnLHS ? BinaryOperator::reverseComparisonOp(Opc) : Opc;
+      return S.FormBinOp(/*Scope=*/nullptr, OpLoc, FinalOpc, Cmp.get(),
+                         Zero.get());
+    }
+  }
   ExprResult Cmp = buildNeverCStringRuntimeCall(
       S, /*Scope=*/nullptr, OpLoc, BuiltinString::getCompareFunctionName(),
       Args, OpLoc);

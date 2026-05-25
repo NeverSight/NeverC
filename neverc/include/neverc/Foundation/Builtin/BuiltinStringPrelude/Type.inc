@@ -58,4 +58,6 @@ __neverc_string_decrypt_literal(const char *enc, __SIZE_TYPE__ len,
     p[i] = NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i);
   p[len] = 0;
   return (string){p, len, len + 1};
-})prelude"
+}
+
+)prelude"
