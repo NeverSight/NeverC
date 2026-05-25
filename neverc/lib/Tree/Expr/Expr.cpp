@@ -1479,8 +1479,6 @@ ImplicitCastExpr *ImplicitCastExpr::Create(const TreeContext &C, QualType T,
                                            FPOptionsOverride FPO) {
   void *Buffer = C.Allocate(
       totalSizeToAlloc<FPOptionsOverride>(FPO.requiresTrailingStorage()));
-  assert((Kind != CK_LValueToRValue || !T->isNullPtrType()) &&
-         "invalid type for lvalue-to-rvalue conversion");
   return new (Buffer) ImplicitCastExpr(T, Kind, Operand, FPO, VK);
 }
 
