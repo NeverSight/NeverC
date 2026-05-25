@@ -486,6 +486,86 @@ string escaped = json_val.json_escape();
 
 ---
 
+## Compile-time String Encryption
+
+`.encrypt()` provides compile-time XOR encryption for string literals. The plaintext is never stored in the binary — it is encrypted at compile time and decrypted at runtime via an `always_inline` function, making static analysis tools (e.g. `strings`) unable to extract the original content.
+
+### Usage
+
+```c
+string secret = "API_KEY_12345".encrypt();
+printf("%s\n", secret.c_str());  // prints "API_KEY_12345" at runtime
+
+// but `strings ./binary` will NOT find "API_KEY_12345"
+```
+
+### How It Works
+
+1. **Compile time**: Sema intercepts `.encrypt()` on a string literal, XOR-encrypts every byte with a per-literal key, and stores the ciphertext in `.rodata`
+2. **Runtime**: The `always_inline` function `__neverc_string_decrypt_literal` XOR-decrypts the bytes into a freshly allocated owned buffer
+3. After decryption, the result is a normal owned `string` — all methods (`c_str()`, `find()`, `to_upper()`, etc.) work as usual
+
+### Key Generation
+
+- **Default**: Each compilation derives a base key from `std::time()`, then mixes it with a per-literal counter to produce a unique key per string literal. Every build produces different ciphertext.
+- **CLI override**: Use `-fstring-encrypt-key=0xDEADBEEF` to fix the base key (useful for reproducible builds or testing).
+
+### All Literal Types Supported
+
+`.encrypt()` automatically supports all string literal types — the compiler folds wide/UTF-16/UTF-32 literals to UTF-8 before encryption:
+
+```c
+string a = "hello".encrypt();                  // ordinary
+string b = u8"héllo".encrypt();                // UTF-8
+string c = L"中文".encrypt();                   // wide
+string d = u"\u4E2D\u6587".encrypt();          // UTF-16
+string e = U"\U0001F389party".encrypt();       // UTF-32
+string f = R"(line1\nline2)".encrypt();        // raw
+```
+
+### Restrictions
+
+- `.encrypt()` can **only** be applied to string literals. Calling it on a variable produces a compile error:
+
+```c
+string s = "hello";
+string e = s.encrypt();  // ERROR: .encrypt() can only be applied to string literals
+```
+
+- `.encrypt()` takes **no arguments**:
+
+```c
+string e = "hello".encrypt(42);  // ERROR: .encrypt() takes no arguments
+```
+
+- Double encryption is rejected:
+
+```c
+string e = "hello".encrypt().encrypt();  // ERROR: .encrypt() can only be applied to string literals
+```
+
+### Custom Encryption Algorithm
+
+The default XOR algorithm can be overridden by defining the `NEVERC_STRING_DECRYPT_BYTE` macro before the string prelude is included:
+
+```c
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+```
+
+### Compiler Flags
+
+| Flag | Description |
+|------|-------------|
+| `-fstring-encrypt-key=<hex>` | Override the XOR base key (e.g. `-fstring-encrypt-key=0xDEADBEEF`) |
+
+### Configurable Knobs
+
+| Macro | Default | Description |
+|-------|---------|-------------|
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR with rotating key bytes | Per-byte decryption operation |
+
+---
+
 ## Method Chaining
 
 All methods returning `string` support chaining. Intermediate values are auto-released with no leaks:

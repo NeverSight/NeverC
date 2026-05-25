@@ -487,6 +487,86 @@ string escaped = json_val.json_escape();
 
 ---
 
+## 編譯時字串加密
+
+`.encrypt()` 為字串字面量提供編譯時 XOR 加密。明文永遠不會出現在二進位檔案中——編譯時加密，執行時透過 `always_inline` 函式解密，靜態分析工具（如 `strings`）無法提取原始內容。
+
+### 用法
+
+```c
+string secret = "API_KEY_12345".encrypt();
+printf("%s\n", secret.c_str());  // 執行時輸出 "API_KEY_12345"
+
+// 但 `strings ./binary` 找不到 "API_KEY_12345"
+```
+
+### 工作原理
+
+1. **編譯時**：Sema 攔截字面量上的 `.encrypt()` 呼叫，對每個位元組進行 XOR 加密，將密文儲存在 `.rodata` 段
+2. **執行時**：`always_inline` 函式 `__neverc_string_decrypt_literal` 將密文 XOR 解密到新分配的 owned 緩衝區
+3. 解密後得到的是普通的 owned `string`——所有方法（`c_str()`、`find()`、`to_upper()` 等）照常工作
+
+### 金鑰生成
+
+- **預設**：每次編譯從 `std::time()` 衍生基礎金鑰，再與 per-literal 計數器混合，為每個字串字面量生成唯一金鑰。每次建置產生不同的密文。
+- **CLI 覆蓋**：使用 `-fstring-encrypt-key=0xDEADBEEF` 固定基礎金鑰（適用於可重現建置或測試）。
+
+### 支援所有字面量類型
+
+`.encrypt()` 自動支援所有字串字面量類型——編譯器在加密前將 wide/UTF-16/UTF-32 字面量折疊為 UTF-8：
+
+```c
+string a = "hello".encrypt();                  // ordinary
+string b = u8"héllo".encrypt();                // UTF-8
+string c = L"中文".encrypt();                   // wide
+string d = u"\u4E2D\u6587".encrypt();          // UTF-16
+string e = U"\U0001F389party".encrypt();       // UTF-32
+string f = R"(line1\nline2)".encrypt();        // raw
+```
+
+### 限制
+
+- `.encrypt()` **只能**用於字串字面量。在變數上呼叫會產生編譯錯誤：
+
+```c
+string s = "hello";
+string e = s.encrypt();  // 錯誤：.encrypt() can only be applied to string literals
+```
+
+- `.encrypt()` **不接受參數**：
+
+```c
+string e = "hello".encrypt(42);  // 錯誤：.encrypt() takes no arguments
+```
+
+- 拒絕雙重加密：
+
+```c
+string e = "hello".encrypt().encrypt();  // 錯誤：.encrypt() can only be applied to string literals
+```
+
+### 自訂加密演算法
+
+預設的 XOR 演算法可以透過在 string prelude 之前定義 `NEVERC_STRING_DECRYPT_BYTE` 巨集來覆蓋：
+
+```c
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+```
+
+### 編譯器旗標
+
+| 旗標 | 說明 |
+|------|------|
+| `-fstring-encrypt-key=<hex>` | 覆蓋 XOR 基礎金鑰（如 `-fstring-encrypt-key=0xDEADBEEF`） |
+
+### 可設定旋鈕
+
+| 巨集 | 預設值 | 說明 |
+|------|--------|------|
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 使用旋轉金鑰位元組的 XOR | 逐位元組解密操作 |
+
+---
+
 ## 鏈式呼叫
 
 所有返回 `string` 的方法都支援鏈式呼叫。中間值自動釋放，不會洩漏：

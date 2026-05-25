@@ -488,6 +488,86 @@ string escaped = json_val.json_escape();
 
 ---
 
+## تشفير النصوص في وقت الترجمة
+
+`.encrypt()` يوفر تشفير XOR في وقت الترجمة للنصوص الحرفية. لا يتم تخزين النص الأصلي أبداً في الملف الثنائي — يتم تشفيره في وقت الترجمة وفك تشفيره في وقت التشغيل عبر دالة `always_inline`، مما يجعل أدوات التحليل الثابت (مثل `strings`) غير قادرة على استخراج المحتوى الأصلي.
+
+### الاستخدام
+
+```c
+string secret = "API_KEY_12345".encrypt();
+printf("%s\n", secret.c_str());  // يطبع "API_KEY_12345" في وقت التشغيل
+
+// لكن `strings ./binary` لن يجد "API_KEY_12345"
+```
+
+### كيف يعمل
+
+1. **وقت الترجمة**: يعترض Sema استدعاء `.encrypt()` على نص حرفي، يشفر كل بايت بـ XOR ويخزن النص المشفر في `.rodata`
+2. **وقت التشغيل**: الدالة `always_inline` باسم `__neverc_string_decrypt_literal` تفك التشفير بـ XOR في ذاكرة owned جديدة
+3. بعد فك التشفير، تكون النتيجة `string` عادية من نوع owned — جميع الدوال (`c_str()`، `find()`، `to_upper()` إلخ) تعمل بشكل طبيعي
+
+### توليد المفتاح
+
+- **افتراضي**: كل عملية ترجمة تستمد مفتاحاً أساسياً من `std::time()`، ثم تمزجه مع عداد per-literal لإنتاج مفتاح فريد لكل نص حرفي. كل بناء ينتج نصاً مشفراً مختلفاً.
+- **تجاوز CLI**: استخدم `-fstring-encrypt-key=0xDEADBEEF` لتثبيت المفتاح الأساسي (مفيد للبناء القابل للتكرار أو الاختبار).
+
+### دعم جميع أنواع النصوص الحرفية
+
+`.encrypt()` يدعم تلقائياً جميع أنواع النصوص الحرفية — المترجم يحول النصوص wide/UTF-16/UTF-32 إلى UTF-8 قبل التشفير:
+
+```c
+string a = "hello".encrypt();                  // ordinary
+string b = u8"héllo".encrypt();                // UTF-8
+string c = L"中文".encrypt();                   // wide
+string d = u"\u4E2D\u6587".encrypt();          // UTF-16
+string e = U"\U0001F389party".encrypt();       // UTF-32
+string f = R"(line1\nline2)".encrypt();        // raw
+```
+
+### القيود
+
+- `.encrypt()` يمكن تطبيقه **فقط** على النصوص الحرفية. استدعاؤه على متغير ينتج خطأ ترجمة:
+
+```c
+string s = "hello";
+string e = s.encrypt();  // خطأ: .encrypt() can only be applied to string literals
+```
+
+- `.encrypt()` **لا يقبل معاملات**:
+
+```c
+string e = "hello".encrypt(42);  // خطأ: .encrypt() takes no arguments
+```
+
+- التشفير المزدوج مرفوض:
+
+```c
+string e = "hello".encrypt().encrypt();  // خطأ: .encrypt() can only be applied to string literals
+```
+
+### خوارزمية تشفير مخصصة
+
+يمكن استبدال خوارزمية XOR الافتراضية بتعريف الماكرو `NEVERC_STRING_DECRYPT_BYTE` قبل تضمين string prelude:
+
+```c
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+```
+
+### أعلام المترجم
+
+| العلم | الوصف |
+|-------|-------|
+| `-fstring-encrypt-key=<hex>` | تجاوز مفتاح XOR الأساسي (مثل `-fstring-encrypt-key=0xDEADBEEF`) |
+
+### المعاملات القابلة للتكوين
+
+| الماكرو | الافتراضي | الوصف |
+|---------|----------|-------|
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR مع بايتات مفتاح دوارة | عملية فك التشفير لكل بايت |
+
+---
+
 ## تسلسل الدوال
 
 All methods returning `string` support chaining. Intermediate values are auto-released with no leaks:

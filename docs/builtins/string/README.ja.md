@@ -486,6 +486,86 @@ string escaped = json_val.json_escape();
 
 ---
 
+## コンパイル時文字列暗号化
+
+`.encrypt()` は文字列リテラルにコンパイル時 XOR 暗号化を提供します。平文はバイナリに格納されず、コンパイル時に暗号化され、実行時に `always_inline` 関数で復号されるため、静的解析ツール（`strings` など）では原文を抽出できません。
+
+### 使い方
+
+```c
+string secret = "API_KEY_12345".encrypt();
+printf("%s\n", secret.c_str());  // 実行時に "API_KEY_12345" を出力
+
+// しかし `strings ./binary` では "API_KEY_12345" は見つからない
+```
+
+### 仕組み
+
+1. **コンパイル時**: Sema がリテラル上の `.encrypt()` を検出し、各バイトを XOR 暗号化、暗号文を `.rodata` に格納
+2. **実行時**: `always_inline` 関数 `__neverc_string_decrypt_literal` が暗号文を新規割り当ての owned バッファに XOR 復号
+3. 復号後は通常の owned `string` — すべてのメソッド（`c_str()`、`find()`、`to_upper()` 等）がそのまま動作
+
+### 鍵生成
+
+- **デフォルト**: 各コンパイルで `std::time()` からベース鍵を導出し、per-literal カウンタと混合して各リテラルに一意の鍵を生成。ビルドごとに異なる暗号文が生成されます。
+- **CLI 上書き**: `-fstring-encrypt-key=0xDEADBEEF` でベース鍵を固定（再現可能ビルドやテスト用）。
+
+### すべてのリテラル型をサポート
+
+`.encrypt()` はすべての文字列リテラル型を自動サポート — コンパイラが暗号化前に wide/UTF-16/UTF-32 リテラルを UTF-8 に折り畳みます:
+
+```c
+string a = "hello".encrypt();                  // ordinary
+string b = u8"héllo".encrypt();                // UTF-8
+string c = L"中文".encrypt();                   // wide
+string d = u"\u4E2D\u6587".encrypt();          // UTF-16
+string e = U"\U0001F389party".encrypt();       // UTF-32
+string f = R"(line1\nline2)".encrypt();        // raw
+```
+
+### 制限
+
+- `.encrypt()` は文字列リテラル**のみ**に適用可能。変数での呼び出しはコンパイルエラー:
+
+```c
+string s = "hello";
+string e = s.encrypt();  // エラー: .encrypt() can only be applied to string literals
+```
+
+- `.encrypt()` は**引数を取らない**:
+
+```c
+string e = "hello".encrypt(42);  // エラー: .encrypt() takes no arguments
+```
+
+- 二重暗号化は拒否:
+
+```c
+string e = "hello".encrypt().encrypt();  // エラー: .encrypt() can only be applied to string literals
+```
+
+### カスタム暗号化アルゴリズム
+
+デフォルトの XOR アルゴリズムは、string prelude の前に `NEVERC_STRING_DECRYPT_BYTE` マクロを定義することで上書きできます:
+
+```c
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+```
+
+### コンパイラフラグ
+
+| フラグ | 説明 |
+|--------|------|
+| `-fstring-encrypt-key=<hex>` | XOR ベース鍵を上書き（例: `-fstring-encrypt-key=0xDEADBEEF`） |
+
+### 設定可能ノブ
+
+| マクロ | デフォルト | 説明 |
+|--------|-----------|------|
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | ローテーション鍵バイトによる XOR | バイト単位の復号操作 |
+
+---
+
 ## メソッドチェーン
 
 `string` を返すすべてのメソッドはチェーンをサポート。中間値は自動解放、リーク無し：

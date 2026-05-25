@@ -486,6 +486,86 @@ string escaped = json_val.json_escape();
 
 ---
 
+## Шифрование строк во время компиляции
+
+`.encrypt()` обеспечивает XOR-шифрование строковых литералов во время компиляции. Открытый текст никогда не хранится в бинарном файле — он шифруется при компиляции и расшифровывается во время выполнения через функцию `always_inline`, что делает невозможным извлечение исходного содержимого инструментами статического анализа (например, `strings`).
+
+### Использование
+
+```c
+string secret = "API_KEY_12345".encrypt();
+printf("%s\n", secret.c_str());  // выводит "API_KEY_12345" во время выполнения
+
+// но `strings ./binary` НЕ найдёт "API_KEY_12345"
+```
+
+### Принцип работы
+
+1. **Время компиляции**: Sema перехватывает `.encrypt()` на литерале, XOR-шифрует каждый байт и сохраняет шифротекст в `.rodata`
+2. **Время выполнения**: `always_inline` функция `__neverc_string_decrypt_literal` расшифровывает XOR в свежевыделенный owned буфер
+3. После расшифровки результат — обычная owned строка `string` — все методы (`c_str()`, `find()`, `to_upper()` и т.д.) работают как обычно
+
+### Генерация ключа
+
+- **По умолчанию**: каждая компиляция выводит базовый ключ из `std::time()`, затем смешивает его с per-literal счётчиком для генерации уникального ключа для каждого строкового литерала. Каждая сборка производит разный шифротекст.
+- **Переопределение через CLI**: используйте `-fstring-encrypt-key=0xDEADBEEF` для фиксации базового ключа (полезно для воспроизводимых сборок или тестирования).
+
+### Поддержка всех типов литералов
+
+`.encrypt()` автоматически поддерживает все типы строковых литералов — компилятор преобразует wide/UTF-16/UTF-32 литералы в UTF-8 перед шифрованием:
+
+```c
+string a = "hello".encrypt();                  // ordinary
+string b = u8"héllo".encrypt();                // UTF-8
+string c = L"中文".encrypt();                   // wide
+string d = u"\u4E2D\u6587".encrypt();          // UTF-16
+string e = U"\U0001F389party".encrypt();       // UTF-32
+string f = R"(line1\nline2)".encrypt();        // raw
+```
+
+### Ограничения
+
+- `.encrypt()` можно применять **только** к строковым литералам. Вызов на переменной приводит к ошибке компиляции:
+
+```c
+string s = "hello";
+string e = s.encrypt();  // ОШИБКА: .encrypt() can only be applied to string literals
+```
+
+- `.encrypt()` **не принимает аргументов**:
+
+```c
+string e = "hello".encrypt(42);  // ОШИБКА: .encrypt() takes no arguments
+```
+
+- Двойное шифрование отклоняется:
+
+```c
+string e = "hello".encrypt().encrypt();  // ОШИБКА: .encrypt() can only be applied to string literals
+```
+
+### Пользовательский алгоритм шифрования
+
+Стандартный алгоритм XOR можно заменить, определив макрос `NEVERC_STRING_DECRYPT_BYTE` перед включением string prelude:
+
+```c
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+```
+
+### Флаги компилятора
+
+| Флаг | Описание |
+|------|----------|
+| `-fstring-encrypt-key=<hex>` | Переопределить базовый XOR-ключ (напр. `-fstring-encrypt-key=0xDEADBEEF`) |
+
+### Настраиваемые параметры
+
+| Макрос | По умолчанию | Описание |
+|--------|-------------|----------|
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR с ротирующими байтами ключа | Побайтовая операция расшифровки |
+
+---
+
 ## Цепочка методов
 
 All methods returning `string` support chaining. Intermediate values are auto-released with no leaks:

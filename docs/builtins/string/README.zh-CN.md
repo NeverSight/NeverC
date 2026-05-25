@@ -487,6 +487,86 @@ string escaped = json_val.json_escape();
 
 ---
 
+## 编译时字符串加密
+
+`.encrypt()` 为字符串字面量提供编译时 XOR 加密。明文永远不会出现在二进制文件中——编译时加密，运行时通过 `always_inline` 函数解密，静态分析工具（如 `strings`）无法提取原始内容。
+
+### 用法
+
+```c
+string secret = "API_KEY_12345".encrypt();
+printf("%s\n", secret.c_str());  // 运行时输出 "API_KEY_12345"
+
+// 但 `strings ./binary` 找不到 "API_KEY_12345"
+```
+
+### 工作原理
+
+1. **编译时**：Sema 拦截字面量上的 `.encrypt()` 调用，对每个字节进行 XOR 加密，将密文存储在 `.rodata` 段
+2. **运行时**：`always_inline` 函数 `__neverc_string_decrypt_literal` 将密文 XOR 解密到新分配的 owned 缓冲区
+3. 解密后得到的是普通的 owned `string`——所有方法（`c_str()`、`find()`、`to_upper()` 等）照常工作
+
+### 密钥生成
+
+- **默认**：每次编译从 `std::time()` 派生基础密钥，再与 per-literal 计数器混合，为每个字符串字面量生成唯一密钥。每次构建产生不同的密文。
+- **CLI 覆盖**：使用 `-fstring-encrypt-key=0xDEADBEEF` 固定基础密钥（适用于可重现构建或测试）。
+
+### 支持所有字面量类型
+
+`.encrypt()` 自动支持所有字符串字面量类型——编译器在加密前将 wide/UTF-16/UTF-32 字面量折叠为 UTF-8：
+
+```c
+string a = "hello".encrypt();                  // ordinary
+string b = u8"héllo".encrypt();                // UTF-8
+string c = L"中文".encrypt();                   // wide
+string d = u"\u4E2D\u6587".encrypt();          // UTF-16
+string e = U"\U0001F389party".encrypt();       // UTF-32
+string f = R"(line1\nline2)".encrypt();        // raw
+```
+
+### 限制
+
+- `.encrypt()` **只能**用于字符串字面量。在变量上调用会产生编译错误：
+
+```c
+string s = "hello";
+string e = s.encrypt();  // 错误：.encrypt() can only be applied to string literals
+```
+
+- `.encrypt()` **不接受参数**：
+
+```c
+string e = "hello".encrypt(42);  // 错误：.encrypt() takes no arguments
+```
+
+- 拒绝双重加密：
+
+```c
+string e = "hello".encrypt().encrypt();  // 错误：.encrypt() can only be applied to string literals
+```
+
+### 自定义加密算法
+
+默认的 XOR 算法可以通过在 string prelude 之前定义 `NEVERC_STRING_DECRYPT_BYTE` 宏来覆盖：
+
+```c
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+```
+
+### 编译器标志
+
+| 标志 | 说明 |
+|------|------|
+| `-fstring-encrypt-key=<hex>` | 覆盖 XOR 基础密钥（如 `-fstring-encrypt-key=0xDEADBEEF`） |
+
+### 可配置旋钮
+
+| 宏 | 默认值 | 说明 |
+|----|--------|------|
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 使用旋转密钥字节的 XOR | 逐字节解密操作 |
+
+---
+
 ## 链式调用
 
 所有返回 `string` 的方法都支持链式调用。中间值自动释放，不会泄漏：

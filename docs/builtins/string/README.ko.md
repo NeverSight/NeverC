@@ -486,6 +486,86 @@ string escaped = json_val.json_escape();
 
 ---
 
+## 컴파일 타임 문자열 암호화
+
+`.encrypt()`는 문자열 리터럴에 컴파일 타임 XOR 암호화를 제공합니다. 평문은 바이너리에 저장되지 않으며, 컴파일 시 암호화되고 런타임에 `always_inline` 함수로 복호화되어 정적 분석 도구(`strings` 등)로 원본 내용을 추출할 수 없습니다.
+
+### 사용법
+
+```c
+string secret = "API_KEY_12345".encrypt();
+printf("%s\n", secret.c_str());  // 런타임에 "API_KEY_12345" 출력
+
+// 하지만 `strings ./binary`로는 "API_KEY_12345"를 찾을 수 없음
+```
+
+### 작동 원리
+
+1. **컴파일 타임**: Sema가 리터럴의 `.encrypt()` 호출을 감지하여 각 바이트를 XOR 암호화하고 암호문을 `.rodata`에 저장
+2. **런타임**: `always_inline` 함수 `__neverc_string_decrypt_literal`이 새로 할당된 owned 버퍼에 XOR 복호화
+3. 복호화 후 일반 owned `string` — 모든 메서드(`c_str()`, `find()`, `to_upper()` 등)가 정상 작동
+
+### 키 생성
+
+- **기본**: 각 컴파일에서 `std::time()`으로 기본 키를 파생하고, per-literal 카운터와 혼합하여 각 문자열 리터럴에 고유 키를 생성합니다. 매 빌드마다 다른 암호문이 생성됩니다.
+- **CLI 재정의**: `-fstring-encrypt-key=0xDEADBEEF`로 기본 키를 고정(재현 가능 빌드 또는 테스트용).
+
+### 모든 리터럴 타입 지원
+
+`.encrypt()`는 모든 문자열 리터럴 타입을 자동 지원 — 컴파일러가 암호화 전에 wide/UTF-16/UTF-32 리터럴을 UTF-8로 폴딩합니다:
+
+```c
+string a = "hello".encrypt();                  // ordinary
+string b = u8"héllo".encrypt();                // UTF-8
+string c = L"中文".encrypt();                   // wide
+string d = u"\u4E2D\u6587".encrypt();          // UTF-16
+string e = U"\U0001F389party".encrypt();       // UTF-32
+string f = R"(line1\nline2)".encrypt();        // raw
+```
+
+### 제한 사항
+
+- `.encrypt()`는 문자열 리터럴**에만** 적용 가능합니다. 변수에서 호출하면 컴파일 오류:
+
+```c
+string s = "hello";
+string e = s.encrypt();  // 오류: .encrypt() can only be applied to string literals
+```
+
+- `.encrypt()`는 **인수를 받지 않음**:
+
+```c
+string e = "hello".encrypt(42);  // 오류: .encrypt() takes no arguments
+```
+
+- 이중 암호화 거부:
+
+```c
+string e = "hello".encrypt().encrypt();  // 오류: .encrypt() can only be applied to string literals
+```
+
+### 커스텀 암호화 알고리즘
+
+기본 XOR 알고리즘은 string prelude 이전에 `NEVERC_STRING_DECRYPT_BYTE` 매크로를 정의하여 재정의할 수 있습니다:
+
+```c
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+```
+
+### 컴파일러 플래그
+
+| 플래그 | 설명 |
+|--------|------|
+| `-fstring-encrypt-key=<hex>` | XOR 기본 키 재정의 (예: `-fstring-encrypt-key=0xDEADBEEF`) |
+
+### 설정 가능 노브
+
+| 매크로 | 기본값 | 설명 |
+|--------|--------|------|
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 회전 키 바이트를 사용한 XOR | 바이트 단위 복호화 연산 |
+
+---
+
 ## 메서드 체이닝
 
 All methods returning `string` support chaining. Intermediate values are auto-released with no leaks:
