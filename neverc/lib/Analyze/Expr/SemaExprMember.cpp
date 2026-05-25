@@ -627,6 +627,19 @@ Sema::OnBuiltinStringMethodCall(Scope *S, Expr *Base, SourceLocation OpLoc,
   llvm::StringRef MethodName = II->getName();
   unsigned DottedArgCount = static_cast<unsigned>(ArgExprs.size());
 
+  if (MethodName == "encrypt") {
+    if (DottedArgCount != 0) {
+      Diag(LParenLoc, diag::err_neverc_string_encrypt_args);
+      return ExprError();
+    }
+    if (!BaseLit) {
+      Diag(LParenLoc, diag::err_neverc_string_encrypt_non_literal);
+      return ExprError();
+    }
+    return buildNeverCStringEncryptedLiteral(*this, S, Base, BaseLit,
+                                            LParenLoc, RParenLoc);
+  }
+
   bool FirstArgIsCharLike = false;
   if (DottedArgCount >= 1) {
     QualType ArgTy = ArgExprs[0]->getType();

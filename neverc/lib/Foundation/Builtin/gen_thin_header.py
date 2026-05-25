@@ -33,6 +33,7 @@ KEEP_INLINE = frozenset([
     "__neverc_string_invalid",
     "__neverc_string_cleanup",
     "__neverc_string_wfree_and_null",
+    "__neverc_string_decrypt_literal",
     "neverc_string_cstr",
     "neverc_string_data",
     "neverc_string_w_str",

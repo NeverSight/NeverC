@@ -274,9 +274,9 @@ private:
 
   void emitToken(Token &Result, const char *TokEnd, tok::TokenKind Kind) {
     unsigned TokLen = TokEnd - BufferPtr;
+    Result.setKind(Kind);
     Result.setLength(TokLen);
     Result.setLocation(getSourceLocationFast(BufferPtr, TokLen));
-    Result.setKind(Kind);
     BufferPtr = TokEnd;
   }
 

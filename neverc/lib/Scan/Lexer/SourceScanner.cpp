@@ -317,8 +317,9 @@ __attribute__((hot, flatten)) bool SourceScanner::Lex(Token &Result) {
 
   bool atPhysicalStartOfLine = IsAtPhysicalStartOfLine;
   IsAtPhysicalStartOfLine = false;
+  bool rawMode = LexingRawMode;
   bool produced = scanToken(Result, atPhysicalStartOfLine);
-  assert((produced || !isLexingRawMode()) && "Raw lex must succeed");
+  assert((produced || !rawMode) && "Raw lex must succeed");
   return produced;
 }
 

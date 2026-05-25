@@ -1545,6 +1545,11 @@ OPTION(prefix_1, "-fno-shellcode-bad-byte-rewrite",
        "byte present in -fshellcode-bad-bytes= / -fshellcode-bad-byte-profile= "
        "triggers a hard finalize-time error.",
        nullptr, nullptr)
+OPTION(prefix_1, "-fno-shellcode-heap-arena", fno_shellcode_heap_arena,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Disable the shellcode heap arena pass; malloc/free calls will be "
+       "left as unresolved externals (original behaviour).",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fno-shellcode", fno_shellcode, Flag, f_Group, INVALID,
        nullptr, NoXarchOption, DefaultVis, 0,
        "Disable shellcode compilation (undoes a preceding -fshellcode)",
@@ -1840,19 +1845,6 @@ OPTION(prefix_1, "-fshellcode-bad-byte-rewrite", fshellcode_bad_byte_rewrite,
        "(Plugin.h::registerBadByteRewriteStrategy) and let them rewrite raw "
        ".text bytes into bad-byte-free equivalents (default).",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-heap-arena", fshellcode_heap_arena,
-       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Rewrite malloc/free/calloc/realloc calls into a stack-resident "
-       "arena allocator for small allocations (<= 64 KB). Large allocations "
-       "fall back to the OS allocator (msvcrt.dll via PEB walk on Windows, "
-       "mmap via syscall on Linux/macOS). Enabled by default in shellcode "
-       "mode.",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fno-shellcode-heap-arena", fno_shellcode_heap_arena,
-       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Disable the shellcode heap arena pass; malloc/free calls will be "
-       "left as unresolved externals (original behaviour).",
-       nullptr, nullptr)
 OPTION(prefix_1, "-fshellcode-bad-bytes=", fshellcode_bad_bytes_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
        "Reject the final shellcode .bin if it contains any byte in the "
@@ -1871,6 +1863,14 @@ OPTION(prefix_1, "-fshellcode-entry=", fshellcode_entry_EQ, Joined, f_Group,
        INVALID, nullptr, NoXarchOption, DefaultVis, 0,
        "Override the shellcode entry symbol name (default: main / _main / "
        "shellcode_entry)",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fshellcode-heap-arena", fshellcode_heap_arena,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Rewrite malloc/free/calloc/realloc calls into a stack-resident "
+       "arena allocator for small allocations (<= 64 KB). Large allocations "
+       "fall back to the OS allocator (msvcrt.dll via PEB walk on Windows, "
+       "mmap via syscall on Linux/macOS). Enabled by default in shellcode "
+       "mode.",
        nullptr, nullptr)
 OPTION(prefix_1, "-fshellcode-keep-obj=", fshellcode_keep_obj_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
@@ -2012,6 +2012,12 @@ OPTION(prefix_1, "-fstrict-float-cast-overflow", fstrict_float_cast_overflow,
        nullptr, nullptr)
 OPTION(prefix_1, "-fstrict-overflow", fstrict_overflow, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_1, "-fstring-encrypt-key=", fstring_encrypt_key_EQ, Joined,
+       f_Group, INVALID, nullptr, 0, DefaultVis, 0,
+       "Override the compile-time XOR key used by .encrypt() on string "
+       "literals (hex value, e.g. -fstring-encrypt-key=0xDEADBEEF). "
+       "Default: auto-derived from compilation time.",
+       "<hex>", nullptr)
 OPTION(prefix_1, "-fstruct-path-tbaa", fstruct_path_tbaa, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-fsymbol-partition=", fsymbol_partition_EQ, Joined, f_Group,
@@ -5657,6 +5663,17 @@ LANG_OPTION_WITH_MARSHALLING(
     makeBooleanOptionNormalizer(false, true, OPT_fbuiltin_string),
     makeBooleanOptionDenormalizer(false), mergeForwardValue,
     extractForwardValue, -1)
+#endif // LANG_OPTION_WITH_MARSHALLING
+#ifdef LANG_OPTION_WITH_MARSHALLING
+LANG_OPTION_WITH_MARSHALLING(
+    prefix_1, "-fstring-encrypt-key=", fstring_encrypt_key_EQ, Joined,
+    f_Group, INVALID, nullptr, 0, DefaultVis, 0,
+    "Override the compile-time XOR key used by .encrypt() on string "
+    "literals (hex value, e.g. -fstring-encrypt-key=0xDEADBEEF). "
+    "Default: auto-derived from compilation time.",
+    "<hex>", nullptr, true, 0, LangOpts->StringEncryptKey, 0u, false,
+    0u, normalizeStringIntegral<unsigned>, denormalizeString<unsigned>,
+    mergeForwardValue, extractForwardValue, -1)
 #endif // LANG_OPTION_WITH_MARSHALLING
 #ifdef LANG_OPTION_WITH_MARSHALLING
 LANG_OPTION_WITH_MARSHALLING(prefix_1, "-fshellcode-mode", fshellcode_mode,

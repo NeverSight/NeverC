@@ -8,11 +8,13 @@
 
 #include "neverc/Analyze/Lookup.h"
 #include "neverc/Analyze/SemaInternal.h"
+#include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Tree/Core/TreeContext.h"
 #include "neverc/Tree/Expr/Expr.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include <ctime>
 
 using namespace neverc;
 
@@ -112,6 +114,58 @@ StringLiteral *neverc::foldNeverCStringWideLiteralToUtf8(Sema &S,
   return StringLiteral::Create(
       S.Context, llvm::StringRef(Bytes.data(), Bytes.size()),
       StringLiteralKind::Ordinary, StrTy, Locs.data(), Locs.size());
+}
+
+ExprResult neverc::buildNeverCStringEncryptedLiteral(Sema &S, Scope *Sc,
+                                                     Expr *Base,
+                                                     StringLiteral *SL,
+                                                     SourceLocation LParenLoc,
+                                                     SourceLocation RParenLoc) {
+  if (StringLiteral *Folded = foldNeverCStringWideLiteralToUtf8(S, SL))
+    SL = Folded;
+
+  llvm::StringRef Bytes = SL->getBytes();
+  unsigned Len = Bytes.size();
+
+  static uint64_t Counter = 0;
+  uint64_t BaseKey = S.getLangOpts().StringEncryptKey;
+  if (BaseKey == 0) {
+    static uint64_t TimeKey =
+        static_cast<uint64_t>(std::time(nullptr)) * 0x9E3779B97F4A7C15ULL;
+    TimeKey |= 1;
+    BaseKey = TimeKey;
+  }
+  QualType SizeTy = S.Context.getSizeType();
+  unsigned SizeBits = S.Context.getTypeSize(SizeTy);
+  unsigned KeyBytes = SizeBits / 8;
+
+  uint64_t Key = BaseKey ^ (++Counter * 0x517CC1B727220A95ULL);
+  Key &= llvm::maskTrailingOnes<uint64_t>(SizeBits);
+
+  llvm::SmallVector<char, 256> EncBytes(Len);
+  for (unsigned i = 0; i < Len; ++i) {
+    auto b = static_cast<unsigned char>(Bytes[i]);
+    auto k = static_cast<unsigned char>(Key >> (8 * (i % KeyBytes)));
+    EncBytes[i] = static_cast<char>(b ^ k);
+  }
+
+  llvm::SmallVector<SourceLocation, 1> Locs;
+  Locs.push_back(SL->getBeginLoc());
+  QualType EncStrTy = S.Context.getStringLiteralArrayType(
+      S.Context.CharTy, Len);
+  StringLiteral *EncSL = StringLiteral::Create(
+      S.Context, llvm::StringRef(EncBytes.data(), Len),
+      StringLiteralKind::Ordinary, EncStrTy, Locs.data(), Locs.size());
+
+  IntegerLiteral *LenLit = IntegerLiteral::Create(
+      S.Context, llvm::APInt(SizeBits, Len), SizeTy, LParenLoc);
+  IntegerLiteral *KeyLit = IntegerLiteral::Create(
+      S.Context, llvm::APInt(SizeBits, Key), SizeTy, LParenLoc);
+
+  Expr *Args[] = {EncSL, LenLit, KeyLit};
+  return buildNeverCStringRuntimeCall(S, Sc, LParenLoc,
+                                      "__neverc_string_decrypt_literal",
+                                      Args, RParenLoc);
 }
 
 ExprResult neverc::buildNeverCStringRuntimeCall(Sema &S, Scope *Sc,

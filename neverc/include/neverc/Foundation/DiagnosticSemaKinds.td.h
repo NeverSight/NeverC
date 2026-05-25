@@ -400,6 +400,8 @@ DIAG(err_musttail_no_variadic, CLASS_ERROR, (unsigned)diag::Severity::Error, "%0
 DIAG(err_musttail_scope, CLASS_ERROR, (unsigned)diag::Severity::Error, "cannot perform a tail call from this return statement", 0, false, true, true, false, 2)
 DIAG(err_nested_redefinition, CLASS_ERROR, (unsigned)diag::Severity::Error, "nested redefinition of %0", 0, false, true, true, false, 2)
 DIAG(err_neverc_string_cstr_temporary, CLASS_ERROR, (unsigned)diag::Severity::Error, "cannot take c_str/data from a temporary string; assign it to a string variable first", 0, false, true, true, false, 2)
+DIAG(err_neverc_string_encrypt_non_literal, CLASS_ERROR, (unsigned)diag::Severity::Error, ".encrypt() can only be applied to string literals", 0, false, true, true, false, 2)
+DIAG(err_neverc_string_encrypt_args, CLASS_ERROR, (unsigned)diag::Severity::Error, ".encrypt() takes no arguments", 0, false, true, true, false, 2)
 DIAG(err_no_member, CLASS_ERROR, (unsigned)diag::Severity::Error, "no member named %0 in %1", 0, false, true, true, false, 2)
 DIAG(err_no_member_suggest, CLASS_ERROR, (unsigned)diag::Severity::Error, "no member named %0 in %1; did you mean %select{|simply }2%3?", 0, false, true, true, false, 2)
 DIAG(err_non_asm_stmt_in_naked_function, CLASS_ERROR, (unsigned)diag::Severity::Error, "non-ASM statement in naked function is not supported", 0, false, true, true, false, 2)

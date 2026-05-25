@@ -31,6 +31,11 @@ ExprResult buildNeverCStringRuntimeCall(Sema &S, Scope *Sc, SourceLocation Loc,
                                         MultiExprArg Args,
                                         SourceLocation EndLoc);
 
+ExprResult buildNeverCStringEncryptedLiteral(Sema &S, Scope *Sc, Expr *Base,
+                                             StringLiteral *SL,
+                                             SourceLocation LParenLoc,
+                                             SourceLocation RParenLoc);
+
 inline bool
 FTIHasSingleVoidParameter(const DeclaratorChunk::FunctionTypeInfo &FTI) {
   return FTI.NumParams == 1 && !FTI.isVariadic &&

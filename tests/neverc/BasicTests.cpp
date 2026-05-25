@@ -151,6 +151,73 @@ TEST_F(BasicTest, BuiltinStringOps) {
                      "test_neverc_string_ops: ALL PASSED");
 }
 
+TEST_F(BasicTest, BuiltinStringEncrypt) {
+  auto src =
+      (testDir() / "string" / "test_neverc_string_encrypt.c").string();
+  compileRunAndCheck("test_neverc_string_encrypt", src, kStrFlags, 0,
+                     "test_neverc_string_encrypt: ALL PASSED");
+  compileRunAndCheck("test_neverc_string_encrypt_g", src, kStrGFlags, 0,
+                     "test_neverc_string_encrypt: ALL PASSED");
+}
+
+TEST_F(BasicTest, BuiltinStringEncryptUnicode) {
+  auto src =
+      (testDir() / "string" / "test_neverc_string_encrypt_unicode.c").string();
+  compileRunAndCheck("test_neverc_string_encrypt_unicode", src, kStrFlags, 0,
+                     "test_neverc_string_encrypt_unicode: ALL PASSED");
+  compileRunAndCheck("test_neverc_string_encrypt_unicode_g", src, kStrGFlags, 0,
+                     "test_neverc_string_encrypt_unicode: ALL PASSED");
+}
+
+TEST_F(BasicTest, BuiltinStringEncryptNonLiteral) {
+  auto src = tmpFile("test_encrypt_non_literal.c");
+  writeFile(src, "int main(void) { string s = \"hi\"; string e = s.encrypt(); "
+                 "return 0; }");
+  auto args = splitFlags(std::string(kStrFlags));
+  args.push_back("-fsyntax-only");
+  for (auto &f : sysrootFlags()) args.push_back(f);
+  for (auto &f : archFlags()) args.push_back(f);
+  args.push_back(src.string());
+  expectCommandFail("test_encrypt_non_literal",
+                    ".encrypt() can only be applied to string literals", args);
+}
+
+TEST_F(BasicTest, BuiltinStringEncryptArgs) {
+  auto src = tmpFile("test_encrypt_args.c");
+  writeFile(src,
+            "int main(void) { string e = \"hi\".encrypt(42); return 0; }");
+  auto args = splitFlags(std::string(kStrFlags));
+  args.push_back("-fsyntax-only");
+  for (auto &f : sysrootFlags()) args.push_back(f);
+  for (auto &f : archFlags()) args.push_back(f);
+  args.push_back(src.string());
+  expectCommandFail("test_encrypt_args", ".encrypt() takes no arguments",
+                    args);
+}
+
+TEST_F(BasicTest, BuiltinStringEncryptDoubleEncrypt) {
+  auto src = tmpFile("test_encrypt_double.c");
+  writeFile(src,
+            "int main(void) { string e = \"hi\".encrypt().encrypt(); "
+            "return 0; }");
+  auto args = splitFlags(std::string(kStrFlags));
+  args.push_back("-fsyntax-only");
+  for (auto &f : sysrootFlags()) args.push_back(f);
+  for (auto &f : archFlags()) args.push_back(f);
+  args.push_back(src.string());
+  expectCommandFail("test_encrypt_double",
+                    ".encrypt() can only be applied to string literals", args);
+}
+
+TEST_F(BasicTest, BuiltinStringEncryptCliKey) {
+  auto src =
+      (testDir() / "string" / "test_neverc_string_encrypt.c").string();
+  std::string keyFlags =
+      std::string(kStrFlags) + " -fstring-encrypt-key=0xDEADBEEF";
+  compileRunAndCheck("test_neverc_string_encrypt_key", src, keyFlags, 0,
+                     "test_neverc_string_encrypt: ALL PASSED");
+}
+
 TEST_F(BasicTest, BuiltinStringKernel) {
   std::string flags =
       std::string(kStrFlags) +
@@ -413,6 +480,7 @@ TEST_F(BasicTest, LeaksGate) {
       "test_neverc_string_webcodec", "test_neverc_string_ic",
       "test_neverc_string_alias",  "test_neverc_string_qstring_parity",
       "test_neverc_string_ops",    "test_neverc_string_wide_literal",
+      "test_neverc_string_encrypt", "test_neverc_string_encrypt_unicode",
   };
 
   for (auto &t : targets) {
