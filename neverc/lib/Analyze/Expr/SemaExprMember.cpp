@@ -720,28 +720,27 @@ Sema::OnBuiltinStringMethodCall(Scope *S, Expr *Base, SourceLocation OpLoc,
   // variant that XOR-decrypts and compares byte-by-byte without ever
   // materialising the plaintext in memory.
   if (CallArgs.size() >= 2) {
-    using namespace BuiltinString;
     using namespace BuiltinStringNames;
     struct DecryptRewrite {
       llvm::StringRef OriginalName;
-      llvm::StringRef (*GetDecryptName)();
+      llvm::StringRef DecryptName;
     };
     const DecryptRewrite kRewrites[] = {
-        {EqualFunctionName,        getDecryptEqualsFunctionName},
-        {CompareFunctionName,      getDecryptCompareFunctionName},
-        {EqualIcFunctionName,      getDecryptEqualsIcFunctionName},
-        {StartsWithFunctionName,   getDecryptStartsWithFunctionName},
-        {EndsWithFunctionName,     getDecryptEndsWithFunctionName},
-        {ContainsFunctionName,     getDecryptContainsFunctionName},
-        {StartsWithIcFunctionName, getDecryptStartsWithIcFunctionName},
-        {EndsWithIcFunctionName,   getDecryptEndsWithIcFunctionName},
-        {ContainsIcFunctionName,   getDecryptContainsIcFunctionName},
-        {FindFunctionName,         getDecryptFindFunctionName},
-        {FindFromFunctionName,     getDecryptFindFromFunctionName},
-        {RfindFunctionName,        getDecryptRfindFunctionName},
-        {RfindToFunctionName,      getDecryptRfindToFunctionName},
-        {FindIcFunctionName,       getDecryptFindIcFunctionName},
-        {CountFunctionName,        getDecryptCountFunctionName},
+        {EqualFunctionName,        DecryptEqualsFunctionName},
+        {CompareFunctionName,      DecryptCompareFunctionName},
+        {EqualIcFunctionName,      DecryptEqualsIcFunctionName},
+        {StartsWithFunctionName,   DecryptStartsWithFunctionName},
+        {EndsWithFunctionName,     DecryptEndsWithFunctionName},
+        {ContainsFunctionName,     DecryptContainsFunctionName},
+        {StartsWithIcFunctionName, DecryptStartsWithIcFunctionName},
+        {EndsWithIcFunctionName,   DecryptEndsWithIcFunctionName},
+        {ContainsIcFunctionName,   DecryptContainsIcFunctionName},
+        {FindFunctionName,         DecryptFindFunctionName},
+        {FindFromFunctionName,     DecryptFindFromFunctionName},
+        {RfindFunctionName,        DecryptRfindFunctionName},
+        {RfindToFunctionName,      DecryptRfindToFunctionName},
+        {FindIcFunctionName,       DecryptFindIcFunctionName},
+        {CountFunctionName,        DecryptCountFunctionName},
     };
 
     for (const auto &R : kRewrites) {
@@ -758,7 +757,7 @@ Sema::OnBuiltinStringMethodCall(Scope *S, Expr *Base, SourceLocation OpLoc,
       for (unsigned I = 2, N = CallArgs.size(); I < N; ++I)
         NewArgs.push_back(CallArgs[I]);
       return buildNeverCStringRuntimeCall(*this, S, LParenLoc,
-                                          R.GetDecryptName(), NewArgs,
+                                          R.DecryptName, NewArgs,
                                           RParenLoc);
     }
   }

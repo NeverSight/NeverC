@@ -60,7 +60,7 @@ bool Sema::isNeverCStringType(QualType T) const {
     return true;
   }
 
-  if (!II->isStr(BuiltinString::getRecordName()))
+  if (!II->isStr(BuiltinStringNames::RecordName))
     return false;
 
   NeverCStringIICache = II;

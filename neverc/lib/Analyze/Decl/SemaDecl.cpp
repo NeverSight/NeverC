@@ -106,7 +106,7 @@ void attachNeverCStringCleanup(Sema &S, Scope *Sc, VarDecl *VD,
   }
 
   FunctionDecl *CleanupFD = S.lookupNeverCStringFunctionDecl(
-      BuiltinString::getCleanupFunctionName(), Sc, VD->getLocation());
+      BuiltinStringNames::CleanupFunctionName, Sc, VD->getLocation());
   if (!CleanupFD)
     return;
   attachImplicitCleanupAttr(S, VD, CleanupFD);
@@ -132,7 +132,7 @@ void attachNeverCWptrCleanup(Sema &S, Scope *Sc, VarDecl *VD) {
     return;
 
   FunctionDecl *CleanupFD = S.lookupNeverCStringFunctionDecl(
-      BuiltinString::getWptrCleanupFunctionName(), Sc, VD->getLocation());
+      BuiltinStringNames::WptrCleanupFunctionName, Sc, VD->getLocation());
   if (!CleanupFD)
     return;
   attachImplicitCleanupAttr(S, VD, CleanupFD);

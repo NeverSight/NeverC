@@ -2680,7 +2680,7 @@ ExprResult Sema::OnArraySubscriptExpr(Scope *S, Expr *base,
     }
     Expr *Args[] = {base, IdxRes.get()};
     return buildNeverCStringRuntimeCall(
-        *this, S, lbLoc, BuiltinString::getAtFunctionName(), Args, rbLoc);
+        *this, S, lbLoc, BuiltinStringNames::AtFunctionName, Args, rbLoc);
   }
 
   ExprResult Res =
@@ -3168,7 +3168,7 @@ bool Sema::GatherArgumentsForCall(SourceLocation CallLoc, FunctionDecl *FDecl,
         Expr *RetainArgs[] = {ArgExpr};
         ExprResult Retained = buildNeverCStringRuntimeCall(
             *this, /*Scope=*/nullptr, ArgExpr->getExprLoc(),
-            BuiltinString::getRetainFunctionName(), RetainArgs,
+            BuiltinStringNames::RetainFunctionName, RetainArgs,
             ArgExpr->getExprLoc());
         if (Retained.isInvalid()) {
           Invalid = true;
@@ -5504,7 +5504,7 @@ ExprResult buildNeverCStringConcat(Sema &S, SourceLocation OpLoc, Expr *LHS,
                                    Expr *RHS) {
   Expr *Args[] = {LHS, RHS};
   return buildNeverCStringRuntimeCall(S, /*Scope=*/nullptr, OpLoc,
-                                      BuiltinString::getConcatFunctionName(),
+                                      BuiltinStringNames::ConcatFunctionName,
                                       Args, OpLoc);
 }
 } // namespace
@@ -5544,14 +5544,14 @@ ExprResult buildNeverCStringCompare(Sema &S, SourceLocation OpLoc,
           const_cast<Expr *>(DecryptCall->getArg(2))};
       ExprResult Eq = buildNeverCStringRuntimeCall(
           S, /*Scope=*/nullptr, OpLoc,
-          BuiltinString::getDecryptEqualsFunctionName(), DecryptArgs, OpLoc);
+          BuiltinStringNames::DecryptEqualsFunctionName, DecryptArgs, OpLoc);
       if (Eq.isInvalid() || Opc == BO_EQ)
         return Eq;
       return S.FormUnaryOp(/*Scope=*/nullptr, OpLoc, UO_LNot, Eq.get());
     }
 
     ExprResult Eq = buildNeverCStringRuntimeCall(
-        S, /*Scope=*/nullptr, OpLoc, BuiltinString::getEqualFunctionName(),
+        S, /*Scope=*/nullptr, OpLoc, BuiltinStringNames::EqualFunctionName,
         Args, OpLoc);
     if (Eq.isInvalid() || Opc == BO_EQ)
       return Eq;
@@ -5579,7 +5579,7 @@ ExprResult buildNeverCStringCompare(Sema &S, SourceLocation OpLoc,
           const_cast<Expr *>(DecryptCall->getArg(2))};
       ExprResult Cmp = buildNeverCStringRuntimeCall(
           S, /*Scope=*/nullptr, OpLoc,
-          BuiltinString::getDecryptCompareFunctionName(), DecryptArgs, OpLoc);
+          BuiltinStringNames::DecryptCompareFunctionName, DecryptArgs, OpLoc);
       if (Cmp.isInvalid())
         return Cmp;
       ExprResult Zero = S.OnIntegerConstant(OpLoc, /*Val=*/0);
@@ -5596,7 +5596,7 @@ ExprResult buildNeverCStringCompare(Sema &S, SourceLocation OpLoc,
     }
   }
   ExprResult Cmp = buildNeverCStringRuntimeCall(
-      S, /*Scope=*/nullptr, OpLoc, BuiltinString::getCompareFunctionName(),
+      S, /*Scope=*/nullptr, OpLoc, BuiltinStringNames::CompareFunctionName,
       Args, OpLoc);
   if (Cmp.isInvalid())
     return Cmp;
@@ -5611,7 +5611,7 @@ namespace {
 ExprResult buildNeverCStringRetain(Sema &S, SourceLocation Loc, Expr *Value) {
   Expr *Args[] = {Value};
   return buildNeverCStringRuntimeCall(S, /*Scope=*/nullptr, Loc,
-                                      BuiltinString::getRetainFunctionName(),
+                                      BuiltinStringNames::RetainFunctionName,
                                       Args, Loc);
 }
 } // namespace
@@ -9444,7 +9444,7 @@ ExprResult buildNeverCStringAssign(Sema &S, Scope *Sc, SourceLocation OpLoc,
 
   Expr *Args[] = {LHSAddr.get(), RHS};
   return buildNeverCStringRuntimeCall(
-      S, Sc, OpLoc, BuiltinString::getAssignFunctionName(), Args, OpLoc);
+      S, Sc, OpLoc, BuiltinStringNames::AssignFunctionName, Args, OpLoc);
 }
 } // namespace
 
@@ -9474,7 +9474,7 @@ Expr *promoteCharToNeverCString(Sema &S, SourceLocation OpLoc, Expr *E) {
     return nullptr;
   Expr *Args[] = {Truncated.get()};
   ExprResult Wrapped = buildNeverCStringRuntimeCall(
-      S, /*Scope=*/nullptr, OpLoc, BuiltinString::getFromCharFunctionName(),
+      S, /*Scope=*/nullptr, OpLoc, BuiltinStringNames::FromCharFunctionName,
       Args, OpLoc);
   if (Wrapped.isInvalid())
     return nullptr;

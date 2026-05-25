@@ -550,7 +550,7 @@ namespace {
 ExprResult buildNeverCStringDiscard(Sema &S, Expr *E) {
   Expr *Args[] = {E};
   return buildNeverCStringRuntimeCall(S, /*Scope=*/nullptr, E->getExprLoc(),
-                                      BuiltinString::getFreeFunctionName(),
+                                      BuiltinStringNames::FreeFunctionName,
                                       Args, E->getEndLoc());
 }
 } // namespace

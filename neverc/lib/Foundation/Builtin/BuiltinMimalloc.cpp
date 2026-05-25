@@ -10,45 +10,36 @@ using namespace neverc;
 #include "BuiltinMimallocBitcode_darwin.h"
 #include "BuiltinMimallocBitcode_win.h"
 
-bool BuiltinMimalloc::isSupported(llvm::Triple::OSType OS) {
+namespace {
+const unsigned char *lookupBlob(llvm::Triple::OSType OS, unsigned &Len) {
   switch (OS) {
   case llvm::Triple::Linux:
+    Len = kMimallocBitcode_linux_len;
+    return kMimallocBitcode_linux;
   case llvm::Triple::Darwin:
   case llvm::Triple::MacOSX:
   case llvm::Triple::IOS:
+    Len = kMimallocBitcode_darwin_len;
+    return kMimallocBitcode_darwin;
   case llvm::Triple::Win32:
-    return true;
+    Len = kMimallocBitcode_win_len;
+    return kMimallocBitcode_win;
   default:
-    return false;
+    Len = 0;
+    return nullptr;
   }
+}
+} // namespace
+
+bool BuiltinMimalloc::isSupported(llvm::Triple::OSType OS) {
+  unsigned Len;
+  return lookupBlob(OS, Len) != nullptr;
 }
 
 llvm::StringRef BuiltinMimalloc::getEmbeddedBitcode(llvm::Triple::OSType OS) {
-  switch (OS) {
-  case llvm::Triple::Linux:
-    if (kMimallocBitcode_linux_len == 0)
-      return {};
-    return llvm::StringRef(
-        reinterpret_cast<const char *>(kMimallocBitcode_linux),
-        kMimallocBitcode_linux_len);
-
-  case llvm::Triple::Darwin:
-  case llvm::Triple::MacOSX:
-  case llvm::Triple::IOS:
-    if (kMimallocBitcode_darwin_len == 0)
-      return {};
-    return llvm::StringRef(
-        reinterpret_cast<const char *>(kMimallocBitcode_darwin),
-        kMimallocBitcode_darwin_len);
-
-  case llvm::Triple::Win32:
-    if (kMimallocBitcode_win_len == 0)
-      return {};
-    return llvm::StringRef(
-        reinterpret_cast<const char *>(kMimallocBitcode_win),
-        kMimallocBitcode_win_len);
-
-  default:
+  unsigned Len;
+  const unsigned char *Data = lookupBlob(OS, Len);
+  if (!Data || Len == 0)
     return {};
-  }
+  return llvm::StringRef(reinterpret_cast<const char *>(Data), Len);
 }

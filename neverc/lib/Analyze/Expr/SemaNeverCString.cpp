@@ -171,7 +171,7 @@ ExprResult neverc::buildNeverCStringEncryptedLiteral(Sema &S, Scope *Sc,
 
   Expr *Args[] = {EncSL, LenLit, KeyLit};
   return buildNeverCStringRuntimeCall(S, Sc, LParenLoc,
-                                      "__neverc_string_decrypt_literal",
+                                      BuiltinStringNames::DecryptLiteralFunctionName,
                                       Args, RParenLoc);
 }
 
@@ -182,7 +182,7 @@ const CallExpr *neverc::getDecryptLiteralCall(const Expr *E) {
   const auto *Callee = CE->getDirectCallee();
   if (!Callee)
     return nullptr;
-  if (Callee->getName() == BuiltinString::getDecryptLiteralFunctionName())
+  if (Callee->getName() == BuiltinStringNames::DecryptLiteralFunctionName)
     return CE;
   return nullptr;
 }

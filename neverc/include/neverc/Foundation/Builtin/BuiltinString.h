@@ -7,24 +7,6 @@
 namespace neverc {
 namespace BuiltinString {
 
-inline llvm::StringRef getTypeName() { return BuiltinStringNames::TypeName; }
-inline llvm::StringRef getRecordName() {
-  return BuiltinStringNames::RecordName;
-}
-inline llvm::StringRef getInternalFunctionPrefix() {
-  return BuiltinStringNames::InternalFunctionPrefix;
-}
-inline llvm::StringRef getWptrCleanupFunctionName() {
-  return BuiltinStringNames::WptrCleanupFunctionName;
-}
-
-#define NEVERC_BUILTIN_STRING_FN(NameId, Spelling, IsPublic)                   \
-  inline llvm::StringRef get##NameId##FunctionName() {                         \
-    return BuiltinStringNames::NameId##FunctionName;                           \
-  }
-#include "neverc/Foundation/Builtin/BuiltinStringRoster.def"
-#undef NEVERC_BUILTIN_STRING_FN
-
 bool isMethodName(llvm::StringRef Name);
 bool isRuntimeFunctionName(llvm::StringRef Name);
 
