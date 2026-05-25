@@ -256,9 +256,9 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
   } else if (Conf.UseDefaultPipeline) {
     MPM.addPass(PB.buildPerModuleDefaultPipeline(OL));
   } else if (Conf.LTOParallelOpt && Conf.ParallelOptCodeGenHook) {
-    MPM.addPass(PB.buildModuleSimplificationPipeline(
-        OL, ThinOrFullLTOPhase::FullLTOPostLink));
     if (OL != OptimizationLevel::O0) {
+      MPM.addPass(PB.buildModuleSimplificationPipeline(
+          OL, ThinOrFullLTOPhase::FullLTOPostLink));
       MPM.addPass(ConstantMergePass());
       MPM.addPass(DeadArgumentEliminationPass());
       MPM.addPass(GlobalDCEPass(/*InLTOPostLink=*/true));
