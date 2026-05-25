@@ -22,7 +22,25 @@ GCC computed-goto → `switch` (null Relocations).
 libc extern → TargetDesc-gesteuerte Inline-Asm-Traps. POSIX-Compat + K&R-Autofix.
 
 ## 4. WinPEBImportPass
-Win32 extern → PEB-Walk-Resolver (~190 APIs, 6 DLLs) + verschlüsselter Adress-Cache. Windows POSIX-Compat (13 Funktionsgruppen). Drei steckbare Funktionen (`__sc_derive_key`, `__sc_ptr_encrypt`, `__sc_ptr_decrypt`) für benutzerdefinierte Verschlüsselung.
+Win32 extern → PEB-Walk-Resolver (~190 APIs, 6 DLLs) + verschlüsselter Adress-Cache. Windows POSIX-Compat (13 Funktionsgruppen).
+
+### 4.1 Adress-Cache-Verschlüsselung
+
+Aufgelöste API-Adressen werden vor dem Speichern in Cache-Globalen XOR-verschlüsselt (Anti-Memory-Scan). Infrastruktur (`PtrCacheHelpers.h`) wird von `WinPEBImportPass` und `KernelImportPass` geteilt.
+
+**Drei steckbare Hilfsfunktionen** (`internal alwaysinline`):
+
+| Funktion | Signatur | Zweck |
+|----------|----------|-------|
+| `__sc_derive_key` | `() → i64` | Laufzeit-Schlüsselableitung |
+| `__sc_ptr_encrypt` | `(ptr) → i64` | Funktionszeiger für Cache verschlüsseln |
+| `__sc_ptr_decrypt` | `(i64) → ptr` | Cache-Wert zurück zum Funktionszeiger entschlüsseln |
+
+**Standard**: `key = PtrToInt(PEB) ^ Kompilierzeit-Seed` (Windows User-Mode) oder reiner Seed (Kernel). `encrypt = PtrToInt(ptr) ^ key`, `decrypt = IntToPtr(enc ^ key)`.
+
+**Cache-Slots**: `@__sc_cache_<dll>_<api>` (i64, Init 0, `.text`-Sektion, 8-Byte-Alignment). Fast/Slow-Pfad: `atomic_load → decrypt → indirekter Aufruf` (~10 Instruktionen) bzw. vollständiger PEB-Walk → `encrypt → cmpxchg weak` (lock-free, threadsicher).
+
+**Überschreiben**: Gleichnamige Funktion im Quellcode definieren. `encrypt`/`decrypt` müssen mathematische Inverse sein, `always_inline`, keine externen Aufrufe.
 
 ## 5. MemIntrinPass
 memcpy/memset/strlen/strcpy etc. → `internal alwaysinline` Byte-Loop-Helfer.

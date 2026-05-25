@@ -26,4 +26,6 @@ Obiettivo in una frase: **Eliminare tutto nel `.o` che diventerebbe una rilocazi
 | StringRuntimePass | metodi `string` integrati → varianti arena stack |
 | HeapArenaPass | `malloc`/`free`/`calloc`/`realloc` → alloc arena + fallback OS per allocazioni grandi |
 
+**Crittografia della cache indirizzi** (§4.1, condivisa da WinPEBImportPass e KernelImportPass): gli indirizzi risolti vengono cifrati con XOR prima della memorizzazione. Tre funzioni intercambiabili (`__sc_derive_key`, `__sc_ptr_encrypt`, `__sc_ptr_decrypt`) — default XOR puro (`key = PEB ^ seed` in modalità utente, seed puro in modalità kernel). Slot cache per (DLL, API) nella sezione `.text`. Percorso rapido/lento con `cmpxchg weak` thread-safe. L'utente può fornire le proprie implementazioni (`always_inline`, inverse reciproche, nessuna chiamata esterna). Vedere [README.md §4.1–4.5](README.md#41-address-cache-encryption) per i dettagli completi.
+
 11 hook di offuscamento. Filosofia diagnostica: 1 errore = 1 diagnostica azionabile. Vedere [plugin-interface.md §6](../plugin-interface/README.it.md#6-registration-position-selection--pic-coverage-matrix) e [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.it.md).

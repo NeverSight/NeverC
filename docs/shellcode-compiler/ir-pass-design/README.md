@@ -105,9 +105,130 @@ All templates and register constraints come from `TargetDesc` — the pass has z
 6. Resolved addresses are XOR-encrypted with `PEB_BASE ^ COMPILE_TIME_SEED` before caching (anti-memory-scan)
 7. Cache slots are per-(DLL, API) global variables in `.text` section; thread-safe via `cmpxchg` (lock-free)
 
-**Pluggable encryption**: three functions (`__sc_derive_key`, `__sc_ptr_encrypt`, `__sc_ptr_decrypt`) can be overridden by user code to replace the default XOR scheme with custom encryption (AES, RC4, etc.)
-
 **Windows POSIX compat**: `WinPEBImportPass` bridges 13 POSIX function groups (write→WriteFile, mmap→VirtualAlloc, exit→ExitProcess, etc.) via `Win32PosixCompat.def`, enabling the same C source to compile across all 8 triples without `#ifdef`.
+
+### 4.1 Address Cache Encryption
+
+Resolved API addresses are XOR-encrypted before being stored in cache global variables. This prevents simple memory scanning from discovering resolved function pointers in the shellcode's address space.
+
+The encryption infrastructure is implemented in `PtrCacheHelpers.h` and shared by both `WinPEBImportPass` (user mode) and `KernelImportPass` (ring-0).
+
+**Three pluggable helper functions** (all generated as `internal alwaysinline`):
+
+| Function | Signature | Purpose |
+|----------|-----------|---------|
+| `__sc_derive_key` | `() → i64` | Derive the encryption key at runtime |
+| `__sc_ptr_encrypt` | `(ptr) → i64` | Encrypt a function pointer for cache storage |
+| `__sc_ptr_decrypt` | `(i64) → ptr` | Decrypt a cached value back to a function pointer |
+
+**Default implementation** — pure XOR:
+
+```
+__sc_derive_key():
+  [PEB mode]   key = PtrToInt(read_PEB()) ^ COMPILE_TIME_SEED
+  [Seed mode]  key = COMPILE_TIME_SEED
+
+__sc_ptr_encrypt(ptr):
+  key = __sc_derive_key()
+  return PtrToInt(ptr) ^ key
+
+__sc_ptr_decrypt(enc_i64):
+  key = __sc_derive_key()
+  return IntToPtr(enc_i64 ^ key)
+```
+
+### 4.2 Key Derivation Modes
+
+| Mode | When used | Key source | Security property |
+|------|-----------|------------|------------------|
+| `PEB` | Windows user-mode | `PEB_base ^ seed` | PEB base varies per process (ASLR), making the key process-unique |
+| `SeedOnly` | Kernel mode, non-Windows | Pure compile-time seed constant | Static key; user should override `__sc_derive_key` for dynamic keys (e.g. from KPCR) |
+
+`COMPILE_TIME_SEED` is a random `uint64_t` generated once per compilation unit. PEB access uses a single inline asm instruction per platform: `movq %gs:0x60, $0` (x86_64) / `ldr $0, [x18, #0x60]` (arm64).
+
+The `__sc_derive_key` function has `MemoryEffects::none()` since the PEB read is modeled as side-effect-free (`hasSideEffects=false`). This allows LLVM to CSE (common subexpression eliminate) redundant `__sc_derive_key()` calls within the same function.
+
+### 4.3 Cache Slot Layout
+
+Each (DLL, API) pair gets its own global variable:
+
+- **Name**: `@__sc_cache_<dll_prefix>_<api_name>` (e.g. `@__sc_cache_kernel32_VirtualAlloc`)
+- **Type**: `i64`, initialized to `0`
+- **Linkage**: `internal` (not visible to linker)
+- **Section**: `.text` (colocated with code to avoid data section creation)
+- **Alignment**: 8 bytes
+- **Semantics**: `0` = unresolved (cache miss); non-zero = XOR-encrypted function pointer
+
+### 4.4 Fast/Slow Path Pattern
+
+Every API callsite is replaced by an `always_inline` wrapper with this structure:
+
+```
+entry:
+  %cached = atomic load monotonic @__sc_cache_<dll>_<api>
+  br (%cached == 0) → slow [weight 1], fast [weight 2000]
+
+fast:                                    ; ~10 instructions
+  %fn.ptr = call __sc_ptr_decrypt(%cached)
+  br → merge
+
+slow:                                    ; full PEB walk / resolver call
+  %raw.fn = <resolve API address>
+  br (%raw.fn == null) → merge [weight 1], store [weight 2000]
+
+store:
+  %enc.fn = call __sc_ptr_encrypt(%raw.fn)
+  cmpxchg weak @__sc_cache_<dll>_<api>, 0, %enc.fn  (release / monotonic)
+  br → merge
+
+merge:
+  %fn = phi [fast: %fn.ptr, slow: %raw.fn, store: %raw.fn]
+  call %fn(original args...)
+```
+
+**Thread safety**: `cmpxchg weak` ensures only the first resolver wins; subsequent threads that resolve concurrently will simply discard their result (weak CAS failure is harmless since the value is the same). The `monotonic` load on the fast path and `release` store on the slow path guarantee correct visibility ordering.
+
+**Branch weights**: `br_weights(1, 2000)` hint the backend to lay out the fast path fall-through for optimal branch prediction.
+
+### 4.5 Overriding the Default Encryption
+
+Users can provide their own implementations by defining functions with matching names in their source code. The pass uses a "get or create" pattern — `M.getFunction("__sc_ptr_encrypt")` is checked first; if a user definition already exists, the default is not generated.
+
+Example — replacing XOR with a rotate+XOR scheme:
+
+```c
+#include <stdint.h>
+
+static inline __attribute__((always_inline))
+uint64_t __sc_derive_key(void) {
+    uint64_t peb;
+    __asm__ volatile("movq %%gs:0x60, %0" : "=r"(peb));
+    return (peb ^ 0xDEAD1337CAFE4242ULL);
+}
+
+static inline __attribute__((always_inline))
+uint64_t __sc_ptr_encrypt(void *ptr) {
+    uint64_t k = __sc_derive_key();
+    uint64_t v = (uint64_t)ptr;
+    v ^= k;
+    v = (v << 13) | (v >> 51);  // rotate left 13
+    return v;
+}
+
+static inline __attribute__((always_inline))
+void *__sc_ptr_decrypt(uint64_t enc) {
+    uint64_t k = __sc_derive_key();
+    enc = (enc >> 13) | (enc << 51);  // rotate right 13
+    enc ^= k;
+    return (void *)enc;
+}
+```
+
+**Constraints for custom implementations**:
+- Must be `always_inline` (the pass expects inlining to eliminate the call overhead)
+- `__sc_ptr_encrypt` and `__sc_ptr_decrypt` must be mathematical inverses: `decrypt(encrypt(ptr)) == ptr`
+- Should have no side effects beyond the encryption itself (to allow CSE optimizations)
+- Must not call any external functions (would re-introduce unresolvable relocations)
 
 ---
 
@@ -196,7 +317,7 @@ Activated when `-mshellcode-context=kernel`. Automatically rewrites unresolved e
    - **Slow path**: `resolver(FNV1a_hash(name), cookie) → encrypt → cmpxchg → call`
 3. Preserves variadic arguments (critical for `printk`)
 4. Address-taken externs are not wrapped; diagnostics direct users to pass pre-resolved function pointers
-5. Default encryption: XOR with compile-time seed (no PEB in kernel mode); user can override `__sc_derive_key` for KPCR-based keys
+5. Default encryption: XOR with compile-time seed (no PEB in kernel mode); user can override `__sc_derive_key` for KPCR-based keys (see [§4.1–4.5](#41-address-cache-encryption) for the shared encryption infrastructure)
 
 See [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.md) for details.
 

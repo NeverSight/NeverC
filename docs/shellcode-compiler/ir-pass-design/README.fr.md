@@ -17,7 +17,7 @@ Objectif en une phrase : **Éliminer tout dans le `.o` qui deviendrait une reloc
 | ZeroRelocPass | Prep : unification linkage + alwaysinline. Stackify : globales mutables → alloca |
 | IndirectBrPass | computed-goto → switch |
 | SyscallStubPass | libc extern → traps inline pilotés par TargetDesc + compat POSIX + autofix K&R |
-| WinPEBImportPass | Win32 extern → résolveur PEB walk (~190 APIs) + cache d'adresses chiffrée + compat Windows POSIX |
+| WinPEBImportPass | Win32 extern → résolveur PEB walk (~190 APIs) + cache d'adresses chiffrée (XOR) + compat Windows POSIX |
 | MemIntrinPass | mem*/str*/abs → helpers boucle-octet inline |
 | CompilerRtPass | `__int128` div/mod → division longue inline |
 | Data2TextPass | Phase 1+2 : GVs constants → immédiats/pile + split résiduel SROA |
@@ -25,5 +25,7 @@ Objectif en une phrase : **Éliminer tout dans le `.o` qui deviendrait une reloc
 | KernelImportPass | (ring-0) extern → appels indirects via résolveur |
 | StringRuntimePass | méthodes `string` intégrées → variantes arena pile |
 | HeapArenaPass | `malloc`/`free`/`calloc`/`realloc` → alloc arena + fallback OS pour grandes allocations |
+
+**Chiffrement du cache d'adresses** (§4.1, partagé par WinPEBImportPass et KernelImportPass) : les adresses résolues sont XOR-chiffrées avant stockage. Trois fonctions enfichables (`__sc_derive_key`, `__sc_ptr_encrypt`, `__sc_ptr_decrypt`) — par défaut XOR pur (`key = PEB ^ seed` en mode utilisateur, seed pur en mode noyau). Slots de cache par (DLL, API) en section `.text`. Chemin rapide/lent avec `cmpxchg weak` thread-safe. L'utilisateur peut fournir ses propres implémentations (doivent être `always_inline`, inverses mutuelles, sans appels externes). Voir [README.md §4.1–4.5](README.md#41-address-cache-encryption) pour les détails complets.
 
 11 hooks d'obfuscation. Philosophie de diagnostic : 1 erreur = 1 diagnostic actionnable. Voir [plugin-interface.md §6](../plugin-interface/README.fr.md#6-registration-position-selection--pic-coverage-matrix) et [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.fr.md).
