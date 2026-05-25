@@ -53,4 +53,8 @@ static __inline__ void *neverc_string_data(string s) {
   return s.data ? (void *)s.data : (void *)"";
 }
 
+static __inline__ unsigned char __neverc_ascii_lower(unsigned char c) {
+  return c | (((unsigned char)(c - 'A') < 26u) << 5);
+}
+
 )prelude"

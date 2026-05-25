@@ -290,6 +290,24 @@ static string neverc_string_from_utf32_char(__UINT32_TYPE__ cp) {
   return __neverc_string_make_owned(buf, n);
 }
 
+static __inline__ __UINT32_TYPE__
+__neverc_utf16_next(const __UINT16_TYPE__ *data, __SIZE_TYPE__ len,
+                    __SIZE_TYPE__ *pos) {
+  __UINT16_TYPE__ u = data[*pos];
+  if (u >= 0xD800 && u <= 0xDBFF && *pos + 1 < len) {
+    __UINT16_TYPE__ lo = data[*pos + 1];
+    if (lo >= 0xDC00 && lo <= 0xDFFF) {
+      *pos += 2;
+      return 0x10000 + (((__UINT32_TYPE__)(u - 0xD800)) << 10) +
+             (__UINT32_TYPE__)(lo - 0xDC00);
+    }
+  }
+  *pos += 1;
+  if (u >= 0xD800 && u <= 0xDFFF)
+    return NEVERC_STRING_UTF8_REPLACEMENT;
+  return u;
+}
+
 static string neverc_string_from_utf16(const __UINT16_TYPE__ *data,
                                            __SIZE_TYPE__ len) {
   if (len == 0 || !data)
@@ -298,25 +316,7 @@ static string neverc_string_from_utf16(const __UINT16_TYPE__ *data,
   __SIZE_TYPE__ total = 0;
   __SIZE_TYPE__ i = 0;
   while (i < len) {
-    __UINT32_TYPE__ cp;
-    __UINT16_TYPE__ u = data[i];
-    if (u >= 0xD800 && u <= 0xDBFF && i + 1 < len) {
-      __UINT16_TYPE__ lo = data[i + 1];
-      if (lo >= 0xDC00 && lo <= 0xDFFF) {
-        cp = 0x10000 + (((__UINT32_TYPE__)(u - 0xD800)) << 10) +
-             (__UINT32_TYPE__)(lo - 0xDC00);
-        i += 2;
-      } else {
-        cp = NEVERC_STRING_UTF8_REPLACEMENT;
-        i += 1;
-      }
-    } else if (u >= 0xD800 && u <= 0xDFFF) {
-      cp = NEVERC_STRING_UTF8_REPLACEMENT;
-      i += 1;
-    } else {
-      cp = u;
-      i += 1;
-    }
+    __UINT32_TYPE__ cp = __neverc_utf16_next(data, len, &i);
     __SIZE_TYPE__ enc = __neverc_utf8_encoded_len(cp);
     if (total > NEVERC_STRING_MAX_LEN - enc)
       return __neverc_string_empty();
@@ -333,25 +333,7 @@ static string neverc_string_from_utf16(const __UINT16_TYPE__ *data,
   __SIZE_TYPE__ written = 0;
   i = 0;
   while (i < len) {
-    __UINT32_TYPE__ cp;
-    __UINT16_TYPE__ u = data[i];
-    if (u >= 0xD800 && u <= 0xDBFF && i + 1 < len) {
-      __UINT16_TYPE__ lo = data[i + 1];
-      if (lo >= 0xDC00 && lo <= 0xDFFF) {
-        cp = 0x10000 + (((__UINT32_TYPE__)(u - 0xD800)) << 10) +
-             (__UINT32_TYPE__)(lo - 0xDC00);
-        i += 2;
-      } else {
-        cp = NEVERC_STRING_UTF8_REPLACEMENT;
-        i += 1;
-      }
-    } else if (u >= 0xD800 && u <= 0xDFFF) {
-      cp = NEVERC_STRING_UTF8_REPLACEMENT;
-      i += 1;
-    } else {
-      cp = u;
-      i += 1;
-    }
+    __UINT32_TYPE__ cp = __neverc_utf16_next(data, len, &i);
     __SIZE_TYPE__ enc = __neverc_utf8_encode(p + written, cp);
     if (enc == 0)
       enc = __neverc_utf8_encode(p + written, NEVERC_STRING_UTF8_REPLACEMENT);
@@ -639,23 +621,33 @@ static __SIZE_TYPE__ neverc_string_to_latin1(string s,
   return required;
 }
 
-static __inline__ char __neverc_b64_encode_digit(unsigned x) {
+static __inline__ char __neverc_b64_encode_digit_ex(unsigned x,
+                                                     char c62, char c63) {
   unsigned m = x & 63u;
   if (m < 26u) return (char)('A' + m);
   if (m < 52u) return (char)('a' + (m - 26u));
   if (m < 62u) return (char)('0' + (m - 52u));
-  if (m == 62u) return '+';
-  return '/';
+  return m == 62u ? c62 : c63;
 }
 
-static __inline__ unsigned char __neverc_b64_decode_digit(char c) {
+static __inline__ unsigned char __neverc_b64_decode_digit_ex(char c,
+                                                              char c62,
+                                                              char c63) {
   unsigned char uc = (unsigned char)c;
   if ((unsigned char)(uc - 'A') < 26u) return (unsigned char)(uc - 'A');
   if ((unsigned char)(uc - 'a') < 26u) return (unsigned char)(uc - 'a' + 26);
   if ((unsigned char)(uc - '0') < 10u) return (unsigned char)(uc - '0' + 52);
-  if (c == '+') return 62;
-  if (c == '/') return 63;
+  if (c == c62) return 62;
+  if (c == c63) return 63;
   return 0xFF;
+}
+
+static __inline__ char __neverc_b64_encode_digit(unsigned x) {
+  return __neverc_b64_encode_digit_ex(x, '+', '/');
+}
+
+static __inline__ unsigned char __neverc_b64_decode_digit(char c) {
+  return __neverc_b64_decode_digit_ex(c, '+', '/');
 }
 
 static string neverc_string_to_base64(string s) {
@@ -760,22 +752,11 @@ static string neverc_string_from_base64(string s) {
 }
 
 static __inline__ char __neverc_b64url_encode_digit(unsigned x) {
-  unsigned m = x & 63u;
-  if (m < 26u) return (char)('A' + m);
-  if (m < 52u) return (char)('a' + (m - 26u));
-  if (m < 62u) return (char)('0' + (m - 52u));
-  if (m == 62u) return '-';
-  return '_';
+  return __neverc_b64_encode_digit_ex(x, '-', '_');
 }
 
 static __inline__ unsigned char __neverc_b64url_decode_digit(char c) {
-  unsigned char uc = (unsigned char)c;
-  if ((unsigned char)(uc - 'A') < 26u) return (unsigned char)(uc - 'A');
-  if ((unsigned char)(uc - 'a') < 26u) return (unsigned char)(uc - 'a' + 26);
-  if ((unsigned char)(uc - '0') < 10u) return (unsigned char)(uc - '0' + 52);
-  if (c == '-') return 62;
-  if (c == '_') return 63;
-  return 0xFFu;
+  return __neverc_b64_decode_digit_ex(c, '-', '_');
 }
 
 static string neverc_string_to_base64_url(string s) {
@@ -886,9 +867,13 @@ static __inline__ unsigned __neverc_string_hex_digit_value(char c) {
   return 16u;
 }
 
-static __inline__ char __neverc_string_hex_digit_char(unsigned x) {
+static __inline__ char __neverc_string_hex_char_ex(unsigned x, char base) {
   unsigned m = x & 0xFu;
-  return m < 10u ? (char)('0' + m) : (char)('a' + (m - 10u));
+  return m < 10u ? (char)('0' + m) : (char)(base + (m - 10u));
+}
+
+static __inline__ char __neverc_string_hex_digit_char(unsigned x) {
+  return __neverc_string_hex_char_ex(x, 'a');
 }
 
 static string neverc_string_to_hex(string s) {
@@ -939,8 +924,7 @@ static __inline__ int __neverc_url_unreserved(char c) {
 }
 
 static __inline__ char __neverc_string_hex_upper_char(unsigned x) {
-  unsigned m = x & 0xFu;
-  return m < 10u ? (char)('0' + m) : (char)('A' + (m - 10u));
+  return __neverc_string_hex_char_ex(x, 'A');
 }
 
 static string neverc_string_url_encode(string s) {

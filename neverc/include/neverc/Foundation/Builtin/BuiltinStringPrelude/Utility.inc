@@ -1,17 +1,12 @@
 R"prelude(
 
-#ifndef NEVERC_STRING_ASCII_CASE_DELTA
-#define NEVERC_STRING_ASCII_CASE_DELTA ('a' - 'A')
-#endif
-
 static __inline__ int __neverc_string_is_whitespace(char c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
          c == '\f' || c == '\v';
 }
 
 static __inline__ char __neverc_string_to_lower_char(char c) {
-  unsigned char uc = (unsigned char)c;
-  return (char)(uc | (((unsigned char)(uc - 'A') < 26u) << 5));
+  return (char)__neverc_ascii_lower((unsigned char)c);
 }
 
 static __inline__ char __neverc_string_to_upper_char(char c) {

@@ -35,6 +35,34 @@ static int neverc_string_eq(string a, string b) {
   return equal;
 }
 
+static __attribute__((always_inline)) int
+__neverc_decrypt_match(const char *sdata, __SIZE_TYPE__ soff,
+                       const char *enc, __SIZE_TYPE__ eoff,
+                       __SIZE_TYPE__ count, __SIZE_TYPE__ vkey) {
+  for (__SIZE_TYPE__ j = 0; j < count; j++) {
+    __SIZE_TYPE__ ei = eoff + j;
+    if ((unsigned char)sdata[soff + j] !=
+        (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[ei], vkey, ei))
+      return 0;
+  }
+  return 1;
+}
+
+static __attribute__((always_inline)) int
+__neverc_decrypt_match_ic(const char *sdata, __SIZE_TYPE__ soff,
+                          const char *enc, __SIZE_TYPE__ eoff,
+                          __SIZE_TYPE__ count, __SIZE_TYPE__ vkey) {
+  for (__SIZE_TYPE__ j = 0; j < count; j++) {
+    __SIZE_TYPE__ ei = eoff + j;
+    unsigned char sb = (unsigned char)sdata[soff + j];
+    unsigned char db =
+        (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[ei], vkey, ei);
+    if (sb != db && __neverc_ascii_lower(sb) != __neverc_ascii_lower(db))
+      return 0;
+  }
+  return 1;
+}
+
 // Thin header has a matching copy (BuiltinStringThinHeaderPrologue.inc).
 static __attribute__((always_inline)) int
 __neverc_string_decrypt_equals(string s, const char *enc,
@@ -47,14 +75,8 @@ __neverc_string_decrypt_equals(string s, const char *enc,
   } else if (NEVERC_UNLIKELY(__neverc_string_invalid(s))) {
     equal = 0;
   } else {
-    equal = 1;
     volatile __SIZE_TYPE__ vkey = key;
-    for (__SIZE_TYPE__ i = 0; i < len; i++) {
-      if (s.data[i] != NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i)) {
-        equal = 0;
-        break;
-      }
-    }
+    equal = __neverc_decrypt_match(s.data, 0, enc, 0, len, vkey);
   }
   neverc_string_free(s);
   return equal;
@@ -134,11 +156,6 @@ static __inline__ int neverc_string_ends_with_char(string s, char ch) {
   return matched;
 }
 
-static __inline__ unsigned char __neverc_ascii_lower(unsigned char c) {
-
-  return c | (((unsigned char)(c - 'A') < 26u) << 5);
-}
-
 static __attribute__((always_inline)) int
 __neverc_string_decrypt_compare(string s, const char *enc,
                                 __SIZE_TYPE__ len, __SIZE_TYPE__ key) {
@@ -175,16 +192,8 @@ __neverc_string_decrypt_equals_ic(string s, const char *enc,
   } else if (NEVERC_UNLIKELY(__neverc_string_invalid(s))) {
     equal = 0;
   } else {
-    equal = 1;
     volatile __SIZE_TYPE__ vkey = key;
-    for (__SIZE_TYPE__ i = 0; i < len; i++) {
-      unsigned char sb = (unsigned char)s.data[i];
-      unsigned char db = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i);
-      if (sb != db && __neverc_ascii_lower(sb) != __neverc_ascii_lower(db)) {
-        equal = 0;
-        break;
-      }
-    }
+    equal = __neverc_decrypt_match_ic(s.data, 0, enc, 0, len, vkey);
   }
   neverc_string_free(s);
   return equal;

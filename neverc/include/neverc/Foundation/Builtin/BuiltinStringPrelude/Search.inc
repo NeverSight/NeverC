@@ -132,22 +132,10 @@ __neverc_string_decrypt_starts_with(string s, const char *enc,
   int result = 0;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len > s.len)
-    goto done;
-  if (len == 0) {
-    result = 1;
-    goto done;
-  }
-  {
-    result = 1;
-    volatile __SIZE_TYPE__ vkey = key;
-    for (__SIZE_TYPE__ i = 0; i < len; i++) {
-      if (s.data[i] != NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i)) {
-        result = 0;
-        break;
-      }
-    }
-  }
+  if (len > s.len) goto done;
+  if (len == 0) { result = 1; goto done; }
+  { volatile __SIZE_TYPE__ vkey = key;
+    result = __neverc_decrypt_match(s.data, 0, enc, 0, len, vkey); }
 done:
   neverc_string_free(s);
   return result;
@@ -159,23 +147,10 @@ __neverc_string_decrypt_ends_with(string s, const char *enc,
   int result = 0;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len > s.len)
-    goto done;
-  if (len == 0) {
-    result = 1;
-    goto done;
-  }
-  {
-    result = 1;
-    __SIZE_TYPE__ offset = s.len - len;
-    volatile __SIZE_TYPE__ vkey = key;
-    for (__SIZE_TYPE__ i = 0; i < len; i++) {
-      if (s.data[offset + i] != NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i)) {
-        result = 0;
-        break;
-      }
-    }
-  }
+  if (len > s.len) goto done;
+  if (len == 0) { result = 1; goto done; }
+  { volatile __SIZE_TYPE__ vkey = key;
+    result = __neverc_decrypt_match(s.data, s.len - len, enc, 0, len, vkey); }
 done:
   neverc_string_free(s);
   return result;
@@ -187,28 +162,15 @@ __neverc_string_decrypt_contains(string s, const char *enc,
   int result = 0;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len == 0) {
-    result = 1;
-    goto done;
-  }
-  if (len > s.len)
-    goto done;
-  {
-    volatile __SIZE_TYPE__ vkey = key;
+  if (len == 0) { result = 1; goto done; }
+  if (len > s.len) goto done;
+  { volatile __SIZE_TYPE__ vkey = key;
     unsigned char first = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[0], vkey, 0);
     __SIZE_TYPE__ limit = s.len - len;
     for (__SIZE_TYPE__ pos = 0; pos <= limit; pos++) {
-      if ((unsigned char)s.data[pos] != first)
-        continue;
-      __SIZE_TYPE__ j = 1;
-      for (; j < len; j++) {
-        if (s.data[pos + j] != NEVERC_STRING_DECRYPT_BYTE(enc[j], vkey, j))
-          break;
-      }
-      if (j == len) {
-        result = 1;
-        goto done;
-      }
+      if ((unsigned char)s.data[pos] != first) continue;
+      if (__neverc_decrypt_match(s.data, pos + 1, enc, 1, len - 1, vkey))
+        { result = 1; goto done; }
     }
   }
 done:
@@ -222,24 +184,10 @@ __neverc_string_decrypt_starts_with_ic(string s, const char *enc,
   int result = 0;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len > s.len)
-    goto done;
-  if (len == 0) {
-    result = 1;
-    goto done;
-  }
-  {
-    result = 1;
-    volatile __SIZE_TYPE__ vkey = key;
-    for (__SIZE_TYPE__ i = 0; i < len; i++) {
-      unsigned char sb = (unsigned char)s.data[i];
-      unsigned char db = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i);
-      if (sb != db && __neverc_ascii_lower(sb) != __neverc_ascii_lower(db)) {
-        result = 0;
-        break;
-      }
-    }
-  }
+  if (len > s.len) goto done;
+  if (len == 0) { result = 1; goto done; }
+  { volatile __SIZE_TYPE__ vkey = key;
+    result = __neverc_decrypt_match_ic(s.data, 0, enc, 0, len, vkey); }
 done:
   neverc_string_free(s);
   return result;
@@ -251,25 +199,10 @@ __neverc_string_decrypt_ends_with_ic(string s, const char *enc,
   int result = 0;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len > s.len)
-    goto done;
-  if (len == 0) {
-    result = 1;
-    goto done;
-  }
-  {
-    result = 1;
-    __SIZE_TYPE__ offset = s.len - len;
-    volatile __SIZE_TYPE__ vkey = key;
-    for (__SIZE_TYPE__ i = 0; i < len; i++) {
-      unsigned char sb = (unsigned char)s.data[offset + i];
-      unsigned char db = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i);
-      if (sb != db && __neverc_ascii_lower(sb) != __neverc_ascii_lower(db)) {
-        result = 0;
-        break;
-      }
-    }
-  }
+  if (len > s.len) goto done;
+  if (len == 0) { result = 1; goto done; }
+  { volatile __SIZE_TYPE__ vkey = key;
+    result = __neverc_decrypt_match_ic(s.data, s.len - len, enc, 0, len, vkey); }
 done:
   neverc_string_free(s);
   return result;
@@ -281,31 +214,16 @@ __neverc_string_decrypt_contains_ic(string s, const char *enc,
   int result = 0;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len == 0) {
-    result = 1;
-    goto done;
-  }
-  if (len > s.len)
-    goto done;
-  {
-    volatile __SIZE_TYPE__ vkey = key;
+  if (len == 0) { result = 1; goto done; }
+  if (len > s.len) goto done;
+  { volatile __SIZE_TYPE__ vkey = key;
     unsigned char first =
         __neverc_ascii_lower((unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[0], vkey, 0));
     __SIZE_TYPE__ limit = s.len - len;
     for (__SIZE_TYPE__ pos = 0; pos <= limit; pos++) {
-      if (__neverc_ascii_lower((unsigned char)s.data[pos]) != first)
-        continue;
-      __SIZE_TYPE__ j = 1;
-      for (; j < len; j++) {
-        unsigned char sb = (unsigned char)s.data[pos + j];
-        unsigned char db = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[j], vkey, j);
-        if (sb != db && __neverc_ascii_lower(sb) != __neverc_ascii_lower(db))
-          break;
-      }
-      if (j == len) {
-        result = 1;
-        goto done;
-      }
+      if (__neverc_ascii_lower((unsigned char)s.data[pos]) != first) continue;
+      if (__neverc_decrypt_match_ic(s.data, pos + 1, enc, 1, len - 1, vkey))
+        { result = 1; goto done; }
     }
   }
 done:
@@ -319,28 +237,15 @@ __neverc_string_decrypt_find(string s, const char *enc,
   __SIZE_TYPE__ result = NEVERC_STRING_NPOS;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len == 0) {
-    result = 0;
-    goto done;
-  }
-  if (len > s.len)
-    goto done;
-  {
-    volatile __SIZE_TYPE__ vkey = key;
+  if (len == 0) { result = 0; goto done; }
+  if (len > s.len) goto done;
+  { volatile __SIZE_TYPE__ vkey = key;
     unsigned char first = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[0], vkey, 0);
     __SIZE_TYPE__ limit = s.len - len;
     for (__SIZE_TYPE__ pos = 0; pos <= limit; pos++) {
-      if ((unsigned char)s.data[pos] != first)
-        continue;
-      __SIZE_TYPE__ j = 1;
-      for (; j < len; j++) {
-        if (s.data[pos + j] != NEVERC_STRING_DECRYPT_BYTE(enc[j], vkey, j))
-          break;
-      }
-      if (j == len) {
-        result = pos;
-        goto done;
-      }
+      if ((unsigned char)s.data[pos] != first) continue;
+      if (__neverc_decrypt_match(s.data, pos + 1, enc, 1, len - 1, vkey))
+        { result = pos; goto done; }
     }
   }
 done:
@@ -351,32 +256,19 @@ done:
 static __attribute__((always_inline)) __SIZE_TYPE__
 __neverc_string_decrypt_find_from(string s, const char *enc,
                                   __SIZE_TYPE__ len, __SIZE_TYPE__ key,
-                                  __SIZE_TYPE__ pos) {
+                                  __SIZE_TYPE__ start) {
   __SIZE_TYPE__ result = NEVERC_STRING_NPOS;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len == 0) {
-    result = pos <= s.len ? pos : NEVERC_STRING_NPOS;
-    goto done;
-  }
-  if (pos > s.len || len > s.len - pos)
-    goto done;
-  {
-    volatile __SIZE_TYPE__ vkey = key;
+  if (len == 0) { result = start <= s.len ? start : NEVERC_STRING_NPOS; goto done; }
+  if (start > s.len || len > s.len - start) goto done;
+  { volatile __SIZE_TYPE__ vkey = key;
     unsigned char first = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[0], vkey, 0);
     __SIZE_TYPE__ limit = s.len - len;
-    for (__SIZE_TYPE__ p = pos; p <= limit; p++) {
-      if ((unsigned char)s.data[p] != first)
-        continue;
-      __SIZE_TYPE__ j = 1;
-      for (; j < len; j++) {
-        if (s.data[p + j] != NEVERC_STRING_DECRYPT_BYTE(enc[j], vkey, j))
-          break;
-      }
-      if (j == len) {
-        result = p;
-        goto done;
-      }
+    for (__SIZE_TYPE__ p = start; p <= limit; p++) {
+      if ((unsigned char)s.data[p] != first) continue;
+      if (__neverc_decrypt_match(s.data, p + 1, enc, 1, len - 1, vkey))
+        { result = p; goto done; }
     }
   }
 done:
@@ -390,27 +282,14 @@ __neverc_string_decrypt_rfind(string s, const char *enc,
   __SIZE_TYPE__ result = NEVERC_STRING_NPOS;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len == 0) {
-    result = s.len;
-    goto done;
-  }
-  if (len > s.len)
-    goto done;
-  {
-    volatile __SIZE_TYPE__ vkey = key;
+  if (len == 0) { result = s.len; goto done; }
+  if (len > s.len) goto done;
+  { volatile __SIZE_TYPE__ vkey = key;
     unsigned char first = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[0], vkey, 0);
     for (__SIZE_TYPE__ i = s.len - len + 1; i-- > 0;) {
-      if ((unsigned char)s.data[i] != first)
-        continue;
-      __SIZE_TYPE__ j = 1;
-      for (; j < len; j++) {
-        if (s.data[i + j] != NEVERC_STRING_DECRYPT_BYTE(enc[j], vkey, j))
-          break;
-      }
-      if (j == len) {
-        result = i;
-        goto done;
-      }
+      if ((unsigned char)s.data[i] != first) continue;
+      if (__neverc_decrypt_match(s.data, i + 1, enc, 1, len - 1, vkey))
+        { result = i; goto done; }
     }
   }
 done:
@@ -425,30 +304,16 @@ __neverc_string_decrypt_rfind_to(string s, const char *enc,
   __SIZE_TYPE__ result = NEVERC_STRING_NPOS;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len == 0) {
-    result = pos < s.len ? pos : s.len;
-    goto done;
-  }
-  if (len > s.len)
-    goto done;
-  {
-    volatile __SIZE_TYPE__ vkey = key;
+  if (len == 0) { result = pos < s.len ? pos : s.len; goto done; }
+  if (len > s.len) goto done;
+  { volatile __SIZE_TYPE__ vkey = key;
     unsigned char first = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[0], vkey, 0);
     __SIZE_TYPE__ last = s.len - len;
-    if (pos < last)
-      last = pos;
+    if (pos < last) last = pos;
     for (__SIZE_TYPE__ i = last + 1; i-- > 0;) {
-      if ((unsigned char)s.data[i] != first)
-        continue;
-      __SIZE_TYPE__ j = 1;
-      for (; j < len; j++) {
-        if (s.data[i + j] != NEVERC_STRING_DECRYPT_BYTE(enc[j], vkey, j))
-          break;
-      }
-      if (j == len) {
-        result = i;
-        goto done;
-      }
+      if ((unsigned char)s.data[i] != first) continue;
+      if (__neverc_decrypt_match(s.data, i + 1, enc, 1, len - 1, vkey))
+        { result = i; goto done; }
     }
   }
 done:
@@ -462,31 +327,16 @@ __neverc_string_decrypt_find_ic(string s, const char *enc,
   __SIZE_TYPE__ result = NEVERC_STRING_NPOS;
   if (NEVERC_UNLIKELY(__neverc_string_invalid(s)))
     goto done;
-  if (len == 0) {
-    result = 0;
-    goto done;
-  }
-  if (len > s.len)
-    goto done;
-  {
-    volatile __SIZE_TYPE__ vkey = key;
+  if (len == 0) { result = 0; goto done; }
+  if (len > s.len) goto done;
+  { volatile __SIZE_TYPE__ vkey = key;
     unsigned char first =
         __neverc_ascii_lower((unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[0], vkey, 0));
     __SIZE_TYPE__ limit = s.len - len;
     for (__SIZE_TYPE__ pos = 0; pos <= limit; pos++) {
-      if (__neverc_ascii_lower((unsigned char)s.data[pos]) != first)
-        continue;
-      __SIZE_TYPE__ j = 1;
-      for (; j < len; j++) {
-        unsigned char sb = (unsigned char)s.data[pos + j];
-        unsigned char db = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[j], vkey, j);
-        if (sb != db && __neverc_ascii_lower(sb) != __neverc_ascii_lower(db))
-          break;
-      }
-      if (j == len) {
-        result = pos;
-        goto done;
-      }
+      if (__neverc_ascii_lower((unsigned char)s.data[pos]) != first) continue;
+      if (__neverc_decrypt_match_ic(s.data, pos + 1, enc, 1, len - 1, vkey))
+        { result = pos; goto done; }
     }
   }
 done:
@@ -498,34 +348,17 @@ static __attribute__((always_inline)) __SIZE_TYPE__
 __neverc_string_decrypt_count(string s, const char *enc,
                               __SIZE_TYPE__ len, __SIZE_TYPE__ key) {
   __SIZE_TYPE__ n = 0;
-  if (__neverc_string_invalid(s))
-    goto done;
-  if (len == 0) {
-    n = s.len + 1;
-    goto done;
-  }
-  if (len > s.len)
-    goto done;
-  {
-    volatile __SIZE_TYPE__ vkey = key;
+  if (__neverc_string_invalid(s)) goto done;
+  if (len == 0) { n = s.len + 1; goto done; }
+  if (len > s.len) goto done;
+  { volatile __SIZE_TYPE__ vkey = key;
     unsigned char first = (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[0], vkey, 0);
     __SIZE_TYPE__ limit = s.len - len;
     for (__SIZE_TYPE__ pos = 0; pos <= limit;) {
-      if ((unsigned char)s.data[pos] != first) {
-        pos++;
-        continue;
-      }
-      __SIZE_TYPE__ j = 1;
-      for (; j < len; j++) {
-        if (s.data[pos + j] != NEVERC_STRING_DECRYPT_BYTE(enc[j], vkey, j))
-          break;
-      }
-      if (j == len) {
-        n++;
-        pos += len;
-      } else {
-        pos++;
-      }
+      if ((unsigned char)s.data[pos] != first) { pos++; continue; }
+      if (__neverc_decrypt_match(s.data, pos + 1, enc, 1, len - 1, vkey)) {
+        n++; pos += len;
+      } else { pos++; }
     }
   }
 done:
