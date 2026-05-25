@@ -568,7 +568,9 @@ string e = "hello".encrypt().encrypt();  // 오류: .encrypt() can only be appli
 - `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — 컴파일 타임: 평문→암호문
 - `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 런타임: 암호문→평문
 
-기본값은 둘 다 XOR (자기 역원 연산). 비-XOR 알고리즘을 사용하려면 **두 매크로를 모두** 정의하며, 수학적 역함수여야 합니다:
+`ENCRYPT_BYTE` 기본값은 XOR. `DECRYPT_BYTE` 기본값은 **XOR 명령어 없는 산술 분해** — `(a + b) - (a & b) - (b & a)`로 `a ^ b`를 계산하며, `volatile` 중간 변수로 LLVM의 `xor` 재최적화를 방지. MBA (Mixed Boolean-Arithmetic) 난독화 패스로 추가 강화 가능.
+
+비-XOR 알고리즘을 사용하려면 **두 매크로를 모두** 정의하며, 수학적 역함수여야 합니다:
 
 ```c
 #define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \

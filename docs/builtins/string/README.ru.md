@@ -568,7 +568,9 @@ string e = "hello".encrypt().encrypt();  // ОШИБКА: .encrypt() can only be
 - `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — компиляция: открытый текст→шифротекст
 - `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — выполнение: шифротекст→открытый текст
 
-По умолчанию оба используют XOR (самообратная операция). Для не-XOR алгоритма определите **оба** макроса (они должны быть математическими обратными):
+`ENCRYPT_BYTE` по умолчанию XOR. `DECRYPT_BYTE` по умолчанию использует **безXOR арифметическую декомпозицию** — вычисляет `a ^ b` как `(a + b) - (a & b) - (b & a)` с `volatile` промежуточными для предотвращения реоптимизации LLVM в `xor`. Может быть усилена проходами обфускации MBA (Mixed Boolean-Arithmetic).
+
+Для не-XOR алгоритма определите **оба** макроса (они должны быть математическими обратными):
 
 ```c
 #define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \

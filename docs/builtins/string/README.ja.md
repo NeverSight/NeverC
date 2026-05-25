@@ -568,7 +568,9 @@ string e = "hello".encrypt().encrypt();  // エラー: .encrypt() can only be ap
 - `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — コンパイル時：平文→暗号文
 - `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 実行時：暗号文→平文
 
-両方のデフォルトは XOR（自己逆演算）。非 XOR アルゴリズムを使用するには**両方**を定義し、数学的逆関数である必要があります：
+`ENCRYPT_BYTE` のデフォルトは XOR。`DECRYPT_BYTE` のデフォルトは **XOR 命令なしの算術分解**——`(a + b) - (a & b) - (b & a)` で `a ^ b` を計算し、`volatile` 中間変数で LLVM の `xor` への最適化を防止。MBA（Mixed Boolean-Arithmetic）難読化パスでさらに強化可能。
+
+非 XOR アルゴリズムを使用するには**両方**を定義し、数学的逆関数である必要があります：
 
 ```c
 #define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \

@@ -568,7 +568,9 @@ Verschlüsselung und Entschlüsselung werden durch zwei Makros gesteuert:
 - `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — Kompilierzeit: Klartext→Chiffretext
 - `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — Laufzeit: Chiffretext→Klartext
 
-Beide sind standardmäßig XOR (selbstinvers). Für einen Nicht-XOR-Algorithmus definieren Sie **beide** Makros (sie müssen mathematische Inverse sein):
+`ENCRYPT_BYTE` verwendet standardmäßig XOR. `DECRYPT_BYTE` verwendet standardmäßig eine **XOR-freie arithmetische Zerlegung** — berechnet `a ^ b` als `(a + b) - (a & b) - (b & a)` mit `volatile` Zwischenvariablen, um LLVMs Re-Optimierung zu `xor` zu verhindern. Kann mit MBA-Obfuskationspässen (Mixed Boolean-Arithmetic) weiter verstärkt werden.
+
+Für einen Nicht-XOR-Algorithmus definieren Sie **beide** Makros (sie müssen mathematische Inverse sein):
 
 ```c
 #define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \

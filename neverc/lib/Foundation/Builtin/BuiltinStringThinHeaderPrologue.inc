@@ -91,10 +91,17 @@ static __inline__ void __neverc_wptr_cleanup(void *p) {
           (unsigned char)((key) >> (8 * ((idx) % sizeof(__SIZE_TYPE__))))))
 #endif
 
+static __attribute__((always_inline)) char
+__neverc_xfree_dec(unsigned char a, unsigned char b) {
+  volatile __SIZE_TYPE__ va = a;
+  volatile __SIZE_TYPE__ vb = b;
+  return (char)((unsigned char)(va + vb - ((va & vb) + (vb & va))));
+}
+
 #ifndef NEVERC_STRING_DECRYPT_BYTE
 #define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
-  ((char)((unsigned char)(byte) ^ \
-          (unsigned char)((key) >> (8 * ((idx) % sizeof(__SIZE_TYPE__))))))
+  __neverc_xfree_dec((unsigned char)(byte), \
+    (unsigned char)((key) >> (8 * ((idx) % sizeof(__SIZE_TYPE__)))))
 #endif
 
 static __attribute__((always_inline)) string

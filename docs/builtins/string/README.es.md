@@ -568,7 +568,9 @@ El cifrado y descifrado se controlan mediante dos macros:
 - `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — compilación: texto plano→texto cifrado
 - `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — ejecución: texto cifrado→texto plano
 
-Ambas son XOR por defecto (auto-inversa). Para un algoritmo no-XOR, defina **ambas** macros (deben ser inversas matemáticas):
+`ENCRYPT_BYTE` usa XOR por defecto. `DECRYPT_BYTE` usa por defecto una **descomposición aritmética sin instrucción XOR** — calcula `a ^ b` como `(a + b) - (a & b) - (b & a)` con intermediarios `volatile` para prevenir la re-optimización de LLVM a `xor`. Puede reforzarse con pasadas de ofuscación MBA (Mixed Boolean-Arithmetic).
+
+Para un algoritmo no-XOR, defina **ambas** macros (deben ser inversas matemáticas):
 
 ```c
 #define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \

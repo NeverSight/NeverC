@@ -569,7 +569,9 @@ string e = "hello".encrypt().encrypt();  // 錯誤：.encrypt() can only be appl
 - `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — 編譯時：明文→密文
 - `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 執行時：密文→明文
 
-兩者預設都是 XOR（自逆操作）。如需使用非 XOR 演算法，**同時**定義兩個巨集，且它們**必須互為數學逆操作**：
+`ENCRYPT_BYTE` 預設為 XOR。`DECRYPT_BYTE` 預設使用**無 XOR 指令的算術分解**——透過 `(a + b) - (a & b) - (b & a)` 計算 `a ^ b`，使用 `volatile` 中間變數阻止 LLVM 最佳化回 `xor` 指令。後續可透過 MBA（Mixed Boolean-Arithmetic）混淆 pass 進一步加強。
+
+如需使用非 XOR 演算法，**同時**定義兩個巨集，且它們**必須互為數學逆操作**：
 
 ```c
 #define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \

@@ -570,7 +570,9 @@ string e = "hello".encrypt().encrypt();  // خطأ: .encrypt() can only be appli
 - `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — وقت الترجمة: نص واضح→نص مشفر
 - `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — وقت التشغيل: نص مشفر→نص واضح
 
-كلاهما XOR افتراضياً (عملية ذاتية العكس). لاستخدام خوارزمية غير XOR، عرّف **كلا** الماكروين (يجب أن يكونا معكوسين رياضياً):
+`ENCRYPT_BYTE` يستخدم XOR افتراضياً. `DECRYPT_BYTE` يستخدم افتراضياً **تفكيك حسابي بدون تعليمات XOR** — يحسب `a ^ b` كـ `(a + b) - (a & b) - (b & a)` مع متغيرات وسيطة `volatile` لمنع LLVM من إعادة التحسين إلى `xor`. يمكن تعزيزه بمرورات تشويش MBA (Mixed Boolean-Arithmetic).
+
+لاستخدام خوارزمية غير XOR، عرّف **كلا** الماكروين (يجب أن يكونا معكوسين رياضياً):
 
 ```c
 #define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \

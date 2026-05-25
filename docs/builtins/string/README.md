@@ -588,11 +588,13 @@ NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // compile-time: plaintext → ciphe
 NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // runtime: ciphertext → plaintext
 ```
 
-Both default to XOR (a self-inverse operation, so encrypt = decrypt):
+`ENCRYPT_BYTE` defaults to XOR:
 
 ```c
 ((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
+
+`DECRYPT_BYTE` defaults to an **XOR-free arithmetic decomposition** — it computes `a ^ b` as `(a + b) - (a & b) - (b & a)` using `volatile` intermediates to prevent LLVM from optimizing back to a `xor` instruction. This makes the decryption code invisible to simple disassembly XOR pattern matchers. The decomposition can be further strengthened with MBA (Mixed Boolean-Arithmetic) obfuscation passes.
 
 To use a non-XOR algorithm, define **both** macros before the string prelude is included. They **must** be mathematical inverses — `DECRYPT(ENCRYPT(b, k, i), k, i) == b` for all inputs:
 

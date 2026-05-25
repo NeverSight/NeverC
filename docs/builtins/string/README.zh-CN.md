@@ -587,7 +587,9 @@ string e = "hello".encrypt().encrypt();  // 错误：.encrypt() can only be appl
 - `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — 编译时：明文→密文
 - `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 运行时：密文→明文
 
-两者默认都是 XOR（自逆操作，所以 encrypt = decrypt）。如需使用非 XOR 算法，在 string prelude 之前**同时**定义两个宏，且它们**必须互为数学逆操作**——`DECRYPT(ENCRYPT(b, k, i), k, i) == b`：
+`ENCRYPT_BYTE` 默认为 XOR。`DECRYPT_BYTE` 默认使用**无 XOR 指令的算术分解**——通过 `(a + b) - (a & b) - (b & a)` 计算 `a ^ b`，使用 `volatile` 中间变量阻止 LLVM 优化回 `xor` 指令。这使得解密代码在简单的反汇编 XOR 模式匹配中不可见。后续可通过 MBA（Mixed Boolean-Arithmetic）混淆 pass 进一步加强。
+
+如需使用非 XOR 算法，在 string prelude 之前**同时**定义两个宏，且它们**必须互为数学逆操作**——`DECRYPT(ENCRYPT(b, k, i), k, i) == b`：
 
 ```c
 // 示例：加减法算法
