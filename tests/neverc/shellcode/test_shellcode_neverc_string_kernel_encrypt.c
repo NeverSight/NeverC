@@ -26,5 +26,18 @@ int shellcode_entry(int seed) {
     if (chain != "encrypted")
         return 7;
 
+    typedef struct {
+        string token;
+        string tags[2];
+    } auth_ctx;
+    auth_ctx ctx = {
+        .token = "kernel_token".encrypt(),
+        .tags = {"k1".encrypt(), "k2".encrypt()}
+    };
+    if (ctx.token != "kernel_token".encrypt())
+        return 8;
+    if (ctx.tags[1] != "k2".encrypt())
+        return 9;
+
     return 0;
 }

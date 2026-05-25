@@ -62,5 +62,24 @@ int main(int a, int b) {
     if (chain != "hello")
         return 15;
 
+    typedef struct {
+        string user;
+        string pass;
+    } creds;
+    creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+    if (login.user != "admin".encrypt())
+        return 16;
+    if (login.pass != "s3cret".encrypt())
+        return 17;
+
+    string grid[2][2] = {
+        {"a".encrypt(), "b".encrypt()},
+        {"c".encrypt(), "d".encrypt()}
+    };
+    if (grid[0][1] != "b".encrypt())
+        return 18;
+    if (grid[1][0] != "c".encrypt())
+        return 19;
+
     return 0;
 }
