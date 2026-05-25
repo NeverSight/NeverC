@@ -581,11 +581,30 @@ string e = "hello".encrypt().encrypt();  // ERROR: .encrypt() can only be applie
 
 ### Custom Encryption Algorithm
 
-The default XOR algorithm can be overridden by defining the `NEVERC_STRING_DECRYPT_BYTE` macro before the string prelude is included:
+The encryption and decryption operations are controlled by two macros:
 
 ```c
-#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // compile-time: plaintext → ciphertext
+NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // runtime: ciphertext → plaintext
 ```
+
+Both default to XOR (a self-inverse operation, so encrypt = decrypt):
+
+```c
+((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+To use a non-XOR algorithm, define **both** macros before the string prelude is included. They **must** be mathematical inverses — `DECRYPT(ENCRYPT(b, k, i), k, i) == b` for all inputs:
+
+```c
+// Example: add/subtract algorithm
+#define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) + (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+> **Important**: The compiler's Sema layer uses a C++ function that mirrors `NEVERC_STRING_ENCRYPT_BYTE`'s default (XOR) behavior for compile-time encryption. If you override `NEVERC_STRING_ENCRYPT_BYTE` to a non-XOR algorithm, the compile-time encryption will still use XOR. To work around this, define `NEVERC_STRING_ENCRYPT_BYTE` as XOR composed with your custom transform, ensuring the compile-time XOR step and your runtime transform combine correctly.
 
 ### Compiler Flags
 
@@ -597,7 +616,8 @@ The default XOR algorithm can be overridden by defining the `NEVERC_STRING_DECRY
 
 | Macro | Default | Description |
 |-------|---------|-------------|
-| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR with rotating key bytes | Per-byte decryption operation |
+| `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` | XOR with rotating key bytes | Per-byte encryption operation (compile-time) |
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR with rotating key bytes | Per-byte decryption operation (runtime); must be inverse of `ENCRYPT_BYTE` |
 
 ---
 

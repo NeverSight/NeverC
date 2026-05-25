@@ -563,10 +563,18 @@ string e = "hello".encrypt().encrypt();  // ERROR: .encrypt() can only be applie
 
 ### Algoritmo de cifrado personalizado
 
-El algoritmo XOR por defecto puede ser sobreescrito definiendo la macro `NEVERC_STRING_DECRYPT_BYTE` antes de incluir el prelude de string:
+El cifrado y descifrado se controlan mediante dos macros:
+
+- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — compilación: texto plano→texto cifrado
+- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — ejecución: texto cifrado→texto plano
+
+Ambas son XOR por defecto (auto-inversa). Para un algoritmo no-XOR, defina **ambas** macros (deben ser inversas matemáticas):
 
 ```c
-#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+#define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) + (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
 
 ### Flags del compilador

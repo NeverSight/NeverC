@@ -563,10 +563,18 @@ string e = "hello".encrypt().encrypt();  // ОШИБКА: .encrypt() can only be
 
 ### Пользовательский алгоритм шифрования
 
-Стандартный алгоритм XOR можно заменить, определив макрос `NEVERC_STRING_DECRYPT_BYTE` перед включением string prelude:
+Шифрование и дешифрование контролируются двумя макросами:
+
+- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — компиляция: открытый текст→шифротекст
+- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — выполнение: шифротекст→открытый текст
+
+По умолчанию оба используют XOR (самообратная операция). Для не-XOR алгоритма определите **оба** макроса (они должны быть математическими обратными):
 
 ```c
-#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+#define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) + (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
 
 ### Флаги компилятора

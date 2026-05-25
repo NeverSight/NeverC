@@ -143,12 +143,18 @@ ExprResult neverc::buildNeverCStringEncryptedLiteral(Sema &S, Scope *Sc,
   uint64_t Key = BaseKey ^ (++Counter * 0x517CC1B727220A95ULL);
   Key &= llvm::maskTrailingOnes<uint64_t>(SizeBits);
 
+  // Mirrors the default NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) macro.
+  // If a user overrides the macro, they must ensure this C++ function and
+  // the C macro produce identical output for every (byte, key, idx) triple.
+  auto encryptByte = [KeyBytes](unsigned char byte, uint64_t key,
+                                unsigned idx) -> char {
+    auto k = static_cast<unsigned char>(key >> (8 * (idx % KeyBytes)));
+    return static_cast<char>(byte ^ k);
+  };
+
   llvm::SmallVector<char, 256> EncBytes(Len);
-  for (unsigned i = 0; i < Len; ++i) {
-    auto b = static_cast<unsigned char>(Bytes[i]);
-    auto k = static_cast<unsigned char>(Key >> (8 * (i % KeyBytes)));
-    EncBytes[i] = static_cast<char>(b ^ k);
-  }
+  for (unsigned i = 0; i < Len; ++i)
+    EncBytes[i] = encryptByte(static_cast<unsigned char>(Bytes[i]), Key, i);
 
   llvm::SmallVector<SourceLocation, 1> Locs;
   Locs.push_back(SL->getBeginLoc());

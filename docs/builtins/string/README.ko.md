@@ -563,10 +563,18 @@ string e = "hello".encrypt().encrypt();  // 오류: .encrypt() can only be appli
 
 ### 커스텀 암호화 알고리즘
 
-기본 XOR 알고리즘은 string prelude 이전에 `NEVERC_STRING_DECRYPT_BYTE` 매크로를 정의하여 재정의할 수 있습니다:
+암호화와 복호화는 두 개의 매크로로 제어됩니다:
+
+- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — 컴파일 타임: 평문→암호문
+- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 런타임: 암호문→평문
+
+기본값은 둘 다 XOR (자기 역원 연산). 비-XOR 알고리즘을 사용하려면 **두 매크로를 모두** 정의하며, 수학적 역함수여야 합니다:
 
 ```c
-#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+#define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) + (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
 
 ### 컴파일러 플래그

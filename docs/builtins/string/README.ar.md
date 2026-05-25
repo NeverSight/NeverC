@@ -565,10 +565,18 @@ string e = "hello".encrypt().encrypt();  // خطأ: .encrypt() can only be appli
 
 ### خوارزمية تشفير مخصصة
 
-يمكن استبدال خوارزمية XOR الافتراضية بتعريف الماكرو `NEVERC_STRING_DECRYPT_BYTE` قبل تضمين string prelude:
+يتم التحكم في التشفير وفك التشفير بماكروين:
+
+- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — وقت الترجمة: نص واضح→نص مشفر
+- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — وقت التشغيل: نص مشفر→نص واضح
+
+كلاهما XOR افتراضياً (عملية ذاتية العكس). لاستخدام خوارزمية غير XOR، عرّف **كلا** الماكروين (يجب أن يكونا معكوسين رياضياً):
 
 ```c
-#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+#define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) + (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
 
 ### أعلام المترجم

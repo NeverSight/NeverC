@@ -563,10 +563,18 @@ string e = "hello".encrypt().encrypt();  // FEHLER: .encrypt() can only be appli
 
 ### Benutzerdefinierter Verschlüsselungsalgorithmus
 
-Der Standard-XOR-Algorithmus kann durch Definition des Makros `NEVERC_STRING_DECRYPT_BYTE` vor dem String-Prelude überschrieben werden:
+Verschlüsselung und Entschlüsselung werden durch zwei Makros gesteuert:
+
+- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — Kompilierzeit: Klartext→Chiffretext
+- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — Laufzeit: Chiffretext→Klartext
+
+Beide sind standardmäßig XOR (selbstinvers). Für einen Nicht-XOR-Algorithmus definieren Sie **beide** Makros (sie müssen mathematische Inverse sein):
 
 ```c
-#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+#define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) + (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
 
 ### Compiler-Flags

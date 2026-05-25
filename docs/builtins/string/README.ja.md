@@ -563,10 +563,18 @@ string e = "hello".encrypt().encrypt();  // エラー: .encrypt() can only be ap
 
 ### カスタム暗号化アルゴリズム
 
-デフォルトの XOR アルゴリズムは、string prelude の前に `NEVERC_STRING_DECRYPT_BYTE` マクロを定義することで上書きできます:
+暗号化と復号は 2 つのマクロで制御されます：
+
+- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — コンパイル時：平文→暗号文
+- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 実行時：暗号文→平文
+
+両方のデフォルトは XOR（自己逆演算）。非 XOR アルゴリズムを使用するには**両方**を定義し、数学的逆関数である必要があります：
 
 ```c
-#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+#define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) + (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
 
 ### コンパイラフラグ

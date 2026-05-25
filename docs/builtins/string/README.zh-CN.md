@@ -582,10 +582,19 @@ string e = "hello".encrypt().encrypt();  // 错误：.encrypt() can only be appl
 
 ### 自定义加密算法
 
-默认的 XOR 算法可以通过在 string prelude 之前定义 `NEVERC_STRING_DECRYPT_BYTE` 宏来覆盖：
+加密和解密操作由两个宏控制：
+
+- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — 编译时：明文→密文
+- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 运行时：密文→明文
+
+两者默认都是 XOR（自逆操作，所以 encrypt = decrypt）。如需使用非 XOR 算法，在 string prelude 之前**同时**定义两个宏，且它们**必须互为数学逆操作**——`DECRYPT(ENCRYPT(b, k, i), k, i) == b`：
 
 ```c
-#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+// 示例：加减法算法
+#define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) + (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
 
 ### 编译器标志

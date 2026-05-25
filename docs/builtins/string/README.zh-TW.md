@@ -564,10 +564,18 @@ string e = "hello".encrypt().encrypt();  // 錯誤：.encrypt() can only be appl
 
 ### 自訂加密演算法
 
-預設的 XOR 演算法可以透過在 string prelude 之前定義 `NEVERC_STRING_DECRYPT_BYTE` 巨集來覆蓋：
+加密和解密操作由兩個巨集控制：
+
+- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — 編譯時：明文→密文
+- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 執行時：密文→明文
+
+兩者預設都是 XOR（自逆操作）。如需使用非 XOR 演算法，**同時**定義兩個巨集，且它們**必須互為數學逆操作**：
 
 ```c
-#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) my_custom_decrypt(byte, key, idx)
+#define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) + (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+#define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
 
 ### 編譯器旗標

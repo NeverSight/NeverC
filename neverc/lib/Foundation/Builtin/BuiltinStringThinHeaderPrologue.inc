@@ -85,6 +85,12 @@ static __inline__ void __neverc_wptr_cleanup(void *p) {
   __neverc_string_wfree_and_null((void **)p);
 }
 
+#ifndef NEVERC_STRING_ENCRYPT_BYTE
+#define NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) \
+  ((char)((unsigned char)(byte) ^ \
+          (unsigned char)((key) >> (8 * ((idx) % sizeof(__SIZE_TYPE__))))))
+#endif
+
 #ifndef NEVERC_STRING_DECRYPT_BYTE
 #define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
   ((char)((unsigned char)(byte) ^ \
