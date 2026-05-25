@@ -267,6 +267,10 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
       }
       if (Failed)
         continue;
+      if (auto Err = MPart.materializeAll()) {
+        consumeError(std::move(Err));
+        continue;
+      }
       if (p == 0) {
         for (GlobalVariable &GV : MPart.globals())
           if (auto Err = GV.materialize()) {
