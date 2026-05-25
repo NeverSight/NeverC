@@ -1733,6 +1733,8 @@ Function *getOrCreateMemChr(Module &M) {
   Value *CZ = B.CreateZExt(CByte, I64);
   Value *C1 = B.CreateMul(CZ, NDC.Lo01, "c.wide");
   Value *NChunks = B.CreateLShr(N, ConstantInt::get(I64, 3));
+  Value *ChunkEnd = B.CreateShl(NChunks, ConstantInt::get(I64, 3), "",
+                                /*HasNUW=*/true);
   Value *HasChunks = B.CreateICmpNE(NChunks, Zero64);
   BasicBlock *TailEntry = BasicBlock::Create(Ctx, "tail.entry", F);
   B.CreateCondBr(HasChunks, Wide, TailEntry);
@@ -1769,8 +1771,6 @@ Function *getOrCreateMemChr(Module &M) {
   B.SetInsertPoint(TailEntry);
   PHINode *TailStart = B.CreatePHI(I64, 2, "tail.start");
   TailStart->addIncoming(Zero64, Prep);
-  Value *ChunkEnd = B.CreateShl(NChunks, ConstantInt::get(I64, 3), "",
-                                /*HasNUW=*/true);
   TailStart->addIncoming(ChunkEnd, WideCont);
   B.CreateBr(Tail);
 
