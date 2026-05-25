@@ -193,7 +193,9 @@ Value *emitFallbackAlloc(IRBuilder<> &B, Module &M, Value *Size,
     Value *Total = B.CreateAdd(N, HdrSz, "ext.total");
 
     Function *MallocFn = getOrDeclareMalloc(M);
-    Value *Base = B.CreateCall(MallocFn, {Total}, "ext.base");
+    Type *MallocArgTy = MallocFn->getFunctionType()->getParamType(0);
+    Value *MallocArg = B.CreateIntCast(Total, MallocArgTy, false);
+    Value *Base = B.CreateCall(MallocFn, {MallocArg}, "ext.base");
 
     Value *IsNull = B.CreateICmpEQ(Base, ConstantPointerNull::get(PtrTy));
     Function *Fn = B.GetInsertBlock()->getParent();
@@ -476,7 +478,7 @@ PreservedAnalyses HeapArenaPass::run(Module &M, ModuleAnalysisManager &) {
 
     switch (T.K) {
     case HeapRewriteTarget::Malloc: {
-      Value *N = CB->getArgOperand(0);
+      Value *N = B.CreateIntCast(CB->getArgOperand(0), SizeTy, false);
       Value *Result = emitHeapAlloc(B, M, N, ArenaSize, Fallback, TargetOS);
       CB->replaceAllUsesWith(Result);
       B.CreateBr(TailBB);
