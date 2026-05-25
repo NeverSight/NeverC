@@ -502,8 +502,8 @@ printf("%s\n", secret.c_str());  // 런타임에 "API_KEY_12345" 출력
 ### 작동 원리
 
 1. **컴파일 타임**: Sema가 리터럴의 `.encrypt()` 호출을 감지하여 각 바이트를 XOR 암호화하고 암호문을 `.rodata`에 저장
-2. **런타임**: `always_inline` 함수 `__neverc_string_decrypt_literal`이 새로 할당된 owned 버퍼에 XOR 복호화
-3. 복호화 후 일반 owned `string` — 모든 메서드(`c_str()`, `find()`, `to_upper()` 등)가 정상 작동
+2. **런타임 (일반 경로)**: `always_inline` 함수 `__neverc_string_decrypt_literal`이 새로 할당된 owned 버퍼에 XOR 복호화. 복호화 후 일반 owned `string`.
+3. **런타임 (비교/검색 고속 경로)**: 암호화된 리터럴이 비교/검색 표현식에서 직접 사용될 때, Sema가 제로 할당 `__neverc_string_decrypt_*` 변형으로 재작성하여 바이트 단위로 복호화/비교 (아래 "제로 할당 복호화 비교" 참조)
 
 ### 키 생성
 
@@ -522,6 +522,23 @@ string d = u"\u4E2D\u6587".encrypt();          // UTF-16
 string e = U"\U0001F389party".encrypt();       // UTF-32
 string f = R"(line1\nline2)".encrypt();        // raw
 ```
+
+### 제로 할당 복호화 비교
+
+암호화된 리터럴이 비교나 검색 표현식에서 직접 사용될 때, 컴파일러는 자동으로 힙 할당을 우회합니다. 전체 문자열을 메모리에 복호화한 후 비교하는 대신, 바이트 단위로 XOR 복호화하고 비교하여 평문이 메모리에 완전히 존재하지 않습니다.
+
+**최적화되는 표현식** (한쪽 피연산자가 `.encrypt()`일 때 모두 제로 할당):
+
+| 카테고리 | 표현식 |
+|---------|--------|
+| 등가 | `s == "key".encrypt()`, `s != "key".encrypt()` |
+| 관계 | `s < "key".encrypt()`, `s > "key".encrypt()`, `<=`, `>=` |
+| 접두사/접미사 | `s.starts_with("prefix".encrypt())`, `s.ends_with("suffix".encrypt())` |
+| 포함 | `s.contains("needle".encrypt())` |
+| 대소문자 무시 | `s.eq_ic(...)`, `s.starts_with_ic(...)`, `s.ends_with_ic(...)`, `s.contains_ic(...)` |
+| 검색 | `s.find("needle".encrypt())`, `s.rfind(...)`, 위치 인수 변형 |
+| 카운트 | `s.count("pattern".encrypt())` |
+| 대소문자 무시 검색 | `s.find_ic("needle".encrypt())` |
 
 ### 제한 사항
 

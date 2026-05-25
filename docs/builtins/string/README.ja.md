@@ -502,8 +502,8 @@ printf("%s\n", secret.c_str());  // 実行時に "API_KEY_12345" を出力
 ### 仕組み
 
 1. **コンパイル時**: Sema がリテラル上の `.encrypt()` を検出し、各バイトを XOR 暗号化、暗号文を `.rodata` に格納
-2. **実行時**: `always_inline` 関数 `__neverc_string_decrypt_literal` が暗号文を新規割り当ての owned バッファに XOR 復号
-3. 復号後は通常の owned `string` — すべてのメソッド（`c_str()`、`find()`、`to_upper()` 等）がそのまま動作
+2. **実行時（汎用パス）**: `always_inline` 関数 `__neverc_string_decrypt_literal` が暗号文を新規割り当ての owned バッファに XOR 復号。復号後は通常の owned `string`。
+3. **実行時（比較/検索高速パス）**: 暗号化リテラルが比較・検索式で直接使われる場合、Sema がゼロアロケーションの `__neverc_string_decrypt_*` バリアントに書き換え、バイト単位で復号・比較（下記「ゼロアロケーション復号比較」参照）
 
 ### 鍵生成
 
@@ -522,6 +522,23 @@ string d = u"\u4E2D\u6587".encrypt();          // UTF-16
 string e = U"\U0001F389party".encrypt();       // UTF-32
 string f = R"(line1\nline2)".encrypt();        // raw
 ```
+
+### ゼロアロケーション復号比較
+
+暗号化リテラルが比較・検索式で直接使われる場合、コンパイラはヒープ割り当てを自動的にバイパスします。文字列全体をメモリに復号してから比較する代わりに、バイト単位で XOR 復号・比較を行い、平文がメモリ上に完全に存在することはありません。
+
+**最適化される式**（一方のオペランドが `.encrypt()` の場合、すべてゼロアロケーション）：
+
+| カテゴリ | 式 |
+|---------|-----|
+| 等値 | `s == "key".encrypt()`、`s != "key".encrypt()` |
+| 関係 | `s < "key".encrypt()`、`s > "key".encrypt()`、`<=`、`>=` |
+| 前方/後方一致 | `s.starts_with("prefix".encrypt())`、`s.ends_with("suffix".encrypt())` |
+| 包含 | `s.contains("needle".encrypt())` |
+| 大文字小文字無視 | `s.eq_ic(...)`、`s.starts_with_ic(...)`、`s.ends_with_ic(...)`、`s.contains_ic(...)` |
+| 検索 | `s.find("needle".encrypt())`、`s.rfind(...)`、位置引数付きバリアント |
+| カウント | `s.count("pattern".encrypt())` |
+| 大文字小文字無視検索 | `s.find_ic("needle".encrypt())` |
 
 ### 制限
 

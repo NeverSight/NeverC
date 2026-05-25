@@ -502,8 +502,8 @@ printf("%s\n", secret.c_str());  // stampa "API_KEY_12345" a runtime
 ### Come funziona
 
 1. **Tempo di compilazione**: Sema intercetta `.encrypt()` su un letterale, crittografa ogni byte con XOR e memorizza il testo cifrato in `.rodata`
-2. **Runtime**: la funzione `always_inline` `__neverc_string_decrypt_literal` decrittografa con XOR in un buffer owned appena allocato
-3. Dopo la decrittografia, il risultato è un normale `string` owned — tutti i metodi (`c_str()`, `find()`, `to_upper()`, ecc.) funzionano normalmente
+2. **Runtime (percorso generale)**: la funzione `always_inline` `__neverc_string_decrypt_literal` decrittografa con XOR in un buffer owned appena allocato. Il risultato è un normale `string` owned.
+3. **Runtime (percorso rapido confronto/ricerca)**: quando il letterale crittografato appare direttamente in un'espressione di confronto o ricerca, Sema riscrive in una variante `__neverc_string_decrypt_*` a zero allocazione che decrittografa e confronta byte per byte (vedi "Confronto decrittografato a zero allocazione" sotto)
 
 ### Generazione della chiave
 
@@ -522,6 +522,23 @@ string d = u"\u4E2D\u6587".encrypt();          // UTF-16
 string e = U"\U0001F389party".encrypt();       // UTF-32
 string f = R"(line1\nline2)".encrypt();        // raw
 ```
+
+### Confronto decrittografato a zero allocazione
+
+Quando un letterale crittografato viene usato direttamente in un'espressione di confronto o ricerca, il compilatore bypassa automaticamente l'allocazione heap. Invece di decrittografare l'intera stringa in memoria e poi confrontare, decrittografa e confronta byte per byte — il testo in chiaro non esiste mai completamente in memoria.
+
+**Espressioni ottimizzate** (tutte a zero allocazione quando un operando è `.encrypt()`):
+
+| Categoria | Espressioni |
+|-----------|------------|
+| Uguaglianza | `s == "key".encrypt()`, `s != "key".encrypt()` |
+| Relazionale | `s < "key".encrypt()`, `s > "key".encrypt()`, `<=`, `>=` |
+| Prefisso/Suffisso | `s.starts_with(...)`, `s.ends_with(...)` |
+| Contenimento | `s.contains(...)` |
+| Case-insensitive | `s.eq_ic(...)`, `s.starts_with_ic(...)`, `s.ends_with_ic(...)`, `s.contains_ic(...)` |
+| Ricerca | `s.find(...)`, `s.rfind(...)`, varianti con posizione |
+| Conteggio | `s.count(...)` |
+| Ricerca case-insensitive | `s.find_ic(...)` |
 
 ### Restrizioni
 

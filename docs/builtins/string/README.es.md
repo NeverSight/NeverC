@@ -502,8 +502,8 @@ printf("%s\n", secret.c_str());  // imprime "API_KEY_12345" en tiempo de ejecuci
 ### Cómo funciona
 
 1. **Tiempo de compilación**: Sema intercepta `.encrypt()` en un literal, cifra cada byte con XOR y almacena el texto cifrado en `.rodata`
-2. **Tiempo de ejecución**: la función `always_inline` `__neverc_string_decrypt_literal` descifra con XOR en un buffer owned recién asignado
-3. Después del descifrado, el resultado es un `string` owned normal — todos los métodos (`c_str()`, `find()`, `to_upper()`, etc.) funcionan normalmente
+2. **Tiempo de ejecución (ruta general)**: la función `always_inline` `__neverc_string_decrypt_literal` descifra con XOR en un buffer owned recién asignado. El resultado es un `string` owned normal.
+3. **Tiempo de ejecución (ruta rápida comparación/búsqueda)**: cuando el literal cifrado aparece directamente en una expresión de comparación o búsqueda, Sema reescribe a una variante `__neverc_string_decrypt_*` de cero asignación que descifra y compara byte a byte (ver "Comparación descifrada de cero asignación" abajo)
 
 ### Generación de clave
 
@@ -522,6 +522,23 @@ string d = u"\u4E2D\u6587".encrypt();          // UTF-16
 string e = U"\U0001F389party".encrypt();       // UTF-32
 string f = R"(line1\nline2)".encrypt();        // raw
 ```
+
+### Comparación descifrada de cero asignación
+
+Cuando un literal cifrado se usa directamente en una expresión de comparación o búsqueda, el compilador evita automáticamente la asignación de memoria. En lugar de descifrar toda la cadena en memoria y luego comparar, descifra y compara byte a byte — el texto plano nunca existe completamente en memoria.
+
+**Expresiones optimizadas** (todas de cero asignación cuando un operando es `.encrypt()`):
+
+| Categoría | Expresiones |
+|-----------|------------|
+| Igualdad | `s == "key".encrypt()`, `s != "key".encrypt()` |
+| Relacional | `s < "key".encrypt()`, `s > "key".encrypt()`, `<=`, `>=` |
+| Prefijo/Sufijo | `s.starts_with(...)`, `s.ends_with(...)` |
+| Contención | `s.contains(...)` |
+| Sin distinción de mayúsculas | `s.eq_ic(...)`, `s.starts_with_ic(...)`, `s.ends_with_ic(...)`, `s.contains_ic(...)` |
+| Búsqueda | `s.find(...)`, `s.rfind(...)`, variantes con posición |
+| Conteo | `s.count(...)` |
+| Búsqueda sin distinción | `s.find_ic(...)` |
 
 ### Restricciones
 

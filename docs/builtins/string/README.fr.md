@@ -502,8 +502,8 @@ printf("%s\n", secret.c_str());  // affiche "API_KEY_12345" à l'exécution
 ### Fonctionnement
 
 1. **Compilation** : Sema intercepte `.encrypt()` sur un littéral, chiffre chaque octet par XOR et stocke le texte chiffré dans `.rodata`
-2. **Exécution** : la fonction `always_inline` `__neverc_string_decrypt_literal` déchiffre par XOR dans un buffer owned nouvellement alloué
-3. Après déchiffrement, le résultat est un `string` owned normal — toutes les méthodes (`c_str()`, `find()`, `to_upper()`, etc.) fonctionnent normalement
+2. **Exécution (chemin général)** : la fonction `always_inline` `__neverc_string_decrypt_literal` déchiffre par XOR dans un buffer owned nouvellement alloué. Le résultat est un `string` owned normal.
+3. **Exécution (chemin rapide comparaison/recherche)** : lorsque le littéral chiffré apparaît directement dans une expression de comparaison ou recherche, Sema réécrit vers une variante `__neverc_string_decrypt_*` à zéro allocation qui déchiffre et compare octet par octet (voir « Comparaison déchiffrée à zéro allocation » ci-dessous)
 
 ### Génération de clé
 
@@ -522,6 +522,23 @@ string d = u"\u4E2D\u6587".encrypt();          // UTF-16
 string e = U"\U0001F389party".encrypt();       // UTF-32
 string f = R"(line1\nline2)".encrypt();        // raw
 ```
+
+### Comparaison déchiffrée à zéro allocation
+
+Lorsqu'un littéral chiffré est utilisé directement dans une expression de comparaison ou de recherche, le compilateur contourne automatiquement l'allocation mémoire. Au lieu de déchiffrer la chaîne entière en mémoire puis de comparer, il déchiffre et compare octet par octet — le texte en clair n'apparaît jamais complètement en mémoire.
+
+**Expressions optimisées** (toutes à zéro allocation quand un opérande est `.encrypt()`) :
+
+| Catégorie | Expressions |
+|-----------|------------|
+| Égalité | `s == "key".encrypt()`, `s != "key".encrypt()` |
+| Relationnel | `s < "key".encrypt()`, `s > "key".encrypt()`, `<=`, `>=` |
+| Préfixe/Suffixe | `s.starts_with(...)`, `s.ends_with(...)` |
+| Contenance | `s.contains(...)` |
+| Insensible à la casse | `s.eq_ic(...)`, `s.starts_with_ic(...)`, `s.ends_with_ic(...)`, `s.contains_ic(...)` |
+| Recherche | `s.find(...)`, `s.rfind(...)`, variantes avec position |
+| Comptage | `s.count(...)` |
+| Recherche insensible | `s.find_ic(...)` |
 
 ### Restrictions
 

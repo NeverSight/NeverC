@@ -502,8 +502,8 @@ printf("%s\n", secret.c_str());  // prints "API_KEY_12345" at runtime
 ### How It Works
 
 1. **Compile time**: Sema intercepts `.encrypt()` on a string literal, XOR-encrypts every byte with a per-literal key, and stores the ciphertext in `.rodata`
-2. **Runtime**: The `always_inline` function `__neverc_string_decrypt_literal` XOR-decrypts the bytes into a freshly allocated owned buffer
-3. After decryption, the result is a normal owned `string` — all methods (`c_str()`, `find()`, `to_upper()`, etc.) work as usual
+2. **Runtime (general case)**: The `always_inline` function `__neverc_string_decrypt_literal` XOR-decrypts the bytes into a freshly allocated owned buffer. After decryption, the result is a normal owned `string`.
+3. **Runtime (comparison/search fast path)**: When the encrypted literal appears directly in a comparison or search expression, Sema rewrites to a zero-allocation `__neverc_string_decrypt_*` variant that decrypts and compares byte-by-byte without any heap allocation (see "Zero-Allocation Decrypt-and-Compare" below)
 
 ### Key Generation
 
@@ -522,6 +522,41 @@ string d = u"\u4E2D\u6587".encrypt();          // UTF-16
 string e = U"\U0001F389party".encrypt();       // UTF-32
 string f = R"(line1\nline2)".encrypt();        // raw
 ```
+
+### Zero-Allocation Decrypt-and-Compare
+
+When an encrypted literal is used directly in a comparison or search expression, the compiler automatically bypasses heap allocation. Instead of decrypting the entire string into memory and then comparing, it XOR-decrypts and compares byte-by-byte — plaintext never materialises in memory.
+
+**Optimized expressions** (all zero-allocation when one operand is `.encrypt()`):
+
+| Category | Expressions |
+|----------|------------|
+| Equality | `s == "key".encrypt()`, `s != "key".encrypt()` |
+| Relational | `s < "key".encrypt()`, `s > "key".encrypt()`, `<=`, `>=` |
+| Prefix/Suffix | `s.starts_with("prefix".encrypt())`, `s.ends_with("suffix".encrypt())` |
+| Containment | `s.contains("needle".encrypt())` |
+| Case-insensitive | `s.eq_ic(...)`, `s.starts_with_ic(...)`, `s.ends_with_ic(...)`, `s.contains_ic(...)` |
+| Search | `s.find("needle".encrypt())`, `s.rfind(...)`, `s.find(... , pos)`, `s.rfind(..., pos)` |
+| Count | `s.count("pattern".encrypt())` |
+| Case-insensitive search | `s.find_ic("needle".encrypt())` |
+
+**Security benefit:** In a memory dump or scan, the plaintext of the encrypted literal is never fully present — each byte exists only momentarily in a register during the comparison loop.
+
+```c
+string input = get_user_input();
+
+// Zero-allocation: decrypts and compares byte-by-byte, short-circuits on mismatch
+if (input == "admin".encrypt()) {
+    grant_access();
+}
+
+// Also zero-allocation
+if (input.starts_with("/api/v1".encrypt())) {
+    handle_api_request();
+}
+```
+
+When `.encrypt()` is used in a context that needs the actual string value (e.g., `s.to_upper()`, `printf("%s", s.c_str())`), the normal decrypt-to-heap path is used.
 
 ### Restrictions
 

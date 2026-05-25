@@ -503,8 +503,8 @@ printf("%s\n", secret.c_str());  // 執行時輸出 "API_KEY_12345"
 ### 工作原理
 
 1. **編譯時**：Sema 攔截字面量上的 `.encrypt()` 呼叫，對每個位元組進行 XOR 加密，將密文儲存在 `.rodata` 段
-2. **執行時**：`always_inline` 函式 `__neverc_string_decrypt_literal` 將密文 XOR 解密到新分配的 owned 緩衝區
-3. 解密後得到的是普通的 owned `string`——所有方法（`c_str()`、`find()`、`to_upper()` 等）照常工作
+2. **執行時（通用路徑）**：`always_inline` 函式 `__neverc_string_decrypt_literal` 將密文 XOR 解密到新分配的 owned 緩衝區。解密後得到的是普通的 owned `string`。
+3. **執行時（比較/搜尋快速路徑）**：當加密字面量直接出現在比較或搜尋表達式中時，Sema 會改寫為零分配的 `__neverc_string_decrypt_*` 變體，逐位元組解密並比較，完全不做堆積分配（參見下方「零分配解密比較」）
 
 ### 金鑰生成
 
@@ -523,6 +523,23 @@ string d = u"\u4E2D\u6587".encrypt();          // UTF-16
 string e = U"\U0001F389party".encrypt();       // UTF-32
 string f = R"(line1\nline2)".encrypt();        // raw
 ```
+
+### 零分配解密比較
+
+當加密字面量直接用於比較或搜尋表達式時，編譯器自動繞過堆積分配。不再將整個字串解密到記憶體中再比較，而是逐位元組 XOR 解密並比較——明文永遠不會完整地出現在記憶體中。
+
+**優化的表達式**（當一個運算元是 `.encrypt()` 時全部零分配）：
+
+| 類別 | 表達式 |
+|------|--------|
+| 等值 | `s == "key".encrypt()`、`s != "key".encrypt()` |
+| 關係 | `s < "key".encrypt()`、`s > "key".encrypt()`、`<=`、`>=` |
+| 前綴/後綴 | `s.starts_with("prefix".encrypt())`、`s.ends_with("suffix".encrypt())` |
+| 包含 | `s.contains("needle".encrypt())` |
+| 大小寫不敏感 | `s.eq_ic(...)`、`s.starts_with_ic(...)`、`s.ends_with_ic(...)`、`s.contains_ic(...)` |
+| 搜尋 | `s.find("needle".encrypt())`、`s.rfind(...)`、帶位置參數的變體 |
+| 計數 | `s.count("pattern".encrypt())` |
+| 大小寫不敏感搜尋 | `s.find_ic("needle".encrypt())` |
 
 ### 限制
 

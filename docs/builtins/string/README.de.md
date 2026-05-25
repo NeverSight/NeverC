@@ -502,8 +502,8 @@ printf("%s\n", secret.c_str());  // gibt "API_KEY_12345" zur Laufzeit aus
 ### Funktionsweise
 
 1. **Kompilierzeit**: Sema fängt `.encrypt()` auf einem Literal ab, XOR-verschlüsselt jedes Byte und speichert den Chiffretext in `.rodata`
-2. **Laufzeit**: Die `always_inline`-Funktion `__neverc_string_decrypt_literal` entschlüsselt per XOR in einen neu allokierten owned Buffer
-3. Nach der Entschlüsselung ist das Ergebnis ein normaler owned `string` — alle Methoden (`c_str()`, `find()`, `to_upper()` usw.) funktionieren wie gewohnt
+2. **Laufzeit (allgemeiner Pfad)**: Die `always_inline`-Funktion `__neverc_string_decrypt_literal` entschlüsselt per XOR in einen neu allokierten owned Buffer. Das Ergebnis ist ein normaler owned `string`.
+3. **Laufzeit (Vergleichs-/Such-Schnellpfad)**: Wenn das verschlüsselte Literal direkt in einem Vergleichs- oder Suchausdruck erscheint, schreibt Sema zu einer Null-Allokation-Variante `__neverc_string_decrypt_*` um, die byteweise entschlüsselt und vergleicht (siehe „Null-Allokation Entschlüsselungsvergleich" unten)
 
 ### Schlüsselgenerierung
 
@@ -522,6 +522,23 @@ string d = u"\u4E2D\u6587".encrypt();          // UTF-16
 string e = U"\U0001F389party".encrypt();       // UTF-32
 string f = R"(line1\nline2)".encrypt();        // raw
 ```
+
+### Null-Allokation Entschlüsselungsvergleich
+
+Wenn ein verschlüsseltes Literal direkt in einem Vergleichs- oder Suchausdruck verwendet wird, umgeht der Compiler automatisch die Heap-Allokation. Anstatt den gesamten String im Speicher zu entschlüsseln und dann zu vergleichen, wird byteweise XOR-entschlüsselt und verglichen — der Klartext existiert nie vollständig im Speicher.
+
+**Optimierte Ausdrücke** (alle Null-Allokation, wenn ein Operand `.encrypt()` ist):
+
+| Kategorie | Ausdrücke |
+|-----------|----------|
+| Gleichheit | `s == "key".encrypt()`, `s != "key".encrypt()` |
+| Relational | `s < "key".encrypt()`, `s > "key".encrypt()`, `<=`, `>=` |
+| Präfix/Suffix | `s.starts_with(...)`, `s.ends_with(...)` |
+| Enthaltensein | `s.contains(...)` |
+| Groß-/Kleinschreibung | `s.eq_ic(...)`, `s.starts_with_ic(...)`, `s.ends_with_ic(...)`, `s.contains_ic(...)` |
+| Suche | `s.find(...)`, `s.rfind(...)`, Varianten mit Position |
+| Zählung | `s.count(...)` |
+| Suche (case-insensitive) | `s.find_ic(...)` |
 
 ### Einschränkungen
 
