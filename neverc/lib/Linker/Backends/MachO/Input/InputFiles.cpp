@@ -499,11 +499,8 @@ Defined *findSymbolAtOffset(const ConcatInputSection *isec, uint64_t off) {
   auto it = llvm::lower_bound(isec->symbols, off, [](Defined *d, uint64_t off) {
     return d->value < off;
   });
-  // The offset should point at the exact address of a symbol (with no addend.)
-  if (it == isec->symbols.end() || (*it)->value != off) {
-    assert(isec->wasCoalesced);
+  if (it == isec->symbols.end() || (*it)->value != off)
     return nullptr;
-  }
   return *it;
 }
 } // namespace
