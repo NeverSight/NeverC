@@ -109,7 +109,7 @@ All templates and register constraints come from `TargetDesc` — the pass has z
 
 ### 4.1 Address Cache Encryption
 
-Resolved API addresses are XOR-encrypted before being stored in cache global variables. This prevents simple memory scanning from discovering resolved function pointers in the shellcode's address space.
+Resolved API addresses are encrypted before being stored in cache global variables. This prevents simple memory scanning from discovering resolved function pointers in the shellcode's address space.
 
 The encryption infrastructure is implemented in `PtrCacheHelpers.h` and shared by both `WinPEBImportPass` (user mode) and `KernelImportPass` (ring-0).
 
@@ -121,21 +121,26 @@ The encryption infrastructure is implemented in `PtrCacheHelpers.h` and shared b
 | `__sc_ptr_encrypt` | `(ptr) → i64` | Encrypt a function pointer for cache storage |
 | `__sc_ptr_decrypt` | `(i64) → ptr` | Decrypt a cached value back to a function pointer |
 
-**Default implementation** — pure XOR:
+**Default implementation** — XOR-free arithmetic decomposition:
+
+The default uses the mathematical identity `a ^ b = (a + b) - 2*(a & b)` instead of a literal `xor` instruction. All intermediate values pass through `volatile` stack slots, preventing LLVM's InstCombine from recognizing and re-optimizing the pattern back to `xor`. This makes the encryption invisible to simple disassembly pattern matching.
 
 ```
 __sc_derive_key():
-  [PEB mode]   key = PtrToInt(read_PEB()) ^ COMPILE_TIME_SEED
+  [PEB mode]   key = (PEB_int + seed) - (PEB_int & seed) - (seed & PEB_int)
   [Seed mode]  key = COMPILE_TIME_SEED
 
 __sc_ptr_encrypt(ptr):
   key = __sc_derive_key()
-  return PtrToInt(ptr) ^ key
+  plain = PtrToInt(ptr)
+  return (plain + key) - (plain & key) - (key & plain)
 
 __sc_ptr_decrypt(enc_i64):
   key = __sc_derive_key()
-  return IntToPtr(enc_i64 ^ key)
+  return IntToPtr((enc + key) - (enc & key) - (key & enc))
 ```
+
+The same XOR-free decomposition is also applied to the built-in string encryption's `NEVERC_STRING_DECRYPT_BYTE` macro via the `__neverc_xfree_dec` helper function. This can be further strengthened with MBA (Mixed Boolean-Arithmetic) obfuscation passes applied independently.
 
 ### 4.2 Key Derivation Modes
 

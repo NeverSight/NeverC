@@ -26,7 +26,7 @@ Win32 extern → PEB-Walk-Resolver (~190 APIs, 6 DLLs) + verschlüsselter Adress
 
 ### 4.1 Adress-Cache-Verschlüsselung
 
-Aufgelöste API-Adressen werden vor dem Speichern in Cache-Globalen XOR-verschlüsselt (Anti-Memory-Scan). Infrastruktur (`PtrCacheHelpers.h`) wird von `WinPEBImportPass` und `KernelImportPass` geteilt.
+Aufgelöste API-Adressen werden vor dem Speichern in Cache-Globalen verschlüsselt (Anti-Memory-Scan). Standard: XOR-freie arithmetische Zerlegung `(a + b) - 2*(a & b)` mit `volatile` Zwischenvariablen, um LLVMs Re-Optimierung zu `xor` zu verhindern. Infrastruktur (`PtrCacheHelpers.h`) wird von `WinPEBImportPass` und `KernelImportPass` geteilt.
 
 **Drei steckbare Hilfsfunktionen** (`internal alwaysinline`):
 
@@ -36,7 +36,7 @@ Aufgelöste API-Adressen werden vor dem Speichern in Cache-Globalen XOR-verschl�
 | `__sc_ptr_encrypt` | `(ptr) → i64` | Funktionszeiger für Cache verschlüsseln |
 | `__sc_ptr_decrypt` | `(i64) → ptr` | Cache-Wert zurück zum Funktionszeiger entschlüsseln |
 
-**Standard**: `key = PtrToInt(PEB) ^ Kompilierzeit-Seed` (Windows User-Mode) oder reiner Seed (Kernel). `encrypt = PtrToInt(ptr) ^ key`, `decrypt = IntToPtr(enc ^ key)`.
+**Standard**: XOR-freie arithmetische Zerlegung. `key = (PEB + seed) - 2*(PEB & seed)` (Windows User-Mode) oder reiner Seed (Kernel). `encrypt/decrypt = (a + b) - (a & b) - (b & a)`, `volatile` Zwischenvariablen verhindern LLVMs Re-Optimierung zu `xor`.
 
 **Cache-Slots**: `@__sc_cache_<dll>_<api>` (i64, Init 0, `.text`-Sektion, 8-Byte-Alignment). Fast/Slow-Pfad: `atomic_load → decrypt → indirekter Aufruf` (~10 Instruktionen) bzw. vollständiger PEB-Walk → `encrypt → cmpxchg weak` (lock-free, threadsicher).
 

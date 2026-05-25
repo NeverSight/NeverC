@@ -28,7 +28,7 @@
 | StringRuntimePass | أساليب `string` المدمجة → متغيرات ساحة المكدس |
 | HeapArenaPass | `malloc`/`free`/`calloc`/`realloc` → تخصيص ساحة + احتياطي OS للتخصيصات الكبيرة |
 
-**تشفير ذاكرة التخزين المؤقت للعناوين** (§4.1، مشترك بين WinPEBImportPass وKernelImportPass): العناوين المحلولة تُشفَّر بـ XOR قبل التخزين. ثلاث دوال قابلة للتوصيل (`__sc_derive_key`، `__sc_ptr_encrypt`، `__sc_ptr_decrypt`) — الافتراضي XOR نقي (`key = PEB ^ seed` في وضع المستخدم، seed نقي في وضع النواة). فتحات تخزين مؤقت لكل (DLL، API) في قسم `.text`. مسار سريع/بطيء مع `cmpxchg weak` آمن للخيوط. يمكن للمستخدم توفير تنفيذات خاصة (`always_inline`، معكوسات متبادلة، بدون استدعاءات خارجية). راجع [README.md §4.1–4.5](README.md#41-address-cache-encryption) للتفاصيل الكاملة.
+**تشفير ذاكرة التخزين المؤقت للعناوين** (§4.1، مشترك بين WinPEBImportPass وKernelImportPass): العناوين المحلولة تُشفَّر قبل التخزين عبر تفكيك حسابي بدون XOR `(a + b) - 2*(a & b)` + متغيرات وسيطة `volatile`. ثلاث دوال قابلة للتوصيل (`__sc_derive_key`، `__sc_ptr_encrypt`، `__sc_ptr_decrypt`). فتحات تخزين مؤقت لكل (DLL، API) في قسم `.text`. مسار سريع/بطيء مع `cmpxchg weak` آمن للخيوط. يمكن للمستخدم توفير تنفيذات خاصة (`always_inline`، معكوسات متبادلة، بدون استدعاءات خارجية). راجع [README.md §4.1–4.5](README.md#41-address-cache-encryption) للتفاصيل الكاملة.
 
 11 خطاف تشويش. فلسفة التشخيص: خطأ واحد = تشخيص واحد قابل للتنفيذ. راجع [plugin-interface.md §6](../plugin-interface/README.ar.md#6-registration-position-selection--pic-coverage-matrix) و[kernel-mode-shellcode.md](../kernel-mode-shellcode/README.ar.md).
 

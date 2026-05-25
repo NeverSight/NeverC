@@ -57,7 +57,7 @@ Win32 extern → PEB 워크 리졸버 (~190 API, 6 DLL). Windows POSIX 호환 (1
 
 ### 4.1 주소 캐시 암호화
 
-해석된 API 주소는 캐시 전역 변수에 저장하기 전에 XOR 암호화됨 (메모리 스캔 방지). 암호화 인프라 (`PtrCacheHelpers.h`)는 `WinPEBImportPass`와 `KernelImportPass`가 공유.
+해석된 API 주소는 캐시 전역 변수에 저장하기 전에 암호화됨 (메모리 스캔 방지). 기본값은 XOR 명령어 없는 산술 분해 `(a + b) - 2*(a & b)` + `volatile` 중간값으로 LLVM의 `xor` 재최적화를 방지. 암호화 인프라 (`PtrCacheHelpers.h`)는 `WinPEBImportPass`와 `KernelImportPass`가 공유.
 
 **3개의 플러그형 헬퍼 함수** (모두 `internal alwaysinline`):
 
@@ -67,7 +67,7 @@ Win32 extern → PEB 워크 리졸버 (~190 API, 6 DLL). Windows POSIX 호환 (1
 | `__sc_ptr_encrypt` | `(ptr) → i64` | 함수 포인터를 캐시 저장용으로 암호화 |
 | `__sc_ptr_decrypt` | `(i64) → ptr` | 캐시 값을 함수 포인터로 복호화 |
 
-**기본 구현**: 순수 XOR. `key = PtrToInt(PEB) ^ 컴파일타임 시드` (Windows 사용자 모드) 또는 순수 시드 (커널). `encrypt = PtrToInt(ptr) ^ key`, `decrypt = IntToPtr(enc ^ key)`.
+**기본 구현**: XOR 명령어 없는 산술 분해. `key = (PEB + seed) - 2*(PEB & seed)` (Windows 사용자 모드) 또는 순수 시드 (커널). `encrypt/decrypt = (a + b) - (a & b) - (b & a)`, `volatile` 중간값으로 LLVM의 `xor` 재최적화 방지.
 
 **캐시 슬롯**: `@__sc_cache_<dll>_<api>` (i64, 초기값 0, `.text` 섹션, 8바이트 정렬). Fast/Slow 경로: fast path (`atomic_load → decrypt → 간접 호출`, ~10 명령), slow path (PEB 워크 → `encrypt → cmpxchg weak`). lock-free 스레드 안전.
 

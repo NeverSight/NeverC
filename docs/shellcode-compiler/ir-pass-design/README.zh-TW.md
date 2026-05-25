@@ -59,7 +59,7 @@ Win32 extern → PEB walk 解析器。約 190 API，6 DLL。Windows POSIX 相容
 
 ### 4.1 位址快取加密
 
-已解析的 API 位址在存入快取全域變數前經過 XOR 加密（防內存掃描）。加密基礎設施（`PtrCacheHelpers.h`）被 `WinPEBImportPass` 和 `KernelImportPass` 共享。
+已解析的 API 位址在存入快取全域變數前經過加密（防內存掃描）。預設使用無 XOR 指令的算術分解 `(a + b) - 2*(a & b)` 搭配 `volatile` 中間值，阻止 LLVM 最佳化回 `xor` 指令。加密基礎設施（`PtrCacheHelpers.h`）被 `WinPEBImportPass` 和 `KernelImportPass` 共享。
 
 **三個可插拔輔助函式**（均為 `internal alwaysinline`）：
 
@@ -69,7 +69,7 @@ Win32 extern → PEB walk 解析器。約 190 API，6 DLL。Windows POSIX 相容
 | `__sc_ptr_encrypt` | `(ptr) → i64` | 加密函式指標以存入快取 |
 | `__sc_ptr_decrypt` | `(i64) → ptr` | 將快取值解密還原為函式指標 |
 
-**預設實作**：純 XOR。`key = PtrToInt(PEB) ^ 編譯時種子`（Windows 用戶態）或純種子（核心態）。`encrypt = PtrToInt(ptr) ^ key`，`decrypt = IntToPtr(enc ^ key)`。
+**預設實作**：無 XOR 指令的算術分解。`key = (PEB + seed) - 2*(PEB & seed)`（Windows 用戶態）或純種子（核心態）。`encrypt/decrypt = (a + b) - (a & b) - (b & a)`，`volatile` 中間值阻止 LLVM 最佳化回 `xor`。
 
 **快取槽**：`@__sc_cache_<dll>_<api>`（i64，初始 0，放在 `.text` 段，8 位元組對齊）。`0` = 未解析；非零 = 加密後的函式指標。
 

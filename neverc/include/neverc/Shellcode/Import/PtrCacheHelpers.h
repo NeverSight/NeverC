@@ -76,7 +76,23 @@ inline llvm::Function *getOrCreateDeriveKey(llvm::Module &M,
   if (Source == KeySource::PEB && !T.TCBReadAsm.empty()) {
     llvm::Value *PEB = emitReadPEB(B, T);
     llvm::Value *PEBInt = B.CreatePtrToInt(PEB, I64, "peb.int");
-    Key = B.CreateXor(PEBInt, llvm::ConstantInt::get(I64, Seed), "key");
+    llvm::Value *SeedVal = llvm::ConstantInt::get(I64, Seed);
+    // XOR-free key derivation: a ^ b = (a + b) - 2*(a & b).
+    llvm::AllocaInst *SA = B.CreateAlloca(I64, nullptr, "ka.slot");
+    llvm::AllocaInst *SB = B.CreateAlloca(I64, nullptr, "kb.slot");
+    B.CreateStore(PEBInt, SA)->setVolatile(true);
+    B.CreateStore(SeedVal, SB)->setVolatile(true);
+    auto *A1 = B.CreateLoad(I64, SA, /*isVolatile=*/true, "ka1");
+    auto *B1 = B.CreateLoad(I64, SB, /*isVolatile=*/true, "kb1");
+    auto *KSum = B.CreateAdd(A1, B1, "ksum");
+    auto *A2 = B.CreateLoad(I64, SA, /*isVolatile=*/true, "ka2");
+    auto *B2 = B.CreateLoad(I64, SB, /*isVolatile=*/true, "kb2");
+    auto *KAnd1 = B.CreateAnd(A2, B2, "kand1");
+    auto *A3 = B.CreateLoad(I64, SB, /*isVolatile=*/true, "ka3");
+    auto *B3 = B.CreateLoad(I64, SA, /*isVolatile=*/true, "kb3");
+    auto *KAnd2 = B.CreateAnd(A3, B3, "kand2");
+    auto *KDbl = B.CreateAdd(KAnd1, KAnd2, "kdbl");
+    Key = B.CreateSub(KSum, KDbl, "key");
   } else {
     Key = llvm::ConstantInt::get(I64, Seed);
   }
@@ -109,7 +125,25 @@ inline llvm::Function *getOrCreatePtrEncrypt(llvm::Module &M,
   llvm::CallInst *Key = B.CreateCall(DK, {}, "key");
   Key->setDoesNotThrow();
   llvm::Value *Plain = B.CreatePtrToInt(F->getArg(0), I64, "plain");
-  llvm::Value *Enc = B.CreateXor(Plain, Key, "enc");
+
+  // XOR-free: a ^ b = (a + b) - 2*(a & b).
+  // Volatile intermediates prevent InstCombine from recognizing the pattern.
+  llvm::AllocaInst *SlotA = B.CreateAlloca(I64, nullptr, "va.slot");
+  llvm::AllocaInst *SlotB = B.CreateAlloca(I64, nullptr, "vb.slot");
+  B.CreateStore(Plain, SlotA)->setVolatile(true);
+  B.CreateStore(Key, SlotB)->setVolatile(true);
+  auto *VA1 = B.CreateLoad(I64, SlotA, /*isVolatile=*/true, "va1");
+  auto *VB1 = B.CreateLoad(I64, SlotB, /*isVolatile=*/true, "vb1");
+  auto *Sum = B.CreateAdd(VA1, VB1, "sum");
+  auto *VA2 = B.CreateLoad(I64, SlotA, /*isVolatile=*/true, "va2");
+  auto *VB2 = B.CreateLoad(I64, SlotB, /*isVolatile=*/true, "vb2");
+  auto *And1 = B.CreateAnd(VA2, VB2, "and1");
+  auto *VA3 = B.CreateLoad(I64, SlotB, /*isVolatile=*/true, "va3");
+  auto *VB3 = B.CreateLoad(I64, SlotA, /*isVolatile=*/true, "vb3");
+  auto *And2 = B.CreateAnd(VA3, VB3, "and2");
+  auto *Dbl = B.CreateAdd(And1, And2, "dbl");
+  llvm::Value *Enc = B.CreateSub(Sum, Dbl, "enc");
+
   B.CreateRet(Enc);
   return F;
 }
@@ -138,7 +172,24 @@ inline llvm::Function *getOrCreatePtrDecrypt(llvm::Module &M,
   llvm::Function *DK = getOrCreateDeriveKey(M, T, Seed, Source);
   llvm::CallInst *Key = B.CreateCall(DK, {}, "key");
   Key->setDoesNotThrow();
-  llvm::Value *Dec = B.CreateXor(F->getArg(0), Key, "dec");
+
+  // XOR-free decrypt: a ^ b = (a + b) - 2*(a & b).
+  llvm::AllocaInst *SlotA = B.CreateAlloca(I64, nullptr, "va.slot");
+  llvm::AllocaInst *SlotB = B.CreateAlloca(I64, nullptr, "vb.slot");
+  B.CreateStore(F->getArg(0), SlotA)->setVolatile(true);
+  B.CreateStore(Key, SlotB)->setVolatile(true);
+  auto *VA1 = B.CreateLoad(I64, SlotA, /*isVolatile=*/true, "va1");
+  auto *VB1 = B.CreateLoad(I64, SlotB, /*isVolatile=*/true, "vb1");
+  auto *Sum = B.CreateAdd(VA1, VB1, "sum");
+  auto *VA2 = B.CreateLoad(I64, SlotA, /*isVolatile=*/true, "va2");
+  auto *VB2 = B.CreateLoad(I64, SlotB, /*isVolatile=*/true, "vb2");
+  auto *And1 = B.CreateAnd(VA2, VB2, "and1");
+  auto *VA3 = B.CreateLoad(I64, SlotB, /*isVolatile=*/true, "va3");
+  auto *VB3 = B.CreateLoad(I64, SlotA, /*isVolatile=*/true, "vb3");
+  auto *And2 = B.CreateAnd(VA3, VB3, "and2");
+  auto *Dbl = B.CreateAdd(And1, And2, "dbl");
+  llvm::Value *Dec = B.CreateSub(Sum, Dbl, "dec");
+
   llvm::Value *Ptr = B.CreateIntToPtr(Dec, PtrTy, "ptr");
   B.CreateRet(Ptr);
   return F;

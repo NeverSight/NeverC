@@ -57,7 +57,7 @@ Win32 extern → PEB ウォークリゾルバ（~190 API、6 DLL）。Windows PO
 
 ### 4.1 アドレスキャッシュ暗号化
 
-解決済み API アドレスはキャッシュグローバル変数への格納前に XOR 暗号化される（メモリスキャン対策）。暗号化インフラ（`PtrCacheHelpers.h`）は `WinPEBImportPass` と `KernelImportPass` で共有。
+解決済み API アドレスはキャッシュグローバル変数への格納前に暗号化される（メモリスキャン対策）。デフォルトは XOR 命令なしの算術分解 `(a + b) - 2*(a & b)` + `volatile` 中間値で、LLVM の `xor` 再最適化を防止。暗号化インフラ（`PtrCacheHelpers.h`）は `WinPEBImportPass` と `KernelImportPass` で共有。
 
 **3 つのプラグ可能ヘルパ関数**（すべて `internal alwaysinline`）：
 
@@ -67,7 +67,7 @@ Win32 extern → PEB ウォークリゾルバ（~190 API、6 DLL）。Windows PO
 | `__sc_ptr_encrypt` | `(ptr) → i64` | 関数ポインタをキャッシュ用に暗号化 |
 | `__sc_ptr_decrypt` | `(i64) → ptr` | キャッシュ値を関数ポインタに復号 |
 
-**デフォルト実装**：純粋 XOR。`key = PtrToInt(PEB) ^ コンパイル時シード`（Windows ユーザモード）、または純シード（カーネル）。`encrypt = PtrToInt(ptr) ^ key`、`decrypt = IntToPtr(enc ^ key)`。
+**デフォルト実装**：XOR 命令なしの算術分解。`key = (PEB + seed) - 2*(PEB & seed)`（Windows ユーザモード）、または純シード（カーネル）。`encrypt/decrypt = (a + b) - (a & b) - (b & a)`、`volatile` 中間値で LLVM の `xor` 再最適化を防止。
 
 **キャッシュスロット**：`@__sc_cache_<dll>_<api>`（i64、初期値 0、`.text` セクション、8 バイトアライメント）。Fast/Slow パス：fast path（`atomic_load → decrypt → 間接呼出`、約 10 命令）、slow path（PEB ウォーク → `encrypt → cmpxchg weak`）。lock-free でスレッドセーフ。
 
