@@ -106,6 +106,7 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
       MPM.addPass(HeapArenaPass(
           StringRuntimePass::arenaSizeFor(Opts.Target.Level), FB,
           Opts.Target.OS));
+      MPM.addPass(MemIntrinPass());
     }
     MPM.addPass(CompilerRtPass());
 
