@@ -250,8 +250,9 @@ int shellcode_entry(int n) {
     return 0;
 }
 )");
-  auto r = ncc({"-fshellcode", "-target", "aarch64-linux-gnu", src.string(),
-                "-o", tmpFile("heap.bin").string()});
+  auto r = ncc({"-fshellcode", "-fno-shellcode-heap-arena", "-target",
+                "aarch64-linux-gnu", src.string(), "-o",
+                tmpFile("heap.bin").string()});
   EXPECT_NE(r.exitCode, 0);
   EXPECT_TRUE(r.stderrContains("heap allocator") ||
               r.contains("heap allocator"));
