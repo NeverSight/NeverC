@@ -42,6 +42,12 @@ NeverC compile du C standard en binaires hébergés, exécutables freestanding e
 int main(void) {
     string msg = "Hello " + "NeverC!";
     printf("%s\n", msg.c_str());
+
+    // Compile-time string encryption — plaintext never appears in the binary
+    string secret = "API_KEY_12345".encrypt();
+    if (secret == "API_KEY_12345".encrypt()) {   // zero-allocation decrypt-and-compare
+        printf("authenticated: %s\n", secret.c_str());
+    }
     return 0;
 }
 ```

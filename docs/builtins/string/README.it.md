@@ -79,6 +79,18 @@ void example() {
 
 Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32_owned()` are also auto-released — Sema attaches `__neverc_wptr_cleanup` when it detects these initializations.
 
+#### Pulizia automatica dei tipi composti
+
+Il compilatore rileva e rilascia ricorsivamente i membri `string` in array, strutture e combinazioni annidate:
+
+```c
+string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};
+typedef struct { string name; string value; } kv_pair;
+kv_pair p = {.name = "key".encrypt(), .value = "val".encrypt()};
+```
+
+Il livello CodeGen attraversa l'albero dei tipi per generare chiamate di cleanup per ogni elemento. Solo le stringhe owned (`cap != 0`) vengono rilasciate; le viste vengono ignorate.
+
 ### Garanzie di sicurezza
 
 - **Forged handle protection**: Handles with `len > 0 && data == NULL` are intercepted by `__neverc_string_invalid`, short-circuiting to the empty string
@@ -590,6 +602,10 @@ Per un algoritmo non-XOR, definire **entrambe** le macro (devono essere inverse 
 | Macro | Default | Descrizione |
 |-------|---------|-------------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR con byte chiave rotanti | Operazione di decrittografia per byte |
+
+### Compatibilità modalità Shellcode
+
+La crittografia delle stringhe funziona in tutte le modalità di compilazione, incluso shellcode (`-fshellcode`). In modalità shellcode, la decrittografia utilizza l'allocatore arena locale. Sono supportati sia il contesto utente che kernel (`-mshellcode-context=kernel`).
 
 ---
 

@@ -79,6 +79,18 @@ void example() {
 
 ワイド文字ポインタ（`w_str()`、`to_utf16_owned()`、`to_utf32_owned()` の戻り値）も自動解放 — Sema がこれらの初期化を検出時に `__neverc_wptr_cleanup` を付与。
 
+#### コンポジット型の自動クリーンアップ
+
+コンパイラは配列・構造体・ネスト構造内の `string` メンバを再帰的に検出し自動解放：
+
+```c
+string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};
+typedef struct { string name; string value; } kv_pair;
+kv_pair p = {.name = "key".encrypt(), .value = "val".encrypt()};
+```
+
+CodeGen 層で型ツリーを走査し、各ネスト `string` に対してクリーンアップ呼び出しを生成。owned 文字列（`cap != 0`）のみ解放し、view はスキップ。
+
 ### 安全性保証
 
 - **偽造ハンドル防護**: `len > 0 && data == NULL` のハンドルは `__neverc_string_invalid` で遮断、空文字列にショートサーキット
@@ -590,6 +602,10 @@ string e = "hello".encrypt().encrypt();  // エラー: .encrypt() can only be ap
 | マクロ | デフォルト | 説明 |
 |--------|-----------|------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | ローテーション鍵バイトによる XOR | バイト単位の復号操作 |
+
+### Shellcode モード互換性
+
+文字列暗号化は shellcode（`-fshellcode`）を含むすべてのコンパイルモードで動作します。shellcode モードでは暗号化文字列の復号にローカル arena アロケータを使用。ユーザモードとカーネルモード（`-mshellcode-context=kernel`）の両方をサポート。
 
 ---
 

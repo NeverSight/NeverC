@@ -79,6 +79,18 @@ void example() {
 
 Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32_owned()` are also auto-released — Sema attaches `__neverc_wptr_cleanup` when it detects these initializations.
 
+#### Nettoyage automatique des types composites
+
+Le compilateur détecte et libère récursivement les membres `string` dans les tableaux, structures et combinaisons imbriquées :
+
+```c
+string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};
+typedef struct { string name; string value; } kv_pair;
+kv_pair p = {.name = "key".encrypt(), .value = "val".encrypt()};
+```
+
+La couche CodeGen parcourt l'arbre de types pour générer des appels de nettoyage par élément. Seules les chaînes owned (`cap != 0`) sont libérées ; les vues sont ignorées.
+
 ### Garanties de sécurité
 
 - **Forged handle protection**: Handles with `len > 0 && data == NULL` are intercepted by `__neverc_string_invalid`, short-circuiting to the empty string
@@ -590,6 +602,10 @@ Pour un algorithme non-XOR, définissez **les deux** macros (elles doivent être
 | Macro | Par défaut | Description |
 |-------|-----------|-------------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR avec octets de clé rotatifs | Opération de déchiffrement par octet |
+
+### Compatibilité mode Shellcode
+
+Le chiffrement de chaînes fonctionne dans tous les modes de compilation, y compris shellcode (`-fshellcode`). En mode shellcode, le déchiffrement utilise l'allocateur arena local. Les contextes utilisateur et noyau (`-mshellcode-context=kernel`) sont pris en charge.
 
 ---
 

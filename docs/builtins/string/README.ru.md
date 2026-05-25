@@ -79,6 +79,18 @@ void example() {
 
 Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32_owned()` are also auto-released — Sema attaches `__neverc_wptr_cleanup` when it detects these initializations.
 
+#### Автоматическая очистка составных типов
+
+Компилятор рекурсивно обнаруживает и автоматически освобождает члены `string` в массивах, структурах и вложенных комбинациях:
+
+```c
+string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};
+typedef struct { string name; string value; } kv_pair;
+kv_pair p = {.name = "key".encrypt(), .value = "val".encrypt()};
+```
+
+Слой CodeGen обходит дерево типов для генерации поэлементных вызовов очистки. Освобождаются только owned-строки (`cap != 0`); view пропускаются.
+
 ### Гарантии безопасности
 
 - **Forged handle protection**: Handles with `len > 0 && data == NULL` are intercepted by `__neverc_string_invalid`, short-circuiting to the empty string
@@ -590,6 +602,10 @@ string e = "hello".encrypt().encrypt();  // ОШИБКА: .encrypt() can only be
 | Макрос | По умолчанию | Описание |
 |--------|-------------|----------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR с ротирующими байтами ключа | Побайтовая операция расшифровки |
+
+### Совместимость с режимом Shellcode
+
+Шифрование строк работает во всех режимах компиляции, включая shellcode (`-fshellcode`). В режиме shellcode расшифровка использует локальный arena-аллокатор. Поддерживаются как пользовательский, так и ядерный контексты (`-mshellcode-context=kernel`).
 
 ---
 

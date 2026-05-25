@@ -81,6 +81,18 @@ void example() {
 
 Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32_owned()` are also auto-released — Sema attaches `__neverc_wptr_cleanup` when it detects these initializations.
 
+#### التنظيف التلقائي للأنواع المركبة
+
+يكتشف المترجم تلقائيًا أعضاء `string` في المصفوفات والهياكل والتركيبات المتداخلة ويحررها:
+
+```c
+string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};
+typedef struct { string name; string value; } kv_pair;
+kv_pair p = {.name = "key".encrypt(), .value = "val".encrypt()};
+```
+
+تقوم طبقة CodeGen بالمرور عبر شجرة الأنواع لتوليد استدعاءات التنظيف لكل عنصر. يتم تحرير السلاسل المملوكة فقط (`cap != 0`)؛ تُتخطى العروض.
+
 ### ضمانات الأمان
 
 - **Forged handle protection**: Handles with `len > 0 && data == NULL` are intercepted by `__neverc_string_invalid`, short-circuiting to the empty string
@@ -592,6 +604,10 @@ string e = "hello".encrypt().encrypt();  // خطأ: .encrypt() can only be appli
 | الماكرو | الافتراضي | الوصف |
 |---------|----------|-------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR مع بايتات مفتاح دوارة | عملية فك التشفير لكل بايت |
+
+### توافق وضع Shellcode
+
+يعمل تشفير السلاسل في جميع أوضاع التجميع بما في ذلك shellcode (`-fshellcode`). في وضع shellcode، يستخدم فك التشفير مخصص arena المحلي. يتم دعم كل من سياق المستخدم والنواة (`-mshellcode-context=kernel`).
 
 ---
 

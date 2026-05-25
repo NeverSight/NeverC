@@ -42,6 +42,7 @@ TEST_F(ShellcodeTest, StringChain) { shellcodeStringPair("chain"); }
 TEST_F(ShellcodeTest, StringNoinline) { shellcodeStringPair("noinline"); }
 TEST_F(ShellcodeTest, StringSTLParity) { shellcodeStringPair("stl_parity"); }
 TEST_F(ShellcodeTest, StringUTF8) { shellcodeStringPair("utf8"); }
+TEST_F(ShellcodeTest, StringEncrypt) { shellcodeStringPair("encrypt"); }
 
 // Struct/dispatch/table tests
 TEST_F(ShellcodeTest, Switch) {

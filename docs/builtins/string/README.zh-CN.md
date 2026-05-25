@@ -79,6 +79,32 @@ void example() {
 
 宽字符指针（`w_str()`、`to_utf16_owned()`、`to_utf32_owned()` 返回的指针）同样自动释放——Sema 检测到这些初始化时自动附加 `__neverc_wptr_cleanup`。
 
+#### 复合类型自动清理
+
+编译器递归检测并自动释放数组、结构体及嵌套组合中的 `string` 成员：
+
+```c
+// 数组
+string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};
+// 作用域退出时自动释放——无需手动 free
+
+// 结构体
+typedef struct { string name; string value; } kv_pair;
+kv_pair p = {.name = "key".encrypt(), .value = "val".encrypt()};
+// 作用域退出时自动释放
+
+// 嵌套组合
+typedef struct { string label; string tags[2]; } tagged_item;
+tagged_item item = {.label = "title", .tags = {"t1", "t2"}};
+// 所有 string 成员在作用域退出时自动释放
+
+// 二维数组
+string grid[2][2] = {{"a", "b"}, {"c", "d"}};
+// 作用域退出时自动释放
+```
+
+清理逻辑在编译时（CodeGen 层）遍历类型树，为每个嵌套的 `string` 生成逐元素 cleanup 调用——包括 `string[N]`、`struct { string; }`、`struct { string[N]; }` 及任意嵌套深度。仅释放 owned 字符串（`cap != 0`），view 会被跳过。
+
 ### 安全性保证
 
 - **Forged handle 防护**：`len > 0 && data == NULL` 的伪造句柄会被 `__neverc_string_invalid` 拦截，短路返回空字符串
@@ -598,6 +624,23 @@ string e = "hello".encrypt().encrypt();  // 错误：.encrypt() can only be appl
 #define NEVERC_STRING_DECRYPT_BYTE(byte, key, idx) \
   ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
+
+### Shellcode 模式兼容
+
+字符串加密在所有编译模式下均可使用，包括 shellcode（`-fshellcode`）：
+
+```c
+// Shellcode 中使用加密字符串——编译为位置无关的扁平二进制
+int main(int a, int b) {
+    string secret = "shellcode_secret".encrypt();
+    if (secret.starts_with("shell".encrypt())) {
+        // ...
+    }
+    return 0;
+}
+```
+
+在 shellcode 模式下，加密字符串的解密使用 shellcode 本地 arena 分配器（而非 `malloc`）。所有零分配比较模式（decrypt-and-compare、decrypt-and-search）行为一致。用户态和内核态 shellcode 上下文（`-mshellcode-context=kernel`）均受支持。
 
 ### 编译器标志
 

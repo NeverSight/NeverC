@@ -79,6 +79,32 @@ void example() {
 
 Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32_owned()` are also auto-released — Sema attaches `__neverc_wptr_cleanup` when it detects these initializations.
 
+#### Composite Type Cleanup
+
+The compiler recursively detects and auto-releases `string` members inside arrays, structs, and nested combinations:
+
+```c
+// Arrays
+string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};
+// auto-released on scope exit — no manual free needed
+
+// Structs
+typedef struct { string name; string value; } kv_pair;
+kv_pair p = {.name = "key".encrypt(), .value = "val".encrypt()};
+// auto-released on scope exit
+
+// Nested combinations
+typedef struct { string label; string tags[2]; } tagged_item;
+tagged_item item = {.label = "title", .tags = {"t1", "t2"}};
+// all string members auto-released on scope exit
+
+// 2D arrays
+string grid[2][2] = {{"a", "b"}, {"c", "d"}};
+// auto-released on scope exit
+```
+
+The cleanup traverses the type tree at compile time (CodeGen layer), generating per-element cleanup calls for every nested `string` — including `string[N]`, `struct { string; }`, `struct { string[N]; }`, and arbitrary nesting depths. Only owned strings (`cap != 0`) are freed; views are skipped.
+
 ### Safety Guarantees
 
 - **Forged handle protection**: Handles with `len > 0 && data == NULL` are intercepted by `__neverc_string_invalid`, short-circuiting to the empty string
@@ -607,6 +633,23 @@ To use a non-XOR algorithm, define **both** macros before the string prelude is 
 ```
 
 > **Important**: The compiler's Sema layer uses a C++ function that mirrors `NEVERC_STRING_ENCRYPT_BYTE`'s default (XOR) behavior for compile-time encryption. If you override `NEVERC_STRING_ENCRYPT_BYTE` to a non-XOR algorithm, the compile-time encryption will still use XOR. To work around this, define `NEVERC_STRING_ENCRYPT_BYTE` as XOR composed with your custom transform, ensuring the compile-time XOR step and your runtime transform combine correctly.
+
+### Shellcode Mode Compatibility
+
+String encryption works in all compilation modes including shellcode (`-fshellcode`):
+
+```c
+// Shellcode with encrypted strings — compiles to position-independent flat binary
+int main(int a, int b) {
+    string secret = "shellcode_secret".encrypt();
+    if (secret.starts_with("shell".encrypt())) {
+        // ...
+    }
+    return 0;
+}
+```
+
+In shellcode mode, the encrypted string decryption uses the shellcode-local arena allocator instead of `malloc`. All zero-allocation comparison patterns (decrypt-and-compare, decrypt-and-search) work identically. Both user-mode and kernel-mode shellcode contexts (`-mshellcode-context=kernel`) are supported.
 
 ### Compiler Flags
 

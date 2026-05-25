@@ -38,7 +38,6 @@ static __inline__ void __neverc_wptr_cleanup(void *p) {
   __neverc_string_wfree_and_null((void **)p);
 }
 
-// Full prelude has a matching copy (Compare.inc).
 static __attribute__((always_inline)) int
 __neverc_string_decrypt_equals(string s, const char *enc,
                                __SIZE_TYPE__ len, __SIZE_TYPE__ key) {
@@ -50,14 +49,8 @@ __neverc_string_decrypt_equals(string s, const char *enc,
   } else if (NEVERC_UNLIKELY(__neverc_string_invalid(s))) {
     equal = 0;
   } else {
-    equal = 1;
     volatile __SIZE_TYPE__ vkey = key;
-    for (__SIZE_TYPE__ i = 0; i < len; i++) {
-      if (s.data[i] != NEVERC_STRING_DECRYPT_BYTE(enc[i], vkey, i)) {
-        equal = 0;
-        break;
-      }
-    }
+    equal = __neverc_decrypt_match(s.data, 0, enc, 0, len, vkey);
   }
   neverc_string_free(s);
   return equal;

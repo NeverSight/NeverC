@@ -42,6 +42,12 @@ NeverC는 표준 C를 호스트 바이너리, 프리스탠딩 실행 파일, 위
 int main(void) {
     string msg = "Hello " + "NeverC!";
     printf("%s\n", msg.c_str());
+
+    // Compile-time string encryption — plaintext never appears in the binary
+    string secret = "API_KEY_12345".encrypt();
+    if (secret == "API_KEY_12345".encrypt()) {   // zero-allocation decrypt-and-compare
+        printf("authenticated: %s\n", secret.c_str());
+    }
     return 0;
 }
 ```

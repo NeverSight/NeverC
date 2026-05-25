@@ -79,6 +79,18 @@ void example() {
 
 Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32_owned()` are also auto-released — Sema attaches `__neverc_wptr_cleanup` when it detects these initializations.
 
+#### Automatische Bereinigung zusammengesetzter Typen
+
+Der Compiler erkennt rekursiv `string`-Mitglieder in Arrays, Strukturen und verschachtelten Kombinationen und gibt sie automatisch frei:
+
+```c
+string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};
+typedef struct { string name; string value; } kv_pair;
+kv_pair p = {.name = "key".encrypt(), .value = "val".encrypt()};
+```
+
+Die CodeGen-Schicht traversiert den Typbaum und generiert elementweise Cleanup-Aufrufe. Nur owned Strings (`cap != 0`) werden freigegeben; Views werden übersprungen.
+
 ### Sicherheitsgarantien
 
 - **Forged handle protection**: Handles with `len > 0 && data == NULL` are intercepted by `__neverc_string_invalid`, short-circuiting to the empty string
@@ -590,6 +602,10 @@ Für einen Nicht-XOR-Algorithmus definieren Sie **beide** Makros (sie müssen ma
 | Makro | Standard | Beschreibung |
 |-------|----------|-------------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR mit rotierenden Schlüsselbytes | Byte-weise Entschlüsselungsoperation |
+
+### Shellcode-Modus-Kompatibilität
+
+String-Verschlüsselung funktioniert in allen Kompilierungsmodi einschließlich Shellcode (`-fshellcode`). Im Shellcode-Modus verwendet die Entschlüsselung den lokalen Arena-Allokator. Sowohl Usermode als auch Kernelmode (`-mshellcode-context=kernel`) werden unterstützt.
 
 ---
 

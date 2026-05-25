@@ -79,6 +79,18 @@ void example() {
 
 寬字元指標（`w_str()`、`to_utf16_owned()`、`to_utf32_owned()` 返回的指標）同樣自動釋放——Sema 檢測到這些初始化時自動附加 `__neverc_wptr_cleanup`。
 
+#### 複合型別自動清理
+
+編譯器遞迴偵測並自動釋放陣列、結構體及巢狀組合中的 `string` 成員：
+
+```c
+string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};
+typedef struct { string name; string value; } kv_pair;
+kv_pair p = {.name = "key".encrypt(), .value = "val".encrypt()};
+```
+
+清理邏輯在編譯時（CodeGen 層）走訪型別樹，為每個巢狀的 `string` 產生逐元素 cleanup 呼叫。僅釋放 owned 字串（`cap != 0`），view 會被跳過。
+
 ### 安全性保證
 
 - **Forged handle 防護**：`len > 0 && data == NULL` 的偽造控制代碼會被 `__neverc_string_invalid` 攔截，短路返回空字串
@@ -591,6 +603,10 @@ string e = "hello".encrypt().encrypt();  // 錯誤：.encrypt() can only be appl
 | 巨集 | 預設值 | 說明 |
 |------|--------|------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 使用旋轉金鑰位元組的 XOR | 逐位元組解密操作 |
+
+### Shellcode 模式相容
+
+字串加密在所有編譯模式下均可使用，包括 shellcode（`-fshellcode`）。在 shellcode 模式下，加密字串的解密使用 shellcode 本地 arena 分配器。用戶態和核心態 shellcode 上下文（`-mshellcode-context=kernel`）均受支援。
 
 ---
 

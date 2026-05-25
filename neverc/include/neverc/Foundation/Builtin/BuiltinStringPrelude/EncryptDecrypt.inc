@@ -33,4 +33,32 @@ __neverc_string_decrypt_literal(const char *enc, __SIZE_TYPE__ len,
   return (string){p, len, len + 1};
 }
 
+static __attribute__((always_inline)) int
+__neverc_decrypt_match(const char *sdata, __SIZE_TYPE__ soff,
+                       const char *enc, __SIZE_TYPE__ eoff,
+                       __SIZE_TYPE__ count, __SIZE_TYPE__ vkey) {
+  for (__SIZE_TYPE__ j = 0; j < count; j++) {
+    __SIZE_TYPE__ ei = eoff + j;
+    if ((unsigned char)sdata[soff + j] !=
+        (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[ei], vkey, ei))
+      return 0;
+  }
+  return 1;
+}
+
+static __attribute__((always_inline)) int
+__neverc_decrypt_match_ic(const char *sdata, __SIZE_TYPE__ soff,
+                          const char *enc, __SIZE_TYPE__ eoff,
+                          __SIZE_TYPE__ count, __SIZE_TYPE__ vkey) {
+  for (__SIZE_TYPE__ j = 0; j < count; j++) {
+    __SIZE_TYPE__ ei = eoff + j;
+    unsigned char sb = (unsigned char)sdata[soff + j];
+    unsigned char db =
+        (unsigned char)NEVERC_STRING_DECRYPT_BYTE(enc[ei], vkey, ei);
+    if (sb != db && __neverc_ascii_lower(sb) != __neverc_ascii_lower(db))
+      return 0;
+  }
+  return 1;
+}
+
 )prelude"

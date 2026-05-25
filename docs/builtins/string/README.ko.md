@@ -79,6 +79,18 @@ void example() {
 
 Wide-character pointers returned by `w_str()`, `to_utf16_owned()`, and `to_utf32_owned()` are also auto-released — Sema attaches `__neverc_wptr_cleanup` when it detects these initializations.
 
+#### 복합 타입 자동 정리
+
+컴파일러는 배열, 구조체 및 중첩 조합 내의 `string` 멤버를 재귀적으로 감지하여 자동 해제합니다:
+
+```c
+string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};
+typedef struct { string name; string value; } kv_pair;
+kv_pair p = {.name = "key".encrypt(), .value = "val".encrypt()};
+```
+
+CodeGen 계층에서 타입 트리를 순회하며 각 중첩 `string`에 대해 cleanup 호출을 생성합니다. owned 문자열(`cap != 0`)만 해제하고 view는 건너뜁니다.
+
 ### 안전성 보장
 
 - **Forged handle protection**: Handles with `len > 0 && data == NULL` are intercepted by `__neverc_string_invalid`, short-circuiting to the empty string
@@ -590,6 +602,10 @@ string e = "hello".encrypt().encrypt();  // 오류: .encrypt() can only be appli
 | 매크로 | 기본값 | 설명 |
 |--------|--------|------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 회전 키 바이트를 사용한 XOR | 바이트 단위 복호화 연산 |
+
+### Shellcode 모드 호환성
+
+문자열 암호화는 shellcode(`-fshellcode`)를 포함한 모든 컴파일 모드에서 작동합니다. Shellcode 모드에서는 암호화 문자열의 복호화에 로컬 arena 할당기를 사용합니다. 사용자 모드와 커널 모드(`-mshellcode-context=kernel`) 모두 지원됩니다.
 
 ---
 
