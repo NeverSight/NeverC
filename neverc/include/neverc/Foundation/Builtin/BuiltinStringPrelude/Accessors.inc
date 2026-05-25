@@ -15,14 +15,6 @@ static __inline__ int neverc_string_empty(string s) {
   return empty;
 }
 
-static __inline__ const char *neverc_string_cstr(string s) {
-  return s.data ? s.data : "";
-}
-
-static __inline__ void *neverc_string_data(string s) {
-  return s.data ? (void *)s.data : (void *)"";
-}
-
 static __inline__ char neverc_string_at(string s, __SIZE_TYPE__ pos) {
   char ch = 0;
   if (!__neverc_string_invalid(s) && pos < s.len && s.data)

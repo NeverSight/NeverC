@@ -1,16 +1,4 @@
 R"prelude(
-#ifndef NEVERC_STRING_ALLOC
-#define NEVERC_STRING_ALLOC __builtin_malloc
-#else
-extern void *NEVERC_STRING_ALLOC(__SIZE_TYPE__);
-#endif
-
-#ifndef NEVERC_STRING_FREE
-#define NEVERC_STRING_FREE __builtin_free
-#else
-extern void NEVERC_STRING_FREE(void *);
-#endif
-
 static __inline__ int __neverc_string_can_allocate(__SIZE_TYPE__ len) {
   return len <= NEVERC_STRING_MAX_LEN;
 }
@@ -20,6 +8,7 @@ static void neverc_string_free(string s) {
     NEVERC_STRING_FREE((void *)s.data);
 }
 
+// Thin header has a matching copy (BuiltinStringThinHeaderPrologue.inc).
 static __inline__ void __neverc_string_cleanup(string *s) {
   if (s) {
     neverc_string_free(*s);

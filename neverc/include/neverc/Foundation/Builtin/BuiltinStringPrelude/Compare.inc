@@ -35,6 +35,7 @@ static int neverc_string_eq(string a, string b) {
   return equal;
 }
 
+// Thin header has a matching copy (BuiltinStringThinHeaderPrologue.inc).
 static __attribute__((always_inline)) int
 __neverc_string_decrypt_equals(string s, const char *enc,
                                __SIZE_TYPE__ len, __SIZE_TYPE__ key) {

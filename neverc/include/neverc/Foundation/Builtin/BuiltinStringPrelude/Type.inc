@@ -39,4 +39,18 @@ static __inline__ int __neverc_string_invalid(string s) {
 extern void *NEVERC_STRING_ALLOC(__SIZE_TYPE__);
 #endif
 
+#ifndef NEVERC_STRING_FREE
+#define NEVERC_STRING_FREE __builtin_free
+#else
+extern void NEVERC_STRING_FREE(void *);
+#endif
+
+static __inline__ const char *neverc_string_cstr(string s) {
+  return s.data ? s.data : "";
+}
+
+static __inline__ void *neverc_string_data(string s) {
+  return s.data ? (void *)s.data : (void *)"";
+}
+
 )prelude"

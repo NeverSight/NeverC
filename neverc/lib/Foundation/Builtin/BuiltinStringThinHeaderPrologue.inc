@@ -1,26 +1,15 @@
 R"thin_header(
 
-#ifndef NEVERC_STRING_FREE
-#define NEVERC_STRING_FREE __builtin_free
-#endif
-
 struct __neverc_format_spec;
 
 extern void neverc_string_free(string s);
 
+// Full prelude has a matching copy (Allocation.inc).
 static __inline__ void __neverc_string_cleanup(string *s) {
   if (s) {
     neverc_string_free(*s);
     *s = __neverc_string_empty();
   }
-}
-
-static __inline__ const char *neverc_string_cstr(string s) {
-  return s.data ? s.data : "";
-}
-
-static __inline__ void *neverc_string_data(string s) {
-  return s.data ? (void *)s.data : (void *)"";
 }
 
 extern __UINT16_TYPE__ *neverc_string_to_utf16_owned(string s);
@@ -49,6 +38,7 @@ static __inline__ void __neverc_wptr_cleanup(void *p) {
   __neverc_string_wfree_and_null((void **)p);
 }
 
+// Full prelude has a matching copy (Compare.inc).
 static __attribute__((always_inline)) int
 __neverc_string_decrypt_equals(string s, const char *enc,
                                __SIZE_TYPE__ len, __SIZE_TYPE__ key) {
