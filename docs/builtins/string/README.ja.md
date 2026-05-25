@@ -603,6 +603,10 @@ string e = "hello".encrypt().encrypt();  // エラー: .encrypt() can only be ap
 |--------|-----------|------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | ローテーション鍵バイトによる XOR | バイト単位の復号操作 |
 
+### 配列・構造体内の暗号化文字列
+
+`.encrypt()` は集約初期化子（`string[]`、`struct { string; }`、2D 配列、ネストした組み合わせ）で使用可能。owned メンバーはスコープ終了時に自動解放され、ゼロアロケーション比較も同様に有効。
+
 ### Shellcode モード互換性
 
 文字列暗号化は shellcode（`-fshellcode`）を含むすべてのコンパイルモードで動作します。shellcode モードでは暗号化文字列の復号にローカル arena アロケータを使用。ユーザモードとカーネルモード（`-mshellcode-context=kernel`）の両方をサポート。

@@ -603,6 +603,10 @@ string e = "hello".encrypt().encrypt();  // 오류: .encrypt() can only be appli
 |--------|--------|------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 회전 키 바이트를 사용한 XOR | 바이트 단위 복호화 연산 |
 
+### 배열 및 구조체의 암호화 문자열
+
+`.encrypt()`는 집계 초기화자(`string[]`, `struct { string; }`, 2D 배열, 중첩 조합)에서 동작합니다. owned 멤버는 스코프 종료 시 자동 해제되며, 무할당 비교 경로도 동일하게 적용됩니다.
+
 ### Shellcode 모드 호환성
 
 문자열 암호화는 shellcode(`-fshellcode`)를 포함한 모든 컴파일 모드에서 작동합니다. Shellcode 모드에서는 암호화 문자열의 복호화에 로컬 arena 할당기를 사용합니다. 사용자 모드와 커널 모드(`-mshellcode-context=kernel`) 모두 지원됩니다.

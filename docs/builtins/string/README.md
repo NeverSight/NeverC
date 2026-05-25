@@ -634,6 +634,24 @@ To use a non-XOR algorithm, define **both** macros before the string prelude is 
 
 > **Important**: The compiler's Sema layer uses a C++ function that mirrors `NEVERC_STRING_ENCRYPT_BYTE`'s default (XOR) behavior for compile-time encryption. If you override `NEVERC_STRING_ENCRYPT_BYTE` to a non-XOR algorithm, the compile-time encryption will still use XOR. To work around this, define `NEVERC_STRING_ENCRYPT_BYTE` as XOR composed with your custom transform, ensuring the compile-time XOR step and your runtime transform combine correctly.
 
+### Encrypted Strings in Arrays and Structs
+
+`.encrypt()` works inside aggregate initializers. Owned `string` members are auto-released on scope exit (see [Composite Type Cleanup](#composite-type-cleanup)):
+
+```c
+typedef struct { string user; string pass; } creds;
+
+creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+string routes[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+string grid[2][2] = {
+    {"a".encrypt(), "b".encrypt()},
+    {"c".encrypt(), "d".encrypt()}
+};
+
+// Zero-allocation comparisons still apply
+if (login.user == "admin".encrypt()) { /* ... */ }
+```
+
 ### Shellcode Mode Compatibility
 
 String encryption works in all compilation modes including shellcode (`-fshellcode`):

@@ -603,6 +603,10 @@ Für einen Nicht-XOR-Algorithmus definieren Sie **beide** Makros (sie müssen ma
 |-------|----------|-------------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR mit rotierenden Schlüsselbytes | Byte-weise Entschlüsselungsoperation |
 
+### Verschlüsselte Strings in Arrays und Structs
+
+`.encrypt()` funktioniert in Aggregat-Initialisierern (`string[]`, `struct { string; }`, 2D-Arrays, verschachtelte Kombinationen). Owned-Member werden beim Verlassen des Scopes freigegeben; Zero-Allocation-Vergleiche bleiben gültig.
+
 ### Shellcode-Modus-Kompatibilität
 
 String-Verschlüsselung funktioniert in allen Kompilierungsmodi einschließlich Shellcode (`-fshellcode`). Im Shellcode-Modus verwendet die Entschlüsselung den lokalen Arena-Allokator. Sowohl Usermode als auch Kernelmode (`-mshellcode-context=kernel`) werden unterstützt.

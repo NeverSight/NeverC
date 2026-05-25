@@ -603,6 +603,10 @@ Para un algoritmo no-XOR, defina **ambas** macros (deben ser inversas matemátic
 |-------|------------|-------------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR con bytes de clave rotativa | Operación de descifrado por byte |
 
+### Cadenas cifradas en arrays y estructuras
+
+`.encrypt()` funciona en inicializadores agregados (`string[]`, `struct { string; }`, arrays 2D, combinaciones anidadas). Los miembros owned se liberan al salir del ámbito; las comparaciones sin asignación siguen aplicando.
+
 ### Compatibilidad con modo Shellcode
 
 La encriptación de cadenas funciona en todos los modos de compilación, incluyendo shellcode (`-fshellcode`). En modo shellcode, el descifrado utiliza el asignador arena local. Se admiten los contextos de usuario y kernel (`-mshellcode-context=kernel`).

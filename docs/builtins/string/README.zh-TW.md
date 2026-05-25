@@ -604,6 +604,10 @@ string e = "hello".encrypt().encrypt();  // 錯誤：.encrypt() can only be appl
 |------|--------|------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 使用旋轉金鑰位元組的 XOR | 逐位元組解密操作 |
 
+### 結構體與陣列中的加密字串
+
+`.encrypt()` 可用於聚合初始化；擁有的 `string` 成員在作用域結束時自動釋放（見 [複合類型清理](#複合類型清理)）。`string[]`、`struct { string; }`、二維陣列與巢狀組合均支援，且零分配比較路徑同樣有效。
+
 ### Shellcode 模式相容
 
 字串加密在所有編譯模式下均可使用，包括 shellcode（`-fshellcode`）。在 shellcode 模式下，加密字串的解密使用 shellcode 本地 arena 分配器。用戶態和核心態 shellcode 上下文（`-mshellcode-context=kernel`）均受支援。

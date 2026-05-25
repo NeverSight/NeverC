@@ -603,6 +603,10 @@ Per un algoritmo non-XOR, definire **entrambe** le macro (devono essere inverse 
 |-------|---------|-------------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR con byte chiave rotanti | Operazione di decrittografia per byte |
 
+### Stringhe crittografate in array e struct
+
+`.encrypt()` funziona negli inizializzatori aggregati (`string[]`, `struct { string; }`, array 2D, combinazioni annidate). I membri owned vengono rilasciati automaticamente all'uscita dallo scope; i confronti zero-allocation restano validi.
+
 ### Compatibilità modalità Shellcode
 
 La crittografia delle stringhe funziona in tutte le modalità di compilazione, incluso shellcode (`-fshellcode`). In modalità shellcode, la decrittografia utilizza l'allocatore arena locale. Sono supportati sia il contesto utente che kernel (`-mshellcode-context=kernel`).

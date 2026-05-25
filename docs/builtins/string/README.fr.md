@@ -603,6 +603,10 @@ Pour un algorithme non-XOR, définissez **les deux** macros (elles doivent être
 |-------|-----------|-------------|
 | `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR avec octets de clé rotatifs | Opération de déchiffrement par octet |
 
+### Chaînes chiffrées dans tableaux et structures
+
+`.encrypt()` fonctionne dans les initialiseurs agrégés (`string[]`, `struct { string; }`, tableaux 2D, combinaisons imbriquées). Les membres possédés sont libérés automatiquement à la sortie de portée ; les comparaisons sans allocation restent valides.
+
 ### Compatibilité mode Shellcode
 
 Le chiffrement de chaînes fonctionne dans tous les modes de compilation, y compris shellcode (`-fshellcode`). En mode shellcode, le déchiffrement utilise l'allocateur arena local. Les contextes utilisateur et noyau (`-mshellcode-context=kernel`) sont pris en charge.

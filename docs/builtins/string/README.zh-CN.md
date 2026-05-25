@@ -625,6 +625,24 @@ string e = "hello".encrypt().encrypt();  // 错误：.encrypt() can only be appl
   ((char)((unsigned char)(byte) - (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
 ```
 
+### 结构体与数组中的加密字符串
+
+`.encrypt()` 可用于聚合初始化。拥有的 `string` 成员在作用域退出时自动释放（见 [复合类型清理](#复合类型清理)）：
+
+```c
+typedef struct { string user; string pass; } creds;
+
+creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+string routes[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+string grid[2][2] = {
+    {"a".encrypt(), "b".encrypt()},
+    {"c".encrypt(), "d".encrypt()}
+};
+
+// 零分配比较同样适用
+if (login.user == "admin".encrypt()) { /* ... */ }
+```
+
 ### Shellcode 模式兼容
 
 字符串加密在所有编译模式下均可使用，包括 shellcode（`-fshellcode`）：
