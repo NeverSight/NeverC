@@ -23,8 +23,9 @@ import re
 import sys
 
 FRAGMENT_ORDER = [
-    "Type", "Allocation", "Accessors", "Capacity", "Compare",
-    "Search", "Mutation", "Utility", "Encoding", "WebCodec", "Format",
+    "Type", "EncryptDecrypt", "Allocation", "Accessors", "Capacity",
+    "Compare", "Search", "Mutation", "Utility", "Encoding", "WebCodec",
+    "Format",
 ]
 
 KEEP_INLINE = frozenset([
@@ -34,6 +35,7 @@ KEEP_INLINE = frozenset([
     "__neverc_string_cleanup",
     "__neverc_string_wfree_and_null",
     "__neverc_string_decrypt_literal",
+    "__neverc_xfree_dec",
     "neverc_string_cstr",
     "neverc_string_data",
     "neverc_string_w_str",

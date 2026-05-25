@@ -32,22 +32,22 @@ inline void setHelperAttrs(llvm::Function *F) {
 
 /// Emit a ^ b as (a + b) - 2*(a & b) using volatile intermediates
 /// to prevent InstCombine from recognizing and re-folding to xor.
-inline llvm::Value *emitXorFree(llvm::IRBuilder<> &B, llvm::Value *A,
-                                llvm::Value *ValB) {
-  llvm::Type *Ty = A->getType();
-  llvm::AllocaInst *SA = B.CreateAlloca(Ty, nullptr, "xf.a");
-  llvm::AllocaInst *SB = B.CreateAlloca(Ty, nullptr, "xf.b");
-  B.CreateStore(A, SA)->setVolatile(true);
-  B.CreateStore(ValB, SB)->setVolatile(true);
-  auto *A1 = B.CreateLoad(Ty, SA, /*isVolatile=*/true, "xf.a1");
-  auto *B1 = B.CreateLoad(Ty, SB, /*isVolatile=*/true, "xf.b1");
-  auto *Sum = B.CreateAdd(A1, B1, "xf.sum");
-  auto *A2 = B.CreateLoad(Ty, SA, /*isVolatile=*/true, "xf.a2");
-  auto *B2 = B.CreateLoad(Ty, SB, /*isVolatile=*/true, "xf.b2");
-  auto *And1 = B.CreateAnd(A2, B2, "xf.and1");
-  auto *A3 = B.CreateLoad(Ty, SB, /*isVolatile=*/true, "xf.a3");
-  auto *B3 = B.CreateLoad(Ty, SA, /*isVolatile=*/true, "xf.b3");
-  auto *And2 = B.CreateAnd(A3, B3, "xf.and2");
+inline llvm::Value *emitXorFree(llvm::IRBuilder<> &B, llvm::Value *LHS,
+                                llvm::Value *RHS) {
+  llvm::Type *Ty = LHS->getType();
+  llvm::AllocaInst *SlotA = B.CreateAlloca(Ty, nullptr, "xf.sa");
+  llvm::AllocaInst *SlotB = B.CreateAlloca(Ty, nullptr, "xf.sb");
+  B.CreateStore(LHS, SlotA)->setVolatile(true);
+  B.CreateStore(RHS, SlotB)->setVolatile(true);
+  auto *VA1 = B.CreateLoad(Ty, SlotA, /*isVolatile=*/true, "xf.va1");
+  auto *VB1 = B.CreateLoad(Ty, SlotB, /*isVolatile=*/true, "xf.vb1");
+  auto *Sum = B.CreateAdd(VA1, VB1, "xf.sum");
+  auto *VA2 = B.CreateLoad(Ty, SlotA, /*isVolatile=*/true, "xf.va2");
+  auto *VB2 = B.CreateLoad(Ty, SlotB, /*isVolatile=*/true, "xf.vb2");
+  auto *And1 = B.CreateAnd(VA2, VB2, "xf.ab");
+  auto *VA3 = B.CreateLoad(Ty, SlotA, /*isVolatile=*/true, "xf.va3");
+  auto *VB3 = B.CreateLoad(Ty, SlotB, /*isVolatile=*/true, "xf.vb3");
+  auto *And2 = B.CreateAnd(VB3, VA3, "xf.ba");
   auto *Dbl = B.CreateAdd(And1, And2, "xf.dbl");
   return B.CreateSub(Sum, Dbl, "xf.res");
 }

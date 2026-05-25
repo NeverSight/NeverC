@@ -3,6 +3,7 @@
 #include "Core/ConstantEmitter.h"
 #include "Core/FunctionEmitter.h"
 #include "Core/ModuleEmitter.h"
+#include "Decl/NeverCStringCleanupEmitter.h"
 #include "Debug/DebugEmitterInfo.h"
 #include "Decl/PatternInit.h"
 #include "Stmt/CleanupEmitterInfo.h"
@@ -336,6 +337,7 @@ struct CallCleanupFunction final : EHScopeStack::Cleanup {
     FE.genCall(FnInfo, Callee, ReturnValueSlot(), Args);
   }
 };
+
 } // end anonymous namespace
 
 // ===----------------------------------------------------------------------===
@@ -1173,6 +1175,14 @@ void FunctionEmitter::genAutoVarCleanups(const AutoVarEmission &emission) {
     return;
 
   const VarDecl &D = *emission.Variable;
+
+  if (!D.hasAttr<CleanupAttr>() && getLangOpts().BuiltinString &&
+      D.hasLocalStorage() &&
+      !Emit::isNeverCStringRecord(D.getType()) &&
+      Emit::typeContainsNeverCString(getContext(), D.getType())) {
+    EHStack.pushCleanup<Emit::NeverCStringCompositeCleanup>(
+        NormalAndEHCleanup, &D);
+  }
 
   if (const CleanupAttr *CA = D.getAttr<CleanupAttr>()) {
     const FunctionDecl *FD = CA->getFunctionDecl();

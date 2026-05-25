@@ -1,8 +1,13 @@
 #ifndef NEVERC_LIB_EMIT_BACKEND_RUNTIMELINKERUTILS_H
 #define NEVERC_LIB_EMIT_BACKEND_RUNTIMELINKERUTILS_H
 
+#include "llvm/ADT/StringSet.h"
+#include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Linker/Linker.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 namespace neverc {
 
@@ -22,6 +27,53 @@ inline void stripHostTargetAttributes(llvm::Module &Mod) {
     F.removeFnAttr("target-features");
     F.removeFnAttr("tune-cpu");
   }
+}
+
+/// Parse embedded bitcode, strip host attributes, and align metadata
+/// (data layout, triple, module flags) with the user module.
+inline std::unique_ptr<llvm::Module>
+parseBitcodeAndPrepare(llvm::StringRef Embedded, llvm::Module &M,
+                       llvm::StringRef Label) {
+  auto Buf = llvm::MemoryBuffer::getMemBuffer(
+      Embedded, Label, /*RequiresNullTerminator=*/false);
+
+  auto ExpectedMod =
+      llvm::parseBitcodeFile(Buf->getMemBufferRef(), M.getContext());
+  if (!ExpectedMod)
+    llvm::report_fatal_error(llvm::Twine("Failed to parse ") + Label + ": " +
+                             llvm::toString(ExpectedMod.takeError()));
+  auto Mod = std::move(*ExpectedMod);
+
+  stripHostTargetAttributes(*Mod);
+  Mod->setDataLayout(M.getDataLayout());
+  Mod->setTargetTriple(M.getTargetTriple());
+
+  if (auto *Flags = Mod->getModuleFlagsMetadata())
+    Flags->clearOperands();
+
+  return Mod;
+}
+
+/// Link the source module into M with OverrideFromSrc, or fatal error.
+inline void linkModuleOrFail(llvm::Module &M,
+                             std::unique_ptr<llvm::Module> Src,
+                             llvm::StringRef Label) {
+  if (llvm::Linker::linkModules(M, std::move(Src),
+                                llvm::Linker::Flags::OverrideFromSrc))
+    llvm::report_fatal_error(llvm::Twine("Failed to link ") + Label);
+}
+
+/// Capture all definition names from a module into string sets.
+/// Must be called before linkModules destroys the source module.
+inline void captureDefinitionNames(const llvm::Module &Mod,
+                                   llvm::StringSet<> &FnNames,
+                                   llvm::StringSet<> &GlobalNames) {
+  for (const llvm::Function &F : Mod)
+    if (!F.isDeclaration())
+      FnNames.insert(F.getName());
+  for (const llvm::GlobalVariable &GV : Mod.globals())
+    if (!GV.isDeclaration())
+      GlobalNames.insert(GV.getName());
 }
 
 } // namespace neverc

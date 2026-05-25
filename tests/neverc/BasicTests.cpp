@@ -481,6 +481,7 @@ TEST_F(BasicTest, LeaksGate) {
       "test_neverc_string_alias",  "test_neverc_string_qstring_parity",
       "test_neverc_string_ops",    "test_neverc_string_wide_literal",
       "test_neverc_string_encrypt", "test_neverc_string_encrypt_unicode",
+      "test_neverc_string_composite_cleanup",
   };
 
   for (auto &t : targets) {

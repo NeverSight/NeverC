@@ -15,6 +15,10 @@ constexpr llvm::StringLiteral kFragmentType =
 #include "neverc/Foundation/Builtin/BuiltinStringPrelude/Type.inc"
     ;
 
+constexpr llvm::StringLiteral kFragmentEncryptDecrypt =
+#include "neverc/Foundation/Builtin/BuiltinStringPrelude/EncryptDecrypt.inc"
+    ;
+
 constexpr llvm::StringLiteral kFragmentAllocation =
 #include "neverc/Foundation/Builtin/BuiltinStringPrelude/Allocation.inc"
     ;
@@ -282,7 +286,7 @@ llvm::StringRef BuiltinString::getBuiltinStringPrelude() {
 
 namespace {
 
-constexpr llvm::StringLiteral kThinHeaderPrologue =
+constexpr llvm::StringLiteral kThinHeaderExtra =
 #include "BuiltinStringThinHeaderPrologue.inc"
     ;
 
@@ -295,8 +299,11 @@ constexpr llvm::StringLiteral kThinHeaderDecls =
 llvm::StringRef BuiltinString::getBuiltinStringThinHeader() {
   static const std::string CachedThinHeader = [] {
     std::string H;
-    H.reserve(kThinHeaderPrologue.size() + kThinHeaderDecls.size());
-    H += kThinHeaderPrologue;
+    H.reserve(kFragmentType.size() + kFragmentEncryptDecrypt.size() +
+              kThinHeaderExtra.size() + kThinHeaderDecls.size());
+    H += kFragmentType;
+    H += kFragmentEncryptDecrypt;
+    H += kThinHeaderExtra;
     H += kThinHeaderDecls;
     return H;
   }();

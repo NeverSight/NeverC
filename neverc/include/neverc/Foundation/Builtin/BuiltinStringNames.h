@@ -18,6 +18,9 @@ inline constexpr llvm::StringLiteral RuntimeFnAttr =
 inline constexpr llvm::StringLiteral WptrCleanupFunctionName =
     "__neverc_wptr_cleanup";
 
+inline constexpr llvm::StringLiteral CompositeCleanupHelperName =
+    "__neverc_sc_str_cleanup";
+
 #define NEVERC_BUILTIN_STRING_FN(NameId, Spelling, IsPublic)                   \
   inline constexpr llvm::StringLiteral NameId##FunctionName = Spelling;
 #include "neverc/Foundation/Builtin/BuiltinStringRoster.def"

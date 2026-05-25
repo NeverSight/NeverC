@@ -1,13 +1,7 @@
 #include "Backend/MimallocRuntimeLinker.h"
 #include "Backend/RuntimeLinkerUtils.h"
 #include "neverc/Foundation/Builtin/BuiltinMimalloc.h"
-#include "llvm/ADT/StringSet.h"
-#include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Linker/Linker.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
 using namespace llvm;
@@ -31,46 +25,14 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   if (Embedded.empty())
     return PreservedAnalyses::all();
 
-  auto Buf = MemoryBuffer::getMemBuffer(
-      Embedded, "neverc_mimalloc_runtime", /*RequiresNullTerminator=*/false);
+  auto MimallocMod =
+      parseBitcodeAndPrepare(Embedded, M, "neverc mimalloc runtime");
 
-  auto ExpectedMod = parseBitcodeFile(Buf->getMemBufferRef(), M.getContext());
-  if (!ExpectedMod)
-    report_fatal_error(Twine("Failed to parse neverc mimalloc runtime: ") +
-                       toString(ExpectedMod.takeError()));
-  auto MimallocMod = std::move(*ExpectedMod);
+  StringSet<> MimallocFnNames, MimallocGlobalNames;
+  captureDefinitionNames(*MimallocMod, MimallocFnNames, MimallocGlobalNames);
 
-  // Strip host-specific attributes from the precompiled bitcode so
-  // functions inherit the user module's target defaults after merge.
-  stripHostTargetAttributes(*MimallocMod);
+  linkModuleOrFail(M, std::move(MimallocMod), "neverc mimalloc runtime");
 
-  // Capture names of all mimalloc definitions before the merge.
-  // Must own the strings: linkModules destroys the source Module,
-  // invalidating any StringRef into its ValueSymbolTable.
-  StringSet<> MimallocFnNames;
-  StringSet<> MimallocGlobalNames;
-  for (const Function &F : *MimallocMod)
-    if (!F.isDeclaration())
-      MimallocFnNames.insert(F.getName());
-  for (const GlobalVariable &GV : MimallocMod->globals())
-    if (!GV.isDeclaration())
-      MimallocGlobalNames.insert(GV.getName());
-
-  // Align module metadata with the user module.
-  MimallocMod->setDataLayout(M.getDataLayout());
-  MimallocMod->setTargetTriple(M.getTargetTriple());
-
-  if (auto *Flags = MimallocMod->getModuleFlagsMetadata())
-    Flags->clearOperands();
-
-  // Whole-archive merge — all mimalloc symbols are linked in.
-  if (Linker::linkModules(M, std::move(MimallocMod),
-                          Linker::Flags::OverrideFromSrc)) {
-    report_fatal_error("Failed to link neverc mimalloc runtime");
-  }
-
-  // Post-merge: internalize helper functions, keep override entry
-  // points external so the system linker resolves them.
   for (Function &F : M) {
     if (!MimallocFnNames.count(F.getName()))
       continue;
@@ -83,7 +45,6 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
       GV.setLinkage(GlobalValue::InternalLinkage);
   }
 
-  // Clean llvm.used / llvm.compiler.used of internalized mimalloc entries.
   removeFromUsedLists(M, [&](Constant *C) {
     auto *GV = dyn_cast<GlobalValue>(C->stripPointerCasts());
     if (!GV)

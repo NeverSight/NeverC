@@ -63,6 +63,7 @@ add_neverc_library(nevercEmit
   Expr/ScalarEmitter.cpp
 
   Decl/DeclEmitter.cpp
+  Decl/NeverCStringCleanupEmitter.cpp
   Decl/InitEmitter.cpp
   Decl/RecordLayoutEmitter.cpp
   Decl/ConstantInitBuilder.cpp

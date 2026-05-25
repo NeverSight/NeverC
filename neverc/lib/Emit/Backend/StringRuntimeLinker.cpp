@@ -5,13 +5,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringSet.h"
-#include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Linker/Linker.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
 using namespace llvm;
@@ -28,9 +22,6 @@ void markAllAsRuntime(Module &Mod) {
   stripHostTargetAttributes(Mod);
 }
 
-/// Visit every Function / GlobalVariable referenced by `U`'s operands
-/// (recursing through ConstantExpr).  The caller's `Visit` receives a
-/// `GlobalValue *` and decides whether to enqueue it.
 template <typename VisitFn>
 void forEachGlobalOperand(User *U, VisitFn Visit) {
   for (Use &Op : U->operands()) {
@@ -42,20 +33,12 @@ void forEachGlobalOperand(User *U, VisitFn Visit) {
   }
 }
 
-/// Replace every use of `GV` with poison and erase it from its parent
-/// module.  Shared by the pre-merge prune (on `RuntimeMod`) and the
-/// post-merge mark-and-sweep (on `M`) -- both phases rip dead runtime
-/// globals out the same way, so funnel the two-step idiom through one
-/// place to keep them in lockstep if the LLVM API ever changes.
 template <typename GlobalT>
 void poisonAndErase(GlobalT &GV) {
   GV.replaceAllUsesWith(PoisonValue::get(GV.getType()));
   GV.eraseFromParent();
 }
 
-/// Walk every instruction in every basic block of `F`, calling
-/// `Visit(GV)` for each global operand referenced by the body.  Shared
-/// by both the pre-merge call-graph BFS and the post-merge mark phase.
 template <typename VisitFn>
 void forEachGlobalReferencedBy(Function &F, VisitFn Visit) {
   for (BasicBlock &BB : F)
@@ -71,11 +54,6 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   if (Embedded.empty())
     return PreservedAnalyses::all();
 
-  // Codegen stamps kRuntimeFnAttr on every runtime function.  We use
-  // two signals to decide what to do:
-  //   AnyExternUsed → thin-header path, bitcode merge needed.
-  //   AnyDefined only → full source-prelude, all bodies present.
-  //   neither → TU doesn't use `string`.
   bool AnyExternUsed = false;
   bool AnyDefined = false;
   for (const Function &F : M) {
@@ -94,38 +72,17 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     return PreservedAnalyses::all();
   }
 
-  auto Buf = MemoryBuffer::getMemBuffer(
-      Embedded, "neverc_string_runtime", /*RequiresNullTerminator=*/false);
+  auto RuntimeMod =
+      parseBitcodeAndPrepare(Embedded, M, "neverc string runtime");
 
-  auto ExpectedMod = parseBitcodeFile(Buf->getMemBufferRef(), M.getContext());
-  if (!ExpectedMod)
-    report_fatal_error(Twine("Failed to parse neverc string runtime: ") +
-                       toString(ExpectedMod.takeError()));
-  auto RuntimeMod = std::move(*ExpectedMod);
-
-  // Stamp `kRuntimeFnAttr` on every function definition in RuntimeMod
-  // BEFORE the merge.  The bitcode was compiled from prelude-only
-  // source, so every definition IS a runtime function by construction
-  // -- no name matching needed.  The attribute survives the merge,
-  // and all downstream phases use `hasFnAttribute()` to identify
-  // runtime functions, eliminating string-prefix matching entirely.
   markAllAsRuntime(*RuntimeMod);
 
-  // Side-set of runtime global names captured from RuntimeMod before
-  // the merge.  GlobalVariable has no function-attribute equivalent;
-  // capturing names while RuntimeMod is still isolated is the simplest
-  // way to identify "this global came from the runtime" post-merge.
-  // Must own the strings: linkModules destroys the source Module,
-  // invalidating any StringRef into its ValueSymbolTable.
   StringSet<> RuntimeGlobalNames;
   for (const GlobalVariable &GV : RuntimeMod->globals())
     if (!GV.isDeclaration())
       RuntimeGlobalNames.insert(GV.getName());
 
-  // Compute the transitive set of RuntimeMod functions needed by user
-  // code.  Seed from user-referenced declarations whose names map to
-  // a real RuntimeMod definition (no prefix matching: RuntimeMod's
-  // function table is the authoritative roster).
+  // Pre-merge call-graph prune: only link functions reachable from user code.
   SmallPtrSet<Function *, 16> Needed;
   SmallPtrSet<GlobalVariable *, 8> NeededGlobals;
   SmallVector<Function *, 32> Worklist;
@@ -141,10 +98,6 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     EnqueueIfNew(RuntimeMod->getFunction(Decl.getName()));
   }
 
-  // Walk the call graph in RuntimeMod.  Every callee that is defined
-  // in RuntimeMod IS a runtime helper -- no name gating needed.
-  // Global operands are tracked separately so unused runtime globals
-  // can be pruned alongside unused functions.
   while (!Worklist.empty()) {
     Function *F = Worklist.pop_back_val();
     forEachGlobalReferencedBy(*F, [&](GlobalValue *GV) {
@@ -158,9 +111,6 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     });
   }
 
-  // Drop unreferenced runtime functions and globals from RuntimeMod
-  // BEFORE the merge -- avoids merging ~170 functions only to DCE
-  // them afterward.
   for (Function &F : make_early_inc_range(*RuntimeMod)) {
     if (F.isDeclaration() || Needed.count(&F))
       continue;
@@ -172,22 +122,9 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     poisonAndErase(GV);
   }
 
-  RuntimeMod->setDataLayout(M.getDataLayout());
-  RuntimeMod->setTargetTriple(M.getTargetTriple());
+  linkModuleOrFail(M, std::move(RuntimeMod), "neverc string runtime");
 
-  if (auto *Flags = RuntimeMod->getModuleFlagsMetadata())
-    Flags->clearOperands();
-
-  if (Linker::linkModules(M, std::move(RuntimeMod),
-                          Linker::Flags::OverrideFromSrc)) {
-    report_fatal_error("Failed to link neverc string runtime");
-  }
-
-  // ── Post-merge: internalize ──
-  //
-  // The attribute we stamped pre-merge survived the link, so every
-  // identification check below is a single bit test on the function.
-  // Globals fall back to the side-set captured before the merge.
+  // Post-merge: internalize and DCE.
   auto IsRuntimeFn = [](const Function &F) {
     return F.hasFnAttribute(kRuntimeFnAttr);
   };
@@ -202,14 +139,7 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     if (!GV.isDeclaration() && IsRuntimeGlobal(GV))
       GV.setLinkage(GlobalValue::InternalLinkage);
 
-  // Mark-and-sweep DCE.  Runtime functions form an interconnected
-  // call graph; simple use_empty() can't reclaim cycles.  Walk from
-  // every non-runtime root to find reachable runtime symbols, then
-  // erase everything else.  Defensive: pre-merge prune already
-  // removes unreachable runtime functions, but cycles introduced by
-  // optimisations between the merge and downstream passes (none
-  // today, but plenty of hooks coming) can leave dead runtime code
-  // attached.
+  // Mark-and-sweep DCE for runtime symbols.
   SmallPtrSet<GlobalValue *, 16> Live;
   SmallVector<GlobalValue *, 32> ReachWorklist;
 
@@ -244,7 +174,6 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
         forEachGlobalOperand(GVar->getInitializer(), Enqueue);
   }
 
-  // Sweep unreachable runtime functions / globals.
   for (Function &F : make_early_inc_range(M)) {
     if (F.isDeclaration() || !IsRuntimeFn(F) || Live.count(&F))
       continue;
@@ -256,11 +185,6 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     poisonAndErase(GV);
   }
 
-  // Clean llvm.used / llvm.compiler.used AFTER the sweep so no erased
-  // runtime symbol leaves behind a poison entry in the intrinsic
-  // array.  Runtime symbols (now internalized) belong to the pipeline
-  // -- the linker pass owns their lifetime, not the user's
-  // __attribute__((used)) decision.
   removeFromUsedLists(M, [&](Constant *C) {
     if (auto *F = dyn_cast<Function>(C->stripPointerCasts()))
       return IsRuntimeFn(*F);
