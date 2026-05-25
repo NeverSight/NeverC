@@ -526,11 +526,13 @@ void neverc::expandUCNs(llvm::SmallVectorImpl<char> &Buf,
       const char *Delim = (const char *)memchr(I, '}', E - I);
       assert(Delim != nullptr);
       llvm::StringRef Name(I, Delim - I);
-      auto Res = llvm::sys::unicode::nameToCodepointLooseMatching(Name);
-      assert(Res.CodePoint != UINT32_MAX &&
+      CodePoint = llvm::sys::unicode::nameToCodepointStrict(Name);
+      if (CodePoint == UINT32_MAX) {
+        auto Res = llvm::sys::unicode::nameToCodepointLooseMatching(Name);
+        CodePoint = Res.CodePoint;
+      }
+      assert(CodePoint != UINT32_MAX &&
              "could not find a codepoint that was previously found");
-      CodePoint = Res.CodePoint;
-      assert(CodePoint != 0xFFFFFFFF);
       appendCodePoint(CodePoint, Buf);
       I = Delim + 1;
       continue;
