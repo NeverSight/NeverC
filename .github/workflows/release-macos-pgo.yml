@@ -27,7 +27,6 @@ jobs:
   pgo-profile:
     name: PGO generate + train
     runs-on: macos-latest
-    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -236,7 +235,6 @@ jobs:
     name: PGO use + package + release
     needs: pgo-profile
     runs-on: macos-latest
-    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4

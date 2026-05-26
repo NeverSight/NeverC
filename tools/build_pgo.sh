@@ -11,7 +11,7 @@
 #   ./tools/build_pgo.sh benchmark       # A/B compare baseline vs PGO build
 #   ./tools/build_pgo.sh clean           # remove PGO build dirs and profiles
 #
-# Requires: cmake, ninja, xcrun (macOS) or llvm-profdata (Linux)
+# Requires: cmake, ninja, xcrun (macOS) or llvm-profdata (Linux/Windows)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,11 +28,13 @@ REDIS_DIR="$REPO_ROOT/local_docs/redis"
 ZLIB_DIR="$REPO_ROOT/local_docs/zlib"
 CURL_DIR="$REPO_ROOT/local_docs/curl"
 
-JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8)}"
+JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-8}")}"
 
 find_profdata_tool() {
   if command -v llvm-profdata &>/dev/null; then
     echo "llvm-profdata"
+  elif [ -n "${LLVM_ROOT:-}" ] && command -v "${LLVM_ROOT}/bin/llvm-profdata" &>/dev/null; then
+    echo "${LLVM_ROOT}/bin/llvm-profdata"
   elif xcrun --find llvm-profdata &>/dev/null 2>&1; then
     xcrun --find llvm-profdata
   else
@@ -79,6 +81,7 @@ phase_train() {
 
   ensure_profdata_tool
   local NC="$BUILD_PGO_GEN/bin/neverc"
+  [ ! -x "$NC" ] && [ -x "${NC}.exe" ] && NC="${NC}.exe"
   if [ ! -x "$NC" ]; then
     echo "ERROR: instrumented neverc not found at $NC" >&2
     echo "       Run '$0 generate' first." >&2
@@ -224,14 +227,19 @@ phase_use() {
 
   local gc_flag="-Wl,--gc-sections"
   local order_flag=""
-  if [ "$(uname)" = "Darwin" ]; then
-    gc_flag="-Wl,-dead_strip"
-    local ORDER_FILE="$PROFILE_DIR/neverc.order"
-    if [ -f "$ORDER_FILE" ]; then
-      order_flag="-DNEVERC_ORDER_FILE=$ORDER_FILE"
-      echo "  Using order file: $ORDER_FILE"
-    fi
-  fi
+  case "$(uname -s)" in
+    Darwin)
+      gc_flag="-Wl,-dead_strip"
+      local ORDER_FILE="$PROFILE_DIR/neverc.order"
+      if [ -f "$ORDER_FILE" ]; then
+        order_flag="-DNEVERC_ORDER_FILE=$ORDER_FILE"
+        echo "  Using order file: $ORDER_FILE"
+      fi
+      ;;
+    MINGW*|MSYS*)
+      gc_flag=""
+      ;;
+  esac
 
   cmake -S "$REPO_ROOT/llvm" -B "$BUILD_PGO_USE" -G Ninja \
     -C "$CACHE" \
@@ -245,9 +253,13 @@ phase_use() {
   echo "✓ PGO-optimised neverc: $BUILD_PGO_USE/bin/neverc"
 
   local baseline_size pgo_size
-  if [ -x "$BUILD_BASELINE/bin/neverc" ]; then
-    baseline_size=$(stat -f '%z' "$BUILD_BASELINE/bin/neverc" 2>/dev/null || stat -c '%s' "$BUILD_BASELINE/bin/neverc" 2>/dev/null)
-    pgo_size=$(stat -f '%z' "$BUILD_PGO_USE/bin/neverc" 2>/dev/null || stat -c '%s' "$BUILD_PGO_USE/bin/neverc" 2>/dev/null)
+  local baseline_bin="$BUILD_BASELINE/bin/neverc"
+  [ ! -x "$baseline_bin" ] && [ -x "${baseline_bin}.exe" ] && baseline_bin="${baseline_bin}.exe"
+  if [ -x "$baseline_bin" ]; then
+    local pgo_bin="$BUILD_PGO_USE/bin/neverc"
+    [ ! -x "$pgo_bin" ] && [ -x "${pgo_bin}.exe" ] && pgo_bin="${pgo_bin}.exe"
+    baseline_size=$(stat -f '%z' "$baseline_bin" 2>/dev/null || stat -c '%s' "$baseline_bin" 2>/dev/null)
+    pgo_size=$(stat -f '%z' "$pgo_bin" 2>/dev/null || stat -c '%s' "$pgo_bin" 2>/dev/null)
     echo "  Binary size: baseline=$(numfmt --to=iec "$baseline_size" 2>/dev/null || echo "${baseline_size}B") → PGO=$(numfmt --to=iec "$pgo_size" 2>/dev/null || echo "${pgo_size}B")"
   fi
 }
@@ -259,6 +271,8 @@ phase_benchmark() {
 
   local NC_BASE="$BUILD_BASELINE/bin/neverc"
   local NC_PGO="$BUILD_PGO_USE/bin/neverc"
+  [ ! -x "$NC_BASE" ] && [ -x "${NC_BASE}.exe" ] && NC_BASE="${NC_BASE}.exe"
+  [ ! -x "$NC_PGO" ] && [ -x "${NC_PGO}.exe" ] && NC_PGO="${NC_PGO}.exe"
 
   for bin_label in "Baseline:$NC_BASE" "PGO:$NC_PGO"; do
     IFS=: read label bin <<< "$bin_label"
