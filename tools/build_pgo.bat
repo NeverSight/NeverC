@@ -34,8 +34,11 @@ set "LLVM_PROFDATA="
 where llvm-profdata >nul 2>&1 && (
     for /f "delims=" %%i in ('where llvm-profdata') do set "LLVM_PROFDATA=%%i"
 )
+if not defined LLVM_PROFDATA if defined LLVM_ROOT (
+    if exist "%LLVM_ROOT%\bin\llvm-profdata.exe" set "LLVM_PROFDATA=%LLVM_ROOT%\bin\llvm-profdata.exe"
+)
 if not defined LLVM_PROFDATA (
-    echo ERROR: llvm-profdata not found. Add LLVM bin directory to PATH.
+    echo ERROR: llvm-profdata not found. Add LLVM bin directory to PATH or set LLVM_ROOT.
     exit /b 1
 )
 
