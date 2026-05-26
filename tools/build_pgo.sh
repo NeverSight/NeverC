@@ -30,14 +30,6 @@ CURL_DIR="$REPO_ROOT/local_docs/curl"
 
 JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8)}"
 
-SCCACHE_FLAGS=()
-if command -v sccache &>/dev/null; then
-  SCCACHE_FLAGS=(
-    -DLLVM_CCACHE_BUILD=ON
-    -DLLVM_CCACHE_PROGRAM=sccache
-  )
-fi
-
 find_profdata_tool() {
   if command -v llvm-profdata &>/dev/null; then
     echo "llvm-profdata"
@@ -69,7 +61,6 @@ phase_generate() {
   # profile runtime's atexit flush (profraw ends up 0 bytes on macOS).
   cmake -S "$REPO_ROOT/llvm" -B "$BUILD_PGO_GEN" -G Ninja \
     -C "$CACHE" \
-    "${SCCACHE_FLAGS[@]}" \
     -DNEVERC_ENABLE_LTO=OFF \
     -DNEVERC_ENABLE_MIMALLOC=OFF \
     -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -march=native -fprofile-instr-generate -DNEVERC_PGO_TRAINING -ffunction-sections -fdata-sections" \
@@ -244,7 +235,6 @@ phase_use() {
 
   cmake -S "$REPO_ROOT/llvm" -B "$BUILD_PGO_USE" -G Ninja \
     -C "$CACHE" \
-    "${SCCACHE_FLAGS[@]}" \
     -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -march=native -fprofile-instr-use=$PROFDATA -ffunction-sections -fdata-sections" \
     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -march=native -fprofile-instr-use=$PROFDATA -ffunction-sections -fdata-sections" \
     -DCMAKE_EXE_LINKER_FLAGS="$gc_flag" \
