@@ -1,6 +1,10 @@
 # Profile-guided release build for Windows x86_64.
 # Tag push: full PGO pipeline + GitHub Release upload.
 # Manual dispatch: same pipeline but artifacts only (no release).
+#
+# Optimisation: profdata is cached across runs (keyed on neverc source hash).
+# When the cache hits, the expensive instrumented-build + training phase is
+# skipped entirely.  sccache further accelerates compilation on cache misses.
 name: windows-x64-neverc-release-pgo
 
 permissions:
@@ -11,6 +15,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      force-rebuild-profdata:
+        description: 'Force rebuild PGO profile data (ignore cache)'
+        type: boolean
+        default: false
 
 jobs:
   pgo-profile:
@@ -44,11 +53,44 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
+      # ── Profdata cache ────────────────────────────────────────
+      - name: Restore cached PGO profile data
+        if: inputs.force-rebuild-profdata != true
+        id: cache-profdata
+        uses: actions/cache/restore@v4
+        with:
+          path: pgo-profiles/merged.profdata
+          key: pgo-profdata-win-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
+          restore-keys: |
+            pgo-profdata-win-
+
+      - name: Check for usable profdata
+        id: check-profdata
+        shell: bash
+        run: |
+          if [ -f pgo-profiles/merged.profdata ]; then
+            echo "has_profdata=true" >> "$GITHUB_OUTPUT"
+            ls -lh pgo-profiles/merged.profdata
+            echo "Reusing cached PGO profile data — skipping instrumented build + training"
+          else
+            echo "has_profdata=false" >> "$GITHUB_OUTPUT"
+            echo "No cached profile data — full instrumented build + training required"
+          fi
+
+      # ── sccache (only when we actually need to compile) ──────
+      - name: Setup sccache
+        if: steps.check-profdata.outputs.has_profdata != 'true'
+        uses: mozilla/sccache-action@v0.0.7
+
+      # ── Phase 1: instrumented build (skipped on cache hit) ───
       - name: Build instrumented neverc
+        if: steps.check-profdata.outputs.has_profdata != 'true'
         shell: bash
         run: |
           cmake -S llvm -B build-pgo-gen -G Ninja \
             -C neverc/cmake/caches/NeverC.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DNEVERC_ENABLE_LTO=OFF \
             -DNEVERC_ENABLE_MIMALLOC=OFF \
             -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-generate -DNEVERC_PGO_TRAINING -ffunction-sections -fdata-sections" \
@@ -56,7 +98,9 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate"
           cmake --build build-pgo-gen --target neverc --parallel $NUMBER_OF_PROCESSORS
 
+      # ── Phase 1b: training (skipped on cache hit) ────────────
       - name: Download PGO training workloads
+        if: steps.check-profdata.outputs.has_profdata != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -85,6 +129,7 @@ jobs:
           tar xzf /tmp/zlib.tar.gz -C ci-pgo-workloads/zlib --strip-components=1
 
       - name: Collect PGO profiles
+        if: steps.check-profdata.outputs.has_profdata != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -135,6 +180,14 @@ jobs:
           echo "Merging $profraw_count profiles..."
           "$LLVM_PROFDATA" merge -output="${PROFILE_DIR}/merged.profdata" "$PROFILE_DIR"/*.profraw
 
+      # ── Save profdata to cache for future runs ───────────────
+      - name: Save PGO profile cache
+        if: steps.check-profdata.outputs.has_profdata != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: pgo-profiles/merged.profdata
+          key: pgo-profdata-win-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
+
       - name: Upload profile data
         uses: actions/upload-artifact@v4
         with:
@@ -174,6 +227,9 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Setup sccache
+        uses: mozilla/sccache-action@v0.0.7
+
       - name: Download profile data
         uses: actions/download-artifact@v4
         with:
@@ -186,6 +242,8 @@ jobs:
           PROFDATA="${GITHUB_WORKSPACE}/pgo-profiles/merged.profdata"
           cmake -S llvm -B build-pgo-use -G Ninja \
             -C neverc/cmake/caches/NeverC.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=${PROFDATA} -ffunction-sections -fdata-sections" \
             -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=${PROFDATA} -ffunction-sections -fdata-sections" \
             -DCMAKE_EXE_LINKER_FLAGS=""

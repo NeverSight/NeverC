@@ -29,6 +29,12 @@ set "CURL_DIR=%REPO_ROOT%\local_docs\curl"
 
 if not defined JOBS set "JOBS=%NUMBER_OF_PROCESSORS%"
 
+REM Detect sccache for compilation caching
+set "SCCACHE_FLAGS="
+where sccache >nul 2>&1 && (
+    set "SCCACHE_FLAGS=-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
+)
+
 REM Locate llvm-profdata
 set "LLVM_PROFDATA="
 where llvm-profdata >nul 2>&1 && (
@@ -67,6 +73,7 @@ echo ==============================================================
 
 cmake -S "%REPO_ROOT%\llvm" -B "%BUILD_PGO_GEN%" -G Ninja ^
     -C "%CACHE%" ^
+    %SCCACHE_FLAGS% ^
     -DNEVERC_ENABLE_LTO=OFF ^
     -DNEVERC_ENABLE_MIMALLOC=OFF ^
     -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-generate -DNEVERC_PGO_TRAINING -ffunction-sections -fdata-sections" ^
@@ -185,6 +192,7 @@ if not exist "%PROFDATA%" (
 
 cmake -S "%REPO_ROOT%\llvm" -B "%BUILD_PGO_USE%" -G Ninja ^
     -C "%CACHE%" ^
+    %SCCACHE_FLAGS% ^
     -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=%PROFDATA% -ffunction-sections -fdata-sections" ^
     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=%PROFDATA% -ffunction-sections -fdata-sections" ^
     -DCMAKE_EXE_LINKER_FLAGS=""
