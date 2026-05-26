@@ -2,9 +2,11 @@
 # Tag push: full PGO pipeline + GitHub Release upload.
 # Manual dispatch: same pipeline but artifacts only (no release).
 #
-# Optimisation: profdata is cached across runs (keyed on neverc source hash).
-# When the cache hits, the expensive instrumented-build + training phase is
-# skipped entirely.  sccache further accelerates compilation on cache misses.
+# Strategy: Windows runners are too slow for the full instrumented-build +
+# training pipeline (~180 min+).  Instead we reuse profdata cached by the
+# Linux PGO workflow — LLVM's PGO profdata is cross-platform (function names
+# + edge counts only, no platform-specific data).  If no profdata is
+# available yet (first-ever run), we fall back to a regular Release build.
 name: windows-x64-neverc-release-pgo
 
 permissions:
@@ -15,189 +17,10 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      force-rebuild-profdata:
-        description: 'Force rebuild PGO profile data (ignore cache)'
-        type: boolean
-        default: false
 
 jobs:
-  pgo-profile:
-    name: PGO generate + train
-    runs-on: windows-latest
-    timeout-minutes: 180
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup build deps
-        run: choco install ninja cmake -y
-
-      - name: Resolve latest LLVM version
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          LLVM_VERIFY_ASSET_SUFFIX: win64.exe
-        run: bash ./.github/scripts/resolve-llvm-version.sh
-
-      - name: Cache LLVM toolchain
-        uses: actions/cache@v4
-        with:
-          path: C:\LLVM
-          key: llvm-${{ env.LLVM_VER }}-win64
-
-      - name: Install PGO-optimised Clang
-        shell: pwsh
-        run: ./.github/scripts/install-llvm-windows.ps1
-
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-
-      # ── Profdata cache ────────────────────────────────────────
-      - name: Restore cached PGO profile data
-        if: inputs.force-rebuild-profdata != true
-        id: cache-profdata
-        uses: actions/cache/restore@v4
-        with:
-          path: pgo-profiles/merged.profdata
-          key: pgo-profdata-win-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
-          restore-keys: |
-            pgo-profdata-win-
-
-      - name: Check for usable profdata
-        id: check-profdata
-        shell: bash
-        run: |
-          if [ -f pgo-profiles/merged.profdata ]; then
-            echo "has_profdata=true" >> "$GITHUB_OUTPUT"
-            ls -lh pgo-profiles/merged.profdata
-            echo "Reusing cached PGO profile data — skipping instrumented build + training"
-          else
-            echo "has_profdata=false" >> "$GITHUB_OUTPUT"
-            echo "No cached profile data — full instrumented build + training required"
-          fi
-
-      # ── sccache (only when we actually need to compile) ──────
-      - name: Setup sccache
-        if: steps.check-profdata.outputs.has_profdata != 'true'
-        uses: mozilla/sccache-action@v0.0.7
-
-      # ── Phase 1: instrumented build (skipped on cache hit) ───
-      - name: Build instrumented neverc
-        if: steps.check-profdata.outputs.has_profdata != 'true'
-        shell: bash
-        run: |
-          cmake -S llvm -B build-pgo-gen -G Ninja \
-            -C neverc/cmake/caches/NeverC.cmake \
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
-            -DNEVERC_ENABLE_LTO=OFF \
-            -DNEVERC_ENABLE_MIMALLOC=OFF \
-            -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-generate -DNEVERC_PGO_TRAINING -ffunction-sections -fdata-sections" \
-            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-generate -DNEVERC_PGO_TRAINING -ffunction-sections -fdata-sections" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate"
-          cmake --build build-pgo-gen --target neverc --parallel $NUMBER_OF_PROCESSORS
-
-      # ── Phase 1b: training (skipped on cache hit) ────────────
-      - name: Download PGO training workloads
-        if: steps.check-profdata.outputs.has_profdata != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          SQLITE_VER=3460100
-          SQLITE_YEAR=2024
-          mkdir -p ci-pgo-workloads/sqlite
-          curl -fsSL \
-            "https://www.sqlite.org/${SQLITE_YEAR}/sqlite-amalgamation-${SQLITE_VER}.zip" \
-            -o /tmp/sqlite-amalgamation.zip
-          unzip -j /tmp/sqlite-amalgamation.zip \
-            "sqlite-amalgamation-${SQLITE_VER}/sqlite3.c" \
-            -d ci-pgo-workloads/sqlite
-
-          REDIS_VER=7.2.5
-          curl -fsSL \
-            "https://github.com/redis/redis/archive/refs/tags/${REDIS_VER}.tar.gz" \
-            -o /tmp/redis.tar.gz
-          mkdir -p ci-pgo-workloads/redis
-          tar xzf /tmp/redis.tar.gz -C ci-pgo-workloads/redis --strip-components=1
-
-          ZLIB_VER=1.3.1
-          curl -fsSL \
-            "https://github.com/madler/zlib/releases/download/v${ZLIB_VER}/zlib-${ZLIB_VER}.tar.gz" \
-            -o /tmp/zlib.tar.gz
-          mkdir -p ci-pgo-workloads/zlib
-          tar xzf /tmp/zlib.tar.gz -C ci-pgo-workloads/zlib --strip-components=1
-
-      - name: Collect PGO profiles
-        if: steps.check-profdata.outputs.has_profdata != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          NC="${GITHUB_WORKSPACE}/build-pgo-gen/bin/neverc.exe"
-          PROFILE_DIR="${GITHUB_WORKSPACE}/pgo-profiles"
-          LLVM_PROFDATA="C:/LLVM/bin/llvm-profdata.exe"
-
-          SQLITE="${GITHUB_WORKSPACE}/ci-pgo-workloads/sqlite/sqlite3.c"
-          REDIS_SRC="${GITHUB_WORKSPACE}/ci-pgo-workloads/redis/src"
-          ZLIB_SRC="${GITHUB_WORKSPACE}/ci-pgo-workloads/zlib"
-
-          rm -rf "$PROFILE_DIR"
-          mkdir -p "$PROFILE_DIR"
-
-          train() {
-            local profraw="$1"; shift
-            LLVM_PROFILE_FILE="$profraw" "$NC" "$@" 2>/dev/null || true
-          }
-
-          echo "Training on SQLite..."
-          train "$PROFILE_DIR/sqlite_preproc.profraw" -E -w -fno-neverc-types -o NUL "$SQLITE"
-          train "$PROFILE_DIR/sqlite_sema.profraw" -fsyntax-only -w -fno-neverc-types "$SQLITE"
-          for opt in O0 O2 O3; do
-            train "$PROFILE_DIR/sqlite_${opt}.profraw" -c "-${opt}" -w -fno-neverc-types -o NUL "$SQLITE"
-          done
-
-          if [ -d "$REDIS_SRC" ]; then
-            echo "Training on Redis..."
-            for f in "$REDIS_SRC"/*.c; do
-              train "$PROFILE_DIR/redis_$(basename "$f" .c).profraw" -c -O2 -w -fno-neverc-types -o NUL "$f"
-            done
-          fi
-
-          if [ -d "$ZLIB_SRC" ]; then
-            echo "Training on zlib..."
-            for f in "$ZLIB_SRC"/*.c; do
-              train "$PROFILE_DIR/zlib_$(basename "$f" .c).profraw" -c -O2 -w -fno-neverc-types -o NUL "$f"
-            done
-          fi
-
-          echo "Training on in-repo tests..."
-          while IFS= read -r -d '' f; do
-            tag=$(echo "$f" | tr '/' '_')
-            train "$PROFILE_DIR/test_${tag}.profraw" -c -O2 -w -fno-neverc-types -o NUL "$f"
-          done < <(find tests -name '*.c' -print0)
-
-          profraw_count=$(ls "$PROFILE_DIR"/*.profraw | wc -l | tr -d ' ')
-          echo "Merging $profraw_count profiles..."
-          "$LLVM_PROFDATA" merge -output="${PROFILE_DIR}/merged.profdata" "$PROFILE_DIR"/*.profraw
-
-      # ── Save profdata to cache for future runs ───────────────
-      - name: Save PGO profile cache
-        if: steps.check-profdata.outputs.has_profdata != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: pgo-profiles/merged.profdata
-          key: pgo-profdata-win-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
-
-      - name: Upload profile data
-        uses: actions/upload-artifact@v4
-        with:
-          name: neverc-pgo-profdata-windows
-          path: pgo-profiles/merged.profdata
-          retention-days: 7
-
   pgo-release:
-    name: PGO use + package + release
-    needs: pgo-profile
+    name: PGO release
     runs-on: windows-latest
     timeout-minutes: 180
     steps:
@@ -227,30 +50,75 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
+      # ── sccache ──────────────────────────────────────────────
       - name: Setup sccache
         uses: mozilla/sccache-action@v0.0.7
 
-      - name: Download profile data
-        uses: actions/download-artifact@v4
-        with:
-          name: neverc-pgo-profdata-windows
-          path: pgo-profiles
+      - name: Verify sccache
+        shell: bash
+        run: |
+          echo "sccache location: $(which sccache || echo 'NOT FOUND')"
+          sccache --version || true
 
-      - name: Build PGO-optimised neverc
+      # ── Restore profdata ─────────────────────────────────────
+      # Try in order:
+      #   1. Windows-specific profdata from a previous run
+      #   2. Linux profdata (cross-platform compatible)
+      - name: Restore PGO profile data
+        id: cache-profdata
+        uses: actions/cache/restore@v4
+        with:
+          path: pgo-profiles/merged.profdata
+          key: pgo-profdata-win-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
+          restore-keys: |
+            pgo-profdata-win-
+            pgo-profdata-linux-
+
+      - name: Check profdata availability
+        id: check-profdata
+        shell: bash
+        run: |
+          if [ -f pgo-profiles/merged.profdata ]; then
+            echo "has_profdata=true" >> "$GITHUB_OUTPUT"
+            ls -lh pgo-profiles/merged.profdata
+            echo "PGO profile data found — building with profile-guided optimisation"
+          else
+            echo "has_profdata=false" >> "$GITHUB_OUTPUT"
+            echo "No profile data available — building standard Release (PGO will be available after the Linux PGO workflow runs)"
+          fi
+
+      # ── Build (PGO-optimised when profdata is available) ─────
+      - name: Build neverc (PGO-optimised)
+        if: steps.check-profdata.outputs.has_profdata == 'true'
         shell: bash
         run: |
           PROFDATA="${GITHUB_WORKSPACE}/pgo-profiles/merged.profdata"
-          cmake -S llvm -B build-pgo-use -G Ninja \
+          cmake -S llvm -B build -G Ninja \
             -C neverc/cmake/caches/NeverC.cmake \
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DLLVM_CCACHE_BUILD=ON \
+            -DLLVM_CCACHE_PROGRAM=sccache \
             -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=${PROFDATA} -ffunction-sections -fdata-sections" \
             -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -fprofile-instr-use=${PROFDATA} -ffunction-sections -fdata-sections" \
             -DCMAKE_EXE_LINKER_FLAGS=""
-          cmake --build build-pgo-use --target neverc --parallel $NUMBER_OF_PROCESSORS
+          cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
+
+      - name: Build neverc (standard release)
+        if: steps.check-profdata.outputs.has_profdata != 'true'
+        shell: bash
+        run: |
+          cmake -S llvm -B build -G Ninja \
+            -C neverc/cmake/caches/NeverC.cmake \
+            -DLLVM_CCACHE_BUILD=ON \
+            -DLLVM_CCACHE_PROGRAM=sccache
+          cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
+
+      - name: Show sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats || true
 
       - name: Install neverc
-        run: cmake --install build-pgo-use --prefix "$env:GITHUB_WORKSPACE\install"
+        run: cmake --install build --prefix "$env:GITHUB_WORKSPACE\install"
 
       - name: Package
         run: 7z a windows-x64-neverc-pgo.zip install

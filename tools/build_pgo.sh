@@ -33,8 +33,8 @@ JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8)}"
 SCCACHE_FLAGS=()
 if command -v sccache &>/dev/null; then
   SCCACHE_FLAGS=(
-    -DCMAKE_C_COMPILER_LAUNCHER=sccache
-    -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+    -DLLVM_CCACHE_BUILD=ON
+    -DLLVM_CCACHE_PROGRAM=sccache
   )
 fi
 

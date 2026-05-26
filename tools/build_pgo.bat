@@ -32,7 +32,7 @@ if not defined JOBS set "JOBS=%NUMBER_OF_PROCESSORS%"
 REM Detect sccache for compilation caching
 set "SCCACHE_FLAGS="
 where sccache >nul 2>&1 && (
-    set "SCCACHE_FLAGS=-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
+    set "SCCACHE_FLAGS=-DLLVM_CCACHE_BUILD=ON -DLLVM_CCACHE_PROGRAM=sccache"
 )
 
 REM Locate llvm-profdata
