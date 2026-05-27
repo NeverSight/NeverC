@@ -24,12 +24,24 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 
 ## 아키텍처 개요
 
-모든 내장 기능은 동일한 4계층 아키텍처를 공유합니다:
+`string`과 `mimalloc`은 동일한 4계층 아키텍처를 공유합니다:
 
 1. **언어 옵션 및 드라이버 플래그** — `LangOptions.def`에 `LangOption` 정의
 2. **Foundation API** — `getEmbeddedBitcode()` 및 `isSupported()` 제공
 3. **CMake 부트스트랩** — 2단계 부트스트랩으로 bitcode 생성
 4. **IR 병합 패스** — `PipelineStartEP`에서 bitcode를 사용자 모듈에 병합
+
+`LangOptions.def` 등록 예시:
+
+```cpp
+LANGOPT(BuiltinString,      1, 0, "inject NeverC builtin string prelude")
+LANGOPT(BuiltinMimalloc,    1, 1, "inject mimalloc allocator override")
+LANGOPT(EncryptCallStrings, 1, 0, "auto-encrypt string literals in call arguments")
+VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
+              "maximum string length for auto-encryption (0 = no limit)")
+```
+
+> **참고:** `xorstr`는 임베디드 bitcode 모델을 사용하지 않습니다. 명시적 매크로 [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.ko.md)는 Sema 레이어(`SemaChecking.cpp`의 `semaBuiltinNeverCXorstr` 핸들러)에서 로어링되며, 선택적 `-fencrypt-call-strings` 자동 암호화는 IR 변환 패스 `EncryptCallStringsPass`가 **OptimizerLast** 위치에서 수행합니다(`XorStrCleanupPass`가 스택의 평문을 memset으로 0으로 지움). 자세한 계층 설계는 [xorstr 문서](xorstr/README.ko.md) 참조.
 
 ---
 
@@ -98,7 +110,12 @@ neverc/
 │   └── Builtin/
 │       ├── BuiltinString.h               # string API
 │       ├── BuiltinMimalloc.h             # mimalloc API
+│       ├── Builtins.def                  # __builtin_neverc_xorstr 등록
 │       └── ...
+│
+├── include/neverc/Transforms/XorStr/     # xorstr IR 패스 헤더
+│   ├── EncryptCallStringsPass.h
+│   └── XorStrCleanupPass.h
 │
 ├── lib/Foundation/
 │   ├── CMakeLists.txt                    # 모든 내장의 부트스트랩 타겟
@@ -109,8 +126,19 @@ neverc/
 │       ├── gen_string_runtime.py         # string 소스 생성기
 │       └── gen_mimalloc_source.py        # mimalloc 소스 생성기
 │
+├── lib/Headers/neverc/
+│   ├── xorstr.h                          # NC_XORSTR / NEVERC_XORSTR 매크로
+│   └── xorstr_impl.inc                   # __neverc_xorstr_decrypt 헬퍼
+│
+├── lib/Analyze/Checking/
+│   └── SemaChecking.cpp                  # semaBuiltinNeverCXorstr 핸들러
+│
+├── lib/Transforms/XorStr/                # xorstr IR 변환 패스
+│   ├── EncryptCallStringsPass.cpp        # 호출 인자의 문자열 리터럴 자동 암호화
+│   └── XorStrCleanupPass.cpp             # 스택의 평문 버퍼 영점화
+│
 ├── lib/Emit/Backend/
-│   ├── BackendUtil.cpp                   # PipelineStartEP 등록
+│   ├── BackendUtil.cpp                   # PipelineStartEP + 후속 패스 등록
 │   ├── StringRuntimeLinker.{h,cpp}       # string IR 병합 패스
 │   └── MimallocRuntimeLinker.{h,cpp}     # mimalloc IR 병합 패스
 │

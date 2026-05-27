@@ -60,24 +60,30 @@ All built-ins share the same four-layer architecture:
 Each built-in is controlled by a `LangOption` defined in `LangOptions.def`:
 
 ```cpp
-LANGOPT(BuiltinString,   1, 0, "inject NeverC builtin string prelude")
-LANGOPT(BuiltinMimalloc, 1, 0, "inject mimalloc allocator override")
+LANGOPT(BuiltinString,      1, 0, "inject NeverC builtin string prelude")
+LANGOPT(BuiltinMimalloc,    1, 1, "inject mimalloc allocator override")
+LANGOPT(EncryptCallStrings, 1, 0, "auto-encrypt string literals in call arguments")
+VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
+              "maximum string length for auto-encryption (0 = no limit)")
 ```
 
-Driver flags (`-fbuiltin-<name>` / `-fno-builtin-<name>`) are declared in `Options.td.h` with corresponding `LANG_OPTION_WITH_MARSHALLING` entries. The driver passes them to the frontend via `addNeverCFeatureFlags()`.
+Driver flags (`-fbuiltin-<name>` / `-fno-builtin-<name>`, `-fencrypt-call-strings` / `-fno-encrypt-call-strings`, `-fencrypt-call-strings-max-len=N`) are declared in `Options.td.h` with corresponding `LANG_OPTION_WITH_MARSHALLING` entries. The driver passes them to the frontend via `addNeverCFeatureFlags()`.
 
 ### Layer 2: Foundation API
 
 Each built-in has a header + implementation pair in `neverc/Foundation/Builtin/`:
 
 
-| Built-in | Header              | Implementation        |
-| -------- | ------------------- | --------------------- |
-| `string`   | `BuiltinString.h`   | `BuiltinString.cpp`   |
-| `mimalloc` | `BuiltinMimalloc.h` | `BuiltinMimalloc.cpp` |
+| Built-in   | Header                                          | Implementation                                    |
+| ---------- | ----------------------------------------------- | ------------------------------------------------- |
+| `string`   | `BuiltinString.h`                               | `BuiltinString.cpp`                               |
+| `mimalloc` | `BuiltinMimalloc.h`                             | `BuiltinMimalloc.cpp`                             |
+| `xorstr`   | `lib/Headers/neverc/xorstr.h` *(user-facing)*   | `lib/Transforms/XorStr/EncryptCallStringsPass.cpp` |
 
 
 The API provides `getEmbeddedBitcode()` to retrieve the precompiled LLVM bitcode blob, and `isSupported()` to check platform availability.
+
+> **Note:** `xorstr` does not use the embedded-bitcode model. The explicit macro [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.md) is lowered by the Sema layer (handler `semaBuiltinNeverCXorstr` in `SemaChecking.cpp`), and the optional `-fencrypt-call-strings` auto-encryption is performed by the IR transform pass `EncryptCallStringsPass` (with a `XorStrCleanupPass` companion that zeroes plaintext stack buffers). See [xorstr documentation](xorstr/README.md) for the full layered design.
 
 ### Layer 3: CMake Bootstrap Infrastructure
 
@@ -110,6 +116,17 @@ if (LangOpts.BuiltinMimalloc) {
 ```
 
 The pass parses the embedded bitcode, merges it into the user module via `llvm::Linker::linkModules()`, internalizes helper symbols (keeping only the public API external), and cleans up `llvm.used` / `llvm.compiler.used`.
+
+`xorstr`'s obfuscation passes register at the **post-pass** position (after all optimizations) so that the optimizer cannot constant-fold or undo the encryption:
+
+```cpp
+if (LangOpts.EncryptCallStrings) {
+    MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
+                    LangOpts.EncryptCallStringsMaxLen));
+    MPM.addPass(createModuleToFunctionPassAdaptor(
+                    neverc::xorstr::XorStrCleanupPass()));
+}
+```
 
 ---
 
@@ -186,10 +203,15 @@ neverc/
 │   └── Builtin/
 │       ├── BuiltinString.h               # string API
 │       ├── BuiltinMimalloc.h             # mimalloc API
+│       ├── Builtins.def                  # __builtin_neverc_xorstr registration
 │       └── ...
 │
 ├── include/neverc/Invoke/
 │   └── Options.td.h                      # Driver flag declarations
+│
+├── include/neverc/Transforms/XorStr/     # xorstr IR pass headers
+│   ├── EncryptCallStringsPass.h
+│   └── XorStrCleanupPass.h
 │
 ├── lib/Foundation/
 │   ├── CMakeLists.txt                    # Bootstrap targets for all built-ins
@@ -200,8 +222,19 @@ neverc/
 │       ├── gen_string_runtime.py         # string source generator
 │       └── gen_mimalloc_source.py        # mimalloc source generator
 │
+├── lib/Headers/neverc/
+│   ├── xorstr.h                          # NC_XORSTR / NEVERC_XORSTR macros
+│   └── xorstr_impl.inc                   # __neverc_xorstr_decrypt helper
+│
+├── lib/Analyze/Checking/
+│   └── SemaChecking.cpp                  # semaBuiltinNeverCXorstr handler
+│
+├── lib/Transforms/XorStr/                # xorstr IR transform passes
+│   ├── EncryptCallStringsPass.cpp        # auto-encrypts call-string literals
+│   └── XorStrCleanupPass.cpp             # zeroes plaintext stack buffers
+│
 ├── lib/Emit/Backend/
-│   ├── BackendUtil.cpp                   # PipelineStartEP registration
+│   ├── BackendUtil.cpp                   # PipelineStartEP + post-pass registration
 │   ├── StringRuntimeLinker.{h,cpp}       # string IR merge pass
 │   └── MimallocRuntimeLinker.{h,cpp}     # mimalloc IR merge pass
 │

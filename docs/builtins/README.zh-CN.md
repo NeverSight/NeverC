@@ -59,11 +59,14 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 每个内置功能由 `LangOptions.def` 中定义的 `LangOption` 控制：
 
 ```cpp
-LANGOPT(BuiltinString,   1, 0, "inject NeverC builtin string prelude")
-LANGOPT(BuiltinMimalloc, 1, 0, "inject mimalloc allocator override")
+LANGOPT(BuiltinString,      1, 0, "inject NeverC builtin string prelude")
+LANGOPT(BuiltinMimalloc,    1, 1, "inject mimalloc allocator override")
+LANGOPT(EncryptCallStrings, 1, 0, "auto-encrypt string literals in call arguments")
+VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
+              "maximum string length for auto-encryption (0 = no limit)")
 ```
 
-驱动器标志（`-fbuiltin-<name>` / `-fno-builtin-<name>`）在 `Options.td.h` 中声明，并附带 `LANG_OPTION_WITH_MARSHALLING` 条目。驱动器通过 `addNeverCFeatureFlags()` 将其传递给前端。
+驱动器标志（`-fbuiltin-<name>` / `-fno-builtin-<name>`、`-fencrypt-call-strings` / `-fno-encrypt-call-strings`、`-fencrypt-call-strings-max-len=N`）在 `Options.td.h` 中声明，并附带 `LANG_OPTION_WITH_MARSHALLING` 条目。驱动器通过 `addNeverCFeatureFlags()` 将其传递给前端。
 
 ### 第二层：Foundation API
 
@@ -73,8 +76,11 @@ LANGOPT(BuiltinMimalloc, 1, 0, "inject mimalloc allocator override")
 |---------|--------|------|
 | `string` | `BuiltinString.h` | `BuiltinString.cpp` |
 | `mimalloc` | `BuiltinMimalloc.h` | `BuiltinMimalloc.cpp` |
+| `xorstr` | `lib/Headers/neverc/xorstr.h` *(用户头文件)* | `lib/Transforms/XorStr/EncryptCallStringsPass.cpp` |
 
 API 提供 `getEmbeddedBitcode()` 用于获取预编译的 LLVM bitcode，以及 `isSupported()` 用于检查平台可用性。
+
+> **说明：** `xorstr` 不走嵌入式 bitcode 模型。显式宏 [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.zh-CN.md) 由 Sema 层降级（处理函数 `semaBuiltinNeverCXorstr` 位于 `SemaChecking.cpp`），可选的 `-fencrypt-call-strings` 自动加密由 IR 变换 Pass `EncryptCallStringsPass` 完成（配套 `XorStrCleanupPass` 负责清零栈上明文）。完整分层设计见 [xorstr 文档](xorstr/README.zh-CN.md)。
 
 ### 第三层：CMake 引导基础设施
 
@@ -107,6 +113,17 @@ if (LangOpts.BuiltinMimalloc) {
 ```
 
 该 Pass 解析嵌入的 bitcode，通过 `llvm::Linker::linkModules()` 合并到用户模块，内部化辅助符号（仅保留公共 API 的外部链接），并清理 `llvm.used` / `llvm.compiler.used`。
+
+`xorstr` 的混淆 Pass 注册在**后置位置**（所有优化之后），确保优化器不会常量折叠或还原加密：
+
+```cpp
+if (LangOpts.EncryptCallStrings) {
+    MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
+                    LangOpts.EncryptCallStringsMaxLen));
+    MPM.addPass(createModuleToFunctionPassAdaptor(
+                    neverc::xorstr::XorStrCleanupPass()));
+}
+```
 
 ---
 
@@ -179,10 +196,15 @@ neverc/
 │   └── Builtin/
 │       ├── BuiltinString.h               # string API
 │       ├── BuiltinMimalloc.h             # mimalloc API
+│       ├── Builtins.def                  # __builtin_neverc_xorstr 注册
 │       └── ...
 │
 ├── include/neverc/Invoke/
 │   └── Options.td.h                      # 驱动器标志声明
+│
+├── include/neverc/Transforms/XorStr/     # xorstr IR pass 头文件
+│   ├── EncryptCallStringsPass.h
+│   └── XorStrCleanupPass.h
 │
 ├── lib/Foundation/
 │   ├── CMakeLists.txt                    # 所有内置功能的引导目标
@@ -193,8 +215,19 @@ neverc/
 │       ├── gen_string_runtime.py         # string 源码生成器
 │       └── gen_mimalloc_source.py        # mimalloc 源码生成器
 │
+├── lib/Headers/neverc/
+│   ├── xorstr.h                          # NC_XORSTR / NEVERC_XORSTR 宏
+│   └── xorstr_impl.inc                   # __neverc_xorstr_decrypt 辅助函数
+│
+├── lib/Analyze/Checking/
+│   └── SemaChecking.cpp                  # semaBuiltinNeverCXorstr 处理函数
+│
+├── lib/Transforms/XorStr/                # xorstr IR 变换 Pass
+│   ├── EncryptCallStringsPass.cpp        # 自动加密 call 参数中的字符串字面量
+│   └── XorStrCleanupPass.cpp             # 清零栈上明文缓冲区
+│
 ├── lib/Emit/Backend/
-│   ├── BackendUtil.cpp                   # PipelineStartEP 注册
+│   ├── BackendUtil.cpp                   # PipelineStartEP + 后置 Pass 注册
 │   ├── StringRuntimeLinker.{h,cpp}       # string IR 合并 Pass
 │   └── MimallocRuntimeLinker.{h,cpp}     # mimalloc IR 合并 Pass
 │

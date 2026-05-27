@@ -22,12 +22,24 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 
 ## Architekturübersicht
 
-Alle integrierten Funktionen teilen die gleiche Vier-Schichten-Architektur:
+`string` und `mimalloc` teilen die gleiche Vier-Schichten-Architektur:
 
 1. **Sprachoptionen und Treiber-Flags** — `LangOption` definiert in `LangOptions.def`
 2. **Foundation API** — bietet `getEmbeddedBitcode()` und `isSupported()`
 3. **CMake Bootstrap-Infrastruktur** — Zweistufige Bitcode-Generierung
 4. **IR-Merge-Pass** — Bitcode-Zusammenführung in das Benutzermodul bei `PipelineStartEP`
+
+Beispiel für `LangOptions.def`-Registrierung:
+
+```cpp
+LANGOPT(BuiltinString,      1, 0, "inject NeverC builtin string prelude")
+LANGOPT(BuiltinMimalloc,    1, 1, "inject mimalloc allocator override")
+LANGOPT(EncryptCallStrings, 1, 0, "auto-encrypt string literals in call arguments")
+VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
+              "maximum string length for auto-encryption (0 = no limit)")
+```
+
+> **Hinweis:** `xorstr` verwendet nicht das Embedded-Bitcode-Modell. Das explizite Makro [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.de.md) wird von der Sema-Schicht (Handler `semaBuiltinNeverCXorstr` in `SemaChecking.cpp`) abgesenkt, und die optionale `-fencrypt-call-strings`-Autoverschlüsselung erfolgt durch die IR-Transform-Pass `EncryptCallStringsPass`, registriert an **OptimizerLast** (mit `XorStrCleanupPass`, das Klartext-Stack-Puffer per `volatile memset` nullt). Siehe [xorstr-Dokumentation](xorstr/README.de.md) für Details.
 
 ---
 
@@ -91,11 +103,19 @@ neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass AUS (u
 neverc/
 ├── include/neverc/Foundation/Builtin/
 │   ├── BuiltinString.h / BuiltinMimalloc.h
+│   └── Builtins.def                      # __builtin_neverc_xorstr
+├── include/neverc/Transforms/XorStr/
+│   └── EncryptCallStringsPass.h / XorStrCleanupPass.h
 ├── lib/Foundation/Builtin/
 │   ├── BuiltinString.cpp / BuiltinMimalloc.cpp
-│   ├── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
+│   └── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
+├── lib/Headers/neverc/
+│   └── xorstr.h / xorstr_impl.inc        # Makros NC_XORSTR / NEVERC_XORSTR
+├── lib/Analyze/Checking/SemaChecking.cpp # semaBuiltinNeverCXorstr
+├── lib/Transforms/XorStr/
+│   └── EncryptCallStringsPass.cpp / XorStrCleanupPass.cpp
 ├── lib/Emit/Backend/
-│   ├── BackendUtil.cpp / StringRuntimeLinker.{h,cpp} / MimallocRuntimeLinker.{h,cpp}
+│   └── BackendUtil.cpp / StringRuntimeLinker.{h,cpp} / MimallocRuntimeLinker.{h,cpp}
 ├── lib/Invoke/ToolChains/NeverC.cpp
 └── lib/Compiler/Preprocessor/InitPreprocessor.cpp
 ```

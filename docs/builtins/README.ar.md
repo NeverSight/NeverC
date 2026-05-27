@@ -22,12 +22,24 @@ neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
 
 ## نظرة عامة على البنية
 
-تشترك جميع الميزات المدمجة في نفس البنية ذات الأربع طبقات:
+يشترك `string` و `mimalloc` في نفس البنية ذات الأربع طبقات:
 
 1. **خيارات اللغة وأعلام المشغل** — `LangOption` معرف في `LangOptions.def`
 2. **واجهة Foundation** — توفر `getEmbeddedBitcode()` و `isSupported()`
 3. **بنية CMake Bootstrap التحتية** — توليد bitcode على مرحلتين
 4. **مسار دمج IR** — دمج bitcode في وحدة المستخدم عند `PipelineStartEP`
+
+مثال على التسجيل في `LangOptions.def`:
+
+```cpp
+LANGOPT(BuiltinString,      1, 0, "inject NeverC builtin string prelude")
+LANGOPT(BuiltinMimalloc,    1, 1, "inject mimalloc allocator override")
+LANGOPT(EncryptCallStrings, 1, 0, "auto-encrypt string literals in call arguments")
+VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
+              "maximum string length for auto-encryption (0 = no limit)")
+```
+
+> **ملاحظة:** لا يستخدم `xorstr` نموذج bitcode المُضمّن. الماكرو الصريح [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.ar.md) يُخفض في طبقة Sema (المعالج `semaBuiltinNeverCXorstr` في `SemaChecking.cpp`)، والتشفير التلقائي الاختياري `-fencrypt-call-strings` يُنفذ بواسطة تمرير تحويل IR `EncryptCallStringsPass` المسجل في **OptimizerLast** (مع `XorStrCleanupPass` الذي يصفر مخازن النص الواضح في المكدس عبر `volatile memset`). انظر [وثائق xorstr](xorstr/README.ar.md) للتفاصيل.
 
 ---
 
@@ -91,11 +103,19 @@ neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass معط
 neverc/
 ├── include/neverc/Foundation/Builtin/
 │   ├── BuiltinString.h / BuiltinMimalloc.h
+│   └── Builtins.def                      # __builtin_neverc_xorstr
+├── include/neverc/Transforms/XorStr/
+│   └── EncryptCallStringsPass.h / XorStrCleanupPass.h
 ├── lib/Foundation/Builtin/
 │   ├── BuiltinString.cpp / BuiltinMimalloc.cpp
-│   ├── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
+│   └── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
+├── lib/Headers/neverc/
+│   └── xorstr.h / xorstr_impl.inc        # ماكرو NC_XORSTR / NEVERC_XORSTR
+├── lib/Analyze/Checking/SemaChecking.cpp # semaBuiltinNeverCXorstr
+├── lib/Transforms/XorStr/
+│   └── EncryptCallStringsPass.cpp / XorStrCleanupPass.cpp
 ├── lib/Emit/Backend/
-│   ├── BackendUtil.cpp / StringRuntimeLinker.{h,cpp} / MimallocRuntimeLinker.{h,cpp}
+│   └── BackendUtil.cpp / StringRuntimeLinker.{h,cpp} / MimallocRuntimeLinker.{h,cpp}
 ├── lib/Invoke/ToolChains/NeverC.cpp
 └── lib/Compiler/Preprocessor/InitPreprocessor.cpp
 ```
