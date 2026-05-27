@@ -20,6 +20,7 @@ set(NEVERC_COMPILER_SOURCES
 
   Diagnostic/DiagnosticRenderer.cpp
   Diagnostic/TextDiagnostic.cpp
+  Diagnostic/TextDiagnosticSnippet.cpp
   Diagnostic/TextDiagnosticBuffer.cpp
   Diagnostic/TextDiagnosticPrinter.cpp
   Consumer/MultiplexConsumer.cpp

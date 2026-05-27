@@ -16,6 +16,7 @@ add_neverc_library(nevercAnalyze
   Core/SemaFixItUtils.cpp
 
   Decl/SemaDecl.cpp
+  Decl/SemaDeclDef.cpp
   Decl/SemaDeclAttr.cpp
   Decl/DeclSpec.cpp
   Decl/ParsedAttr.cpp
@@ -23,6 +24,7 @@ add_neverc_library(nevercAnalyze
   Decl/SemaAvailability.cpp
 
   Expr/SemaExpr.cpp
+  Expr/SemaExprBinOp.cpp
   Expr/SemaExprMember.cpp
   Expr/SemaNeverCString.cpp
   Expr/SemaCast.cpp
