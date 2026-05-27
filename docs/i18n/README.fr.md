@@ -6,7 +6,7 @@
 
 **Compilateur C23 orienté recherche en sécurité, construit sur LLVM**
 
-Éditeur de liens intégré · Pipeline shellcode · Runtimes intégrés (`string` · `mimalloc`)
+Éditeur de liens intégré · Pipeline shellcode · Runtimes intégrés (`string` · `mimalloc` · `xorstr`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#fonctionnalités)
@@ -30,7 +30,7 @@ NeverC compile du C standard en binaires hébergés, exécutables freestanding e
 - **[Compilateur shellcode](../shellcode-compiler/README.fr.md)** — pipeline IR/MIR multi-étapes, extraction multiplateforme, résolution d'imports/syscalls, mode noyau, audit d'octets interdits, architecture de plugins
 - **Éditeur de liens intégré** — COFF, ELF et Mach-O dans un seul binaire ; pas de `ld` ou `link.exe` externe
 - **Compilation croisée** — PE Windows depuis macOS/Linux avec SDK MSVC fourni
-- **[Runtimes intégrés](../builtins/README.fr.md)** — runtimes LLVM bitcode intégrés au compilateur : [`string`](../builtins/string/README.fr.md) (chaîne à sémantique de valeur, gestion mémoire automatique) et [`mimalloc`](../builtins/mimalloc/README.fr.md) (remplacement transparent d'allocateur haute performance)
+- **[Runtimes intégrés](../builtins/README.fr.md)** — runtimes LLVM bitcode intégrés au compilateur : [`string`](../builtins/string/README.fr.md) (chaîne à sémantique de valeur, gestion mémoire automatique), [`mimalloc`](../builtins/mimalloc/README.fr.md) (remplacement transparent d'allocateur haute performance) et [`xorstr`](../builtins/xorstr/README.fr.md) (chiffrement de chaînes à la compilation avec déchiffrement anti-signature)
 - **[Extension `.nc`](../nc-extension/README.fr.md)** — utilisez `.nc` pour activer automatiquement toutes les fonctionnalités NeverC (`string`, types entiers style Rust) sans drapeaux supplémentaires
 - **Build LLVM allégé** — backends x86_64 / AArch64 uniquement ; chemins C++/ObjC/OpenMP retirés
 

@@ -8,7 +8,7 @@
 
 **مُجمِّع C23 موجَّه لأبحاث الأمن على LLVM**
 
-مُرابط مدمج · مسار shellcode · أوقات تشغيل مدمجة (`string` · `mimalloc`)
+مُرابط مدمج · مسار shellcode · أوقات تشغيل مدمجة (`string` · `mimalloc` · `xorstr`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#الميزات)
@@ -32,7 +32,7 @@
 - **[مُجمِّع shellcode](../shellcode-compiler/README.ar.md)** — مسار IR/MIR متعدد المراحل، استخراج متعدد المنصات، حل الاستيراد/استدعاءات النظام، وضع النواة، تدقيق البايتات المحظورة، بنية إضافات
 - **مُرابط مدمج** — COFF وELF وMach-O في ثنائي واحد؛ دون `ld` أو `link.exe` خارجي
 - **تجميع متقاطع** — PE لـ Windows من macOS/Linux مع MSVC SDK مضمّن
-- **[أوقات التشغيل المدمجة](../builtins/README.ar.md)** — أوقات تشغيل LLVM bitcode مدمجة في المترجم: [`string`](../builtins/string/README.ar.md) (سلسلة بدلالة القيمة، إدارة ذاكرة تلقائية) و [`mimalloc`](../builtins/mimalloc/README.ar.md) (تجاوز مخصص ذاكرة عالي الأداء شفاف)
+- **[أوقات التشغيل المدمجة](../builtins/README.ar.md)** — أوقات تشغيل LLVM bitcode مدمجة في المترجم: [`string`](../builtins/string/README.ar.md) (سلسلة بدلالة القيمة، إدارة ذاكرة تلقائية) و[`mimalloc`](../builtins/mimalloc/README.ar.md) (تجاوز مخصص ذاكرة عالي الأداء شفاف) و[`xorstr`](../builtins/xorstr/README.ar.md) (تشفير السلاسل وقت الترجمة مع فك تشفير مضاد للبصمات)
 - **[امتداد `.nc`](../nc-extension/README.ar.md)** — استخدم `.nc` لتفعيل جميع ميزات NeverC تلقائيًا (`string`، أنواع الأعداد بأسلوب Rust) بدون أعلام إضافية
 - **بناء LLVM خفيف** — خلفية x86_64 / AArch64 فقط؛ إزالة مسارات C++/ObjC/OpenMP
 
