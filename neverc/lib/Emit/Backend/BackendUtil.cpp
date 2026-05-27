@@ -466,7 +466,12 @@ void GenAssemblyHelper::runOptimizationPipeline(
         });
   }
 
-
+  if (LangOpts.BuiltinMimalloc) {
+    PB.registerPipelineStartEPCallback(
+        [](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(MimallocRuntimeLinkerPass());
+        });
+  }
 
   switch (CodeGenOpts.getAssignmentTrackingMode()) {
   case CodeGenOptions::AssignmentTrackingOpts::Forced:
@@ -591,9 +596,6 @@ void GenAssemblyHelper::runOptimizationPipeline(
       MPM.addPass(createModuleToFunctionPassAdaptor(
           neverc::xorstr::XorStrCleanupPass()));
     }
-
-    if (LangOpts.BuiltinMimalloc)
-      MPM.addPass(MimallocRuntimeLinkerPass());
 
     if (CodeGenOpts.AutoGenerateIR)
       MPM.addPass(IRAutoGeneratorPostPass(true, "IRAutoGeneratorPost"));
