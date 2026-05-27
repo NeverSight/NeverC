@@ -466,23 +466,7 @@ void GenAssemblyHelper::runOptimizationPipeline(
         });
   }
 
-  if (LangOpts.BuiltinMimalloc) {
-    PB.registerPipelineStartEPCallback(
-        [](ModulePassManager &MPM, OptimizationLevel) {
-          MPM.addPass(MimallocRuntimeLinkerPass());
-        });
-  }
 
-  if (LangOpts.EncryptCallStrings) {
-    unsigned MaxLen = LangOpts.EncryptCallStringsMaxLen;
-    PB.registerOptimizerLastEPCallback(
-        [MaxLen](ModulePassManager &MPM, OptimizationLevel) {
-          MPM.addPass(
-              neverc::xorstr::EncryptCallStringsPass(MaxLen));
-          MPM.addPass(createModuleToFunctionPassAdaptor(
-              neverc::xorstr::XorStrCleanupPass()));
-        });
-  }
 
   switch (CodeGenOpts.getAssignmentTrackingMode()) {
   case CodeGenOptions::AssignmentTrackingOpts::Forced:
@@ -601,6 +585,16 @@ void GenAssemblyHelper::runOptimizationPipeline(
 
   // Post pass
   {
+    if (LangOpts.EncryptCallStrings) {
+      MPM.addPass(
+          neverc::xorstr::EncryptCallStringsPass(LangOpts.EncryptCallStringsMaxLen));
+      MPM.addPass(createModuleToFunctionPassAdaptor(
+          neverc::xorstr::XorStrCleanupPass()));
+    }
+
+    if (LangOpts.BuiltinMimalloc)
+      MPM.addPass(MimallocRuntimeLinkerPass());
+
     if (CodeGenOpts.AutoGenerateIR)
       MPM.addPass(IRAutoGeneratorPostPass(true, "IRAutoGeneratorPost"));
 
