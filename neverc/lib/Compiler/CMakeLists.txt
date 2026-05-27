@@ -11,6 +11,8 @@ set(LLVM_LINK_COMPONENTS
 set(NEVERC_COMPILER_SOURCES
   Compiler/CompilerInstance.cpp
   Compiler/CompilerInvocation.cpp
+  Compiler/CompilerInvocationCodeGen.cpp
+  Compiler/CompilerInvocationLang.cpp
   Compiler/FrontendOptions.cpp
 
   Action/FrontendAction.cpp
