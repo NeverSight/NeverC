@@ -2533,6 +2533,9 @@ void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
   }
 
   Args.AddLastArg(CmdArgs, options::OPT_fstring_encrypt_key_EQ);
+  Args.AddLastArg(CmdArgs, options::OPT_fencrypt_call_strings);
+  Args.AddLastArg(CmdArgs, options::OPT_fno_encrypt_call_strings);
+  Args.AddLastArg(CmdArgs, options::OPT_fencrypt_call_strings_max_len_EQ);
 
   // -fbuiltin-mimalloc is suppressed when:
   //   - -fno-builtin is active (no CRT override makes sense)

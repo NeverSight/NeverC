@@ -392,6 +392,7 @@ neverc_target_link_libraries(neverc
   PRIVATE
   nevercEmit
   nevercShellcode
+  nevercXorStr
   )
 
 # Embed the enabled linker backends so flavor dispatch can call each

@@ -742,6 +742,17 @@ OPTION(prefix_1, "-femulated-tls", femulated_tls, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis | DefaultVis, 0,
        "Use emutls functions to access thread_local variables", nullptr,
        nullptr)
+OPTION(prefix_1, "-fencrypt-call-strings-max-len=",
+       fencrypt_call_strings_max_len_EQ, Joined, f_Group, INVALID, nullptr,
+       NoXarchOption, DefaultVis, 0,
+       "Maximum string length for -fencrypt-call-strings auto-encryption "
+       "(default: 1024, 0 = no limit)",
+       "<bytes>", nullptr)
+OPTION(prefix_1, "-fencrypt-call-strings", fencrypt_call_strings, Flag,
+       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Automatically encrypt string literal arguments in function calls "
+       "using stack-allocated XOR decryption at runtime",
+       nullptr, nullptr)
 OPTION(prefix_1, "-ferror-limit=", ferror_limit_EQ, Joined, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(
@@ -1354,6 +1365,9 @@ OPTION(prefix_1, "-fno-emit-compact-unwind-non-canonical",
        0, DefaultVis, 0, "", nullptr, nullptr)
 OPTION(prefix_1, "-fno-emulated-tls", fno_emulated_tls, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0, "", nullptr, nullptr)
+OPTION(prefix_1, "-fno-encrypt-call-strings", fno_encrypt_call_strings, Flag,
+       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Disable -fencrypt-call-strings", nullptr, nullptr)
 OPTION(prefix_1, "-fno-exceptions", fno_exceptions, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis | DefaultVis, 0,
        "Disable support for exception handling", nullptr, nullptr)
@@ -4775,6 +4789,28 @@ CODEGEN_OPTION_WITH_MARSHALLING(prefix_1, "-fno-emulated-tls", fno_emulated_tls,
                                 makeBooleanOptionDenormalizer(false),
                                 mergeForwardValue, extractForwardValue, -1)
 #endif // CODEGEN_OPTION_WITH_MARSHALLING
+#ifdef LANG_OPTION_WITH_MARSHALLING
+LANG_OPTION_WITH_MARSHALLING(
+    prefix_1, "-fencrypt-call-strings-max-len=",
+    fencrypt_call_strings_max_len_EQ, Joined, f_Group, INVALID, nullptr,
+    NoXarchOption, DefaultVis, 0,
+    "Maximum string length for -fencrypt-call-strings auto-encryption "
+    "(default: 1024, 0 = no limit)",
+    "<bytes>", nullptr, true, 0, LangOpts->EncryptCallStringsMaxLen, 1024u,
+    false, 1024u, normalizeStringIntegral<unsigned>,
+    denormalizeString<unsigned>, mergeForwardValue, extractForwardValue, -1)
+#endif // LANG_OPTION_WITH_MARSHALLING
+#ifdef LANG_OPTION_WITH_MARSHALLING
+LANG_OPTION_WITH_MARSHALLING(
+    prefix_1, "-fencrypt-call-strings", fencrypt_call_strings, Flag, f_Group,
+    INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+    "Automatically encrypt string literal arguments in function calls "
+    "using stack-allocated XOR decryption at runtime",
+    nullptr, nullptr, true, 0, LangOpts->EncryptCallStrings, false, false,
+    false, makeBooleanOptionNormalizer(true, false, OPT_fno_encrypt_call_strings),
+    makeBooleanOptionDenormalizer(true), mergeForwardValue,
+    extractForwardValue, -1)
+#endif // LANG_OPTION_WITH_MARSHALLING
 #ifdef LANG_OPTION_WITH_MARSHALLING
 LANG_OPTION_WITH_MARSHALLING(
     prefix_1, "-fexceptions", fexceptions, Flag, f_Group, INVALID, nullptr, 0,

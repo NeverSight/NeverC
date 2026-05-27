@@ -36,6 +36,7 @@
 #include <algorithm>
 #include <cassert>
 #include <optional>
+#include <ctime>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -138,6 +139,88 @@ bool semaBuiltinAnnotation(Sema &S, CallExpr *TheCall) {
 
   TheCall->setType(Ty);
   return false;
+}
+
+ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
+  if (checkArgCount(S, TheCall, 1))
+    return ExprError();
+
+  Expr *Arg = TheCall->getArg(0)->IgnoreParenCasts();
+  StringLiteral *SL = dyn_cast<StringLiteral>(Arg);
+  if (!SL) {
+    S.Diag(Arg->getBeginLoc(), diag::err_expr_not_string_literal)
+        << Arg->getSourceRange();
+    return ExprError();
+  }
+
+  if (SL->getKind() != StringLiteralKind::Ordinary &&
+      SL->getKind() != StringLiteralKind::UTF8) {
+    StringLiteral *Folded = foldNeverCStringWideLiteralToUtf8(S, SL);
+    if (Folded)
+      SL = Folded;
+  }
+
+  llvm::StringRef Bytes = SL->getBytes();
+  unsigned Len = Bytes.size();
+
+  static uint64_t Counter = 0;
+  uint64_t BaseKey = S.getLangOpts().StringEncryptKey;
+  if (BaseKey == 0) {
+    static uint64_t TimeKey =
+        static_cast<uint64_t>(std::time(nullptr)) * 0x9E3779B97F4A7C15ULL;
+    TimeKey |= 1;
+    BaseKey = TimeKey;
+  }
+  QualType SizeTy = S.Context.getSizeType();
+  unsigned SizeBits = S.Context.getTypeSize(SizeTy);
+  unsigned KeyBytes = SizeBits / 8;
+
+  uint64_t Key = BaseKey ^ (++Counter * 0x517CC1B727220A95ULL);
+  Key &= llvm::maskTrailingOnes<uint64_t>(SizeBits);
+
+  auto encryptByte = [KeyBytes](unsigned char byte, uint64_t key,
+                                unsigned idx) -> char {
+    auto k = static_cast<unsigned char>(key >> (8 * (idx % KeyBytes)));
+    return static_cast<char>(byte ^ k);
+  };
+
+  llvm::SmallVector<char, 256> EncBytes(Len);
+  for (unsigned i = 0; i < Len; ++i)
+    EncBytes[i] = encryptByte(static_cast<unsigned char>(Bytes[i]), Key, i);
+
+  SourceLocation Loc = TheCall->getBeginLoc();
+  SourceLocation EndLoc = TheCall->getEndLoc();
+
+  QualType EncStrTy =
+      S.Context.getStringLiteralArrayType(S.Context.CharTy, Len);
+  SmallVector<SourceLocation, 1> SLLocs;
+  SLLocs.push_back(SL->getBeginLoc());
+  StringLiteral *EncSL = StringLiteral::Create(
+      S.Context, llvm::StringRef(EncBytes.data(), Len),
+      StringLiteralKind::Ordinary, EncStrTy, SLLocs.data(), SLLocs.size());
+
+  IntegerLiteral *LenLit = IntegerLiteral::Create(
+      S.Context, llvm::APInt(SizeBits, Len), SizeTy, Loc);
+  IntegerLiteral *KeyLit = IntegerLiteral::Create(
+      S.Context, llvm::APInt(SizeBits, Key), SizeTy, Loc);
+
+  FunctionDecl *FD = S.lookupNeverCStringFunctionDecl(
+      "__neverc_xorstr_decrypt", nullptr, Loc);
+  if (!FD) {
+    unsigned DiagID = S.Diags.getCustomDiagID(
+        DiagnosticsEngine::Error,
+        "'__builtin_neverc_xorstr' requires '#include <neverc/xorstr.h>'");
+    S.Diag(Loc, DiagID);
+    return ExprError();
+  }
+
+  ExprResult DeclRef =
+      S.MakeDeclRefExpr(FD, FD->getType(), VK_LValue, Loc);
+  if (DeclRef.isInvalid())
+    return ExprError();
+
+  Expr *Args[] = {EncSL, LenLit, KeyLit};
+  return S.FormCallExpr(nullptr, DeclRef.get(), Loc, Args, EndLoc);
 }
 
 bool semaBuiltinMSVCAnnotation(Sema &S, CallExpr *TheCall) {
@@ -1670,6 +1753,8 @@ ExprResult Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl,
     if (semaBuiltinAnnotation(*this, TheCall))
       return ExprError();
     break;
+  case Builtin::BI__builtin_neverc_xorstr:
+    return semaBuiltinNeverCXorstr(*this, TheCall);
   case Builtin::BI__builtin_function_start:
     if (semaBuiltinFunctionStart(*this, TheCall))
       return ExprError();

@@ -1552,6 +1552,7 @@ BUILTIN(__builtin_smull_overflow, "bSLiCSLiCSLi*", "nE")
 BUILTIN(__builtin_smulll_overflow, "bSLLiCSLLiCSLLi*", "nE")
 
 // NeverC builtins (not available in GCC).
+BUILTIN(__builtin_neverc_xorstr, "cC*cC*", "nct")
 BUILTIN(__builtin_function_start, "v*v&", "nctE")
 BUILTIN(__builtin_char_memchr, "c*cC*iz", "nE")
 BUILTIN(__builtin_dump_struct, "v.", "t")

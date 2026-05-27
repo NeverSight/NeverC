@@ -3,6 +3,8 @@
 #include "Backend/LinkInModulesPass.h"
 #include "Backend/MimallocRuntimeLinker.h"
 #include "Backend/StringRuntimeLinker.h"
+#include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
+#include "neverc/Transforms/XorStr/XorStrCleanupPass.h"
 #include "neverc/Compiler/FrontendDiag.h"
 #include "neverc/Compiler/Utils.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
@@ -468,6 +470,17 @@ void GenAssemblyHelper::runOptimizationPipeline(
     PB.registerPipelineStartEPCallback(
         [](ModulePassManager &MPM, OptimizationLevel) {
           MPM.addPass(MimallocRuntimeLinkerPass());
+        });
+  }
+
+  if (LangOpts.EncryptCallStrings) {
+    unsigned MaxLen = LangOpts.EncryptCallStringsMaxLen;
+    PB.registerOptimizerLastEPCallback(
+        [MaxLen](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(
+              neverc::xorstr::EncryptCallStringsPass(MaxLen));
+          MPM.addPass(createModuleToFunctionPassAdaptor(
+              neverc::xorstr::XorStrCleanupPass()));
         });
   }
 
