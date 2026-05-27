@@ -795,10 +795,6 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
 /// TODO: Should LTO cause any differences to this set of passes?
 void PassBuilder::addVectorPasses(OptimizationLevel Level,
                                   FunctionPassManager &FPM, bool IsFullLTO) {
-  // Disable vector passes on windows.
-  if (TM->getTargetTriple().isOSWindows())
-    return;
-
   FPM.addPass(LoopVectorizePass(
       LoopVectorizeOptions(!PTO.LoopInterleaving, !PTO.LoopVectorization)));
 
@@ -1034,12 +1030,10 @@ PassBuilder::buildModuleOptimizationPipeline(OptimizationLevel Level,
   OptimizePM.addPass(createFunctionToLoopPassAdaptor(
       std::move(LPM), /*UseMemorySSA=*/false, /*UseBlockFrequencyInfo=*/false));
 
-  if (!TM || !TM->getTargetTriple().isOSWindows()) {
-    if (Level == OptimizationLevel::O3)
-      OptimizePM.addPass(LoopDistributePass());
-    OptimizePM.addPass(InjectTLIMappings());
-    addVectorPasses(Level, OptimizePM, /* IsFullLTO */ false);
-  }
+  if (Level == OptimizationLevel::O3)
+    OptimizePM.addPass(LoopDistributePass());
+  OptimizePM.addPass(InjectTLIMappings());
+  addVectorPasses(Level, OptimizePM, /* IsFullLTO */ false);
 
   // LoopSink pass sinks instructions hoisted by LICM, which serves as a
   // canonicalization pass that enables other optimizations. As a result,
@@ -1348,10 +1342,8 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
   MainFPM.addPass(createFunctionToLoopPassAdaptor(
       std::move(LPM), /*UseMemorySSA=*/false, /*UseBlockFrequencyInfo=*/true));
 
-  if (!TM || !TM->getTargetTriple().isOSWindows()) {
-    MainFPM.addPass(LoopDistributePass());
-    addVectorPasses(Level, MainFPM, /* IsFullLTO */ true);
-  }
+  MainFPM.addPass(LoopDistributePass());
+  addVectorPasses(Level, MainFPM, /* IsFullLTO */ true);
 
   invokePeepholeEPCallbacks(MainFPM, Level);
   MainFPM.addPass(JumpThreadingPass());

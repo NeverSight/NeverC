@@ -127,6 +127,7 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
           return;
         const ObfuscationHooks &H = getShellcodeObfuscationHooks();
 
+        MPM.addPass(CompilerRtPass());
         runIRHook(H.RunAfterInlining, MPM, Opts);
         MPM.addPass(StringRuntimeInlineFinalizePass());
         MPM.addPass(AlwaysInlinerPass());
