@@ -26,12 +26,12 @@
 
 - [x] `TargetDesc` 抽象：表驅動的平台差異
 - [x] 跨平台 `-mshellcode-syscall` 語意（替代僅 Darwin 的 `-mshellcode-libsystem`）
-- [x] Linux / Android 系統呼叫號表（Darwin BSD 80+、Linux arm64 60+、Linux x86_64 90+）
+- [x] Linux / Android 系統呼叫號表（Darwin BSD 100+、Linux arm64 130+、Linux x86_64 150+）
 - [x] `ShellcodeExtractor` 重構為 `MachOExtractor` / `ELFExtractor` / `COFFExtractor`
 - [x] ELF 擷取器（arm64：`R_AARCH64_CALL26`/`JUMP26`/`ADR_PREL_PG_HI21`/等；x86_64：`R_X86_64_PC32`/`PLT32`）
 - [x] COFF 擷取器（arm64：`IMAGE_REL_ARM64_BRANCH26`/等；x86_64：`IMAGE_REL_AMD64_REL32`/等）
 - [x] Windows PEB 匯入 pass（`WinPEBImportPass`），含真實 PEB walk 解析器
-- [x] 多 DLL Win32 API 白名單（~190 API，跨 kernel32/ntdll/user32/ws2_32/advapi32/shell32）
+- [x] 多 DLL Win32 API 白名單（~210 API，跨 kernel32/ntdll/user32/ws2_32/advapi32/shell32）
 - [x] `MemIntrinPass`：memcpy/memset/memmove/memcmp/bcmp/bzero/memchr + strlen/strcpy/strcmp/等 → 內聯位元組迴圈輔助函式
 - [x] `CompilerRtPass`：`__int128` 除法/取餘 → 內聯長除法輔助函式
 - [x] Windows `aarch64-pc-windows-msvc` 前端支援

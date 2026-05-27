@@ -300,7 +300,7 @@ Die Shellcode-Pipeline stellt nur sicher, dass „der Code korrekt läuft“. Ob
 - `RunAfterPreEmit` — **Built-in MIRPrepPass has stripped pseudos**, closest to the byte form AsmPrinter will see; ideal for instruction-level obfuscation/register renaming
 - `RunAfterFinalMIR` — True last MIR hook, after LLVM `addPreEmitPass2()`, just before AsmPrinter
 
-**Byte-Stream-Ebene (3 Hooks, `SmallVectorImpl<uint8_t> &`)**:
+**Byte-Stream-Ebene (2 Hooks, `SmallVectorImpl<uint8_t> &`)**:
 - `RunPostExtract` — After extractor completes intra-text relocation patching and data-section audit; before `.bin` is written. Use for whole-payload encryption, junk byte insertion, or custom headers.
 - `RunPostFinalize` — After all finalize steps; NeverC performs no further auditing.
 
@@ -313,6 +313,6 @@ Die Shellcode-Pipeline stellt nur sicher, dass „der Code korrekt läuft“. Ob
 ## Aktuelle Einschränkungen
 
 - **Supports 8 (OS, arch) combinations** (see matrix above). Other triples (RISC-V, PowerPC, 32-bit x86, big-endian ARM, etc.) are rejected at `describeTriple()` with the full supported set listed as a hint. Each (OS, arch) row has independent `User` / `Kernel` contexts, yielding 16 (OS, arch, level) variants.
-- **Windows PEB walk is fully implemented with multi-DLL dispatch**. `__neverc_win_resolve` accepts `(dll_hash, api_hash)` pairs. The current whitelist covers kernel32.dll (~110 APIs), ntdll.dll (~26), user32.dll (~13), ws2_32.dll (~23), advapi32.dll (~16), shell32.dll (~6). Adding an API = one row in `WinImportTables.cpp` + one declaration in `lib/Headers/windows.h`.
-- **External function whitelist** only covers Darwin BSD / Linux / Android common syscalls (~80+) + Win32 APIs (~190). stdio and similar runtime-heavy interfaces are not included — shellcode cannot embed the full stdio state machine.
+- **Windows PEB walk is fully implemented with multi-DLL dispatch**. `__neverc_win_resolve` accepts `(dll_hash, api_hash)` pairs. The current whitelist covers kernel32.dll (~125 APIs), ntdll.dll (~26), user32.dll (~13), ws2_32.dll (~23), advapi32.dll (~16), shell32.dll (~6). Adding an API = one row in `Tables/Win32Apis.def` + one declaration in `lib/Headers/windows.h`.
+- **External function whitelist** only covers Darwin BSD / Linux / Android common syscalls (~80+) + Win32 APIs (~210). stdio and similar runtime-heavy interfaces are not included — shellcode cannot embed the full stdio state machine.
 - Kein C++ / ObjC / CUDA — NeverC ist bewusst nur C.

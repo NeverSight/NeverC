@@ -17,7 +17,7 @@ Objetivo en una frase: **Eliminar todo en el `.o` que se convertiría en una rel
 | ZeroRelocPass | Prep: unificación linkage + alwaysinline. Stackify: globales mutables → alloca |
 | IndirectBrPass | computed-goto → switch |
 | SyscallStubPass | libc extern → traps inline dirigidas por TargetDesc + compat POSIX + autofix K&R |
-| WinPEBImportPass | Win32 extern → PEB walk resolver (~190 APIs) + caché de direcciones cifrada + compat Windows POSIX |
+| WinPEBImportPass | Win32 extern → PEB walk resolver (~210 APIs) + caché de direcciones cifrada + compat Windows POSIX |
 | MemIntrinPass | mem*/str*/abs → helpers byte-loop inline |
 | CompilerRtPass | `__int128` div/mod → división larga inline |
 | Data2TextPass | Phase 1+2: GVs constantes → inmediatos/stack + split SROA residual |

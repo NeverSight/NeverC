@@ -28,12 +28,12 @@
 
 - [x] تجريد `TargetDesc`: اختلافات المنصات مدفوعة بجدول
 - [x] دلالات `-mshellcode-syscall` عبر المنصات (تحل محل `-mshellcode-libsystem` الخاص بـ Darwin)
-- [x] جداول أرقام syscall لـ Linux / Android (Darwin BSD 80+، Linux arm64 60+، Linux x86_64 90+)
+- [x] جداول أرقام syscall لـ Linux / Android (Darwin BSD 100+، Linux arm64 130+، Linux x86_64 150+)
 - [x] إعادة هيكلة `ShellcodeExtractor` إلى `MachOExtractor` / `ELFExtractor` / `COFFExtractor`
 - [x] مستخرج ELF (arm64: `R_AARCH64_CALL26`/`JUMP26`/`ADR_PREL_PG_HI21`/إلخ؛ x86_64: `R_X86_64_PC32`/`PLT32`)
 - [x] مستخرج COFF (arm64: `IMAGE_REL_ARM64_BRANCH26`/إلخ؛ x86_64: `IMAGE_REL_AMD64_REL32`/إلخ)
 - [x] مرور استيراد PEB لـ Windows (`WinPEBImportPass`) مع محلل PEB walk حقيقي
-- [x] قائمة بيضاء Win32 API متعددة DLL (~190 API عبر kernel32/ntdll/user32/ws2_32/advapi32/shell32)
+- [x] قائمة بيضاء Win32 API متعددة DLL (~210 API عبر kernel32/ntdll/user32/ws2_32/advapi32/shell32)
 - [x] `MemIntrinPass`: memcpy/memset/memmove/memcmp/bcmp/bzero/memchr + strlen/strcpy/strcmp/إلخ → مساعدات حلقة بايت مضمّنة
 - [x] `CompilerRtPass`: قسمة/باقي `__int128` → مساعدات قسمة طويلة مضمّنة
 - [x] دعم واجهة Windows `aarch64-pc-windows-msvc`

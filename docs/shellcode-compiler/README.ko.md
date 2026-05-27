@@ -300,7 +300,7 @@ shellcode 파이프라인 자체는 "코드가 올바르게 실행됨"만 보장
 - `RunAfterPreEmit` — **내장 MIRPrepPass가 의사 명령 제거**, AsmPrinter가 볼 바이트에 가장 가까움; 명령 수준 난독화·레지스터 이름 변경에 적합
 - `RunAfterFinalMIR` — LLVM `addPreEmitPass2()` 후, AsmPrinter 직전의 진짜 마지막 MIR 훅
 
-**바이트 스트림 계층(3 훅, `SmallVectorImpl<uint8_t> &`)**:
+**바이트 스트림 계층(2 훅, `SmallVectorImpl<uint8_t> &`)**:
 - `RunPostExtract` — 추출기가 .text 내 reloc 패치·데이터 섹션 감사 완료 후 `.bin` 기록 전. 전체 페이로드 암호화·정크 바이트·커스텀 헤더용.
 - `RunPostFinalize` — 모든 finalize 후; NeverC는 더 이상 감사하지 않음.
 
@@ -313,6 +313,6 @@ shellcode 파이프라인 자체는 "코드가 올바르게 실행됨"만 보장
 ## 현재 제한
 
 - **8가지 (OS, arch) 조합 지원**(위 표 참고). RISC-V·PowerPC·32비트 x86·빅엔디안 ARM 등은 `describeTriple()`에서 거부되며 지원 목록 힌트 제공. 각 행에 독립 `User` / `Kernel` 컨텍스트, 총 16 (OS, arch, level) 변형.
-- **Windows PEB 워크는 멀티 DLL 디스패치로 완전 구현**. `__neverc_win_resolve`는 `(dll_hash, api_hash)` 쌍 수용. 화이트리스트: kernel32.dll(~110 API), ntdll.dll(~26), user32.dll(~13), ws2_32.dll(~23), advapi32.dll(~16), shell32.dll(~6). API 추가 = `WinImportTables.cpp` 한 행 + `lib/Headers/windows.h` 선언 하나.
+- **Windows PEB 워크는 멀티 DLL 디스패치로 완전 구현**. `__neverc_win_resolve`는 `(dll_hash, api_hash)` 쌍 수용. 화이트리스트: kernel32.dll(~125 API), ntdll.dll(~26), user32.dll(~13), ws2_32.dll(~23), advapi32.dll(~16), shell32.dll(~6). API 추가 = `Tables/Win32Apis.def` 한 행 + `lib/Headers/windows.h` 선언 하나.
 - **외부 함수 화이트리스트**는 Darwin BSD / Linux / Android 일반 syscall(~80+)과 Win32 API(~190)만. stdio 등 무거운 런타임 미포함 — shellcode에 stdio 상태 머신 전체 불가.
 - C++ / ObjC / CUDA 미지원 — NeverC는 설계상 C만.

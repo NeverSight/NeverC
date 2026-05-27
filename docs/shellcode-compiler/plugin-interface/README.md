@@ -59,7 +59,7 @@ struct Init {
   Init() {
     using namespace neverc::shellcode;
     registerBadByteRewriteStrategy([](BadByteRewriteContext &Ctx) {
-      if (Ctx.Target->Arch != TargetArch::X86_64)
+      if (Ctx.Target->Arch != ShellcodeArch::X86_64)
         return BadByteRewriteResult::NotApplied;
       // Replace all 0x00 immediates with xor reg,reg equivalents.
       // See byvalver / Capstone-based tooling for reference implementations.

@@ -17,7 +17,7 @@ Objectif en une phrase : **Éliminer tout dans le `.o` qui deviendrait une reloc
 | ZeroRelocPass | Prep : unification linkage + alwaysinline. Stackify : globales mutables → alloca |
 | IndirectBrPass | computed-goto → switch |
 | SyscallStubPass | libc extern → traps inline pilotés par TargetDesc + compat POSIX + autofix K&R |
-| WinPEBImportPass | Win32 extern → résolveur PEB walk (~190 APIs) + cache d'adresses chiffrée (XOR) + compat Windows POSIX |
+| WinPEBImportPass | Win32 extern → résolveur PEB walk (~210 APIs) + cache d'adresses chiffrée (XOR) + compat Windows POSIX |
 | MemIntrinPass | mem*/str*/abs → helpers boucle-octet inline |
 | CompilerRtPass | `__int128` div/mod → division longue inline |
 | Data2TextPass | Phase 1+2 : GVs constants → immédiats/pile + split résiduel SROA |

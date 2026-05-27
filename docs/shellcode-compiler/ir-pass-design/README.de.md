@@ -22,7 +22,7 @@ GCC computed-goto → `switch` (null Relocations).
 libc extern → TargetDesc-gesteuerte Inline-Asm-Traps. POSIX-Compat + K&R-Autofix.
 
 ## 4. WinPEBImportPass
-Win32 extern → PEB-Walk-Resolver (~190 APIs, 6 DLLs) + verschlüsselter Adress-Cache. Windows POSIX-Compat (13 Funktionsgruppen).
+Win32 extern → PEB-Walk-Resolver (~210 APIs, 6 DLLs) + verschlüsselter Adress-Cache. Windows POSIX-Compat (13 Funktionsgruppen).
 
 ### 4.1 Adress-Cache-Verschlüsselung
 

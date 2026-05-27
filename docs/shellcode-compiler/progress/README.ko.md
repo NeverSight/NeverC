@@ -26,12 +26,12 @@
 
 - [x] `TargetDesc` 추상화: 테이블 기반 플랫폼 차이
 - [x] 크로스 플랫폼 `-mshellcode-syscall` 시맨틱 (Darwin 전용 `-mshellcode-libsystem` 대체)
-- [x] Linux / Android syscall 번호 테이블 (Darwin BSD 80+, Linux arm64 60+, Linux x86_64 90+)
+- [x] Linux / Android syscall 번호 테이블 (Darwin BSD 100+, Linux arm64 130+, Linux x86_64 150+)
 - [x] `ShellcodeExtractor`를 `MachOExtractor` / `ELFExtractor` / `COFFExtractor`로 리팩터링
 - [x] ELF 추출기 (arm64: `R_AARCH64_CALL26`/`JUMP26`/`ADR_PREL_PG_HI21`/등; x86_64: `R_X86_64_PC32`/`PLT32`)
 - [x] COFF 추출기 (arm64: `IMAGE_REL_ARM64_BRANCH26`/등; x86_64: `IMAGE_REL_AMD64_REL32`/등)
 - [x] Windows PEB 임포트 패스 (`WinPEBImportPass`), 실제 PEB walk 리졸버 포함
-- [x] 멀티 DLL Win32 API 화이트리스트 (kernel32/ntdll/user32/ws2_32/advapi32/shell32에 걸쳐 ~190 API)
+- [x] 멀티 DLL Win32 API 화이트리스트 (kernel32/ntdll/user32/ws2_32/advapi32/shell32에 걸쳐 ~210 API)
 - [x] `MemIntrinPass`: memcpy/memset/memmove/memcmp/bcmp/bzero/memchr + strlen/strcpy/strcmp/등 → 인라인 바이트 루프 헬퍼
 - [x] `CompilerRtPass`: `__int128` 나눗셈/나머지 → 인라인 장나눗셈 헬퍼
 - [x] Windows `aarch64-pc-windows-msvc` 프런트엔드 지원

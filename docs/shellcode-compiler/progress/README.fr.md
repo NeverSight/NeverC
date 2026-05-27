@@ -26,12 +26,12 @@
 
 - [x] Abstraction `TargetDesc` : différences de plateforme pilotées par table
 - [x] Sémantique `-mshellcode-syscall` multiplateforme (remplace `-mshellcode-libsystem` Darwin-only)
-- [x] Tables de numéros de syscall Linux / Android (Darwin BSD 80+, Linux arm64 60+, Linux x86_64 90+)
+- [x] Tables de numéros de syscall Linux / Android (Darwin BSD 100+, Linux arm64 130+, Linux x86_64 150+)
 - [x] `ShellcodeExtractor` refactorisé en `MachOExtractor` / `ELFExtractor` / `COFFExtractor`
 - [x] Extracteur ELF (arm64 : `R_AARCH64_CALL26`/`JUMP26`/`ADR_PREL_PG_HI21`/etc. ; x86_64 : `R_X86_64_PC32`/`PLT32`)
 - [x] Extracteur COFF (arm64 : `IMAGE_REL_ARM64_BRANCH26`/etc. ; x86_64 : `IMAGE_REL_AMD64_REL32`/etc.)
 - [x] Passe d'import PEB Windows (`WinPEBImportPass`) avec résolveur PEB walk réel
-- [x] Liste blanche Win32 API multi-DLL (~190 API sur kernel32/ntdll/user32/ws2_32/advapi32/shell32)
+- [x] Liste blanche Win32 API multi-DLL (~210 API sur kernel32/ntdll/user32/ws2_32/advapi32/shell32)
 - [x] `MemIntrinPass` : memcpy/memset/memmove/memcmp/bcmp/bzero/memchr + strlen/strcpy/strcmp/etc. → helpers de boucle d'octets inline
 - [x] `CompilerRtPass` : division/modulo `__int128` → helpers de division longue inline
 - [x] Support frontend Windows `aarch64-pc-windows-msvc`

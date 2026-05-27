@@ -300,7 +300,7 @@ La pipeline shellcode garantisce solo che «il codice funzioni correttamente». 
 - `RunAfterPreEmit` — **Built-in MIRPrepPass has stripped pseudos**, closest to the byte form AsmPrinter will see; ideal for instruction-level obfuscation/register renaming
 - `RunAfterFinalMIR` — True last MIR hook, after LLVM `addPreEmitPass2()`, just before AsmPrinter
 
-**Livello flusso byte (3 hook, `SmallVectorImpl<uint8_t> &`)**:
+**Livello flusso byte (2 hook, `SmallVectorImpl<uint8_t> &`)**:
 - `RunPostExtract` — After extractor completes intra-text relocation patching and data-section audit; before `.bin` is written. Use for whole-payload encryption, junk byte insertion, or custom headers.
 - `RunPostFinalize` — After all finalize steps; NeverC performs no further auditing.
 
@@ -313,6 +313,6 @@ La pipeline shellcode garantisce solo che «il codice funzioni correttamente». 
 ## Limitazioni attuali
 
 - **Supporta 8 combinazioni (OS, arch)** (see matrix above). Altri triple (RISC-V, PowerPC, x86 a 32 bit, ARM big-endian, ecc.) sono rifiutati in `describeTriple()` con l'elenco completo come suggerimento. Ogni riga (OS, arch) ha contesti `User` / `Kernel` indipendenti → 16 varianti (OS, arch, livello).
-- **Il percorso PEB Windows è implementato con dispatch multi-DLL**. `__neverc_win_resolve` accepts `(dll_hash, api_hash)` pairs. La whitelist attuale copre kernel32.dll (~110 APIs), ntdll.dll (~26), user32.dll (~13), ws2_32.dll (~23), advapi32.dll (~16), shell32.dll (~6). Aggiungere un'API = una riga in `WinImportTables.cpp` + one declaration in `lib/Headers/windows.h`.
+- **Il percorso PEB Windows è implementato con dispatch multi-DLL**. `__neverc_win_resolve` accepts `(dll_hash, api_hash)` pairs. La whitelist attuale copre kernel32.dll (~125 APIs), ntdll.dll (~26), user32.dll (~13), ws2_32.dll (~23), advapi32.dll (~16), shell32.dll (~6). Aggiungere un'API = una riga in `Tables/Win32Apis.def` + una dichiarazione in `lib/Headers/windows.h`.
 - **La whitelist di funzioni esterne** copre solo syscall comuni Darwin BSD / Linux / Android (~80+) + API Win32 (~190). stdio e interfacce runtime pesanti non sono incluse — lo shellcode non può incorporare l'intera macchina a stati di stdio.
 - Niente C++ / ObjC / CUDA — NeverC è solo C per design.

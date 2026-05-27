@@ -26,12 +26,12 @@
 
 - [x] `TargetDesc` 抽象化：テーブル駆動のプラットフォーム差異
 - [x] クロスプラットフォーム `-mshellcode-syscall` セマンティクス（Darwin 専用の `-mshellcode-libsystem` を置き換え）
-- [x] Linux / Android syscall 番号テーブル（Darwin BSD 80+、Linux arm64 60+、Linux x86_64 90+）
+- [x] Linux / Android syscall 番号テーブル（Darwin BSD 100+、Linux arm64 130+、Linux x86_64 150+）
 - [x] `ShellcodeExtractor` を `MachOExtractor` / `ELFExtractor` / `COFFExtractor` にリファクタ
 - [x] ELF エクストラクタ（arm64：`R_AARCH64_CALL26`/`JUMP26`/`ADR_PREL_PG_HI21`/等、x86_64：`R_X86_64_PC32`/`PLT32`）
 - [x] COFF エクストラクタ（arm64：`IMAGE_REL_ARM64_BRANCH26`/等、x86_64：`IMAGE_REL_AMD64_REL32`/等）
 - [x] Windows PEB インポートパス（`WinPEBImportPass`）、リアル PEB walk リゾルバ付き
-- [x] マルチ DLL Win32 API ホワイトリスト（kernel32/ntdll/user32/ws2_32/advapi32/shell32 にわたる約 190 API）
+- [x] マルチ DLL Win32 API ホワイトリスト（kernel32/ntdll/user32/ws2_32/advapi32/shell32 にわたる約 210 API）
 - [x] `MemIntrinPass`：memcpy/memset/memmove/memcmp/bcmp/bzero/memchr + strlen/strcpy/strcmp/等 → インラインバイトループヘルパー
 - [x] `CompilerRtPass`：`__int128` 除算/剰余 → インライン長除算ヘルパー
 - [x] Windows `aarch64-pc-windows-msvc` フロントエンドサポート

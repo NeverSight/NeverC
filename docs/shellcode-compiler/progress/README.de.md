@@ -26,12 +26,12 @@
 
 - [x] `TargetDesc`-Abstraktion: Tabellengesteuerte Plattformunterschiede
 - [x] Plattformübergreifende `-mshellcode-syscall`-Semantik (ersetzt Darwin-only `-mshellcode-libsystem`)
-- [x] Linux / Android Syscall-Nummerntabellen (Darwin BSD 80+, Linux arm64 60+, Linux x86_64 90+)
+- [x] Linux / Android Syscall-Nummerntabellen (Darwin BSD 100+, Linux arm64 130+, Linux x86_64 150+)
 - [x] `ShellcodeExtractor` refaktoriert in `MachOExtractor` / `ELFExtractor` / `COFFExtractor`
 - [x] ELF-Extraktor (arm64: `R_AARCH64_CALL26`/`JUMP26`/`ADR_PREL_PG_HI21`/etc.; x86_64: `R_X86_64_PC32`/`PLT32`)
 - [x] COFF-Extraktor (arm64: `IMAGE_REL_ARM64_BRANCH26`/etc.; x86_64: `IMAGE_REL_AMD64_REL32`/etc.)
 - [x] Windows PEB Import Pass (`WinPEBImportPass`) mit echtem PEB-Walk-Resolver
-- [x] Multi-DLL Win32 API Whitelist (~190 APIs über kernel32/ntdll/user32/ws2_32/advapi32/shell32)
+- [x] Multi-DLL Win32 API Whitelist (~210 APIs über kernel32/ntdll/user32/ws2_32/advapi32/shell32)
 - [x] `MemIntrinPass`: memcpy/memset/memmove/memcmp/bcmp/bzero/memchr + strlen/strcpy/strcmp/etc. → Inline-Byteschleifenhelfer
 - [x] `CompilerRtPass`: `__int128` Division/Modulo → Inline-Langdivisionshelfer
 - [x] Windows `aarch64-pc-windows-msvc` Frontend-Unterstützung

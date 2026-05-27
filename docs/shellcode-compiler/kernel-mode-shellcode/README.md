@@ -112,7 +112,7 @@ Users always see clear diagnostics; incorrect `.bin` files are never silently ge
 
 ### 4.6 Kernel Helper Name Table-Driven Diagnostics
 
-`Tables/KernelHelperNames.def` lists common ring-0 helpers for each OS (~60 Linux, ~50 Windows, ~30 Darwin). Both diagnostic paths query this table:
+`Tables/KernelHelperNames.def` lists common ring-0 helpers for each OS (~120 Linux, ~120 Windows, ~60 Darwin). Both diagnostic paths query this table:
 
 - **User mode**: when driver code is accidentally used in ring-3, the extractor emits `"'<name>' is a <os> kernel-only helper ... pass -mshellcode-context=kernel"`.
 - **Kernel mode**: when inline asm bypasses `KernelImportPass`, the table identifies "you meant to resolve a kernel helper" and points to the appropriate `KernelImport` branch.

@@ -300,7 +300,7 @@ docs/shellcode-compiler/
 - `RunAfterPreEmit` — **Built-in MIRPrepPass has stripped pseudos**, closest to the byte form AsmPrinter will see; ideal for instruction-level obfuscation/register renaming
 - `RunAfterFinalMIR` — True last MIR hook, after LLVM `addPreEmitPass2()`, just before AsmPrinter
 
-**Byte-stream level (3 hooks, receive `SmallVectorImpl<uint8_t> &`)**:
+**Byte-stream level (2 hooks, receive `SmallVectorImpl<uint8_t> &`)**:
 - `RunPostExtract` — After extractor completes intra-text relocation patching and data-section audit; before `.bin` is written. Use for whole-payload encryption, junk byte insertion, or custom headers.
 - `RunPostFinalize` — After all finalize steps; NeverC performs no further auditing.
 
@@ -313,6 +313,6 @@ docs/shellcode-compiler/
 ## Текущие ограничения
 
 - **Поддерживается 8 комбинаций (OS, arch)** (см. матрицу). Другие triple (RISC-V, PowerPC, 32-bit x86, big-endian ARM и т.д.) отклоняются в `describeTriple()` с подсказкой полного списка. У каждой строки независимые контексты `User` / `Kernel` → 16 вариантов (OS, arch, уровень).
-- **Обход PEB в Windows полностью реализован с multi-DLL dispatch**. `__neverc_win_resolve` принимает пары `(dll_hash, api_hash)`. Текущий whitelist: kernel32.dll (~110 API), ntdll.dll (~26), user32.dll (~13), ws2_32.dll (~23), advapi32.dll (~16), shell32.dll (~6). Добавление API = строка в `WinImportTables.cpp` + объявление в `lib/Headers/windows.h`.
+- **Обход PEB в Windows полностью реализован с multi-DLL dispatch**. `__neverc_win_resolve` принимает пары `(dll_hash, api_hash)`. Текущий whitelist: kernel32.dll (~125 API), ntdll.dll (~26), user32.dll (~13), ws2_32.dll (~23), advapi32.dll (~16), shell32.dll (~6). Добавление API = строка в `Tables/Win32Apis.def` + объявление в `lib/Headers/windows.h`.
 - **Whitelist внешних функций** покрывает только типичные syscalls Darwin BSD / Linux / Android (~80+) + Win32 API (~190). stdio и тяжёлые runtime-интерфейсы не включены — shellcode не может встроить полную машину состояний stdio.
 - C++ / ObjC / CUDA не поддерживаются — NeverC только для C.

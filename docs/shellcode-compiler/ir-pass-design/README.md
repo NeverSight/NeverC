@@ -96,7 +96,7 @@ All templates and register constraints come from `TargetDesc` — the pass has z
 
 **Problem**: Windows has no stable syscall ABI; Win32 APIs must be resolved via PEB walk.
 
-**Solution**: for each extern matching the `WinImportTables` whitelist (~190 APIs across 6 DLLs):
+**Solution**: for each extern matching the `WinImportTables` whitelist (~210 APIs across 6 DLLs):
 1. Generate an `always_inline` wrapper with fast/slow path and encrypted address cache
 2. **Fast path** (cache hit): `atomic_load(cache) → decrypt → indirect call` (~10 instructions)
 3. **Slow path** (cache miss): full PEB → Ldr → InMemoryOrderModuleList walk with ROR-13 hash matching → `encrypt → cmpxchg` → call

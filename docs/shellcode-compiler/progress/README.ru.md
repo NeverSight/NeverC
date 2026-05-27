@@ -26,12 +26,12 @@
 
 - [x] Абстракция `TargetDesc`: табличные различия платформ
 - [x] Кроссплатформенная семантика `-mshellcode-syscall` (заменяет `-mshellcode-libsystem` только для Darwin)
-- [x] Таблицы номеров syscall Linux / Android (Darwin BSD 80+, Linux arm64 60+, Linux x86_64 90+)
+- [x] Таблицы номеров syscall Linux / Android (Darwin BSD 100+, Linux arm64 130+, Linux x86_64 150+)
 - [x] `ShellcodeExtractor` рефакторирован в `MachOExtractor` / `ELFExtractor` / `COFFExtractor`
 - [x] ELF-экстрактор (arm64: `R_AARCH64_CALL26`/`JUMP26`/`ADR_PREL_PG_HI21`/и т.д.; x86_64: `R_X86_64_PC32`/`PLT32`)
 - [x] COFF-экстрактор (arm64: `IMAGE_REL_ARM64_BRANCH26`/и т.д.; x86_64: `IMAGE_REL_AMD64_REL32`/и т.д.)
 - [x] Проход импорта PEB Windows (`WinPEBImportPass`) с реальным PEB-walk-резолвером
-- [x] Мульти-DLL белый список Win32 API (~190 API в kernel32/ntdll/user32/ws2_32/advapi32/shell32)
+- [x] Мульти-DLL белый список Win32 API (~210 API в kernel32/ntdll/user32/ws2_32/advapi32/shell32)
 - [x] `MemIntrinPass`: memcpy/memset/memmove/memcmp/bcmp/bzero/memchr + strlen/strcpy/strcmp/и т.д. → инлайн-хелперы на основе байтовых циклов
 - [x] `CompilerRtPass`: деление/остаток `__int128` → инлайн-хелперы длинного деления
 - [x] Поддержка фронтенда Windows `aarch64-pc-windows-msvc`
