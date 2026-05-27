@@ -12,6 +12,7 @@ NeverC расширяет стандартный C опциональными в
 |-----------|------|-------------|----------|
 | [**`string`**](string/README.ru.md) | `-fbuiltin-string` | Выкл. | Строковый тип с семантикой значения, методы через точку, автоматическое управление памятью и нативная поддержка UTF-8 |
 | [**`mimalloc`**](mimalloc/README.ru.md) | `-fbuiltin-mimalloc` | **Вкл.** | Высокопроизводительный аллокатор памяти, прозрачно заменяющий `malloc`/`free`/`calloc`/`realloc` |
+| [**`xorstr`**](xorstr/README.ru.md) | `-fencrypt-call-strings` | Выкл. | Шифрование строк на этапе компиляции, стековая XOR-дешифрация, антисигнатурный алгоритм |
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main

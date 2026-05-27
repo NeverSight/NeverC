@@ -12,6 +12,7 @@ NeverC estende il C standard con runtime integrati opzionali, incorporati dirett
 |-----------|------|------------|-------------|
 | [**`string`**](string/README.it.md) | `-fbuiltin-string` | Disattivato | Tipo stringa con semantica di valore, metodi con sintassi a punto, gestione automatica della memoria e UTF-8 nativo |
 | [**`mimalloc`**](mimalloc/README.it.md) | `-fbuiltin-mimalloc` | **Attivato** | Allocatore di memoria ad alte prestazioni che sostituisce trasparentemente `malloc`/`free`/`calloc`/`realloc` |
+| [**`xorstr`**](xorstr/README.it.md) | `-fencrypt-call-strings` | Disattivato | Crittografia delle stringhe a tempo di compilazione, decrittazione XOR su stack, algoritmo anti-firma |
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main

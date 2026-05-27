@@ -12,6 +12,7 @@ NeverC는 옵트인 방식의 내장 런타임으로 표준 C를 확장합니다
 |----------|--------|--------|------|
 | [**`string`**](string/README.ko.md) | `-fbuiltin-string` | 꺼짐 | 값 의미론 문자열 타입. 도트 호출 메서드, 자동 메모리 관리, 네이티브 UTF-8 |
 | [**`mimalloc`**](mimalloc/README.ko.md) | `-fbuiltin-mimalloc` | **켜짐** | 고성능 메모리 할당자. `malloc`/`free`/`calloc`/`realloc` 투명 대체 |
+| [**`xorstr`**](xorstr/README.ko.md) | `-fencrypt-call-strings` | 꺼짐 | 컴파일 타임 문자열 암호화, 스택 할당 XOR 복호화, 안티 시그니처 알고리즘 |
 
 두 내장 기능은 기본적으로 비활성화되며 명시적 옵트인이 필요합니다. 조합 사용 가능:
 

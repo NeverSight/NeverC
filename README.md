@@ -6,7 +6,7 @@
 
 **A security-research-oriented C23 compiler built on LLVM**
 
-Integrated linker · Shellcode pipeline · Built-in runtimes (`string` · `mimalloc`)
+Integrated linker · Shellcode pipeline · Built-in runtimes (`string` · `mimalloc` · `xorstr`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#features)
@@ -30,7 +30,7 @@ NeverC compiles standard C into hosted binaries, freestanding executables, and p
 - **[Shellcode compiler](docs/shellcode-compiler/README.md)** — multi-stage IR/MIR pipeline, cross-platform extraction, import/syscall lowering, kernel-mode support, bad-byte auditing, and a plugin architecture
 - **Integrated linker** — COFF, ELF, and Mach-O in one binary; no external `ld` or `link.exe`
 - **Cross-compilation** — build Windows PE from macOS/Linux with bundled MSVC SDK support
-- **[Built-in runtimes](docs/builtins/README.md)** — opt-in LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string/README.md) (value-semantic string with dot-call methods and automatic memory management) and [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override)
+- **[Built-in runtimes](docs/builtins/README.md)** — opt-in LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string/README.md) (value-semantic string with dot-call methods and automatic memory management), [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override), and [`xorstr`](docs/builtins/xorstr/README.md) (compile-time string encryption with anti-signature decryption)
 - **[`.nc` extension](docs/nc-extension/README.md)** — use `.nc` as file extension to auto-enable all NeverC features (`string`, Rust-style integer types) without extra flags
 - **Lean LLVM build** — only x86_64 and AArch64 backends; C++/ObjC/OpenMP paths stripped
 

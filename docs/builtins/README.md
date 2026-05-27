@@ -13,6 +13,7 @@ NeverC extends standard C with opt-in built-in runtimes that are embedded direct
 | ------------------------------------------- | -------------------- | ------- | ------------------------------------------------------------------------------------------------- |
 | [**`string`**](string/README.md) | `-fbuiltin-string`   | Off     | Value-semantic string type with dot-call methods, automatic memory management, and native UTF-8   |
 | [**`mimalloc`**](mimalloc/README.md) | `-fbuiltin-mimalloc` | **On**  | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
+| [**`xorstr`**](xorstr/README.md) | `-fencrypt-call-strings` | Off  | Compile-time string encryption with stack-allocated XOR decryption and anti-signature algorithm   |
 
 The `string` built-in requires explicit opt-in; `mimalloc` is enabled by default for all hosted builds (automatically suppressed in kernel, shellcode, and freestanding modes). They can be combined:
 

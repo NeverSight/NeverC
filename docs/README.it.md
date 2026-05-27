@@ -50,3 +50,4 @@ NeverC estende il C standard con runtime integrati come bitcode LLVM. Ciascuno Ã
 |-----------|------|-------------|
 | [String integrato](builtins/string/README.it.md) | `-fbuiltin-string` | Tipo `string` a semantica di valore, metodi con punto, gestione automatica della memoria, UTF-8 nativo |
 | [mimalloc integrato](builtins/mimalloc/README.it.md) | `-fbuiltin-mimalloc` | Sostituzione trasparente allocatore `mimalloc` ad alte prestazioni `malloc`/`free`/`calloc`/`realloc` |
+| [Crittografia stringhe (xorstr)](builtins/xorstr/README.it.md) | `-fencrypt-call-strings` | Crittografia stringhe a tempo di compilazione, decrittazione XOR su stack, anti-firma |

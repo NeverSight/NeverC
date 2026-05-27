@@ -52,5 +52,6 @@
 |--------|-------|-------|
 | [السلسلة المدمجة](builtins/string/README.ar.md) | `-fbuiltin-string` | نوع `string` بدلالة القيمة، طرق بالنقطة، إدارة ذاكرة تلقائية، UTF-8 أصلي |
 | [mimalloc المدمج](builtins/mimalloc/README.ar.md) | `-fbuiltin-mimalloc` | تجاوز مخصص ذاكرة `mimalloc` عالي الأداء شفاف `malloc`/`free`/`calloc`/`realloc` |
+| [تشفير السلاسل (xorstr)](builtins/xorstr/README.ar.md) | `-fencrypt-call-strings` | تشفير السلاسل في وقت التجميع، فك تشفير XOR على المكدس، مضاد للتوقيع |
 
 </div>

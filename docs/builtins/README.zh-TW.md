@@ -12,6 +12,7 @@ NeverC 透過可選的內建執行時擴展標準 C，這些執行時以 LLVM bi
 |---------|------|------|------|
 | [**`string`**](string/README.zh-TW.md) | `-fbuiltin-string` | 關閉 | 值語義字串型別，支援點呼叫方法、自動記憶體管理和原生 UTF-8 |
 | [**`mimalloc`**](mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | **開啟** | 高效能記憶體配置器，透明替換 `malloc`/`free`/`calloc`/`realloc` |
+| [**`xorstr`**](xorstr/README.zh-TW.md) | `-fencrypt-call-strings` | 關閉 | 編譯期字串加密，堆疊分配 XOR 解密，反簽名偵測演算法 |
 
 `string` 內建需要明確啟用；`mimalloc` 對所有 hosted 建置預設開啟（核心、shellcode 和 freestanding 模式下自動抑制）。可以組合使用：
 

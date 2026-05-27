@@ -12,6 +12,7 @@
 |--------|-------|-----------|-------|
 | [**`string`**](string/README.ar.md) | `-fbuiltin-string` | معطل | نوع سلسلة نصية بدلالة القيمة مع أساليب النقطة، إدارة تلقائية للذاكرة ودعم UTF-8 أصلي |
 | [**`mimalloc`**](mimalloc/README.ar.md) | `-fbuiltin-mimalloc` | **مفعّل** | مخصص ذاكرة عالي الأداء يستبدل بشفافية `malloc`/`free`/`calloc`/`realloc` |
+| [**`xorstr`**](xorstr/README.ar.md) | `-fencrypt-call-strings` | معطّل | تشفير السلاسل في وقت التجميع، فك تشفير XOR على المكدس، خوارزمية مضادة للتوقيع |
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
