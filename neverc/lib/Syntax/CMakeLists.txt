@@ -10,6 +10,7 @@ add_neverc_library(nevercSyntax
   Core/RunParser.cpp
 
   Decl/DeclParser.cpp
+  Decl/DeclParserSpec.cpp
 
   Expr/ExprParser.cpp
   Expr/InitParser.cpp

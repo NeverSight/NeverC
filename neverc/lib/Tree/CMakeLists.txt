@@ -12,6 +12,7 @@ set(AST_INTERP_SOURCES
 add_neverc_library(nevercTree
   Core/TreeConsumer.cpp
   Core/TreeContext.cpp
+  Core/TreeContextType.cpp
   Core/TreeDiag.cpp
   Core/APValue.cpp
   Core/AttrImpl.cpp
