@@ -1,4 +1,7 @@
 #include "neverc/Tree/Core/TreeContext.h"
+#include "neverc/Tree/Core/Mangle.h"
+#include "neverc/Tree/Core/TreeMutationListener.h"
+#include "neverc/Tree/Decl/GlobalDecl.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"

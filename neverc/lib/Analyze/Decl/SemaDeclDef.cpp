@@ -2,7 +2,9 @@
 #include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/ScopeInfo.h"
 #include "neverc/Analyze/SemaInternal.h"
+#include "neverc/Foundation/Attr/AttributeCommonInfo.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Scan/IncludeResolver.h"
@@ -19,6 +21,116 @@
 
 using namespace neverc;
 using namespace sema;
+
+// ===----------------------------------------------------------------------===
+// Helpers shared with SemaDecl.cpp
+// ===----------------------------------------------------------------------===
+
+namespace {
+
+void attachImplicitCleanupAttr(Sema &S, VarDecl *VD, FunctionDecl *CleanupFD) {
+  AttributeCommonInfo Info(SourceRange(VD->getLocation()),
+                           AttributeCommonInfo::AT_Cleanup,
+                           AttributeCommonInfo::Form::Implicit());
+  auto *Attr = ::new (S.Context) CleanupAttr(S.Context, Info, CleanupFD);
+  Attr->setImplicit(true);
+  VD->addAttr(Attr);
+}
+
+bool isWptrProducingCall(Sema &S, const Expr *Init) {
+  const auto *CE = dyn_cast_or_null<CallExpr>(Init->IgnoreParenImpCasts());
+  if (!CE)
+    return false;
+  const auto *Callee = CE->getDirectCallee();
+  return S.isNeverCStringWptrProducer(Callee);
+}
+
+void attachNeverCWptrCleanup(Sema &S, Scope *Sc, VarDecl *VD) {
+  if (!VD || VD->isInvalidDecl() || !VD->hasLocalStorage())
+    return;
+  if (VD->hasAttr<CleanupAttr>())
+    return;
+  if (!VD->getType()->isPointerType())
+    return;
+  const Expr *Init = VD->getInit();
+  if (!Init || !isWptrProducingCall(S, Init))
+    return;
+
+  FunctionDecl *CleanupFD = S.lookupNeverCStringFunctionDecl(
+      BuiltinStringNames::WptrCleanupFunctionName, Sc, VD->getLocation());
+  if (!CleanupFD)
+    return;
+  attachImplicitCleanupAttr(S, VD, CleanupFD);
+}
+
+bool canRedefineFunction(const FunctionDecl *FD, const LangOptions &LangOpts) {
+  return ((FD->hasAttr<GNUInlineAttr>() || LangOpts.GNUInline) &&
+          FD->isInlineSpecified() && FD->getStorageClass() == SC_Extern);
+}
+
+void checkAttributesAfterMerging(Sema &S, NamedDecl &ND) {
+  assert(!S.ParsingInitForAutoVars.contains(&ND));
+
+  if (LLVM_LIKELY(!ND.hasAttrs()))
+    return;
+
+  if (WeakAttr *Attr = ND.getAttr<WeakAttr>()) {
+    if (!ND.isExternallyVisible()) {
+      S.Diag(Attr->getLocation(), diag::err_attribute_weak_static);
+      ND.dropAttr<WeakAttr>();
+    }
+  }
+  if (WeakRefAttr *Attr = ND.getAttr<WeakRefAttr>()) {
+    if (ND.isExternallyVisible()) {
+      S.Diag(Attr->getLocation(), diag::err_attribute_weakref_not_static);
+      ND.dropAttr<WeakRefAttr>();
+      ND.dropAttr<AliasAttr>();
+    }
+  }
+
+  if (auto *VD = dyn_cast<VarDecl>(&ND)) {
+    if (VD->hasInit()) {
+      if (const auto *Attr = VD->getAttr<AliasAttr>()) {
+        assert(VD->isThisDeclarationADefinition() &&
+               !VD->isExternallyVisible() && "Broken AliasAttr handled late!");
+        S.Diag(Attr->getLocation(), diag::err_alias_is_definition) << VD << 0;
+        VD->dropAttr<AliasAttr>();
+      }
+    }
+  }
+
+  if (SelectAnyAttr *Attr = ND.getAttr<SelectAnyAttr>()) {
+    if (isa<FunctionDecl>(ND) || !ND.isExternallyVisible()) {
+      S.Diag(Attr->getLocation(),
+             diag::err_attribute_selectany_non_extern_data);
+      ND.dropAttr<SelectAnyAttr>();
+    }
+  }
+
+  if (const InheritableAttr *Attr = getDLLAttr(&ND)) {
+    auto *VD = dyn_cast<VarDecl>(&ND);
+    if (!ND.isExternallyVisible() || (VD && VD->isStaticLocal())) {
+      S.Diag(ND.getLocation(), diag::err_attribute_dll_not_extern)
+          << &ND << Attr;
+      ND.setInvalidDecl();
+    }
+  }
+}
+
+DeclContext *getTagInjectionContext(DeclContext *DC) {
+  while (!DC->isFileContext() && !DC->isFunctionOrMethod())
+    DC = DC->getParent();
+  return DC;
+}
+
+Scope *getTagInjectionScope(Scope *S, const LangOptions &LangOpts) {
+  while (S->isRecordScope() || ((S->getFlags() & Scope::DeclScope) == 0) ||
+         (S->getEntity() && S->getEntity()->isTransparentContext()))
+    S = S->getParent();
+  return S;
+}
+
+} // namespace
 
 // ===----------------------------------------------------------------------===
 // Variable initialization & completion

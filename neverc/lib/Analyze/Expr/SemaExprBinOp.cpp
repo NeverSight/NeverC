@@ -1,4 +1,5 @@
 #include "TreeTransform.h"
+#include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/SemaInternal.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Core/SourceManager.h"
@@ -17,6 +18,44 @@
 
 using namespace neverc;
 using namespace sema;
+
+namespace neverc {
+template <class Derived>
+class ReferencedDeclWalker : public EvaluatedExprVisitor<Derived> {
+protected:
+  Sema &S;
+
+public:
+  typedef EvaluatedExprVisitor<Derived> Inherited;
+
+  ReferencedDeclWalker(Sema &S) : Inherited(S.Context), S(S) {}
+
+  Derived &asImpl() { return *static_cast<Derived *>(this); }
+
+  void VisitDeclRefExpr(DeclRefExpr *E) {
+    auto *D = E->getDecl();
+    if (isa<FunctionDecl>(D) || isa<VarDecl>(D)) {
+      asImpl().visitUsedDecl(E->getLocation(), D);
+    }
+  }
+
+  void VisitMemberExpr(MemberExpr *E) {
+    auto *D = E->getMemberDecl();
+    if (isa<FunctionDecl>(D) || isa<VarDecl>(D)) {
+      asImpl().visitUsedDecl(E->getMemberLoc(), D);
+    }
+    asImpl().Visit(E->getBase());
+  }
+
+  void VisitInitListExpr(InitListExpr *ILE) {
+    if (ILE->hasArrayFiller())
+      asImpl().Visit(ILE->getArrayFiller());
+    Inherited::VisitInitListExpr(ILE);
+  }
+
+  void visitUsedDecl(SourceLocation Loc, Decl *D) {}
+};
+} // namespace neverc
 
 // ===----------------------------------------------------------------------===
 // Helpers shared with SemaExpr.cpp
@@ -90,6 +129,118 @@ QualType checkRealImagOperand(Sema &S, ExprResult &V, SourceLocation Loc,
   S.Diag(Loc, diag::err_realimag_invalid_type)
       << V.get()->getType() << (IsReal ? "__real" : "__imag");
   return QualType();
+}
+
+void warnNullPtrDeref(Sema &S, Expr *E) {
+  const auto *UO = dyn_cast<UnaryOperator>(E->IgnoreParenCasts());
+  if (UO && UO->getOpcode() == UO_Deref &&
+      UO->getSubExpr()->getType()->isPointerType()) {
+    const LangAS AS =
+        UO->getSubExpr()->getType()->getPointeeType().getAddressSpace();
+    if ((!isTargetAddressSpace(AS) ||
+         (isTargetAddressSpace(AS) && toTargetAddressSpace(AS) == 0)) &&
+        UO->getSubExpr()->IgnoreParenCasts()->isNullPointerConstant(
+            S.Context, Expr::NPC_ValueDependentIsNotNull) &&
+        !UO->getType().isVolatileQualified()) {
+      S.DiagRuntimeBehavior(UO->getOperatorLoc(), UO,
+                            S.PDiag(diag::warn_indirection_through_null)
+                                << UO->getSubExpr()->getSourceRange());
+      S.DiagRuntimeBehavior(UO->getOperatorLoc(), UO,
+                            S.PDiag(diag::note_indirection_through_null));
+    }
+  }
+}
+
+bool isVector(QualType QT, QualType ElementType) {
+  if (const VectorType *VT = QT->getAs<VectorType>())
+    return VT->getElementType().getCanonicalType() == ElementType;
+  return false;
+}
+
+ExprResult buildNeverCStringConcat(Sema &S, SourceLocation OpLoc, Expr *LHS,
+                                   Expr *RHS) {
+  Expr *Args[] = {LHS, RHS};
+  return buildNeverCStringRuntimeCall(S, /*Scope=*/nullptr, OpLoc,
+                                      BuiltinStringNames::ConcatFunctionName,
+                                      Args, OpLoc);
+}
+
+ExprResult buildNeverCStringCompare(Sema &S, SourceLocation OpLoc,
+                                    BinaryOperatorKind Opc, Expr *LHS,
+                                    Expr *RHS) {
+  assert(BinaryOperator::isComparisonOp(Opc) &&
+         "only comparison operators compare neverc strings");
+
+  Expr *Args[] = {LHS, RHS};
+
+  if (BinaryOperator::isEqualityOp(Opc)) {
+    const CallExpr *DecryptCall = getDecryptLiteralCall(RHS);
+    Expr *OtherOperand = LHS;
+    if (!DecryptCall) {
+      DecryptCall = getDecryptLiteralCall(LHS);
+      OtherOperand = RHS;
+    }
+
+    if (DecryptCall && DecryptCall->getNumArgs() == 3) {
+      Expr *DecryptArgs[] = {
+          OtherOperand,
+          const_cast<Expr *>(DecryptCall->getArg(0)),
+          const_cast<Expr *>(DecryptCall->getArg(1)),
+          const_cast<Expr *>(DecryptCall->getArg(2))};
+      ExprResult Eq = buildNeverCStringRuntimeCall(
+          S, /*Scope=*/nullptr, OpLoc,
+          BuiltinStringNames::DecryptEqualsFunctionName, DecryptArgs, OpLoc);
+      if (Eq.isInvalid() || Opc == BO_EQ)
+        return Eq;
+      return S.FormUnaryOp(/*Scope=*/nullptr, OpLoc, UO_LNot, Eq.get());
+    }
+
+    ExprResult Eq = buildNeverCStringRuntimeCall(
+        S, /*Scope=*/nullptr, OpLoc, BuiltinStringNames::EqualFunctionName,
+        Args, OpLoc);
+    if (Eq.isInvalid() || Opc == BO_EQ)
+      return Eq;
+    return S.FormUnaryOp(/*Scope=*/nullptr, OpLoc, UO_LNot, Eq.get());
+  }
+
+  {
+    const CallExpr *DecryptCall = getDecryptLiteralCall(RHS);
+    Expr *OtherOperand = LHS;
+    bool DecryptOnLHS = false;
+    if (!DecryptCall) {
+      DecryptCall = getDecryptLiteralCall(LHS);
+      OtherOperand = RHS;
+      DecryptOnLHS = true;
+    }
+    if (DecryptCall && DecryptCall->getNumArgs() == 3) {
+      Expr *DecryptArgs[] = {
+          OtherOperand,
+          const_cast<Expr *>(DecryptCall->getArg(0)),
+          const_cast<Expr *>(DecryptCall->getArg(1)),
+          const_cast<Expr *>(DecryptCall->getArg(2))};
+      ExprResult Cmp = buildNeverCStringRuntimeCall(
+          S, /*Scope=*/nullptr, OpLoc,
+          BuiltinStringNames::DecryptCompareFunctionName, DecryptArgs, OpLoc);
+      if (Cmp.isInvalid())
+        return Cmp;
+      ExprResult Zero = S.OnIntegerConstant(OpLoc, /*Val=*/0);
+      if (Zero.isInvalid())
+        return ExprError();
+      BinaryOperatorKind FinalOpc =
+          DecryptOnLHS ? BinaryOperator::reverseComparisonOp(Opc) : Opc;
+      return S.FormBinOp(/*Scope=*/nullptr, OpLoc, FinalOpc, Cmp.get(),
+                         Zero.get());
+    }
+  }
+  ExprResult Cmp = buildNeverCStringRuntimeCall(
+      S, /*Scope=*/nullptr, OpLoc, BuiltinStringNames::CompareFunctionName,
+      Args, OpLoc);
+  if (Cmp.isInvalid())
+    return Cmp;
+  ExprResult Zero = S.OnIntegerConstant(OpLoc, /*Val=*/0);
+  if (Zero.isInvalid())
+    return ExprError();
+  return S.FormBinOp(/*Scope=*/nullptr, OpLoc, Opc, Cmp.get(), Zero.get());
 }
 
 } // namespace
