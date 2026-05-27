@@ -26,7 +26,10 @@ set(NEVERC_COMPILER_SOURCES
   Consumer/MultiplexConsumer.cpp
 
   Preprocessor/InitPreprocessor.cpp
+  Preprocessor/InitPredefinedMacros.cpp
   Preprocessor/PrintPreprocessedOutput.cpp
+  Preprocessor/PrintPPOutputPragmas.cpp
+  Preprocessor/PrintPPOutputTokens.cpp
   Preprocessor/HeaderIncludeGen.cpp
   Preprocessor/DependencyFile.cpp
 
