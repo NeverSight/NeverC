@@ -203,10 +203,10 @@ jobs:
           fi
 
           echo "Merging $profraw_count profiles..."
-          "$LLVM_PROFDATA" merge \
-            -output="${PROFILE_DIR}/merged.profdata" \
-            "$PROFILE_DIR"/*.profraw
-          ls -lh "${PROFILE_DIR}/merged.profdata"
+          bash "${GITHUB_WORKSPACE}/tools/merge_pgo_profiles.sh" \
+            --llvm-profdata "$LLVM_PROFDATA" \
+            --profile-dir "$PROFILE_DIR" \
+            --output "${PROFILE_DIR}/merged.profdata"
 
       - name: Generate order file
         if: steps.check-profdata.outputs.has_profdata != 'true'

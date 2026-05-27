@@ -157,7 +157,10 @@ phase_train() {
   fi
 
   echo "  Merging $profraw_count profiles → $PROFDATA"
-  "$LLVM_PROFDATA" merge -output="$PROFDATA" "$PROFILE_DIR"/*.profraw
+  "$REPO_ROOT/tools/merge_pgo_profiles.sh" \
+    --llvm-profdata "$LLVM_PROFDATA" \
+    --profile-dir "$PROFILE_DIR" \
+    --output "$PROFDATA"
   echo "✓ Profile data: $PROFDATA ($(du -h "$PROFDATA" | cut -f1))"
 }
 

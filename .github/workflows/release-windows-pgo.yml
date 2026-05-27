@@ -187,10 +187,12 @@ jobs:
             train "$PROFILE_DIR/test_${tag}.profraw" -c -O2 -w -fno-neverc-types -o /dev/null "$f"
           done < <(find tests -name '*.c' -print0)
 
-          profraw_count=$(ls "$PROFILE_DIR"/*.profraw | wc -l | tr -d ' ')
+          profraw_count=$(find "$PROFILE_DIR" -maxdepth 1 -name '*.profraw' | wc -l | tr -d ' ')
           echo "Merging $profraw_count profiles..."
-          "$LLVM_PROFDATA" merge -output="${PROFILE_DIR}/merged.profdata" "$PROFILE_DIR"/*.profraw
-          ls -lh "${PROFILE_DIR}/merged.profdata"
+          bash "${GITHUB_WORKSPACE}/tools/merge_pgo_profiles.sh" \
+            --llvm-profdata "$LLVM_PROFDATA" \
+            --profile-dir "$PROFILE_DIR" \
+            --output "${PROFILE_DIR}/merged.profdata"
 
       # ── Save profdata to cache for future runs ───────────────
       - name: Save PGO profile cache

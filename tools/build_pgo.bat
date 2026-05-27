@@ -151,7 +151,14 @@ if %PROFRAW_COUNT% equ 0 (
 )
 
 echo   Merging %PROFRAW_COUNT% profiles...
-"%LLVM_PROFDATA%" merge -output="%PROFDATA%" "%PROFILE_DIR%\*.profraw"
+where bash >nul 2>&1 && (
+    bash "%REPO_ROOT%\tools\merge_pgo_profiles.sh" ^
+        --llvm-profdata "%LLVM_PROFDATA%" ^
+        --profile-dir "%PROFILE_DIR%" ^
+        --output "%PROFDATA%"
+) || (
+    "%LLVM_PROFDATA%" merge -output="%PROFDATA%" "%PROFILE_DIR%\*.profraw"
+)
 if errorlevel 1 exit /b 1
 
 echo [OK] Profile data: %PROFDATA%
