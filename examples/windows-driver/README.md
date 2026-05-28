@@ -26,6 +26,7 @@ The output is `ExampleDriver.sys` (~3 KB, auto-LTO optimized).
 
 ```bash
 neverc --target=x86_64-pc-windows-msvc \
+  -g \
   -fms-kernel -fms-extensions -fms-compatibility \
   -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
@@ -35,6 +36,9 @@ neverc --target=x86_64-pc-windows-msvc \
   -lntoskrnl -lhal \
   -o ExampleDriver.sys driver.c
 ```
+
+> `-g` emits DWARF debug info into the PE; inspect with `llvm-dwarfdump` or load
+> symbols in WinDbg. Omit for release builds to reduce binary size.
 
 ## What it does
 
