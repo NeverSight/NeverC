@@ -19,8 +19,11 @@ Roughly three dozen import libraries for typical Win32 apps, for example:
 `netapi32`, `mpr`, `gdiplus`, `opengl32`, `setupapi`, `wldap32`,
 `BufferOverflow`, `BufferOverflowU`.
 
-Specialized stacks (DirectX, WMI, debug engines, cluster, etc.) were removed.
-Restore from git history if needed.
+**DirectX / DXGI:** `d3d9`, `d3d10`, `d3d10_1`, `d3d11`, `d3d12`, `d3dcompiler`,
+`d3dcsx`, `d3dcsxd`, `dxgi`, `dxguid` (link e.g. `-ld3d11 -ldxgi -ldxguid`).
+
+Other specialized stacks (WMI, debug engines, cluster, …) were removed;
+restore from git history if needed.
 
 CRT startup is under `runtime/windows/x64/msvc/crt/lib/`:
 
