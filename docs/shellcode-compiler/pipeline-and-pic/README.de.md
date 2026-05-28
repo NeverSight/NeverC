@@ -54,12 +54,12 @@ Beim Cross-Kompilieren für Windows-Ziele unterstützt NeverC zwei SDK-Quellen *
 
    ```
    build-neverc/bin/neverc
-   build-neverc/runtime/windows/x64/msvc/
-     crt/include, crt/lib/<arch>
-     sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
+   build-neverc/runtime/windows/shared/msvc/  (Header)
+   build-neverc/runtime/windows/x64/msvc/     (x64 Bibliotheken)
+   build-neverc/runtime/windows/arm64/msvc/   (arm64 Bibliotheken)
    ```
 
-2. **Echtes VS-Stil-Sysroot** (optional): Bei vorhandenem `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...`-Verzeichnisbaum über `-winsysroot=<path>` oder die `NEVERC_WIN_SYSROOT`-Umgebungsvariable verweisen.
+2. **Explizites VS-Stil-Sysroot** (optional): Bei vorhandenem `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...`-Verzeichnisbaum über `-vctoolsdir=<path>` oder `-winsysroot=<path>` verweisen. Dieser Pfad hat Vorrang vor dem integrierten SDK.
 
 Beide Quellen funktionieren ohne Registry oder OS-bereitgestellte VS-Umgebungsvariablen, was Windows-Shellcode-Cross-Kompilierung von macOS / Linux ermöglicht.
 

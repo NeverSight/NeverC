@@ -54,12 +54,12 @@ Windows ターゲットへのクロスコンパイル時、NeverC は**ハード
 
    ```
    build-neverc/bin/neverc
-   build-neverc/runtime/windows/x64/msvc/
-     crt/include, crt/lib/<arch>
-     sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
+   build-neverc/runtime/windows/shared/msvc/  （ヘッダ）
+   build-neverc/runtime/windows/x64/msvc/     （x64 ライブラリ）
+   build-neverc/runtime/windows/arm64/msvc/   （arm64 ライブラリ）
    ```
 
-2. **実際の VS スタイル sysroot**（任意）：`VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...` ディレクトリツリーがあれば `-winsysroot=<path>` または `NEVERC_WIN_SYSROOT` 環境変数で指定。
+2. **明示的な VS スタイル sysroot**（任意）：`VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...` ディレクトリツリーがあれば `-vctoolsdir=<path>` または `-winsysroot=<path>` で指定。指定されたパスは内蔵 SDK より優先されます。
 
 両方ともレジストリや OS 提供の VS 環境変数不要で、macOS / Linux からの Windows shellcode クロスコンパイルを実現。
 

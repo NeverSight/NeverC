@@ -46,8 +46,16 @@ NeverC يُرجع **true** من `Generic_GCC::isPICDefaultForced()` و`MachO::is
 
 NeverC يدعم مصدرين لـ SDK **بدون مسارات مطلقة مشفرة**:
 
-1. **SDK مجمع مع شجرة البناء** (موصى به).
-2. **Sysroot حقيقي بنمط VS** (اختياري): عبر `-winsysroot=<path>` أو `NEVERC_WIN_SYSROOT`.
+1. **SDK مدمج** (افتراضي): NeverC يضمّن Windows SDK و WDK كاملين في `runtime/`. الترويسات في `runtime/windows/shared/`، والمكتبات الخاصة بكل معمارية في `runtime/windows/{x64,arm64}/`. تخطيط ما بعد البناء:
+
+   ```
+   build-neverc/bin/neverc
+   build-neverc/runtime/windows/shared/msvc/  (ترويسات)
+   build-neverc/runtime/windows/x64/msvc/     (مكتبات x64)
+   build-neverc/runtime/windows/arm64/msvc/   (مكتبات arm64)
+   ```
+
+2. **Sysroot صريح بنمط VS** (اختياري): إذا كان لديك شجرة `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...`، أشِر إليها عبر `-vctoolsdir=<path>` أو `-winsysroot=<path>`. هذا المسار له الأولوية على SDK المدمج.
 
 ## 5. نقاط التشويش والتوسيع
 

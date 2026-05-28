@@ -50,8 +50,16 @@ NeverC возвращает **true** из `Generic_GCC::isPICDefaultForced()`, `
 
 NeverC поддерживает два источника SDK **без жёстко закодированных путей**:
 
-1. **SDK, связанный с деревом сборки** (рекомендуется): `build-neverc/sdk` как корень SDK.
-2. **Реальный sysroot в стиле VS** (опционально): через `-winsysroot=<path>` или `NEVERC_WIN_SYSROOT`.
+1. **Встроенный SDK** (по умолчанию): NeverC поставляет полный Windows SDK и WDK в `runtime/`. Заголовки в `runtime/windows/shared/`, библиотеки по архитектуре в `runtime/windows/{x64,arm64}/`. Раскладка после сборки:
+
+   ```
+   build-neverc/bin/neverc
+   build-neverc/runtime/windows/shared/msvc/  (заголовки)
+   build-neverc/runtime/windows/x64/msvc/     (библиотеки x64)
+   build-neverc/runtime/windows/arm64/msvc/   (библиотеки arm64)
+   ```
+
+2. **Явный sysroot в стиле VS** (опционально): через `-vctoolsdir=<path>` или `-winsysroot=<path>`. Указанный путь имеет приоритет над встроенным SDK.
 
 Оба работают без реестра или переменных среды VS, обеспечивая кросс-компиляцию shellcode Windows из macOS / Linux.
 

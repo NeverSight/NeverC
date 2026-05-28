@@ -54,12 +54,12 @@ Windows 타겟으로 크로스 컴파일 시 NeverC는 **하드코딩된 절대 
 
    ```
    build-neverc/bin/neverc
-   build-neverc/runtime/windows/x64/msvc/
-     crt/include, crt/lib/<arch>
-     sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
+   build-neverc/runtime/windows/shared/msvc/  (헤더)
+   build-neverc/runtime/windows/x64/msvc/     (x64 라이브러리)
+   build-neverc/runtime/windows/arm64/msvc/   (arm64 라이브러리)
    ```
 
-2. **실제 VS 스타일 sysroot** (선택): `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...` 디렉터리 트리가 있다면 `-winsysroot=<path>` 또는 `NEVERC_WIN_SYSROOT` 환경 변수로 지정.
+2. **명시적 VS 스타일 sysroot** (선택): `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...` 디렉터리 트리가 있다면 `-vctoolsdir=<path>` 또는 `-winsysroot=<path>`로 지정. 지정된 경로는 내장 SDK보다 우선합니다.
 
 두 소스 모두 레지스트리나 OS 제공 VS 환경 변수 없이 작동하여 macOS / Linux에서 Windows shellcode 크로스 컴파일을 가능하게 합니다.
 

@@ -54,12 +54,12 @@ IR 和 MIR 全局回调均使用**注册一次、运行时读取当前 `Shellcod
 
    ```
    build-neverc/bin/neverc
-   build-neverc/runtime/windows/x64/msvc/
-     crt/include, crt/lib/<arch>
-     sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
+   build-neverc/runtime/windows/shared/msvc/  （头文件）
+   build-neverc/runtime/windows/x64/msvc/     （x64 库）
+   build-neverc/runtime/windows/arm64/msvc/   （arm64 库）
    ```
 
-2. **真实 VS 风格 sysroot**（可选）：如果有 `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...` 目录树，通过 `-winsysroot=<path>` 或 `NEVERC_WIN_SYSROOT` 环境变量指向它。
+2. **显式 VS 风格 sysroot**（可选）：如果有 `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...` 目录树，通过 `-vctoolsdir=<path>` 或 `-winsysroot=<path>` 指向它。该路径优先级高于内置 SDK。
 
 两种来源均无需注册表或操作系统提供的 VS 环境变量，实现从 macOS / Linux 交叉编译 Windows shellcode。
 

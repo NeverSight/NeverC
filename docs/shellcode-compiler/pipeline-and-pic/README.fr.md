@@ -54,12 +54,12 @@ Lors de la compilation croisée vers des cibles Windows, NeverC supporte deux so
 
    ```
    build-neverc/bin/neverc
-   build-neverc/runtime/windows/x64/msvc/
-     crt/include, crt/lib/<arch>
-     sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
+   build-neverc/runtime/windows/shared/msvc/  (en-têtes)
+   build-neverc/runtime/windows/x64/msvc/     (bibliothèques x64)
+   build-neverc/runtime/windows/arm64/msvc/   (bibliothèques arm64)
    ```
 
-2. **Vrai sysroot style VS** (optionnel) : Si vous avez un arbre `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...`, pointer via `-winsysroot=<path>` ou la variable d'environnement `NEVERC_WIN_SYSROOT`.
+2. **Sysroot explicite style VS** (optionnel) : Si vous avez un arbre `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...`, le pointer via `-vctoolsdir=<path>` ou `-winsysroot=<path>`. Ce chemin a priorité sur le SDK intégré.
 
 Les deux sources fonctionnent sans registre ni variables d'environnement VS fournies par l'OS, permettant la compilation croisée de shellcode Windows depuis macOS / Linux.
 

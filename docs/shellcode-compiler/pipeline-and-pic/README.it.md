@@ -54,12 +54,12 @@ Per la compilazione incrociata verso target Windows, NeverC supporta due fonti S
 
    ```
    build-neverc/bin/neverc
-   build-neverc/runtime/windows/x64/msvc/
-     crt/include, crt/lib/<arch>
-     sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
+   build-neverc/runtime/windows/shared/msvc/  (header)
+   build-neverc/runtime/windows/x64/msvc/     (librerie x64)
+   build-neverc/runtime/windows/arm64/msvc/   (librerie arm64)
    ```
 
-2. **Sysroot reale stile VS** (opzionale): Tramite `-winsysroot=<path>` o `NEVERC_WIN_SYSROOT`.
+2. **Sysroot esplicito stile VS** (opzionale): Tramite `-vctoolsdir=<path>` o `-winsysroot=<path>`. Questo percorso ha la precedenza sull'SDK integrato.
 
 Entrambe funzionano senza registro o variabili d'ambiente VS dell'OS.
 
