@@ -1,0 +1,6 @@
+*.sys
+*.obj
+*.o
+*.lib
+*.exp
+*.pdb
