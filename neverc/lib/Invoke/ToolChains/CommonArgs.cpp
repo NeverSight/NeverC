@@ -364,19 +364,6 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
     Cfg.linkerOptLevel = Level > 2 ? 2 : Level;
   }
 
-  // In auto-LTO mode, -g implies a true debug build: disable LTO
-  // optimization so the generated code matches source-level debugging.
-  // Overridden if user explicitly sets -O alongside -g.
-  if (TC.getDriver().isAutoLTO() &&
-      !Args.hasArg(options::OPT_O_Group)) {
-    if (const Arg *A = Args.getLastArg(options::OPT_g_Group)) {
-      if (!A->getOption().matches(options::OPT_g0)) {
-        Cfg.ltoOptLevel = 0;
-        Cfg.linkerOptLevel = 0;
-      }
-    }
-  }
-
   // -fbasic-block-sections= and -funique-basic-block-section-names forwarded
   // to LTO codegen, replacing --lto-basic-block-sections= on the linker CLI.
   if (const Arg *A = Args.getLastArg(options::OPT_fbasic_block_sections_EQ))
@@ -517,12 +504,8 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
 
   if (Args.hasArg(options::OPT_s))
     Cfg.stripLevel = 2;
-  if (TC.getDriver().isAutoLTO()) {
-    bool WantDebug = false;
-    if (const Arg *A = Args.getLastArg(options::OPT_g_Group))
-      WantDebug = !A->getOption().matches(options::OPT_g0);
-    Cfg.stripLocals = !WantDebug;
-  }
+  if (TC.getDriver().isAutoLTO())
+    Cfg.stripLocals = true;
   Cfg.traceFiles = Args.hasArg(options::OPT_t);
 
   // Explicit overrides for linker optimization defaults.
