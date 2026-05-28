@@ -1,4 +1,7 @@
 #include <ntddk.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
 
 #define DEVICE_NAME    L"\\Device\\CetDriver"
 #define SYMLINK_NAME   L"\\DosDevices\\CetDriver"
@@ -88,7 +91,17 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObj, PUNICODE_STRING RegistryPath) {
 
   ULONG r1 = DispatchCompute(RotateLeft13, 0xDEADBEEF);
   ULONG r2 = DispatchCompute(XorFold, 0xCAFEBABE);
-  dprintf("[CetDriver] Loaded  rotl=0x%08X xfold=0x%08X\n", r1, r2);
+
+  char buf[32];
+  const char *src = "CET Shadow Stack";
+  strncpy(buf, src, sizeof(buf) - 1);
+  buf[sizeof(buf) - 1] = '\0';
+  size_t len = strlen(buf);
+  for (size_t i = 0; i < len; ++i)
+    buf[i] = (char)toupper((unsigned char)buf[i]);
+
+  dprintf("[CetDriver] Loaded  rotl=0x%08X xfold=0x%08X crt=\"%s\" len=%u\n",
+          r1, r2, buf, (unsigned)len);
 
   return STATUS_SUCCESS;
 }

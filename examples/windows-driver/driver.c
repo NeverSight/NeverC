@@ -1,4 +1,7 @@
 #include <ntddk.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
 
 #define DEVICE_NAME    L"\\Device\\ExampleDriver"
 #define SYMLINK_NAME   L"\\DosDevices\\ExampleDriver"
@@ -79,6 +82,16 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObj, PUNICODE_STRING RegistryPath) {
   ULONG masked = (b & 0xFF00FF00) | (a & 0x00FF00FF);
   dprintf("[ExampleDriver] Loaded  xor=0x%08X rotl=0x%08X mask=0x%08X\n",
           xored, rotl, masked);
+
+  char buf[32];
+  const char *src = "NeverC Driver";
+  strncpy(buf, src, sizeof(buf) - 1);
+  buf[sizeof(buf) - 1] = '\0';
+  size_t len = strlen(buf);
+  for (size_t i = 0; i < len; ++i)
+    buf[i] = (char)toupper((unsigned char)buf[i]);
+  dprintf("[ExampleDriver] crt: \"%s\" len=%u cmp=%d atoi=%d\n",
+          buf, (unsigned)len, strcmp(buf, src), atoi("42"));
 
   return STATUS_SUCCESS;
 }
