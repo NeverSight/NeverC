@@ -50,7 +50,7 @@ IR 和 MIR 全局回调均使用**注册一次、运行时读取当前 `Shellcod
 
 交叉编译到 Windows 目标时，NeverC 支持两种 SDK 来源，**无硬编码绝对路径**：
 
-1. **构建树捆绑的 SDK**（推荐）：用户和测试脚本将 `runtime/windows/<arch>/msvc/` 放置 MSVC CRT/SDK 文件。NeverC 自动检测安装目录中的该路径，并在 `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob` 中注入 include/lib 路径。典型布局：
+1. **内置 SDK**（默认）：NeverC 在 `runtime/` 中内置了完整的 Windows SDK 和 WDK。头文件在 `runtime/windows/shared/`，架构特定的库在 `runtime/windows/{x64,arm64}/`。构建后布局：
 
    ```
    build-neverc/bin/neverc

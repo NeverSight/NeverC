@@ -50,7 +50,7 @@ IR・MIR のグローバルコールバックはともに**一度登録、実行
 
 Windows ターゲットへのクロスコンパイル時、NeverC は**ハードコード絶対パスなし**で 2 つの SDK ソースをサポート：
 
-1. **ビルドツリーにバンドルされた SDK**（推奨）：ユーザーとテストスクリプトが `runtime/windows/<arch>/msvc/` に MSVC CRT/SDK ファイルを配置。NeverC はインストールディレクトリからこのパスを自動検出し、`MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob` で include/lib パスを注入。典型レイアウト：
+1. **内蔵 SDK**（デフォルト）：NeverC は `runtime/` に Windows SDK と WDK を同梱。ヘッダは `runtime/windows/shared/`、アーキテクチャ固有のライブラリは `runtime/windows/{x64,arm64}/` に配置。ビルド後レイアウト：
 
    ```
    build-neverc/bin/neverc

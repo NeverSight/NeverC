@@ -50,7 +50,7 @@ IR과 MIR 전역 콜백 모두 **한 번 등록, 런타임에 현재 `ShellcodeO
 
 Windows 타겟으로 크로스 컴파일 시 NeverC는 **하드코딩된 절대 경로 없이** 두 가지 SDK 소스를 지원합니다:
 
-1. **빌드 트리에 번들된 SDK** (권장): 사용자와 테스트 스크립트가 `runtime/windows/<arch>/msvc/`에 MSVC CRT/SDK 파일 배치. NeverC가 설치 디렉터리에서 이 경로를 자동 감지하고 `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob`에서 include/lib 경로를 주입. 일반적 레이아웃:
+1. **내장 SDK** (기본): NeverC는 `runtime/`에 Windows SDK와 WDK를 내장. 헤더는 `runtime/windows/shared/`, 아키텍처별 라이브러리는 `runtime/windows/{x64,arm64}/`에 위치. 빌드 후 레이아웃:
 
    ```
    build-neverc/bin/neverc
