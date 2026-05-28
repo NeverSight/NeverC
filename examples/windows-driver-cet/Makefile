@@ -5,7 +5,7 @@ DRIVER  = CetDriver.sys
 SOURCES = driver.c
 
 # -fcf-protection=return: generate CET Shadow Stack compatible code (KCET).
-#     Windows kernel uses Shadow Stack only (no IBT; CFG is used instead).
+#     Windows kernel uses Shadow Stack only (no IBT; CFG covers forward-edge).
 # --cetcompat: mark PE as CET Shadow Stack compatible
 #     (IMAGE_DLL_CHARACTERISTICS_EX_CET_COMPAT in debug directory).
 # -g: emit DWARF debug info; remove for release builds.
