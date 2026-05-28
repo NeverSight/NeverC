@@ -19,6 +19,44 @@
 using namespace neverc;
 using namespace sema;
 
+namespace neverc {
+template <class Derived>
+class ReferencedDeclWalker : public EvaluatedExprVisitor<Derived> {
+protected:
+  Sema &S;
+
+public:
+  typedef EvaluatedExprVisitor<Derived> Inherited;
+
+  ReferencedDeclWalker(Sema &S) : Inherited(S.Context), S(S) {}
+
+  Derived &asImpl() { return *static_cast<Derived *>(this); }
+
+  void VisitDeclRefExpr(DeclRefExpr *E) {
+    auto *D = E->getDecl();
+    if (isa<FunctionDecl>(D) || isa<VarDecl>(D)) {
+      asImpl().visitUsedDecl(E->getLocation(), D);
+    }
+  }
+
+  void VisitMemberExpr(MemberExpr *E) {
+    auto *D = E->getMemberDecl();
+    if (isa<FunctionDecl>(D) || isa<VarDecl>(D)) {
+      asImpl().visitUsedDecl(E->getMemberLoc(), D);
+    }
+    asImpl().Visit(E->getBase());
+  }
+
+  void VisitInitListExpr(InitListExpr *ILE) {
+    if (ILE->hasArrayFiller())
+      asImpl().Visit(ILE->getArrayFiller());
+    Inherited::VisitInitListExpr(ILE);
+  }
+
+  void visitUsedDecl(SourceLocation Loc, Decl *D) {}
+};
+} // namespace neverc
+
 // Defined in SemaExprBinOp.cpp.
 namespace neverc {
 ExprResult castVectorElement(Expr *E, QualType ElementType, Sema &S);
@@ -26,10 +64,54 @@ bool verifyArithmeticPointerOp(Sema &S, SourceLocation Loc, Expr *Operand);
 bool checkForModifiableLvalue(Expr *E, SourceLocation Loc, Sema &S);
 void noteModifiableNonNullParam(Sema &S, const Expr *Exp);
 QualType checkIndirectionOperand(Sema &S, Expr *Op, ExprValueKind &VK,
-                                 SourceLocation OpLoc);
+                                 SourceLocation OpLoc, bool IsAfterAmp = false);
 bool requiresHalfVecConversion(bool OpRequiresConversion, TreeContext &Ctx,
                                Expr *E0, Expr *E1 = nullptr);
 } // namespace neverc
+
+namespace {
+inline UnaryOperatorKind ConvertTokenKindToUnaryOpcode(tok::TokenKind Kind) {
+  UnaryOperatorKind Opc;
+  switch (Kind) {
+  default:
+    llvm_unreachable("Unknown unary op!");
+  case tok::plusplus:
+    Opc = UO_PreInc;
+    break;
+  case tok::minusminus:
+    Opc = UO_PreDec;
+    break;
+  case tok::amp:
+    Opc = UO_AddrOf;
+    break;
+  case tok::star:
+    Opc = UO_Deref;
+    break;
+  case tok::plus:
+    Opc = UO_Plus;
+    break;
+  case tok::minus:
+    Opc = UO_Minus;
+    break;
+  case tok::tilde:
+    Opc = UO_Not;
+    break;
+  case tok::exclaim:
+    Opc = UO_LNot;
+    break;
+  case tok::kw___real:
+    Opc = UO_Real;
+    break;
+  case tok::kw___imag:
+    Opc = UO_Imag;
+    break;
+  case tok::kw___extension__:
+    Opc = UO_Extension;
+    break;
+  }
+  return Opc;
+}
+} // namespace
 
 
 namespace {
