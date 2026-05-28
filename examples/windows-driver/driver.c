@@ -2,6 +2,7 @@
 
 #define DEVICE_NAME    L"\\Device\\ExampleDriver"
 #define SYMLINK_NAME   L"\\DosDevices\\ExampleDriver"
+#define dprintf(...) DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, __VA_ARGS__)
 
 static UNICODE_STRING DeviceName;
 static UNICODE_STRING SymlinkName;
@@ -45,7 +46,7 @@ static VOID DriverUnload(PDRIVER_OBJECT DriverObj) {
   UNREFERENCED_PARAMETER(DriverObj);
   IoDeleteSymbolicLink(&SymlinkName);
   IoDeleteDevice(DeviceObject);
-  DbgPrint("[ExampleDriver] Unloaded\n");
+  dprintf("[ExampleDriver] Unloaded\n");
 }
 
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObj, PUNICODE_STRING RegistryPath) {
@@ -71,6 +72,6 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObj, PUNICODE_STRING RegistryPath) {
   DriverObj->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DispatchDeviceControl;
   DriverObj->DriverUnload = DriverUnload;
 
-  DbgPrint("[ExampleDriver] Loaded\n");
+  dprintf("[ExampleDriver] Loaded\n");
   return STATUS_SUCCESS;
 }
