@@ -2,6 +2,9 @@
 
 A minimal WDM kernel driver built with NeverC. Cross-compiles from macOS / Linux.
 
+NeverC is an all-in-one compiler — a single invocation handles preprocessing,
+compilation, optimization (auto-LTO), and linking via the built-in linker.
+
 ## Build
 
 From the repo:
@@ -17,7 +20,21 @@ From a standalone NeverC release:
 make NEVERC=/path/to/neverc
 ```
 
-The output is `ExampleDriver.sys`.
+The output is `ExampleDriver.sys` (~3 KB, auto-LTO optimized).
+
+## Manual build (without Make)
+
+```bash
+neverc --target=x86_64-pc-windows-msvc \
+  -fms-kernel -fms-extensions -fms-compatibility \
+  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
+  -Wall -nostdlib -shared \
+  -Xlinker --entry=DriverEntry \
+  -Xlinker --subsystem=native \
+  -Xlinker --nodefaultlib \
+  -lntoskrnl -lhal \
+  -o ExampleDriver.sys driver.c
+```
 
 ## What it does
 
