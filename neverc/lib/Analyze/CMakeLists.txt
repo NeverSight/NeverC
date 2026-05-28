@@ -25,6 +25,7 @@ add_neverc_library(nevercAnalyze
 
   Expr/SemaExpr.cpp
   Expr/SemaExprBinOp.cpp
+  Expr/SemaExprUnaryOp.cpp
   Expr/SemaExprMember.cpp
   Expr/SemaNeverCString.cpp
   Expr/SemaCast.cpp
