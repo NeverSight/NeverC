@@ -95,7 +95,7 @@ TEST_F(OverrideTest, TwoOverridesNonLTO) {
 TEST_F(OverrideTest, FlagOverrideNonLTO) {
   auto d = overrideDir();
   runOverrideTest("flag_override_nolto", "nolto",
-                  {"-Wl,--override=" + ovrSym()},
+                  {"-Xlinker", "--override=" + ovrSym()},
                   (d / "main_expect_99.c").string(),
                   {(d / "plain_compute_a.c").string(),
                    (d / "plain_compute_b.c").string()},

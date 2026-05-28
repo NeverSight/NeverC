@@ -1,7 +1,7 @@
 // RUN: %neverc -g -c %s -o %t.o
 // Cross-compile to Windows x64 PE with DWARF v5 (freestanding, no CRT):
 //   neverc --target=x86_64-pc-windows-msvc -gdwarf-5 -O1 -nostdlib \
-//       -Wl,--entry=main \
+//       -Xlinker --entry=main \
 //       tests/neverc/debug/test_pe_dwarf.c -o tests/neverc/debug/test_pe_dwarf.exe
 
 struct NetAddr {
