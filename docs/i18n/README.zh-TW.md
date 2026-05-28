@@ -131,7 +131,7 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## 交叉編譯到 Windows
 
-將 [xwin](https://github.com/Jake-Shadle/xwin) SDK splat 置於 `runtime/windows/x64/msvc/`。
+NeverC 在 `runtime/` 中內建了 Windows SDK 和 WDK，無需額外設定。
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \

@@ -131,7 +131,7 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## Windows로 크로스 컴파일
 
-[xwin](https://github.com/Jake-Shadle/xwin) SDK splat을 `runtime/windows/x64/msvc/`에 배치.
+NeverC는 `runtime/`에 Windows SDK와 WDK를 번들로 포함하고 있어 별도 설정이 필요 없습니다.
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \

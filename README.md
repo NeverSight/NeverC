@@ -131,7 +131,7 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## Cross-Compiling to Windows
 
-Place an [xwin](https://github.com/Jake-Shadle/xwin) SDK splat at `runtime/windows/x64/msvc/` (CMake copies it to the build tree automatically).
+NeverC bundles a Windows SDK and WDK in `runtime/`; no external SDK setup is needed.
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \

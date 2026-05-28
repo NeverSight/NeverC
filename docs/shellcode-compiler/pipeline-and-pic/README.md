@@ -48,20 +48,20 @@ Both IR and MIR global callbacks use a **register-once, read-current-`ShellcodeO
 
 ## 4. Windows MSVC Toolchain and SDK Layout
 
-When cross-compiling for Windows targets, NeverC supports two SDK sources with **no hardcoded absolute paths**:
+When cross-compiling for Windows targets, NeverC uses its **bundled SDK** with no hardcoded absolute paths:
 
-1. **Bundled SDK with the build tree** (recommended): users and test scripts place MSVC CRT/SDK files in `runtime/windows/<arch>/msvc/`. NeverC auto-detects this directory relative to the installation directory and injects include/lib paths in `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob`. Typical layout:
+1. **Bundled SDK** (default): NeverC ships a complete Windows SDK and WDK in `runtime/`. Headers live in `runtime/windows/shared/` and architecture-specific libraries in `runtime/windows/{x64,arm64}/`. The build tree layout:
 
    ```
    build-neverc/bin/neverc
-   build-neverc/runtime/windows/x64/msvc/
-     crt/include, crt/lib/<arch>
-     sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
+   build-neverc/runtime/windows/shared/msvc/  (headers)
+   build-neverc/runtime/windows/x64/msvc/     (x64 libs)
+   build-neverc/runtime/windows/arm64/msvc/   (arm64 libs)
    ```
 
-2. **Real VS-style sysroot** (optional): if you have a `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...` directory tree, point to it via `-winsysroot=<path>` or the `NEVERC_WIN_SYSROOT` environment variable.
+2. **Explicit VS-style sysroot** (optional): if you have a `VC/Tools/MSVC/<version>/...` + `Windows Kits/10/...` directory tree, point to it via `-vctoolsdir=<path>` or `-winsysroot=<path>`. This takes priority over the bundled SDK.
 
-Both sources work without registry or OS-provided VS environment variables, enabling Windows shellcode cross-compilation from macOS / Linux.
+Both sources work without registry or OS-provided VS environment variables, enabling Windows cross-compilation from macOS / Linux.
 
 ## 5. Obfuscation and Extension Points
 

@@ -133,7 +133,7 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## التجميع المتقاطع إلى Windows
 
-وضع splat SDK من [xwin](https://github.com/Jake-Shadle/xwin) في `runtime/windows/x64/msvc/`.
+يتضمن NeverC حزمة Windows SDK و WDK في `runtime/`؛ لا حاجة لإعداد خارجي.
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \

@@ -131,7 +131,7 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## Cross-Kompilierung nach Windows
 
-[xwin](https://github.com/Jake-Shadle/xwin)-SDK-Splat nach `runtime/windows/x64/msvc/` legen.
+NeverC bündelt ein Windows SDK und WDK in `runtime/`; keine externe Einrichtung erforderlich.
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
