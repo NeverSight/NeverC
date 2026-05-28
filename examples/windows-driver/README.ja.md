@@ -40,9 +40,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -o ExampleDriver.sys driver.c
 ```
 
-> `-g` は DWARF デバッグ情報を PE に埋め込みます。`llvm-dwarfdump` で検査するか、
-> WinDbg でシンボルをロードできます。リリースビルドではバイナリサイズを削減するため
-> 省略してください。
+> `-g` は DWARF デバッグ情報を PE に埋め込みます。`llvm-dwarfdump` で検査できます。
+> リリースビルドではバイナリサイズを削減するため省略してください。
 
 ## 機能
 

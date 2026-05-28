@@ -4,7 +4,7 @@ TARGET  = x86_64-pc-windows-msvc
 DRIVER  = ExampleDriver.sys
 SOURCES = driver.c
 
-# -g: emit DWARF debug info (PE + DWARF); useful with WinDbg / llvm-dwarfdump.
+# -g: emit DWARF debug info into PE; inspect with llvm-dwarfdump.
 #     For release builds, remove -g to reduce binary size.
 FLAGS = \
 	--target=$(TARGET) \

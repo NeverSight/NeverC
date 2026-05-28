@@ -39,8 +39,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -o ExampleDriver.sys driver.c
 ```
 
-> `-g` 将 DWARF 调试信息嵌入 PE；可使用 `llvm-dwarfdump` 检查或在 WinDbg 中
-> 加载符号。发布版本应省略此选项以减小二进制体积。
+> `-g` 将 DWARF 调试信息嵌入 PE；可使用 `llvm-dwarfdump` 检查。
+> 发布版本应省略此选项以减小二进制体积。
 
 ## 功能说明
 

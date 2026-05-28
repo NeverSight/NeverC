@@ -39,8 +39,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -o ExampleDriver.sys driver.c
 ```
 
-> `-g` emits DWARF debug info into the PE; inspect with `llvm-dwarfdump` or load
-> symbols in WinDbg. Omit for release builds to reduce binary size.
+> `-g` emits DWARF debug info into the PE; inspect with `llvm-dwarfdump`.
+> Omit for release builds to reduce binary size.
 
 ## What it does
 

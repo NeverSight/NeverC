@@ -39,8 +39,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -o ExampleDriver.sys driver.c
 ```
 
-> `-g` 將 DWARF 除錯資訊嵌入 PE；可使用 `llvm-dwarfdump` 檢查或在 WinDbg 中
-> 載入符號。釋出版本應省略此選項以縮小二進位檔案大小。
+> `-g` 將 DWARF 除錯資訊嵌入 PE；可使用 `llvm-dwarfdump` 檢查。
+> 釋出版本應省略此選項以縮小二進位檔案大小。
 
 ## 功能說明
 

@@ -41,8 +41,8 @@ neverc --target=x86_64-pc-windows-msvc \
 ```
 
 > `-g` incrusta información de depuración DWARF en el PE; inspecciónela con
-> `llvm-dwarfdump` o cargue los símbolos en WinDbg. Omita esta opción en
-> versiones de producción para reducir el tamaño del binario.
+> `llvm-dwarfdump`. Omita esta opción en versiones de producción para reducir
+> el tamaño del binario.
 
 ## Funcionalidades
 

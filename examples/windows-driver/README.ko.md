@@ -39,9 +39,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -o ExampleDriver.sys driver.c
 ```
 
-> `-g`는 DWARF 디버그 정보를 PE에 포함합니다. `llvm-dwarfdump`로 검사하거나
-> WinDbg에서 심볼을 로드할 수 있습니다. 릴리스 빌드에서는 바이너리 크기를
-> 줄이기 위해 생략하세요.
+> `-g`는 DWARF 디버그 정보를 PE에 포함합니다. `llvm-dwarfdump`로 검사할 수 있습니다.
+> 릴리스 빌드에서는 바이너리 크기를 줄이기 위해 생략하세요.
 
 ## 기능
 
