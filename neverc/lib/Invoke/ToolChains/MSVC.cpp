@@ -111,9 +111,23 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  // Layout: <InstalledDir>/../runtime/windows/<arch>/msvc/{crt/lib,
-  // sdk/lib/{um,ucrt}}
-  {
+  // Priority: user-specified toolchain (-vctoolsdir/-winsysroot) wins over
+  // the bundled runtime/ SDK.
+  if (TC.FoundMSVCInstall()) {
+    CmdArgs.push_back(Args.MakeArgString(
+        llvm::Twine("--libpath=") +
+        TC.getSubDirectoryPath(llvm::SubDirectoryType::Lib)));
+    if (TC.useUniversalCRT()) {
+      std::string UniversalCRTLibPath;
+      if (TC.getUniversalCRTLibraryPath(Args, UniversalCRTLibPath))
+        CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") +
+                                             UniversalCRTLibPath));
+    }
+    std::string WindowsSdkLibPath;
+    if (TC.getWindowsSDKLibraryPath(Args, WindowsSdkLibPath))
+      CmdArgs.push_back(
+          Args.MakeArgString(std::string("--libpath=") + WindowsSdkLibPath));
+  } else {
     llvm::SmallString<128> MsvcRoot;
     if (getBundledMsvcSdkRoot(TC.getDriver(), TC.getTriple(), MsvcRoot)) {
       llvm::SmallString<128> P;
@@ -135,8 +149,8 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  // Layout: <InstalledDir>/../runtime/windows/<arch>/wdk/lib/
-  {
+  // WDK libs are only needed for kernel-mode drivers (-fms-kernel).
+  if (Args.hasArg(options::OPT_fms_kernel)) {
     llvm::SmallString<128> WdkRoot;
     if (getBundledWdkRoot(TC.getDriver(), TC.getTriple(), WdkRoot)) {
       llvm::SmallString<128> P(WdkRoot);
@@ -146,46 +160,15 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  // If the VC environment hasn't been configured (perhaps because the user
-  // did not run vcvarsall), try to build a consistent link environment.  If
-  // the environment variable is set however, assume the user knows what
-  // they're doing. If the user passes /vctoolsdir or /winsdkdir, trust that
-  // over env vars.
+  // Explicit DIA SDK path via -diasdkdir or -winsysroot.
   if (const Arg *A =
           Args.getLastArg(options::OPT_diasdkdir, options::OPT_winsysroot)) {
-    // cl.exe doesn't find the DIA SDK automatically, so this too requires
-    // explicit flags and doesn't automatically look in "DIA SDK" relative
-    // to the path we found for VCToolChainPath.
     llvm::SmallString<128> DIAPath(A->getValue());
     if (A->getOption().getID() == options::OPT_winsysroot)
       llvm::sys::path::append(DIAPath, "DIA SDK");
-
-    // The DIA SDK always uses the legacy vc arch, even in new MSVC versions.
     llvm::sys::path::append(DIAPath, "lib",
                             llvm::archToLegacyVCArch(TC.getArch()));
     CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") + DIAPath));
-  }
-  if (!llvm::sys::Process::GetEnv("LIB") ||
-      Args.getLastArg(options::OPT_vctoolsdir, options::OPT_winsysroot)) {
-    CmdArgs.push_back(Args.MakeArgString(
-        llvm::Twine("--libpath=") +
-        TC.getSubDirectoryPath(llvm::SubDirectoryType::Lib)));
-    CmdArgs.push_back(Args.MakeArgString(
-        llvm::Twine("--libpath=") +
-        TC.getSubDirectoryPath(llvm::SubDirectoryType::Lib, "atlmfc")));
-  }
-  if (!llvm::sys::Process::GetEnv("LIB") ||
-      Args.getLastArg(options::OPT_winsdkdir, options::OPT_winsysroot)) {
-    if (TC.useUniversalCRT()) {
-      std::string UniversalCRTLibPath;
-      if (TC.getUniversalCRTLibraryPath(Args, UniversalCRTLibPath))
-        CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") +
-                                             UniversalCRTLibPath));
-    }
-    std::string WindowsSdkLibPath;
-    if (TC.getWindowsSDKLibraryPath(Args, WindowsSdkLibPath))
-      CmdArgs.push_back(
-          Args.MakeArgString(std::string("--libpath=") + WindowsSdkLibPath));
   }
 
   // Add the compiler-rt library directories to libpath if they exist to help
@@ -322,41 +305,13 @@ MSVCToolChain::MSVCToolChain(const Driver &D, const llvm::Triple &Triple,
   if (Arg *A = Args.getLastArg(options::OPT_winsysroot))
     WinSysRoot = A->getValue();
 
-  // Check the command line first, that's the user explicitly telling us what to
-  // use. Check the environment next, in case we're being invoked from a VS
-  // command prompt. Failing that, just try to find the newest Visual Studio
-  // version we can and use its default VC toolchain.
+  // NeverC bundles its own SDK in runtime/; auto-discovery via environment
+  // variables, VS setup config, or Windows registry is intentionally disabled.
+  // When the user explicitly passes -vctoolsdir / -winsysroot, their paths
+  // take priority over the bundled runtime/ (checked in include/lib helpers).
   llvm::findVCToolChainViaCommandLine(getVFS(), VCToolsDir, VCToolsVersion,
-                                      WinSysRoot, VCToolChainPath, VSLayout) ||
-      llvm::findVCToolChainViaEnvironment(getVFS(), VCToolChainPath,
-                                          VSLayout) ||
-      llvm::findVCToolChainViaSetupConfig(getVFS(), VCToolsVersion,
-                                          VCToolChainPath, VSLayout) ||
-      llvm::findVCToolChainViaRegistry(VCToolChainPath, VSLayout);
-
-  // Optional override: `NEVERC_WIN_SYSROOT` env var points at a real
-  // Visual-Studio-style sysroot (contains `VC/Tools/MSVC/<version>/` and
-  // the Windows Kits siblings).  Only consulted when nothing above already
-  // resolved a toolchain path, and only activates when the target directory
-  // actually contains `VC/Tools/MSVC/`, so a bogus env value cannot poison
-  // `VCToolChainPath` with a non-existent subpath.  The NeverC bundled
-  // sysroot at `<InstalledDir>/../runtime/windows/<arch>/msvc` does NOT match this layout —
-  // it is consumed by `getBundledMsvcSdkRoot` directly inside the
-  // include/lib resolution helpers, so no WinSysRoot synthesis is needed
-  // for the bundled flow.
-  if (VCToolChainPath.empty()) {
-    if (auto Env = llvm::sys::Process::GetEnv("NEVERC_WIN_SYSROOT")) {
-      llvm::SmallString<256> Probe(*Env);
-      llvm::sys::path::append(Probe, "VC", "Tools", "MSVC");
-      if (getVFS().exists(Probe)) {
-        NeverCWinSysRootStorage.assign(Env->begin(), Env->end());
-        WinSysRoot = NeverCWinSysRootStorage;
-        llvm::findVCToolChainViaCommandLine(getVFS(), VCToolsDir,
-                                            VCToolsVersion, *WinSysRoot,
-                                            VCToolChainPath, VSLayout);
-      }
-    }
-  }
+                                      WinSysRoot, VCToolChainPath, VSLayout);
+  IsUserSpecifiedToolChain = !VCToolChainPath.empty();
 }
 
 Tool *MSVCToolChain::buildLinker() const {
@@ -551,8 +506,47 @@ void MSVCToolChain::AddNeverCSystemIncludeArgs(
   if (DriverArgs.hasArg(options::OPT_nostdlibinc))
     return;
 
-  // Layout: <InstalledDir>/../runtime/windows/shared/msvc/{crt/include,
-  // sdk/include/{ucrt,um,shared}}
+  // Priority: user-specified toolchain (-vctoolsdir/-winsysroot) wins over
+  // the bundled runtime/ SDK.
+  if (IsUserSpecifiedToolChain) {
+    addSystemInclude(DriverArgs, FrontendArgs,
+                     getSubDirectoryPath(llvm::SubDirectoryType::Include));
+
+    if (useUniversalCRT()) {
+      std::string UniversalCRTSdkPath;
+      std::string UCRTVersion;
+      if (llvm::getUniversalCRTSdkDir(getVFS(), WinSdkDir, WinSdkVersion,
+                                      WinSysRoot, UniversalCRTSdkPath,
+                                      UCRTVersion)) {
+        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs,
+                                      UniversalCRTSdkPath, "Include",
+                                      UCRTVersion, "ucrt");
+      }
+    }
+
+    std::string WindowsSDKDir;
+    int major = 0;
+    std::string windowsSDKIncludeVersion;
+    std::string windowsSDKLibVersion;
+    if (llvm::getWindowsSDKDir(getVFS(), WinSdkDir, WinSdkVersion, WinSysRoot,
+                               WindowsSDKDir, major, windowsSDKIncludeVersion,
+                               windowsSDKLibVersion)) {
+      if (major >= 8) {
+        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs, WindowsSDKDir,
+                                      "Include", windowsSDKIncludeVersion,
+                                      "shared");
+        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs, WindowsSDKDir,
+                                      "Include", windowsSDKIncludeVersion,
+                                      "um");
+      } else {
+        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs, WindowsSDKDir,
+                                      "Include");
+      }
+    }
+    return;
+  }
+
+  // Bundled SDK: <InstalledDir>/../runtime/windows/shared/msvc/
   {
     llvm::SmallString<128> SharedMsvc;
     if (getBundledRuntimeSharedRoot(getDriver(), "msvc", SharedMsvc)) {
@@ -579,8 +573,8 @@ void MSVCToolChain::AddNeverCSystemIncludeArgs(
     }
   }
 
-  // Layout: <InstalledDir>/../runtime/windows/shared/wdk/include/{ddk,api}
-  {
+  // WDK headers are only injected for kernel-mode drivers (-fms-kernel).
+  if (DriverArgs.hasArg(options::OPT_fms_kernel)) {
     llvm::SmallString<128> SharedWdk;
     if (getBundledRuntimeSharedRoot(getDriver(), "wdk", SharedWdk)) {
       llvm::SmallString<128> P(SharedWdk);
@@ -594,80 +588,6 @@ void MSVCToolChain::AddNeverCSystemIncludeArgs(
         addSystemInclude(DriverArgs, FrontendArgs, P);
     }
   }
-
-  // Honor %INCLUDE% and %EXTERNAL_INCLUDE%. It should have essential search
-  // paths set by vcvarsall.bat. Skip if the user expressly set a vctoolsdir.
-  if (!DriverArgs.getLastArg(options::OPT_vctoolsdir,
-                             options::OPT_winsysroot)) {
-    bool Found = AddSystemIncludesFromEnv("INCLUDE");
-    Found |= AddSystemIncludesFromEnv("EXTERNAL_INCLUDE");
-    if (Found)
-      return;
-  }
-
-  // When built with access to the proper Windows APIs, try to actually find
-  // the correct include paths first.
-  if (!VCToolChainPath.empty()) {
-    addSystemInclude(DriverArgs, FrontendArgs,
-                     getSubDirectoryPath(llvm::SubDirectoryType::Include));
-    addSystemInclude(
-        DriverArgs, FrontendArgs,
-        getSubDirectoryPath(llvm::SubDirectoryType::Include, "atlmfc"));
-
-    if (useUniversalCRT()) {
-      std::string UniversalCRTSdkPath;
-      std::string UCRTVersion;
-      if (llvm::getUniversalCRTSdkDir(getVFS(), WinSdkDir, WinSdkVersion,
-                                      WinSysRoot, UniversalCRTSdkPath,
-                                      UCRTVersion)) {
-        if (!(WinSdkDir.has_value() || WinSysRoot.has_value()) &&
-            WinSdkVersion.has_value())
-          UCRTVersion = *WinSdkVersion;
-        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs,
-                                      UniversalCRTSdkPath, "Include",
-                                      UCRTVersion, "ucrt");
-      }
-    }
-
-    std::string WindowsSDKDir;
-    int major = 0;
-    std::string windowsSDKIncludeVersion;
-    std::string windowsSDKLibVersion;
-    if (llvm::getWindowsSDKDir(getVFS(), WinSdkDir, WinSdkVersion, WinSysRoot,
-                               WindowsSDKDir, major, windowsSDKIncludeVersion,
-                               windowsSDKLibVersion)) {
-      if (major >= 10)
-        if (!(WinSdkDir.has_value() || WinSysRoot.has_value()) &&
-            WinSdkVersion.has_value())
-          windowsSDKIncludeVersion = windowsSDKLibVersion = *WinSdkVersion;
-      if (major >= 8) {
-        // Note: windowsSDKIncludeVersion is empty for SDKs prior to v10.
-        // Anyway, llvm::sys::path::append is able to manage it.
-        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs, WindowsSDKDir,
-                                      "Include", windowsSDKIncludeVersion,
-                                      "shared");
-        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs, WindowsSDKDir,
-                                      "Include", windowsSDKIncludeVersion,
-                                      "um");
-      } else {
-        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs, WindowsSDKDir,
-                                      "Include");
-      }
-    }
-
-    return;
-  }
-
-#if defined(_WIN32)
-  // As a fallback, select default install paths.
-  const llvm::StringRef Paths[] = {
-      "C:/Program Files/Microsoft Visual Studio 10.0/VC/include",
-      "C:/Program Files/Microsoft Visual Studio 9.0/VC/include",
-      "C:/Program Files/Microsoft Visual Studio 9.0/VC/PlatformSDK/Include",
-      "C:/Program Files/Microsoft Visual Studio 8/VC/include",
-      "C:/Program Files/Microsoft Visual Studio 8/VC/PlatformSDK/Include"};
-  addSystemIncludes(DriverArgs, FrontendArgs, Paths);
-#endif
 }
 
 llvm::VersionTuple

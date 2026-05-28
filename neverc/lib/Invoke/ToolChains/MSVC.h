@@ -82,8 +82,8 @@ protected:
 private:
   std::optional<llvm::StringRef> WinSdkDir, WinSdkVersion, WinSysRoot;
   std::string VCToolChainPath;
-  std::string NeverCWinSysRootStorage;
   llvm::ToolsetLayout VSLayout = llvm::ToolsetLayout::OlderVS;
+  bool IsUserSpecifiedToolChain = false;
 };
 
 } // end namespace toolchains
