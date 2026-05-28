@@ -72,6 +72,13 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObj, PUNICODE_STRING RegistryPath) {
   DriverObj->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DispatchDeviceControl;
   DriverObj->DriverUnload = DriverUnload;
 
-  dprintf("[ExampleDriver] Loaded\n");
+  volatile ULONG a = 0xDEADBEEF;
+  volatile ULONG b = 0xCAFEBABE;
+  ULONG xored  = a ^ b;
+  ULONG rotl   = (a << 13) | (a >> 19);
+  ULONG masked = (b & 0xFF00FF00) | (a & 0x00FF00FF);
+  dprintf("[ExampleDriver] Loaded  xor=0x%08X rotl=0x%08X mask=0x%08X\n",
+          xored, rotl, masked);
+
   return STATUS_SUCCESS;
 }
