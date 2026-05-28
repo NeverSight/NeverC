@@ -889,7 +889,7 @@ neverc/
 │   ├── BuiltinStringLValueDirectHelpers.def    # Lvalue-direct helper 白名单
 │   ├── BuiltinStringWptrProducers.def          # 宽指针 producer 列表
 │   ├── BuiltinStringPreludeFragments.def       # Prelude 片段排序
-│   └── BuiltinStringPrelude/                   # 11 个 .inc 函数实现片段
+│   └── BuiltinStringPrelude/                   # 12 个 .inc 函数实现片段
 │       ├── Type.inc                            # struct 定义 + 基础操作
 │       ├── Allocation.inc                      # 内存分配/释放/赋值
 │       ├── Accessors.inc                       # c_str, data, at, front, back
@@ -900,6 +900,7 @@ neverc/
 │       ├── Utility.inc                         # clone, substr, trim, repeat, reverse, hash, count, split/join, 数值转换
 │       ├── Encoding.inc                        # UTF-8/16/32, Latin-1, Base64/Base32/Hex, URL/Form 编码
 │       ├── WebCodec.inc                        # HTML/JSON/CSV escape/unescape
+│       ├── EncryptDecrypt.inc                  # NC_XORSTR encrypt/decrypt 辅助函数
 │       └── Format.inc                          # printf 风格 format
 │
 ├── include/neverc/Shellcode/IR/

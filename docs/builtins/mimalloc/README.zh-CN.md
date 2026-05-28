@@ -226,7 +226,7 @@ neverc/
 │   └── NeverC.cpp                      # addNeverCFeatureFlags() 中的安全互锁
 │
 ├── lib/Compiler/Preprocessor/
-│   └── InitPreprocessor.cpp            # __NEVERC_MIMALLOC__ 宏定义
+│   └── InitPredefinedMacros.cpp        # __NEVERC_MIMALLOC__ 宏定义
 │
 └── include/neverc/
     ├── Foundation/LangOpts/

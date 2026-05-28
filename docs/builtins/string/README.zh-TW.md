@@ -829,7 +829,7 @@ neverc/
 │   ├── BuiltinStringLValueDirectHelpers.def    # Lvalue-direct helper 白名單
 │   ├── BuiltinStringWptrProducers.def          # 寬指標 producer 列表
 │   ├── BuiltinStringPreludeFragments.def       # Prelude 片段排序
-│   └── BuiltinStringPrelude/                   # 11 個 .inc 函式實現片段
+│   └── BuiltinStringPrelude/                   # 12 個 .inc 函式實現片段
 │       ├── Type.inc                            # struct 定義 + 基礎操作
 │       ├── Allocation.inc                      # 記憶體分配/釋放/賦值
 │       ├── Accessors.inc                       # c_str, data, at, front, back
@@ -840,6 +840,7 @@ neverc/
 │       ├── Utility.inc                         # clone, substr, trim, repeat, reverse, hash, count, split/join, 數值轉換
 │       ├── Encoding.inc                        # UTF-8/16/32, Latin-1, Base64/Base32/Hex, URL/Form 編碼
 │       ├── WebCodec.inc                        # HTML/JSON/CSV escape/unescape
+│       ├── EncryptDecrypt.inc                  # NC_XORSTR encrypt/decrypt 輔助函式
 │       └── Format.inc                          # printf 風格 format
 │
 ├── include/neverc/Shellcode/IR/

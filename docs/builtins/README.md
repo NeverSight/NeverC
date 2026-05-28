@@ -242,7 +242,7 @@ neverc/
 │   └── NeverC.cpp                        # addNeverCFeatureFlags()
 │
 └── lib/Compiler/Preprocessor/
-    └── InitPreprocessor.cpp              # __NEVERC_MIMALLOC__ macro
+    └── InitPredefinedMacros.cpp          # __NEVERC_MIMALLOC__ macro
 ```
 
 ---
@@ -257,7 +257,7 @@ To add a new built-in runtime (e.g., a custom allocator, crypto library, or plat
 4. **Source generator**: Create `gen_foo_source.py` to produce a standalone C compilation unit
 5. **CMake**: Add placeholder headers, bootstrap targets, and the source file to `nevercFoundation` in `Foundation/CMakeLists.txt`
 6. **IR Pass**: Create `FooRuntimeLinkerPass` in `Emit/Backend/`, register at `PipelineStartEP` in `BackendUtil.cpp`
-7. **Preprocessor**: Define `__NEVERC_FOO__` in `InitPreprocessor.cpp`
+7. **Preprocessor**: Define `__NEVERC_FOO__` in `InitPredefinedMacros.cpp`
 8. **Safety**: Add suppression logic in `addNeverCFeatureFlags()` for incompatible modes
 9. **Tests**: Add GTest cases + C test source files
 10. **Documentation**: Add `docs/builtins/foo/README.md` with i18n translations

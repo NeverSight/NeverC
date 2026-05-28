@@ -830,7 +830,7 @@ neverc/
 │   ├── BuiltinStringLValueDirectHelpers.def    # Lvalue-direct helper whitelist
 │   ├── BuiltinStringWptrProducers.def          # Wide pointer producer list
 │   ├── BuiltinStringPreludeFragments.def       # Prelude fragment ordering
-│   └── BuiltinStringPrelude/                   # 11 .inc function implementation fragments
+│   └── BuiltinStringPrelude/                   # 12 .inc function implementation fragments
 │       ├── Type.inc                            # struct definition + base operations
 │       ├── Allocation.inc                      # Memory allocation/release/assignment
 │       ├── Accessors.inc                       # c_str, data, at, front, back
@@ -841,6 +841,7 @@ neverc/
 │       ├── Utility.inc                         # clone, substr, trim, repeat, reverse, hash, count, split/join, numeric conversion
 │       ├── Encoding.inc                        # UTF-8/16/32, Latin-1, Base64/Base32/Hex, URL/Form encoding
 │       ├── WebCodec.inc                        # HTML/JSON/CSV escape/unescape
+│       ├── EncryptDecrypt.inc                  # NC_XORSTR encrypt/decrypt helpers
 │       └── Format.inc                          # printf-style format
 │
 ├── include/neverc/Shellcode/IR/

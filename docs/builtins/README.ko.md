@@ -146,7 +146,7 @@ neverc/
 │   └── NeverC.cpp                        # addNeverCFeatureFlags()
 │
 └── lib/Compiler/Preprocessor/
-    └── InitPreprocessor.cpp              # __NEVERC_MIMALLOC__ 매크로
+    └── InitPredefinedMacros.cpp          # __NEVERC_MIMALLOC__ 매크로
 ```
 
 ---

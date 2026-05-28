@@ -284,7 +284,7 @@ neverc/
 │   └── NeverC.cpp                      # Safety interlocks in addNeverCFeatureFlags()
 │
 ├── lib/Compiler/Preprocessor/
-│   └── InitPreprocessor.cpp            # __NEVERC_MIMALLOC__ macro definition
+│   └── InitPredefinedMacros.cpp        # __NEVERC_MIMALLOC__ macro definition
 │
 └── include/neverc/
     ├── Foundation/LangOpts/

@@ -235,7 +235,7 @@ neverc/
 │   └── NeverC.cpp                        # addNeverCFeatureFlags()
 │
 └── lib/Compiler/Preprocessor/
-    └── InitPreprocessor.cpp              # __NEVERC_MIMALLOC__ 宏
+    └── InitPredefinedMacros.cpp          # __NEVERC_MIMALLOC__ 宏
 ```
 
 ---
@@ -250,7 +250,7 @@ neverc/
 4. **源码生成器**：创建 `gen_foo_source.py` 生成独立 C 编译单元
 5. **CMake**：在 `Foundation/CMakeLists.txt` 中添加占位符头文件、引导目标，并将源文件加入 `nevercFoundation`
 6. **IR Pass**：在 `Emit/Backend/` 中创建 `FooRuntimeLinkerPass`，在 `BackendUtil.cpp` 的 `PipelineStartEP` 注册
-7. **预处理器**：在 `InitPreprocessor.cpp` 中定义 `__NEVERC_FOO__`
+7. **预处理器**：在 `InitPredefinedMacros.cpp` 中定义 `__NEVERC_FOO__`
 8. **安全检查**：在 `addNeverCFeatureFlags()` 中添加不兼容模式的抑制逻辑
 9. **测试**：添加 GTest 用例 + C 测试源文件
 10. **文档**：添加 `docs/builtins/foo/README.md` 及 i18n 翻译
