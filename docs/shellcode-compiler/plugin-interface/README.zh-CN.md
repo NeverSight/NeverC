@@ -6,7 +6,7 @@
 
 NeverC 的 shellcode 流水线采用**核心流水线 + 可插拔用户层**双重结构。混淆、反反汇编、EDR 规避、分阶段编码器（XOR / RC4 / 自解密）等策略层功能**有意不内置** — 它们通过本文档描述的插件接口集成。
 
-主要扩展点在 [Plugin.h](../../neverc/include/neverc/Shellcode/Pipeline/Plugin.h) 和 [Pipeline.h](../../neverc/include/neverc/Shellcode/Pipeline/Pipeline.h)。前者提供 finalize 阶段（字节流后处理）的 SDK；后者提供 IR / MIR / 字节级混淆的钩子。本文档聚焦前者。
+主要扩展点在 [Plugin.h](../../../neverc/include/neverc/Shellcode/Pipeline/Plugin.h) 和 [Pipeline.h](../../../neverc/include/neverc/Shellcode/Pipeline/Pipeline.h)。前者提供 finalize 阶段（字节流后处理）的 SDK；后者提供 IR / MIR / 字节级混淆的钩子。本文档聚焦前者。
 
 ## 1. Finalize 流水线
 

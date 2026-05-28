@@ -6,7 +6,7 @@
 
 NeverC's shellcode pipeline has a **core pipeline + pluggable user layer** dual structure. Obfuscation, anti-disassembly, EDR evasion, staged encoders (XOR / RC4 / self-decrypting), and similar strategy-level features are **intentionally not built-in** — they are designed to be integrated through the plugin interfaces described here.
 
-The main extension points are in [Plugin.h](../../neverc/include/neverc/Shellcode/Pipeline/Plugin.h) and [Pipeline.h](../../neverc/include/neverc/Shellcode/Pipeline/Pipeline.h). The former provides the SDK for the finalize stage (byte-stream post-processing); the latter provides hooks for IR / MIR / byte-level obfuscation. This document focuses on the former.
+The main extension points are in [Plugin.h](../../../neverc/include/neverc/Shellcode/Pipeline/Plugin.h) and [Pipeline.h](../../../neverc/include/neverc/Shellcode/Pipeline/Pipeline.h). The former provides the SDK for the finalize stage (byte-stream post-processing); the latter provides hooks for IR / MIR / byte-level obfuscation. This document focuses on the former.
 
 ## 1. Finalize Pipeline
 

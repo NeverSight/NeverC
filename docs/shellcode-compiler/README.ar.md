@@ -236,10 +236,12 @@ neverc/
 │   │   └── ShellcodeExtractor.h
 │   ├── IR/                                    # IR-level passes and ABIs
 │   │   ├── ZeroRelocPass.h / ZeroRelocABI.h
-│   │   ├── Data2TextPass.h
+│   │   ├── Data2TextPass.h / Data2TextABI.h
 │   │   ├── AllBlrPass.h / IndirectBrPass.h
 │   │   ├── MemIntrinPass.h                    # memcpy/memset/str* inlining
 │   │   ├── StringRuntimePass.h / StringRuntimeABI.h
+│   │   ├── HeapArenaPass.h                    # malloc/free → arena + OS fallback
+│   │   ├── ExternRewriter.h                   # Extern function rewrite utilities
 │   │   └── CompilerRtPass.h                   # __int128 division inline
 │   ├── MIR/
 │   │   └── MIRPrepPass.h                      # Catch-all MachineFunctionPass
@@ -247,6 +249,7 @@ neverc/
 │   │   ├── SyscallStub.h / SyscallTables.h
 │   │   ├── WinPEBImport.h / WinImportTables.h
 │   │   ├── KernelImportPass.h / KernelImportABI.h
+│   │   └── PtrCacheHelpers.h                  # Shared address cache encryption helpers
 │   └── Tables/                                # User-extensible .def tables
 ├── lib/Shellcode/                             # Implementation (mirrors header structure)
 │   ├── Pipeline/ Extractor/ IR/ MIR/ Import/

@@ -170,7 +170,7 @@ Adding new arch support = add a case + write a reloc table. The patch algorithm 
 
 Total cost:
 1. `TargetDesc.cpp::describeTriple` — one row (~15 lines)
-2. `SyscallTables_<OS>_<arch>.def` — syscall numbers (skip for Windows)
+2. `Syscalls_<OS>[<Arch>].def` — syscall numbers (e.g. `Syscalls_Darwin.def`, `Syscalls_LinuxArm64.def`, `Syscalls_LinuxX86_64.def`; skip for Windows)
 3. Corresponding extractor arch switch — one case + reloc table
 4. Test files — one case each in `tests/neverc/ShellcodeCrossTargetTests.cpp`
 

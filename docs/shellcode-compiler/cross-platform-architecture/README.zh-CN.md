@@ -170,7 +170,7 @@ ExecutionLevel 与 (OS, arch) 正交：
 
 总成本：
 1. `TargetDesc.cpp::describeTriple` — 一行（约 15 行）
-2. `SyscallTables_<OS>_<arch>.def` — 系统调用号（Windows 跳过）
+2. `Syscalls_<OS>[<Arch>].def` — 系统调用号（如 `Syscalls_Darwin.def`、`Syscalls_LinuxArm64.def`、`Syscalls_LinuxX86_64.def`；Windows 跳过）
 3. 对应提取器架构 switch — 一个 case + reloc 表
 4. 测试文件 — `tests/neverc/ShellcodeCrossTargetTests.cpp` 中各一个 case
 
