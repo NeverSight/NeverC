@@ -102,10 +102,14 @@ void populateLinkerDriverConfig(const ToolChain &TC,
                                 const llvm::opt::ArgList &Args,
                                 ::linker::LinkerDriverConfig &Cfg);
 
-bool getBundledMsvcSdkRoot(const Driver &D,
+bool getBundledMsvcSdkRoot(const Driver &D, const llvm::Triple &Triple,
                            llvm::SmallVectorImpl<char> &SdkRoot);
 
-llvm::StringRef getBundledMsvcArchName(const llvm::Triple &Triple);
+bool getBundledWdkRoot(const Driver &D, const llvm::Triple &Triple,
+                       llvm::SmallVectorImpl<char> &WdkRoot);
+
+bool getBundledRuntimeSharedRoot(const Driver &D, llvm::StringRef Sdk,
+                                 llvm::SmallVectorImpl<char> &Root);
 
 } // end namespace tools
 } // end namespace driver

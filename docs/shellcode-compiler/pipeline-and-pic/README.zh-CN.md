@@ -50,11 +50,11 @@ IR 和 MIR 全局回调均使用**注册一次、运行时读取当前 `Shellcod
 
 交叉编译到 Windows 目标时，NeverC 支持两种 SDK 来源，**无硬编码绝对路径**：
 
-1. **构建树捆绑的 SDK**（推荐）：用户和测试脚本将 `build-neverc/sdk` 作为 SDK 根。NeverC 自动检测安装目录中的 `sdk/msvc/`，并在 `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob` 中注入 include/lib 路径。典型布局：
+1. **构建树捆绑的 SDK**（推荐）：用户和测试脚本将 `runtime/windows/<arch>/msvc/` 放置 MSVC CRT/SDK 文件。NeverC 自动检测安装目录中的该路径，并在 `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob` 中注入 include/lib 路径。典型布局：
 
    ```
    build-neverc/bin/neverc
-   build-neverc/sdk/msvc/
+   build-neverc/runtime/windows/x64/msvc/
      crt/include, crt/lib/<arch>
      sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
    ```

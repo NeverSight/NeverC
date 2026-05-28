@@ -111,26 +111,36 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  // Layout: <InstalledDir>/../sdk/msvc/{crt/lib/<arch>,
-  // sdk/lib/{um,ucrt}/<arch>}
+  // Layout: <InstalledDir>/../runtime/windows/<arch>/msvc/{crt/lib,
+  // sdk/lib/{um,ucrt}}
   {
     llvm::SmallString<128> MsvcRoot;
-    if (getBundledMsvcSdkRoot(TC.getDriver(), MsvcRoot)) {
-      llvm::StringRef Arch = getBundledMsvcArchName(TC.getTriple());
+    if (getBundledMsvcSdkRoot(TC.getDriver(), TC.getTriple(), MsvcRoot)) {
       llvm::SmallString<128> P;
 
       P = MsvcRoot;
-      llvm::sys::path::append(P, "crt", "lib", Arch);
+      llvm::sys::path::append(P, "crt", "lib");
       if (llvm::sys::fs::is_directory(P))
         CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") + P));
 
       P = MsvcRoot;
-      llvm::sys::path::append(P, "sdk", "lib", "um", Arch);
+      llvm::sys::path::append(P, "sdk", "lib", "um");
       if (llvm::sys::fs::is_directory(P))
         CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") + P));
 
       P = MsvcRoot;
-      llvm::sys::path::append(P, "sdk", "lib", "ucrt", Arch);
+      llvm::sys::path::append(P, "sdk", "lib", "ucrt");
+      if (llvm::sys::fs::is_directory(P))
+        CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") + P));
+    }
+  }
+
+  // Layout: <InstalledDir>/../runtime/windows/<arch>/wdk/lib/
+  {
+    llvm::SmallString<128> WdkRoot;
+    if (getBundledWdkRoot(TC.getDriver(), TC.getTriple(), WdkRoot)) {
+      llvm::SmallString<128> P(WdkRoot);
+      llvm::sys::path::append(P, "lib");
       if (llvm::sys::fs::is_directory(P))
         CmdArgs.push_back(Args.MakeArgString(llvm::Twine("--libpath=") + P));
     }
@@ -330,7 +340,7 @@ MSVCToolChain::MSVCToolChain(const Driver &D, const llvm::Triple &Triple,
   // resolved a toolchain path, and only activates when the target directory
   // actually contains `VC/Tools/MSVC/`, so a bogus env value cannot poison
   // `VCToolChainPath` with a non-existent subpath.  The NeverC bundled
-  // sysroot at `<InstalledDir>/../sdk/msvc` does NOT match this layout —
+  // sysroot at `<InstalledDir>/../runtime/windows/<arch>/msvc` does NOT match this layout —
   // it is consumed by `getBundledMsvcSdkRoot` directly inside the
   // include/lib resolution helpers, so no WinSysRoot synthesis is needed
   // for the bundled flow.
@@ -541,29 +551,45 @@ void MSVCToolChain::AddNeverCSystemIncludeArgs(
   if (DriverArgs.hasArg(options::OPT_nostdlibinc))
     return;
 
-  // Layout: <InstalledDir>/../sdk/msvc/{crt/include,
+  // Layout: <InstalledDir>/../runtime/windows/shared/msvc/{crt/include,
   // sdk/include/{ucrt,um,shared}}
   {
-    llvm::SmallString<128> MsvcRoot;
-    if (getBundledMsvcSdkRoot(getDriver(), MsvcRoot)) {
+    llvm::SmallString<128> SharedMsvc;
+    if (getBundledRuntimeSharedRoot(getDriver(), "msvc", SharedMsvc)) {
       llvm::SmallString<128> P;
-      P = MsvcRoot;
+      P = SharedMsvc;
       llvm::sys::path::append(P, "crt", "include");
       if (getVFS().exists(P))
         addSystemInclude(DriverArgs, FrontendArgs, P);
 
-      P = MsvcRoot;
+      P = SharedMsvc;
       llvm::sys::path::append(P, "sdk", "include", "ucrt");
       if (getVFS().exists(P))
         addSystemInclude(DriverArgs, FrontendArgs, P);
 
-      P = MsvcRoot;
+      P = SharedMsvc;
       llvm::sys::path::append(P, "sdk", "include", "um");
       if (getVFS().exists(P))
         addSystemInclude(DriverArgs, FrontendArgs, P);
 
-      P = MsvcRoot;
+      P = SharedMsvc;
       llvm::sys::path::append(P, "sdk", "include", "shared");
+      if (getVFS().exists(P))
+        addSystemInclude(DriverArgs, FrontendArgs, P);
+    }
+  }
+
+  // Layout: <InstalledDir>/../runtime/windows/shared/wdk/include/{ddk,api}
+  {
+    llvm::SmallString<128> SharedWdk;
+    if (getBundledRuntimeSharedRoot(getDriver(), "wdk", SharedWdk)) {
+      llvm::SmallString<128> P(SharedWdk);
+      llvm::sys::path::append(P, "include", "ddk");
+      if (getVFS().exists(P))
+        addSystemInclude(DriverArgs, FrontendArgs, P);
+
+      P = SharedWdk;
+      llvm::sys::path::append(P, "include", "api");
       if (getVFS().exists(P))
         addSystemInclude(DriverArgs, FrontendArgs, P);
     }

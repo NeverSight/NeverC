@@ -131,7 +131,7 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## 交叉編譯到 Windows
 
-將 [xwin](https://github.com/Jake-Shadle/xwin) SDK splat 置於 `build-neverc/sdk/msvc/`。
+將 [xwin](https://github.com/Jake-Shadle/xwin) SDK splat 置於 `runtime/windows/x64/msvc/`。
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \

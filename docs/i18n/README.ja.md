@@ -131,7 +131,7 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## Windows へのクロスコンパイル
 
-[xwin](https://github.com/Jake-Shadle/xwin) SDK splat を `build-neverc/sdk/msvc/` に配置。
+[xwin](https://github.com/Jake-Shadle/xwin) SDK splat を `runtime/windows/x64/msvc/` に配置。
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \

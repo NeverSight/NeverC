@@ -346,6 +346,10 @@ add_subdirectory(lib)
 # libraries are consumed by the `neverc` executable below.
 add_subdirectory(lib/Linker)
 
+# Platform-specific runtime SDKs (WDK, future Windows SDK, etc.)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+                 ${CMAKE_CURRENT_BINARY_DIR}/runtime)
+
 option(NEVERC_ENABLE_BENCH "Build NeverC microbenchmarks" OFF)
 if(NEVERC_ENABLE_BENCH)
   add_subdirectory(bench)

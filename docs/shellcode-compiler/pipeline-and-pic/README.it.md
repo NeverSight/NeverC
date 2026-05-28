@@ -50,11 +50,11 @@ Sia i callback globali IR che MIR usano un pattern **registra una volta, leggi l
 
 Per la compilazione incrociata verso target Windows, NeverC supporta due fonti SDK **senza percorsi assoluti codificati**:
 
-1. **SDK incluso nell'albero di build** (consigliato): `build-neverc/sdk` come root SDK, con auto-rilevamento di `sdk/msvc/`.
+1. **SDK incluso nell'albero di build** (consigliato): `runtime/windows/<arch>/msvc/` per file MSVC CRT/SDK. NeverC rileva automaticamente questo percorso relativo alla directory di installazione.
 
    ```
    build-neverc/bin/neverc
-   build-neverc/sdk/msvc/
+   build-neverc/runtime/windows/x64/msvc/
      crt/include, crt/lib/<arch>
      sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
    ```

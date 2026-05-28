@@ -964,10 +964,21 @@ void tools::addMachineOutlinerArgs(const Driver &D,
   }
 }
 
-bool tools::getBundledMsvcSdkRoot(const Driver &D,
+bool tools::getBundledMsvcSdkRoot(const Driver &D, const llvm::Triple &Triple,
                                   llvm::SmallVectorImpl<char> &SdkRoot) {
   llvm::SmallString<128> P(llvm::sys::path::parent_path(D.getInstalledDir()));
-  llvm::sys::path::append(P, "sdk", "msvc");
+  llvm::StringRef Arch;
+  switch (Triple.getArch()) {
+  case llvm::Triple::x86_64:
+    Arch = "x64";
+    break;
+  case llvm::Triple::aarch64:
+    Arch = "arm64";
+    break;
+  default:
+    return false;
+  }
+  llvm::sys::path::append(P, "runtime", "windows", Arch, "msvc");
   if (llvm::sys::fs::is_directory(P)) {
     SdkRoot.assign(P.begin(), P.end());
     return true;
@@ -975,13 +986,34 @@ bool tools::getBundledMsvcSdkRoot(const Driver &D,
   return false;
 }
 
-llvm::StringRef tools::getBundledMsvcArchName(const llvm::Triple &Triple) {
+bool tools::getBundledWdkRoot(const Driver &D, const llvm::Triple &Triple,
+                              llvm::SmallVectorImpl<char> &WdkRoot) {
+  llvm::SmallString<128> P(llvm::sys::path::parent_path(D.getInstalledDir()));
+  llvm::StringRef Arch;
   switch (Triple.getArch()) {
   case llvm::Triple::x86_64:
-    return "x86_64";
-  case llvm::Triple::aarch64:
-    return "aarch64";
+    Arch = "x64";
+    break;
   default:
-    return Triple.getArchName();
+    return false;
   }
+  llvm::sys::path::append(P, "runtime", "windows", Arch, "wdk");
+  if (llvm::sys::fs::is_directory(P)) {
+    WdkRoot.assign(P.begin(), P.end());
+    return true;
+  }
+  return false;
 }
+
+bool tools::getBundledRuntimeSharedRoot(const Driver &D,
+                                        llvm::StringRef Sdk,
+                                        llvm::SmallVectorImpl<char> &Root) {
+  llvm::SmallString<128> P(llvm::sys::path::parent_path(D.getInstalledDir()));
+  llvm::sys::path::append(P, "runtime", "windows", "shared", Sdk);
+  if (llvm::sys::fs::is_directory(P)) {
+    Root.assign(P.begin(), P.end());
+    return true;
+  }
+  return false;
+}
+

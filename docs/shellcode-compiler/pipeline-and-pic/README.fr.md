@@ -50,11 +50,11 @@ Les callbacks globaux IR et MIR utilisent tous deux un modèle **enregistrer une
 
 Lors de la compilation croisée vers des cibles Windows, NeverC supporte deux sources de SDK **sans chemins absolus codés en dur** :
 
-1. **SDK groupé avec l'arbre de build** (recommandé) : Les utilisateurs et scripts de test traitent `build-neverc/sdk` comme racine SDK. NeverC détecte automatiquement `sdk/msvc/` dans le répertoire d'installation et injecte les chemins include/lib dans `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob`. Disposition typique :
+1. **SDK groupé avec l'arbre de build** (recommandé) : Les utilisateurs et scripts de test traitent `runtime/windows/<arch>/msvc/` pour les fichiers MSVC CRT/SDK. NeverC détecte automatiquement ce chemin relatif au répertoire d'installation et injecte les chemins include/lib dans `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob`. Disposition typique :
 
    ```
    build-neverc/bin/neverc
-   build-neverc/sdk/msvc/
+   build-neverc/runtime/windows/x64/msvc/
      crt/include, crt/lib/<arch>
      sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
    ```

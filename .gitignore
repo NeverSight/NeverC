@@ -80,7 +80,6 @@ pythonenv*
 
 local_docs/
 .xwin-cache/
-sdk/msvc/
 tests/neverc/Output/
 neverc/build/
 

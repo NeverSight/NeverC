@@ -131,7 +131,7 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## Кросс-компиляция под Windows
 
-Разместить splat SDK [xwin](https://github.com/Jake-Shadle/xwin) в `build-neverc/sdk/msvc/`.
+Разместить splat SDK [xwin](https://github.com/Jake-Shadle/xwin) в `runtime/windows/x64/msvc/`.
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \

@@ -50,11 +50,11 @@ IR・MIR のグローバルコールバックはともに**一度登録、実行
 
 Windows ターゲットへのクロスコンパイル時、NeverC は**ハードコード絶対パスなし**で 2 つの SDK ソースをサポート：
 
-1. **ビルドツリーにバンドルされた SDK**（推奨）：ユーザーとテストスクリプトが `build-neverc/sdk` を SDK ルートとして扱う。NeverC はインストールディレクトリ内の `sdk/msvc/` を自動検出し、`MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob` で include/lib パスを注入。典型レイアウト：
+1. **ビルドツリーにバンドルされた SDK**（推奨）：ユーザーとテストスクリプトが `runtime/windows/<arch>/msvc/` に MSVC CRT/SDK ファイルを配置。NeverC はインストールディレクトリからこのパスを自動検出し、`MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob` で include/lib パスを注入。典型レイアウト：
 
    ```
    build-neverc/bin/neverc
-   build-neverc/sdk/msvc/
+   build-neverc/runtime/windows/x64/msvc/
      crt/include, crt/lib/<arch>
      sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
    ```

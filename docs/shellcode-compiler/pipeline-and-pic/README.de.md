@@ -50,11 +50,11 @@ Sowohl IR- als auch MIR-globale Callbacks verwenden ein **einmal registrieren, z
 
 Beim Cross-Kompilieren für Windows-Ziele unterstützt NeverC zwei SDK-Quellen **ohne hartcodierte absolute Pfade**:
 
-1. **Mit dem Build-Baum gebündeltes SDK** (empfohlen): Benutzer und Testskripte behandeln `build-neverc/sdk` als SDK-Root. NeverC erkennt automatisch `sdk/msvc/` im Installationsverzeichnis und injiziert include/lib-Pfade in `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob`. Typisches Layout:
+1. **Mit dem Build-Baum gebündeltes SDK** (empfohlen): Benutzer und Testskripte behandeln `runtime/windows/<arch>/msvc/` für MSVC CRT/SDK-Dateien. NeverC erkennt automatisch diesen Pfad relativ zum Installationsverzeichnis und injiziert include/lib-Pfade in `MSVCToolChain::AddNeverCSystemIncludeArgs` / `Linker::ConstructJob`. Typisches Layout:
 
    ```
    build-neverc/bin/neverc
-   build-neverc/sdk/msvc/
+   build-neverc/runtime/windows/x64/msvc/
      crt/include, crt/lib/<arch>
      sdk/include/{ucrt,um,shared}, sdk/lib/{ucrt,um}/<arch>
    ```

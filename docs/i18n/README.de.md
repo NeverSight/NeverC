@@ -131,7 +131,7 @@ echo 'int main(void) { return 0; }' > /tmp/hello.c
 
 ## Cross-Kompilierung nach Windows
 
-[xwin](https://github.com/Jake-Shadle/xwin)-SDK-Splat nach `build-neverc/sdk/msvc/` legen.
+[xwin](https://github.com/Jake-Shadle/xwin)-SDK-Splat nach `runtime/windows/x64/msvc/` legen.
 
 ```bash
 ./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
