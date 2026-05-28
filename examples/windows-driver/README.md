@@ -20,7 +20,9 @@ From a standalone NeverC release:
 make NEVERC=/path/to/neverc
 ```
 
-The output is `ExampleDriver.sys` (~3 KB, auto-LTO optimized).
+The output is `ExampleDriver.sys` (auto-LTO optimized).
+Default build includes `-g` for debugging; **release builds should remove `-g`** to strip
+debug symbols and reduce binary size (~38 KB → ~3 KB).
 
 ## Manual build (without Make)
 
