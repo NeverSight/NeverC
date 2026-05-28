@@ -169,6 +169,94 @@ rotate13:
 
 ---
 
+## 编译器 vs bin2bin：谁对 CET 友好？
+
+CET 在**源码级编译器**和 **bin2bin 工具**（加壳、混淆、hook、dump+rebuild）
+之间画了一道清晰的红线。硬件 Shadow Stack 强制三条规则，重塑整个防护 /
+混淆产业：
+
+> 1. **不要修改返回地址。**
+> 2. **不要自修改代码**（HVCI 强制代码页 W^X）。
+> 3. **寻找尊重 1、2 的强混淆变换。**
+
+### 编译器能"加密返回地址"吗？
+
+**不能。** 这是个常见误解。Shadow Stack 由 CPU 而非操作系统强制，对用户态
+代码不可见。如果你在函数 epilogue 里 XOR 加密主栈上的返回地址：
+
+```c
+void my_func() {
+    // ... 函数体 ...
+    // epilogue 尝试加密返回地址：
+    // XOR [rsp], 0xDEADBEEF
+    // RET           <- 硬件比较主栈 vs 影子栈
+                     //   不再匹配 -> #CP 异常 -> BUGCHECK
+}
+```
+
+影子栈仍保存着原始返回地址。RET 触发硬件比较；不匹配则触发 `#CP`，BUGCHECK
+内核。编译器**无法**触及影子栈：
+
+- 用户态：没有任何指令能写影子栈
+- 内核态：`WRSSQ` 是特权指令，只有 `ntoskrnl` 使用
+
+### 编译器能做的 CET 友好混淆
+
+| 变换 | 为什么 CET 安全 |
+|------|--------------|
+| **控制流平坦化** | switch dispatcher 用直接 CALL/JMP；cases 需要时加 ENDBR64 |
+| **VM 虚拟化** | handler 之间用间接 JMP（带 ENDBR64）连接，不用 push+ret |
+| **字符串 / 常量加密** | 纯数据变换，不影响控制流 |
+| **MBA 表达式** | `x + y → (x ^ y) + 2*(x & y)` —— 仅数据 |
+| **不透明谓词** | 通过直接跳转实现条件分支 |
+| **函数克隆 / 内联** | 不改变调用栈语义 |
+| **指令替换** | `MOV → XOR + ADD` —— 不影响栈 |
+
+### CET 敌对模式（KCET 下会崩）
+
+| 模式 | 为何不可行 |
+|------|----------|
+| **返回地址加密** | 影子栈不匹配 → `#CP` |
+| **PUSH addr; RET dispatcher**（经典 VMProtect / Themida 风格） | 同上 —— 影子栈没有 `addr` 这一项 |
+| **Stack pivoting**（ROP gadget chain） | 影子栈无法跟随 pivot |
+| **自修改代码** | HVCI 阻止对可执行页的写 |
+| **运行时代码生成** | 同上 —— HVCI W^X 违规 |
+| **基于 trampoline 的 inline hook** | 修改函数 prologue 触发 HVCI；即使绕过 HVCI，trampoline RET 处的影子栈也会出问题 |
+
+### 为什么 bin2bin 工具有结构性劣势
+
+编译器从语义化的 IR 生成 CET 正确的代码。bin2bin 工具必须从编译后的字节
+**重新发现**语义：
+
+1. **指令边界歧义** —— x86 是变长指令。在错误偏移加 ENDBR64（4 字节）会破坏所有 RIP-relative 寻址和重定位。
+2. **间接目标识别** —— bin2bin 不能总是判断 `.data` 里哪些地址是跳转表项 vs 原始数据。要么过度标记（代码膨胀、新的 ROP gadget 起点），要么标记不足（运行时 `#CP`）。
+3. **自证危险** —— 设置 `IMAGE_DLL_CHARACTERISTICS_EX_CET_COMPAT` 是一种承诺。如果 bin2bin 输出包含任何 CET 敌对模式，驱动在非 CET 机器上能加载，但在 KCET 主机上立刻 BSOD。
+4. **CFG 完整性** —— 编译器看到完整调用图；bin2bin 必须推断，没有精确目标的间接调用迫使保守的 ENDBR 放置。
+
+### 产业现状
+
+| 工具 / 类别 | CET 状态 |
+|------------|---------|
+| **NeverC / Clang / MSVC（编译器）** | 通过 `-fcf-protection` + 链接器标志原生 CET 友好 |
+| **OLLVM / Tigress / NeverC passes** | IR 级变换 → 天然 CET 安全 |
+| **Microsoft Detours (4.0+)** | 已更新为 CET 兼容 |
+| **VMProtect / Themida（旧版）** | Push+RET dispatcher 在 KCET 主机上杀死驱动 |
+| **VMProtect / Themida（新版）** | 添加 ENDBR-aware dispatcher，混合支持 |
+| **Manual map / dump+rebuild loader** | 必须重建所有 ENDBR 标记 —— 容易出错 |
+
+### 游戏安全视角
+
+反作弊驱动（EAC、BattlEye、FACEIT AC、Vanguard）出厂时设置了 `--cetcompat`，
+因此可以在启用 KCET 的机器上正常运行。
+作弊驱动——通常通过 bin2bin 工具加壳、hook 或 trampoline 注入——很难保持
+CET 合规。KCET + HVCI 形成一道**"编译器友好、bin2bin 敌对"的硬件壁垒**，
+不对称地有利于工程化良好的安全软件，而非恶意代码风格的程序。
+
+这就是 Microsoft 对内核软件如此推动 KCET 的更深层原因：让合法内核代码更
+容易加固，同时让攻击者技术逐渐变得更难。
+
+---
+
 ## 在目标机器上启用 KCET
 
 ```cmd

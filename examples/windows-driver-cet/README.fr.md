@@ -133,6 +133,100 @@ rotate13:
 
 ---
 
+## Compilateur vs bin2bin : qui est compatible avec CET ?
+
+CET trace une ligne nette entre les **compilateurs au niveau source** et
+les **outils bin2bin** (packers, obfuscateurs, hookeurs, dump+rebuild).
+Le Shadow Stack matériel impose trois règles qui remodèlent toute
+l'industrie de la protection / obfuscation :
+
+> 1. **Ne pas modifier les adresses de retour.**
+> 2. **Ne pas auto-patcher le code** (HVCI impose W^X sur les pages de code).
+> 3. **Chercher des transformations d'obfuscation fortes** respectant 1 et 2.
+
+### Un compilateur peut-il « chiffrer les adresses de retour » ?
+
+**Non.** C'est une idée fausse courante. Le Shadow Stack est imposé par le CPU,
+pas par l'OS, et il est invisible au code utilisateur. Si vous XOR-chiffrez
+l'adresse de retour sur la pile régulière dans l'épilogue de votre fonction :
+
+```c
+void my_func() {
+    // ... corps de fonction ...
+    // l'épilogue tente de chiffrer l'adresse de retour :
+    // XOR [rsp], 0xDEADBEEF
+    // RET           <- le matériel compare pile régulière vs shadow stack
+                     //   elles ne correspondent plus -> exception #CP -> BUGCHECK
+}
+```
+
+Le shadow stack conserve toujours l'adresse de retour originale. RET déclenche
+une comparaison matérielle ; un désaccord déclenche `#CP` et bugcheck le noyau.
+Le compilateur **ne peut pas** atteindre le shadow stack :
+
+- Mode utilisateur : aucune instruction ne peut écrire dans le shadow stack
+- Mode noyau : `WRSSQ` est privilégié, seul `ntoskrnl` l'utilise
+
+### Obfuscations compatibles CET que le compilateur PEUT faire
+
+| Transformation | Pourquoi sûr CET |
+|----------------|------------------|
+| **Aplatissement de flux de contrôle** | Le dispatcher switch utilise CALL/JMP direct ; les cas reçoivent ENDBR64 si nécessaire |
+| **Virtualisation VM** | Handlers connectés via JMP indirect (avec ENDBR64), pas push+ret |
+| **Chiffrement chaînes / constantes** | Pure transformation de données, pas d'impact sur le flux de contrôle |
+| **Expressions MBA** | `x + y → (x ^ y) + 2*(x & y)` — données seulement |
+| **Prédicats opaques** | Branches conditionnelles via sauts directs |
+| **Clonage / inlining de fonctions** | Pas de changement de sémantique de pile d'appel |
+| **Substitution d'instructions** | `MOV → XOR + ADD` — pas d'effets sur la pile |
+
+### Schémas hostiles à CET (ils meurent sous KCET)
+
+| Schéma | Pourquoi ça casse |
+|--------|-------------------|
+| **Chiffrement d'adresse de retour** | Désaccord shadow stack → `#CP` |
+| **PUSH addr; RET dispatcher** (style VMProtect / Themida classique) | Idem — le shadow stack n'a pas d'entrée pour `addr` |
+| **Stack pivoting** (chaînes ROP) | Le shadow stack ne peut pas suivre le pivot |
+| **Code auto-modifiant** | HVCI bloque les écritures sur les pages exécutables |
+| **Génération de code à l'exécution** | Idem — violation HVCI W^X |
+| **Hooks inline à base de trampoline** | Modifier le prologue de fonction déclenche HVCI ; même en contournant HVCI, le shadow stack casse sur le RET du trampoline |
+
+### Pourquoi les outils bin2bin ont un désavantage structurel
+
+Un compilateur émet du code CET-correct depuis l'IR sémantique. Un outil
+bin2bin doit **redécouvrir** la sémantique depuis les octets compilés :
+
+1. **Ambiguïté des limites d'instructions** — x86 est à longueur variable. Ajouter ENDBR64 (4 octets) au mauvais offset casse tout l'adressage RIP-relatif et les relocations.
+2. **Identification des cibles indirectes** — bin2bin ne peut pas toujours dire quelles adresses dans `.data` sont des entrées de table de saut vs des données brutes. Soit sur-marquer (gonflement du code, nouvelles graines de ROP gadget), soit sous-marquer (`#CP` à l'exécution).
+3. **Risque d'auto-attestation** — Définir `IMAGE_DLL_CHARACTERISTICS_EX_CET_COMPAT` est une promesse. Si la sortie bin2bin contient un schéma hostile à CET, le pilote se chargera bien sur les machines non-CET mais BSOD instantanément sur les hôtes KCET.
+4. **Complétude du CFG** — Les compilateurs voient tout le graphe d'appels ; bin2bin doit l'inférer, et les appels indirects sans cibles précises forcent un placement conservateur d'ENDBR.
+
+### État de l'industrie
+
+| Outil / classe | État CET |
+|----------------|----------|
+| **NeverC / Clang / MSVC (compilateurs)** | Nativement compatible CET via `-fcf-protection` + drapeau éditeur de liens |
+| **OLLVM / Tigress / passes NeverC** | Transformations au niveau IR → naturellement CET-safe |
+| **Microsoft Detours (4.0+)** | Mis à jour pour être CET-compatible |
+| **VMProtect / Themida (ancien)** | Le dispatcher Push+RET tue le pilote sur les hôtes KCET |
+| **VMProtect / Themida (récent)** | Ajout de dispatchers conscients d'ENDBR, support mixte |
+| **Chargeurs manual map / dump+rebuild** | Doivent reconstruire tous les marqueurs ENDBR — sujets aux erreurs |
+
+### Angle sécurité des jeux
+
+Les pilotes anti-triche (EAC, BattlEye, FACEIT AC, Vanguard) sortent avec
+`--cetcompat` activé, ils s'exécutent donc proprement sur les machines à KCET
+activé. Les pilotes de triche — typiquement packés, hookés ou injectés par
+trampoline via outillage bin2bin — peinent à rester CET-conformes. KCET + HVCI
+forment un **mur matériel « ami du compilateur, hostile au bin2bin »** qui
+favorise asymétriquement les logiciels de sécurité bien conçus par rapport
+au code de style malware.
+
+C'est la raison plus profonde pour laquelle Microsoft pousse fortement KCET
+pour les logiciels noyau : il rend le code noyau légitime plus facile à durcir
+tout en rendant le métier de l'attaquant progressivement plus difficile.
+
+---
+
 ## Activation du KCET sur la machine cible
 
 ```cmd

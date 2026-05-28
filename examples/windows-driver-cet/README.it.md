@@ -135,6 +135,101 @@ rotate13:
 
 ---
 
+## Compilatore vs bin2bin: chi è compatibile con CET?
+
+CET traccia una linea netta tra i **compilatori a livello sorgente** e gli
+**strumenti bin2bin** (packer, offuscatori, hooker, dump+rebuild). Lo
+Shadow Stack hardware impone tre regole che rimodellano l'intera industria
+della protezione / offuscamento:
+
+> 1. **Non modificare gli indirizzi di ritorno.**
+> 2. **Non auto-modificare il codice** (HVCI impone W^X sulle pagine di codice).
+> 3. **Cercare trasformazioni di offuscamento forti** che rispettino 1 e 2.
+
+### Un compilatore può "cifrare gli indirizzi di ritorno"?
+
+**No.** Questo è un fraintendimento comune. Shadow Stack è imposto dalla CPU,
+non dal SO, ed è invisibile al codice in modalità utente. Se XOR-cifri
+l'indirizzo di ritorno sullo stack regolare nell'epilogo della tua funzione:
+
+```c
+void my_func() {
+    // ... corpo della funzione ...
+    // l'epilogo tenta di cifrare l'indirizzo di ritorno:
+    // XOR [rsp], 0xDEADBEEF
+    // RET           <- l'hardware confronta stack regolare vs shadow stack
+                     //   non corrispondono più -> eccezione #CP -> BUGCHECK
+}
+```
+
+Lo shadow stack mantiene comunque l'indirizzo di ritorno originale. RET attiva
+un confronto hardware; la mancata corrispondenza scatena `#CP` e fa bugcheck
+del kernel. Il compilatore **non può** raggiungere lo shadow stack:
+
+- Modalità utente: nessuna istruzione può scrivere lo shadow stack
+- Modalità kernel: `WRSSQ` è privilegiato, solo `ntoskrnl` lo usa
+
+### Offuscamenti compatibili con CET che il compilatore PUÒ fare
+
+| Trasformazione | Perché è sicuro per CET |
+|----------------|-------------------------|
+| **Appiattimento del flusso di controllo** | Il dispatcher switch usa CALL/JMP diretto; i case ricevono ENDBR64 se necessario |
+| **Virtualizzazione basata su VM** | Handler connessi tramite JMP indiretto (con ENDBR64), non push+ret |
+| **Cifratura stringhe / costanti** | Pura trasformazione dati, nessun impatto sul flusso di controllo |
+| **Espressioni MBA** | `x + y → (x ^ y) + 2*(x & y)` — solo dati |
+| **Predicati opachi** | Rami condizionali via salti diretti |
+| **Clonazione / inlining di funzioni** | Nessun cambio nella semantica dello stack di chiamate |
+| **Sostituzione di istruzioni** | `MOV → XOR + ADD` — nessun effetto sullo stack |
+
+### Pattern ostili a CET (muoiono sotto KCET)
+
+| Pattern | Perché si rompe |
+|---------|----------------|
+| **Cifratura indirizzo di ritorno** | Mancata corrispondenza shadow stack → `#CP` |
+| **PUSH addr; RET dispatcher** (stile VMProtect / Themida classico) | Stesso — lo shadow stack non ha voce per `addr` |
+| **Stack pivoting** (catene di gadget ROP) | Lo shadow stack non può seguire il pivot |
+| **Codice auto-modificante** | HVCI blocca le scritture sulle pagine eseguibili |
+| **Generazione di codice a runtime** | Stesso — violazione HVCI W^X |
+| **Hook inline basati su trampolino** | Modificare il prologo della funzione attiva HVCI; anche bypassando HVCI, lo shadow stack si rompe sul RET del trampolino |
+
+### Perché gli strumenti bin2bin hanno uno svantaggio strutturale
+
+Un compilatore emette codice CET-corretto da IR semantico. Uno strumento
+bin2bin deve **riscoprire** la semantica dai byte compilati:
+
+1. **Ambiguità dei confini delle istruzioni** — x86 ha lunghezza variabile. Aggiungere ENDBR64 (4 byte) all'offset sbagliato rompe tutto l'indirizzamento RIP-relativo e le rilocazioni.
+2. **Identificazione dei target indiretti** — bin2bin non può sempre dire quali indirizzi in `.data` sono voci di tabella di salto vs dati grezzi. O sovra-marca (inflazione del codice, nuovi semi di gadget ROP) o sotto-marca (`#CP` a runtime).
+3. **Pericolo di auto-attestazione** — Impostare `IMAGE_DLL_CHARACTERISTICS_EX_CET_COMPAT` è una promessa. Se l'output bin2bin contiene qualsiasi pattern ostile a CET, il driver si caricherà bene su macchine non-CET ma BSOD istantaneamente su host KCET.
+4. **Completezza del CFG** — I compilatori vedono l'intero grafo delle chiamate; bin2bin deve inferirlo, e le chiamate indirette senza target precisi forzano un posizionamento conservativo di ENDBR.
+
+### Stato dell'industria
+
+| Strumento / classe | Stato CET |
+|-------------------|-----------|
+| **NeverC / Clang / MSVC (compilatori)** | Nativamente compatibile con CET tramite `-fcf-protection` + flag del linker |
+| **OLLVM / Tigress / pass di NeverC** | Trasformazioni a livello IR → naturalmente sicure per CET |
+| **Microsoft Detours (4.0+)** | Aggiornato per essere compatibile con CET |
+| **VMProtect / Themida (vecchio)** | Il dispatcher Push+RET uccide il driver su host KCET |
+| **VMProtect / Themida (nuovo)** | Aggiungendo dispatcher consapevoli di ENDBR, supporto misto |
+| **Loader manual map / dump+rebuild** | Devono ricostruire tutti i marcatori ENDBR — soggetto a errori |
+
+### Prospettiva di sicurezza dei giochi
+
+I driver anti-cheat (EAC, BattlEye, FACEIT AC, Vanguard) vengono spediti con
+`--cetcompat` impostato, quindi funzionano puliti su macchine con KCET
+abilitato. I driver di cheat — tipicamente impacchettati, hookati o iniettati
+con trampolino tramite tooling bin2bin — faticano a rimanere conformi a CET.
+KCET + HVCI formano un **muro hardware "amico del compilatore, ostile al
+bin2bin"** che favorisce asimmetricamente il software di sicurezza ben
+ingegnerizzato rispetto al codice in stile malware.
+
+Questa è la ragione più profonda per cui Microsoft spinge così tanto KCET
+per il software kernel: rende il codice kernel legittimo più facile da
+indurire, rendendo allo stesso tempo il mestiere dell'attaccante
+progressivamente più difficile.
+
+---
+
 ## Attivazione KCET sulla macchina target
 
 ```cmd
