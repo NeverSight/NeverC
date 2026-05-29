@@ -1301,6 +1301,35 @@ typedef struct NevercHostAPI {
          exist.  Caller frees via Free. ---- */
   NevercValueRef *(*ModuleCollectDefinedFunctions)(NevercModuleRef M,
                                                    unsigned *OutCount);
+
+  /* ---- Sort / binary-search (routed through the host so plugin code
+         never touches CRT qsort/bsearch across DLL boundaries) ----
+     Sort is NOT stable.  Cmp returns <0, 0, >0 like strcmp.            */
+  void (*Sort)(void *Base, uint64_t NumElements, uint64_t ElemSize,
+               int (*Cmp)(const void *A, const void *B));
+  const void *(*BSearch)(const void *Key, const void *Base,
+                         uint64_t NumElements, uint64_t ElemSize,
+                         int (*Cmp)(const void *A, const void *B));
+
+  /* ---- snprintf to caller-owned buffer (zero allocation).
+         Returns the number of characters that WOULD have been written
+         (excluding the null terminator), regardless of BufSize.
+         If return value >= BufSize, the output was truncated.
+         Buf may be NULL when BufSize is 0 (dry-run to measure).       */
+  int (*StrFormatBuf)(char *Buf, uint64_t BufSize, const char *Fmt, ...);
+  int (*StrFormatBufV)(char *Buf, uint64_t BufSize, const char *Fmt,
+                       va_list Args);
+
+  /* ---- Bounded string compare (strncmp equivalent).
+         Compares at most MaxLen bytes.  Returns <0, 0, >0. ---- */
+  int (*StrNCompare)(const char *A, const char *B, uint64_t MaxLen);
+
+  /* ---- Copy string into caller-owned buffer (strlcpy semantics).
+         Always null-terminates when BufSize > 0.  Returns strlen(Src)
+         so the caller can detect truncation (result >= BufSize).
+         Zero allocation — use instead of StrDup when a stack buffer
+         suffices, or instead of StrFormatBuf(buf, n, "%s", s). ---- */
+  uint64_t (*StrCopyBuf)(char *Buf, uint64_t BufSize, const char *Src);
 } NevercHostAPI;
 
 /* -------------------------------------------------------------------------- */

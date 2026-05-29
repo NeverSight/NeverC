@@ -4063,55 +4063,35 @@ bridgeModuleCollectAllInstructions(NevercModuleRef M, unsigned *OutCount) {
     return nullptr;
   auto *Mod = unwrap(M);
 
-  // Single-pass collection with geometric growth.  Avoids the double
-  // traversal of the IR linked list (count pass + fill pass) that is
-  // hostile to the instruction cache on large modules.
-  constexpr size_t InitCap = 1024;
-  size_t Cap = InitCap;
-  size_t Idx = 0;
-  auto *Buf = static_cast<NevercValueRef *>(
-      bridgeAlloc(Cap * sizeof(NevercValueRef)));
-  if (LLVM_UNLIKELY(!Buf))
-    return nullptr;
-
+  // Two-pass: count via BB.size() (O(1) per BB), then exact alloc + fill.
+  // BB.size() is O(1) in modern LLVM, so the count pass only touches
+  // Function and BasicBlock nodes — never instruction nodes.  This beats
+  // geometric growth because it eliminates all realloc copies.
+  size_t Total = 0;
   for (auto &F : *Mod) {
     if (F.isDeclaration())
       continue;
-    for (auto &BB : F) {
-      for (auto &I : BB) {
-        if (LLVM_UNLIKELY(Idx == Cap)) {
-          if (LLVM_UNLIKELY(Cap > SIZE_MAX / (2 * sizeof(NevercValueRef)))) {
-            bridgeFree(Buf);
-            return nullptr;
-          }
-          size_t NewCap = Cap * 2;
-          auto *NewBuf = static_cast<NevercValueRef *>(
-              bridgeRealloc(Buf, NewCap * sizeof(NevercValueRef)));
-          if (LLVM_UNLIKELY(!NewBuf)) {
-            bridgeFree(Buf);
-            return nullptr;
-          }
-          Buf = NewBuf;
-          Cap = NewCap;
-        }
-        Buf[Idx++] = wrapV(&I);
-      }
-    }
+    for (auto &BB : F)
+      Total += BB.size();
   }
-
-  if (LLVM_UNLIKELY(Idx == 0 || Idx > UINT_MAX)) {
-    bridgeFree(Buf);
+  if (LLVM_UNLIKELY(Total == 0 || Total > UINT_MAX))
     return nullptr;
+
+  auto *Buf = static_cast<NevercValueRef *>(
+      bridgeAlloc(static_cast<uint64_t>(Total) * sizeof(NevercValueRef)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+
+  unsigned Idx = 0;
+  for (auto &F : *Mod) {
+    if (F.isDeclaration())
+      continue;
+    for (auto &BB : F)
+      for (auto &I : BB)
+        Buf[Idx++] = wrapV(&I);
   }
 
-  if (Idx < Cap) {
-    auto *Shrunk = static_cast<NevercValueRef *>(
-        bridgeRealloc(Buf, Idx * sizeof(NevercValueRef)));
-    if (LLVM_LIKELY(Shrunk))
-      Buf = Shrunk;
-  }
-
-  *OutCount = static_cast<unsigned>(Idx);
+  *OutCount = Idx;
   return Buf;
 }
 
@@ -4250,6 +4230,11 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
     P += DelimLen;
   }
 
+  if (LLVM_UNLIKELY(HitCount >= UINT_MAX)) {
+    if (Hits != StackHits)
+      bridgeFree(Hits);
+    return nullptr;
+  }
   unsigned Parts = static_cast<unsigned>(HitCount) + 1;
   char **Arr = static_cast<char **>(
       bridgeAlloc(static_cast<uint64_t>(Parts) * sizeof(char *)));
@@ -5110,35 +5095,118 @@ bridgeModuleCollectDefinedFunctions(NevercModuleRef M, unsigned *OutCount) {
     return nullptr;
   auto *Mod = unwrap(M);
 
-  size_t TotalFns = Mod->size();
-  if (LLVM_UNLIKELY(TotalFns == 0 || TotalFns > UINT_MAX))
+  unsigned Count = 0;
+  for (auto &F : *Mod)
+    if (!F.isDeclaration())
+      ++Count;
+  if (LLVM_UNLIKELY(Count == 0))
     return nullptr;
 
   auto *Buf = static_cast<NevercValueRef *>(
-      bridgeAlloc(static_cast<uint64_t>(TotalFns) * sizeof(NevercValueRef)));
+      bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(NevercValueRef)));
   if (LLVM_UNLIKELY(!Buf))
     return nullptr;
 
   unsigned Idx = 0;
-  for (auto &F : *Mod) {
+  for (auto &F : *Mod)
     if (!F.isDeclaration())
       Buf[Idx++] = wrapV(&F);
-  }
 
-  if (LLVM_UNLIKELY(Idx == 0)) {
-    bridgeFree(Buf);
-    return nullptr;
-  }
-
-  if (Idx < TotalFns) {
-    auto *Shrunk = static_cast<NevercValueRef *>(bridgeRealloc(
-        Buf, static_cast<uint64_t>(Idx) * sizeof(NevercValueRef)));
-    if (LLVM_LIKELY(Shrunk))
-      Buf = Shrunk;
-  }
-
-  *OutCount = Idx;
+  *OutCount = Count;
   return Buf;
+}
+
+// ===----------------------------------------------------------------------===
+//  Sort / BSearch — routed through host to avoid cross-CRT calls
+// ===----------------------------------------------------------------------===
+
+static void bridgeSort(void *Base, uint64_t NumElements, uint64_t ElemSize,
+                       int (*Cmp)(const void *, const void *)) {
+  if (LLVM_UNLIKELY(!Base || !Cmp || NumElements <= 1 || ElemSize == 0))
+    return;
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(NumElements > SIZE_MAX || ElemSize > SIZE_MAX))
+    return;
+#endif
+  std::qsort(Base, static_cast<size_t>(NumElements),
+             static_cast<size_t>(ElemSize), Cmp);
+}
+
+static const void *bridgeBSearch(const void *Key, const void *Base,
+                                 uint64_t NumElements, uint64_t ElemSize,
+                                 int (*Cmp)(const void *, const void *)) {
+  if (LLVM_UNLIKELY(!Key || !Base || !Cmp || NumElements == 0 || ElemSize == 0))
+    return nullptr;
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(NumElements > SIZE_MAX || ElemSize > SIZE_MAX))
+    return nullptr;
+#endif
+  return std::bsearch(Key, Base, static_cast<size_t>(NumElements),
+                      static_cast<size_t>(ElemSize), Cmp);
+}
+
+// ===----------------------------------------------------------------------===
+//  StrFormatBuf — snprintf to caller-owned buffer (zero allocation)
+// ===----------------------------------------------------------------------===
+
+static int bridgeStrFormatBufV(char *Buf, uint64_t BufSize, const char *Fmt,
+                               va_list Args) {
+  if (LLVM_UNLIKELY(!Fmt))
+    return -1;
+  if (LLVM_UNLIKELY(!Buf && BufSize > 0))
+    BufSize = 0;
+  size_t Sz = 0;
+#if SIZE_MAX < UINT64_MAX
+  Sz = (BufSize > SIZE_MAX) ? SIZE_MAX : static_cast<size_t>(BufSize);
+#else
+  Sz = static_cast<size_t>(BufSize);
+#endif
+  return std::vsnprintf(Buf, Sz, Fmt, Args);
+}
+
+static int bridgeStrFormatBuf(char *Buf, uint64_t BufSize, const char *Fmt,
+                              ...) {
+  va_list Args;
+  va_start(Args, Fmt);
+  int Ret = bridgeStrFormatBufV(Buf, BufSize, Fmt, Args);
+  va_end(Args);
+  return Ret;
+}
+
+// ===----------------------------------------------------------------------===
+//  Bounded string compare
+// ===----------------------------------------------------------------------===
+
+static int bridgeStrNCompare(const char *A, const char *B, uint64_t MaxLen) {
+  if (A == B || MaxLen == 0)
+    return 0;
+  if (LLVM_UNLIKELY(!A))
+    return -1;
+  if (LLVM_UNLIKELY(!B))
+    return 1;
+#if SIZE_MAX < UINT64_MAX
+  size_t N = (MaxLen > SIZE_MAX) ? SIZE_MAX : static_cast<size_t>(MaxLen);
+#else
+  size_t N = static_cast<size_t>(MaxLen);
+#endif
+  return std::strncmp(A, B, N);
+}
+
+// ===----------------------------------------------------------------------===
+//  StrCopyBuf — strlcpy semantics (always null-terminates, zero allocation)
+// ===----------------------------------------------------------------------===
+
+static uint64_t bridgeStrCopyBuf(char *Buf, uint64_t BufSize,
+                                 const char *Src) {
+  if (LLVM_UNLIKELY(!Src))
+    return 0;
+  size_t SrcLen = std::strlen(Src);
+  if (BufSize > 0 && LLVM_LIKELY(Buf != nullptr)) {
+    size_t CopyLen = (SrcLen < BufSize) ? SrcLen : BufSize - 1;
+    std::memcpy(Buf, Src, CopyLen);
+    Buf[CopyLen] = '\0';
+  }
+  return static_cast<uint64_t>(SrcLen);
 }
 
 // ===----------------------------------------------------------------------===
@@ -5771,12 +5839,20 @@ NevercHostAPI buildHostAPI() {
 
   API.ModuleCollectDefinedFunctions = bridgeModuleCollectDefinedFunctions;
 
+  API.Sort = bridgeSort;
+  API.BSearch = bridgeBSearch;
+
+  API.StrFormatBuf = bridgeStrFormatBuf;
+  API.StrFormatBufV = bridgeStrFormatBufV;
+
+  API.StrNCompare = bridgeStrNCompare;
+  API.StrCopyBuf = bridgeStrCopyBuf;
+
   static_assert(
-      offsetof(NevercHostAPI, ModuleCollectDefinedFunctions) +
-              sizeof(NevercHostAPI::ModuleCollectDefinedFunctions) ==
+      offsetof(NevercHostAPI, StrCopyBuf) +
+              sizeof(NevercHostAPI::StrCopyBuf) ==
           sizeof(NevercHostAPI),
-      "ModuleCollectDefinedFunctions is no longer the last field in "
-      "NevercHostAPI. "
+      "StrCopyBuf is no longer the last field in NevercHostAPI. "
       "Add bridge assignments for the new field(s) and update this check.");
 
   return API;

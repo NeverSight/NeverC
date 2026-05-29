@@ -86,9 +86,6 @@ struct LinkerDriverConfig {
   bool optRemarksWithHotness = false;
   std::string optRemarksHotnessThreshold;
 
-  // LTO pass-plugin libraries.
-  std::vector<std::string> passPlugins;
-
   // Neverc C-ABI out-of-tree plugin paths for LTO and linker hooks.
   std::vector<std::string> nevercPluginPaths;
 

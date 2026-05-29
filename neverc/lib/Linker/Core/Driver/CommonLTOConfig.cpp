@@ -84,9 +84,6 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
       c.RemarksHotnessThreshold = Val;
   }
 
-  if (!Cfg.passPlugins.empty())
-    c.PassPlugins = Cfg.passPlugins;
-
   if (!Cfg.nevercPluginPaths.empty()) {
     auto &PL = neverc::plugin::getGlobalPluginLoader();
     for (const auto &Path : Cfg.nevercPluginPaths) {

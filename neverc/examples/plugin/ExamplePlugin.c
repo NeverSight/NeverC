@@ -9,6 +9,7 @@
  *   - LTO pipeline hooks (LTO_PRE_OPT / LTO_POST_OPT)
  *   - Linker hooks (LINK_PRE_LAYOUT / POST_LAYOUT / POST_EMIT)
  *   - Host-provided string/memory utilities (StrStartsWith, StrFindChar, etc.)
+ *   - Sort (host-routed qsort — no cross-DLL CRT calls)
  *   - Formatted diagnostics via DiagNoteF — no manual StrFormat/Free dance
  *   - Plugin command-line arguments via PluginGetArg / PluginHasArg
  *   - HookPointGetName for runtime hook-name resolution
@@ -208,7 +209,9 @@ static int pipelineStagePass(NevercModuleRef M, const NevercHostAPI *API,
  * String utility API demo.
  *
  * Classifies functions and extracts intrinsic categories from LLVM
- * intrinsics: "llvm.memcpy.p0.p0.i64" → category "memcpy".
+ * intrinsics: "llvm.memcpy.p0.p0.i64" -> category "memcpy".
+ *
+ * Shows: StrStartsWith, StrFindChar, zero-alloc %.*s pattern.
  */
 static int stringApiDemoPass(NevercModuleRef M, const NevercHostAPI *API,
                              void *UserData) {
@@ -240,16 +243,68 @@ static int stringApiDemoPass(NevercModuleRef M, const NevercHostAPI *API,
     if (CategoryLen == (uint64_t)-1)
       continue;
 
-    char *Category = API->StrSubstring(Name, 5, CategoryLen);
-    if (!Category)
-      continue;
-    API->DiagNoteF(PLUGIN_TAG "Intrinsic category: %s", Category);
-    API->Free(Category);
+    API->DiagNoteF(PLUGIN_TAG "Intrinsic category: %.*s",
+                   (int)CategoryLen, Name + 5);
   }
   API->Free(AllFns);
 
   API->DiagNoteF(PLUGIN_TAG "StringAPI: %u defined, %u intrinsics",
                  DefinedCount, IntrinsicCount);
+  return 0;
+}
+
+/*
+ * Sort API demo: collect defined functions, sort by BB count descending,
+ * report top-N "hottest" functions (most basic blocks).
+ *
+ * Shows: ModuleCollectDefinedFunctions, Sort, NEVERC_ALLOC_ARRAY,
+ *        branchless comparator for qsort.
+ */
+
+struct FuncSortEntry {
+  NevercValueRef Fn;
+  unsigned BBCount;
+};
+
+static int cmpFuncByBBCountDesc(const void *A, const void *B) {
+  unsigned CA = ((const struct FuncSortEntry *)A)->BBCount;
+  unsigned CB = ((const struct FuncSortEntry *)B)->BBCount;
+  return (CA < CB) - (CA > CB);
+}
+
+static int sortedFuncAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
+                                  void *UserData) {
+  (void)UserData;
+  if (!NEVERC_API_FN(API, Sort))
+    return 0;
+
+  unsigned FnCount = 0;
+  NevercValueRef *Fns = NEVERC_COLLECT_DEFINED_FUNCTIONS(API, M, &FnCount);
+  if (!Fns || FnCount == 0)
+    return 0;
+
+  struct FuncSortEntry *Entries =
+      NEVERC_ALLOC_ARRAY(API, struct FuncSortEntry, FnCount);
+  if (!Entries) {
+    API->Free(Fns);
+    return 0;
+  }
+
+  for (unsigned I = 0; I < FnCount; I++) {
+    Entries[I].Fn = Fns[I];
+    Entries[I].BBCount = API->FunctionGetBBCount(Fns[I]);
+  }
+  API->Free(Fns);
+
+  API->Sort(Entries, FnCount, sizeof(struct FuncSortEntry),
+            cmpFuncByBBCountDesc);
+
+  unsigned Top = FnCount < 5 ? FnCount : 5;
+  for (unsigned I = 0; I < Top; I++)
+    API->DiagNoteF(PLUGIN_TAG "Top func: #%u %s (%u BBs)", I + 1,
+                   API->ValueGetName(Entries[I].Fn), Entries[I].BBCount);
+
+  API->Free(Entries);
   return 0;
 }
 
@@ -487,6 +542,9 @@ static void registerPasses(const NevercHostAPI *API, void *Registrar) {
                           functionEntryInstrPass, NULL, "example-instrument");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT, stringApiDemoPass,
                           NULL, "example-string-api");
+  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+                          sortedFuncAnalysisPass, NULL,
+                          "example-sorted-analysis");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_POST_OPT,
                           deadFunctionRemovalPass, NULL, "example-dead-remove");
 
