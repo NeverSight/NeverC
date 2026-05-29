@@ -3776,10 +3776,12 @@ static void *bridgeAllocZeroed(uint64_t Count, uint64_t ElemSize) {
 static int bridgeStrStartsWith(const char *S, const char *Prefix) {
   if (LLVM_UNLIKELY(!S || !Prefix))
     return 0;
-  size_t PrefixLen = std::strlen(Prefix);
-  if (PrefixLen == 0)
-    return 1;
-  return std::strncmp(S, Prefix, PrefixLen) == 0;
+  for (;; ++S, ++Prefix) {
+    if (*Prefix == '\0')
+      return 1;
+    if (*S != *Prefix)
+      return 0;
+  }
 }
 
 static int bridgeStrEndsWith(const char *S, const char *Suffix) {
@@ -4161,16 +4163,21 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
         return nullptr;
       }
       size_t NewCap = HitCap * 2;
-      size_t *NewBuf =
-          static_cast<size_t *>(bridgeAlloc(NewCap * sizeof(size_t)));
+      size_t *NewBuf;
+      if (Hits == StackHits) {
+        NewBuf =
+            static_cast<size_t *>(bridgeAlloc(NewCap * sizeof(size_t)));
+        if (LLVM_LIKELY(NewBuf))
+          std::memcpy(NewBuf, StackHits, HitCount * sizeof(size_t));
+      } else {
+        NewBuf =
+            static_cast<size_t *>(bridgeRealloc(Hits, NewCap * sizeof(size_t)));
+      }
       if (LLVM_UNLIKELY(!NewBuf)) {
         if (Hits != StackHits)
           bridgeFree(Hits);
         return nullptr;
       }
-      std::memcpy(NewBuf, Hits, HitCount * sizeof(size_t));
-      if (Hits != StackHits)
-        bridgeFree(Hits);
       Hits = NewBuf;
       HitCap = NewCap;
     }
@@ -4949,16 +4956,21 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
         return nullptr;
       }
       size_t NewCap = HitCap * 2;
-      auto *NewBuf = static_cast<size_t *>(
-          bridgeAlloc(NewCap * sizeof(size_t)));
+      size_t *NewBuf;
+      if (Hits == StackBuf) {
+        NewBuf = static_cast<size_t *>(
+            bridgeAlloc(NewCap * sizeof(size_t)));
+        if (LLVM_LIKELY(NewBuf))
+          std::memcpy(NewBuf, StackBuf, HitCount * sizeof(size_t));
+      } else {
+        NewBuf = static_cast<size_t *>(
+            bridgeRealloc(Hits, NewCap * sizeof(size_t)));
+      }
       if (LLVM_UNLIKELY(!NewBuf)) {
         if (Hits != StackBuf)
           bridgeFree(Hits);
         return nullptr;
       }
-      std::memcpy(NewBuf, Hits, HitCount * sizeof(size_t));
-      if (Hits != StackBuf)
-        bridgeFree(Hits);
       Hits = NewBuf;
       HitCap = NewCap;
     }
