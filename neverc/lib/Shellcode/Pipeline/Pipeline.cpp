@@ -138,6 +138,10 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
   currentShellcodeOptionsStorage() = Opts;
   neverc::plugin::setShellcodeModeState(Opts.Enabled, Opts.EntrySymbol);
 
+  PB.registerAnalysisRegistrationCallback([](ModuleAnalysisManager &MAM) {
+    MAM.registerPass([] { return CompilerRtStampAnalysis(); });
+  });
+
   if (!Opts.Enabled)
     return;
 
@@ -211,6 +215,8 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
         runIRHook(H.RunAfterFinalIR, MPM, Opts);
         neverc::plugin::addPluginModulePasses(
             MPM, NEVERC_HOOK_SC_AFTER_FINAL_IR, PL);
+
+        MPM.addPass(CompilerRtPass());
       });
 }
 

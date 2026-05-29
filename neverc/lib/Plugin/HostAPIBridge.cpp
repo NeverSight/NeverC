@@ -35,6 +35,8 @@ using namespace llvm;
 namespace neverc {
 namespace plugin {
 
+static bool gShellcodeModeEnabled = false;
+
 // ===----------------------------------------------------------------------===
 //  Cast helpers
 // ===----------------------------------------------------------------------===
@@ -215,6 +217,8 @@ static NevercValueRef bridgeModuleAddFunction(NevercModuleRef M,
   if (!FT)
     return nullptr;
   auto *Fn = Function::Create(FT, GlobalValue::ExternalLinkage, Name, Mod);
+  if (gShellcodeModeEnabled)
+    Fn->addFnAttr("no-stack-arg-probe");
   return wrapV(Fn);
 }
 
@@ -3054,6 +3058,7 @@ void setShellcodeModeState(bool Enabled, llvm::StringRef EntrySymbol) {
   auto &S = shellcodeModeStorage();
   S.Enabled = Enabled;
   S.EntrySymbol = EntrySymbol.str();
+  gShellcodeModeEnabled = Enabled;
 }
 
 static int bridgeHostIsShellcodeMode(void) {

@@ -13,8 +13,17 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
+
+#define DEBUG_TYPE "neverc-compiler-rt"
 
 using namespace llvm;
+
+static cl::opt<bool> VerboseCompilerRt(
+    "neverc-compiler-rt-verbose", cl::Hidden,
+    cl::desc("Print CompilerRtPass stamp skip/run decisions"));
 
 namespace neverc {
 namespace shellcode {
@@ -613,7 +622,19 @@ bool rewriteCollectedOps(SmallVectorImpl<BinaryOperator *> &DivRemOps,
 
 } // namespace
 
-PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &) {
+AnalysisKey CompilerRtStampAnalysis::Key;
+
+PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &MAM) {
+  if (MAM.getCachedResult<CompilerRtStampAnalysis>(M)) {
+    LLVM_DEBUG(dbgs() << "CompilerRtPass: stamp valid, skipping\n");
+    if (VerboseCompilerRt)
+      errs() << "CompilerRtPass: stamp valid, skipping\n";
+    return PreservedAnalyses::all();
+  }
+  LLVM_DEBUG(dbgs() << "CompilerRtPass: no stamp, running full pass\n");
+  if (VerboseCompilerRt)
+    errs() << "CompilerRtPass: no stamp, running full pass\n";
+
   bool StampedProbe = false;
   for (Function &F : M) {
     if (!F.hasFnAttribute("no-stack-arg-probe")) {
@@ -697,8 +718,13 @@ PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &) {
 
   const bool AnyWideNeed =
       W_UDiv || W_SDiv || W_URem || W_SRem || W_Shl || W_LShr || W_AShr;
-  if (!AnyWideNeed && !HasExternDecls)
-    return StampedProbe ? PreservedAnalyses::none() : PreservedAnalyses::all();
+  if (!AnyWideNeed && !HasExternDecls) {
+    (void)MAM.getResult<CompilerRtStampAnalysis>(M);
+    auto PA = StampedProbe ? PreservedAnalyses::none()
+                           : PreservedAnalyses::all();
+    PA.preserve<CompilerRtStampAnalysis>();
+    return PA;
+  }
 
   CRTHelperBundle H = {};
   if (AnyWideNeed) {
@@ -750,8 +776,11 @@ PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &) {
       Workhorse->eraseFromParent();
   }
 
-  return (Changed || StampedProbe) ? PreservedAnalyses::none()
-                                   : PreservedAnalyses::all();
+  (void)MAM.getResult<CompilerRtStampAnalysis>(M);
+  auto PA = (Changed || StampedProbe) ? PreservedAnalyses::none()
+                                      : PreservedAnalyses::all();
+  PA.preserve<CompilerRtStampAnalysis>();
+  return PA;
 }
 
 } // namespace shellcode
