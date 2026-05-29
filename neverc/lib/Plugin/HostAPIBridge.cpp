@@ -3629,7 +3629,7 @@ static char *bridgeUIntToStr(uint64_t Val) {
 static char *bridgeStrFormatV(const char *Fmt, va_list Args) {
   if (LLVM_UNLIKELY(!Fmt))
     return nullptr;
-  char Stack[512];
+  char Stack[1024];
   va_list ArgsCopy;
   va_copy(ArgsCopy, Args);
   int Len = std::vsnprintf(Stack, sizeof(Stack), Fmt, ArgsCopy);
@@ -3704,7 +3704,7 @@ static void bridgeDiagV(void (*Emit)(const char *), const char *Fmt,
                         va_list Args) {
   if (LLVM_UNLIKELY(!Fmt))
     return;
-  char Stack[512];
+  char Stack[1024];
   va_list ArgsCopy;
   va_copy(ArgsCopy, Args);
   int Len = std::vsnprintf(Stack, sizeof(Stack), Fmt, ArgsCopy);
@@ -4020,33 +4020,55 @@ bridgeModuleCollectAllInstructions(NevercModuleRef M, unsigned *OutCount) {
     return nullptr;
   auto *Mod = unwrap(M);
 
-  size_t Total = 0;
-  for (const auto &F : *Mod) {
-    if (F.isDeclaration())
-      continue;
-    for (const auto &BB : F) {
-      Total += BB.size();
-      if (LLVM_UNLIKELY(Total > UINT_MAX))
-        return nullptr;
-    }
-  }
-  if (LLVM_UNLIKELY(Total == 0))
-    return nullptr;
-
+  // Single-pass collection with geometric growth.  Avoids the double
+  // traversal of the IR linked list (count pass + fill pass) that is
+  // hostile to the instruction cache on large modules.
+  constexpr size_t InitCap = 1024;
+  size_t Cap = InitCap;
+  size_t Idx = 0;
   auto *Buf = static_cast<NevercValueRef *>(
-      bridgeAlloc(static_cast<uint64_t>(Total) * sizeof(NevercValueRef)));
+      bridgeAlloc(Cap * sizeof(NevercValueRef)));
   if (LLVM_UNLIKELY(!Buf))
     return nullptr;
 
-  unsigned Idx = 0;
   for (auto &F : *Mod) {
     if (F.isDeclaration())
       continue;
-    for (auto &BB : F)
-      for (auto &I : BB)
+    for (auto &BB : F) {
+      for (auto &I : BB) {
+        if (LLVM_UNLIKELY(Idx == Cap)) {
+          if (LLVM_UNLIKELY(Cap > SIZE_MAX / (2 * sizeof(NevercValueRef)))) {
+            bridgeFree(Buf);
+            return nullptr;
+          }
+          size_t NewCap = Cap * 2;
+          auto *NewBuf = static_cast<NevercValueRef *>(
+              bridgeRealloc(Buf, NewCap * sizeof(NevercValueRef)));
+          if (LLVM_UNLIKELY(!NewBuf)) {
+            bridgeFree(Buf);
+            return nullptr;
+          }
+          Buf = NewBuf;
+          Cap = NewCap;
+        }
         Buf[Idx++] = wrapV(&I);
+      }
+    }
   }
-  *OutCount = Idx;
+
+  if (LLVM_UNLIKELY(Idx == 0 || Idx > UINT_MAX)) {
+    bridgeFree(Buf);
+    return nullptr;
+  }
+
+  if (Idx < Cap) {
+    auto *Shrunk = static_cast<NevercValueRef *>(
+        bridgeRealloc(Buf, Idx * sizeof(NevercValueRef)));
+    if (LLVM_LIKELY(Shrunk))
+      Buf = Shrunk;
+  }
+
+  *OutCount = static_cast<unsigned>(Idx);
   return Buf;
 }
 
