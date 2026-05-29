@@ -4294,7 +4294,8 @@ static void bridgeMBBCollectInstructions(NevercMachineBBRef MBB,
                                      NevercValueRef RHS, const char *Name) {   \
     if (LLVM_UNLIKELY(!B || !LHS || !RHS))                                     \
       return nullptr;                                                          \
-    return wrapV(unwrapB(B)->METHOD(unwrapV(LHS), unwrapV(RHS), Name));        \
+    const char *Nm = Name ? Name : "";                                         \
+    return wrapV(unwrapB(B)->METHOD(unwrapV(LHS), unwrapV(RHS), Nm));          \
   }
 
 BRIDGE_BINOP_FLAG(BuildNSWAdd, CreateNSWAdd)
@@ -4311,7 +4312,7 @@ static NevercValueRef bridgeBuildNSWNeg(NevercBuilderRef B, NevercValueRef V,
                                         const char *Name) {
   if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateNSWNeg(unwrapV(V), Name));
+  return wrapV(unwrapB(B)->CreateNSWNeg(unwrapV(V), Name ? Name : ""));
 }
 
 // ===----------------------------------------------------------------------===
@@ -4337,7 +4338,8 @@ static NevercValueRef bridgeBuildInvoke(NevercBuilderRef B, NevercTypeRef FnTy,
     ArgVec.push_back(unwrapV(Args[I]));
   }
   return wrapV(unwrapB(B)->CreateInvoke(FTy, unwrapV(Fn), unwrapBB(NormalDest),
-                                        unwrapBB(UnwindDest), ArgVec, Name));
+                                        unwrapBB(UnwindDest), ArgVec,
+                                        Name ? Name : ""));
 }
 
 static NevercValueRef bridgeBuildLandingPad(NevercBuilderRef B,
@@ -4346,7 +4348,8 @@ static NevercValueRef bridgeBuildLandingPad(NevercBuilderRef B,
                                             const char *Name) {
   if (LLVM_UNLIKELY(!B || !Ty))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateLandingPad(unwrapTy(Ty), NumClauses, Name));
+  return wrapV(
+      unwrapB(B)->CreateLandingPad(unwrapTy(Ty), NumClauses, Name ? Name : ""));
 }
 
 static void bridgeLandingPadAddClause(NevercValueRef LPad,
