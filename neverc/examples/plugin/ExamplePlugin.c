@@ -86,7 +86,7 @@ static int functionEntryInstrPass(NevercModuleRef M,
                                   const NevercHostAPI *API,
                                   void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, BuildGlobalStringPtr))
+  if (!NEVERC_API_FN(API, BuildGlobalStringPtr))
     return 0;
 
   if (NEVERC_API_FN(API, HostIsShellcodeMode) &&
@@ -170,7 +170,7 @@ static int mirInstrCountPass(NevercMachineFuncRef MF,
     return 0;
   }
 
-  if (NEVERC_API_HAS(API, MFuncCollectBBs)) {
+  if (NEVERC_API_FN(API, MFuncCollectBBs)) {
     NevercMachineBBRef *MBBs =
         (NevercMachineBBRef *)API->Alloc(BBCount * sizeof(NevercMachineBBRef));
     if (!MBBs)
@@ -282,7 +282,7 @@ static int gepIndexDemoPass(NevercModuleRef M,
                             const NevercHostAPI *API,
                             void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, GEPGetIndex))
+  if (!NEVERC_API_FN(API, GEPGetIndex))
     return 0;
 
   int TotalGEPs = 0, ConstIdxCount = 0, DynIdxCount = 0;
@@ -399,8 +399,8 @@ static int instrTypeDemoPass(NevercModuleRef M,
                              const NevercHostAPI *API,
                              void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, InstIsCall) ||
-      !NEVERC_API_HAS(API, ModuleCollectFunctions))
+  if (!NEVERC_API_FN(API, InstIsCall) ||
+      !NEVERC_API_FN(API, ModuleCollectFunctions))
     return 0;
 
   unsigned FnCount = API->ModuleGetFunctionCount(M);
@@ -490,7 +490,7 @@ static int icmpAnalysisDemoPass(NevercModuleRef M,
                                 const NevercHostAPI *API,
                                 void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, InstIsICmp))
+  if (!NEVERC_API_FN(API, InstIsICmp))
     return 0;
 
   int EqCount = 0, RelCount = 0, FCmpCount = 0;
@@ -535,7 +535,7 @@ static int cfgAnalysisDemoPass(NevercModuleRef M,
                                const NevercHostAPI *API,
                                void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, InstGetNumSuccessors))
+  if (!NEVERC_API_FN(API, InstGetNumSuccessors))
     return 0;
 
   int TotalEdges = 0;
@@ -574,7 +574,7 @@ static int globalInfoDemoPass(NevercModuleRef M,
                               const NevercHostAPI *API,
                               void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, GlobalGetLinkage))
+  if (!NEVERC_API_FN(API, GlobalGetLinkage))
     return 0;
 
   int InternalCount = 0;
@@ -616,7 +616,7 @@ static int deadInternalRemovalPass(NevercModuleRef M,
                                    const NevercHostAPI *API,
                                    void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, ModuleRemoveFunction))
+  if (!NEVERC_API_FN(API, ModuleRemoveFunction))
     return 0;
 
   unsigned FnCount = API->ModuleGetFunctionCount(M);
@@ -667,7 +667,7 @@ static int switchAnalysisDemoPass(NevercModuleRef M,
                                   const NevercHostAPI *API,
                                   void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, SwitchGetNumCases))
+  if (!NEVERC_API_FN(API, SwitchGetNumCases))
     return 0;
 
   int SwitchCount = 0;
@@ -713,9 +713,9 @@ static int reverseIterationDemoPass(NevercModuleRef M,
                                     const NevercHostAPI *API,
                                     void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, ModuleGetPrevFunction) ||
-      !NEVERC_API_HAS(API, ModuleGetPrevGlobal) ||
-      !NEVERC_API_HAS(API, FunctionGetBBCount))
+  if (!NEVERC_API_FN(API, ModuleGetPrevFunction) ||
+      !NEVERC_API_FN(API, ModuleGetPrevGlobal) ||
+      !NEVERC_API_FN(API, FunctionGetBBCount))
     return 0;
 
   API->DiagNoteF("[example-plugin] Source: %s",
@@ -751,7 +751,7 @@ static int reverseIterationDemoPass(NevercModuleRef M,
   }
 
   unsigned AliasCount = 0;
-  if (NEVERC_API_HAS(API, ModuleGetPrevAlias)) {
+  if (NEVERC_API_FN(API, ModuleGetPrevAlias)) {
     NevercValueRef A = API->ModuleGetLastAlias(M);
     while (A) {
       AliasCount++;
@@ -776,7 +776,7 @@ static int callLikeDemoPass(NevercModuleRef M,
                             const NevercHostAPI *API,
                             void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, InstIsCallLike))
+  if (!NEVERC_API_FN(API, InstIsCallLike))
     return 0;
 
   int DirectCalls = 0, IndirectCalls = 0, Invokes = 0;
@@ -821,8 +821,8 @@ static int memAccessDemoPass(NevercModuleRef M,
                              const NevercHostAPI *API,
                              void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, LoadGetType) ||
-      !NEVERC_API_HAS(API, GEPIsInBounds))
+  if (!NEVERC_API_FN(API, LoadGetType) ||
+      !NEVERC_API_FN(API, GEPIsInBounds))
     return 0;
 
   int PtrLoads = 0, IntLoads = 0, OtherLoads = 0;
@@ -939,7 +939,7 @@ static int debugLocDemoPass(NevercModuleRef M,
                             const NevercHostAPI *API,
                             void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, InstCopyDebugLoc))
+  if (!NEVERC_API_FN(API, InstCopyDebugLoc))
     return 0;
 
   int WithLoc = 0, WithoutLoc = 0;
@@ -963,7 +963,7 @@ static int debugLocDemoPass(NevercModuleRef M,
   }
 
   int SectionedGlobals = 0;
-  if (NEVERC_API_HAS(API, GlobalGetSection)) {
+  if (NEVERC_API_FN(API, GlobalGetSection)) {
     NevercValueRef G = API->ModuleGetFirstGlobal(M);
     while (G) {
       if (API->ValueIsGlobalVariable(G)) {
@@ -992,7 +992,7 @@ static int valuePrintDemoPass(NevercModuleRef M,
                               const NevercHostAPI *API,
                               void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, ValuePrintToString))
+  if (!NEVERC_API_FN(API, ValuePrintToString))
     return 0;
 
   NevercValueRef F = API->ModuleGetFirstFunction(M);
@@ -1064,7 +1064,7 @@ static int intrinsicAndMDDemoPass(NevercModuleRef M,
                                   const NevercHostAPI *API,
                                   void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, IntrinsicLookupByName))
+  if (!NEVERC_API_FN(API, IntrinsicLookupByName))
     return 0;
 
   unsigned TrapID = API->IntrinsicLookupByName("llvm.debugtrap");
@@ -1080,7 +1080,7 @@ static int intrinsicAndMDDemoPass(NevercModuleRef M,
     }
   }
 
-  if (NEVERC_API_HAS(API, ModuleGetNamedMetadata)) {
+  if (NEVERC_API_FN(API, ModuleGetNamedMetadata)) {
     NevercNamedMDRef Ident = API->ModuleGetNamedMetadata(M, "llvm.ident");
     if (Ident)
       API->DiagNoteF("[example-plugin] llvm.ident has %u operand(s)",
@@ -1096,7 +1096,7 @@ static int pluginArgDemoPass(NevercModuleRef M,
                              const NevercHostAPI *API,
                              void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, PluginGetArg))
+  if (!NEVERC_API_FN(API, PluginGetArg))
     return 0;
 
   API->DiagNoteF("[example-plugin] Plugin arg count: %u",
@@ -1127,7 +1127,7 @@ static int dataLayoutDemoPass(NevercModuleRef M,
                               const NevercHostAPI *API,
                               void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, TypeSizeInBits))
+  if (!NEVERC_API_FN(API, TypeSizeInBits))
     return 0;
 
   NevercContextRef C = API->ModuleGetContext(M);
@@ -1149,14 +1149,14 @@ static int dataLayoutDemoPass(NevercModuleRef M,
                  (unsigned long long)I32Size, I32Align,
                  (unsigned long long)I64Size, DblAlign);
 
-  if (NEVERC_API_HAS(API, ConstPoison)) {
+  if (NEVERC_API_FN(API, ConstPoison)) {
     NevercValueRef Poison = API->ConstPoison(I32Ty);
     API->DiagNoteF("[example-plugin] PoisonValue(i32): isPoison=%d "
                    "isUndef=%d",
                    API->ValueIsPoison(Poison), API->ValueIsUndef(Poison));
   }
 
-  if (NEVERC_API_HAS(API, TypeGetFixedVector)) {
+  if (NEVERC_API_FN(API, TypeGetFixedVector)) {
     NevercTypeRef V4I32 = API->TypeGetFixedVector(I32Ty, 4);
     API->DiagNoteF("[example-plugin] <4 x i32>: isVector=%d numElems=%u "
                    "sizeBits=%llu",
@@ -1165,7 +1165,7 @@ static int dataLayoutDemoPass(NevercModuleRef M,
                    (unsigned long long)API->TypeSizeInBits(M, V4I32));
   }
 
-  if (NEVERC_API_HAS(API, TypeGetPtrInAddrSpace)) {
+  if (NEVERC_API_FN(API, TypeGetPtrInAddrSpace)) {
     NevercTypeRef DefaultPtr = API->TypeGetPtr(C);
     NevercTypeRef AS1Ptr = API->TypeGetPtrInAddrSpace(C, 1);
     API->DiagNoteF("[example-plugin] ptr addrspace(0)=%u "
@@ -1187,7 +1187,7 @@ static int nswAndComdatDemoPass(NevercModuleRef M,
                                 const NevercHostAPI *API,
                                 void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, BuildNSWAdd) || !NEVERC_API_HAS(API, GlobalGetComdat))
+  if (!NEVERC_API_FN(API, BuildNSWAdd) || !NEVERC_API_FN(API, GlobalGetComdat))
     return 0;
 
   int ComdatCount = 0;
@@ -1202,7 +1202,7 @@ static int nswAndComdatDemoPass(NevercModuleRef M,
   }
 
   int ThreadLocalCount = 0;
-  if (NEVERC_API_HAS(API, GlobalIsThreadLocal)) {
+  if (NEVERC_API_FN(API, GlobalIsThreadLocal)) {
     G = API->ModuleGetFirstGlobal(M);
     while (G) {
       if (API->ValueIsGlobalVariable(G) && API->GlobalIsThreadLocal(G))
@@ -1227,8 +1227,8 @@ static int constAggrAndAttrDemoPass(NevercModuleRef M,
                                     const NevercHostAPI *API,
                                     void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, ConstGetAggregateElement) ||
-      !NEVERC_API_HAS(API, FunctionHasEnumAttr))
+  if (!NEVERC_API_FN(API, ConstGetAggregateElement) ||
+      !NEVERC_API_FN(API, FunctionHasEnumAttr))
     return 0;
 
   int AggrGlobals = 0;
@@ -1367,7 +1367,7 @@ static int batchAnalysisDemoPass(NevercModuleRef M,
                                  const NevercHostAPI *API,
                                  void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, ModuleCollectFunctions))
+  if (!NEVERC_API_FN(API, ModuleCollectFunctions))
     return 0;
 
   unsigned FnCount = API->ModuleGetFunctionCount(M);
