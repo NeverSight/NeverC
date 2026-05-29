@@ -43,6 +43,7 @@ file after defining the expected macro.
 | `ScalarSoftFloatNames.def`          | `ExtractorCommon.cpp` (`isScalarSoftFloatHelperName`) | `NEVERC_NAME(name)`                       |
 | `LongIntegerHelperPrefixes.def`     | `ExtractorCommon.cpp` (`isLongIntegerCompilerRtHelperName`) | `NEVERC_PREFIX(prefix)`       |
 | `CompilerGeneratedExternHints.def`  | `ExtractorCommon.cpp` (`getExternalSymbolHint`) | `NEVERC_EXTERN_HINT(name, message)`       |
+| `StackProbeNames.def`              | `CompilerRtPass.cpp` (erase declarations, stamp attribute) | `NEVERC_NAME(name)`      |
 | `Binary128HelperNames.def`          | `ExtractorCommon.cpp` (`isBinary128HelperName`) | `NEVERC_NAME(name)`               |
 | `HeapAllocatorNames.def`            | `ExtractorCommon.cpp` (`isHeapAllocatorName`) | `NEVERC_NAME(name)`                   |
 | `HeapArenaRewriteTargets.def`      | `HeapArenaPass.cpp` (`classifyHeapCall`) | `NEVERC_HEAP_ARENA_TARGET(name, kind)` |
@@ -115,6 +116,10 @@ Tables you are likely to extend:
 * `CompilerGeneratedExternHints` — add an exact MIR diagnostic for a
   compiler-generated helper that shellcode mode should normally prevent
   with driver flags or earlier IR passes.
+* `StackProbeNames` — list additional stack-probe extern spellings
+  (`__chkstk` variants) that `CompilerRtPass` forcibly erases and whose
+  emission is prevented by stamping `no-stack-arg-probe` on all
+  functions.
 * `LongIntegerHelperPrefixes` / `Binary128HelperNames` — sharpen
   compiler-rt diagnostics without touching MIR pass control flow.
 * `StringRuntimeAllocatorNames` — keep shellcode support for the builtin

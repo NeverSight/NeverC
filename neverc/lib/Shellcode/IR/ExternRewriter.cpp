@@ -28,6 +28,7 @@ void applyScHelperFnAttrs(Function *F) {
   AB.addAttribute(Attribute::MustProgress);
   AB.addAttribute(Attribute::NoProfile);
   F->addFnAttrs(AB);
+  F->addFnAttr("no-stack-arg-probe");
   F->setDSOLocal(true);
 }
 

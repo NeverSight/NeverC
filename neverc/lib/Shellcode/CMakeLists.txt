@@ -30,6 +30,7 @@ set(_neverc_shellcode_tables
   ScalarSoftFloatNames
   LongIntegerHelperPrefixes
   CompilerGeneratedExternHints
+  StackProbeNames
   Binary128HelperNames
   HeapAllocatorNames
   HeapArenaRewriteTargets

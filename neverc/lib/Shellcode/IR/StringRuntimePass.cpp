@@ -87,6 +87,7 @@ void setRuntimeFunctionAttrs(Function &F, bool DeferInlining = false) {
     F.addFnAttr(Attribute::AlwaysInline);
   }
   F.addFnAttr(Attribute::NoUnwind);
+  F.addFnAttr("no-stack-arg-probe");
 }
 
 RuntimeAllocatorClassification classifyRuntimeAllocator(StringRef Name) {

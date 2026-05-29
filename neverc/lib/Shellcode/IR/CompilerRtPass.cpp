@@ -614,6 +614,28 @@ bool rewriteCollectedOps(SmallVectorImpl<BinaryOperator *> &DivRemOps,
 } // namespace
 
 PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &) {
+  bool StampedProbe = false;
+  for (Function &F : M) {
+    if (!F.hasFnAttribute("no-stack-arg-probe")) {
+      F.addFnAttr("no-stack-arg-probe");
+      StampedProbe = true;
+    }
+  }
+  static constexpr StringLiteral kStackProbeNames[] = {
+#define NEVERC_NAME(name) #name,
+#include "neverc/Shellcode/Tables/StackProbeNames.def"
+#include "neverc/Shellcode/Tables/UserExtra_StackProbeNames.def"
+#undef NEVERC_NAME
+  };
+  for (StringRef Name : kStackProbeNames) {
+    if (Function *ChkF = M.getFunction(Name)) {
+      if (ChkF->use_empty()) {
+        ChkF->eraseFromParent();
+        StampedProbe = true;
+      }
+    }
+  }
+
   bool W_UDiv = false, W_SDiv = false, W_URem = false, W_SRem = false;
   bool W_Shl = false, W_LShr = false, W_AShr = false;
   SmallVector<BinaryOperator *, 8> AllDivRemOps;
@@ -676,7 +698,7 @@ PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &) {
   const bool AnyWideNeed =
       W_UDiv || W_SDiv || W_URem || W_SRem || W_Shl || W_LShr || W_AShr;
   if (!AnyWideNeed && !HasExternDecls)
-    return PreservedAnalyses::all();
+    return StampedProbe ? PreservedAnalyses::none() : PreservedAnalyses::all();
 
   CRTHelperBundle H = {};
   if (AnyWideNeed) {
@@ -728,7 +750,8 @@ PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &) {
       Workhorse->eraseFromParent();
   }
 
-  return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
+  return (Changed || StampedProbe) ? PreservedAnalyses::none()
+                                   : PreservedAnalyses::all();
 }
 
 } // namespace shellcode

@@ -27,6 +27,7 @@ inline void setHelperAttrs(llvm::Function *F) {
   AB.addAttribute(llvm::Attribute::NoFree);
   AB.addAttribute(llvm::Attribute::MustProgress);
   F->addFnAttrs(AB);
+  F->addFnAttr("no-stack-arg-probe");
   F->setDSOLocal(true);
 }
 
