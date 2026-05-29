@@ -1,0 +1,7 @@
+#ifndef NEVERC_SC_FLAG
+#error "define NEVERC_SC_FLAG(flag) before including this file"
+#endif
+NEVERC_SC_FLAG("-mno-stack-arg-probe")
+NEVERC_SC_FLAG("-fno-ms-buffer-security-check")
+NEVERC_SC_FLAG("-mno-outline-atomics")
+NEVERC_SC_FLAG("-mlong-double-64")

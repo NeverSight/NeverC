@@ -1,0 +1,6 @@
+#ifndef NEVERC_SC_FLAG
+#error "define NEVERC_SC_FLAG(flag) before including this file"
+#endif
+NEVERC_SC_FLAG("-fpic")
+NEVERC_SC_FLAG("-mcmodel=small")
+NEVERC_SC_FLAG("-mno-implicit-float")

@@ -1,0 +1,8 @@
+#ifndef NEVERC_SC_FLAG
+#error "define NEVERC_SC_FLAG(flag) before including this file"
+#endif
+NEVERC_SC_FLAG("-mno-red-zone")
+NEVERC_SC_FLAG("-mcmodel=kernel")
+NEVERC_SC_FLAG("-mno-sse")
+NEVERC_SC_FLAG("-mno-mmx")
+NEVERC_SC_FLAG("-mno-sse2")

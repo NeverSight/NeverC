@@ -1,0 +1,4 @@
+#ifndef NEVERC_SC_FLAG
+#error "define NEVERC_SC_FLAG(flag) before including this file"
+#endif
+NEVERC_SC_FLAG("-mgeneral-regs-only")

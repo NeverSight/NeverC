@@ -47,6 +47,14 @@ set(_neverc_shellcode_tables
   ShellcodeInternalRuntimePrefixes
   ShellcodeIncompats
   ShellcodeInjectFlags
+  TargetInjectFlags_Unix_X86_64
+  TargetInjectFlags_Unix_AArch64
+  TargetInjectFlags_Windows_X86_64
+  TargetInjectFlags_Windows_AArch64
+  TargetKernelFlags_Unix_X86_64
+  TargetKernelFlags_Unix_AArch64
+  TargetKernelFlags_Windows_X86_64
+  TargetKernelFlags_Windows_AArch64
   )
 
 set(_neverc_tables_out_dir

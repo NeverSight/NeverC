@@ -15,50 +15,66 @@ const StringRef kX86_64LinuxArgRegs[] = {"rdi", "rsi", "rdx",
                                          "r10", "r8",  "r9"};
 
 const char *const kX86_64UnixInjectFlags[] = {
-    "-fpic",
-    "-mcmodel=small",
-    "-mno-implicit-float",
+#define NEVERC_SC_FLAG(flag) flag,
+#include "neverc/Shellcode/Tables/TargetInjectFlags_Unix_X86_64.def"
+#include "neverc/Shellcode/Tables/UserExtra_TargetInjectFlags_Unix_X86_64.def"
+#undef NEVERC_SC_FLAG
     nullptr,
 };
 
 const char *const kWindowsX86_64InjectFlags[] = {
-    "-mno-stack-arg-probe",
-    "-fno-ms-buffer-security-check",
-    "-mno-implicit-float",
+#define NEVERC_SC_FLAG(flag) flag,
+#include "neverc/Shellcode/Tables/TargetInjectFlags_Windows_X86_64.def"
+#include "neverc/Shellcode/Tables/UserExtra_TargetInjectFlags_Windows_X86_64.def"
+#undef NEVERC_SC_FLAG
     nullptr,
 };
 
 const char *const kAArch64UnixInjectFlags[] = {
-    "-mno-outline-atomics",
-    "-mlong-double-64",
+#define NEVERC_SC_FLAG(flag) flag,
+#include "neverc/Shellcode/Tables/TargetInjectFlags_Unix_AArch64.def"
+#include "neverc/Shellcode/Tables/UserExtra_TargetInjectFlags_Unix_AArch64.def"
+#undef NEVERC_SC_FLAG
     nullptr,
 };
 
 const char *const kWindowsAArch64InjectFlags[] = {
-    "-mno-stack-arg-probe",
-    "-fno-ms-buffer-security-check",
-    "-mno-outline-atomics",
-    "-mlong-double-64",
+#define NEVERC_SC_FLAG(flag) flag,
+#include "neverc/Shellcode/Tables/TargetInjectFlags_Windows_AArch64.def"
+#include "neverc/Shellcode/Tables/UserExtra_TargetInjectFlags_Windows_AArch64.def"
+#undef NEVERC_SC_FLAG
     nullptr,
 };
 
 const char *const kX86_64UnixKernelInjectFlags[] = {
-    "-mno-red-zone", "-mcmodel=kernel", "-mno-sse",
-    "-mno-mmx",      "-mno-sse2",       nullptr,
+#define NEVERC_SC_FLAG(flag) flag,
+#include "neverc/Shellcode/Tables/TargetKernelFlags_Unix_X86_64.def"
+#include "neverc/Shellcode/Tables/UserExtra_TargetKernelFlags_Unix_X86_64.def"
+#undef NEVERC_SC_FLAG
+    nullptr,
 };
 
 const char *const kX86_64WindowsKernelInjectFlags[] = {
-    "-fms-kernel", "-mno-sse", "-mno-mmx", "-mno-sse2", nullptr,
+#define NEVERC_SC_FLAG(flag) flag,
+#include "neverc/Shellcode/Tables/TargetKernelFlags_Windows_X86_64.def"
+#include "neverc/Shellcode/Tables/UserExtra_TargetKernelFlags_Windows_X86_64.def"
+#undef NEVERC_SC_FLAG
+    nullptr,
 };
 
 const char *const kAArch64UnixKernelInjectFlags[] = {
-    "-mgeneral-regs-only",
+#define NEVERC_SC_FLAG(flag) flag,
+#include "neverc/Shellcode/Tables/TargetKernelFlags_Unix_AArch64.def"
+#include "neverc/Shellcode/Tables/UserExtra_TargetKernelFlags_Unix_AArch64.def"
+#undef NEVERC_SC_FLAG
     nullptr,
 };
 
 const char *const kAArch64WindowsKernelInjectFlags[] = {
-    "-fms-kernel",
-    "-mgeneral-regs-only",
+#define NEVERC_SC_FLAG(flag) flag,
+#include "neverc/Shellcode/Tables/TargetKernelFlags_Windows_AArch64.def"
+#include "neverc/Shellcode/Tables/UserExtra_TargetKernelFlags_Windows_AArch64.def"
+#undef NEVERC_SC_FLAG
     nullptr,
 };
 
