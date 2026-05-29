@@ -4453,7 +4453,7 @@ static unsigned bridgeComdatGetSelectionKind(NevercComdatRef C) {
 }
 
 static void bridgeComdatSetSelectionKind(NevercComdatRef C, unsigned Kind) {
-  if (LLVM_UNLIKELY(!C))
+  if (LLVM_UNLIKELY(!C || Kind > NEVERC_COMDAT_SAME_SIZE))
     return;
   unwrapComdat(C)->setSelectionKind(static_cast<Comdat::SelectionKind>(Kind));
 }
@@ -4698,10 +4698,10 @@ static void bridgeMInstMoveBefore(NevercMachineInstrRef MI,
     return;
   auto *Inst = unwrapMI(MI);
   auto *BeforeInst = unwrapMI(Before);
-  auto *MBB = BeforeInst->getParent();
-  if (MBB)
-    MBB->splice(BeforeInst->getIterator(), Inst->getParent(),
-                Inst->getIterator());
+  auto *DstMBB = BeforeInst->getParent();
+  auto *SrcMBB = Inst->getParent();
+  if (DstMBB && SrcMBB)
+    DstMBB->splice(BeforeInst->getIterator(), SrcMBB, Inst->getIterator());
 }
 
 static unsigned bridgeMBBGetInstCount(NevercMachineBBRef MBB) {
@@ -4810,8 +4810,20 @@ static unsigned bridgeLinkGetOutputFormat(void) {
                                  : NEVERC_LINK_FORMAT_UNKNOWN;
 }
 
+static const char *bridgeLinkGetOutputFormatName() {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  unsigned Fmt = B && B->GetOutputFormat ? B->GetOutputFormat()
+                                         : NEVERC_LINK_FORMAT_UNKNOWN;
+  switch (Fmt) {
+  case NEVERC_LINK_FORMAT_ELF:   return "ELF";
+  case NEVERC_LINK_FORMAT_COFF:  return "COFF";
+  case NEVERC_LINK_FORMAT_MACHO: return "Mach-O";
+  default:                       return "unknown";
+  }
+}
+
 // ===----------------------------------------------------------------------===
-//  Substring search, hook-point name, memory duplicate
+//  String search, replacement, case conversion, memory duplicate
 // ===----------------------------------------------------------------------===
 
 static uint64_t bridgeStrFindStr(const char *Haystack, const char *Needle) {
@@ -4891,45 +4903,6 @@ static char *bridgeStrReplace(const char *S, const char *Old,
     std::memcpy(Result + PrefixLen + NewLen, Pos + OldLen, SuffixLen);
   Result[ResultLen] = '\0';
   return Result;
-}
-
-static NevercValueRef *
-bridgeModuleCollectDefinedFunctions(NevercModuleRef M, unsigned *OutCount) {
-  if (OutCount)
-    *OutCount = 0;
-  if (LLVM_UNLIKELY(!M || !OutCount))
-    return nullptr;
-  auto *Mod = unwrap(M);
-
-  size_t TotalFns = Mod->size();
-  if (LLVM_UNLIKELY(TotalFns == 0 || TotalFns > UINT_MAX))
-    return nullptr;
-
-  auto *Buf = static_cast<NevercValueRef *>(
-      bridgeAlloc(static_cast<uint64_t>(TotalFns) * sizeof(NevercValueRef)));
-  if (LLVM_UNLIKELY(!Buf))
-    return nullptr;
-
-  unsigned Idx = 0;
-  for (auto &F : *Mod) {
-    if (!F.isDeclaration())
-      Buf[Idx++] = wrapV(&F);
-  }
-
-  if (LLVM_UNLIKELY(Idx == 0)) {
-    bridgeFree(Buf);
-    return nullptr;
-  }
-
-  if (Idx < TotalFns) {
-    auto *Shrunk = static_cast<NevercValueRef *>(
-        bridgeRealloc(Buf, static_cast<uint64_t>(Idx) * sizeof(NevercValueRef)));
-    if (LLVM_LIKELY(Shrunk))
-      Buf = Shrunk;
-  }
-
-  *OutCount = Idx;
-  return Buf;
 }
 
 static char *bridgeStrReplaceAll(const char *S, const char *Old,
@@ -5052,18 +5025,6 @@ static char *bridgeStrToLower(const char *S) {
   return R;
 }
 
-static const char *bridgeLinkGetOutputFormatName() {
-  const NevercLinkerBackend *B = getLinkerBackend();
-  unsigned Fmt = B && B->GetOutputFormat ? B->GetOutputFormat()
-                                         : NEVERC_LINK_FORMAT_UNKNOWN;
-  switch (Fmt) {
-  case NEVERC_LINK_FORMAT_ELF:   return "ELF";
-  case NEVERC_LINK_FORMAT_COFF:  return "COFF";
-  case NEVERC_LINK_FORMAT_MACHO: return "Mach-O";
-  default:                       return "unknown";
-  }
-}
-
 static char *bridgeStrToUpper(const char *S) {
   if (LLVM_UNLIKELY(!S))
     return nullptr;
@@ -5079,6 +5040,49 @@ static char *bridgeStrToUpper(const char *S) {
   }
   R[Len] = '\0';
   return R;
+}
+
+// ===----------------------------------------------------------------------===
+//  One-call defined function collection
+// ===----------------------------------------------------------------------===
+
+static NevercValueRef *
+bridgeModuleCollectDefinedFunctions(NevercModuleRef M, unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!M || !OutCount))
+    return nullptr;
+  auto *Mod = unwrap(M);
+
+  size_t TotalFns = Mod->size();
+  if (LLVM_UNLIKELY(TotalFns == 0 || TotalFns > UINT_MAX))
+    return nullptr;
+
+  auto *Buf = static_cast<NevercValueRef *>(
+      bridgeAlloc(static_cast<uint64_t>(TotalFns) * sizeof(NevercValueRef)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+
+  unsigned Idx = 0;
+  for (auto &F : *Mod) {
+    if (!F.isDeclaration())
+      Buf[Idx++] = wrapV(&F);
+  }
+
+  if (LLVM_UNLIKELY(Idx == 0)) {
+    bridgeFree(Buf);
+    return nullptr;
+  }
+
+  if (Idx < TotalFns) {
+    auto *Shrunk = static_cast<NevercValueRef *>(bridgeRealloc(
+        Buf, static_cast<uint64_t>(Idx) * sizeof(NevercValueRef)));
+    if (LLVM_LIKELY(Shrunk))
+      Buf = Shrunk;
+  }
+
+  *OutCount = Idx;
+  return Buf;
 }
 
 // ===----------------------------------------------------------------------===
