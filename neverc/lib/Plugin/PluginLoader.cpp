@@ -1,6 +1,7 @@
 #include "neverc/Plugin/PluginLoader.h"
 #include "HostAPIBridge.h"
 #include "csupport/ldynamic_llibrary.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -178,7 +179,8 @@ bool PluginLoader::loadPlugin(StringRef Path, std::string &ErrMsg) {
   void *Handle =
       csupport_dlopen_local(Path.str().c_str(), ErrBuf, sizeof(ErrBuf));
   if (!Handle) {
-    ErrMsg = "failed to load plugin '" + Path.str() + "': " + ErrBuf;
+    ErrMsg =
+        ("failed to load plugin '" + Path + "': " + ErrBuf).str();
     return false;
   }
 
@@ -186,8 +188,9 @@ bool PluginLoader::loadPlugin(StringRef Path, std::string &ErrMsg) {
   auto *GetInfo = reinterpret_cast<GetInfoFn>(
       csupport_dlsym(Handle, NEVERC_PLUGIN_ENTRY_POINT));
   if (!GetInfo) {
-    ErrMsg = "plugin '" + Path.str() +
-             "' does not export '" NEVERC_PLUGIN_ENTRY_POINT "'";
+    ErrMsg = ("plugin '" + Path +
+              "' does not export '" NEVERC_PLUGIN_ENTRY_POINT "'")
+                 .str();
     csupport_dlclose(Handle);
     return false;
   }
@@ -202,15 +205,16 @@ bool PluginLoader::loadPlugin(StringRef Path, std::string &ErrMsg) {
                     << "'\n");
 
   if (Info.APIVersion == 0 || Info.APIVersion > NEVERC_PLUGIN_API_VERSION) {
-    ErrMsg = "plugin '" + Path.str() + "' has API version " +
-             std::to_string(Info.APIVersion) + " (host supports 1.." +
-             std::to_string(NEVERC_PLUGIN_API_VERSION) + ")";
+    ErrMsg = ("plugin '" + Path + "' has API version " +
+              Twine(Info.APIVersion) + " (host supports 1.." +
+              Twine(NEVERC_PLUGIN_API_VERSION) + ")")
+                 .str();
     csupport_dlclose(Handle);
     return false;
   }
 
   if (!Info.RegisterPasses) {
-    ErrMsg = "plugin '" + Path.str() + "' has NULL RegisterPasses";
+    ErrMsg = ("plugin '" + Path + "' has NULL RegisterPasses").str();
     csupport_dlclose(Handle);
     return false;
   }
@@ -332,9 +336,13 @@ void runLinkerPasses(NevercHookPoint Hook, PluginLoader &Loader) {
   for (const RegisteredLinkerPass *P : Loader.getLinkerPasses(Hook)) {
     if (!P->Fn)
       continue;
-    std::string StackMsg = "Plugin linker pass '" + P->PassName + "'";
-    if (!P->PluginPath.empty())
-      StackMsg += " from " + P->PluginPath;
+    SmallString<128> StackMsg("Plugin linker pass '");
+    StackMsg += P->PassName;
+    StackMsg += '\'';
+    if (!P->PluginPath.empty()) {
+      StackMsg += " from ";
+      StackMsg += P->PluginPath;
+    }
     PrettyStackTraceString CrashInfo(StackMsg.c_str());
     LLVM_DEBUG(dbgs() << "neverc: running plugin linker pass '" << P->PassName
                       << "'\n");

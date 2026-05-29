@@ -6,8 +6,8 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/PrettyStackTrace.h"
-#include "llvm/Support/WithColor.h"
 #include "llvm/Support/TimeProfiler.h"
+#include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
 
 #define DEBUG_TYPE "neverc-plugin"
@@ -26,11 +26,15 @@ PluginModulePassAdaptor::PluginModulePassAdaptor(NevercModulePassFn Fn,
                                                  void *UserData,
                                                  StringRef PassName,
                                                  StringRef PluginPath)
-    : Callback(Fn), API(API), UserData(UserData), Name(PassName.str()),
-      Origin(PluginPath.str()) {
-  StackMsg = "Plugin IR pass '" + Name + "'";
-  if (!Origin.empty())
-    StackMsg += " from " + Origin;
+    : Callback(Fn), API(API), UserData(UserData), Name(PassName),
+      Origin(PluginPath) {
+  StackMsg = "Plugin IR pass '";
+  StackMsg += Name;
+  StackMsg += '\'';
+  if (!Origin.empty()) {
+    StackMsg += " from ";
+    StackMsg += Origin;
+  }
 }
 
 PreservedAnalyses PluginModulePassAdaptor::run(Module &M,
@@ -52,8 +56,8 @@ PreservedAnalyses PluginModulePassAdaptor::run(Module &M,
 
 #ifndef NDEBUG
   if (Changed) {
-    std::string Err;
-    raw_string_ostream OS(Err);
+    SmallString<256> Err;
+    raw_svector_ostream OS(Err);
     if (verifyModule(M, &OS)) {
       WithColor::error(errs(), "neverc-plugin")
           << "pass '" << Name << "' produced invalid IR:\n"
@@ -93,10 +97,14 @@ PluginMachineFunctionPassAdaptor::PluginMachineFunctionPassAdaptor(
     NevercMachinePassFn Fn, const NevercHostAPI *API, void *UserData,
     StringRef PassName, StringRef PluginPath)
     : MachineFunctionPass(ID), Callback(Fn), API(API), UserData(UserData),
-      Name(PassName.str()), Origin(PluginPath.str()) {
-  StackMsg = "Plugin MIR pass '" + Name + "'";
-  if (!Origin.empty())
-    StackMsg += " from " + Origin;
+      Name(PassName), Origin(PluginPath) {
+  StackMsg = "Plugin MIR pass '";
+  StackMsg += Name;
+  StackMsg += '\'';
+  if (!Origin.empty()) {
+    StackMsg += " from ";
+    StackMsg += Origin;
+  }
 }
 
 bool PluginMachineFunctionPassAdaptor::runOnMachineFunction(

@@ -1289,9 +1289,9 @@ typedef struct NevercHostAPI {
          array containing a copy of S. ---- */
   char **(*StrSplit)(const char *S, const char *Delim, unsigned *OutCount);
 
-  /* ---- Fast string hash (FNV-1a 64-bit).  Useful for building lookup
-         tables or fast string comparisons in plugins.  Returns 0 for
-         NULL input. ---- */
+  /* ---- Fast string hash (xxh3 64-bit, SIMD-accelerated).  Useful for
+         building lookup tables or fast string comparisons in plugins.
+         Returns 0 for NULL input. ---- */
   uint64_t (*StrHash)(const char *S);
 
   /* ---- One-call batch collection of DEFINED functions only.

@@ -2,10 +2,10 @@
 #define NEVERC_LIB_PLUGIN_PLUGINPASSADAPTOR_H
 
 #include "neverc/Plugin/NevercPluginAPI.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Support/raw_ostream.h"
-#include <string>
 
 namespace neverc {
 namespace plugin {
@@ -30,9 +30,9 @@ private:
   NevercModulePassFn Callback;
   const NevercHostAPI *API;
   void *UserData;
-  std::string Name;
-  std::string Origin;
-  std::string StackMsg;
+  llvm::SmallString<64> Name;
+  llvm::SmallString<128> Origin;
+  llvm::SmallString<128> StackMsg;
 };
 
 /// Wraps a C NevercMachinePassFn callback into a legacy MachineFunctionPass
@@ -54,9 +54,9 @@ private:
   NevercMachinePassFn Callback;
   const NevercHostAPI *API;
   void *UserData;
-  std::string Name;
-  std::string Origin;
-  std::string StackMsg;
+  llvm::SmallString<64> Name;
+  llvm::SmallString<128> Origin;
+  llvm::SmallString<128> StackMsg;
 };
 
 } // namespace plugin
