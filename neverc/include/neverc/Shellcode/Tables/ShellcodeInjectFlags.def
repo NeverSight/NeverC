@@ -1,0 +1,17 @@
+#ifndef NEVERC_SC_FLAG
+#error "define NEVERC_SC_FLAG(flag) before including this file"
+#endif
+NEVERC_SC_FLAG("-ffreestanding")
+NEVERC_SC_FLAG("-fno-builtin")
+NEVERC_SC_FLAG("-fno-stack-protector")
+NEVERC_SC_FLAG("-fomit-frame-pointer")
+NEVERC_SC_FLAG("-fno-unwind-tables")
+NEVERC_SC_FLAG("-fno-asynchronous-unwind-tables")
+NEVERC_SC_FLAG("-fno-jump-tables")
+NEVERC_SC_FLAG("-fno-vectorize")
+NEVERC_SC_FLAG("-fno-slp-vectorize")
+NEVERC_SC_FLAG("-fno-lto")
+NEVERC_SC_FLAG("-D__NEVERC_SHELLCODE__=1")
+NEVERC_SC_FLAG("-fshellcode-mode")
+NEVERC_SC_FLAG("-fbuiltin-string")
+NEVERC_SC_FLAG("-Oz")

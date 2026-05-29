@@ -1,0 +1,20 @@
+#ifndef NEVERC_SC_INCOMPAT
+#error "define NEVERC_SC_INCOMPAT(optId, reason) before including this file"
+#endif
+NEVERC_SC_INCOMPAT(OPT_flto,
+  "LTO emits bitcode, not an object file; "
+  "ShellcodeExtractor needs real object files")
+NEVERC_SC_INCOMPAT(OPT_flto_EQ,
+  "LTO emits bitcode, not an object file; "
+  "ShellcodeExtractor needs real object files")
+NEVERC_SC_INCOMPAT(OPT_fsanitize_EQ,
+  "sanitizers require a runtime library that shellcode cannot link to")
+NEVERC_SC_INCOMPAT(OPT_fstack_protector,
+  "stack-protector emits references to __stack_chk_guard / "
+  "__stack_chk_fail")
+NEVERC_SC_INCOMPAT(OPT_fstack_protector_all,
+  "stack-protector emits references to __stack_chk_guard / "
+  "__stack_chk_fail")
+NEVERC_SC_INCOMPAT(OPT_fstack_protector_strong,
+  "stack-protector emits references to __stack_chk_guard / "
+  "__stack_chk_fail")

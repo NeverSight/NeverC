@@ -59,21 +59,10 @@ struct Incompat {
   const char *Reason;
 };
 const Incompat Incompats[] = {
-    {opts::OPT_flto, "LTO emits bitcode, not an object file; "
-                     "ShellcodeExtractor needs real object files"},
-    {opts::OPT_flto_EQ, "LTO emits bitcode, not an object file; "
-                        "ShellcodeExtractor needs real object files"},
-    {opts::OPT_fsanitize_EQ,
-     "sanitizers require a runtime library that shellcode cannot link to"},
-    {opts::OPT_fstack_protector,
-     "stack-protector emits references to __stack_chk_guard / "
-     "__stack_chk_fail"},
-    {opts::OPT_fstack_protector_all,
-     "stack-protector emits references to __stack_chk_guard / "
-     "__stack_chk_fail"},
-    {opts::OPT_fstack_protector_strong,
-     "stack-protector emits references to __stack_chk_guard / "
-     "__stack_chk_fail"},
+#define NEVERC_SC_INCOMPAT(optId, reason) {opts::optId, reason},
+#include "neverc/Shellcode/Tables/ShellcodeIncompats.def"
+#include "neverc/Shellcode/Tables/UserExtra_ShellcodeIncompats.def"
+#undef NEVERC_SC_INCOMPAT
 };
 
 void appendBadByte(ShellcodeOptions &Out, uint8_t Byte) {
@@ -234,14 +223,10 @@ void ensurePassBuilderCallbackInstalled() {
 }
 
 const char *const CommonInjectFlags[] = {
-    "-ffreestanding",       "-fno-builtin",
-    "-fno-stack-protector", "-fomit-frame-pointer",
-    "-fno-unwind-tables",   "-fno-asynchronous-unwind-tables",
-    "-fno-jump-tables",     "-fno-vectorize",
-    "-fno-slp-vectorize",   "-fno-lto",
-    "-D__NEVERC_SHELLCODE__=1",
-    "-fshellcode-mode",     "-fbuiltin-string",
-    "-Oz",
+#define NEVERC_SC_FLAG(flag) flag,
+#include "neverc/Shellcode/Tables/ShellcodeInjectFlags.def"
+#include "neverc/Shellcode/Tables/UserExtra_ShellcodeInjectFlags.def"
+#undef NEVERC_SC_FLAG
 };
 
 SmallVector<const char *, 8> perTargetInjectFlags(const TargetDesc &T) {

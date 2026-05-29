@@ -45,6 +45,8 @@ set(_neverc_shellcode_tables
   Win32PosixCompat
   DefaultEntryNames
   ShellcodeInternalRuntimePrefixes
+  ShellcodeIncompats
+  ShellcodeInjectFlags
   )
 
 set(_neverc_tables_out_dir

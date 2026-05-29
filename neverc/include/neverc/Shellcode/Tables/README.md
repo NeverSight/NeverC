@@ -162,6 +162,15 @@ Tables you are likely to extend:
 * `KernelImportReservedPrefixes` — add a prefix reserved by the kernel
   import resolution shim.
 
+* `ShellcodeIncompats` — driver-level option incompatibilities checked
+  before shellcode compilation.  Each row maps an `OPT_*` enum to a
+  human-readable reason string.  Add a row when a new driver flag is
+  known to produce artifacts that shellcode cannot consume.
+* `ShellcodeInjectFlags` — compiler flags the shellcode driver injects
+  into every compilation invocation.  Each row is a single flag string
+  (e.g. `"-ffreestanding"`).  Add a row to force a flag for all
+  shellcode compilations.
+
 ## Tables deliberately not externalised
 
 A few small, prefix-based or deeply intertwined with diagnostic text
