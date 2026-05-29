@@ -113,6 +113,7 @@ add_neverc_library(nevercShellcode
 
   LINK_LIBS
   nevercFoundation
+  nevercPlugin
 
   DEPENDS
   NeverCDriverOptions

@@ -1730,11 +1730,6 @@ OPTION(prefix_1, "-fparallel-codegen=", fparallel_codegen_EQ, Joined, f_Group,
        "Split module into N partitions for parallel code generation (0 = "
        "auto-detect, 1 = serial)",
        nullptr, nullptr)
-OPTION(prefix_1, "-fpass-plugin=", fpass_plugin_EQ, Joined, f_Group, INVALID,
-       nullptr, 0, DefaultVis, 0,
-       "Load pass plugin from a dynamic shared object file (only with new pass "
-       "manager).",
-       "<dsopath>", nullptr)
 OPTION(prefix_1, "-fpatchable-function-entry-offset=",
        fpatchable_function_entry_offset_EQ, Joined, INVALID, INVALID, nullptr,
        HelpHidden, DefaultVis, 0, "Generate M NOPs before function entry",
@@ -1754,6 +1749,14 @@ OPTION(prefix_1, "-fpie", fpie, Flag, f_Group, INVALID, nullptr, Ignored,
        DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-fplt", fplt, Flag, f_Group, INVALID, nullptr, 0, DefaultVis,
        0, "", nullptr, nullptr)
+OPTION(prefix_1, "-fplugin-pass-arg=", fplugin_pass_arg_EQ, Joined, f_Group,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Pass a key=value argument to neverc C-ABI pass plugins.",
+       "<key=value>", nullptr)
+OPTION(prefix_1, "-fplugin-pass=", fplugin_pass_EQ, Joined, f_Group, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Load a neverc C-ABI out-of-tree pass plugin from a shared library.",
+       "<dsopath>", nullptr)
 OPTION(prefix_1, "-fpreserve-as-comments", fpreserve_as_comments, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0, "", nullptr, nullptr)
 OPTION(prefix_1, "-fprint-arguments", fprint_arguments, Flag, f_Group, INVALID,
@@ -5890,13 +5893,27 @@ CODEGEN_OPTION_WITH_MARSHALLING(prefix_1, "-fplt", fplt, Flag, f_Group, INVALID,
                                 mergeForwardValue, extractForwardValue, -1)
 #endif // CODEGEN_OPTION_WITH_MARSHALLING
 #ifdef CODEGEN_OPTION_WITH_MARSHALLING
-CODEGEN_OPTION_WITH_MARSHALLING(prefix_1, "-fpass-plugin=", fpass_plugin_EQ,
+CODEGEN_OPTION_WITH_MARSHALLING(prefix_1, "-fplugin-pass=", fplugin_pass_EQ,
                                 Joined, f_Group, INVALID, nullptr, 0,
                                 DefaultVis, 0,
-                                "Load pass plugin from a dynamic shared object "
-                                "file (only with new pass manager).",
+                                "Load a neverc C-ABI out-of-tree pass plugin "
+                                "from a shared library.",
                                 "<dsopath>", nullptr, true, 0,
-                                CodeGenOpts.PassPlugins,
+                                CodeGenOpts.NevercPassPlugins,
+                                std::vector<std::string>({}), false,
+                                std::vector<std::string>({}),
+                                normalizeStringVector, denormalizeStringVector,
+                                mergeForwardValue, extractForwardValue, -1)
+#endif // CODEGEN_OPTION_WITH_MARSHALLING
+#ifdef CODEGEN_OPTION_WITH_MARSHALLING
+CODEGEN_OPTION_WITH_MARSHALLING(prefix_1, "-fplugin-pass-arg=",
+                                fplugin_pass_arg_EQ,
+                                Joined, f_Group, INVALID, nullptr, 0,
+                                DefaultVis, 0,
+                                "Pass a key=value argument to neverc C-ABI "
+                                "pass plugins.",
+                                "<key=value>", nullptr, true, 0,
+                                CodeGenOpts.NevercPassPluginArgs,
                                 std::vector<std::string>({}), false,
                                 std::vector<std::string>({}),
                                 normalizeStringVector, denormalizeStringVector,

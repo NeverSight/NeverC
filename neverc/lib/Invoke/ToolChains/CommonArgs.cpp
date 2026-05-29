@@ -486,9 +486,9 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
           Args.getLastArg(options::OPT_fdiagnostics_hotness_threshold_EQ))
     Cfg.optRemarksHotnessThreshold = A->getValue();
 
-  // Pass plugins forwarded to LTO.
-  for (const Arg *A : Args.filtered(options::OPT_fpass_plugin_EQ))
-    Cfg.passPlugins.emplace_back(A->getValue());
+  // Forward neverc C-ABI plugin paths to the linker for LTO/linker hooks.
+  for (const Arg *A : Args.filtered(options::OPT_fplugin_pass_EQ))
+    Cfg.nevercPluginPaths.emplace_back(A->getValue());
 
   // Unified linker-level options derived from compiler flags.
   // gc-sections on for -O1+; ICF safe for -O2, all for -O3.

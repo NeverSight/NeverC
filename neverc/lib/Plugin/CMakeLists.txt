@@ -1,0 +1,22 @@
+set(LLVM_LINK_COMPONENTS
+  CodeGen
+  Core
+  Support
+  )
+
+add_neverc_library(nevercPlugin
+  HostAPIBridge.cpp
+  PluginLoader.cpp
+  PluginPassAdaptor.cpp
+
+  LINK_LIBS
+  nevercFoundation
+
+  DEPENDS
+  NeverCDriverOptions
+  )
+
+target_include_directories(nevercPlugin
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+  )

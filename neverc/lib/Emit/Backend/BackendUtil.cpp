@@ -12,6 +12,7 @@
 #include "neverc/Foundation/LangOpts/CodeGenOptions.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetOptions.h"
+#include "neverc/Plugin/PluginLoader.h"
 #include "neverc/Scan/HeaderIndexOptions.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -19,6 +20,7 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Bitcode/BitcodeAutoGeneratorPass.h"
 #include "llvm/Bitcode/BitcodeWriterPass.h"
+#include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/Frontend/Driver/CodeGenOptions.h"
 #include "llvm/IR/DataLayout.h"
@@ -32,7 +34,6 @@
 #include "llvm/LTO/LTOBackend.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/PassPlugin.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/BuryPointer.h"
 #include "llvm/Support/CommandLine.h"
@@ -509,20 +510,52 @@ void GenAssemblyHelper::runOptimizationPipeline(
           CodeGenOpts.DIBugsReportFilePath);
     Debugify.registerCallbacks(PIC, MAM);
   }
-  // Attempt to load pass plugins and register their callbacks with PB.
-  for (auto &PluginFN : CodeGenOpts.PassPlugins) {
-    auto PassPlugin = PassPlugin::Load(PluginFN);
-    if (PassPlugin) {
-      PassPlugin->registerPassBuilderCallbacks(PB);
-    } else {
-      Diags.Report(diag::err_fe_unable_to_load_plugin)
-          << PluginFN << toString(PassPlugin.takeError());
-    }
+  // Set plugin arguments before loading so they're available during registration.
+  if (!CodeGenOpts.NevercPassPluginArgs.empty())
+    neverc::plugin::setPluginArgs(CodeGenOpts.NevercPassPluginArgs);
+  // Load neverc C-ABI out-of-tree pass plugins.
+  for (const auto &PluginPath : CodeGenOpts.NevercPassPlugins) {
+    std::string Err;
+    if (!neverc::plugin::getGlobalPluginLoader().loadPlugin(PluginPath, Err))
+      Diags.Report(diag::err_fe_unable_to_load_plugin) << PluginPath << Err;
   }
   for (const auto &PassCallback : CodeGenOpts.PassBuilderCallbacks)
     PassCallback(PB);
   for (auto PassCallback : ListRegisterPassBuilderCallbacks) {
     PassCallback(PB);
+  }
+
+  if (neverc::plugin::getGlobalPluginLoader().hasPlugins()) {
+    PB.registerPipelineStartEPCallback(
+        [](ModulePassManager &MPM, OptimizationLevel) {
+          auto &PL = neverc::plugin::getGlobalPluginLoader();
+          neverc::plugin::addPluginModulePasses(
+              MPM, NEVERC_HOOK_PIPELINE_START, PL);
+        });
+    PB.registerOptimizerLastEPCallback(
+        [](ModulePassManager &MPM, OptimizationLevel) {
+          auto &PL = neverc::plugin::getGlobalPluginLoader();
+          neverc::plugin::addPluginModulePasses(
+              MPM, NEVERC_HOOK_PIPELINE_LAST, PL);
+        });
+
+    auto &PL = neverc::plugin::getGlobalPluginLoader();
+    if (PL.hasPassesForHook(NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT)) {
+      ListRegisterTargetPassConfigCallbacks.push_back(
+          [](TargetPassConfig &TPC) {
+            auto &PL = neverc::plugin::getGlobalPluginLoader();
+            neverc::plugin::addPluginMachinePasses(
+                TPC, NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT, PL);
+          });
+    }
+    if (PL.hasPassesForHook(NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR)) {
+      ListRegisterTargetPassConfigPostPreEmitCallbacks.push_back(
+          [](TargetPassConfig &TPC) {
+            auto &PL = neverc::plugin::getGlobalPluginLoader();
+            neverc::plugin::addPluginMachinePasses(
+                TPC, NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR, PL);
+          });
+    }
   }
 
   // Register the target library analysis directly and give it a customized
@@ -543,6 +576,26 @@ void GenAssemblyHelper::runOptimizationPipeline(
   if (CodeGenOpts.VerifyModule)
     MPM.addPass(VerifierPass());
 #endif
+
+  // Pre pass — runs before the optimization pipeline.
+  {
+    if (LangOpts.MicrosoftExt || LangOpts.MSVCCompat)
+      MPM.addPassToFront(MSVCMacroRebuildingPass());
+
+    if (CodeGenOpts.OptimizationLevel > 0)
+      MPM.addPassToFront(Annotation2MetadataPass());
+
+    if (CodeGenOpts.AutoGenerateBitcode)
+      MPM.addPassToFront(
+          BitcodeAutoGeneratorPrePass(true, "BitcodeAutoGeneratorPre"));
+
+    if (CodeGenOpts.AutoGenerateIR)
+      MPM.addPassToFront(IRAutoGeneratorPrePass(true, "IRAutoGeneratorPre"));
+
+    neverc::plugin::addPluginModulePasses(
+        MPM, NEVERC_HOOK_PRE_OPT,
+        neverc::plugin::getGlobalPluginLoader());
+  }
 
   if (!CodeGenOpts.DisableLLVMPasses) {
     // Map our optimization levels into one of the distinct levels used to
@@ -572,23 +625,7 @@ void GenAssemblyHelper::runOptimizationPipeline(
   if (!actionRequiresCodeGen(Action) && CodeGenOpts.VerifyModule)
     MPM.addPass(VerifierPass());
 
-  // Pre pass
-  {
-    if (CodeGenOpts.AutoGenerateIR)
-      MPM.addPassToFront(IRAutoGeneratorPrePass(true, "IRAutoGeneratorPre"));
-
-    if (CodeGenOpts.AutoGenerateBitcode)
-      MPM.addPassToFront(
-          BitcodeAutoGeneratorPrePass(true, "BitcodeAutoGeneratorPre"));
-
-    if (CodeGenOpts.OptimizationLevel > 0)
-      MPM.addPassToFront(Annotation2MetadataPass());
-
-    if (LangOpts.MicrosoftExt || LangOpts.MSVCCompat)
-      MPM.addPassToFront(MSVCMacroRebuildingPass());
-  }
-
-  // Post pass
+  // Post pass — runs after the optimization pipeline.
   {
     if (LangOpts.EncryptCallStrings) {
       MPM.addPass(
@@ -596,6 +633,10 @@ void GenAssemblyHelper::runOptimizationPipeline(
       MPM.addPass(createModuleToFunctionPassAdaptor(
           neverc::xorstr::XorStrCleanupPass()));
     }
+
+    neverc::plugin::addPluginModulePasses(
+        MPM, NEVERC_HOOK_POST_OPT,
+        neverc::plugin::getGlobalPluginLoader());
 
     if (CodeGenOpts.AutoGenerateIR)
       MPM.addPass(IRAutoGeneratorPostPass(true, "IRAutoGeneratorPost"));

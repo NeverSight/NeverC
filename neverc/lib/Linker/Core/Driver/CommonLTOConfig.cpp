@@ -4,6 +4,7 @@
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
+#include "neverc/Plugin/PluginLoader.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Support/CommandLine.h"
 
@@ -85,6 +86,15 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
 
   if (!Cfg.passPlugins.empty())
     c.PassPlugins = Cfg.passPlugins;
+
+  if (!Cfg.nevercPluginPaths.empty()) {
+    auto &PL = neverc::plugin::getGlobalPluginLoader();
+    for (const auto &Path : Cfg.nevercPluginPaths) {
+      std::string Err;
+      if (!PL.loadPlugin(Path, Err))
+        error("failed to load neverc plugin: " + Err);
+    }
+  }
 
   if (!Cfg.ltoBasicBlockSections.empty()) {
     StringRef BBS = Cfg.ltoBasicBlockSections;

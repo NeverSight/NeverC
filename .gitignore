@@ -87,4 +87,5 @@ neverc/build/
 *.profraw
 *.profdata
 pgo-profiles/
+.cursor/
 

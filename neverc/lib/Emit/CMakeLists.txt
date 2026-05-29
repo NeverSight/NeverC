@@ -100,6 +100,7 @@ add_neverc_library(nevercEmit
   nevercScan
   nevercMerge
   nevercXorStr
+  nevercPlugin
   )
 
 target_include_directories(nevercEmit

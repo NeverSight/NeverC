@@ -214,7 +214,11 @@ public:
 
   std::vector<std::string> DefaultFunctionAttrs;
 
-  std::vector<std::string> PassPlugins;
+  /// Out-of-tree C-ABI plugin paths loaded via -fplugin-pass=<path>.
+  std::vector<std::string> NevercPassPlugins;
+
+  /// Key=value arguments passed to C-ABI plugins via -fplugin-pass-arg=.
+  std::vector<std::string> NevercPassPluginArgs;
 
   std::vector<std::function<void(llvm::PassBuilder &)>> PassBuilderCallbacks;
 

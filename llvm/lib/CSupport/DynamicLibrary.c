@@ -72,6 +72,79 @@ void *csupport_dlopen_local(const char *filename, char *errbuf, size_t errlen) {
   return h;
 }
 
+#elif defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+static void win32_format_error(char *errbuf, size_t errlen) {
+  if (!errbuf || errlen == 0)
+    return;
+  DWORD err = GetLastError();
+  DWORD n = FormatMessageA(
+      FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err,
+      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), errbuf, (DWORD)errlen, NULL);
+  if (n == 0) {
+    errbuf[0] = '\0';
+    return;
+  }
+  /* FormatMessageA appends trailing "\r\n" — strip it for cleaner errors. */
+  while (n > 0 && (errbuf[n - 1] == '\r' || errbuf[n - 1] == '\n' ||
+                   errbuf[n - 1] == ' ' || errbuf[n - 1] == '.'))
+    errbuf[--n] = '\0';
+}
+
+void *csupport_dlopen(const char *filename, char *errbuf, size_t errlen) {
+  HMODULE h = LoadLibraryA(filename);
+  if (!h)
+    win32_format_error(errbuf, errlen);
+  return (void *)h;
+}
+
+void *csupport_dlsym(void *handle, const char *symbol) {
+  if (!handle)
+    return NULL;
+  return (void *)(uintptr_t)GetProcAddress((HMODULE)handle, symbol);
+}
+
+int csupport_dlclose(void *handle) {
+  if (!handle)
+    return 0;
+  return FreeLibrary((HMODULE)handle) ? 0 : -1;
+}
+
+void *csupport_dlsym_default(const char *symbol) {
+  HMODULE exe = GetModuleHandleA(NULL);
+  if (!exe)
+    return NULL;
+  return (void *)(uintptr_t)GetProcAddress(exe, symbol);
+}
+
+int csupport_dladdr(const void *addr, char *fname, size_t fname_len,
+                    char *sname, size_t sname_len) {
+  HMODULE mod = NULL;
+  if (!GetModuleHandleExA(
+          GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+              GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+          (LPCSTR)addr, &mod))
+    return 0;
+  if (fname && fname_len > 0) {
+    DWORD n = GetModuleFileNameA(mod, fname, (DWORD)fname_len);
+    if (n == 0)
+      fname[0] = '\0';
+  }
+  if (sname && sname_len > 0)
+    sname[0] = '\0';
+  return 1;
+}
+
+void *csupport_dlopen_local(const char *filename, char *errbuf, size_t errlen) {
+  HMODULE h = LoadLibraryExA(filename, NULL,
+                             LOAD_WITH_ALTERED_SEARCH_PATH);
+  if (!h)
+    win32_format_error(errbuf, errlen);
+  return (void *)h;
+}
+
 #else
 
 void *csupport_dlopen(const char *f, char *e, size_t l) {

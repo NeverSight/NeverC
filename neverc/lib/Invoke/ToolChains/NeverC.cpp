@@ -3761,10 +3761,17 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
 
   Args.AddLastArg(CmdArgs, options::OPT_fmax_tokens_EQ);
 
-  // Forward -fpass-plugin=name.so to the frontend.
-  for (const Arg *A : Args.filtered(options::OPT_fpass_plugin_EQ)) {
+  // Forward -fplugin-pass=name.so to the frontend.
+  for (const Arg *A : Args.filtered(options::OPT_fplugin_pass_EQ)) {
     CmdArgs.push_back(
-        Args.MakeArgString(llvm::Twine("-fpass-plugin=") + A->getValue()));
+        Args.MakeArgString(llvm::Twine("-fplugin-pass=") + A->getValue()));
+    A->claim();
+  }
+
+  // Forward -fplugin-pass-arg=key=value to the frontend.
+  for (const Arg *A : Args.filtered(options::OPT_fplugin_pass_arg_EQ)) {
+    CmdArgs.push_back(Args.MakeArgString(
+        llvm::Twine("-fplugin-pass-arg=") + A->getValue()));
     A->claim();
   }
 

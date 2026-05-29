@@ -89,6 +89,9 @@ struct LinkerDriverConfig {
   // LTO pass-plugin libraries.
   std::vector<std::string> passPlugins;
 
+  // Neverc C-ABI out-of-tree plugin paths for LTO and linker hooks.
+  std::vector<std::string> nevercPluginPaths;
+
   // Linker-level options now controlled by the neverc driver.
   // Backends use these as defaults; explicit -Wl, overrides still apply.
   bool gcSections = false; // --gc-sections / -dead_strip / /opt:ref
