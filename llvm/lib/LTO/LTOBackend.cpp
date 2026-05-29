@@ -247,6 +247,12 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
     break;
   }
 
+  // Let the host inject module passes before the LTO optimization pipeline.
+  // Routed through a Config hook so core LTO has no dependency on the host
+  // (e.g. neverc's out-of-tree C-ABI plugin system).
+  if (Conf.PreOptPassHook)
+    Conf.PreOptPassHook(MPM);
+
   // Parse a custom pipeline if asked to.
   if (!Conf.OptPipeline.empty()) {
     if (auto Err = PB.parsePassPipeline(MPM, Conf.OptPipeline)) {
@@ -266,6 +272,10 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
   } else {
     MPM.addPass(PB.buildLTODefaultPipeline(OL, ExportSummary));
   }
+
+  // Mirror PreOptPassHook for the post-optimization insertion point.
+  if (Conf.PostOptPassHook)
+    Conf.PostOptPassHook(MPM);
 
   if (!Conf.DisableVerify)
     MPM.addPass(VerifierPass());

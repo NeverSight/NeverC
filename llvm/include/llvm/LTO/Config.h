@@ -65,6 +65,14 @@ struct Config {
   /// (IPO + inlining). Function-level optimization is deferred to the
   /// ParallelOptCodeGenHook.
   bool LTOParallelOpt = false;
+
+  /// Optional hooks to inject module passes before/after the LTO optimization
+  /// pipeline.  Called with the ModulePassManager that is being assembled —
+  /// the callback may call MPM.addPass() to inject any number of passes.
+  /// These are non-const (unlike ModuleHookFn) and allow IR modification.
+  std::function<void(ModulePassManager &)> PreOptPassHook;
+  std::function<void(ModulePassManager &)> PostOptPassHook;
+
   std::optional<CodeModel::Model> CodeModel;
   CodeGenOptLevel CGOptLevel = CodeGenOptLevel::Default;
   CodeGenFileType CGFileType = CodeGenFileType::ObjectFile;

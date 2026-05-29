@@ -15,6 +15,7 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
+#include "neverc/Plugin/PluginLoader.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/BLAKE3.h"
@@ -458,7 +459,203 @@ template <class ELFT> void elf::createSyntheticSections() {
     add(*in.strTab);
 }
 
+// ===----------------------------------------------------------------------===
+//  neverc out-of-tree plugin: linker hook integration
+//
+//  Exposes the ELF symbol table and output-section list to plugin linker
+//  passes through a backend-agnostic accessor table (neverc::plugin::
+//  NevercLinkerBackend), and fires the LINK_* hooks around layout/emission.
+//  Opaque refs encode a 1-based array index (0 == end-of-list / not-found),
+//  so iteration is O(1) and needs no auxiliary state.  Returned names point
+//  into the (null-terminated) ELF string-table / StringSaver storage and are
+//  valid for the duration of the link.
+// ===----------------------------------------------------------------------===
+namespace {
+
+NevercLinkerSymbolRef encodeSymRef(size_t OneBased) {
+  return reinterpret_cast<NevercLinkerSymbolRef>(
+      static_cast<uintptr_t>(OneBased));
+}
+
+Symbol *symbolFromRef(NevercLinkerSymbolRef S) {
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  ArrayRef<Symbol *> Syms = symtab.getSymbols();
+  return (Idx == 0 || Idx > Syms.size()) ? nullptr : Syms[Idx - 1];
+}
+
+NevercLinkerSymbolRef elfLinkGetFirstSymbol() {
+  return symtab.getSymbols().empty() ? nullptr : encodeSymRef(1);
+}
+
+NevercLinkerSymbolRef elfLinkGetNextSymbol(NevercLinkerSymbolRef S) {
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  return (Idx == 0 || Idx >= symtab.getSymbols().size())
+             ? nullptr
+             : encodeSymRef(Idx + 1);
+}
+
+NevercLinkerSymbolRef elfLinkFindSymbol(const char *Name) {
+  if (!Name)
+    return nullptr;
+  StringRef Want(Name);
+  ArrayRef<Symbol *> Syms = symtab.getSymbols();
+  for (size_t I = 0, E = Syms.size(); I != E; ++I)
+    if (Syms[I]->getName() == Want)
+      return encodeSymRef(I + 1);
+  return nullptr;
+}
+
+const char *elfLinkSymbolGetName(NevercLinkerSymbolRef S) {
+  Symbol *Sym = symbolFromRef(S);
+  return Sym ? Sym->getName().data() : "";
+}
+
+uint64_t elfLinkSymbolGetValue(NevercLinkerSymbolRef S) {
+  Symbol *Sym = symbolFromRef(S);
+  return (Sym && isa<Defined>(*Sym)) ? Sym->getVA() : 0;
+}
+
+uint64_t elfLinkSymbolGetSize(NevercLinkerSymbolRef S) {
+  // Symbol::getSize() is only well-defined for Defined / SharedSymbol kinds;
+  // calling it on others (Undefined, Lazy, ...) would hit an invalid cast.
+  Symbol *Sym = symbolFromRef(S);
+  if (Sym && (isa<Defined>(*Sym) || isa<SharedSymbol>(*Sym)))
+    return Sym->getSize();
+  return 0;
+}
+
+int elfLinkSymbolIsDefined(NevercLinkerSymbolRef S) {
+  Symbol *Sym = symbolFromRef(S);
+  return (Sym && Sym->isDefined()) ? 1 : 0;
+}
+
+int elfLinkSymbolIsLocal(NevercLinkerSymbolRef S) {
+  Symbol *Sym = symbolFromRef(S);
+  return (Sym && Sym->isLocal()) ? 1 : 0;
+}
+
+int elfLinkSymbolIsHidden(NevercLinkerSymbolRef S) {
+  Symbol *Sym = symbolFromRef(S);
+  return (Sym && Sym->visibility() == STV_HIDDEN) ? 1 : 0;
+}
+
+void elfLinkSymbolSetVisibilityHidden(NevercLinkerSymbolRef S, int IsHidden) {
+  if (Symbol *Sym = symbolFromRef(S))
+    Sym->setVisibility(IsHidden ? STV_HIDDEN : STV_DEFAULT);
+}
+
+NevercLinkerSectionRef encodeSecRef(size_t OneBased) {
+  return reinterpret_cast<NevercLinkerSectionRef>(
+      static_cast<uintptr_t>(OneBased));
+}
+
+OutputSection *sectionFromRef(NevercLinkerSectionRef S) {
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  return (Idx == 0 || Idx > outputSections.size()) ? nullptr
+                                                   : outputSections[Idx - 1];
+}
+
+NevercLinkerSectionRef elfLinkGetFirstSection() {
+  return outputSections.empty() ? nullptr : encodeSecRef(1);
+}
+
+NevercLinkerSectionRef elfLinkGetNextSection(NevercLinkerSectionRef S) {
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  return (Idx == 0 || Idx >= outputSections.size()) ? nullptr
+                                                    : encodeSecRef(Idx + 1);
+}
+
+NevercLinkerSectionRef elfLinkFindSection(const char *Name) {
+  if (!Name)
+    return nullptr;
+  StringRef Want(Name);
+  for (size_t I = 0, E = outputSections.size(); I != E; ++I)
+    if (outputSections[I]->name == Want)
+      return encodeSecRef(I + 1);
+  return nullptr;
+}
+
+const char *elfLinkSectionGetName(NevercLinkerSectionRef S) {
+  OutputSection *Sec = sectionFromRef(S);
+  return Sec ? Sec->name.data() : "";
+}
+
+uint64_t elfLinkSectionGetSize(NevercLinkerSectionRef S) {
+  OutputSection *Sec = sectionFromRef(S);
+  return Sec ? Sec->size : 0;
+}
+
+uint64_t elfLinkSectionGetAlignment(NevercLinkerSectionRef S) {
+  OutputSection *Sec = sectionFromRef(S);
+  return Sec ? Sec->addralign : 0;
+}
+
+unsigned elfLinkSectionGetFlags(NevercLinkerSectionRef S) {
+  OutputSection *Sec = sectionFromRef(S);
+  return Sec ? static_cast<unsigned>(Sec->flags) : 0;
+}
+
+const char *elfLinkGetOutputPath() {
+  return config->outputFile.empty() ? "" : config->outputFile.data();
+}
+
+unsigned elfLinkGetOutputFormat() { return NEVERC_LINK_FORMAT_ELF; }
+
+neverc::plugin::NevercLinkerBackend makeElfLinkerBackend() {
+  neverc::plugin::NevercLinkerBackend B{};
+  B.GetFirstSymbol = elfLinkGetFirstSymbol;
+  B.GetNextSymbol = elfLinkGetNextSymbol;
+  B.FindSymbol = elfLinkFindSymbol;
+  B.SymbolGetName = elfLinkSymbolGetName;
+  B.SymbolGetValue = elfLinkSymbolGetValue;
+  B.SymbolGetSize = elfLinkSymbolGetSize;
+  B.SymbolIsDefined = elfLinkSymbolIsDefined;
+  B.SymbolIsLocal = elfLinkSymbolIsLocal;
+  B.SymbolIsHidden = elfLinkSymbolIsHidden;
+  B.SymbolSetVisibilityHidden = elfLinkSymbolSetVisibilityHidden;
+  B.GetFirstSection = elfLinkGetFirstSection;
+  B.GetNextSection = elfLinkGetNextSection;
+  B.FindSection = elfLinkFindSection;
+  B.SectionGetName = elfLinkSectionGetName;
+  B.SectionGetSize = elfLinkSectionGetSize;
+  B.SectionGetAlignment = elfLinkSectionGetAlignment;
+  B.SectionGetFlags = elfLinkSectionGetFlags;
+  B.GetOutputPath = elfLinkGetOutputPath;
+  B.GetOutputFormat = elfLinkGetOutputFormat;
+  return B;
+}
+
+const neverc::plugin::NevercLinkerBackend ElfLinkerBackend =
+    makeElfLinkerBackend();
+
+// Installs the ELF accessor table for the lifetime of the writer's run() and
+// clears it on scope exit, including the early error returns inside run().
+struct ElfLinkerBackendScope {
+  bool Active;
+  explicit ElfLinkerBackendScope(bool Active) : Active(Active) {
+    if (Active)
+      neverc::plugin::setLinkerBackend(&ElfLinkerBackend);
+  }
+  ~ElfLinkerBackendScope() {
+    if (Active)
+      neverc::plugin::clearLinkerBackend();
+  }
+  ElfLinkerBackendScope(const ElfLinkerBackendScope &) = delete;
+  ElfLinkerBackendScope &operator=(const ElfLinkerBackendScope &) = delete;
+};
+
+} // anonymous namespace
+
 template <class ELFT> void OutputWriter<ELFT>::run() {
+  // neverc out-of-tree plugins: install the ELF linker accessor table and fire
+  // the LINK_* hooks around layout / emission.  Zero cost when no plugin
+  // registered a linker pass (runLinkerPasses early-returns on an empty set).
+  auto &pluginLoader = neverc::plugin::getGlobalPluginLoader();
+  const bool runLinkerHooks = pluginLoader.hasLinkerPasses();
+  ElfLinkerBackendScope backendScope(runLinkerHooks);
+  if (runLinkerHooks)
+    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_PRE_LAYOUT, pluginLoader);
+
   prepareLayout();
   checkExecuteOnly();
 
@@ -478,6 +675,11 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
 
   for (Partition &part : partitions)
     commitSegmentHeaders(part);
+
+  // Addresses, sizes and file offsets are now final: let plugins inspect the
+  // laid-out symbols/sections before the image is written.
+  if (runLinkerHooks)
+    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_LAYOUT, pluginLoader);
 
   writeMapAndCref();
 
@@ -518,6 +720,11 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
       fatal("failed to write output '" + buffer->getPath() +
             "': " + toString(std::move(e)));
   }
+
+  // The output file is on disk: run post-emit plugin passes (e.g. signing,
+  // checksum recording, link-map post-processing).
+  if (runLinkerHooks)
+    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_EMIT, pluginLoader);
 }
 
 template <class ELFT, class RelTy>

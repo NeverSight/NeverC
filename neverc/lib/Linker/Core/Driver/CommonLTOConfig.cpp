@@ -94,6 +94,23 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
       if (!PL.loadPlugin(Path, Err))
         error("failed to load neverc plugin: " + Err);
     }
+    // Wire plugin module passes into the LTO optimization pipeline through the
+    // Config hooks.  Keeping core LLVM LTO decoupled from neverc: the backend
+    // only sees std::function hooks, never the plugin loader.  The lambdas
+    // capture nothing and re-fetch the singleton, so they stay valid for the
+    // lifetime of the Config regardless of copies.
+    if (PL.hasPlugins()) {
+      c.PreOptPassHook = [](ModulePassManager &MPM) {
+        neverc::plugin::addPluginModulePasses(
+            MPM, NEVERC_HOOK_LTO_PRE_OPT,
+            neverc::plugin::getGlobalPluginLoader());
+      };
+      c.PostOptPassHook = [](ModulePassManager &MPM) {
+        neverc::plugin::addPluginModulePasses(
+            MPM, NEVERC_HOOK_LTO_POST_OPT,
+            neverc::plugin::getGlobalPluginLoader());
+      };
+    }
   }
 
   if (!Cfg.ltoBasicBlockSections.empty()) {

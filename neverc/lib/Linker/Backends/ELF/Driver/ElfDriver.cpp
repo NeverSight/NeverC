@@ -22,6 +22,7 @@
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
 #include "neverc/Merge/Merger.h"
+#include "neverc/Plugin/PluginLoader.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
@@ -137,6 +138,16 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   partitions.emplace_back();
 
   config->progName = args[0];
+
+  // Load neverc out-of-tree C-ABI plugins so their linker passes can fire at
+  // the LINK_* hook points during image emission.  Idempotent with the LTO
+  // path (loadPlugin dedups by path); doing it here also covers pure
+  // object-file links that never build an LTO config.
+  for (const std::string &Path : driverCfg.nevercPluginPaths) {
+    std::string Err;
+    if (!neverc::plugin::getGlobalPluginLoader().loadPlugin(Path, Err))
+      error(Err);
+  }
 
   elf::ctx.driver.run(args, driverCfg);
 

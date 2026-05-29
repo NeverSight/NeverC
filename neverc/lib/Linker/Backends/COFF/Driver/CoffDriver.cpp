@@ -14,6 +14,7 @@
 #include "Linker/Core/Runtime/Stopwatch.h"
 #include "Linker/Core/Support/FileIO.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
+#include "neverc/Plugin/PluginLoader.h"
 #include "llvm/BinaryFormat/Magic.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Object/COFFImportFile.h"
@@ -57,6 +58,15 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   ctx->e.logName = args::getFilenameWithoutExe(args[0]);
   ctx->e.errorLimitExceededMsg = "too many errors emitted, stopping now"
                                  " (use -ferror-limit=0 to see all errors)";
+
+  // Load neverc out-of-tree C-ABI plugins so their linker passes can fire at
+  // the LINK_* hook points during image emission.  Idempotent with the LTO
+  // path (loadPlugin dedups by path); also covers pure object-file links.
+  for (const std::string &Path : driverCfg.nevercPluginPaths) {
+    std::string Err;
+    if (!neverc::plugin::getGlobalPluginLoader().loadPlugin(Path, Err))
+      error(Err);
+  }
 
   ctx->driver.run(args, driverCfg);
 

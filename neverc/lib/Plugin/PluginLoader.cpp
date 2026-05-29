@@ -3,6 +3,7 @@
 #include "csupport/ldynamic_llibrary.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -303,6 +304,42 @@ PluginLoader::getLinkerPasses(NevercHookPoint Hook) const {
 PluginLoader &getGlobalPluginLoader() {
   static PluginLoader Instance;
   return Instance;
+}
+
+// ===----------------------------------------------------------------------===
+//  Linker backend accessor table + linker pass execution
+// ===----------------------------------------------------------------------===
+
+// Installed by a linker backend (ELF/COFF/MachO) for the duration of its
+// link-pass invocation.  Single-threaded by construction: links run
+// sequentially and the writer phase that fires linker hooks is not reentrant,
+// so a plain pointer is sufficient (and avoids any TLS overhead).
+static const NevercLinkerBackend *CurrentLinkerBackend = nullptr;
+
+void setLinkerBackend(const NevercLinkerBackend *Backend) {
+  CurrentLinkerBackend = Backend;
+}
+
+const NevercLinkerBackend *getLinkerBackend() { return CurrentLinkerBackend; }
+
+void clearLinkerBackend() { CurrentLinkerBackend = nullptr; }
+
+void runLinkerPasses(NevercHookPoint Hook, PluginLoader &Loader) {
+  if (!Loader.hasPlugins())
+    return;
+
+  const NevercHostAPI &API = Loader.getHostAPI();
+  for (const RegisteredLinkerPass *P : Loader.getLinkerPasses(Hook)) {
+    if (!P->Fn)
+      continue;
+    std::string StackMsg = "Plugin linker pass '" + P->PassName + "'";
+    if (!P->PluginPath.empty())
+      StackMsg += " from " + P->PluginPath;
+    PrettyStackTraceString CrashInfo(StackMsg.c_str());
+    LLVM_DEBUG(dbgs() << "neverc: running plugin linker pass '" << P->PassName
+                      << "'\n");
+    P->Fn(&API, P->UserData);
+  }
 }
 
 } // namespace plugin

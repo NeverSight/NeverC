@@ -2,12 +2,18 @@
  * ExamplePlugin.c — Pure C neverc out-of-tree pass plugin.
  *
  * Demonstrates:
- *   - Module-level passes at PRE_OPT and POST_OPT hooks (normal flow)
- *   - IR mutation: inserting function-entry instrumentation via IRBuilder
+ *   - Module-level passes at PRE_OPT / POST_OPT / PIPELINE_START / LAST hooks
+ *   - IR mutation: function-entry instrumentation via IRBuilder
+ *   - High-throughput batch collection (ModuleCollectFunctions / CollectBBs /
+ *     CollectInstructions) to minimise vtable indirection overhead
  *   - MIR-level pass at SC_BEFORE_PREEMIT hook (shellcode flow)
  *   - Binary-level pass at SC_POST_EXTRACT hook (shellcode flow)
- *   - Using the NevercHostAPI vtable to iterate IR/MIR and log diagnostics
- *   - String/memory utility API (StrFormat, StrFormatV, StrConcat, etc.)
+ *   - LTO pipeline passes at LTO_PRE_OPT / LTO_POST_OPT hooks
+ *   - Linker passes at LINK_PRE_LAYOUT / POST_LAYOUT / POST_EMIT hooks
+ *   - Host-provided string utilities (StrReplace, StrToLower, StrFindChar, etc.)
+ *   - HookPointGetName for runtime hook-name resolution (no static strings)
+ *   - MemDup for single-call allocate-and-copy
+ *   - Formatted diagnostics via DiagNoteF — no manual StrFormat/Free dance
  *   - Zero LLVM C++ or CRT dependencies — everything goes through the vtable
  *
  * Build:
@@ -19,34 +25,6 @@
 
 #include "neverc/Plugin/NevercPluginAPI.h"
 
-/* ---- Diagnostic helpers using the host string API ----
-   These wrap StrFormatV (the va_list variant) to provide a clean one-liner
-   for formatting + emitting + freeing diagnostic messages.  This is the
-   canonical pattern for plugin code — no stack buffers, no manual
-   concatenation, all memory routed through the host allocator.           */
-
-static void diagNote(const NevercHostAPI *API, const char *Fmt, ...) {
-  va_list Args;
-  va_start(Args, Fmt);
-  char *Msg = API->StrFormatV(Fmt, Args);
-  va_end(Args);
-  if (Msg) {
-    API->DiagNote(Msg);
-    API->Free(Msg);
-  }
-}
-
-static void diagWarning(const NevercHostAPI *API, const char *Fmt, ...) {
-  va_list Args;
-  va_start(Args, Fmt);
-  char *Msg = API->StrFormatV(Fmt, Args);
-  va_end(Args);
-  if (Msg) {
-    API->DiagWarning(Msg);
-    API->Free(Msg);
-  }
-}
-
 /* ---- Module pass: print module info and count defined functions ---- */
 static int functionCounterPass(NevercModuleRef M,
                                const NevercHostAPI *API,
@@ -54,7 +32,7 @@ static int functionCounterPass(NevercModuleRef M,
   (void)UserData;
 
   const char *Triple = API->ModuleGetTargetTriple(M);
-  diagNote(API, "[example-plugin] Target: %s", Triple);
+  API->DiagNoteF("[example-plugin] Target: %s", Triple);
 
   int Count = 0;
   NevercValueRef F = API->ModuleGetFirstFunction(M);
@@ -64,7 +42,7 @@ static int functionCounterPass(NevercModuleRef M,
     F = API->ModuleGetNextFunction(F);
   }
 
-  diagNote(API, "[example-plugin] Found %d defined functions", Count);
+  API->DiagNoteF("[example-plugin] Found %d defined functions", Count);
   return 0;
 }
 
@@ -76,8 +54,8 @@ static int functionListPass(NevercModuleRef M,
   NevercValueRef F = API->ModuleGetFirstFunction(M);
   while (F) {
     if (!API->FunctionIsDeclaration(F))
-      diagNote(API, "[example-plugin] Processing function: %s",
-               API->ValueGetName(F));
+      API->DiagNoteF("[example-plugin] Processing function: %s",
+                     API->ValueGetName(F));
     F = API->ModuleGetNextFunction(F);
   }
   return 0;
@@ -111,11 +89,10 @@ static int functionEntryInstrPass(NevercModuleRef M,
   if (!NEVERC_API_HAS(API, BuildGlobalStringPtr))
     return 0;
 
-  if (NEVERC_API_HAS(API, HostIsShellcodeMode) &&
+  if (NEVERC_API_FN(API, HostIsShellcodeMode) &&
       API->HostIsShellcodeMode()) {
-    diagNote(API,
-             "[example-plugin] Shellcode mode active; skipping trace "
-             "instrumentation (would break shellcode extraction)");
+    API->DiagNoteF("[example-plugin] Shellcode mode active; skipping trace "
+                   "instrumentation (would break shellcode extraction)");
     return 0;
   }
 
@@ -166,45 +143,90 @@ static int functionEntryInstrPass(NevercModuleRef M,
   API->BuilderDispose(Builder);
 
   if (Modified)
-    diagNote(API, "[example-plugin] Inserted function-entry tracing calls");
+    API->DiagNoteF("[example-plugin] Inserted function-entry tracing calls");
   return Modified;
 }
 
-/* ---- MIR pass: detailed MachineFunction analysis ---- */
+/*
+ * MIR pass: detailed MachineFunction analysis.
+ *
+ * Uses batch collection (MFuncCollectBBs / MBBCollectInstructions) when
+ * available, falling back to per-element iteration otherwise.  The batch
+ * path makes 2 vtable calls per BB (collect + count) instead of O(instrs)
+ * GetNextInst calls, cutting indirect-call overhead on large functions.
+ */
 static int mirInstrCountPass(NevercMachineFuncRef MF,
                              const NevercHostAPI *API,
                              void *UserData) {
   (void)UserData;
   const char *FnName = API->MFuncGetName(MF);
   int InstrCount = 0;
-  int BBCount = 0;
   int RegOpCount = 0;
   int ImmOpCount = 0;
 
-  NevercMachineBBRef MBB = API->MFuncGetFirstBB(MF);
-  while (MBB) {
-    BBCount++;
-
-    NevercMachineInstrRef MI = API->MBBGetFirstInst(MBB);
-    while (MI) {
-      InstrCount++;
-      unsigned NumOps = API->MInstGetNumOperands(MI);
-      unsigned I;
-      for (I = 0; I < NumOps; I++) {
-        if (API->MInstGetOperandIsReg(MI, I))
-          RegOpCount++;
-        if (API->MInstGetOperandIsImm(MI, I))
-          ImmOpCount++;
-      }
-      MI = API->MBBGetNextInst(MI);
-    }
-    MBB = API->MFuncGetNextBB(MBB);
+  unsigned BBCount = API->MFuncGetBBCount(MF);
+  if (BBCount == 0) {
+    API->DiagNoteF("[example-plugin] MIR '%s': empty", FnName);
+    return 0;
   }
 
-  diagNote(API,
-           "[example-plugin] MIR '%s': %d BBs, %d instrs, %d reg ops, "
-           "%d imm ops",
-           FnName, BBCount, InstrCount, RegOpCount, ImmOpCount);
+  if (NEVERC_API_HAS(API, MFuncCollectBBs)) {
+    NevercMachineBBRef *MBBs =
+        (NevercMachineBBRef *)API->Alloc(BBCount * sizeof(NevercMachineBBRef));
+    if (!MBBs)
+      return 0;
+    API->MFuncCollectBBs(MF, MBBs);
+
+    unsigned B;
+    for (B = 0; B < BBCount; B++) {
+      unsigned IC = API->MBBGetInstCount(MBBs[B]);
+      InstrCount += (int)IC;
+      if (IC == 0)
+        continue;
+
+      NevercMachineInstrRef *MIs = (NevercMachineInstrRef *)API->Alloc(
+          IC * sizeof(NevercMachineInstrRef));
+      if (!MIs)
+        continue;
+      API->MBBCollectInstructions(MBBs[B], MIs);
+
+      unsigned J;
+      for (J = 0; J < IC; J++) {
+        unsigned NumOps = API->MInstGetNumOperands(MIs[J]);
+        unsigned K;
+        for (K = 0; K < NumOps; K++) {
+          if (API->MInstGetOperandIsReg(MIs[J], K))
+            RegOpCount++;
+          if (API->MInstGetOperandIsImm(MIs[J], K))
+            ImmOpCount++;
+        }
+      }
+      API->Free(MIs);
+    }
+    API->Free(MBBs);
+  } else {
+    NevercMachineBBRef MBB = API->MFuncGetFirstBB(MF);
+    while (MBB) {
+      NevercMachineInstrRef MI = API->MBBGetFirstInst(MBB);
+      while (MI) {
+        InstrCount++;
+        unsigned NumOps = API->MInstGetNumOperands(MI);
+        unsigned I;
+        for (I = 0; I < NumOps; I++) {
+          if (API->MInstGetOperandIsReg(MI, I))
+            RegOpCount++;
+          if (API->MInstGetOperandIsImm(MI, I))
+            ImmOpCount++;
+        }
+        MI = API->MBBGetNextInst(MI);
+      }
+      MBB = API->MFuncGetNextBB(MBB);
+    }
+  }
+
+  API->DiagNoteF("[example-plugin] MIR '%s': %u BBs, %d instrs, %d reg ops, "
+                 "%d imm ops",
+                 FnName, BBCount, InstrCount, RegOpCount, ImmOpCount);
   return 0;
 }
 
@@ -217,8 +239,8 @@ static int binarySizePass(uint8_t **Data, uint64_t *Len,
   (void)Capacity;
   (void)UserData;
 
-  diagNote(API, "[example-plugin] Binary: %llu bytes",
-           (unsigned long long)*Len);
+  API->DiagNoteF("[example-plugin] Binary: %llu bytes",
+                 (unsigned long long)*Len);
   return 0;
 }
 
@@ -238,15 +260,15 @@ static int binaryNopSledPass(uint8_t **Data, uint64_t *Len,
   uint64_t NewLen = OldLen + 16;
 
   if (!API->BinaryResize(Data, Len, Capacity, NewLen)) {
-    diagWarning(API, "[example-plugin] BinaryResize failed");
+    API->DiagWarningF("[example-plugin] BinaryResize failed");
     return 0;
   }
 
   API->MemSet(*Data + OldLen, 0x90, 16);
 
-  diagNote(API,
-           "[example-plugin] Appended 16-byte NOP sled (%llu -> %llu bytes)",
-           (unsigned long long)OldLen, (unsigned long long)NewLen);
+  API->DiagNoteF("[example-plugin] Appended 16-byte NOP sled "
+                 "(%llu -> %llu bytes)",
+                 (unsigned long long)OldLen, (unsigned long long)NewLen);
   return 1;
 }
 
@@ -292,38 +314,9 @@ static int gepIndexDemoPass(NevercModuleRef M,
     F = API->ModuleGetNextFunction(F);
   }
 
-  diagNote(API,
-           "[example-plugin] GEP index analysis: %d GEPs, %d const indices, "
-           "%d dynamic indices",
-           TotalGEPs, ConstIdxCount, DynIdxCount);
-  return 0;
-}
-
-/*
- * Module pass: demonstrate reverse global iteration.
- *
- * Uses ModuleGetLastGlobal / ModuleGetPrevGlobal to iterate globals
- * in reverse order and count those with initializers.
- */
-static int reverseGlobalWalkPass(NevercModuleRef M,
-                                  const NevercHostAPI *API,
-                                  void *UserData) {
-  (void)UserData;
-  if (!NEVERC_API_HAS(API, ModuleGetPrevGlobal))
-    return 0;
-
-  int Total = 0, WithInit = 0;
-  NevercValueRef G = API->ModuleGetLastGlobal(M);
-  while (G) {
-    Total++;
-    if (API->GlobalHasInitializer(G))
-      WithInit++;
-    G = API->ModuleGetPrevGlobal(G);
-  }
-
-  diagNote(API,
-           "[example-plugin] ReverseGlobals: %d total, %d with initializer",
-           Total, WithInit);
+  API->DiagNoteF("[example-plugin] GEP index analysis: %d GEPs, "
+                 "%d const indices, %d dynamic indices",
+                 TotalGEPs, ConstIdxCount, DynIdxCount);
   return 0;
 }
 
@@ -348,8 +341,8 @@ static int valueKindDemoPass(NevercModuleRef M,
     G = API->ModuleGetNextGlobal(G);
   }
 
-  diagNote(API, "[example-plugin] ValueKind: %d functions, %d globals",
-           FuncCount, GlobalCount);
+  API->DiagNoteF("[example-plugin] ValueKind: %d functions, %d globals",
+                 FuncCount, GlobalCount);
   return 0;
 }
 
@@ -370,8 +363,8 @@ static int structTypeDemoPass(NevercModuleRef M,
 
   NevercTypeRef ST = API->TypeGetStruct(Ctx, Fields, 2, 0);
   if (ST && API->TypeIsStruct(ST))
-    diagNote(API, "[example-plugin] Created struct with %u fields",
-             API->StructGetNumElements(ST));
+    API->DiagNoteF("[example-plugin] Created struct with %u fields",
+                   API->StructGetNumElements(ST));
   return 0;
 }
 
@@ -383,61 +376,100 @@ static int moduleStatsPass(NevercModuleRef M,
   unsigned FnCount = API->ModuleGetFunctionCount(M);
   unsigned GvCount = API->ModuleGetGlobalCount(M);
 
-  diagNote(API, "[example-plugin] Module stats: %u functions, %u globals",
-           FnCount, GvCount);
+  API->DiagNoteF("[example-plugin] Module stats: %u functions, %u globals",
+                 FnCount, GvCount);
 
   NevercValueRef Main = API->ModuleGetNamedGlobal(M, "main_var");
   if (Main)
-    diagNote(API, "[example-plugin] Found global 'main_var'");
+    API->DiagNoteF("[example-plugin] Found global 'main_var'");
 
   return 0;
 }
 
-/* ---- Module pass: instruction type analysis using the kind queries ---- */
+/*
+ * Module pass: instruction type analysis using batch collection.
+ *
+ * Uses ModuleCollectFunctions -> FunctionCollectBBs -> BBCollectInstructions
+ * to walk the entire module with O(N+M) vtable calls for navigation instead
+ * of O(N+M+L) with per-element GetNext iteration (N=functions, M=BBs,
+ * L=instructions).  The inner instruction loop runs over a flat array with
+ * zero indirection overhead.
+ */
 static int instrTypeDemoPass(NevercModuleRef M,
                              const NevercHostAPI *API,
                              void *UserData) {
   (void)UserData;
-
-  if (!NEVERC_API_HAS(API, InstIsCall))
+  if (!NEVERC_API_HAS(API, InstIsCall) ||
+      !NEVERC_API_HAS(API, ModuleCollectFunctions))
     return 0;
 
-  int Calls = 0, Branches = 0, Loads = 0, Stores = 0;
-  int Allocas = 0, PHIs = 0, GEPs = 0;
+  unsigned FnCount = API->ModuleGetFunctionCount(M);
+  if (FnCount == 0)
+    return 0;
 
-  NevercValueRef F = API->ModuleGetFirstFunction(M);
-  while (F) {
-    if (!API->FunctionIsDeclaration(F)) {
-      NevercBasicBlockRef BB = API->FunctionGetFirstBB(F);
-      while (BB) {
-        NevercValueRef I = API->BBGetFirstInst(BB);
-        while (I) {
-          if (API->InstIsCall(I))
-            Calls++;
-          if (API->InstIsBranch(I))
-            Branches++;
-          if (API->InstIsLoad(I))
-            Loads++;
-          if (API->InstIsStore(I))
-            Stores++;
-          if (API->InstIsAlloca(I))
-            Allocas++;
-          if (API->InstIsPHI(I))
-            PHIs++;
-          if (API->InstIsGEP(I))
-            GEPs++;
-          I = API->BBGetNextInst(I);
-        }
-        BB = API->FunctionGetNextBB(BB);
+  NevercValueRef *Fns =
+      (NevercValueRef *)API->Alloc(FnCount * sizeof(NevercValueRef));
+  if (!Fns)
+    return 0;
+  API->ModuleCollectFunctions(M, Fns);
+
+  unsigned Calls = 0, Branches = 0, Loads = 0, Stores = 0;
+  unsigned Allocas = 0, PHIs = 0, GEPs = 0;
+
+  unsigned FI;
+  for (FI = 0; FI < FnCount; FI++) {
+    if (API->FunctionIsDeclaration(Fns[FI]))
+      continue;
+
+    unsigned BBCount = API->FunctionGetBBCount(Fns[FI]);
+    if (BBCount == 0)
+      continue;
+
+    NevercBasicBlockRef *BBs = (NevercBasicBlockRef *)API->Alloc(
+        BBCount * sizeof(NevercBasicBlockRef));
+    if (!BBs)
+      continue;
+    API->FunctionCollectBBs(Fns[FI], BBs);
+
+    unsigned BI;
+    for (BI = 0; BI < BBCount; BI++) {
+      unsigned IC = API->BBGetInstCount(BBs[BI]);
+      if (IC == 0)
+        continue;
+
+      NevercValueRef *Insts =
+          (NevercValueRef *)API->Alloc(IC * sizeof(NevercValueRef));
+      if (!Insts)
+        continue;
+      API->BBCollectInstructions(BBs[BI], Insts);
+
+      unsigned II;
+      for (II = 0; II < IC; II++) {
+        NevercValueRef Inst = Insts[II];
+        if (API->InstIsCall(Inst))
+          Calls++;
+        if (API->InstIsBranch(Inst))
+          Branches++;
+        if (API->InstIsLoad(Inst))
+          Loads++;
+        if (API->InstIsStore(Inst))
+          Stores++;
+        if (API->InstIsAlloca(Inst))
+          Allocas++;
+        if (API->InstIsPHI(Inst))
+          PHIs++;
+        if (API->InstIsGEP(Inst))
+          GEPs++;
       }
+      API->Free(Insts);
     }
-    F = API->ModuleGetNextFunction(F);
+    API->Free(BBs);
   }
+  API->Free(Fns);
 
-  diagNote(API,
-           "[example-plugin] Instr stats: %d calls, %d branches, %d loads, "
-           "%d stores, %d allocas, %d phis, %d geps",
-           Calls, Branches, Loads, Stores, Allocas, PHIs, GEPs);
+  API->DiagNoteF("[example-plugin] Instr stats: %u calls, %u branches, "
+                 "%u loads, %u stores, %u allocas, %u phis, %u geps",
+                 Calls, Branches, Loads, Stores, Allocas, PHIs, GEPs);
   return 0;
 }
 
@@ -487,9 +519,9 @@ static int icmpAnalysisDemoPass(NevercModuleRef M,
     F = API->ModuleGetNextFunction(F);
   }
 
-  diagNote(API,
-           "[example-plugin] Cmp analysis: %d eq, %d relational, %d fcmp",
-           EqCount, RelCount, FCmpCount);
+  API->DiagNoteF("[example-plugin] Cmp analysis: %d eq, %d relational, "
+                 "%d fcmp",
+                 EqCount, RelCount, FCmpCount);
   return 0;
 }
 
@@ -527,9 +559,9 @@ static int cfgAnalysisDemoPass(NevercModuleRef M,
     F = API->ModuleGetNextFunction(F);
   }
 
-  diagNote(API,
-           "[example-plugin] CFG: %d edges, %d conditional terminators",
-           TotalEdges, ConditionalTerms);
+  API->DiagNoteF("[example-plugin] CFG: %d edges, "
+                 "%d conditional terminators",
+                 TotalEdges, ConditionalTerms);
   return 0;
 }
 
@@ -561,8 +593,8 @@ static int globalInfoDemoPass(NevercModuleRef M,
     G = API->ModuleGetNextGlobal(G);
   }
 
-  diagNote(API, "[example-plugin] Globals: %d internal, %d external",
-           InternalCount, ExternalCount);
+  API->DiagNoteF("[example-plugin] Globals: %d internal, %d external",
+                 InternalCount, ExternalCount);
   return 0;
 }
 
@@ -587,9 +619,16 @@ static int deadInternalRemovalPass(NevercModuleRef M,
   if (!NEVERC_API_HAS(API, ModuleRemoveFunction))
     return 0;
 
-  NevercValueRef ToRemove[64];
-  int RemoveCount = 0;
+  unsigned FnCount = API->ModuleGetFunctionCount(M);
+  if (FnCount == 0)
+    return 0;
 
+  NevercValueRef *ToRemove =
+      (NevercValueRef *)API->Alloc(FnCount * sizeof(NevercValueRef));
+  if (!ToRemove)
+    return 0;
+
+  unsigned RemoveCount = 0;
   NevercValueRef F = API->ModuleGetFirstFunction(M);
   while (F) {
     NevercValueRef Next = API->ModuleGetNextFunction(F);
@@ -597,25 +636,24 @@ static int deadInternalRemovalPass(NevercModuleRef M,
       unsigned Linkage = API->FunctionGetLinkage(F);
       if (Linkage == NEVERC_LINKAGE_INTERNAL ||
           Linkage == NEVERC_LINKAGE_PRIVATE) {
-        unsigned NumUses = API->ValueGetNumUses(F);
-        if (NumUses == 0 && RemoveCount < 64)
+        if (API->ValueGetNumUses(F) == 0)
           ToRemove[RemoveCount++] = F;
       }
     }
     F = Next;
   }
 
-  int I;
+  unsigned I;
   for (I = 0; I < RemoveCount; I++) {
-    diagNote(API,
-             "[example-plugin] Removing dead internal function: %s",
-             API->ValueGetName(ToRemove[I]));
+    API->DiagNoteF("[example-plugin] Removing dead internal function: %s",
+                   API->ValueGetName(ToRemove[I]));
     API->ModuleRemoveFunction(M, ToRemove[I]);
   }
+  API->Free(ToRemove);
 
   if (RemoveCount > 0)
-    diagNote(API, "[example-plugin] Removed %d dead internal functions",
-             RemoveCount);
+    API->DiagNoteF("[example-plugin] Removed %u dead internal functions",
+                   RemoveCount);
   return RemoveCount > 0 ? 1 : 0;
 }
 
@@ -654,50 +692,76 @@ static int switchAnalysisDemoPass(NevercModuleRef M,
     F = API->ModuleGetNextFunction(F);
   }
 
-  diagNote(API,
-           "[example-plugin] Switch: %d switches, %d total cases",
-           SwitchCount, TotalCases);
+  API->DiagNoteF("[example-plugin] Switch: %d switches, %d total cases",
+                 SwitchCount, TotalCases);
   return 0;
 }
 
 /*
- * Module pass: demonstrate reverse iteration and BB count.
+ * Module pass: comprehensive reverse iteration demo.
  *
- * Uses FunctionGetBBCount, FunctionGetPrevBB, InstGetPrevInst, BBGetName,
- * and ModuleGetSourceFileName to do a reverse walk of the IR.
+ * Consolidates reverse walks over functions, globals, and aliases into a
+ * single pass, exercising:
+ *   - ModuleGetLastFunction / ModuleGetPrevFunction
+ *   - FunctionGetLastBB / FunctionGetPrevBB
+ *   - BBGetLastInst / InstGetPrevInst
+ *   - ModuleGetLastGlobal / ModuleGetPrevGlobal
+ *   - ModuleGetLastAlias / ModuleGetPrevAlias
+ *   - ModuleGetSourceFileName, FunctionGetBBCount
  */
-static int reverseWalkDemoPass(NevercModuleRef M,
-                               const NevercHostAPI *API,
-                               void *UserData) {
+static int reverseIterationDemoPass(NevercModuleRef M,
+                                    const NevercHostAPI *API,
+                                    void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_HAS(API, FunctionGetBBCount))
+  if (!NEVERC_API_HAS(API, ModuleGetPrevFunction) ||
+      !NEVERC_API_HAS(API, ModuleGetPrevGlobal) ||
+      !NEVERC_API_HAS(API, FunctionGetBBCount))
     return 0;
 
-  diagNote(API, "[example-plugin] Source: %s",
-           API->ModuleGetSourceFileName(M));
+  API->DiagNoteF("[example-plugin] Source: %s",
+                 API->ModuleGetSourceFileName(M));
 
-  NevercValueRef F = API->ModuleGetFirstFunction(M);
+  unsigned RevFnCount = 0;
+  unsigned TotalTerms = 0;
+  NevercValueRef F = API->ModuleGetLastFunction(M);
   while (F) {
     if (!API->FunctionIsDeclaration(F)) {
-      unsigned BBCount = API->FunctionGetBBCount(F);
-      int TermCount = 0;
+      RevFnCount++;
       NevercBasicBlockRef BB = API->FunctionGetLastBB(F);
       while (BB) {
         NevercValueRef I = API->BBGetLastInst(BB);
         while (I) {
           if (API->InstIsTerminator(I))
-            TermCount++;
+            TotalTerms++;
           I = API->InstGetPrevInst(I);
         }
         BB = API->FunctionGetPrevBB(BB);
       }
-
-      diagNote(API,
-               "[example-plugin] RevWalk '%s': %u BBs, %d terminators",
-               API->ValueGetName(F), BBCount, TermCount);
     }
-    F = API->ModuleGetNextFunction(F);
+    F = API->ModuleGetPrevFunction(F);
   }
+
+  unsigned TotalGlobals = 0, WithInit = 0;
+  NevercValueRef G = API->ModuleGetLastGlobal(M);
+  while (G) {
+    TotalGlobals++;
+    if (API->GlobalHasInitializer(G))
+      WithInit++;
+    G = API->ModuleGetPrevGlobal(G);
+  }
+
+  unsigned AliasCount = 0;
+  if (NEVERC_API_HAS(API, ModuleGetPrevAlias)) {
+    NevercValueRef A = API->ModuleGetLastAlias(M);
+    while (A) {
+      AliasCount++;
+      A = API->ModuleGetPrevAlias(A);
+    }
+  }
+
+  API->DiagNoteF("[example-plugin] ReverseIter: %u fns/%u terminators, "
+                 "%u globals (%u init), %u aliases",
+                 RevFnCount, TotalTerms, TotalGlobals, WithInit, AliasCount);
   return 0;
 }
 
@@ -741,9 +805,9 @@ static int callLikeDemoPass(NevercModuleRef M,
     F = API->ModuleGetNextFunction(F);
   }
 
-  diagNote(API,
-           "[example-plugin] CallLike: %d direct, %d indirect, %d invokes",
-           DirectCalls, IndirectCalls, Invokes);
+  API->DiagNoteF("[example-plugin] CallLike: %d direct, %d indirect, "
+                 "%d invokes",
+                 DirectCalls, IndirectCalls, Invokes);
   return 0;
 }
 
@@ -796,67 +860,71 @@ static int memAccessDemoPass(NevercModuleRef M,
     F = API->ModuleGetNextFunction(F);
   }
 
-  diagNote(API,
-           "[example-plugin] MemAccess: loads=%dptr/%dint/%dother, "
-           "GEPs=%dinbounds/%dregular",
-           PtrLoads, IntLoads, OtherLoads, InboundsGEPs, RegularGEPs);
+  API->DiagNoteF("[example-plugin] MemAccess: loads=%dptr/%dint/%dother, "
+                 "GEPs=%dinbounds/%dregular",
+                 PtrLoads, IntLoads, OtherLoads, InboundsGEPs, RegularGEPs);
   return 0;
 }
 
-/*
- * Module pass: run at PIPELINE_START (inside PassBuilder pipeline).
- *
- * Counts the number of functions and basic blocks before optimization.
- */
-static int pipelineStartPass(NevercModuleRef M,
-                              const NevercHostAPI *API,
-                              void *UserData) {
-  (void)UserData;
-  int FnCount = 0, BBTotal = 0;
-  NevercValueRef F = API->ModuleGetFirstFunction(M);
-  while (F) {
-    if (!API->FunctionIsDeclaration(F)) {
-      FnCount++;
-      NevercBasicBlockRef BB = API->FunctionGetFirstBB(F);
-      while (BB) {
-        BBTotal++;
-        BB = API->FunctionGetNextBB(BB);
-      }
-    }
-    F = API->ModuleGetNextFunction(F);
-  }
-  diagNote(API,
-           "[example-plugin] PipelineStart: %d functions, %d BBs before opt",
-           FnCount, BBTotal);
-  return 0;
+/* Resolve a hook-point name from UserData carrying a NevercHookPoint value.
+ * Falls back to "<unknown>" on hosts that predate the HookPointGetName API. */
+static const char *getHookName(const NevercHostAPI *API, void *UserData) {
+  unsigned Hook = (unsigned)(uintptr_t)UserData;
+  if (NEVERC_API_FN(API, HookPointGetName))
+    return API->HookPointGetName(Hook);
+  return "<unknown>";
 }
 
 /*
- * Module pass: run at PIPELINE_LAST (OptimizerLast EP).
+ * Module pass: count functions and BBs at a pipeline stage.
  *
- * Counts the number of functions and basic blocks after optimization,
- * allowing comparison with the PipelineStart pass.
+ * Registered at both PIPELINE_START and PIPELINE_LAST so the plugin
+ * user can see the optimizer's impact on function/BB counts.  UserData
+ * carries the NevercHookPoint enum value; the name is resolved via
+ * HookPointGetName.
+ *
+ * Uses ModuleCollectFunctions + FunctionGetBBCount for O(N) vtable
+ * calls (N = functions) instead of O(N+M) from per-BB iteration.
  */
-static int pipelineLastPass(NevercModuleRef M,
+static int pipelineStagePass(NevercModuleRef M,
                              const NevercHostAPI *API,
                              void *UserData) {
-  (void)UserData;
-  int FnCount = 0, BBTotal = 0;
-  NevercValueRef F = API->ModuleGetFirstFunction(M);
-  while (F) {
-    if (!API->FunctionIsDeclaration(F)) {
-      FnCount++;
-      NevercBasicBlockRef BB = API->FunctionGetFirstBB(F);
-      while (BB) {
-        BBTotal++;
-        BB = API->FunctionGetNextBB(BB);
-      }
-    }
-    F = API->ModuleGetNextFunction(F);
+  const char *Stage = getHookName(API, UserData);
+  unsigned FnCount = API->ModuleGetFunctionCount(M);
+  if (FnCount == 0) {
+    API->DiagNoteF("[example-plugin] %s: 0 functions", Stage);
+    return 0;
   }
-  diagNote(API,
-           "[example-plugin] PipelineLast: %d functions, %d BBs after opt",
-           FnCount, BBTotal);
+
+  unsigned Defined = 0, BBTotal = 0;
+
+  if (NEVERC_API_FN(API, ModuleCollectFunctions)) {
+    NevercValueRef *Fns =
+        (NevercValueRef *)API->Alloc(FnCount * sizeof(NevercValueRef));
+    if (!Fns)
+      return 0;
+    API->ModuleCollectFunctions(M, Fns);
+    unsigned I;
+    for (I = 0; I < FnCount; I++) {
+      if (API->FunctionIsDeclaration(Fns[I]))
+        continue;
+      Defined++;
+      BBTotal += API->FunctionGetBBCount(Fns[I]);
+    }
+    API->Free(Fns);
+  } else {
+    NevercValueRef F = API->ModuleGetFirstFunction(M);
+    while (F) {
+      if (!API->FunctionIsDeclaration(F)) {
+        Defined++;
+        BBTotal += API->FunctionGetBBCount(F);
+      }
+      F = API->ModuleGetNextFunction(F);
+    }
+  }
+
+  API->DiagNoteF("[example-plugin] %s: %u functions, %u BBs",
+                 Stage, Defined, BBTotal);
   return 0;
 }
 
@@ -907,10 +975,9 @@ static int debugLocDemoPass(NevercModuleRef M,
     }
   }
 
-  diagNote(API,
-           "[example-plugin] DebugLoc: %d with, %d without, "
-           "%d sectioned globals",
-           WithLoc, WithoutLoc, SectionedGlobals);
+  API->DiagNoteF("[example-plugin] DebugLoc: %d with, %d without, "
+                 "%d sectioned globals",
+                 WithLoc, WithoutLoc, SectionedGlobals);
   return 0;
 }
 
@@ -937,9 +1004,8 @@ static int valuePrintDemoPass(NevercModuleRef M,
         if (Term) {
           char *Str = API->ValuePrintToString(Term);
           if (Str) {
-            diagNote(API,
-                     "[example-plugin] Entry terminator of '%s': %s",
-                     API->ValueGetName(F), Str);
+            API->DiagNoteF("[example-plugin] Entry terminator of '%s': %s",
+                         API->ValueGetName(F), Str);
             API->Free(Str);
           }
         }
@@ -953,27 +1019,27 @@ static int valuePrintDemoPass(NevercModuleRef M,
 
 /*
  * Stage tracker — a single pass that logs which hook point it runs at.
- * Registered at every shellcode hook we don't otherwise demonstrate, so
- * the user can verify all pipeline insertion points are wired correctly.
+ * Registered at every hook we don't otherwise demonstrate, so the user
+ * can verify all pipeline insertion points are wired correctly.
  *
- * UserData carries a pointer to a stable static string identifying the stage.
+ * UserData carries the NevercHookPoint enum value (cast to void*).
+ * The hook name is resolved at runtime via getHookName (defined above
+ * pipelineStagePass).
  */
 static int stageTrackerModulePass(NevercModuleRef M,
                                   const NevercHostAPI *API,
                                   void *UserData) {
   (void)M;
-  const char *Stage = (const char *)UserData;
-  diagNote(API, "[example-plugin] Stage: %s", Stage ? Stage : "<unknown>");
+  API->DiagNoteF("[example-plugin] Stage: %s", getHookName(API, UserData));
   return 0;
 }
 
 static int stageTrackerMachinePass(NevercMachineFuncRef MF,
                                    const NevercHostAPI *API,
                                    void *UserData) {
-  const char *Stage = (const char *)UserData;
   const char *FnName = API->MFuncGetName(MF);
-  diagNote(API, "[example-plugin] Stage: %s (MF=%s)",
-           Stage ? Stage : "<unknown>", FnName ? FnName : "?");
+  API->DiagNoteF("[example-plugin] Stage: %s (MF=%s)",
+                 getHookName(API, UserData), FnName ? FnName : "?");
   return 0;
 }
 
@@ -983,9 +1049,8 @@ static int stageTrackerBinaryPass(uint8_t **Data, uint64_t *Len,
                                   void *UserData) {
   (void)Data;
   (void)Capacity;
-  const char *Stage = (const char *)UserData;
-  diagNote(API, "[example-plugin] Stage: %s (binary=%llu bytes)",
-           Stage ? Stage : "<unknown>", (unsigned long long)*Len);
+  API->DiagNoteF("[example-plugin] Stage: %s (binary=%llu bytes)",
+                 getHookName(API, UserData), (unsigned long long)*Len);
   return 0;
 }
 
@@ -1006,10 +1071,11 @@ static int intrinsicAndMDDemoPass(NevercModuleRef M,
   if (TrapID != 0) {
     char *Name = API->IntrinsicGetName(TrapID);
     if (Name) {
-      diagNote(API, "[example-plugin] Intrinsic '%s' id=%u%s",
-               Name, TrapID,
-               API->IntrinsicIsOverloaded(TrapID) ? " (overloaded)"
-                                                  : " (not overloaded)");
+      API->DiagNoteF("[example-plugin] Intrinsic '%s' id=%u%s",
+                     Name, TrapID,
+                     API->IntrinsicIsOverloaded(TrapID)
+                         ? " (overloaded)"
+                         : " (not overloaded)");
       API->Free(Name);
     }
   }
@@ -1017,10 +1083,10 @@ static int intrinsicAndMDDemoPass(NevercModuleRef M,
   if (NEVERC_API_HAS(API, ModuleGetNamedMetadata)) {
     NevercNamedMDRef Ident = API->ModuleGetNamedMetadata(M, "llvm.ident");
     if (Ident)
-      diagNote(API, "[example-plugin] llvm.ident has %u operand(s)",
-               API->NamedMDGetNumOperands(Ident));
+      API->DiagNoteF("[example-plugin] llvm.ident has %u operand(s)",
+                     API->NamedMDGetNumOperands(Ident));
     else
-      diagNote(API, "[example-plugin] No llvm.ident metadata found");
+      API->DiagNoteF("[example-plugin] No llvm.ident metadata found");
   }
   return 0;
 }
@@ -1033,24 +1099,24 @@ static int pluginArgDemoPass(NevercModuleRef M,
   if (!NEVERC_API_HAS(API, PluginGetArg))
     return 0;
 
-  diagNote(API, "[example-plugin] Plugin arg count: %u",
-           API->PluginGetArgCount());
+  API->DiagNoteF("[example-plugin] Plugin arg count: %u",
+                 API->PluginGetArgCount());
 
   const char *Verbose = API->PluginGetArg("verbose");
   if (Verbose && Verbose[0] == '1') {
     NevercValueRef F = API->ModuleGetFirstFunction(M);
     while (F) {
       if (!API->FunctionIsDeclaration(F))
-        diagNote(API, "[example-plugin][verbose] Function: %s",
-                 API->ValueGetName(F));
+        API->DiagNoteF("[example-plugin][verbose] Function: %s",
+                       API->ValueGetName(F));
       F = API->ModuleGetNextFunction(F);
     }
   }
 
   if (API->PluginHasArg("prefix")) {
     const char *Prefix = API->PluginGetArg("prefix");
-    diagNote(API, "[example-plugin] Using custom prefix: %s",
-             Prefix ? Prefix : "(empty)");
+    API->DiagNoteF("[example-plugin] Using custom prefix: %s",
+                   Prefix ? Prefix : "(empty)");
   }
 
   return 0;
@@ -1067,7 +1133,7 @@ static int dataLayoutDemoPass(NevercModuleRef M,
   NevercContextRef C = API->ModuleGetContext(M);
 
   unsigned PtrBits = API->PointerSizeInBits(M, 0);
-  diagNote(API, "[example-plugin] Pointer size: %u bits", PtrBits);
+  API->DiagNoteF("[example-plugin] Pointer size: %u bits", PtrBits);
 
   NevercTypeRef I32Ty = API->TypeGetInt32(C);
   NevercTypeRef I64Ty = API->TypeGetInt64(C);
@@ -1078,76 +1144,36 @@ static int dataLayoutDemoPass(NevercModuleRef M,
   unsigned I32Align = API->TypeABIAlignment(M, I32Ty);
   unsigned DblAlign = API->TypeABIAlignment(M, DblTy);
 
-  diagNote(API,
-           "[example-plugin] i32: %llu bytes, align %u | i64: %llu bytes "
-           "| double align %u",
-           (unsigned long long)I32Size, I32Align,
-           (unsigned long long)I64Size, DblAlign);
+  API->DiagNoteF("[example-plugin] i32: %llu bytes, align %u | "
+                 "i64: %llu bytes | double align %u",
+                 (unsigned long long)I32Size, I32Align,
+                 (unsigned long long)I64Size, DblAlign);
 
   if (NEVERC_API_HAS(API, ConstPoison)) {
     NevercValueRef Poison = API->ConstPoison(I32Ty);
-    diagNote(API,
-             "[example-plugin] PoisonValue(i32): isPoison=%d isUndef=%d",
-             API->ValueIsPoison(Poison), API->ValueIsUndef(Poison));
+    API->DiagNoteF("[example-plugin] PoisonValue(i32): isPoison=%d "
+                   "isUndef=%d",
+                   API->ValueIsPoison(Poison), API->ValueIsUndef(Poison));
   }
 
   if (NEVERC_API_HAS(API, TypeGetFixedVector)) {
     NevercTypeRef V4I32 = API->TypeGetFixedVector(I32Ty, 4);
-    diagNote(API,
-             "[example-plugin] <4 x i32>: isVector=%d numElems=%u "
-             "sizeBits=%llu",
-             API->TypeIsVector(V4I32),
-             API->TypeGetVectorNumElements(V4I32),
-             (unsigned long long)API->TypeSizeInBits(M, V4I32));
+    API->DiagNoteF("[example-plugin] <4 x i32>: isVector=%d numElems=%u "
+                   "sizeBits=%llu",
+                   API->TypeIsVector(V4I32),
+                   API->TypeGetVectorNumElements(V4I32),
+                   (unsigned long long)API->TypeSizeInBits(M, V4I32));
   }
 
   if (NEVERC_API_HAS(API, TypeGetPtrInAddrSpace)) {
     NevercTypeRef DefaultPtr = API->TypeGetPtr(C);
     NevercTypeRef AS1Ptr = API->TypeGetPtrInAddrSpace(C, 1);
-    diagNote(API,
-             "[example-plugin] ptr addrspace(0)=%u ptr addrspace(1)=%u",
-             API->TypeGetPointerAddrSpace(DefaultPtr),
-             API->TypeGetPointerAddrSpace(AS1Ptr));
+    API->DiagNoteF("[example-plugin] ptr addrspace(0)=%u "
+                   "ptr addrspace(1)=%u",
+                   API->TypeGetPointerAddrSpace(DefaultPtr),
+                   API->TypeGetPointerAddrSpace(AS1Ptr));
   }
 
-  return 0;
-}
-
-/*
- * Module pass: demonstrate reverse function & alias iteration.
- *
- * Uses ModuleGetPrevFunction (complement to ModuleGetLastFunction) to
- * walk the function list backwards, and ModuleGetLastAlias /
- * ModuleGetPrevAlias for reverse alias traversal.
- */
-static int reverseIterDemoPass(NevercModuleRef M,
-                               const NevercHostAPI *API,
-                               void *UserData) {
-  (void)UserData;
-
-  int RevFnCount = 0;
-  if (NEVERC_API_HAS(API, ModuleGetPrevFunction)) {
-    NevercValueRef F = API->ModuleGetLastFunction(M);
-    while (F) {
-      if (!API->FunctionIsDeclaration(F))
-        RevFnCount++;
-      F = API->ModuleGetPrevFunction(F);
-    }
-  }
-
-  int AliasCount = 0;
-  if (NEVERC_API_HAS(API, ModuleGetPrevAlias)) {
-    NevercValueRef A = API->ModuleGetLastAlias(M);
-    while (A) {
-      AliasCount++;
-      A = API->ModuleGetPrevAlias(A);
-    }
-  }
-
-  diagNote(API,
-           "[example-plugin] ReverseIter: %d defined fns (rev), "
-           "%d aliases (rev)",
-           RevFnCount, AliasCount);
   return 0;
 }
 
@@ -1185,9 +1211,9 @@ static int nswAndComdatDemoPass(NevercModuleRef M,
     }
   }
 
-  diagNote(API,
-           "[example-plugin] Globals: %d with COMDAT, %d thread-local",
-           ComdatCount, ThreadLocalCount);
+  API->DiagNoteF("[example-plugin] Globals: %d with COMDAT, "
+                 "%d thread-local",
+                 ComdatCount, ThreadLocalCount);
   return 0;
 }
 
@@ -1228,10 +1254,252 @@ static int constAggrAndAttrDemoPass(NevercModuleRef M,
     F = API->ModuleGetNextFunction(F);
   }
 
-  diagNote(API,
-           "[example-plugin] %d globals with aggregate init, "
-           "%d noinline functions",
-           AggrGlobals, NoInlineFns);
+  API->DiagNoteF("[example-plugin] %d globals with aggregate init, "
+                 "%d noinline functions",
+                 AggrGlobals, NoInlineFns);
+  return 0;
+}
+
+/*
+ * Module pass: demonstrate the string / memory utility API.
+ *
+ * Uses StrStartsWith, StrFindChar, StrSubstring, StrReplaceAll, StrToLower,
+ * MemDup to classify function names by prefix, extract base names from mangled
+ * intrinsics (e.g. "llvm.memcpy.p0.p0.i64" -> "memcpy"), and show name
+ * transformation via StrReplaceAll and StrToLower.
+ *
+ * Tracks the first defined function during the walk to avoid a second
+ * traversal for the StrReplaceAll/MemDup demo.
+ */
+static int stringUtilDemoPass(NevercModuleRef M,
+                              const NevercHostAPI *API,
+                              void *UserData) {
+  (void)UserData;
+  if (!NEVERC_API_FN(API, StrStartsWith))
+    return 0;
+
+  int PrefixedCount = 0;
+  int TotalDefined = 0;
+  int IntrinsicCount = 0;
+  NevercValueRef FirstDefined = NULL;
+
+  NevercValueRef F = API->ModuleGetFirstFunction(M);
+  while (F) {
+    const char *Name = API->ValueGetName(F);
+    if (!API->FunctionIsDeclaration(F)) {
+      TotalDefined++;
+      if (!FirstDefined)
+        FirstDefined = F;
+      if (API->StrStartsWith(Name, "__neverc_") ||
+          API->StrStartsWith(Name, "llvm."))
+        PrefixedCount++;
+    }
+    if (!API->StrStartsWith(Name, "llvm.")) {
+      F = API->ModuleGetNextFunction(F);
+      continue;
+    }
+    IntrinsicCount++;
+
+    if (!NEVERC_API_FN(API, StrFindChar)) {
+      F = API->ModuleGetNextFunction(F);
+      continue;
+    }
+    uint64_t DotPos = API->StrFindChar(Name + 5, '.');
+    if (DotPos == (uint64_t)-1) {
+      F = API->ModuleGetNextFunction(F);
+      continue;
+    }
+    char *BaseName = API->StrSubstring(Name, 5, DotPos);
+    if (!BaseName) {
+      F = API->ModuleGetNextFunction(F);
+      continue;
+    }
+
+    const char *Display = BaseName;
+    char *Lower = NULL;
+    if (NEVERC_API_FN(API, StrToLower)) {
+      Lower = API->StrToLower(BaseName);
+      if (Lower)
+        Display = Lower;
+    }
+    API->DiagNoteF("[example-plugin] Intrinsic: %s", Display);
+    if (Lower)
+      API->Free(Lower);
+    API->Free(BaseName);
+
+    F = API->ModuleGetNextFunction(F);
+  }
+
+  if (FirstDefined && NEVERC_API_FN(API, StrReplaceAll)) {
+    const char *Name = API->ValueGetName(FirstDefined);
+    char *Demangled = API->StrReplaceAll(Name, "_", "::");
+    if (Demangled) {
+      API->DiagNoteF("[example-plugin] Demangled-like: %s -> %s",
+                     Name, Demangled);
+      API->Free(Demangled);
+    }
+    if (NEVERC_API_FN(API, MemDup) && NEVERC_API_FN(API, StrLen)) {
+      uint64_t NameLen = API->StrLen(Name);
+      char *Copy = (char *)API->MemDup(Name, NameLen + 1);
+      if (Copy) {
+        API->DiagNoteF("[example-plugin] MemDup name: %s", Copy);
+        API->Free(Copy);
+      }
+    }
+  }
+
+  API->DiagNoteF("[example-plugin] StringUtil: %d defined, %d prefixed, "
+                 "%d intrinsics",
+                 TotalDefined, PrefixedCount, IntrinsicCount);
+  return 0;
+}
+
+/*
+ * Module pass: demonstrate batch collection for high-throughput analysis.
+ *
+ * Uses ModuleCollectFunctions / FunctionCollectBBs to gather all items
+ * into flat arrays, avoiding repeated vtable indirection.  For a module
+ * with N functions and M total instructions the iterator pattern makes
+ * O(N+M) indirect calls; the batch path makes O(N) calls plus fast
+ * sequential array walks.
+ */
+static int batchAnalysisDemoPass(NevercModuleRef M,
+                                 const NevercHostAPI *API,
+                                 void *UserData) {
+  (void)UserData;
+  if (!NEVERC_API_HAS(API, ModuleCollectFunctions))
+    return 0;
+
+  unsigned FnCount = API->ModuleGetFunctionCount(M);
+  if (FnCount == 0)
+    return 0;
+  NevercValueRef *Funcs =
+      (NevercValueRef *)API->Alloc(FnCount * sizeof(NevercValueRef));
+  if (!Funcs)
+    return 0;
+  API->ModuleCollectFunctions(M, Funcs);
+
+  unsigned TotalBBs = 0;
+  unsigned TotalInsts = 0;
+  unsigned DefinedFns = 0;
+
+  unsigned I;
+  for (I = 0; I < FnCount; I++) {
+    if (API->FunctionIsDeclaration(Funcs[I]))
+      continue;
+    DefinedFns++;
+
+    unsigned BBCount = API->FunctionGetBBCount(Funcs[I]);
+    TotalBBs += BBCount;
+
+    NevercBasicBlockRef *BBs = (NevercBasicBlockRef *)API->Alloc(
+        BBCount * sizeof(NevercBasicBlockRef));
+    if (!BBs)
+      continue;
+    API->FunctionCollectBBs(Funcs[I], BBs);
+
+    unsigned J;
+    for (J = 0; J < BBCount; J++)
+      TotalInsts += API->BBGetInstCount(BBs[J]);
+    API->Free(BBs);
+  }
+  API->Free(Funcs);
+
+  API->DiagNoteF("[example-plugin] Batch: %u defined fns, "
+                 "%u BBs, %u instructions",
+                 DefinedFns, TotalBBs, TotalInsts);
+  return 0;
+}
+
+/*
+ * Module pass: LTO pipeline stage tracker.
+ *
+ * Registered at LTO_PRE_OPT and LTO_POST_OPT.  UserData carries the
+ * NevercHookPoint enum value.
+ */
+static int ltoStagePass(NevercModuleRef M,
+                        const NevercHostAPI *API,
+                        void *UserData) {
+  const char *Stage = getHookName(API, UserData);
+  unsigned FnCount = API->ModuleGetFunctionCount(M);
+  unsigned Defined = 0;
+
+  if (FnCount && NEVERC_API_FN(API, ModuleCollectFunctions)) {
+    NevercValueRef *Fns =
+        (NevercValueRef *)API->Alloc(FnCount * sizeof(NevercValueRef));
+    if (Fns) {
+      API->ModuleCollectFunctions(M, Fns);
+      unsigned I;
+      for (I = 0; I < FnCount; I++) {
+        if (!API->FunctionIsDeclaration(Fns[I]))
+          Defined++;
+      }
+      API->Free(Fns);
+    }
+  } else {
+    NevercValueRef F = API->ModuleGetFirstFunction(M);
+    while (F) {
+      if (!API->FunctionIsDeclaration(F))
+        Defined++;
+      F = API->ModuleGetNextFunction(F);
+    }
+  }
+
+  API->DiagNoteF("[example-plugin] %s: %u functions (%u defined)",
+                 Stage, FnCount, Defined);
+  return 0;
+}
+
+/*
+ * Linker pass: symbol and section census.
+ *
+ * Walks the linker's symbol table and section list to demonstrate the
+ * LINK_* hook API.  Reports counts of defined/undefined/local symbols
+ * and the output format.  UserData carries the NevercHookPoint enum value.
+ */
+static int linkerCensusPass(const NevercHostAPI *API,
+                            void *UserData) {
+  const char *Stage = getHookName(API, UserData);
+  int Defined = 0, Undefined = 0, LocalCount = 0, HiddenCount = 0;
+
+  uint64_t DefinedSizeTotal = 0;
+  NevercLinkerSymbolRef Sym = API->LinkGetFirstSymbol();
+  while (Sym) {
+    if (API->LinkSymbolIsDefined(Sym)) {
+      Defined++;
+      if (NEVERC_API_FN(API, LinkSymbolGetSize))
+        DefinedSizeTotal += API->LinkSymbolGetSize(Sym);
+    } else {
+      Undefined++;
+    }
+    if (API->LinkSymbolIsLocal(Sym))
+      LocalCount++;
+    if (API->LinkSymbolIsHidden(Sym))
+      HiddenCount++;
+    Sym = API->LinkGetNextSymbol(Sym);
+  }
+
+  int Sections = 0;
+  NevercLinkerSectionRef Sec = API->LinkGetFirstSection();
+  while (Sec) {
+    Sections++;
+    Sec = API->LinkGetNextSection(Sec);
+  }
+
+  unsigned Format = API->LinkGetOutputFormat();
+  const char *FmtName = "unknown";
+  if (Format == NEVERC_LINK_FORMAT_ELF)
+    FmtName = "ELF";
+  else if (Format == NEVERC_LINK_FORMAT_COFF)
+    FmtName = "COFF";
+  else if (Format == NEVERC_LINK_FORMAT_MACHO)
+    FmtName = "Mach-O";
+
+  API->DiagNoteF("[example-plugin] Link %s [%s]: %d defined, %d undef, "
+                 "%d local, %d hidden syms; %d sections; defined size=%llu",
+                 Stage, FmtName, Defined, Undefined,
+                 LocalCount, HiddenCount, Sections,
+                 (unsigned long long)DefinedSizeTotal);
   return 0;
 }
 
@@ -1269,20 +1537,22 @@ static void registerPasses(const NevercHostAPI *API, void *Registrar) {
   API->RegisterModulePass(Registrar, NEVERC_HOOK_POST_OPT,
                           switchAnalysisDemoPass, NULL,
                           "example-switch-analysis");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
-                          reverseWalkDemoPass, NULL,
-                          "example-reverse-walk");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_POST_OPT,
                           callLikeDemoPass, NULL,
                           "example-call-like");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_POST_OPT,
                           memAccessDemoPass, NULL,
                           "example-mem-access");
+
+#define HOOK_UD(h) ((void *)(uintptr_t)(h))
+
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PIPELINE_START,
-                          pipelineStartPass, NULL,
+                          pipelineStagePass,
+                          HOOK_UD(NEVERC_HOOK_PIPELINE_START),
                           "example-pipeline-start");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PIPELINE_LAST,
-                          pipelineLastPass, NULL,
+                          pipelineStagePass,
+                          HOOK_UD(NEVERC_HOOK_PIPELINE_LAST),
                           "example-pipeline-last");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_POST_OPT,
                           debugLocDemoPass, NULL,
@@ -1293,9 +1563,6 @@ static void registerPasses(const NevercHostAPI *API, void *Registrar) {
   API->RegisterModulePass(Registrar, NEVERC_HOOK_POST_OPT,
                           gepIndexDemoPass, NULL,
                           "example-gep-index");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
-                          reverseGlobalWalkPass, NULL,
-                          "example-reverse-globals");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_POST_OPT,
                           valuePrintDemoPass, NULL,
                           "example-value-print");
@@ -1306,85 +1573,112 @@ static void registerPasses(const NevercHostAPI *API, void *Registrar) {
                           dataLayoutDemoPass, NULL,
                           "example-datalayout");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
-                          reverseIterDemoPass, NULL,
-                          "example-reverse-iter");
+                          reverseIterationDemoPass, NULL,
+                          "example-reverse-iteration");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
                           nswAndComdatDemoPass, NULL,
                           "example-nsw-comdat");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
                           constAggrAndAttrDemoPass, NULL,
                           "example-const-aggr-attr");
+  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+                          stringUtilDemoPass, NULL,
+                          "example-string-util");
+  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+                          batchAnalysisDemoPass, NULL,
+                          "example-batch-analysis");
 
   /* Stage trackers — verify every hook point is wired correctly.
-     Using stable string-literal pointers so UserData stays valid for the
-     lifetime of the host process. */
+     UserData carries the NevercHookPoint enum value; stage names are
+     resolved at runtime via HookPointGetName. */
 
   /* Normal flow — MIR hooks */
-  static const char kStageBeforeCodegenPreEmit[] = "BEFORE_CODEGEN_PREEMIT";
-  static const char kStageAfterCodegenFinalMIR[] = "AFTER_CODEGEN_FINAL_MIR";
-
   API->RegisterMachinePass(Registrar, NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT,
                            stageTrackerMachinePass,
-                           (void *)kStageBeforeCodegenPreEmit,
+                           HOOK_UD(NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT),
                            "example-stage-before-codegen-preemit");
   API->RegisterMachinePass(Registrar, NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR,
                            stageTrackerMachinePass,
-                           (void *)kStageAfterCodegenFinalMIR,
+                           HOOK_UD(NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR),
                            "example-stage-after-codegen-final-mir");
 
   /* Shellcode flow — IR hooks */
-  static const char kStageBeforePrep[]     = "SC_BEFORE_PREP";
-  static const char kStageAfterPrep[]      = "SC_AFTER_PREP";
-  static const char kStageBeforeInlining[] = "SC_BEFORE_INLINING";
-  static const char kStageAfterInlining[]  = "SC_AFTER_INLINING";
-  static const char kStageAfterStackify[]  = "SC_AFTER_STACKIFY";
-  static const char kStageAfterFinalIR[]   = "SC_AFTER_FINAL_IR";
-
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_BEFORE_PREP,
-                          stageTrackerModulePass, (void *)kStageBeforePrep,
+                          stageTrackerModulePass,
+                          HOOK_UD(NEVERC_HOOK_SC_BEFORE_PREP),
                           "example-stage-sc-before-prep");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_PREP,
-                          stageTrackerModulePass, (void *)kStageAfterPrep,
+                          stageTrackerModulePass,
+                          HOOK_UD(NEVERC_HOOK_SC_AFTER_PREP),
                           "example-stage-sc-after-prep");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_BEFORE_INLINING,
-                          stageTrackerModulePass, (void *)kStageBeforeInlining,
+                          stageTrackerModulePass,
+                          HOOK_UD(NEVERC_HOOK_SC_BEFORE_INLINING),
                           "example-stage-sc-before-inlining");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_INLINING,
-                          stageTrackerModulePass, (void *)kStageAfterInlining,
+                          stageTrackerModulePass,
+                          HOOK_UD(NEVERC_HOOK_SC_AFTER_INLINING),
                           "example-stage-sc-after-inlining");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_STACKIFY,
-                          stageTrackerModulePass, (void *)kStageAfterStackify,
+                          stageTrackerModulePass,
+                          HOOK_UD(NEVERC_HOOK_SC_AFTER_STACKIFY),
                           "example-stage-sc-after-stackify");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_FINAL_IR,
-                          stageTrackerModulePass, (void *)kStageAfterFinalIR,
+                          stageTrackerModulePass,
+                          HOOK_UD(NEVERC_HOOK_SC_AFTER_FINAL_IR),
                           "example-stage-sc-after-final-ir");
 
   /* Shellcode flow — MIR hooks */
-  static const char kStageBeforePreEmit[]  = "SC_BEFORE_PREEMIT";
-  static const char kStageAfterPreEmit[]   = "SC_AFTER_PREEMIT";
-  static const char kStageAfterFinalMIR[]  = "SC_AFTER_FINAL_MIR";
-
   API->RegisterMachinePass(Registrar, NEVERC_HOOK_SC_BEFORE_PREEMIT,
                            stageTrackerMachinePass,
-                           (void *)kStageBeforePreEmit,
+                           HOOK_UD(NEVERC_HOOK_SC_BEFORE_PREEMIT),
                            "example-stage-sc-before-preemit");
   API->RegisterMachinePass(Registrar, NEVERC_HOOK_SC_AFTER_PREEMIT,
-                           stageTrackerMachinePass, (void *)kStageAfterPreEmit,
+                           stageTrackerMachinePass,
+                           HOOK_UD(NEVERC_HOOK_SC_AFTER_PREEMIT),
                            "example-stage-sc-after-preemit");
   API->RegisterMachinePass(Registrar, NEVERC_HOOK_SC_AFTER_FINAL_MIR,
-                           stageTrackerMachinePass, (void *)kStageAfterFinalMIR,
+                           stageTrackerMachinePass,
+                           HOOK_UD(NEVERC_HOOK_SC_AFTER_FINAL_MIR),
                            "example-stage-sc-after-final-mir");
 
   /* Shellcode flow — binary hooks */
-  static const char kStagePostExtract[]    = "SC_POST_EXTRACT";
-  static const char kStagePostFinalize[]   = "SC_POST_FINALIZE";
-
   API->RegisterBinaryPass(Registrar, NEVERC_HOOK_SC_POST_EXTRACT,
-                          stageTrackerBinaryPass, (void *)kStagePostExtract,
+                          stageTrackerBinaryPass,
+                          HOOK_UD(NEVERC_HOOK_SC_POST_EXTRACT),
                           "example-stage-sc-post-extract");
   API->RegisterBinaryPass(Registrar, NEVERC_HOOK_SC_POST_FINALIZE,
-                          stageTrackerBinaryPass, (void *)kStagePostFinalize,
+                          stageTrackerBinaryPass,
+                          HOOK_UD(NEVERC_HOOK_SC_POST_FINALIZE),
                           "example-stage-sc-post-finalize");
+
+  /* LTO flow — IR hooks (module passes; independent of linker API). */
+  API->RegisterModulePass(Registrar, NEVERC_HOOK_LTO_PRE_OPT,
+                          ltoStagePass,
+                          HOOK_UD(NEVERC_HOOK_LTO_PRE_OPT),
+                          "example-lto-pre-opt");
+  API->RegisterModulePass(Registrar, NEVERC_HOOK_LTO_POST_OPT,
+                          ltoStagePass,
+                          HOOK_UD(NEVERC_HOOK_LTO_POST_OPT),
+                          "example-lto-post-opt");
+
+  /* Linker flow — object-level hooks */
+  if (NEVERC_API_FN(API, RegisterLinkerPass)) {
+    API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_PRE_LAYOUT,
+                            linkerCensusPass,
+                            HOOK_UD(NEVERC_HOOK_LINK_PRE_LAYOUT),
+                            "example-linker-pre-layout");
+    API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_POST_LAYOUT,
+                            linkerCensusPass,
+                            HOOK_UD(NEVERC_HOOK_LINK_POST_LAYOUT),
+                            "example-linker-post-layout");
+    API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_POST_EMIT,
+                            linkerCensusPass,
+                            HOOK_UD(NEVERC_HOOK_LINK_POST_EMIT),
+                            "example-linker-post-emit");
+  }
+
+#undef HOOK_UD
 }
 
 NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {

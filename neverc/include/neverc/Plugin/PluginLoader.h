@@ -97,6 +97,16 @@ public:
     return LI != LinkerPasses.end() && !LI->second.empty();
   }
 
+  /// True if any plugin registered a linker pass (any LINK_* hook).  Linker
+  /// backends gate their accessor-table setup and LINK_* hook firing on this
+  /// so a plugin that only uses IR/MIR hooks adds zero cost to the link.
+  bool hasLinkerPasses() const {
+    for (const auto &KV : LinkerPasses)
+      if (!KV.second.empty())
+        return true;
+    return false;
+  }
+
   const NevercHostAPI &getHostAPI() const { return HostAPI; }
 
 private:
@@ -137,6 +147,53 @@ void addPluginModulePasses(llvm::ModulePassManager &MPM, NevercHookPoint Hook,
 /// TargetPassConfig.
 void addPluginMachinePasses(llvm::TargetPassConfig &TPC, NevercHookPoint Hook,
                             PluginLoader &Loader);
+
+/// Backend-provided accessor table for linker symbol/section state.
+///
+/// A linker backend (ELF/COFF/MachO) installs one of these via
+/// setLinkerBackend() while it runs linker passes, so the host vtable's
+/// Link* queries resolve against backend-specific state WITHOUT the plugin
+/// library depending on any linker backend.  Opaque refs are backend-defined;
+/// the ELF backend encodes a 1-based array index (0 == end-of-list /
+/// not-found) for O(1) iteration.  Every member may be null; the bridge falls
+/// back to safe defaults (empty string / 0 / nullptr).
+struct NevercLinkerBackend {
+  NevercLinkerSymbolRef (*GetFirstSymbol)();
+  NevercLinkerSymbolRef (*GetNextSymbol)(NevercLinkerSymbolRef S);
+  NevercLinkerSymbolRef (*FindSymbol)(const char *Name);
+  const char *(*SymbolGetName)(NevercLinkerSymbolRef S);
+  uint64_t (*SymbolGetValue)(NevercLinkerSymbolRef S);
+  uint64_t (*SymbolGetSize)(NevercLinkerSymbolRef S);
+  int (*SymbolIsDefined)(NevercLinkerSymbolRef S);
+  int (*SymbolIsLocal)(NevercLinkerSymbolRef S);
+  int (*SymbolIsHidden)(NevercLinkerSymbolRef S);
+  void (*SymbolSetVisibilityHidden)(NevercLinkerSymbolRef S, int IsHidden);
+
+  NevercLinkerSectionRef (*GetFirstSection)();
+  NevercLinkerSectionRef (*GetNextSection)(NevercLinkerSectionRef S);
+  NevercLinkerSectionRef (*FindSection)(const char *Name);
+  const char *(*SectionGetName)(NevercLinkerSectionRef S);
+  uint64_t (*SectionGetSize)(NevercLinkerSectionRef S);
+  uint64_t (*SectionGetAlignment)(NevercLinkerSectionRef S);
+  unsigned (*SectionGetFlags)(NevercLinkerSectionRef S);
+
+  const char *(*GetOutputPath)();
+  unsigned (*GetOutputFormat)();
+};
+
+/// Install / clear the active linker backend accessor table.  A backend sets
+/// it around its link-pass invocation and clears it afterwards (RAII is
+/// recommended so it is cleared on early returns).  Single-threaded: links run
+/// sequentially and the writer phase that fires linker hooks is not reentrant.
+void setLinkerBackend(const NevercLinkerBackend *Backend);
+const NevercLinkerBackend *getLinkerBackend();
+void clearLinkerBackend();
+
+/// Run every linker pass registered for a hook point, in registration order.
+/// No-op when no plugin registered a linker pass for Hook, so the common
+/// (no-plugin) link path pays nothing.  The backend must install its accessor
+/// table (setLinkerBackend) before calling this so Link* queries resolve.
+void runLinkerPasses(NevercHookPoint Hook, PluginLoader &Loader);
 
 } // namespace plugin
 } // namespace neverc

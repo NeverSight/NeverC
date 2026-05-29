@@ -11,6 +11,7 @@
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
 #include "Linker/Core/Support/FileIO.h"
+#include "neverc/Plugin/PluginLoader.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSet.h"
@@ -21,9 +22,12 @@
 #include "llvm/Support/Parallel.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <algorithm>
+#include <deque>
 #include <map>
 #include <memory>
+#include <string>
 #include <utility>
+#include <vector>
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/mman.h>
 #include <unistd.h>
@@ -683,7 +687,206 @@ void OutputWriter::commitPostFixes() {}
 // ImageEmitter: main pipeline
 // ===----------------------------------------------------------------------===
 
+// ===----------------------------------------------------------------------===
+//  neverc out-of-tree plugin: linker hook integration (COFF)
+//
+//  Mirrors the ELF backend.  COFF has no global linker context, so the active
+//  COFFLinkerContext is published in a TU-local pointer for the duration of
+//  the writer's run().  Symbols live in an unordered hash map, so a flat
+//  snapshot vector is built once for O(1) indexed iteration.  COFF short
+//  symbol names are not null-terminated in place, so names handed to plugins
+//  are copied into a per-run cache (a deque for pointer stability).  COFF has
+//  no ELF-style symbol visibility/binding, so those accessors are left null
+//  and the bridge returns safe defaults.
+// ===----------------------------------------------------------------------===
+namespace {
+
+COFFLinkerContext *gCoffCtx = nullptr;
+std::vector<Symbol *> *gCoffSymbols = nullptr;
+std::deque<std::string> *gCoffNames = nullptr;
+
+const char *cacheCoffName(StringRef S) {
+  if (!gCoffNames)
+    return "";
+  gCoffNames->emplace_back(S.str());
+  return gCoffNames->back().c_str();
+}
+
+Symbol *coffSymbolFromRef(NevercLinkerSymbolRef S) {
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  if (!gCoffSymbols || Idx == 0 || Idx > gCoffSymbols->size())
+    return nullptr;
+  return (*gCoffSymbols)[Idx - 1];
+}
+
+NevercLinkerSymbolRef coffEncodeSymRef(size_t OneBased) {
+  return reinterpret_cast<NevercLinkerSymbolRef>(
+      static_cast<uintptr_t>(OneBased));
+}
+
+NevercLinkerSymbolRef coffLinkGetFirstSymbol() {
+  return (gCoffSymbols && !gCoffSymbols->empty()) ? coffEncodeSymRef(1)
+                                                  : nullptr;
+}
+
+NevercLinkerSymbolRef coffLinkGetNextSymbol(NevercLinkerSymbolRef S) {
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  if (!gCoffSymbols || Idx == 0 || Idx >= gCoffSymbols->size())
+    return nullptr;
+  return coffEncodeSymRef(Idx + 1);
+}
+
+NevercLinkerSymbolRef coffLinkFindSymbol(const char *Name) {
+  if (!Name || !gCoffSymbols)
+    return nullptr;
+  StringRef Want(Name);
+  for (size_t I = 0, E = gCoffSymbols->size(); I != E; ++I)
+    if ((*gCoffSymbols)[I]->getName() == Want)
+      return coffEncodeSymRef(I + 1);
+  return nullptr;
+}
+
+const char *coffLinkSymbolGetName(NevercLinkerSymbolRef S) {
+  Symbol *Sym = coffSymbolFromRef(S);
+  return Sym ? cacheCoffName(Sym->getName()) : "";
+}
+
+uint64_t coffLinkSymbolGetValue(NevercLinkerSymbolRef S) {
+  Symbol *Sym = coffSymbolFromRef(S);
+  if (Sym && Sym->kind() <= Symbol::LastDefinedKind)
+    return static_cast<Defined *>(Sym)->getRVA();
+  return 0;
+}
+
+int coffLinkSymbolIsDefined(NevercLinkerSymbolRef S) {
+  Symbol *Sym = coffSymbolFromRef(S);
+  return (Sym && Sym->kind() <= Symbol::LastDefinedKind) ? 1 : 0;
+}
+
+NevercLinkerSectionRef coffEncodeSecRef(size_t OneBased) {
+  return reinterpret_cast<NevercLinkerSectionRef>(
+      static_cast<uintptr_t>(OneBased));
+}
+
+OutputSection *coffSectionFromRef(NevercLinkerSectionRef S) {
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  if (!gCoffCtx || Idx == 0 || Idx > gCoffCtx->outputSections.size())
+    return nullptr;
+  return gCoffCtx->outputSections[Idx - 1];
+}
+
+NevercLinkerSectionRef coffLinkGetFirstSection() {
+  return (gCoffCtx && !gCoffCtx->outputSections.empty()) ? coffEncodeSecRef(1)
+                                                         : nullptr;
+}
+
+NevercLinkerSectionRef coffLinkGetNextSection(NevercLinkerSectionRef S) {
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  if (!gCoffCtx || Idx == 0 || Idx >= gCoffCtx->outputSections.size())
+    return nullptr;
+  return coffEncodeSecRef(Idx + 1);
+}
+
+NevercLinkerSectionRef coffLinkFindSection(const char *Name) {
+  if (!Name || !gCoffCtx)
+    return nullptr;
+  StringRef Want(Name);
+  for (size_t I = 0, E = gCoffCtx->outputSections.size(); I != E; ++I)
+    if (gCoffCtx->outputSections[I]->name == Want)
+      return coffEncodeSecRef(I + 1);
+  return nullptr;
+}
+
+const char *coffLinkSectionGetName(NevercLinkerSectionRef S) {
+  OutputSection *Sec = coffSectionFromRef(S);
+  return Sec ? cacheCoffName(Sec->name) : "";
+}
+
+uint64_t coffLinkSectionGetSize(NevercLinkerSectionRef S) {
+  OutputSection *Sec = coffSectionFromRef(S);
+  return Sec ? Sec->getVirtualSize() : 0;
+}
+
+unsigned coffLinkSectionGetFlags(NevercLinkerSectionRef S) {
+  OutputSection *Sec = coffSectionFromRef(S);
+  return Sec ? Sec->header.Characteristics : 0;
+}
+
+const char *coffLinkGetOutputPath() {
+  if (!gCoffCtx || gCoffCtx->config.outputFile.empty())
+    return "";
+  return cacheCoffName(gCoffCtx->config.outputFile);
+}
+
+unsigned coffLinkGetOutputFormat() { return NEVERC_LINK_FORMAT_COFF; }
+
+neverc::plugin::NevercLinkerBackend makeCoffLinkerBackend() {
+  neverc::plugin::NevercLinkerBackend B{};
+  B.GetFirstSymbol = coffLinkGetFirstSymbol;
+  B.GetNextSymbol = coffLinkGetNextSymbol;
+  B.FindSymbol = coffLinkFindSymbol;
+  B.SymbolGetName = coffLinkSymbolGetName;
+  B.SymbolGetValue = coffLinkSymbolGetValue;
+  B.SymbolIsDefined = coffLinkSymbolIsDefined;
+  // COFF has no ELF-style size/binding/visibility: leave SymbolGetSize,
+  // SymbolIsLocal, SymbolIsHidden and SymbolSetVisibilityHidden null so the
+  // bridge returns safe defaults.
+  B.GetFirstSection = coffLinkGetFirstSection;
+  B.GetNextSection = coffLinkGetNextSection;
+  B.FindSection = coffLinkFindSection;
+  B.SectionGetName = coffLinkSectionGetName;
+  B.SectionGetSize = coffLinkSectionGetSize;
+  // SectionGetAlignment: COFF alignment is encoded in characteristics, not a
+  // plain field; leave null.
+  B.SectionGetFlags = coffLinkSectionGetFlags;
+  B.GetOutputPath = coffLinkGetOutputPath;
+  B.GetOutputFormat = coffLinkGetOutputFormat;
+  return B;
+}
+
+const neverc::plugin::NevercLinkerBackend CoffLinkerBackend =
+    makeCoffLinkerBackend();
+
+// Publishes the COFF accessor state for the writer's run() and tears it down
+// on scope exit (including early error returns inside run()).
+struct CoffLinkerBackendScope {
+  bool Active;
+  std::vector<Symbol *> Symbols;
+  std::deque<std::string> Names;
+
+  CoffLinkerBackendScope(COFFLinkerContext &ctx, bool active) : Active(active) {
+    if (!Active)
+      return;
+    ctx.symtab.forEachSymbol([this](Symbol *S) { Symbols.push_back(S); });
+    gCoffCtx = &ctx;
+    gCoffSymbols = &Symbols;
+    gCoffNames = &Names;
+    neverc::plugin::setLinkerBackend(&CoffLinkerBackend);
+  }
+  ~CoffLinkerBackendScope() {
+    if (!Active)
+      return;
+    neverc::plugin::clearLinkerBackend();
+    gCoffCtx = nullptr;
+    gCoffSymbols = nullptr;
+    gCoffNames = nullptr;
+  }
+  CoffLinkerBackendScope(const CoffLinkerBackendScope &) = delete;
+  CoffLinkerBackendScope &operator=(const CoffLinkerBackendScope &) = delete;
+};
+
+} // anonymous namespace
+
 void OutputWriter::run() {
+  // neverc out-of-tree plugins: publish the COFF linker accessor state and
+  // fire the LINK_* hooks around layout / emission.  Zero cost when no plugin
+  // registered a linker pass.
+  auto &pluginLoader = neverc::plugin::getGlobalPluginLoader();
+  const bool runLinkerHooks = pluginLoader.hasLinkerPasses();
+  CoffLinkerBackendScope backendScope(ctx, runLinkerHooks);
+  if (runLinkerHooks)
+    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_PRE_LAYOUT, pluginLoader);
+
   {
     llvm::TimeTraceScope timeScope("Write PE");
     ScopedTimer t1(ctx.codeLayoutTimer);
@@ -702,6 +905,12 @@ void OutputWriter::run() {
     assignOutputSectionIndices();
     setSectionPermissions();
     createSymbolAndStringTable();
+
+    // RVAs, sizes and the symbol table are now final: let plugins inspect the
+    // laid-out symbols/sections before the image is written.
+    if (runLinkerHooks)
+      neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_LAYOUT,
+                                      pluginLoader);
 
     if (fileSize > UINT32_MAX)
       fatal("image size (" + Twine(fileSize) + ") " +
@@ -733,6 +942,10 @@ void OutputWriter::run() {
     fatal("failed to write output '" + buffer->getPath() +
           "': " + toString(std::move(e)));
   commitPostFixes();
+
+  // The output image is on disk: run post-emit plugin passes.
+  if (runLinkerHooks)
+    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_EMIT, pluginLoader);
 }
 
 namespace {

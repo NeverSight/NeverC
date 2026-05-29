@@ -1,4 +1,5 @@
 #include "HostAPIBridge.h"
+#include "neverc/Plugin/PluginLoader.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -24,6 +25,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cerrno>
 #include <cinttypes>
 #include <cstdarg>
 #include <cstdio>
@@ -1681,6 +1683,9 @@ static void bridgeNoOpRegisterMachinePass(void *, NevercHookPoint,
                                           const char *) {}
 static void bridgeNoOpRegisterBinaryPass(void *, NevercHookPoint,
                                          NevercBinaryPassFn, void *,
+                                         const char *) {}
+static void bridgeNoOpRegisterLinkerPass(void *, NevercHookPoint,
+                                         NevercLinkerPassFn, void *,
                                          const char *) {}
 
 // ===----------------------------------------------------------------------===
@@ -3551,7 +3556,7 @@ static char *bridgeStrDup(const char *S) {
   if (!S)
     return nullptr;
   size_t Len = std::strlen(S);
-  char *Buf = static_cast<char *>(std::malloc(Len + 1));
+  char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
   if (!Buf)
     return nullptr;
   std::memcpy(Buf, S, Len + 1);
@@ -3561,14 +3566,17 @@ static char *bridgeStrDup(const char *S) {
 static char *bridgeStrConcat(const char *A, const char *B) {
   size_t LenA = A ? std::strlen(A) : 0;
   size_t LenB = B ? std::strlen(B) : 0;
-  char *Buf = static_cast<char *>(std::malloc(LenA + LenB + 1));
+  size_t TotalLen = LenA + LenB;
+  if (TotalLen < LenA)
+    return nullptr;
+  char *Buf = static_cast<char *>(bridgeAlloc(TotalLen + 1));
   if (!Buf)
     return nullptr;
   if (LenA)
     std::memcpy(Buf, A, LenA);
   if (LenB)
     std::memcpy(Buf + LenA, B, LenB);
-  Buf[LenA + LenB] = '\0';
+  Buf[TotalLen] = '\0';
   return Buf;
 }
 
@@ -3585,7 +3593,7 @@ static char *bridgeIntToStr(int64_t Val) {
   int Len = std::snprintf(Tmp, sizeof(Tmp), "%" PRId64, Val);
   if (Len < 0)
     return nullptr;
-  char *Buf = static_cast<char *>(std::malloc(Len + 1));
+  char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
   if (!Buf)
     return nullptr;
   std::memcpy(Buf, Tmp, Len + 1);
@@ -3597,7 +3605,7 @@ static char *bridgeUIntToStr(uint64_t Val) {
   int Len = std::snprintf(Tmp, sizeof(Tmp), "%" PRIu64, Val);
   if (Len < 0)
     return nullptr;
-  char *Buf = static_cast<char *>(std::malloc(Len + 1));
+  char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
   if (!Buf)
     return nullptr;
   std::memcpy(Buf, Tmp, Len + 1);
@@ -3614,7 +3622,7 @@ static char *bridgeStrFormatV(const char *Fmt, va_list Args) {
   va_end(ArgsCopy);
   if (Len < 0)
     return nullptr;
-  char *Buf = static_cast<char *>(std::malloc(Len + 1));
+  char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
   if (!Buf)
     return nullptr;
   if (static_cast<size_t>(Len) < sizeof(Stack))
@@ -3655,6 +3663,304 @@ static int bridgeMemCompare(const void *A, const void *B, uint64_t Len) {
   if (!A || !B || !Len)
     return 0;
   return std::memcmp(A, B, static_cast<size_t>(Len));
+}
+
+// ===----------------------------------------------------------------------===
+//  Formatted diagnostics (printf-style, one-call format + emit)
+// ===----------------------------------------------------------------------===
+
+static void bridgeDiagV(void (*Emit)(const char *), const char *Fmt,
+                        va_list Args) {
+  if (!Fmt)
+    return;
+  char Stack[512];
+  va_list ArgsCopy;
+  va_copy(ArgsCopy, Args);
+  int Len = std::vsnprintf(Stack, sizeof(Stack), Fmt, ArgsCopy);
+  va_end(ArgsCopy);
+  if (Len < 0)
+    return;
+  if (static_cast<size_t>(Len) < sizeof(Stack)) {
+    Emit(Stack);
+    return;
+  }
+  size_t Size = static_cast<size_t>(Len) + 1;
+  char *Heap = static_cast<char *>(bridgeAlloc(Size));
+  if (!Heap)
+    return;
+  std::vsnprintf(Heap, Size, Fmt, Args);
+  Emit(Heap);
+  bridgeFree(Heap);
+}
+
+static void bridgeDiagNoteV(const char *Fmt, va_list Args) {
+  bridgeDiagV(bridgeDiagNote, Fmt, Args);
+}
+
+static void bridgeDiagWarningV(const char *Fmt, va_list Args) {
+  bridgeDiagV(bridgeDiagWarning, Fmt, Args);
+}
+
+static void bridgeDiagErrorV(const char *Fmt, va_list Args) {
+  bridgeDiagV(bridgeDiagError, Fmt, Args);
+}
+
+static void bridgeDiagNoteF(const char *Fmt, ...) {
+  va_list Args;
+  va_start(Args, Fmt);
+  bridgeDiagNoteV(Fmt, Args);
+  va_end(Args);
+}
+
+static void bridgeDiagWarningF(const char *Fmt, ...) {
+  va_list Args;
+  va_start(Args, Fmt);
+  bridgeDiagWarningV(Fmt, Args);
+  va_end(Args);
+}
+
+static void bridgeDiagErrorF(const char *Fmt, ...) {
+  va_list Args;
+  va_start(Args, Fmt);
+  bridgeDiagErrorV(Fmt, Args);
+  va_end(Args);
+}
+
+// ===----------------------------------------------------------------------===
+//  Zero-initialized allocation
+// ===----------------------------------------------------------------------===
+
+static void *bridgeAllocZeroed(uint64_t Count, uint64_t ElemSize) {
+#if SIZE_MAX < UINT64_MAX
+  // On hosts where size_t is narrower than uint64_t, reject values that the
+  // narrowing casts below would silently truncate.
+  if (Count > SIZE_MAX || ElemSize > SIZE_MAX)
+    return nullptr;
+#endif
+  // calloc itself guarantees the Count * ElemSize product is overflow-checked.
+  return ::calloc(static_cast<size_t>(Count), static_cast<size_t>(ElemSize));
+}
+
+// ===----------------------------------------------------------------------===
+//  Extended string operations
+// ===----------------------------------------------------------------------===
+
+static int bridgeStrStartsWith(const char *S, const char *Prefix) {
+  if (!S || !Prefix)
+    return 0;
+  size_t PrefixLen = std::strlen(Prefix);
+  if (PrefixLen == 0)
+    return 1;
+  return std::strncmp(S, Prefix, PrefixLen) == 0;
+}
+
+static int bridgeStrEndsWith(const char *S, const char *Suffix) {
+  if (!S || !Suffix)
+    return 0;
+  size_t SLen = std::strlen(S);
+  size_t XLen = std::strlen(Suffix);
+  if (XLen > SLen)
+    return 0;
+  return std::memcmp(S + SLen - XLen, Suffix, XLen) == 0 ? 1 : 0;
+}
+
+static int bridgeStrContains(const char *Haystack, const char *Needle) {
+  if (!Haystack)
+    return 0;
+  if (!Needle || !*Needle)
+    return 1;
+  return std::strstr(Haystack, Needle) != nullptr ? 1 : 0;
+}
+
+static int bridgeStrCompare(const char *A, const char *B) {
+  if (A == B)
+    return 0;
+  if (!A)
+    return -1;
+  if (!B)
+    return 1;
+  return std::strcmp(A, B);
+}
+
+static int bridgeStrToInt64(const char *S, int64_t *Out) {
+  if (!S || !Out)
+    return 0;
+  char *End = nullptr;
+  errno = 0;
+  long long Val = std::strtoll(S, &End, 10);
+  if (errno != 0 || End == S || *End != '\0')
+    return 0;
+  *Out = static_cast<int64_t>(Val);
+  return 1;
+}
+
+static int bridgeStrToUInt64(const char *S, uint64_t *Out) {
+  if (!S || !Out)
+    return 0;
+  const char *P = S;
+  while (*P == ' ' || *P == '\t' || *P == '\n' || *P == '\r')
+    ++P;
+  if (*P == '-')
+    return 0;
+  char *End = nullptr;
+  errno = 0;
+  unsigned long long Val = std::strtoull(P, &End, 10);
+  if (errno != 0 || End == P || *End != '\0')
+    return 0;
+  *Out = static_cast<uint64_t>(Val);
+  return 1;
+}
+
+static char *bridgeStrSubstring(const char *S, uint64_t Start, uint64_t Len) {
+  if (!S)
+    return nullptr;
+  size_t SLen = std::strlen(S);
+  if (Start >= SLen)
+    Len = 0;
+  else if (Len > SLen - Start)
+    Len = SLen - Start;
+  char *Buf = static_cast<char *>(bridgeAlloc(static_cast<size_t>(Len) + 1));
+  if (!Buf)
+    return nullptr;
+  if (Len)
+    std::memcpy(Buf, S + Start, static_cast<size_t>(Len));
+  Buf[Len] = '\0';
+  return Buf;
+}
+
+static char *bridgeStrTrim(const char *S) {
+  if (!S)
+    return nullptr;
+  while (*S == ' ' || *S == '\t' || *S == '\n' || *S == '\r')
+    ++S;
+  size_t Len = std::strlen(S);
+  while (Len > 0) {
+    char C = S[Len - 1];
+    if (C != ' ' && C != '\t' && C != '\n' && C != '\r')
+      break;
+    --Len;
+  }
+  char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
+  if (!Buf)
+    return nullptr;
+  std::memcpy(Buf, S, Len);
+  Buf[Len] = '\0';
+  return Buf;
+}
+
+// ===----------------------------------------------------------------------===
+//  Convenience zero-fill
+// ===----------------------------------------------------------------------===
+
+static void bridgeMemZero(void *Dst, uint64_t Len) {
+  if (Dst && Len)
+    std::memset(Dst, 0, static_cast<size_t>(Len));
+}
+
+// ===----------------------------------------------------------------------===
+//  Character search
+// ===----------------------------------------------------------------------===
+
+static uint64_t bridgeStrFindChar(const char *S, int C) {
+  if (!S)
+    return UINT64_MAX;
+  const char *P = std::strchr(S, C);
+  if (!P)
+    return UINT64_MAX;
+  return static_cast<uint64_t>(P - S);
+}
+
+static uint64_t bridgeStrFindLastChar(const char *S, int C) {
+  if (!S)
+    return UINT64_MAX;
+  const char *P = std::strrchr(S, C);
+  if (!P)
+    return UINT64_MAX;
+  return static_cast<uint64_t>(P - S);
+}
+
+// ===----------------------------------------------------------------------===
+//  Overflow-safe array reallocation
+// ===----------------------------------------------------------------------===
+
+static void *bridgeReallocArray(void *Ptr, uint64_t Count, uint64_t ElemSize) {
+#if SIZE_MAX < UINT64_MAX
+  // On hosts where size_t is narrower than uint64_t, reject values that the
+  // narrowing casts below would silently truncate.
+  if (Count > SIZE_MAX || ElemSize > SIZE_MAX)
+    return nullptr;
+#endif
+  // Compute the product entirely in size_t so the overflow check and the
+  // allocation size agree on every host width.
+  size_t C = static_cast<size_t>(Count);
+  size_t E = static_cast<size_t>(ElemSize);
+  if (C != 0 && E > SIZE_MAX / C)
+    return nullptr;
+  size_t Total = C * E;
+  if (Total == 0)
+    Total = 1;
+  return bridgeRealloc(Ptr, Total);
+}
+
+// ===----------------------------------------------------------------------===
+//  Batch collection
+// ===----------------------------------------------------------------------===
+
+static void bridgeModuleCollectFunctions(NevercModuleRef M,
+                                         NevercValueRef *Out) {
+  if (!M || !Out)
+    return;
+  unsigned Idx = 0;
+  for (auto &F : *unwrap(M))
+    Out[Idx++] = wrapV(&F);
+}
+
+static void bridgeModuleCollectGlobals(NevercModuleRef M,
+                                       NevercValueRef *Out) {
+  if (!M || !Out)
+    return;
+  unsigned Idx = 0;
+  for (auto &G : unwrap(M)->globals())
+    Out[Idx++] = wrapV(&G);
+}
+
+static void bridgeFunctionCollectBBs(NevercValueRef F,
+                                     NevercBasicBlockRef *Out) {
+  if (!F || !Out)
+    return;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (!Fn || Fn->isDeclaration())
+    return;
+  unsigned Idx = 0;
+  for (auto &BB : *Fn)
+    Out[Idx++] = wrapBB(&BB);
+}
+
+static void bridgeBBCollectInstructions(NevercBasicBlockRef BB,
+                                        NevercValueRef *Out) {
+  if (!BB || !Out)
+    return;
+  unsigned Idx = 0;
+  for (auto &Inst : *unwrapBB(BB))
+    Out[Idx++] = wrapV(&Inst);
+}
+
+static void bridgeMFuncCollectBBs(NevercMachineFuncRef MF,
+                                  NevercMachineBBRef *Out) {
+  if (!MF || !Out)
+    return;
+  unsigned Idx = 0;
+  for (auto &MBB : *unwrapMF(MF))
+    Out[Idx++] = wrapMBB(&MBB);
+}
+
+static void bridgeMBBCollectInstructions(NevercMachineBBRef MBB,
+                                         NevercMachineInstrRef *Out) {
+  if (!MBB || !Out)
+    return;
+  unsigned Idx = 0;
+  for (auto &MI : *unwrapMBB(MBB))
+    Out[Idx++] = wrapMI(&MI);
 }
 
 // ===----------------------------------------------------------------------===
@@ -3722,8 +4028,11 @@ static void bridgeLandingPadAddClause(NevercValueRef LPad,
   if (!LPad || !ClauseVal)
     return;
   auto *LP = dyn_cast<LandingPadInst>(unwrapV(LPad));
-  if (LP)
-    LP->addClause(cast<Constant>(unwrapV(ClauseVal)));
+  // LandingPadInst::addClause() requires a Constant; use dyn_cast (not cast)
+  // so a plugin passing a non-constant clause is rejected, not a host abort.
+  auto *Clause = dyn_cast<Constant>(unwrapV(ClauseVal));
+  if (LP && Clause)
+    LP->addClause(Clause);
 }
 
 static void bridgeLandingPadSetCleanup(NevercValueRef LPad, int IsCleanup) {
@@ -3861,6 +4170,13 @@ static NevercValueRef bridgeConstGetAggregateElement(NevercValueRef Agg,
   auto *C = dyn_cast<Constant>(unwrapV(Agg));
   if (!C)
     return nullptr;
+  // Constant::getAggregateElement() asserts the value is an aggregate or
+  // vector constant.  A plugin may legitimately probe a scalar initializer
+  // (e.g. `int g = 0;`), so mirror that precondition here and return null
+  // rather than aborting the host compiler.
+  Type *Ty = C->getType();
+  if (!Ty->isAggregateType() && !Ty->isVectorTy())
+    return nullptr;
   Constant *Elem = C->getAggregateElement(Idx);
   return Elem ? wrapV(Elem) : nullptr;
 }
@@ -3869,7 +4185,7 @@ static NevercValueRef bridgeConstGetAggregateElement(NevercValueRef Agg,
 //  MIR extended navigation
 // ===----------------------------------------------------------------------===
 
-static NevercMachineInstrRef bridgeMBBGetLastInst2(NevercMachineBBRef MBB) {
+static NevercMachineInstrRef bridgeMBBGetLastInst(NevercMachineBBRef MBB) {
   if (!MBB)
     return nullptr;
   auto *BB = unwrapMBB(MBB);
@@ -4078,35 +4394,258 @@ static unsigned bridgeMFuncGetBBCount(NevercMachineFuncRef MF) {
 //  they return safe defaults (NULL / 0 / empty string).
 // ===----------------------------------------------------------------------===
 
-static NevercLinkerSymbolRef stubLinkGetFirstSymbol(void) { return nullptr; }
-static NevercLinkerSymbolRef stubLinkGetNextSymbol(NevercLinkerSymbolRef) {
-  return nullptr;
+// These forward to the linker backend accessor table installed via
+// setLinkerBackend() for the duration of a LINK_* hook.  With no backend
+// installed (the common, non-linking path) or a missing accessor they return
+// safe defaults, so plugins that probe the linker API outside a link run get
+// well-defined empty results instead of crashing.
+
+static NevercLinkerSymbolRef bridgeLinkGetFirstSymbol(void) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->GetFirstSymbol ? B->GetFirstSymbol() : nullptr;
 }
-static NevercLinkerSymbolRef stubLinkFindSymbol(const char *) {
-  return nullptr;
+static NevercLinkerSymbolRef bridgeLinkGetNextSymbol(NevercLinkerSymbolRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->GetNextSymbol ? B->GetNextSymbol(S) : nullptr;
 }
-static const char *stubLinkSymbolGetName(NevercLinkerSymbolRef) { return ""; }
-static uint64_t stubLinkSymbolGetValue(NevercLinkerSymbolRef) { return 0; }
-static uint64_t stubLinkSymbolGetSize(NevercLinkerSymbolRef) { return 0; }
-static int stubLinkSymbolIsDefined(NevercLinkerSymbolRef) { return 0; }
-static int stubLinkSymbolIsLocal(NevercLinkerSymbolRef) { return 0; }
-static int stubLinkSymbolIsHidden(NevercLinkerSymbolRef) { return 0; }
-static void stubLinkSymbolSetVisibilityHidden(NevercLinkerSymbolRef, int) {}
-static NevercLinkerSectionRef stubLinkGetFirstSection(void) { return nullptr; }
-static NevercLinkerSectionRef stubLinkGetNextSection(NevercLinkerSectionRef) {
-  return nullptr;
+static NevercLinkerSymbolRef bridgeLinkFindSymbol(const char *Name) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->FindSymbol ? B->FindSymbol(Name) : nullptr;
 }
-static NevercLinkerSectionRef stubLinkFindSection(const char *) {
-  return nullptr;
+static const char *bridgeLinkSymbolGetName(NevercLinkerSymbolRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->SymbolGetName ? B->SymbolGetName(S) : "";
 }
-static const char *stubLinkSectionGetName(NevercLinkerSectionRef) { return ""; }
-static uint64_t stubLinkSectionGetSize(NevercLinkerSectionRef) { return 0; }
-static uint64_t stubLinkSectionGetAlignment(NevercLinkerSectionRef) {
-  return 0;
+static uint64_t bridgeLinkSymbolGetValue(NevercLinkerSymbolRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->SymbolGetValue ? B->SymbolGetValue(S) : 0;
 }
-static unsigned stubLinkSectionGetFlags(NevercLinkerSectionRef) { return 0; }
-static const char *stubLinkGetOutputPath(void) { return ""; }
-static unsigned stubLinkGetOutputFormat(void) { return 0; }
+static uint64_t bridgeLinkSymbolGetSize(NevercLinkerSymbolRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->SymbolGetSize ? B->SymbolGetSize(S) : 0;
+}
+static int bridgeLinkSymbolIsDefined(NevercLinkerSymbolRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->SymbolIsDefined ? B->SymbolIsDefined(S) : 0;
+}
+static int bridgeLinkSymbolIsLocal(NevercLinkerSymbolRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->SymbolIsLocal ? B->SymbolIsLocal(S) : 0;
+}
+static int bridgeLinkSymbolIsHidden(NevercLinkerSymbolRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->SymbolIsHidden ? B->SymbolIsHidden(S) : 0;
+}
+static void bridgeLinkSymbolSetVisibilityHidden(NevercLinkerSymbolRef S,
+                                                int IsHidden) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  if (B && B->SymbolSetVisibilityHidden)
+    B->SymbolSetVisibilityHidden(S, IsHidden);
+}
+static NevercLinkerSectionRef bridgeLinkGetFirstSection(void) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->GetFirstSection ? B->GetFirstSection() : nullptr;
+}
+static NevercLinkerSectionRef
+bridgeLinkGetNextSection(NevercLinkerSectionRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->GetNextSection ? B->GetNextSection(S) : nullptr;
+}
+static NevercLinkerSectionRef bridgeLinkFindSection(const char *Name) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->FindSection ? B->FindSection(Name) : nullptr;
+}
+static const char *bridgeLinkSectionGetName(NevercLinkerSectionRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->SectionGetName ? B->SectionGetName(S) : "";
+}
+static uint64_t bridgeLinkSectionGetSize(NevercLinkerSectionRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->SectionGetSize ? B->SectionGetSize(S) : 0;
+}
+static uint64_t bridgeLinkSectionGetAlignment(NevercLinkerSectionRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->SectionGetAlignment ? B->SectionGetAlignment(S) : 0;
+}
+static unsigned bridgeLinkSectionGetFlags(NevercLinkerSectionRef S) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->SectionGetFlags ? B->SectionGetFlags(S) : 0;
+}
+static const char *bridgeLinkGetOutputPath(void) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->GetOutputPath ? B->GetOutputPath() : "";
+}
+static unsigned bridgeLinkGetOutputFormat(void) {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  return B && B->GetOutputFormat ? B->GetOutputFormat()
+                                 : NEVERC_LINK_FORMAT_UNKNOWN;
+}
+
+// ===----------------------------------------------------------------------===
+//  Substring search, hook-point name, memory duplicate
+// ===----------------------------------------------------------------------===
+
+static uint64_t bridgeStrFindStr(const char *Haystack, const char *Needle) {
+  if (!Haystack || !Needle)
+    return UINT64_MAX;
+  const char *P = std::strstr(Haystack, Needle);
+  return P ? static_cast<uint64_t>(P - Haystack) : UINT64_MAX;
+}
+
+static const char *bridgeHookPointGetName(unsigned Hook) {
+  switch (Hook) {
+  case NEVERC_HOOK_PRE_OPT:                 return "PRE_OPT";
+  case NEVERC_HOOK_POST_OPT:                return "POST_OPT";
+  case NEVERC_HOOK_PIPELINE_START:          return "PIPELINE_START";
+  case NEVERC_HOOK_PIPELINE_LAST:           return "PIPELINE_LAST";
+  case NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT:  return "BEFORE_CODEGEN_PREEMIT";
+  case NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR: return "AFTER_CODEGEN_FINAL_MIR";
+  case NEVERC_HOOK_SC_BEFORE_PREP:          return "SC_BEFORE_PREP";
+  case NEVERC_HOOK_SC_AFTER_PREP:           return "SC_AFTER_PREP";
+  case NEVERC_HOOK_SC_BEFORE_INLINING:      return "SC_BEFORE_INLINING";
+  case NEVERC_HOOK_SC_AFTER_INLINING:       return "SC_AFTER_INLINING";
+  case NEVERC_HOOK_SC_AFTER_STACKIFY:       return "SC_AFTER_STACKIFY";
+  case NEVERC_HOOK_SC_AFTER_FINAL_IR:       return "SC_AFTER_FINAL_IR";
+  case NEVERC_HOOK_SC_BEFORE_PREEMIT:       return "SC_BEFORE_PREEMIT";
+  case NEVERC_HOOK_SC_AFTER_PREEMIT:        return "SC_AFTER_PREEMIT";
+  case NEVERC_HOOK_SC_AFTER_FINAL_MIR:      return "SC_AFTER_FINAL_MIR";
+  case NEVERC_HOOK_SC_POST_EXTRACT:         return "SC_POST_EXTRACT";
+  case NEVERC_HOOK_SC_POST_FINALIZE:        return "SC_POST_FINALIZE";
+  case NEVERC_HOOK_LTO_PRE_OPT:             return "LTO_PRE_OPT";
+  case NEVERC_HOOK_LTO_POST_OPT:            return "LTO_POST_OPT";
+  case NEVERC_HOOK_LINK_PRE_LAYOUT:         return "LINK_PRE_LAYOUT";
+  case NEVERC_HOOK_LINK_POST_LAYOUT:        return "LINK_POST_LAYOUT";
+  case NEVERC_HOOK_LINK_POST_EMIT:          return "LINK_POST_EMIT";
+  default:                                  return "<unknown>";
+  }
+}
+
+static void *bridgeMemDup(const void *Src, uint64_t Len) {
+  if (!Src || Len == 0)
+    return nullptr;
+  void *Dst = bridgeAlloc(Len);
+  if (Dst)
+    std::memcpy(Dst, Src, Len);
+  return Dst;
+}
+
+static char *bridgeStrReplace(const char *S, const char *Old, const char *New) {
+  if (!S)
+    return nullptr;
+  if (!Old || !New || Old[0] == '\0')
+    return bridgeStrDup(S);
+
+  const char *Pos = std::strstr(S, Old);
+  if (!Pos)
+    return bridgeStrDup(S);
+
+  size_t PrefixLen = static_cast<size_t>(Pos - S);
+  size_t OldLen = std::strlen(Old);
+  size_t NewLen = std::strlen(New);
+  size_t SuffixLen = std::strlen(Pos + OldLen);
+  size_t ResultLen = PrefixLen + NewLen;
+  if (ResultLen < PrefixLen)
+    return nullptr;
+  ResultLen += SuffixLen;
+  if (ResultLen < SuffixLen)
+    return nullptr;
+
+  char *Result = static_cast<char *>(bridgeAlloc(ResultLen + 1));
+  if (!Result)
+    return nullptr;
+
+  std::memcpy(Result, S, PrefixLen);
+  std::memcpy(Result + PrefixLen, New, NewLen);
+  std::memcpy(Result + PrefixLen + NewLen, Pos + OldLen, SuffixLen);
+  Result[ResultLen] = '\0';
+  return Result;
+}
+
+static char *bridgeStrReplaceAll(const char *S, const char *Old,
+                                 const char *New) {
+  if (!S)
+    return nullptr;
+  if (!Old || !New || Old[0] == '\0')
+    return bridgeStrDup(S);
+
+  size_t OldLen = std::strlen(Old);
+  size_t NewLen = std::strlen(New);
+
+  size_t Count = 0;
+  const char *P = S;
+  while ((P = std::strstr(P, Old)) != nullptr) {
+    ++Count;
+    P += OldLen;
+  }
+
+  if (Count == 0)
+    return bridgeStrDup(S);
+
+  size_t SLen = std::strlen(S);
+  size_t Removed = Count * OldLen;
+  size_t Added = 0;
+  if (NewLen != 0) {
+    if (Count > SIZE_MAX / NewLen)
+      return nullptr;
+    Added = Count * NewLen;
+  }
+  size_t BaseLen = SLen - Removed;
+  if (Added > SIZE_MAX - BaseLen)
+    return nullptr;
+  size_t ResultLen = BaseLen + Added;
+  char *Result = static_cast<char *>(bridgeAlloc(ResultLen + 1));
+  if (!Result)
+    return nullptr;
+
+  char *Dst = Result;
+  P = S;
+  for (size_t I = 0; I < Count; ++I) {
+    const char *Hit = std::strstr(P, Old);
+    size_t Span = static_cast<size_t>(Hit - P);
+    std::memcpy(Dst, P, Span);
+    Dst += Span;
+    std::memcpy(Dst, New, NewLen);
+    Dst += NewLen;
+    P = Hit + OldLen;
+  }
+  size_t Tail = std::strlen(P);
+  std::memcpy(Dst, P, Tail + 1);
+  return Result;
+}
+
+static char *bridgeStrToLower(const char *S) {
+  if (!S)
+    return nullptr;
+  size_t Len = std::strlen(S);
+  char *R = static_cast<char *>(bridgeAlloc(Len + 1));
+  if (!R)
+    return nullptr;
+  for (size_t I = 0; I < Len; ++I) {
+    auto C = static_cast<unsigned char>(S[I]);
+    R[I] = (C >= 'A' && C <= 'Z')
+               ? static_cast<char>(C + ('a' - 'A'))
+               : static_cast<char>(C);
+  }
+  R[Len] = '\0';
+  return R;
+}
+
+static char *bridgeStrToUpper(const char *S) {
+  if (!S)
+    return nullptr;
+  size_t Len = std::strlen(S);
+  char *R = static_cast<char *>(bridgeAlloc(Len + 1));
+  if (!R)
+    return nullptr;
+  for (size_t I = 0; I < Len; ++I) {
+    auto C = static_cast<unsigned char>(S[I]);
+    R[I] = (C >= 'a' && C <= 'z')
+               ? static_cast<char>(C - ('a' - 'A'))
+               : static_cast<char>(C);
+  }
+  R[Len] = '\0';
+  return R;
+}
 
 // ===----------------------------------------------------------------------===
 //  Build the vtable
@@ -4633,7 +5172,7 @@ NevercHostAPI buildHostAPI() {
   API.InstMoveAfter = bridgeInstMoveAfter;
   API.ConstGetAggregateElement = bridgeConstGetAggregateElement;
 
-  API.MBBGetLastInst = bridgeMBBGetLastInst2;
+  API.MBBGetLastInst = bridgeMBBGetLastInst;
   API.MBBGetPrevInst = bridgeMBBGetPrevInst;
   API.MFuncGetLastBB = bridgeMFuncGetLastBB;
   API.MFuncGetPrevBB = bridgeMFuncGetPrevBB;
@@ -4660,37 +5199,75 @@ NevercHostAPI buildHostAPI() {
   API.MBBGetInstCount = bridgeMBBGetInstCount;
   API.MFuncGetBBCount = bridgeMFuncGetBBCount;
 
-  API.RegisterLinkerPass = nullptr;
+  API.RegisterLinkerPass = bridgeNoOpRegisterLinkerPass;
 
-  API.LinkGetFirstSymbol = stubLinkGetFirstSymbol;
-  API.LinkGetNextSymbol = stubLinkGetNextSymbol;
-  API.LinkFindSymbol = stubLinkFindSymbol;
-  API.LinkSymbolGetName = stubLinkSymbolGetName;
-  API.LinkSymbolGetValue = stubLinkSymbolGetValue;
-  API.LinkSymbolGetSize = stubLinkSymbolGetSize;
-  API.LinkSymbolIsDefined = stubLinkSymbolIsDefined;
-  API.LinkSymbolIsLocal = stubLinkSymbolIsLocal;
-  API.LinkSymbolIsHidden = stubLinkSymbolIsHidden;
-  API.LinkSymbolSetVisibilityHidden = stubLinkSymbolSetVisibilityHidden;
+  API.LinkGetFirstSymbol = bridgeLinkGetFirstSymbol;
+  API.LinkGetNextSymbol = bridgeLinkGetNextSymbol;
+  API.LinkFindSymbol = bridgeLinkFindSymbol;
+  API.LinkSymbolGetName = bridgeLinkSymbolGetName;
+  API.LinkSymbolGetValue = bridgeLinkSymbolGetValue;
+  API.LinkSymbolGetSize = bridgeLinkSymbolGetSize;
+  API.LinkSymbolIsDefined = bridgeLinkSymbolIsDefined;
+  API.LinkSymbolIsLocal = bridgeLinkSymbolIsLocal;
+  API.LinkSymbolIsHidden = bridgeLinkSymbolIsHidden;
+  API.LinkSymbolSetVisibilityHidden = bridgeLinkSymbolSetVisibilityHidden;
 
-  API.LinkGetFirstSection = stubLinkGetFirstSection;
-  API.LinkGetNextSection = stubLinkGetNextSection;
-  API.LinkFindSection = stubLinkFindSection;
-  API.LinkSectionGetName = stubLinkSectionGetName;
-  API.LinkSectionGetSize = stubLinkSectionGetSize;
-  API.LinkSectionGetAlignment = stubLinkSectionGetAlignment;
-  API.LinkSectionGetFlags = stubLinkSectionGetFlags;
+  API.LinkGetFirstSection = bridgeLinkGetFirstSection;
+  API.LinkGetNextSection = bridgeLinkGetNextSection;
+  API.LinkFindSection = bridgeLinkFindSection;
+  API.LinkSectionGetName = bridgeLinkSectionGetName;
+  API.LinkSectionGetSize = bridgeLinkSectionGetSize;
+  API.LinkSectionGetAlignment = bridgeLinkSectionGetAlignment;
+  API.LinkSectionGetFlags = bridgeLinkSectionGetFlags;
 
-  API.LinkGetOutputPath = stubLinkGetOutputPath;
-  API.LinkGetOutputFormat = stubLinkGetOutputFormat;
+  API.LinkGetOutputPath = bridgeLinkGetOutputPath;
+  API.LinkGetOutputFormat = bridgeLinkGetOutputFormat;
+
+  API.DiagNoteF = bridgeDiagNoteF;
+  API.DiagWarningF = bridgeDiagWarningF;
+  API.DiagErrorF = bridgeDiagErrorF;
+  API.DiagNoteV = bridgeDiagNoteV;
+  API.DiagWarningV = bridgeDiagWarningV;
+  API.DiagErrorV = bridgeDiagErrorV;
+
+  API.AllocZeroed = bridgeAllocZeroed;
+
+  API.StrStartsWith = bridgeStrStartsWith;
+  API.StrEndsWith = bridgeStrEndsWith;
+  API.StrContains = bridgeStrContains;
+  API.StrCompare = bridgeStrCompare;
+  API.StrToInt64 = bridgeStrToInt64;
+  API.StrToUInt64 = bridgeStrToUInt64;
+  API.StrSubstring = bridgeStrSubstring;
+  API.StrTrim = bridgeStrTrim;
+
+  API.MemZero = bridgeMemZero;
+  API.StrFindChar = bridgeStrFindChar;
+  API.StrFindLastChar = bridgeStrFindLastChar;
+  API.ReallocArray = bridgeReallocArray;
+
+  API.ModuleCollectFunctions = bridgeModuleCollectFunctions;
+  API.ModuleCollectGlobals = bridgeModuleCollectGlobals;
+  API.FunctionCollectBBs = bridgeFunctionCollectBBs;
+  API.BBCollectInstructions = bridgeBBCollectInstructions;
+
+  API.MFuncCollectBBs = bridgeMFuncCollectBBs;
+  API.MBBCollectInstructions = bridgeMBBCollectInstructions;
+
+  API.StrFindStr = bridgeStrFindStr;
+  API.HookPointGetName = bridgeHookPointGetName;
+  API.MemDup = bridgeMemDup;
+  API.StrReplace = bridgeStrReplace;
+  API.StrReplaceAll = bridgeStrReplaceAll;
+  API.StrToLower = bridgeStrToLower;
+  API.StrToUpper = bridgeStrToUpper;
 
   static_assert(
-      offsetof(NevercHostAPI, LinkGetOutputFormat) +
-              sizeof(NevercHostAPI::LinkGetOutputFormat) ==
+      offsetof(NevercHostAPI, StrToUpper) +
+              sizeof(NevercHostAPI::StrToUpper) ==
           sizeof(NevercHostAPI),
-      "LinkGetOutputFormat is no longer the last field in "
-      "NevercHostAPI. Add bridge assignments for the new field(s) and "
-      "update this check.");
+      "StrToUpper is no longer the last field in NevercHostAPI. "
+      "Add bridge assignments for the new field(s) and update this check.");
 
   return API;
 }

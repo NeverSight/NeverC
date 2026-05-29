@@ -37,6 +37,7 @@
 #include "llvm/TextAPI/PackedVersion.h"
 
 #include "neverc/Merge/Merger.h"
+#include "neverc/Plugin/PluginLoader.h"
 #include <algorithm>
 #include <vector>
 
@@ -1261,6 +1262,12 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   ctx->e.verbose = driverCfg.verbose;
   ctx->e.fatalWarnings = driverCfg.fatalWarnings;
   ctx->e.suppressWarnings = driverCfg.suppressWarnings;
+
+  for (const std::string &Path : driverCfg.nevercPluginPaths) {
+    std::string Err;
+    if (!neverc::plugin::getGlobalPluginLoader().loadPlugin(Path, Err))
+      error(Err);
+  }
 
   config = std::make_unique<Configuration>();
   symtab = std::make_unique<SymbolTable>();

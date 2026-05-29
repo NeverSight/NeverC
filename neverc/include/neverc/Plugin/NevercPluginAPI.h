@@ -14,11 +14,16 @@
 |*     owning Module/Value exists (i.e., within the pass callback).           *|
 |*   - NevercBuilderRef created by BuilderCreate must be freed by calling     *|
 |*     BuilderDispose before the pass returns.                                *|
-|*   - Memory obtained via Alloc/Realloc must be freed via Free.             *|
+|*   - Memory obtained via Alloc/Realloc/MemDup/AllocZeroed/ReallocArray      *|
+|*     must be freed via Free.                                                *|
+|*   - Strings returned by StrDup/StrConcat/StrSubstring/StrReplace/        *|
+|*     StrFormat/IntToStr/ValuePrintToString/etc. are host-allocated;       *|
+|*     caller frees via Free.  DiagNoteF/DiagWarningF/DiagErrorF do NOT       *|
+|*     require Free.  HookPointGetName returns a static string.               *|
 |*   - Do NOT call RegisterModulePass/MachinePass/BinaryPass outside of      *|
 |*     the RegisterPasses callback — they are no-ops after registration.      *|
-|*   - Before using fields added in later versions, check either             *|
-|*     API->Version >= N or NEVERC_API_HAS(API, FieldName).                  *|
+|*   - Before using fields added in later versions, use NEVERC_API_FN or     *|
+|*     NEVERC_API_HAS (layout only) before calling optional vtable entries.  *|
 |*                                                                            *|
 \*===----------------------------------------------------------------------===*/
 
@@ -51,6 +56,11 @@ extern "C" {
  * Usage: if (NEVERC_API_HAS(API, BuildSwitch)) { API->BuildSwitch(...); }  */
 #define NEVERC_API_HAS(api, field) \
     ((api)->StructSize >= offsetof(NevercHostAPI, field) + sizeof((api)->field))
+
+/* Same as NEVERC_API_HAS but also requires a non-NULL function pointer.
+ * Use for optional vtable entries that may be absent on older hosts. */
+#define NEVERC_API_FN(api, field) \
+    (NEVERC_API_HAS(api, field) && (api)->field)
 
 /* -------------------------------------------------------------------------- */
 /*  Opaque handle types                                                       */
@@ -180,6 +190,17 @@ typedef enum {
 } NevercComdatSelectionKind;
 
 /* -------------------------------------------------------------------------- */
+/*  Linker output object format (returned by LinkGetOutputFormat)             */
+/* -------------------------------------------------------------------------- */
+
+typedef enum {
+  NEVERC_LINK_FORMAT_UNKNOWN = 0,
+  NEVERC_LINK_FORMAT_ELF     = 1,
+  NEVERC_LINK_FORMAT_COFF    = 2,
+  NEVERC_LINK_FORMAT_MACHO   = 3
+} NevercLinkerOutputFormat;
+
+/* -------------------------------------------------------------------------- */
 /*  Pass callback signatures                                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -220,7 +241,7 @@ typedef struct NevercHostAPI {
                           fields past this boundary even if its compiled
                           header defines more fields. */
 
-  /* ---- Memory (backed by host allocator — safe across CRT boundaries) ---- */
+  /* ---- Memory (host heap — mimalloc when enabled; no plugin CRT malloc) ---- */
   void *(*Alloc)(uint64_t Size);
   void *(*Realloc)(void *Ptr, uint64_t Size);
   void  (*Free)(void *Ptr);
@@ -1117,6 +1138,79 @@ typedef struct NevercHostAPI {
   /* ---- Linker output info ---- */
   const char *(*LinkGetOutputPath)(void);
   unsigned (*LinkGetOutputFormat)(void);
+
+  /* ---- Formatted diagnostics (printf-style: format + emit in one call,
+         no manual StrFormat/Free dance needed) ---- */
+  void (*DiagNoteF)(const char *Fmt, ...);
+  void (*DiagWarningF)(const char *Fmt, ...);
+  void (*DiagErrorF)(const char *Fmt, ...);
+  void (*DiagNoteV)(const char *Fmt, va_list Args);
+  void (*DiagWarningV)(const char *Fmt, va_list Args);
+  void (*DiagErrorV)(const char *Fmt, va_list Args);
+
+  /* ---- Zero-initialized allocation (calloc equivalent) ---- */
+  void *(*AllocZeroed)(uint64_t Count, uint64_t ElemSize);
+
+  /* ---- Extended string operations ---- */
+  int (*StrStartsWith)(const char *S, const char *Prefix);
+  int (*StrEndsWith)(const char *S, const char *Suffix);
+  int (*StrContains)(const char *Haystack, const char *Needle);
+  int (*StrCompare)(const char *A, const char *B);
+  int (*StrToInt64)(const char *S, int64_t *Out);
+  int (*StrToUInt64)(const char *S, uint64_t *Out);
+  char *(*StrSubstring)(const char *S, uint64_t Start, uint64_t Len);
+  char *(*StrTrim)(const char *S);
+
+  /* ---- Convenience zero-fill (equivalent to MemSet(Dst, 0, Len)) ---- */
+  void (*MemZero)(void *Dst, uint64_t Len);
+
+  /* ---- Character search: returns byte offset, or (uint64_t)-1 if not
+         found.  These mirror strchr / strrchr semantics. ---- */
+  uint64_t (*StrFindChar)(const char *S, int C);
+  uint64_t (*StrFindLastChar)(const char *S, int C);
+
+  /* ---- Overflow-safe array reallocation.  Returns NULL (without freeing
+         Ptr) on Count*ElemSize overflow or allocation failure. ---- */
+  void *(*ReallocArray)(void *Ptr, uint64_t Count, uint64_t ElemSize);
+
+  /* ---- Batch collection (fills a pre-allocated buffer in ONE vtable call,
+         eliminating per-element indirect-call overhead).
+         Caller sizes the buffer via ModuleGetFunctionCount /
+         ModuleGetGlobalCount / FunctionGetBBCount / BBGetInstCount. ---- */
+  void (*ModuleCollectFunctions)(NevercModuleRef M, NevercValueRef *Out);
+  void (*ModuleCollectGlobals)(NevercModuleRef M, NevercValueRef *Out);
+  void (*FunctionCollectBBs)(NevercValueRef F, NevercBasicBlockRef *Out);
+  void (*BBCollectInstructions)(NevercBasicBlockRef BB, NevercValueRef *Out);
+
+  /* ---- MIR batch collection (same pattern as IR batch above).
+         Caller sizes via MFuncGetBBCount / MBBGetInstCount. ---- */
+  void (*MFuncCollectBBs)(NevercMachineFuncRef MF, NevercMachineBBRef *Out);
+  void (*MBBCollectInstructions)(NevercMachineBBRef MBB,
+                                 NevercMachineInstrRef *Out);
+
+  /* ---- Substring search: returns byte offset of the first occurrence of
+         Needle in Haystack, or (uint64_t)-1 if not found.  Complements
+         StrFindChar (single char) and StrContains (bool). ---- */
+  uint64_t (*StrFindStr)(const char *Haystack, const char *Needle);
+
+  /* ---- Hook-point name lookup (returns a static string, never NULL) ---- */
+  const char *(*HookPointGetName)(unsigned Hook);
+
+  /* ---- Memory duplicate: allocate Len bytes and copy Src into it.
+         Returns NULL on allocation failure.  Caller frees via Free. ---- */
+  void *(*MemDup)(const void *Src, uint64_t Len);
+
+  /* ---- String replacement (host-allocated result; caller frees via Free).
+         StrReplace replaces the FIRST occurrence of Old with New.
+         StrReplaceAll replaces ALL occurrences.
+         Returns a copy of S unchanged if Old is not found or is empty. ---- */
+  char *(*StrReplace)(const char *S, const char *Old, const char *New);
+  char *(*StrReplaceAll)(const char *S, const char *Old, const char *New);
+
+  /* ---- Case conversion (host-allocated result; caller frees via Free).
+         Operates on ASCII characters only (0x41-0x5A / 0x61-0x7A). ---- */
+  char *(*StrToLower)(const char *S);
+  char *(*StrToUpper)(const char *S);
 } NevercHostAPI;
 
 /* -------------------------------------------------------------------------- */

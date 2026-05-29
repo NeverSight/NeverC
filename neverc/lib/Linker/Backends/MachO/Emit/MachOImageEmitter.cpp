@@ -17,6 +17,8 @@
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Chunks.h"
 #include "Linker/Core/Support/FileIO.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
+#include "neverc/Plugin/PluginLoader.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/LEB128.h"
@@ -1255,6 +1257,227 @@ void OutputWriter::writeImage() {
           "': " + toString(std::move(e)));
 }
 
+// ===----------------------------------------------------------------------===
+//  neverc out-of-tree plugin: linker hook integration (MachO)
+//
+//  Mirrors the ELF/COFF backends.  MachO uses global symtab / outputSegments,
+//  so the bridge functions access them directly.  Sections are nested inside
+//  segments; we flatten them into a deque for stable 1-based indexed access.
+// ===----------------------------------------------------------------------===
+
+namespace {
+
+// Flatten outputSegments → OutputSection* on demand.  Not cached because the
+// list may grow between PRE_LAYOUT (segments not yet populated) and
+// POST_LAYOUT (final).  Linker hook callbacks are rare, so the O(segments)
+// rebuild cost is negligible.
+void collectMachOSections(std::vector<OutputSection *> &Out) {
+  Out.clear();
+  for (OutputSegment *Seg : outputSegments)
+    for (OutputSection *Sec : Seg->getSections())
+      if (Sec->isNeeded() && !Sec->isHidden())
+        Out.push_back(Sec);
+}
+
+NevercLinkerSymbolRef machoEncodeSymRef(size_t OneBased) {
+  return reinterpret_cast<NevercLinkerSymbolRef>(
+      static_cast<uintptr_t>(OneBased));
+}
+
+Symbol *machoSymbolFromRef(NevercLinkerSymbolRef S) {
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  ArrayRef<Symbol *> Syms = symtab->getSymbols();
+  return (Idx == 0 || Idx > Syms.size()) ? nullptr : Syms[Idx - 1];
+}
+
+NevercLinkerSymbolRef machoLinkGetFirstSymbol() {
+  return symtab->getSymbols().empty() ? nullptr : machoEncodeSymRef(1);
+}
+
+NevercLinkerSymbolRef machoLinkGetNextSymbol(NevercLinkerSymbolRef S) {
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  return (Idx == 0 || Idx >= symtab->getSymbols().size())
+             ? nullptr
+             : machoEncodeSymRef(Idx + 1);
+}
+
+NevercLinkerSymbolRef machoLinkFindSymbol(const char *Name) {
+  if (!Name)
+    return nullptr;
+  Symbol *Sym = symtab->find(Name);
+  if (!Sym)
+    return nullptr;
+  ArrayRef<Symbol *> Syms = symtab->getSymbols();
+  for (size_t I = 0, E = Syms.size(); I != E; ++I)
+    if (Syms[I] == Sym)
+      return machoEncodeSymRef(I + 1);
+  return nullptr;
+}
+
+const char *machoLinkSymbolGetName(NevercLinkerSymbolRef S) {
+  Symbol *Sym = machoSymbolFromRef(S);
+  return Sym ? Sym->getName().data() : "";
+}
+
+uint64_t machoLinkSymbolGetValue(NevercLinkerSymbolRef S) {
+  // Defined::getVA() asserts isLive() and, for a non-finalized section,
+  // asserts target->usesThunks() (false on x86_64) — so an unguarded call
+  // would abort on dead-stripped symbols or when queried at PRE_LAYOUT.
+  // Absolute symbols carry their value directly; section-relative symbols only
+  // have a meaningful address once their InputSection is final (POST_LAYOUT).
+  // DylibSymbol::getVA() routes through getStubVA(), which has the same
+  // pre-finalize assert, so non-Defined symbols safely report 0 here.
+  auto *D = dyn_cast_or_null<Defined>(machoSymbolFromRef(S));
+  if (!D || !D->isLive())
+    return 0;
+  if (D->isAbsolute() || (D->isec && D->isec->isFinal))
+    return D->getVA();
+  return 0;
+}
+
+uint64_t machoLinkSymbolGetSize(NevercLinkerSymbolRef S) {
+  Symbol *Sym = machoSymbolFromRef(S);
+  if (auto *D = dyn_cast_or_null<Defined>(Sym))
+    return D->size;
+  return 0;
+}
+
+int machoLinkSymbolIsDefined(NevercLinkerSymbolRef S) {
+  Symbol *Sym = machoSymbolFromRef(S);
+  return (Sym && isa<Defined>(Sym)) ? 1 : 0;
+}
+
+int machoLinkSymbolIsLocal(NevercLinkerSymbolRef S) {
+  // "Local" means file-scope / not externally visible (external == false),
+  // which is distinct from "hidden" (privateExtern / N_PEXT, see IsHidden).
+  Symbol *Sym = machoSymbolFromRef(S);
+  if (auto *D = dyn_cast_or_null<Defined>(Sym))
+    return D->isExternal() ? 0 : 1;
+  return 0;
+}
+
+int machoLinkSymbolIsHidden(NevercLinkerSymbolRef S) {
+  Symbol *Sym = machoSymbolFromRef(S);
+  if (auto *D = dyn_cast_or_null<Defined>(Sym))
+    return D->privateExtern ? 1 : 0;
+  return 0;
+}
+
+void machoLinkSymbolSetVisibilityHidden(NevercLinkerSymbolRef S, int IsHidden) {
+  Symbol *Sym = machoSymbolFromRef(S);
+  if (auto *D = dyn_cast_or_null<Defined>(Sym))
+    D->privateExtern = IsHidden != 0;
+}
+
+NevercLinkerSectionRef machoEncodeSecRef(size_t OneBased) {
+  return reinterpret_cast<NevercLinkerSectionRef>(
+      static_cast<uintptr_t>(OneBased));
+}
+
+// Section queries rebuild the flat list on every call.  The list is tiny
+// (typically < 30 sections) and these run only during plugin hook callbacks.
+OutputSection *machoSectionFromRef(NevercLinkerSectionRef S) {
+  std::vector<OutputSection *> Secs;
+  collectMachOSections(Secs);
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  return (Idx == 0 || Idx > Secs.size()) ? nullptr : Secs[Idx - 1];
+}
+
+NevercLinkerSectionRef machoLinkGetFirstSection() {
+  std::vector<OutputSection *> Secs;
+  collectMachOSections(Secs);
+  return Secs.empty() ? nullptr : machoEncodeSecRef(1);
+}
+
+NevercLinkerSectionRef machoLinkGetNextSection(NevercLinkerSectionRef S) {
+  std::vector<OutputSection *> Secs;
+  collectMachOSections(Secs);
+  size_t Idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(S));
+  return (Idx == 0 || Idx >= Secs.size()) ? nullptr : machoEncodeSecRef(Idx + 1);
+}
+
+NevercLinkerSectionRef machoLinkFindSection(const char *Name) {
+  if (!Name)
+    return nullptr;
+  std::vector<OutputSection *> Secs;
+  collectMachOSections(Secs);
+  StringRef Want(Name);
+  for (size_t I = 0, E = Secs.size(); I != E; ++I)
+    if (Secs[I]->name == Want)
+      return machoEncodeSecRef(I + 1);
+  return nullptr;
+}
+
+const char *machoLinkSectionGetName(NevercLinkerSectionRef S) {
+  OutputSection *Sec = machoSectionFromRef(S);
+  return Sec ? Sec->name.data() : "";
+}
+
+uint64_t machoLinkSectionGetSize(NevercLinkerSectionRef S) {
+  OutputSection *Sec = machoSectionFromRef(S);
+  return Sec ? Sec->getSize() : 0;
+}
+
+uint64_t machoLinkSectionGetAlignment(NevercLinkerSectionRef S) {
+  OutputSection *Sec = machoSectionFromRef(S);
+  return Sec ? Sec->align : 0;
+}
+
+unsigned machoLinkSectionGetFlags(NevercLinkerSectionRef S) {
+  OutputSection *Sec = machoSectionFromRef(S);
+  return Sec ? Sec->flags : 0;
+}
+
+const char *machoLinkGetOutputPath() {
+  return config->outputFile.empty() ? "" : config->outputFile.data();
+}
+
+unsigned machoLinkGetOutputFormat() { return NEVERC_LINK_FORMAT_MACHO; }
+
+neverc::plugin::NevercLinkerBackend makeMachOLinkerBackend() {
+  neverc::plugin::NevercLinkerBackend B{};
+  B.GetFirstSymbol = machoLinkGetFirstSymbol;
+  B.GetNextSymbol = machoLinkGetNextSymbol;
+  B.FindSymbol = machoLinkFindSymbol;
+  B.SymbolGetName = machoLinkSymbolGetName;
+  B.SymbolGetValue = machoLinkSymbolGetValue;
+  B.SymbolGetSize = machoLinkSymbolGetSize;
+  B.SymbolIsDefined = machoLinkSymbolIsDefined;
+  B.SymbolIsLocal = machoLinkSymbolIsLocal;
+  B.SymbolIsHidden = machoLinkSymbolIsHidden;
+  B.SymbolSetVisibilityHidden = machoLinkSymbolSetVisibilityHidden;
+  B.GetFirstSection = machoLinkGetFirstSection;
+  B.GetNextSection = machoLinkGetNextSection;
+  B.FindSection = machoLinkFindSection;
+  B.SectionGetName = machoLinkSectionGetName;
+  B.SectionGetSize = machoLinkSectionGetSize;
+  B.SectionGetAlignment = machoLinkSectionGetAlignment;
+  B.SectionGetFlags = machoLinkSectionGetFlags;
+  B.GetOutputPath = machoLinkGetOutputPath;
+  B.GetOutputFormat = machoLinkGetOutputFormat;
+  return B;
+}
+
+const neverc::plugin::NevercLinkerBackend MachOLinkerBackend =
+    makeMachOLinkerBackend();
+
+struct MachOLinkerBackendScope {
+  bool Active;
+
+  explicit MachOLinkerBackendScope(bool Active) : Active(Active) {
+    if (Active)
+      neverc::plugin::setLinkerBackend(&MachOLinkerBackend);
+  }
+  ~MachOLinkerBackendScope() {
+    if (Active)
+      neverc::plugin::clearLinkerBackend();
+  }
+  MachOLinkerBackendScope(const MachOLinkerBackendScope &) = delete;
+  MachOLinkerBackendScope &operator=(const MachOLinkerBackendScope &) = delete;
+};
+
+} // anonymous namespace
+
 template <class LP> void OutputWriter::run() {
   // Phase 1: symbol and relocation resolution.
   resolveSpecialSymbols();
@@ -1274,11 +1497,23 @@ template <class LP> void OutputWriter::run() {
   if (in.stubHelper && in.stubHelper->isNeeded())
     in.stubHelper->setUp();
 
+  // neverc out-of-tree plugins: install the MachO accessor table and fire
+  // LINK_* hooks around layout / emission.  Zero cost when no plugin
+  // registered a linker pass.
+  auto &pluginLoader = neverc::plugin::getGlobalPluginLoader();
+  const bool runLinkerHooks = pluginLoader.hasLinkerPasses();
+  MachOLinkerBackendScope backendScope(runLinkerHooks);
+  if (runLinkerHooks)
+    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_PRE_LAYOUT, pluginLoader);
+
   // Phase 2: layout computation.
   buildOutputLayout<LP>();
   sortSegmentsAndSections();
   assembleLoadCommands<LP>();
   assignSegmentAddresses();
+
+  if (runLinkerHooks)
+    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_LAYOUT, pluginLoader);
 
   // Phase 3: finalize and emit. Map file runs concurrently with LINKEDIT.
   if (!config->mapFile.empty()) {
@@ -1293,6 +1528,9 @@ template <class LP> void OutputWriter::run() {
   }
   finalizeLinkEdit();
   writeImage();
+
+  if (runLinkerHooks)
+    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_EMIT, pluginLoader);
 }
 
 template <class LP> void macho::writeOutput() { OutputWriter().run<LP>(); }
