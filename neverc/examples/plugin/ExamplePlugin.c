@@ -1283,8 +1283,9 @@ static int stringUtilDemoPass(NevercModuleRef M,
   int IntrinsicCount = 0;
   NevercValueRef FirstDefined = NULL;
 
-  NevercValueRef F = API->ModuleGetFirstFunction(M);
-  while (F) {
+  NevercValueRef F;
+  for (F = API->ModuleGetFirstFunction(M); F;
+       F = API->ModuleGetNextFunction(F)) {
     const char *Name = API->ValueGetName(F);
     if (!API->FunctionIsDeclaration(F)) {
       TotalDefined++;
@@ -1294,26 +1295,18 @@ static int stringUtilDemoPass(NevercModuleRef M,
           API->StrStartsWith(Name, "llvm."))
         PrefixedCount++;
     }
-    if (!API->StrStartsWith(Name, "llvm.")) {
-      F = API->ModuleGetNextFunction(F);
+    if (!API->StrStartsWith(Name, "llvm."))
       continue;
-    }
     IntrinsicCount++;
 
-    if (!NEVERC_API_FN(API, StrFindChar)) {
-      F = API->ModuleGetNextFunction(F);
+    if (!NEVERC_API_FN(API, StrFindChar))
       continue;
-    }
     uint64_t DotPos = API->StrFindChar(Name + 5, '.');
-    if (DotPos == (uint64_t)-1) {
-      F = API->ModuleGetNextFunction(F);
+    if (DotPos == (uint64_t)-1)
       continue;
-    }
     char *BaseName = API->StrSubstring(Name, 5, DotPos);
-    if (!BaseName) {
-      F = API->ModuleGetNextFunction(F);
+    if (!BaseName)
       continue;
-    }
 
     const char *Display = BaseName;
     char *Lower = NULL;
@@ -1326,8 +1319,6 @@ static int stringUtilDemoPass(NevercModuleRef M,
     if (Lower)
       API->Free(Lower);
     API->Free(BaseName);
-
-    F = API->ModuleGetNextFunction(F);
   }
 
   if (FirstDefined && NEVERC_API_FN(API, StrReplaceAll)) {
