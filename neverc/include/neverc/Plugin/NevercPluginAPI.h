@@ -16,15 +16,15 @@
 |*     BuilderDispose before the pass returns.                                *|
 |*   - Memory obtained via Alloc/Realloc/MemDup/AllocZeroed/ReallocArray      *|
 |*     must be freed via Free.                                                *|
-|*   - Strings returned by StrDup/StrConcat/StrSubstring/StrReplace/        *|
-|*     StrFormat/IntToStr/ValuePrintToString/etc. are host-allocated;       *|
-|*     caller frees via Free.  DiagNoteF/DiagWarningF/DiagErrorF do NOT       *|
-|*     require Free.  HookPointGetName returns a static string.               *|
-|*   - NevercDynArrayRef / NevercStrMapRef / NevercStrBuilderRef created     *|
-|*     by DynArrayCreate / StrMapCreate / StrBuilderCreate must be freed     *|
-|*     via DynArrayDestroy / StrMapDestroy / StrBuilderDestroy before the    *|
-|*     pass returns.  StrBuilderFinish returns a host-allocated string;      *|
-|*     caller frees via Free.                                                *|
+|*   - Strings returned by StrDup/StrNDup/StrConcat/StrSubstring/StrReplace/ *|
+|*     StrFormat/IntToStr/ValuePrintToString/etc. are host-allocated;        *|
+|*     caller frees via Free.  DiagNoteF/DiagWarningF/DiagErrorF do NOT      *|
+|*     require Free.  HookPointGetName returns a static string.              *|
+|*   - NevercDynArrayRef / NevercStrMapRef / NevercIntMapRef /               *|
+|*     NevercStrBuilderRef created by DynArrayCreate / StrMapCreate /       *|
+|*     IntMapCreate / StrBuilderCreate must be freed via the corresponding  *|
+|*     Destroy function before the pass returns.  StrBuilderFinish returns  *|
+|*     a host-allocated string; caller frees via Free.                      *|
 |*   - Do NOT call RegisterModulePass/MachinePass/BinaryPass outside of      *|
 |*     the RegisterPasses callback -- they are no-ops after registration.     *|
 |*   - Before using fields added in later versions, use NEVERC_API_FN or     *|
@@ -68,6 +68,11 @@ extern "C" {
 #define NEVERC_API_FN(api, field) \
     (NEVERC_API_HAS(api, field) && (api)->field)
 
+/* Sentinel value returned by all "find" APIs that yield a uint64_t offset
+ * (StrFindChar, StrFindLastChar, StrFindStr, MemFind, ...).  Use this
+ * macro instead of (uint64_t)-1 to make intent explicit at call sites. */
+#define NEVERC_NPOS ((uint64_t)-1)
+
 /* ---- Convenience allocation macros ----
  * Typed array allocation through the host vtable -- eliminates the
  * repetitive (Type*)API->Alloc(Count * sizeof(Type)) pattern and
@@ -104,6 +109,64 @@ extern "C" {
     (NEVERC_API_FN(api, ModuleCollectDefinedFunctions) \
      ? (api)->ModuleCollectDefinedFunctions((m), (count)) : NULL)
 
+#define NEVERC_COLLECT_OPCODES(api, m, count) \
+    (NEVERC_API_FN(api, ModuleCollectAllOpcodes) \
+     ? (api)->ModuleCollectAllOpcodes((m), (count)) : NULL)
+
+/* ---- Iteration macros ----
+ * For-each loops over IR / MIR linked lists.  Eliminates the repetitive
+ * GetFirst+GetNext boilerplate.  The variable is scoped to the loop body.
+ *
+ * WARNING: Do NOT erase or move the current element inside the loop body.
+ * GetNext is called on the current element to advance, so deleting it
+ * causes undefined behaviour.  Use a two-phase collect-then-modify
+ * pattern instead (e.g. DynArray + separate erasure loop).
+ *
+ * Example:
+ *   NEVERC_FOR_EACH_FUNCTION(API, M, F) {
+ *     if (API->FunctionIsDeclaration(F)) continue;
+ *     ...
+ *   }                                                                       */
+#define NEVERC_FOR_EACH_FUNCTION(api, m, var)                                  \
+    for (NevercValueRef var = (api)->ModuleGetFirstFunction(m);                \
+         var; var = (api)->ModuleGetNextFunction(var))
+
+#define NEVERC_FOR_EACH_GLOBAL(api, m, var)                                    \
+    for (NevercValueRef var = (api)->ModuleGetFirstGlobal(m);                  \
+         var; var = (api)->ModuleGetNextGlobal(var))
+
+#define NEVERC_FOR_EACH_ALIAS(api, m, var)                                     \
+    for (NevercValueRef var = (api)->ModuleGetFirstAlias(m);                   \
+         var; var = (api)->ModuleGetNextAlias(var))
+
+#define NEVERC_FOR_EACH_BB(api, fn, var)                                       \
+    for (NevercBasicBlockRef var = (api)->FunctionGetFirstBB(fn);              \
+         var; var = (api)->FunctionGetNextBB(var))
+
+#define NEVERC_FOR_EACH_INST(api, bb, var)                                     \
+    for (NevercValueRef var = (api)->BBGetFirstInst(bb);                       \
+         var; var = (api)->BBGetNextInst(var))
+
+#define NEVERC_FOR_EACH_MBB(api, mf, var)                                     \
+    for (NevercMachineBBRef var = (api)->MFuncGetFirstBB(mf);                 \
+         var; var = (api)->MFuncGetNextBB(var))
+
+#define NEVERC_FOR_EACH_MI(api, mbb, var)                                     \
+    for (NevercMachineInstrRef var = (api)->MBBGetFirstInst(mbb);             \
+         var; var = (api)->MBBGetNextInst(var))
+
+#define NEVERC_FOR_EACH_USE(api, val, var)                                    \
+    for (NevercUseRef var = (api)->ValueGetFirstUse(val);                     \
+         var; var = (api)->UseGetNext(var))
+
+#define NEVERC_FOR_EACH_SYMBOL(api, var)                                      \
+    for (NevercLinkerSymbolRef var = (api)->LinkGetFirstSymbol();              \
+         var; var = (api)->LinkGetNextSymbol(var))
+
+#define NEVERC_FOR_EACH_SECTION(api, var)                                     \
+    for (NevercLinkerSectionRef var = (api)->LinkGetFirstSection();            \
+         var; var = (api)->LinkGetNextSection(var))
+
 /* -------------------------------------------------------------------------- */
 /*  Opaque handle types                                                       */
 /*  Underlying: reinterpret_cast of llvm::Module*, llvm::Value*, etc.         */
@@ -128,6 +191,12 @@ typedef struct NevercOpaqueDynArray      *NevercDynArrayRef;
 typedef struct NevercOpaqueStrMap        *NevercStrMapRef;
 typedef struct NevercOpaqueStrBuilder    *NevercStrBuilderRef;
 typedef struct NevercOpaqueIntMap        *NevercIntMapRef;
+typedef struct NevercOpaqueDomTree       *NevercDomTreeRef;
+typedef struct NevercOpaquePostDomTree   *NevercPostDomTreeRef;
+typedef struct NevercOpaqueLoopInfo      *NevercLoopInfoRef;
+typedef struct NevercOpaqueLoop          *NevercLoopRef;
+typedef struct NevercOpaqueSCEVInfo      *NevercSCEVInfoRef;
+typedef struct NevercOpaqueCallGraph     *NevercCallGraphRef;
 
 /* -------------------------------------------------------------------------- */
 /*  Hook points                                                               */
@@ -234,6 +303,26 @@ typedef enum {
   NEVERC_COMDAT_NO_DEDUPLICATE = 3,
   NEVERC_COMDAT_SAME_SIZE     = 4
 } NevercComdatSelectionKind;
+
+/* -------------------------------------------------------------------------- */
+/*  MachineOperand kinds (returned by MInstCollectOperandKinds)               */
+/*  Numeric values are stable across API versions; new kinds append at the    */
+/*  end with the next unused integer.                                          */
+/* -------------------------------------------------------------------------- */
+
+typedef enum {
+  NEVERC_MIR_OP_OTHER     = 0,
+  NEVERC_MIR_OP_REG       = 1,
+  NEVERC_MIR_OP_IMM       = 2,
+  NEVERC_MIR_OP_FPIMM     = 3,
+  NEVERC_MIR_OP_MBB       = 4,
+  NEVERC_MIR_OP_FRAMEIDX  = 5,
+  NEVERC_MIR_OP_GLOBAL    = 6,
+  NEVERC_MIR_OP_EXTSYM    = 7,
+  NEVERC_MIR_OP_METADATA  = 8,
+  NEVERC_MIR_OP_REGMASK   = 9,
+  NEVERC_MIR_OP_BLOCKADDR = 10
+} NevercMIROperandKind;
 
 /* -------------------------------------------------------------------------- */
 /*  Linker output object format (returned by LinkGetOutputFormat)             */
@@ -1210,7 +1299,7 @@ typedef struct NevercHostAPI {
   /* ---- Convenience zero-fill (equivalent to MemSet(Dst, 0, Len)) ---- */
   void (*MemZero)(void *Dst, uint64_t Len);
 
-  /* ---- Character search: returns byte offset, or (uint64_t)-1 if not
+  /* ---- Character search: returns byte offset, or NEVERC_NPOS if not
          found.  These mirror strchr / strrchr semantics. ---- */
   uint64_t (*StrFindChar)(const char *S, int C);
   uint64_t (*StrFindLastChar)(const char *S, int C);
@@ -1235,7 +1324,7 @@ typedef struct NevercHostAPI {
                                  NevercMachineInstrRef *Out);
 
   /* ---- Substring search: returns byte offset of the first occurrence of
-         Needle in Haystack, or (uint64_t)-1 if not found.  Complements
+         Needle in Haystack, or NEVERC_NPOS if not found.  Complements
          StrFindChar (single char) and StrContains (bool). ---- */
   uint64_t (*StrFindStr)(const char *Haystack, const char *Needle);
 
@@ -1493,6 +1582,313 @@ typedef struct NevercHostAPI {
      is available.  Returns a static string; never free it.
      Returns "" for out-of-range opcodes. */
   const char *(*InstOpcodeToName)(unsigned Opcode);
+
+  /* ---- Bounded string duplication (strndup equivalent) ----
+     Copies at most MaxLen bytes from S into a host-allocated null-
+     terminated string.  If S is shorter than MaxLen, the full string
+     is copied.  Returns NULL on allocation failure or NULL input.
+     Caller frees via Free.  Unlike the stack-buffer StrCopyBuf
+     pattern, this handles arbitrary lengths without truncation. */
+  char *(*StrNDup)(const char *S, uint64_t MaxLen);
+
+  /* ---- Character occurrence count ----
+     Returns the number of times byte C appears in S.
+     Returns 0 for NULL input.  Useful for pre-sizing arrays
+     before StrSplit, or counting delimiters in paths/names. */
+  uint64_t (*StrCountChar)(const char *S, int C);
+
+  /* ---- N-bounded StrMap operations (key pointer + length) ----
+     Same semantics as StrMapPut/Get/Has/Increment/Remove but accept
+     a (Key, KeyLen) pair instead of requiring a null-terminated key.
+     This eliminates the need for temporary string allocation when the
+     caller already knows the key bounds (e.g. a substring of a larger
+     string).  The key data is copied into the map on insert, so the
+     caller's buffer need not outlive the call. */
+  int (*StrMapPutN)(NevercStrMapRef Map, const char *Key,
+                    uint64_t KeyLen, uint64_t Value);
+  int (*StrMapGetN)(NevercStrMapRef Map, const char *Key,
+                    uint64_t KeyLen, uint64_t *OutValue);
+  int (*StrMapHasN)(NevercStrMapRef Map, const char *Key, uint64_t KeyLen);
+  uint64_t (*StrMapIncrementN)(NevercStrMapRef Map, const char *Key,
+                               uint64_t KeyLen, uint64_t Delta);
+  void (*StrMapRemoveN)(NevercStrMapRef Map, const char *Key, uint64_t KeyLen);
+
+  /* ---- Prefix-skip helper (zero allocation, no temporary buffer) ----
+     If S starts with Prefix, return the position immediately AFTER the
+     prefix (S + strlen(Prefix)).  Otherwise return NULL.  This eliminates
+     the common StrStartsWith + hardcoded-offset pattern, e.g.
+         if (!API->StrStartsWith(Name, "llvm.")) continue;
+         const char *After = Name + 5;       // <-- magic number
+     becomes
+         const char *After = API->StrAfterPrefix(Name, "llvm.");
+         if (!After) continue;
+     Returns S unchanged when Prefix is NULL or empty. */
+  const char *(*StrAfterPrefix)(const char *S, const char *Prefix);
+
+  /* ---- Memory needle search (memmem equivalent) ----
+     Locate the first occurrence of NeedleLen bytes from Needle inside
+     HaystackLen bytes of Haystack.  Returns the byte offset (not a
+     pointer -- offsets survive Haystack relocation, e.g. inside a
+     binary-pass BinaryResize).  Returns NEVERC_NPOS when not found
+     or on any NULL/empty input.  An empty needle is treated as not
+     found to avoid the libc divergence around memmem("", 0).  Useful
+     for binary passes scanning shellcode for byte signatures. */
+  uint64_t (*MemFind)(const void *Haystack, uint64_t HaystackLen,
+                      const void *Needle, uint64_t NeedleLen);
+
+  /* ---- Byte occurrence count (paired with MemFind) ----
+     Count how many times Byte (low 8 bits used) appears in HaystackLen
+     bytes of Haystack.  Returns 0 on NULL or zero-length input.  Single-
+     byte sweep delegated to libc memchr -- typically SIMD-accelerated
+     and faster than a hand-written branchless loop in the plugin. */
+  uint64_t (*MemCount)(const void *Haystack, uint64_t HaystackLen, int Byte);
+
+  /* ---- Character class scanning (strspn / strcspn equivalents) ----
+     StrSpan returns the length of the initial segment of S consisting
+     entirely of bytes from Accept.  StrCSpn returns the length of the
+     initial segment that contains NO bytes from Reject.
+     Both return 0 when S is NULL or empty.  Both treat a NULL/empty
+     class as "no characters match" (StrSpan -> 0, StrCSpn -> strlen(S)).
+     Lookup uses a 256-bit bitset built from the class on entry; the
+     scan itself is one branch per byte. */
+  uint64_t (*StrSpan)(const char *S, const char *Accept);
+  uint64_t (*StrCSpn)(const char *S, const char *Reject);
+
+  /* ---- ASCII case-insensitive comparison ----
+     Compare A and B byte-by-byte after lowercasing ASCII letters
+     (0x41-0x5A -> 0x61-0x7A).  Non-ASCII bytes compared verbatim.
+     StrIEqual returns 1 when equal, 0 otherwise (cheaper than
+     StrICompare(...) == 0 because it can short-circuit on length
+     mismatch when both arguments are walked from a common origin).
+     StrICompare returns <0, 0, >0 like strcmp.
+     Both return safe defaults on NULL inputs (0 / inequality).        */
+  int (*StrIEqual)(const char *A, const char *B);
+  int (*StrICompare)(const char *A, const char *B);
+
+  /* ---- Path manipulation (zero-allocation offset helpers) ----
+     Both helpers recognize '/' AND '\\' as separators, so they work
+     uniformly on Unix and Windows paths without the plugin author
+     having to call StrFindLastChar twice and merge.
+
+     PathBaseNameOffset returns the byte offset to the start of the
+     basename (immediately after the last separator).  Returns 0 when
+     the path has no separator (the whole string is the basename).
+     Returns 0 for NULL input.
+
+     PathExtOffset returns the byte offset to the dot of the file
+     extension (e.g. for "src/foo.c" returns 7).  Returns NEVERC_NPOS
+     when there is no extension after the basename.  Hidden files like
+     ".bashrc" report NEVERC_NPOS (no extension), matching POSIX
+     basename(1) intuition.  Returns NEVERC_NPOS for NULL input.       */
+  uint64_t (*PathBaseNameOffset)(const char *Path);
+  uint64_t (*PathExtOffset)(const char *Path);
+
+  /* ---- Byte-reverse copy ----
+     Copy Len bytes from Src into Dst in reverse order.  Two supported
+     modes: (1) Dst == Src for in-place reversal (meet-in-the-middle
+     swap, no temporary buffer), or (2) Dst and Src ranges fully
+     disjoint.  Partial overlap is undefined behaviour and treated as
+     a no-op, mirroring memcpy's contract.  Useful for endianness
+     flips on big-endian fields embedded in shellcode. */
+  void (*MemReverse)(void *Dst, const void *Src, uint64_t Len);
+
+  /* ---- DynArray order-preserving mutation ----
+     Insert pushes Elem into Arr at position Idx, shifting elements
+     [Idx..Count) right by one.  Idx == Count appends (equivalent to
+     Push); Idx > Count is an error and returns 0.  Returns 1 on
+     success, 0 on allocation failure or invalid arguments.
+
+     RemoveOrdered erases the element at Idx and shifts elements
+     (Idx, Count) left by one to close the gap.  Out-of-range Idx
+     is a no-op.  Use RemoveSwap for O(1) unordered deletion when
+     iteration order does not matter -- this routine is O(N) due to
+     the memmove. */
+  int (*DynArrayInsert)(NevercDynArrayRef Arr, unsigned Idx,
+                        const void *Elem);
+  void (*DynArrayRemoveOrdered)(NevercDynArrayRef Arr, unsigned Idx);
+
+  /* ---- Batch operand-kind collection (MIR hot-path) ----
+     Walk all operands of MI and write each operand's kind tag (one of
+     the NEVERC_MIR_OP_* enum values) into OutKinds.  Caller sizes the
+     buffer to MInstGetNumOperands(MI) bytes.  Returns the actual
+     operand count written.
+
+     This collapses the typical N x 3 vtable dispatch (NumOps + IsReg +
+     IsImm per operand) into a single vtable call.  On a 1k-instruction
+     function with three operands per instruction, that turns 9 000
+     indirect calls into 1 000 -- meaningful when MIR analysis is the
+     bottleneck.
+
+     Returns 0 on NULL MI / OutKinds.  Bytes beyond the actual operand
+     count are left untouched. */
+  unsigned (*MInstCollectOperandKinds)(NevercMachineInstrRef MI,
+                                       uint8_t *OutKinds);
+
+  /* ---- Batch opcode collection (IR hot-path) ----
+     Single-vtable-call equivalents of "iterate Instructions, query each
+     opcode".  Useful for opcode histograms / hot-loop analysis where
+     plugins don't need the Value handles, only the numeric opcodes.
+
+     BBCollectOpcodes fills OutOpcodes with one entry per instruction in
+     BB (caller sizes via BBGetInstCount).  Returns the actual count.
+
+     ModuleCollectAllOpcodes is the module-wide equivalent: returns a
+     host-allocated array of opcodes for every Instruction in every
+     defined Function, plus *OutCount.  Caller frees via Free.  Returns
+     NULL when the module has zero defined instructions.
+
+     Both eliminate the per-instruction vtable hop that
+     ModuleCollectAllInstructions + InstGetOpcode would incur. */
+  unsigned (*BBCollectOpcodes)(NevercBasicBlockRef BB, unsigned *OutOpcodes);
+  unsigned *(*ModuleCollectAllOpcodes)(NevercModuleRef M, unsigned *OutCount);
+
+  /* ---- Function instruction count (convenience, avoids per-BB loop) ----
+     Returns the total number of instructions in all basic blocks of F.
+     Equivalent to summing BBGetInstCount over every BB, but in a single
+     vtable call using the O(1) BB::size() internally.  Returns 0 for
+     declarations or NULL input. */
+  unsigned (*FunctionGetInstructionCount)(NevercValueRef F);
+
+  /* ---- DominatorTree (on-demand CFG analysis) ----
+     Computes the full dominator tree from the function's CFG.  Analysis
+     objects are snapshot-in-time: they are NOT updated when the IR is
+     modified.  Destroy and rebuild after any IR mutation.
+
+     Returns NULL for declarations, NULL input, or allocation failure.
+     The caller MUST call DomTreeDestroy before the pass returns. */
+  NevercDomTreeRef (*FunctionBuildDomTree)(NevercValueRef F);
+  void (*DomTreeDestroy)(NevercDomTreeRef DT);
+  /* Returns 1 if BB A dominates BB B (A == B counts as dominance). */
+  int (*DomTreeDominates)(NevercDomTreeRef DT,
+                          NevercBasicBlockRef A, NevercBasicBlockRef B);
+  /* Returns 1 if A strictly dominates B (A != B required). */
+  int (*DomTreeProperlyDominates)(NevercDomTreeRef DT,
+                                  NevercBasicBlockRef A,
+                                  NevercBasicBlockRef B);
+  /* Returns the immediate dominator of BB, or NULL for the entry block. */
+  NevercBasicBlockRef (*DomTreeGetIDom)(NevercDomTreeRef DT,
+                                        NevercBasicBlockRef BB);
+  /* Returns 1 if BB is reachable from the function entry. */
+  int (*DomTreeIsReachable)(NevercDomTreeRef DT, NevercBasicBlockRef BB);
+
+  /* ---- LoopInfo (on-demand loop nest analysis) ----
+     Detects natural loops using dominance information.  Internally owns
+     its own DominatorTree; the plugin does NOT need to build one first.
+     Same snapshot-in-time rule as DomTree: rebuild after IR mutation.
+
+     LoopRef handles point into the LoopInfo's internal storage and are
+     valid only until LoopInfoDestroy is called.
+
+     Returns NULL for declarations, NULL input, or allocation failure.
+     A function with no loops returns a valid handle where
+     LoopInfoGetLoopFor returns NULL for all BBs and
+     LoopInfoGetTopLevelLoopCount returns 0. */
+  NevercLoopInfoRef (*FunctionBuildLoopInfo)(NevercValueRef F);
+  void (*LoopInfoDestroy)(NevercLoopInfoRef LI);
+  /* Returns the innermost loop containing BB, or NULL if not in a loop. */
+  NevercLoopRef (*LoopInfoGetLoopFor)(NevercLoopInfoRef LI,
+                                      NevercBasicBlockRef BB);
+  /* Number of top-level (outermost) loops in the function. */
+  unsigned (*LoopInfoGetTopLevelLoopCount)(NevercLoopInfoRef LI);
+  /* Loop header -- the single entry block of the loop. */
+  NevercBasicBlockRef (*LoopGetHeader)(NevercLoopRef L);
+  /* Nesting depth (1 = outermost, 2 = nested once, etc.).  0 for NULL. */
+  unsigned (*LoopGetDepth)(NevercLoopRef L);
+  /* Parent loop in the nest, or NULL for top-level loops. */
+  NevercLoopRef (*LoopGetParentLoop)(NevercLoopRef L);
+  /* Returns 1 if BB is contained in loop L. */
+  int (*LoopContains)(NevercLoopRef L, NevercBasicBlockRef BB);
+  /* Number of basic blocks in this loop (including sub-loop blocks). */
+  unsigned (*LoopGetNumBlocks)(NevercLoopRef L);
+  /* Number of direct child sub-loops (not recursively). */
+  unsigned (*LoopGetNumSubLoops)(NevercLoopRef L);
+  /* Returns 1 if this loop has no sub-loops (leaf in the loop tree). */
+  int (*LoopIsInnermost)(NevercLoopRef L);
+
+  /* ---- PostDominatorTree (reverse-CFG dominance analysis) ----
+     Same lifecycle rules as DominatorTree: snapshot-in-time, rebuild
+     after IR mutation, caller MUST call PostDomTreeDestroy.
+
+     A post-dominates B means every path from B to any function exit
+     must pass through A.  Useful for identifying where control flow
+     converges (e.g. for opaque predicate cleanup, region analysis). */
+  NevercPostDomTreeRef (*FunctionBuildPostDomTree)(NevercValueRef F);
+  void (*PostDomTreeDestroy)(NevercPostDomTreeRef PDT);
+  int (*PostDomTreeDominates)(NevercPostDomTreeRef PDT,
+                              NevercBasicBlockRef A, NevercBasicBlockRef B);
+  int (*PostDomTreeProperlyDominates)(NevercPostDomTreeRef PDT,
+                                      NevercBasicBlockRef A,
+                                      NevercBasicBlockRef B);
+  /* Returns the immediate post-dominator, or NULL for exit-like blocks. */
+  NevercBasicBlockRef (*PostDomTreeGetIPDom)(NevercPostDomTreeRef PDT,
+                                             NevercBasicBlockRef BB);
+
+  /* ---- Function cloning (deep copy of an entire function) ----
+     Creates a complete copy of F, inserted into the same Module.
+     All instructions, basic blocks, and metadata are duplicated;
+     internal references are remapped to the clone's own values.
+     The clone is initially given InternalLinkage.
+     Returns NULL on failure or if F is a declaration.  The cloned
+     function is owned by the Module and does NOT need to be freed. */
+  NevercValueRef (*FunctionClone)(NevercValueRef F, const char *NewName);
+
+  /* ---- SCEV (Scalar Evolution -- on-demand loop trip count analysis) ----
+     Bundles DominatorTree + LoopInfo + TargetLibraryInfo + AssumptionCache +
+     ScalarEvolution internally.  Same snapshot-in-time rule as DomTree:
+     rebuild after any IR mutation.  Caller MUST call SCEVInfoDestroy.
+
+     Trip count queries take a LoopHeader BB (not a LoopRef) so the SCEV
+     can look up the loop in its own LoopInfo, avoiding cross-LoopInfo
+     aliasing when the plugin also uses FunctionBuildLoopInfo separately.
+
+     GetTripCount returns a constant trip count or 0 when the count is not
+     a small compile-time constant.  GetMaxTripCount returns a constant
+     upper bound or 0 when not computable. */
+  NevercSCEVInfoRef (*FunctionBuildSCEV)(NevercValueRef F);
+  void (*SCEVInfoDestroy)(NevercSCEVInfoRef SI);
+  unsigned (*SCEVGetTripCount)(NevercSCEVInfoRef SI,
+                               NevercBasicBlockRef LoopHeader);
+  unsigned (*SCEVGetMaxTripCount)(NevercSCEVInfoRef SI,
+                                  NevercBasicBlockRef LoopHeader);
+
+  /* ---- CallGraph (on-demand module-wide call graph) ----
+     Builds the call graph and pre-computes the set of recursive functions
+     (via SCC decomposition) at construction time.  IsRecursive is an O(1)
+     set lookup -- covers both direct and indirect (mutual) recursion.
+
+     CollectCallees returns a host-allocated array of distinct callees
+     (Function values); caller frees via Free.  Returns NULL and sets
+     *OutCount to 0 when F has no callees or is external.
+
+     Caller MUST call CallGraphDestroy before the pass returns. */
+  NevercCallGraphRef (*ModuleBuildCallGraph)(NevercModuleRef M);
+  void (*CallGraphDestroy)(NevercCallGraphRef CG);
+  unsigned (*CallGraphGetCalleeCount)(NevercCallGraphRef CG,
+                                      NevercValueRef F);
+  NevercValueRef *(*CallGraphCollectCallees)(NevercCallGraphRef CG,
+                                             NevercValueRef F,
+                                             unsigned *OutCount);
+  int (*CallGraphIsRecursive)(NevercCallGraphRef CG, NevercValueRef F);
+
+  /* ---- CFG mutation helpers (edge splitting, block merging) ----
+     SplitEdge inserts a new empty BasicBlock on the edge from From to To.
+     Returns the new BB, or NULL if From->To is not a valid edge.  Analysis
+     objects (DomTree, LoopInfo, SCEV) are NOT updated -- rebuild them
+     after mutation.
+
+     MergeBlockIntoPredecessor merges BB into its single predecessor,
+     removing BB from the function.  Returns 1 on success, 0 if BB has
+     multiple predecessors or other constraints prevent merging.  The
+     merged BB handle becomes dangling after a successful merge. */
+  NevercBasicBlockRef (*SplitEdge)(NevercBasicBlockRef From,
+                                   NevercBasicBlockRef To);
+  int (*MergeBlockIntoPredecessor)(NevercBasicBlockRef BB);
+
+  /* ---- Loop invariant check ----
+     Returns 1 if V is defined outside Loop L (i.e., V is loop-invariant
+     with respect to L).  Constants always return 1.  Returns 0 for NULL
+     inputs or if V is defined inside L. */
+  int (*LoopIsLoopInvariant)(NevercLoopRef L, NevercValueRef V);
 } NevercHostAPI;
 
 /* ---- Convenience: cast a NevercHookPoint to a void* UserData value ----

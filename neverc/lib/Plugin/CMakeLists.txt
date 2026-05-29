@@ -1,7 +1,9 @@
 set(LLVM_LINK_COMPONENTS
+  Analysis
   CodeGen
   Core
   Support
+  TransformUtils
   )
 
 add_neverc_library(nevercPlugin

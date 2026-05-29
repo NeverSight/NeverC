@@ -1,8 +1,16 @@
 #include "HostAPIBridge.h"
 #include "neverc/Plugin/PluginLoader.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/CallGraph.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/PostDominators.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -14,6 +22,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -29,6 +38,8 @@
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/xxhash.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 #include <cerrno>
 #include <cstdarg>
 #include <cstdio>
@@ -207,7 +218,7 @@ static NevercValueRef bridgeModuleGetFirstGlobal(NevercModuleRef M) {
   if (LLVM_UNLIKELY(!M))
     return nullptr;
   auto *Mod = unwrap(M);
-  if (Mod->global_empty())
+  if (LLVM_UNLIKELY(Mod->global_empty()))
     return nullptr;
   return wrapV(&*Mod->global_begin());
 }
@@ -1459,6 +1470,54 @@ static int bridgeMInstGetOperandIsImm(NevercMachineInstrRef MI, unsigned Idx) {
   if (Idx >= Inst->getNumOperands())
     return 0;
   return Inst->getOperand(Idx).isImm();
+}
+
+// ===----------------------------------------------------------------------===
+//  Batch operand-kind collection.  Single vtable call returns the operand
+//  kind for every position in OutKinds (caller-allocated, sized via
+//  MInstGetNumOperands).  Eliminates the 3x vtable hop per operand pattern.
+// ===----------------------------------------------------------------------===
+
+static uint8_t machineOperandKindOf(const llvm::MachineOperand &Op) {
+  using llvm::MachineOperand;
+  switch (Op.getType()) {
+  case MachineOperand::MO_Register:
+    return NEVERC_MIR_OP_REG;
+  case MachineOperand::MO_Immediate:
+    return NEVERC_MIR_OP_IMM;
+  case MachineOperand::MO_CImmediate:
+    return NEVERC_MIR_OP_IMM;
+  case MachineOperand::MO_FPImmediate:
+    return NEVERC_MIR_OP_FPIMM;
+  case MachineOperand::MO_MachineBasicBlock:
+    return NEVERC_MIR_OP_MBB;
+  case MachineOperand::MO_FrameIndex:
+    return NEVERC_MIR_OP_FRAMEIDX;
+  case MachineOperand::MO_GlobalAddress:
+    return NEVERC_MIR_OP_GLOBAL;
+  case MachineOperand::MO_ExternalSymbol:
+    return NEVERC_MIR_OP_EXTSYM;
+  case MachineOperand::MO_Metadata:
+    return NEVERC_MIR_OP_METADATA;
+  case MachineOperand::MO_RegisterMask:
+  case MachineOperand::MO_RegisterLiveOut:
+    return NEVERC_MIR_OP_REGMASK;
+  case MachineOperand::MO_BlockAddress:
+    return NEVERC_MIR_OP_BLOCKADDR;
+  default:
+    return NEVERC_MIR_OP_OTHER;
+  }
+}
+
+static unsigned bridgeMInstCollectOperandKinds(NevercMachineInstrRef MI,
+                                               uint8_t *OutKinds) {
+  if (LLVM_UNLIKELY(!MI || !OutKinds))
+    return 0;
+  auto *Inst = unwrapMI(MI);
+  unsigned N = Inst->getNumOperands();
+  for (unsigned I = 0; I < N; ++I)
+    OutKinds[I] = machineOperandKindOf(Inst->getOperand(I));
+  return N;
 }
 
 // ===----------------------------------------------------------------------===
@@ -2941,7 +3000,7 @@ static NevercValueRef bridgeModuleGetFirstAlias(NevercModuleRef M) {
   if (LLVM_UNLIKELY(!M))
     return nullptr;
   auto *Mod = unwrap(M);
-  if (Mod->alias_empty())
+  if (LLVM_UNLIKELY(Mod->alias_empty()))
     return nullptr;
   return wrapV(&*Mod->alias_begin());
 }
@@ -2962,7 +3021,7 @@ static NevercValueRef bridgeModuleGetLastAlias(NevercModuleRef M) {
   if (LLVM_UNLIKELY(!M))
     return nullptr;
   auto *Mod = unwrap(M);
-  if (Mod->alias_empty())
+  if (LLVM_UNLIKELY(Mod->alias_empty()))
     return nullptr;
   return wrapV(&*std::prev(Mod->alias_end()));
 }
@@ -3012,7 +3071,7 @@ static NevercValueRef bridgeModuleGetLastGlobal(NevercModuleRef M) {
   if (LLVM_UNLIKELY(!M))
     return nullptr;
   auto *Mod = unwrap(M);
-  if (Mod->global_empty())
+  if (LLVM_UNLIKELY(Mod->global_empty()))
     return nullptr;
   return wrapV(&*std::prev(Mod->global_end()));
 }
@@ -3749,6 +3808,44 @@ static void bridgeMemMove(void *Dst, const void *Src, uint64_t Len) {
     std::memmove(Dst, Src, static_cast<size_t>(Len));
 }
 
+// ===----------------------------------------------------------------------===
+//  Byte-reverse copy.  Two supported modes:
+//    1. Dst == Src           -- in-place reversal (meet-in-the-middle swap)
+//    2. Dst and Src disjoint -- forward reverse-copy
+//  Partial overlap (Dst != Src but ranges intersect) is undefined behaviour
+//  per the API contract and treated as a no-op here, matching how the libc
+//  memcpy contract handles overlapping regions.  Caller must use a separate
+//  buffer for that case.
+// ===----------------------------------------------------------------------===
+
+static void bridgeMemReverse(void *Dst, const void *Src, uint64_t Len) {
+  if (LLVM_UNLIKELY(!Dst || !Src || Len < 2))
+    return;
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+    return;
+#endif
+  auto *D = static_cast<unsigned char *>(Dst);
+  const auto *S = static_cast<const unsigned char *>(Src);
+  size_t N = static_cast<size_t>(Len);
+  if (D == S) {
+    for (size_t I = 0, J = N - 1; I < J; ++I, --J) {
+      unsigned char T = D[I];
+      D[I] = D[J];
+      D[J] = T;
+    }
+    return;
+  }
+  // Reject partial overlap (UB per contract).  Pointer comparison across
+  // distinct objects is implementation-defined but works on every platform
+  // we ship for, and a false positive here just costs the caller the data
+  // they would have read anyway.
+  if (LLVM_UNLIKELY(D + N > S && S + N > D))
+    return;
+  for (size_t I = 0; I < N; ++I)
+    D[I] = S[N - 1 - I];
+}
+
 static int bridgeMemCompare(const void *A, const void *B, uint64_t Len) {
   if (LLVM_UNLIKELY(!A || !B || !Len))
     return 0;
@@ -3829,6 +3926,8 @@ static void *bridgeAllocZeroed(uint64_t Count, uint64_t ElemSize) {
   if (LLVM_UNLIKELY(Count > SIZE_MAX || ElemSize > SIZE_MAX))
     return nullptr;
 #endif
+  if (LLVM_UNLIKELY(ElemSize && Count > SIZE_MAX / ElemSize))
+    return nullptr;
   return ::calloc(static_cast<size_t>(Count), static_cast<size_t>(ElemSize));
 }
 
@@ -3875,6 +3974,11 @@ static int bridgeStrCompare(const char *A, const char *B) {
   return std::strcmp(A, B);
 }
 
+static inline bool isWhitespace(unsigned char C) {
+  return C == ' ' || C == '\t' || C == '\n' || C == '\r' || C == '\f' ||
+         C == '\v';
+}
+
 static int bridgeStrToInt64(const char *S, int64_t *Out) {
   if (LLVM_UNLIKELY(!S || !Out))
     return 0;
@@ -3891,7 +3995,7 @@ static int bridgeStrToUInt64(const char *S, uint64_t *Out) {
   if (LLVM_UNLIKELY(!S || !Out))
     return 0;
   const char *P = S;
-  while (*P == ' ' || *P == '\t' || *P == '\n' || *P == '\r')
+  while (isWhitespace(static_cast<unsigned char>(*P)))
     ++P;
   if (*P == '-')
     return 0;
@@ -3924,15 +4028,11 @@ static char *bridgeStrSubstring(const char *S, uint64_t Start, uint64_t Len) {
 static char *bridgeStrTrim(const char *S) {
   if (LLVM_UNLIKELY(!S))
     return nullptr;
-  while (*S == ' ' || *S == '\t' || *S == '\n' || *S == '\r')
+  while (isWhitespace(static_cast<unsigned char>(*S)))
     ++S;
   size_t Len = std::strlen(S);
-  while (Len > 0) {
-    char C = S[Len - 1];
-    if (C != ' ' && C != '\t' && C != '\n' && C != '\r')
-      break;
+  while (Len > 0 && isWhitespace(static_cast<unsigned char>(S[Len - 1])))
     --Len;
-  }
   char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
   if (LLVM_UNLIKELY(!Buf))
     return nullptr;
@@ -3959,10 +4059,16 @@ static void bridgeMemZero(void *Dst, uint64_t Len) {
 //  Character search
 // ===----------------------------------------------------------------------===
 
+// Reject C values that collapse to '\0' after the implicit (char) truncation
+// performed by std::strchr/strrchr -- otherwise StrFindChar(s, 256) would
+// "find" the null terminator and report strlen(s) instead of NotFound.
 static uint64_t bridgeStrFindChar(const char *S, int C) {
   if (LLVM_UNLIKELY(!S))
     return UINT64_MAX;
-  const char *P = std::strchr(S, C);
+  unsigned char Needle = static_cast<unsigned char>(C);
+  if (LLVM_UNLIKELY(Needle == 0))
+    return UINT64_MAX;
+  const char *P = std::strchr(S, Needle);
   if (!P)
     return UINT64_MAX;
   return static_cast<uint64_t>(P - S);
@@ -3971,7 +4077,10 @@ static uint64_t bridgeStrFindChar(const char *S, int C) {
 static uint64_t bridgeStrFindLastChar(const char *S, int C) {
   if (LLVM_UNLIKELY(!S))
     return UINT64_MAX;
-  const char *P = std::strrchr(S, C);
+  unsigned char Needle = static_cast<unsigned char>(C);
+  if (LLVM_UNLIKELY(Needle == 0))
+    return UINT64_MAX;
+  const char *P = std::strrchr(S, Needle);
   if (!P)
     return UINT64_MAX;
   return static_cast<uint64_t>(P - S);
@@ -4329,6 +4438,488 @@ static void bridgeBBCollectInstructions(NevercBasicBlockRef BB,
   unsigned Idx = 0;
   for (auto &Inst : *unwrapBB(BB))
     Out[Idx++] = wrapV(&Inst);
+}
+
+// ===----------------------------------------------------------------------===
+//  Batch opcode collection -- direct-iterate without wrap/unwrap of every
+//  Instruction handle.  Cheaper than collect-then-foreach because the
+//  call to InstGetOpcode does an unwrap each time; we avoid that hop.
+// ===----------------------------------------------------------------------===
+
+static unsigned bridgeBBCollectOpcodes(NevercBasicBlockRef BB,
+                                       unsigned *OutOpcodes) {
+  if (LLVM_UNLIKELY(!BB || !OutOpcodes))
+    return 0;
+  unsigned Idx = 0;
+  for (auto &Inst : *unwrapBB(BB))
+    OutOpcodes[Idx++] = Inst.getOpcode();
+  return Idx;
+}
+
+static unsigned *bridgeModuleCollectAllOpcodes(NevercModuleRef M,
+                                               unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!M || !OutCount))
+    return nullptr;
+  auto *Mod = unwrap(M);
+
+  // Same exact-count approach as bridgeModuleCollectAllInstructions:
+  // BB::size() is O(1) so the count pass touches only Function and BB
+  // nodes; the fill pass walks instructions exactly once.
+  size_t Total = 0;
+  for (auto &F : *Mod) {
+    if (F.isDeclaration())
+      continue;
+    for (auto &BB : F)
+      Total += BB.size();
+  }
+  if (LLVM_UNLIKELY(Total == 0 || Total > UINT_MAX))
+    return nullptr;
+
+  auto *Buf = static_cast<unsigned *>(
+      bridgeAlloc(static_cast<uint64_t>(Total) * sizeof(unsigned)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+
+  size_t Idx = 0;
+  for (auto &F : *Mod) {
+    if (F.isDeclaration())
+      continue;
+    for (auto &BB : F)
+      for (auto &Inst : BB)
+        Buf[Idx++] = Inst.getOpcode();
+  }
+
+  *OutCount = static_cast<unsigned>(Total);
+  return Buf;
+}
+
+static unsigned bridgeFunctionGetInstructionCount(NevercValueRef F) {
+  if (LLVM_UNLIKELY(!F))
+    return 0;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
+    return 0;
+  unsigned Count = 0;
+  for (const auto &BB : *Fn)
+    Count += BB.size();
+  return Count;
+}
+
+// ===----------------------------------------------------------------------===
+//  DominatorTree -- on-demand CFG analysis
+// ===----------------------------------------------------------------------===
+
+static NevercDomTreeRef bridgeFunctionBuildDomTree(NevercValueRef F) {
+  if (LLVM_UNLIKELY(!F))
+    return nullptr;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
+    return nullptr;
+  auto *DT = new DominatorTree();
+  DT->recalculate(*Fn);
+  return reinterpret_cast<NevercDomTreeRef>(DT);
+}
+
+static void bridgeDomTreeDestroy(NevercDomTreeRef DT) {
+  if (LLVM_UNLIKELY(!DT))
+    return;
+  delete reinterpret_cast<DominatorTree *>(DT);
+}
+
+static int bridgeDomTreeDominates(NevercDomTreeRef DT,
+                                  NevercBasicBlockRef A,
+                                  NevercBasicBlockRef B) {
+  if (LLVM_UNLIKELY(!DT || !A || !B))
+    return 0;
+  return reinterpret_cast<DominatorTree *>(DT)->dominates(unwrapBB(A),
+                                                          unwrapBB(B));
+}
+
+static int bridgeDomTreeProperlyDominates(NevercDomTreeRef DT,
+                                          NevercBasicBlockRef A,
+                                          NevercBasicBlockRef B) {
+  if (LLVM_UNLIKELY(!DT || !A || !B))
+    return 0;
+  return reinterpret_cast<DominatorTree *>(DT)->properlyDominates(
+      unwrapBB(A), unwrapBB(B));
+}
+
+static NevercBasicBlockRef bridgeDomTreeGetIDom(NevercDomTreeRef DT,
+                                                NevercBasicBlockRef BB) {
+  if (LLVM_UNLIKELY(!DT || !BB))
+    return nullptr;
+  auto *Tree = reinterpret_cast<DominatorTree *>(DT);
+  auto *Node = Tree->getNode(unwrapBB(BB));
+  if (LLVM_UNLIKELY(!Node))
+    return nullptr;
+  auto *IDomNode = Node->getIDom();
+  return IDomNode ? wrapBB(IDomNode->getBlock()) : nullptr;
+}
+
+static int bridgeDomTreeIsReachable(NevercDomTreeRef DT,
+                                    NevercBasicBlockRef BB) {
+  if (LLVM_UNLIKELY(!DT || !BB))
+    return 0;
+  return reinterpret_cast<DominatorTree *>(DT)->isReachableFromEntry(
+      unwrapBB(BB));
+}
+
+// ===----------------------------------------------------------------------===
+//  LoopInfo -- on-demand loop nest analysis
+//  Bundles DominatorTree + LoopInfo so the plugin never manages the DomTree
+//  dependency.  The DomTree is kept alive because LoopInfo may reference it.
+// ===----------------------------------------------------------------------===
+
+namespace {
+struct LoopInfoState {
+  DominatorTree DT;
+  LoopInfo LI;
+
+  explicit LoopInfoState(Function &F) {
+    DT.recalculate(F);
+    LI.analyze(DT);
+  }
+};
+} // namespace
+
+static NevercLoopInfoRef bridgeFunctionBuildLoopInfo(NevercValueRef F) {
+  if (LLVM_UNLIKELY(!F))
+    return nullptr;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
+    return nullptr;
+  auto *State = new LoopInfoState(*Fn);
+  return reinterpret_cast<NevercLoopInfoRef>(State);
+}
+
+static void bridgeLoopInfoDestroy(NevercLoopInfoRef LI) {
+  if (LLVM_UNLIKELY(!LI))
+    return;
+  delete reinterpret_cast<LoopInfoState *>(LI);
+}
+
+static NevercLoopRef bridgeLoopInfoGetLoopFor(NevercLoopInfoRef LI,
+                                              NevercBasicBlockRef BB) {
+  if (LLVM_UNLIKELY(!LI || !BB))
+    return nullptr;
+  auto *State = reinterpret_cast<LoopInfoState *>(LI);
+  auto *L = State->LI.getLoopFor(unwrapBB(BB));
+  return reinterpret_cast<NevercLoopRef>(L);
+}
+
+static unsigned bridgeLoopInfoGetTopLevelLoopCount(NevercLoopInfoRef LI) {
+  if (LLVM_UNLIKELY(!LI))
+    return 0;
+  auto *State = reinterpret_cast<LoopInfoState *>(LI);
+  return static_cast<unsigned>(State->LI.end() - State->LI.begin());
+}
+
+static NevercBasicBlockRef bridgeLoopGetHeader(NevercLoopRef L) {
+  if (LLVM_UNLIKELY(!L))
+    return nullptr;
+  return wrapBB(reinterpret_cast<Loop *>(L)->getHeader());
+}
+
+static unsigned bridgeLoopGetDepth(NevercLoopRef L) {
+  if (LLVM_UNLIKELY(!L))
+    return 0;
+  return reinterpret_cast<Loop *>(L)->getLoopDepth();
+}
+
+static NevercLoopRef bridgeLoopGetParentLoop(NevercLoopRef L) {
+  if (LLVM_UNLIKELY(!L))
+    return nullptr;
+  return reinterpret_cast<NevercLoopRef>(
+      reinterpret_cast<Loop *>(L)->getParentLoop());
+}
+
+static int bridgeLoopContains(NevercLoopRef L, NevercBasicBlockRef BB) {
+  if (LLVM_UNLIKELY(!L || !BB))
+    return 0;
+  return reinterpret_cast<Loop *>(L)->contains(unwrapBB(BB));
+}
+
+static unsigned bridgeLoopGetNumBlocks(NevercLoopRef L) {
+  if (LLVM_UNLIKELY(!L))
+    return 0;
+  return reinterpret_cast<Loop *>(L)->getNumBlocks();
+}
+
+static unsigned bridgeLoopGetNumSubLoops(NevercLoopRef L) {
+  if (LLVM_UNLIKELY(!L))
+    return 0;
+  return reinterpret_cast<Loop *>(L)->getSubLoops().size();
+}
+
+static int bridgeLoopIsInnermost(NevercLoopRef L) {
+  if (LLVM_UNLIKELY(!L))
+    return 0;
+  return reinterpret_cast<Loop *>(L)->isInnermost();
+}
+
+// ===----------------------------------------------------------------------===
+//  PostDominatorTree -- reverse-CFG dominance analysis
+// ===----------------------------------------------------------------------===
+
+static NevercPostDomTreeRef bridgeFunctionBuildPostDomTree(NevercValueRef F) {
+  if (LLVM_UNLIKELY(!F))
+    return nullptr;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
+    return nullptr;
+  auto *PDT = new PostDominatorTree();
+  PDT->recalculate(*Fn);
+  return reinterpret_cast<NevercPostDomTreeRef>(PDT);
+}
+
+static void bridgePostDomTreeDestroy(NevercPostDomTreeRef PDT) {
+  if (LLVM_UNLIKELY(!PDT))
+    return;
+  delete reinterpret_cast<PostDominatorTree *>(PDT);
+}
+
+static int bridgePostDomTreeDominates(NevercPostDomTreeRef PDT,
+                                      NevercBasicBlockRef A,
+                                      NevercBasicBlockRef B) {
+  if (LLVM_UNLIKELY(!PDT || !A || !B))
+    return 0;
+  return reinterpret_cast<PostDominatorTree *>(PDT)->dominates(unwrapBB(A),
+                                                               unwrapBB(B));
+}
+
+static int bridgePostDomTreeProperlyDominates(NevercPostDomTreeRef PDT,
+                                              NevercBasicBlockRef A,
+                                              NevercBasicBlockRef B) {
+  if (LLVM_UNLIKELY(!PDT || !A || !B))
+    return 0;
+  return reinterpret_cast<PostDominatorTree *>(PDT)->properlyDominates(
+      unwrapBB(A), unwrapBB(B));
+}
+
+static NevercBasicBlockRef bridgePostDomTreeGetIPDom(NevercPostDomTreeRef PDT,
+                                                     NevercBasicBlockRef BB) {
+  if (LLVM_UNLIKELY(!PDT || !BB))
+    return nullptr;
+  auto *Tree = reinterpret_cast<PostDominatorTree *>(PDT);
+  auto *Node = Tree->getNode(unwrapBB(BB));
+  if (LLVM_UNLIKELY(!Node))
+    return nullptr;
+  auto *IPDomNode = Node->getIDom();
+  return IPDomNode ? wrapBB(IPDomNode->getBlock()) : nullptr;
+}
+
+// ===----------------------------------------------------------------------===
+//  Function cloning
+// ===----------------------------------------------------------------------===
+
+static NevercValueRef bridgeFunctionClone(NevercValueRef F,
+                                          const char *NewName) {
+  if (LLVM_UNLIKELY(!F))
+    return nullptr;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
+    return nullptr;
+  ValueToValueMapTy VMap;
+  Function *Clone = CloneFunction(Fn, VMap);
+  if (LLVM_UNLIKELY(!Clone))
+    return nullptr;
+  if (NewName && *NewName)
+    Clone->setName(NewName);
+  Clone->setLinkage(GlobalValue::InternalLinkage);
+  return wrapV(Clone);
+}
+
+// ===----------------------------------------------------------------------===
+//  SCEV -- on-demand ScalarEvolution analysis
+//  Bundles all dependencies (TLI, AC, DT, LI, SE) into one state object.
+//  SE is heap-allocated after DT/LI are populated to avoid referencing
+//  uninitialized analysis results.
+// ===----------------------------------------------------------------------===
+
+namespace {
+struct SCEVState {
+  TargetLibraryInfoImpl TLIImpl;
+  TargetLibraryInfo TLI;
+  AssumptionCache AC;
+  DominatorTree DT;
+  LoopInfo LI;
+  std::unique_ptr<ScalarEvolution> SE;
+
+  explicit SCEVState(Function &F)
+      : TLIImpl(Triple(F.getParent()->getTargetTriple())), TLI(TLIImpl),
+        AC(F) {
+    DT.recalculate(F);
+    LI.analyze(DT);
+    SE = std::make_unique<ScalarEvolution>(F, TLI, AC, DT, LI);
+  }
+};
+} // namespace
+
+static NevercSCEVInfoRef bridgeFunctionBuildSCEV(NevercValueRef F) {
+  if (LLVM_UNLIKELY(!F))
+    return nullptr;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
+    return nullptr;
+  auto *State = new SCEVState(*Fn);
+  return reinterpret_cast<NevercSCEVInfoRef>(State);
+}
+
+static void bridgeSCEVInfoDestroy(NevercSCEVInfoRef SI) {
+  if (LLVM_UNLIKELY(!SI))
+    return;
+  delete reinterpret_cast<SCEVState *>(SI);
+}
+
+static unsigned bridgeSCEVGetTripCount(NevercSCEVInfoRef SI,
+                                       NevercBasicBlockRef LoopHeader) {
+  if (LLVM_UNLIKELY(!SI || !LoopHeader))
+    return 0;
+  auto *State = reinterpret_cast<SCEVState *>(SI);
+  auto *L = State->LI.getLoopFor(unwrapBB(LoopHeader));
+  if (LLVM_UNLIKELY(!L || L->getHeader() != unwrapBB(LoopHeader)))
+    return 0;
+  return State->SE->getSmallConstantTripCount(L);
+}
+
+static unsigned bridgeSCEVGetMaxTripCount(NevercSCEVInfoRef SI,
+                                          NevercBasicBlockRef LoopHeader) {
+  if (LLVM_UNLIKELY(!SI || !LoopHeader))
+    return 0;
+  auto *State = reinterpret_cast<SCEVState *>(SI);
+  auto *L = State->LI.getLoopFor(unwrapBB(LoopHeader));
+  if (LLVM_UNLIKELY(!L || L->getHeader() != unwrapBB(LoopHeader)))
+    return 0;
+  return State->SE->getSmallConstantMaxTripCount(L);
+}
+
+// ===----------------------------------------------------------------------===
+//  CallGraph -- on-demand module-wide call graph with SCC recursion cache
+// ===----------------------------------------------------------------------===
+
+namespace {
+struct CallGraphState {
+  CallGraph CG;
+  SmallPtrSet<Function *, 32> RecursiveFns;
+
+  explicit CallGraphState(Module &M) : CG(M) {
+    for (scc_iterator<CallGraph *> I = scc_begin(&CG), E = scc_end(&CG);
+         I != E; ++I) {
+      if (!I.hasCycle())
+        continue;
+      for (CallGraphNode *Node : *I) {
+        if (Function *Fn = Node->getFunction())
+          RecursiveFns.insert(Fn);
+      }
+    }
+  }
+};
+} // namespace
+
+static NevercCallGraphRef bridgeModuleBuildCallGraph(NevercModuleRef M) {
+  if (LLVM_UNLIKELY(!M))
+    return nullptr;
+  auto *State = new CallGraphState(*unwrap(M));
+  return reinterpret_cast<NevercCallGraphRef>(State);
+}
+
+static void bridgeCallGraphDestroy(NevercCallGraphRef CG) {
+  if (LLVM_UNLIKELY(!CG))
+    return;
+  delete reinterpret_cast<CallGraphState *>(CG);
+}
+
+static unsigned bridgeCallGraphGetCalleeCount(NevercCallGraphRef CG,
+                                              NevercValueRef F) {
+  if (LLVM_UNLIKELY(!CG || !F))
+    return 0;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn))
+    return 0;
+  auto *State = reinterpret_cast<CallGraphState *>(CG);
+  CallGraphNode *Node = State->CG[Fn];
+  if (LLVM_UNLIKELY(!Node))
+    return 0;
+  SmallPtrSet<Function *, 16> Seen;
+  for (const auto &CR : *Node) {
+    if (Function *Callee = CR.second->getFunction())
+      Seen.insert(Callee);
+  }
+  return static_cast<unsigned>(Seen.size());
+}
+
+static NevercValueRef *bridgeCallGraphCollectCallees(NevercCallGraphRef CG,
+                                                     NevercValueRef F,
+                                                     unsigned *OutCount) {
+  if (LLVM_UNLIKELY(!OutCount))
+    return nullptr;
+  *OutCount = 0;
+  if (LLVM_UNLIKELY(!CG || !F))
+    return nullptr;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn))
+    return nullptr;
+  auto *State = reinterpret_cast<CallGraphState *>(CG);
+  CallGraphNode *Node = State->CG[Fn];
+  if (LLVM_UNLIKELY(!Node))
+    return nullptr;
+  SmallPtrSet<Function *, 16> Seen;
+  for (const auto &CR : *Node) {
+    if (Function *Callee = CR.second->getFunction())
+      Seen.insert(Callee);
+  }
+  if (Seen.empty())
+    return nullptr;
+  auto *Out = static_cast<NevercValueRef *>(
+      bridgeAlloc(Seen.size() * sizeof(NevercValueRef)));
+  if (LLVM_UNLIKELY(!Out))
+    return nullptr;
+  unsigned Idx = 0;
+  for (Function *Callee : Seen)
+    Out[Idx++] = wrapV(Callee);
+  *OutCount = Idx;
+  return Out;
+}
+
+static int bridgeCallGraphIsRecursive(NevercCallGraphRef CG,
+                                      NevercValueRef F) {
+  if (LLVM_UNLIKELY(!CG || !F))
+    return 0;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn))
+    return 0;
+  return reinterpret_cast<CallGraphState *>(CG)->RecursiveFns.count(Fn) != 0;
+}
+
+// ===----------------------------------------------------------------------===
+//  CFG mutation helpers
+// ===----------------------------------------------------------------------===
+
+static NevercBasicBlockRef bridgeSplitEdge(NevercBasicBlockRef From,
+                                           NevercBasicBlockRef To) {
+  if (LLVM_UNLIKELY(!From || !To))
+    return nullptr;
+  BasicBlock *New =
+      llvm::SplitEdge(unwrapBB(From), unwrapBB(To));
+  return New ? wrapBB(New) : nullptr;
+}
+
+static int bridgeMergeBlockIntoPredecessor(NevercBasicBlockRef BB) {
+  if (LLVM_UNLIKELY(!BB))
+    return 0;
+  return llvm::MergeBlockIntoPredecessor(unwrapBB(BB)) ? 1 : 0;
+}
+
+// ===----------------------------------------------------------------------===
+//  Loop invariant query
+// ===----------------------------------------------------------------------===
+
+static int bridgeLoopIsLoopInvariant(NevercLoopRef L, NevercValueRef V) {
+  if (LLVM_UNLIKELY(!L || !V))
+    return 0;
+  return reinterpret_cast<Loop *>(L)->isLoopInvariant(unwrapV(V)) ? 1 : 0;
 }
 
 static void bridgeMFuncCollectBBs(NevercMachineFuncRef MF,
@@ -5104,6 +5695,291 @@ static char *bridgeStrToUpper(const char *S) {
 }
 
 // ===----------------------------------------------------------------------===
+//  Bounded string duplication (strndup equivalent)
+// ===----------------------------------------------------------------------===
+
+static char *bridgeStrNDup(const char *S, uint64_t MaxLen) {
+  if (LLVM_UNLIKELY(!S))
+    return nullptr;
+  size_t Limit = static_cast<size_t>(MaxLen);
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(MaxLen > SIZE_MAX))
+    Limit = SIZE_MAX;
+#endif
+  const void *Nul = std::memchr(S, '\0', Limit);
+  size_t CopyLen = Nul ? static_cast<size_t>(
+                             static_cast<const char *>(Nul) - S)
+                       : Limit;
+  if (LLVM_UNLIKELY(CopyLen >= SIZE_MAX))
+    return nullptr;
+  char *Buf = static_cast<char *>(bridgeAlloc(CopyLen + 1));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  std::memcpy(Buf, S, CopyLen);
+  Buf[CopyLen] = '\0';
+  return Buf;
+}
+
+// ===----------------------------------------------------------------------===
+//  Character occurrence count
+//
+//  Normalize C to unsigned char before searching: std::strchr converts the
+//  needle through (char), so values like 256, 512, ... silently collapse to
+//  '\0' on 8-bit-char platforms and trigger an infinite loop on the null
+//  terminator.  Reject the post-truncation zero, not just the literal 0.
+// ===----------------------------------------------------------------------===
+
+static uint64_t bridgeStrCountChar(const char *S, int C) {
+  if (LLVM_UNLIKELY(!S))
+    return 0;
+  unsigned char Needle = static_cast<unsigned char>(C);
+  if (LLVM_UNLIKELY(Needle == 0))
+    return 0;
+  uint64_t Count = 0;
+  for (const char *P = S; (P = std::strchr(P, Needle)) != nullptr; ++P)
+    ++Count;
+  return Count;
+}
+
+// ===----------------------------------------------------------------------===
+//  Prefix-skip helper -- returns S+strlen(Prefix) when S starts with Prefix,
+//  or nullptr otherwise.  Replaces the StrStartsWith + magic-offset idiom.
+// ===----------------------------------------------------------------------===
+
+static const char *bridgeStrAfterPrefix(const char *S, const char *Prefix) {
+  if (LLVM_UNLIKELY(!S))
+    return nullptr;
+  if (LLVM_UNLIKELY(!Prefix || !*Prefix))
+    return S;
+  size_t PrefixLen = std::strlen(Prefix);
+  if (std::strncmp(S, Prefix, PrefixLen) != 0)
+    return nullptr;
+  return S + PrefixLen;
+}
+
+// ===----------------------------------------------------------------------===
+//  Byte-needle search (memmem equivalent).  Returns offset, not pointer,
+//  so the result survives Haystack relocations such as BinaryResize.
+// ===----------------------------------------------------------------------===
+
+static uint64_t bridgeMemFind(const void *Haystack, uint64_t HaystackLen,
+                              const void *Needle, uint64_t NeedleLen) {
+  if (LLVM_UNLIKELY(!Haystack || !Needle))
+    return UINT64_MAX;
+  if (LLVM_UNLIKELY(NeedleLen == 0 || NeedleLen > HaystackLen))
+    return UINT64_MAX;
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(HaystackLen > SIZE_MAX))
+    return UINT64_MAX;
+#endif
+
+  const auto *H = static_cast<const unsigned char *>(Haystack);
+  const auto *N = static_cast<const unsigned char *>(Needle);
+
+  // Single-byte needle: defer to libc memchr (typically SIMD-accelerated).
+  if (NeedleLen == 1) {
+    const void *P = std::memchr(H, N[0], static_cast<size_t>(HaystackLen));
+    if (!P)
+      return UINT64_MAX;
+    return static_cast<uint64_t>(static_cast<const unsigned char *>(P) - H);
+  }
+
+  // Two-Way / Boyer-Moore-Horspool would be faster for large inputs, but
+  // pass authors typically scan short binary blobs, so a naive memchr-anchored
+  // sweep wins on simplicity and stays branch-prediction-friendly.
+  uint64_t Last = HaystackLen - NeedleLen;
+  uint64_t I = 0;
+  while (I <= Last) {
+    const void *Hit = std::memchr(H + I, N[0],
+                                  static_cast<size_t>(Last - I + 1));
+    if (!Hit)
+      return UINT64_MAX;
+    uint64_t Off = static_cast<uint64_t>(
+        static_cast<const unsigned char *>(Hit) - H);
+    if (std::memcmp(H + Off, N, static_cast<size_t>(NeedleLen)) == 0)
+      return Off;
+    I = Off + 1;
+  }
+  return UINT64_MAX;
+}
+
+// ===----------------------------------------------------------------------===
+//  Byte occurrence count -- delegates to libc memchr in a tight loop so the
+//  hot path stays SIMD-accelerated on platforms where memchr is vectorized.
+// ===----------------------------------------------------------------------===
+
+static uint64_t bridgeMemCount(const void *Haystack, uint64_t HaystackLen,
+                               int Byte) {
+  if (LLVM_UNLIKELY(!Haystack || HaystackLen == 0))
+    return 0;
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(HaystackLen > SIZE_MAX))
+    return 0;
+#endif
+  unsigned char Needle = static_cast<unsigned char>(Byte);
+  const auto *H = static_cast<const unsigned char *>(Haystack);
+  size_t Remaining = static_cast<size_t>(HaystackLen);
+  uint64_t Count = 0;
+  while (Remaining > 0) {
+    const void *Hit = std::memchr(H, Needle, Remaining);
+    if (!Hit)
+      break;
+    ++Count;
+    size_t Skip = static_cast<size_t>(
+                      static_cast<const unsigned char *>(Hit) - H) +
+                  1;
+    H += Skip;
+    Remaining -= Skip;
+  }
+  return Count;
+}
+
+// ===----------------------------------------------------------------------===
+//  Character class scanning (strspn / strcspn equivalents)
+//
+//  Build a 256-bit bitset from the class on entry then walk S with one
+//  branch per byte.  Faster than the libc strspn/strcspn variants on
+//  short character classes that revisit the class for every byte.
+// ===----------------------------------------------------------------------===
+
+namespace {
+struct ByteClass {
+  // 256 bits packed into 4x uint64_t.  Built once per call; queried by
+  // ((Bits[B >> 6] >> (B & 63)) & 1).
+  uint64_t Bits[4] = {0, 0, 0, 0};
+
+  void add(unsigned char B) { Bits[B >> 6] |= (uint64_t{1} << (B & 63)); }
+  bool contains(unsigned char B) const {
+    return (Bits[B >> 6] >> (B & 63)) & uint64_t{1};
+  }
+  void buildFrom(const char *Class) {
+    for (const unsigned char *P = reinterpret_cast<const unsigned char *>(
+             Class);
+         *P; ++P)
+      add(*P);
+  }
+};
+} // anonymous namespace
+
+static uint64_t bridgeStrSpan(const char *S, const char *Accept) {
+  if (LLVM_UNLIKELY(!S))
+    return 0;
+  if (LLVM_UNLIKELY(!Accept || !*Accept))
+    return 0;
+  ByteClass C;
+  C.buildFrom(Accept);
+  const unsigned char *P = reinterpret_cast<const unsigned char *>(S);
+  const unsigned char *Start = P;
+  while (*P && C.contains(*P))
+    ++P;
+  return static_cast<uint64_t>(P - Start);
+}
+
+static uint64_t bridgeStrCSpn(const char *S, const char *Reject) {
+  if (LLVM_UNLIKELY(!S))
+    return 0;
+  const unsigned char *P = reinterpret_cast<const unsigned char *>(S);
+  const unsigned char *Start = P;
+  if (LLVM_UNLIKELY(!Reject || !*Reject)) {
+    while (*P)
+      ++P;
+    return static_cast<uint64_t>(P - Start);
+  }
+  ByteClass C;
+  C.buildFrom(Reject);
+  while (*P && !C.contains(*P))
+    ++P;
+  return static_cast<uint64_t>(P - Start);
+}
+
+// ===----------------------------------------------------------------------===
+//  ASCII case-insensitive comparison
+//
+//  Lowercase only ASCII letters in [A-Z]; non-ASCII bytes pass through as
+//  raw uint8.  Branchless lowercasing via subtract-shift-AND mask.
+// ===----------------------------------------------------------------------===
+
+static inline unsigned char asciiToLower(unsigned char C) {
+  // (C - 'A' < 26U) ? C | 0x20 : C, branchless variant.
+  unsigned Diff = static_cast<unsigned>(C) - 'A';
+  unsigned Mask = (Diff < 26U) ? 0x20U : 0U;
+  return static_cast<unsigned char>(C | Mask);
+}
+
+static int bridgeStrICompare(const char *A, const char *B) {
+  if (LLVM_UNLIKELY(!A || !B))
+    return (A == B) ? 0 : (A ? 1 : -1);
+  const auto *PA = reinterpret_cast<const unsigned char *>(A);
+  const auto *PB = reinterpret_cast<const unsigned char *>(B);
+  for (;; ++PA, ++PB) {
+    unsigned char CA = asciiToLower(*PA);
+    unsigned char CB = asciiToLower(*PB);
+    if (CA != CB)
+      return (CA < CB) ? -1 : 1;
+    if (CA == 0)
+      return 0;
+  }
+}
+
+static int bridgeStrIEqual(const char *A, const char *B) {
+  if (LLVM_UNLIKELY(!A || !B))
+    return (A == B) ? 1 : 0;
+  if (A == B)
+    return 1;
+  const auto *PA = reinterpret_cast<const unsigned char *>(A);
+  const auto *PB = reinterpret_cast<const unsigned char *>(B);
+  for (;; ++PA, ++PB) {
+    unsigned char CA = asciiToLower(*PA);
+    unsigned char CB = asciiToLower(*PB);
+    if (CA != CB)
+      return 0;
+    if (CA == 0)
+      return 1;
+  }
+}
+
+// ===----------------------------------------------------------------------===
+//  Path manipulation -- recognize both '/' and '\\' as separators in a
+//  single pass.  Zero allocation; offsets are returned so the caller can
+//  combine with StrSubstring/StrDup only when an owned copy is actually
+//  needed.
+// ===----------------------------------------------------------------------===
+
+static uint64_t bridgePathBaseNameOffset(const char *Path) {
+  if (LLVM_UNLIKELY(!Path))
+    return 0;
+  uint64_t LastSep = UINT64_MAX;
+  for (const char *P = Path; *P; ++P) {
+    if (*P == '/' || *P == '\\')
+      LastSep = static_cast<uint64_t>(P - Path);
+  }
+  return LastSep == UINT64_MAX ? 0 : LastSep + 1;
+}
+
+static uint64_t bridgePathExtOffset(const char *Path) {
+  if (LLVM_UNLIKELY(!Path))
+    return UINT64_MAX;
+  uint64_t BaseStart = 0;
+  uint64_t LastDot = UINT64_MAX;
+  for (const char *P = Path; *P; ++P) {
+    char C = *P;
+    if (C == '/' || C == '\\') {
+      BaseStart = static_cast<uint64_t>(P - Path) + 1;
+      LastDot = UINT64_MAX;
+    } else if (C == '.') {
+      LastDot = static_cast<uint64_t>(P - Path);
+    }
+  }
+  // Reject "no dot", "trailing dot", and leading-dot dotfiles
+  // ("/.bashrc" -> LastDot == BaseStart -> no extension).
+  if (LastDot == UINT64_MAX || LastDot == BaseStart)
+    return UINT64_MAX;
+  if (Path[LastDot + 1] == '\0')
+    return UINT64_MAX;
+  return LastDot;
+}
+
+// ===----------------------------------------------------------------------===
 //  One-call defined function collection
 // ===----------------------------------------------------------------------===
 
@@ -5252,6 +6128,27 @@ static inline NevercDynArrayRef wrapDA(DynArrayImpl *A) {
   return reinterpret_cast<NevercDynArrayRef>(A);
 }
 
+static int dynArrayGrowTo(DynArrayImpl *A, unsigned MinCapacity) {
+  if (LLVM_LIKELY(MinCapacity <= A->Capacity))
+    return 1;
+  unsigned NewCap = A->Capacity == 0 ? 16 : A->Capacity;
+  while (NewCap < MinCapacity) {
+    unsigned Doubled = NewCap * 2;
+    if (LLVM_UNLIKELY(Doubled <= NewCap))
+      return 0;
+    NewCap = Doubled;
+  }
+  uint64_t Bytes = static_cast<uint64_t>(NewCap) * A->ElemSize;
+  if (LLVM_UNLIKELY(Bytes / A->ElemSize != NewCap))
+    return 0;
+  char *NewData = static_cast<char *>(bridgeRealloc(A->Data, Bytes));
+  if (LLVM_UNLIKELY(!NewData))
+    return 0;
+  A->Data = NewData;
+  A->Capacity = NewCap;
+  return 1;
+}
+
 static NevercDynArrayRef bridgeDynArrayCreate(uint64_t ElemSize) {
   if (LLVM_UNLIKELY(ElemSize == 0 || ElemSize > SIZE_MAX / 16))
     return nullptr;
@@ -5277,22 +6174,14 @@ static int bridgeDynArrayPush(NevercDynArrayRef Arr, const void *Elem) {
   if (LLVM_UNLIKELY(!Arr || !Elem))
     return 0;
   auto *A = unwrapDA(Arr);
-  if (LLVM_UNLIKELY(A->Count == A->Capacity)) {
-    unsigned NewCap = A->Capacity == 0 ? 16 : A->Capacity * 2;
-    if (LLVM_UNLIKELY(NewCap < A->Capacity))
-      return 0;
-    uint64_t Bytes = static_cast<uint64_t>(NewCap) * A->ElemSize;
-    if (LLVM_UNLIKELY(Bytes / A->ElemSize != NewCap))
-      return 0;
-    char *NewData = static_cast<char *>(bridgeRealloc(A->Data, Bytes));
-    if (LLVM_UNLIKELY(!NewData))
-      return 0;
-    A->Data = NewData;
-    A->Capacity = NewCap;
-  }
+  unsigned NewCount = A->Count + 1;
+  if (LLVM_UNLIKELY(NewCount == 0))
+    return 0;
+  if (LLVM_UNLIKELY(!dynArrayGrowTo(A, NewCount)))
+    return 0;
   std::memcpy(A->Data + static_cast<uint64_t>(A->Count) * A->ElemSize, Elem,
               static_cast<size_t>(A->ElemSize));
-  ++A->Count;
+  A->Count = NewCount;
   return 1;
 }
 
@@ -5493,6 +6382,64 @@ static uint64_t bridgeStrMapIncrement(NevercStrMapRef Map, const char *Key,
 }
 
 // ===----------------------------------------------------------------------===
+//  N-bounded StrMap operations (key pointer + length, no null terminator)
+//  Uses StringRef directly -- zero-copy lookup, key copied on insert.
+// ===----------------------------------------------------------------------===
+
+static inline StringRef toKeyRef(const char *Key, uint64_t KeyLen) {
+  size_t Len = static_cast<size_t>(KeyLen);
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(KeyLen > SIZE_MAX))
+    Len = SIZE_MAX;
+#endif
+  return StringRef(Key, Len);
+}
+
+static int bridgeStrMapPutN(NevercStrMapRef Map, const char *Key,
+                            uint64_t KeyLen, uint64_t Value) {
+  if (LLVM_UNLIKELY(!Map || !Key))
+    return 0;
+  (*unwrapSM(Map))[toKeyRef(Key, KeyLen)] = Value;
+  return 1;
+}
+
+static int bridgeStrMapGetN(NevercStrMapRef Map, const char *Key,
+                            uint64_t KeyLen, uint64_t *OutValue) {
+  if (LLVM_UNLIKELY(!Map || !Key))
+    return 0;
+  auto *M = unwrapSM(Map);
+  auto It = M->find(toKeyRef(Key, KeyLen));
+  if (It == M->end())
+    return 0;
+  if (OutValue)
+    *OutValue = It->second;
+  return 1;
+}
+
+static int bridgeStrMapHasN(NevercStrMapRef Map, const char *Key,
+                            uint64_t KeyLen) {
+  if (LLVM_UNLIKELY(!Map || !Key))
+    return 0;
+  return unwrapSM(Map)->count(toKeyRef(Key, KeyLen)) != 0;
+}
+
+static uint64_t bridgeStrMapIncrementN(NevercStrMapRef Map, const char *Key,
+                                       uint64_t KeyLen, uint64_t Delta) {
+  if (LLVM_UNLIKELY(!Map || !Key))
+    return 0;
+  auto &Val = (*unwrapSM(Map))[toKeyRef(Key, KeyLen)];
+  Val += Delta;
+  return Val;
+}
+
+static void bridgeStrMapRemoveN(NevercStrMapRef Map, const char *Key,
+                                uint64_t KeyLen) {
+  if (LLVM_UNLIKELY(!Map || !Key))
+    return;
+  unwrapSM(Map)->erase(toKeyRef(Key, KeyLen));
+}
+
+// ===----------------------------------------------------------------------===
 //  StrBuilder -- opaque incremental string construction
 //  Backed by LLVM's SmallString<256>: inline storage avoids heap alloc
 //  for strings up to 256 bytes, geometric growth beyond.
@@ -5525,7 +6472,11 @@ static void bridgeStrBuilderAppendN(NevercStrBuilderRef SB, const char *S,
                                     uint64_t Len) {
   if (LLVM_UNLIKELY(!SB || !S))
     return;
-  unwrapSB(SB)->append(StringRef(S, Len));
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+    return;
+#endif
+  unwrapSB(SB)->append(StringRef(S, static_cast<size_t>(Len)));
 }
 
 static void bridgeStrBuilderAppendChar(NevercStrBuilderRef SB, char C) {
@@ -5538,7 +6489,7 @@ static void bridgeStrBuilderAppendV(NevercStrBuilderRef SB, const char *Fmt,
                                     va_list Args) {
   if (LLVM_UNLIKELY(!SB || !Fmt))
     return;
-  char Stack[512];
+  char Stack[1024];
   va_list ArgsCopy;
   va_copy(ArgsCopy, Args);
   int Len = std::vsnprintf(Stack, sizeof(Stack), Fmt, ArgsCopy);
@@ -5605,23 +6556,8 @@ static int bridgeDynArrayPushN(NevercDynArrayRef Arr, const void *Data,
   unsigned NewCount = A->Count + Count;
   if (LLVM_UNLIKELY(NewCount < A->Count))
     return 0;
-  if (LLVM_UNLIKELY(NewCount > A->Capacity)) {
-    unsigned NewCap = A->Capacity == 0 ? 16 : A->Capacity;
-    while (NewCap < NewCount) {
-      unsigned Doubled = NewCap * 2;
-      if (LLVM_UNLIKELY(Doubled <= NewCap))
-        return 0;
-      NewCap = Doubled;
-    }
-    uint64_t Bytes = static_cast<uint64_t>(NewCap) * A->ElemSize;
-    if (LLVM_UNLIKELY(Bytes / A->ElemSize != NewCap))
-      return 0;
-    char *NewData = static_cast<char *>(bridgeRealloc(A->Data, Bytes));
-    if (LLVM_UNLIKELY(!NewData))
-      return 0;
-    A->Data = NewData;
-    A->Capacity = NewCap;
-  }
+  if (LLVM_UNLIKELY(!dynArrayGrowTo(A, NewCount)))
+    return 0;
   std::memcpy(A->Data + static_cast<uint64_t>(A->Count) * A->ElemSize, Data,
               static_cast<uint64_t>(Count) * A->ElemSize);
   A->Count = NewCount;
@@ -5660,6 +6596,49 @@ static void bridgeDynArrayShrinkToFit(NevercDynArrayRef Arr) {
     A->Data = Shrunk;
     A->Capacity = A->Count;
   }
+}
+
+// ===----------------------------------------------------------------------===
+//  Order-preserving DynArray mutation: O(N) random insert and remove.
+//  Use RemoveSwap when iteration order doesn't matter (O(1)).
+// ===----------------------------------------------------------------------===
+
+static int bridgeDynArrayInsert(NevercDynArrayRef Arr, unsigned Idx,
+                                const void *Elem) {
+  if (LLVM_UNLIKELY(!Arr || !Elem))
+    return 0;
+  auto *A = unwrapDA(Arr);
+  if (LLVM_UNLIKELY(Idx > A->Count))
+    return 0;
+  unsigned NewCount = A->Count + 1;
+  if (LLVM_UNLIKELY(NewCount < A->Count))
+    return 0;
+  if (LLVM_UNLIKELY(!dynArrayGrowTo(A, NewCount)))
+    return 0;
+  uint64_t Stride = A->ElemSize;
+  char *Slot = A->Data + static_cast<uint64_t>(Idx) * Stride;
+  if (Idx < A->Count) {
+    std::memmove(Slot + Stride, Slot,
+                 static_cast<size_t>((A->Count - Idx) * Stride));
+  }
+  std::memcpy(Slot, Elem, static_cast<size_t>(Stride));
+  A->Count = NewCount;
+  return 1;
+}
+
+static void bridgeDynArrayRemoveOrdered(NevercDynArrayRef Arr, unsigned Idx) {
+  if (LLVM_UNLIKELY(!Arr))
+    return;
+  auto *A = unwrapDA(Arr);
+  if (LLVM_UNLIKELY(Idx >= A->Count))
+    return;
+  uint64_t Stride = A->ElemSize;
+  unsigned Tail = A->Count - Idx - 1;
+  if (Tail) {
+    char *Slot = A->Data + static_cast<uint64_t>(Idx) * Stride;
+    std::memmove(Slot, Slot + Stride, static_cast<size_t>(Tail * Stride));
+  }
+  --A->Count;
 }
 
 // ===----------------------------------------------------------------------===
@@ -6482,11 +7461,85 @@ NevercHostAPI buildHostAPI() {
   API.InstGetOpcodeName = bridgeInstGetOpcodeName;
   API.InstOpcodeToName = bridgeInstOpcodeToName;
 
+  API.StrNDup = bridgeStrNDup;
+  API.StrCountChar = bridgeStrCountChar;
+
+  API.StrMapPutN = bridgeStrMapPutN;
+  API.StrMapGetN = bridgeStrMapGetN;
+  API.StrMapHasN = bridgeStrMapHasN;
+  API.StrMapIncrementN = bridgeStrMapIncrementN;
+  API.StrMapRemoveN = bridgeStrMapRemoveN;
+
+  API.StrAfterPrefix = bridgeStrAfterPrefix;
+  API.MemFind = bridgeMemFind;
+  API.MemCount = bridgeMemCount;
+  API.StrSpan = bridgeStrSpan;
+  API.StrCSpn = bridgeStrCSpn;
+  API.StrIEqual = bridgeStrIEqual;
+  API.StrICompare = bridgeStrICompare;
+
+  API.PathBaseNameOffset = bridgePathBaseNameOffset;
+  API.PathExtOffset = bridgePathExtOffset;
+
+  API.MemReverse = bridgeMemReverse;
+  API.DynArrayInsert = bridgeDynArrayInsert;
+  API.DynArrayRemoveOrdered = bridgeDynArrayRemoveOrdered;
+
+  API.MInstCollectOperandKinds = bridgeMInstCollectOperandKinds;
+
+  API.BBCollectOpcodes = bridgeBBCollectOpcodes;
+  API.ModuleCollectAllOpcodes = bridgeModuleCollectAllOpcodes;
+
+  API.FunctionGetInstructionCount = bridgeFunctionGetInstructionCount;
+
+  API.FunctionBuildDomTree = bridgeFunctionBuildDomTree;
+  API.DomTreeDestroy = bridgeDomTreeDestroy;
+  API.DomTreeDominates = bridgeDomTreeDominates;
+  API.DomTreeProperlyDominates = bridgeDomTreeProperlyDominates;
+  API.DomTreeGetIDom = bridgeDomTreeGetIDom;
+  API.DomTreeIsReachable = bridgeDomTreeIsReachable;
+
+  API.FunctionBuildLoopInfo = bridgeFunctionBuildLoopInfo;
+  API.LoopInfoDestroy = bridgeLoopInfoDestroy;
+  API.LoopInfoGetLoopFor = bridgeLoopInfoGetLoopFor;
+  API.LoopInfoGetTopLevelLoopCount = bridgeLoopInfoGetTopLevelLoopCount;
+  API.LoopGetHeader = bridgeLoopGetHeader;
+  API.LoopGetDepth = bridgeLoopGetDepth;
+  API.LoopGetParentLoop = bridgeLoopGetParentLoop;
+  API.LoopContains = bridgeLoopContains;
+  API.LoopGetNumBlocks = bridgeLoopGetNumBlocks;
+  API.LoopGetNumSubLoops = bridgeLoopGetNumSubLoops;
+  API.LoopIsInnermost = bridgeLoopIsInnermost;
+
+  API.FunctionBuildPostDomTree = bridgeFunctionBuildPostDomTree;
+  API.PostDomTreeDestroy = bridgePostDomTreeDestroy;
+  API.PostDomTreeDominates = bridgePostDomTreeDominates;
+  API.PostDomTreeProperlyDominates = bridgePostDomTreeProperlyDominates;
+  API.PostDomTreeGetIPDom = bridgePostDomTreeGetIPDom;
+
+  API.FunctionClone = bridgeFunctionClone;
+
+  API.FunctionBuildSCEV = bridgeFunctionBuildSCEV;
+  API.SCEVInfoDestroy = bridgeSCEVInfoDestroy;
+  API.SCEVGetTripCount = bridgeSCEVGetTripCount;
+  API.SCEVGetMaxTripCount = bridgeSCEVGetMaxTripCount;
+
+  API.ModuleBuildCallGraph = bridgeModuleBuildCallGraph;
+  API.CallGraphDestroy = bridgeCallGraphDestroy;
+  API.CallGraphGetCalleeCount = bridgeCallGraphGetCalleeCount;
+  API.CallGraphCollectCallees = bridgeCallGraphCollectCallees;
+  API.CallGraphIsRecursive = bridgeCallGraphIsRecursive;
+
+  API.SplitEdge = bridgeSplitEdge;
+  API.MergeBlockIntoPredecessor = bridgeMergeBlockIntoPredecessor;
+
+  API.LoopIsLoopInvariant = bridgeLoopIsLoopInvariant;
+
   static_assert(
-      offsetof(NevercHostAPI, InstOpcodeToName) +
-              sizeof(NevercHostAPI::InstOpcodeToName) ==
+      offsetof(NevercHostAPI, LoopIsLoopInvariant) +
+              sizeof(NevercHostAPI::LoopIsLoopInvariant) ==
           sizeof(NevercHostAPI),
-      "New fields added after InstOpcodeToName. "
+      "New fields added after LoopIsLoopInvariant. "
       "Wire them in buildHostAPI and update this static_assert.");
 
   return API;
