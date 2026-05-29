@@ -154,7 +154,7 @@ static void bridgeDiagError(const char *Msg) {
 // ===----------------------------------------------------------------------===
 
 static NevercContextRef bridgeModuleGetContext(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return nullptr;
   return wrapCtx(&unwrap(M)->getContext());
 }
@@ -164,28 +164,28 @@ static NevercContextRef bridgeModuleGetContext(NevercModuleRef M) {
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeModuleGetFirstFunction(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return nullptr;
   auto *Mod = unwrap(M);
-  if (Mod->empty())
+  if (LLVM_UNLIKELY(Mod->empty()))
     return nullptr;
   return wrapV(&*Mod->begin());
 }
 
 static NevercValueRef bridgeModuleGetLastFunction(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return nullptr;
   auto *Mod = unwrap(M);
-  if (Mod->empty())
+  if (LLVM_UNLIKELY(Mod->empty()))
     return nullptr;
   return wrapV(&*Mod->rbegin());
 }
 
 static NevercValueRef bridgeModuleGetNextFunction(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return nullptr;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || !Fn->getParent())
+  if (LLVM_UNLIKELY(!Fn || !Fn->getParent()))
     return nullptr;
   auto It = std::next(Fn->getIterator());
   if (It == Fn->getParent()->end())
@@ -195,14 +195,14 @@ static NevercValueRef bridgeModuleGetNextFunction(NevercValueRef F) {
 
 static NevercValueRef bridgeModuleGetNamedFunction(NevercModuleRef M,
                                                    const char *Name) {
-  if (!M || !Name)
+  if (LLVM_UNLIKELY(!M || !Name))
     return nullptr;
   auto *Fn = unwrap(M)->getFunction(Name);
   return Fn ? wrapV(Fn) : nullptr;
 }
 
 static NevercValueRef bridgeModuleGetFirstGlobal(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return nullptr;
   auto *Mod = unwrap(M);
   if (Mod->global_empty())
@@ -211,10 +211,10 @@ static NevercValueRef bridgeModuleGetFirstGlobal(NevercModuleRef M) {
 }
 
 static NevercValueRef bridgeModuleGetNextGlobal(NevercValueRef G) {
-  if (!G)
+  if (LLVM_UNLIKELY(!G))
     return nullptr;
   auto *GV = dyn_cast<GlobalVariable>(unwrapV(G));
-  if (!GV || !GV->getParent())
+  if (LLVM_UNLIKELY(!GV || !GV->getParent()))
     return nullptr;
   auto It = std::next(GV->getIterator());
   if (It == GV->getParent()->global_end())
@@ -225,11 +225,11 @@ static NevercValueRef bridgeModuleGetNextGlobal(NevercValueRef G) {
 static NevercValueRef bridgeModuleAddFunction(NevercModuleRef M,
                                               const char *Name,
                                               NevercTypeRef FnTy) {
-  if (!M || !Name || !FnTy)
+  if (LLVM_UNLIKELY(!M || !Name || !FnTy))
     return nullptr;
   auto *Mod = unwrap(M);
   auto *FT = dyn_cast<FunctionType>(unwrapTy(FnTy));
-  if (!FT)
+  if (LLVM_UNLIKELY(!FT))
     return nullptr;
   auto *Fn = Function::Create(FT, GlobalValue::ExternalLinkage, Name, Mod);
   if (gShellcodeModeEnabled)
@@ -242,21 +242,21 @@ static NevercValueRef bridgeModuleAddFunction(NevercModuleRef M,
 // ===----------------------------------------------------------------------===
 
 static const char *bridgeValueGetName(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return "";
   auto Name = unwrapV(V)->getName();
   return Name.data() ? Name.data() : "";
 }
 
 static NevercTypeRef bridgeValueGetType(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return nullptr;
   return wrapTy(unwrapV(V)->getType());
 }
 
 static void bridgeValueReplaceAllUsesWith(NevercValueRef Old,
                                           NevercValueRef New) {
-  if (!Old || !New)
+  if (LLVM_UNLIKELY(!Old || !New))
     return;
   Value *O = unwrapV(Old);
   Value *N = unwrapV(New);
@@ -269,7 +269,7 @@ static void bridgeValueReplaceAllUsesWith(NevercValueRef Old,
 }
 
 static void bridgeValueEraseFromParent(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return;
   Value *Val = unwrapV(V);
   if (!Val->use_empty()) {
@@ -289,28 +289,28 @@ static void bridgeValueEraseFromParent(NevercValueRef V) {
 // ===----------------------------------------------------------------------===
 
 static NevercBasicBlockRef bridgeFunctionGetFirstBB(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return nullptr;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || Fn->empty())
+  if (LLVM_UNLIKELY(!Fn || Fn->empty()))
     return nullptr;
   return wrapBB(&Fn->front());
 }
 
 static NevercBasicBlockRef bridgeFunctionGetLastBB(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return nullptr;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || Fn->empty())
+  if (LLVM_UNLIKELY(!Fn || Fn->empty()))
     return nullptr;
   return wrapBB(&Fn->back());
 }
 
 static NevercBasicBlockRef bridgeFunctionGetNextBB(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return nullptr;
   auto *Block = unwrapBB(BB);
-  if (!Block->getParent())
+  if (LLVM_UNLIKELY(!Block->getParent()))
     return nullptr;
   auto It = std::next(Block->getIterator());
   if (It == Block->getParent()->end())
@@ -319,23 +319,23 @@ static NevercBasicBlockRef bridgeFunctionGetNextBB(NevercBasicBlockRef BB) {
 }
 
 static unsigned bridgeFunctionGetArgCount(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return 0;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   return Fn ? Fn->arg_size() : 0;
 }
 
 static NevercValueRef bridgeFunctionGetArg(NevercValueRef F, unsigned Idx) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return nullptr;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || Idx >= Fn->arg_size())
+  if (LLVM_UNLIKELY(!Fn || Idx >= Fn->arg_size()))
     return nullptr;
   return wrapV(Fn->getArg(Idx));
 }
 
 static int bridgeFunctionIsDeclaration(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return 1;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   return (!Fn || Fn->isDeclaration()) ? 1 : 0;
@@ -346,28 +346,28 @@ static int bridgeFunctionIsDeclaration(NevercValueRef F) {
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeBBGetFirstInst(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return nullptr;
   auto *Block = unwrapBB(BB);
-  if (Block->empty())
+  if (LLVM_UNLIKELY(Block->empty()))
     return nullptr;
   return wrapV(&Block->front());
 }
 
 static NevercValueRef bridgeBBGetLastInst(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return nullptr;
   auto *Block = unwrapBB(BB);
-  if (Block->empty())
+  if (LLVM_UNLIKELY(Block->empty()))
     return nullptr;
   return wrapV(&Block->back());
 }
 
 static NevercValueRef bridgeBBGetNextInst(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
-  if (!Inst || !Inst->getParent())
+  if (LLVM_UNLIKELY(!Inst || !Inst->getParent()))
     return nullptr;
   auto It = std::next(Inst->getIterator());
   if (It == Inst->getParent()->end())
@@ -376,21 +376,21 @@ static NevercValueRef bridgeBBGetNextInst(NevercValueRef I) {
 }
 
 static NevercValueRef bridgeBBGetTerminator(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return nullptr;
   auto *T = unwrapBB(BB)->getTerminator();
   return T ? wrapV(T) : nullptr;
 }
 
 static NevercValueRef bridgeBBGetParentFunction(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return nullptr;
   return wrapV(unwrapBB(BB)->getParent());
 }
 
 static NevercBasicBlockRef bridgeBBCreate(NevercContextRef C, const char *Name,
                                           NevercValueRef F) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   auto *Fn = F ? dyn_cast<Function>(unwrapV(F)) : nullptr;
   return wrapBB(BasicBlock::Create(*unwrapCtx(C), Name ? Name : "", Fn));
@@ -401,43 +401,43 @@ static NevercBasicBlockRef bridgeBBCreate(NevercContextRef C, const char *Name,
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeInstGetOpcode(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
   return Inst ? Inst->getOpcode() : 0;
 }
 
 static unsigned bridgeInstGetNumOperands(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
   return Inst ? Inst->getNumOperands() : 0;
 }
 
 static NevercValueRef bridgeInstGetOperand(NevercValueRef I, unsigned Idx) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
-  if (!Inst || Idx >= Inst->getNumOperands())
+  if (LLVM_UNLIKELY(!Inst || Idx >= Inst->getNumOperands()))
     return nullptr;
   return wrapV(Inst->getOperand(Idx));
 }
 
 static void bridgeInstSetOperand(NevercValueRef I, unsigned Idx,
                                  NevercValueRef V) {
-  if (!I || !V)
+  if (LLVM_UNLIKELY(!I || !V))
     return;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
-  if (!Inst || Idx >= Inst->getNumOperands())
+  if (LLVM_UNLIKELY(!Inst || Idx >= Inst->getNumOperands()))
     return;
   Inst->setOperand(Idx, unwrapV(V));
 }
 
 static void bridgeInstEraseFromParent(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
-  if (!Inst)
+  if (LLVM_UNLIKELY(!Inst))
     return;
   if (!Inst->use_empty()) {
     WithColor::warning(errs(), "neverc-plugin")
@@ -449,14 +449,14 @@ static void bridgeInstEraseFromParent(NevercValueRef I) {
 }
 
 static NevercValueRef bridgeInstClone(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
   return Inst ? wrapV(Inst->clone()) : nullptr;
 }
 
 static NevercBasicBlockRef bridgeInstGetParentBB(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
   return Inst ? wrapBB(Inst->getParent()) : nullptr;
@@ -467,95 +467,95 @@ static NevercBasicBlockRef bridgeInstGetParentBB(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static NevercTypeRef bridgeTypeGetInt1(NevercContextRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapTy(Type::getInt1Ty(*unwrapCtx(C)));
 }
 static NevercTypeRef bridgeTypeGetInt8(NevercContextRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapTy(Type::getInt8Ty(*unwrapCtx(C)));
 }
 static NevercTypeRef bridgeTypeGetInt16(NevercContextRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapTy(Type::getInt16Ty(*unwrapCtx(C)));
 }
 static NevercTypeRef bridgeTypeGetInt32(NevercContextRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapTy(Type::getInt32Ty(*unwrapCtx(C)));
 }
 static NevercTypeRef bridgeTypeGetInt64(NevercContextRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapTy(Type::getInt64Ty(*unwrapCtx(C)));
 }
 static NevercTypeRef bridgeTypeGetIntN(NevercContextRef C, unsigned NumBits) {
-  if (!C || NumBits == 0)
+  if (LLVM_UNLIKELY(!C || NumBits == 0))
     return nullptr;
   return wrapTy(Type::getIntNTy(*unwrapCtx(C), NumBits));
 }
 static NevercTypeRef bridgeTypeGetFloat(NevercContextRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapTy(Type::getFloatTy(*unwrapCtx(C)));
 }
 static NevercTypeRef bridgeTypeGetDouble(NevercContextRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapTy(Type::getDoubleTy(*unwrapCtx(C)));
 }
 static NevercTypeRef bridgeTypeGetVoid(NevercContextRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapTy(Type::getVoidTy(*unwrapCtx(C)));
 }
 static NevercTypeRef bridgeTypeGetPtr(NevercContextRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapTy(PointerType::get(*unwrapCtx(C), 0));
 }
 static NevercTypeRef bridgeTypeGetArray(NevercTypeRef ElemTy, uint64_t Count) {
-  if (!ElemTy)
+  if (LLVM_UNLIKELY(!ElemTy))
     return nullptr;
   return wrapTy(ArrayType::get(unwrapTy(ElemTy), Count));
 }
 static NevercTypeRef bridgeTypeGetFunction(NevercTypeRef RetTy,
                                            NevercTypeRef *ParamTys,
                                            unsigned ParamCount, int IsVarArg) {
-  if (!RetTy || (ParamCount > 0 && !ParamTys))
+  if (LLVM_UNLIKELY(!RetTy || (ParamCount > 0 && !ParamTys)))
     return nullptr;
   SmallVector<Type *, 8> Params;
   for (unsigned I = 0; I < ParamCount; ++I) {
-    if (!ParamTys[I])
+    if (LLVM_UNLIKELY(!ParamTys[I]))
       return nullptr;
     Params.push_back(unwrapTy(ParamTys[I]));
   }
   return wrapTy(FunctionType::get(unwrapTy(RetTy), Params, IsVarArg != 0));
 }
 static int bridgeTypeIsInteger(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return 0;
   return unwrapTy(T)->isIntegerTy() ? 1 : 0;
 }
 static int bridgeTypeIsFloat(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return 0;
   return unwrapTy(T)->isFloatingPointTy() ? 1 : 0;
 }
 static int bridgeTypeIsPointer(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return 0;
   return unwrapTy(T)->isPointerTy() ? 1 : 0;
 }
 static int bridgeTypeIsVoid(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return 0;
   return unwrapTy(T)->isVoidTy() ? 1 : 0;
 }
 static unsigned bridgeTypeGetIntWidth(NevercTypeRef T) {
-  if (!T || !unwrapTy(T)->isIntegerTy())
+  if (LLVM_UNLIKELY(!T || !unwrapTy(T)->isIntegerTy()))
     return 0;
   return unwrapTy(T)->getIntegerBitWidth();
 }
@@ -566,31 +566,31 @@ static unsigned bridgeTypeGetIntWidth(NevercTypeRef T) {
 
 static NevercValueRef bridgeConstInt(NevercTypeRef IntTy, uint64_t Val,
                                      int SignExtend) {
-  if (!IntTy)
+  if (LLVM_UNLIKELY(!IntTy))
     return nullptr;
   Type *T = unwrapTy(IntTy);
-  if (!T->isIntegerTy())
+  if (LLVM_UNLIKELY(!T->isIntegerTy()))
     return nullptr;
   return wrapV(ConstantInt::get(T, Val, SignExtend != 0));
 }
 
 static NevercValueRef bridgeConstFloat(NevercTypeRef FloatTy, double Val) {
-  if (!FloatTy)
+  if (LLVM_UNLIKELY(!FloatTy))
     return nullptr;
   Type *T = unwrapTy(FloatTy);
-  if (!T->isFloatingPointTy())
+  if (LLVM_UNLIKELY(!T->isFloatingPointTy()))
     return nullptr;
   return wrapV(ConstantFP::get(T, Val));
 }
 
 static NevercValueRef bridgeConstNull(NevercTypeRef Ty) {
-  if (!Ty)
+  if (LLVM_UNLIKELY(!Ty))
     return nullptr;
   return wrapV(Constant::getNullValue(unwrapTy(Ty)));
 }
 
 static NevercValueRef bridgeConstUndef(NevercTypeRef Ty) {
-  if (!Ty)
+  if (LLVM_UNLIKELY(!Ty))
     return nullptr;
   return wrapV(UndefValue::get(unwrapTy(Ty)));
 }
@@ -598,7 +598,7 @@ static NevercValueRef bridgeConstUndef(NevercTypeRef Ty) {
 static NevercValueRef bridgeConstString(NevercContextRef C, const char *Str,
                                         uint32_t Len,
                                         int DontNullTerminate) {
-  if (!C || !Str)
+  if (LLVM_UNLIKELY(!C || !Str))
     return nullptr;
   return wrapV(ConstantDataArray::getString(
       *unwrapCtx(C), StringRef(Str, Len), DontNullTerminate == 0));
@@ -609,7 +609,7 @@ static NevercValueRef bridgeConstString(NevercContextRef C, const char *Str,
 // ===----------------------------------------------------------------------===
 
 static NevercBuilderRef bridgeBuilderCreate(NevercContextRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapB(new IRBuilder<>(*unwrapCtx(C)));
 }
@@ -621,84 +621,84 @@ static void bridgeBuilderDispose(NevercBuilderRef B) {
 
 static void bridgeBuilderSetInsertPoint(NevercBuilderRef B,
                                         NevercBasicBlockRef BB) {
-  if (!B || !BB)
+  if (LLVM_UNLIKELY(!B || !BB))
     return;
   unwrapB(B)->SetInsertPoint(unwrapBB(BB));
 }
 
 static void bridgeBuilderSetInsertPointBefore(NevercBuilderRef B,
                                               NevercValueRef Inst) {
-  if (!B || !Inst)
+  if (LLVM_UNLIKELY(!B || !Inst))
     return;
   auto *I = dyn_cast<Instruction>(unwrapV(Inst));
-  if (!I || !I->getParent())
+  if (LLVM_UNLIKELY(!I || !I->getParent()))
     return;
   unwrapB(B)->SetInsertPoint(I->getIterator());
 }
 
 static NevercValueRef bridgeBuildAdd(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateAdd(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildSub(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateSub(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildMul(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateMul(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildUDiv(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateUDiv(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildSDiv(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateSDiv(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildAnd(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateAnd(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildOr(NevercBuilderRef B, NevercValueRef LHS,
                                     NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateOr(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildXor(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateXor(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildShl(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateShl(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildLShr(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateLShr(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildAShr(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateAShr(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
 }
@@ -706,7 +706,7 @@ static NevercValueRef bridgeBuildAShr(NevercBuilderRef B, NevercValueRef LHS,
 static NevercValueRef bridgeBuildICmp(NevercBuilderRef B, unsigned Pred,
                                       NevercValueRef LHS, NevercValueRef RHS,
                                       const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateICmp(static_cast<CmpInst::Predicate>(Pred),
                                       unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
@@ -714,7 +714,7 @@ static NevercValueRef bridgeBuildICmp(NevercBuilderRef B, unsigned Pred,
 static NevercValueRef bridgeBuildFCmp(NevercBuilderRef B, unsigned Pred,
                                       NevercValueRef LHS, NevercValueRef RHS,
                                       const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(unwrapB(B)->CreateFCmp(static_cast<CmpInst::Predicate>(Pred),
                                       unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
@@ -722,7 +722,7 @@ static NevercValueRef bridgeBuildFCmp(NevercBuilderRef B, unsigned Pred,
 
 static NevercValueRef bridgeBuildBr(NevercBuilderRef B,
                                     NevercBasicBlockRef Dest) {
-  if (!B || !Dest)
+  if (LLVM_UNLIKELY(!B || !Dest))
     return nullptr;
   return wrapV(unwrapB(B)->CreateBr(unwrapBB(Dest)));
 }
@@ -730,18 +730,18 @@ static NevercValueRef bridgeBuildCondBr(NevercBuilderRef B,
                                         NevercValueRef Cond,
                                         NevercBasicBlockRef Then,
                                         NevercBasicBlockRef Else) {
-  if (!B || !Cond || !Then || !Else)
+  if (LLVM_UNLIKELY(!B || !Cond || !Then || !Else))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateCondBr(unwrapV(Cond), unwrapBB(Then), unwrapBB(Else)));
 }
 static NevercValueRef bridgeBuildRet(NevercBuilderRef B, NevercValueRef V) {
-  if (!B || !V)
+  if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
   return wrapV(unwrapB(B)->CreateRet(unwrapV(V)));
 }
 static NevercValueRef bridgeBuildRetVoid(NevercBuilderRef B) {
-  if (!B)
+  if (LLVM_UNLIKELY(!B))
     return nullptr;
   return wrapV(unwrapB(B)->CreateRetVoid());
 }
@@ -749,14 +749,14 @@ static NevercValueRef bridgeBuildRetVoid(NevercBuilderRef B) {
 static NevercValueRef bridgeBuildCall(NevercBuilderRef B, NevercTypeRef FnTy,
                                       NevercValueRef Fn, NevercValueRef *Args,
                                       unsigned ArgCount, const char *Name) {
-  if (!B || !FnTy || !Fn || (ArgCount > 0 && !Args))
+  if (LLVM_UNLIKELY(!B || !FnTy || !Fn || (ArgCount > 0 && !Args)))
     return nullptr;
   auto *FT = dyn_cast<FunctionType>(unwrapTy(FnTy));
-  if (!FT)
+  if (LLVM_UNLIKELY(!FT))
     return nullptr;
   SmallVector<Value *, 8> ArgVec;
   for (unsigned I = 0; I < ArgCount; ++I) {
-    if (!Args[I])
+    if (LLVM_UNLIKELY(!Args[I]))
       return nullptr;
     ArgVec.push_back(unwrapV(Args[I]));
   }
@@ -767,11 +767,11 @@ static NevercValueRef bridgeBuildGEP(NevercBuilderRef B, NevercTypeRef Ty,
                                      NevercValueRef Ptr,
                                      NevercValueRef *Indices,
                                      unsigned NumIndices, const char *Name) {
-  if (!B || !Ty || !Ptr || (NumIndices > 0 && !Indices))
+  if (LLVM_UNLIKELY(!B || !Ty || !Ptr || (NumIndices > 0 && !Indices)))
     return nullptr;
   SmallVector<Value *, 4> Idxs;
   for (unsigned I = 0; I < NumIndices; ++I) {
-    if (!Indices[I])
+    if (LLVM_UNLIKELY(!Indices[I]))
       return nullptr;
     Idxs.push_back(unwrapV(Indices[I]));
   }
@@ -781,21 +781,21 @@ static NevercValueRef bridgeBuildGEP(NevercBuilderRef B, NevercTypeRef Ty,
 
 static NevercValueRef bridgeBuildLoad(NevercBuilderRef B, NevercTypeRef Ty,
                                       NevercValueRef Ptr, const char *Name) {
-  if (!B || !Ty || !Ptr)
+  if (LLVM_UNLIKELY(!B || !Ty || !Ptr))
     return nullptr;
   return wrapV(unwrapB(B)->CreateLoad(unwrapTy(Ty), unwrapV(Ptr), Name ? Name : ""));
 }
 
 static NevercValueRef bridgeBuildStore(NevercBuilderRef B, NevercValueRef Val,
                                        NevercValueRef Ptr) {
-  if (!B || !Val || !Ptr)
+  if (LLVM_UNLIKELY(!B || !Val || !Ptr))
     return nullptr;
   return wrapV(unwrapB(B)->CreateStore(unwrapV(Val), unwrapV(Ptr)));
 }
 
 static NevercValueRef bridgeBuildAlloca(NevercBuilderRef B, NevercTypeRef Ty,
                                         const char *Name) {
-  if (!B || !Ty)
+  if (LLVM_UNLIKELY(!B || !Ty))
     return nullptr;
   return wrapV(unwrapB(B)->CreateAlloca(unwrapTy(Ty), nullptr, Name ? Name : ""));
 }
@@ -803,14 +803,14 @@ static NevercValueRef bridgeBuildAlloca(NevercBuilderRef B, NevercTypeRef Ty,
 static NevercValueRef bridgeBuildBitCast(NevercBuilderRef B, NevercValueRef V,
                                          NevercTypeRef DestTy,
                                          const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(unwrapB(B)->CreateBitCast(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildIntToPtr(NevercBuilderRef B, NevercValueRef V,
                                           NevercTypeRef DestTy,
                                           const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateIntToPtr(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
@@ -818,27 +818,27 @@ static NevercValueRef bridgeBuildIntToPtr(NevercBuilderRef B, NevercValueRef V,
 static NevercValueRef bridgeBuildPtrToInt(NevercBuilderRef B, NevercValueRef V,
                                           NevercTypeRef DestTy,
                                           const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreatePtrToInt(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildZExt(NevercBuilderRef B, NevercValueRef V,
                                       NevercTypeRef DestTy, const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(unwrapB(B)->CreateZExt(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildSExt(NevercBuilderRef B, NevercValueRef V,
                                       NevercTypeRef DestTy, const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(unwrapB(B)->CreateSExt(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
 }
 static NevercValueRef bridgeBuildTrunc(NevercBuilderRef B, NevercValueRef V,
                                        NevercTypeRef DestTy,
                                        const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(unwrapB(B)->CreateTrunc(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
 }
@@ -847,7 +847,7 @@ static NevercValueRef bridgeBuildSelect(NevercBuilderRef B, NevercValueRef Cond,
                                         NevercValueRef Then,
                                         NevercValueRef Else,
                                         const char *Name) {
-  if (!B || !Cond || !Then || !Else)
+  if (LLVM_UNLIKELY(!B || !Cond || !Then || !Else))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateSelect(unwrapV(Cond), unwrapV(Then), unwrapV(Else), Name ? Name : ""));
@@ -855,20 +855,20 @@ static NevercValueRef bridgeBuildSelect(NevercBuilderRef B, NevercValueRef Cond,
 
 static NevercValueRef bridgeBuildPhi(NevercBuilderRef B, NevercTypeRef Ty,
                                      const char *Name) {
-  if (!B || !Ty)
+  if (LLVM_UNLIKELY(!B || !Ty))
     return nullptr;
   return wrapV(unwrapB(B)->CreatePHI(unwrapTy(Ty), 2, Name ? Name : ""));
 }
 
 static void bridgePhiAddIncoming(NevercValueRef Phi, NevercValueRef *Values,
                                  NevercBasicBlockRef *Blocks, unsigned Count) {
-  if (!Phi || !Values || !Blocks || Count == 0)
+  if (LLVM_UNLIKELY(!Phi || !Values || !Blocks || Count == 0))
     return;
   auto *PN = dyn_cast<PHINode>(unwrapV(Phi));
-  if (!PN)
+  if (LLVM_UNLIKELY(!PN))
     return;
   for (unsigned I = 0; I < Count; ++I) {
-    if (!Values[I] || !Blocks[I])
+    if (LLVM_UNLIKELY(!Values[I] || !Blocks[I]))
       continue;
     PN->addIncoming(unwrapV(Values[I]), unwrapBB(Blocks[I]));
   }
@@ -880,7 +880,7 @@ static void bridgePhiAddIncoming(NevercValueRef Phi, NevercValueRef *Values,
 
 static NevercMetadataRef bridgeMDStringCreate(NevercContextRef C,
                                               const char *Str, uint32_t Len) {
-  if (!C || !Str)
+  if (LLVM_UNLIKELY(!C || !Str))
     return nullptr;
   return wrapMD(MDString::get(*unwrapCtx(C), StringRef(Str, Len)));
 }
@@ -888,11 +888,11 @@ static NevercMetadataRef bridgeMDStringCreate(NevercContextRef C,
 static NevercMetadataRef bridgeMDNodeCreate(NevercContextRef C,
                                             NevercMetadataRef *Vals,
                                             unsigned Count) {
-  if (!C || (Count > 0 && !Vals))
+  if (LLVM_UNLIKELY(!C || (Count > 0 && !Vals)))
     return nullptr;
   SmallVector<Metadata *, 4> Ops;
   for (unsigned I = 0; I < Count; ++I) {
-    if (!Vals[I])
+    if (LLVM_UNLIKELY(!Vals[I]))
       return nullptr;
     Ops.push_back(unwrapMD(Vals[I]));
   }
@@ -901,7 +901,7 @@ static NevercMetadataRef bridgeMDNodeCreate(NevercContextRef C,
 
 static void bridgeInstSetMetadata(NevercValueRef Inst, unsigned KindID,
                                   NevercMetadataRef MD) {
-  if (!Inst || !MD)
+  if (LLVM_UNLIKELY(!Inst || !MD))
     return;
   auto *I = dyn_cast<Instruction>(unwrapV(Inst));
   auto *Node = dyn_cast<MDNode>(unwrapMD(MD));
@@ -911,17 +911,17 @@ static void bridgeInstSetMetadata(NevercValueRef Inst, unsigned KindID,
 
 static NevercMetadataRef bridgeInstGetMetadata(NevercValueRef Inst,
                                                unsigned KindID) {
-  if (!Inst)
+  if (LLVM_UNLIKELY(!Inst))
     return nullptr;
   auto *I = dyn_cast<Instruction>(unwrapV(Inst));
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *N = I->getMetadata(KindID);
   return N ? wrapMD(N) : nullptr;
 }
 
 static unsigned bridgeMDKindGetID(NevercContextRef C, const char *Name) {
-  if (!C || !Name)
+  if (LLVM_UNLIKELY(!C || !Name))
     return 0;
   return unwrapCtx(C)->getMDKindID(Name);
 }
@@ -931,19 +931,19 @@ static unsigned bridgeMDKindGetID(NevercContextRef C, const char *Name) {
 // ===----------------------------------------------------------------------===
 
 static NevercMachineBBRef bridgeMFuncGetFirstBB(NevercMachineFuncRef MF) {
-  if (!MF)
+  if (LLVM_UNLIKELY(!MF))
     return nullptr;
   auto *Func = unwrapMF(MF);
-  if (Func->empty())
+  if (LLVM_UNLIKELY(Func->empty()))
     return nullptr;
   return wrapMBB(&Func->front());
 }
 
 static NevercMachineBBRef bridgeMFuncGetNextBB(NevercMachineBBRef MBB) {
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return nullptr;
   auto *Block = unwrapMBB(MBB);
-  if (!Block->getParent())
+  if (LLVM_UNLIKELY(!Block->getParent()))
     return nullptr;
   auto It = std::next(Block->getIterator());
   if (It == Block->getParent()->end())
@@ -952,19 +952,19 @@ static NevercMachineBBRef bridgeMFuncGetNextBB(NevercMachineBBRef MBB) {
 }
 
 static NevercMachineInstrRef bridgeMBBGetFirstInst(NevercMachineBBRef MBB) {
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return nullptr;
   auto *Block = unwrapMBB(MBB);
-  if (Block->empty())
+  if (LLVM_UNLIKELY(Block->empty()))
     return nullptr;
   return wrapMI(&Block->front());
 }
 
 static NevercMachineInstrRef bridgeMBBGetNextInst(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return nullptr;
   auto *Inst = unwrapMI(MI);
-  if (!Inst->getParent())
+  if (LLVM_UNLIKELY(!Inst->getParent()))
     return nullptr;
   auto It = std::next(Inst->getIterator());
   if (It == Inst->getParent()->end())
@@ -973,19 +973,19 @@ static NevercMachineInstrRef bridgeMBBGetNextInst(NevercMachineInstrRef MI) {
 }
 
 static unsigned bridgeMInstGetOpcode(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   return unwrapMI(MI)->getOpcode();
 }
 
 static unsigned bridgeMInstGetNumOperands(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   return unwrapMI(MI)->getNumOperands();
 }
 
 static void bridgeMInstEraseFromParent(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return;
   unwrapMI(MI)->eraseFromParent();
 }
@@ -995,19 +995,19 @@ static void bridgeMInstEraseFromParent(NevercMachineInstrRef MI) {
 // ===----------------------------------------------------------------------===
 
 static const char *bridgeModuleGetDataLayout(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return "";
   return unwrap(M)->getDataLayoutStr().c_str();
 }
 
 static const char *bridgeModuleGetTargetTriple(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return "";
   return unwrap(M)->getTargetTriple().c_str();
 }
 
 static void bridgeModulePrint(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return;
   unwrap(M)->print(errs(), nullptr);
 }
@@ -1017,14 +1017,14 @@ static void bridgeModulePrint(NevercModuleRef M) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeValueDump(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return;
   unwrapV(V)->print(errs());
   errs() << "\n";
 }
 
 static unsigned bridgeValueGetNumUses(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return 0;
   return unwrapV(V)->getNumUses();
 }
@@ -1034,14 +1034,14 @@ static unsigned bridgeValueGetNumUses(NevercValueRef V) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeFunctionGetLinkage(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return 0;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   return Fn ? static_cast<unsigned>(Fn->getLinkage()) : 0;
 }
 
 static void bridgeFunctionSetLinkage(NevercValueRef F, unsigned Linkage) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (Fn)
@@ -1049,14 +1049,14 @@ static void bridgeFunctionSetLinkage(NevercValueRef F, unsigned Linkage) {
 }
 
 static unsigned bridgeFunctionGetCallingConv(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return 0;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   return Fn ? static_cast<unsigned>(Fn->getCallingConv()) : 0;
 }
 
 static void bridgeFunctionSetCallingConv(NevercValueRef F, unsigned CC) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (Fn)
@@ -1068,11 +1068,11 @@ static void bridgeFunctionSetCallingConv(NevercValueRef F, unsigned CC) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeInstMoveBefore(NevercValueRef I, NevercValueRef Before) {
-  if (!I || !Before)
+  if (LLVM_UNLIKELY(!I || !Before))
     return;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
   auto *BeforeInst = dyn_cast<Instruction>(unwrapV(Before));
-  if (!Inst || !BeforeInst || !BeforeInst->getParent())
+  if (LLVM_UNLIKELY(!Inst || !BeforeInst || !BeforeInst->getParent()))
     return;
   Inst->moveBefore(BeforeInst);
 }
@@ -1082,13 +1082,13 @@ static void bridgeInstMoveBefore(NevercValueRef I, NevercValueRef Before) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeModuleSetDataLayout(NevercModuleRef M, const char *DL) {
-  if (!M || !DL)
+  if (LLVM_UNLIKELY(!M || !DL))
     return;
   unwrap(M)->setDataLayout(DL);
 }
 
 static void bridgeModuleSetTargetTriple(NevercModuleRef M, const char *Triple) {
-  if (!M || !Triple)
+  if (LLVM_UNLIKELY(!M || !Triple))
     return;
   unwrap(M)->setTargetTriple(Triple);
 }
@@ -1105,7 +1105,7 @@ static inline Use *unwrapUse(NevercUseRef U) {
 }
 
 static NevercUseRef bridgeValueGetFirstUse(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return nullptr;
   auto *Val = unwrapV(V);
   if (Val->use_empty())
@@ -1114,14 +1114,14 @@ static NevercUseRef bridgeValueGetFirstUse(NevercValueRef V) {
 }
 
 static NevercUseRef bridgeUseGetNext(NevercUseRef U) {
-  if (!U)
+  if (LLVM_UNLIKELY(!U))
     return nullptr;
   Use *Next = unwrapUse(U)->getNext();
   return Next ? wrapUse(Next) : nullptr;
 }
 
 static NevercValueRef bridgeUseGetUser(NevercUseRef U) {
-  if (!U)
+  if (LLVM_UNLIKELY(!U))
     return nullptr;
   return wrapV(unwrapUse(U)->getUser());
 }
@@ -1132,29 +1132,29 @@ static NevercValueRef bridgeUseGetUser(NevercUseRef U) {
 
 static void bridgeFunctionAddStringAttr(NevercValueRef F, const char *Kind,
                                         const char *Val) {
-  if (!F || !Kind)
+  if (LLVM_UNLIKELY(!F || !Kind))
     return;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn)
+  if (LLVM_UNLIKELY(!Fn))
     return;
   Fn->addFnAttr(Kind, Val ? Val : "");
 }
 
 static int bridgeFunctionHasStringAttr(NevercValueRef F, const char *Kind) {
-  if (!F || !Kind)
+  if (LLVM_UNLIKELY(!F || !Kind))
     return 0;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn)
+  if (LLVM_UNLIKELY(!Fn))
     return 0;
   return Fn->hasFnAttribute(Kind) ? 1 : 0;
 }
 
 static const char *bridgeFunctionGetStringAttr(NevercValueRef F,
                                                const char *Kind) {
-  if (!F || !Kind)
+  if (LLVM_UNLIKELY(!F || !Kind))
     return "";
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || !Fn->hasFnAttribute(Kind))
+  if (LLVM_UNLIKELY(!Fn || !Fn->hasFnAttribute(Kind)))
     return "";
   auto Val = Fn->getFnAttribute(Kind).getValueAsString();
   return Val.data() ? Val.data() : "";
@@ -1162,7 +1162,7 @@ static const char *bridgeFunctionGetStringAttr(NevercValueRef F,
 
 static void bridgeFunctionRemoveStringAttr(NevercValueRef F,
                                            const char *Kind) {
-  if (!F || !Kind)
+  if (LLVM_UNLIKELY(!F || !Kind))
     return;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (Fn)
@@ -1174,13 +1174,13 @@ static void bridgeFunctionRemoveStringAttr(NevercValueRef F,
 // ===----------------------------------------------------------------------===
 
 static void bridgeBBRemoveFromParent(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return;
   unwrapBB(BB)->removeFromParent();
 }
 
 static void bridgeBBEraseFromParent(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return;
   BasicBlock *Block = unwrapBB(BB);
   if (!Block->use_empty()) {
@@ -1226,11 +1226,11 @@ static int bridgeValueIsBasicBlock(NevercValueRef V) {
 static NevercTypeRef bridgeTypeGetStruct(NevercContextRef C,
                                          NevercTypeRef *ElemTys,
                                          unsigned ElemCount, int IsPacked) {
-  if (!C || (ElemCount > 0 && !ElemTys))
+  if (LLVM_UNLIKELY(!C || (ElemCount > 0 && !ElemTys)))
     return nullptr;
   SmallVector<Type *, 8> Elems;
   for (unsigned I = 0; I < ElemCount; ++I) {
-    if (!ElemTys[I])
+    if (LLVM_UNLIKELY(!ElemTys[I]))
       return nullptr;
     Elems.push_back(unwrapTy(ElemTys[I]));
   }
@@ -1239,7 +1239,7 @@ static NevercTypeRef bridgeTypeGetStruct(NevercContextRef C,
 
 static NevercTypeRef bridgeTypeGetNamedStruct(NevercContextRef C,
                                               const char *Name) {
-  if (!C || !Name)
+  if (LLVM_UNLIKELY(!C || !Name))
     return nullptr;
   return wrapTy(StructType::create(*unwrapCtx(C), Name));
 }
@@ -1247,10 +1247,10 @@ static NevercTypeRef bridgeTypeGetNamedStruct(NevercContextRef C,
 static void bridgeStructSetBody(NevercTypeRef StructTy,
                                 NevercTypeRef *ElemTys, unsigned ElemCount,
                                 int IsPacked) {
-  if (!StructTy || (ElemCount > 0 && !ElemTys))
+  if (LLVM_UNLIKELY(!StructTy || (ElemCount > 0 && !ElemTys)))
     return;
   auto *ST = dyn_cast<StructType>(unwrapTy(StructTy));
-  if (!ST)
+  if (LLVM_UNLIKELY(!ST))
     return;
   if (!ST->isOpaque()) {
     WithColor::warning(errs(), "neverc-plugin")
@@ -1260,7 +1260,7 @@ static void bridgeStructSetBody(NevercTypeRef StructTy,
   }
   SmallVector<Type *, 8> Elems;
   for (unsigned I = 0; I < ElemCount; ++I) {
-    if (!ElemTys[I])
+    if (LLVM_UNLIKELY(!ElemTys[I]))
       return;
     Elems.push_back(unwrapTy(ElemTys[I]));
   }
@@ -1268,7 +1268,7 @@ static void bridgeStructSetBody(NevercTypeRef StructTy,
 }
 
 static unsigned bridgeStructGetNumElements(NevercTypeRef StructTy) {
-  if (!StructTy)
+  if (LLVM_UNLIKELY(!StructTy))
     return 0;
   auto *ST = dyn_cast<StructType>(unwrapTy(StructTy));
   return ST ? ST->getNumElements() : 0;
@@ -1276,10 +1276,10 @@ static unsigned bridgeStructGetNumElements(NevercTypeRef StructTy) {
 
 static NevercTypeRef bridgeStructGetElementType(NevercTypeRef StructTy,
                                                 unsigned Idx) {
-  if (!StructTy)
+  if (LLVM_UNLIKELY(!StructTy))
     return nullptr;
   auto *ST = dyn_cast<StructType>(unwrapTy(StructTy));
-  if (!ST || Idx >= ST->getNumElements())
+  if (LLVM_UNLIKELY(!ST || Idx >= ST->getNumElements()))
     return nullptr;
   return wrapTy(ST->getElementType(Idx));
 }
@@ -1295,7 +1295,7 @@ static int bridgeTypeIsStruct(NevercTypeRef T) {
 static NevercValueRef bridgeModuleAddGlobal(NevercModuleRef M,
                                             NevercTypeRef Ty, int IsConstant,
                                             const char *Name) {
-  if (!M || !Ty || !Name)
+  if (LLVM_UNLIKELY(!M || !Ty || !Name))
     return nullptr;
   auto *GV = new GlobalVariable(*unwrap(M), unwrapTy(Ty), IsConstant != 0,
                                 GlobalValue::ExternalLinkage, nullptr, Name);
@@ -1303,27 +1303,27 @@ static NevercValueRef bridgeModuleAddGlobal(NevercModuleRef M,
 }
 
 static NevercValueRef bridgeGlobalGetInitializer(NevercValueRef GV) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return nullptr;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
-  if (!G || !G->hasInitializer())
+  if (LLVM_UNLIKELY(!G || !G->hasInitializer()))
     return nullptr;
   return wrapV(G->getInitializer());
 }
 
 static void bridgeGlobalSetInitializer(NevercValueRef GV,
                                        NevercValueRef Init) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
-  if (!G)
+  if (LLVM_UNLIKELY(!G))
     return;
   if (!Init) {
     G->setInitializer(nullptr);
     return;
   }
   auto *C = dyn_cast<Constant>(unwrapV(Init));
-  if (!C) {
+  if (LLVM_UNLIKELY(!C)) {
     WithColor::warning(errs(), "neverc-plugin")
         << "GlobalSetInitializer called with non-constant value; ignoring\n";
     return;
@@ -1332,21 +1332,21 @@ static void bridgeGlobalSetInitializer(NevercValueRef GV,
 }
 
 static int bridgeGlobalHasInitializer(NevercValueRef GV) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return 0;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
   return (G && G->hasInitializer()) ? 1 : 0;
 }
 
 static int bridgeGlobalIsConstant(NevercValueRef GV) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return 0;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
   return (G && G->isConstant()) ? 1 : 0;
 }
 
 static void bridgeGlobalSetConstant(NevercValueRef GV, int IsConstant) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
   if (G)
@@ -1359,7 +1359,7 @@ static void bridgeGlobalSetConstant(NevercValueRef GV, int IsConstant) {
 
 static NevercValueRef bridgeModuleGetNamedGlobal(NevercModuleRef M,
                                                  const char *Name) {
-  if (!M || !Name)
+  if (LLVM_UNLIKELY(!M || !Name))
     return nullptr;
   auto *GV = unwrap(M)->getGlobalVariable(Name, true);
   return GV ? wrapV(GV) : nullptr;
@@ -1371,22 +1371,22 @@ static NevercValueRef bridgeModuleGetNamedGlobal(NevercModuleRef M,
 
 static void bridgeInstInsertBefore(NevercValueRef Inst,
                                    NevercValueRef Before) {
-  if (!Inst || !Before)
+  if (LLVM_UNLIKELY(!Inst || !Before))
     return;
   auto *I = dyn_cast<Instruction>(unwrapV(Inst));
   auto *BeforeI = dyn_cast<Instruction>(unwrapV(Before));
-  if (!I || !BeforeI || !BeforeI->getParent())
+  if (LLVM_UNLIKELY(!I || !BeforeI || !BeforeI->getParent()))
     return;
   I->insertBefore(BeforeI);
 }
 
 static void bridgeInstInsertAfter(NevercValueRef Inst,
                                   NevercValueRef After) {
-  if (!Inst || !After)
+  if (LLVM_UNLIKELY(!Inst || !After))
     return;
   auto *I = dyn_cast<Instruction>(unwrapV(Inst));
   auto *AfterI = dyn_cast<Instruction>(unwrapV(After));
-  if (!I || !AfterI || !AfterI->getParent())
+  if (LLVM_UNLIKELY(!I || !AfterI || !AfterI->getParent()))
     return;
   I->insertAfter(AfterI);
 }
@@ -1396,7 +1396,7 @@ static void bridgeInstInsertAfter(NevercValueRef Inst,
 // ===----------------------------------------------------------------------===
 
 static const char *bridgeMFuncGetName(NevercMachineFuncRef MF) {
-  if (!MF)
+  if (LLVM_UNLIKELY(!MF))
     return "";
   auto Name = unwrapMF(MF)->getName();
   return Name.data() ? Name.data() : "";
@@ -1404,7 +1404,7 @@ static const char *bridgeMFuncGetName(NevercMachineFuncRef MF) {
 
 static int64_t bridgeMInstGetOperandImm(NevercMachineInstrRef MI,
                                         unsigned Idx) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   auto *Inst = unwrapMI(MI);
   if (Idx >= Inst->getNumOperands() || !Inst->getOperand(Idx).isImm())
@@ -1413,7 +1413,7 @@ static int64_t bridgeMInstGetOperandImm(NevercMachineInstrRef MI,
 }
 
 static int bridgeMInstGetOperandIsReg(NevercMachineInstrRef MI, unsigned Idx) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   auto *Inst = unwrapMI(MI);
   if (Idx >= Inst->getNumOperands())
@@ -1423,7 +1423,7 @@ static int bridgeMInstGetOperandIsReg(NevercMachineInstrRef MI, unsigned Idx) {
 
 static unsigned bridgeMInstGetOperandReg(NevercMachineInstrRef MI,
                                          unsigned Idx) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   auto *Inst = unwrapMI(MI);
   if (Idx >= Inst->getNumOperands() || !Inst->getOperand(Idx).isReg())
@@ -1432,7 +1432,7 @@ static unsigned bridgeMInstGetOperandReg(NevercMachineInstrRef MI,
 }
 
 static int bridgeMInstGetOperandIsImm(NevercMachineInstrRef MI, unsigned Idx) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   auto *Inst = unwrapMI(MI);
   if (Idx >= Inst->getNumOperands())
@@ -1445,19 +1445,19 @@ static int bridgeMInstGetOperandIsImm(NevercMachineInstrRef MI, unsigned Idx) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeMBBGetNumber(NevercMachineBBRef MBB) {
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return 0;
   return unwrapMBB(MBB)->getNumber();
 }
 
 static unsigned bridgeMBBGetSuccCount(NevercMachineBBRef MBB) {
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return 0;
   return unwrapMBB(MBB)->succ_size();
 }
 
 static unsigned bridgeMBBGetPredCount(NevercMachineBBRef MBB) {
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return 0;
   return unwrapMBB(MBB)->pred_size();
 }
@@ -1467,11 +1467,11 @@ static unsigned bridgeMBBGetPredCount(NevercMachineBBRef MBB) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeModuleRemoveFunction(NevercModuleRef M, NevercValueRef F) {
-  if (!M || !F)
+  if (LLVM_UNLIKELY(!M || !F))
     return;
   auto *Mod = unwrap(M);
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || Fn->getParent() != Mod)
+  if (LLVM_UNLIKELY(!Fn || Fn->getParent() != Mod))
     return;
   if (!Fn->use_empty()) {
     WithColor::warning(errs(), "neverc-plugin")
@@ -1484,11 +1484,11 @@ static void bridgeModuleRemoveFunction(NevercModuleRef M, NevercValueRef F) {
 }
 
 static void bridgeModuleRemoveGlobal(NevercModuleRef M, NevercValueRef GV) {
-  if (!M || !GV)
+  if (LLVM_UNLIKELY(!M || !GV))
     return;
   auto *Mod = unwrap(M);
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
-  if (!G || G->getParent() != Mod)
+  if (LLVM_UNLIKELY(!G || G->getParent() != Mod))
     return;
   if (!G->use_empty()) {
     WithColor::warning(errs(), "neverc-plugin")
@@ -1505,22 +1505,22 @@ static void bridgeModuleRemoveGlobal(NevercModuleRef M, NevercValueRef GV) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeModuleGetFunctionCount(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return 0;
   return unwrap(M)->size();
 }
 
 static unsigned bridgeModuleGetGlobalCount(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return 0;
   return unwrap(M)->global_size();
 }
 
 static NevercTypeRef bridgeValueGetTypeAsFunction(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return nullptr;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn)
+  if (LLVM_UNLIKELY(!Fn))
     return nullptr;
   return wrapTy(Fn->getFunctionType());
 }
@@ -1530,10 +1530,10 @@ static NevercTypeRef bridgeValueGetTypeAsFunction(NevercValueRef F) {
 // ===----------------------------------------------------------------------===
 
 static NevercTypeRef bridgeFunctionGetReturnType(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return nullptr;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn)
+  if (LLVM_UNLIKELY(!Fn))
     return nullptr;
   return wrapTy(Fn->getReturnType());
 }
@@ -1543,7 +1543,7 @@ static NevercTypeRef bridgeFunctionGetReturnType(NevercValueRef F) {
 // ===----------------------------------------------------------------------===
 
 static int bridgeInstIsTerminator(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
   return (Inst && Inst->isTerminator()) ? 1 : 0;
@@ -1555,27 +1555,27 @@ static int bridgeInstIsTerminator(NevercValueRef I) {
 
 static NevercValueRef bridgeBuildNeg(NevercBuilderRef B, NevercValueRef V,
                                      const char *Name) {
-  if (!B || !V)
+  if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
   return wrapV(unwrapB(B)->CreateNeg(unwrapV(V), Name ? Name : ""));
 }
 
 static NevercValueRef bridgeBuildNot(NevercBuilderRef B, NevercValueRef V,
                                      const char *Name) {
-  if (!B || !V)
+  if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
   return wrapV(unwrapB(B)->CreateNot(unwrapV(V), Name ? Name : ""));
 }
 
 static NevercValueRef bridgeBuildFNeg(NevercBuilderRef B, NevercValueRef V,
                                       const char *Name) {
-  if (!B || !V)
+  if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
   return wrapV(unwrapB(B)->CreateFNeg(unwrapV(V), Name ? Name : ""));
 }
 
 static NevercValueRef bridgeBuildUnreachable(NevercBuilderRef B) {
-  if (!B)
+  if (LLVM_UNLIKELY(!B))
     return nullptr;
   return wrapV(unwrapB(B)->CreateUnreachable());
 }
@@ -1587,7 +1587,7 @@ static NevercValueRef bridgeBuildUnreachable(NevercBuilderRef B) {
 static NevercValueRef bridgeBuildSwitch(NevercBuilderRef B, NevercValueRef V,
                                         NevercBasicBlockRef DefaultBB,
                                         unsigned NumCases) {
-  if (!B || !V || !DefaultBB)
+  if (LLVM_UNLIKELY(!B || !V || !DefaultBB))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateSwitch(unwrapV(V), unwrapBB(DefaultBB), NumCases));
@@ -1595,13 +1595,13 @@ static NevercValueRef bridgeBuildSwitch(NevercBuilderRef B, NevercValueRef V,
 
 static void bridgeSwitchAddCase(NevercValueRef Switch, NevercValueRef OnVal,
                                 NevercBasicBlockRef Dest) {
-  if (!Switch || !OnVal || !Dest)
+  if (LLVM_UNLIKELY(!Switch || !OnVal || !Dest))
     return;
   auto *SI = dyn_cast<SwitchInst>(unwrapV(Switch));
-  if (!SI)
+  if (LLVM_UNLIKELY(!SI))
     return;
   auto *CI = dyn_cast<ConstantInt>(unwrapV(OnVal));
-  if (!CI) {
+  if (LLVM_UNLIKELY(!CI)) {
     WithColor::warning(errs(), "neverc-plugin")
         << "SwitchAddCase: case value is not ConstantInt; ignoring\n";
     return;
@@ -1614,10 +1614,10 @@ static void bridgeSwitchAddCase(NevercValueRef Switch, NevercValueRef OnVal,
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeConstPointerNull(NevercTypeRef PtrTy) {
-  if (!PtrTy)
+  if (LLVM_UNLIKELY(!PtrTy))
     return nullptr;
   auto *PT = dyn_cast<PointerType>(unwrapTy(PtrTy));
-  if (!PT)
+  if (LLVM_UNLIKELY(!PT))
     return nullptr;
   return wrapV(ConstantPointerNull::get(PT));
 }
@@ -1628,7 +1628,7 @@ static NevercValueRef bridgeConstPointerNull(NevercTypeRef PtrTy) {
 
 static NevercValueRef bridgeBuildURem(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateURem(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
@@ -1636,7 +1636,7 @@ static NevercValueRef bridgeBuildURem(NevercBuilderRef B, NevercValueRef LHS,
 
 static NevercValueRef bridgeBuildSRem(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateSRem(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
@@ -1649,7 +1649,7 @@ static NevercValueRef bridgeBuildSRem(NevercBuilderRef B, NevercValueRef LHS,
 static NevercValueRef bridgeBuildFPToSI(NevercBuilderRef B, NevercValueRef V,
                                         NevercTypeRef DestTy,
                                         const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateFPToSI(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
@@ -1658,7 +1658,7 @@ static NevercValueRef bridgeBuildFPToSI(NevercBuilderRef B, NevercValueRef V,
 static NevercValueRef bridgeBuildSIToFP(NevercBuilderRef B, NevercValueRef V,
                                         NevercTypeRef DestTy,
                                         const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateSIToFP(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
@@ -1667,7 +1667,7 @@ static NevercValueRef bridgeBuildSIToFP(NevercBuilderRef B, NevercValueRef V,
 static NevercValueRef bridgeBuildFPToUI(NevercBuilderRef B, NevercValueRef V,
                                         NevercTypeRef DestTy,
                                         const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateFPToUI(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
@@ -1676,7 +1676,7 @@ static NevercValueRef bridgeBuildFPToUI(NevercBuilderRef B, NevercValueRef V,
 static NevercValueRef bridgeBuildUIToFP(NevercBuilderRef B, NevercValueRef V,
                                         NevercTypeRef DestTy,
                                         const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateUIToFP(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
@@ -1707,7 +1707,7 @@ static void bridgeNoOpRegisterLinkerPass(void *, NevercHookPoint,
 
 static int bridgeBinaryResize(uint8_t **Data, uint64_t *Len,
                                uint64_t *Capacity, uint64_t NewLen) {
-  if (!Data || !Len || !Capacity)
+  if (LLVM_UNLIKELY(!Data || !Len || !Capacity))
     return 0;
   if (NewLen <= *Capacity) {
     *Len = NewLen;
@@ -1721,7 +1721,7 @@ static int bridgeBinaryResize(uint8_t **Data, uint64_t *Len,
   if (NewCap < 64)
     NewCap = 64;
   uint8_t *New = static_cast<uint8_t *>(bridgeRealloc(*Data, NewCap));
-  if (!New)
+  if (LLVM_UNLIKELY(!New))
     return 0;
   *Data = New;
   *Len = NewLen;
@@ -1778,30 +1778,30 @@ static int bridgeInstIsSelect(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeCallGetCalledOperand(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *CB = dyn_cast<CallBase>(unwrapV(I));
   return CB ? wrapV(CB->getCalledOperand()) : nullptr;
 }
 
 static unsigned bridgeCallGetNumArgs(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *CB = dyn_cast<CallBase>(unwrapV(I));
   return CB ? CB->arg_size() : 0;
 }
 
 static NevercValueRef bridgeCallGetArg(NevercValueRef I, unsigned Idx) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *CB = dyn_cast<CallBase>(unwrapV(I));
-  if (!CB || Idx >= CB->arg_size())
+  if (LLVM_UNLIKELY(!CB || Idx >= CB->arg_size()))
     return nullptr;
   return wrapV(CB->getArgOperand(Idx));
 }
 
 static NevercTypeRef bridgeCallGetFunctionType(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *CB = dyn_cast<CallBase>(unwrapV(I));
   return CB ? wrapTy(CB->getFunctionType()) : nullptr;
@@ -1812,7 +1812,7 @@ static NevercTypeRef bridgeCallGetFunctionType(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeFuncTypeGetParamCount(NevercTypeRef FnTy) {
-  if (!FnTy)
+  if (LLVM_UNLIKELY(!FnTy))
     return 0;
   auto *FT = dyn_cast<FunctionType>(unwrapTy(FnTy));
   return FT ? FT->getNumParams() : 0;
@@ -1820,23 +1820,23 @@ static unsigned bridgeFuncTypeGetParamCount(NevercTypeRef FnTy) {
 
 static NevercTypeRef bridgeFuncTypeGetParamType(NevercTypeRef FnTy,
                                                 unsigned Idx) {
-  if (!FnTy)
+  if (LLVM_UNLIKELY(!FnTy))
     return nullptr;
   auto *FT = dyn_cast<FunctionType>(unwrapTy(FnTy));
-  if (!FT || Idx >= FT->getNumParams())
+  if (LLVM_UNLIKELY(!FT || Idx >= FT->getNumParams()))
     return nullptr;
   return wrapTy(FT->getParamType(Idx));
 }
 
 static NevercTypeRef bridgeFuncTypeGetReturnType(NevercTypeRef FnTy) {
-  if (!FnTy)
+  if (LLVM_UNLIKELY(!FnTy))
     return nullptr;
   auto *FT = dyn_cast<FunctionType>(unwrapTy(FnTy));
   return FT ? wrapTy(FT->getReturnType()) : nullptr;
 }
 
 static int bridgeFuncTypeIsVarArg(NevercTypeRef FnTy) {
-  if (!FnTy)
+  if (LLVM_UNLIKELY(!FnTy))
     return 0;
   auto *FT = dyn_cast<FunctionType>(unwrapTy(FnTy));
   return (FT && FT->isVarArg()) ? 1 : 0;
@@ -1851,14 +1851,14 @@ static int bridgeTypeIsArrayTy(NevercTypeRef T) {
 }
 
 static uint64_t bridgeTypeGetArrayLength(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return 0;
   auto *AT = dyn_cast<ArrayType>(unwrapTy(T));
   return AT ? AT->getNumElements() : 0;
 }
 
 static NevercTypeRef bridgeTypeGetArrayElementType(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return nullptr;
   auto *AT = dyn_cast<ArrayType>(unwrapTy(T));
   return AT ? wrapTy(AT->getElementType()) : nullptr;
@@ -1869,33 +1869,33 @@ static NevercTypeRef bridgeTypeGetArrayElementType(NevercTypeRef T) {
 // ===----------------------------------------------------------------------===
 
 static int bridgeBrIsConditional(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *BI = dyn_cast<BranchInst>(unwrapV(I));
   return (BI && BI->isConditional()) ? 1 : 0;
 }
 
 static NevercValueRef bridgeBrGetCondition(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *BI = dyn_cast<BranchInst>(unwrapV(I));
-  if (!BI || !BI->isConditional())
+  if (LLVM_UNLIKELY(!BI || !BI->isConditional()))
     return nullptr;
   return wrapV(BI->getCondition());
 }
 
 static NevercBasicBlockRef bridgeBrGetSuccessor(NevercValueRef I,
                                                 unsigned Idx) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *BI = dyn_cast<BranchInst>(unwrapV(I));
-  if (!BI || Idx >= BI->getNumSuccessors())
+  if (LLVM_UNLIKELY(!BI || Idx >= BI->getNumSuccessors()))
     return nullptr;
   return wrapBB(BI->getSuccessor(Idx));
 }
 
 static unsigned bridgeBrGetNumSuccessors(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *BI = dyn_cast<BranchInst>(unwrapV(I));
   return BI ? BI->getNumSuccessors() : 0;
@@ -1906,21 +1906,21 @@ static unsigned bridgeBrGetNumSuccessors(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeLoadGetPointerOperand(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *LI = dyn_cast<LoadInst>(unwrapV(I));
   return LI ? wrapV(LI->getPointerOperand()) : nullptr;
 }
 
 static NevercValueRef bridgeStoreGetValueOperand(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *SI = dyn_cast<StoreInst>(unwrapV(I));
   return SI ? wrapV(SI->getValueOperand()) : nullptr;
 }
 
 static NevercValueRef bridgeStoreGetPointerOperand(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *SI = dyn_cast<StoreInst>(unwrapV(I));
   return SI ? wrapV(SI->getPointerOperand()) : nullptr;
@@ -1931,14 +1931,14 @@ static NevercValueRef bridgeStoreGetPointerOperand(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeGEPGetPointerOperand(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *GEP = dyn_cast<GetElementPtrInst>(unwrapV(I));
   return GEP ? wrapV(GEP->getPointerOperand()) : nullptr;
 }
 
 static unsigned bridgeGEPGetNumIndices(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *GEP = dyn_cast<GetElementPtrInst>(unwrapV(I));
   return GEP ? GEP->getNumIndices() : 0;
@@ -1949,13 +1949,13 @@ static unsigned bridgeGEPGetNumIndices(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeBBGetPredCount(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return 0;
   return std::distance(pred_begin(unwrapBB(BB)), pred_end(unwrapBB(BB)));
 }
 
 static unsigned bridgeBBGetSuccCount(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return 0;
   return std::distance(succ_begin(unwrapBB(BB)), succ_end(unwrapBB(BB)));
 }
@@ -1966,7 +1966,7 @@ static unsigned bridgeBBGetSuccCount(NevercBasicBlockRef BB) {
 
 static NevercValueRef bridgeBuildFAdd(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateFAdd(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
@@ -1974,7 +1974,7 @@ static NevercValueRef bridgeBuildFAdd(NevercBuilderRef B, NevercValueRef LHS,
 
 static NevercValueRef bridgeBuildFSub(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateFSub(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
@@ -1982,7 +1982,7 @@ static NevercValueRef bridgeBuildFSub(NevercBuilderRef B, NevercValueRef LHS,
 
 static NevercValueRef bridgeBuildFMul(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateFMul(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
@@ -1990,7 +1990,7 @@ static NevercValueRef bridgeBuildFMul(NevercBuilderRef B, NevercValueRef LHS,
 
 static NevercValueRef bridgeBuildFDiv(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateFDiv(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
@@ -1998,7 +1998,7 @@ static NevercValueRef bridgeBuildFDiv(NevercBuilderRef B, NevercValueRef LHS,
 
 static NevercValueRef bridgeBuildFRem(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
-  if (!B || !LHS || !RHS)
+  if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateFRem(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
@@ -2011,7 +2011,7 @@ static NevercValueRef bridgeBuildFRem(NevercBuilderRef B, NevercValueRef LHS,
 static NevercValueRef bridgeBuildExtractValue(NevercBuilderRef B,
                                               NevercValueRef Agg, unsigned Idx,
                                               const char *Name) {
-  if (!B || !Agg)
+  if (LLVM_UNLIKELY(!B || !Agg))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateExtractValue(unwrapV(Agg), Idx, Name ? Name : ""));
@@ -2021,7 +2021,7 @@ static NevercValueRef bridgeBuildInsertValue(NevercBuilderRef B,
                                              NevercValueRef Agg,
                                              NevercValueRef Val, unsigned Idx,
                                              const char *Name) {
-  if (!B || !Agg || !Val)
+  if (LLVM_UNLIKELY(!B || !Agg || !Val))
     return nullptr;
   return wrapV(unwrapB(B)->CreateInsertValue(unwrapV(Agg), unwrapV(Val), Idx,
                                              Name ? Name : ""));
@@ -2033,12 +2033,12 @@ static NevercValueRef bridgeBuildInsertValue(NevercBuilderRef B,
 
 static NevercValueRef bridgeConstArray(NevercTypeRef ElemTy,
                                        NevercValueRef *Vals, unsigned Count) {
-  if (!ElemTy || (Count > 0 && !Vals))
+  if (LLVM_UNLIKELY(!ElemTy || (Count > 0 && !Vals)))
     return nullptr;
   SmallVector<Constant *, 8> Elems;
   for (unsigned I = 0; I < Count; ++I) {
     auto *C = dyn_cast_or_null<Constant>(unwrapV(Vals[I]));
-    if (!C)
+    if (LLVM_UNLIKELY(!C))
       return nullptr;
     Elems.push_back(C);
   }
@@ -2049,12 +2049,12 @@ static NevercValueRef bridgeConstArray(NevercTypeRef ElemTy,
 static NevercValueRef bridgeConstStruct(NevercContextRef C,
                                         NevercValueRef *Vals, unsigned Count,
                                         int IsPacked) {
-  if (!C || (Count > 0 && !Vals))
+  if (LLVM_UNLIKELY(!C || (Count > 0 && !Vals)))
     return nullptr;
   SmallVector<Constant *, 8> Elems;
   for (unsigned I = 0; I < Count; ++I) {
     auto *CV = dyn_cast_or_null<Constant>(unwrapV(Vals[I]));
-    if (!CV)
+    if (LLVM_UNLIKELY(!CV))
       return nullptr;
     Elems.push_back(CV);
   }
@@ -2064,10 +2064,10 @@ static NevercValueRef bridgeConstStruct(NevercContextRef C,
 static NevercValueRef bridgeConstNamedStruct(NevercTypeRef StructTy,
                                              NevercValueRef *Vals,
                                              unsigned Count) {
-  if (!StructTy || (Count > 0 && !Vals))
+  if (LLVM_UNLIKELY(!StructTy || (Count > 0 && !Vals)))
     return nullptr;
   auto *ST = dyn_cast<StructType>(unwrapTy(StructTy));
-  if (!ST)
+  if (LLVM_UNLIKELY(!ST))
     return nullptr;
   if (ST->isOpaque()) {
     WithColor::warning(errs(), "neverc-plugin")
@@ -2087,7 +2087,7 @@ static NevercValueRef bridgeConstNamedStruct(NevercTypeRef StructTy,
   SmallVector<Constant *, 8> Elems;
   for (unsigned I = 0; I < Count; ++I) {
     auto *CV = dyn_cast_or_null<Constant>(unwrapV(Vals[I]));
-    if (!CV)
+    if (LLVM_UNLIKELY(!CV))
       return nullptr;
     Elems.push_back(CV);
   }
@@ -2101,7 +2101,7 @@ static NevercValueRef bridgeConstNamedStruct(NevercTypeRef StructTy,
 static NevercValueRef bridgeBuildGlobalStringPtr(NevercBuilderRef B,
                                                  const char *Str,
                                                  const char *Name) {
-  if (!B || !Str)
+  if (LLVM_UNLIKELY(!B || !Str))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateGlobalStringPtr(Str, Name ? Name : ""));
@@ -2112,7 +2112,7 @@ static NevercValueRef bridgeBuildGlobalStringPtr(NevercBuilderRef B,
 // ===----------------------------------------------------------------------===
 
 static void bridgeValueSetName(NevercValueRef V, const char *Name) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return;
   unwrapV(V)->setName(Name ? Name : "");
 }
@@ -2122,14 +2122,14 @@ static void bridgeValueSetName(NevercValueRef V, const char *Name) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeGlobalGetLinkage(NevercValueRef GV) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return 0;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
   return G ? static_cast<unsigned>(G->getLinkage()) : 0;
 }
 
 static void bridgeGlobalSetLinkage(NevercValueRef GV, unsigned Linkage) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
   if (G)
@@ -2146,11 +2146,11 @@ static NevercValueRef bridgeBuildInBoundsGEP(NevercBuilderRef B,
                                              NevercValueRef *Indices,
                                              unsigned NumIndices,
                                              const char *Name) {
-  if (!B || !Ty || !Ptr || (NumIndices > 0 && !Indices))
+  if (LLVM_UNLIKELY(!B || !Ty || !Ptr || (NumIndices > 0 && !Indices)))
     return nullptr;
   SmallVector<Value *, 4> Idxs;
   for (unsigned I = 0; I < NumIndices; ++I) {
-    if (!Indices[I])
+    if (LLVM_UNLIKELY(!Indices[I]))
       return nullptr;
     Idxs.push_back(unwrapV(Indices[I]));
   }
@@ -2163,7 +2163,7 @@ static NevercValueRef bridgeBuildInBoundsGEP(NevercBuilderRef B,
 // ===----------------------------------------------------------------------===
 
 static int bridgeModuleVerify(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return 1;
   std::string Err;
   raw_string_ostream OS(Err);
@@ -2181,20 +2181,21 @@ static int bridgeModuleVerify(NevercModuleRef M) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeInstGetNumSuccessors(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
-  if (!Inst || !Inst->isTerminator())
+  if (LLVM_UNLIKELY(!Inst || !Inst->isTerminator()))
     return 0;
   return Inst->getNumSuccessors();
 }
 
 static NevercBasicBlockRef bridgeInstGetSuccessor(NevercValueRef I,
                                                   unsigned Idx) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
-  if (!Inst || !Inst->isTerminator() || Idx >= Inst->getNumSuccessors())
+  if (LLVM_UNLIKELY(!Inst || !Inst->isTerminator() ||
+                    Idx >= Inst->getNumSuccessors()))
     return nullptr;
   return wrapBB(Inst->getSuccessor(Idx));
 }
@@ -2204,7 +2205,7 @@ static NevercBasicBlockRef bridgeInstGetSuccessor(NevercValueRef I,
 // ===----------------------------------------------------------------------===
 
 static NevercTypeRef bridgeAllocaGetAllocatedType(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *AI = dyn_cast<AllocaInst>(unwrapV(I));
   return AI ? wrapTy(AI->getAllocatedType()) : nullptr;
@@ -2215,17 +2216,17 @@ static NevercTypeRef bridgeAllocaGetAllocatedType(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeGlobalGetAlignment(NevercValueRef GV) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return 0;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
-  if (!G)
+  if (LLVM_UNLIKELY(!G))
     return 0;
   MaybeAlign A = G->getAlign();
   return A ? A->value() : 0;
 }
 
 static void bridgeGlobalSetAlignment(NevercValueRef GV, unsigned Align) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
   if (G)
@@ -2238,7 +2239,7 @@ static void bridgeGlobalSetAlignment(NevercValueRef GV, unsigned Align) {
 
 static NevercBasicBlockRef bridgeBBGetPredecessor(NevercBasicBlockRef BB,
                                                   unsigned Idx) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return nullptr;
   auto *Block = unwrapBB(BB);
   unsigned Count = 0;
@@ -2252,7 +2253,7 @@ static NevercBasicBlockRef bridgeBBGetPredecessor(NevercBasicBlockRef BB,
 
 static NevercBasicBlockRef bridgeBBGetSuccessorBB(NevercBasicBlockRef BB,
                                                   unsigned Idx) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return nullptr;
   auto *Block = unwrapBB(BB);
   unsigned Count = 0;
@@ -2286,7 +2287,7 @@ static int bridgeValueIsSameAs(NevercValueRef A, NevercValueRef B) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgePhiGetNumIncoming(NevercValueRef Phi) {
-  if (!Phi)
+  if (LLVM_UNLIKELY(!Phi))
     return 0;
   auto *PN = dyn_cast<PHINode>(unwrapV(Phi));
   return PN ? PN->getNumIncomingValues() : 0;
@@ -2294,20 +2295,20 @@ static unsigned bridgePhiGetNumIncoming(NevercValueRef Phi) {
 
 static NevercValueRef bridgePhiGetIncomingValue(NevercValueRef Phi,
                                                 unsigned Idx) {
-  if (!Phi)
+  if (LLVM_UNLIKELY(!Phi))
     return nullptr;
   auto *PN = dyn_cast<PHINode>(unwrapV(Phi));
-  if (!PN || Idx >= PN->getNumIncomingValues())
+  if (LLVM_UNLIKELY(!PN || Idx >= PN->getNumIncomingValues()))
     return nullptr;
   return wrapV(PN->getIncomingValue(Idx));
 }
 
 static NevercBasicBlockRef bridgePhiGetIncomingBlock(NevercValueRef Phi,
                                                      unsigned Idx) {
-  if (!Phi)
+  if (LLVM_UNLIKELY(!Phi))
     return nullptr;
   auto *PN = dyn_cast<PHINode>(unwrapV(Phi));
-  if (!PN || Idx >= PN->getNumIncomingValues())
+  if (LLVM_UNLIKELY(!PN || Idx >= PN->getNumIncomingValues()))
     return nullptr;
   return wrapBB(PN->getIncomingBlock(Idx));
 }
@@ -2317,21 +2318,21 @@ static NevercBasicBlockRef bridgePhiGetIncomingBlock(NevercValueRef Phi,
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeSelectGetCondition(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *SI = dyn_cast<SelectInst>(unwrapV(I));
   return SI ? wrapV(SI->getCondition()) : nullptr;
 }
 
 static NevercValueRef bridgeSelectGetTrueValue(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *SI = dyn_cast<SelectInst>(unwrapV(I));
   return SI ? wrapV(SI->getTrueValue()) : nullptr;
 }
 
 static NevercValueRef bridgeSelectGetFalseValue(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *SI = dyn_cast<SelectInst>(unwrapV(I));
   return SI ? wrapV(SI->getFalseValue()) : nullptr;
@@ -2342,7 +2343,7 @@ static NevercValueRef bridgeSelectGetFalseValue(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeReturnGetValue(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *RI = dyn_cast<ReturnInst>(unwrapV(I));
   return (RI && RI->getReturnValue()) ? wrapV(RI->getReturnValue()) : nullptr;
@@ -2353,14 +2354,14 @@ static NevercValueRef bridgeReturnGetValue(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static NevercTypeRef bridgeCastGetSrcTy(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *CI = dyn_cast<CastInst>(unwrapV(I));
   return CI ? wrapTy(CI->getSrcTy()) : nullptr;
 }
 
 static NevercTypeRef bridgeCastGetDestTy(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *CI = dyn_cast<CastInst>(unwrapV(I));
   return CI ? wrapTy(CI->getDestTy()) : nullptr;
@@ -2371,7 +2372,7 @@ static NevercTypeRef bridgeCastGetDestTy(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static NevercTypeRef bridgeGEPGetSourceElementType(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *GEP = dyn_cast<GetElementPtrInst>(unwrapV(I));
   return GEP ? wrapTy(GEP->getSourceElementType()) : nullptr;
@@ -2382,7 +2383,7 @@ static NevercTypeRef bridgeGEPGetSourceElementType(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeCmpGetPredicate(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *CI = dyn_cast<CmpInst>(unwrapV(I));
   return CI ? static_cast<unsigned>(CI->getPredicate()) : 0;
@@ -2401,7 +2402,7 @@ static int bridgeInstIsFCmp(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static const char *bridgeBBGetName(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return "";
   auto Name = unwrapBB(BB)->getName();
   return Name.data() ? Name.data() : "";
@@ -2412,7 +2413,7 @@ static const char *bridgeBBGetName(NevercBasicBlockRef BB) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeFunctionGetBBCount(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return 0;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   return Fn ? Fn->size() : 0;
@@ -2423,10 +2424,10 @@ static unsigned bridgeFunctionGetBBCount(NevercValueRef F) {
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeInstGetPrevInst(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
-  if (!Inst || !Inst->getParent())
+  if (LLVM_UNLIKELY(!Inst || !Inst->getParent()))
     return nullptr;
   auto It = Inst->getIterator();
   if (It == Inst->getParent()->begin())
@@ -2435,10 +2436,10 @@ static NevercValueRef bridgeInstGetPrevInst(NevercValueRef I) {
 }
 
 static NevercBasicBlockRef bridgeFunctionGetPrevBB(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return nullptr;
   auto *Block = unwrapBB(BB);
-  if (!Block->getParent())
+  if (LLVM_UNLIKELY(!Block->getParent()))
     return nullptr;
   auto It = Block->getIterator();
   if (It == Block->getParent()->begin())
@@ -2451,10 +2452,10 @@ static NevercBasicBlockRef bridgeFunctionGetPrevBB(NevercBasicBlockRef BB) {
 // ===----------------------------------------------------------------------===
 
 static const char *bridgeTypeGetStructName(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return nullptr;
   auto *ST = dyn_cast<StructType>(unwrapTy(T));
-  if (!ST || !ST->hasName())
+  if (LLVM_UNLIKELY(!ST || !ST->hasName()))
     return nullptr;
   return ST->getName().data();
 }
@@ -2464,17 +2465,17 @@ static const char *bridgeTypeGetStructName(NevercTypeRef T) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeSwitchGetNumCases(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *SI = dyn_cast<SwitchInst>(unwrapV(I));
   return SI ? SI->getNumCases() : 0;
 }
 
 static NevercValueRef bridgeSwitchGetCaseValue(NevercValueRef I, unsigned Idx) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *SI = dyn_cast<SwitchInst>(unwrapV(I));
-  if (!SI || Idx >= SI->getNumCases())
+  if (LLVM_UNLIKELY(!SI || Idx >= SI->getNumCases()))
     return nullptr;
   auto It = SI->case_begin();
   std::advance(It, Idx);
@@ -2483,10 +2484,10 @@ static NevercValueRef bridgeSwitchGetCaseValue(NevercValueRef I, unsigned Idx) {
 
 static NevercBasicBlockRef bridgeSwitchGetCaseSuccessor(NevercValueRef I,
                                                         unsigned Idx) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *SI = dyn_cast<SwitchInst>(unwrapV(I));
-  if (!SI || Idx >= SI->getNumCases())
+  if (LLVM_UNLIKELY(!SI || Idx >= SI->getNumCases()))
     return nullptr;
   auto It = SI->case_begin();
   std::advance(It, Idx);
@@ -2494,7 +2495,7 @@ static NevercBasicBlockRef bridgeSwitchGetCaseSuccessor(NevercValueRef I,
 }
 
 static NevercBasicBlockRef bridgeSwitchGetDefaultDest(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *SI = dyn_cast<SwitchInst>(unwrapV(I));
   return SI ? wrapBB(SI->getDefaultDest()) : nullptr;
@@ -2506,7 +2507,7 @@ static NevercBasicBlockRef bridgeSwitchGetDefaultDest(NevercValueRef I) {
 
 static NevercMachineBBRef bridgeMBBGetSuccessor(NevercMachineBBRef MBB,
                                                 unsigned Idx) {
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return nullptr;
   auto *Block = unwrapMBB(MBB);
   if (Idx >= Block->succ_size())
@@ -2518,7 +2519,7 @@ static NevercMachineBBRef bridgeMBBGetSuccessor(NevercMachineBBRef MBB,
 
 static NevercMachineBBRef bridgeMBBGetPredecessor(NevercMachineBBRef MBB,
                                                   unsigned Idx) {
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return nullptr;
   auto *Block = unwrapMBB(MBB);
   if (Idx >= Block->pred_size())
@@ -2533,7 +2534,7 @@ static NevercMachineBBRef bridgeMBBGetPredecessor(NevercMachineBBRef MBB,
 // ===----------------------------------------------------------------------===
 
 static const char *bridgeModuleGetSourceFileName(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return "";
   return unwrap(M)->getSourceFileName().c_str();
 }
@@ -2547,14 +2548,14 @@ static int bridgeInstIsInvoke(NevercValueRef I) {
 }
 
 static NevercBasicBlockRef bridgeInvokeGetNormalDest(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *II = dyn_cast<InvokeInst>(unwrapV(I));
   return II ? wrapBB(II->getNormalDest()) : nullptr;
 }
 
 static NevercBasicBlockRef bridgeInvokeGetUnwindDest(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *II = dyn_cast<InvokeInst>(unwrapV(I));
   return II ? wrapBB(II->getUnwindDest()) : nullptr;
@@ -2566,14 +2567,14 @@ static NevercBasicBlockRef bridgeInvokeGetUnwindDest(NevercValueRef I) {
 
 static NevercBasicBlockRef bridgeBBSplitBefore(NevercBasicBlockRef BB,
                                                 NevercValueRef Inst) {
-  if (!BB || !Inst)
+  if (LLVM_UNLIKELY(!BB || !Inst))
     return nullptr;
   auto *Block = unwrapBB(BB);
   auto *I = dyn_cast<Instruction>(unwrapV(Inst));
-  if (!I || I->getParent() != Block)
+  if (LLVM_UNLIKELY(!I || I->getParent() != Block))
     return nullptr;
   // splitBasicBlock asserts the BB has a terminator and I != end().
-  if (!Block->getTerminator()) {
+  if (LLVM_UNLIKELY(!Block->getTerminator())) {
     WithColor::warning(errs(), "neverc-plugin")
         << "BBSplitBefore called on BB without terminator; ignoring\n";
     return nullptr;
@@ -2587,7 +2588,7 @@ static NevercBasicBlockRef bridgeBBSplitBefore(NevercBasicBlockRef BB,
 // ===----------------------------------------------------------------------===
 
 static NevercBasicBlockRef bridgeBuilderGetInsertBlock(NevercBuilderRef B) {
-  if (!B)
+  if (LLVM_UNLIKELY(!B))
     return nullptr;
   auto *BB = unwrapB(B)->GetInsertBlock();
   return BB ? wrapBB(BB) : nullptr;
@@ -2598,14 +2599,14 @@ static NevercBasicBlockRef bridgeBuilderGetInsertBlock(NevercBuilderRef B) {
 // ===----------------------------------------------------------------------===
 
 static uint64_t bridgeConstIntGetZExtValue(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return 0;
   auto *CI = dyn_cast<ConstantInt>(unwrapV(V));
   return CI ? CI->getZExtValue() : 0;
 }
 
 static int64_t bridgeConstIntGetSExtValue(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return 0;
   auto *CI = dyn_cast<ConstantInt>(unwrapV(V));
   return CI ? CI->getSExtValue() : 0;
@@ -2620,7 +2621,7 @@ static int bridgeValueIsConstantInt(NevercValueRef V) {
 // ===----------------------------------------------------------------------===
 
 static NevercTypeRef bridgeGlobalGetValueType(NevercValueRef GV) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return nullptr;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
   return G ? wrapTy(G->getValueType()) : nullptr;
@@ -2631,7 +2632,7 @@ static NevercTypeRef bridgeGlobalGetValueType(NevercValueRef GV) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeFunctionDeleteBody(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (Fn)
@@ -2652,10 +2653,10 @@ static int bridgeValueIsUndef(NevercValueRef V) {
 
 static NevercBasicBlockRef bridgeInstGetOperandAsBB(NevercValueRef I,
                                                     unsigned Idx) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
-  if (!Inst || Idx >= Inst->getNumOperands())
+  if (LLVM_UNLIKELY(!Inst || Idx >= Inst->getNumOperands()))
     return nullptr;
   auto *BB = dyn_cast<BasicBlock>(Inst->getOperand(Idx));
   return BB ? wrapBB(BB) : nullptr;
@@ -2668,7 +2669,7 @@ static NevercBasicBlockRef bridgeInstGetOperandAsBB(NevercValueRef I,
 static NevercValueRef bridgeBuildFPExt(NevercBuilderRef B, NevercValueRef V,
                                        NevercTypeRef DestTy,
                                        const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateFPExt(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
@@ -2677,7 +2678,7 @@ static NevercValueRef bridgeBuildFPExt(NevercBuilderRef B, NevercValueRef V,
 static NevercValueRef bridgeBuildFPTrunc(NevercBuilderRef B, NevercValueRef V,
                                          NevercTypeRef DestTy,
                                          const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(unwrapB(B)->CreateFPTrunc(unwrapV(V), unwrapTy(DestTy),
                                          Name ? Name : ""));
@@ -2688,7 +2689,7 @@ static NevercValueRef bridgeBuildFPTrunc(NevercBuilderRef B, NevercValueRef V,
 // ===----------------------------------------------------------------------===
 
 static NevercTypeRef bridgeLoadGetType(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *LI = dyn_cast<LoadInst>(unwrapV(I));
   return LI ? wrapTy(LI->getType()) : nullptr;
@@ -2699,7 +2700,7 @@ static NevercTypeRef bridgeLoadGetType(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static int bridgeGEPIsInBounds(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *GEP = dyn_cast<GetElementPtrInst>(unwrapV(I));
   return (GEP && GEP->isInBounds()) ? 1 : 0;
@@ -2718,28 +2719,28 @@ static int bridgeInstIsCallLike(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeLoadGetAlignment(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *LI = dyn_cast<LoadInst>(unwrapV(I));
   return LI ? LI->getAlign().value() : 0;
 }
 
 static unsigned bridgeStoreGetAlignment(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *SI = dyn_cast<StoreInst>(unwrapV(I));
   return SI ? SI->getAlign().value() : 0;
 }
 
 static int bridgeLoadIsVolatile(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *LI = dyn_cast<LoadInst>(unwrapV(I));
   return (LI && LI->isVolatile()) ? 1 : 0;
 }
 
 static int bridgeStoreIsVolatile(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *SI = dyn_cast<StoreInst>(unwrapV(I));
   return (SI && SI->isVolatile()) ? 1 : 0;
@@ -2751,7 +2752,7 @@ static int bridgeStoreIsVolatile(NevercValueRef I) {
 
 static void bridgeBuilderSetInsertPointBeforeTerminator(NevercBuilderRef B,
                                                         NevercBasicBlockRef BB) {
-  if (!B || !BB)
+  if (LLVM_UNLIKELY(!B || !BB))
     return;
   auto *Block = unwrapBB(BB);
   auto *Term = Block->getTerminator();
@@ -2766,20 +2767,20 @@ static void bridgeBuilderSetInsertPointBeforeTerminator(NevercBuilderRef B,
 // ===----------------------------------------------------------------------===
 
 static int bridgeInstIsIntrinsic(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *CB = dyn_cast<CallBase>(unwrapV(I));
-  if (!CB)
+  if (LLVM_UNLIKELY(!CB))
     return 0;
   auto *Callee = CB->getCalledFunction();
   return (Callee && Callee->isIntrinsic()) ? 1 : 0;
 }
 
 static unsigned bridgeCallGetIntrinsicID(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *CB = dyn_cast<CallBase>(unwrapV(I));
-  if (!CB)
+  if (LLVM_UNLIKELY(!CB))
     return 0;
   auto *Callee = CB->getCalledFunction();
   if (!Callee || !Callee->isIntrinsic())
@@ -2796,7 +2797,7 @@ static NevercValueRef bridgeBuildAlignedLoad(NevercBuilderRef B,
                                              NevercValueRef Ptr,
                                              unsigned AlignVal, int IsVolatile,
                                              const char *Name) {
-  if (!B || !Ty || !Ptr)
+  if (LLVM_UNLIKELY(!B || !Ty || !Ptr))
     return nullptr;
   return wrapV(unwrapB(B)->CreateAlignedLoad(
       unwrapTy(Ty), unwrapV(Ptr), MaybeAlign(AlignVal), IsVolatile != 0,
@@ -2808,7 +2809,7 @@ static NevercValueRef bridgeBuildAlignedStore(NevercBuilderRef B,
                                               NevercValueRef Ptr,
                                               unsigned AlignVal,
                                               int IsVolatile) {
-  if (!B || !Val || !Ptr)
+  if (LLVM_UNLIKELY(!B || !Val || !Ptr))
     return nullptr;
   return wrapV(unwrapB(B)->CreateAlignedStore(
       unwrapV(Val), unwrapV(Ptr), MaybeAlign(AlignVal), IsVolatile != 0));
@@ -2819,7 +2820,7 @@ static NevercValueRef bridgeBuildAlignedStore(NevercBuilderRef B,
 // ===----------------------------------------------------------------------===
 
 static void bridgeInstCopyDebugLoc(NevercValueRef Dst, NevercValueRef Src) {
-  if (!Dst || !Src)
+  if (LLVM_UNLIKELY(!Dst || !Src))
     return;
   auto *DstI = dyn_cast<Instruction>(unwrapV(Dst));
   auto *SrcI = dyn_cast<Instruction>(unwrapV(Src));
@@ -2828,27 +2829,27 @@ static void bridgeInstCopyDebugLoc(NevercValueRef Dst, NevercValueRef Src) {
 }
 
 static int bridgeInstHasDebugLoc(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
   return (Inst && Inst->getDebugLoc()) ? 1 : 0;
 }
 
 static unsigned bridgeInstGetDebugLocLine(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
-  if (!Inst)
+  if (LLVM_UNLIKELY(!Inst))
     return 0;
   const auto &DL = Inst->getDebugLoc();
   return DL ? DL.getLine() : 0;
 }
 
 static unsigned bridgeInstGetDebugLocCol(NevercValueRef I) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return 0;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
-  if (!Inst)
+  if (LLVM_UNLIKELY(!Inst))
     return 0;
   const auto &DL = Inst->getDebugLoc();
   return DL ? DL.getCol() : 0;
@@ -2859,17 +2860,17 @@ static unsigned bridgeInstGetDebugLocCol(NevercValueRef I) {
 // ===----------------------------------------------------------------------===
 
 static const char *bridgeGlobalGetSection(NevercValueRef GV) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return "";
   auto *GO = dyn_cast<GlobalObject>(unwrapV(GV));
-  if (!GO)
+  if (LLVM_UNLIKELY(!GO))
     return "";
   StringRef Sec = GO->getSection();
   return Sec.data() ? Sec.data() : "";
 }
 
 static void bridgeGlobalSetSection(NevercValueRef GV, const char *Section) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return;
   auto *GO = dyn_cast<GlobalObject>(unwrapV(GV));
   if (GO)
@@ -2882,10 +2883,10 @@ static void bridgeGlobalSetSection(NevercValueRef GV, const char *Section) {
 
 static void bridgeFunctionAddParamAttr(NevercValueRef F, unsigned ParamIdx,
                                        const char *Kind, const char *Val) {
-  if (!F || !Kind)
+  if (LLVM_UNLIKELY(!F || !Kind))
     return;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || ParamIdx >= Fn->arg_size())
+  if (LLVM_UNLIKELY(!Fn || ParamIdx >= Fn->arg_size()))
     return;
   Fn->addParamAttr(ParamIdx, Attribute::get(Fn->getContext(), Kind,
                                             Val ? Val : ""));
@@ -2893,10 +2894,10 @@ static void bridgeFunctionAddParamAttr(NevercValueRef F, unsigned ParamIdx,
 
 static int bridgeFunctionHasParamAttr(NevercValueRef F, unsigned ParamIdx,
                                       const char *Kind) {
-  if (!F || !Kind)
+  if (LLVM_UNLIKELY(!F || !Kind))
     return 0;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || ParamIdx >= Fn->arg_size())
+  if (LLVM_UNLIKELY(!Fn || ParamIdx >= Fn->arg_size()))
     return 0;
   return Fn->getAttributes()
                  .hasParamAttr(ParamIdx, Kind)
@@ -2909,7 +2910,7 @@ static int bridgeFunctionHasParamAttr(NevercValueRef F, unsigned ParamIdx,
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeBBGetInstCount(NevercBasicBlockRef BB) {
-  if (!BB)
+  if (LLVM_UNLIKELY(!BB))
     return 0;
   return unwrapBB(BB)->size();
 }
@@ -2919,7 +2920,7 @@ static unsigned bridgeBBGetInstCount(NevercBasicBlockRef BB) {
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeModuleGetFirstAlias(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return nullptr;
   auto *Mod = unwrap(M);
   if (Mod->alias_empty())
@@ -2928,10 +2929,10 @@ static NevercValueRef bridgeModuleGetFirstAlias(NevercModuleRef M) {
 }
 
 static NevercValueRef bridgeModuleGetNextAlias(NevercValueRef A) {
-  if (!A)
+  if (LLVM_UNLIKELY(!A))
     return nullptr;
   auto *GA = dyn_cast<GlobalAlias>(unwrapV(A));
-  if (!GA || !GA->getParent())
+  if (LLVM_UNLIKELY(!GA || !GA->getParent()))
     return nullptr;
   auto It = std::next(GA->getIterator());
   if (It == GA->getParent()->alias_end())
@@ -2940,7 +2941,7 @@ static NevercValueRef bridgeModuleGetNextAlias(NevercValueRef A) {
 }
 
 static NevercValueRef bridgeModuleGetLastAlias(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return nullptr;
   auto *Mod = unwrap(M);
   if (Mod->alias_empty())
@@ -2949,10 +2950,10 @@ static NevercValueRef bridgeModuleGetLastAlias(NevercModuleRef M) {
 }
 
 static NevercValueRef bridgeModuleGetPrevAlias(NevercValueRef A) {
-  if (!A)
+  if (LLVM_UNLIKELY(!A))
     return nullptr;
   auto *GA = dyn_cast<GlobalAlias>(unwrapV(A));
-  if (!GA || !GA->getParent())
+  if (LLVM_UNLIKELY(!GA || !GA->getParent()))
     return nullptr;
   auto It = GA->getIterator();
   if (It == GA->getParent()->alias_begin())
@@ -2961,10 +2962,10 @@ static NevercValueRef bridgeModuleGetPrevAlias(NevercValueRef A) {
 }
 
 static NevercValueRef bridgeModuleGetPrevFunction(NevercValueRef F) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return nullptr;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || !Fn->getParent())
+  if (LLVM_UNLIKELY(!Fn || !Fn->getParent()))
     return nullptr;
   auto It = Fn->getIterator();
   if (It == Fn->getParent()->begin())
@@ -2977,10 +2978,10 @@ static NevercValueRef bridgeModuleGetPrevFunction(NevercValueRef F) {
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeGEPGetIndex(NevercValueRef I, unsigned Idx) {
-  if (!I)
+  if (LLVM_UNLIKELY(!I))
     return nullptr;
   auto *GEP = dyn_cast<GetElementPtrInst>(unwrapV(I));
-  if (!GEP || Idx >= GEP->getNumIndices())
+  if (LLVM_UNLIKELY(!GEP || Idx >= GEP->getNumIndices()))
     return nullptr;
   return wrapV(GEP->getOperand(Idx + 1));
 }
@@ -2990,7 +2991,7 @@ static NevercValueRef bridgeGEPGetIndex(NevercValueRef I, unsigned Idx) {
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeModuleGetLastGlobal(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return nullptr;
   auto *Mod = unwrap(M);
   if (Mod->global_empty())
@@ -2999,10 +3000,10 @@ static NevercValueRef bridgeModuleGetLastGlobal(NevercModuleRef M) {
 }
 
 static NevercValueRef bridgeModuleGetPrevGlobal(NevercValueRef G) {
-  if (!G)
+  if (LLVM_UNLIKELY(!G))
     return nullptr;
   auto *GV = dyn_cast<GlobalVariable>(unwrapV(G));
-  if (!GV || !GV->getParent())
+  if (LLVM_UNLIKELY(!GV || !GV->getParent()))
     return nullptr;
   auto It = GV->getIterator();
   if (It == GV->getParent()->global_begin())
@@ -3015,13 +3016,13 @@ static NevercValueRef bridgeModuleGetPrevGlobal(NevercValueRef G) {
 // ===----------------------------------------------------------------------===
 
 static char *bridgeValuePrintToString(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return nullptr;
   std::string Buf;
   raw_string_ostream OS(Buf);
   unwrapV(V)->print(OS, /*IsForDebug=*/true);
   char *Result = static_cast<char *>(bridgeAlloc(Buf.size() + 1));
-  if (!Result)
+  if (LLVM_UNLIKELY(!Result))
     return nullptr;
   std::memcpy(Result, Buf.data(), Buf.size());
   Result[Buf.size()] = '\0';
@@ -3029,13 +3030,13 @@ static char *bridgeValuePrintToString(NevercValueRef V) {
 }
 
 static char *bridgeTypePrintToString(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return nullptr;
   std::string Buf;
   raw_string_ostream OS(Buf);
   unwrapTy(T)->print(OS);
   char *Result = static_cast<char *>(bridgeAlloc(Buf.size() + 1));
-  if (!Result)
+  if (LLVM_UNLIKELY(!Result))
     return nullptr;
   std::memcpy(Result, Buf.data(), Buf.size());
   Result[Buf.size()] = '\0';
@@ -3120,7 +3121,7 @@ void setPluginArgs(const std::vector<std::string> &RawArgs) {
 }
 
 static const char *bridgePluginGetArg(const char *Key) {
-  if (!Key)
+  if (LLVM_UNLIKELY(!Key))
     return nullptr;
   const auto &Args = pluginArgStorage().Args;
   auto It = Args.find(Key);
@@ -3130,7 +3131,7 @@ static const char *bridgePluginGetArg(const char *Key) {
 }
 
 static int bridgePluginHasArg(const char *Key) {
-  if (!Key)
+  if (LLVM_UNLIKELY(!Key))
     return 0;
   return pluginArgStorage().Args.count(Key) ? 1 : 0;
 }
@@ -3147,12 +3148,12 @@ static NevercValueRef bridgeIntrinsicGetDeclaration(NevercModuleRef M,
                                                      unsigned IntrinsicID,
                                                      NevercTypeRef *OverloadTys,
                                                      unsigned NumTys) {
-  if (!M || IntrinsicID == 0)
+  if (LLVM_UNLIKELY(!M || IntrinsicID == 0))
     return nullptr;
   auto *Mod = unwrap(M);
   SmallVector<Type *, 4> Tys;
   for (unsigned I = 0; I < NumTys; ++I) {
-    if (!OverloadTys || !OverloadTys[I])
+    if (LLVM_UNLIKELY(!OverloadTys || !OverloadTys[I]))
       return nullptr;
     Tys.push_back(unwrapTy(OverloadTys[I]));
   }
@@ -3166,7 +3167,7 @@ static char *bridgeIntrinsicGetName(unsigned IntrinsicID) {
     return nullptr;
   StringRef Name = Intrinsic::getName(static_cast<Intrinsic::ID>(IntrinsicID));
   char *Buf = static_cast<char *>(bridgeAlloc(Name.size() + 1));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
   std::memcpy(Buf, Name.data(), Name.size());
   Buf[Name.size()] = '\0';
@@ -3181,7 +3182,7 @@ static int bridgeIntrinsicIsOverloaded(unsigned IntrinsicID) {
 }
 
 static unsigned bridgeIntrinsicLookupByName(const char *Name) {
-  if (!Name)
+  if (LLVM_UNLIKELY(!Name))
     return 0;
   auto ID = Function::lookupIntrinsicID(Name);
   return static_cast<unsigned>(ID);
@@ -3193,27 +3194,27 @@ static unsigned bridgeIntrinsicLookupByName(const char *Name) {
 
 static NevercNamedMDRef bridgeModuleGetNamedMetadata(NevercModuleRef M,
                                                       const char *Name) {
-  if (!M || !Name)
+  if (LLVM_UNLIKELY(!M || !Name))
     return nullptr;
   return wrapNMD(unwrap(M)->getNamedMetadata(Name));
 }
 
 static NevercNamedMDRef bridgeModuleGetOrInsertNamedMetadata(NevercModuleRef M,
                                                               const char *Name) {
-  if (!M || !Name)
+  if (LLVM_UNLIKELY(!M || !Name))
     return nullptr;
   return wrapNMD(unwrap(M)->getOrInsertNamedMetadata(Name));
 }
 
 static unsigned bridgeNamedMDGetNumOperands(NevercNamedMDRef NMD) {
-  if (!NMD)
+  if (LLVM_UNLIKELY(!NMD))
     return 0;
   return unwrapNMD(NMD)->getNumOperands();
 }
 
 static NevercMetadataRef bridgeNamedMDGetOperand(NevercNamedMDRef NMD,
                                                   unsigned Idx) {
-  if (!NMD)
+  if (LLVM_UNLIKELY(!NMD))
     return nullptr;
   auto *Node = unwrapNMD(NMD);
   if (Idx >= Node->getNumOperands())
@@ -3223,10 +3224,10 @@ static NevercMetadataRef bridgeNamedMDGetOperand(NevercNamedMDRef NMD,
 
 static void bridgeNamedMDAddOperand(NevercNamedMDRef NMD,
                                      NevercMetadataRef MD) {
-  if (!NMD || !MD)
+  if (LLVM_UNLIKELY(!NMD || !MD))
     return;
   auto *Node = dyn_cast<MDNode>(unwrapMD(MD));
-  if (!Node) {
+  if (LLVM_UNLIKELY(!Node)) {
     WithColor::warning(errs(), "neverc-plugin")
         << "NamedMDAddOperand: expected MDNode, got other Metadata kind\n";
     return;
@@ -3240,13 +3241,13 @@ static void bridgeNamedMDAddOperand(NevercNamedMDRef NMD,
 
 static NevercValueRef bridgeMetadataAsValue(NevercContextRef C,
                                              NevercMetadataRef MD) {
-  if (!C || !MD)
+  if (LLVM_UNLIKELY(!C || !MD))
     return nullptr;
   return wrapV(MetadataAsValue::get(*unwrapCtx(C), unwrapMD(MD)));
 }
 
 static NevercMetadataRef bridgeValueAsMetadata(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return nullptr;
   Value *Val = unwrapV(V);
   if (auto *MAV = dyn_cast<MetadataAsValue>(Val))
@@ -3262,7 +3263,7 @@ static NevercMetadataRef bridgeValueAsMetadata(NevercValueRef V) {
 
 static void bridgeBBMoveAfter(NevercBasicBlockRef BB,
                                NevercBasicBlockRef AfterBB) {
-  if (!BB || !AfterBB)
+  if (LLVM_UNLIKELY(!BB || !AfterBB))
     return;
   auto *Block = unwrapBB(BB);
   auto *After = unwrapBB(AfterBB);
@@ -3273,7 +3274,7 @@ static void bridgeBBMoveAfter(NevercBasicBlockRef BB,
 
 static void bridgeBBMoveBefore(NevercBasicBlockRef BB,
                                 NevercBasicBlockRef BeforeBB) {
-  if (!BB || !BeforeBB)
+  if (LLVM_UNLIKELY(!BB || !BeforeBB))
     return;
   auto *Block = unwrapBB(BB);
   auto *Before = unwrapBB(BeforeBB);
@@ -3290,7 +3291,7 @@ static NevercValueRef bridgeBuildMemCpy(NevercBuilderRef B,
                                          NevercValueRef Dst, unsigned DstAlign,
                                          NevercValueRef Src, unsigned SrcAlign,
                                          NevercValueRef Len, int IsVolatile) {
-  if (!B || !Dst || !Src || !Len)
+  if (LLVM_UNLIKELY(!B || !Dst || !Src || !Len))
     return nullptr;
   auto *Builder = unwrapB(B);
   return wrapV(Builder->CreateMemCpy(
@@ -3303,7 +3304,7 @@ static NevercValueRef bridgeBuildMemSet(NevercBuilderRef B,
                                          NevercValueRef Dst, unsigned DstAlign,
                                          NevercValueRef Val,
                                          NevercValueRef Len, int IsVolatile) {
-  if (!B || !Dst || !Val || !Len)
+  if (LLVM_UNLIKELY(!B || !Dst || !Val || !Len))
     return nullptr;
   auto *Builder = unwrapB(B);
   return wrapV(Builder->CreateMemSet(
@@ -3315,7 +3316,7 @@ static NevercValueRef bridgeBuildMemMove(NevercBuilderRef B,
                                           NevercValueRef Dst, unsigned DstAlign,
                                           NevercValueRef Src, unsigned SrcAlign,
                                           NevercValueRef Len, int IsVolatile) {
-  if (!B || !Dst || !Src || !Len)
+  if (LLVM_UNLIKELY(!B || !Dst || !Src || !Len))
     return nullptr;
   auto *Builder = unwrapB(B);
   return wrapV(Builder->CreateMemMove(
@@ -3329,53 +3330,53 @@ static NevercValueRef bridgeBuildMemMove(NevercBuilderRef B,
 // ===----------------------------------------------------------------------===
 
 static uint64_t bridgeTypeSizeInBits(NevercModuleRef M, NevercTypeRef T) {
-  if (!M || !T)
+  if (LLVM_UNLIKELY(!M || !T))
     return 0;
   auto *Ty = unwrapTy(T);
-  if (!Ty->isSized())
+  if (LLVM_UNLIKELY(!Ty->isSized()))
     return 0;
   return unwrap(M)->getDataLayout().getTypeSizeInBits(Ty);
 }
 
 static uint64_t bridgeTypeAllocSize(NevercModuleRef M, NevercTypeRef T) {
-  if (!M || !T)
+  if (LLVM_UNLIKELY(!M || !T))
     return 0;
   auto *Ty = unwrapTy(T);
-  if (!Ty->isSized())
+  if (LLVM_UNLIKELY(!Ty->isSized()))
     return 0;
   return unwrap(M)->getDataLayout().getTypeAllocSize(Ty).getFixedValue();
 }
 
 static uint64_t bridgeTypeStoreSize(NevercModuleRef M, NevercTypeRef T) {
-  if (!M || !T)
+  if (LLVM_UNLIKELY(!M || !T))
     return 0;
   auto *Ty = unwrapTy(T);
-  if (!Ty->isSized())
+  if (LLVM_UNLIKELY(!Ty->isSized()))
     return 0;
   return unwrap(M)->getDataLayout().getTypeStoreSize(Ty).getFixedValue();
 }
 
 static unsigned bridgeTypeABIAlignment(NevercModuleRef M, NevercTypeRef T) {
-  if (!M || !T)
+  if (LLVM_UNLIKELY(!M || !T))
     return 0;
   auto *Ty = unwrapTy(T);
-  if (!Ty->isSized())
+  if (LLVM_UNLIKELY(!Ty->isSized()))
     return 0;
   return unwrap(M)->getDataLayout().getABITypeAlign(Ty).value();
 }
 
 static unsigned bridgeTypePrefAlignment(NevercModuleRef M, NevercTypeRef T) {
-  if (!M || !T)
+  if (LLVM_UNLIKELY(!M || !T))
     return 0;
   auto *Ty = unwrapTy(T);
-  if (!Ty->isSized())
+  if (LLVM_UNLIKELY(!Ty->isSized()))
     return 0;
   return unwrap(M)->getDataLayout().getPrefTypeAlign(Ty).value();
 }
 
 static unsigned bridgePointerSizeInBits(NevercModuleRef M,
                                         unsigned AddrSpace) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return 0;
   return unwrap(M)->getDataLayout().getPointerSizeInBits(AddrSpace);
 }
@@ -3385,7 +3386,7 @@ static unsigned bridgePointerSizeInBits(NevercModuleRef M,
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeConstPoison(NevercTypeRef Ty) {
-  if (!Ty)
+  if (LLVM_UNLIKELY(!Ty))
     return nullptr;
   return wrapV(PoisonValue::get(unwrapTy(Ty)));
 }
@@ -3400,13 +3401,13 @@ static int bridgeValueIsPoison(NevercValueRef V) {
 
 static NevercTypeRef bridgeTypeGetPtrInAddrSpace(NevercContextRef C,
                                                   unsigned AddrSpace) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   return wrapTy(PointerType::get(*unwrapCtx(C), AddrSpace));
 }
 
 static unsigned bridgeTypeGetPointerAddrSpace(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return 0;
   auto *PT = dyn_cast<PointerType>(unwrapTy(T));
   return PT ? PT->getAddressSpace() : 0;
@@ -3418,7 +3419,7 @@ static unsigned bridgeTypeGetPointerAddrSpace(NevercTypeRef T) {
 
 static NevercTypeRef bridgeTypeGetFixedVector(NevercTypeRef ElemTy,
                                                unsigned Count) {
-  if (!ElemTy || Count == 0)
+  if (LLVM_UNLIKELY(!ElemTy || Count == 0))
     return nullptr;
   return wrapTy(FixedVectorType::get(unwrapTy(ElemTy), Count));
 }
@@ -3428,14 +3429,14 @@ static int bridgeTypeIsVector(NevercTypeRef T) {
 }
 
 static unsigned bridgeTypeGetVectorNumElements(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return 0;
   auto *VT = dyn_cast<FixedVectorType>(unwrapTy(T));
   return VT ? VT->getNumElements() : 0;
 }
 
 static NevercTypeRef bridgeTypeGetVectorElementType(NevercTypeRef T) {
-  if (!T)
+  if (LLVM_UNLIKELY(!T))
     return nullptr;
   auto *VT = dyn_cast<VectorType>(unwrapTy(T));
   return VT ? wrapTy(VT->getElementType()) : nullptr;
@@ -3443,14 +3444,14 @@ static NevercTypeRef bridgeTypeGetVectorElementType(NevercTypeRef T) {
 
 static NevercValueRef bridgeConstVector(NevercValueRef *Vals,
                                          unsigned Count) {
-  if (!Vals || Count == 0)
+  if (LLVM_UNLIKELY(!Vals || Count == 0))
     return nullptr;
   SmallVector<Constant *, 8> Elems;
   for (unsigned I = 0; I < Count; ++I) {
-    if (!Vals[I])
+    if (LLVM_UNLIKELY(!Vals[I]))
       return nullptr;
     auto *C = dyn_cast<Constant>(unwrapV(Vals[I]));
-    if (!C)
+    if (LLVM_UNLIKELY(!C))
       return nullptr;
     Elems.push_back(C);
   }
@@ -3465,7 +3466,7 @@ static NevercValueRef bridgeBuildExtractElement(NevercBuilderRef B,
                                                 NevercValueRef Vec,
                                                 NevercValueRef Idx,
                                                 const char *Name) {
-  if (!B || !Vec || !Idx)
+  if (LLVM_UNLIKELY(!B || !Vec || !Idx))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateExtractElement(unwrapV(Vec), unwrapV(Idx),
@@ -3477,7 +3478,7 @@ static NevercValueRef bridgeBuildInsertElement(NevercBuilderRef B,
                                                NevercValueRef Val,
                                                NevercValueRef Idx,
                                                const char *Name) {
-  if (!B || !Vec || !Val || !Idx)
+  if (LLVM_UNLIKELY(!B || !Vec || !Val || !Idx))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateInsertElement(unwrapV(Vec), unwrapV(Val),
@@ -3490,7 +3491,7 @@ static NevercValueRef bridgeBuildShuffleVector(NevercBuilderRef B,
                                                int *MaskVals,
                                                unsigned MaskLen,
                                                const char *Name) {
-  if (!B || !V1 || !V2 || !MaskVals || MaskLen == 0)
+  if (LLVM_UNLIKELY(!B || !V1 || !V2 || !MaskVals || MaskLen == 0))
     return nullptr;
   SmallVector<int, 16> Mask(MaskVals, MaskVals + MaskLen);
   return wrapV(
@@ -3504,7 +3505,7 @@ static NevercValueRef bridgeBuildShuffleVector(NevercBuilderRef B,
 
 static NevercValueRef bridgeBuildFreeze(NevercBuilderRef B, NevercValueRef V,
                                         const char *Name) {
-  if (!B || !V)
+  if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
   return wrapV(unwrapB(B)->CreateFreeze(unwrapV(V), Name ? Name : ""));
 }
@@ -3517,7 +3518,7 @@ static NevercValueRef bridgeBuildAddrSpaceCast(NevercBuilderRef B,
                                                NevercValueRef V,
                                                NevercTypeRef DestTy,
                                                const char *Name) {
-  if (!B || !V || !DestTy)
+  if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateAddrSpaceCast(unwrapV(V), unwrapTy(DestTy),
@@ -3529,7 +3530,7 @@ static NevercValueRef bridgeBuildAddrSpaceCast(NevercBuilderRef B,
 // ===----------------------------------------------------------------------===
 
 static NevercValueRef bridgeConstZeroInitializer(NevercTypeRef Ty) {
-  if (!Ty)
+  if (LLVM_UNLIKELY(!Ty))
     return nullptr;
   return wrapV(ConstantAggregateZero::get(unwrapTy(Ty)));
 }
@@ -3539,7 +3540,7 @@ static NevercValueRef bridgeConstZeroInitializer(NevercTypeRef Ty) {
 // ===----------------------------------------------------------------------===
 
 static int bridgeGlobalHasUnnamedAddr(NevercValueRef GV) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return 0;
   auto *G = dyn_cast<GlobalValue>(unwrapV(GV));
   return (G && G->hasGlobalUnnamedAddr()) ? 1 : 0;
@@ -3547,7 +3548,7 @@ static int bridgeGlobalHasUnnamedAddr(NevercValueRef GV) {
 
 static void bridgeGlobalSetUnnamedAddr(NevercValueRef GV,
                                        int HasUnnamedAddr) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return;
   auto *G = dyn_cast<GlobalValue>(unwrapV(GV));
   if (G)
@@ -3560,7 +3561,7 @@ static void bridgeGlobalSetUnnamedAddr(NevercValueRef GV,
 // ===----------------------------------------------------------------------===
 
 static uint64_t bridgeStrLen(const char *S) {
-  if (!S)
+  if (LLVM_UNLIKELY(!S))
     return 0;
   return std::strlen(S);
 }
@@ -3596,7 +3597,7 @@ static char *bridgeStrConcat(const char *A, const char *B) {
 static int bridgeStrEqual(const char *A, const char *B) {
   if (A == B)
     return 1;
-  if (!A || !B)
+  if (LLVM_UNLIKELY(!A || !B))
     return 0;
   return std::strcmp(A, B) == 0 ? 1 : 0;
 }
@@ -3604,10 +3605,10 @@ static int bridgeStrEqual(const char *A, const char *B) {
 static char *bridgeIntToStr(int64_t Val) {
   char Tmp[32];
   int Len = std::snprintf(Tmp, sizeof(Tmp), "%" PRId64, Val);
-  if (Len < 0)
+  if (LLVM_UNLIKELY(Len < 0))
     return nullptr;
   char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
   std::memcpy(Buf, Tmp, Len + 1);
   return Buf;
@@ -3616,28 +3617,28 @@ static char *bridgeIntToStr(int64_t Val) {
 static char *bridgeUIntToStr(uint64_t Val) {
   char Tmp[32];
   int Len = std::snprintf(Tmp, sizeof(Tmp), "%" PRIu64, Val);
-  if (Len < 0)
+  if (LLVM_UNLIKELY(Len < 0))
     return nullptr;
   char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
   std::memcpy(Buf, Tmp, Len + 1);
   return Buf;
 }
 
 static char *bridgeStrFormatV(const char *Fmt, va_list Args) {
-  if (!Fmt)
+  if (LLVM_UNLIKELY(!Fmt))
     return nullptr;
   char Stack[512];
   va_list ArgsCopy;
   va_copy(ArgsCopy, Args);
   int Len = std::vsnprintf(Stack, sizeof(Stack), Fmt, ArgsCopy);
   va_end(ArgsCopy);
-  if (Len < 0)
+  if (LLVM_UNLIKELY(Len < 0))
     return nullptr;
   size_t Need = static_cast<size_t>(Len) + 1;
   char *Buf = static_cast<char *>(bridgeAlloc(Need));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
   if (Need <= sizeof(Stack))
     std::memcpy(Buf, Stack, Need);
@@ -3701,24 +3702,24 @@ static int bridgeMemCompare(const void *A, const void *B, uint64_t Len) {
 
 static void bridgeDiagV(void (*Emit)(const char *), const char *Fmt,
                         va_list Args) {
-  if (!Fmt)
+  if (LLVM_UNLIKELY(!Fmt))
     return;
   char Stack[512];
   va_list ArgsCopy;
   va_copy(ArgsCopy, Args);
   int Len = std::vsnprintf(Stack, sizeof(Stack), Fmt, ArgsCopy);
   va_end(ArgsCopy);
-  if (Len < 0)
+  if (LLVM_UNLIKELY(Len < 0))
     return;
-  if (static_cast<size_t>(Len) < sizeof(Stack)) {
+  size_t Need = static_cast<size_t>(Len) + 1;
+  if (Need <= sizeof(Stack)) {
     Emit(Stack);
     return;
   }
-  size_t Size = static_cast<size_t>(Len) + 1;
-  char *Heap = static_cast<char *>(bridgeAlloc(Size));
-  if (!Heap)
+  char *Heap = static_cast<char *>(bridgeAlloc(Need));
+  if (LLVM_UNLIKELY(!Heap))
     return;
-  std::vsnprintf(Heap, Size, Fmt, Args);
+  std::vsnprintf(Heap, Need, Fmt, Args);
   Emit(Heap);
   bridgeFree(Heap);
 }
@@ -3762,7 +3763,7 @@ static void bridgeDiagErrorF(const char *Fmt, ...) {
 
 static void *bridgeAllocZeroed(uint64_t Count, uint64_t ElemSize) {
 #if SIZE_MAX < UINT64_MAX
-  if (Count > SIZE_MAX || ElemSize > SIZE_MAX)
+  if (LLVM_UNLIKELY(Count > SIZE_MAX || ElemSize > SIZE_MAX))
     return nullptr;
 #endif
   return ::calloc(static_cast<size_t>(Count), static_cast<size_t>(ElemSize));
@@ -3773,7 +3774,7 @@ static void *bridgeAllocZeroed(uint64_t Count, uint64_t ElemSize) {
 // ===----------------------------------------------------------------------===
 
 static int bridgeStrStartsWith(const char *S, const char *Prefix) {
-  if (!S || !Prefix)
+  if (LLVM_UNLIKELY(!S || !Prefix))
     return 0;
   size_t PrefixLen = std::strlen(Prefix);
   if (PrefixLen == 0)
@@ -3782,7 +3783,7 @@ static int bridgeStrStartsWith(const char *S, const char *Prefix) {
 }
 
 static int bridgeStrEndsWith(const char *S, const char *Suffix) {
-  if (!S || !Suffix)
+  if (LLVM_UNLIKELY(!S || !Suffix))
     return 0;
   size_t SLen = std::strlen(S);
   size_t XLen = std::strlen(Suffix);
@@ -3792,9 +3793,9 @@ static int bridgeStrEndsWith(const char *S, const char *Suffix) {
 }
 
 static int bridgeStrContains(const char *Haystack, const char *Needle) {
-  if (!Haystack)
+  if (LLVM_UNLIKELY(!Haystack))
     return 0;
-  if (!Needle || !*Needle)
+  if (LLVM_UNLIKELY(!Needle || !*Needle))
     return 1;
   return std::strstr(Haystack, Needle) != nullptr ? 1 : 0;
 }
@@ -3802,15 +3803,15 @@ static int bridgeStrContains(const char *Haystack, const char *Needle) {
 static int bridgeStrCompare(const char *A, const char *B) {
   if (A == B)
     return 0;
-  if (!A)
+  if (LLVM_UNLIKELY(!A))
     return -1;
-  if (!B)
+  if (LLVM_UNLIKELY(!B))
     return 1;
   return std::strcmp(A, B);
 }
 
 static int bridgeStrToInt64(const char *S, int64_t *Out) {
-  if (!S || !Out)
+  if (LLVM_UNLIKELY(!S || !Out))
     return 0;
   char *End = nullptr;
   errno = 0;
@@ -3822,7 +3823,7 @@ static int bridgeStrToInt64(const char *S, int64_t *Out) {
 }
 
 static int bridgeStrToUInt64(const char *S, uint64_t *Out) {
-  if (!S || !Out)
+  if (LLVM_UNLIKELY(!S || !Out))
     return 0;
   const char *P = S;
   while (*P == ' ' || *P == '\t' || *P == '\n' || *P == '\r')
@@ -3839,7 +3840,7 @@ static int bridgeStrToUInt64(const char *S, uint64_t *Out) {
 }
 
 static char *bridgeStrSubstring(const char *S, uint64_t Start, uint64_t Len) {
-  if (!S)
+  if (LLVM_UNLIKELY(!S))
     return nullptr;
   size_t SLen = std::strlen(S);
   if (Start >= SLen)
@@ -3847,7 +3848,7 @@ static char *bridgeStrSubstring(const char *S, uint64_t Start, uint64_t Len) {
   else if (Len > SLen - Start)
     Len = SLen - Start;
   char *Buf = static_cast<char *>(bridgeAlloc(static_cast<size_t>(Len) + 1));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
   if (Len)
     std::memcpy(Buf, S + Start, static_cast<size_t>(Len));
@@ -3856,7 +3857,7 @@ static char *bridgeStrSubstring(const char *S, uint64_t Start, uint64_t Len) {
 }
 
 static char *bridgeStrTrim(const char *S) {
-  if (!S)
+  if (LLVM_UNLIKELY(!S))
     return nullptr;
   while (*S == ' ' || *S == '\t' || *S == '\n' || *S == '\r')
     ++S;
@@ -3868,9 +3869,10 @@ static char *bridgeStrTrim(const char *S) {
     --Len;
   }
   char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
-  std::memcpy(Buf, S, Len);
+  if (Len)
+    std::memcpy(Buf, S, Len);
   Buf[Len] = '\0';
   return Buf;
 }
@@ -3893,7 +3895,7 @@ static void bridgeMemZero(void *Dst, uint64_t Len) {
 // ===----------------------------------------------------------------------===
 
 static uint64_t bridgeStrFindChar(const char *S, int C) {
-  if (!S)
+  if (LLVM_UNLIKELY(!S))
     return UINT64_MAX;
   const char *P = std::strchr(S, C);
   if (!P)
@@ -3902,7 +3904,7 @@ static uint64_t bridgeStrFindChar(const char *S, int C) {
 }
 
 static uint64_t bridgeStrFindLastChar(const char *S, int C) {
-  if (!S)
+  if (LLVM_UNLIKELY(!S))
     return UINT64_MAX;
   const char *P = std::strrchr(S, C);
   if (!P)
@@ -3916,16 +3918,12 @@ static uint64_t bridgeStrFindLastChar(const char *S, int C) {
 
 static void *bridgeReallocArray(void *Ptr, uint64_t Count, uint64_t ElemSize) {
 #if SIZE_MAX < UINT64_MAX
-  // On hosts where size_t is narrower than uint64_t, reject values that the
-  // narrowing casts below would silently truncate.
-  if (Count > SIZE_MAX || ElemSize > SIZE_MAX)
+  if (LLVM_UNLIKELY(Count > SIZE_MAX || ElemSize > SIZE_MAX))
     return nullptr;
 #endif
-  // Compute the product entirely in size_t so the overflow check and the
-  // allocation size agree on every host width.
   size_t C = static_cast<size_t>(Count);
   size_t E = static_cast<size_t>(ElemSize);
-  if (C != 0 && E > SIZE_MAX / C)
+  if (LLVM_UNLIKELY(C != 0 && E > SIZE_MAX / C))
     return nullptr;
   size_t Total = C * E;
   if (Total == 0)
@@ -3939,7 +3937,7 @@ static void *bridgeReallocArray(void *Ptr, uint64_t Count, uint64_t ElemSize) {
 
 static void bridgeModuleCollectFunctions(NevercModuleRef M,
                                          NevercValueRef *Out) {
-  if (!M || !Out)
+  if (LLVM_UNLIKELY(!M || !Out))
     return;
   unsigned Idx = 0;
   for (auto &F : *unwrap(M))
@@ -3948,7 +3946,7 @@ static void bridgeModuleCollectFunctions(NevercModuleRef M,
 
 static void bridgeModuleCollectGlobals(NevercModuleRef M,
                                        NevercValueRef *Out) {
-  if (!M || !Out)
+  if (LLVM_UNLIKELY(!M || !Out))
     return;
   unsigned Idx = 0;
   for (auto &G : unwrap(M)->globals())
@@ -3956,14 +3954,14 @@ static void bridgeModuleCollectGlobals(NevercModuleRef M,
 }
 
 static unsigned bridgeModuleGetAliasCount(NevercModuleRef M) {
-  if (!M)
+  if (LLVM_UNLIKELY(!M))
     return 0;
   return unwrap(M)->alias_size();
 }
 
 static void bridgeModuleCollectAliases(NevercModuleRef M,
                                        NevercValueRef *Out) {
-  if (!M || !Out)
+  if (LLVM_UNLIKELY(!M || !Out))
     return;
   unsigned Idx = 0;
   for (auto &A : unwrap(M)->aliases())
@@ -3974,15 +3972,15 @@ static NevercValueRef *
 bridgeModuleCollectAllFunctions(NevercModuleRef M, unsigned *OutCount) {
   if (OutCount)
     *OutCount = 0;
-  if (!M || !OutCount)
+  if (LLVM_UNLIKELY(!M || !OutCount))
     return nullptr;
   auto *Mod = unwrap(M);
   size_t Count = Mod->size();
-  if (Count == 0 || Count > UINT_MAX)
+  if (LLVM_UNLIKELY(Count == 0 || Count > UINT_MAX))
     return nullptr;
   auto *Buf = static_cast<NevercValueRef *>(
       bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(NevercValueRef)));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
   unsigned Idx = 0;
   for (auto &F : *Mod)
@@ -3995,15 +3993,15 @@ static NevercValueRef *
 bridgeModuleCollectAllGlobals(NevercModuleRef M, unsigned *OutCount) {
   if (OutCount)
     *OutCount = 0;
-  if (!M || !OutCount)
+  if (LLVM_UNLIKELY(!M || !OutCount))
     return nullptr;
   auto *Mod = unwrap(M);
   size_t Count = Mod->global_size();
-  if (Count == 0 || Count > UINT_MAX)
+  if (LLVM_UNLIKELY(Count == 0 || Count > UINT_MAX))
     return nullptr;
   auto *Buf = static_cast<NevercValueRef *>(
       bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(NevercValueRef)));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
   unsigned Idx = 0;
   for (auto &G : Mod->globals())
@@ -4016,7 +4014,7 @@ static NevercValueRef *
 bridgeModuleCollectAllInstructions(NevercModuleRef M, unsigned *OutCount) {
   if (OutCount)
     *OutCount = 0;
-  if (!M || !OutCount)
+  if (LLVM_UNLIKELY(!M || !OutCount))
     return nullptr;
   auto *Mod = unwrap(M);
 
@@ -4026,16 +4024,16 @@ bridgeModuleCollectAllInstructions(NevercModuleRef M, unsigned *OutCount) {
       continue;
     for (const auto &BB : F) {
       Total += BB.size();
-      if (Total > UINT_MAX)
+      if (LLVM_UNLIKELY(Total > UINT_MAX))
         return nullptr;
     }
   }
-  if (Total == 0)
+  if (LLVM_UNLIKELY(Total == 0))
     return nullptr;
 
   auto *Buf = static_cast<NevercValueRef *>(
       bridgeAlloc(static_cast<uint64_t>(Total) * sizeof(NevercValueRef)));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
 
   unsigned Idx = 0;
@@ -4062,18 +4060,17 @@ static char *bridgeStrJoin(const char *const *Strings, unsigned Count,
       Empty[0] = '\0';
     return Empty;
   }
-  if (!Strings)
+  if (LLVM_UNLIKELY(!Strings))
     return nullptr;
 
   size_t SepLen = (Sep && *Sep) ? std::strlen(Sep) : 0;
 
-  // Cache string lengths to avoid computing them twice (measure + copy).
   size_t StackLens[64];
   size_t *Lens = StackLens;
-  if (Count > 64) {
+  if (LLVM_UNLIKELY(Count > 64)) {
     Lens = static_cast<size_t *>(
         bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(size_t)));
-    if (!Lens)
+    if (LLVM_UNLIKELY(!Lens))
       return nullptr;
   }
 
@@ -4097,7 +4094,7 @@ static char *bridgeStrJoin(const char *const *Strings, unsigned Count,
   }
 
   char *Buf = static_cast<char *>(bridgeAlloc(Total + 1));
-  if (!Buf) {
+  if (LLVM_UNLIKELY(!Buf)) {
     if (Lens != StackLens)
       bridgeFree(Lens);
     return nullptr;
@@ -4129,15 +4126,15 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
                              unsigned *OutCount) {
   if (OutCount)
     *OutCount = 0;
-  if (!S || !OutCount)
+  if (LLVM_UNLIKELY(!S || !OutCount))
     return nullptr;
 
-  if (!Delim || !*Delim) {
+  if (LLVM_UNLIKELY(!Delim || !*Delim)) {
     char **Arr = static_cast<char **>(bridgeAlloc(sizeof(char *)));
-    if (!Arr)
+    if (LLVM_UNLIKELY(!Arr))
       return nullptr;
     Arr[0] = bridgeStrDup(S);
-    if (!Arr[0]) {
+    if (LLVM_UNLIKELY(!Arr[0])) {
       bridgeFree(Arr);
       return nullptr;
     }
@@ -4166,7 +4163,7 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
       size_t NewCap = HitCap * 2;
       size_t *NewBuf =
           static_cast<size_t *>(bridgeAlloc(NewCap * sizeof(size_t)));
-      if (!NewBuf) {
+      if (LLVM_UNLIKELY(!NewBuf)) {
         if (Hits != StackHits)
           bridgeFree(Hits);
         return nullptr;
@@ -4184,7 +4181,7 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
   unsigned Parts = static_cast<unsigned>(HitCount) + 1;
   char **Arr = static_cast<char **>(
       bridgeAlloc(static_cast<uint64_t>(Parts) * sizeof(char *)));
-  if (!Arr) {
+  if (LLVM_UNLIKELY(!Arr)) {
     if (Hits != StackHits)
       bridgeFree(Hits);
     return nullptr;
@@ -4196,7 +4193,7 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
   for (size_t I = 0; I < HitCount; ++I) {
     size_t Span = Hits[I] - Prev;
     char *Part = static_cast<char *>(bridgeAlloc(Span + 1));
-    if (!Part) {
+    if (LLVM_UNLIKELY(!Part)) {
       for (unsigned J = 0; J < Idx; ++J)
         bridgeFree(Arr[J]);
       bridgeFree(Arr);
@@ -4216,7 +4213,7 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
 
   // Tail after the last delimiter.
   Arr[Idx] = bridgeStrDup(S + Prev);
-  if (!Arr[Idx]) {
+  if (LLVM_UNLIKELY(!Arr[Idx])) {
     for (unsigned J = 0; J < Idx; ++J)
       bridgeFree(Arr[J]);
     bridgeFree(Arr);
@@ -4231,7 +4228,7 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
 // ===----------------------------------------------------------------------===
 
 static uint64_t bridgeStrHash(const char *S) {
-  if (!S)
+  if (LLVM_UNLIKELY(!S))
     return 0;
   uint64_t Hash = UINT64_C(14695981039346656037);
   while (*S) {
@@ -4244,10 +4241,10 @@ static uint64_t bridgeStrHash(const char *S) {
 
 static void bridgeFunctionCollectBBs(NevercValueRef F,
                                      NevercBasicBlockRef *Out) {
-  if (!F || !Out)
+  if (LLVM_UNLIKELY(!F || !Out))
     return;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || Fn->isDeclaration())
+  if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
     return;
   unsigned Idx = 0;
   for (auto &BB : *Fn)
@@ -4256,7 +4253,7 @@ static void bridgeFunctionCollectBBs(NevercValueRef F,
 
 static void bridgeBBCollectInstructions(NevercBasicBlockRef BB,
                                         NevercValueRef *Out) {
-  if (!BB || !Out)
+  if (LLVM_UNLIKELY(!BB || !Out))
     return;
   unsigned Idx = 0;
   for (auto &Inst : *unwrapBB(BB))
@@ -4265,7 +4262,7 @@ static void bridgeBBCollectInstructions(NevercBasicBlockRef BB,
 
 static void bridgeMFuncCollectBBs(NevercMachineFuncRef MF,
                                   NevercMachineBBRef *Out) {
-  if (!MF || !Out)
+  if (LLVM_UNLIKELY(!MF || !Out))
     return;
   unsigned Idx = 0;
   for (auto &MBB : *unwrapMF(MF))
@@ -4274,7 +4271,7 @@ static void bridgeMFuncCollectBBs(NevercMachineFuncRef MF,
 
 static void bridgeMBBCollectInstructions(NevercMachineBBRef MBB,
                                          NevercMachineInstrRef *Out) {
-  if (!MBB || !Out)
+  if (LLVM_UNLIKELY(!MBB || !Out))
     return;
   unsigned Idx = 0;
   for (auto &MI : *unwrapMBB(MBB))
@@ -4288,7 +4285,7 @@ static void bridgeMBBCollectInstructions(NevercMachineBBRef MBB,
 #define BRIDGE_BINOP_FLAG(NAME, METHOD)                                        \
   static NevercValueRef bridge##NAME(NevercBuilderRef B, NevercValueRef LHS,   \
                                      NevercValueRef RHS, const char *Name) {   \
-    if (!B || !LHS || !RHS)                                                    \
+    if (LLVM_UNLIKELY(!B || !LHS || !RHS))                                     \
       return nullptr;                                                          \
     return wrapV(unwrapB(B)->METHOD(unwrapV(LHS), unwrapV(RHS), Name));        \
   }
@@ -4305,7 +4302,7 @@ BRIDGE_BINOP_FLAG(BuildExactUDiv, CreateExactUDiv)
 
 static NevercValueRef bridgeBuildNSWNeg(NevercBuilderRef B, NevercValueRef V,
                                         const char *Name) {
-  if (!B || !V)
+  if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
   return wrapV(unwrapB(B)->CreateNSWNeg(unwrapV(V), Name));
 }
@@ -4320,14 +4317,18 @@ static NevercValueRef bridgeBuildInvoke(NevercBuilderRef B, NevercTypeRef FnTy,
                                         NevercBasicBlockRef NormalDest,
                                         NevercBasicBlockRef UnwindDest,
                                         const char *Name) {
-  if (!B || !FnTy || !Fn || !NormalDest || !UnwindDest)
+  if (LLVM_UNLIKELY(!B || !FnTy || !Fn || !NormalDest || !UnwindDest ||
+                    (ArgCount > 0 && !Args)))
+    return nullptr;
+  auto *FTy = dyn_cast<FunctionType>(unwrapTy(FnTy));
+  if (LLVM_UNLIKELY(!FTy))
     return nullptr;
   SmallVector<Value *, 8> ArgVec;
-  for (unsigned I = 0; I < ArgCount; ++I)
+  for (unsigned I = 0; I < ArgCount; ++I) {
+    if (LLVM_UNLIKELY(!Args[I]))
+      return nullptr;
     ArgVec.push_back(unwrapV(Args[I]));
-  auto *FTy = dyn_cast<FunctionType>(unwrapTy(FnTy));
-  if (!FTy)
-    return nullptr;
+  }
   return wrapV(unwrapB(B)->CreateInvoke(FTy, unwrapV(Fn), unwrapBB(NormalDest),
                                         unwrapBB(UnwindDest), ArgVec, Name));
 }
@@ -4336,14 +4337,14 @@ static NevercValueRef bridgeBuildLandingPad(NevercBuilderRef B,
                                             NevercTypeRef Ty,
                                             unsigned NumClauses,
                                             const char *Name) {
-  if (!B || !Ty)
+  if (LLVM_UNLIKELY(!B || !Ty))
     return nullptr;
   return wrapV(unwrapB(B)->CreateLandingPad(unwrapTy(Ty), NumClauses, Name));
 }
 
 static void bridgeLandingPadAddClause(NevercValueRef LPad,
                                       NevercValueRef ClauseVal) {
-  if (!LPad || !ClauseVal)
+  if (LLVM_UNLIKELY(!LPad || !ClauseVal))
     return;
   auto *LP = dyn_cast<LandingPadInst>(unwrapV(LPad));
   // LandingPadInst::addClause() requires a Constant; use dyn_cast (not cast)
@@ -4354,7 +4355,7 @@ static void bridgeLandingPadAddClause(NevercValueRef LPad,
 }
 
 static void bridgeLandingPadSetCleanup(NevercValueRef LPad, int IsCleanup) {
-  if (!LPad)
+  if (LLVM_UNLIKELY(!LPad))
     return;
   auto *LP = dyn_cast<LandingPadInst>(unwrapV(LPad));
   if (LP)
@@ -4363,7 +4364,7 @@ static void bridgeLandingPadSetCleanup(NevercValueRef LPad, int IsCleanup) {
 
 static NevercValueRef bridgeBuildResume(NevercBuilderRef B,
                                         NevercValueRef Val) {
-  if (!B || !Val)
+  if (LLVM_UNLIKELY(!B || !Val))
     return nullptr;
   return wrapV(unwrapB(B)->CreateResume(unwrapV(Val)));
 }
@@ -4373,14 +4374,14 @@ static NevercValueRef bridgeBuildResume(NevercBuilderRef B,
 // ===----------------------------------------------------------------------===
 
 static int bridgeGlobalIsThreadLocal(NevercValueRef GV) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return 0;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
   return (G && G->isThreadLocal()) ? 1 : 0;
 }
 
 static void bridgeGlobalSetThreadLocal(NevercValueRef GV, int IsThreadLocal) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return;
   auto *G = dyn_cast<GlobalVariable>(unwrapV(GV));
   if (G)
@@ -4392,7 +4393,7 @@ static void bridgeGlobalSetThreadLocal(NevercValueRef GV, int IsThreadLocal) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeFunctionAddEnumAttr(NevercValueRef F, unsigned AttrKind) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (Fn && AttrKind < Attribute::EndAttrKinds)
@@ -4400,17 +4401,17 @@ static void bridgeFunctionAddEnumAttr(NevercValueRef F, unsigned AttrKind) {
 }
 
 static int bridgeFunctionHasEnumAttr(NevercValueRef F, unsigned AttrKind) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return 0;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (!Fn || AttrKind >= Attribute::EndAttrKinds)
+  if (LLVM_UNLIKELY(!Fn || AttrKind >= Attribute::EndAttrKinds))
     return 0;
   return Fn->hasFnAttribute(static_cast<Attribute::AttrKind>(AttrKind)) ? 1
                                                                         : 0;
 }
 
 static void bridgeFunctionRemoveEnumAttr(NevercValueRef F, unsigned AttrKind) {
-  if (!F)
+  if (LLVM_UNLIKELY(!F))
     return;
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (Fn && AttrKind < Attribute::EndAttrKinds)
@@ -4430,25 +4431,25 @@ static inline NevercComdatRef wrapComdat(Comdat *C) {
 
 static NevercComdatRef bridgeModuleGetOrInsertComdat(NevercModuleRef M,
                                                       const char *Name) {
-  if (!M || !Name)
+  if (LLVM_UNLIKELY(!M || !Name))
     return nullptr;
   return wrapComdat(unwrap(M)->getOrInsertComdat(Name));
 }
 
 static unsigned bridgeComdatGetSelectionKind(NevercComdatRef C) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return 0;
   return static_cast<unsigned>(unwrapComdat(C)->getSelectionKind());
 }
 
 static void bridgeComdatSetSelectionKind(NevercComdatRef C, unsigned Kind) {
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return;
   unwrapComdat(C)->setSelectionKind(static_cast<Comdat::SelectionKind>(Kind));
 }
 
 static void bridgeGlobalSetComdat(NevercValueRef GV, NevercComdatRef C) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return;
   auto *GO = dyn_cast<GlobalObject>(unwrapV(GV));
   if (GO)
@@ -4456,10 +4457,10 @@ static void bridgeGlobalSetComdat(NevercValueRef GV, NevercComdatRef C) {
 }
 
 static NevercComdatRef bridgeGlobalGetComdat(NevercValueRef GV) {
-  if (!GV)
+  if (LLVM_UNLIKELY(!GV))
     return nullptr;
   auto *GO = dyn_cast<GlobalObject>(unwrapV(GV));
-  if (!GO)
+  if (LLVM_UNLIKELY(!GO))
     return nullptr;
   return wrapComdat(const_cast<Comdat *>(GO->getComdat()));
 }
@@ -4469,7 +4470,7 @@ static NevercComdatRef bridgeGlobalGetComdat(NevercValueRef GV) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeInstMoveAfter(NevercValueRef I, NevercValueRef After) {
-  if (!I || !After)
+  if (LLVM_UNLIKELY(!I || !After))
     return;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
   auto *AfterInst = dyn_cast<Instruction>(unwrapV(After));
@@ -4483,17 +4484,17 @@ static void bridgeInstMoveAfter(NevercValueRef I, NevercValueRef After) {
 
 static NevercValueRef bridgeConstGetAggregateElement(NevercValueRef Agg,
                                                       unsigned Idx) {
-  if (!Agg)
+  if (LLVM_UNLIKELY(!Agg))
     return nullptr;
   auto *C = dyn_cast<Constant>(unwrapV(Agg));
-  if (!C)
+  if (LLVM_UNLIKELY(!C))
     return nullptr;
   // Constant::getAggregateElement() asserts the value is an aggregate or
   // vector constant.  A plugin may legitimately probe a scalar initializer
   // (e.g. `int g = 0;`), so mirror that precondition here and return null
   // rather than aborting the host compiler.
   Type *Ty = C->getType();
-  if (!Ty->isAggregateType() && !Ty->isVectorTy())
+  if (LLVM_UNLIKELY(!Ty->isAggregateType() && !Ty->isVectorTy()))
     return nullptr;
   Constant *Elem = C->getAggregateElement(Idx);
   return Elem ? wrapV(Elem) : nullptr;
@@ -4504,42 +4505,42 @@ static NevercValueRef bridgeConstGetAggregateElement(NevercValueRef Agg,
 // ===----------------------------------------------------------------------===
 
 static NevercMachineInstrRef bridgeMBBGetLastInst(NevercMachineBBRef MBB) {
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return nullptr;
   auto *BB = unwrapMBB(MBB);
-  if (BB->empty())
+  if (LLVM_UNLIKELY(BB->empty()))
     return nullptr;
   return wrapMI(&BB->back());
 }
 
 static NevercMachineInstrRef bridgeMBBGetPrevInst(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return nullptr;
   auto *Inst = unwrapMI(MI);
   auto *MBB = Inst->getParent();
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return nullptr;
   auto It = Inst->getIterator();
-  if (It == MBB->begin())
+  if (LLVM_UNLIKELY(It == MBB->begin()))
     return nullptr;
   return wrapMI(&*std::prev(It));
 }
 
 static NevercMachineBBRef bridgeMFuncGetLastBB(NevercMachineFuncRef MF) {
-  if (!MF)
+  if (LLVM_UNLIKELY(!MF))
     return nullptr;
   auto *Func = unwrapMF(MF);
-  if (Func->empty())
+  if (LLVM_UNLIKELY(Func->empty()))
     return nullptr;
   return wrapMBB(&Func->back());
 }
 
 static NevercMachineBBRef bridgeMFuncGetPrevBB(NevercMachineBBRef MBB) {
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return nullptr;
   auto *BB = unwrapMBB(MBB);
   auto *MF = BB->getParent();
-  if (!MF)
+  if (LLVM_UNLIKELY(!MF))
     return nullptr;
   auto It = BB->getIterator();
   if (It == MF->begin())
@@ -4553,7 +4554,7 @@ static NevercMachineBBRef bridgeMFuncGetPrevBB(NevercMachineBBRef MBB) {
 
 static void bridgeMInstSetOperandReg(NevercMachineInstrRef MI, unsigned Idx,
                                      unsigned Reg) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return;
   auto *Inst = unwrapMI(MI);
   if (Idx < Inst->getNumOperands() && Inst->getOperand(Idx).isReg())
@@ -4562,7 +4563,7 @@ static void bridgeMInstSetOperandReg(NevercMachineInstrRef MI, unsigned Idx,
 
 static void bridgeMInstSetOperandImm(NevercMachineInstrRef MI, unsigned Idx,
                                      int64_t Val) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return;
   auto *Inst = unwrapMI(MI);
   if (Idx < Inst->getNumOperands() && Inst->getOperand(Idx).isImm())
@@ -4574,65 +4575,65 @@ static void bridgeMInstSetOperandImm(NevercMachineInstrRef MI, unsigned Idx,
 // ===----------------------------------------------------------------------===
 
 static unsigned bridgeMInstGetFlags(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   return unwrapMI(MI)->getFlags();
 }
 
 static void bridgeMInstSetFlags(NevercMachineInstrRef MI, unsigned Flags) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return;
   unwrapMI(MI)->setFlags(Flags);
 }
 
 static int bridgeMInstIsBranch(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   return unwrapMI(MI)->isBranch() ? 1 : 0;
 }
 
 static int bridgeMInstIsCall(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   return unwrapMI(MI)->isCall() ? 1 : 0;
 }
 
 static int bridgeMInstIsReturn(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   return unwrapMI(MI)->isReturn() ? 1 : 0;
 }
 
 static int bridgeMInstIsTerminator(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   return unwrapMI(MI)->isTerminator() ? 1 : 0;
 }
 
 static int bridgeMInstIsMoveImmediate(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   return unwrapMI(MI)->isMoveImmediate() ? 1 : 0;
 }
 
 static int bridgeMInstHasDelaySlot(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   return unwrapMI(MI)->hasDelaySlot() ? 1 : 0;
 }
 
 static const char *bridgeMInstGetDesc(NevercMachineInstrRef MI) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return "";
   auto *Inst = unwrapMI(MI);
   auto *MBB = Inst->getParent();
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return "";
   auto *MF = MBB->getParent();
-  if (!MF)
+  if (LLVM_UNLIKELY(!MF))
     return "";
   const auto *TII = MF->getSubtarget().getInstrInfo();
-  if (!TII)
+  if (LLVM_UNLIKELY(!TII))
     return "";
   return TII->getName(Inst->getOpcode()).data();
 }
@@ -4642,7 +4643,7 @@ static const char *bridgeMInstGetDesc(NevercMachineInstrRef MI) {
 // ===----------------------------------------------------------------------===
 
 static int bridgeMInstOperandIsVirtReg(NevercMachineInstrRef MI, unsigned Idx) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   auto *Inst = unwrapMI(MI);
   if (Idx >= Inst->getNumOperands() || !Inst->getOperand(Idx).isReg())
@@ -4651,7 +4652,7 @@ static int bridgeMInstOperandIsVirtReg(NevercMachineInstrRef MI, unsigned Idx) {
 }
 
 static int bridgeMInstOperandIsPhysReg(NevercMachineInstrRef MI, unsigned Idx) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   auto *Inst = unwrapMI(MI);
   if (Idx >= Inst->getNumOperands() || !Inst->getOperand(Idx).isReg())
@@ -4660,7 +4661,7 @@ static int bridgeMInstOperandIsPhysReg(NevercMachineInstrRef MI, unsigned Idx) {
 }
 
 static int bridgeMInstOperandIsDef(NevercMachineInstrRef MI, unsigned Idx) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   auto *Inst = unwrapMI(MI);
   if (Idx >= Inst->getNumOperands() || !Inst->getOperand(Idx).isReg())
@@ -4669,7 +4670,7 @@ static int bridgeMInstOperandIsDef(NevercMachineInstrRef MI, unsigned Idx) {
 }
 
 static int bridgeMInstOperandIsUse(NevercMachineInstrRef MI, unsigned Idx) {
-  if (!MI)
+  if (LLVM_UNLIKELY(!MI))
     return 0;
   auto *Inst = unwrapMI(MI);
   if (Idx >= Inst->getNumOperands() || !Inst->getOperand(Idx).isReg())
@@ -4683,7 +4684,7 @@ static int bridgeMInstOperandIsUse(NevercMachineInstrRef MI, unsigned Idx) {
 
 static void bridgeMInstMoveBefore(NevercMachineInstrRef MI,
                                   NevercMachineInstrRef Before) {
-  if (!MI || !Before)
+  if (LLVM_UNLIKELY(!MI || !Before))
     return;
   auto *Inst = unwrapMI(MI);
   auto *BeforeInst = unwrapMI(Before);
@@ -4694,13 +4695,13 @@ static void bridgeMInstMoveBefore(NevercMachineInstrRef MI,
 }
 
 static unsigned bridgeMBBGetInstCount(NevercMachineBBRef MBB) {
-  if (!MBB)
+  if (LLVM_UNLIKELY(!MBB))
     return 0;
   return static_cast<unsigned>(unwrapMBB(MBB)->size());
 }
 
 static unsigned bridgeMFuncGetBBCount(NevercMachineFuncRef MF) {
-  if (!MF)
+  if (LLVM_UNLIKELY(!MF))
     return 0;
   return static_cast<unsigned>(unwrapMF(MF)->size());
 }
@@ -4804,7 +4805,7 @@ static unsigned bridgeLinkGetOutputFormat(void) {
 // ===----------------------------------------------------------------------===
 
 static uint64_t bridgeStrFindStr(const char *Haystack, const char *Needle) {
-  if (!Haystack || !Needle)
+  if (LLVM_UNLIKELY(!Haystack || !Needle))
     return UINT64_MAX;
   const char *P = std::strstr(Haystack, Needle);
   return P ? static_cast<uint64_t>(P - Haystack) : UINT64_MAX;
@@ -4839,18 +4840,19 @@ static const char *bridgeHookPointGetName(unsigned Hook) {
 }
 
 static void *bridgeMemDup(const void *Src, uint64_t Len) {
-  if (!Src || Len == 0)
+  if (LLVM_UNLIKELY(!Src || Len == 0))
     return nullptr;
   void *Dst = bridgeAlloc(Len);
-  if (Dst)
+  if (LLVM_LIKELY(Dst))
     std::memcpy(Dst, Src, static_cast<size_t>(Len));
   return Dst;
 }
 
-static char *bridgeStrReplace(const char *S, const char *Old, const char *New) {
-  if (!S)
+static char *bridgeStrReplace(const char *S, const char *Old,
+                              const char *New) {
+  if (LLVM_UNLIKELY(!S))
     return nullptr;
-  if (!Old || !New || Old[0] == '\0')
+  if (LLVM_UNLIKELY(!Old || !New || Old[0] == '\0'))
     return bridgeStrDup(S);
 
   const char *Pos = std::strstr(S, Old);
@@ -4861,29 +4863,70 @@ static char *bridgeStrReplace(const char *S, const char *Old, const char *New) {
   size_t OldLen = std::strlen(Old);
   size_t NewLen = std::strlen(New);
   size_t SuffixLen = std::strlen(Pos + OldLen);
-  if (NewLen > SIZE_MAX - 1 - PrefixLen)
+  if (LLVM_UNLIKELY(NewLen > SIZE_MAX - 1 - PrefixLen))
     return nullptr;
   size_t ResultLen = PrefixLen + NewLen;
-  if (SuffixLen > SIZE_MAX - 1 - ResultLen)
+  if (LLVM_UNLIKELY(SuffixLen > SIZE_MAX - 1 - ResultLen))
     return nullptr;
   ResultLen += SuffixLen;
 
   char *Result = static_cast<char *>(bridgeAlloc(ResultLen + 1));
-  if (!Result)
+  if (LLVM_UNLIKELY(!Result))
     return nullptr;
-
-  std::memcpy(Result, S, PrefixLen);
-  std::memcpy(Result + PrefixLen, New, NewLen);
-  std::memcpy(Result + PrefixLen + NewLen, Pos + OldLen, SuffixLen);
+  if (PrefixLen)
+    std::memcpy(Result, S, PrefixLen);
+  if (NewLen)
+    std::memcpy(Result + PrefixLen, New, NewLen);
+  if (SuffixLen)
+    std::memcpy(Result + PrefixLen + NewLen, Pos + OldLen, SuffixLen);
   Result[ResultLen] = '\0';
   return Result;
 }
 
+static NevercValueRef *
+bridgeModuleCollectDefinedFunctions(NevercModuleRef M, unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!M || !OutCount))
+    return nullptr;
+  auto *Mod = unwrap(M);
+
+  size_t TotalFns = Mod->size();
+  if (LLVM_UNLIKELY(TotalFns == 0 || TotalFns > UINT_MAX))
+    return nullptr;
+
+  auto *Buf = static_cast<NevercValueRef *>(
+      bridgeAlloc(static_cast<uint64_t>(TotalFns) * sizeof(NevercValueRef)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+
+  unsigned Idx = 0;
+  for (auto &F : *Mod) {
+    if (!F.isDeclaration())
+      Buf[Idx++] = wrapV(&F);
+  }
+
+  if (LLVM_UNLIKELY(Idx == 0)) {
+    bridgeFree(Buf);
+    return nullptr;
+  }
+
+  if (Idx < TotalFns) {
+    auto *Shrunk = static_cast<NevercValueRef *>(
+        bridgeRealloc(Buf, static_cast<uint64_t>(Idx) * sizeof(NevercValueRef)));
+    if (LLVM_LIKELY(Shrunk))
+      Buf = Shrunk;
+  }
+
+  *OutCount = Idx;
+  return Buf;
+}
+
 static char *bridgeStrReplaceAll(const char *S, const char *Old,
                                  const char *New) {
-  if (!S)
+  if (LLVM_UNLIKELY(!S))
     return nullptr;
-  if (!Old || !New || Old[0] == '\0')
+  if (LLVM_UNLIKELY(!Old || !New || Old[0] == '\0'))
     return bridgeStrDup(S);
 
   size_t OldLen = std::strlen(Old);
@@ -4899,16 +4942,16 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
 
   const char *P = S;
   while ((P = std::strstr(P, Old)) != nullptr) {
-    if (HitCount == HitCap) {
+    if (LLVM_UNLIKELY(HitCount == HitCap)) {
       if (HitCap > (SIZE_MAX / sizeof(size_t)) / 2) {
         if (Hits != StackBuf)
           bridgeFree(Hits);
         return nullptr;
       }
       size_t NewCap = HitCap * 2;
-      size_t *NewBuf =
-          static_cast<size_t *>(bridgeAlloc(NewCap * sizeof(size_t)));
-      if (!NewBuf) {
+      auto *NewBuf = static_cast<size_t *>(
+          bridgeAlloc(NewCap * sizeof(size_t)));
+      if (LLVM_UNLIKELY(!NewBuf)) {
         if (Hits != StackBuf)
           bridgeFree(Hits);
         return nullptr;
@@ -4932,7 +4975,7 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
   size_t Removed = HitCount * OldLen;
   size_t Added = 0;
   if (NewLen != 0) {
-    if (HitCount > SIZE_MAX / NewLen) {
+    if (LLVM_UNLIKELY(HitCount > SIZE_MAX / NewLen)) {
       if (Hits != StackBuf)
         bridgeFree(Hits);
       return nullptr;
@@ -4940,7 +4983,7 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
     Added = HitCount * NewLen;
   }
   size_t BaseLen = SLen - Removed;
-  if (Added > SIZE_MAX - BaseLen - 1) {
+  if (LLVM_UNLIKELY(Added > SIZE_MAX - BaseLen - 1)) {
     if (Hits != StackBuf)
       bridgeFree(Hits);
     return nullptr;
@@ -4948,7 +4991,7 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
   size_t ResultLen = BaseLen + Added;
 
   char *Result = static_cast<char *>(bridgeAlloc(ResultLen + 1));
-  if (!Result) {
+  if (LLVM_UNLIKELY(!Result)) {
     if (Hits != StackBuf)
       bridgeFree(Hits);
     return nullptr;
@@ -4978,11 +5021,11 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
 }
 
 static char *bridgeStrToLower(const char *S) {
-  if (!S)
+  if (LLVM_UNLIKELY(!S))
     return nullptr;
   size_t Len = std::strlen(S);
   char *R = static_cast<char *>(bridgeAlloc(Len + 1));
-  if (!R)
+  if (LLVM_UNLIKELY(!R))
     return nullptr;
   for (size_t I = 0; I < Len; ++I) {
     auto C = static_cast<unsigned char>(S[I]);
@@ -5007,11 +5050,11 @@ static const char *bridgeLinkGetOutputFormatName() {
 }
 
 static char *bridgeStrToUpper(const char *S) {
-  if (!S)
+  if (LLVM_UNLIKELY(!S))
     return nullptr;
   size_t Len = std::strlen(S);
   char *R = static_cast<char *>(bridgeAlloc(Len + 1));
-  if (!R)
+  if (LLVM_UNLIKELY(!R))
     return nullptr;
   for (size_t I = 0; I < Len; ++I) {
     auto C = static_cast<unsigned char>(S[I]);
@@ -5651,11 +5694,14 @@ NevercHostAPI buildHostAPI() {
   API.StrSplit = bridgeStrSplit;
   API.StrHash = bridgeStrHash;
 
+  API.ModuleCollectDefinedFunctions = bridgeModuleCollectDefinedFunctions;
+
   static_assert(
-      offsetof(NevercHostAPI, StrHash) +
-              sizeof(NevercHostAPI::StrHash) ==
+      offsetof(NevercHostAPI, ModuleCollectDefinedFunctions) +
+              sizeof(NevercHostAPI::ModuleCollectDefinedFunctions) ==
           sizeof(NevercHostAPI),
-      "StrHash is no longer the last field in NevercHostAPI. "
+      "ModuleCollectDefinedFunctions is no longer the last field in "
+      "NevercHostAPI. "
       "Add bridge assignments for the new field(s) and update this check.");
 
   return API;

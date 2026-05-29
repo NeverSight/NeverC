@@ -66,19 +66,38 @@ extern "C" {
 /* ---- Convenience allocation macros ----
  * Typed array allocation through the host vtable — eliminates the
  * repetitive (Type*)API->Alloc(Count * sizeof(Type)) pattern and
- * guards against count*size overflow via AllocZeroed/ReallocArray.
+ * guards against count*size overflow via ReallocArray/AllocZeroed.
  *
  * NEVERC_ALLOC_ARRAY  — uninitialized (fast, for immediately-filled arrays)
  * NEVERC_CALLOC_ARRAY — zero-initialized (for arrays that need a clean slate)
  * NEVERC_REALLOC_ARRAY — grow/shrink with overflow check                    */
 #define NEVERC_ALLOC_ARRAY(api, type, count) \
-    ((type *)(api)->Alloc((uint64_t)(count) * sizeof(type)))
+    ((type *)(api)->ReallocArray(NULL, (count), sizeof(type)))
 
 #define NEVERC_CALLOC_ARRAY(api, type, count) \
     ((type *)(api)->AllocZeroed((count), sizeof(type)))
 
 #define NEVERC_REALLOC_ARRAY(api, ptr, type, count) \
     ((type *)(api)->ReallocArray((ptr), (count), sizeof(type)))
+
+/* ---- Convenience batch-collect macros ----
+ * Version-safe wrappers around the ModuleCollectAll* family.
+ * Return the host-allocated array or NULL; caller frees via Free. */
+#define NEVERC_COLLECT_FUNCTIONS(api, m, count) \
+    (NEVERC_API_FN(api, ModuleCollectAllFunctions) \
+     ? (api)->ModuleCollectAllFunctions((m), (count)) : NULL)
+
+#define NEVERC_COLLECT_GLOBALS(api, m, count) \
+    (NEVERC_API_FN(api, ModuleCollectAllGlobals) \
+     ? (api)->ModuleCollectAllGlobals((m), (count)) : NULL)
+
+#define NEVERC_COLLECT_INSTRUCTIONS(api, m, count) \
+    (NEVERC_API_FN(api, ModuleCollectAllInstructions) \
+     ? (api)->ModuleCollectAllInstructions((m), (count)) : NULL)
+
+#define NEVERC_COLLECT_DEFINED_FUNCTIONS(api, m, count) \
+    (NEVERC_API_FN(api, ModuleCollectDefinedFunctions) \
+     ? (api)->ModuleCollectDefinedFunctions((m), (count)) : NULL)
 
 /* -------------------------------------------------------------------------- */
 /*  Opaque handle types                                                       */
@@ -1274,6 +1293,14 @@ typedef struct NevercHostAPI {
          tables or fast string comparisons in plugins.  Returns 0 for
          NULL input. ---- */
   uint64_t (*StrHash)(const char *S);
+
+  /* ---- One-call batch collection of DEFINED functions only.
+         Skips declarations on the host side — eliminates the
+         ubiquitous collect→filter→loop→free boilerplate in plugins.
+         Returns NULL and sets *OutCount to 0 when no defined functions
+         exist.  Caller frees via Free. ---- */
+  NevercValueRef *(*ModuleCollectDefinedFunctions)(NevercModuleRef M,
+                                                   unsigned *OutCount);
 } NevercHostAPI;
 
 /* -------------------------------------------------------------------------- */
