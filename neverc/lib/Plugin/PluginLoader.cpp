@@ -28,26 +28,57 @@ struct RegistrarContext {
 };
 
 bool isIRHookPoint(NevercHookPoint Hook) {
-  unsigned H = static_cast<unsigned>(Hook);
-  return (H >= 0x0001 && H <= 0x0004) || // normal flow IR
-         (H >= 0x0100 && H <= 0x0105) || // shellcode IR
-         (H >= 0x0400 && H <= 0x0401);   // LTO IR
+  switch (Hook) {
+  case NEVERC_HOOK_PRE_OPT:
+  case NEVERC_HOOK_POST_OPT:
+  case NEVERC_HOOK_PIPELINE_START:
+  case NEVERC_HOOK_PIPELINE_LAST:
+  case NEVERC_HOOK_SC_BEFORE_PREP:
+  case NEVERC_HOOK_SC_AFTER_PREP:
+  case NEVERC_HOOK_SC_BEFORE_INLINING:
+  case NEVERC_HOOK_SC_AFTER_INLINING:
+  case NEVERC_HOOK_SC_AFTER_STACKIFY:
+  case NEVERC_HOOK_SC_AFTER_FINAL_IR:
+  case NEVERC_HOOK_LTO_PRE_OPT:
+  case NEVERC_HOOK_LTO_POST_OPT:
+    return true;
+  default:
+    return false;
+  }
 }
 
 bool isMIRHookPoint(NevercHookPoint Hook) {
-  unsigned H = static_cast<unsigned>(Hook);
-  return (H >= 0x0010 && H <= 0x0011) || // normal flow MIR
-         (H >= 0x0200 && H <= 0x0202);    // shellcode MIR
+  switch (Hook) {
+  case NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT:
+  case NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR:
+  case NEVERC_HOOK_SC_BEFORE_PREEMIT:
+  case NEVERC_HOOK_SC_AFTER_PREEMIT:
+  case NEVERC_HOOK_SC_AFTER_FINAL_MIR:
+    return true;
+  default:
+    return false;
+  }
 }
 
 bool isBinaryHookPoint(NevercHookPoint Hook) {
-  unsigned H = static_cast<unsigned>(Hook);
-  return (H >= 0x0300 && H <= 0x0301); // shellcode binary
+  switch (Hook) {
+  case NEVERC_HOOK_SC_POST_EXTRACT:
+  case NEVERC_HOOK_SC_POST_FINALIZE:
+    return true;
+  default:
+    return false;
+  }
 }
 
 bool isLinkerHookPoint(NevercHookPoint Hook) {
-  unsigned H = static_cast<unsigned>(Hook);
-  return (H >= 0x0500 && H <= 0x0502); // linker
+  switch (Hook) {
+  case NEVERC_HOOK_LINK_PRE_LAYOUT:
+  case NEVERC_HOOK_LINK_POST_LAYOUT:
+  case NEVERC_HOOK_LINK_POST_EMIT:
+    return true;
+  default:
+    return false;
+  }
 }
 
 void warnHookMismatch(const char *PassKind, NevercHookPoint Hook,
