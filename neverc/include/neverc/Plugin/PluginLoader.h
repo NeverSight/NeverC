@@ -131,7 +131,7 @@ PluginLoader &getGlobalPluginLoader();
 /// Publish the current shellcode compilation state so that plugin passes can
 /// query HostIsShellcodeMode / HostGetShellcodeEntrySymbol via the vtable.
 /// Called by the shellcode pipeline when it observes Opts.Enabled change.
-/// Plugin → Shellcode is one-way; this proxy avoids a circular dependency.
+/// Plugin -> Shellcode is one-way; this proxy avoids a circular dependency.
 void setShellcodeModeState(bool Enabled, llvm::StringRef EntrySymbol);
 
 /// Parse and store plugin arguments from -fplugin-pass-arg=key=value.

@@ -1,20 +1,26 @@
 /*
- * ExamplePlugin.c — Pure C neverc out-of-tree pass plugin.
+ * ExamplePlugin.c -- Pure C neverc out-of-tree pass plugin.
  *
  * Demonstrates:
  *   - Module-level IR reading and mutation
- *   - ModuleCollectDefinedFunctions — host-side filter+collect in one call
+ *   - ModuleCollectDefinedFunctions -- host-side filter+collect in one call
+ *   - DynArray -- opaque growable array for collect-filter-sort workflows
+ *   - StrMap -- opaque string-keyed hash table for histogram / counting
+ *   - IntMap -- opaque integer-keyed hash table for opcode counting
+ *   - InstOpcodeToName -- numeric opcode -> human-readable name lookup
+ *   - StrBuilder -- opaque incremental string construction
  *   - MIR-level analysis with batch collection
  *   - Binary-level inspection and patching (BinaryResize + NOP sled)
  *   - LTO pipeline hooks (LTO_PRE_OPT / LTO_POST_OPT)
  *   - Linker hooks (LINK_PRE_LAYOUT / POST_LAYOUT / POST_EMIT)
  *   - Host-provided string/memory utilities (StrStartsWith, StrFindChar, etc.)
- *   - Sort (host-routed qsort — no cross-DLL CRT calls)
- *   - Formatted diagnostics via DiagNoteF — no manual StrFormat/Free dance
+ *   - Sort (host-routed qsort -- no cross-DLL CRT calls)
+ *   - Formatted diagnostics via DiagNoteF -- no manual StrFormat/Free dance
  *   - Plugin command-line arguments via PluginGetArg / PluginHasArg
  *   - HookPointGetName for runtime hook-name resolution
  *   - NEVERC_ALLOC_ARRAY / NEVERC_COLLECT_* convenience macros
- *   - Zero LLVM C++ or CRT dependencies — everything goes through the vtable
+ *   - NEVERC_HOOK_UD / NEVERC_HOOK_NAME / NEVERC_STRMAP_NEW / NEVERC_INTMAP_NEW
+ *   - Zero LLVM C++ or CRT dependencies -- everything goes through the vtable
  *
  * Build:
  *   cc -shared -o ExamplePlugin.dll ExamplePlugin.c -I<neverc>/include
@@ -28,17 +34,6 @@
 #include "neverc/Plugin/NevercPluginAPI.h"
 
 #define PLUGIN_TAG "[example] "
-
-/* ======================================================================== */
-/*  Helpers                                                                 */
-/* ======================================================================== */
-
-static const char *getHookName(const NevercHostAPI *API, void *UserData) {
-  unsigned Hook = (unsigned)(uintptr_t)UserData;
-  if (NEVERC_API_FN(API, HookPointGetName))
-    return API->HookPointGetName(Hook);
-  return "<unknown>";
-}
 
 /* ======================================================================== */
 /*  IR Passes                                                               */
@@ -55,7 +50,7 @@ static int functionCounterPass(NevercModuleRef M, const NevercHostAPI *API,
   if (Fns)
     API->Free(Fns);
 
-  API->DiagNoteF(PLUGIN_TAG "Target: %s — %u defined functions",
+  API->DiagNoteF(PLUGIN_TAG "Target: %s -- %u defined functions",
                  Triple, Defined);
   return 0;
 }
@@ -77,7 +72,7 @@ static int functionEntryInstrPass(NevercModuleRef M, const NevercHostAPI *API,
     return 0;
 
   if (NEVERC_API_FN(API, HostIsShellcodeMode) && API->HostIsShellcodeMode()) {
-    API->DiagNoteF(PLUGIN_TAG "Shellcode mode — skipping trace "
+    API->DiagNoteF(PLUGIN_TAG "Shellcode mode -- skipping trace "
                    "instrumentation");
     return 0;
   }
@@ -134,15 +129,16 @@ static int functionEntryInstrPass(NevercModuleRef M, const NevercHostAPI *API,
 }
 
 /*
- * Remove dead internal functions (analyze → modify workflow).
+ * Remove dead internal functions (analyze -> modify workflow).
  *
  * Shows: FunctionGetLinkage, ValueGetNumUses, ModuleRemoveFunction,
- *        safe two-phase collect-then-delete pattern.
+ *        DynArray for safe two-phase collect-then-delete pattern.
  */
 static int deadFunctionRemovalPass(NevercModuleRef M, const NevercHostAPI *API,
                                    void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, ModuleRemoveFunction))
+  if (!NEVERC_API_FN(API, ModuleRemoveFunction) ||
+      !NEVERC_API_FN(API, DynArrayCreate))
     return 0;
 
   unsigned FnCount = 0;
@@ -150,28 +146,29 @@ static int deadFunctionRemovalPass(NevercModuleRef M, const NevercHostAPI *API,
   if (!Fns)
     return 0;
 
-  NevercValueRef *ToRemove = NEVERC_ALLOC_ARRAY(API, NevercValueRef, FnCount);
-  if (!ToRemove) {
+  NevercDynArrayRef Dead = API->DynArrayCreate(sizeof(NevercValueRef));
+  if (!Dead) {
     API->Free(Fns);
     return 0;
   }
 
-  unsigned RemoveCount = 0;
   for (unsigned I = 0; I < FnCount; I++) {
     unsigned Linkage = API->FunctionGetLinkage(Fns[I]);
     if ((Linkage == NEVERC_LINKAGE_INTERNAL ||
          Linkage == NEVERC_LINKAGE_PRIVATE) &&
         API->ValueGetNumUses(Fns[I]) == 0)
-      ToRemove[RemoveCount++] = Fns[I];
+      API->DynArrayPush(Dead, &Fns[I]);
   }
   API->Free(Fns);
 
+  unsigned RemoveCount = API->DynArrayCount(Dead);
+  NevercValueRef *ToRemove = (NevercValueRef *)API->DynArrayData(Dead);
   for (unsigned I = 0; I < RemoveCount; I++) {
     API->DiagNoteF(PLUGIN_TAG "Removing dead: %s",
                    API->ValueGetName(ToRemove[I]));
     API->ModuleRemoveFunction(M, ToRemove[I]);
   }
-  API->Free(ToRemove);
+  API->DynArrayDestroy(Dead);
 
   if (RemoveCount > 0)
     API->DiagNoteF(PLUGIN_TAG "Removed %u dead internal functions",
@@ -180,14 +177,14 @@ static int deadFunctionRemovalPass(NevercModuleRef M, const NevercHostAPI *API,
 }
 
 /*
- * Pipeline stage tracker — reports function/BB counts at a specific stage.
+ * Pipeline stage tracker -- reports function/BB counts at a specific stage.
  *
  * Registered at PIPELINE_START and PIPELINE_LAST so users can see the
  * optimizer's impact.  UserData carries NevercHookPoint as (void*).
  */
 static int pipelineStagePass(NevercModuleRef M, const NevercHostAPI *API,
                              void *UserData) {
-  const char *Stage = getHookName(API, UserData);
+  const char *Stage = NEVERC_HOOK_NAME(API, UserData);
   unsigned Defined = 0;
   NevercValueRef *Fns = NEVERC_COLLECT_DEFINED_FUNCTIONS(API, M, &Defined);
   if (!Fns) {
@@ -206,17 +203,35 @@ static int pipelineStagePass(NevercModuleRef M, const NevercHostAPI *API,
 }
 
 /*
- * String utility API demo.
+ * Intrinsic category histogram using StrMap + StrBuilder + StrMapForEach.
  *
- * Classifies functions and extracts intrinsic categories from LLVM
- * intrinsics: "llvm.memcpy.p0.p0.i64" -> category "memcpy".
+ * Groups all LLVM intrinsics by category (the segment between "llvm."
+ * and the next dot), counts occurrences in a StrMap, then iterates the
+ * map via StrMapForEach to build a summary with StrBuilder.
  *
- * Shows: StrStartsWith, StrFindChar, zero-alloc %.*s pattern.
+ * Shows: StrMap (fast string-keyed counting), StrMapIncrement (single
+ *        hash lookup for counting), StrBuilder (incremental string
+ *        construction), StrMapForEach (zero-alloc callback iteration),
+ *        StrStartsWith, StrFindChar, StrCopyBuf.
  */
-static int stringApiDemoPass(NevercModuleRef M, const NevercHostAPI *API,
-                             void *UserData) {
+
+struct HistVisitCtx {
+  const NevercHostAPI *API;
+  NevercStrBuilderRef SB;
+};
+
+static int histVisitor(const char *Key, uint64_t Value, void *Ctx) {
+  struct HistVisitCtx *H = (struct HistVisitCtx *)Ctx;
+  H->API->StrBuilderAppendF(H->SB, " %s=%" PRIu64, Key, Value);
+  return 0;
+}
+
+static int intrinsicHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
+                                  void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, StrStartsWith))
+  if (!NEVERC_API_FN(API, StrMapCreate) ||
+      !NEVERC_API_FN(API, StrBuilderCreate) ||
+      !NEVERC_API_FN(API, StrStartsWith))
     return 0;
 
   unsigned AllCount = 0;
@@ -224,32 +239,156 @@ static int stringApiDemoPass(NevercModuleRef M, const NevercHostAPI *API,
   if (!AllFns)
     return 0;
 
-  int CanExtract = NEVERC_API_FN(API, StrFindChar) != 0;
-  unsigned DefinedCount = 0;
-  unsigned IntrinsicCount = 0;
+  NevercStrMapRef Hist = NEVERC_STRMAP_NEW(API, 64);
+  if (!Hist) {
+    API->Free(AllFns);
+    return 0;
+  }
 
+  int HasIncrement = NEVERC_API_FN(API, StrMapIncrement) != 0;
+  char CatBuf[128];
   for (unsigned I = 0; I < AllCount; I++) {
     const char *Name = API->ValueGetName(AllFns[I]);
-    if (!API->FunctionIsDeclaration(AllFns[I]))
-      DefinedCount++;
-
     if (!API->StrStartsWith(Name, "llvm."))
       continue;
-    IntrinsicCount++;
-
-    if (!CanExtract)
+    uint64_t DotPos = API->StrFindChar(Name + 5, '.');
+    if (DotPos == (uint64_t)-1 || DotPos >= sizeof(CatBuf))
       continue;
-    uint64_t CategoryLen = API->StrFindChar(Name + 5, '.');
-    if (CategoryLen == (uint64_t)-1)
-      continue;
+    API->StrCopyBuf(CatBuf, DotPos + 1, Name + 5);
 
-    API->DiagNoteF(PLUGIN_TAG "Intrinsic category: %.*s",
-                   (int)CategoryLen, Name + 5);
+    if (HasIncrement) {
+      API->StrMapIncrement(Hist, CatBuf, 1);
+    } else {
+      uint64_t Prev = 0;
+      API->StrMapGet(Hist, CatBuf, &Prev);
+      API->StrMapPut(Hist, CatBuf, Prev + 1);
+    }
   }
   API->Free(AllFns);
 
-  API->DiagNoteF(PLUGIN_TAG "StringAPI: %u defined, %u intrinsics",
-                 DefinedCount, IntrinsicCount);
+  unsigned NumCategories = API->StrMapCount(Hist);
+  if (NumCategories == 0) {
+    API->StrMapDestroy(Hist);
+    API->DiagNoteF(PLUGIN_TAG "No LLVM intrinsics found");
+    return 0;
+  }
+
+  NevercStrBuilderRef SB = API->StrBuilderCreate();
+  if (!SB) {
+    API->StrMapDestroy(Hist);
+    return 0;
+  }
+  API->StrBuilderAppendF(SB, PLUGIN_TAG "Intrinsics (%u categories):",
+                         NumCategories);
+
+  if (NEVERC_API_FN(API, StrMapForEach)) {
+    struct HistVisitCtx Ctx;
+    Ctx.API = API;
+    Ctx.SB = SB;
+    API->StrMapForEach(Hist, histVisitor, &Ctx);
+  }
+
+  API->StrMapDestroy(Hist);
+  char *Summary = API->StrBuilderFinish(SB);
+  API->StrBuilderDestroy(SB);
+  if (Summary) {
+    API->DiagNote(Summary);
+    API->Free(Summary);
+  }
+  return 0;
+}
+
+/*
+ * Opcode histogram using IntMap -- counts IR instruction opcodes.
+ *
+ * Prefers the batch path (ModuleCollectAllInstructions) for cache-friendly
+ * linear scan; falls back to per-element iterator when the batch API is
+ * unavailable.  IntMapIncrement does single-probe amortized O(1) counting.
+ * IntMapCreateSized(128) pre-allocates for the ~70 LLVM IR opcodes.
+ *
+ * Shows: IntMap (integer-keyed hash table), IntMapIncrement (single-
+ *        probe counting), IntMapForEach (zero-alloc callback iteration),
+ *        InstOpcodeToName (human-readable opcode), StrBuilder,
+ *        ModuleCollectAllInstructions (batch collection).
+ */
+
+struct OpcodeVisitCtx {
+  const NevercHostAPI *API;
+  NevercStrBuilderRef SB;
+  int HasOpcodeToName;
+};
+
+static int opcodeVisitor(uint64_t Key, uint64_t Value, void *Ctx) {
+  struct OpcodeVisitCtx *O = (struct OpcodeVisitCtx *)Ctx;
+  if (O->HasOpcodeToName) {
+    const char *Name = O->API->InstOpcodeToName((unsigned)Key);
+    O->API->StrBuilderAppendF(O->SB, " %s=%" PRIu64, Name, Value);
+  } else {
+    O->API->StrBuilderAppendF(O->SB, " op%u=%" PRIu64, (unsigned)Key, Value);
+  }
+  return 0;
+}
+
+static int opcodeHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
+                               void *UserData) {
+  (void)UserData;
+  if (!NEVERC_API_FN(API, IntMapCreate) ||
+      !NEVERC_API_FN(API, StrBuilderCreate))
+    return 0;
+
+  NevercIntMapRef Hist = NEVERC_INTMAP_NEW(API, 128);
+  if (!Hist)
+    return 0;
+
+  unsigned InstCount = 0;
+  NevercValueRef *Insts = NEVERC_COLLECT_INSTRUCTIONS(API, M, &InstCount);
+  if (Insts) {
+    for (unsigned I = 0; I < InstCount; I++)
+      API->IntMapIncrement(Hist, API->InstGetOpcode(Insts[I]), 1);
+    API->Free(Insts);
+  } else {
+    NevercValueRef F = API->ModuleGetFirstFunction(M);
+    for (; F; F = API->ModuleGetNextFunction(F)) {
+      if (API->FunctionIsDeclaration(F))
+        continue;
+      NevercBasicBlockRef BB = API->FunctionGetFirstBB(F);
+      for (; BB; BB = API->FunctionGetNextBB(BB)) {
+        NevercValueRef I = API->BBGetFirstInst(BB);
+        for (; I; I = API->BBGetNextInst(I)) {
+          API->IntMapIncrement(Hist, API->InstGetOpcode(I), 1);
+          ++InstCount;
+        }
+      }
+    }
+  }
+
+  unsigned UniqueOps = API->IntMapCount(Hist);
+  if (UniqueOps == 0) {
+    API->IntMapDestroy(Hist);
+    return 0;
+  }
+
+  NevercStrBuilderRef SB = API->StrBuilderCreate();
+  if (!SB) {
+    API->IntMapDestroy(Hist);
+    return 0;
+  }
+  API->StrBuilderAppendF(SB, PLUGIN_TAG "Opcodes (%u unique, %u total):",
+                         UniqueOps, InstCount);
+
+  struct OpcodeVisitCtx Ctx;
+  Ctx.API = API;
+  Ctx.SB = SB;
+  Ctx.HasOpcodeToName = NEVERC_API_FN(API, InstOpcodeToName) != 0;
+  API->IntMapForEach(Hist, opcodeVisitor, &Ctx);
+
+  API->IntMapDestroy(Hist);
+  char *Summary = API->StrBuilderFinish(SB);
+  API->StrBuilderDestroy(SB);
+  if (Summary) {
+    API->DiagNote(Summary);
+    API->Free(Summary);
+  }
   return 0;
 }
 
@@ -257,7 +396,7 @@ static int stringApiDemoPass(NevercModuleRef M, const NevercHostAPI *API,
  * Sort API demo: collect defined functions, sort by BB count descending,
  * report top-N "hottest" functions (most basic blocks).
  *
- * Shows: ModuleCollectDefinedFunctions, Sort, NEVERC_ALLOC_ARRAY,
+ * Shows: DynArray (push entries, sort in-place, read via Get),
  *        branchless comparator for qsort.
  */
 
@@ -275,7 +414,7 @@ static int cmpFuncByBBCountDesc(const void *A, const void *B) {
 static int sortedFuncAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
                                   void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, Sort))
+  if (!NEVERC_API_FN(API, DynArrayCreate))
     return 0;
 
   unsigned FnCount = 0;
@@ -283,28 +422,34 @@ static int sortedFuncAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
   if (!Fns || FnCount == 0)
     return 0;
 
-  struct FuncSortEntry *Entries =
-      NEVERC_ALLOC_ARRAY(API, struct FuncSortEntry, FnCount);
+  NevercDynArrayRef Entries =
+      API->DynArrayCreate(sizeof(struct FuncSortEntry));
   if (!Entries) {
     API->Free(Fns);
     return 0;
   }
+  API->DynArrayReserve(Entries, FnCount);
 
   for (unsigned I = 0; I < FnCount; I++) {
-    Entries[I].Fn = Fns[I];
-    Entries[I].BBCount = API->FunctionGetBBCount(Fns[I]);
+    struct FuncSortEntry E;
+    E.Fn = Fns[I];
+    E.BBCount = API->FunctionGetBBCount(Fns[I]);
+    API->DynArrayPush(Entries, &E);
   }
   API->Free(Fns);
 
-  API->Sort(Entries, FnCount, sizeof(struct FuncSortEntry),
-            cmpFuncByBBCountDesc);
+  API->DynArraySort(Entries, cmpFuncByBBCountDesc);
 
-  unsigned Top = FnCount < 5 ? FnCount : 5;
-  for (unsigned I = 0; I < Top; I++)
+  unsigned Count = API->DynArrayCount(Entries);
+  unsigned Top = Count < 5 ? Count : 5;
+  for (unsigned I = 0; I < Top; I++) {
+    const struct FuncSortEntry *E =
+        (const struct FuncSortEntry *)API->DynArrayGet(Entries, I);
     API->DiagNoteF(PLUGIN_TAG "Top func: #%u %s (%u BBs)", I + 1,
-                   API->ValueGetName(Entries[I].Fn), Entries[I].BBCount);
+                   API->ValueGetName(E->Fn), E->BBCount);
+  }
 
-  API->Free(Entries);
+  API->DynArrayDestroy(Entries);
   return 0;
 }
 
@@ -344,8 +489,10 @@ static int pluginArgDemoPass(NevercModuleRef M, const NevercHostAPI *API,
  * MIR analysis: count instructions and classify operands.
  *
  * Uses batch collection (MFuncCollectBBs / MBBCollectInstructions) when
- * available, falling back to per-element iteration.  The batch path makes
- * 2 vtable calls per BB instead of O(instrs) GetNextInst calls.
+ * available, falling back to per-element iteration.  The batch path uses
+ * a two-pass strategy: first scan finds the max per-BB instruction count
+ * for a single allocation, then the second pass reuses that buffer for
+ * every BB -- eliminates N alloc/free cycles.
  */
 static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
                            void *UserData) {
@@ -368,18 +515,22 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
       return 0;
     API->MFuncCollectBBs(MF, MBBs);
 
+    unsigned MaxIC = 0;
     for (unsigned B = 0; B < BBCount; B++) {
       unsigned IC = API->MBBGetInstCount(MBBs[B]);
       InstrCount += IC;
+      if (IC > MaxIC)
+        MaxIC = IC;
+    }
+
+    NevercMachineInstrRef *MIs =
+        MaxIC > 0 ? NEVERC_ALLOC_ARRAY(API, NevercMachineInstrRef, MaxIC)
+                  : NULL;
+    for (unsigned B = 0; B < BBCount && MIs; B++) {
+      unsigned IC = API->MBBGetInstCount(MBBs[B]);
       if (IC == 0)
         continue;
-
-      NevercMachineInstrRef *MIs =
-          NEVERC_ALLOC_ARRAY(API, NevercMachineInstrRef, IC);
-      if (!MIs)
-        continue;
       API->MBBCollectInstructions(MBBs[B], MIs);
-
       for (unsigned J = 0; J < IC; J++) {
         unsigned NumOps = API->MInstGetNumOperands(MIs[J]);
         for (unsigned K = 0; K < NumOps; K++) {
@@ -389,8 +540,8 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
             ImmOps++;
         }
       }
-      API->Free(MIs);
     }
+    API->Free(MIs);
     API->Free(MBBs);
   } else {
     NevercMachineBBRef MBB = API->MFuncGetFirstBB(MF);
@@ -430,7 +581,7 @@ static int binaryInfoPass(uint8_t **Data, uint64_t *Len, uint64_t *Capacity,
   return 0;
 }
 
-/* Append a 16-byte NOP sled — binary mutation demo. */
+/* Append a 16-byte NOP sled -- binary mutation demo. */
 static int binaryNopSledPass(uint8_t **Data, uint64_t *Len, uint64_t *Capacity,
                              const NevercHostAPI *API, void *UserData) {
   (void)UserData;
@@ -452,10 +603,10 @@ static int binaryNopSledPass(uint8_t **Data, uint64_t *Len, uint64_t *Capacity,
 /*  LTO Pass                                                                */
 /* ======================================================================== */
 
-/* LTO pipeline tracker — reports defined function count. */
+/* LTO pipeline tracker -- reports defined function count. */
 static int ltoInfoPass(NevercModuleRef M, const NevercHostAPI *API,
                        void *UserData) {
-  const char *Stage = getHookName(API, UserData);
+  const char *Stage = NEVERC_HOOK_NAME(API, UserData);
   unsigned Defined = 0;
   NevercValueRef *Fns = NEVERC_COLLECT_DEFINED_FUNCTIONS(API, M, &Defined);
   if (Fns)
@@ -468,9 +619,9 @@ static int ltoInfoPass(NevercModuleRef M, const NevercHostAPI *API,
 /*  Linker Pass                                                             */
 /* ======================================================================== */
 
-/* Symbol and section census — linker hook demo. */
+/* Symbol and section census -- linker hook demo. */
 static int linkerCensusPass(const NevercHostAPI *API, void *UserData) {
-  const char *Stage = getHookName(API, UserData);
+  const char *Stage = NEVERC_HOOK_NAME(API, UserData);
   unsigned Defined = 0, Undefined = 0;
 
   NevercLinkerSymbolRef Sym = API->LinkGetFirstSymbol();
@@ -498,20 +649,20 @@ static int linkerCensusPass(const NevercHostAPI *API, void *UserData) {
 }
 
 /* ======================================================================== */
-/*  Stage Trackers — verify all hook points are wired correctly              */
+/*  Stage Trackers -- verify all hook points are wired correctly             */
 /* ======================================================================== */
 
 static int stageTrackerModulePass(NevercModuleRef M, const NevercHostAPI *API,
                                   void *UserData) {
   (void)M;
-  API->DiagNoteF(PLUGIN_TAG "Stage: %s", getHookName(API, UserData));
+  API->DiagNoteF(PLUGIN_TAG "Stage: %s", NEVERC_HOOK_NAME(API, UserData));
   return 0;
 }
 
 static int stageTrackerMachinePass(NevercMachineFuncRef MF,
                                    const NevercHostAPI *API, void *UserData) {
   const char *FnName = API->MFuncGetName(MF);
-  API->DiagNoteF(PLUGIN_TAG "Stage: %s (MF=%s)", getHookName(API, UserData),
+  API->DiagNoteF(PLUGIN_TAG "Stage: %s (MF=%s)", NEVERC_HOOK_NAME(API, UserData),
                  FnName ? FnName : "?");
   return 0;
 }
@@ -522,7 +673,7 @@ static int stageTrackerBinaryPass(uint8_t **Data, uint64_t *Len,
   (void)Data;
   (void)Capacity;
   API->DiagNoteF(PLUGIN_TAG "Stage: %s (binary=%" PRIu64 " bytes)",
-                 getHookName(API, UserData), *Len);
+                 NEVERC_HOOK_NAME(API, UserData), *Len);
   return 0;
 }
 
@@ -531,17 +682,20 @@ static int stageTrackerBinaryPass(uint8_t **Data, uint64_t *Len,
 /* ======================================================================== */
 
 static void registerPasses(const NevercHostAPI *API, void *Registrar) {
-#define HOOK_UD(h) ((void *)(uintptr_t)(h))
 
-  /* Normal flow — IR hooks */
+  /* Normal flow -- IR hooks */
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT, pluginArgDemoPass,
                           NULL, "example-args");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT, functionCounterPass,
                           NULL, "example-counter");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
                           functionEntryInstrPass, NULL, "example-instrument");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT, stringApiDemoPass,
-                          NULL, "example-string-api");
+  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+                          intrinsicHistogramPass, NULL,
+                          "example-intrinsic-histogram");
+  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+                          opcodeHistogramPass, NULL,
+                          "example-opcode-histogram");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
                           sortedFuncAnalysisPass, NULL,
                           "example-sorted-analysis");
@@ -550,96 +704,94 @@ static void registerPasses(const NevercHostAPI *API, void *Registrar) {
 
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PIPELINE_START,
                           pipelineStagePass,
-                          HOOK_UD(NEVERC_HOOK_PIPELINE_START),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_PIPELINE_START),
                           "example-pipeline-start");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_PIPELINE_LAST,
                           pipelineStagePass,
-                          HOOK_UD(NEVERC_HOOK_PIPELINE_LAST),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_PIPELINE_LAST),
                           "example-pipeline-last");
 
-  /* Normal flow — MIR hooks */
+  /* Normal flow -- MIR hooks */
   API->RegisterMachinePass(Registrar, NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT,
                            stageTrackerMachinePass,
-                           HOOK_UD(NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT),
+                           NEVERC_HOOK_UD(NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT),
                            "example-stage-codegen-preemit");
   API->RegisterMachinePass(Registrar, NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR,
                            stageTrackerMachinePass,
-                           HOOK_UD(NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR),
+                           NEVERC_HOOK_UD(NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR),
                            "example-stage-codegen-final-mir");
 
-  /* Shellcode flow — IR hooks */
+  /* Shellcode flow -- IR hooks */
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_BEFORE_PREP,
                           stageTrackerModulePass,
-                          HOOK_UD(NEVERC_HOOK_SC_BEFORE_PREP),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_BEFORE_PREP),
                           "example-stage-sc-before-prep");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_PREP,
                           stageTrackerModulePass,
-                          HOOK_UD(NEVERC_HOOK_SC_AFTER_PREP),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_PREP),
                           "example-stage-sc-after-prep");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_BEFORE_INLINING,
                           stageTrackerModulePass,
-                          HOOK_UD(NEVERC_HOOK_SC_BEFORE_INLINING),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_BEFORE_INLINING),
                           "example-stage-sc-before-inlining");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_INLINING,
                           stageTrackerModulePass,
-                          HOOK_UD(NEVERC_HOOK_SC_AFTER_INLINING),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_INLINING),
                           "example-stage-sc-after-inlining");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_STACKIFY,
                           stageTrackerModulePass,
-                          HOOK_UD(NEVERC_HOOK_SC_AFTER_STACKIFY),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_STACKIFY),
                           "example-stage-sc-after-stackify");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_FINAL_IR,
                           stageTrackerModulePass,
-                          HOOK_UD(NEVERC_HOOK_SC_AFTER_FINAL_IR),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_FINAL_IR),
                           "example-stage-sc-after-final-ir");
 
-  /* Shellcode flow — MIR hooks */
+  /* Shellcode flow -- MIR hooks */
   API->RegisterMachinePass(Registrar, NEVERC_HOOK_SC_BEFORE_PREEMIT,
                            mirAnalysisPass, NULL, "example-mir-analysis");
   API->RegisterMachinePass(Registrar, NEVERC_HOOK_SC_AFTER_PREEMIT,
                            stageTrackerMachinePass,
-                           HOOK_UD(NEVERC_HOOK_SC_AFTER_PREEMIT),
+                           NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_PREEMIT),
                            "example-stage-sc-after-preemit");
   API->RegisterMachinePass(Registrar, NEVERC_HOOK_SC_AFTER_FINAL_MIR,
                            stageTrackerMachinePass,
-                           HOOK_UD(NEVERC_HOOK_SC_AFTER_FINAL_MIR),
+                           NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_FINAL_MIR),
                            "example-stage-sc-after-final-mir");
 
-  /* Shellcode flow — binary hooks */
+  /* Shellcode flow -- binary hooks */
   API->RegisterBinaryPass(Registrar, NEVERC_HOOK_SC_POST_EXTRACT,
                           binaryInfoPass, NULL, "example-binary-info");
   API->RegisterBinaryPass(Registrar, NEVERC_HOOK_SC_POST_EXTRACT,
                           binaryNopSledPass, NULL, "example-nop-sled");
   API->RegisterBinaryPass(Registrar, NEVERC_HOOK_SC_POST_FINALIZE,
                           stageTrackerBinaryPass,
-                          HOOK_UD(NEVERC_HOOK_SC_POST_FINALIZE),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_POST_FINALIZE),
                           "example-stage-sc-post-finalize");
 
   /* LTO flow */
   API->RegisterModulePass(Registrar, NEVERC_HOOK_LTO_PRE_OPT, ltoInfoPass,
-                          HOOK_UD(NEVERC_HOOK_LTO_PRE_OPT),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_LTO_PRE_OPT),
                           "example-lto-pre-opt");
   API->RegisterModulePass(Registrar, NEVERC_HOOK_LTO_POST_OPT, ltoInfoPass,
-                          HOOK_UD(NEVERC_HOOK_LTO_POST_OPT),
+                          NEVERC_HOOK_UD(NEVERC_HOOK_LTO_POST_OPT),
                           "example-lto-post-opt");
 
   /* Linker flow */
   if (NEVERC_API_FN(API, RegisterLinkerPass)) {
     API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_PRE_LAYOUT,
                             linkerCensusPass,
-                            HOOK_UD(NEVERC_HOOK_LINK_PRE_LAYOUT),
+                            NEVERC_HOOK_UD(NEVERC_HOOK_LINK_PRE_LAYOUT),
                             "example-link-pre-layout");
     API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_POST_LAYOUT,
                             linkerCensusPass,
-                            HOOK_UD(NEVERC_HOOK_LINK_POST_LAYOUT),
+                            NEVERC_HOOK_UD(NEVERC_HOOK_LINK_POST_LAYOUT),
                             "example-link-post-layout");
     API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_POST_EMIT,
                             linkerCensusPass,
-                            HOOK_UD(NEVERC_HOOK_LINK_POST_EMIT),
+                            NEVERC_HOOK_UD(NEVERC_HOOK_LINK_POST_EMIT),
                             "example-link-post-emit");
   }
-
-#undef HOOK_UD
 }
 
 /* ======================================================================== */

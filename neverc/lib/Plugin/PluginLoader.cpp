@@ -16,7 +16,7 @@ namespace neverc {
 namespace plugin {
 
 // ===----------------------------------------------------------------------===
-//  Registration callbacks — called by plugins during RegisterPasses
+//  Registration callbacks -- called by plugins during RegisterPasses
 // ===----------------------------------------------------------------------===
 
 namespace {

@@ -1,5 +1,6 @@
 #include "HostAPIBridge.h"
 #include "neverc/Plugin/PluginLoader.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -110,12 +111,12 @@ static inline NevercNamedMDRef wrapNMD(NamedMDNode *NMD) {
 }
 
 // ===----------------------------------------------------------------------===
-//  Memory — route through host process allocator
+//  Memory -- route through host process allocator
 //  When NEVERC_ENABLE_MIMALLOC=ON the neverc binary links mimalloc with
 //  MI_OVERRIDE=ON + whole-archive, so ::malloc/::realloc/::free are
 //  transparently replaced by mi_malloc/mi_realloc/mi_free at the process
 //  level.  Plugin allocations through these pointers thus go through the
-//  host's mimalloc heap — no CRT boundary crossing on Windows.
+//  host's mimalloc heap -- no CRT boundary crossing on Windows.
 // ===----------------------------------------------------------------------===
 
 static void *bridgeAlloc(uint64_t Size) {
@@ -137,7 +138,7 @@ static void *bridgeRealloc(void *Ptr, uint64_t Size) {
 static void bridgeFree(void *Ptr) { ::free(Ptr); }
 
 // ===----------------------------------------------------------------------===
-//  Diagnostics — simple stderr output for now
+//  Diagnostics -- simple stderr output for now
 // ===----------------------------------------------------------------------===
 
 static void bridgeDiagNote(const char *Msg) {
@@ -406,6 +407,25 @@ static unsigned bridgeInstGetOpcode(NevercValueRef I) {
     return 0;
   auto *Inst = dyn_cast<Instruction>(unwrapV(I));
   return Inst ? Inst->getOpcode() : 0;
+}
+
+static const char *bridgeInstGetOpcodeName(NevercValueRef I) {
+  if (LLVM_UNLIKELY(!I))
+    return "";
+  auto *Inst = dyn_cast<Instruction>(unwrapV(I));
+  if (LLVM_UNLIKELY(!Inst))
+    return "";
+  const char *Name = Inst->getOpcodeName();
+  if (LLVM_UNLIKELY(!Name || Name[0] == '<'))
+    return "";
+  return Name;
+}
+
+static const char *bridgeInstOpcodeToName(unsigned Opcode) {
+  const char *Name = Instruction::getOpcodeName(Opcode);
+  if (LLVM_UNLIKELY(!Name || Name[0] == '<'))
+    return "";
+  return Name;
 }
 
 static unsigned bridgeInstGetNumOperands(NevercValueRef I) {
@@ -1684,7 +1704,7 @@ static NevercValueRef bridgeBuildUIToFP(NevercBuilderRef B, NevercValueRef V,
 }
 
 // ===----------------------------------------------------------------------===
-//  Register stubs — safe no-ops so the vtable is never null for these slots.
+//  Register stubs -- safe no-ops so the vtable is never null for these slots.
 //  PluginLoader replaces them with real registrars during RegisterPasses and
 //  restores NoOps afterward.
 // ===----------------------------------------------------------------------===
@@ -3010,7 +3030,7 @@ static NevercValueRef bridgeModuleGetPrevGlobal(NevercValueRef G) {
 }
 
 // ===----------------------------------------------------------------------===
-//  Text representation — returns host-allocated string, caller must Free()
+//  Text representation -- returns host-allocated string, caller must Free()
 // ===----------------------------------------------------------------------===
 
 static char *bridgeValuePrintToString(NevercValueRef V) {
@@ -3553,7 +3573,7 @@ static void bridgeGlobalSetUnnamedAddr(NevercValueRef GV,
 //  String utilities
 // ===----------------------------------------------------------------------===
 
-// Two-digit lookup: "00010203...9899" — halves the number of divisions in
+// Two-digit lookup: "00010203...9899" -- halves the number of divisions in
 // integer-to-string conversion compared to single-digit extraction.
 static const char kDigitPairs[201] =
     "00010203040506070809"
@@ -4065,7 +4085,7 @@ bridgeModuleCollectAllInstructions(NevercModuleRef M, unsigned *OutCount) {
 
   // Two-pass: count via BB.size() (O(1) per BB), then exact alloc + fill.
   // BB.size() is O(1) in modern LLVM, so the count pass only touches
-  // Function and BasicBlock nodes — never instruction nodes.  This beats
+  // Function and BasicBlock nodes -- never instruction nodes.  This beats
   // geometric growth because it eliminates all realloc copies.
   size_t Total = 0;
   for (auto &F : *Mod) {
@@ -4096,7 +4116,7 @@ bridgeModuleCollectAllInstructions(NevercModuleRef M, unsigned *OutCount) {
 }
 
 // ===----------------------------------------------------------------------===
-//  StrJoin — concatenate an array of strings with a separator
+//  StrJoin -- concatenate an array of strings with a separator
 // ===----------------------------------------------------------------------===
 
 static char *bridgeStrJoin(const char *const *Strings, unsigned Count,
@@ -4166,7 +4186,7 @@ static char *bridgeStrJoin(const char *const *Strings, unsigned Count,
 }
 
 // ===----------------------------------------------------------------------===
-//  StrSplit — split a string by delimiter into an array of strings
+//  StrSplit -- split a string by delimiter into an array of strings
 // ===----------------------------------------------------------------------===
 
 static char **bridgeStrSplit(const char *S, const char *Delim,
@@ -4244,7 +4264,7 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
     return nullptr;
   }
 
-  // Build parts using recorded offsets — no second strstr scan.
+  // Build parts using recorded offsets -- no second strstr scan.
   size_t Prev = 0;
   unsigned Idx = 0;
   for (size_t I = 0; I < HitCount; ++I) {
@@ -4281,7 +4301,7 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
 }
 
 // ===----------------------------------------------------------------------===
-//  StrHash — xxh3 64-bit hash (SIMD-accelerated when available)
+//  StrHash -- xxh3 64-bit hash (SIMD-accelerated when available)
 // ===----------------------------------------------------------------------===
 
 static uint64_t bridgeStrHash(const char *S) {
@@ -5117,7 +5137,7 @@ bridgeModuleCollectDefinedFunctions(NevercModuleRef M, unsigned *OutCount) {
 }
 
 // ===----------------------------------------------------------------------===
-//  Sort / BSearch — routed through host to avoid cross-CRT calls
+//  Sort / BSearch -- routed through host to avoid cross-CRT calls
 // ===----------------------------------------------------------------------===
 
 static void bridgeSort(void *Base, uint64_t NumElements, uint64_t ElemSize,
@@ -5146,7 +5166,7 @@ static const void *bridgeBSearch(const void *Key, const void *Base,
 }
 
 // ===----------------------------------------------------------------------===
-//  StrFormatBuf — snprintf to caller-owned buffer (zero allocation)
+//  StrFormatBuf -- snprintf to caller-owned buffer (zero allocation)
 // ===----------------------------------------------------------------------===
 
 static int bridgeStrFormatBufV(char *Buf, uint64_t BufSize, const char *Fmt,
@@ -5193,7 +5213,7 @@ static int bridgeStrNCompare(const char *A, const char *B, uint64_t MaxLen) {
 }
 
 // ===----------------------------------------------------------------------===
-//  StrCopyBuf — strlcpy semantics (always null-terminates, zero allocation)
+//  StrCopyBuf -- strlcpy semantics (always null-terminates, zero allocation)
 // ===----------------------------------------------------------------------===
 
 static uint64_t bridgeStrCopyBuf(char *Buf, uint64_t BufSize,
@@ -5207,6 +5227,563 @@ static uint64_t bridgeStrCopyBuf(char *Buf, uint64_t BufSize,
     Buf[CopyLen] = '\0';
   }
   return static_cast<uint64_t>(SrcLen);
+}
+
+// ===----------------------------------------------------------------------===
+//  DynArray -- opaque growable array
+//  Geometric 2x growth, contiguous buffer, cache-friendly iteration.
+//  Two allocations: a small header (ElemSize/Count/Capacity/DataPtr) and the
+//  data buffer itself.  Both go through the host allocator.
+// ===----------------------------------------------------------------------===
+
+namespace {
+struct DynArrayImpl {
+  uint64_t ElemSize;
+  unsigned Count;
+  unsigned Capacity;
+  char *Data;
+};
+} // namespace
+
+static inline DynArrayImpl *unwrapDA(NevercDynArrayRef A) {
+  return reinterpret_cast<DynArrayImpl *>(A);
+}
+static inline NevercDynArrayRef wrapDA(DynArrayImpl *A) {
+  return reinterpret_cast<NevercDynArrayRef>(A);
+}
+
+static NevercDynArrayRef bridgeDynArrayCreate(uint64_t ElemSize) {
+  if (LLVM_UNLIKELY(ElemSize == 0 || ElemSize > SIZE_MAX / 16))
+    return nullptr;
+  auto *A = static_cast<DynArrayImpl *>(bridgeAlloc(sizeof(DynArrayImpl)));
+  if (LLVM_UNLIKELY(!A))
+    return nullptr;
+  A->ElemSize = ElemSize;
+  A->Count = 0;
+  A->Capacity = 0;
+  A->Data = nullptr;
+  return wrapDA(A);
+}
+
+static void bridgeDynArrayDestroy(NevercDynArrayRef Arr) {
+  if (LLVM_UNLIKELY(!Arr))
+    return;
+  auto *A = unwrapDA(Arr);
+  bridgeFree(A->Data);
+  bridgeFree(A);
+}
+
+static int bridgeDynArrayPush(NevercDynArrayRef Arr, const void *Elem) {
+  if (LLVM_UNLIKELY(!Arr || !Elem))
+    return 0;
+  auto *A = unwrapDA(Arr);
+  if (LLVM_UNLIKELY(A->Count == A->Capacity)) {
+    unsigned NewCap = A->Capacity == 0 ? 16 : A->Capacity * 2;
+    if (LLVM_UNLIKELY(NewCap < A->Capacity))
+      return 0;
+    uint64_t Bytes = static_cast<uint64_t>(NewCap) * A->ElemSize;
+    if (LLVM_UNLIKELY(Bytes / A->ElemSize != NewCap))
+      return 0;
+    char *NewData = static_cast<char *>(bridgeRealloc(A->Data, Bytes));
+    if (LLVM_UNLIKELY(!NewData))
+      return 0;
+    A->Data = NewData;
+    A->Capacity = NewCap;
+  }
+  std::memcpy(A->Data + static_cast<uint64_t>(A->Count) * A->ElemSize, Elem,
+              static_cast<size_t>(A->ElemSize));
+  ++A->Count;
+  return 1;
+}
+
+static void *bridgeDynArrayGet(NevercDynArrayRef Arr, unsigned Idx) {
+  if (LLVM_UNLIKELY(!Arr))
+    return nullptr;
+  auto *A = unwrapDA(Arr);
+  if (LLVM_UNLIKELY(Idx >= A->Count))
+    return nullptr;
+  return A->Data + static_cast<uint64_t>(Idx) * A->ElemSize;
+}
+
+static unsigned bridgeDynArrayCount(NevercDynArrayRef Arr) {
+  return LLVM_LIKELY(Arr) ? unwrapDA(Arr)->Count : 0;
+}
+
+static void *bridgeDynArrayData(NevercDynArrayRef Arr) {
+  return LLVM_LIKELY(Arr) ? unwrapDA(Arr)->Data : nullptr;
+}
+
+static void bridgeDynArrayClear(NevercDynArrayRef Arr) {
+  if (LLVM_LIKELY(Arr))
+    unwrapDA(Arr)->Count = 0;
+}
+
+static void bridgeDynArraySort(NevercDynArrayRef Arr,
+                               int (*Cmp)(const void *, const void *)) {
+  if (LLVM_UNLIKELY(!Arr || !Cmp))
+    return;
+  auto *A = unwrapDA(Arr);
+  if (A->Count > 1)
+    std::qsort(A->Data, A->Count, static_cast<size_t>(A->ElemSize), Cmp);
+}
+
+static void *bridgeDynArrayPop(NevercDynArrayRef Arr) {
+  if (LLVM_UNLIKELY(!Arr))
+    return nullptr;
+  auto *A = unwrapDA(Arr);
+  if (LLVM_UNLIKELY(A->Count == 0))
+    return nullptr;
+  --A->Count;
+  return A->Data + static_cast<uint64_t>(A->Count) * A->ElemSize;
+}
+
+static int bridgeDynArrayReserve(NevercDynArrayRef Arr, unsigned MinCapacity) {
+  if (LLVM_UNLIKELY(!Arr))
+    return 0;
+  auto *A = unwrapDA(Arr);
+  if (A->Capacity >= MinCapacity)
+    return 1;
+  uint64_t Bytes = static_cast<uint64_t>(MinCapacity) * A->ElemSize;
+  if (LLVM_UNLIKELY(Bytes / A->ElemSize != MinCapacity))
+    return 0;
+  char *NewData = static_cast<char *>(bridgeRealloc(A->Data, Bytes));
+  if (LLVM_UNLIKELY(!NewData))
+    return 0;
+  A->Data = NewData;
+  A->Capacity = MinCapacity;
+  return 1;
+}
+
+static void *bridgeDynArrayDetach(NevercDynArrayRef Arr, unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!Arr))
+    return nullptr;
+  auto *A = unwrapDA(Arr);
+  if (LLVM_UNLIKELY(A->Count == 0)) {
+    bridgeFree(A->Data);
+    bridgeFree(A);
+    return nullptr;
+  }
+  uint64_t ExactBytes = static_cast<uint64_t>(A->Count) * A->ElemSize;
+  if (A->Count < A->Capacity) {
+    char *Shrunk = static_cast<char *>(bridgeRealloc(A->Data, ExactBytes));
+    if (LLVM_LIKELY(Shrunk))
+      A->Data = Shrunk;
+  }
+  void *Result = A->Data;
+  if (OutCount)
+    *OutCount = A->Count;
+  bridgeFree(A);
+  return Result;
+}
+
+// ===----------------------------------------------------------------------===
+//  StrMap -- opaque string-keyed hash table
+//  Backed by LLVM's StringMap: open addressing with quadratic probing,
+//  cache-friendly allocation-dense buckets, keys copied inline.
+// ===----------------------------------------------------------------------===
+
+static inline StringMap<uint64_t> *unwrapSM(NevercStrMapRef M) {
+  return reinterpret_cast<StringMap<uint64_t> *>(M);
+}
+static inline NevercStrMapRef wrapSM(StringMap<uint64_t> *M) {
+  return reinterpret_cast<NevercStrMapRef>(M);
+}
+
+static NevercStrMapRef bridgeStrMapCreate() {
+  auto *M = new (std::nothrow) StringMap<uint64_t>();
+  return wrapSM(M);
+}
+
+static void bridgeStrMapDestroy(NevercStrMapRef Map) {
+  if (LLVM_UNLIKELY(!Map))
+    return;
+  delete unwrapSM(Map);
+}
+
+static int bridgeStrMapPut(NevercStrMapRef Map, const char *Key,
+                           uint64_t Value) {
+  if (LLVM_UNLIKELY(!Map || !Key))
+    return 0;
+  (*unwrapSM(Map))[Key] = Value;
+  return 1;
+}
+
+static int bridgeStrMapGet(NevercStrMapRef Map, const char *Key,
+                           uint64_t *OutValue) {
+  if (LLVM_UNLIKELY(!Map || !Key))
+    return 0;
+  auto *M = unwrapSM(Map);
+  auto It = M->find(Key);
+  if (It == M->end())
+    return 0;
+  if (OutValue)
+    *OutValue = It->second;
+  return 1;
+}
+
+static int bridgeStrMapHas(NevercStrMapRef Map, const char *Key) {
+  if (LLVM_UNLIKELY(!Map || !Key))
+    return 0;
+  return unwrapSM(Map)->count(Key) != 0;
+}
+
+static void bridgeStrMapRemove(NevercStrMapRef Map, const char *Key) {
+  if (LLVM_UNLIKELY(!Map || !Key))
+    return;
+  unwrapSM(Map)->erase(Key);
+}
+
+static unsigned bridgeStrMapCount(NevercStrMapRef Map) {
+  if (LLVM_UNLIKELY(!Map))
+    return 0;
+  return static_cast<unsigned>(unwrapSM(Map)->size());
+}
+
+static void bridgeStrMapForEach(NevercStrMapRef Map,
+                                int (*Fn)(const char *, uint64_t, void *),
+                                void *Ctx) {
+  if (LLVM_UNLIKELY(!Map || !Fn))
+    return;
+  for (const auto &E : *unwrapSM(Map))
+    if (Fn(E.getKeyData(), E.second, Ctx))
+      break;
+}
+
+static char **bridgeStrMapCollectKeys(NevercStrMapRef Map,
+                                      unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!Map || !OutCount))
+    return nullptr;
+  auto *M = unwrapSM(Map);
+  unsigned Count = static_cast<unsigned>(M->size());
+  if (LLVM_UNLIKELY(Count == 0))
+    return nullptr;
+  auto **Keys = static_cast<char **>(
+      bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(char *)));
+  if (LLVM_UNLIKELY(!Keys))
+    return nullptr;
+  unsigned Idx = 0;
+  for (const auto &E : *M) {
+    size_t Len = E.getKeyLength();
+    char *Key = static_cast<char *>(bridgeAlloc(Len + 1));
+    if (LLVM_UNLIKELY(!Key)) {
+      for (unsigned J = 0; J < Idx; ++J)
+        bridgeFree(Keys[J]);
+      bridgeFree(Keys);
+      return nullptr;
+    }
+    std::memcpy(Key, E.getKeyData(), Len);
+    Key[Len] = '\0';
+    Keys[Idx++] = Key;
+  }
+  *OutCount = Count;
+  return Keys;
+}
+
+static uint64_t bridgeStrMapIncrement(NevercStrMapRef Map, const char *Key,
+                                      uint64_t Delta) {
+  if (LLVM_UNLIKELY(!Map || !Key))
+    return 0;
+  auto &Val = (*unwrapSM(Map))[Key];
+  Val += Delta;
+  return Val;
+}
+
+// ===----------------------------------------------------------------------===
+//  StrBuilder -- opaque incremental string construction
+//  Backed by LLVM's SmallString<256>: inline storage avoids heap alloc
+//  for strings up to 256 bytes, geometric growth beyond.
+// ===----------------------------------------------------------------------===
+
+static inline SmallString<256> *unwrapSB(NevercStrBuilderRef SB) {
+  return reinterpret_cast<SmallString<256> *>(SB);
+}
+static inline NevercStrBuilderRef wrapSB(SmallString<256> *SB) {
+  return reinterpret_cast<NevercStrBuilderRef>(SB);
+}
+
+static NevercStrBuilderRef bridgeStrBuilderCreate() {
+  return wrapSB(new (std::nothrow) SmallString<256>());
+}
+
+static void bridgeStrBuilderDestroy(NevercStrBuilderRef SB) {
+  if (LLVM_UNLIKELY(!SB))
+    return;
+  delete unwrapSB(SB);
+}
+
+static void bridgeStrBuilderAppend(NevercStrBuilderRef SB, const char *S) {
+  if (LLVM_UNLIKELY(!SB || !S))
+    return;
+  unwrapSB(SB)->append(StringRef(S));
+}
+
+static void bridgeStrBuilderAppendN(NevercStrBuilderRef SB, const char *S,
+                                    uint64_t Len) {
+  if (LLVM_UNLIKELY(!SB || !S))
+    return;
+  unwrapSB(SB)->append(StringRef(S, Len));
+}
+
+static void bridgeStrBuilderAppendChar(NevercStrBuilderRef SB, char C) {
+  if (LLVM_UNLIKELY(!SB))
+    return;
+  unwrapSB(SB)->push_back(C);
+}
+
+static void bridgeStrBuilderAppendV(NevercStrBuilderRef SB, const char *Fmt,
+                                    va_list Args) {
+  if (LLVM_UNLIKELY(!SB || !Fmt))
+    return;
+  char Stack[512];
+  va_list ArgsCopy;
+  va_copy(ArgsCopy, Args);
+  int Len = std::vsnprintf(Stack, sizeof(Stack), Fmt, ArgsCopy);
+  va_end(ArgsCopy);
+  if (LLVM_UNLIKELY(Len < 0))
+    return;
+  auto *B = unwrapSB(SB);
+  size_t Need = static_cast<size_t>(Len);
+  if (LLVM_LIKELY(Need < sizeof(Stack))) {
+    B->append(StringRef(Stack, Need));
+  } else {
+    size_t OldSize = B->size();
+    B->resize_for_overwrite(OldSize + Need + 1);
+    std::vsnprintf(B->data() + OldSize, Need + 1, Fmt, Args);
+    B->pop_back();
+  }
+}
+
+static void bridgeStrBuilderAppendF(NevercStrBuilderRef SB, const char *Fmt,
+                                    ...) {
+  va_list Args;
+  va_start(Args, Fmt);
+  bridgeStrBuilderAppendV(SB, Fmt, Args);
+  va_end(Args);
+}
+
+static char *bridgeStrBuilderFinish(NevercStrBuilderRef SB) {
+  if (LLVM_UNLIKELY(!SB))
+    return nullptr;
+  auto *B = unwrapSB(SB);
+  size_t Len = B->size();
+  char *Result = static_cast<char *>(bridgeAlloc(Len + 1));
+  if (LLVM_UNLIKELY(!Result))
+    return nullptr;
+  if (Len)
+    std::memcpy(Result, B->data(), Len);
+  Result[Len] = '\0';
+  B->clear();
+  return Result;
+}
+
+static uint64_t bridgeStrBuilderLen(NevercStrBuilderRef SB) {
+  return LLVM_LIKELY(SB) ? unwrapSB(SB)->size() : 0;
+}
+
+static void bridgeStrBuilderClear(NevercStrBuilderRef SB) {
+  if (LLVM_LIKELY(SB))
+    unwrapSB(SB)->clear();
+}
+
+// ===----------------------------------------------------------------------===
+//  DynArray batch / mutate operations
+// ===----------------------------------------------------------------------===
+
+static int bridgeDynArrayPushN(NevercDynArrayRef Arr, const void *Data,
+                               unsigned Count) {
+  if (LLVM_UNLIKELY(!Arr))
+    return 0;
+  if (Count == 0)
+    return 1;
+  if (LLVM_UNLIKELY(!Data))
+    return 0;
+  auto *A = unwrapDA(Arr);
+  unsigned NewCount = A->Count + Count;
+  if (LLVM_UNLIKELY(NewCount < A->Count))
+    return 0;
+  if (LLVM_UNLIKELY(NewCount > A->Capacity)) {
+    unsigned NewCap = A->Capacity == 0 ? 16 : A->Capacity;
+    while (NewCap < NewCount) {
+      unsigned Doubled = NewCap * 2;
+      if (LLVM_UNLIKELY(Doubled <= NewCap))
+        return 0;
+      NewCap = Doubled;
+    }
+    uint64_t Bytes = static_cast<uint64_t>(NewCap) * A->ElemSize;
+    if (LLVM_UNLIKELY(Bytes / A->ElemSize != NewCap))
+      return 0;
+    char *NewData = static_cast<char *>(bridgeRealloc(A->Data, Bytes));
+    if (LLVM_UNLIKELY(!NewData))
+      return 0;
+    A->Data = NewData;
+    A->Capacity = NewCap;
+  }
+  std::memcpy(A->Data + static_cast<uint64_t>(A->Count) * A->ElemSize, Data,
+              static_cast<uint64_t>(Count) * A->ElemSize);
+  A->Count = NewCount;
+  return 1;
+}
+
+static void bridgeDynArrayRemoveSwap(NevercDynArrayRef Arr, unsigned Idx) {
+  if (LLVM_UNLIKELY(!Arr))
+    return;
+  auto *A = unwrapDA(Arr);
+  if (LLVM_UNLIKELY(Idx >= A->Count))
+    return;
+  --A->Count;
+  if (Idx != A->Count) {
+    std::memcpy(A->Data + static_cast<uint64_t>(Idx) * A->ElemSize,
+                A->Data + static_cast<uint64_t>(A->Count) * A->ElemSize,
+                static_cast<size_t>(A->ElemSize));
+  }
+}
+
+static void bridgeDynArrayShrinkToFit(NevercDynArrayRef Arr) {
+  if (LLVM_UNLIKELY(!Arr))
+    return;
+  auto *A = unwrapDA(Arr);
+  if (A->Count == 0) {
+    bridgeFree(A->Data);
+    A->Data = nullptr;
+    A->Capacity = 0;
+    return;
+  }
+  if (A->Count == A->Capacity)
+    return;
+  uint64_t ExactBytes = static_cast<uint64_t>(A->Count) * A->ElemSize;
+  char *Shrunk = static_cast<char *>(bridgeRealloc(A->Data, ExactBytes));
+  if (LLVM_LIKELY(Shrunk)) {
+    A->Data = Shrunk;
+    A->Capacity = A->Count;
+  }
+}
+
+// ===----------------------------------------------------------------------===
+//  StrMap with pre-allocated capacity
+// ===----------------------------------------------------------------------===
+
+static NevercStrMapRef bridgeStrMapCreateSized(unsigned InitialCapacity) {
+  auto *M = new (std::nothrow) StringMap<uint64_t>(InitialCapacity);
+  return wrapSM(M);
+}
+
+// ===----------------------------------------------------------------------===
+//  IntMap -- integer-keyed hash table
+//  Backed by LLVM DenseMap<uint64_t, uint64_t>: open addressing, quadratic
+//  probing, cache-friendly contiguous buckets.  Sentinel keys 0xFFFF...FF
+//  and 0xFFFF...FE are rejected at the API boundary.
+// ===----------------------------------------------------------------------===
+
+static constexpr uint64_t kIntMapEmptyKey = ~uint64_t(0);
+static constexpr uint64_t kIntMapTombstone = ~uint64_t(0) - 1;
+
+static inline bool isIntMapReservedKey(uint64_t Key) {
+  return Key >= kIntMapTombstone;
+}
+
+static inline DenseMap<uint64_t, uint64_t> *unwrapIM(NevercIntMapRef M) {
+  return reinterpret_cast<DenseMap<uint64_t, uint64_t> *>(M);
+}
+static inline NevercIntMapRef wrapIM(DenseMap<uint64_t, uint64_t> *M) {
+  return reinterpret_cast<NevercIntMapRef>(M);
+}
+
+static NevercIntMapRef bridgeIntMapCreate() {
+  auto *M = new (std::nothrow) DenseMap<uint64_t, uint64_t>();
+  return wrapIM(M);
+}
+
+static void bridgeIntMapDestroy(NevercIntMapRef Map) {
+  if (LLVM_UNLIKELY(!Map))
+    return;
+  delete unwrapIM(Map);
+}
+
+static int bridgeIntMapPut(NevercIntMapRef Map, uint64_t Key, uint64_t Value) {
+  if (LLVM_UNLIKELY(!Map || isIntMapReservedKey(Key)))
+    return 0;
+  (*unwrapIM(Map))[Key] = Value;
+  return 1;
+}
+
+static int bridgeIntMapGet(NevercIntMapRef Map, uint64_t Key,
+                           uint64_t *OutValue) {
+  if (LLVM_UNLIKELY(!Map || isIntMapReservedKey(Key)))
+    return 0;
+  auto *M = unwrapIM(Map);
+  auto It = M->find(Key);
+  if (It == M->end())
+    return 0;
+  if (OutValue)
+    *OutValue = It->second;
+  return 1;
+}
+
+static int bridgeIntMapHas(NevercIntMapRef Map, uint64_t Key) {
+  if (LLVM_UNLIKELY(!Map || isIntMapReservedKey(Key)))
+    return 0;
+  return unwrapIM(Map)->count(Key) != 0;
+}
+
+static void bridgeIntMapRemove(NevercIntMapRef Map, uint64_t Key) {
+  if (LLVM_UNLIKELY(!Map || isIntMapReservedKey(Key)))
+    return;
+  unwrapIM(Map)->erase(Key);
+}
+
+static unsigned bridgeIntMapCount(NevercIntMapRef Map) {
+  if (LLVM_UNLIKELY(!Map))
+    return 0;
+  return static_cast<unsigned>(unwrapIM(Map)->size());
+}
+
+static uint64_t bridgeIntMapIncrement(NevercIntMapRef Map, uint64_t Key,
+                                      uint64_t Delta) {
+  if (LLVM_UNLIKELY(!Map || isIntMapReservedKey(Key)))
+    return 0;
+  auto &Val = (*unwrapIM(Map))[Key];
+  Val += Delta;
+  return Val;
+}
+
+static void bridgeIntMapForEach(NevercIntMapRef Map,
+                                int (*Fn)(uint64_t, uint64_t, void *),
+                                void *Ctx) {
+  if (LLVM_UNLIKELY(!Map || !Fn))
+    return;
+  for (const auto &E : *unwrapIM(Map))
+    if (Fn(E.first, E.second, Ctx))
+      break;
+}
+
+static void bridgeIntMapClear(NevercIntMapRef Map) {
+  if (LLVM_UNLIKELY(!Map))
+    return;
+  unwrapIM(Map)->clear();
+}
+
+static NevercIntMapRef bridgeIntMapCreateSized(unsigned InitialCapacity) {
+  auto *M = new (std::nothrow) DenseMap<uint64_t, uint64_t>(InitialCapacity);
+  return wrapIM(M);
+}
+
+// ===----------------------------------------------------------------------===
+//  DynArray binary search -- requires prior DynArraySort with same Cmp
+// ===----------------------------------------------------------------------===
+
+static void *bridgeDynArrayBSearch(NevercDynArrayRef Arr, const void *Key,
+                                   int (*Cmp)(const void *, const void *)) {
+  if (LLVM_UNLIKELY(!Arr || !Key || !Cmp))
+    return nullptr;
+  auto *A = unwrapDA(Arr);
+  if (LLVM_UNLIKELY(A->Count == 0))
+    return nullptr;
+  return std::bsearch(Key, A->Data, A->Count,
+                      static_cast<size_t>(A->ElemSize), Cmp);
 }
 
 // ===----------------------------------------------------------------------===
@@ -5848,12 +6425,69 @@ NevercHostAPI buildHostAPI() {
   API.StrNCompare = bridgeStrNCompare;
   API.StrCopyBuf = bridgeStrCopyBuf;
 
+  API.DynArrayCreate = bridgeDynArrayCreate;
+  API.DynArrayDestroy = bridgeDynArrayDestroy;
+  API.DynArrayPush = bridgeDynArrayPush;
+  API.DynArrayGet = bridgeDynArrayGet;
+  API.DynArrayCount = bridgeDynArrayCount;
+  API.DynArrayData = bridgeDynArrayData;
+  API.DynArrayClear = bridgeDynArrayClear;
+  API.DynArraySort = bridgeDynArraySort;
+  API.DynArrayPop = bridgeDynArrayPop;
+  API.DynArrayReserve = bridgeDynArrayReserve;
+  API.DynArrayDetach = bridgeDynArrayDetach;
+
+  API.StrMapCreate = bridgeStrMapCreate;
+  API.StrMapDestroy = bridgeStrMapDestroy;
+  API.StrMapPut = bridgeStrMapPut;
+  API.StrMapGet = bridgeStrMapGet;
+  API.StrMapHas = bridgeStrMapHas;
+  API.StrMapRemove = bridgeStrMapRemove;
+  API.StrMapCount = bridgeStrMapCount;
+  API.StrMapForEach = bridgeStrMapForEach;
+  API.StrMapCollectKeys = bridgeStrMapCollectKeys;
+  API.StrMapIncrement = bridgeStrMapIncrement;
+
+  API.StrBuilderCreate = bridgeStrBuilderCreate;
+  API.StrBuilderDestroy = bridgeStrBuilderDestroy;
+  API.StrBuilderAppend = bridgeStrBuilderAppend;
+  API.StrBuilderAppendN = bridgeStrBuilderAppendN;
+  API.StrBuilderAppendChar = bridgeStrBuilderAppendChar;
+  API.StrBuilderAppendF = bridgeStrBuilderAppendF;
+  API.StrBuilderAppendV = bridgeStrBuilderAppendV;
+  API.StrBuilderFinish = bridgeStrBuilderFinish;
+  API.StrBuilderLen = bridgeStrBuilderLen;
+  API.StrBuilderClear = bridgeStrBuilderClear;
+
+  API.DynArrayPushN = bridgeDynArrayPushN;
+  API.DynArrayRemoveSwap = bridgeDynArrayRemoveSwap;
+  API.DynArrayShrinkToFit = bridgeDynArrayShrinkToFit;
+
+  API.StrMapCreateSized = bridgeStrMapCreateSized;
+
+  API.IntMapCreate = bridgeIntMapCreate;
+  API.IntMapDestroy = bridgeIntMapDestroy;
+  API.IntMapPut = bridgeIntMapPut;
+  API.IntMapGet = bridgeIntMapGet;
+  API.IntMapHas = bridgeIntMapHas;
+  API.IntMapRemove = bridgeIntMapRemove;
+  API.IntMapCount = bridgeIntMapCount;
+  API.IntMapIncrement = bridgeIntMapIncrement;
+  API.IntMapForEach = bridgeIntMapForEach;
+  API.IntMapClear = bridgeIntMapClear;
+  API.IntMapCreateSized = bridgeIntMapCreateSized;
+
+  API.DynArrayBSearch = bridgeDynArrayBSearch;
+
+  API.InstGetOpcodeName = bridgeInstGetOpcodeName;
+  API.InstOpcodeToName = bridgeInstOpcodeToName;
+
   static_assert(
-      offsetof(NevercHostAPI, StrCopyBuf) +
-              sizeof(NevercHostAPI::StrCopyBuf) ==
+      offsetof(NevercHostAPI, InstOpcodeToName) +
+              sizeof(NevercHostAPI::InstOpcodeToName) ==
           sizeof(NevercHostAPI),
-      "StrCopyBuf is no longer the last field in NevercHostAPI. "
-      "Add bridge assignments for the new field(s) and update this check.");
+      "New fields added after InstOpcodeToName. "
+      "Wire them in buildHostAPI and update this static_assert.");
 
   return API;
 }

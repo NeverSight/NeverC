@@ -4,7 +4,7 @@
 |* This is the ONLY file a plugin needs to compile against.                   *|
 |*                                                                            *|
 |* All IR/MIR/Binary manipulation goes through the NevercHostAPI vtable       *|
-|* provided by the host process — no direct CRT or LLVM C++ calls needed.    *|
+|* provided by the host process -- no direct CRT or LLVM C++ calls needed.   *|
 |*                                                                            *|
 |* LIFETIME RULES:                                                            *|
 |*   - All opaque handles (NevercModuleRef, NevercValueRef, etc.) are valid   *|
@@ -20,8 +20,13 @@
 |*     StrFormat/IntToStr/ValuePrintToString/etc. are host-allocated;       *|
 |*     caller frees via Free.  DiagNoteF/DiagWarningF/DiagErrorF do NOT       *|
 |*     require Free.  HookPointGetName returns a static string.               *|
+|*   - NevercDynArrayRef / NevercStrMapRef / NevercStrBuilderRef created     *|
+|*     by DynArrayCreate / StrMapCreate / StrBuilderCreate must be freed     *|
+|*     via DynArrayDestroy / StrMapDestroy / StrBuilderDestroy before the    *|
+|*     pass returns.  StrBuilderFinish returns a host-allocated string;      *|
+|*     caller frees via Free.                                                *|
 |*   - Do NOT call RegisterModulePass/MachinePass/BinaryPass outside of      *|
-|*     the RegisterPasses callback — they are no-ops after registration.      *|
+|*     the RegisterPasses callback -- they are no-ops after registration.     *|
 |*   - Before using fields added in later versions, use NEVERC_API_FN or     *|
 |*     NEVERC_API_HAS (layout only) before calling optional vtable entries.  *|
 |*                                                                            *|
@@ -64,13 +69,13 @@ extern "C" {
     (NEVERC_API_HAS(api, field) && (api)->field)
 
 /* ---- Convenience allocation macros ----
- * Typed array allocation through the host vtable — eliminates the
+ * Typed array allocation through the host vtable -- eliminates the
  * repetitive (Type*)API->Alloc(Count * sizeof(Type)) pattern and
  * guards against count*size overflow via ReallocArray/AllocZeroed.
  *
- * NEVERC_ALLOC_ARRAY  — uninitialized (fast, for immediately-filled arrays)
- * NEVERC_CALLOC_ARRAY — zero-initialized (for arrays that need a clean slate)
- * NEVERC_REALLOC_ARRAY — grow/shrink with overflow check                    */
+ * NEVERC_ALLOC_ARRAY  -- uninitialized (fast, for immediately-filled arrays)
+ * NEVERC_CALLOC_ARRAY -- zero-initialized (for arrays that need a clean slate)
+ * NEVERC_REALLOC_ARRAY -- grow/shrink with overflow check                   */
 #define NEVERC_ALLOC_ARRAY(api, type, count) \
     ((type *)(api)->ReallocArray(NULL, (count), sizeof(type)))
 
@@ -119,23 +124,27 @@ typedef struct NevercOpaqueNamedMD     *NevercNamedMDRef;
 typedef struct NevercOpaqueComdat      *NevercComdatRef;
 typedef struct NevercOpaqueLinkerSymbol  *NevercLinkerSymbolRef;
 typedef struct NevercOpaqueLinkerSection *NevercLinkerSectionRef;
+typedef struct NevercOpaqueDynArray      *NevercDynArrayRef;
+typedef struct NevercOpaqueStrMap        *NevercStrMapRef;
+typedef struct NevercOpaqueStrBuilder    *NevercStrBuilderRef;
+typedef struct NevercOpaqueIntMap        *NevercIntMapRef;
 
 /* -------------------------------------------------------------------------- */
 /*  Hook points                                                               */
 /* -------------------------------------------------------------------------- */
 
 typedef enum {
-  /* ---- Normal flow — IR (BackendUtil.cpp optimization pipeline) ---- */
+  /* ---- Normal flow -- IR (BackendUtil.cpp optimization pipeline) ---- */
   NEVERC_HOOK_PRE_OPT        = 0x0001,
   NEVERC_HOOK_POST_OPT       = 0x0002,
   NEVERC_HOOK_PIPELINE_START = 0x0003,
   NEVERC_HOOK_PIPELINE_LAST  = 0x0004,
 
-  /* ---- Normal flow — MIR (code generation pipeline) ---- */
+  /* ---- Normal flow -- MIR (code generation pipeline) ---- */
   NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT  = 0x0010,
   NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR = 0x0011,
 
-  /* ---- Shellcode flow — IR hooks ---- */
+  /* ---- Shellcode flow -- IR hooks ---- */
   NEVERC_HOOK_SC_BEFORE_PREP     = 0x0100,
   NEVERC_HOOK_SC_AFTER_PREP      = 0x0101,
   NEVERC_HOOK_SC_BEFORE_INLINING = 0x0102,
@@ -143,20 +152,20 @@ typedef enum {
   NEVERC_HOOK_SC_AFTER_STACKIFY  = 0x0104,
   NEVERC_HOOK_SC_AFTER_FINAL_IR  = 0x0105,
 
-  /* ---- Shellcode flow — MIR hooks ---- */
+  /* ---- Shellcode flow -- MIR hooks ---- */
   NEVERC_HOOK_SC_BEFORE_PREEMIT  = 0x0200,
   NEVERC_HOOK_SC_AFTER_PREEMIT   = 0x0201,
   NEVERC_HOOK_SC_AFTER_FINAL_MIR = 0x0202,
 
-  /* ---- Shellcode flow — binary hooks ---- */
+  /* ---- Shellcode flow -- binary hooks ---- */
   NEVERC_HOOK_SC_POST_EXTRACT    = 0x0300,
   NEVERC_HOOK_SC_POST_FINALIZE   = 0x0301,
 
-  /* ---- LTO flow — IR hooks (inside LTO optimization pipeline) ---- */
+  /* ---- LTO flow -- IR hooks (inside LTO optimization pipeline) ---- */
   NEVERC_HOOK_LTO_PRE_OPT        = 0x0400,
   NEVERC_HOOK_LTO_POST_OPT       = 0x0401,
 
-  /* ---- Linker flow — object-level hooks ---- */
+  /* ---- Linker flow -- object-level hooks ---- */
   NEVERC_HOOK_LINK_PRE_LAYOUT    = 0x0500,
   NEVERC_HOOK_LINK_POST_LAYOUT   = 0x0501,
   NEVERC_HOOK_LINK_POST_EMIT     = 0x0502
@@ -274,11 +283,11 @@ typedef int (*NevercLinkerPassFn)(const struct NevercHostAPI *API,
 
 typedef struct NevercHostAPI {
   uint32_t Version;
-  uint32_t StructSize; /* sizeof(NevercHostAPI) — plugin MUST NOT access
+  uint32_t StructSize; /* sizeof(NevercHostAPI) -- plugin MUST NOT access
                           fields past this boundary even if its compiled
                           header defines more fields. */
 
-  /* ---- Memory (host heap — mimalloc when enabled; no plugin CRT malloc) ---- */
+  /* ---- Memory (host heap -- mimalloc when enabled; no plugin CRT malloc) ---- */
   void *(*Alloc)(uint64_t Size);
   void *(*Realloc)(void *Ptr, uint64_t Size);
   void  (*Free)(void *Ptr);
@@ -846,7 +855,7 @@ typedef struct NevercHostAPI {
                                       int IsVolatile);
 
   /* ---- Debug location (critical for preserving line info in IR-mutating
-         passes — without this, debugger single-stepping breaks) ---- */
+         passes -- without this, debugger single-stepping breaks) ---- */
   void (*InstCopyDebugLoc)(NevercValueRef Dst, NevercValueRef Src);
   int  (*InstHasDebugLoc)(NevercValueRef I);
   unsigned (*InstGetDebugLocLine)(NevercValueRef I);
@@ -872,7 +881,7 @@ typedef struct NevercHostAPI {
   NevercValueRef (*ModuleGetNextAlias)(NevercValueRef A);
 
   /* ---- GEP index access (Idx is 0-based into the index list,
-         NOT the LLVM operand index — operand 0 is the pointer) ---- */
+         NOT the LLVM operand index -- operand 0 is the pointer) ---- */
   NevercValueRef (*GEPGetIndex)(NevercValueRef I, unsigned Idx);
 
   /* ---- Reverse global iteration ---- */
@@ -1003,7 +1012,7 @@ typedef struct NevercHostAPI {
                                        const char *Name);
 
   /* ---- Freeze instruction (needed to safely use values that may be poison
-         — e.g., branch on a potentially-poison condition without UB) ---- */
+         -- e.g., branch on a potentially-poison condition without UB) ---- */
   NevercValueRef (*BuildFreeze)(NevercBuilderRef B, NevercValueRef V,
                                 const char *Name);
 
@@ -1295,8 +1304,8 @@ typedef struct NevercHostAPI {
   uint64_t (*StrHash)(const char *S);
 
   /* ---- One-call batch collection of DEFINED functions only.
-         Skips declarations on the host side — eliminates the
-         ubiquitous collect→filter→loop→free boilerplate in plugins.
+         Skips declarations on the host side -- eliminates the
+         ubiquitous collect->filter->loop->free boilerplate in plugins.
          Returns NULL and sets *OutCount to 0 when no defined functions
          exist.  Caller frees via Free. ---- */
   NevercValueRef *(*ModuleCollectDefinedFunctions)(NevercModuleRef M,
@@ -1327,10 +1336,190 @@ typedef struct NevercHostAPI {
   /* ---- Copy string into caller-owned buffer (strlcpy semantics).
          Always null-terminates when BufSize > 0.  Returns strlen(Src)
          so the caller can detect truncation (result >= BufSize).
-         Zero allocation — use instead of StrDup when a stack buffer
+         Zero allocation -- use instead of StrDup when a stack buffer
          suffices, or instead of StrFormatBuf(buf, n, "%s", s). ---- */
   uint64_t (*StrCopyBuf)(char *Buf, uint64_t BufSize, const char *Src);
+
+  /* ---- Dynamic array (opaque, host-allocated, type-erased) ----
+     A growable contiguous buffer for elements of uniform size.
+     Internally: 2x geometric growth, cache-friendly linear layout.
+     All memory goes through the host allocator -- CRT-safe on Windows.
+
+     Lifecycle: Create -> Push/Reserve/Sort -> read via Get/Data -> Destroy.
+     Detach transfers ownership of the raw buffer to the caller (free
+     via API->Free); the array handle itself is destroyed.              */
+  NevercDynArrayRef (*DynArrayCreate)(uint64_t ElemSize);
+  void (*DynArrayDestroy)(NevercDynArrayRef Arr);
+  int (*DynArrayPush)(NevercDynArrayRef Arr, const void *Elem);
+  void *(*DynArrayGet)(NevercDynArrayRef Arr, unsigned Idx);
+  unsigned (*DynArrayCount)(NevercDynArrayRef Arr);
+  void *(*DynArrayData)(NevercDynArrayRef Arr);
+  void (*DynArrayClear)(NevercDynArrayRef Arr);
+  void (*DynArraySort)(NevercDynArrayRef Arr,
+                       int (*Cmp)(const void *, const void *));
+  /* Returns a pointer to the removed tail element.  The pointer is valid
+     only until the next mutation (Push/Reserve/Sort/Destroy).  Copy
+     the data immediately if you need it beyond that. */
+  void *(*DynArrayPop)(NevercDynArrayRef Arr);
+  int (*DynArrayReserve)(NevercDynArrayRef Arr, unsigned MinCapacity);
+  void *(*DynArrayDetach)(NevercDynArrayRef Arr, unsigned *OutCount);
+
+  /* ---- String map (opaque, host-allocated, StringMap<uint64_t>) ----
+     A fast string-keyed hash table storing uint64_t values.  Keys are
+     copied internally; the caller's key pointer need not remain valid.
+     Use the value as an integer counter, a pointer (via cast), or an
+     opaque tag -- whatever fits in 64 bits.
+
+     Backed by LLVM's StringMap for cache-friendly, allocation-dense
+     bucket storage with quadratic probing.                             */
+  NevercStrMapRef (*StrMapCreate)(void);
+  void (*StrMapDestroy)(NevercStrMapRef Map);
+  int (*StrMapPut)(NevercStrMapRef Map, const char *Key, uint64_t Value);
+  int (*StrMapGet)(NevercStrMapRef Map, const char *Key, uint64_t *OutValue);
+  int (*StrMapHas)(NevercStrMapRef Map, const char *Key);
+  void (*StrMapRemove)(NevercStrMapRef Map, const char *Key);
+  unsigned (*StrMapCount)(NevercStrMapRef Map);
+  /* Zero-allocation callback iteration.  Fn is called for each entry;
+     returning nonzero from Fn aborts the traversal early.
+     Iteration order is unspecified (hash table internal order).
+     IMPORTANT: Do NOT modify the map (Put/Remove/Increment) inside Fn --
+     insertions may trigger a rehash that invalidates internal iterators. */
+  void (*StrMapForEach)(NevercStrMapRef Map,
+                        int (*Fn)(const char *Key, uint64_t Value, void *Ctx),
+                        void *Ctx);
+  /* Collect all keys into a host-allocated array of host-allocated strings.
+     Caller frees each key AND the array itself via Free.
+     Returns NULL and sets *OutCount to 0 when the map is empty. */
+  char **(*StrMapCollectKeys)(NevercStrMapRef Map, unsigned *OutCount);
+  /* Single-lookup increment (or initialize to Delta) the value for Key.
+     One hash probe instead of separate Get+Put -- 2x fewer lookups for
+     counting patterns.  Returns the new value after adding Delta.
+     If Key did not exist, inserts it with value = Delta.  NOT thread-safe. */
+  uint64_t (*StrMapIncrement)(NevercStrMapRef Map, const char *Key,
+                              uint64_t Delta);
+
+  /* ---- String builder (opaque, host-allocated, SmallString<256>) ----
+     Efficient incremental string construction without repeated
+     alloc/format/concat/free.  Inline buffer avoids heap allocation
+     for strings <= 256 bytes; grows geometrically beyond that.
+
+     Finish returns a host-allocated null-terminated copy; caller frees
+     via API->Free.  The builder can be reused after Finish or Clear.   */
+  NevercStrBuilderRef (*StrBuilderCreate)(void);
+  void (*StrBuilderDestroy)(NevercStrBuilderRef SB);
+  void (*StrBuilderAppend)(NevercStrBuilderRef SB, const char *S);
+  void (*StrBuilderAppendN)(NevercStrBuilderRef SB, const char *S,
+                            uint64_t Len);
+  void (*StrBuilderAppendChar)(NevercStrBuilderRef SB, char C);
+  void (*StrBuilderAppendF)(NevercStrBuilderRef SB, const char *Fmt, ...);
+  void (*StrBuilderAppendV)(NevercStrBuilderRef SB, const char *Fmt,
+                            va_list Args);
+  char *(*StrBuilderFinish)(NevercStrBuilderRef SB);
+  uint64_t (*StrBuilderLen)(NevercStrBuilderRef SB);
+  void (*StrBuilderClear)(NevercStrBuilderRef SB);
+
+  /* ---- DynArray batch / mutate operations ----
+     PushN copies Count elements from Data in one call -- eliminates
+     N vtable calls, N bounds checks, and N growth checks.  Single
+     geometric growth to accommodate all elements.
+     RemoveSwap does O(1) unordered removal: copies the last element
+     into position Idx, then decrements count.  Invalidates any pointer
+     returned by DynArrayGet for position Idx or the former last element.
+     ShrinkToFit reallocs the backing buffer to exactly Count * ElemSize,
+     releasing unused capacity.  No-op when Count == Capacity.
+     When Count == 0, frees the backing buffer entirely. */
+  int (*DynArrayPushN)(NevercDynArrayRef Arr, const void *Data,
+                       unsigned Count);
+  void (*DynArrayRemoveSwap)(NevercDynArrayRef Arr, unsigned Idx);
+  void (*DynArrayShrinkToFit)(NevercDynArrayRef Arr);
+
+  /* ---- StrMap with pre-allocated capacity ----
+     Same as StrMapCreate but reserves bucket space for at least
+     InitialCapacity entries.  Avoids rehashing when the approximate
+     entry count is known upfront -- single allocation for all buckets. */
+  NevercStrMapRef (*StrMapCreateSized)(unsigned InitialCapacity);
+
+  /* ---- Integer-keyed hash table (opaque, host-allocated, DenseMap) ----
+     A fast integer-keyed hash table storing uint64_t values.  Ideal for
+     opcode counting, instruction-ID mapping, and other numeric-keyed
+     lookups -- avoids the integer-to-string conversion overhead of StrMap.
+
+     Backed by LLVM DenseMap: open addressing with quadratic probing,
+     cache-friendly contiguous buckets, O(1) amortized lookup/insert.
+
+     RESERVED KEYS: 0xFFFFFFFFFFFFFFFF and 0xFFFFFFFFFFFFFFFE are used
+     as DenseMap sentinel values and MUST NOT be used as keys.  Put/Get/
+     Has/Remove silently ignore them.  All other uint64_t values are
+     valid keys.                                                         */
+  NevercIntMapRef (*IntMapCreate)(void);
+  void (*IntMapDestroy)(NevercIntMapRef Map);
+  int (*IntMapPut)(NevercIntMapRef Map, uint64_t Key, uint64_t Value);
+  int (*IntMapGet)(NevercIntMapRef Map, uint64_t Key, uint64_t *OutValue);
+  int (*IntMapHas)(NevercIntMapRef Map, uint64_t Key);
+  void (*IntMapRemove)(NevercIntMapRef Map, uint64_t Key);
+  unsigned (*IntMapCount)(NevercIntMapRef Map);
+  /* Single-probe increment (or initialize to Delta).  Returns the new
+     value after adding Delta.  If Key did not exist, inserts it with
+     value = Delta.  NOT thread-safe. */
+  uint64_t (*IntMapIncrement)(NevercIntMapRef Map, uint64_t Key,
+                              uint64_t Delta);
+  /* Zero-allocation callback iteration.  Fn is called for each entry;
+     returning nonzero from Fn aborts the traversal early.
+     Iteration order is unspecified (hash table internal order).
+     IMPORTANT: Do NOT modify the map (Put/Remove/Increment) inside Fn --
+     insertions may trigger a rehash that invalidates internal iterators. */
+  void (*IntMapForEach)(NevercIntMapRef Map,
+                        int (*Fn)(uint64_t Key, uint64_t Value, void *Ctx),
+                        void *Ctx);
+  void (*IntMapClear)(NevercIntMapRef Map);
+  NevercIntMapRef (*IntMapCreateSized)(unsigned InitialCapacity);
+
+  /* ---- DynArray binary search (requires prior DynArraySort) ----
+     Returns a pointer to the matching element, or NULL if not found.
+     The array MUST be sorted with the same Cmp comparator.  If multiple
+     elements match, which one is returned is unspecified. */
+  void *(*DynArrayBSearch)(NevercDynArrayRef Arr, const void *Key,
+                           int (*Cmp)(const void *, const void *));
+
+  /* ---- IR instruction opcode name ----
+     Returns the human-readable name of the instruction's opcode (e.g.
+     "add", "load", "call", "br").  The returned pointer is a static
+     string valid for the lifetime of the process -- never free it.
+     Returns "" for null or non-instruction values. */
+  const char *(*InstGetOpcodeName)(NevercValueRef I);
+
+  /* Opcode number -> name without needing an instruction handle.
+     Useful inside IntMapForEach callbacks where only the numeric key
+     is available.  Returns a static string; never free it.
+     Returns "" for out-of-range opcodes. */
+  const char *(*InstOpcodeToName)(unsigned Opcode);
 } NevercHostAPI;
+
+/* ---- Convenience: cast a NevercHookPoint to a void* UserData value ----
+ * Plugins often store the hook-point enum as UserData so that a single
+ * callback can identify which stage it was invoked from.  This macro
+ * makes the cast explicit and avoids platform width warnings. */
+#define NEVERC_HOOK_UD(hook) ((void *)(uintptr_t)(hook))
+
+/* ---- Convenience: resolve a hook name from a UserData that was set
+ *      via NEVERC_HOOK_UD.  Falls back to "<unknown>" when the host
+ *      is too old to provide HookPointGetName.  The returned pointer
+ *      is a static string -- never free it. ---- */
+#define NEVERC_HOOK_NAME(api, ud) \
+    (NEVERC_API_FN(api, HookPointGetName) \
+     ? (api)->HookPointGetName((unsigned)(uintptr_t)(ud)) \
+     : "<unknown>")
+
+/* ---- Convenience: create a StrMap/IntMap with optional pre-allocation ----
+ * Uses the Sized variant when the host supports it, otherwise falls back
+ * to the default zero-capacity constructor.  cap==0 always uses Create. */
+#define NEVERC_STRMAP_NEW(api, cap) \
+    (((cap) > 0 && NEVERC_API_FN(api, StrMapCreateSized)) \
+     ? (api)->StrMapCreateSized(cap) : (api)->StrMapCreate())
+
+#define NEVERC_INTMAP_NEW(api, cap) \
+    (((cap) > 0 && NEVERC_API_FN(api, IntMapCreateSized)) \
+     ? (api)->IntMapCreateSized(cap) : (api)->IntMapCreate())
 
 /* -------------------------------------------------------------------------- */
 /*  Plugin entry protocol                                                     */
