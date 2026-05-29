@@ -30,6 +30,7 @@
 #ifndef NEVERC_PLUGIN_API_H
 #define NEVERC_PLUGIN_API_H
 
+#include <inttypes.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -61,6 +62,23 @@ extern "C" {
  * Use for optional vtable entries that may be absent on older hosts. */
 #define NEVERC_API_FN(api, field) \
     (NEVERC_API_HAS(api, field) && (api)->field)
+
+/* ---- Convenience allocation macros ----
+ * Typed array allocation through the host vtable — eliminates the
+ * repetitive (Type*)API->Alloc(Count * sizeof(Type)) pattern and
+ * guards against count*size overflow via AllocZeroed/ReallocArray.
+ *
+ * NEVERC_ALLOC_ARRAY  — uninitialized (fast, for immediately-filled arrays)
+ * NEVERC_CALLOC_ARRAY — zero-initialized (for arrays that need a clean slate)
+ * NEVERC_REALLOC_ARRAY — grow/shrink with overflow check                    */
+#define NEVERC_ALLOC_ARRAY(api, type, count) \
+    ((type *)(api)->Alloc((uint64_t)(count) * sizeof(type)))
+
+#define NEVERC_CALLOC_ARRAY(api, type, count) \
+    ((type *)(api)->AllocZeroed((count), sizeof(type)))
+
+#define NEVERC_REALLOC_ARRAY(api, ptr, type, count) \
+    ((type *)(api)->ReallocArray((ptr), (count), sizeof(type)))
 
 /* -------------------------------------------------------------------------- */
 /*  Opaque handle types                                                       */
@@ -1211,6 +1229,51 @@ typedef struct NevercHostAPI {
          Operates on ASCII characters only (0x41-0x5A / 0x61-0x7A). ---- */
   char *(*StrToLower)(const char *S);
   char *(*StrToUpper)(const char *S);
+
+  /* ---- Linker output format name (returns a static string, never NULL).
+         Convenience wrapper around LinkGetOutputFormat; avoids repeated
+         switch/if-else chains in every plugin.  Returns "ELF", "COFF",
+         "Mach-O", or "unknown". ---- */
+  const char *(*LinkGetOutputFormatName)(void);
+
+  /* ---- Alias count + batch collection (completes the Module batch API set:
+         functions, globals, aliases all have count + collect). ---- */
+  unsigned (*ModuleGetAliasCount)(NevercModuleRef M);
+  void (*ModuleCollectAliases)(NevercModuleRef M, NevercValueRef *Out);
+
+  /* ---- One-call batch collection (host allocates; caller frees via Free).
+         Returns NULL and sets *OutCount to 0 when the module has no
+         matching items.  Eliminates the count->alloc->fill dance; the
+         host iterates LLVM data structures directly with zero vtable
+         overhead.
+         ModuleCollectAllInstructions returns every Instruction in every
+         defined (non-declaration) Function, flattened into a single
+         contiguous array for cache-friendly linear scans. ---- */
+  NevercValueRef *(*ModuleCollectAllFunctions)(NevercModuleRef M,
+                                               unsigned *OutCount);
+  NevercValueRef *(*ModuleCollectAllGlobals)(NevercModuleRef M,
+                                             unsigned *OutCount);
+  NevercValueRef *(*ModuleCollectAllInstructions)(NevercModuleRef M,
+                                                  unsigned *OutCount);
+
+  /* ---- String join: concatenate an array of strings with a separator.
+         Returns a host-allocated string; caller frees via Free.
+         Sep may be NULL or "" for no separator.
+         Returns "" (allocated) when Count == 0. ---- */
+  char *(*StrJoin)(const char *const *Strings, unsigned Count,
+                   const char *Sep);
+
+  /* ---- String split: split S by Delim into an array of host-allocated
+         strings.  *OutCount receives the number of parts.  Returns NULL
+         on allocation failure.  Each element AND the array itself must be
+         freed via Free.  Empty Delim or NULL Delim returns a single-element
+         array containing a copy of S. ---- */
+  char **(*StrSplit)(const char *S, const char *Delim, unsigned *OutCount);
+
+  /* ---- Fast string hash (FNV-1a 64-bit).  Useful for building lookup
+         tables or fast string comparisons in plugins.  Returns 0 for
+         NULL input. ---- */
+  uint64_t (*StrHash)(const char *S);
 } NevercHostAPI;
 
 /* -------------------------------------------------------------------------- */

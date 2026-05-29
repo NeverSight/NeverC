@@ -23,6 +23,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cerrno>
@@ -116,10 +117,22 @@ static inline NevercNamedMDRef wrapNMD(NamedMDNode *NMD) {
 //  host's mimalloc heap — no CRT boundary crossing on Windows.
 // ===----------------------------------------------------------------------===
 
-static void *bridgeAlloc(uint64_t Size) { return ::malloc(Size); }
-static void *bridgeRealloc(void *Ptr, uint64_t Size) {
-  return ::realloc(Ptr, Size);
+static void *bridgeAlloc(uint64_t Size) {
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(Size > SIZE_MAX))
+    return nullptr;
+#endif
+  return ::malloc(static_cast<size_t>(Size));
 }
+
+static void *bridgeRealloc(void *Ptr, uint64_t Size) {
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(Size > SIZE_MAX))
+    return nullptr;
+#endif
+  return ::realloc(Ptr, static_cast<size_t>(Size));
+}
+
 static void bridgeFree(void *Ptr) { ::free(Ptr); }
 
 // ===----------------------------------------------------------------------===
@@ -3553,11 +3566,11 @@ static uint64_t bridgeStrLen(const char *S) {
 }
 
 static char *bridgeStrDup(const char *S) {
-  if (!S)
+  if (LLVM_UNLIKELY(!S))
     return nullptr;
   size_t Len = std::strlen(S);
   char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
   std::memcpy(Buf, S, Len + 1);
   return Buf;
@@ -3566,11 +3579,11 @@ static char *bridgeStrDup(const char *S) {
 static char *bridgeStrConcat(const char *A, const char *B) {
   size_t LenA = A ? std::strlen(A) : 0;
   size_t LenB = B ? std::strlen(B) : 0;
-  size_t TotalLen = LenA + LenB;
-  if (TotalLen < LenA)
+  if (LLVM_UNLIKELY(LenA > SIZE_MAX - 1 - LenB))
     return nullptr;
+  size_t TotalLen = LenA + LenB;
   char *Buf = static_cast<char *>(bridgeAlloc(TotalLen + 1));
-  if (!Buf)
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
   if (LenA)
     std::memcpy(Buf, A, LenA);
@@ -3615,20 +3628,21 @@ static char *bridgeUIntToStr(uint64_t Val) {
 static char *bridgeStrFormatV(const char *Fmt, va_list Args) {
   if (!Fmt)
     return nullptr;
-  char Stack[256];
+  char Stack[512];
   va_list ArgsCopy;
   va_copy(ArgsCopy, Args);
   int Len = std::vsnprintf(Stack, sizeof(Stack), Fmt, ArgsCopy);
   va_end(ArgsCopy);
   if (Len < 0)
     return nullptr;
-  char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
+  size_t Need = static_cast<size_t>(Len) + 1;
+  char *Buf = static_cast<char *>(bridgeAlloc(Need));
   if (!Buf)
     return nullptr;
-  if (static_cast<size_t>(Len) < sizeof(Stack))
-    std::memcpy(Buf, Stack, Len + 1);
+  if (Need <= sizeof(Stack))
+    std::memcpy(Buf, Stack, Need);
   else
-    std::vsnprintf(Buf, Len + 1, Fmt, Args);
+    std::vsnprintf(Buf, Need, Fmt, Args);
   return Buf;
 }
 
@@ -3645,23 +3659,39 @@ static char *bridgeStrFormat(const char *Fmt, ...) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeMemCopy(void *Dst, const void *Src, uint64_t Len) {
-  if (Dst && Src && Len)
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+    return;
+#endif
+  if (LLVM_LIKELY(Dst && Src && Len))
     std::memcpy(Dst, Src, static_cast<size_t>(Len));
 }
 
 static void bridgeMemSet(void *Dst, int Val, uint64_t Len) {
-  if (Dst && Len)
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+    return;
+#endif
+  if (LLVM_LIKELY(Dst && Len))
     std::memset(Dst, Val, static_cast<size_t>(Len));
 }
 
 static void bridgeMemMove(void *Dst, const void *Src, uint64_t Len) {
-  if (Dst && Src && Len)
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+    return;
+#endif
+  if (LLVM_LIKELY(Dst && Src && Len))
     std::memmove(Dst, Src, static_cast<size_t>(Len));
 }
 
 static int bridgeMemCompare(const void *A, const void *B, uint64_t Len) {
-  if (!A || !B || !Len)
+  if (LLVM_UNLIKELY(!A || !B || !Len))
     return 0;
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+    return 0;
+#endif
   return std::memcmp(A, B, static_cast<size_t>(Len));
 }
 
@@ -3732,12 +3762,9 @@ static void bridgeDiagErrorF(const char *Fmt, ...) {
 
 static void *bridgeAllocZeroed(uint64_t Count, uint64_t ElemSize) {
 #if SIZE_MAX < UINT64_MAX
-  // On hosts where size_t is narrower than uint64_t, reject values that the
-  // narrowing casts below would silently truncate.
   if (Count > SIZE_MAX || ElemSize > SIZE_MAX)
     return nullptr;
 #endif
-  // calloc itself guarantees the Count * ElemSize product is overflow-checked.
   return ::calloc(static_cast<size_t>(Count), static_cast<size_t>(ElemSize));
 }
 
@@ -3853,7 +3880,11 @@ static char *bridgeStrTrim(const char *S) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeMemZero(void *Dst, uint64_t Len) {
-  if (Dst && Len)
+#if SIZE_MAX < UINT64_MAX
+  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+    return;
+#endif
+  if (LLVM_LIKELY(Dst && Len))
     std::memset(Dst, 0, static_cast<size_t>(Len));
 }
 
@@ -3922,6 +3953,293 @@ static void bridgeModuleCollectGlobals(NevercModuleRef M,
   unsigned Idx = 0;
   for (auto &G : unwrap(M)->globals())
     Out[Idx++] = wrapV(&G);
+}
+
+static unsigned bridgeModuleGetAliasCount(NevercModuleRef M) {
+  if (!M)
+    return 0;
+  return unwrap(M)->alias_size();
+}
+
+static void bridgeModuleCollectAliases(NevercModuleRef M,
+                                       NevercValueRef *Out) {
+  if (!M || !Out)
+    return;
+  unsigned Idx = 0;
+  for (auto &A : unwrap(M)->aliases())
+    Out[Idx++] = wrapV(&A);
+}
+
+static NevercValueRef *
+bridgeModuleCollectAllFunctions(NevercModuleRef M, unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (!M || !OutCount)
+    return nullptr;
+  auto *Mod = unwrap(M);
+  size_t Count = Mod->size();
+  if (Count == 0 || Count > UINT_MAX)
+    return nullptr;
+  auto *Buf = static_cast<NevercValueRef *>(
+      bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(NevercValueRef)));
+  if (!Buf)
+    return nullptr;
+  unsigned Idx = 0;
+  for (auto &F : *Mod)
+    Buf[Idx++] = wrapV(&F);
+  *OutCount = Idx;
+  return Buf;
+}
+
+static NevercValueRef *
+bridgeModuleCollectAllGlobals(NevercModuleRef M, unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (!M || !OutCount)
+    return nullptr;
+  auto *Mod = unwrap(M);
+  size_t Count = Mod->global_size();
+  if (Count == 0 || Count > UINT_MAX)
+    return nullptr;
+  auto *Buf = static_cast<NevercValueRef *>(
+      bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(NevercValueRef)));
+  if (!Buf)
+    return nullptr;
+  unsigned Idx = 0;
+  for (auto &G : Mod->globals())
+    Buf[Idx++] = wrapV(&G);
+  *OutCount = Idx;
+  return Buf;
+}
+
+static NevercValueRef *
+bridgeModuleCollectAllInstructions(NevercModuleRef M, unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (!M || !OutCount)
+    return nullptr;
+  auto *Mod = unwrap(M);
+
+  size_t Total = 0;
+  for (const auto &F : *Mod) {
+    if (F.isDeclaration())
+      continue;
+    for (const auto &BB : F) {
+      Total += BB.size();
+      if (Total > UINT_MAX)
+        return nullptr;
+    }
+  }
+  if (Total == 0)
+    return nullptr;
+
+  auto *Buf = static_cast<NevercValueRef *>(
+      bridgeAlloc(static_cast<uint64_t>(Total) * sizeof(NevercValueRef)));
+  if (!Buf)
+    return nullptr;
+
+  unsigned Idx = 0;
+  for (auto &F : *Mod) {
+    if (F.isDeclaration())
+      continue;
+    for (auto &BB : F)
+      for (auto &I : BB)
+        Buf[Idx++] = wrapV(&I);
+  }
+  *OutCount = Idx;
+  return Buf;
+}
+
+// ===----------------------------------------------------------------------===
+//  StrJoin — concatenate an array of strings with a separator
+// ===----------------------------------------------------------------------===
+
+static char *bridgeStrJoin(const char *const *Strings, unsigned Count,
+                           const char *Sep) {
+  if (Count == 0) {
+    char *Empty = static_cast<char *>(bridgeAlloc(1));
+    if (Empty)
+      Empty[0] = '\0';
+    return Empty;
+  }
+  if (!Strings)
+    return nullptr;
+
+  size_t SepLen = (Sep && *Sep) ? std::strlen(Sep) : 0;
+
+  // Cache string lengths to avoid computing them twice (measure + copy).
+  size_t StackLens[64];
+  size_t *Lens = StackLens;
+  if (Count > 64) {
+    Lens = static_cast<size_t *>(
+        bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(size_t)));
+    if (!Lens)
+      return nullptr;
+  }
+
+  size_t Total = 0;
+  for (unsigned I = 0; I < Count; ++I) {
+    Lens[I] = Strings[I] ? std::strlen(Strings[I]) : 0;
+    if (Total > SIZE_MAX - Lens[I] - 1) {
+      if (Lens != StackLens)
+        bridgeFree(Lens);
+      return nullptr;
+    }
+    Total += Lens[I];
+    if (I > 0 && SepLen) {
+      if (Total > SIZE_MAX - SepLen - 1) {
+        if (Lens != StackLens)
+          bridgeFree(Lens);
+        return nullptr;
+      }
+      Total += SepLen;
+    }
+  }
+
+  char *Buf = static_cast<char *>(bridgeAlloc(Total + 1));
+  if (!Buf) {
+    if (Lens != StackLens)
+      bridgeFree(Lens);
+    return nullptr;
+  }
+
+  char *Dst = Buf;
+  for (unsigned I = 0; I < Count; ++I) {
+    if (I > 0 && SepLen) {
+      std::memcpy(Dst, Sep, SepLen);
+      Dst += SepLen;
+    }
+    if (Lens[I]) {
+      std::memcpy(Dst, Strings[I], Lens[I]);
+      Dst += Lens[I];
+    }
+  }
+  *Dst = '\0';
+
+  if (Lens != StackLens)
+    bridgeFree(Lens);
+  return Buf;
+}
+
+// ===----------------------------------------------------------------------===
+//  StrSplit — split a string by delimiter into an array of strings
+// ===----------------------------------------------------------------------===
+
+static char **bridgeStrSplit(const char *S, const char *Delim,
+                             unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (!S || !OutCount)
+    return nullptr;
+
+  if (!Delim || !*Delim) {
+    char **Arr = static_cast<char **>(bridgeAlloc(sizeof(char *)));
+    if (!Arr)
+      return nullptr;
+    Arr[0] = bridgeStrDup(S);
+    if (!Arr[0]) {
+      bridgeFree(Arr);
+      return nullptr;
+    }
+    *OutCount = 1;
+    return Arr;
+  }
+
+  size_t DelimLen = std::strlen(Delim);
+
+  // Single pass: collect delimiter hit offsets into a stack-local buffer,
+  // spilling to the heap only when there are many hits.  This avoids
+  // scanning the string twice (count pass + split pass).
+  size_t StackHits[64];
+  size_t *Hits = StackHits;
+  size_t HitCap = sizeof(StackHits) / sizeof(StackHits[0]);
+  size_t HitCount = 0;
+
+  const char *P = S;
+  while ((P = std::strstr(P, Delim)) != nullptr) {
+    if (HitCount == HitCap) {
+      if (HitCap > (SIZE_MAX / sizeof(size_t)) / 2) {
+        if (Hits != StackHits)
+          bridgeFree(Hits);
+        return nullptr;
+      }
+      size_t NewCap = HitCap * 2;
+      size_t *NewBuf =
+          static_cast<size_t *>(bridgeAlloc(NewCap * sizeof(size_t)));
+      if (!NewBuf) {
+        if (Hits != StackHits)
+          bridgeFree(Hits);
+        return nullptr;
+      }
+      std::memcpy(NewBuf, Hits, HitCount * sizeof(size_t));
+      if (Hits != StackHits)
+        bridgeFree(Hits);
+      Hits = NewBuf;
+      HitCap = NewCap;
+    }
+    Hits[HitCount++] = static_cast<size_t>(P - S);
+    P += DelimLen;
+  }
+
+  unsigned Parts = static_cast<unsigned>(HitCount) + 1;
+  char **Arr = static_cast<char **>(
+      bridgeAlloc(static_cast<uint64_t>(Parts) * sizeof(char *)));
+  if (!Arr) {
+    if (Hits != StackHits)
+      bridgeFree(Hits);
+    return nullptr;
+  }
+
+  // Build parts using recorded offsets — no second strstr scan.
+  size_t Prev = 0;
+  unsigned Idx = 0;
+  for (size_t I = 0; I < HitCount; ++I) {
+    size_t Span = Hits[I] - Prev;
+    char *Part = static_cast<char *>(bridgeAlloc(Span + 1));
+    if (!Part) {
+      for (unsigned J = 0; J < Idx; ++J)
+        bridgeFree(Arr[J]);
+      bridgeFree(Arr);
+      if (Hits != StackHits)
+        bridgeFree(Hits);
+      return nullptr;
+    }
+    if (Span)
+      std::memcpy(Part, S + Prev, Span);
+    Part[Span] = '\0';
+    Arr[Idx++] = Part;
+    Prev = Hits[I] + DelimLen;
+  }
+
+  if (Hits != StackHits)
+    bridgeFree(Hits);
+
+  // Tail after the last delimiter.
+  Arr[Idx] = bridgeStrDup(S + Prev);
+  if (!Arr[Idx]) {
+    for (unsigned J = 0; J < Idx; ++J)
+      bridgeFree(Arr[J]);
+    bridgeFree(Arr);
+    return nullptr;
+  }
+  *OutCount = Parts;
+  return Arr;
+}
+
+// ===----------------------------------------------------------------------===
+//  StrHash — FNV-1a 64-bit hash
+// ===----------------------------------------------------------------------===
+
+static uint64_t bridgeStrHash(const char *S) {
+  if (!S)
+    return 0;
+  uint64_t Hash = UINT64_C(14695981039346656037);
+  while (*S) {
+    Hash ^= static_cast<uint64_t>(static_cast<unsigned char>(*S));
+    Hash *= UINT64_C(1099511628211);
+    ++S;
+  }
+  return Hash;
 }
 
 static void bridgeFunctionCollectBBs(NevercValueRef F,
@@ -4525,7 +4843,7 @@ static void *bridgeMemDup(const void *Src, uint64_t Len) {
     return nullptr;
   void *Dst = bridgeAlloc(Len);
   if (Dst)
-    std::memcpy(Dst, Src, Len);
+    std::memcpy(Dst, Src, static_cast<size_t>(Len));
   return Dst;
 }
 
@@ -4543,12 +4861,12 @@ static char *bridgeStrReplace(const char *S, const char *Old, const char *New) {
   size_t OldLen = std::strlen(Old);
   size_t NewLen = std::strlen(New);
   size_t SuffixLen = std::strlen(Pos + OldLen);
+  if (NewLen > SIZE_MAX - 1 - PrefixLen)
+    return nullptr;
   size_t ResultLen = PrefixLen + NewLen;
-  if (ResultLen < PrefixLen)
+  if (SuffixLen > SIZE_MAX - 1 - ResultLen)
     return nullptr;
   ResultLen += SuffixLen;
-  if (ResultLen < SuffixLen)
-    return nullptr;
 
   char *Result = static_cast<char *>(bridgeAlloc(ResultLen + 1));
   if (!Result)
@@ -4570,46 +4888,92 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
 
   size_t OldLen = std::strlen(Old);
   size_t NewLen = std::strlen(New);
+  size_t SLen = std::strlen(S);
 
-  size_t Count = 0;
+  // Single scan: collect hit offsets into a small stack-local buffer,
+  // spilling to the heap only when there are many matches.
+  size_t StackBuf[64];
+  size_t *Hits = StackBuf;
+  size_t HitCap = sizeof(StackBuf) / sizeof(StackBuf[0]);
+  size_t HitCount = 0;
+
   const char *P = S;
   while ((P = std::strstr(P, Old)) != nullptr) {
-    ++Count;
+    if (HitCount == HitCap) {
+      if (HitCap > (SIZE_MAX / sizeof(size_t)) / 2) {
+        if (Hits != StackBuf)
+          bridgeFree(Hits);
+        return nullptr;
+      }
+      size_t NewCap = HitCap * 2;
+      size_t *NewBuf =
+          static_cast<size_t *>(bridgeAlloc(NewCap * sizeof(size_t)));
+      if (!NewBuf) {
+        if (Hits != StackBuf)
+          bridgeFree(Hits);
+        return nullptr;
+      }
+      std::memcpy(NewBuf, Hits, HitCount * sizeof(size_t));
+      if (Hits != StackBuf)
+        bridgeFree(Hits);
+      Hits = NewBuf;
+      HitCap = NewCap;
+    }
+    Hits[HitCount++] = static_cast<size_t>(P - S);
     P += OldLen;
   }
 
-  if (Count == 0)
+  if (HitCount == 0) {
+    if (Hits != StackBuf)
+      bridgeFree(Hits);
     return bridgeStrDup(S);
+  }
 
-  size_t SLen = std::strlen(S);
-  size_t Removed = Count * OldLen;
+  size_t Removed = HitCount * OldLen;
   size_t Added = 0;
   if (NewLen != 0) {
-    if (Count > SIZE_MAX / NewLen)
+    if (HitCount > SIZE_MAX / NewLen) {
+      if (Hits != StackBuf)
+        bridgeFree(Hits);
       return nullptr;
-    Added = Count * NewLen;
+    }
+    Added = HitCount * NewLen;
   }
   size_t BaseLen = SLen - Removed;
-  if (Added > SIZE_MAX - BaseLen)
+  if (Added > SIZE_MAX - BaseLen - 1) {
+    if (Hits != StackBuf)
+      bridgeFree(Hits);
     return nullptr;
-  size_t ResultLen = BaseLen + Added;
-  char *Result = static_cast<char *>(bridgeAlloc(ResultLen + 1));
-  if (!Result)
-    return nullptr;
-
-  char *Dst = Result;
-  P = S;
-  for (size_t I = 0; I < Count; ++I) {
-    const char *Hit = std::strstr(P, Old);
-    size_t Span = static_cast<size_t>(Hit - P);
-    std::memcpy(Dst, P, Span);
-    Dst += Span;
-    std::memcpy(Dst, New, NewLen);
-    Dst += NewLen;
-    P = Hit + OldLen;
   }
-  size_t Tail = std::strlen(P);
-  std::memcpy(Dst, P, Tail + 1);
+  size_t ResultLen = BaseLen + Added;
+
+  char *Result = static_cast<char *>(bridgeAlloc(ResultLen + 1));
+  if (!Result) {
+    if (Hits != StackBuf)
+      bridgeFree(Hits);
+    return nullptr;
+  }
+
+  // Build the result in one pass using recorded offsets.
+  char *Dst = Result;
+  size_t Prev = 0;
+  for (size_t I = 0; I < HitCount; ++I) {
+    size_t Off = Hits[I];
+    size_t Span = Off - Prev;
+    if (Span)
+      std::memcpy(Dst, S + Prev, Span);
+    Dst += Span;
+    if (NewLen)
+      std::memcpy(Dst, New, NewLen);
+    Dst += NewLen;
+    Prev = Off + OldLen;
+  }
+  size_t Tail = SLen - Prev;
+  std::memcpy(Dst, S + Prev, Tail);
+  Dst[Tail] = '\0';
+
+  if (Hits != StackBuf)
+    bridgeFree(Hits);
   return Result;
 }
 
@@ -4628,6 +4992,18 @@ static char *bridgeStrToLower(const char *S) {
   }
   R[Len] = '\0';
   return R;
+}
+
+static const char *bridgeLinkGetOutputFormatName() {
+  const NevercLinkerBackend *B = getLinkerBackend();
+  unsigned Fmt = B && B->GetOutputFormat ? B->GetOutputFormat()
+                                         : NEVERC_LINK_FORMAT_UNKNOWN;
+  switch (Fmt) {
+  case NEVERC_LINK_FORMAT_ELF:   return "ELF";
+  case NEVERC_LINK_FORMAT_COFF:  return "COFF";
+  case NEVERC_LINK_FORMAT_MACHO: return "Mach-O";
+  default:                       return "unknown";
+  }
 }
 
 static char *bridgeStrToUpper(const char *S) {
@@ -5262,11 +5638,24 @@ NevercHostAPI buildHostAPI() {
   API.StrToLower = bridgeStrToLower;
   API.StrToUpper = bridgeStrToUpper;
 
+  API.LinkGetOutputFormatName = bridgeLinkGetOutputFormatName;
+
+  API.ModuleGetAliasCount = bridgeModuleGetAliasCount;
+  API.ModuleCollectAliases = bridgeModuleCollectAliases;
+
+  API.ModuleCollectAllFunctions = bridgeModuleCollectAllFunctions;
+  API.ModuleCollectAllGlobals = bridgeModuleCollectAllGlobals;
+  API.ModuleCollectAllInstructions = bridgeModuleCollectAllInstructions;
+
+  API.StrJoin = bridgeStrJoin;
+  API.StrSplit = bridgeStrSplit;
+  API.StrHash = bridgeStrHash;
+
   static_assert(
-      offsetof(NevercHostAPI, StrToUpper) +
-              sizeof(NevercHostAPI::StrToUpper) ==
+      offsetof(NevercHostAPI, StrHash) +
+              sizeof(NevercHostAPI::StrHash) ==
           sizeof(NevercHostAPI),
-      "StrToUpper is no longer the last field in NevercHostAPI. "
+      "StrHash is no longer the last field in NevercHostAPI. "
       "Add bridge assignments for the new field(s) and update this check.");
 
   return API;
