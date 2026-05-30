@@ -48,77 +48,87 @@ static NevercValueRef bridgeBuildAdd(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateAdd(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateAdd(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildSub(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateSub(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateSub(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildMul(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateMul(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateMul(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildUDiv(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateUDiv(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateUDiv(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildSDiv(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateSDiv(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateSDiv(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildAnd(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateAnd(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateAnd(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildOr(NevercBuilderRef B, NevercValueRef LHS,
                                     NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateOr(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateOr(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildXor(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateXor(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateXor(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildShl(NevercBuilderRef B, NevercValueRef LHS,
                                      NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateShl(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateShl(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildLShr(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateLShr(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateLShr(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildAShr(NevercBuilderRef B, NevercValueRef LHS,
                                       NevercValueRef RHS, const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateAShr(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateAShr(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildICmp(NevercBuilderRef B, unsigned Pred,
@@ -126,8 +136,9 @@ static NevercValueRef bridgeBuildICmp(NevercBuilderRef B, unsigned Pred,
                                       const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateICmp(static_cast<CmpInst::Predicate>(Pred),
-                                      unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateICmp(
+      static_cast<CmpInst::Predicate>(Pred), unwrapV(LHS), unwrapV(RHS),
+      nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildFCmp(NevercBuilderRef B, unsigned Pred,
@@ -135,8 +146,9 @@ static NevercValueRef bridgeBuildFCmp(NevercBuilderRef B, unsigned Pred,
                                       const char *Name) {
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateFCmp(static_cast<CmpInst::Predicate>(Pred),
-                                      unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateFCmp(
+      static_cast<CmpInst::Predicate>(Pred), unwrapV(LHS), unwrapV(RHS),
+      nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildBr(NevercBuilderRef B,
@@ -182,7 +194,7 @@ static NevercValueRef bridgeBuildCall(NevercBuilderRef B, NevercTypeRef FnTy,
       return nullptr;
     ArgVec.push_back(unwrapV(Args[I]));
   }
-  return wrapV(unwrapB(B)->CreateCall(FT, unwrapV(Fn), ArgVec, Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateCall(FT, unwrapV(Fn), ArgVec, nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildGEP(NevercBuilderRef B, NevercTypeRef Ty,
@@ -198,14 +210,15 @@ static NevercValueRef bridgeBuildGEP(NevercBuilderRef B, NevercTypeRef Ty,
     Idxs.push_back(unwrapV(Indices[I]));
   }
   return wrapV(
-      unwrapB(B)->CreateGEP(unwrapTy(Ty), unwrapV(Ptr), Idxs, Name ? Name : ""));
+      unwrapB(B)->CreateGEP(unwrapTy(Ty), unwrapV(Ptr), Idxs, nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildLoad(NevercBuilderRef B, NevercTypeRef Ty,
                                       NevercValueRef Ptr, const char *Name) {
   if (LLVM_UNLIKELY(!B || !Ty || !Ptr))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateLoad(unwrapTy(Ty), unwrapV(Ptr), Name ? Name : ""));
+  return wrapV(
+      unwrapB(B)->CreateLoad(unwrapTy(Ty), unwrapV(Ptr), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildStore(NevercBuilderRef B, NevercValueRef Val,
@@ -219,7 +232,7 @@ static NevercValueRef bridgeBuildAlloca(NevercBuilderRef B, NevercTypeRef Ty,
                                         const char *Name) {
   if (LLVM_UNLIKELY(!B || !Ty))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateAlloca(unwrapTy(Ty), nullptr, Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateAlloca(unwrapTy(Ty), nullptr, nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildBitCast(NevercBuilderRef B, NevercValueRef V,
@@ -227,7 +240,8 @@ static NevercValueRef bridgeBuildBitCast(NevercBuilderRef B, NevercValueRef V,
                                          const char *Name) {
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateBitCast(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateBitCast(unwrapV(V), unwrapTy(DestTy),
+                                        nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildIntToPtr(NevercBuilderRef B, NevercValueRef V,
@@ -236,7 +250,7 @@ static NevercValueRef bridgeBuildIntToPtr(NevercBuilderRef B, NevercValueRef V,
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateIntToPtr(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+      unwrapB(B)->CreateIntToPtr(unwrapV(V), unwrapTy(DestTy), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildPtrToInt(NevercBuilderRef B, NevercValueRef V,
@@ -245,21 +259,23 @@ static NevercValueRef bridgeBuildPtrToInt(NevercBuilderRef B, NevercValueRef V,
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreatePtrToInt(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+      unwrapB(B)->CreatePtrToInt(unwrapV(V), unwrapTy(DestTy), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildZExt(NevercBuilderRef B, NevercValueRef V,
                                       NevercTypeRef DestTy, const char *Name) {
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateZExt(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateZExt(unwrapV(V), unwrapTy(DestTy),
+                                     nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildSExt(NevercBuilderRef B, NevercValueRef V,
                                       NevercTypeRef DestTy, const char *Name) {
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateSExt(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateSExt(unwrapV(V), unwrapTy(DestTy),
+                                     nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildTrunc(NevercBuilderRef B, NevercValueRef V,
@@ -267,7 +283,8 @@ static NevercValueRef bridgeBuildTrunc(NevercBuilderRef B, NevercValueRef V,
                                        const char *Name) {
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateTrunc(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateTrunc(unwrapV(V), unwrapTy(DestTy),
+                                      nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildSelect(NevercBuilderRef B, NevercValueRef Cond,
@@ -276,15 +293,15 @@ static NevercValueRef bridgeBuildSelect(NevercBuilderRef B, NevercValueRef Cond,
                                         const char *Name) {
   if (LLVM_UNLIKELY(!B || !Cond || !Then || !Else))
     return nullptr;
-  return wrapV(
-      unwrapB(B)->CreateSelect(unwrapV(Cond), unwrapV(Then), unwrapV(Else), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateSelect(
+      unwrapV(Cond), unwrapV(Then), unwrapV(Else), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildPhi(NevercBuilderRef B, NevercTypeRef Ty,
                                      const char *Name) {
   if (LLVM_UNLIKELY(!B || !Ty))
     return nullptr;
-  return wrapV(unwrapB(B)->CreatePHI(unwrapTy(Ty), 2, Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreatePHI(unwrapTy(Ty), 2, nameStr(Name)));
 }
 
 static void bridgePhiAddIncoming(NevercValueRef Phi, NevercValueRef *Values,
@@ -310,21 +327,21 @@ static NevercValueRef bridgeBuildNeg(NevercBuilderRef B, NevercValueRef V,
                                      const char *Name) {
   if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateNeg(unwrapV(V), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateNeg(unwrapV(V), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildNot(NevercBuilderRef B, NevercValueRef V,
                                      const char *Name) {
   if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateNot(unwrapV(V), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateNot(unwrapV(V), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildFNeg(NevercBuilderRef B, NevercValueRef V,
                                       const char *Name) {
   if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateFNeg(unwrapV(V), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateFNeg(unwrapV(V), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildUnreachable(NevercBuilderRef B) {
@@ -372,7 +389,7 @@ static NevercValueRef bridgeBuildURem(NevercBuilderRef B, NevercValueRef LHS,
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateURem(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+      unwrapB(B)->CreateURem(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildSRem(NevercBuilderRef B, NevercValueRef LHS,
@@ -380,7 +397,7 @@ static NevercValueRef bridgeBuildSRem(NevercBuilderRef B, NevercValueRef LHS,
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateSRem(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+      unwrapB(B)->CreateSRem(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 // ===----------------------------------------------------------------------===
@@ -393,7 +410,7 @@ static NevercValueRef bridgeBuildFPToSI(NevercBuilderRef B, NevercValueRef V,
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateFPToSI(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+      unwrapB(B)->CreateFPToSI(unwrapV(V), unwrapTy(DestTy), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildSIToFP(NevercBuilderRef B, NevercValueRef V,
@@ -402,7 +419,7 @@ static NevercValueRef bridgeBuildSIToFP(NevercBuilderRef B, NevercValueRef V,
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateSIToFP(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+      unwrapB(B)->CreateSIToFP(unwrapV(V), unwrapTy(DestTy), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildFPToUI(NevercBuilderRef B, NevercValueRef V,
@@ -411,7 +428,7 @@ static NevercValueRef bridgeBuildFPToUI(NevercBuilderRef B, NevercValueRef V,
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateFPToUI(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+      unwrapB(B)->CreateFPToUI(unwrapV(V), unwrapTy(DestTy), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildUIToFP(NevercBuilderRef B, NevercValueRef V,
@@ -420,7 +437,7 @@ static NevercValueRef bridgeBuildUIToFP(NevercBuilderRef B, NevercValueRef V,
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateUIToFP(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+      unwrapB(B)->CreateUIToFP(unwrapV(V), unwrapTy(DestTy), nameStr(Name)));
 }
 
 
@@ -433,7 +450,7 @@ static NevercValueRef bridgeBuildFAdd(NevercBuilderRef B, NevercValueRef LHS,
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateFAdd(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+      unwrapB(B)->CreateFAdd(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildFSub(NevercBuilderRef B, NevercValueRef LHS,
@@ -441,7 +458,7 @@ static NevercValueRef bridgeBuildFSub(NevercBuilderRef B, NevercValueRef LHS,
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateFSub(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+      unwrapB(B)->CreateFSub(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildFMul(NevercBuilderRef B, NevercValueRef LHS,
@@ -449,7 +466,7 @@ static NevercValueRef bridgeBuildFMul(NevercBuilderRef B, NevercValueRef LHS,
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateFMul(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+      unwrapB(B)->CreateFMul(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildFDiv(NevercBuilderRef B, NevercValueRef LHS,
@@ -457,7 +474,7 @@ static NevercValueRef bridgeBuildFDiv(NevercBuilderRef B, NevercValueRef LHS,
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateFDiv(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+      unwrapB(B)->CreateFDiv(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildFRem(NevercBuilderRef B, NevercValueRef LHS,
@@ -465,7 +482,7 @@ static NevercValueRef bridgeBuildFRem(NevercBuilderRef B, NevercValueRef LHS,
   if (LLVM_UNLIKELY(!B || !LHS || !RHS))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateFRem(unwrapV(LHS), unwrapV(RHS), Name ? Name : ""));
+      unwrapB(B)->CreateFRem(unwrapV(LHS), unwrapV(RHS), nameStr(Name)));
 }
 
 // ===----------------------------------------------------------------------===
@@ -478,7 +495,7 @@ static NevercValueRef bridgeBuildExtractValue(NevercBuilderRef B,
   if (LLVM_UNLIKELY(!B || !Agg))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateExtractValue(unwrapV(Agg), Idx, Name ? Name : ""));
+      unwrapB(B)->CreateExtractValue(unwrapV(Agg), Idx, nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildInsertValue(NevercBuilderRef B,
@@ -488,7 +505,7 @@ static NevercValueRef bridgeBuildInsertValue(NevercBuilderRef B,
   if (LLVM_UNLIKELY(!B || !Agg || !Val))
     return nullptr;
   return wrapV(unwrapB(B)->CreateInsertValue(unwrapV(Agg), unwrapV(Val), Idx,
-                                             Name ? Name : ""));
+                                             nameStr(Name)));
 }
 
 
@@ -502,7 +519,7 @@ static NevercValueRef bridgeBuildGlobalStringPtr(NevercBuilderRef B,
   if (LLVM_UNLIKELY(!B || !Str))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateGlobalStringPtr(Str, Name ? Name : ""));
+      unwrapB(B)->CreateGlobalStringPtr(Str, nameStr(Name)));
 }
 
 
@@ -525,7 +542,7 @@ static NevercValueRef bridgeBuildInBoundsGEP(NevercBuilderRef B,
     Idxs.push_back(unwrapV(Indices[I]));
   }
   return wrapV(unwrapB(B)->CreateInBoundsGEP(unwrapTy(Ty), unwrapV(Ptr), Idxs,
-                                             Name ? Name : ""));
+                                             nameStr(Name)));
 }
 
 
@@ -551,7 +568,7 @@ static NevercValueRef bridgeBuildFPExt(NevercBuilderRef B, NevercValueRef V,
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateFPExt(unwrapV(V), unwrapTy(DestTy), Name ? Name : ""));
+      unwrapB(B)->CreateFPExt(unwrapV(V), unwrapTy(DestTy), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildFPTrunc(NevercBuilderRef B, NevercValueRef V,
@@ -560,7 +577,7 @@ static NevercValueRef bridgeBuildFPTrunc(NevercBuilderRef B, NevercValueRef V,
   if (LLVM_UNLIKELY(!B || !V || !DestTy))
     return nullptr;
   return wrapV(unwrapB(B)->CreateFPTrunc(unwrapV(V), unwrapTy(DestTy),
-                                         Name ? Name : ""));
+                                         nameStr(Name)));
 }
 
 
@@ -568,8 +585,8 @@ static NevercValueRef bridgeBuildFPTrunc(NevercBuilderRef B, NevercValueRef V,
 //  Builder: insert before terminator
 // ===----------------------------------------------------------------------===
 
-static void bridgeBuilderSetInsertPointBeforeTerminator(NevercBuilderRef B,
-                                                        NevercBasicBlockRef BB) {
+static void bridgeBuilderSetInsertPointBeforeTerminator(
+    NevercBuilderRef B, NevercBasicBlockRef BB) {
   if (LLVM_UNLIKELY(!B || !BB))
     return;
   auto *Block = unwrapBB(BB);
@@ -594,7 +611,7 @@ static NevercValueRef bridgeBuildAlignedLoad(NevercBuilderRef B,
     return nullptr;
   return wrapV(unwrapB(B)->CreateAlignedLoad(
       unwrapTy(Ty), unwrapV(Ptr), MaybeAlign(AlignVal), IsVolatile != 0,
-      Name ? Name : ""));
+      nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildAlignedStore(NevercBuilderRef B,
@@ -664,7 +681,7 @@ static NevercValueRef bridgeBuildExtractElement(NevercBuilderRef B,
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateExtractElement(unwrapV(Vec), unwrapV(Idx),
-                                       Name ? Name : ""));
+                                       nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildInsertElement(NevercBuilderRef B,
@@ -676,7 +693,7 @@ static NevercValueRef bridgeBuildInsertElement(NevercBuilderRef B,
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateInsertElement(unwrapV(Vec), unwrapV(Val),
-                                      unwrapV(Idx), Name ? Name : ""));
+                                      unwrapV(Idx), nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildShuffleVector(NevercBuilderRef B,
@@ -690,7 +707,7 @@ static NevercValueRef bridgeBuildShuffleVector(NevercBuilderRef B,
   SmallVector<int, 16> Mask(MaskVals, MaskVals + MaskLen);
   return wrapV(
       unwrapB(B)->CreateShuffleVector(unwrapV(V1), unwrapV(V2), Mask,
-                                      Name ? Name : ""));
+                                      nameStr(Name)));
 }
 
 // ===----------------------------------------------------------------------===
@@ -701,7 +718,7 @@ static NevercValueRef bridgeBuildFreeze(NevercBuilderRef B, NevercValueRef V,
                                         const char *Name) {
   if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateFreeze(unwrapV(V), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateFreeze(unwrapV(V), nameStr(Name)));
 }
 
 // ===----------------------------------------------------------------------===
@@ -716,7 +733,7 @@ static NevercValueRef bridgeBuildAddrSpaceCast(NevercBuilderRef B,
     return nullptr;
   return wrapV(
       unwrapB(B)->CreateAddrSpaceCast(unwrapV(V), unwrapTy(DestTy),
-                                      Name ? Name : ""));
+                                      nameStr(Name)));
 }
 
 
@@ -724,7 +741,7 @@ static NevercValueRef bridgeBuildNSWNeg(NevercBuilderRef B, NevercValueRef V,
                                         const char *Name) {
   if (LLVM_UNLIKELY(!B || !V))
     return nullptr;
-  return wrapV(unwrapB(B)->CreateNSWNeg(unwrapV(V), Name ? Name : ""));
+  return wrapV(unwrapB(B)->CreateNSWNeg(unwrapV(V), nameStr(Name)));
 }
 
 // ===----------------------------------------------------------------------===
@@ -751,7 +768,7 @@ static NevercValueRef bridgeBuildInvoke(NevercBuilderRef B, NevercTypeRef FnTy,
   }
   return wrapV(unwrapB(B)->CreateInvoke(FTy, unwrapV(Fn), unwrapBB(NormalDest),
                                         unwrapBB(UnwindDest), ArgVec,
-                                        Name ? Name : ""));
+                                        nameStr(Name)));
 }
 
 static NevercValueRef bridgeBuildLandingPad(NevercBuilderRef B,
@@ -761,7 +778,7 @@ static NevercValueRef bridgeBuildLandingPad(NevercBuilderRef B,
   if (LLVM_UNLIKELY(!B || !Ty))
     return nullptr;
   return wrapV(
-      unwrapB(B)->CreateLandingPad(unwrapTy(Ty), NumClauses, Name ? Name : ""));
+      unwrapB(B)->CreateLandingPad(unwrapTy(Ty), NumClauses, nameStr(Name)));
 }
 
 static void bridgeLandingPadAddClause(NevercValueRef LPad,
@@ -801,7 +818,7 @@ static NevercValueRef bridgeBuildResume(NevercBuilderRef B,
                                      NevercValueRef RHS, const char *Name) {   \
     if (LLVM_UNLIKELY(!B || !LHS || !RHS))                                     \
       return nullptr;                                                          \
-    const char *Nm = Name ? Name : "";                                         \
+    const char *Nm = nameStr(Name);                                         \
     return wrapV(unwrapB(B)->METHOD(unwrapV(LHS), unwrapV(RHS), Nm));          \
   }
 
@@ -895,7 +912,8 @@ void populateIRBuilderBridge(NevercHostAPI &API) {
   API.BuilderGetInsertBlock = bridgeBuilderGetInsertBlock;
   API.BuilderSetInsertPoint = bridgeBuilderSetInsertPoint;
   API.BuilderSetInsertPointBefore = bridgeBuilderSetInsertPointBefore;
-  API.BuilderSetInsertPointBeforeTerminator = bridgeBuilderSetInsertPointBeforeTerminator;
+  API.BuilderSetInsertPointBeforeTerminator =
+      bridgeBuilderSetInsertPointBeforeTerminator;
   API.LandingPadAddClause = bridgeLandingPadAddClause;
   API.LandingPadSetCleanup = bridgeLandingPadSetCleanup;
   API.PhiAddIncoming = bridgePhiAddIncoming;

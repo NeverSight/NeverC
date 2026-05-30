@@ -841,11 +841,8 @@ static char *bridgeStrToLower(const char *S) {
   char *R = static_cast<char *>(bridgeAlloc(Len + 1));
   if (LLVM_UNLIKELY(!R))
     return nullptr;
-  for (size_t I = 0; I < Len; ++I) {
-    unsigned C = static_cast<unsigned char>(S[I]);
-    unsigned CaseBit = (C - 'A' <= unsigned('Z' - 'A')) ? 0x20u : 0u;
-    R[I] = static_cast<char>(C | CaseBit);
-  }
+  for (size_t I = 0; I < Len; ++I)
+    R[I] = static_cast<char>(asciiToLower(static_cast<unsigned char>(S[I])));
   R[Len] = '\0';
   return R;
 }
@@ -857,11 +854,8 @@ static char *bridgeStrToUpper(const char *S) {
   char *R = static_cast<char *>(bridgeAlloc(Len + 1));
   if (LLVM_UNLIKELY(!R))
     return nullptr;
-  for (size_t I = 0; I < Len; ++I) {
-    unsigned C = static_cast<unsigned char>(S[I]);
-    unsigned CaseBit = (C - 'a' <= unsigned('z' - 'a')) ? 0x20u : 0u;
-    R[I] = static_cast<char>(C & ~CaseBit);
-  }
+  for (size_t I = 0; I < Len; ++I)
+    R[I] = static_cast<char>(asciiToUpper(static_cast<unsigned char>(S[I])));
   R[Len] = '\0';
   return R;
 }

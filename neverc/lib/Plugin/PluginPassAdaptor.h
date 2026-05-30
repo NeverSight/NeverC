@@ -37,7 +37,8 @@ private:
 
 /// Wraps a C NevercMachinePassFn callback into a legacy MachineFunctionPass
 /// for use with TargetPassConfig-based MIR pipeline insertion.
-class PluginMachineFunctionPassAdaptor final : public llvm::MachineFunctionPass {
+class PluginMachineFunctionPassAdaptor final
+    : public llvm::MachineFunctionPass {
 public:
   static char ID;
 

@@ -1359,15 +1359,18 @@ struct MirOpCountCtx {
 };
 
 static void mirClassifyOps(NevercMachineInstrRef MI,
-                            struct MirOpCountCtx *C) {
+                           struct MirOpCountCtx *C) {
   unsigned NumOps = C->API->MInstGetNumOperands(MI);
   if (NumOps == 0)
     return;
   if (C->HasBatchKinds) {
     uint8_t StackKinds[128];
     uint8_t *KindsBuf = StackKinds;
-    if (NumOps > sizeof(StackKinds))
-      KindsBuf = NULL;
+    int HeapAlloced = 0;
+    if (NumOps > sizeof(StackKinds)) {
+      KindsBuf = (uint8_t *)C->API->Alloc(NumOps);
+      HeapAlloced = KindsBuf != NULL;
+    }
     if (KindsBuf) {
       C->API->MInstCollectOperandKinds(MI, KindsBuf);
       for (unsigned K = 0; K < NumOps; K++) {
@@ -1376,6 +1379,8 @@ static void mirClassifyOps(NevercMachineInstrRef MI,
         else if (KindsBuf[K] == NEVERC_MIR_OP_IMM)
           C->ImmOps++;
       }
+      if (HeapAlloced)
+        C->API->Free(KindsBuf);
       return;
     }
   }

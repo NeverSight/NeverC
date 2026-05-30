@@ -141,6 +141,10 @@ static inline bool bridgeIsWhitespace(unsigned char C) {
          C == '\v';
 }
 
+static inline const char *nameStr(const char *Name) {
+  return Name ? Name : "";
+}
+
 static inline unsigned char asciiToLower(unsigned char C) {
   unsigned Diff = static_cast<unsigned>(C) - 'A';
   unsigned Mask = (Diff < 26U) ? 0x20U : 0U;

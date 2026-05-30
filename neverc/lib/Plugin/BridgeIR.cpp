@@ -289,7 +289,7 @@ static NevercBasicBlockRef bridgeBBCreate(NevercContextRef C, const char *Name,
   if (LLVM_UNLIKELY(!C))
     return nullptr;
   auto *Fn = F ? dyn_cast<Function>(unwrapV(F)) : nullptr;
-  return wrapBB(BasicBlock::Create(*unwrapCtx(C), Name ? Name : "", Fn));
+  return wrapBB(BasicBlock::Create(*unwrapCtx(C), nameStr(Name), Fn));
 }
 
 
@@ -1492,7 +1492,7 @@ static NevercValueRef bridgeConstNamedStruct(NevercTypeRef StructTy,
 static void bridgeValueSetName(NevercValueRef V, const char *Name) {
   if (LLVM_UNLIKELY(!V))
     return;
-  unwrapV(V)->setName(Name ? Name : "");
+  unwrapV(V)->setName(nameStr(Name));
 }
 
 
@@ -2444,8 +2444,8 @@ static NevercNamedMDRef bridgeModuleGetNamedMetadata(NevercModuleRef M,
 }
 
 
-static NevercNamedMDRef bridgeModuleGetOrInsertNamedMetadata(NevercModuleRef M,
-                                                              const char *Name) {
+static NevercNamedMDRef
+bridgeModuleGetOrInsertNamedMetadata(NevercModuleRef M, const char *Name) {
   if (LLVM_UNLIKELY(!M || !Name))
     return nullptr;
   return wrapNMD(unwrap(M)->getOrInsertNamedMetadata(Name));
