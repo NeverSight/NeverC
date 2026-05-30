@@ -82,7 +82,7 @@ void LangOptions::setLangDefaults(LangOptions &Opts, Language Lang,
   Opts.C17 = Std.isC17();
   Opts.C23 = Std.isC23();
   Opts.GNUMode = Std.isGNUMode();
-  Opts.GNUCVersion = 0;
+  Opts.GNUCVersion = Opts.GNUMode ? 40201 : 0;
   Opts.HexFloats = Std.hasHexFloats();
   Opts.Digraphs = Std.hasDigraphs();
 
