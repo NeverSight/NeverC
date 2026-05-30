@@ -6,6 +6,13 @@
 #include <sstream>
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #include <io.h>
 #include <process.h>
 #define popen _popen
@@ -167,14 +174,17 @@ std::vector<std::string> NeverCTest::linkFlags() const {
       f.push_back("-L" + sdk + "/usr/lib");
       f.push_back("-lSystem");
     }
-  } else {
+  } else if (isLinux()) {
     f.push_back("-lc");
   }
+  // Windows (MSVC): the C runtime is linked automatically by the driver, so no
+  // explicit library flag is needed (and `-lc`/`c.lib` does not exist there).
   return f;
 }
 
 // ---- Low-level execution ----
 
+#ifndef _WIN32
 static std::string shellEscape(const std::string &s) {
   std::string r = "'";
   for (char c : s) {
@@ -186,7 +196,135 @@ static std::string shellEscape(const std::string &s) {
   r += "'";
   return r;
 }
+#endif
 
+#ifdef _WIN32
+// Quote a single argument according to the MSVC C runtime's argv parsing rules
+// so that CreateProcess passes it through verbatim. (See MSDN
+// "Parsing C Command-Line Arguments".)
+static std::string winQuoteArg(const std::string &arg) {
+  if (!arg.empty() &&
+      arg.find_first_of(" \t\n\v\"") == std::string::npos)
+    return arg;
+
+  std::string out = "\"";
+  for (size_t i = 0;; ++i) {
+    size_t backslashes = 0;
+    while (i < arg.size() && arg[i] == '\\') {
+      ++backslashes;
+      ++i;
+    }
+    if (i == arg.size()) {
+      out.append(backslashes * 2, '\\');
+      break;
+    }
+    if (arg[i] == '"') {
+      out.append(backslashes * 2 + 1, '\\');
+      out += '"';
+    } else {
+      out.append(backslashes, '\\');
+      out += arg[i];
+    }
+  }
+  out += '"';
+  return out;
+}
+
+static std::string readFileBinary(const fs::path &path) {
+  if (!fs::exists(path))
+    return {};
+  std::ifstream f(path, std::ios::binary);
+  return {std::istreambuf_iterator<char>(f), {}};
+}
+
+// Windows implementation: spawn the process directly via CreateProcess instead
+// of routing through cmd.exe (popen). This avoids cmd.exe's quoting rules
+// entirely (it does not understand POSIX single-quoting) and lets us run
+// extension-less PE images produced by `neverc -o <name>` directly.
+CmdResult NeverCTest::exec(const std::string &program,
+                           const std::vector<std::string> &args) const {
+  CmdResult result;
+  auto outFile = tmpFile("_cmd_stdout.txt");
+  auto errFile = tmpFile("_cmd_stderr.txt");
+
+  // Resolve the executable. CreateProcess runs a valid PE regardless of its
+  // file extension when given an explicit application path, so prefer that.
+  // Fall back to PATH search (lpApplicationName == NULL) for bare tool names.
+  std::string appPath = program;
+  bool looksLikePath = program.find('/') != std::string::npos ||
+                       program.find('\\') != std::string::npos ||
+                       (program.size() > 1 && program[1] == ':');
+  bool useAppName = false;
+  if (looksLikePath) {
+    // Normalise to native separators; CreateProcess is happier with backslashes
+    // in lpApplicationName than the forward slashes CMake often emits.
+    fs::path p = fs::path(program).make_preferred();
+    appPath = p.string();
+    if (!fs::exists(appPath) && fs::exists(appPath + ".exe"))
+      appPath += ".exe";
+    useAppName = fs::exists(appPath);
+  }
+
+  std::string cmdline = winQuoteArg(useAppName ? appPath : program);
+  for (auto &a : args)
+    cmdline += " " + winQuoteArg(a);
+
+  SECURITY_ATTRIBUTES sa{};
+  sa.nLength = sizeof(sa);
+  sa.bInheritHandle = TRUE;
+  sa.lpSecurityDescriptor = nullptr;
+
+  HANDLE hOut =
+      CreateFileA(outFile.string().c_str(), GENERIC_WRITE,
+                  FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS,
+                  FILE_ATTRIBUTE_NORMAL, nullptr);
+  HANDLE hErr =
+      CreateFileA(errFile.string().c_str(), GENERIC_WRITE,
+                  FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS,
+                  FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (hOut == INVALID_HANDLE_VALUE || hErr == INVALID_HANDLE_VALUE) {
+    if (hOut != INVALID_HANDLE_VALUE)
+      CloseHandle(hOut);
+    if (hErr != INVALID_HANDLE_VALUE)
+      CloseHandle(hErr);
+    result.exitCode = -1;
+    return result;
+  }
+
+  STARTUPINFOA si{};
+  si.cb = sizeof(si);
+  si.dwFlags = STARTF_USESTDHANDLES;
+  si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+  si.hStdOutput = hOut;
+  si.hStdError = hErr;
+
+  PROCESS_INFORMATION pi{};
+  std::vector<char> cmdMutable(cmdline.begin(), cmdline.end());
+  cmdMutable.push_back('\0');
+
+  BOOL ok = CreateProcessA(useAppName ? appPath.c_str() : nullptr,
+                           cmdMutable.data(), nullptr, nullptr, TRUE, 0, nullptr,
+                           nullptr, &si, &pi);
+  CloseHandle(hOut);
+  CloseHandle(hErr);
+
+  if (!ok) {
+    result.exitCode = -1;
+    return result;
+  }
+
+  WaitForSingleObject(pi.hProcess, INFINITE);
+  DWORD code = 1;
+  GetExitCodeProcess(pi.hProcess, &code);
+  result.exitCode = static_cast<int>(code);
+  CloseHandle(pi.hProcess);
+  CloseHandle(pi.hThread);
+
+  result.out = readFileBinary(outFile);
+  result.err = readFileBinary(errFile);
+  return result;
+}
+#else
 CmdResult NeverCTest::exec(const std::string &program,
                            const std::vector<std::string> &args) const {
   CmdResult result;
@@ -208,11 +346,7 @@ CmdResult NeverCTest::exec(const std::string &program,
     result.out += buf;
 
   int status = pclose(fp);
-#ifndef _WIN32
   result.exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-#else
-  result.exitCode = status;
-#endif
 
   if (fs::exists(errFile)) {
     std::ifstream f(errFile);
@@ -220,6 +354,7 @@ CmdResult NeverCTest::exec(const std::string &program,
   }
   return result;
 }
+#endif
 
 CmdResult NeverCTest::ncc(const std::vector<std::string> &args) const {
   return exec(neverc().string(), args);
