@@ -68,15 +68,13 @@ NeverC의 shellcode 파이프라인은 다음을 포함합니다:
 각 추출기는 `.bin` 기록 전에 `finalizeShellcodeBytes`를 호출:
 
 ```
-applyPostExtractObfuscationHook       (ObfuscationHooks::RunPostExtract)
-        |
-runBadByteRewriters                   (Plugin.h::registerBadByteRewriteStrategy)
-        |
-runCharsetEncoder                     (Plugin.h::registerCharsetEncoder)
+applyPostExtractObfuscationHook       (C Plugin API: NEVERC_HOOK_SC_POST_EXTRACT)
         |
 auditFinalBadBytes                    (내장 하드 감사)
         |
 applyShellcodeSizing                  (-fshellcode-align/-max-length/-pad)
+        |
+applyPostFinalizeObfuscationHook      (C Plugin API: NEVERC_HOOK_SC_POST_FINALIZE)
 ```
 
 사용법 및 코드 예제는 [Plugin API 문서](../../plugin-api/README.ko.md) 참조.

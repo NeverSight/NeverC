@@ -16,7 +16,7 @@ NeverC's shellcode pipeline covers:
 - Direct syscall lowering (Darwin `svc #0x80`, Linux `svc #0` / `syscall`)
 - Kernel-mode support (Windows, Linux)
 - Bad-byte auditing with configurable profiles
-- Plugin SDK for bad-byte rewriters and charset encoders
+- Out-of-tree C Plugin API with 11 hook points across IR, MIR, and byte-stream layers
 - Size / alignment / padding constraints (`-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=`)
 - 11 obfuscation hooks across IR, MIR, and byte-stream layers
 
@@ -24,9 +24,7 @@ NeverC's shellcode pipeline covers:
 
 1. **Size / alignment / padding constraints** — Built-in. `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=` execute at the end of `finalizeShellcodeBytes`. The driver rejects contradictory configurations (e.g., pad byte in the bad-byte set, or pad without align/max-length).
 
-2. **Bad-byte rewriter interface** — Skeleton built-in, no built-in strategies. `Plugin.h::registerBadByteRewriteStrategy` exposes the SDK. `-fshellcode-bad-byte-rewrite` / `-fno-...` controls whether the finalize chain invokes rewriters. Disabling falls back to audit-only behavior. Downstream libraries register Capstone-based or custom rewrite strategies.
-
-3. **Charset encoder interface** — Skeleton built-in, no built-in charsets. `Plugin.h::registerCharsetEncoder` exposes a `(name, Encode, Stub, IsCharsetMember)` tuple. When `-fshellcode-charset=<name>` is set, the finalize stage replaces `.text` with `Stub(target) || Encode(text, target)` and validates all output bytes against the charset. Printable / alphanumeric / custom encoders are registered by downstream libraries.
+2. **Out-of-tree C Plugin API** — Pure C ABI plugin interface (`NevercPluginAPI.h`) for custom IR, MIR, binary, and linker passes. Plugins register at 11 shellcode hook points (`NEVERC_HOOK_SC_*`). Single-header SDK with zero LLVM/CRT dependencies. See the [Plugin API documentation](../../plugin-api/README.md).
 
 ## Planned — Plugin Layer (via hooks)
 
@@ -68,15 +66,13 @@ These capabilities are **intentionally not built-in**. They belong to the strate
 Each extractor calls `finalizeShellcodeBytes` before writing the `.bin`:
 
 ```
-applyPostExtractObfuscationHook       (ObfuscationHooks::RunPostExtract)
-        |
-runBadByteRewriters                   (Plugin.h::registerBadByteRewriteStrategy)
-        |
-runCharsetEncoder                     (Plugin.h::registerCharsetEncoder)
+applyPostExtractObfuscationHook       (C Plugin API: NEVERC_HOOK_SC_POST_EXTRACT)
         |
 auditFinalBadBytes                    (built-in hard audit)
         |
 applyShellcodeSizing                  (-fshellcode-align/-max-length/-pad)
+        |
+applyPostFinalizeObfuscationHook      (C Plugin API: NEVERC_HOOK_SC_POST_FINALIZE)
 ```
 
 See the [Plugin API documentation](../../plugin-api/README.md) for usage and code examples.

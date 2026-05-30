@@ -50,3 +50,11 @@ NeverC extends standard C with opt-in built-in runtimes embedded as LLVM bitcode
 | [Built-in String](builtins/string/README.md) | `-fbuiltin-string` | Value-semantic `string` type with dot-call methods, automatic memory management, and native UTF-8 |
 | [Built-in mimalloc](builtins/mimalloc/README.md) | `-fbuiltin-mimalloc` | Transparent high-performance `mimalloc` allocator override for `malloc`/`free`/`calloc`/`realloc` |
 | [String Encryption (xorstr)](builtins/xorstr/README.md) | `-fencrypt-call-strings` | Compile-time string encryption with stack-allocated XOR decryption and anti-signature algorithm |
+
+---
+
+## Plugin API
+
+NeverC provides a pure C ABI for out-of-tree pass plugins. A plugin is a shared library (`.dll` / `.so` / `.dylib`) that registers custom passes at designated pipeline hook points. The plugin compiles against a single header with zero LLVM or CRT dependencies.
+
+**[Plugin API →](plugin-api/README.md)**

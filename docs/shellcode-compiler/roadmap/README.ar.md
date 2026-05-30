@@ -70,15 +70,13 @@
 يستدعي كل مستخرج `finalizeShellcodeBytes` قبل كتابة `.bin`:
 
 ```
-applyPostExtractObfuscationHook       (ObfuscationHooks::RunPostExtract)
-        |
-runBadByteRewriters                   (Plugin.h::registerBadByteRewriteStrategy)
-        |
-runCharsetEncoder                     (Plugin.h::registerCharsetEncoder)
+applyPostExtractObfuscationHook       (C Plugin API: NEVERC_HOOK_SC_POST_EXTRACT)
         |
 auditFinalBadBytes                    (تدقيق صارم مدمج)
         |
 applyShellcodeSizing                  (-fshellcode-align/-max-length/-pad)
+        |
+applyPostFinalizeObfuscationHook      (C Plugin API: NEVERC_HOOK_SC_POST_FINALIZE)
 ```
 
 الاستخدام وأمثلة الكود في [وثائق Plugin API](../../plugin-api/README.ar.md).

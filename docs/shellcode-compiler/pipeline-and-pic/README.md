@@ -65,9 +65,9 @@ Both sources work without registry or OS-provided VS environment variables, enab
 
 ## 5. Obfuscation and Extension Points
 
-- **IR obfuscation**: via `setShellcodeObfuscationHooks` with multiple IR-stage hooks; `-fshellcode-obfuscate=` passes the spec string to the external library. Each layer provides **pre** (before optimization) and **post** (after optimization) hooks. `RunAfterFinalIR` is the true last IR-dimension injectable point — obfuscation passes registered here have no subsequent passes that can modify their output. 11 hook points total (6 IR + 3 MIR + 2 byte-stream).
-- **MIR obfuscation**: `RunBeforePreEmit` / `RunAfterPreEmit` are pre/mid-granularity MIR hooks; `RunAfterFinalMIR` is the **true last** MIR hook (fork-extension adds `RegisterTargetPassConfigPostPreEmitCallbackFn` invoked after `addPreEmitPass2()`). `-fshellcode-mir-obfuscate=` specifies MIR spec separately; defaults to IR spec when unset.
-- **Byte-stream hooks**: `RunPostExtract` is the finalize **pre** hook; `RunPostFinalize` is the finalize **post** hook (last moment before disk write, no further NeverC auditing).
+- **IR hooks**: 6 hook points (`NEVERC_HOOK_SC_BEFORE_PREP` through `NEVERC_HOOK_SC_AFTER_FINAL_IR`) accessible via the [Plugin API](../../plugin-api/README.md). `NEVERC_HOOK_SC_AFTER_FINAL_IR` is the true last IR-dimension injectable point — passes registered here have no subsequent passes that can modify their output. 11 hook points total (6 IR + 3 MIR + 2 byte-stream).
+- **MIR hooks**: `NEVERC_HOOK_SC_BEFORE_PREEMIT` / `NEVERC_HOOK_SC_AFTER_PREEMIT` are pre/mid-granularity MIR hooks; `NEVERC_HOOK_SC_AFTER_FINAL_MIR` is the **true last** MIR hook (fork-extension adds `RegisterTargetPassConfigPostPreEmitCallbackFn` invoked after `addPreEmitPass2()`).
+- **Byte-stream hooks**: `NEVERC_HOOK_SC_POST_EXTRACT` is the finalize **pre** hook; `NEVERC_HOOK_SC_POST_FINALIZE` is the finalize **post** hook (last moment before disk write, no further NeverC auditing).
 - **Size / alignment / padding**: `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=` execute at the end of finalize; the driver rejects contradictory configurations.
 - **Design choice**: obfuscation, polymorphism, staged encoders, indirect syscalls, and similar strategy-layer features are **intentionally not built-in**, and are only available as optional plugins.
 

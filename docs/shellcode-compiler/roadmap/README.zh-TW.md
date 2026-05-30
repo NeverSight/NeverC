@@ -68,15 +68,13 @@ NeverC 的 shellcode 管線涵蓋：
 每個擷取器在寫入 `.bin` 之前呼叫 `finalizeShellcodeBytes`：
 
 ```
-applyPostExtractObfuscationHook       (ObfuscationHooks::RunPostExtract)
-        |
-runBadByteRewriters                   (Plugin.h::registerBadByteRewriteStrategy)
-        |
-runCharsetEncoder                     (Plugin.h::registerCharsetEncoder)
+applyPostExtractObfuscationHook       (C Plugin API: NEVERC_HOOK_SC_POST_EXTRACT)
         |
 auditFinalBadBytes                    (內建硬稽核)
         |
 applyShellcodeSizing                  (-fshellcode-align/-max-length/-pad)
+        |
+applyPostFinalizeObfuscationHook      (C Plugin API: NEVERC_HOOK_SC_POST_FINALIZE)
 ```
 
 用法和程式碼範例見 [Plugin API 文件](../../plugin-api/README.zh-TW.md)。

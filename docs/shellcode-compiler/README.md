@@ -98,7 +98,7 @@ neverc -v -fshellcode -target arm64-apple-macos fib.c -o fib.bin
 | `-fshellcode-entry=<name>` | Override default entry name. Defaults accept `main` / `_main` / `shellcode_entry` / `_shellcode_entry`. |
 | `-fshellcode-bad-bytes=<hex-list>` | Comma-separated forbidden byte list, e.g. `00,0a,0d` or `0x00,0x0a`. Extractor scans the final `.bin` after post-extract hooks; hits cause failure with no file written. |
 | `-fshellcode-bad-byte-profile=<name>` | Built-in forbidden byte profiles: `null`, `c-string`, `http-newline`, `line`, `whitespace`, `ascii-control`. Combinable with `-fshellcode-bad-bytes=`. |
-| `-fshellcode-obfuscate=<spec>` | Passed through to registered **IR-level** obfuscation hooks (`ObfuscationHooks`). No-op when no obfuscation library is linked. See [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.md#9-obfuscation-hooks). |
+| `-fshellcode-obfuscate=<spec>` | Passed through to registered **IR-level** plugin hooks via the [Plugin API](../plugin-api/README.md). No-op when no plugin is loaded. See [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.md#9-obfuscation-hooks). |
 | `-fshellcode-mir-obfuscate=<spec>` | Passed through to **MIR-level** obfuscation hooks (`RunBeforePreEmit` / `RunAfterPreEmit`). Falls back to `-fshellcode-obfuscate=` value if unset. See [mir-pass-design.md §3 — User Obfuscation Hooks](mir-pass-design/README.md#3-user-obfuscation-hooks). |
 
 ---
@@ -224,7 +224,6 @@ neverc/
 ├── include/neverc/Shellcode/                  # Headers (organized by subsystem)
 │   ├── Pipeline/                              # Pipeline / driver integration
 │   │   ├── Pipeline.h                         # IR + MIR hook registration
-│   │   ├── Plugin.h                           # Plugin SDK (bad-byte / charset)
 │   │   ├── DriverIntegration.h
 │   │   ├── TargetDesc.h                       # Platform table / descriptors
 │   │   ├── ShellcodeOptions.h                 # Cross-subsystem config
@@ -284,31 +283,33 @@ docs/shellcode-compiler/
    - Windows: Win64 (rcx/rdx/r8/r9)
 3. The loader is responsible for i-cache flush (arm64) / FlushInstructionCache (Windows).
 
-## Obfuscation Pass Extension (reserved interface)
+## Obfuscation & Plugin Extension
 
-The shellcode pipeline itself only ensures "the code runs correctly". Adding obfuscation for adversarial scenarios (CFF, bogus CF, opaque predicates, string encryption, instruction substitution, register renaming, etc.) is separate work. `Pipeline.h` exposes an `ObfuscationHooks` struct with **11 hook points** across three layers:
+The shellcode pipeline itself only ensures "the code runs correctly". Obfuscation, polymorphism, staged encoders, and similar strategy-layer features are **intentionally not built-in** — they are provided by out-of-tree plugins through the [Plugin API](../plugin-api/README.md).
 
-**IR level (6 hooks, receive `ModulePassManager &`)**:
-- `RunBeforePrep` — Before any shellcode pass
-- `RunAfterPrep` — Linkage unified (internal + always_inline)
-- `RunBeforeInlining` — Last chance before AlwaysInliner
-- `RunAfterInlining` — IR fully compressed into one large function
-- `RunAfterStackify` — Final IR shape, next step is codegen
-- `RunAfterFinalIR` — After AllBlrPass, the true last IR hook
+The pipeline exposes **11 hook points** across three layers, all accessible via the C Plugin API (`NEVERC_HOOK_SC_*`):
 
-**MIR level (3 hooks, receive `TargetPassConfig &`)**:
-- `RunBeforePreEmit` — Registers allocated, **CFI/EH pseudos still present**
-- `RunAfterPreEmit` — **Built-in MIRPrepPass has stripped pseudos**, closest to the byte form AsmPrinter will see; ideal for instruction-level obfuscation/register renaming
-- `RunAfterFinalMIR` — True last MIR hook, after LLVM `addPreEmitPass2()`, just before AsmPrinter
+**IR level (6 hooks)**:
+- `NEVERC_HOOK_SC_BEFORE_PREP` — Before any shellcode pass
+- `NEVERC_HOOK_SC_AFTER_PREP` — Linkage unified (internal + always_inline)
+- `NEVERC_HOOK_SC_BEFORE_INLINING` — Last chance before AlwaysInliner
+- `NEVERC_HOOK_SC_AFTER_INLINING` — IR fully compressed into one large function
+- `NEVERC_HOOK_SC_AFTER_STACKIFY` — Final IR shape, next step is codegen
+- `NEVERC_HOOK_SC_AFTER_FINAL_IR` — After AllBlrPass, the true last IR hook
 
-**Byte-stream level (2 hooks, receive `SmallVectorImpl<uint8_t> &`)**:
-- `RunPostExtract` — After extractor completes intra-text relocation patching and data-section audit; before `.bin` is written. Use for whole-payload encryption, junk byte insertion, or custom headers.
-- `RunPostFinalize` — After all finalize steps; NeverC performs no further auditing.
+**MIR level (3 hooks)**:
+- `NEVERC_HOOK_SC_BEFORE_PREEMIT` — Registers allocated, **CFI/EH pseudos still present**
+- `NEVERC_HOOK_SC_AFTER_PREEMIT` — **Built-in MIRPrepPass has stripped pseudos**, closest to the byte form AsmPrinter will see; ideal for instruction-level obfuscation/register renaming
+- `NEVERC_HOOK_SC_AFTER_FINAL_MIR` — True last MIR hook, after LLVM `addPreEmitPass2()`, just before AsmPrinter
 
-`-fshellcode-obfuscate=<spec>` and `-fshellcode-mir-obfuscate=<spec>` pass strings through to `ShellcodeOptions::ObfuscateSpec` / `MirObfuscateSpec`. MIR spec defaults to the IR spec. The pipeline does not parse the content — the obfuscation library defines its own DSL. Details:
+**Byte-stream level (2 hooks)**:
+- `NEVERC_HOOK_SC_POST_EXTRACT` — After extractor completes intra-text relocation patching and data-section audit; before `.bin` is written. Use for whole-payload encryption, junk byte insertion, or custom headers.
+- `NEVERC_HOOK_SC_POST_FINALIZE` — After all finalize steps; NeverC performs no further auditing.
 
-- IR-level: [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.md#9-obfuscation-hooks).
-- MIR-level: [mir-pass-design.md §3 — User Obfuscation Hooks](mir-pass-design/README.md#3-user-obfuscation-hooks)
+See the [Plugin API documentation](../plugin-api/README.md) for the full hook list, pass registration, and code examples.
+
+- IR-level design: [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.md#9-obfuscation-hooks).
+- MIR-level design: [mir-pass-design.md §3 — User Obfuscation Hooks](mir-pass-design/README.md#3-user-obfuscation-hooks)
 ---
 
 ## Current Limitations

@@ -53,4 +53,12 @@
 | [mimalloc المدمج](builtins/mimalloc/README.ar.md) | `-fbuiltin-mimalloc` | تجاوز مخصص ذاكرة `mimalloc` عالي الأداء شفاف `malloc`/`free`/`calloc`/`realloc` |
 | [تشفير السلاسل (xorstr)](builtins/xorstr/README.ar.md) | `-fencrypt-call-strings` | تشفير السلاسل في وقت التجميع، فك تشفير XOR على المكدس، مضاد للتوقيع |
 
+---
+
+## واجهة الإضافات API
+
+يوفر NeverC واجهة C ABI خالصة لإضافات المرور خارج الشجرة. الإضافة هي مكتبة مشتركة (`.dll` / `.so` / `.dylib`) تسجل مرورات مخصصة في نقاط ربط معينة في المسار. ملف رأس واحد فقط، صفر تبعيات LLVM/CRT.
+
+**[واجهة الإضافات API →](plugin-api/README.ar.md)**
+
 </div>

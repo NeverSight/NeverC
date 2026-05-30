@@ -50,3 +50,11 @@ NeverC는 LLVM bitcode로 임베디드된 내장 런타임으로 표준 C를 확
 | [내장 문자열](builtins/string/README.ko.md) | `-fbuiltin-string` | 값 의미론 `string` 타입, 도트 호출 메서드, 자동 메모리 관리, 네이티브 UTF-8 |
 | [내장 mimalloc](builtins/mimalloc/README.ko.md) | `-fbuiltin-mimalloc` | `malloc`/`free`/`calloc`/`realloc` `mimalloc` 투명 고성능 할당자 오버라이드 |
 | [문자열 암호화 (xorstr)](builtins/xorstr/README.ko.md) | `-fencrypt-call-strings` | 컴파일 타임 문자열 암호화, 스택 할당 XOR 복호화, 안티 시그니처 |
+
+---
+
+## 플러그인 API
+
+NeverC는 아웃오브트리 패스 플러그인을 위한 순수 C ABI를 제공합니다. 플러그인은 공유 라이브러리(`.dll` / `.so` / `.dylib`)로, 파이프라인의 지정된 훅 포인트에 커스텀 패스를 등록합니다. 단일 헤더만 필요하며 LLVM/CRT 의존성이 없습니다.
+
+**[플러그인 API →](plugin-api/README.ko.md)**

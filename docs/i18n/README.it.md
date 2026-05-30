@@ -13,7 +13,7 @@ Linker integrato · Pipeline shellcode · Runtime integrati (`string` · `mimall
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#cross-compilazione-verso-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#funzionalità)
 
-[Documentazione](../README.it.md) · [Guida shellcode](../shellcode-compiler/README.it.md) · [Runtime integrati](../builtins/README.it.md)
+[Documentazione](../README.it.md) · [Guida shellcode](../shellcode-compiler/README.it.md) · [Runtime integrati](../builtins/README.it.md) · [API Plugin](../plugin-api/README.it.md)
 
 </div>
 
@@ -31,6 +31,7 @@ NeverC compila C standard in binari ospitati, eseguibili freestanding e shellcod
 - **Linker integrato** — COFF, ELF e Mach-O in un solo binario; nessun `ld` o `link.exe` esterno
 - **Cross-compilazione** — PE Windows da macOS/Linux con SDK MSVC incluso
 - **[Runtime integrati](../builtins/README.it.md)** — runtime LLVM bitcode integrati nel compilatore: [`string`](../builtins/string/README.it.md) (stringa a semantica di valore, gestione automatica della memoria), [`mimalloc`](../builtins/mimalloc/README.it.md) (sostituzione trasparente allocatore ad alte prestazioni) e [`xorstr`](../builtins/xorstr/README.it.md) (cifratura di stringhe a tempo di compilazione con decifratura anti-firma)
+- **[API Plugin](../plugin-api/README.it.md)** — ABI C pura per plugin di pass fuori dall'albero; SDK a singolo header, zero dipendenze LLVM/CRT, hook point IR, MIR, Binary e Linker
 - **[Estensione `.nc`](../nc-extension/README.it.md)** — usa `.nc` per abilitare automaticamente tutte le funzionalità NeverC (`string`, tipi interi stile Rust) senza flag aggiuntivi
 - **Build LLVM snella** — solo backend x86_64 / AArch64; percorsi C++/ObjC/OpenMP rimossi
 

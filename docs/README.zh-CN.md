@@ -50,3 +50,11 @@ NeverC 通过嵌入 LLVM bitcode 的内置运行时扩展标准 C，每个由 `-
 | [内置字符串](builtins/string/README.zh-CN.md) | `-fbuiltin-string` | 值语义 `string` 类型，点调用方法、自动内存管理和原生 UTF-8 |
 | [内置 mimalloc](builtins/mimalloc/README.zh-CN.md) | `-fbuiltin-mimalloc` | 透明高性能 `mimalloc` 分配器覆盖 `malloc`/`free`/`calloc`/`realloc` |
 | [字符串加密 (xorstr)](builtins/xorstr/README.zh-CN.md) | `-fencrypt-call-strings` | 编译期字符串加密，栈分配 XOR 解密，反签名算法 |
+
+---
+
+## 插件 API
+
+NeverC 提供纯 C ABI 的树外 pass 插件接口。插件是一个共享库（`.dll` / `.so` / `.dylib`），可在编译流水线的指定钩子点注册自定义 pass。只需一个头文件，零 LLVM/CRT 依赖。
+
+**[插件 API →](plugin-api/README.zh-CN.md)**

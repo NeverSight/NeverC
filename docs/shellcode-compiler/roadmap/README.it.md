@@ -68,15 +68,13 @@ Queste capacità **non sono intenzionalmente integrate**. Appartengono al livell
 Ogni estrattore chiama `finalizeShellcodeBytes` prima di scrivere il `.bin`:
 
 ```
-applyPostExtractObfuscationHook       (ObfuscationHooks::RunPostExtract)
-        |
-runBadByteRewriters                   (Plugin.h::registerBadByteRewriteStrategy)
-        |
-runCharsetEncoder                     (Plugin.h::registerCharsetEncoder)
+applyPostExtractObfuscationHook       (C Plugin API: NEVERC_HOOK_SC_POST_EXTRACT)
         |
 auditFinalBadBytes                    (audit rigido integrato)
         |
 applyShellcodeSizing                  (-fshellcode-align/-max-length/-pad)
+        |
+applyPostFinalizeObfuscationHook      (C Plugin API: NEVERC_HOOK_SC_POST_FINALIZE)
 ```
 
 Utilizzo ed esempi di codice nella [documentazione Plugin API](../../plugin-api/README.it.md).
