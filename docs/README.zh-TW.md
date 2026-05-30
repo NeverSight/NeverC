@@ -63,12 +63,6 @@ NeverC 提供純 C ABI 的樹外 pass 外掛介面。外掛是一個共享程式
 
 ## 範例
 
-完整的可建置範例，示範 NeverC 功能：
+完整的可建置範例，展示 NeverC 的跨平台編譯能力。所有範例均可從 macOS / Linux 交叉編譯。
 
-**[範例 →](../examples/)**
-
-| 範例 | 說明 |
-|------|------|
-| [Windows 核心驅動](../examples/windows-driver/README.zh-TW.md) | 最小 WDM 核心驅動，從 macOS/Linux 交叉編譯 |
-| [Windows 驅動 + CET](../examples/windows-driver-cet/README.zh-TW.md) | 帶控制流強制技術的核心驅動 |
-| [Windows 驅動 + 浮點](../examples/windows-driver-float/README.zh-TW.md) | 帶浮點支援的核心驅動 |
+**[範例 →](examples/README.zh-TW.md)**

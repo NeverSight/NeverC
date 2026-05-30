@@ -63,12 +63,6 @@ NeverC предоставляет чистый C ABI для внедеревны
 
 ## Примеры
 
-Полные собираемые примеры, демонстрирующие возможности NeverC:
+Собираемые примеры, демонстрирующие кроссплатформенную компиляцию NeverC. Все кросс-компилируются с macOS / Linux.
 
-**[Примеры →](../examples/)**
-
-| Пример | Описание |
-|--------|----------|
-| [Драйвер ядра Windows](../examples/windows-driver/README.ru.md) | Минимальный WDM-драйвер, кросс-компиляция с macOS/Linux |
-| [Драйвер Windows + CET](../examples/windows-driver-cet/README.ru.md) | Драйвер ядра с Control-flow Enforcement Technology |
-| [Драйвер Windows + плавающая точка](../examples/windows-driver-float/README.ru.md) | Драйвер ядра с поддержкой чисел с плавающей запятой |
+**[Примеры →](examples/README.ru.md)**

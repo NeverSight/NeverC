@@ -63,12 +63,6 @@ NeverC はアウトオブツリーのパスプラグイン用に純粋な C ABI 
 
 ## サンプル
 
-NeverC の機能を示すビルド可能なサンプル：
+NeverC のクロスプラットフォームコンパイル機能を示すビルド可能なサンプル。macOS / Linux からクロスコンパイル可能。
 
-**[サンプル →](../examples/)**
-
-| サンプル | 説明 |
-|---------|------|
-| [Windows カーネルドライバ](../examples/windows-driver/README.ja.md) | 最小限の WDM カーネルドライバ、macOS/Linux からクロスコンパイル |
-| [Windows ドライバ + CET](../examples/windows-driver-cet/README.ja.md) | 制御フロー強制技術付きカーネルドライバ |
-| [Windows ドライバ + 浮動小数点](../examples/windows-driver-float/README.ja.md) | 浮動小数点対応カーネルドライバ |
+**[サンプル →](examples/README.ja.md)**

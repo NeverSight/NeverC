@@ -63,12 +63,6 @@ NeverC bietet eine reine C-ABI für Out-of-Tree-Pass-Plugins. Ein Plugin ist ein
 
 ## Beispiele
 
-Vollständig kompilierbare Beispiele für NeverC-Funktionen:
+Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilierung mit NeverC. Cross-Kompilierung von macOS / Linux.
 
-**[Beispiele →](../examples/)**
-
-| Beispiel | Beschreibung |
-|----------|--------------|
-| [Windows Kerneltreiber](../examples/windows-driver/README.de.md) | Minimaler WDM-Kerneltreiber, Cross-Kompilierung von macOS/Linux |
-| [Windows Treiber + CET](../examples/windows-driver-cet/README.de.md) | Kerneltreiber mit Control-flow Enforcement Technology |
-| [Windows Treiber + Gleitkomma](../examples/windows-driver-float/README.de.md) | Kerneltreiber mit Gleitkommaunterstützung |
+**[Beispiele →](examples/README.de.md)**

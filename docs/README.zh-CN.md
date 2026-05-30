@@ -63,12 +63,6 @@ NeverC 提供纯 C ABI 的树外 pass 插件接口。插件是一个共享库（
 
 ## 示例
 
-完整的可构建示例，演示 NeverC 功能：
+完整的可构建示例，展示 NeverC 的跨平台编译能力。所有示例均可从 macOS / Linux 交叉编译。
 
-**[示例 →](../examples/)**
-
-| 示例 | 说明 |
-|------|------|
-| [Windows 内核驱动](../examples/windows-driver/README.zh-CN.md) | 最小 WDM 内核驱动，从 macOS/Linux 交叉编译 |
-| [Windows 驱动 + CET](../examples/windows-driver-cet/README.zh-CN.md) | 带控制流强制技术的内核驱动 |
-| [Windows 驱动 + 浮点](../examples/windows-driver-float/README.zh-CN.md) | 带浮点支持的内核驱动 |
+**[示例 →](examples/README.zh-CN.md)**

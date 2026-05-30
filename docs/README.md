@@ -63,12 +63,6 @@ NeverC provides a pure C ABI for out-of-tree pass plugins. A plugin is a shared 
 
 ## Examples
 
-Complete buildable samples demonstrating NeverC features:
+Complete buildable samples demonstrating NeverC's cross-platform compilation capabilities. All examples cross-compile from macOS / Linux.
 
-**[Examples →](../examples/)**
-
-| Example | Description |
-|---------|-------------|
-| [Windows Kernel Driver](../examples/windows-driver/README.md) | Minimal WDM kernel driver, cross-compiled from macOS/Linux |
-| [Windows Driver + CET](../examples/windows-driver-cet/README.md) | Kernel driver with Control-flow Enforcement Technology |
-| [Windows Driver + Float](../examples/windows-driver-float/README.md) | Kernel driver with floating-point support |
+**[Examples →](examples/README.md)**

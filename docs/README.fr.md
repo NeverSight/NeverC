@@ -63,12 +63,6 @@ NeverC fournit une ABI C pure pour les plugins de passes hors arbre. Un plugin e
 
 ## Exemples
 
-Exemples compilables complets démontrant les fonctionnalités de NeverC :
+Exemples compilables démontrant les capacités de compilation croisée de NeverC. Tous compilent depuis macOS / Linux.
 
-**[Exemples →](../examples/)**
-
-| Exemple | Description |
-|---------|-------------|
-| [Pilote noyau Windows](../examples/windows-driver/README.fr.md) | Pilote WDM minimal, compilation croisée depuis macOS/Linux |
-| [Pilote Windows + CET](../examples/windows-driver-cet/README.fr.md) | Pilote noyau avec Control-flow Enforcement Technology |
-| [Pilote Windows + virgule flottante](../examples/windows-driver-float/README.fr.md) | Pilote noyau avec support virgule flottante |
+**[Exemples →](examples/README.fr.md)**

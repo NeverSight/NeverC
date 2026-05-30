@@ -63,12 +63,6 @@ NeverC proporciona una ABI C pura para plugins de pases fuera del árbol. Un plu
 
 ## Ejemplos
 
-Ejemplos compilables completos que demuestran las características de NeverC:
+Ejemplos compilables que demuestran las capacidades de compilación cruzada de NeverC. Todos compilan desde macOS / Linux.
 
-**[Ejemplos →](../examples/)**
-
-| Ejemplo | Descripción |
-|---------|-------------|
-| [Controlador de kernel Windows](../examples/windows-driver/README.es.md) | Controlador WDM mínimo, compilación cruzada desde macOS/Linux |
-| [Controlador Windows + CET](../examples/windows-driver-cet/README.es.md) | Controlador kernel con Control-flow Enforcement Technology |
-| [Controlador Windows + punto flotante](../examples/windows-driver-float/README.es.md) | Controlador kernel con soporte de punto flotante |
+**[Ejemplos →](examples/README.es.md)**
