@@ -1,4 +1,5 @@
 #include "BridgeCastHelpers.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/xxhash.h"
 #include <cerrno>
@@ -215,11 +216,13 @@ static void bridgeMemReverse(void *Dst, const void *Src, uint64_t Len) {
     }
     return;
   }
-  // Reject partial overlap (UB per contract).  Pointer comparison across
-  // distinct objects is implementation-defined but works on every platform
-  // we ship for, and a false positive here just costs the caller the data
-  // they would have read anyway.
-  if (LLVM_UNLIKELY(D + N > S && S + N > D))
+  // Reject partial overlap (UB per contract).  C++ pointer comparison
+  // across distinct objects is unspecified, so route the range-overlap
+  // test through uintptr_t arithmetic for well-defined behaviour on
+  // every target.  A false positive here just no-ops the call.
+  auto DI = reinterpret_cast<uintptr_t>(D);
+  auto SI = reinterpret_cast<uintptr_t>(S);
+  if (LLVM_UNLIKELY(DI < SI + N && SI < DI + N))
     return;
   for (size_t I = 0; I < N; ++I)
     D[I] = S[N - 1 - I];
@@ -472,6 +475,7 @@ static void *bridgeReallocArray(void *Ptr, uint64_t Count, uint64_t ElemSize) {
   return bridgeRealloc(Ptr, Total);
 }
 
+// ===----------------------------------------------------------------------===
 //  StrJoin -- concatenate an array of strings with a separator
 // ===----------------------------------------------------------------------===
 
@@ -488,14 +492,10 @@ static char *bridgeStrJoin(const char *const *Strings, unsigned Count,
 
   size_t SepLen = (Sep && *Sep) ? std::strlen(Sep) : 0;
 
-  size_t StackLens[64];
-  size_t *Lens = StackLens;
-  if (LLVM_UNLIKELY(Count > 64)) {
-    Lens = static_cast<size_t *>(
-        bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(size_t)));
-    if (LLVM_UNLIKELY(!Lens))
-      return nullptr;
-  }
+  // 64-element inline buffer covers the common case; SmallVector spills
+  // to the heap (one alloc, no incremental growth) only for huge joins.
+  SmallVector<size_t, 64> Lens;
+  Lens.resize_for_overwrite(Count);
 
   size_t Total = 0;
   for (unsigned I = 0; I < Count; ++I) {
@@ -504,29 +504,20 @@ static char *bridgeStrJoin(const char *const *Strings, unsigned Count,
     // pathologically close to SIZE_MAX before computing SIZE_MAX-1-Lens[I],
     // which would otherwise wrap around for Lens[I] >= SIZE_MAX-1.
     if (LLVM_UNLIKELY(Lens[I] > SIZE_MAX - 1 ||
-                      Total > SIZE_MAX - 1 - Lens[I])) {
-      if (Lens != StackLens)
-        bridgeFree(Lens);
+                      Total > SIZE_MAX - 1 - Lens[I]))
       return nullptr;
-    }
     Total += Lens[I];
     if (I > 0 && SepLen) {
       if (LLVM_UNLIKELY(SepLen > SIZE_MAX - 1 ||
-                        Total > SIZE_MAX - 1 - SepLen)) {
-        if (Lens != StackLens)
-          bridgeFree(Lens);
+                        Total > SIZE_MAX - 1 - SepLen))
         return nullptr;
-      }
       Total += SepLen;
     }
   }
 
   char *Buf = static_cast<char *>(bridgeAlloc(Total + 1));
-  if (LLVM_UNLIKELY(!Buf)) {
-    if (Lens != StackLens)
-      bridgeFree(Lens);
+  if (LLVM_UNLIKELY(!Buf))
     return nullptr;
-  }
 
   char *Dst = Buf;
   for (unsigned I = 0; I < Count; ++I) {
@@ -540,9 +531,6 @@ static char *bridgeStrJoin(const char *const *Strings, unsigned Count,
     }
   }
   *Dst = '\0';
-
-  if (Lens != StackLens)
-    bridgeFree(Lens);
   return Buf;
 }
 
@@ -572,82 +560,43 @@ static char **bridgeStrSplit(const char *S, const char *Delim,
 
   size_t DelimLen = std::strlen(Delim);
 
-  // Single pass: collect delimiter hit offsets into a stack-local buffer,
-  // spilling to the heap only when there are many hits.  This avoids
-  // scanning the string twice (count pass + split pass).
-  size_t StackHits[64];
-  size_t *Hits = StackHits;
-  size_t HitCap = sizeof(StackHits) / sizeof(StackHits[0]);
-  size_t HitCount = 0;
+  // Single pass: collect delimiter hit offsets into an inline-64 buffer,
+  // spilling to the heap automatically only when there are many hits.
+  // This avoids scanning the string twice (count pass + split pass).
+  SmallVector<size_t, 64> Hits;
 
   const char *P = S;
   while ((P = std::strstr(P, Delim)) != nullptr) {
-    if (HitCount == HitCap) {
-      if (HitCap > (SIZE_MAX / sizeof(size_t)) / 2) {
-        if (Hits != StackHits)
-          bridgeFree(Hits);
-        return nullptr;
-      }
-      size_t NewCap = HitCap * 2;
-      size_t *NewBuf;
-      if (Hits == StackHits) {
-        NewBuf =
-            static_cast<size_t *>(bridgeAlloc(NewCap * sizeof(size_t)));
-        if (LLVM_LIKELY(NewBuf))
-          std::memcpy(NewBuf, StackHits, HitCount * sizeof(size_t));
-      } else {
-        NewBuf =
-            static_cast<size_t *>(bridgeRealloc(Hits, NewCap * sizeof(size_t)));
-      }
-      if (LLVM_UNLIKELY(!NewBuf)) {
-        if (Hits != StackHits)
-          bridgeFree(Hits);
-        return nullptr;
-      }
-      Hits = NewBuf;
-      HitCap = NewCap;
-    }
-    Hits[HitCount++] = static_cast<size_t>(P - S);
+    Hits.push_back(static_cast<size_t>(P - S));
     P += DelimLen;
   }
 
-  if (LLVM_UNLIKELY(HitCount >= UINT_MAX)) {
-    if (Hits != StackHits)
-      bridgeFree(Hits);
+  if (LLVM_UNLIKELY(Hits.size() >= UINT_MAX))
     return nullptr;
-  }
-  unsigned Parts = static_cast<unsigned>(HitCount) + 1;
+  unsigned Parts = static_cast<unsigned>(Hits.size()) + 1;
   char **Arr = static_cast<char **>(
       bridgeAlloc(static_cast<uint64_t>(Parts) * sizeof(char *)));
-  if (LLVM_UNLIKELY(!Arr)) {
-    if (Hits != StackHits)
-      bridgeFree(Hits);
+  if (LLVM_UNLIKELY(!Arr))
     return nullptr;
-  }
 
   // Build parts using recorded offsets -- no second strstr scan.
   size_t Prev = 0;
   unsigned Idx = 0;
-  for (size_t I = 0; I < HitCount; ++I) {
-    size_t Span = Hits[I] - Prev;
+  for (size_t Off : Hits) {
+    size_t Span = Off - Prev;
     char *Part = static_cast<char *>(bridgeAlloc(Span + 1));
     if (LLVM_UNLIKELY(!Part)) {
       for (unsigned J = 0; J < Idx; ++J)
         bridgeFree(Arr[J]);
       bridgeFree(Arr);
-      if (Hits != StackHits)
-        bridgeFree(Hits);
       return nullptr;
     }
     if (Span)
       std::memcpy(Part, S + Prev, Span);
     Part[Span] = '\0';
     Arr[Idx++] = Part;
-    Prev = Hits[I] + DelimLen;
+    Prev = Off + DelimLen;
   }
-
-  if (Hits != StackHits)
-    bridgeFree(Hits);
 
   // Tail after the last delimiter.
   Arr[Idx] = bridgeStrDup(S + Prev);
@@ -671,6 +620,7 @@ static uint64_t bridgeStrHash(const char *S) {
   return llvm::xxh3_64bits(StringRef(S));
 }
 
+// ===----------------------------------------------------------------------===
 //  String search, replacement, case conversion, memory duplicate
 // ===----------------------------------------------------------------------===
 
@@ -738,58 +688,26 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
   size_t NewLen = std::strlen(New);
   size_t SLen = std::strlen(S);
 
-  // Single scan: collect hit offsets into a small stack-local buffer,
-  // spilling to the heap only when there are many matches.
-  size_t StackBuf[64];
-  size_t *Hits = StackBuf;
-  size_t HitCap = sizeof(StackBuf) / sizeof(StackBuf[0]);
-  size_t HitCount = 0;
+  // Single scan: collect hit offsets into an inline-64 buffer that
+  // spills to the heap (single contiguous alloc, no per-step realloc)
+  // only when there are many matches.
+  SmallVector<size_t, 64> Hits;
 
   const char *P = S;
   while ((P = std::strstr(P, Old)) != nullptr) {
-    if (LLVM_UNLIKELY(HitCount == HitCap)) {
-      if (HitCap > (SIZE_MAX / sizeof(size_t)) / 2) {
-        if (Hits != StackBuf)
-          bridgeFree(Hits);
-        return nullptr;
-      }
-      size_t NewCap = HitCap * 2;
-      size_t *NewBuf;
-      if (Hits == StackBuf) {
-        NewBuf = static_cast<size_t *>(
-            bridgeAlloc(NewCap * sizeof(size_t)));
-        if (LLVM_LIKELY(NewBuf))
-          std::memcpy(NewBuf, StackBuf, HitCount * sizeof(size_t));
-      } else {
-        NewBuf = static_cast<size_t *>(
-            bridgeRealloc(Hits, NewCap * sizeof(size_t)));
-      }
-      if (LLVM_UNLIKELY(!NewBuf)) {
-        if (Hits != StackBuf)
-          bridgeFree(Hits);
-        return nullptr;
-      }
-      Hits = NewBuf;
-      HitCap = NewCap;
-    }
-    Hits[HitCount++] = static_cast<size_t>(P - S);
+    Hits.push_back(static_cast<size_t>(P - S));
     P += OldLen;
   }
 
-  if (HitCount == 0) {
-    if (Hits != StackBuf)
-      bridgeFree(Hits);
+  if (Hits.empty())
     return bridgeStrDup(S);
-  }
 
+  size_t HitCount = Hits.size();
   size_t Removed = HitCount * OldLen;
   size_t Added = 0;
   if (NewLen != 0) {
-    if (LLVM_UNLIKELY(HitCount > SIZE_MAX / NewLen)) {
-      if (Hits != StackBuf)
-        bridgeFree(Hits);
+    if (LLVM_UNLIKELY(HitCount > SIZE_MAX / NewLen))
       return nullptr;
-    }
     Added = HitCount * NewLen;
   }
   size_t BaseLen = SLen - Removed;
@@ -797,25 +715,18 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
   // wraps around if BaseLen == SIZE_MAX (impossible in practice but
   // matches the unsigned-underflow-safe pattern used elsewhere).
   if (LLVM_UNLIKELY(BaseLen > SIZE_MAX - 1 ||
-                    Added > SIZE_MAX - 1 - BaseLen)) {
-    if (Hits != StackBuf)
-      bridgeFree(Hits);
+                    Added > SIZE_MAX - 1 - BaseLen))
     return nullptr;
-  }
   size_t ResultLen = BaseLen + Added;
 
   char *Result = static_cast<char *>(bridgeAlloc(ResultLen + 1));
-  if (LLVM_UNLIKELY(!Result)) {
-    if (Hits != StackBuf)
-      bridgeFree(Hits);
+  if (LLVM_UNLIKELY(!Result))
     return nullptr;
-  }
 
   // Build the result in one pass using recorded offsets.
   char *Dst = Result;
   size_t Prev = 0;
-  for (size_t I = 0; I < HitCount; ++I) {
-    size_t Off = Hits[I];
+  for (size_t Off : Hits) {
     size_t Span = Off - Prev;
     if (Span)
       std::memcpy(Dst, S + Prev, Span);
@@ -828,9 +739,6 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
   size_t Tail = SLen - Prev;
   std::memcpy(Dst, S + Prev, Tail);
   Dst[Tail] = '\0';
-
-  if (Hits != StackBuf)
-    bridgeFree(Hits);
   return Result;
 }
 

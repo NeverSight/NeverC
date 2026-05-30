@@ -1356,10 +1356,12 @@ struct MirOpCountCtx {
   unsigned RegOps;
   unsigned ImmOps;
   int HasBatchKinds;
-  /* Reusable kind-array scratch -- grows monotonically across MIs in the
-     pass, so the steady-state hot path is a single MInstCollectOperandKinds
-     call with zero per-instruction allocation.  Owned by mirAnalysisPass,
-     freed exactly once after the iteration completes. */
+  /* Arena-owned scratch that grows monotonically via bump-alloc.
+     Starts at 64 bytes; when an MI with more operands appears the
+     outer loop bump-allocs a larger buffer (O(1), the old one stays
+     in the arena).  Settles within the first few MIs so the steady
+     state is zero-alloc.  NULL on non-arena fallback paths -- callers
+     degrade to single-operand vtable queries. */
   uint8_t *KindsBuf;
   unsigned KindsCap;
 };
@@ -1369,33 +1371,15 @@ static void mirClassifyOps(NevercMachineInstrRef MI,
   unsigned NumOps = C->API->MInstGetNumOperands(MI);
   if (NumOps == 0)
     return;
-  if (C->HasBatchKinds) {
-    if (NumOps > C->KindsCap) {
-      unsigned NewCap = C->KindsCap ? C->KindsCap : 64;
-      while (NewCap < NumOps) {
-        unsigned Doubled = NewCap * 2;
-        if (Doubled <= NewCap) {
-          NewCap = NumOps;
-          break;
-        }
-        NewCap = Doubled;
-      }
-      uint8_t *NewBuf = (uint8_t *)C->API->Realloc(C->KindsBuf, NewCap);
-      if (NewBuf) {
-        C->KindsBuf = NewBuf;
-        C->KindsCap = NewCap;
-      }
+  if (C->HasBatchKinds && C->KindsBuf && NumOps <= C->KindsCap) {
+    C->API->MInstCollectOperandKinds(MI, C->KindsBuf);
+    for (unsigned K = 0; K < NumOps; K++) {
+      if (C->KindsBuf[K] == NEVERC_MIR_OP_REG)
+        C->RegOps++;
+      else if (C->KindsBuf[K] == NEVERC_MIR_OP_IMM)
+        C->ImmOps++;
     }
-    if (C->KindsCap >= NumOps) {
-      C->API->MInstCollectOperandKinds(MI, C->KindsBuf);
-      for (unsigned K = 0; K < NumOps; K++) {
-        if (C->KindsBuf[K] == NEVERC_MIR_OP_REG)
-          C->RegOps++;
-        else if (C->KindsBuf[K] == NEVERC_MIR_OP_IMM)
-          C->ImmOps++;
-      }
-      return;
-    }
+    return;
   }
   for (unsigned K = 0; K < NumOps; K++) {
     if (C->API->MInstGetOperandIsReg(MI, K))
@@ -1440,7 +1424,16 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
 
   NevercArenaRef Scratch = NEVERC_TRY_ARENA(API);
   if (Scratch && NEVERC_API_FN(API, ArenaCollectMBBs)) {
-    /* Tier 1: batch collect + batch operand kinds. */
+    /* Tier 1: batch collect + arena-grown KindsBuf.
+       Pass 1 counts instructions per MBB and finds MaxIC.
+       Pass 2 collects + classifies in a single walk.  KindsBuf starts
+       at 64 bytes; when an MI with more operands appears we bump-alloc
+       a larger buffer from the arena (O(1) pointer bump, the abandoned
+       old buffer is reclaimed with ArenaDestroy).  In practice the
+       buffer settles within the first few MIs so the steady-state hot
+       loop is a single MInstCollectOperandKinds + linear scan.  Zero
+       heap realloc, zero free -- ArenaDestroy at function exit reclaims
+       everything. */
     unsigned MBBCount = 0;
     NevercMachineBBRef *MBBs =
         NEVERC_ARENA_COLLECT_MBBS(API, Scratch, MF, &MBBCount);
@@ -1461,13 +1454,30 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
         ? NEVERC_ARENA_ALLOC_ARRAY(API, Scratch, NevercMachineInstrRef, MaxIC)
         : NULL;
 
+    if (Ctx.HasBatchKinds && MIs) {
+      Ctx.KindsBuf = NEVERC_ARENA_ALLOC_ARRAY(API, Scratch, uint8_t, 64);
+      Ctx.KindsCap = Ctx.KindsBuf ? 64 : 0;
+    }
+
     for (unsigned B = 0; B < MBBCount && MIs; B++) {
       unsigned IC = API->MBBGetInstCount(MBBs[B]);
       if (IC == 0)
         continue;
       API->MBBCollectInstructions(MBBs[B], MIs);
-      for (unsigned J = 0; J < IC; J++)
+      for (unsigned J = 0; J < IC; J++) {
+        if (Ctx.HasBatchKinds) {
+          unsigned N = API->MInstGetNumOperands(MIs[J]);
+          if (N > Ctx.KindsCap) {
+            uint8_t *New =
+                NEVERC_ARENA_ALLOC_ARRAY(API, Scratch, uint8_t, N);
+            if (New) {
+              Ctx.KindsBuf = New;
+              Ctx.KindsCap = N;
+            }
+          }
+        }
         mirClassifyOps(MIs[J], &Ctx);
+      }
     }
     API->ArenaDestroy(Scratch);
   } else if (NEVERC_API_FN(API, MFuncForEachBB) &&
@@ -1485,9 +1495,6 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
       }
     }
   }
-
-  if (Ctx.KindsBuf)
-    API->Free(Ctx.KindsBuf);
 
   API->DiagNoteF(PLUGIN_TAG "MIR '%s': %u BBs, %u instrs, %u reg, %u imm",
                  FnName, BBCount, Ctx.InstrCount, Ctx.RegOps, Ctx.ImmOps);

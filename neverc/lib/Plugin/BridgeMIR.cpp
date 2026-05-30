@@ -104,7 +104,6 @@ static void bridgeMInstEraseFromParent(NevercMachineInstrRef MI) {
   unwrapMI(MI)->eraseFromParent();
 }
 
-
 // ===----------------------------------------------------------------------===
 //  MIR name & operand access
 // ===----------------------------------------------------------------------===
@@ -153,7 +152,6 @@ static int bridgeMInstGetOperandIsImm(NevercMachineInstrRef MI, unsigned Idx) {
   return Inst->getOperand(Idx).isImm();
 }
 
-
 static unsigned bridgeMInstCollectOperandKinds(NevercMachineInstrRef MI,
                                                uint8_t *OutKinds) {
   if (LLVM_UNLIKELY(!MI || !OutKinds))
@@ -186,7 +184,6 @@ static unsigned bridgeMBBGetPredCount(NevercMachineBBRef MBB) {
     return 0;
   return unwrapMBB(MBB)->pred_size();
 }
-
 
 // ===----------------------------------------------------------------------===
 //  MIR BasicBlock navigation by index
@@ -233,7 +230,6 @@ static void bridgeMBBCollectInstructions(NevercMachineBBRef MBB,
   for (auto &MI : *unwrapMBB(MBB))
     Out[Idx++] = wrapMI(&MI);
 }
-
 
 // ===----------------------------------------------------------------------===
 //  MIR extended navigation
@@ -441,7 +437,6 @@ static unsigned bridgeMFuncGetBBCount(NevercMachineFuncRef MF) {
   return static_cast<unsigned>(unwrapMF(MF)->size());
 }
 
-
 // ===----------------------------------------------------------------------===
 //  MIR callback iteration
 //  Same pattern as the IR ForEach family.  One vtable call replaces N
@@ -491,7 +486,6 @@ bridgeArenaCollectMBBs(NevercArenaRef Arena, NevercMachineFuncRef MF,
   *OutCount = Idx;
   return Buf;
 }
-
 
 void populateMIRBridge(NevercHostAPI &API) {
   API.MFuncGetFirstBB = bridgeMFuncGetFirstBB;

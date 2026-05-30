@@ -340,7 +340,7 @@ static inline NevercStrMapRef wrapSM(StringMap<uint64_t> *M) {
   return reinterpret_cast<NevercStrMapRef>(M);
 }
 
-static NevercStrMapRef bridgeStrMapCreate() {
+static NevercStrMapRef bridgeStrMapCreate(void) {
   auto *M = new (std::nothrow) StringMap<uint64_t>();
   return wrapSM(M);
 }
@@ -514,7 +514,7 @@ static inline NevercStrBuilderRef wrapSB(SmallString<256> *SB) {
   return reinterpret_cast<NevercStrBuilderRef>(SB);
 }
 
-static NevercStrBuilderRef bridgeStrBuilderCreate() {
+static NevercStrBuilderRef bridgeStrBuilderCreate(void) {
   return wrapSB(new (std::nothrow) SmallString<256>());
 }
 
@@ -740,7 +740,7 @@ static inline NevercIntMapRef wrapIM(DenseMap<uint64_t, uint64_t> *M) {
   return reinterpret_cast<NevercIntMapRef>(M);
 }
 
-static NevercIntMapRef bridgeIntMapCreate() {
+static NevercIntMapRef bridgeIntMapCreate(void) {
   auto *M = new (std::nothrow) DenseMap<uint64_t, uint64_t>();
   return wrapIM(M);
 }
@@ -843,7 +843,7 @@ static void *bridgeDynArrayBSearch(NevercDynArrayRef Arr, const void *Key,
 
 // ArenaImpl, unwrapArena, wrapArena defined in BridgeCastHelpers.h
 
-static NevercArenaRef bridgeArenaCreate() {
+static NevercArenaRef bridgeArenaCreate(void) {
   auto *A = new (std::nothrow) ArenaImpl();
   return wrapArena(A);
 }
@@ -963,7 +963,7 @@ static inline NevercValueSetRef wrapVS(ValueSetImpl *S) {
   return reinterpret_cast<NevercValueSetRef>(S);
 }
 
-static NevercValueSetRef bridgeValueSetCreate() {
+static NevercValueSetRef bridgeValueSetCreate(void) {
   auto *S = new (std::nothrow) ValueSetImpl();
   return wrapVS(S);
 }

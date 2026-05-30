@@ -96,7 +96,7 @@ static unsigned bridgeLinkGetOutputFormat(void) {
                                  : NEVERC_LINK_FORMAT_UNKNOWN;
 }
 
-static const char *bridgeLinkGetOutputFormatName() {
+static const char *bridgeLinkGetOutputFormatName(void) {
   const NevercLinkerBackend *B = getLinkerBackend();
   unsigned Fmt = B && B->GetOutputFormat ? B->GetOutputFormat()
                                          : NEVERC_LINK_FORMAT_UNKNOWN;

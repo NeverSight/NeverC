@@ -11,7 +11,6 @@ using namespace llvm;
 namespace neverc {
 namespace plugin {
 
-
 // ===----------------------------------------------------------------------===
 //  IRBuilder
 // ===----------------------------------------------------------------------===
@@ -318,7 +317,6 @@ static void bridgePhiAddIncoming(NevercValueRef Phi, NevercValueRef *Values,
   }
 }
 
-
 // ===----------------------------------------------------------------------===
 //  Unary builder ops
 // ===----------------------------------------------------------------------===
@@ -377,7 +375,6 @@ static void bridgeSwitchAddCase(NevercValueRef Switch, NevercValueRef OnVal,
   }
   SI->addCase(CI, unwrapBB(Dest));
 }
-
 
 // ===----------------------------------------------------------------------===
 //  Remainder ops
@@ -438,7 +435,6 @@ static NevercValueRef bridgeBuildUIToFP(NevercBuilderRef B, NevercValueRef V,
   return wrapV(
       unwrapB(B)->CreateUIToFP(unwrapV(V), unwrapTy(DestTy), nameStr(Name)));
 }
-
 
 // ===----------------------------------------------------------------------===
 //  Floating-point arithmetic
@@ -507,7 +503,6 @@ static NevercValueRef bridgeBuildInsertValue(NevercBuilderRef B,
                                              nameStr(Name)));
 }
 
-
 // ===----------------------------------------------------------------------===
 //  Global string pointer convenience
 // ===----------------------------------------------------------------------===
@@ -520,7 +515,6 @@ static NevercValueRef bridgeBuildGlobalStringPtr(NevercBuilderRef B,
   return wrapV(
       unwrapB(B)->CreateGlobalStringPtr(Str, nameStr(Name)));
 }
-
 
 // ===----------------------------------------------------------------------===
 //  Inbounds GEP
@@ -544,7 +538,6 @@ static NevercValueRef bridgeBuildInBoundsGEP(NevercBuilderRef B,
                                              nameStr(Name)));
 }
 
-
 // ===----------------------------------------------------------------------===
 //  IRBuilder insert-point query
 // ===----------------------------------------------------------------------===
@@ -555,7 +548,6 @@ static NevercBasicBlockRef bridgeBuilderGetInsertBlock(NevercBuilderRef B) {
   auto *BB = unwrapB(B)->GetInsertBlock();
   return BB ? wrapBB(BB) : nullptr;
 }
-
 
 // ===----------------------------------------------------------------------===
 //  FP precision cast ops
@@ -579,7 +571,6 @@ static NevercValueRef bridgeBuildFPTrunc(NevercBuilderRef B, NevercValueRef V,
                                          nameStr(Name)));
 }
 
-
 // ===----------------------------------------------------------------------===
 //  Builder: insert before terminator
 // ===----------------------------------------------------------------------===
@@ -595,7 +586,6 @@ static void bridgeBuilderSetInsertPointBeforeTerminator(
   else
     unwrapB(B)->SetInsertPoint(Block);
 }
-
 
 // ===----------------------------------------------------------------------===
 //  Aligned Load/Store builders
@@ -623,7 +613,6 @@ static NevercValueRef bridgeBuildAlignedStore(NevercBuilderRef B,
   return wrapV(unwrapB(B)->CreateAlignedStore(
       unwrapV(Val), unwrapV(Ptr), MaybeAlign(AlignVal), IsVolatile != 0));
 }
-
 
 // ===----------------------------------------------------------------------===
 //  Memory intrinsic builders (memcpy, memset, memmove)
@@ -666,7 +655,6 @@ static NevercValueRef bridgeBuildMemMove(NevercBuilderRef B,
       unwrapV(Src), MaybeAlign(SrcAlign),
       unwrapV(Len), IsVolatile != 0));
 }
-
 
 // ===----------------------------------------------------------------------===
 //  Vector element operations
@@ -734,7 +722,6 @@ static NevercValueRef bridgeBuildAddrSpaceCast(NevercBuilderRef B,
       unwrapB(B)->CreateAddrSpaceCast(unwrapV(V), unwrapTy(DestTy),
                                       nameStr(Name)));
 }
-
 
 static NevercValueRef bridgeBuildNSWNeg(NevercBuilderRef B, NevercValueRef V,
                                         const char *Name) {
@@ -806,7 +793,6 @@ static NevercValueRef bridgeBuildResume(NevercBuilderRef B,
     return nullptr;
   return wrapV(unwrapB(B)->CreateResume(unwrapV(Val)));
 }
-
 
 // ===----------------------------------------------------------------------===
 //  NSW/NUW arithmetic (macro-generated)
