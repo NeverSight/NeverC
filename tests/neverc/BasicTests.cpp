@@ -241,6 +241,11 @@ TEST_F(BasicTest, BuiltinStringInvalid) {
 }
 
 TEST_F(BasicTest, BuiltinStringDCE) {
+  if (isWindows()) {
+    GTEST_SKIP() << "DCE symbol check relies on nm, which is not a reliable "
+                    "standard tool on Windows";
+    return;
+  }
   auto dceSrc = tmpFile("neverc_string_dce.c");
   writeFile(dceSrc, R"(int main(void) {
     string s = "123";
