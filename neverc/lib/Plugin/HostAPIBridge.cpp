@@ -553,6 +553,7 @@ static void bridgeModuleForEachInstruction(
           return;
   }
 }
+
 // ===----------------------------------------------------------------------===
 //  Alias / Use / per-function-instruction callback iteration
 // ===----------------------------------------------------------------------===
@@ -821,6 +822,7 @@ static unsigned bridgeModuleGetDefinedFunctionCount(NevercModuleRef M) {
       ++Count;
   return Count;
 }
+
 // ===----------------------------------------------------------------------===
 //  Arena-backed BB / MBB collection
 //  Single vtable call replaces the GetCount + AllocArray + Fill pattern.
@@ -852,6 +854,7 @@ bridgeArenaCollectBBs(NevercArenaRef Arena, NevercValueRef F,
   *OutCount = Idx;
   return Buf;
 }
+
 // ===----------------------------------------------------------------------===
 //  Build the vtable
 // ===----------------------------------------------------------------------===

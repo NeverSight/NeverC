@@ -1506,14 +1506,14 @@ static NevercBasicBlockRef bridgeBBGetSuccessorBB(NevercBasicBlockRef BB,
 // ===----------------------------------------------------------------------===
 
 static int bridgeValueIsNull(NevercValueRef V) {
-  if (!V)
+  if (LLVM_UNLIKELY(!V))
     return 1;
   auto *C = dyn_cast<Constant>(unwrapV(V));
   return C && C->isNullValue();
 }
 
 static int bridgeValueIsSameAs(NevercValueRef A, NevercValueRef B) {
-  if (!A || !B)
+  if (LLVM_UNLIKELY(!A || !B))
     return !A && !B;
   return unwrapV(A) == unwrapV(B);
 }
