@@ -17,9 +17,17 @@
 #   make NEVERC=/path/to/neverc INCLUDE_DIR=/path/to/include
 # ============================================================================
 
-# Path to the neverc compiler (assumes neverc is on PATH for SDK users).
-# In-tree override: make NEVERC=../../build-neverc/bin/neverc
-NEVERC ?= neverc
+# Auto-detect compiler path.
+#   1. Distributed SDK / build tree: neverc sits next to pluginsdk (../../bin/neverc)
+#   2. Source tree:                  ../../build-neverc/bin/neverc
+#   3. Fallback:                     neverc on PATH
+ifneq ($(wildcard ../../bin/neverc),)
+  NEVERC ?= ../../bin/neverc
+else ifneq ($(wildcard ../../build-neverc/bin/neverc),)
+  NEVERC ?= ../../build-neverc/bin/neverc
+else
+  NEVERC ?= neverc
+endif
 
 # Each entry becomes a separate shared library (one .c -> one .dll/.dylib/.so).
 PLUGINS = ExamplePlugin CrtShimPlugin BenchPlugin
@@ -43,11 +51,16 @@ else
   SHARED_EXT = .dll
 endif
 
-# SDK header search path (parent of neverc/Plugin/NevercPluginAPI.h).
-# In-tree default: ../../neverc/include
-# Distributed SDK:  ../include  (pluginsdk/include/ sits next to examples/)
-# CI overrides this via: make INCLUDE_DIR=$PWD/build/pluginsdk/include
-INCLUDE_DIR ?= ../include
+# Auto-detect SDK header search path (parent of neverc/Plugin/NevercPluginAPI.h).
+#   1. Distributed SDK:  ../include  (pluginsdk/include/ sits next to examples/)
+#   2. Source tree:       ../../neverc/include
+ifneq ($(wildcard ../include/neverc/Plugin/NevercPluginAPI.h),)
+  INCLUDE_DIR ?= ../include
+else ifneq ($(wildcard ../../neverc/include/neverc/Plugin/NevercPluginAPI.h),)
+  INCLUDE_DIR ?= ../../neverc/include
+else
+  $(error NevercPluginAPI.h not found. Set INCLUDE_DIR=/path/to/include)
+endif
 FLAGS = --target=$(HOST_TARGET) -shared -I$(INCLUDE_DIR)
 
 # Expand plugin names to platform-specific output filenames.
