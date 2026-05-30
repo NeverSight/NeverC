@@ -58,3 +58,17 @@ NeverC 通过嵌入 LLVM bitcode 的内置运行时扩展标准 C，每个由 `-
 NeverC 提供纯 C ABI 的树外 pass 插件接口。插件是一个共享库（`.dll` / `.so` / `.dylib`），可在编译流水线的指定钩子点注册自定义 pass。只需一个头文件，零 LLVM/CRT 依赖。
 
 **[插件 API →](plugin-api/README.zh-CN.md)**
+
+---
+
+## 示例
+
+完整的可构建示例，演示 NeverC 功能：
+
+**[示例 →](../examples/)**
+
+| 示例 | 说明 |
+|------|------|
+| [Windows 内核驱动](../examples/windows-driver/README.zh-CN.md) | 最小 WDM 内核驱动，从 macOS/Linux 交叉编译 |
+| [Windows 驱动 + CET](../examples/windows-driver-cet/README.zh-CN.md) | 带控制流强制技术的内核驱动 |
+| [Windows 驱动 + 浮点](../examples/windows-driver-float/README.zh-CN.md) | 带浮点支持的内核驱动 |

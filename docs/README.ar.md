@@ -61,4 +61,18 @@
 
 **[واجهة الإضافات API →](plugin-api/README.ar.md)**
 
+---
+
+## أمثلة
+
+أمثلة قابلة للبناء توضح ميزات NeverC:
+
+**[أمثلة →](../examples/)**
+
+| المثال | الوصف |
+|--------|-------|
+| [برنامج تشغيل نواة Windows](../examples/windows-driver/README.ar.md) | برنامج WDM أدنى، تجميع متقاطع من macOS/Linux |
+| [برنامج تشغيل Windows + CET](../examples/windows-driver-cet/README.ar.md) | برنامج نواة مع تقنية فرض تدفق التحكم |
+| [برنامج تشغيل Windows + عائم](../examples/windows-driver-float/README.ar.md) | برنامج نواة مع دعم الفاصلة العائمة |
+
 </div>

@@ -83,7 +83,7 @@ neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
 neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
-See the **[documentation index](docs/README.md)** for detailed design notes, platform matrix, CLI reference, and examples.
+See the **[documentation index](docs/README.md)** for detailed design notes, platform matrix, CLI reference, and examples. For complete buildable samples, see the **[examples/](examples/)** directory.
 
 ## Prebuilt macOS binaries
 

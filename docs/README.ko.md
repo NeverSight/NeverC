@@ -58,3 +58,17 @@ NeverC는 LLVM bitcode로 임베디드된 내장 런타임으로 표준 C를 확
 NeverC는 아웃오브트리 패스 플러그인을 위한 순수 C ABI를 제공합니다. 플러그인은 공유 라이브러리(`.dll` / `.so` / `.dylib`)로, 파이프라인의 지정된 훅 포인트에 커스텀 패스를 등록합니다. 단일 헤더만 필요하며 LLVM/CRT 의존성이 없습니다.
 
 **[플러그인 API →](plugin-api/README.ko.md)**
+
+---
+
+## 예제
+
+NeverC 기능을 보여주는 빌드 가능한 샘플:
+
+**[예제 →](../examples/)**
+
+| 예제 | 설명 |
+|------|------|
+| [Windows 커널 드라이버](../examples/windows-driver/README.ko.md) | 최소 WDM 커널 드라이버, macOS/Linux에서 크로스 컴파일 |
+| [Windows 드라이버 + CET](../examples/windows-driver-cet/README.ko.md) | 제어 흐름 강제 기술 커널 드라이버 |
+| [Windows 드라이버 + 부동 소수점](../examples/windows-driver-float/README.ko.md) | 부동 소수점 지원 커널 드라이버 |

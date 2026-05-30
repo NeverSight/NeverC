@@ -58,3 +58,17 @@ NeverC estende il C standard con runtime integrati come bitcode LLVM. Ciascuno �
 NeverC fornisce un'ABI C pura per plugin di pass fuori dall'albero. Un plugin è una libreria condivisa (`.dll` / `.so` / `.dylib`) che registra pass personalizzati nei punti di aggancio designati della pipeline. Un solo header, zero dipendenze LLVM/CRT.
 
 **[API Plugin →](plugin-api/README.it.md)**
+
+---
+
+## Esempi
+
+Esempi completi compilabili che dimostrano le funzionalità di NeverC:
+
+**[Esempi →](../examples/)**
+
+| Esempio | Descrizione |
+|---------|-------------|
+| [Driver kernel Windows](../examples/windows-driver/README.it.md) | Driver WDM minimale, cross-compilazione da macOS/Linux |
+| [Driver Windows + CET](../examples/windows-driver-cet/README.it.md) | Driver kernel con Control-flow Enforcement Technology |
+| [Driver Windows + virgola mobile](../examples/windows-driver-float/README.it.md) | Driver kernel con supporto virgola mobile |

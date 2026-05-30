@@ -58,3 +58,17 @@ NeverC étend le C standard avec des runtimes intégrés sous forme de bitcode L
 NeverC fournit une ABI C pure pour les plugins de passes hors arbre. Un plugin est une bibliothèque partagée (`.dll` / `.so` / `.dylib`) qui enregistre des passes personnalisées aux points d'accroche désignés du pipeline. Un seul en-tête, zéro dépendance LLVM/CRT.
 
 **[API Plugin →](plugin-api/README.fr.md)**
+
+---
+
+## Exemples
+
+Exemples compilables complets démontrant les fonctionnalités de NeverC :
+
+**[Exemples →](../examples/)**
+
+| Exemple | Description |
+|---------|-------------|
+| [Pilote noyau Windows](../examples/windows-driver/README.fr.md) | Pilote WDM minimal, compilation croisée depuis macOS/Linux |
+| [Pilote Windows + CET](../examples/windows-driver-cet/README.fr.md) | Pilote noyau avec Control-flow Enforcement Technology |
+| [Pilote Windows + virgule flottante](../examples/windows-driver-float/README.fr.md) | Pilote noyau avec support virgule flottante |

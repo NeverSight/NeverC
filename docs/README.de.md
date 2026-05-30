@@ -58,3 +58,17 @@ NeverC erweitert Standard-C mit integrierten Laufzeiten als LLVM-Bitcode. Jede w
 NeverC bietet eine reine C-ABI für Out-of-Tree-Pass-Plugins. Ein Plugin ist eine Shared Library (`.dll` / `.so` / `.dylib`), die benutzerdefinierte Passes an festgelegten Hook-Punkten der Pipeline registriert. Nur ein Header, null LLVM/CRT-Abhängigkeiten.
 
 **[Plugin-API →](plugin-api/README.de.md)**
+
+---
+
+## Beispiele
+
+Vollständig kompilierbare Beispiele für NeverC-Funktionen:
+
+**[Beispiele →](../examples/)**
+
+| Beispiel | Beschreibung |
+|----------|--------------|
+| [Windows Kerneltreiber](../examples/windows-driver/README.de.md) | Minimaler WDM-Kerneltreiber, Cross-Kompilierung von macOS/Linux |
+| [Windows Treiber + CET](../examples/windows-driver-cet/README.de.md) | Kerneltreiber mit Control-flow Enforcement Technology |
+| [Windows Treiber + Gleitkomma](../examples/windows-driver-float/README.de.md) | Kerneltreiber mit Gleitkommaunterstützung |

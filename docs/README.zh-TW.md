@@ -58,3 +58,17 @@ NeverC 透過嵌入 LLVM bitcode 的內建執行時擴展標準 C，每個由 `-
 NeverC 提供純 C ABI 的樹外 pass 外掛介面。外掛是一個共享程式庫（`.dll` / `.so` / `.dylib`），可在編譯管線的指定掛鈎點註冊自訂 pass。只需一個標頭檔，零 LLVM/CRT 相依性。
 
 **[外掛 API →](plugin-api/README.zh-TW.md)**
+
+---
+
+## 範例
+
+完整的可建置範例，示範 NeverC 功能：
+
+**[範例 →](../examples/)**
+
+| 範例 | 說明 |
+|------|------|
+| [Windows 核心驅動](../examples/windows-driver/README.zh-TW.md) | 最小 WDM 核心驅動，從 macOS/Linux 交叉編譯 |
+| [Windows 驅動 + CET](../examples/windows-driver-cet/README.zh-TW.md) | 帶控制流強制技術的核心驅動 |
+| [Windows 驅動 + 浮點](../examples/windows-driver-float/README.zh-TW.md) | 帶浮點支援的核心驅動 |
