@@ -1,6 +1,7 @@
 #include "HostAPIBridge.h"
 #include "neverc/Plugin/PluginLoader.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
@@ -34,6 +35,7 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Support/Allocator.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
@@ -41,6 +43,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include <cerrno>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -130,19 +133,48 @@ static inline NevercNamedMDRef wrapNMD(NamedMDNode *NMD) {
 //  host's mimalloc heap -- no CRT boundary crossing on Windows.
 // ===----------------------------------------------------------------------===
 
-static void *bridgeAlloc(uint64_t Size) {
+// True on 32-bit when V exceeds SIZE_MAX.  Always false on 64-bit
+// (SIZE_MAX == UINT64_MAX) -- the compiler eliminates the call entirely.
+static inline bool exceedsSizeT(uint64_t V) {
 #if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Size > SIZE_MAX))
-    return nullptr;
+  return V > SIZE_MAX;
+#else
+  (void)V;
+  return false;
 #endif
+}
+
+// Clamp uint64_t to size_t.  On 64-bit this is a no-op cast.
+static inline size_t clampToSizeT(uint64_t V) {
+#if SIZE_MAX < UINT64_MAX
+  return V > SIZE_MAX ? SIZE_MAX : static_cast<size_t>(V);
+#else
+  return static_cast<size_t>(V);
+#endif
+}
+
+// Overflow-safe Count * ElemSize -> size_t.  Returns 0 on overflow; the
+// caller must distinguish overflow (Count!=0 && ElemSize!=0) from a genuine
+// zero-size request.
+static size_t checkedArraySize(uint64_t Count, uint64_t ElemSize) {
+  if (LLVM_UNLIKELY(exceedsSizeT(Count) || exceedsSizeT(ElemSize)))
+    return 0;
+  size_t C = static_cast<size_t>(Count);
+  size_t E = static_cast<size_t>(ElemSize);
+  if (LLVM_UNLIKELY(C != 0 && E > SIZE_MAX / C))
+    return 0;
+  return C * E;
+}
+
+static void *bridgeAlloc(uint64_t Size) {
+  if (LLVM_UNLIKELY(exceedsSizeT(Size)))
+    return nullptr;
   return ::malloc(static_cast<size_t>(Size));
 }
 
 static void *bridgeRealloc(void *Ptr, uint64_t Size) {
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Size > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(Size)))
     return nullptr;
-#endif
   return ::realloc(Ptr, static_cast<size_t>(Size));
 }
 
@@ -204,6 +236,37 @@ static NevercValueRef bridgeModuleGetNextFunction(NevercValueRef F) {
   if (It == Fn->getParent()->end())
     return nullptr;
   return wrapV(&*It);
+}
+
+// Defined function iterators -- skip declarations at the C++ level so the
+// plugin pays one vtable call per defined function instead of two (GetNext +
+// IsDeclaration).  For modules with many declarations (system headers, libc)
+// this eliminates the per-declaration vtable overhead entirely.
+
+static NevercValueRef bridgeModuleGetFirstDefinedFunction(NevercModuleRef M) {
+  if (LLVM_UNLIKELY(!M))
+    return nullptr;
+  for (auto &F : *unwrap(M))
+    if (!F.isDeclaration())
+      return wrapV(&F);
+  return nullptr;
+}
+
+static NevercValueRef
+bridgeModuleGetNextDefinedFunction(NevercValueRef F) {
+  if (LLVM_UNLIKELY(!F))
+    return nullptr;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn || !Fn->getParent()))
+    return nullptr;
+  auto It = std::next(Fn->getIterator());
+  auto End = Fn->getParent()->end();
+  while (It != End) {
+    if (!It->isDeclaration())
+      return wrapV(&*It);
+    ++It;
+  }
+  return nullptr;
 }
 
 static NevercValueRef bridgeModuleGetNamedFunction(NevercModuleRef M,
@@ -3666,7 +3729,7 @@ static char *bridgeStrDup(const char *S) {
 static char *bridgeStrConcat(const char *A, const char *B) {
   size_t LenA = A ? std::strlen(A) : 0;
   size_t LenB = B ? std::strlen(B) : 0;
-  if (LLVM_UNLIKELY(LenA > SIZE_MAX - 1 - LenB))
+  if (LLVM_UNLIKELY(LenB > SIZE_MAX - 1 || LenA > SIZE_MAX - 1 - LenB))
     return nullptr;
   size_t TotalLen = LenA + LenB;
   char *Buf = static_cast<char *>(bridgeAlloc(TotalLen + 1));
@@ -3762,10 +3825,14 @@ static char *bridgeStrFormatV(const char *Fmt, va_list Args) {
   char *Buf = static_cast<char *>(bridgeAlloc(Need));
   if (LLVM_UNLIKELY(!Buf))
     return nullptr;
-  if (Need <= sizeof(Stack))
+  if (Need <= sizeof(Stack)) {
     std::memcpy(Buf, Stack, Need);
-  else
-    std::vsnprintf(Buf, Need, Fmt, Args);
+  } else {
+    va_list Args2;
+    va_copy(Args2, Args);
+    std::vsnprintf(Buf, Need, Fmt, Args2);
+    va_end(Args2);
+  }
   return Buf;
 }
 
@@ -3782,28 +3849,22 @@ static char *bridgeStrFormat(const char *Fmt, ...) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeMemCopy(void *Dst, const void *Src, uint64_t Len) {
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(Len)))
     return;
-#endif
   if (LLVM_LIKELY(Dst && Src && Len))
     std::memcpy(Dst, Src, static_cast<size_t>(Len));
 }
 
 static void bridgeMemSet(void *Dst, int Val, uint64_t Len) {
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(Len)))
     return;
-#endif
   if (LLVM_LIKELY(Dst && Len))
     std::memset(Dst, Val, static_cast<size_t>(Len));
 }
 
 static void bridgeMemMove(void *Dst, const void *Src, uint64_t Len) {
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(Len)))
     return;
-#endif
   if (LLVM_LIKELY(Dst && Src && Len))
     std::memmove(Dst, Src, static_cast<size_t>(Len));
 }
@@ -3821,10 +3882,8 @@ static void bridgeMemMove(void *Dst, const void *Src, uint64_t Len) {
 static void bridgeMemReverse(void *Dst, const void *Src, uint64_t Len) {
   if (LLVM_UNLIKELY(!Dst || !Src || Len < 2))
     return;
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(Len)))
     return;
-#endif
   auto *D = static_cast<unsigned char *>(Dst);
   const auto *S = static_cast<const unsigned char *>(Src);
   size_t N = static_cast<size_t>(Len);
@@ -3849,10 +3908,8 @@ static void bridgeMemReverse(void *Dst, const void *Src, uint64_t Len) {
 static int bridgeMemCompare(const void *A, const void *B, uint64_t Len) {
   if (LLVM_UNLIKELY(!A || !B || !Len))
     return 0;
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(Len)))
     return 0;
-#endif
   return std::memcmp(A, B, static_cast<size_t>(Len));
 }
 
@@ -3879,7 +3936,10 @@ static void bridgeDiagV(void (*Emit)(const char *), const char *Fmt,
   char *Heap = static_cast<char *>(bridgeAlloc(Need));
   if (LLVM_UNLIKELY(!Heap))
     return;
-  std::vsnprintf(Heap, Need, Fmt, Args);
+  va_list Args2;
+  va_copy(Args2, Args);
+  std::vsnprintf(Heap, Need, Fmt, Args2);
+  va_end(Args2);
   Emit(Heap);
   bridgeFree(Heap);
 }
@@ -3922,10 +3982,8 @@ static void bridgeDiagErrorF(const char *Fmt, ...) {
 // ===----------------------------------------------------------------------===
 
 static void *bridgeAllocZeroed(uint64_t Count, uint64_t ElemSize) {
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Count > SIZE_MAX || ElemSize > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(Count) || exceedsSizeT(ElemSize)))
     return nullptr;
-#endif
   if (LLVM_UNLIKELY(ElemSize && Count > SIZE_MAX / ElemSize))
     return nullptr;
   return ::calloc(static_cast<size_t>(Count), static_cast<size_t>(ElemSize));
@@ -3974,7 +4032,7 @@ static int bridgeStrCompare(const char *A, const char *B) {
   return std::strcmp(A, B);
 }
 
-static inline bool isWhitespace(unsigned char C) {
+static inline bool bridgeIsWhitespace(unsigned char C) {
   return C == ' ' || C == '\t' || C == '\n' || C == '\r' || C == '\f' ||
          C == '\v';
 }
@@ -3995,7 +4053,7 @@ static int bridgeStrToUInt64(const char *S, uint64_t *Out) {
   if (LLVM_UNLIKELY(!S || !Out))
     return 0;
   const char *P = S;
-  while (isWhitespace(static_cast<unsigned char>(*P)))
+  while (bridgeIsWhitespace(static_cast<unsigned char>(*P)))
     ++P;
   if (*P == '-')
     return 0;
@@ -4028,10 +4086,10 @@ static char *bridgeStrSubstring(const char *S, uint64_t Start, uint64_t Len) {
 static char *bridgeStrTrim(const char *S) {
   if (LLVM_UNLIKELY(!S))
     return nullptr;
-  while (isWhitespace(static_cast<unsigned char>(*S)))
+  while (bridgeIsWhitespace(static_cast<unsigned char>(*S)))
     ++S;
   size_t Len = std::strlen(S);
-  while (Len > 0 && isWhitespace(static_cast<unsigned char>(S[Len - 1])))
+  while (Len > 0 && bridgeIsWhitespace(static_cast<unsigned char>(S[Len - 1])))
     --Len;
   char *Buf = static_cast<char *>(bridgeAlloc(Len + 1));
   if (LLVM_UNLIKELY(!Buf))
@@ -4047,10 +4105,8 @@ static char *bridgeStrTrim(const char *S) {
 // ===----------------------------------------------------------------------===
 
 static void bridgeMemZero(void *Dst, uint64_t Len) {
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(Len)))
     return;
-#endif
   if (LLVM_LIKELY(Dst && Len))
     std::memset(Dst, 0, static_cast<size_t>(Len));
 }
@@ -4091,15 +4147,9 @@ static uint64_t bridgeStrFindLastChar(const char *S, int C) {
 // ===----------------------------------------------------------------------===
 
 static void *bridgeReallocArray(void *Ptr, uint64_t Count, uint64_t ElemSize) {
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Count > SIZE_MAX || ElemSize > SIZE_MAX))
+  size_t Total = checkedArraySize(Count, ElemSize);
+  if (LLVM_UNLIKELY(Total == 0 && Count != 0 && ElemSize != 0))
     return nullptr;
-#endif
-  size_t C = static_cast<size_t>(Count);
-  size_t E = static_cast<size_t>(ElemSize);
-  if (LLVM_UNLIKELY(C != 0 && E > SIZE_MAX / C))
-    return nullptr;
-  size_t Total = C * E;
   if (Total == 0)
     Total = 1;
   return bridgeRealloc(Ptr, Total);
@@ -4253,14 +4303,19 @@ static char *bridgeStrJoin(const char *const *Strings, unsigned Count,
   size_t Total = 0;
   for (unsigned I = 0; I < Count; ++I) {
     Lens[I] = Strings[I] ? std::strlen(Strings[I]) : 0;
-    if (Total > SIZE_MAX - Lens[I] - 1) {
+    // Two-step overflow guard: catch the case where Lens[I] itself is
+    // pathologically close to SIZE_MAX before computing SIZE_MAX-1-Lens[I],
+    // which would otherwise wrap around for Lens[I] >= SIZE_MAX-1.
+    if (LLVM_UNLIKELY(Lens[I] > SIZE_MAX - 1 ||
+                      Total > SIZE_MAX - 1 - Lens[I])) {
       if (Lens != StackLens)
         bridgeFree(Lens);
       return nullptr;
     }
     Total += Lens[I];
     if (I > 0 && SepLen) {
-      if (Total > SIZE_MAX - SepLen - 1) {
+      if (LLVM_UNLIKELY(SepLen > SIZE_MAX - 1 ||
+                        Total > SIZE_MAX - 1 - SepLen)) {
         if (Lens != StackLens)
           bridgeFree(Lens);
         return nullptr;
@@ -4491,7 +4546,7 @@ static unsigned *bridgeModuleCollectAllOpcodes(NevercModuleRef M,
         Buf[Idx++] = Inst.getOpcode();
   }
 
-  *OutCount = static_cast<unsigned>(Total);
+  *OutCount = static_cast<unsigned>(Idx);
   return Buf;
 }
 
@@ -4517,7 +4572,9 @@ static NevercDomTreeRef bridgeFunctionBuildDomTree(NevercValueRef F) {
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
     return nullptr;
-  auto *DT = new DominatorTree();
+  auto *DT = new (std::nothrow) DominatorTree();
+  if (LLVM_UNLIKELY(!DT))
+    return nullptr;
   DT->recalculate(*Fn);
   return reinterpret_cast<NevercDomTreeRef>(DT);
 }
@@ -4566,6 +4623,15 @@ static int bridgeDomTreeIsReachable(NevercDomTreeRef DT,
       unwrapBB(BB));
 }
 
+static unsigned bridgeDomTreeGetDepth(NevercDomTreeRef DT,
+                                      NevercBasicBlockRef BB) {
+  if (LLVM_UNLIKELY(!DT || !BB))
+    return 0;
+  auto *Node =
+      reinterpret_cast<DominatorTree *>(DT)->getNode(unwrapBB(BB));
+  return LLVM_LIKELY(Node) ? Node->getLevel() : 0;
+}
+
 // ===----------------------------------------------------------------------===
 //  LoopInfo -- on-demand loop nest analysis
 //  Bundles DominatorTree + LoopInfo so the plugin never manages the DomTree
@@ -4590,7 +4656,9 @@ static NevercLoopInfoRef bridgeFunctionBuildLoopInfo(NevercValueRef F) {
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
     return nullptr;
-  auto *State = new LoopInfoState(*Fn);
+  auto *State = new (std::nothrow) LoopInfoState(*Fn);
+  if (LLVM_UNLIKELY(!State))
+    return nullptr;
   return reinterpret_cast<NevercLoopInfoRef>(State);
 }
 
@@ -4669,7 +4737,9 @@ static NevercPostDomTreeRef bridgeFunctionBuildPostDomTree(NevercValueRef F) {
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
     return nullptr;
-  auto *PDT = new PostDominatorTree();
+  auto *PDT = new (std::nothrow) PostDominatorTree();
+  if (LLVM_UNLIKELY(!PDT))
+    return nullptr;
   PDT->recalculate(*Fn);
   return reinterpret_cast<NevercPostDomTreeRef>(PDT);
 }
@@ -4708,6 +4778,15 @@ static NevercBasicBlockRef bridgePostDomTreeGetIPDom(NevercPostDomTreeRef PDT,
     return nullptr;
   auto *IPDomNode = Node->getIDom();
   return IPDomNode ? wrapBB(IPDomNode->getBlock()) : nullptr;
+}
+
+static unsigned bridgePostDomTreeGetDepth(NevercPostDomTreeRef PDT,
+                                          NevercBasicBlockRef BB) {
+  if (LLVM_UNLIKELY(!PDT || !BB))
+    return 0;
+  auto *Node =
+      reinterpret_cast<PostDominatorTree *>(PDT)->getNode(unwrapBB(BB));
+  return LLVM_LIKELY(Node) ? Node->getLevel() : 0;
 }
 
 // ===----------------------------------------------------------------------===
@@ -4763,7 +4842,9 @@ static NevercSCEVInfoRef bridgeFunctionBuildSCEV(NevercValueRef F) {
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
     return nullptr;
-  auto *State = new SCEVState(*Fn);
+  auto *State = new (std::nothrow) SCEVState(*Fn);
+  if (LLVM_UNLIKELY(!State))
+    return nullptr;
   return reinterpret_cast<NevercSCEVInfoRef>(State);
 }
 
@@ -4821,7 +4902,9 @@ struct CallGraphState {
 static NevercCallGraphRef bridgeModuleBuildCallGraph(NevercModuleRef M) {
   if (LLVM_UNLIKELY(!M))
     return nullptr;
-  auto *State = new CallGraphState(*unwrap(M));
+  auto *State = new (std::nothrow) CallGraphState(*unwrap(M));
+  if (LLVM_UNLIKELY(!State))
+    return nullptr;
   return reinterpret_cast<NevercCallGraphRef>(State);
 }
 
@@ -4873,7 +4956,7 @@ static NevercValueRef *bridgeCallGraphCollectCallees(NevercCallGraphRef CG,
   if (Seen.empty())
     return nullptr;
   auto *Out = static_cast<NevercValueRef *>(
-      bridgeAlloc(Seen.size() * sizeof(NevercValueRef)));
+      bridgeAlloc(static_cast<uint64_t>(Seen.size()) * sizeof(NevercValueRef)));
   if (LLVM_UNLIKELY(!Out))
     return nullptr;
   unsigned Idx = 0;
@@ -5539,10 +5622,12 @@ static char *bridgeStrReplace(const char *S, const char *Old,
   size_t OldLen = std::strlen(Old);
   size_t NewLen = std::strlen(New);
   size_t SuffixLen = std::strlen(Pos + OldLen);
-  if (LLVM_UNLIKELY(NewLen > SIZE_MAX - 1 - PrefixLen))
+  if (LLVM_UNLIKELY(PrefixLen > SIZE_MAX - 1 ||
+                    NewLen > SIZE_MAX - 1 - PrefixLen))
     return nullptr;
   size_t ResultLen = PrefixLen + NewLen;
-  if (LLVM_UNLIKELY(SuffixLen > SIZE_MAX - 1 - ResultLen))
+  if (LLVM_UNLIKELY(ResultLen > SIZE_MAX - 1 ||
+                    SuffixLen > SIZE_MAX - 1 - ResultLen))
     return nullptr;
   ResultLen += SuffixLen;
 
@@ -5625,7 +5710,11 @@ static char *bridgeStrReplaceAll(const char *S, const char *Old,
     Added = HitCount * NewLen;
   }
   size_t BaseLen = SLen - Removed;
-  if (LLVM_UNLIKELY(Added > SIZE_MAX - BaseLen - 1)) {
+  // Two-step guard: BaseLen could be 0 or large; SIZE_MAX-BaseLen-1
+  // wraps around if BaseLen == SIZE_MAX (impossible in practice but
+  // matches the unsigned-underflow-safe pattern used elsewhere).
+  if (LLVM_UNLIKELY(BaseLen > SIZE_MAX - 1 ||
+                    Added > SIZE_MAX - 1 - BaseLen)) {
     if (Hits != StackBuf)
       bridgeFree(Hits);
     return nullptr;
@@ -5701,21 +5790,17 @@ static char *bridgeStrToUpper(const char *S) {
 static char *bridgeStrNDup(const char *S, uint64_t MaxLen) {
   if (LLVM_UNLIKELY(!S))
     return nullptr;
-  size_t Limit = static_cast<size_t>(MaxLen);
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(MaxLen > SIZE_MAX))
-    Limit = SIZE_MAX;
-#endif
-  const void *Nul = std::memchr(S, '\0', Limit);
-  size_t CopyLen = Nul ? static_cast<size_t>(
-                             static_cast<const char *>(Nul) - S)
-                       : Limit;
-  if (LLVM_UNLIKELY(CopyLen >= SIZE_MAX))
-    return nullptr;
+  size_t Cap = (MaxLen > static_cast<uint64_t>(SIZE_MAX - 1))
+                   ? (SIZE_MAX - 1)
+                   : static_cast<size_t>(MaxLen);
+  const void *Nul = Cap ? std::memchr(S, '\0', Cap) : nullptr;
+  size_t CopyLen =
+      Nul ? static_cast<size_t>(static_cast<const char *>(Nul) - S) : Cap;
   char *Buf = static_cast<char *>(bridgeAlloc(CopyLen + 1));
   if (LLVM_UNLIKELY(!Buf))
     return nullptr;
-  std::memcpy(Buf, S, CopyLen);
+  if (CopyLen)
+    std::memcpy(Buf, S, CopyLen);
   Buf[CopyLen] = '\0';
   return Buf;
 }
@@ -5751,10 +5836,14 @@ static const char *bridgeStrAfterPrefix(const char *S, const char *Prefix) {
     return nullptr;
   if (LLVM_UNLIKELY(!Prefix || !*Prefix))
     return S;
-  size_t PrefixLen = std::strlen(Prefix);
-  if (std::strncmp(S, Prefix, PrefixLen) != 0)
-    return nullptr;
-  return S + PrefixLen;
+  const char *P = S;
+  const char *Q = Prefix;
+  for (;; ++P, ++Q) {
+    if (*Q == '\0')
+      return P;
+    if (*P != *Q)
+      return nullptr;
+  }
 }
 
 // ===----------------------------------------------------------------------===
@@ -5768,10 +5857,8 @@ static uint64_t bridgeMemFind(const void *Haystack, uint64_t HaystackLen,
     return UINT64_MAX;
   if (LLVM_UNLIKELY(NeedleLen == 0 || NeedleLen > HaystackLen))
     return UINT64_MAX;
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(HaystackLen > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(HaystackLen)))
     return UINT64_MAX;
-#endif
 
   const auto *H = static_cast<const unsigned char *>(Haystack);
   const auto *N = static_cast<const unsigned char *>(Needle);
@@ -5812,10 +5899,8 @@ static uint64_t bridgeMemCount(const void *Haystack, uint64_t HaystackLen,
                                int Byte) {
   if (LLVM_UNLIKELY(!Haystack || HaystackLen == 0))
     return 0;
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(HaystackLen > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(HaystackLen)))
     return 0;
-#endif
   unsigned char Needle = static_cast<unsigned char>(Byte);
   const auto *H = static_cast<const unsigned char *>(Haystack);
   size_t Remaining = static_cast<size_t>(HaystackLen);
@@ -5832,6 +5917,25 @@ static uint64_t bridgeMemCount(const void *Haystack, uint64_t HaystackLen,
     Remaining -= Skip;
   }
   return Count;
+}
+
+// ===----------------------------------------------------------------------===
+//  Single-byte search returning an offset.  Thin wrapper around memchr
+//  that avoids the caller constructing a 1-byte needle array.
+// ===----------------------------------------------------------------------===
+
+static uint64_t bridgeMemFindByte(const void *Haystack, uint64_t HaystackLen,
+                                  uint8_t Byte) {
+  if (LLVM_UNLIKELY(!Haystack || HaystackLen == 0))
+    return UINT64_MAX;
+  if (LLVM_UNLIKELY(exceedsSizeT(HaystackLen)))
+    return UINT64_MAX;
+  const void *P =
+      std::memchr(Haystack, Byte, static_cast<size_t>(HaystackLen));
+  if (!P)
+    return UINT64_MAX;
+  return static_cast<uint64_t>(static_cast<const unsigned char *>(P) -
+                               static_cast<const unsigned char *>(Haystack));
 }
 
 // ===----------------------------------------------------------------------===
@@ -5991,23 +6095,27 @@ bridgeModuleCollectDefinedFunctions(NevercModuleRef M, unsigned *OutCount) {
     return nullptr;
   auto *Mod = unwrap(M);
 
+  // Two-pass: exact count then exact allocation.  The arena variant uses
+  // Mod->size() as an upper bound (over-allocation is free for arenas),
+  // but the heap variant must allocate precisely since the caller Frees
+  // the buffer -- over-allocating wastes memory for modules where
+  // declarations vastly outnumber definitions.
   unsigned Count = 0;
   for (auto &F : *Mod)
     if (!F.isDeclaration())
       ++Count;
-  if (LLVM_UNLIKELY(Count == 0))
+  if (LLVM_UNLIKELY(Count == 0 ||
+                    Count > SIZE_MAX / sizeof(NevercValueRef)))
     return nullptr;
 
   auto *Buf = static_cast<NevercValueRef *>(
       bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(NevercValueRef)));
   if (LLVM_UNLIKELY(!Buf))
     return nullptr;
-
   unsigned Idx = 0;
   for (auto &F : *Mod)
     if (!F.isDeclaration())
       Buf[Idx++] = wrapV(&F);
-
   *OutCount = Count;
   return Buf;
 }
@@ -6020,10 +6128,8 @@ static void bridgeSort(void *Base, uint64_t NumElements, uint64_t ElemSize,
                        int (*Cmp)(const void *, const void *)) {
   if (LLVM_UNLIKELY(!Base || !Cmp || NumElements <= 1 || ElemSize == 0))
     return;
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(NumElements > SIZE_MAX || ElemSize > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(NumElements) || exceedsSizeT(ElemSize)))
     return;
-#endif
   std::qsort(Base, static_cast<size_t>(NumElements),
              static_cast<size_t>(ElemSize), Cmp);
 }
@@ -6033,12 +6139,72 @@ static const void *bridgeBSearch(const void *Key, const void *Base,
                                  int (*Cmp)(const void *, const void *)) {
   if (LLVM_UNLIKELY(!Key || !Base || !Cmp || NumElements == 0 || ElemSize == 0))
     return nullptr;
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(NumElements > SIZE_MAX || ElemSize > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(NumElements) || exceedsSizeT(ElemSize)))
     return nullptr;
-#endif
   return std::bsearch(Key, Base, static_cast<size_t>(NumElements),
                       static_cast<size_t>(ElemSize), Cmp);
+}
+
+// ===----------------------------------------------------------------------===
+//  SortCtx / BSearchCtx -- context-aware sort and binary search
+//  The 3-arg comparator int(*)(a, b, ctx) lets plugin callbacks access the
+//  host API vtable or pass state without hand-rolling CRT-like helpers.
+//  Implemented via a thread-local thunk: SortCtx stores the user comparator
+//  and context in TLS, calls std::qsort with a 2-arg shim that forwards to
+//  the 3-arg function.  The TLS access is a single memory load on x86/ARM64
+//  and introduces zero per-call heap allocation.
+// ===----------------------------------------------------------------------===
+
+namespace {
+
+struct SortCtxTLS {
+  int (*Cmp)(const void *, const void *, void *);
+  void *Ctx;
+};
+
+static thread_local SortCtxTLS TheSortCtx;
+
+static int sortCtxThunk(const void *A, const void *B) {
+  return TheSortCtx.Cmp(A, B, TheSortCtx.Ctx);
+}
+
+struct SortCtxGuard {
+  SortCtxTLS Saved;
+  SortCtxGuard(int (*Cmp)(const void *, const void *, void *), void *Ctx)
+      : Saved(TheSortCtx) {
+    TheSortCtx.Cmp = Cmp;
+    TheSortCtx.Ctx = Ctx;
+  }
+  ~SortCtxGuard() { TheSortCtx = Saved; }
+  SortCtxGuard(const SortCtxGuard &) = delete;
+  SortCtxGuard &operator=(const SortCtxGuard &) = delete;
+};
+
+} // namespace
+
+static void bridgeSortCtx(void *Base, uint64_t NumElements, uint64_t ElemSize,
+                          int (*Cmp)(const void *, const void *, void *),
+                          void *Ctx) {
+  if (LLVM_UNLIKELY(!Base || !Cmp || NumElements <= 1 || ElemSize == 0))
+    return;
+  if (LLVM_UNLIKELY(exceedsSizeT(NumElements) || exceedsSizeT(ElemSize)))
+    return;
+  SortCtxGuard G(Cmp, Ctx);
+  std::qsort(Base, static_cast<size_t>(NumElements),
+             static_cast<size_t>(ElemSize), sortCtxThunk);
+}
+
+static const void *
+bridgeBSearchCtx(const void *Key, const void *Base, uint64_t NumElements,
+                 uint64_t ElemSize,
+                 int (*Cmp)(const void *, const void *, void *), void *Ctx) {
+  if (LLVM_UNLIKELY(!Key || !Base || !Cmp || NumElements == 0 || ElemSize == 0))
+    return nullptr;
+  if (LLVM_UNLIKELY(exceedsSizeT(NumElements) || exceedsSizeT(ElemSize)))
+    return nullptr;
+  SortCtxGuard G(Cmp, Ctx);
+  return std::bsearch(Key, Base, static_cast<size_t>(NumElements),
+                      static_cast<size_t>(ElemSize), sortCtxThunk);
 }
 
 // ===----------------------------------------------------------------------===
@@ -6051,12 +6217,7 @@ static int bridgeStrFormatBufV(char *Buf, uint64_t BufSize, const char *Fmt,
     return -1;
   if (LLVM_UNLIKELY(!Buf && BufSize > 0))
     BufSize = 0;
-  size_t Sz = 0;
-#if SIZE_MAX < UINT64_MAX
-  Sz = (BufSize > SIZE_MAX) ? SIZE_MAX : static_cast<size_t>(BufSize);
-#else
-  Sz = static_cast<size_t>(BufSize);
-#endif
+  size_t Sz = clampToSizeT(BufSize);
   return std::vsnprintf(Buf, Sz, Fmt, Args);
 }
 
@@ -6080,11 +6241,7 @@ static int bridgeStrNCompare(const char *A, const char *B, uint64_t MaxLen) {
     return -1;
   if (LLVM_UNLIKELY(!B))
     return 1;
-#if SIZE_MAX < UINT64_MAX
-  size_t N = (MaxLen > SIZE_MAX) ? SIZE_MAX : static_cast<size_t>(MaxLen);
-#else
-  size_t N = static_cast<size_t>(MaxLen);
-#endif
+  size_t N = clampToSizeT(MaxLen);
   return std::strncmp(A, B, N);
 }
 
@@ -6214,6 +6371,19 @@ static void bridgeDynArraySort(NevercDynArrayRef Arr,
   auto *A = unwrapDA(Arr);
   if (A->Count > 1)
     std::qsort(A->Data, A->Count, static_cast<size_t>(A->ElemSize), Cmp);
+}
+
+static void bridgeDynArraySortCtx(
+    NevercDynArrayRef Arr,
+    int (*Cmp)(const void *, const void *, void *), void *Ctx) {
+  if (LLVM_UNLIKELY(!Arr || !Cmp))
+    return;
+  auto *A = unwrapDA(Arr);
+  if (A->Count <= 1)
+    return;
+  SortCtxGuard G(Cmp, Ctx);
+  std::qsort(A->Data, A->Count, static_cast<size_t>(A->ElemSize),
+             sortCtxThunk);
 }
 
 static void *bridgeDynArrayPop(NevercDynArrayRef Arr) {
@@ -6347,9 +6517,10 @@ static char **bridgeStrMapCollectKeys(NevercStrMapRef Map,
   if (LLVM_UNLIKELY(!Map || !OutCount))
     return nullptr;
   auto *M = unwrapSM(Map);
-  unsigned Count = static_cast<unsigned>(M->size());
-  if (LLVM_UNLIKELY(Count == 0))
+  size_t RawCount = M->size();
+  if (LLVM_UNLIKELY(RawCount == 0 || RawCount > UINT_MAX))
     return nullptr;
+  unsigned Count = static_cast<unsigned>(RawCount);
   auto **Keys = static_cast<char **>(
       bridgeAlloc(static_cast<uint64_t>(Count) * sizeof(char *)));
   if (LLVM_UNLIKELY(!Keys))
@@ -6368,7 +6539,7 @@ static char **bridgeStrMapCollectKeys(NevercStrMapRef Map,
     Key[Len] = '\0';
     Keys[Idx++] = Key;
   }
-  *OutCount = Count;
+  *OutCount = Idx;
   return Keys;
 }
 
@@ -6381,18 +6552,19 @@ static uint64_t bridgeStrMapIncrement(NevercStrMapRef Map, const char *Key,
   return Val;
 }
 
+static void bridgeStrMapClear(NevercStrMapRef Map) {
+  if (LLVM_UNLIKELY(!Map))
+    return;
+  unwrapSM(Map)->clear();
+}
+
 // ===----------------------------------------------------------------------===
 //  N-bounded StrMap operations (key pointer + length, no null terminator)
 //  Uses StringRef directly -- zero-copy lookup, key copied on insert.
 // ===----------------------------------------------------------------------===
 
 static inline StringRef toKeyRef(const char *Key, uint64_t KeyLen) {
-  size_t Len = static_cast<size_t>(KeyLen);
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(KeyLen > SIZE_MAX))
-    Len = SIZE_MAX;
-#endif
-  return StringRef(Key, Len);
+  return StringRef(Key, clampToSizeT(KeyLen));
 }
 
 static int bridgeStrMapPutN(NevercStrMapRef Map, const char *Key,
@@ -6472,10 +6644,8 @@ static void bridgeStrBuilderAppendN(NevercStrBuilderRef SB, const char *S,
                                     uint64_t Len) {
   if (LLVM_UNLIKELY(!SB || !S))
     return;
-#if SIZE_MAX < UINT64_MAX
-  if (LLVM_UNLIKELY(Len > SIZE_MAX))
+  if (LLVM_UNLIKELY(exceedsSizeT(Len)))
     return;
-#endif
   unwrapSB(SB)->append(StringRef(S, static_cast<size_t>(Len)));
 }
 
@@ -6503,7 +6673,10 @@ static void bridgeStrBuilderAppendV(NevercStrBuilderRef SB, const char *Fmt,
   } else {
     size_t OldSize = B->size();
     B->resize_for_overwrite(OldSize + Need + 1);
-    std::vsnprintf(B->data() + OldSize, Need + 1, Fmt, Args);
+    va_list Args2;
+    va_copy(Args2, Args);
+    std::vsnprintf(B->data() + OldSize, Need + 1, Fmt, Args2);
+    va_end(Args2);
     B->pop_back();
   }
 }
@@ -6538,6 +6711,12 @@ static uint64_t bridgeStrBuilderLen(NevercStrBuilderRef SB) {
 static void bridgeStrBuilderClear(NevercStrBuilderRef SB) {
   if (LLVM_LIKELY(SB))
     unwrapSB(SB)->clear();
+}
+
+static const char *bridgeStrBuilderGetStr(NevercStrBuilderRef SB) {
+  if (LLVM_UNLIKELY(!SB))
+    return nullptr;
+  return unwrapSB(SB)->c_str();
 }
 
 // ===----------------------------------------------------------------------===
@@ -6763,6 +6942,922 @@ static void *bridgeDynArrayBSearch(NevercDynArrayRef Arr, const void *Key,
     return nullptr;
   return std::bsearch(Key, A->Data, A->Count,
                       static_cast<size_t>(A->ElemSize), Cmp);
+}
+
+// ===----------------------------------------------------------------------===
+//  Arena -- bump-pointer allocator for pass-scoped temporaries
+//  Backed by LLVM BumpPtrAllocator: 4 KiB slab growth, sequential alloc,
+//  zero per-object bookkeeping.  All memory freed in one shot by Destroy
+//  or Reset.  Individual pointers MUST NOT be passed to bridgeFree.
+// ===----------------------------------------------------------------------===
+
+namespace {
+struct ArenaImpl {
+  BumpPtrAllocator Alloc;
+};
+} // namespace
+
+static inline ArenaImpl *unwrapArena(NevercArenaRef A) {
+  return reinterpret_cast<ArenaImpl *>(A);
+}
+static inline NevercArenaRef wrapArena(ArenaImpl *A) {
+  return reinterpret_cast<NevercArenaRef>(A);
+}
+
+static NevercArenaRef bridgeArenaCreate() {
+  auto *A = new (std::nothrow) ArenaImpl();
+  return wrapArena(A);
+}
+
+static void bridgeArenaDestroy(NevercArenaRef Arena) {
+  if (LLVM_UNLIKELY(!Arena))
+    return;
+  delete unwrapArena(Arena);
+}
+
+static void *bridgeArenaAlloc(NevercArenaRef Arena, uint64_t Size) {
+  if (LLVM_UNLIKELY(!Arena || Size == 0))
+    return nullptr;
+  if (LLVM_UNLIKELY(exceedsSizeT(Size)))
+    return nullptr;
+  return unwrapArena(Arena)->Alloc.Allocate(static_cast<size_t>(Size),
+                                            alignof(std::max_align_t));
+}
+
+static void *bridgeArenaAllocZeroed(NevercArenaRef Arena, uint64_t Size) {
+  void *P = bridgeArenaAlloc(Arena, Size);
+  if (LLVM_LIKELY(P))
+    std::memset(P, 0, static_cast<size_t>(Size));
+  return P;
+}
+
+static void *bridgeArenaAllocArray(NevercArenaRef Arena, uint64_t Count,
+                                   uint64_t ElemSize) {
+  if (LLVM_UNLIKELY(!Arena))
+    return nullptr;
+  size_t Total = checkedArraySize(Count, ElemSize);
+  if (LLVM_UNLIKELY(Total == 0 && Count != 0 && ElemSize != 0))
+    return nullptr;
+  if (Total == 0)
+    Total = 1;
+  return unwrapArena(Arena)->Alloc.Allocate(Total, alignof(std::max_align_t));
+}
+
+static void *bridgeArenaAllocArrayZeroed(NevercArenaRef Arena, uint64_t Count,
+                                         uint64_t ElemSize) {
+  if (LLVM_UNLIKELY(!Arena))
+    return nullptr;
+  size_t Total = checkedArraySize(Count, ElemSize);
+  if (LLVM_UNLIKELY(Total == 0 && Count != 0 && ElemSize != 0))
+    return nullptr;
+  if (Total == 0)
+    Total = 1;
+  void *P = unwrapArena(Arena)->Alloc.Allocate(
+      Total, alignof(std::max_align_t));
+  if (LLVM_LIKELY(P))
+    std::memset(P, 0, Total);
+  return P;
+}
+
+static char *bridgeArenaStrDup(NevercArenaRef Arena, const char *S) {
+  if (LLVM_UNLIKELY(!Arena || !S))
+    return nullptr;
+  size_t Len = std::strlen(S);
+  char *Buf = static_cast<char *>(
+      unwrapArena(Arena)->Alloc.Allocate(Len + 1, 1));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  std::memcpy(Buf, S, Len + 1);
+  return Buf;
+}
+
+static char *bridgeArenaStrNDup(NevercArenaRef Arena, const char *S,
+                                uint64_t MaxLen) {
+  if (LLVM_UNLIKELY(!Arena || !S))
+    return nullptr;
+  // Cap MaxLen at SIZE_MAX-1 so CopyLen + 1 cannot overflow size_t when the
+  // caller passes UINT64_MAX or SIZE_MAX as a "copy until NUL" sentinel.
+  size_t Cap = (MaxLen > static_cast<uint64_t>(SIZE_MAX - 1))
+                   ? (SIZE_MAX - 1)
+                   : static_cast<size_t>(MaxLen);
+  const void *NulPos = Cap ? std::memchr(S, '\0', Cap) : nullptr;
+  size_t CopyLen = NulPos
+                       ? static_cast<size_t>(
+                             static_cast<const char *>(NulPos) - S)
+                       : Cap;
+  char *Buf = static_cast<char *>(
+      unwrapArena(Arena)->Alloc.Allocate(CopyLen + 1, 1));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  if (CopyLen)
+    std::memcpy(Buf, S, CopyLen);
+  Buf[CopyLen] = '\0';
+  return Buf;
+}
+
+static void bridgeArenaReset(NevercArenaRef Arena) {
+  if (LLVM_UNLIKELY(!Arena))
+    return;
+  unwrapArena(Arena)->Alloc.Reset();
+}
+
+static uint64_t bridgeArenaGetBytesUsed(NevercArenaRef Arena) {
+  if (LLVM_UNLIKELY(!Arena))
+    return 0;
+  return unwrapArena(Arena)->Alloc.getBytesAllocated();
+}
+
+// ===----------------------------------------------------------------------===
+//  ValueSet -- opaque hash set of NevercValueRef pointers
+//  Backed by LLVM DenseSet<void *>: open addressing, quadratic probing,
+//  O(1) amortized insert/contains/remove.  Sentinel pointer values
+//  ((void*)-1 and (void*)-2) are never produced by the LLVM IR wrapping
+//  layer, so no special-case rejection is needed beyond NULL guards.
+// ===----------------------------------------------------------------------===
+
+using ValueSetImpl = DenseSet<void *>;
+
+static inline ValueSetImpl *unwrapVS(NevercValueSetRef S) {
+  return reinterpret_cast<ValueSetImpl *>(S);
+}
+static inline NevercValueSetRef wrapVS(ValueSetImpl *S) {
+  return reinterpret_cast<NevercValueSetRef>(S);
+}
+
+static NevercValueSetRef bridgeValueSetCreate() {
+  auto *S = new (std::nothrow) ValueSetImpl();
+  return wrapVS(S);
+}
+
+static NevercValueSetRef bridgeValueSetCreateSized(unsigned InitialCapacity) {
+  auto *S = new (std::nothrow) ValueSetImpl(InitialCapacity);
+  return wrapVS(S);
+}
+
+static void bridgeValueSetDestroy(NevercValueSetRef Set) {
+  if (LLVM_UNLIKELY(!Set))
+    return;
+  delete unwrapVS(Set);
+}
+
+static int bridgeValueSetInsert(NevercValueSetRef Set, NevercValueRef V) {
+  if (LLVM_UNLIKELY(!Set || !V))
+    return 0;
+  return unwrapVS(Set)->insert(static_cast<void *>(V)).second ? 1 : 0;
+}
+
+static int bridgeValueSetContains(NevercValueSetRef Set, NevercValueRef V) {
+  if (LLVM_UNLIKELY(!Set || !V))
+    return 0;
+  return unwrapVS(Set)->contains(static_cast<void *>(V)) ? 1 : 0;
+}
+
+static void bridgeValueSetRemove(NevercValueSetRef Set, NevercValueRef V) {
+  if (LLVM_UNLIKELY(!Set || !V))
+    return;
+  unwrapVS(Set)->erase(static_cast<void *>(V));
+}
+
+static unsigned bridgeValueSetCount(NevercValueSetRef Set) {
+  if (LLVM_UNLIKELY(!Set))
+    return 0;
+  return static_cast<unsigned>(unwrapVS(Set)->size());
+}
+
+static void bridgeValueSetClear(NevercValueSetRef Set) {
+  if (LLVM_UNLIKELY(!Set))
+    return;
+  unwrapVS(Set)->clear();
+}
+
+static void bridgeValueSetForEach(NevercValueSetRef Set,
+                                  int (*Fn)(NevercValueRef V, void *Ctx),
+                                  void *Ctx) {
+  if (LLVM_UNLIKELY(!Set || !Fn))
+    return;
+  for (void *V : *unwrapVS(Set)) {
+    if (Fn(reinterpret_cast<NevercValueRef>(V), Ctx) != 0)
+      return;
+  }
+}
+
+// ===----------------------------------------------------------------------===
+//  Arena string concat / printf-style formatting
+//  Allocates straight into the BumpPtrAllocator -- no malloc/Free pair.
+//  ArenaStrFormatV uses a stack scratch buffer first; only the final
+//  size hits the arena, never a heap intermediate.
+// ===----------------------------------------------------------------------===
+
+static char *bridgeArenaStrConcat(NevercArenaRef Arena, const char *L,
+                                  const char *R) {
+  if (LLVM_UNLIKELY(!Arena))
+    return nullptr;
+  size_t LL = L ? std::strlen(L) : 0;
+  size_t RL = R ? std::strlen(R) : 0;
+  if (LLVM_UNLIKELY(RL > SIZE_MAX - 1 || LL > SIZE_MAX - 1 - RL))
+    return nullptr;
+  size_t Total = LL + RL + 1;
+  char *Buf = static_cast<char *>(
+      unwrapArena(Arena)->Alloc.Allocate(Total, 1));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  if (LL)
+    std::memcpy(Buf, L, LL);
+  if (RL)
+    std::memcpy(Buf + LL, R, RL);
+  Buf[LL + RL] = '\0';
+  return Buf;
+}
+
+static char *bridgeArenaStrFormatV(NevercArenaRef Arena, const char *Fmt,
+                                   va_list Args) {
+  if (LLVM_UNLIKELY(!Arena || !Fmt))
+    return nullptr;
+  char Stack[1024];
+  va_list ArgsCopy;
+  va_copy(ArgsCopy, Args);
+  int Len = std::vsnprintf(Stack, sizeof(Stack), Fmt, ArgsCopy);
+  va_end(ArgsCopy);
+  if (LLVM_UNLIKELY(Len < 0))
+    return nullptr;
+  size_t Need = static_cast<size_t>(Len) + 1;
+  char *Buf =
+      static_cast<char *>(unwrapArena(Arena)->Alloc.Allocate(Need, 1));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  if (Need <= sizeof(Stack)) {
+    std::memcpy(Buf, Stack, Need);
+  } else {
+    va_list Args2;
+    va_copy(Args2, Args);
+    std::vsnprintf(Buf, Need, Fmt, Args2);
+    va_end(Args2);
+  }
+  return Buf;
+}
+
+static char *bridgeArenaStrFormat(NevercArenaRef Arena, const char *Fmt, ...) {
+  va_list Args;
+  va_start(Args, Fmt);
+  char *Result = bridgeArenaStrFormatV(Arena, Fmt, Args);
+  va_end(Args);
+  return Result;
+}
+
+// ===----------------------------------------------------------------------===
+//  Arena-backed string transformations -- mirrors of bridgeStrSubstring /
+//  StrTrim / StrToLower / StrToUpper / StrJoin / MemDup but allocate from
+//  the BumpPtrAllocator.  Saves the malloc/Free pair on plugin hot paths
+//  that slice or normalize many strings.
+// ===----------------------------------------------------------------------===
+
+static char *bridgeArenaStrSubstring(NevercArenaRef Arena, const char *S,
+                                     uint64_t Start, uint64_t Len) {
+  if (LLVM_UNLIKELY(!Arena || !S))
+    return nullptr;
+  size_t SLen = std::strlen(S);
+  if (LLVM_UNLIKELY(Start > SLen))
+    return nullptr;
+  size_t Avail = SLen - static_cast<size_t>(Start);
+  size_t CopyLen = (Len > Avail) ? Avail : static_cast<size_t>(Len);
+  char *Buf = static_cast<char *>(
+      unwrapArena(Arena)->Alloc.Allocate(CopyLen + 1, 1));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  if (CopyLen)
+    std::memcpy(Buf, S + Start, CopyLen);
+  Buf[CopyLen] = '\0';
+  return Buf;
+}
+
+static char *bridgeArenaStrTrim(NevercArenaRef Arena, const char *S) {
+  if (LLVM_UNLIKELY(!Arena || !S))
+    return nullptr;
+  while (bridgeIsWhitespace(static_cast<unsigned char>(*S)))
+    ++S;
+  size_t Len = std::strlen(S);
+  while (Len > 0 && bridgeIsWhitespace(static_cast<unsigned char>(S[Len - 1])))
+    --Len;
+  char *Buf = static_cast<char *>(
+      unwrapArena(Arena)->Alloc.Allocate(Len + 1, 1));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  if (Len)
+    std::memcpy(Buf, S, Len);
+  Buf[Len] = '\0';
+  return Buf;
+}
+
+// Branchless ASCII upper-case fold paired with the existing asciiToLower
+// (defined earlier in this file).  Multiplying by 0x20 turns the
+// "is in [a-z]" mask into the bit to clear for lower->upper.  No
+// std::toupper call so locale and CRT boundaries do not matter.
+static inline unsigned char asciiToUpper(unsigned char C) {
+  unsigned Diff = static_cast<unsigned>(C) - 'a';
+  unsigned Mask = (Diff < 26U) ? 0x20U : 0U;
+  return static_cast<unsigned char>(C & ~Mask);
+}
+
+static char *bridgeArenaStrToLower(NevercArenaRef Arena, const char *S) {
+  if (LLVM_UNLIKELY(!Arena || !S))
+    return nullptr;
+  size_t Len = std::strlen(S);
+  char *Buf = static_cast<char *>(
+      unwrapArena(Arena)->Alloc.Allocate(Len + 1, 1));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  for (size_t I = 0; I < Len; ++I)
+    Buf[I] = static_cast<char>(
+        asciiToLower(static_cast<unsigned char>(S[I])));
+  Buf[Len] = '\0';
+  return Buf;
+}
+
+static char *bridgeArenaStrToUpper(NevercArenaRef Arena, const char *S) {
+  if (LLVM_UNLIKELY(!Arena || !S))
+    return nullptr;
+  size_t Len = std::strlen(S);
+  char *Buf = static_cast<char *>(
+      unwrapArena(Arena)->Alloc.Allocate(Len + 1, 1));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  for (size_t I = 0; I < Len; ++I)
+    Buf[I] = static_cast<char>(
+        asciiToUpper(static_cast<unsigned char>(S[I])));
+  Buf[Len] = '\0';
+  return Buf;
+}
+
+static char *bridgeArenaStrJoin(NevercArenaRef Arena,
+                                const char *const *Strings, unsigned Count,
+                                const char *Sep) {
+  if (LLVM_UNLIKELY(!Arena))
+    return nullptr;
+  if (Count == 0) {
+    char *Empty = static_cast<char *>(unwrapArena(Arena)->Alloc.Allocate(1, 1));
+    if (LLVM_LIKELY(Empty))
+      *Empty = '\0';
+    return Empty;
+  }
+  if (LLVM_UNLIKELY(!Strings))
+    return nullptr;
+
+  size_t SepLen = (Sep && *Sep) ? std::strlen(Sep) : 0;
+
+  // Stack-cache the lengths so the second pass copies without re-walking.
+  // Spills to the arena (not the host heap) when Count exceeds the cache.
+  size_t StackLens[64];
+  size_t *Lens = StackLens;
+  if (LLVM_UNLIKELY(Count > sizeof(StackLens) / sizeof(StackLens[0]))) {
+    if (LLVM_UNLIKELY(static_cast<uint64_t>(Count) >
+                      SIZE_MAX / sizeof(size_t)))
+      return nullptr;
+    Lens = static_cast<size_t *>(unwrapArena(Arena)->Alloc.Allocate(
+        static_cast<size_t>(Count) * sizeof(size_t), alignof(size_t)));
+    if (LLVM_UNLIKELY(!Lens))
+      return nullptr;
+  }
+
+  size_t Total = 0;
+  for (unsigned I = 0; I < Count; ++I) {
+    Lens[I] = Strings[I] ? std::strlen(Strings[I]) : 0;
+    if (LLVM_UNLIKELY(Lens[I] > SIZE_MAX - 1 ||
+                      Total > SIZE_MAX - 1 - Lens[I]))
+      return nullptr;
+    Total += Lens[I];
+    if (I > 0 && SepLen) {
+      if (LLVM_UNLIKELY(SepLen > SIZE_MAX - 1 ||
+                        Total > SIZE_MAX - 1 - SepLen))
+        return nullptr;
+      Total += SepLen;
+    }
+  }
+
+  char *Buf =
+      static_cast<char *>(unwrapArena(Arena)->Alloc.Allocate(Total + 1, 1));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+
+  char *Dst = Buf;
+  for (unsigned I = 0; I < Count; ++I) {
+    if (I > 0 && SepLen) {
+      std::memcpy(Dst, Sep, SepLen);
+      Dst += SepLen;
+    }
+    if (Lens[I]) {
+      std::memcpy(Dst, Strings[I], Lens[I]);
+      Dst += Lens[I];
+    }
+  }
+  *Dst = '\0';
+  return Buf;
+}
+
+static void *bridgeArenaMemDup(NevercArenaRef Arena, const void *Src,
+                               uint64_t Len) {
+  if (LLVM_UNLIKELY(!Arena || !Src))
+    return nullptr;
+  if (LLVM_UNLIKELY(exceedsSizeT(Len)))
+    return nullptr;
+  if (Len == 0) {
+    // Return a non-null 1-byte placeholder so callers can distinguish
+    // "empty input" from "allocation failure".
+    return unwrapArena(Arena)->Alloc.Allocate(1, 1);
+  }
+  size_t N = static_cast<size_t>(Len);
+  void *Buf = unwrapArena(Arena)->Alloc.Allocate(N, alignof(std::max_align_t));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  std::memcpy(Buf, Src, N);
+  return Buf;
+}
+
+// MonotonicNanos -- exposed via the vtable so plugins can time intervals
+// without depending on <chrono> / <time.h> (which would break their
+// zero-CRT contract).  std::chrono::steady_clock is guaranteed monotonic
+// per [time.clock.steady]/p1.  We reduce the duration to nanoseconds via
+// std::chrono::duration_cast which the optimizer compiles down to a single
+// multiply on every platform we target.
+static uint64_t bridgeMonotonicNanos(void) {
+  using namespace std::chrono;
+  return static_cast<uint64_t>(
+      duration_cast<nanoseconds>(steady_clock::now().time_since_epoch())
+          .count());
+}
+
+// Module endianness -- thin wrapper over llvm::DataLayout::isLittleEndian.
+// Returns 1 for LE / 0 for BE.  Defaults to LE (1) when the module pointer
+// is null so passes can use the result unconditionally.
+static int bridgeModuleIsLittleEndian(NevercModuleRef M) {
+  if (LLVM_UNLIKELY(!M))
+    return 1;
+  return unwrap(M)->getDataLayout().isLittleEndian() ? 1 : 0;
+}
+
+// ===----------------------------------------------------------------------===
+//  Zero-allocation callback iteration over IR structures
+//  One vtable call replaces N GetNext vtable calls.  The callback runs
+//  entirely inside the host process, so per-element overhead is a single
+//  indirect call (function pointer) rather than two (vtable lookup +
+//  function pointer).  Early exit when the callback returns non-zero.
+// ===----------------------------------------------------------------------===
+
+static void bridgeModuleForEachFunction(
+    NevercModuleRef M, int (*Fn)(NevercValueRef F, void *Ctx), void *Ctx) {
+  if (LLVM_UNLIKELY(!M || !Fn))
+    return;
+  for (auto &F : *unwrap(M))
+    if (Fn(wrapV(&F), Ctx) != 0)
+      return;
+}
+
+static void bridgeModuleForEachDefinedFunction(
+    NevercModuleRef M, int (*Fn)(NevercValueRef F, void *Ctx), void *Ctx) {
+  if (LLVM_UNLIKELY(!M || !Fn))
+    return;
+  for (auto &F : *unwrap(M))
+    if (!F.isDeclaration())
+      if (Fn(wrapV(&F), Ctx) != 0)
+        return;
+}
+
+static void bridgeFunctionForEachBB(
+    NevercValueRef F, int (*Fn)(NevercBasicBlockRef BB, void *Ctx),
+    void *Ctx) {
+  if (LLVM_UNLIKELY(!F || !Fn))
+    return;
+  auto *Func = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Func || Func->isDeclaration()))
+    return;
+  for (auto &BB : *Func)
+    if (Fn(wrapBB(&BB), Ctx) != 0)
+      return;
+}
+
+static void bridgeBBForEachInst(
+    NevercBasicBlockRef BB, int (*Fn)(NevercValueRef I, void *Ctx),
+    void *Ctx) {
+  if (LLVM_UNLIKELY(!BB || !Fn))
+    return;
+  for (auto &I : *unwrapBB(BB))
+    if (Fn(wrapV(&I), Ctx) != 0)
+      return;
+}
+
+static void bridgeModuleForEachGlobal(
+    NevercModuleRef M, int (*Fn)(NevercValueRef G, void *Ctx), void *Ctx) {
+  if (LLVM_UNLIKELY(!M || !Fn))
+    return;
+  for (auto &G : unwrap(M)->globals())
+    if (Fn(wrapV(&G), Ctx) != 0)
+      return;
+}
+
+static void bridgeModuleForEachInstruction(
+    NevercModuleRef M, int (*Fn)(NevercValueRef I, void *Ctx), void *Ctx) {
+  if (LLVM_UNLIKELY(!M || !Fn))
+    return;
+  for (auto &F : *unwrap(M)) {
+    if (F.isDeclaration())
+      continue;
+    for (auto &BB : F)
+      for (auto &I : BB)
+        if (Fn(wrapV(&I), Ctx) != 0)
+          return;
+  }
+}
+
+// ===----------------------------------------------------------------------===
+//  MIR callback iteration
+//  Same pattern as the IR ForEach family.  One vtable call replaces N
+//  MFuncGetNextBB / MBBGetNextInst vtable calls.
+// ===----------------------------------------------------------------------===
+
+static void bridgeMFuncForEachBB(
+    NevercMachineFuncRef MF,
+    int (*Fn)(NevercMachineBBRef MBB, void *Ctx), void *Ctx) {
+  if (LLVM_UNLIKELY(!MF || !Fn))
+    return;
+  for (auto &MBB : *unwrapMF(MF))
+    if (Fn(wrapMBB(&MBB), Ctx) != 0)
+      return;
+}
+
+static void bridgeMBBForEachInst(
+    NevercMachineBBRef MBB,
+    int (*Fn)(NevercMachineInstrRef MI, void *Ctx), void *Ctx) {
+  if (LLVM_UNLIKELY(!MBB || !Fn))
+    return;
+  for (auto &MI : *unwrapMBB(MBB))
+    if (Fn(wrapMI(&MI), Ctx) != 0)
+      return;
+}
+
+// ===----------------------------------------------------------------------===
+//  Alias / Use / per-function-instruction callback iteration
+// ===----------------------------------------------------------------------===
+
+static void bridgeModuleForEachAlias(
+    NevercModuleRef M, int (*Fn)(NevercValueRef A, void *Ctx), void *Ctx) {
+  if (LLVM_UNLIKELY(!M || !Fn))
+    return;
+  for (auto &A : unwrap(M)->aliases())
+    if (Fn(wrapV(&A), Ctx) != 0)
+      return;
+}
+
+static void bridgeValueForEachUse(
+    NevercValueRef V, int (*Fn)(NevercUseRef U, void *Ctx), void *Ctx) {
+  if (LLVM_UNLIKELY(!V || !Fn))
+    return;
+  for (auto &U : unwrapV(V)->uses())
+    if (Fn(reinterpret_cast<NevercUseRef>(&U), Ctx) != 0)
+      return;
+}
+
+static void bridgeFunctionForEachInst(
+    NevercValueRef F, int (*Fn)(NevercValueRef I, void *Ctx), void *Ctx) {
+  if (LLVM_UNLIKELY(!F || !Fn))
+    return;
+  auto *Func = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Func || Func->isDeclaration()))
+    return;
+  for (auto &BB : *Func)
+    for (auto &I : BB)
+      if (Fn(wrapV(&I), Ctx) != 0)
+        return;
+}
+
+// ===----------------------------------------------------------------------===
+//  Typed plugin argument helpers -- centralized parsing / range checking.
+//  All three helpers return Default when the key is absent or the value
+//  fails to parse, so callers can write a single-line lookup.
+// ===----------------------------------------------------------------------===
+
+static int bridgePluginGetArgBool(const char *Key, int Default) {
+  const char *V = bridgePluginGetArg(Key);
+  if (LLVM_UNLIKELY(!V))
+    return Default;
+  while (bridgeIsWhitespace(static_cast<unsigned char>(*V)))
+    ++V;
+  if (*V == '\0')
+    return Default;
+
+  const char *End = V;
+  while (*End && !bridgeIsWhitespace(static_cast<unsigned char>(*End)))
+    ++End;
+  for (const char *T = End; *T; ++T)
+    if (LLVM_UNLIKELY(!bridgeIsWhitespace(static_cast<unsigned char>(*T))))
+      return Default;
+
+  size_t Len = static_cast<size_t>(End - V);
+  if (Len == 1) {
+    char C = V[0];
+    if (C == '1' || C == 'y' || C == 'Y' || C == 't' || C == 'T')
+      return 1;
+    if (C == '0' || C == 'n' || C == 'N' || C == 'f' || C == 'F')
+      return 0;
+    return Default;
+  }
+
+  char Buf[8];
+  if (LLVM_UNLIKELY(Len >= sizeof(Buf)))
+    return Default;
+  std::memcpy(Buf, V, Len);
+  Buf[Len] = '\0';
+
+  static const char *const TrueWords[] = {"true", "yes", "on"};
+  static const char *const FalseWords[] = {"false", "no", "off"};
+  for (const char *W : TrueWords)
+    if (bridgeStrIEqual(Buf, W))
+      return 1;
+  for (const char *W : FalseWords)
+    if (bridgeStrIEqual(Buf, W))
+      return 0;
+  return Default;
+}
+
+static int64_t bridgePluginGetArgInt64(const char *Key, int64_t Default) {
+  const char *V = bridgePluginGetArg(Key);
+  if (LLVM_UNLIKELY(!V))
+    return Default;
+  while (bridgeIsWhitespace(static_cast<unsigned char>(*V)))
+    ++V;
+  char *End = nullptr;
+  errno = 0;
+  long long Val = std::strtoll(V, &End, 10);
+  if (LLVM_UNLIKELY(errno != 0 || End == V))
+    return Default;
+  while (bridgeIsWhitespace(static_cast<unsigned char>(*End)))
+    ++End;
+  if (LLVM_UNLIKELY(*End != '\0'))
+    return Default;
+  return static_cast<int64_t>(Val);
+}
+
+static uint64_t bridgePluginGetArgUInt64(const char *Key, uint64_t Default) {
+  const char *V = bridgePluginGetArg(Key);
+  if (LLVM_UNLIKELY(!V))
+    return Default;
+  const char *P = V;
+  while (bridgeIsWhitespace(static_cast<unsigned char>(*P)))
+    ++P;
+  if (LLVM_UNLIKELY(*P == '-'))
+    return Default;
+  char *End = nullptr;
+  errno = 0;
+  unsigned long long Val = std::strtoull(P, &End, 10);
+  if (LLVM_UNLIKELY(errno != 0 || End == P))
+    return Default;
+  while (bridgeIsWhitespace(static_cast<unsigned char>(*End)))
+    ++End;
+  if (LLVM_UNLIKELY(*End != '\0'))
+    return Default;
+  return static_cast<uint64_t>(Val);
+}
+
+// ===----------------------------------------------------------------------===
+//  Arena-backed batch collection -- mirror the host-heap variants but
+//  allocate the result array straight from the BumpPtrAllocator.  The
+//  iteration logic is identical so the count + fill cost matches the
+//  existing ModuleCollect* path.  Eliminates the per-call mi_malloc/
+//  mi_free pair on the plugin's hot path.
+// ===----------------------------------------------------------------------===
+
+static NevercValueRef *
+bridgeArenaCollectFunctions(NevercArenaRef Arena, NevercModuleRef M,
+                            unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!Arena || !M || !OutCount))
+    return nullptr;
+  auto *Mod = unwrap(M);
+  size_t Count = Mod->size();
+  if (LLVM_UNLIKELY(Count == 0 || Count > UINT_MAX ||
+                    Count > SIZE_MAX / sizeof(NevercValueRef)))
+    return nullptr;
+  auto *Buf = static_cast<NevercValueRef *>(unwrapArena(Arena)->Alloc.Allocate(
+      Count * sizeof(NevercValueRef), alignof(NevercValueRef)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  unsigned Idx = 0;
+  for (auto &F : *Mod)
+    Buf[Idx++] = wrapV(&F);
+  *OutCount = Idx;
+  return Buf;
+}
+
+static NevercValueRef *
+bridgeArenaCollectDefinedFunctions(NevercArenaRef Arena, NevercModuleRef M,
+                                   unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!Arena || !M || !OutCount))
+    return nullptr;
+  auto *Mod = unwrap(M);
+  // Arena allocation is freed in bulk, so over-allocating by the declaration
+  // count is harmless.  Use Mod->size() (O(1) on modern LLVM) as the upper
+  // bound and avoid a separate counting pass.
+  size_t MaxCount = Mod->size();
+  if (LLVM_UNLIKELY(MaxCount == 0 || MaxCount > UINT_MAX ||
+                    MaxCount > SIZE_MAX / sizeof(NevercValueRef)))
+    return nullptr;
+  auto *Buf = static_cast<NevercValueRef *>(unwrapArena(Arena)->Alloc.Allocate(
+      MaxCount * sizeof(NevercValueRef), alignof(NevercValueRef)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  unsigned Idx = 0;
+  for (auto &F : *Mod)
+    if (!F.isDeclaration())
+      Buf[Idx++] = wrapV(&F);
+  if (LLVM_UNLIKELY(Idx == 0))
+    return nullptr;
+  *OutCount = Idx;
+  return Buf;
+}
+
+static NevercValueRef *
+bridgeArenaCollectInstructions(NevercArenaRef Arena, NevercModuleRef M,
+                               unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!Arena || !M || !OutCount))
+    return nullptr;
+  auto *Mod = unwrap(M);
+  size_t Total = 0;
+  for (auto &F : *Mod) {
+    if (F.isDeclaration())
+      continue;
+    for (auto &BB : F)
+      Total += BB.size();
+  }
+  if (LLVM_UNLIKELY(Total == 0 || Total > UINT_MAX ||
+                    Total > SIZE_MAX / sizeof(NevercValueRef)))
+    return nullptr;
+  auto *Buf = static_cast<NevercValueRef *>(unwrapArena(Arena)->Alloc.Allocate(
+      Total * sizeof(NevercValueRef), alignof(NevercValueRef)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  unsigned Idx = 0;
+  for (auto &F : *Mod) {
+    if (F.isDeclaration())
+      continue;
+    for (auto &BB : F)
+      for (auto &I : BB)
+        Buf[Idx++] = wrapV(&I);
+  }
+  *OutCount = Idx;
+  return Buf;
+}
+
+static unsigned *bridgeArenaCollectAllOpcodes(NevercArenaRef Arena,
+                                              NevercModuleRef M,
+                                              unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!Arena || !M || !OutCount))
+    return nullptr;
+  auto *Mod = unwrap(M);
+  size_t Total = 0;
+  for (auto &F : *Mod) {
+    if (F.isDeclaration())
+      continue;
+    for (auto &BB : F)
+      Total += BB.size();
+  }
+  if (LLVM_UNLIKELY(Total == 0 || Total > UINT_MAX ||
+                    Total > SIZE_MAX / sizeof(unsigned)))
+    return nullptr;
+  auto *Buf = static_cast<unsigned *>(unwrapArena(Arena)->Alloc.Allocate(
+      Total * sizeof(unsigned), alignof(unsigned)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  size_t Idx = 0;
+  for (auto &F : *Mod) {
+    if (F.isDeclaration())
+      continue;
+    for (auto &BB : F)
+      for (auto &Inst : BB)
+        Buf[Idx++] = Inst.getOpcode();
+  }
+  *OutCount = static_cast<unsigned>(Idx);
+  return Buf;
+}
+
+// ===----------------------------------------------------------------------===
+//  Zero-allocation defined-function census
+//  O(N) single scan, zero allocation.  Eliminates the
+//  "ModuleCollectDefinedFunctions + Free" pattern when only the count
+//  is needed.  (ModuleGetFunctionCount / ModuleGetGlobalCount are
+//  implemented earlier in this file.)
+// ===----------------------------------------------------------------------===
+
+static unsigned bridgeModuleGetDefinedFunctionCount(NevercModuleRef M) {
+  if (LLVM_UNLIKELY(!M))
+    return 0;
+  unsigned Count = 0;
+  for (auto &F : *unwrap(M))
+    if (!F.isDeclaration())
+      ++Count;
+  return Count;
+}
+
+// ===----------------------------------------------------------------------===
+//  Arena-backed callee collection
+//  Mirrors CallGraphCollectCallees but allocates from the BumpPtrAllocator.
+//  Single SmallPtrSet pass for dedup + arena fill -- eliminates the per-
+//  iteration mi_malloc/mi_free pair in call-graph-walking plugin loops.
+// ===----------------------------------------------------------------------===
+
+static NevercValueRef *
+bridgeArenaCollectCallees(NevercArenaRef Arena, NevercCallGraphRef CG,
+                          NevercValueRef F, unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!Arena || !CG || !F || !OutCount))
+    return nullptr;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn))
+    return nullptr;
+  auto *State = reinterpret_cast<CallGraphState *>(CG);
+  CallGraphNode *Node = State->CG[Fn];
+  if (LLVM_UNLIKELY(!Node))
+    return nullptr;
+  SmallPtrSet<Function *, 16> Seen;
+  for (const auto &CR : *Node) {
+    if (Function *Callee = CR.second->getFunction())
+      Seen.insert(Callee);
+  }
+  if (Seen.empty())
+    return nullptr;
+  size_t SeenCount = Seen.size();
+  if (LLVM_UNLIKELY(SeenCount > SIZE_MAX / sizeof(NevercValueRef)))
+    return nullptr;
+  auto *Buf = static_cast<NevercValueRef *>(unwrapArena(Arena)->Alloc.Allocate(
+      SeenCount * sizeof(NevercValueRef), alignof(NevercValueRef)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  unsigned Idx = 0;
+  for (Function *Callee : Seen)
+    Buf[Idx++] = wrapV(Callee);
+  *OutCount = Idx;
+  return Buf;
+}
+
+// ===----------------------------------------------------------------------===
+//  Arena-backed BB / MBB collection
+//  Single vtable call replaces the GetCount + AllocArray + Fill pattern.
+// ===----------------------------------------------------------------------===
+
+static NevercBasicBlockRef *
+bridgeArenaCollectBBs(NevercArenaRef Arena, NevercValueRef F,
+                      unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!Arena || !F || !OutCount))
+    return nullptr;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn || Fn->isDeclaration()))
+    return nullptr;
+  size_t RawCount = Fn->size();
+  if (LLVM_UNLIKELY(RawCount == 0 || RawCount > UINT_MAX ||
+                    RawCount > SIZE_MAX / sizeof(NevercBasicBlockRef)))
+    return nullptr;
+  auto *Buf = static_cast<NevercBasicBlockRef *>(
+      unwrapArena(Arena)->Alloc.Allocate(
+          RawCount * sizeof(NevercBasicBlockRef),
+          alignof(NevercBasicBlockRef)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  unsigned Idx = 0;
+  for (auto &BB : *Fn)
+    Buf[Idx++] = wrapBB(&BB);
+  *OutCount = Idx;
+  return Buf;
+}
+
+static NevercMachineBBRef *
+bridgeArenaCollectMBBs(NevercArenaRef Arena, NevercMachineFuncRef MF,
+                       unsigned *OutCount) {
+  if (OutCount)
+    *OutCount = 0;
+  if (LLVM_UNLIKELY(!Arena || !MF || !OutCount))
+    return nullptr;
+  size_t RawCount = unwrapMF(MF)->size();
+  if (LLVM_UNLIKELY(RawCount == 0 || RawCount > UINT_MAX ||
+                    RawCount > SIZE_MAX / sizeof(NevercMachineBBRef)))
+    return nullptr;
+  auto *Buf = static_cast<NevercMachineBBRef *>(
+      unwrapArena(Arena)->Alloc.Allocate(
+          RawCount * sizeof(NevercMachineBBRef),
+          alignof(NevercMachineBBRef)));
+  if (LLVM_UNLIKELY(!Buf))
+    return nullptr;
+  unsigned Idx = 0;
+  for (auto &MBB : *unwrapMF(MF))
+    Buf[Idx++] = wrapMBB(&MBB);
+  *OutCount = Idx;
+  return Buf;
 }
 
 // ===----------------------------------------------------------------------===
@@ -7535,11 +8630,93 @@ NevercHostAPI buildHostAPI() {
 
   API.LoopIsLoopInvariant = bridgeLoopIsLoopInvariant;
 
+  API.ArenaCreate = bridgeArenaCreate;
+  API.ArenaDestroy = bridgeArenaDestroy;
+  API.ArenaAlloc = bridgeArenaAlloc;
+  API.ArenaAllocZeroed = bridgeArenaAllocZeroed;
+  API.ArenaAllocArray = bridgeArenaAllocArray;
+  API.ArenaStrDup = bridgeArenaStrDup;
+  API.ArenaStrNDup = bridgeArenaStrNDup;
+  API.ArenaReset = bridgeArenaReset;
+  API.ArenaGetBytesUsed = bridgeArenaGetBytesUsed;
+
+  API.ValueSetCreate = bridgeValueSetCreate;
+  API.ValueSetCreateSized = bridgeValueSetCreateSized;
+  API.ValueSetDestroy = bridgeValueSetDestroy;
+  API.ValueSetInsert = bridgeValueSetInsert;
+  API.ValueSetContains = bridgeValueSetContains;
+  API.ValueSetRemove = bridgeValueSetRemove;
+  API.ValueSetCount = bridgeValueSetCount;
+  API.ValueSetClear = bridgeValueSetClear;
+
+  API.SortCtx = bridgeSortCtx;
+  API.BSearchCtx = bridgeBSearchCtx;
+  API.DynArraySortCtx = bridgeDynArraySortCtx;
+
+  API.StrBuilderGetStr = bridgeStrBuilderGetStr;
+
+  API.ArenaAllocArrayZeroed = bridgeArenaAllocArrayZeroed;
+
+  API.ArenaStrConcat = bridgeArenaStrConcat;
+  API.ArenaStrFormatV = bridgeArenaStrFormatV;
+  API.ArenaStrFormat = bridgeArenaStrFormat;
+
+  API.ValueSetForEach = bridgeValueSetForEach;
+
+  API.PluginGetArgBool = bridgePluginGetArgBool;
+  API.PluginGetArgInt64 = bridgePluginGetArgInt64;
+  API.PluginGetArgUInt64 = bridgePluginGetArgUInt64;
+
+  API.ArenaCollectFunctions = bridgeArenaCollectFunctions;
+  API.ArenaCollectDefinedFunctions = bridgeArenaCollectDefinedFunctions;
+  API.ArenaCollectInstructions = bridgeArenaCollectInstructions;
+  API.ArenaCollectAllOpcodes = bridgeArenaCollectAllOpcodes;
+
+  API.ModuleGetDefinedFunctionCount = bridgeModuleGetDefinedFunctionCount;
+
+  API.ArenaCollectCallees = bridgeArenaCollectCallees;
+
+  API.ArenaCollectBBs = bridgeArenaCollectBBs;
+  API.ArenaCollectMBBs = bridgeArenaCollectMBBs;
+
+  API.DomTreeGetDepth = bridgeDomTreeGetDepth;
+  API.PostDomTreeGetDepth = bridgePostDomTreeGetDepth;
+
+  API.MemFindByte = bridgeMemFindByte;
+
+  API.ModuleGetFirstDefinedFunction = bridgeModuleGetFirstDefinedFunction;
+  API.ModuleGetNextDefinedFunction = bridgeModuleGetNextDefinedFunction;
+
+  API.StrMapClear = bridgeStrMapClear;
+
+  API.ArenaStrSubstring = bridgeArenaStrSubstring;
+  API.ArenaStrTrim = bridgeArenaStrTrim;
+  API.ArenaStrToLower = bridgeArenaStrToLower;
+  API.ArenaStrToUpper = bridgeArenaStrToUpper;
+  API.ArenaStrJoin = bridgeArenaStrJoin;
+  API.ArenaMemDup = bridgeArenaMemDup;
+
+  API.MonotonicNanos = bridgeMonotonicNanos;
+  API.ModuleIsLittleEndian = bridgeModuleIsLittleEndian;
+
+  API.ModuleForEachFunction = bridgeModuleForEachFunction;
+  API.ModuleForEachDefinedFunction = bridgeModuleForEachDefinedFunction;
+  API.FunctionForEachBB = bridgeFunctionForEachBB;
+  API.BBForEachInst = bridgeBBForEachInst;
+  API.ModuleForEachGlobal = bridgeModuleForEachGlobal;
+  API.ModuleForEachInstruction = bridgeModuleForEachInstruction;
+
+  API.MFuncForEachBB = bridgeMFuncForEachBB;
+  API.MBBForEachInst = bridgeMBBForEachInst;
+  API.ModuleForEachAlias = bridgeModuleForEachAlias;
+  API.ValueForEachUse = bridgeValueForEachUse;
+  API.FunctionForEachInst = bridgeFunctionForEachInst;
+
   static_assert(
-      offsetof(NevercHostAPI, LoopIsLoopInvariant) +
-              sizeof(NevercHostAPI::LoopIsLoopInvariant) ==
+      offsetof(NevercHostAPI, FunctionForEachInst) +
+              sizeof(NevercHostAPI::FunctionForEachInst) ==
           sizeof(NevercHostAPI),
-      "New fields added after LoopIsLoopInvariant. "
+      "New fields added after FunctionForEachInst. "
       "Wire them in buildHostAPI and update this static_assert.");
 
   return API;

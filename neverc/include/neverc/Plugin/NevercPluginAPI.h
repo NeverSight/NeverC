@@ -24,7 +24,17 @@
 |*     NevercStrBuilderRef created by DynArrayCreate / StrMapCreate /       *|
 |*     IntMapCreate / StrBuilderCreate must be freed via the corresponding  *|
 |*     Destroy function before the pass returns.  StrBuilderFinish returns  *|
-|*     a host-allocated string; caller frees via Free.                      *|
+|*     a host-allocated string; caller frees via Free.  StrBuilderGetStr   *|
+|*     returns a borrow into the builder's buffer -- do NOT free it; it    *|
+|*     is valid only until the next mutation or Destroy.                    *|
+|*   - NevercArenaRef created by ArenaCreate must be freed by calling        *|
+|*     ArenaDestroy before the pass returns.  Memory obtained via            *|
+|*     ArenaAlloc / ArenaAllocZeroed / ArenaAllocArray /                     *|
+|*     ArenaAllocArrayZeroed / ArenaStrDup / ArenaStrNDup /                  *|
+|*     ArenaStrConcat / ArenaStrFormat / ArenaStrFormatV /                   *|
+|*     ArenaStrSubstring / ArenaStrTrim / ArenaStrToLower /                  *|
+|*     ArenaStrToUpper / ArenaStrJoin / ArenaMemDup                          *|
+|*     MUST NOT be freed via Free -- it is owned by the Arena.               *|
 |*   - Do NOT call RegisterModulePass/MachinePass/BinaryPass outside of      *|
 |*     the RegisterPasses callback -- they are no-ops after registration.     *|
 |*   - Before using fields added in later versions, use NEVERC_API_FN or     *|
@@ -35,7 +45,12 @@
 #ifndef NEVERC_PLUGIN_API_H
 #define NEVERC_PLUGIN_API_H
 
-#include <inttypes.h>
+/* <inttypes.h> is re-exported here as a convenience for plugins so they can
+   use PRId64 / PRIu64 / etc. with the int64_t / uint64_t fields exposed by
+   this ABI without needing to remember the extra include.  IWYU / clangd
+   may flag this header as "unused" because we don't reference PRI* macros
+   ourselves -- that's intentional. */
+#include <inttypes.h> /* IWYU pragma: keep */
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -72,6 +87,14 @@ extern "C" {
  * (StrFindChar, StrFindLastChar, StrFindStr, MemFind, ...).  Use this
  * macro instead of (uint64_t)-1 to make intent explicit at call sites. */
 #define NEVERC_NPOS ((uint64_t)-1)
+
+/* Return S when it is non-NULL and points to a non-empty string, Default
+ * otherwise.  Zero allocation, zero vtable call -- pure compile-time
+ * expansion.  Useful for ValueGetName and similar APIs that may return
+ * NULL or "".
+ * NOTE: both S and Default may be evaluated more than once; avoid
+ * side-effectful expressions as arguments. */
+#define NEVERC_STR_OR(s, def) (((s) && *(s)) ? (s) : (def))
 
 /* ---- Convenience allocation macros ----
  * Typed array allocation through the host vtable -- eliminates the
@@ -167,6 +190,30 @@ extern "C" {
     for (NevercLinkerSectionRef var = (api)->LinkGetFirstSection();            \
          var; var = (api)->LinkGetNextSection(var))
 
+/* Iterate only non-declaration (defined) functions in a module.
+ * When the host provides ModuleGetFirstDefinedFunction (newer hosts),
+ * the skipping happens on the C++ side: one vtable call per defined
+ * function, zero calls for declarations.  On older hosts, falls back
+ * to ModuleGetNextFunction + FunctionIsDeclaration (two vtable calls
+ * per function including declarations).
+ *
+ * The version dispatch is inside the inline helpers; the macro itself
+ * is a plain for-loop.  At -O2+ the compiler hoists the invariant
+ * NEVERC_API_FN check out of the loop body.
+ *
+ * Usage:
+ *   NEVERC_FOR_EACH_DEFINED_FUNCTION(API, M, F) {
+ *     // F is guaranteed to have a body
+ *   }
+ *
+ * The neverc_internal_*DefFn_ helpers are defined later in this header
+ * (after the NevercHostAPI struct).  This is fine because the macro is
+ * only expanded in user code, which #includes the whole header. */
+#define NEVERC_FOR_EACH_DEFINED_FUNCTION(api, m, var)                          \
+    for (NevercValueRef var = neverc_internal_FirstDefFn_(api, m);             \
+         var;                                                                  \
+         var = neverc_internal_NextDefFn_(api, var))
+
 /* -------------------------------------------------------------------------- */
 /*  Opaque handle types                                                       */
 /*  Underlying: reinterpret_cast of llvm::Module*, llvm::Value*, etc.         */
@@ -197,6 +244,8 @@ typedef struct NevercOpaqueLoopInfo      *NevercLoopInfoRef;
 typedef struct NevercOpaqueLoop          *NevercLoopRef;
 typedef struct NevercOpaqueSCEVInfo      *NevercSCEVInfoRef;
 typedef struct NevercOpaqueCallGraph     *NevercCallGraphRef;
+typedef struct NevercOpaqueArena         *NevercArenaRef;
+typedef struct NevercOpaqueValueSet      *NevercValueSetRef;
 
 /* -------------------------------------------------------------------------- */
 /*  Hook points                                                               */
@@ -1493,7 +1542,12 @@ typedef struct NevercHostAPI {
      for strings <= 256 bytes; grows geometrically beyond that.
 
      Finish returns a host-allocated null-terminated copy; caller frees
-     via API->Free.  The builder can be reused after Finish or Clear.   */
+     via API->Free.  The builder can be reused after Finish or Clear.
+
+     GetStr returns a const char* borrow of the internal buffer -- zero
+     allocation, valid until the next mutation (Append/AppendF/Clear) or
+     Destroy.  Prefer GetStr over Finish when the string is consumed
+     immediately (e.g. passed to DiagNote) and not retained.            */
   NevercStrBuilderRef (*StrBuilderCreate)(void);
   void (*StrBuilderDestroy)(NevercStrBuilderRef SB);
   void (*StrBuilderAppend)(NevercStrBuilderRef SB, const char *S);
@@ -1889,7 +1943,440 @@ typedef struct NevercHostAPI {
      with respect to L).  Constants always return 1.  Returns 0 for NULL
      inputs or if V is defined inside L. */
   int (*LoopIsLoopInvariant)(NevercLoopRef L, NevercValueRef V);
+
+  /* ---- Arena (bump-pointer allocator for pass-scoped temporaries) ----
+     All memory allocated from an Arena is freed in one shot when the
+     Arena is destroyed or reset.  Individual ArenaAlloc'd pointers
+     MUST NOT be passed to Free -- they are owned by the Arena.
+
+     Use an Arena whenever a pass needs many small temporary allocations
+     (string copies, pointer arrays, scratch buffers) that share the same
+     lifetime.  A single ArenaDestroy at the end replaces N individual
+     Free calls and eliminates per-object malloc overhead.
+
+     Backed by LLVM BumpPtrAllocator: 4 KiB slab growth, minimal
+     bookkeeping, cache-line-friendly sequential allocation.
+
+     Returns NULL on allocation failure or when the Arena handle is NULL.
+     The caller MUST call ArenaDestroy before the pass returns. */
+  NevercArenaRef (*ArenaCreate)(void);
+  void (*ArenaDestroy)(NevercArenaRef A);
+  /* Allocate Size bytes, aligned to max_align_t.  Not individually
+     freeable -- freed when the Arena is destroyed or reset. */
+  void *(*ArenaAlloc)(NevercArenaRef A, uint64_t Size);
+  /* Same as ArenaAlloc but zero-fills the returned memory. */
+  void *(*ArenaAllocZeroed)(NevercArenaRef A, uint64_t Size);
+  /* Overflow-safe array allocation: Count * ElemSize with overflow check.
+     Returns NULL on overflow.  Not individually freeable. */
+  void *(*ArenaAllocArray)(NevercArenaRef A, uint64_t Count,
+                           uint64_t ElemSize);
+  /* Duplicate a null-terminated string into the Arena. */
+  char *(*ArenaStrDup)(NevercArenaRef A, const char *S);
+  /* Duplicate at most MaxLen bytes of S into the Arena. */
+  char *(*ArenaStrNDup)(NevercArenaRef A, const char *S, uint64_t MaxLen);
+  /* Reset the Arena, freeing all allocations but keeping the slab
+     memory for reuse.  Cheaper than Destroy + Create when you need
+     a fresh Arena in a loop. */
+  void (*ArenaReset)(NevercArenaRef A);
+  /* Returns the total bytes allocated from this Arena (includes
+     alignment padding).  Useful for pass-level allocation profiling. */
+  uint64_t (*ArenaGetBytesUsed)(NevercArenaRef A);
+
+  /* ---- ValueSet (opaque hash set of NevercValueRef pointers) ----
+     O(1) amortized insert / contains / remove.  Backed by LLVM
+     DenseSet with open addressing and quadratic probing.
+
+     Primary use: visited sets, worklists dedup, "is this Value in
+     my collection?" membership tests.  Replaces the O(N) linear scan
+     pattern when using DynArray or raw pointer arrays.
+
+     NULL values are silently rejected (Insert returns 0, Contains
+     returns 0).  The caller MUST call ValueSetDestroy before the
+     pass returns. */
+  NevercValueSetRef (*ValueSetCreate)(void);
+  NevercValueSetRef (*ValueSetCreateSized)(unsigned InitialCapacity);
+  void (*ValueSetDestroy)(NevercValueSetRef Set);
+  /* Returns 1 if V was newly inserted, 0 if already present or NULL. */
+  int (*ValueSetInsert)(NevercValueSetRef Set, NevercValueRef V);
+  /* Returns 1 if V is in the set, 0 otherwise. */
+  int (*ValueSetContains)(NevercValueSetRef Set, NevercValueRef V);
+  void (*ValueSetRemove)(NevercValueSetRef Set, NevercValueRef V);
+  unsigned (*ValueSetCount)(NevercValueSetRef Set);
+  void (*ValueSetClear)(NevercValueSetRef Set);
+
+  /* ---- Context-aware sort / binary-search ----
+     Like Sort/BSearch/DynArraySort but the comparator receives an extra
+     void *Ctx parameter, allowing callbacks to access the host API vtable
+     or any other pass state without hand-rolling CRT-like helpers.
+
+     Comparator signature: int Cmp(const void *A, const void *B, void *Ctx)
+     Returns <0, 0, >0 like strcmp.
+
+     Implementation uses a thread-local thunk around std::qsort so there
+     is zero per-call heap allocation and negligible overhead vs Sort. */
+  void (*SortCtx)(void *Base, uint64_t NumElements, uint64_t ElemSize,
+                  int (*Cmp)(const void *A, const void *B, void *Ctx),
+                  void *Ctx);
+  const void *(*BSearchCtx)(const void *Key, const void *Base,
+                            uint64_t NumElements, uint64_t ElemSize,
+                            int (*Cmp)(const void *A, const void *B,
+                                       void *Ctx),
+                            void *Ctx);
+  void (*DynArraySortCtx)(NevercDynArrayRef Arr,
+                          int (*Cmp)(const void *A, const void *B,
+                                     void *Ctx),
+                          void *Ctx);
+
+  /* ---- StrBuilder zero-alloc read-back ----
+     Returns a const char* pointing into the builder's internal buffer.
+     Zero allocation -- no Free required.  The pointer is valid only until
+     the next mutating operation (Append, AppendF, Clear, Destroy).
+
+     Prefer this over Finish when the string is consumed immediately
+     (e.g. passed to DiagNote) and does not need to outlive the builder.
+     Returns "" for an empty builder, NULL only when SB is NULL. */
+  const char *(*StrBuilderGetStr)(NevercStrBuilderRef SB);
+
+  /* ---- Arena zero-initialized array allocation ----
+     Overflow-safe Count * ElemSize with zero-fill.  Combines the overflow
+     protection of ArenaAllocArray with the zero-initialization of
+     ArenaAllocZeroed.  Not individually freeable -- owned by the Arena.
+     Returns NULL on overflow, NULL Arena, or allocation failure. */
+  void *(*ArenaAllocArrayZeroed)(NevercArenaRef A, uint64_t Count,
+                                 uint64_t ElemSize);
+
+  /* ---- Arena string concat / printf-style formatting ----
+     Allocate the result string directly inside the Arena -- the plugin
+     never sees a malloc/Free pair.  Use these when a pass needs many
+     short formatted strings sharing the Arena's lifetime (e.g. clone
+     names, diagnostic prefixes, per-function temporaries).
+
+     ArenaStrConcat returns L+R as one string.  Either operand may be
+     NULL (treated as empty).  Returns NULL only when the Arena handle
+     is NULL.
+
+     ArenaStrFormat / ArenaStrFormatV use vsnprintf.  The implementation
+     measures the formatted length on a stack buffer first, then makes a
+     SINGLE arena allocation sized exactly to the result -- no temporary
+     heap allocation, no two-pass vsnprintf when the message fits in the
+     1 KiB stack buffer.  Returns NULL on NULL Arena/Fmt or vsnprintf
+     failure. */
+  char *(*ArenaStrConcat)(NevercArenaRef A, const char *L, const char *R);
+  char *(*ArenaStrFormatV)(NevercArenaRef A, const char *Fmt, va_list Args);
+  char *(*ArenaStrFormat)(NevercArenaRef A, const char *Fmt, ...);
+
+  /* ---- ValueSet callback iteration (zero allocation) ----
+     Fn is invoked once per element in the set.  Returning nonzero from
+     Fn aborts the traversal early.  Iteration order is unspecified
+     (DenseSet internal order).
+     IMPORTANT: Do NOT mutate the set inside Fn -- inserts/removes may
+     trigger a rehash that invalidates internal iterators. */
+  void (*ValueSetForEach)(NevercValueSetRef Set,
+                          int (*Fn)(NevercValueRef V, void *Ctx),
+                          void *Ctx);
+
+  /* ---- Typed plugin argument access (parsed value, no manual probing) ----
+     Each helper reads -fplugin-pass-arg=Key=Value, parses according to
+     the typed contract below, and returns Default when the key is
+     absent or the value cannot be parsed.
+
+     PluginGetArgBool  -- "1"/"true"/"yes"/"on"  -> 1,
+                          "0"/"false"/"no"/"off" -> 0.
+                          Single-char shortcuts: t/y -> 1, f/n -> 0.
+                          ASCII case-insensitive, leading and trailing
+                          whitespace trimmed; unparseable -> Default.
+     PluginGetArgInt64  -- base-10 signed integer (leading '-' allowed,
+                           leading and trailing whitespace trimmed,
+                           non-whitespace trailing content rejects);
+                           range errors -> Default.
+     PluginGetArgUInt64 -- base-10 unsigned integer (leading '-' rejects,
+                           leading and trailing whitespace trimmed);
+                           range errors -> Default.
+
+     These eliminate the brittle `Verbose && Verbose[0] == '1'` pattern
+     and centralize parsing/range-check logic in the host. */
+  int (*PluginGetArgBool)(const char *Key, int Default);
+  int64_t (*PluginGetArgInt64)(const char *Key, int64_t Default);
+  uint64_t (*PluginGetArgUInt64)(const char *Key, uint64_t Default);
+
+  /* ---- Arena-backed batch collection (zero individual Free) ----
+     Same semantics as the ModuleCollect* family, but the result array
+     is allocated from the supplied Arena.  The plugin frees nothing --
+     ArenaDestroy reclaims the array along with every other arena
+     object.  This collapses the typical
+         Fns = ModuleCollectDefinedFunctions(...);
+         ... use Fns ...
+         Free(Fns);
+     pattern into a single ArenaDestroy at the end of the pass, and
+     removes the per-call mi_malloc/mi_free pair entirely.
+
+     Returns NULL when the module has zero matching elements, when
+     either Arena or M is NULL, or on integer overflow.  *OutCount is
+     always written (set to 0 on failure).  Internally these use the
+     same exact-count + single-allocate strategy as the host-heap
+     variants, so iteration cost is identical. */
+  NevercValueRef *(*ArenaCollectFunctions)(NevercArenaRef A, NevercModuleRef M,
+                                           unsigned *OutCount);
+  NevercValueRef *(*ArenaCollectDefinedFunctions)(NevercArenaRef A,
+                                                  NevercModuleRef M,
+                                                  unsigned *OutCount);
+  NevercValueRef *(*ArenaCollectInstructions)(NevercArenaRef A,
+                                              NevercModuleRef M,
+                                              unsigned *OutCount);
+  unsigned *(*ArenaCollectAllOpcodes)(NevercArenaRef A, NevercModuleRef M,
+                                      unsigned *OutCount);
+
+  /* ---- Zero-allocation defined-function census ----
+     Count non-declaration functions without allocating an array.
+     Eliminates the "ModuleCollectDefinedFunctions + Free" pattern
+     when the caller only needs the count.  O(N) single scan, zero
+     allocation.  Returns 0 for NULL M.
+     (ModuleGetFunctionCount / ModuleGetGlobalCount already exist above
+      for total counts.) */
+  unsigned (*ModuleGetDefinedFunctionCount)(NevercModuleRef M);
+
+  /* ---- Arena-backed callee collection for call graph analysis ----
+     Same semantics as CallGraphCollectCallees but allocates the result
+     array from the supplied Arena.  Eliminates the per-iteration
+     malloc/Free pair in call-graph-walking loops.
+     Returns NULL when CalleeCount == 0, either input is NULL, or on
+     allocation failure.  *OutCount is always written (set to 0 on
+     failure). */
+  NevercValueRef *(*ArenaCollectCallees)(NevercArenaRef A,
+                                         NevercCallGraphRef CG,
+                                         NevercValueRef Fn,
+                                         unsigned *OutCount);
+
+  /* ---- Arena-backed BB / MBB collection (single vtable call) ----
+     Replaces the three-step "GetCount + ArenaAllocArray + CollectBBs"
+     pattern with a single vtable call that queries the count, allocates
+     from the Arena, and fills the array internally.
+
+     ArenaCollectBBs: collect BasicBlock handles for an IR Function.
+       Returns NULL when the function has no BBs, is a declaration,
+       Fn or Arena is NULL.  *OutCount is always written.
+
+     ArenaCollectMBBs: collect MachineBasicBlock handles.
+       Returns NULL when the MachineFunction has no BBs, or
+       MF / Arena is NULL.  *OutCount is always written. */
+  NevercBasicBlockRef *(*ArenaCollectBBs)(NevercArenaRef A,
+                                          NevercValueRef Fn,
+                                          unsigned *OutCount);
+  NevercMachineBBRef *(*ArenaCollectMBBs)(NevercArenaRef A,
+                                          NevercMachineFuncRef MF,
+                                          unsigned *OutCount);
+
+  /* ---- DomTree / PostDomTree depth (O(1) level query) ----
+     Returns the depth (level) of BB in the dominator tree.  The root
+     has depth 0.  Returns 0 for NULL inputs or when BB is not in the
+     tree (unreachable).
+
+     This replaces the O(depth) pattern of walking DomTreeGetIDom in a
+     loop to compute depth.  LLVM stores the level in each DomTreeNode,
+     so the query is a single pointer chase. */
+  unsigned (*DomTreeGetDepth)(NevercDomTreeRef DT,
+                              NevercBasicBlockRef BB);
+  unsigned (*PostDomTreeGetDepth)(NevercPostDomTreeRef PDT,
+                                  NevercBasicBlockRef BB);
+
+  /* ---- Single-byte memory search ----
+     Returns the byte offset of the first occurrence of Byte in
+     Haystack, or NEVERC_NPOS if not found.  Convenience wrapper
+     around memchr that returns an offset (not a pointer) -- the
+     result stays valid across BinaryResize relocations.
+     Prefer this over MemFind when the needle is a single byte.   */
+  uint64_t (*MemFindByte)(const void *Haystack, uint64_t HaystackLen,
+                          uint8_t Byte);
+
+  /* ---- Defined-function iterators (host-side declaration skip) ----
+     Like ModuleGetFirstFunction / ModuleGetNextFunction, but skips
+     declarations at the C++ level.  One vtable call per defined
+     function instead of two (GetNext + IsDeclaration).
+
+     For modules with many declarations (system headers, forward decls)
+     this eliminates the per-declaration vtable call overhead entirely.
+     Returns NULL when the module has no defined functions or at end of
+     the defined-function list.
+
+     When available, NEVERC_FOR_EACH_DEFINED_FUNCTION routes through
+     these automatically.  Plugin code does not need to change. */
+  NevercValueRef (*ModuleGetFirstDefinedFunction)(NevercModuleRef M);
+  NevercValueRef (*ModuleGetNextDefinedFunction)(NevercValueRef F);
+
+  /* ---- StrMap clear (symmetric with IntMapClear / DynArrayClear) ----
+     Removes all entries but keeps the allocation.  Cheaper than
+     Destroy + Create when the same map is reused across loop
+     iterations.  No-op for NULL Map. */
+  void (*StrMapClear)(NevercStrMapRef Map);
+
+  /* ---- Arena-backed string transformations (zero malloc/free pair) ----
+     Mirror the host-heap StrSubstring / StrTrim / StrToLower / StrToUpper
+     / StrJoin family but allocate the result directly from the supplied
+     Arena.  No individual Free needed -- ArenaDestroy reclaims everything.
+     Useful for plugin passes that slice / normalize many strings (path
+     splitting, case-folded symbol matching, label generation, etc.).
+
+     ArenaStrSubstring -- copies S[Start, Start+Len) into the arena.
+       Out-of-bounds Start returns NULL; Start+Len is clamped to strlen(S).
+     ArenaStrTrim      -- copies S with leading/trailing whitespace stripped.
+     ArenaStrToLower   -- ASCII-only [A-Z]->[a-z] copy.
+     ArenaStrToUpper   -- ASCII-only [a-z]->[A-Z] copy.
+     ArenaStrJoin      -- concatenates Strings[0..Count) separated by Sep
+                          (NULL Sep means empty).  NULL/empty entries are
+                          treated as empty strings.  Returns NULL when
+                          Strings or Arena is NULL or on overflow.
+     ArenaMemDup       -- copies Len bytes of Src into the arena.  Returns
+                          NULL when Arena/Src is NULL or Len overflows
+                          size_t.  Result is NOT null-terminated.
+
+     All return NULL on allocation failure or invalid inputs (Arena NULL,
+     S NULL).  Lifetime is tied to the Arena -- the pass MUST NOT call
+     Free on the returned pointer. */
+  char *(*ArenaStrSubstring)(NevercArenaRef A, const char *S, uint64_t Start,
+                             uint64_t Len);
+  char *(*ArenaStrTrim)(NevercArenaRef A, const char *S);
+  char *(*ArenaStrToLower)(NevercArenaRef A, const char *S);
+  char *(*ArenaStrToUpper)(NevercArenaRef A, const char *S);
+  char *(*ArenaStrJoin)(NevercArenaRef A, const char *const *Strings,
+                        unsigned Count, const char *Sep);
+  void *(*ArenaMemDup)(NevercArenaRef A, const void *Src, uint64_t Len);
+
+  /* ---- Monotonic clock --------------------------------------------------
+     Returns nanoseconds elapsed since some unspecified reference point.
+     Guaranteed monotonic (never goes backwards) and unaffected by wall-clock
+     adjustments.  Useful for plugin-internal timing / profiling without
+     forcing the plugin to depend on <time.h> / <chrono>, which would break
+     the zero-CRT-dependency contract.
+
+     Resolution is implementation-defined but at least 1 us on every modern
+     OS we target (Linux clock_gettime(CLOCK_MONOTONIC), macOS
+     clock_gettime_nsec_np(CLOCK_UPTIME_RAW_APPROX), Windows
+     QueryPerformanceCounter scaled to 100ns ticks).
+
+     Subtract two consecutive calls to measure an elapsed interval.  Do NOT
+     interpret the absolute value -- the epoch is unspecified. */
+  uint64_t (*MonotonicNanos)(void);
+
+  /* ---- Module endianness ------------------------------------------------
+     Structured 1/0 query equivalent to inspecting the 'e' (little) / 'E'
+     (big) prefix of ModuleGetDataLayout, without forcing every plugin to
+     write that micro-parser.  Returns 1 (the LLVM default) when M is null
+     so passes that don't care about endianness can use the result
+     directly without a null check. */
+  int (*ModuleIsLittleEndian)(NevercModuleRef M);
+
+  /* ---- Zero-allocation callback iteration over IR structures -----------
+     Each ForEach function performs the entire iteration inside the host
+     process: one vtable call replaces N GetNext vtable calls.  The
+     callback receives each element plus a user-provided context pointer.
+     Return 0 from the callback to continue; return non-zero to stop
+     early (the ForEach returns immediately without visiting remaining
+     elements).
+
+     These are the fastest iteration mechanism available -- faster than
+     both the linked-list macros (NEVERC_FOR_EACH_) and the batch-
+     collect APIs (ModuleCollect / ArenaCollect families) because they
+     avoid per-element vtable indirection AND allocation entirely.
+
+     Prefer ForEach when:
+       - You process each element exactly once (no random access needed)
+       - You don't need the array after iteration (no sort, no 2-pass)
+
+     Use Collect/ArenaCollect when you need random access, sorting,
+     or multi-pass algorithms.                                          */
+  void (*ModuleForEachFunction)(
+      NevercModuleRef M,
+      int (*Fn)(NevercValueRef F, void *Ctx), void *Ctx);
+  void (*ModuleForEachDefinedFunction)(
+      NevercModuleRef M,
+      int (*Fn)(NevercValueRef F, void *Ctx), void *Ctx);
+  void (*FunctionForEachBB)(
+      NevercValueRef F,
+      int (*Fn)(NevercBasicBlockRef BB, void *Ctx), void *Ctx);
+  void (*BBForEachInst)(
+      NevercBasicBlockRef BB,
+      int (*Fn)(NevercValueRef I, void *Ctx), void *Ctx);
+
+  /* Callback iteration over globals.  Same semantics as
+     ModuleForEachFunction but walks the global variable list. */
+  void (*ModuleForEachGlobal)(
+      NevercModuleRef M,
+      int (*Fn)(NevercValueRef G, void *Ctx), void *Ctx);
+
+  /* Flattened instruction iteration across all defined functions.
+     Replaces the triple-nested FOR_EACH_FUNCTION / FOR_EACH_BB /
+     FOR_EACH_INST pattern with a single vtable call.  The callback
+     does not receive the parent function or BB -- use InstGetParent /
+     BBGetParentFunction if needed (adds vtable calls, but only on the
+     elements you care about).
+
+     For the common "scan every instruction" analysis pattern, this is
+     the fastest approach when batch-collect is unavailable:
+       1 vtable call + N callback invocations
+     vs.
+       ~4N vtable calls in the triple-nested macro version.           */
+  void (*ModuleForEachInstruction)(
+      NevercModuleRef M,
+      int (*Fn)(NevercValueRef I, void *Ctx), void *Ctx);
+
+  /* ---- MIR callback iteration (zero allocation) ----
+     Same pattern as the IR ForEach family but for MachineFunction /
+     MachineBasicBlock / MachineInstr structures.  Eliminates per-
+     element vtable call overhead in MIR analysis passes.
+
+     MFuncForEachBB iterates MachineBasicBlocks in a MachineFunction.
+     MBBForEachInst iterates MachineInstrs in a MachineBasicBlock.
+     Return 0 from the callback to continue; non-zero stops early.    */
+  void (*MFuncForEachBB)(
+      NevercMachineFuncRef MF,
+      int (*Fn)(NevercMachineBBRef MBB, void *Ctx), void *Ctx);
+  void (*MBBForEachInst)(
+      NevercMachineBBRef MBB,
+      int (*Fn)(NevercMachineInstrRef MI, void *Ctx), void *Ctx);
+
+  /* Callback iteration over module aliases and value uses. */
+  void (*ModuleForEachAlias)(
+      NevercModuleRef M,
+      int (*Fn)(NevercValueRef A, void *Ctx), void *Ctx);
+  void (*ValueForEachUse)(
+      NevercValueRef V,
+      int (*Fn)(NevercUseRef U, void *Ctx), void *Ctx);
+
+  /* Flattened instruction iteration within a single function.
+     Collapses the two-level FunctionForEachBB + BBForEachInst pattern
+     into one vtable call.  Skips declarations (returns immediately).
+     Return 0 from the callback to continue; non-zero stops early.    */
+  void (*FunctionForEachInst)(
+      NevercValueRef F,
+      int (*Fn)(NevercValueRef I, void *Ctx), void *Ctx);
 } NevercHostAPI;
+
+/* ---- Internal helpers for NEVERC_FOR_EACH_DEFINED_FUNCTION ----
+ * Route to the host-side defined-function iterators when available
+ * (one vtable call per defined function), or fall back to walking the
+ * full function list with FunctionIsDeclaration on older hosts.
+ * The NEVERC_API_FN check is inside the helper so the macro body is a
+ * simple for-loop; at -O2+ the compiler hoists the invariant StructSize
+ * comparison out of the loop. */
+static inline NevercValueRef
+neverc_internal_FirstDefFn_(const NevercHostAPI *API, NevercModuleRef M) {
+  if (NEVERC_API_FN(API, ModuleGetFirstDefinedFunction))
+    return API->ModuleGetFirstDefinedFunction(M);
+  NevercValueRef F = API->ModuleGetFirstFunction(M);
+  while (F && API->FunctionIsDeclaration(F))
+    F = API->ModuleGetNextFunction(F);
+  return F;
+}
+
+static inline NevercValueRef
+neverc_internal_NextDefFn_(const NevercHostAPI *API, NevercValueRef F) {
+  if (NEVERC_API_FN(API, ModuleGetNextDefinedFunction))
+    return API->ModuleGetNextDefinedFunction(F);
+  F = API->ModuleGetNextFunction(F);
+  while (F && API->FunctionIsDeclaration(F))
+    F = API->ModuleGetNextFunction(F);
+  return F;
+}
 
 /* ---- Convenience: cast a NevercHookPoint to a void* UserData value ----
  * Plugins often store the hook-point enum as UserData so that a single
@@ -1916,6 +2403,129 @@ typedef struct NevercHostAPI {
 #define NEVERC_INTMAP_NEW(api, cap) \
     (((cap) > 0 && NEVERC_API_FN(api, IntMapCreateSized)) \
      ? (api)->IntMapCreateSized(cap) : (api)->IntMapCreate())
+
+/* ---- Convenience: create a ValueSet with optional pre-allocation ---- */
+#define NEVERC_VALUESET_NEW(api, cap) \
+    (((cap) > 0 && NEVERC_API_FN(api, ValueSetCreateSized)) \
+     ? (api)->ValueSetCreateSized(cap) : (api)->ValueSetCreate())
+
+/* ---- Convenience: Arena-based typed array allocation ----
+ * Like NEVERC_ALLOC_ARRAY but allocates from an Arena -- no individual
+ * Free needed, freed in bulk by ArenaDestroy.  Includes overflow check.
+ *
+ * NEVERC_ARENA_ALLOC_ARRAY  -- uninitialized (fast, for immediately-filled)
+ * NEVERC_ARENA_CALLOC_ARRAY -- zero-initialized (requires host with
+ *                              ArenaAllocArrayZeroed) */
+#define NEVERC_ARENA_ALLOC_ARRAY(api, arena, type, count) \
+    ((type *)(api)->ArenaAllocArray((arena), (count), sizeof(type)))
+
+#define NEVERC_ARENA_CALLOC_ARRAY(api, arena, type, count) \
+    ((type *)(api)->ArenaAllocArrayZeroed((arena), (count), sizeof(type)))
+
+/* ---- Convenience: arena-backed batch-collect macros ----
+ * Same shape as NEVERC_COLLECT_*, but the result array is owned by the
+ * Arena -- no API->Free needed.  Falls back to the host-heap collector
+ * + ArenaStrDup-style adoption is NOT supported; the macros simply
+ * return NULL when the host predates the Arena variant, so callers
+ * should branch on the result and fall through to NEVERC_COLLECT_*.   */
+#define NEVERC_ARENA_COLLECT_FUNCTIONS(api, arena, m, count) \
+    (NEVERC_API_FN(api, ArenaCollectFunctions) \
+     ? (api)->ArenaCollectFunctions((arena), (m), (count)) : NULL)
+
+#define NEVERC_ARENA_COLLECT_DEFINED_FUNCTIONS(api, arena, m, count) \
+    (NEVERC_API_FN(api, ArenaCollectDefinedFunctions) \
+     ? (api)->ArenaCollectDefinedFunctions((arena), (m), (count)) : NULL)
+
+#define NEVERC_ARENA_COLLECT_INSTRUCTIONS(api, arena, m, count) \
+    (NEVERC_API_FN(api, ArenaCollectInstructions) \
+     ? (api)->ArenaCollectInstructions((arena), (m), (count)) : NULL)
+
+#define NEVERC_ARENA_COLLECT_OPCODES(api, arena, m, count) \
+    (NEVERC_API_FN(api, ArenaCollectAllOpcodes) \
+     ? (api)->ArenaCollectAllOpcodes((arena), (m), (count)) : NULL)
+
+#define NEVERC_ARENA_COLLECT_CALLEES(api, arena, cg, fn, count) \
+    (NEVERC_API_FN(api, ArenaCollectCallees) \
+     ? (api)->ArenaCollectCallees((arena), (cg), (fn), (count)) : NULL)
+
+#define NEVERC_ARENA_COLLECT_BBS(api, arena, fn, count) \
+    (NEVERC_API_FN(api, ArenaCollectBBs) \
+     ? (api)->ArenaCollectBBs((arena), (fn), (count)) : NULL)
+
+#define NEVERC_ARENA_COLLECT_MBBS(api, arena, mf, count) \
+    (NEVERC_API_FN(api, ArenaCollectMBBs) \
+     ? (api)->ArenaCollectMBBs((arena), (mf), (count)) : NULL)
+
+/* ---- Convenience: try to create an Arena (NULL on old hosts) ----
+ * Returns a valid NevercArenaRef or NULL when the host predates the
+ * Arena API.  Callers MUST check for NULL or guard with NEVERC_API_FN. */
+#define NEVERC_TRY_ARENA(api) \
+    (NEVERC_API_FN(api, ArenaCreate) ? (api)->ArenaCreate() : NULL)
+
+/* ---- Convenience: arena-preferred collect with heap fallback ----
+ * When `arena` is non-NULL, the macro routes through the arena variant.
+ * The result array is owned by the Arena (freed by ArenaDestroy -- do
+ * NOT call Free).  Pair with NEVERC_FREE_IF_HEAP for cleanup.
+ *
+ * When `arena` is NULL, the macro degrades to the plain
+ * NEVERC_COLLECT_* (heap) variant.  The caller must Free the result.
+ *
+ * NOTE: NEVERC_TRY_ARENA returns non-NULL only when the host supports
+ * ArenaCreate, which was added alongside all ArenaCollect* variants.
+ * Therefore when `arena` is non-NULL the arena path is always available.  */
+#define NEVERC_AUTO_COLLECT_FUNCTIONS(api, arena, m, count)                    \
+    ((arena)                                                                   \
+     ? NEVERC_ARENA_COLLECT_FUNCTIONS(api, arena, m, count)                    \
+     : NEVERC_COLLECT_FUNCTIONS(api, m, count))
+
+#define NEVERC_AUTO_COLLECT_DEFINED_FUNCTIONS(api, arena, m, count)            \
+    ((arena)                                                                   \
+     ? NEVERC_ARENA_COLLECT_DEFINED_FUNCTIONS(api, arena, m, count)            \
+     : NEVERC_COLLECT_DEFINED_FUNCTIONS(api, m, count))
+
+#define NEVERC_AUTO_COLLECT_INSTRUCTIONS(api, arena, m, count)                 \
+    ((arena)                                                                   \
+     ? NEVERC_ARENA_COLLECT_INSTRUCTIONS(api, arena, m, count)                 \
+     : NEVERC_COLLECT_INSTRUCTIONS(api, m, count))
+
+#define NEVERC_AUTO_COLLECT_OPCODES(api, arena, m, count)                      \
+    ((arena)                                                                   \
+     ? NEVERC_ARENA_COLLECT_OPCODES(api, arena, m, count)                      \
+     : NEVERC_COLLECT_OPCODES(api, m, count))
+
+#define NEVERC_AUTO_COLLECT_CALLEES(api, arena, cg, fn, count)                 \
+    ((arena)                                                                   \
+     ? NEVERC_ARENA_COLLECT_CALLEES(api, arena, cg, fn, count)                 \
+     : (NEVERC_API_FN(api, CallGraphCollectCallees)                            \
+        ? (api)->CallGraphCollectCallees((cg), (fn), (count)) : NULL))
+
+/* Free ptr ONLY when it came from the host heap (arena is NULL).
+ * No-op when arena is non-NULL (ArenaDestroy reclaims everything). */
+#define NEVERC_FREE_IF_HEAP(api, ptr, arena)                                   \
+    do { if (!(arena) && (ptr)) (api)->Free(ptr); } while (0)
+
+/* Destroy arena if non-NULL; no-op otherwise.  Pairs with NEVERC_TRY_ARENA. */
+#define NEVERC_ARENA_DESTROY(api, arena)                                       \
+    do { if (arena) (api)->ArenaDestroy(arena); } while (0)
+
+/* ---- Convenience: emit StrBuilder contents to a diagnostic ----
+ * Zero allocation when StrBuilderGetStr is available on the host;
+ * falls back to Finish + Free on older hosts.  diagFn must be a member
+ * of NevercHostAPI that accepts const char* (DiagNote / DiagWarning /
+ * DiagError).  Does NOT destroy the builder -- caller manages lifetime. */
+#define NEVERC_STRBUILDER_DIAG(api, sb, diagFn)                                \
+    do {                                                                       \
+      if (NEVERC_API_FN(api, StrBuilderGetStr)) {                              \
+        const char *neverc_sbdiag_v_ = (api)->StrBuilderGetStr(sb);            \
+        if (neverc_sbdiag_v_) (api)->diagFn(neverc_sbdiag_v_);                 \
+      } else {                                                                 \
+        char *neverc_sbdiag_v_ = (api)->StrBuilderFinish(sb);                  \
+        if (neverc_sbdiag_v_) {                                                \
+          (api)->diagFn(neverc_sbdiag_v_);                                     \
+          (api)->Free(neverc_sbdiag_v_);                                       \
+        }                                                                      \
+      }                                                                        \
+    } while (0)
 
 /* -------------------------------------------------------------------------- */
 /*  Plugin entry protocol                                                     */
