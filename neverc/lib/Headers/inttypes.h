@@ -1,84 +1,274 @@
+/*===---- inttypes.h - Standard header for PRI/SCN format macros ----------===*\
+ *
+ * Provides the format conversion macros required by <inttypes.h> (C99 7.8)
+ * without relying on the system header.
+ *
+ * Earlier versions of this header used #include_next to forward to the
+ * platform's <inttypes.h>, but that fails when:
+ *   - The system header is absent (Windows cross-compile without a full SDK)
+ *   - The system header pulls in glibc's <features.h>, which uses
+ *     preprocessor patterns this compiler's preprocessor cannot parse
+ *
+ * This version is fully self-contained: it includes our own <stdint.h>
+ * (which already has a self-contained fallback) and defines all PRI/SCN
+ * macros using the __INTn_FMTx__ / __UINTn_FMTx__ builtins that the
+ * compiler always provides.
+ *
+\*===----------------------------------------------------------------------===*/
+
 #ifndef __NEVERC_INTTYPES_H
 #define __NEVERC_INTTYPES_H
 
-#if defined(_MSC_VER) && _MSC_VER < 1800
-#error MSVC does not have inttypes.h prior to Visual Studio 2013
+#include <stdint.h>
+
+/* ---- Exact-width ------------------------------------------------------ */
+
+#ifdef __INT8_FMTd__
+#define PRId8       __INT8_FMTd__
+#define PRIi8       __INT8_FMTi__
+#define PRIo8       __UINT8_FMTo__
+#define PRIu8       __UINT8_FMTu__
+#define PRIx8       __UINT8_FMTx__
+#define PRIX8       __UINT8_FMTX__
 #endif
 
-#include_next <inttypes.h>
+#ifdef __INT16_FMTd__
+#define PRId16      __INT16_FMTd__
+#define PRIi16      __INT16_FMTi__
+#define PRIo16      __UINT16_FMTo__
+#define PRIu16      __UINT16_FMTu__
+#define PRIx16      __UINT16_FMTx__
+#define PRIX16      __UINT16_FMTX__
+#endif
 
-#if defined(_MSC_VER) && _MSC_VER < 1900
-/* MSVC headers define int32_t as int, but PRIx32 as "lx" instead of "x".
- * This triggers format warnings, so fix it up here. */
-#undef PRId32
-#undef PRIdLEAST32
-#undef PRIdFAST32
-#undef PRIi32
-#undef PRIiLEAST32
-#undef PRIiFAST32
-#undef PRIo32
-#undef PRIoLEAST32
-#undef PRIoFAST32
-#undef PRIu32
-#undef PRIuLEAST32
-#undef PRIuFAST32
-#undef PRIx32
-#undef PRIxLEAST32
-#undef PRIxFAST32
-#undef PRIX32
-#undef PRIXLEAST32
-#undef PRIXFAST32
+#ifdef __INT32_FMTd__
+#define PRId32      __INT32_FMTd__
+#define PRIi32      __INT32_FMTi__
+#define PRIo32      __UINT32_FMTo__
+#define PRIu32      __UINT32_FMTu__
+#define PRIx32      __UINT32_FMTx__
+#define PRIX32      __UINT32_FMTX__
+#endif
 
-#undef SCNd32
-#undef SCNdLEAST32
-#undef SCNdFAST32
-#undef SCNi32
-#undef SCNiLEAST32
-#undef SCNiFAST32
-#undef SCNo32
-#undef SCNoLEAST32
-#undef SCNoFAST32
-#undef SCNu32
-#undef SCNuLEAST32
-#undef SCNuFAST32
-#undef SCNx32
-#undef SCNxLEAST32
-#undef SCNxFAST32
+#ifdef __INT64_FMTd__
+#define PRId64      __INT64_FMTd__
+#define PRIi64      __INT64_FMTi__
+#define PRIo64      __UINT64_FMTo__
+#define PRIu64      __UINT64_FMTu__
+#define PRIx64      __UINT64_FMTx__
+#define PRIX64      __UINT64_FMTX__
+#endif
 
-#define PRId32 "d"
-#define PRIdLEAST32 "d"
-#define PRIdFAST32 "d"
-#define PRIi32 "i"
-#define PRIiLEAST32 "i"
-#define PRIiFAST32 "i"
-#define PRIo32 "o"
-#define PRIoLEAST32 "o"
-#define PRIoFAST32 "o"
-#define PRIu32 "u"
-#define PRIuLEAST32 "u"
-#define PRIuFAST32 "u"
-#define PRIx32 "x"
-#define PRIxLEAST32 "x"
-#define PRIxFAST32 "x"
-#define PRIX32 "X"
-#define PRIXLEAST32 "X"
-#define PRIXFAST32 "X"
+/* ---- Least-width ------------------------------------------------------ */
 
-#define SCNd32 "d"
-#define SCNdLEAST32 "d"
-#define SCNdFAST32 "d"
-#define SCNi32 "i"
-#define SCNiLEAST32 "i"
-#define SCNiFAST32 "i"
-#define SCNo32 "o"
-#define SCNoLEAST32 "o"
-#define SCNoFAST32 "o"
-#define SCNu32 "u"
-#define SCNuLEAST32 "u"
-#define SCNuFAST32 "u"
-#define SCNx32 "x"
-#define SCNxLEAST32 "x"
-#define SCNxFAST32 "x"
+#ifdef __INT_LEAST8_FMTd__
+#define PRIdLEAST8  __INT_LEAST8_FMTd__
+#define PRIiLEAST8  __INT_LEAST8_FMTi__
+#define PRIoLEAST8  __UINT_LEAST8_FMTo__
+#define PRIuLEAST8  __UINT_LEAST8_FMTu__
+#define PRIxLEAST8  __UINT_LEAST8_FMTx__
+#define PRIXLEAST8  __UINT_LEAST8_FMTX__
+#endif
+
+#ifdef __INT_LEAST16_FMTd__
+#define PRIdLEAST16 __INT_LEAST16_FMTd__
+#define PRIiLEAST16 __INT_LEAST16_FMTi__
+#define PRIoLEAST16 __UINT_LEAST16_FMTo__
+#define PRIuLEAST16 __UINT_LEAST16_FMTu__
+#define PRIxLEAST16 __UINT_LEAST16_FMTx__
+#define PRIXLEAST16 __UINT_LEAST16_FMTX__
+#endif
+
+#ifdef __INT_LEAST32_FMTd__
+#define PRIdLEAST32 __INT_LEAST32_FMTd__
+#define PRIiLEAST32 __INT_LEAST32_FMTi__
+#define PRIoLEAST32 __UINT_LEAST32_FMTo__
+#define PRIuLEAST32 __UINT_LEAST32_FMTu__
+#define PRIxLEAST32 __UINT_LEAST32_FMTx__
+#define PRIXLEAST32 __UINT_LEAST32_FMTX__
+#endif
+
+#ifdef __INT_LEAST64_FMTd__
+#define PRIdLEAST64 __INT_LEAST64_FMTd__
+#define PRIiLEAST64 __INT_LEAST64_FMTi__
+#define PRIoLEAST64 __UINT_LEAST64_FMTo__
+#define PRIuLEAST64 __UINT_LEAST64_FMTu__
+#define PRIxLEAST64 __UINT_LEAST64_FMTx__
+#define PRIXLEAST64 __UINT_LEAST64_FMTX__
+#endif
+
+/* ---- Fast-width ------------------------------------------------------- */
+
+#ifdef __INT_FAST8_FMTd__
+#define PRIdFAST8   __INT_FAST8_FMTd__
+#define PRIiFAST8   __INT_FAST8_FMTi__
+#define PRIoFAST8   __UINT_FAST8_FMTo__
+#define PRIuFAST8   __UINT_FAST8_FMTu__
+#define PRIxFAST8   __UINT_FAST8_FMTx__
+#define PRIXFAST8   __UINT_FAST8_FMTX__
+#endif
+
+#ifdef __INT_FAST16_FMTd__
+#define PRIdFAST16  __INT_FAST16_FMTd__
+#define PRIiFAST16  __INT_FAST16_FMTi__
+#define PRIoFAST16  __UINT_FAST16_FMTo__
+#define PRIuFAST16  __UINT_FAST16_FMTu__
+#define PRIxFAST16  __UINT_FAST16_FMTx__
+#define PRIXFAST16  __UINT_FAST16_FMTX__
+#endif
+
+#ifdef __INT_FAST32_FMTd__
+#define PRIdFAST32  __INT_FAST32_FMTd__
+#define PRIiFAST32  __INT_FAST32_FMTi__
+#define PRIoFAST32  __UINT_FAST32_FMTo__
+#define PRIuFAST32  __UINT_FAST32_FMTu__
+#define PRIxFAST32  __UINT_FAST32_FMTx__
+#define PRIXFAST32  __UINT_FAST32_FMTX__
+#endif
+
+#ifdef __INT_FAST64_FMTd__
+#define PRIdFAST64  __INT_FAST64_FMTd__
+#define PRIiFAST64  __INT_FAST64_FMTi__
+#define PRIoFAST64  __UINT_FAST64_FMTo__
+#define PRIuFAST64  __UINT_FAST64_FMTu__
+#define PRIxFAST64  __UINT_FAST64_FMTx__
+#define PRIXFAST64  __UINT_FAST64_FMTX__
+#endif
+
+/* ---- intmax_t / uintmax_t --------------------------------------------- */
+
+#ifdef __INTMAX_FMTd__
+#define PRIdMAX     __INTMAX_FMTd__
+#define PRIiMAX     __INTMAX_FMTi__
+#define PRIoMAX     __UINTMAX_FMTo__
+#define PRIuMAX     __UINTMAX_FMTu__
+#define PRIxMAX     __UINTMAX_FMTx__
+#define PRIXMAX     __UINTMAX_FMTX__
+#endif
+
+/* ---- intptr_t / uintptr_t --------------------------------------------- */
+
+#ifdef __INTPTR_FMTd__
+#define PRIdPTR     __INTPTR_FMTd__
+#define PRIiPTR     __INTPTR_FMTi__
+#define PRIoPTR     __UINTPTR_FMTo__
+#define PRIuPTR     __UINTPTR_FMTu__
+#define PRIxPTR     __UINTPTR_FMTx__
+#define PRIXPTR     __UINTPTR_FMTX__
+#endif
+
+/* ---- SCN (scanf) macros — same format specifiers as PRI --------------- */
+
+#ifdef __INT8_FMTd__
+#define SCNd8       __INT8_FMTd__
+#define SCNi8       __INT8_FMTi__
+#define SCNo8       __UINT8_FMTo__
+#define SCNu8       __UINT8_FMTu__
+#define SCNx8       __UINT8_FMTx__
+#endif
+
+#ifdef __INT16_FMTd__
+#define SCNd16      __INT16_FMTd__
+#define SCNi16      __INT16_FMTi__
+#define SCNo16      __UINT16_FMTo__
+#define SCNu16      __UINT16_FMTu__
+#define SCNx16      __UINT16_FMTx__
+#endif
+
+#ifdef __INT32_FMTd__
+#define SCNd32      __INT32_FMTd__
+#define SCNi32      __INT32_FMTi__
+#define SCNo32      __UINT32_FMTo__
+#define SCNu32      __UINT32_FMTu__
+#define SCNx32      __UINT32_FMTx__
+#endif
+
+#ifdef __INT64_FMTd__
+#define SCNd64      __INT64_FMTd__
+#define SCNi64      __INT64_FMTi__
+#define SCNo64      __UINT64_FMTo__
+#define SCNu64      __UINT64_FMTu__
+#define SCNx64      __UINT64_FMTx__
+#endif
+
+#ifdef __INT_LEAST8_FMTd__
+#define SCNdLEAST8  __INT_LEAST8_FMTd__
+#define SCNiLEAST8  __INT_LEAST8_FMTi__
+#define SCNoLEAST8  __UINT_LEAST8_FMTo__
+#define SCNuLEAST8  __UINT_LEAST8_FMTu__
+#define SCNxLEAST8  __UINT_LEAST8_FMTx__
+#endif
+
+#ifdef __INT_LEAST16_FMTd__
+#define SCNdLEAST16 __INT_LEAST16_FMTd__
+#define SCNiLEAST16 __INT_LEAST16_FMTi__
+#define SCNoLEAST16 __UINT_LEAST16_FMTo__
+#define SCNuLEAST16 __UINT_LEAST16_FMTu__
+#define SCNxLEAST16 __UINT_LEAST16_FMTx__
+#endif
+
+#ifdef __INT_LEAST32_FMTd__
+#define SCNdLEAST32 __INT_LEAST32_FMTd__
+#define SCNiLEAST32 __INT_LEAST32_FMTi__
+#define SCNoLEAST32 __UINT_LEAST32_FMTo__
+#define SCNuLEAST32 __UINT_LEAST32_FMTu__
+#define SCNxLEAST32 __UINT_LEAST32_FMTx__
+#endif
+
+#ifdef __INT_LEAST64_FMTd__
+#define SCNdLEAST64 __INT_LEAST64_FMTd__
+#define SCNiLEAST64 __INT_LEAST64_FMTi__
+#define SCNoLEAST64 __UINT_LEAST64_FMTo__
+#define SCNuLEAST64 __UINT_LEAST64_FMTu__
+#define SCNxLEAST64 __UINT_LEAST64_FMTx__
+#endif
+
+#ifdef __INT_FAST8_FMTd__
+#define SCNdFAST8   __INT_FAST8_FMTd__
+#define SCNiFAST8   __INT_FAST8_FMTi__
+#define SCNoFAST8   __UINT_FAST8_FMTo__
+#define SCNuFAST8   __UINT_FAST8_FMTu__
+#define SCNxFAST8   __UINT_FAST8_FMTx__
+#endif
+
+#ifdef __INT_FAST16_FMTd__
+#define SCNdFAST16  __INT_FAST16_FMTd__
+#define SCNiFAST16  __INT_FAST16_FMTi__
+#define SCNoFAST16  __UINT_FAST16_FMTo__
+#define SCNuFAST16  __UINT_FAST16_FMTu__
+#define SCNxFAST16  __UINT_FAST16_FMTx__
+#endif
+
+#ifdef __INT_FAST32_FMTd__
+#define SCNdFAST32  __INT_FAST32_FMTd__
+#define SCNiFAST32  __INT_FAST32_FMTi__
+#define SCNoFAST32  __UINT_FAST32_FMTo__
+#define SCNuFAST32  __UINT_FAST32_FMTu__
+#define SCNxFAST32  __UINT_FAST32_FMTx__
+#endif
+
+#ifdef __INT_FAST64_FMTd__
+#define SCNdFAST64  __INT_FAST64_FMTd__
+#define SCNiFAST64  __INT_FAST64_FMTi__
+#define SCNoFAST64  __UINT_FAST64_FMTo__
+#define SCNuFAST64  __UINT_FAST64_FMTu__
+#define SCNxFAST64  __UINT_FAST64_FMTx__
+#endif
+
+#ifdef __INTMAX_FMTd__
+#define SCNdMAX     __INTMAX_FMTd__
+#define SCNiMAX     __INTMAX_FMTi__
+#define SCNoMAX     __UINTMAX_FMTo__
+#define SCNuMAX     __UINTMAX_FMTu__
+#define SCNxMAX     __UINTMAX_FMTx__
+#endif
+
+#ifdef __INTPTR_FMTd__
+#define SCNdPTR     __INTPTR_FMTd__
+#define SCNiPTR     __INTPTR_FMTi__
+#define SCNoPTR     __UINTPTR_FMTo__
+#define SCNuPTR     __UINTPTR_FMTu__
+#define SCNxPTR     __UINTPTR_FMTx__
 #endif
 
 #endif /* __NEVERC_INTTYPES_H */
