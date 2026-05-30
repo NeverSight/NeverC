@@ -98,7 +98,7 @@ neverc -v -fshellcode -target arm64-apple-macos fib.c -o fib.bin
 | `-fshellcode-entry=<name>` | 覆盖默认入口名。默认可接受 `main` / `_main` / `shellcode_entry` / `_shellcode_entry`。 |
 | `-fshellcode-bad-bytes=<hex-list>` | 逗号分隔的禁止字节列表，如 `00,0a,0d`。提取器在 post-extract 钩子后扫描最终 `.bin`；命中则失败且不写文件。 |
 | `-fshellcode-bad-byte-profile=<name>` | 内置禁止字节配置：`null`、`c-string`、`http-newline`、`line`、`whitespace`、`ascii-control`。可与 `-fshellcode-bad-bytes=` 组合。 |
-| `-fshellcode-obfuscate=<spec>` | 传递给已注册的 **IR 级**混淆钩子（`ObfuscationHooks`）。未链接混淆库时为 no-op。见 [ir-pass-design.md 第 9 節](ir-pass-design/README.zh-TW.md#9-obfuscation-hooks)（Obfuscation Hooks）。 |
+| `-fshellcode-obfuscate=<spec>` | 傳遞給透過 [Plugin API](../plugin-api/README.zh-TW.md) 註冊的 **IR 級**外掛掛鈎。未載入外掛時為 no-op。見 [ir-pass-design.md 第 9 節](ir-pass-design/README.zh-TW.md#9-obfuscation-hooks)。 |
 | `-fshellcode-mir-obfuscate=<spec>` | 传递给 **MIR 级**混淆钩子（`RunBeforePreEmit` / `RunAfterPreEmit`）。未设置时回退到 `-fshellcode-obfuscate=`。见 [mir-pass-design.md 第 3 節](mir-pass-design/README.zh-TW.md#3-user-obfuscation-hooks)（User Obfuscation Hooks）。 |
 
 ---
@@ -284,9 +284,11 @@ docs/shellcode-compiler/
    - Windows：Win64 (rcx/rdx/r8/r9)
 3. Loader 负责 i-cache flush (arm64) / FlushInstructionCache (Windows)。
 
-## 混淆 Pass 扩展（预留接口）
+## 混淆與外掛擴展
 
-Shellcode 流水线本身只保证「代码能正确运行」。针对对抗场景的混淆（CFF、虚假控制流、不透明谓词、字符串加密、指令替换、寄存器重命名等）为独立工作。`Pipeline.h` 暴露 `ObfuscationHooks` 结构体，三层共 **11 个钩子**：
+Shellcode 流水線本身只保證「程式碼能正確執行」。混淆、多型、分階段編碼器等策略層功能**故意不內建**——它們透過 [Plugin API](../plugin-api/README.zh-TW.md) 以樹外外掛的形式提供。
+
+流水線暴露 **11 個掛鈎點**，全部透過 C Plugin API（`NEVERC_HOOK_SC_*`）存取：
 
 **IR 层（6 个钩子，接收 `ModulePassManager &`）**：
 - `RunBeforePrep` — 任何 shellcode pass 之前

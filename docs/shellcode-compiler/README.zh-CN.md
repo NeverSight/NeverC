@@ -98,7 +98,7 @@ neverc -v -fshellcode -target arm64-apple-macos fib.c -o fib.bin
 | `-fshellcode-entry=<name>` | 覆盖默认入口名。默认可接受 `main` / `_main` / `shellcode_entry` / `_shellcode_entry`。 |
 | `-fshellcode-bad-bytes=<hex-list>` | 逗号分隔的禁止字节列表，如 `00,0a,0d`。提取器在 post-extract 钩子后扫描最终 `.bin`；命中则失败且不写文件。 |
 | `-fshellcode-bad-byte-profile=<name>` | 内置禁止字节配置：`null`、`c-string`、`http-newline`、`line`、`whitespace`、`ascii-control`。可与 `-fshellcode-bad-bytes=` 组合。 |
-| `-fshellcode-obfuscate=<spec>` | 传递给已注册的 **IR 级**混淆钩子（`ObfuscationHooks`）。未链接混淆库时为 no-op。见 [ir-pass-design.md 第 9 节](ir-pass-design/README.zh-CN.md#9-obfuscation-hooks)（Obfuscation Hooks）。 |
+| `-fshellcode-obfuscate=<spec>` | 传递给通过 [Plugin API](../plugin-api/README.zh-CN.md) 注册的 **IR 级**插件钩子。未加载插件时为 no-op。见 [ir-pass-design.md 第 9 节](ir-pass-design/README.zh-CN.md#9-obfuscation-hooks)。 |
 | `-fshellcode-mir-obfuscate=<spec>` | 传递给 **MIR 级**混淆钩子（`RunBeforePreEmit` / `RunAfterPreEmit`）。未设置时回退到 `-fshellcode-obfuscate=`。见 [mir-pass-design.md 第 3 节](mir-pass-design/README.zh-CN.md#3-user-obfuscation-hooks)（User Obfuscation Hooks）。 |
 
 ---
@@ -284,31 +284,33 @@ docs/shellcode-compiler/
    - Windows：Win64 (rcx/rdx/r8/r9)
 3. Loader 负责 i-cache flush (arm64) / FlushInstructionCache (Windows)。
 
-## 混淆 Pass 扩展（预留接口）
+## 混淆与插件扩展
 
-Shellcode 流水线本身只保证「代码能正确运行」。针对对抗场景的混淆（CFF、虚假控制流、不透明谓词、字符串加密、指令替换、寄存器重命名等）为独立工作。`Pipeline.h` 暴露 `ObfuscationHooks` 结构体，三层共 **11 个钩子**：
+Shellcode 流水线本身只保证「代码能正确运行」。混淆、多态、分阶段编码器等策略层功能**故意不内置**——它们通过 [Plugin API](../plugin-api/README.zh-CN.md) 以树外插件的形式提供。
 
-**IR 层（6 个钩子，接收 `ModulePassManager &`）**：
-- `RunBeforePrep` — 任何 shellcode pass 之前
-- `RunAfterPrep` — 链接属性已统一（internal + always_inline）
-- `RunBeforeInlining` — AlwaysInliner 前最后机会
-- `RunAfterInlining` — IR 已压缩为单一大函数
-- `RunAfterStackify` — 最终 IR 形态，下一步为代码生成
-- `RunAfterFinalIR` — AllBlrPass 之后，真正的最后 IR 钩子
+流水线暴露 **11 个钩子点**，全部通过 C Plugin API（`NEVERC_HOOK_SC_*`）访问：
 
-**MIR 层（3 个钩子，接收 `TargetPassConfig &`）**：
-- `RunBeforePreEmit` — 寄存器已分配，**CFI/EH 伪指令仍在**
-- `RunAfterPreEmit` — **内置 MIRPrepPass 已剥离伪指令**，最接近 AsmPrinter 将看到的字节形态；适合指令级混淆/寄存器重命名
-- `RunAfterFinalMIR` — 真正的最后 MIR 钩子，在 LLVM `addPreEmitPass2()` 之后、AsmPrinter 之前
+**IR 层（6 个钩子）**：
+- `NEVERC_HOOK_SC_BEFORE_PREP` — 任何 shellcode pass 之前
+- `NEVERC_HOOK_SC_AFTER_PREP` — 链接属性已统一（internal + always_inline）
+- `NEVERC_HOOK_SC_BEFORE_INLINING` — AlwaysInliner 前最后机会
+- `NEVERC_HOOK_SC_AFTER_INLINING` — IR 已压缩为单一大函数
+- `NEVERC_HOOK_SC_AFTER_STACKIFY` — 最终 IR 形态，下一步为代码生成
+- `NEVERC_HOOK_SC_AFTER_FINAL_IR` — AllBlrPass 之后，真正的最后 IR 钩子
 
-**字节流层（2 个钩子，接收 `SmallVectorImpl<uint8_t> &`）**：
-- `RunPostExtract` — 提取器完成段内重定位修补与数据段审计之后、写入 `.bin` 之前。用于整包加密、垃圾字节插入或自定义头。
-- `RunPostFinalize` — 全部 finalize 步骤之后；NeverC 不再审计。
+**MIR 层（3 个钩子）**：
+- `NEVERC_HOOK_SC_BEFORE_PREEMIT` — 寄存器已分配，**CFI/EH 伪指令仍在**
+- `NEVERC_HOOK_SC_AFTER_PREEMIT` — **内置 MIRPrepPass 已剥离伪指令**，最接近 AsmPrinter 将看到的字节形态；适合指令级混淆/寄存器重命名
+- `NEVERC_HOOK_SC_AFTER_FINAL_MIR` — 真正的最后 MIR 钩子，在 LLVM `addPreEmitPass2()` 之后、AsmPrinter 之前
 
-`-fshellcode-obfuscate=<spec>` 与 `-fshellcode-mir-obfuscate=<spec>` 将字符串传入 `ShellcodeOptions::ObfuscateSpec` / `MirObfuscateSpec`。MIR spec 默认与 IR spec 相同。流水线不解析内容 — 由混淆库定义自有 DSL。详情：
+**字节流层（2 个钩子）**：
+- `NEVERC_HOOK_SC_POST_EXTRACT` — 提取器完成段内重定位修补与数据段审计之后、写入 `.bin` 之前。用于整包加密、垃圾字节插入或自定义头。
+- `NEVERC_HOOK_SC_POST_FINALIZE` — 全部 finalize 步骤之后；NeverC 不再审计。
 
-- IR 层：[ir-pass-design.md 第 9 节](ir-pass-design/README.zh-CN.md#9-obfuscation-hooks)（Obfuscation Hooks）。
-- MIR 层：[mir-pass-design.md 第 3 节](mir-pass-design/README.zh-CN.md#3-user-obfuscation-hooks)（User Obfuscation Hooks）。
+详见 [Plugin API 文档](../plugin-api/README.zh-CN.md)了解完整钩子列表、pass 注册和代码示例。
+
+- IR 层设计：[ir-pass-design.md 第 9 节](ir-pass-design/README.zh-CN.md#9-obfuscation-hooks)。
+- MIR 层设计：[mir-pass-design.md 第 3 节](mir-pass-design/README.zh-CN.md#3-user-obfuscation-hooks)。
 
 ---
 

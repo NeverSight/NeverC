@@ -98,7 +98,7 @@ neverc -v -fshellcode -target arm64-apple-macos fib.c -o fib.bin
 | `-fshellcode-entry=<name>` | Remplace le symbole d'entrée par défaut (`main`, `_main`, `shellcode_entry`, `_shellcode_entry`). |
 | `-fshellcode-bad-bytes=<hex-list>` | Liste d'octets interdits séparés par des virgules. Scan du `.bin` final après post-extract ; échec sans fichier écrit si hit. |
 | `-fshellcode-bad-byte-profile=<name>` | Profils intégrés : `null`, `c-string`, `http-newline`, `line`, `whitespace`, `ascii-control`. Combinable avec `-fshellcode-bad-bytes=`. |
-| `-fshellcode-obfuscate=<spec>` | Vers les hooks d'obfuscation **niveau IR** (`ObfuscationHooks`). No-op sans bibliothèque liée. Voir [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.fr.md#9-obfuscation-hooks). |
+| `-fshellcode-obfuscate=<spec>` | Vers les hooks plugin **niveau IR** via l'[API Plugin](../plugin-api/README.fr.md). No-op sans plugin chargé. Voir [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.fr.md#9-obfuscation-hooks). |
 | `-fshellcode-mir-obfuscate=<spec>` | Vers les hooks **niveau MIR** (`RunBeforePreEmit` / `RunAfterPreEmit`). Par défaut `-fshellcode-obfuscate=`. Voir [mir-pass-design.md §3 — User Obfuscation Hooks](mir-pass-design/README.fr.md#3-user-obfuscation-hooks). |
 
 ---

@@ -98,7 +98,7 @@ neverc -v -fshellcode -target arm64-apple-macos fib.c -o fib.bin
 | `-fshellcode-entry=<name>` | 기본 진입 심볼 덮어쓰기. `main` / `_main` / `shellcode_entry` / `_shellcode_entry` 허용. |
 | `-fshellcode-bad-bytes=<hex-list>` | 금지 바이트 쉼표 목록(예 `00,0a,0d`). post-extract 후 최종 `.bin` 스캔; 적중 시 실패·파일 미기록. |
 | `-fshellcode-bad-byte-profile=<name>` | 내장 금지 바이트 프로필: `null`, `c-string`, `http-newline`, `line`, `whitespace`, `ascii-control`. `-fshellcode-bad-bytes=`와 병용. |
-| `-fshellcode-obfuscate=<spec>` | 등록된 **IR 수준** 난독화 훅(`ObfuscationHooks`)으로 전달. 난독화 라이브러리 미연결 시 no-op. [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.ko.md#9-obfuscation-hooks). |
+| `-fshellcode-obfuscate=<spec>` | [Plugin API](../plugin-api/README.ko.md)로 등록된 **IR 수준** 플러그인 훅으로 전달. 플러그인 미로드 시 no-op. [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.ko.md#9-obfuscation-hooks). |
 | `-fshellcode-mir-obfuscate=<spec>` | **MIR 수준** 난독화 훅(`RunBeforePreEmit` / `RunAfterPreEmit`)으로 전달. 미설정 시 `-fshellcode-obfuscate=`로 폴백. [mir-pass-design.md §3 — User Obfuscation Hooks](mir-pass-design/README.ko.md#3-user-obfuscation-hooks). |
 
 ---

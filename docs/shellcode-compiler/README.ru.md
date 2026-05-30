@@ -98,7 +98,7 @@ neverc -v -fshellcode -target arm64-apple-macos fib.c -o fib.bin
 | `-fshellcode-entry=<name>` | Переопределить вход (`main`, `_main`, `shellcode_entry`, `_shellcode_entry`). |
 | `-fshellcode-bad-bytes=<hex-list>` | Список запрещённых байт через запятую. Скан финального `.bin` после post-extract. |
 | `-fshellcode-bad-byte-profile=<name>` | Профили: `null`, `c-string`, `http-newline`, `line`, `whitespace`, `ascii-control`. С `-fshellcode-bad-bytes=`. |
-| `-fshellcode-obfuscate=<spec>` | В **IR-level** hooks (`ObfuscationHooks`). No-op без библиотеки. См. [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.ru.md#9-obfuscation-hooks). |
+| `-fshellcode-obfuscate=<spec>` | В **IR-level** хуки плагинов через [API плагинов](../plugin-api/README.ru.md). No-op без загруженного плагина. См. [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.ru.md#9-obfuscation-hooks). |
 | `-fshellcode-mir-obfuscate=<spec>` | В **MIR-level** hooks. Fallback `-fshellcode-obfuscate=`. См. [mir-pass-design.md §3 — User Obfuscation Hooks](mir-pass-design/README.ru.md#3-user-obfuscation-hooks). |
 
 ---
@@ -224,7 +224,6 @@ neverc/
 ├── include/neverc/Shellcode/                  # Headers (organized by subsystem)
 │   ├── Pipeline/                              # Pipeline / driver integration
 │   │   ├── Pipeline.h                         # IR + MIR hook registration
-│   │   ├── Plugin.h                           # Plugin SDK (bad-byte / charset)
 │   │   ├── DriverIntegration.h
 │   │   ├── TargetDesc.h                       # Platform table / descriptors
 │   │   ├── ShellcodeOptions.h                 # Cross-subsystem config

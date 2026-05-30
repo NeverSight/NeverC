@@ -98,7 +98,7 @@ neverc -v -fshellcode -target arm64-apple-macos fib.c -o fib.bin
 | `-fshellcode-entry=<name>` | デフォルト入口名を上書き。`main` / `_main` / `shellcode_entry` / `_shellcode_entry` を受理。 |
 | `-fshellcode-bad-bytes=<hex-list>` | 禁止バイトのカンマ区切りリスト（例 `00,0a,0d`）。post-extract 後に最終 `.bin` を走査；命中時は失敗しファイルは書かない。 |
 | `-fshellcode-bad-byte-profile=<name>` | 組み込み禁止バイトプロファイル：`null`、`c-string`、`http-newline`、`line`、`whitespace`、`ascii-control`。`-fshellcode-bad-bytes=` と併用可。 |
-| `-fshellcode-obfuscate=<spec>` | 登録済み **IR レベル**難読化フック（`ObfuscationHooks`）へ渡す。難読化ライブラリ未リンク時は no-op。[ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.ja.md#9-obfuscation-hooks)。 |
+| `-fshellcode-obfuscate=<spec>` | [Plugin API](../plugin-api/README.ja.md) 経由で登録された **IR レベル**プラグインフックへ渡す。プラグイン未ロード時は no-op。[ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.ja.md#9-obfuscation-hooks)。 |
 | `-fshellcode-mir-obfuscate=<spec>` | **MIR レベル**難読化フック（`RunBeforePreEmit` / `RunAfterPreEmit`）へ渡す。未設定時は `-fshellcode-obfuscate=` にフォールバック。[mir-pass-design.md §3 — User Obfuscation Hooks](mir-pass-design/README.ja.md#3-user-obfuscation-hooks)。 |
 
 ---

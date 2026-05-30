@@ -100,7 +100,7 @@ neverc -v -fshellcode -target arm64-apple-macos fib.c -o fib.bin
 | `-fshellcode-entry=<name>` | استبدال اسم نقطة الدخول (`main`, `_main`, `shellcode_entry`, `_shellcode_entry`). |
 | `-fshellcode-bad-bytes=<hex-list>` | قائمة بايتات محظورة مفصولة بفواصل. فحص `.bin` النهائي بعد post-extract؛ عند التطابق يفشل التجميع دون كتابة ملف. |
 | `-fshellcode-bad-byte-profile=<name>` | ملفات محظورة مدمجة: `null`, `c-string`, `http-newline`, `line`, `whitespace`, `ascii-control`. قابلة للجمع مع `-fshellcode-bad-bytes=`. |
-| `-fshellcode-obfuscate=<spec>` | يُمرَّر إلى خطافات التشويش **مستوى IR** (`ObfuscationHooks`). no-op بدون مكتبة. راجع [ir-pass-design.md §9](ir-pass-design/README.ar.md#9-obfuscation-hooks). |
+| `-fshellcode-obfuscate=<spec>` | يُمرَّر إلى خطافات التشويش **مستوى IR** عبر [واجهة الإضافات](../plugin-api/README.ar.md). no-op بدون إضافة. راجع [ir-pass-design.md §9](ir-pass-design/README.ar.md#9-obfuscation-hooks). |
 | `-fshellcode-mir-obfuscate=<spec>` | يُمرَّر إلى خطافات **مستوى MIR**. الافتراضي `-fshellcode-obfuscate=` إن لم يُحدَّد. راجع [mir-pass-design.md §3](mir-pass-design/README.ar.md#3-user-obfuscation-hooks). |
 
 ---
@@ -226,7 +226,6 @@ neverc/
 ├── include/neverc/Shellcode/                  # Headers (organized by subsystem)
 │   ├── Pipeline/                              # Pipeline / driver integration
 │   │   ├── Pipeline.h                         # IR + MIR hook registration
-│   │   ├── Plugin.h                           # Plugin SDK (bad-byte / charset)
 │   │   ├── DriverIntegration.h
 │   │   ├── TargetDesc.h                       # Platform table / descriptors
 │   │   ├── ShellcodeOptions.h                 # Cross-subsystem config

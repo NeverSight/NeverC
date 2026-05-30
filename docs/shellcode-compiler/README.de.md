@@ -98,7 +98,7 @@ neverc -v -fshellcode -target arm64-apple-macos fib.c -o fib.bin
 | `-fshellcode-entry=<name>` | Standard-Einstieg überschreiben (`main`, `_main`, `shellcode_entry`, `_shellcode_entry`). |
 | `-fshellcode-bad-bytes=<hex-list>` | Verbotene Bytes (kommagetrennt). Scan der finalen `.bin` nach post-extract; bei Treffer kein File. |
 | `-fshellcode-bad-byte-profile=<name>` | Profile: `null`, `c-string`, `http-newline`, `line`, `whitespace`, `ascii-control`. Mit `-fshellcode-bad-bytes=` kombinierbar. |
-| `-fshellcode-obfuscate=<spec>` | An **IR-Level**-Obfuskations-Hooks (`ObfuscationHooks`). No-op ohne Bibliothek. Siehe [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.de.md#9-obfuscation-hooks). |
+| `-fshellcode-obfuscate=<spec>` | An **IR-Level**-Plugin-Hooks über die [Plugin-API](../plugin-api/README.de.md). No-op ohne geladenes Plugin. Siehe [ir-pass-design.md §9 — Obfuscation Hooks](ir-pass-design/README.de.md#9-obfuscation-hooks). |
 | `-fshellcode-mir-obfuscate=<spec>` | An **MIR-Level**-Hooks (`RunBeforePreEmit` / `RunAfterPreEmit`). Fallback `-fshellcode-obfuscate=`. Siehe [mir-pass-design.md §3 — User Obfuscation Hooks](mir-pass-design/README.de.md#3-user-obfuscation-hooks). |
 
 ---
@@ -224,7 +224,6 @@ neverc/
 ├── include/neverc/Shellcode/                  # Headers (organized by subsystem)
 │   ├── Pipeline/                              # Pipeline / driver integration
 │   │   ├── Pipeline.h                         # IR + MIR hook registration
-│   │   ├── Plugin.h                           # Plugin SDK (bad-byte / charset)
 │   │   ├── DriverIntegration.h
 │   │   ├── TargetDesc.h                       # Platform table / descriptors
 │   │   ├── ShellcodeOptions.h                 # Cross-subsystem config
