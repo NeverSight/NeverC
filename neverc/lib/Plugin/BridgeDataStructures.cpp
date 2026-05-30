@@ -1095,10 +1095,13 @@ static char *bridgeArenaStrSubstring(NevercArenaRef Arena, const char *S,
   if (LLVM_UNLIKELY(!Arena || !S))
     return nullptr;
   size_t SLen = std::strlen(S);
-  if (LLVM_UNLIKELY(Start > SLen))
-    return nullptr;
-  size_t Avail = SLen - static_cast<size_t>(Start);
-  size_t CopyLen = (Len > Avail) ? Avail : static_cast<size_t>(Len);
+  size_t CopyLen;
+  if (Start >= SLen) {
+    CopyLen = 0;
+  } else {
+    size_t Avail = SLen - static_cast<size_t>(Start);
+    CopyLen = (Len > Avail) ? Avail : static_cast<size_t>(Len);
+  }
   char *Buf = static_cast<char *>(
       unwrapArena(Arena)->Alloc.Allocate(CopyLen + 1, 1));
   if (LLVM_UNLIKELY(!Buf))

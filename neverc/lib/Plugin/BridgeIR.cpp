@@ -1,5 +1,4 @@
 #include "BridgeCastHelpers.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Comdat.h"
 #include "llvm/IR/Constants.h"
