@@ -35,7 +35,7 @@ C is already the simplest systems language. NeverC makes it even simpler:
 - **Single binary** — Compiler + linker + runtimes ship as one executable. Zero external dependencies to set up.
 - **LLM-friendly** — Minimal grammar and deterministic semantics mean AI-generated NeverC code compiles correctly more often than C++ alternatives.
 - **True cross-compilation** — Build Windows executables and shellcode from macOS or Linux — no VM, no dual boot, no SDK hunting. The Windows SDK ships inside the compiler.
-- **Extensible with zero friction** — One C header, 20+ hook points, and you have a [compiler plugin](docs/plugin-api/README.md) that can intercept any stage from IR optimization to final binary output — no LLVM knowledge needed.
+- **Extensible with zero friction** — A single C header, 20+ hook points, and you have a [compiler plugin](docs/plugin-api/README.md) that can intercept any stage from IR optimization to final binary output — no LLVM knowledge needed.
 - **Security research built in** — Shellcode compilation, compile-time string encryption, and cross-platform PE generation are native to the toolchain — not afterthoughts bolted on with external scripts.
 
 ## Features
