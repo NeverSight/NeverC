@@ -9,7 +9,7 @@ NeverC provides a **pure C ABI** for out-of-tree pass plugins. A plugin is a sha
 ### Minimal Plugin
 
 ```c
-#include "NevercPluginAPI.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 
 static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
     (void)UD;
@@ -228,6 +228,9 @@ All IR/MIR objects are accessed through opaque handles. Handles are valid **only
 | `NevercTypeRef` | LLVM Type |
 | `NevercBuilderRef` | IR Builder (create with `BuilderCreate`, free with `BuilderDispose`) |
 | `NevercContextRef` | LLVM Context |
+| `NevercMetadataRef` | LLVM Metadata |
+| `NevercNamedMDRef` | Named Metadata Node |
+| `NevercComdatRef` | COMDAT Group |
 | `NevercMachineFuncRef` | Machine function |
 | `NevercMachineBBRef` | Machine basic block |
 | `NevercMachineInstrRef` | Machine instruction |
@@ -343,22 +346,42 @@ int64_t limit = API->PluginGetArgInt64("max-fns", -1);   // default -1
 |-------|---------|
 | `NEVERC_FOR_EACH_FUNCTION(api, m, var)` | Iterate all functions |
 | `NEVERC_FOR_EACH_DEFINED_FUNCTION(api, m, var)` | Iterate defined (non-declaration) functions |
+| `NEVERC_FOR_EACH_GLOBAL(api, m, var)` | Iterate global variables |
+| `NEVERC_FOR_EACH_ALIAS(api, m, var)` | Iterate aliases |
 | `NEVERC_FOR_EACH_BB(api, fn, var)` | Iterate basic blocks |
 | `NEVERC_FOR_EACH_INST(api, bb, var)` | Iterate instructions |
 | `NEVERC_FOR_EACH_USE(api, val, var)` | Traverse use-def chain |
 | `NEVERC_FOR_EACH_MBB(api, mf, var)` | Iterate machine basic blocks |
 | `NEVERC_FOR_EACH_MI(api, mbb, var)` | Iterate machine instructions |
+| `NEVERC_FOR_EACH_SYMBOL(api, var)` | Iterate linker symbols |
+| `NEVERC_FOR_EACH_SECTION(api, var)` | Iterate linker sections |
 | `NEVERC_ALLOC_ARRAY(api, type, count)` | Typed heap allocation |
-| `NEVERC_ARENA_ALLOC_ARRAY(api, arena, type, count)` | Typed arena allocation |
+| `NEVERC_CALLOC_ARRAY(api, type, count)` | Typed zero-initialized heap allocation |
+| `NEVERC_REALLOC_ARRAY(api, ptr, type, count)` | Typed heap reallocation |
+| `NEVERC_COLLECT_FUNCTIONS(api, m, count)` | Batch-collect all functions into array |
+| `NEVERC_COLLECT_DEFINED_FUNCTIONS(api, m, count)` | Batch-collect defined functions |
+| `NEVERC_COLLECT_GLOBALS(api, m, count)` | Batch-collect global variables |
+| `NEVERC_COLLECT_INSTRUCTIONS(api, m, count)` | Batch-collect all instructions |
+| `NEVERC_COLLECT_OPCODES(api, m, count)` | Batch-collect opcode histogram |
 | `NEVERC_TRY_ARENA(api)` | Create an arena (or `NULL` on old hosts) |
+| `NEVERC_ARENA_ALLOC_ARRAY(api, arena, type, count)` | Typed arena allocation |
+| `NEVERC_ARENA_CALLOC_ARRAY(api, arena, type, count)` | Typed zero-initialized arena allocation |
+| `NEVERC_ARENA_COLLECT_*(api, arena, ...)` | Arena variants of batch-collect macros |
 | `NEVERC_AUTO_COLLECT_*(api, arena, ...)` | Arena-preferred batch collect with heap fallback |
 | `NEVERC_FREE_IF_HEAP(api, ptr, arena)` | Free only if not arena-owned |
 | `NEVERC_ARENA_DESTROY(api, arena)` | Destroy arena if non-NULL |
+| `NEVERC_STRBUILDER_DIAG(api, sb, diagFn)` | Emit StrBuilder content as diagnostic |
+| `NEVERC_STRMAP_NEW(api, cap)` | Create StrMap with initial capacity |
+| `NEVERC_INTMAP_NEW(api, cap)` | Create IntMap with initial capacity |
+| `NEVERC_VALUESET_NEW(api, cap)` | Create ValueSet with initial capacity |
+| `NEVERC_API_HAS(api, field)` | Check vtable field existence (layout only) |
 | `NEVERC_API_FN(api, field)` | Check vtable entry existence + non-NULL |
 | `NEVERC_HOOK_UD(hook)` | Cast hook enum to `void*` UserData |
 | `NEVERC_HOOK_NAME(api, ud)` | Resolve hook name from UserData |
 | `NEVERC_STR_OR(s, def)` | Return `s` if non-NULL and non-empty, else `def` |
+| `NEVERC_NPOS` | Sentinel value for "not found" (`(uint64_t)-1`) |
 | `NEVERC_MIN(a, b)` / `NEVERC_MAX(a, b)` | Compile-time min/max |
+| `NEVERC_CLAMP(v, lo, hi)` | Clamp value to `[lo, hi]` range |
 
 ## 12. Best Practices
 

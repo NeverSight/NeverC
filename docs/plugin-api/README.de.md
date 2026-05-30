@@ -9,7 +9,7 @@ NeverC bietet ein **reines C-ABI** für Out-of-Tree-Pass-Plugins. Ein Plugin ist
 ### Minimales Plugin
 
 ```c
-#include "NevercPluginAPI.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 
 static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
     (void)UD;
@@ -103,6 +103,17 @@ Shellcode-Hooks verwenden das Präfix `NEVERC_HOOK_SC_*`, LTO verwendet `NEVERC_
 ## 6. Opake Handle-Typen
 
 Alle IR/MIR-Objekte werden über opake Handles zugegriffen. Handles sind nur **innerhalb des Scopes des Pass-Callbacks gültig**, der sie empfangen hat.
+
+| Handle | Repräsentiert |
+|--------|---------------|
+| `NevercModuleRef` | LLVM Module |
+| `NevercValueRef` | LLVM Value (Funktionen, Instruktionen, Globale) |
+| `NevercBasicBlockRef` / `TypeRef` / `ContextRef` | BasicBlock / Type / Context |
+| `NevercBuilderRef` | IR Builder |
+| `NevercMetadataRef` / `NamedMDRef` / `ComdatRef` | Metadata / Named Metadata / COMDAT |
+| `NevercMachineFuncRef` / `MBBRef` / `MInstrRef` | Machine Function / Block / Instruction |
+| `NevercUseRef` | Use-def-Ketteneintrag |
+| `NevercLinkerSymbolRef` / `SectionRef` | Linker-Symbol / -Sektion |
 
 ## 7. Datenstrukturen
 

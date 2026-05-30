@@ -9,7 +9,7 @@ NeverC предоставляет **чистый C ABI** для out-of-tree пл
 ### Минимальный плагин
 
 ```c
-#include "NevercPluginAPI.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 
 static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
     (void)UD;
@@ -89,11 +89,15 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 | `NEVERC_HOOK_LTO_*` | IR | Поток LTO |
 | `NEVERC_HOOK_LINK_*` | Линковщик | Поток линковщика |
 
-## 6. Структуры данных
+## 6. Непрозрачные типы дескрипторов
+
+Все объекты IR/MIR доступны через непрозрачные дескрипторы: `NevercModuleRef`, `NevercValueRef`, `NevercBasicBlockRef`, `NevercTypeRef`, `NevercBuilderRef`, `NevercContextRef`, `NevercMetadataRef`, `NevercNamedMDRef`, `NevercComdatRef`, `NevercMachineFuncRef`, `NevercMachineBBRef`, `NevercMachineInstrRef`, `NevercUseRef`, `NevercLinkerSymbolRef`, `NevercLinkerSectionRef`. Дескрипторы действительны **только в области видимости обратного вызова прохода**, который их получил.
+
+## 7. Структуры данных
 
 **Arena** (bump-pointer аллокатор), **StrMap** (хеш-таблица со строковым ключом), **IntMap** (хеш-таблица с целочисленным ключом), **StrBuilder** (инкрементальное построение строк), **ValueSet** (хеш-множество значений).
 
-## 7. Совместимость версий
+## 8. Совместимость версий
 
 ```c
 if (NEVERC_API_FN(API, SomeNewFunction)) {
@@ -101,7 +105,7 @@ if (NEVERC_API_FN(API, SomeNewFunction)) {
 }
 ```
 
-## 8. Аргументы плагина
+## 9. Аргументы плагина
 
 ```bash
 neverc -fplugin-pass=./MyPlugin.dll \
@@ -109,7 +113,7 @@ neverc -fplugin-pass=./MyPlugin.dll \
        input.c -o output.obj
 ```
 
-## 9. Лучшие практики
+## 10. Лучшие практики
 
 1. **Arena в приоритете**: Используйте `NEVERC_TRY_ARENA` для временных данных.
 2. **Защита версий**: Всегда оборачивайте новые вызовы vtable в `NEVERC_API_FN`.
@@ -117,7 +121,7 @@ neverc -fplugin-pass=./MyPlugin.dll \
 4. **Без зависимости CRT**: Все операции через vtable.
 5. **Чистый возврат**: Освободите все ресурсы перед возвратом из прохода.
 
-## 10. Содержимое Plugin SDK
+## 11. Содержимое Plugin SDK
 
 ```
 pluginsdk/
@@ -132,6 +136,6 @@ pluginsdk/
     └── BenchPlugin.c
 ```
 
-## 11. Связанная документация
+## 12. Связанная документация
 
 - [Интерфейс плагинов Shellcode](../shellcode-compiler/plugin-interface/README.ru.md) — Точки расширения C++ in-tree для конвейера shellcode.

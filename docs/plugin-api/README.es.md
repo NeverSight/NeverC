@@ -9,7 +9,7 @@ NeverC proporciona una **ABI de C puro** para plugins de pases out-of-tree. Un p
 ### Plugin mínimo
 
 ```c
-#include "NevercPluginAPI.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 
 static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
     (void)UD;
@@ -89,11 +89,15 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 | `NEVERC_HOOK_LTO_*` | IR | Flujo LTO |
 | `NEVERC_HOOK_LINK_*` | Enlazador | Flujo del enlazador |
 
-## 6. Estructuras de datos
+## 6. Tipos de handles opacos
+
+Todos los objetos IR/MIR se acceden a través de handles opacos: `NevercModuleRef`, `NevercValueRef`, `NevercBasicBlockRef`, `NevercTypeRef`, `NevercBuilderRef`, `NevercContextRef`, `NevercMetadataRef`, `NevercNamedMDRef`, `NevercComdatRef`, `NevercMachineFuncRef`, `NevercMachineBBRef`, `NevercMachineInstrRef`, `NevercUseRef`, `NevercLinkerSymbolRef`, `NevercLinkerSectionRef`. Los handles son válidos **solo dentro del ámbito del callback de paso** que los recibió.
+
+## 7. Estructuras de datos
 
 **Arena** (asignador bump-pointer), **StrMap** (tabla hash con clave de cadena), **IntMap** (tabla hash con clave entera), **StrBuilder** (construcción incremental de cadenas), **ValueSet** (conjunto hash de valores).
 
-## 7. Compatibilidad de versiones
+## 8. Compatibilidad de versiones
 
 ```c
 if (NEVERC_API_FN(API, SomeNewFunction)) {
@@ -101,7 +105,7 @@ if (NEVERC_API_FN(API, SomeNewFunction)) {
 }
 ```
 
-## 8. Argumentos del plugin
+## 9. Argumentos del plugin
 
 ```bash
 neverc -fplugin-pass=./MyPlugin.dll \
@@ -109,7 +113,7 @@ neverc -fplugin-pass=./MyPlugin.dll \
        input.c -o output.obj
 ```
 
-## 9. Mejores prácticas
+## 10. Mejores prácticas
 
 1. **Arena primero**: Use `NEVERC_TRY_ARENA` para datos temporales.
 2. **Protección de versión**: Envuelva nuevas llamadas vtable con `NEVERC_API_FN`.
@@ -117,7 +121,7 @@ neverc -fplugin-pass=./MyPlugin.dll \
 4. **Sin dependencia CRT**: Todas las operaciones a través de la vtable.
 5. **Retorno limpio**: Libere todos los recursos antes del retorno del pase.
 
-## 10. Contenido del Plugin SDK
+## 11. Contenido del Plugin SDK
 
 ```
 pluginsdk/
@@ -132,6 +136,6 @@ pluginsdk/
     └── BenchPlugin.c
 ```
 
-## 11. Documentación relacionada
+## 12. Documentación relacionada
 
 - [Interfaz de plugin Shellcode](../shellcode-compiler/plugin-interface/README.es.md) — Puntos de extensión C++ in-tree para el pipeline shellcode.

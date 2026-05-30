@@ -9,7 +9,7 @@
 ### إضافة بسيطة
 
 ```c
-#include "NevercPluginAPI.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 
 static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
     (void)UD;
@@ -89,11 +89,15 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 | `NEVERC_HOOK_LTO_*` | IR | تدفق LTO |
 | `NEVERC_HOOK_LINK_*` | الرابط | تدفق الرابط |
 
-## 6. هياكل البيانات
+## 6. أنواع المقابض المبهمة
+
+جميع كائنات IR/MIR يتم الوصول إليها عبر مقابض مبهمة: `NevercModuleRef`، `NevercValueRef`، `NevercBasicBlockRef`، `NevercTypeRef`، `NevercBuilderRef`، `NevercContextRef`، `NevercMetadataRef`، `NevercNamedMDRef`، `NevercComdatRef`، `NevercMachineFuncRef`، `NevercMachineBBRef`، `NevercMachineInstrRef`، `NevercUseRef`، `NevercLinkerSymbolRef`، `NevercLinkerSectionRef`. المقابض صالحة **فقط ضمن نطاق استدعاء المرور** الذي استلمها.
+
+## 7. هياكل البيانات
 
 **Arena** (مخصص bump-pointer)، **StrMap** (جدول تجزئة بمفتاح نصي)، **IntMap** (جدول تجزئة بمفتاح صحيح)، **StrBuilder** (بناء نصوص تراكمي)، **ValueSet** (مجموعة تجزئة للقيم).
 
-## 7. توافق الإصدارات
+## 8. توافق الإصدارات
 
 ```c
 if (NEVERC_API_FN(API, SomeNewFunction)) {
@@ -101,7 +105,7 @@ if (NEVERC_API_FN(API, SomeNewFunction)) {
 }
 ```
 
-## 8. معاملات الإضافة
+## 9. معاملات الإضافة
 
 ```bash
 neverc -fplugin-pass=./MyPlugin.dll \
@@ -109,7 +113,7 @@ neverc -fplugin-pass=./MyPlugin.dll \
        input.c -o output.obj
 ```
 
-## 9. أفضل الممارسات
+## 10. أفضل الممارسات
 
 1. **Arena أولاً**: استخدم `NEVERC_TRY_ARENA` للبيانات المؤقتة.
 2. **حماية الإصدار**: لف استدعاءات vtable الجديدة دائمًا بـ `NEVERC_API_FN`.
@@ -117,7 +121,7 @@ neverc -fplugin-pass=./MyPlugin.dll \
 4. **بدون اعتمادية CRT**: جميع العمليات عبر vtable.
 5. **عودة نظيفة**: حرر جميع الموارد قبل العودة من المرور.
 
-## 10. محتويات Plugin SDK
+## 11. محتويات Plugin SDK
 
 ```
 pluginsdk/
@@ -132,6 +136,6 @@ pluginsdk/
     └── BenchPlugin.c
 ```
 
-## 11. وثائق ذات صلة
+## 12. وثائق ذات صلة
 
 - [واجهة إضافات Shellcode](../shellcode-compiler/plugin-interface/README.ar.md) — نقاط التمديد C++ الداخلية لخط أنابيب shellcode.
