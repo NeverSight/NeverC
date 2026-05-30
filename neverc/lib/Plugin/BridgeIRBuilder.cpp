@@ -372,8 +372,7 @@ static void bridgeSwitchAddCase(NevercValueRef Switch, NevercValueRef OnVal,
     return;
   auto *CI = dyn_cast<ConstantInt>(unwrapV(OnVal));
   if (LLVM_UNLIKELY(!CI)) {
-    WithColor::warning(errs(), "neverc-plugin")
-        << "SwitchAddCase: case value is not ConstantInt; ignoring\n";
+    bridgeDiagWarning("SwitchAddCase: case value is not ConstantInt; ignoring");
     return;
   }
   SI->addCase(CI, unwrapBB(Dest));
@@ -818,7 +817,7 @@ static NevercValueRef bridgeBuildResume(NevercBuilderRef B,
                                      NevercValueRef RHS, const char *Name) {   \
     if (LLVM_UNLIKELY(!B || !LHS || !RHS))                                     \
       return nullptr;                                                          \
-    const char *Nm = nameStr(Name);                                         \
+    const char *Nm = nameStr(Name);                                            \
     return wrapV(unwrapB(B)->METHOD(unwrapV(LHS), unwrapV(RHS), Nm));          \
   }
 

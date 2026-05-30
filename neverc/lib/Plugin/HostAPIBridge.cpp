@@ -47,13 +47,13 @@ void bridgeFree(void *Ptr) { ::free(Ptr); }
 // ===----------------------------------------------------------------------===
 
 void bridgeDiagNote(const char *Msg) {
-  WithColor::note(errs(), "neverc-plugin") << (Msg ? Msg : "") << "\n";
+  WithColor::note(errs(), "neverc-plugin") << nameStr(Msg) << "\n";
 }
 void bridgeDiagWarning(const char *Msg) {
-  WithColor::warning(errs(), "neverc-plugin") << (Msg ? Msg : "") << "\n";
+  WithColor::warning(errs(), "neverc-plugin") << nameStr(Msg) << "\n";
 }
 void bridgeDiagError(const char *Msg) {
-  WithColor::error(errs(), "neverc-plugin") << (Msg ? Msg : "") << "\n";
+  WithColor::error(errs(), "neverc-plugin") << nameStr(Msg) << "\n";
 }
 
 // ===----------------------------------------------------------------------===

@@ -125,8 +125,7 @@ static NevercValueRef bridgeModuleAddFunction(NevercModuleRef M,
 static const char *bridgeValueGetName(NevercValueRef V) {
   if (LLVM_UNLIKELY(!V))
     return "";
-  auto Name = unwrapV(V)->getName();
-  return Name.data() ? Name.data() : "";
+  return nameStr(unwrapV(V)->getName().data());
 }
 
 
@@ -759,7 +758,7 @@ static void bridgeFunctionAddStringAttr(NevercValueRef F, const char *Kind,
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (LLVM_UNLIKELY(!Fn))
     return;
-  Fn->addFnAttr(Kind, Val ? Val : "");
+  Fn->addFnAttr(Kind, nameStr(Val));
 }
 
 
@@ -780,8 +779,7 @@ static const char *bridgeFunctionGetStringAttr(NevercValueRef F,
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (LLVM_UNLIKELY(!Fn || !Fn->hasFnAttribute(Kind)))
     return "";
-  auto Val = Fn->getFnAttribute(Kind).getValueAsString();
-  return Val.data() ? Val.data() : "";
+  return nameStr(Fn->getFnAttribute(Kind).getValueAsString().data());
 }
 
 
@@ -1786,8 +1784,7 @@ static int bridgeInstIsFCmp(NevercValueRef I) {
 static const char *bridgeBBGetName(NevercBasicBlockRef BB) {
   if (LLVM_UNLIKELY(!BB))
     return "";
-  auto Name = unwrapBB(BB)->getName();
-  return Name.data() ? Name.data() : "";
+  return nameStr(unwrapBB(BB)->getName().data());
 }
 
 
@@ -2177,8 +2174,7 @@ static const char *bridgeGlobalGetSection(NevercValueRef GV) {
   auto *GO = dyn_cast<GlobalObject>(unwrapV(GV));
   if (LLVM_UNLIKELY(!GO))
     return "";
-  StringRef Sec = GO->getSection();
-  return Sec.data() ? Sec.data() : "";
+  return nameStr(GO->getSection().data());
 }
 
 
@@ -2187,7 +2183,7 @@ static void bridgeGlobalSetSection(NevercValueRef GV, const char *Section) {
     return;
   auto *GO = dyn_cast<GlobalObject>(unwrapV(GV));
   if (GO)
-    GO->setSection(Section ? Section : "");
+    GO->setSection(nameStr(Section));
 }
 
 
@@ -2202,8 +2198,8 @@ static void bridgeFunctionAddParamAttr(NevercValueRef F, unsigned ParamIdx,
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (LLVM_UNLIKELY(!Fn || ParamIdx >= Fn->arg_size()))
     return;
-  Fn->addParamAttr(ParamIdx, Attribute::get(Fn->getContext(), Kind,
-                                            Val ? Val : ""));
+  Fn->addParamAttr(ParamIdx,
+                   Attribute::get(Fn->getContext(), Kind, nameStr(Val)));
 }
 
 
@@ -2715,38 +2711,6 @@ static void bridgeGlobalSetUnnamedAddr(NevercValueRef GV,
   if (G)
     G->setUnnamedAddr(HasUnnamedAddr ? GlobalValue::UnnamedAddr::Global
                                      : GlobalValue::UnnamedAddr::None);
-}
-
-
-// ===----------------------------------------------------------------------===
-//  Formatted diagnostics (printf-style, one-call format + emit)
-// ===----------------------------------------------------------------------===
-
-static void bridgeDiagV(void (*Emit)(const char *), const char *Fmt,
-                        va_list Args) {
-  if (LLVM_UNLIKELY(!Fmt))
-    return;
-  char Stack[1024];
-  va_list ArgsCopy;
-  va_copy(ArgsCopy, Args);
-  int Len = std::vsnprintf(Stack, sizeof(Stack), Fmt, ArgsCopy);
-  va_end(ArgsCopy);
-  if (LLVM_UNLIKELY(Len < 0))
-    return;
-  size_t Need = static_cast<size_t>(Len) + 1;
-  if (Need <= sizeof(Stack)) {
-    Emit(Stack);
-    return;
-  }
-  char *Heap = static_cast<char *>(bridgeAlloc(Need));
-  if (LLVM_UNLIKELY(!Heap))
-    return;
-  va_list Args2;
-  va_copy(Args2, Args);
-  std::vsnprintf(Heap, Need, Fmt, Args2);
-  va_end(Args2);
-  Emit(Heap);
-  bridgeFree(Heap);
 }
 
 

@@ -1,4 +1,5 @@
 #include "neverc/Plugin/PluginLoader.h"
+#include "BridgeCastHelpers.h"
 #include "HostAPIBridge.h"
 #include "csupport/ldynamic_llibrary.h"
 #include "llvm/ADT/SmallString.h"
@@ -101,7 +102,7 @@ void registrarRegisterModulePass(void *Reg, NevercHookPoint Hook,
     return;
   }
   (*Ctx->ModulePasses)[static_cast<unsigned>(Hook)].push_back(
-      {Hook, Fn, UserData, PassName ? PassName : "", Ctx->PluginPath});
+      {Hook, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
 }
 
 void registrarRegisterMachinePass(void *Reg, NevercHookPoint Hook,
@@ -113,7 +114,7 @@ void registrarRegisterMachinePass(void *Reg, NevercHookPoint Hook,
     return;
   }
   (*Ctx->MachinePasses)[static_cast<unsigned>(Hook)].push_back(
-      {Hook, Fn, UserData, PassName ? PassName : "", Ctx->PluginPath});
+      {Hook, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
 }
 
 void registrarRegisterBinaryPass(void *Reg, NevercHookPoint Hook,
@@ -125,7 +126,7 @@ void registrarRegisterBinaryPass(void *Reg, NevercHookPoint Hook,
     return;
   }
   (*Ctx->BinaryPasses)[static_cast<unsigned>(Hook)].push_back(
-      {Hook, Fn, UserData, PassName ? PassName : "", Ctx->PluginPath});
+      {Hook, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
 }
 
 void registrarRegisterLinkerPass(void *Reg, NevercHookPoint Hook,
@@ -137,7 +138,7 @@ void registrarRegisterLinkerPass(void *Reg, NevercHookPoint Hook,
     return;
   }
   (*Ctx->LinkerPasses)[static_cast<unsigned>(Hook)].push_back(
-      {Hook, Fn, UserData, PassName ? PassName : "", Ctx->PluginPath});
+      {Hook, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
 }
 
 } // namespace

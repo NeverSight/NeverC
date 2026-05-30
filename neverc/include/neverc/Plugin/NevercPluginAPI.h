@@ -96,6 +96,18 @@ extern "C" {
  * side-effectful expressions as arguments. */
 #define NEVERC_STR_OR(s, def) (((s) && *(s)) ? (s) : (def))
 
+/* ---- Numeric convenience ----
+ * Compile-time MIN / MAX / CLAMP.  Pure ternary expansion -- no vtable
+ * call, no allocation, fully inlineable.  Both arms must be assignment-
+ * compatible (the usual arithmetic conversions apply).
+ *
+ * NOTE: arguments may be evaluated more than once; avoid side-effectful
+ * expressions (function calls, increments, etc.) as inputs.              */
+#define NEVERC_MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define NEVERC_MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define NEVERC_CLAMP(v, lo, hi)                                                \
+    (((v) < (lo)) ? (lo) : ((v) > (hi)) ? (hi) : (v))
+
 /* ---- Convenience allocation macros ----
  * Typed array allocation through the host vtable -- eliminates the
  * repetitive (Type*)API->Alloc(Count * sizeof(Type)) pattern and

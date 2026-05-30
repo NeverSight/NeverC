@@ -569,7 +569,7 @@ static int sortedFuncAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
   API->Sort(Entries, FnCount, sizeof(struct FuncSortEntry),
             cmpFuncByInstCountDesc);
 
-  unsigned Top = FnCount < 5 ? FnCount : 5;
+  unsigned Top = NEVERC_MIN(FnCount, 5U);
   for (unsigned I = 0; I < Top; I++)
     API->DiagNoteF(PLUGIN_TAG "Top func: #%u %s (%u instrs, %u BBs)", I + 1,
                    API->ValueGetName(Entries[I].Fn), Entries[I].InstCount,
@@ -729,7 +729,7 @@ static int callSiteAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
 
   API->Sort(Entries, FnCount, sizeof(struct CallSiteEntry), cmpCallSitesDesc);
 
-  unsigned Top = FnCount < 5 ? FnCount : 5;
+  unsigned Top = NEVERC_MIN(FnCount, 5U);
   for (unsigned I = 0; I < Top; I++)
     API->DiagNoteF(PLUGIN_TAG "Call sites: #%u %s (%u sites, %u instrs)",
                    I + 1, API->ValueGetName(Entries[I].Fn),
@@ -848,7 +848,7 @@ static int uniqueCallTargetsPass(NevercModuleRef M, const NevercHostAPI *API,
   if (NEVERC_API_FN(API, ValueSetForEach) && UniqueTargets > 0) {
     struct UniqueTargetPrintCtx PrintCtx;
     PrintCtx.API = API;
-    PrintCtx.Remaining = UniqueTargets < 5 ? UniqueTargets : 5;
+    PrintCtx.Remaining = NEVERC_MIN(UniqueTargets, 5U);
     API->ValueSetForEach(Seen, printTargetVisitor, &PrintCtx);
   }
 
@@ -1030,7 +1030,7 @@ static int arenaCollectAnalysisPass(NevercModuleRef M,
     Sorted = 1;
   }
 
-  unsigned Top = FnCount < 5 ? FnCount : 5;
+  unsigned Top = NEVERC_MIN(FnCount, 5U);
   for (unsigned I = 0; I < Top; I++)
     API->DiagNoteF(PLUGIN_TAG "Arena %s: #%u %s (%u instrs)",
                    Sorted ? "sorted" : "unsorted", I + 1,
@@ -1313,7 +1313,7 @@ static int pluginArgDemoPass(NevercModuleRef M, const NevercHostAPI *API,
     NevercValueRef *Fns =
         NEVERC_AUTO_COLLECT_DEFINED_FUNCTIONS(API, Scratch, M, &FnCount);
     if (Fns) {
-      unsigned Limit = MaxFns >= 0 && (uint64_t)MaxFns < FnCount
+      unsigned Limit = (MaxFns >= 0 && (uint64_t)MaxFns < FnCount)
                            ? (unsigned)MaxFns
                            : FnCount;
       for (unsigned I = 0; I < Limit; I++)
@@ -1356,6 +1356,12 @@ struct MirOpCountCtx {
   unsigned RegOps;
   unsigned ImmOps;
   int HasBatchKinds;
+  /* Reusable kind-array scratch -- grows monotonically across MIs in the
+     pass, so the steady-state hot path is a single MInstCollectOperandKinds
+     call with zero per-instruction allocation.  Owned by mirAnalysisPass,
+     freed exactly once after the iteration completes. */
+  uint8_t *KindsBuf;
+  unsigned KindsCap;
 };
 
 static void mirClassifyOps(NevercMachineInstrRef MI,
@@ -1364,23 +1370,30 @@ static void mirClassifyOps(NevercMachineInstrRef MI,
   if (NumOps == 0)
     return;
   if (C->HasBatchKinds) {
-    uint8_t StackKinds[128];
-    uint8_t *KindsBuf = StackKinds;
-    int HeapAlloced = 0;
-    if (NumOps > sizeof(StackKinds)) {
-      KindsBuf = (uint8_t *)C->API->Alloc(NumOps);
-      HeapAlloced = KindsBuf != NULL;
+    if (NumOps > C->KindsCap) {
+      unsigned NewCap = C->KindsCap ? C->KindsCap : 64;
+      while (NewCap < NumOps) {
+        unsigned Doubled = NewCap * 2;
+        if (Doubled <= NewCap) {
+          NewCap = NumOps;
+          break;
+        }
+        NewCap = Doubled;
+      }
+      uint8_t *NewBuf = (uint8_t *)C->API->Realloc(C->KindsBuf, NewCap);
+      if (NewBuf) {
+        C->KindsBuf = NewBuf;
+        C->KindsCap = NewCap;
+      }
     }
-    if (KindsBuf) {
-      C->API->MInstCollectOperandKinds(MI, KindsBuf);
+    if (C->KindsCap >= NumOps) {
+      C->API->MInstCollectOperandKinds(MI, C->KindsBuf);
       for (unsigned K = 0; K < NumOps; K++) {
-        if (KindsBuf[K] == NEVERC_MIR_OP_REG)
+        if (C->KindsBuf[K] == NEVERC_MIR_OP_REG)
           C->RegOps++;
-        else if (KindsBuf[K] == NEVERC_MIR_OP_IMM)
+        else if (C->KindsBuf[K] == NEVERC_MIR_OP_IMM)
           C->ImmOps++;
       }
-      if (HeapAlloced)
-        C->API->Free(KindsBuf);
       return;
     }
   }
@@ -1422,6 +1435,8 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
   Ctx.RegOps = 0;
   Ctx.ImmOps = 0;
   Ctx.HasBatchKinds = NEVERC_API_FN(API, MInstCollectOperandKinds) != 0;
+  Ctx.KindsBuf = NULL;
+  Ctx.KindsCap = 0;
 
   NevercArenaRef Scratch = NEVERC_TRY_ARENA(API);
   if (Scratch && NEVERC_API_FN(API, ArenaCollectMBBs)) {
@@ -1470,6 +1485,9 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
       }
     }
   }
+
+  if (Ctx.KindsBuf)
+    API->Free(Ctx.KindsBuf);
 
   API->DiagNoteF(PLUGIN_TAG "MIR '%s': %u BBs, %u instrs, %u reg, %u imm",
                  FnName, BBCount, Ctx.InstrCount, Ctx.RegOps, Ctx.ImmOps);

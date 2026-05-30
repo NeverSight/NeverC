@@ -112,8 +112,7 @@ static void bridgeMInstEraseFromParent(NevercMachineInstrRef MI) {
 static const char *bridgeMFuncGetName(NevercMachineFuncRef MF) {
   if (LLVM_UNLIKELY(!MF))
     return "";
-  auto Name = unwrapMF(MF)->getName();
-  return Name.data() ? Name.data() : "";
+  return nameStr(unwrapMF(MF)->getName().data());
 }
 
 static int64_t bridgeMInstGetOperandImm(NevercMachineInstrRef MI,
