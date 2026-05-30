@@ -40,10 +40,15 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
 ### Compilation
 
 ```bash
-cc -shared -o MyPlugin.dll MyPlugin.c -I/path/to/pluginsdk/include
+# Recommandé : compiler avec neverc (ABI cohérent, multiplateforme) :
+neverc --target=x86_64-pc-windows-msvc -shared -o MyPlugin.dll MyPlugin.c \
+       -I/path/to/pluginsdk/include
 
+# Ou avec Make (utilise neverc par défaut) :
 make -C /path/to/pluginsdk/examples
 ```
+
+> **Note :** Tout compilateur C peut compiler les plugins, mais **neverc est fortement recommandé** pour la cohérence ABI et le support multiplateforme.
 
 ### Exécution
 

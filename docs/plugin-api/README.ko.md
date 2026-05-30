@@ -40,10 +40,15 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
 ### 빌드
 
 ```bash
-cc -shared -o MyPlugin.dll MyPlugin.c -I/path/to/pluginsdk/include
+# 권장: neverc로 빌드 (ABI 일관성, 크로스 플랫폼):
+neverc --target=x86_64-pc-windows-msvc -shared -o MyPlugin.dll MyPlugin.c \
+       -I/path/to/pluginsdk/include
 
+# 또는 Make (기본적으로 neverc 사용):
 make -C /path/to/pluginsdk/examples
 ```
+
+> **참고:** 모든 C 컴파일러로 플러그인을 빌드할 수 있지만, ABI 일관성과 크로스 플랫폼 지원을 위해 **neverc 사용을 강력히 권장**합니다.
 
 ### 실행
 

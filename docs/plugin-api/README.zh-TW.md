@@ -40,10 +40,15 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
 ### 建置
 
 ```bash
-cc -shared -o MyPlugin.dll MyPlugin.c -I/path/to/pluginsdk/include
+# 推薦：使用 neverc 建置（ABI 一致，跨平台）：
+neverc --target=x86_64-pc-windows-msvc -shared -o MyPlugin.dll MyPlugin.c \
+       -I/path/to/pluginsdk/include
 
+# 或使用 Make（預設使用 neverc）：
 make -C /path/to/pluginsdk/examples
 ```
+
+> **注意：** 雖然任意 C 編譯器都能建置外掛，但**強烈推薦使用 neverc** 以確保 ABI 一致性和跨平台支援。
 
 ### 執行
 
