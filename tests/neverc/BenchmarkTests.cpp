@@ -52,12 +52,9 @@ TEST_F(BenchmarkTest, ParallelCodegenCorrectness) {
       << "parallel compile";
 
   // Link both
-  ASSERT_EQ(exec("cc", {serialObj.string(), "-o", serialBin.string()}).exitCode,
-            0)
+  ASSERT_EQ(ncc({serialObj.string(), "-o", serialBin.string()}).exitCode, 0)
       << "serial link";
-  ASSERT_EQ(
-      exec("cc", {parallelObj.string(), "-o", parallelBin.string()}).exitCode,
-      0)
+  ASSERT_EQ(ncc({parallelObj.string(), "-o", parallelBin.string()}).exitCode, 0)
       << "parallel link";
 
   // Compare outputs
@@ -89,8 +86,8 @@ TEST_F(BenchmarkTest, ParallelCodegenOptLevels) {
                   .exitCode,
               0);
 
-    exec("cc", {serObj.string(), "-o", serBin.string()});
-    exec("cc", {parObj.string(), "-o", parBin.string()});
+    ncc({serObj.string(), "-o", serBin.string()});
+    ncc({parObj.string(), "-o", parBin.string()});
 
     auto serR = exec(serBin.string(), {});
     auto parR = exec(parBin.string(), {});
@@ -109,7 +106,7 @@ int main(void) { printf("small=%d\n", foo(41)); return 0; }
   auto bin = tmpFile("small_bin");
 
   ASSERT_EQ(ncc({"-O2", "-c", src.string(), "-o", obj.string()}).exitCode, 0);
-  ASSERT_EQ(exec("cc", {obj.string(), "-o", bin.string()}).exitCode, 0);
+  ASSERT_EQ(ncc({obj.string(), "-o", bin.string()}).exitCode, 0);
 
   auto r = exec(bin.string(), {});
   EXPECT_EQ(r.exitCode, 0);
@@ -134,8 +131,8 @@ TEST_F(BenchmarkTest, NoParallelCodegenFlag) {
                 .exitCode,
             0);
 
-  exec("cc", {serObj.string(), "-o", serBin.string()});
-  exec("cc", {noparObj.string(), "-o", noparBin.string()});
+  ncc({serObj.string(), "-o", serBin.string()});
+  ncc({noparObj.string(), "-o", noparBin.string()});
 
   auto serR = exec(serBin.string(), {});
   auto noparR = exec(noparBin.string(), {});

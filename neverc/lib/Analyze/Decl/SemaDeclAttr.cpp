@@ -3287,7 +3287,8 @@ void handlePreferredTypeAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 
 void handleDeclspecThreadAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   const auto *VD = cast<VarDecl>(D);
-  if (!S.Context.getTargetInfo().isTLSSupported()) {
+  if (!S.Context.getTargetInfo().isTLSSupported() &&
+      !S.getLangOpts().ShellcodeMode) {
     S.Diag(AL.getLoc(), diag::err_thread_unsupported);
     return;
   }
