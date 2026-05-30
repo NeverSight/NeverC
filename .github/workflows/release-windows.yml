@@ -58,13 +58,18 @@ jobs:
         run: |
           cmake -S llvm -B build -G Ninja \
             -C neverc/cmake/caches/NeverC.cmake \
-            -DNEVERC_RELEASE_OPT_LEVEL=3
+            -DNEVERC_RELEASE_OPT_LEVEL=3 \
+            -DNEVERC_INCLUDE_TESTS=ON
           cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
 
       - name: Show sccache stats
         if: always()
         shell: bash
         run: sccache --show-stats || true
+
+      - name: Run neverc tests
+        shell: bash
+        run: cmake --build build --target check-neverc
 
       - name: Install neverc
         run: cmake --install build --prefix "$env:GITHUB_WORKSPACE\install"

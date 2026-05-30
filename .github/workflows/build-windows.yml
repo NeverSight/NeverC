@@ -53,11 +53,19 @@ jobs:
         -DCMAKE_INSTALL_PREFIX=install \
         -DLLVM_ENABLE_ASSERTIONS=OFF \
         -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+        -DNEVERC_INCLUDE_TESTS=ON \
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
         -C neverc/neverc/cmake/caches/NeverC.cmake \
         neverc/llvm
         cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
-        cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+
+    - name: Run neverc tests
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
+
+    - name: Install neverc
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
 
     - name: Package neverc
       run: 7z a windows-x64-neverc.zip install

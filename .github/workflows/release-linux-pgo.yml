@@ -237,6 +237,11 @@ jobs:
       - name: Build PGO-optimised neverc
         run: ./tools/build_pgo.sh use
 
+      - name: Run neverc tests
+        run: |
+          cmake -B build-pgo-use -DNEVERC_INCLUDE_TESTS=ON
+          cmake --build build-pgo-use --target check-neverc
+
       - name: Install neverc
         run: cmake --install build-pgo-use --prefix "${GITHUB_WORKSPACE}/install"
 

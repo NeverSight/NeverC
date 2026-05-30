@@ -117,8 +117,7 @@ cmake --build build-neverc --target neverc
 ### Tests
 
 ```bash
-cmake --build build-neverc --target neverc-tests
-ctest --test-dir build-neverc --output-on-failure
+cmake --build build-neverc --target check-neverc
 ```
 
 ### Vérification
