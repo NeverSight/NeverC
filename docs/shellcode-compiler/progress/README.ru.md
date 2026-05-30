@@ -47,7 +47,7 @@
 - [x] `<neverc/kernel.h>` для конвенций точки входа ring-0
 - [x] Принудительное смещение точки входа на ноль (`placeEntryFirst`)
 - [x] Конвейер финализации: SDK перезаписи плохих байтов + SDK кодировщика charset + ограничения размера
-- [x] SDK плагинов (`Plugin.h`): `registerBadByteRewriteStrategy` + `registerCharsetEncoder`
+- [x] Внедеревный C-плагин API (`NevercPluginAPI.h`): 11 точек подключения shellcode (`NEVERC_HOOK_SC_*`)
 - [x] Инъекция `-mno-implicit-float` для x86_64 (предотвращает вынос SSE-констант бэкенда в пул)
 - [x] Кроссплатформенные загрузчики (macOS/Linux/Windows)
 

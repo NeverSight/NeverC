@@ -24,9 +24,7 @@ NeverC의 shellcode 파이프라인은 다음을 포함합니다:
 
 1. **크기 / 정렬 / 패딩 제약** — 내장 기능. `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=`는 `finalizeShellcodeBytes` 끝에서 실행. 드라이버는 모순된 구성을 거부 (예: 패드 바이트가 배드바이트 세트에 있거나, align/max-length 없이 pad 사용).
 
-2. **배드바이트 리라이터 인터페이스** — 골격은 내장, 내장 전략 없음. `Plugin.h::registerBadByteRewriteStrategy`가 SDK를 노출. `-fshellcode-bad-byte-rewrite` / `-fno-...`가 파이널라이즈 체인의 리라이터 호출 여부를 제어. 비활성화 시 감사만 수행으로 폴백. 다운스트림 라이브러리가 Capstone 기반 또는 커스텀 리라이트 전략을 등록.
-
-3. **문자 집합 인코더 인터페이스** — 골격은 내장, 내장 문자 집합 없음. `Plugin.h::registerCharsetEncoder`가 `(name, Encode, Stub, IsCharsetMember)` 튜플을 노출. `-fshellcode-charset=<name>` 설정 시 파이널라이즈 단계가 `.text`를 `Stub(target) || Encode(text, target)`로 교체하고 모든 출력 바이트를 문자 집합에 대해 검증. 인쇄 가능 / 영숫자 / 커스텀 인코더는 다운스트림 라이브러리가 등록.
+2. **아웃오브트리 C 플러그인 API** — 순수 C ABI 플러그인 인터페이스(`NevercPluginAPI.h`). IR, MIR, Binary, Linker 커스텀 패스를 11개 shellcode 훅 포인트(`NEVERC_HOOK_SC_*`)에 등록 가능. 단일 헤더 SDK, LLVM/CRT 의존성 제로. 자세한 내용은 [Plugin API 문서](../../plugin-api/README.ko.md) 참조.
 
 ## 계획 중 — 플러그인 레이어 (훅을 통해)
 

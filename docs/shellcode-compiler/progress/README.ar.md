@@ -49,7 +49,7 @@
 - [x] `<neverc/kernel.h>` لاتفاقيات نقطة الدخول ring-0
 - [x] فرض إزاحة صفر لنقطة الدخول (`placeEntryFirst`)
 - [x] خط أنابيب الإنهاء: SDK مُعيد كتابة البايتات المحظورة + SDK مشفّر مجموعة الأحرف + قيود الحجم
-- [x] SDK الإضافات (`Plugin.h`): `registerBadByteRewriteStrategy` + `registerCharsetEncoder`
+- [x] واجهة الإضافات C خارج الشجرة (`NevercPluginAPI.h`): 11 نقطة ربط shellcode (`NEVERC_HOOK_SC_*`)
 - [x] حقن `-mno-implicit-float` لـ x86_64 (يمنع تسرب مجمع ثوابت SSE للخلفية)
 - [x] محمّلات عبر المنصات (macOS/Linux/Windows)
 

@@ -24,9 +24,7 @@ Die Shellcode-Pipeline von NeverC umfasst:
 
 1. **Größen- / Ausrichtungs- / Padding-Beschränkungen** — Eingebaut. `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=` werden am Ende von `finalizeShellcodeBytes` ausgeführt. Der Treiber lehnt widersprüchliche Konfigurationen ab (z.B. Padding-Byte im Bad-Byte-Set oder Padding ohne align/max-length).
 
-2. **Bad-Byte-Rewriter-Schnittstelle** — Grundgerüst eingebaut, keine eingebauten Strategien. `Plugin.h::registerBadByteRewriteStrategy` stellt das SDK bereit. `-fshellcode-bad-byte-rewrite` / `-fno-...` steuert, ob die Finalize-Kette Rewriter aufruft. Deaktivierung fällt auf Nur-Audit-Modus zurück. Downstream-Bibliotheken registrieren Capstone-basierte oder benutzerdefinierte Rewrite-Strategien.
-
-3. **Zeichensatz-Encoder-Schnittstelle** — Grundgerüst eingebaut, keine eingebauten Zeichensätze. `Plugin.h::registerCharsetEncoder` stellt ein `(name, Encode, Stub, IsCharsetMember)`-Tupel bereit. Bei gesetztem `-fshellcode-charset=<name>` ersetzt die Finalize-Phase `.text` durch `Stub(target) || Encode(text, target)` und validiert alle Ausgabebytes gegen den Zeichensatz. Druckbare / alphanumerische / benutzerdefinierte Encoder werden von Downstream-Bibliotheken registriert.
+2. **Out-of-Tree C Plugin-API** — Reine C-ABI-Plugin-Schnittstelle (`NevercPluginAPI.h`) für benutzerdefinierte IR-, MIR-, Binary- und Linker-Passes. Plugins registrieren sich an 11 Shellcode-Hook-Punkten (`NEVERC_HOOK_SC_*`). Single-Header-SDK, null LLVM/CRT-Abhängigkeiten. Siehe [Plugin-API-Dokumentation](../../plugin-api/README.de.md).
 
 ## Geplant — Plugin-Schicht (über Hooks)
 

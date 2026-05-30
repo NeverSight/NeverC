@@ -65,7 +65,7 @@ Beide Quellen funktionieren ohne Registry oder OS-bereitgestellte VS-Umgebungsva
 
 ## 5. Obfuskation und Erweiterungspunkte
 
-- **IR-Obfuskation**: Über `setShellcodeObfuscationHooks` mit mehreren IR-Stufen-Hooks; `-fshellcode-obfuscate=` übergibt den Spec-String an die externe Bibliothek. Jede Schicht bietet **pre** (vor Optimierung) und **post** (nach Optimierung) Hooks. `RunAfterFinalIR` ist der echte letzte IR-Injektionspunkt — nach hier registrierten Obfuskations-Passes gibt es keine nachfolgenden Passes. 11 Hook-Punkte insgesamt (6 IR + 3 MIR + 2 Byte-Stream).
+- **IR-Hooks**: 6 IR-Hook-Punkte (`NEVERC_HOOK_SC_BEFORE_PREP` bis `NEVERC_HOOK_SC_AFTER_FINAL_IR`) über die [Plugin-API](../../plugin-api/README.de.md). `NEVERC_HOOK_SC_AFTER_FINAL_IR` ist der echte letzte IR-Injektionspunkt — nach hier registrierten Passes gibt es keine nachfolgenden Passes. 11 Hook-Punkte insgesamt (6 IR + 3 MIR + 2 Byte-Stream).
 - **MIR-Obfuskation**: `RunBeforePreEmit` / `RunAfterPreEmit` sind MIR-Hooks mittlerer Granularität; `RunAfterFinalMIR` ist der **echte letzte** MIR-Hook (Fork-Erweiterung fügt `RegisterTargetPassConfigPostPreEmitCallbackFn` hinzu, aufgerufen nach `addPreEmitPass2()`). `-fshellcode-mir-obfuscate=` spezifiziert MIR-Spec separat; Standard ist IR-Spec wenn nicht gesetzt.
 - **Byte-Stream-Hooks**: `RunPostExtract` ist der Finalize-**Pre**-Hook; `RunPostFinalize` ist der Finalize-**Post**-Hook (letzter Moment vor Festplattenschreiben, NeverC prüft danach nicht mehr).
 - **Größe / Ausrichtung / Padding**: `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=` werden am Ende von Finalize ausgeführt; der Treiber lehnt widersprüchliche Konfigurationen ab.

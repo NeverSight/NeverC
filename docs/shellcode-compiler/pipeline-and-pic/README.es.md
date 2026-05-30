@@ -65,7 +65,7 @@ Ambas fuentes funcionan sin registro ni variables de entorno VS proporcionadas p
 
 ## 5. Puntos de ofuscación y extensión
 
-- **Ofuscación IR**: Vía `setShellcodeObfuscationHooks` con múltiples hooks de etapa IR; `-fshellcode-obfuscate=` pasa el string spec a la biblioteca externa. Cada capa proporciona hooks **pre** (antes de optimización) y **post** (después de optimización). `RunAfterFinalIR` es el verdadero último punto de inyección IR — los passes de ofuscación registrados aquí no tienen passes subsecuentes que modifiquen su salida. 11 puntos de hook en total (6 IR + 3 MIR + 2 flujo de bytes).
+- **Hooks IR**: 6 puntos de enganche IR (`NEVERC_HOOK_SC_BEFORE_PREP` a `NEVERC_HOOK_SC_AFTER_FINAL_IR`) vía la [API de Plugins](../../plugin-api/README.es.md). `NEVERC_HOOK_SC_AFTER_FINAL_IR` es el verdadero último punto de inyección IR — los passes registrados aquí no tienen passes subsecuentes que modifiquen su salida. 11 puntos de hook en total (6 IR + 3 MIR + 2 flujo de bytes).
 - **Ofuscación MIR**: `RunBeforePreEmit` / `RunAfterPreEmit` son hooks MIR de granularidad media; `RunAfterFinalMIR` es el **verdadero último** hook MIR (extensión fork agrega `RegisterTargetPassConfigPostPreEmitCallbackFn` invocado después de `addPreEmitPass2()`). `-fshellcode-mir-obfuscate=` especifica MIR spec por separado; por defecto usa IR spec si no se establece.
 - **Hooks de flujo de bytes**: `RunPostExtract` es el hook **pre**-finalize; `RunPostFinalize` es el hook **post**-finalize (último momento antes de escritura a disco, NeverC no audita más).
 - **Tamaño / alineación / relleno**: `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=` se ejecutan al final de finalize; el driver rechaza configuraciones contradictorias.

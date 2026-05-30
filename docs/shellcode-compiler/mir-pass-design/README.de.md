@@ -110,7 +110,7 @@ Zwei registrierte Muster:
 
 - **Pseudo-Entfernung**: Ein Case in `isShellcodeStripPseudo`.
 - **MIR-Rewrite**: `tryRewriteXxx` schreiben + `MIRRewritePatterns.def` + `MIRRewriteOpcodes.def`.
-- **Drittanbieter**: `setShellcodeObfuscationHooks()`.
+- **Drittanbieter**: [Plugin-API](../../plugin-api/README.de.md) (`NEVERC_HOOK_SC_*` Hooks).
 
 ## 7. Beziehung zu ShellcodeExtractor
 

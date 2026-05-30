@@ -54,7 +54,7 @@
 
 - **إضافة إزالة شبه تعليمة**: حالة واحدة في `isShellcodeStripPseudo`.
 - **إضافة إعادة كتابة MIR**: كتابة `tryRewriteXxx` + ملفات `.def`.
-- **أطراف ثالثة**: `setShellcodeObfuscationHooks()`.
+- **أطراف ثالثة**: [واجهة الإضافات](../../plugin-api/README.ar.md) (خطافات `NEVERC_HOOK_SC_*`).
 
 ## 7. العلاقة مع ShellcodeExtractor
 

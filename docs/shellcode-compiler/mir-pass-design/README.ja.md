@@ -128,7 +128,7 @@ if (Name.starts_with("SEH_"))
 
 - **組込み疑似除去追加**: `isShellcodeStripPseudo` switch に 1 case 追加。
 - **組込み MIR リライト追加**: `tryRewriteXxx` を書き `MIRRewritePatterns.def` + `MIRRewriteOpcodes.def` に追加。
-- **サードパーティ難読化**: `setShellcodeObfuscationHooks()` で登録。
+- **サードパーティ難読化**: [Plugin API](../../plugin-api/README.ja.md)（`NEVERC_HOOK_SC_*` フック）で登録。
 
 ## 7. ShellcodeExtractor との関係
 

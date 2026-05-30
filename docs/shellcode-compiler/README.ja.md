@@ -224,7 +224,6 @@ neverc/
 ├── include/neverc/Shellcode/                  # Headers (organized by subsystem)
 │   ├── Pipeline/                              # Pipeline / driver integration
 │   │   ├── Pipeline.h                         # IR + MIR hook registration
-│   │   ├── Plugin.h                           # Plugin SDK (bad-byte / charset)
 │   │   ├── DriverIntegration.h
 │   │   ├── TargetDesc.h                       # Platform table / descriptors
 │   │   ├── ShellcodeOptions.h                 # Cross-subsystem config

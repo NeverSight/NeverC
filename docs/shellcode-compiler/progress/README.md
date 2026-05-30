@@ -47,7 +47,7 @@
 - [x] `<neverc/kernel.h>` for ring-0 entry conventions
 - [x] Entry offset zero enforcement (`placeEntryFirst`)
 - [x] Finalize pipeline: bad-byte rewriter SDK + charset encoder SDK + sizing constraints
-- [x] Plugin SDK (`Plugin.h`): `registerBadByteRewriteStrategy` + `registerCharsetEncoder`
+- [x] Out-of-tree C Plugin API (`NevercPluginAPI.h`): 11 shellcode hook points (`NEVERC_HOOK_SC_*`)
 - [x] x86_64 `-mno-implicit-float` injection (prevents backend SSE constant pool spills)
 - [x] Cross-platform loaders (macOS/Linux/Windows)
 

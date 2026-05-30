@@ -47,7 +47,7 @@
 - [x] `<neverc/kernel.h>`：ring-0 エントリ規約用
 - [x] エントリオフセットゼロ強制（`placeEntryFirst`）
 - [x] ファイナライズパイプライン：バッドバイトリライター SDK + 文字セットエンコーダー SDK + サイズ制約
-- [x] プラグイン SDK（`Plugin.h`）：`registerBadByteRewriteStrategy` + `registerCharsetEncoder`
+- [x] アウトオブツリー C プラグイン API（`NevercPluginAPI.h`）：11 shellcode フックポイント（`NEVERC_HOOK_SC_*`）
 - [x] x86_64 `-mno-implicit-float` インジェクション（バックエンド SSE 定数プールスピル防止）
 - [x] クロスプラットフォームローダー（macOS/Linux/Windows）
 

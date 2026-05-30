@@ -65,7 +65,7 @@ Entrambe funzionano senza registro o variabili d'ambiente VS dell'OS.
 
 ## 5. Punti di offuscamento ed estensione
 
-- **Offuscamento IR**: Via `setShellcodeObfuscationHooks`; `-fshellcode-obfuscate=` passa la stringa spec. 11 hook totali (6 IR + 3 MIR + 2 flusso byte).
+- **Hook IR**: 6 hook point IR (`NEVERC_HOOK_SC_BEFORE_PREP` a `NEVERC_HOOK_SC_AFTER_FINAL_IR`) via l'[API Plugin](../../plugin-api/README.it.md). 11 hook totali (6 IR + 3 MIR + 2 flusso byte).
 - **Offuscamento MIR**: `RunBeforePreEmit` / `RunAfterPreEmit` / `RunAfterFinalMIR`. `-fshellcode-mir-obfuscate=` per spec MIR separato.
 - **Hook flusso byte**: `RunPostExtract` (pre-finalize) e `RunPostFinalize` (post-finalize).
 - **Dimensione / allineamento / padding**: `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=`.

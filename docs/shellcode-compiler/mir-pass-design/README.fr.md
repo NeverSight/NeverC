@@ -99,7 +99,7 @@ Deux motifs enregistrés :
 
 - **Ajout suppression pseudo** : Un case dans `isShellcodeStripPseudo`.
 - **Ajout réécriture MIR** : Écrire `tryRewriteXxx` + fichiers `.def`.
-- **Tiers** : `setShellcodeObfuscationHooks()`.
+- **Tiers** : [API Plugin](../../plugin-api/README.fr.md) (hooks `NEVERC_HOOK_SC_*`).
 
 ## 7. Relation avec ShellcodeExtractor
 

@@ -24,9 +24,7 @@ NeverC 的 shellcode 管線涵蓋：
 
 1. **大小 / 對齊 / 填充約束** — 內建功能。`-fshellcode-max-length=`、`-fshellcode-align=`、`-fshellcode-pad=` 在 `finalizeShellcodeBytes` 末尾執行。驅動會拒絕矛盾的設定（例如填充位元組在壞位元組集中，或無 align/max-length 時使用 pad）。
 
-2. **壞位元組重寫器介面** — 骨架已內建，無內建策略。`Plugin.h::registerBadByteRewriteStrategy` 暴露 SDK。`-fshellcode-bad-byte-rewrite` / `-fno-...` 控制 finalize 鏈是否呼叫重寫器。停用後退回到僅稽核模式。下游程式庫註冊基於 Capstone 或自訂的重寫策略。
-
-3. **字元集編碼器介面** — 骨架已內建，無內建字元集。`Plugin.h::registerCharsetEncoder` 暴露 `(name, Encode, Stub, IsCharsetMember)` 元組。設定 `-fshellcode-charset=<name>` 後，finalize 階段將 `.text` 替換為 `Stub(target) || Encode(text, target)` 並驗證所有輸出位元組符合字元集。可列印 / 字母數字 / 自訂編碼器由下游程式庫註冊。
+2. **樹外 C 外掛 API** — 純 C ABI 外掛介面（`NevercPluginAPI.h`），用於自訂 IR、MIR、Binary 和 Linker pass。外掛透過 11 個 shellcode 掛鈎點（`NEVERC_HOOK_SC_*`）註冊。單一標頭檔 SDK，零 LLVM/CRT 相依性。詳見 [Plugin API 文件](../../plugin-api/README.zh-TW.md)。
 
 ## 計畫中 — 外掛層（透過鉤子）
 

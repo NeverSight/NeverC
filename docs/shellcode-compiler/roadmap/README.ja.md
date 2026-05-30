@@ -24,9 +24,7 @@ NeverC の shellcode パイプラインは以下をカバー：
 
 1. **サイズ / アライメント / パディング制約** — ビルトイン。`-fshellcode-max-length=`、`-fshellcode-align=`、`-fshellcode-pad=` は `finalizeShellcodeBytes` の末尾で実行。ドライバは矛盾する設定を拒否（例：パッドバイトがバッドバイトセット内にある、または align/max-length なしの pad）。
 
-2. **バッドバイトリライターインターフェース** — スケルトンはビルトイン、ビルトイン戦略なし。`Plugin.h::registerBadByteRewriteStrategy` が SDK を公開。`-fshellcode-bad-byte-rewrite` / `-fno-...` でファイナライズチェーンがリライターを呼び出すかを制御。無効時は監査のみにフォールバック。ダウンストリームライブラリが Capstone ベースまたはカスタムリライト戦略を登録。
-
-3. **文字セットエンコーダーインターフェース** — スケルトンはビルトイン、ビルトイン文字セットなし。`Plugin.h::registerCharsetEncoder` が `(name, Encode, Stub, IsCharsetMember)` タプルを公開。`-fshellcode-charset=<name>` 設定時、ファイナライズステージが `.text` を `Stub(target) || Encode(text, target)` に置換し、全出力バイトを文字セットに対して検証。印字可能 / 英数字 / カスタムエンコーダーはダウンストリームライブラリが登録。
+2. **アウトオブツリー C プラグイン API** — 純粋 C ABI プラグインインターフェース（`NevercPluginAPI.h`）。IR、MIR、Binary、Linker のカスタムパスを 11 の shellcode フックポイント（`NEVERC_HOOK_SC_*`）に登録可能。単一ヘッダー SDK、LLVM/CRT 依存ゼロ。詳細は [Plugin API ドキュメント](../../plugin-api/README.ja.md) を参照。
 
 ## 計画中 — プラグインレイヤー（フック経由）
 

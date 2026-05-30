@@ -52,7 +52,7 @@
 
 - **Добавление удаления псевдо**: Один case в `isShellcodeStripPseudo`.
 - **Добавление перезаписи MIR**: Написать `tryRewriteXxx` + файлы `.def`.
-- **Сторонние**: `setShellcodeObfuscationHooks()`.
+- **Сторонние**: [API плагинов](../../plugin-api/README.ru.md) (хуки `NEVERC_HOOK_SC_*`).
 
 ## 7. Связь с ShellcodeExtractor
 

@@ -47,7 +47,7 @@
 - [x] `<neverc/kernel.h>` para convenciones de punto de entrada ring-0
 - [x] Imposición de offset cero del punto de entrada (`placeEntryFirst`)
 - [x] Pipeline de finalización: SDK de reescritor de bytes prohibidos + SDK de codificador de charset + restricciones de tamaño
-- [x] SDK de plugins (`Plugin.h`): `registerBadByteRewriteStrategy` + `registerCharsetEncoder`
+- [x] API de Plugins C fuera del árbol (`NevercPluginAPI.h`): 11 puntos de enganche shellcode (`NEVERC_HOOK_SC_*`)
 - [x] Inyección de `-mno-implicit-float` para x86_64 (previene desbordamiento de pool de constantes SSE del backend)
 - [x] Cargadores multiplataforma (macOS/Linux/Windows)
 

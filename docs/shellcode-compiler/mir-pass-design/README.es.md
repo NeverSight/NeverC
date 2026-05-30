@@ -100,7 +100,7 @@ Dos patrones registrados:
 
 - **Agregar eliminación de pseudo**: Un case en `isShellcodeStripPseudo`.
 - **Agregar reescritura MIR**: Escribir `tryRewriteXxx` + `MIRRewritePatterns.def` + `MIRRewriteOpcodes.def`.
-- **Terceros**: `setShellcodeObfuscationHooks()`.
+- **Terceros**: [API de Plugins](../../plugin-api/README.es.md) (hooks `NEVERC_HOOK_SC_*`).
 
 ## 7. Relación con ShellcodeExtractor
 

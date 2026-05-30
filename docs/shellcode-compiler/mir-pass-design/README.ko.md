@@ -125,7 +125,7 @@ if (Name.starts_with("SEH_"))
 
 - **내장 의사 명령 제거 추가**: `isShellcodeStripPseudo` switch에 1 case 추가.
 - **내장 MIR 리라이트 추가**: `tryRewriteXxx` 작성 후 `MIRRewritePatterns.def` + `MIRRewriteOpcodes.def`에 추가.
-- **서드파티 난독화**: `setShellcodeObfuscationHooks()`로 등록.
+- **서드파티 난독화**: [Plugin API](../../plugin-api/README.ko.md) (`NEVERC_HOOK_SC_*` 훅)로 등록.
 
 ## 7. ShellcodeExtractor와의 관계
 

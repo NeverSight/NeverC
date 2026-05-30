@@ -47,7 +47,7 @@
 - [x] `<neverc/kernel.h>` 用于 ring-0 入口约定
 - [x] 入口偏移零强制（`placeEntryFirst`）
 - [x] Finalize 流水线：坏字节重写器 SDK + 字符集编码器 SDK + 大小约束
-- [x] 插件 SDK（`Plugin.h`）：`registerBadByteRewriteStrategy` + `registerCharsetEncoder`
+- [x] 树外 C 插件 API（`NevercPluginAPI.h`）：11 个 shellcode 钩子点（`NEVERC_HOOK_SC_*`）
 - [x] x86_64 `-mno-implicit-float` 注入（防止后端 SSE 常量池溢出）
 - [x] 跨平台 loader（macOS/Linux/Windows）
 

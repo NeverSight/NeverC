@@ -47,7 +47,7 @@
 - [x] `<neverc/kernel.h>`: ring-0 진입점 규약용
 - [x] 진입점 오프셋 0 강제 (`placeEntryFirst`)
 - [x] 파이널라이즈 파이프라인: 배드바이트 리라이터 SDK + 문자 집합 인코더 SDK + 크기 제약
-- [x] 플러그인 SDK (`Plugin.h`): `registerBadByteRewriteStrategy` + `registerCharsetEncoder`
+- [x] 아웃오브트리 C 플러그인 API (`NevercPluginAPI.h`): 11개 shellcode 훅 포인트 (`NEVERC_HOOK_SC_*`)
 - [x] x86_64 `-mno-implicit-float` 주입 (백엔드 SSE 상수 풀 스필 방지)
 - [x] 크로스 플랫폼 로더 (macOS/Linux/Windows)
 

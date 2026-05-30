@@ -65,7 +65,7 @@ Les deux sources fonctionnent sans registre ni variables d'environnement VS four
 
 ## 5. Points d'obfuscation et d'extension
 
-- **Obfuscation IR** : Via `setShellcodeObfuscationHooks` avec plusieurs hooks d'étape IR ; `-fshellcode-obfuscate=` passe la chaîne spec à la bibliothèque externe. Chaque couche fournit des hooks **pré** (avant optimisation) et **post** (après optimisation). `RunAfterFinalIR` est le vrai dernier point d'injection IR — aucune passe après. 11 points de hook total (6 IR + 3 MIR + 2 flux d'octets).
+- **Hooks IR** : 6 points d'accroche IR (`NEVERC_HOOK_SC_BEFORE_PREP` à `NEVERC_HOOK_SC_AFTER_FINAL_IR`) via l'[API Plugin](../../plugin-api/README.fr.md). `NEVERC_HOOK_SC_AFTER_FINAL_IR` est le vrai dernier point d'injection IR — aucune passe après. 11 points de hook total (6 IR + 3 MIR + 2 flux d'octets).
 - **Obfuscation MIR** : `RunBeforePreEmit` / `RunAfterPreEmit` sont des hooks MIR de granularité moyenne ; `RunAfterFinalMIR` est le **vrai dernier** hook MIR. `-fshellcode-mir-obfuscate=` spécifie le spec MIR séparément ; utilise le spec IR par défaut si non défini.
 - **Hooks de flux d'octets** : `RunPostExtract` est le hook **pré**-finalize ; `RunPostFinalize` est le hook **post**-finalize (dernier moment avant écriture sur disque).
 - **Taille / alignement / remplissage** : `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=` s'exécutent en fin de finalize ; le driver rejette les configurations contradictoires.

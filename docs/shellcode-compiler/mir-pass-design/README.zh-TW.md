@@ -160,7 +160,7 @@ MIR 層處理**兜底清理 + 混淆掛鉤點**，而非業務邏輯。「寫普
 
 **新增內建 MIR 重寫**：使用 `TII->getName()` / `BuildMI(TII->get(...))` 編寫 `tryRewriteXxx(MachineFunction &)`。在 `MIRRewritePatterns.def` 中新增模式，在 `MIRRewriteOpcodes.def` 中新增操作碼。
 
-**第三方混淆庫**：透過 `setShellcodeObfuscationHooks()` 註冊。
+**第三方混淆庫**：透過 [Plugin API](../../plugin-api/README.zh-TW.md)（`NEVERC_HOOK_SC_*` 掛鈎）註冊。
 
 ## 7. 與 ShellcodeExtractor 的關係
 

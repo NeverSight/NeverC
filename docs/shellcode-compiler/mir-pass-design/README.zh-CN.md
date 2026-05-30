@@ -126,7 +126,7 @@ static void myMirObfInit() {
                          const neverc::shellcode::ShellcodeOptions &Opts) {
     TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
   };
-  neverc::shellcode::setShellcodeObfuscationHooks(std::move(H));
+  // 通过 Plugin API 注册：NEVERC_HOOK_SC_BEFORE_PREEMIT / AFTER_PREEMIT / AFTER_FINAL_MIR
 }
 ```
 
@@ -185,7 +185,7 @@ MIR 层处理**兜底清理 + 混淆钩子点**，而非业务逻辑。"写普�
 
 **添加内置 MIR 重写**：使用 `TII->getName()` / `BuildMI(TII->get(...))` 编写 `tryRewriteXxx(MachineFunction &)`。在 `MIRRewritePatterns.def` 中添加模式，在 `MIRRewriteOpcodes.def` 中添加操作码。
 
-**第三方混淆库**：通过 `setShellcodeObfuscationHooks()` 注册。
+**第三方混淆库**：通过 [Plugin API](../../plugin-api/README.zh-CN.md)（`NEVERC_HOOK_SC_*` 钩子）注册。
 
 ## 7. 与 ShellcodeExtractor 的关系
 

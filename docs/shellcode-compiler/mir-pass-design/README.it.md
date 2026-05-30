@@ -52,7 +52,7 @@ Due pattern registrati:
 
 - **Aggiunta rimozione pseudo**: Un case in `isShellcodeStripPseudo`.
 - **Aggiunta riscrittura MIR**: Scrivere `tryRewriteXxx` + file `.def`.
-- **Terze parti**: `setShellcodeObfuscationHooks()`.
+- **Terze parti**: [API Plugin](../../plugin-api/README.it.md) (hook `NEVERC_HOOK_SC_*`).
 
 ## 7. Relazione con ShellcodeExtractor
 

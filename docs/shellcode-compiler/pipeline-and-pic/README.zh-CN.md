@@ -65,7 +65,7 @@ IR 和 MIR 全局回调均使用**注册一次、运行时读取当前 `Shellcod
 
 ## 5. 混淆与扩展点
 
-- **IR 混淆**：通过 `setShellcodeObfuscationHooks` 提供多个 IR 阶段钩子；`-fshellcode-obfuscate=` 将 spec 字符串传递给外部库。每层提供**前**（优化前）和**后**（优化后）钩子。`RunAfterFinalIR` 是真正的最后 IR 维度可注入点——注册在此的混淆 pass 之后没有后续 pass 能修改其输出。共 11 个钩子（6 IR + 3 MIR + 2 字节流）。
+- **IR 钩子**：通过 [Plugin API](../../plugin-api/README.zh-CN.md) 提供 6 个 IR 钩子点（`NEVERC_HOOK_SC_BEFORE_PREP` 至 `NEVERC_HOOK_SC_AFTER_FINAL_IR`）。`NEVERC_HOOK_SC_AFTER_FINAL_IR` 是真正的最后 IR 维度可注入点——注册在此的 pass 之后没有后续 pass 能修改其输出。共 11 个钩子（6 IR + 3 MIR + 2 字节流）。
 - **MIR 混淆**：`RunBeforePreEmit` / `RunAfterPreEmit` 是中粒度 MIR 钩子；`RunAfterFinalMIR` 是**真正最后**的 MIR 钩子（fork 扩展添加了 `RegisterTargetPassConfigPostPreEmitCallbackFn`，在 `addPreEmitPass2()` 之后调用）。`-fshellcode-mir-obfuscate=` 单独指定 MIR spec；未设置时默认使用 IR spec。
 - **字节流钩子**：`RunPostExtract` 是 finalize **前**钩子；`RunPostFinalize` 是 finalize **后**钩子（写入磁盘前的最后时刻，NeverC 不再审计）。
 - **大小/对齐/填充**：`-fshellcode-max-length=`、`-fshellcode-align=`、`-fshellcode-pad=` 在 finalize 末尾执行；驱动拒绝矛盾的配置。

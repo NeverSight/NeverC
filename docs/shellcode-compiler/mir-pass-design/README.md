@@ -126,7 +126,7 @@ static void myMirObfInit() {
                          const neverc::shellcode::ShellcodeOptions &Opts) {
     TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
   };
-  neverc::shellcode::setShellcodeObfuscationHooks(std::move(H));
+  // Register via Plugin API: NEVERC_HOOK_SC_BEFORE_PREEMIT / AFTER_PREEMIT / AFTER_FINAL_MIR
 }
 ```
 
@@ -185,7 +185,7 @@ The MIR layer handles **catch-all cleanup + obfuscation hook points**, not busin
 
 **Adding a built-in MIR rewrite**: write `tryRewriteXxx(MachineFunction &)` using `TII->getName()` / `BuildMI(TII->get(...))`. Add pattern to `MIRRewritePatterns.def`, opcodes to `MIRRewriteOpcodes.def`.
 
-**Third-party obfuscation library**: register via `setShellcodeObfuscationHooks()`.
+**Third-party obfuscation library**: register via the [Plugin API](../../plugin-api/README.md) (`NEVERC_HOOK_SC_*` hooks).
 
 ## 7. Relationship with ShellcodeExtractor
 

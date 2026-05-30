@@ -24,9 +24,7 @@ El pipeline de shellcode de NeverC cubre:
 
 1. **Restricciones de tamaño / alineación / relleno** — Integrado. `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=` se ejecutan al final de `finalizeShellcodeBytes`. El driver rechaza configuraciones contradictorias (ej. byte de relleno en el conjunto de bytes prohibidos, o relleno sin align/max-length).
 
-2. **Interfaz de reescritor de bytes prohibidos** — Esqueleto integrado, sin estrategias incorporadas. `Plugin.h::registerBadByteRewriteStrategy` expone el SDK. `-fshellcode-bad-byte-rewrite` / `-fno-...` controla si la cadena de finalización invoca reescritores. Desactivar retrocede al modo solo auditoría. Las bibliotecas downstream registran estrategias basadas en Capstone o personalizadas.
-
-3. **Interfaz de codificador de conjunto de caracteres** — Esqueleto integrado, sin conjuntos incorporados. `Plugin.h::registerCharsetEncoder` expone una tupla `(name, Encode, Stub, IsCharsetMember)`. Cuando se establece `-fshellcode-charset=<name>`, la fase de finalización reemplaza `.text` con `Stub(target) || Encode(text, target)` y valida todos los bytes de salida contra el conjunto de caracteres. Los codificadores imprimibles / alfanuméricos / personalizados son registrados por bibliotecas downstream.
+2. **API de Plugins C fuera del árbol** — Interfaz de plugin C ABI pura (`NevercPluginAPI.h`) para pases IR, MIR, Binary y Linker personalizados. Los plugins se registran en 11 puntos de enganche shellcode (`NEVERC_HOOK_SC_*`). SDK de un solo encabezado, cero dependencias LLVM/CRT. Ver [documentación del API de Plugins](../../plugin-api/README.es.md).
 
 ## Planificado — Capa de plugins (vía hooks)
 

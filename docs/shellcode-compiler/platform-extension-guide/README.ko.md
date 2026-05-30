@@ -141,7 +141,7 @@ H.RunAfterInlining = [](llvm::ModulePassManager &MPM,
                         const neverc::shellcode::ShellcodeOptions &Opts) {
   MPM.addPass(MyCFFPass(Opts.ObfuscateSpec));
 };
-neverc::shellcode::setShellcodeObfuscationHooks(std::move(H));
+// Plugin API로 등록: NEVERC_HOOK_SC_* 훅 (plugin-api 문서 참조)
 ```
 
 MIR 수준 사용법:

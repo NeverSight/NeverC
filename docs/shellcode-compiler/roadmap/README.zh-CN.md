@@ -24,9 +24,7 @@ NeverC 的 shellcode 流水线涵盖：
 
 1. **大小 / 对齐 / 填充约束** — 内置功能。`-fshellcode-max-length=`、`-fshellcode-align=`、`-fshellcode-pad=` 在 `finalizeShellcodeBytes` 末尾执行。驱动会拒绝矛盾的配置（例如填充字节在坏字节集中，或无 align/max-length 时使用 pad）。
 
-2. **坏字节重写器接口** — 骨架已内置，无内置策略。`Plugin.h::registerBadByteRewriteStrategy` 暴露 SDK。`-fshellcode-bad-byte-rewrite` / `-fno-...` 控制 finalize 链是否调用重写器。禁用后退回到仅审计模式。下游库注册基于 Capstone 或自定义的重写策略。
-
-3. **字符集编码器接口** — 骨架已内置，无内置字符集。`Plugin.h::registerCharsetEncoder` 暴露 `(name, Encode, Stub, IsCharsetMember)` 元组。设置 `-fshellcode-charset=<name>` 后，finalize 阶段将 `.text` 替换为 `Stub(target) || Encode(text, target)` 并验证所有输出字节符合字符集。可打印 / 字母数字 / 自定义编码器由下游库注册。
+2. **树外 C 插件 API** — 纯 C ABI 插件接口（`NevercPluginAPI.h`），用于自定义 IR、MIR、Binary 和 Linker pass。插件通过 11 个 shellcode 钩子点（`NEVERC_HOOK_SC_*`）注册。单头文件 SDK，零 LLVM/CRT 依赖。详见 [Plugin API 文档](../../plugin-api/README.zh-CN.md)。
 
 ## 计划中 — 插件层（通过钩子）
 
