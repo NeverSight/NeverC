@@ -7,6 +7,13 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_neverc_library(nevercPlugin
+  BridgeAnalysis.cpp
+  BridgeDataStructures.cpp
+  BridgeIR.cpp
+  BridgeIRBuilder.cpp
+  BridgeLinker.cpp
+  BridgeMIR.cpp
+  BridgeString.cpp
   HostAPIBridge.cpp
   PluginLoader.cpp
   PluginPassAdaptor.cpp
