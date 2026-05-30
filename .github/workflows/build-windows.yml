@@ -60,6 +60,10 @@ jobs:
         neverc/llvm
         cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
 
+    - name: Build bundled Windows runtime
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-runtime-x64-msvc neverc-runtime-shared-msvc
+
     - name: Build Plugin SDK
       shell: bash
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
