@@ -1,6 +1,20 @@
 # NeverC unified compiler + linker CMake cache
 # Use: cmake -S llvm -B build-neverc -C neverc/cmake/caches/NeverC.cmake
 set(CMAKE_BUILD_TYPE Release CACHE STRING "")
+
+# On macOS, prefer Homebrew LLVM toolchain so the compiler and linker
+# (lld) share the same LLVM version.  Mixing Apple Clang with Homebrew
+# LLD causes LTO crashes due to bitcode incompatibilities.
+# Override with: -DCMAKE_C_COMPILER=... -DCMAKE_CXX_COMPILER=...
+if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_C_COMPILER)
+  find_program(_NEVERC_BREW_CC  clang   PATHS /opt/homebrew/opt/llvm/bin NO_DEFAULT_PATH)
+  find_program(_NEVERC_BREW_CXX clang++ PATHS /opt/homebrew/opt/llvm/bin NO_DEFAULT_PATH)
+  if(_NEVERC_BREW_CC AND _NEVERC_BREW_CXX)
+    set(CMAKE_C_COMPILER   "${_NEVERC_BREW_CC}"  CACHE FILEPATH "")
+    set(CMAKE_CXX_COMPILER "${_NEVERC_BREW_CXX}" CACHE FILEPATH "")
+    message(STATUS "NeverC: using Homebrew LLVM toolchain (${_NEVERC_BREW_CXX})")
+  endif()
+endif()
 set(NEVERC_RELEASE_OPT_LEVEL "2" CACHE STRING
     "Release optimization level for building neverc itself (2 or 3)")
 if(NEVERC_RELEASE_OPT_LEVEL STREQUAL "3")
@@ -129,11 +143,16 @@ set(NEVERC_ENABLE_MIMALLOC ON CACHE BOOL "")
 set(NEVERC_STRIP_BINARY ON CACHE BOOL "")
 
 # Full LTO for the final neverc binary: interprocedural optimisation.
-# Disabled under MSVC (uses /LTCG instead) and when cross-compiling
-# (linker may not support it).
+# Disabled under MSVC (uses /LTCG instead), when cross-compiling
+# (linker may not support it), and in Debug builds (LTO slows linking
+# dramatically and can trigger mismatches between the host compiler's
+# LLVM and the linker's LLVM, e.g. Apple Clang + Homebrew LLD).
 option(NEVERC_ENABLE_LTO "Enable Full LTO for the neverc binary" ON)
-if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING AND NOT MSVC)
+if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING AND NOT MSVC
+   AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(LLVM_ENABLE_LTO Full CACHE STRING "" FORCE)
+else()
+  set(LLVM_ENABLE_LTO OFF CACHE STRING "" FORCE)
 endif()
 
 # Profile-Guided Optimisation (PGO) two-phase build.

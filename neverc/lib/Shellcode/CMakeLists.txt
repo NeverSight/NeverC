@@ -76,26 +76,10 @@ endforeach()
 unset(_neverc_tables_out_dir)
 unset(_neverc_shellcode_tables)
 
-# E2E test-only plugin (OFF by default).  Compile-time gated; at runtime
-# the plugin also checks NEVERC_ENABLE_SHELLCODE_TEST_PLUGIN=1 in env.
-option(NEVERC_ENABLE_SHELLCODE_TEST_PLUGIN
-  "Compile the test plugin into nevercShellcode for e2e plugin SDK tests."
-  OFF)
-
-set(_neverc_shellcode_test_plugin_sources)
-if(NEVERC_ENABLE_SHELLCODE_TEST_PLUGIN)
-  list(APPEND _neverc_shellcode_test_plugin_sources
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/neverc/shellcode/test_plugin/TestShellcodePlugin.cpp)
-  # Directory-scoped so the macro reaches every TU in this CMakeLists.
-  add_definitions(-DNEVERC_HAVE_SHELLCODE_TEST_PLUGIN=1)
-endif()
-
 add_neverc_library(nevercShellcode
   Pipeline/DriverIntegration.cpp
   Pipeline/Pipeline.cpp
   Pipeline/TargetDesc.cpp
-
-  ${_neverc_shellcode_test_plugin_sources}
 
   Extractor/COFFExtractor.cpp
   Extractor/ELFExtractor.cpp

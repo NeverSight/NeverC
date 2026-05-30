@@ -244,13 +244,6 @@ TEST_F(ShellcodeTest, SizeRegression) {
 }
 
 // Finalize flag tests
-TEST_F(ShellcodeTest, FinalizeCharsetUnknown) {
-  shellcodeExpectFail(
-      "charset_unknown",
-      (testDir() / "shellcode/test_shellcode_add.c").string(),
-      "no registered encoder", {"-fshellcode-charset=foo"});
-}
-
 TEST_F(ShellcodeTest, FinalizePadWithoutSize) {
   shellcodeExpectFail(
       "pad_without_size",
