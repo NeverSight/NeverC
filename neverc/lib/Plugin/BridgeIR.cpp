@@ -143,8 +143,7 @@ static void bridgeValueReplaceAllUsesWith(NevercValueRef Old,
   Value *O = unwrapV(Old);
   Value *N = unwrapV(New);
   if (O->getType() != N->getType()) {
-    WithColor::warning(errs(), "neverc-plugin")
-        << "ValueReplaceAllUsesWith: type mismatch; ignoring\n";
+    bridgeDiagWarning("ValueReplaceAllUsesWith: type mismatch; ignoring");
     return;
   }
   O->replaceAllUsesWith(N);
@@ -361,8 +360,8 @@ static void bridgeInstEraseFromParent(NevercValueRef I) {
   if (LLVM_UNLIKELY(!Inst))
     return;
   if (!Inst->use_empty()) {
-    WithColor::warning(errs(), "neverc-plugin")
-        << "erasing instruction that still has uses; replacing with poison\n";
+    bridgeDiagWarning(
+        "erasing instruction that still has uses; replacing with poison");
     if (!Inst->getType()->isVoidTy())
       Inst->replaceAllUsesWith(PoisonValue::get(Inst->getType()));
   }
@@ -964,8 +963,8 @@ static void bridgeGlobalSetInitializer(NevercValueRef GV,
   }
   auto *C = dyn_cast<Constant>(unwrapV(Init));
   if (LLVM_UNLIKELY(!C)) {
-    WithColor::warning(errs(), "neverc-plugin")
-        << "GlobalSetInitializer called with non-constant value; ignoring\n";
+    bridgeDiagWarning(
+        "GlobalSetInitializer called with non-constant value; ignoring");
     return;
   }
   G->setInitializer(C);
@@ -1939,8 +1938,8 @@ static NevercBasicBlockRef bridgeBBSplitBefore(NevercBasicBlockRef BB,
     return nullptr;
   // splitBasicBlock asserts the BB has a terminator and I != end().
   if (LLVM_UNLIKELY(!Block->getTerminator())) {
-    WithColor::warning(errs(), "neverc-plugin")
-        << "BBSplitBefore called on BB without terminator; ignoring\n";
+    bridgeDiagWarning(
+        "BBSplitBefore called on BB without terminator; ignoring");
     return nullptr;
   }
   auto *NewBB = Block->splitBasicBlock(I->getIterator());
@@ -2472,8 +2471,8 @@ static void bridgeNamedMDAddOperand(NevercNamedMDRef NMD,
     return;
   auto *Node = dyn_cast<MDNode>(unwrapMD(MD));
   if (LLVM_UNLIKELY(!Node)) {
-    WithColor::warning(errs(), "neverc-plugin")
-        << "NamedMDAddOperand: expected MDNode, got other Metadata kind\n";
+    bridgeDiagWarning(
+        "NamedMDAddOperand: expected MDNode, got other Metadata kind");
     return;
   }
   unwrapNMD(NMD)->addOperand(Node);
