@@ -1,54 +1,17 @@
 #include "BridgeCastHelpers.h"
 #include "HostAPIBridge.h"
 #include "neverc/Plugin/PluginLoader.h"
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SCCIterator.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/Analysis/AssumptionCache.h"
-#include "llvm/Analysis/CallGraph.h"
-#include "llvm/Analysis/LoopInfo.h"
-#include "llvm/Analysis/PostDominators.h"
-#include "llvm/Analysis/ScalarEvolution.h"
-#include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/CodeGen/MachineBasicBlock.h"
-#include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/TargetInstrInfo.h"
-#include "llvm/CodeGen/TargetSubtargetInfo.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/CFG.h"
-#include "llvm/IR/Comdat.h"
-#include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/GlobalVariable.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/InstrTypes.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/Intrinsics.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Metadata.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/Support/Allocator.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/xxhash.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/Cloning.h"
 #include <cerrno>
 #include <chrono>
-#include <cstdarg>
-#include <cstdio>
 #include <cstdlib>
-#include <cstring>
 
 using namespace llvm;
 
@@ -247,26 +210,6 @@ static int bridgePluginHasArg(const char *Key) {
 static unsigned bridgePluginGetArgCount(void) {
   return static_cast<unsigned>(pluginArgStorage().Args.size());
 }
-// ===----------------------------------------------------------------------===
-//  String utilities
-// ===----------------------------------------------------------------------===
-
-// Two-digit lookup: "00010203...9899" -- halves the number of divisions in
-// integer-to-string conversion compared to single-digit extraction.
-static const char kDigitPairs[201] =
-    "00010203040506070809"
-    "10111213141516171819"
-    "20212223242526272829"
-    "30313233343536373839"
-    "40414243444546474849"
-    "50515253545556575859"
-    "60616263646566676869"
-    "70717273747576777879"
-    "80818283848586878889"
-    "90919293949596979899";
-// ===----------------------------------------------------------------------===
-//  Character search
-// ===----------------------------------------------------------------------===
 // ===----------------------------------------------------------------------===
 //  Batch collection
 // ===----------------------------------------------------------------------===
@@ -473,102 +416,6 @@ static unsigned bridgeFunctionGetInstructionCount(NevercValueRef F) {
   return Count;
 }
 // ===----------------------------------------------------------------------===
-//  LoopInfo -- on-demand loop nest analysis
-//  Bundles DominatorTree + LoopInfo so the plugin never manages the DomTree
-//  dependency.  The DomTree is kept alive because LoopInfo may reference it.
-// ===----------------------------------------------------------------------===
-
-namespace {
-struct LoopInfoState {
-  DominatorTree DT;
-  LoopInfo LI;
-
-  explicit LoopInfoState(Function &F) {
-    DT.recalculate(F);
-    LI.analyze(DT);
-  }
-};
-} // namespace
-// ===----------------------------------------------------------------------===
-//  SCEV -- on-demand ScalarEvolution analysis
-//  Bundles all dependencies (TLI, AC, DT, LI, SE) into one state object.
-//  SE is heap-allocated after DT/LI are populated to avoid referencing
-//  uninitialized analysis results.
-// ===----------------------------------------------------------------------===
-
-namespace {
-struct SCEVState {
-  TargetLibraryInfoImpl TLIImpl;
-  TargetLibraryInfo TLI;
-  AssumptionCache AC;
-  DominatorTree DT;
-  LoopInfo LI;
-  std::unique_ptr<ScalarEvolution> SE;
-
-  explicit SCEVState(Function &F)
-      : TLIImpl(Triple(F.getParent()->getTargetTriple())), TLI(TLIImpl),
-        AC(F) {
-    DT.recalculate(F);
-    LI.analyze(DT);
-    SE = std::make_unique<ScalarEvolution>(F, TLI, AC, DT, LI);
-  }
-};
-} // namespace
-// ===----------------------------------------------------------------------===
-//  CallGraph -- on-demand module-wide call graph with SCC recursion cache
-// ===----------------------------------------------------------------------===
-
-namespace {
-struct CallGraphState {
-  CallGraph CG;
-  SmallPtrSet<Function *, 32> RecursiveFns;
-
-  explicit CallGraphState(Module &M) : CG(M) {
-    for (scc_iterator<CallGraph *> I = scc_begin(&CG), E = scc_end(&CG);
-         I != E; ++I) {
-      if (!I.hasCycle())
-        continue;
-      for (CallGraphNode *Node : *I) {
-        if (Function *Fn = Node->getFunction())
-          RecursiveFns.insert(Fn);
-      }
-    }
-  }
-};
-} // namespace
-// ===----------------------------------------------------------------------===
-//  Linker API stubs
-//  These are populated with real implementations when the linker backends
-//  set up their per-invocation context.  During compilation (non-linking)
-//  they return safe defaults (NULL / 0 / empty string).
-// ===----------------------------------------------------------------------===
-// ===----------------------------------------------------------------------===
-//  Character class scanning (strspn / strcspn equivalents)
-//
-//  Build a 256-bit bitset from the class on entry then walk S with one
-//  branch per byte.  Faster than the libc strspn/strcspn variants on
-//  short character classes that revisit the class for every byte.
-// ===----------------------------------------------------------------------===
-
-namespace {
-struct ByteClass {
-  // 256 bits packed into 4x uint64_t.  Built once per call; queried by
-  // ((Bits[B >> 6] >> (B & 63)) & 1).
-  uint64_t Bits[4] = {0, 0, 0, 0};
-
-  void add(unsigned char B) { Bits[B >> 6] |= (uint64_t{1} << (B & 63)); }
-  bool contains(unsigned char B) const {
-    return (Bits[B >> 6] >> (B & 63)) & uint64_t{1};
-  }
-  void buildFrom(const char *Class) {
-    for (const unsigned char *P = reinterpret_cast<const unsigned char *>(
-             Class);
-         *P; ++P)
-      add(*P);
-  }
-};
-} // anonymous namespace
-// ===----------------------------------------------------------------------===
 //  One-call defined function collection
 // ===----------------------------------------------------------------------===
 
@@ -603,146 +450,6 @@ bridgeModuleCollectDefinedFunctions(NevercModuleRef M, unsigned *OutCount) {
       Buf[Idx++] = wrapV(&F);
   *OutCount = Count;
   return Buf;
-}
-// ===----------------------------------------------------------------------===
-//  SortCtx / BSearchCtx -- context-aware sort and binary search
-//  The 3-arg comparator int(*)(a, b, ctx) lets plugin callbacks access the
-//  host API vtable or pass state without hand-rolling CRT-like helpers.
-//  Implemented via a thread-local thunk: SortCtx stores the user comparator
-//  and context in TLS, calls std::qsort with a 2-arg shim that forwards to
-//  the 3-arg function.  The TLS access is a single memory load on x86/ARM64
-//  and introduces zero per-call heap allocation.
-// ===----------------------------------------------------------------------===
-
-namespace {
-
-struct SortCtxTLS {
-  int (*Cmp)(const void *, const void *, void *);
-  void *Ctx;
-};
-
-static thread_local SortCtxTLS TheSortCtx;
-
-static int sortCtxThunk(const void *A, const void *B) {
-  return TheSortCtx.Cmp(A, B, TheSortCtx.Ctx);
-}
-
-struct SortCtxGuard {
-  SortCtxTLS Saved;
-  SortCtxGuard(int (*Cmp)(const void *, const void *, void *), void *Ctx)
-      : Saved(TheSortCtx) {
-    TheSortCtx.Cmp = Cmp;
-    TheSortCtx.Ctx = Ctx;
-  }
-  ~SortCtxGuard() { TheSortCtx = Saved; }
-  SortCtxGuard(const SortCtxGuard &) = delete;
-  SortCtxGuard &operator=(const SortCtxGuard &) = delete;
-};
-
-} // namespace
-// ===----------------------------------------------------------------------===
-//  DynArray -- opaque growable array
-//  Geometric 2x growth, contiguous buffer, cache-friendly iteration.
-//  Two allocations: a small header (ElemSize/Count/Capacity/DataPtr) and the
-//  data buffer itself.  Both go through the host allocator.
-// ===----------------------------------------------------------------------===
-
-namespace {
-struct DynArrayImpl {
-  uint64_t ElemSize;
-  unsigned Count;
-  unsigned Capacity;
-  char *Data;
-};
-} // namespace
-
-static inline DynArrayImpl *unwrapDA(NevercDynArrayRef A) {
-  return reinterpret_cast<DynArrayImpl *>(A);
-}
-static inline NevercDynArrayRef wrapDA(DynArrayImpl *A) {
-  return reinterpret_cast<NevercDynArrayRef>(A);
-}
-
-static int dynArrayGrowTo(DynArrayImpl *A, unsigned MinCapacity) {
-  if (LLVM_LIKELY(MinCapacity <= A->Capacity))
-    return 1;
-  unsigned NewCap = A->Capacity == 0 ? 16 : A->Capacity;
-  while (NewCap < MinCapacity) {
-    unsigned Doubled = NewCap * 2;
-    if (LLVM_UNLIKELY(Doubled <= NewCap))
-      return 0;
-    NewCap = Doubled;
-  }
-  uint64_t Bytes = static_cast<uint64_t>(NewCap) * A->ElemSize;
-  if (LLVM_UNLIKELY(Bytes / A->ElemSize != NewCap))
-    return 0;
-  char *NewData = static_cast<char *>(bridgeRealloc(A->Data, Bytes));
-  if (LLVM_UNLIKELY(!NewData))
-    return 0;
-  A->Data = NewData;
-  A->Capacity = NewCap;
-  return 1;
-}
-// ===----------------------------------------------------------------------===
-//  StrMap -- opaque string-keyed hash table
-//  Backed by LLVM's StringMap: open addressing with quadratic probing,
-//  cache-friendly allocation-dense buckets, keys copied inline.
-// ===----------------------------------------------------------------------===
-
-static inline StringMap<uint64_t> *unwrapSM(NevercStrMapRef M) {
-  return reinterpret_cast<StringMap<uint64_t> *>(M);
-}
-static inline NevercStrMapRef wrapSM(StringMap<uint64_t> *M) {
-  return reinterpret_cast<NevercStrMapRef>(M);
-}
-// ===----------------------------------------------------------------------===
-//  StrBuilder -- opaque incremental string construction
-//  Backed by LLVM's SmallString<256>: inline storage avoids heap alloc
-//  for strings up to 256 bytes, geometric growth beyond.
-// ===----------------------------------------------------------------------===
-
-static inline SmallString<256> *unwrapSB(NevercStrBuilderRef SB) {
-  return reinterpret_cast<SmallString<256> *>(SB);
-}
-static inline NevercStrBuilderRef wrapSB(SmallString<256> *SB) {
-  return reinterpret_cast<NevercStrBuilderRef>(SB);
-}
-// ===----------------------------------------------------------------------===
-//  IntMap -- integer-keyed hash table
-//  Backed by LLVM DenseMap<uint64_t, uint64_t>: open addressing, quadratic
-//  probing, cache-friendly contiguous buckets.  Sentinel keys 0xFFFF...FF
-//  and 0xFFFF...FE are rejected at the API boundary.
-// ===----------------------------------------------------------------------===
-
-static constexpr uint64_t kIntMapEmptyKey = ~uint64_t(0);
-static constexpr uint64_t kIntMapTombstone = ~uint64_t(0) - 1;
-
-static inline bool isIntMapReservedKey(uint64_t Key) {
-  return Key >= kIntMapTombstone;
-}
-
-static inline DenseMap<uint64_t, uint64_t> *unwrapIM(NevercIntMapRef M) {
-  return reinterpret_cast<DenseMap<uint64_t, uint64_t> *>(M);
-}
-static inline NevercIntMapRef wrapIM(DenseMap<uint64_t, uint64_t> *M) {
-  return reinterpret_cast<NevercIntMapRef>(M);
-}
-// Arena ops moved to BridgeDataStructures.cpp
-// ===----------------------------------------------------------------------===
-//  ValueSet -- opaque hash set of NevercValueRef pointers
-//  Backed by LLVM DenseSet<void *>: open addressing, quadratic probing,
-//  O(1) amortized insert/contains/remove.  Sentinel pointer values
-//  ((void*)-1 and (void*)-2) are never produced by the LLVM IR wrapping
-//  layer, so no special-case rejection is needed beyond NULL guards.
-// ===----------------------------------------------------------------------===
-
-using ValueSetImpl = DenseSet<void *>;
-
-static inline ValueSetImpl *unwrapVS(NevercValueSetRef S) {
-  return reinterpret_cast<ValueSetImpl *>(S);
-}
-static inline NevercValueSetRef wrapVS(ValueSetImpl *S) {
-  return reinterpret_cast<NevercValueSetRef>(S);
 }
 // MonotonicNanos -- exposed via the vtable so plugins can time intervals
 // without depending on <chrono> / <time.h> (which would break their
@@ -1162,68 +869,46 @@ NevercHostAPI buildHostAPI() {
   API.DiagWarning = bridgeDiagWarning;
   API.DiagError = bridgeDiagError;
 
-
   API.RegisterModulePass = bridgeNoOpRegisterModulePass;
   API.RegisterMachinePass = bridgeNoOpRegisterMachinePass;
   API.RegisterBinaryPass = bridgeNoOpRegisterBinaryPass;
+  API.RegisterLinkerPass = bridgeNoOpRegisterLinkerPass;
 
   API.BinaryResize = bridgeBinaryResize;
-
-
 
   API.HostIsShellcodeMode = bridgeHostIsShellcodeMode;
   API.HostGetShellcodeEntrySymbol = bridgeHostGetShellcodeEntrySymbol;
 
-
   API.PluginGetArg = bridgePluginGetArg;
   API.PluginHasArg = bridgePluginHasArg;
   API.PluginGetArgCount = bridgePluginGetArgCount;
-
-
-  API.RegisterLinkerPass = bridgeNoOpRegisterLinkerPass;
-
+  API.PluginGetArgBool = bridgePluginGetArgBool;
+  API.PluginGetArgInt64 = bridgePluginGetArgInt64;
+  API.PluginGetArgUInt64 = bridgePluginGetArgUInt64;
 
   API.ModuleCollectFunctions = bridgeModuleCollectFunctions;
   API.ModuleCollectGlobals = bridgeModuleCollectGlobals;
   API.FunctionCollectBBs = bridgeFunctionCollectBBs;
   API.BBCollectInstructions = bridgeBBCollectInstructions;
-
-
   API.ModuleGetAliasCount = bridgeModuleGetAliasCount;
   API.ModuleCollectAliases = bridgeModuleCollectAliases;
-
   API.ModuleCollectAllFunctions = bridgeModuleCollectAllFunctions;
   API.ModuleCollectAllGlobals = bridgeModuleCollectAllGlobals;
   API.ModuleCollectAllInstructions = bridgeModuleCollectAllInstructions;
-
-
   API.ModuleCollectDefinedFunctions = bridgeModuleCollectDefinedFunctions;
-
-
   API.BBCollectOpcodes = bridgeBBCollectOpcodes;
   API.ModuleCollectAllOpcodes = bridgeModuleCollectAllOpcodes;
-
   API.FunctionGetInstructionCount = bridgeFunctionGetInstructionCount;
-
-
-  API.PluginGetArgBool = bridgePluginGetArgBool;
-  API.PluginGetArgInt64 = bridgePluginGetArgInt64;
-  API.PluginGetArgUInt64 = bridgePluginGetArgUInt64;
+  API.ModuleGetDefinedFunctionCount = bridgeModuleGetDefinedFunctionCount;
 
   API.ArenaCollectFunctions = bridgeArenaCollectFunctions;
   API.ArenaCollectDefinedFunctions = bridgeArenaCollectDefinedFunctions;
   API.ArenaCollectInstructions = bridgeArenaCollectInstructions;
   API.ArenaCollectAllOpcodes = bridgeArenaCollectAllOpcodes;
-
-  API.ModuleGetDefinedFunctionCount = bridgeModuleGetDefinedFunctionCount;
-
-
   API.ArenaCollectBBs = bridgeArenaCollectBBs;
-
 
   API.ModuleGetFirstDefinedFunction = bridgeModuleGetFirstDefinedFunction;
   API.ModuleGetNextDefinedFunction = bridgeModuleGetNextDefinedFunction;
-
 
   API.MonotonicNanos = bridgeMonotonicNanos;
   API.ModuleIsLittleEndian = bridgeModuleIsLittleEndian;

@@ -682,34 +682,6 @@ static uint64_t bridgeStrFindStr(const char *Haystack, const char *Needle) {
   return P ? static_cast<uint64_t>(P - Haystack) : UINT64_MAX;
 }
 
-static const char *bridgeHookPointGetName(unsigned Hook) {
-  switch (Hook) {
-  case NEVERC_HOOK_PRE_OPT:                 return "PRE_OPT";
-  case NEVERC_HOOK_POST_OPT:                return "POST_OPT";
-  case NEVERC_HOOK_PIPELINE_START:          return "PIPELINE_START";
-  case NEVERC_HOOK_PIPELINE_LAST:           return "PIPELINE_LAST";
-  case NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT:  return "BEFORE_CODEGEN_PREEMIT";
-  case NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR: return "AFTER_CODEGEN_FINAL_MIR";
-  case NEVERC_HOOK_SC_BEFORE_PREP:          return "SC_BEFORE_PREP";
-  case NEVERC_HOOK_SC_AFTER_PREP:           return "SC_AFTER_PREP";
-  case NEVERC_HOOK_SC_BEFORE_INLINING:      return "SC_BEFORE_INLINING";
-  case NEVERC_HOOK_SC_AFTER_INLINING:       return "SC_AFTER_INLINING";
-  case NEVERC_HOOK_SC_AFTER_STACKIFY:       return "SC_AFTER_STACKIFY";
-  case NEVERC_HOOK_SC_AFTER_FINAL_IR:       return "SC_AFTER_FINAL_IR";
-  case NEVERC_HOOK_SC_BEFORE_PREEMIT:       return "SC_BEFORE_PREEMIT";
-  case NEVERC_HOOK_SC_AFTER_PREEMIT:        return "SC_AFTER_PREEMIT";
-  case NEVERC_HOOK_SC_AFTER_FINAL_MIR:      return "SC_AFTER_FINAL_MIR";
-  case NEVERC_HOOK_SC_POST_EXTRACT:         return "SC_POST_EXTRACT";
-  case NEVERC_HOOK_SC_POST_FINALIZE:        return "SC_POST_FINALIZE";
-  case NEVERC_HOOK_LTO_PRE_OPT:             return "LTO_PRE_OPT";
-  case NEVERC_HOOK_LTO_POST_OPT:            return "LTO_POST_OPT";
-  case NEVERC_HOOK_LINK_PRE_LAYOUT:         return "LINK_PRE_LAYOUT";
-  case NEVERC_HOOK_LINK_POST_LAYOUT:        return "LINK_POST_LAYOUT";
-  case NEVERC_HOOK_LINK_POST_EMIT:          return "LINK_POST_EMIT";
-  default:                                  return "<unknown>";
-  }
-}
-
 static void *bridgeMemDup(const void *Src, uint64_t Len) {
   if (LLVM_UNLIKELY(!Src || Len == 0))
     return nullptr;
