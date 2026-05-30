@@ -25,6 +25,18 @@ Integrierter Linker · Shellcode-Pipeline · Integrierte Laufzeiten (`string` ·
 
 NeverC kompiliert Standard-C in gehostete Binärdateien, Freestanding-Executables und positionsunabhängigen Shellcode — alles aus einer Toolchain. Zielarchitekturen: **x86_64** und **AArch64** (nur Little-Endian).
 
+## Warum NeverC?
+
+C ist bereits die einfachste Systemsprache. NeverC macht sie noch einfacher:
+
+- **Reines C23, mehr nicht** — Keine Templates, kein RAII, kein Operator-Overloading, kein versteckter Kontrollfluss. Was Sie lesen, wird ausgeführt.
+- **Eingebauter `string`** — Werttyp-String mit `+`, `==`, `.starts_with()` und automatischer Freigabe — ohne C++.
+- **Keine Exceptions** — Fehlerbehandlung bleibt explizit. Kein Stack-Unwinding, keine Performance-Überraschungen.
+- **Einzelne Binärdatei** — Compiler + Linker + Laufzeiten in einer einzigen ausführbaren Datei. Null externe Abhängigkeiten.
+- **LLM-freundlich** — Minimale Grammatik und deterministische Semantik sorgen dafür, dass KI-generierter NeverC-Code häufiger korrekt kompiliert als C++-Alternativen.
+- **Echte Cross-Kompilierung** — Windows-Executables und Shellcode von macOS oder Linux bauen — keine VM, kein Dual-Boot, keine SDK-Suche. Das Windows SDK ist im Compiler integriert.
+- **Sicherheitsforschung eingebaut** — Shellcode-Kompilierung, Kompilierzeit-Stringverschlüsselung und plattformübergreifende PE-Generierung sind nativ in den Compiler integriert — keine nachträglich angehängten externen Skripte.
+
 ## Funktionen
 
 - **[Shellcode-Compiler](../shellcode-compiler/README.de.md)** — mehrstufige IR/MIR-Pipeline, plattformübergreifende Extraktion, Import-/Syscall-Lowering, Kernelmodus, Bad-Byte-Audit, Plugin-Architektur

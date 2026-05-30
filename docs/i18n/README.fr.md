@@ -25,6 +25,18 @@
 
 NeverC compile du C standard en binaires hébergés, exécutables freestanding et shellcode indépendant de la position — le tout depuis une seule chaîne d'outils. Cible **x86_64** et **AArch64** (petit-boutien uniquement).
 
+## Pourquoi NeverC ?
+
+C est déjà le langage système le plus simple. NeverC le rend encore plus simple :
+
+- **C23 pur, rien de plus** — Pas de templates, pas de RAII, pas de surcharge d'opérateurs, pas de flux de contrôle caché. Ce que vous lisez est ce qui s'exécute.
+- **`string` intégré** — Type chaîne à sémantique de valeur avec `+`, `==`, `.starts_with()` et libération automatique — sans C++.
+- **Pas d'exceptions** — La gestion d'erreurs reste explicite. Pas de déroulement de pile, pas de surprises de performance.
+- **Binaire unique** — Compilateur + éditeur de liens + runtimes dans un seul exécutable. Zéro dépendance externe.
+- **Compatible LLM** — Grammaire minimale et sémantique déterministe : le code NeverC généré par IA compile correctement plus souvent que les alternatives C++.
+- **Véritable compilation croisée** — Compilez des exécutables Windows et du shellcode depuis macOS ou Linux — pas de VM, pas de dual boot, pas de SDK à chercher. Le Windows SDK est intégré au compilateur.
+- **Recherche en sécurité intégrée** — Compilation shellcode, chiffrement de chaînes à la compilation et génération PE multiplateforme sont nativement intégrés au compilateur — pas des ajouts bricolés avec des scripts externes.
+
 ## Fonctionnalités
 
 - **[Compilateur shellcode](../shellcode-compiler/README.fr.md)** — pipeline IR/MIR multi-étapes, extraction multiplateforme, résolution d'imports/syscalls, mode noyau, audit d'octets interdits, architecture de plugins
