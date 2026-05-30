@@ -59,6 +59,30 @@ jobs:
         neverc/llvm
         cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
 
+    - name: Build Plugin SDK
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
+
+    - name: Test Plugin SDK (standalone build)
+      shell: bash
+      run: |
+        cmake -S build/pluginsdk/examples -B build-plugin-test
+        cmake --build build-plugin-test
+
+    - name: Test Plugin SDK (plugin loading)
+      shell: bash
+      run: |
+        printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
+        for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
+          echo "--- Testing $plugin ---"
+          build/bin/neverc \
+            --target=x86_64-pc-windows-msvc \
+            -fplugin-pass=build-plugin-test/${plugin}.dll \
+            /tmp/plugin_test.c -o /tmp/plugin_test.obj 2>&1 \
+            | head -40
+          echo "--- $plugin OK ---"
+        done
+
     - name: Run neverc tests
       shell: bash
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc

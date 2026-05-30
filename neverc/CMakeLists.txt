@@ -350,6 +350,10 @@ add_subdirectory(lib/Linker)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../runtime
                  ${CMAKE_CURRENT_BINARY_DIR}/runtime)
 
+# Out-of-tree plugin SDK (header + examples + build template).
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../pluginsdk
+                 ${CMAKE_CURRENT_BINARY_DIR}/pluginsdk)
+
 option(NEVERC_ENABLE_BENCH "Build NeverC microbenchmarks" OFF)
 if(NEVERC_ENABLE_BENCH)
   add_subdirectory(bench)
@@ -359,7 +363,8 @@ option(NEVERC_BUILD_EXAMPLE_PLUGIN
   "Build the pure-C ExamplePlugin sample (no LLVM link)" OFF)
 if(NEVERC_BUILD_EXAMPLE_PLUGIN)
   set(NEVERC_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
-  add_subdirectory(examples/plugin)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../pluginsdk/examples
+                   ${CMAKE_CURRENT_BINARY_DIR}/pluginsdk-examples)
 endif()
 
 # mimalloc high-performance allocator
