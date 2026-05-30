@@ -19,6 +19,7 @@ namespace neverc {
 namespace plugin {
 
 bool gShellcodeModeEnabled = false;
+
 // ===----------------------------------------------------------------------===
 //  Memory -- route through host process allocator
 //  When NEVERC_ENABLE_MIMALLOC=ON the neverc binary links mimalloc with
@@ -54,36 +55,7 @@ void bridgeDiagWarning(const char *Msg) {
 void bridgeDiagError(const char *Msg) {
   WithColor::error(errs(), "neverc-plugin") << (Msg ? Msg : "") << "\n";
 }
-// Defined function iterators -- skip declarations at the C++ level so the
-// plugin pays one vtable call per defined function instead of two (GetNext +
-// IsDeclaration).  For modules with many declarations (system headers, libc)
-// this eliminates the per-declaration vtable overhead entirely.
 
-static NevercValueRef bridgeModuleGetFirstDefinedFunction(NevercModuleRef M) {
-  if (LLVM_UNLIKELY(!M))
-    return nullptr;
-  for (auto &F : *unwrap(M))
-    if (!F.isDeclaration())
-      return wrapV(&F);
-  return nullptr;
-}
-
-static NevercValueRef
-bridgeModuleGetNextDefinedFunction(NevercValueRef F) {
-  if (LLVM_UNLIKELY(!F))
-    return nullptr;
-  auto *Fn = dyn_cast<Function>(unwrapV(F));
-  if (LLVM_UNLIKELY(!Fn || !Fn->getParent()))
-    return nullptr;
-  auto It = std::next(Fn->getIterator());
-  auto End = Fn->getParent()->end();
-  while (It != End) {
-    if (!It->isDeclaration())
-      return wrapV(&*It);
-    ++It;
-  }
-  return nullptr;
-}
 // ===----------------------------------------------------------------------===
 //  Register stubs -- safe no-ops so the vtable is never null for these slots.
 //  PluginLoader replaces them with real registrars during RegisterPasses and
@@ -130,6 +102,7 @@ static int bridgeBinaryResize(uint8_t **Data, uint64_t *Len,
   *Capacity = NewCap;
   return 1;
 }
+
 // ===----------------------------------------------------------------------===
 //  Compilation mode queries
 //  The shellcode library publishes its current state via
@@ -210,6 +183,7 @@ static int bridgePluginHasArg(const char *Key) {
 static unsigned bridgePluginGetArgCount(void) {
   return static_cast<unsigned>(pluginArgStorage().Args.size());
 }
+
 // ===----------------------------------------------------------------------===
 //  Batch collection
 // ===----------------------------------------------------------------------===
@@ -415,6 +389,7 @@ static unsigned bridgeFunctionGetInstructionCount(NevercValueRef F) {
     Count += BB.size();
   return Count;
 }
+
 // ===----------------------------------------------------------------------===
 //  One-call defined function collection
 // ===----------------------------------------------------------------------===
@@ -451,12 +426,45 @@ bridgeModuleCollectDefinedFunctions(NevercModuleRef M, unsigned *OutCount) {
   *OutCount = Count;
   return Buf;
 }
-// MonotonicNanos -- exposed via the vtable so plugins can time intervals
-// without depending on <chrono> / <time.h> (which would break their
-// zero-CRT contract).  std::chrono::steady_clock is guaranteed monotonic
-// per [time.clock.steady]/p1.  We reduce the duration to nanoseconds via
-// std::chrono::duration_cast which the optimizer compiles down to a single
-// multiply on every platform we target.
+
+// ===----------------------------------------------------------------------===
+//  Defined function iterators
+//  Skip declarations at the C++ level so the plugin pays one vtable call
+//  per defined function instead of two (GetNext + IsDeclaration).  For
+//  modules with many declarations (system headers, libc) this eliminates
+//  the per-declaration vtable overhead entirely.
+// ===----------------------------------------------------------------------===
+
+static NevercValueRef bridgeModuleGetFirstDefinedFunction(NevercModuleRef M) {
+  if (LLVM_UNLIKELY(!M))
+    return nullptr;
+  for (auto &F : *unwrap(M))
+    if (!F.isDeclaration())
+      return wrapV(&F);
+  return nullptr;
+}
+
+static NevercValueRef
+bridgeModuleGetNextDefinedFunction(NevercValueRef F) {
+  if (LLVM_UNLIKELY(!F))
+    return nullptr;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (LLVM_UNLIKELY(!Fn || !Fn->getParent()))
+    return nullptr;
+  auto It = std::next(Fn->getIterator());
+  auto End = Fn->getParent()->end();
+  while (It != End) {
+    if (!It->isDeclaration())
+      return wrapV(&*It);
+    ++It;
+  }
+  return nullptr;
+}
+
+// ===----------------------------------------------------------------------===
+//  Timing and module metadata
+// ===----------------------------------------------------------------------===
+
 static uint64_t bridgeMonotonicNanos(void) {
   using namespace std::chrono;
   return static_cast<uint64_t>(

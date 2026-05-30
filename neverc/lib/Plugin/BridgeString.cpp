@@ -1,7 +1,5 @@
 #include "BridgeCastHelpers.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/WithColor.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/xxhash.h"
 #include <cerrno>
 #include <cstdarg>
@@ -13,6 +11,7 @@ using namespace llvm;
 namespace neverc {
 namespace plugin {
 
+// ===----------------------------------------------------------------------===
 //  String utilities
 // ===----------------------------------------------------------------------===
 
