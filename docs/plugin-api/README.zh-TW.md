@@ -42,8 +42,7 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
 ```bash
 cc -shared -o MyPlugin.dll MyPlugin.c -I/path/to/pluginsdk/include
 
-cmake -S /path/to/pluginsdk/examples -B build
-cmake --build build
+make -C /path/to/pluginsdk/examples
 ```
 
 ### 執行
@@ -193,7 +192,7 @@ pluginsdk/
 │       └── Plugin/
 │           └── NevercPluginAPI.h    # 唯一需要的標頭檔
 └── examples/
-    ├── CMakeLists.txt       # 獨立建置範本
+    ├── Makefile             # 獨立建置範本
     ├── ExamplePlugin.c      # 綜合示範
     ├── CrtShimPlugin.c      # 零 CRT 依賴概念驗證
     └── BenchPlugin.c        # HostAPI 吞吐量微基準測試

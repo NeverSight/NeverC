@@ -43,9 +43,8 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
 # Single-command build (any C compiler):
 cc -shared -o MyPlugin.dll MyPlugin.c -I/path/to/pluginsdk/include
 
-# Or with CMake (using the shipped template):
-cmake -S /path/to/pluginsdk/examples -B build
-cmake --build build
+# Or with Make (using the shipped Makefile):
+make -C /path/to/pluginsdk/examples
 ```
 
 ### Run
@@ -381,7 +380,7 @@ pluginsdk/
 │       └── Plugin/
 │           └── NevercPluginAPI.h    # The only header you need
 └── examples/
-    ├── CMakeLists.txt       # Standalone build template
+    ├── Makefile             # Standalone build template
     ├── ExamplePlugin.c      # Comprehensive demo (IR + MIR + Binary + LTO + Linker)
     ├── CrtShimPlugin.c      # Zero-CRT-dependency proof of concept
     └── BenchPlugin.c        # HostAPI throughput micro-benchmarks

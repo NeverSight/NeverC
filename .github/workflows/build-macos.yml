@@ -56,21 +56,19 @@ jobs:
       - name: Build Plugin SDK
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
 
-      - name: Test Plugin SDK (standalone build)
+      - name: Test Plugin SDK (build + load)
         run: |
-          cmake -S build/pluginsdk/examples -B build-plugin-test
-          cmake --build build-plugin-test
-
-      - name: Test Plugin SDK (plugin loading)
-        run: |
+          set -e
+          make -C build/pluginsdk/examples \
+            NEVERC=$PWD/build/bin/neverc \
+            INCLUDE_DIR=$PWD/build/pluginsdk/include
           printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
           for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
             echo "--- Testing $plugin ---"
             build/bin/neverc \
               --target=x86_64-pc-windows-msvc \
-              -fplugin-pass=build-plugin-test/${plugin}.dylib \
-              /tmp/plugin_test.c -o /tmp/plugin_test.obj 2>&1 \
-              | head -40
+              -fplugin-pass=build/pluginsdk/examples/${plugin}.dylib \
+              -c /tmp/plugin_test.c -o /tmp/plugin_test.obj
             echo "--- $plugin OK ---"
           done
 

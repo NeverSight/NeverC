@@ -42,8 +42,7 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
 ```bash
 cc -shared -o MyPlugin.dll MyPlugin.c -I/path/to/pluginsdk/include
 
-cmake -S /path/to/pluginsdk/examples -B build
-cmake --build build
+make -C /path/to/pluginsdk/examples
 ```
 
 ### Exécution
@@ -151,7 +150,7 @@ pluginsdk/
 │       └── Plugin/
 │           └── NevercPluginAPI.h    # Le seul en-tête nécessaire
 └── examples/
-    ├── CMakeLists.txt       # Modèle de compilation autonome
+    ├── Makefile             # Modèle de compilation autonome
     ├── ExamplePlugin.c      # Démonstration complète
     ├── CrtShimPlugin.c      # Preuve de concept zéro CRT
     └── BenchPlugin.c        # Micro-benchmarks de débit HostAPI

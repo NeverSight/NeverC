@@ -359,13 +359,6 @@ if(NEVERC_ENABLE_BENCH)
   add_subdirectory(bench)
 endif()
 
-option(NEVERC_BUILD_EXAMPLE_PLUGIN
-  "Build the pure-C ExamplePlugin sample (no LLVM link)" OFF)
-if(NEVERC_BUILD_EXAMPLE_PLUGIN)
-  set(NEVERC_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../pluginsdk/examples
-                   ${CMAKE_CURRENT_BINARY_DIR}/pluginsdk-examples)
-endif()
 
 # mimalloc high-performance allocator
 option(NEVERC_ENABLE_MIMALLOC

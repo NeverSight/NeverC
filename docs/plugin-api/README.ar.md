@@ -126,7 +126,7 @@ pluginsdk/
 │       └── Plugin/
 │           └── NevercPluginAPI.h
 └── examples/
-    ├── CMakeLists.txt
+    ├── Makefile
     ├── ExamplePlugin.c
     ├── CrtShimPlugin.c
     └── BenchPlugin.c

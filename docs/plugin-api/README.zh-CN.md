@@ -43,9 +43,8 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
 # 单命令构建（任意 C 编译器）：
 cc -shared -o MyPlugin.dll MyPlugin.c -I/path/to/pluginsdk/include
 
-# 或使用 CMake（使用 SDK 附带的模板）：
-cmake -S /path/to/pluginsdk/examples -B build
-cmake --build build
+# 或使用 Make（使用 SDK 附带的 Makefile）：
+make -C /path/to/pluginsdk/examples
 ```
 
 ### 运行
@@ -365,7 +364,7 @@ pluginsdk/
 │       └── Plugin/
 │           └── NevercPluginAPI.h    # 唯一需要的头文件
 └── examples/
-    ├── CMakeLists.txt       # 独立构建模板
+    ├── Makefile             # 独立构建模板
     ├── ExamplePlugin.c      # 综合演示（IR + MIR + Binary + LTO + Linker）
     ├── CrtShimPlugin.c      # 零 CRT 依赖概念验证
     └── BenchPlugin.c        # HostAPI 吞吐量微基准测试

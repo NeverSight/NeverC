@@ -42,8 +42,7 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
 ```bash
 cc -shared -o MyPlugin.dll MyPlugin.c -I/path/to/pluginsdk/include
 
-cmake -S /path/to/pluginsdk/examples -B build
-cmake --build build
+make -C /path/to/pluginsdk/examples
 ```
 
 ### 実行
@@ -153,7 +152,7 @@ pluginsdk/
 │       └── Plugin/
 │           └── NevercPluginAPI.h    # 必要なのはこのヘッダーのみ
 └── examples/
-    ├── CMakeLists.txt       # スタンドアロンビルドテンプレート
+    ├── Makefile             # スタンドアロンビルドテンプレート
     ├── ExamplePlugin.c      # 包括的デモ
     ├── CrtShimPlugin.c      # ゼロ CRT 依存の概念実証
     └── BenchPlugin.c        # HostAPI スループットベンチマーク
