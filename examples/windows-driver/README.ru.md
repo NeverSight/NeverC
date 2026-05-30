@@ -1,3 +1,5 @@
+**Языки**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
 # Пример драйвера ядра Windows
 
 Минимальный драйвер ядра WDM, собранный с помощью NeverC. Кросс-компиляция с macOS / Linux.

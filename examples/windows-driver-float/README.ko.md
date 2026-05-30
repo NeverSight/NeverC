@@ -1,3 +1,5 @@
+**언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
 # 부동소수점 연산을 사용하는 Windows 커널 드라이버
 
 NeverC로 빌드한 WDM 커널 드라이버로, **커널 모드에서 부동소수점 / SIMD를
