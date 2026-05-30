@@ -25,6 +25,7 @@ macro(runtime_sdk_target _name _stamp_name)
     list(GET _parts 1 _dst)
 
     list(APPEND _cmds
+      COMMAND "${CMAKE_COMMAND}" -E rm -rf "${RUNTIME_DST}/${_dst}"
       COMMAND "${CMAKE_COMMAND}" -E make_directory "${RUNTIME_DST}/${_dst}"
       COMMAND "${CMAKE_COMMAND}" -E copy_directory
         "${RUNTIME_SRC}/${_src}" "${RUNTIME_DST}/${_dst}")
