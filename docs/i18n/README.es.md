@@ -35,6 +35,7 @@ C ya es el lenguaje de sistemas más simple. NeverC lo hace aún más simple:
 - **Binario único** — Compilador + enlazador + runtimes en un solo ejecutable. Cero dependencias externas.
 - **Compatible con LLM** — Gramática mínima y semántica determinista hacen que el código NeverC generado por IA compile correctamente con más frecuencia que las alternativas en C++.
 - **Verdadera compilación cruzada** — Compile ejecutables Windows y shellcode desde macOS o Linux — sin VM, sin arranque dual, sin buscar SDKs. El Windows SDK viene integrado en el compilador.
+- **[Sistema de plugins](../plugin-api/README.es.md), un solo encabezado** — API C pura con 20+ puntos de enganche en IR, MIR, binario y enlazador. Escribe un plugin en cualquier lenguaje e intervén en prácticamente cualquier punto del pipeline de compilación — sin encabezados LLVM.
 - **Investigación en seguridad integrada** — Compilación de shellcode, cifrado de cadenas en tiempo de compilación y generación PE multiplataforma están integrados nativamente en el compilador — no parches añadidos con scripts externos.
 
 ## Características
