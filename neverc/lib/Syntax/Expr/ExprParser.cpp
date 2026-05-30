@@ -1552,7 +1552,16 @@ ExprResult Parser::ParseAvailabilityCheckExpr(SourceLocation BeginLoc) {
 
 bool Parser::ParseUnqualifiedId(UnqualifiedId &Result) {
   if (Tok.is(tok::identifier)) {
-    Result.setIdentifier(Tok.getIdentifierInfo(), ConsumeToken());
+    // Capture identifier BEFORE ConsumeToken() — C++ does not guarantee
+    // function-argument evaluation order, so merging these into
+    //   setIdentifier(Tok.getIdentifierInfo(), ConsumeToken())
+    // lets the optimizer call ConsumeToken() first, advancing Tok and
+    // returning nullptr from getIdentifierInfo().  LTO builds on Windows
+    // reliably trigger this, producing "no member named ''" for every
+    // struct member access.
+    IdentifierInfo *II = Tok.getIdentifierInfo();
+    SourceLocation Loc = ConsumeToken();
+    Result.setIdentifier(II, Loc);
     return false;
   }
   Diag(Tok, diag::err_expected_unqualified_id) << 0;
