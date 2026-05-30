@@ -48,6 +48,7 @@ jobs:
             -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
             -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0 \
             -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_ENABLE_LTO=ON \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -C neverc/neverc/cmake/caches/NeverC.cmake \
             neverc/llvm

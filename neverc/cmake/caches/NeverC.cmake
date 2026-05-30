@@ -143,11 +143,10 @@ set(NEVERC_ENABLE_MIMALLOC ON CACHE BOOL "")
 set(NEVERC_STRIP_BINARY ON CACHE BOOL "")
 
 # Full LTO for the final neverc binary: interprocedural optimisation.
-# Disabled under MSVC (uses /LTCG instead), when cross-compiling
-# (linker may not support it), and in Debug builds (LTO slows linking
-# dramatically and can trigger mismatches between the host compiler's
-# LLVM and the linker's LLVM, e.g. Apple Clang + Homebrew LLD).
-option(NEVERC_ENABLE_LTO "Enable Full LTO for the neverc binary" ON)
+# Defaults OFF for fast incremental rebuilds during local development.
+# CI workflows should pass -DNEVERC_ENABLE_LTO=ON for release artifacts.
+# Always disabled under MSVC, when cross-compiling, or in Debug builds.
+option(NEVERC_ENABLE_LTO "Enable Full LTO for the neverc binary" OFF)
 if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING AND NOT MSVC
    AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(LLVM_ENABLE_LTO Full CACHE STRING "" FORCE)
