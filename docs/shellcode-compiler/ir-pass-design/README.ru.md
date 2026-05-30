@@ -28,4 +28,4 @@
 
 **Шифрование кеша адресов** (§4.1, общее для WinPEBImportPass и KernelImportPass): разрешённые адреса шифруются перед сохранением через безXOR арифметическую декомпозицию `(a + b) - 2*(a & b)` + `volatile` промежуточные. Три подключаемые функции (`__sc_derive_key`, `__sc_ptr_encrypt`, `__sc_ptr_decrypt`). Слоты кеша на (DLL, API) в секции `.text`. Быстрый/медленный путь с `cmpxchg weak` (потокобезопасно). Пользователь может предоставить собственные реализации (`always_inline`, взаимно обратные, без внешних вызовов). См. [README.md §4.1–4.5](README.md#41-address-cache-encryption) для полных деталей.
 
-11 хуков обфускации. Философия диагностики: 1 ошибка = 1 действенная диагностика. См. [plugin-interface.md §6](../plugin-interface/README.ru.md#6-registration-position-selection--pic-coverage-matrix) и [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.ru.md).
+11 хуков обфускации (`NEVERC_HOOK_SC_*`). Философия диагностики: 1 ошибка = 1 действенная диагностика. См. [Plugin API — Точки подключения](../../plugin-api/README.ru.md#5-точки-подключения) и [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.ru.md).

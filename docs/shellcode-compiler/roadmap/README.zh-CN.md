@@ -79,7 +79,7 @@ auditFinalBadBytes                    (内置硬审计)
 applyShellcodeSizing                  (-fshellcode-align/-max-length/-pad)
 ```
 
-用法和代码示例见 [plugin-interface.md](../plugin-interface/README.zh-CN.md)。
+用法和代码示例见 [Plugin API 文档](../../plugin-api/README.zh-CN.md)。
 
 ## 不计划实现
 

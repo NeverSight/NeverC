@@ -137,5 +137,3 @@ pluginsdk/
 ```
 
 ## 12. وثائق ذات صلة
-
-- [واجهة إضافات Shellcode](../shellcode-compiler/plugin-interface/README.ar.md) — نقاط التمديد C++ الداخلية لخط أنابيب shellcode.

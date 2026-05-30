@@ -25,7 +25,6 @@
 | [IR Pass Design](shellcode-compiler/ir-pass-design/README.ar.md) | مبررات كل مرور IR |
 | [MIR Pass Design](shellcode-compiler/mir-pass-design/README.ar.md) | مرورات MIR للخلفية |
 | [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.ar.md) | تجميع Ring-0 |
-| [Plugin Interface](shellcode-compiler/plugin-interface/README.ar.md) | إضافات التشويش والترميز |
 | [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.ar.md) | `TargetDesc` والمستخرجات |
 | [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.ar.md) | إضافة منصة |
 | [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.ar.md) | تعليمات ARM64 من منظور shellcode |

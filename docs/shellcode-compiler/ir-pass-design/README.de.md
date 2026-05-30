@@ -55,7 +55,7 @@ Phase 1: Konstant-GVs → Immediates/Stack-Stores. Phase 2: SROA-Residual-Split 
 Direkte Aufrufe → indirekte via volatile Slot.
 
 ## 9. Obfuskations-Hooks
-11 Hook-Punkte. Siehe [plugin-interface.md §6](../plugin-interface/README.de.md#6-registration-position-selection--pic-coverage-matrix).
+11 Hook-Punkte (`NEVERC_HOOK_SC_*`). Siehe [Plugin API — Hook-Punkte](../../plugin-api/README.de.md#5-hook-punkte).
 
 ## 10. Zwei-Phasen-Design
 Phase 1 reinigt originales IR; Phase 2 reinigt optimizer-eingeführte Konstrukte.

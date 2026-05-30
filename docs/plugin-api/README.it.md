@@ -137,5 +137,3 @@ pluginsdk/
 ```
 
 ## 12. Documentazione correlata
-
-- [Interfaccia plugin Shellcode](../shellcode-compiler/plugin-interface/README.it.md) — Punti di estensione C++ in-tree per la pipeline shellcode.

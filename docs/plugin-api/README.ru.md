@@ -137,5 +137,3 @@ pluginsdk/
 ```
 
 ## 12. Связанная документация
-
-- [Интерфейс плагинов Shellcode](../shellcode-compiler/plugin-interface/README.ru.md) — Точки расширения C++ in-tree для конвейера shellcode.

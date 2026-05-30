@@ -168,5 +168,3 @@ pluginsdk/
 ```
 
 ## 13. 관련 문서
-
-- [Shellcode 플러그인 인터페이스](../shellcode-compiler/plugin-interface/README.ko.md) — shellcode 파이프라인의 in-tree C++ 확장 포인트.

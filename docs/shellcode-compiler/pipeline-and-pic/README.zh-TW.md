@@ -68,7 +68,6 @@ IR 和 MIR 全域回呼均使用**註冊一次、執行時讀取當前 `Shellcod
 - **IR 混淆**：透過 `setShellcodeObfuscationHooks` 提供多個 IR 階段掛鉤；`-fshellcode-obfuscate=` 將 spec 字串傳遞給外部庫。每層提供**前**（最佳化前）和**後**（最佳化後）掛鉤。`RunAfterFinalIR` 是真正的最後 IR 維度可注入點——註冊在此的混淆 pass 之後沒有後續 pass 能修改其輸出。共 11 個掛鉤（6 IR + 3 MIR + 2 位元組流）。
 - **MIR 混淆**：`RunBeforePreEmit` / `RunAfterPreEmit` 是中粒度 MIR 掛鉤；`RunAfterFinalMIR` 是**真正最後**的 MIR 掛鉤（fork 擴充新增了 `RegisterTargetPassConfigPostPreEmitCallbackFn`，在 `addPreEmitPass2()` 之後呼叫）。`-fshellcode-mir-obfuscate=` 單獨指定 MIR spec；未設定時預設使用 IR spec。
 - **位元組流掛鉤**：`RunPostExtract` 是 finalize **前**掛鉤；`RunPostFinalize` 是 finalize **後**掛鉤（寫入磁碟前的最後時刻，NeverC 不再稽核）。
-- **Finalize 外掛 SDK**：`Plugin.h` 暴露 `registerBadByteRewriteStrategy`（鏈式指令級壞位元組重寫策略）和 `registerCharsetEncoder`（命名字元集註冊）。見 [plugin-interface.md 第 2–3 節](../plugin-interface/README.zh-TW.md#2-bad-byte-rewriter-badbyterewritestrategy)。
 - **大小/對齊/填充**：`-fshellcode-max-length=`、`-fshellcode-align=`、`-fshellcode-pad=` 在 finalize 末尾執行；驅動拒絕矛盾的配置。
 - **設計選擇**：混淆、多型、分階段編碼器、間接系統呼叫等策略層功能**有意不內建**，僅作為可選外掛提供。
 

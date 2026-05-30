@@ -23,7 +23,6 @@
 | [IR Pass Design](shellcode-compiler/ir-pass-design/README.ru.md) | Обоснование каждого IR-прохода |
 | [MIR Pass Design](shellcode-compiler/mir-pass-design/README.ru.md) | MIR-проходы бэкенда |
 | [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.ru.md) | Компиляция Ring-0 |
-| [Plugin Interface](shellcode-compiler/plugin-interface/README.ru.md) | Плагины обфускации и кодирования |
 | [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.ru.md) | `TargetDesc` и экстракторы |
 | [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.ru.md) | Добавление платформы |
 | [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.ru.md) | Инструкции ARM64 с точки зрения shellcode |

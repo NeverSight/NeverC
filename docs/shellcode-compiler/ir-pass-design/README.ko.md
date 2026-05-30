@@ -87,7 +87,7 @@ Phase 2: SROA 잔여 벡터 store 분할. 벡터 상수 인라인화.
 직접 호출 → volatile 슬롯 + `blr xN` / `call *rax` 간접 호출.
 
 ## 9. 난독화 훅
-11개 훅 포인트. [plugin-interface.md §6](../plugin-interface/README.ko.md#6-registration-position-selection--pic-coverage-matrix) 참조.
+11개 훅 포인트（`NEVERC_HOOK_SC_*`）. [Plugin API — 훅 포인트](../../plugin-api/README.ko.md#5-훅-포인트) 참조.
 
 ## 10. 2단계 설계 근거
 Phase 1은 원본 IR 정리. LLVM 최적화 후 Phase 2는 최적화기가 도입한 새 구조를 정리.

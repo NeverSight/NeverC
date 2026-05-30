@@ -202,5 +202,3 @@ pluginsdk/
 ```
 
 ## 13. 相關文件
-
-- [Shellcode 外掛介面](../shellcode-compiler/plugin-interface/README.zh-TW.md) — shellcode 管線的 in-tree C++ 擴充點。

@@ -68,7 +68,6 @@ Windows 타겟으로 크로스 컴파일 시 NeverC는 **하드코딩된 절대 
 - **IR 난독화**: `setShellcodeObfuscationHooks`로 복수 IR 단계 훅 제공; `-fshellcode-obfuscate=`가 spec 문자열을 외부 라이브러리에 전달. 각 계층에 **전**(최적화 전)과 **후**(최적화 후) 훅 있음. `RunAfterFinalIR`은 진정한 마지막 IR 주입 가능 지점——여기 등록된 난독화 pass 이후 출력을 수정하는 pass 없음. 총 11개 훅(6 IR + 3 MIR + 2 바이트스트림).
 - **MIR 난독화**: `RunBeforePreEmit` / `RunAfterPreEmit`는 중간 수준 MIR 훅; `RunAfterFinalMIR`은 **진정한 마지막** MIR 훅(fork 확장이 `RegisterTargetPassConfigPostPreEmitCallbackFn` 추가, `addPreEmitPass2()` 후 호출). `-fshellcode-mir-obfuscate=`로 MIR spec을 별도 지정; 미설정 시 IR spec이 기본.
 - **바이트스트림 훅**: `RunPostExtract`는 finalize **전** 훅; `RunPostFinalize`는 finalize **후** 훅(디스크 기록 전 마지막 순간, NeverC는 이후 감사하지 않음).
-- **Finalize 플러그인 SDK**: `Plugin.h`가 `registerBadByteRewriteStrategy`(명령 수준 금지 바이트 재작성 전략 체인)와 `registerCharsetEncoder`(명명된 캐릭터셋 등록)를 노출. [plugin-interface.md 제 2–3절](../plugin-interface/README.ko.md#2-bad-byte-rewriter-badbyterewritestrategy) 참조.
 - **크기/정렬/패딩**: `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=`가 finalize 끝에 실행; 드라이버가 모순된 설정을 거부.
 - **설계 선택**: 난독화, 다형성, 단계 인코더, 간접 시스템 콜 등 전략 계층 기능은 **의도적으로 내장하지 않으며**, 선택적 플러그인으로만 제공.
 

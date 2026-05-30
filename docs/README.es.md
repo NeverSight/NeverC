@@ -23,7 +23,6 @@ El pipeline de compilación de shellcode es el foco principal de investigación 
 | [IR Pass Design](shellcode-compiler/ir-pass-design/README.es.md) | Razón de cada pasada IR |
 | [MIR Pass Design](shellcode-compiler/mir-pass-design/README.es.md) | Pasadas MIR del backend |
 | [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.es.md) | Compilación Ring-0 |
-| [Plugin Interface](shellcode-compiler/plugin-interface/README.es.md) | Plugins de ofuscación y codificación |
 | [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.es.md) | `TargetDesc` y extractores |
 | [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.es.md) | Añadir plataforma |
 | [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.es.md) | Instrucciones ARM64 desde la perspectiva de shellcode |

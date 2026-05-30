@@ -170,5 +170,3 @@ pluginsdk/
 ```
 
 ## 13. 関連ドキュメント
-
-- [Shellcode プラグインインターフェース](../shellcode-compiler/plugin-interface/README.ja.md) — shellcode パイプラインの in-tree C++ 拡張ポイント。

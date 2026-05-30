@@ -4,7 +4,6 @@
 #include "neverc/Shellcode/Import/SyscallTables.h"
 #include "neverc/Shellcode/Import/WinImportTables.h"
 #include "neverc/Shellcode/Pipeline/Pipeline.h"
-#include "neverc/Shellcode/Pipeline/Plugin.h"
 #include "neverc/Shellcode/Pipeline/SymbolNames.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/Twine.h"
@@ -323,82 +322,6 @@ bool auditFinalBadBytes(ArrayRef<uint8_t> Bytes, const ShellcodeOptions &Opts) {
 
 namespace {
 
-bool runBadByteRewriters(SmallVectorImpl<uint8_t> &Bytes,
-                         const ShellcodeOptions &Opts) {
-  if (Opts.BadBytes.empty() || !Opts.BadByteRewrite)
-    return true;
-  ArrayRef<BadByteRewriteStrategy> Strategies = getBadByteRewriteStrategies();
-  if (Strategies.empty())
-    return true;
-
-  BadByteRewriteContext Ctx;
-  Ctx.Bytes = &Bytes;
-  Ctx.BadBytes = Opts.BadBytes;
-  Ctx.Target = &Opts.Target;
-  Ctx.Opts = &Opts;
-  for (size_t Idx = 0, E = Strategies.size(); Idx < E; ++Idx) {
-    BadByteRewriteResult Res = Strategies[Idx](Ctx);
-    if (Res == BadByteRewriteResult::Error) {
-      errs() << "shellcode-extractor: bad-byte rewrite strategy #" << Idx
-             << " reported an unrecoverable error; finalize aborted\n";
-      return false;
-    }
-  }
-  return true;
-}
-
-bool runCharsetEncoder(SmallVectorImpl<uint8_t> &Bytes,
-                       const ShellcodeOptions &Opts) {
-  if (Opts.Charset.empty())
-    return true;
-  const CharsetEncoderEntry *Entry = getCharsetEncoder(Opts.Charset);
-  if (!Entry) {
-    errs() << "shellcode-extractor: -fshellcode-charset='" << Opts.Charset
-           << "' has no registered encoder; downstream libraries are expected "
-              "to call neverc::shellcode::registerCharsetEncoder before "
-              "invoking the driver.  Available built-in charsets: <none>\n";
-    return false;
-  }
-  if (!Entry->Encode || !Entry->Stub || !Entry->IsCharsetMember) {
-    errs() << "shellcode-extractor: charset encoder '" << Opts.Charset
-           << "' is missing a required callback (Encode/Stub/IsCharsetMember); "
-              "refusing to run\n";
-    return false;
-  }
-
-  SmallVector<uint8_t, 256> Stub = Entry->Stub(Opts.Target);
-  SmallVector<uint8_t, 256> Encoded =
-      Entry->Encode(ArrayRef<uint8_t>(Bytes.data(), Bytes.size()), Opts.Target);
-  for (size_t I = 0; I < Stub.size(); ++I) {
-    if (!Entry->IsCharsetMember(Stub[I])) {
-      errs() << "shellcode-extractor: charset encoder '" << Opts.Charset
-             << "' decoder stub byte ";
-      printHexByte(errs(), Stub[I]);
-      errs() << " at offset 0x";
-      errs().write_hex(I);
-      errs() << " is outside the declared charset; the encoder is "
-                "self-inconsistent\n";
-      return false;
-    }
-  }
-  for (size_t I = 0; I < Encoded.size(); ++I) {
-    if (!Entry->IsCharsetMember(Encoded[I])) {
-      errs() << "shellcode-extractor: charset encoder '" << Opts.Charset
-             << "' produced byte ";
-      printHexByte(errs(), Encoded[I]);
-      errs() << " at offset 0x";
-      errs().write_hex(I);
-      errs() << " which is outside the declared charset\n";
-      return false;
-    }
-  }
-
-  Bytes.clear();
-  Bytes.append(Stub.begin(), Stub.end());
-  Bytes.append(Encoded.begin(), Encoded.end());
-  return true;
-}
-
 bool applyShellcodeSizing(SmallVectorImpl<uint8_t> &Bytes,
                           const ShellcodeOptions &Opts) {
   uint8_t Pad = Opts.PadByte.value_or(0x00);
@@ -418,19 +341,6 @@ bool applyShellcodeSizing(SmallVectorImpl<uint8_t> &Bytes,
       printHexByte(errs(), Pad);
       errs() << " is in the bad-byte set; pass -fshellcode-pad=<byte> with a "
                 "byte that the bad-byte audit accepts\n";
-      return false;
-    }
-  }
-
-  if (WantsPadding && !Opts.Charset.empty()) {
-    const CharsetEncoderEntry *Entry = getCharsetEncoder(Opts.Charset);
-    if (Entry && Entry->IsCharsetMember && !Entry->IsCharsetMember(Pad)) {
-      errs() << "shellcode-extractor: pad byte ";
-      printHexByte(errs(), Pad);
-      errs() << " is outside the charset declared by encoder '" << Opts.Charset
-             << "'; padding would break charset compliance.  Pass "
-                "-fshellcode-pad=<byte> with a byte that the encoder's "
-                "IsCharsetMember predicate accepts.\n";
       return false;
     }
   }
@@ -462,10 +372,6 @@ bool applyShellcodeSizing(SmallVectorImpl<uint8_t> &Bytes,
 int finalizeShellcodeBytes(SmallVectorImpl<uint8_t> &Bytes,
                            const ShellcodeOptions &Opts) {
   applyPostExtractObfuscationHook(Bytes);
-  if (!runBadByteRewriters(Bytes, Opts))
-    return 1;
-  if (!runCharsetEncoder(Bytes, Opts))
-    return 1;
   if (!auditFinalBadBytes(Bytes, Opts))
     return 1;
   if (!applyShellcodeSizing(Bytes, Opts))

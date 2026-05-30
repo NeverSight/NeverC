@@ -91,7 +91,7 @@ Phase 2：拆分 SROA 殘留向量 store。內嵌向量常數。
 直接呼叫 → volatile 槽 + `blr xN` / `call *rax` 間接呼叫。
 
 ## 9. 混淆掛鉤
-11 個掛鉤點。詳見 [plugin-interface.md 第 6 節](../plugin-interface/README.zh-TW.md#6-registration-position-selection--pic-coverage-matrix)。
+11 個掛鉤點（`NEVERC_HOOK_SC_*`）。詳見 [Plugin API — 勾點](../../plugin-api/README.zh-TW.md#5-勾點)。
 
 ## 10. 兩階段設計理據
 Phase 1 清理原始 IR；LLVM 最佳化後 Phase 2 清理最佳化器引入的新構造。

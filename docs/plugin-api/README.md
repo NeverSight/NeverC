@@ -410,5 +410,3 @@ pluginsdk/
 ```
 
 ## 14. Related Documentation
-
-- [Shellcode Plugin Interface](../shellcode-compiler/plugin-interface/README.md) — In-tree C++ extension points for the shellcode pipeline (separate from this out-of-tree C API).

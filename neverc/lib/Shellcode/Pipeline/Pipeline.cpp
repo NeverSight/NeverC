@@ -25,11 +25,6 @@ namespace neverc {
 namespace shellcode {
 
 namespace {
-ObfuscationHooks &hookStorage() {
-  static ObfuscationHooks S;
-  return S;
-}
-
 ShellcodeOptions &currentShellcodeOptionsStorage() {
   static ShellcodeOptions S;
   return S;
@@ -39,25 +34,7 @@ bool &machinePassCallbackInstalled() {
   static bool Installed = false;
   return Installed;
 }
-
-void runIRHook(const ObfuscationHook &Hook, ModulePassManager &MPM,
-               const ShellcodeOptions &Opts) {
-  if (Hook)
-    Hook(MPM, Opts);
-}
-
-void runMIRHook(const MachineObfuscationHook &Hook, TargetPassConfig &TPC,
-                const ShellcodeOptions &Opts) {
-  if (Hook)
-    Hook(TPC, Opts);
-}
 } // namespace
-
-void setShellcodeObfuscationHooks(ObfuscationHooks H) {
-  hookStorage() = std::move(H);
-}
-
-const ObfuscationHooks &getShellcodeObfuscationHooks() { return hookStorage(); }
 
 const ShellcodeOptions &getCurrentShellcodeOptions() {
   return currentShellcodeOptionsStorage();
@@ -118,9 +95,6 @@ void applyPostExtractObfuscationHook(llvm::SmallVectorImpl<uint8_t> &Bytes) {
   const ShellcodeOptions &Opts = currentShellcodeOptionsStorage();
   if (!Opts.Enabled)
     return;
-  const ObfuscationHooks &H = hookStorage();
-  if (H.RunPostExtract)
-    H.RunPostExtract(Bytes, Opts);
   runPluginBinaryHooks(Bytes, NEVERC_HOOK_SC_POST_EXTRACT);
 }
 
@@ -128,9 +102,6 @@ void applyPostFinalizeObfuscationHook(llvm::SmallVectorImpl<uint8_t> &Bytes) {
   const ShellcodeOptions &Opts = currentShellcodeOptionsStorage();
   if (!Opts.Enabled)
     return;
-  const ObfuscationHooks &H = hookStorage();
-  if (H.RunPostFinalize)
-    H.RunPostFinalize(Bytes, Opts);
   runPluginBinaryHooks(Bytes, NEVERC_HOOK_SC_POST_FINALIZE);
 }
 
@@ -150,14 +121,10 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
     const ShellcodeOptions &Opts = getCurrentShellcodeOptions();
     if (!Opts.Enabled)
       return;
-    const ObfuscationHooks &H = getShellcodeObfuscationHooks();
-
     auto &PL = neverc::plugin::getGlobalPluginLoader();
 
-    runIRHook(H.RunBeforePrep, MPM, Opts);
     neverc::plugin::addPluginModulePasses(MPM, NEVERC_HOOK_SC_BEFORE_PREP, PL);
     MPM.addPass(ZeroRelocPass(Opts.EntrySymbol));
-    runIRHook(H.RunAfterPrep, MPM, Opts);
     neverc::plugin::addPluginModulePasses(MPM, NEVERC_HOOK_SC_AFTER_PREP, PL);
     MPM.addPass(IndirectBrPass());
     MPM.addPass(MemIntrinPass());
@@ -183,7 +150,6 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
     MPM.addPass(KernelImportPass(Opts));
 
     MPM.addPass(Data2TextPass());
-    runIRHook(H.RunBeforeInlining, MPM, Opts);
     neverc::plugin::addPluginModulePasses(
         MPM, NEVERC_HOOK_SC_BEFORE_INLINING, PL);
   });
@@ -193,26 +159,21 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
         const ShellcodeOptions &Opts = getCurrentShellcodeOptions();
         if (!Opts.Enabled)
           return;
-        const ObfuscationHooks &H = getShellcodeObfuscationHooks();
-
         auto &PL = neverc::plugin::getGlobalPluginLoader();
 
         MPM.addPass(CompilerRtPass());
-        runIRHook(H.RunAfterInlining, MPM, Opts);
         neverc::plugin::addPluginModulePasses(
             MPM, NEVERC_HOOK_SC_AFTER_INLINING, PL);
         MPM.addPass(StringRuntimeInlineFinalizePass());
         MPM.addPass(AlwaysInlinerPass());
         MPM.addPass(Data2TextPass());
         MPM.addPass(ZeroRelocPass(Opts.EntrySymbol));
-        runIRHook(H.RunAfterStackify, MPM, Opts);
         neverc::plugin::addPluginModulePasses(
             MPM, NEVERC_HOOK_SC_AFTER_STACKIFY, PL);
 
         if (Opts.AllBlr)
           MPM.addPass(AllBlrPass());
 
-        runIRHook(H.RunAfterFinalIR, MPM, Opts);
         neverc::plugin::addPluginModulePasses(
             MPM, NEVERC_HOOK_SC_AFTER_FINAL_IR, PL);
 
@@ -235,15 +196,11 @@ void registerShellcodeMachinePasses(const ShellcodeOptions &Opts) {
     const ShellcodeOptions &Opts = currentShellcodeOptionsStorage();
     if (!Opts.Enabled)
       return;
-    const ObfuscationHooks &H = getShellcodeObfuscationHooks();
-
     auto &PL = neverc::plugin::getGlobalPluginLoader();
 
-    runMIRHook(H.RunBeforePreEmit, TPC, Opts);
     neverc::plugin::addPluginMachinePasses(TPC, NEVERC_HOOK_SC_BEFORE_PREEMIT,
                                            PL);
     TPC.addExternalPass(createShellcodeMIRPrepPass(Opts));
-    runMIRHook(H.RunAfterPreEmit, TPC, Opts);
     neverc::plugin::addPluginMachinePasses(TPC, NEVERC_HOOK_SC_AFTER_PREEMIT,
                                            PL);
   });
@@ -253,11 +210,8 @@ void registerShellcodeMachinePasses(const ShellcodeOptions &Opts) {
         const ShellcodeOptions &Opts = currentShellcodeOptionsStorage();
         if (!Opts.Enabled)
           return;
-        const ObfuscationHooks &H = getShellcodeObfuscationHooks();
-
         auto &PL = neverc::plugin::getGlobalPluginLoader();
 
-        runMIRHook(H.RunAfterFinalMIR, TPC, Opts);
         neverc::plugin::addPluginMachinePasses(
             TPC, NEVERC_HOOK_SC_AFTER_FINAL_MIR, PL);
       });

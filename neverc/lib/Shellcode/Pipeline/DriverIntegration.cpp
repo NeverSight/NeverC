@@ -306,7 +306,7 @@ bool collectOptions(const llvm::opt::InputArgList &Args,
     if (Name.empty()) {
       llvm::errs() << "neverc: error: " << A->getSpelling()
                    << " expects a non-empty charset name registered via "
-                      "Plugin.h::registerCharsetEncoder\n";
+                      "registerCharsetEncoder\n";
       return false;
     }
     Out.Charset = Name.str();

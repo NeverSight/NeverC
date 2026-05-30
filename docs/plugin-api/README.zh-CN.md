@@ -394,5 +394,3 @@ pluginsdk/
 ```
 
 ## 14. 相关文档
-
-- [Shellcode 插件接口](../shellcode-compiler/plugin-interface/README.zh-CN.md) — shellcode 流水线的 in-tree C++ 扩展点（与本 out-of-tree C API 分开）。

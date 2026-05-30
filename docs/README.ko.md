@@ -23,7 +23,6 @@ Shellcode 컴파일 파이프라인은 NeverC의 핵심 연구 영역입니다. 
 | [IR Pass Design](shellcode-compiler/ir-pass-design/README.ko.md) | 각 IR 패스 설계 근거 |
 | [MIR Pass Design](shellcode-compiler/mir-pass-design/README.ko.md) | 백엔드 MIR 패스 |
 | [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.ko.md) | Ring-0 컴파일 |
-| [Plugin Interface](shellcode-compiler/plugin-interface/README.ko.md) | 난독화·인코딩 플러그인 |
 | [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.ko.md) | `TargetDesc` 및 추출기 |
 | [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.ko.md) | 새 플랫폼 추가 |
 | [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.ko.md) | shellcode 관점의 ARM64 명령어 |

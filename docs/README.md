@@ -23,7 +23,6 @@ The shellcode compilation pipeline is NeverC's primary research focus. For archi
 | [IR Pass Design](shellcode-compiler/ir-pass-design/README.md) | Rationale for each IR pass |
 | [MIR Pass Design](shellcode-compiler/mir-pass-design/README.md) | Backend MIR passes |
 | [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.md) | Ring-0 compilation |
-| [Plugin Interface](shellcode-compiler/plugin-interface/README.md) | Obfuscation and encoding plugins |
 | [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.md) | `TargetDesc` and extractors |
 | [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.md) | Adding new targets |
 | [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.md) | ARM64 instructions from a shellcode perspective |

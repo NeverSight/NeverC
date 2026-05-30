@@ -68,7 +68,6 @@ Entrambe funzionano senza registro o variabili d'ambiente VS dell'OS.
 - **Offuscamento IR**: Via `setShellcodeObfuscationHooks`; `-fshellcode-obfuscate=` passa la stringa spec. 11 hook totali (6 IR + 3 MIR + 2 flusso byte).
 - **Offuscamento MIR**: `RunBeforePreEmit` / `RunAfterPreEmit` / `RunAfterFinalMIR`. `-fshellcode-mir-obfuscate=` per spec MIR separato.
 - **Hook flusso byte**: `RunPostExtract` (pre-finalize) e `RunPostFinalize` (post-finalize).
-- **SDK plugin Finalize**: `Plugin.h` espone `registerBadByteRewriteStrategy` e `registerCharsetEncoder`. Vedere [plugin-interface.md §2–§3](../plugin-interface/README.it.md#2-bad-byte-rewriter-badbyterewritestrategy).
 - **Dimensione / allineamento / padding**: `-fshellcode-max-length=`, `-fshellcode-align=`, `-fshellcode-pad=`.
 - **Scelta di design**: Offuscamento, polimorfismo, encoder a stadi, syscall indiretti **intenzionalmente non integrati**, solo come plugin opzionali.
 

@@ -79,7 +79,7 @@ auditFinalBadBytes                    (audit rigido integrato)
 applyShellcodeSizing                  (-fshellcode-align/-max-length/-pad)
 ```
 
-Utilizzo ed esempi di codice in [plugin-interface.md](../plugin-interface/README.it.md).
+Utilizzo ed esempi di codice nella [documentazione Plugin API](../../plugin-api/README.it.md).
 
 ## Non pianificato
 

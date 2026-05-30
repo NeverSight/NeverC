@@ -68,7 +68,6 @@ Windows ターゲットへのクロスコンパイル時、NeverC は**ハード
 - **IR 難読化**：`setShellcodeObfuscationHooks` で複数 IR ステージフックを提供；`-fshellcode-obfuscate=` が spec 文字列を外部ライブラリに渡す。各層に**前**（最適化前）と**後**（最適化後）フックあり。`RunAfterFinalIR` は真の最終 IR 注入可能ポイント——ここに登録した難読化 pass の後に出力を変更する pass はない。計 11 フック（6 IR + 3 MIR + 2 バイトストリーム）。
 - **MIR 難読化**：`RunBeforePreEmit` / `RunAfterPreEmit` は中粒度 MIR フック；`RunAfterFinalMIR` は**真の最終** MIR フック（fork 拡張が `RegisterTargetPassConfigPostPreEmitCallbackFn` を追加、`addPreEmitPass2()` 後に呼出）。`-fshellcode-mir-obfuscate=` で MIR spec を個別指定；未設定時は IR spec がデフォルト。
 - **バイトストリームフック**：`RunPostExtract` は finalize **前**フック；`RunPostFinalize` は finalize **後**フック（ディスク書込前の最後の瞬間、NeverC は以降監査しない）。
-- **Finalize プラグイン SDK**：`Plugin.h` が `registerBadByteRewriteStrategy`（命令レベル禁止バイト書換戦略のチェーン）と `registerCharsetEncoder`（名前付きキャラセット登録）を公開。[plugin-interface.md 第 2–3 節](../plugin-interface/README.ja.md#2-bad-byte-rewriter-badbyterewritestrategy)を参照。
 - **サイズ/アライメント/パディング**：`-fshellcode-max-length=`、`-fshellcode-align=`、`-fshellcode-pad=` が finalize 末尾で実行；ドライバは矛盾する設定を拒否。
 - **設計選択**：難読化、ポリモーフィズム、段階エンコーダ、間接 syscall 等の戦略層機能は**意図的に組み込まず**、オプションプラグインとしてのみ提供。
 

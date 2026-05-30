@@ -79,7 +79,7 @@ auditFinalBadBytes                    (ビルトインハード監査)
 applyShellcodeSizing                  (-fshellcode-align/-max-length/-pad)
 ```
 
-使用法とコード例は [plugin-interface.md](../plugin-interface/README.ja.md) を参照。
+使用法とコード例は [Plugin API ドキュメント](../../plugin-api/README.ja.md) を参照。
 
 ## 計画なし
 

@@ -23,7 +23,6 @@ La pipeline di compilazione shellcode è il focus principale di ricerca di Never
 | [IR Pass Design](shellcode-compiler/ir-pass-design/README.it.md) | Motivazione di ogni pass IR |
 | [MIR Pass Design](shellcode-compiler/mir-pass-design/README.it.md) | Pass MIR backend |
 | [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.it.md) | Compilazione Ring-0 |
-| [Plugin Interface](shellcode-compiler/plugin-interface/README.it.md) | Plugin offuscazione e codifica |
 | [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.it.md) | `TargetDesc` ed estrattori |
 | [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.it.md) | Aggiungere piattaforma |
 | [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.it.md) | Istruzioni ARM64 dalla prospettiva shellcode |

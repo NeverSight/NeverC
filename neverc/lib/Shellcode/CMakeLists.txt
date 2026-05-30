@@ -93,7 +93,6 @@ endif()
 add_neverc_library(nevercShellcode
   Pipeline/DriverIntegration.cpp
   Pipeline/Pipeline.cpp
-  Pipeline/Plugins.cpp
   Pipeline/TargetDesc.cpp
 
   ${_neverc_shellcode_test_plugin_sources}

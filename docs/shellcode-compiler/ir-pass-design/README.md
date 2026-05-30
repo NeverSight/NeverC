@@ -289,7 +289,7 @@ Activated by `-fshellcode-all-blr`. Converts remaining intra-module direct calls
 
 ## 9. Obfuscation Hooks
 
-`Pipeline.h::ObfuscationHooks` provides 11 hook points for third-party obfuscation passes. See [plugin-interface.md §6](../plugin-interface/README.md#6-registration-position-selection--pic-coverage-matrix) for the full PIC coverage matrix and recommended registration positions.
+The out-of-tree C plugin API provides 11 shellcode hook points (`NEVERC_HOOK_SC_*`) for third-party obfuscation passes. See [Plugin API — Hook Points](../../plugin-api/README.md#5-hook-points) for the full list.
 
 Key design principles:
 - **Registration position is a contract**: earlier hooks have broader built-in fixup coverage

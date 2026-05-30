@@ -271,7 +271,6 @@ docs/shellcode-compiler/
 ├── mir-pass-design/README.md
 ├── pipeline-and-pic/README.md
 ├── platform-extension-guide/README.md
-├── plugin-interface/README.md
 ├── progress/README.md
 └── roadmap/README.md
 ```

@@ -289,7 +289,7 @@ void *__sc_ptr_decrypt(uint64_t enc) {
 
 ## 9. 混淆钩子
 
-`Pipeline.h::ObfuscationHooks` 为第三方混淆 pass 提供 11 个钩子点。详见 [plugin-interface.md 第 6 节](../plugin-interface/README.zh-CN.md#6-registration-position-selection--pic-coverage-matrix) 的完整 PIC 覆盖矩阵和推荐注册位置。
+out-of-tree C 插件 API 为第三方混淆 pass 提供 11 个 shellcode 钩子点（`NEVERC_HOOK_SC_*`）。详见 [Plugin API — 钩子点](../../plugin-api/README.zh-CN.md#5-钩子点)。
 
 关键设计原则：
 - **注册位置是契约**：越早注册越有更广的内置 PIC 修复覆盖

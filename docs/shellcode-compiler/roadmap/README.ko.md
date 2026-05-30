@@ -79,7 +79,7 @@ auditFinalBadBytes                    (내장 하드 감사)
 applyShellcodeSizing                  (-fshellcode-align/-max-length/-pad)
 ```
 
-사용법 및 코드 예제는 [plugin-interface.md](../plugin-interface/README.ko.md) 참조.
+사용법 및 코드 예제는 [Plugin API 문서](../../plugin-api/README.ko.md) 참조.
 
 ## 계획 없음
 
