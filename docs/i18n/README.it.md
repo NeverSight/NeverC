@@ -4,7 +4,7 @@
 
 # NeverC
 
-**Compilatore C23 orientato alla ricerca sulla sicurezza, costruito su LLVM**
+**Il compilatore C23 AI-friendly per la ricerca sulla sicurezza, costruito su LLVM**
 
 Linker integrato · Pipeline shellcode · Runtime integrati (`string` · `mimalloc` · `xorstr`)
 

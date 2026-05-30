@@ -4,7 +4,7 @@
 
 # NeverC
 
-**LLVM 기반의 보안 연구용 C23 컴파일러**
+**AI 친화적인 보안 연구용 C23 컴파일러 — LLVM 기반**
 
 통합 링커 · Shellcode 파이프라인 · 내장 런타임（`string` · `mimalloc` · `xorstr`）
 

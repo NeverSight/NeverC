@@ -4,7 +4,7 @@
 
 # NeverC
 
-**基於 LLVM 的安全研究向 C23 編譯器**
+**AI 友好的安全研究 C23 編譯器，基於 LLVM 建構**
 
 整合連結器 · Shellcode 流水線 · 內建執行時（`string` · `mimalloc` · `xorstr`）
 

@@ -4,7 +4,7 @@
 
 # NeverC
 
-**Sicherheitsforschungsorientierter C23-Compiler auf LLVM-Basis**
+**Der KI-freundliche C23-Compiler für Sicherheitsforschung — auf LLVM gebaut**
 
 Integrierter Linker · Shellcode-Pipeline · Integrierte Laufzeiten (`string` · `mimalloc` · `xorstr`)
 

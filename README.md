@@ -4,7 +4,7 @@
 
 # NeverC
 
-**A security-research-oriented C23 compiler built on LLVM**
+**The AI-friendly C23 compiler for security research, built on LLVM**
 
 Integrated linker · Shellcode pipeline · Built-in runtimes (`string` · `mimalloc` · `xorstr`)
 

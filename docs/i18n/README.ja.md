@@ -4,7 +4,7 @@
 
 # NeverC
 
-**LLVM 上に構築されたセキュリティ研究向け C23 コンパイラ**
+**AI フレンドリーなセキュリティ研究向け C23 コンパイラ — LLVM 上に構築**
 
 統合リンカ · Shellcode パイプライン · 組み込みランタイム（`string` · `mimalloc` · `xorstr`）
 
