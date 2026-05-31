@@ -1542,7 +1542,7 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, LookupResult &R,
   return true;
 }
 
-__attribute__((hot)) ExprResult
+NEVERC_HOT ExprResult
 Sema::OnIdExpression(Scope *S, UnqualifiedId &Id, bool HasTrailingLParen,
                      bool IsAddressOfOperand, CorrectionCandidateCallback *CCC,
                      bool IsInlineAsmIdentifier, Token *KeywordReplacement) {
@@ -1645,7 +1645,7 @@ ExprResult Sema::FormDeclarationNameExpr(LookupResult &R) {
                                  R.getRepresentativeDecl());
 }
 
-__attribute__((hot)) ExprResult Sema::FormDeclarationNameExpr(
+NEVERC_HOT ExprResult Sema::FormDeclarationNameExpr(
     const DeclarationNameInfo &NameInfo, NamedDecl *D, NamedDecl *FoundD) {
   assert(D && "Cannot refer to a NULL declaration");
 
@@ -1872,7 +1872,7 @@ Expr *formFloatingLiteral(Sema &S, NumericLiteralParser &Literal, QualType Ty,
 }
 } // namespace
 
-__attribute__((hot)) ExprResult Sema::OnNumericConstant(const Token &Tok) {
+NEVERC_HOT ExprResult Sema::OnNumericConstant(const Token &Tok) {
   // Fast path: single digit is extremely common in real-world C code.
   if (Tok.getLength() == 1) {
     const char Val = PP.getSpellingOfSingleCharacterNumericConstant(Tok);
@@ -3396,7 +3396,7 @@ ExprResult Sema::OnCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
                       /*AllowRecovery=*/true);
 }
 
-__attribute__((hot)) ExprResult Sema::FormCallExpr(Scope *Scope, Expr *Fn,
+NEVERC_HOT ExprResult Sema::FormCallExpr(Scope *Scope, Expr *Fn,
                                                    SourceLocation LParenLoc,
                                                    MultiExprArg ArgExprs,
                                                    SourceLocation RParenLoc,

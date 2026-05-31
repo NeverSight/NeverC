@@ -63,7 +63,7 @@ TokenScratch::TokenScratch(SourceManager &SM)
   BytesUsed = InitialChunkCapacity;
 }
 
-__attribute__((hot)) SourceLocation
+NEVERC_HOT SourceLocation
 TokenScratch::getToken(const char *Buf, unsigned Len, const char *&DestPtr) {
   BytesUsed = llvm::alignTo(BytesUsed, 4u);
 

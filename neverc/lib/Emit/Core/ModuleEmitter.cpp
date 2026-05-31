@@ -2061,7 +2061,7 @@ template <typename AttrT> bool hasImplicitAttr(const ValueDecl *D) {
 // Emission dispatch
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) void ModuleEmitter::lowerGlobal(GlobalDecl GD) {
+NEVERC_HOT void ModuleEmitter::lowerGlobal(GlobalDecl GD) {
   const auto *Global = cast<ValueDecl>(GD.getDecl());
 
   if (Global->hasAttr<WeakRefAttr>())
@@ -2246,7 +2246,7 @@ void ModuleEmitter::genMultiVersionFunctionDefinition(GlobalDecl GD,
     genGlobalFunctionDefinition(GD, GV);
 }
 
-__attribute__((hot)) void ModuleEmitter::genGlobalDef(GlobalDecl GD,
+NEVERC_HOT void ModuleEmitter::genGlobalDef(GlobalDecl GD,
                                                       llvm::GlobalValue *GV) {
   const auto *D = cast<ValueDecl>(GD.getDecl());
 
@@ -2648,7 +2648,7 @@ llvm::Constant *ModuleEmitter::getOrCreateMultiVersionResolver(GlobalDecl GD) {
 // Symbol resolution & function/global creation
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) llvm::Constant *ModuleEmitter::obtainLLVMFunction(
+NEVERC_HOT llvm::Constant *ModuleEmitter::obtainLLVMFunction(
     llvm::StringRef MangledName, llvm::Type *Ty, GlobalDecl GD, bool DontDefer,
     llvm::AttributeList ExtraAttrs, ForDefinition_t IsForDefinition) {
   const Decl *D = GD.getDecl();
@@ -3428,7 +3428,7 @@ void replaceUsesOfNonProtoTypeWithRealFunction(llvm::GlobalValue *Old,
 }
 } // namespace
 
-__attribute__((hot)) void
+NEVERC_HOT void
 ModuleEmitter::genGlobalFunctionDefinition(GlobalDecl GD,
                                            llvm::GlobalValue *GV) {
   const auto *D = cast<FunctionDecl>(GD.getDecl());
@@ -3768,7 +3768,7 @@ void ModuleEmitter::genDeclContext(const DeclContext *DC) {
 // Top-level declaration lowering
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) void ModuleEmitter::lowerTopLevel(Decl *D) {
+NEVERC_HOT void ModuleEmitter::lowerTopLevel(Decl *D) {
 
   switch (D->getKind()) {
   case Decl::Function:

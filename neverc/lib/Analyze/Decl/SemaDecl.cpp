@@ -3089,7 +3089,7 @@ void Sema::warnOnReservedIdentifier(const NamedDecl *D) {
   }
 }
 
-__attribute__((hot)) NamedDecl *Sema::OnDeclarator(Scope *S, Declarator &D) {
+NEVERC_HOT NamedDecl *Sema::OnDeclarator(Scope *S, Declarator &D) {
   DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
   DeclarationName Name = NameInfo.getName();
   const DeclSpec &HDS = D.getDeclSpec();

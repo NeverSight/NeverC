@@ -10062,7 +10062,7 @@ bool evaluateVoid(const Expr *E, EvalInfo &Info) {
 } // namespace
 
 namespace {
-__attribute__((hot, flatten)) bool evaluate(APValue &Result, EvalInfo &Info,
+NEVERC_HOT NEVERC_FLATTEN bool evaluate(APValue &Result, EvalInfo &Info,
                                             const Expr *E) {
   QualType T = E->getType();
   if (E->isLValue() || T->isFunctionType()) {
@@ -10282,7 +10282,7 @@ bool evaluateAsFixedPoint(const Expr *E, Expr::EvalResult &ExprResult,
 // Public API (Expr::Evaluate*)
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) bool Expr::EvaluateAsRValue(EvalResult &Result,
+NEVERC_HOT bool Expr::EvaluateAsRValue(EvalResult &Result,
                                                  const TreeContext &Ctx,
                                                  bool InConstantContext) const {
 
@@ -10301,7 +10301,7 @@ bool Expr::EvaluateAsBooleanCondition(bool &Result, const TreeContext &Ctx,
          handleConversionToBool(Scratch.Val, Result);
 }
 
-__attribute__((hot)) bool Expr::EvaluateAsInt(EvalResult &Result,
+NEVERC_HOT bool Expr::EvaluateAsInt(EvalResult &Result,
                                               const TreeContext &Ctx,
                                               SideEffectsKind AllowSideEffects,
                                               bool InConstantContext) const {

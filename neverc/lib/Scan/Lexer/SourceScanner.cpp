@@ -299,7 +299,7 @@ void SourceScanner::escapeStringLiteral(llvm::SmallVectorImpl<char> &Str) {
 // Main lexing loop
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot, flatten)) bool SourceScanner::Lex(Token &Result) {
+NEVERC_HOT NEVERC_FLATTEN bool SourceScanner::Lex(Token &Result) {
   unsigned short InitFlags = 0;
   if (IsAtStartOfLine) {
     InitFlags = Token::StartOfLine;
@@ -353,7 +353,7 @@ bool SourceScanner::skipNonToken(Token &Result,
   }
 }
 
-__attribute__((noinline)) int
+LLVM_ATTRIBUTE_NOINLINE int
 SourceScanner::dispatchSlowPath(Token &Result, const char *CurPtr, char Char,
                                 bool &TokAtPhysicalStartOfLine) {
   unsigned SizeTmp, SizeTmp2;
@@ -773,7 +773,7 @@ SourceScanner::dispatchSlowPath(Token &Result, const char *CurPtr, char Char,
   return 1;
 }
 
-__attribute__((hot, flatten)) bool
+NEVERC_HOT NEVERC_FLATTEN bool
 SourceScanner::scanToken(Token &Result, bool TokAtPhysicalStartOfLine) {
   for (;;) {
     assert(!Result.needsCleaning() && "Result needs cleaning");

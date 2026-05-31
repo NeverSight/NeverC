@@ -133,7 +133,7 @@ bool evaluateDefinedExpr(CondExprValue &Result, Token &PeekTok,
   return false;
 }
 
-__attribute__((hot)) bool
+NEVERC_HOT bool
 evaluateConditionAtom(CondExprValue &Result, Token &PeekTok,
                       MacroDefinedState &DT, bool ValueLive, PrepEngine &PP) {
   DT.State = MacroDefinedState::Unknown;

@@ -65,7 +65,7 @@ char inspectFirstChar(const PrepEngine &PP, const Token &Tok) {
 }
 } // namespace
 
-__attribute__((hot)) bool PasteGuard::avoidConcat(const Token &PrevPrevTok,
+NEVERC_HOT bool PasteGuard::avoidConcat(const Token &PrevPrevTok,
                                                   const Token &PrevTok,
                                                   const Token &Tok) const {
   if (LLVM_UNLIKELY(PrevTok.isAnnotation()))

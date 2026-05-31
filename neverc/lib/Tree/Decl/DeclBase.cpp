@@ -237,7 +237,7 @@ unsigned Decl::getMaxAlignment() const {
   return Align;
 }
 
-__attribute__((hot)) bool Decl::isUsed(bool CheckUsedAttr) const {
+NEVERC_HOT bool Decl::isUsed(bool CheckUsedAttr) const {
   const Decl *CanonD = getCanonicalDecl();
   if (LLVM_LIKELY(CanonD->Used))
     return true;
@@ -258,7 +258,7 @@ void Decl::markUsed(TreeContext &C) {
   setIsUsed();
 }
 
-__attribute__((hot)) bool Decl::isReferenced() const {
+NEVERC_HOT bool Decl::isReferenced() const {
   if (LLVM_LIKELY(Referenced))
     return true;
 
@@ -856,7 +856,7 @@ void DeclContext::removeDecl(Decl *D) {
   }
 }
 
-__attribute__((hot)) void DeclContext::addHiddenDecl(Decl *D) {
+NEVERC_HOT void DeclContext::addHiddenDecl(Decl *D) {
   assert(D->getLexicalDeclContext() == this &&
          "Decl inserted into wrong lexical context");
   assert(!D->getNextDeclInContext() && D != LastDecl &&
@@ -870,7 +870,7 @@ __attribute__((hot)) void DeclContext::addHiddenDecl(Decl *D) {
   }
 }
 
-__attribute__((hot)) void DeclContext::addDecl(Decl *D) {
+NEVERC_HOT void DeclContext::addDecl(Decl *D) {
   addHiddenDecl(D);
 
   if (auto *ND = dyn_cast<NamedDecl>(D))
@@ -907,7 +907,7 @@ void DeclContext::buildLookupImpl(DeclContext *DCtx) {
   }
 }
 
-__attribute__((hot)) DeclContext::lookup_result
+NEVERC_HOT DeclContext::lookup_result
 DeclContext::lookup(DeclarationName Name) const {
   const DeclContext *PrimaryContext = getPrimaryContext();
   if (LLVM_UNLIKELY(PrimaryContext != this))

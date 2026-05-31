@@ -1542,7 +1542,7 @@ void ModuleEmitter::adjustMemoryAttribute(llvm::StringRef Name,
 // Attribute list construction
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) void ModuleEmitter::constructAttributeList(
+NEVERC_HOT void ModuleEmitter::constructAttributeList(
     llvm::StringRef Name, const ABIFunctionInfo &FI, FnCalleeInfo CalleeInfo,
     llvm::AttributeList &AttrList, unsigned &CallingConv, bool AttrOnCallSite) {
   llvm::AttrBuilder FuncAttrs(getLLVMContext());
@@ -1920,7 +1920,7 @@ const NonNullAttr *getNonNullAttr(const Decl *FD, const ParmVarDecl *PVD,
 // Function prolog & call emission
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) void
+NEVERC_HOT void
 FunctionEmitter::genFunctionProlog(const ABIFunctionInfo &FI,
                                    llvm::Function *Fn,
                                    const FunctionArgList &Args) {
@@ -2846,7 +2846,7 @@ unsigned getMaxVectorWidth(const llvm::Type *Ty) {
 }
 } // namespace
 
-__attribute__((hot)) RValue FunctionEmitter::genCall(
+NEVERC_HOT RValue FunctionEmitter::genCall(
     const ABIFunctionInfo &CallInfo, const FnCallee &Callee,
     ReturnValueSlot ReturnValue, const CallArgList &CallArgs,
     llvm::CallBase **callOrInvoke, bool IsMustTail, SourceLocation Loc) {

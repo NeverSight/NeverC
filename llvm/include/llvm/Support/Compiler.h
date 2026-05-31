@@ -259,6 +259,27 @@
 #define LLVM_ATTRIBUTE_ALWAYS_INLINE inline
 #endif
 
+/// NEVERC_HOT - Mark a function as hot (frequently executed).
+#if __has_attribute(hot)
+#define NEVERC_HOT __attribute__((hot))
+#else
+#define NEVERC_HOT
+#endif
+
+/// NEVERC_COLD - Mark a function as cold (rarely executed).
+#if __has_attribute(cold)
+#define NEVERC_COLD __attribute__((cold))
+#else
+#define NEVERC_COLD
+#endif
+
+/// NEVERC_FLATTEN - Request that all calls within a function be inlined.
+#if __has_attribute(flatten)
+#define NEVERC_FLATTEN __attribute__((flatten))
+#else
+#define NEVERC_FLATTEN
+#endif
+
 /// LLVM_ATTRIBUTE_NO_DEBUG - On compilers where we have a directive to do
 /// so, mark a method "no debug" because debug info makes the debugger
 /// experience worse.

@@ -1431,7 +1431,7 @@ SourceManager::getBufferDataOrNone(FileID FID) const {
   return std::nullopt;
 }
 
-__attribute__((hot)) FileID
+NEVERC_HOT FileID
 SourceManager::getFileIDSlow(SourceLocation::UIntTy SLocOffset) const {
   if (!SLocOffset)
     return FileID::get(0);
@@ -1443,7 +1443,7 @@ SourceManager::getFileIDSlow(SourceLocation::UIntTy SLocOffset) const {
   return getFileIDLoaded(SLocOffset);
 }
 
-__attribute__((hot)) FileID
+NEVERC_HOT FileID
 SourceManager::getFileIDLocal(SourceLocation::UIntTy SLocOffset) const {
   assert(SLocOffset < NextLocalOffset && "Bad function choice");
 

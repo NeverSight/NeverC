@@ -94,7 +94,7 @@ void PrepEngine::PushLexer(SourceScanner *TheLexer,
   }
 }
 
-__attribute__((hot)) void PrepEngine::PushMacroContext(Token &Tok,
+NEVERC_HOT void PrepEngine::PushMacroContext(Token &Tok,
                                                        SourceLocation ILEnd,
                                                        MacroRecord *Macro,
                                                        MacroArgStorage *Args) {
@@ -113,7 +113,7 @@ __attribute__((hot)) void PrepEngine::PushMacroContext(Token &Tok,
   CurLexerCallback = DispatchExpansion;
 }
 
-__attribute__((hot)) void
+NEVERC_HOT void
 PrepEngine::PushTokenStream(const Token *Toks, unsigned NumToks,
                             bool DisableMacroExpansion, bool OwnsTokens,
                             bool IsReinject) {
@@ -292,7 +292,7 @@ bool PrepEngine::FinalizeSourceEnd(Token &Result, bool isEndOfMacro) {
   return true;
 }
 
-__attribute__((hot)) bool PrepEngine::FinalizeExpansion(Token &Result) {
+NEVERC_HOT bool PrepEngine::FinalizeExpansion(Token &Result) {
   assert(CurExpansionLexer && !CurPPLexer &&
          "Ending a macro when currently in a #include file!");
 

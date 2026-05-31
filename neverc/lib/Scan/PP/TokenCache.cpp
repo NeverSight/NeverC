@@ -20,7 +20,7 @@ void PrepEngine::RestoreLexState() {
   refreshDispatch();
 }
 
-__attribute__((hot)) void PrepEngine::FetchCachedToken(Token &Result) {
+NEVERC_HOT void PrepEngine::FetchCachedToken(Token &Result) {
   if (LLVM_UNLIKELY(!IsCaching()))
     return;
 

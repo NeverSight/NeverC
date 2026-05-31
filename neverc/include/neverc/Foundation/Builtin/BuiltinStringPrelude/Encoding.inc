@@ -405,7 +405,8 @@ static __SIZE_TYPE__ neverc_string_to_utf16(string s,
   neverc_string_free(s);
   return required;
 }
-
+)prelude"
+R"prelude(
 static __SIZE_TYPE__ neverc_string_to_utf32(string s,
                                                  __UINT32_TYPE__ *out,
                                                  __SIZE_TYPE__ out_cap) {
@@ -799,6 +800,8 @@ static string neverc_string_to_base64_url(string s) {
   return __neverc_string_finalize_owned(p, total);
 }
 
+)prelude"
+R"prelude(
 static string neverc_string_from_base64_url(string s) {
   if (__neverc_string_invalid(s) || s.len == 0)
     return __neverc_string_consume(s);

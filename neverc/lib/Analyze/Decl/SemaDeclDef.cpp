@@ -1230,7 +1230,7 @@ void Sema::CheckForFunctionRedefinition(FunctionDecl *FD,
   FD->setInvalidDecl();
 }
 
-__attribute__((hot)) Decl *Sema::OnStartOfFunctionDef(Scope *FnBodyScope,
+NEVERC_HOT Decl *Sema::OnStartOfFunctionDef(Scope *FnBodyScope,
                                                       Decl *D,
                                                       SkipBodyInfo *SkipBody) {
   if (!D) {

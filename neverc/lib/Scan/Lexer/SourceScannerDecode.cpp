@@ -558,7 +558,7 @@ bool SourceScanner::tryConsumeIdentifierUTF8Char(const char *&CurPtr,
   return true;
 }
 
-__attribute__((cold, noinline)) bool
+NEVERC_COLD LLVM_ATTRIBUTE_NOINLINE bool
 SourceScanner::processUnicodeIdentStart(Token &Result, uint32_t C,
                                         const char *CurPtr) {
   bool IsExtension = false;

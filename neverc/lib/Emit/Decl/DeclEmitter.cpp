@@ -29,7 +29,7 @@ static_assert(neverc::Sema::MaximumAlignment <= llvm::Value::MaximumAlignment,
 // Declaration dispatch
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) void FunctionEmitter::genDecl(const Decl &D) {
+NEVERC_HOT void FunctionEmitter::genDecl(const Decl &D) {
   switch (D.getKind()) {
   case Decl::Record:
     if (DebugEmitter *DI = getDebugInfo())
@@ -833,7 +833,7 @@ void FunctionEmitter::genAndRegisterVariableArrayDimensions(DebugEmitter *DI,
   }
 }
 
-__attribute__((hot)) FunctionEmitter::AutoVarEmission
+NEVERC_HOT FunctionEmitter::AutoVarEmission
 FunctionEmitter::genAutoVarAlloca(const VarDecl &D) {
   QualType Ty = D.getType();
   assert(Ty.getAddressSpace() == LangAS::Default);
@@ -1215,7 +1215,7 @@ llvm::Function *ModuleEmitter::getLLVMLifetimeEndFn() {
   return LifetimeEndFn;
 }
 
-__attribute__((hot)) void
+NEVERC_HOT void
 FunctionEmitter::genParmDecl(const VarDecl &D, ParamValue Arg, unsigned ArgNo) {
   assert((isa<ParmVarDecl>(D) || isa<ImplicitParamDecl>(D)) &&
          "Invalid argument to genParmDecl");

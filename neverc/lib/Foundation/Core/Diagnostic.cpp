@@ -753,7 +753,7 @@ const char *describeTokenForDiagnostic(tok::TokenKind Kind) {
 
 } // namespace
 
-__attribute__((cold, noinline)) void
+NEVERC_COLD LLVM_ATTRIBUTE_NOINLINE void
 Diagnostic::FormatDiagnostic(llvm::SmallVectorImpl<char> &OutStr) const {
   if (StoredDiagMessage.has_value()) {
     OutStr.append(StoredDiagMessage->begin(), StoredDiagMessage->end());
@@ -875,7 +875,7 @@ void neverc::EscapeStringForDiagnostic(llvm::StringRef Str,
   }
 }
 
-__attribute__((cold, noinline)) void
+NEVERC_COLD LLVM_ATTRIBUTE_NOINLINE void
 Diagnostic::FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
                              llvm::SmallVectorImpl<char> &OutStr) const {
   // When the diagnostic string is only "%0", the entire string is being given
@@ -1299,7 +1299,7 @@ bool neverc::isStackNearlyExhausted() {
   return StackUsage >= DesiredStackSize - SufficientStack;
 }
 
-__attribute__((cold, noinline)) void
+NEVERC_COLD LLVM_ATTRIBUTE_NOINLINE void
 neverc::runWithSufficientStackSpaceSlow(llvm::function_ref<void()> Diag,
                                         llvm::function_ref<void()> Fn) {
   llvm::CrashRecoveryContext CRC;
@@ -2017,7 +2017,7 @@ bool DiagnosticIDs::ProcessDiag(DiagnosticsEngine &Diag) const {
   return true;
 }
 
-__attribute__((cold, noinline)) void
+NEVERC_COLD LLVM_ATTRIBUTE_NOINLINE void
 DiagnosticIDs::GenDiag(DiagnosticsEngine &Diag, Level DiagLevel) const {
   Diagnostic Info(&Diag);
   assert(DiagLevel != DiagnosticIDs::Ignored &&

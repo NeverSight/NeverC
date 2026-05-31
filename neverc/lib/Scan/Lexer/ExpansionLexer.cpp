@@ -518,7 +518,7 @@ bool isWideLiteralConcat(const Token &FirstTok, const Token &SecondTok) {
 }
 } // namespace
 
-__attribute__((hot)) bool ExpansionLexer::Lex(Token &Tok) {
+NEVERC_HOT bool ExpansionLexer::Lex(Token &Tok) {
   if (LLVM_UNLIKELY(isAtEnd())) {
     if (Macro)
       Macro->EnableMacro();

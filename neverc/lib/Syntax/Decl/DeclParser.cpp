@@ -1354,7 +1354,7 @@ void Parser::SkipBrokenDecl() {
   }
 }
 
-__attribute__((hot)) Parser::DeclGroupPtrTy
+NEVERC_HOT Parser::DeclGroupPtrTy
 Parser::ParseDeclGroup(ParsingDeclSpec &DS, DeclaratorContext Context,
                        ParsedAttributes &Attrs, SourceLocation *DeclEnd) {
   // Consume all of the attributes from `Attrs` by moving them to our own local

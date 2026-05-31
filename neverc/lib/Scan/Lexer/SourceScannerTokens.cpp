@@ -688,7 +688,7 @@ const char *fastScanLiteralBody(const char *CurPtr,
 // Token scanning — identifiers, numbers & literals
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) bool SourceScanner::scanIdentRest(Token &Result,
+NEVERC_HOT bool SourceScanner::scanIdentRest(Token &Result,
                                                        const char *CurPtr) {
   while (true) {
     CurPtr = fastParseASCIIIdentifier(CurPtr, BufferEnd);
@@ -748,7 +748,7 @@ bool SourceScanner::hasHexPrefix(const char *Start,
   return (C2 == 'x' || C2 == 'X');
 }
 
-__attribute__((hot)) inline bool
+NEVERC_HOT inline bool
 SourceScanner::isExponentSignContinuation(char C, char PrevCh,
                                           const char *CurPtr) {
   unsigned IsSign = (C == '-') | (C == '+');
@@ -766,7 +766,7 @@ SourceScanner::isExponentSignContinuation(char C, char PrevCh,
   return true;
 }
 
-__attribute__((hot)) bool SourceScanner::scanNumber(Token &Result,
+NEVERC_HOT bool SourceScanner::scanNumber(Token &Result,
                                                     const char *CurPtr) {
   unsigned Size;
   char PrevCh = 0;
@@ -833,7 +833,7 @@ __attribute__((hot)) bool SourceScanner::scanNumber(Token &Result,
   return true;
 }
 
-__attribute__((hot)) bool
+NEVERC_HOT bool
 SourceScanner::scanQuotedLiteral(Token &Result, const char *CurPtr, char Quote,
                                  tok::TokenKind Kind) {
   const char *NulCharacter = nullptr;

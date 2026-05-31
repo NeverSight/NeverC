@@ -2299,7 +2299,7 @@ void Sema::DiagnoseAlwaysNonNullPointer(Expr *E,
       << FixItHint::CreateInsertion(getLocForEndOfToken(E->getEndLoc()), "()");
 }
 
-__attribute__((noinline)) void
+LLVM_ATTRIBUTE_NOINLINE void
 Sema::CheckImplicitConversions(Expr *E, SourceLocation CC) {
   // Don't diagnose in unevaluated contexts.
   if (isUnevaluatedContext())

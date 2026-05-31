@@ -54,7 +54,7 @@ bool isUnicodeSpaceChar(uint32_t Codepoint) {
 // Comments & whitespace
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot, flatten)) bool
+NEVERC_HOT NEVERC_FLATTEN bool
 SourceScanner::consumeSpacing(Token &Result, const char *CurPtr,
                               bool &TokAtPhysicalStartOfLine) {
   bool SawNewline = isVerticalWhitespace(CurPtr[-1]);
@@ -118,7 +118,7 @@ SourceScanner::consumeSpacing(Token &Result, const char *CurPtr,
   return false;
 }
 
-__attribute__((hot, flatten)) bool
+NEVERC_HOT NEVERC_FLATTEN bool
 SourceScanner::consumeLineComment(Token &Result, const char *CurPtr,
                                   bool &TokAtPhysicalStartOfLine) {
   if (!LineComment) {
@@ -308,7 +308,7 @@ bool isLineSplicedBlockEnd(const char *CurPtr, SourceScanner *L,
 }
 } // namespace
 
-__attribute__((hot)) bool
+NEVERC_HOT bool
 SourceScanner::consumeBlockComment(Token &Result, const char *CurPtr,
                                    bool &TokAtPhysicalStartOfLine) {
   unsigned CharSize;
@@ -448,7 +448,7 @@ void SourceScanner::drainDirectiveLine(llvm::SmallVectorImpl<char> *Result) {
 // Buffer management & conflict markers
 // ===----------------------------------------------------------------------===
 
-__attribute__((cold, noinline)) bool
+NEVERC_COLD LLVM_ATTRIBUTE_NOINLINE bool
 SourceScanner::onBufferTerminator(Token &Result, const char *CurPtr) {
   if (ParsingDirective) {
     ParsingDirective = false;
@@ -528,7 +528,7 @@ const char *locateConflictEnd(const char *CurPtr, const char *BufferEnd,
 }
 } // namespace
 
-__attribute__((cold, noinline)) bool
+NEVERC_COLD LLVM_ATTRIBUTE_NOINLINE bool
 SourceScanner::matchConflictBegin(const char *CurPtr) {
   if (CurPtr != BufferStart && CurPtr[-1] != '\n' && CurPtr[-1] != '\r')
     return false;
@@ -557,7 +557,7 @@ SourceScanner::matchConflictBegin(const char *CurPtr) {
   return false;
 }
 
-__attribute__((cold, noinline)) bool
+NEVERC_COLD LLVM_ATTRIBUTE_NOINLINE bool
 SourceScanner::matchConflictClose(const char *CurPtr) {
   if (CurPtr != BufferStart && CurPtr[-1] != '\n' && CurPtr[-1] != '\r')
     return false;
@@ -811,7 +811,7 @@ uint32_t SourceScanner::tryReadUCN(const char *&StartPtr, const char *SlashLoc,
   return CodePoint;
 }
 
-__attribute__((cold, noinline)) bool
+NEVERC_COLD LLVM_ATTRIBUTE_NOINLINE bool
 SourceScanner::checkUnicodeWhitespace(Token &Result, uint32_t C,
                                       const char *CurPtr) {
   if (!isLexingRawMode() && !PP->isPreprocessedOutput() &&

@@ -822,7 +822,7 @@ static bool isSimpleCallExpr(const Expr *E) {
   return true;
 }
 
-__attribute__((hot)) void
+NEVERC_HOT void
 Sema::CheckCompletedExpr(Expr *E, SourceLocation CheckLoc, bool IsConstexpr) {
   if (LLVM_UNLIKELY(Diags.getIgnoreAllWarnings())) {
     if (LLVM_UNLIKELY(!MisalignedMembers.empty()))

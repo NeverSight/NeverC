@@ -219,7 +219,7 @@ ExprDependence neverc::computeDependence(PredefinedExpr *E) {
   return toExprDependenceForImpliedType(E->getType()->getDependence());
 }
 
-__attribute__((hot)) ExprDependence
+NEVERC_HOT ExprDependence
 neverc::computeDependence(CallExpr *E, llvm::ArrayRef<Expr *> PreArgs) {
   auto D = E->getCallee()->getDependence();
   const unsigned NumArgs = E->getNumArgs();
@@ -247,7 +247,7 @@ ExprDependence neverc::computeDependence(MemberExpr *E) {
   return E->getBase()->getDependence();
 }
 
-__attribute__((hot)) ExprDependence neverc::computeDependence(InitListExpr *E) {
+NEVERC_HOT ExprDependence neverc::computeDependence(InitListExpr *E) {
   auto D = ExprDependence::None;
   const unsigned N = E->getNumInits();
   Expr *const *Inits = E->getInits();

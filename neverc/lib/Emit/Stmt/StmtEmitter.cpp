@@ -36,7 +36,7 @@ void FunctionEmitter::genStopPoint(const Stmt *S) {
   }
 }
 
-__attribute__((hot)) void
+NEVERC_HOT void
 FunctionEmitter::genStmt(const Stmt *S, llvm::ArrayRef<const Attr *> Attrs) {
   assert(S && "Null statement?");
 
@@ -138,7 +138,7 @@ FunctionEmitter::genStmt(const Stmt *S, llvm::ArrayRef<const Attr *> Attrs) {
   }
 }
 
-__attribute__((hot)) bool
+NEVERC_HOT bool
 FunctionEmitter::genSimpleStmt(const Stmt *S,
                                llvm::ArrayRef<const Attr *> Attrs) {
   switch (S->getStmtClass()) {
@@ -180,7 +180,7 @@ FunctionEmitter::genSimpleStmt(const Stmt *S,
   return true;
 }
 
-__attribute__((hot)) Address FunctionEmitter::genCompoundStmt(
+NEVERC_HOT Address FunctionEmitter::genCompoundStmt(
     const CompoundStmt &S, bool GetLast, AggValueSlot AggSlot) {
 #if ENABLE_CRASH_OVERRIDES
   PrettyStackTraceLoc CrashInfo(
@@ -193,7 +193,7 @@ __attribute__((hot)) Address FunctionEmitter::genCompoundStmt(
   return genCompoundStmtWithoutScope(S, GetLast, AggSlot);
 }
 
-__attribute__((hot)) Address FunctionEmitter::genCompoundStmtWithoutScope(
+NEVERC_HOT Address FunctionEmitter::genCompoundStmtWithoutScope(
     const CompoundStmt &S, bool GetLast, AggValueSlot AggSlot) {
 
   const Stmt *ExprResult = S.getStmtExprResult();
@@ -475,7 +475,7 @@ void FunctionEmitter::genIndirectGotoStmt(const IndirectGotoStmt &S) {
 // Control flow: if / while / do / for / switch
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) void FunctionEmitter::genIfStmt(const IfStmt &S) {
+NEVERC_HOT void FunctionEmitter::genIfStmt(const IfStmt &S) {
   LexicalScope ConditionScope(*this, S.getCond()->getSourceRange());
 
   if (S.getInit())
@@ -538,7 +538,7 @@ __attribute__((hot)) void FunctionEmitter::genIfStmt(const IfStmt &S) {
   genBlock(ContBlock, true);
 }
 
-__attribute__((hot)) void
+NEVERC_HOT void
 FunctionEmitter::genWhileStmt(const WhileStmt &S,
                               llvm::ArrayRef<const Attr *> WhileAttrs) {
   JumpDest LoopHeader = getJumpDestInCurrentScope("while.cond");
@@ -659,7 +659,7 @@ void FunctionEmitter::genDoStmt(const DoStmt &S,
     simplifyForwardingBlocks(LoopCond.getBlock());
 }
 
-__attribute__((hot)) void
+NEVERC_HOT void
 FunctionEmitter::genForStmt(const ForStmt &S,
                             llvm::ArrayRef<const Attr *> ForAttrs) {
   JumpDest LoopExit = getJumpDestInCurrentScope("for.end");
@@ -797,7 +797,7 @@ struct SaveRetExprRAII {
 };
 } // namespace
 
-__attribute__((hot)) void FunctionEmitter::genReturnStmt(const ReturnStmt &S) {
+NEVERC_HOT void FunctionEmitter::genReturnStmt(const ReturnStmt &S) {
 
   Address ReturnValue = this->ReturnValue;
   if (IsOutlinedSEHHelper) {
@@ -850,7 +850,7 @@ __attribute__((hot)) void FunctionEmitter::genReturnStmt(const ReturnStmt &S) {
 // Decl, break, continue
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) void FunctionEmitter::genDeclStmt(const DeclStmt &S) {
+NEVERC_HOT void FunctionEmitter::genDeclStmt(const DeclStmt &S) {
   if (haveInsertPoint())
     genStopPoint(&S);
 
@@ -1278,7 +1278,7 @@ bool findCaseStatementsForValue(
 
 } // namespace
 
-__attribute__((hot)) void FunctionEmitter::genSwitchStmt(const SwitchStmt &S) {
+NEVERC_HOT void FunctionEmitter::genSwitchStmt(const SwitchStmt &S) {
   llvm::SwitchInst *SavedSwitchInsn = SwitchInsn;
   llvm::BasicBlock *SavedCRBlock = CaseRangeBlock;
 

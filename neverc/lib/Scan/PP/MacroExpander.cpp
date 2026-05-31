@@ -219,7 +219,7 @@ bool PrepEngine::ProbeLeftParen() {
   return Val == 1;
 }
 
-__attribute__((hot)) bool
+NEVERC_HOT bool
 PrepEngine::BeginMacroExpansion(Token &Identifier, const MacroDefinition &M) {
   checkMacroWarnings(Identifier);
 

@@ -283,7 +283,7 @@ void emitPendingBlock(FunctionEmitter &FE, llvm::BasicBlock *BB) {
 
 } // namespace
 
-__attribute__((hot)) void
+NEVERC_HOT void
 FunctionEmitter::finishFunction(SourceLocation EndLoc) {
   assert(BreakContinueStack.empty() &&
          "mismatched push/pop in break/continue stack!");
@@ -460,7 +460,7 @@ bool hasReturnTerminator(const Decl *F) {
 
 } // namespace
 
-__attribute__((hot)) void FunctionEmitter::startFunction(
+NEVERC_HOT void FunctionEmitter::startFunction(
     GlobalDecl GD, QualType RetTy, llvm::Function *Fn,
     const ABIFunctionInfo &FnInfo, const FunctionArgList &Args,
     SourceLocation Loc, SourceLocation StartLoc) {
@@ -617,7 +617,7 @@ __attribute__((hot)) void FunctionEmitter::startFunction(
       LargestVectorWidth = VecWidth->getVectorWidth();
 }
 
-__attribute__((hot)) void FunctionEmitter::genFunctionBody(const Stmt *Body) {
+NEVERC_HOT void FunctionEmitter::genFunctionBody(const Stmt *Body) {
   if (const CompoundStmt *S = dyn_cast<CompoundStmt>(Body))
     genCompoundStmtWithoutScope(*S);
   else
@@ -664,7 +664,7 @@ QualType FunctionEmitter::formFunctionArgList(GlobalDecl GD,
   return ResTy;
 }
 
-__attribute__((hot)) void
+NEVERC_HOT void
 FunctionEmitter::generateCode(GlobalDecl GD, llvm::Function *Fn,
                               const ABIFunctionInfo &FnInfo) {
   assert(Fn && "generating code for null Function");
@@ -858,7 +858,7 @@ bool FunctionEmitter::constantFoldsToSimpleInteger(const Expr *Cond,
   return true;
 }
 
-__attribute__((hot)) void FunctionEmitter::genBranchOnBoolExpr(
+NEVERC_HOT void FunctionEmitter::genBranchOnBoolExpr(
     const Expr *Cond, llvm::BasicBlock *TrueBlock, llvm::BasicBlock *FalseBlock,
     Stmt::Likelihood LH) {
   Cond = Cond->IgnoreParens();

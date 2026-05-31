@@ -19,7 +19,7 @@ bool isNeverCStringMethodName(const UnqualifiedId &Name) {
 }
 } // namespace
 
-__attribute__((hot)) ExprResult
+NEVERC_HOT ExprResult
 Parser::ParseExpression(TypeCastState isTypeCast) {
   ExprResult LHS(ParseAssignmentExpression(isTypeCast));
   return ParseRHSOfBinaryExpression(LHS, prec::Comma);
@@ -88,7 +88,7 @@ bool Parser::isNotExpressionStart() {
   }
 }
 
-__attribute__((hot)) ExprResult
+NEVERC_HOT ExprResult
 Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
   prec::Level NextTokPrec = getBinOpPrecedence(Tok.getKind());
   SourceLocation ColonLoc;
@@ -240,7 +240,7 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
   }
 }
 
-__attribute__((hot)) ExprResult Parser::ParseCastExpression(
+NEVERC_HOT ExprResult Parser::ParseCastExpression(
     CastParseKind ParseKind, bool isAddressOfOperand, TypeCastState isTypeCast,
     bool isVectorLiteral, bool *NotPrimaryExpression) {
   bool NotCastExpr;
@@ -293,7 +293,7 @@ private:
 };
 } // namespace
 
-__attribute__((hot, flatten)) ExprResult
+NEVERC_HOT NEVERC_FLATTEN ExprResult
 Parser::ParseCastExpression(CastParseKind ParseKind, bool isAddressOfOperand,
                             bool &NotCastExpr, TypeCastState isTypeCast,
                             bool isVectorLiteral, bool *NotPrimaryExpression) {
@@ -637,7 +637,7 @@ Parser::ParseCastExpression(CastParseKind ParseKind, bool isAddressOfOperand,
   return Res;
 }
 
-__attribute__((hot))
+NEVERC_HOT
 // ===----------------------------------------------------------------------===
 // Postfix, unary & sizeof expressions
 // ===----------------------------------------------------------------------===

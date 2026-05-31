@@ -1311,7 +1311,7 @@ Value *ScalarExprEmitter::VisitInitListExpr(InitListExpr *E) {
 // Cast expressions
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot, flatten)) Value *
+NEVERC_HOT NEVERC_FLATTEN Value *
 ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
   Expr *E = CE->getSubExpr();
   QualType DestTy = CE->getType();
@@ -3436,7 +3436,7 @@ Value *ScalarExprEmitter::VisitAtomicExpr(AtomicExpr *E) {
 // FunctionEmitter entry points
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) Value *
+NEVERC_HOT Value *
 FunctionEmitter::genScalarExpr(const Expr *E, bool IgnoreResultAssign) {
   assert(E && hasScalarEvaluationKind(E->getType()) &&
          "Invalid scalar expression to emit");
@@ -3463,7 +3463,7 @@ Value *FunctionEmitter::genComplexToScalarConversion(ComplexPairTy Src,
                                                                DstTy, Loc);
 }
 
-__attribute__((hot)) Value *
+NEVERC_HOT Value *
 FunctionEmitter::genPromotedScalarExpr(const Expr *E, QualType PromotionType) {
   if (!PromotionType.isNull())
     return ScalarExprEmitter(*this).genPromoted(E, PromotionType);

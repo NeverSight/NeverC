@@ -434,7 +434,8 @@ static __inline__ __SIZE_TYPE__ neverc_string_find_char_from(string s, char ch,
   neverc_string_free(s);
   return result;
 }
-
+)prelude"
+R"prelude(
 static __SIZE_TYPE__ neverc_string_rfind_char(string s, char ch) {
   __SIZE_TYPE__ result = NEVERC_STRING_NPOS;
   if (!__neverc_string_invalid(s) && s.data && s.len) {

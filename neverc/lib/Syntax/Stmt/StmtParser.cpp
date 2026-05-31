@@ -12,7 +12,7 @@ using namespace neverc;
 // Statement parsing entry
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) StmtResult Parser::ParseStatement(
+NEVERC_HOT StmtResult Parser::ParseStatement(
     SourceLocation *TrailingElseLoc, ParsedStmtContext StmtCtx) {
   StmtResult Res;
   StmtVector Stmts;
@@ -23,7 +23,7 @@ __attribute__((hot)) StmtResult Parser::ParseStatement(
   return Res;
 }
 
-__attribute__((hot)) StmtResult Parser::ParseStatementOrDeclaration(
+NEVERC_HOT StmtResult Parser::ParseStatementOrDeclaration(
     StmtVector &Stmts, ParsedStmtContext StmtCtx,
     SourceLocation *TrailingElseLoc) {
 
@@ -80,7 +80,7 @@ private:
 };
 } // namespace
 
-__attribute__((hot)) StmtResult
+NEVERC_HOT StmtResult
 Parser::ParseStatementOrDeclarationAfterAttributes(
     StmtVector &Stmts, ParsedStmtContext StmtCtx,
     SourceLocation *TrailingElseLoc, ParsedAttributes &BracketAttrs,
@@ -828,7 +828,7 @@ StmtResult Parser::finalizeExprStmt(ExprResult E, ParsedStmtContext StmtCtx) {
   return Actions.OnExprStmt(E, /*DiscardedValue=*/!IsStmtExprResult);
 }
 
-__attribute__((hot)) StmtResult
+NEVERC_HOT StmtResult
 Parser::ParseCompoundStatementBody(bool isStmtExpr) {
   PrettyStackTraceLoc CrashInfo(PP.getSourceManager(), Tok.getLocation(),
                                 "in compound statement ('{}')");

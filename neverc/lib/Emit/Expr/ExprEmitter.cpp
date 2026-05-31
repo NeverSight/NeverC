@@ -136,7 +136,7 @@ llvm::Value *FunctionEmitter::evaluateExprAsBool(const Expr *E) {
                                       Loc);
 }
 
-__attribute__((hot)) void FunctionEmitter::genIgnoredExpr(const Expr *E) {
+NEVERC_HOT void FunctionEmitter::genIgnoredExpr(const Expr *E) {
   if (E->isPRValue())
     return (void)genAnyExpr(E, AggValueSlot::ignored(), true);
 
@@ -154,7 +154,7 @@ __attribute__((hot)) void FunctionEmitter::genIgnoredExpr(const Expr *E) {
   genLValue(E);
 }
 
-__attribute__((hot)) RValue FunctionEmitter::genAnyExpr(const Expr *E,
+NEVERC_HOT RValue FunctionEmitter::genAnyExpr(const Expr *E,
                                                         AggValueSlot aggSlot,
                                                         bool ignoreResult) {
   switch (getEvaluationKind(E->getType())) {
@@ -476,7 +476,7 @@ LValue FunctionEmitter::genCheckedLValue(const Expr *E, TypeCheckKind) {
   return genLValue(E);
 }
 
-__attribute__((hot)) LValue
+NEVERC_HOT LValue
 FunctionEmitter::genLValue(const Expr *E, KnownNonNull_t IsKnownNonNull) {
   LValue LV = genLValueHelper(E, IsKnownNonNull);
   if (IsKnownNonNull && !LV.isKnownNonNull())
@@ -484,7 +484,7 @@ FunctionEmitter::genLValue(const Expr *E, KnownNonNull_t IsKnownNonNull) {
   return LV;
 }
 
-__attribute__((hot)) LValue
+NEVERC_HOT LValue
 FunctionEmitter::genLValueHelper(const Expr *E, KnownNonNull_t IsKnownNonNull) {
   ApplyDebugLocation DL(*this, E);
   switch (E->getStmtClass()) {
@@ -663,7 +663,7 @@ llvm::Value *FunctionEmitter::emitScalarConstant(
 // Scalar loads, TBAA & memory/register round-trip
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) llvm::Value *
+NEVERC_HOT llvm::Value *
 FunctionEmitter::genLoadOfScalar(LValue lvalue, SourceLocation Loc) {
   return genLoadOfScalar(lvalue.getAddress(*this), lvalue.isVolatile(),
                          lvalue.getType(), Loc, lvalue.getBaseInfo(),
@@ -703,7 +703,7 @@ llvm::MDNode *FunctionEmitter::getRangeForLoadFromType(QualType Ty) {
   return MDHelper.createRange(Min, End);
 }
 
-__attribute__((hot)) llvm::Value *
+NEVERC_HOT llvm::Value *
 FunctionEmitter::genLoadOfScalar(Address Addr, bool Volatile, QualType Ty,
                                  SourceLocation Loc, LValueBaseInfo BaseInfo,
                                  TBAAAccessInfo TBAAInfo, bool isNontemporal) {
@@ -849,7 +849,7 @@ void genStoreOfMatrixScalar(llvm::Value *value, LValue lvalue, bool isInit,
 }
 } // namespace
 
-__attribute__((hot)) void FunctionEmitter::genStoreOfScalar(
+NEVERC_HOT void FunctionEmitter::genStoreOfScalar(
     llvm::Value *Value, Address Addr, bool Volatile, QualType Ty,
     LValueBaseInfo BaseInfo, TBAAAccessInfo TBAAInfo, bool isInit,
     bool isNontemporal) {
@@ -928,7 +928,7 @@ RValue genLoadOfMatrixLValue(LValue LV, SourceLocation Loc,
 }
 } // namespace
 
-__attribute__((hot)) RValue
+NEVERC_HOT RValue
 FunctionEmitter::genLoadOfLValue(LValue LV, SourceLocation Loc) {
 
   if (LV.isSimple()) {
@@ -1066,7 +1066,7 @@ RValue FunctionEmitter::genLoadOfGlobalRegLValue(LValue LV) {
   return RValue::get(Call);
 }
 
-__attribute__((hot)) void
+NEVERC_HOT void
 FunctionEmitter::genStoreThroughLValue(RValue Src, LValue Dst, bool isInit) {
   if (!Dst.isSimple()) {
     if (Dst.isVectorElt()) {
@@ -1376,7 +1376,7 @@ bool canEmitSpuriousReferenceToVariable(FunctionEmitter &FE,
 }
 } // namespace
 
-__attribute__((hot)) LValue
+NEVERC_HOT LValue
 FunctionEmitter::genDeclRefLValue(const DeclRefExpr *E) {
   const NamedDecl *ND = E->getDecl();
   QualType T = E->getType();

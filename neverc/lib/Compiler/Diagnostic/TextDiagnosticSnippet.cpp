@@ -660,7 +660,7 @@ prepareAndFilterRanges(const llvm::SmallVectorImpl<CharSourceRange> &Ranges,
 // Snippet & caret emission
 // ===----------------------------------------------------------------------===
 
-__attribute__((cold)) void TextDiagnostic::emitSnippetAndCaret(
+NEVERC_COLD void TextDiagnostic::emitSnippetAndCaret(
     FullSourceLoc Loc, DiagnosticsEngine::Level Level,
     llvm::SmallVectorImpl<CharSourceRange> &Ranges,
     llvm::ArrayRef<FixItHint> Hints) {

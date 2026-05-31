@@ -3479,7 +3479,7 @@ bool requiresHalfVecConversion(bool OpRequiresConversion, TreeContext &Ctx,
 }
 } // namespace
 
-__attribute__((hot)) ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
+NEVERC_HOT ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
                                                          BinaryOperatorKind Opc,
                                                          Expr *LHSExpr,
                                                          Expr *RHSExpr) {
@@ -3995,7 +3995,7 @@ std::optional<ExprResult> tryNeverCStringBinaryOpRewrite(Sema &S, Scope *Sc,
 } // namespace
 
 // Binary Operators.  'Tok' is the token for the operator.
-__attribute__((hot)) ExprResult Sema::OnBinOp(Scope *S, SourceLocation TokLoc,
+NEVERC_HOT ExprResult Sema::OnBinOp(Scope *S, SourceLocation TokLoc,
                                               tok::TokenKind Kind,
                                               Expr *LHSExpr, Expr *RHSExpr) {
   BinaryOperatorKind Opc = ConvertTokenKindToBinaryOpcode(Kind);
@@ -4012,7 +4012,7 @@ __attribute__((hot)) ExprResult Sema::OnBinOp(Scope *S, SourceLocation TokLoc,
   return FormBinOp(S, TokLoc, Opc, LHSExpr, RHSExpr);
 }
 
-__attribute__((hot)) ExprResult Sema::FormBinOp(Scope *S, SourceLocation OpLoc,
+NEVERC_HOT ExprResult Sema::FormBinOp(Scope *S, SourceLocation OpLoc,
                                                 BinaryOperatorKind Opc,
                                                 Expr *LHSExpr, Expr *RHSExpr) {
   const Type *LT = LHSExpr->getType().getTypePtrOrNull();

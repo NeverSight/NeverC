@@ -405,7 +405,7 @@ bool LookupResult::isAvailableForLookup(Sema &SemaRef, NamedDecl *ND) {
 // Name resolution
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot, flatten)) bool
+NEVERC_HOT NEVERC_FLATTEN bool
 Sema::ResolveName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
   DeclarationName Name = R.getLookupName();
   if (LLVM_UNLIKELY(!Name))
@@ -479,7 +479,7 @@ Sema::ResolveName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
   return false;
 }
 
-__attribute__((hot)) bool Sema::LookupQualifiedName(LookupResult &R,
+NEVERC_HOT bool Sema::LookupQualifiedName(LookupResult &R,
                                                     DeclContext *LookupCtx) {
   assert(LookupCtx && "Sema::LookupQualifiedName requires a lookup context");
 
@@ -510,7 +510,7 @@ __attribute__((hot)) bool Sema::LookupQualifiedName(LookupResult &R,
   return false;
 }
 
-__attribute__((hot)) bool Sema::LookupParsedName(LookupResult &R, Scope *S,
+NEVERC_HOT bool Sema::LookupParsedName(LookupResult &R, Scope *S,
                                                  bool AllowBuiltinCreation) {
   return ResolveName(R, S, AllowBuiltinCreation);
 }

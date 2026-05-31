@@ -112,7 +112,7 @@ private:
 
 } // namespace
 
-__attribute__((hot)) void StmtProfiler::VisitStmt(const Stmt *S) {
+NEVERC_HOT void StmtProfiler::VisitStmt(const Stmt *S) {
   assert(S && "Requires non-null Stmt pointer");
 
   VisitStmtNoChildren(S);

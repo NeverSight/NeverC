@@ -183,7 +183,7 @@ TextDiagnostic::TextDiagnostic(llvm::raw_ostream &OS,
 
 TextDiagnostic::~TextDiagnostic() {}
 
-__attribute__((cold)) void TextDiagnostic::emitDiagnosticMessage(
+NEVERC_COLD void TextDiagnostic::emitDiagnosticMessage(
     FullSourceLoc Loc, PresumedLoc PLoc, DiagnosticsEngine::Level Level,
     llvm::StringRef Message, llvm::ArrayRef<neverc::CharSourceRange> Ranges,
     DiagOrStoredDiag D) {

@@ -49,7 +49,7 @@ private:
 // Directive dispatch & conditional compilation
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) void PrepEngine::DispatchDirective(Token &Result) {
+NEVERC_HOT void PrepEngine::DispatchDirective(Token &Result) {
   CurPPLexer->ParsingDirective = true;
   if (CurLexer)
     CurLexer->SetKeepWhitespaceMode(false);

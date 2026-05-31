@@ -6,7 +6,7 @@
 
 using namespace neverc;
 
-__attribute__((hot)) void
+NEVERC_HOT void
 TextDiagnosticBuffer::ProcessDiagnostic(DiagnosticsEngine::Level Level,
                                         const Diagnostic &Info) {
   DiagnosticConsumer::ProcessDiagnostic(Level, Info);

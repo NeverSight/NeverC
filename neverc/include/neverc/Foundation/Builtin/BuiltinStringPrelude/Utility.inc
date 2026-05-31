@@ -300,7 +300,8 @@ static string neverc_string_reverse(string s) {
   neverc_string_free(s);
   return __neverc_string_finalize_owned(p, len);
 }
-
+)prelude"
+R"prelude(
 static __SIZE_TYPE__ neverc_string_count_char(string s, char ch) {
   __SIZE_TYPE__ n = 0;
   if (!__neverc_string_invalid(s) && s.data) {

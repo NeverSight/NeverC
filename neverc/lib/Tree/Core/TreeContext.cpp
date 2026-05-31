@@ -1376,7 +1376,7 @@ QualType TreeContext::getComplexType(QualType T) const {
   return QualType(New, 0);
 }
 
-__attribute__((hot)) QualType TreeContext::getPointerType(QualType T) const {
+NEVERC_HOT QualType TreeContext::getPointerType(QualType T) const {
   // Unique pointers, to guarantee there is only one pointer of a particular
   // structure.
   llvm::FoldingSetNodeID ID;

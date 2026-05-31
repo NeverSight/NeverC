@@ -21,7 +21,7 @@ using namespace neverc;
 // Declaration specifiers
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) void
+NEVERC_HOT void
 Parser::ParseDeclarationSpecifiers(DeclSpec &DS, AccessSpecifier AS,
                                    DeclSpecContext DSContext,
                                    LateParsedAttrList *LateAttrs) {
@@ -1554,7 +1554,7 @@ SourceLocation locateMissingDeclaratorName(Declarator &D, SourceLocation Loc) {
 }
 } // namespace
 
-__attribute__((hot)) void Parser::ParseDirectDeclarator(Declarator &D) {
+NEVERC_HOT void Parser::ParseDirectDeclarator(Declarator &D) {
   if (Tok.is(tok::identifier) && D.mayHaveIdentifier()) {
     assert(Tok.getIdentifierInfo() && "Not an identifier?");
     D.SetIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());

@@ -338,7 +338,7 @@ void PrepEngine::FiniMainInput() {
     Callbacks->EndOfMainFile();
 }
 
-__attribute__((noinline, cold)) IdentifierInfo *
+LLVM_ATTRIBUTE_NOINLINE NEVERC_COLD IdentifierInfo *
 PrepEngine::ResolveRawIdentSlow(Token &Identifier) const {
   assert(!Identifier.getRawIdentifier().empty() && "No raw identifier data!");
 
@@ -364,7 +364,7 @@ void PrepEngine::RecordPoisonReason(IdentifierInfo *II, unsigned DiagID) {
   PoisonReasons[II] = DiagID;
 }
 
-__attribute__((noinline, cold)) void
+LLVM_ATTRIBUTE_NOINLINE NEVERC_COLD void
 PrepEngine::DiagPoisonedIdent(Token &Identifier) {
   assert(Identifier.getIdentifierInfo() &&
          "Can't handle identifiers without identifier info!");
@@ -376,7 +376,7 @@ PrepEngine::DiagPoisonedIdent(Token &Identifier) {
     Diag(Identifier, it->second) << Identifier.getIdentifierInfo();
 }
 
-__attribute__((hot)) bool PrepEngine::ResolveIdentifier(Token &Identifier) {
+NEVERC_HOT bool PrepEngine::ResolveIdentifier(Token &Identifier) {
   assert(Identifier.getIdentifierInfo() &&
          "Can't handle identifiers without identifier info!");
 

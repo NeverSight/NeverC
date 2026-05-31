@@ -384,7 +384,7 @@ bool Parser::ParseTopLevelDecl(DeclGroupPtrTy &Result) {
   return false;
 }
 
-__attribute__((hot)) Parser::DeclGroupPtrTy
+NEVERC_HOT Parser::DeclGroupPtrTy
 Parser::ParseExternalDeclaration(ParsedAttributes &Attrs,
                                  ParsedAttributes &DeclSpecAttrs,
                                  ParsingDeclSpec *DS) {

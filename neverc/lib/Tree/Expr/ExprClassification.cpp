@@ -30,7 +30,7 @@ Cl::ModifiableType isModifiable(TreeContext &Ctx, const Expr *E, Cl::Kinds Kind,
 // Public entry point
 // ===----------------------------------------------------------------------===
 
-__attribute__((hot)) Cl Expr::ClassifyImpl(TreeContext &Ctx,
+NEVERC_HOT Cl Expr::ClassifyImpl(TreeContext &Ctx,
                                            SourceLocation *Loc) const {
   Cl::Kinds kind = classifyInternal(Ctx, this);
 
@@ -276,7 +276,7 @@ Cl::Kinds classifyMemberExpr(TreeContext &Ctx, const MemberExpr *E) {
   return classifyInternal(Ctx, E->getBase()->IgnoreParens());
 }
 
-__attribute__((hot)) Cl::ModifiableType isModifiable(TreeContext &Ctx,
+NEVERC_HOT Cl::ModifiableType isModifiable(TreeContext &Ctx,
                                                      const Expr *E,
                                                      Cl::Kinds Kind,
                                                      SourceLocation &Loc) {
