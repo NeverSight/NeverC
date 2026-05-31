@@ -30,6 +30,14 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
   c.Options.EmitAddrsig = EmitAddrsig;
   c.Options.FunctionSections = true;
   c.Options.DataSections = true;
+  // Emit static constructors/destructors into .init_array/.fini_array rather
+  // than the legacy .ctors/.dtors.  TargetOptions defaults UseInitArray to
+  // false, but modern crt startup (glibc, musl) only walks .init_array, so
+  // without this LTO-compiled __attribute__((constructor/destructor)) routines
+  // are silently dropped into an ignored .ctors section and never run.  The
+  // non-LTO backend already sets this from CodeGenOpts.UseInitArray; mirror it
+  // here.  Ignored by the MachO/COFF backends, so it is safe to set always.
+  c.Options.UseInitArray = true;
 
   if (Cfg.globalISel >= 0) {
     c.Options.EnableGlobalISel = Cfg.globalISel != 0;
