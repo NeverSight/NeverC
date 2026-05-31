@@ -26,6 +26,8 @@ std::string Linux::getMultiarchTriple(const Driver &D,
                                       llvm::StringRef SysRoot) const {
   if (TargetTriple.isAndroid()) {
     switch (TargetTriple.getArch()) {
+    case llvm::Triple::x86_64:
+      return "x86_64-linux-android";
     case llvm::Triple::aarch64:
       return "aarch64-linux-android";
     default:

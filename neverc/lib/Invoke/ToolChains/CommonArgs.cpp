@@ -1045,6 +1045,9 @@ bool tools::getBundledAndroidSysroot(const Driver &D,
   llvm::SmallString<128> P(llvm::sys::path::parent_path(D.getInstalledDir()));
   llvm::StringRef Arch;
   switch (Triple.getArch()) {
+  case llvm::Triple::x86_64:
+    Arch = "x64";
+    break;
   case llvm::Triple::aarch64:
     Arch = "arm64";
     break;
