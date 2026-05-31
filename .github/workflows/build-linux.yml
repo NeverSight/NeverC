@@ -26,14 +26,16 @@ jobs:
 
     - name: Setup build deps
       run: |
+        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+        echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm-18.list
         sudo apt-get update
-        sudo apt-get install -y ninja-build cmake p7zip-full clang lld
+        sudo apt-get install -y ninja-build cmake p7zip-full clang-18 lld-18
 
     - name: Build neverc
       run: |
         cmake -GNinja -Bbuild \
-        -DCMAKE_C_COMPILER=clang \
-        -DCMAKE_CXX_COMPILER=clang++ \
+        -DCMAKE_C_COMPILER=clang-18 \
+        -DCMAKE_CXX_COMPILER=clang++-18 \
         -DCMAKE_INSTALL_PREFIX=install \
         -DLLVM_ENABLE_ASSERTIONS=OFF \
         -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
