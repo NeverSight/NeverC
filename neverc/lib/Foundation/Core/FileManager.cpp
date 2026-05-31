@@ -1991,7 +1991,7 @@ LineOffsetMapping LineOffsetMapping::get(llvm::MemoryBufferRef Buffer,
     const uint8x16_t NLV = vdupq_n_u8('\n');
     const uint8x16_t CRV = vdupq_n_u8('\r');
     auto extractNL = [&](const unsigned char *Base,
-                         uint8x16_t V) LLVM_ATTRIBUTE_ALWAYS_INLINE {
+                         uint8x16_t V) NEVERC_LAMBDA_ALWAYS_INLINE {
       uint8x16_t NLHit = vceqq_u8(V, NLV);
       uint8x16_t CRHit = vceqq_u8(V, CRV);
       if (LLVM_LIKELY(vmaxvq_u8(CRHit) == 0)) {
