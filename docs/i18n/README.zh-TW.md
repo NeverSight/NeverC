@@ -130,7 +130,10 @@ cmake --build build-neverc --target neverc
 
 ### 測試
 
+`check-neverc` 目標僅在啟用測試時才會生成。請先使用 `-DNEVERC_INCLUDE_TESTS=ON` 重新配置：
+
 ```bash
+cmake -S llvm -B build-neverc -DNEVERC_INCLUDE_TESTS=ON
 cmake --build build-neverc --target check-neverc
 ```
 

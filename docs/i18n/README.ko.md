@@ -130,7 +130,10 @@ cmake --build build-neverc --target neverc
 
 ### 테스트
 
+`check-neverc` 타깃은 테스트가 활성화된 경우에만 생성됩니다. 먼저 `-DNEVERC_INCLUDE_TESTS=ON` 으로 재구성하세요:
+
 ```bash
+cmake -S llvm -B build-neverc -DNEVERC_INCLUDE_TESTS=ON
 cmake --build build-neverc --target check-neverc
 ```
 

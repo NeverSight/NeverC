@@ -130,7 +130,10 @@ cmake --build build-neverc --target neverc
 
 ### Testen
 
+Das Target `check-neverc` wird nur erzeugt, wenn Tests aktiviert sind. Konfiguriere zuerst mit `-DNEVERC_INCLUDE_TESTS=ON` neu:
+
 ```bash
+cmake -S llvm -B build-neverc -DNEVERC_INCLUDE_TESTS=ON
 cmake --build build-neverc --target check-neverc
 ```
 

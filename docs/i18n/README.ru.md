@@ -130,7 +130,10 @@ cmake --build build-neverc --target neverc
 
 ### Тестирование
 
+Цель `check-neverc` создаётся только при включённых тестах. Сначала переконфигурируйте с `-DNEVERC_INCLUDE_TESTS=ON`:
+
 ```bash
+cmake -S llvm -B build-neverc -DNEVERC_INCLUDE_TESTS=ON
 cmake --build build-neverc --target check-neverc
 ```
 

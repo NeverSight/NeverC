@@ -132,7 +132,10 @@ cmake --build build-neverc --target neverc
 
 ### الاختبار
 
+يتم إنشاء الهدف `check-neverc` فقط عند تفعيل الاختبارات. أعد التهيئة أولاً باستخدام `-DNEVERC_INCLUDE_TESTS=ON`:
+
 ```bash
+cmake -S llvm -B build-neverc -DNEVERC_INCLUDE_TESTS=ON
 cmake --build build-neverc --target check-neverc
 ```
 
