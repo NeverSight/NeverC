@@ -987,10 +987,8 @@ getAlignmentAndOffsetFromBinAddOrSub(const Expr *PtrE, const Expr *IntE,
       CharUnits::Zero());
 }
 
-std::optional<std::pair<
-    CharUnits,
-    CharUnits>> static getBaseAlignmentAndOffsetFromLValue(const Expr *E,
-                                                           TreeContext &Ctx) {
+static std::optional<std::pair<CharUnits, CharUnits>>
+getBaseAlignmentAndOffsetFromLValue(const Expr *E, TreeContext &Ctx) {
   E = E->IgnoreParens();
   switch (E->getStmtClass()) {
   default:
@@ -1064,11 +1062,8 @@ std::optional<std::pair<
   return std::nullopt;
 }
 
-std::optional<std::pair<
-    CharUnits, CharUnits>> static getBaseAlignmentAndOffsetFromPtr(const Expr
-                                                                       *E,
-                                                                   TreeContext
-                                                                       &Ctx) {
+static std::optional<std::pair<CharUnits, CharUnits>>
+getBaseAlignmentAndOffsetFromPtr(const Expr *E, TreeContext &Ctx) {
   E = E->IgnoreParens();
   switch (E->getStmtClass()) {
   default:
