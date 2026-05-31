@@ -26,6 +26,12 @@ Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilieru
 | [Linux Netzwerk](../../examples/linux-network/README.de.md) | TCP-Socket-Demo | Client/Server |
 | [Linux Math + zlib](../../examples/linux-math/README.de.md) | Math + Kompression | Trigonometrie, zlib, CRC32 |
 
+### Android
+
+| Beispiel | Beschreibung | Hauptmerkmale |
+|----------|-------------|--------------|
+| [Android ELF](../../examples/android-elf/README.de.md) | Natives ARM64-Binary für gerootete Geräte | Android-Cross-Kompilierung, dlopen/liblog, /proc, Root-Erkennung |
+
 ---
 
 ## Schnellstart

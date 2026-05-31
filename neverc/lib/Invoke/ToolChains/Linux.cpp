@@ -24,6 +24,14 @@ using tools::addPathIfExists;
 std::string Linux::getMultiarchTriple(const Driver &D,
                                       const llvm::Triple &TargetTriple,
                                       llvm::StringRef SysRoot) const {
+  if (TargetTriple.isAndroid()) {
+    switch (TargetTriple.getArch()) {
+    case llvm::Triple::aarch64:
+      return "aarch64-linux-android";
+    default:
+      return TargetTriple.str();
+    }
+  }
   switch (TargetTriple.getArch()) {
   case llvm::Triple::x86_64:
     return "x86_64-linux-gnu";
@@ -46,9 +54,16 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   std::string SysRoot = computeSysRoot();
 
   llvm::SmallString<128> BundledCheck;
-  if (D.SysRoot.empty() &&
-      tools::getBundledLinuxSysroot(D, Triple, BundledCheck))
-    UseBundledSysroot = true;
+  if (D.SysRoot.empty()) {
+    if (Triple.isAndroid() &&
+        tools::getBundledAndroidSysroot(D, Triple, BundledCheck)) {
+      UseBundledAndroidSysroot = true;
+      UseBundledSysroot = true;
+    } else if (!Triple.isAndroid() &&
+               tools::getBundledLinuxSysroot(D, Triple, BundledCheck)) {
+      UseBundledSysroot = true;
+    }
+  }
 
   ToolChain::path_list &PPaths = getProgramPaths();
 
@@ -79,7 +94,19 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   addPathIfExists(D, concat(SysRoot, "/lib"), Paths);
   addPathIfExists(D, concat(SysRoot, "/usr/lib"), Paths);
 
-  if (UseBundledSysroot) {
+  if (UseBundledAndroidSysroot) {
+    // Android: add API-level directory for CRT objects and shared libs.
+    // Try the conventional API levels, preferring the minimum supported.
+    for (const char *Api : {"21", "22", "23", "24", "25", "26", "27", "28",
+                            "29", "30", "31", "32", "33", "34"}) {
+      std::string ApiPath =
+          concat(SysRoot, "/usr/lib/", MultiarchTriple, "/") + Api;
+      if (D.getVFS().exists(ApiPath)) {
+        Paths.push_back(ApiPath);
+        break;
+      }
+    }
+  } else if (UseBundledSysroot) {
     // When GCC isn't detected (common during cross-compilation), search for
     // bundled GCC runtime objects (crtbeginS.o, crtendS.o, libgcc.a, etc.)
     // inside the sysroot.
@@ -129,13 +156,21 @@ std::string Linux::computeSysRoot() const {
     return getDriver().SysRoot;
 
   llvm::SmallString<128> BundledRoot;
-  if (tools::getBundledLinuxSysroot(getDriver(), getTriple(), BundledRoot))
-    return std::string(BundledRoot);
+  if (getTriple().isAndroid()) {
+    if (tools::getBundledAndroidSysroot(getDriver(), getTriple(), BundledRoot))
+      return std::string(BundledRoot);
+  } else {
+    if (tools::getBundledLinuxSysroot(getDriver(), getTriple(), BundledRoot))
+      return std::string(BundledRoot);
+  }
 
   return std::string();
 }
 
 std::string Linux::getDynamicLinker(const ArgList &Args) const {
+  if (getTriple().isAndroid()) {
+    return "/system/bin/linker64";
+  }
   switch (getArch()) {
   case llvm::Triple::aarch64:
     return "/lib/ld-linux-aarch64.so.1";

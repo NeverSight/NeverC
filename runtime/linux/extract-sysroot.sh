@@ -145,9 +145,10 @@ reorganize_sysroot() {
 
   # Libraries from /usr/lib/<multiarch>/
   if [ -d "${raw_dir}/usr/lib/${multiarch}" ]; then
-    # Copy .a files, .o files, and linker scripts
+    # Copy .a files, .o files, and linker scripts (skip symlinks — they
+    # point at absolute /lib/... paths and break cmake copy on macOS).
     find "${raw_dir}/usr/lib/${multiarch}" -maxdepth 1 \
-      \( -name '*.a' -o -name '*.o' -o -name 'lib*.so' \) \
+      \( -name '*.a' -o -name '*.o' -o \( -name 'lib*.so' ! -type l \) \) \
       -exec cp -a {} "${sysroot_dir}/usr/lib/${multiarch}/" \; 2>/dev/null || true
   fi
 

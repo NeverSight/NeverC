@@ -1039,3 +1039,23 @@ bool tools::getBundledLinuxSysroot(const Driver &D, const llvm::Triple &Triple,
   return false;
 }
 
+bool tools::getBundledAndroidSysroot(const Driver &D,
+                                     const llvm::Triple &Triple,
+                                     llvm::SmallVectorImpl<char> &SysRoot) {
+  llvm::SmallString<128> P(llvm::sys::path::parent_path(D.getInstalledDir()));
+  llvm::StringRef Arch;
+  switch (Triple.getArch()) {
+  case llvm::Triple::aarch64:
+    Arch = "arm64";
+    break;
+  default:
+    return false;
+  }
+  llvm::sys::path::append(P, "runtime", "android", Arch);
+  if (llvm::sys::fs::is_directory(P)) {
+    SysRoot.assign(P.begin(), P.end());
+    return true;
+  }
+  return false;
+}
+

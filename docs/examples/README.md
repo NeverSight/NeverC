@@ -28,6 +28,12 @@ Complete, buildable examples demonstrating NeverC's cross-platform compilation c
 | [Linux Network](../../examples/linux-network/README.md) | TCP socket demo | Client/server, socket API, loopback communication |
 | [Linux Math + zlib](../../examples/linux-math/README.md) | Math + compression | Trigonometry, special functions, zlib compress/decompress, CRC32 |
 
+### Android
+
+| Example | Description | Key Features |
+|---------|-------------|-------------|
+| [Android ELF](../../examples/android-elf/README.md) | Native ARM64 binary for rooted devices | Cross-compile to Android, dlopen/liblog, /proc info, root check |
+
 ---
 
 ## Quick Start
@@ -52,12 +58,20 @@ make TARGET=aarch64-linux-gnu   # Build for ARM64
 make TARGET=x86_64-linux-gnu    # Build for x86_64 (default)
 ```
 
+Android examples target ARM64 by default:
+
+```bash
+cd examples/android-elf
+make            # Build
+make run        # Build + push to device + run via adb
+```
+
 ---
 
 ## Cross-Platform Highlights
 
 - **Single toolchain**: NeverC handles preprocessing, compilation, optimization (auto-LTO), and linking in one invocation
-- **Bundled SDK**: Windows SDK/WDK and Linux sysroot (Ubuntu 22.04) headers/libraries are bundled in `runtime/` — zero external dependencies
+- **Bundled SDK**: Windows SDK/WDK, Linux sysroot (Ubuntu 22.04), and Android sysroot (NDK r26c, API 21+) are bundled in `runtime/` — zero external dependencies
 - **Host-agnostic**: Build from macOS (arm64/x86_64), Linux (x86_64/aarch64), or Windows with identical commands
-- **Multi-target**: Cross-compile to Windows PE (`.sys`/`.exe`) and Linux ELF from any host
+- **Multi-target**: Cross-compile to Windows PE (`.sys`/`.exe`), Linux ELF, and Android ELF from any host
 - **Debug support**: Pass `-g` for DWARF debug info; inspect with `llvm-dwarfdump`

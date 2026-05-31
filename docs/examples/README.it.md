@@ -26,6 +26,12 @@ Esempi completi compilabili che dimostrano le capacità di cross-compilazione di
 | [Linux Rete](../../examples/linux-network/README.it.md) | Demo socket TCP | Client/server |
 | [Linux Math + zlib](../../examples/linux-math/README.it.md) | Math + compressione | Trigonometria, zlib, CRC32 |
 
+### Android
+
+| Esempio | Descrizione | Caratteristiche |
+|---------|-------------|----------------|
+| [Android ELF](../../examples/android-elf/README.it.md) | Binario ARM64 nativo per dispositivi rootati | Cross-compilazione Android, dlopen/liblog, /proc, rilevamento root |
+
 ---
 
 ## Avvio rapido

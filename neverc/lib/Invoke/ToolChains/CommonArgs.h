@@ -114,6 +114,9 @@ bool getBundledRuntimeSharedRoot(const Driver &D, llvm::StringRef Sdk,
 bool getBundledLinuxSysroot(const Driver &D, const llvm::Triple &Triple,
                             llvm::SmallVectorImpl<char> &SysRoot);
 
+bool getBundledAndroidSysroot(const Driver &D, const llvm::Triple &Triple,
+                              llvm::SmallVectorImpl<char> &SysRoot);
+
 } // end namespace tools
 } // end namespace driver
 } // end namespace neverc

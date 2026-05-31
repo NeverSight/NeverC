@@ -26,6 +26,12 @@
 | [Linux 網路](../../examples/linux-network/README.zh-TW.md) | TCP Socket 示範 | 客戶端/伺服器，Socket API |
 | [Linux 數學 + zlib](../../examples/linux-math/README.zh-TW.md) | 數學 + 壓縮 | 三角函數，zlib 壓縮/解壓，CRC32 |
 
+### Android
+
+| 範例 | 說明 | 關鍵特性 |
+|------|------|---------|
+| [Android ELF](../../examples/android-elf/README.zh-TW.md) | Root 裝置上的原生 ARM64 可執行檔 | 交叉編譯到 Android，dlopen/liblog，/proc 資訊，root 檢測 |
+
 ---
 
 ## 快速開始

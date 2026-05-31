@@ -47,6 +47,7 @@ protected:
 
 private:
   bool UseBundledSysroot = false;
+  bool UseBundledAndroidSysroot = false;
 };
 
 } // end namespace toolchains

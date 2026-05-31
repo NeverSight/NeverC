@@ -28,6 +28,12 @@
 | [Linux شبكة](../../examples/linux-network/README.ar.md) | عرض مقبس TCP | عميل/خادم |
 | [Linux رياضيات + zlib](../../examples/linux-math/README.ar.md) | رياضيات + ضغط | حساب مثلثات، zlib، CRC32 |
 
+### Android
+
+| مثال | الوصف | الميزات الرئيسية |
+|------|-------|-----------------|
+| [Android ELF](../../examples/android-elf/README.ar.md) | ملف ARM64 أصلي لأجهزة مروّتة | ترجمة تبادلية لـ Android، dlopen/liblog، معلومات /proc، اكتشاف root |
+
 ---
 
 ## بدء سريع

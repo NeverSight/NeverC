@@ -26,9 +26,18 @@ macro(runtime_sdk_target _name _stamp_name)
 
     list(APPEND _cmds
       COMMAND "${CMAKE_COMMAND}" -E rm -rf "${RUNTIME_DST}/${_dst}"
-      COMMAND "${CMAKE_COMMAND}" -E make_directory "${RUNTIME_DST}/${_dst}"
-      COMMAND "${CMAKE_COMMAND}" -E copy_directory
-        "${RUNTIME_SRC}/${_src}" "${RUNTIME_DST}/${_dst}")
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "${RUNTIME_DST}/${_dst}")
+    # Linux sysroots contain absolute symlinks (e.g. usr/lib/.../libz.so ->
+    # /lib/.../libz.so.1) that are valid on Linux but broken on macOS.
+    # cmake -E copy_directory follows symlinks and fails; cp -a preserves them.
+    if(CMAKE_HOST_UNIX)
+      list(APPEND _cmds
+        COMMAND cp -a "${RUNTIME_SRC}/${_src}/." "${RUNTIME_DST}/${_dst}/")
+    else()
+      list(APPEND _cmds
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+          "${RUNTIME_SRC}/${_src}" "${RUNTIME_DST}/${_dst}")
+    endif()
 
     install(DIRECTORY "${RUNTIME_SRC}/${_src}/"
             DESTINATION "runtime/${_dst}"
@@ -97,5 +106,14 @@ endif()
 if(IS_DIRECTORY "${RUNTIME_SRC}/linux/arm64")
   runtime_sdk_target(neverc-runtime-linux-arm64  linux-arm64
     "linux/arm64:linux/arm64"
+  )
+endif()
+
+# ---------------------------------------------------------------------------
+# Android / arm64 sysroot  (NDK r26c, API 21+)
+# ---------------------------------------------------------------------------
+if(IS_DIRECTORY "${RUNTIME_SRC}/android/arm64")
+  runtime_sdk_target(neverc-runtime-android-arm64  android-arm64
+    "android/arm64:android/arm64"
   )
 endif()

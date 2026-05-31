@@ -26,6 +26,12 @@ Ejemplos compilables que demuestran las capacidades de compilación cruzada de N
 | [Linux Red](../../examples/linux-network/README.es.md) | Demo socket TCP | Cliente/servidor |
 | [Linux Math + zlib](../../examples/linux-math/README.es.md) | Math + compresión | Trigonometría, zlib, CRC32 |
 
+### Android
+
+| Ejemplo | Descripción | Características |
+|---------|-------------|----------------|
+| [Android ELF](../../examples/android-elf/README.es.md) | Binario ARM64 nativo para dispositivos rooteados | Compilación cruzada Android, dlopen/liblog, /proc, detección root |
+
 ---
 
 ## Inicio rápido

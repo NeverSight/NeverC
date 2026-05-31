@@ -26,6 +26,12 @@ Exemples compilables démontrant les capacités de compilation croisée de Never
 | [Linux Réseau](../../examples/linux-network/README.fr.md) | Démo socket TCP | Client/serveur |
 | [Linux Math + zlib](../../examples/linux-math/README.fr.md) | Math + compression | Trigonométrie, zlib, CRC32 |
 
+### Android
+
+| Exemple | Description | Caractéristiques |
+|---------|-------------|-----------------|
+| [Android ELF](../../examples/android-elf/README.fr.md) | Binaire ARM64 natif pour appareils rootés | Cross-compilation Android, dlopen/liblog, /proc, détection root |
+
 ---
 
 ## Démarrage rapide

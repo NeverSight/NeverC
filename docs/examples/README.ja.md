@@ -26,6 +26,12 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 | [Linux ネットワーク](../../examples/linux-network/README.ja.md) | TCP ソケットデモ | クライアント/サーバー |
 | [Linux 数学 + zlib](../../examples/linux-math/README.ja.md) | 数学 + 圧縮 | 三角関数、zlib、CRC32 |
 
+### Android
+
+| サンプル | 説明 | 主要機能 |
+|---------|------|---------|
+| [Android ELF](../../examples/android-elf/README.ja.md) | root 端末向けネイティブ ARM64 バイナリ | Android クロスコンパイル、dlopen/liblog、/proc 情報、root 検出 |
+
 ---
 
 ## クイックスタート

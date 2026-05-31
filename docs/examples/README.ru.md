@@ -26,6 +26,12 @@
 | [Linux Сеть](../../examples/linux-network/README.ru.md) | Демо TCP-сокетов | Клиент/сервер |
 | [Linux Math + zlib](../../examples/linux-math/README.ru.md) | Математика + сжатие | Тригонометрия, zlib, CRC32 |
 
+### Android
+
+| Пример | Описание | Ключевые особенности |
+|--------|---------|---------------------|
+| [Android ELF](../../examples/android-elf/README.ru.md) | Нативный ARM64-бинарник для рутированных устройств | Кросс-компиляция для Android, dlopen/liblog, /proc, проверка root |
+
 ---
 
 ## Быстрый старт

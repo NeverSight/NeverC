@@ -151,41 +151,52 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nostartfiles,
                    options::OPT_r)) {
-    const char *crt1 = nullptr;
-    if (!Args.hasArg(options::OPT_shared)) {
-      if (IsPIE)
-        crt1 = "Scrt1.o";
-      else if (IsStaticPIE)
-        crt1 = "rcrt1.o";
+    if (Triple.isAndroid()) {
+      const char *crtbegin;
+      if (Args.hasArg(options::OPT_shared))
+        crtbegin = "crtbegin_so.o";
+      else if (IsStatic)
+        crtbegin = "crtbegin_static.o";
       else
-        crt1 = "crt1.o";
-    }
-    if (crt1)
-      CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath(crt1)));
-
-    CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crti.o")));
-
-    if (HasCRTBeginEndFiles) {
-      std::string P;
-      if (ToolChain.GetRuntimeLibType(Args) == ToolChain::RLT_CompilerRT) {
-        std::string crtbegin =
-            ToolChain.getCompilerRT(Args, "crtbegin", ToolChain::FT_Object);
-        if (ToolChain.getVFS().exists(crtbegin))
-          P = crtbegin;
-      }
-      if (P.empty()) {
-        const char *crtbegin;
-        if (Args.hasArg(options::OPT_shared))
-          crtbegin = "crtbeginS.o";
-        else if (IsStatic)
-          crtbegin = "crtbeginT.o";
-        else if (IsPIE || IsStaticPIE)
-          crtbegin = "crtbeginS.o";
+        crtbegin = "crtbegin_dynamic.o";
+      CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath(crtbegin)));
+    } else {
+      const char *crt1 = nullptr;
+      if (!Args.hasArg(options::OPT_shared)) {
+        if (IsPIE)
+          crt1 = "Scrt1.o";
+        else if (IsStaticPIE)
+          crt1 = "rcrt1.o";
         else
-          crtbegin = "crtbegin.o";
-        P = ToolChain.GetFilePath(crtbegin);
+          crt1 = "crt1.o";
       }
-      CmdArgs.push_back(Args.MakeArgString(P));
+      if (crt1)
+        CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath(crt1)));
+
+      CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crti.o")));
+
+      if (HasCRTBeginEndFiles) {
+        std::string P;
+        if (ToolChain.GetRuntimeLibType(Args) == ToolChain::RLT_CompilerRT) {
+          std::string crtbegin =
+              ToolChain.getCompilerRT(Args, "crtbegin", ToolChain::FT_Object);
+          if (ToolChain.getVFS().exists(crtbegin))
+            P = crtbegin;
+        }
+        if (P.empty()) {
+          const char *crtbegin;
+          if (Args.hasArg(options::OPT_shared))
+            crtbegin = "crtbeginS.o";
+          else if (IsStatic)
+            crtbegin = "crtbeginT.o";
+          else if (IsPIE || IsStaticPIE)
+            crtbegin = "crtbeginS.o";
+          else
+            crtbegin = "crtbegin.o";
+          P = ToolChain.GetFilePath(crtbegin);
+        }
+        CmdArgs.push_back(Args.MakeArgString(P));
+      }
     }
 
     // Add crtfastmath.o if available and fast math is enabled.
@@ -224,27 +235,36 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
 
     if (!Args.hasArg(options::OPT_nostartfiles)) {
-      if (HasCRTBeginEndFiles) {
-        std::string P;
-        if (ToolChain.GetRuntimeLibType(Args) == ToolChain::RLT_CompilerRT) {
-          std::string crtend =
-              ToolChain.getCompilerRT(Args, "crtend", ToolChain::FT_Object);
-          if (ToolChain.getVFS().exists(crtend))
-            P = crtend;
+      if (Triple.isAndroid()) {
+        const char *crtend =
+            Args.hasArg(options::OPT_shared) ? "crtend_so.o"
+                                             : "crtend_android.o";
+        CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath(crtend)));
+      } else {
+        if (HasCRTBeginEndFiles) {
+          std::string P;
+          if (ToolChain.GetRuntimeLibType(Args) ==
+              ToolChain::RLT_CompilerRT) {
+            std::string crtend =
+                ToolChain.getCompilerRT(Args, "crtend", ToolChain::FT_Object);
+            if (ToolChain.getVFS().exists(crtend))
+              P = crtend;
+          }
+          if (P.empty()) {
+            const char *crtend;
+            if (Args.hasArg(options::OPT_shared))
+              crtend = "crtendS.o";
+            else if (IsPIE || IsStaticPIE)
+              crtend = "crtendS.o";
+            else
+              crtend = "crtend.o";
+            P = ToolChain.GetFilePath(crtend);
+          }
+          CmdArgs.push_back(Args.MakeArgString(P));
         }
-        if (P.empty()) {
-          const char *crtend;
-          if (Args.hasArg(options::OPT_shared))
-            crtend = "crtendS.o";
-          else if (IsPIE || IsStaticPIE)
-            crtend = "crtendS.o";
-          else
-            crtend = "crtend.o";
-          P = ToolChain.GetFilePath(crtend);
-        }
-        CmdArgs.push_back(Args.MakeArgString(P));
+        CmdArgs.push_back(
+            Args.MakeArgString(ToolChain.GetFilePath("crtn.o")));
       }
-      CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crtn.o")));
     }
   }
 

@@ -26,6 +26,12 @@ NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 
 | [Linux 네트워크](../../examples/linux-network/README.ko.md) | TCP 소켓 데모 | 클라이언트/서버 |
 | [Linux 수학 + zlib](../../examples/linux-math/README.ko.md) | 수학 + 압축 | 삼각 함수, zlib, CRC32 |
 
+### Android
+
+| 예제 | 설명 | 주요 기능 |
+|------|------|---------|
+| [Android ELF](../../examples/android-elf/README.ko.md) | 루팅 기기용 네이티브 ARM64 바이너리 | Android 크로스 컴파일, dlopen/liblog, /proc 정보, root 확인 |
+
 ---
 
 ## 빠른 시작
