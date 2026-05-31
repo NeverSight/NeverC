@@ -1,13 +1,10 @@
-# Release build for Windows x86_64 (no self-PGO on Windows — GHA runners are too
-# slow/unreliable for instrumented builds).  Tag push: package + GitHub Release.
+# Release build for Windows x86_64.  Tag push: package + GitHub Release.
 # Manual dispatch: artifacts only (no release).
 #
-# Compiler binary speed (how fast neverc compiles user code) comes from:
-#   - NEVERC_RELEASE_OPT_LEVEL=3  (-O3)
-#   - Full LTO + lld (NeverC.cmake defaults when using Clang, not MSVC cl)
-#   - mimalloc, -ffunction-sections / GC (NeverC.cmake)
-#   - -march=native on the CI runner (NEVERC_NATIVE_ARCH=ON; disable for portable zips)
-# Bootstrap toolchain is still LLVM's own PGO-optimised Clang (install-llvm-windows.ps1).
+# Uses MSVC (cl.exe) via Ninja for reliable Windows builds.
+# LTO is disabled under MSVC; compiler speed comes from:
+#   - NEVERC_RELEASE_OPT_LEVEL=3  (/O2 via MSVC defaults)
+#   - mimalloc, static linking (NeverC.cmake)
 name: windows-x64-neverc-release
 
 permissions:
@@ -30,37 +27,19 @@ jobs:
       - name: Setup build deps
         run: choco install ninja cmake 7zip -y
 
-      - name: Resolve latest LLVM version
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          LLVM_VERIFY_ASSET_SUFFIX: win64.exe
-        run: bash ./.github/scripts/resolve-llvm-version.sh
-
-      - name: Cache LLVM toolchain
-        uses: actions/cache@v4
-        with:
-          path: C:\LLVM
-          key: llvm-${{ env.LLVM_VER }}-win64
-
-      - name: Install LLVM Clang
-        shell: pwsh
-        run: ./.github/scripts/install-llvm-windows.ps1
-
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Setup sccache
         uses: mozilla/sccache-action@v0.0.7
 
-      - name: Build neverc (Release -O3 + LTO)
+      - name: Build neverc (Release)
         shell: bash
         run: |
           cmake -S llvm -B build -G Ninja \
             -C neverc/cmake/caches/NeverC.cmake \
-            -DNEVERC_RELEASE_OPT_LEVEL=3 \
-            -DNEVERC_ENABLE_LTO=ON \
-            -DNEVERC_INCLUDE_TESTS=ON
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DCMAKE_BUILD_TYPE=Release
           cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
 
       - name: Show sccache stats

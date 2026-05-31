@@ -17,12 +17,14 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_C_COMPILER)
 endif()
 set(NEVERC_RELEASE_OPT_LEVEL "2" CACHE STRING
     "Release optimization level for building neverc itself (2 or 3)")
-if(NEVERC_RELEASE_OPT_LEVEL STREQUAL "3")
-  set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
-  set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
-else()
-  set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "" FORCE)
-  set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "" FORCE)
+if(NOT MSVC)
+  if(NEVERC_RELEASE_OPT_LEVEL STREQUAL "3")
+    set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
+  else()
+    set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "" FORCE)
+  endif()
 endif()
 
 # When building on the same architecture we're targeting, enable
@@ -112,6 +114,11 @@ endif()
 # The release artifact is a single neverc executable linked from static
 # libraries, so avoid PIC/unwind/debugging extras and the associated configure
 # probes by default.
+# Static CRT (/MT) for standalone deployment and plugin compatibility.
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
+endif()
+
 set(LLVM_ENABLE_PIC OFF CACHE BOOL "")
 set(LLVM_ENABLE_UNWIND_TABLES OFF CACHE BOOL "")
 set(LLVM_ENABLE_CRASH_OVERRIDES OFF CACHE BOOL "")
