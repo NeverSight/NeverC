@@ -699,10 +699,16 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
       return;
 
     if (!config->oFormatBinary) {
-      // Header, trap fill, and section content target disjoint
-      // buffer regions — run all three inside a single TaskGroup
-      // so the OS can pipeline page faults and writes.
-      writeTrapInstr();
+      // Trap-fill the tail padding of executable segments only when code is
+      // separated onto its own pages (-z separate-code / -z
+      // separate-loadable-segments).  With the default packed layout (-z
+      // noseparate-code) an executable segment shares its last file page with
+      // the following RW data segment, so filling up to the page boundary would
+      // clobber that data — most damagingly the reserved .got.plt[1]/[2] slots,
+      // which glibc misreads as a prelink marker and then crashes the lazy PLT
+      // resolver.  This mirrors LLD, which guards writeTrapInstr() the same way.
+      if (config->zSeparate != SeparateSegmentKind::None)
+        writeTrapInstr();
       writeHeader();
       writeSections();
     } else {
