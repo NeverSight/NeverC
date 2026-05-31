@@ -115,7 +115,6 @@ set(LLVM_C_SUPPORT_SOURCES
   Valgrind.c
   VersionTuple.c
   Watchdog.c
-  WithColor.c
   YAMLParser.c
   raw_ostream.c
   regcomp.c
