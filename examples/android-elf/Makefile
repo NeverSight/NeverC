@@ -1,6 +1,6 @@
 NEVERC ?= ../../build-neverc/bin/neverc
 
-TARGET  = aarch64-linux-android21
+TARGET  = aarch64-linux-android
 OUTPUT  = android-elf
 
 FLAGS = \

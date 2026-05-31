@@ -24,7 +24,7 @@ make NEVERC=/path/to/neverc
 ## 手动构建（不使用 Make）
 
 ```bash
-neverc --target=aarch64-linux-android21 -Wall -fPIE -lm -ldl -llog -o android-elf main.c
+neverc --target=aarch64-linux-android -Wall -fPIE -lm -ldl -llog -o android-elf main.c
 ```
 
 ## 部署和运行
