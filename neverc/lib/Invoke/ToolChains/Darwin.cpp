@@ -382,8 +382,11 @@ void darwin::StaticLibTool::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   ArgStringList CmdArgs;
-  const char *Exec =
-      Args.MakeArgString(getToolChain().GetProgramPath("libtool"));
+  // The archive is written in-process (ArchiveCommand::Execute ->
+  // llvm::writeArchive); no external archiver is spawned.  Exec is shown only
+  // by -###, so point it at neverc itself rather than resolving a tool that is
+  // never run.
+  const char *Exec = getToolChain().getDriver().getNeverCProgramPath();
   C.addCommand(std::make_unique<ArchiveCommand>(
       JA, *this, ResponseFileSupport::None(), Exec, CmdArgs, Inputs, Output));
 }
