@@ -46,7 +46,19 @@ PrepEngine::PrepEngine(std::shared_ptr<PrepOptions> PPOpts,
       SourceMgr(SM), ScratchBuf(new TokenScratch(SourceMgr)),
       HeaderInfo(Headers), Identifiers(IILookup),
       PragmaDispatchs(new PragmaRegistry(llvm::StringRef())) {
+  // Initialize bit-field state. These are not default-initialized in the header
+  // because MSVC rejects bit-field default member initializers outside of
+  // /std:c++20 (error C7582), and the project targets C++17.
+  KeepComments = false;
+  KeepMacroComments = false;
+  SuppressIncludeNotFoundError = false;
+  InMacroArgStorage = false;
   OwnsIncludeResolver = OwnsHeaders;
+  DisableMacroExpansion = false;
+  MacroExpansionInDirectivesOverride = false;
+  PragmasEnabled = true;
+  PreprocessedOutput = false;
+
   BuiltinInfo = std::make_unique<Builtin::Context>();
 
   IncludeMacroStack.reserve(64);

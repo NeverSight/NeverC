@@ -16,6 +16,12 @@
 #define CSUPPORT_HAS_C11_ATOMICS 0
 #endif
 
+/* MSVC provides neither C11 <stdatomic.h> in this build mode nor the GCC/Clang
+   __sync_* builtins; pull in the _Interlocked* intrinsics instead. */
+#if !CSUPPORT_HAS_C11_ATOMICS && defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 #ifndef __has_attribute
 #define __has_attribute(x) 0
 #endif
@@ -35,6 +41,11 @@ void csupport_bury_pointer(const void *Ptr) {
 #if CSUPPORT_HAS_C11_ATOMICS
   static _Atomic(unsigned) GraveYardSize;
   unsigned Idx = atomic_fetch_add(&GraveYardSize, 1);
+#elif defined(_MSC_VER)
+  /* _InterlockedExchangeAdd returns the previous value, matching the
+     fetch-then-add semantics of __sync_fetch_and_add. */
+  static volatile long GraveYardSize;
+  unsigned Idx = (unsigned)_InterlockedExchangeAdd(&GraveYardSize, 1);
 #else
   static unsigned GraveYardSize;
   unsigned Idx = __sync_fetch_and_add(&GraveYardSize, 1);

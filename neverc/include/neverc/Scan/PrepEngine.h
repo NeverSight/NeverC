@@ -209,24 +209,28 @@ public:
   };
 
   // State that is set before the preprocessor begins.
-  bool KeepComments : 1 = false;
-  bool KeepMacroComments : 1 = false;
-  bool SuppressIncludeNotFoundError : 1 = false;
+  // NOTE: These bit-fields are initialized in the PrepEngine constructor rather
+  // than with default member initializers, because MSVC only accepts the latter
+  // on bit-fields under /std:c++20 (error C7582), whereas the project targets
+  // C++17.
+  bool KeepComments : 1;
+  bool KeepMacroComments : 1;
+  bool SuppressIncludeNotFoundError : 1;
 
   // State that changes while the preprocessor runs:
-  bool InMacroArgStorage : 1 = false;
+  bool InMacroArgStorage : 1;
 
-  bool OwnsIncludeResolver : 1 = false;
+  bool OwnsIncludeResolver : 1;
 
-  bool DisableMacroExpansion : 1 = false;
+  bool DisableMacroExpansion : 1;
 
-  bool MacroExpansionInDirectivesOverride : 1 = false;
+  bool MacroExpansionInDirectivesOverride : 1;
 
   class ResetMacroExpansionHelper;
 
-  bool PragmasEnabled : 1 = true;
+  bool PragmasEnabled : 1;
 
-  bool PreprocessedOutput : 1 = false;
+  bool PreprocessedOutput : 1;
 
   bool ParsingIfOrElifDirective = false;
 
