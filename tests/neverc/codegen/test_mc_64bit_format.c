@@ -117,13 +117,20 @@ static void signal_handler(int sig) {
 }
 
 static void test_signal_handling(void) {
-    void (*prev)(int) = signal(SIGUSR1, signal_handler);
+    /* SIGUSR1 is POSIX-only; Windows' CRT has no equivalent, so fall back to a
+     * signal that exists everywhere (raise() still invokes the handler). */
+#ifdef SIGUSR1
+    int sig = SIGUSR1;
+#else
+    int sig = SIGTERM;
+#endif
+    void (*prev)(int) = signal(sig, signal_handler);
     CHECK(prev != SIG_ERR, "signal() succeeded");
 
-    raise(SIGUSR1);
+    raise(sig);
     CHECK(signal_received == 1, "signal handler invoked");
 
-    signal(SIGUSR1, SIG_DFL);
+    signal(sig, SIG_DFL);
 }
 
 // --- 6. Cross-TU style linking (multiple compilation units simulated) ---

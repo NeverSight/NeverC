@@ -15,6 +15,11 @@ TEST_F(DriverTest, CrossAArch64) {
 }
 
 TEST_F(DriverTest, CrossAppleIOS) {
+  // test_basic.c pulls in <stdio.h>; resolving libc headers for an Apple
+  // target requires the host Apple SDK (-isysroot), which only exists on a
+  // Darwin host.  On Windows/Linux there is no Apple SDK to search.
+  if (!isDarwin())
+    GTEST_SKIP() << "iOS cross-compile needs host Apple SDK headers";
   syntaxCheck("test_cross_apple_ios",
               (testDir() / "test_basic.c").string(), "c11",
               "aarch64-apple-ios");
