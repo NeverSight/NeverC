@@ -26,18 +26,11 @@ macro(runtime_sdk_target _name _stamp_name)
 
     list(APPEND _cmds
       COMMAND "${CMAKE_COMMAND}" -E rm -rf "${RUNTIME_DST}/${_dst}"
-      COMMAND "${CMAKE_COMMAND}" -E make_directory "${RUNTIME_DST}/${_dst}")
-    # Linux sysroots contain absolute symlinks (e.g. usr/lib/.../libz.so ->
-    # /lib/.../libz.so.1) that are valid on Linux but broken on macOS.
-    # cmake -E copy_directory follows symlinks and fails; cp -a preserves them.
-    if(CMAKE_HOST_UNIX)
-      list(APPEND _cmds
-        COMMAND cp -a "${RUNTIME_SRC}/${_src}/." "${RUNTIME_DST}/${_dst}/")
-    else()
-      list(APPEND _cmds
-        COMMAND "${CMAKE_COMMAND}" -E copy_directory
-          "${RUNTIME_SRC}/${_src}" "${RUNTIME_DST}/${_dst}")
-    endif()
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "${RUNTIME_DST}/${_dst}"
+      COMMAND "${CMAKE_COMMAND}"
+        -DSRC="${RUNTIME_SRC}/${_src}"
+        -DDST="${RUNTIME_DST}/${_dst}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/copy_runtime_tree.cmake")
 
     install(DIRECTORY "${RUNTIME_SRC}/${_src}/"
             DESTINATION "runtime/${_dst}"

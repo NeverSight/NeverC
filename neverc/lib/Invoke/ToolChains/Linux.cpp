@@ -94,19 +94,7 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   addPathIfExists(D, concat(SysRoot, "/lib"), Paths);
   addPathIfExists(D, concat(SysRoot, "/usr/lib"), Paths);
 
-  if (UseBundledAndroidSysroot) {
-    // Android: add API-level directory for CRT objects and shared libs.
-    // Try the conventional API levels, preferring the minimum supported.
-    for (const char *Api : {"21", "22", "23", "24", "25", "26", "27", "28",
-                            "29", "30", "31", "32", "33", "34"}) {
-      std::string ApiPath =
-          concat(SysRoot, "/usr/lib/", MultiarchTriple, "/") + Api;
-      if (D.getVFS().exists(ApiPath)) {
-        Paths.push_back(ApiPath);
-        break;
-      }
-    }
-  } else if (UseBundledSysroot) {
+  if (!UseBundledAndroidSysroot && UseBundledSysroot) {
     // When GCC isn't detected (common during cross-compilation), search for
     // bundled GCC runtime objects (crtbeginS.o, crtendS.o, libgcc.a, etc.)
     // inside the sysroot.
@@ -136,6 +124,8 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
 }
 
 ToolChain::RuntimeLibType Linux::GetDefaultRuntimeLibType() const {
+  if (getTriple().isAndroid())
+    return ToolChain::RLT_CompilerRT;
   return Generic_ELF::GetDefaultRuntimeLibType();
 }
 
