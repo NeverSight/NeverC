@@ -1,1 +1,2 @@
-../../../lib/aarch64-linux-gnu/libm.so.6
+/* GNU ld script */
+GROUP ( libm.a )
