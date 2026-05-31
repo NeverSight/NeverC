@@ -96,7 +96,7 @@ neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
 neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
-Ausführliche Designnotizen, Plattformmatrix, CLI-Referenz und Beispiele: **[Dokumentationsindex](../README.de.md)**. Vollständig kompilierbare Beispiele: **[examples/](../../examples/)**.
+Ausführliche Designnotizen, Plattformmatrix, CLI-Referenz und Beispiele: **[Dokumentationsindex](../README.de.md)**. Vollständig kompilierbare Beispiele: **[examples](../examples/README.de.md)**.
 
 ## Vorgefertigte macOS-Binärdateien
 

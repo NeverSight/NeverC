@@ -14,7 +14,7 @@ make
 ## البناء اليدوي
 
 ```bash
-neverc --target=x86_64-pc-windows-msvc -Wall -fms-extensions -fms-compatibility -D_AMD64_ -Xlinker --subsystem=console -lkernel32 -luser32 -lmsvcrt -o example.exe main.c
+neverc --target=x86_64-pc-windows-msvc -Wall -Xlinker --subsystem=console -lkernel32 -luser32 -lmsvcrt -o example.exe main.c
 ```
 
 ## الميزات

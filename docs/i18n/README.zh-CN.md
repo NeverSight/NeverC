@@ -96,7 +96,7 @@ neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
 neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
-详细设计说明、平台矩阵、CLI 参考与示例见 **[文档索引](../README.zh-CN.md)**。更多完整可构建示例见 **[examples/](../../examples/)**。
+详细设计说明、平台矩阵、CLI 参考与示例见 **[文档索引](../README.zh-CN.md)**。更多完整可构建示例见 **[examples](../examples/README.zh-CN.md)**。
 
 ## macOS 预编译产物
 

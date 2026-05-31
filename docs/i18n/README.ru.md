@@ -96,7 +96,7 @@ neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
 neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
-Подробности: **[индекс документации](../README.ru.md)** — дизайн, матрица платформ, справочник CLI, примеры. Полные собираемые примеры: **[examples/](../../examples/)**.
+Подробности: **[индекс документации](../README.ru.md)** — дизайн, матрица платформ, справочник CLI, примеры. Полные собираемые примеры: **[examples](../examples/README.ru.md)**.
 
 ## Готовые бинарники macOS
 
