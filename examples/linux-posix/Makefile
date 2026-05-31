@@ -5,7 +5,6 @@ OUTPUT  = posix-demo
 
 FLAGS = \
 	--target=$(TARGET) \
-	-O2 \
 	-Wall \
 	-lpthread
 

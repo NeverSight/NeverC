@@ -5,7 +5,6 @@ OUTPUT  = hello
 
 FLAGS = \
 	--target=$(TARGET) \
-	-O2 \
 	-Wall
 
 all: $(OUTPUT)

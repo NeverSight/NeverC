@@ -5,7 +5,6 @@ OUTPUT  = network-demo
 
 FLAGS = \
 	--target=$(TARGET) \
-	-O2 \
 	-Wall
 
 all: $(OUTPUT)

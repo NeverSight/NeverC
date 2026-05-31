@@ -30,7 +30,7 @@ make NEVERC=/path/to/neverc
 ## 수동 빌드 (Make 없이)
 
 ```bash
-neverc --target=x86_64-linux-gnu -O2 -Wall -o hello main.c
+neverc --target=x86_64-linux-gnu -Wall -o hello main.c
 ```
 
 ## 실행

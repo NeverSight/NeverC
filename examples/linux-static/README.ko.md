@@ -22,7 +22,7 @@ make TARGET=aarch64-linux-gnu
 ## 수동 빌드
 
 ```bash
-neverc --target=x86_64-linux-gnu -O2 -Wall -static -lm -o static-demo main.c
+neverc --target=x86_64-linux-gnu -Wall -static -lm -o static-demo main.c
 ```
 
 ## 실행

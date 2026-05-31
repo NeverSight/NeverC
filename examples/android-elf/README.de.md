@@ -24,7 +24,7 @@ make NEVERC=/path/to/neverc
 ## Manueller Build (ohne Make)
 
 ```bash
-neverc --target=aarch64-linux-android21 -O2 -Wall -fPIE -lm -ldl -llog -o android-elf main.c
+neverc --target=aarch64-linux-android21 -Wall -fPIE -lm -ldl -llog -o android-elf main.c
 ```
 
 ## Bereitstellung und Ausführung

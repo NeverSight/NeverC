@@ -5,7 +5,6 @@ OUTPUT  = static-demo
 
 FLAGS = \
 	--target=$(TARGET) \
-	-O2 \
 	-Wall \
 	-static \
 	-lm

@@ -24,7 +24,7 @@ make TARGET=aarch64-linux-gnu
 ## Manual build (without Make)
 
 ```bash
-neverc --target=x86_64-linux-gnu -O2 -Wall -static -lm -o static-demo main.c
+neverc --target=x86_64-linux-gnu -Wall -static -lm -o static-demo main.c
 ```
 
 ## Verify static linking

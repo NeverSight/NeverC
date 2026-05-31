@@ -30,7 +30,7 @@ make NEVERC=/path/to/neverc
 ## 手動建置（不使用 Make）
 
 ```bash
-neverc --target=x86_64-linux-gnu -O2 -Wall -o hello main.c
+neverc --target=x86_64-linux-gnu -Wall -o hello main.c
 ```
 
 ## 執行

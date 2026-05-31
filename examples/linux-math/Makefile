@@ -5,7 +5,6 @@ OUTPUT  = math-demo
 
 FLAGS = \
 	--target=$(TARGET) \
-	-O2 \
 	-Wall \
 	-lm -lz
 

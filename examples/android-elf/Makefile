@@ -5,7 +5,6 @@ OUTPUT  = android-elf
 
 FLAGS = \
 	--target=$(TARGET) \
-	-O2 \
 	-Wall \
 	-fPIE \
 	-lm \

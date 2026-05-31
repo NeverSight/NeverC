@@ -24,7 +24,7 @@ make TARGET=aarch64-linux-gnu
 ## 手动构建（不使用 Make）
 
 ```bash
-neverc --target=x86_64-linux-gnu -O2 -Wall -o network-demo main.c
+neverc --target=x86_64-linux-gnu -Wall -o network-demo main.c
 ```
 
 ## 运行

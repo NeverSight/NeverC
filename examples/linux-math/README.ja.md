@@ -22,7 +22,7 @@ make TARGET=aarch64-linux-gnu
 ## 手動ビルド
 
 ```bash
-neverc --target=x86_64-linux-gnu -O2 -Wall -lm -lz -o math-demo main.c
+neverc --target=x86_64-linux-gnu -Wall -lm -lz -o math-demo main.c
 ```
 
 ## 実行

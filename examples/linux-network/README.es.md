@@ -22,7 +22,7 @@ make TARGET=aarch64-linux-gnu
 ## Compilación manual
 
 ```bash
-neverc --target=x86_64-linux-gnu -O2 -Wall -o network-demo main.c
+neverc --target=x86_64-linux-gnu -Wall -o network-demo main.c
 ```
 
 ## Ejecución

@@ -24,7 +24,7 @@ make NEVERC=/path/to/neverc
 ## 手動ビルド（Make を使わない場合）
 
 ```bash
-neverc --target=aarch64-linux-android21 -O2 -Wall -fPIE -lm -ldl -llog -o android-elf main.c
+neverc --target=aarch64-linux-android21 -Wall -fPIE -lm -ldl -llog -o android-elf main.c
 ```
 
 ## デプロイと実行

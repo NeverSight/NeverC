@@ -22,7 +22,7 @@ make TARGET=aarch64-linux-gnu
 ## Ручная сборка
 
 ```bash
-neverc --target=x86_64-linux-gnu -O2 -Wall -static -lm -o static-demo main.c
+neverc --target=x86_64-linux-gnu -Wall -static -lm -o static-demo main.c
 ```
 
 ## Запуск
