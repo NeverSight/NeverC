@@ -32,7 +32,7 @@ el tamaño del binario (~38 KB → ~3 KB).
 ```bash
 neverc --target=x86_64-pc-windows-msvc \
   -g \
-  -fms-kernel -fms-extensions -fms-compatibility \
+  -fms-kernel \
   -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
   -Xlinker --entry=DriverEntry \
