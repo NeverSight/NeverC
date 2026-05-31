@@ -370,10 +370,12 @@ CrashRecoveryContextImpl_HandleCrash(CrashRecoveryContextImpl *impl,
     longjmp(impl->JumpBuffer, 1);
 }
 
+#if LLVM_ENABLE_THREADS == 1
 inline LLVM_CRC_MUTEX_T *getCrashRecoveryContextMutex() {
   static LLVM_CRC_MUTEX_T CrashRecoveryContextMutex = LLVM_CRC_MUTEX_INITIALIZER;
   return &CrashRecoveryContextMutex;
 }
+#endif
 
 static bool gCrashRecoveryEnabled = false;
 
@@ -426,23 +428,31 @@ inline CrashRecoveryContext *CrashRecoveryContext::GetCurrent() {
 }
 
 inline void CrashRecoveryContext::Enable() {
+#if LLVM_ENABLE_THREADS == 1
   LLVM_CRC_MUTEX_T *_crc_mtx = getCrashRecoveryContextMutex();
   LLVM_CRC_MUTEX_LOCK(_crc_mtx);
+#endif
   if (!gCrashRecoveryEnabled) {
     gCrashRecoveryEnabled = true;
     installExceptionOrSignalHandlers();
   }
+#if LLVM_ENABLE_THREADS == 1
   LLVM_CRC_MUTEX_UNLOCK(_crc_mtx);
+#endif
 }
 
 inline void CrashRecoveryContext::Disable() {
+#if LLVM_ENABLE_THREADS == 1
   LLVM_CRC_MUTEX_T *_crc_mtx = getCrashRecoveryContextMutex();
   LLVM_CRC_MUTEX_LOCK(_crc_mtx);
+#endif
   if (gCrashRecoveryEnabled) {
     gCrashRecoveryEnabled = false;
     uninstallExceptionOrSignalHandlers();
   }
+#if LLVM_ENABLE_THREADS == 1
   LLVM_CRC_MUTEX_UNLOCK(_crc_mtx);
+#endif
 }
 
 inline void
