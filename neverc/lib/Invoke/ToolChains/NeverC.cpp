@@ -1698,6 +1698,20 @@ void renderFloatingPointOptions(const ToolChain &TC, const Driver &D,
     A->claim();
   }
 
+  // NeverC does not bundle a complex-arithmetic runtime (compiler-rt's
+  // __mulXc3 / __divXc3) for the MSVC target, and the MSVC CRT does not provide
+  // one, so the default CX_Full lowering would emit unresolved __muldc3 /
+  // __divdc3 calls at link time. Default _Complex multiply/divide to the inline
+  // "limited" range lowering there. A user-supplied -fcx-* / -ffast-math /
+  // -ffp-model= flag was already handled above and takes precedence.
+  if (TC.getTriple().isWindowsMSVCEnvironment() &&
+      !Args.hasArg(options::OPT_fcx_limited_range,
+                   options::OPT_fno_cx_limited_range,
+                   options::OPT_fcx_fortran_rules,
+                   options::OPT_fno_cx_fortran_rules) &&
+      !Args.hasArg(options::OPT_ffast_math, options::OPT_ffp_model_EQ))
+    CmdArgs.push_back(Args.MakeArgString(renderComplexRangeOption("limited")));
+
   if (!HonorINFs)
     CmdArgs.push_back("-menable-no-infs");
 
