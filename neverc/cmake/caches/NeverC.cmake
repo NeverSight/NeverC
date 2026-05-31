@@ -146,8 +146,19 @@ set(NEVERC_STRIP_BINARY ON CACHE BOOL "")
 # Defaults OFF for fast incremental rebuilds during local development.
 # CI workflows should pass -DNEVERC_ENABLE_LTO=ON for release artifacts.
 # Always disabled under MSVC, when cross-compiling, or in Debug builds.
+#
+# Also disabled on Windows HOSTS: the Windows LLVM/clang + Full LTO toolchain
+# miscompiles parts of neverc.exe, detonating latent unspecified-evaluation-
+# order / UB in the sources (e.g. the ParseUnqualifiedId bug fixed in
+# e473c35fd) into wrong codegen, parser/lexer failures and runtime crashes
+# that do NOT reproduce with the same sources on macOS/Linux (or on a non-LTO
+# Windows build).  The Windows CI uses clang.exe (GNU driver, so `MSVC` is
+# false here), which is why the NOT MSVC guard alone let LTO through.  Keep
+# Windows on a non-LTO build until those UB sites are hunted down (ASan/UBSan)
+# and the sources are proven LTO-clean; then drop the CMAKE_HOST_WIN32 guard.
 option(NEVERC_ENABLE_LTO "Enable Full LTO for the neverc binary" OFF)
 if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING AND NOT MSVC
+   AND NOT CMAKE_HOST_WIN32
    AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(LLVM_ENABLE_LTO Full CACHE STRING "" FORCE)
 else()
