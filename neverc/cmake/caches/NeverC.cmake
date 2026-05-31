@@ -71,12 +71,19 @@ set(LLVM_BUILD_LLVM_C_DYLIB OFF CACHE BOOL "")
 
 # Default to lld on every platform when available.  LLVM_ENABLE_LLD wires
 # -fuse-ld=lld on Unix/macOS and CMAKE_LINKER=lld-link on MSVC, so Full LTO
-# works without LLVMgold.so.  Linux/Windows always opt in; macOS falls back to
-# ld64 only when the host toolchain has no lld (e.g. bare Xcode clang).
+# works without LLVMgold.so.  Opt in only when the matching lld is actually
+# present; otherwise fall back to the platform default linker (MSVC link.exe,
+# or ld64 on bare Xcode clang).
 if(NOT CMAKE_CROSSCOMPILING)
   set(_NEVERC_USE_LLD FALSE)
   if(_NEVERC_HOST_MSVC)
-    set(_NEVERC_USE_LLD TRUE)
+    # On MSVC, LLD is the separate lld-link.exe, which ships with LLVM/clang
+    # rather than the MSVC toolset.  Only opt in when it is on PATH; otherwise
+    # keep LLVM_ENABLE_LLD off and let the build use the MSVC linker (link.exe).
+    find_program(_NEVERC_LLD NAMES lld-link)
+    if(_NEVERC_LLD)
+      set(_NEVERC_USE_LLD TRUE)
+    endif()
   else()
     get_filename_component(_NEVERC_CXX_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
     find_program(_NEVERC_LLD NAMES ld64.lld ld.lld lld
