@@ -55,17 +55,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* On some Windows configurations (e.g. when the compiler's built-in resource
-   headers are not in the search path), <stddef.h> may fail to provide
-   offsetof.  Ensure it is always available since NEVERC_API_HAS relies on it. */
-#ifndef offsetof
-#if defined(__GNUC__) || defined(__clang__) || defined(__neverc__)
-#define offsetof(t, d) __builtin_offsetof(t, d)
-#else
-#define offsetof(t, d) ((size_t)&(((t *)0)->d))
-#endif
-#endif
-
 #ifdef _WIN32
 #define NEVERC_EXPORT __declspec(dllexport)
 #elif defined(__GNUC__) || defined(__clang__)
