@@ -17,6 +17,7 @@
 #include <intrin.h>
 #pragma intrinsic(_BitScanReverse, _BitScanReverse64)
 #pragma intrinsic(_BitScanForward, _BitScanForward64)
+#pragma intrinsic(__popcnt64)
 
 static __forceinline int csupport_compat_clzll(unsigned __int64 x) {
   unsigned long index;
@@ -36,6 +37,7 @@ static __forceinline int csupport_compat_clz(unsigned int x) {
 #define __builtin_clzll(x) csupport_compat_clzll(x)
 #define __builtin_ctzll(x) csupport_compat_ctzll(x)
 #define __builtin_clz(x) csupport_compat_clz(x)
+#define __builtin_popcountll(x) ((int)__popcnt64(x))
 #define CSUPPORT_FALLTHROUGH
 #else
 #define CSUPPORT_FALLTHROUGH __attribute__((fallthrough))

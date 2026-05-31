@@ -113,12 +113,12 @@ static void test_inc_dec(void) {
 }
 
 // --- 4. Stack alignment ---
-// x86_64 and AArch64 both require 16-byte stack alignment.
+// x86_64 and AArch64 both require 16-byte stack alignment at call sites.
+// We verify this by reading SP inside a non-leaf function (a leaf function
+// may use the red zone on x86_64, leaving RSP at entry+8 which is valid
+// but not 16-aligned).
 
-__attribute__((noinline))
-static int check_stack_alignment(void) {
-    volatile char buf[1];
-    buf[0] = 0;
+static void __attribute__((noinline)) stack_alignment_callee(uintptr_t *out) {
     uintptr_t sp;
 #if defined(__x86_64__)
     __asm__ volatile("movq %%rsp, %0" : "=r"(sp));
@@ -127,6 +127,16 @@ static int check_stack_alignment(void) {
 #else
     sp = 0;
 #endif
+    *out = sp;
+}
+
+__attribute__((noinline))
+static int check_stack_alignment(void) {
+    volatile char buf[1];
+    buf[0] = 0;
+    uintptr_t sp = 0;
+    stack_alignment_callee(&sp);
+    if (sp == 0) return 1;
     return (sp % 16 == 0) ? 1 : 0;
 }
 

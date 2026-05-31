@@ -19,6 +19,7 @@
 
 #include "llvm/ADT/FunctionExtras.h"
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -477,7 +478,7 @@ public:
         nc_thread_t t =
             nc_thread_create(&ThreadPoolExecutor::workerEntry, child);
         self->Threads.push_back(t);
-        if (__atomic_load_n(&self->Stop, __ATOMIC_ACQUIRE))
+        if (self->Stop.load(std::memory_order_acquire))
           break;
       }
       nc_mutex_lock(self->CreatedMtx);
@@ -509,11 +510,11 @@ public:
 
   void stop() {
     nc_mutex_lock(Mutex);
-    if (__atomic_load_n(&Stop, __ATOMIC_RELAXED)) {
+    if (Stop.load(std::memory_order_relaxed)) {
       nc_mutex_unlock(Mutex);
       return;
     }
-    __atomic_store_n(&Stop, true, __ATOMIC_RELEASE);
+    Stop.store(true, std::memory_order_release);
     nc_mutex_unlock(Mutex);
     nc_cond_broadcast(Cond);
     nc_mutex_lock(CreatedMtx);
@@ -557,7 +558,7 @@ public:
 private:
   bool hasSequentialTasks() const {
     return !WorkQueueSequential.empty() &&
-           !__atomic_load_n(&SeqQueueLocked, __ATOMIC_ACQUIRE);
+           !SeqQueueLocked.load(std::memory_order_acquire);
   }
 
   bool hasGeneralTasks() const { return !WorkQueue.empty(); }
@@ -567,16 +568,16 @@ private:
     S.apply_thread_strategy(ThreadID);
     while (true) {
       nc_mutex_lock(Mutex);
-      while (!__atomic_load_n(&Stop, __ATOMIC_RELAXED) && !hasGeneralTasks() &&
+      while (!Stop.load(std::memory_order_relaxed) && !hasGeneralTasks() &&
              !hasSequentialTasks())
         nc_cond_wait(Cond, Mutex);
-      if (__atomic_load_n(&Stop, __ATOMIC_RELAXED)) {
+      if (Stop.load(std::memory_order_relaxed)) {
         nc_mutex_unlock(Mutex);
         break;
       }
       bool Sequential = hasSequentialTasks();
       if (Sequential)
-        __atomic_store_n(&SeqQueueLocked, true, __ATOMIC_RELEASE);
+        SeqQueueLocked.store(true, std::memory_order_release);
       else
         assert(hasGeneralTasks());
 
@@ -590,12 +591,12 @@ private:
       nc_mutex_unlock(Mutex);
       Task();
       if (Sequential)
-        __atomic_store_n(&SeqQueueLocked, false, __ATOMIC_RELEASE);
+        SeqQueueLocked.store(false, std::memory_order_release);
     }
   }
 
-  bool Stop = false;           /* accessed atomically via __atomic builtins */
-  bool SeqQueueLocked = false; /* accessed atomically via __atomic builtins */
+  std::atomic<bool> Stop{false};
+  std::atomic<bool> SeqQueueLocked{false};
   SmallVector<llvm::unique_function<void()>, 32> WorkQueue;
   UniqueFunctionDeque WorkQueueSequential;
   nc_mutex_t Mutex;

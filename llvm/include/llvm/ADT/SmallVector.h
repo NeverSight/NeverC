@@ -1370,7 +1370,7 @@ SmallVectorBase<Size_T>::mallocForGrow(void *FirstEl, size_t MinSize,
         this->BeginX, FirstEl, MinSize, TSize, (uint64_t)(this->Capacity),
         &NewCapacity);
 #else
-    __builtin_unreachable();
+    LLVM_BUILTIN_UNREACHABLE;
 #endif
   }
 }

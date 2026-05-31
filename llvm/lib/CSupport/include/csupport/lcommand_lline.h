@@ -1,5 +1,6 @@
 #ifndef CSUPPORT_LCOMMAND_LLINE_H
 #define CSUPPORT_LCOMMAND_LLINE_H
+#include "csupport/types.h"
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -1853,7 +1854,7 @@ inline bool cl_detail::CommandLineParser::ParseCommandLineOptions(
         switch (PositionalOpts[i]->getNumOccurrencesFlag()) {
         case cl::Optional:
           Done = true; // Optional arguments want _at most_ one value
-          __attribute__((fallthrough));
+          CSUPPORT_FALLTHROUGH;
         case cl::ZeroOrMore: // Zero or more will take all they can get...
         case cl::OneOrMore:  // One or more will take all they can get...
           ProvidePositionalOption(PositionalOpts[i],
@@ -1907,7 +1908,7 @@ inline bool cl_detail::CommandLineParser::ParseCommandLineOptions(
         Opt.second->error("must be specified at least once!");
         ErrorParsing = true;
       }
-      __attribute__((fallthrough));
+      CSUPPORT_FALLTHROUGH;
     default:
       break;
     }

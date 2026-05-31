@@ -32,6 +32,7 @@
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Program.h"
 #include <optional>
 
@@ -146,7 +147,7 @@ public:
   [[noreturn]] static void Exit(int RetCode, bool NoCleanup = false);
   [[noreturn]] static void ExitNoCleanup(int RetCode) {
     csupport_exit_no_cleanup(RetCode);
-    __builtin_unreachable();
+    LLVM_BUILTIN_UNREACHABLE;
   }
 
 private:

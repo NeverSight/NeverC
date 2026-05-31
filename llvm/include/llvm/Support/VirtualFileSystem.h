@@ -24,6 +24,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include <assert.h>
+#include <atomic>
 #include <optional>
 #include <stdint.h>
 #include <string>
@@ -3737,8 +3738,8 @@ inline void collectVFSFromYAML(uptr_t<MemoryBuffer> Buffer,
 }
 
 inline UniqueID getNextVirtualUniqueID() {
-  static unsigned UID = 0;
-  unsigned ID = __atomic_add_fetch(&UID, 1, __ATOMIC_SEQ_CST);
+  static std::atomic<unsigned> UID{0};
+  unsigned ID = UID.fetch_add(1, std::memory_order_seq_cst) + 1;
   // The following assumes that uint64_t max will never collide with a real
   // dev_t value from the OS.
   return UniqueID(UINT64_MAX, ID);
