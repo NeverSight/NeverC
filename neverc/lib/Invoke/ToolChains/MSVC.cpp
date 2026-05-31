@@ -286,6 +286,24 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   C.addCommand(std::move(LCmd));
 }
 
+void tools::visualstudio::StaticLibTool::ConstructJob(
+    Compilation &C, const JobAction &JA, const InputInfo &Output,
+    const InputInfoList &Inputs, const ArgList &Args,
+    const char *LinkingOutput) const {
+  Args.ClaimAllArgs(options::OPT_g_Group);
+  Args.ClaimAllArgs(options::OPT_emit_llvm);
+  Args.ClaimAllArgs(options::OPT_w);
+
+  ArgStringList CmdArgs;
+  // The archive is written in-process (ArchiveCommand::Execute ->
+  // llvm::writeArchive, K_COFF for Windows); no external archiver is spawned.
+  // Exec is shown only by -###, so point it at neverc itself rather than
+  // resolving a tool that is never run.
+  const char *Exec = getToolChain().getDriver().getNeverCProgramPath();
+  C.addCommand(std::make_unique<ArchiveCommand>(
+      JA, *this, ResponseFileSupport::None(), Exec, CmdArgs, Inputs, Output));
+}
+
 MSVCToolChain::MSVCToolChain(const Driver &D, const llvm::Triple &Triple,
                              const ArgList &Args)
     : ToolChain(D, Triple, Args) {
@@ -316,6 +334,10 @@ MSVCToolChain::MSVCToolChain(const Driver &D, const llvm::Triple &Triple,
 
 Tool *MSVCToolChain::buildLinker() const {
   return new tools::visualstudio::Linker(*this);
+}
+
+Tool *MSVCToolChain::buildStaticLibTool() const {
+  return new tools::visualstudio::StaticLibTool(*this);
 }
 
 ToolChain::UnwindTableLevel
