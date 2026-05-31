@@ -956,7 +956,7 @@ bool Sema::CheckParmsForFunctionDef(llvm::ArrayRef<ParmVarDecl *> Parameters,
 
 namespace {
 
-std::optional<std::pair<CharUnits, CharUnits>>
+static std::optional<std::pair<CharUnits, CharUnits>>
 getBaseAlignmentAndOffsetFromPtr(const Expr *E, TreeContext &Ctx);
 std::optional<std::pair<CharUnits, CharUnits>>
 getAlignmentAndOffsetFromBinAddOrSub(const Expr *PtrE, const Expr *IntE,
