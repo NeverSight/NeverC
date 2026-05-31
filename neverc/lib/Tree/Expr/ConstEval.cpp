@@ -2203,6 +2203,14 @@ bool handleLValueIndirectMember(EvalInfo &Info, const Expr *E, LValue &LVal,
 namespace {
 bool handleSizeof(EvalInfo &Info, SourceLocation Loc, QualType Type,
                   CharUnits &Size) {
+  // Defense in depth: never attempt to size a null or dependent type. The
+  // type-size machinery (getTypeInfoImpl) treats dependent types as
+  // unreachable, so reaching here with one would be undefined behavior.
+  if (Type.isNull() || Type->isDependentType()) {
+    Info.FFDiag(Loc);
+    return false;
+  }
+
   // sizeof(void), __alignof__(void), sizeof(function) = 1 as a gcc
   // extension.
   if (Type->isVoidType() || Type->isFunctionType()) {
@@ -10529,6 +10537,12 @@ ICEDiag checkEvalInICE(const Expr *E, const TreeContext &Ctx) {
 
 namespace {
 ICEDiag checkICE(const Expr *E, const TreeContext &Ctx) {
+  // A value-dependent or error-containing expression (e.g. sizeof() of an
+  // undeclared identifier recovered as a dependent-typed RecoveryExpr) is never
+  // an integer constant expression. Bail out before attempting any evaluation,
+  // which would otherwise feed a dependent type into getTypeInfoImpl and crash.
+  if (E->isValueDependent() || E->containsErrors())
+    return ICEDiag(IK_NotICE, E->getBeginLoc());
   if (!E->getType()->isIntegralOrEnumerationType())
     return ICEDiag(IK_NotICE, E->getBeginLoc());
 
