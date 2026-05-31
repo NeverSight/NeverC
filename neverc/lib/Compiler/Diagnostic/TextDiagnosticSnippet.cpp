@@ -8,6 +8,7 @@
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/Locale.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/bit.h"
 #include <algorithm>
 #include <optional>
 
@@ -43,10 +44,11 @@ int bytesSincePreviousTabOrLineBegin(llvm::StringRef SourceLine, size_t i) {
         uint64x2_t As64 = vreinterpretq_u64_u8(Hits);
         uint64_t Hi = vgetq_lane_u64(As64, 1);
         if (Hi)
-          return static_cast<int>(i) - 8 - (63 - __builtin_clzll(Hi)) / 8 - 1;
+          return static_cast<int>(i) - 8 -
+                 (static_cast<int>(llvm::bit_width(Hi)) - 1) / 8 - 1;
         uint64_t Lo = vgetq_lane_u64(As64, 0);
-        return static_cast<int>(i) - 16 + 8 - (63 - __builtin_clzll(Lo)) / 8 -
-               1;
+        return static_cast<int>(i) - 16 + 8 -
+               (static_cast<int>(llvm::bit_width(Lo)) - 1) / 8 - 1;
       }
       i -= 16;
     }
@@ -59,7 +61,7 @@ int bytesSincePreviousTabOrLineBegin(llvm::StringRef SourceLine, size_t i) {
       unsigned Mask = static_cast<unsigned>(
           _mm256_movemask_epi8(_mm256_cmpeq_epi8(V, VTab)));
       if (Mask != 0) {
-        unsigned LastBit = 31 - __builtin_clz(Mask);
+        unsigned LastBit = llvm::bit_width(Mask) - 1;
         return static_cast<int>(i) - 32 + static_cast<int>(32 - LastBit - 1);
       }
       i -= 32;
@@ -73,7 +75,7 @@ int bytesSincePreviousTabOrLineBegin(llvm::StringRef SourceLine, size_t i) {
       unsigned Mask =
           static_cast<unsigned>(_mm_movemask_epi8(_mm_cmpeq_epi8(V, VTab)));
       if (Mask != 0) {
-        unsigned LastBit = 31 - __builtin_clz(Mask);
+        unsigned LastBit = llvm::bit_width(Mask) - 1;
         return static_cast<int>(i) - 16 + static_cast<int>(16 - LastBit - 1);
       }
       i -= 16;

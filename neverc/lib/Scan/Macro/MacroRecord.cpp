@@ -3,6 +3,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <utility>
@@ -93,7 +94,7 @@ uint32_t MacroRecord::computeTokenContentHash() const {
 
   for (; I + 4 <= N; I += 4) {
     if (LLVM_LIKELY(I + 8 <= N))
-      __builtin_prefetch(&ReplacementTokens[I + 8], 0, 1);
+      NEVERC_PREFETCH(&ReplacementTokens[I + 8], 0, 1);
 
     // Pack kind+length into a single 32-bit word per token.  Accumulate
     // four words before mixing identifier pointers to keep the dependency

@@ -93,7 +93,7 @@ void printPreprocessedTokens(PrepEngine &PP, Token &Tok,
 
   const char *DeferredStart = nullptr;
 
-  auto flushDeferred = [&]() __attribute__((always_inline)) {
+  auto flushDeferred = [&]() {
     if (DeferredStart && DeferredStart < CopyEnd)
       Callbacks->OS->write(DeferredStart, CopyEnd - DeferredStart);
     DeferredStart = nullptr;

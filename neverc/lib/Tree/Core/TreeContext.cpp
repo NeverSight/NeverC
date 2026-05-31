@@ -13,6 +13,7 @@
 #include "neverc/Tree/Decl/DeclContextInternals.h"
 #include "neverc/Tree/Expr/Expr.h"
 #include "neverc/Tree/Stmt/Stmt.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Tree/Type/DependenceFlags.h"
 #include "neverc/Tree/Type/StructLayout.h"
 #include "neverc/Tree/Type/TypeLoc.h"
@@ -120,7 +121,7 @@ void TreeContext::PrintStats() const {
   const Type *const *TypeData = Types.data();
   for (size_t i = 0; i < TypeCount; ++i) {
     if (LLVM_LIKELY(i + 4 < TypeCount))
-      __builtin_prefetch(TypeData[i + 4], 0, 1);
+      NEVERC_PREFETCH(TypeData[i + 4], 0, 1);
     counts[static_cast<unsigned>(TypeData[i]->getTypeClass())]++;
   }
 

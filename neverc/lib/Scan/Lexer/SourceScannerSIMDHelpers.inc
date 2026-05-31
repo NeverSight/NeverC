@@ -5,6 +5,8 @@
 //
 // Prerequisites: SIMD headers must be included before this file.
 
+#include "llvm/ADT/bit.h"
+
 #if defined(__aarch64__) && defined(__ARM_NEON)
 namespace {
 LLVM_ATTRIBUTE_ALWAYS_INLINE
@@ -13,8 +15,8 @@ unsigned neonFirstSetByte_WS(uint8x16_t Mask) {
   uint64_t Lo = vgetq_lane_u64(AsU64, 0);
   uint64_t Hi = vgetq_lane_u64(AsU64, 1);
   if (Lo)
-    return __builtin_ctzll(Lo) >> 3;
-  return 8 + (__builtin_ctzll(Hi) >> 3);
+    return llvm::countr_zero(Lo) >> 3;
+  return 8 + (llvm::countr_zero(Hi) >> 3);
 }
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE
@@ -28,13 +30,13 @@ unsigned neonFirstSetByte32_WS(uint8x16_t MaskLo,
   uint64x2_t Lo64 = vreinterpretq_u64_u8(MaskLo);
   uint64_t L0 = vgetq_lane_u64(Lo64, 0);
   uint64_t L1 = vgetq_lane_u64(Lo64, 1);
-  if (L0) return __builtin_ctzll(L0) >> 3;
-  if (L1) return 8 + (__builtin_ctzll(L1) >> 3);
+  if (L0) return llvm::countr_zero(L0) >> 3;
+  if (L1) return 8 + (llvm::countr_zero(L1) >> 3);
   uint64x2_t Hi64 = vreinterpretq_u64_u8(MaskHi);
   uint64_t H0 = vgetq_lane_u64(Hi64, 0);
   uint64_t H1 = vgetq_lane_u64(Hi64, 1);
-  if (H0) return 16 + (__builtin_ctzll(H0) >> 3);
-  return 24 + (__builtin_ctzll(H1) >> 3);
+  if (H0) return 16 + (llvm::countr_zero(H0) >> 3);
+  return 24 + (llvm::countr_zero(H1) >> 3);
 }
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE
@@ -181,7 +183,7 @@ __m128i pshufbClassify128_WS(__m128i V, __m128i LoLUT, __m128i HiLUT) {
 #endif
 
 namespace {
-__attribute__((always_inline))
+LLVM_ATTRIBUTE_ALWAYS_INLINE
 inline const char *
 skipWhitespaceRun(const char *CurPtr, const char *BufferEnd) {
 #ifdef __AVX512BW__
@@ -286,7 +288,7 @@ skipWhitespaceRun(const char *CurPtr, const char *BufferEnd) {
   return CurPtr;
 }
 
-__attribute__((always_inline))
+LLVM_ATTRIBUTE_ALWAYS_INLINE
 inline const char *
 scanToLineBreak(const char *CurPtr, const char *BufferEnd) {
 #ifdef __AVX512BW__
@@ -382,7 +384,7 @@ scanToLineBreak(const char *CurPtr, const char *BufferEnd) {
   return CurPtr;
 }
 
-__attribute__((always_inline))
+LLVM_ATTRIBUTE_ALWAYS_INLINE
 inline const char *
 scanBlockBody(const char *CurPtr, const char *BufferEnd) {
 #ifdef __AVX512BW__

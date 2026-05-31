@@ -29,6 +29,8 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
+#include "llvm/ADT/bit.h"
 #include <algorithm>
 #include <cassert>
 #include <climits>
@@ -1493,8 +1495,8 @@ SourceManager::getFileIDLocal(SourceLocation::UIntTy SLocOffset) const {
     unsigned MiddleIndex = (GreaterIndex - LessIndex) / 2 + LessIndex;
     unsigned Q1 = (MiddleIndex - LessIndex) / 2 + LessIndex;
     unsigned Q3 = (GreaterIndex - MiddleIndex) / 2 + MiddleIndex;
-    __builtin_prefetch(&LocalSLocEntryTable[Q1], 0, 3);
-    __builtin_prefetch(&LocalSLocEntryTable[Q3], 0, 3);
+    NEVERC_PREFETCH(&LocalSLocEntryTable[Q1], 0, 3);
+    NEVERC_PREFETCH(&LocalSLocEntryTable[Q3], 0, 3);
     SourceLocation::UIntTy MidOffset =
         getLocalSLocEntry(MiddleIndex).getOffset();
 
@@ -1989,7 +1991,7 @@ LineOffsetMapping LineOffsetMapping::get(llvm::MemoryBufferRef Buffer,
     const uint8x16_t NLV = vdupq_n_u8('\n');
     const uint8x16_t CRV = vdupq_n_u8('\r');
     auto extractNL = [&](const unsigned char *Base,
-                         uint8x16_t V) __attribute__((always_inline)) {
+                         uint8x16_t V) LLVM_ATTRIBUTE_ALWAYS_INLINE {
       uint8x16_t NLHit = vceqq_u8(V, NLV);
       uint8x16_t CRHit = vceqq_u8(V, CRV);
       if (LLVM_LIKELY(vmaxvq_u8(CRHit) == 0)) {
@@ -1997,12 +1999,12 @@ LineOffsetMapping LineOffsetMapping::get(llvm::MemoryBufferRef Buffer,
         uint64_t Lo = vgetq_lane_u64(As64, 0);
         uint64_t Hi = vgetq_lane_u64(As64, 1);
         while (Lo) {
-          unsigned Pos = static_cast<unsigned>(__builtin_ctzll(Lo)) >> 3;
+          unsigned Pos = static_cast<unsigned>(llvm::countr_zero(Lo)) >> 3;
           LineOffsets.push_back(static_cast<unsigned>(Base + Pos + 1 - Start));
           Lo ^= 0xFFULL << (Pos * 8);
         }
         while (Hi) {
-          unsigned Pos = 8u + (static_cast<unsigned>(__builtin_ctzll(Hi)) >> 3);
+          unsigned Pos = 8u + (static_cast<unsigned>(llvm::countr_zero(Hi)) >> 3);
           LineOffsets.push_back(static_cast<unsigned>(Base + Pos + 1 - Start));
           Hi ^= 0xFFULL << ((Pos - 8u) * 8);
         }

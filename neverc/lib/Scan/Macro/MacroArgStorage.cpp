@@ -4,6 +4,7 @@
 #include "neverc/Scan/PrepEngine.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Compiler.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include <algorithm>
 
@@ -111,7 +112,7 @@ unsigned MacroArgStorage::getArgLength(const Token *ArgPtr) {
       ArgPtr += 7;
       break;
     }
-    __builtin_prefetch(ArgPtr + 16, 0, 1);
+    NEVERC_PREFETCH(ArgPtr + 16, 0, 1);
     ArgPtr += 8;
   }
   return static_cast<unsigned>(ArgPtr - Start);
@@ -167,7 +168,7 @@ bool MacroArgStorage::ArgNeedsPreexpansion(const Token *ArgTok,
                                            PrepEngine &PP) const {
   for (; ArgTok->isNot(tok::eof); ++ArgTok) {
     if (LLVM_LIKELY(ArgTok + 1 != nullptr))
-      __builtin_prefetch(ArgTok + 2, 0, 1);
+      NEVERC_PREFETCH(ArgTok + 2, 0, 1);
     if (const IdentifierInfo *II = ArgTok->getIdentifierInfo())
       if (LLVM_UNLIKELY(II->hasMacroDefinition()))
         return true;

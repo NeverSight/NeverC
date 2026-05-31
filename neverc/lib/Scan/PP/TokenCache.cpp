@@ -1,4 +1,5 @@
 #include "neverc/Scan/PrepEngine.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "llvm/Support/Compiler.h"
 using namespace neverc;
 
@@ -31,7 +32,7 @@ NEVERC_HOT void PrepEngine::FetchCachedToken(Token &Result) {
   const size_t Sz = CachedTokens.size();
   if (LLVM_LIKELY(Pos < Sz)) {
     if (LLVM_LIKELY(Pos + 1 < Sz))
-      __builtin_prefetch(&CachedTokens[Pos + 1], 0, 3);
+      NEVERC_PREFETCH(&CachedTokens[Pos + 1], 0, 3);
     Result = CachedTokens[Pos];
     CachedLexPos = Pos + 1;
     Result.setFlag(Token::IsReinjected);

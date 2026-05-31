@@ -13,6 +13,8 @@
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/Unicode.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
+#include "llvm/ADT/bit.h"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -157,7 +159,7 @@ size_t countEscapeCharsInSpan(const char *Data, size_t Len, char Quote) {
       __mmask64 Hit =
           _mm512_cmpeq_epi8_mask(V, VBS) | _mm512_cmpeq_epi8_mask(V, VQ) |
           _mm512_cmpeq_epi8_mask(V, VNL) | _mm512_cmpeq_epi8_mask(V, VCR);
-      Extra += __builtin_popcountll(Hit);
+      Extra += llvm::popcount(static_cast<uint64_t>(Hit));
     }
   }
 #endif
@@ -173,7 +175,7 @@ size_t countEscapeCharsInSpan(const char *Data, size_t Len, char Quote) {
           _mm256_or_si256(_mm256_cmpeq_epi8(V, VBS), _mm256_cmpeq_epi8(V, VQ)),
           _mm256_or_si256(_mm256_cmpeq_epi8(V, VNL),
                           _mm256_cmpeq_epi8(V, VCR)));
-      Extra += __builtin_popcount(_mm256_movemask_epi8(Hit));
+      Extra += llvm::popcount(_mm256_movemask_epi8(Hit));
     }
   }
 #elif defined(__SSE2__)
@@ -187,8 +189,7 @@ size_t countEscapeCharsInSpan(const char *Data, size_t Len, char Quote) {
       __m128i Hit = _mm_or_si128(
           _mm_or_si128(_mm_cmpeq_epi8(V, VBS), _mm_cmpeq_epi8(V, VQ)),
           _mm_or_si128(_mm_cmpeq_epi8(V, VNL), _mm_cmpeq_epi8(V, VCR)));
-      Extra +=
-          __builtin_popcount(static_cast<unsigned>(_mm_movemask_epi8(Hit)));
+      Extra += llvm::popcount(static_cast<unsigned>(_mm_movemask_epi8(Hit)));
     }
   }
 #elif defined(__aarch64__) && defined(__ARM_NEON)
@@ -795,7 +796,7 @@ SourceScanner::scanToken(Token &Result, bool TokAtPhysicalStartOfLine) {
       Result.setFlag(Token::LeadingSpace);
     }
 
-    __builtin_prefetch(CurPtr + 64, 0, 3);
+    NEVERC_PREFETCH(CurPtr + 64, 0, 3);
 
     char Char = readChar(CurPtr, Result);
 

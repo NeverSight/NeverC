@@ -9,6 +9,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Compiler.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include <cassert>
 #include <cstring>
 #include <optional>
@@ -200,7 +201,7 @@ bool ExpansionLexer::needsParamSubstitution() const {
   unsigned I = 0;
   for (; I + 2 <= E; I += 2) {
     if (LLVM_LIKELY(I + PrefetchAhead + 2 < E))
-      __builtin_prefetch(&Tokens[I + PrefetchAhead + 2], 0, 1);
+      NEVERC_PREFETCH(&Tokens[I + PrefetchAhead + 2], 0, 1);
 
     const Token &T0 = Tokens[I];
     const Token &T1 = Tokens[I + 1];
@@ -322,7 +323,7 @@ void ExpansionLexer::substituteFunctionParams() {
 
   for (unsigned I = 0; I != E; ++I) {
     if (LLVM_LIKELY(I + PrefetchAhead < E))
-      __builtin_prefetch(&Tokens[I + PrefetchAhead], 0, 1);
+      NEVERC_PREFETCH(&Tokens[I + PrefetchAhead], 0, 1);
 
     const Token &CurTok = Tokens[I];
     if (I != 0 && !Tokens[I - 1].is(tok::hashhash) && CurTok.hasLeadingSpace())
@@ -537,9 +538,9 @@ NEVERC_HOT bool ExpansionLexer::Lex(Token &Tok) {
   Tok = Tokens[CurTokenIdx++];
 
   if (LLVM_LIKELY(!isAtEnd())) {
-    __builtin_prefetch(&Tokens[CurTokenIdx], 0, 3);
+    NEVERC_PREFETCH(&Tokens[CurTokenIdx], 0, 3);
     if (LLVM_LIKELY(CurTokenIdx + PrefetchAhead < NumTokens))
-      __builtin_prefetch(&Tokens[CurTokenIdx + PrefetchAhead], 0, 1);
+      NEVERC_PREFETCH(&Tokens[CurTokenIdx + PrefetchAhead], 0, 1);
   }
 
   if (LLVM_UNLIKELY(IsReinject))

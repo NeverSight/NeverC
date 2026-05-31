@@ -13,6 +13,7 @@
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Capacity.h"
 #include "llvm/Support/Errc.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/VirtualFileSystem.h"
@@ -59,7 +60,7 @@ void IncludeResolver::PrintStats() {
   const auto *FIData = FileInfo.data();
   for (unsigned i = 0; i < FISize; ++i) {
     if (LLVM_LIKELY(i + 4 < FISize))
-      __builtin_prefetch(&FIData[i + 4], 0, 0);
+      NEVERC_PREFETCH(&FIData[i + 4], 0, 0);
     NumOnceOnlyFiles += (FIData[i].isPragmaOnce | FIData[i].isImport);
   }
   llvm::errs() << "  " << NumOnceOnlyFiles << " #import/#pragma once files.\n";

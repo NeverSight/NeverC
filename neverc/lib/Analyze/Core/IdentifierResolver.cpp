@@ -6,6 +6,7 @@
 #include "neverc/Tree/Decl/Decl.h"
 #include "neverc/Tree/Decl/DeclarationName.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include <cassert>
 #include <cstdint>
 
@@ -369,7 +370,7 @@ IdentifierResolver::IdDeclInfoMap::operator[](DeclarationName Name) {
   }
   IdDeclInfo *IDI = &CurPool->Pool[CurIndex];
   if (LLVM_LIKELY(CurIndex + PREFETCH_DISTANCE < POOL_SIZE))
-    __builtin_prefetch(&CurPool->Pool[CurIndex + PREFETCH_DISTANCE], 1, 1);
+    NEVERC_PREFETCH(&CurPool->Pool[CurIndex + PREFETCH_DISTANCE], 1, 1);
   Name.setFETokenInfo(
       reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(IDI) | 0x1));
   ++CurIndex;

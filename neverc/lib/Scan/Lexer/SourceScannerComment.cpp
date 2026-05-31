@@ -12,6 +12,7 @@
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/Unicode.h"
 #include "llvm/Support/UnicodeCharRanges.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include <cassert>
 #include <cstdint>
 #include <optional>
@@ -335,7 +336,7 @@ SourceScanner::consumeBlockComment(Token &Result, const char *CurPtr,
 
   while (true) {
     if (CurPtr + 16 <= BufferEnd && C != '/' && C != '\0' && isASCII(C)) {
-      __builtin_prefetch(CurPtr + 64, 0, 2);
+      NEVERC_PREFETCH(CurPtr + 64, 0, 2);
       CurPtr = scanBlockBody(CurPtr, BufferEnd);
       UnicodeDecodingAlreadyDiagnosed = false;
       C = *CurPtr++;

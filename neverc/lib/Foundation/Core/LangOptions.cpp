@@ -8,6 +8,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/SpecialCaseList.h"
@@ -129,6 +130,7 @@ llvm::StringRef neverc::languageToString(Language L) {
   case Language::C:
     return "C";
   }
+  llvm_unreachable("invalid Language");
 }
 
 namespace {

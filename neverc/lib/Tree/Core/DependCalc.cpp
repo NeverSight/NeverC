@@ -4,6 +4,7 @@
 #include "neverc/Tree/Type/DependenceFlags.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Compiler.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 
 using namespace neverc;
 
@@ -226,7 +227,7 @@ neverc::computeDependence(CallExpr *E, llvm::ArrayRef<Expr *> PreArgs) {
   Expr *const *Args = E->getArgs();
   for (unsigned I = 0; I < NumArgs; ++I) {
     if (LLVM_LIKELY(I + 2 < NumArgs))
-      __builtin_prefetch(Args[I + 2], 0, 1);
+      NEVERC_PREFETCH(Args[I + 2], 0, 1);
     if (LLVM_LIKELY(Args[I] != nullptr))
       D |= Args[I]->getDependence();
   }

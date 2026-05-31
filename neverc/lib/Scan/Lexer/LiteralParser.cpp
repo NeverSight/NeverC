@@ -7,6 +7,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/ADT/bit.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Unicode.h"
@@ -86,14 +87,14 @@ const char *scanToBackslash(const char *Ptr, const char *End) {
           uint64x2_t As64 = vreinterpretq_u64_u8(H0);
           uint64_t Lo = vgetq_lane_u64(As64, 0);
           if (Lo)
-            return Ptr + (__builtin_ctzll(Lo) >> 3);
-          return Ptr + 8 + (__builtin_ctzll(vgetq_lane_u64(As64, 1)) >> 3);
+            return Ptr + (llvm::countr_zero(Lo) >> 3);
+          return Ptr + 8 + (llvm::countr_zero(vgetq_lane_u64(As64, 1)) >> 3);
         }
         uint64x2_t As64 = vreinterpretq_u64_u8(H1);
         uint64_t Lo = vgetq_lane_u64(As64, 0);
         if (Lo)
-          return Ptr + 16 + (__builtin_ctzll(Lo) >> 3);
-        return Ptr + 24 + (__builtin_ctzll(vgetq_lane_u64(As64, 1)) >> 3);
+          return Ptr + 16 + (llvm::countr_zero(Lo) >> 3);
+        return Ptr + 24 + (llvm::countr_zero(vgetq_lane_u64(As64, 1)) >> 3);
       }
       Ptr += 32;
     }
@@ -104,8 +105,8 @@ const char *scanToBackslash(const char *Ptr, const char *End) {
         uint64x2_t As64 = vreinterpretq_u64_u8(Hit);
         uint64_t Lo = vgetq_lane_u64(As64, 0);
         if (Lo)
-          return Ptr + (__builtin_ctzll(Lo) >> 3);
-        return Ptr + 8 + (__builtin_ctzll(vgetq_lane_u64(As64, 1)) >> 3);
+          return Ptr + (llvm::countr_zero(Lo) >> 3);
+        return Ptr + 8 + (llvm::countr_zero(vgetq_lane_u64(As64, 1)) >> 3);
       }
       Ptr += 16;
     }
@@ -119,22 +120,22 @@ const char *scanToBackslash(const char *Ptr, const char *End) {
     };
     while (Ptr + 16 <= End) {
       uint64_t W0, W1;
-      __builtin_memcpy(&W0, Ptr, 8);
-      __builtin_memcpy(&W1, Ptr + 8, 8);
+      std::memcpy(&W0, Ptr, 8);
+      std::memcpy(&W1, Ptr + 8, 8);
       uint64_t S0 = hasZeroByte(W0 ^ (Broadcast * '\\'));
       if (S0)
-        return Ptr + (__builtin_ctzll(S0 & HiBitMask) >> 3);
+        return Ptr + (llvm::countr_zero(S0 & HiBitMask) >> 3);
       uint64_t S1 = hasZeroByte(W1 ^ (Broadcast * '\\'));
       if (S1)
-        return Ptr + 8 + (__builtin_ctzll(S1 & HiBitMask) >> 3);
+        return Ptr + 8 + (llvm::countr_zero(S1 & HiBitMask) >> 3);
       Ptr += 16;
     }
     if (Ptr + 8 <= End) {
       uint64_t Word;
-      __builtin_memcpy(&Word, Ptr, 8);
+      std::memcpy(&Word, Ptr, 8);
       uint64_t Stops = hasZeroByte(Word ^ (Broadcast * '\\'));
       if (Stops)
-        return Ptr + (__builtin_ctzll(Stops & HiBitMask) >> 3);
+        return Ptr + (llvm::countr_zero(Stops & HiBitMask) >> 3);
       Ptr += 8;
     }
   }

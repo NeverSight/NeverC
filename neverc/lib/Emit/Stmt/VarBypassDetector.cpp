@@ -3,6 +3,7 @@
 #include "neverc/Tree/Expr/Expr.h"
 #include "neverc/Tree/Stmt/Stmt.h"
 #include "llvm/Support/Compiler.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 
 using namespace neverc;
 using namespace Emit;
@@ -119,7 +120,7 @@ void VarBypassDetector::Detect() {
   const unsigned N = FromScopes.size();
   for (unsigned Idx = 0; Idx < N; ++Idx) {
     if (LLVM_LIKELY(Idx + 1 < N))
-      __builtin_prefetch(&FromScopes[Idx + 1], 0, 2);
+      NEVERC_PREFETCH(&FromScopes[Idx + 1], 0, 2);
     const Stmt *St = FromScopes[Idx].first;
     const unsigned FromScope = FromScopes[Idx].second;
     if (LLVM_LIKELY(isa<GotoStmt>(St))) {

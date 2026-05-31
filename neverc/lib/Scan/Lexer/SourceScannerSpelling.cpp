@@ -9,6 +9,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/MemoryBufferRef.h"
+#include "llvm/ADT/bit.h"
 #include <cassert>
 #include <cstddef>
 #include <string>
@@ -35,8 +36,8 @@ unsigned neonFirstSetByte(uint8x16_t Mask) {
   uint64_t Lo = vgetq_lane_u64(AsU64, 0);
   uint64_t Hi = vgetq_lane_u64(AsU64, 1);
   if (Lo)
-    return __builtin_ctzll(Lo) >> 3;
-  return 8 + (__builtin_ctzll(Hi) >> 3);
+    return llvm::countr_zero(Lo) >> 3;
+  return 8 + (llvm::countr_zero(Hi) >> 3);
 }
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE
@@ -302,7 +303,7 @@ const char *findPhysicalLineBegin(llvm::StringRef Buffer, unsigned Offset) {
       __mmask64 Hits =
           _mm512_cmpeq_epi8_mask(V, VNL) | _mm512_cmpeq_epi8_mask(V, VCR);
       if (Hits != 0) {
-        unsigned LastBit = 63 - __builtin_clzll(Hits);
+        unsigned LastBit = llvm::bit_width(static_cast<uint64_t>(Hits)) - 1;
         const char *Candidate = LexStart + LastBit;
         if (!SourceScanner::isEscapedNewline(BufStart, Candidate))
           return Candidate + 1;
@@ -323,7 +324,7 @@ scalar_fallback_512:
     unsigned Hits = static_cast<unsigned>(_mm256_movemask_epi8(
         _mm256_or_si256(_mm256_cmpeq_epi8(V, VNL), _mm256_cmpeq_epi8(V, VCR))));
     if (Hits != 0) {
-      unsigned LastBit = 31 - __builtin_clz(Hits);
+      unsigned LastBit = llvm::bit_width(Hits) - 1;
       const char *Candidate = LexStart + LastBit;
       if (!SourceScanner::isEscapedNewline(BufStart, Candidate))
         return Candidate + 1;
@@ -343,7 +344,7 @@ scalar_fallback:
       unsigned Hits = static_cast<unsigned>(_mm_movemask_epi8(
           _mm_or_si128(_mm_cmpeq_epi8(V, VNL), _mm_cmpeq_epi8(V, VCR))));
       if (Hits != 0) {
-        unsigned LastBit = 31 - __builtin_clz(Hits);
+        unsigned LastBit = llvm::bit_width(Hits) - 1;
         const char *Candidate = LexStart + LastBit;
         if (!SourceScanner::isEscapedNewline(BufStart, Candidate))
           return Candidate + 1;
@@ -367,9 +368,9 @@ scalar_path:
         uint64_t Lo = vgetq_lane_u64(As64, 0);
         unsigned LastBit;
         if (Hi)
-          LastBit = 8 + (63 - __builtin_clzll(Hi)) / 8;
+          LastBit = 8 + (static_cast<unsigned>(llvm::bit_width(Hi)) - 1) / 8;
         else
-          LastBit = (63 - __builtin_clzll(Lo)) / 8;
+          LastBit = (static_cast<unsigned>(llvm::bit_width(Lo)) - 1) / 8;
         const char *Candidate = LexStart + LastBit;
         if (!SourceScanner::isEscapedNewline(BufStart, Candidate))
           return Candidate + 1;

@@ -13,6 +13,7 @@
 #include "neverc/Foundation/Diagnostic/DiagnosticOptions.h"
 #include "neverc/Foundation/Diagnostic/PartialDiagnostic.h"
 #include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/bit.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
@@ -922,7 +923,7 @@ Diagnostic::FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
           __m128i V = _mm_loadu_si128((const __m128i *)StrEnd);
           unsigned Mask = _mm_movemask_epi8(_mm_cmpeq_epi8(V, VPct));
           if (Mask != 0) {
-            StrEnd += __builtin_ctz(Mask);
+            StrEnd += llvm::countr_zero(Mask);
             goto found_pct;
           }
           StrEnd += 16;
@@ -938,10 +939,10 @@ Diagnostic::FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
             uint64x2_t As64 = vreinterpretq_u64_u8(Hit);
             uint64_t Lo = vgetq_lane_u64(As64, 0);
             if (Lo) {
-              StrEnd += __builtin_ctzll(Lo) >> 3;
+              StrEnd += llvm::countr_zero(Lo) >> 3;
               goto found_pct;
             }
-            StrEnd += 8 + (__builtin_ctzll(vgetq_lane_u64(As64, 1)) >> 3);
+            StrEnd += 8 + (llvm::countr_zero(vgetq_lane_u64(As64, 1)) >> 3);
             goto found_pct;
           }
           StrEnd += 16;

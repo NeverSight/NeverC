@@ -13,6 +13,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO/MSVCMacroRebuilding.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include <cassert>
 #include <cstddef>
 #include <ctime>
@@ -352,7 +353,7 @@ bool areBracesBalanced(const llvm::SmallVectorImpl<Token> &Tokens) {
   unsigned i = 0;
 
   for (; i + 4 <= N; i += 4) {
-    __builtin_prefetch(Data + i + 8, 0, 1);
+    NEVERC_PREFETCH(Data + i + 8, 0, 1);
     for (unsigned j = 0; j < 4; ++j) {
       const auto K = Data[i + j].getKind();
       if (LLVM_LIKELY(K != tok::l_paren && K != tok::r_paren &&
