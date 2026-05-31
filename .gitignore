@@ -10,6 +10,7 @@
 # File extensions to be ignored anywhere in the tree.
 #==============================================================================#
 # Temp files created by most text editors.
+.repro/
 *~
 # Merge files created by git.
 *.orig
