@@ -1,0 +1,84 @@
+name: windows-min-failing-tests
+
+# TEMPORARY diagnostic workflow.
+#
+# Mirrors the real Windows build invocation (passes -DNEVERC_ENABLE_LTO=ON;
+# NeverC.cmake now gates Full LTO off on Windows hosts) but only builds the
+# compiler + bundled runtime + test binary and runs ONLY the ~25 tests that
+# were failing on Windows.  Ground-truth results in ~30 min instead of the
+# full ~40 min suite.
+#
+# Delete this file once the full Windows suite is green again.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+
+concurrency:
+  group: windows-min-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test-failing:
+    runs-on: windows-latest
+    env:
+      BUILD_TYPE: Release
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+      with:
+        path: neverc
+
+    - name: Setup build deps
+      run: choco install ninja cmake 7zip -y
+
+    - name: Resolve latest LLVM version
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        LLVM_VERIFY_ASSET_SUFFIX: win64.exe
+      run: bash ./neverc/.github/scripts/resolve-llvm-version.sh
+
+    - name: Cache LLVM toolchain
+      uses: actions/cache@v4
+      with:
+        path: C:\LLVM
+        key: llvm-${{ env.LLVM_VER }}-win64
+
+    - name: Install PGO-optimised Clang
+      shell: pwsh
+      run: ./neverc/.github/scripts/install-llvm-windows.ps1
+
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Configure (mirrors real Windows build; LTO gated off on Windows host)
+      shell: bash
+      run: |
+        cmake -GNinja -Bbuild \
+        -DCMAKE_C_COMPILER="${PGO_CLANG}" \
+        -DCMAKE_CXX_COMPILER="${PGO_CLANGXX}" \
+        -DCMAKE_INSTALL_PREFIX=install \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+        -DNEVERC_INCLUDE_TESTS=ON \
+        -DNEVERC_ENABLE_LTO=ON \
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+        -C neverc/neverc/cmake/caches/NeverC.cmake \
+        neverc/llvm
+
+    - name: Build neverc + bundled runtime + test binary
+      shell: bash
+      run: |
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-runtime-x64-msvc neverc-runtime-shared-msvc
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-tests
+
+    - name: Run ONLY the previously-failing tests
+      shell: bash
+      run: |
+        cd build
+        ctest --output-on-failure -R 'TestPreprocessor|BuiltinStringQStringParity|BuiltinStringEncrypt|CFeatures|KernelAdvanced|C11Atomics|CStdlibPatterns|MC64BitFormat|ArchCleanupRound2|Arch64OnlyValidation|ARM64MCCleanup|CleanupFinalValidation|AArch64_32BitOpsValidation|Comprehensive64BitValidation|CrossAppleIOS|EmitStaticLib|DuplicateErrorsNonLTO|WeakOverrideNonLTO|FinalizeBadByteAuditFail|HeapArenaDisabled'
