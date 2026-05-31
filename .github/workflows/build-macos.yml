@@ -19,7 +19,9 @@ jobs:
       matrix:
         os: [macos-latest]
     env:
-      BUILD_TYPE: Release
+      # RelWithDebInfo so CI artifacts ship with DWARF symbols for crash
+      # triage; release-macos-pgo.yml is the symbol-stripped Release path.
+      BUILD_TYPE: RelWithDebInfo
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
