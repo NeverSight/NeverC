@@ -1,6 +1,8 @@
 /*===- NativeFormatting.c - Number formatting (pure C) ----------*- C -*-===*/
 #include "include/csupport/lnative_lformatting.h"
+#include "include/csupport/types.h"
 #include <assert.h>
+#include <math.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -151,7 +153,7 @@ int csupport_format_double_ex(char *buf, size_t buflen, double value,
     int n = snprintf(buf, buflen, "nan");
     return n > 0 ? n : 0;
   }
-  if (value == 1.0/0.0 || value == -1.0/0.0) { /* Inf */
+  if (value == HUGE_VAL || value == -HUGE_VAL) { /* Inf */
     int n = snprintf(buf, buflen, "%sINF", value < 0 ? "-" : "");
     return n > 0 ? n : 0;
   }

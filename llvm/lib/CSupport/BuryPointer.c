@@ -16,6 +16,10 @@
 #define CSUPPORT_HAS_C11_ATOMICS 0
 #endif
 
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
+
 #ifndef LLVM_ATTRIBUTE_USED
 #if __has_attribute(used)
 #define LLVM_ATTRIBUTE_USED __attribute__((__used__))

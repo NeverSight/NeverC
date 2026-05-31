@@ -2037,7 +2037,7 @@ ScalarNode::getDoubleQuotedValue(StringRef RawValue,
     case '\r':
       if (UnquotedValue.size() >= 2 && UnquotedValue[1] == '\n')
         UnquotedValue = UnquotedValue.drop_front(1);
-      __attribute__((fallthrough));
+      LLVM_FALLTHROUGH;
     case '\n':
       return UnquotedValue.drop_front(1).ltrim(" \t");
     case '0':
@@ -2235,7 +2235,7 @@ inline void MappingNode::increment() {
       break;
     default:
       setError("Unexpected token. Expected Key or Block End", T);
-      __attribute__((fallthrough));
+      LLVM_FALLTHROUGH;
     case Token::TK_Error:
       IsAtEnd = true;
       CurrentEntry = 0;
@@ -2247,7 +2247,7 @@ inline void MappingNode::increment() {
       return increment();
     case Token::TK_FlowMappingEnd:
       getNext();
-      __attribute__((fallthrough));
+      LLVM_FALLTHROUGH;
     case Token::TK_Error:
       IsAtEnd = true;
       CurrentEntry = 0;
@@ -2292,7 +2292,7 @@ inline void SequenceNode::increment() {
       break;
     default:
       setError("Unexpected token. Expected Block Entry or Block End.", T);
-      __attribute__((fallthrough));
+      LLVM_FALLTHROUGH;
     case Token::TK_Error:
       IsAtEnd = true;
       CurrentEntry = 0;
@@ -2320,7 +2320,7 @@ inline void SequenceNode::increment() {
       return increment();
     case Token::TK_FlowSequenceEnd:
       getNext();
-      __attribute__((fallthrough));
+      LLVM_FALLTHROUGH;
     case Token::TK_Error:
       IsAtEnd = true;
       CurrentEntry = 0;

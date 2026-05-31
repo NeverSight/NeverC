@@ -1,5 +1,6 @@
 /*===- YAMLParser.c - YAML parsing utilities (pure C) ---------*- C -*-===*/
 #include "include/csupport/ly_la_lm_ll_lparser.h"
+#include "include/csupport/types.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -791,7 +792,7 @@ int csupport_yaml_scan_flow_scalar_double(const char *p, size_t len,
         break;
       case '\r':
         if (i + 1 < len && p[i+1] == '\n') i++;
-        __attribute__((fallthrough));
+        CSUPPORT_FALLTHROUGH;
       case '\n':
         lc++;
         while (i + 1 < len && (p[i+1] == ' ' || p[i+1] == '\t')) i++;
@@ -941,7 +942,7 @@ size_t csupport_yaml_unescape_double_quoted(const char *src, size_t src_len,
       case '\\': c = '\\'; break;
       case '\r':
         if (i + 1 < src_len && src[i+1] == '\n') i++;
-        __attribute__((fallthrough));
+        CSUPPORT_FALLTHROUGH;
       case '\n':
         while (i + 1 < src_len && (src[i+1] == ' ' || src[i+1] == '\t')) i++;
         continue;

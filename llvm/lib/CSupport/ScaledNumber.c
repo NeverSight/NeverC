@@ -1,5 +1,6 @@
 /*===- ScaledNumber.c - Scaled number arithmetic (pure C) -------*- C -*-===*/
 #include "include/csupport/lscaled_lnumber.h"
+#include "include/csupport/types.h"
 #include <stdint.h>
 #include <string.h>
 #include <assert.h>

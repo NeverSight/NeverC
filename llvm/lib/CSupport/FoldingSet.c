@@ -1,5 +1,6 @@
 /*===- FoldingSet.c - Hash set for profiling (pure C) -----------*- C -*-===*/
 #include "include/csupport/lfolding_lset.h"
+#include "include/csupport/types.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
@@ -133,10 +134,10 @@ unsigned csupport_folding_set_id_add_string(unsigned *bits, unsigned bits_cap,
     switch (remaining) {
     case 3:
       v = (v << 8) | s[str_len - 3];
-      __attribute__((fallthrough));
+      CSUPPORT_FALLTHROUGH;
     case 2:
       v = (v << 8) | s[str_len - 2];
-      __attribute__((fallthrough));
+      CSUPPORT_FALLTHROUGH;
     case 1: v = (v << 8) | s[str_len - 1]; break;
     }
     bits[pos++] = v;

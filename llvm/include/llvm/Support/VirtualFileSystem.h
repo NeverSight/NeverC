@@ -2342,7 +2342,7 @@ class RedirectingFSDirIterImpl : public detail::DirIterImpl {
       sys::fs::file_type Type = sys::fs::file_type::type_unknown;
       switch ((*Current)->getKind()) {
       case RedirectingFileSystem::EK_Directory:
-        __attribute__((fallthrough));
+        LLVM_FALLTHROUGH;
       case RedirectingFileSystem::EK_DirectoryRemap:
         Type = sys::fs::file_type::directory_file;
         break;

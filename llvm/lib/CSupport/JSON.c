@@ -388,7 +388,7 @@ int csupport_json_format_uint64(char *buf, size_t cap, uint64_t val) {
 
 int csupport_json_format_double(char *buf, size_t cap, double val) {
   if (val != val) return snprintf(buf, cap, "null");
-  if (val == 1.0/0.0 || val == -1.0/0.0) return snprintf(buf, cap, "null");
+  if (val == HUGE_VAL || val == -HUGE_VAL) return snprintf(buf, cap, "null");
   int len = snprintf(buf, cap, "%.17g", val);
   if (len > 0 && (size_t)len < cap) {
     int has_dot = 0, has_e = 0;

@@ -12,6 +12,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

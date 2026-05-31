@@ -2,6 +2,7 @@
 #include "include/csupport/raw_ostream.h"
 #include "include/csupport/lprocess.h"
 #include "include/csupport/ostream.h"
+#include "include/csupport/types.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -46,10 +47,10 @@ size_t csupport_format_u64_to_hex(char *buf, size_t buflen, uint64_t val,
 size_t csupport_ostream_copy_to_buffer_small(const char *src, size_t len,
                                               char *dst) {
   switch (len) {
-  case 4: dst[3] = src[3]; __attribute__((fallthrough));
-  case 3: dst[2] = src[2]; __attribute__((fallthrough));
-  case 2: dst[1] = src[1]; __attribute__((fallthrough));
-  case 1: dst[0] = src[0]; __attribute__((fallthrough));
+  case 4: dst[3] = src[3]; CSUPPORT_FALLTHROUGH;
+  case 3: dst[2] = src[2]; CSUPPORT_FALLTHROUGH;
+  case 2: dst[1] = src[1]; CSUPPORT_FALLTHROUGH;
+  case 1: dst[0] = src[0]; CSUPPORT_FALLTHROUGH;
   case 0: break;
   default: memcpy(dst, src, len); break;
   }

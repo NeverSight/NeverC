@@ -17,7 +17,7 @@
 
 int csupport_float_classify(double v) {
   if (v != v) return 0;
-  if (v == 1.0/0.0 || v == -1.0/0.0) return 1;
+  if (v == HUGE_VAL || v == -HUGE_VAL) return 1;
   if (v == 0.0) return 2;
   double abs_v = v < 0 ? -v : v;
   if (abs_v < 2.2250738585072014e-308) return 3;
