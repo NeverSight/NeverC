@@ -168,22 +168,24 @@ unsigned getCharacterBitWidth(tok::TokenKind kind, const TargetInfo &Target) {
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE
 unsigned getEncodingPrefixLength(tok::TokenKind kind) {
-  constexpr unsigned PrefixLenTable[] = {
-      [tok::char_constant - tok::char_constant] = 0,
-      [tok::wide_char_constant - tok::char_constant] = 1,
-      [tok::utf8_char_constant - tok::char_constant] = 2,
-      [tok::utf16_char_constant - tok::char_constant] = 1,
-      [tok::utf32_char_constant - tok::char_constant] = 1,
-      [tok::string_literal - tok::char_constant] = 0,
-      [tok::wide_string_literal - tok::char_constant] = 1,
-      [tok::utf8_string_literal - tok::char_constant] = 2,
-      [tok::utf16_string_literal - tok::char_constant] = 1,
-      [tok::utf32_string_literal - tok::char_constant] = 1,
-  };
-  unsigned Idx =
-      static_cast<unsigned>(kind) - static_cast<unsigned>(tok::char_constant);
-  assert(Idx < std::size(PrefixLenTable) && "Unknown token type!");
-  return PrefixLenTable[Idx];
+  // GCC C++ rejects designated initializers with computed indices; keep explicit.
+  switch (kind) {
+  case tok::char_constant:
+  case tok::string_literal:
+    return 0;
+  case tok::wide_char_constant:
+  case tok::utf16_char_constant:
+  case tok::utf32_char_constant:
+  case tok::wide_string_literal:
+  case tok::utf16_string_literal:
+  case tok::utf32_string_literal:
+    return 1;
+  case tok::utf8_char_constant:
+  case tok::utf8_string_literal:
+    return 2;
+  default:
+    llvm_unreachable("Unknown token type!");
+  }
 }
 } // namespace
 

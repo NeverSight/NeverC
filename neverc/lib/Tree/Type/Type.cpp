@@ -19,6 +19,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <optional>
@@ -924,19 +925,22 @@ enum CharClassBits : uint8_t {
   CCB_AnyChar = CCB_Char | CCB_WChar | CCB_Char8 | CCB_Char16 | CCB_Char32,
 };
 
-constexpr uint8_t CharClassTable[] = {
-    [BuiltinType::Char_U] = CCB_Char | CCB_AnyChar,
-    [BuiltinType::UChar] = CCB_Char | CCB_AnyChar,
-    [BuiltinType::Char_S] = CCB_Char | CCB_AnyChar,
-    [BuiltinType::SChar] = CCB_Char | CCB_AnyChar,
-    [BuiltinType::WChar_S] = CCB_WChar | CCB_AnyChar,
-    [BuiltinType::WChar_U] = CCB_WChar | CCB_AnyChar,
-    [BuiltinType::Char8] = CCB_Char8 | CCB_AnyChar,
-    [BuiltinType::Char16] = CCB_Char16 | CCB_AnyChar,
-    [BuiltinType::Char32] = CCB_Char32 | CCB_AnyChar,
+constexpr auto makeCharClassTable = []() constexpr {
+  std::array<uint8_t, BuiltinType::Char32 + 1> T{};
+  T[BuiltinType::Char_U] = CCB_Char | CCB_AnyChar;
+  T[BuiltinType::UChar] = CCB_Char | CCB_AnyChar;
+  T[BuiltinType::Char_S] = CCB_Char | CCB_AnyChar;
+  T[BuiltinType::SChar] = CCB_Char | CCB_AnyChar;
+  T[BuiltinType::WChar_S] = CCB_WChar | CCB_AnyChar;
+  T[BuiltinType::WChar_U] = CCB_WChar | CCB_AnyChar;
+  T[BuiltinType::Char8] = CCB_Char8 | CCB_AnyChar;
+  T[BuiltinType::Char16] = CCB_Char16 | CCB_AnyChar;
+  T[BuiltinType::Char32] = CCB_Char32 | CCB_AnyChar;
+  return T;
 };
-constexpr unsigned CharClassTableSize =
-    sizeof(CharClassTable) / sizeof(CharClassTable[0]);
+constexpr std::array<uint8_t, BuiltinType::Char32 + 1> CharClassTable =
+    makeCharClassTable();
+constexpr unsigned CharClassTableSize = CharClassTable.size();
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE
 uint8_t getCharClass(QualType CT) {
