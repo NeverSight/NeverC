@@ -925,8 +925,21 @@ enum CharClassBits : uint8_t {
   CCB_AnyChar = CCB_Char | CCB_WChar | CCB_Char8 | CCB_Char16 | CCB_Char32,
 };
 
+// Largest BuiltinType::Kind index among character kinds (SVE kinds precede Char_U
+// in the enum, and Char_S/WChar_S follow Char32).
+constexpr unsigned CharClassTableMaxIndex = std::max(
+    {static_cast<unsigned>(BuiltinType::Char_U),
+     static_cast<unsigned>(BuiltinType::UChar),
+     static_cast<unsigned>(BuiltinType::Char_S),
+     static_cast<unsigned>(BuiltinType::SChar),
+     static_cast<unsigned>(BuiltinType::WChar_S),
+     static_cast<unsigned>(BuiltinType::WChar_U),
+     static_cast<unsigned>(BuiltinType::Char8),
+     static_cast<unsigned>(BuiltinType::Char16),
+     static_cast<unsigned>(BuiltinType::Char32)});
+
 constexpr auto makeCharClassTable = []() constexpr {
-  std::array<uint8_t, BuiltinType::Char32 + 1> T{};
+  std::array<uint8_t, CharClassTableMaxIndex + 1> T{};
   T[BuiltinType::Char_U] = CCB_Char | CCB_AnyChar;
   T[BuiltinType::UChar] = CCB_Char | CCB_AnyChar;
   T[BuiltinType::Char_S] = CCB_Char | CCB_AnyChar;
@@ -938,7 +951,7 @@ constexpr auto makeCharClassTable = []() constexpr {
   T[BuiltinType::Char32] = CCB_Char32 | CCB_AnyChar;
   return T;
 };
-constexpr std::array<uint8_t, BuiltinType::Char32 + 1> CharClassTable =
+constexpr std::array<uint8_t, CharClassTableMaxIndex + 1> CharClassTable =
     makeCharClassTable();
 constexpr unsigned CharClassTableSize = CharClassTable.size();
 
