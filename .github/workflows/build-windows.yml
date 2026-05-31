@@ -57,6 +57,20 @@ jobs:
         name: windows-x64-neverc
         path: windows-x64-neverc.zip
 
+    # Package link-time PDBs (neverc.pdb etc.) for windbg/VS crash triage.
+    # Only build/bin/*.pdb — per-target compile PDBs under build/lib/** are
+    # already merged into the link-time PDB and would push the zip past
+    # GitHub's 2 GB artifact limit.
+    - name: Package PDBs
+      shell: bash
+      run: 7z a windows-x64-neverc-pdb.zip ./build/bin/*.pdb
+
+    - name: Upload PDB Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-x64-neverc-pdb
+        path: windows-x64-neverc-pdb.zip
+
     - name: Build Plugin SDK
       shell: bash
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
