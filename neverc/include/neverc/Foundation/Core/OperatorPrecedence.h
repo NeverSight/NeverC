@@ -90,7 +90,7 @@ inline constexpr auto PrecedenceTable =
 } // namespace detail
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE
-inline prec::Level getBinOpPrecedence(tok::TokenKind Kind) {
+prec::Level getBinOpPrecedence(tok::TokenKind Kind) {
   if (LLVM_UNLIKELY(static_cast<unsigned>(Kind) >= tok::NUM_TOKENS))
     return prec::Unknown;
   return detail::PrecedenceTable[Kind];

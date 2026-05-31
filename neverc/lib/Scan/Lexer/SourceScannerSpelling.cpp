@@ -30,7 +30,7 @@
 #if defined(__aarch64__) && defined(__ARM_NEON)
 namespace {
 LLVM_ATTRIBUTE_ALWAYS_INLINE
-inline unsigned neonFirstSetByte(uint8x16_t Mask) {
+unsigned neonFirstSetByte(uint8x16_t Mask) {
   uint64x2_t AsU64 = vreinterpretq_u64_u8(Mask);
   uint64_t Lo = vgetq_lane_u64(AsU64, 0);
   uint64_t Hi = vgetq_lane_u64(AsU64, 1);
@@ -40,7 +40,7 @@ inline unsigned neonFirstSetByte(uint8x16_t Mask) {
 }
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE
-inline bool neonAnySet(uint8x16_t V) { return vmaxvq_u8(V) != 0; }
+bool neonAnySet(uint8x16_t V) { return vmaxvq_u8(V) != 0; }
 } // namespace
 #endif
 
