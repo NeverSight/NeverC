@@ -12,6 +12,7 @@
 #include "llvm/Support/Unicode.h"
 #include "llvm/Support/UnicodeCharRanges.h"
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <optional>
@@ -25,10 +26,22 @@ using namespace neverc;
 // ===----------------------------------------------------------------------===
 
 namespace {
-constexpr char TrigraphTable[128] = {
-    ['='] = '#', [')'] = ']',  ['('] = '[', ['!'] = '|', ['\''] = '^',
-    ['>'] = '}', ['/'] = '\\', ['<'] = '{', ['-'] = '~',
+// GCC rejects aggregate designated initializers with char indices; build at
+// compile time the same way as EscapeValueTable in LiteralParser.cpp.
+constexpr auto makeTrigraphTable = []() constexpr {
+  std::array<char, 128> T{};
+  T['='] = '#';
+  T[')'] = ']';
+  T['('] = '[';
+  T['!'] = '|';
+  T['\''] = '^';
+  T['>'] = '}';
+  T['/'] = '\\';
+  T['<'] = '{';
+  T['-'] = '~';
+  return T;
 };
+constexpr std::array<char, 128> TrigraphTable = makeTrigraphTable();
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE
 char decodeTrigraph(char Letter) {
