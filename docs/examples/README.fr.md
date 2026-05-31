@@ -15,6 +15,8 @@ Exemples compilables démontrant les capacités de compilation croisée de Never
 | [Pilote noyau Windows](../../examples/windows-driver/README.fr.md) | Pilote WDM minimal | Compilation croisée `.sys` depuis macOS/Linux, auto-LTO, éditeur de liens intégré |
 | [Pilote Windows + CET](../../examples/windows-driver-cet/README.fr.md) | Pilote avec Intel CET Shadow Stack | Code noyau compatible CET, `/guard:ehcont` |
 | [Pilote Windows + virgule flottante](../../examples/windows-driver-float/README.fr.md) | Pilote avec virgule flottante/SIMD | Virgule flottante sécurisée en mode noyau |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.fr.md) | Application console mode utilisateur | GetSystemInfo, énumération processus, VirtualAlloc |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.fr.md) | DLL mode utilisateur | ReadProcessMemory, VirtualAllocEx, énumération modules |
 
 ### Linux
 
@@ -31,6 +33,7 @@ Exemples compilables démontrant les capacités de compilation croisée de Never
 | Exemple | Description | Caractéristiques |
 |---------|-------------|-----------------|
 | [Android ELF](../../examples/android-elf/README.fr.md) | Binaire ARM64 natif pour appareils rootés | Cross-compilation Android, dlopen/liblog, /proc, détection root |
+| [Bibliothèque partagée Android](../../examples/android-so/README.fr.md) | Bibliothèque `.so` native ARM64 | Bibliothèque partagée, mmap RWX, chiffrement XOR |
 
 ---
 

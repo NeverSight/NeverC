@@ -15,6 +15,8 @@ Ejemplos compilables que demuestran las capacidades de compilación cruzada de N
 | [Controlador de kernel Windows](../../examples/windows-driver/README.es.md) | Controlador WDM mínimo | Compilación cruzada `.sys` desde macOS/Linux, auto-LTO, enlazador integrado |
 | [Controlador Windows + CET](../../examples/windows-driver-cet/README.es.md) | Controlador con Intel CET Shadow Stack | Código kernel compatible CET, `/guard:ehcont` |
 | [Controlador Windows + punto flotante](../../examples/windows-driver-float/README.es.md) | Controlador con punto flotante/SIMD | Punto flotante seguro en modo kernel |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.es.md) | Aplicación consola modo usuario | GetSystemInfo, enumeración procesos, VirtualAlloc |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.es.md) | DLL modo usuario | ReadProcessMemory, VirtualAllocEx, enumeración módulos |
 
 ### Linux
 
@@ -31,6 +33,7 @@ Ejemplos compilables que demuestran las capacidades de compilación cruzada de N
 | Ejemplo | Descripción | Características |
 |---------|-------------|----------------|
 | [Android ELF](../../examples/android-elf/README.es.md) | Binario ARM64 nativo para dispositivos rooteados | Compilación cruzada Android, dlopen/liblog, /proc, detección root |
+| [Biblioteca compartida Android](../../examples/android-so/README.es.md) | Biblioteca `.so` nativa ARM64 | Biblioteca compartida, mmap RWX, cifrado XOR |
 
 ---
 

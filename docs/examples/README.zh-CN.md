@@ -17,6 +17,8 @@
 | [Windows 内核驱动](../../examples/windows-driver/README.zh-CN.md) | 最小 WDM 内核驱动 | 从 macOS/Linux 交叉编译 `.sys`，自动 LTO，内置链接器，`DbgPrint` 设备 I/O |
 | [Windows 驱动 + CET](../../examples/windows-driver-cet/README.zh-CN.md) | 带 Intel CET 影子栈的内核驱动 | CET 兼容内核代码，`/guard:ehcont`，影子栈强制 |
 | [Windows 驱动 + 浮点](../../examples/windows-driver-float/README.zh-CN.md) | 带浮点/SIMD 的内核驱动 | 内核模式安全浮点，`KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.zh-CN.md) | 用户态控制台程序 | GetSystemInfo，进程枚举，VirtualAlloc |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.zh-CN.md) | 用户态 DLL | ReadProcessMemory，VirtualAllocEx，模块枚举 |
 
 ### Linux
 
@@ -33,6 +35,7 @@
 | 示例 | 说明 | 关键特性 |
 |------|------|---------|
 | [Android ELF](../../examples/android-elf/README.zh-CN.md) | Root 设备上的原生 ARM64 可执行文件 | 交叉编译到 Android，dlopen/liblog，/proc 信息，root 检测 |
+| [Android 共享库](../../examples/android-so/README.zh-CN.md) | 原生 ARM64 `.so` 库 | 共享库，mmap RWX，XOR 加密，dlopen liblog |
 
 ---
 

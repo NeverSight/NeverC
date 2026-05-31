@@ -17,6 +17,8 @@
 | [برنامج تشغيل نواة Windows](../../examples/windows-driver/README.ar.md) | برنامج WDM أدنى | تجميع متقاطع `.sys` من macOS/Linux، LTO تلقائي، مُرابط مدمج |
 | [برنامج تشغيل Windows + CET](../../examples/windows-driver-cet/README.ar.md) | برنامج مع Intel CET Shadow Stack | كود نواة متوافق مع CET، `/guard:ehcont` |
 | [برنامج تشغيل Windows + عائم](../../examples/windows-driver-float/README.ar.md) | برنامج مع فاصلة عائمة/SIMD | فاصلة عائمة آمنة في وضع النواة |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.ar.md) | تطبيق وحدة تحكم وضع المستخدم | GetSystemInfo، تعداد العمليات، VirtualAlloc |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.ar.md) | DLL وضع المستخدم | ReadProcessMemory، VirtualAllocEx، تعداد الوحدات |
 
 ### Linux
 
@@ -33,6 +35,7 @@
 | مثال | الوصف | الميزات الرئيسية |
 |------|-------|-----------------|
 | [Android ELF](../../examples/android-elf/README.ar.md) | ملف ARM64 أصلي لأجهزة مروّتة | ترجمة تبادلية لـ Android، dlopen/liblog، معلومات /proc، اكتشاف root |
+| [مكتبة مشتركة Android](../../examples/android-so/README.ar.md) | مكتبة `.so` أصلية ARM64 | مكتبة مشتركة، mmap RWX، تشفير XOR |
 
 ---
 

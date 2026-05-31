@@ -145,7 +145,6 @@ set(windows_only_files
   intrin.h
   vadefs.h
   varargs_msvc.h
-  windows.h
 )
 
 set(utility_files

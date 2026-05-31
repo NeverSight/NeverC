@@ -15,6 +15,8 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 | [Windows カーネルドライバ](../../examples/windows-driver/README.ja.md) | 最小 WDM カーネルドライバ | macOS/Linux から `.sys` をクロスコンパイル、自動 LTO、内蔵リンカ |
 | [Windows ドライバ + CET](../../examples/windows-driver-cet/README.ja.md) | Intel CET シャドウスタック付きカーネルドライバ | CET 対応カーネルコード、`/guard:ehcont` |
 | [Windows ドライバ + 浮動小数点](../../examples/windows-driver-float/README.ja.md) | 浮動小数点/SIMD 付きカーネルドライバ | カーネルモード安全浮動小数点 |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.ja.md) | ユーザーモードコンソールアプリ | GetSystemInfo、プロセス列挙、VirtualAlloc |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.ja.md) | ユーザーモード DLL | ReadProcessMemory、VirtualAllocEx、モジュール列挙 |
 
 ### Linux
 
@@ -31,6 +33,7 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 | サンプル | 説明 | 主要機能 |
 |---------|------|---------|
 | [Android ELF](../../examples/android-elf/README.ja.md) | root 端末向けネイティブ ARM64 バイナリ | Android クロスコンパイル、dlopen/liblog、/proc 情報、root 検出 |
+| [Android 共有ライブラリ](../../examples/android-so/README.ja.md) | ネイティブ ARM64 `.so` ライブラリ | 共有ライブラリ、mmap RWX、XOR 暗号化 |
 
 ---
 

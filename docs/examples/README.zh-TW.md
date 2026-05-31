@@ -15,6 +15,8 @@
 | [Windows 核心驅動](../../examples/windows-driver/README.zh-TW.md) | 最小 WDM 核心驅動 | 從 macOS/Linux 交叉編譯 `.sys`，自動 LTO，內建連結器，`DbgPrint` 裝置 I/O |
 | [Windows 驅動 + CET](../../examples/windows-driver-cet/README.zh-TW.md) | 帶 Intel CET 影子堆疊的核心驅動 | CET 相容核心程式碼，`/guard:ehcont`，影子堆疊強制 |
 | [Windows 驅動 + 浮點](../../examples/windows-driver-float/README.zh-TW.md) | 帶浮點/SIMD 的核心驅動 | 核心模式安全浮點，`KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.zh-TW.md) | 使用者態控制台程式 | GetSystemInfo，程序列舉，VirtualAlloc |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.zh-TW.md) | 使用者態 DLL | ReadProcessMemory，VirtualAllocEx，模組列舉 |
 
 ### Linux
 
@@ -31,6 +33,7 @@
 | 範例 | 說明 | 關鍵特性 |
 |------|------|---------|
 | [Android ELF](../../examples/android-elf/README.zh-TW.md) | Root 裝置上的原生 ARM64 可執行檔 | 交叉編譯到 Android，dlopen/liblog，/proc 資訊，root 檢測 |
+| [Android 共享庫](../../examples/android-so/README.zh-TW.md) | 原生 ARM64 `.so` 庫 | 共享庫，mmap RWX，XOR 加密，dlopen liblog |
 
 ---
 

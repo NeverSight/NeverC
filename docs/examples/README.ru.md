@@ -15,6 +15,8 @@
 | [Драйвер ядра Windows](../../examples/windows-driver/README.ru.md) | Минимальный WDM-драйвер ядра | Кросс-компиляция `.sys` с macOS/Linux, авто-LTO, встроенный линкер |
 | [Драйвер Windows + CET](../../examples/windows-driver-cet/README.ru.md) | Драйвер с Intel CET Shadow Stack | CET-совместимый код ядра, `/guard:ehcont` |
 | [Драйвер Windows + плавающая точка](../../examples/windows-driver-float/README.ru.md) | Драйвер с плавающей точкой/SIMD | Безопасная плавающая точка в режиме ядра |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.ru.md) | Консольное приложение пользовательского режима | GetSystemInfo, перечисление процессов, VirtualAlloc |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.ru.md) | DLL пользовательского режима | ReadProcessMemory, VirtualAllocEx, перечисление модулей |
 
 ### Linux
 
@@ -31,6 +33,7 @@
 | Пример | Описание | Ключевые особенности |
 |--------|---------|---------------------|
 | [Android ELF](../../examples/android-elf/README.ru.md) | Нативный ARM64-бинарник для рутированных устройств | Кросс-компиляция для Android, dlopen/liblog, /proc, проверка root |
+| [Общая библиотека Android](../../examples/android-so/README.ru.md) | Нативная ARM64 `.so` библиотека | Разделяемая библиотека, mmap RWX, XOR-шифрование |
 
 ---
 

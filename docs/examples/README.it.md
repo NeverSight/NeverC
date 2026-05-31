@@ -15,6 +15,8 @@ Esempi completi compilabili che dimostrano le capacità di cross-compilazione di
 | [Driver kernel Windows](../../examples/windows-driver/README.it.md) | Driver WDM minimale | Cross-compilazione `.sys` da macOS/Linux, auto-LTO, linker integrato |
 | [Driver Windows + CET](../../examples/windows-driver-cet/README.it.md) | Driver con Intel CET Shadow Stack | Codice kernel compatibile CET, `/guard:ehcont` |
 | [Driver Windows + virgola mobile](../../examples/windows-driver-float/README.it.md) | Driver con virgola mobile/SIMD | Virgola mobile sicura in modalità kernel |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.it.md) | App console user-mode | GetSystemInfo, enumerazione processi, VirtualAlloc |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.it.md) | DLL user-mode | ReadProcessMemory, VirtualAllocEx, enumerazione moduli |
 
 ### Linux
 
@@ -31,6 +33,7 @@ Esempi completi compilabili che dimostrano le capacità di cross-compilazione di
 | Esempio | Descrizione | Caratteristiche |
 |---------|-------------|----------------|
 | [Android ELF](../../examples/android-elf/README.it.md) | Binario ARM64 nativo per dispositivi rootati | Cross-compilazione Android, dlopen/liblog, /proc, rilevamento root |
+| [Libreria condivisa Android](../../examples/android-so/README.it.md) | Libreria `.so` nativa ARM64 | Libreria condivisa, mmap RWX, crittografia XOR |
 
 ---
 

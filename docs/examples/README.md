@@ -17,6 +17,8 @@ Complete, buildable examples demonstrating NeverC's cross-platform compilation c
 | [Windows Kernel Driver](../../examples/windows-driver/README.md) | Minimal WDM kernel driver | Cross-compile `.sys` from macOS/Linux, auto-LTO, built-in linker, `DbgPrint` device I/O |
 | [Windows Driver + CET](../../examples/windows-driver-cet/README.md) | Kernel driver with Intel CET Shadow Stack | CET-compatible kernel code, `/guard:ehcont`, Shadow Stack enforcement |
 | [Windows Driver + Float](../../examples/windows-driver-float/README.md) | Kernel driver with floating-point/SIMD | Safe FP in kernel mode, `KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.md) | User-mode console app | GetSystemInfo, process enum, VirtualAlloc/VirtualQuery |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.md) | User-mode DLL | ReadProcessMemory, VirtualAllocEx, module enum, XOR helper |
 
 ### Linux
 
@@ -33,6 +35,7 @@ Complete, buildable examples demonstrating NeverC's cross-platform compilation c
 | Example | Description | Key Features |
 |---------|-------------|-------------|
 | [Android ELF](../../examples/android-elf/README.md) | Native ARM64 binary for rooted devices | Cross-compile to Android, dlopen/liblog, /proc info, root check |
+| [Android Shared Library](../../examples/android-so/README.md) | Native ARM64 `.so` library | Shared library, mmap RWX, XOR encryption, dlopen liblog |
 
 ---
 

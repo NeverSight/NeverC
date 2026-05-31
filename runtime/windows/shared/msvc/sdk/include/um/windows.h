@@ -187,8 +187,8 @@ Abstract:
 #include <stdarg.h>
 #endif /* RC_INVOKED */
 
-#include <winbase.h>
 #include <windef.h>
+#include <winbase.h>
 #include <wingdi.h>
 #include <winuser.h>
 #if !defined(_MAC) || defined(_WIN32NLS)

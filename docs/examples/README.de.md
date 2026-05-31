@@ -15,6 +15,8 @@ Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilieru
 | [Windows Kerneltreiber](../../examples/windows-driver/README.de.md) | Minimaler WDM-Kerneltreiber | Cross-Kompilierung `.sys` von macOS/Linux, Auto-LTO, integrierter Linker |
 | [Windows Treiber + CET](../../examples/windows-driver-cet/README.de.md) | Kerneltreiber mit Intel CET Shadow Stack | CET-kompatibler Kernelcode, `/guard:ehcont` |
 | [Windows Treiber + Gleitkomma](../../examples/windows-driver-float/README.de.md) | Kerneltreiber mit Gleitkomma/SIMD | Sichere Gleitkommaoperationen im Kernelmodus |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.de.md) | Benutzermodus-Konsolenanwendung | GetSystemInfo, Prozessauflistung, VirtualAlloc |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.de.md) | Benutzermodus-DLL | ReadProcessMemory, VirtualAllocEx, Modulauflistung |
 
 ### Linux
 
@@ -31,6 +33,7 @@ Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilieru
 | Beispiel | Beschreibung | Hauptmerkmale |
 |----------|-------------|--------------|
 | [Android ELF](../../examples/android-elf/README.de.md) | Natives ARM64-Binary für gerootete Geräte | Android-Cross-Kompilierung, dlopen/liblog, /proc, Root-Erkennung |
+| [Android Shared Library](../../examples/android-so/README.de.md) | Native ARM64 `.so` Bibliothek | Shared Library, mmap RWX, XOR-Verschlüsselung |
 
 ---
 
