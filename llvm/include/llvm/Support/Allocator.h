@@ -27,7 +27,7 @@
 #include <cstdio>
 #include <iterator>
 #include <optional>
-#include <stddef.h>
+#include <cstddef>
 #include <stdint.h>
 #include <utility>
 
