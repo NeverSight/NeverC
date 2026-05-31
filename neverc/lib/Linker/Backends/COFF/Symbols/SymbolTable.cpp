@@ -542,7 +542,10 @@ void SymbolTable::reportDuplicate(Symbol *existing, InputFile *newFile,
   if (ctx.config.forceMultiple)
     warn(os.str());
   else
-    message(os.str()); //[MSVC Compatibility]
+    // A genuine multiply-defined regular symbol is a hard error, matching the
+    // ELF/MachO backends and real link.exe (LNK2005). /force:multiple downgrades
+    // it to a warning above. (Library/COMDAT/lazy collisions never reach here.)
+    error(os.str());
 }
 
 Symbol *SymbolTable::addAbsolute(StringRef n, COFFSymbolRef sym) {
