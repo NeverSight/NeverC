@@ -30,6 +30,14 @@
 
 namespace neverc::merge {
 
+/// Marker that parallel codegen appends (followed by a per-module hash, e.g.
+/// "helper.__pcg1a2b3c4d") when it externalizes a module-local symbol so that
+/// cross-partition references resolve.  This name suffix is the *only* signal
+/// that a symbol is a parallel-codegen artifact — no object format carries a
+/// flag for it — so the codegen that appends it and every merger that detects
+/// it must share this single definition instead of hardcoding the literal.
+inline constexpr llvm::StringLiteral PcgSymbolMarker = ".__pcg";
+
 /// Container format of the input/output objects.
 enum class Format {
   ELF64LE,

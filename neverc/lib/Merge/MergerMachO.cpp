@@ -273,7 +273,7 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // Symbols that we externalized only to satisfy cross-partition
       // references (the .__pcg<hash> suffix) are an implementation detail
       // and must not bloat the final binary's symbol table.
-      bool IsPcgInternal = Name.contains(".__pcg");
+      bool IsPcgInternal = Name.contains(PcgSymbolMarker);
 
       bool IsExt = (OutSym.n_type & MO::N_EXT) != 0;
       bool IsDefined = IsExt && (OutSym.n_type & MO::N_TYPE) != MO::N_UNDF;

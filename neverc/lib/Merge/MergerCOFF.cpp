@@ -119,6 +119,24 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   unsigned TotalSymbols = 0;
   uint16_t Machine = 0;
 
+  // Parallel codegen externalizes module-local symbols with a ".__pcg<hash>"
+  // suffix so cross-partition references resolve.  The owning partition's
+  // definition is demoted back to STATIC below, so every *other* partition
+  // carries an UNDEFINED external reference to that name which the final
+  // linker can no longer satisfy ("undefined symbol: x.__pcg<hash>").  The
+  // ELF and MachO mergers avoid this by deduping global symbols (an undefined
+  // reference collapses onto the defined slot); the COFF merger historically
+  // skipped that step.  Collect the undefined .__pcg references here and, once
+  // every partition's STATIC definition is known, point their relocations
+  // straight at it.
+  StringMap<unsigned> PcgDefSlot;
+  struct DeferredRef {
+    unsigned Part;
+    unsigned OrigIdx;
+    std::string Name;
+  };
+  SmallVector<DeferredRef, 0> DeferredPcgUndef;
+
   for (unsigned p = 0; p < (unsigned)Buffers.size(); ++p) {
     if (Buffers[p].empty())
       continue;
@@ -212,6 +230,17 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         return false;
       }
       StringRef Name = *NameOrErr;
+
+      // Defer cross-partition undefined references to .__pcg symbols; they are
+      // resolved onto the in-object STATIC definition after every partition is
+      // merged (see PcgDefSlot below).  Undefined symbols carry no aux records.
+      if (CSym.getStorageClass() == COFF::IMAGE_SYM_CLASS_EXTERNAL &&
+          CSym.getSectionNumber() == COFF::IMAGE_SYM_UNDEFINED &&
+          CSym.getValue() == 0 && Name.contains(PcgSymbolMarker)) {
+        DeferredPcgUndef.push_back({p, OrigIdx, Name.str()});
+        continue;
+      }
+
       if (Name.size() <= COFF::NameSize) {
         memset(OutSym.Name.ShortName, 0, COFF::NameSize);
         memcpy(OutSym.Name.ShortName, Name.data(), Name.size());
@@ -242,9 +271,13 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       OutSym.Type = CSym.getType();
       OutSym.StorageClass = CSym.getStorageClass();
       // Demote __pcg symbols to static (matching MachO/ELF merger behavior).
+      // Record the slot so deferred cross-partition references can be remapped
+      // onto this in-object definition once all partitions are merged.
       if (OutSym.StorageClass == COFF::IMAGE_SYM_CLASS_EXTERNAL &&
-          Name.contains(".__pcg") && OutSym.SectionNumber > 0)
+          Name.contains(PcgSymbolMarker) && OutSym.SectionNumber > 0) {
         OutSym.StorageClass = COFF::IMAGE_SYM_CLASS_STATIC;
+        PcgDefSlot[Name] = TotalSymbols;
+      }
       OutSym.NumberOfAuxSymbols = CSym.getNumberOfAuxSymbols();
 
       PM.SymMap[OrigIdx] = TotalSymbols;
@@ -278,6 +311,44 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         PM.SymMap[OrigIdx + 1 + a] = TotalSymbols;
         TotalSymbols++;
       }
+    }
+  }
+
+  // Resolve deferred cross-partition .__pcg references onto the in-object
+  // STATIC definition (mirrors the ELF/MachO global-symbol dedup).  If a
+  // definition is somehow missing, emit a single undefined external so the
+  // relocation stays well-formed and the linker still reports it cleanly.
+  if (!DeferredPcgUndef.empty()) {
+    StringMap<unsigned> PcgUndefEmitted;
+    auto emitUndefExtern = [&](StringRef Nm) -> unsigned {
+      coff_symbol16 US;
+      memset(&US, 0, sizeof(US));
+      if (Nm.size() <= COFF::NameSize) {
+        memcpy(US.Name.ShortName, Nm.data(), Nm.size());
+      } else {
+        US.Name.Offset.Zeroes = 0;
+        US.Name.Offset.Offset = appendString(Nm);
+      }
+      US.SectionNumber = 0;
+      US.StorageClass = COFF::IMAGE_SYM_CLASS_EXTERNAL;
+      unsigned Slot = TotalSymbols;
+      SymbolTable.append(reinterpret_cast<const char *>(&US),
+                         reinterpret_cast<const char *>(&US) + 18);
+      TotalSymbols++;
+      return Slot;
+    };
+    for (auto &Ref : DeferredPcgUndef) {
+      unsigned Slot;
+      auto DefIt = PcgDefSlot.find(Ref.Name);
+      if (DefIt != PcgDefSlot.end()) {
+        Slot = DefIt->second;
+      } else {
+        auto [UIt, Inserted] = PcgUndefEmitted.try_emplace(Ref.Name, 0u);
+        if (Inserted)
+          UIt->second = emitUndefExtern(Ref.Name);
+        Slot = UIt->second;
+      }
+      Maps[Ref.Part].SymMap[Ref.OrigIdx] = Slot;
     }
   }
 

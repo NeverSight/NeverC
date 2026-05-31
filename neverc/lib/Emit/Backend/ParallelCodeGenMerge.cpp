@@ -154,7 +154,7 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
   SmallString<32> PCGSuffix;
   {
     auto H = hash_value(Mod.getModuleIdentifier());
-    raw_svector_ostream(PCGSuffix) << ".__pcg" << (H & 0xFFFFFFFF);
+    raw_svector_ostream(PCGSuffix) << merge::PcgSymbolMarker << (H & 0xFFFFFFFF);
   }
 
   auto ExternalizeGV = [&](GlobalValue &GV) {

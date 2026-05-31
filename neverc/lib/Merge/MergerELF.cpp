@@ -441,7 +441,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           GlobalSyms[i].st_shndx == ELF::SHN_COMMON)
         continue;
       StringRef Name(SymStrTab.Data.data() + GlobalSyms[i].st_name);
-      if (Name.contains(".__pcg")) {
+      if (Name.contains(PcgSymbolMarker)) {
         GlobalSyms[i].setBinding(ELF::STB_LOCAL);
         DemoteSlots.insert(i);
       }
