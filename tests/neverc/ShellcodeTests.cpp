@@ -284,11 +284,16 @@ TEST_F(ShellcodeTest, FinalizeMaxLengthTooSmall) {
 }
 
 TEST_F(ShellcodeTest, FinalizeBadByteAuditFail) {
+  // The forbidden set must contain a byte that is guaranteed to appear in the
+  // emitted payload on every host arch: x86_64 codegen for `a + b` contains no
+  // 0x00 byte (it does on AArch64), but it always ends in 0xC3 (`ret`); AArch64
+  // contains 0x00. Forbidding both makes the audit deterministically trip
+  // regardless of the default target (x86_64 on Windows/Linux, arm64 on macOS).
   shellcodeExpectFail(
       "bad_byte_audit_fail",
       (testDir() / "shellcode/test_shellcode_add.c").string(),
       "bad-byte audit failed",
-      {"-fshellcode-bad-bytes=00", "-fno-shellcode-bad-byte-rewrite"});
+      {"-fshellcode-bad-bytes=00,c3", "-fno-shellcode-bad-byte-rewrite"});
 }
 
 // HeapArenaPass tests
@@ -322,6 +327,13 @@ TEST_F(ShellcodeTest, HeapArenaCrossCompile) {
       (testDir() / "shellcode/test_shellcode_heap_arena.c").string());
 }
 TEST_F(ShellcodeTest, HeapArenaDisabled) {
+  if (isWindows()) {
+    GTEST_SKIP() << "Windows resolves malloc/free via the PEB ProcessHeap "
+                    "(WinPEBImportPass / RtlAllocateHeap) independently of the "
+                    "HeapArenaPass, so -fno-shellcode-heap-arena leaves no "
+                    "undefined heap allocator symbol to diagnose";
+    return;
+  }
   shellcodeExpectFail(
       "heap_arena_disabled",
       (testDir() / "shellcode/test_shellcode_heap_arena.c").string(),

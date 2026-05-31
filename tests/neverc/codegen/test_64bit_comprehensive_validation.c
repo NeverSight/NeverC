@@ -240,7 +240,13 @@ static void test_platform_invariants(void) {
     CHECK(sizeof(char) == 1, "char 1 byte");
 
 #ifdef __x86_64__
+#if defined(_WIN32)
+    // The MSVC ABI makes `long double` an alias for `double` (8 bytes), unlike
+    // the System V x86_64 ABI where it is the 80-bit x87 type (16 bytes).
+    CHECK(sizeof(long double) == 8, "x86_64 Windows long double 8 bytes");
+#else
     CHECK(sizeof(long double) == 16, "x86_64 long double 16 bytes");
+#endif
 #endif
 #ifdef __aarch64__
     CHECK(sizeof(long double) == 8, "aarch64 long double 8 bytes");
