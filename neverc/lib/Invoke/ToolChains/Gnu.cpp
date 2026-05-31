@@ -217,7 +217,8 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       bool WantPthread = Args.hasArg(options::OPT_pthread) ||
                          Args.hasArg(options::OPT_pthreads);
 
-      AddRunTimeLibs(ToolChain, D, CmdArgs, Args);
+      if (!Triple.isAndroid())
+        AddRunTimeLibs(ToolChain, D, CmdArgs, Args);
 
       if (WantPthread && !Triple.isAndroid())
         CmdArgs.push_back("-lpthread");
@@ -230,7 +231,7 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
       if (IsStatic || IsStaticPIE)
         CmdArgs.push_back("--end-group");
-      else
+      else if (!Triple.isAndroid())
         AddRunTimeLibs(ToolChain, D, CmdArgs, Args);
     }
 
