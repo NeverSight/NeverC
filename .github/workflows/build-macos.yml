@@ -54,6 +54,21 @@ jobs:
             neverc/llvm
           time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
 
+      # Package + upload neverc immediately after the compiler links, before the
+      # plugin-SDK / test steps below, so the binary is always downloadable as
+      # an artifact even when a later step fails.
+      - name: Install neverc
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+
+      - name: Package neverc
+        run: 7z a macos-arm64-neverc.zip install
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-neverc
+          path: macos-arm64-neverc.zip
+
       - name: Build Plugin SDK
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
 
@@ -75,15 +90,3 @@ jobs:
 
       - name: Run neverc tests
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
-
-      - name: Install neverc
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
-
-      - name: Package neverc
-        run: 7z a macos-arm64-neverc.zip install
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-arm64-neverc
-          path: macos-arm64-neverc.zip

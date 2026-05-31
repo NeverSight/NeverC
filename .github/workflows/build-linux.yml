@@ -12,7 +12,10 @@ jobs:
       (github.event_name == 'push' ||
        (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name != github.repository))
-    runs-on: ubuntu-latest
+    # Pin to 22.04 (glibc 2.35) rather than ubuntu-latest (24.04/glibc 2.39) so
+    # the neverc artifact runs in glibc>=2.35 containers (Ubuntu 22.04 / 24.04),
+    # matching the target Docker test environment. Build low, run high.
+    runs-on: ubuntu-22.04
     env:
       BUILD_TYPE: Release
     steps:
@@ -22,7 +25,7 @@ jobs:
         path: neverc
 
     - name: Setup build deps
-      run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full gdb
+      run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full
 
     - name: Resolve latest LLVM version
       env:
@@ -54,6 +57,22 @@ jobs:
         neverc/llvm
         time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
 
+    # Package + upload neverc immediately after the compiler links, before the
+    # plugin-SDK / test / debug steps below (which may crash). Guarantees the
+    # neverc binary is always downloadable for local Docker reproduction even
+    # when a later step fails.
+    - name: Install neverc
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+
+    - name: Package neverc
+      run: 7z a linux-x64-neverc.zip install
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-x64-neverc
+        path: linux-x64-neverc.zip
+
     - name: Build Plugin SDK
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
 
@@ -76,44 +95,3 @@ jobs:
     - name: Run neverc tests
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
       continue-on-error: true
-
-    - name: Debug runtime crash (GDB backtrace)
-      if: always()
-      run: |
-        set +e
-        echo "=== Compiling test_basic.c ==="
-        build/bin/neverc tests/neverc/test_basic.c -o /tmp/test_basic_dbg -g
-        echo "=== readelf -l (program headers) ==="
-        readelf -l /tmp/test_basic_dbg 2>/dev/null || true
-        echo "=== readelf -d (dynamic section) ==="
-        readelf -d /tmp/test_basic_dbg 2>/dev/null || true
-        echo "=== ldd ==="
-        ldd /tmp/test_basic_dbg 2>/dev/null || true
-        echo "=== GDB backtrace ==="
-        echo -e "set confirm off\nset pagination off\nrun\nbt full\ninfo registers\nquit" \
-          | gdb -batch -q /tmp/test_basic_dbg 2>&1 | head -100
-        echo "=== Compiling minimal test ==="
-        cat > /tmp/minimal.c << 'CEOF'
-        int main(void) { return 42; }
-        CEOF
-        build/bin/neverc /tmp/minimal.c -o /tmp/minimal_test
-        /tmp/minimal_test; echo "minimal exit: $?"
-        echo "=== Compiling printf test ==="
-        cat > /tmp/printf_test.c << 'CEOF'
-        #include <stdio.h>
-        int main(void) { printf("hello\n"); return 0; }
-        CEOF
-        build/bin/neverc /tmp/printf_test.c -o /tmp/printf_test
-        /tmp/printf_test; echo "printf exit: $?"
-
-    - name: Install neverc
-      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
-
-    - name: Package neverc
-      run: 7z a linux-x64-neverc.zip install
-
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: linux-x64-neverc
-        path: linux-x64-neverc.zip

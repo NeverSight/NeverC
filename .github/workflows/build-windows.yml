@@ -64,6 +64,22 @@ jobs:
       shell: bash
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-runtime-x64-msvc neverc-runtime-shared-msvc
 
+    # Package + upload neverc immediately after the compiler + bundled runtime
+    # build, before the plugin-SDK / test steps below, so the binary is always
+    # downloadable as an artifact even when a later step fails.
+    - name: Install neverc
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+
+    - name: Package neverc
+      run: 7z a windows-x64-neverc.zip install
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-x64-neverc
+        path: windows-x64-neverc.zip
+
     - name: Build Plugin SDK
       shell: bash
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
@@ -88,16 +104,3 @@ jobs:
     - name: Run neverc tests
       shell: bash
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
-
-    - name: Install neverc
-      shell: bash
-      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
-
-    - name: Package neverc
-      run: 7z a windows-x64-neverc.zip install
-
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-x64-neverc
-        path: windows-x64-neverc.zip
