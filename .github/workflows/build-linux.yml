@@ -52,6 +52,7 @@ jobs:
         -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
         -DNEVERC_INCLUDE_TESTS=ON \
         -DNEVERC_ENABLE_LTO=ON \
+        -DNEVERC_NATIVE_ARCH=OFF \
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
         -C neverc/neverc/cmake/caches/NeverC.cmake \
         neverc/llvm
@@ -94,4 +95,3 @@ jobs:
 
     - name: Run neverc tests
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
-      continue-on-error: true
