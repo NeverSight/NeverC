@@ -571,7 +571,6 @@ public:
 // Unsequenced operations & expression completion
 // ===----------------------------------------------------------------------===
 
-LLVM_ATTRIBUTE_ALWAYS_INLINE
 static bool hasSideEffectOp(const Expr *E, unsigned Depth) {
   for (;;) {
     if (LLVM_UNLIKELY(Depth == 0))
@@ -660,7 +659,6 @@ void Sema::CheckUnsequencedOperations(const Expr *E) {
   SequenceChecker(*this, E);
 }
 
-LLVM_ATTRIBUTE_ALWAYS_INLINE
 static bool isPureArithExpr(const Expr *E, unsigned Depth,
                             bool &HasNonLiteral) {
   for (;;) {
