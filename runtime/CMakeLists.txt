@@ -81,3 +81,21 @@ runtime_sdk_target(neverc-runtime-arm64-msvc  arm64-msvc
   "windows/arm64/msvc/crt/lib:windows/arm64/msvc/crt/lib"
   "windows/arm64/msvc/sdk/lib:windows/arm64/msvc/sdk/lib"
 )
+
+# ---------------------------------------------------------------------------
+# Linux / x64 sysroot  (Ubuntu 22.04 headers + libraries)
+# ---------------------------------------------------------------------------
+if(IS_DIRECTORY "${RUNTIME_SRC}/linux/x64")
+  runtime_sdk_target(neverc-runtime-linux-x64  linux-x64
+    "linux/x64:linux/x64"
+  )
+endif()
+
+# ---------------------------------------------------------------------------
+# Linux / arm64 sysroot
+# ---------------------------------------------------------------------------
+if(IS_DIRECTORY "${RUNTIME_SRC}/linux/arm64")
+  runtime_sdk_target(neverc-runtime-linux-arm64  linux-arm64
+    "linux/arm64:linux/arm64"
+  )
+endif()

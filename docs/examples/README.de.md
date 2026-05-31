@@ -16,6 +16,16 @@ Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilieru
 | [Windows Treiber + CET](../../examples/windows-driver-cet/README.de.md) | Kerneltreiber mit Intel CET Shadow Stack | CET-kompatibler Kernelcode, `/guard:ehcont` |
 | [Windows Treiber + Gleitkomma](../../examples/windows-driver-float/README.de.md) | Kerneltreiber mit Gleitkomma/SIMD | Sichere Gleitkommaoperationen im Kernelmodus |
 
+### Linux
+
+| Beispiel | Beschreibung | Hauptmerkmale |
+|----------|-------------|--------------|
+| [Linux Hello World](../../examples/linux-hello/README.de.md) | Minimales C-Programm | Cross-Kompilierung von macOS/Windows |
+| [Linux POSIX](../../examples/linux-posix/README.de.md) | POSIX-Systemprogrammierung | pthreads, mmap, pipe, Signale |
+| [Linux Statisch](../../examples/linux-static/README.de.md) | Vollständig statisches Binary | `-static` Verlinkung |
+| [Linux Netzwerk](../../examples/linux-network/README.de.md) | TCP-Socket-Demo | Client/Server |
+| [Linux Math + zlib](../../examples/linux-math/README.de.md) | Math + Kompression | Trigonometrie, zlib, CRC32 |
+
 ---
 
 ## Schnellstart

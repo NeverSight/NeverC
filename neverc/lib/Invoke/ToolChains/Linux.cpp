@@ -7,6 +7,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/ScopedPrinter.h"
 #include "llvm/Support/VirtualFileSystem.h"
+#include "llvm/TargetParser/Host.h"
 #include <system_error>
 
 using namespace neverc::driver;
@@ -43,6 +44,12 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   Multilibs = GCCInstallation.getMultilibs();
   SelectedMultilibs.assign({GCCInstallation.getMultilib()});
   std::string SysRoot = computeSysRoot();
+
+  llvm::SmallString<128> BundledCheck;
+  if (D.SysRoot.empty() &&
+      tools::getBundledLinuxSysroot(D, Triple, BundledCheck))
+    UseBundledSysroot = true;
+
   ToolChain::path_list &PPaths = getProgramPaths();
 
   Generic_GCC::PushPPaths(PPaths);
@@ -51,17 +58,9 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   ExtraOpts.push_back("relro");
 
   if (GCCInstallation.getParentLibPath().contains("opt/rh/"))
-    // With devtoolset on RHEL, we want to add a bin directory that is relative
-    // to the detected gcc install, because if we are using devtoolset gcc then
-    // we want to use other tools from devtoolset (e.g. ld) instead of the
-    // standard system tools.
     PPaths.push_back(
         llvm::Twine(GCCInstallation.getParentLibPath() + "/../bin").str());
 
-  // --hash-style and --build-id are now passed via LinkerDriverConfig.
-
-  // The selection of paths to try here is designed to match the patterns which
-  // the GCC driver itself uses, as this is part of the GCC-compatible driver.
   path_list &Paths = getFilePaths();
 
   const std::string OSLibDir = std::string(getOSLibDir(Triple));
@@ -79,6 +78,34 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
 
   addPathIfExists(D, concat(SysRoot, "/lib"), Paths);
   addPathIfExists(D, concat(SysRoot, "/usr/lib"), Paths);
+
+  if (UseBundledSysroot) {
+    // When GCC isn't detected (common during cross-compilation), search for
+    // bundled GCC runtime objects (crtbeginS.o, crtendS.o, libgcc.a, etc.)
+    // inside the sysroot.
+    if (!GCCInstallation.isValid()) {
+      for (const char *Ver : {"12", "13", "14", "11", "10"}) {
+        std::string GCCPath =
+            concat(SysRoot, "/usr/lib/gcc/", MultiarchTriple, "/") + Ver;
+        if (D.getVFS().exists(GCCPath)) {
+          Paths.push_back(GCCPath);
+          break;
+        }
+      }
+    }
+
+    // On a native Linux host, also add system library paths as fallback
+    // for any libs not included in the bundle.
+    llvm::Triple HostTriple(llvm::sys::getDefaultTargetTriple());
+    if (HostTriple.isOSLinux()) {
+      addPathIfExists(D, concat("", "/lib", MultiarchTriple), Paths);
+      addPathIfExists(D, concat("", "/lib/..", OSLibDir), Paths);
+      addPathIfExists(D, concat("", "/usr/lib", MultiarchTriple), Paths);
+      addPathIfExists(D, concat("", "/usr/lib/..", OSLibDir), Paths);
+      addPathIfExists(D, "/lib", Paths);
+      addPathIfExists(D, "/usr/lib", Paths);
+    }
+  }
 }
 
 ToolChain::RuntimeLibType Linux::GetDefaultRuntimeLibType() const {
@@ -100,6 +127,11 @@ Tool *Linux::buildStaticLibTool() const {
 std::string Linux::computeSysRoot() const {
   if (!getDriver().SysRoot.empty())
     return getDriver().SysRoot;
+
+  llvm::SmallString<128> BundledRoot;
+  if (tools::getBundledLinuxSysroot(getDriver(), getTriple(), BundledRoot))
+    return std::string(BundledRoot);
+
   return std::string();
 }
 
@@ -159,14 +191,24 @@ void Linux::AddNeverCSystemIncludeArgs(const ArgList &DriverArgs,
         DriverArgs, FrontendArgs,
         concat(SysRoot, "/usr/include", MultiarchIncludeDir));
 
-  // Add an include of '/include' directly. This isn't provided by default by
-  // system GCCs, but is often used with cross-compiling GCCs, and harmless to
-  // add even when NeverC is acting as-if it were a system compiler.
   addExternCSystemInclude(DriverArgs, FrontendArgs,
                           concat(SysRoot, "/include"));
 
   addExternCSystemInclude(DriverArgs, FrontendArgs,
                           concat(SysRoot, "/usr/include"));
+
+  // When using the bundled sysroot on a native Linux host, also add
+  // system include paths as fallback for headers not in the bundle.
+  if (UseBundledSysroot) {
+    llvm::Triple HostTriple(llvm::sys::getDefaultTargetTriple());
+    if (HostTriple.isOSLinux()) {
+      if (!MultiarchIncludeDir.empty() &&
+          D.getVFS().exists(concat("", "/usr/include", MultiarchIncludeDir)))
+        addExternCSystemInclude(DriverArgs, FrontendArgs,
+                                concat("", "/usr/include", MultiarchIncludeDir));
+      addExternCSystemInclude(DriverArgs, FrontendArgs, "/usr/include");
+    }
+  }
 }
 
 bool Linux::IsAArch64OutlineAtomicsDefault(const ArgList &Args) const {

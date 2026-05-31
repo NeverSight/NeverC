@@ -16,6 +16,16 @@
 | [Windows 驅動 + CET](../../examples/windows-driver-cet/README.zh-TW.md) | 帶 Intel CET 影子堆疊的核心驅動 | CET 相容核心程式碼，`/guard:ehcont`，影子堆疊強制 |
 | [Windows 驅動 + 浮點](../../examples/windows-driver-float/README.zh-TW.md) | 帶浮點/SIMD 的核心驅動 | 核心模式安全浮點，`KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
 
+### Linux
+
+| 範例 | 說明 | 關鍵特性 |
+|------|------|--------|
+| [Linux Hello World](../../examples/linux-hello/README.zh-TW.md) | 最小 C 程式 | 從 macOS/Windows 交叉編譯 ELF |
+| [Linux POSIX](../../examples/linux-posix/README.zh-TW.md) | POSIX 系統程式設計 | pthreads、mmap、pipe、訊號處理 |
+| [Linux 全靜態](../../examples/linux-static/README.zh-TW.md) | 全靜態連結二進位 | `-static` 連結，零執行階段相依性 |
+| [Linux 網路](../../examples/linux-network/README.zh-TW.md) | TCP Socket 示範 | 客戶端/伺服器，Socket API |
+| [Linux 數學 + zlib](../../examples/linux-math/README.zh-TW.md) | 數學 + 壓縮 | 三角函數，zlib 壓縮/解壓，CRC32 |
+
 ---
 
 ## 快速開始

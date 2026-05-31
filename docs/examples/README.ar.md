@@ -18,6 +18,16 @@
 | [برنامج تشغيل Windows + CET](../../examples/windows-driver-cet/README.ar.md) | برنامج مع Intel CET Shadow Stack | كود نواة متوافق مع CET، `/guard:ehcont` |
 | [برنامج تشغيل Windows + عائم](../../examples/windows-driver-float/README.ar.md) | برنامج مع فاصلة عائمة/SIMD | فاصلة عائمة آمنة في وضع النواة |
 
+### Linux
+
+| مثال | الوصف | الميزات الرئيسية |
+|------|-------|-----------------|
+| [Linux Hello World](../../examples/linux-hello/README.ar.md) | برنامج C بسيط | ترجمة تبادلية من macOS/Windows |
+| [Linux POSIX](../../examples/linux-posix/README.ar.md) | برمجة أنظمة POSIX | pthreads، mmap، pipe، إشارات |
+| [Linux ثابت](../../examples/linux-static/README.ar.md) | ثنائي ثابت بالكامل | ربط `-static` |
+| [Linux شبكة](../../examples/linux-network/README.ar.md) | عرض مقبس TCP | عميل/خادم |
+| [Linux رياضيات + zlib](../../examples/linux-math/README.ar.md) | رياضيات + ضغط | حساب مثلثات، zlib، CRC32 |
+
 ---
 
 ## بدء سريع

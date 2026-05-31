@@ -16,6 +16,16 @@ Ejemplos compilables que demuestran las capacidades de compilación cruzada de N
 | [Controlador Windows + CET](../../examples/windows-driver-cet/README.es.md) | Controlador con Intel CET Shadow Stack | Código kernel compatible CET, `/guard:ehcont` |
 | [Controlador Windows + punto flotante](../../examples/windows-driver-float/README.es.md) | Controlador con punto flotante/SIMD | Punto flotante seguro en modo kernel |
 
+### Linux
+
+| Ejemplo | Descripción | Características |
+|---------|-------------|----------------|
+| [Linux Hello World](../../examples/linux-hello/README.es.md) | Programa C mínimo | Compilación cruzada desde macOS/Windows |
+| [Linux POSIX](../../examples/linux-posix/README.es.md) | Programación de sistemas POSIX | pthreads, mmap, pipe, señales |
+| [Linux Estático](../../examples/linux-static/README.es.md) | Binario completamente estático | Enlace `-static` |
+| [Linux Red](../../examples/linux-network/README.es.md) | Demo socket TCP | Cliente/servidor |
+| [Linux Math + zlib](../../examples/linux-math/README.es.md) | Math + compresión | Trigonometría, zlib, CRC32 |
+
 ---
 
 ## Inicio rápido

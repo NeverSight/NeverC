@@ -16,6 +16,16 @@ Exemples compilables démontrant les capacités de compilation croisée de Never
 | [Pilote Windows + CET](../../examples/windows-driver-cet/README.fr.md) | Pilote avec Intel CET Shadow Stack | Code noyau compatible CET, `/guard:ehcont` |
 | [Pilote Windows + virgule flottante](../../examples/windows-driver-float/README.fr.md) | Pilote avec virgule flottante/SIMD | Virgule flottante sécurisée en mode noyau |
 
+### Linux
+
+| Exemple | Description | Caractéristiques |
+|---------|-------------|-----------------|
+| [Linux Hello World](../../examples/linux-hello/README.fr.md) | Programme C minimal | Cross-compilation depuis macOS/Windows |
+| [Linux POSIX](../../examples/linux-posix/README.fr.md) | Programmation système POSIX | pthreads, mmap, pipe, signaux |
+| [Linux Statique](../../examples/linux-static/README.fr.md) | Binaire entièrement statique | Liaison `-static` |
+| [Linux Réseau](../../examples/linux-network/README.fr.md) | Démo socket TCP | Client/serveur |
+| [Linux Math + zlib](../../examples/linux-math/README.fr.md) | Math + compression | Trigonométrie, zlib, CRC32 |
+
 ---
 
 ## Démarrage rapide

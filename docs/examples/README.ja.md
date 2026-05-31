@@ -16,6 +16,16 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 | [Windows ドライバ + CET](../../examples/windows-driver-cet/README.ja.md) | Intel CET シャドウスタック付きカーネルドライバ | CET 対応カーネルコード、`/guard:ehcont` |
 | [Windows ドライバ + 浮動小数点](../../examples/windows-driver-float/README.ja.md) | 浮動小数点/SIMD 付きカーネルドライバ | カーネルモード安全浮動小数点 |
 
+### Linux
+
+| サンプル | 説明 | 主要機能 |
+|---------|------|--------|
+| [Linux Hello World](../../examples/linux-hello/README.ja.md) | 最小限の C プログラム | macOS/Windows からのクロスコンパイル |
+| [Linux POSIX](../../examples/linux-posix/README.ja.md) | POSIX システムプログラミング | pthreads、mmap、pipe、シグナル |
+| [Linux 静的](../../examples/linux-static/README.ja.md) | 完全静的バイナリ | `-static` リンク |
+| [Linux ネットワーク](../../examples/linux-network/README.ja.md) | TCP ソケットデモ | クライアント/サーバー |
+| [Linux 数学 + zlib](../../examples/linux-math/README.ja.md) | 数学 + 圧縮 | 三角関数、zlib、CRC32 |
+
 ---
 
 ## クイックスタート

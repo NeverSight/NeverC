@@ -33,6 +33,8 @@ public:
 
   void addExtraOpts(llvm::opt::ArgStringList &CmdArgs) const override;
 
+  bool hasBundledSysroot() const { return UseBundledSysroot; }
+
   std::vector<std::string> ExtraOpts;
 
   llvm::DenormalMode getDefaultDenormalModeForType(
@@ -42,6 +44,9 @@ public:
 protected:
   Tool *buildLinker() const override;
   Tool *buildStaticLibTool() const override;
+
+private:
+  bool UseBundledSysroot = false;
 };
 
 } // end namespace toolchains

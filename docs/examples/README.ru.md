@@ -16,6 +16,16 @@
 | [Драйвер Windows + CET](../../examples/windows-driver-cet/README.ru.md) | Драйвер с Intel CET Shadow Stack | CET-совместимый код ядра, `/guard:ehcont` |
 | [Драйвер Windows + плавающая точка](../../examples/windows-driver-float/README.ru.md) | Драйвер с плавающей точкой/SIMD | Безопасная плавающая точка в режиме ядра |
 
+### Linux
+
+| Пример | Описание | Ключевые особенности |
+|--------|---------|---------------------|
+| [Linux Hello World](../../examples/linux-hello/README.ru.md) | Минимальная программа на C | Кросс-компиляция с macOS/Windows |
+| [Linux POSIX](../../examples/linux-posix/README.ru.md) | Системное программирование POSIX | pthreads, mmap, pipe, сигналы |
+| [Linux Статический](../../examples/linux-static/README.ru.md) | Полностью статический бинарник | Линковка `-static` |
+| [Linux Сеть](../../examples/linux-network/README.ru.md) | Демо TCP-сокетов | Клиент/сервер |
+| [Linux Math + zlib](../../examples/linux-math/README.ru.md) | Математика + сжатие | Тригонометрия, zlib, CRC32 |
+
 ---
 
 ## Быстрый старт

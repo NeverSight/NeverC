@@ -111,6 +111,9 @@ bool getBundledWdkRoot(const Driver &D, const llvm::Triple &Triple,
 bool getBundledRuntimeSharedRoot(const Driver &D, llvm::StringRef Sdk,
                                  llvm::SmallVectorImpl<char> &Root);
 
+bool getBundledLinuxSysroot(const Driver &D, const llvm::Triple &Triple,
+                            llvm::SmallVectorImpl<char> &SysRoot);
+
 } // end namespace tools
 } // end namespace driver
 } // end namespace neverc

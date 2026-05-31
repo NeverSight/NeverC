@@ -16,6 +16,16 @@ Esempi completi compilabili che dimostrano le capacità di cross-compilazione di
 | [Driver Windows + CET](../../examples/windows-driver-cet/README.it.md) | Driver con Intel CET Shadow Stack | Codice kernel compatibile CET, `/guard:ehcont` |
 | [Driver Windows + virgola mobile](../../examples/windows-driver-float/README.it.md) | Driver con virgola mobile/SIMD | Virgola mobile sicura in modalità kernel |
 
+### Linux
+
+| Esempio | Descrizione | Caratteristiche |
+|---------|-------------|----------------|
+| [Linux Hello World](../../examples/linux-hello/README.it.md) | Programma C minimale | Cross-compilazione da macOS/Windows |
+| [Linux POSIX](../../examples/linux-posix/README.it.md) | Programmazione di sistema POSIX | pthreads, mmap, pipe, segnali |
+| [Linux Statico](../../examples/linux-static/README.it.md) | Binario completamente statico | Linking `-static` |
+| [Linux Rete](../../examples/linux-network/README.it.md) | Demo socket TCP | Client/server |
+| [Linux Math + zlib](../../examples/linux-math/README.it.md) | Math + compressione | Trigonometria, zlib, CRC32 |
+
 ---
 
 ## Avvio rapido

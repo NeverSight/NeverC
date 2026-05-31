@@ -16,6 +16,16 @@ NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 
 | [Windows 드라이버 + CET](../../examples/windows-driver-cet/README.ko.md) | Intel CET 섀도 스택 커널 드라이버 | CET 호환 커널 코드, `/guard:ehcont` |
 | [Windows 드라이버 + 부동 소수점](../../examples/windows-driver-float/README.ko.md) | 부동 소수점/SIMD 커널 드라이버 | 커널 모드 안전 부동 소수점 |
 
+### Linux
+
+| 예제 | 설명 | 주요 기능 |
+|------|------|--------|
+| [Linux Hello World](../../examples/linux-hello/README.ko.md) | 최소한의 C 프로그램 | macOS/Windows에서 크로스 컴파일 |
+| [Linux POSIX](../../examples/linux-posix/README.ko.md) | POSIX 시스템 프로그래밍 | pthreads, mmap, pipe, 시그널 |
+| [Linux 정적](../../examples/linux-static/README.ko.md) | 완전 정적 바이너리 | `-static` 링크 |
+| [Linux 네트워크](../../examples/linux-network/README.ko.md) | TCP 소켓 데모 | 클라이언트/서버 |
+| [Linux 수학 + zlib](../../examples/linux-math/README.ko.md) | 수학 + 압축 | 삼각 함수, zlib, CRC32 |
+
 ---
 
 ## 빠른 시작
