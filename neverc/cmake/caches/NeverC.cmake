@@ -15,9 +15,19 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_C_COMPILER)
     message(STATUS "NeverC: using Homebrew LLVM toolchain (${_NEVERC_BREW_CXX})")
   endif()
 endif()
+# Detect MSVC early: in cache preload (-C), MSVC is not yet set (project()
+# hasn't run).  Use CMAKE_HOST_WIN32 + absence of explicit Clang compiler
+# as proxy.  On Windows with no -DCMAKE_C_COMPILER override, assume MSVC.
+set(_NEVERC_HOST_MSVC FALSE)
+if(CMAKE_HOST_WIN32 AND NOT DEFINED CMAKE_C_COMPILER)
+  set(_NEVERC_HOST_MSVC TRUE)
+elseif(DEFINED CMAKE_C_COMPILER AND CMAKE_C_COMPILER MATCHES "cl\\.exe$")
+  set(_NEVERC_HOST_MSVC TRUE)
+endif()
+
 set(NEVERC_RELEASE_OPT_LEVEL "2" CACHE STRING
     "Release optimization level for building neverc itself (2 or 3)")
-if(NOT MSVC)
+if(NOT _NEVERC_HOST_MSVC)
   if(NEVERC_RELEASE_OPT_LEVEL STREQUAL "3")
     set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
@@ -32,7 +42,7 @@ endif()
 # binary itself.  Disable with -DNEVERC_NATIVE_ARCH=OFF for portable
 # release builds.
 option(NEVERC_NATIVE_ARCH "Enable -march=native for local builds" ON)
-if(NEVERC_NATIVE_ARCH AND NOT CMAKE_CROSSCOMPILING AND NOT MSVC)
+if(NEVERC_NATIVE_ARCH AND NOT CMAKE_CROSSCOMPILING AND NOT _NEVERC_HOST_MSVC)
   set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=native" CACHE STRING "" FORCE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native" CACHE STRING "" FORCE)
 endif()
@@ -65,7 +75,7 @@ set(LLVM_BUILD_LLVM_C_DYLIB OFF CACHE BOOL "")
 # ld64 only when the host toolchain has no lld (e.g. bare Xcode clang).
 if(NOT CMAKE_CROSSCOMPILING)
   set(_NEVERC_USE_LLD FALSE)
-  if(MSVC)
+  if(_NEVERC_HOST_MSVC)
     set(_NEVERC_USE_LLD TRUE)
   else()
     get_filename_component(_NEVERC_CXX_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
@@ -115,7 +125,7 @@ endif()
 # libraries, so avoid PIC/unwind/debugging extras and the associated configure
 # probes by default.
 # Static CRT (/MT) for standalone deployment and plugin compatibility.
-if(MSVC)
+if(_NEVERC_HOST_MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
 endif()
 
@@ -164,7 +174,7 @@ set(NEVERC_STRIP_BINARY ON CACHE BOOL "")
 # Windows on a non-LTO build until those UB sites are hunted down (ASan/UBSan)
 # and the sources are proven LTO-clean; then drop the CMAKE_HOST_WIN32 guard.
 option(NEVERC_ENABLE_LTO "Enable Full LTO for the neverc binary" OFF)
-if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING AND NOT MSVC
+if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING AND NOT _NEVERC_HOST_MSVC
    AND NOT CMAKE_HOST_WIN32
    AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(LLVM_ENABLE_LTO Full CACHE STRING "" FORCE)
@@ -203,7 +213,7 @@ set(NEVERC_PGO_MODE "OFF" CACHE STRING
     "PGO mode: OFF (default), generate, or use")
 set(NEVERC_PGO_PROFILE "" CACHE FILEPATH
     "Path to merged .profdata file (required when NEVERC_PGO_MODE=use)")
-if(NOT MSVC)
+if(NOT _NEVERC_HOST_MSVC)
   if(NEVERC_PGO_MODE STREQUAL "generate")
     set(CMAKE_C_FLAGS_RELEASE
         "${CMAKE_C_FLAGS_RELEASE} -fprofile-instr-generate -DNEVERC_PGO_TRAINING"
@@ -233,7 +243,7 @@ endif()
 # and improves I-cache utilisation.
 # Disabled during PGO generate: -dead_strip / --gc-sections removes the
 # __llvm_prf* profiling data sections, preventing profile output.
-if(NOT MSVC)
+if(NOT _NEVERC_HOST_MSVC)
   set(CMAKE_C_FLAGS_RELEASE
       "${CMAKE_C_FLAGS_RELEASE} -ffunction-sections -fdata-sections"
       CACHE STRING "" FORCE)
@@ -264,7 +274,7 @@ if(NEVERC_CCACHE_PROG)
   message(STATUS "NeverC: enabling compiler cache via ${NEVERC_CCACHE_PROG}")
 endif()
 
-if(NOT MSVC)
+if(NOT _NEVERC_HOST_MSVC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function" CACHE STRING "" FORCE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-function" CACHE STRING "" FORCE)
 endif()
