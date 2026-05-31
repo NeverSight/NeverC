@@ -16,6 +16,6 @@ void csupport_set_color(csupport_ostream_t *os, int color_idx, int bold) {
   csupport_os_write_str(os, ansi_color_codes[color_idx]);
 }
 
-void csupport_reset_color(csupport_ostream_t *os) {
+void csupport_ostream_reset_color(csupport_ostream_t *os) {
   csupport_os_write_str(os, "\033[0m");
 }

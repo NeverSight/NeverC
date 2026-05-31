@@ -61,7 +61,15 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include <map>
-#include <math.h>
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <cmath>
+#define LLVM_JSON_NAN() std::nan("")
+#define LLVM_JSON_ISNAN(x) std::isnan(x)
+#else
+#define LLVM_JSON_NAN() __builtin_nan("")
+#define LLVM_JSON_ISNAN(x) __builtin_isnan(x)
+#endif
 
 namespace llvm {
 namespace json {
@@ -429,7 +437,7 @@ public:
       return (double)as<int64_t>();
     if (LLVM_LIKELY(Type == T_UINT64))
       return (double)as<uint64_t>();
-    return __builtin_nan("");
+    return LLVM_JSON_NAN();
   }
   bool getAsInteger(int64_t &Out) const {
     if (LLVM_LIKELY(Type == T_Integer)) {
@@ -778,7 +786,7 @@ inline bool fromJSON(const Value &E, int64_t &Out, Path P) {
 }
 inline bool fromJSON(const Value &E, double &Out, Path P) {
   double S = E.getAsNumber();
-  if (!__builtin_isnan(S)) {
+  if (!LLVM_JSON_ISNAN(S)) {
     Out = S;
     return true;
   }
@@ -1162,7 +1170,7 @@ inline int Object::getBoolean(StringRef K) const {
 inline double Object::getNumber(StringRef K) const {
   if (auto *V = get(K))
     return V->getAsNumber();
-  return __builtin_nan("");
+  return LLVM_JSON_NAN();
 }
 inline bool Object::getInteger(StringRef K, int64_t &Out) const {
   if (auto *V = get(K))
