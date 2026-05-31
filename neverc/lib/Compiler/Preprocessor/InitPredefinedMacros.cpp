@@ -572,9 +572,9 @@ void neverc::initializePredefinedMacros(const TargetInfo &TI,
 
   TI.getTargetDefines(LangOpts, Builder);
 
-#ifdef _WIN32
-  Builder.append("#if !defined(offsetof) || __has_feature(modules)");
-  Builder.append("#define offsetof(t, d) __builtin_offsetof(t, d)");
-  Builder.append("#endif");
-#endif
+// #ifdef _WIN32
+//   Builder.append("#if !defined(offsetof) || __has_feature(modules)");
+//   Builder.append("#define offsetof(t, d) __builtin_offsetof(t, d)");
+//   Builder.append("#endif");
+// #endif
 }

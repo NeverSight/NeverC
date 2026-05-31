@@ -87,9 +87,12 @@ TokenScratch::getToken(const char *Buf, unsigned Len, const char *&DestPtr) {
 
 void TokenScratch::allocateChunk(unsigned RequestLen) {
   unsigned Cap = CurrentChunkCapacity;
-  unsigned AllocSize = RequestLen > Cap ? llvm::NextPowerOf2(RequestLen) : Cap;
-  if (Cap < MaxChunkCapacity)
-    CurrentChunkCapacity = std::min(Cap << 1, MaxChunkCapacity);
+  // Grow the chunk geometrically (capped) so large inputs don't spill into many
+  // small buffers, while always honoring an oversized single request.
+  unsigned AllocSize =
+      Cap < MaxChunkCapacity ? std::min(Cap << 1, MaxChunkCapacity) : Cap;
+  if (RequestLen > AllocSize)
+    AllocSize = llvm::NextPowerOf2(RequestLen);
 
   auto OwnBuf =
       llvm::WritableMemoryBuffer::getNewMemBuffer(AllocSize, "<scratch space>");
@@ -97,4 +100,15 @@ void TokenScratch::allocateChunk(unsigned RequestLen) {
   FileID FID = SrcMgr.createFileID(std::move(OwnBuf));
   BufferStartLoc = SrcMgr.getLocForStartOfFile(FID);
   BytesUsed = 0;
+
+  // getToken() bounds every write against CurrentChunkCapacity, so it must
+  // equal the size actually allocated for CurBuffer. The previous code doubled
+  // CurrentChunkCapacity but still allocated the *old* size, so once a chunk
+  // filled past the real buffer length getToken() wrote past the end — silently
+  // corrupting scratch contents and the source-location mapping used when
+  // re-lexing pasted tokens (`a ## __COUNTER__`) and destringized _Pragma
+  // strings. That surfaced as split identifiers and runaway "null character
+  // ignored" loops on inputs with heavy scratch usage (e.g. the Windows UCRT
+  // headers). Keep the invariant: tracked capacity == real buffer size.
+  CurrentChunkCapacity = AllocSize;
 }

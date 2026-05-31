@@ -97,12 +97,16 @@
 #undef __need_max_align_t
 #endif /* defined(__need_max_align_t) */
 
-#ifndef _WIN32
+/* Unlike upstream clang (which defers offsetof to the MS UCRT <stddef.h> on
+ * Windows), NeverC puts its builtin headers ahead of the bundled SDK and does
+ * not chain to the UCRT stddef.h, so the UCRT definition is never reached.
+ * Define offsetof here on every target via __builtin_offsetof (which is valid
+ * for the MSVC target too). The __stddef_offsetof.h guard (#ifndef offsetof)
+ * keeps this from clobbering a UCRT definition in -nobuiltininc builds. */
 #if defined(__need_offsetof)
 #include <__stddef_offsetof.h>
 #undef __need_offsetof
 #endif /* defined(__need_offsetof) */
-#endif
 
 /* Some C libraries expect to see a wint_t here. Others will use
 __WINT_TYPE__ directly; accommodate both by requiring __need_wint_t */
