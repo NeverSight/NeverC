@@ -1515,6 +1515,21 @@ void ModuleEmitter::setNonAliasAttributes(GlobalDecl GD, llvm::GlobalObject *GO,
       GO->addMetadata("neverc.override",
                       *llvm::MDNode::get(GO->getContext(), {}));
 
+    // On COFF, a `weak` definition is lowered to a weak external — modeled by
+    // the linker as an undefined symbol with a fallback alias. The override
+    // symbol-table resolution keys on DefinedRegular, so a weak-external
+    // override can never force itself over a strong library definition (the
+    // strong definition simply satisfies the undefined symbol). Because an
+    // `override` definition is always present and must prevail regardless of
+    // binding, emit it with strong (external) linkage on COFF so the linker's
+    // override path selects it. ELF/MachO keep the weak binding (their override
+    // mechanism already handles weak symbols correctly).
+    if (D->hasAttr<OverrideAttr>() && D->hasAttr<WeakAttr>() &&
+        !GO->isDeclaration() && getTriple().isOSBinFormatCOFF() &&
+        (GO->getLinkage() == llvm::GlobalValue::WeakAnyLinkage ||
+         GO->getLinkage() == llvm::GlobalValue::WeakODRLinkage))
+      GO->setLinkage(llvm::GlobalValue::ExternalLinkage);
+
     if (auto *F = dyn_cast<llvm::Function>(GO)) {
       if (D->hasAttr<RetainAttr>())
         addUsedGlobal(F);
