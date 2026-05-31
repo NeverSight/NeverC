@@ -15,13 +15,11 @@ using Cl = Expr::Classification;
 
 namespace {
 
-LLVM_ATTRIBUTE_ALWAYS_INLINE
 Cl::Kinds classifyInternal(TreeContext &Ctx, const Expr *E);
 LLVM_ATTRIBUTE_ALWAYS_INLINE
 Cl::Kinds classifyDecl(const Decl *D);
 LLVM_ATTRIBUTE_ALWAYS_INLINE
 Cl::Kinds classifyUnnamed(TreeContext &Ctx, QualType T);
-LLVM_ATTRIBUTE_ALWAYS_INLINE
 Cl::Kinds classifyMemberExpr(TreeContext &Ctx, const MemberExpr *E);
 Cl::ModifiableType isModifiable(TreeContext &Ctx, const Expr *E, Cl::Kinds Kind,
                                 SourceLocation &Loc);
@@ -272,7 +270,6 @@ Cl::Kinds classifyDecl(const Decl *D) {
 LLVM_ATTRIBUTE_ALWAYS_INLINE
 Cl::Kinds classifyUnnamed(TreeContext &, QualType) { return Cl::CL_PRValue; }
 
-LLVM_ATTRIBUTE_ALWAYS_INLINE
 Cl::Kinds classifyMemberExpr(TreeContext &Ctx, const MemberExpr *E) {
   if (E->isArrow())
     return Cl::CL_LValue;
