@@ -17,8 +17,6 @@ jobs:
     # matching the target Docker test environment. Build low, run high.
     runs-on: ubuntu-22.04
     env:
-      # RelWithDebInfo so CI artifacts ship with DWARF symbols for crash
-      # triage; release-linux-pgo.yml is the symbol-stripped Release path.
       BUILD_TYPE: RelWithDebInfo
     steps:
     - name: Checkout Repo
@@ -29,32 +27,13 @@ jobs:
     - name: Setup build deps
       run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full
 
-    - name: Resolve latest LLVM version
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-        LLVM_VERIFY_ASSET_SUFFIX: Linux-X64.tar.xz
-      run: bash ./neverc/.github/scripts/resolve-llvm-version.sh
-
-    - name: Cache LLVM toolchain
-      uses: actions/cache@v4
-      with:
-        path: /tmp/llvm-pgo
-        key: llvm-${{ env.LLVM_VER }}-linux-x64
-
-    - name: Install PGO-optimised Clang
-      run: bash ./neverc/.github/scripts/install-llvm-linux.sh
-
     - name: Build neverc
       run: |
         cmake -GNinja -Bbuild \
-        -DCMAKE_C_COMPILER=${{ env.PGO_CLANG }} \
-        -DCMAKE_CXX_COMPILER=${{ env.PGO_CLANGXX }} \
         -DCMAKE_INSTALL_PREFIX=install \
         -DLLVM_ENABLE_ASSERTIONS=OFF \
         -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
         -DNEVERC_INCLUDE_TESTS=ON \
-        -DNEVERC_ENABLE_LTO=ON \
-        -DNEVERC_NATIVE_ARCH=OFF \
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
         -C neverc/neverc/cmake/caches/NeverC.cmake \
         neverc/llvm
