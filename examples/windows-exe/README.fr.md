@@ -8,7 +8,7 @@ Un exécutable Windows mode utilisateur compilé en croisé avec NeverC. Démont
 
 ```bash
 cd examples/windows-exe
-make
+neverc make
 ```
 
 ## Compilation manuelle

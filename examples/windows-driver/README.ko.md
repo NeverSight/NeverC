@@ -13,13 +13,13 @@ NeverC는 올인원 컴파일러입니다 — 단일 호출로 전처리, 컴파
 
 ```bash
 cd examples/windows-driver
-make
+neverc make
 ```
 
 독립 실행형 NeverC 릴리스에서:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 출력은 `ExampleDriver.sys`(auto-LTO 최적화)입니다.

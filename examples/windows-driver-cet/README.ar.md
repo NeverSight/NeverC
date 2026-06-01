@@ -9,13 +9,13 @@
 
 ```bash
 cd examples/windows-driver-cet
-make
+neverc make
 ```
 
 من إصدار NeverC مستقل:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 الناتج هو `CetDriver.sys` (محسّن بـ auto-LTO).

@@ -13,13 +13,13 @@ Dal repository:
 
 ```bash
 cd examples/windows-driver
-make
+neverc make
 ```
 
 Da una versione standalone di NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 L'output è `ExampleDriver.sys` (ottimizzato auto-LTO).

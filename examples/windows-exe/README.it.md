@@ -8,7 +8,7 @@ Un eseguibile Windows user-mode cross-compilato con NeverC. Dimostra API Win32.
 
 ```bash
 cd examples/windows-exe
-make
+neverc make
 ```
 
 ## Compilazione manuale

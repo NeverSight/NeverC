@@ -8,7 +8,7 @@
 
 ```bash
 cd examples/windows-exe
-make
+neverc make
 ```
 
 ## 手动构建（不使用 Make）

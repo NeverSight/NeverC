@@ -8,7 +8,7 @@ NeverC でクロスコンパイルした Windows ユーザーモード DLL で�
 
 ```bash
 cd examples/windows-dll
-make
+neverc make
 ```
 
 ## 手動ビルド

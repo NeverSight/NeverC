@@ -8,7 +8,7 @@ Una biblioteca compartida `.so` nativa ARM64 compilada cruzada para Android con 
 
 ```bash
 cd examples/android-so
-make
+neverc make
 ```
 
 ## Compilación manual

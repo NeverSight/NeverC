@@ -9,13 +9,13 @@ NeverC で構築した最小限の WDM カーネルドライバーで、Intel CE
 
 ```bash
 cd examples/windows-driver-cet
-make
+neverc make
 ```
 
 スタンドアロンの NeverC リリースから：
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 出力は `CetDriver.sys`（auto-LTO 最適化済み）。

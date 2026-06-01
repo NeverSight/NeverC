@@ -9,13 +9,13 @@
 
 ```bash
 cd examples/windows-driver-float
-make
+neverc make
 ```
 
 使用獨立的 NeverC 發行版：
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 輸出為 `FloatDriver.sys`（auto-LTO 最佳化）。

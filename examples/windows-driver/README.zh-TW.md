@@ -13,13 +13,13 @@ NeverC 是一體化編譯器——單次呼叫即可完成預處理、編譯、�
 
 ```bash
 cd examples/windows-driver
-make
+neverc make
 ```
 
 使用獨立的 NeverC 發行版：
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 輸出為 `ExampleDriver.sys`（auto-LTO 最佳化）。

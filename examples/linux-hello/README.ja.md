@@ -12,19 +12,19 @@ NeverC は `runtime/linux/` に Linux sysroot（Ubuntu 22.04、glibc 2.35）を�
 
 ```bash
 cd examples/linux-hello
-make
+neverc make
 ```
 
 AArch64 向けにビルド：
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 スタンドアロンの NeverC リリースを使用：
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 ## 手動ビルド（Make を使用しない）

@@ -12,13 +12,13 @@
 
 ```bash
 cd examples/android-elf
-make
+neverc make
 ```
 
 باستخدام إصدار مستقل من NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 ## البناء اليدوي (بدون Make)
@@ -32,7 +32,7 @@ neverc --target=aarch64-linux-android -Wall -fPIE -lm -ldl -llog -o android-elf 
 نقل إلى الجهاز والتشغيل عبر adb:
 
 ```bash
-make run
+neverc make run
 ```
 
 أو يدوياً:

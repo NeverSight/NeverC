@@ -12,19 +12,19 @@ Dal repository (target predefinito: `x86_64-linux-gnu`):
 
 ```bash
 cd examples/linux-hello
-make
+neverc make
 ```
 
 Compilare per AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 Con una versione standalone di NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 ## Compilazione manuale (senza Make)

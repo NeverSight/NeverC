@@ -8,7 +8,7 @@ DLL Windows في وضع المستخدم مُترجمة تبادلياً باس�
 
 ```bash
 cd examples/windows-dll
-make
+neverc make
 ```
 
 ## البناء اليدوي

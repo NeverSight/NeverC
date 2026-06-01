@@ -10,13 +10,13 @@
 
 ```bash
 cd examples/windows-driver-float
-make
+neverc make
 ```
 
 Из автономной сборки NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 Результат — `FloatDriver.sys` (оптимизирован auto-LTO).

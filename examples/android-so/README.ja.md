@@ -8,7 +8,7 @@ NeverC で Android 向けにクロスコンパイルした ARM64 ネイティブ
 
 ```bash
 cd examples/android-so
-make
+neverc make
 ```
 
 ## 手動ビルド

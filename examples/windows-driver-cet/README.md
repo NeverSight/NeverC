@@ -10,13 +10,13 @@ macOS / Linux.
 
 ```bash
 cd examples/windows-driver-cet
-make
+neverc make
 ```
 
 From a standalone NeverC release:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 The output is `CetDriver.sys` (auto-LTO optimized).

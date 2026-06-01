@@ -8,7 +8,7 @@
 
 ```bash
 cd examples/android-so
-make
+neverc make
 ```
 
 ## Ручная сборка

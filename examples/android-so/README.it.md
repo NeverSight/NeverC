@@ -8,7 +8,7 @@ Una libreria condivisa `.so` nativa ARM64 cross-compilata per Android con NeverC
 
 ```bash
 cd examples/android-so
-make
+neverc make
 ```
 
 ## Compilazione manuale

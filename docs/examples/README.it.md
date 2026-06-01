@@ -41,7 +41,7 @@ Esempi completi compilabili che dimostrano le capacità di cross-compilazione di
 
 ```bash
 cd examples/<nome-esempio>
-make
+neverc make
 ```
 
 Specificare percorso compilatore: `make NEVERC=/path/to/neverc`

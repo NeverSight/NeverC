@@ -41,7 +41,7 @@ Ejemplos compilables que demuestran las capacidades de compilación cruzada de N
 
 ```bash
 cd examples/<nombre-ejemplo>
-make
+neverc make
 ```
 
 Especificar ruta del compilador: `make NEVERC=/path/to/neverc`

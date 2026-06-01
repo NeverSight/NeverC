@@ -41,7 +41,7 @@ NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 
 
 ```bash
 cd examples/<예제명>
-make
+neverc make
 ```
 
 컴파일러 경로 지정: `make NEVERC=/path/to/neverc`

@@ -10,13 +10,13 @@ incrociata da macOS / Linux.
 
 ```bash
 cd examples/windows-driver-float
-make
+neverc make
 ```
 
 Da una versione standalone di NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 L'output è `FloatDriver.sys` (ottimizzato auto-LTO).

@@ -8,7 +8,7 @@ A user-mode Windows DLL cross-compiled using NeverC. Provides helper functions f
 
 ```bash
 cd examples/windows-dll
-make
+neverc make
 ```
 
 ## Manual build (without Make)

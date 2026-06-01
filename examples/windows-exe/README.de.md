@@ -8,7 +8,7 @@ Eine Windows-Benutzermodus-Anwendung, cross-kompiliert mit NeverC. Demonstriert 
 
 ```bash
 cd examples/windows-exe
-make
+neverc make
 ```
 
 ## Manueller Build

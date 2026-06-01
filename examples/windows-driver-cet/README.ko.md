@@ -9,13 +9,13 @@ NeverC로 빌드한 최소한의 WDM 커널 드라이버로, Intel CET(제어 �
 
 ```bash
 cd examples/windows-driver-cet
-make
+neverc make
 ```
 
 독립 실행형 NeverC 릴리스에서:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 출력은 `CetDriver.sys`(auto-LTO 최적화)입니다.

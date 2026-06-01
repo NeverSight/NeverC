@@ -8,7 +8,7 @@ NeverC로 크로스 컴파일한 Windows 사용자 모드 실행 파일입니다
 
 ```bash
 cd examples/windows-exe
-make
+neverc make
 ```
 
 ## 수동 빌드

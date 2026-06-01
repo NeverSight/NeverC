@@ -10,13 +10,13 @@ NeverC 在 `runtime/linux/` 中內建了 Linux sysroot（Ubuntu 22.04，glibc 2.
 
 ```bash
 cd examples/linux-static
-make
+neverc make
 ```
 
 AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 ## 手動建置

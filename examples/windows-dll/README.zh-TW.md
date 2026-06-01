@@ -8,7 +8,7 @@
 
 ```bash
 cd examples/windows-dll
-make
+neverc make
 ```
 
 ## 手動建置（不使用 Make）

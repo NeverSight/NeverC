@@ -9,13 +9,13 @@ NeverC で構築した WDM カーネルドライバーで、**カーネルモー
 
 ```bash
 cd examples/windows-driver-float
-make
+neverc make
 ```
 
 スタンドアロンの NeverC リリースから：
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 出力は `FloatDriver.sys`（auto-LTO 最適化済み）。

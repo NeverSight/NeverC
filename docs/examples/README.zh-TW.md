@@ -43,13 +43,13 @@
 
 ```bash
 cd examples/<範例名>
-make
+neverc make
 ```
 
 如需指定編譯器路徑：
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 所有範例使用 **neverc** 作為編譯器，透過 NeverC 的內建連結器產生 Windows PE 二進位（`.sys` 驅動）— 無需外部 `link.exe` 或 Windows SDK 安裝。

@@ -10,13 +10,13 @@ NeverC는 `runtime/linux/`에 Linux sysroot(Ubuntu 22.04, glibc 2.35)를 번들�
 
 ```bash
 cd examples/linux-posix
-make
+neverc make
 ```
 
 AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 ## 수동 빌드

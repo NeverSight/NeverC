@@ -12,13 +12,13 @@ NeverC включает Android sysroot (NDK r26c, API 21+) в `runtime/android/
 
 ```bash
 cd examples/android-elf
-make
+neverc make
 ```
 
 С автономной версией NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 ## Ручная сборка (без Make)
@@ -32,7 +32,7 @@ neverc --target=aarch64-linux-android -Wall -fPIE -lm -ldl -llog -o android-elf 
 Отправить на устройство и запустить через adb:
 
 ```bash
-make run
+neverc make run
 ```
 
 Или вручную:

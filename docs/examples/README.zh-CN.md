@@ -45,28 +45,28 @@
 
 ```bash
 cd examples/<示例名>
-make
+neverc make
 ```
 
 如需指定编译器路径：
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 Linux 示例支持架构选择：
 
 ```bash
-make TARGET=aarch64-linux-gnu   # 构建 ARM64 版本
-make TARGET=x86_64-linux-gnu    # 构建 x86_64 版本（默认）
+neverc make TARGET=aarch64-linux-gnu   # 构建 ARM64 版本
+neverc make TARGET=x86_64-linux-gnu    # 构建 x86_64 版本（默认）
 ```
 
 Android 示例默认面向 ARM64：
 
 ```bash
 cd examples/android-elf
-make            # 构建
-make run        # 构建 + 推送到设备 + 通过 adb 运行
+neverc make            # 构建
+neverc make run        # 构建 + 推送到设备 + 通过 adb 运行
 ```
 
 ---

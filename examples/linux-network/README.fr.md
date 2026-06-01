@@ -10,13 +10,13 @@ NeverC embarque un sysroot Linux (Ubuntu 22.04, glibc 2.35) dans `runtime/linux/
 
 ```bash
 cd examples/linux-network
-make
+neverc make
 ```
 
 AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 ## Compilation manuelle

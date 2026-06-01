@@ -10,13 +10,13 @@ NeverC include un sysroot Linux (Ubuntu 22.04, glibc 2.35) in `runtime/linux/`.
 
 ```bash
 cd examples/linux-math
-make
+neverc make
 ```
 
 AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 ## Compilazione manuale

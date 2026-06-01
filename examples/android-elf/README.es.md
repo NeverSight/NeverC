@@ -12,13 +12,13 @@ Desde el repositorio:
 
 ```bash
 cd examples/android-elf
-make
+neverc make
 ```
 
 Con una versión independiente de NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 ## Compilación manual (sin Make)
@@ -32,7 +32,7 @@ neverc --target=aarch64-linux-android -Wall -fPIE -lm -ldl -llog -o android-elf 
 Enviar al dispositivo y ejecutar via adb:
 
 ```bash
-make run
+neverc make run
 ```
 
 O manualmente:

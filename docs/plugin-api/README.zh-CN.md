@@ -45,7 +45,7 @@ neverc --target=x86_64-pc-windows-msvc -shared -o MyPlugin.dll MyPlugin.c \
        -I/path/to/pluginsdk/include
 
 # 或使用 Make（默认使用 neverc）：
-make -C /path/to/pluginsdk/examples
+neverc make -C /path/to/pluginsdk/examples
 ```
 
 > **注意：** 虽然任意 C 编译器都能构建插件（头文件是纯 C，无依赖），但**强烈推荐使用 neverc** 以确保 ABI 一致性和跨平台支持。SDK 附带的 Makefile 默认使用 neverc。

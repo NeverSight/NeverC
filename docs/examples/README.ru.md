@@ -41,7 +41,7 @@
 
 ```bash
 cd examples/<имя-примера>
-make
+neverc make
 ```
 
 Указать путь компилятора: `make NEVERC=/path/to/neverc`

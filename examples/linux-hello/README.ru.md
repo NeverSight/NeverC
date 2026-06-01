@@ -12,19 +12,19 @@ NeverC включает Linux sysroot (Ubuntu 22.04, glibc 2.35) в `runtime/lin
 
 ```bash
 cd examples/linux-hello
-make
+neverc make
 ```
 
 Сборка для AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 С использованием автономного выпуска NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 ## Ручная сборка (без Make)

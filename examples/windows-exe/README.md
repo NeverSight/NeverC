@@ -8,7 +8,7 @@ A user-mode Windows executable cross-compiled using NeverC. Demonstrates Win32 A
 
 ```bash
 cd examples/windows-exe
-make
+neverc make
 ```
 
 ## Manual build (without Make)

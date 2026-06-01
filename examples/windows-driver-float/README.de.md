@@ -10,13 +10,13 @@ Cross-Kompilierung von macOS / Linux.
 
 ```bash
 cd examples/windows-driver-float
-make
+neverc make
 ```
 
 Mit einer eigenständigen NeverC-Version:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 Die Ausgabe ist `FloatDriver.sys` (auto-LTO-optimiert).

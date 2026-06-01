@@ -41,7 +41,7 @@ Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilieru
 
 ```bash
 cd examples/<beispiel-name>
-make
+neverc make
 ```
 
 Compilerpfad angeben: `make NEVERC=/path/to/neverc`

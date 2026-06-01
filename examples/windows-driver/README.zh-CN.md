@@ -13,13 +13,13 @@ NeverC 是一体化编译器——单次调用即可完成预处理、编译、�
 
 ```bash
 cd examples/windows-driver
-make
+neverc make
 ```
 
 使用独立的 NeverC 发行版：
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 输出为 `ExampleDriver.sys`（auto-LTO 优化）。
