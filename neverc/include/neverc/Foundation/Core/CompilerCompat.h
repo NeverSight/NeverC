@@ -25,4 +25,12 @@
 
 #endif // _MSC_VER
 
+/// Lambda-compatible always_inline. Unlike LLVM_ATTRIBUTE_ALWAYS_INLINE, omits
+/// the \c inline keyword which is invalid on lambda expressions.
+#ifdef _MSC_VER
+#define NEVERC_LAMBDA_ALWAYS_INLINE
+#else
+#define NEVERC_LAMBDA_ALWAYS_INLINE __attribute__((always_inline))
+#endif
+
 #endif // NEVERC_FOUNDATION_CORE_COMPILERCOMPAT_H

@@ -323,13 +323,25 @@ MSVCToolChain::MSVCToolChain(const Driver &D, const llvm::Triple &Triple,
   if (Arg *A = Args.getLastArg(options::OPT_winsysroot))
     WinSysRoot = A->getValue();
 
-  // NeverC bundles its own SDK in runtime/; auto-discovery via environment
-  // variables, VS setup config, or Windows registry is intentionally disabled.
   // When the user explicitly passes -vctoolsdir / -winsysroot, their paths
-  // take priority over the bundled runtime/ (checked in include/lib helpers).
+  // take priority over everything (checked in include/lib helpers).
   llvm::findVCToolChainViaCommandLine(getVFS(), VCToolsDir, VCToolsVersion,
                                       WinSysRoot, VCToolChainPath, VSLayout);
   IsUserSpecifiedToolChain = !VCToolChainPath.empty();
+
+  // Fallback: discover the system MSVC SDK via environment variables,
+  // VS Setup Config, or the registry.  The bundled runtime/ headers still
+  // take priority in AddNeverCSystemIncludeArgs (they are added first);
+  // this discovery only provides a lower-priority fallback so that system
+  // CRT/UCRT/SDK headers are available when the bundled runtime is absent
+  // or incomplete.
+  if (VCToolChainPath.empty()) {
+    if (!llvm::findVCToolChainViaEnvironment(getVFS(), VCToolChainPath,
+                                             VSLayout))
+      if (!llvm::findVCToolChainViaSetupConfig(getVFS(), VCToolsVersion,
+                                               VCToolChainPath, VSLayout))
+        llvm::findVCToolChainViaRegistry(VCToolChainPath, VSLayout);
+  }
 }
 
 Tool *MSVCToolChain::buildLinker() const {
@@ -592,6 +604,46 @@ void MSVCToolChain::AddNeverCSystemIncludeArgs(
       llvm::sys::path::append(P, "sdk", "include", "shared");
       if (getVFS().exists(P))
         addSystemInclude(DriverArgs, FrontendArgs, P);
+    }
+  }
+
+  // System SDK fallback: when VCToolChainPath was discovered via environment
+  // or registry (not via command line), add its include paths AFTER the
+  // bundled runtime so bundled headers take priority.
+  if (!IsUserSpecifiedToolChain && !VCToolChainPath.empty()) {
+    addSystemInclude(DriverArgs, FrontendArgs,
+                     getSubDirectoryPath(llvm::SubDirectoryType::Include));
+
+    if (useUniversalCRT()) {
+      std::string UniversalCRTSdkPath;
+      std::string UCRTVersion;
+      if (llvm::getUniversalCRTSdkDir(getVFS(), WinSdkDir, WinSdkVersion,
+                                      WinSysRoot, UniversalCRTSdkPath,
+                                      UCRTVersion)) {
+        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs,
+                                      UniversalCRTSdkPath, "Include",
+                                      UCRTVersion, "ucrt");
+      }
+    }
+
+    std::string WindowsSDKDir;
+    int major = 0;
+    std::string windowsSDKIncludeVersion;
+    std::string windowsSDKLibVersion;
+    if (llvm::getWindowsSDKDir(getVFS(), WinSdkDir, WinSdkVersion, WinSysRoot,
+                               WindowsSDKDir, major, windowsSDKIncludeVersion,
+                               windowsSDKLibVersion)) {
+      if (major >= 8) {
+        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs, WindowsSDKDir,
+                                      "Include", windowsSDKIncludeVersion,
+                                      "shared");
+        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs, WindowsSDKDir,
+                                      "Include", windowsSDKIncludeVersion,
+                                      "um");
+      } else {
+        AddSystemIncludeWithSubfolder(DriverArgs, FrontendArgs, WindowsSDKDir,
+                                      "Include");
+      }
     }
   }
 
