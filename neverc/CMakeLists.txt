@@ -399,6 +399,7 @@ add_neverc_tool(neverc
 
 neverc_target_link_libraries(neverc
   PRIVATE
+  nevercBuild
   nevercEmit
   nevercShellcode
   nevercXorStr

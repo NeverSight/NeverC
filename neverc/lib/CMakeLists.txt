@@ -1,5 +1,6 @@
 add_subdirectory(Headers)
 add_subdirectory(Foundation)
+add_subdirectory(Build)
 add_subdirectory(Scan)
 add_subdirectory(Syntax)
 add_subdirectory(Tree)
