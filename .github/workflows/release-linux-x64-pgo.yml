@@ -55,9 +55,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: pgo-profiles/merged.profdata
-          key: pgo-profdata-linux-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
+          key: pgo-profdata-linux-x64-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
           restore-keys: |
-            pgo-profdata-linux-
+            pgo-profdata-linux-x64-
 
       - name: Check for usable profdata
         id: check-profdata
@@ -191,12 +191,12 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: pgo-profiles/merged.profdata
-          key: pgo-profdata-linux-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
+          key: pgo-profdata-linux-x64-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
 
       - name: Upload profile data
         uses: actions/upload-artifact@v4
         with:
-          name: neverc-pgo-profdata-linux
+          name: neverc-pgo-profdata-linux-x64
           path: pgo-profiles/merged.profdata
           retention-days: 7
 
@@ -233,7 +233,7 @@ jobs:
       - name: Download profile data
         uses: actions/download-artifact@v4
         with:
-          name: neverc-pgo-profdata-linux
+          name: neverc-pgo-profdata-linux-x64
           path: pgo-profiles
 
       - name: Build PGO-optimised neverc

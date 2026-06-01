@@ -39,6 +39,7 @@ jobs:
         shell: bash
         run: |
           cmake -S llvm -B build -G Ninja \
+            -DCMAKE_SYSTEM_PROCESSOR=ARM64 \
             -C neverc/cmake/caches/NeverC.cmake \
             -DNEVERC_INCLUDE_TESTS=ON \
             -DCMAKE_BUILD_TYPE=Release
