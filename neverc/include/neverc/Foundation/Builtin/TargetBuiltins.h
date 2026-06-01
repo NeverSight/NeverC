@@ -59,6 +59,12 @@ enum {
 #include "neverc/Foundation/Builtin/BuiltinsX86.def"
   FirstX86_64Builtin,
   LastX86CommonBuiltin = FirstX86_64Builtin - 1,
+#ifdef __shiftleft128
+#undef __shiftleft128
+#endif
+#ifdef __shiftright128
+#undef __shiftright128
+#endif
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "neverc/Foundation/Builtin/BuiltinsX86_64.def"
   LastTSBuiltin

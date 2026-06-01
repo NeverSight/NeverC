@@ -1,0 +1,136 @@
+name: windows-arm64-neverc-build
+
+permissions:
+  contents: write
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name != github.repository))
+    # Native arm64 Windows runner (GitHub-hosted, Windows 11 on ARM).
+    runs-on: windows-11-arm
+    env:
+      BUILD_TYPE: RelWithDebInfo
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+      with:
+        path: neverc
+
+    - name: Install ARM64-native CMake & Ninja
+      shell: pwsh
+      run: |
+        $cmakeVer = '3.31.11'
+        Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-arm64.zip" -OutFile cmake.zip
+        Expand-Archive cmake.zip C:\tools -Force
+        Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-arm64\bin"
+
+        $ninjaVer = '1.13.1'
+        Invoke-WebRequest "https://github.com/ninja-build/ninja/releases/download/v$ninjaVer/ninja-winarm64.zip" -OutFile ninja.zip
+        Expand-Archive ninja.zip C:\tools\ninja -Force
+        Add-Content $env:GITHUB_PATH "C:\tools\ninja"
+
+        choco install 7zip -y
+
+    - name: Setup MSVC (native arm64)
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: arm64
+
+    - name: Build neverc
+      shell: bash
+      run: |
+        cmake -GNinja -Bbuild \
+        -DCMAKE_SYSTEM_PROCESSOR=ARM64 \
+        -DCMAKE_INSTALL_PREFIX=install \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+        -DNEVERC_INCLUDE_TESTS=ON \
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+        -C neverc/neverc/cmake/caches/NeverC.cmake \
+        neverc/llvm
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+
+    - name: Build bundled Windows runtime
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-runtime-arm64-msvc neverc-runtime-shared-msvc
+
+    - name: Install neverc
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+
+    - name: Package neverc
+      run: 7z a windows-arm64-neverc.zip install
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-arm64-neverc
+        path: windows-arm64-neverc.zip
+
+    - name: Package neverc compiler (without runtime)
+      shell: bash
+      run: |
+        mv install/runtime install-runtime-stash
+        7z a windows-arm64-neverc-compiler.zip install
+        mv install-runtime-stash install/runtime
+
+    - name: Upload Compiler Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-arm64-neverc-compiler
+        path: windows-arm64-neverc-compiler.zip
+
+    - name: Package neverc runtime
+      run: 7z a windows-arm64-neverc-runtime.zip install/runtime
+
+    - name: Upload Runtime Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-arm64-neverc-runtime
+        path: windows-arm64-neverc-runtime.zip
+
+    # Package link-time PDBs (neverc.pdb etc.) for windbg/VS crash triage.
+    # Only build/bin/*.pdb — per-target compile PDBs under build/lib/** are
+    # already merged into the link-time PDB and would push the zip past
+    # GitHub's 2 GB artifact limit.
+    - name: Package PDBs
+      shell: bash
+      run: 7z a windows-arm64-neverc-pdb.zip ./build/bin/*.pdb
+
+    - name: Upload PDB Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-arm64-neverc-pdb
+        path: windows-arm64-neverc-pdb.zip
+
+    - name: Build Plugin SDK
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
+
+    - name: Test Plugin SDK (build + load)
+      shell: bash
+      run: |
+        set -e
+        make -C build/pluginsdk/examples \
+          NEVERC=$PWD/build/bin/neverc \
+          INCLUDE_DIR=$PWD/build/pluginsdk/include \
+          HOST_TARGET=aarch64-pc-windows-msvc
+        printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
+        for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
+          echo "--- Testing $plugin ---"
+          build/bin/neverc \
+            --target=aarch64-pc-windows-msvc \
+            -fplugin-pass=build/pluginsdk/examples/${plugin}.dll \
+            -c /tmp/plugin_test.c -o /tmp/plugin_test.obj
+          echo "--- $plugin OK ---"
+        done
+
+    - name: Run neverc tests
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc

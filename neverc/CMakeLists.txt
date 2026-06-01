@@ -448,7 +448,13 @@ endif()
 
 option(NEVERC_STRIP_BINARY "Strip local symbols from the neverc binary after linking" OFF)
 if(NEVERC_STRIP_BINARY AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  find_program(NEVERC_STRIP_PROG NAMES strip llvm-strip)
+  if(WIN32)
+    # On Windows, only use llvm-strip which handles all PE architectures.
+    # MinGW's strip.exe is often x86_64-only and chokes on ARM64 PE files.
+    find_program(NEVERC_STRIP_PROG NAMES llvm-strip)
+  else()
+    find_program(NEVERC_STRIP_PROG NAMES llvm-strip strip)
+  endif()
   if(NEVERC_STRIP_PROG)
     if(APPLE)
       set(_strip_flags -x)

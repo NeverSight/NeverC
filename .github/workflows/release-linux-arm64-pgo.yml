@@ -1,11 +1,11 @@
-# Profile-guided release build for Linux x86_64.
+# Profile-guided release build for Linux arm64.
 # Tag push: full PGO pipeline + GitHub Release upload.
 # Manual dispatch: same pipeline but artifacts only (no release).
 #
 # Optimisation: profdata is cached across runs (keyed on neverc source hash).
 # When the cache hits, the expensive instrumented-build + training phase is
 # skipped entirely.  sccache further accelerates compilation on cache misses.
-name: linux-x64-neverc-release-pgo
+name: linux-arm64-neverc-release-pgo
 
 permissions:
   contents: write
@@ -24,8 +24,9 @@ on:
 jobs:
   pgo-profile:
     name: PGO generate + train
-    # Build on glibc 2.35 so the released PGO binary runs on Ubuntu 22.04+.
-    runs-on: ubuntu-22.04
+    # Native arm64 runner. Pinned to 22.04 (glibc 2.35) so the released PGO
+    # binary runs on Ubuntu 22.04+.
+    runs-on: ubuntu-22.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,14 +37,14 @@ jobs:
       - name: Resolve latest LLVM version
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          LLVM_VERIFY_ASSET_SUFFIX: Linux-X64.tar.xz
+          LLVM_VERIFY_ASSET_SUFFIX: Linux-ARM64.tar.xz
         run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain
         uses: actions/cache@v4
         with:
           path: /tmp/llvm-pgo
-          key: llvm-${{ env.LLVM_VER }}-linux-x64
+          key: llvm-${{ env.LLVM_VER }}-linux-arm64
 
       - name: Install PGO-optimised Clang
         run: bash ./.github/scripts/install-llvm-linux.sh
@@ -55,9 +56,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: pgo-profiles/merged.profdata
-          key: pgo-profdata-linux-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
+          key: pgo-profdata-linux-arm64-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
           restore-keys: |
-            pgo-profdata-linux-
+            pgo-profdata-linux-arm64-
 
       - name: Check for usable profdata
         id: check-profdata
@@ -191,20 +192,21 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: pgo-profiles/merged.profdata
-          key: pgo-profdata-linux-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
+          key: pgo-profdata-linux-arm64-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
 
       - name: Upload profile data
         uses: actions/upload-artifact@v4
         with:
-          name: neverc-pgo-profdata-linux
+          name: neverc-pgo-profdata-linux-arm64
           path: pgo-profiles/merged.profdata
           retention-days: 7
 
   pgo-release:
     name: PGO use + package + release
     needs: pgo-profile
-    # Build on glibc 2.35 so the released PGO binary runs on Ubuntu 22.04+.
-    runs-on: ubuntu-22.04
+    # Native arm64 runner. Pinned to 22.04 (glibc 2.35) so the released PGO
+    # binary runs on Ubuntu 22.04+.
+    runs-on: ubuntu-22.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -215,14 +217,14 @@ jobs:
       - name: Resolve latest LLVM version
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          LLVM_VERIFY_ASSET_SUFFIX: Linux-X64.tar.xz
+          LLVM_VERIFY_ASSET_SUFFIX: Linux-ARM64.tar.xz
         run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain
         uses: actions/cache@v4
         with:
           path: /tmp/llvm-pgo
-          key: llvm-${{ env.LLVM_VER }}-linux-x64
+          key: llvm-${{ env.LLVM_VER }}-linux-arm64
 
       - name: Install PGO-optimised Clang
         run: bash ./.github/scripts/install-llvm-linux.sh
@@ -233,7 +235,7 @@ jobs:
       - name: Download profile data
         uses: actions/download-artifact@v4
         with:
-          name: neverc-pgo-profdata-linux
+          name: neverc-pgo-profdata-linux-arm64
           path: pgo-profiles
 
       - name: Build PGO-optimised neverc
@@ -248,17 +250,17 @@ jobs:
         run: cmake --install build-pgo-use --prefix "${GITHUB_WORKSPACE}/install"
 
       - name: Package
-        run: 7z a linux-x64-neverc-pgo.zip install
+        run: 7z a linux-arm64-neverc-pgo.zip install
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: linux-x64-neverc-pgo
-          path: linux-x64-neverc-pgo.zip
+          name: linux-arm64-neverc-pgo
+          path: linux-arm64-neverc-pgo.zip
 
       - name: GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
-          files: linux-x64-neverc-pgo.zip
+          files: linux-arm64-neverc-pgo.zip

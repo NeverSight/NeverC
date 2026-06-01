@@ -1,0 +1,101 @@
+name: linux-arm64-neverc-build
+
+permissions:
+  contents: write
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name != github.repository))
+    # Native arm64 runner (GitHub-hosted). Pinned to 22.04 (glibc 2.35) to match
+    # the x64 build's portability target.
+    runs-on: ubuntu-22.04-arm
+    env:
+      BUILD_TYPE: RelWithDebInfo
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+      with:
+        path: neverc
+
+    - name: Setup build deps
+      run: |
+        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+        echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm-18.list
+        sudo apt-get update
+        sudo apt-get install -y ninja-build cmake p7zip-full clang-18 lld-18
+
+    - name: Build neverc
+      run: |
+        cmake -GNinja -Bbuild \
+        -DCMAKE_C_COMPILER=clang-18 \
+        -DCMAKE_CXX_COMPILER=clang++-18 \
+        -DCMAKE_INSTALL_PREFIX=install \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+        -DNEVERC_INCLUDE_TESTS=ON \
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+        -C neverc/neverc/cmake/caches/NeverC.cmake \
+        neverc/llvm
+        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+
+    - name: Install neverc
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+
+    - name: Package neverc
+      run: 7z a linux-arm64-neverc.zip install
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-arm64-neverc
+        path: linux-arm64-neverc.zip
+
+    - name: Package neverc compiler (without runtime)
+      run: |
+        mv install/runtime install-runtime-stash
+        7z a linux-arm64-neverc-compiler.zip install
+        mv install-runtime-stash install/runtime
+
+    - name: Upload Compiler Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-arm64-neverc-compiler
+        path: linux-arm64-neverc-compiler.zip
+
+    - name: Package neverc runtime
+      run: 7z a linux-arm64-neverc-runtime.zip install/runtime
+
+    - name: Upload Runtime Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-arm64-neverc-runtime
+        path: linux-arm64-neverc-runtime.zip
+
+    - name: Build Plugin SDK
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
+
+    - name: Test Plugin SDK (build + load)
+      run: |
+        set -e
+        make -C build/pluginsdk/examples \
+          NEVERC=$PWD/build/bin/neverc \
+          INCLUDE_DIR=$PWD/build/pluginsdk/include \
+          HOST_TARGET=aarch64-unknown-linux-gnu
+        printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
+        for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
+          echo "--- Testing $plugin ---"
+          build/bin/neverc \
+            --target=x86_64-pc-windows-msvc \
+            -fplugin-pass=build/pluginsdk/examples/${plugin}.so \
+            -c /tmp/plugin_test.c -o /tmp/plugin_test.obj
+          echo "--- $plugin OK ---"
+        done
+
+    - name: Run neverc tests
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
