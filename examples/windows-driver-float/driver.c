@@ -1,3 +1,4 @@
+#include "config.h"
 #include <ntddk.h>
 
 #define DEVICE_NAME    L"\\Device\\FloatDriver"

@@ -1,3 +1,4 @@
+#include "config.h"
 #include <windows.h>
 #include <tlhelp32.h>
 
