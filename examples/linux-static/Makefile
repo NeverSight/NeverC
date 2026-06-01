@@ -6,30 +6,21 @@ NEVERC ?= ../../build-neverc/bin/neverc
 TARGET ?= x86_64-linux-gnu
 OUTPUT  = static-demo
 
+SRCS    = main.c
+HEADERS = config.h
+
 FLAGS = \
 	--target=$(TARGET) \
 	-Wall \
 	-static \
 	-lm
 
-SRCS = main.c
-OBJS = $(SRCS:.c=.o)
-DEPS = $(OBJS:.o=.d)
-
 all: $(OUTPUT)
 
-# Link
-$(OUTPUT): $(OBJS)
-	$(NEVERC) $(FLAGS) -o $@ $^
-
-# Compile (generates .d dependency files for incremental builds)
-%.o: %.c
-	$(NEVERC) $(FLAGS) -MMD -c $< -o $@
+$(OUTPUT): $(SRCS) $(HEADERS)
+	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 clean:
-	rm -f $(OUTPUT) $(OBJS) $(DEPS)
-
-# Auto-generated header dependencies
--include $(DEPS)
+	rm -f $(OUTPUT)
 
 .PHONY: all clean

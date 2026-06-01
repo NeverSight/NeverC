@@ -6,30 +6,21 @@ NEVERC ?= ../../build-neverc/bin/neverc
 TARGET  = x86_64-pc-windows-msvc
 OUTPUT  = example.exe
 
+SRCS    = main.c
+HEADERS = config.h
+
 FLAGS = \
 	--target=$(TARGET) \
 	-Wall \
 	-Xlinker --subsystem=console \
 	-lkernel32 -luser32 -lmsvcrt
 
-SRCS = main.c
-OBJS = $(SRCS:.c=.o)
-DEPS = $(OBJS:.o=.d)
-
 all: $(OUTPUT)
 
-# Link
-$(OUTPUT): $(OBJS)
-	$(NEVERC) $(FLAGS) -o $@ $^
-
-# Compile (generates .d dependency files for incremental builds)
-%.o: %.c
-	$(NEVERC) $(FLAGS) -MMD -c $< -o $@
+$(OUTPUT): $(SRCS) $(HEADERS)
+	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 clean:
-	rm -f $(OUTPUT) $(OUTPUT:.exe=.lib) $(OBJS) $(DEPS)
-
-# Auto-generated header dependencies
--include $(DEPS)
+	rm -f $(OUTPUT) $(OUTPUT:.exe=.lib)
 
 .PHONY: all clean

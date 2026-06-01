@@ -9,6 +9,9 @@ NEVERC ?= ../../build-neverc/bin/neverc
 TARGET  = x86_64-pc-windows-msvc
 DRIVER  = CetDriver.sys
 
+SRCS    = driver.c
+HEADERS = config.h
+
 FLAGS = \
 	--target=$(TARGET) \
 	-g \
@@ -27,24 +30,12 @@ FLAGS = \
 	-Xlinker --cetcompat \
 	-lntoskrnl -lhal
 
-SRCS = driver.c
-OBJS = $(SRCS:.c=.o)
-DEPS = $(OBJS:.o=.d)
-
 all: $(DRIVER)
 
-# Link
-$(DRIVER): $(OBJS)
-	$(NEVERC) $(FLAGS) -o $@ $^
-
-# Compile (generates .d dependency files for incremental builds)
-%.o: %.c
-	$(NEVERC) $(FLAGS) -MMD -c $< -o $@
+$(DRIVER): $(SRCS) $(HEADERS)
+	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 clean:
-	rm -f $(DRIVER) $(OBJS) $(DEPS)
-
-# Auto-generated header dependencies
--include $(DEPS)
+	rm -f $(DRIVER)
 
 .PHONY: all clean
