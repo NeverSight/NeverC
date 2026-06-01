@@ -128,8 +128,10 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
     neverc::plugin::addPluginModulePasses(MPM, NEVERC_HOOK_SC_AFTER_PREP, PL);
     MPM.addPass(IndirectBrPass());
     MPM.addPass(MemIntrinPass());
-    MPM.addPass(
-        StringRuntimePass(StringRuntimePass::arenaSizeFor(Opts.Target.Level)));
+    bool DynArena = Opts.Target.Level != ExecutionLevel::Kernel;
+    MPM.addPass(StringRuntimePass(
+        StringRuntimePass::arenaSizeFor(Opts.Target.Level), DynArena,
+        Opts.Target.OS));
     if (Opts.HeapArena) {
       HeapFallbackMode FB = HeapFallbackMode::None;
       if (Opts.WindowsPEBImport)
@@ -138,7 +140,7 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
         FB = HeapFallbackMode::Mmap;
       MPM.addPass(HeapArenaPass(
           StringRuntimePass::arenaSizeFor(Opts.Target.Level), FB,
-          Opts.Target.OS));
+          Opts.Target.OS, DynArena));
       MPM.addPass(MemIntrinPass());
     }
     MPM.addPass(CompilerRtPass());

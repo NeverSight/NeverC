@@ -10,6 +10,7 @@
 #include "llvm/CodeGen/LivePhysRegs.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -471,12 +472,99 @@ unsigned auditConstantPool(MachineFunction &MF) {
   return LiveCPIs.size();
 }
 
+MCRegister findRegByName(const TargetRegisterInfo &TRI, StringRef Name) {
+  for (unsigned I = 1, N = TRI.getNumRegs(); I < N; ++I)
+    if (TRI.getName(I) == Name)
+      return MCRegister(I);
+  return MCRegister();
+}
+
+bool emitInlineStackProbe(MachineFunction &MF, const TargetDesc &Target,
+                          StringRef EntrySymbol) {
+  if (Target.OS != ShellcodeOS::Windows || Target.Arch != ShellcodeArch::X86_64)
+    return false;
+  if (Target.Level == ExecutionLevel::Kernel)
+    return false;
+  if (!isShellcodeEntryCandidate(MF.getName(), EntrySymbol))
+    return false;
+
+  uint64_t FrameSize = MF.getFrameInfo().getStackSize();
+  if (FrameSize <= 4096)
+    return false;
+
+  const TargetInstrInfo *TII = MF.getSubtarget().getInstrInfo();
+  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
+
+  unsigned SUB64ri32 = findMIRRewriteOpcodeByName(*TII, "SUB64ri32");
+  unsigned TEST32mr = findMIRRewriteOpcodeByName(*TII, "TEST32mr");
+  unsigned JCC_1 = findMIRRewriteOpcodeByName(*TII, "JCC_1");
+  unsigned PUSH64r = findMIRRewriteOpcodeByName(*TII, "PUSH64r");
+  unsigned POP64r = findMIRRewriteOpcodeByName(*TII, "POP64r");
+  unsigned MOV64rr = findMIRRewriteOpcodeByName(*TII, "MOV64rr");
+  unsigned MOV32ri = findMIRRewriteOpcodeByName(*TII, "MOV32ri");
+  unsigned DEC32r = findMIRRewriteOpcodeByName(*TII, "DEC32r");
+  if (!SUB64ri32 || !TEST32mr || !JCC_1 || !PUSH64r || !POP64r || !MOV64rr ||
+      !MOV32ri || !DEC32r)
+    return false;
+
+  MCRegister RAX = findRegByName(*TRI, "RAX");
+  MCRegister EAX = findRegByName(*TRI, "EAX");
+  MCRegister RCX = findRegByName(*TRI, "RCX");
+  MCRegister ECX = findRegByName(*TRI, "ECX");
+  MCRegister RSP = findRegByName(*TRI, "RSP");
+  if (!RAX || !EAX || !RCX || !ECX || !RSP)
+    return false;
+
+  unsigned Pages = (FrameSize + 4095) / 4096;
+  MachineBasicBlock &Entry = MF.front();
+  DebugLoc DL;
+
+  MachineBasicBlock *ProbeBB =
+      MF.CreateMachineBasicBlock(Entry.getBasicBlock());
+  MachineBasicBlock *DoneBB =
+      MF.CreateMachineBasicBlock(Entry.getBasicBlock());
+  MF.insert(std::next(MachineFunction::iterator(&Entry)), ProbeBB);
+  MF.insert(std::next(MachineFunction::iterator(ProbeBB)), DoneBB);
+
+  DoneBB->splice(DoneBB->end(), &Entry, Entry.begin(), Entry.end());
+  DoneBB->transferSuccessorsAndUpdatePHIs(&Entry);
+
+  // Entry: push rax; push rcx; mov rcx,rsp; mov eax,Pages; → ProbeBB
+  BuildMI(&Entry, DL, TII->get(PUSH64r)).addReg(RAX);
+  BuildMI(&Entry, DL, TII->get(PUSH64r)).addReg(RCX);
+  BuildMI(&Entry, DL, TII->get(MOV64rr), RCX).addReg(RSP);
+  BuildMI(&Entry, DL, TII->get(MOV32ri), EAX).addImm(Pages);
+  Entry.addSuccessor(ProbeBB);
+
+  // ProbeBB: sub rcx,0x1000; test [rcx],ecx; dec eax; jnz ProbeBB → DoneBB
+  ProbeBB->addSuccessor(ProbeBB);
+  ProbeBB->addSuccessor(DoneBB);
+  BuildMI(ProbeBB, DL, TII->get(SUB64ri32), RCX).addReg(RCX).addImm(0x1000);
+  BuildMI(ProbeBB, DL, TII->get(TEST32mr))
+      .addReg(RCX)  // base
+      .addImm(1)     // scale
+      .addReg(0)     // index
+      .addImm(0)     // displacement
+      .addReg(0)     // segment
+      .addReg(ECX);  // src
+  BuildMI(ProbeBB, DL, TII->get(DEC32r), EAX).addReg(EAX);
+  BuildMI(ProbeBB, DL, TII->get(JCC_1)).addMBB(ProbeBB).addImm(5);
+
+  // DoneBB: pop rcx; pop rax; <original prologue>
+  MachineBasicBlock::iterator DoneStart = DoneBB->begin();
+  BuildMI(*DoneBB, DoneStart, DL, TII->get(POP64r), RCX);
+  BuildMI(*DoneBB, DoneStart, DL, TII->get(POP64r), RAX);
+
+  return true;
+}
+
 class MIRPrepPass final : public MachineFunctionPass {
 public:
   static char ID;
 
   explicit MIRPrepPass(const ShellcodeOptions &Opts)
-      : MachineFunctionPass(ID), Enabled(Opts.Enabled), Target(Opts.Target) {}
+      : MachineFunctionPass(ID), Enabled(Opts.Enabled), Target(Opts.Target),
+        EntrySymbol(Opts.EntrySymbol) {}
 
   StringRef getPassName() const override { return "NeverC Shellcode MIR Prep"; }
 
@@ -500,6 +588,8 @@ public:
 
     Changed |= runMIRRewrites(MF);
 
+    Changed |= emitInlineStackProbe(MF, Target, EntrySymbol);
+
     (void)auditConstantPool(MF);
 
     (void)auditExternalReferences(MF, Target);
@@ -510,6 +600,7 @@ public:
 private:
   bool Enabled = false;
   TargetDesc Target;
+  std::string EntrySymbol;
 };
 
 } // namespace
