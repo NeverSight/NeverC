@@ -111,29 +111,31 @@ void RuleDB::addRule(const Rule &R, VariableEnv &Env) {
   }
 
   for (auto &Target : R.Targets) {
-    std::string ExpandedTarget = Env.expand(Target);
+    std::string ET = Env.expand(Target);
 
-    if (ExpandedTarget[0] == '.')
-      continue;
+    for (auto &ExpandedTarget : splitWords(ET)) {
+      if (ExpandedTarget[0] == '.')
+        continue;
 
-    ResolvedRule RR;
-    RR.Target = ExpandedTarget;
-    RR.IsPhony = PhonyTargets.count(ExpandedTarget) > 0;
-    RR.Recipes = R.Recipes;
+      ResolvedRule RR;
+      RR.Target = ExpandedTarget;
+      RR.IsPhony = PhonyTargets.count(ExpandedTarget) > 0;
+      RR.Recipes = R.Recipes;
 
-    for (auto &P : R.Prerequisites) {
-      for (auto &W : splitWords(Env.expand(P)))
-        RR.Prerequisites.push_back(W);
+      for (auto &P : R.Prerequisites) {
+        for (auto &W : splitWords(Env.expand(P)))
+          RR.Prerequisites.push_back(W);
+      }
+      for (auto &P : R.OrderOnlyPrereqs) {
+        for (auto &W : splitWords(Env.expand(P)))
+          RR.OrderOnlyPrereqs.push_back(W);
+      }
+
+      ExplicitRules[ExpandedTarget].push_back(RR);
+
+      if (FirstTarget.empty() && ExpandedTarget[0] != '.')
+        FirstTarget = ExpandedTarget;
     }
-    for (auto &P : R.OrderOnlyPrereqs) {
-      for (auto &W : splitWords(Env.expand(P)))
-        RR.OrderOnlyPrereqs.push_back(W);
-    }
-
-    ExplicitRules[ExpandedTarget].push_back(RR);
-
-    if (FirstTarget.empty() && ExpandedTarget[0] != '.')
-      FirstTarget = ExpandedTarget;
   }
 }
 

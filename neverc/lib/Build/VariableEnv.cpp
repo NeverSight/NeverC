@@ -142,6 +142,18 @@ void VariableEnv::setCommandLineVar(const std::string &Name,
 std::string
 VariableEnv::expandInternal(const std::string &Expr,
                              std::unordered_set<std::string> &Expanding) {
+  if (++RecursionDepth > MaxRecursionDepth) {
+    --RecursionDepth;
+    std::fprintf(stderr,
+                 "neverc make: *** Recursion depth exceeded (max %u). Stop.\n",
+                 MaxRecursionDepth);
+    return "";
+  }
+  struct DepthGuard {
+    unsigned &Depth;
+    ~DepthGuard() { --Depth; }
+  } Guard{RecursionDepth};
+
   std::string Result;
   Result.reserve(Expr.size());
 
@@ -240,8 +252,14 @@ VariableEnv::expandVarRef(const std::string &Expr, size_t &Pos,
         if (EqPos != std::string::npos) {
           std::string VarName =
               expandInternal(RawInner.substr(0, ColonPos), Expanding);
-          std::string Pattern = "%" + SubRest.substr(0, EqPos);
-          std::string Replacement = "%" + SubRest.substr(EqPos + 1);
+          std::string RawPat = SubRest.substr(0, EqPos);
+          std::string RawRep = SubRest.substr(EqPos + 1);
+          std::string Pattern =
+              (RawPat.find('%') != std::string::npos) ? RawPat
+                                                      : "%" + RawPat;
+          std::string Replacement =
+              (RawRep.find('%') != std::string::npos) ? RawRep
+                                                      : "%" + RawRep;
 
           if (Expanding.count(VarName))
             return "";

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <fstream>
 #include <set>
 #include <sstream>
 
@@ -541,6 +542,50 @@ void FunctionRegistry::registerBuiltins() {
     if (!Env.isDefined(Name))
       return "undefined";
     return Env.getFlavor(Name);
+  });
+
+  // --- File ---
+
+  registerFunction("file", [](const std::vector<std::string> &Args,
+                                VariableEnv &Env) -> std::string {
+    if (Args.empty())
+      return "";
+    std::string Op = trim(Args[0]);
+    if (Op.size() < 2)
+      return "";
+    char Mode = Op[0];
+    bool Append = (Mode == '>' && Op.size() >= 2 && Op[1] == '>');
+    std::string Filename = trim(Append ? Op.substr(2) : Op.substr(1));
+    if (Filename.empty())
+      return "";
+
+    if (Mode == '<') {
+      std::string Path = trim(Op.substr(1));
+      std::ifstream In(Path);
+      if (!In.is_open())
+        return "";
+      std::string Content((std::istreambuf_iterator<char>(In)),
+                           std::istreambuf_iterator<char>());
+      if (!Content.empty() && Content.back() == '\n')
+        Content.pop_back();
+      return Content;
+    }
+
+    if (Mode == '>') {
+      std::string Text = Args.size() > 1 ? Args[1] : "";
+      std::ofstream Out(Filename,
+                        Append ? (std::ios::app | std::ios::out) : std::ios::out);
+      if (!Out.is_open()) {
+        std::fprintf(stderr, "*** open: %s: No such file or directory\n",
+                     Filename.c_str());
+        return "";
+      }
+      if (!Text.empty())
+        Out << Text << "\n";
+      return "";
+    }
+
+    return "";
   });
 
   // --- Shell ---

@@ -43,7 +43,18 @@ bool DepGraph::buildNode(const std::string &Target, const RuleDB &Rules,
         if (!RR->Recipes.empty())
           N.Rule = RR;
       }
+      // Collect prereqs from the recipe rule first so $< refers to the
+      // correct first prerequisite (e.g. pattern rule prereq before
+      // prereq-only explicit rules).
+      if (N.Rule) {
+        for (auto &Dep : N.Rule->Prerequisites)
+          N.Dependencies.push_back(Dep);
+        for (auto &Dep : N.Rule->OrderOnlyPrereqs)
+          N.OrderOnlyDeps.push_back(Dep);
+      }
       for (auto *RR : AllRules) {
+        if (RR == N.Rule)
+          continue;
         for (auto &Dep : RR->Prerequisites) {
           if (std::find(N.Dependencies.begin(), N.Dependencies.end(), Dep) ==
               N.Dependencies.end())

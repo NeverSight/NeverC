@@ -148,9 +148,19 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
       case AssignMode::Conditional:
         Env.conditionalSet(Name, Value);
         break;
-      case AssignMode::Append:
-        Env.append(Name, Value);
+      case AssignMode::Append: {
+        auto ExistingIt = Env.vars().find(Name);
+        if (ExistingIt != Env.vars().end() &&
+            ExistingIt->second.Orig == VariableEnv::Origin::CommandLine &&
+            Orig != VariableEnv::Origin::Override)
+          break;
+        if (ExistingIt != Env.vars().end() &&
+            ExistingIt->second.Mode == AssignMode::Simple)
+          Env.append(Name, Env.expand(Value));
+        else
+          Env.append(Name, Value);
         break;
+      }
       case AssignMode::Shell: {
         auto R = platform::shellExecute(Value);
         std::string Out = R.Output;
@@ -216,6 +226,14 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
                            << ": No such file or directory\n";
             continue;
           }
+
+          std::string MFL = Env.get("MAKEFILE_LIST");
+          if (!MFL.empty())
+            MFL += ' ';
+          MFL += Path;
+          Env.set("MAKEFILE_LIST", MFL, AssignMode::Simple,
+                   VariableEnv::Origin::Default);
+
           std::string Content = (*Buf)->getBuffer().str();
           Lexer L(Path, Content);
           auto Lines = L.lex();
@@ -236,9 +254,15 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
       case AssignMode::Simple:
         Env.set(D->Name, Env.expand(D->Body), AssignMode::Simple, Orig);
         break;
-      case AssignMode::Append:
+      case AssignMode::Append: {
+        auto It = Env.vars().find(D->Name);
+        if (It != Env.vars().end() &&
+            It->second.Orig == VariableEnv::Origin::CommandLine &&
+            Orig != VariableEnv::Origin::Override)
+          break;
         Env.append(D->Name, D->Body);
         break;
+      }
       case AssignMode::Conditional:
         Env.conditionalSet(D->Name, D->Body);
         break;

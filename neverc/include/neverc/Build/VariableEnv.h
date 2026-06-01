@@ -76,6 +76,8 @@ private:
   std::unordered_map<std::string, std::string> AutoVars;
   FunctionRegistry *FuncReg = nullptr;
   EvalCallback EvalCB;
+  unsigned RecursionDepth = 0;
+  static constexpr unsigned MaxRecursionDepth = 256;
 };
 
 } // namespace build

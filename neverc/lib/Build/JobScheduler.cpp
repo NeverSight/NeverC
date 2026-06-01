@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <future>
+#include <sstream>
 
 namespace neverc {
 namespace build {
@@ -93,9 +94,10 @@ bool JobScheduler::allDepsBuilt(const DepGraph::Node &N,
   return true;
 }
 
-void JobScheduler::collectReadyJobs(DepGraph &Graph,
+bool JobScheduler::collectReadyJobs(DepGraph &Graph,
                                      const std::vector<std::string> &Targets,
                                      std::vector<Job> &Ready) {
+  bool MadeProgress = false;
   for (auto &[Name, N] : Graph.nodes()) {
     if (!N.NeedsBuild || N.Built || N.Failed)
       continue;
@@ -123,8 +125,10 @@ void JobScheduler::collectReadyJobs(DepGraph &Graph,
       Ready.push_back(J);
     } else {
       N.Built = true;
+      MadeProgress = true;
     }
   }
+  return MadeProgress;
 }
 
 int JobScheduler::runJob(Job &J, VariableEnv &Env) {
@@ -141,48 +145,61 @@ int JobScheduler::runJob(Job &J, VariableEnv &Env) {
   }
 
   for (auto &R : J.Recipes) {
-    std::string Cmd = expandRecipeVars(R.Command, J.Target, *J.Node, Env);
+    std::string FullCmd = expandRecipeVars(R.Command, J.Target, *J.Node, Env);
 
-    if (Cmd.empty())
+    if (FullCmd.empty())
       continue;
 
-    bool Silent = R.Silent || Opts.Silent;
-    bool IgnoreErr = R.IgnoreError;
-    bool Force = R.Force;
-
-    // Strip @/-/+ prefixes AFTER variable expansion — $(call) and
-    // $(eval) can produce commands starting with these prefixes.
-    while (!Cmd.empty() &&
-           (Cmd[0] == '@' || Cmd[0] == '-' || Cmd[0] == '+')) {
-      if (Cmd[0] == '@')
-        Silent = true;
-      else if (Cmd[0] == '-')
-        IgnoreErr = true;
-      else if (Cmd[0] == '+')
-        Force = true;
-      Cmd = Cmd.substr(1);
+    // $(call) / $(eval) can produce multiline commands from define
+    // blocks. Split on newlines and execute each line independently.
+    std::vector<std::string> Lines;
+    {
+      std::istringstream SS(FullCmd);
+      std::string Line;
+      while (std::getline(SS, Line))
+        Lines.push_back(Line);
     }
 
-    if (Cmd.empty())
-      continue;
+    for (auto &Cmd : Lines) {
+      if (Cmd.empty())
+        continue;
 
-    if (Opts.DryRun && !Force) {
-      std::lock_guard<std::mutex> Lock(OutputMutex);
-      llvm::outs() << Cmd << "\n";
-      continue;
-    }
+      bool Silent = R.Silent || Opts.Silent;
+      bool IgnoreErr = R.IgnoreError;
+      bool Force = R.Force;
 
-    if (!Silent) {
-      std::lock_guard<std::mutex> Lock(OutputMutex);
-      llvm::outs() << Cmd << "\n";
-    }
+      while (!Cmd.empty() &&
+             (Cmd[0] == '@' || Cmd[0] == '-' || Cmd[0] == '+')) {
+        if (Cmd[0] == '@')
+          Silent = true;
+        else if (Cmd[0] == '-')
+          IgnoreErr = true;
+        else if (Cmd[0] == '+')
+          Force = true;
+        Cmd = Cmd.substr(1);
+      }
 
-    int Rc = platform::shellExecuteNoCapture(Cmd, Opts.Shell, false);
-    if (Rc != 0 && !IgnoreErr) {
-      std::lock_guard<std::mutex> Lock(OutputMutex);
-      llvm::errs() << "neverc make: *** [" << J.Target
-                   << "] Error " << Rc << "\n";
-      return Rc;
+      if (Cmd.empty())
+        continue;
+
+      if (Opts.DryRun && !Force) {
+        std::lock_guard<std::mutex> Lock(OutputMutex);
+        llvm::outs() << Cmd << "\n";
+        continue;
+      }
+
+      if (!Silent) {
+        std::lock_guard<std::mutex> Lock(OutputMutex);
+        llvm::outs() << Cmd << "\n";
+      }
+
+      int Rc = platform::shellExecuteNoCapture(Cmd, Opts.Shell, false);
+      if (Rc != 0 && !IgnoreErr) {
+        std::lock_guard<std::mutex> Lock(OutputMutex);
+        llvm::errs() << "neverc make: *** [" << J.Target
+                     << "] Error " << Rc << "\n";
+        return Rc;
+      }
     }
   }
   return 0;
@@ -194,10 +211,13 @@ int JobScheduler::execute(DepGraph &Graph, VariableEnv &Env,
 
   while (true) {
     std::vector<Job> Ready;
-    collectReadyJobs(Graph, Targets, Ready);
+    bool MadeProgress = collectReadyJobs(Graph, Targets, Ready);
 
-    if (Ready.empty())
+    if (Ready.empty()) {
+      if (MadeProgress)
+        continue;
       break;
+    }
 
     if (Opts.MaxJobs <= 1) {
       for (auto &J : Ready) {

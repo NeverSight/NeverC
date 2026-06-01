@@ -40,7 +40,7 @@ private:
                                 const std::string &Target,
                                 const DepGraph::Node &N,
                                 VariableEnv &Env);
-  void collectReadyJobs(DepGraph &Graph,
+  bool collectReadyJobs(DepGraph &Graph,
                         const std::vector<std::string> &Targets,
                         std::vector<Job> &Ready);
   bool allDepsBuilt(const DepGraph::Node &N, const DepGraph &Graph) const;
