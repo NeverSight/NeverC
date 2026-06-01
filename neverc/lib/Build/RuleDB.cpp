@@ -163,7 +163,14 @@ RuleDB::findAllRules(const std::string &Target) const {
     for (auto &RR : It->second)
       Result.push_back(&RR);
 
-  if (Result.empty()) {
+  // If no explicit rule has a recipe, also consult pattern rules.
+  // This allows prerequisite-only rules (e.g. from -MMD .d files)
+  // to coexist with pattern rule recipes.
+  bool HasRecipe = false;
+  for (auto *RR : Result)
+    if (!RR->Recipes.empty())
+      HasRecipe = true;
+  if (!HasRecipe) {
     auto *PR = matchPatternRule(Target);
     if (PR)
       Result.push_back(PR);

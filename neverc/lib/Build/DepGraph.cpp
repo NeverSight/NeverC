@@ -92,8 +92,12 @@ bool DepGraph::needsRebuild(const Node &N) const {
 
   for (auto &Dep : N.Dependencies) {
     auto DepIt = Nodes.find(Dep);
-    if (DepIt != Nodes.end() && DepIt->second.IsPhony)
-      return true;
+    if (DepIt != Nodes.end()) {
+      if (DepIt->second.IsPhony)
+        return true;
+      if (DepIt->second.NeedsBuild)
+        return true;
+    }
 
     int64_t DepTime = platform::getFileTimestamp(Dep);
     if (DepTime < 0)
