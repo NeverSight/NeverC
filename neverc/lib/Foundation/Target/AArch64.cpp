@@ -1450,3 +1450,38 @@ TargetInfo::BuiltinVaListKind
 DarwinAArch64TargetInfo::getBuiltinVaListKind() const {
   return TargetInfo::CharPtrBuiltinVaList;
 }
+
+WindowsAArch64TargetInfo::WindowsAArch64TargetInfo(
+    const llvm::Triple &Triple, const TargetOptions &Opts)
+    : WindowsTargetInfo<AArch64leTargetInfo>(Triple, Opts) {
+  LongWidth = LongAlign = 32;
+  DoubleAlign = LongLongAlign = 64;
+  IntMaxType = SignedLongLong;
+  Int64Type = SignedLongLong;
+  SizeType = UnsignedLongLong;
+  PtrDiffType = SignedLongLong;
+  IntPtrType = SignedLongLong;
+}
+
+TargetInfo::BuiltinVaListKind
+WindowsAArch64TargetInfo::getBuiltinVaListKind() const {
+  return TargetInfo::CharPtrBuiltinVaList;
+}
+
+MicrosoftAArch64TargetInfo::MicrosoftAArch64TargetInfo(
+    const llvm::Triple &Triple, const TargetOptions &Opts)
+    : WindowsAArch64TargetInfo(Triple, Opts) {
+  LongDoubleWidth = LongDoubleAlign = 64;
+  LongDoubleFormat = &llvm::APFloat::IEEEdouble();
+}
+
+void MicrosoftAArch64TargetInfo::getTargetDefines(const LangOptions &Opts,
+                                                  MacroBuilder &Builder) const {
+  WindowsAArch64TargetInfo::getTargetDefines(Opts, Builder);
+  Builder.defineMacro("_M_ARM64", "1");
+}
+
+TargetInfo::CallingConvKind
+MicrosoftAArch64TargetInfo::getCallingConvKind(bool ABICompat4) const {
+  return CCK_MicrosoftWin64;
+}
