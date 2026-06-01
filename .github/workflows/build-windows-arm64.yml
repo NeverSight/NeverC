@@ -27,12 +27,12 @@ jobs:
       run: |
         $cmakeVer = '3.31.11'
         Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-arm64.zip" -OutFile cmake.zip
-        Expand-Archive cmake.zip C:\tools
+        Expand-Archive cmake.zip C:\tools -Force
         Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-arm64\bin"
 
         $ninjaVer = '1.13.1'
         Invoke-WebRequest "https://github.com/ninja-build/ninja/releases/download/v$ninjaVer/ninja-winarm64.zip" -OutFile ninja.zip
-        Expand-Archive ninja.zip C:\tools\ninja
+        Expand-Archive ninja.zip C:\tools\ninja -Force
         Add-Content $env:GITHUB_PATH "C:\tools\ninja"
 
         choco install 7zip -y
