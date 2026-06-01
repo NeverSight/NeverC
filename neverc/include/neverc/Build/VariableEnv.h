@@ -42,6 +42,8 @@ public:
   std::string expand(const std::string &Expr);
   bool isDefined(const std::string &Name) const;
   std::string rawValue(const std::string &Name) const;
+  Origin getOrigin(const std::string &Name) const;
+  std::string getFlavor(const std::string &Name) const;
 
   void setAutoVar(const std::string &Name, const std::string &Value);
   void clearAutoVars();

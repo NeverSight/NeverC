@@ -13,7 +13,7 @@ static bool isDirectiveKeyword(const std::string &Word) {
   return Word == "ifeq" || Word == "ifneq" || Word == "ifdef" ||
          Word == "ifndef" || Word == "else" || Word == "endif" ||
          Word == "define" || Word == "endef" || Word == "override" ||
-         Word == "export" || Word == "include" ||
+         Word == "export" || Word == "unexport" || Word == "include" ||
          Word == "-include" || Word == "sinclude";
 }
 

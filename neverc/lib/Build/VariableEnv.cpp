@@ -84,6 +84,34 @@ std::string VariableEnv::rawValue(const std::string &Name) const {
   return It->second.Value;
 }
 
+VariableEnv::Origin VariableEnv::getOrigin(const std::string &Name) const {
+  if (AutoVars.count(Name))
+    return Origin::Automatic;
+  auto It = Vars.find(Name);
+  if (It == Vars.end())
+    return Origin::Default;
+  return It->second.Orig;
+}
+
+std::string VariableEnv::getFlavor(const std::string &Name) const {
+  auto It = Vars.find(Name);
+  if (It == Vars.end())
+    return "undefined";
+  switch (It->second.Mode) {
+  case AssignMode::Recursive:
+    return "recursive";
+  case AssignMode::Simple:
+    return "simple";
+  case AssignMode::Conditional:
+    return "recursive";
+  case AssignMode::Append:
+    return "recursive";
+  case AssignMode::Shell:
+    return "simple";
+  }
+  return "undefined";
+}
+
 void VariableEnv::setAutoVar(const std::string &Name,
                               const std::string &Value) {
   AutoVars[Name] = Value;

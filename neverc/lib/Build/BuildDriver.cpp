@@ -180,12 +180,12 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
         break;
       case Conditional::IfDef: {
         std::string Name = Env.expand(C->Arg1);
-        Result = Env.isDefined(Name) && !Env.get(Name).empty();
+        Result = Env.isDefined(Name) && !Env.rawValue(Name).empty();
         break;
       }
       case Conditional::IfNDef: {
         std::string Name = Env.expand(C->Arg1);
-        Result = !Env.isDefined(Name) || Env.get(Name).empty();
+        Result = !Env.isDefined(Name) || Env.rawValue(Name).empty();
         break;
       }
       }
@@ -198,21 +198,32 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
     case StmtKind::Include: {
       auto *Inc = static_cast<Include *>(S.get());
       for (auto &F : Inc->Files) {
-        std::string Path = Env.expand(F);
-        auto Buf = llvm::MemoryBuffer::getFile(Path);
-        if (!Buf) {
-          if (!Inc->Optional)
-            llvm::errs() << "neverc make: " << Path
-                         << ": No such file or directory\n";
-          continue;
+        std::string Expanded = Env.expand(F);
+
+        std::vector<std::string> Paths;
+        if (Expanded.find('*') != std::string::npos ||
+            Expanded.find('?') != std::string::npos) {
+          Paths = platform::globFiles(Expanded);
+        } else {
+          Paths.push_back(Expanded);
         }
-        std::string Content = (*Buf)->getBuffer().str();
-        Lexer L(Path, Content);
-        auto Lines = L.lex();
-        Parser P(Path, std::move(Lines));
-        auto SubAST = P.parse();
-        if (SubAST)
-          processAST(*SubAST, Env, Rules, FuncReg);
+
+        for (auto &Path : Paths) {
+          auto Buf = llvm::MemoryBuffer::getFile(Path);
+          if (!Buf) {
+            if (!Inc->Optional)
+              llvm::errs() << "neverc make: " << Path
+                           << ": No such file or directory\n";
+            continue;
+          }
+          std::string Content = (*Buf)->getBuffer().str();
+          Lexer L(Path, Content);
+          auto Lines = L.lex();
+          Parser P(Path, std::move(Lines));
+          auto SubAST = P.parse();
+          if (SubAST)
+            processAST(*SubAST, Env, Rules, FuncReg);
+        }
       }
       break;
     }
@@ -239,7 +250,10 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
     }
     case StmtKind::ExportDirective: {
       auto *E = static_cast<ExportDirective *>(S.get());
-      if (E->ExportAll) {
+      if (E->IsUnexport) {
+        for (auto &Name : E->Names)
+          Env.setExport(Env.expand(Name), false);
+      } else if (E->ExportAll) {
         for (auto &[Name, Var] : Env.vars())
           Env.setExport(Name);
       } else {
@@ -335,6 +349,20 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
            VariableEnv::Origin::Default);
   Env.set("MAKE", std::string(Argv0) + " make", AssignMode::Simple,
            VariableEnv::Origin::Default);
+
+  {
+    std::string Flags;
+    if (Opts.DryRun) Flags += 'n';
+    if (Opts.KeepGoing) Flags += 'k';
+    if (Opts.Silent) Flags += 's';
+    if (Opts.AlwaysMake) Flags += 'B';
+    if (Opts.Jobs > 1)
+      Flags += " -j" + std::to_string(Opts.Jobs);
+    for (auto &[Name, Value] : Opts.CmdVars)
+      Flags += " " + Name + "=" + Value;
+    Env.set("MAKEFLAGS", Flags, AssignMode::Simple,
+             VariableEnv::Origin::Default);
+  }
 
   if (!Opts.Targets.empty()) {
     std::string Goals;

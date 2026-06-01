@@ -26,6 +26,7 @@ std::vector<std::string> globFiles(const std::string &Pattern);
 std::string getDefaultShell();
 std::string normalizePath(const std::string &Path);
 std::string realPath(const std::string &Path);
+std::string absolutePath(const std::string &Path);
 std::string getCwd();
 bool changeCwd(const std::string &Dir);
 unsigned getProcessorCount();

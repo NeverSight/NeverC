@@ -191,6 +191,14 @@ std::unique_ptr<Statement> Parser::parseLine(size_t &Idx) {
       return E;
     }
 
+    if (First == "unexport") {
+      auto E = parseExport(Word, ML.LineNumber);
+      if (E)
+        E->IsUnexport = true;
+      ++Idx;
+      return E;
+    }
+
     if (First == "ifeq" || First == "ifneq" || First == "ifdef" ||
         First == "ifndef") {
       return parseConditional(Word, ML.LineNumber, Idx);

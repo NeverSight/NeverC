@@ -148,8 +148,25 @@ int JobScheduler::runJob(Job &J, VariableEnv &Env) {
 
     bool Silent = R.Silent || Opts.Silent;
     bool IgnoreErr = R.IgnoreError;
+    bool Force = R.Force;
 
-    if (Opts.DryRun && !R.Force) {
+    // Strip @/-/+ prefixes AFTER variable expansion — $(call) and
+    // $(eval) can produce commands starting with these prefixes.
+    while (!Cmd.empty() &&
+           (Cmd[0] == '@' || Cmd[0] == '-' || Cmd[0] == '+')) {
+      if (Cmd[0] == '@')
+        Silent = true;
+      else if (Cmd[0] == '-')
+        IgnoreErr = true;
+      else if (Cmd[0] == '+')
+        Force = true;
+      Cmd = Cmd.substr(1);
+    }
+
+    if (Cmd.empty())
+      continue;
+
+    if (Opts.DryRun && !Force) {
       std::lock_guard<std::mutex> Lock(OutputMutex);
       llvm::outs() << Cmd << "\n";
       continue;

@@ -106,6 +106,7 @@ struct DefineBlock : Statement {
 struct ExportDirective : Statement {
   std::vector<std::string> Names;
   bool ExportAll = false;
+  bool IsUnexport = false;
 
   ExportDirective() : Statement(StmtKind::ExportDirective) {}
   static bool classof(const Statement *S) {

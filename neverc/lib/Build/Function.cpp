@@ -355,7 +355,21 @@ void FunctionRegistry::registerBuiltins() {
     auto Words = splitWords(Args[0]);
     std::vector<std::string> Result;
     for (auto &W : Words)
+      Result.push_back(platform::absolutePath(W));
+    return joinWords(Result);
+  });
+
+  registerFunction("realpath", [](const std::vector<std::string> &Args,
+                                   VariableEnv &Env) -> std::string {
+    if (Args.empty())
+      return "";
+    auto Words = splitWords(Args[0]);
+    std::vector<std::string> Result;
+    for (auto &W : Words) {
+      if (!platform::fileExists(W))
+        continue;
       Result.push_back(platform::realPath(W));
+    }
     return joinWords(Result);
   });
 
@@ -484,6 +498,49 @@ void FunctionRegistry::registerBuiltins() {
     std::string Msg = Args.empty() ? "" : Args[0];
     std::fprintf(stdout, "%s\n", Msg.c_str());
     return "";
+  });
+
+  // --- Variable introspection ---
+
+  registerFunction("origin", [](const std::vector<std::string> &Args,
+                                  VariableEnv &Env) -> std::string {
+    if (Args.empty())
+      return "undefined";
+    std::string Name = trim(Args[0]);
+    if (!Env.isDefined(Name))
+      return "undefined";
+    switch (Env.getOrigin(Name)) {
+    case VariableEnv::Origin::Default:
+      return "default";
+    case VariableEnv::Origin::Environment:
+      return "environment";
+    case VariableEnv::Origin::File:
+      return "file";
+    case VariableEnv::Origin::CommandLine:
+      return "command line";
+    case VariableEnv::Origin::Override:
+      return "override";
+    case VariableEnv::Origin::Automatic:
+      return "automatic";
+    }
+    return "undefined";
+  });
+
+  registerFunction("value", [](const std::vector<std::string> &Args,
+                                 VariableEnv &Env) -> std::string {
+    if (Args.empty())
+      return "";
+    return Env.rawValue(trim(Args[0]));
+  });
+
+  registerFunction("flavor", [](const std::vector<std::string> &Args,
+                                  VariableEnv &Env) -> std::string {
+    if (Args.empty())
+      return "undefined";
+    std::string Name = trim(Args[0]);
+    if (!Env.isDefined(Name))
+      return "undefined";
+    return Env.getFlavor(Name);
   });
 
   // --- Shell ---

@@ -136,6 +136,13 @@ std::string realPath(const std::string &Path) {
   return std::string(Result);
 }
 
+std::string absolutePath(const std::string &Path) {
+  llvm::SmallString<256> Result(Path);
+  llvm::sys::fs::make_absolute(Result);
+  llvm::sys::path::remove_dots(Result, true);
+  return std::string(Result);
+}
+
 std::string getCwd() {
   llvm::SmallString<256> Cwd;
   if (llvm::sys::fs::current_path(Cwd))
