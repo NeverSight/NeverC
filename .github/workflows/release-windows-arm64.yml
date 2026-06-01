@@ -24,8 +24,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup build deps
-        run: choco install ninja cmake 7zip -y
+      - name: Install ARM64-native CMake & Ninja
+        shell: pwsh
+        run: |
+          $cmakeVer = '3.31.11'
+          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-arm64.zip" -OutFile cmake.zip
+          Expand-Archive cmake.zip C:\tools
+          Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-arm64\bin"
+
+          $ninjaVer = '1.13.1'
+          Invoke-WebRequest "https://github.com/ninja-build/ninja/releases/download/v$ninjaVer/ninja-winarm64.zip" -OutFile ninja.zip
+          Expand-Archive ninja.zip C:\tools\ninja
+          Add-Content $env:GITHUB_PATH "C:\tools\ninja"
+
+          choco install 7zip -y
 
       - name: Setup MSVC (native arm64)
         uses: ilammy/msvc-dev-cmd@v1
