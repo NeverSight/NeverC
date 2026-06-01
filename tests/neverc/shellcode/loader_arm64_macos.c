@@ -2,8 +2,9 @@
 /*
  * Shellcode loader for macOS ARM64.
  *
- * Reads a flat .bin shellcode file, maps it as RWX, flushes the i-cache, and
- * calls the entry point.  The entry function signature is:
+ * Reads a flat .bin shellcode file, maps it with MAP_JIT (per-thread W^X
+ * via pthread_jit_write_protect_np), flushes the i-cache, and calls the
+ * entry point.  The entry function signature is:
  *
  *   int entry(int arg0, int arg1)          -- for pure-computation tests
  *   void entry(void)                       -- for libSystem hello-world tests
