@@ -18,8 +18,10 @@ struct StringRuntimePass : public llvm::PassInfoMixin<StringRuntimePass> {
     return Level == ExecutionLevel::Kernel ? KernelArenaSize : UserArenaSize;
   }
 
-  explicit StringRuntimePass(uint64_t ArenaSize = UserArenaSize)
-      : ArenaSize(ArenaSize) {}
+  explicit StringRuntimePass(uint64_t ArenaSize = UserArenaSize,
+                             bool DynamicArena = true,
+                             ShellcodeOS OS = ShellcodeOS::Linux)
+      : ArenaSize(ArenaSize), DynamicArena(DynamicArena), OS(OS) {}
 
   llvm::PreservedAnalyses run(llvm::Module &M,
                               llvm::ModuleAnalysisManager &MAM);
@@ -28,10 +30,14 @@ struct StringRuntimePass : public llvm::PassInfoMixin<StringRuntimePass> {
   /// Ensure the arena global, bump-alloc function, and free-list function
   /// exist in @p M.  Safe to call multiple times — idempotent when the
   /// infrastructure already has full definitions.
-  static void ensureArenaInfrastructure(llvm::Module &M, uint64_t ArenaSize);
+  static void ensureArenaInfrastructure(llvm::Module &M, uint64_t ArenaSize,
+                                        bool DynamicArena = true,
+                                        ShellcodeOS OS = ShellcodeOS::Linux);
 
 private:
   uint64_t ArenaSize;
+  bool DynamicArena;
+  ShellcodeOS OS;
 };
 
 struct StringRuntimeInlineFinalizePass

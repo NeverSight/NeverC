@@ -119,11 +119,21 @@ Value *alignValue(IRBuilder<> &B, Value *V, Type *SizeTy, StringRef Name) {
   return B.CreateAnd(B.CreateAdd(V, AlignMinusOne), Mask, Name);
 }
 
-GlobalVariable *getOrCreateArena(Module &M, uint64_t ArenaSize) {
+GlobalVariable *getOrCreateArena(Module &M, uint64_t ArenaSize,
+                                 bool Dynamic) {
   if (auto *GV = M.getNamedGlobal(ABI::ArenaGlobalName))
     return GV;
 
   LLVMContext &Ctx = M.getContext();
+  if (Dynamic) {
+    PointerType *PtrTy = PointerType::getUnqual(Ctx);
+    auto *GV = new GlobalVariable(
+        M, PtrTy, /*isConstant=*/false, GlobalValue::InternalLinkage,
+        ConstantPointerNull::get(PtrTy), ABI::ArenaGlobalName);
+    GV->setAlignment(Align(ABI::ArenaMetadataAlignment));
+    return GV;
+  }
+
   Type *I8 = Type::getInt8Ty(Ctx);
   ArrayType *ArenaTy = ArrayType::get(I8, ArenaSize);
   auto *GV = new GlobalVariable(M, ArenaTy, /*isConstant=*/false,
@@ -131,6 +141,25 @@ GlobalVariable *getOrCreateArena(Module &M, uint64_t ArenaSize) {
                                 UndefValue::get(ArenaTy), ABI::ArenaGlobalName);
   GV->setAlignment(Align(ABI::ArenaAlignment));
   return GV;
+}
+
+int mmapAnonFlags(ShellcodeOS OS) {
+  return (OS == ShellcodeOS::Darwin) ? ABI::MmapPrivateAnonDarwin
+                                     : ABI::MmapPrivateAnonLinux;
+}
+
+Function *getOrDeclareMmap(Module &M) {
+  PointerType *PtrTy = PointerType::getUnqual(M.getContext());
+  Type *I32 = Type::getInt32Ty(M.getContext());
+  Type *I64 = Type::getInt64Ty(M.getContext());
+  FunctionType *FTy =
+      FunctionType::get(PtrTy, {PtrTy, I64, I32, I32, I32, I64}, false);
+  Function *F = M.getFunction("mmap");
+  if (F)
+    return F;
+  F = Function::Create(FTy, GlobalValue::ExternalLinkage, "mmap", &M);
+  F->setDoesNotThrow();
+  return F;
 }
 
 GlobalVariable *getOrCreateArenaOffset(Module &M, Type *SizeTy) {
@@ -161,7 +190,8 @@ Value *createHeaderFieldPtr(IRBuilder<> &B, const ArenaLayout &Layout,
   return B.CreateStructGEP(Layout.HeaderTy, Header, Field, Name);
 }
 
-Function *getOrCreateStringAlloc(Module &M, uint64_t ArenaSize) {
+Function *getOrCreateStringAlloc(Module &M, uint64_t ArenaSize,
+                                 bool Dynamic, ShellcodeOS OS) {
   LLVMContext &Ctx = M.getContext();
   ArenaLayout Layout = getArenaLayout(M);
   Type *SizeTy = Layout.SizeTy;
@@ -178,10 +208,9 @@ Function *getOrCreateStringAlloc(Module &M, uint64_t ArenaSize) {
   setRuntimeFunctionAttrs(*F);
   F->getArg(0)->setName(ABI::IRNames::AllocSizeArg);
 
-  GlobalVariable *Arena = getOrCreateArena(M, ArenaSize);
+  GlobalVariable *Arena = getOrCreateArena(M, ArenaSize, Dynamic);
   GlobalVariable *ArenaOffset = getOrCreateArenaOffset(M, SizeTy);
   GlobalVariable *ArenaFreeList = getOrCreateArenaFreeList(M, PtrTy);
-  auto *ArenaTy = cast<ArrayType>(Arena->getValueType());
 
   BasicBlock *Entry =
       BasicBlock::Create(Ctx, ABI::BasicBlockNames::AllocEntry, F);
@@ -210,14 +239,49 @@ Function *getOrCreateStringAlloc(Module &M, uint64_t ArenaSize) {
   Value *N = B.CreateSelect(B.CreateICmpEQ(NArg, ConstantInt::get(SizeTy, 0)),
                             ConstantInt::get(SizeTy, 1), NArg,
                             ABI::IRNames::AllocSizeNonZero);
+
+  // For dynamic arenas, lazy-init via mmap on first alloc.
+  Value *ArenaBase = nullptr;
+  if (Dynamic) {
+    BasicBlock *InitBB = BasicBlock::Create(Ctx, "arena.init", F);
+    BasicBlock *ReadyBB = BasicBlock::Create(Ctx, "arena.ready", F);
+
+    Value *Loaded = B.CreateLoad(PtrTy, Arena, "arena.loaded");
+    B.CreateCondBr(B.CreateICmpEQ(Loaded, ConstantPointerNull::get(PtrTy)),
+                   InitBB, ReadyBB);
+
+    B.SetInsertPoint(InitBB);
+    Type *I32 = Type::getInt32Ty(Ctx);
+    Type *I64 = Type::getInt64Ty(Ctx);
+    Function *MmapFn = getOrDeclareMmap(M);
+    Value *Raw = B.CreateCall(
+        MmapFn,
+        {ConstantPointerNull::get(PtrTy),
+         ConstantInt::get(I64, ArenaSize),
+         ConstantInt::get(I32, ABI::MmapProtRW),
+         ConstantInt::get(I32, mmapAnonFlags(OS)),
+         ConstantInt::get(I32, -1), ConstantInt::get(I64, 0)},
+        "arena.mmap");
+    Value *Failed =
+        B.CreateICmpEQ(B.CreatePtrToInt(Raw, SizeTy),
+                       ConstantInt::getSigned(SizeTy, -1));
+    Value *Safe = B.CreateSelect(Failed, ConstantPointerNull::get(PtrTy), Raw);
+    B.CreateStore(Safe, Arena);
+    B.CreateBr(ReadyBB);
+
+    B.SetInsertPoint(ReadyBB);
+    ArenaBase = B.CreateLoad(PtrTy, Arena, "arena.base");
+  }
+
   Value *Head = B.CreateLoad(PtrTy, ArenaFreeList, ABI::IRNames::AllocFreeHead);
+  BasicBlock *PreReuseBlock = B.GetInsertBlock();
   B.CreateBr(ReuseCheck);
 
   B.SetInsertPoint(ReuseCheck);
   PHINode *Cur = B.CreatePHI(PtrTy, 2, ABI::IRNames::AllocFreeCur);
   PHINode *Prev = B.CreatePHI(PtrTy, 2, ABI::IRNames::AllocFreePrev);
-  Cur->addIncoming(Head, Entry);
-  Prev->addIncoming(ConstantPointerNull::get(PtrTy), Entry);
+  Cur->addIncoming(Head, PreReuseBlock);
+  Prev->addIncoming(ConstantPointerNull::get(PtrTy), PreReuseBlock);
   B.CreateCondBr(B.CreateICmpEQ(Cur, ConstantPointerNull::get(PtrTy)), Bump,
                  ReuseInspect);
 
@@ -301,9 +365,15 @@ Function *getOrCreateStringAlloc(Module &M, uint64_t ArenaSize) {
 
   B.SetInsertPoint(BumpCommit);
   B.CreateStore(End, ArenaOffset);
-  Value *Block = B.CreateInBoundsGEP(
-      ArenaTy, Arena, {ConstantInt::get(Type::getInt32Ty(Ctx), 0), Aligned},
-      ABI::IRNames::AllocBlock);
+  Value *Block;
+  if (Dynamic) {
+    Block = B.CreateGEP(I8Ty, ArenaBase, Aligned, ABI::IRNames::AllocBlock);
+  } else {
+    auto *ArenaTy = cast<ArrayType>(Arena->getValueType());
+    Block = B.CreateInBoundsGEP(
+        ArenaTy, Arena, {ConstantInt::get(Type::getInt32Ty(Ctx), 0), Aligned},
+        ABI::IRNames::AllocBlock);
+  }
   Value *BlockSizePtr = createHeaderFieldPtr(
       B, Layout, Block, ABI::HeaderSizeField, ABI::IRNames::AllocBlockSizePtr);
   Value *PayloadCapacity =
@@ -330,7 +400,7 @@ Function *getOrCreateStringAlloc(Module &M, uint64_t ArenaSize) {
 }
 
 Function *getOrCreateStringFree(Module &M, bool ValidateArena,
-                                uint64_t ArenaSize) {
+                                uint64_t ArenaSize, bool Dynamic) {
   LLVMContext &Ctx = M.getContext();
   ArenaLayout Layout = getArenaLayout(M);
   Type *SizeTy = Layout.SizeTy;
@@ -366,17 +436,26 @@ Function *getOrCreateStringFree(Module &M, bool ValidateArena,
                  Validate);
 
   B.SetInsertPoint(Validate);
-  GlobalVariable *Arena = getOrCreateArena(M, ArenaSize);
-  auto *ArenaTy = cast<ArrayType>(Arena->getValueType());
-  Value *ArenaBegin = B.CreateInBoundsGEP(
-      ArenaTy, Arena,
-      {ConstantInt::get(Type::getInt32Ty(Ctx), 0), ConstantInt::get(SizeTy, 0)},
-      ABI::IRNames::FreeArenaBegin);
-  Value *ArenaEnd =
-      B.CreateInBoundsGEP(ArenaTy, Arena,
-                          {ConstantInt::get(Type::getInt32Ty(Ctx), 0),
-                           ConstantInt::get(SizeTy, ArenaSize)},
-                          ABI::IRNames::FreeArenaEnd);
+  GlobalVariable *Arena = getOrCreateArena(M, ArenaSize, Dynamic);
+  Value *ArenaBegin, *ArenaEnd;
+  if (Dynamic) {
+    ArenaBegin = B.CreateLoad(PtrTy, Arena, ABI::IRNames::FreeArenaBegin);
+    ArenaEnd = B.CreateGEP(I8Ty, ArenaBegin,
+                           ConstantInt::get(SizeTy, ArenaSize),
+                           ABI::IRNames::FreeArenaEnd);
+  } else {
+    auto *ArenaTy = cast<ArrayType>(Arena->getValueType());
+    ArenaBegin = B.CreateInBoundsGEP(
+        ArenaTy, Arena,
+        {ConstantInt::get(Type::getInt32Ty(Ctx), 0),
+         ConstantInt::get(SizeTy, 0)},
+        ABI::IRNames::FreeArenaBegin);
+    ArenaEnd = B.CreateInBoundsGEP(
+        ArenaTy, Arena,
+        {ConstantInt::get(Type::getInt32Ty(Ctx), 0),
+         ConstantInt::get(SizeTy, ArenaSize)},
+        ABI::IRNames::FreeArenaEnd);
+  }
   Value *PtrInt = B.CreatePtrToInt(Ptr, SizeTy, ABI::IRNames::FreePtrInt);
   Value *BeginInt =
       B.CreatePtrToInt(ArenaBegin, SizeTy, ABI::IRNames::FreeArenaBeginInt);
@@ -427,7 +506,8 @@ Function *getOrCreateStringFree(Module &M, bool ValidateArena,
 }
 
 bool rewriteAllocatorCalls(Function &RuntimeFn, Module &M, uint64_t ArenaSize,
-                           bool ModuleNeedsAlloc) {
+                           bool ModuleNeedsAlloc, bool Dynamic,
+                           ShellcodeOS OS) {
   bool Changed = false;
   Function *Alloc = nullptr;
   Function *Free = nullptr;
@@ -456,7 +536,7 @@ bool rewriteAllocatorCalls(Function &RuntimeFn, Module &M, uint64_t ArenaSize,
     switch (Item.Role) {
     case RuntimeAllocatorRole::Alloc: {
       if (!Alloc)
-        Alloc = getOrCreateStringAlloc(M, ArenaSize);
+        Alloc = getOrCreateStringAlloc(M, ArenaSize, Dynamic, OS);
       Value *N = CB->getArgOperand(0);
       Type *SizeTy = Alloc->getFunctionType()->getParamType(0);
       if (N->getType() != SizeTy)
@@ -469,7 +549,7 @@ bool rewriteAllocatorCalls(Function &RuntimeFn, Module &M, uint64_t ArenaSize,
     }
     case RuntimeAllocatorRole::Free: {
       if (!Free)
-        Free = getOrCreateStringFree(M, ModuleNeedsAlloc, ArenaSize);
+        Free = getOrCreateStringFree(M, ModuleNeedsAlloc, ArenaSize, Dynamic);
       B.CreateCall(Free, {CB->getArgOperand(0)});
       CB->eraseFromParent();
       Changed = true;
@@ -502,9 +582,11 @@ bool anyRuntimeAllocatorCalls(ArrayRef<Function *> RuntimeFunctions,
 } // namespace
 
 void StringRuntimePass::ensureArenaInfrastructure(Module &M,
-                                                   uint64_t ArenaSize) {
-  getOrCreateStringAlloc(M, ArenaSize);
-  getOrCreateStringFree(M, /*ValidateArena=*/true, ArenaSize);
+                                                   uint64_t ArenaSize,
+                                                   bool DynamicArena,
+                                                   ShellcodeOS OS) {
+  getOrCreateStringAlloc(M, ArenaSize, DynamicArena, OS);
+  getOrCreateStringFree(M, /*ValidateArena=*/true, ArenaSize, DynamicArena);
 }
 
 PreservedAnalyses StringRuntimePass::run(Module &M, ModuleAnalysisManager &) {
@@ -523,7 +605,8 @@ PreservedAnalyses StringRuntimePass::run(Module &M, ModuleAnalysisManager &) {
   for (Function *F : RuntimeFunctions) {
     setRuntimeFunctionAttrs(*F, /*DeferInlining=*/true);
     Changed = true;
-    Changed |= rewriteAllocatorCalls(*F, M, ArenaSize, ModuleNeedsAlloc);
+    Changed |= rewriteAllocatorCalls(*F, M, ArenaSize, ModuleNeedsAlloc,
+                                     DynamicArena, OS);
   }
 
   return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();

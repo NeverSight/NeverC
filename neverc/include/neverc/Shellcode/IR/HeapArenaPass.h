@@ -44,8 +44,10 @@ struct HeapArenaPass : public llvm::PassInfoMixin<HeapArenaPass> {
   explicit HeapArenaPass(
       uint64_t ArenaSize = StringRuntimeABI::UserArenaSize,
       HeapFallbackMode Fallback = HeapFallbackMode::None,
-      ShellcodeOS TargetOS = ShellcodeOS::Linux)
-      : ArenaSize(ArenaSize), Fallback(Fallback), TargetOS(TargetOS) {}
+      ShellcodeOS TargetOS = ShellcodeOS::Linux,
+      bool DynamicArena = true)
+      : ArenaSize(ArenaSize), Fallback(Fallback), TargetOS(TargetOS),
+        DynamicArena(DynamicArena) {}
 
   llvm::PreservedAnalyses run(llvm::Module &M,
                               llvm::ModuleAnalysisManager &MAM);
@@ -55,6 +57,7 @@ private:
   uint64_t ArenaSize;
   HeapFallbackMode Fallback;
   ShellcodeOS TargetOS;
+  bool DynamicArena;
 };
 
 } // namespace shellcode

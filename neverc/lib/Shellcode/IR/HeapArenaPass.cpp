@@ -308,17 +308,25 @@ void emitHeapFree(IRBuilder<> &B, Module &M, Value *Ptr, uint64_t ArenaSize,
     return;
   }
 
-  auto *ArenaTy = cast<ArrayType>(Arena->getValueType());
-  Value *ArenaBegin = B.CreateInBoundsGEP(
-      ArenaTy, Arena,
-      {ConstantInt::get(Type::getInt32Ty(M.getContext()), 0),
-       ConstantInt::get(SizeTy, 0)},
-      "heap.free.begin");
-  Value *ArenaEnd = B.CreateInBoundsGEP(
-      ArenaTy, Arena,
-      {ConstantInt::get(Type::getInt32Ty(M.getContext()), 0),
-       ConstantInt::get(SizeTy, ArenaSize)},
-      "heap.free.end");
+  Value *ArenaBegin, *ArenaEnd;
+  if (Arena->getValueType()->isPointerTy()) {
+    ArenaBegin = B.CreateLoad(PtrTy, Arena, "heap.free.begin");
+    ArenaEnd = B.CreateGEP(Type::getInt8Ty(M.getContext()), ArenaBegin,
+                           ConstantInt::get(SizeTy, ArenaSize),
+                           "heap.free.end");
+  } else {
+    auto *ArenaTy = cast<ArrayType>(Arena->getValueType());
+    ArenaBegin = B.CreateInBoundsGEP(
+        ArenaTy, Arena,
+        {ConstantInt::get(Type::getInt32Ty(M.getContext()), 0),
+         ConstantInt::get(SizeTy, 0)},
+        "heap.free.begin");
+    ArenaEnd = B.CreateInBoundsGEP(
+        ArenaTy, Arena,
+        {ConstantInt::get(Type::getInt32Ty(M.getContext()), 0),
+         ConstantInt::get(SizeTy, ArenaSize)},
+        "heap.free.end");
+  }
 
   Value *PtrInt = B.CreatePtrToInt(Ptr, SizeTy);
   Value *BeginInt = B.CreatePtrToInt(ArenaBegin, SizeTy);
@@ -386,17 +394,26 @@ Value *emitOldSizeRead(IRBuilder<> &B, Module &M, Value *Ptr,
   if (!Arena)
     return readOldBlockSize(B, M, Ptr);
 
-  auto *ArenaTy = cast<ArrayType>(Arena->getValueType());
-  Value *ArenaBegin = B.CreateInBoundsGEP(
-      ArenaTy, Arena,
-      {ConstantInt::get(Type::getInt32Ty(M.getContext()), 0),
-       ConstantInt::get(SizeTy, 0)},
-      "realloc.arena.begin");
-  Value *ArenaEnd = B.CreateInBoundsGEP(
-      ArenaTy, Arena,
-      {ConstantInt::get(Type::getInt32Ty(M.getContext()), 0),
-       ConstantInt::get(SizeTy, ArenaSize)},
-      "realloc.arena.end");
+  Value *ArenaBegin, *ArenaEnd;
+  if (Arena->getValueType()->isPointerTy()) {
+    PointerType *PtrTy = PointerType::getUnqual(M.getContext());
+    ArenaBegin = B.CreateLoad(PtrTy, Arena, "realloc.arena.begin");
+    ArenaEnd = B.CreateGEP(Type::getInt8Ty(M.getContext()), ArenaBegin,
+                           ConstantInt::get(SizeTy, ArenaSize),
+                           "realloc.arena.end");
+  } else {
+    auto *ArenaTy = cast<ArrayType>(Arena->getValueType());
+    ArenaBegin = B.CreateInBoundsGEP(
+        ArenaTy, Arena,
+        {ConstantInt::get(Type::getInt32Ty(M.getContext()), 0),
+         ConstantInt::get(SizeTy, 0)},
+        "realloc.arena.begin");
+    ArenaEnd = B.CreateInBoundsGEP(
+        ArenaTy, Arena,
+        {ConstantInt::get(Type::getInt32Ty(M.getContext()), 0),
+         ConstantInt::get(SizeTy, ArenaSize)},
+        "realloc.arena.end");
+  }
 
   Value *PtrInt = B.CreatePtrToInt(Ptr, SizeTy);
   Value *BeginInt = B.CreatePtrToInt(ArenaBegin, SizeTy);
@@ -466,7 +483,8 @@ PreservedAnalyses HeapArenaPass::run(Module &M, ModuleAnalysisManager &) {
   if (Work.empty())
     return PreservedAnalyses::all();
 
-  StringRuntimePass::ensureArenaInfrastructure(M, ArenaSize);
+  StringRuntimePass::ensureArenaInfrastructure(M, ArenaSize, DynamicArena,
+                                                TargetOS);
 
   Type *SizeTy = getSizeType(M);
   PointerType *PtrTy = PointerType::getUnqual(M.getContext());

@@ -119,6 +119,8 @@ TEST_F(ShellcodeTest, ComputedGotoDual) {
       1, 20);
 }
 TEST_F(ShellcodeTest, AsmGoto) {
+  if (!isArm64())
+    GTEST_SKIP() << "asm_goto test uses AArch64 inline assembly";
   shellcodeTest("asm_goto",
                 (testDir() / "shellcode/test_shellcode_asm_goto.c").string(), 0,
                 0, 0);

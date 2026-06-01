@@ -478,27 +478,34 @@ fs::path NeverCTest::buildShellcodeLoader() {
   if (loaderBuilt_)
     return loaderPath_;
 
-  if (!isDarwin() || !isArm64()) {
-    loaderBuilt_ = true;
-    return {};
-  }
-
-  auto loaderSrc = testDir() / "shellcode" / "loader_arm64_macos.c";
-  loaderPath_ = tmpFile("shellcode_loader");
-
-  auto r = exec("cc", {"-O2", "-o", loaderPath_.string(), loaderSrc.string()});
-  EXPECT_EQ(r.exitCode, 0) << "shellcode loader build failed\n" << r.err;
-
-  if (r.exitCode == 0) {
-    auto entitlements = testDir() / "shellcode" / "jit.entitlements";
-    if (fs::exists(entitlements)) {
-      exec("codesign",
-           {"-s", "-", "--entitlements", entitlements.string(), "-f",
-            loaderPath_.string()});
-    }
-  }
-
   loaderBuilt_ = true;
+
+  if (isDarwin() && isArm64()) {
+    auto loaderSrc = testDir() / "shellcode" / "loader_arm64_macos.c";
+    loaderPath_ = tmpFile("shellcode_loader");
+
+    auto r =
+        exec("cc", {"-O2", "-o", loaderPath_.string(), loaderSrc.string()});
+    EXPECT_EQ(r.exitCode, 0) << "shellcode loader build failed\n" << r.err;
+
+    if (r.exitCode == 0) {
+      auto entitlements = testDir() / "shellcode" / "jit.entitlements";
+      if (fs::exists(entitlements)) {
+        exec("codesign",
+             {"-s", "-", "--entitlements", entitlements.string(), "-f",
+              loaderPath_.string()});
+      }
+    }
+  } else if (isWindows() && isX86_64()) {
+    auto loaderSrc = testDir() / "shellcode" / "loader_windows.c";
+    loaderPath_ = tmpFile("shellcode_loader.exe");
+
+    auto r = ncc({"-O2", loaderSrc.string(), "-o", loaderPath_.string()});
+    EXPECT_EQ(r.exitCode, 0)
+        << "Windows shellcode loader build failed\n"
+        << r.err;
+  }
+
   return loaderPath_;
 }
 
@@ -506,14 +513,9 @@ void NeverCTest::shellcodeTest(const std::string &name, const std::string &src,
                                 int arg0, int arg1, int expectedExit) {
   SCOPED_TRACE("shellcodeTest: " + name);
 
-  if (!isDarwin() || !isArm64()) {
-    GTEST_SKIP() << "shellcode loader requires arm64 macOS";
-    return;
-  }
-
   auto loader = buildShellcodeLoader();
   if (loader.empty()) {
-    GTEST_SKIP() << "shellcode loader not available";
+    GTEST_SKIP() << "shellcode loader not available on this platform";
     return;
   }
 
@@ -523,7 +525,13 @@ void NeverCTest::shellcodeTest(const std::string &name, const std::string &src,
 
   auto runR = exec(loader.string(),
                    {bin.string(), std::to_string(arg0), std::to_string(arg1)});
-  EXPECT_EQ(runR.exitCode, expectedExit)
+  int actual = runR.exitCode;
+#ifdef _WIN32
+  // Windows preserves the full 32-bit process exit code; Unix masks to 0-255
+  // via WEXITSTATUS.  Mask to match since expected values assume 8-bit.
+  actual &= 0xFF;
+#endif
+  EXPECT_EQ(actual, expectedExit)
       << "shellcode " << name << ": run exit " << runR.exitCode << ", expected "
       << expectedExit << "\n" << runR.out;
 }

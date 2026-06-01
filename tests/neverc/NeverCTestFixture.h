@@ -70,9 +70,9 @@ protected:
   bool compileOnly(const std::string &name, const std::string &src,
                    const std::string &flags = "");
 
-  // ---- Shellcode patterns (macOS arm64) ----
+  // ---- Shellcode patterns (arm64 macOS, x86_64 Windows) ----
 
-  // Build + sign the shellcode loader. Returns loader path.
+  // Build the shellcode loader for the current platform. Returns loader path.
   fs::path buildShellcodeLoader();
 
   // Compile to shellcode .bin, load, check exit code.
