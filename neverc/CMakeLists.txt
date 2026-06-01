@@ -562,10 +562,21 @@ set(NEVERC_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tests")
 if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
   add_subdirectory("${NEVERC_TEST_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/tests")
 
+  # The suite compiles & links real programs with the freshly-built neverc,
+  # which finds its system headers/libraries from the bundled SDK staged under
+  # <build>/runtime. Those copy targets are ALL-targets, so a plain
+  # `--target check-neverc` would otherwise skip them and every compile/link
+  # test would fail (no <stdio.h>, no CRT). Depend on them explicitly so the
+  # suite is self-contained.
+  set(_neverc_check_runtime_deps)
+  if(CMAKE_HOST_WIN32)
+    list(APPEND _neverc_check_runtime_deps
+         neverc-runtime-shared-msvc neverc-runtime-x64-msvc)
+  endif()
   add_custom_target(check-neverc
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG>
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
-    DEPENDS neverc-tests
+    DEPENDS neverc-tests ${_neverc_check_runtime_deps}
     USES_TERMINAL
     COMMENT "Running NeverC test suite (GoogleTest + CTest)")
 endif()

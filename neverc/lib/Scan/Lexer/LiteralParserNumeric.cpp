@@ -111,8 +111,11 @@ const char *scanToSeparator(const char *Ptr, const char *End) {
   {
     constexpr uint64_t Broadcast = 0x0101010101010101ULL;
     constexpr uint64_t HiBitMask = 0x8080808080808080ULL;
+    // Carry-free per-byte zero detector (the classic (V-0x01..)&~V&0x80.. form
+    // is only a valid whole-word boolean; this form is correct per byte).
     auto hasZeroByte = [](uint64_t V) -> uint64_t {
-      return (V - 0x0101010101010101ULL) & ~V & 0x8080808080808080ULL;
+      return ~(((V & 0x7F7F7F7F7F7F7F7FULL) + 0x7F7F7F7F7F7F7F7FULL) | V) &
+             0x8080808080808080ULL;
     };
     while (Ptr + 16 <= End) {
       uint64_t W0, W1;

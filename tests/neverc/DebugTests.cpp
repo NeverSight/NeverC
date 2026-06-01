@@ -56,6 +56,10 @@ TEST_F(DebugTest, WindowsCOFFDWARF) {
                 "-c", src, "-o", obj.string()});
   ASSERT_EQ(r.exitCode, 0) << "windows-dwarf compile\n" << r.err;
 
+  if (exec("which", {"objdump"}).exitCode != 0) {
+    GTEST_SKIP() << "objdump not available";
+    return;
+  }
   auto sections = exec("objdump", {"-h", obj.string()});
   for (auto *sect : {".debug_info", ".debug_abbrev", ".debug_line",
                      ".debug_str"}) {
@@ -111,6 +115,10 @@ TEST_F(DebugTest, WindowsDefaultDebug) {
                 src, "-o", obj.string()});
   ASSERT_EQ(r.exitCode, 0);
 
+  if (exec("which", {"objdump"}).exitCode != 0) {
+    GTEST_SKIP() << "objdump not available";
+    return;
+  }
   auto sections = exec("objdump", {"-h", obj.string()});
   EXPECT_TRUE(sections.contains(".debug_info"))
       << "Windows -g should produce DWARF, not CodeView";

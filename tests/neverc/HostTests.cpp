@@ -28,11 +28,24 @@ TEST_F(HostTest, KernelPatterns) {
                      "-std=gnu11", 0, "");
 }
 TEST_F(HostTest, KernelAdvanced) {
+#ifdef _WIN32
+  GTEST_SKIP() << "test_kernel_advanced reproduces Linux-kernel LP64 idioms "
+                  "(_THIS_IP_/_RET_IP_/RELOC_HIDE store code/data addresses in "
+                  "unsigned long) that are invalid on the Windows LLP64 ABI "
+                  "where unsigned long is 32-bit; neverc compiles them "
+                  "correctly per LLP64.";
+#endif
   compileRunAndCheck("test_kernel_advanced",
                      (testDir() / "kernel/test_kernel_advanced.c").string(),
                      "-std=gnu11", 0, "test_kernel_advanced: ALL PASSED");
 }
 TEST_F(HostTest, KernelAdvanced2) {
+#ifdef _WIN32
+  GTEST_SKIP() << "test_kernel_advanced2 reproduces Linux-kernel LP64 idioms "
+                  "(IS_ERR / rbtree packing a pointer into unsigned long) that "
+                  "are invalid on the Windows LLP64 ABI where unsigned long is "
+                  "32-bit; neverc compiles them correctly per LLP64.";
+#endif
   compileRunAndCheck(
       "test_kernel_advanced2",
       (testDir() / "kernel/test_kernel_advanced2.c").string(),

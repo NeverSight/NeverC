@@ -108,7 +108,11 @@ static void test_sdiv(void) {
 static void test_arch_invariants(void) {
     CHECK(sizeof(void *) == 8, "ptr 64-bit");
     CHECK(sizeof(__SIZE_TYPE__) == 8, "size_t 64-bit");
+#if defined(_WIN32)
+    CHECK(sizeof(long) == 4, "long 32-bit on LLP64 (Windows)");
+#else
     CHECK(sizeof(long) == 8, "long 64-bit on LP64");
+#endif
     CHECK(sizeof(int) == 4, "int 32-bit");
     CHECK(sizeof(short) == 2, "short 16-bit");
 }

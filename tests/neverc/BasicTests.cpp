@@ -32,6 +32,15 @@ TEST_F(BasicTest, TestPreprocessor) {
                      "-std=c23", 0, "test_preprocessor: ALL PASSED");
 }
 
+// Regression: SWAR per-byte zero-detector borrow-propagation bug in the
+// no-SIMD lexer scanners (mis-tokenized "a  != b", "x_^y", "1./2").
+TEST_F(BasicTest, SwarTokenBoundaries) {
+  compileRunAndCheck("test_swar_token_boundaries",
+                     (testDir() / "test_swar_token_boundaries.c").string(),
+                     "-std=gnu11", 0,
+                     "test_swar_token_boundaries: ALL PASSED");
+}
+
 // NeverC builtin string tests
 static const char *kStrFlags = "-std=c23 -fbuiltin-string";
 static const char *kStrGFlags = "-std=c23 -fbuiltin-string -g";

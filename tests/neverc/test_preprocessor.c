@@ -32,7 +32,10 @@ static void test_variadic_macros(void) {
     if (n3 != 3) abort();
 }
 
-#if defined(__STDC__)
+/* MSVC-compatibility mode (the default for x86_64-pc-windows-msvc, like
+   clang-cl) does not define __STDC__ even in -std= modes; accept _MSC_VER
+   there. */
+#if defined(__STDC__) || defined(_MSC_VER)
   #define IS_STDC 1
 #else
   #define IS_STDC 0

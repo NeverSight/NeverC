@@ -390,8 +390,16 @@ const char *fastParseASCIIIdentifier(const char *CurPtr,
       uint64_t Upper = inRange(Word, 'A', 'Z');
       uint64_t Lower = inRange(Word, 'a', 'z');
       uint64_t Digit = inRange(Word, '0', '9');
+      // Carry-free per-byte zero detector. The classic (V-0x01..)&~V&0x80.. form
+      // is only valid as a whole-word boolean; used per byte it borrow-
+      // propagates a false positive into the byte after a zero byte, which here
+      // (a complement scan for the first non-identifier byte) would wrongly
+      // extend the identifier — e.g. '_'(0x5F) followed by '^'(0x5E) would make
+      // "x_^y" lex as one identifier. Adding 0x7F to each byte's low 7 bits
+      // never carries across a byte boundary.
       auto hasZeroByte = [](uint64_t V) -> uint64_t {
-        return (V - 0x0101010101010101ULL) & ~V & 0x8080808080808080ULL;
+        return ~(((V & 0x7F7F7F7F7F7F7F7FULL) + 0x7F7F7F7F7F7F7F7FULL) | V) &
+               0x8080808080808080ULL;
       };
       uint64_t Under = hasZeroByte(Word ^ (Broadcast * '_'));
       uint64_t IsIdent = Upper | Lower | Digit | Under;
@@ -538,8 +546,15 @@ const char *fastScanPPNumberBody(const char *CurPtr,
       uint64_t B = Word + Broadcast * (127 - Lo + 1);
       return (A ^ B) & HiBitMask;
     };
+    // Carry-free per-byte zero detector (see fastParseASCIIIdentifier). The
+    // classic (V-0x01..)&~V&0x80.. form borrow-propagates a false positive into
+    // the byte after a zero byte; in this complement scan (first non-pp-number
+    // byte) that would wrongly extend the number — e.g. '.'(0x2E) followed by
+    // '/'(0x2F) would make "1./2" lex as one pp-number. Adding 0x7F to each
+    // byte's low 7 bits never carries across a byte boundary.
     auto hasZeroByte = [](uint64_t V) -> uint64_t {
-      return (V - 0x0101010101010101ULL) & ~V & 0x8080808080808080ULL;
+      return ~(((V & 0x7F7F7F7F7F7F7F7FULL) + 0x7F7F7F7F7F7F7F7FULL) | V) &
+             0x8080808080808080ULL;
     };
     while (CurPtr + 16 <= BufferEnd) {
       uint64_t W0, W1;

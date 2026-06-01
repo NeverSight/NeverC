@@ -264,17 +264,24 @@ skipWhitespaceRun(const char *CurPtr, const char *BufferEnd) {
 #else
   {
     constexpr uint64_t Broadcast = 0x0101010101010101ULL;
+    constexpr uint64_t LoMask = 0x7F7F7F7F7F7F7F7FULL;
     constexpr uint64_t HiBitMask = 0x8080808080808080ULL;
-    auto hasZeroByte = [](uint64_t V) -> uint64_t {
-      return (V - Broadcast) & ~V & HiBitMask;
+    // Per-byte zero detector. The classic (V-0x01..)&~V&0x80.. test is only a
+    // valid whole-word "contains a zero byte?" boolean — used as a per-byte
+    // mask it borrow-propagates and falsely flags the byte *after* a zero byte
+    // (e.g. ' '(0x20) followed by '!'(0x21) misread the '!' as whitespace,
+    // dropping the '!' from "  !="). Adding 0x7F to each byte's low 7 bits
+    // never carries across a byte boundary, so this form is correct per byte.
+    auto zeroByteMask = [](uint64_t V) -> uint64_t {
+      return ~(((V & LoMask) + LoMask) | V) & HiBitMask;
     };
     while (CurPtr + 8 <= BufferEnd) {
       uint64_t Word;
       std::memcpy(&Word, CurPtr, 8);
-      uint64_t MatchSP  = hasZeroByte(Word ^ (Broadcast * ' '));
-      uint64_t MatchTab = hasZeroByte(Word ^ (Broadcast * '\t'));
-      uint64_t MatchFF  = hasZeroByte(Word ^ (Broadcast * '\f'));
-      uint64_t MatchVT  = hasZeroByte(Word ^ (Broadcast * '\v'));
+      uint64_t MatchSP  = zeroByteMask(Word ^ (Broadcast * ' '));
+      uint64_t MatchTab = zeroByteMask(Word ^ (Broadcast * '\t'));
+      uint64_t MatchFF  = zeroByteMask(Word ^ (Broadcast * '\f'));
+      uint64_t MatchVT  = zeroByteMask(Word ^ (Broadcast * '\v'));
       uint64_t AllWS = MatchSP | MatchTab | MatchFF | MatchVT;
       uint64_t NonWS = ~AllWS & HiBitMask;
       if (NonWS != 0)
@@ -347,8 +354,13 @@ scanToLineBreak(const char *CurPtr, const char *BufferEnd) {
   {
     constexpr uint64_t Broadcast = 0x0101010101010101ULL;
     constexpr uint64_t HiBitMask = 0x8080808080808080ULL;
+    // Correct per-byte zero detector (see skipWhitespaceRun): the classic
+    // (V-0x01..)&~V&0x80.. form is only valid as a whole-word boolean and
+    // borrow-propagates a false positive into the byte after a zero byte.
+    // Adding 0x7F to each byte's low 7 bits never carries across bytes.
     auto hasZeroByte = [](uint64_t V) -> uint64_t {
-      return (V - 0x0101010101010101ULL) & ~V & 0x8080808080808080ULL;
+      return ~(((V & 0x7F7F7F7F7F7F7F7FULL) + 0x7F7F7F7F7F7F7F7FULL) | V) &
+             0x8080808080808080ULL;
     };
     while (CurPtr + 16 <= BufferEnd) {
       uint64_t W0, W1;
@@ -442,8 +454,13 @@ scanBlockBody(const char *CurPtr, const char *BufferEnd) {
   {
     constexpr uint64_t Broadcast = 0x0101010101010101ULL;
     constexpr uint64_t HiBitMask = 0x8080808080808080ULL;
+    // Correct per-byte zero detector (see skipWhitespaceRun): the classic
+    // (V-0x01..)&~V&0x80.. form is only valid as a whole-word boolean and
+    // borrow-propagates a false positive into the byte after a zero byte.
+    // Adding 0x7F to each byte's low 7 bits never carries across bytes.
     auto hasZeroByte = [](uint64_t V) -> uint64_t {
-      return (V - 0x0101010101010101ULL) & ~V & 0x8080808080808080ULL;
+      return ~(((V & 0x7F7F7F7F7F7F7F7FULL) + 0x7F7F7F7F7F7F7F7FULL) | V) &
+             0x8080808080808080ULL;
     };
     while (CurPtr + 16 <= BufferEnd) {
       uint64_t W0, W1;
