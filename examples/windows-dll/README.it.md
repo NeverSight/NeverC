@@ -8,7 +8,7 @@ Una DLL Windows user-mode cross-compilata con NeverC.
 
 ```bash
 cd examples/windows-dll
-make
+neverc make
 ```
 
 ## Compilazione manuale

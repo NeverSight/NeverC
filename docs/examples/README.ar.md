@@ -43,7 +43,7 @@
 
 ```bash
 cd examples/<اسم-المثال>
-make
+neverc make
 ```
 
 تحديد مسار المترجم: `make NEVERC=/path/to/neverc`

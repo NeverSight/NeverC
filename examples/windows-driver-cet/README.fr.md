@@ -9,13 +9,13 @@ Un pilote noyau WDM minimal construit avec NeverC, avec le Shadow Stack CET
 
 ```bash
 cd examples/windows-driver-cet
-make
+neverc make
 ```
 
 Depuis une version autonome de NeverC :
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 Le résultat est `CetDriver.sys` (optimisé auto-LTO).

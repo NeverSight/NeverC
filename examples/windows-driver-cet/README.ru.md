@@ -10,13 +10,13 @@ Intel CET (Control-flow Enforcement Technology) Kernel Shadow Stack.
 
 ```bash
 cd examples/windows-driver-cet
-make
+neverc make
 ```
 
 Из автономной сборки NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 Результат — `CetDriver.sys` (оптимизирован auto-LTO).

@@ -9,13 +9,13 @@ NeverC로 빌드한 WDM 커널 드라이버로, **커널 모드에서 부동소�
 
 ```bash
 cd examples/windows-driver-float
-make
+neverc make
 ```
 
 독립 실행형 NeverC 릴리스에서:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 출력은 `FloatDriver.sys`(auto-LTO 최적화)입니다.

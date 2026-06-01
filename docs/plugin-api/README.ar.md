@@ -45,7 +45,7 @@ neverc --target=x86_64-pc-windows-msvc -shared -o MyPlugin.dll MyPlugin.c \
        -I/path/to/pluginsdk/include
 
 # أو باستخدام Make (يستخدم neverc افتراضيًا):
-make -C /path/to/pluginsdk/examples
+neverc make -C /path/to/pluginsdk/examples
 ```
 
 > **ملاحظة:** يُوصى بشدة باستخدام **neverc** لضمان اتساق ABI والدعم عبر المنصات.

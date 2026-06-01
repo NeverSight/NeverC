@@ -10,13 +10,13 @@ Compilación cruzada desde macOS / Linux.
 
 ```bash
 cd examples/windows-driver-cet
-make
+neverc make
 ```
 
 Desde una versión independiente de NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 La salida es `CetDriver.sys` (optimizado con auto-LTO).

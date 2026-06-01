@@ -10,13 +10,13 @@ NeverC bündelt ein Linux-Sysroot (Ubuntu 22.04, glibc 2.35) in `runtime/linux/`
 
 ```bash
 cd examples/linux-posix
-make
+neverc make
 ```
 
 AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 ## Manuelle Erstellung

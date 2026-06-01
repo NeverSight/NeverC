@@ -8,7 +8,7 @@
 
 ```bash
 cd examples/windows-exe
-make
+neverc make
 ```
 
 ## البناء اليدوي

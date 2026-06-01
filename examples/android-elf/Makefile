@@ -1,7 +1,14 @@
+# Android Native ELF — ARM64 binary for rooted devices
+# Usage: neverc make
+#        neverc make run    (build + push via adb + execute)
+
 NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = aarch64-linux-android
 OUTPUT  = android-elf
+
+SRCS    = main.c
+HEADERS = config.h
 
 FLAGS = \
 	--target=$(TARGET) \
@@ -13,8 +20,8 @@ FLAGS = \
 
 all: $(OUTPUT)
 
-$(OUTPUT): main.c
-	$(NEVERC) $(FLAGS) -o $@ $^
+$(OUTPUT): $(SRCS) $(HEADERS)
+	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 push: $(OUTPUT)
 	adb push $(OUTPUT) /data/local/tmp/

@@ -13,13 +13,13 @@ NeverC هو مترجم متكامل — استدعاء واحد يتولى ال�
 
 ```bash
 cd examples/windows-driver
-make
+neverc make
 ```
 
 من إصدار NeverC مستقل:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 الناتج هو `ExampleDriver.sys` (محسّن بـ auto-LTO).

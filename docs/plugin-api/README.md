@@ -45,7 +45,7 @@ neverc --target=x86_64-pc-windows-msvc -shared -o MyPlugin.dll MyPlugin.c \
        -I/path/to/pluginsdk/include
 
 # Or with Make (uses neverc by default):
-make -C /path/to/pluginsdk/examples
+neverc make -C /path/to/pluginsdk/examples
 ```
 
 > **Note:** While any C compiler can build plugins (the header is pure C with no dependencies), **neverc is strongly recommended** to ensure ABI consistency and cross-platform support. The shipped Makefile uses neverc by default.

@@ -9,13 +9,13 @@ floating-point / SIMD in kernel mode**. Cross-compiles from macOS / Linux.
 
 ```bash
 cd examples/windows-driver-float
-make
+neverc make
 ```
 
 From a standalone NeverC release:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 The output is `FloatDriver.sys` (auto-LTO optimized).

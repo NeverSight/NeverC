@@ -1,11 +1,15 @@
+# Windows Kernel Driver — minimal WDM driver cross-compiled from any host
+# Usage: neverc make
+
 NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = x86_64-pc-windows-msvc
 DRIVER  = ExampleDriver.sys
-SOURCES = driver.c
 
-# -g: emit DWARF debug info into PE; inspect with llvm-dwarfdump.
-#     For release builds, remove -g to reduce binary size.
+SRCS    = driver.c
+HEADERS = config.h
+
+# -g: emit DWARF debug info; remove for release builds
 FLAGS = \
 	--target=$(TARGET) \
 	-g \
@@ -24,8 +28,8 @@ FLAGS = \
 
 all: $(DRIVER)
 
-$(DRIVER): $(SOURCES)
-	$(NEVERC) $(FLAGS) -o $@ $^
+$(DRIVER): $(SRCS) $(HEADERS)
+	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 clean:
 	rm -f $(DRIVER)

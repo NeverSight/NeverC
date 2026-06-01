@@ -8,7 +8,7 @@ DLL Windows пользовательского режима, кросс-комп
 
 ```bash
 cd examples/windows-dll
-make
+neverc make
 ```
 
 ## Ручная сборка

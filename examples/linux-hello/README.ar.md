@@ -12,19 +12,19 @@
 
 ```bash
 cd examples/linux-hello
-make
+neverc make
 ```
 
 البناء لـ AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 باستخدام إصدار مستقل من NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 ## البناء اليدوي (بدون Make)

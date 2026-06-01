@@ -1,7 +1,13 @@
+# Windows Ring3 DLL — user-mode dynamic library
+# Usage: neverc make
+
 NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = x86_64-pc-windows-msvc
 OUTPUT  = example.dll
+
+SRCS    = dllmain.c
+HEADERS = config.h
 
 FLAGS = \
 	--target=$(TARGET) \
@@ -13,8 +19,8 @@ FLAGS = \
 
 all: $(OUTPUT)
 
-$(OUTPUT): dllmain.c
-	$(NEVERC) $(FLAGS) -o $@ $^
+$(OUTPUT): $(SRCS) $(HEADERS)
+	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 clean:
 	rm -f $(OUTPUT) $(OUTPUT:.dll=.lib)

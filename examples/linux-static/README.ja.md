@@ -10,13 +10,13 @@ NeverC は `runtime/linux/` に Linux sysroot（Ubuntu 22.04、glibc 2.35）を�
 
 ```bash
 cd examples/linux-static
-make
+neverc make
 ```
 
 AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 ## 手動ビルド

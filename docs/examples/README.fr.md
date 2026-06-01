@@ -41,7 +41,7 @@ Exemples compilables démontrant les capacités de compilation croisée de Never
 
 ```bash
 cd examples/<nom-exemple>
-make
+neverc make
 ```
 
 Spécifier le chemin du compilateur : `make NEVERC=/path/to/neverc`

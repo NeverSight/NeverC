@@ -13,13 +13,13 @@ NeverC — это универсальный компилятор: один вы
 
 ```bash
 cd examples/windows-driver
-make
+neverc make
 ```
 
 Из автономной сборки NeverC:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 Результат — `ExampleDriver.sys` (оптимизирован auto-LTO).

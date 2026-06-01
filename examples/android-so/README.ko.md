@@ -8,7 +8,7 @@ NeverC를 사용하여 Android용으로 크로스 컴파일한 ARM64 네이티�
 
 ```bash
 cd examples/android-so
-make
+neverc make
 ```
 
 ## 수동 빌드

@@ -13,13 +13,13 @@ NeverC はオールインワンコンパイラです——単一の呼び出し�
 
 ```bash
 cd examples/windows-driver
-make
+neverc make
 ```
 
 スタンドアロンの NeverC リリースから：
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 出力は `ExampleDriver.sys`（auto-LTO 最適化済み）です。

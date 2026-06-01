@@ -1,7 +1,13 @@
+# Windows Ring3 EXE — user-mode console application
+# Usage: neverc make
+
 NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = x86_64-pc-windows-msvc
 OUTPUT  = example.exe
+
+SRCS    = main.c
+HEADERS = config.h
 
 FLAGS = \
 	--target=$(TARGET) \
@@ -11,8 +17,8 @@ FLAGS = \
 
 all: $(OUTPUT)
 
-$(OUTPUT): main.c
-	$(NEVERC) $(FLAGS) -o $@ $^
+$(OUTPUT): $(SRCS) $(HEADERS)
+	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 clean:
 	rm -f $(OUTPUT) $(OUTPUT:.exe=.lib)

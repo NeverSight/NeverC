@@ -10,13 +10,13 @@
 
 ```bash
 cd examples/linux-math
-make
+neverc make
 ```
 
 AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 ## البناء اليدوي

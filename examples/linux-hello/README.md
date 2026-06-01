@@ -12,19 +12,19 @@ From the repo (default target: `x86_64-linux-gnu`):
 
 ```bash
 cd examples/linux-hello
-make
+neverc make
 ```
 
 Build for AArch64:
 
 ```bash
-make TARGET=aarch64-linux-gnu
+neverc make TARGET=aarch64-linux-gnu
 ```
 
 From a standalone NeverC release:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 ## Manual build (without Make)

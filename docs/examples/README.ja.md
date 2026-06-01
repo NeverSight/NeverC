@@ -41,7 +41,7 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 
 ```bash
 cd examples/<サンプル名>
-make
+neverc make
 ```
 
 コンパイラパス指定：`make NEVERC=/path/to/neverc`

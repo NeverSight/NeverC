@@ -1,7 +1,13 @@
+# Android Shared Library — ARM64 .so for rooted devices
+# Usage: neverc make
+
 NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = aarch64-linux-android
 OUTPUT  = libneverc.so
+
+SRCS    = lib.c
+HEADERS = config.h
 
 FLAGS = \
 	--target=$(TARGET) \
@@ -12,8 +18,8 @@ FLAGS = \
 
 all: $(OUTPUT)
 
-$(OUTPUT): lib.c
-	$(NEVERC) $(FLAGS) -o $@ $^
+$(OUTPUT): $(SRCS) $(HEADERS)
+	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 push: $(OUTPUT)
 	adb push $(OUTPUT) /data/local/tmp/

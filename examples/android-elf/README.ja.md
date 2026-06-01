@@ -12,13 +12,13 @@ NeverC は `runtime/android/` に Android sysroot（NDK r26c, API 21+）を内�
 
 ```bash
 cd examples/android-elf
-make
+neverc make
 ```
 
 スタンドアロンの NeverC リリースを使用：
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 ## 手動ビルド（Make を使わない場合）
@@ -32,7 +32,7 @@ neverc --target=aarch64-linux-android -Wall -fPIE -lm -ldl -llog -o android-elf 
 adb 経由でデバイスにプッシュして実行：
 
 ```bash
-make run
+neverc make run
 ```
 
 または手動で：

@@ -1,14 +1,17 @@
+# Windows Kernel Driver + CET Shadow Stack
+# Usage: neverc make
+#
+# -fcf-protection=return: CET Shadow Stack compatible code (KCET)
+# --cetcompat: mark PE as CET Shadow Stack compatible
+
 NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = x86_64-pc-windows-msvc
 DRIVER  = CetDriver.sys
-SOURCES = driver.c
 
-# -fcf-protection=return: generate CET Shadow Stack compatible code (KCET).
-#     Windows kernel uses Shadow Stack only (no IBT; CFG covers forward-edge).
-# --cetcompat: mark PE as CET Shadow Stack compatible
-#     (IMAGE_DLL_CHARACTERISTICS_EX_CET_COMPAT in debug directory).
-# -g: emit DWARF debug info; remove for release builds.
+SRCS    = driver.c
+HEADERS = config.h
+
 FLAGS = \
 	--target=$(TARGET) \
 	-g \
@@ -29,8 +32,8 @@ FLAGS = \
 
 all: $(DRIVER)
 
-$(DRIVER): $(SOURCES)
-	$(NEVERC) $(FLAGS) -o $@ $^
+$(DRIVER): $(SRCS) $(HEADERS)
+	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 clean:
 	rm -f $(DRIVER)

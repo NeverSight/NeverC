@@ -45,28 +45,28 @@ Every example follows the same pattern:
 
 ```bash
 cd examples/<example-name>
-make
+neverc make
 ```
 
 Override the compiler path if needed:
 
 ```bash
-make NEVERC=/path/to/neverc
+neverc make NEVERC=/path/to/neverc
 ```
 
 Linux examples support architecture selection:
 
 ```bash
-make TARGET=aarch64-linux-gnu   # Build for ARM64
-make TARGET=x86_64-linux-gnu    # Build for x86_64 (default)
+neverc make TARGET=aarch64-linux-gnu   # Build for ARM64
+neverc make TARGET=x86_64-linux-gnu    # Build for x86_64 (default)
 ```
 
 Android examples target ARM64 by default:
 
 ```bash
 cd examples/android-elf
-make            # Build
-make run        # Build + push to device + run via adb
+neverc make            # Build
+neverc make run        # Build + push to device + run via adb
 ```
 
 ---
