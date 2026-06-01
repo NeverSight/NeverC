@@ -273,6 +273,30 @@ protected:
                     MacroBuilder &Builder) const override;
 };
 
+// AArch64 Windows target (LLP64, matches MSVC vcruntime and UCRT)
+class LLVM_LIBRARY_VISIBILITY WindowsAArch64TargetInfo
+    : public WindowsTargetInfo<AArch64leTargetInfo> {
+public:
+  WindowsAArch64TargetInfo(const llvm::Triple &Triple,
+                           const TargetOptions &Opts);
+
+  BuiltinVaListKind getBuiltinVaListKind() const override;
+};
+
+// AArch64 Windows Visual Studio target
+class LLVM_LIBRARY_VISIBILITY MicrosoftAArch64TargetInfo
+    : public WindowsAArch64TargetInfo {
+public:
+  MicrosoftAArch64TargetInfo(const llvm::Triple &Triple,
+                             const TargetOptions &Opts);
+
+  void getTargetDefines(const LangOptions &Opts,
+                        MacroBuilder &Builder) const override;
+
+  TargetInfo::CallingConvKind
+  getCallingConvKind(bool ABICompat4) const override;
+};
+
 } // namespace targets
 } // namespace neverc
 

@@ -1020,8 +1020,7 @@ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
                                                                     Opts);
     if (os == llvm::Triple::Win32) {
       if (Triple.getEnvironment() == llvm::Triple::MSVC)
-        return std::make_unique<WindowsTargetInfo<AArch64leTargetInfo>>(Triple,
-                                                                        Opts);
+        return std::make_unique<MicrosoftAArch64TargetInfo>(Triple, Opts);
       return nullptr;
     }
     return nullptr;
