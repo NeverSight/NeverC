@@ -2,8 +2,9 @@
 /*
  * Shellcode loader for Linux / Android (arm64 and x86_64).
  *
- * Reads a flat `.bin` shellcode file, maps it RWX via mmap, flushes
- * the i-cache on arm64 (x86 has coherent caches), and calls the entry.
+ * Reads a flat `.bin` shellcode file, maps it with W^X discipline
+ * (RW for writing, then mprotect to RX before calling), and flushes
+ * the i-cache on arm64 (x86 has coherent caches).
  *
  * Two calling conventions are exposed based on argc:
  *
@@ -64,7 +65,8 @@ int main(int argc, char **argv) {
     /* Round up to a page so mmap gets a whole-page allocation. */
     long psize = sysconf(_SC_PAGESIZE);
     size_t alloc_sz = ((sz + (size_t)psize - 1) / (size_t)psize) * (size_t)psize;
-    void *mem = mmap(NULL, alloc_sz, PROT_READ | PROT_WRITE | PROT_EXEC,
+    /* W^X: map RW, copy payload, then flip to RX. */
+    void *mem = mmap(NULL, alloc_sz, PROT_READ | PROT_WRITE,
                      MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (mem == MAP_FAILED) { perror("mmap"); close(fd); return 1; }
 
@@ -76,6 +78,9 @@ int main(int argc, char **argv) {
     }
     close(fd);
 
+    if (mprotect(mem, alloc_sz, PROT_READ | PROT_EXEC) < 0) {
+        perror("mprotect RX"); munmap(mem, alloc_sz); return 1;
+    }
     icache_flush(mem, sz);
 
     int ret;

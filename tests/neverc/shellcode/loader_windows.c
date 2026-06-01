@@ -2,10 +2,9 @@
 /*
  * Shellcode loader for Windows (x86_64 and arm64).
  *
- * Maps the shellcode RWX via VirtualAlloc, invalidates the i-cache on
- * arm64 (x86_64 is coherent), and calls the entry.  x86 has a unified
- * cache so no FlushInstructionCache is needed there, but we call it
- * unconditionally — cheap and future-proof.
+ * Maps the shellcode with proper W^X discipline: allocate RW, copy
+ * the payload, then flip to RX before calling.  This avoids the RWX
+ * artifact that anti-cheat / EDR memory scanners flag.
  *
  * Two calling conventions are exposed based on argc:
  *
@@ -46,12 +45,12 @@ int main(int argc, char **argv) {
     }
     size_t bytes = (size_t)sz.QuadPart;
 
-    /* VirtualAlloc with PAGE_EXECUTE_READWRITE is the classic
-     * in-process shellcode mapping.  We could split RW + RX for
-     * DEP-friendliness but the loader is a test harness, not a
-     * production dropper. */
+    /* W^X: allocate RW, copy payload, then flip to RX.  The shellcode
+     * .text blob is pure code after Data2TextPass — no runtime writes
+     * to the code region are needed.  Data lives on the thread stack
+     * (stackified globals) and in a separate RW arena (mmap). */
     void *mem = VirtualAlloc(NULL, bytes, MEM_COMMIT | MEM_RESERVE,
-                             PAGE_EXECUTE_READWRITE);
+                             PAGE_READWRITE);
     if (!mem) {
         fprintf(stderr, "VirtualAlloc failed: %lu\n",
                 (unsigned long)GetLastError());
@@ -69,6 +68,14 @@ int main(int argc, char **argv) {
     CloseHandle(h);
     FlushInstructionCache(GetCurrentProcess(), mem, bytes);
 
+    DWORD old_prot;
+    if (!VirtualProtect(mem, bytes, PAGE_EXECUTE_READ, &old_prot)) {
+        fprintf(stderr, "VirtualProtect RX failed: %lu\n",
+                (unsigned long)GetLastError());
+        VirtualFree(mem, 0, MEM_RELEASE);
+        return 1;
+    }
+
     int ret;
     if (argc >= 4) {
         int a0 = atoi(argv[2]);
@@ -80,6 +87,7 @@ int main(int argc, char **argv) {
         fn();
         ret = 0;
     }
+    VirtualProtect(mem, bytes, PAGE_READWRITE, &old_prot);
     VirtualFree(mem, 0, MEM_RELEASE);
     return ret;
 }
