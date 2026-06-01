@@ -164,7 +164,11 @@ set(LLVM_APPEND_VC_REV OFF CACHE BOOL "")
 set(NEVERC_DETECT_HOST_LINK_VERSION OFF CACHE BOOL "")
 set(NEVERC_ENABLE_ORDER_FILE OFF CACHE BOOL "")
 set(NEVERC_ENABLE_MIMALLOC ON CACHE BOOL "")
-set(NEVERC_STRIP_BINARY ON CACHE BOOL "")
+if(CMAKE_HOST_WIN32)
+  set(NEVERC_STRIP_BINARY OFF CACHE BOOL "")
+else()
+  set(NEVERC_STRIP_BINARY ON CACHE BOOL "")
+endif()
 
 # Full LTO for the final neverc binary: interprocedural optimisation.
 # Defaults OFF for fast incremental rebuilds during local development.
