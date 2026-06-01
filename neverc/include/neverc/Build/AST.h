@@ -30,6 +30,7 @@ enum class StmtKind {
   Include,
   DefineBlock,
   ExportDirective,
+  UndefineDirective,
   Expression,
 };
 
@@ -111,6 +112,16 @@ struct ExportDirective : Statement {
   ExportDirective() : Statement(StmtKind::ExportDirective) {}
   static bool classof(const Statement *S) {
     return S->Kind == StmtKind::ExportDirective;
+  }
+};
+
+struct UndefineDirective : Statement {
+  std::string Name;
+  bool Override = false;
+
+  UndefineDirective() : Statement(StmtKind::UndefineDirective) {}
+  static bool classof(const Statement *S) {
+    return S->Kind == StmtKind::UndefineDirective;
   }
 };
 

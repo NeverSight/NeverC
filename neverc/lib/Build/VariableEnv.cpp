@@ -52,6 +52,8 @@ void VariableEnv::setExport(const std::string &Name, bool Export) {
     It->second.Exported = Export;
 }
 
+void VariableEnv::undefine(const std::string &Name) { Vars.erase(Name); }
+
 std::string VariableEnv::get(const std::string &Name) {
   auto AIt = AutoVars.find(Name);
   if (AIt != AutoVars.end())

@@ -286,6 +286,19 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
       }
       break;
     }
+    case StmtKind::UndefineDirective: {
+      auto *U = static_cast<UndefineDirective *>(S.get());
+      std::string Name = Env.expand(U->Name);
+      if (U->Override) {
+        Env.undefine(Name);
+      } else {
+        auto It = Env.vars().find(Name);
+        if (It == Env.vars().end() ||
+            It->second.Orig != VariableEnv::Origin::CommandLine)
+          Env.undefine(Name);
+      }
+      break;
+    }
     case StmtKind::Expression: {
       auto *E = static_cast<Expression *>(S.get());
       Env.expand(E->Text);
@@ -372,6 +385,8 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
   Env.set("CURDIR", platform::getCwd(), AssignMode::Simple,
            VariableEnv::Origin::Default);
   Env.set("MAKE", std::string(Argv0) + " make", AssignMode::Simple,
+           VariableEnv::Origin::Default);
+  Env.set("MAKE_VERSION", "4.3", AssignMode::Simple,
            VariableEnv::Origin::Default);
 
   {

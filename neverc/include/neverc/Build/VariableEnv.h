@@ -37,6 +37,7 @@ public:
   void append(const std::string &Name, const std::string &Value);
   void conditionalSet(const std::string &Name, const std::string &Value);
   void setExport(const std::string &Name, bool Export = true);
+  void undefine(const std::string &Name);
 
   std::string get(const std::string &Name);
   std::string expand(const std::string &Expr);

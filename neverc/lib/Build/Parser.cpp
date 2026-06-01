@@ -164,6 +164,14 @@ std::unique_ptr<Statement> Parser::parseLine(size_t &Idx) {
         if (D) D->Override = true;
         return D;
       }
+      if (RestFirst == "undefine") {
+        std::string Name = trim(Rest.substr(8));
+        auto U = std::make_unique<UndefineDirective>();
+        U->Name = Name;
+        U->Override = true;
+        ++Idx;
+        return U;
+      }
       auto A = parseAssignment(Rest, ML.LineNumber);
       if (A) {
         A->Override = true;
@@ -197,6 +205,14 @@ std::unique_ptr<Statement> Parser::parseLine(size_t &Idx) {
         E->IsUnexport = true;
       ++Idx;
       return E;
+    }
+
+    if (First == "undefine") {
+      std::string Name = trim(Word.substr(8));
+      auto U = std::make_unique<UndefineDirective>();
+      U->Name = Name;
+      ++Idx;
+      return U;
     }
 
     if (First == "ifeq" || First == "ifneq" || First == "ifdef" ||

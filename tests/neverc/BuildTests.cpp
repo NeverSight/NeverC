@@ -9556,3 +9556,1448 @@ TEST_F(BuildTest, KernelComplexSubstRef) {
   EXPECT_TRUE(R.contains("lib/c.c"))
       << "lib/c.c should not match src/%.c pattern: " << R.out;
 }
+
+// ============================================================================
+// undefine directive
+// ============================================================================
+
+TEST_F(BuildTest, UndefineBasic) {
+  writeMakefile(
+      "FOO := hello\n"
+      "undefine FOO\n"
+      "all:\n"
+      "\t@echo val=[$(FOO)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("val=[]")) << R.out;
+}
+
+TEST_F(BuildTest, UndefineIfdef) {
+  writeMakefile(
+      "X := something\n"
+      "undefine X\n"
+      "ifdef X\n"
+      "  RESULT := defined\n"
+      "else\n"
+      "  RESULT := undefined\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo $(RESULT)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("undefined")) << R.out;
+}
+
+TEST_F(BuildTest, UndefineOverride) {
+  writeMakefile(
+      "override undefine FOO\n"
+      "all:\n"
+      "\t@echo val=[$(FOO)]\n"
+      ".PHONY: all\n");
+  auto R = runMake({"FOO=cmdval"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("val=[]")) << R.out;
+}
+
+TEST_F(BuildTest, UndefineNoOverrideCmdLine) {
+  writeMakefile(
+      "undefine FOO\n"
+      "all:\n"
+      "\t@echo val=$(FOO)\n"
+      ".PHONY: all\n");
+  auto R = runMake({"FOO=cmdval"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("val=cmdval")) << R.out;
+}
+
+TEST_F(BuildTest, UndefineRedefine) {
+  writeMakefile(
+      "X := first\n"
+      "undefine X\n"
+      "X := second\n"
+      "all:\n"
+      "\t@echo $(X)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("second")) << R.out;
+}
+
+// ============================================================================
+// MAKE_VERSION special variable
+// ============================================================================
+
+TEST_F(BuildTest, MakeVersionDefined) {
+  writeMakefile(
+      "all:\n"
+      "\t@echo ver=$(MAKE_VERSION)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("ver=4.3")) << R.out;
+}
+
+TEST_F(BuildTest, MakeVersionFilter) {
+  writeMakefile(
+      "ifneq ($(filter 4.%,$(MAKE_VERSION)),)\n"
+      "  MODERN := yes\n"
+      "else\n"
+      "  MODERN := no\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo modern=$(MODERN)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("modern=yes")) << R.out;
+}
+
+// ============================================================================
+// else ifdef / else ifndef chains
+// ============================================================================
+
+TEST_F(BuildTest, ElseIfdef) {
+  writeMakefile(
+      "B := val_b\n"
+      "ifdef A\n"
+      "  R := from_a\n"
+      "else ifdef B\n"
+      "  R := from_b\n"
+      "else\n"
+      "  R := fallback\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo $(R)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("from_b")) << R.out;
+}
+
+TEST_F(BuildTest, ElseIfndef) {
+  writeMakefile(
+      "A := exists\n"
+      "ifdef A\n"
+      "  R := from_a\n"
+      "else ifndef B\n"
+      "  R := b_not_defined\n"
+      "else\n"
+      "  R := fallback\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo $(R)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("from_a")) << R.out;
+}
+
+TEST_F(BuildTest, ElseIfdefChain3) {
+  writeMakefile(
+      "C := val_c\n"
+      "ifdef A\n"
+      "  R := from_a\n"
+      "else ifdef B\n"
+      "  R := from_b\n"
+      "else ifdef C\n"
+      "  R := from_c\n"
+      "else\n"
+      "  R := fallback\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo $(R)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("from_c")) << R.out;
+}
+
+TEST_F(BuildTest, ElseIfndefFallthrough) {
+  writeMakefile(
+      "A := 1\n"
+      "B := 2\n"
+      "ifndef A\n"
+      "  R := no_a\n"
+      "else ifndef B\n"
+      "  R := no_b\n"
+      "else\n"
+      "  R := both_exist\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo $(R)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("both_exist")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: ARCH selection with else ifeq chain
+// ============================================================================
+
+TEST_F(BuildTest, KernelArchSelectionChain) {
+  writeMakefile(
+      "SRCARCH := arm64\n"
+      "\n"
+      "ifeq ($(SRCARCH),x86)\n"
+      "  ARCH_CFLAGS := -m32\n"
+      "else ifeq ($(SRCARCH),x86_64)\n"
+      "  ARCH_CFLAGS := -m64\n"
+      "else ifeq ($(SRCARCH),arm)\n"
+      "  ARCH_CFLAGS := -march=armv7-a\n"
+      "else ifeq ($(SRCARCH),arm64)\n"
+      "  ARCH_CFLAGS := -march=armv8-a\n"
+      "else\n"
+      "  ARCH_CFLAGS :=\n"
+      "endif\n"
+      "\n"
+      "all:\n"
+      "\t@echo flags=$(ARCH_CFLAGS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("flags=-march=armv8-a")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: Kbuild verbose/quiet with define+call
+// ============================================================================
+
+TEST_F(BuildTest, KernelKbuildVerboseQuiet) {
+  writeMakefile(
+      "V ?= 0\n"
+      "ifeq ($(V),1)\n"
+      "  quiet :=\n"
+      "  Q :=\n"
+      "else\n"
+      "  quiet := quiet_\n"
+      "  Q := @\n"
+      "endif\n"
+      "\n"
+      "quiet_cmd_cc_o = CC      $@\n"
+      "cmd_cc_o = gcc -c -o $@ $<\n"
+      "\n"
+      "define cmd\n"
+      "$(if $($(quiet)cmd_$(1)),$($(quiet)cmd_$(1)),$(cmd_$(1)))\n"
+      "endef\n"
+      "\n"
+      "all:\n"
+      "\t@echo $(call cmd,cc_o)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("CC")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: CONFIG_* conditional compilation
+// ============================================================================
+
+TEST_F(BuildTest, KernelConfigConditionals) {
+  writeMakefile(
+      "CONFIG_SMP := y\n"
+      "CONFIG_MODULES := y\n"
+      "\n"
+      "obj-y := main.o\n"
+      "obj-$(CONFIG_SMP) += smp.o\n"
+      "obj-$(CONFIG_MODULES) += module.o\n"
+      "obj-$(CONFIG_DEBUG) += debug.o\n"
+      "\n"
+      "all:\n"
+      "\t@echo objs=$(obj-y)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("main.o")) << R.out;
+  EXPECT_TRUE(R.contains("smp.o")) << R.out;
+  EXPECT_TRUE(R.contains("module.o")) << R.out;
+  EXPECT_FALSE(R.contains("debug.o")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: version extraction with shell+subst
+// ============================================================================
+
+TEST_F(BuildTest, KernelVersionExtract) {
+  writeMakefile(
+      "VERSION := 5\n"
+      "PATCHLEVEL := 10\n"
+      "SUBLEVEL := 0\n"
+      "EXTRAVERSION :=\n"
+      "KERNELRELEASE := $(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)\n"
+      "KERNELVERSION := $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if "
+      "$(SUBLEVEL),.$(SUBLEVEL)))\n"
+      "all:\n"
+      "\t@echo rel=$(KERNELRELEASE) ver=$(KERNELVERSION)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("rel=5.10.0")) << R.out;
+  EXPECT_TRUE(R.contains("ver=5.10.0")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: FORCE target chain with dependency
+// ============================================================================
+
+TEST_F(BuildTest, KernelFORCETargetChainWithDep) {
+  writeFile(tmp() / "vmlinux.o", "");
+  writeMakefile(
+      ".PHONY: all FORCE\n"
+      "all: vmlinux\n"
+      "\t@echo done\n"
+      "\n"
+      "vmlinux: vmlinux.o FORCE\n"
+      "\t@echo LD vmlinux\n"
+      "\n"
+      "FORCE:\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("LD vmlinux")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: cc-option pattern with shell
+// ============================================================================
+
+TEST_F(BuildTest, KernelCCOptionPattern) {
+  writeMakefile(
+      "define try-run\n"
+      "$(shell set -e; if $(1) 2>/dev/null; then echo $(2); else echo $(3); "
+      "fi)\n"
+      "endef\n"
+      "\n"
+      "cc-option = $(call try-run,echo | $(CC) $(1) -x c - -o /dev/null "
+      "2>/dev/null,$(1),$(2))\n"
+      "\n"
+      "CC := cc\n"
+      "CFLAGS := -Wall\n"
+      "all:\n"
+      "\t@echo flags=$(CFLAGS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("flags=-Wall")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: subdir Makefile with obj-y aggregation
+// ============================================================================
+
+TEST_F(BuildTest, KernelSubdirObjY) {
+  writeMakefile(
+      "obj-y :=\n"
+      "obj-y += kernel/\n"
+      "obj-y += drivers/\n"
+      "\n"
+      "core-y := $(patsubst %/,%/built-in.a,$(obj-y))\n"
+      "all:\n"
+      "\t@echo core=$(core-y)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("kernel/built-in.a")) << R.out;
+  EXPECT_TRUE(R.contains("drivers/built-in.a")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: KBUILD_MODULES detection
+// ============================================================================
+
+TEST_F(BuildTest, KernelKBUILDModulesDetect) {
+  writeMakefile(
+      "MAKECMDGOALS := modules\n"
+      "\n"
+      "ifneq ($(filter modules,$(MAKECMDGOALS)),)\n"
+      "  KBUILD_MODULES := 1\n"
+      "endif\n"
+      "\n"
+      "ifdef KBUILD_MODULES\n"
+      "  MODULE_FLAG := -DMODULE\n"
+      "else\n"
+      "  MODULE_FLAG :=\n"
+      "endif\n"
+      "\n"
+      "all:\n"
+      "\t@echo mflag=$(MODULE_FLAG)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("mflag=-DMODULE")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: foreach+eval+call Kbuild module template
+// ============================================================================
+
+TEST_F(BuildTest, KernelForeachEvalCallTemplate) {
+  writeFile(tmp() / "a.c", "");
+  writeFile(tmp() / "b.c", "");
+  writeFile(tmp() / "c.c", "");
+  writeMakefile(
+      ".PHONY: all\n"
+      "all: mod_a.ko mod_b.ko\n"
+      "\t@echo done\n"
+      "\n"
+      "modules := mod_a mod_b\n"
+      "mod_a-objs := a.o b.o\n"
+      "mod_b-objs := c.o\n"
+      "\n"
+      "define build_module\n"
+      "$(1).ko: $($(1)-objs)\n"
+      "\t@echo LD $(1).ko from $($(1)-objs)\n"
+      "endef\n"
+      "\n"
+      "$(foreach m,$(modules),$(eval $(call build_module,$(m))))\n"
+      "\n"
+      "%.o: %.c\n"
+      "\t@echo CC $<\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("LD mod_a.ko")) << R.out;
+  EXPECT_TRUE(R.contains("LD mod_b.ko")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: .d dependency include with header tracking
+// ============================================================================
+
+TEST_F(BuildTest, KernelDepFileIncludeHeaderTracking) {
+  writeFile(tmp() / "foo.c", "");
+  writeFile(tmp() / "foo.h", "");
+  writeFile(tmp() / ".foo.o.d", "foo.o: foo.c foo.h\n");
+  writeMakefile(
+      "-include .*.d\n"
+      "%.o: %.c\n"
+      "\t@echo CC $< deps=$^\n"
+      ".PHONY: all\n"
+      "all: foo.o\n"
+      "\t@echo done\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("CC foo.c")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: complex export+override interaction
+// ============================================================================
+
+TEST_F(BuildTest, KernelExportOverride) {
+  writeMakefile(
+      "ARCH := x86_64\n"
+      "override SHELL := /bin/bash\n"
+      "export ARCH\n"
+      "\n"
+      "all:\n"
+      "\t@echo arch=$(ARCH)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("arch=x86_64")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: MAKEFLAGS += -rR
+// ============================================================================
+
+TEST_F(BuildTest, KernelMakeFlagsAppend) {
+  writeMakefile(
+      "MAKEFLAGS += -rR\n"
+      "all:\n"
+      "\t@echo flags=$(MAKEFLAGS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("-rR")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: multi-level variable indirection
+// ============================================================================
+
+TEST_F(BuildTest, KernelMultiLevelVarIndirection) {
+  writeMakefile(
+      "ARCH := arm64\n"
+      "arm64_CFLAGS := -march=armv8-a\n"
+      "x86_CFLAGS := -m64\n"
+      "CFLAGS := $($(ARCH)_CFLAGS)\n"
+      "all:\n"
+      "\t@echo cflags=$(CFLAGS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("cflags=-march=armv8-a")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: undefine in Kbuild context
+// ============================================================================
+
+TEST_F(BuildTest, KernelUndefineInKbuild) {
+  writeMakefile(
+      "KBUILD_CFLAGS := -O2\n"
+      "KBUILD_CFLAGS += -Wall\n"
+      "\n"
+      "ifdef CONFIG_DEBUG\n"
+      "  KBUILD_CFLAGS += -g\n"
+      "endif\n"
+      "\n"
+      "undefine CONFIG_DEBUG\n"
+      "ifndef CONFIG_DEBUG\n"
+      "  KBUILD_CFLAGS += -DNDEBUG\n"
+      "endif\n"
+      "\n"
+      "all:\n"
+      "\t@echo $(KBUILD_CFLAGS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("-O2")) << R.out;
+  EXPECT_TRUE(R.contains("-Wall")) << R.out;
+  EXPECT_TRUE(R.contains("-DNDEBUG")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: complex if/filter/patsubst pipeline
+// ============================================================================
+
+TEST_F(BuildTest, KernelComplexFilterPipeline) {
+  writeMakefile(
+      "SRCS := main.c util.c debug.c test.c\n"
+      "EXCLUDE := test.c debug.c\n"
+      "FILTERED := $(filter-out $(EXCLUDE),$(SRCS))\n"
+      "OBJS := $(patsubst %.c,%.o,$(FILTERED))\n"
+      "all:\n"
+      "\t@echo objs=$(OBJS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("main.o")) << R.out;
+  EXPECT_TRUE(R.contains("util.o")) << R.out;
+  EXPECT_FALSE(R.contains("test.o")) << R.out;
+  EXPECT_FALSE(R.contains("debug.o")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: obj-y with subdir and sort
+// ============================================================================
+
+TEST_F(BuildTest, KernelObjYSortDedup) {
+  writeMakefile(
+      "obj-y += net.o\n"
+      "obj-y += fs.o\n"
+      "obj-y += net.o\n"
+      "obj-y += mm.o\n"
+      "SORTED := $(sort $(obj-y))\n"
+      "all:\n"
+      "\t@echo sorted=$(SORTED)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("sorted=fs.o mm.o net.o")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: full mini-kernel simulation
+// ============================================================================
+
+TEST_F(BuildTest, KernelFullMiniSimulation) {
+  std::filesystem::create_directories(tmp() / "init");
+  std::filesystem::create_directories(tmp() / "kernel");
+  std::filesystem::create_directories(tmp() / "mm");
+  writeFile(tmp() / "init/main.c", "");
+  writeFile(tmp() / "kernel/sched.c", "");
+  writeFile(tmp() / "mm/page.c", "");
+  writeMakefile(
+      "VERSION := 5\n"
+      "PATCHLEVEL := 10\n"
+      "SUBLEVEL := 42\n"
+      "EXTRAVERSION :=\n"
+      "\n"
+      "ARCH ?= arm64\n"
+      "CROSS_COMPILE ?=\n"
+      "CC := $(CROSS_COMPILE)gcc\n"
+      "LD := $(CROSS_COMPILE)ld\n"
+      "\n"
+      "KERNELRELEASE := $(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)\n"
+      "\n"
+      "CFLAGS := -O2 -Wall\n"
+      "ifeq ($(ARCH),arm64)\n"
+      "  CFLAGS += -march=armv8-a\n"
+      "else ifeq ($(ARCH),x86_64)\n"
+      "  CFLAGS += -m64\n"
+      "endif\n"
+      "\n"
+      "init-y := init/main.o\n"
+      "core-y := kernel/sched.o\n"
+      "mm-y   := mm/page.o\n"
+      "\n"
+      "vmlinux-deps := $(init-y) $(core-y) $(mm-y)\n"
+      "\n"
+      ".PHONY: all vmlinux FORCE\n"
+      "all: vmlinux\n"
+      "\t@echo Build complete: $(KERNELRELEASE)\n"
+      "\n"
+      "define rule_cc_o\n"
+      "$(1): $(basename $(1)).c\n"
+      "\t@echo CC $(1) [$(CFLAGS)]\n"
+      "endef\n"
+      "\n"
+      "$(foreach o,$(vmlinux-deps),$(eval $(call rule_cc_o,$(o))))\n"
+      "\n"
+      "FORCE:\n"
+      "\n"
+      "vmlinux: $(vmlinux-deps) FORCE\n"
+      "\t@echo LD vmlinux $(KERNELRELEASE)\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("CC init/main.o")) << R.out;
+  EXPECT_TRUE(R.contains("CC kernel/sched.o")) << R.out;
+  EXPECT_TRUE(R.contains("CC mm/page.o")) << R.out;
+  EXPECT_TRUE(R.contains("LD vmlinux 5.10.42")) << R.out;
+  EXPECT_TRUE(R.contains("-march=armv8-a")) << R.out;
+}
+
+// ============================================================================
+// Robustness: deep nested foreach+call+eval
+// ============================================================================
+
+TEST_F(BuildTest, RobustDeepForeachCallEval) {
+  writeFile(tmp() / "a1.c", "");
+  writeFile(tmp() / "a2.c", "");
+  writeFile(tmp() / "b1.c", "");
+  writeFile(tmp() / "b2.c", "");
+  writeMakefile(
+      ".PHONY: all\n"
+      "all: a.ko b.ko\n"
+      "\t@echo done\n"
+      "\n"
+      "MODULES := a b\n"
+      "a_SRCS := a1 a2\n"
+      "b_SRCS := b1 b2\n"
+      "\n"
+      "define src_to_obj\n"
+      "$(1).o: $(1).c\n"
+      "\t@echo CC $(1)\n"
+      "endef\n"
+      "\n"
+      "define module_template\n"
+      "$(foreach s,$($(1)_SRCS),$(eval $(call src_to_obj,$(s))))\n"
+      "$(1).ko: $(addsuffix .o,$($(1)_SRCS))\n"
+      "\t@echo LD $(1).ko\n"
+      "endef\n"
+      "\n"
+      "$(foreach m,$(MODULES),$(eval $(call module_template,$(m))))\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("CC a1")) << R.out;
+  EXPECT_TRUE(R.contains("CC a2")) << R.out;
+  EXPECT_TRUE(R.contains("LD a.ko")) << R.out;
+  EXPECT_TRUE(R.contains("LD b.ko")) << R.out;
+}
+
+// ============================================================================
+// Robustness: variable with special chars
+// ============================================================================
+
+TEST_F(BuildTest, RobustVarSpecialChars) {
+  writeMakefile(
+      "lib-special.name := libfoo\n"
+      "all:\n"
+      "\t@echo lib=$(lib-special.name)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("lib=libfoo")) << R.out;
+}
+
+// ============================================================================
+// Robustness: empty variable in patsubst
+// ============================================================================
+
+TEST_F(BuildTest, RobustEmptyVarPatsubst) {
+  writeMakefile(
+      "EMPTY :=\n"
+      "RESULT := $(patsubst %.c,%.o,$(EMPTY))\n"
+      "all:\n"
+      "\t@echo res=[$(RESULT)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("res=[]")) << R.out;
+}
+
+// ============================================================================
+// Robustness: multiple targets in one rule
+// ============================================================================
+
+TEST_F(BuildTest, RobustMultiTargetRule) {
+  writeFile(tmp() / "input.txt", "data");
+  writeMakefile(
+      "output1.txt output2.txt: input.txt\n"
+      "\t@echo gen $@\n"
+      ".PHONY: all\n"
+      "all: output1.txt output2.txt\n"
+      "\t@echo done\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("gen output1.txt")) << R.out;
+}
+
+// ============================================================================
+// Robustness: inline recipe after semicolon with phony
+// ============================================================================
+
+TEST_F(BuildTest, RobustInlineRecipePhony) {
+  writeMakefile(
+      ".PHONY: all\n"
+      "all: ; @echo inline_works\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("inline_works")) << R.out;
+}
+
+// ============================================================================
+// Robustness: recipe prefix after variable expansion
+// ============================================================================
+
+TEST_F(BuildTest, RobustRecipePrefixExpansion) {
+  writeMakefile(
+      "define quiet_cmd\n"
+      "@echo quiet_output\n"
+      "endef\n"
+      "all:\n"
+      "\t$(quiet_cmd)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("quiet_output")) << R.out;
+  EXPECT_FALSE(R.contains("echo quiet_output")) << R.out;
+}
+
+// ============================================================================
+// Robustness: parallel error propagation
+// ============================================================================
+
+TEST_F(BuildTest, RobustParallelErrorPropagation) {
+  writeFile(tmp() / "good.c", "");
+  writeMakefile(
+      ".PHONY: all\n"
+      "all: good.o bad.o\n"
+      "\t@echo link\n"
+      "good.o: good.c\n"
+      "\t@echo CC good.o\n"
+      "bad.o:\n"
+      "\t@exit 1\n");
+  auto R = runMake({"-j2"});
+  EXPECT_FALSE(R.ok());
+}
+
+// ============================================================================
+// Robustness: keep-going with parallel
+// ============================================================================
+
+TEST_F(BuildTest, RobustKeepGoingParallel) {
+  writeFile(tmp() / "ok.c", "");
+  writeMakefile(
+      ".PHONY: all fail ok\n"
+      "all: fail ok\n"
+      "\t@echo done\n"
+      "fail:\n"
+      "\t@exit 1\n"
+      "ok:\n"
+      "\t@echo ok_ran\n");
+  auto R = runMake({"-k", "-j2"});
+  EXPECT_FALSE(R.ok());
+}
+
+// ============================================================================
+// Robustness: deeply nested conditional
+// ============================================================================
+
+TEST_F(BuildTest, RobustDeeplyNestedConditional) {
+  writeMakefile(
+      "A := 1\n"
+      "B := 2\n"
+      "C := 3\n"
+      "D := 4\n"
+      "ifdef A\n"
+      "  ifdef B\n"
+      "    ifdef C\n"
+      "      ifdef D\n"
+      "        R := all_defined\n"
+      "      endif\n"
+      "    endif\n"
+      "  endif\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo $(R)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("all_defined")) << R.out;
+}
+
+// ============================================================================
+// Robustness: wordlist edge cases
+// ============================================================================
+
+TEST_F(BuildTest, RobustWordlistEdge) {
+  writeMakefile(
+      "LIST := a b c d e\n"
+      "W1 := $(word 3,$(LIST))\n"
+      "W2 := $(wordlist 2,4,$(LIST))\n"
+      "W3 := $(words $(LIST))\n"
+      "W4 := $(word 99,$(LIST))\n"
+      "all:\n"
+      "\t@echo w1=$(W1) w2=$(W2) w3=$(W3) w4=[$(W4)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("w1=c")) << R.out;
+  EXPECT_TRUE(R.contains("w2=b c d")) << R.out;
+  EXPECT_TRUE(R.contains("w3=5")) << R.out;
+  EXPECT_TRUE(R.contains("w4=[]")) << R.out;
+}
+
+// ============================================================================
+// Robustness: multiple assignment modes on same var
+// ============================================================================
+
+TEST_F(BuildTest, RobustMixedAssignModes) {
+  writeMakefile(
+      "X := initial\n"
+      "X += appended\n"
+      "Y ?= default\n"
+      "Y += more\n"
+      "Z = recursive_$(X)\n"
+      "all:\n"
+      "\t@echo x=$(X) y=$(Y) z=$(Z)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("x=initial appended")) << R.out;
+  EXPECT_TRUE(R.contains("y=default more")) << R.out;
+  EXPECT_TRUE(R.contains("z=recursive_initial appended")) << R.out;
+}
+
+// ============================================================================
+// Robustness: define with := mode
+// ============================================================================
+
+TEST_F(BuildTest, RobustDefineSimpleMode) {
+  writeMakefile(
+      "X := world\n"
+      "define GREETING :=\n"
+      "hello $(X)\n"
+      "endef\n"
+      "X := changed\n"
+      "all:\n"
+      "\t@echo $(GREETING)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("hello world")) << R.out;
+}
+
+// ============================================================================
+// Robustness: static pattern rule with multiple targets
+// ============================================================================
+
+TEST_F(BuildTest, RobustStaticPatternMultiTarget) {
+  writeFile(tmp() / "x.src", "");
+  writeFile(tmp() / "y.src", "");
+  writeFile(tmp() / "z.src", "");
+  writeMakefile(
+      "OBJS := x.obj y.obj z.obj\n"
+      ".PHONY: all\n"
+      "all: $(OBJS)\n"
+      "\t@echo done\n"
+      "$(OBJS): %.obj: %.src\n"
+      "\t@echo COMPILE $< -> $@\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("COMPILE x.src")) << R.out;
+  EXPECT_TRUE(R.contains("COMPILE y.src")) << R.out;
+  EXPECT_TRUE(R.contains("COMPILE z.src")) << R.out;
+}
+
+// ============================================================================
+// Robustness: order-only prereqs don't trigger rebuild
+// ============================================================================
+
+TEST_F(BuildTest, RobustOrderOnlyNoRebuild) {
+  writeFile(tmp() / "src.c", "");
+  writeFile(tmp() / "outdir/.keep", "");
+  writeMakefile(
+      "output.o: src.c | outdir\n"
+      "\t@echo CC $<\n"
+      "outdir:\n"
+      "\t@echo MKDIR outdir\n"
+      ".PHONY: all\n"
+      "all: output.o\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("CC src.c")) << R.out;
+}
+
+// ============================================================================
+// Robustness: $? auto-var (newer prereqs)
+// ============================================================================
+
+TEST_F(BuildTest, RobustAutoVarNewer) {
+  writeFile(tmp() / "target.out", "old");
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  writeFile(tmp() / "newer.c", "new");
+  writeFile(tmp() / "older.c", "old");
+  // Touch older.c to be older than target.out
+  writeMakefile(
+      "target.out: newer.c\n"
+      "\t@echo newer=$?\n"
+      ".PHONY: all\n"
+      "all: target.out\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+}
+
+// ============================================================================
+// Robustness: $(if) with complex condition
+// ============================================================================
+
+TEST_F(BuildTest, RobustIfComplexCondition) {
+  writeMakefile(
+      "DEBUG :=\n"
+      "RELEASE := yes\n"
+      "MODE := $(if $(DEBUG),debug,$(if $(RELEASE),release,unknown))\n"
+      "all:\n"
+      "\t@echo mode=$(MODE)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("mode=release")) << R.out;
+}
+
+// ============================================================================
+// Robustness: $(and) / $(or) with multiple args
+// ============================================================================
+
+TEST_F(BuildTest, RobustAndOrMultiArgs) {
+  writeMakefile(
+      "A := yes\n"
+      "B := yes\n"
+      "C :=\n"
+      "R1 := $(and $(A),$(B),result)\n"
+      "R2 := $(and $(A),$(C),result)\n"
+      "R3 := $(or $(C),$(B),fallback)\n"
+      "R4 := $(or $(C),,fallback)\n"
+      "all:\n"
+      "\t@echo r1=$(R1) r2=[$(R2)] r3=$(R3) r4=$(R4)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("r1=result")) << R.out;
+  EXPECT_TRUE(R.contains("r2=[]")) << R.out;
+  EXPECT_TRUE(R.contains("r3=yes")) << R.out;
+  EXPECT_TRUE(R.contains("r4=fallback")) << R.out;
+}
+
+// ============================================================================
+// Robustness: $(foreach) with nested call
+// ============================================================================
+
+TEST_F(BuildTest, RobustForeachNestedCall) {
+  writeMakefile(
+      "to_upper = $(subst a,A,$(subst b,B,$(1)))\n"
+      "ITEMS := abc bac cab\n"
+      "RESULT := $(foreach i,$(ITEMS),$(call to_upper,$(i)))\n"
+      "all:\n"
+      "\t@echo $(RESULT)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("ABc")) << R.out;
+  EXPECT_TRUE(R.contains("BAc")) << R.out;
+  EXPECT_TRUE(R.contains("cAB")) << R.out;
+}
+
+// ============================================================================
+// Robustness: export with := assignment
+// ============================================================================
+
+TEST_F(BuildTest, RobustExportWithAssignment) {
+  writeMakefile(
+      "export CC := gcc\n"
+      "export CFLAGS := -O2 -Wall\n"
+      "all:\n"
+      "\t@echo cc=$(CC) flags=$(CFLAGS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("cc=gcc")) << R.out;
+  EXPECT_TRUE(R.contains("flags=-O2 -Wall")) << R.out;
+}
+
+// ============================================================================
+// Robustness: $(basename) and $(suffix) edge cases
+// ============================================================================
+
+TEST_F(BuildTest, RobustBasenameSuffixEdge) {
+  writeMakefile(
+      "FILES := foo.c bar.h.bak noext .hidden path/to/file.o\n"
+      "B := $(basename $(FILES))\n"
+      "S := $(suffix $(FILES))\n"
+      "all:\n"
+      "\t@echo b=$(B)\n"
+      "\t@echo s=$(S)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("foo")) << R.out;
+  EXPECT_TRUE(R.contains("bar.h")) << R.out;
+  EXPECT_TRUE(R.contains(".c")) << R.out;
+}
+
+// ============================================================================
+// Robustness: $(dir) and $(notdir) with paths
+// ============================================================================
+
+TEST_F(BuildTest, RobustDirNotdir) {
+  writeMakefile(
+      "PATHS := src/foo.c lib/bar.h main.c\n"
+      "DIRS := $(dir $(PATHS))\n"
+      "FILES := $(notdir $(PATHS))\n"
+      "all:\n"
+      "\t@echo dirs=$(DIRS)\n"
+      "\t@echo files=$(FILES)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("src/")) << R.out;
+  EXPECT_TRUE(R.contains("lib/")) << R.out;
+  EXPECT_TRUE(R.contains("foo.c")) << R.out;
+  EXPECT_TRUE(R.contains("bar.h")) << R.out;
+}
+
+// ============================================================================
+// Robustness: dry-run preserves + force prefix
+// ============================================================================
+
+TEST_F(BuildTest, RobustDryRunForcePrefix) {
+  writeMakefile(
+      ".PHONY: all\n"
+      "all:\n"
+      "\t@echo silent\n"
+      "\t+echo forced\n"
+      "\t-echo ignore_err\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("echo silent")) << R.out;
+  EXPECT_TRUE(R.contains("echo forced")) << R.out;
+}
+
+// ============================================================================
+// Stress: 80 module Kbuild simulation
+// ============================================================================
+
+TEST_F(BuildTest, Stress80ModuleKbuild) {
+  std::string Mf;
+  Mf += ".DEFAULT_GOAL := all\n"
+        "MODULES :=\n";
+  for (int I = 0; I < 80; ++I) {
+    std::string M = "mod" + std::to_string(I);
+    Mf += "MODULES += " + M + "\n";
+    writeFile(tmp() / (M + ".c"), "");
+  }
+  Mf += "\n"
+        "define build_mod\n"
+        "$(1).o: $(1).c\n"
+        "\t@echo CC $(1)\n"
+        "endef\n"
+        "\n"
+        "$(foreach m,$(MODULES),$(eval $(call build_mod,$(m))))\n"
+        "\n"
+        "OBJS := $(addsuffix .o,$(MODULES))\n"
+        "\n"
+        ".PHONY: all\n"
+        "all: $(OBJS)\n"
+        "\t@echo total=$(words $(MODULES))\n";
+  writeMakefile(Mf);
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("CC mod0")) << R.out;
+  EXPECT_TRUE(R.contains("CC mod79")) << R.out;
+  EXPECT_TRUE(R.contains("total=80")) << R.out;
+}
+
+// ============================================================================
+// Stress: parallel fan-out 20 targets
+// ============================================================================
+
+TEST_F(BuildTest, StressParallelFanout20) {
+  std::string Mf = ".PHONY: all\nall:";
+  for (int I = 0; I < 20; ++I) {
+    std::string T = "t" + std::to_string(I);
+    Mf += " " + T;
+    writeFile(tmp() / (T + ".c"), "");
+  }
+  Mf += "\n\t@echo done\n";
+  for (int I = 0; I < 20; ++I) {
+    std::string T = "t" + std::to_string(I);
+    Mf += T + ": " + T + ".c\n\t@echo CC " + T + "\n";
+  }
+  writeMakefile(Mf);
+  auto R = runMake({"-n", "-j4"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("CC t0")) << R.out;
+  EXPECT_TRUE(R.contains("CC t19")) << R.out;
+}
+
+// ============================================================================
+// Stress: chain dependency A->B->C->D->E
+// ============================================================================
+
+TEST_F(BuildTest, StressChainDependency) {
+  writeFile(tmp() / "e.src", "");
+  writeMakefile(
+      "a: b\n\t@echo BUILD_A\n"
+      "b: c\n\t@echo BUILD_B\n"
+      "c: d\n\t@echo BUILD_C\n"
+      "d: e\n\t@echo BUILD_D\n"
+      "e: e.src\n\t@echo BUILD_E\n"
+      ".PHONY: all\n"
+      "all: a\n\t@echo done\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  std::string Out = R.out;
+  auto posE = Out.find("BUILD_E");
+  auto posD = Out.find("BUILD_D");
+  auto posC = Out.find("BUILD_C");
+  auto posB = Out.find("BUILD_B");
+  auto posA = Out.find("BUILD_A");
+  EXPECT_NE(posE, std::string::npos);
+  EXPECT_NE(posD, std::string::npos);
+  EXPECT_LT(posE, posD) << "E must build before D";
+  EXPECT_LT(posD, posC) << "D must build before C";
+  EXPECT_LT(posC, posB) << "C must build before B";
+  EXPECT_LT(posB, posA) << "B must build before A";
+}
+
+// ============================================================================
+// Robustness: $(eval) generating rules with $(call) arguments
+// ============================================================================
+
+TEST_F(BuildTest, RobustEvalCallGenerateRules) {
+  writeFile(tmp() / "alpha.in", "");
+  writeFile(tmp() / "beta.in", "");
+  writeMakefile(
+      ".PHONY: all\n"
+      "all: alpha.out beta.out\n"
+      "\t@echo done\n"
+      "\n"
+      "define GEN_RULE\n"
+      "$(1).out: $(1).in\n"
+      "\t@echo PROCESS $(1)\n"
+      "endef\n"
+      "\n"
+      "INPUTS := alpha beta\n"
+      "$(foreach i,$(INPUTS),$(eval $(call GEN_RULE,$(i))))\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("PROCESS alpha")) << R.out;
+  EXPECT_TRUE(R.contains("PROCESS beta")) << R.out;
+}
+
+// ============================================================================
+// Robustness: ifeq with variable refs in both args
+// ============================================================================
+
+TEST_F(BuildTest, RobustIfeqVarRefBothArgs) {
+  writeMakefile(
+      "EXPECTED := arm64\n"
+      "ACTUAL := arm64\n"
+      "ifeq ($(EXPECTED),$(ACTUAL))\n"
+      "  MATCH := yes\n"
+      "else\n"
+      "  MATCH := no\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo match=$(MATCH)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("match=yes")) << R.out;
+}
+
+// ============================================================================
+// Robustness: ifneq with quoted strings
+// ============================================================================
+
+TEST_F(BuildTest, RobustIfneqQuotedStrings) {
+  writeMakefile(
+      "MODE := release\n"
+      "ifneq \"$(MODE)\" \"debug\"\n"
+      "  OPTIMIZED := yes\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo opt=$(OPTIMIZED)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("opt=yes")) << R.out;
+}
+
+// ============================================================================
+// Robustness: phony target always runs
+// ============================================================================
+
+TEST_F(BuildTest, RobustPhonyAlwaysRuns) {
+  writeMakefile(
+      ".PHONY: all clean test\n"
+      "all: test\n"
+      "\t@echo all\n"
+      "test:\n"
+      "\t@echo test\n"
+      "clean:\n"
+      "\t@echo clean\n");
+  auto R1 = runMake();
+  ASSERT_TRUE(R1.ok()) << R1.err;
+  EXPECT_TRUE(R1.contains("test")) << R1.out;
+  auto R2 = runMake();
+  ASSERT_TRUE(R2.ok()) << R2.err;
+  EXPECT_TRUE(R2.contains("test")) << R2.out;
+}
+
+// ============================================================================
+// Robustness: $(file) write and read
+// ============================================================================
+
+TEST_F(BuildTest, RobustFileWriteRead) {
+  writeMakefile(
+      "$(file >flags.txt,-O2 -Wall)\n"
+      "$(file >>flags.txt,-DNDEBUG)\n"
+      "FLAGS := $(file <flags.txt)\n"
+      "all:\n"
+      "\t@echo flags=$(FLAGS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("-O2")) << R.out;
+}
+
+// ============================================================================
+// Kernel-style: complete Kbuild flow simulation
+// ============================================================================
+
+TEST_F(BuildTest, KernelComprehensiveKbuildFlow) {
+  std::filesystem::create_directories(tmp() / "arch/arm64/kernel");
+  std::filesystem::create_directories(tmp() / "init");
+  std::filesystem::create_directories(tmp() / "kernel");
+  writeFile(tmp() / "arch/arm64/kernel/head.c", "");
+  writeFile(tmp() / "arch/arm64/kernel/entry.c", "");
+  writeFile(tmp() / "init/main.c", "");
+  writeFile(tmp() / "kernel/fork.c", "");
+  writeMakefile(
+      "VERSION := 5\n"
+      "PATCHLEVEL := 10\n"
+      "SUBLEVEL := 186\n"
+      "EXTRAVERSION :=\n"
+      "\n"
+      "ARCH ?= arm64\n"
+      "SRCARCH := $(ARCH)\n"
+      "CROSS_COMPILE ?=\n"
+      "CC := $(CROSS_COMPILE)gcc\n"
+      "\n"
+      "KBUILD_CFLAGS := -O2\n"
+      "\n"
+      "ifeq ($(SRCARCH),arm64)\n"
+      "  KBUILD_CFLAGS += -march=armv8-a\n"
+      "else ifeq ($(SRCARCH),x86_64)\n"
+      "  KBUILD_CFLAGS += -m64\n"
+      "else ifeq ($(SRCARCH),x86)\n"
+      "  KBUILD_CFLAGS += -m32\n"
+      "endif\n"
+      "\n"
+      "ifneq ($(filter 4.%,$(MAKE_VERSION)),)\n"
+      "  HAS_MODERN_MAKE := y\n"
+      "endif\n"
+      "\n"
+      "ifdef HAS_MODERN_MAKE\n"
+      "  KBUILD_CFLAGS += -DMODERN_MAKE\n"
+      "endif\n"
+      "\n"
+      "KERNELRELEASE := "
+      "$(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)\n"
+      "\n"
+      "arch-y := arch/$(SRCARCH)/kernel/head.o "
+      "arch/$(SRCARCH)/kernel/entry.o\n"
+      "init-y := init/main.o\n"
+      "core-y := kernel/fork.o\n"
+      "vmlinux-deps := $(arch-y) $(init-y) $(core-y)\n"
+      "\n"
+      ".PHONY: all vmlinux FORCE\n"
+      "all: vmlinux\n"
+      "\t@echo Kernel: $(KERNELRELEASE) [$(SRCARCH)]\n"
+      "\n"
+      "define rule_cc\n"
+      "$(1): $(basename $(1)).c\n"
+      "\t@echo CC $(1) [$(KBUILD_CFLAGS)]\n"
+      "endef\n"
+      "\n"
+      "$(foreach o,$(vmlinux-deps),$(eval $(call rule_cc,$(o))))\n"
+      "\n"
+      "FORCE:\n"
+      "\n"
+      "vmlinux: $(vmlinux-deps) FORCE\n"
+      "\t@echo LD vmlinux $(KERNELRELEASE)\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("CC arch/arm64/kernel/head.o")) << R.out;
+  EXPECT_TRUE(R.contains("CC arch/arm64/kernel/entry.o")) << R.out;
+  EXPECT_TRUE(R.contains("CC init/main.o")) << R.out;
+  EXPECT_TRUE(R.contains("CC kernel/fork.o")) << R.out;
+  EXPECT_TRUE(R.contains("-march=armv8-a")) << R.out;
+  EXPECT_TRUE(R.contains("-DMODERN_MAKE")) << R.out;
+  EXPECT_TRUE(R.contains("LD vmlinux 5.10.186")) << R.out;
+}
+
+// ============================================================================
+// Robustness: $(call) with 0 args expansion
+// ============================================================================
+
+TEST_F(BuildTest, RobustCallZeroArgsExpand) {
+  writeMakefile(
+      "greeting = hello world\n"
+      "R := $(call greeting)\n"
+      "all:\n"
+      "\t@echo $(R)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("hello world")) << R.out;
+}
+
+// ============================================================================
+// Robustness: $(subst) chained
+// ============================================================================
+
+TEST_F(BuildTest, RobustSubstChained) {
+  writeMakefile(
+      "S := foo-bar-baz\n"
+      "R := $(subst -,_,$(subst foo,FOO,$(S)))\n"
+      "all:\n"
+      "\t@echo $(R)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("FOO_bar_baz")) << R.out;
+}
+
+// ============================================================================
+// Robustness: empty recipe rule with existing file
+// ============================================================================
+
+TEST_F(BuildTest, RobustEmptyRecipeExistingFile) {
+  writeFile(tmp() / "exists.txt", "");
+  writeMakefile(
+      ".PHONY: all\n"
+      "all: exists.txt\n"
+      "\t@echo done\n"
+      "exists.txt:\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("done")) << R.out;
+}
+
+// ============================================================================
+// Robustness: $(addprefix) + $(addsuffix) pipeline
+// ============================================================================
+
+TEST_F(BuildTest, RobustAddprefixAddsuffix) {
+  writeMakefile(
+      "NAMES := foo bar baz\n"
+      "PATHS := $(addprefix src/,$(addsuffix .c,$(NAMES)))\n"
+      "all:\n"
+      "\t@echo $(PATHS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("src/foo.c")) << R.out;
+  EXPECT_TRUE(R.contains("src/bar.c")) << R.out;
+  EXPECT_TRUE(R.contains("src/baz.c")) << R.out;
+}
+
+// ============================================================================
+// Robustness: include chain (a.mk includes b.mk includes c.mk)
+// ============================================================================
+
+TEST_F(BuildTest, RobustIncludeChain) {
+  writeFile(tmp() / "c.mk", "C_VAR := from_c\n");
+  writeFile(tmp() / "b.mk", "include c.mk\nB_VAR := from_b_$(C_VAR)\n");
+  writeMakefile(
+      "include b.mk\n"
+      "all:\n"
+      "\t@echo b=$(B_VAR) c=$(C_VAR)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("b=from_b_from_c")) << R.out;
+  EXPECT_TRUE(R.contains("c=from_c")) << R.out;
+}
+
+// ============================================================================
+// Robustness: override += preserves cmdline
+// ============================================================================
+
+TEST_F(BuildTest, RobustOverrideAppend) {
+  writeMakefile(
+      "override CFLAGS += -Wall\n"
+      "override CFLAGS += -Werror\n"
+      "all:\n"
+      "\t@echo flags=$(CFLAGS)\n"
+      ".PHONY: all\n");
+  auto R = runMake({"CFLAGS=-O2"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("-O2")) << R.out;
+  EXPECT_TRUE(R.contains("-Wall")) << R.out;
+  EXPECT_TRUE(R.contains("-Werror")) << R.out;
+}
+
+// ============================================================================
+// Robustness: $(filter) with multiple patterns
+// ============================================================================
+
+TEST_F(BuildTest, RobustFilterMultiPattern) {
+  writeMakefile(
+      "ALL := foo.c bar.h baz.S qux.c test.S\n"
+      "COMPILE := $(filter %.c %.S,$(ALL))\n"
+      "all:\n"
+      "\t@echo compile=$(COMPILE)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("foo.c")) << R.out;
+  EXPECT_TRUE(R.contains("baz.S")) << R.out;
+  EXPECT_TRUE(R.contains("qux.c")) << R.out;
+  EXPECT_TRUE(R.contains("test.S")) << R.out;
+  EXPECT_FALSE(R.contains("bar.h")) << R.out;
+}
+
+// ============================================================================
+// Robustness: .DEFAULT_GOAL override with multiple targets
+// ============================================================================
+
+TEST_F(BuildTest, RobustDefaultGoalOverrideMulti) {
+  writeMakefile(
+      ".DEFAULT_GOAL := custom\n"
+      "first:\n"
+      "\t@echo first\n"
+      "custom:\n"
+      "\t@echo custom_target\n"
+      ".PHONY: first custom\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("custom_target")) << R.out;
+  EXPECT_FALSE(R.contains("first")) << R.out;
+}
