@@ -26,6 +26,7 @@ struct ShellcodeOptions {
   uint32_t Align = 1;
   std::optional<uint8_t> PadByte;
   bool HeapArena = true;
+  bool InlineAll = false;
   bool Verbose = false;
   std::string ObfuscateSpec;
   std::string MirObfuscateSpec;
