@@ -119,7 +119,8 @@ jobs:
         set -e
         make -C build/pluginsdk/examples \
           NEVERC=$PWD/build/bin/neverc \
-          INCLUDE_DIR=$PWD/build/pluginsdk/include
+          INCLUDE_DIR=$PWD/build/pluginsdk/include \
+          HOST_TARGET=aarch64-pc-windows-msvc
         printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
         for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
           echo "--- Testing $plugin ---"

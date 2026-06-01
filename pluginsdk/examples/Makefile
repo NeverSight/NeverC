@@ -44,10 +44,18 @@ ifeq ($(UNAME_S),Darwin)
   endif
   SHARED_EXT = .dylib
 else ifeq ($(UNAME_S),Linux)
-  HOST_TARGET ?= x86_64-pc-linux-gnu
+  ifeq ($(UNAME_M),aarch64)
+    HOST_TARGET ?= aarch64-unknown-linux-gnu
+  else
+    HOST_TARGET ?= x86_64-pc-linux-gnu
+  endif
   SHARED_EXT = .so
 else
-  HOST_TARGET ?= x86_64-pc-windows-msvc
+  ifeq ($(UNAME_M),aarch64)
+    HOST_TARGET ?= aarch64-pc-windows-msvc
+  else
+    HOST_TARGET ?= x86_64-pc-windows-msvc
+  endif
   SHARED_EXT = .dll
 endif
 
