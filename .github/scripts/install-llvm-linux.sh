@@ -8,7 +8,17 @@ source "${SCRIPT_DIR}/resolve-llvm-version.sh"
 resolve_llvm_version
 
 LLVM_ROOT="${LLVM_ROOT:-/tmp/llvm-pgo}"
-ASSET="LLVM-${LLVM_VER}-Linux-X64.tar.xz"
+
+case "$(uname -m)" in
+  x86_64|amd64)  LLVM_HOST_ARCH="Linux-X64" ;;
+  aarch64|arm64) LLVM_HOST_ARCH="Linux-ARM64" ;;
+  *)
+    echo "unsupported host arch: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
+ASSET="LLVM-${LLVM_VER}-${LLVM_HOST_ARCH}.tar.xz"
 URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/${ASSET}"
 ARCHIVE="/tmp/llvm-${LLVM_VER}-linux.tar.xz"
 
