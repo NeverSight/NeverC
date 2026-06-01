@@ -61,6 +61,27 @@ jobs:
         name: linux-x64-neverc
         path: linux-x64-neverc.zip
 
+    - name: Package neverc compiler (without runtime)
+      run: |
+        mv install/runtime install-runtime-stash
+        7z a linux-x64-neverc-compiler.zip install
+        mv install-runtime-stash install/runtime
+
+    - name: Upload Compiler Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-x64-neverc-compiler
+        path: linux-x64-neverc-compiler.zip
+
+    - name: Package neverc runtime
+      run: 7z a linux-x64-neverc-runtime.zip install/runtime
+
+    - name: Upload Runtime Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-x64-neverc-runtime
+        path: linux-x64-neverc-runtime.zip
+
     - name: Build Plugin SDK
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
 
