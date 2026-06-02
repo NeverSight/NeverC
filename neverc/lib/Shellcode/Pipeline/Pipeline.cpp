@@ -124,7 +124,7 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
     auto &PL = neverc::plugin::getGlobalPluginLoader();
 
     neverc::plugin::addPluginModulePasses(MPM, NEVERC_HOOK_SC_BEFORE_PREP, PL);
-    MPM.addPass(ZeroRelocPass(Opts.EntrySymbol));
+    MPM.addPass(ZeroRelocPass(Opts.EntrySymbol, Opts.InlineAll));
     neverc::plugin::addPluginModulePasses(MPM, NEVERC_HOOK_SC_AFTER_PREP, PL);
     MPM.addPass(IndirectBrPass());
     MPM.addPass(MemIntrinPass());
@@ -169,7 +169,7 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
         MPM.addPass(StringRuntimeInlineFinalizePass());
         MPM.addPass(AlwaysInlinerPass());
         MPM.addPass(Data2TextPass());
-        MPM.addPass(ZeroRelocPass(Opts.EntrySymbol));
+        MPM.addPass(ZeroRelocPass(Opts.EntrySymbol, Opts.InlineAll));
         neverc::plugin::addPluginModulePasses(
             MPM, NEVERC_HOOK_SC_AFTER_STACKIFY, PL);
 

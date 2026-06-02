@@ -1564,6 +1564,11 @@ OPTION(prefix_1, "-fno-shellcode-heap-arena", fno_shellcode_heap_arena,
        "Disable the shellcode heap arena pass; malloc/free calls will be "
        "left as unresolved externals (original behaviour).",
        nullptr, nullptr)
+OPTION(prefix_1, "-fno-shellcode-inline-all", fno_shellcode_inline_all,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Allow shellcode helper functions to remain as separate functions "
+       "instead of forcing everything into the entry (default).",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fno-shellcode", fno_shellcode, Flag, f_Group, INVALID,
        nullptr, NoXarchOption, DefaultVis, 0,
        "Disable shellcode compilation (undoes a preceding -fshellcode)",
@@ -1888,6 +1893,11 @@ OPTION(prefix_1, "-fshellcode-heap-arena", fshellcode_heap_arena,
        "fall back to the OS allocator (msvcrt.dll via PEB walk on Windows, "
        "mmap via syscall on Linux/macOS). Enabled by default in shellcode "
        "mode.",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fshellcode-inline-all", fshellcode_inline_all,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Force-inline all non-entry functions into the shellcode entry "
+       "point, producing a single monolithic function (legacy behaviour).",
        nullptr, nullptr)
 OPTION(prefix_1, "-fshellcode-keep-obj=", fshellcode_keep_obj_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,

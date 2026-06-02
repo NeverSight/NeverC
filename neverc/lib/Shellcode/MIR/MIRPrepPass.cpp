@@ -479,15 +479,7 @@ MCRegister findRegByName(const TargetRegisterInfo &TRI, StringRef Name) {
   return MCRegister();
 }
 
-bool emitInlineStackProbe(MachineFunction &MF, const TargetDesc &Target,
-                          StringRef EntrySymbol) {
-  if (Target.OS != ShellcodeOS::Windows || Target.Arch != ShellcodeArch::X86_64)
-    return false;
-  if (Target.Level == ExecutionLevel::Kernel)
-    return false;
-  if (!isShellcodeEntryCandidate(MF.getName(), EntrySymbol))
-    return false;
-
+bool emitX86InlineStackProbe(MachineFunction &MF) {
   uint64_t FrameSize = MF.getFrameInfo().getStackSize();
   if (FrameSize <= 4096)
     return false;
@@ -558,6 +550,109 @@ bool emitInlineStackProbe(MachineFunction &MF, const TargetDesc &Target,
   return true;
 }
 
+bool emitAArch64InlineStackProbe(MachineFunction &MF) {
+  uint64_t FrameSize = MF.getFrameInfo().getStackSize();
+  if (FrameSize <= 4096)
+    return false;
+
+  const TargetInstrInfo *TII = MF.getSubtarget().getInstrInfo();
+  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
+
+  unsigned SUBXri = findMIRRewriteOpcodeByName(*TII, "SUBXri");
+  unsigned ADDXri = findMIRRewriteOpcodeByName(*TII, "ADDXri");
+  unsigned STRXui = findMIRRewriteOpcodeByName(*TII, "STRXui");
+  unsigned LDRXui = findMIRRewriteOpcodeByName(*TII, "LDRXui");
+  unsigned MOVZWi = findMIRRewriteOpcodeByName(*TII, "MOVZWi");
+  unsigned SUBSWri = findMIRRewriteOpcodeByName(*TII, "SUBSWri");
+  unsigned Bcc = findMIRRewriteOpcodeByName(*TII, "Bcc");
+  if (!SUBXri || !ADDXri || !STRXui || !LDRXui || !MOVZWi || !SUBSWri || !Bcc)
+    return false;
+
+  MCRegister X16 = findRegByName(*TRI, "X16");
+  MCRegister X17 = findRegByName(*TRI, "X17");
+  MCRegister W17 = findRegByName(*TRI, "W17");
+  MCRegister SP = findRegByName(*TRI, "SP");
+  MCRegister XZR = findRegByName(*TRI, "XZR");
+  if (!X16 || !X17 || !W17 || !SP || !XZR)
+    return false;
+
+  unsigned Pages = (FrameSize + 4095) / 4096;
+  MachineBasicBlock &Entry = MF.front();
+  DebugLoc DL;
+
+  MachineBasicBlock *ProbeBB =
+      MF.CreateMachineBasicBlock(Entry.getBasicBlock());
+  MachineBasicBlock *DoneBB =
+      MF.CreateMachineBasicBlock(Entry.getBasicBlock());
+  MF.insert(std::next(MachineFunction::iterator(&Entry)), ProbeBB);
+  MF.insert(std::next(MachineFunction::iterator(ProbeBB)), DoneBB);
+
+  DoneBB->splice(DoneBB->end(), &Entry, Entry.begin(), Entry.end());
+  DoneBB->transferSuccessorsAndUpdatePHIs(&Entry);
+
+  // Entry: save x16,x17; mov x16,sp; mov w17,Pages; → ProbeBB
+  //   sub sp, sp, #16
+  BuildMI(&Entry, DL, TII->get(SUBXri), SP).addReg(SP).addImm(16).addImm(0);
+  //   str x16, [sp, #0]
+  BuildMI(&Entry, DL, TII->get(STRXui)).addReg(X16).addReg(SP).addImm(0);
+  //   str x17, [sp, #8]  (offset in 8-byte units = 1)
+  BuildMI(&Entry, DL, TII->get(STRXui)).addReg(X17).addReg(SP).addImm(1);
+  //   add x16, sp, #16  (x16 = original sp)
+  BuildMI(&Entry, DL, TII->get(ADDXri), X16).addReg(SP).addImm(16).addImm(0);
+  //   movz w17, #Pages
+  BuildMI(&Entry, DL, TII->get(MOVZWi), W17).addImm(Pages).addImm(0);
+  Entry.addSuccessor(ProbeBB);
+
+  // ProbeBB: sub x16,x16,#4096; ldr xzr,[x16]; subs w17,w17,#1; b.ne ProbeBB
+  ProbeBB->addSuccessor(ProbeBB);
+  ProbeBB->addSuccessor(DoneBB);
+  //   sub x16, x16, #1, lsl #12  (= x16 - 4096)
+  BuildMI(ProbeBB, DL, TII->get(SUBXri), X16)
+      .addReg(X16)
+      .addImm(1)
+      .addImm(12);
+  //   ldr xzr, [x16]  (touch page, discard result)
+  BuildMI(ProbeBB, DL, TII->get(LDRXui), XZR).addReg(X16).addImm(0);
+  //   subs w17, w17, #1
+  BuildMI(ProbeBB, DL, TII->get(SUBSWri), W17)
+      .addReg(W17)
+      .addImm(1)
+      .addImm(0);
+  //   b.ne ProbeBB  (cond=1 is NE/NZ on AArch64)
+  BuildMI(ProbeBB, DL, TII->get(Bcc)).addImm(1).addMBB(ProbeBB);
+
+  // DoneBB: restore x16,x17; <original prologue>
+  MachineBasicBlock::iterator DoneStart = DoneBB->begin();
+  //   ldr x17, [sp, #8]
+  BuildMI(*DoneBB, DoneStart, DL, TII->get(LDRXui), X17)
+      .addReg(SP)
+      .addImm(1);
+  //   ldr x16, [sp, #0]
+  BuildMI(*DoneBB, DoneStart, DL, TII->get(LDRXui), X16)
+      .addReg(SP)
+      .addImm(0);
+  //   add sp, sp, #16
+  BuildMI(*DoneBB, DoneStart, DL, TII->get(ADDXri), SP)
+      .addReg(SP)
+      .addImm(16)
+      .addImm(0);
+
+  return true;
+}
+
+bool emitInlineStackProbe(MachineFunction &MF, const TargetDesc &Target) {
+  if (Target.OS != ShellcodeOS::Windows)
+    return false;
+  if (Target.Level == ExecutionLevel::Kernel)
+    return false;
+
+  if (Target.Arch == ShellcodeArch::X86_64)
+    return emitX86InlineStackProbe(MF);
+  if (Target.Arch == ShellcodeArch::AArch64)
+    return emitAArch64InlineStackProbe(MF);
+  return false;
+}
+
 class MIRPrepPass final : public MachineFunctionPass {
 public:
   static char ID;
@@ -588,7 +683,7 @@ public:
 
     Changed |= runMIRRewrites(MF);
 
-    Changed |= emitInlineStackProbe(MF, Target, EntrySymbol);
+    Changed |= emitInlineStackProbe(MF, Target);
 
     (void)auditConstantPool(MF);
 

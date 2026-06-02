@@ -48,7 +48,7 @@ Function *findEntry(Module &M, StringRef UserEntry) {
   return First;
 }
 
-bool prep(Module &M, StringRef UserEntry, Function *Entry) {
+bool prep(Module &M, StringRef UserEntry, Function *Entry, bool InlineAll) {
   bool Changed = false;
 
   for (const char *Name : {"llvm.global_ctors", "llvm.global_dtors"}) {
@@ -100,7 +100,7 @@ bool prep(Module &M, StringRef UserEntry, Function *Entry) {
       F.setLinkage(GlobalValue::InternalLinkage);
       Changed = true;
     }
-    if (!F.hasFnAttribute(Attribute::AlwaysInline) &&
+    if (InlineAll && !F.hasFnAttribute(Attribute::AlwaysInline) &&
         !F.hasFnAttribute(Attribute::NoInline)) {
       F.addFnAttr(Attribute::AlwaysInline);
       F.removeFnAttr(Attribute::OptimizeNone);
@@ -401,7 +401,7 @@ PreservedAnalyses ZeroRelocPass::run(Module &M, ModuleAnalysisManager &) {
 
   Function *Entry = findEntry(M, UserEntry);
 
-  bool Changed = prep(M, UserEntry, Entry);
+  bool Changed = prep(M, UserEntry, Entry, InlineAll);
 
   NamedMDNode *Sentinel = M.getNamedMetadata(ZeroRelocABI::StackifiedSentinel);
   if (!Sentinel) {

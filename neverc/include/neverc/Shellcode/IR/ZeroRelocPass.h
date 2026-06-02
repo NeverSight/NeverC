@@ -10,9 +10,11 @@ namespace shellcode {
 
 struct ZeroRelocPass : public llvm::PassInfoMixin<ZeroRelocPass> {
   std::string EntrySymbol;
+  bool InlineAll = false;
 
   ZeroRelocPass() = default;
-  explicit ZeroRelocPass(llvm::StringRef Entry) : EntrySymbol(Entry.str()) {}
+  explicit ZeroRelocPass(llvm::StringRef Entry, bool InlineAll = false)
+      : EntrySymbol(Entry.str()), InlineAll(InlineAll) {}
 
   llvm::PreservedAnalyses run(llvm::Module &M,
                               llvm::ModuleAnalysisManager &MAM);

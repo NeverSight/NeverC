@@ -46,6 +46,8 @@ constexpr unsigned DriverOnlyOpts[] = {
     opts::OPT_fno_shellcode_bad_byte_rewrite,
     opts::OPT_fshellcode_heap_arena,
     opts::OPT_fno_shellcode_heap_arena,
+    opts::OPT_fshellcode_inline_all,
+    opts::OPT_fno_shellcode_inline_all,
     opts::OPT_fshellcode_charset_EQ,
     opts::OPT_fshellcode_max_length_EQ,
     opts::OPT_fshellcode_align_EQ,
@@ -300,6 +302,9 @@ bool collectOptions(const llvm::opt::InputArgList &Args,
   Out.HeapArena = Args.hasFlag(opts::OPT_fshellcode_heap_arena,
                                opts::OPT_fno_shellcode_heap_arena,
                                /*Default=*/true);
+  Out.InlineAll = Args.hasFlag(opts::OPT_fshellcode_inline_all,
+                               opts::OPT_fno_shellcode_inline_all,
+                               /*Default=*/false);
   Out.Charset.clear();
   if (auto *A = Args.getLastArg(opts::OPT_fshellcode_charset_EQ)) {
     StringRef Name = StringRef(A->getValue()).trim();
