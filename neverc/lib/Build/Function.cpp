@@ -462,10 +462,12 @@ void FunctionRegistry::registerBuiltins() {
       Saved.push_back({Key, Defined ? Env.rawValue(Key) : "", Defined});
     }
 
-    for (size_t I = 1; I < Args.size(); ++I) {
-      Env.setForced(std::to_string(I), trim(Env.expand(Args[I])),
+    std::vector<std::string> ExpandedArgs;
+    for (size_t I = 1; I < Args.size(); ++I)
+      ExpandedArgs.push_back(trim(Env.expand(Args[I])));
+    for (size_t I = 0; I < ExpandedArgs.size(); ++I)
+      Env.setForced(std::to_string(I + 1), ExpandedArgs[I],
                     AssignMode::Simple);
-    }
     for (size_t I = Args.size(); I < 10; ++I) {
       std::string Key = std::to_string(I);
       if (Env.isDefined(Key))
@@ -588,7 +590,8 @@ void FunctionRegistry::registerBuiltins() {
     }
 
     if (Mode == '>') {
-      std::string Text = Args.size() > 1 ? Args[1] : "";
+      bool HasText = Args.size() > 1;
+      std::string Text = HasText ? Args[1] : "";
       std::ofstream Out(Filename,
                         Append ? (std::ios::app | std::ios::out) : std::ios::out);
       if (!Out.is_open()) {
@@ -596,7 +599,7 @@ void FunctionRegistry::registerBuiltins() {
                      Filename.c_str());
         return "";
       }
-      if (!Text.empty())
+      if (HasText)
         Out << Text << "\n";
       return "";
     }

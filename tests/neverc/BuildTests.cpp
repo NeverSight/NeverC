@@ -18641,3 +18641,2020 @@ TEST_F(BuildTest, EdgeWordlistBoundary) {
   EXPECT_TRUE(R.contains("sub=b c d")) << R.out;
   EXPECT_TRUE(R.contains("over=a b c d e")) << R.out;
 }
+
+// ============================================================================
+// Linux 5.10 Kernel Makefile Compatibility Tests
+// ============================================================================
+
+TEST_F(BuildTest, Kernel510_MakeflagsFilterFindstring) {
+  writeMakefile(
+      "MAKEFLAGS_CLEAN := nks --warn-undefined-variables\n"
+      "FILTERED := $(filter-out --%,$(MAKEFLAGS_CLEAN))\n"
+      "HAS_S := $(findstring s,$(FILTERED))\n"
+      "ifeq ($(HAS_S),s)\n"
+      "  QUIET := silent_\n"
+      "else\n"
+      "  QUIET := quiet_\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo quiet=$(QUIET) filtered=$(FILTERED)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("quiet=silent_")) << R.out;
+  EXPECT_TRUE(R.contains("filtered=nks")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_ConfigShellDetection) {
+  writeMakefile(
+      "CONFIG_SHELL := $(shell echo /bin/bash)\n"
+      "SHELL := $(CONFIG_SHELL)\n"
+      "all:\n"
+      "\t@echo shell=$(SHELL)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("shell=/bin/bash")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_VerboseQuietPrefixSystem) {
+  writeMakefile(
+      "ifeq (\"$(origin V)\", \"command line\")\n"
+      "  KBUILD_VERBOSE = $(V)\n"
+      "endif\n"
+      "ifndef KBUILD_VERBOSE\n"
+      "  KBUILD_VERBOSE = 0\n"
+      "endif\n"
+      "ifeq ($(KBUILD_VERBOSE),1)\n"
+      "  quiet =\n"
+      "  Q =\n"
+      "else\n"
+      "  quiet = quiet_\n"
+      "  Q = @\n"
+      "endif\n"
+      "quiet_cmd_cc = CC $@\n"
+      "cmd_cc = gcc -c $< -o $@\n"
+      "CMD_DISPLAY := $($(quiet)cmd_cc)\n"
+      "all:\n"
+      "\t@echo v=$(KBUILD_VERBOSE) q=$(quiet) display=[$(CMD_DISPLAY)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("v=0")) << R.out;
+  EXPECT_TRUE(R.contains("q=quiet_")) << R.out;
+  EXPECT_TRUE(R.contains("CC")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_VerboseQuietWithCommandLine) {
+  writeMakefile(
+      "ifeq (\"$(origin V)\", \"command line\")\n"
+      "  KBUILD_VERBOSE = $(V)\n"
+      "endif\n"
+      "ifndef KBUILD_VERBOSE\n"
+      "  KBUILD_VERBOSE = 0\n"
+      "endif\n"
+      "ifeq ($(KBUILD_VERBOSE),1)\n"
+      "  quiet =\n"
+      "  Q =\n"
+      "else\n"
+      "  quiet = quiet_\n"
+      "  Q = @\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo v=$(KBUILD_VERBOSE) q=[$(quiet)] Q=[$(Q)]\n"
+      ".PHONY: all\n");
+  auto R = runMake({"V=1"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("v=1")) << R.out;
+  EXPECT_TRUE(R.contains("q=[]")) << R.out;
+  EXPECT_TRUE(R.contains("Q=[]")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_ArchSelectionWithElseIfeq) {
+  writeMakefile(
+      "ARCH ?= x86\n"
+      "ifeq ($(ARCH),x86)\n"
+      "  SRCARCH := x86\n"
+      "  BITS := 64\n"
+      "else ifeq ($(ARCH),arm)\n"
+      "  SRCARCH := arm\n"
+      "  BITS := 32\n"
+      "else ifeq ($(ARCH),arm64)\n"
+      "  SRCARCH := arm64\n"
+      "  BITS := 64\n"
+      "else ifeq ($(ARCH),riscv)\n"
+      "  SRCARCH := riscv\n"
+      "  BITS := 64\n"
+      "else\n"
+      "  SRCARCH := $(ARCH)\n"
+      "  BITS := unknown\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo arch=$(SRCARCH) bits=$(BITS)\n"
+      ".PHONY: all\n");
+  auto R1 = runMake();
+  ASSERT_TRUE(R1.ok()) << R1.err;
+  EXPECT_TRUE(R1.contains("arch=x86 bits=64")) << R1.out;
+  auto R2 = runMake({"ARCH=arm64"});
+  ASSERT_TRUE(R2.ok()) << R2.err;
+  EXPECT_TRUE(R2.contains("arch=arm64 bits=64")) << R2.out;
+  auto R3 = runMake({"ARCH=mips"});
+  ASSERT_TRUE(R3.ok()) << R3.err;
+  EXPECT_TRUE(R3.contains("arch=mips bits=unknown")) << R3.out;
+}
+
+TEST_F(BuildTest, Kernel510_VersionConstruction) {
+  writeMakefile(
+      "VERSION = 5\n"
+      "PATCHLEVEL = 10\n"
+      "SUBLEVEL = 214\n"
+      "EXTRAVERSION =\n"
+      "NAME = Dare mighty things\n"
+      "KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if "
+      "$(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)\n"
+      "all:\n"
+      "\t@echo version=$(KERNELVERSION) name=$(NAME)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("version=5.10.214")) << R.out;
+  EXPECT_TRUE(R.contains("name=Dare mighty things")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_VersionWithExtraversion) {
+  writeMakefile(
+      "VERSION = 5\n"
+      "PATCHLEVEL = 10\n"
+      "SUBLEVEL = 0\n"
+      "EXTRAVERSION = -rc3\n"
+      "KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if "
+      "$(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)\n"
+      "all:\n"
+      "\t@echo version=$(KERNELVERSION)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("version=5.10.0-rc3")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_KbuildSubdirTemplate) {
+  writeMakefile(
+      "CONFIG_SMP := y\n"
+      "CONFIG_MODULES := m\n"
+      "obj-y := core.o sched.o\n"
+      "obj-$(CONFIG_SMP) += smp.o\n"
+      "obj-$(CONFIG_MODULES) += module.o\n"
+      "ALL_OBJS := $(obj-y) $(obj-m)\n"
+      "all:\n"
+      "\t@echo objs=[$(ALL_OBJS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("core.o")) << R.out;
+  EXPECT_TRUE(R.contains("sched.o")) << R.out;
+  EXPECT_TRUE(R.contains("smp.o")) << R.out;
+  EXPECT_TRUE(R.contains("module.o")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_ComputedVariableName) {
+  writeMakefile(
+      "CONFIG_ARM_VFP := y\n"
+      "machine-y := mach-generic\n"
+      "machine-$(CONFIG_ARM_VFP) := mach-vfp\n"
+      "MACHINE := $(machine-y)\n"
+      "all:\n"
+      "\t@echo machine=$(MACHINE)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("machine=mach-vfp")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_CcOptionWithShellFallback) {
+  writeMakefile(
+      "define try-run\n"
+      "$(shell if $(1) >/dev/null 2>&1; then echo $(2); else echo $(3); fi)\n"
+      "endef\n"
+      "define cc-option\n"
+      "$(call try-run,echo test,$(1),$(2))\n"
+      "endef\n"
+      "CFLAGS := -O2\n"
+      "OPT := $(call cc-option,-Wformat-security,-Wno-format)\n"
+      "CFLAGS += $(OPT)\n"
+      "all:\n"
+      "\t@echo cflags=[$(strip $(CFLAGS))]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("-O2")) << R.out;
+  EXPECT_TRUE(R.contains("-Wformat-security")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_ForeachEvalModuleTemplate) {
+  writeMakefile(
+      "SUBDIRS := drivers fs net\n"
+      "define build_subdir\n"
+      "$(1)-objs := $(1)/main.o $(1)/init.o\n"
+      "obj-y += $$($(1)-objs)\n"
+      "endef\n"
+      "$(foreach d,$(SUBDIRS),$(eval $(call build_subdir,$(d))))\n"
+      "all:\n"
+      "\t@echo obj-y=[$(obj-y)]\n"
+      "\t@echo drivers-objs=[$(drivers-objs)]\n"
+      "\t@echo fs-objs=[$(fs-objs)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("drivers/main.o")) << R.out;
+  EXPECT_TRUE(R.contains("drivers/init.o")) << R.out;
+  EXPECT_TRUE(R.contains("fs/main.o")) << R.out;
+  EXPECT_TRUE(R.contains("net/main.o")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_FilterOutPatsubstPipeline) {
+  writeMakefile(
+      "SRCS := main.c helper.c test_main.c debug.c test_helper.c\n"
+      "FILTERED := $(filter-out test_%,$(SRCS))\n"
+      "OBJS := $(patsubst %.c,%.o,$(FILTERED))\n"
+      "PATHS := $(addprefix build/,$(OBJS))\n"
+      "all:\n"
+      "\t@echo paths=[$(PATHS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("build/main.o")) << R.out;
+  EXPECT_TRUE(R.contains("build/helper.o")) << R.out;
+  EXPECT_TRUE(R.contains("build/debug.o")) << R.out;
+  EXPECT_FALSE(R.contains("test_main")) << R.out;
+  EXPECT_FALSE(R.contains("test_helper")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_IfChangedCommandPattern) {
+  writeMakefile(
+      "define if_changed\n"
+      "$(if $(strip $(filter-out $(cmd_$(1)),$(cmd_$(1)))),\n"
+      "@echo '  $(quiet_cmd_$(1))'\n"
+      "$(cmd_$(1)))\n"
+      "endef\n"
+      "quiet_cmd_link = LINK $@\n"
+      "cmd_link = ld -o $@ $^\n"
+      "RESULT := $(quiet_cmd_link)\n"
+      "all:\n"
+      "\t@echo result=[$(RESULT)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("LINK")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_RecipeContinuation) {
+  writeMakefile(
+      "all:\n"
+      "\t@echo hello \\\n"
+      "\tworld \\\n"
+      "\tdone\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("hello")) << R.out;
+  EXPECT_TRUE(R.contains("world")) << R.out;
+  EXPECT_TRUE(R.contains("done")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_ExportChainForSubMake) {
+  writeMakefile(
+      "ARCH := arm64\n"
+      "CROSS_COMPILE := aarch64-linux-gnu-\n"
+      "CC := $(CROSS_COMPILE)gcc\n"
+      "LD := $(CROSS_COMPILE)ld\n"
+      "export ARCH CROSS_COMPILE CC LD\n"
+      "HOSTCC := gcc\n"
+      "all:\n"
+      "\t@echo cc=$(CC) ld=$(LD) hostcc=$(HOSTCC)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("cc=aarch64-linux-gnu-gcc")) << R.out;
+  EXPECT_TRUE(R.contains("ld=aarch64-linux-gnu-ld")) << R.out;
+  EXPECT_TRUE(R.contains("hostcc=gcc")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_FORCETargetWithDeps) {
+  writeFile(tmp() / "src.c", "int main(){}");
+  writeMakefile(
+      "all: version.h\n"
+      "\t@echo done\n"
+      "version.h: FORCE\n"
+      "\t@echo generating version.h\n"
+      "\t@echo '/* version */' > version.h\n"
+      "FORCE:\n"
+      ".PHONY: all FORCE\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("generating version.h")) << R.out;
+  EXPECT_TRUE(R.contains("done")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_NestedIfWithFindstring) {
+  writeMakefile(
+      "CFLAGS := -march=armv8-a\n"
+      "ARCH := arm64\n"
+      "ifeq ($(ARCH),arm64)\n"
+      "  ifneq ($(findstring -march=,$(CFLAGS)),)\n"
+      "    HAS_MARCH := yes\n"
+      "  else\n"
+      "    HAS_MARCH := no\n"
+      "  endif\n"
+      "else\n"
+      "  HAS_MARCH := n/a\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo has_march=$(HAS_MARCH)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("has_march=yes")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_DefineCmdTemplate) {
+  writeMakefile(
+      "quiet_cmd_cc_o_c = CC      $@\n"
+      "      cmd_cc_o_c = gcc -c $< -o $@\n"
+      "define rule_cc_o_c\n"
+      "$(call echo-cmd,cc_o_c)\n"
+      "$(cmd_cc_o_c)\n"
+      "endef\n"
+      "define echo-cmd\n"
+      "$(if $($(quiet)cmd_$(1)),@echo '  $($(quiet)cmd_$(1))')\n"
+      "endef\n"
+      "quiet := quiet_\n"
+      "RESULT := $(call echo-cmd,cc_o_c)\n"
+      "all:\n"
+      "\t@echo [$(RESULT)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("CC")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_MakeVersionCheck) {
+  writeMakefile(
+      "ifneq ($(filter 4.%,$(MAKE_VERSION)),)\n"
+      "  MAKE_OK := yes\n"
+      "else ifneq ($(filter 3.8%,$(MAKE_VERSION)),)\n"
+      "  MAKE_OK := yes\n"
+      "else\n"
+      "  MAKE_OK := no\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo make_ok=$(MAKE_OK) ver=$(MAKE_VERSION)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("make_ok=yes")) << R.out;
+  EXPECT_TRUE(R.contains("ver=4.3")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_OverrideDefineAppend) {
+  writeMakefile(
+      "KBUILD_CFLAGS := -O2\n"
+      "override KBUILD_CFLAGS += -Wall\n"
+      "override KBUILD_CFLAGS += -Wextra\n"
+      "all:\n"
+      "\t@echo cflags=$(KBUILD_CFLAGS)\n"
+      ".PHONY: all\n");
+  auto R = runMake({"KBUILD_CFLAGS=-Os"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("-Os")) << R.out;
+  EXPECT_TRUE(R.contains("-Wall")) << R.out;
+  EXPECT_TRUE(R.contains("-Wextra")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_SubstRefWithDirPrefix) {
+  writeMakefile(
+      "SRCS := drivers/core.c drivers/init.c lib/helper.c\n"
+      "OBJS := $(SRCS:.c=.o)\n"
+      "all:\n"
+      "\t@echo objs=[$(OBJS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("drivers/core.o")) << R.out;
+  EXPECT_TRUE(R.contains("drivers/init.o")) << R.out;
+  EXPECT_TRUE(R.contains("lib/helper.o")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_IncludeGeneratedDepFiles) {
+  writeFile(tmp() / "main.c", "int main(){}");
+  writeFile(tmp() / "main.h", "");
+  writeFile(tmp() / "util.c", "int util(){}");
+  writeFile(tmp() / "util.h", "");
+  writeFile(tmp() / "main.d", "main.o: main.c main.h\n");
+  writeFile(tmp() / "util.d", "util.o: util.c util.h\n");
+  writeMakefile(
+      ".DEFAULT_GOAL := all\n"
+      "OBJS := main.o util.o\n"
+      "DEPS := $(OBJS:.o=.d)\n"
+      "-include $(DEPS)\n"
+      "all:\n"
+      "\t@echo objs=$(OBJS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("objs=main.o util.o")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_FileWriteEmptyText) {
+  writeMakefile(
+      "all:\n"
+      "\t$(file >$(CURDIR)/test_empty.txt,)\n"
+      "\t@wc -c < $(CURDIR)/test_empty.txt | tr -d ' '\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("1")) << "Should write single newline, out: " << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_ComplexCondChainWithOrigin) {
+  writeMakefile(
+      "ifeq (\"$(origin CROSS_COMPILE)\", \"command line\")\n"
+      "  CROSS := $(CROSS_COMPILE)\n"
+      "else ifdef CROSS_COMPILE\n"
+      "  CROSS := $(CROSS_COMPILE)\n"
+      "else\n"
+      "  CROSS :=\n"
+      "endif\n"
+      "CC := $(CROSS)gcc\n"
+      "all:\n"
+      "\t@echo cc=[$(CC)]\n"
+      ".PHONY: all\n");
+  auto R1 = runMake();
+  ASSERT_TRUE(R1.ok()) << R1.err;
+  EXPECT_TRUE(R1.contains("cc=[gcc]")) << R1.out;
+  auto R2 = runMake({"CROSS_COMPILE=arm-linux-gnueabi-"});
+  ASSERT_TRUE(R2.ok()) << R2.err;
+  EXPECT_TRUE(R2.contains("cc=[arm-linux-gnueabi-gcc]")) << R2.out;
+}
+
+TEST_F(BuildTest, Kernel510_KbuildObjYWithForeachEval) {
+  writeMakefile(
+      "subdirs := mm fs net\n"
+      "define register_subdir\n"
+      "obj-y += $(1)/built-in.a\n"
+      "endef\n"
+      "$(foreach d,$(subdirs),$(eval $(call register_subdir,$(d))))\n"
+      "OBJS := $(filter %.a,$(obj-y))\n"
+      "all:\n"
+      "\t@echo objs=[$(OBJS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("mm/built-in.a")) << R.out;
+  EXPECT_TRUE(R.contains("fs/built-in.a")) << R.out;
+  EXPECT_TRUE(R.contains("net/built-in.a")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_PatsubstMultiLevel) {
+  writeMakefile(
+      "C_SRCS := a.c b.c c.c\n"
+      "S_SRCS := entry.S vector.S\n"
+      "C_OBJS := $(patsubst %.c,%.o,$(C_SRCS))\n"
+      "S_OBJS := $(patsubst %.S,%.o,$(S_SRCS))\n"
+      "ALL_OBJS := $(C_OBJS) $(S_OBJS)\n"
+      "PREFIXED := $(addprefix obj/,$(ALL_OBJS))\n"
+      "DIRS := $(sort $(dir $(PREFIXED)))\n"
+      "all:\n"
+      "\t@echo objs=[$(PREFIXED)]\n"
+      "\t@echo dirs=[$(DIRS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("obj/a.o")) << R.out;
+  EXPECT_TRUE(R.contains("obj/entry.o")) << R.out;
+  EXPECT_TRUE(R.contains("dirs=[obj/]")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_IfeqWithQuotesAndVarExpansion) {
+  writeMakefile(
+      "ARCH := arm64\n"
+      "ifeq \"$(ARCH)\" \"arm64\"\n"
+      "  MATCH := yes\n"
+      "else\n"
+      "  MATCH := no\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo match=$(MATCH)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("match=yes")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_IncludeArchMakefile) {
+  writeFile(tmp() / "arch_arm64.mk",
+      "ARCH_CFLAGS := -march=armv8-a\n"
+      "ARCH_LDFLAGS := -maarch64elf\n");
+  writeMakefile(
+      "SRCARCH := arm64\n"
+      "include $(CURDIR)/arch_$(SRCARCH).mk\n"
+      "all:\n"
+      "\t@echo cflags=$(ARCH_CFLAGS) ldflags=$(ARCH_LDFLAGS)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("cflags=-march=armv8-a")) << R.out;
+  EXPECT_TRUE(R.contains("ldflags=-maarch64elf")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_DollarDollarInRecipe) {
+  writeMakefile(
+      "all:\n"
+      "\t@VAR=hello; echo result=$$VAR\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("result=hello")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_DefineWithCallAndDollarDollar) {
+  writeMakefile(
+      "define filechk\n"
+      "$(filechk_$(1))\n"
+      "endef\n"
+      "filechk_version = echo 5.10.0\n"
+      "RESULT := $(call filechk,version)\n"
+      "all:\n"
+      "\t@echo result=[$(RESULT)]\n"
+      "\t@VAR=hello; echo shell_var=$$VAR\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("result=[echo 5.10.0]")) << R.out;
+  EXPECT_TRUE(R.contains("shell_var=hello")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_UndefineAndRedefine) {
+  writeMakefile(
+      "FOO := old_value\n"
+      "undefine FOO\n"
+      "ifdef FOO\n"
+      "  STATUS := defined\n"
+      "else\n"
+      "  STATUS := undefined\n"
+      "endif\n"
+      "FOO := new_value\n"
+      "all:\n"
+      "\t@echo status=$(STATUS) foo=$(FOO)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("status=undefined")) << R.out;
+  EXPECT_TRUE(R.contains("foo=new_value")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_OverrideUndefine) {
+  writeMakefile(
+      "override undefine CFLAGS\n"
+      "ifdef CFLAGS\n"
+      "  R := defined\n"
+      "else\n"
+      "  R := undefined\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo r=$(R)\n"
+      ".PHONY: all\n");
+  auto R = runMake({"CFLAGS=-O2"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("r=undefined")) << R.out;
+}
+
+// ============================================================================
+// Robustness & Edge Case Tests
+// ============================================================================
+
+TEST_F(BuildTest, Robust_EmptyVarInAllContexts) {
+  writeMakefile(
+      "EMPTY :=\n"
+      "ALSO_EMPTY =\n"
+      "R1 := [$(EMPTY)]\n"
+      "R2 := [$(ALSO_EMPTY)]\n"
+      "R3 := $(if $(EMPTY),yes,no)\n"
+      "R4 := $(strip $(EMPTY))\n"
+      "R5 := $(words $(EMPTY))\n"
+      "R6 := $(sort $(EMPTY))\n"
+      "R7 := $(filter %.o,$(EMPTY))\n"
+      "R8 := $(patsubst %.c,%.o,$(EMPTY))\n"
+      "R9 := $(foreach x,$(EMPTY),item)\n"
+      "R10 := $(subst a,b,$(EMPTY))\n"
+      "all:\n"
+      "\t@echo r1=$(R1) r2=$(R2) r3=$(R3) r4=[$(R4)] r5=$(R5)\n"
+      "\t@echo r6=[$(R6)] r7=[$(R7)] r8=[$(R8)] r9=[$(R9)] r10=[$(R10)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("r1=[]")) << R.out;
+  EXPECT_TRUE(R.contains("r2=[]")) << R.out;
+  EXPECT_TRUE(R.contains("r3=no")) << R.out;
+  EXPECT_TRUE(R.contains("r4=[]")) << R.out;
+  EXPECT_TRUE(R.contains("r5=0")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_UndefinedVarInAllContexts) {
+  writeMakefile(
+      "R1 := [$(NONEXIST)]\n"
+      "R2 := $(if $(NONEXIST),yes,no)\n"
+      "R3 := $(or $(NONEXIST),fallback)\n"
+      "R4 := $(origin NONEXIST)\n"
+      "R5 := $(flavor NONEXIST)\n"
+      "ifdef NONEXIST\n"
+      "  R6 := defined\n"
+      "else\n"
+      "  R6 := undefined\n"
+      "endif\n"
+      "R7 := $(words $(NONEXIST))\n"
+      "all:\n"
+      "\t@echo r1=$(R1) r2=$(R2) r3=$(R3) r4=$(R4)\n"
+      "\t@echo r5=$(R5) r6=$(R6) r7=$(R7)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("r1=[]")) << R.out;
+  EXPECT_TRUE(R.contains("r2=no")) << R.out;
+  EXPECT_TRUE(R.contains("r3=fallback")) << R.out;
+  EXPECT_TRUE(R.contains("r4=undefined")) << R.out;
+  EXPECT_TRUE(R.contains("r5=undefined")) << R.out;
+  EXPECT_TRUE(R.contains("r6=undefined")) << R.out;
+  EXPECT_TRUE(R.contains("r7=0")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_VeryLongVariableValue) {
+  std::string LongVal;
+  for (int i = 0; i < 500; ++i) {
+    if (i > 0)
+      LongVal += " ";
+    LongVal += "item" + std::to_string(i);
+  }
+  writeMakefile(
+      "LONG := " + LongVal + "\n"
+      "COUNT := $(words $(LONG))\n"
+      "FIRST := $(firstword $(LONG))\n"
+      "LAST := $(lastword $(LONG))\n"
+      "all:\n"
+      "\t@echo count=$(COUNT) first=$(FIRST) last=$(LAST)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("count=500")) << R.out;
+  EXPECT_TRUE(R.contains("first=item0")) << R.out;
+  EXPECT_TRUE(R.contains("last=item499")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_DeepNestedFunctions) {
+  writeMakefile(
+      "X := hello world foo bar baz\n"
+      "R := $(strip $(sort $(filter-out baz,$(patsubst %,prefix_%,"
+      "$(filter %o %d,$(X))))))\n"
+      "all:\n"
+      "\t@echo r=[$(R)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("prefix_foo")) << R.out;
+  EXPECT_TRUE(R.contains("prefix_world")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_CircularVarNoHang) {
+  writeMakefile(
+      "A = $(B)\n"
+      "B = $(C)\n"
+      "C = $(A)\n"
+      "all:\n"
+      "\t@echo a=[$(A)] b=[$(B)] c=[$(C)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("a=[]")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_MissingIncludeOptional) {
+  writeMakefile(
+      "-include nonexistent1.mk\n"
+      "sinclude nonexistent2.mk\n"
+      "-include $(wildcard *.nonexist)\n"
+      "all:\n"
+      "\t@echo ok\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("ok")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_PatternRuleNoMatchingPrereq) {
+  writeFile(tmp() / "actual.c", "int x;");
+  writeMakefile(
+      "%.o: %.c\n"
+      "\t@echo compile $< to $@\n"
+      "all: actual.o\n"
+      "\t@echo done\n"
+      ".PHONY: all\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("compile actual.c to actual.o")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_MultipleRulesSameTargetMergePrereqs) {
+  writeFile(tmp() / "a.h", "");
+  writeFile(tmp() / "b.h", "");
+  writeFile(tmp() / "main.c", "");
+  writeMakefile(
+      "main.o: main.c a.h\n"
+      "\t@echo compile main.c\n"
+      "main.o: b.h\n"
+      "all: main.o\n"
+      "\t@echo done\n"
+      ".PHONY: all\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("compile main.c")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_SpecialCharsInVarNames) {
+  writeMakefile(
+      "my-var := dash\n"
+      "my_var := underscore\n"
+      "my.var := dot\n"
+      "all:\n"
+      "\t@echo dash=$(my-var) under=$(my_var) dot=$(my.var)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("dash=dash")) << R.out;
+  EXPECT_TRUE(R.contains("under=underscore")) << R.out;
+  EXPECT_TRUE(R.contains("dot=dot")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_AssignModesInteraction) {
+  writeMakefile(
+      "A = recursive\n"
+      "B := simple\n"
+      "C ?= conditional\n"
+      "D ?= should_not_override\n"
+      "D := overridden\n"
+      "E = $(A)\n"
+      "A = changed\n"
+      "F := $(A)\n"
+      "all:\n"
+      "\t@echo a=$(A) b=$(B) c=$(C) d=$(D)\n"
+      "\t@echo e=$(E) f=$(F)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("a=changed")) << R.out;
+  EXPECT_TRUE(R.contains("b=simple")) << R.out;
+  EXPECT_TRUE(R.contains("c=conditional")) << R.out;
+  EXPECT_TRUE(R.contains("d=overridden")) << R.out;
+  EXPECT_TRUE(R.contains("e=changed")) << R.out;
+  EXPECT_TRUE(R.contains("f=changed")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_CmdLineVarBlocksFileAssign) {
+  writeMakefile(
+      "FOO = from_file\n"
+      "FOO := also_from_file\n"
+      "all:\n"
+      "\t@echo foo=$(FOO)\n"
+      ".PHONY: all\n");
+  auto R = runMake({"FOO=from_cmdline"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("foo=from_cmdline")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_DefineEvalInteraction) {
+  writeMakefile(
+      ".DEFAULT_GOAL := all\n"
+      "define make_rule\n"
+      "$(1): ; @echo building $(1)\n"
+      ".PHONY: $(1)\n"
+      "endef\n"
+      "$(eval $(call make_rule,target_a))\n"
+      "$(eval $(call make_rule,target_b))\n"
+      "all: target_a target_b\n"
+      "\t@echo all_done\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("building target_a")) << R.out;
+  EXPECT_TRUE(R.contains("building target_b")) << R.out;
+  EXPECT_TRUE(R.contains("all_done")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_ForeachPreservesOuterVar) {
+  writeMakefile(
+      "X := outer_value\n"
+      "ITEMS := a b c\n"
+      "RESULT := $(foreach X,$(ITEMS),$(X)_done)\n"
+      "all:\n"
+      "\t@echo x=$(X) result=$(RESULT)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("x=outer_value")) << R.out;
+  EXPECT_TRUE(R.contains("a_done")) << R.out;
+  EXPECT_TRUE(R.contains("b_done")) << R.out;
+  EXPECT_TRUE(R.contains("c_done")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_CallPreservesPositionalVars) {
+  writeMakefile(
+      "outer = [$(1)][$(2)]\n"
+      "inner = {$(1)}\n"
+      "RESULT := $(call outer,A,$(call inner,B))\n"
+      "all:\n"
+      "\t@echo result=$(RESULT)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("[A]")) << R.out;
+  EXPECT_TRUE(R.contains("{B}")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_OrderOnlyDep) {
+  writeFile(tmp() / "src.c", "int main(){}");
+  writeMakefile(
+      "output: src.c | order_dep\n"
+      "\t@echo building output\n"
+      "\t@echo done > output\n"
+      "order_dep:\n"
+      "\t@echo creating order_dep\n"
+      "\t@mkdir -p order_dep\n"
+      ".PHONY: order_dep\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("creating order_dep")) << R.out;
+  EXPECT_TRUE(R.contains("building output")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_FileWriteAndRead) {
+  writeMakefile(
+      "all:\n"
+      "\t$(file >$(CURDIR)/test_rw.txt,line1)\n"
+      "\t$(file >>$(CURDIR)/test_rw.txt,line2)\n"
+      "\t@cat $(CURDIR)/test_rw.txt\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("line1")) << R.out;
+  EXPECT_TRUE(R.contains("line2")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_RecipePrefixesAfterExpansion) {
+  writeMakefile(
+      "define silent_echo\n"
+      "@echo $(1)\n"
+      "endef\n"
+      "all:\n"
+      "\t$(call silent_echo,silent_output)\n"
+      "\t-false\n"
+      "\t@echo after_ignore_error\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("silent_output")) << R.out;
+  EXPECT_TRUE(R.contains("after_ignore_error")) << R.out;
+  EXPECT_FALSE(R.contains("echo silent_output")) << "@ prefix should suppress echo, out: " << R.out;
+}
+
+TEST_F(BuildTest, Robust_StaticPatternRule) {
+  writeFile(tmp() / "a.c", "int a;");
+  writeFile(tmp() / "b.c", "int b;");
+  writeFile(tmp() / "c.c", "int c;");
+  writeMakefile(
+      "OBJS := a.o b.o c.o\n"
+      "all: $(OBJS)\n"
+      "\t@echo done\n"
+      "$(OBJS): %.o: %.c\n"
+      "\t@echo compile $< to $@\n"
+      ".PHONY: all\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("compile a.c to a.o")) << R.out;
+  EXPECT_TRUE(R.contains("compile b.c to b.o")) << R.out;
+  EXPECT_TRUE(R.contains("compile c.c to c.o")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_ParallelBuildOrder) {
+  writeMakefile(
+      "all: step3\n"
+      "step3: step2\n"
+      "\t@echo step3\n"
+      "step2: step1\n"
+      "\t@echo step2\n"
+      "step1:\n"
+      "\t@echo step1\n"
+      ".PHONY: all step1 step2 step3\n");
+  auto R = runMake({"-j4"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  auto pos1 = R.out.find("step1");
+  auto pos2 = R.out.find("step2");
+  auto pos3 = R.out.find("step3");
+  EXPECT_LT(pos1, pos2) << "step1 should come before step2";
+  EXPECT_LT(pos2, pos3) << "step2 should come before step3";
+}
+
+TEST_F(BuildTest, Robust_KeepGoingContinuesAfterError) {
+  writeMakefile(
+      "all: good_target bad_target good2_target\n"
+      "good_target:\n"
+      "\t@echo good1\n"
+      "bad_target:\n"
+      "\tfalse\n"
+      "good2_target:\n"
+      "\t@echo good2\n"
+      ".PHONY: all good_target bad_target good2_target\n");
+  auto R = runMake({"-k"});
+  EXPECT_FALSE(R.ok());
+  EXPECT_TRUE(R.contains("good1")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_DryRunForcePrefix) {
+  writeMakefile(
+      "all:\n"
+      "\t@echo normal_cmd\n"
+      "\t+echo forced_cmd\n"
+      ".PHONY: all\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("echo normal_cmd")) << R.out;
+  EXPECT_TRUE(R.contains("forced_cmd")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_DefaultGoalSetting) {
+  writeMakefile(
+      ".DEFAULT_GOAL := custom\n"
+      "first:\n"
+      "\t@echo first\n"
+      "custom:\n"
+      "\t@echo custom_target\n"
+      ".PHONY: first custom\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("custom_target")) << R.out;
+  EXPECT_FALSE(R.contains("first")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_MakefileListTracking) {
+  writeFile(tmp() / "sub.mk",
+      "SUB_LOADED := yes\n"
+      "MFL2 := $(MAKEFILE_LIST)\n");
+  writeMakefile(
+      "MFL1 := $(MAKEFILE_LIST)\n"
+      "include $(CURDIR)/sub.mk\n"
+      "all:\n"
+      "\t@echo mfl1=[$(MFL1)]\n"
+      "\t@echo sub=$(SUB_LOADED)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("akefile")) << "MAKEFILE_LIST should contain the makefile name, out: " << R.out;
+  EXPECT_TRUE(R.contains("sub=yes")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_RecursionDepthLimit) {
+  writeMakefile(
+      "deep = $(deep)\n"
+      "all:\n"
+      "\t@echo val=[$(deep)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("val=[]")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_ComplexSubstRefWithPercent) {
+  writeMakefile(
+      "SRCS := src/a.c src/b.c lib/c.c\n"
+      "OBJS := $(SRCS:src/%.c=obj/%.o)\n"
+      "all:\n"
+      "\t@echo objs=[$(OBJS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("obj/a.o")) << R.out;
+  EXPECT_TRUE(R.contains("obj/b.o")) << R.out;
+  EXPECT_TRUE(R.contains("lib/c.c")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_EvalGeneratesPatternRule) {
+  writeFile(tmp() / "test.c", "int main(){}");
+  writeMakefile(
+      "define pattern_rule\n"
+      "%.o: %.c\n"
+      "\t@echo compile $$< to $$@\n"
+      "endef\n"
+      "$(eval $(pattern_rule))\n"
+      "all: test.o\n"
+      "\t@echo done\n"
+      ".PHONY: all\n");
+  auto R = runMake({"-n"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("compile test.c to test.o")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_NestedCallWithEval) {
+  writeMakefile(
+      ".DEFAULT_GOAL := all\n"
+      "define gen_target\n"
+      "$(1):\n"
+      "\t@echo built_$(1)\n"
+      ".PHONY: $(1)\n"
+      "endef\n"
+      "define gen_all\n"
+      "$(foreach t,$(1),$(eval $(call gen_target,$(t))))\n"
+      "endef\n"
+      "$(call gen_all,x y z)\n"
+      "all: x y z\n"
+      "\t@echo all_done\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("built_x")) << R.out;
+  EXPECT_TRUE(R.contains("built_y")) << R.out;
+  EXPECT_TRUE(R.contains("built_z")) << R.out;
+  EXPECT_TRUE(R.contains("all_done")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_AppendToSimpleVar) {
+  writeMakefile(
+      "FLAGS := -O2\n"
+      "FLAGS += -Wall\n"
+      "FLAGS += -Wextra\n"
+      "all:\n"
+      "\t@echo flags=[$(FLAGS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("-O2")) << R.out;
+  EXPECT_TRUE(R.contains("-Wall")) << R.out;
+  EXPECT_TRUE(R.contains("-Wextra")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_AppendToRecursiveVar) {
+  writeMakefile(
+      "FLAGS = -O2\n"
+      "FLAGS += -Wall\n"
+      "EXTRA := -Wformat\n"
+      "FLAGS += $(EXTRA)\n"
+      "EXTRA := -Wshadow\n"
+      "all:\n"
+      "\t@echo flags=[$(FLAGS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("-O2")) << R.out;
+  EXPECT_TRUE(R.contains("-Wall")) << R.out;
+  EXPECT_TRUE(R.contains("-Wshadow")) << R.out;
+}
+
+TEST_F(BuildTest, Robust_MultiTargetRule) {
+  writeMakefile(
+      "all: a b c\n"
+      "\t@echo done\n"
+      "a b c:\n"
+      "\t@echo building $@\n"
+      ".PHONY: all a b c\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("building a")) << R.out;
+  EXPECT_TRUE(R.contains("building b")) << R.out;
+  EXPECT_TRUE(R.contains("building c")) << R.out;
+}
+
+// ============================================================================
+// Full Linux 5.10 Mini-Kernel Simulation
+// ============================================================================
+
+TEST_F(BuildTest, Kernel510_FullBuildSimulation) {
+  writeFile(tmp() / "arch_x86.mk",
+      "ARCH_CFLAGS := -m64 -march=x86-64\n"
+      "ARCH_ASFLAGS := --64\n"
+      "head-y := arch/x86/kernel/head_64.o\n");
+  writeFile(tmp() / "arch_arm64.mk",
+      "ARCH_CFLAGS := -march=armv8-a\n"
+      "ARCH_ASFLAGS := -march=armv8-a\n"
+      "head-y := arch/arm64/kernel/head.o\n");
+  writeMakefile(
+      "VERSION = 5\n"
+      "PATCHLEVEL = 10\n"
+      "SUBLEVEL = 214\n"
+      "EXTRAVERSION =\n"
+      "\n"
+      "KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if "
+      "$(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)\n"
+      "\n"
+      "ARCH ?= x86\n"
+      "ifeq ($(ARCH),x86)\n"
+      "  SRCARCH := x86\n"
+      "else ifeq ($(ARCH),arm64)\n"
+      "  SRCARCH := arm64\n"
+      "else\n"
+      "  SRCARCH := $(ARCH)\n"
+      "endif\n"
+      "\n"
+      "CROSS_COMPILE ?=\n"
+      "CC := $(CROSS_COMPILE)gcc\n"
+      "LD := $(CROSS_COMPILE)ld\n"
+      "AR := $(CROSS_COMPILE)ar\n"
+      "\n"
+      "ifeq (\"$(origin V)\", \"command line\")\n"
+      "  KBUILD_VERBOSE = $(V)\n"
+      "endif\n"
+      "ifndef KBUILD_VERBOSE\n"
+      "  KBUILD_VERBOSE = 0\n"
+      "endif\n"
+      "ifeq ($(KBUILD_VERBOSE),1)\n"
+      "  quiet =\n"
+      "  Q =\n"
+      "else\n"
+      "  quiet = quiet_\n"
+      "  Q = @\n"
+      "endif\n"
+      "\n"
+      "export ARCH SRCARCH CROSS_COMPILE CC LD AR\n"
+      "\n"
+      "include $(CURDIR)/arch_$(SRCARCH).mk\n"
+      "\n"
+      "KBUILD_CFLAGS := -O2 -std=gnu89\n"
+      "KBUILD_CFLAGS += $(ARCH_CFLAGS)\n"
+      "KBUILD_CFLAGS += -Wall -Wstrict-prototypes\n"
+      "\n"
+      "CONFIG_SMP := y\n"
+      "CONFIG_MODULES := y\n"
+      "CONFIG_PRINTK := y\n"
+      "\n"
+      "init-y := init/main.o init/version.o\n"
+      "core-y := kernel/sched.o kernel/fork.o\n"
+      "core-$(CONFIG_SMP) += kernel/smp.o\n"
+      "core-$(CONFIG_PRINTK) += kernel/printk.o\n"
+      "drivers-y := drivers/base/core.o\n"
+      "libs-y := lib/string.o lib/vsprintf.o\n"
+      "\n"
+      "vmlinux-deps := $(head-y) $(init-y) $(core-y) $(drivers-y) $(libs-y)\n"
+      "vmlinux-objs := $(patsubst %/,%/built-in.a,"
+      "$(sort $(dir $(vmlinux-deps))))\n"
+      "\n"
+      "quiet_cmd_link = LINK    $@\n"
+      "      cmd_link = $(LD) -o $@ $(vmlinux-deps)\n"
+      "\n"
+      "all:\n"
+      "\t@echo version=$(KERNELVERSION)\n"
+      "\t@echo arch=$(SRCARCH) cc=$(CC)\n"
+      "\t@echo cflags=[$(KBUILD_CFLAGS)]\n"
+      "\t@echo deps=[$(vmlinux-deps)]\n"
+      "\t@echo objs=[$(vmlinux-objs)]\n"
+      "\t@echo quiet=$(quiet) verbose=$(KBUILD_VERBOSE)\n"
+      "\t@echo link=[$($(quiet)cmd_link)]\n"
+      ".PHONY: all\n");
+
+  auto R1 = runMake();
+  ASSERT_TRUE(R1.ok()) << R1.err;
+  EXPECT_TRUE(R1.contains("version=5.10.214")) << R1.out;
+  EXPECT_TRUE(R1.contains("arch=x86")) << R1.out;
+  EXPECT_TRUE(R1.contains("cc=gcc")) << R1.out;
+  EXPECT_TRUE(R1.contains("-m64")) << R1.out;
+  EXPECT_TRUE(R1.contains("-march=x86-64")) << R1.out;
+  EXPECT_TRUE(R1.contains("kernel/smp.o")) << R1.out;
+  EXPECT_TRUE(R1.contains("kernel/printk.o")) << R1.out;
+  EXPECT_TRUE(R1.contains("quiet=quiet_")) << R1.out;
+  EXPECT_TRUE(R1.contains("LINK")) << R1.out;
+
+  auto R2 = runMake({"ARCH=arm64", "CROSS_COMPILE=aarch64-linux-gnu-", "V=1"});
+  ASSERT_TRUE(R2.ok()) << R2.err;
+  EXPECT_TRUE(R2.contains("arch=arm64")) << R2.out;
+  EXPECT_TRUE(R2.contains("cc=aarch64-linux-gnu-gcc")) << R2.out;
+  EXPECT_TRUE(R2.contains("-march=armv8-a")) << R2.out;
+  EXPECT_TRUE(R2.contains("verbose=1")) << R2.out;
+  EXPECT_TRUE(R2.contains("quiet=[]") || R2.contains("quiet= ")) << R2.out;
+}
+
+TEST_F(BuildTest, Kernel510_StressLargeKbuild) {
+  std::string mk = "subdirs :=";
+  for (int i = 0; i < 100; ++i)
+    mk += " mod" + std::to_string(i);
+  mk += "\n";
+  mk += "define register\n"
+        "$(1)-objs := $(1)/core.o $(1)/init.o\n"
+        "obj-y += $$($(1)-objs)\n"
+        "endef\n";
+  mk += "$(foreach d,$(subdirs),$(eval $(call register,$(d))))\n";
+  mk += "COUNT := $(words $(obj-y))\n";
+  mk += "all:\n\t@echo count=$(COUNT)\n.PHONY: all\n";
+  writeMakefile(mk);
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("count=200")) << R.out;
+}
+
+TEST_F(BuildTest, Kernel510_StressParallelFanOut) {
+  std::string mk;
+  std::string targets;
+  for (int i = 0; i < 30; ++i) {
+    std::string t = "t" + std::to_string(i);
+    targets += " " + t;
+  }
+  mk += "all:" + targets + "\n\t@echo all_done\n";
+  for (int i = 0; i < 30; ++i) {
+    std::string t = "t" + std::to_string(i);
+    mk += t + ":\n\t@echo built_" + t + "\n";
+  }
+  mk += ".PHONY: all" + targets + "\n";
+  writeMakefile(mk);
+  auto R = runMake({"-j4"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("all_done")) << R.out;
+  for (int i = 0; i < 30; ++i)
+    EXPECT_TRUE(R.contains("built_t" + std::to_string(i))) << R.out;
+}
+
+// ============================================================================
+// Additional Kernel 5.10 Robustness & Edge Case Tests
+// ============================================================================
+
+// $(space) and $(comma) helper variables — used throughout kernel Makefile
+TEST_F(BuildTest, Kernel510_SpaceCommaHelpers) {
+  writeMakefile(
+      "comma  := ,\n"
+      "empty  :=\n"
+      "space  := $(empty) $(empty)\n"
+      "LIST := a b c\n"
+      "CSV := $(subst $(space),$(comma),$(LIST))\n"
+      "all:\n"
+      "\t@echo csv=[$(CSV)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("csv=[a,b,c]")) << R.out;
+}
+
+// $(call) args should not cross-contaminate during expansion
+TEST_F(BuildTest, Kernel510_CallArgIndependence) {
+  writeMakefile(
+      "func = arg1=[$1] arg2=[$2]\n"
+      "A = hello\n"
+      "RESULT := $(call func,$(A),world_$(A))\n"
+      "all:\n"
+      "\t@echo $(RESULT)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("arg1=[hello]")) << R.out;
+  EXPECT_TRUE(R.contains("arg2=[world_hello]")) << R.out;
+}
+
+// Nested filter + patsubst pipeline used for subdir extraction
+TEST_F(BuildTest, Kernel510_FilterPatsubstSubdirs) {
+  writeMakefile(
+      "obj-y := core.o drivers/ net/ fs/vfs.o lib/\n"
+      "subdirs := $(patsubst %/,%,$(filter %/,$(obj-y)))\n"
+      "files := $(filter-out %/,$(obj-y))\n"
+      "all:\n"
+      "\t@echo dirs=[$(subdirs)] files=[$(files)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("dirs=[drivers net lib]")) << R.out;
+  EXPECT_TRUE(R.contains("files=[core.o fs/vfs.o]")) << R.out;
+}
+
+// $(word) after $(subst) — used for version parsing
+TEST_F(BuildTest, Kernel510_WordAfterSubst) {
+  writeMakefile(
+      "KVER := 5.10.214\n"
+      "MAJOR := $(word 1,$(subst ., ,$(KVER)))\n"
+      "MINOR := $(word 2,$(subst ., ,$(KVER)))\n"
+      "PATCH := $(word 3,$(subst ., ,$(KVER)))\n"
+      "all:\n"
+      "\t@echo major=$(MAJOR) minor=$(MINOR) patch=$(PATCH)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("major=5")) << R.out;
+  EXPECT_TRUE(R.contains("minor=10")) << R.out;
+  EXPECT_TRUE(R.contains("patch=214")) << R.out;
+}
+
+// Multiple conditional CFLAGS accumulation (kernel pattern)
+TEST_F(BuildTest, Kernel510_CFlagsConditionalAccumulation) {
+  writeMakefile(
+      "CONFIG_SMP := y\n"
+      "CONFIG_MODULES := y\n"
+      "CONFIG_DEBUG_INFO :=\n"
+      "CFLAGS := -O2\n"
+      "ifeq ($(CONFIG_SMP),y)\n"
+      "  CFLAGS += -DSMP\n"
+      "endif\n"
+      "ifeq ($(CONFIG_MODULES),y)\n"
+      "  CFLAGS += -DMODULE\n"
+      "endif\n"
+      "ifdef CONFIG_DEBUG_INFO\n"
+      "  CFLAGS += -g\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo cflags=[$(CFLAGS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("-O2")) << R.out;
+  EXPECT_TRUE(R.contains("-DSMP")) << R.out;
+  EXPECT_TRUE(R.contains("-DMODULE")) << R.out;
+  EXPECT_FALSE(R.contains("-g")) << R.out;
+}
+
+// Export multiple variables on one line + unexport specific
+TEST_F(BuildTest, Kernel510_ExportMultipleThenUnexport) {
+  writeMakefile(
+      "CC := gcc\n"
+      "LD := ld\n"
+      "AR := ar\n"
+      "export CC LD AR\n"
+      "unexport AR\n"
+      "all:\n"
+      "\t@echo cc=$$CC ld=$$LD ar=$$AR\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("cc=gcc")) << R.out;
+  EXPECT_TRUE(R.contains("ld=ld")) << R.out;
+}
+
+// $(foreach) with $(if $(findstring ...)) — used in arch selection
+TEST_F(BuildTest, Kernel510_ForeachIfFindstring) {
+  writeMakefile(
+      "ALL_ARCHES := x86 arm arm64 mips riscv\n"
+      "WANT := arm mips\n"
+      "SELECTED := $(foreach a,$(ALL_ARCHES),$(if $(findstring "
+      "$(a),$(WANT)),$(a)))\n"
+      "all:\n"
+      "\t@echo selected=[$(SELECTED)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("arm")) << R.out;
+  EXPECT_TRUE(R.contains("mips")) << R.out;
+  EXPECT_FALSE(R.contains("x86")) << R.out;
+}
+
+// Double dereference with computed quiet prefix — core kernel pattern
+TEST_F(BuildTest, Kernel510_DoubleDerefQuietCmd) {
+  writeMakefile(
+      "quiet = quiet_\n"
+      "quiet_cmd_link = LINK $@\n"
+      "cmd_link = ld -o $@ $^\n"
+      "all:\n"
+      "\t@echo display=[$($(quiet)cmd_link)]\n"
+      "\t@echo full=[$(cmd_link)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("display=[LINK")) << R.out;
+  EXPECT_TRUE(R.contains("full=[ld")) << R.out;
+}
+
+// define + call generating multi-command recipe with $$ escape
+TEST_F(BuildTest, Kernel510_DefineCallDollarEscapeRecipe) {
+  writeMakefile(
+      "define run_cmd\n"
+      "echo running: $(1)\n"
+      "echo status: $$?\n"
+      "endef\n"
+      "all:\n"
+      "\t@$(call run_cmd,test_program)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("running: test_program")) << R.out;
+  EXPECT_TRUE(R.contains("status: 0")) << R.out;
+}
+
+// Multiple .PHONY declarations accumulating targets
+TEST_F(BuildTest, Kernel510_MultiplePhonyDeclarationsAccumulate) {
+  writeMakefile(
+      ".PHONY: all\n"
+      ".PHONY: clean install\n"
+      ".PHONY: help\n"
+      "all:\n"
+      "\t@echo all\n"
+      "clean:\n"
+      "\t@echo clean\n"
+      "install:\n"
+      "\t@echo install\n"
+      "help:\n"
+      "\t@echo help\n");
+  auto R1 = runMake({}, "all");
+  ASSERT_TRUE(R1.ok()) << R1.err;
+  EXPECT_TRUE(R1.contains("all")) << R1.out;
+  auto R2 = runMake({}, "clean");
+  ASSERT_TRUE(R2.ok()) << R2.err;
+  EXPECT_TRUE(R2.contains("clean")) << R2.out;
+  auto R3 = runMake({}, "help");
+  ASSERT_TRUE(R3.ok()) << R3.err;
+  EXPECT_TRUE(R3.contains("help")) << R3.out;
+}
+
+// FORCE pseudo-target pattern (no recipe, no prereqs)
+TEST_F(BuildTest, Kernel510_FORCEPseudoTarget) {
+  writeMakefile(
+      "all: version.h\n"
+      "\t@echo done\n"
+      "version.h: FORCE\n"
+      "\t@echo generating version.h\n"
+      ".PHONY: all FORCE\n"
+      "FORCE:\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("generating version.h")) << R.out;
+  EXPECT_TRUE(R.contains("done")) << R.out;
+}
+
+// $(addprefix) + $(addsuffix) pipeline — building file lists
+TEST_F(BuildTest, Kernel510_AddprefixAddsuffixPipeline) {
+  writeMakefile(
+      "SRCS := main init config\n"
+      "OBJ_DIR := build/obj\n"
+      "OBJS := $(addprefix $(OBJ_DIR)/,$(addsuffix .o,$(SRCS)))\n"
+      "all:\n"
+      "\t@echo objs=[$(OBJS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("build/obj/main.o")) << R.out;
+  EXPECT_TRUE(R.contains("build/obj/init.o")) << R.out;
+  EXPECT_TRUE(R.contains("build/obj/config.o")) << R.out;
+}
+
+// $(if $(CONFIG_X),...) — zero-length string is false
+TEST_F(BuildTest, Kernel510_IfEmptyVsNonEmpty) {
+  writeMakefile(
+      "CONFIG_A := y\n"
+      "CONFIG_B :=\n"
+      "R_A := $(if $(CONFIG_A),yes_a,no_a)\n"
+      "R_B := $(if $(CONFIG_B),yes_b,no_b)\n"
+      "R_C := $(if $(CONFIG_C),yes_c,no_c)\n"
+      "all:\n"
+      "\t@echo a=$(R_A) b=$(R_B) c=$(R_C)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("a=yes_a")) << R.out;
+  EXPECT_TRUE(R.contains("b=no_b")) << R.out;
+  EXPECT_TRUE(R.contains("c=no_c")) << R.out;
+}
+
+// $(words) for counting — used for module count checks
+TEST_F(BuildTest, Kernel510_WordsCount) {
+  writeMakefile(
+      "MODULES := mod_a mod_b mod_c mod_d mod_e\n"
+      "COUNT := $(words $(MODULES))\n"
+      "FIRST := $(firstword $(MODULES))\n"
+      "LAST := $(lastword $(MODULES))\n"
+      "all:\n"
+      "\t@echo count=$(COUNT) first=$(FIRST) last=$(LAST)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("count=5")) << R.out;
+  EXPECT_TRUE(R.contains("first=mod_a")) << R.out;
+  EXPECT_TRUE(R.contains("last=mod_e")) << R.out;
+}
+
+// Override define block — override multi-line macro
+TEST_F(BuildTest, Kernel510_OverrideDefineBlock) {
+  writeMakefile(
+      "define cmd_link\n"
+      "echo original\n"
+      "endef\n"
+      "override define cmd_link\n"
+      "echo overridden\n"
+      "endef\n"
+      "all:\n"
+      "\t@$(cmd_link)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("overridden")) << R.out;
+}
+
+// $(eval) generating rule with automatic variables
+TEST_F(BuildTest, Kernel510_EvalRuleWithAutoVars) {
+  writeFile(tmp() / "prog1.src", "");
+  writeFile(tmp() / "prog2.src", "");
+  writeMakefile(
+      "TARGETS := prog1 prog2\n"
+      "all: $(TARGETS)\n"
+      "\t@echo all_done\n"
+      ".PHONY: all\n"
+      "define gen_rule\n"
+      "$(1): $(1).src\n"
+      "\t@echo building $$@ from $$<\n"
+      "endef\n"
+      "$(foreach t,$(TARGETS),$(eval $(call gen_rule,$(t))))\n");
+  auto R = runMake({"-B"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("building prog1 from prog1.src")) << R.out;
+  EXPECT_TRUE(R.contains("building prog2 from prog2.src")) << R.out;
+  EXPECT_TRUE(R.contains("all_done")) << R.out;
+}
+
+// ifeq with strip to handle trailing whitespace
+TEST_F(BuildTest, Kernel510_IfeqWithStripWhitespace) {
+  writeMakefile(
+      "VAR := y  \n"
+      "ifeq ($(strip $(VAR)),y)\n"
+      "  RESULT := matched\n"
+      "else\n"
+      "  RESULT := not_matched\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo result=$(RESULT)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("result=matched")) << R.out;
+}
+
+// Substitution reference with directory path conversion
+TEST_F(BuildTest, Kernel510_SubstRefDirConversion) {
+  writeMakefile(
+      "SRCS := src/main.c src/util.c src/config.c\n"
+      "OBJS := $(SRCS:src/%.c=obj/%.o)\n"
+      "all:\n"
+      "\t@echo objs=[$(OBJS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("obj/main.o")) << R.out;
+  EXPECT_TRUE(R.contains("obj/util.o")) << R.out;
+  EXPECT_TRUE(R.contains("obj/config.o")) << R.out;
+}
+
+// $(sort) for dedup + alphabetic ordering of paths
+TEST_F(BuildTest, Kernel510_SortDeduplicateAndOrder) {
+  writeMakefile(
+      "DIRS := lib drivers drivers kernel lib fs kernel\n"
+      "UNIQUE := $(sort $(DIRS))\n"
+      "all:\n"
+      "\t@echo dirs=[$(UNIQUE)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("dirs=[drivers fs kernel lib]")) << R.out;
+}
+
+// $(or) and $(and) with function results
+TEST_F(BuildTest, Kernel510_OrAndWithFunctionResults) {
+  writeMakefile(
+      "CC_IS_GCC :=\n"
+      "CC_IS_CLANG := yes\n"
+      "COMPILER := $(or $(and $(CC_IS_GCC),gcc),$(and "
+      "$(CC_IS_CLANG),clang),unknown)\n"
+      "all:\n"
+      "\t@echo compiler=$(COMPILER)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("compiler=clang")) << R.out;
+}
+
+// Multiple assignment modes on same variable
+TEST_F(BuildTest, Kernel510_AssignModePrecedence) {
+  writeMakefile(
+      "X = recursive\n"
+      "X := simple\n"
+      "X += appended\n"
+      "Y ?= conditional_default\n"
+      "Y := overwritten\n"
+      "Z ?= should_stick\n"
+      "all:\n"
+      "\t@echo x=[$(X)] y=[$(Y)] z=[$(Z)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("x=[simple appended]")) << R.out;
+  EXPECT_TRUE(R.contains("y=[overwritten]")) << R.out;
+  EXPECT_TRUE(R.contains("z=[should_stick]")) << R.out;
+}
+
+// $(call) with $(eval) that generates rules + variables dynamically
+TEST_F(BuildTest, Kernel510_CallEvalDynamicRulesAndVars) {
+  std::filesystem::create_directories(tmp() / "net");
+  std::filesystem::create_directories(tmp() / "fs");
+  writeFile(tmp() / "net" / "core.o", "");
+  writeFile(tmp() / "net" / "init.o", "");
+  writeFile(tmp() / "fs" / "core.o", "");
+  writeFile(tmp() / "fs" / "init.o", "");
+  writeMakefile(
+      "SUBDIRS := net fs\n"
+      "all: $(foreach d,$(SUBDIRS),$(d)/built-in.o)\n"
+      "\t@echo all_done\n"
+      ".PHONY: all FORCE\n"
+      "FORCE:\n"
+      "define module_template\n"
+      "$(1)_OBJS := $(1)/core.o $(1)/init.o\n"
+      "$(1)_CFLAGS := -I$(1)/include\n"
+      "$(1)/built-in.o: $$($(1)_OBJS)\n"
+      "\t@echo link $$@ from $$($(1)_OBJS) with $$($(1)_CFLAGS)\n"
+      "endef\n"
+      "$(foreach d,$(SUBDIRS),$(eval $(call module_template,$(d))))\n");
+  auto R = runMake({"-B"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("link net/built-in.o")) << R.out;
+  EXPECT_TRUE(R.contains("link fs/built-in.o")) << R.out;
+  EXPECT_TRUE(R.contains("-Inet/include")) << R.out;
+  EXPECT_TRUE(R.contains("all_done")) << R.out;
+}
+
+// Deeply nested ifeq/else ifeq chain (6 levels)
+TEST_F(BuildTest, Kernel510_DeepIfeqChain6Levels) {
+  writeMakefile(
+      "ARCH ?= arm64\n"
+      "ifeq ($(ARCH),x86)\n"
+      "  BITS := 32\n"
+      "else ifeq ($(ARCH),x86_64)\n"
+      "  BITS := 64\n"
+      "else ifeq ($(ARCH),arm)\n"
+      "  BITS := 32\n"
+      "else ifeq ($(ARCH),arm64)\n"
+      "  BITS := 64\n"
+      "else ifeq ($(ARCH),riscv)\n"
+      "  BITS := 64\n"
+      "else ifeq ($(ARCH),mips)\n"
+      "  BITS := 32\n"
+      "else\n"
+      "  BITS := unknown\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo arch=$(ARCH) bits=$(BITS)\n"
+      ".PHONY: all\n");
+  auto R1 = runMake();
+  ASSERT_TRUE(R1.ok()) << R1.err;
+  EXPECT_TRUE(R1.contains("arch=arm64 bits=64")) << R1.out;
+  auto R2 = runMake({"ARCH=mips"});
+  ASSERT_TRUE(R2.ok()) << R2.err;
+  EXPECT_TRUE(R2.contains("arch=mips bits=32")) << R2.out;
+  auto R3 = runMake({"ARCH=ppc"});
+  ASSERT_TRUE(R3.ok()) << R3.err;
+  EXPECT_TRUE(R3.contains("bits=unknown")) << R3.out;
+}
+
+// $(MAKECMDGOALS) with $(filter) — routing specific targets
+TEST_F(BuildTest, Kernel510_MakecmdgoalsFilter) {
+  writeMakefile(
+      "CLEAN_TARGETS := clean mrproper distclean\n"
+      "ifneq ($(filter $(CLEAN_TARGETS),$(MAKECMDGOALS)),)\n"
+      "  NEED_CONFIG := no\n"
+      "else\n"
+      "  NEED_CONFIG := yes\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo config=$(NEED_CONFIG)\n"
+      "clean:\n"
+      "\t@echo config=$(NEED_CONFIG)\n"
+      ".PHONY: all clean\n");
+  auto R1 = runMake({}, "all");
+  ASSERT_TRUE(R1.ok()) << R1.err;
+  EXPECT_TRUE(R1.contains("config=yes")) << R1.out;
+  auto R2 = runMake({}, "clean");
+  ASSERT_TRUE(R2.ok()) << R2.err;
+  EXPECT_TRUE(R2.contains("config=no")) << R2.out;
+}
+
+// ifndef with ?= default value pattern (kernel common)
+TEST_F(BuildTest, Kernel510_IfndefConditionalDefault) {
+  writeMakefile(
+      "ifndef CROSS_COMPILE\n"
+      "  CROSS_COMPILE :=\n"
+      "endif\n"
+      "CC := $(CROSS_COMPILE)gcc\n"
+      "LD := $(CROSS_COMPILE)ld\n"
+      "all:\n"
+      "\t@echo cc=$(CC) ld=$(LD)\n"
+      ".PHONY: all\n");
+  auto R1 = runMake();
+  ASSERT_TRUE(R1.ok()) << R1.err;
+  EXPECT_TRUE(R1.contains("cc=gcc")) << R1.out;
+  EXPECT_TRUE(R1.contains("ld=ld")) << R1.out;
+  auto R2 = runMake({"CROSS_COMPILE=aarch64-linux-gnu-"});
+  ASSERT_TRUE(R2.ok()) << R2.err;
+  EXPECT_TRUE(R2.contains("cc=aarch64-linux-gnu-gcc")) << R2.out;
+  EXPECT_TRUE(R2.contains("ld=aarch64-linux-gnu-ld")) << R2.out;
+}
+
+// $(basename) + $(suffix) on multiple files
+TEST_F(BuildTest, Kernel510_BasenameSuffixMultiFile) {
+  writeMakefile(
+      "FILES := main.c util.h config.mk README\n"
+      "BASES := $(basename $(FILES))\n"
+      "SUFFS := $(suffix $(FILES))\n"
+      "all:\n"
+      "\t@echo bases=[$(BASES)] suffs=[$(SUFFS)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("bases=[main util config README]")) << R.out;
+  EXPECT_TRUE(R.contains("suffs=[.c .h .mk]")) << R.out;
+}
+
+// export with := assignment on same line
+TEST_F(BuildTest, Kernel510_ExportWithColonEquals) {
+  writeMakefile(
+      "export CC := neverc\n"
+      "export CFLAGS := -O2 -Wall\n"
+      "all:\n"
+      "\t@echo cc=$$CC flags=$$CFLAGS\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("cc=neverc")) << R.out;
+  EXPECT_TRUE(R.contains("-O2")) << R.out;
+}
+
+// $(dir) and $(notdir) used together for path decomposition
+TEST_F(BuildTest, Kernel510_DirNotdirDecomposition) {
+  writeMakefile(
+      "FILES := arch/x86/kernel/entry.o drivers/net/e1000.o fs/ext4/super.o\n"
+      "DIRS := $(sort $(dir $(FILES)))\n"
+      "NAMES := $(notdir $(FILES))\n"
+      "all:\n"
+      "\t@echo dirs=[$(DIRS)] names=[$(NAMES)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("arch/x86/kernel/")) << R.out;
+  EXPECT_TRUE(R.contains("drivers/net/")) << R.out;
+  EXPECT_TRUE(R.contains("fs/ext4/")) << R.out;
+  EXPECT_TRUE(R.contains("names=[entry.o e1000.o super.o]")) << R.out;
+}
+
+// Pattern rule matching with directory prefix
+TEST_F(BuildTest, Kernel510_PatternRuleWithDirPrefix) {
+  std::filesystem::create_directories(tmp() / "src");
+  std::filesystem::create_directories(tmp() / "obj");
+  writeFile(tmp() / "src" / "main.c", "");
+  writeFile(tmp() / "src" / "util.c", "");
+  writeMakefile(
+      "obj/%.o: src/%.c\n"
+      "\t@echo compile $< to $@\n"
+      "all: obj/main.o obj/util.o\n"
+      "\t@echo linked\n"
+      ".PHONY: all\n");
+  auto R = runMake({"-B"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("compile src/main.c to obj/main.o")) << R.out;
+  EXPECT_TRUE(R.contains("compile src/util.c to obj/util.o")) << R.out;
+}
+
+// $(foreach) + $(filter) pipeline — extract matching config vars
+TEST_F(BuildTest, Kernel510_ForeachFilterPipeline) {
+  writeMakefile(
+      "CONFIG_NET := y\n"
+      "CONFIG_BLK := m\n"
+      "CONFIG_USB := y\n"
+      "CONFIG_SND :=\n"
+      "ALL_CONFIGS := CONFIG_NET CONFIG_BLK CONFIG_USB CONFIG_SND\n"
+      "ENABLED := $(foreach c,$(ALL_CONFIGS),$(if $($(c)),$(c)))\n"
+      "BUILTIN := $(foreach c,$(ENABLED),$(if $(filter "
+      "y,$($(c))),$(c)))\n"
+      "all:\n"
+      "\t@echo enabled=[$(ENABLED)] builtin=[$(BUILTIN)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("CONFIG_NET")) << R.out;
+  EXPECT_TRUE(R.contains("CONFIG_BLK")) << R.out;
+  EXPECT_TRUE(R.contains("CONFIG_USB")) << R.out;
+  EXPECT_FALSE(R.contains("CONFIG_SND")) << R.out;
+}
+
+// Kernel-style complete build pipeline: version + arch + config + modules
+TEST_F(BuildTest, Kernel510_CompleteBuildPipeline) {
+  writeMakefile(
+      "# Version\n"
+      "VERSION = 5\n"
+      "PATCHLEVEL = 10\n"
+      "SUBLEVEL = 214\n"
+      "EXTRAVERSION =\n"
+      "KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if "
+      "$(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)\n"
+      "\n"
+      "# Verbosity\n"
+      "ifeq (\"$(origin V)\",\"command line\")\n"
+      "  KBUILD_VERBOSE = $(V)\n"
+      "endif\n"
+      "ifndef KBUILD_VERBOSE\n"
+      "  KBUILD_VERBOSE = 0\n"
+      "endif\n"
+      "ifeq ($(KBUILD_VERBOSE),1)\n"
+      "  quiet =\n"
+      "  Q =\n"
+      "else\n"
+      "  quiet = quiet_\n"
+      "  Q = @\n"
+      "endif\n"
+      "\n"
+      "# Architecture\n"
+      "ARCH ?= x86\n"
+      "CROSS_COMPILE ?=\n"
+      "ifeq ($(ARCH),x86)\n"
+      "  SRCARCH := x86\n"
+      "else ifeq ($(ARCH),arm64)\n"
+      "  SRCARCH := arm64\n"
+      "else\n"
+      "  SRCARCH := $(ARCH)\n"
+      "endif\n"
+      "\n"
+      "# Toolchain\n"
+      "CC := $(CROSS_COMPILE)gcc\n"
+      "LD := $(CROSS_COMPILE)ld\n"
+      "CFLAGS := -O2\n"
+      "export CC LD CFLAGS\n"
+      "\n"
+      "# Config\n"
+      "CONFIG_SMP := y\n"
+      "CONFIG_MODULES := y\n"
+      "ifeq ($(CONFIG_SMP),y)\n"
+      "  CFLAGS += -DCONFIG_SMP\n"
+      "endif\n"
+      "\n"
+      "# Subdirectories\n"
+      "core-y := kernel/ mm/\n"
+      "drivers-y := drivers/\n"
+      "ifeq ($(CONFIG_MODULES),y)\n"
+      "  drivers-y += drivers/base/\n"
+      "endif\n"
+      "ALL_SUBDIRS := $(core-y) $(drivers-y)\n"
+      "SUBDIRS := $(patsubst %/,%,$(ALL_SUBDIRS))\n"
+      "\n"
+      "# Module template\n"
+      "define subdir_template\n"
+      "$(1)_objs := $(1)/built-in.o\n"
+      "endef\n"
+      "$(foreach d,$(SUBDIRS),$(eval $(call subdir_template,$(d))))\n"
+      "ALL_OBJS := $(foreach d,$(SUBDIRS),$($(d)_objs))\n"
+      "\n"
+      "# Commands\n"
+      "quiet_cmd_link = LINK $@\n"
+      "cmd_link = $(LD) -o $@ $(ALL_OBJS)\n"
+      "\n"
+      "# Build\n"
+      "all:\n"
+      "\t@echo version=$(KERNELVERSION)\n"
+      "\t@echo arch=$(SRCARCH) cc=$(CC)\n"
+      "\t@echo subdirs=[$(SUBDIRS)]\n"
+      "\t@echo objs=[$(ALL_OBJS)]\n"
+      "\t@echo cflags=[$(CFLAGS)]\n"
+      "\t@echo display=[$($(quiet)cmd_link)]\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("version=5.10.214")) << R.out;
+  EXPECT_TRUE(R.contains("arch=x86")) << R.out;
+  EXPECT_TRUE(R.contains("cc=gcc")) << R.out;
+  EXPECT_TRUE(R.contains("kernel")) << R.out;
+  EXPECT_TRUE(R.contains("mm")) << R.out;
+  EXPECT_TRUE(R.contains("drivers")) << R.out;
+  EXPECT_TRUE(R.contains("-DCONFIG_SMP")) << R.out;
+  EXPECT_TRUE(R.contains("LINK")) << R.out;
+
+  // Test with cross-compile
+  auto R2 = runMake({"ARCH=arm64", "CROSS_COMPILE=aarch64-linux-gnu-"});
+  ASSERT_TRUE(R2.ok()) << R2.err;
+  EXPECT_TRUE(R2.contains("arch=arm64")) << R2.out;
+  EXPECT_TRUE(R2.contains("cc=aarch64-linux-gnu-gcc")) << R2.out;
+}
+
+// Stress test: 200 config variables with conditional compilation
+TEST_F(BuildTest, Kernel510_Stress200ConfigVars) {
+  std::string mk;
+  for (int i = 0; i < 200; ++i) {
+    std::string name = "CONFIG_FEAT_" + std::to_string(i);
+    if (i % 3 == 0)
+      mk += name + " := y\n";
+    else if (i % 3 == 1)
+      mk += name + " := m\n";
+  }
+  mk += "BUILTIN :=\n";
+  mk += "MODULE :=\n";
+  for (int i = 0; i < 200; ++i) {
+    std::string name = "CONFIG_FEAT_" + std::to_string(i);
+    mk += "ifeq ($(" + name + "),y)\n";
+    mk += "  BUILTIN += feat" + std::to_string(i) + ".o\n";
+    mk += "else ifeq ($(" + name + "),m)\n";
+    mk += "  MODULE += feat" + std::to_string(i) + ".o\n";
+    mk += "endif\n";
+  }
+  mk += "BCOUNT := $(words $(BUILTIN))\n";
+  mk += "MCOUNT := $(words $(MODULE))\n";
+  mk += "all:\n\t@echo builtin=$(BCOUNT) module=$(MCOUNT)\n";
+  mk += ".PHONY: all\n";
+  writeMakefile(mk);
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("builtin=67")) << R.out;
+  EXPECT_TRUE(R.contains("module=67")) << R.out;
+}
+
+// Stress: foreach + eval generating 150 rules (dry-run to verify generation)
+TEST_F(BuildTest, Kernel510_StressForeachEval150Rules) {
+  std::string mk = "MODULES :=";
+  for (int i = 0; i < 150; ++i)
+    mk += " m" + std::to_string(i);
+  mk += "\n";
+  mk += "OBJS := $(addsuffix .o,$(MODULES))\n";
+  mk += "COUNT := $(words $(OBJS))\n";
+  mk += "all:\n\t@echo count=$(COUNT)\n.PHONY: all\n";
+  mk += "define mod_rule\n"
+        "$(1).o:\n"
+        "\t@echo CC $(1).o\n"
+        "endef\n";
+  mk += "$(foreach m,$(MODULES),$(eval $(call mod_rule,$(m))))\n";
+  writeMakefile(mk);
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("count=150")) << R.out;
+}
+
+// Edge case: empty foreach body produces empty result
+TEST_F(BuildTest, Kernel510_EdgeEmptyForeachBody) {
+  writeMakefile(
+      "LIST := a b c\n"
+      "RESULT := [$(foreach x,$(LIST),)]done\n"
+      "all:\n"
+      "\t@echo result=$(RESULT)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("done")) << R.out;
+}
+
+// Edge case: $(call) with arg that contains commas via $(comma)
+TEST_F(BuildTest, Kernel510_CallArgWithComma) {
+  writeMakefile(
+      "comma := ,\n"
+      "func = got [$(1)] and [$(2)]\n"
+      "RESULT := $(call func,hello$(comma)world,second)\n"
+      "all:\n"
+      "\t@echo $(RESULT)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("got [hello,world]")) << R.out;
+  EXPECT_TRUE(R.contains("second")) << R.out;
+}
+
+// Edge case: ifeq comparing variables that expand to empty
+TEST_F(BuildTest, Kernel510_IfeqBothEmpty) {
+  writeMakefile(
+      "A :=\n"
+      "B :=\n"
+      "ifeq ($(A),$(B))\n"
+      "  MATCH := yes\n"
+      "else\n"
+      "  MATCH := no\n"
+      "endif\n"
+      "all:\n"
+      "\t@echo match=$(MATCH)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("match=yes")) << R.out;
+}
+
+// Edge case: $(eval) modifying variable then using it
+TEST_F(BuildTest, Kernel510_EvalModifiesVariable) {
+  writeMakefile(
+      "X := initial\n"
+      "$(eval X := modified)\n"
+      "all:\n"
+      "\t@echo x=$(X)\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("x=modified")) << R.out;
+}
+
+// Edge case: pattern rule $* stem with directory
+TEST_F(BuildTest, Kernel510_PatternStemWithDir) {
+  std::filesystem::create_directories(tmp() / "src");
+  std::filesystem::create_directories(tmp() / "build");
+  writeFile(tmp() / "src" / "main.c", "");
+  writeMakefile(
+      "build/%.o: src/%.c\n"
+      "\t@echo stem=$* target=$@ prereq=$<\n"
+      "all: build/main.o\n"
+      "\t@echo done\n"
+      ".PHONY: all\n");
+  auto R = runMake({"-B"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("stem=main")) << R.out;
+  EXPECT_TRUE(R.contains("target=build/main.o")) << R.out;
+  EXPECT_TRUE(R.contains("prereq=src/main.c")) << R.out;
+}
