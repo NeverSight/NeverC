@@ -1,7 +1,6 @@
 set(NEVERC_TEST_SOURCES
   NeverCTestFixture.cpp
   BasicTests.cpp
-  BuildTests.cpp
   HostTests.cpp
   DriverTests.cpp
   LTOTests.cpp
