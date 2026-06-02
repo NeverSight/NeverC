@@ -184,7 +184,7 @@ __m128i pshufbClassify128_WS(__m128i V, __m128i LoLUT, __m128i HiLUT) {
 
 namespace {
 LLVM_ATTRIBUTE_ALWAYS_INLINE
-inline const char *
+const char *
 skipWhitespaceRun(const char *CurPtr, const char *BufferEnd) {
 #ifdef __AVX512BW__
   CurPtr = simdScan512_WS(CurPtr, BufferEnd, [](__m512i V) -> __mmask64 {
@@ -296,7 +296,7 @@ skipWhitespaceRun(const char *CurPtr, const char *BufferEnd) {
 }
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE
-inline const char *
+const char *
 scanToLineBreak(const char *CurPtr, const char *BufferEnd) {
 #ifdef __AVX512BW__
   CurPtr = simdScan512x2_WS(CurPtr, BufferEnd, [](__m512i V) -> __mmask64 {
@@ -397,7 +397,7 @@ scanToLineBreak(const char *CurPtr, const char *BufferEnd) {
 }
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE
-inline const char *
+const char *
 scanBlockBody(const char *CurPtr, const char *BufferEnd) {
 #ifdef __AVX512BW__
   CurPtr = simdScan512x2_WS(CurPtr, BufferEnd, [](__m512i V) -> __mmask64 {
