@@ -143,6 +143,23 @@ public:
     return TargetCodeGenInfo::isScalarizableAsmOperand(FE, Ty);
   }
 };
+
+class WindowsAArch64TargetCodeGenInfo : public AArch64TargetCodeGenInfo {
+public:
+  WindowsAArch64TargetCodeGenInfo(TypeEmitter &CGT, AArch64ABIKind Kind)
+      : AArch64TargetCodeGenInfo(CGT, Kind) {}
+
+  void getDependentLibraryOption(llvm::StringRef Lib,
+                                 llvm::SmallString<24> &Opt) const override {
+    Opt = "--defaultlib=";
+    Opt += qualifyWindowsLibrary(Lib);
+  }
+
+  void getDetectMismatchOption(llvm::StringRef Name, llvm::StringRef Value,
+                               llvm::SmallString<32> &Opt) const override {
+    Opt = "--failifmismatch=\"" + Name.str() + "=" + Value.str() + "\"";
+  }
+};
 } // namespace
 
 // ===----------------------------------------------------------------------===
@@ -709,4 +726,10 @@ Address AArch64ABIInfo::genMSVAArg(FunctionEmitter &FE, Address VAListAddr,
 std::unique_ptr<TargetCodeGenInfo>
 Emit::createAArch64TargetCodeGenInfo(ModuleEmitter &ME, AArch64ABIKind Kind) {
   return std::make_unique<AArch64TargetCodeGenInfo>(ME.getTypes(), Kind);
+}
+
+std::unique_ptr<TargetCodeGenInfo>
+Emit::createWindowsAArch64TargetCodeGenInfo(ModuleEmitter &ME,
+                                            AArch64ABIKind Kind) {
+  return std::make_unique<WindowsAArch64TargetCodeGenInfo>(ME.getTypes(), Kind);
 }

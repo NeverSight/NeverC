@@ -69,7 +69,13 @@ std::unique_ptr<TargetCodeGenInfo> createTargetCodeGenInfo(ModuleEmitter &ME) {
     AArch64ABIKind Kind = AArch64ABIKind::AAPCS;
     if (Target.getABI() == "darwinpcs")
       Kind = AArch64ABIKind::DarwinPCS;
-    return createAArch64TargetCodeGenInfo(ME, Kind);
+
+    switch (Triple.getOS()) {
+    case llvm::Triple::Win32:
+      return createWindowsAArch64TargetCodeGenInfo(ME, Kind);
+    default:
+      return createAArch64TargetCodeGenInfo(ME, Kind);
+    }
   }
 
   case llvm::Triple::x86_64: {
