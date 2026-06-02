@@ -28,6 +28,11 @@ void VariableEnv::set(const std::string &Name, const std::string &Value,
   Vars[Name] = {Value, Mode, Orig, false};
 }
 
+void VariableEnv::setForced(const std::string &Name, const std::string &Value,
+                            AssignMode Mode, Origin Orig) {
+  Vars[Name] = {Value, Mode, Orig, false};
+}
+
 void VariableEnv::append(const std::string &Name, const std::string &Value) {
   auto It = Vars.find(Name);
   if (It == Vars.end()) {

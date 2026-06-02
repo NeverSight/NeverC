@@ -34,6 +34,10 @@ public:
 
   void set(const std::string &Name, const std::string &Value,
            AssignMode Mode, Origin Orig = Origin::File);
+  // Bypass origin protection — used by foreach/call to temporarily override
+  // variables regardless of their origin.
+  void setForced(const std::string &Name, const std::string &Value,
+                 AssignMode Mode, Origin Orig = Origin::File);
   void append(const std::string &Name, const std::string &Value);
   void conditionalSet(const std::string &Name, const std::string &Value);
   void setExport(const std::string &Name, bool Export = true);

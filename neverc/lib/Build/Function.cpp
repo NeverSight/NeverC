@@ -417,11 +417,28 @@ void FunctionRegistry::registerBuiltins() {
     std::string VarName = trim(Env.expand(Args[0]));
     auto Words = splitWords(Env.expand(Args[1]));
     std::string Template = Args[2]; // kept raw for per-iteration expansion
+
+    bool WasDefined = false;
+    VariableEnv::Variable SavedVar;
+    {
+      auto It = Env.vars().find(VarName);
+      if (It != Env.vars().end()) {
+        WasDefined = true;
+        SavedVar = It->second;
+      }
+    }
+
     std::vector<std::string> Result;
     for (auto &W : Words) {
-      Env.set(VarName, W, AssignMode::Simple);
+      Env.setForced(VarName, W, AssignMode::Simple);
       Result.push_back(Env.expand(Template));
     }
+
+    if (WasDefined)
+      Env.setForced(VarName, SavedVar.Value, SavedVar.Mode, SavedVar.Orig);
+    else
+      Env.undefine(VarName);
+
     return joinWords(Result);
   });
 
@@ -446,23 +463,22 @@ void FunctionRegistry::registerBuiltins() {
     }
 
     for (size_t I = 1; I < Args.size(); ++I) {
-      Env.set(std::to_string(I), trim(Env.expand(Args[I])),
-              AssignMode::Simple);
+      Env.setForced(std::to_string(I), trim(Env.expand(Args[I])),
+                    AssignMode::Simple);
     }
     for (size_t I = Args.size(); I < 10; ++I) {
       std::string Key = std::to_string(I);
       if (Env.isDefined(Key))
-        Env.set(Key, "", AssignMode::Simple);
+        Env.setForced(Key, "", AssignMode::Simple);
     }
 
     std::string Result = Env.expand(Body);
 
-    // Restore positional variables to their saved state.
     for (auto &S : Saved) {
       if (S.WasDefined)
-        Env.set(S.Key, S.Value, AssignMode::Simple);
+        Env.setForced(S.Key, S.Value, AssignMode::Simple);
       else
-        Env.set(S.Key, "", AssignMode::Simple);
+        Env.setForced(S.Key, "", AssignMode::Simple);
     }
 
     return Result;

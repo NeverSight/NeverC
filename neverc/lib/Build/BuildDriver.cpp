@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -210,12 +211,20 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
       for (auto &F : Inc->Files) {
         std::string Expanded = Env.expand(F);
 
+        // Expansion may produce multiple space-separated filenames
+        // (e.g. $(wildcard *.mk) → "a.mk b.mk"). Split into words,
+        // then glob each word that contains wildcards.
         std::vector<std::string> Paths;
-        if (Expanded.find('*') != std::string::npos ||
-            Expanded.find('?') != std::string::npos) {
-          Paths = platform::globFiles(Expanded);
-        } else {
-          Paths.push_back(Expanded);
+        std::istringstream SS(Expanded);
+        std::string Word;
+        while (SS >> Word) {
+          if (Word.find('*') != std::string::npos ||
+              Word.find('?') != std::string::npos) {
+            auto G = platform::globFiles(Word);
+            Paths.insert(Paths.end(), G.begin(), G.end());
+          } else {
+            Paths.push_back(Word);
+          }
         }
 
         for (auto &Path : Paths) {

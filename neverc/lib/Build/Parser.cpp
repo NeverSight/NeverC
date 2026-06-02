@@ -613,7 +613,7 @@ std::unique_ptr<Include> Parser::parseInclude(const std::string &Line,
   Inc->Optional = (Keyword == "-include" || Keyword == "sinclude");
 
   std::string Rest = trim(Word.substr(Keyword.size()));
-  Inc->Files = splitWords(Rest);
+  Inc->Files = splitWordsRespectingVarRefs(Rest);
   return Inc;
 }
 
