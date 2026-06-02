@@ -182,6 +182,8 @@ CODEGEN_TEST(CleanupFinal64Bit, "test_64bit_cleanup_final.c",
              "PASS: 64bit_cleanup_final")
 
 TEST_F(HostTest, GenericCPUCMOV) {
+  if (!isX86_64())
+    GTEST_SKIP() << "-march=x86-64 is only valid on x86_64 hosts";
   compileRunAndCheck("test_generic_cpu_cmov",
                      (testDir() / "codegen/test_generic_cpu_cmov.c").string(),
                      "-std=gnu11 -O2 -march=x86-64", 0,

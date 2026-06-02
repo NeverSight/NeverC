@@ -14026,12 +14026,11 @@ AArch64TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
                                                SelectionDAG &DAG) const {
   MachineFunction &MF = DAG.getMachineFunction();
 
+  if (hasInlineStackProbe(MF))
+    return LowerInlineDYNAMIC_STACKALLOC(Op, DAG);
   if (Subtarget->isTargetWindows())
     return LowerWindowsDYNAMIC_STACKALLOC(Op, DAG);
-  else if (hasInlineStackProbe(MF))
-    return LowerInlineDYNAMIC_STACKALLOC(Op, DAG);
-  else
-    return SDValue();
+  return SDValue();
 }
 
 // When x and y are extended, lower:

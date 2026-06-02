@@ -24288,7 +24288,8 @@ SDValue X86TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
   MachineFunction &MF = DAG.getMachineFunction();
   bool SplitStack = MF.shouldSplitStack();
   bool EmitStackProbeCall = hasStackProbeSymbol(MF);
-  bool Lower = (Subtarget.isOSWindows() && !Subtarget.isTargetMachO()) ||
+  bool Lower = (Subtarget.isOSWindows() && !Subtarget.isTargetMachO() &&
+                !hasInlineStackProbe(MF)) ||
                SplitStack || EmitStackProbeCall;
   SDLoc dl(Op);
 

@@ -58,8 +58,11 @@ private:
       llvm::report_fatal_error("Passing SVE types to variadic functions is "
                                "currently not supported");
 
-    return isDarwinPCS() ? genDarwinVAArg(VAListAddr, Ty, FE)
-                         : genAAPCSVAArg(VAListAddr, Ty, FE);
+    if (isDarwinPCS())
+      return genDarwinVAArg(VAListAddr, Ty, FE);
+    if (getTarget().getTriple().isOSWindows())
+      return genMSVAArg(FE, VAListAddr, Ty);
+    return genAAPCSVAArg(VAListAddr, Ty, FE);
   }
 
   bool allowBFloatArgsAndRet() const override {

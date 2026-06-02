@@ -296,6 +296,7 @@ bool initTargetOptions(DiagnosticsEngine &Diags, llvm::TargetOptions &Options,
   Options.MCOptions.MCNoWarn = CodeGenOpts.NoWarn;
   Options.MCOptions.AsmVerbose = CodeGenOpts.AsmVerbose;
   Options.MCOptions.Dwarf64 = CodeGenOpts.Dwarf64;
+  Options.MCOptions.DwarfVersion = CodeGenOpts.DwarfVersion;
   Options.MCOptions.PreserveAsmComments = CodeGenOpts.PreserveAsmComments;
   Options.MCOptions.ABIName = TargetOpts.ABI;
   for (const auto &Entry : HSOpts.UserEntries)

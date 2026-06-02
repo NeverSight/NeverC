@@ -249,7 +249,12 @@ static void test_platform_invariants(void) {
 #endif
 #endif
 #ifdef __aarch64__
+#if defined(_WIN32) || defined(__APPLE__)
     CHECK(sizeof(long double) == 8, "aarch64 long double 8 bytes");
+#else
+    // AAPCS64: long double is 128-bit IEEE quad-precision (16 bytes)
+    CHECK(sizeof(long double) == 16, "aarch64 linux long double 16 bytes");
+#endif
 #endif
 }
 

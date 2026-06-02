@@ -760,7 +760,7 @@ bool AArch64Relaxer::tryRelaxAdrpLdr(const Relocation &adrpRel,
 // and thus need the full 64-bit GOT entry. Do not relax such symbols.
 namespace {
 bool needsGotForMemtag(const Relocation &rel) {
-  return rel.sym->isTagged() && needsGot(rel.expr);
+  return rel.sym && rel.sym->isTagged() && needsGot(rel.expr);
 }
 } // namespace
 
