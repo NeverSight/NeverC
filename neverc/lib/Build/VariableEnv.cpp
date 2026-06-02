@@ -24,13 +24,20 @@ void VariableEnv::set(const std::string &Name, const std::string &Value,
   if (It != Vars.end()) {
     if (Orig == Origin::File && It->second.Orig == Origin::CommandLine)
       return;
+    bool WasExported = It->second.Exported;
+    Vars[Name] = {Value, Mode, Orig, WasExported};
+  } else {
+    Vars[Name] = {Value, Mode, Orig, false};
   }
-  Vars[Name] = {Value, Mode, Orig, false};
 }
 
 void VariableEnv::setForced(const std::string &Name, const std::string &Value,
                             AssignMode Mode, Origin Orig) {
-  Vars[Name] = {Value, Mode, Orig, false};
+  bool WasExported = false;
+  auto It = Vars.find(Name);
+  if (It != Vars.end())
+    WasExported = It->second.Exported;
+  Vars[Name] = {Value, Mode, Orig, WasExported};
 }
 
 void VariableEnv::append(const std::string &Name, const std::string &Value) {
@@ -143,7 +150,11 @@ void VariableEnv::importEnvironment() {
 
 void VariableEnv::setCommandLineVar(const std::string &Name,
                                      const std::string &Value) {
-  Vars[Name] = {Value, AssignMode::Simple, Origin::CommandLine, false};
+  bool WasExported = false;
+  auto It = Vars.find(Name);
+  if (It != Vars.end())
+    WasExported = It->second.Exported;
+  Vars[Name] = {Value, AssignMode::Simple, Origin::CommandLine, WasExported};
 }
 
 std::string

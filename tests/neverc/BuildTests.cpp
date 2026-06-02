@@ -20658,3 +20658,63 @@ TEST_F(BuildTest, Kernel510_PatternStemWithDir) {
   EXPECT_TRUE(R.contains("target=build/main.o")) << R.out;
   EXPECT_TRUE(R.contains("prereq=src/main.c")) << R.out;
 }
+
+// ============================================================================
+// Export flag preservation across reassignment
+// ============================================================================
+
+// export VAR then reassign — export flag must persist
+TEST_F(BuildTest, ExportFlagPreservedOnReassign) {
+  writeMakefile(
+      "CC := original\n"
+      "export CC\n"
+      "CC := reassigned\n"
+      "all:\n"
+      "\t@echo cc=$$CC\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("cc=reassigned")) << R.out;
+}
+
+// export VAR then ?= — export flag should persist even with conditional assign
+TEST_F(BuildTest, ExportFlagPreservedOnConditionalAssign) {
+  writeMakefile(
+      "CC := gcc\n"
+      "export CC\n"
+      "CC ?= clang\n"
+      "all:\n"
+      "\t@echo cc=$$CC\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("cc=gcc")) << R.out;
+}
+
+// export with := on same line then += append
+TEST_F(BuildTest, ExportFlagPreservedOnAppend) {
+  writeMakefile(
+      "export CFLAGS := -O2\n"
+      "CFLAGS += -Wall\n"
+      "all:\n"
+      "\t@echo flags=$$CFLAGS\n"
+      ".PHONY: all\n");
+  auto R = runMake();
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("-O2")) << R.out;
+  EXPECT_TRUE(R.contains("-Wall")) << R.out;
+}
+
+// Command line var with export should preserve export through override
+TEST_F(BuildTest, ExportFlagPreservedWithCmdLineOverride) {
+  writeMakefile(
+      "CC := default\n"
+      "export CC\n"
+      "override CC := forced\n"
+      "all:\n"
+      "\t@echo cc=$$CC\n"
+      ".PHONY: all\n");
+  auto R = runMake({"CC=fromcmd"});
+  ASSERT_TRUE(R.ok()) << R.err;
+  EXPECT_TRUE(R.contains("cc=forced")) << R.out;
+}
