@@ -26,7 +26,8 @@ public:
   explicit JobScheduler(const Options &Opts);
 
   int execute(DepGraph &Graph, VariableEnv &Env,
-              const std::vector<std::string> &Targets);
+              const std::vector<std::string> &Targets,
+              const RuleDB *Rules = nullptr);
 
 private:
   struct Job {
@@ -35,7 +36,7 @@ private:
     std::vector<Recipe> Recipes;
   };
 
-  int runJob(Job &J, VariableEnv &Env);
+  int runJob(Job &J, VariableEnv &Env, const RuleDB *Rules);
   std::string expandRecipeVars(const std::string &Cmd,
                                 const std::string &Target,
                                 const DepGraph::Node &N,

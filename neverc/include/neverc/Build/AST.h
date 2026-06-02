@@ -31,6 +31,7 @@ enum class StmtKind {
   DefineBlock,
   ExportDirective,
   UndefineDirective,
+  TargetVarAssign,
   Expression,
 };
 
@@ -122,6 +123,19 @@ struct UndefineDirective : Statement {
   UndefineDirective() : Statement(StmtKind::UndefineDirective) {}
   static bool classof(const Statement *S) {
     return S->Kind == StmtKind::UndefineDirective;
+  }
+};
+
+struct TargetVarAssign : Statement {
+  std::vector<std::string> Targets;
+  std::string VarName;
+  AssignMode Mode;
+  std::string RawValue;
+  bool Override = false;
+
+  TargetVarAssign() : Statement(StmtKind::TargetVarAssign) {}
+  static bool classof(const Statement *S) {
+    return S->Kind == StmtKind::TargetVarAssign;
   }
 };
 

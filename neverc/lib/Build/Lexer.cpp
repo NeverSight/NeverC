@@ -1,6 +1,5 @@
 #include "neverc/Build/Lexer.h"
 
-#include <algorithm>
 #include <cctype>
 
 namespace neverc {
@@ -30,6 +29,8 @@ static std::string firstWord(const std::string &Line) {
 static bool hasUnquotedAssignOp(const std::string &Line, size_t &OpPos,
                                  size_t &OpLen) {
   int Parens = 0;
+  size_t FoundOp = std::string::npos;
+  size_t FoundLen = 0;
   for (size_t I = 0; I < Line.size(); ++I) {
     char C = Line[I];
     if (C == '$' && I + 1 < Line.size() &&
@@ -47,40 +48,74 @@ static bool hasUnquotedAssignOp(const std::string &Line, size_t &OpPos,
 
     if (C == '=' && I > 0 && Line[I - 1] == ':' &&
         (I < 2 || Line[I - 2] != ':')) {
-      OpPos = I - 1;
-      OpLen = 2;
-      return true;
+      FoundOp = I - 1;
+      FoundLen = 2;
+      break;
     }
     if (C == '=' && I > 0 && Line[I - 1] == ':' && I >= 2 &&
         Line[I - 2] == ':') {
-      OpPos = I - 2;
-      OpLen = 3;
-      return true;
+      FoundOp = I - 2;
+      FoundLen = 3;
+      break;
     }
     if (C == '=' && I > 0 && Line[I - 1] == '+') {
-      OpPos = I - 1;
-      OpLen = 2;
-      return true;
+      FoundOp = I - 1;
+      FoundLen = 2;
+      break;
     }
     if (C == '=' && I > 0 && Line[I - 1] == '?') {
-      OpPos = I - 1;
-      OpLen = 2;
-      return true;
+      FoundOp = I - 1;
+      FoundLen = 2;
+      break;
     }
     if (C == '=' && I > 0 && Line[I - 1] == '!') {
-      OpPos = I - 1;
-      OpLen = 2;
-      return true;
+      FoundOp = I - 1;
+      FoundLen = 2;
+      break;
     }
     if (C == '=' && (I == 0 || (Line[I - 1] != ':' && Line[I - 1] != '+' &&
                                  Line[I - 1] != '?' && Line[I - 1] != '!' &&
                                  Line[I - 1] != '<' && Line[I - 1] != '>'))) {
-      OpPos = I;
-      OpLen = 1;
-      return true;
+      FoundOp = I;
+      FoundLen = 1;
+      break;
     }
   }
-  return false;
+
+  if (FoundOp == std::string::npos)
+    return false;
+
+  // If a rule-separator colon exists before the assignment operator,
+  // this is a target-specific variable (target: VAR = value), not a
+  // standalone assignment.  Let classifyLine fall through to the rule check.
+  Parens = 0;
+  for (size_t I = 0; I < FoundOp; ++I) {
+    char C = Line[I];
+    if (C == '$' && I + 1 < Line.size() &&
+        (Line[I + 1] == '(' || Line[I + 1] == '{')) {
+      ++Parens;
+      ++I;
+      continue;
+    }
+    if (Parens > 0 && (C == ')' || C == '}')) {
+      --Parens;
+      continue;
+    }
+    if (Parens > 0)
+      continue;
+    if (C == ':') {
+      if (I + 1 < Line.size() && Line[I + 1] == '=')
+        continue;
+      if (I + 1 < Line.size() && Line[I + 1] == ':' &&
+          I + 2 < Line.size() && Line[I + 2] == '=')
+        continue;
+      return false;
+    }
+  }
+
+  OpPos = FoundOp;
+  OpLen = FoundLen;
+  return true;
 }
 
 static bool hasUnquotedColon(const std::string &Line) {

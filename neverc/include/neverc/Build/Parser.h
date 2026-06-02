@@ -34,6 +34,8 @@ private:
                                             unsigned LineNo, size_t &Idx);
   std::unique_ptr<ExportDirective> parseExport(const std::string &Line,
                                                 unsigned LineNo);
+  std::unique_ptr<TargetVarAssign> parseTargetVarAssign(
+      const std::string &Line, unsigned LineNo, size_t &Idx);
 
   void error(unsigned LineNo, const std::string &Msg);
 

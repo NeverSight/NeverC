@@ -246,6 +246,9 @@ std::unique_ptr<Statement> Parser::parseLine(size_t &Idx) {
   }
 
   if (ML.Type == MakefileLine::Rule) {
+    auto TSV = parseTargetVarAssign(ML.Content, ML.LineNumber, Idx);
+    if (TSV)
+      return TSV;
     return parseRule(ML.Content, ML.LineNumber, Idx);
   }
 
@@ -315,6 +318,7 @@ std::unique_ptr<Rule> Parser::parseRule(const std::string &Line,
   size_t PrereqStart = ColonPos + 1;
 
   std::string PrereqStr = trim(Line.substr(PrereqStart));
+
 
   R->Targets = splitWordsRespectingVarRefs(TargetStr);
 
@@ -679,6 +683,54 @@ std::unique_ptr<ExportDirective> Parser::parseExport(const std::string &Line,
     E->Names = splitWords(Rest);
   }
   return E;
+}
+
+std::unique_ptr<TargetVarAssign>
+Parser::parseTargetVarAssign(const std::string &Line, unsigned LineNo,
+                              size_t &Idx) {
+  size_t ColonPos = std::string::npos;
+  {
+    int Parens = 0;
+    for (size_t I = 0; I < Line.size(); ++I) {
+      char C = Line[I];
+      if (C == '$' && I + 1 < Line.size() &&
+          (Line[I + 1] == '(' || Line[I + 1] == '{')) {
+        ++Parens;
+        ++I;
+        continue;
+      }
+      if (Parens > 0 && (C == ')' || C == '}')) {
+        --Parens;
+        continue;
+      }
+      if (Parens > 0)
+        continue;
+      if (C == ':') {
+        if (I + 1 < Line.size() && Line[I + 1] == '=')
+          continue;
+        ColonPos = I;
+        break;
+      }
+    }
+  }
+  if (ColonPos == std::string::npos)
+    return nullptr;
+
+  std::string After = trim(Line.substr(ColonPos + 1));
+  size_t OpPos, OpLen;
+  AssignMode Mode;
+  if (!findAssignOp(After, OpPos, OpLen, Mode))
+    return nullptr;
+
+  auto TSV = std::make_unique<TargetVarAssign>();
+  TSV->Targets = splitWordsRespectingVarRefs(trim(Line.substr(0, ColonPos)));
+  TSV->VarName = trim(After.substr(0, OpPos));
+  TSV->Mode = Mode;
+  TSV->RawValue = trim(After.substr(OpPos + OpLen));
+  ++Idx;
+  while (Idx < Lines.size() && Lines[Idx].Type == MakefileLine::RecipeLine)
+    ++Idx;
+  return TSV;
 }
 
 void Parser::error(unsigned LineNo, const std::string &Msg) {

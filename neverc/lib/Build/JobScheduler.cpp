@@ -131,7 +131,35 @@ bool JobScheduler::collectReadyJobs(DepGraph &Graph,
   return MadeProgress;
 }
 
-int JobScheduler::runJob(Job &J, VariableEnv &Env) {
+int JobScheduler::runJob(Job &J, VariableEnv &Env, const RuleDB *Rules) {
+  // Apply target-specific variable overrides.
+  struct SavedVar {
+    std::string Name;
+    std::string Value;
+    bool WasDefined;
+  };
+  std::vector<SavedVar> Saved;
+  if (Rules) {
+    if (auto *TVars = Rules->getTargetVars(J.Target)) {
+      for (auto &TV : *TVars) {
+        std::string Name = Env.expand(TV.VarName);
+        bool Defined = Env.isDefined(Name);
+        Saved.push_back({Name, Defined ? Env.rawValue(Name) : "", Defined});
+        if (TV.Mode == AssignMode::Conditional) {
+          if (!Defined)
+            Env.setForced(Name, TV.RawValue, AssignMode::Recursive);
+        } else if (TV.Mode == AssignMode::Append) {
+          Env.append(Name, Env.expand(TV.RawValue));
+        } else {
+          std::string Val = TV.RawValue;
+          if (TV.Mode == AssignMode::Simple)
+            Val = Env.expand(Val);
+          Env.setForced(Name, Val, TV.Mode);
+        }
+      }
+    }
+  }
+
   // Set exported variables in the process environment so child commands see
   // them.
   for (auto &[Name, Var] : Env.vars()) {
@@ -198,15 +226,29 @@ int JobScheduler::runJob(Job &J, VariableEnv &Env) {
         std::lock_guard<std::mutex> Lock(OutputMutex);
         llvm::errs() << "neverc make: *** [" << J.Target
                      << "] Error " << Rc << "\n";
+        for (auto &S : Saved) {
+          if (S.WasDefined)
+            Env.setForced(S.Name, S.Value, AssignMode::Recursive);
+          else
+            Env.undefine(S.Name);
+        }
         return Rc;
       }
     }
+  }
+
+  for (auto &S : Saved) {
+    if (S.WasDefined)
+      Env.setForced(S.Name, S.Value, AssignMode::Recursive);
+    else
+      Env.undefine(S.Name);
   }
   return 0;
 }
 
 int JobScheduler::execute(DepGraph &Graph, VariableEnv &Env,
-                           const std::vector<std::string> &Targets) {
+                           const std::vector<std::string> &Targets,
+                           const RuleDB *Rules) {
   bool AnyFailed = false;
 
   while (true) {
@@ -221,7 +263,7 @@ int JobScheduler::execute(DepGraph &Graph, VariableEnv &Env,
 
     if (Opts.MaxJobs <= 1) {
       for (auto &J : Ready) {
-        int Rc = runJob(J, Env);
+        int Rc = runJob(J, Env, Rules);
         if (Rc != 0) {
           J.Node->Failed = true;
           AnyFailed = true;
@@ -242,9 +284,9 @@ int JobScheduler::execute(DepGraph &Graph, VariableEnv &Env,
         // Each async job gets its own VariableEnv copy to avoid
         // auto-variable race conditions.
         Futures.push_back(std::async(std::launch::async,
-                                     [this, &Ready, I, &Env]() {
+                                     [this, &Ready, I, &Env, Rules]() {
                                        VariableEnv LocalEnv(Env);
-                                       return runJob(Ready[I], LocalEnv);
+                                       return runJob(Ready[I], LocalEnv, Rules);
                                      }));
       }
 
@@ -262,7 +304,7 @@ int JobScheduler::execute(DepGraph &Graph, VariableEnv &Env,
       }
 
       for (size_t I = BatchSize; I < Ready.size(); ++I) {
-        int Rc = runJob(Ready[I], Env);
+        int Rc = runJob(Ready[I], Env, Rules);
         if (Rc != 0) {
           Ready[I].Node->Failed = true;
           AnyFailed = true;

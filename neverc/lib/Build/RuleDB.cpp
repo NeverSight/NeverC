@@ -233,5 +233,18 @@ RuleDB::matchPatternRule(const std::string &Target) const {
   return nullptr;
 }
 
+void RuleDB::addTargetVar(const std::string &Target,
+                           const TargetVarOverride &Var) {
+  TargetVars[Target].push_back(Var);
+}
+
+const std::vector<TargetVarOverride> *
+RuleDB::getTargetVars(const std::string &Target) const {
+  auto It = TargetVars.find(Target);
+  if (It == TargetVars.end())
+    return nullptr;
+  return &It->second;
+}
+
 } // namespace build
 } // namespace neverc

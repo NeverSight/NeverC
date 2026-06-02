@@ -13,6 +13,12 @@ namespace build {
 
 class VariableEnv;
 
+struct TargetVarOverride {
+  std::string VarName;
+  std::string RawValue;
+  AssignMode Mode;
+};
+
 struct ResolvedRule {
   std::string Target;
   std::vector<std::string> Prerequisites;
@@ -34,6 +40,10 @@ public:
   bool isPhony(const std::string &Target) const;
   std::string defaultTarget() const;
 
+  void addTargetVar(const std::string &Target, const TargetVarOverride &Var);
+  const std::vector<TargetVarOverride> *
+  getTargetVars(const std::string &Target) const;
+
   const std::unordered_map<std::string, std::vector<ResolvedRule>> &
   rules() const {
     return ExplicitRules;
@@ -54,6 +64,7 @@ private:
   std::unordered_set<std::string> PhonyTargets;
   std::string FirstTarget;
   mutable std::map<std::string, ResolvedRule> PatternMatchCache;
+  std::unordered_map<std::string, std::vector<TargetVarOverride>> TargetVars;
 };
 
 } // namespace build

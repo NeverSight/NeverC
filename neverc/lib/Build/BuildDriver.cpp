@@ -308,6 +308,18 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
       }
       break;
     }
+    case StmtKind::TargetVarAssign: {
+      auto *TV = static_cast<TargetVarAssign *>(S.get());
+      for (auto &RawTarget : TV->Targets) {
+        std::string Target = Env.expand(RawTarget);
+        TargetVarOverride Ov;
+        Ov.VarName = TV->VarName;
+        Ov.RawValue = TV->RawValue;
+        Ov.Mode = TV->Mode;
+        Rules.addTargetVar(Target, Ov);
+      }
+      break;
+    }
     case StmtKind::Expression: {
       auto *E = static_cast<Expression *>(S.get());
       Env.expand(E->Text);
@@ -539,7 +551,7 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
   SchedOpts.Silent = Opts.Silent;
 
   JobScheduler Sched(SchedOpts);
-  return Sched.execute(Graph, Env, Targets);
+  return Sched.execute(Graph, Env, Targets, &Rules);
 }
 
 } // namespace build
