@@ -36,3 +36,19 @@ gtest_discover_tests(neverc-tests
     TIMEOUT 300
   DISCOVERY_TIMEOUT 30
 )
+
+# Build module unit tests (Lexer, Parser, VariableEnv, RuleDB, DepGraph)
+add_executable(neverc-build-tests BuildTests.cpp)
+
+target_link_libraries(neverc-build-tests PRIVATE
+  GTest::gtest GTest::gtest_main
+  nevercBuild
+)
+
+target_compile_features(neverc-build-tests PRIVATE cxx_std_17)
+
+gtest_discover_tests(neverc-build-tests
+  PROPERTIES
+    TIMEOUT 120
+  DISCOVERY_TIMEOUT 30
+)
