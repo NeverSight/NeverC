@@ -29,7 +29,11 @@ ProcessResult shellExecute(const std::string &Command,
   // GNU make passes the command directly to popen() which invokes
   // /bin/sh -c <command>.  We match that behavior.
   (void)Shell;
+#ifdef _WIN32
+  FILE *Pipe = _popen(Command.c_str(), "r");
+#else
   FILE *Pipe = popen(Command.c_str(), "r");
+#endif
   if (!Pipe) {
     R.ExitCode = 127;
     return R;
@@ -39,7 +43,11 @@ ProcessResult shellExecute(const std::string &Command,
   while (fgets(Buf, sizeof(Buf), Pipe))
     R.Output += Buf;
 
+#ifdef _WIN32
+  int Status = _pclose(Pipe);
+#else
   int Status = pclose(Pipe);
+#endif
 #ifdef _WIN32
   R.ExitCode = Status;
 #else

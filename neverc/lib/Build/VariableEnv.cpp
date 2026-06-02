@@ -5,7 +5,13 @@
 #include <cstdlib>
 #include <sstream>
 
+#ifdef _WIN32
+#include <stdlib.h>
+static char **getEnviron() { return _environ; }
+#else
 extern "C" char **environ;
+static char **getEnviron() { return environ; }
+#endif
 
 namespace neverc {
 namespace build {
@@ -148,9 +154,10 @@ void VariableEnv::setAutoVar(const std::string &Name,
 void VariableEnv::clearAutoVars() { AutoVars.clear(); }
 
 void VariableEnv::importEnvironment() {
-  if (!::environ)
+  char **envp = getEnviron();
+  if (!envp)
     return;
-  for (char **Env = ::environ; *Env; ++Env) {
+  for (char **Env = envp; *Env; ++Env) {
     std::string Entry = *Env;
     size_t Eq = Entry.find('=');
     if (Eq == std::string::npos)
