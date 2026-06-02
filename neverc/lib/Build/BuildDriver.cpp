@@ -287,6 +287,7 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
         for (auto &Name : E->Names)
           Env.setExport(Env.expand(Name), false);
       } else if (E->ExportAll) {
+        Env.setExportAll(true);
         for (auto &[Name, Var] : Env.vars())
           Env.setExport(Name);
       } else {

@@ -41,6 +41,7 @@ public:
   void append(const std::string &Name, const std::string &Value);
   void conditionalSet(const std::string &Name, const std::string &Value);
   void setExport(const std::string &Name, bool Export = true);
+  void setExportAll(bool All) { ExportAllFlag = All; }
   void undefine(const std::string &Name);
 
   std::string get(const std::string &Name);
@@ -79,6 +80,8 @@ private:
 
   std::unordered_map<std::string, Variable> Vars;
   std::unordered_map<std::string, std::string> AutoVars;
+  std::unordered_set<std::string> PendingExports;
+  bool ExportAllFlag = false;
   FunctionRegistry *FuncReg = nullptr;
   EvalCallback EvalCB;
   unsigned RecursionDepth = 0;

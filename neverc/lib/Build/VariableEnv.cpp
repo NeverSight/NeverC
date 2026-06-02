@@ -27,16 +27,23 @@ void VariableEnv::set(const std::string &Name, const std::string &Value,
     bool WasExported = It->second.Exported;
     Vars[Name] = {Value, Mode, Orig, WasExported};
   } else {
-    Vars[Name] = {Value, Mode, Orig, false};
+    bool Exported = ExportAllFlag || PendingExports.count(Name) > 0;
+    Vars[Name] = {Value, Mode, Orig, Exported};
+    if (PendingExports.count(Name))
+      PendingExports.erase(Name);
   }
 }
 
 void VariableEnv::setForced(const std::string &Name, const std::string &Value,
                             AssignMode Mode, Origin Orig) {
-  bool WasExported = false;
+  bool WasExported = ExportAllFlag;
   auto It = Vars.find(Name);
-  if (It != Vars.end())
+  if (It != Vars.end()) {
     WasExported = It->second.Exported;
+  } else if (PendingExports.count(Name)) {
+    WasExported = true;
+    PendingExports.erase(Name);
+  }
   Vars[Name] = {Value, Mode, Orig, WasExported};
 }
 
@@ -60,8 +67,15 @@ void VariableEnv::conditionalSet(const std::string &Name,
 
 void VariableEnv::setExport(const std::string &Name, bool Export) {
   auto It = Vars.find(Name);
-  if (It != Vars.end())
+  if (It != Vars.end()) {
     It->second.Exported = Export;
+    if (!Export)
+      PendingExports.erase(Name);
+  } else if (Export) {
+    PendingExports.insert(Name);
+  } else {
+    PendingExports.erase(Name);
+  }
 }
 
 void VariableEnv::undefine(const std::string &Name) { Vars.erase(Name); }
