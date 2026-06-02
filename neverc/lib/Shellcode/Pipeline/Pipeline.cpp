@@ -143,7 +143,7 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
           Opts.Target.OS, DynArena));
       MPM.addPass(MemIntrinPass());
     }
-    MPM.addPass(CompilerRtPass());
+    MPM.addPass(CompilerRtPass(Opts.Target));
 
     if (Opts.SyscallInlining)
       MPM.addPass(SyscallStubPass(Opts.Target));
@@ -163,7 +163,7 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
           return;
         auto &PL = neverc::plugin::getGlobalPluginLoader();
 
-        MPM.addPass(CompilerRtPass());
+        MPM.addPass(CompilerRtPass(Opts.Target));
         neverc::plugin::addPluginModulePasses(
             MPM, NEVERC_HOOK_SC_AFTER_INLINING, PL);
         MPM.addPass(StringRuntimeInlineFinalizePass());
@@ -179,7 +179,7 @@ void registerShellcodePasses(PassBuilder &PB, const ShellcodeOptions &Opts) {
         neverc::plugin::addPluginModulePasses(
             MPM, NEVERC_HOOK_SC_AFTER_FINAL_IR, PL);
 
-        MPM.addPass(CompilerRtPass());
+        MPM.addPass(CompilerRtPass(Opts.Target));
       });
 }
 

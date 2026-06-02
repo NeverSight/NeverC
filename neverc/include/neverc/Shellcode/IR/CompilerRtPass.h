@@ -1,6 +1,7 @@
 #ifndef NEVERC_SHELLCODE_COMPILERRTPASS_H
 #define NEVERC_SHELLCODE_COMPILERRTPASS_H
 
+#include "neverc/Shellcode/Pipeline/TargetDesc.h"
 #include "llvm/IR/PassManager.h"
 
 namespace neverc {
@@ -27,7 +28,12 @@ public:
 
 class CompilerRtPass : public llvm::PassInfoMixin<CompilerRtPass> {
 public:
+  CompilerRtPass() = default;
+  explicit CompilerRtPass(const TargetDesc &Target) : Target(Target) {}
   llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &);
+
+private:
+  TargetDesc Target;
 };
 
 } // namespace shellcode

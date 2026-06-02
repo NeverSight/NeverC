@@ -636,10 +636,19 @@ PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &MAM) {
     errs() << "CompilerRtPass: no stamp, running full pass\n";
 
   bool StampedProbe = false;
+  const bool WantsInlineProbe = Target.OS == ShellcodeOS::Windows &&
+                                Target.Level != ExecutionLevel::Kernel;
   for (Function &F : M) {
-    if (!F.hasFnAttribute("no-stack-arg-probe")) {
-      F.addFnAttr("no-stack-arg-probe");
-      StampedProbe = true;
+    if (WantsInlineProbe) {
+      if (!F.hasFnAttribute("probe-stack")) {
+        F.addFnAttr("probe-stack", "inline-asm");
+        StampedProbe = true;
+      }
+    } else {
+      if (!F.hasFnAttribute("no-stack-arg-probe")) {
+        F.addFnAttr("no-stack-arg-probe");
+        StampedProbe = true;
+      }
     }
   }
   static constexpr StringLiteral kStackProbeNames[] = {

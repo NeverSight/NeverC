@@ -26708,6 +26708,13 @@ unsigned AArch64TargetLowering::getVectorTypeBreakdownForCallingConv(
 
 bool AArch64TargetLowering::hasInlineStackProbe(
     const MachineFunction &MF) const {
-  return !Subtarget->isTargetWindows() &&
-         MF.getInfo<AArch64FunctionInfo>()->hasStackProbing();
+  if (Subtarget->isTargetWindows()) {
+    const Function &F = MF.getFunction();
+    if (F.hasFnAttribute("no-stack-arg-probe"))
+      return false;
+    if (F.hasFnAttribute("probe-stack"))
+      return F.getFnAttribute("probe-stack").getValueAsString() == "inline-asm";
+    return false;
+  }
+  return MF.getInfo<AArch64FunctionInfo>()->hasStackProbing();
 }

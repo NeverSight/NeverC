@@ -56268,13 +56268,13 @@ bool X86TargetLowering::hasStackProbeSymbol(const MachineFunction &MF) const {
 
 /// Returns true if stack probing through inline assembly is requested.
 bool X86TargetLowering::hasInlineStackProbe(const MachineFunction &MF) const {
-
-  // No inline stack probe for Windows, they have their own mechanism.
-  if (Subtarget.isOSWindows() ||
-      MF.getFunction().hasFnAttribute("no-stack-arg-probe"))
+  if (MF.getFunction().hasFnAttribute("no-stack-arg-probe"))
     return false;
 
   // If the function specifically requests inline stack probes, emit them.
+  // This deliberately runs before the Windows check so that shellcode (or
+  // any other consumer that cannot call __chkstk) can opt into inline probes
+  // on Windows via "probe-stack"="inline-asm".
   if (MF.getFunction().hasFnAttribute("probe-stack"))
     return MF.getFunction().getFnAttribute("probe-stack").getValueAsString() ==
            "inline-asm";
