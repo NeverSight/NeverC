@@ -10,27 +10,27 @@
  * resolver-shim extern.
  */
 
-static string identity(string s) {
+__attribute__((always_inline)) static inline string identity(string s) {
     return s;
 }
 
-static string greet(string name) {
+__attribute__((always_inline)) static inline string greet(string name) {
     return "hello " + name;
 }
 
-static string twice(string s) {
+__attribute__((always_inline)) static inline string twice(string s) {
     return s + s;
 }
 
-static int len_of(string s) {
+__attribute__((always_inline)) static inline int len_of(string s) {
     return (int)s.size();
 }
 
-static int sum_lengths(string a, string b) {
+__attribute__((always_inline)) static inline int sum_lengths(string a, string b) {
     return (int)(a.size() + b.size());
 }
 
-static string echo_uppercase(string s) {
+__attribute__((always_inline)) static inline string echo_uppercase(string s) {
     return s.to_upper();
 }
 
