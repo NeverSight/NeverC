@@ -26,8 +26,6 @@
 // Ideally, this could be done inside SelectionDAG, or in the
 // MachineInstruction representation, without the use of an IR-level intrinsic.
 // But, within the current framework, it’s simpler to implement as an IR pass.
-// (If support for callbr in GlobalISel is implemented, it’s worth considering
-// whether this is still required.)
 //
 //===----------------------------------------------------------------------===//
 
