@@ -148,7 +148,7 @@ void darwin::Linker::AddLinkArgs(Compilation &C, const ArgList &Args,
   // -pie/-no_pie removed: now conveyed via LinkerDriverConfig.pie
   // (set after populateLinkerDriverConfig below).
 
-  // GlobalISel, kernel/freestanding mllvm opts are now conveyed via
+  // kernel/freestanding mllvm opts are now conveyed via
   // LinkerDriverConfig.mllvmOpts (populated in populateLinkerDriverConfig).
 
   Args.AddLastArg(CmdArgs, options::OPT_prebind);
@@ -336,9 +336,6 @@ void darwin::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     DarwinTC.populatePlatformVersionConfig(Args, MacCfg);
   }
   MacCfg.pie = true;
-
-  // globalISel is already conveyed via LinkerDriverConfig.globalISel
-  // (set in populateLinkerDriverConfig → createLTOConfig).
 
   // Darwin-specific mllvm opts that have no direct TargetOptions mapping.
   if (Args.hasArg(options::OPT_mkernel) ||

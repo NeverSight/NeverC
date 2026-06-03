@@ -68,7 +68,6 @@ struct LinkerDriverConfig {
 
   // Codegen options forwarded directly to TargetOptions — avoids the
   // string-based cl::opt round-trip through mllvmOpts.
-  int globalISel = -1;     // -1=not set, 0=off, 1=on
   int debuggerTuning = -1; // -1=not set, 0=default, 1=gdb, 2=lldb
   bool splitMachineFunctions = false;
   bool jmcInstrument = false;

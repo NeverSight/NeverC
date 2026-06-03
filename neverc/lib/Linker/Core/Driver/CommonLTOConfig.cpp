@@ -39,11 +39,6 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
   // here.  Ignored by the MachO/COFF backends, so it is safe to set always.
   c.Options.UseInitArray = true;
 
-  if (Cfg.globalISel >= 0) {
-    c.Options.EnableGlobalISel = Cfg.globalISel != 0;
-    if (c.Options.EnableGlobalISel)
-      c.Options.GlobalISelAbort = GlobalISelAbortMode::Disable;
-  }
   if (Cfg.debuggerTuning == 1)
     c.Options.DebuggerTuning = DebuggerKind::GDB;
   else if (Cfg.debuggerTuning == 2)

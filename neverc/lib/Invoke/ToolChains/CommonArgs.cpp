@@ -380,10 +380,6 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
 
   // Options with direct TargetOptions mappings — skip the cl::opt
   // string round-trip and set named fields on LinkerDriverConfig.
-  if (Arg *A = Args.getLastArg(options::OPT_fglobal_isel,
-                               options::OPT_fno_global_isel))
-    Cfg.globalISel = A->getOption().matches(options::OPT_fglobal_isel) ? 1 : 0;
-
   if (Arg *A =
           Args.getLastArg(options::OPT_gTune_Group, options::OPT_ggdbN_Group))
     Cfg.debuggerTuning = A->getOption().matches(options::OPT_glldb) ? 2 : 1;
