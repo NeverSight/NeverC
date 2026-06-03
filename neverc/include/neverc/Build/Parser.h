@@ -3,6 +3,9 @@
 
 #include "neverc/Build/AST.h"
 #include "neverc/Build/Lexer.h"
+
+#include "llvm/ADT/StringRef.h"
+
 #include <memory>
 #include <string>
 
@@ -11,7 +14,7 @@ namespace build {
 
 class Parser {
 public:
-  explicit Parser(const std::string &Filename,
+  explicit Parser(llvm::StringRef Filename,
                   std::vector<MakefileLine> Lines);
 
   std::unique_ptr<MakefileAST> parse();

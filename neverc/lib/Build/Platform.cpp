@@ -1,9 +1,8 @@
 #include "neverc/Build/Platform.h"
+#include "neverc/Build/BuildConstants.h"
 
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/Program.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -39,7 +38,7 @@ ProcessResult shellExecute(const std::string &Command,
     return R;
   }
 
-  char Buf[4096];
+  char Buf[constants::ShellBufSize];
   while (fgets(Buf, sizeof(Buf), Pipe))
     R.Output += Buf;
 
@@ -124,11 +123,7 @@ std::vector<std::string> globFiles(const std::string &Pattern) {
 }
 
 std::string getDefaultShell() {
-#ifdef _WIN32
-  return "cmd.exe";
-#else
-  return "/bin/sh";
-#endif
+  return constants::DefaultShell.str();
 }
 
 std::string normalizePath(const std::string &Path) {
@@ -146,7 +141,8 @@ std::string realPath(const std::string &Path) {
 
 std::string absolutePath(const std::string &Path) {
   llvm::SmallString<256> Result(Path);
-  llvm::sys::fs::make_absolute(Result);
+  std::error_code EC = llvm::sys::fs::make_absolute(Result);
+  (void)EC;
   llvm::sys::path::remove_dots(Result, true);
   return std::string(Result);
 }

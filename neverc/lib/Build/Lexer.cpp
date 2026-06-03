@@ -1,29 +1,23 @@
 #include "neverc/Build/Lexer.h"
+#include "neverc/Build/StringUtils.h"
+
+#include "llvm/ADT/StringSwitch.h"
 
 #include <cctype>
 
 namespace neverc {
 namespace build {
 
-Lexer::Lexer(const std::string &Filename, const std::string &Content)
-    : Filename(Filename), Input(Content) {}
+Lexer::Lexer(llvm::StringRef Filename, llvm::StringRef Content)
+    : Filename(Filename.str()), Input(Content.str()) {}
 
-static bool isDirectiveKeyword(const std::string &Word) {
-  return Word == "ifeq" || Word == "ifneq" || Word == "ifdef" ||
-         Word == "ifndef" || Word == "else" || Word == "endif" ||
-         Word == "define" || Word == "endef" || Word == "override" ||
-         Word == "export" || Word == "unexport" || Word == "undefine" ||
-         Word == "include" || Word == "-include" || Word == "sinclude";
-}
-
-static std::string firstWord(const std::string &Line) {
-  size_t Start = 0;
-  while (Start < Line.size() && (Line[Start] == ' ' || Line[Start] == '\t'))
-    ++Start;
-  size_t End = Start;
-  while (End < Line.size() && !std::isspace((unsigned char)Line[End]))
-    ++End;
-  return Line.substr(Start, End - Start);
+static bool isDirectiveKeyword(llvm::StringRef Word) {
+  return llvm::StringSwitch<bool>(Word)
+      .Cases("ifeq", "ifneq", "ifdef", "ifndef", true)
+      .Cases("else", "endif", "define", "endef", true)
+      .Cases("override", "export", "unexport", "undefine", true)
+      .Cases("include", "-include", "sinclude", true)
+      .Default(false);
 }
 
 static bool hasUnquotedAssignOp(const std::string &Line, size_t &OpPos,
@@ -201,7 +195,7 @@ MakefileLine Lexer::classifyLine(const std::string &Line, unsigned LineNo,
     return ML;
   }
 
-  std::string Word = firstWord(Stripped);
+  std::string Word = neverc::build::firstWord(Stripped);
 
   if (Word == "-include" || Word == "sinclude") {
     ML.Type = MakefileLine::Directive;

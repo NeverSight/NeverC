@@ -1,6 +1,8 @@
 #ifndef NEVERC_BUILD_LEXER_H
 #define NEVERC_BUILD_LEXER_H
 
+#include "llvm/ADT/StringRef.h"
+
 #include <string>
 #include <vector>
 
@@ -25,7 +27,7 @@ struct MakefileLine {
 
 class Lexer {
 public:
-  explicit Lexer(const std::string &Filename, const std::string &Content);
+  explicit Lexer(llvm::StringRef Filename, llvm::StringRef Content);
 
   std::vector<MakefileLine> lex();
 

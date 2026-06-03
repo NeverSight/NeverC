@@ -2,10 +2,12 @@
 #define NEVERC_BUILD_RULEDB_H
 
 #include "neverc/Build/AST.h"
+
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
+
 #include <map>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace neverc {
@@ -44,8 +46,7 @@ public:
   const std::vector<TargetVarOverride> *
   getTargetVars(const std::string &Target) const;
 
-  const std::unordered_map<std::string, std::vector<ResolvedRule>> &
-  rules() const {
+  const llvm::StringMap<std::vector<ResolvedRule>> &rules() const {
     return ExplicitRules;
   }
 
@@ -59,12 +60,12 @@ public:
 private:
   const ResolvedRule *matchPatternRule(const std::string &Target) const;
 
-  std::unordered_map<std::string, std::vector<ResolvedRule>> ExplicitRules;
+  llvm::StringMap<std::vector<ResolvedRule>> ExplicitRules;
   std::vector<PatternRule> PatternRules;
-  std::unordered_set<std::string> PhonyTargets;
+  llvm::StringSet<> PhonyTargets;
   std::string FirstTarget;
-  mutable std::map<std::string, ResolvedRule> PatternMatchCache;
-  std::unordered_map<std::string, std::vector<TargetVarOverride>> TargetVars;
+  mutable llvm::StringMap<ResolvedRule> PatternMatchCache;
+  llvm::StringMap<std::vector<TargetVarOverride>> TargetVars;
 };
 
 } // namespace build

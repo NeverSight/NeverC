@@ -1,5 +1,6 @@
 #include "neverc/Build/BuildDriver.h"
 #include "neverc/Build/AST.h"
+#include "neverc/Build/BuildConstants.h"
 #include "neverc/Build/DepGraph.h"
 #include "neverc/Build/Function.h"
 #include "neverc/Build/JobScheduler.h"
@@ -7,8 +8,10 @@
 #include "neverc/Build/Parser.h"
 #include "neverc/Build/Platform.h"
 #include "neverc/Build/RuleDB.h"
+#include "neverc/Build/StringUtils.h"
 #include "neverc/Build/VariableEnv.h"
 
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -16,7 +19,6 @@
 #include <cstring>
 #include <sstream>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 namespace neverc {
@@ -94,7 +96,8 @@ bool parseOptions(int Argc, const char **Argv, BuildOptions &Opts) {
     } else if (!Arg.empty() && Arg[0] != '-') {
       Opts.Targets.push_back(Arg);
     } else {
-      llvm::errs() << "neverc make: Unknown option: " << Arg << "\n";
+      llvm::errs() << constants::ToolName << ": Unknown option: "
+                   << Arg << "\n";
     }
     ++I;
   }
@@ -107,20 +110,17 @@ std::string findMakefile(const std::string &Specified) {
   if (!Specified.empty()) {
     if (platform::fileExists(Specified))
       return Specified;
-    llvm::errs() << "neverc make: " << Specified
+    llvm::errs() << constants::ToolName << ": " << Specified
                  << ": No such file or directory\n";
     return "";
   }
 
-  if (platform::fileExists("GNUmakefile"))
-    return "GNUmakefile";
-  if (platform::fileExists("makefile"))
-    return "makefile";
-  if (platform::fileExists("Makefile"))
-    return "Makefile";
+  for (const auto &Name : constants::DefaultMakefiles)
+    if (platform::fileExists(Name.str()))
+      return Name.str();
 
-  llvm::errs() << "neverc make: *** No targets specified and no makefile "
-                  "found. Stop.\n";
+  llvm::errs() << constants::ErrorPrefix
+               << "No targets specified and no makefile found. Stop.\n";
   return "";
 }
 
@@ -231,16 +231,16 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
           auto Buf = llvm::MemoryBuffer::getFile(Path);
           if (!Buf) {
             if (!Inc->Optional)
-              llvm::errs() << "neverc make: " << Path
+              llvm::errs() << constants::ToolName << ": " << Path
                            << ": No such file or directory\n";
             continue;
           }
 
-          std::string MFL = Env.get("MAKEFILE_LIST");
+          std::string MFL = Env.get(constants::VarMakefileList.str());
           if (!MFL.empty())
             MFL += ' ';
           MFL += Path;
-          Env.set("MAKEFILE_LIST", MFL, AssignMode::Simple,
+          Env.set(constants::VarMakefileList.str(), MFL, AssignMode::Simple,
                    VariableEnv::Origin::Default);
 
           std::string Content = (*Buf)->getBuffer().str();
@@ -288,8 +288,8 @@ void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
           Env.setExport(Env.expand(Name), false);
       } else if (E->ExportAll) {
         Env.setExportAll(true);
-        for (auto &[Name, Var] : Env.vars())
-          Env.setExport(Name);
+        for (auto &Entry : Env.vars())
+          Env.setExport(Entry.first().str());
       } else {
         for (auto &Name : E->Names)
           Env.setExport(Env.expand(Name));
@@ -337,11 +337,11 @@ void processAST(MakefileAST &AST, VariableEnv &Env, RuleDB &Rules,
 
 void printDatabase(const RuleDB &Rules, const VariableEnv &Env) {
   llvm::outs() << "# Variables\n";
-  for (auto &[Name, Var] : Env.vars())
-    llvm::outs() << Name << " = " << Var.Value << "\n";
+  for (auto &Entry : Env.vars())
+    llvm::outs() << Entry.first() << " = " << Entry.second.Value << "\n";
   llvm::outs() << "\n# Rules\n";
-  for (auto &[Target, RuleList] : Rules.rules()) {
-    for (auto &R : RuleList) {
+  for (auto &RuleEntry : Rules.rules()) {
+    for (auto &R : RuleEntry.second) {
       llvm::outs() << R.Target << ":";
       for (auto &P : R.Prerequisites)
         llvm::outs() << " " << P;
@@ -366,7 +366,7 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
 
   for (auto &Dir : Opts.ChangeDirs) {
     if (!platform::changeCwd(Dir)) {
-      llvm::errs() << "neverc make: *** No such directory: "
+      llvm::errs() << constants::ErrorPrefix << "No such directory: "
                    << Dir << "\n";
       return 2;
     }
@@ -378,7 +378,8 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
 
   auto Buf = llvm::MemoryBuffer::getFile(MakefilePath);
   if (!Buf) {
-    llvm::errs() << "neverc make: *** Cannot read " << MakefilePath << "\n";
+    llvm::errs() << constants::ErrorPrefix << "Cannot read "
+                 << MakefilePath << "\n";
     return 2;
   }
 
@@ -391,9 +392,10 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
   Env.importEnvironment();
 
   Env.setEvalCallback([&Env, &Rules, &FuncReg](const std::string &Text) {
-    Lexer EvalL("<eval>", Text);
+    std::string Filename = constants::EvalFilename.str();
+    Lexer EvalL(Filename, Text);
     auto EvalLines = EvalL.lex();
-    Parser EvalP("<eval>", std::move(EvalLines));
+    Parser EvalP(Filename, std::move(EvalLines));
     auto EvalAST = EvalP.parse();
     if (EvalAST)
       processAST(*EvalAST, Env, Rules, FuncReg);
@@ -402,14 +404,14 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
   for (auto &[Name, Value] : Opts.CmdVars)
     Env.setCommandLineVar(Name, Value);
 
-  Env.set("MAKEFILE_LIST", MakefilePath, AssignMode::Simple,
+  Env.set(constants::VarMakefileList.str(), MakefilePath, AssignMode::Simple,
            VariableEnv::Origin::Default);
-  Env.set("CURDIR", platform::getCwd(), AssignMode::Simple,
+  Env.set(constants::VarCurdir.str(), platform::getCwd(), AssignMode::Simple,
            VariableEnv::Origin::Default);
-  Env.set("MAKE", std::string(Argv0) + " make", AssignMode::Simple,
-           VariableEnv::Origin::Default);
-  Env.set("MAKE_VERSION", "4.3", AssignMode::Simple,
-           VariableEnv::Origin::Default);
+  Env.set(constants::VarMake.str(), std::string(Argv0) + " make",
+           AssignMode::Simple, VariableEnv::Origin::Default);
+  Env.set(constants::VarMakeVersion.str(), constants::MakeVersionValue.str(),
+           AssignMode::Simple, VariableEnv::Origin::Default);
 
   {
     std::string Flags;
@@ -421,19 +423,13 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
       Flags += " -j" + std::to_string(Opts.Jobs);
     for (auto &[Name, Value] : Opts.CmdVars)
       Flags += " " + Name + "=" + Value;
-    Env.set("MAKEFLAGS", Flags, AssignMode::Simple,
+    Env.set(constants::VarMakeFlags.str(), Flags, AssignMode::Simple,
              VariableEnv::Origin::Default);
   }
 
   if (!Opts.Targets.empty()) {
-    std::string Goals;
-    for (size_t I = 0; I < Opts.Targets.size(); ++I) {
-      if (I > 0)
-        Goals += ' ';
-      Goals += Opts.Targets[I];
-    }
-    Env.set("MAKECMDGOALS", Goals, AssignMode::Simple,
-             VariableEnv::Origin::Default);
+    Env.set(constants::VarMakeCmdGoals.str(), joinWords(Opts.Targets),
+             AssignMode::Simple, VariableEnv::Origin::Default);
   }
 
   Lexer L(MakefilePath, Content);
@@ -460,13 +456,13 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
   std::vector<std::string> Targets = Opts.Targets;
   if (Targets.empty()) {
     std::string Default;
-    std::string DGVar = Env.get(".DEFAULT_GOAL");
+    std::string DGVar = Env.get(constants::TargetDefaultGoal.str());
     if (!DGVar.empty())
       Default = Env.expand(DGVar);
     if (Default.empty())
       Default = Rules.defaultTarget();
     if (Default.empty()) {
-      llvm::errs() << "neverc make: *** No targets. Stop.\n";
+      llvm::errs() << constants::ErrorPrefix << "No targets. Stop.\n";
       return 2;
     }
     Targets.push_back(Default);
@@ -476,7 +472,8 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
   for (auto &T : Targets) {
     if (!Graph.build(T, Rules, Opts.AlwaysMake)) {
       if (Graph.hasCycle())
-        llvm::errs() << "neverc make: " << Graph.cycleMessage() << "\n";
+        llvm::errs() << constants::ToolName << ": "
+                     << Graph.cycleMessage() << "\n";
       return 2;
     }
   }
@@ -484,26 +481,26 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
   for (auto &T : Targets) {
     auto *N = Graph.getNode(T);
     if (N && !N->Rule && !N->IsPhony && !platform::fileExists(T)) {
-      llvm::errs() << "neverc make: *** No rule to make target '"
+      llvm::errs() << constants::ErrorPrefix << "No rule to make target '"
                    << T << "'.  Stop.\n";
       return 2;
     }
   }
 
   {
-    std::unordered_set<std::string> AllPrereqs;
-    for (auto &[N, Node] : Graph.nodes())
-      for (auto &Dep : Node.Dependencies)
+    llvm::StringSet<> AllPrereqs;
+    for (auto &Entry : Graph.nodes())
+      for (auto &Dep : Entry.second.Dependencies)
         AllPrereqs.insert(Dep);
 
-    for (auto &[Name, Node] : Graph.nodes()) {
-      if (Node.Rule || Node.IsPhony)
+    for (auto &Entry : Graph.nodes()) {
+      if (Entry.second.Rule || Entry.second.IsPhony)
         continue;
-      if (platform::fileExists(Name))
+      if (platform::fileExists(Entry.first().str()))
         continue;
-      if (AllPrereqs.count(Name)) {
-        llvm::errs() << "neverc make: *** No rule to make target '"
-                     << Name << "'.  Stop.\n";
+      if (AllPrereqs.count(Entry.first())) {
+        llvm::errs() << constants::ErrorPrefix << "No rule to make target '"
+                     << Entry.first() << "'.  Stop.\n";
         return 2;
       }
     }
@@ -537,10 +534,11 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
     for (auto &T : Targets) {
       auto *N = Graph.getNode(T);
       if (N && N->IsPhony)
-        llvm::outs() << "neverc make: Nothing to be done for '" << T
-                     << "'.\n";
+        llvm::outs() << constants::ToolName
+                     << ": Nothing to be done for '" << T << "'.\n";
       else
-        llvm::outs() << "neverc make: '" << T << "' is up to date.\n";
+        llvm::outs() << constants::ToolName << ": '" << T
+                     << "' is up to date.\n";
     }
     return 0;
   }

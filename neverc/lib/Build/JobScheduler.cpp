@@ -1,4 +1,5 @@
 #include "neverc/Build/JobScheduler.h"
+#include "neverc/Build/BuildConstants.h"
 #include "neverc/Build/Platform.h"
 
 #include "llvm/Support/raw_ostream.h"
@@ -98,7 +99,8 @@ bool JobScheduler::collectReadyJobs(DepGraph &Graph,
                                      const std::vector<std::string> &Targets,
                                      std::vector<Job> &Ready) {
   bool MadeProgress = false;
-  for (auto &[Name, N] : Graph.nodes()) {
+  for (auto &Entry : Graph.nodes()) {
+    auto &N = Entry.second;
     if (!N.NeedsBuild || N.Built || N.Failed)
       continue;
     if (!allDepsBuilt(N, Graph))
@@ -119,7 +121,7 @@ bool JobScheduler::collectReadyJobs(DepGraph &Graph,
 
     if (N.Rule && !N.Rule->Recipes.empty()) {
       Job J;
-      J.Target = Name;
+      J.Target = Entry.first().str();
       J.Node = &N;
       J.Recipes = N.Rule->Recipes;
       Ready.push_back(J);
@@ -162,12 +164,13 @@ int JobScheduler::runJob(Job &J, VariableEnv &Env, const RuleDB *Rules) {
 
   // Set exported variables in the process environment so child commands see
   // them.
-  for (auto &[Name, Var] : Env.vars()) {
-    if (Var.Exported) {
+  for (auto &Entry : Env.vars()) {
+    if (Entry.second.Exported) {
+      std::string Key = Entry.first().str();
 #ifdef _WIN32
-      _putenv_s(Name.c_str(), Var.Value.c_str());
+      _putenv_s(Key.c_str(), Entry.second.Value.c_str());
 #else
-      setenv(Name.c_str(), Var.Value.c_str(), 1);
+      setenv(Key.c_str(), Entry.second.Value.c_str(), 1);
 #endif
     }
   }
@@ -224,7 +227,7 @@ int JobScheduler::runJob(Job &J, VariableEnv &Env, const RuleDB *Rules) {
       int Rc = platform::shellExecuteNoCapture(Cmd, Opts.Shell, false);
       if (Rc != 0 && !IgnoreErr) {
         std::lock_guard<std::mutex> Lock(OutputMutex);
-        llvm::errs() << "neverc make: *** [" << J.Target
+        llvm::errs() << constants::ErrorPrefix << "[" << J.Target
                      << "] Error " << Rc << "\n";
         for (auto &S : Saved) {
           if (S.WasDefined)
@@ -323,8 +326,8 @@ int JobScheduler::execute(DepGraph &Graph, VariableEnv &Env,
     if (N && N->NeedsBuild && !N->Built) {
       if (N->Failed)
         continue;
-      llvm::errs() << "neverc make: Nothing to be done for '" << Target
-                   << "'.\n";
+      llvm::errs() << constants::ToolName
+                   << ": Nothing to be done for '" << Target << "'.\n";
     }
   }
 

@@ -1,68 +1,18 @@
 #include "neverc/Build/Function.h"
+#include "neverc/Build/BuildConstants.h"
 #include "neverc/Build/Platform.h"
+#include "neverc/Build/StringUtils.h"
 #include "neverc/Build/VariableEnv.h"
+
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <cctype>
-#include <cstdio>
 #include <fstream>
 #include <set>
-#include <sstream>
 
 namespace neverc {
 namespace build {
-
-static std::string trim(const std::string &S) {
-  size_t Start = S.find_first_not_of(" \t");
-  if (Start == std::string::npos)
-    return "";
-  size_t End = S.find_last_not_of(" \t");
-  return S.substr(Start, End - Start + 1);
-}
-
-static std::vector<std::string> splitWords(const std::string &S) {
-  std::vector<std::string> Words;
-  std::istringstream SS(S);
-  std::string W;
-  while (SS >> W)
-    Words.push_back(W);
-  return Words;
-}
-
-static std::string joinWords(const std::vector<std::string> &Words,
-                              const std::string &Sep = " ") {
-  std::string R;
-  for (size_t I = 0; I < Words.size(); ++I) {
-    if (I > 0)
-      R += Sep;
-    R += Words[I];
-  }
-  return R;
-}
-
-static bool matchPattern(const std::string &Pattern,
-                          const std::string &Text) {
-  size_t PctPos = Pattern.find('%');
-  if (PctPos == std::string::npos)
-    return Pattern == Text;
-  std::string Prefix = Pattern.substr(0, PctPos);
-  std::string Suffix = Pattern.substr(PctPos + 1);
-  if (Text.size() < Prefix.size() + Suffix.size())
-    return false;
-  return Text.substr(0, Prefix.size()) == Prefix &&
-         Text.substr(Text.size() - Suffix.size()) == Suffix;
-}
-
-static std::string stemFromPattern(const std::string &Pattern,
-                                     const std::string &Text) {
-  size_t PctPos = Pattern.find('%');
-  if (PctPos == std::string::npos)
-    return "";
-  std::string Prefix = Pattern.substr(0, PctPos);
-  std::string Suffix = Pattern.substr(PctPos + 1);
-  return Text.substr(Prefix.size(),
-                     Text.size() - Prefix.size() - Suffix.size());
-}
 
 FunctionRegistry::FunctionRegistry() { registerBuiltins(); }
 
@@ -456,7 +406,7 @@ void FunctionRegistry::registerBuiltins() {
       bool WasDefined;
     };
     std::vector<SavedVar> Saved;
-    for (size_t I = 1; I < 10; ++I) {
+    for (size_t I = 1; I <= constants::MaxPositionalArgs; ++I) {
       std::string Key = std::to_string(I);
       bool Defined = Env.isDefined(Key);
       Saved.push_back({Key, Defined ? Env.rawValue(Key) : "", Defined});
@@ -468,7 +418,7 @@ void FunctionRegistry::registerBuiltins() {
     for (size_t I = 0; I < ExpandedArgs.size(); ++I)
       Env.setForced(std::to_string(I + 1), ExpandedArgs[I],
                     AssignMode::Simple);
-    for (size_t I = Args.size(); I < 10; ++I) {
+    for (size_t I = Args.size(); I <= constants::MaxPositionalArgs; ++I) {
       std::string Key = std::to_string(I);
       if (Env.isDefined(Key))
         Env.setForced(Key, "", AssignMode::Simple);
@@ -500,7 +450,7 @@ void FunctionRegistry::registerBuiltins() {
   registerFunction("error", [](const std::vector<std::string> &Args,
                                  VariableEnv &Env) -> std::string {
     std::string Msg = Args.empty() ? "" : Args[0];
-    std::fprintf(stderr, "*** %s.  Stop.\n", Msg.c_str());
+    llvm::errs() << constants::ErrorPrefix << Msg << ".  Stop.\n";
     std::exit(2);
     return "";
   });
@@ -508,14 +458,14 @@ void FunctionRegistry::registerBuiltins() {
   registerFunction("warning", [](const std::vector<std::string> &Args,
                                    VariableEnv &Env) -> std::string {
     std::string Msg = Args.empty() ? "" : Args[0];
-    std::fprintf(stderr, "warning: %s\n", Msg.c_str());
+    llvm::errs() << "warning: " << Msg << "\n";
     return "";
   });
 
   registerFunction("info", [](const std::vector<std::string> &Args,
                                 VariableEnv &Env) -> std::string {
     std::string Msg = Args.empty() ? "" : Args[0];
-    std::fprintf(stdout, "%s\n", Msg.c_str());
+    llvm::outs() << Msg << "\n";
     return "";
   });
 
@@ -595,8 +545,8 @@ void FunctionRegistry::registerBuiltins() {
       std::ofstream Out(Filename,
                         Append ? (std::ios::app | std::ios::out) : std::ios::out);
       if (!Out.is_open()) {
-        std::fprintf(stderr, "*** open: %s: No such file or directory\n",
-                     Filename.c_str());
+        llvm::errs() << constants::ErrorPrefix << "open: " << Filename
+                     << ": No such file or directory\n";
         return "";
       }
       if (HasText)

@@ -12,6 +12,7 @@ add_neverc_library(nevercBuild
   DepGraph.cpp
   JobScheduler.cpp
   Platform.cpp
+  StringUtils.cpp
 
   LINK_LIBS
   nevercFoundation

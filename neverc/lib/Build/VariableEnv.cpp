@@ -1,6 +1,10 @@
 #include "neverc/Build/VariableEnv.h"
+#include "neverc/Build/BuildConstants.h"
 #include "neverc/Build/Function.h"
 #include "neverc/Build/Platform.h"
+
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstdlib>
 #include <sstream>
@@ -17,11 +21,14 @@ namespace neverc {
 namespace build {
 
 VariableEnv::VariableEnv() {
-  set("CURDIR", platform::getCwd(), AssignMode::Simple, Origin::Default);
-  set("MAKE", "neverc make", AssignMode::Simple, Origin::Default);
-  set("SHELL", platform::getDefaultShell(), AssignMode::Simple,
+  set(constants::VarCurdir.str(), platform::getCwd(), AssignMode::Simple,
       Origin::Default);
-  set(".SHELLFLAGS", "-c", AssignMode::Simple, Origin::Default);
+  set(constants::VarMake.str(), constants::ToolName.str(), AssignMode::Simple,
+      Origin::Default);
+  set(constants::VarShell.str(), platform::getDefaultShell(), AssignMode::Simple,
+      Origin::Default);
+  set(constants::VarShellFlags.str(), constants::ShellFlagsDefault.str(),
+      AssignMode::Simple, Origin::Default);
 }
 
 void VariableEnv::set(const std::string &Name, const std::string &Value,
@@ -133,13 +140,10 @@ std::string VariableEnv::getFlavor(const std::string &Name) const {
     return "undefined";
   switch (It->second.Mode) {
   case AssignMode::Recursive:
-    return "recursive";
-  case AssignMode::Simple:
-    return "simple";
   case AssignMode::Conditional:
-    return "recursive";
   case AssignMode::Append:
     return "recursive";
+  case AssignMode::Simple:
   case AssignMode::Shell:
     return "simple";
   }
@@ -183,9 +187,9 @@ VariableEnv::expandInternal(const std::string &Expr,
                              std::unordered_set<std::string> &Expanding) {
   if (++RecursionDepth > MaxRecursionDepth) {
     --RecursionDepth;
-    std::fprintf(stderr,
-                 "neverc make: *** Recursion depth exceeded (max %u). Stop.\n",
-                 MaxRecursionDepth);
+    llvm::errs() << constants::ErrorPrefix
+                 << "Recursion depth exceeded (max " << MaxRecursionDepth
+                 << "). Stop.\n";
     return "";
   }
   struct DepthGuard {
@@ -400,12 +404,13 @@ std::string VariableEnv::evaluateFunction(
   if (!FuncReg)
     return "";
 
-  static const std::unordered_set<std::string> LazyFuncs = {
-      "foreach", "call", "if", "or", "and", "eval"};
-
   auto ArgList = FunctionRegistry::splitArgs(RawArgs);
 
-  if (LazyFuncs.count(Name))
+  bool IsLazy = llvm::StringSwitch<bool>(Name)
+                    .Cases("foreach", "call", "if", true)
+                    .Cases("or", "and", "eval", true)
+                    .Default(false);
+  if (IsLazy)
     return FuncReg->call(Name, ArgList, *this);
 
   std::vector<std::string> ExpandedArgs;

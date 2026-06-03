@@ -2,9 +2,13 @@
 #define NEVERC_BUILD_VARIABLEENV_H
 
 #include "neverc/Build/AST.h"
+#include "neverc/Build/BuildConstants.h"
+
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
+
 #include <functional>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 
 namespace neverc {
@@ -65,9 +69,7 @@ public:
     if (EvalCB) EvalCB(Text);
   }
 
-  const std::unordered_map<std::string, Variable> &vars() const {
-    return Vars;
-  }
+  const llvm::StringMap<Variable> &vars() const { return Vars; }
 
 private:
   std::string expandInternal(const std::string &Expr,
@@ -78,14 +80,14 @@ private:
                                 const std::string &Args,
                                 std::unordered_set<std::string> &Expanding);
 
-  std::unordered_map<std::string, Variable> Vars;
-  std::unordered_map<std::string, std::string> AutoVars;
-  std::unordered_set<std::string> PendingExports;
+  llvm::StringMap<Variable> Vars;
+  llvm::StringMap<std::string> AutoVars;
+  llvm::StringSet<> PendingExports;
   bool ExportAllFlag = false;
   FunctionRegistry *FuncReg = nullptr;
   EvalCallback EvalCB;
   unsigned RecursionDepth = 0;
-  static constexpr unsigned MaxRecursionDepth = 256;
+  static constexpr unsigned MaxRecursionDepth = constants::MaxRecursionDepth;
 };
 
 } // namespace build

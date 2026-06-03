@@ -1,20 +1,11 @@
 #include "neverc/Build/RuleDB.h"
+#include "neverc/Build/BuildConstants.h"
 #include "neverc/Build/Platform.h"
+#include "neverc/Build/StringUtils.h"
 #include "neverc/Build/VariableEnv.h"
-
-#include <sstream>
 
 namespace neverc {
 namespace build {
-
-static std::vector<std::string> splitWords(const std::string &S) {
-  std::vector<std::string> Words;
-  std::istringstream SS(S);
-  std::string W;
-  while (SS >> W)
-    Words.push_back(W);
-  return Words;
-}
 
 bool RuleDB::PatternRule::matchTarget(const std::string &Target,
                                        std::string &Stem) const {
@@ -42,7 +33,7 @@ void RuleDB::addRule(const Rule &R, VariableEnv &Env) {
   for (auto &Target : R.Targets) {
     std::string ExpandedTarget = Env.expand(Target);
 
-    if (ExpandedTarget == ".PHONY") {
+    if (ExpandedTarget == constants::TargetPhony) {
       std::vector<std::string> ExpandedPrereqs;
       for (auto &P : R.Prerequisites)
         for (auto &W : splitWords(Env.expand(P)))
@@ -51,7 +42,7 @@ void RuleDB::addRule(const Rule &R, VariableEnv &Env) {
       continue;
     }
 
-    if (ExpandedTarget == ".SUFFIXES")
+    if (ExpandedTarget == constants::TargetSuffixes)
       continue;
   }
 
@@ -226,7 +217,7 @@ RuleDB::matchPatternRule(const std::string &Target) const {
       if (!PrereqsSatisfied)
         continue;
 
-      auto Pair = PatternMatchCache.emplace(Target, std::move(RR));
+      auto Pair = PatternMatchCache.try_emplace(Target, std::move(RR));
       return &Pair.first->second;
     }
   }

@@ -2,8 +2,10 @@
 #define NEVERC_BUILD_DEPGRAPH_H
 
 #include "neverc/Build/RuleDB.h"
+
+#include "llvm/ADT/StringMap.h"
+
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace neverc {
@@ -34,21 +36,19 @@ public:
   const Node *getNode(const std::string &Name) const;
   bool hasNode(const std::string &Name) const;
 
-  const std::unordered_map<std::string, Node> &nodes() const {
-    return Nodes;
-  }
-  std::unordered_map<std::string, Node> &nodes() { return Nodes; }
+  const llvm::StringMap<Node> &nodes() const { return Nodes; }
+  llvm::StringMap<Node> &nodes() { return Nodes; }
 
 private:
   enum Color { White, Gray, Black };
 
   bool buildNode(const std::string &Target, const RuleDB &Rules,
                   bool AlwaysMake,
-                  std::unordered_map<std::string, Color> &Colors);
+                  llvm::StringMap<Color> &Colors);
 
   bool needsRebuild(const Node &N) const;
 
-  std::unordered_map<std::string, Node> Nodes;
+  llvm::StringMap<Node> Nodes;
   bool CycleDetected = false;
   std::string CycleMsg;
 };

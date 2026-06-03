@@ -1,58 +1,12 @@
 #include "neverc/Build/Parser.h"
+#include "neverc/Build/StringUtils.h"
+
+#include "llvm/ADT/StringSwitch.h"
 
 #include <cctype>
-#include <sstream>
 
 namespace neverc {
 namespace build {
-
-static std::string trim(const std::string &S) {
-  size_t Start = S.find_first_not_of(" \t");
-  if (Start == std::string::npos)
-    return "";
-  size_t End = S.find_last_not_of(" \t");
-  return S.substr(Start, End - Start + 1);
-}
-
-static std::vector<std::string> splitWords(const std::string &S) {
-  std::vector<std::string> Words;
-  std::istringstream SS(S);
-  std::string W;
-  while (SS >> W)
-    Words.push_back(W);
-  return Words;
-}
-
-static std::vector<std::string> splitWordsRespectingVarRefs(
-    const std::string &S) {
-  std::vector<std::string> Words;
-  size_t I = 0;
-  while (I < S.size() && (S[I] == ' ' || S[I] == '\t'))
-    ++I;
-
-  size_t Start = I;
-  int Depth = 0;
-  while (I < S.size()) {
-    if (S[I] == '$' && I + 1 < S.size() &&
-        (S[I + 1] == '(' || S[I + 1] == '{')) {
-      ++Depth;
-      ++I;
-    } else if (Depth > 0 && (S[I] == ')' || S[I] == '}')) {
-      --Depth;
-    } else if (Depth == 0 && (S[I] == ' ' || S[I] == '\t')) {
-      if (I > Start)
-        Words.push_back(S.substr(Start, I - Start));
-      while (I < S.size() && (S[I] == ' ' || S[I] == '\t'))
-        ++I;
-      Start = I;
-      continue;
-    }
-    ++I;
-  }
-  if (I > Start)
-    Words.push_back(S.substr(Start, I - Start));
-  return Words;
-}
 
 static bool findAssignOp(const std::string &Line, size_t &OpPos,
                           size_t &OpLen, AssignMode &Mode) {
@@ -114,8 +68,8 @@ static bool findAssignOp(const std::string &Line, size_t &OpPos,
   return false;
 }
 
-Parser::Parser(const std::string &Filename, std::vector<MakefileLine> Lines)
-    : Filename(Filename), Lines(std::move(Lines)) {}
+Parser::Parser(llvm::StringRef Filename, std::vector<MakefileLine> Lines)
+    : Filename(Filename.str()), Lines(std::move(Lines)) {}
 
 std::unique_ptr<MakefileAST> Parser::parse() {
   auto AST = std::make_unique<MakefileAST>();
@@ -451,17 +405,15 @@ std::unique_ptr<Rule> Parser::parseRule(const std::string &Line,
   return R;
 }
 
-static void parseConditionalArgs(const std::string &Keyword,
+static void parseConditionalArgs(llvm::StringRef Keyword,
                                   const std::string &Rest,
                                   Conditional &C) {
-  if (Keyword == "ifeq")
-    C.CondKind = Conditional::IfEq;
-  else if (Keyword == "ifneq")
-    C.CondKind = Conditional::IfNeq;
-  else if (Keyword == "ifdef")
-    C.CondKind = Conditional::IfDef;
-  else if (Keyword == "ifndef")
-    C.CondKind = Conditional::IfNDef;
+  C.CondKind = llvm::StringSwitch<Conditional::Kind>(Keyword)
+                   .Case("ifeq", Conditional::IfEq)
+                   .Case("ifneq", Conditional::IfNeq)
+                   .Case("ifdef", Conditional::IfDef)
+                   .Case("ifndef", Conditional::IfNDef)
+                   .Default(Conditional::IfEq);
 
   if (C.CondKind == Conditional::IfDef ||
       C.CondKind == Conditional::IfNDef) {

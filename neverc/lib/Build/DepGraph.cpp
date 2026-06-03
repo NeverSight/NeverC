@@ -1,27 +1,30 @@
 #include "neverc/Build/DepGraph.h"
+#include "neverc/Build/BuildConstants.h"
 #include "neverc/Build/Platform.h"
 
+#include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/Twine.h"
+
 #include <algorithm>
-#include <unordered_set>
 
 namespace neverc {
 namespace build {
 
 bool DepGraph::build(const std::string &Target, const RuleDB &Rules,
                       bool AlwaysMake) {
-  std::unordered_map<std::string, Color> Colors;
+  llvm::StringMap<Color> Colors;
   return buildNode(Target, Rules, AlwaysMake, Colors);
 }
 
 bool DepGraph::buildNode(const std::string &Target, const RuleDB &Rules,
                           bool AlwaysMake,
-                          std::unordered_map<std::string, Color> &Colors) {
+                          llvm::StringMap<Color> &Colors) {
   if (Colors[Target] == Black)
     return true;
 
   if (Colors[Target] == Gray) {
     CycleDetected = true;
-    CycleMsg = "Circular dependency: " + Target;
+    CycleMsg = ("Circular dependency: " + llvm::Twine(Target)).str();
     return false;
   }
 
@@ -121,28 +124,28 @@ bool DepGraph::needsRebuild(const Node &N) const {
 }
 
 std::vector<std::vector<std::string>> DepGraph::topologicalLayers() const {
-  std::unordered_map<std::string, int> InDegree;
-  for (auto &[Name, N] : Nodes) {
+  llvm::StringMap<int> InDegree;
+  for (auto &Entry : Nodes) {
     int Count = 0;
-    for (auto &Dep : N.Dependencies) {
+    for (auto &Dep : Entry.second.Dependencies) {
       if (Nodes.count(Dep))
         ++Count;
     }
-    for (auto &Dep : N.OrderOnlyDeps) {
+    for (auto &Dep : Entry.second.OrderOnlyDeps) {
       if (Nodes.count(Dep))
         ++Count;
     }
-    InDegree[Name] = Count;
+    InDegree[Entry.first()] = Count;
   }
 
   std::vector<std::vector<std::string>> Layers;
-  std::unordered_set<std::string> Processed;
+  llvm::StringSet<> Processed;
 
   while (Processed.size() < Nodes.size()) {
     std::vector<std::string> Layer;
-    for (auto &[Name, Degree] : InDegree) {
-      if (Degree == 0 && !Processed.count(Name))
-        Layer.push_back(Name);
+    for (auto &Entry : InDegree) {
+      if (Entry.second == 0 && !Processed.count(Entry.first()))
+        Layer.push_back(Entry.first().str());
     }
 
     if (Layer.empty())
@@ -150,16 +153,16 @@ std::vector<std::vector<std::string>> DepGraph::topologicalLayers() const {
 
     for (auto &Name : Layer) {
       Processed.insert(Name);
-      for (auto &[Other, OtherNode] : Nodes) {
-        if (Processed.count(Other))
+      for (auto &NodeEntry : Nodes) {
+        if (Processed.count(NodeEntry.first()))
           continue;
-        for (auto &Dep : OtherNode.Dependencies) {
+        for (auto &Dep : NodeEntry.second.Dependencies) {
           if (Dep == Name)
-            --InDegree[Other];
+            --InDegree[NodeEntry.first()];
         }
-        for (auto &Dep : OtherNode.OrderOnlyDeps) {
+        for (auto &Dep : NodeEntry.second.OrderOnlyDeps) {
           if (Dep == Name)
-            --InDegree[Other];
+            --InDegree[NodeEntry.first()];
         }
       }
     }
