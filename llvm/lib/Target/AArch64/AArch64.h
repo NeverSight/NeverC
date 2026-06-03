@@ -23,11 +23,9 @@
 
 namespace llvm {
 
-class AArch64RegisterBankInfo;
 class AArch64Subtarget;
 class AArch64TargetMachine;
 class FunctionPass;
-class InstructionSelector;
 
 FunctionPass *createAArch64DeadRegisterDefinitions();
 FunctionPass *createAArch64RedundantCopyEliminationPass();
@@ -56,14 +54,6 @@ FunctionPass *createAArch64CleanupLocalDynamicTLSPass();
 FunctionPass *createAArch64CollectLOHPass();
 FunctionPass *createSMEABIPass();
 ModulePass *createSVEIntrinsicOptsPass();
-InstructionSelector *
-createAArch64InstructionSelector(const AArch64TargetMachine &,
-                                 AArch64Subtarget &, AArch64RegisterBankInfo &);
-FunctionPass *createAArch64O0PreLegalizerCombiner();
-FunctionPass *createAArch64PreLegalizerCombiner();
-FunctionPass *createAArch64PostLegalizerCombiner(bool IsOptNone);
-FunctionPass *createAArch64PostLegalizerLowering();
-FunctionPass *createAArch64PostSelectOptimize();
 FunctionPass *createAArch64StackTaggingPass(bool IsOptNone);
 FunctionPass *createAArch64StackTaggingPreRAPass();
 ModulePass *createAArch64GlobalsTaggingPass();
@@ -84,11 +74,6 @@ void initializeAArch64ExpandPseudoPass(PassRegistry &);
 void initializeAArch64GlobalsTaggingPass(PassRegistry &);
 void initializeAArch64LoadStoreOptPass(PassRegistry &);
 void initializeAArch64MIPeepholeOptPass(PassRegistry &);
-void initializeAArch64O0PreLegalizerCombinerPass(PassRegistry &);
-void initializeAArch64PostLegalizerCombinerPass(PassRegistry &);
-void initializeAArch64PostLegalizerLoweringPass(PassRegistry &);
-void initializeAArch64PostSelectOptimizePass(PassRegistry &);
-void initializeAArch64PreLegalizerCombinerPass(PassRegistry &);
 void initializeAArch64PromoteConstantPass(PassRegistry &);
 void initializeAArch64RedundantCopyEliminationPass(PassRegistry &);
 void initializeAArch64SIMDInstrOptPass(PassRegistry &);

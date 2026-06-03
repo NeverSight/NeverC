@@ -3,16 +3,6 @@ add_llvm_component_group(AArch64 HAS_JIT)
 add_custom_target(AArch64CommonTableGen)
 
 add_llvm_target(AArch64CodeGen
-  GISel/AArch64CallLowering.cpp
-  GISel/AArch64GlobalISelUtils.cpp
-  GISel/AArch64InstructionSelector.cpp
-  GISel/AArch64LegalizerInfo.cpp
-  GISel/AArch64O0PreLegalizerCombiner.cpp
-  GISel/AArch64PreLegalizerCombiner.cpp
-  GISel/AArch64PostLegalizerCombiner.cpp
-  GISel/AArch64PostLegalizerLowering.cpp
-  GISel/AArch64PostSelectOptimize.cpp
-  GISel/AArch64RegisterBankInfo.cpp
   AArch64A57FPLoadBalancing.cpp
   AArch64AsmPrinter.cpp
   AArch64BranchTargets.cpp

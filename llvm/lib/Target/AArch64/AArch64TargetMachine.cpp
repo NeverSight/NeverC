@@ -23,14 +23,6 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/CFIFixup.h"
-#include "llvm/CodeGen/CSEConfigBase.h"
-#include "llvm/CodeGen/GlobalISel/CSEInfo.h"
-#include "llvm/CodeGen/GlobalISel/IRTranslator.h"
-#include "llvm/CodeGen/GlobalISel/InstructionSelect.h"
-#include "llvm/CodeGen/GlobalISel/Legalizer.h"
-#include "llvm/CodeGen/GlobalISel/LoadStoreOpt.h"
-#include "llvm/CodeGen/GlobalISel/Localizer.h"
-#include "llvm/CodeGen/GlobalISel/RegBankSelect.h"
 #include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
@@ -149,11 +141,6 @@ static cl::opt<bool>
                            cl::desc("Enable the loop data prefetch pass"),
                            cl::init(true));
 
-static cl::opt<int> EnableGlobalISelAtO(
-    "aarch64-enable-global-isel-at-O", cl::Hidden,
-    cl::desc("Enable GlobalISel at or below an opt level (-1 to disable)"),
-    cl::init(2));
-
 static cl::opt<bool>
     EnableSVEIntrinsicOpts("aarch64-enable-sve-intrinsic-opts", cl::Hidden,
                            cl::desc("Enable SVE intrinsic opts"),
@@ -176,16 +163,6 @@ static cl::opt<unsigned> SVEVectorBitsMinOpt(
              "with zero meaning no minimum size is assumed."),
     cl::init(0), cl::Hidden);
 
-static cl::opt<bool> EnableGISelLoadStoreOptPreLegal(
-    "aarch64-enable-gisel-ldst-prelegal",
-    cl::desc("Enable GlobalISel's pre-legalizer load/store optimization pass"),
-    cl::init(true), cl::Hidden);
-
-static cl::opt<bool> EnableGISelLoadStoreOptPostLegal(
-    "aarch64-enable-gisel-ldst-postlegal",
-    cl::desc("Enable GlobalISel's post-legalizer load/store optimization pass"),
-    cl::init(false), cl::Hidden);
-
 static cl::opt<bool>
     EnableSinkFold("aarch64-enable-sink-fold",
                    cl::desc("Enable sinking and folding of instruction copies"),
@@ -196,7 +173,6 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64Target() {
   RegisterTargetMachine<AArch64leTargetMachine> X(getTheAArch64leTarget());
   RegisterTargetMachine<AArch64leTargetMachine> Z(getTheARM64Target());
   auto PR = PassRegistry::getPassRegistry();
-  initializeGlobalISel(*PR);
   initializeAArch64A53Fix835769Pass(*PR);
   initializeAArch64A57FPLoadBalancingPass(*PR);
   initializeAArch64BranchTargetsPass(*PR);
@@ -209,12 +185,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64Target() {
   initializeAArch64LoadStoreOptPass(*PR);
   initializeAArch64MIPeepholeOptPass(*PR);
   initializeAArch64SIMDInstrOptPass(*PR);
-  initializeAArch64O0PreLegalizerCombinerPass(*PR);
-  initializeAArch64PreLegalizerCombinerPass(*PR);
   initializeAArch64PointerAuthPass(*PR);
-  initializeAArch64PostLegalizerCombinerPass(*PR);
-  initializeAArch64PostLegalizerLoweringPass(*PR);
-  initializeAArch64PostSelectOptimizePass(*PR);
   initializeAArch64PromoteConstantPass(*PR);
   initializeAArch64RedundantCopyEliminationPass(*PR);
   initializeAArch64StorePairSuppressPass(*PR);
@@ -308,14 +279,6 @@ AArch64TargetMachine::AArch64TargetMachine(const Target &T, const Triple &TT,
   else if (getCodeModel() == CodeModel::Tiny && this->Options.TLSSize > 24)
     // for the tiny code model, the maximum TLS size is 1MiB (< 16MiB)
     this->Options.TLSSize = 24;
-
-  // Enable GlobalISel at or below EnableGlobalISelAt0, unless this is
-  // MachO/CodeModel::Large, which GlobalISel does not support.
-  if (static_cast<int>(getOptLevel()) <= EnableGlobalISelAtO &&
-      !(getCodeModel() == CodeModel::Large && TT.isOSBinFormatMachO())) {
-    setGlobalISel(true);
-    setGlobalISelAbort(GlobalISelAbortMode::Disable);
-  }
 
   // AArch64 supports the MachineOutliner.
   setMachineOutliner(true);
@@ -456,12 +419,6 @@ public:
   bool addPreISel() override;
   void addCodeGenPrepare() override;
   bool addInstSelector() override;
-  bool addIRTranslator() override;
-  void addPreLegalizeMachineIR() override;
-  bool addLegalizeMachineIR() override;
-  void addPreRegBankSelect() override;
-  bool addRegBankSelect() override;
-  bool addGlobalInstructionSelect() override;
   void addMachineSSAOptimization() override;
   bool addILPOpts() override;
   void addPreRegAlloc() override;
@@ -471,7 +428,6 @@ public:
   void addPostBBSections() override;
   void addPreEmitPass2() override;
 
-  std::unique_ptr<CSEConfigBase> getCSEConfig() const override;
 };
 
 } // end anonymous namespace
@@ -483,10 +439,6 @@ AArch64TargetMachine::getTargetTransformInfo(const Function &F) const {
 
 TargetPassConfig *AArch64TargetMachine::createPassConfig(PassManagerBase &PM) {
   return new AArch64PassConfig(*this, PM);
-}
-
-std::unique_ptr<CSEConfigBase> AArch64PassConfig::getCSEConfig() const {
-  return getStandardCSEConfigForOpt(TM->getOptLevel());
 }
 
 void AArch64PassConfig::addIRPasses() {
@@ -616,49 +568,6 @@ bool AArch64PassConfig::addInstSelector() {
       getOptLevel() != CodeGenOptLevel::None)
     addPass(createAArch64CleanupLocalDynamicTLSPass());
 
-  return false;
-}
-
-bool AArch64PassConfig::addIRTranslator() {
-  addPass(new IRTranslator(getOptLevel()));
-  return false;
-}
-
-void AArch64PassConfig::addPreLegalizeMachineIR() {
-  if (getOptLevel() == CodeGenOptLevel::None) {
-    addPass(createAArch64O0PreLegalizerCombiner());
-  } else {
-    addPass(createAArch64PreLegalizerCombiner());
-    addPass(new Localizer());
-    if (EnableGISelLoadStoreOptPreLegal)
-      addPass(new LoadStoreOpt());
-  }
-}
-
-bool AArch64PassConfig::addLegalizeMachineIR() {
-  addPass(new Legalizer());
-  return false;
-}
-
-void AArch64PassConfig::addPreRegBankSelect() {
-  bool IsOptNone = getOptLevel() == CodeGenOptLevel::None;
-  if (!IsOptNone) {
-    addPass(createAArch64PostLegalizerCombiner(IsOptNone));
-    if (EnableGISelLoadStoreOptPostLegal)
-      addPass(new LoadStoreOpt());
-  }
-  addPass(createAArch64PostLegalizerLowering());
-}
-
-bool AArch64PassConfig::addRegBankSelect() {
-  addPass(new RegBankSelect());
-  return false;
-}
-
-bool AArch64PassConfig::addGlobalInstructionSelect() {
-  addPass(new InstructionSelect(getOptLevel()));
-  if (getOptLevel() != CodeGenOptLevel::None)
-    addPass(createAArch64PostSelectOptimize());
   return false;
 }
 

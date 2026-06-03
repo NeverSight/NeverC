@@ -15,11 +15,7 @@
 #include "AArch64.h"
 #include "AArch64InstrInfo.h"
 #include "AArch64TargetMachine.h"
-#include "GISel/AArch64CallLowering.h"
-#include "GISel/AArch64LegalizerInfo.h"
-#include "GISel/AArch64RegisterBankInfo.h"
 #include "MCTargetDesc/AArch64AddressingModes.h"
-#include "llvm/CodeGen/GlobalISel/InstructionSelect.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/IR/GlobalValue.h"
@@ -328,20 +324,6 @@ AArch64Subtarget::AArch64Subtarget(
   if (AArch64::isX18ReservedByDefault(TT))
     ReserveXRegister.set(18);
 
-  CallLoweringInfo.reset(new AArch64CallLowering(*getTargetLowering()));
-  InlineAsmLoweringInfo.reset(new InlineAsmLowering(getTargetLowering()));
-  Legalizer.reset(new AArch64LegalizerInfo(*this));
-
-  auto *RBI = new AArch64RegisterBankInfo(*getRegisterInfo());
-
-  // FIXME: At this point, we can't rely on Subtarget having RBI.
-  // It's awkward to mix passing RBI and the Subtarget; should we pass
-  // TII/TRI as well?
-  InstSelector.reset(createAArch64InstructionSelector(
-      *static_cast<const AArch64TargetMachine *>(&TM), *this, *RBI));
-
-  RegBankInfo.reset(RBI);
-
   auto TRI = getRegisterInfo();
   StringSet<> ReservedRegNames;
   ReservedRegNames.insert(ReservedRegsForRA.begin(), ReservedRegsForRA.end());
@@ -357,26 +339,6 @@ AArch64Subtarget::AArch64Subtarget(
     ReserveXRegisterForRA.set(29);
 
   AddressCheckPSV.reset(new AddressCheckPseudoSourceValue(TM));
-}
-
-const CallLowering *AArch64Subtarget::getCallLowering() const {
-  return CallLoweringInfo.get();
-}
-
-const InlineAsmLowering *AArch64Subtarget::getInlineAsmLowering() const {
-  return InlineAsmLoweringInfo.get();
-}
-
-InstructionSelector *AArch64Subtarget::getInstructionSelector() const {
-  return InstSelector.get();
-}
-
-const LegalizerInfo *AArch64Subtarget::getLegalizerInfo() const {
-  return Legalizer.get();
-}
-
-const RegisterBankInfo *AArch64Subtarget::getRegBankInfo() const {
-  return RegBankInfo.get();
 }
 
 /// Find the target operand flags that describe how a global value should be
