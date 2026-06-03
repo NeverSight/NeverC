@@ -127,21 +127,23 @@ jobs:
         set -x
         NCC=$(cygpath -m "$PWD/build/bin/neverc.exe")
         TESTDIR=$(cygpath -m "$PWD/neverc/tests/neverc")
-        DIAGDIR=$(cygpath -m "$TEMP")
+        WDIAG=$(cygpath -m "$PWD/diag_out")
+        BDIAG="$PWD/diag_out"
+        mkdir -p "$BDIAG"
 
         diagnose() {
           local label=$1 src=$2 flags=$3
           echo "=== [$label] step 1: compile to .obj ==="
-          "$NCC" $flags -c "$src" -o "$DIAGDIR/diag_${label}.obj" 2>&1 && echo "OK" || echo "EXIT=$?"
+          "$NCC" $flags -c "$src" -o "$WDIAG/diag_${label}.obj" 2>&1 && echo "OK" || echo "EXIT=$?"
 
           echo "=== [$label] step 2: link .obj to exe ==="
-          "$NCC" $flags "$DIAGDIR/diag_${label}.obj" -o "$DIAGDIR/diag_${label}.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+          "$NCC" $flags "$WDIAG/diag_${label}.obj" -o "$WDIAG/diag_${label}.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
 
           echo "=== [$label] step 3: compile+link (one shot) ==="
-          "$NCC" $flags "$src" -o "$DIAGDIR/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+          "$NCC" $flags "$src" -o "$WDIAG/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
 
           echo "=== [$label] step 4: run exe ==="
-          "$DIAGDIR/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+          "$BDIAG/diag_${label}_oneshot.exe" 2>&1 && echo "RUN OK" || echo "RUN EXIT=$?"
         }
 
         # Smoke diagnostics for Windows x64
