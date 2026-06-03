@@ -29,7 +29,7 @@ jobs:
         wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
         echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm-18.list
         sudo apt-get update
-        sudo apt-get install -y ninja-build cmake p7zip-full clang-18 lld-18 gdb
+        sudo apt-get install -y ninja-build cmake p7zip-full clang-18 lld-18 gdb elfutils
 
     - name: Build neverc
       run: |
@@ -130,16 +130,13 @@ jobs:
 
           for core in cores/core.*; do
             [ -f "$core" ] || continue
-            echo "=== symbolized backtrace from $core ==="
-            gdb -batch \
-              -ex "set print demangle on" \
-              -ex "info symbol \$pc" \
-              -ex "x/i \$pc" \
-              -ex "thread 1" \
-              -ex "bt 20" \
-              -ex "info registers" \
-              -ex "thread apply all bt" \
-              $NCC "$core" 2>&1 | head -100
+            echo "=== eu-stack backtrace from $core ==="
+            eu-stack -e $NCC --core="$core" 2>&1 | head -30
+            echo "=== crash registers ==="
+            gdb -batch -ex "x/i \$pc" -ex "info reg" $NCC "$core" 2>&1 | head -10
+            echo "=== eu-addr2line for PC ==="
+            PC=$(gdb -batch -ex "print/x \$pc" $NCC "$core" 2>&1 | grep -oP '0x[0-9a-f]+' | tail -1)
+            [ -n "$PC" ] && eu-addr2line -e $NCC --core="$core" $PC 2>&1
             rm -f "$core"
           done
         }
