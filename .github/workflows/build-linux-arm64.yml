@@ -125,11 +125,26 @@ jobs:
           echo "=== [$label] step 3: compile+link (one shot) ==="
           $NCC $flags "$src" -o /tmp/diag_${label}_oneshot 2>&1 && echo "OK" || echo "EXIT=$?"
 
-          # If core dump exists, get backtrace
+          # If core dump exists, get backtrace with symbols
           for core in cores/core.*; do
             [ -f "$core" ] || continue
             echo "=== backtrace from $core ==="
-            gdb -batch -ex "thread apply all bt" $NCC "$core" 2>&1 | head -80
+            gdb -batch \
+              -ex "set print demangle on" \
+              -ex "thread apply all bt full" \
+              $NCC "$core" 2>&1 | head -120
+            # Also try addr2line for crash PC
+            echo "=== addr2line for crash address ==="
+            CRASH_PC=$(gdb -batch -ex "info registers pc" $NCC "$core" 2>&1 | grep -oP '0x[0-9a-f]+' | head -1)
+            if [ -n "$CRASH_PC" ]; then
+              # Get load address to compute offset
+              LOAD_ADDR=$(gdb -batch -ex "info proc mappings" $NCC "$core" 2>&1 | grep neverc | head -1 | awk '{print $1}')
+              if [ -n "$LOAD_ADDR" ]; then
+                OFFSET=$(printf "0x%x" $((CRASH_PC - LOAD_ADDR)))
+                echo "PC=$CRASH_PC LOAD=$LOAD_ADDR OFFSET=$OFFSET"
+                addr2line -e $NCC -f -C $OFFSET 2>&1 || true
+              fi
+            fi
             rm -f "$core"
           done
         }
