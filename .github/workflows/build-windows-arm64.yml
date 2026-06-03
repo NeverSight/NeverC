@@ -142,33 +142,33 @@ jobs:
       shell: bash
       run: |
         set -x
-        # Convert MSYS2 paths to Windows paths for neverc.exe
-        NCC=$(cygpath -w "$PWD/build/bin/neverc.exe")
-        TESTDIR=$(cygpath -w "$PWD/neverc/tests/neverc")
-        DIAGDIR=$(cygpath -w "$TEMP")
+        # Use mixed paths (C:/...) — both bash and neverc.exe accept forward slashes
+        NCC=$(cygpath -m "$PWD/build/bin/neverc.exe")
+        TESTDIR=$(cygpath -m "$PWD/neverc/tests/neverc")
+        DIAGDIR=$(cygpath -m "$TEMP")
 
         diagnose() {
           local label=$1 src=$2 flags=$3
           echo "=== [$label] step 1: compile to .obj ==="
-          "$NCC" $flags -c "$src" -o "$DIAGDIR\\diag_${label}.obj" 2>&1 && echo "OK" || echo "EXIT=$?"
+          "$NCC" $flags -c "$src" -o "$DIAGDIR/diag_${label}.obj" 2>&1 && echo "OK" || echo "EXIT=$?"
 
           echo "=== [$label] step 2: link .obj to exe ==="
-          "$NCC" $flags "$DIAGDIR\\diag_${label}.obj" -o "$DIAGDIR\\diag_${label}.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+          "$NCC" $flags "$DIAGDIR/diag_${label}.obj" -o "$DIAGDIR/diag_${label}.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
 
           echo "=== [$label] step 3: compile+link (one shot) ==="
-          "$NCC" $flags "$src" -o "$DIAGDIR\\diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+          "$NCC" $flags "$src" -o "$DIAGDIR/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
 
           echo "=== [$label] step 4: run exe ==="
-          "$DIAGDIR\\diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+          "$DIAGDIR/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
         }
 
         # Known failing tests on Windows ARM64
         diagnose "c_stdlib" \
-          "$TESTDIR\\codegen\\test_c_stdlib_patterns.c" \
+          "$TESTDIR/codegen/test_c_stdlib_patterns.c" \
           "-std=gnu11 -O2"
 
         diagnose "mc64bit" \
-          "$TESTDIR\\codegen\\test_mc64bit_format.c" \
+          "$TESTDIR/codegen/test_mc64bit_format.c" \
           "-std=gnu11 -O2"
 
     - name: Fail if tests failed
