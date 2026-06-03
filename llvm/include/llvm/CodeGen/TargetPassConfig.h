@@ -316,20 +316,6 @@ public:
   /// the MachineVerifier if it is enabled.
   void addMachinePostPasses(const std::string &Banner);
 
-  /// Check whether or not GlobalISel should abort on error.
-  /// When this is disabled, GlobalISel will fall back on SDISel instead of
-  /// erroring out.
-  bool isGlobalISelAbortEnabled() const;
-
-  /// Check whether or not a diagnostic should be emitted when GlobalISel
-  /// uses the fallback path. In other words, it will emit a diagnostic
-  /// when GlobalISel failed and isGlobalISelAbortEnabled is false.
-  virtual bool reportDiagnosticWhenGlobalISelFallback() const;
-
-  /// Check whether continuous CSE should be enabled in GISel passes.
-  /// By default, it's enabled for non O0 levels.
-  virtual bool isGISelCSEEnabled() const;
-
   /// Returns the CSEConfig object to use for the current optimization level.
   virtual std::unique_ptr<CSEConfigBase> getCSEConfig() const;
 

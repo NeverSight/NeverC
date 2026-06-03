@@ -81,14 +81,6 @@ enum class DebuggerKind {
   LLDB,    ///< Tune debug info for lldb.
 };
 
-/// Enable abort calls when global instruction selection fails to lower/select
-/// an instruction.
-enum class GlobalISelAbortMode {
-  Disable,        // Disable the abort.
-  Enable,         // Enable the abort.
-  DisableWithDiag // Disable the abort but emit a diagnostic on failure.
-};
-
 class TargetOptions {
 public:
   TargetOptions()
@@ -96,7 +88,7 @@ public:
         NoTrappingFPMath(true), NoSignedZerosFPMath(false),
         ApproxFuncFPMath(false), HonorSignDependentRoundingFPMathOption(false),
         NoZerosInBSS(false), GuaranteedTailCallOpt(false),
-        StackSymbolOrdering(true), EnableGlobalISel(false), UseInitArray(false),
+        StackSymbolOrdering(true), UseInitArray(false),
         DisableIntegratedAS(false), RelaxELFRelocations(true),
         FunctionSections(false), DataSections(false), UniqueSectionNames(true),
         UniqueBasicBlockSectionNames(false), TrapUnreachable(false),
@@ -182,13 +174,6 @@ public:
   /// heuristics). When false, the local symbols are left in whatever order
   /// they were generated. Default is true.
   unsigned StackSymbolOrdering : 1;
-
-  /// EnableGlobalISel - This flag enables global instruction selection.
-  unsigned EnableGlobalISel : 1;
-
-  /// EnableGlobalISelAbort - Control abort behaviour when global instruction
-  /// selection fails to lower/select an instruction.
-  GlobalISelAbortMode GlobalISelAbort = GlobalISelAbortMode::Enable;
 
   /// UseInitArray - Use .init_array instead of .ctors for static
   /// constructors.

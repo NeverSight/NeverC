@@ -14,7 +14,6 @@
 #ifndef LLVM_TARGET_CGPASSBUILDEROPTION_H
 #define LLVM_TARGET_CGPASSBUILDEROPTION_H
 
-#include "llvm/Target/TargetOptions.h"
 #include <optional>
 
 namespace llvm {
@@ -44,9 +43,7 @@ struct CGPassBuilderOption {
 
   RunOutliner EnableMachineOutliner = RunOutliner::TargetDefault;
   RegAllocType RegAlloc = RegAllocType::Default;
-  std::optional<GlobalISelAbortMode> EnableGlobalISelAbort;
   std::optional<bool> VerifyMachineCode;
-  std::optional<bool> EnableGlobalISelOption;
 };
 
 CGPassBuilderOption getCGPassBuilderOption();

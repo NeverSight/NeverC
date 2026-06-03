@@ -60,7 +60,6 @@ When `args` is present, it takes precedence over `gpr` / `xmm`. Type mismatches 
 - **Variadic functions**: Not supported — the compiler emits a clear error instead of silently mis-passing arguments.
 - **Indirect calls**: Function-pointer calls cannot carry a custom convention. The plugin warns when a custom-CC function has its address taken; indirect calls fall back to the standard CC.
 - **Tail calls**: Automatically disabled for custom-CC functions (conservative safety).
-- **AArch64 / GlobalISel**: The custom convention is implemented in the SelectionDAG path. Functions that define or call a custom-CC function automatically fall back from GlobalISel to SelectionDAG, so the behavior is identical regardless of the default ISel.
 
 ## Usage
 

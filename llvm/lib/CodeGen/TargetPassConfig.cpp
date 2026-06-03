@@ -135,20 +135,6 @@ static cl::opt<RunOutliner> EnableMachineOutliner(
 // manual override.
 static cl::opt<bool> DisableCFIFixup("disable-cfi-fixup", cl::Hidden,
                                      cl::desc("Disable the CFI fixup pass"));
-static cl::opt<cl::boolOrDefault> EnableGlobalISelOption(
-    "global-isel", cl::Hidden,
-    cl::desc("Enable the \"global\" instruction selector"));
-
-static cl::opt<GlobalISelAbortMode> EnableGlobalISelAbort(
-    "global-isel-abort", cl::Hidden,
-    cl::desc("Enable abort calls when \"global\" instruction selection "
-             "fails to lower/select an instruction"),
-    cl::values(
-        clEnumValN(GlobalISelAbortMode::Disable, "0", "Disable the abort"),
-        clEnumValN(GlobalISelAbortMode::Enable, "1", "Enable the abort"),
-        clEnumValN(GlobalISelAbortMode::DisableWithDiag, "2",
-                   "Disable the abort but emit a diagnostic on failure")));
-
 // Temporary option to allow experimenting with MachineScheduler as a post-RA
 // scheduler. Targets can "properly" enable this with
 // substitutePass(&PostRASchedulerID, &PostMachineSchedulerID).
@@ -396,8 +382,6 @@ CGPassBuilderOption llvm::getCGPassBuilderOption() {
   if (Option.getNumOccurrences())                                              \
     Opt.Option = Option;
 
-  SET_OPTION(EnableGlobalISelAbort)
-  SET_OPTION(EnableGlobalISelOption)
   SET_OPTION(OptimizeRegAlloc)
   SET_OPTION(VerifyMachineCode)
   SET_OPTION(DisableAtExitBasedGlobalDtorLowering)
@@ -538,9 +522,6 @@ TargetPassConfig::TargetPassConfig(LLVMTargetMachine &TM, PassManagerBase &pm)
   // Also register alias analysis passes required by codegen passes.
   initializeBasicAAWrapperPassPass(*PassRegistry::getPassRegistry());
   initializeAAResultsWrapperPassPass(*PassRegistry::getPassRegistry());
-
-  if (EnableGlobalISelAbort.getNumOccurrences())
-    TM.Options.GlobalISelAbort = EnableGlobalISelAbort;
 
   setStartStopPasses();
 }
@@ -843,53 +824,7 @@ void TargetPassConfig::addISelPrepare() {
 }
 
 bool TargetPassConfig::addCoreISelPasses() {
-  // FastISel was removed; only SelectionDAG and GlobalISel remain.
-  enum class SelectorType { SelectionDAG, GlobalISel };
-  SelectorType Selector;
-
-  if (EnableGlobalISelOption == cl::BOU_TRUE ||
-      (TM->Options.EnableGlobalISel && EnableGlobalISelOption != cl::BOU_FALSE))
-    Selector = SelectorType::GlobalISel;
-  else
-    Selector = SelectorType::SelectionDAG;
-
-  // Set consistently TM->Options.EnableGlobalISel.
-  if (Selector == SelectorType::GlobalISel)
-    TM->setGlobalISel(true);
-
-  // Add instruction selector passes.
-  if (Selector == SelectorType::GlobalISel) {
-    SaveAndRestore SavedAddingMachinePasses(AddingMachinePasses, true);
-    if (addIRTranslator())
-      return true;
-
-    addPreLegalizeMachineIR();
-
-    if (addLegalizeMachineIR())
-      return true;
-
-    // Before running the register bank selector, ask the target if it
-    // wants to run some passes.
-    addPreRegBankSelect();
-
-    if (addRegBankSelect())
-      return true;
-
-    addPreGlobalInstructionSelect();
-
-    if (addGlobalInstructionSelect())
-      return true;
-
-    // Pass to reset the MachineFunction if the ISel failed.
-    addPass(createResetMachineFunctionPass(
-        reportDiagnosticWhenGlobalISelFallback(), isGlobalISelAbortEnabled()));
-
-    // Provide a fallback path when we do not want to abort on
-    // not-yet-supported input.
-    if (!isGlobalISelAbortEnabled() && addInstSelector())
-      return true;
-
-  } else if (addInstSelector())
+  if (addInstSelector())
     return true;
 
   // Expand pseudo-instructions emitted by ISel. Don't run the verifier before
@@ -1314,19 +1249,6 @@ void TargetPassConfig::addMachineLateOptimization() {
 void TargetPassConfig::addBlockPlacement() {
   addPass(&MachineBlockPlacementID);
 }
-
-//===---------------------------------------------------------------------===//
-/// GlobalISel Configuration
-//===---------------------------------------------------------------------===//
-bool TargetPassConfig::isGlobalISelAbortEnabled() const {
-  return TM->Options.GlobalISelAbort == GlobalISelAbortMode::Enable;
-}
-
-bool TargetPassConfig::reportDiagnosticWhenGlobalISelFallback() const {
-  return TM->Options.GlobalISelAbort == GlobalISelAbortMode::DisableWithDiag;
-}
-
-bool TargetPassConfig::isGISelCSEEnabled() const { return true; }
 
 std::unique_ptr<CSEConfigBase> TargetPassConfig::getCSEConfig() const {
   return std::make_unique<CSEConfigBase>();

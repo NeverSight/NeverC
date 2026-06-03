@@ -220,10 +220,6 @@ public:
   /// Overrides the optimization level.
   void setOptLevel(CodeGenOptLevel Level);
 
-  void setGlobalISel(bool Enable) { Options.EnableGlobalISel = Enable; }
-  void setGlobalISelAbort(GlobalISelAbortMode Mode) {
-    Options.GlobalISelAbort = Mode;
-  }
   void setMachineOutliner(bool Enable) {
     Options.EnableMachineOutliner = Enable;
   }
