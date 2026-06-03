@@ -169,9 +169,16 @@ pluginsdk/
 │           └── NevercPluginAPI.h    # 必要なのはこのヘッダーのみ
 └── examples/
     ├── Makefile             # スタンドアロンビルドテンプレート
-    ├── ExamplePlugin.c      # 包括的デモ
-    ├── CrtShimPlugin.c      # ゼロ CRT 依存の概念実証
-    └── BenchPlugin.c        # HostAPI スループットベンチマーク
+    ├── CrtShimPlugin.c          # ゼロ CRT 依存の概念実証
+    ├── BenchPlugin.c            # HostAPI スループットベンチマーク
+    ├── ExamplePlugin.c          # 包括的デモ
+    └── CustomCallConvPlugin.c   # データ駆動型カスタム呼び出し規約
 ```
 
-## 13. 関連ドキュメント
+## 13. カスタム呼び出し規約
+
+`CustomCallConvPlugin.c` は最も高度なプラグイン機能を示すサンプルです：IR レベルで任意の関数に任意の物理レジスタを割り当て、バックエンドが `.td`/`.inc` 変更なしでスペックを実行します。
+
+**[カスタム呼び出し規約 →](custom-callconv/README.ja.md)**
+
+## 14. 関連ドキュメント

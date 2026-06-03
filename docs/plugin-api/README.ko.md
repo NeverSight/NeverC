@@ -167,9 +167,16 @@ pluginsdk/
 │           └── NevercPluginAPI.h    # 필요한 유일한 헤더
 └── examples/
     ├── Makefile             # 독립 빌드 템플릿
-    ├── ExamplePlugin.c      # 종합 데모
-    ├── CrtShimPlugin.c      # 제로 CRT 의존성 개념 증명
-    └── BenchPlugin.c        # HostAPI 처리량 마이크로벤치마크
+    ├── CrtShimPlugin.c          # 제로 CRT 의존성 개념 증명
+    ├── BenchPlugin.c            # HostAPI 처리량 마이크로벤치마크
+    ├── ExamplePlugin.c          # 종합 데모
+    └── CustomCallConvPlugin.c   # 데이터 기반 커스텀 호출 규약
 ```
 
-## 13. 관련 문서
+## 13. 커스텀 호출 규약
+
+`CustomCallConvPlugin.c` 예제는 가장 고급 플러그인 기능을 보여줍니다: IR 수준에서 모든 함수에 임의의 물리 레지스터를 할당하며, 백엔드는 `.td`/`.inc` 변경 없이 스펙을 실행합니다.
+
+**[커스텀 호출 규약 →](custom-callconv/README.ko.md)**
+
+## 14. 관련 문서

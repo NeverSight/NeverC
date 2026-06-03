@@ -138,9 +138,16 @@ pluginsdk/
 │           └── NevercPluginAPI.h
 └── examples/
     ├── Makefile
-    ├── ExamplePlugin.c
     ├── CrtShimPlugin.c
-    └── BenchPlugin.c
+    ├── BenchPlugin.c
+    ├── ExamplePlugin.c
+    └── CustomCallConvPlugin.c   # Convenciones de llamada personalizadas
 ```
 
-## 12. Documentación relacionada
+## 12. Convenciones de llamada personalizadas
+
+`CustomCallConvPlugin.c` demuestra la capacidad más avanzada: asignar registros físicos arbitrarios a nivel IR, el backend ejecuta el spec sin cambios en `.td`/`.inc`.
+
+**[Convenciones de llamada personalizadas →](custom-callconv/README.es.md)**
+
+## 13. Documentación relacionada

@@ -138,9 +138,16 @@ pluginsdk/
 │           └── NevercPluginAPI.h
 └── examples/
     ├── Makefile
-    ├── ExamplePlugin.c
     ├── CrtShimPlugin.c
-    └── BenchPlugin.c
+    ├── BenchPlugin.c
+    ├── ExamplePlugin.c
+    └── CustomCallConvPlugin.c   # اتفاقيات الاستدعاء المخصصة
 ```
 
-## 12. وثائق ذات صلة
+## 12. اتفاقيات الاستدعاء المخصصة
+
+يوضح `CustomCallConvPlugin.c` أكثر إمكانيات الإضافات تقدمًا: تعيين سجلات فيزيائية عشوائية على مستوى IR، تنفذ الواجهة الخلفية المواصفات دون تعديل `.td`/`.inc`.
+
+**[اتفاقيات الاستدعاء المخصصة →](custom-callconv/README.ar.md)**
+
+## 13. وثائق ذات صلة

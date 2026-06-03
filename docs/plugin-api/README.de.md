@@ -167,9 +167,16 @@ pluginsdk/
 │           └── NevercPluginAPI.h    # Der einzige benötigte Header
 └── examples/
     ├── Makefile             # Eigenständige Build-Vorlage
-    ├── ExamplePlugin.c      # Umfassende Demo
-    ├── CrtShimPlugin.c      # Zero-CRT-Proof-of-Concept
-    └── BenchPlugin.c        # HostAPI-Durchsatz-Mikrobenchmarks
+    ├── CrtShimPlugin.c          # Zero-CRT-Proof-of-Concept
+    ├── BenchPlugin.c            # HostAPI-Durchsatz-Mikrobenchmarks
+    ├── ExamplePlugin.c          # Umfassende Demo
+    └── CustomCallConvPlugin.c   # Datengesteuerte benutzerdefinierte Aufrufkonventionen
 ```
 
-## 13. Verwandte Dokumentation
+## 13. Benutzerdefinierte Aufrufkonventionen
+
+`CustomCallConvPlugin.c` demonstriert die fortschrittlichste Plugin-Fähigkeit: Zuweisung beliebiger physischer Register auf IR-Ebene, das Backend führt die Spezifikation ohne `.td`/`.inc`-Änderungen aus.
+
+**[Benutzerdefinierte Aufrufkonventionen →](custom-callconv/README.de.md)**
+
+## 14. Verwandte Dokumentation

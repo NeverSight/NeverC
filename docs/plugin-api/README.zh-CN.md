@@ -390,10 +390,26 @@ pluginsdk/
 │       └── Plugin/
 │           └── NevercPluginAPI.h    # 唯一需要的头文件
 └── examples/
-    ├── Makefile             # 独立构建模板
-    ├── ExamplePlugin.c      # 综合演示（IR + MIR + Binary + LTO + Linker）
-    ├── CrtShimPlugin.c      # 零 CRT 依赖概念验证
-    └── BenchPlugin.c        # HostAPI 吞吐量微基准测试
+    ├── Makefile                 # 独立构建模板
+    ├── CrtShimPlugin.c          # 零 CRT 依赖验证
+    ├── BenchPlugin.c            # HostAPI 吞吐量微基准测试
+    ├── ExamplePlugin.c          # 综合演示（IR + MIR + Binary + LTO + Linker）
+    └── CustomCallConvPlugin.c   # 数据驱动的自定义调用约定
 ```
 
-## 14. 相关文档
+### 示例插件（简单 → 高级）
+
+| 插件 | 复杂度 | 演示内容 |
+|---|---|---|
+| **CrtShimPlugin.c** | 最简 | 零 CRT 依赖 —— 所有内存/IO/字符串操作都走宿主 vtable。证明插件可以用任意 CRT（或无 CRT）编译 |
+| **BenchPlugin.c** | 低 | HostAPI 吞吐量基准：堆/竞技场分配器、StrFormat、StrMap、DynArray、vtable 调用开销 |
+| **ExamplePlugin.c** | 综合 | 全 API 覆盖：IR 读写、MIR 分析、二进制补丁、LTO/链接器钩子、use-def 链、支配树、循环信息、SCEV、调用图、函数克隆等 |
+| **CustomCallConvPlugin.c** | 高级 | 数据驱动的自定义调用约定：给任意函数指定任意物理寄存器，支持 LTO，无需改 `.td`/`.inc` |
+
+## 14. 自定义调用约定
+
+`CustomCallConvPlugin.c` 示例展示了最高级的插件能力：在 IR 层给任意函数的参数和返回值指定任意物理寄存器，后端按清单执行，无需改动任何 `.td`/`.inc` 文件。
+
+**[自定义调用约定 →](custom-callconv/README.zh-CN.md)**
+
+## 15. 相关文档

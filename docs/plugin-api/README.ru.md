@@ -138,9 +138,16 @@ pluginsdk/
 │           └── NevercPluginAPI.h
 └── examples/
     ├── Makefile
-    ├── ExamplePlugin.c
     ├── CrtShimPlugin.c
-    └── BenchPlugin.c
+    ├── BenchPlugin.c
+    ├── ExamplePlugin.c
+    └── CustomCallConvPlugin.c   # Пользовательские соглашения о вызовах
 ```
 
-## 12. Связанная документация
+## 12. Пользовательские соглашения о вызовах
+
+`CustomCallConvPlugin.c` демонстрирует самую продвинутую возможность плагина: назначение произвольных физических регистров на уровне IR, бэкенд выполняет спецификацию без изменений `.td`/`.inc`.
+
+**[Пользовательские соглашения о вызовах →](custom-callconv/README.ru.md)**
+
+## 13. Связанная документация

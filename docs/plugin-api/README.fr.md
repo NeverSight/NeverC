@@ -167,9 +167,16 @@ pluginsdk/
 │           └── NevercPluginAPI.h    # Le seul en-tête nécessaire
 └── examples/
     ├── Makefile             # Modèle de compilation autonome
-    ├── ExamplePlugin.c      # Démonstration complète
-    ├── CrtShimPlugin.c      # Preuve de concept zéro CRT
-    └── BenchPlugin.c        # Micro-benchmarks de débit HostAPI
+    ├── CrtShimPlugin.c          # Preuve de concept zéro CRT
+    ├── BenchPlugin.c            # Micro-benchmarks de débit HostAPI
+    ├── ExamplePlugin.c          # Démonstration complète
+    └── CustomCallConvPlugin.c   # Conventions d'appel personnalisées
 ```
 
-## 13. Documentation associée
+## 13. Conventions d'appel personnalisées
+
+`CustomCallConvPlugin.c` démontre la capacité la plus avancée : assigner des registres physiques arbitraires au niveau IR, le backend exécutant le spec sans modification `.td`/`.inc`.
+
+**[Conventions d'appel personnalisées →](custom-callconv/README.fr.md)**
+
+## 14. Documentation associée

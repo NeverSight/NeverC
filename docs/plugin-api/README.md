@@ -406,10 +406,26 @@ pluginsdk/
 │       └── Plugin/
 │           └── NevercPluginAPI.h    # The only header you need
 └── examples/
-    ├── Makefile             # Standalone build template
-    ├── ExamplePlugin.c      # Comprehensive demo (IR + MIR + Binary + LTO + Linker)
-    ├── CrtShimPlugin.c      # Zero-CRT-dependency proof of concept
-    └── BenchPlugin.c        # HostAPI throughput micro-benchmarks
+    ├── Makefile                 # Standalone build template
+    ├── CrtShimPlugin.c          # Zero-CRT-dependency proof of concept
+    ├── BenchPlugin.c            # HostAPI throughput micro-benchmarks
+    ├── ExamplePlugin.c          # Comprehensive demo (IR + MIR + Binary + LTO + Linker)
+    └── CustomCallConvPlugin.c   # Data-driven custom calling conventions
 ```
 
-## 14. Related Documentation
+### Example Plugins (simple → advanced)
+
+| Plugin | Complexity | What It Demonstrates |
+|---|---|---|
+| **CrtShimPlugin.c** | Minimal | Zero CRT dependency — routes all memory, I/O, and string ops through the host vtable. Proves plugins can be built with _any_ CRT (or none) and remain compatible. |
+| **BenchPlugin.c** | Low | HostAPI throughput micro-benchmarks: heap/arena allocator, StrFormat, StrMap, DynArray, and vtable call overhead. Quantifies API performance. |
+| **ExamplePlugin.c** | Comprehensive | Full API coverage: IR reading/mutation, MIR analysis, binary patching, LTO/Linker hooks, use-def chains, dominator trees, loop info, SCEV, call graph, function cloning, arena collections, and more. |
+| **CustomCallConvPlugin.c** | Advanced | Data-driven custom calling conventions: assigns arbitrary physical registers to function arguments/returns, with LTO support. The backend executes the spec — no `.td`/`.inc` changes needed. |
+
+## 14. Custom Calling Conventions
+
+The `CustomCallConvPlugin.c` example demonstrates the most advanced plugin capability: assigning arbitrary physical registers to any function's arguments and return values at the IR level, with the backend executing the spec without any `.td`/`.inc` changes.
+
+**[Custom Calling Conventions →](custom-callconv/README.md)**
+
+## 15. Related Documentation

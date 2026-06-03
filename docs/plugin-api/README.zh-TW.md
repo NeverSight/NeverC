@@ -200,10 +200,17 @@ pluginsdk/
 │       └── Plugin/
 │           └── NevercPluginAPI.h    # 唯一需要的標頭檔
 └── examples/
-    ├── Makefile             # 獨立建置範本
-    ├── ExamplePlugin.c      # 綜合示範
-    ├── CrtShimPlugin.c      # 零 CRT 依賴概念驗證
-    └── BenchPlugin.c        # HostAPI 吞吐量微基準測試
+    ├── Makefile                 # 獨立建置範本
+    ├── CrtShimPlugin.c          # 零 CRT 依賴概念驗證
+    ├── BenchPlugin.c            # HostAPI 吞吐量微基準測試
+    ├── ExamplePlugin.c          # 綜合示範（IR + MIR + Binary + LTO + Linker）
+    └── CustomCallConvPlugin.c   # 資料驅動的自訂呼叫慣例
 ```
 
-## 13. 相關文件
+## 13. 自訂呼叫慣例
+
+`CustomCallConvPlugin.c` 範例展示了最進階的外掛能力：在 IR 層為任意函式指定任意實體暫存器，後端按清單執行，無需改動 `.td`/`.inc`。
+
+**[自訂呼叫慣例 →](custom-callconv/README.zh-TW.md)**
+
+## 14. 相關文件
