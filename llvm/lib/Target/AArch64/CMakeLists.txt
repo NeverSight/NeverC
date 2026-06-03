@@ -59,7 +59,6 @@ add_llvm_target(AArch64CodeGen
   CodeGen
   CodeGenTypes
   Core
-  GlobalISel
   MC
   Scalar
   SelectionDAG

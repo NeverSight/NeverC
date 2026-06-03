@@ -21,7 +21,6 @@
 #define LLVM_CODEGEN_MACHINEINSTRBUILDER_H
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/CodeGen/GlobalISel/Utils.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -326,11 +325,6 @@ public:
     return *this;
   }
 
-  bool constrainAllUses(const TargetInstrInfo &TII,
-                        const TargetRegisterInfo &TRI,
-                        const RegisterBankInfo &RBI) const {
-    return constrainSelectedInstRegOperands(*MI, TII, TRI, RBI);
-  }
 };
 
 /// Set of metadata that should be preserved when using BuildMI(). This provides

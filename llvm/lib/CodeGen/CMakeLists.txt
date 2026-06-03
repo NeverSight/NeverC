@@ -210,6 +210,5 @@ add_llvm_component_library(LLVMCodeGen
   TransformUtils
   )
 
-add_subdirectory(GlobalISel)
 add_subdirectory(SelectionDAG)
 add_subdirectory(AsmPrinter)
