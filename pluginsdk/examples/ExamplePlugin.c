@@ -229,15 +229,13 @@ struct PipelineStageCtx {
   unsigned Defined;
   unsigned BBTotal;
   unsigned InstTotal;
-  int HasInstCount;
 };
 
 static int pipelineStageVisitor(NevercValueRef F, void *Ctx) {
   struct PipelineStageCtx *S = (struct PipelineStageCtx *)Ctx;
   S->Defined++;
   S->BBTotal += S->API->FunctionGetBBCount(F);
-  if (S->HasInstCount)
-    S->InstTotal += S->API->FunctionGetInstructionCount(F);
+  S->InstTotal += S->API->FunctionGetInstructionCount(F);
   return 0;
 }
 
@@ -250,7 +248,6 @@ static int pipelineStagePass(NevercModuleRef M, const NevercHostAPI *API,
   Ctx.Defined = 0;
   Ctx.BBTotal = 0;
   Ctx.InstTotal = 0;
-  Ctx.HasInstCount = 1;
 
   API->ModuleForEachDefinedFunction(M, pipelineStageVisitor, &Ctx);
 
@@ -349,33 +346,15 @@ static int intrinsicHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
  *        IntMap, IntMapIncrement, IntMapForEach, InstOpcodeToName, StrBuilder.
  */
 
-struct OpcodeCountCtx {
-  const NevercHostAPI *API;
-  NevercIntMapRef Hist;
-  unsigned InstCount;
-};
-
-static int opcodeCountVisitor(NevercValueRef I, void *Ctx) {
-  struct OpcodeCountCtx *O = (struct OpcodeCountCtx *)Ctx;
-  O->API->IntMapIncrement(O->Hist, O->API->InstGetOpcode(I), 1);
-  O->InstCount++;
-  return 0;
-}
-
 struct OpcodeOutputCtx {
   const NevercHostAPI *API;
   NevercStrBuilderRef SB;
-  int HasOpcodeToName;
 };
 
 static int opcodeOutputVisitor(uint64_t Key, uint64_t Value, void *Ctx) {
   struct OpcodeOutputCtx *O = (struct OpcodeOutputCtx *)Ctx;
-  if (O->HasOpcodeToName) {
-    const char *Name = O->API->InstOpcodeToName((unsigned)Key);
-    O->API->StrBuilderAppendF(O->SB, " %s=%" PRIu64, Name, Value);
-  } else {
-    O->API->StrBuilderAppendF(O->SB, " op%u=%" PRIu64, (unsigned)Key, Value);
-  }
+  const char *Name = O->API->InstOpcodeToName((unsigned)Key);
+  O->API->StrBuilderAppendF(O->SB, " %s=%" PRIu64, Name, Value);
   return 0;
 }
 
@@ -415,7 +394,6 @@ static int opcodeHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
   struct OpcodeOutputCtx OutCtx;
   OutCtx.API = API;
   OutCtx.SB = SB;
-  OutCtx.HasOpcodeToName = 1;
   API->IntMapForEach(Hist, opcodeOutputVisitor, &OutCtx);
 
   API->IntMapDestroy(Hist);
@@ -1130,12 +1108,6 @@ struct MirOpCountCtx {
   unsigned InstrCount;
   unsigned RegOps;
   unsigned ImmOps;
-  int HasBatchKinds;
-  /* Arena-owned scratch that grows monotonically via bump-alloc.
-     Starts at 64 bytes; when an MI with more operands appears the
-     outer loop bump-allocs a larger buffer (O(1), the old one stays
-     in the arena).  Settles within the first few MIs so the steady
-     state is zero-alloc. */
   uint8_t *KindsBuf;
   unsigned KindsCap;
 };
@@ -1145,7 +1117,7 @@ static void mirClassifyOps(NevercMachineInstrRef MI,
   unsigned NumOps = C->API->MInstGetNumOperands(MI);
   if (NumOps == 0)
     return;
-  if (C->HasBatchKinds && C->KindsBuf && NumOps <= C->KindsCap) {
+  if (C->KindsBuf && NumOps <= C->KindsCap) {
     C->API->MInstCollectOperandKinds(MI, C->KindsBuf);
     for (unsigned K = 0; K < NumOps; K++) {
       if (C->KindsBuf[K] == NEVERC_MIR_OP_REG)
@@ -1161,19 +1133,6 @@ static void mirClassifyOps(NevercMachineInstrRef MI,
     else if (C->API->MInstGetOperandIsImm(MI, K))
       C->ImmOps++;
   }
-}
-
-static int mirInstVisitor(NevercMachineInstrRef MI, void *Ctx) {
-  struct MirOpCountCtx *C = (struct MirOpCountCtx *)Ctx;
-  C->InstrCount++;
-  mirClassifyOps(MI, C);
-  return 0;
-}
-
-static int mirBBVisitor(NevercMachineBBRef MBB, void *Ctx) {
-  struct MirOpCountCtx *C = (struct MirOpCountCtx *)Ctx;
-  C->API->MBBForEachInst(MBB, mirInstVisitor, Ctx);
-  return 0;
 }
 
 static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
@@ -1192,7 +1151,6 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
   Ctx.InstrCount = 0;
   Ctx.RegOps = 0;
   Ctx.ImmOps = 0;
-  Ctx.HasBatchKinds = 1;
   Ctx.KindsBuf = NULL;
   Ctx.KindsCap = 0;
 
@@ -1218,7 +1176,7 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
         ? NEVERC_ARENA_ALLOC_ARRAY(API, Scratch, NevercMachineInstrRef, MaxIC)
         : NULL;
 
-    if (Ctx.HasBatchKinds && MIs) {
+    if (MIs) {
       Ctx.KindsBuf = NEVERC_ARENA_ALLOC_ARRAY(API, Scratch, uint8_t, 64);
       Ctx.KindsCap = Ctx.KindsBuf ? 64 : 0;
     }
@@ -1229,15 +1187,13 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
         continue;
       API->MBBCollectInstructions(MBBs[B], MIs);
       for (unsigned J = 0; J < IC; J++) {
-        if (Ctx.HasBatchKinds) {
-          unsigned N = API->MInstGetNumOperands(MIs[J]);
-          if (N > Ctx.KindsCap) {
-            uint8_t *New =
-                NEVERC_ARENA_ALLOC_ARRAY(API, Scratch, uint8_t, N);
-            if (New) {
-              Ctx.KindsBuf = New;
-              Ctx.KindsCap = N;
-            }
+        unsigned N = API->MInstGetNumOperands(MIs[J]);
+        if (N > Ctx.KindsCap) {
+          uint8_t *New =
+              NEVERC_ARENA_ALLOC_ARRAY(API, Scratch, uint8_t, N);
+          if (New) {
+            Ctx.KindsBuf = New;
+            Ctx.KindsCap = N;
           }
         }
         mirClassifyOps(MIs[J], &Ctx);
