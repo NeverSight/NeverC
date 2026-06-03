@@ -775,9 +775,6 @@ OPTION(prefix_1, "-fexec-charset=", fexec_charset_EQ, Joined, f_Group, INVALID,
 OPTION(prefix_1, "-fexperimental-assignment-tracking=",
        fexperimental_assignment_tracking_EQ, Joined, f_Group, INVALID, nullptr,
        HelpHidden, DefaultVis, 0, nullptr, nullptr, "disabled,enabled,forced")
-OPTION(prefix_1, "-fexperimental-isel", fexperimental_isel, Flag,
-       f_neverc_Group, fglobal_isel, nullptr, 0, DefaultVis, 0, nullptr,
-       nullptr, nullptr)
 OPTION(prefix_1,
        "-fexperimental-max-bitint-width=", fexperimental_max_bitint_width_EQ,
        Joined, f_Group, INVALID, nullptr, HelpHidden, DefaultVis, 0,
@@ -960,9 +957,6 @@ OPTION(prefix_1, "-ffunction-sections", ffunction_sections, Flag, f_Group,
 OPTION(prefix_1, "-fgc-sections", fgc_sections, Flag, f_Group, INVALID, nullptr,
        LinkOption, DefaultVis, 0,
        "Enable linker garbage collection of unused sections (default at -O1+)",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fglobal-isel", fglobal_isel, Flag, f_neverc_Group, INVALID,
-       nullptr, 0, DefaultVis, 0, "Enables the global instruction selector",
        nullptr, nullptr)
 OPTION(prefix_1, "-fgnu-inline-asm", fgnu_inline_asm, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0, "", nullptr, nullptr)
@@ -1371,9 +1365,6 @@ OPTION(prefix_1, "-fno-encrypt-call-strings", fno_encrypt_call_strings, Flag,
 OPTION(prefix_1, "-fno-exceptions", fno_exceptions, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis | DefaultVis, 0,
        "Disable support for exception handling", nullptr, nullptr)
-OPTION(prefix_1, "-fno-experimental-isel", fno_experimental_isel, Flag,
-       f_neverc_Group, fno_global_isel, nullptr, 0, DefaultVis, 0, nullptr,
-       nullptr, nullptr)
 OPTION(prefix_1, "-fno-fast-math", fno_fast_math, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis | DefaultVis, 0, "", nullptr, nullptr)
 OPTION(prefix_1, "-fno-file-reproducible", fno_file_reproducible, Flag, f_Group,
@@ -1404,9 +1395,6 @@ OPTION(prefix_1, "-fno-function-sections", fno_function_sections, Flag, f_Group,
 OPTION(prefix_1, "-fno-gc-sections", fno_gc_sections, Flag, f_Group, INVALID,
        nullptr, LinkOption, DefaultVis, 0,
        "Disable linker garbage collection of unused sections", nullptr, nullptr)
-OPTION(prefix_1, "-fno-global-isel", fno_global_isel, Flag, f_neverc_Group,
-       INVALID, nullptr, 0, DefaultVis, 0,
-       "Disables the global instruction selector", nullptr, nullptr)
 OPTION(prefix_1, "-fno-gnu-inline-asm", fno_gnu_inline_asm, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
        "Disable GNU style inline asm", nullptr, nullptr)
