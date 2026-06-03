@@ -6,12 +6,16 @@ Sorts diagnostic groups alphabetically by flag name, sorts diag::
 entries within each group, rebuilds all array offsets and the name table.
 
 Usage:
-    python scripts/sort_diagnostic_groups.py [path/to/DiagnosticGroups.td.h]
+    python3 scripts/sort-diagnostic-groups.py            # dry-run (shows diff)
+    python3 scripts/sort-diagnostic-groups.py --write     # overwrite in place
+    python3 scripts/sort-diagnostic-groups.py --check     # exit 1 if unsorted (CI)
 
-With no argument, defaults to
+An optional path argument overrides the default of
 neverc/include/neverc/Foundation/DiagnosticGroups.td.h relative to the repo root.
 """
 
+import argparse
+import difflib
 import re
 import sys
 from dataclasses import dataclass, field
@@ -269,21 +273,13 @@ def emit_entries(groups, name_offsets, arr_offsets, sg_offsets):
 
 # ── Main ─────────────────────────────────────────────────────────────────
 
-def main():
-    if len(sys.argv) > 1:
-        path = Path(sys.argv[1])
-    else:
-        # Default: relative to repo root (this script lives in <repo>/scripts/).
-        repo_root = Path(__file__).resolve().parent.parent
-        path = (repo_root / 'neverc' / 'include' / 'neverc' / 'Foundation'
+DEFAULT_PATH = (Path(__file__).resolve().parent.parent
+                / 'neverc' / 'include' / 'neverc' / 'Foundation'
                 / 'DiagnosticGroups.td.h')
 
-    if not path.exists():
-        print(f"Error: {path} not found", file=sys.stderr)
-        sys.exit(1)
 
-    content = path.read_text()
-
+def build_sorted_content(content, quiet=False):
+    """Return the fully sorted/reindexed file content as a string."""
     # ── Locate sections ──
     arrays_hdr = '#ifdef GET_DIAG_ARRAYS'
     arrays_end = '#endif // GET_DIAG_ARRAYS'
@@ -313,9 +309,10 @@ def main():
     sub_groups = parse_c_array(arrays_text[dsg_i:dsg_j], 'DiagSubGroup')
     entries = parse_entries(entries_text)
 
-    print(f"Parsed {len(entries)} groups, "
-          f"{len(diag_arrays)} DiagArrays, "
-          f"{len(sub_groups)} DiagSubGroups", file=sys.stderr)
+    if not quiet:
+        print(f"Parsed {len(entries)} groups, "
+              f"{len(diag_arrays)} DiagArrays, "
+              f"{len(sub_groups)} DiagSubGroups", file=sys.stderr)
 
     # ── Build group model ──
     groups = []
@@ -363,8 +360,56 @@ def main():
     out.append(categories)
     out.append('')
 
-    path.write_text('\n'.join(out))
-    print(f"Wrote {len(sorted_groups)} sorted groups to {path}", file=sys.stderr)
+    return '\n'.join(out), len(sorted_groups)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Sort and reindex DiagnosticGroups.td.h")
+    parser.add_argument('path', nargs='?', type=Path, default=DEFAULT_PATH,
+                        help="Path to DiagnosticGroups.td.h "
+                             "(defaults to the in-tree copy).")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--write', action='store_true',
+                      help="Overwrite the file in place.")
+    mode.add_argument('--check', action='store_true',
+                      help="Exit 1 if the file is not already sorted (CI).")
+    args = parser.parse_args()
+
+    path = args.path
+    if not path.exists():
+        print(f"Error: {path} not found", file=sys.stderr)
+        sys.exit(1)
+
+    original = path.read_text()
+    new_content, num_groups = build_sorted_content(original, quiet=args.check)
+
+    if new_content == original:
+        if not args.check:
+            print(f"Already sorted ({num_groups} groups). No changes needed.",
+                  file=sys.stderr)
+        return
+
+    if args.check:
+        print(f"ERROR: {path} is not sorted. "
+              f"Run: python3 scripts/sort-diagnostic-groups.py --write",
+              file=sys.stderr)
+        sys.exit(1)
+
+    if args.write:
+        path.write_text(new_content)
+        print(f"Wrote {num_groups} sorted groups to {path}", file=sys.stderr)
+    else:
+        diff = difflib.unified_diff(
+            original.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=str(path),
+            tofile=str(path) + " (sorted)",
+            n=1,
+        )
+        sys.stdout.writelines(diff)
+        print(f"\n{num_groups} groups parsed. Use --write to apply.",
+              file=sys.stderr)
 
 
 if __name__ == '__main__':

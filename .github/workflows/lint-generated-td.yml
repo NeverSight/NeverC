@@ -1,0 +1,56 @@
+name: lint-generated-td
+
+on:
+  push:
+    paths:
+      - 'neverc/include/neverc/Invoke/Options.td.h'
+      - 'scripts/sort-options-td.py'
+      - 'neverc/include/neverc/Foundation/DiagnosticGroups.td.h'
+      - 'scripts/sort-diagnostic-groups.py'
+      - '.github/workflows/lint-generated-td.yml'
+  pull_request:
+    paths:
+      - 'neverc/include/neverc/Invoke/Options.td.h'
+      - 'scripts/sort-options-td.py'
+      - 'neverc/include/neverc/Foundation/DiagnosticGroups.td.h'
+      - 'scripts/sort-diagnostic-groups.py'
+      - '.github/workflows/lint-generated-td.yml'
+
+jobs:
+  check-options-sorted:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Verify Options.td.h is sorted
+        run: |
+          python3 scripts/sort-options-td.py --check
+          echo ""
+          echo "If this step fails, run locally:"
+          echo "  python3 scripts/sort-options-td.py --write"
+          echo "and commit the result."
+
+  check-diagnostic-groups-sorted:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Verify DiagnosticGroups.td.h is sorted
+        run: |
+          python3 scripts/sort-diagnostic-groups.py --check
+          echo ""
+          echo "If this step fails, run locally:"
+          echo "  python3 scripts/sort-diagnostic-groups.py --write"
+          echo "and commit the result."
