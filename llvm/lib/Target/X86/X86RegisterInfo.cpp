@@ -13,9 +13,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "X86RegisterInfo.h"
+#include "X86CallingConv.h"
 #include "X86FrameLowering.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86Subtarget.h"
+#include "llvm/CodeGen/NeverCCallConv.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
@@ -234,6 +236,26 @@ X86RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   // calling convention and use the empty set instead.
   if (MF->getFunction().hasFnAttribute("no_callee_saved_registers"))
     return CSR_NoRegs_SaveList;
+
+  // NeverC custom calling convention: an optional "csr" spec segment overrides
+  // the callee-saved set. Build the (null-terminated) list lazily per function.
+  if (CC == CallingConv::NeverC_Custom &&
+      F.hasFnAttribute(neverc::CallConvAttrName)) {
+    neverc::CustomCCSpec Spec;
+    neverc::parseCustomCCSpec(
+        F.getFnAttribute(neverc::CallConvAttrName).getValueAsString(), Spec);
+    if (!Spec.CalleeSaved.empty()) {
+      auto &Info = *MF->getInfo<X86MachineFunctionInfo>();
+      Info.NeverCCSRSaveList.clear();
+      for (StringRef Name : Spec.CalleeSaved) {
+        MCRegister R = neverCParseX86Reg(Name);
+        if (R.isValid())
+          Info.NeverCCSRSaveList.push_back(R);
+      }
+      Info.NeverCCSRSaveList.push_back(0); // null terminator
+      return Info.NeverCCSRSaveList.data();
+    }
+  }
 
   switch (CC) {
   case CallingConv::AnyReg:

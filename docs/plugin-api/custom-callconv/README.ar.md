@@ -74,7 +74,7 @@ API->FunctionSetCustomCallConv(F, "gpr:r10,r11,rsi;ret:rdx");
 
 ## الاختبارات
 
-مجموعة GoogleTest (18 اختبارًا، جميعها PASS):
+مجموعة GoogleTest (22 اختبارًا، جميعها PASS):
 
 ```bash
 ninja -C build-neverc neverc-tests

@@ -198,6 +198,11 @@ class AArch64FunctionInfo final : public MachineFunctionInfo {
 public:
   AArch64FunctionInfo(const Function &F, const AArch64Subtarget *STI);
 
+  /// NeverC: lazily-built custom callee-saved SaveList for
+  /// CallingConv::NeverC_Custom (the "csr" spec segment). Null-terminated for
+  /// getCalleeSavedRegs. Mutable because getCalleeSavedRegs() is const.
+  mutable SmallVector<MCPhysReg, 16> NeverCCSRSaveList;
+
   MachineFunctionInfo *
   clone(BumpPtrAllocator &Allocator, MachineFunction &DestMF,
         const DenseMap<MachineBasicBlock *, MachineBasicBlock *> &Src2DstMBB)

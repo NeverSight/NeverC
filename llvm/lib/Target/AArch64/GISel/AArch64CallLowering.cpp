@@ -351,6 +351,13 @@ bool AArch64CallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
                                       const Value *Val,
                                       ArrayRef<Register> VRegs,
                                       FunctionLoweringInfo &FLI) const {
+  // NeverC custom calling convention (data-driven register layout / preserved
+  // mask) is implemented only in the SelectionDAG path. Bail so the function
+  // falls back to SelectionDAG, which lowers it correctly.
+  if (MIRBuilder.getMF().getFunction().getCallingConv() ==
+      CallingConv::NeverC_Custom)
+    return false;
+
   auto MIB = MIRBuilder.buildInstrNoInsert(AArch64::RET_ReallyLR);
   assert(((Val && !VRegs.empty()) || (!Val && VRegs.empty())) &&
          "Return value without a vreg");
@@ -625,6 +632,11 @@ void AArch64CallLowering::saveVarArgRegisters(
 bool AArch64CallLowering::lowerFormalArguments(
     MachineIRBuilder &MIRBuilder, const Function &F,
     ArrayRef<ArrayRef<Register>> VRegs, FunctionLoweringInfo &FLI) const {
+  // NeverC custom calling convention is implemented only in the SelectionDAG
+  // path; bail so this function falls back to SelectionDAG (see lowerReturn).
+  if (F.getCallingConv() == CallingConv::NeverC_Custom)
+    return false;
+
   MachineFunction &MF = MIRBuilder.getMF();
   MachineBasicBlock &MBB = MIRBuilder.getMBB();
   MachineRegisterInfo &MRI = MF.getRegInfo();
@@ -1170,6 +1182,14 @@ bool AArch64CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
                                     CallLoweringInfo &Info) const {
   MachineFunction &MF = MIRBuilder.getMF();
   const Function &F = MF.getFunction();
+
+  // A call using the NeverC custom calling convention (or made from a NeverC
+  // custom-CC function) needs the SelectionDAG path's per-call spec injection
+  // and preserved mask. Bail so the whole function falls back to SelectionDAG.
+  if (Info.CallConv == CallingConv::NeverC_Custom ||
+      F.getCallingConv() == CallingConv::NeverC_Custom)
+    return false;
+
   MachineRegisterInfo &MRI = MF.getRegInfo();
   auto &DL = F.getParent()->getDataLayout();
   const AArch64TargetLowering &TLI = *getTLI<AArch64TargetLowering>();

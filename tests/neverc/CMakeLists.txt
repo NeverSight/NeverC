@@ -13,6 +13,7 @@ set(NEVERC_TEST_SOURCES
   DebugTests.cpp
   BenchmarkTests.cpp
   MimallocTests.cpp
+  CustomCallConvTests.cpp
 )
 
 add_executable(neverc-tests ${NEVERC_TEST_SOURCES})
@@ -25,6 +26,8 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_BINARY="$<TARGET_FILE:neverc>"
   TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
   TEST_C_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../C"
+  NEVERC_PLUGINSDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk"
+  NEVERC_NEVERC_INCLUDE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include"
 )
 
 if(TARGET neverc)

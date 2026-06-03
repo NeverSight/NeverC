@@ -37,6 +37,24 @@ bool CC_AArch64_Win64_CFGuard_Check(unsigned ValNo, MVT ValVT, MVT LocVT,
 bool RetCC_AArch64_AAPCS(unsigned ValNo, MVT ValVT, MVT LocVT,
                          CCValAssign::LocInfo LocInfo, ISD::ArgFlagsTy ArgFlags,
                          CCState &State);
+
+/// Data-driven custom calling convention (CallingConv::NeverC_Custom). Assigns
+/// argument/return registers from the per-function "neverc-callconv" spec (see
+/// llvm/CodeGen/NeverCCallConv.h) instead of any tablegen rule.
+bool CC_AArch64_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
+                       CCValAssign::LocInfo LocInfo, ISD::ArgFlagsTy ArgFlags,
+                       CCState &State);
+bool RetCC_AArch64_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
+                          CCValAssign::LocInfo LocInfo, ISD::ArgFlagsTy ArgFlags,
+                          CCState &State);
+
+/// Translate a NeverC spec register name to the AArch64 physical register used
+/// for the custom callee-saved ("csr") set: GPR names (x0..x28) map to the X
+/// register, vector names (v0..v31) map to the full 128-bit Q register so the
+/// callee's save/restore and the caller's preserved mask agree at every width.
+/// Returns an invalid register for unknown names. Shared with AArch64RegisterInfo
+/// and AArch64ISelLowering.
+MCRegister neverCParseA64Reg(StringRef Name);
 } // namespace llvm
 
 #endif

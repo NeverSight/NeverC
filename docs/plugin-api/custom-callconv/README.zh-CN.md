@@ -54,10 +54,13 @@ args:rcx,stack,r8;ret:rax   # 参数0→rcx, 参数1→栈, 参数2→r8, 返回
 
 ### 约束
 
-- **Callee-saved**：默认使用标准 ABI 集合。用 `csr:r12,r13` 声明自定义集合（函数只保存/恢复这些寄存器）。
+- **Callee-saved**：默认使用标准 ABI 集合。用 `csr:r12,r13` 声明自定义集合（函数只保存/恢复这些寄存器）。x86-64 与 AArch64 均支持。
+- **保留寄存器**：栈指针（`rsp` / `sp`）以及 AArch64 的 `x29`/`x30`（FP/LR）永远不能作为参数/返回寄存器 —— spec 里写到它们会被直接跳过。
+- **csr 冲突**：若某寄存器同时出现在 `csr` 与参数/返回列表里，bridge 会发出警告（callee 会保存/恢复它，破坏其传值作用）。
 - **变参函数**：不支持 —— 编译器会输出明确错误而非静默错传参数。
 - **间接调用**：函数指针调用无法携带自定义约定。插件在函数地址被取时发出警告；间接调用回退到标准约定。
 - **尾调用**：自定义约定函数自动禁用尾调用（保守安全策略）。
+- **AArch64 / GlobalISel**：自定义约定在 SelectionDAG 路径实现。定义或调用自定义约定函数的函数会自动从 GlobalISel 回退到 SelectionDAG，因此行为与默认 ISel 无关、保持一致。
 
 ## 用法
 
@@ -141,7 +144,7 @@ API->FunctionSetCustomCallConv(F, "gpr:r10,r11,rsi;ret:rdx");
 
 ## 测试
 
-GoogleTest 套件位于 `tests/neverc/CustomCallConvTests.cpp`（18 个测试，全部 PASS）：
+GoogleTest 套件位于 `tests/neverc/CustomCallConvTests.cpp`（22 个测试，全部 PASS）：
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -153,9 +156,9 @@ build-neverc/bin/neverc-tests --gtest_filter='CustomCallConvTest.*'
 | 类别 | 测试数 |
 |---|---|
 | x86-64 池/位置/栈/溢出/i64/sret/byval/回退 | 9 |
-| AArch64 GPR/FPR/栈 | 3 |
+| AArch64 GPR/FPR/栈/`csr`/非统一 spec 跨调用 | 5 |
 | 前端 `custom_attr`（GNU / `__declspec` / 端到端） | 3 |
-| 加固（callee-saved `csr` / 变参拒绝 / 间接调用警告） | 3 |
+| 加固（`csr` / 变参 / 间接 / rsp 拒绝 / csr 冲突告警） | 5 |
 
 ## 架构
 

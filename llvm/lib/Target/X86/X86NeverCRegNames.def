@@ -1,0 +1,69 @@
+//===-- X86NeverCRegNames.def - NeverC custom-CC register names --*- C++ -*-===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// Single source of truth mapping NeverC spec register *names* (as written in
+// the "neverc-callconv" attribute) to X86 physical registers, for
+// CallingConv::NeverC_Custom. GPRs are listed in 64-bit form; the allocator
+// narrows them to the matching sub-register for i32 values.
+//
+// Usage:
+//   #define NEVERC_X86_GPR(NAME, REG) ...
+//   #define NEVERC_X86_XMM(NAME, REG) ...
+//   #include "X86NeverCRegNames.def"
+// Either macro may be left undefined (it then expands to nothing).
+//
+// Note: rsp is intentionally *not* listed -- it is the stack pointer and is
+// never a valid argument/return/callee-saved register, so leaving it out makes
+// every use site reject it uniformly. rbp is kept: it is a legitimate
+// callee-saved register and is usable as a general register under
+// -fomit-frame-pointer (use at your own risk).
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef NEVERC_X86_GPR
+#define NEVERC_X86_GPR(NAME, REG)
+#endif
+#ifndef NEVERC_X86_XMM
+#define NEVERC_X86_XMM(NAME, REG)
+#endif
+
+NEVERC_X86_GPR("rax", RAX)
+NEVERC_X86_GPR("rbx", RBX)
+NEVERC_X86_GPR("rcx", RCX)
+NEVERC_X86_GPR("rdx", RDX)
+NEVERC_X86_GPR("rsi", RSI)
+NEVERC_X86_GPR("rdi", RDI)
+NEVERC_X86_GPR("rbp", RBP)
+NEVERC_X86_GPR("r8", R8)
+NEVERC_X86_GPR("r9", R9)
+NEVERC_X86_GPR("r10", R10)
+NEVERC_X86_GPR("r11", R11)
+NEVERC_X86_GPR("r12", R12)
+NEVERC_X86_GPR("r13", R13)
+NEVERC_X86_GPR("r14", R14)
+NEVERC_X86_GPR("r15", R15)
+
+NEVERC_X86_XMM("xmm0", XMM0)
+NEVERC_X86_XMM("xmm1", XMM1)
+NEVERC_X86_XMM("xmm2", XMM2)
+NEVERC_X86_XMM("xmm3", XMM3)
+NEVERC_X86_XMM("xmm4", XMM4)
+NEVERC_X86_XMM("xmm5", XMM5)
+NEVERC_X86_XMM("xmm6", XMM6)
+NEVERC_X86_XMM("xmm7", XMM7)
+NEVERC_X86_XMM("xmm8", XMM8)
+NEVERC_X86_XMM("xmm9", XMM9)
+NEVERC_X86_XMM("xmm10", XMM10)
+NEVERC_X86_XMM("xmm11", XMM11)
+NEVERC_X86_XMM("xmm12", XMM12)
+NEVERC_X86_XMM("xmm13", XMM13)
+NEVERC_X86_XMM("xmm14", XMM14)
+NEVERC_X86_XMM("xmm15", XMM15)
+
+#undef NEVERC_X86_GPR
+#undef NEVERC_X86_XMM

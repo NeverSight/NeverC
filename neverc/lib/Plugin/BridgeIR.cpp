@@ -1,4 +1,6 @@
 #include "BridgeCastHelpers.h"
+#include "llvm/CodeGen/NeverCCallConv.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Comdat.h"
 #include "llvm/IR/Constants.h"
@@ -632,6 +634,82 @@ static void bridgeFunctionSetCallingConv(NevercValueRef F, unsigned CC) {
   auto *Fn = dyn_cast<Function>(unwrapV(F));
   if (Fn)
     Fn->setCallingConv(static_cast<CallingConv::ID>(CC));
+}
+
+static void bridgeFunctionSetCustomCallConv(NevercValueRef F,
+                                            const char *Spec) {
+  if (LLVM_UNLIKELY(!F))
+    return;
+  auto *Fn = dyn_cast<Function>(unwrapV(F));
+  if (!Fn)
+    return;
+
+  StringRef Kind = llvm::neverc::CallConvAttrName;
+  LLVMContext &Ctx = Fn->getContext();
+
+  // Apply or clear the convention on each direct call site too, so the caller
+  // and the callee agree on the register layout.
+  auto forEachDirectCall = [&](auto Apply) {
+    for (User *U : Fn->users())
+      if (auto *CB = dyn_cast<CallBase>(U))
+        if (CB->getCalledOperand() == Fn)
+          Apply(CB);
+  };
+
+  if (!Spec || !*Spec) {
+    Fn->removeFnAttr(Kind);
+    if (Fn->getCallingConv() == CallingConv::NeverC_Custom)
+      Fn->setCallingConv(CallingConv::C);
+    forEachDirectCall([&](CallBase *CB) {
+      CB->removeFnAttr(Kind);
+      if (CB->getCallingConv() == CallingConv::NeverC_Custom)
+        CB->setCallingConv(CallingConv::C);
+    });
+    return;
+  }
+
+  StringRef SpecRef(Spec);
+  Fn->setCallingConv(CallingConv::NeverC_Custom);
+  Fn->addFnAttr(Kind, SpecRef);
+
+  // Warn when a register is listed both as callee-saved (csr) and as an
+  // argument/return register: the callee saves/restores it in its
+  // prologue/epilogue, which clobbers its role in passing the value -- a return
+  // register so listed is overwritten on return. Target-agnostic (by name).
+  {
+    llvm::neverc::CustomCCSpec Parsed;
+    llvm::neverc::parseCustomCCSpec(SpecRef, Parsed);
+    auto inList = [](ArrayRef<StringRef> L, StringRef N) {
+      for (StringRef E : L)
+        if (E.trim().equals_insensitive(N))
+          return true;
+      return false;
+    };
+    for (StringRef C : Parsed.CalleeSaved) {
+      StringRef Cn = C.trim();
+      if (inList(Parsed.Args, Cn) || inList(Parsed.ArgGPR, Cn) ||
+          inList(Parsed.ArgXMM, Cn) || inList(Parsed.RetGPR, Cn) ||
+          inList(Parsed.RetXMM, Cn))
+        errs() << "neverc: warning: register '" << Cn
+               << "' is listed as both callee-saved (csr) and an "
+                  "argument/return register for '"
+               << Fn->getName() << "'; this is likely an ABI mistake\n";
+    }
+  }
+
+  // Indirect calls through a function pointer keep the default C calling
+  // convention (the call site cannot see the callee), so they would not match
+  // the custom register layout. Warn when the address is taken; direct calls
+  // below are kept in sync explicitly.
+  if (Fn->hasAddressTaken())
+    errs() << "neverc: warning: custom calling convention applied to '"
+           << Fn->getName()
+           << "' whose address is taken; indirect calls through a function "
+              "pointer will not use it and may violate the ABI\n";
+  forEachDirectCall([&](CallBase *CB) {
+    CB->setCallingConv(CallingConv::NeverC_Custom);
+    CB->addFnAttr(Attribute::get(Ctx, Kind, SpecRef));
+  });
 }
 
 // ===----------------------------------------------------------------------===
@@ -2675,6 +2753,7 @@ void populateIRBridge(NevercHostAPI &API) {
   API.FunctionSetLinkage = bridgeFunctionSetLinkage;
   API.FunctionGetCallingConv = bridgeFunctionGetCallingConv;
   API.FunctionSetCallingConv = bridgeFunctionSetCallingConv;
+  API.FunctionSetCustomCallConv = bridgeFunctionSetCustomCallConv;
   API.InstMoveBefore = bridgeInstMoveBefore;
   API.ModuleSetDataLayout = bridgeModuleSetDataLayout;
   API.ModuleSetTargetTriple = bridgeModuleSetTargetTriple;

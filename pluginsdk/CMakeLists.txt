@@ -19,7 +19,8 @@ set(EXAMPLE_FILES
     Makefile
     ExamplePlugin.c
     CrtShimPlugin.c
-    BenchPlugin.c)
+    BenchPlugin.c
+    CustomCallConvPlugin.c)
 
 list(TRANSFORM EXAMPLE_FILES
      PREPEND "${PLUGINSDK_SRC}/examples/"

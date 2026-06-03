@@ -27,6 +27,27 @@ bool RetCC_X86(unsigned ValNo, MVT ValVT, MVT LocVT,
 bool CC_X86(unsigned ValNo, MVT ValVT, MVT LocVT, CCValAssign::LocInfo LocInfo,
             ISD::ArgFlagsTy ArgFlags, CCState &State);
 
+/// Data-driven custom calling convention (CallingConv::NeverC_Custom).
+///
+/// These are drop-in replacements for CC_X86 / RetCC_X86: for every other
+/// calling convention they simply delegate to the tablegen entry points, but
+/// for NeverC_Custom they assign argument/return registers according to the
+/// per-function "neverc-callconv" spec (see llvm/CodeGen/NeverCCallConv.h).
+/// This is how external NeverC plugins can set arbitrary register layouts
+/// without touching tablegen / X86GenCallingConv.inc.
+bool CC_X86_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
+                   CCValAssign::LocInfo LocInfo, ISD::ArgFlagsTy ArgFlags,
+                   CCState &State);
+
+bool RetCC_X86_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
+                      CCValAssign::LocInfo LocInfo, ISD::ArgFlagsTy ArgFlags,
+                      CCState &State);
+
+/// Translate a NeverC spec register name (e.g. "rbx", "xmm0") to an X86
+/// physical register; returns an invalid register for unknown names. Shared
+/// with X86RegisterInfo for the custom callee-saved ("csr") set.
+MCRegister neverCParseX86Reg(StringRef Name);
+
 } // namespace llvm
 
 #endif

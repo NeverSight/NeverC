@@ -178,3 +178,4 @@ PARSED_ATTR(WeakImport)
 PARSED_ATTR(WeakRef)
 PARSED_ATTR(X86ForceAlignArgPointer)
 PARSED_ATTR(ZeroCallUsedRegs)
+PARSED_ATTR(CustomAttr) // NeverC: generic function-attribute escape hatch

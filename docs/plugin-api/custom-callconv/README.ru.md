@@ -74,7 +74,7 @@ API->FunctionSetCustomCallConv(F, "gpr:r10,r11,rsi;ret:rdx");
 
 ## Тесты
 
-Набор GoogleTest (18 тестов, все PASS):
+Набор GoogleTest (22 тестов, все PASS):
 
 ```bash
 ninja -C build-neverc neverc-tests

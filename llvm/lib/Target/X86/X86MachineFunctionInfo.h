@@ -147,6 +147,11 @@ public:
         const DenseMap<MachineBasicBlock *, MachineBasicBlock *> &Src2DstMBB)
       const override;
 
+  /// NeverC: lazily-built custom callee-saved SaveList for
+  /// CallingConv::NeverC_Custom (the "csr" spec segment). Null-terminated for
+  /// getCalleeSavedRegs. Mutable because getCalleeSavedRegs() is const.
+  mutable SmallVector<MCPhysReg, 9> NeverCCSRSaveList;
+
   bool getForceFramePointer() const { return ForceFramePointer; }
   void setForceFramePointer(bool forceFP) { ForceFramePointer = forceFP; }
 

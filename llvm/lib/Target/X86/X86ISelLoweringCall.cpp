@@ -22,15 +22,62 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/CodeGen/NeverCCallConv.h"
 #include "llvm/CodeGen/WinEHFuncInfo.h"
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstrTypes.h"
 
 #define DEBUG_TYPE "x86-isel"
 
 using namespace llvm;
 
 STATISTIC(NumTailCalls, "Number of tail calls");
+
+/// Fetch the NeverC custom calling-convention spec describing a call's callee.
+/// Prefer the call-site attribute (so indirect calls work too), then fall back
+/// to the called function's attribute. Returns an empty string if absent.
+static StringRef getNeverCCalleeSpec(const CallBase *CB) {
+  if (!CB)
+    return StringRef();
+  if (CB->hasFnAttr(neverc::CallConvAttrName))
+    return CB->getFnAttr(neverc::CallConvAttrName).getValueAsString();
+  if (const Function *F = CB->getCalledFunction())
+    if (F->hasFnAttribute(neverc::CallConvAttrName))
+      return F->getFnAttribute(neverc::CallConvAttrName).getValueAsString();
+  return StringRef();
+}
+
+/// Build a caller-side preserved-register mask for a NeverC custom-CC call whose
+/// callee declares a custom "csr" set, so the caller agrees with the callee's
+/// prologue/epilogue. Returns nullptr when there is no custom csr (caller should
+/// fall back to the standard mask). Starts from "nothing preserved" and marks
+/// the listed registers (and aliases) as preserved; reserved regs (rsp/rip/...)
+/// are handled by the allocator independent of this mask.
+static const uint32_t *buildNeverCPreservedMask(MachineFunction &MF,
+                                                const X86RegisterInfo *TRI,
+                                                const CallBase *CB) {
+  StringRef SpecStr = getNeverCCalleeSpec(CB);
+  if (SpecStr.empty())
+    return nullptr;
+  neverc::CustomCCSpec Spec;
+  neverc::parseCustomCCSpec(SpecStr, Spec);
+  if (Spec.CalleeSaved.empty())
+    return nullptr;
+
+  uint32_t *Mask = MF.allocateRegMask();
+  unsigned Size = MachineOperand::getRegMaskSize(TRI->getNumRegs());
+  std::memcpy(Mask, TRI->getNoPreservedMask(), Size * sizeof(uint32_t));
+  for (StringRef Name : Spec.CalleeSaved) {
+    MCRegister R = neverCParseX86Reg(Name);
+    if (!R.isValid())
+      continue;
+    for (MCRegAliasIterator AI(R, TRI, /*IncludeSelf=*/true); AI.isValid(); ++AI)
+      Mask[(*AI) / 32] |= 1u << ((*AI) % 32);
+  }
+  return Mask;
+}
 
 /// Call this when the user attempts to do something unsupported, like
 /// returning a double without SSE2 enabled on x86_64. This is not fatal, unlike
@@ -589,7 +636,7 @@ bool X86TargetLowering::CanLowerReturn(
     const SmallVectorImpl<ISD::OutputArg> &Outs, LLVMContext &Context) const {
   SmallVector<CCValAssign, 16> RVLocs;
   CCState CCInfo(CallConv, isVarArg, MF, RVLocs, Context);
-  return CCInfo.CheckReturn(Outs, RetCC_X86);
+  return CCInfo.CheckReturn(Outs, RetCC_X86_NeverC);
 }
 
 const MCPhysReg *X86TargetLowering::getScratchRegisters(CallingConv::ID) const {
@@ -657,7 +704,7 @@ X86TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
 
   SmallVector<CCValAssign, 16> RVLocs;
   CCState CCInfo(CallConv, isVarArg, MF, RVLocs, *DAG.getContext());
-  CCInfo.AnalyzeReturn(Outs, RetCC_X86);
+  CCInfo.AnalyzeReturn(Outs, RetCC_X86_NeverC);
 
   SmallVector<std::pair<Register, SDValue>, 4> RetVals;
   for (unsigned I = 0, OutsIndex = 0, E = RVLocs.size(); I != E;
@@ -908,15 +955,17 @@ static SDValue lowerRegToMasks(const SDValue &ValArg, const EVT &ValVT,
 SDValue X86TargetLowering::LowerCallResult(
     SDValue Chain, SDValue InGlue, CallingConv::ID CallConv, bool isVarArg,
     const SmallVectorImpl<ISD::InputArg> &Ins, const SDLoc &dl,
-    SelectionDAG &DAG, SmallVectorImpl<SDValue> &InVals,
-    uint32_t *RegMask) const {
+    SelectionDAG &DAG, SmallVectorImpl<SDValue> &InVals, uint32_t *RegMask,
+    StringRef NeverCCustomSpec) const {
 
   const TargetRegisterInfo *TRI = Subtarget.getRegisterInfo();
   // Assign locations to each value returned by this call.
   SmallVector<CCValAssign, 16> RVLocs;
   CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(), RVLocs,
                  *DAG.getContext());
-  CCInfo.AnalyzeCallResult(Ins, RetCC_X86);
+  if (CallConv == CallingConv::NeverC_Custom)
+    CCInfo.setNeverCCustomSpec(NeverCCustomSpec);
+  CCInfo.AnalyzeCallResult(Ins, RetCC_X86_NeverC);
 
   // Copy all of the result registers out of their specified physreg.
   for (unsigned I = 0, InsIndex = 0, E = RVLocs.size(); I != E;
@@ -1365,7 +1414,8 @@ void VarArgsLoweringHelper::forwardMustTailParameters(SDValue &Chain) {
   // Compute the set of forwarded registers. The rest are scratch.
   SmallVectorImpl<ForwardedRegister> &Forwards =
       FuncInfo->getForwardedMustTailRegParms();
-  CCInfo.analyzeMustTailForwardedRegisters(Forwards, RegParmTypes, CC_X86);
+  CCInfo.analyzeMustTailForwardedRegisters(Forwards, RegParmTypes,
+                                           CC_X86_NeverC);
 
   // Forward AL for SysV x86_64 targets, since it is used for varargs.
   if (!isWin64() && !CCInfo.isAllocated(X86::AL)) {
@@ -1423,12 +1473,12 @@ SDValue X86TargetLowering::LowerFormalArguments(
   if (IsWin64)
     CCInfo.AllocateStack(32, Align(8));
 
-  CCInfo.AnalyzeArguments(Ins, CC_X86);
+  CCInfo.AnalyzeArguments(Ins, CC_X86_NeverC);
 
   // In vectorcall calling convention a second pass is required for the HVA
   // types.
   if (CallingConv::X86_VectorCall == CallConv) {
-    CCInfo.AnalyzeArgumentsSecondPass(Ins, CC_X86);
+    CCInfo.AnalyzeArgumentsSecondPass(Ins, CC_X86_NeverC);
   }
 
   // The next loop assumes that the locations are in the same order of the
@@ -1731,16 +1781,21 @@ SDValue X86TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CallConv, isVarArg, MF, ArgLocs, *DAG.getContext());
 
+  // NeverC custom calling convention: the callee's register layout lives on the
+  // callee, but here MF is the caller, so inject the callee's spec explicitly.
+  if (CallConv == CallingConv::NeverC_Custom)
+    CCInfo.setNeverCCustomSpec(getNeverCCalleeSpec(CLI.CB));
+
   // Allocate shadow area for Win64.
   if (IsWin64)
     CCInfo.AllocateStack(32, Align(8));
 
-  CCInfo.AnalyzeArguments(Outs, CC_X86);
+  CCInfo.AnalyzeArguments(Outs, CC_X86_NeverC);
 
   // In vectorcall calling convention a second pass is required for the HVA
   // types.
   if (CallingConv::X86_VectorCall == CallConv) {
-    CCInfo.AnalyzeArgumentsSecondPass(Outs, CC_X86);
+    CCInfo.AnalyzeArgumentsSecondPass(Outs, CC_X86_NeverC);
   }
 
   // Get a count of how many bytes are to be pushed on the stack.
@@ -2135,6 +2190,11 @@ SDValue X86TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
       AdaptedCC = (CallingConv::ID)CallingConv::X86_INTR;
     if (CB && CB->hasFnAttr("no_callee_saved_registers"))
       return RegInfo->getNoPreservedMask();
+    // NeverC custom CC: if the callee declares a custom "csr" set, build a
+    // matching preserved mask so caller and callee agree.
+    if (CallConv == CallingConv::NeverC_Custom)
+      if (const uint32_t *M = buildNeverCPreservedMask(MF, RegInfo, CB))
+        return M;
     return RegInfo->getCallPreservedMask(MF, AdaptedCC);
   }();
   assert(Mask && "Missing call preserved mask for calling convention");
@@ -2219,7 +2279,7 @@ SDValue X86TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // Handle result values, copying them out of physregs into vregs that we
   // return.
   return LowerCallResult(Chain, InGlue, CallConv, isVarArg, Ins, dl, DAG,
-                         InVals, RegMask);
+                         InVals, RegMask, getNeverCCalleeSpec(CLI.CB));
 }
 
 //===----------------------------------------------------------------------===//
@@ -2382,6 +2442,15 @@ bool X86TargetLowering::IsEligibleForTailCallOptimization(
     return false;
 
   CallingConv::ID CallerCC = CallerF.getCallingConv();
+
+  // NeverC custom calling convention: tail-call optimization would have to
+  // reconcile the caller's and callee's data-driven register/preserve layouts,
+  // which the allocator doesn't model. Be conservative and never tail-call into
+  // or out of it.
+  if (CalleeCC == CallingConv::NeverC_Custom ||
+      CallerCC == CallingConv::NeverC_Custom)
+    return false;
+
   bool CCMatch = CallerCC == CalleeCC;
   bool IsCalleeWin64 = Subtarget.isCallingConvWin64(CalleeCC);
   bool IsCallerWin64 = Subtarget.isCallingConvWin64(CallerCC);

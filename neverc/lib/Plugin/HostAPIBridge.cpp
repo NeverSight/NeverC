@@ -936,10 +936,10 @@ NevercHostAPI buildHostAPI() {
   API.FunctionForEachInst = bridgeFunctionForEachInst;
 
   static_assert(
-      offsetof(NevercHostAPI, FunctionForEachInst) +
-              sizeof(NevercHostAPI::FunctionForEachInst) ==
+      offsetof(NevercHostAPI, FunctionSetCustomCallConv) +
+              sizeof(NevercHostAPI::FunctionSetCustomCallConv) ==
           sizeof(NevercHostAPI),
-      "New fields added after FunctionForEachInst. "
+      "New fields added after FunctionSetCustomCallConv. "
       "Wire them in buildHostAPI and update this static_assert.");
 
   return API;

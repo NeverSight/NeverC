@@ -121,6 +121,18 @@ enum {
   /// Preserve X2-X15, X19-X29, SP, Z0-Z31, P0-P15.
   AArch64_SME_ABI_Support_Routines_PreserveMost_From_X2 = 103,
 
+  /// NeverC data-driven custom calling convention.
+  ///
+  /// Unlike every other calling convention above, this one has *no* fixed
+  /// register-assignment rules baked into tablegen (.td) / the generated
+  /// X86GenCallingConv.inc. Instead, the per-function register layout is
+  /// described as data via the "neverc-callconv" string function attribute
+  /// (see llvm/CodeGen/NeverCCallConv.h) and resolved at lowering time by a
+  /// hand-written allocator in the backend. This lets external tools (e.g.
+  /// NeverC plugins) assign arbitrary physical registers to arguments and
+  /// return values at will, without ever regenerating tablegen output.
+  NeverC_Custom = 1000,
+
   /// The highest possible ID. Must be some 2^k - 1.
   MaxID = 1023
 };

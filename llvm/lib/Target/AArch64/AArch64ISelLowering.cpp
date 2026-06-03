@@ -12,6 +12,7 @@
 
 #include "AArch64ISelLowering.h"
 #include "AArch64CallingConvention.h"
+#include "llvm/CodeGen/NeverCCallConv.h"
 #include "AArch64ExpandImm.h"
 #include "AArch64MachineFunctionInfo.h"
 #include "AArch64PerfectShuffle.h"
@@ -6513,6 +6514,52 @@ bool AArch64TargetLowering::isReassocProfitable(SelectionDAG &DAG, SDValue N0,
   return true;
 }
 
+/// Fetch the NeverC custom calling-convention spec describing a call's callee:
+/// the call-site attribute first (so indirect calls work), then the called
+/// function's attribute. Empty when absent.
+static StringRef getNeverCCalleeSpec(const CallBase *CB) {
+  if (!CB)
+    return StringRef();
+  if (CB->hasFnAttr(neverc::CallConvAttrName))
+    return CB->getFnAttr(neverc::CallConvAttrName).getValueAsString();
+  if (const Function *F = CB->getCalledFunction())
+    if (F->hasFnAttribute(neverc::CallConvAttrName))
+      return F->getFnAttribute(neverc::CallConvAttrName).getValueAsString();
+  return StringRef();
+}
+
+/// Build a caller-side preserved-register mask for a NeverC custom-CC call whose
+/// callee declares a custom "csr" set, so the caller agrees with the callee's
+/// prologue/epilogue (see AArch64RegisterInfo::getCalleeSavedRegs). Returns
+/// nullptr when there is no custom csr. Starts from "nothing preserved" and
+/// marks the listed registers and their aliases; reserved regs (sp/lr/...) are
+/// handled by the allocator independent of this mask.
+static const uint32_t *
+buildNeverCA64PreservedMask(MachineFunction &MF, const AArch64RegisterInfo *TRI,
+                            const CallBase *CB) {
+  StringRef SpecStr = getNeverCCalleeSpec(CB);
+  if (SpecStr.empty())
+    return nullptr;
+  neverc::CustomCCSpec Spec;
+  neverc::parseCustomCCSpec(SpecStr, Spec);
+  if (Spec.CalleeSaved.empty())
+    return nullptr;
+
+  const uint32_t *Base = TRI->getNoPreservedMask();
+  uint32_t *Mask = MF.allocateRegMask();
+  unsigned Size = MachineOperand::getRegMaskSize(TRI->getNumRegs());
+  for (unsigned I = 0; I < Size; ++I)
+    Mask[I] = Base[I];
+  for (StringRef Name : Spec.CalleeSaved) {
+    MCRegister R = neverCParseA64Reg(Name);
+    if (!R.isValid())
+      continue;
+    for (MCRegAliasIterator AI(R, TRI, /*IncludeSelf=*/true); AI.isValid(); ++AI)
+      Mask[(*AI) / 32] |= 1u << ((*AI) % 32);
+  }
+  return Mask;
+}
+
 /// Selects the correct CCAssignFn for a given CallingConvention value.
 CCAssignFn *AArch64TargetLowering::CCAssignFnForCall(CallingConv::ID CC,
                                                      bool IsVarArg) const {
@@ -6545,11 +6592,15 @@ CCAssignFn *AArch64TargetLowering::CCAssignFnForCall(CallingConv::ID CC,
   case CallingConv::AArch64_SME_ABI_Support_Routines_PreserveMost_From_X0:
   case CallingConv::AArch64_SME_ABI_Support_Routines_PreserveMost_From_X2:
     return CC_AArch64_AAPCS;
+  case CallingConv::NeverC_Custom:
+    return CC_AArch64_NeverC;
   }
 }
 
 CCAssignFn *
 AArch64TargetLowering::CCAssignFnForReturn(CallingConv::ID CC) const {
+  if (CC == CallingConv::NeverC_Custom)
+    return RetCC_AArch64_NeverC;
   return RetCC_AArch64_AAPCS;
 }
 
@@ -7167,6 +7218,14 @@ static void analyzeCallOperands(const AArch64TargetLowering &TLI,
 bool AArch64TargetLowering::isEligibleForTailCallOptimization(
     const CallLoweringInfo &CLI) const {
   CallingConv::ID CalleeCC = CLI.CallConv;
+
+  // NeverC custom calling convention: don't tail-call into or out of it -- the
+  // data-driven register/preserve layout isn't modeled for TCO yet.
+  if (CalleeCC == CallingConv::NeverC_Custom ||
+      CLI.DAG.getMachineFunction().getFunction().getCallingConv() ==
+          CallingConv::NeverC_Custom)
+    return false;
+
   if (!mayTailCallThisCC(CalleeCC))
     return false;
 
@@ -7445,6 +7504,10 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CallConv, IsVarArg, MF, ArgLocs, *DAG.getContext());
 
+  // NeverC custom CC: MF here is the caller, so inject the callee's spec.
+  if (CallConv == CallingConv::NeverC_Custom)
+    CCInfo.setNeverCCustomSpec(getNeverCCalleeSpec(CLI.CB));
+
   if (IsVarArg) {
     unsigned NumArgs = Outs.size();
 
@@ -7462,6 +7525,8 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   SmallVector<CCValAssign, 16> RVLocs;
   CCState RetCCInfo(CallConv, IsVarArg, DAG.getMachineFunction(), RVLocs,
                     *DAG.getContext());
+  if (CallConv == CallingConv::NeverC_Custom)
+    RetCCInfo.setNeverCCustomSpec(getNeverCCalleeSpec(CLI.CB));
   RetCCInfo.AnalyzeCallResult(Ins, RetCC);
 
   // Check callee args/returns for SVE registers and set calling convention
@@ -7931,6 +7996,13 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
 
   if (Subtarget->hasCustomCallingConv())
     TRI->UpdateCustomCallPreservedMask(MF, &Mask);
+
+  // NeverC custom CC: if the callee declares a custom "csr" set, replace the
+  // mask with one preserving exactly that set, matching the callee's
+  // prologue/epilogue.
+  if (CallConv == CallingConv::NeverC_Custom)
+    if (const uint32_t *M = buildNeverCA64PreservedMask(MF, TRI, CLI.CB))
+      Mask = M;
 
   if (TRI->isAnyArgRegReserved(MF))
     TRI->emitReservedArgRegCallError(MF);

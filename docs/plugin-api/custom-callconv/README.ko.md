@@ -50,10 +50,13 @@ args:rcx,stack,r8;ret:rax   # 인수0→rcx, 인수1→스택, 인수2→r8, 반
 
 ### 제약
 
-- **Callee-saved**: 기본값은 표준 ABI 집합. `csr:r12,r13`으로 커스텀 집합 선언.
+- **Callee-saved**: 기본값은 표준 ABI 집합. `csr:r12,r13`으로 커스텀 집합 선언 (x86-64 / AArch64 모두 지원).
+- **예약 레지스터**: 스택 포인터(`rsp` / `sp`)와 AArch64의 `x29`/`x30`(FP/LR)는 인수/반환 레지스터로 지정할 수 없습니다(스펙에 써도 무시됨).
+- **csr 충돌**: 어떤 레지스터가 `csr`와 인수/반환 목록에 모두 나타나면 bridge가 경고를 출력합니다.
 - **가변 인수 함수**: 미지원 — 명확한 오류 출력.
 - **간접 호출**: 함수 포인터 호출은 커스텀 규약 적용 불가. 주소 취득 시 경고, 간접 호출은 표준 규약으로 폴백.
 - **꼬리 호출**: 커스텀 규약 함수에서 자동 비활성화.
+- **AArch64 / GlobalISel**: 커스텀 규약은 SelectionDAG 경로에서 구현됩니다. 해당 함수는 GlobalISel에서 SelectionDAG로 자동 폴백됩니다.
 
 ## 사용법
 
@@ -98,7 +101,7 @@ API->FunctionSetCustomCallConv(F, "gpr:r10,r11,rsi;ret:rdx");
 
 ## 테스트
 
-GoogleTest 스위트 (18개 테스트, 모두 PASS):
+GoogleTest 스위트 (22개 테스트, 모두 PASS):
 
 ```bash
 ninja -C build-neverc neverc-tests

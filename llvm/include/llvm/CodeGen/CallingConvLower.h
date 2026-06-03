@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/Register.h"
 #include "llvm/CodeGen/TargetCallingConv.h"
 #include "llvm/IR/CallingConv.h"
@@ -227,6 +228,17 @@ private:
   // during argument analysis.
   unsigned InRegsParamsProcessed;
 
+  // NeverC: optional per-call spec string for CallingConv::NeverC_Custom.
+  //
+  // The data-driven custom calling convention reads its register layout from
+  // the callee function's "neverc-callconv" attribute. On the *callee* side
+  // (LowerFormalArguments / LowerReturn) the allocator can read it straight
+  // from getMachineFunction().getFunction(). On the *caller* side (LowerCall /
+  // LowerCallResult) the MachineFunction is the caller, not the callee, so the
+  // callee's spec is injected here before the call operands are analyzed.
+  StringRef NeverCCustomSpec;
+  bool NeverCSpecInjected = false;
+
 public:
   CCState(CallingConv::ID CC, bool IsVarArg, MachineFunction &MF,
           SmallVectorImpl<CCValAssign> &Locs, LLVMContext &Context,
@@ -238,6 +250,21 @@ public:
   MachineFunction &getMachineFunction() const { return MF; }
   CallingConv::ID getCallingConv() const { return CallingConv; }
   bool isVarArg() const { return IsVarArg; }
+
+  /// NeverC: per-call spec injection for CallingConv::NeverC_Custom.
+  ///
+  /// On the caller side the callee's spec is injected here before the call is
+  /// analyzed (it may be empty, meaning "this call has no custom layout"). On
+  /// the callee side nothing is injected and the allocator reads the spec from
+  /// the function's own attribute instead. isNeverCSpecInjected() lets the
+  /// allocator tell the two apart, so the caller side never accidentally reads
+  /// the *caller's* attribute when the callee has no spec.
+  StringRef getNeverCCustomSpec() const { return NeverCCustomSpec; }
+  bool isNeverCSpecInjected() const { return NeverCSpecInjected; }
+  void setNeverCCustomSpec(StringRef S) {
+    NeverCCustomSpec = S;
+    NeverCSpecInjected = true;
+  }
 
   /// Returns the size of the currently allocated portion of the stack.
   uint64_t getStackSize() const { return StackSize; }

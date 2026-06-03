@@ -71,7 +71,7 @@ extern "C" {
 /*  Version                                                                   */
 /* -------------------------------------------------------------------------- */
 
-#define NEVERC_PLUGIN_API_VERSION 1
+#define NEVERC_PLUGIN_API_VERSION 2
 
 /* Check at runtime whether the host vtable includes a specific field.
  * Usage: if (NEVERC_API_HAS(API, BuildSwitch)) { API->BuildSwitch(...); }  */
@@ -2361,6 +2361,27 @@ typedef struct NevercHostAPI {
   void (*FunctionForEachInst)(
       NevercValueRef F,
       int (*Fn)(NevercValueRef I, void *Ctx), void *Ctx);
+
+  /* ---- NeverC data-driven custom calling convention (API v2) ----
+   *
+   * Give F an arbitrary physical-register calling convention
+   * (CallingConv::NeverC_Custom) described by Spec, which uses the
+   * "neverc-callconv" format, e.g.:
+   *
+   *     "gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax"
+   *
+   * Segments: gpr/arg_gpr (integer & pointer args), xmm/arg_xmm (fp/vector
+   * args), ret/ret_gpr (integer & pointer returns), ret_xmm (fp/vector
+   * returns). Any segment may be omitted; values that don't fit a listed
+   * register spill to the stack. The convention and Spec are applied to F *and*
+   * to every direct call site that targets F, so callers and the callee stay in
+   * sync -- no need to modify NeverC itself to add a new convention.
+   *
+   * Passing NULL or "" clears the custom convention and restores CallingConv::C.
+   *
+   * Note: don't use callee-saved registers (rbx, rbp, r12-r15 on x86-64) as
+   * argument registers; F keeps the standard callee-saved set. */
+  void (*FunctionSetCustomCallConv)(NevercValueRef F, const char *Spec);
 } NevercHostAPI;
 
 /* ---- Internal helpers for NEVERC_FOR_EACH_DEFINED_FUNCTION ----

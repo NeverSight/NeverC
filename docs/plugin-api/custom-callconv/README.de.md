@@ -74,7 +74,7 @@ Setzt `CallingConv::NeverC_Custom` (CC 1000), schreibt das Attribut und **synchr
 
 ## Tests
 
-GoogleTest-Suite (18 Tests, alle PASS):
+GoogleTest-Suite (22 Tests, alle PASS):
 
 ```bash
 ninja -C build-neverc neverc-tests

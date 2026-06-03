@@ -3,6 +3,7 @@ const llvm::Triple &T = Target.getTriple();
 switch (Syntax) {
 case AttributeCommonInfo::Syntax::AS_GNU:
   return llvm::StringSwitch<int>(Name)
+      .Case("custom_attr", 1) // NeverC generic function-attribute escape hatch
       .Case("aarch64_sve_pcs", 1)
       .Case("aarch64_vector_pcs", 1)
       .Case("acquire_handle", 1)
@@ -172,6 +173,7 @@ case AttributeCommonInfo::Syntax::AS_GNU:
       .Default(0);
 case AttributeCommonInfo::Syntax::AS_Declspec:
   return llvm::StringSwitch<int>(Name)
+      .Case("custom_attr", 1) // NeverC generic function-attribute escape hatch
       .Case("align", 1)
       .Case("guard", true && (T.getOS() == llvm::Triple::Win32) ? 1 : 0)
       .Case("cpu_dispatch", 1)

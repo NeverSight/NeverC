@@ -14,9 +14,14 @@
 #include "X86CallingConv.h"
 #include "X86Subtarget.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/CodeGen/CallingConvLower.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/NeverCCallConv.h"
 #include "llvm/IR/CallingConv.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
+#include <algorithm>
 
 using namespace llvm;
 
@@ -189,3 +194,217 @@ static bool CC_X86_64_Pointer(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
 
 // Provides entry points of CC_X86 and RetCC_X86.
 #include "X86GenCallingConv.inc"
+
+//===----------------------------------------------------------------------===//
+//   NeverC data-driven custom calling convention (CallingConv::NeverC_Custom)
+//===----------------------------------------------------------------------===//
+//
+// The register layout is *not* described in tablegen. It is read from the
+// callee's "neverc-callconv" string attribute (parsed by
+// llvm/CodeGen/NeverCCallConv.h) and applied here. See CallingConv.h for the
+// rationale.
+
+/// Translate a NeverC spec register name into a 64-bit GPR or an XMM register.
+/// GPR names are always given in their 64-bit form (rax, r8, ...); the caller
+/// narrows them to the right sub-register for i32 values. Returns an invalid
+/// register for unknown names.
+MCRegister llvm::neverCParseX86Reg(StringRef Name) {
+  return StringSwitch<MCRegister>(Name.trim())
+#define NEVERC_X86_GPR(NAME, REG) .CaseLower(NAME, X86::REG)
+#define NEVERC_X86_XMM(NAME, REG) .CaseLower(NAME, X86::REG)
+#include "X86NeverCRegNames.def"
+      .Default(MCRegister());
+}
+
+/// True if \p R is one of the XMM registers in the spec table (single source of
+/// truth: the same .def that maps names to registers).
+static bool neverCRegIsXMM(MCRegister R) {
+  switch (R.id()) {
+  default:
+    return false;
+#define NEVERC_X86_XMM(NAME, REG) case X86::REG:
+#include "X86NeverCRegNames.def"
+    return true;
+  }
+}
+
+/// Resolve the active spec for a CCState.
+///
+/// Caller side (LowerCall/LowerCallResult): the callee's spec was injected, so
+/// use it verbatim -- even if empty, which simply means this call has no custom
+/// layout. Callee side (LowerFormalArguments/LowerReturn): nothing was injected,
+/// so read the spec from the function's own attribute. The injection flag keeps
+/// the caller side from ever reading the *caller's* attribute by mistake.
+static StringRef neverCGetSpecString(CCState &State) {
+  if (State.isNeverCSpecInjected())
+    return State.getNeverCCustomSpec();
+  const Function &F = State.getMachineFunction().getFunction();
+  if (F.hasFnAttribute(neverc::CallConvAttrName))
+    return F.getFnAttribute(neverc::CallConvAttrName).getValueAsString();
+  return StringRef();
+}
+
+/// True for value types we route through the XMM argument/return list.
+static bool neverCIsXMMType(MVT LocVT) {
+  return LocVT == MVT::f16 || LocVT == MVT::f32 || LocVT == MVT::f64 ||
+         (LocVT.isVector() && LocVT.getSizeInBits() <= 128);
+}
+
+/// Promote i1/i8/i16 to i32 the same way the standard X86 conventions do.
+static void neverCPromoteSmallInt(MVT &LocVT, CCValAssign::LocInfo &LocInfo,
+                                  ISD::ArgFlagsTy ArgFlags) {
+  if (LocVT == MVT::i1 || LocVT == MVT::i8 || LocVT == MVT::i16) {
+    LocVT = MVT::i32;
+    if (ArgFlags.isSExt())
+      LocInfo = CCValAssign::SExt;
+    else if (ArgFlags.isZExt())
+      LocInfo = CCValAssign::ZExt;
+    else
+      LocInfo = CCValAssign::AExt;
+  }
+}
+
+/// Try to assign one value to a register from \p GPRs (integers) or \p XMMs
+/// (floats/vectors). Returns true and records the assignment on success.
+static bool neverCAssignReg(unsigned ValNo, MVT ValVT, MVT LocVT,
+                            CCValAssign::LocInfo LocInfo, CCState &State,
+                            ArrayRef<StringRef> GPRs, ArrayRef<StringRef> XMMs) {
+  if (LocVT == MVT::i32 || LocVT == MVT::i64) {
+    unsigned Bits = LocVT == MVT::i32 ? 32 : 64;
+    for (StringRef Name : GPRs) {
+      MCRegister Reg64 = neverCParseX86Reg(Name);
+      if (!Reg64.isValid())
+        continue;
+      MCRegister Reg = getX86SubSuperRegister(Reg64, Bits);
+      if (Reg.isValid() && !State.isAllocated(Reg)) {
+        State.AllocateReg(Reg);
+        State.addLoc(CCValAssign::getReg(ValNo, ValVT, Reg, LocVT, LocInfo));
+        return true;
+      }
+    }
+  } else if (neverCIsXMMType(LocVT)) {
+    for (StringRef Name : XMMs) {
+      MCRegister Reg = neverCParseX86Reg(Name);
+      if (Reg.isValid() && !State.isAllocated(Reg)) {
+        State.AllocateReg(Reg);
+        State.addLoc(CCValAssign::getReg(ValNo, ValVT, Reg, LocVT, LocInfo));
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// Spill one value to the stack (8-byte aligned, 16 for >8-byte types).
+static void neverCAssignStack(unsigned ValNo, MVT ValVT, MVT LocVT,
+                              CCValAssign::LocInfo LocInfo, CCState &State) {
+  uint64_t SizeBytes =
+      std::max<uint64_t>(LocVT.getStoreSize().getFixedValue(), 8);
+  Align StackAlign(SizeBytes > 8 ? 16 : 8);
+  unsigned Offset = State.AllocateStack(SizeBytes, StackAlign);
+  State.addLoc(CCValAssign::getMem(ValNo, ValVT, Offset, LocVT, LocInfo));
+}
+
+/// Positional argument allocator: argument number \p ValNo uses
+/// Spec.Args[ValNo], which is either a register name or the stack keyword. The
+/// stack keyword, running past the end of the list, a type-mismatched register
+/// (e.g. an XMM name for an integer argument), or an already-used register all
+/// fall back to a stack slot.
+static void neverCAssignPositional(unsigned ValNo, MVT ValVT, MVT LocVT,
+                                   CCValAssign::LocInfo LocInfo, CCState &State,
+                                   const neverc::CustomCCSpec &Spec) {
+  if (ValNo < Spec.Args.size()) {
+    StringRef Tok = Spec.Args[ValNo].trim();
+    if (!neverc::isStackToken(Tok)) {
+      MCRegister R = neverCParseX86Reg(Tok);
+      if (R.isValid()) {
+        bool RegIsXMM = neverCRegIsXMM(R);
+        if ((LocVT == MVT::i32 || LocVT == MVT::i64) && !RegIsXMM) {
+          MCRegister Use =
+              getX86SubSuperRegister(R, LocVT == MVT::i32 ? 32 : 64);
+          if (Use.isValid() && !State.isAllocated(Use)) {
+            State.AllocateReg(Use);
+            State.addLoc(CCValAssign::getReg(ValNo, ValVT, Use, LocVT, LocInfo));
+            return;
+          }
+        } else if (neverCIsXMMType(LocVT) && RegIsXMM) {
+          if (!State.isAllocated(R)) {
+            State.AllocateReg(R);
+            State.addLoc(CCValAssign::getReg(ValNo, ValVT, R, LocVT, LocInfo));
+            return;
+          }
+        }
+      }
+    }
+  }
+  neverCAssignStack(ValNo, ValVT, LocVT, LocInfo, State);
+}
+
+// IMPORTANT: a top-level CCAssignFn returns *false* once it has handled
+// (assigned) a value, and *true* to mean "not handled" -- which makes
+// CCState::Analyze*/Check* treat the value as unallocatable (fatal for args).
+// The neverCAssignReg helper above uses the opposite, more natural convention
+// (true == "I assigned a register"), so the wrappers translate between the two.
+
+bool llvm::CC_X86_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
+                         CCValAssign::LocInfo LocInfo, ISD::ArgFlagsTy ArgFlags,
+                         CCState &State) {
+  if (State.getCallingConv() == CallingConv::NeverC_Custom) {
+    StringRef SpecStr = neverCGetSpecString(State);
+    if (!SpecStr.empty()) {
+      neverc::CustomCCSpec Spec;
+      neverc::parseCustomCCSpec(SpecStr, Spec);
+      if (Spec.hasAnyArgs()) {
+        // NeverC custom CC has no defined vararg ABI: reject variadic functions
+        // explicitly instead of silently mis-passing the variadic part.
+        if (State.isVarArg())
+          report_fatal_error(
+              "NeverC custom calling convention does not support variadic "
+              "functions: '" +
+              State.getMachineFunction().getName() + "'");
+        MVT UseVT = LocVT;
+        CCValAssign::LocInfo UseLI = LocInfo;
+        neverCPromoteSmallInt(UseVT, UseLI, ArgFlags);
+
+        // Positional mode wins: each argument is placed explicitly (register or
+        // stack) by its position -- the only way to force an arg onto the stack
+        // even when registers are still free.
+        if (Spec.hasPositionalArgs()) {
+          neverCAssignPositional(ValNo, ValVT, UseVT, UseLI, State, Spec);
+          return false;
+        }
+
+        // Pool mode: consume the register lists in order, spill on exhaustion.
+        if (neverCAssignReg(ValNo, ValVT, UseVT, UseLI, State, Spec.ArgGPR,
+                            Spec.ArgXMM))
+          return false;
+        neverCAssignStack(ValNo, ValVT, UseVT, UseLI, State);
+        return false;
+      }
+    }
+  }
+  return CC_X86(ValNo, ValVT, LocVT, LocInfo, ArgFlags, State);
+}
+
+bool llvm::RetCC_X86_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
+                            CCValAssign::LocInfo LocInfo,
+                            ISD::ArgFlagsTy ArgFlags, CCState &State) {
+  if (State.getCallingConv() == CallingConv::NeverC_Custom) {
+    StringRef SpecStr = neverCGetSpecString(State);
+    if (!SpecStr.empty()) {
+      neverc::CustomCCSpec Spec;
+      neverc::parseCustomCCSpec(SpecStr, Spec);
+      if (Spec.hasRetRegs()) {
+        MVT UseVT = LocVT;
+        CCValAssign::LocInfo UseLI = LocInfo;
+        neverCPromoteSmallInt(UseVT, UseLI, ArgFlags);
+        if (neverCAssignReg(ValNo, ValVT, UseVT, UseLI, State, Spec.RetGPR,
+                            Spec.RetXMM))
+          return false; // handled: assigned a return register
+        // No listed return register fit: fall back to the standard convention
+        // below using the original (un-promoted) value.
+      }
+    }
+  }
+  return RetCC_X86(ValNo, ValVT, LocVT, LocInfo, ArgFlags, State);
+}

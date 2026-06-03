@@ -54,10 +54,13 @@ When `args` is present, it takes precedence over `gpr` / `xmm`. Type mismatches 
 
 ### Constraints
 
-- **Callee-saved**: Defaults to the standard ABI set. Use `csr:r12,r13` to declare a custom set (the function will only save/restore those registers).
+- **Callee-saved**: Defaults to the standard ABI set. Use `csr:r12,r13` to declare a custom set (the function will only save/restore those registers). Supported on both x86-64 and AArch64.
+- **Reserved registers**: The stack pointer (`rsp` / `sp`) and AArch64 `x29`/`x30` (FP/LR) are never assignable as argument/return registers — a spec naming them simply skips them.
+- **csr conflicts**: If a register appears in both `csr` and an argument/return list, the bridge emits a warning (the callee would save/restore it, clobbering its value-passing role).
 - **Variadic functions**: Not supported — the compiler emits a clear error instead of silently mis-passing arguments.
 - **Indirect calls**: Function-pointer calls cannot carry a custom convention. The plugin warns when a custom-CC function has its address taken; indirect calls fall back to the standard CC.
 - **Tail calls**: Automatically disabled for custom-CC functions (conservative safety).
+- **AArch64 / GlobalISel**: The custom convention is implemented in the SelectionDAG path. Functions that define or call a custom-CC function automatically fall back from GlobalISel to SelectionDAG, so the behavior is identical regardless of the default ISel.
 
 ## Usage
 
@@ -141,7 +144,7 @@ This sets `CallingConv::NeverC_Custom` (CC 1000) on the function, writes the spe
 
 ## Testing
 
-GoogleTest suite in `tests/neverc/CustomCallConvTests.cpp` (18 tests, all PASS):
+GoogleTest suite in `tests/neverc/CustomCallConvTests.cpp` (22 tests, all PASS):
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -153,9 +156,9 @@ Coverage:
 | Category | Tests |
 |---|---|
 | x86-64 pool/positional/stack/spill/i64/sret/byval/fallback | 9 |
-| AArch64 GPR/FPR/stack | 3 |
+| AArch64 GPR/FPR/stack/`csr`/mixed-spec cross-call | 5 |
 | Frontend `custom_attr` (GNU / `__declspec` / end-to-end) | 3 |
-| Hardening (callee-saved `csr` / vararg rejection / indirect-call warning) | 3 |
+| Hardening (`csr` / vararg / indirect / rsp rejection / csr-conflict warning) | 5 |
 
 ## Architecture
 

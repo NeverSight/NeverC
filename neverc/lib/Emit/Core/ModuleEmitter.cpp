@@ -1544,6 +1544,17 @@ void ModuleEmitter::setNonAliasAttributes(GlobalDecl GD, llvm::GlobalObject *GO,
       if (auto *SA = D->getAttr<PragmaNeverCTextSectionAttr>())
         if (!D->getAttr<SectionAttr>())
           F->addFnAttr("implicit-section-name", SA->getName());
+      // NeverC: lower custom_attr("key","value") (carried as an AnnotateAttr
+      // tagged "custom_attr:") into a real function attribute, so IR/MIR passes
+      // and plugins can read it via F.getFnAttribute(key).
+      for (const auto *AA : D->specific_attrs<AnnotateAttr>()) {
+        llvm::StringRef Ann = AA->getAnnotation();
+        if (!Ann.consume_front("custom_attr:"))
+          continue;
+        auto [Key, Val] = Ann.split('=');
+        if (!Key.empty())
+          F->addFnAttr(Key, Val);
+      }
 
       if (!SkipCPUFeatures) {
         llvm::AttrBuilder Attrs(F->getContext());
@@ -1995,8 +2006,14 @@ llvm::Constant *ModuleEmitter::genAnnotateAttr(llvm::GlobalValue *GV,
 void ModuleEmitter::addGlobalAnnotations(const ValueDecl *D,
                                          llvm::GlobalValue *GV) {
   assert(D->hasAttr<AnnotateAttr>() && "no annotate attribute");
-  for (const auto *I : D->specific_attrs<AnnotateAttr>())
+  for (const auto *I : D->specific_attrs<AnnotateAttr>()) {
+    // NeverC custom_attr(...) is carried as an AnnotateAttr but lowered to a
+    // real function attribute (see the custom_attr handling in
+    // SetFunctionAttributes), not a global annotation -- skip it here.
+    if (I->getAnnotation().starts_with("custom_attr:"))
+      continue;
     Annotations.push_back(genAnnotateAttr(GV, I, D->getLocation()));
+  }
 }
 
 // ===----------------------------------------------------------------------===

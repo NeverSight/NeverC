@@ -1,6 +1,13 @@
 
 static AttributeCommonInfo::Kind
 getAttrKind(llvm::StringRef Name, AttributeCommonInfo::Syntax Syntax) {
+  // NeverC generic escape-hatch attribute: custom_attr("key"[,"value"]).
+  // Registered here (name -> kind) instead of editing the per-character memcmp
+  // state machine below; everything else keys off AT_CustomAttr.
+  if (Name == "custom_attr" &&
+      (Syntax == AttributeCommonInfo::AS_GNU ||
+       Syntax == AttributeCommonInfo::AS_Declspec))
+    return AttributeCommonInfo::AT_CustomAttr;
   if (AttributeCommonInfo::AS_GNU == Syntax) {
     switch (Name.size()) {
     default:

@@ -1,0 +1,93 @@
+//===-- AArch64NeverCRegNames.def - NeverC custom-CC reg names ---*- C++ -*-===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// Single source of truth mapping NeverC spec register *names* to AArch64
+// physical registers, for CallingConv::NeverC_Custom.
+//
+//   NEVERC_A64_GPR(NAME, XREG, WREG)         -- general-purpose, by width
+//   NEVERC_A64_VEC(NAME, QREG, DREG, SREG, HREG) -- SIMD/FP, by width
+//
+// GPRs are named in 64-bit form (x0..x30); the allocator picks W for i32 and X
+// for i64/pointers. Vector registers are named v0..v31; the allocator picks
+// H/S/D/Q for f16/f32/f64/(f128|128-bit vector).
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef NEVERC_A64_GPR
+#define NEVERC_A64_GPR(NAME, XREG, WREG)
+#endif
+#ifndef NEVERC_A64_VEC
+#define NEVERC_A64_VEC(NAME, QREG, DREG, SREG, HREG)
+#endif
+
+NEVERC_A64_GPR("x0", X0, W0)
+NEVERC_A64_GPR("x1", X1, W1)
+NEVERC_A64_GPR("x2", X2, W2)
+NEVERC_A64_GPR("x3", X3, W3)
+NEVERC_A64_GPR("x4", X4, W4)
+NEVERC_A64_GPR("x5", X5, W5)
+NEVERC_A64_GPR("x6", X6, W6)
+NEVERC_A64_GPR("x7", X7, W7)
+NEVERC_A64_GPR("x8", X8, W8)
+NEVERC_A64_GPR("x9", X9, W9)
+NEVERC_A64_GPR("x10", X10, W10)
+NEVERC_A64_GPR("x11", X11, W11)
+NEVERC_A64_GPR("x12", X12, W12)
+NEVERC_A64_GPR("x13", X13, W13)
+NEVERC_A64_GPR("x14", X14, W14)
+NEVERC_A64_GPR("x15", X15, W15)
+NEVERC_A64_GPR("x16", X16, W16)
+NEVERC_A64_GPR("x17", X17, W17)
+NEVERC_A64_GPR("x18", X18, W18)
+NEVERC_A64_GPR("x19", X19, W19)
+NEVERC_A64_GPR("x20", X20, W20)
+NEVERC_A64_GPR("x21", X21, W21)
+NEVERC_A64_GPR("x22", X22, W22)
+NEVERC_A64_GPR("x23", X23, W23)
+NEVERC_A64_GPR("x24", X24, W24)
+NEVERC_A64_GPR("x25", X25, W25)
+NEVERC_A64_GPR("x26", X26, W26)
+NEVERC_A64_GPR("x27", X27, W27)
+NEVERC_A64_GPR("x28", X28, W28)
+// x29/x30 are FP/LR (reserved); intentionally not selectable as arg/ret regs.
+
+NEVERC_A64_VEC("v0", Q0, D0, S0, H0)
+NEVERC_A64_VEC("v1", Q1, D1, S1, H1)
+NEVERC_A64_VEC("v2", Q2, D2, S2, H2)
+NEVERC_A64_VEC("v3", Q3, D3, S3, H3)
+NEVERC_A64_VEC("v4", Q4, D4, S4, H4)
+NEVERC_A64_VEC("v5", Q5, D5, S5, H5)
+NEVERC_A64_VEC("v6", Q6, D6, S6, H6)
+NEVERC_A64_VEC("v7", Q7, D7, S7, H7)
+NEVERC_A64_VEC("v8", Q8, D8, S8, H8)
+NEVERC_A64_VEC("v9", Q9, D9, S9, H9)
+NEVERC_A64_VEC("v10", Q10, D10, S10, H10)
+NEVERC_A64_VEC("v11", Q11, D11, S11, H11)
+NEVERC_A64_VEC("v12", Q12, D12, S12, H12)
+NEVERC_A64_VEC("v13", Q13, D13, S13, H13)
+NEVERC_A64_VEC("v14", Q14, D14, S14, H14)
+NEVERC_A64_VEC("v15", Q15, D15, S15, H15)
+NEVERC_A64_VEC("v16", Q16, D16, S16, H16)
+NEVERC_A64_VEC("v17", Q17, D17, S17, H17)
+NEVERC_A64_VEC("v18", Q18, D18, S18, H18)
+NEVERC_A64_VEC("v19", Q19, D19, S19, H19)
+NEVERC_A64_VEC("v20", Q20, D20, S20, H20)
+NEVERC_A64_VEC("v21", Q21, D21, S21, H21)
+NEVERC_A64_VEC("v22", Q22, D22, S22, H22)
+NEVERC_A64_VEC("v23", Q23, D23, S23, H23)
+NEVERC_A64_VEC("v24", Q24, D24, S24, H24)
+NEVERC_A64_VEC("v25", Q25, D25, S25, H25)
+NEVERC_A64_VEC("v26", Q26, D26, S26, H26)
+NEVERC_A64_VEC("v27", Q27, D27, S27, H27)
+NEVERC_A64_VEC("v28", Q28, D28, S28, H28)
+NEVERC_A64_VEC("v29", Q29, D29, S29, H29)
+NEVERC_A64_VEC("v30", Q30, D30, S30, H30)
+NEVERC_A64_VEC("v31", Q31, D31, S31, H31)
+
+#undef NEVERC_A64_GPR
+#undef NEVERC_A64_VEC

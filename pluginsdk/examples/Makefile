@@ -30,7 +30,7 @@ else
 endif
 
 # Each entry becomes a separate shared library (one .c -> one .dll/.dylib/.so).
-PLUGINS = ExamplePlugin CrtShimPlugin BenchPlugin
+PLUGINS = ExamplePlugin CrtShimPlugin BenchPlugin CustomCallConvPlugin
 
 # Auto-detect host platform for shared library suffix and target triple.
 UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)

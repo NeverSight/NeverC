@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "AArch64RegisterInfo.h"
+#include "AArch64CallingConvention.h"
 #include "AArch64FrameLowering.h"
 #include "AArch64InstrInfo.h"
 #include "AArch64MachineFunctionInfo.h"
@@ -23,6 +24,7 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/NeverCCallConv.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
 #include "llvm/IR/DebugInfoMetadata.h"
@@ -71,6 +73,29 @@ AArch64RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
 
   if (MF->getFunction().getCallingConv() == CallingConv::AnyReg)
     return CSR_AArch64_AllRegs_SaveList;
+
+  // NeverC custom calling convention: an optional "csr" spec segment overrides
+  // the callee-saved set. Build the (null-terminated) list lazily per function.
+  // Placed before the OS-specific dispatch so it applies on every target.
+  if (MF->getFunction().getCallingConv() == CallingConv::NeverC_Custom &&
+      MF->getFunction().hasFnAttribute(neverc::CallConvAttrName)) {
+    neverc::CustomCCSpec Spec;
+    neverc::parseCustomCCSpec(
+        MF->getFunction().getFnAttribute(neverc::CallConvAttrName)
+            .getValueAsString(),
+        Spec);
+    if (!Spec.CalleeSaved.empty()) {
+      auto &Info = *MF->getInfo<AArch64FunctionInfo>();
+      Info.NeverCCSRSaveList.clear();
+      for (StringRef Name : Spec.CalleeSaved) {
+        MCRegister R = neverCParseA64Reg(Name);
+        if (R.isValid())
+          Info.NeverCCSRSaveList.push_back(R);
+      }
+      Info.NeverCCSRSaveList.push_back(0); // null terminator
+      return Info.NeverCCSRSaveList.data();
+    }
+  }
 
   // Darwin has its own CSR_AArch64_AAPCS_SaveList, which means most CSR save
   // lists depending on that will need to have their Darwin variant as well.

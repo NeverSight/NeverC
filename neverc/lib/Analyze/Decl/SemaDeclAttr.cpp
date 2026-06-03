@@ -2447,6 +2447,25 @@ void handleAnnotateAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   S.AddAnnotationAttr(D, AL, Str, Args);
 }
 
+// NeverC: custom_attr("key" [, "value"]) -- a generic escape hatch that
+// attaches an arbitrary function string attribute. It has no dedicated Attr
+// class (NeverC can't regenerate tablegen), so it's carried through the AST as
+// an AnnotateAttr tagged "custom_attr:key=value" and lowered to a real function
+// attribute in codegen (see ModuleEmitter). Arg count is validated by the
+// generic machinery from ParsedAttrInfoCustomAttr (NumArgs=1, OptArgs=1).
+void handleCustomAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  llvm::StringRef Key, Val;
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, Key))
+    return;
+  if (AL.getNumArgs() == 2 && !S.checkStringLiteralArgumentAttr(AL, 1, Val))
+    return;
+  llvm::SmallString<64> Encoded("custom_attr:");
+  Encoded += Key;
+  Encoded += '=';
+  Encoded += Val;
+  S.AddAnnotationAttr(D, AL, Encoded.str(), /*Args=*/{});
+}
+
 void handleAlignValueAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   S.AddAlignValueAttr(D, AL, AL.getArgAsExpr(0));
 }
@@ -3823,6 +3842,9 @@ void processDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     break;
   case ParsedAttr::AT_ReadOnlyPlacement:
     handleSimpleAttribute<ReadOnlyPlacementAttr>(S, D, AL);
+    break;
+  case ParsedAttr::AT_CustomAttr:
+    handleCustomAttr(S, D, AL);
     break;
   case ParsedAttr::AT_DLLExport:
   case ParsedAttr::AT_DLLImport:

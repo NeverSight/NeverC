@@ -50,10 +50,13 @@ args:rcx,stack,r8;ret:rax   # 引数0→rcx, 引数1→スタック, 引数2→r
 
 ### 制約
 
-- **Callee-saved**：デフォルトは標準 ABI セット。`csr:r12,r13` でカスタムセットを宣言。
+- **Callee-saved**：デフォルトは標準 ABI セット。`csr:r12,r13` でカスタムセットを宣言（x86-64 / AArch64 両対応）。
+- **予約レジスタ**：スタックポインタ（`rsp` / `sp`）と AArch64 の `x29`/`x30`（FP/LR）は引数/戻り値レジスタに指定できません（spec に書いても無視）。
+- **csr 競合**：あるレジスタが `csr` と引数/戻り値リストの両方に現れると、bridge が警告を出します。
 - **可変長引数関数**：非サポート。コンパイラが明確なエラーを出力。
 - **間接呼び出し**：関数ポインタ経由の呼び出しはカスタム規約を適用不可。アドレス取得時に警告、間接呼び出しは標準規約にフォールバック。
 - **末尾呼び出し**：カスタム規約関数では自動的に無効化。
+- **AArch64 / GlobalISel**：カスタム規約は SelectionDAG パスで実装。該当関数は GlobalISel から SelectionDAG に自動フォールバックします。
 
 ## 使い方
 
@@ -98,7 +101,7 @@ API->FunctionSetCustomCallConv(F, "gpr:r10,r11,rsi;ret:rdx");
 
 ## テスト
 
-GoogleTest スイート（18 テスト、すべて PASS）：
+GoogleTest スイート（22 テスト、すべて PASS）：
 
 ```bash
 ninja -C build-neverc neverc-tests

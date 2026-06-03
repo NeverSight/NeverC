@@ -8951,6 +8951,30 @@ struct ParsedAttrInfoZeroCallUsedRegs final : public ParsedAttrInfo {
   static const ParsedAttrInfoZeroCallUsedRegs Instance;
 };
 const ParsedAttrInfoZeroCallUsedRegs ParsedAttrInfoZeroCallUsedRegs::Instance;
+// NeverC: generic escape-hatch attribute custom_attr("key"[,"value"]).
+static constexpr ParsedAttrInfo::Spelling CustomAttrSpellings[] = {
+    {AttributeCommonInfo::AS_GNU, "custom_attr"},
+    {AttributeCommonInfo::AS_Declspec, "custom_attr"},
+};
+static constexpr const char *CustomAttrArgNames[] = {"Key", "Value"};
+struct ParsedAttrInfoCustomAttr final : public ParsedAttrInfo {
+  constexpr ParsedAttrInfoCustomAttr()
+      : ParsedAttrInfo(
+            /*AttrKind=*/ParsedAttr::AT_CustomAttr,
+            /*NumArgs=*/1,
+            /*OptArgs=*/1,
+            /*NumArgMembers=*/0,
+            /*HasCustomParsing=*/0,
+            /*IsTargetSpecific=*/0,
+            /*IsType=*/0,
+            /*IsStmt=*/0,
+            /*IsKnownToGCC=*/0,
+            /*IsSupportedByPragmaAttribute=*/0,
+            /*Spellings=*/CustomAttrSpellings,
+            /*ArgNames=*/CustomAttrArgNames) {}
+  static const ParsedAttrInfoCustomAttr Instance;
+};
+const ParsedAttrInfoCustomAttr ParsedAttrInfoCustomAttr::Instance;
 static const ParsedAttrInfo *AttrInfoMap[] = {
     &ParsedAttrInfoAArch64SVEPcs::Instance,
     &ParsedAttrInfoAArch64VectorPcs::Instance,
@@ -9128,6 +9152,7 @@ static const ParsedAttrInfo *AttrInfoMap[] = {
     &ParsedAttrInfoWeakRef::Instance,
     &ParsedAttrInfoX86ForceAlignArgPointer::Instance,
     &ParsedAttrInfoZeroCallUsedRegs::Instance,
+    &ParsedAttrInfoCustomAttr::Instance,
 };
 
 static bool checkAttributeMatchRuleAppliesTo(const Decl *D,

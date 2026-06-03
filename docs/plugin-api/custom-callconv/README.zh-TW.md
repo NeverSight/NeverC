@@ -54,10 +54,13 @@ args:rcx,stack,r8;ret:rax   # 參數0→rcx, 參數1→堆疊, 參數2→r8, 回
 
 ### 限制
 
-- **Callee-saved**：預設使用標準 ABI 集合。用 `csr:r12,r13` 宣告自訂集合。
+- **Callee-saved**：預設使用標準 ABI 集合。用 `csr:r12,r13` 宣告自訂集合（x86-64 與 AArch64 皆支援）。
+- **保留暫存器**：堆疊指標（`rsp` / `sp`）以及 AArch64 的 `x29`/`x30`（FP/LR）永遠不能作為參數/回傳暫存器 —— spec 中寫到它們會被直接跳過。
+- **csr 衝突**：若某暫存器同時出現在 `csr` 與參數/回傳清單中，bridge 會發出警告（callee 會保存/還原它，破壞其傳值作用）。
 - **可變參數函式**：不支援 —— 編譯器輸出明確錯誤而非靜默錯傳參數。
 - **間接呼叫**：函式指標呼叫無法攜帶自訂慣例。外掛程式在函式位址被取用時發出警告；間接呼叫回退到標準慣例。
 - **尾呼叫**：自訂慣例函式自動停用尾呼叫。
+- **AArch64 / GlobalISel**：自訂慣例在 SelectionDAG 路徑實作。定義或呼叫自訂慣例函式的函式會自動從 GlobalISel 回退到 SelectionDAG，行為與預設 ISel 無關。
 
 ## 用法
 
@@ -114,7 +117,7 @@ API->FunctionSetCustomCallConv(F, "gpr:r10,r11,rsi;ret:rdx");
 
 ## 測試
 
-GoogleTest 套件（18 項測試，全部 PASS）：
+GoogleTest 套件（22 項測試，全部 PASS）：
 
 ```bash
 ninja -C build-neverc neverc-tests

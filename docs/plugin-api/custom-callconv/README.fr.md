@@ -74,7 +74,7 @@ Définit `CallingConv::NeverC_Custom` (CC 1000), écrit l'attribut et **synchron
 
 ## Tests
 
-Suite GoogleTest (18 tests, tous PASS) :
+Suite GoogleTest (22 tests, tous PASS) :
 
 ```bash
 ninja -C build-neverc neverc-tests
