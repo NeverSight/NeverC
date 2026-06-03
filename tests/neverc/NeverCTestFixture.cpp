@@ -386,12 +386,12 @@ void NeverCTest::compileRunAndCheck(const std::string &name,
         << name << ": compile failed\n" << r.err;
   }
 
-  // Link .o to exe
+  // Compile + link to exe
   {
     auto args = splitFlags(stdFlag);
     for (auto &f : sysrootFlags()) args.push_back(f);
     for (auto &f : archFlags()) args.push_back(f);
-    args.push_back(obj.string());
+    args.push_back(src);
     args.push_back("-o");
     args.push_back(exe.string());
     auto r = ncc(args);

@@ -115,5 +115,40 @@ jobs:
         done
 
     - name: Run neverc tests
+      id: tests
       shell: bash
+      continue-on-error: true
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
+
+    - name: Diagnose crashes
+      if: steps.tests.outcome == 'failure'
+      shell: bash
+      run: |
+        set -x
+        NCC=$PWD/build/bin/neverc.exe
+        TESTDIR=$PWD/neverc/tests/neverc
+
+        diagnose() {
+          local label=$1 src=$2 flags=$3
+          echo "=== [$label] step 1: compile to .obj ==="
+          $NCC $flags -c "$src" -o "$TEMP/diag_${label}.obj" 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          echo "=== [$label] step 2: link .obj to exe ==="
+          $NCC $flags "$TEMP/diag_${label}.obj" -o "$TEMP/diag_${label}.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          echo "=== [$label] step 3: compile+link (one shot) ==="
+          $NCC $flags "$src" -o "$TEMP/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          echo "=== [$label] step 4: run exe ==="
+          "$TEMP/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+        }
+
+        # Smoke diagnostics for Windows x64
+        diagnose "c_stdlib" \
+          "$TESTDIR/codegen/test_c_stdlib_patterns.c" \
+          "-std=gnu11 -O2"
+
+    - name: Fail if tests failed
+      if: steps.tests.outcome == 'failure'
+      shell: bash
+      run: exit 1

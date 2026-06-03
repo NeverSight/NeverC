@@ -28,7 +28,7 @@ jobs:
         wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
         echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm-18.list
         sudo apt-get update
-        sudo apt-get install -y ninja-build cmake p7zip-full clang-18 lld-18
+        sudo apt-get install -y ninja-build cmake p7zip-full clang-18 lld-18 gdb
 
     - name: Build neverc
       run: |
@@ -98,4 +98,51 @@ jobs:
         done
 
     - name: Run neverc tests
+      id: tests
+      continue-on-error: true
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
+
+    - name: Diagnose crashes
+      if: steps.tests.outcome == 'failure'
+      run: |
+        set -x
+        NCC=$PWD/build/bin/neverc
+        TESTDIR=$PWD/neverc/tests/neverc
+
+        # Enable core dumps
+        ulimit -c unlimited
+        echo "$PWD/cores/core.%e.%p" | sudo tee /proc/sys/kernel/core_pattern
+        mkdir -p cores
+
+        diagnose() {
+          local label=$1 src=$2 flags=$3
+          echo "=== [$label] step 1: compile to .o ==="
+          $NCC $flags -c "$src" -o /tmp/diag_${label}.o 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          echo "=== [$label] step 2: link .o to exe ==="
+          $NCC $flags /tmp/diag_${label}.o -o /tmp/diag_${label} 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          echo "=== [$label] step 3: compile+link (one shot) ==="
+          $NCC $flags "$src" -o /tmp/diag_${label}_oneshot 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          # If core dump exists, get backtrace
+          for core in cores/core.*; do
+            [ -f "$core" ] || continue
+            echo "=== backtrace from $core ==="
+            gdb -batch -ex "thread apply all bt" $NCC "$core" 2>&1 | head -80
+            rm -f "$core"
+          done
+        }
+
+        # Known failing tests on Linux ARM64
+        diagnose "string_encrypt" \
+          "$TESTDIR/string/test_neverc_string_encrypt.c" \
+          "-std=c23 -fbuiltin-string"
+
+        diagnose "string_qstring" \
+          "$TESTDIR/string/test_neverc_string_qstring_parity.c" \
+          "-std=c23 -fbuiltin-string"
+
+    - name: Fail if tests failed
+      if: steps.tests.outcome == 'failure'
+      run: exit 1
