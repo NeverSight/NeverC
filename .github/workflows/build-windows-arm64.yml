@@ -164,11 +164,15 @@ jobs:
 
         # Known failing tests on Windows ARM64
         diagnose "c_stdlib" \
-          "$TESTDIR/codegen/test_c_stdlib_patterns.c" \
-          "-std=gnu11 -O2"
+          "$TESTDIR/standards/test_c_stdlib_patterns.c" \
+          "-std=c11"
 
         diagnose "mc64bit" \
-          "$TESTDIR/codegen/test_mc64bit_format.c" \
+          "$TESTDIR/codegen/test_mc_64bit_format.c" \
+          "-std=gnu11 -O2"
+
+        diagnose "arch_cleanup_r2" \
+          "$TESTDIR/codegen/test_arch_cleanup_round2.c" \
           "-std=gnu11 -O2"
 
     - name: Fail if tests failed

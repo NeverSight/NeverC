@@ -146,8 +146,8 @@ jobs:
 
         # Smoke diagnostics for Windows x64
         diagnose "c_stdlib" \
-          "$TESTDIR/codegen/test_c_stdlib_patterns.c" \
-          "-std=gnu11 -O2"
+          "$TESTDIR/standards/test_c_stdlib_patterns.c" \
+          "-std=c11"
 
     - name: Fail if tests failed
       if: steps.tests.outcome == 'failure'
