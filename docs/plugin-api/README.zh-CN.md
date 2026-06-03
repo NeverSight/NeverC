@@ -233,7 +233,7 @@ typedef int (*NevercLinkerPassFn)(const NevercHostAPI *API, void *UserData);
 ### Arena（bump-pointer 分配器）
 
 ```c
-NevercArenaRef A = NEVERC_TRY_ARENA(API);  // 旧宿主返回 NULL
+NevercArenaRef A = NEVERC_TRY_ARENA(API);
 // ... 使用 ArenaAllocArray、ArenaStrDup 等分配
 API->ArenaDestroy(A);  // 一次性释放所有 arena 分配
 ```
@@ -290,7 +290,7 @@ if (NEVERC_API_FN(API, SomeNewFunction)) {
 }
 ```
 
-旧头文件编译的插件仍与新版宿主兼容。在旧宿主上调用新 API 的插件必须用 `NEVERC_API_FN` 保护。
+vtable 追加设计保证向前兼容：旧插件无条件兼容新宿主。若未来 vtable 尾部新增字段，且插件需要在缺少该字段的旧宿主上运行，可用 `NEVERC_API_FN` 保护调用。
 
 ## 9. 插件参数
 
@@ -306,11 +306,9 @@ neverc -fplugin-pass=./MyPlugin.dll \
 在插件中读取：
 
 ```c
-if (NEVERC_API_FN(API, PluginGetArg)) {
-    const char *val = API->PluginGetArg("verbose");  // "1" 或 NULL
-}
+const char *val = API->PluginGetArg("verbose");  // "1" 或 NULL
 
-// 类型化访问器（较新宿主）：
+// 类型化访问器：
 int verbose   = API->PluginGetArgBool("verbose", 0);     // 默认 0
 int64_t limit = API->PluginGetArgInt64("max-fns", -1);   // 默认 -1
 ```
@@ -350,11 +348,11 @@ int64_t limit = API->PluginGetArgInt64("max-fns", -1);   // 默认 -1
 | `NEVERC_COLLECT_GLOBALS(api, m, count)` | 批量收集全局变量 |
 | `NEVERC_COLLECT_INSTRUCTIONS(api, m, count)` | 批量收集所有指令 |
 | `NEVERC_COLLECT_OPCODES(api, m, count)` | 批量收集操作码直方图 |
-| `NEVERC_TRY_ARENA(api)` | 创建 arena（旧宿主返回 `NULL`） |
+| `NEVERC_TRY_ARENA(api)` | 创建 arena（失败返回 `NULL`） |
 | `NEVERC_ARENA_ALLOC_ARRAY(api, arena, type, count)` | 类型化 arena 分配 |
 | `NEVERC_ARENA_CALLOC_ARRAY(api, arena, type, count)` | 类型化零初始化 arena 分配 |
 | `NEVERC_ARENA_COLLECT_*(api, arena, ...)` | 批量收集宏的 arena 变体 |
-| `NEVERC_AUTO_COLLECT_*(api, arena, ...)` | arena 优先批量收集 + 堆回退 |
+| `NEVERC_AUTO_COLLECT_*(api, arena, ...)` | arena 优先批量收集（无 arena 时回退到堆分配） |
 | `NEVERC_FREE_IF_HEAP(api, ptr, arena)` | 仅非 arena 所有时释放 |
 | `NEVERC_ARENA_DESTROY(api, arena)` | 非 NULL 时销毁 arena |
 | `NEVERC_STRBUILDER_DIAG(api, sb, diagFn)` | 将 StrBuilder 内容作为诊断输出 |
@@ -373,9 +371,8 @@ int64_t limit = API->PluginGetArgInt64("max-fns", -1);   // 默认 -1
 ## 12. 最佳实践
 
 1. **Arena 优先分配**：临时数据使用 `NEVERC_TRY_ARENA` + `NEVERC_ARENA_ALLOC_ARRAY`。一个 `ArenaDestroy` 替代 N 个 `Free`。
-2. **版本保护新 API**：始终用 `NEVERC_API_FN` 包裹新版 vtable 调用。
-3. **优先使用回调迭代**：`ModuleForEachDefinedFunction` 比 `NEVERC_FOR_EACH_DEFINED_FUNCTION` 更快（一次 vtable 调用 vs N 次）。
-4. **分层回退**：通过先尝试批量 API，再回退到回调迭代，最后用逐元素循环，支持多版本宿主。参见 `ExamplePlugin.c` 的规范模式。
+2. **版本保护未来新增 API**：当 vtable 在正式发布后新增字段时，若插件需要兼容缺少该字段的旧宿主，才用 `NEVERC_API_FN` 保护。当前版本的 vtable 条目无需保护。
+3. **优先批量 API**：`ModuleForEachDefinedFunction`（回调迭代，1 次 vtable 调用）或 `NEVERC_COLLECT_*`（批量收集）比逐元素 `FOR_EACH` 宏更快。参见 `ExamplePlugin.c`。
 5. **无 CRT 依赖**：vtable 提供 `Alloc`、`Free`、`MemSet`、`MemCopy`、`StrDup`、`StrFormat`、`Sort` 等。不要直接调用 `malloc`、`printf` 或 `qsort` — 确保跨 DLL CRT 安全。
 6. **干净返回**：pass 回调返回前释放所有 Builder，销毁所有数据结构和 Arena。
 

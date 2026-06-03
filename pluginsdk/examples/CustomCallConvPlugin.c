@@ -93,8 +93,7 @@ static int applyToFunction(NevercValueRef F, void *Ctx) {
 
   if (C->ArgDriven) {
     int Match = !C->Prefix || !*C->Prefix ||
-                (NEVERC_API_FN(API, StrStartsWith) &&
-                 API->StrStartsWith(Name, C->Prefix));
+                API->StrStartsWith(Name, C->Prefix);
     if (Match) {
       const char *Spec =
           C->Shuffle ? kVariants[C->Index % NUM_VARIANTS] : C->Spec;
@@ -110,9 +109,7 @@ static int applyToFunction(NevercValueRef F, void *Ctx) {
   /* Source-declared convention via __attribute__((custom_attr(...))) /
    * __declspec(custom_attr(...)), lowered by the frontend to a plain
    * "neverc-callconv" function string attribute. */
-  if (NEVERC_API_FN(API, FunctionHasStringAttr) &&
-      NEVERC_API_FN(API, FunctionGetStringAttr) &&
-      API->FunctionHasStringAttr(F, "neverc-callconv")) {
+  if (API->FunctionHasStringAttr(F, "neverc-callconv")) {
     const char *Spec = API->FunctionGetStringAttr(F, "neverc-callconv");
     if (Spec && *Spec) {
       API->FunctionSetCustomCallConv(F, Spec);
@@ -128,12 +125,6 @@ static int customCallConvPass(NevercModuleRef M, const NevercHostAPI *API,
                               void *UserData) {
   (void)UserData;
 
-  /* Backwards compatible: cleanly no-op on hosts without the v2 entry. */
-  if (!NEVERC_API_FN(API, FunctionSetCustomCallConv)) {
-    API->DiagWarningF(PLUGIN_TAG "host too old: no FunctionSetCustomCallConv");
-    return 0;
-  }
-
   struct ApplyCtx Ctx;
   Ctx.API = API;
   Ctx.Spec = "gpr:r10,r11,rsi,rdi;ret:rdx";
@@ -143,27 +134,17 @@ static int customCallConvPass(NevercModuleRef M, const NevercHostAPI *API,
   Ctx.Index = 0;
   Ctx.Applied = 0;
 
-  if (NEVERC_API_FN(API, PluginGetArg)) {
-    const char *S = API->PluginGetArg("ccspec");
-    if (S && *S)
-      Ctx.Spec = S;
-    const char *P = API->PluginGetArg("ccprefix");
-    if (P)
-      Ctx.Prefix = P;
-  }
-  if (NEVERC_API_FN(API, PluginGetArgBool)) {
-    if (API->PluginGetArgBool("ccshuffle", 0))
-      Ctx.Shuffle = 1;
-    Ctx.ArgDriven = API->PluginGetArgBool("cc-all", 0);
-  }
+  const char *S = API->PluginGetArg("ccspec");
+  if (S && *S)
+    Ctx.Spec = S;
+  const char *P = API->PluginGetArg("ccprefix");
+  if (P)
+    Ctx.Prefix = P;
+  if (API->PluginGetArgBool("ccshuffle", 0))
+    Ctx.Shuffle = 1;
+  Ctx.ArgDriven = API->PluginGetArgBool("cc-all", 0);
 
-  if (NEVERC_API_FN(API, ModuleForEachDefinedFunction)) {
-    API->ModuleForEachDefinedFunction(M, applyToFunction, &Ctx);
-  } else {
-    NEVERC_FOR_EACH_DEFINED_FUNCTION(API, M, F) {
-      applyToFunction(F, &Ctx);
-    }
-  }
+  API->ModuleForEachDefinedFunction(M, applyToFunction, &Ctx);
 
   if (Ctx.Applied)
     API->DiagNoteF(PLUGIN_TAG "applied %u custom calling convention(s)",

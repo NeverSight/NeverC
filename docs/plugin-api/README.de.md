@@ -152,7 +152,7 @@ neverc -fplugin-pass=./MyPlugin.dll \
 ## 11. Best Practices
 
 1. **Arena bevorzugen**: Temporäre Daten mit `NEVERC_TRY_ARENA`. Ein `ArenaDestroy` ersetzt N `Free`-Aufrufe.
-2. **Versionsschutz**: Neue vtable-Aufrufe immer mit `NEVERC_API_FN` umschließen.
+2. **Versionsschutz (für zukünftige APIs)**: Wenn die vtable nach einem Release neue Felder erhält, schützen Sie Aufrufe mit `NEVERC_API_FN` nur dann, wenn das Plugin auch auf älteren Hosts ohne diese Felder laufen muss. Aktuelle vtable-Einträge brauchen keinen Schutz.
 3. **Callback-Iteration bevorzugen**: `ModuleForEachDefinedFunction` ist schneller als Makros.
 4. **Keine CRT-Abhängigkeit**: Alle Operationen über die vtable.
 5. **Saubere Rückgabe**: Alle Ressourcen vor dem Pass-Return freigeben.

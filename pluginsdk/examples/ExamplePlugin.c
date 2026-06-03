@@ -35,7 +35,7 @@
  *   - NEVERC_COLLECT_OPCODES (batch opcode collection without Value handles)
  *   - NEVERC_FOR_EACH_{FUNCTION,DEFINED_FUNCTION,GLOBAL,ALIAS,BB,INST,...}
  *   - NEVERC_TRY_ARENA / NEVERC_AUTO_COLLECT_* / NEVERC_FREE_IF_HEAP /
- *     NEVERC_ARENA_DESTROY (arena-preferred collection with auto fallback)
+ *     NEVERC_ARENA_DESTROY (arena-preferred collection)
  *   - ValueSet -- opaque hash set for O(1) membership testing
  *   - Arena (bump-pointer allocator -- single ArenaDestroy replaces N Frees)
  *   - NEVERC_ARENA_ALLOC_ARRAY / NEVERC_ARENA_CALLOC_ARRAY
@@ -47,7 +47,7 @@
  *   - PluginGetArgBool / PluginGetArgInt64 / PluginGetArgUInt64
  *   - ModuleGetDefinedFunctionCount (zero-allocation census)
  *   - NEVERC_HOOK_UD / NEVERC_HOOK_NAME / NEVERC_STRMAP_NEW / NEVERC_INTMAP_NEW
- *   - NEVERC_STR_OR (null/empty string fallback -- zero allocation, no vtable)
+ *   - NEVERC_STR_OR (null/empty string default -- zero allocation, no vtable)
  *   - ModuleForEachFunction / ModuleForEachDefinedFunction /
  *     ModuleForEachInstruction / ModuleForEachGlobal / FunctionForEachBB /
  *     BBForEachInst (zero-alloc callback iteration -- one vtable call
@@ -79,8 +79,6 @@
  * Shows: ModuleGetDefinedFunctionCount (zero-allocation census --
  *        no Collect + Free dance when only the count is needed),
  *        ModuleGetFunctionCount / ModuleGetGlobalCount (O(1) totals).
- *        Falls back to NEVERC_FOR_EACH_DEFINED_FUNCTION (zero-alloc
- *        iterator) on older hosts.
  */
 static int functionCounterPass(NevercModuleRef M, const NevercHostAPI *API,
                                void *UserData) {
@@ -88,22 +86,12 @@ static int functionCounterPass(NevercModuleRef M, const NevercHostAPI *API,
 
   const char *Triple = API->ModuleGetTargetTriple(M);
 
-  if (NEVERC_API_FN(API, ModuleGetDefinedFunctionCount)) {
-    unsigned Defined = API->ModuleGetDefinedFunctionCount(M);
-    unsigned Total = API->ModuleGetFunctionCount(M);
-    unsigned Globals = API->ModuleGetGlobalCount(M);
-    API->DiagNoteF(PLUGIN_TAG "Target: %s -- %u/%u functions (%u decls), "
-                   "%u globals",
-                   Triple, Defined, Total, Total - Defined, Globals);
-  } else {
-    unsigned Defined = 0;
-    NEVERC_FOR_EACH_DEFINED_FUNCTION(API, M, F) {
-      (void)F;
-      ++Defined;
-    }
-    API->DiagNoteF(PLUGIN_TAG "Target: %s -- %u defined functions",
-                   Triple, Defined);
-  }
+  unsigned Defined = API->ModuleGetDefinedFunctionCount(M);
+  unsigned Total = API->ModuleGetFunctionCount(M);
+  unsigned Globals = API->ModuleGetGlobalCount(M);
+  API->DiagNoteF(PLUGIN_TAG "Target: %s -- %u/%u functions (%u decls), "
+                 "%u globals",
+                 Triple, Defined, Total, Total - Defined, Globals);
   return 0;
 }
 
@@ -114,18 +102,14 @@ static int functionCounterPass(NevercModuleRef M, const NevercHostAPI *API,
  *
  * Shows: type creation, ModuleAddFunction, BuilderCreate, BuildGlobalStringPtr,
  *        BuildCall, HostIsShellcodeMode guard,
- *        NEVERC_FOR_EACH_DEFINED_FUNCTION (zero-allocation iteration --
- *        no Collect+Free needed for a single-pass instrumentation).
+ *        NEVERC_FOR_EACH_DEFINED_FUNCTION (zero-allocation iteration).
  *
  * Skips when shellcode mode is active (external symbols are forbidden).
  */
 static int functionEntryInstrPass(NevercModuleRef M, const NevercHostAPI *API,
                                   void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, BuildGlobalStringPtr))
-    return 0;
-
-  if (NEVERC_API_FN(API, HostIsShellcodeMode) && API->HostIsShellcodeMode()) {
+  if (API->HostIsShellcodeMode()) {
     API->DiagNoteF(PLUGIN_TAG "Shellcode mode -- skipping trace "
                    "instrumentation");
     return 0;
@@ -187,9 +171,6 @@ static int functionEntryInstrPass(NevercModuleRef M, const NevercHostAPI *API,
 static int deadFunctionRemovalPass(NevercModuleRef M, const NevercHostAPI *API,
                                    void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, ModuleRemoveFunction))
-    return 0;
-
   NevercArenaRef Scratch = NEVERC_TRY_ARENA(API);
   if (!Scratch)
     return 0;
@@ -240,7 +221,6 @@ static int deadFunctionRemovalPass(NevercModuleRef M, const NevercHostAPI *API,
  *
  * Shows: ModuleForEachDefinedFunction (zero-alloc callback iteration --
  *        one vtable call replaces N GetNext calls; fastest path),
- *        NEVERC_FOR_EACH_DEFINED_FUNCTION (fallback for older hosts),
  *        NEVERC_HOOK_NAME (resolve UserData -> name).
  */
 
@@ -270,22 +250,12 @@ static int pipelineStagePass(NevercModuleRef M, const NevercHostAPI *API,
   Ctx.Defined = 0;
   Ctx.BBTotal = 0;
   Ctx.InstTotal = 0;
-  Ctx.HasInstCount = NEVERC_API_FN(API, FunctionGetInstructionCount) != 0;
+  Ctx.HasInstCount = 1;
 
-  if (NEVERC_API_FN(API, ModuleForEachDefinedFunction)) {
-    API->ModuleForEachDefinedFunction(M, pipelineStageVisitor, &Ctx);
-  } else {
-    NEVERC_FOR_EACH_DEFINED_FUNCTION(API, M, F) {
-      pipelineStageVisitor(F, &Ctx);
-    }
-  }
+  API->ModuleForEachDefinedFunction(M, pipelineStageVisitor, &Ctx);
 
-  if (Ctx.HasInstCount)
-    API->DiagNoteF(PLUGIN_TAG "%s: %u functions, %u BBs, %u instrs", Stage,
-                   Ctx.Defined, Ctx.BBTotal, Ctx.InstTotal);
-  else
-    API->DiagNoteF(PLUGIN_TAG "%s: %u functions, %u BBs", Stage,
-                   Ctx.Defined, Ctx.BBTotal);
+  API->DiagNoteF(PLUGIN_TAG "%s: %u functions, %u BBs, %u instrs", Stage,
+                 Ctx.Defined, Ctx.BBTotal, Ctx.InstTotal);
   return 0;
 }
 
@@ -336,12 +306,6 @@ static int histOutputVisitor(const char *Key, uint64_t Value, void *Ctx) {
 static int intrinsicHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
                                   void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, StrMapCreate) ||
-      !NEVERC_API_FN(API, StrBuilderCreate) ||
-      !NEVERC_API_FN(API, StrAfterPrefix) ||
-      !NEVERC_API_FN(API, StrMapIncrementN))
-    return 0;
-
   NevercStrMapRef Hist = NEVERC_STRMAP_NEW(API, 64);
   if (!Hist)
     return 0;
@@ -350,13 +314,7 @@ static int intrinsicHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
   HistCtx.API = API;
   HistCtx.Hist = Hist;
 
-  if (NEVERC_API_FN(API, ModuleForEachFunction)) {
-    API->ModuleForEachFunction(M, intrinsicHistVisitor, &HistCtx);
-  } else {
-    NEVERC_FOR_EACH_FUNCTION(API, M, F) {
-      intrinsicHistVisitor(F, &HistCtx);
-    }
-  }
+  API->ModuleForEachFunction(M, intrinsicHistVisitor, &HistCtx);
 
   unsigned NumCategories = API->StrMapCount(Hist);
   if (NumCategories == 0) {
@@ -373,12 +331,10 @@ static int intrinsicHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
   API->StrBuilderAppendF(SB, PLUGIN_TAG "Intrinsics (%u categories):",
                          NumCategories);
 
-  if (NEVERC_API_FN(API, StrMapForEach)) {
-    struct HistOutputCtx OutCtx;
-    OutCtx.API = API;
-    OutCtx.SB = SB;
-    API->StrMapForEach(Hist, histOutputVisitor, &OutCtx);
-  }
+  struct HistOutputCtx OutCtx;
+  OutCtx.API = API;
+  OutCtx.SB = SB;
+  API->StrMapForEach(Hist, histOutputVisitor, &OutCtx);
 
   API->StrMapDestroy(Hist);
   NEVERC_STRBUILDER_DIAG(API, SB, DiagNote);
@@ -389,14 +345,7 @@ static int intrinsicHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
 /*
  * Opcode histogram using IntMap -- counts IR instruction opcodes.
  *
- * Four-tier fallback for maximum performance on every host version:
- *   1. Batch opcodes  (NEVERC_AUTO_COLLECT_OPCODES -- fastest, 1 vtable call)
- *   2. Batch instrs   (NEVERC_AUTO_COLLECT_INSTRUCTIONS -- 1 vtable + N opcode)
- *   3. ForEach instrs (ModuleForEachInstruction -- 1 vtable + N cb + N opcode)
- *   4. Nested macros  (FOR_EACH triple loop -- ~4N vtable calls)
- *
- * Shows: NEVERC_AUTO_COLLECT_OPCODES / NEVERC_AUTO_COLLECT_INSTRUCTIONS,
- *        ModuleForEachInstruction (flattened zero-alloc callback iteration),
+ * Shows: NEVERC_AUTO_COLLECT_OPCODES (batch opcode collection),
  *        IntMap, IntMapIncrement, IntMapForEach, InstOpcodeToName, StrBuilder.
  */
 
@@ -433,10 +382,6 @@ static int opcodeOutputVisitor(uint64_t Key, uint64_t Value, void *Ctx) {
 static int opcodeHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
                                void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, IntMapCreate) ||
-      !NEVERC_API_FN(API, StrBuilderCreate))
-    return 0;
-
   NevercIntMapRef Hist = NEVERC_INTMAP_NEW(API, 128);
   if (!Hist)
     return 0;
@@ -444,39 +389,11 @@ static int opcodeHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
   NevercArenaRef Scratch = NEVERC_TRY_ARENA(API);
   unsigned InstCount = 0;
 
-  /* Tier 1: batch opcodes -- host walks IR, returns raw unsigned array. */
   unsigned *Opcodes = NEVERC_AUTO_COLLECT_OPCODES(API, Scratch, M, &InstCount);
   if (Opcodes) {
     for (unsigned I = 0; I < InstCount; I++)
       API->IntMapIncrement(Hist, Opcodes[I], 1);
     NEVERC_FREE_IF_HEAP(API, Opcodes, Scratch);
-  } else {
-    /* Tier 2: batch instructions -- host walks IR, returns Value handles. */
-    NevercValueRef *Insts =
-        NEVERC_AUTO_COLLECT_INSTRUCTIONS(API, Scratch, M, &InstCount);
-    if (Insts) {
-      for (unsigned I = 0; I < InstCount; I++)
-        API->IntMapIncrement(Hist, API->InstGetOpcode(Insts[I]), 1);
-      NEVERC_FREE_IF_HEAP(API, Insts, Scratch);
-    } else if (NEVERC_API_FN(API, ModuleForEachInstruction)) {
-      /* Tier 3: callback iteration -- 1 vtable call + N callbacks. */
-      struct OpcodeCountCtx CountCtx;
-      CountCtx.API = API;
-      CountCtx.Hist = Hist;
-      CountCtx.InstCount = 0;
-      API->ModuleForEachInstruction(M, opcodeCountVisitor, &CountCtx);
-      InstCount = CountCtx.InstCount;
-    } else {
-      /* Tier 4: per-element vtable iteration (oldest hosts). */
-      NEVERC_FOR_EACH_DEFINED_FUNCTION(API, M, F) {
-        NEVERC_FOR_EACH_BB(API, F, BB) {
-          NEVERC_FOR_EACH_INST(API, BB, I) {
-            API->IntMapIncrement(Hist, API->InstGetOpcode(I), 1);
-            ++InstCount;
-          }
-        }
-      }
-    }
   }
 
   NEVERC_ARENA_DESTROY(API, Scratch);
@@ -498,7 +415,7 @@ static int opcodeHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
   struct OpcodeOutputCtx OutCtx;
   OutCtx.API = API;
   OutCtx.SB = SB;
-  OutCtx.HasOpcodeToName = NEVERC_API_FN(API, InstOpcodeToName) != 0;
+  OutCtx.HasOpcodeToName = 1;
   API->IntMapForEach(Hist, opcodeOutputVisitor, &OutCtx);
 
   API->IntMapDestroy(Hist);
@@ -510,8 +427,7 @@ static int opcodeHistogramPass(NevercModuleRef M, const NevercHostAPI *API,
 /*
  * Sort API demo: collect defined functions, sort by instruction count
  * descending, report top-N largest functions with both instruction and
- * BB counts.  Falls back to BB count when FunctionGetInstructionCount
- * is unavailable on older hosts.
+ * BB counts.
  *
  * Shows: Arena (Fns + Entries in the same arena -- single ArenaDestroy
  *        reclaims everything; contiguous array layout for cache-friendly
@@ -557,13 +473,10 @@ static int sortedFuncAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
     return 0;
   }
 
-  int HasInstCount = NEVERC_API_FN(API, FunctionGetInstructionCount) != 0;
   for (unsigned I = 0; I < FnCount; I++) {
     Entries[I].Fn = Fns[I];
     Entries[I].BBCount = API->FunctionGetBBCount(Fns[I]);
-    Entries[I].InstCount = HasInstCount
-                               ? API->FunctionGetInstructionCount(Fns[I])
-                               : Entries[I].BBCount;
+    Entries[I].InstCount = API->FunctionGetInstructionCount(Fns[I]);
   }
 
   API->Sort(Entries, FnCount, sizeof(struct FuncSortEntry),
@@ -590,15 +503,11 @@ static int sortedFuncAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
  * Shows: PathBaseNameOffset / PathExtOffset (zero-alloc cross-platform
  *        path split), ArenaStrSubstring (slice into arena, no host
  *        malloc/Free pair), ArenaStrToLower (ASCII-only lowercase into
- *        arena), NEVERC_NPOS sentinel, NEVERC_TRY_ARENA fallback.
+ *        arena), NEVERC_NPOS sentinel.
  */
 static int sourceInfoPass(NevercModuleRef M, const NevercHostAPI *API,
                           void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, ModuleGetSourceFileName) ||
-      !NEVERC_API_FN(API, PathBaseNameOffset))
-    return 0;
-
   const char *Path = API->ModuleGetSourceFileName(M);
   if (!Path || !*Path) {
     API->DiagNoteF(PLUGIN_TAG "Source: <none>");
@@ -606,51 +515,36 @@ static int sourceInfoPass(NevercModuleRef M, const NevercHostAPI *API,
   }
 
   uint64_t BaseOff = API->PathBaseNameOffset(Path);
-  uint64_t ExtOff = NEVERC_API_FN(API, PathExtOffset)
-                        ? API->PathExtOffset(Path)
-                        : NEVERC_NPOS;
+  uint64_t ExtOff = API->PathExtOffset(Path);
 
-  if (NEVERC_API_FN(API, ArenaStrSubstring)) {
-    NevercArenaRef A = NEVERC_TRY_ARENA(API);
-    if (A) {
-      char *Dir = API->ArenaStrSubstring(A, Path, 0, BaseOff);
-      char *Base =
-          (ExtOff != NEVERC_NPOS)
-              ? API->ArenaStrSubstring(A, Path, BaseOff, ExtOff - BaseOff)
-              : API->ArenaStrSubstring(A, Path, BaseOff, NEVERC_NPOS);
-      char *Ext = (ExtOff != NEVERC_NPOS)
-                      ? API->ArenaStrSubstring(A, Path, ExtOff, NEVERC_NPOS)
-                      : NULL;
-      char *ExtLower = (Ext && NEVERC_API_FN(API, ArenaStrToLower))
-                           ? API->ArenaStrToLower(A, Ext)
-                           : Ext;
-      int ExtNormalized = Ext && ExtLower && Ext != ExtLower &&
-                          !API->StrEqual(Ext, ExtLower);
+  NevercArenaRef A = NEVERC_TRY_ARENA(API);
+  if (!A)
+    return 0;
 
-      if (Ext)
-        API->DiagNoteF(PLUGIN_TAG "Source: dir=%s base=%s ext=%s%s%s",
-                       NEVERC_STR_OR(Dir, ""),
-                       NEVERC_STR_OR(Base, ""),
-                       NEVERC_STR_OR(Ext, ""),
-                       ExtNormalized ? " norm=" : "",
-                       ExtNormalized ? ExtLower : "");
-      else
-        API->DiagNoteF(PLUGIN_TAG "Source: dir=%s base=%s",
-                       NEVERC_STR_OR(Dir, ""), NEVERC_STR_OR(Base, ""));
+  char *Dir = API->ArenaStrSubstring(A, Path, 0, BaseOff);
+  char *Base =
+      (ExtOff != NEVERC_NPOS)
+          ? API->ArenaStrSubstring(A, Path, BaseOff, ExtOff - BaseOff)
+          : API->ArenaStrSubstring(A, Path, BaseOff, NEVERC_NPOS);
+  char *Ext = (ExtOff != NEVERC_NPOS)
+                  ? API->ArenaStrSubstring(A, Path, ExtOff, NEVERC_NPOS)
+                  : NULL;
+  char *ExtLower = Ext ? API->ArenaStrToLower(A, Ext) : Ext;
+  int ExtNormalized = Ext && ExtLower && Ext != ExtLower &&
+                      !API->StrEqual(Ext, ExtLower);
 
-      API->ArenaDestroy(A);
-      return 0;
-    }
-  }
-
-  if (ExtOff != NEVERC_NPOS)
-    API->DiagNoteF(PLUGIN_TAG "Source: dir=%.*s base=%.*s ext=%s",
-                   (int)BaseOff, Path,
-                   (int)(ExtOff - BaseOff), Path + BaseOff,
-                   Path + ExtOff);
+  if (Ext)
+    API->DiagNoteF(PLUGIN_TAG "Source: dir=%s base=%s ext=%s%s%s",
+                   NEVERC_STR_OR(Dir, ""),
+                   NEVERC_STR_OR(Base, ""),
+                   NEVERC_STR_OR(Ext, ""),
+                   ExtNormalized ? " norm=" : "",
+                   ExtNormalized ? ExtLower : "");
   else
-    API->DiagNoteF(PLUGIN_TAG "Source: dir=%.*s base=%s",
-                   (int)BaseOff, Path, Path + BaseOff);
+    API->DiagNoteF(PLUGIN_TAG "Source: dir=%s base=%s",
+                   NEVERC_STR_OR(Dir, ""), NEVERC_STR_OR(Base, ""));
+
+  API->ArenaDestroy(A);
   return 0;
 }
 
@@ -679,9 +573,6 @@ static int cmpCallSitesDesc(const void *A, const void *B) {
 static int callSiteAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
                                 void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, ValueGetFirstUse))
-    return 0;
-
   NevercArenaRef Scratch = NEVERC_TRY_ARENA(API);
   if (!Scratch)
     return 0;
@@ -701,30 +592,18 @@ static int callSiteAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
     return 0;
   }
 
-  int HasCalledOp = NEVERC_API_FN(API, CallGetCalledOperand) != 0;
-  int HasCallLike = NEVERC_API_FN(API, InstIsCallLike) != 0;
-  int HasInstCount = NEVERC_API_FN(API, FunctionGetInstructionCount) != 0;
-
   for (unsigned I = 0; I < FnCount; I++) {
     unsigned Sites = 0;
     NEVERC_FOR_EACH_USE(API, Fns[I], U) {
       NevercValueRef User = API->UseGetUser(U);
-      int IsCallLike = HasCallLike ? API->InstIsCallLike(User)
-                                   : API->InstIsCall(User);
-      if (!IsCallLike)
+      if (!API->InstIsCallLike(User))
         continue;
-      if (HasCalledOp) {
-        if (API->CallGetCalledOperand(User) == Fns[I])
-          Sites++;
-      } else {
+      if (API->CallGetCalledOperand(User) == Fns[I])
         Sites++;
-      }
     }
     Entries[I].Fn = Fns[I];
     Entries[I].CallSites = Sites;
-    Entries[I].InstCount = HasInstCount
-                               ? API->FunctionGetInstructionCount(Fns[I])
-                               : API->FunctionGetBBCount(Fns[I]);
+    Entries[I].InstCount = API->FunctionGetInstructionCount(Fns[I]);
   }
 
   API->Sort(Entries, FnCount, sizeof(struct CallSiteEntry), cmpCallSitesDesc);
@@ -744,15 +623,9 @@ static int callSiteAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
  * entire module using a ValueSet for O(1) deduplication, and print the
  * first few unique targets via ValueSetForEach.
  *
- * Three-tier instruction iteration fallback:
- *   1. Batch collect (NEVERC_AUTO_COLLECT_INSTRUCTIONS)
- *   2. Callback iteration (ModuleForEachInstruction -- zero-alloc)
- *   3. Triple-nested FOR_EACH macros (oldest hosts)
- *
  * Shows: ValueSetCreate, ValueSetInsert, ValueSetCount,
  *        ValueSetForEach (zero-alloc callback iteration with early-exit),
  *        ModuleForEachInstruction (flattened zero-alloc instruction scan),
- *        NEVERC_AUTO_COLLECT_INSTRUCTIONS, NEVERC_FREE_IF_HEAP,
  *        CallGetCalledOperand, InstIsCall.
  */
 
@@ -792,60 +665,22 @@ static int printTargetVisitor(NevercValueRef V, void *Ctx) {
 static int uniqueCallTargetsPass(NevercModuleRef M, const NevercHostAPI *API,
                                  void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, ValueSetCreate) ||
-      !NEVERC_API_FN(API, CallGetCalledOperand))
-    return 0;
-
   NevercValueSetRef Seen = API->ValueSetCreate();
   if (!Seen)
     return 0;
 
-  unsigned TotalCalls = 0;
-
-  NevercArenaRef Scratch = NEVERC_TRY_ARENA(API);
-  unsigned InstCount = 0;
-  NevercValueRef *Insts =
-      NEVERC_AUTO_COLLECT_INSTRUCTIONS(API, Scratch, M, &InstCount);
-
-  if (Insts) {
-    for (unsigned I = 0; I < InstCount; I++) {
-      if (!API->InstIsCall(Insts[I]))
-        continue;
-      TotalCalls++;
-      NevercValueRef Target = API->CallGetCalledOperand(Insts[I]);
-      if (Target)
-        API->ValueSetInsert(Seen, Target);
-    }
-    NEVERC_FREE_IF_HEAP(API, Insts, Scratch);
-  } else if (NEVERC_API_FN(API, ModuleForEachInstruction)) {
-    struct CallTargetScanCtx ScanCtx;
-    ScanCtx.API = API;
-    ScanCtx.Seen = Seen;
-    ScanCtx.TotalCalls = 0;
-    API->ModuleForEachInstruction(M, callTargetScanVisitor, &ScanCtx);
-    TotalCalls = ScanCtx.TotalCalls;
-  } else {
-    NEVERC_FOR_EACH_DEFINED_FUNCTION(API, M, F) {
-      NEVERC_FOR_EACH_BB(API, F, BB) {
-        NEVERC_FOR_EACH_INST(API, BB, I) {
-          if (!API->InstIsCall(I))
-            continue;
-          TotalCalls++;
-          NevercValueRef Target = API->CallGetCalledOperand(I);
-          if (Target)
-            API->ValueSetInsert(Seen, Target);
-        }
-      }
-    }
-  }
-
-  NEVERC_ARENA_DESTROY(API, Scratch);
+  struct CallTargetScanCtx ScanCtx;
+  ScanCtx.API = API;
+  ScanCtx.Seen = Seen;
+  ScanCtx.TotalCalls = 0;
+  API->ModuleForEachInstruction(M, callTargetScanVisitor, &ScanCtx);
+  unsigned TotalCalls = ScanCtx.TotalCalls;
 
   unsigned UniqueTargets = API->ValueSetCount(Seen);
   API->DiagNoteF(PLUGIN_TAG "Call targets: %u total calls, %u unique targets",
                  TotalCalls, UniqueTargets);
 
-  if (NEVERC_API_FN(API, ValueSetForEach) && UniqueTargets > 0) {
+  if (UniqueTargets > 0) {
     struct UniqueTargetPrintCtx PrintCtx;
     PrintCtx.API = API;
     PrintCtx.Remaining = NEVERC_MIN(UniqueTargets, 5U);
@@ -865,8 +700,7 @@ static int uniqueCallTargetsPass(NevercModuleRef M, const NevercHostAPI *API,
  *        ArenaCollectBBs (single vtable call replaces GetBBCount +
  *        ArenaAllocArray + FunctionCollectBBs three-step pattern),
  *        FunctionBuildDomTree / FunctionBuildPostDomTree (on-demand analysis),
- *        DomTreeGetDepth (O(1) level query -- replaces O(depth) idom walk,
- *        with idom-walk fallback for older hosts),
+ *        DomTreeGetDepth (O(1) level query),
  *        DomTreeIsReachable / PostDomTreeGetIPDom,
  *        FunctionBuildLoopInfo (on-demand loop detection),
  *        LoopInfoGetLoopFor / LoopGetDepth / LoopGetHeader / LoopIsInnermost
@@ -875,10 +709,6 @@ static int uniqueCallTargetsPass(NevercModuleRef M, const NevercHostAPI *API,
 static int cfgAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
                            void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, FunctionBuildDomTree) ||
-      !NEVERC_API_FN(API, FunctionBuildLoopInfo))
-    return 0;
-
   NevercArenaRef Scratch = NEVERC_TRY_ARENA(API);
   if (!Scratch)
     return 0;
@@ -890,8 +720,6 @@ static int cfgAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
     API->ArenaDestroy(Scratch);
     return 0;
   }
-
-  int HasDepth = NEVERC_API_FN(API, DomTreeGetDepth) != 0;
 
   for (unsigned I = 0; I < FnCount; I++) {
     unsigned BBCount = 0;
@@ -910,17 +738,7 @@ static int cfgAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
         Unreachable++;
         continue;
       }
-      unsigned Depth;
-      if (HasDepth) {
-        Depth = API->DomTreeGetDepth(DT, BBs[B]);
-      } else {
-        Depth = 0;
-        NevercBasicBlockRef Cur = API->DomTreeGetIDom(DT, BBs[B]);
-        while (Cur) {
-          Cur = API->DomTreeGetIDom(DT, Cur);
-          Depth++;
-        }
-      }
+      unsigned Depth = API->DomTreeGetDepth(DT, BBs[B]);
       if (Depth > MaxDomDepth)
         MaxDomDepth = Depth;
     }
@@ -944,15 +762,13 @@ static int cfgAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
     }
 
     unsigned PostDomConvergence = 0;
-    if (NEVERC_API_FN(API, FunctionBuildPostDomTree)) {
-      NevercPostDomTreeRef PDT = API->FunctionBuildPostDomTree(Fns[I]);
-      if (PDT) {
-        for (unsigned B = 0; B < BBCount; B++) {
-          if (API->PostDomTreeGetIPDom(PDT, BBs[B]))
-            PostDomConvergence++;
-        }
-        API->PostDomTreeDestroy(PDT);
+    NevercPostDomTreeRef PDT = API->FunctionBuildPostDomTree(Fns[I]);
+    if (PDT) {
+      for (unsigned B = 0; B < BBCount; B++) {
+        if (API->PostDomTreeGetIPDom(PDT, BBs[B]))
+          PostDomConvergence++;
       }
+      API->PostDomTreeDestroy(PDT);
     }
 
     API->DiagNoteF(PLUGIN_TAG "CFG '%s': %u BBs, dom-depth %u, "
@@ -1015,25 +831,17 @@ static int arenaCollectAnalysisPass(NevercModuleRef M,
     return 0;
   }
 
-  int HasInstCount = NEVERC_API_FN(API, FunctionGetInstructionCount) != 0;
   for (unsigned I = 0; I < FnCount; I++) {
     Entries[I].Name = API->ArenaStrDup(A, API->ValueGetName(Fns[I]));
-    Entries[I].InstCount = HasInstCount
-                               ? API->FunctionGetInstructionCount(Fns[I])
-                               : API->FunctionGetBBCount(Fns[I]);
+    Entries[I].InstCount = API->FunctionGetInstructionCount(Fns[I]);
   }
 
-  int Sorted = 0;
-  if (NEVERC_API_FN(API, SortCtx)) {
-    API->SortCtx(Entries, FnCount, sizeof(struct ArenaSortEntry),
-                 cmpArenaSortByName, (void *)API);
-    Sorted = 1;
-  }
+  API->SortCtx(Entries, FnCount, sizeof(struct ArenaSortEntry),
+               cmpArenaSortByName, (void *)API);
 
   unsigned Top = NEVERC_MIN(FnCount, 5U);
   for (unsigned I = 0; I < Top; I++)
-    API->DiagNoteF(PLUGIN_TAG "Arena %s: #%u %s (%u instrs)",
-                   Sorted ? "sorted" : "unsorted", I + 1,
+    API->DiagNoteF(PLUGIN_TAG "Arena sorted: #%u %s (%u instrs)", I + 1,
                    Entries[I].Name, Entries[I].InstCount);
 
   uint64_t BytesUsed = API->ArenaGetBytesUsed(A);
@@ -1061,13 +869,7 @@ static int arenaCollectAnalysisPass(NevercModuleRef M,
 static int cloneDemoPass(NevercModuleRef M, const NevercHostAPI *API,
                          void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, FunctionClone) ||
-      !NEVERC_API_FN(API, ArenaStrConcat))
-    return 0;
-
-  const char *Prefix = NULL;
-  if (NEVERC_API_FN(API, PluginGetArg))
-    Prefix = API->PluginGetArg("clone-prefix");
+  const char *Prefix = API->PluginGetArg("clone-prefix");
   if (!Prefix || !*Prefix)
     return 0;
 
@@ -1115,10 +917,6 @@ static int cloneDemoPass(NevercModuleRef M, const NevercHostAPI *API,
 static int loopTripCountPass(NevercModuleRef M, const NevercHostAPI *API,
                              void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, FunctionBuildSCEV) ||
-      !NEVERC_API_FN(API, FunctionBuildLoopInfo))
-    return 0;
-
   NevercArenaRef Scratch = NEVERC_TRY_ARENA(API);
   if (!Scratch)
     return 0;
@@ -1130,8 +928,6 @@ static int loopTripCountPass(NevercModuleRef M, const NevercHostAPI *API,
     API->ArenaDestroy(Scratch);
     return 0;
   }
-
-  int HasInvariant = NEVERC_API_FN(API, LoopIsLoopInvariant) != 0;
 
   for (unsigned I = 0; I < FnCount; I++) {
     NevercLoopInfoRef LI = API->FunctionBuildLoopInfo(Fns[I]);
@@ -1165,14 +961,12 @@ static int loopTripCountPass(NevercModuleRef M, const NevercHostAPI *API,
       unsigned TC = API->SCEVGetTripCount(SI, BBs[B]);
       unsigned MaxTC = API->SCEVGetMaxTripCount(SI, BBs[B]);
       unsigned InvariantArgs = 0;
-      if (HasInvariant) {
-        NevercValueRef Fn = API->BBGetParentFunction(BBs[B]);
-        if (Fn) {
-          unsigned ArgCount = API->FunctionGetArgCount(Fn);
-          for (unsigned Arg = 0; Arg < ArgCount; Arg++) {
-            if (API->LoopIsLoopInvariant(L, API->FunctionGetArg(Fn, Arg)))
-              InvariantArgs++;
-          }
+      NevercValueRef Fn = API->BBGetParentFunction(BBs[B]);
+      if (Fn) {
+        unsigned ArgCount = API->FunctionGetArgCount(Fn);
+        for (unsigned Arg = 0; Arg < ArgCount; Arg++) {
+          if (API->LoopIsLoopInvariant(L, API->FunctionGetArg(Fn, Arg)))
+            InvariantArgs++;
         }
       }
 
@@ -1205,7 +999,7 @@ static int loopTripCountPass(NevercModuleRef M, const NevercHostAPI *API,
 /*
  * Call graph analysis: report callee counts, detect recursive functions.
  *
- * Shows: NEVERC_AUTO_COLLECT_CALLEES (arena -> heap fallback),
+ * Shows: NEVERC_AUTO_COLLECT_CALLEES (arena-preferred collection),
  *        NEVERC_FREE_IF_HEAP (conditional cleanup),
  *        ModuleBuildCallGraph, CallGraphGetCalleeCount,
  *        CallGraphIsRecursive (SCC-based O(1) recursion detection),
@@ -1214,10 +1008,6 @@ static int loopTripCountPass(NevercModuleRef M, const NevercHostAPI *API,
 static int callGraphAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
                                  void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, ModuleBuildCallGraph) ||
-      !NEVERC_API_FN(API, StrBuilderCreate))
-    return 0;
-
   NevercCallGraphRef CG = API->ModuleBuildCallGraph(M);
   if (!CG)
     return 0;
@@ -1290,22 +1080,15 @@ static int callGraphAnalysisPass(NevercModuleRef M, const NevercHostAPI *API,
  * Shows: PluginGetArgBool (typed bool: 1/0/true/false/yes/no/on/off),
  *        PluginGetArgInt64 (typed int with default), PluginHasArg
  *        + PluginGetArg (raw string), NEVERC_TRY_ARENA +
- *        NEVERC_AUTO_COLLECT_DEFINED_FUNCTIONS (arena -> heap fallback).
+ *        NEVERC_AUTO_COLLECT_DEFINED_FUNCTIONS (arena-preferred collection).
  */
 static int pluginArgDemoPass(NevercModuleRef M, const NevercHostAPI *API,
                              void *UserData) {
   (void)UserData;
-  if (!NEVERC_API_FN(API, PluginGetArg))
-    return 0;
-
   API->DiagNoteF(PLUGIN_TAG "Plugin args: %u", API->PluginGetArgCount());
 
-  int Verbose = NEVERC_API_FN(API, PluginGetArgBool)
-                    ? API->PluginGetArgBool("verbose", 0)
-                    : (API->PluginGetArg("verbose") != NULL);
-  int64_t MaxFns = NEVERC_API_FN(API, PluginGetArgInt64)
-                       ? API->PluginGetArgInt64("max-fns", -1)
-                       : -1;
+  int Verbose = API->PluginGetArgBool("verbose", 0);
+  int64_t MaxFns = API->PluginGetArgInt64("max-fns", -1);
 
   if (Verbose) {
     NevercArenaRef Scratch = NEVERC_TRY_ARENA(API);
@@ -1338,16 +1121,8 @@ static int pluginArgDemoPass(NevercModuleRef M, const NevercHostAPI *API,
 /*
  * MIR analysis: count instructions and classify operands.
  *
- * Three-tier fallback for maximum performance on every host version:
- *   1. ArenaCollectMBBs + MBBCollectInstructions + MInstCollectOperandKinds
- *      (batch everything: contiguous arrays, cache-friendly linear scan)
- *   2. MFuncForEachBB + MBBForEachInst (zero-alloc callback iteration --
- *      one vtable call per MBB/MI vs two for the linked-list macros)
- *   3. NEVERC_FOR_EACH_MBB + NEVERC_FOR_EACH_MI (oldest hosts)
- *
- * Shows: MFuncForEachBB / MBBForEachInst (MIR zero-alloc callback
- *        iteration), ArenaCollectMBBs (batch), MInstCollectOperandKinds
- *        (single vtable call per MI), stack buffer fast path.
+ * Shows: ArenaCollectMBBs (batch), MBBCollectInstructions,
+ *        MInstCollectOperandKinds (single vtable call per MI).
  */
 
 struct MirOpCountCtx {
@@ -1360,8 +1135,7 @@ struct MirOpCountCtx {
      Starts at 64 bytes; when an MI with more operands appears the
      outer loop bump-allocs a larger buffer (O(1), the old one stays
      in the arena).  Settles within the first few MIs so the steady
-     state is zero-alloc.  NULL on non-arena fallback paths -- callers
-     degrade to single-operand vtable queries. */
+     state is zero-alloc. */
   uint8_t *KindsBuf;
   unsigned KindsCap;
 };
@@ -1418,22 +1192,12 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
   Ctx.InstrCount = 0;
   Ctx.RegOps = 0;
   Ctx.ImmOps = 0;
-  Ctx.HasBatchKinds = NEVERC_API_FN(API, MInstCollectOperandKinds) != 0;
+  Ctx.HasBatchKinds = 1;
   Ctx.KindsBuf = NULL;
   Ctx.KindsCap = 0;
 
   NevercArenaRef Scratch = NEVERC_TRY_ARENA(API);
-  if (Scratch && NEVERC_API_FN(API, ArenaCollectMBBs)) {
-    /* Tier 1: batch collect + arena-grown KindsBuf.
-       Pass 1 counts instructions per MBB and finds MaxIC.
-       Pass 2 collects + classifies in a single walk.  KindsBuf starts
-       at 64 bytes; when an MI with more operands appears we bump-alloc
-       a larger buffer from the arena (O(1) pointer bump, the abandoned
-       old buffer is reclaimed with ArenaDestroy).  In practice the
-       buffer settles within the first few MIs so the steady-state hot
-       loop is a single MInstCollectOperandKinds + linear scan.  Zero
-       heap realloc, zero free -- ArenaDestroy at function exit reclaims
-       everything. */
+  if (Scratch) {
     unsigned MBBCount = 0;
     NevercMachineBBRef *MBBs =
         NEVERC_ARENA_COLLECT_MBBS(API, Scratch, MF, &MBBCount);
@@ -1480,20 +1244,6 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
       }
     }
     API->ArenaDestroy(Scratch);
-  } else if (NEVERC_API_FN(API, MFuncForEachBB) &&
-             NEVERC_API_FN(API, MBBForEachInst)) {
-    /* Tier 2: zero-alloc callback iteration. */
-    NEVERC_ARENA_DESTROY(API, Scratch);
-    API->MFuncForEachBB(MF, mirBBVisitor, &Ctx);
-  } else {
-    /* Tier 3: per-element linked-list iteration. */
-    NEVERC_ARENA_DESTROY(API, Scratch);
-    NEVERC_FOR_EACH_MBB(API, MF, MBB) {
-      NEVERC_FOR_EACH_MI(API, MBB, MI) {
-        Ctx.InstrCount++;
-        mirClassifyOps(MI, &Ctx);
-      }
-    }
   }
 
   API->DiagNoteF(PLUGIN_TAG "MIR '%s': %u BBs, %u instrs, %u reg, %u imm",
@@ -1521,15 +1271,13 @@ static int binaryInfoPass(uint8_t **Data, uint64_t *Len, uint64_t *Capacity,
   (void)UserData;
   API->DiagNoteF(PLUGIN_TAG "Binary: %" PRIu64 " bytes", *Len);
 
-  if (NEVERC_API_FN(API, MemFindByte) && NEVERC_API_FN(API, MemCount)) {
-    uint64_t Off = API->MemFindByte(*Data, *Len, 0xCC);
-    if (Off != NEVERC_NPOS) {
-      uint64_t Total = API->MemCount(*Data, *Len, 0xCC);
-      API->DiagWarningF(PLUGIN_TAG
-                        "Stray 0xCC: %" PRIu64 " total, first at offset "
-                        "%" PRIu64,
-                        Total, Off);
-    }
+  uint64_t Off = API->MemFindByte(*Data, *Len, 0xCC);
+  if (Off != NEVERC_NPOS) {
+    uint64_t Total = API->MemCount(*Data, *Len, 0xCC);
+    API->DiagWarningF(PLUGIN_TAG
+                      "Stray 0xCC: %" PRIu64 " total, first at offset "
+                      "%" PRIu64,
+                      Total, Off);
   }
   return 0;
 }
@@ -1559,22 +1307,12 @@ static int binaryNopSledPass(uint8_t **Data, uint64_t *Len, uint64_t *Capacity,
 /* LTO pipeline tracker -- reports defined function count.
  *
  * Shows: ModuleGetDefinedFunctionCount (zero-allocation census),
- *        NEVERC_HOOK_NAME (resolve hook enum from UserData),
- *        NEVERC_FOR_EACH_DEFINED_FUNCTION (zero-alloc fallback).
+ *        NEVERC_HOOK_NAME (resolve hook enum from UserData).
  */
 static int ltoInfoPass(NevercModuleRef M, const NevercHostAPI *API,
                        void *UserData) {
   const char *Stage = NEVERC_HOOK_NAME(API, UserData);
-  unsigned Defined;
-  if (NEVERC_API_FN(API, ModuleGetDefinedFunctionCount)) {
-    Defined = API->ModuleGetDefinedFunctionCount(M);
-  } else {
-    Defined = 0;
-    NEVERC_FOR_EACH_DEFINED_FUNCTION(API, M, F) {
-      (void)F;
-      ++Defined;
-    }
-  }
+  unsigned Defined = API->ModuleGetDefinedFunctionCount(M);
   API->DiagNoteF(PLUGIN_TAG "%s: %u defined functions", Stage, Defined);
   return 0;
 }
@@ -1600,9 +1338,7 @@ static int linkerCensusPass(const NevercHostAPI *API, void *UserData) {
     Sections++;
   }
 
-  const char *Fmt = NEVERC_API_FN(API, LinkGetOutputFormatName)
-                        ? API->LinkGetOutputFormatName()
-                        : "unknown";
+  const char *Fmt = API->LinkGetOutputFormatName();
   API->DiagNoteF(PLUGIN_TAG "Link %s [%s]: %u defined, %u undef, %u sections",
                  Stage, Fmt, Defined, Undefined, Sections);
   return 0;
@@ -1762,20 +1498,18 @@ static void registerPasses(const NevercHostAPI *API, void *Registrar) {
                           "example-lto-post-opt");
 
   /* Linker flow */
-  if (NEVERC_API_FN(API, RegisterLinkerPass)) {
-    API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_PRE_LAYOUT,
-                            linkerCensusPass,
-                            NEVERC_HOOK_UD(NEVERC_HOOK_LINK_PRE_LAYOUT),
-                            "example-link-pre-layout");
-    API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_POST_LAYOUT,
-                            linkerCensusPass,
-                            NEVERC_HOOK_UD(NEVERC_HOOK_LINK_POST_LAYOUT),
-                            "example-link-post-layout");
-    API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_POST_EMIT,
-                            linkerCensusPass,
-                            NEVERC_HOOK_UD(NEVERC_HOOK_LINK_POST_EMIT),
-                            "example-link-post-emit");
-  }
+  API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_PRE_LAYOUT,
+                          linkerCensusPass,
+                          NEVERC_HOOK_UD(NEVERC_HOOK_LINK_PRE_LAYOUT),
+                          "example-link-pre-layout");
+  API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_POST_LAYOUT,
+                          linkerCensusPass,
+                          NEVERC_HOOK_UD(NEVERC_HOOK_LINK_POST_LAYOUT),
+                          "example-link-post-layout");
+  API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_POST_EMIT,
+                          linkerCensusPass,
+                          NEVERC_HOOK_UD(NEVERC_HOOK_LINK_POST_EMIT),
+                          "example-link-post-emit");
 }
 
 /* ======================================================================== */

@@ -248,7 +248,7 @@ The host provides several high-performance data structures through the vtable. A
 ### Arena (Bump-Pointer Allocator)
 
 ```c
-NevercArenaRef A = NEVERC_TRY_ARENA(API);  // NULL on old hosts
+NevercArenaRef A = NEVERC_TRY_ARENA(API);
 // ... allocate with ArenaAllocArray, ArenaStrDup, etc.
 API->ArenaDestroy(A);  // frees ALL arena allocations at once
 ```
@@ -305,7 +305,7 @@ if (NEVERC_API_FN(API, SomeNewFunction)) {
 }
 ```
 
-Plugins compiled against an older header remain compatible with newer hosts. Plugins calling newer APIs on older hosts must guard with `NEVERC_API_FN`.
+The append-only vtable design guarantees forward compatibility: older plugins work unconditionally on newer hosts. If future vtable extensions add fields at the end, and a plugin needs to run on older hosts that lack those fields, it can guard calls with `NEVERC_API_FN`.
 
 ## 9. Plugin Arguments
 
@@ -321,11 +321,9 @@ neverc -fplugin-pass=./MyPlugin.dll \
 Read them in the plugin:
 
 ```c
-if (NEVERC_API_FN(API, PluginGetArg)) {
-    const char *val = API->PluginGetArg("verbose");  // "1" or NULL
-}
+const char *val = API->PluginGetArg("verbose");  // "1" or NULL
 
-// Typed accessors (newer hosts):
+// Typed accessors:
 int verbose   = API->PluginGetArgBool("verbose", 0);     // default 0
 int64_t limit = API->PluginGetArgInt64("max-fns", -1);   // default -1
 ```
@@ -366,11 +364,11 @@ int64_t limit = API->PluginGetArgInt64("max-fns", -1);   // default -1
 | `NEVERC_COLLECT_GLOBALS(api, m, count)` | Batch-collect global variables |
 | `NEVERC_COLLECT_INSTRUCTIONS(api, m, count)` | Batch-collect all instructions |
 | `NEVERC_COLLECT_OPCODES(api, m, count)` | Batch-collect opcode histogram |
-| `NEVERC_TRY_ARENA(api)` | Create an arena (or `NULL` on old hosts) |
+| `NEVERC_TRY_ARENA(api)` | Create an arena (returns `NULL` on failure) |
 | `NEVERC_ARENA_ALLOC_ARRAY(api, arena, type, count)` | Typed arena allocation |
 | `NEVERC_ARENA_CALLOC_ARRAY(api, arena, type, count)` | Typed zero-initialized arena allocation |
 | `NEVERC_ARENA_COLLECT_*(api, arena, ...)` | Arena variants of batch-collect macros |
-| `NEVERC_AUTO_COLLECT_*(api, arena, ...)` | Arena-preferred batch collect with heap fallback |
+| `NEVERC_AUTO_COLLECT_*(api, arena, ...)` | Arena-preferred batch collect (falls back to heap if no arena) |
 | `NEVERC_FREE_IF_HEAP(api, ptr, arena)` | Free only if not arena-owned |
 | `NEVERC_ARENA_DESTROY(api, arena)` | Destroy arena if non-NULL |
 | `NEVERC_STRBUILDER_DIAG(api, sb, diagFn)` | Emit StrBuilder content as diagnostic |
@@ -389,9 +387,8 @@ int64_t limit = API->PluginGetArgInt64("max-fns", -1);   // default -1
 ## 12. Best Practices
 
 1. **Arena-first allocation**: Use `NEVERC_TRY_ARENA` + `NEVERC_ARENA_ALLOC_ARRAY` for temporary data. One `ArenaDestroy` replaces N `Free` calls.
-2. **Version-guard new APIs**: Always wrap newer vtable calls with `NEVERC_API_FN`.
-3. **Prefer callback iteration**: `ModuleForEachDefinedFunction` is faster than `NEVERC_FOR_EACH_DEFINED_FUNCTION` (one vtable call vs N).
-4. **Tiered fallbacks**: Support multiple host versions by trying batch APIs first, then callback iteration, then per-element loops. See `ExamplePlugin.c` for the canonical pattern.
+2. **Version-guard future APIs**: When the vtable gains new fields after a release, guard calls with `NEVERC_API_FN` only if the plugin must also run on hosts that lack those fields. Current vtable entries need no guard.
+3. **Prefer callback iteration**: `ModuleForEachDefinedFunction` is faster than `NEVERC_FOR_EACH_DEFINED_FUNCTION` (one vtable call vs N). Batch-collect APIs (`NEVERC_COLLECT_*`) are fastest when you need the full array.
 5. **No CRT dependency**: The vtable provides `Alloc`, `Free`, `MemSet`, `MemCopy`, `StrDup`, `StrFormat`, `Sort`, etc. Never call `malloc`, `printf`, or `qsort` directly — this ensures cross-DLL CRT safety.
 6. **Clean return**: Free all Builders, destroy all data structures, and destroy all Arenas before the pass callback returns.
 

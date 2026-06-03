@@ -186,7 +186,7 @@ int64_t limit = API->PluginGetArgInt64("max-fns", -1);
 ## 11. 最佳實踐
 
 1. **Arena 優先配置**：臨時資料使用 `NEVERC_TRY_ARENA`。一個 `ArenaDestroy` 取代 N 個 `Free`。
-2. **版本保護**：始終用 `NEVERC_API_FN` 包裹新版 vtable 呼叫。
+2. **版本保護（未來新增 API）**：當 vtable 在正式發佈後新增欄位時，若外掛程式需要在缺少該欄位的舊宿主上執行，才用 `NEVERC_API_FN` 保護。當前版本的 vtable 項目無需保護。
 3. **優先使用回呼疊代**：`ModuleForEachDefinedFunction` 比巨集疊代更快。
 4. **無 CRT 依賴**：所有操作透過 vtable。不要直接呼叫 `malloc` / `printf` / `qsort`。
 5. **乾淨回傳**：pass 回傳前釋放所有 Builder、銷毀所有資料結構和 Arena。

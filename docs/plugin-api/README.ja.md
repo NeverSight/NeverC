@@ -154,7 +154,7 @@ neverc -fplugin-pass=./MyPlugin.dll \
 ## 11. ベストプラクティス
 
 1. **Arena ファースト**：一時データには `NEVERC_TRY_ARENA` を使用。
-2. **バージョンガード**：`NEVERC_API_FN` で新しい vtable 呼び出しをラップ。
+2. **バージョンガード（将来の API 向け）**：vtable にリリース後新しいフィールドが追加された場合、そのフィールドがない旧ホストでもプラグインを動作させるには `NEVERC_API_FN` でガード。現在のバージョンの vtable エントリにはガード不要。
 3. **コールバック反復優先**：`ModuleForEachDefinedFunction` はマクロより高速。
 4. **CRT 依存なし**：すべての操作は vtable 経由。
 5. **クリーンリターン**：パス返却前にすべてのリソースを解放。

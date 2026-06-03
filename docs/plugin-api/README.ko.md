@@ -152,7 +152,7 @@ neverc -fplugin-pass=./MyPlugin.dll \
 ## 11. 모범 사례
 
 1. **Arena 우선 할당**: 임시 데이터에는 `NEVERC_TRY_ARENA` 사용. 하나의 `ArenaDestroy`로 N개의 `Free` 대체.
-2. **버전 가드**: 새로운 vtable 호출은 항상 `NEVERC_API_FN`으로 감싸기.
+2. **버전 가드 (향후 API 용)**: 릴리스 이후 vtable에 새 필드가 추가되고, 플러그인이 해당 필드가 없는 이전 호스트에서도 동작해야 할 경우에만 `NEVERC_API_FN`으로 보호. 현재 버전의 vtable 항목에는 가드 불필요.
 3. **콜백 반복 우선**: `ModuleForEachDefinedFunction`이 매크로보다 빠름.
 4. **CRT 의존성 없음**: 모든 작업은 vtable 경유. `malloc` / `printf` / `qsort` 직접 호출 금지.
 5. **깨끗한 반환**: 패스 반환 전 모든 리소스 해제.

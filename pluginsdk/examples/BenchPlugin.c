@@ -88,8 +88,6 @@ static void benchAllocFree(const NevercHostAPI *API) {
 |* Bench 2: Arena allocator throughput                                        *|
 \*===----------------------------------------------------------------------===*/
 static void benchArena(const NevercHostAPI *API) {
-  if (!NEVERC_API_FN(API, ArenaCreate))
-    return;
   NevercArenaRef A = API->ArenaCreate();
   if (!A)
     return;
@@ -131,9 +129,6 @@ static void benchStrFormat(const NevercHostAPI *API) {
 |* Bench 4: Arena StrFormat throughput (no individual frees)                  *|
 \*===----------------------------------------------------------------------===*/
 static void benchArenaStrFormat(const NevercHostAPI *API) {
-  if (!NEVERC_API_FN(API, ArenaCreate) ||
-      !NEVERC_API_FN(API, ArenaStrFormat))
-    return;
   NevercArenaRef A = API->ArenaCreate();
   if (!A)
     return;
@@ -153,8 +148,6 @@ static void benchArenaStrFormat(const NevercHostAPI *API) {
 |* Bench 5: StrMap insert throughput                                          *|
 \*===----------------------------------------------------------------------===*/
 static void benchStrMap(const NevercHostAPI *API) {
-  if (!NEVERC_API_FN(API, StrMapCreate))
-    return;
   NevercStrMapRef Map = API->StrMapCreate();
   if (!Map)
     return;
@@ -185,8 +178,6 @@ static void benchStrMap(const NevercHostAPI *API) {
 |* Bench 6: DynArray push throughput                                          *|
 \*===----------------------------------------------------------------------===*/
 static void benchDynArray(const NevercHostAPI *API) {
-  if (!NEVERC_API_FN(API, DynArrayCreate))
-    return;
   NevercDynArrayRef Arr = API->DynArrayCreate(sizeof(uint64_t));
   if (!Arr)
     return;
@@ -229,12 +220,6 @@ static int benchPass(NevercModuleRef M, const NevercHostAPI *API,
                      void *UserData) {
   (void)M;
   (void)UserData;
-
-  if (!NEVERC_API_FN(API, MonotonicNanos)) {
-    API->DiagNoteF(BENCH_TAG "Host does not expose MonotonicNanos -- "
-                   "skipping benchmarks");
-    return 0;
-  }
 
   API->DiagNoteF(BENCH_TAG "==== HostAPI micro-benchmarks ====");
   benchAllocFree(API);

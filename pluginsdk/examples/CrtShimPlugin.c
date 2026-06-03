@@ -50,20 +50,13 @@ static int censusPass(NevercModuleRef M, const NevercHostAPI *API,
                       void *UserData) {
   (void)UserData;
 
-  unsigned Defined =
-      NEVERC_API_FN(API, ModuleGetDefinedFunctionCount)
-          ? API->ModuleGetDefinedFunctionCount(M)
-          : 0;
+  unsigned Defined = API->ModuleGetDefinedFunctionCount(M);
   unsigned Total = API->ModuleGetFunctionCount(M);
   unsigned Globals = API->ModuleGetGlobalCount(M);
 
   /* DiagNoteF goes through the host CRT, so the plugin's own CRT (or
      absence thereof) never participates in formatting or I/O. */
-  const char *Endian =
-      (NEVERC_API_FN(API, ModuleIsLittleEndian) &&
-       !API->ModuleIsLittleEndian(M))
-          ? "BE"
-          : "LE";
+  const char *Endian = !API->ModuleIsLittleEndian(M) ? "BE" : "LE";
   API->DiagNoteF(PLUGIN_TAG "%s [%s] -- functions: %u defined / %u total, "
                  "globals: %u",
                  API->ModuleGetTargetTriple(M), Endian, Defined, Total,
@@ -80,9 +73,6 @@ static int symbolScanPass(NevercModuleRef M, const NevercHostAPI *API,
                           void *UserData) {
   (void)UserData;
 
-  if (!NEVERC_API_FN(API, ArenaStrToLower) ||
-      !NEVERC_API_FN(API, StrIEqual))
-    return 0;
   NevercArenaRef A = NEVERC_TRY_ARENA(API);
   if (!A)
     return 0;

@@ -123,7 +123,7 @@ neverc -fplugin-pass=./MyPlugin.dll \
 ## 10. Mejores prácticas
 
 1. **Arena primero**: Use `NEVERC_TRY_ARENA` para datos temporales.
-2. **Protección de versión**: Envuelva nuevas llamadas vtable con `NEVERC_API_FN`.
+2. **Protección de versión (para APIs futuras)**: Cuando la vtable gane nuevos campos tras un lanzamiento, proteja las llamadas con `NEVERC_API_FN` solo si el plugin debe funcionar en hosts antiguos que carecen de esos campos. Las entradas actuales de la vtable no necesitan protección.
 3. **Iteración por callback**: `ModuleForEachDefinedFunction` es más rápido que las macros.
 4. **Sin dependencia CRT**: Todas las operaciones a través de la vtable.
 5. **Retorno limpio**: Libere todos los recursos antes del retorno del pase.
