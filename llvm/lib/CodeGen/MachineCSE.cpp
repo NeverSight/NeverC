@@ -274,7 +274,7 @@ static bool isCallerPreservedOrConstPhysReg(MCRegister Reg,
   // reserved registers to be frozen. That doesn't cause a problem  post-ISel as
   // most (if not all) targets freeze reserved registers right after ISel.
   //
-  // It does cause issues mid-GlobalISel, however, hence the additional
+  // It does cause issues mid-ISel, however, hence the additional
   // reservedRegsFrozen check.
   const MachineRegisterInfo &MRI = MF.getRegInfo();
   return TRI.isCallerPreservedPhysReg(Reg, MF) || TII.isIgnorableUse(MO) ||

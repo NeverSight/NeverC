@@ -8,7 +8,7 @@
 /// \file
 /// This file implements a pass that will conditionally reset a machine
 /// function as if it was just created. This is used to provide a fallback
-/// mechanism when GlobalISel fails, thus the condition for the reset to
+/// mechanism when instruction selection fails; the condition for the reset to
 /// happen is that the MachineFunction has the FailedISel property.
 //===----------------------------------------------------------------------===//
 

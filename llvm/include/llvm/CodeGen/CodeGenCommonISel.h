@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares common utilities that are shared between SelectionDAG and
-// GlobalISel frameworks.
+// This file declares common utilities that are shared between instruction
+// selection frameworks.
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,9 +24,8 @@ enum FPClassTest : unsigned;
 /// Encapsulates all of the information needed to generate a stack protector
 /// check, and signals to isel when initialized that one needs to be generated.
 ///
-/// *NOTE* The following is a high level documentation of SelectionDAG Stack
-/// Protector Generation. This is now also ported be shared with GlobalISel,
-/// but without any significant changes.
+/// *NOTE* The following is a high level documentation of Stack
+/// Protector Generation.
 ///
 /// High Level Overview of ISel Stack Protector Generation:
 ///
@@ -60,8 +59,8 @@ enum FPClassTest : unsigned;
 ///      related to available registers that can not be known at the IR level.
 ///
 ///   2. Even if the previous point were not true, the decision on whether to
-///      perform a tail call is done in LowerCallTo in SelectionDAG (or
-///      CallLowering in GlobalISel) which occurs after the Stack Protector
+///      perform a tail call is done in LowerCallTo which occurs after the Stack
+///      Protector
 ///      Pass. As a result, one would need to put the relevant callinst into the
 ///      stack protector check success basic block (where the return inst is
 ///      placed) and then move it back later at ISel/MI time before the

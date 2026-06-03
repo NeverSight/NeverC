@@ -21,9 +21,6 @@ class PassRegistry;
 /// Initialize all passes linked into the CodeGen library.
 void initializeCodeGen(PassRegistry &);
 
-/// Initialize all passes linked into the GlobalISel library.
-void initializeGlobalISel(PassRegistry &);
-
 /// Initialize all passes linked into the CodeGen library.
 
 void initializeAAResultsWrapperPassPass(PassRegistry &);

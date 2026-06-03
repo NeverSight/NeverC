@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines common utilies that are shared between SelectionDAG and
-// GlobalISel frameworks.
+// This file defines common utilities that are shared between instruction
+// selection frameworks.
 //
 //===----------------------------------------------------------------------===//
 
@@ -60,8 +60,8 @@ static bool MIIsInTerminatorSequence(const MachineInstr &MI) {
     if (MI.isDebugInstr())
       return true;
 
-    // For GlobalISel, we may have extension instructions for arguments within
-    // copy sequences. Allow these.
+    // We may have extension instructions for arguments within copy sequences.
+    // Allow these.
     switch (MI.getOpcode()) {
     case TargetOpcode::G_TRUNC:
     case TargetOpcode::G_ZEXT:

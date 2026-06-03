@@ -2316,8 +2316,6 @@ Instruction *TargetLoweringBase::emitTrailingFence(IRBuilderBase &Builder,
 }
 
 //===----------------------------------------------------------------------===//
-//  GlobalISel Hooks
-//===----------------------------------------------------------------------===//
 
 bool TargetLoweringBase::shouldLocalize(const MachineInstr &MI,
                                         const TargetTransformInfo *TTI) const {

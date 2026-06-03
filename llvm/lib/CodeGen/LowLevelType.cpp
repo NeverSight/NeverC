@@ -22,8 +22,8 @@ LLT::LLT(MVT VT) {
          VT.getVectorElementCount(), VT.getVectorElementType().getSizeInBits(),
          /*AddressSpace=*/0);
   } else if (VT.isValid() && !VT.isScalableTargetExtVT()) {
-    // Aggregates are no different from real scalars as far as GlobalISel is
-    // concerned.
+    // Aggregates are no different from real scalars as far as low-level types
+    // are concerned.
     init(/*IsPointer=*/false, /*IsVector=*/false, /*IsScalar=*/true,
          ElementCount::getFixed(0), VT.getSizeInBits(), /*AddressSpace=*/0);
   } else {

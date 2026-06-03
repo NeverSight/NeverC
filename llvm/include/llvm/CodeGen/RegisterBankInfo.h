@@ -426,12 +426,7 @@ protected:
   RegisterBankInfo(const RegisterBank **RegBanks, unsigned NumRegBanks,
                    const unsigned *Sizes, unsigned HwMode);
 
-  /// This constructor is meaningless.
-  /// It just provides a default constructor that can be used at link time
-  /// when GlobalISel is not built.
-  /// That way, targets can still inherit from this class without doing
-  /// crazy gymnastic to avoid link time failures.
-  /// \note That works because the constructor is inlined.
+  /// Default constructor.
   RegisterBankInfo() {
     llvm_unreachable("This constructor should not be executed");
   }
@@ -661,7 +656,7 @@ public:
   /// \returns The constrained register class, or nullptr if there is none.
   /// \note This is a generic variant of MachineRegisterInfo::constrainRegClass
   /// \note Use MachineRegisterInfo::constrainRegAttrs instead for any non-isel
-  /// purpose, including non-select passes of GlobalISel
+  /// purpose.
   static const TargetRegisterClass *
   constrainGenericRegister(Register Reg, const TargetRegisterClass &RC,
                            MachineRegisterInfo &MRI);

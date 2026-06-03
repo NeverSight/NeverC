@@ -412,9 +412,8 @@ bool AArch64FrameLowering::hasFP(const MachineFunction &MF) const {
   // emergency spillslot.
   //
   // Unfortunately some calls to hasFP() like machine verifier ->
-  // getReservedReg() -> hasFP in the middle of global isel are too early
-  // to know the max call frame size. Hopefully conservatively returning "true"
-  // in those cases is fine.
+  // getReservedReg() -> hasFP are too early to know the max call frame size.
+  // Hopefully conservatively returning "true" in those cases is fine.
   // DefaultSafeSPDisplacement is fine as we only emergency spill GP regs.
   if (!MFI.isMaxCallFrameSizeComputed() ||
       MFI.getMaxCallFrameSize() > DefaultSafeSPDisplacement)

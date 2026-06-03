@@ -391,8 +391,8 @@ static void handleADRP(const MachineInstr &MI, AArch64FunctionInfo &AFI,
   if (Info.IsCandidate) {
     switch (Info.Type) {
     case MCLOH_AdrpAdd: {
-      // ADRPs and ADDs for this candidate may be split apart if using
-      // GlobalISel instead of pseudo-expanded. If that happens, the
+      // ADRPs and ADDs for this candidate may be split apart instead of
+      // pseudo-expanded. If that happens, the
       // def register of the ADD may have a use in between. Adding an LOH in
       // this case can cause the linker to rewrite the ADRP to write to that
       // register, clobbering the use.

@@ -671,9 +671,7 @@ public:
   /// 1. Generic virtual registers are created.
   /// 2. The machine function has not completely been through the
   ///    instruction selection process.
-  /// None of this condition is possible without GlobalISel for now.
-  /// In other words, if GlobalISel is not used or if the query happens after
-  /// the select pass, using getRegClass is safe.
+  /// Using getRegClass is safe after the select pass completes.
   const TargetRegisterClass *getRegClassOrNull(Register Reg) const {
     const RegClassOrRegBank &Val = VRegInfo[Reg].first;
     return dyn_cast_if_present<const TargetRegisterClass *>(Val);
@@ -713,9 +711,7 @@ public:
   /// GR32 -> GR32_NOSP. Beware of increasing register pressure.
   ///
   /// \note Assumes that the register has a register class assigned.
-  /// Use RegisterBankInfo::constrainGenericRegister in GlobalISel's
-  /// InstructionSelect pass and constrainRegAttrs in every other pass,
-  /// including non-select passes of GlobalISel, instead.
+  /// Use constrainRegAttrs in every other pass instead.
   const TargetRegisterClass *constrainRegClass(Register Reg,
                                                const TargetRegisterClass *RC,
                                                unsigned MinNumRegs = 0);
@@ -728,9 +724,8 @@ public:
   /// have a class smaller than before and of size less than \p MinNumRegs.
   /// Return true if such register attributes exist, false otherwise.
   ///
-  /// \note Use this method instead of constrainRegClass and
-  /// RegisterBankInfo::constrainGenericRegister everywhere but SelectionDAG
-  /// ISel / FastISel and GlobalISel's InstructionSelect pass respectively.
+  /// \note Use this method instead of constrainRegClass everywhere but
+  /// SelectionDAG ISel / FastISel.
   bool constrainRegAttrs(Register Reg, Register ConstrainingReg,
                          unsigned MinNumRegs = 0);
 

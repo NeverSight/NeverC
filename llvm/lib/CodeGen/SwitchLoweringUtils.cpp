@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file contains switch inst lowering optimizations and utilities for
-// codegen, so that it can be used for both SelectionDAG and GlobalISel.
+// codegen.
 //
 //===----------------------------------------------------------------------===//
 

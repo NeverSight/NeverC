@@ -228,8 +228,7 @@ public:
 
   unsigned getAddrSpace() const { return PtrInfo.getAddrSpace(); }
 
-  /// Return the memory type of the memory reference. This should only be relied
-  /// on for GlobalISel G_* operation legalization.
+  /// Return the memory type of the memory reference.
   LLT getMemoryType() const { return MemoryType; }
 
   /// Return the size in bytes of the memory reference.

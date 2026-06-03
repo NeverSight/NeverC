@@ -151,14 +151,14 @@ public:
   //  When this property is cleared at a very late time, liveness is no longer
   //  reliable.
   // NoVRegs: The machine function does not use any virtual registers.
-  // Legalized: In GlobalISel: the MachineLegalizer ran and all pre-isel generic
+  // Legalized: the MachineLegalizer ran and all pre-isel generic
   //  instructions have been legalized; i.e., all instructions are now one of:
   //   - generic and always legal (e.g., COPY)
   //   - target-specific
   //   - legal pre-isel generic instructions.
-  // RegBankSelected: In GlobalISel: the RegBankSelect pass ran and all generic
+  // RegBankSelected: the RegBankSelect pass ran and all generic
   //  virtual registers have been assigned to a register bank.
-  // Selected: In GlobalISel: the InstructionSelect pass ran and all pre-isel
+  // Selected: the InstructionSelect pass ran and all pre-isel
   //  generic instructions have been eliminated; i.e., all instructions are now
   //  target-specific or non-pre-isel generic instructions (e.g., COPY).
   //  Since only pre-isel generic instructions can have generic virtual register

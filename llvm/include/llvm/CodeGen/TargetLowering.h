@@ -3291,9 +3291,6 @@ public:
   /// The default implementation just freezes the set of reserved registers.
   virtual void finalizeLowering(MachineFunction &MF) const;
 
-  //===----------------------------------------------------------------------===//
-  //  GlobalISel Hooks
-  //===----------------------------------------------------------------------===//
   /// Check whether or not \p MI needs to be moved close to its uses.
   virtual bool shouldLocalize(const MachineInstr &MI,
                               const TargetTransformInfo *TTI) const;
@@ -3928,7 +3925,7 @@ public:
                                                    unsigned Depth = 0) const;
 
   /// This method can be implemented by targets that want to expose additional
-  /// information about sign bits to GlobalISel combiners. The DemandedElts
+  /// information about sign bits to combiners. The DemandedElts
   /// argument allows us to only collect the minimum sign bits that are shared
   /// by the requested vector elements.
   virtual unsigned computeNumSignBitsForTargetInstr(
@@ -4088,7 +4085,7 @@ public:
     return true;
   }
 
-  /// GlobalISel - return true if it is profitable to move this shift by a
+  /// Return true if it is profitable to move this shift by a
   /// constant amount through its operand, adjusting any immediate operands as
   /// necessary to preserve semantics. This transformation may not be desirable
   /// if it disrupts a particularly auspicious target-specific tree (e.g.
@@ -4101,7 +4098,7 @@ public:
     return true;
   }
 
-  /// GlobalISel - return true if it's profitable to perform the combine:
+  /// Return true if it's profitable to perform the combine:
   /// shl ([sza]ext x), y => zext (shl x, y)
   virtual bool isDesirableToPullExtFromShl(const MachineInstr &MI) const {
     return true;

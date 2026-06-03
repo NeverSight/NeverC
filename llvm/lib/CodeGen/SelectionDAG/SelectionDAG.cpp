@@ -602,11 +602,6 @@ ISD::CondCode ISD::getSetCCInverse(ISD::CondCode Op, EVT Type) {
   return getSetCCInverseImpl(Op, Type.isInteger());
 }
 
-ISD::CondCode ISD::GlobalISel::getSetCCInverse(ISD::CondCode Op,
-                                               bool isIntegerLike) {
-  return getSetCCInverseImpl(Op, isIntegerLike);
-}
-
 /// For an integer comparison, return 1 if the comparison is a signed operation
 /// and 2 if the result is an unsigned comparison. Return zero if the operation
 /// does not depend on the sign of the input (setne and seteq).

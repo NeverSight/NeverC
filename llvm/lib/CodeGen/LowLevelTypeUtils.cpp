@@ -32,8 +32,8 @@ LLT llvm::getLLTForType(Type &Ty, const DataLayout &DL) {
   }
 
   if (Ty.isSized() && !Ty.isScalableTargetExtTy()) {
-    // Aggregates are no different from real scalars as far as GlobalISel is
-    // concerned.
+    // Aggregates are no different from real scalars as far as low-level types
+    // are concerned.
     auto SizeInBits = DL.getTypeSizeInBits(&Ty);
     assert(SizeInBits != 0 && "invalid zero-sized type");
     return LLT::scalar(SizeInBits);

@@ -242,7 +242,6 @@ if(LLVM_DEPENDENCY_DEBUGGING)
 endif()
 
 option(LLVM_ENABLE_DAGISEL_COV "Debug: Prints tablegen patterns that were used for selecting" OFF)
-option(LLVM_ENABLE_GISEL_COV "Enable collection of GlobalISel rule coverage" OFF)
 
 # Add path for custom modules
 list(INSERT CMAKE_MODULE_PATH 0

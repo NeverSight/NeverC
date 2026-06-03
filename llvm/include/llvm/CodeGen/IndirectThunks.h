@@ -83,8 +83,7 @@ void ThunkInserter<Derived, InsertedThunksTy>::createThunkFunction(
   MachineFunction &MF = MMI.getOrCreateMachineFunction(*F);
   // A MachineBasicBlock must not be created for the Entry block; code
   // generation from an empty naked function in C source code also does not
-  // generate one.  At least GlobalISel asserts if this invariant isn't
-  // respected.
+  // generate one.
 
   // Set MF properties. We never use vregs...
   MF.getProperties().set(MachineFunctionProperties::Property::NoVRegs);

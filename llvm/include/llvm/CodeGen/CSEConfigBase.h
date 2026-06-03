@@ -10,10 +10,8 @@
 #define LLVM_CODEGEN_CSECONFIGBASE_H
 
 namespace llvm {
-// Class representing some configuration that can be done during GlobalISel's
-// CSEInfo analysis. We define it here because TargetPassConfig can't depend on
-// the GlobalISel library, and so we use this in the interface between them
-// so that the derived classes in GISel can reference generic opcodes.
+// Class representing some configuration that can be done during CSEInfo
+// analysis.
 class CSEConfigBase {
 public:
   virtual ~CSEConfigBase() = default;
