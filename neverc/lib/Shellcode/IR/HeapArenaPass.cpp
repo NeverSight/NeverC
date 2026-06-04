@@ -1,5 +1,6 @@
 #include "neverc/Shellcode/IR/HeapArenaPass.h"
 #include "neverc/Shellcode/IR/MmapABI.h"
+#include "neverc/Shellcode/IR/ShellcodeIRHelpers.h"
 #include "neverc/Shellcode/IR/StringRuntimeABI.h"
 #include "neverc/Shellcode/IR/StringRuntimePass.h"
 #include "neverc/Shellcode/Pipeline/SymbolNames.h"
@@ -47,12 +48,10 @@ bool classifyHeapCall(StringRef Canon, HeapRewriteTarget::Kind &Out) {
   return false;
 }
 
-Type *getSizeType(Module &M) {
-  unsigned Bits = M.getDataLayout().getPointerSizeInBits();
-  if (Bits == 0)
-    Bits = 64;
-  return IntegerType::get(M.getContext(), Bits);
-}
+using IRHelpers::getSizeType;
+using IRHelpers::getOrDeclareExtern;
+using IRHelpers::getOrDeclareMmap;
+using IRHelpers::getOrDeclareMunmap;
 
 StructType *getArenaHeaderType(Module &M) {
   Type *SizeTy = getSizeType(M);
@@ -74,15 +73,6 @@ Function *getArenaFree(Module &M) {
   return M.getFunction(ABI::FreeFunctionName);
 }
 
-Function *getOrDeclareExtern(Module &M, StringRef Name, FunctionType *FTy) {
-  if (Function *F = M.getFunction(Name))
-    return F;
-  Function *F =
-      Function::Create(FTy, GlobalValue::ExternalLinkage, Name, &M);
-  F->addFnAttr(Attribute::NoUnwind);
-  return F;
-}
-
 Function *getOrDeclareMalloc(Module &M) {
   Type *SizeTy = getSizeType(M);
   PointerType *PtrTy = PointerType::getUnqual(M.getContext());
@@ -95,29 +85,6 @@ Function *getOrDeclareFree(Module &M) {
   return getOrDeclareExtern(
       M, "free",
       FunctionType::get(Type::getVoidTy(M.getContext()), {PtrTy}, false));
-}
-
-Function *getOrDeclareMmap(Module &M) {
-  Type *SizeTy = getSizeType(M);
-  PointerType *PtrTy = PointerType::getUnqual(M.getContext());
-  Type *I32 = Type::getInt32Ty(M.getContext());
-  Type *I64 = Type::getInt64Ty(M.getContext());
-  return getOrDeclareExtern(
-      M, "mmap",
-      FunctionType::get(PtrTy, {PtrTy, I64, I32, I32, I32, I64}, false));
-}
-
-Function *getOrDeclareMunmap(Module &M) {
-  PointerType *PtrTy = PointerType::getUnqual(M.getContext());
-  Type *I64 = Type::getInt64Ty(M.getContext());
-  return getOrDeclareExtern(
-      M, "munmap",
-      FunctionType::get(Type::getInt32Ty(M.getContext()), {PtrTy, I64}, false));
-}
-
-int mapPrivateAnonFlags(ShellcodeOS OS) {
-  return (OS == ShellcodeOS::Darwin) ? MmapABI::PrivateAnonDarwin
-                                     : MmapABI::PrivateAnonLinux;
 }
 
 Value *emitMmapAlloc(IRBuilder<> &B, Module &M, Value *Size, ShellcodeOS OS) {
@@ -135,7 +102,7 @@ Value *emitMmapAlloc(IRBuilder<> &B, Module &M, Value *Size, ShellcodeOS OS) {
       Mmap,
       {ConstantPointerNull::get(PtrTy), Total64,
        ConstantInt::get(I32, MmapABI::ProtRW),
-       ConstantInt::get(I32, mapPrivateAnonFlags(OS)),
+       ConstantInt::get(I32, MmapABI::anonFlags(OS)),
        ConstantInt::get(I32, -1), ConstantInt::get(I64, 0)},
       "mmap.base");
 

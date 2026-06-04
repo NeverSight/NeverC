@@ -1,5 +1,6 @@
 #include "neverc/Shellcode/IR/StringRuntimePass.h"
 #include "neverc/Shellcode/IR/MmapABI.h"
+#include "neverc/Shellcode/IR/ShellcodeIRHelpers.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -42,13 +43,7 @@ uint64_t alignUp(uint64_t Value, uint64_t Alignment) {
   return (Value + Alignment - 1) & ~(Alignment - 1);
 }
 
-Type *getSizeType(Module &M) {
-  LLVMContext &Ctx = M.getContext();
-  unsigned PointerBits = M.getDataLayout().getPointerSizeInBits();
-  if (PointerBits == 0)
-    PointerBits = 64;
-  return IntegerType::get(Ctx, PointerBits);
-}
+using IRHelpers::getSizeType;
 
 ArenaLayout getArenaLayout(Module &M) {
   LLVMContext &Ctx = M.getContext();
@@ -144,24 +139,7 @@ GlobalVariable *getOrCreateArena(Module &M, uint64_t ArenaSize,
   return GV;
 }
 
-int mmapAnonFlags(ShellcodeOS OS) {
-  return (OS == ShellcodeOS::Darwin) ? MmapABI::PrivateAnonDarwin
-                                     : MmapABI::PrivateAnonLinux;
-}
-
-Function *getOrDeclareMmap(Module &M) {
-  PointerType *PtrTy = PointerType::getUnqual(M.getContext());
-  Type *I32 = Type::getInt32Ty(M.getContext());
-  Type *I64 = Type::getInt64Ty(M.getContext());
-  FunctionType *FTy =
-      FunctionType::get(PtrTy, {PtrTy, I64, I32, I32, I32, I64}, false);
-  Function *F = M.getFunction("mmap");
-  if (F)
-    return F;
-  F = Function::Create(FTy, GlobalValue::ExternalLinkage, "mmap", &M);
-  F->setDoesNotThrow();
-  return F;
-}
+using IRHelpers::getOrDeclareMmap;
 
 GlobalVariable *getOrCreateArenaOffset(Module &M, Type *SizeTy) {
   if (auto *GV = M.getNamedGlobal(ABI::ArenaOffsetGlobalName))
@@ -260,7 +238,7 @@ Function *getOrCreateStringAlloc(Module &M, uint64_t ArenaSize,
         {ConstantPointerNull::get(PtrTy),
          ConstantInt::get(I64, ArenaSize),
          ConstantInt::get(I32, MmapABI::ProtRW),
-         ConstantInt::get(I32, mmapAnonFlags(OS)),
+         ConstantInt::get(I32, MmapABI::anonFlags(OS)),
          ConstantInt::get(I32, -1), ConstantInt::get(I64, 0)},
         "arena.mmap");
     Value *Failed =
