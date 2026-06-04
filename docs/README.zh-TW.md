@@ -61,6 +61,21 @@ NeverC 提供純 C ABI 的樹外 pass 外掛介面。外掛是一個共享程式
 
 ---
 
+## 路線圖
+
+NeverC 專案的主要規劃方向：標準函式庫、EVM 智慧合約後端和 Solana eBPF 後端。
+
+**[路線圖 →](roadmap/README.zh-TW.md)**
+
+| 功能 | 描述 |
+|------|------|
+| 標準函式庫 (`std`) | Go 風格開箱即用套件：`fmt`、`os`、`io`、`net`、`crypto`、`encoding`、`sync` 等 |
+| UI 元件庫 (`neverc-ui`) | 類 Qt 跨平台 UI，HTML/JS/CSS 渲染器，拖曳式設計器，AI 原生工作流 |
+| EVM 智慧合約 | 把 C 編譯為 EVM 位元組碼——用 C 取代 Solidity 撰寫智慧合約 |
+| Solana eBPF | 把 C 編譯為 Solana eBPF 位元組碼——用 C 開發鏈上程式 |
+
+---
+
 ## 範例
 
 完整的可建置範例，展示 NeverC 的跨平台編譯能力。所有範例均可從 macOS / Linux 交叉編譯。

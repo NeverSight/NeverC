@@ -13,7 +13,7 @@ Integrated linker · Shellcode pipeline · Built-in runtimes (`string` · `mimal
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#cross-compiling-to-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#features)
 
-[Documentation](docs/README.md) · [Shellcode Guide](docs/shellcode-compiler/README.md) · [Built-in Runtimes](docs/builtins/README.md) · [Plugin API](docs/plugin-api/README.md)
+[Documentation](docs/README.md) · [Shellcode Guide](docs/shellcode-compiler/README.md) · [Built-in Runtimes](docs/builtins/README.md) · [Plugin API](docs/plugin-api/README.md) · [Roadmap](docs/roadmap/README.md)
 
 </div>
 

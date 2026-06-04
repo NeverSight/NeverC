@@ -1,0 +1,136 @@
+**语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+[← 文档索引](../README.zh-CN.md)
+
+# NeverC 路线图
+
+本文档概述 NeverC 项目在现有 shellcode 编译器和内置运行时之外的主要规划方向。
+
+---
+
+## 1. 标准库 (`std`)
+
+NeverC 将提供一套全面的标准库，参照 Go 标准库设计——提供开箱即用的包，覆盖常见系统编程需求，无需外部依赖。
+
+### 计划中的包
+
+
+| 包           | 描述                                                       |
+| ----------- | -------------------------------------------------------- |
+| `fmt`       | 格式化 I/O（printf 系列 + 类型安全扩展）                              |
+| `os`        | 操作系统交互：环境变量、进程管理、文件权限                                    |
+| `io`        | Reader/Writer 接口、缓冲 I/O、管道工具                             |
+| `fs`        | 文件系统操作：遍历、glob、临时文件、原子写入                                 |
+| `net`       | TCP/UDP 套接字、DNS 解析、HTTP 客户端/服务端                          |
+| `net/http`  | HTTP/1.1 和 HTTP/2 客户端与服务端                                |
+| `crypto`    | 哈希（SHA-256、SHA-512、BLAKE3）、HMAC、AES、ChaCha20、RSA、Ed25519 |
+| `encoding`  | JSON、Base64、Hex、CSV、二进制（大小端）                             |
+| `sync`      | 互斥锁、读写锁、WaitGroup、Once、原子操作                              |
+| `time`      | 单调/墙钟时间、时长、定时器、格式化                                       |
+| `strings`   | 搜索、分割、连接、修剪、替换、构建器                                       |
+| `bytes`     | 字节切片操作、缓冲区                                               |
+| `math`      | 数学常量、基本函数、随机数生成                                          |
+| `sort`      | 泛型排序与搜索                                                  |
+| `container` | 链表、堆、环形缓冲区                                               |
+| `log`       | 带级别的结构化日志                                                |
+| `flag`      | 命令行参数解析                                                  |
+| `path`      | 路径操作（POSIX 和 Windows）                                    |
+| `regexp`    | 正则表达式匹配（RE2 语法）                                          |
+| `compress`  | gzip、zlib、zstd、lz4                                       |
+| `hash`      | CRC32、CRC64、FNV、xxHash                                   |
+| `unicode`   | Unicode 表、大小写折叠、UTF-8/UTF-16 转换                          |
+
+
+### 设计原则
+
+- **纯 C23** — 每个包都以标准 NeverC/C23 编译；无隐藏 C++ 或平台特定汇编
+- **零外部依赖** — 标准库以 LLVM bitcode 嵌入编译器，与现有的 `string` 和 `mimalloc` 内置功能一致
+- **跨平台** — 所有包在 macOS、Linux、Windows（x86_64 / AArch64）上工作
+- **Shellcode 兼容** — 在独立模式下有意义的包（如 `crypto`、`encoding`、`strings`）支持 `-fshellcode`
+
+---
+
+## 2. UI 组件库 (`neverc-ui`)
+
+NeverC 将提供类似 Qt 的跨平台 UI 组件库——但采用 HTML/JS/CSS 前端渲染引擎，天然适合 AI 生成界面。
+
+### 目标
+
+- **组件化架构** — 窗口、按钮、文本输入、列表、树、表格、菜单、对话框、选项卡和布局容器作为一等 C 类型
+- **HTML/JS/CSS 渲染器** — 通过内嵌轻量级浏览器引擎渲染 UI；开发者编写 C 逻辑，视觉层使用标准 Web 技术
+- **拖拽式可视化设计器** — 配套 GUI 构建器，生成 NeverC 兼容的 C 代码，无需手写布局代码即可快速原型设计
+- **AI 原生设计流程** — LLM 可在一轮生成 C 业务逻辑和 HTML/CSS 布局，因为视觉层使用的是地球上最广泛理解的 UI 语言
+- **原生外观** — 通过 CSS 变量和系统字体/颜色检测实现平台自适应主题（macOS、Windows、Linux）
+- **轻量级嵌入** — 渲染器作为内置运行时提供（类似 `string` / `mimalloc`）；没有 Electron 级别的开销
+- **事件系统** — 用户交互的 C 回调函数（点击、输入、调整大小、拖拽、键盘、自定义事件）
+- **数据绑定** — C 结构体与 UI 状态之间的声明式绑定；变更自动传播
+- **自定义渲染** — 通过原始 canvas/WebGL 进行游戏 UI、数据可视化或自定义控件的逃逸口
+
+### 为什么用 HTML/CSS 做 C 的 UI 库？
+
+- 每个 AI 模型都已经掌握 HTML/CSS——生成 UI 代码无需专门训练
+- Web 技术是经过最充分验证的布局系统；无需重新发明 flexbox、grid 或文字渲染
+- 安全研究工具（仪表板、十六进制查看器、数据包检查器）受益于丰富的样式界面，无需学习专有控件 API
+- 可视化设计器导出的 HTML 模板既可在 NeverC 应用中使用，也可在独立浏览器中快速迭代
+
+---
+
+## 3. EVM 智能合约后端
+
+NeverC 将支持把 C 源代码编译为 EVM（以太坊虚拟机）字节码——使开发者能用 C 代替 Solidity 编写智能合约。
+
+### 目标
+
+- **新 LLVM 后端目标** — `evm` 目标三元组（如 `neverc --target=evm hello.c -o contract.bin`）
+- **ABI 兼容** — 生成 Solidity 兼容的 ABI 描述符，合约可与现有以太坊工具链（Hardhat、Foundry、ethers.js）交互
+- **存储布局** — 将 C 结构体映射到 EVM 存储槽，布局确定性
+- **内置 EVM 原语** — `msg.sender`、`msg.value`、`block.number`、`tx.origin` 作为内置变量或内建函数
+- **payable / view / pure 修饰符** — 映射到 Solidity 可见性语义的函数属性
+- **事件发射** — 从标注的函数调用生成 `LOG0`–`LOG4` 操作码
+- **Gas 优化** — IR pass 最小化 gas 开销（栈调度、常量折叠、死存储消除）
+- **revert / require** — 带自定义错误消息的错误处理原语
+
+### 为什么用 C 写 EVM？
+
+- Solidity 的语法对 JavaScript 开发者友好，但对系统程序员陌生；C 是通用语言
+- NeverC 现有的 IR 优化管线在很多场景下能生成比 `solc` 更紧凑的字节码
+- 安全研究员已经用 C 思考——用 C 编写审计工具和 fuzzer 对 C 合约是天然匹配
+- 插件 API 允许在编译期进行自定义 gas 分析和漏洞检测 pass
+
+---
+
+## 4. Solana eBPF 后端
+
+NeverC 将支持把 C 源代码编译为 Solana 的 eBPF 字节码——实现用 C 开发链上程序。
+
+### 目标
+
+- **eBPF 目标** — `sbf`（Solana BPF）目标三元组（如 `neverc --target=sbf-solana hello.c -o program.so`）
+- **Solana 运行时绑定** — 内置 Solana 系统调用头文件：`sol_invoke_signed`、`sol_log`、`sol_memcpy`、账户信息结构体
+- **账户模型** — C 结构体覆盖 Solana 账户数据，自动序列化/反序列化
+- **CPI（跨程序调用）** — 类型安全的包装器，用于调用其他链上程序
+- **PDA（程序派生地址）** — 内置 PDA 推导和验证函数
+- **计算预算感知** — 当估计的计算单元超出程序限制时发出编译器警告
+- **Anchor 兼容** — 可选 IDL 生成，与 Anchor 前端互操作
+
+### 为什么用 C 写 Solana？
+
+- Solana 运行时本身执行 eBPF——C 是 BPF 目标最自然的源语言
+- 现有基于 C 的 BPF 工具链（clang + solana-bpf）配置复杂；NeverC 将一切打包到单一二进制
+- 性能关键的程序受益于 C 的零开销抽象和 NeverC 的优化 pass
+- shellcode 编译经验（位置无关、最小运行时代码）直接映射到链上程序约束
+
+---
+
+## 时间线
+
+这些功能目前处于研究和设计阶段。暂不承诺具体发布日期。进展将在本文档中更新，并在项目发布页公布。
+
+| 功能 | 状态 |
+|------|------|
+| 标准库 (`std`) | 研究 / 设计 |
+| UI 组件库 (`neverc-ui`) | 研究 / 设计 |
+| EVM 智能合约后端 | 研究 / 设计 |
+| Solana eBPF 后端 | 研究 / 设计 |
+
+

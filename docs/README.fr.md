@@ -61,6 +61,21 @@ NeverC fournit une ABI C pure pour les plugins de passes hors arbre. Un plugin e
 
 ---
 
+## Feuille de route
+
+Grandes orientations du projet NeverC : bibliothèque standard, backend EVM pour contrats intelligents, backend Solana eBPF.
+
+**[Feuille de route →](roadmap/README.fr.md)**
+
+| Fonctionnalité | Description |
+|----------------|-------------|
+| Bibliothèque standard (`std`) | Paquets à la Go : `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync`, et plus |
+| Bibliothèque de composants UI (`neverc-ui`) | UI multiplateforme à la Qt, moteur HTML/JS/CSS, concepteur glisser-déposer, flux IA natif |
+| Contrats intelligents EVM | Compiler du C en bytecode EVM — écrire des contrats en C au lieu de Solidity |
+| Solana eBPF | Compiler du C en bytecode eBPF Solana — développement de programmes on-chain en C |
+
+---
+
 ## Exemples
 
 Exemples compilables démontrant les capacités de compilation croisée de NeverC. Tous compilent depuis macOS / Linux.

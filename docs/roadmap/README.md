@@ -1,0 +1,136 @@
+**Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+[← Documentation Index](../README.md)
+
+# NeverC Roadmap
+
+This document outlines the major planned directions for the NeverC project beyond its current shellcode compiler and built-in runtime capabilities.
+
+---
+
+## 1. Standard Library (`std`)
+
+NeverC will ship a comprehensive standard library modeled after Go's standard library — providing batteries-included packages that cover common systems programming needs without external dependencies.
+
+### Planned Packages
+
+
+| Package     | Description                                                                 |
+| ----------- | --------------------------------------------------------------------------- |
+| `fmt`       | Formatted I/O (printf-family with type-safe extensions)                     |
+| `os`        | OS interaction: environment variables, process management, file permissions |
+| `io`        | Reader/Writer interfaces, buffered I/O, pipe utilities                      |
+| `fs`        | Filesystem operations: walk, glob, temp files, atomic writes                |
+| `net`       | TCP/UDP sockets, DNS resolution, HTTP client/server                         |
+| `net/http`  | HTTP/1.1 and HTTP/2 client and server                                       |
+| `crypto`    | Hashing (SHA-256, SHA-512, BLAKE3), HMAC, AES, ChaCha20, RSA, Ed25519       |
+| `encoding`  | JSON, Base64, Hex, CSV, binary (little/big endian)                          |
+| `sync`      | Mutex, RWLock, WaitGroup, Once, atomic operations                           |
+| `time`      | Monotonic/wall clocks, duration, timers, formatting                         |
+| `strings`   | Search, split, join, trim, replace, builder                                 |
+| `bytes`     | Byte slice manipulation, buffer                                             |
+| `math`      | Constants, elementary functions, random number generation                   |
+| `sort`      | Generic sorting and searching                                               |
+| `container` | Linked list, heap, ring buffer                                              |
+| `log`       | Structured logging with levels                                              |
+| `flag`      | Command-line flag parsing                                                   |
+| `path`      | Path manipulation (POSIX and Windows)                                       |
+| `regexp`    | Regular expression matching (RE2 syntax)                                    |
+| `compress`  | gzip, zlib, zstd, lz4                                                       |
+| `hash`      | CRC32, CRC64, FNV, xxHash                                                   |
+| `unicode`   | Unicode tables, case folding, UTF-8/UTF-16 conversion                       |
+
+
+### Design Principles
+
+- **Pure C23** — every package compiles as standard NeverC/C23; no hidden C++ or platform-specific assembly
+- **Zero external dependencies** — the standard library ships as LLVM bitcode embedded in the compiler, just like the existing `string` and `mimalloc` built-ins
+- **Cross-platform** — all packages work on macOS, Linux, and Windows (x86_64 / AArch64)
+- **Shellcode-compatible** — packages that make sense in freestanding mode (e.g., `crypto`, `encoding`, `strings`) work under `-fshellcode`
+
+---
+
+## 2. UI Component Library (`neverc-ui`)
+
+NeverC will provide a cross-platform UI component library inspired by Qt — but with an HTML/JS/CSS frontend rendering engine, making it inherently AI-friendly for interface design.
+
+### Goals
+
+- **Component-based architecture** — windows, buttons, text inputs, lists, trees, tables, menus, dialogs, tabs, and layout containers as first-class C types
+- **HTML/JS/CSS renderer** — UI is rendered via an embedded lightweight browser engine; developers write C logic while the visual layer uses standard web technologies
+- **Drag-and-drop visual designer** — a companion GUI builder that generates NeverC-compatible C code, enabling rapid prototyping without hand-writing layout code
+- **AI-native design workflow** — LLMs can generate both the C business logic and the HTML/CSS layout in a single pass, because the visual layer uses the most widely-understood UI language on earth
+- **Native look and feel** — platform-adaptive themes (macOS, Windows, Linux) via CSS variables and system font/color detection
+- **Lightweight embedding** — the renderer ships as a built-in runtime (like `string` / `mimalloc`); no Electron-scale overhead
+- **Event system** — C callback functions for user interactions (click, input, resize, drag, keyboard, custom events)
+- **Data binding** — declarative binding between C structs and UI state; changes propagate automatically
+- **Custom rendering** — escape hatch to raw canvas/WebGL for game UIs, data visualization, or custom widgets
+
+### Why HTML/CSS for a C UI Library?
+
+- Every AI model already knows HTML/CSS — generating UI code requires zero specialized training
+- Web technologies are the most battle-tested layout system; no need to reinvent flexbox, grid, or text rendering
+- Security research tools (dashboards, hex viewers, packet inspectors) benefit from rich, styled interfaces without learning a proprietary widget API
+- The visual designer can export HTML templates that work both in the NeverC app and in a standalone browser for rapid iteration
+
+---
+
+## 3. EVM Smart Contract Backend
+
+NeverC will support compiling C source code into EVM (Ethereum Virtual Machine) bytecode — enabling developers to write smart contracts in C instead of Solidity.
+
+### Goals
+
+- **New LLVM backend target** — `evm` target triple (e.g., `neverc --target=evm hello.c -o contract.bin`)
+- **ABI compatibility** — generate Solidity-compatible ABI descriptors so contracts can interact with existing Ethereum tooling (Hardhat, Foundry, ethers.js)
+- **Storage layout** — map C structs to EVM storage slots with deterministic layout
+- **Built-in EVM primitives** — `msg.sender`, `msg.value`, `block.number`, `tx.origin` as built-in variables or intrinsics
+- **Payable / view / pure modifiers** — function attributes that map to Solidity visibility semantics
+- **Event emission** — `LOG0`–`LOG4` opcode generation from annotated function calls
+- **Gas optimization** — IR passes that minimize gas cost (stack scheduling, constant folding, dead storage elimination)
+- **Revert / require** — error handling primitives with custom error messages
+
+### Why C for EVM?
+
+- Solidity's syntax is familiar to JavaScript developers but foreign to systems programmers; C is universal
+- NeverC's existing IR optimization pipeline can produce tighter bytecode than `solc` in many cases
+- Security researchers already think in C — writing audit tools and fuzzers against C contracts is natural
+- The plugin API allows custom gas-analysis and vulnerability-detection passes at compile time
+
+---
+
+## 4. Solana eBPF Backend
+
+NeverC will support compiling C source code into Solana's eBPF bytecode — enabling on-chain program development in C.
+
+### Goals
+
+- **eBPF target** — `sbf` (Solana BPF) target triple (e.g., `neverc --target=sbf-solana hello.c -o program.so`)
+- **Solana runtime bindings** — built-in headers for Solana system calls: `sol_invoke_signed`, `sol_log`, `sol_memcpy`, account info structs
+- **Account model** — C struct overlays for Solana account data with automatic serialization/deserialization
+- **CPI (Cross-Program Invocation)** — type-safe wrappers for calling other on-chain programs
+- **PDAs (Program Derived Addresses)** — built-in functions for PDA derivation and verification
+- **Compute budget awareness** — compiler warnings when estimated compute units exceed program limits
+- **Anchor compatibility** — optional IDL generation for interoperability with Anchor-based frontends
+
+### Why C for Solana?
+
+- Solana's runtime already executes eBPF — C is the most natural source language for BPF targets
+- Existing C-based BPF toolchains (clang + solana-bpf) require complex setup; NeverC bundles everything in one binary
+- Performance-critical programs benefit from C's zero-overhead abstraction and NeverC's optimization passes
+- The shellcode compilation experience (position-independent, minimal-runtime code) maps directly to on-chain program constraints
+
+---
+
+## Timeline
+
+These features are in the research and design phase. No specific release dates are committed. Progress will be tracked in this document and announced on the project's release page.
+
+| Feature | Status |
+|---------|--------|
+| Standard Library (`std`) | Research / Design |
+| UI Component Library (`neverc-ui`) | Research / Design |
+| EVM Smart Contract Backend | Research / Design |
+| Solana eBPF Backend | Research / Design |
+
+

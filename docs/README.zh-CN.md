@@ -61,6 +61,21 @@ NeverC 提供纯 C ABI 的树外 pass 插件接口。插件是一个共享库（
 
 ---
 
+## 路线图
+
+NeverC 项目的主要规划方向：标准库、EVM 智能合约后端和 Solana eBPF 后端。
+
+**[路线图 →](roadmap/README.zh-CN.md)**
+
+| 功能 | 描述 |
+|------|------|
+| 标准库 (`std`) | Go 风格开箱即用包：`fmt`、`os`、`io`、`net`、`crypto`、`encoding`、`sync` 等 |
+| UI 组件库 (`neverc-ui`) | 类 Qt 跨平台 UI，HTML/JS/CSS 渲染器，拖拽式设计器，AI 原生工作流 |
+| EVM 智能合约 | 把 C 编译为 EVM 字节码——用 C 代替 Solidity 编写智能合约 |
+| Solana eBPF | 把 C 编译为 Solana eBPF 字节码——用 C 开发链上程序 |
+
+---
+
 ## 示例
 
 完整的可构建示例，展示 NeverC 的跨平台编译能力。所有示例均可从 macOS / Linux 交叉编译。

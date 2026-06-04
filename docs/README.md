@@ -61,6 +61,21 @@ NeverC provides a pure C ABI for out-of-tree pass plugins. A plugin is a shared 
 
 ---
 
+## Roadmap
+
+Major planned directions for the NeverC project: standard library, EVM smart contract backend, and Solana eBPF backend.
+
+**[Roadmap →](roadmap/README.md)**
+
+| Feature | Description |
+|---------|-------------|
+| Standard Library (`std`) | Go-style batteries-included packages: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync`, and more |
+| UI Component Library (`neverc-ui`) | Qt-inspired cross-platform UI with HTML/JS/CSS renderer, drag-and-drop designer, AI-native workflow |
+| EVM Smart Contracts | Compile C to EVM bytecode — write smart contracts in C instead of Solidity |
+| Solana eBPF | Compile C to Solana eBPF bytecode — on-chain program development in C |
+
+---
+
 ## Examples
 
 Complete buildable samples demonstrating NeverC's cross-platform compilation capabilities. All examples cross-compile from macOS / Linux.

@@ -61,6 +61,21 @@ NeverC는 아웃오브트리 패스 플러그인을 위한 순수 C ABI를 제�
 
 ---
 
+## 로드맵
+
+NeverC 프로젝트의 주요 계획 방향: 표준 라이브러리, EVM 스마트 컨트랙트 백엔드, Solana eBPF 백엔드.
+
+**[로드맵 →](roadmap/README.ko.md)**
+
+| 기능 | 설명 |
+|------|------|
+| 표준 라이브러리 (`std`) | Go 스타일 배터리 포함 패키지: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync` 등 |
+| UI 컴포넌트 라이브러리 (`neverc-ui`) | Qt 스타일 크로스 플랫폼 UI, HTML/JS/CSS 렌더러, 드래그 앤 드롭 디자이너, AI 네이티브 워크플로 |
+| EVM 스마트 컨트랙트 | C를 EVM 바이트코드로 컴파일 — Solidity 대신 C로 스마트 컨트랙트 작성 |
+| Solana eBPF | C를 Solana eBPF 바이트코드로 컴파일 — C로 온체인 프로그램 개발 |
+
+---
+
 ## 예제
 
 NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 샘플. macOS / Linux에서 크로스 컴파일 가능.
