@@ -142,8 +142,8 @@ jobs:
           echo "=== [$label] step 3: compile+link (one shot) ==="
           "$NCC" $flags "$src" -o "$WDIAG/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
 
-          echo "=== [$label] step 4: run exe via cmd ==="
-          cmd.exe /c "$WDIAG\\diag_${label}_oneshot.exe" 2>&1 && echo "RUN OK" || echo "RUN EXIT=$?"
+          echo "=== [$label] step 4: run exe ==="
+          powershell.exe -NoProfile -Command "& '$WDIAG/diag_${label}_oneshot.exe'; exit \$LASTEXITCODE" 2>&1 && echo "RUN OK" || echo "RUN EXIT=$?"
         }
 
         # Smoke diagnostics for Windows x64
