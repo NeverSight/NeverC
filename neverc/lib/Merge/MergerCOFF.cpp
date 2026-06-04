@@ -253,14 +253,16 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       int32_t SecNum = CSym.getSectionNumber();
       if (SecNum > 0) {
         auto It = PM.SecMap.find(SecNum);
-        if (It != PM.SecMap.end()) {
+        if (It != PM.SecMap.end() && It->second != 0) {
           OutSym.SectionNumber = It->second;
           unsigned mIdx = It->second - 1;
-          for (auto &[pp, off] : MergedSections[mIdx].PartOffsets)
-            if (pp == p) {
-              OutSym.Value += off;
-              break;
-            }
+          if (mIdx < MergedSections.size()) {
+            for (auto &[pp, off] : MergedSections[mIdx].PartOffsets)
+              if (pp == p) {
+                OutSym.Value += off;
+                break;
+              }
+          }
         } else {
           OutSym.SectionNumber = 0;
         }

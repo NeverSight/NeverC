@@ -283,8 +283,11 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           PartOffset = MS.Data.size();
         }
         auto D = EF.getSectionContents(S);
-        if (D)
+        if (D) {
           MS.Data.append(D->begin(), D->end());
+        } else {
+          consumeError(D.takeError());
+        }
       }
 
       MS.PartOffsets.push_back({p, PartOffset});
