@@ -55,3 +55,23 @@ gtest_discover_tests(neverc-build-tests
     TIMEOUT 120
   DISCOVERY_TIMEOUT 30
 )
+
+# Object merger unit tests (ELF, COFF, MachO fuzzing + edge cases)
+add_executable(neverc-merge-tests MergeTests.cpp)
+
+target_link_libraries(neverc-merge-tests PRIVATE
+  GTest::gtest GTest::gtest_main
+  nevercMerge
+)
+
+target_include_directories(neverc-merge-tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+
+target_compile_features(neverc-merge-tests PRIVATE cxx_std_17)
+
+gtest_discover_tests(neverc-merge-tests
+  PROPERTIES
+    TIMEOUT 120
+  DISCOVERY_TIMEOUT 30
+)
