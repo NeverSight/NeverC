@@ -125,17 +125,38 @@ jobs:
           echo "=== [$label] step 3: compile+link (one shot) ==="
           $NCC $flags "$src" -o /tmp/diag_${label}_oneshot 2>&1 && echo "OK" || echo "EXIT=$?"
 
-          # If core dump exists, get symbolized stack with eu-stack
+          # Build sorted symbol table once
+          nm -n --defined-only -C $NCC 2>/dev/null | awk 'NF>=3{print $1,$3}' > /tmp/nm_syms.txt
+          echo "Symbol table: $(wc -l < /tmp/nm_syms.txt) symbols"
+
           for core in cores/core.*; do
             [ -f "$core" ] || continue
+
             echo "=== eu-stack backtrace from $core ==="
-            eu-stack -e $NCC --core="$core" 2>&1 | head -30
-            echo "=== crash registers ==="
-            gdb -batch -ex "x/i \$pc" -ex "info reg x9 x30 pc" $NCC "$core" 2>&1 | head -10
-            echo "=== eu-addr2line for PC ==="
+            eu-stack -e $NCC --core="$core" 2>&1 | head -25
+
+            # Get crash PC
             PC=$(gdb -batch -ex "print/x \$pc" $NCC "$core" 2>&1 | grep -oP '0x[0-9a-f]+' | tail -1)
-            X30=$(gdb -batch -ex "print/x \$x30" $NCC "$core" 2>&1 | grep -oP '0x[0-9a-f]+' | tail -1)
-            [ -n "$PC" ] && eu-addr2line -e $NCC --core="$core" $PC $X30 2>&1
+
+            # Get load base from core's LOAD segments
+            LOAD_BASE=$(readelf -l "$core" 2>/dev/null | awk '/LOAD/{print $3; exit}')
+            echo "PC=$PC LOAD_BASE=$LOAD_BASE"
+
+            if [ -n "$PC" ] && [ -n "$LOAD_BASE" ]; then
+              FILE_OFF=$(printf "0x%x" $(($PC - $LOAD_BASE)))
+              echo "File offset: $FILE_OFF"
+
+              # Look up all stack frames in nm
+              echo "=== symbolized stack ==="
+              eu-stack -e $NCC --core="$core" 2>&1 | grep '^ *#' | head -22 | while read line; do
+                ADDR=$(echo "$line" | grep -oP '0x[0-9a-f]+')
+                if [ -n "$ADDR" ]; then
+                  OFF=$(printf "%x" $(($ADDR - $LOAD_BASE)))
+                  FUNC=$(awk -v off="$OFF" 'BEGIN{target=strtonum("0x"off)} {a=strtonum("0x"$1); if(a<=target){name=$2;fa=a}} END{if(name)printf "%s+0x%x",name,target-fa; else print "??"}' /tmp/nm_syms.txt)
+                  echo "$line  =>  $FUNC"
+                fi
+              done
+            fi
             rm -f "$core"
           done
         }
