@@ -358,7 +358,7 @@ MSVCToolChain::getDefaultUnwindTableLevel(const ArgList &Args) const {
   if (getTriple().isOSBinFormatMachO())
     return UnwindTableLevel::None;
 
-  if (getArch() == llvm::Triple::x86_64)
+  if (getArch() == llvm::Triple::x86_64 || getArch() == llvm::Triple::aarch64)
     return UnwindTableLevel::Asynchronous;
 
   return UnwindTableLevel::None;
