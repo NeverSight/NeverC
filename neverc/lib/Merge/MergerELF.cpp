@@ -312,12 +312,14 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         if (OutS.st_shndx < SHN_LORESERVE) {
           auto It = PM.SecMap.find(OutS.st_shndx);
           if (It != PM.SecMap.end()) {
-            unsigned mIdx = It->second - 1;
             OutS.st_shndx = It->second;
-            for (auto &[pp, off] : MergedSections[mIdx].PartOffsets) {
-              if (pp == p) {
-                OutS.st_value += off;
-                break;
+            if (It->second != 0) {
+              unsigned mIdx = It->second - 1;
+              for (auto &[pp, off] : MergedSections[mIdx].PartOffsets) {
+                if (pp == p) {
+                  OutS.st_value += off;
+                  break;
+                }
               }
             }
           } else {
@@ -367,7 +369,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       if (Secs[i].sh_type != SHT_RELA && Secs[i].sh_type != SHT_REL)
         continue;
       auto TargetIt = PM.SecMap.find(Secs[i].sh_info);
-      if (TargetIt == PM.SecMap.end())
+      if (TargetIt == PM.SecMap.end() || TargetIt->second == 0)
         continue;
       unsigned targetMIdx = TargetIt->second - 1;
       uint64_t dataOff = 0;
