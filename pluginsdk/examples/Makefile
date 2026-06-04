@@ -1,35 +1,20 @@
-# ============================================================================
-# NeverC Plugin Examples — Makefile
-# ============================================================================
+# NeverC Plugin Examples — build each example as a standalone shared library
 #
-# Builds each example plugin as a standalone shared library:
-#   ExamplePlugin.c  -> ExamplePlugin.{dll,dylib,so}
-#   CrtShimPlugin.c  -> CrtShimPlugin.{dll,dylib,so}
-#   BenchPlugin.c    -> BenchPlugin.{dll,dylib,so}
+# Each .c file compiles into a corresponding shared library:
+#   ExamplePlugin.c        -> ExamplePlugin.{dll,dylib,so}
+#   CrtShimPlugin.c        -> CrtShimPlugin.{dll,dylib,so}
+#   BenchPlugin.c          -> BenchPlugin.{dll,dylib,so}
+#   CustomCallConvPlugin.c -> CustomCallConvPlugin.{dll,dylib,so}
 #
 # Usage:
-#   neverc make                        # build all plugins (runs the default "all" target)
-#   neverc make all                    # same as above — explicit form
-#   neverc make ExamplePlugin.dylib    # build a single plugin (pattern rule matches %.c)
+#   neverc make                        # build all plugins
+#   neverc make ExamplePlugin.dylib    # build a single plugin
 #   neverc make clean                  # remove built plugins
-#
-# Override variables as needed:
-#   neverc make NEVERC=/path/to/neverc INCLUDE_DIR=/path/to/include
-# ============================================================================
+#   neverc make NEVERC=/path/to/neverc # override compiler path
 
-# Auto-detect compiler path.
-#   1. Distributed SDK / build tree: neverc sits next to pluginsdk (../../bin/neverc)
-#   2. Source tree:                  ../../build-neverc/bin/neverc
-#   3. Fallback:                     neverc on PATH
-ifneq ($(wildcard ../../bin/neverc),)
-  NEVERC ?= ../../bin/neverc
-else ifneq ($(wildcard ../../build-neverc/bin/neverc),)
-  NEVERC ?= ../../build-neverc/bin/neverc
-else
-  NEVERC ?= neverc
-endif
+NEVERC ?= ../../build-neverc/bin/neverc
 
-# Each entry becomes a separate shared library (one .c -> one .dll/.dylib/.so).
+# Each entry becomes a separate shared library (one .c -> one plugin).
 PLUGINS = ExamplePlugin CrtShimPlugin BenchPlugin CustomCallConvPlugin
 
 # Auto-detect host platform for shared library suffix and target triple.
@@ -59,9 +44,9 @@ else
   SHARED_EXT = .dll
 endif
 
-# Auto-detect SDK header search path (parent of neverc/Plugin/NevercPluginAPI.h).
-#   1. Distributed SDK:  ../include  (pluginsdk/include/ sits next to examples/)
-#   2. Source tree:       ../../neverc/include
+# SDK header search path (parent of neverc/Plugin/NevercPluginAPI.h).
+#   Distributed SDK:  ../include  (pluginsdk/include/ sits next to examples/)
+#   Source tree:       ../../neverc/include
 ifneq ($(wildcard ../include/neverc/Plugin/NevercPluginAPI.h),)
   INCLUDE_DIR ?= ../include
 else ifneq ($(wildcard ../../neverc/include/neverc/Plugin/NevercPluginAPI.h),)
@@ -69,9 +54,11 @@ else ifneq ($(wildcard ../../neverc/include/neverc/Plugin/NevercPluginAPI.h),)
 else
   $(error NevercPluginAPI.h not found. Set INCLUDE_DIR=/path/to/include)
 endif
+
+# -shared: produce a loadable plugin library
+# -I: SDK header include path (single-header, zero LLVM/CRT dependencies)
 FLAGS = --target=$(HOST_TARGET) -shared -I$(INCLUDE_DIR)
 
-# Expand plugin names to platform-specific output filenames.
 OUTPUTS = $(addsuffix $(SHARED_EXT),$(PLUGINS))
 
 all: $(OUTPUTS)
