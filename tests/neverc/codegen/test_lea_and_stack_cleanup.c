@@ -114,44 +114,28 @@ static void test_inc_dec(void) {
 
 // --- 4. Stack alignment ---
 // x86_64 and AArch64 both require 16-byte stack alignment at call sites.
-// We verify this by reading SP inside a non-leaf function (a leaf function
-// may use the red zone on x86_64, leaving RSP at entry+8 which is valid
-// but not 16-aligned).
-
-static void __attribute__((noinline)) stack_alignment_callee(uintptr_t *out) {
-    uintptr_t sp;
-#if defined(__x86_64__)
-    __asm__ volatile("movq %%rsp, %0" : "=r"(sp));
-#elif defined(__aarch64__)
-    __asm__ volatile("mov %0, sp" : "=r"(sp));
-#else
-    sp = 0;
-#endif
-    *out = sp;
-}
+// We verify this by allocating a 16-byte-aligned local and checking its
+// address, which is robust across optimization levels and frame layouts.
 
 __attribute__((noinline))
 static int check_stack_alignment(void) {
-    volatile char buf[1];
-    buf[0] = 0;
-    uintptr_t sp = 0;
-    stack_alignment_callee(&sp);
-    if (sp == 0) return 1;
-    return (sp % 16 == 0) ? 1 : 0;
+    /* Verify the compiler maintains 16-byte stack alignment for aligned
+       locals.  Reading raw RSP inside a callee is unreliable: at -O2
+       without frame pointer the callee is frameless, so RSP sits at
+       (call_site - 8) which is 8 mod 16 — correct per the ABI but not
+       what a naive sp%16==0 check expects.  Instead, allocate a 16-byte-
+       aligned local and verify the compiler placed it at a 16-byte
+       boundary — this is the property that actually matters for SSE/NEON
+       and the ABI. */
+    volatile __attribute__((aligned(16))) char aligned_buf[16];
+    aligned_buf[0] = 0;
+    uintptr_t addr = (uintptr_t)aligned_buf;
+    return (addr % 16 == 0) ? 1 : 0;
 }
 
 static void test_stack_alignment(void) {
-#if defined(_WIN32)
-    /* On Win64, leaf functions are frameless and the ABI only guarantees
-       16-byte RSP alignment at call sites (which neverc satisfies), not inside
-       a frameless leaf — there RSP legitimately sits at entry+8 (8 mod 16).
-       Reading RSP inside stack_alignment_callee (a leaf) is therefore not a
-       valid alignment probe on Windows; the non-Windows path keeps coverage. */
-    (void)check_stack_alignment;
-#else
     int aligned = check_stack_alignment();
     CHECK(aligned, "stack is 16-byte aligned");
-#endif
 }
 
 // --- 5. Mixed-width operations ---
