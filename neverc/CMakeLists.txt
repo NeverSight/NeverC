@@ -577,8 +577,12 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
   # suite is self-contained.
   set(_neverc_check_runtime_deps)
   if(CMAKE_HOST_WIN32)
-    list(APPEND _neverc_check_runtime_deps
-         neverc-runtime-shared-msvc neverc-runtime-x64-msvc)
+    list(APPEND _neverc_check_runtime_deps neverc-runtime-shared-msvc)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+      list(APPEND _neverc_check_runtime_deps neverc-runtime-arm64-msvc)
+    else()
+      list(APPEND _neverc_check_runtime_deps neverc-runtime-x64-msvc)
+    endif()
   endif()
   add_custom_target(check-neverc
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG>
