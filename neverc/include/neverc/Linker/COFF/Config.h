@@ -192,9 +192,11 @@ struct Configuration {
   uint64_t heapCommit = 4096;
   uint32_t majorImageVersion = 0;
   uint32_t minorImageVersion = 0;
-  uint32_t majorOSVersion = 6;
+  // NeverC targets Windows 10 as the minimum supported OS; images built by
+  // neverc are not expected to load on anything older.
+  uint32_t majorOSVersion = 10;
   uint32_t minorOSVersion = 0;
-  uint32_t majorSubsystemVersion = 6;
+  uint32_t majorSubsystemVersion = 10;
   uint32_t minorSubsystemVersion = 0;
   uint32_t timestamp = 0;
   uint32_t functionPadMin = 0;

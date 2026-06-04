@@ -1542,15 +1542,17 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   if (!config->dynamicBase && config->machine == ARM64)
     config->dynamicBase = true;
 
-  if (config->machine == ARM64) {
-    if (config->majorSubsystemVersion < 10) {
-      config->majorSubsystemVersion = 10;
-      config->minorSubsystemVersion = 0;
-    }
-    if (config->majorOSVersion < 10) {
-      config->majorOSVersion = 10;
-      config->minorOSVersion = 0;
-    }
+  // NeverC only supports Windows 10 and newer.  Clamp the OS / subsystem
+  // version up to 10.0 even if a lower value was requested (e.g. via
+  // --osversion / --subsystem), so emitted images refuse to load on older
+  // Windows rather than starting and then failing in unsupported CRT paths.
+  if (config->majorSubsystemVersion < 10) {
+    config->majorSubsystemVersion = 10;
+    config->minorSubsystemVersion = 0;
+  }
+  if (config->majorOSVersion < 10) {
+    config->majorOSVersion = 10;
+    config->minorOSVersion = 0;
   }
 
   // --- Exports & module definitions ---
