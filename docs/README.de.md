@@ -70,6 +70,7 @@ Wichtigste geplante Richtungen des NeverC-Projekts: Standardbibliothek, EVM-Smar
 | Funktion | Beschreibung |
 |----------|-------------|
 | Standardbibliothek (`std`) | Go-ähnliche Batterien-inklusive-Pakete: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync` und mehr |
+| Obfuskations-Plugin-Suite (`neverc-obfuscation`) | Erstanbieter VM, MBA, Kontrollflussverflachung, polymorphe Engine, Anti-Tamper-Plugins |
 | UI-Komponentenbibliothek (`neverc-ui`) | Qt-inspirierte plattformübergreifende UI, HTML/JS/CSS-Renderer, Drag-and-Drop-Designer, KI-nativer Workflow |
 | IDE & Sprachwerkzeuge (`neverc-ide`) | VSCode-Erweiterung + Standalone-IDE für `.nc`-Dateien, IntelliSense, Debugging, Shellcode-Pipeline-Visualisierung |
 | EVM-Smart-Contracts | C zu EVM-Bytecode kompilieren — Smart Contracts in C statt Solidity |

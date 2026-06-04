@@ -49,7 +49,33 @@ NeverC will ship a comprehensive standard library modeled after Go's standard li
 
 ---
 
-## 2. UI Component Library (`neverc-ui`)
+## 2. Obfuscation Plugin Suite (`neverc-obfuscation`)
+
+NeverC will ship a first-party suite of code obfuscation plugins — reference implementations that demonstrate the Plugin API's full capabilities while providing production-grade code protection out of the box.
+
+### Planned Plugins
+
+| Plugin | Hook Point | Description |
+|--------|-----------|-------------|
+| Junk Code Insertion | `RunAfterFinalMIR` | Insert semantically dead but syntactically valid instruction sequences between real basic blocks |
+| Opaque Predicates | `RunBeforePreEmit` | Insert always-true/always-false branches guarded by number-theoretic invariants; adds dead paths that confuse analysis |
+| Control Flow Flattening | `RunAfterStackify` | Scatter basic blocks into a switch-dispatched loop; destroys natural CFG structure for decompilers |
+| Anti-Tamper | `RunPostFinalize` | Embed self-integrity checks (CRC/hash of code sections) that trigger failure on patching |
+| Polymorphic Engine | `RunPostExtract` | Seed-based output variation — each compilation produces functionally equivalent but structurally different code; defeats signature-based detection |
+| MBA (Mixed Boolean Arithmetic) | `RunAfterInlining` | Replace arithmetic/boolean expressions with equivalent but opaque MBA forms (e.g., `x + y` → `(x ^ y) + 2 * (x & y)` chains); resists symbolic execution |
+| VM (Code Virtualization) | `RunAfterFinalIR` | Convert functions into custom bytecode executed by an embedded interpreter; defeats static disassembly and signature matching |
+
+### Design Principles
+
+- **Pure Plugin API** — every obfuscation ships as a `.dll` / `.so` / `.dylib` plugin; no compiler fork required
+- **Composable** — plugins stack: apply MBA first, then flatten, then virtualize — each pass is independent
+- **Configurable** — per-function annotations (`__attribute__((obfuscate("vm")))`) to selectively protect hot paths without whole-program overhead
+- **Auditable** — each plugin logs its transformations for security review; before/after IR diff output available via `-fshellcode-dump-ir`
+- **Shellcode-compatible** — all plugins work in `-fshellcode` mode; generated code remains position-independent
+
+---
+
+## 3. UI Component Library (`neverc-ui`)
 
 NeverC will provide a cross-platform UI component library inspired by Qt — but with an HTML/JS/CSS frontend rendering engine, making it inherently AI-friendly for interface design.
 
@@ -74,7 +100,7 @@ NeverC will provide a cross-platform UI component library inspired by Qt — but
 
 ---
 
-## 3. IDE & Language Tooling (`neverc-ide`)
+## 4. IDE & Language Tooling (`neverc-ide`)
 
 NeverC will provide first-class IDE support for the `.nc` language extension — a VSCode extension for immediate productivity and a standalone NeverC IDE for a fully integrated development experience.
 
@@ -107,7 +133,7 @@ NeverC will provide first-class IDE support for the `.nc` language extension —
 
 ---
 
-## 4. EVM Smart Contract Backend
+## 5. EVM Smart Contract Backend
 
 NeverC will support compiling C source code into EVM (Ethereum Virtual Machine) bytecode — enabling developers to write smart contracts in C instead of Solidity.
 
@@ -131,7 +157,7 @@ NeverC will support compiling C source code into EVM (Ethereum Virtual Machine) 
 
 ---
 
-## 5. Solana eBPF Backend
+## 6. Solana eBPF Backend
 
 NeverC will support compiling C source code into Solana's eBPF bytecode — enabling on-chain program development in C.
 
@@ -161,6 +187,7 @@ These features are in the research and design phase. No specific release dates a
 | Feature | Status |
 |---------|--------|
 | Standard Library (`std`) | Research / Design |
+| Obfuscation Plugin Suite (`neverc-obfuscation`) | Research / Design |
 | UI Component Library (`neverc-ui`) | Research / Design |
 | IDE & Language Tooling (`neverc-ide`) | Research / Design |
 | EVM Smart Contract Backend | Research / Design |

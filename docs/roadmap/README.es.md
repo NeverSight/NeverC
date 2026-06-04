@@ -47,7 +47,33 @@ NeverC proporcionará una biblioteca estándar integral basada en la de Go — p
 
 ---
 
-## 2. Biblioteca de componentes UI (`neverc-ui`)
+## 2. Obfuscation Plugin Suite (`neverc-obfuscation`)
+
+NeverC will ship a first-party suite of code obfuscation plugins — reference implementations that demonstrate the Plugin API's full capabilities while providing production-grade code protection out of the box.
+
+### Planned Plugins
+
+| Plugin | Hook Point | Description |
+|--------|-----------|-------------|
+| Junk Code Insertion | `RunAfterFinalMIR` | Insert semantically dead but syntactically valid instruction sequences between real basic blocks |
+| Opaque Predicates | `RunBeforePreEmit` | Insert always-true/always-false branches guarded by number-theoretic invariants; adds dead paths that confuse analysis |
+| Control Flow Flattening | `RunAfterStackify` | Scatter basic blocks into a switch-dispatched loop; destroys natural CFG structure for decompilers |
+| Anti-Tamper | `RunPostFinalize` | Embed self-integrity checks (CRC/hash of code sections) that trigger failure on patching |
+| Polymorphic Engine | `RunPostExtract` | Seed-based output variation — each compilation produces functionally equivalent but structurally different code; defeats signature-based detection |
+| MBA (Mixed Boolean Arithmetic) | `RunAfterInlining` | Replace arithmetic/boolean expressions with equivalent but opaque MBA forms (e.g., `x + y` → `(x ^ y) + 2 * (x & y)` chains); resists symbolic execution |
+| VM (Code Virtualization) | `RunAfterFinalIR` | Convert functions into custom bytecode executed by an embedded interpreter; defeats static disassembly and signature matching |
+
+### Design Principles
+
+- **Pure Plugin API** — every obfuscation ships as a `.dll` / `.so` / `.dylib` plugin; no compiler fork required
+- **Composable** — plugins stack: apply MBA first, then flatten, then virtualize — each pass is independent
+- **Configurable** — per-function annotations (`__attribute__((obfuscate("vm")))`) to selectively protect hot paths without whole-program overhead
+- **Auditable** — each plugin logs its transformations for security review; before/after IR diff output available via `-fshellcode-dump-ir`
+- **Shellcode-compatible** — all plugins work in `-fshellcode` mode; generated code remains position-independent
+
+---
+
+## 3. Biblioteca de componentes UI (`neverc-ui`)
 
 NeverC proporcionará una biblioteca de componentes UI multiplataforma inspirada en Qt — con un motor de renderizado frontend HTML/JS/CSS, intrínsecamente apto para el diseño de interfaces por IA.
 
@@ -72,7 +98,7 @@ NeverC proporcionará una biblioteca de componentes UI multiplataforma inspirada
 
 ---
 
-## 3. IDE & Language Tooling (`neverc-ide`)
+## 4. IDE & Language Tooling (`neverc-ide`)
 
 NeverC will provide first-class IDE support for the `.nc` language extension — a VSCode extension for immediate productivity and a standalone NeverC IDE for a fully integrated development experience.
 
@@ -106,7 +132,7 @@ NeverC will provide first-class IDE support for the `.nc` language extension —
 ---
 
 
-## 4. Backend EVM para contratos inteligentes
+## 5. Backend EVM para contratos inteligentes
 
 NeverC soportará la compilación de código fuente C a bytecode EVM (Ethereum Virtual Machine) — permitiendo a los desarrolladores escribir contratos inteligentes en C en lugar de Solidity.
 
@@ -130,7 +156,7 @@ NeverC soportará la compilación de código fuente C a bytecode EVM (Ethereum V
 
 ---
 
-## 5. Backend Solana eBPF
+## 6. Backend Solana eBPF
 
 NeverC soportará la compilación de código fuente C a bytecode eBPF de Solana — habilitando el desarrollo de programas on-chain en C.
 
@@ -160,6 +186,7 @@ Estas características están en fase de investigación y diseño. No se comprom
 | Característica | Estado |
 |----------------|--------|
 | Biblioteca estándar (`std`) | Investigación / Diseño |
+| Obfuscation Plugin Suite (`neverc-obfuscation`) | Investigación / Diseño |
 | Biblioteca de componentes UI (`neverc-ui`) | Investigación / Diseño |
 | IDE y herramientas de lenguaje (`neverc-ide`) | Investigación / Diseño |
 | Backend EVM para contratos inteligentes | Investigación / Diseño |

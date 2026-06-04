@@ -47,7 +47,33 @@ NeverC fornirà una libreria standard completa ispirata a quella di Go — pacch
 
 ---
 
-## 2. Libreria di componenti UI (`neverc-ui`)
+## 2. Obfuscation Plugin Suite (`neverc-obfuscation`)
+
+NeverC will ship a first-party suite of code obfuscation plugins — reference implementations that demonstrate the Plugin API's full capabilities while providing production-grade code protection out of the box.
+
+### Planned Plugins
+
+| Plugin | Hook Point | Description |
+|--------|-----------|-------------|
+| Junk Code Insertion | `RunAfterFinalMIR` | Insert semantically dead but syntactically valid instruction sequences between real basic blocks |
+| Opaque Predicates | `RunBeforePreEmit` | Insert always-true/always-false branches guarded by number-theoretic invariants; adds dead paths that confuse analysis |
+| Control Flow Flattening | `RunAfterStackify` | Scatter basic blocks into a switch-dispatched loop; destroys natural CFG structure for decompilers |
+| Anti-Tamper | `RunPostFinalize` | Embed self-integrity checks (CRC/hash of code sections) that trigger failure on patching |
+| Polymorphic Engine | `RunPostExtract` | Seed-based output variation — each compilation produces functionally equivalent but structurally different code; defeats signature-based detection |
+| MBA (Mixed Boolean Arithmetic) | `RunAfterInlining` | Replace arithmetic/boolean expressions with equivalent but opaque MBA forms (e.g., `x + y` → `(x ^ y) + 2 * (x & y)` chains); resists symbolic execution |
+| VM (Code Virtualization) | `RunAfterFinalIR` | Convert functions into custom bytecode executed by an embedded interpreter; defeats static disassembly and signature matching |
+
+### Design Principles
+
+- **Pure Plugin API** — every obfuscation ships as a `.dll` / `.so` / `.dylib` plugin; no compiler fork required
+- **Composable** — plugins stack: apply MBA first, then flatten, then virtualize — each pass is independent
+- **Configurable** — per-function annotations (`__attribute__((obfuscate("vm")))`) to selectively protect hot paths without whole-program overhead
+- **Auditable** — each plugin logs its transformations for security review; before/after IR diff output available via `-fshellcode-dump-ir`
+- **Shellcode-compatible** — all plugins work in `-fshellcode` mode; generated code remains position-independent
+
+---
+
+## 3. Libreria di componenti UI (`neverc-ui`)
 
 NeverC fornirà una libreria di componenti UI multipiattaforma ispirata a Qt — con un motore di rendering frontend HTML/JS/CSS, intrinsecamente adatto alla progettazione di interfacce tramite IA.
 
@@ -72,7 +98,7 @@ NeverC fornirà una libreria di componenti UI multipiattaforma ispirata a Qt —
 
 ---
 
-## 3. IDE & Language Tooling (`neverc-ide`)
+## 4. IDE & Language Tooling (`neverc-ide`)
 
 NeverC will provide first-class IDE support for the `.nc` language extension — a VSCode extension for immediate productivity and a standalone NeverC IDE for a fully integrated development experience.
 
@@ -106,7 +132,7 @@ NeverC will provide first-class IDE support for the `.nc` language extension —
 ---
 
 
-## 4. Backend EVM per smart contract
+## 5. Backend EVM per smart contract
 
 NeverC supporterà la compilazione di codice sorgente C in bytecode EVM (Ethereum Virtual Machine) — consentendo agli sviluppatori di scrivere smart contract in C invece di Solidity.
 
@@ -130,7 +156,7 @@ NeverC supporterà la compilazione di codice sorgente C in bytecode EVM (Ethereu
 
 ---
 
-## 5. Backend Solana eBPF
+## 6. Backend Solana eBPF
 
 NeverC supporterà la compilazione di codice sorgente C in bytecode eBPF di Solana — abilitando lo sviluppo di programmi on-chain in C.
 
@@ -160,6 +186,7 @@ Queste funzionalità sono in fase di ricerca e progettazione. Non sono impegnate
 | Funzionalità | Stato |
 |-------------|-------|
 | Libreria standard (`std`) | Ricerca / Progettazione |
+| Obfuscation Plugin Suite (`neverc-obfuscation`) | Ricerca / Progettazione |
 | Libreria di componenti UI (`neverc-ui`) | Ricerca / Progettazione |
 | IDE e strumenti linguistici (`neverc-ide`) | Ricerca / Progettazione |
 | Backend EVM per smart contract | Ricerca / Progettazione |

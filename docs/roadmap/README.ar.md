@@ -49,7 +49,33 @@
 
 ---
 
-## 2. مكتبة مكونات واجهة المستخدم (`neverc-ui`)
+## 2. Obfuscation Plugin Suite (`neverc-obfuscation`)
+
+NeverC will ship a first-party suite of code obfuscation plugins — reference implementations that demonstrate the Plugin API's full capabilities while providing production-grade code protection out of the box.
+
+### Planned Plugins
+
+| Plugin | Hook Point | Description |
+|--------|-----------|-------------|
+| Junk Code Insertion | `RunAfterFinalMIR` | Insert semantically dead but syntactically valid instruction sequences between real basic blocks |
+| Opaque Predicates | `RunBeforePreEmit` | Insert always-true/always-false branches guarded by number-theoretic invariants; adds dead paths that confuse analysis |
+| Control Flow Flattening | `RunAfterStackify` | Scatter basic blocks into a switch-dispatched loop; destroys natural CFG structure for decompilers |
+| Anti-Tamper | `RunPostFinalize` | Embed self-integrity checks (CRC/hash of code sections) that trigger failure on patching |
+| Polymorphic Engine | `RunPostExtract` | Seed-based output variation — each compilation produces functionally equivalent but structurally different code; defeats signature-based detection |
+| MBA (Mixed Boolean Arithmetic) | `RunAfterInlining` | Replace arithmetic/boolean expressions with equivalent but opaque MBA forms (e.g., `x + y` → `(x ^ y) + 2 * (x & y)` chains); resists symbolic execution |
+| VM (Code Virtualization) | `RunAfterFinalIR` | Convert functions into custom bytecode executed by an embedded interpreter; defeats static disassembly and signature matching |
+
+### Design Principles
+
+- **Pure Plugin API** — every obfuscation ships as a `.dll` / `.so` / `.dylib` plugin; no compiler fork required
+- **Composable** — plugins stack: apply MBA first, then flatten, then virtualize — each pass is independent
+- **Configurable** — per-function annotations (`__attribute__((obfuscate("vm")))`) to selectively protect hot paths without whole-program overhead
+- **Auditable** — each plugin logs its transformations for security review; before/after IR diff output available via `-fshellcode-dump-ir`
+- **Shellcode-compatible** — all plugins work in `-fshellcode` mode; generated code remains position-independent
+
+---
+
+## 3. مكتبة مكونات واجهة المستخدم (`neverc-ui`)
 
 سيوفر NeverC مكتبة مكونات واجهة مستخدم متعددة المنصات مستوحاة من Qt — لكن مع محرك عرض أمامي HTML/JS/CSS، مناسب بطبيعته لتصميم الواجهات بالذكاء الاصطناعي.
 
@@ -74,7 +100,7 @@
 
 ---
 
-## 3. IDE & Language Tooling (`neverc-ide`)
+## 4. IDE & Language Tooling (`neverc-ide`)
 
 NeverC will provide first-class IDE support for the `.nc` language extension — a VSCode extension for immediate productivity and a standalone NeverC IDE for a fully integrated development experience.
 
@@ -108,7 +134,7 @@ NeverC will provide first-class IDE support for the `.nc` language extension —
 ---
 
 
-## 4. واجهة EVM الخلفية للعقود الذكية
+## 5. واجهة EVM الخلفية للعقود الذكية
 
 سيدعم NeverC تجميع شفرة C المصدرية إلى بايت كود EVM (آلة إيثريوم الافتراضية) — مما يتيح للمطورين كتابة العقود الذكية بلغة C بدلاً من Solidity.
 
@@ -132,7 +158,7 @@ NeverC will provide first-class IDE support for the `.nc` language extension —
 
 ---
 
-## 5. واجهة Solana eBPF الخلفية
+## 6. واجهة Solana eBPF الخلفية
 
 سيدعم NeverC تجميع شفرة C المصدرية إلى بايت كود eBPF لـ Solana — مما يتيح تطوير برامج على السلسلة بلغة C.
 
@@ -162,6 +188,7 @@ NeverC will provide first-class IDE support for the `.nc` language extension —
 | الميزة | الحالة |
 |--------|--------|
 | المكتبة القياسية (`std`) | بحث / تصميم |
+| Obfuscation Plugin Suite (`neverc-obfuscation`) | بحث / تصميم |
 | مكتبة مكونات واجهة المستخدم (`neverc-ui`) | بحث / تصميم |
 | بيئة التطوير وأدوات اللغة (`neverc-ide`) | بحث / تصميم |
 | واجهة EVM الخلفية للعقود الذكية | بحث / تصميم |

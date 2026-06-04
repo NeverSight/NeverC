@@ -49,7 +49,33 @@ NeverC 将提供一套全面的标准库，参照 Go 标准库设计——提供
 
 ---
 
-## 2. UI 组件库 (`neverc-ui`)
+## 2. 混淆插件套件 (`neverc-obfuscation`)
+
+NeverC 将提供第一方代码混淆插件套件——既是 Plugin API 完整能力的参考实现，也是开箱即用的生产级代码保护工具。
+
+### 计划中的插件
+
+| 插件 | 钩子点 | 描述 |
+|------|--------|------|
+| 垃圾代码插入 | `RunAfterFinalMIR` | 在真实基本块之间插入语义无效但语法合法的指令序列 |
+| 不透明谓词 | `RunBeforePreEmit` | 插入由数论不变量守护的恒真/恒假分支；增加混淆分析的死路径 |
+| 控制流平坦化 | `RunAfterStackify` | 将基本块打散到 switch 分发循环中；破坏反编译器可识别的自然 CFG 结构 |
+| 反篡改 | `RunPostFinalize` | 嵌入自完整性检查（代码段的 CRC/哈希），修补时触发失败 |
+| 多态引擎 | `RunPostExtract` | 基于种子的输出变化——每次编译产生功能等价但结构不同的代码；对抗签名检测 |
+| MBA（混合布尔算术） | `RunAfterInlining` | 用等价但不透明的 MBA 形式替换算术/布尔表达式（如 `x + y` → `(x ^ y) + 2 * (x & y)` 链）；抗符号执行 |
+| VM（代码虚拟化） | `RunAfterFinalIR` | 将函数转换为自定义字节码，由内嵌解释器执行；对抗静态反汇编和签名匹配 |
+
+### 设计原则
+
+- **纯 Plugin API** — 每个混淆功能以 `.dll` / `.so` / `.dylib` 插件形式提供；无需分叉编译器
+- **可组合** — 插件可叠加：先 MBA，再平坦化，再虚拟化——每个 pass 相互独立
+- **可配置** — 逐函数注解（`__attribute__((obfuscate("vm")))`）选择性保护热点路径，避免全程序开销
+- **可审计** — 每个插件记录其变换以供安全审查；通过 `-fshellcode-dump-ir` 可查看变换前后 IR 差异
+- **Shellcode 兼容** — 所有插件在 `-fshellcode` 模式下工作；生成的代码保持位置无关
+
+---
+
+## 3. UI 组件库 (`neverc-ui`)
 
 NeverC 将提供类似 Qt 的跨平台 UI 组件库——但采用 HTML/JS/CSS 前端渲染引擎，天然适合 AI 生成界面。
 
@@ -74,7 +100,7 @@ NeverC 将提供类似 Qt 的跨平台 UI 组件库——但采用 HTML/JS/CSS �
 
 ---
 
-## 3. IDE 与语言工具 (`neverc-ide`)
+## 4. IDE 与语言工具 (`neverc-ide`)
 
 NeverC 将为 `.nc` 语言扩展提供一流的 IDE 支持——VSCode 扩展实现即时生产力，独立 NeverC IDE 提供完全集成的开发体验。
 
@@ -107,7 +133,7 @@ NeverC 将为 `.nc` 语言扩展提供一流的 IDE 支持——VSCode 扩展实
 
 ---
 
-## 4. EVM 智能合约后端
+## 5. EVM 智能合约后端
 
 NeverC 将支持把 C 源代码编译为 EVM（以太坊虚拟机）字节码——使开发者能用 C 代替 Solidity 编写智能合约。
 
@@ -131,7 +157,7 @@ NeverC 将支持把 C 源代码编译为 EVM（以太坊虚拟机）字节码—
 
 ---
 
-## 5. Solana eBPF 后端
+## 6. Solana eBPF 后端
 
 NeverC 将支持把 C 源代码编译为 Solana 的 eBPF 字节码——实现用 C 开发链上程序。
 
@@ -161,6 +187,7 @@ NeverC 将支持把 C 源代码编译为 Solana 的 eBPF 字节码——实现�
 | 功能 | 状态 |
 |------|------|
 | 标准库 (`std`) | 研究 / 设计 |
+| 混淆插件套件 (`neverc-obfuscation`) | 研究 / 设计 |
 | UI 组件库 (`neverc-ui`) | 研究 / 设计 |
 | IDE 与语言工具 (`neverc-ide`) | 研究 / 设计 |
 | EVM 智能合约后端 | 研究 / 设计 |

@@ -70,6 +70,7 @@ Grandes orientations du projet NeverC : bibliothèque standard, backend EVM pour
 | Fonctionnalité | Description |
 |----------------|-------------|
 | Bibliothèque standard (`std`) | Paquets à la Go : `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync`, et plus |
+| Suite de plugins d'obfuscation (`neverc-obfuscation`) | VM, MBA, aplatissement de flux, moteur polymorphe, anti-altération — plugins de première partie |
 | Bibliothèque de composants UI (`neverc-ui`) | UI multiplateforme à la Qt, moteur HTML/JS/CSS, concepteur glisser-déposer, flux IA natif |
 | IDE & outils linguistiques (`neverc-ide`) | Extension VSCode + IDE autonome pour fichiers `.nc`, IntelliSense, débogage, visualisation pipeline shellcode |
 | Contrats intelligents EVM | Compiler du C en bytecode EVM — écrire des contrats en C au lieu de Solidity |

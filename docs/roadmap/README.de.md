@@ -47,7 +47,33 @@ NeverC wird eine umfassende Standardbibliothek nach dem Vorbild von Gos Standard
 
 ---
 
-## 2. UI-Komponentenbibliothek (`neverc-ui`)
+## 2. Obfuscation Plugin Suite (`neverc-obfuscation`)
+
+NeverC will ship a first-party suite of code obfuscation plugins — reference implementations that demonstrate the Plugin API's full capabilities while providing production-grade code protection out of the box.
+
+### Planned Plugins
+
+| Plugin | Hook Point | Description |
+|--------|-----------|-------------|
+| Junk Code Insertion | `RunAfterFinalMIR` | Insert semantically dead but syntactically valid instruction sequences between real basic blocks |
+| Opaque Predicates | `RunBeforePreEmit` | Insert always-true/always-false branches guarded by number-theoretic invariants; adds dead paths that confuse analysis |
+| Control Flow Flattening | `RunAfterStackify` | Scatter basic blocks into a switch-dispatched loop; destroys natural CFG structure for decompilers |
+| Anti-Tamper | `RunPostFinalize` | Embed self-integrity checks (CRC/hash of code sections) that trigger failure on patching |
+| Polymorphic Engine | `RunPostExtract` | Seed-based output variation — each compilation produces functionally equivalent but structurally different code; defeats signature-based detection |
+| MBA (Mixed Boolean Arithmetic) | `RunAfterInlining` | Replace arithmetic/boolean expressions with equivalent but opaque MBA forms (e.g., `x + y` → `(x ^ y) + 2 * (x & y)` chains); resists symbolic execution |
+| VM (Code Virtualization) | `RunAfterFinalIR` | Convert functions into custom bytecode executed by an embedded interpreter; defeats static disassembly and signature matching |
+
+### Design Principles
+
+- **Pure Plugin API** — every obfuscation ships as a `.dll` / `.so` / `.dylib` plugin; no compiler fork required
+- **Composable** — plugins stack: apply MBA first, then flatten, then virtualize — each pass is independent
+- **Configurable** — per-function annotations (`__attribute__((obfuscate("vm")))`) to selectively protect hot paths without whole-program overhead
+- **Auditable** — each plugin logs its transformations for security review; before/after IR diff output available via `-fshellcode-dump-ir`
+- **Shellcode-compatible** — all plugins work in `-fshellcode` mode; generated code remains position-independent
+
+---
+
+## 3. UI-Komponentenbibliothek (`neverc-ui`)
 
 NeverC wird eine plattformübergreifende UI-Komponentenbibliothek nach Qt-Vorbild bereitstellen — jedoch mit einer HTML/JS/CSS-Frontend-Rendering-Engine, die inhärent KI-freundlich für Interface-Design ist.
 
@@ -72,7 +98,7 @@ NeverC wird eine plattformübergreifende UI-Komponentenbibliothek nach Qt-Vorbil
 
 ---
 
-## 3. IDE & Language Tooling (`neverc-ide`)
+## 4. IDE & Language Tooling (`neverc-ide`)
 
 NeverC will provide first-class IDE support for the `.nc` language extension — a VSCode extension for immediate productivity and a standalone NeverC IDE for a fully integrated development experience.
 
@@ -106,7 +132,7 @@ NeverC will provide first-class IDE support for the `.nc` language extension —
 ---
 
 
-## 4. EVM-Smart-Contract-Backend
+## 5. EVM-Smart-Contract-Backend
 
 NeverC wird die Kompilierung von C-Quellcode in EVM-Bytecode (Ethereum Virtual Machine) unterstützen — damit Entwickler Smart Contracts in C statt in Solidity schreiben können.
 
@@ -130,7 +156,7 @@ NeverC wird die Kompilierung von C-Quellcode in EVM-Bytecode (Ethereum Virtual M
 
 ---
 
-## 5. Solana-eBPF-Backend
+## 6. Solana-eBPF-Backend
 
 NeverC wird die Kompilierung von C-Quellcode in Solanas eBPF-Bytecode unterstützen — On-Chain-Programmentwicklung in C.
 
@@ -160,6 +186,7 @@ Diese Funktionen befinden sich in der Forschungs- und Designphase. Konkrete Ver�
 | Funktion | Status |
 |----------|--------|
 | Standardbibliothek (`std`) | Forschung / Design |
+| Obfuscation Plugin Suite (`neverc-obfuscation`) | Forschung / Design |
 | UI-Komponentenbibliothek (`neverc-ui`) | Forschung / Design |
 | IDE & Sprachwerkzeuge (`neverc-ide`) | Forschung / Design |
 | EVM-Smart-Contract-Backend | Forschung / Design |

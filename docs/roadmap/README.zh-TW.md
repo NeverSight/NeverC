@@ -47,7 +47,33 @@ NeverC 將提供一套完整的標準函式庫，參照 Go 標準函式庫設計
 
 ---
 
-## 2. UI 元件庫 (`neverc-ui`)
+## 2. 混淆外掛套件 (`neverc-obfuscation`)
+
+NeverC 將提供第一方程式碼混淆外掛套件——既是 Plugin API 完整能力的參考實作，也是開箱即用的生產級程式碼保護工具。
+
+### 計畫中的外掛
+
+| 外掛 | 掛鈎點 | 描述 |
+|------|--------|------|
+| 垃圾程式碼插入 | `RunAfterFinalMIR` | 在真實基本區塊之間插入語義無效但語法合法的指令序列 |
+| 不透明述詞 | `RunBeforePreEmit` | 插入由數論不變量守護的恆真/恆假分支；增加混淆分析的死路徑 |
+| 控制流平坦化 | `RunAfterStackify` | 將基本區塊打散到 switch 分發迴圈中；破壞反編譯器可辨識的自然 CFG 結構 |
+| 反竄改 | `RunPostFinalize` | 嵌入自完整性檢查（程式碼段的 CRC/雜湊），修補時觸發失敗 |
+| 多態引擎 | `RunPostExtract` | 基於種子的輸出變化——每次編譯產生功能等價但結構不同的程式碼；對抗簽名偵測 |
+| MBA（混合布林算術） | `RunAfterInlining` | 用等價但不透明的 MBA 形式取代算術/布林表示式；抗符號執行 |
+| VM（程式碼虛擬化） | `RunAfterFinalIR` | 將函式轉換為自訂位元組碼，由內嵌直譯器執行；對抗靜態反組譯和簽名比對 |
+
+### 設計原則
+
+- **純 Plugin API** — 每個混淆功能以 `.dll` / `.so` / `.dylib` 外掛形式提供；無需分叉編譯器
+- **可組合** — 外掛可疊加：先 MBA，再平坦化，再虛擬化——每個 pass 相互獨立
+- **可設定** — 逐函式標註（`__attribute__((obfuscate("vm")))`）選擇性保護熱點路徑，避免全程式負擔
+- **可稽核** — 每個外掛記錄其變換以供安全審查；透過 `-fshellcode-dump-ir` 可查看變換前後 IR 差異
+- **Shellcode 相容** — 所有外掛在 `-fshellcode` 模式下運作；產生的程式碼保持位置無關
+
+---
+
+## 3. UI 元件庫 (`neverc-ui`)
 
 NeverC 將提供類似 Qt 的跨平台 UI 元件庫——但採用 HTML/JS/CSS 前端渲染引擎，天然適合 AI 生成介面。
 
@@ -72,7 +98,7 @@ NeverC 將提供類似 Qt 的跨平台 UI 元件庫——但採用 HTML/JS/CSS �
 
 ---
 
-## 3. IDE 與語言工具 (`neverc-ide`)
+## 4. IDE 與語言工具 (`neverc-ide`)
 
 NeverC 將為 `.nc` 語言擴充提供一流的 IDE 支援——VSCode 擴充實現即時生產力，獨立 NeverC IDE 提供完全整合的開發體驗。
 
@@ -105,7 +131,7 @@ NeverC 將為 `.nc` 語言擴充提供一流的 IDE 支援——VSCode 擴充實
 
 ---
 
-## 4. EVM 智慧合約後端
+## 5. EVM 智慧合約後端
 
 NeverC 將支援把 C 原始碼編譯為 EVM（以太坊虛擬機）位元組碼——讓開發者能用 C 取代 Solidity 撰寫智慧合約。
 
@@ -129,7 +155,7 @@ NeverC 將支援把 C 原始碼編譯為 EVM（以太坊虛擬機）位元組碼
 
 ---
 
-## 5. Solana eBPF 後端
+## 6. Solana eBPF 後端
 
 NeverC 將支援把 C 原始碼編譯為 Solana 的 eBPF 位元組碼——實現用 C 開發鏈上程式。
 
@@ -159,6 +185,7 @@ NeverC 將支援把 C 原始碼編譯為 Solana 的 eBPF 位元組碼——實�
 | 功能 | 狀態 |
 |------|------|
 | 標準函式庫 (`std`) | 研究 / 設計 |
+| 混淆外掛套件 (`neverc-obfuscation`) | 研究 / 設計 |
 | UI 元件庫 (`neverc-ui`) | 研究 / 設計 |
 | IDE 與語言工具 (`neverc-ide`) | 研究 / 設計 |
 | EVM 智慧合約後端 | 研究 / 設計 |
