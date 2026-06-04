@@ -21,7 +21,6 @@
 //
 //===------------------------------------------------------------------===//
 
-#include "MergerCommon.h"
 #include "neverc/Merge/Merger.h"
 
 #include "llvm/ADT/DenseMap.h"
