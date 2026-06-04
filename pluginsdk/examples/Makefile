@@ -8,13 +8,13 @@
 #   BenchPlugin.c    -> BenchPlugin.{dll,dylib,so}
 #
 # Usage:
-#   make                        # build all plugins (runs the default "all" target)
-#   make all                    # same as above — explicit form
-#   make ExamplePlugin.dylib    # build a single plugin (pattern rule matches %.c)
-#   make clean                  # remove built plugins
+#   neverc make                        # build all plugins (runs the default "all" target)
+#   neverc make all                    # same as above — explicit form
+#   neverc make ExamplePlugin.dylib    # build a single plugin (pattern rule matches %.c)
+#   neverc make clean                  # remove built plugins
 #
 # Override variables as needed:
-#   make NEVERC=/path/to/neverc INCLUDE_DIR=/path/to/include
+#   neverc make NEVERC=/path/to/neverc INCLUDE_DIR=/path/to/include
 # ============================================================================
 
 # Auto-detect compiler path.
