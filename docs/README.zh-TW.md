@@ -71,6 +71,7 @@ NeverC 專案的主要規劃方向：標準函式庫、EVM 智慧合約後端和
 |------|------|
 | 標準函式庫 (`std`) | Go 風格開箱即用套件：`fmt`、`os`、`io`、`net`、`crypto`、`encoding`、`sync` 等 |
 | UI 元件庫 (`neverc-ui`) | 類 Qt 跨平台 UI，HTML/JS/CSS 渲染器，拖曳式設計器，AI 原生工作流 |
+| IDE 與語言工具 (`neverc-ide`) | `.nc` 檔案的 VSCode 擴充 + 獨立 IDE，支援智慧補全、偵錯和 shellcode 管線視覺化 |
 | EVM 智慧合約 | 把 C 編譯為 EVM 位元組碼——用 C 取代 Solidity 撰寫智慧合約 |
 | Solana eBPF | 把 C 編譯為 Solana eBPF 位元組碼——用 C 開發鏈上程式 |
 

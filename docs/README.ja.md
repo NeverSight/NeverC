@@ -71,6 +71,7 @@ NeverC プロジェクトの主要な計画方向：標準ライブラリ、EVM 
 |------|------|
 | 標準ライブラリ (`std`) | Go スタイルのバッテリー同梱パッケージ：`fmt`、`os`、`io`、`net`、`crypto`、`encoding`、`sync` など |
 | UI コンポーネントライブラリ (`neverc-ui`) | Qt 風クロスプラットフォーム UI、HTML/JS/CSS レンダラー、ドラッグ＆ドロップデザイナー、AI ネイティブワークフロー |
+| IDE & 言語ツール (`neverc-ide`) | `.nc` ファイル用 VSCode 拡張 + スタンドアロン IDE、IntelliSense、デバッグ、shellcode パイプライン可視化 |
 | EVM スマートコントラクト | C を EVM バイトコードにコンパイル——Solidity の代わりに C でスマートコントラクトを記述 |
 | Solana eBPF | C を Solana eBPF バイトコードにコンパイル——C でオンチェーンプログラム開発 |
 

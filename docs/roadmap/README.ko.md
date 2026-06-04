@@ -26,7 +26,6 @@ NeverC는 Go의 표준 라이브러리를 모델로 한 포괄적인 표준 라�
 | `encoding` | JSON, Base64, Hex, CSV, 바이너리 (리틀/빅 엔디안) |
 | `sync` | Mutex, RWLock, WaitGroup, Once, 원자적 연산 |
 | `time` | 모노토닉/벽시계, 지속 시간, 타이머, 포맷팅 |
-| `strings` | 검색, 분할, 결합, 트림, 교체, 빌더 |
 | `bytes` | 바이트 슬라이스 조작, 버퍼 |
 | `math` | 수학 상수, 기본 함수, 난수 생성 |
 | `sort` | 제네릭 정렬 및 검색 |
@@ -44,7 +43,7 @@ NeverC는 Go의 표준 라이브러리를 모델로 한 포괄적인 표준 라�
 - **순수 C23** — 모든 패키지가 표준 NeverC/C23로 컴파일; 숨겨진 C++이나 플랫폼 특정 어셈블리 없음
 - **외부 의존성 제로** — 표준 라이브러리는 기존 `string` 및 `mimalloc` 내장과 마찬가지로 LLVM bitcode로 컴파일러에 임베디드
 - **크로스 플랫폼** — 모든 패키지가 macOS, Linux, Windows (x86_64 / AArch64)에서 작동
-- **Shellcode 호환** — 프리스탠딩 모드에서 의미 있는 패키지 (예: `crypto`, `encoding`, `strings`)는 `-fshellcode`에서 작동
+- **Shellcode 호환** — 프리스탠딩 모드에서 의미 있는 패키지 (예: `crypto`, `encoding`, `bytes`)는 `-fshellcode`에서 작동
 
 ---
 
@@ -73,7 +72,41 @@ NeverC는 Qt에서 영감을 받은 크로스 플랫폼 UI 컴포넌트 라이�
 
 ---
 
-## 3. EVM 스마트 컨트랙트 백엔드
+## 3. IDE & Language Tooling (`neverc-ide`)
+
+NeverC will provide first-class IDE support for the `.nc` language extension — a VSCode extension for immediate productivity and a standalone NeverC IDE for a fully integrated development experience.
+
+### VSCode Extension
+
+- **Syntax highlighting** — full `.nc` grammar with semantic token support for NeverC-specific types (`string`, `u8`–`u64`, `i8`–`i64`, `f32`, `f64`)
+- **IntelliSense** — auto-completion for built-in types, dot-call methods (`.c_str()`, `.len()`, `.starts_with()`), and `#include` paths
+- **Diagnostics** — real-time error and warning display from `neverc` compiler output
+- **Go to definition** — jump to function, struct, and macro definitions across translation units
+- **Hover documentation** — inline docs for built-in functions, compiler intrinsics, and standard library packages
+- **Code actions** — quick-fix suggestions for common errors, auto-import for `std` packages
+- **Debugging** — integrated LLDB/GDB debug adapter with breakpoint, step, and variable inspection support
+- **Shellcode mode** — syntax-aware features for `-fshellcode` pipelines: bad-byte highlighting, shellcode size display, target-specific completions
+- **Plugin API integration** — plugin hook point visualization and scaffolding
+
+### Standalone IDE
+
+- **Built on NeverC UI (`neverc-ui`)** — the IDE is itself a showcase of the HTML/JS/CSS component library, dogfooding the UI framework
+- **Integrated terminal** — build, run, and debug without leaving the IDE
+- **Visual shellcode pipeline** — graphical view of the IR → MIR → extraction pipeline with pass-by-pass output inspection
+- **Project templates** — one-click scaffolding for hosted binaries, shellcode, EVM contracts, and Solana programs
+- **AI-assisted coding** — built-in LLM integration that understands NeverC semantics, generates `.nc` code, and explains compiler diagnostics
+- **Cross-compilation dashboard** — visual target selector with platform matrix and build status
+
+### Why Both VSCode and Standalone?
+
+- VSCode captures the majority of developers who already live in that ecosystem
+- The standalone IDE provides a deeper, purpose-built experience for security researchers who want shellcode pipeline visualization and integrated binary analysis
+- Both share the same language server backend — improvements benefit both simultaneously
+
+---
+
+
+## 4. EVM 스마트 컨트랙트 백엔드
 
 NeverC는 C 소스 코드를 EVM (Ethereum Virtual Machine) 바이트코드로 컴파일하는 것을 지원합니다 — 개발자가 Solidity 대신 C로 스마트 컨트랙트를 작성할 수 있게 합니다.
 
@@ -97,7 +130,7 @@ NeverC는 C 소스 코드를 EVM (Ethereum Virtual Machine) 바이트코드로 �
 
 ---
 
-## 4. Solana eBPF 백엔드
+## 5. Solana eBPF 백엔드
 
 NeverC는 C 소스 코드를 Solana의 eBPF 바이트코드로 컴파일하는 것을 지원합니다 — C로 온체인 프로그램 개발을 실현합니다.
 
@@ -128,5 +161,6 @@ NeverC는 C 소스 코드를 Solana의 eBPF 바이트코드로 컴파일하는 �
 |------|------|
 | 표준 라이브러리 (`std`) | 연구 / 설계 |
 | UI 컴포넌트 라이브러리 (`neverc-ui`) | 연구 / 설계 |
+| IDE & 언어 도구 (`neverc-ide`) | 연구 / 설계 |
 | EVM 스마트 컨트랙트 백엔드 | 연구 / 설계 |
 | Solana eBPF 백엔드 | 연구 / 설계 |

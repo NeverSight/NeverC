@@ -71,6 +71,7 @@ NeverC 프로젝트의 주요 계획 방향: 표준 라이브러리, EVM 스마�
 |------|------|
 | 표준 라이브러리 (`std`) | Go 스타일 배터리 포함 패키지: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync` 등 |
 | UI 컴포넌트 라이브러리 (`neverc-ui`) | Qt 스타일 크로스 플랫폼 UI, HTML/JS/CSS 렌더러, 드래그 앤 드롭 디자이너, AI 네이티브 워크플로 |
+| IDE & 언어 도구 (`neverc-ide`) | `.nc` 파일용 VSCode 확장 + 스탠드얼론 IDE, IntelliSense, 디버깅, shellcode 파이프라인 시각화 |
 | EVM 스마트 컨트랙트 | C를 EVM 바이트코드로 컴파일 — Solidity 대신 C로 스마트 컨트랙트 작성 |
 | Solana eBPF | C를 Solana eBPF 바이트코드로 컴파일 — C로 온체인 프로그램 개발 |
 

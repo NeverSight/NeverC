@@ -71,6 +71,7 @@ Principali direzioni pianificate del progetto NeverC: libreria standard, backend
 |-------------|-------------|
 | Libreria standard (`std`) | Pacchetti in stile Go: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync` e altro |
 | Libreria di componenti UI (`neverc-ui`) | UI multipiattaforma tipo Qt, renderer HTML/JS/CSS, designer drag-and-drop, workflow nativo IA |
+| IDE e strumenti linguistici (`neverc-ide`) | Estensione VSCode + IDE autonomo per file `.nc`, IntelliSense, debug, visualizzazione pipeline shellcode |
 | Smart contract EVM | Compilare C in bytecode EVM — scrivere contratti in C invece di Solidity |
 | Solana eBPF | Compilare C in bytecode eBPF di Solana — sviluppo di programmi on-chain in C |
 

@@ -26,7 +26,6 @@ NeverC は Go の標準ライブラリをモデルにした包括的な標準ラ
 | `encoding` | JSON、Base64、Hex、CSV、バイナリ（リトル/ビッグエンディアン） |
 | `sync` | Mutex、RWLock、WaitGroup、Once、アトミック操作 |
 | `time` | モノトニック/ウォールクロック、持続時間、タイマー、フォーマット |
-| `strings` | 検索、分割、結合、トリム、置換、ビルダー |
 | `bytes` | バイトスライス操作、バッファ |
 | `math` | 数学定数、基本関数、乱数生成 |
 | `sort` | ジェネリックソートと検索 |
@@ -44,7 +43,7 @@ NeverC は Go の標準ライブラリをモデルにした包括的な標準ラ
 - **純粋な C23** — すべてのパッケージが標準 NeverC/C23 としてコンパイル；隠れた C++ やプラットフォーム固有アセンブリなし
 - **外部依存ゼロ** — 標準ライブラリは既存の `string` や `mimalloc` 組み込みと同様に、LLVM bitcode としてコンパイラに埋め込み
 - **クロスプラットフォーム** — すべてのパッケージが macOS、Linux、Windows（x86_64 / AArch64）で動作
-- **Shellcode 互換** — フリースタンディングモードで意味のあるパッケージ（例：`crypto`、`encoding`、`strings`）は `-fshellcode` で動作
+- **Shellcode 互換** — フリースタンディングモードで意味のあるパッケージ（例：`crypto`、`encoding`、`bytes`）は `-fshellcode` で動作
 
 ---
 
@@ -73,7 +72,41 @@ NeverC は Qt に着想を得たクロスプラットフォーム UI コンポ�
 
 ---
 
-## 3. EVM スマートコントラクトバックエンド
+## 3. IDE & Language Tooling (`neverc-ide`)
+
+NeverC will provide first-class IDE support for the `.nc` language extension — a VSCode extension for immediate productivity and a standalone NeverC IDE for a fully integrated development experience.
+
+### VSCode Extension
+
+- **Syntax highlighting** — full `.nc` grammar with semantic token support for NeverC-specific types (`string`, `u8`–`u64`, `i8`–`i64`, `f32`, `f64`)
+- **IntelliSense** — auto-completion for built-in types, dot-call methods (`.c_str()`, `.len()`, `.starts_with()`), and `#include` paths
+- **Diagnostics** — real-time error and warning display from `neverc` compiler output
+- **Go to definition** — jump to function, struct, and macro definitions across translation units
+- **Hover documentation** — inline docs for built-in functions, compiler intrinsics, and standard library packages
+- **Code actions** — quick-fix suggestions for common errors, auto-import for `std` packages
+- **Debugging** — integrated LLDB/GDB debug adapter with breakpoint, step, and variable inspection support
+- **Shellcode mode** — syntax-aware features for `-fshellcode` pipelines: bad-byte highlighting, shellcode size display, target-specific completions
+- **Plugin API integration** — plugin hook point visualization and scaffolding
+
+### Standalone IDE
+
+- **Built on NeverC UI (`neverc-ui`)** — the IDE is itself a showcase of the HTML/JS/CSS component library, dogfooding the UI framework
+- **Integrated terminal** — build, run, and debug without leaving the IDE
+- **Visual shellcode pipeline** — graphical view of the IR → MIR → extraction pipeline with pass-by-pass output inspection
+- **Project templates** — one-click scaffolding for hosted binaries, shellcode, EVM contracts, and Solana programs
+- **AI-assisted coding** — built-in LLM integration that understands NeverC semantics, generates `.nc` code, and explains compiler diagnostics
+- **Cross-compilation dashboard** — visual target selector with platform matrix and build status
+
+### Why Both VSCode and Standalone?
+
+- VSCode captures the majority of developers who already live in that ecosystem
+- The standalone IDE provides a deeper, purpose-built experience for security researchers who want shellcode pipeline visualization and integrated binary analysis
+- Both share the same language server backend — improvements benefit both simultaneously
+
+---
+
+
+## 4. EVM スマートコントラクトバックエンド
 
 NeverC は C ソースコードを EVM（Ethereum Virtual Machine）バイトコードにコンパイルすることをサポートします——開発者が Solidity の代わりに C でスマートコントラクトを書けるようになります。
 
@@ -97,7 +130,7 @@ NeverC は C ソースコードを EVM（Ethereum Virtual Machine）バイトコ
 
 ---
 
-## 4. Solana eBPF バックエンド
+## 5. Solana eBPF バックエンド
 
 NeverC は C ソースコードを Solana の eBPF バイトコードにコンパイルすることをサポートします——C でのオンチェーンプログラム開発を実現します。
 
@@ -128,5 +161,6 @@ NeverC は C ソースコードを Solana の eBPF バイトコードにコン�
 |------|-----------|
 | 標準ライブラリ (`std`) | 研究 / 設計 |
 | UI コンポーネントライブラリ (`neverc-ui`) | 研究 / 設計 |
+| IDE & 言語ツール (`neverc-ide`) | 研究 / 設計 |
 | EVM スマートコントラクトバックエンド | 研究 / 設計 |
 | Solana eBPF バックエンド | 研究 / 設計 |

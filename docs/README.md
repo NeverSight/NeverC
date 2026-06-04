@@ -71,6 +71,7 @@ Major planned directions for the NeverC project: standard library, EVM smart con
 |---------|-------------|
 | Standard Library (`std`) | Go-style batteries-included packages: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync`, and more |
 | UI Component Library (`neverc-ui`) | Qt-inspired cross-platform UI with HTML/JS/CSS renderer, drag-and-drop designer, AI-native workflow |
+| IDE & Language Tooling (`neverc-ide`) | VSCode extension + standalone IDE for `.nc` files with IntelliSense, debugging, and shellcode pipeline visualization |
 | EVM Smart Contracts | Compile C to EVM bytecode — write smart contracts in C instead of Solidity |
 | Solana eBPF | Compile C to Solana eBPF bytecode — on-chain program development in C |
 

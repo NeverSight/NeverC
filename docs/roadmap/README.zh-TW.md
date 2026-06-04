@@ -26,7 +26,6 @@ NeverC 將提供一套完整的標準函式庫，參照 Go 標準函式庫設計
 | `encoding` | JSON、Base64、Hex、CSV、二進位（大小端序） |
 | `sync` | 互斥鎖、讀寫鎖、WaitGroup、Once、原子操作 |
 | `time` | 單調/掛鐘時間、時長、計時器、格式化 |
-| `strings` | 搜尋、分割、連接、修剪、取代、建構器 |
 | `bytes` | 位元組切片操作、緩衝區 |
 | `math` | 數學常數、基本函式、亂數產生 |
 | `sort` | 泛型排序與搜尋 |
@@ -44,7 +43,7 @@ NeverC 將提供一套完整的標準函式庫，參照 Go 標準函式庫設計
 - **純 C23** — 每個套件都以標準 NeverC/C23 編譯；無隱藏 C++ 或平台特定組合語言
 - **零外部相依性** — 標準函式庫以 LLVM bitcode 嵌入編譯器，與現有的 `string` 和 `mimalloc` 內建功能一致
 - **跨平台** — 所有套件在 macOS、Linux、Windows（x86_64 / AArch64）上運作
-- **Shellcode 相容** — 在獨立模式下有意義的套件（如 `crypto`、`encoding`、`strings`）支援 `-fshellcode`
+- **Shellcode 相容** — 在獨立模式下有意義的套件（如 `crypto`、`encoding`、`bytes`）支援 `-fshellcode`
 
 ---
 
@@ -73,7 +72,40 @@ NeverC 將提供類似 Qt 的跨平台 UI 元件庫——但採用 HTML/JS/CSS �
 
 ---
 
-## 3. EVM 智慧合約後端
+## 3. IDE 與語言工具 (`neverc-ide`)
+
+NeverC 將為 `.nc` 語言擴充提供一流的 IDE 支援——VSCode 擴充實現即時生產力，獨立 NeverC IDE 提供完全整合的開發體驗。
+
+### VSCode 擴充
+
+- **語法醒目提示** — 完整 `.nc` 語法，支援 NeverC 特有型別的語義 token（`string`、`u8`–`u64`、`i8`–`i64`、`f32`、`f64`）
+- **智慧補全** — 內建型別、點呼叫方法（`.c_str()`、`.len()`、`.starts_with()`）和 `#include` 路徑的自動補全
+- **診斷** — 即時顯示 `neverc` 編譯器的錯誤和警告
+- **跳至定義** — 跨翻譯單元跳轉到函式、結構體和巨集定義
+- **懸停文件** — 內建函式、編譯器內建和標準函式庫套件的內嵌文件
+- **程式碼動作** — 常見錯誤的快速修復建議，`std` 套件的自動匯入
+- **偵錯** — 整合 LLDB/GDB 偵錯配接器，支援中斷點、逐步和變數檢查
+- **Shellcode 模式** — 針對 `-fshellcode` 管線的語法感知功能：壞位元組醒目提示、shellcode 大小顯示、目標特定補全
+- **外掛 API 整合** — 外掛掛鈎點視覺化和鷹架
+
+### 獨立 IDE
+
+- **基於 NeverC UI (`neverc-ui`)** — IDE 本身是 HTML/JS/CSS 元件庫的展示，用自己的 UI 框架建構
+- **整合終端** — 無需離開 IDE 即可建置、執行和偵錯
+- **視覺化 shellcode 管線** — IR → MIR → 擷取管線的圖形視圖，逐 pass 輸出檢查
+- **專案範本** — 一鍵鷹架：宿主二進位、shellcode、EVM 合約、Solana 程式
+- **AI 輔助編碼** — 內建 LLM 整合，理解 NeverC 語義，產生 `.nc` 程式碼，解釋編譯器診斷
+- **跨編譯儀表板** — 視覺化目標選擇器，平台矩陣和建置狀態
+
+### 為什麼同時做 VSCode 和獨立 IDE？
+
+- VSCode 涵蓋了大多數已在該生態中的開發者
+- 獨立 IDE 為安全研究員提供更深入的、專門建構的體驗，包含 shellcode 管線視覺化和整合二進位分析
+- 兩者共享同一個語言伺服器後端——改進同時惠及兩者
+
+---
+
+## 4. EVM 智慧合約後端
 
 NeverC 將支援把 C 原始碼編譯為 EVM（以太坊虛擬機）位元組碼——讓開發者能用 C 取代 Solidity 撰寫智慧合約。
 
@@ -97,7 +129,7 @@ NeverC 將支援把 C 原始碼編譯為 EVM（以太坊虛擬機）位元組碼
 
 ---
 
-## 4. Solana eBPF 後端
+## 5. Solana eBPF 後端
 
 NeverC 將支援把 C 原始碼編譯為 Solana 的 eBPF 位元組碼——實現用 C 開發鏈上程式。
 
@@ -128,5 +160,6 @@ NeverC 將支援把 C 原始碼編譯為 Solana 的 eBPF 位元組碼——實�
 |------|------|
 | 標準函式庫 (`std`) | 研究 / 設計 |
 | UI 元件庫 (`neverc-ui`) | 研究 / 設計 |
+| IDE 與語言工具 (`neverc-ide`) | 研究 / 設計 |
 | EVM 智慧合約後端 | 研究 / 設計 |
 | Solana eBPF 後端 | 研究 / 設計 |

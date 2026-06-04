@@ -71,6 +71,7 @@ NeverC 项目的主要规划方向：标准库、EVM 智能合约后端和 Solan
 |------|------|
 | 标准库 (`std`) | Go 风格开箱即用包：`fmt`、`os`、`io`、`net`、`crypto`、`encoding`、`sync` 等 |
 | UI 组件库 (`neverc-ui`) | 类 Qt 跨平台 UI，HTML/JS/CSS 渲染器，拖拽式设计器，AI 原生工作流 |
+| IDE 与语言工具 (`neverc-ide`) | `.nc` 文件的 VSCode 扩展 + 独立 IDE，支持智能补全、调试和 shellcode 管线可视化 |
 | EVM 智能合约 | 把 C 编译为 EVM 字节码——用 C 代替 Solidity 编写智能合约 |
 | Solana eBPF | 把 C 编译为 Solana eBPF 字节码——用 C 开发链上程序 |
 

@@ -71,6 +71,7 @@ Principales direcciones planificadas del proyecto NeverC: biblioteca estándar, 
 |----------------|-------------|
 | Biblioteca estándar (`std`) | Paquetes al estilo Go: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync` y más |
 | Biblioteca de componentes UI (`neverc-ui`) | UI multiplataforma tipo Qt, renderizador HTML/JS/CSS, diseñador drag-and-drop, flujo nativo IA |
+| IDE y herramientas de lenguaje (`neverc-ide`) | Extensión VSCode + IDE independiente para archivos `.nc`, IntelliSense, depuración, visualización de pipeline shellcode |
 | Contratos inteligentes EVM | Compilar C a bytecode EVM — escribir contratos en C en lugar de Solidity |
 | Solana eBPF | Compilar C a bytecode eBPF de Solana — desarrollo de programas on-chain en C |
 

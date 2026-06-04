@@ -27,7 +27,6 @@ NeverC 将提供一套全面的标准库，参照 Go 标准库设计——提供
 | `encoding`  | JSON、Base64、Hex、CSV、二进制（大小端）                             |
 | `sync`      | 互斥锁、读写锁、WaitGroup、Once、原子操作                              |
 | `time`      | 单调/墙钟时间、时长、定时器、格式化                                       |
-| `strings`   | 搜索、分割、连接、修剪、替换、构建器                                       |
 | `bytes`     | 字节切片操作、缓冲区                                               |
 | `math`      | 数学常量、基本函数、随机数生成                                          |
 | `sort`      | 泛型排序与搜索                                                  |
@@ -46,7 +45,7 @@ NeverC 将提供一套全面的标准库，参照 Go 标准库设计——提供
 - **纯 C23** — 每个包都以标准 NeverC/C23 编译；无隐藏 C++ 或平台特定汇编
 - **零外部依赖** — 标准库以 LLVM bitcode 嵌入编译器，与现有的 `string` 和 `mimalloc` 内置功能一致
 - **跨平台** — 所有包在 macOS、Linux、Windows（x86_64 / AArch64）上工作
-- **Shellcode 兼容** — 在独立模式下有意义的包（如 `crypto`、`encoding`、`strings`）支持 `-fshellcode`
+- **Shellcode 兼容** — 在独立模式下有意义的包（如 `crypto`、`encoding`、`bytes`）支持 `-fshellcode`
 
 ---
 
@@ -75,7 +74,40 @@ NeverC 将提供类似 Qt 的跨平台 UI 组件库——但采用 HTML/JS/CSS �
 
 ---
 
-## 3. EVM 智能合约后端
+## 3. IDE 与语言工具 (`neverc-ide`)
+
+NeverC 将为 `.nc` 语言扩展提供一流的 IDE 支持——VSCode 扩展实现即时生产力，独立 NeverC IDE 提供完全集成的开发体验。
+
+### VSCode 扩展
+
+- **语法高亮** — 完整 `.nc` 语法，支持 NeverC 特有类型的语义 token（`string`、`u8`–`u64`、`i8`–`i64`、`f32`、`f64`）
+- **智能补全** — 内置类型、点调用方法（`.c_str()`、`.len()`、`.starts_with()`）和 `#include` 路径的自动补全
+- **诊断** — 实时显示 `neverc` 编译器的错误和警告
+- **跳转到定义** — 跨翻译单元跳转到函数、结构体和宏定义
+- **悬停文档** — 内置函数、编译器内建和标准库包的内联文档
+- **代码操作** — 常见错误的快速修复建议，`std` 包的自动导入
+- **调试** — 集成 LLDB/GDB 调试适配器，支持断点、单步和变量检查
+- **Shellcode 模式** — 针对 `-fshellcode` 管线的语法感知功能：坏字节高亮、shellcode 大小显示、目标特定补全
+- **插件 API 集成** — 插件钩子点可视化和脚手架
+
+### 独立 IDE
+
+- **基于 NeverC UI (`neverc-ui`)** — IDE 本身是 HTML/JS/CSS 组件库的展示，用自己的 UI 框架构建
+- **集成终端** — 无需离开 IDE 即可构建、运行和调试
+- **可视化 shellcode 管线** — IR → MIR → 提取管线的图形视图，逐 pass 输出检查
+- **项目模板** — 一键脚手架：宿主二进制、shellcode、EVM 合约、Solana 程序
+- **AI 辅助编码** — 内置 LLM 集成，理解 NeverC 语义，生成 `.nc` 代码，解释编译器诊断
+- **跨编译仪表板** — 可视化目标选择器，平台矩阵和构建状态
+
+### 为什么同时做 VSCode 和独立 IDE？
+
+- VSCode 覆盖了大多数已经在该生态中的开发者
+- 独立 IDE 为安全研究员提供更深入的、专门构建的体验，包含 shellcode 管线可视化和集成二进制分析
+- 两者共享同一个语言服务器后端——改进同时惠及两者
+
+---
+
+## 4. EVM 智能合约后端
 
 NeverC 将支持把 C 源代码编译为 EVM（以太坊虚拟机）字节码——使开发者能用 C 代替 Solidity 编写智能合约。
 
@@ -99,7 +131,7 @@ NeverC 将支持把 C 源代码编译为 EVM（以太坊虚拟机）字节码—
 
 ---
 
-## 4. Solana eBPF 后端
+## 5. Solana eBPF 后端
 
 NeverC 将支持把 C 源代码编译为 Solana 的 eBPF 字节码——实现用 C 开发链上程序。
 
@@ -130,6 +162,7 @@ NeverC 将支持把 C 源代码编译为 Solana 的 eBPF 字节码——实现�
 |------|------|
 | 标准库 (`std`) | 研究 / 设计 |
 | UI 组件库 (`neverc-ui`) | 研究 / 设计 |
+| IDE 与语言工具 (`neverc-ide`) | 研究 / 设计 |
 | EVM 智能合约后端 | 研究 / 设计 |
 | Solana eBPF 后端 | 研究 / 设计 |
 

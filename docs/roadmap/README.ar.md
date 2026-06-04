@@ -28,7 +28,6 @@
 | `encoding` | JSON، Base64، Hex، CSV، ثنائي (ترتيب بايت صغير/كبير) |
 | `sync` | Mutex، RWLock، WaitGroup، Once، عمليات ذرية |
 | `time` | ساعة رتيبة/جدارية، مدة، مؤقتات، تنسيق |
-| `strings` | بحث، تقسيم، ضم، قص، استبدال، باني |
 | `bytes` | معالجة شرائح البايت، مخزن مؤقت |
 | `math` | ثوابت، دوال أساسية، توليد أعداد عشوائية |
 | `sort` | فرز وبحث عام |
@@ -46,7 +45,7 @@
 - **C23 نقي** — كل حزمة تُجمَّع كمعيار NeverC/C23؛ بدون C++ مخفي أو مُجمِّع خاص بمنصة
 - **صفر تبعيات خارجية** — المكتبة القياسية مضمنة كـ LLVM bitcode في المُجمِّع، مثل المدمجات الحالية `string` و `mimalloc`
 - **متعدد المنصات** — جميع الحزم تعمل على macOS و Linux و Windows (x86_64 / AArch64)
-- **متوافق مع shellcode** — الحزم ذات المعنى في وضع freestanding (مثل: `crypto`، `encoding`، `strings`) تعمل مع `-fshellcode`
+- **متوافق مع shellcode** — الحزم ذات المعنى في وضع freestanding (مثل: `crypto`، `encoding`، `bytes`) تعمل مع `-fshellcode`
 
 ---
 
@@ -75,7 +74,41 @@
 
 ---
 
-## 3. واجهة EVM الخلفية للعقود الذكية
+## 3. IDE & Language Tooling (`neverc-ide`)
+
+NeverC will provide first-class IDE support for the `.nc` language extension — a VSCode extension for immediate productivity and a standalone NeverC IDE for a fully integrated development experience.
+
+### VSCode Extension
+
+- **Syntax highlighting** — full `.nc` grammar with semantic token support for NeverC-specific types (`string`, `u8`–`u64`, `i8`–`i64`, `f32`, `f64`)
+- **IntelliSense** — auto-completion for built-in types, dot-call methods (`.c_str()`, `.len()`, `.starts_with()`), and `#include` paths
+- **Diagnostics** — real-time error and warning display from `neverc` compiler output
+- **Go to definition** — jump to function, struct, and macro definitions across translation units
+- **Hover documentation** — inline docs for built-in functions, compiler intrinsics, and standard library packages
+- **Code actions** — quick-fix suggestions for common errors, auto-import for `std` packages
+- **Debugging** — integrated LLDB/GDB debug adapter with breakpoint, step, and variable inspection support
+- **Shellcode mode** — syntax-aware features for `-fshellcode` pipelines: bad-byte highlighting, shellcode size display, target-specific completions
+- **Plugin API integration** — plugin hook point visualization and scaffolding
+
+### Standalone IDE
+
+- **Built on NeverC UI (`neverc-ui`)** — the IDE is itself a showcase of the HTML/JS/CSS component library, dogfooding the UI framework
+- **Integrated terminal** — build, run, and debug without leaving the IDE
+- **Visual shellcode pipeline** — graphical view of the IR → MIR → extraction pipeline with pass-by-pass output inspection
+- **Project templates** — one-click scaffolding for hosted binaries, shellcode, EVM contracts, and Solana programs
+- **AI-assisted coding** — built-in LLM integration that understands NeverC semantics, generates `.nc` code, and explains compiler diagnostics
+- **Cross-compilation dashboard** — visual target selector with platform matrix and build status
+
+### Why Both VSCode and Standalone?
+
+- VSCode captures the majority of developers who already live in that ecosystem
+- The standalone IDE provides a deeper, purpose-built experience for security researchers who want shellcode pipeline visualization and integrated binary analysis
+- Both share the same language server backend — improvements benefit both simultaneously
+
+---
+
+
+## 4. واجهة EVM الخلفية للعقود الذكية
 
 سيدعم NeverC تجميع شفرة C المصدرية إلى بايت كود EVM (آلة إيثريوم الافتراضية) — مما يتيح للمطورين كتابة العقود الذكية بلغة C بدلاً من Solidity.
 
@@ -99,7 +132,7 @@
 
 ---
 
-## 4. واجهة Solana eBPF الخلفية
+## 5. واجهة Solana eBPF الخلفية
 
 سيدعم NeverC تجميع شفرة C المصدرية إلى بايت كود eBPF لـ Solana — مما يتيح تطوير برامج على السلسلة بلغة C.
 
@@ -130,6 +163,7 @@
 |--------|--------|
 | المكتبة القياسية (`std`) | بحث / تصميم |
 | مكتبة مكونات واجهة المستخدم (`neverc-ui`) | بحث / تصميم |
+| بيئة التطوير وأدوات اللغة (`neverc-ide`) | بحث / تصميم |
 | واجهة EVM الخلفية للعقود الذكية | بحث / تصميم |
 | واجهة Solana eBPF الخلفية | بحث / تصميم |
 

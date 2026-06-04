@@ -26,7 +26,6 @@ NeverC fornirà una libreria standard completa ispirata a quella di Go — pacch
 | `encoding` | JSON, Base64, Hex, CSV, binario (little/big endian) |
 | `sync` | Mutex, RWLock, WaitGroup, Once, operazioni atomiche |
 | `time` | Orologio monotono/a muro, durata, timer, formattazione |
-| `strings` | Ricerca, divisione, unione, trim, sostituzione, builder |
 | `bytes` | Manipolazione di slice di byte, buffer |
 | `math` | Costanti, funzioni elementari, generazione numeri casuali |
 | `sort` | Ordinamento e ricerca generici |
@@ -44,7 +43,7 @@ NeverC fornirà una libreria standard completa ispirata a quella di Go — pacch
 - **C23 puro** — ogni pacchetto compila come NeverC/C23 standard; nessun C++ nascosto né assembler specifico per piattaforma
 - **Zero dipendenze esterne** — la libreria standard è incorporata come bitcode LLVM nel compilatore, come i built-in `string` e `mimalloc` esistenti
 - **Multipiattaforma** — tutti i pacchetti funzionano su macOS, Linux e Windows (x86_64 / AArch64)
-- **Compatibile con shellcode** — i pacchetti utili in modalità freestanding (es.: `crypto`, `encoding`, `strings`) funzionano con `-fshellcode`
+- **Compatibile con shellcode** — i pacchetti utili in modalità freestanding (es.: `crypto`, `encoding`, `bytes`) funzionano con `-fshellcode`
 
 ---
 
@@ -73,7 +72,41 @@ NeverC fornirà una libreria di componenti UI multipiattaforma ispirata a Qt —
 
 ---
 
-## 3. Backend EVM per smart contract
+## 3. IDE & Language Tooling (`neverc-ide`)
+
+NeverC will provide first-class IDE support for the `.nc` language extension — a VSCode extension for immediate productivity and a standalone NeverC IDE for a fully integrated development experience.
+
+### VSCode Extension
+
+- **Syntax highlighting** — full `.nc` grammar with semantic token support for NeverC-specific types (`string`, `u8`–`u64`, `i8`–`i64`, `f32`, `f64`)
+- **IntelliSense** — auto-completion for built-in types, dot-call methods (`.c_str()`, `.len()`, `.starts_with()`), and `#include` paths
+- **Diagnostics** — real-time error and warning display from `neverc` compiler output
+- **Go to definition** — jump to function, struct, and macro definitions across translation units
+- **Hover documentation** — inline docs for built-in functions, compiler intrinsics, and standard library packages
+- **Code actions** — quick-fix suggestions for common errors, auto-import for `std` packages
+- **Debugging** — integrated LLDB/GDB debug adapter with breakpoint, step, and variable inspection support
+- **Shellcode mode** — syntax-aware features for `-fshellcode` pipelines: bad-byte highlighting, shellcode size display, target-specific completions
+- **Plugin API integration** — plugin hook point visualization and scaffolding
+
+### Standalone IDE
+
+- **Built on NeverC UI (`neverc-ui`)** — the IDE is itself a showcase of the HTML/JS/CSS component library, dogfooding the UI framework
+- **Integrated terminal** — build, run, and debug without leaving the IDE
+- **Visual shellcode pipeline** — graphical view of the IR → MIR → extraction pipeline with pass-by-pass output inspection
+- **Project templates** — one-click scaffolding for hosted binaries, shellcode, EVM contracts, and Solana programs
+- **AI-assisted coding** — built-in LLM integration that understands NeverC semantics, generates `.nc` code, and explains compiler diagnostics
+- **Cross-compilation dashboard** — visual target selector with platform matrix and build status
+
+### Why Both VSCode and Standalone?
+
+- VSCode captures the majority of developers who already live in that ecosystem
+- The standalone IDE provides a deeper, purpose-built experience for security researchers who want shellcode pipeline visualization and integrated binary analysis
+- Both share the same language server backend — improvements benefit both simultaneously
+
+---
+
+
+## 4. Backend EVM per smart contract
 
 NeverC supporterà la compilazione di codice sorgente C in bytecode EVM (Ethereum Virtual Machine) — consentendo agli sviluppatori di scrivere smart contract in C invece di Solidity.
 
@@ -97,7 +130,7 @@ NeverC supporterà la compilazione di codice sorgente C in bytecode EVM (Ethereu
 
 ---
 
-## 4. Backend Solana eBPF
+## 5. Backend Solana eBPF
 
 NeverC supporterà la compilazione di codice sorgente C in bytecode eBPF di Solana — abilitando lo sviluppo di programmi on-chain in C.
 
@@ -128,5 +161,6 @@ Queste funzionalità sono in fase di ricerca e progettazione. Non sono impegnate
 |-------------|-------|
 | Libreria standard (`std`) | Ricerca / Progettazione |
 | Libreria di componenti UI (`neverc-ui`) | Ricerca / Progettazione |
+| IDE e strumenti linguistici (`neverc-ide`) | Ricerca / Progettazione |
 | Backend EVM per smart contract | Ricerca / Progettazione |
 | Backend Solana eBPF | Ricerca / Progettazione |
