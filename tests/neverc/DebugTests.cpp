@@ -56,11 +56,20 @@ TEST_F(DebugTest, WindowsCOFFDWARF) {
                 "-c", src, "-o", obj.string()});
   ASSERT_EQ(r.exitCode, 0) << "windows-dwarf compile\n" << r.err;
 
-  if (exec("which", {"objdump"}).exitCode != 0) {
+  std::string objdumpTool;
+  if (exec("which", {"llvm-objdump"}).exitCode == 0)
+    objdumpTool = "llvm-objdump";
+  else if (exec("which", {"objdump"}).exitCode == 0)
+    objdumpTool = "objdump";
+  else {
     GTEST_SKIP() << "objdump not available";
     return;
   }
-  auto sections = exec("objdump", {"-h", obj.string()});
+  auto sections = exec(objdumpTool, {"-h", obj.string()});
+  if (!sections.contains(".text")) {
+    GTEST_SKIP() << objdumpTool << " cannot parse COFF format on this host";
+    return;
+  }
   for (auto *sect : {".debug_info", ".debug_abbrev", ".debug_line",
                      ".debug_str"}) {
     SCOPED_TRACE(sect);
@@ -115,11 +124,20 @@ TEST_F(DebugTest, WindowsDefaultDebug) {
                 src, "-o", obj.string()});
   ASSERT_EQ(r.exitCode, 0);
 
-  if (exec("which", {"objdump"}).exitCode != 0) {
+  std::string objdumpTool;
+  if (exec("which", {"llvm-objdump"}).exitCode == 0)
+    objdumpTool = "llvm-objdump";
+  else if (exec("which", {"objdump"}).exitCode == 0)
+    objdumpTool = "objdump";
+  else {
     GTEST_SKIP() << "objdump not available";
     return;
   }
-  auto sections = exec("objdump", {"-h", obj.string()});
+  auto sections = exec(objdumpTool, {"-h", obj.string()});
+  if (!sections.contains(".text")) {
+    GTEST_SKIP() << objdumpTool << " cannot parse COFF format on this host";
+    return;
+  }
   EXPECT_TRUE(sections.contains(".debug_info"))
       << "Windows -g should produce DWARF, not CodeView";
 }
