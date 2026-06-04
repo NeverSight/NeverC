@@ -12,7 +12,6 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/BinaryFormat/ELF.h"
-#include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <gtest/gtest.h>
@@ -201,17 +200,18 @@ buildMinimalELF(ArrayRef<std::string> DefinedSyms,
   return Buf;
 }
 
-/// Validate that a buffer is a parseable ELF64LE relocatable object.
+/// Validate that a buffer looks like a well-formed ELF64LE relocatable object.
+/// Uses raw header checks instead of LLVM's ELFObjectFile to avoid RTTI
+/// dependencies (LLVM is built with -fno-rtti).
 bool isValidELF64LE(ArrayRef<char> Buf) {
   if (Buf.size() < sizeof(ELF::Elf64_Ehdr))
     return false;
-  auto BufRef = MemoryBufferRef(StringRef(Buf.data(), Buf.size()), "test");
-  auto ObjOrErr = object::ELFObjectFile<object::ELF64LE>::create(BufRef);
-  if (!ObjOrErr) {
-    consumeError(ObjOrErr.takeError());
-    return false;
-  }
-  return ObjOrErr->getELFFile().getHeader().e_type == ELF::ET_REL;
+  auto *H = reinterpret_cast<const ELF::Elf64_Ehdr *>(Buf.data());
+  return memcmp(H->e_ident, ELF::ElfMagic, 4) == 0 &&
+         H->e_ident[ELF::EI_CLASS] == ELF::ELFCLASS64 &&
+         H->e_ident[ELF::EI_DATA] == ELF::ELFDATA2LSB &&
+         H->e_type == ELF::ET_REL &&
+         H->e_shoff > 0 && H->e_shoff < Buf.size();
 }
 
 /// Merge helper: returns (success, output_buffer).
