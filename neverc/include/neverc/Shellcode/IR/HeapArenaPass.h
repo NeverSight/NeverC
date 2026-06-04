@@ -22,9 +22,6 @@ inline constexpr uint64_t DefaultArenaThreshold = 64 * 1024;
 
 inline constexpr uint64_t MmapHeaderSize = 16;
 
-inline constexpr int MapPrivateAnonLinux = 0x22;   // MAP_PRIVATE(0x02) | MAP_ANONYMOUS(0x20)
-inline constexpr int MapPrivateAnonDarwin = 0x1002; // MAP_PRIVATE(0x02) | MAP_ANONYMOUS(0x1000)
-
 } // namespace HeapArenaABI
 
 /// Rewrites malloc/free/calloc/realloc calls in shellcode to use

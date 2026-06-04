@@ -1,4 +1,5 @@
 #include "neverc/Shellcode/IR/HeapArenaPass.h"
+#include "neverc/Shellcode/IR/MmapABI.h"
 #include "neverc/Shellcode/IR/StringRuntimeABI.h"
 #include "neverc/Shellcode/IR/StringRuntimePass.h"
 #include "neverc/Shellcode/Pipeline/SymbolNames.h"
@@ -114,11 +115,9 @@ Function *getOrDeclareMunmap(Module &M) {
       FunctionType::get(Type::getInt32Ty(M.getContext()), {PtrTy, I64}, false));
 }
 
-constexpr int kProtRW = 3; // PROT_READ(0x1) | PROT_WRITE(0x2)
-
 int mapPrivateAnonFlags(ShellcodeOS OS) {
-  return (OS == ShellcodeOS::Darwin) ? HeapABI::MapPrivateAnonDarwin
-                                     : HeapABI::MapPrivateAnonLinux;
+  return (OS == ShellcodeOS::Darwin) ? MmapABI::PrivateAnonDarwin
+                                     : MmapABI::PrivateAnonLinux;
 }
 
 Value *emitMmapAlloc(IRBuilder<> &B, Module &M, Value *Size, ShellcodeOS OS) {
@@ -135,7 +134,7 @@ Value *emitMmapAlloc(IRBuilder<> &B, Module &M, Value *Size, ShellcodeOS OS) {
   Value *Base = B.CreateCall(
       Mmap,
       {ConstantPointerNull::get(PtrTy), Total64,
-       ConstantInt::get(I32, kProtRW),
+       ConstantInt::get(I32, MmapABI::ProtRW),
        ConstantInt::get(I32, mapPrivateAnonFlags(OS)),
        ConstantInt::get(I32, -1), ConstantInt::get(I64, 0)},
       "mmap.base");

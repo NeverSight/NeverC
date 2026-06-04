@@ -1,4 +1,5 @@
 #include "neverc/Shellcode/IR/StringRuntimePass.h"
+#include "neverc/Shellcode/IR/MmapABI.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -144,8 +145,8 @@ GlobalVariable *getOrCreateArena(Module &M, uint64_t ArenaSize,
 }
 
 int mmapAnonFlags(ShellcodeOS OS) {
-  return (OS == ShellcodeOS::Darwin) ? ABI::MmapPrivateAnonDarwin
-                                     : ABI::MmapPrivateAnonLinux;
+  return (OS == ShellcodeOS::Darwin) ? MmapABI::PrivateAnonDarwin
+                                     : MmapABI::PrivateAnonLinux;
 }
 
 Function *getOrDeclareMmap(Module &M) {
@@ -258,7 +259,7 @@ Function *getOrCreateStringAlloc(Module &M, uint64_t ArenaSize,
         MmapFn,
         {ConstantPointerNull::get(PtrTy),
          ConstantInt::get(I64, ArenaSize),
-         ConstantInt::get(I32, ABI::MmapProtRW),
+         ConstantInt::get(I32, MmapABI::ProtRW),
          ConstantInt::get(I32, mmapAnonFlags(OS)),
          ConstantInt::get(I32, -1), ConstantInt::get(I64, 0)},
         "arena.mmap");

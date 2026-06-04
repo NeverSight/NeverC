@@ -55,9 +55,6 @@ static_assert(KernelArenaSize <= ArenaSizeCeiling,
               "alloc helper's `Pos + N` arithmetic stays far from wrap.");
 
 inline constexpr llvm::StringLiteral ArenaGlobalName = "__sc_string_arena";
-inline constexpr int MmapProtRW = 3; // PROT_READ | PROT_WRITE
-inline constexpr int MmapPrivateAnonLinux = 0x22;
-inline constexpr int MmapPrivateAnonDarwin = 0x1002;
 inline constexpr llvm::StringLiteral ArenaOffsetGlobalName =
     "__sc_string_arena_pos";
 inline constexpr llvm::StringLiteral ArenaFreeListGlobalName =
