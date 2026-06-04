@@ -134,7 +134,10 @@ jobs:
             [ -f "$core" ] || continue
 
             echo "=== eu-stack backtrace from $core ==="
-            eu-stack -e $NCC --core="$core" 2>&1 | head -25
+            eu-stack -e $NCC --core="$core" 2>&1 | head -40
+
+            echo "=== GDB full backtrace from $core ==="
+            gdb -batch -ex "bt full 30" -ex "info registers" $NCC "$core" 2>&1 | head -60
 
             # Get crash PC
             PC=$(gdb -batch -ex "print/x \$pc" $NCC "$core" 2>&1 | grep -oP '0x[0-9a-f]+' | tail -1)
@@ -162,14 +165,19 @@ jobs:
           done
         }
 
-        # Known failing tests on Linux ARM64
-        diagnose "string_encrypt" \
-          "$TESTDIR/string/test_neverc_string_encrypt.c" \
-          "-std=c23 -fbuiltin-string"
-
+        # BuiltinStringQStringParity -g variant crashes (SIGSEGV) during
+        # compile+link.  Test with/without parallel codegen to isolate.
         diagnose "string_qstring" \
           "$TESTDIR/string/test_neverc_string_qstring_parity.c" \
           "-std=c23 -fbuiltin-string"
+
+        diagnose "string_qstring_g" \
+          "$TESTDIR/string/test_neverc_string_qstring_parity.c" \
+          "-std=c23 -fbuiltin-string -g"
+
+        diagnose "string_qstring_g_nopcg" \
+          "$TESTDIR/string/test_neverc_string_qstring_parity.c" \
+          "-std=c23 -fbuiltin-string -g -fno-parallel-codegen"
 
     - name: Fail if tests failed
       if: steps.tests.outcome == 'failure'
