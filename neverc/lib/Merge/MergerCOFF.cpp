@@ -167,7 +167,9 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       uint32_t SAlign = 0;
       uint32_t AlignBits = CS->Characteristics & IMAGE_SCN_ALIGN_MASK;
       if (AlignBits) {
-        SAlign = 1u << ((AlignBits >> 20) - 1);
+        unsigned Exp = (AlignBits >> 20) - 1;
+        Exp = std::min(Exp, 20u);
+        SAlign = 1u << Exp;
         if (SAlign > MS.Alignment)
           MS.Alignment = SAlign;
       }

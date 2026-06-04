@@ -72,6 +72,15 @@ bool sectionsCompatible(uint32_t typeA, uint64_t flagsA, uint32_t typeB,
   return false;
 }
 
+uint64_t clampAlign(uint64_t A) {
+  constexpr uint64_t MaxAlign = uint64_t(1) << 20;
+  if (A <= 1)
+    return 1;
+  if ((A & (A - 1)) != 0)
+    return 1;
+  return std::min(A, MaxAlign);
+}
+
 // ---------------------------------------------------------------------------
 // Symbol resolution priority — ported from LLD Symbols/Symbols.cpp
 // ---------------------------------------------------------------------------
@@ -152,6 +161,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     MS.Name = Name.str();
     MS.Template = S;
     MS.Template.sh_flags = Flags;
+    MS.Template.sh_addralign = clampAlign(MS.Template.sh_addralign);
     MS.Template.sh_link = 0;
     MS.Template.sh_info = 0;
     unsigned NewIdx = MergedSections.size();
@@ -256,8 +266,11 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       auto &MS = MergedSections[MIdx];
 
       // Track max alignment (LLD: OutputSection::commitSection).
-      if (S.sh_addralign > MS.Template.sh_addralign)
-        MS.Template.sh_addralign = S.sh_addralign;
+      {
+        uint64_t SafeAlign = clampAlign(S.sh_addralign);
+        if (SafeAlign > MS.Template.sh_addralign)
+          MS.Template.sh_addralign = SafeAlign;
+      }
 
       // When types differ but are compatible (canMergeToProgbits),
       // promote to SHT_PROGBITS (LLD behavior).
@@ -576,7 +589,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   // All section addresses are 0 in -r mode (ElfImageEmitter.cpp:1552).
   uint64_t Off = sizeof(Ehdr);
   for (unsigned i = 1; i < OutSections.size(); ++i) {
-    uint64_t Align = std::max<uint64_t>(OutSections[i].Hdr.sh_addralign, 1);
+    uint64_t Align = clampAlign(OutSections[i].Hdr.sh_addralign);
     Off = (Off + Align - 1) & ~(Align - 1);
     OutSections[i].Hdr.sh_offset = Off;
     if (OutSections[i].Hdr.sh_type == SHT_NOBITS) {

@@ -181,8 +181,12 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       MS.Flags = S64.flags;
       MS.Reserved1 = S64.reserved1;
       MS.Reserved2 = S64.reserved2;
-      if (S64.align > MS.Align)
-        MS.Align = S64.align;
+      {
+        constexpr uint32_t MaxAlignExp = 20;
+        uint32_t SafeExp = std::min(S64.align, MaxAlignExp);
+        if (SafeExp > MS.Align)
+          MS.Align = SafeExp;
+      }
 
       // Distinguish zerofill (BSS-like) sections from regular sections.
       // Zerofill sections have no on-disk content; their layout uses
@@ -192,7 +196,7 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           (SecType == MO::S_ZEROFILL || SecType == MO::S_GB_ZEROFILL ||
            SecType == MO::S_THREAD_LOCAL_ZEROFILL);
 
-      uint64_t SecAlign = 1ULL << MS.Align;
+      uint64_t SecAlign = 1ULL << std::min(MS.Align, 20u);
       uint64_t PartOffset;
       if (IsZerofill) {
         PartOffset = MS.VirtualSize;
@@ -416,7 +420,7 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     Layouts[i].IsZerofill = IsZf;
     if (IsZf)
       continue;
-    uint64_t Align = 1ULL << MergedSections[i].Align;
+    uint64_t Align = 1ULL << std::min(MergedSections[i].Align, 20u);
     CurOff = (CurOff + Align - 1) & ~(Align - 1);
     Layouts[i].Offset = CurOff;
     Layouts[i].Size = MergedSections[i].Data.size();
@@ -427,7 +431,7 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   for (unsigned i = 0; i < NSects; ++i) {
     if (!Layouts[i].IsZerofill)
       continue;
-    uint64_t Align = 1ULL << MergedSections[i].Align;
+    uint64_t Align = 1ULL << std::min(MergedSections[i].Align, 20u);
     CurOff = (CurOff + Align - 1) & ~(Align - 1);
     Layouts[i].Offset = CurOff;
     Layouts[i].Size = MergedSections[i].VirtualSize;
