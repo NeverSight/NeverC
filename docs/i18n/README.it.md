@@ -23,7 +23,7 @@ Linker integrato · Pipeline shellcode · Runtime integrati (`string` · `mimall
 
 ## Panoramica
 
-NeverC compila C standard in binari ospitati, eseguibili freestanding e shellcode indipendente dalla posizione — tutto da un'unica toolchain. Supporta **x86_64** e **AArch64** (solo little-endian).
+NeverC compila C standard in binari ospitati, eseguibili freestanding e shellcode indipendente dalla posizione — tutto da un'unica toolchain. Supporta **x86_64** e **AArch64** (solo little-endian). Le versioni future aggiungeranno **EVM** (smart contract Ethereum) e **Solana eBPF** (programmi on-chain) come target di compilazione.
 
 ## Perché NeverC?
 

@@ -23,7 +23,7 @@ Integrated linker · Shellcode pipeline · Built-in runtimes (`string` · `mimal
 
 ## Overview
 
-NeverC compiles standard C into hosted binaries, freestanding executables, and position-independent shellcode — all from a single toolchain. It targets **x86_64** and **AArch64** (little-endian only).
+NeverC compiles standard C into hosted binaries, freestanding executables, and position-independent shellcode — all from a single toolchain. It targets **x86_64** and **AArch64** (little-endian only). Future releases will add **EVM** (Ethereum smart contracts) and **Solana eBPF** (on-chain programs) as compilation targets.
 
 ## Why NeverC?
 

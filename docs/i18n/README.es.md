@@ -23,7 +23,7 @@ Enlazador integrado · Pipeline shellcode · Runtimes integrados (`string` · `m
 
 ## Descripción general
 
-NeverC compila C estándar en binarios alojados, ejecutables freestanding y shellcode independiente de la posición, todo desde una única cadena de herramientas. Apunta a **x86_64** y **AArch64** (solo little-endian).
+NeverC compila C estándar en binarios alojados, ejecutables freestanding y shellcode independiente de la posición, todo desde una única cadena de herramientas. Apunta a **x86_64** y **AArch64** (solo little-endian). Futuras versiones añadirán **EVM** (contratos inteligentes Ethereum) y **Solana eBPF** (programas on-chain) como objetivos de compilación.
 
 ## ¿Por qué NeverC?
 

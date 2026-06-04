@@ -23,7 +23,7 @@ Integrierter Linker · Shellcode-Pipeline · Integrierte Laufzeiten (`string` ·
 
 ## Überblick
 
-NeverC kompiliert Standard-C in gehostete Binärdateien, Freestanding-Executables und positionsunabhängigen Shellcode — alles aus einer Toolchain. Zielarchitekturen: **x86_64** und **AArch64** (nur Little-Endian).
+NeverC kompiliert Standard-C in gehostete Binärdateien, Freestanding-Executables und positionsunabhängigen Shellcode — alles aus einer Toolchain. Zielarchitekturen: **x86_64** und **AArch64** (nur Little-Endian). Zukünftige Versionen werden **EVM** (Ethereum Smart Contracts) und **Solana eBPF** (On-Chain-Programme) als Kompilierungsziele hinzufügen.
 
 ## Warum NeverC?
 

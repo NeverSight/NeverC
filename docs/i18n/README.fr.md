@@ -23,7 +23,7 @@
 
 ## Vue d'ensemble
 
-NeverC compile du C standard en binaires hébergés, exécutables freestanding et shellcode indépendant de la position — le tout depuis une seule chaîne d'outils. Cible **x86_64** et **AArch64** (petit-boutien uniquement).
+NeverC compile du C standard en binaires hébergés, exécutables freestanding et shellcode indépendant de la position — le tout depuis une seule chaîne d'outils. Cible **x86_64** et **AArch64** (petit-boutien uniquement). Les futures versions ajouteront **EVM** (contrats intelligents Ethereum) et **Solana eBPF** (programmes on-chain) comme cibles de compilation.
 
 ## Pourquoi NeverC ?
 
