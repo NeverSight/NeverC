@@ -1542,6 +1542,17 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   if (!config->dynamicBase && config->machine == ARM64)
     config->dynamicBase = true;
 
+  if (config->machine == ARM64) {
+    if (config->majorSubsystemVersion < 10) {
+      config->majorSubsystemVersion = 10;
+      config->minorSubsystemVersion = 0;
+    }
+    if (config->majorOSVersion < 10) {
+      config->majorOSVersion = 10;
+      config->minorOSVersion = 0;
+    }
+  }
+
   // --- Exports & module definitions ---
 
   {

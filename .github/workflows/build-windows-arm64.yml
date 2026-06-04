@@ -143,12 +143,40 @@ jobs:
       shell: bash
       run: |
         set -x
-        # Windows paths (C:/...) for neverc.exe args, MSYS paths for bash execution
         NCC=$(cygpath -m "$PWD/build/bin/neverc.exe")
         TESTDIR=$(cygpath -m "$PWD/neverc/tests/neverc")
         WDIAG=$(cygpath -m "$PWD/diag_out")
         BDIAG="$PWD/diag_out"
         mkdir -p "$BDIAG"
+
+        # ── Environment & SDK diagnostics ──
+        echo "=== MSVC / SDK environment ==="
+        echo "LIB=$LIB"
+        echo "INCLUDE=$INCLUDE"
+        echo "VCToolsInstallDir=$VCToolsInstallDir"
+        echo "WindowsSdkDir=$WindowsSdkDir"
+        echo "WindowsSDKVersion=$WindowsSDKVersion"
+        echo "VSCMD_ARG_TGT_ARCH=$VSCMD_ARG_TGT_ARCH"
+        echo "PROCESSOR_ARCHITECTURE=$PROCESSOR_ARCHITECTURE"
+
+        echo "=== Check ARM64 CRT & SDK libs exist ==="
+        for lib in libcmt.lib libvcruntime.lib libucrt.lib kernel32.lib bcryptprimitives.lib; do
+          found=false
+          IFS=';' read -ra LIBDIRS <<< "$LIB"
+          for dir in "${LIBDIRS[@]}"; do
+            wdir=$(cygpath -u "$dir" 2>/dev/null || echo "$dir")
+            if [ -f "$wdir/$lib" ]; then
+              echo "  FOUND: $dir/$lib ($(wc -c < "$wdir/$lib") bytes)"
+              found=true
+              break
+            fi
+          done
+          $found || echo "  MISSING: $lib"
+        done
+
+        echo "=== Linker search paths (neverc -v) ==="
+        "$NCC" -std=c11 -v "$TESTDIR/standards/test_c_stdlib_patterns.c" \
+          -o "$WDIAG/diag_verbose.exe" 2>&1 | head -80 || true
 
         diagnose() {
           local label=$1 src=$2 flags=$3
@@ -166,18 +194,44 @@ jobs:
           file "$BDIAG"/diag_${label}_oneshot.exe 2>&1 || true
 
           echo "=== [$label] DLL dependencies ==="
-          dumpbin //DEPENDENTS "$BDIAG/diag_${label}_oneshot.exe" 2>&1 | head -30 || true
+          dumpbin //DEPENDENTS "$BDIAG/diag_${label}_oneshot.exe" 2>&1 || true
 
-          echo "=== [$label] step 4: run exe (powershell) ==="
-          powershell.exe -NoProfile -Command "& '$WDIAG/diag_${label}_oneshot.exe'; exit \$LASTEXITCODE" 2>&1 && echo "RUN OK" || echo "RUN EXIT=$?"
+          echo "=== [$label] IMPORTS (function names) ==="
+          dumpbin //IMPORTS "$BDIAG/diag_${label}_oneshot.exe" 2>&1 || true
+
+          echo "=== [$label] PE headers ==="
+          dumpbin //HEADERS "$BDIAG/diag_${label}_oneshot.exe" 2>&1 | head -60 || true
+
+          echo "=== [$label] step 4: run exe (powershell with detailed error) ==="
+          powershell.exe -NoProfile -Command "
+            try {
+              \$p = Start-Process -FilePath '$WDIAG/diag_${label}_oneshot.exe' \
+                -NoNewWindow -Wait -PassThru \
+                -RedirectStandardOutput '$WDIAG/diag_${label}_stdout.txt' \
+                -RedirectStandardError '$WDIAG/diag_${label}_stderr.txt'
+              Write-Host \"EXIT_CODE=\$(\$p.ExitCode)\"
+            } catch {
+              Write-Host \"EXCEPTION: \$_\"
+              Write-Host \"WIN32_ERROR: \$([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())\"
+            }
+          " 2>&1 || echo "POWERSHELL_EXIT=$?"
+          echo "--- stdout ---"
+          cat "$BDIAG/diag_${label}_stdout.txt" 2>/dev/null || echo "(empty)"
+          echo "--- stderr ---"
+          cat "$BDIAG/diag_${label}_stderr.txt" 2>/dev/null || echo "(empty)"
 
           echo "=== [$label] step 4b: run exe (direct) ==="
           "$BDIAG/diag_${label}_oneshot.exe" 2>&1 && echo "RUN OK" || echo "RUN EXIT=$?"
         }
 
-        # Known failing tests on Windows ARM64
         diagnose "c_stdlib" \
           "$TESTDIR/standards/test_c_stdlib_patterns.c" \
+          "-std=c11"
+
+        # Minimal test: just main() { return 0; } to isolate CRT vs codegen
+        echo 'int main(void) { return 0; }' > "$BDIAG/diag_minimal.c"
+        diagnose "minimal" \
+          "$(cygpath -m "$BDIAG/diag_minimal.c")" \
           "-std=c11"
 
         diagnose "mc64bit" \

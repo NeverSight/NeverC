@@ -1715,12 +1715,10 @@ template <typename PEHeaderTy> void OutputWriter::writeHeader() {
   pe->FileAlignment = config->fileAlign;
   pe->MajorImageVersion = config->majorImageVersion;
   pe->MinorImageVersion = config->minorImageVersion;
-  // Change the value to 4 to support win-xp
-  pe->MajorOperatingSystemVersion = 4;
-  pe->MinorOperatingSystemVersion = 0;
-  // Change the value to 4 to support win-xp
-  pe->MajorSubsystemVersion = 4;
-  pe->MinorSubsystemVersion = 0;
+  pe->MajorOperatingSystemVersion = config->majorOSVersion;
+  pe->MinorOperatingSystemVersion = config->minorOSVersion;
+  pe->MajorSubsystemVersion = config->majorSubsystemVersion;
+  pe->MinorSubsystemVersion = config->minorSubsystemVersion;
   pe->Subsystem = config->subsystem;
   pe->SizeOfImage = sizeOfImage;
   pe->SizeOfHeaders = sizeOfHeaders;
