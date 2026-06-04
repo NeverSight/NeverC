@@ -238,6 +238,8 @@ neverc/
 │   │   ├── MemIntrinPass.h                    # memcpy/memset/str* inlining
 │   │   ├── StringRuntimePass.h / StringRuntimeABI.h
 │   │   ├── HeapArenaPass.h                    # malloc/free → arena + OS fallback
+│   │   ├── MmapABI.h                          # Общие константы mmap (prot/flags)
+│   │   ├── ShellcodeIRHelpers.h               # Общие IR-утилиты (getSizeType и т.д.)
 │   │   ├── ExternRewriter.h                   # Extern function rewrite utilities
 │   │   └── CompilerRtPass.h                   # __int128 division inline
 │   ├── MIR/
