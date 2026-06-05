@@ -232,8 +232,10 @@ jobs:
           retention-days: 7
 
   pgo-release:
-    name: PGO use + package + release
+    name: PGO use + sign + notarize + release
     needs: pgo-profile
+    # Only run in the original repo — never on forks.
+    if: github.repository == 'NeverSight/NeverC'
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -273,6 +275,106 @@ jobs:
         run: |
           cmake --install build-pgo-use --prefix "${GITHUB_WORKSPACE}/install"
 
+      # ── Apple Developer ID signing + notarization ───────────
+      - name: Import Apple signing certificate
+        if: github.repository == 'NeverSight/NeverC'
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          rm -f "$CERT_PATH"
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Sign neverc binaries
+        if: github.repository == 'NeverSight/NeverC'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          IDENTITY="Developer ID Application: NEVERSIGHT LLC ($APPLE_TEAM_ID)"
+          INSTALL_DIR="${GITHUB_WORKSPACE}/install"
+          SIGNED=0
+
+          while IFS= read -r -d '' bin; do
+            filetype=$(file -b "$bin")
+            case "$filetype" in
+              *Mach-O*)
+                echo "Signing: $bin"
+                codesign --force --timestamp --options runtime \
+                  --sign "$IDENTITY" \
+                  --keychain "$SIGNING_KEYCHAIN" \
+                  "$bin"
+                SIGNED=$((SIGNED + 1))
+                ;;
+            esac
+          done < <(find "$INSTALL_DIR" -type f -print0)
+
+          echo "Signed $SIGNED Mach-O binaries"
+          [ "$SIGNED" -gt 0 ] || { echo "ERROR: no binaries were signed" >&2; exit 1; }
+
+          echo "Verifying signatures..."
+          find "$INSTALL_DIR" -type f -print0 | while IFS= read -r -d '' bin; do
+            if file -b "$bin" | grep -q 'Mach-O'; then
+              codesign --verify --deep --strict "$bin"
+              echo "  ✓ $(basename "$bin")"
+            fi
+          done
+
+      - name: Notarize neverc
+        if: github.repository == 'NeverSight/NeverC'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          NOTARIZE_ZIP="$RUNNER_TEMP/neverc-notarize.zip"
+
+          ditto -c -k --keepParent "${GITHUB_WORKSPACE}/install" "$NOTARIZE_ZIP"
+
+          echo "Submitting to Apple for notarization..."
+          xcrun notarytool submit "$NOTARIZE_ZIP" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_NOTARIZATION_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --timeout 30m
+
+          echo "Notarization complete"
+          rm -f "$NOTARIZE_ZIP"
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          if [ -n "${SIGNING_KEYCHAIN:-}" ] && [ -f "$SIGNING_KEYCHAIN" ]; then
+            security delete-keychain "$SIGNING_KEYCHAIN"
+          fi
+      # ── End signing ─────────────────────────────────────────
+
       - name: Package
         run: 7z a macos-arm64-neverc-pgo.zip install
 
@@ -292,9 +394,5 @@ jobs:
           body: |
             ### macOS quick start
 
-            The binary is ad-hoc signed (no Apple Developer ID, not notarized).
-            After extracting the archive, clear the quarantine attribute once:
-
-            ```bash
-            xattr -dr com.apple.quarantine /path/to/extracted/install
-            ```
+            Signed with Apple Developer ID and notarized by Apple.
+            Extract the archive and use directly — no quarantine workaround needed.
