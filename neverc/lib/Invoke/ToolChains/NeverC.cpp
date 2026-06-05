@@ -3662,8 +3662,11 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fno-async-exceptions");
   } else {
     Arg *A = Args.getLastArg(options::OPT_fseh_exceptions);
-    // The cc1 frontend rejects -exception-model= for MSVC environments (WinEH
-    // is implied there), so only forward it for non-MSVC (e.g. MinGW) targets.
+    // For MSVC the WinEH model is already implied by the target triple, so SEH
+    // exception/unwind codegen (.pdata/.xdata) is produced regardless of this
+    // flag. Passing -exception-model= would make the cc1 frontend hard-error
+    // ("invalid exception model"); it is only a model selector for non-MSVC
+    // Windows (MinGW). So skip it for MSVC.
     if (!IsWindowsMSVC &&
         (A || TC.GetExceptionModel(Args) == llvm::ExceptionHandling::WinEH))
       CmdArgs.push_back("-exception-model=seh");
