@@ -3662,7 +3662,10 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fno-async-exceptions");
   } else {
     Arg *A = Args.getLastArg(options::OPT_fseh_exceptions);
-    if (A || TC.GetExceptionModel(Args) == llvm::ExceptionHandling::WinEH)
+    // The cc1 frontend rejects -exception-model= for MSVC environments (WinEH
+    // is implied there), so only forward it for non-MSVC (e.g. MinGW) targets.
+    if (!IsWindowsMSVC &&
+        (A || TC.GetExceptionModel(Args) == llvm::ExceptionHandling::WinEH))
       CmdArgs.push_back("-exception-model=seh");
   }
 
