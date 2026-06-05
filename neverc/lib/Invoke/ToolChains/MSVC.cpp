@@ -352,6 +352,11 @@ Tool *MSVCToolChain::buildStaticLibTool() const {
   return new tools::visualstudio::StaticLibTool(*this);
 }
 
+llvm::ExceptionHandling
+MSVCToolChain::GetExceptionModel(const ArgList &Args) const {
+  return llvm::ExceptionHandling::WinEH;
+}
+
 ToolChain::UnwindTableLevel
 MSVCToolChain::getDefaultUnwindTableLevel(const ArgList &Args) const {
   // Don't emit unwind tables by default for MachO targets.

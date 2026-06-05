@@ -83,6 +83,9 @@ public:
 
   bool FoundMSVCInstall() const { return !VCToolChainPath.empty(); }
 
+  llvm::ExceptionHandling
+  GetExceptionModel(const llvm::opt::ArgList &Args) const override;
+
 protected:
   void AddSystemIncludeWithSubfolder(const llvm::opt::ArgList &DriverArgs,
                                      llvm::opt::ArgStringList &FrontendArgs,
