@@ -15,6 +15,8 @@ Abstract:
 
 #include <windows.h>
 
+#define XFRAME_EXPORT __declspec(dllexport)
+
 typedef void (*PASS_THROUGH_DESTINATION)();
 
 ULONG64 *test_accumulator_address;
@@ -32,7 +34,7 @@ int * volatile sehD = NULL;
     *test_accumulator_address *= (___PRIME);        \
 }
 
-void setup_data_dll(int *fp, ULONG64 *taa, BOOLEAN boes)
+XFRAME_EXPORT void setup_data_dll(int *fp, ULONG64 *taa, BOOLEAN boes)
 {
     sehD = fp;
     test_accumulator_address = taa;
@@ -71,16 +73,16 @@ void pass_through_2_dll(PASS_THROUGH_DESTINATION dest, int Disposition) {
     }
 }
 
-void pass_through_dll(PASS_THROUGH_DESTINATION dest) {
+XFRAME_EXPORT void pass_through_dll(PASS_THROUGH_DESTINATION dest) {
     pass_through_2_dll(dest, EXCEPTION_CONTINUE_SEARCH);
 }
 
-void pass_through_catch_dll(PASS_THROUGH_DESTINATION dest) {
+XFRAME_EXPORT void pass_through_catch_dll(PASS_THROUGH_DESTINATION dest) {
     pass_through_2_dll(dest, EXCEPTION_EXECUTE_HANDLER);
 }
 
 
-void raise_nocatch_fin_dll(void) {
+XFRAME_EXPORT void raise_nocatch_fin_dll(void) {
     __try
     {
         __try
@@ -98,7 +100,7 @@ void raise_nocatch_fin_dll(void) {
     }
 }
 
-void fault_and_catch_dll(void) {
+XFRAME_EXPORT void fault_and_catch_dll(void) {
     __try
     {
         sehR = *sehD;
@@ -109,7 +111,7 @@ void fault_and_catch_dll(void) {
     }
 }
 
-void fault_nocatch_fin(void) {
+XFRAME_EXPORT void fault_nocatch_fin(void) {
     __try
     {
         __try
