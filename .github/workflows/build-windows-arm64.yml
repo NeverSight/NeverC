@@ -186,8 +186,15 @@ jobs:
           echo "=== [$label] step 2: link .obj to exe ==="
           "$NCC" $flags "$WDIAG/diag_${label}.obj" -o "$WDIAG/diag_${label}.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
 
-          echo "=== [$label] step 3: compile+link (one shot) ==="
+          echo "=== [$label] step 3a: compile+link (one shot, LTO) ==="
           "$NCC" $flags "$src" -o "$WDIAG/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          echo "=== [$label] step 3b: compile+link (one shot, NO LTO) ==="
+          "$NCC" $flags -fno-lto "$src" -o "$WDIAG/diag_${label}_nolto.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          echo "=== [$label] step 3c: compile+link (save LTO temps) ==="
+          "$NCC" $flags -save-temps "$src" -o "$WDIAG/diag_${label}_temps.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+          ls -la "$WDIAG"/diag_${label}_temps.*.obj 2>/dev/null || echo "(no LTO temps)"
 
           echo "=== [$label] check output files ==="
           ls -la "$BDIAG"/diag_${label}* 2>&1 || echo "NO FILES FOUND"
@@ -202,7 +209,13 @@ jobs:
           echo "=== [$label] PE headers ==="
           dumpbin //HEADERS "$BDIAG/diag_${label}_oneshot.exe" 2>&1 | head -60 || true
 
-          echo "=== [$label] step 4: run exe (powershell with detailed error) ==="
+          echo "=== [$label] UNWIND INFO (.pdata/.xdata content) ==="
+          dumpbin //UNWINDINFO "$BDIAG/diag_${label}_oneshot.exe" 2>&1 | head -200 || true
+
+          echo "=== [$label] .pdata raw hex (first 256 bytes) ==="
+          dumpbin //RAWDATA:.pdata "$BDIAG/diag_${label}_oneshot.exe" 2>&1 | head -40 || true
+
+          echo "=== [$label] step 4: run LTO exe ==="
           powershell.exe -NoProfile -Command "
             try {
               \$p = Start-Process -FilePath '$WDIAG/diag_${label}_oneshot.exe' \
@@ -220,8 +233,26 @@ jobs:
           echo "--- stderr ---"
           cat "$BDIAG/diag_${label}_stderr.txt" 2>/dev/null || echo "(empty)"
 
-          echo "=== [$label] step 4b: run exe (direct) ==="
-          "$BDIAG/diag_${label}_oneshot.exe" 2>&1 && echo "RUN OK" || echo "RUN EXIT=$?"
+          echo "=== [$label] step 4b: run NO-LTO exe ==="
+          powershell.exe -NoProfile -Command "
+            try {
+              \$p = Start-Process -FilePath '$WDIAG/diag_${label}_nolto.exe' \
+                -NoNewWindow -Wait -PassThru \
+                -RedirectStandardOutput '$WDIAG/diag_${label}_nolto_stdout.txt' \
+                -RedirectStandardError '$WDIAG/diag_${label}_nolto_stderr.txt'
+              Write-Host \"NOLTO_EXIT_CODE=\$(\$p.ExitCode)\"
+            } catch {
+              Write-Host \"NOLTO_EXCEPTION: \$_\"
+            }
+          " 2>&1 || echo "NOLTO_POWERSHELL_EXIT=$?"
+
+          echo "=== [$label] step 4c: compare LTO vs NO-LTO .pdata ==="
+          echo "--- LTO exe .pdata entry count ---"
+          dumpbin //UNWINDINFO "$BDIAG/diag_${label}_oneshot.exe" 2>&1 | grep -c "Function:" || echo "0"
+          echo "--- NO-LTO exe .pdata entry count ---"
+          dumpbin //UNWINDINFO "$BDIAG/diag_${label}_nolto.exe" 2>&1 | grep -c "Function:" || echo "0"
+          echo "--- NO-LTO exe IMPORTS (RtlUnwind check) ---"
+          dumpbin //IMPORTS "$BDIAG/diag_${label}_nolto.exe" 2>&1 | grep -i "RtlUnwind" || echo "(no RtlUnwind)"
         }
 
         diagnose "c_stdlib" \
