@@ -183,8 +183,8 @@ jobs:
           echo "=== [$label] step 1: compile to .obj ==="
           "$NCC" $flags -c "$src" -o "$WDIAG/diag_${label}.obj" 2>&1 && echo "OK" || echo "EXIT=$?"
 
-          echo "=== [$label] step 2: link .obj to exe ==="
-          "$NCC" $flags "$WDIAG/diag_${label}.obj" -o "$WDIAG/diag_${label}.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+          echo "=== [$label] step 2: link .obj to exe (with .pdata validation) ==="
+          "$NCC" $flags -v "$WDIAG/diag_${label}.obj" -o "$WDIAG/diag_${label}.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
 
           echo "=== [$label] step 3a: compile+link (one shot, LTO) ==="
           "$NCC" $flags "$src" -o "$WDIAG/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"

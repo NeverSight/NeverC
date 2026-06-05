@@ -2288,6 +2288,56 @@ void OutputWriter::sortExceptionTables() {
       linker::errs() << "warning: don't know how to handle .pdata.\n";
     break;
   }
+
+  if (ctx.config.verbose && pdata.first && ctx.config.machine == ARM64) {
+    auto bufAddr = [&](Chunk *c) {
+      OutputSection *os = ctx.getOutputSection(c);
+      return buffer->getBufferStart() + os->getFileOff() + c->getRVA() -
+             os->getRVA();
+    };
+    uint8_t *begin = bufAddr(pdata.first);
+    uint8_t *end = bufAddr(pdata.last) + pdata.last->getSize();
+    size_t count = (end - begin) / sizeof(EntryArm);
+    auto *entries = reinterpret_cast<const EntryArm *>(begin);
+
+    uint32_t textRVA = textSec->getRVA();
+    uint32_t textEnd = textRVA + textSec->getVirtualSize();
+    uint32_t rdataRVA = rdataSec->getRVA();
+    uint32_t rdataEnd = rdataRVA + rdataSec->getVirtualSize();
+
+    unsigned issues = 0;
+    for (size_t i = 0; i < count; ++i) {
+      uint32_t funcRVA = entries[i].begin;
+      uint32_t unwindRVA = entries[i].unwind;
+
+      if (funcRVA < textRVA || funcRVA >= textEnd) {
+        linker::errs() << "neverc: .pdata[" << i << "] begin RVA 0x"
+                        << Twine::utohexstr(funcRVA) << " outside .text [0x"
+                        << Twine::utohexstr(textRVA) << ", 0x"
+                        << Twine::utohexstr(textEnd) << ")\n";
+        ++issues;
+      }
+      bool unwindInRdata = unwindRVA >= rdataRVA && unwindRVA < rdataEnd;
+      bool isPacked = (unwindRVA & 0x3) != 0;
+      if (!unwindInRdata && !isPacked) {
+        linker::errs() << "neverc: .pdata[" << i << "] unwind RVA 0x"
+                        << Twine::utohexstr(unwindRVA)
+                        << " not in .rdata and not packed\n";
+        ++issues;
+      }
+      if (i > 0 && entries[i].begin < entries[i - 1].begin) {
+        linker::errs() << "neverc: .pdata[" << i
+                        << "] not sorted: 0x"
+                        << Twine::utohexstr((uint32_t)entries[i].begin)
+                        << " < 0x"
+                        << Twine::utohexstr((uint32_t)entries[i - 1].begin)
+                        << "\n";
+        ++issues;
+      }
+    }
+    log(".pdata: " + Twine(count) + " ARM64 entries, " + Twine(issues) +
+        " issues");
+  }
 }
 
 // The CRT section contains, among other things, the array of function
