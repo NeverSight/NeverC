@@ -253,6 +253,43 @@ jobs:
           dumpbin //UNWINDINFO "$BDIAG/diag_${label}_nolto.exe" 2>&1 | grep -c "Function:" || echo "0"
           echo "--- NO-LTO exe IMPORTS (RtlUnwind check) ---"
           dumpbin //IMPORTS "$BDIAG/diag_${label}_nolto.exe" 2>&1 | grep -i "RtlUnwind" || echo "(no RtlUnwind)"
+
+          echo "=== [$label] step 5: .obj .pdata analysis ==="
+          echo "--- .obj sections with .pdata ---"
+          dumpbin //SECTIONS "$WDIAG/diag_${label}.obj" 2>&1 | grep -i "pdata\|xdata" || echo "(none)"
+          echo "--- .obj symbols (functions) ---"
+          dumpbin //SYMBOLS "$WDIAG/diag_${label}.obj" 2>&1 | grep -E "notype.*\(\)|\.pdata|\.xdata" | head -60 || echo "(none)"
+
+          echo "=== [$label] step 6: MSVC link.exe comparison ==="
+          echo "--- link with MSVC link.exe ---"
+          link.exe //NOLOGO //MACHINE:ARM64 //SUBSYSTEM:CONSOLE \
+            //DEFAULTLIB:libcmt //DEFAULTLIB:libvcruntime //DEFAULTLIB:libucrt \
+            //DEFAULTLIB:legacy_stdio_definitions //DEFAULTLIB:oldnames \
+            "$WDIAG/diag_${label}.obj" \
+            "//OUT:$WDIAG/diag_${label}_msvc.exe" 2>&1 && echo "MSVC_LINK=OK" || echo "MSVC_LINK=FAIL"
+          echo "--- run MSVC-linked exe ---"
+          if [ -f "$BDIAG/diag_${label}_msvc.exe" ]; then
+            powershell.exe -NoProfile -Command "
+              try {
+                \$p = Start-Process -FilePath '$WDIAG/diag_${label}_msvc.exe' \
+                  -NoNewWindow -Wait -PassThru \
+                  -RedirectStandardOutput '$WDIAG/diag_${label}_msvc_stdout.txt' \
+                  -RedirectStandardError '$WDIAG/diag_${label}_msvc_stderr.txt'
+                Write-Host \"MSVC_EXIT_CODE=\$(\$p.ExitCode)\"
+              } catch {
+                Write-Host \"MSVC_EXCEPTION: \$_\"
+              }
+            " 2>&1 || echo "MSVC_POWERSHELL_EXIT=$?"
+            echo "--- MSVC stdout ---"
+            cat "$BDIAG/diag_${label}_msvc_stdout.txt" 2>/dev/null || echo "(empty)"
+            echo "--- compare .pdata: neverc-linked vs MSVC-linked ---"
+            echo "neverc .pdata entries:"
+            dumpbin //UNWINDINFO "$BDIAG/diag_${label}_nolto.exe" 2>&1 | grep -c "Begin" || echo "0"
+            echo "MSVC .pdata entries:"
+            dumpbin //UNWINDINFO "$BDIAG/diag_${label}_msvc.exe" 2>&1 | grep -c "Begin" || echo "0"
+          else
+            echo "MSVC link failed, skipping run"
+          fi
         }
 
         diagnose "c_stdlib" \
@@ -272,6 +309,42 @@ jobs:
         diagnose "arch_cleanup_r2" \
           "$TESTDIR/codegen/test_arch_cleanup_round2.c" \
           "-std=gnu11 -O2"
+
+        # ── Frame pointer forced on ──
+        # ARM64 longjmp always does stack unwinding.  If -mframe-pointer=none
+        # causes missing/wrong .pdata entries the forced-fp build will pass.
+        echo "=== frame-pointer=all comparison ==="
+        diagnose "c_stdlib_fp" \
+          "$TESTDIR/standards/test_c_stdlib_patterns.c" \
+          "-std=c11 -mframe-pointer=all"
+
+        # ── Pure MSVC cl.exe baseline (eliminates neverc entirely) ──
+        echo "=== MSVC cl.exe full compile+link baseline ==="
+        echo "cl.exe version:"
+        cl.exe 2>&1 | head -1 || true
+        cl.exe //nologo //W3 //EHsc //TC \
+          "$TESTDIR/standards/test_c_stdlib_patterns.c" \
+          "//Fe$WDIAG/diag_c_stdlib_msvc_cl.exe" \
+          //link //MACHINE:ARM64 //SUBSYSTEM:CONSOLE 2>&1 \
+          && echo "MSVC_CL_BUILD=OK" || echo "MSVC_CL_BUILD=FAIL"
+        if [ -f "$BDIAG/diag_c_stdlib_msvc_cl.exe" ]; then
+          echo "--- run pure-MSVC exe ---"
+          powershell.exe -NoProfile -Command "
+            try {
+              \$p = Start-Process -FilePath '$WDIAG/diag_c_stdlib_msvc_cl.exe' \
+                -NoNewWindow -Wait -PassThru \
+                -RedirectStandardOutput '$WDIAG/diag_c_stdlib_msvc_cl_stdout.txt' \
+                -RedirectStandardError '$WDIAG/diag_c_stdlib_msvc_cl_stderr.txt'
+              Write-Host \"MSVC_CL_EXIT_CODE=\$(\$p.ExitCode)\"
+            } catch {
+              Write-Host \"MSVC_CL_EXCEPTION: \$_\"
+            }
+          " 2>&1 || echo "MSVC_CL_POWERSHELL_EXIT=$?"
+          echo "--- MSVC cl.exe stdout ---"
+          cat "$BDIAG/diag_c_stdlib_msvc_cl_stdout.txt" 2>/dev/null || echo "(empty)"
+        else
+          echo "MSVC cl.exe build failed, skipping run"
+        fi
 
     - name: Fail if tests failed
       if: steps.tests.outcome == 'failure'
