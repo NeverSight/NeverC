@@ -254,11 +254,35 @@ jobs:
           echo "--- NO-LTO exe IMPORTS (RtlUnwind check) ---"
           dumpbin //IMPORTS "$BDIAG/diag_${label}_nolto.exe" 2>&1 | grep -i "RtlUnwind" || echo "(no RtlUnwind)"
 
-          echo "=== [$label] step 5: .obj .pdata analysis ==="
+          echo "=== [$label] step 5: auto-LTO .obj .pdata analysis (bitcode wrapper, expect none) ==="
           echo "--- .obj sections with .pdata ---"
           dumpbin //SECTIONS "$WDIAG/diag_${label}.obj" 2>&1 | grep -i "pdata\|xdata" || echo "(none)"
           echo "--- .obj symbols (functions) ---"
           dumpbin //SYMBOLS "$WDIAG/diag_${label}.obj" 2>&1 | grep -E "notype.*\(\)|\.pdata|\.xdata" | head -60 || echo "(none)"
+
+          echo "=== [$label] step 5b: -fno-lto -c REAL machine-code .obj .pdata check ==="
+          # The auto-LTO .obj above is a bitcode wrapper, so it never has .pdata.
+          # Build a true machine-code object to see whether the AArch64 COFF
+          # codegen backend actually emits .pdata/.xdata for user functions.
+          "$NCC" $flags -fno-lto -c "$src" -o "$WDIAG/diag_${label}_nolto.obj" 2>&1 && echo "OK" || echo "EXIT=$?"
+          echo "--- nolto .obj SECTIONS (head) ---"
+          dumpbin //SECTIONS "$WDIAG/diag_${label}_nolto.obj" 2>&1 | head -60 || true
+          echo "--- nolto .obj .pdata/.xdata present? ---"
+          dumpbin //SECTIONS "$WDIAG/diag_${label}_nolto.obj" 2>&1 | grep -i "pdata\|xdata" || echo "(NONE - codegen not emitting .pdata!)"
+          echo "--- nolto .obj UNWINDINFO ---"
+          dumpbin //UNWINDINFO "$WDIAG/diag_${label}_nolto.obj" 2>&1 | head -80 || echo "(none)"
+
+          echo "=== [$label] step 5c: uwtable attribute in LLVM IR ==="
+          # If the frontend attaches `uwtable` but no .pdata appears, the loss is
+          # in the backend / LTO codegen, not the frontend.
+          echo "--- non-LTO frontend IR ---"
+          "$NCC" $flags -fno-lto -emit-llvm -S "$src" -o "$WDIAG/diag_${label}_nolto.ll" 2>&1 && echo "OK" || echo "EXIT=$?"
+          echo "non-LTO uwtable occurrences: $(grep -c "uwtable" "$BDIAG/diag_${label}_nolto.ll" 2>/dev/null)"
+          grep -E "^define|^attributes #" "$BDIAG/diag_${label}_nolto.ll" 2>/dev/null | head -40 || echo "(none)"
+          echo "--- LTO bitcode IR (pre-link, TY_LTO_IR) ---"
+          "$NCC" $flags -flto -S "$src" -o "$WDIAG/diag_${label}_lto.ll" 2>&1 && echo "OK" || echo "EXIT=$?"
+          echo "LTO uwtable occurrences: $(grep -c "uwtable" "$BDIAG/diag_${label}_lto.ll" 2>/dev/null)"
+          grep -E "^define|^attributes #" "$BDIAG/diag_${label}_lto.ll" 2>/dev/null | head -40 || echo "(none)"
 
           echo "=== [$label] step 6: MSVC link.exe comparison ==="
           echo "--- link with MSVC link.exe ---"
