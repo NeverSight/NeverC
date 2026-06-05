@@ -244,6 +244,12 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   // Add filenames, libraries, and other linker inputs.
   for (const auto &Input : Inputs) {
     if (Input.isFilename()) {
+      llvm::StringRef Ext = llvm::sys::path::extension(Input.getFilename());
+      if (Ext.equals_insensitive(".def")) {
+        CmdArgs.push_back(
+            Args.MakeArgString(std::string("--def=") + Input.getFilename()));
+        continue;
+      }
       CmdArgs.push_back(Input.getFilename());
       continue;
     }
