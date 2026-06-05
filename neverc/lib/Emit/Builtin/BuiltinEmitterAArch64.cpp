@@ -3677,6 +3677,43 @@ Value *FunctionEmitter::genAArch64BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateCall(F, llvm::ConstantInt::get(Int32Ty, HintID));
   }
 
+  // MSVC ARM64 load-acquire (__ldarN) / store-release (__stlrN) intrinsics.
+  // These map to the AArch64 LDAR/STLR instructions: an atomic load with
+  // acquire ordering and an atomic store with release ordering, respectively.
+  // <winnt.h> uses them to implement ReadAcquireN/WriteReleaseN, so they must
+  // be available whenever <windows.h> is included for Windows on ARM64.
+  switch (BuiltinID) {
+  default:
+    break;
+  case neverc::AArch64::BI__ldar8:
+  case neverc::AArch64::BI__ldar16:
+  case neverc::AArch64::BI__ldar32:
+  case neverc::AArch64::BI__ldar64: {
+    Value *Ptr = genScalarExpr(E->getArg(0));
+    QualType ElTy = E->getArg(0)->getType()->getPointeeType();
+    CharUnits LoadSize = getContext().getTypeSizeInChars(ElTy);
+    llvm::Type *ITy =
+        llvm::IntegerType::get(getLLVMContext(), LoadSize.getQuantity() * 8);
+    llvm::LoadInst *Load = Builder.CreateAlignedLoad(ITy, Ptr, LoadSize);
+    Load->setVolatile(true);
+    Load->setAtomic(llvm::AtomicOrdering::Acquire);
+    return Load;
+  }
+  case neverc::AArch64::BI__stlr8:
+  case neverc::AArch64::BI__stlr16:
+  case neverc::AArch64::BI__stlr32:
+  case neverc::AArch64::BI__stlr64: {
+    Value *Ptr = genScalarExpr(E->getArg(0));
+    Value *Val = genScalarExpr(E->getArg(1));
+    QualType ElTy = E->getArg(0)->getType()->getPointeeType();
+    CharUnits StoreSize = getContext().getTypeSizeInChars(ElTy);
+    llvm::StoreInst *Store = Builder.CreateAlignedStore(Val, Ptr, StoreSize);
+    Store->setVolatile(true);
+    Store->setAtomic(llvm::AtomicOrdering::Release);
+    return Store;
+  }
+  }
+
   if (BuiltinID == neverc::AArch64::BI__builtin_arm_rbit) {
     assert((getContext().getTypeSize(E->getType()) == 32) &&
            "rbit of unusual size!");

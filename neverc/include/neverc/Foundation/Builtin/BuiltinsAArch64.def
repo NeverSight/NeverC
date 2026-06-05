@@ -88,6 +88,18 @@ LANGBUILTIN(__wfi,   "v", "",   ALL_MS_LANGUAGES)
 LANGBUILTIN(__sev,   "v", "",   ALL_MS_LANGUAGES)
 LANGBUILTIN(__sevl,  "v", "",   ALL_MS_LANGUAGES)
 
+// MSVC ARM64 load-acquire (LDAR) / store-release (STLR) intrinsics, declared
+// by <arm64intr.h> and used by <winnt.h>'s ReadAcquireN/WriteReleaseN. Lowered
+// to atomic acquire loads / release stores in BuiltinEmitterAArch64.cpp.
+LANGBUILTIN(__ldar8,  "UcUcCD*",     "n", ALL_MS_LANGUAGES)
+LANGBUILTIN(__ldar16, "UsUsCD*",     "n", ALL_MS_LANGUAGES)
+LANGBUILTIN(__ldar32, "UiUiCD*",     "n", ALL_MS_LANGUAGES)
+LANGBUILTIN(__ldar64, "ULLiULLiCD*", "n", ALL_MS_LANGUAGES)
+LANGBUILTIN(__stlr8,  "vUcD*Uc",     "n", ALL_MS_LANGUAGES)
+LANGBUILTIN(__stlr16, "vUsD*Us",     "n", ALL_MS_LANGUAGES)
+LANGBUILTIN(__stlr32, "vUiD*Ui",     "n", ALL_MS_LANGUAGES)
+LANGBUILTIN(__stlr64, "vULLiD*ULLi", "n", ALL_MS_LANGUAGES)
+
 // Misc
 BUILTIN(__builtin_sponentry, "v*", "c")
 
