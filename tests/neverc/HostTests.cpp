@@ -79,6 +79,12 @@ TEST_F(HostTest, CStdlibPatterns) {
       (testDir() / "standards/test_c_stdlib_patterns.c").string(), "-std=c11",
       0, "test_c_stdlib_patterns: ALL PASSED");
 }
+TEST_F(HostTest, CStdlibPatterns_NoLTO) {
+  compileRunAndCheck(
+      "test_c_stdlib_patterns_nolto",
+      (testDir() / "standards/test_c_stdlib_patterns.c").string(),
+      "-std=c11 -fno-lto", 0, "test_c_stdlib_patterns: ALL PASSED");
+}
 TEST_F(HostTest, CRealWorld) {
   compileRunAndCheck("test_c_real_world",
                      (testDir() / "standards/test_c_real_world.c").string(),
@@ -122,10 +128,22 @@ CODEGEN_TEST_O2_ONLY(Ops32BitIn64Bit, "test_32bit_ops_in_64bit.c",
                       "test_32bit_ops_in_64bit: ALL PASSED")
 CODEGEN_TEST_O2_ONLY(MC64BitFormat, "test_mc_64bit_format.c",
                       "test_mc_64bit_format: ALL PASSED")
+TEST_F(HostTest, MC64BitFormat_NoLTO) {
+  compileRunAndCheck("MC64BitFormat_NoLTO",
+                     (testDir() / "codegen/test_mc_64bit_format.c").string(),
+                     "-std=gnu11 -O2 -fno-lto", 0,
+                     "test_mc_64bit_format: ALL PASSED");
+}
 CODEGEN_TEST_O2_ONLY(CMOVAndCleanup, "test_cmov_and_cleanup.c",
                       "test_cmov_and_cleanup: ALL PASSED")
 CODEGEN_TEST_O2_ONLY(ArchCleanupRound2, "test_arch_cleanup_round2.c",
                       "test_arch_cleanup_round2: ALL PASSED")
+TEST_F(HostTest, ArchCleanupRound2_NoLTO) {
+  compileRunAndCheck("ArchCleanupRound2_NoLTO",
+                     (testDir() / "codegen/test_arch_cleanup_round2.c").string(),
+                     "-std=gnu11 -O2 -fno-lto", 0,
+                     "test_arch_cleanup_round2: ALL PASSED");
+}
 CODEGEN_TEST_O2_ONLY(Arch64OnlyValidation, "test_arch_64only_validation.c",
                       "test_arch_64only_validation: ALL PASSED")
 CODEGEN_TEST_O2_ONLY(MC64BitHardcode, "test_mc_64bit_hardcode.c",
