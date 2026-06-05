@@ -100,11 +100,7 @@ See the **[documentation index](docs/README.md)** for detailed design notes, pla
 
 ## Prebuilt macOS binaries
 
-The release is ad-hoc signed (no Apple Developer ID, not notarized). If you downloaded it via a browser, clear the quarantine attribute once after extracting:
-
-```bash
-xattr -dr com.apple.quarantine /path/to/extracted/install
-```
+The release is signed with an Apple Developer ID certificate and notarized by Apple. Extract the archive and use directly — no quarantine workaround needed.
 
 ## Building
 

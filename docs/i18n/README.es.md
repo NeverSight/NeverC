@@ -100,11 +100,7 @@ Consulte el **[índice de documentación](../README.es.md)** para diseño detall
 
 ## Binarios macOS precompilados
 
-La release está firmada en ad-hoc (sin Apple Developer ID, sin notarización). Si la descargó vía navegador, elimine una sola vez el atributo quarantine tras extraer:
-
-```bash
-xattr -dr com.apple.quarantine /path/to/extracted/install
-```
+La release está firmada con un certificado Apple Developer ID y notarizada por Apple. Extraiga el archivo y úselo directamente.
 
 ## Compilación
 

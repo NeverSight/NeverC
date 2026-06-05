@@ -100,11 +100,7 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 ## ビルド済み macOS バイナリ
 
-リリースは ad‑hoc 署名のみ（Apple Developer ID なし、公証なし）です。ブラウザでダウンロードした場合は、展開後に一度だけ quarantine 属性を削除してください：
-
-```bash
-xattr -dr com.apple.quarantine /path/to/extracted/install
-```
+リリースは Apple Developer ID 証明書で署名され、Apple により公証済みです。アーカイブを展開してそのまま使用できます。
 
 ## ビルド
 

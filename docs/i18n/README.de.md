@@ -100,11 +100,7 @@ Ausführliche Designnotizen, Plattformmatrix, CLI-Referenz und Beispiele: **[Dok
 
 ## Vorgefertigte macOS-Binärdateien
 
-Das Release ist ad-hoc signiert (keine Apple Developer ID, nicht notarisiert). Wenn Sie es über einen Browser heruntergeladen haben, entfernen Sie nach dem Entpacken einmalig das Quarantine-Attribut:
-
-```bash
-xattr -dr com.apple.quarantine /path/to/extracted/install
-```
+Das Release ist mit einem Apple Developer ID-Zertifikat signiert und von Apple notarisiert. Entpacken Sie das Archiv und verwenden Sie es direkt.
 
 ## Bauen
 

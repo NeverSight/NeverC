@@ -109,7 +109,7 @@ All platform differences are encoded in `TargetDesc` (returned by `describeTripl
 - [ ] **Kernel mode**: `KernelImportABI::DarwinXNUKextShim` for kext symbol resolution
 - [ ] **Build host**: Homebrew LLVM preferred; CMake auto-detects `/opt/homebrew/opt/llvm/bin`
 - [ ] **Linker GC**: `-Wl,-dead_strip` (macOS-specific flag, not `--gc-sections`)
-- [ ] **Code signing**: ad-hoc signed; users need `xattr -dr com.apple.quarantine` after download
+- [ ] **Code signing**: Developer ID signed + Apple notarized; no quarantine workaround needed
 - [ ] **llvm-ar**: auto-detected when host is non-Apple clang to avoid libtool incompatibility
 - [ ] **PAC/BTI**: `BranchProtectionPAuthLR`, `sign-return-address-all`, `sign-return-address-with-bkey` module flags
 

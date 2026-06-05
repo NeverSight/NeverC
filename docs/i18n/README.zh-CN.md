@@ -100,11 +100,7 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 ## macOS 预编译产物
 
-发布产物是 ad‑hoc 签名（没有 Apple Developer ID，未公证）。如果是通过浏览器下载的，解压后跑一次清除 quarantine 属性即可：
-
-```bash
-xattr -dr com.apple.quarantine /path/to/extracted/install
-```
+发布产物已使用 Apple Developer ID 证书签名并经过 Apple 公证。解压后可直接使用，无需任何额外操作。
 
 ## 构建
 

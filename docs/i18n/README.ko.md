@@ -100,11 +100,7 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 ## 사전 빌드된 macOS 바이너리
 
-릴리스는 ad‑hoc 서명만 포함합니다 (Apple Developer ID 없음, 공증 없음). 브라우저로 다운로드한 경우, 압축 해제 후 quarantine 속성을 한 번만 제거하세요:
-
-```bash
-xattr -dr com.apple.quarantine /path/to/extracted/install
-```
+릴리스는 Apple Developer ID 인증서로 서명되고 Apple에 의해 공증되었습니다. 아카이브를 압축 해제하면 바로 사용할 수 있습니다.
 
 ## 빌드
 

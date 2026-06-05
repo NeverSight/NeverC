@@ -100,11 +100,7 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 ## Готовые бинарники macOS
 
-Релиз подписан в ad‑hoc (без Apple Developer ID, без нотаризации). Если вы скачали его через браузер, после распаковки достаточно один раз снять атрибут quarantine:
-
-```bash
-xattr -dr com.apple.quarantine /path/to/extracted/install
-```
+Релиз подписан сертификатом Apple Developer ID и нотаризован Apple. Извлеките архив и используйте напрямую.
 
 ## Сборка
 

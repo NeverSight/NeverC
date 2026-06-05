@@ -102,11 +102,7 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 ## ثنائيات macOS مُسبقة البناء
 
-الإصدار موقَّع بـ ad‑hoc فقط (بدون Apple Developer ID، بدون توثيق). إذا نزّلته عبر متصفح، أزِل خاصية quarantine مرة واحدة بعد فك الضغط:
-
-```bash
-xattr -dr com.apple.quarantine /path/to/extracted/install
-```
+الإصدار موقَّع بشهادة Apple Developer ID ومُوثَّق من Apple. فُكَّ ضغط الأرشيف واستخدمه مباشرةً.
 
 ## البناء
 
