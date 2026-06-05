@@ -149,6 +149,7 @@ types::ID types::lookupTypeForExtension(llvm::StringRef Ext) {
       .Case("asm", TY_PP_Asm)
       .Case("lib", TY_Object)
       .Case("obj", TY_Object)
+      .Case("def", TY_Object)
       .Default(TY_INVALID);
 }
 
