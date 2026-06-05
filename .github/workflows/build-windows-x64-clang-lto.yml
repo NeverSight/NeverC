@@ -1,0 +1,251 @@
+# Clang + LTO build for Windows x86_64.
+# Manual dispatch only.  Verifies the Clang-based release pipeline compiles
+# and tests pass.  Uses a PGO-optimised Clang from the official LLVM releases.
+name: windows-x64-neverc-build-clang-lto
+
+permissions:
+  contents: write
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: Clang + LTO build
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name != github.repository))
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup build deps
+        run: choco install ninja cmake 7zip -y
+
+      - name: Resolve latest LLVM version
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LLVM_VERIFY_ASSET_SUFFIX: win64.exe
+        run: bash ./.github/scripts/resolve-llvm-version.sh
+
+      - name: Cache LLVM toolchain
+        uses: actions/cache@v4
+        with:
+          path: C:\LLVM
+          key: llvm-${{ env.LLVM_VER }}-win64
+
+      - name: Install PGO-optimised Clang
+        shell: pwsh
+        run: ./.github/scripts/install-llvm-windows.ps1
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # ── sccache ──────────────────────────────────────────────
+      - name: Setup sccache
+        uses: mozilla/sccache-action@v0.0.7
+
+      - name: Verify sccache
+        shell: bash
+        run: |
+          echo "sccache location: $(which sccache || echo 'NOT FOUND')"
+          sccache --version || true
+
+      # ── Build ────────────────────────────────────────────────
+      - name: Build neverc (Clang + LTO)
+        shell: bash
+        run: |
+          cmake -S llvm -B build -G Ninja \
+            -C neverc/cmake/caches/NeverC.cmake \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
+            -DCMAKE_EXE_LINKER_FLAGS=""
+          cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
+
+      - name: Show sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats || true
+
+      - name: Build bundled Windows runtime
+        shell: bash
+        run: cmake --build build --target neverc-runtime-x64-msvc neverc-runtime-shared-msvc
+
+      # ── Package + upload ─────────────────────────────────────
+      - name: Install neverc
+        run: cmake --install build --prefix "$env:GITHUB_WORKSPACE\install"
+
+      - name: Package neverc
+        run: 7z a windows-x64-neverc-clang-lto.zip install
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-neverc-clang-lto
+          path: windows-x64-neverc-clang-lto.zip
+
+      - name: Package neverc compiler (without runtime)
+        shell: bash
+        run: |
+          mv install/runtime install-runtime-stash
+          7z a windows-x64-neverc-clang-lto-compiler.zip install
+          mv install-runtime-stash install/runtime
+
+      - name: Upload Compiler Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-neverc-clang-lto-compiler
+          path: windows-x64-neverc-clang-lto-compiler.zip
+
+      - name: Package neverc runtime
+        run: 7z a windows-x64-neverc-clang-lto-runtime.zip install/runtime
+
+      - name: Upload Runtime Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-neverc-clang-lto-runtime
+          path: windows-x64-neverc-clang-lto-runtime.zip
+
+      - name: Package PDBs
+        shell: bash
+        run: 7z a windows-x64-neverc-clang-lto-pdb.zip ./build/bin/*.pdb 2>/dev/null || echo "No PDB files found (expected with Clang)"
+
+      - name: Upload PDB Artifact
+        if: hashFiles('windows-x64-neverc-clang-lto-pdb.zip') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-neverc-clang-lto-pdb
+          path: windows-x64-neverc-clang-lto-pdb.zip
+
+      # ── Plugin SDK ───────────────────────────────────────────
+      - name: Build Plugin SDK
+        shell: bash
+        run: cmake --build build --target neverc-pluginsdk
+
+      - name: Test Plugin SDK (build + load)
+        shell: bash
+        run: |
+          set -e
+          make -C build/pluginsdk/examples \
+            NEVERC=$PWD/build/bin/neverc \
+            INCLUDE_DIR=$PWD/build/pluginsdk/include
+          printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
+          for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
+            echo "--- Testing $plugin ---"
+            build/bin/neverc \
+              --target=x86_64-pc-windows-msvc \
+              -fplugin-pass=build/pluginsdk/examples/${plugin}.dll \
+              -c /tmp/plugin_test.c -o /tmp/plugin_test.obj
+            echo "--- $plugin OK ---"
+          done
+
+      # ── Tests + diagnostics ──────────────────────────────────
+      - name: Run neverc tests
+        id: tests
+        shell: bash
+        continue-on-error: true
+        run: cmake --build build --target check-neverc
+
+      - name: Diagnose crashes
+        if: steps.tests.outcome == 'failure'
+        shell: bash
+        run: |
+          set -x
+          NCC=$(cygpath -m "$PWD/build/bin/neverc.exe")
+          TESTDIR=$(cygpath -m "$PWD/tests/neverc")
+          WDIAG=$(cygpath -m "$PWD/diag_out")
+          BDIAG="$PWD/diag_out"
+          mkdir -p "$BDIAG"
+
+          echo "=== MSVC / SDK environment ==="
+          echo "LIB=$LIB"
+          echo "INCLUDE=$INCLUDE"
+          echo "VCToolsInstallDir=$VCToolsInstallDir"
+          echo "WindowsSdkDir=$WindowsSdkDir"
+          echo "WindowsSDKVersion=$WindowsSDKVersion"
+          echo "VSCMD_ARG_TGT_ARCH=$VSCMD_ARG_TGT_ARCH"
+          echo "PROCESSOR_ARCHITECTURE=$PROCESSOR_ARCHITECTURE"
+
+          echo "=== Check CRT & SDK libs exist ==="
+          for lib in libcmt.lib libvcruntime.lib libucrt.lib kernel32.lib bcryptprimitives.lib; do
+            found=false
+            IFS=';' read -ra LIBDIRS <<< "$LIB"
+            for dir in "${LIBDIRS[@]}"; do
+              wdir=$(cygpath -u "$dir" 2>/dev/null || echo "$dir")
+              if [ -f "$wdir/$lib" ]; then
+                echo "  FOUND: $dir/$lib ($(wc -c < "$wdir/$lib") bytes)"
+                found=true
+                break
+              fi
+            done
+            $found || echo "  MISSING: $lib"
+          done
+
+          echo "=== Linker search paths (neverc -v) ==="
+          "$NCC" -std=c11 -v "$TESTDIR/standards/test_c_stdlib_patterns.c" \
+            -o "$WDIAG/diag_verbose.exe" 2>&1 | head -80 || true
+
+          diagnose() {
+            local label=$1 src=$2 flags=$3
+            echo "=== [$label] step 1: compile to .obj ==="
+            "$NCC" $flags -c "$src" -o "$WDIAG/diag_${label}.obj" 2>&1 && echo "OK" || echo "EXIT=$?"
+
+            echo "=== [$label] step 2: link .obj to exe ==="
+            "$NCC" $flags "$WDIAG/diag_${label}.obj" -o "$WDIAG/diag_${label}.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+
+            echo "=== [$label] step 3: compile+link (one shot) ==="
+            "$NCC" $flags "$src" -o "$WDIAG/diag_${label}_oneshot.exe" 2>&1 && echo "OK" || echo "EXIT=$?"
+
+            echo "=== [$label] check output files ==="
+            ls -la "$BDIAG"/diag_${label}* 2>&1 || echo "NO FILES FOUND"
+            file "$BDIAG"/diag_${label}_oneshot.exe 2>&1 || true
+
+            echo "=== [$label] DLL dependencies ==="
+            dumpbin //DEPENDENTS "$BDIAG/diag_${label}_oneshot.exe" 2>&1 || true
+
+            echo "=== [$label] IMPORTS (function names) ==="
+            dumpbin //IMPORTS "$BDIAG/diag_${label}_oneshot.exe" 2>&1 || true
+
+            echo "=== [$label] PE headers ==="
+            dumpbin //HEADERS "$BDIAG/diag_${label}_oneshot.exe" 2>&1 | head -60 || true
+
+            echo "=== [$label] step 4: run exe (powershell with detailed error) ==="
+            powershell.exe -NoProfile -Command "
+              try {
+                \$p = Start-Process -FilePath '$WDIAG/diag_${label}_oneshot.exe' \
+                  -NoNewWindow -Wait -PassThru \
+                  -RedirectStandardOutput '$WDIAG/diag_${label}_stdout.txt' \
+                  -RedirectStandardError '$WDIAG/diag_${label}_stderr.txt'
+                Write-Host \"EXIT_CODE=\$(\$p.ExitCode)\"
+              } catch {
+                Write-Host \"EXCEPTION: \$_\"
+                Write-Host \"WIN32_ERROR: \$([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())\"
+              }
+            " 2>&1 || echo "POWERSHELL_EXIT=$?"
+            echo "--- stdout ---"
+            cat "$BDIAG/diag_${label}_stdout.txt" 2>/dev/null || echo "(empty)"
+            echo "--- stderr ---"
+            cat "$BDIAG/diag_${label}_stderr.txt" 2>/dev/null || echo "(empty)"
+
+            echo "=== [$label] step 4b: run exe (direct) ==="
+            "$BDIAG/diag_${label}_oneshot.exe" 2>&1 && echo "RUN OK" || echo "RUN EXIT=$?"
+          }
+
+          diagnose "c_stdlib" \
+            "$TESTDIR/standards/test_c_stdlib_patterns.c" \
+            "-std=c11"
+
+          echo 'int main(void) { return 0; }' > "$BDIAG/diag_minimal.c"
+          diagnose "minimal" \
+            "$(cygpath -m "$BDIAG/diag_minimal.c")" \
+            "-std=c11"
+
+      - name: Fail if tests failed
+        if: steps.tests.outcome == 'failure'
+        shell: bash
+        run: exit 1
