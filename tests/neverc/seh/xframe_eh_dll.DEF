@@ -1,0 +1,10 @@
+
+LIBRARY      xframe_eh_dll
+
+EXPORTS
+    setup_data_dll
+    pass_through_dll
+    pass_through_catch_dll
+    raise_nocatch_fin_dll
+    fault_and_catch_dll
+    fault_nocatch_fin
