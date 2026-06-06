@@ -1,5 +1,6 @@
 #include "neverc/math.h"
+#include "_math_internal.h"
 
 double neverc_math_ceil(double x) {
-    return ceil(x);
+    return -neverc_math_floor(-x);
 }

@@ -1,4 +1,5 @@
 #include "neverc/math.h"
+#include "_math_internal.h"
 
 /*
  * Bessel function of the first and second kinds of order zero.
@@ -212,7 +213,7 @@ double neverc_math_j0(double x) {
     if (isinf(x))  return 0.0;
     if (x == 0.0)  return 1.0;
 
-    x = fabs(x);
+    x = nc_abs(x);
     if (x >= 2.0) {
         double s = sin(x);
         double c = cos(x);

@@ -1,4 +1,5 @@
 #include "neverc/math.h"
+#include "_math_internal.h"
 
 /*
  * Bessel function of the first and second kinds of order one.
