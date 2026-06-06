@@ -7,6 +7,9 @@ on:
       - 'scripts/sort-options-td.py'
       - 'neverc/include/neverc/Foundation/DiagnosticGroups.td.h'
       - 'scripts/sort-diagnostic-groups.py'
+      - 'llvm/include/llvm/IR/IntrinsicsX86.h'
+      - 'llvm/lib/Target/X86/X86GenDAGISel.inc'
+      - 'scripts/sort-x86-intrinsics.py'
       - '.github/workflows/lint-generated-td.yml'
   pull_request:
     paths:
@@ -14,6 +17,9 @@ on:
       - 'scripts/sort-options-td.py'
       - 'neverc/include/neverc/Foundation/DiagnosticGroups.td.h'
       - 'scripts/sort-diagnostic-groups.py'
+      - 'llvm/include/llvm/IR/IntrinsicsX86.h'
+      - 'llvm/lib/Target/X86/X86GenDAGISel.inc'
+      - 'scripts/sort-x86-intrinsics.py'
       - '.github/workflows/lint-generated-td.yml'
 
 jobs:
@@ -53,4 +59,25 @@ jobs:
           echo ""
           echo "If this step fails, run locally:"
           echo "  python3 scripts/sort-diagnostic-groups.py --write"
+          echo "and commit the result."
+
+  check-x86-intrinsics-synced:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Verify x86 intrinsics are sorted and DAGISel IDs are synced
+        run: |
+          python3 scripts/sort-x86-intrinsics.py --check
+          echo ""
+          echo "If this step fails, run locally:"
+          echo "  python3 scripts/sort-x86-intrinsics.py --write"
           echo "and commit the result."
