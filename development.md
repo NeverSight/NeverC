@@ -269,22 +269,77 @@ mnemonics. Uses `compileToAsm()` helper with `--target=x86_64-pc-windows-msvc
 
 ### Unicorn binary verification (`tests/verify-x86-intrin-binary.py`)
 
-81 standalone tests that:
+81 standalone tests. Requires: `pip install unicorn capstone lief`
+
+**Pipeline:**
 
 1. Compile to COFF `.o` via `ncc --target=x86_64-pc-windows-msvc -O2 -fno-lto`
 2. Extract `.text` bytes via `lief`
-3. Disassemble via `capstone` to locate the privileged instruction
-4. Emulate up to the privileged instruction via `unicorn`
-5. Verify register state matches Intel SDM expectations
+3. Disassemble via `capstone` to locate the target instruction
+4. Emulate via `unicorn` and verify register/memory state
 
-Port I/O string ops tests additionally verify three registers (DX=port,
-RDI/RSI=buffer, RCX=count) to ensure the ISel CopyToReg chain correctly sets
-up the implicit operands.
+**Two emulation modes:**
 
-Key flags: `-fno-lto` is required to get native object code (not bitcode).
+- **Priv-insn mode:** `emu_start(func_entry, priv_insn_addr)` — executes all
+  preceding instructions and stops *before* the privileged instruction. Then
+  snapshots all registers and runs the checker. This validates that the ISel
+  CopyToReg chain correctly set up implicit operands (e.g., DX=port, RDI=buf,
+  RCX=count) before the instruction would execute.
+
+- **Full-emulation mode:** Runs the entire function to completion, then checks
+  RAX (return value) and/or memory contents. Used for GS/FS segment ops where
+  no privileged trap occurs — the instructions execute normally in Unicorn and
+  we verify end-to-end semantics.
+
+**Verification tiers (each tier catches a distinct class of bugs):**
+
+| Tier | What it checks | What it catches |
+|------|---------------|-----------------|
+| Instruction existence | Capstone mnemonic match | Missing intrinsic lowering, wrong instruction entirely |
+| Machine code bytes | Capstone disassembly of raw `.text` bytes | Wrong TSFlags / opcode encoding (e.g., `f3 a4` movsb vs `f3 6c` insb) |
+| Register state | Unicorn register snapshot at priv insn | Wrong CopyToReg target, missing ZERO_EXTEND, swapped operands |
+| Full emulation | RAX return value / memory after execution | End-to-end semantic correctness (GS/FS reads/writes) |
+
+**Coverage:** 60/81 tests have register-level or value-level verification.
+The remaining 21 are no-arg instructions (cli, sti, wbinvd, vmxoff, etc.),
+pure reads that trap before producing output (readcr*), or TSX ops with no
+input registers — these have no meaningful register state to check.
+
+**Known limitations and design tradeoffs:**
+
+1. **`-fno-lto` is required** to get native object code (LTO emits bitcode).
+   This means the test validates the non-LTO codegen path. However, ISel
+   lowering is per-function and deterministic — LTO's cross-module
+   optimization does not change intrinsic lowering patterns. The PGO/LTO
+   segfault we encountered was caused by UB in the ISel code itself (wrong
+   operand count in `getMachineNode`), which manifests identically in both
+   paths; the difference was that PGO/LTO's memory layout made the UB crash
+   instead of silently producing wrong output.
+
+2. **`find_insn` matches the first Capstone mnemonic.** For unique mnemonics
+   like `rep insb`, `wrmsr`, or `invlpg` this is unambiguous. For the common
+   mnemonic `mov` (used by CR/DR ops), it depends on `-O2` generating minimal
+   code (e.g., `mov cr3, rcx; ret` with no preceding `mov`). This is reliable
+   today because each test wraps a single intrinsic call in a trivial function,
+   and the backend at `-O2` does not insert unnecessary register shuffles for
+   one-instruction bodies. If this assumption ever breaks, the fix is to switch
+   to op-string matching (e.g., check `op_str` contains `cr3`), not to
+   rewrite the emulation strategy.
+
+3. **Unicorn emulates user-mode (ring 3).** Privileged instructions (mov cr,
+   in/out, cli, etc.) fault when executed, which is why we stop *before* them.
+   We cannot verify the instruction's own side effects (e.g., CR3 actually
+   changes). What we *can* verify is that the compiler set up the correct
+   register inputs — if the registers are right, the instruction will do the
+   right thing on real hardware.
+
+4. **Cross-compilation on macOS ARM64.** The test compiles for
+   `x86_64-pc-windows-msvc` and emulates x86-64 via Unicorn. This validates
+   the cross-compilation backend. It does not validate execution on real
+   Windows x64 hardware, but for privileged instructions that require ring 0,
+   there is no user-mode test possible anyway.
+
 Windows x64 ABI: args in RCX, RDX, R8, R9.
-
-Requires: `pip install unicorn capstone lief`
 
 ## Converted Builtins (complete list)
 

@@ -268,6 +268,184 @@ def _check_rdpmc(mu, instrs, regs):
     return None
 
 
+def _check_inword(mu, instrs, regs):
+    dx = regs[uc_x86.UC_X86_REG_DX]
+    if dx != 0x3F8:
+        return f"DX={dx:#x}, want 0x3F8 (port)"
+    return None
+
+
+def _check_invlpg(mu, instrs, regs):
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    if rcx != 0x1000_0000:
+        return f"RCX={rcx:#x}, want 0x10000000 (address)"
+    return None
+
+
+def _check_movsb(mu, instrs, regs):
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    rsi = regs[uc_x86.UC_X86_REG_RSI]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (dst)")
+    if rsi != DATA_BASE + 0x100:
+        errors.append(f"RSI={rsi:#x}, want {DATA_BASE + 0x100:#x} (src)")
+    if rcx != 64:
+        errors.append(f"RCX={rcx:#x}, want 64 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_movsw(mu, instrs, regs):
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    rsi = regs[uc_x86.UC_X86_REG_RSI]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (dst)")
+    if rsi != DATA_BASE + 0x100:
+        errors.append(f"RSI={rsi:#x}, want {DATA_BASE + 0x100:#x} (src)")
+    if rcx != 32:
+        errors.append(f"RCX={rcx:#x}, want 32 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_movsd_rep(mu, instrs, regs):
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    rsi = regs[uc_x86.UC_X86_REG_RSI]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (dst)")
+    if rsi != DATA_BASE + 0x100:
+        errors.append(f"RSI={rsi:#x}, want {DATA_BASE + 0x100:#x} (src)")
+    if rcx != 16:
+        errors.append(f"RCX={rcx:#x}, want 16 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_movsq(mu, instrs, regs):
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    rsi = regs[uc_x86.UC_X86_REG_RSI]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (dst)")
+    if rsi != DATA_BASE + 0x100:
+        errors.append(f"RSI={rsi:#x}, want {DATA_BASE + 0x100:#x} (src)")
+    if rcx != 8:
+        errors.append(f"RCX={rcx:#x}, want 8 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_stosb(mu, instrs, regs):
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    al = regs[uc_x86.UC_X86_REG_AL]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (dst)")
+    if al != 0x41:
+        errors.append(f"AL={al:#x}, want 0x41 (value)")
+    if rcx != 64:
+        errors.append(f"RCX={rcx:#x}, want 64 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_stosw(mu, instrs, regs):
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    ax = regs[uc_x86.UC_X86_REG_AX]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (dst)")
+    if ax != 0x4142:
+        errors.append(f"AX={ax:#x}, want 0x4142 (value)")
+    if rcx != 32:
+        errors.append(f"RCX={rcx:#x}, want 32 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_stosd(mu, instrs, regs):
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    eax = regs[uc_x86.UC_X86_REG_EAX]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (dst)")
+    if eax != 0xDEADBEEF:
+        errors.append(f"EAX={eax:#x}, want 0xDEADBEEF (value)")
+    if rcx != 16:
+        errors.append(f"RCX={rcx:#x}, want 16 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_stosq(mu, instrs, regs):
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    rax = regs[uc_x86.UC_X86_REG_RAX]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (dst)")
+    if rax != 0xCAFEBABE:
+        errors.append(f"RAX={rax:#x}, want 0xCAFEBABE (value)")
+    if rcx != 8:
+        errors.append(f"RCX={rcx:#x}, want 8 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_mem_operand(expected_addr):
+    def checker(mu, instrs, regs):
+        rcx = regs[uc_x86.UC_X86_REG_RCX]
+        if rcx != expected_addr:
+            return f"RCX={rcx:#x}, want {expected_addr:#x} (memory operand)"
+        return None
+    return checker
+
+
+def _check_invpcid(mu, instrs, regs):
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    rdx = regs[uc_x86.UC_X86_REG_RDX]
+    errors = []
+    if rcx != 0:
+        errors.append(f"RCX={rcx:#x}, want 0 (type)")
+    if rdx != DATA_BASE:
+        errors.append(f"RDX={rdx:#x}, want {DATA_BASE:#x} (descriptor)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_vmread(mu, instrs, regs):
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    rdx = regs[uc_x86.UC_X86_REG_RDX]
+    errors = []
+    if rcx != 0x4002:
+        errors.append(f"RCX={rcx:#x}, want 0x4002 (VMCS field)")
+    if rdx != DATA_BASE:
+        errors.append(f"RDX={rdx:#x}, want {DATA_BASE:#x} (output ptr)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_xgetbv(mu, instrs, regs):
+    ecx = regs[uc_x86.UC_X86_REG_ECX]
+    if ecx != 0:
+        return f"ECX={ecx:#x}, want 0 (XCR0)"
+    return None
+
+
+def _check_flags_write(mu, instrs, regs):
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    if rcx != 0x202:
+        return f"RCX={rcx:#x}, want 0x202 (flags value)"
+    return None
+
+
+def _check_segmentlimit(mu, instrs, regs):
+    ecx = regs[uc_x86.UC_X86_REG_ECX]
+    if ecx != 0x10:
+        return f"ECX={ecx:#x}, want 0x10 (selector)"
+    return None
+
+
 def _check_insb(mu, instrs, regs):
     """rep insb: DX=port, RDI=buffer, RCX=count."""
     dx = regs[uc_x86.UC_X86_REG_DX]
@@ -432,7 +610,8 @@ TESTS = [
     # TLB
     Test("invlpg",
          'void invlpg(void *a) { __invlpg(a); }\n',
-         args=[0x1000_0000], priv_insn="invlpg"),
+         args=[0x1000_0000], priv_insn="invlpg",
+         custom=_check_invlpg),
 
     # CLI / STI
     Test("cli",
@@ -445,13 +624,16 @@ TESTS = [
     # Descriptor tables
     Test("sidt",
          'void do_sidt(void *p) { __sidt(p); }\n',
-         args=[DATA_BASE], priv_insn="sidt"),
+         args=[DATA_BASE], priv_insn="sidt",
+         custom=_check_mem_operand(DATA_BASE)),
     Test("lidt",
          'void do_lidt(void *p) { __lidt(p); }\n',
-         args=[DATA_BASE], priv_insn="lidt"),
+         args=[DATA_BASE], priv_insn="lidt",
+         custom=_check_mem_operand(DATA_BASE)),
     Test("lgdt",
          'void do_lgdt(void *p) { _lgdt(p); }\n',
-         args=[DATA_BASE], priv_insn="lgdt"),
+         args=[DATA_BASE], priv_insn="lgdt",
+         custom=_check_mem_operand(DATA_BASE)),
 
     # WBINVD
     Test("wbinvd",
@@ -474,24 +656,30 @@ TESTS = [
          custom=_check_vmwrite),
     Test("vmread",
          'unsigned char do_vmread(unsigned __int64 f, unsigned __int64 *o) { return __vmx_vmread(f, o); }\n',
-         args=[0x4002, DATA_BASE], priv_insn="vmread"),
+         args=[0x4002, DATA_BASE], priv_insn="vmread",
+         custom=_check_vmread),
     Test("vmclear",
          'unsigned char do_vmclear(unsigned __int64 *p) { return __vmx_vmclear(p); }\n',
-         args=[DATA_BASE], priv_insn="vmclear"),
+         args=[DATA_BASE], priv_insn="vmclear",
+         custom=_check_mem_operand(DATA_BASE)),
     Test("vmptrld",
          'unsigned char do_vmptrld(unsigned __int64 *p) { return __vmx_vmptrld(p); }\n',
-         args=[DATA_BASE], priv_insn="vmptrld"),
+         args=[DATA_BASE], priv_insn="vmptrld",
+         custom=_check_mem_operand(DATA_BASE)),
     Test("vmxon",
          'unsigned char do_vmxon(unsigned __int64 *p) { return __vmx_on(p); }\n',
-         args=[DATA_BASE], priv_insn="vmxon"),
+         args=[DATA_BASE], priv_insn="vmxon",
+         custom=_check_mem_operand(DATA_BASE)),
     Test("vmptrst",
          'void do_vmptrst(unsigned __int64 *p) { __vmx_vmptrst(p); }\n',
-         args=[DATA_BASE], priv_insn="vmptrst"),
+         args=[DATA_BASE], priv_insn="vmptrst",
+         custom=_check_mem_operand(DATA_BASE)),
 
     # Segment limit
     Test("segmentlimit",
          'unsigned int do_lsl(unsigned int s) { return __segmentlimit(s); }\n',
-         args=[0x10], priv_insn="lsl"),
+         args=[0x10], priv_insn="lsl",
+         custom=_check_segmentlimit),
 
     # INT 2C
     Test("int2c",
@@ -507,7 +695,8 @@ TESTS = [
     # --- Port I/O: inword ---
     Test("inword",
          'unsigned short inword(unsigned short p) { return __inword(p); }\n',
-         args=[0x3F8], priv_insn="in"),
+         args=[0x3F8], priv_insn="in",
+         custom=_check_inword),
 
     # --- Port I/O string ops ---
     Test("inbytestring",
@@ -538,38 +727,48 @@ TESTS = [
     # --- Rep string ops ---
     Test("movsb",
          'void do_movsb(void *d, const void *s, unsigned __int64 n) { __movsb((unsigned char*)d, (const unsigned char*)s, n); }\n',
-         args=[DATA_BASE, DATA_BASE + 0x100, 64], priv_insn="rep movsb"),
+         args=[DATA_BASE, DATA_BASE + 0x100, 64], priv_insn="rep movsb",
+         custom=_check_movsb),
     Test("movsw",
          'void do_movsw(void *d, const void *s, unsigned __int64 n) { __movsw((unsigned short*)d, (const unsigned short*)s, n); }\n',
-         args=[DATA_BASE, DATA_BASE + 0x100, 32], priv_insn="rep movsw"),
+         args=[DATA_BASE, DATA_BASE + 0x100, 32], priv_insn="rep movsw",
+         custom=_check_movsw),
     Test("movsd_rep",
          'void do_movsd(void *d, const void *s, unsigned __int64 n) { __movsd((unsigned long*)d, (const unsigned long*)s, n); }\n',
-         args=[DATA_BASE, DATA_BASE + 0x100, 16], priv_insn="rep movsd"),
+         args=[DATA_BASE, DATA_BASE + 0x100, 16], priv_insn="rep movsd",
+         custom=_check_movsd_rep),
     Test("movsq",
          'void do_movsq(void *d, const void *s, unsigned __int64 n) { __movsq((unsigned __int64*)d, (const unsigned __int64*)s, n); }\n',
-         args=[DATA_BASE, DATA_BASE + 0x100, 8], priv_insn="rep movsq"),
+         args=[DATA_BASE, DATA_BASE + 0x100, 8], priv_insn="rep movsq",
+         custom=_check_movsq),
     Test("stosb",
          'void do_stosb(unsigned char *d, unsigned char v, unsigned __int64 n) { __stosb(d, v, n); }\n',
-         args=[DATA_BASE, 0x41, 64], priv_insn="rep stosb"),
+         args=[DATA_BASE, 0x41, 64], priv_insn="rep stosb",
+         custom=_check_stosb),
     Test("stosw",
          'void do_stosw(unsigned short *d, unsigned short v, unsigned __int64 n) { __stosw(d, v, n); }\n',
-         args=[DATA_BASE, 0x4142, 32], priv_insn="rep stosw"),
+         args=[DATA_BASE, 0x4142, 32], priv_insn="rep stosw",
+         custom=_check_stosw),
     Test("stosd",
          'void do_stosd(unsigned long *d, unsigned long v, unsigned __int64 n) { __stosd(d, v, n); }\n',
-         args=[DATA_BASE, 0xDEADBEEF, 16], priv_insn="rep stosd"),
+         args=[DATA_BASE, 0xDEADBEEF, 16], priv_insn="rep stosd",
+         custom=_check_stosd),
     Test("stosq",
          'void do_stosq(unsigned __int64 *d, unsigned __int64 v, unsigned __int64 n) { __stosq(d, v, n); }\n',
-         args=[DATA_BASE, 0xCAFEBABE, 8], priv_insn="rep stosq"),
+         args=[DATA_BASE, 0xCAFEBABE, 8], priv_insn="rep stosq",
+         custom=_check_stosq),
 
     # --- Descriptor tables: sgdt ---
     Test("sgdt",
          'void do_sgdt(void *p) { _sgdt(p); }\n',
-         args=[DATA_BASE], priv_insn="sgdt"),
+         args=[DATA_BASE], priv_insn="sgdt",
+         custom=_check_mem_operand(DATA_BASE)),
 
     # --- INVPCID ---
     Test("invpcid",
          'void do_invpcid(unsigned int t, void *d) { _invpcid(t, d); }\n',
-         args=[0, DATA_BASE], priv_insn="invpcid"),
+         args=[0, DATA_BASE], priv_insn="invpcid",
+         custom=_check_invpcid),
 
     # --- EFLAGS ---
     Test("flags_read",
@@ -577,12 +776,14 @@ TESTS = [
          priv_insn="pushfq"),
     Test("flags_write",
          'void do_writeflags(unsigned __int64 v) { __writeeflags(v); }\n',
-         args=[0x202], priv_insn="popfq"),
+         args=[0x202], priv_insn="popfq",
+         custom=_check_flags_write),
 
     # --- XCR (xgetbv / xsetbv) ---
     Test("xgetbv",
          'unsigned __int64 do_xgetbv(unsigned int xcr) { return _xgetbv(xcr); }\n',
-         args=[0], priv_insn="xgetbv"),
+         args=[0], priv_insn="xgetbv",
+         custom=_check_xgetbv),
     Test("xsetbv",
          'void do_xsetbv(unsigned int xcr, unsigned __int64 val) { _xsetbv(xcr, val); }\n',
          args=[0, 7], priv_insn="xsetbv"),
