@@ -1,0 +1,211 @@
+{
+  "version": "0.1.0",
+  "modules": {
+    "math": {
+      "header": "include/neverc/math.h",
+      "description": "Mathematical functions — constants, trigonometry, exponential, rounding, and more (mirrors Go math package)",
+      "symbols": {
+        "neverc_math_abs":             "src/math/abs.c",
+        "neverc_math_dim":             "src/math/dim.c",
+        "neverc_math_max":             "src/math/max.c",
+        "neverc_math_min":             "src/math/min.c",
+
+        "neverc_math_sin":             "src/math/sin.c",
+        "neverc_math_cos":             "src/math/cos.c",
+        "neverc_math_tan":             "src/math/tan.c",
+        "neverc_math_sincos":          "src/math/sincos.c",
+
+        "neverc_math_asin":            "src/math/asin.c",
+        "neverc_math_acos":            "src/math/acos.c",
+        "neverc_math_atan":            "src/math/atan.c",
+        "neverc_math_atan2":           "src/math/atan2.c",
+
+        "neverc_math_sinh":            "src/math/sinh.c",
+        "neverc_math_cosh":            "src/math/cosh.c",
+        "neverc_math_tanh":            "src/math/tanh.c",
+        "neverc_math_asinh":           "src/math/asinh.c",
+        "neverc_math_acosh":           "src/math/acosh.c",
+        "neverc_math_atanh":           "src/math/atanh.c",
+
+        "neverc_math_exp":             "src/math/exp.c",
+        "neverc_math_exp2":            "src/math/exp2.c",
+        "neverc_math_expm1":           "src/math/expm1.c",
+        "neverc_math_log":             "src/math/log.c",
+        "neverc_math_log2":            "src/math/log2.c",
+        "neverc_math_log10":           "src/math/log10.c",
+        "neverc_math_log1p":           "src/math/log1p.c",
+        "neverc_math_logb":            "src/math/logb.c",
+        "neverc_math_ilogb":           "src/math/ilogb.c",
+
+        "neverc_math_sqrt":            "src/math/sqrt.c",
+        "neverc_math_cbrt":            "src/math/cbrt.c",
+        "neverc_math_pow":             "src/math/pow.c",
+        "neverc_math_pow10":           "src/math/pow10.c",
+        "neverc_math_hypot":           "src/math/hypot.c",
+
+        "neverc_math_ceil":            "src/math/ceil.c",
+        "neverc_math_floor":           "src/math/floor.c",
+        "neverc_math_trunc":           "src/math/trunc.c",
+        "neverc_math_round":           "src/math/round.c",
+        "neverc_math_roundtoeven":     "src/math/roundtoeven.c",
+        "neverc_math_fmod":            "src/math/fmod.c",
+        "neverc_math_remainder":       "src/math/remainder.c",
+
+        "neverc_math_modf":            "src/math/modf.c",
+        "neverc_math_frexp":           "src/math/frexp.c",
+        "neverc_math_ldexp":           "src/math/ldexp.c",
+        "neverc_math_nextafter":       "src/math/nextafter.c",
+
+        "neverc_math_copysign":        "src/math/copysign.c",
+        "neverc_math_signbit":         "src/math/signbit.c",
+
+        "neverc_math_fma":             "src/math/fma.c",
+
+        "neverc_math_erf":             "src/math/erf.c",
+        "neverc_math_erfc":            "src/math/erfc.c",
+        "neverc_math_erfinv":          "src/math/erfinv.c",
+
+        "neverc_math_gamma":           "src/math/gamma.c",
+        "neverc_math_lgamma":          "src/math/lgamma.c",
+
+        "neverc_math_nan":             "src/math/nan.c",
+        "neverc_math_inf":             "src/math/inf.c",
+        "neverc_math_isnan":           "src/math/isnan.c",
+        "neverc_math_isinf":           "src/math/isinf.c",
+
+        "neverc_math_float64bits":     "src/math/float64bits.c",
+        "neverc_math_float64frombits": "src/math/float64bits.c",
+        "neverc_math_float32bits":     "src/math/float32bits.c",
+        "neverc_math_float32frombits": "src/math/float32bits.c"
+      },
+      "dot_methods": {
+        "abs":             "neverc_math_abs",
+        "dim":             "neverc_math_dim",
+        "max":             "neverc_math_max",
+        "min":             "neverc_math_min",
+
+        "sin":             "neverc_math_sin",
+        "cos":             "neverc_math_cos",
+        "tan":             "neverc_math_tan",
+        "sincos":          "neverc_math_sincos",
+
+        "asin":            "neverc_math_asin",
+        "acos":            "neverc_math_acos",
+        "atan":            "neverc_math_atan",
+        "atan2":           "neverc_math_atan2",
+
+        "sinh":            "neverc_math_sinh",
+        "cosh":            "neverc_math_cosh",
+        "tanh":            "neverc_math_tanh",
+        "asinh":           "neverc_math_asinh",
+        "acosh":           "neverc_math_acosh",
+        "atanh":           "neverc_math_atanh",
+
+        "exp":             "neverc_math_exp",
+        "exp2":            "neverc_math_exp2",
+        "expm1":           "neverc_math_expm1",
+        "log":             "neverc_math_log",
+        "log2":            "neverc_math_log2",
+        "log10":           "neverc_math_log10",
+        "log1p":           "neverc_math_log1p",
+        "logb":            "neverc_math_logb",
+        "ilogb":           "neverc_math_ilogb",
+
+        "sqrt":            "neverc_math_sqrt",
+        "cbrt":            "neverc_math_cbrt",
+        "pow":             "neverc_math_pow",
+        "pow10":           "neverc_math_pow10",
+        "hypot":           "neverc_math_hypot",
+
+        "ceil":            "neverc_math_ceil",
+        "floor":           "neverc_math_floor",
+        "trunc":           "neverc_math_trunc",
+        "round":           "neverc_math_round",
+        "roundtoeven":     "neverc_math_roundtoeven",
+        "fmod":            "neverc_math_fmod",
+        "remainder":       "neverc_math_remainder",
+
+        "modf":            "neverc_math_modf",
+        "frexp":           "neverc_math_frexp",
+        "ldexp":           "neverc_math_ldexp",
+        "nextafter":       "neverc_math_nextafter",
+
+        "copysign":        "neverc_math_copysign",
+        "signbit":         "neverc_math_signbit",
+
+        "fma":             "neverc_math_fma",
+
+        "erf":             "neverc_math_erf",
+        "erfc":            "neverc_math_erfc",
+        "erfinv":          "neverc_math_erfinv",
+
+        "gamma":           "neverc_math_gamma",
+        "lgamma":          "neverc_math_lgamma",
+
+        "nan":             "neverc_math_nan",
+        "inf":             "neverc_math_inf",
+        "isnan":           "neverc_math_isnan",
+        "isinf":           "neverc_math_isinf",
+
+        "float64bits":     "neverc_math_float64bits",
+        "float64frombits": "neverc_math_float64frombits",
+        "float32bits":     "neverc_math_float32bits",
+        "float32frombits": "neverc_math_float32frombits"
+      }
+    },
+    "strconv": {
+      "header": "include/neverc/strconv.h",
+      "description": "String-to-value and value-to-string conversions (mirrors Go strconv package)",
+      "symbols": {
+        "neverc_strconv_atoi":         "src/strconv/parse_int.c",
+        "neverc_strconv_atol":         "src/strconv/parse_int.c",
+        "neverc_strconv_parse_int":    "src/strconv/parse_int.c",
+        "neverc_strconv_parse_uint":   "src/strconv/parse_int.c",
+        "neverc_strconv_parse_float":  "src/strconv/parse_float.c",
+        "neverc_strconv_parse_bool":   "src/strconv/parse_bool.c",
+        "neverc_strconv_itoa":         "src/strconv/format_int.c",
+        "neverc_strconv_ltoa":         "src/strconv/format_int.c",
+        "neverc_strconv_format_int":   "src/strconv/format_int.c",
+        "neverc_strconv_format_uint":  "src/strconv/format_int.c",
+        "neverc_strconv_format_float": "src/strconv/format_float.c",
+        "neverc_strconv_format_bool":  "src/strconv/format_bool.c"
+      },
+      "dot_methods": {
+        "atoi":         "neverc_strconv_atoi",
+        "atol":         "neverc_strconv_atol",
+        "parse_int":    "neverc_strconv_parse_int",
+        "parse_uint":   "neverc_strconv_parse_uint",
+        "parse_float":  "neverc_strconv_parse_float",
+        "parse_bool":   "neverc_strconv_parse_bool",
+        "itoa":         "neverc_strconv_itoa",
+        "ltoa":         "neverc_strconv_ltoa",
+        "format_int":   "neverc_strconv_format_int",
+        "format_uint":  "neverc_strconv_format_uint",
+        "format_float": "neverc_strconv_format_float",
+        "format_bool":  "neverc_strconv_format_bool"
+      }
+    },
+    "path": {
+      "header": "include/neverc/path.h",
+      "description": "Slash-separated path manipulation utilities (mirrors Go path package)",
+      "symbols": {
+        "neverc_path_base":   "src/path/base.c",
+        "neverc_path_dir":    "src/path/dir.c",
+        "neverc_path_ext":    "src/path/ext.c",
+        "neverc_path_isabs":  "src/path/isabs.c",
+        "neverc_path_clean":  "src/path/clean.c",
+        "neverc_path_join2":  "src/path/join.c",
+        "neverc_path_split":  "src/path/split.c"
+      },
+      "dot_methods": {
+        "base":   "neverc_path_base",
+        "dir":    "neverc_path_dir",
+        "ext":    "neverc_path_ext",
+        "isabs":  "neverc_path_isabs",
+        "clean":  "neverc_path_clean",
+        "join2":  "neverc_path_join2",
+        "split":  "neverc_path_split"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+#ifndef NEVERC_PATH_H
+#define NEVERC_PATH_H
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* All buffer-writing functions return the number of chars written
+   (excluding '\0'), or -1 if the buffer is too small. */
+
+int neverc_path_base(const char *path, char *buf, size_t bufsize);
+int neverc_path_dir(const char *path, char *buf, size_t bufsize);
+int neverc_path_clean(const char *path, char *buf, size_t bufsize);
+int neverc_path_join2(const char *a, const char *b, char *buf, size_t bufsize);
+int neverc_path_split(const char *path, char *dir, size_t dirsize,
+                      char *file, size_t filesize);
+
+const char *neverc_path_ext(const char *path);
+int         neverc_path_isabs(const char *path);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NEVERC_PATH_H */
