@@ -271,6 +271,25 @@ jobs:
           cmake -S llvm -B build-pgo-use -DNEVERC_INCLUDE_TESTS=ON
           cmake --build build-pgo-use --target check-neverc
 
+      - name: Build Plugin SDK
+        run: cmake --build build-pgo-use --target neverc-pluginsdk
+
+      - name: Test Plugin SDK (build + load)
+        run: |
+          set -e
+          make -C build-pgo-use/pluginsdk/examples \
+            NEVERC=$PWD/build-pgo-use/bin/neverc \
+            INCLUDE_DIR=$PWD/build-pgo-use/pluginsdk/include
+          printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
+          for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
+            echo "--- Testing $plugin ---"
+            build-pgo-use/bin/neverc \
+              --target=x86_64-pc-windows-msvc \
+              -fplugin-pass=build-pgo-use/pluginsdk/examples/${plugin}.dylib \
+              -c /tmp/plugin_test.c -o /tmp/plugin_test.obj
+            echo "--- $plugin OK ---"
+          done
+
       - name: Install neverc
         run: |
           cmake --install build-pgo-use --prefix "${GITHUB_WORKSPACE}/install"

@@ -42,10 +42,35 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
 
+      - name: Build bundled Windows runtime
+        shell: bash
+        run: cmake --build build --target neverc-runtime-x64-msvc neverc-runtime-shared-msvc
+
       - name: Show sccache stats
         if: always()
         shell: bash
         run: sccache --show-stats || true
+
+      - name: Build Plugin SDK
+        shell: bash
+        run: cmake --build build --target neverc-pluginsdk
+
+      - name: Test Plugin SDK (build + load)
+        shell: bash
+        run: |
+          set -e
+          make -C build/pluginsdk/examples \
+            NEVERC=$PWD/build/bin/neverc \
+            INCLUDE_DIR=$PWD/build/pluginsdk/include
+          printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
+          for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
+            echo "--- Testing $plugin ---"
+            build/bin/neverc \
+              --target=x86_64-pc-windows-msvc \
+              -fplugin-pass=build/pluginsdk/examples/${plugin}.dll \
+              -c /tmp/plugin_test.c -o /tmp/plugin_test.obj
+            echo "--- $plugin OK ---"
+          done
 
       - name: Run neverc tests
         shell: bash
