@@ -210,8 +210,8 @@ double neverc_math_j1(double x) {
     const double TwoM27 = 1.0 / (1 << 27);
     const double Two129 = 6.805647338418769269267492148635364229120e+38;
 
-    if (isnan(x))             return x;
-    if (isinf(x) || x == 0.0) return 0.0;
+    if (nc_isnan(x))             return x;
+    if (nc_isinf_any(x) || x == 0.0) return 0.0;
 
     int sign = 0;
     if (x < 0) {
@@ -219,13 +219,13 @@ double neverc_math_j1(double x) {
         sign = 1;
     }
     if (x >= 2.0) {
-        double s = sin(x);
-        double c = cos(x);
+        double s = neverc_math_sin(x);
+        double c = neverc_math_cos(x);
         double ss = -s - c;
         double cc = s - c;
 
         if (x < NEVERC_MATH_MAX_FLOAT64 / 2.0) {
-            double z = cos(x + x);
+            double z = neverc_math_cos(x + x);
             if (s * c > 0)
                 cc = z / ss;
             else
@@ -234,11 +234,11 @@ double neverc_math_j1(double x) {
 
         double z;
         if (x > Two129)
-            z = INV_SQRT_PI * cc / sqrt(x);
+            z = INV_SQRT_PI * cc / neverc_math_sqrt(x);
         else {
             double u = pone(x);
             double v = qone(x);
-            z = INV_SQRT_PI * (u*cc - v*ss) / sqrt(x);
+            z = INV_SQRT_PI * (u*cc - v*ss) / neverc_math_sqrt(x);
         }
         return sign ? -z : z;
     }
@@ -257,18 +257,18 @@ double neverc_math_y1(double x) {
     const double TwoM54 = 1.0 / ((double)(1LL << 54));
     const double Two129 = 6.805647338418769269267492148635364229120e+38;
 
-    if (x < 0 || isnan(x))  return NAN;
-    if (isinf(x) && x > 0)  return 0.0;
-    if (x == 0.0)            return -INFINITY;
+    if (x < 0 || nc_isnan(x))  return nc_nan();
+    if (nc_isinf_any(x) && x > 0)  return 0.0;
+    if (x == 0.0)            return nc_inf(-1);
 
     if (x >= 2.0) {
-        double s = sin(x);
-        double c = cos(x);
+        double s = neverc_math_sin(x);
+        double c = neverc_math_cos(x);
         double ss = -s - c;
         double cc = s - c;
 
         if (x < NEVERC_MATH_MAX_FLOAT64 / 2.0) {
-            double z = cos(x + x);
+            double z = neverc_math_cos(x + x);
             if (s * c > 0)
                 cc = z / ss;
             else
@@ -277,11 +277,11 @@ double neverc_math_y1(double x) {
 
         double z;
         if (x > Two129)
-            z = INV_SQRT_PI * ss / sqrt(x);
+            z = INV_SQRT_PI * ss / neverc_math_sqrt(x);
         else {
             double u = pone(x);
             double v = qone(x);
-            z = INV_SQRT_PI * (u*ss + v*cc) / sqrt(x);
+            z = INV_SQRT_PI * (u*ss + v*cc) / neverc_math_sqrt(x);
         }
         return z;
     }
@@ -291,5 +291,5 @@ double neverc_math_y1(double x) {
     double z = x * x;
     double u = Y1_U00 + z*(Y1_U01 + z*(Y1_U02 + z*(Y1_U03 + z*Y1_U04)));
     double v = 1.0 + z*(Y1_V00 + z*(Y1_V01 + z*(Y1_V02 + z*(Y1_V03 + z*Y1_V04))));
-    return x*(u/v) + (2.0/NEVERC_MATH_PI)*(neverc_math_j1(x)*log(x) - 1.0/x);
+    return x*(u/v) + (2.0/NEVERC_MATH_PI)*(neverc_math_j1(x)*neverc_math_log(x) - 1.0/x);
 }

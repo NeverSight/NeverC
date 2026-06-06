@@ -15,8 +15,8 @@ double neverc_math_jn(int n, double x) {
     const double TwoM29 = 1.0 / (1 << 29);
     const double Two302 = 8.148143905337944345073782753637512644205e+90;
 
-    if (isnan(x)) return x;
-    if (isinf(x)) return 0.0;
+    if (nc_isnan(x)) return x;
+    if (nc_isinf_any(x)) return 0.0;
 
     if (n == 0) return neverc_math_j0(x);
     if (x == 0.0) return 0.0;
@@ -36,8 +36,8 @@ double neverc_math_jn(int n, double x) {
     double b;
     if ((double)n <= x) {
         if (x >= Two302) {
-            double s = sin(x);
-            double c = cos(x);
+            double s = neverc_math_sin(x);
+            double c = neverc_math_cos(x);
             double temp;
             switch (n & 3) {
             case 0: temp =  c + s; break;
@@ -46,7 +46,7 @@ double neverc_math_jn(int n, double x) {
             case 3: temp =  c - s; break;
             default: temp = 0; break;
             }
-            b = INV_SQRT_PI * temp / sqrt(x);
+            b = INV_SQRT_PI * temp / neverc_math_sqrt(x);
         } else {
             b = neverc_math_j1(x);
             double a = neverc_math_j0(x);
@@ -94,7 +94,7 @@ double neverc_math_jn(int n, double x) {
 
             double tmp = (double)n;
             double v = 2.0 / x;
-            tmp = tmp * log(fabs(v * tmp));
+            tmp = tmp * neverc_math_log(nc_abs(v * tmp));
             if (tmp < 7.09782712893383973096e+02) {
                 for (int i = n - 1; i > 0; i--) {
                     double di = (double)(i + i);
@@ -124,13 +124,13 @@ double neverc_math_jn(int n, double x) {
 double neverc_math_yn(int n, double x) {
     const double Two302 = 8.148143905337944345073782753637512644205e+90;
 
-    if (x < 0 || isnan(x)) return NAN;
-    if (isinf(x) && x > 0) return 0.0;
+    if (x < 0 || nc_isnan(x)) return nc_nan();
+    if (nc_isinf_any(x) && x > 0) return 0.0;
 
     if (n == 0) return neverc_math_y0(x);
     if (x == 0.0) {
-        if (n < 0 && (n & 1) == 1) return INFINITY;
-        return -INFINITY;
+        if (n < 0 && (n & 1) == 1) return nc_inf(1);
+        return nc_inf(-1);
     }
 
     int sign = 0;
@@ -145,8 +145,8 @@ double neverc_math_yn(int n, double x) {
 
     double b;
     if (x >= Two302) {
-        double s = sin(x);
-        double c = cos(x);
+        double s = neverc_math_sin(x);
+        double c = neverc_math_cos(x);
         double temp;
         switch (n & 3) {
         case 0: temp =  s - c; break;
@@ -155,11 +155,11 @@ double neverc_math_yn(int n, double x) {
         case 3: temp =  s + c; break;
         default: temp = 0; break;
         }
-        b = INV_SQRT_PI * temp / sqrt(x);
+        b = INV_SQRT_PI * temp / neverc_math_sqrt(x);
     } else {
         double a = neverc_math_y0(x);
         b = neverc_math_y1(x);
-        for (int i = 1; i < n && !isinf(b); i++) {
+        for (int i = 1; i < n && !nc_isinf_any(b); i++) {
             double tmp = b;
             b = ((double)(i + i) / x) * b - a;
             a = tmp;

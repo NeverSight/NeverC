@@ -1,4 +1,5 @@
 #include "neverc/math.h"
+#include "_math_internal.h"
 
 /*
  * Inverse error function, ported from Go's math.Erfinv.
@@ -59,12 +60,12 @@ static const double
     f7 = 2.891024605872965461538222e-15;
 
 double neverc_math_erfinv(double x) {
-    if (isnan(x) || x <= -1.0 || x >= 1.0) {
+    if (nc_isnan(x) || x <= -1.0 || x >= 1.0) {
         if (x == -1.0)
-            return -INFINITY;
+            return nc_inf(-1);
         if (x == 1.0)
-            return INFINITY;
-        return NAN;
+            return nc_inf(1);
+        return nc_nan();
     }
 
     int sign = 0;
@@ -81,7 +82,7 @@ double neverc_math_erfinv(double x) {
         ans = (x * z1) / z2;
     } else {
         double z1, z2;
-        double r = sqrt(NEVERC_MATH_LN2 - log(1.0 - x));
+        double r = neverc_math_sqrt(NEVERC_MATH_LN2 - neverc_math_log(1.0 - x));
         if (r <= 5.0) {
             r -= 1.6;
             z1 = ((((((c7*r + c6)*r + c5)*r + c4)*r + c3)*r + c2)*r + c1)*r + c0;

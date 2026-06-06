@@ -1,11 +1,12 @@
 #include "neverc/math.h"
+#include "_math_internal.h"
 
 double neverc_math_min(double x, double y) {
-    if (isinf(x) && x < 0) return x;
-    if (isinf(y) && y < 0) return y;
-    if (isnan(x) || isnan(y)) return NAN;
+    if (nc_isinf_any(x) && x < 0) return x;
+    if (nc_isinf_any(y) && y < 0) return y;
+    if (nc_isnan(x) || nc_isnan(y)) return nc_nan();
     if (x == 0 && y == 0) {
-        if (signbit(x))
+        if (neverc_math_signbit(x))
             return x;
         return y;
     }
