@@ -3688,7 +3688,11 @@ Value *FunctionEmitter::genAArch64BuiltinExpr(unsigned BuiltinID,
   case neverc::AArch64::BI__ldar8:
   case neverc::AArch64::BI__ldar16:
   case neverc::AArch64::BI__ldar32:
-  case neverc::AArch64::BI__ldar64: {
+  case neverc::AArch64::BI__ldar64:
+  case neverc::AArch64::BI__load_acquire8:
+  case neverc::AArch64::BI__load_acquire16:
+  case neverc::AArch64::BI__load_acquire32:
+  case neverc::AArch64::BI__load_acquire64: {
     Value *Ptr = genScalarExpr(E->getArg(0));
     QualType ElTy = E->getArg(0)->getType()->getPointeeType();
     CharUnits LoadSize = getContext().getTypeSizeInChars(ElTy);
@@ -3702,7 +3706,11 @@ Value *FunctionEmitter::genAArch64BuiltinExpr(unsigned BuiltinID,
   case neverc::AArch64::BI__stlr8:
   case neverc::AArch64::BI__stlr16:
   case neverc::AArch64::BI__stlr32:
-  case neverc::AArch64::BI__stlr64: {
+  case neverc::AArch64::BI__stlr64:
+  case neverc::AArch64::BI__store_release8:
+  case neverc::AArch64::BI__store_release16:
+  case neverc::AArch64::BI__store_release32:
+  case neverc::AArch64::BI__store_release64: {
     Value *Ptr = genScalarExpr(E->getArg(0));
     Value *Val = genScalarExpr(E->getArg(1));
     QualType ElTy = E->getArg(0)->getType()->getPointeeType();
