@@ -81,7 +81,7 @@ function(neverc_fetch_mimalloc)
   # but mimalloc's atomic.h uses them. Shim them via a force-included header.
   if(WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64"
      AND CMAKE_C_COMPILER_ID MATCHES "Clang")
-    set(_compat_h "${CMAKE_CURRENT_LIST_DIR}/../mimalloc_arm64_compat.h")
+    set(_compat_h "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../mimalloc_arm64_compat.h")
     cmake_path(ABSOLUTE_PATH _compat_h NORMALIZE)
     target_compile_options(mimalloc-static PRIVATE
       "-include${_compat_h}")
