@@ -268,6 +268,92 @@ def _check_rdpmc(mu, instrs, regs):
     return None
 
 
+def _check_insb(mu, instrs, regs):
+    """rep insb: DX=port, RDI=buffer, RCX=count."""
+    dx = regs[uc_x86.UC_X86_REG_DX]
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if dx != 0x60:
+        errors.append(f"DX={dx:#x}, want 0x60 (port)")
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (buffer)")
+    if rcx != 16:
+        errors.append(f"RCX={rcx:#x}, want 16 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_insw(mu, instrs, regs):
+    dx = regs[uc_x86.UC_X86_REG_DX]
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if dx != 0x60:
+        errors.append(f"DX={dx:#x}, want 0x60 (port)")
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (buffer)")
+    if rcx != 8:
+        errors.append(f"RCX={rcx:#x}, want 8 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_insd(mu, instrs, regs):
+    dx = regs[uc_x86.UC_X86_REG_DX]
+    rdi = regs[uc_x86.UC_X86_REG_RDI]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if dx != 0xCF8:
+        errors.append(f"DX={dx:#x}, want 0xCF8 (port)")
+    if rdi != DATA_BASE:
+        errors.append(f"RDI={rdi:#x}, want {DATA_BASE:#x} (buffer)")
+    if rcx != 4:
+        errors.append(f"RCX={rcx:#x}, want 4 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_outsb(mu, instrs, regs):
+    """rep outsb: DX=port, RSI=buffer, RCX=count."""
+    dx = regs[uc_x86.UC_X86_REG_DX]
+    rsi = regs[uc_x86.UC_X86_REG_RSI]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if dx != 0x60:
+        errors.append(f"DX={dx:#x}, want 0x60 (port)")
+    if rsi != DATA_BASE:
+        errors.append(f"RSI={rsi:#x}, want {DATA_BASE:#x} (buffer)")
+    if rcx != 16:
+        errors.append(f"RCX={rcx:#x}, want 16 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_outsw(mu, instrs, regs):
+    dx = regs[uc_x86.UC_X86_REG_DX]
+    rsi = regs[uc_x86.UC_X86_REG_RSI]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if dx != 0x60:
+        errors.append(f"DX={dx:#x}, want 0x60 (port)")
+    if rsi != DATA_BASE:
+        errors.append(f"RSI={rsi:#x}, want {DATA_BASE:#x} (buffer)")
+    if rcx != 8:
+        errors.append(f"RCX={rcx:#x}, want 8 (count)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_outsd(mu, instrs, regs):
+    dx = regs[uc_x86.UC_X86_REG_DX]
+    rsi = regs[uc_x86.UC_X86_REG_RSI]
+    rcx = regs[uc_x86.UC_X86_REG_RCX]
+    errors = []
+    if dx != 0xCF8:
+        errors.append(f"DX={dx:#x}, want 0xCF8 (port)")
+    if rsi != DATA_BASE:
+        errors.append(f"RSI={rsi:#x}, want {DATA_BASE:#x} (buffer)")
+    if rcx != 4:
+        errors.append(f"RCX={rcx:#x}, want 4 (count)")
+    return "; ".join(errors) if errors else None
+
+
 _SEG_TEST_DATA = b'\xAA\xBB\xCC\xDD\xEE\xFF\x11\x22'
 
 
@@ -426,22 +512,28 @@ TESTS = [
     # --- Port I/O string ops ---
     Test("inbytestring",
          'void do_inbs(unsigned short p, unsigned char *b, unsigned long n) { __inbytestring(p, b, n); }\n',
-         args=[0x60, DATA_BASE, 16], priv_insn="insb"),
+         args=[0x60, DATA_BASE, 16], priv_insn="rep insb",
+         custom=_check_insb),
     Test("inwordstring",
          'void do_inws(unsigned short p, unsigned short *b, unsigned long n) { __inwordstring(p, b, n); }\n',
-         args=[0x60, DATA_BASE, 8], priv_insn="insw"),
+         args=[0x60, DATA_BASE, 8], priv_insn="rep insw",
+         custom=_check_insw),
     Test("indwordstring",
          'void do_inds(unsigned short p, unsigned long *b, unsigned long n) { __indwordstring(p, b, n); }\n',
-         args=[0xCF8, DATA_BASE, 4], priv_insn="insd"),
+         args=[0xCF8, DATA_BASE, 4], priv_insn="rep insd",
+         custom=_check_insd),
     Test("outbytestring",
          'void do_outbs(unsigned short p, unsigned char *b, unsigned long n) { __outbytestring(p, b, n); }\n',
-         args=[0x60, DATA_BASE, 16], priv_insn="outsb"),
+         args=[0x60, DATA_BASE, 16], priv_insn="rep outsb",
+         custom=_check_outsb),
     Test("outwordstring",
          'void do_outws(unsigned short p, unsigned short *b, unsigned long n) { __outwordstring(p, b, n); }\n',
-         args=[0x60, DATA_BASE, 8], priv_insn="outsw"),
+         args=[0x60, DATA_BASE, 8], priv_insn="rep outsw",
+         custom=_check_outsw),
     Test("outdwordstring",
          'void do_outds(unsigned short p, unsigned long *b, unsigned long n) { __outdwordstring(p, b, n); }\n',
-         args=[0xCF8, DATA_BASE, 4], priv_insn="outsd"),
+         args=[0xCF8, DATA_BASE, 4], priv_insn="rep outsd",
+         custom=_check_outsd),
 
     # --- Rep string ops ---
     Test("movsb",

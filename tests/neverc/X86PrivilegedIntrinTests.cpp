@@ -281,6 +281,7 @@ TEST_F(X86PrivilegedIntrinTest, PortIoStringOpsLowerCorrectly) {
     void do_outbytes(unsigned short p, unsigned char *b, unsigned long n) { __outbytestring(p, b, n); }
   )", "portiostr");
   ASSERT_EQ(rc, 0) << s;
+  EXPECT_NE(s.find("rep"), std::string::npos) << "expected rep prefix\n" << s;
   EXPECT_NE(s.find("insb"), std::string::npos) << "expected insb\n" << s;
   EXPECT_NE(s.find("outsb"), std::string::npos) << "expected outsb\n" << s;
 }

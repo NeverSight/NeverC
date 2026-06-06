@@ -1840,6 +1840,12 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
   /* 18862 */ "rmpquery\0"
   /* 18871 */ "setssbsy\0"
   /* 18880 */ "fldz\0"
+  /* 18885 */ "rep;insb %dx, %es:(%rdi)\0"
+  /* 18910 */ "rep;insw %dx, %es:(%rdi)\0"
+  /* 18935 */ "rep;insl %dx, %es:(%rdi)\0"
+  /* 18960 */ "rep;outsb (%rsi), %dx\0"
+  /* 18982 */ "rep;outsw (%rsi), %dx\0"
+  /* 19004 */ "rep;outsl (%rsi), %dx\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20288,6 +20294,12 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     17727U,	// XSTORE
     17999U,	// XSUSLDTRK
     18631U,	// XTEST
+    18886U,	// REP_INSB_64
+    18936U,	// REP_INSL_64
+    18911U,	// REP_INSW_64
+    18961U,	// REP_OUTSB_64
+    19005U,	// REP_OUTSL_64
+    18983U,	// REP_OUTSW_64
   };
 
   static const uint16_t OpInfo1[] = {
@@ -38733,6 +38745,12 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// XSTORE
     0U,	// XSUSLDTRK
     0U,	// XTEST
+    0U,	// REP_INSB_64
+    0U,	// REP_INSL_64
+    0U,	// REP_INSW_64
+    0U,	// REP_OUTSB_64
+    0U,	// REP_OUTSL_64
+    0U,	// REP_OUTSW_64
   };
 
   static const uint8_t OpInfo2[] = {
@@ -57178,6 +57196,12 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// XSTORE
     0U,	// XSUSLDTRK
     0U,	// XTEST
+    0U,	// REP_INSB_64
+    0U,	// REP_INSL_64
+    0U,	// REP_INSW_64
+    0U,	// REP_OUTSB_64
+    0U,	// REP_OUTSL_64
+    0U,	// REP_OUTSW_64
   };
 
   // Emit the opcode for the instruction.

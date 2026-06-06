@@ -1522,6 +1522,12 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
   /* 15383 */ "vscatterpf0qps\t{\0"
   /* 15400 */ "vgatherpf1qps\t{\0"
   /* 15416 */ "vscatterpf1qps\t{\0"
+  /* 15433 */ "rep insb es:[rdi], dx\0"
+  /* 15455 */ "rep insw es:[rdi], dx\0"
+  /* 15477 */ "rep insd es:[rdi], dx\0"
+  /* 15499 */ "rep outsb dx, [rsi]\0"
+  /* 15519 */ "rep outsw dx, [rsi]\0"
+  /* 15539 */ "rep outsd dx, [rsi]\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -19970,6 +19976,12 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     14013U,	// XSTORE
     14301U,	// XSUSLDTRK
     14887U,	// XTEST
+    15434U,	// REP_INSB_64
+    15478U,	// REP_INSL_64
+    15456U,	// REP_INSW_64
+    15500U,	// REP_OUTSB_64
+    15540U,	// REP_OUTSL_64
+    15520U,	// REP_OUTSW_64
   };
 
   static const uint32_t OpInfo1[] = {
@@ -38415,6 +38427,12 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// XSTORE
     0U,	// XSUSLDTRK
     0U,	// XTEST
+    0U,	// REP_INSB_64
+    0U,	// REP_INSL_64
+    0U,	// REP_INSW_64
+    0U,	// REP_OUTSB_64
+    0U,	// REP_OUTSL_64
+    0U,	// REP_OUTSW_64
   };
 
   // Emit the opcode for the instruction.

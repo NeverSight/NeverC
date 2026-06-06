@@ -26497,11 +26497,13 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDValue Count = Op.getOperand(4);
       unsigned Opc;
       switch (IntNo) {
-      case llvm::Intrinsic::x86_inbytestring:  Opc = X86::INSB; break;
-      case llvm::Intrinsic::x86_inwordstring:  Opc = X86::INSW; break;
-      case llvm::Intrinsic::x86_indwordstring: Opc = X86::INSL; break;
+      case llvm::Intrinsic::x86_inbytestring:  Opc = X86::REP_INSB_64; break;
+      case llvm::Intrinsic::x86_inwordstring:   Opc = X86::REP_INSW_64; break;
+      case llvm::Intrinsic::x86_indwordstring:  Opc = X86::REP_INSL_64; break;
       default: llvm_unreachable("bad ins intrinsic");
       }
+      if (Count.getValueType() != MVT::i64)
+        Count = DAG.getNode(ISD::ZERO_EXTEND, dl, MVT::i64, Count);
       SDValue Glue;
       Chain = DAG.getCopyToReg(Chain, dl, X86::DX, Port, Glue);
       Glue = Chain.getValue(1);
@@ -26523,11 +26525,13 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDValue Count = Op.getOperand(4);
       unsigned Opc;
       switch (IntNo) {
-      case llvm::Intrinsic::x86_outbytestring:  Opc = X86::OUTSB; break;
-      case llvm::Intrinsic::x86_outwordstring:  Opc = X86::OUTSW; break;
-      case llvm::Intrinsic::x86_outdwordstring: Opc = X86::OUTSL; break;
+      case llvm::Intrinsic::x86_outbytestring:  Opc = X86::REP_OUTSB_64; break;
+      case llvm::Intrinsic::x86_outwordstring:   Opc = X86::REP_OUTSW_64; break;
+      case llvm::Intrinsic::x86_outdwordstring:  Opc = X86::REP_OUTSL_64; break;
       default: llvm_unreachable("bad outs intrinsic");
       }
+      if (Count.getValueType() != MVT::i64)
+        Count = DAG.getNode(ISD::ZERO_EXTEND, dl, MVT::i64, Count);
       SDValue Glue;
       Chain = DAG.getCopyToReg(Chain, dl, X86::DX, Port, Glue);
       Glue = Chain.getValue(1);
