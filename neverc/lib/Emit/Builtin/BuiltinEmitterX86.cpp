@@ -29,6 +29,13 @@
 #include "llvm/TargetParser/X86TargetParser.h"
 #include <optional>
 
+namespace {
+enum X86AddrSpace : unsigned {
+  X86AS_GS = 256,
+  X86AS_FS = 257,
+};
+} // anonymous namespace
+
 using namespace neverc;
 using namespace Emit;
 using namespace llvm;
@@ -3194,7 +3201,7 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__readfsqword: {
     llvm::Type *IntTy = convertType(E->getType());
     Value *Ptr = Builder.CreateIntToPtr(
-        Ops[0], llvm::PointerType::get(getLLVMContext(), 257));
+        Ops[0], llvm::PointerType::get(getLLVMContext(), X86AS_FS));
     LoadInst *Load = Builder.CreateAlignedLoad(
         IntTy, Ptr, getContext().getTypeAlignInChars(E->getType()));
     Load->setVolatile(true);
@@ -3206,7 +3213,7 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__readgsqword: {
     llvm::Type *IntTy = convertType(E->getType());
     Value *Ptr = Builder.CreateIntToPtr(
-        Ops[0], llvm::PointerType::get(getLLVMContext(), 256));
+        Ops[0], llvm::PointerType::get(getLLVMContext(), X86AS_GS));
     LoadInst *Load = Builder.CreateAlignedLoad(
         IntTy, Ptr, getContext().getTypeAlignInChars(E->getType()));
     Load->setVolatile(true);
@@ -3226,7 +3233,7 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     default: llvm_unreachable("invalid writegs builtin");
     }
     Value *Ptr = Builder.CreateIntToPtr(
-        Ops[0], llvm::PointerType::get(getLLVMContext(), 256));
+        Ops[0], llvm::PointerType::get(getLLVMContext(), X86AS_GS));
     StoreInst *Store =
         Builder.CreateAlignedStore(Ops[1], Ptr, Align(AlignBytes));
     Store->setVolatile(true);
@@ -3246,7 +3253,7 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     default: llvm_unreachable("invalid incgs builtin");
     }
     Value *Ptr = Builder.CreateIntToPtr(
-        Ops[0], llvm::PointerType::get(getLLVMContext(), 256));
+        Ops[0], llvm::PointerType::get(getLLVMContext(), X86AS_GS));
     LoadInst *Load = Builder.CreateAlignedLoad(IntTy, Ptr, Align(AlignBytes));
     Load->setVolatile(true);
     Value *Inc = Builder.CreateAdd(Load, ConstantInt::get(IntTy, 1));
@@ -3268,7 +3275,7 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     default: llvm_unreachable("invalid addgs builtin");
     }
     Value *Ptr = Builder.CreateIntToPtr(
-        Ops[0], llvm::PointerType::get(getLLVMContext(), 256));
+        Ops[0], llvm::PointerType::get(getLLVMContext(), X86AS_GS));
     LoadInst *Load = Builder.CreateAlignedLoad(IntTy, Ptr, Align(AlignBytes));
     Load->setVolatile(true);
     Value *Sum = Builder.CreateAdd(Load, Ops[1]);
