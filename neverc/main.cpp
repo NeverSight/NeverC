@@ -13,6 +13,7 @@
 #include "neverc/Invoke/Options.h"
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Build/BuildDriver.h"
+#include "neverc/Runtime/RuntimeManager.h"
 #include "neverc/Shellcode/Pipeline/DriverIntegration.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
@@ -310,6 +311,10 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   if (Argc > 1 && (StringRef(Argv[1]) == "build" ||
                     StringRef(Argv[1]) == "make")) {
     return neverc::build::runBuild(Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
+  }
+
+  if (Argc > 1 && StringRef(Argv[1]) == "runtime") {
+    return neverc::runtime::runRuntime(Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
   }
 
   llvm::BumpPtrAllocator A;

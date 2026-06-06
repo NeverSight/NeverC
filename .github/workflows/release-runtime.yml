@@ -1,0 +1,70 @@
+# Package and upload per-target runtime sysroot assets to GitHub Releases.
+#
+# Runtime packages are platform-independent archives of cross-compilation
+# sysroots (headers + libraries).  They are uploaded alongside the per-platform
+# neverc binary packages.
+#
+# Users install them on demand:
+#   neverc runtime install windows-x64
+name: release-runtime
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  package-runtime:
+    name: Package runtime assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      # Each runtime package extracts relative to the NeverC root so that
+      # <root>/bin/neverc finds <root>/runtime/<target>/... automatically.
+      #
+      # Windows targets include windows/shared/ (MSVC + SDK headers) plus
+      # the arch-specific lib directory.
+
+      - name: Package runtime — windows-x64
+        run: cd runtime && zip -r ../neverc-runtime-windows-x64.zip windows/shared windows/x64
+
+      - name: Package runtime — windows-arm64
+        run: cd runtime && zip -r ../neverc-runtime-windows-arm64.zip windows/shared windows/arm64
+
+      - name: Package runtime — linux-x64
+        if: hashFiles('runtime/linux/x64') != ''
+        run: cd runtime && zip -r ../neverc-runtime-linux-x64.zip linux/x64
+
+      - name: Package runtime — linux-arm64
+        if: hashFiles('runtime/linux/arm64') != ''
+        run: cd runtime && zip -r ../neverc-runtime-linux-arm64.zip linux/arm64
+
+      - name: Package runtime — android-arm64
+        if: hashFiles('runtime/android/arm64') != ''
+        run: cd runtime && zip -r ../neverc-runtime-android-arm64.zip android/arm64
+
+      - name: List packages
+        run: ls -lh neverc-runtime-*.zip
+
+      - name: Upload CI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: neverc-runtime-packages
+          path: neverc-runtime-*.zip
+          retention-days: 14
+
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
+          files: neverc-runtime-*.zip

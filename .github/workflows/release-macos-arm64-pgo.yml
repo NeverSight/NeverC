@@ -394,24 +394,44 @@ jobs:
           fi
       # ── End signing ─────────────────────────────────────────
 
-      - name: Package
+      - name: Package (full, with runtime)
         run: 7z a macos-arm64-neverc-pgo.zip install
+
+      - name: Package (binary + headers, for curl installer)
+        run: cd install && zip -r ../neverc-macos-arm64.zip bin lib
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-arm64-neverc-pgo
-          path: macos-arm64-neverc-pgo.zip
+          path: |
+            macos-arm64-neverc-pgo.zip
+            neverc-macos-arm64.zip
 
       - name: GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
-          files: macos-arm64-neverc-pgo.zip
+          files: |
+            macos-arm64-neverc-pgo.zip
+            neverc-macos-arm64.zip
           generate_release_notes: true
           body: |
-            ### macOS quick start
+            ### Quick install (macOS / Linux)
+
+            ```
+            curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/main/install.sh | sh
+            ```
+
+            ### macOS note
 
             Signed with Apple Developer ID and notarized by Apple.
             Extract the archive and use directly — no quarantine workaround needed.
+
+            ### Cross-compilation runtimes (optional)
+
+            ```
+            neverc runtime install windows-x64
+            neverc runtime list
+            ```
