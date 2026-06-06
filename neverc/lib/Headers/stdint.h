@@ -1,16 +1,15 @@
 #ifndef __NEVERC_STDINT_H
 #define __NEVERC_STDINT_H
 
-/* If we're hosted, fall back to the system's stdint.h, which might have
- * additional definitions.
+/* Fully self-contained <stdint.h> using compiler builtins.
+ *
+ * Earlier versions used #include_next to forward to the platform's
+ * <stdint.h>, but that fails when the system header pulls in glibc's
+ * <features.h>, which uses preprocessor patterns (multi-line
+ * `defined X || defined Y` chains) this compiler's preprocessor
+ * cannot currently parse.  The self-contained path below defines
+ * everything via __INTn_TYPE__ / __UINTn_TYPE__ builtins.
  */
-#if __STDC_HOSTED__ && __has_include_next(<stdint.h>)
-
-// Hosted: defer to the system <stdint.h>.
-
-#include_next <stdint.h>
-
-#else
 
 /* C99 7.18.1.1 Exact-width integer types.
  * C99 7.18.1.2 Minimum-width integer types.
@@ -870,5 +869,4 @@ typedef __UINTMAX_TYPE__ uintmax_t;
 #define WINT_WIDTH __WINT_WIDTH__
 #endif
 
-#endif /* __STDC_HOSTED__ */
 #endif /* __NEVERC_STDINT_H */
