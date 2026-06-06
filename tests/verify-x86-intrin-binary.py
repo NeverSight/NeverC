@@ -141,6 +141,12 @@ class Test:
     check_regs: dict = field(default_factory=dict)
     # Custom verifier: (mu, instrs, regs_at_priv) -> error_str|None
     custom: Callable | None = None
+    # Setup callback: (mu) -> None, called before emulation (e.g. set GS base)
+    setup: Callable | None = None
+    # Full emulation: run to completion and check return value in RAX
+    expect_rax: int | None = None
+    # Check memory after full emulation: {addr: (size, expected_value)}
+    expect_mem: dict = field(default_factory=dict)
 
 
 def _check_wrmsr(mu, instrs, regs):
@@ -237,6 +243,42 @@ def _check_cpuid(mu, instrs, regs):
     if ecx != 0:
         errors.append(f"ECX={ecx:#x}, want 0 (subfunction)")
     return "; ".join(errors) if errors else None
+
+
+def _check_xsetbv_regs(mu, instrs, regs):
+    """xsetbv: ECX=XCR, EAX=lo32(val), EDX=hi32(val)."""
+    ecx = regs[uc_x86.UC_X86_REG_ECX]
+    eax = regs[uc_x86.UC_X86_REG_EAX]
+    edx = regs[uc_x86.UC_X86_REG_EDX]
+    errors = []
+    if ecx != 0:
+        errors.append(f"ECX={ecx:#x}, want 0 (XCR0)")
+    if eax != 0xBEEF1234:
+        errors.append(f"EAX={eax:#x}, want 0xBEEF1234 (lo32)")
+    if edx != 0xDEAD:
+        errors.append(f"EDX={edx:#x}, want 0xDEAD (hi32)")
+    return "; ".join(errors) if errors else None
+
+
+def _check_rdpmc(mu, instrs, regs):
+    """rdpmc: ECX=counter."""
+    ecx = regs[uc_x86.UC_X86_REG_ECX]
+    if ecx != 0x42:
+        return f"ECX={ecx:#x}, want 0x42 (counter)"
+    return None
+
+
+_SEG_TEST_DATA = b'\xAA\xBB\xCC\xDD\xEE\xFF\x11\x22'
+
+
+def _setup_gs(mu):
+    mu.reg_write(uc_x86.UC_X86_REG_GS_BASE, DATA_BASE)
+    mu.mem_write(DATA_BASE + 0x30, _SEG_TEST_DATA)
+
+
+def _setup_fs(mu):
+    mu.reg_write(uc_x86.UC_X86_REG_FS_BASE, DATA_BASE)
+    mu.mem_write(DATA_BASE + 0x30, _SEG_TEST_DATA)
 
 
 # ---------------------------------------------------------------------------
@@ -466,6 +508,107 @@ TESTS = [
     Test("xtest",
          'unsigned char do_xtest(void) { return _xtest(); }\n',
          priv_insn="xtest"),
+
+    # --- Additional CR registers ---
+    Test("readcr2",
+         'unsigned __int64 readcr2(void) { return __readcr2(); }\n',
+         priv_insn="mov"),
+    Test("readcr4",
+         'unsigned __int64 readcr4(void) { return __readcr4(); }\n',
+         priv_insn="mov"),
+    Test("readcr8",
+         'unsigned __int64 readcr8(void) { return __readcr8(); }\n',
+         priv_insn="mov"),
+    Test("writecr2",
+         'void writecr2(unsigned __int64 v) { __writecr2(v); }\n',
+         args=[0xFA01E000], priv_insn="mov",
+         check_regs={uc_x86.UC_X86_REG_RCX: 0xFA01E000}),
+    Test("writecr4",
+         'void writecr4(unsigned __int64 v) { __writecr4(v); }\n',
+         args=[0x6E0], priv_insn="mov",
+         check_regs={uc_x86.UC_X86_REG_RCX: 0x6E0}),
+    Test("writecr8",
+         'void writecr8(unsigned __int64 v) { __writecr8(v); }\n',
+         args=[0x0F], priv_insn="mov",
+         check_regs={uc_x86.UC_X86_REG_RCX: 0x0F}),
+
+    # --- RDPMC ---
+    Test("rdpmc",
+         'unsigned __int64 do_rdpmc(unsigned int c) { return __readpmc(c); }\n',
+         args=[0x42], priv_insn="rdpmc",
+         custom=_check_rdpmc),
+
+    # --- RDTSCP ---
+    Test("rdtscp",
+         'unsigned __int64 do_rdtscp(unsigned int *aux) { return __rdtscp(aux); }\n',
+         args=[DATA_BASE], priv_insn="rdtscp"),
+
+    # --- xsetbv register verification ---
+    Test("xsetbv_regs",
+         'void do_xsetbv(unsigned int xcr, unsigned __int64 val) { _xsetbv(xcr, val); }\n',
+         args=[0, 0xDEAD_BEEF1234], priv_insn="xsetbv",
+         custom=_check_xsetbv_regs),
+
+    # --- xbegin with return value ---
+    Test("xbegin_ret",
+         'unsigned int do_xbegin(void) { return _xbegin(); }\n',
+         priv_insn="xbegin"),
+
+    # --- GS segment reads (full emulation) ---
+    Test("readgsbyte",
+         'unsigned char do_readgsbyte(unsigned __int64 off) { return __readgsbyte(off); }\n',
+         args=[0x30], setup=_setup_gs, expect_rax=0xAA),
+    Test("readgsword",
+         'unsigned short do_readgsword(unsigned __int64 off) { return __readgsword(off); }\n',
+         args=[0x30], setup=_setup_gs, expect_rax=0xBBAA),
+    Test("readgsdword",
+         'unsigned long do_readgsdword(unsigned __int64 off) { return __readgsdword(off); }\n',
+         args=[0x30], setup=_setup_gs, expect_rax=0xDDCCBBAA),
+    Test("readgsqword",
+         'unsigned __int64 do_readgsqword(unsigned __int64 off) { return __readgsqword(off); }\n',
+         args=[0x30], setup=_setup_gs, expect_rax=0x2211FFEEDDCCBBAA),
+
+    # --- GS segment writes (full emulation) ---
+    Test("writegsbyte",
+         'void do_writegsbyte(unsigned __int64 off, unsigned char v) { __writegsbyte(off, v); }\n',
+         args=[0x40, 0x5A], setup=_setup_gs,
+         expect_mem={DATA_BASE + 0x40: (1, 0x5A)}),
+    Test("writegsword",
+         'void do_writegsword(unsigned __int64 off, unsigned short v) { __writegsword(off, v); }\n',
+         args=[0x40, 0x1234], setup=_setup_gs,
+         expect_mem={DATA_BASE + 0x40: (2, 0x1234)}),
+    Test("writegsdword",
+         'void do_writegsdword(unsigned __int64 off, unsigned long v) { __writegsdword(off, v); }\n',
+         args=[0x40, 0xDEADBEEF], setup=_setup_gs,
+         expect_mem={DATA_BASE + 0x40: (4, 0xDEADBEEF)}),
+    Test("writegsqword",
+         'void do_writegsqword(unsigned __int64 off, unsigned __int64 v) { __writegsqword(off, v); }\n',
+         args=[0x40, 0xCAFEBABE12345678], setup=_setup_gs,
+         expect_mem={DATA_BASE + 0x40: (8, 0xCAFEBABE12345678)}),
+
+    # --- GS segment inc/add ---
+    Test("incgsdword",
+         'void do_incgsdword(unsigned __int64 off) { __incgsdword(off); }\n',
+         args=[0x50], setup=_setup_gs,
+         expect_mem={DATA_BASE + 0x50: (4, 0x00000001)}),
+    Test("addgsdword",
+         'void do_addgsdword(unsigned __int64 off, unsigned long v) { __addgsdword(off, v); }\n',
+         args=[0x50, 0x100], setup=_setup_gs,
+         expect_mem={DATA_BASE + 0x50: (4, 0x00000100)}),
+
+    # --- FS segment reads (full emulation) ---
+    Test("readfsbyte",
+         'unsigned char do_readfsbyte(unsigned __int64 off) { return __readfsbyte(off); }\n',
+         args=[0x30], setup=_setup_fs, expect_rax=0xAA),
+    Test("readfsword",
+         'unsigned short do_readfsword(unsigned __int64 off) { return __readfsword(off); }\n',
+         args=[0x30], setup=_setup_fs, expect_rax=0xBBAA),
+    Test("readfsdword",
+         'unsigned long do_readfsdword(unsigned __int64 off) { return __readfsdword(off); }\n',
+         args=[0x30], setup=_setup_fs, expect_rax=0xDDCCBBAA),
+    Test("readfsqword",
+         'unsigned __int64 do_readfsqword(unsigned __int64 off) { return __readfsqword(off); }\n',
+         args=[0x30], setup=_setup_fs, expect_rax=0x2211FFEEDDCCBBAA),
 ]
 
 
@@ -491,18 +634,19 @@ def run_test(t: Test, tmpdir: str, verbose: bool) -> tuple[bool, str]:
             raw = code[a - CODE_BASE:a - CODE_BASE + sz].hex()
             print(f"    {a:#06x}: {raw:20s} {mn:10s} {ops}")
 
-    # 3) Check the privileged instruction exists
+    # 3) Check the privileged instruction exists (if specified)
+    target = None
     if t.priv_insn:
         target = find_insn(instrs, t.priv_insn)
         if not target:
             return False, f"instruction '{t.priv_insn}' not found in output"
 
-    # 4) Emulate up to the privileged instruction
-    if not t.priv_insn:
+    # 4) Determine emulation mode
+    full_emu = (t.setup is not None or t.expect_rax is not None or t.expect_mem)
+    if not t.priv_insn and not full_emu:
         return True, "compiled OK (no priv insn to emulate)"
 
-    priv_addr, priv_size, _, _ = target
-
+    # 5) Create emulator and set arguments
     try:
         mu = make_emu(code)
     except unicorn.UcError as e:
@@ -512,32 +656,65 @@ def run_test(t: Test, tmpdir: str, verbose: bool) -> tuple[bool, str]:
         if i < len(ARG_REGS):
             mu.reg_write(ARG_REGS[i], val & 0xFFFFFFFFFFFFFFFF)
 
-    try:
-        mu.emu_start(CODE_BASE, priv_addr, timeout=5_000_000)
-    except unicorn.UcError as e:
+    if t.setup:
+        t.setup(mu)
+
+    if target:
+        # 6a) Privileged-instruction mode: emulate up to the priv insn
+        priv_addr, priv_size, _, _ = target
+
+        try:
+            mu.emu_start(CODE_BASE, priv_addr, timeout=5_000_000)
+        except unicorn.UcError as e:
+            rip = mu.reg_read(uc_x86.UC_X86_REG_RIP)
+            return False, f"emu stopped at {rip:#x} (target {priv_addr:#x}): {e}"
+
         rip = mu.reg_read(uc_x86.UC_X86_REG_RIP)
-        return False, f"emu stopped at {rip:#x} (target {priv_addr:#x}): {e}"
+        if rip != priv_addr:
+            return False, f"RIP={rip:#x}, expected {priv_addr:#x} (didn't reach priv insn)"
 
-    rip = mu.reg_read(uc_x86.UC_X86_REG_RIP)
-    if rip != priv_addr:
-        return False, f"RIP={rip:#x}, expected {priv_addr:#x} (didn't reach priv insn)"
+        regs = snapshot(mu)
 
-    # 5) Snapshot & check registers
-    regs = snapshot(mu)
+        for reg, expected in t.check_regs.items():
+            actual = mu.reg_read(reg)
+            if actual != expected:
+                return False, (f"{reg_name(reg)}={actual:#x}, "
+                               f"want {expected:#x}")
 
-    for reg, expected in t.check_regs.items():
-        actual = mu.reg_read(reg)
-        if actual != expected:
-            return False, (f"{reg_name(reg)}={actual:#x}, "
-                           f"want {expected:#x}")
+        if t.custom:
+            err = t.custom(mu, instrs, regs)
+            if err:
+                return False, err
 
-    # 6) Custom verification
-    if t.custom:
-        err = t.custom(mu, instrs, regs)
-        if err:
-            return False, err
+        return True, "OK"
+    else:
+        # 6b) Full emulation: run to completion and check results
+        code_size = max(0x2000, (len(code) + 0xFFF) & ~0xFFF)
+        end_addr = CODE_BASE + code_size - 1
 
-    return True, "OK"
+        try:
+            mu.emu_start(CODE_BASE, end_addr, timeout=5_000_000)
+        except unicorn.UcError as e:
+            rip = mu.reg_read(uc_x86.UC_X86_REG_RIP)
+            return False, f"emu stopped at {rip:#x}: {e}"
+
+        if t.expect_rax is not None:
+            rax = mu.reg_read(uc_x86.UC_X86_REG_RAX)
+            if rax != t.expect_rax:
+                return False, f"RAX={rax:#x}, want {t.expect_rax:#x}"
+
+        for addr, (size, expected) in t.expect_mem.items():
+            fmt = {1: "<B", 2: "<H", 4: "<I", 8: "<Q"}[size]
+            actual = struct.unpack(fmt, mu.mem_read(addr, size))[0]
+            if actual != expected:
+                return False, f"mem[{addr:#x}]={actual:#x}, want {expected:#x}"
+
+        if t.custom:
+            err = t.custom(mu, instrs, snapshot(mu))
+            if err:
+                return False, err
+
+        return True, "OK"
 
 
 def main():
