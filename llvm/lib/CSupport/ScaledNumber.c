@@ -17,7 +17,7 @@ int csupport_count_trailing_zeros_64(uint64_t v) {
 
 void csupport_multiply_u64(uint64_t lhs, uint64_t rhs, uint64_t *hi,
                            uint64_t *lo) {
-#ifdef __SIZEOF_INT128__
+#if defined(__SIZEOF_INT128__) && !defined(_WIN32)
   __uint128_t prod = (__uint128_t)lhs * rhs;
   *lo = (uint64_t)prod;
   *hi = (uint64_t)(prod >> 64);
@@ -39,7 +39,7 @@ void csupport_multiply_u64(uint64_t lhs, uint64_t rhs, uint64_t *hi,
 uint64_t csupport_divide_u128_by_u64(uint64_t dividend_hi,
                                      uint64_t dividend_lo, uint64_t divisor,
                                      uint64_t *remainder) {
-#ifdef __SIZEOF_INT128__
+#if defined(__SIZEOF_INT128__) && !defined(_WIN32)
   __uint128_t dividend = ((__uint128_t)dividend_hi << 64) | dividend_lo;
   *remainder = (uint64_t)(dividend % divisor);
   return (uint64_t)(dividend / divisor);

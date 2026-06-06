@@ -730,7 +730,7 @@ void csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
         uint64_t remainder;
         tmp[i] = _udiv128(r, tmp[i], (uint64_t)radix, &remainder);
         r = remainder;
-#elif defined(__SIZEOF_INT128__)
+#elif defined(__SIZEOF_INT128__) && !defined(_WIN32)
         __uint128_t cur = ((__uint128_t)r << 64) | tmp[i];
         tmp[i] = (uint64_t)(cur / radix);
         r = (uint64_t)(cur % radix);
@@ -983,7 +983,7 @@ int csupport_apint_from_string(uint64_t *dst, unsigned bit_width,
       if (lo < carry) hi++;
       dst[w] = lo;
       carry = hi;
-#elif defined(__SIZEOF_INT128__)
+#elif defined(__SIZEOF_INT128__) && !defined(_WIN32)
       __uint128_t prod = (__uint128_t)dst[w] * radix + carry;
       dst[w] = (uint64_t)prod;
       carry = (uint64_t)(prod >> 64);

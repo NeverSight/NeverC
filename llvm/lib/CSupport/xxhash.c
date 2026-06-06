@@ -157,7 +157,7 @@ static const uint8_t kSecret[XXH_SECRET_DEFAULT_SIZE] = {
 };
 
 static uint64_t XXH3_mul128_fold64(uint64_t lhs, uint64_t rhs) {
-#if defined(__SIZEOF_INT128__)
+#if defined(__SIZEOF_INT128__) && !defined(_WIN32)
   __uint128_t product = (__uint128_t)lhs * (__uint128_t)rhs;
   return (uint64_t)(product) ^ (uint64_t)(product >> 64);
 #else
