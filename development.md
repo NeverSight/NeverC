@@ -195,6 +195,70 @@ If an instruction's `NumDefs` field in `X86GenInstrInfo.inc` is wrong, it
 causes segfaults during instruction emission. Example: VMWRITE64rr had
 `NumDefs=1` (wrong — vmwrite has no register output). Fixed to `NumDefs=0`.
 
+## REP Pseudo-Instructions (Port I/O String Ops)
+
+Port I/O string operations (`__inbytestring`, `__outbytestring`, etc.) are
+implemented via REP pseudo-instructions: `REP_INSB_64`, `REP_INSW_64`,
+`REP_INSL_64`, `REP_OUTSB_64`, `REP_OUTSW_64`, `REP_OUTSL_64`.
+
+### Checklist for Adding REP Pseudo-Instructions
+
+Adding a REP pseudo-instruction requires synchronized changes across the
+following files. **Missing any one of these causes compile failures or runtime
+segfaults:**
+
+| # | File | Change |
+|---|------|--------|
+| 1 | `X86GenInstrInfo.inc` | Add enum opcode + update `INSTRUCTION_LIST_END` |
+| 2 | `X86GenInstrInfo.inc` | Update `Insts[]` array size (must match `INSTRUCTION_LIST_END`) |
+| 3 | `X86GenInstrInfo.inc` | ImplicitOps array: add implicit register uses/defs |
+| 4 | `X86GenInstrInfo.inc` | MCInstrDesc table: one entry per instruction, inserted at top in **reverse order** |
+| 5 | `X86GenInstrInfo.inc` | InstrNameData / InstrNameIndices / InitMCInstrInfo count |
+| 6 | `X86GenInstrInfo.inc` | Sched/Offsets / Feature bits / assert update |
+| 7 | `X86GenAsmWriter.inc` | AsmStrs (AT&T syntax strings), OpInfo0, OpInfo1, **OpInfo2** |
+| 8 | `X86GenAsmWriter1.inc` | AsmStrs (Intel syntax strings), OpInfo0, OpInfo1 |
+| 9 | `X86ISelLowering.cpp` | ISel lowering (CopyToReg + getMachineNode) |
+
+### Key Lessons
+
+1. **TSFlags must correctly encode each instruction's opcode.** Never copy
+   TSFlags from an existing pseudo-instruction verbatim — the MCCodeEmitter
+   derives machine code bytes from the Opcode field in TSFlags. `INSB` has
+   opcode `0x6C`, `MOVSB` has `0xA4`; using the wrong one silently emits
+   incorrect bytes. Local builds may not crash, but the output is functionally
+   wrong.
+
+   TSFlags encoding formula (see `MCTargetDesc/X86BaseInfo.h`):
+   ```
+   RawFrm(1) | AdSize64(3<<9) | REP(1<<26) | OpSize(x<<7) | Opcode(op<<31)
+   ```
+   - Byte variant: OpSize=0
+   - Word variant: OpSize=1 (OpSize16)
+   - Dword variant: OpSize=2 (OpSize32)
+
+   | Instruction | Opcode | TSFlags |
+   |-------------|--------|---------|
+   | REP_INSB_64 | 0x6C | `0x3604000601` |
+   | REP_INSW_64 | 0x6D | `0x3684000681` |
+   | REP_INSL_64 | 0x6D | `0x3684000701` |
+   | REP_OUTSB_64 | 0x6E | `0x3704000601` |
+   | REP_OUTSW_64 | 0x6F | `0x3784000681` |
+   | REP_OUTSL_64 | 0x6F | `0x3784000701` |
+
+2. **Windows `unsigned long` is 32-bit.** The port I/O string intrinsics take
+   count as `i32`, but `RCX` is a 64-bit register. ISel must `ZERO_EXTEND`
+   count to `i64` before `CopyToReg` to `X86::RCX`, otherwise it triggers
+   `Cannot emit physreg copy instruction`.
+
+3. **PGO/LTO builds expose UB.** A local debug build may appear to work
+   (wrong operand count in `getMachineNode` happens not to crash), but
+   PGO/LTO's different memory layout makes the UB segfault immediately. These
+   issues must be caught via Unicorn binary verification — checking that the
+   target instruction appears in assembly text is not enough. You must also
+   verify:
+   - Correct machine code bytes (`f3 6c` = rep insb, not `f3 a4` = rep movsb)
+   - Correct register state (DX=port, RDI/RSI=buffer, RCX=count)
+
 ## Testing
 
 ### GTest suite (`tests/neverc/X86PrivilegedIntrinTests.cpp`)
@@ -205,13 +269,17 @@ mnemonics. Uses `compileToAsm()` helper with `--target=x86_64-pc-windows-msvc
 
 ### Unicorn binary verification (`tests/verify-x86-intrin-binary.py`)
 
-57 standalone tests that:
+81 standalone tests that:
 
 1. Compile to COFF `.o` via `ncc --target=x86_64-pc-windows-msvc -O2 -fno-lto`
 2. Extract `.text` bytes via `lief`
 3. Disassemble via `capstone` to locate the privileged instruction
 4. Emulate up to the privileged instruction via `unicorn`
 5. Verify register state matches Intel SDM expectations
+
+Port I/O string ops tests additionally verify three registers (DX=port,
+RDI/RSI=buffer, RCX=count) to ensure the ISel CopyToReg chain correctly sets
+up the implicit operands.
 
 Key flags: `-fno-lto` is required to get native object code (not bitcode).
 Windows x64 ABI: args in RCX, RDX, R8, R9.
