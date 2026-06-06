@@ -487,6 +487,109 @@ static void test_lgamma(void) {
     check_double("lgamma(2)",   neverc_math_lgamma(2.0),   0.0);
 }
 
+/* ===== Test: Bessel Functions ===== */
+static void test_j0(void) {
+    printf("[j0]\n");
+    check_double("j0(0)",    neverc_math_j0(0.0),    1.0);
+    check_double("j0(NaN)",  neverc_math_j0(NAN),    NAN);
+    check_double("j0(+Inf)", neverc_math_j0(INFINITY), 0.0);
+    check_double("j0(-Inf)", neverc_math_j0(-INFINITY), 0.0);
+
+    /* Go test vectors (vf[i] → expected j0) */
+    check_double("j0(4.979)",  neverc_math_j0(4.9790119248836735e+00),
+                 -1.8444682230601672018219338e-01);
+    check_double("j0(7.739)",  neverc_math_j0(7.7388724745781045e+00),
+                 2.27353668906331975435892e-01);
+    check_double("j0(-0.277)", neverc_math_j0(-2.7688005719200159e-01),
+                 9.809259936157051116270273e-01);
+    check_double("j0(-5.011)", neverc_math_j0(-5.0106036182710749e+00),
+                 -1.741170131426226587841181e-01);
+    check_double("j0(9.636)",  neverc_math_j0(9.6362937071984173e+00),
+                 -2.1389448451144143352039069e-01);
+}
+
+static void test_y0(void) {
+    printf("[y0]\n");
+    check_double("y0(+Inf)", neverc_math_y0(INFINITY), 0.0);
+    check_double("y0(0)",    neverc_math_y0(0.0),    -INFINITY);
+    check_double("y0(-1)",   neverc_math_y0(-1.0),   NAN);
+    check_double("y0(NaN)",  neverc_math_y0(NAN),    NAN);
+
+    check_double("y0(4.979)", neverc_math_y0(4.9790119248836735e+00),
+                 -3.053399153780788357534855e-01);
+    check_double("y0(7.739)", neverc_math_y0(7.7388724745781045e+00),
+                 1.7437227649515231515503649e-01);
+    check_double("y0(2.926)", neverc_math_y0(2.9263772392439646e+00),
+                 4.000004067997901144239363e-01);
+}
+
+static void test_j1(void) {
+    printf("[j1]\n");
+    check_double("j1(0)",    neverc_math_j1(0.0),    0.0);
+    check_double("j1(NaN)",  neverc_math_j1(NAN),    NAN);
+    check_double("j1(+Inf)", neverc_math_j1(INFINITY), 0.0);
+    check_double("j1(-Inf)", neverc_math_j1(-INFINITY), 0.0);
+
+    check_double("j1(4.979)", neverc_math_j1(4.9790119248836735e+00),
+                 -3.251526395295203422162967e-01);
+    check_double("j1(7.739)", neverc_math_j1(7.7388724745781045e+00),
+                 1.893581711430515718062564e-01);
+    check_double("j1(-0.277)", neverc_math_j1(-2.7688005719200159e-01),
+                 -1.3711761352467242914491514e-01);
+    check_double("j1(9.636)", neverc_math_j1(9.6362937071984173e+00),
+                 1.3133899188830978473849215e-01);
+}
+
+static void test_y1(void) {
+    printf("[y1]\n");
+    check_double("y1(+Inf)", neverc_math_y1(INFINITY), 0.0);
+    check_double("y1(0)",    neverc_math_y1(0.0),    -INFINITY);
+    check_double("y1(-1)",   neverc_math_y1(-1.0),   NAN);
+    check_double("y1(NaN)",  neverc_math_y1(NAN),    NAN);
+
+    check_double("y1(4.979)", neverc_math_y1(4.9790119248836735e+00),
+                 0.15494213737457922210218611);
+    check_double("y1(7.739)", neverc_math_y1(7.7388724745781045e+00),
+                 -0.2165955142081145245075746);
+}
+
+static void test_jn(void) {
+    printf("[jn]\n");
+    check_double("jn(0,1)", neverc_math_jn(0, 1.0), neverc_math_j0(1.0));
+    check_double("jn(1,1)", neverc_math_jn(1, 1.0), neverc_math_j1(1.0));
+    check_double("jn(n,NaN)", neverc_math_jn(2, NAN), NAN);
+    check_double("jn(n,+Inf)", neverc_math_jn(2, INFINITY), 0.0);
+
+    /* J2 test vectors from Go */
+    check_double("jn(2,4.979)", neverc_math_jn(2, 4.9790119248836735e+00),
+                 5.3837518920137802565192769e-02);
+    check_double("jn(2,7.739)", neverc_math_jn(2, 7.7388724745781045e+00),
+                 -1.7841678003393207281244667e-01);
+
+    /* J(-3, x) test vectors from Go */
+    check_double("jn(-3,4.979)", neverc_math_jn(-3, 4.9790119248836735e+00),
+                 -3.684042080996403091021151e-01);
+    check_double("jn(-3,7.739)", neverc_math_jn(-3, 7.7388724745781045e+00),
+                 2.8157665936340887268092661e-01);
+}
+
+static void test_yn(void) {
+    printf("[yn]\n");
+    check_double("yn(0,1)",  neverc_math_yn(0, 1.0), neverc_math_y0(1.0));
+    check_double("yn(1,1)",  neverc_math_yn(1, 1.0), neverc_math_y1(1.0));
+    check_double("yn(n,-1)", neverc_math_yn(2, -1.0), NAN);
+    check_double("yn(n,NaN)", neverc_math_yn(2, NAN), NAN);
+    check_double("yn(n,+Inf)", neverc_math_yn(2, INFINITY), 0.0);
+    check_double("yn(0,0)",  neverc_math_yn(0, 0.0), -INFINITY);
+    check_double("yn(1,0)",  neverc_math_yn(1, 0.0), -INFINITY);
+
+    /* Y2 test vectors from Go */
+    check_double("yn(2,4.979)", neverc_math_yn(2, 4.9790119248836735e+00),
+                 0.3675780219390303613394936);
+    check_double("yn(2,7.739)", neverc_math_yn(2, 7.7388724745781045e+00),
+                 -0.23034826393250119879267257);
+}
+
 /* ===== Test: Special Values ===== */
 static void test_special_values(void) {
     printf("[special_values]\n");
@@ -583,6 +686,13 @@ int main(void) {
 
     test_gamma();
     test_lgamma();
+
+    test_j0();
+    test_y0();
+    test_j1();
+    test_y1();
+    test_jn();
+    test_yn();
 
     test_special_values();
     test_float_bits();

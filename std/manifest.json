@@ -73,6 +73,13 @@
         "neverc_math_isnan":           "src/math/isnan.c",
         "neverc_math_isinf":           "src/math/isinf.c",
 
+        "neverc_math_j0":              "src/math/j0.c",
+        "neverc_math_y0":              "src/math/j0.c",
+        "neverc_math_j1":              "src/math/j1.c",
+        "neverc_math_y1":              "src/math/j1.c",
+        "neverc_math_jn":              "src/math/jn.c",
+        "neverc_math_yn":              "src/math/jn.c",
+
         "neverc_math_float64bits":     "src/math/float64bits.c",
         "neverc_math_float64frombits": "src/math/float64bits.c",
         "neverc_math_float32bits":     "src/math/float32bits.c",
@@ -147,6 +154,13 @@
         "isnan":           "neverc_math_isnan",
         "isinf":           "neverc_math_isinf",
 
+        "j0":              "neverc_math_j0",
+        "y0":              "neverc_math_y0",
+        "j1":              "neverc_math_j1",
+        "y1":              "neverc_math_y1",
+        "jn":              "neverc_math_jn",
+        "yn":              "neverc_math_yn",
+
         "float64bits":     "neverc_math_float64bits",
         "float64frombits": "neverc_math_float64frombits",
         "float32bits":     "neverc_math_float32bits",
@@ -183,6 +197,120 @@
         "format_uint":  "neverc_strconv_format_uint",
         "format_float": "neverc_strconv_format_float",
         "format_bool":  "neverc_strconv_format_bool"
+      }
+    },
+    "rand": {
+      "header": "include/neverc/rand.h",
+      "description": "Pseudo-random number generation using xoshiro256** (mirrors Go math/rand package)",
+      "symbols": {
+        "neverc_rand_seed":    "src/rand/rand.c",
+        "neverc_rand_uint32":  "src/rand/rand.c",
+        "neverc_rand_uint64":  "src/rand/rand.c",
+        "neverc_rand_int63":   "src/rand/rand.c",
+        "neverc_rand_intn":    "src/rand/rand.c",
+        "neverc_rand_float64": "src/rand/rand.c",
+        "neverc_rand_float32": "src/rand/rand.c",
+        "neverc_rand_shuffle": "src/rand/rand.c"
+      },
+      "dot_methods": {
+        "seed":    "neverc_rand_seed",
+        "uint32":  "neverc_rand_uint32",
+        "uint64":  "neverc_rand_uint64",
+        "int63":   "neverc_rand_int63",
+        "intn":    "neverc_rand_intn",
+        "float64": "neverc_rand_float64",
+        "float32": "neverc_rand_float32",
+        "shuffle": "neverc_rand_shuffle"
+      }
+    },
+    "base64": {
+      "header": "include/neverc/base64.h",
+      "description": "Base64 encoding/decoding with standard and URL-safe alphabets (mirrors Go encoding/base64 package)",
+      "symbols": {
+        "neverc_base64_encoded_len": "src/base64/base64.c",
+        "neverc_base64_decoded_len": "src/base64/base64.c",
+        "neverc_base64_encode":      "src/base64/base64.c",
+        "neverc_base64_decode":      "src/base64/base64.c",
+        "neverc_base64_url_encode":  "src/base64/base64.c",
+        "neverc_base64_url_decode":  "src/base64/base64.c"
+      },
+      "dot_methods": {
+        "encoded_len": "neverc_base64_encoded_len",
+        "decoded_len": "neverc_base64_decoded_len",
+        "encode":      "neverc_base64_encode",
+        "decode":      "neverc_base64_decode",
+        "url_encode":  "neverc_base64_url_encode",
+        "url_decode":  "neverc_base64_url_decode"
+      }
+    },
+    "sort": {
+      "header": "include/neverc/sort.h",
+      "description": "Sorting and binary search utilities (mirrors Go sort package)",
+      "symbols": {
+        "neverc_sort_ints":           "src/sort/sort.c",
+        "neverc_sort_doubles":        "src/sort/sort.c",
+        "neverc_sort_custom":         "src/sort/sort.c",
+        "neverc_sort_is_sorted":      "src/sort/sort.c",
+        "neverc_sort_search":         "src/sort/sort.c",
+        "neverc_sort_search_ints":    "src/sort/sort.c",
+        "neverc_sort_search_doubles": "src/sort/sort.c"
+      },
+      "dot_methods": {
+        "ints":           "neverc_sort_ints",
+        "doubles":        "neverc_sort_doubles",
+        "custom":         "neverc_sort_custom",
+        "is_sorted":      "neverc_sort_is_sorted",
+        "search":         "neverc_sort_search",
+        "search_ints":    "neverc_sort_search_ints",
+        "search_doubles": "neverc_sort_search_doubles"
+      }
+    },
+    "hex": {
+      "header": "include/neverc/hex.h",
+      "description": "Hexadecimal encoding and decoding (mirrors Go encoding/hex package)",
+      "symbols": {
+        "neverc_hex_encoded_len": "src/hex/encode.c",
+        "neverc_hex_encode":      "src/hex/encode.c",
+        "neverc_hex_decoded_len": "src/hex/decode.c",
+        "neverc_hex_decode":      "src/hex/decode.c"
+      },
+      "dot_methods": {
+        "encoded_len": "neverc_hex_encoded_len",
+        "encode":      "neverc_hex_encode",
+        "decoded_len": "neverc_hex_decoded_len",
+        "decode":      "neverc_hex_decode"
+      }
+    },
+    "fnv": {
+      "header": "include/neverc/fnv.h",
+      "description": "FNV-1 and FNV-1a non-cryptographic hash functions (mirrors Go hash/fnv package)",
+      "symbols": {
+        "neverc_fnv_32":  "src/fnv/fnv.c",
+        "neverc_fnv_32a": "src/fnv/fnv.c",
+        "neverc_fnv_64":  "src/fnv/fnv.c",
+        "neverc_fnv_64a": "src/fnv/fnv.c"
+      },
+      "dot_methods": {
+        "fnv32":  "neverc_fnv_32",
+        "fnv32a": "neverc_fnv_32a",
+        "fnv64":  "neverc_fnv_64",
+        "fnv64a": "neverc_fnv_64a"
+      }
+    },
+    "crc32": {
+      "header": "include/neverc/crc32.h",
+      "description": "CRC-32 checksum (mirrors Go hash/crc32 package)",
+      "symbols": {
+        "neverc_crc32_make_table": "src/crc32/crc32.c",
+        "neverc_crc32_update":     "src/crc32/crc32.c",
+        "neverc_crc32_checksum":   "src/crc32/crc32.c",
+        "neverc_crc32_ieee":       "src/crc32/crc32.c"
+      },
+      "dot_methods": {
+        "make_table": "neverc_crc32_make_table",
+        "update":     "neverc_crc32_update",
+        "checksum":   "neverc_crc32_checksum",
+        "ieee":       "neverc_crc32_ieee"
       }
     },
     "path": {

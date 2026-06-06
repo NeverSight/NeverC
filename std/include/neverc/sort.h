@@ -1,0 +1,36 @@
+#ifndef NEVERC_SORT_H
+#define NEVERC_SORT_H
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*
+ * Sorting and searching utilities (mirrors Go sort package).
+ */
+
+typedef int (*neverc_sort_cmp_t)(const void *a, const void *b);
+
+void neverc_sort_ints(int *arr, size_t n);
+void neverc_sort_doubles(double *arr, size_t n);
+
+void neverc_sort_custom(void *base, size_t n, size_t elem_size,
+                        neverc_sort_cmp_t cmp);
+
+int  neverc_sort_is_sorted(const void *base, size_t n, size_t elem_size,
+                           neverc_sort_cmp_t cmp);
+
+/* Binary search: returns the smallest index i in [0, n) for which f(i) is true.
+ * Equivalent to Go's sort.Search. */
+size_t neverc_sort_search(size_t n, int (*f)(size_t i));
+
+int  neverc_sort_search_ints(const int *arr, size_t n, int target);
+int  neverc_sort_search_doubles(const double *arr, size_t n, double target);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NEVERC_SORT_H */

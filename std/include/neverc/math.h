@@ -139,6 +139,15 @@ double neverc_math_inf(int sign);
 int    neverc_math_isnan(double x);
 int    neverc_math_isinf(double x, int sign);
 
+/* ===== Bessel Functions ===== */
+
+double neverc_math_j0(double x);
+double neverc_math_y0(double x);
+double neverc_math_j1(double x);
+double neverc_math_y1(double x);
+double neverc_math_jn(int n, double x);
+double neverc_math_yn(int n, double x);
+
 /* ===== Bit-level Helpers ===== */
 
 uint64_t neverc_math_float64bits(double f);
