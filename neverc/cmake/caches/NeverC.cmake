@@ -171,19 +171,21 @@ else()
 endif()
 
 # Full LTO for the final neverc binary: interprocedural optimisation.
-# Defaults OFF.  Release builds rely on PGO alone for performance; LTO is
-# intentionally disabled to maximise binary stability.  LTO has historically
-# exposed latent UB in the sources (different memory layout makes UB crash
-# instead of silently producing wrong output), so it is not used in release
-# artifacts until all UB sites are eliminated.
+# Defaults OFF for fast incremental rebuilds during local development.
+# CI build workflows (push/PR) and PGO release workflows pass
+# -DNEVERC_ENABLE_LTO=ON, so LTO is validated on every push before
+# a release tag is cut.  Always disabled under MSVC, when cross-compiling,
+# or in Debug builds.
 #
-# Additionally disabled on Windows HOSTS: the Windows LLVM/clang + Full LTO
-# toolchain miscompiles parts of neverc.exe, detonating latent unspecified-
-# evaluation-order / UB in the sources (e.g. the ParseUnqualifiedId bug fixed
-# in e473c35fd) into wrong codegen, parser/lexer failures and runtime crashes
+# Disabled on Windows HOSTS: the Windows LLVM/clang + Full LTO toolchain
+# miscompiles parts of neverc.exe, detonating latent unspecified-evaluation-
+# order / UB in the sources (e.g. the ParseUnqualifiedId bug fixed in
+# e473c35fd) into wrong codegen, parser/lexer failures and runtime crashes
 # that do NOT reproduce with the same sources on macOS/Linux (or on a non-LTO
 # Windows build).  The Windows CI uses clang.exe (GNU driver, so `MSVC` is
-# false here), which is why the NOT MSVC guard alone let LTO through.
+# false here), which is why the NOT MSVC guard alone let LTO through.  Keep
+# Windows on a non-LTO build until those UB sites are hunted down (ASan/UBSan)
+# and the sources are proven LTO-clean; then drop the CMAKE_HOST_WIN32 guard.
 option(NEVERC_ENABLE_LTO "Enable Full LTO for the neverc binary" OFF)
 if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING AND NOT _NEVERC_HOST_MSVC
    AND NOT CMAKE_HOST_WIN32
