@@ -41,10 +41,14 @@ jobs:
 
       - name: Create swap
         run: |
-          sudo fallocate -l 4G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
+          if ! swapon --show | grep -q /mnt/swapfile; then
+            sudo swapoff /mnt/swapfile 2>/dev/null || true
+            sudo rm -f /mnt/swapfile
+            sudo fallocate -l 4G /mnt/swapfile
+            sudo chmod 600 /mnt/swapfile
+            sudo mkswap /mnt/swapfile
+            sudo swapon /mnt/swapfile
+          fi
           free -h
 
       - name: Checkout
@@ -235,10 +239,14 @@ jobs:
 
       - name: Create swap
         run: |
-          sudo fallocate -l 4G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
+          if ! swapon --show | grep -q /mnt/swapfile; then
+            sudo swapoff /mnt/swapfile 2>/dev/null || true
+            sudo rm -f /mnt/swapfile
+            sudo fallocate -l 4G /mnt/swapfile
+            sudo chmod 600 /mnt/swapfile
+            sudo mkswap /mnt/swapfile
+            sudo swapon /mnt/swapfile
+          fi
           free -h
 
       - name: Checkout
