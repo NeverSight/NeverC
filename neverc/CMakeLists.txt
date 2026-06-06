@@ -575,9 +575,11 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
   # `--target check-neverc` would otherwise skip them and every compile/link
   # test would fail (no <stdio.h>, no CRT). Depend on them explicitly so the
   # suite is self-contained.
-  set(_neverc_check_runtime_deps)
+  #
+  # Shared MSVC headers are needed on every host: WinArm64IntrinTest does
+  # cross-compiles to aarch64-pc-windows-msvc and #includes <windows.h>.
+  set(_neverc_check_runtime_deps neverc-runtime-shared-msvc)
   if(CMAKE_HOST_WIN32)
-    list(APPEND _neverc_check_runtime_deps neverc-runtime-shared-msvc)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
       list(APPEND _neverc_check_runtime_deps neverc-runtime-arm64-msvc)
     else()
