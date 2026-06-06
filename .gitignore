@@ -73,9 +73,9 @@ IRAutoGeneratorCodeGenPrepare/
 .vscode
 .vs
 CppProperties.json
-# pythonenv for github Codespaces
+# pythonenv for github Codespaces.
 pythonenv*
-# clangd index. (".clangd" is a config file now, thus trailing slash)
+# clangd index. (".clangd" is a config file now, thus trailing slash).
 .clangd/
 .cache
 
