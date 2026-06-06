@@ -9,6 +9,9 @@ TEST_F(DriverTest, KernelStyleC) {
 }
 
 TEST_F(DriverTest, CrossAArch64) {
+  auto sysroot = neverc().parent_path().parent_path() / "runtime/linux/arm64";
+  if (!fs::is_directory(sysroot))
+    GTEST_SKIP() << "AArch64 Linux cross-compile needs bundled sysroot";
   syntaxCheck("test_cross_aarch64",
               (testDir() / "platform/test_cross_aarch64.c").string(), "c11",
               "aarch64-linux-gnu", "-fneverc-types");
@@ -26,6 +29,9 @@ TEST_F(DriverTest, CrossAppleIOS) {
 }
 
 TEST_F(DriverTest, CrossAndroid) {
+  auto sysroot = neverc().parent_path().parent_path() / "runtime/android/arm64";
+  if (!fs::is_directory(sysroot))
+    GTEST_SKIP() << "Android cross-compile needs bundled sysroot";
   syntaxCheck("test_cross_android",
               (testDir() / "platform/test_android_target_min.c").string(),
               "c11", "aarch64-linux-android29");
