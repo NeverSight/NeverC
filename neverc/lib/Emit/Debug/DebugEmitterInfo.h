@@ -11,6 +11,7 @@
 #include "neverc/Tree/Type/TypeOrdering.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/ValueHandle.h"
@@ -72,6 +73,10 @@ class DebugEmitter {
   llvm::DenseMap<const FunctionDecl *, llvm::TrackingMDRef> SPCache;
   llvm::DenseMap<const Decl *, llvm::TrackingMDRef> DeclCache;
   llvm::DenseMap<const Decl *, llvm::TrackingMDRef> ImportedDeclCache;
+
+  /// Cache of inlined subprograms used for verbose traps / synthetic inline
+  /// frames, keyed by the encoded function name.
+  llvm::StringMap<llvm::DISubprogram *> InlinedSubprogramMap;
   llvm::DIType *CreateType(const BuiltinType *Ty);
   llvm::DIType *CreateType(const ComplexType *Ty);
   llvm::DIType *CreateType(const BitIntType *Ty);
@@ -232,6 +237,13 @@ public:
   llvm::DIMacroFile *CreateTempMacroFile(llvm::DIMacroFile *Parent,
                                          SourceLocation LineLoc,
                                          SourceLocation FileLoc);
+
+  /// Create a debug location for a verbose trap with category and message
+  /// encoded into an artificial inline frame. The encoded function name is:
+  ///   `__neverc_trap_msg$<Category>$<Message>`
+  llvm::DILocation *CreateTrapFailureMessageFor(llvm::DebugLoc TrapLocation,
+                                                llvm::StringRef Category,
+                                                llvm::StringRef FailureMsg);
 
 private:
   llvm::DILocalVariable *genDeclare(const VarDecl *decl, llvm::Value *AI,

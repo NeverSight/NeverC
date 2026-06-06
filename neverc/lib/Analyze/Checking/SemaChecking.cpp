@@ -914,6 +914,28 @@ ExprResult Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl,
     if (SemaBuiltinAssume(TheCall))
       return ExprError();
     break;
+  case Builtin::BI__builtin_verbose_trap: {
+    bool HasError = false;
+    for (const Expr *Arg : TheCall->arguments()) {
+      if (Arg->isValueDependent())
+        continue;
+      std::optional<std::string> ArgString =
+          Arg->tryEvaluateString(Context);
+      int DiagMsgKind = -1;
+      if (!ArgString.has_value())
+        DiagMsgKind = 0;
+      else if (ArgString->find('$') != std::string::npos)
+        DiagMsgKind = 1;
+      if (DiagMsgKind >= 0) {
+        Diag(Arg->getBeginLoc(), diag::err_builtin_verbose_trap_arg)
+            << DiagMsgKind << Arg->getSourceRange();
+        HasError = true;
+      }
+    }
+    if (HasError)
+      return ExprError();
+    break;
+  }
   case Builtin::BI__builtin_assume_aligned:
     if (SemaBuiltinAssumeAligned(TheCall))
       return ExprError();

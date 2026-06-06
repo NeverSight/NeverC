@@ -1445,6 +1445,32 @@ llvm::DIMacroFile *DebugEmitter::CreateTempMacroFile(llvm::DIMacroFile *Parent,
   return DBuilder.createTempMacroFile(Parent, Line, FName);
 }
 
+llvm::DILocation *DebugEmitter::CreateTrapFailureMessageFor(
+    llvm::DebugLoc TrapLocation, llvm::StringRef Category,
+    llvm::StringRef FailureMsg) {
+  llvm::SmallString<64> FuncName("__neverc_trap_msg");
+  FuncName += "$";
+  FuncName += Category;
+  FuncName += "$";
+  FuncName += FailureMsg;
+
+  llvm::DISubprogram *&SP = InlinedSubprogramMap[FuncName];
+
+  if (!SP) {
+    llvm::DISubroutineType *DIFnTy = DBuilder.createSubroutineType(nullptr);
+    SP = DBuilder.createFunction(
+        /*Scope=*/TrapLocation->getFile(), /*Name=*/FuncName,
+        /*LinkageName=*/llvm::StringRef(), /*File=*/TrapLocation->getFile(),
+        /*LineNo=*/0, /*Ty=*/DIFnTy, /*ScopeLine=*/0,
+        /*Flags=*/llvm::DINode::FlagArtificial,
+        /*SPFlags=*/llvm::DISubprogram::SPFlagDefinition,
+        /*TParams=*/nullptr, /*Decl=*/nullptr, /*ThrownTypes=*/nullptr);
+  }
+
+  return llvm::DILocation::get(ME.getLLVMContext(), /*Line=*/0, /*Column=*/0,
+                               /*Scope=*/SP, /*InlinedAt=*/TrapLocation);
+}
+
 namespace {
 QualType unwrapTypeForDebugInfo(QualType T, const TreeContext &C) {
   Qualifiers Quals;

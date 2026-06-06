@@ -372,6 +372,11 @@ public:
 
   bool tryEvaluateStrLen(uint64_t &Result, TreeContext &Ctx) const;
 
+  /// If the current Expr can be evaluated to a pointer to a null-terminated
+  /// constant string, return the constant string (without the terminating
+  /// null).
+  std::optional<std::string> tryEvaluateString(TreeContext &Ctx) const;
+
   bool EvaluateCharRangeAsString(std::string &Result,
                                  const Expr *SizeExpression,
                                  const Expr *PtrExpression, TreeContext &Ctx,

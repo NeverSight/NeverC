@@ -197,6 +197,7 @@ DIAG(err_builtin_non_vector_type, CLASS_ERROR, (unsigned)diag::Severity::Error, 
 DIAG(err_builtin_redeclare, CLASS_ERROR, (unsigned)diag::Severity::Error, "cannot redeclare builtin function %0", 0, false, true, true, false, 2)
 DIAG(err_builtin_setjmp_unsupported, CLASS_ERROR, (unsigned)diag::Severity::Error, "__builtin_setjmp is not supported for the current target", 0, false, true, true, false, 2)
 DIAG(err_builtin_target_unsupported, CLASS_ERROR, (unsigned)diag::Severity::Error, "builtin is not supported on this target", 0, false, true, true, false, 2)
+DIAG(err_builtin_verbose_trap_arg, CLASS_ERROR, (unsigned)diag::Severity::Error, "argument to __builtin_verbose_trap must %select{be a pointer to a constant string|not contain $}0", 0, false, true, true, false, 2)
 DIAG(err_builtin_x64_aarch64_only, CLASS_ERROR, (unsigned)diag::Severity::Error, "this builtin is only available on x86-64 and aarch64 targets", 0, false, true, true, false, 2)
 DIAG(err_call_function_incomplete_return, CLASS_ERROR, (unsigned)diag::Severity::Error, "calling %0 with incomplete return type %1", 0, false, true, true, false, 2)
 DIAG(err_call_incomplete_argument, CLASS_ERROR, (unsigned)diag::Severity::Error, "argument type %0 is incomplete", 0, false, true, true, false, 2)

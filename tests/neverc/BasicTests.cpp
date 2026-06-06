@@ -474,6 +474,41 @@ TEST_F(BasicTest, CompileOnly) {
   compileOnly("compile_only", src.string());
 }
 
+// __builtin_verbose_trap: valid usage should pass syntax check.
+TEST_F(BasicTest, VerboseTrapBasic) {
+  auto src = tmpFile("verbose_trap.c");
+  writeFile(src,
+            "void f(void) { __builtin_verbose_trap(\"bounds\", \"index out of range\"); }\n");
+  syntaxCheck("verbose_trap_basic", src.string(), "c11", hostTriple());
+}
+
+// __builtin_verbose_trap: argument containing '$' should be rejected.
+TEST_F(BasicTest, VerboseTrapRejectsDollar) {
+  auto src = tmpFile("verbose_trap_dollar.c");
+  writeFile(src,
+            "void f(void) { __builtin_verbose_trap(\"bad$cat\", \"msg\"); }\n");
+  auto args = splitFlags("-std=c11 -fsyntax-only");
+  for (auto &f : sysrootFlags()) args.push_back(f);
+  for (auto &f : archFlags()) args.push_back(f);
+  args.push_back(src.string());
+  expectCommandFail("verbose_trap_dollar",
+                    "must not contain $", args);
+}
+
+// __builtin_verbose_trap: debug info contains the synthetic inline frame.
+TEST_F(BasicTest, VerboseTrapDebugInfo) {
+  auto src = tmpFile("verbose_trap_dbg.c");
+  writeFile(src,
+            "void f(void) { __builtin_verbose_trap(\"cat\", \"msg\"); }\n");
+  auto ll = tmpFile("verbose_trap_dbg.ll");
+  auto r = ncc({"-std=c11", "-S", "-emit-llvm", "-g", "-o", ll.string(),
+                src.string()});
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+  std::string ir = readFile(ll);
+  EXPECT_TRUE(ir.find("__neverc_trap_msg$cat$msg") != std::string::npos)
+      << "expected synthetic trap subprogram in IR\n" << ir.substr(0, 500);
+}
+
 TEST_F(BasicTest, LeaksGate) {
   if (!isDarwin()) {
     GTEST_SKIP() << "leaks gate requires macOS";

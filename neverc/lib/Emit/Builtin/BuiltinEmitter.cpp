@@ -2552,6 +2552,17 @@ RValue FunctionEmitter::genBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
   case Builtin::BI__builtin_trap:
     genTrapCall(Intrinsic::trap);
     return RValue::get(nullptr);
+  case Builtin::BI__builtin_verbose_trap: {
+    llvm::DILocation *TrapLocation = Builder.getCurrentDebugLocation();
+    if (getDebugInfo()) {
+      TrapLocation = getDebugInfo()->CreateTrapFailureMessageFor(
+          TrapLocation, *E->getArg(0)->tryEvaluateString(getContext()),
+          *E->getArg(1)->tryEvaluateString(getContext()));
+    }
+    ApplyDebugLocation ApplyTrapDI(*this, TrapLocation);
+    genTrapCall(Intrinsic::trap);
+    return RValue::get(nullptr);
+  }
   case Builtin::BI__debugbreak:
     genTrapCall(Intrinsic::debugtrap);
     return RValue::get(nullptr);

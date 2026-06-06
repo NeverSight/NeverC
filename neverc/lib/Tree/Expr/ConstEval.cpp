@@ -1263,7 +1263,8 @@ namespace {
 bool evaluateAsRValue(EvalInfo &Info, const Expr *E, APValue &Result);
 } // namespace
 namespace {
-bool evaluateBuiltinStrLen(const Expr *E, uint64_t &Result, EvalInfo &Info);
+bool evaluateBuiltinStrLen(const Expr *E, uint64_t &Result, EvalInfo &Info,
+                           std::string *StringResult = nullptr);
 } // namespace
 
 namespace {
@@ -10948,7 +10949,8 @@ bool Expr::tryEvaluateObjectSize(uint64_t &Result, TreeContext &Ctx,
 }
 
 namespace {
-bool evaluateBuiltinStrLen(const Expr *E, uint64_t &Result, EvalInfo &Info) {
+bool evaluateBuiltinStrLen(const Expr *E, uint64_t &Result, EvalInfo &Info,
+                           std::string *StringResult) {
   if (!E->getType()->hasPointerRepresentation() || !E->isPRValue())
     return false;
 
@@ -10973,6 +10975,8 @@ bool evaluateBuiltinStrLen(const Expr *E, uint64_t &Result, EvalInfo &Info) {
       if (Pos != llvm::StringRef::npos)
         Str = Str.substr(0, Pos);
 
+      if (StringResult)
+        *StringResult = Str;
       Result = Str.size();
       return true;
     }
@@ -10990,6 +10994,8 @@ bool evaluateBuiltinStrLen(const Expr *E, uint64_t &Result, EvalInfo &Info) {
       Result = Strlen;
       return true;
     }
+    if (StringResult)
+      StringResult->push_back(static_cast<char>(Char.getInt().getExtValue()));
     if (!handleLValueArrayAdjustment(Info, E, String, CharTy, 1))
       return false;
   }
@@ -11034,4 +11040,15 @@ bool Expr::tryEvaluateStrLen(uint64_t &Result, TreeContext &Ctx) const {
   Expr::EvalStatus Status;
   EvalInfo Info(Ctx, Status, EvalInfo::EM_ConstantFold);
   return evaluateBuiltinStrLen(this, Result, Info);
+}
+
+std::optional<std::string> Expr::tryEvaluateString(TreeContext &Ctx) const {
+  Expr::EvalStatus Status;
+  EvalInfo Info(Ctx, Status, EvalInfo::EM_ConstantFold);
+  uint64_t StrLen;
+  std::string StringResult;
+
+  if (evaluateBuiltinStrLen(this, StrLen, Info, &StringResult))
+    return StringResult;
+  return std::nullopt;
 }
