@@ -46,23 +46,29 @@ static int format_f(double f, int prec, char *buf, size_t bufsize) {
 
     if (f < 0) { if (p < end) *p++ = '-'; f = -f; }
 
-    uint64_t integer = (uint64_t)f;
-    double frac = f - (double)integer;
-
-    char intbuf[32];
-    int ilen = 0;
-    if (integer == 0) intbuf[ilen++] = '0';
-    else {
-        while (integer > 0 && ilen < 30) {
-            intbuf[ilen++] = '0' + (int)(integer % 10);
-            integer /= 10;
-        }
+    /* Find the number of integer digits */
+    int ndigits = 0;
+    {
+        double t = f;
+        if (t < 1.0) ndigits = 1;
+        else { while (t >= 1.0) { t *= 0.1; ndigits++; } }
     }
-    for (int i = ilen - 1; i >= 0; i--)
-        if (p < end) *p++ = intbuf[i];
+
+    /* Extract integer digits from most-significant to least-significant.
+       This avoids casting to uint64_t which overflows for f >= 2^64. */
+    double rem = f;
+    for (int i = ndigits - 1; i >= 0; i--) {
+        double scale = nc_pow10_d(i);
+        int d = (int)(rem / scale);
+        if (d > 9) d = 9;
+        if (d < 0) d = 0;
+        if (p < end) *p++ = '0' + d;
+        rem -= d * scale;
+    }
 
     if (prec > 0) {
         if (p < end) *p++ = '.';
+        double frac = rem;
         for (int i = 0; i < prec && p < end; i++) {
             frac *= 10.0;
             int d = (int)frac;

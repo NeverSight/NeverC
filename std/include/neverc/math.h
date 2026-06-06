@@ -1,8 +1,6 @@
 #ifndef NEVERC_MATH_H
 #define NEVERC_MATH_H
 
-#include <math.h>
-#include <float.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -111,6 +109,7 @@ double neverc_math_modf(double x, double *iptr);
 double neverc_math_frexp(double x, int *exp);
 double neverc_math_ldexp(double frac, int exp);
 double neverc_math_nextafter(double x, double y);
+float  neverc_math_nextafter32(float x, float y);
 
 /* ===== Sign & Bit Manipulation ===== */
 
@@ -126,11 +125,13 @@ double neverc_math_fma(double x, double y, double z);
 double neverc_math_erf(double x);
 double neverc_math_erfc(double x);
 double neverc_math_erfinv(double x);
+double neverc_math_erfcinv(double x);
 
 /* ===== Gamma ===== */
 
 double neverc_math_gamma(double x);
 double neverc_math_lgamma(double x);
+double neverc_math_lgamma_sign(double x, int *sign);
 
 /* ===== Special Values ===== */
 

@@ -1,10 +1,12 @@
 #include "neverc/math.h"
 #include "_math_internal.h"
+#include "_trig_reduce.h"
 
 /*
- * sin/cos using Cephes polynomial approximation.
+ * sin(x) using Cephes polynomial approximation.
  * Ported from Go math.Sin, originally from Cephes Math Library.
  * Range reduction into intervals of pi/4, then polynomial evaluation.
+ * For |x| >= 2^29, uses Payne-Hanek exact reduction.
  */
 
 static const double _sin_coeff[] = {
@@ -36,19 +38,27 @@ double neverc_math_sin(double x) {
     int sign = 0;
     if (x < 0.0) { x = -x; sign = 1; }
 
-    uint64_t j = (uint64_t)(x * (4.0 / NEVERC_MATH_PI));
-    double y = (double)j;
-    if (j & 1) { j++; y += 1.0; }
-    j &= 7;
-    double z = ((x - y * PI4A) - y * PI4B) - y * PI4C;
+    uint64_t j;
+    double z;
+
+    if (x >= TRIG_REDUCE_THRESHOLD) {
+        nc_trig_reduce(x, &j, &z);
+    } else {
+        j = (uint64_t)(x * (4.0 / NEVERC_MATH_PI));
+        double y = (double)j;
+        if (j & 1) { j++; y += 1.0; }
+        j &= 7;
+        z = ((x - y * PI4A) - y * PI4B) - y * PI4C;
+    }
 
     if (j > 3) { sign = !sign; j -= 4; }
 
     double zz = z * z;
+    double result;
     if (j == 1 || j == 2) {
-        y = 1.0 - 0.5*zz + zz*zz*(((((_cos_coeff[0]*zz + _cos_coeff[1])*zz + _cos_coeff[2])*zz + _cos_coeff[3])*zz + _cos_coeff[4])*zz + _cos_coeff[5]);
+        result = 1.0 - 0.5*zz + zz*zz*(((((_cos_coeff[0]*zz + _cos_coeff[1])*zz + _cos_coeff[2])*zz + _cos_coeff[3])*zz + _cos_coeff[4])*zz + _cos_coeff[5]);
     } else {
-        y = z + z*zz*(((((_sin_coeff[0]*zz + _sin_coeff[1])*zz + _sin_coeff[2])*zz + _sin_coeff[3])*zz + _sin_coeff[4])*zz + _sin_coeff[5]);
+        result = z + z*zz*(((((_sin_coeff[0]*zz + _sin_coeff[1])*zz + _sin_coeff[2])*zz + _sin_coeff[3])*zz + _sin_coeff[4])*zz + _sin_coeff[5]);
     }
-    return sign ? -y : y;
+    return sign ? -result : result;
 }

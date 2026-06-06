@@ -1,11 +1,10 @@
 #include "neverc/math.h"
 #include "_math_internal.h"
-#include <limits.h>
 
 int neverc_math_ilogb(double x) {
-    if (x == 0.0) return INT_MIN;
-    if (nc_isnan(x)) return INT_MAX;
-    if (nc_isinf_any(x)) return INT_MAX;
+    if (x == 0.0) return NEVERC_MATH_MIN_INT32;
+    if (nc_isnan(x)) return NEVERC_MATH_MAX_INT32;
+    if (nc_isinf_any(x)) return NEVERC_MATH_MAX_INT32;
 
     int norm_exp;
     x = nc_normalize(x, &norm_exp);

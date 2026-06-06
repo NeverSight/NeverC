@@ -1,7 +1,6 @@
 #include "neverc/math.h"
+#include "_math_internal.h"
 
 double neverc_math_inf(int sign) {
-    if (sign >= 0)
-        return INFINITY;
-    return -INFINITY;
+    return nc_inf(sign);
 }

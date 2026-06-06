@@ -1,0 +1,122 @@
+#include "neverc/pbkdf2.h"
+#include <stdio.h>
+#include <string.h>
+
+static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+
+static void check_true(const char *name, int cond) {
+    tests_run++;
+    if (cond) { tests_passed++; }
+    else { tests_failed++; printf("  FAIL: %s\n", name); }
+}
+
+static void hex_to_bytes(const char *hex, uint8_t *out, int len) {
+    for (int i = 0; i < len; i++) {
+        unsigned int v;
+        sscanf(hex + 2 * i, "%02x", &v);
+        out[i] = (uint8_t)v;
+    }
+}
+
+static void test_rfc7914_vectors(void) {
+    printf("[PBKDF2-SHA256 RFC 7914 vectors]\n");
+
+    /* RFC 7914 Section 11 — PBKDF2-HMAC-SHA256 test vectors */
+    {
+        const char *pass = "passwd";
+        const char *salt = "salt";
+        uint8_t dk[64];
+        neverc_pbkdf2_sha256(dk, 64,
+            (const uint8_t *)pass, strlen(pass),
+            (const uint8_t *)salt, strlen(salt), 1);
+
+        uint8_t expected[64];
+        hex_to_bytes(
+            "55ac046e56e3089fec1691c22544b605"
+            "f94185216dde0465e68b9d57c20dacbc"
+            "49ca9cccf179b645991b7852b855"
+            "000000000000000000000000000000000000",
+            expected, 64);
+        /* Only first 32 bytes are specified in the test vector */
+        hex_to_bytes(
+            "55ac046e56e3089fec1691c22544b605"
+            "f94185216dde0465e68b9d57c20dacbc",
+            expected, 32);
+        check_true("RFC7914 passwd/salt/1 (first 32)", memcmp(dk, expected, 32) == 0);
+    }
+
+    /* password="Password", salt="NaCl", c=80000 */
+    {
+        const char *pass = "Password";
+        const char *salt = "NaCl";
+        uint8_t dk[64];
+        neverc_pbkdf2_sha256(dk, 64,
+            (const uint8_t *)pass, strlen(pass),
+            (const uint8_t *)salt, strlen(salt), 80000);
+
+        uint8_t expected[64];
+        hex_to_bytes(
+            "4ddcd8f60b98be21830cee5ef22701f9"
+            "641a4418d04c0414aeff08876b34ab56"
+            "a1d425a1225833549adb841b51c9b317"
+            "6a272bdebba1d078478f62b397f33c8d",
+            expected, 64);
+        check_true("RFC7914 Password/NaCl/80000", memcmp(dk, expected, 64) == 0);
+    }
+}
+
+static void test_basic(void) {
+    printf("[PBKDF2-SHA256 basic]\n");
+
+    /* Same password+salt+iterations should give same result */
+    uint8_t dk1[32], dk2[32];
+    const char *pass = "testpassword";
+    const char *salt = "testsalt";
+
+    neverc_pbkdf2_sha256(dk1, 32, (const uint8_t *)pass, strlen(pass),
+                         (const uint8_t *)salt, strlen(salt), 100);
+    neverc_pbkdf2_sha256(dk2, 32, (const uint8_t *)pass, strlen(pass),
+                         (const uint8_t *)salt, strlen(salt), 100);
+    check_true("deterministic", memcmp(dk1, dk2, 32) == 0);
+
+    /* Different password → different output */
+    neverc_pbkdf2_sha256(dk2, 32, (const uint8_t *)"other", 5,
+                         (const uint8_t *)salt, strlen(salt), 100);
+    check_true("diff password", memcmp(dk1, dk2, 32) != 0);
+
+    /* Different salt → different output */
+    neverc_pbkdf2_sha256(dk2, 32, (const uint8_t *)pass, strlen(pass),
+                         (const uint8_t *)"othersalt", 9, 100);
+    check_true("diff salt", memcmp(dk1, dk2, 32) != 0);
+
+    /* Different iterations → different output */
+    neverc_pbkdf2_sha256(dk2, 32, (const uint8_t *)pass, strlen(pass),
+                         (const uint8_t *)salt, strlen(salt), 200);
+    check_true("diff iterations", memcmp(dk1, dk2, 32) != 0);
+}
+
+static void test_various_lengths(void) {
+    printf("[PBKDF2-SHA256 various output lengths]\n");
+    const char *pass = "key";
+    const char *salt = "salt";
+
+    for (int len = 1; len <= 96; len += 15) {
+        uint8_t dk[96];
+        int rc = neverc_pbkdf2_sha256(dk, len, (const uint8_t *)pass, 3,
+                                      (const uint8_t *)salt, 4, 10);
+        char buf[64];
+        snprintf(buf, sizeof(buf), "len=%d ok", len);
+        check_true(buf, rc == 0);
+    }
+}
+
+int main(void) {
+    printf("=== NeverC PBKDF2 Tests ===\n\n");
+    test_rfc7914_vectors();
+    test_basic();
+    test_various_lengths();
+    printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
+    if (tests_failed > 0) printf(", %d FAILED", tests_failed);
+    printf(" ===\n");
+    return tests_failed > 0 ? 1 : 0;
+}

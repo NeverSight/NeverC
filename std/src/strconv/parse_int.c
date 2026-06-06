@@ -1,7 +1,12 @@
 #include "neverc/strconv.h"
-#include <limits.h>
 #include <string.h>
-#include <ctype.h>
+#include <stdint.h>
+
+#define NC_ULLONG_MAX  18446744073709551615ULL
+#define NC_LLONG_MAX   9223372036854775807LL
+#define NC_LLONG_MIN   (-9223372036854775807LL - 1)
+#define NC_INT_MAX     2147483647
+#define NC_INT_MIN     (-2147483647 - 1)
 
 int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *result) {
     if (!s || !result || *s == '\0')
@@ -36,7 +41,7 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
     if (*p == '\0')
         return NEVERC_STRCONV_ERR_SYNTAX;
 
-    unsigned long long cutoff = ULLONG_MAX / (unsigned long long)base;
+    unsigned long long cutoff = NC_ULLONG_MAX / (unsigned long long)base;
     unsigned long long val = 0;
     int any = 0;
 
@@ -57,8 +62,8 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         if (digit >= base)
             return NEVERC_STRCONV_ERR_SYNTAX;
 
-        if (val > cutoff || (val == cutoff && (unsigned long long)digit > ULLONG_MAX % (unsigned long long)base)) {
-            *result = ULLONG_MAX;
+        if (val > cutoff || (val == cutoff && (unsigned long long)digit > NC_ULLONG_MAX % (unsigned long long)base)) {
+            *result = NC_ULLONG_MAX;
             return NEVERC_STRCONV_ERR_RANGE;
         }
         val = val * (unsigned long long)base + (unsigned long long)digit;
@@ -93,14 +98,14 @@ int neverc_strconv_parse_int(const char *s, int base, long long *result) {
     }
 
     if (neg) {
-        if (uval > (unsigned long long)LLONG_MAX + 1ULL) {
-            *result = LLONG_MIN;
+        if (uval > (unsigned long long)NC_LLONG_MAX + 1ULL) {
+            *result = NC_LLONG_MIN;
             return NEVERC_STRCONV_ERR_RANGE;
         }
         *result = -(long long)uval;
     } else {
-        if (uval > (unsigned long long)LLONG_MAX) {
-            *result = LLONG_MAX;
+        if (uval > (unsigned long long)NC_LLONG_MAX) {
+            *result = NC_LLONG_MAX;
             return NEVERC_STRCONV_ERR_RANGE;
         }
         *result = (long long)uval;
@@ -115,8 +120,8 @@ int neverc_strconv_atoi(const char *s, int *result) {
         if (result) *result = 0;
         return rc;
     }
-    if (val < INT_MIN || val > INT_MAX) {
-        if (result) *result = val < 0 ? INT_MIN : INT_MAX;
+    if (val < NC_INT_MIN || val > NC_INT_MAX) {
+        if (result) *result = val < 0 ? NC_INT_MIN : NC_INT_MAX;
         return NEVERC_STRCONV_ERR_RANGE;
     }
     if (result) *result = (int)val;

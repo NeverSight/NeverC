@@ -25,6 +25,12 @@ static void check_ull(const char *name, unsigned long long got, unsigned long lo
     else { tests_failed++; printf("  FAIL: %s: got %llu, expected %llu\n", name, got, expected); }
 }
 
+static void check_true(const char *name, int cond) {
+    tests_run++;
+    if (cond) { tests_passed++; }
+    else { tests_failed++; printf("  FAIL: %s: expected true\n", name); }
+}
+
 static void check_str(const char *name, const char *got, const char *expected) {
     tests_run++;
     if (strcmp(got, expected) == 0) { tests_passed++; }
@@ -156,6 +162,21 @@ static void test_format_float(void) {
 
     neverc_strconv_format_float(0.0, 'g', -1, buf, sizeof(buf));
     check_str("g 0", buf, "0");
+
+    /* Regression: large values that exceed uint64_t range */
+    neverc_strconv_format_float(1e20, 'g', -1, buf, sizeof(buf));
+    check_true("g 1e20 not empty", strlen(buf) > 0);
+    check_true("g 1e20 starts with 1", buf[0] == '1');
+
+    neverc_strconv_format_float(1e20, 'e', 2, buf, sizeof(buf));
+    check_str("e 1e20", buf, "1.00e+20");
+
+    neverc_strconv_format_float(-1e20, 'e', 2, buf, sizeof(buf));
+    check_str("e -1e20", buf, "-1.00e+20");
+
+    neverc_strconv_format_float(1.23456789e15, 'f', 0, buf, sizeof(buf));
+    check_true("f 1.23e15 starts with 1", buf[0] == '1');
+    check_true("f 1.23e15 length >= 16", strlen(buf) >= 16);
 }
 
 /* ===== FormatBool ===== */

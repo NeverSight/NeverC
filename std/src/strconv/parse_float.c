@@ -10,6 +10,15 @@
 static int is_space(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
 static int is_digit(char c) { return c >= '0' && c <= '9'; }
 
+static double nc_make_inf(int neg) {
+    uint64_t b = neg ? 0xFFF0000000000000ULL : 0x7FF0000000000000ULL;
+    double f; memcpy(&f, &b, 8); return f;
+}
+static double nc_make_nan(void) {
+    uint64_t b = 0x7FF8000000000001ULL;
+    double f; memcpy(&f, &b, 8); return f;
+}
+
 static double nc_pow10(int n) {
     static const double p10[] = {
         1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9,
@@ -45,13 +54,13 @@ int neverc_strconv_parse_float(const char *s, double *result) {
     if ((s[0] == 'i' || s[0] == 'I') &&
         (s[1] == 'n' || s[1] == 'N') &&
         (s[2] == 'f' || s[2] == 'F')) {
-        *result = sign > 0 ? (1.0/0.0) : -(1.0/0.0);
+        *result = nc_make_inf(sign < 0);
         return NEVERC_STRCONV_OK;
     }
     if ((s[0] == 'n' || s[0] == 'N') &&
         (s[1] == 'a' || s[1] == 'A') &&
         (s[2] == 'n' || s[2] == 'N')) {
-        *result = 0.0/0.0;
+        *result = nc_make_nan();
         return NEVERC_STRCONV_OK;
     }
 
@@ -65,14 +74,12 @@ int neverc_strconv_parse_float(const char *s, double *result) {
     }
 
     double frac_part = 0.0;
-    int frac_digits = 0;
     if (*s == '.') {
         s++;
         double frac_scale = 0.1;
         while (is_digit(*s)) {
             frac_part += (*s - '0') * frac_scale;
             frac_scale *= 0.1;
-            frac_digits++;
             s++;
         }
     }
@@ -92,7 +99,7 @@ int neverc_strconv_parse_float(const char *s, double *result) {
         while (is_digit(*s)) {
             exp_val = exp_val * 10 + (*s - '0');
             if (exp_val > 400) {
-                *result = (exp_sign > 0) ? sign * (1.0/0.0) : 0.0;
+                *result = (exp_sign > 0) ? nc_make_inf(sign < 0) : 0.0;
                 return NEVERC_STRCONV_ERR_RANGE;
             }
             s++;

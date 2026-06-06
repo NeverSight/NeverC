@@ -55,6 +55,7 @@
         "neverc_math_frexp":           "src/math/frexp.c",
         "neverc_math_ldexp":           "src/math/ldexp.c",
         "neverc_math_nextafter":       "src/math/nextafter.c",
+        "neverc_math_nextafter32":     "src/math/nextafter32.c",
 
         "neverc_math_copysign":        "src/math/copysign.c",
         "neverc_math_signbit":         "src/math/signbit.c",
@@ -64,9 +65,11 @@
         "neverc_math_erf":             "src/math/erf.c",
         "neverc_math_erfc":            "src/math/erfc.c",
         "neverc_math_erfinv":          "src/math/erfinv.c",
+        "neverc_math_erfcinv":         "src/math/erfcinv.c",
 
         "neverc_math_gamma":           "src/math/gamma.c",
         "neverc_math_lgamma":          "src/math/lgamma.c",
+        "neverc_math_lgamma_sign":     "src/math/lgamma.c",
 
         "neverc_math_nan":             "src/math/nan.c",
         "neverc_math_inf":             "src/math/inf.c",
@@ -136,6 +139,7 @@
         "frexp":           "neverc_math_frexp",
         "ldexp":           "neverc_math_ldexp",
         "nextafter":       "neverc_math_nextafter",
+        "nextafter32":     "neverc_math_nextafter32",
 
         "copysign":        "neverc_math_copysign",
         "signbit":         "neverc_math_signbit",
@@ -145,9 +149,11 @@
         "erf":             "neverc_math_erf",
         "erfc":            "neverc_math_erfc",
         "erfinv":          "neverc_math_erfinv",
+        "erfcinv":         "neverc_math_erfcinv",
 
         "gamma":           "neverc_math_gamma",
         "lgamma":          "neverc_math_lgamma",
+        "lgamma_sign":     "neverc_math_lgamma_sign",
 
         "nan":             "neverc_math_nan",
         "inf":             "neverc_math_inf",
@@ -313,6 +319,160 @@
         "ieee":       "neverc_crc32_ieee"
       }
     },
+    "crc64": {
+      "header": "include/neverc/crc64.h",
+      "description": "CRC-64 checksum with ISO and ECMA polynomials (mirrors Go hash/crc64 package)",
+      "symbols": {
+        "neverc_crc64_make_table": "src/crc64/crc64.c",
+        "neverc_crc64_update":     "src/crc64/crc64.c",
+        "neverc_crc64_checksum":   "src/crc64/crc64.c"
+      },
+      "dot_methods": {
+        "make_table": "neverc_crc64_make_table",
+        "update":     "neverc_crc64_update",
+        "checksum":   "neverc_crc64_checksum"
+      }
+    },
+    "unicode": {
+      "header": "include/neverc/unicode.h",
+      "description": "Unicode character classification and case conversion (mirrors Go unicode package)",
+      "symbols": {
+        "neverc_unicode_is_upper":   "src/unicode/unicode.c",
+        "neverc_unicode_is_lower":   "src/unicode/unicode.c",
+        "neverc_unicode_is_letter":  "src/unicode/unicode.c",
+        "neverc_unicode_is_digit":   "src/unicode/unicode.c",
+        "neverc_unicode_is_space":   "src/unicode/unicode.c",
+        "neverc_unicode_is_punct":   "src/unicode/unicode.c",
+        "neverc_unicode_is_control": "src/unicode/unicode.c",
+        "neverc_unicode_is_graphic": "src/unicode/unicode.c",
+        "neverc_unicode_is_print":   "src/unicode/unicode.c",
+        "neverc_unicode_to_upper":   "src/unicode/unicode.c",
+        "neverc_unicode_to_lower":   "src/unicode/unicode.c"
+      },
+      "dot_methods": {
+        "is_upper":   "neverc_unicode_is_upper",
+        "is_lower":   "neverc_unicode_is_lower",
+        "is_letter":  "neverc_unicode_is_letter",
+        "is_digit":   "neverc_unicode_is_digit",
+        "is_space":   "neverc_unicode_is_space",
+        "is_punct":   "neverc_unicode_is_punct",
+        "is_control": "neverc_unicode_is_control",
+        "is_graphic": "neverc_unicode_is_graphic",
+        "is_print":   "neverc_unicode_is_print",
+        "to_upper":   "neverc_unicode_to_upper",
+        "to_lower":   "neverc_unicode_to_lower"
+      }
+    },
+    "binary": {
+      "header": "include/neverc/binary.h",
+      "description": "Binary encoding — BigEndian/LittleEndian byte order read/write (mirrors Go encoding/binary package)",
+      "symbols": {
+        "neverc_binary_big_endian_uint16":        "src/binary/binary.c",
+        "neverc_binary_big_endian_uint32":        "src/binary/binary.c",
+        "neverc_binary_big_endian_uint64":        "src/binary/binary.c",
+        "neverc_binary_big_endian_put_uint16":    "src/binary/binary.c",
+        "neverc_binary_big_endian_put_uint32":    "src/binary/binary.c",
+        "neverc_binary_big_endian_put_uint64":    "src/binary/binary.c",
+        "neverc_binary_little_endian_uint16":     "src/binary/binary.c",
+        "neverc_binary_little_endian_uint32":     "src/binary/binary.c",
+        "neverc_binary_little_endian_uint64":     "src/binary/binary.c",
+        "neverc_binary_little_endian_put_uint16": "src/binary/binary.c",
+        "neverc_binary_little_endian_put_uint32": "src/binary/binary.c",
+        "neverc_binary_little_endian_put_uint64": "src/binary/binary.c"
+      },
+      "dot_methods": {
+        "big_endian_uint16":        "neverc_binary_big_endian_uint16",
+        "big_endian_uint32":        "neverc_binary_big_endian_uint32",
+        "big_endian_uint64":        "neverc_binary_big_endian_uint64",
+        "big_endian_put_uint16":    "neverc_binary_big_endian_put_uint16",
+        "big_endian_put_uint32":    "neverc_binary_big_endian_put_uint32",
+        "big_endian_put_uint64":    "neverc_binary_big_endian_put_uint64",
+        "little_endian_uint16":     "neverc_binary_little_endian_uint16",
+        "little_endian_uint32":     "neverc_binary_little_endian_uint32",
+        "little_endian_uint64":     "neverc_binary_little_endian_uint64",
+        "little_endian_put_uint16": "neverc_binary_little_endian_put_uint16",
+        "little_endian_put_uint32": "neverc_binary_little_endian_put_uint32",
+        "little_endian_put_uint64": "neverc_binary_little_endian_put_uint64"
+      }
+    },
+    "bits": {
+      "header": "include/neverc/bits.h",
+      "description": "Bit counting and manipulation — popcount, CLZ, CTZ, rotate, reverse (mirrors Go math/bits package)",
+      "symbols": {
+        "neverc_bits_leading_zeros32":  "src/bits/bits.c",
+        "neverc_bits_leading_zeros64":  "src/bits/bits.c",
+        "neverc_bits_trailing_zeros32": "src/bits/bits.c",
+        "neverc_bits_trailing_zeros64": "src/bits/bits.c",
+        "neverc_bits_ones_count32":     "src/bits/bits.c",
+        "neverc_bits_ones_count64":     "src/bits/bits.c",
+        "neverc_bits_len32":            "src/bits/bits.c",
+        "neverc_bits_len64":            "src/bits/bits.c",
+        "neverc_bits_rotate_left32":    "src/bits/bits.c",
+        "neverc_bits_rotate_left64":    "src/bits/bits.c",
+        "neverc_bits_reverse32":        "src/bits/bits.c",
+        "neverc_bits_reverse64":        "src/bits/bits.c",
+        "neverc_bits_reverse_bytes16":  "src/bits/bits.c",
+        "neverc_bits_reverse_bytes32":  "src/bits/bits.c",
+        "neverc_bits_reverse_bytes64":  "src/bits/bits.c",
+        "neverc_bits_add64":            "src/bits/bits.c",
+        "neverc_bits_sub64":            "src/bits/bits.c",
+        "neverc_bits_mul64":            "src/bits/bits.c"
+      },
+      "dot_methods": {
+        "leading_zeros32":  "neverc_bits_leading_zeros32",
+        "leading_zeros64":  "neverc_bits_leading_zeros64",
+        "trailing_zeros32": "neverc_bits_trailing_zeros32",
+        "trailing_zeros64": "neverc_bits_trailing_zeros64",
+        "ones_count32":     "neverc_bits_ones_count32",
+        "ones_count64":     "neverc_bits_ones_count64",
+        "len32":            "neverc_bits_len32",
+        "len64":            "neverc_bits_len64",
+        "rotate_left32":    "neverc_bits_rotate_left32",
+        "rotate_left64":    "neverc_bits_rotate_left64",
+        "reverse32":        "neverc_bits_reverse32",
+        "reverse64":        "neverc_bits_reverse64",
+        "reverse_bytes16":  "neverc_bits_reverse_bytes16",
+        "reverse_bytes32":  "neverc_bits_reverse_bytes32",
+        "reverse_bytes64":  "neverc_bits_reverse_bytes64",
+        "add64":            "neverc_bits_add64",
+        "sub64":            "neverc_bits_sub64",
+        "mul64":            "neverc_bits_mul64"
+      }
+    },
+    "utf8": {
+      "header": "include/neverc/utf8.h",
+      "description": "UTF-8 encoding and decoding utilities (mirrors Go unicode/utf8 package)",
+      "symbols": {
+        "neverc_utf8_rune_len":    "src/utf8/utf8.c",
+        "neverc_utf8_encode_rune": "src/utf8/utf8.c",
+        "neverc_utf8_decode_rune": "src/utf8/utf8.c",
+        "neverc_utf8_rune_count":  "src/utf8/utf8.c",
+        "neverc_utf8_valid":       "src/utf8/utf8.c",
+        "neverc_utf8_rune_start":  "src/utf8/utf8.c",
+        "neverc_utf8_valid_rune":  "src/utf8/utf8.c"
+      },
+      "dot_methods": {
+        "rune_len":    "neverc_utf8_rune_len",
+        "encode_rune": "neverc_utf8_encode_rune",
+        "decode_rune": "neverc_utf8_decode_rune",
+        "rune_count":  "neverc_utf8_rune_count",
+        "valid":       "neverc_utf8_valid",
+        "rune_start":  "neverc_utf8_rune_start",
+        "valid_rune":  "neverc_utf8_valid_rune"
+      }
+    },
+    "adler32": {
+      "header": "include/neverc/adler32.h",
+      "description": "Adler-32 checksum (mirrors Go hash/adler32 package)",
+      "symbols": {
+        "neverc_adler32_update":   "src/adler32/adler32.c",
+        "neverc_adler32_checksum": "src/adler32/adler32.c"
+      },
+      "dot_methods": {
+        "update":   "neverc_adler32_update",
+        "checksum": "neverc_adler32_checksum"
+      }
+    },
     "path": {
       "header": "include/neverc/path.h",
       "description": "Slash-separated path manipulation utilities (mirrors Go path package)",
@@ -333,6 +493,358 @@
         "clean":  "neverc_path_clean",
         "join2":  "neverc_path_join2",
         "split":  "neverc_path_split"
+      }
+    },
+    "sha256": {
+      "header": "include/neverc/sha256.h",
+      "description": "SHA-256 cryptographic hash (FIPS 180-4)",
+      "symbols": {
+        "neverc_sha256_init":   "src/sha256/sha256.c",
+        "neverc_sha256_update": "src/sha256/sha256.c",
+        "neverc_sha256_final":  "src/sha256/sha256.c",
+        "neverc_sha256_sum":    "src/sha256/sha256.c"
+      },
+      "dot_methods": {
+        "init":   "neverc_sha256_init",
+        "update": "neverc_sha256_update",
+        "final":  "neverc_sha256_final",
+        "sum":    "neverc_sha256_sum"
+      }
+    },
+    "sha1": {
+      "header": "include/neverc/sha1.h",
+      "description": "SHA-1 cryptographic hash (FIPS 180-4)",
+      "symbols": {
+        "neverc_sha1_init":   "src/sha1/sha1.c",
+        "neverc_sha1_update": "src/sha1/sha1.c",
+        "neverc_sha1_final":  "src/sha1/sha1.c",
+        "neverc_sha1_sum":    "src/sha1/sha1.c"
+      },
+      "dot_methods": {
+        "init":   "neverc_sha1_init",
+        "update": "neverc_sha1_update",
+        "final":  "neverc_sha1_final",
+        "sum":    "neverc_sha1_sum"
+      }
+    },
+    "sha512": {
+      "header": "include/neverc/sha512.h",
+      "description": "SHA-512 cryptographic hash (FIPS 180-4)",
+      "symbols": {
+        "neverc_sha512_init":   "src/sha512/sha512.c",
+        "neverc_sha512_update": "src/sha512/sha512.c",
+        "neverc_sha512_final":  "src/sha512/sha512.c",
+        "neverc_sha512_sum":    "src/sha512/sha512.c"
+      },
+      "dot_methods": {
+        "init":   "neverc_sha512_init",
+        "update": "neverc_sha512_update",
+        "final":  "neverc_sha512_final",
+        "sum":    "neverc_sha512_sum"
+      }
+    },
+    "md5": {
+      "header": "include/neverc/md5.h",
+      "description": "MD5 message-digest hash (RFC 1321)",
+      "symbols": {
+        "neverc_md5_init":   "src/md5/md5.c",
+        "neverc_md5_update": "src/md5/md5.c",
+        "neverc_md5_final":  "src/md5/md5.c",
+        "neverc_md5_sum":    "src/md5/md5.c"
+      },
+      "dot_methods": {
+        "init":   "neverc_md5_init",
+        "update": "neverc_md5_update",
+        "final":  "neverc_md5_final",
+        "sum":    "neverc_md5_sum"
+      }
+    },
+    "subtle": {
+      "header": "include/neverc/subtle.h",
+      "description": "Constant-time cryptographic operations (mirrors Go crypto/subtle package)",
+      "symbols": {
+        "neverc_subtle_constant_time_compare":    "src/subtle/subtle.c",
+        "neverc_subtle_constant_time_select":     "src/subtle/subtle.c",
+        "neverc_subtle_constant_time_byte_eq":    "src/subtle/subtle.c",
+        "neverc_subtle_constant_time_eq":         "src/subtle/subtle.c",
+        "neverc_subtle_constant_time_copy":       "src/subtle/subtle.c",
+        "neverc_subtle_constant_time_less_or_eq": "src/subtle/subtle.c"
+      },
+      "dot_methods": {
+        "constant_time_compare":    "neverc_subtle_constant_time_compare",
+        "constant_time_select":     "neverc_subtle_constant_time_select",
+        "constant_time_byte_eq":    "neverc_subtle_constant_time_byte_eq",
+        "constant_time_eq":         "neverc_subtle_constant_time_eq",
+        "constant_time_copy":       "neverc_subtle_constant_time_copy",
+        "constant_time_less_or_eq": "neverc_subtle_constant_time_less_or_eq"
+      }
+    },
+    "utf16": {
+      "header": "include/neverc/utf16.h",
+      "description": "UTF-16 encoding and decoding with surrogate pair handling (mirrors Go unicode/utf16 package)",
+      "symbols": {
+        "neverc_utf16_is_surrogate":  "src/utf16/utf16.c",
+        "neverc_utf16_decode_rune":   "src/utf16/utf16.c",
+        "neverc_utf16_encode_rune":   "src/utf16/utf16.c",
+        "neverc_utf16_rune_len":      "src/utf16/utf16.c"
+      },
+      "dot_methods": {
+        "is_surrogate":  "neverc_utf16_is_surrogate",
+        "decode_rune":   "neverc_utf16_decode_rune",
+        "encode_rune":   "neverc_utf16_encode_rune",
+        "rune_len":      "neverc_utf16_rune_len"
+      }
+    },
+    "pem": {
+      "header": "include/neverc/pem.h",
+      "description": "PEM encoding and decoding (RFC 1421, mirrors Go encoding/pem package)",
+      "symbols": {
+        "neverc_pem_encode": "src/pem/pem.c",
+        "neverc_pem_decode": "src/pem/pem.c"
+      },
+      "dot_methods": {
+        "encode": "neverc_pem_encode",
+        "decode": "neverc_pem_decode"
+      }
+    },
+    "hmac": {
+      "header": "include/neverc/hmac.h",
+      "description": "HMAC keyed-hash message authentication (FIPS 198-1, mirrors Go crypto/hmac package)",
+      "symbols": {
+        "neverc_hmac_sha256": "src/hmac/hmac.c",
+        "neverc_hmac_sha512": "src/hmac/hmac.c",
+        "neverc_hmac_sha1":   "src/hmac/hmac.c",
+        "neverc_hmac_md5":    "src/hmac/hmac.c",
+        "neverc_hmac_equal":  "src/hmac/hmac.c"
+      },
+      "dot_methods": {
+        "sha256": "neverc_hmac_sha256",
+        "sha512": "neverc_hmac_sha512",
+        "sha1":   "neverc_hmac_sha1",
+        "md5":    "neverc_hmac_md5",
+        "equal":  "neverc_hmac_equal"
+      }
+    },
+    "ascii85": {
+      "header": "include/neverc/ascii85.h",
+      "description": "ASCII85 (Base85) encoding and decoding (mirrors Go encoding/ascii85 package)",
+      "symbols": {
+        "neverc_ascii85_max_encoded_len": "src/ascii85/ascii85.c",
+        "neverc_ascii85_encode":          "src/ascii85/ascii85.c",
+        "neverc_ascii85_decode":          "src/ascii85/ascii85.c"
+      },
+      "dot_methods": {
+        "max_encoded_len": "neverc_ascii85_max_encoded_len",
+        "encode":          "neverc_ascii85_encode",
+        "decode":          "neverc_ascii85_decode"
+      }
+    },
+    "aes": {
+      "header": "include/neverc/aes.h",
+      "description": "AES block cipher — FIPS 197, supports AES-128/192/256 (mirrors Go crypto/aes package)",
+      "symbols": {
+        "neverc_aes_init":          "src/aes/aes.c",
+        "neverc_aes_encrypt_block": "src/aes/aes.c",
+        "neverc_aes_decrypt_block": "src/aes/aes.c"
+      },
+      "dot_methods": {
+        "init":          "neverc_aes_init",
+        "encrypt_block": "neverc_aes_encrypt_block",
+        "decrypt_block": "neverc_aes_decrypt_block"
+      }
+    },
+    "sha384": {
+      "header": "include/neverc/sha384.h",
+      "description": "SHA-384 cryptographic hash (FIPS 180-4, SHA-512 variant)",
+      "symbols": {
+        "neverc_sha384_init":   "src/sha384/sha384.c",
+        "neverc_sha384_update": "src/sha384/sha384.c",
+        "neverc_sha384_final":  "src/sha384/sha384.c",
+        "neverc_sha384_sum":    "src/sha384/sha384.c"
+      },
+      "dot_methods": {
+        "init":   "neverc_sha384_init",
+        "update": "neverc_sha384_update",
+        "final":  "neverc_sha384_final",
+        "sum":    "neverc_sha384_sum"
+      }
+    },
+    "chacha20": {
+      "header": "include/neverc/chacha20.h",
+      "description": "ChaCha20 stream cipher (RFC 7539, mirrors Go crypto/chacha20 package)",
+      "symbols": {
+        "neverc_chacha20_init":  "src/chacha20/chacha20.c",
+        "neverc_chacha20_xor":   "src/chacha20/chacha20.c",
+        "neverc_chacha20_block": "src/chacha20/chacha20.c"
+      },
+      "dot_methods": {
+        "init":  "neverc_chacha20_init",
+        "xor":   "neverc_chacha20_xor",
+        "block": "neverc_chacha20_block"
+      }
+    },
+    "poly1305": {
+      "header": "include/neverc/poly1305.h",
+      "description": "Poly1305 MAC (RFC 7539, pairs with ChaCha20 for AEAD)",
+      "symbols": {
+        "neverc_poly1305_auth":   "src/poly1305/poly1305.c",
+        "neverc_poly1305_verify": "src/poly1305/poly1305.c"
+      },
+      "dot_methods": {
+        "auth":   "neverc_poly1305_auth",
+        "verify": "neverc_poly1305_verify"
+      }
+    },
+    "hkdf": {
+      "header": "include/neverc/hkdf.h",
+      "description": "HKDF — HMAC-based Key Derivation Function (RFC 5869)",
+      "symbols": {
+        "neverc_hkdf_sha256":          "src/hkdf/hkdf.c",
+        "neverc_hkdf_extract_sha256":  "src/hkdf/hkdf.c",
+        "neverc_hkdf_expand_sha256":   "src/hkdf/hkdf.c"
+      },
+      "dot_methods": {
+        "sha256":          "neverc_hkdf_sha256",
+        "extract_sha256":  "neverc_hkdf_extract_sha256",
+        "expand_sha256":   "neverc_hkdf_expand_sha256"
+      }
+    },
+    "pbkdf2": {
+      "header": "include/neverc/pbkdf2.h",
+      "description": "PBKDF2 password-based key derivation (RFC 2898/8018)",
+      "symbols": {
+        "neverc_pbkdf2_sha256": "src/pbkdf2/pbkdf2.c"
+      },
+      "dot_methods": {
+        "sha256": "neverc_pbkdf2_sha256"
+      }
+    },
+    "sha224": {
+      "header": "include/neverc/sha224.h",
+      "description": "SHA-224 cryptographic hash (FIPS 180-4, SHA-256 variant)",
+      "symbols": {
+        "neverc_sha224_init":   "src/sha224/sha224.c",
+        "neverc_sha224_update": "src/sha224/sha224.c",
+        "neverc_sha224_final":  "src/sha224/sha224.c",
+        "neverc_sha224_sum":    "src/sha224/sha224.c"
+      },
+      "dot_methods": {
+        "init":   "neverc_sha224_init",
+        "update": "neverc_sha224_update",
+        "final":  "neverc_sha224_final",
+        "sum":    "neverc_sha224_sum"
+      }
+    },
+    "sha512_224": {
+      "header": "include/neverc/sha512_224.h",
+      "description": "SHA-512/224 cryptographic hash (FIPS 180-4, SHA-512 variant)",
+      "symbols": {
+        "neverc_sha512_224_init":   "src/sha512_224/sha512_224.c",
+        "neverc_sha512_224_update": "src/sha512_224/sha512_224.c",
+        "neverc_sha512_224_final":  "src/sha512_224/sha512_224.c",
+        "neverc_sha512_224_sum":    "src/sha512_224/sha512_224.c"
+      },
+      "dot_methods": {
+        "init":   "neverc_sha512_224_init",
+        "update": "neverc_sha512_224_update",
+        "final":  "neverc_sha512_224_final",
+        "sum":    "neverc_sha512_224_sum"
+      }
+    },
+    "sha512_256": {
+      "header": "include/neverc/sha512_256.h",
+      "description": "SHA-512/256 cryptographic hash (FIPS 180-4, SHA-512 variant)",
+      "symbols": {
+        "neverc_sha512_256_init":   "src/sha512_256/sha512_256.c",
+        "neverc_sha512_256_update": "src/sha512_256/sha512_256.c",
+        "neverc_sha512_256_final":  "src/sha512_256/sha512_256.c",
+        "neverc_sha512_256_sum":    "src/sha512_256/sha512_256.c"
+      },
+      "dot_methods": {
+        "init":   "neverc_sha512_256_init",
+        "update": "neverc_sha512_256_update",
+        "final":  "neverc_sha512_256_final",
+        "sum":    "neverc_sha512_256_sum"
+      }
+    },
+    "cipher": {
+      "header": "include/neverc/cipher.h",
+      "description": "AES block cipher modes — CBC and CTR (mirrors Go crypto/cipher package)",
+      "symbols": {
+        "neverc_cipher_cbc_encrypt": "src/cipher/cipher.c",
+        "neverc_cipher_cbc_decrypt": "src/cipher/cipher.c",
+        "neverc_cipher_ctr":         "src/cipher/cipher.c"
+      },
+      "dot_methods": {
+        "cbc_encrypt": "neverc_cipher_cbc_encrypt",
+        "cbc_decrypt": "neverc_cipher_cbc_decrypt",
+        "ctr":         "neverc_cipher_ctr"
+      }
+    },
+    "cmplx": {
+      "header": "include/neverc/cmplx.h",
+      "description": "Complex number math — exponential, logarithmic, trigonometric, and root functions (mirrors Go math/cmplx package)",
+      "symbols": {
+        "neverc_cmplx_abs":      "src/cmplx/cmplx.c",
+        "neverc_cmplx_phase":    "src/cmplx/cmplx.c",
+        "neverc_cmplx_conj":     "src/cmplx/cmplx.c",
+        "neverc_cmplx_polar":    "src/cmplx/cmplx.c",
+        "neverc_cmplx_rect":     "src/cmplx/cmplx.c",
+        "neverc_cmplx_exp":      "src/cmplx/cmplx.c",
+        "neverc_cmplx_log":      "src/cmplx/cmplx.c",
+        "neverc_cmplx_log10":    "src/cmplx/cmplx.c",
+        "neverc_cmplx_sqrt":     "src/cmplx/cmplx.c",
+        "neverc_cmplx_pow":      "src/cmplx/cmplx.c",
+        "neverc_cmplx_sin":      "src/cmplx/cmplx.c",
+        "neverc_cmplx_cos":      "src/cmplx/cmplx.c",
+        "neverc_cmplx_tan":      "src/cmplx/cmplx.c",
+        "neverc_cmplx_sinh":     "src/cmplx/cmplx.c",
+        "neverc_cmplx_cosh":     "src/cmplx/cmplx.c",
+        "neverc_cmplx_tanh":     "src/cmplx/cmplx.c",
+        "neverc_cmplx_asin":     "src/cmplx/cmplx.c",
+        "neverc_cmplx_acos":     "src/cmplx/cmplx.c",
+        "neverc_cmplx_atan":     "src/cmplx/cmplx.c",
+        "neverc_cmplx_isnan":    "src/cmplx/cmplx.c",
+        "neverc_cmplx_isinf":    "src/cmplx/cmplx.c",
+        "neverc_cmplx_nan_val":  "src/cmplx/cmplx.c",
+        "neverc_cmplx_inf_val":  "src/cmplx/cmplx.c"
+      },
+      "dot_methods": {
+        "abs":      "neverc_cmplx_abs",
+        "phase":    "neverc_cmplx_phase",
+        "conj":     "neverc_cmplx_conj",
+        "polar":    "neverc_cmplx_polar",
+        "rect":     "neverc_cmplx_rect",
+        "exp":      "neverc_cmplx_exp",
+        "log":      "neverc_cmplx_log",
+        "log10":    "neverc_cmplx_log10",
+        "sqrt":     "neverc_cmplx_sqrt",
+        "pow":      "neverc_cmplx_pow",
+        "sin":      "neverc_cmplx_sin",
+        "cos":      "neverc_cmplx_cos",
+        "tan":      "neverc_cmplx_tan",
+        "sinh":     "neverc_cmplx_sinh",
+        "cosh":     "neverc_cmplx_cosh",
+        "tanh":     "neverc_cmplx_tanh",
+        "asin":     "neverc_cmplx_asin",
+        "acos":     "neverc_cmplx_acos",
+        "atan":     "neverc_cmplx_atan",
+        "isnan":    "neverc_cmplx_isnan",
+        "isinf":    "neverc_cmplx_isinf",
+        "nan_val":  "neverc_cmplx_nan_val",
+        "inf_val":  "neverc_cmplx_inf_val"
+      }
+    },
+    "chacha20poly1305": {
+      "header": "include/neverc/chacha20poly1305.h",
+      "description": "ChaCha20-Poly1305 AEAD authenticated encryption (RFC 8439)",
+      "symbols": {
+        "neverc_chacha20poly1305_seal": "src/chacha20poly1305/chacha20poly1305.c",
+        "neverc_chacha20poly1305_open": "src/chacha20poly1305/chacha20poly1305.c"
+      },
+      "dot_methods": {
+        "seal": "neverc_chacha20poly1305_seal",
+        "open": "neverc_chacha20poly1305_open"
       }
     }
   }

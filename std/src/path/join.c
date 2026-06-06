@@ -1,6 +1,5 @@
 #include "neverc/path.h"
 #include <string.h>
-#include <stdio.h>
 
 int neverc_path_join2(const char *a, const char *b, char *buf, size_t bufsize) {
     if (!buf || bufsize == 0)
@@ -15,18 +14,27 @@ int neverc_path_join2(const char *a, const char *b, char *buf, size_t bufsize) {
     }
 
     char tmp[4096];
-    int len;
+    size_t len = 0;
 
-    if (a_empty) {
-        len = snprintf(tmp, sizeof(tmp), "%s", b);
-    } else if (b_empty) {
-        len = snprintf(tmp, sizeof(tmp), "%s", a);
-    } else {
-        len = snprintf(tmp, sizeof(tmp), "%s/%s", a, b);
+    if (!a_empty) {
+        size_t alen = strlen(a);
+        if (alen >= sizeof(tmp)) return -1;
+        memcpy(tmp, a, alen);
+        len = alen;
     }
 
-    if (len < 0 || (size_t)len >= sizeof(tmp))
-        return -1;
+    if (!a_empty && !b_empty) {
+        if (len + 1 >= sizeof(tmp)) return -1;
+        tmp[len++] = '/';
+    }
 
+    if (!b_empty) {
+        size_t blen = strlen(b);
+        if (len + blen >= sizeof(tmp)) return -1;
+        memcpy(tmp + len, b, blen);
+        len += blen;
+    }
+
+    tmp[len] = '\0';
     return neverc_path_clean(tmp, buf, bufsize);
 }

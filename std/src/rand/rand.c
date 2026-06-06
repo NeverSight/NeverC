@@ -57,7 +57,14 @@ int64_t neverc_rand_int63(void) {
 
 int64_t neverc_rand_intn(int64_t n) {
     if (n <= 0) return 0;
-    return (int64_t)(next() % (uint64_t)n);
+    uint64_t un = (uint64_t)n;
+    if ((un & (un - 1)) == 0)
+        return (int64_t)((next() >> 1) & (un - 1));
+    uint64_t max = (uint64_t)((1ULL << 63) - 1 - (1ULL << 63) % un);
+    uint64_t v = next() >> 1;
+    while (v > max)
+        v = next() >> 1;
+    return (int64_t)(v % un);
 }
 
 double neverc_rand_float64(void) {

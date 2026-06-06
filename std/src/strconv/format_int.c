@@ -1,6 +1,5 @@
 #include "neverc/strconv.h"
 #include <string.h>
-#include <stdio.h>
 
 static const char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 

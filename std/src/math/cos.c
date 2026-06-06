@@ -1,5 +1,6 @@
 #include "neverc/math.h"
 #include "_math_internal.h"
+#include "_trig_reduce.h"
 
 static const double _sin_c[] = {
     1.58962301576546568060e-10, -2.50507477628578072866e-8,
@@ -22,20 +23,28 @@ double neverc_math_cos(double x) {
     int sign = 0;
     x = nc_abs(x);
 
-    uint64_t j = (uint64_t)(x * (4.0 / NEVERC_MATH_PI));
-    double y = (double)j;
-    if (j & 1) { j++; y += 1.0; }
-    j &= 7;
-    double z = ((x - y * PI4A) - y * PI4B) - y * PI4C;
+    uint64_t j;
+    double z;
+
+    if (x >= TRIG_REDUCE_THRESHOLD) {
+        nc_trig_reduce(x, &j, &z);
+    } else {
+        j = (uint64_t)(x * (4.0 / NEVERC_MATH_PI));
+        double y = (double)j;
+        if (j & 1) { j++; y += 1.0; }
+        j &= 7;
+        z = ((x - y * PI4A) - y * PI4B) - y * PI4C;
+    }
 
     if (j > 3) { j -= 4; sign = !sign; }
     if (j > 1) sign = !sign;
 
     double zz = z * z;
+    double result;
     if (j == 1 || j == 2) {
-        y = z + z*zz*(((((_sin_c[0]*zz + _sin_c[1])*zz + _sin_c[2])*zz + _sin_c[3])*zz + _sin_c[4])*zz + _sin_c[5]);
+        result = z + z*zz*(((((_sin_c[0]*zz + _sin_c[1])*zz + _sin_c[2])*zz + _sin_c[3])*zz + _sin_c[4])*zz + _sin_c[5]);
     } else {
-        y = 1.0 - 0.5*zz + zz*zz*(((((_cos_c[0]*zz + _cos_c[1])*zz + _cos_c[2])*zz + _cos_c[3])*zz + _cos_c[4])*zz + _cos_c[5]);
+        result = 1.0 - 0.5*zz + zz*zz*(((((_cos_c[0]*zz + _cos_c[1])*zz + _cos_c[2])*zz + _cos_c[3])*zz + _cos_c[4])*zz + _cos_c[5]);
     }
-    return sign ? -y : y;
+    return sign ? -result : result;
 }
