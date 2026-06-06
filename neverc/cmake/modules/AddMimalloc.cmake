@@ -76,6 +76,17 @@ function(neverc_fetch_mimalloc)
   if(NOT MSVC)
     target_compile_options(mimalloc-static PRIVATE -w)
   endif()
+
+  # Upstream Clang doesn't implement MSVC's __ldar/__stlr ARM64 intrinsics,
+  # but mimalloc's atomic.h uses them. Shim them via a force-included header.
+  if(WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64"
+     AND CMAKE_C_COMPILER_ID MATCHES "Clang")
+    set(_compat_h "${CMAKE_CURRENT_LIST_DIR}/../mimalloc_arm64_compat.h")
+    cmake_path(ABSOLUTE_PATH _compat_h NORMALIZE)
+    target_compile_options(mimalloc-static PRIVATE
+      "-include${_compat_h}")
+  endif()
+
   set_target_properties(mimalloc-static PROPERTIES FOLDER "Third-Party")
 endfunction()
 

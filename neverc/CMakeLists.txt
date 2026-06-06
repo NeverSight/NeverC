@@ -444,6 +444,8 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       "NeverC: could not find compiler-rt builtins for ${LLVM_HOST_TRIPLE}. "
       "Required on Windows with LTO when the link uses -nostdlib "
       "(undefined symbols such as __udivti3).")
+  else()
+    set(NEVERC_COMPILER_RT_BUILTINS "")
   endif()
 endif()
 

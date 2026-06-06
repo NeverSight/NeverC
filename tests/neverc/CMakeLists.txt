@@ -63,6 +63,7 @@ add_executable(neverc-merge-tests MergeTests.cpp)
 target_link_libraries(neverc-merge-tests PRIVATE
   GTest::gtest GTest::gtest_main
   nevercMerge
+  ${NEVERC_COMPILER_RT_BUILTINS}
 )
 
 target_include_directories(neverc-merge-tests PRIVATE
