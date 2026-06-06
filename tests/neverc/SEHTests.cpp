@@ -172,3 +172,4 @@ TEST_F(WinArm64IntrinTest, WindowsHCompilesForArm64) {
   syntaxCheck("windows_h_arm64", src.string(), "c11",
               "aarch64-pc-windows-msvc");
 }
+

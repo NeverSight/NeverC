@@ -26049,6 +26049,125 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
                          Op.getOperand(2), DAG.getConstant(0, dl, MVT::i32),
                          DAG.getConstant(0, dl, MVT::i32));
     }
+    case llvm::Intrinsic::x86_wrmsr: {
+      SDLoc dl(Op);
+      SDValue Chain = Op.getOperand(0);
+      SDValue Addr = Op.getOperand(2);   // i32 MSR address → ECX
+      SDValue Val = Op.getOperand(3);    // i64 value → EDX:EAX
+
+      SDValue Lo = DAG.getNode(ISD::TRUNCATE, dl, MVT::i32, Val);
+      SDValue Hi = DAG.getNode(ISD::SRL, dl, MVT::i64, Val,
+                               DAG.getConstant(32, dl, MVT::i8));
+      Hi = DAG.getNode(ISD::TRUNCATE, dl, MVT::i32, Hi);
+
+      SDValue Glue;
+      Chain = DAG.getCopyToReg(Chain, dl, X86::EAX, Lo, Glue);
+      Glue = Chain.getValue(1);
+      Chain = DAG.getCopyToReg(Chain, dl, X86::EDX, Hi, Glue);
+      Glue = Chain.getValue(1);
+      Chain = DAG.getCopyToReg(Chain, dl, X86::ECX, Addr, Glue);
+      Glue = Chain.getValue(1);
+
+      SDVTList Tys = DAG.getVTList(MVT::Other, MVT::Glue);
+      SDValue Ops[] = {Chain, Glue};
+      SDNode *N = DAG.getMachineNode(X86::WRMSR, dl, Tys, Ops);
+      return SDValue(N, 0);
+    }
+    case llvm::Intrinsic::x86_inbyte: {
+      SDLoc dl(Op);
+      SDValue Chain = Op.getOperand(0);
+      SDValue Port = Op.getOperand(2);
+      SDValue Glue;
+      Chain = DAG.getCopyToReg(Chain, dl, X86::DX, Port, Glue);
+      Glue = Chain.getValue(1);
+      SDVTList Tys = DAG.getVTList(MVT::Other, MVT::Glue);
+      SDNode *N = DAG.getMachineNode(X86::IN8rr, dl, Tys, {Chain, Glue});
+      Chain = SDValue(N, 0);
+      Glue = SDValue(N, 1);
+      SDValue Result = DAG.getCopyFromReg(Chain, dl, X86::AL, MVT::i8, Glue);
+      return DAG.getMergeValues({Result, Result.getValue(1)}, dl);
+    }
+    case llvm::Intrinsic::x86_inword: {
+      SDLoc dl(Op);
+      SDValue Chain = Op.getOperand(0);
+      SDValue Port = Op.getOperand(2);
+      SDValue Glue;
+      Chain = DAG.getCopyToReg(Chain, dl, X86::DX, Port, Glue);
+      Glue = Chain.getValue(1);
+      SDVTList Tys = DAG.getVTList(MVT::Other, MVT::Glue);
+      SDNode *N = DAG.getMachineNode(X86::IN16rr, dl, Tys, {Chain, Glue});
+      Chain = SDValue(N, 0);
+      Glue = SDValue(N, 1);
+      SDValue Result = DAG.getCopyFromReg(Chain, dl, X86::AX, MVT::i16, Glue);
+      return DAG.getMergeValues({Result, Result.getValue(1)}, dl);
+    }
+    case llvm::Intrinsic::x86_indword: {
+      SDLoc dl(Op);
+      SDValue Chain = Op.getOperand(0);
+      SDValue Port = Op.getOperand(2);
+      SDValue Glue;
+      Chain = DAG.getCopyToReg(Chain, dl, X86::DX, Port, Glue);
+      Glue = Chain.getValue(1);
+      SDVTList Tys = DAG.getVTList(MVT::Other, MVT::Glue);
+      SDNode *N = DAG.getMachineNode(X86::IN32rr, dl, Tys, {Chain, Glue});
+      Chain = SDValue(N, 0);
+      Glue = SDValue(N, 1);
+      SDValue Result = DAG.getCopyFromReg(Chain, dl, X86::EAX, MVT::i32, Glue);
+      return DAG.getMergeValues({Result, Result.getValue(1)}, dl);
+    }
+    case llvm::Intrinsic::x86_outbyte: {
+      SDLoc dl(Op);
+      SDValue Chain = Op.getOperand(0);
+      SDValue Port = Op.getOperand(2);
+      SDValue Val = Op.getOperand(3);
+      SDValue Glue;
+      Chain = DAG.getCopyToReg(Chain, dl, X86::AL, Val, Glue);
+      Glue = Chain.getValue(1);
+      Chain = DAG.getCopyToReg(Chain, dl, X86::DX, Port, Glue);
+      Glue = Chain.getValue(1);
+      SDVTList Tys = DAG.getVTList(MVT::Other, MVT::Glue);
+      SDNode *N = DAG.getMachineNode(X86::OUT8rr, dl, Tys, {Chain, Glue});
+      return SDValue(N, 0);
+    }
+    case llvm::Intrinsic::x86_outword: {
+      SDLoc dl(Op);
+      SDValue Chain = Op.getOperand(0);
+      SDValue Port = Op.getOperand(2);
+      SDValue Val = Op.getOperand(3);
+      SDValue Glue;
+      Chain = DAG.getCopyToReg(Chain, dl, X86::AX, Val, Glue);
+      Glue = Chain.getValue(1);
+      Chain = DAG.getCopyToReg(Chain, dl, X86::DX, Port, Glue);
+      Glue = Chain.getValue(1);
+      SDVTList Tys = DAG.getVTList(MVT::Other, MVT::Glue);
+      SDNode *N = DAG.getMachineNode(X86::OUT16rr, dl, Tys, {Chain, Glue});
+      return SDValue(N, 0);
+    }
+    case llvm::Intrinsic::x86_outdword: {
+      SDLoc dl(Op);
+      SDValue Chain = Op.getOperand(0);
+      SDValue Port = Op.getOperand(2);
+      SDValue Val = Op.getOperand(3);
+      SDValue Glue;
+      Chain = DAG.getCopyToReg(Chain, dl, X86::EAX, Val, Glue);
+      Glue = Chain.getValue(1);
+      Chain = DAG.getCopyToReg(Chain, dl, X86::DX, Port, Glue);
+      Glue = Chain.getValue(1);
+      SDVTList Tys = DAG.getVTList(MVT::Other, MVT::Glue);
+      SDNode *N = DAG.getMachineNode(X86::OUT32rr, dl, Tys, {Chain, Glue});
+      return SDValue(N, 0);
+    }
+    case llvm::Intrinsic::x86_readcr:
+    case llvm::Intrinsic::x86_writecr:
+    case llvm::Intrinsic::x86_invlpg: {
+      return Op;
+    }
+    case llvm::Intrinsic::x86_wbinvd: {
+      SDLoc dl(Op);
+      SDValue Chain = Op.getOperand(0);
+      SDNode *N = DAG.getMachineNode(X86::WBINVD, dl, MVT::Other, Chain);
+      return SDValue(N, 0);
+    }
     case llvm::Intrinsic::x86_flags_read_u64:
     case llvm::Intrinsic::x86_flags_write_u64: {
       // We need a frame pointer because this will get lowered to a PUSH/POP

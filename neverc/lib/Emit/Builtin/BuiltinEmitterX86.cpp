@@ -3203,57 +3203,28 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return CI;
   }
   case X86::BI__inbyte: {
-    llvm::FunctionType *FTy = llvm::FunctionType::get(Int8Ty, {Int16Ty}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "inb ${1:w}, ${0:b}", "={ax},N{dx},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0]});
-    return CI;
+    return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_inbyte,
+                                   {Ops[0]});
   }
   case X86::BI__inword: {
-    llvm::FunctionType *FTy =
-        llvm::FunctionType::get(Int16Ty, {Int16Ty}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "inw ${1:w}, ${0:w}", "={ax},N{dx},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0]});
-    return CI;
+    return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_inword,
+                                   {Ops[0]});
   }
   case X86::BI__indword: {
-    llvm::FunctionType *FTy =
-        llvm::FunctionType::get(Int32Ty, {Int16Ty}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "inl ${1:w}, ${0:k}", "={ax},N{dx},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0]});
-    return CI;
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_indword,
+                                   {Ops[0]});
   }
   case X86::BI__outbyte: {
-    llvm::FunctionType *FTy =
-        llvm::FunctionType::get(VoidTy, {Int16Ty, Int8Ty}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "outb ${1:b}, ${0:w}", "N{dx},{ax},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0], Ops[1]});
-    return CI;
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_outbyte,
+                                   {Ops[0], Ops[1]});
   }
   case X86::BI__outword: {
-    llvm::FunctionType *FTy =
-        llvm::FunctionType::get(VoidTy, {Int16Ty, Int16Ty}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "outw ${1:w}, ${0:w}", "N{dx},{ax},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0], Ops[1]});
-    return CI;
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_outword,
+                                   {Ops[0], Ops[1]});
   }
   case X86::BI__outdword: {
-    llvm::FunctionType *FTy =
-        llvm::FunctionType::get(VoidTy, {Int16Ty, Int32Ty}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "outl ${1:k}, ${0:w}", "N{dx},{ax},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0], Ops[1]});
-    return CI;
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_outdword,
+                                   {Ops[0], Ops[1]});
   }
   case X86::BI__inbytestring: {
     llvm::FunctionType *FTy = llvm::FunctionType::get(
@@ -3466,85 +3437,45 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0], Ops[1]});
     return CI;
   }
-  case X86::BI__readcr0: {
-    llvm::FunctionType *FTy = llvm::FunctionType::get(SizeTy, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(FTy, "mov %cr0, $0",
-                                               "=r,~{dirflag},~{fpsr},~{flags}",
-                                               /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA);
-    return CI;
-  }
-  case X86::BI__readcr2: {
-    llvm::FunctionType *FTy = llvm::FunctionType::get(SizeTy, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(FTy, "mov %cr2, $0",
-                                               "=r,~{dirflag},~{fpsr},~{flags}",
-                                               /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA);
-    return CI;
-  }
-  case X86::BI__readcr3: {
-    llvm::FunctionType *FTy = llvm::FunctionType::get(SizeTy, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(FTy, "mov %cr3, $0",
-                                               "=r,~{dirflag},~{fpsr},~{flags}",
-                                               /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA);
-    return CI;
-  }
-  case X86::BI__readcr4: {
-    llvm::FunctionType *FTy = llvm::FunctionType::get(SizeTy, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(FTy, "mov %cr4, $0",
-                                               "=r,~{dirflag},~{fpsr},~{flags}",
-                                               /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA);
-    return CI;
-  }
+  case X86::BI__readcr0:
+  case X86::BI__readcr2:
+  case X86::BI__readcr3:
+  case X86::BI__readcr4:
   case X86::BI__readcr8: {
+    const char *CRName;
+    switch (BuiltinID) {
+    case X86::BI__readcr0: CRName = "mov %cr0, $0"; break;
+    case X86::BI__readcr2: CRName = "mov %cr2, $0"; break;
+    case X86::BI__readcr3: CRName = "mov %cr3, $0"; break;
+    case X86::BI__readcr4: CRName = "mov %cr4, $0"; break;
+    case X86::BI__readcr8: CRName = "mov %cr8, $0"; break;
+    default: llvm_unreachable("invalid CR read builtin");
+    }
     llvm::FunctionType *FTy = llvm::FunctionType::get(SizeTy, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(FTy, "mov %cr8, $0",
+    llvm::InlineAsm *IA = llvm::InlineAsm::get(FTy, CRName,
                                                "=r,~{dirflag},~{fpsr},~{flags}",
                                                /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA);
-    return CI;
+    return Builder.CreateCall(IA);
   }
-  case X86::BI__writecr0: {
-    llvm::FunctionType *FTy = llvm::FunctionType::get(VoidTy, {SizeTy}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "mov $0, %cr0", "r,~{memory},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0]});
-    return CI;
-  }
-  case X86::BI__writecr2: {
-    llvm::FunctionType *FTy = llvm::FunctionType::get(VoidTy, {SizeTy}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "mov $0, %cr2", "r,~{memory},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0]});
-    return CI;
-  }
-  case X86::BI__writecr3: {
-    llvm::FunctionType *FTy = llvm::FunctionType::get(VoidTy, {SizeTy}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "mov $0, %cr3", "r,~{memory},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0]});
-    return CI;
-  }
-  case X86::BI__writecr4: {
-    llvm::FunctionType *FTy = llvm::FunctionType::get(VoidTy, {SizeTy}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "mov $0, %cr4", "r,~{memory},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0]});
-    return CI;
-  }
+  case X86::BI__writecr0:
+  case X86::BI__writecr2:
+  case X86::BI__writecr3:
+  case X86::BI__writecr4:
   case X86::BI__writecr8: {
+    const char *CRName;
+    switch (BuiltinID) {
+    case X86::BI__writecr0: CRName = "mov $0, %cr0"; break;
+    case X86::BI__writecr2: CRName = "mov $0, %cr2"; break;
+    case X86::BI__writecr3: CRName = "mov $0, %cr3"; break;
+    case X86::BI__writecr4: CRName = "mov $0, %cr4"; break;
+    case X86::BI__writecr8: CRName = "mov $0, %cr8"; break;
+    default: llvm_unreachable("invalid CR write builtin");
+    }
     llvm::FunctionType *FTy = llvm::FunctionType::get(VoidTy, {SizeTy}, false);
     llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "mov $0, %cr8", "r,~{memory},~{dirflag},~{fpsr},~{flags}",
+        FTy, CRName, "r,~{memory},~{dirflag},~{fpsr},~{flags}",
         /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0]});
-    return CI;
+    return Builder.CreateCall(IA, {Ops[0]});
   }
   case X86::BI__readdr: {
     BasicBlock *BBs[8];
@@ -3727,14 +3658,8 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
                                    {Ops[0]});
   }
   case X86::BI__writemsr: {
-    llvm::FunctionType *FTy =
-        llvm::FunctionType::get(VoidTy, {Int64Ty, Int64Ty, Int32Ty}, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "wrmsr", "{ax},{dx},{cx},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::Value *EDX = Builder.CreateLShr(Ops[1], Builder.getInt64(32), "");
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[1], EDX, Ops[0]});
-    return CI;
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_wrmsr,
+                                   {Ops[0], Ops[1]});
   }
   case X86::BI__readpmc: {
     llvm::CallInst *CI =
@@ -3779,20 +3704,14 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     llvm::InlineAsm *IA = llvm::InlineAsm::get(
         FTy, "invlpg ($0)", "r,~{memory},~{dirflag},~{fpsr},~{flags}",
         /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA, {Ops[0]});
-    return CI;
+    return Builder.CreateCall(IA, {Ops[0]});
   }
   case X86::BI_invpcid: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invpcid,
                                    {Ops[0], Ops[1]});
   }
   case X86::BI__wbinvd: {
-    llvm::FunctionType *FTy = llvm::FunctionType::get(VoidTy, false);
-    llvm::InlineAsm *IA = llvm::InlineAsm::get(
-        FTy, "wbinvd", "~{memory},~{dirflag},~{fpsr},~{flags}",
-        /*hasSideEffects=*/true);
-    llvm::CallInst *CI = Builder.CreateCall(IA);
-    return CI;
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_wbinvd, {});
   }
   case X86::BI_xbegin: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_xbegin,

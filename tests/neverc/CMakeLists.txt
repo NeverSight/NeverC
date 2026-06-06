@@ -15,6 +15,7 @@ set(NEVERC_TEST_SOURCES
   MimallocTests.cpp
   CustomCallConvTests.cpp
   SEHTests.cpp
+  X86PrivilegedIntrinTests.cpp
 )
 
 add_executable(neverc-tests ${NEVERC_TEST_SOURCES})
