@@ -175,7 +175,7 @@ size_t countEscapeCharsInSpan(const char *Data, size_t Len, char Quote) {
           _mm256_or_si256(_mm256_cmpeq_epi8(V, VBS), _mm256_cmpeq_epi8(V, VQ)),
           _mm256_or_si256(_mm256_cmpeq_epi8(V, VNL),
                           _mm256_cmpeq_epi8(V, VCR)));
-      Extra += llvm::popcount(_mm256_movemask_epi8(Hit));
+      Extra += llvm::popcount(static_cast<unsigned>(_mm256_movemask_epi8(Hit)));
     }
   }
 #elif defined(__SSE2__)
