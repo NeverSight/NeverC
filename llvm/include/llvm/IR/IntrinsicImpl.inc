@@ -74,7 +74,8 @@ struct IntrinsicTargetInfo {
 static constexpr IntrinsicTargetInfo TargetInfos[] = {
   {llvm::StringLiteral(""), 0, 370},
   {llvm::StringLiteral("aarch64"), 370, 1432},
-  {llvm::StringLiteral("x86"), 1802, 1453},
+  // x86 entries must be sorted alphabetically: scripts/sort-x86-intrinsics.py
+  {llvm::StringLiteral("x86"), 1802, 1487},
 };
 #endif
 
@@ -2859,12 +2860,14 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.cast.vector.to.tile",
   "llvm.x86.cldemote",
   "llvm.x86.clflushopt",
+  "llvm.x86.cli",
   "llvm.x86.clrssbsy",
   "llvm.x86.clui",
   "llvm.x86.clwb",
   "llvm.x86.clzero",
   "llvm.x86.cmpccxadd32",
   "llvm.x86.cmpccxadd64",
+  "llvm.x86.cpuidex",
   "llvm.x86.directstore32",
   "llvm.x86.directstore64",
   "llvm.x86.encodekey128",
@@ -2882,17 +2885,24 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.fxsave",
   "llvm.x86.fxsave64",
   "llvm.x86.inbyte",
+  "llvm.x86.inbytestring",
   "llvm.x86.incsspd",
   "llvm.x86.incsspq",
   "llvm.x86.indword",
+  "llvm.x86.indwordstring",
   "llvm.x86.int",
+  "llvm.x86.int2c",
   "llvm.x86.invlpg",
   "llvm.x86.invpcid",
   "llvm.x86.inword",
+  "llvm.x86.inwordstring",
   "llvm.x86.ldtilecfg",
   "llvm.x86.ldtilecfg.internal",
+  "llvm.x86.lgdt",
+  "llvm.x86.lidt",
   "llvm.x86.llwpcb",
   "llvm.x86.loadiwkey",
+  "llvm.x86.lsl",
   "llvm.x86.lwpins32",
   "llvm.x86.lwpins64",
   "llvm.x86.lwpval32",
@@ -2970,10 +2980,17 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.mmx.pxor",
   "llvm.x86.monitorx",
   "llvm.x86.movdir64b",
+  "llvm.x86.movsb",
+  "llvm.x86.movsd.rep",
+  "llvm.x86.movsq",
+  "llvm.x86.movsw",
   "llvm.x86.mwaitx",
   "llvm.x86.outbyte",
+  "llvm.x86.outbytestring",
   "llvm.x86.outdword",
+  "llvm.x86.outdwordstring",
   "llvm.x86.outword",
+  "llvm.x86.outwordstring",
   "llvm.x86.pclmulqdq",
   "llvm.x86.pclmulqdq.256",
   "llvm.x86.pclmulqdq.512",
@@ -2999,12 +3016,14 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.rdtsc",
   "llvm.x86.rdtscp",
   "llvm.x86.readcr",
+  "llvm.x86.readdr",
   "llvm.x86.rstorssp",
   "llvm.x86.saveprevssp",
   "llvm.x86.seh.lsda",
   "llvm.x86.senduipi",
   "llvm.x86.serialize",
   "llvm.x86.setssbsy",
+  "llvm.x86.sgdt",
   "llvm.x86.sha1msg1",
   "llvm.x86.sha1msg2",
   "llvm.x86.sha1nexte",
@@ -3012,6 +3031,7 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.sha256msg1",
   "llvm.x86.sha256msg2",
   "llvm.x86.sha256rnds2",
+  "llvm.x86.sidt",
   "llvm.x86.slwpcb",
   "llvm.x86.sse.cmp.ps",
   "llvm.x86.sse.cmp.ss",
@@ -3184,6 +3204,11 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.ssse3.psign.d.128",
   "llvm.x86.ssse3.psign.w",
   "llvm.x86.ssse3.psign.w.128",
+  "llvm.x86.sti",
+  "llvm.x86.stosb",
+  "llvm.x86.stosd",
+  "llvm.x86.stosq",
+  "llvm.x86.stosw",
   "llvm.x86.sttilecfg",
   "llvm.x86.stui",
   "llvm.x86.subborrow.32",
@@ -3246,6 +3271,15 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.vgf2p8mulb.128",
   "llvm.x86.vgf2p8mulb.256",
   "llvm.x86.vgf2p8mulb.512",
+  "llvm.x86.vmclear",
+  "llvm.x86.vmlaunch",
+  "llvm.x86.vmptrld",
+  "llvm.x86.vmptrst",
+  "llvm.x86.vmread",
+  "llvm.x86.vmresume",
+  "llvm.x86.vmwrite",
+  "llvm.x86.vmxoff",
+  "llvm.x86.vmxon",
   "llvm.x86.vsha512msg1",
   "llvm.x86.vsha512msg2",
   "llvm.x86.vsha512rnds2",
@@ -3263,6 +3297,7 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.wrgsbase.32",
   "llvm.x86.wrgsbase.64",
   "llvm.x86.writecr",
+  "llvm.x86.writedr",
   "llvm.x86.wrmsr",
   "llvm.x86.wrpkru",
   "llvm.x86.wrssd",
@@ -3746,6 +3781,11 @@ static const uint8_t OTable[] = {
   0,
   0,
   0,
+  0,
+  0,
+  0,
+  0,
+  0,
   0
 };
 
@@ -4102,47 +4142,50 @@ static const unsigned IIT_Table[] = {
   0x446b6b, 0x456b6b, 0x46b4, 0x46b5, 0x46b4, 0x46b5, 0x446b6b, 0x456b6b,
   0x46666, (1U<<31) | 2082, 0x6b6b6b6b, 0x6c6c6c6c, (1U<<31) | 2082, 0x4e0, 0x5e0, 0x444,
   0x555, 0x444, 0x555, 0x444, 0x555, 0x444, 0x555, (1U<<31) | 4211,
-  (1U<<31) | 703, 0xe0, 0xe0, 0xe0, 0x0, 0xe0, 0xe0, 0x444e4,
-  0x455e5, 0x4e0, 0x5e0, (1U<<31) | 2559, (1U<<31) | 2587, 0xee2, 0xee2, 0x5,
-  0x50, (1U<<31) | 3549, (1U<<31) | 3610, 0x7a7a7a7a, 0x7b7b7b7b, 0xe0, 0xe0, 0xe0,
-  0xe0, 0x32, 0x40, 0x50, 0x34, 0x20, 0xE0, 0xe40,
-  0x33, 0xe0, 0xe0, 0xe0, 0x45959590, 0x4442, 0x4452, 0x4440,
-  0x4450, 0x0, 0x0, (1U<<31) | 3904, (1U<<31) | 3994, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998,
+  (1U<<31) | 703, 0xe0, 0xe0, 0, 0xe0, 0x0, 0xe0, 0xe0,
+  0x444e4, 0x455e5, 0x44E0, 0x4e0, 0x5e0, (1U<<31) | 2559, (1U<<31) | 2587, 0xee2,
+  0xee2, 0x5, 0x50, (1U<<31) | 3549, (1U<<31) | 3610, 0x7a7a7a7a, 0x7b7b7b7b, 0xe0,
+  0xe0, 0xe0, 0xe0, 0x32, 0x4E30, 0x40, 0x50, 0x34,
+  0x4E30, 0x20, 0, 0xE0, 0xe40, 0x33, 0x4E30, 0xe0,
+  0xe0, 0xE0, 0xE0, 0xe0, 0x45959590, 0x44, 0x4442, 0x4452,
+  0x4440, 0x4450, 0x0, 0x0, (1U<<31) | 3904, (1U<<31) | 3994, (1U<<31) | 3998, (1U<<31) | 3998,
   (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998,
-  (1U<<31) | 587, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998,
-  (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 2449, (1U<<31) | 1959, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998,
-  (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3981, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998,
-  (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 2462, (1U<<31) | 2462, (1U<<31) | 2462, (1U<<31) | 3998,
-  (1U<<31) | 3998, (1U<<31) | 2462, (1U<<31) | 2462, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 2462, (1U<<31) | 2462,
-  (1U<<31) | 2462, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998,
+  (1U<<31) | 3998, (1U<<31) | 587, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998,
+  (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 2449, (1U<<31) | 1959, (1U<<31) | 3998, (1U<<31) | 3998,
+  (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3981, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998,
+  (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 2462, (1U<<31) | 2462, (1U<<31) | 2462,
+  (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 2462, (1U<<31) | 2462, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 2462,
+  (1U<<31) | 2462, (1U<<31) | 2462, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998,
   (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998, (1U<<31) | 3998,
-  0x44e0, 0xee0, 0x4440, 0x230, 0x430, 0x330, 0x2595959, 0x25a5a5a,
+  (1U<<31) | 3998, 0x44e0, 0xee0, 0x5EE0, 0x5EE0, 0x5EE0, 0x5EE0, 0x4440,
+  0x230, 0x4E30, 0x430, 0x4E30, 0x330, 0x4E30, 0x2595959, 0x25a5a5a,
   0x25b5b5b, 0x40, 0x50, 0x4, 0x5, 0x4, 0x5, 0x45,
   0x4, 0x4, 0x45, 0x45, (1U<<31) | 1676, (1U<<31) | 1970, (1U<<31) | 2078, (1U<<31) | 1676,
-  (1U<<31) | 1970, (1U<<31) | 2078, 0x44, 0x55, 0x5, (1U<<31) | 2078, 0x45, 0xe0,
-  0x0, 0xee, 0x50, 0x0, 0x0, 0x4a4a4a, 0x4a4a4a, 0x4a4a4a,
-  0x24a4a4a, 0x4a4a4a, 0x4a4a4a, 0x4a4a4a4a, 0xe, 0x27a7a7a, 0x27a7a7a, 0x7a7a4,
-  0x7a7a4, 0x7a7a4, 0x7a7a4, 0x7a7a4, 0x7a7a4, (1U<<31) | 3558, (1U<<31) | 3990, (1U<<31) | 3984,
-  (1U<<31) | 2820, 0x7a4, 0x7a5, (1U<<31) | 3558, (1U<<31) | 2820, 0x7a4, 0x7a5, 0xe0,
-  0x7a7a7a, 0x7a7a7a, 0x7a7a7a, 0x7a7a7a, 0x7a4, (1U<<31) | 588, 0x7a7a, 0x7a7a,
-  0x7a7a, 0x7a7a, 0x0, 0xe0, 0x7a7a4, 0x7a7a4, 0x7a7a4, 0x7a7a4,
-  0x7a7a4, 0x7a7a4, 0xe0, 0x2898989, 0x2898989, 0x89894, 0x89894, 0x89894,
-  0x89894, 0x89894, 0x89894, 0x894a, 0x897a, 0x7a4a, 0x894, 0x895,
-  0x897a7a, 0x894a, 0x7a4a, 0x894, 0x895, 0x0, 0xe2c2c0, 0x898989,
-  0x898989, 0x0, 0x898989, 0x898989, 0x894, 0x4a4a3b, 0x3b3b2c, 0x3b3b2c,
-  0x0, 0x2c2c2c, 0x3b3b3b, 0x3b3b4a, 0x2c4, 0x3b3b3b, 0x3b3b3b, 0x2c2c59,
-  0x4a4a4a, 0x595959, 0x3b3b3b, 0x44a4a, 0x45959, 0x43b3b, 0x4a4a4a, 0x3b3b3b,
-  0x44a4a, 0x43b3b, 0x4a4a4a, 0x595959, 0x3b3b3b, 0x44a4a, 0x45959, 0x43b3b,
-  0x89894, 0x89894, 0x89894, 0x89894, 0x89894, 0x89894, 0x898989, 0x7a7a7a,
-  0x898989, 0x7a7a7a, 0x898989, 0x7a7a7a, 0xe2c, 0x44e0, 0x440, (1U<<31) | 3549,
-  0x7a7a7a7a, 0x2898989, 0x27a7a7a, 0x27a7a7a, 0x22c2c3b, 0x4a4a3b, 0x2c2c2c2c, 0x3b3b,
-  0x59594, 0x59594, 0x59594, 0x48989, 0x47a7a, 0x4898989, 0x47a7a7a, 0x344,
-  0x444, 0x244, 0x555, 0x242c42c4, 0x242c42c4, 0x242c42c4, 0x242c42c4, 0x242c42c4,
-  0x242c42c4, (1U<<31) | 183, 0x22c2c4, 0x22c2c4, 0x22c2c4, 0x22c2c4, 0x22c2c4, 0x22c2c4,
-  0x22c2c2c, 0x2c5959, 0x225959, 0x595959, 0x22595959, (1U<<31) | 3999, (1U<<31) | 3999, (1U<<31) | 3999,
-  (1U<<31) | 3998, 0x4a4a4a, (1U<<31) | 3998, 0x3b3b3b, (1U<<31) | 3998, 0x3b3b3b, (1U<<31) | 3998, 0x4a4a4a,
-  (1U<<31) | 3998, 0x3b3b3b, (1U<<31) | 3998, 0x3b3b3b, (1U<<31) | 3998, 0x2c2c3b, (1U<<31) | 3998, 0x3b3b3b,
-  (1U<<31) | 3998, 0x2c2c2c, (1U<<31) | 3998, 0x2c2c2c, (1U<<31) | 3998, 0x4a4a4a, (1U<<31) | 3998, 0x3b3b3b,
+  (1U<<31) | 1970, (1U<<31) | 2078, 0x44, 0x55, 0x5, (1U<<31) | 2078, 0x45, 0x45,
+  0xe0, 0x0, 0xee, 0x50, 0x0, 0x0, 0xE0, 0x4a4a4a,
+  0x4a4a4a, 0x4a4a4a, 0x24a4a4a, 0x4a4a4a, 0x4a4a4a, 0x4a4a4a4a, 0xE0, 0xe,
+  0x27a7a7a, 0x27a7a7a, 0x7a7a4, 0x7a7a4, 0x7a7a4, 0x7a7a4, 0x7a7a4, 0x7a7a4,
+  (1U<<31) | 3558, (1U<<31) | 3990, (1U<<31) | 3984, (1U<<31) | 2820, 0x7a4, 0x7a5, (1U<<31) | 3558, (1U<<31) | 2820,
+  0x7a4, 0x7a5, 0xe0, 0x7a7a7a, 0x7a7a7a, 0x7a7a7a, 0x7a7a7a, 0x7a4,
+  (1U<<31) | 588, 0x7a7a, 0x7a7a, 0x7a7a, 0x7a7a, 0x0, 0xe0, 0x7a7a4,
+  0x7a7a4, 0x7a7a4, 0x7a7a4, 0x7a7a4, 0x7a7a4, 0xe0, 0x2898989, 0x2898989,
+  0x89894, 0x89894, 0x89894, 0x89894, 0x89894, 0x89894, 0x894a, 0x897a,
+  0x7a4a, 0x894, 0x895, 0x897a7a, 0x894a, 0x7a4a, 0x894, 0x895,
+  0x0, 0xe2c2c0, 0x898989, 0x898989, 0x0, 0x898989, 0x898989, 0x894,
+  0x4a4a3b, 0x3b3b2c, 0x3b3b2c, 0x0, 0x2c2c2c, 0x3b3b3b, 0x3b3b4a, 0x2c4,
+  0x3b3b3b, 0x3b3b3b, 0x2c2c59, 0x4a4a4a, 0x595959, 0x3b3b3b, 0x44a4a, 0x45959,
+  0x43b3b, 0x4a4a4a, 0x3b3b3b, 0x44a4a, 0x43b3b, 0x4a4a4a, 0x595959, 0x3b3b3b,
+  0x44a4a, 0x45959, 0x43b3b, 0x89894, 0x89894, 0x89894, 0x89894, 0x89894,
+  0x89894, 0x898989, 0x7a7a7a, 0x898989, 0x7a7a7a, 0x898989, 0x7a7a7a, 0xe2c,
+  0x44e0, 0x440, (1U<<31) | 3549, 0x7a7a7a7a, 0x2898989, 0x27a7a7a, 0x27a7a7a, 0x22c2c3b,
+  0x4a4a3b, 0x2c2c2c2c, 0x3b3b, 0x59594, 0x59594, 0x59594, 0x48989, 0x47a7a,
+  0x4898989, 0x47a7a7a, 0x344, 0x444, 0x244, 0x555, 0x242c42c4, 0x242c42c4,
+  0x242c42c4, 0x242c42c4, 0x242c42c4, 0x242c42c4, (1U<<31) | 183, 0x22c2c4, 0x22c2c4, 0x22c2c4,
+  0x22c2c4, 0x22c2c4, 0x22c2c4, 0x22c2c2c, 0x2c5959, 0x225959, 0x595959, 0x22595959,
+  (1U<<31) | 3999, (1U<<31) | 3999, (1U<<31) | 3999, (1U<<31) | 3998, 0x4a4a4a, (1U<<31) | 3998, 0x3b3b3b, (1U<<31) | 3998,
+  0x3b3b3b, (1U<<31) | 3998, 0x4a4a4a, (1U<<31) | 3998, 0x3b3b3b, (1U<<31) | 3998, 0x3b3b3b, (1U<<31) | 3998,
+  0x2c2c3b, (1U<<31) | 3998, 0x3b3b3b, (1U<<31) | 3998, 0x2c2c2c, (1U<<31) | 3998, 0x2c2c2c, (1U<<31) | 3998,
+  0x4a4a4a, (1U<<31) | 3998, 0x3b3b3b, 0, 0x52E0, 0x54E0, 0x55E0, 0x53E0,
   0xe0, 0x0, (1U<<31) | 1724, (1U<<31) | 2522, 0x444, 0x555, 0x2220, (1U<<31) | 4222,
   0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222,
   0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222, 0x2220, (1U<<31) | 4222, 0x2, 0x5e20,
@@ -4150,18 +4193,20 @@ static const unsigned IIT_Table[] = {
   0x4442, 0xe0, 0x4442, 0x55, 0x550, 0xe7a, 0xe7b, 0xe7a,
   0xe7b, 0xe7a, 0xe7b, 0xe7a, 0xe7b, 0xe7a, 0xe7b, 0xe7a,
   0xe7b, (1U<<31) | 2888, (1U<<31) | 2900, 0x47a3b, 0x47b3b, 0x22c2c2c, 0x22d2d2d, (1U<<31) | 175,
-  0x22c2c2c, 0x22d2d2d, (1U<<31) | 175, 0x2c2c2c, 0x2d2d2d, (1U<<31) | 566, 0x595a5a, 0x5a5a5a,
-  0x595a5a5a, 0x4a4a4a4a, 0x4a4a4a4a, (1U<<31) | 1839, 0x4a4a4a, 0x4b4b4b, 0x4a4a4a, 0x4b4b4b,
-  0x0, 0x0, 0x40, 0x50, 0x40, 0x50, 0x540, 0x540,
-  0x40, 0xe40, 0xe50, 0xe40, 0xe50, 0x20, 0x4, 0x0,
-  0x45, 0x8989, 0x8a8a, 0x7a7a, 0x7b7b, 0x8989, 0x7a7a, (1U<<31) | 323,
-  (1U<<31) | 355, (1U<<31) | 270, (1U<<31) | 291, 0x2c4a, 0x2c59, 0x2c3b, 0x4a59, 0x2c4a,
-  0x2c59, 0x2c3b, 0x4a59, 0x3b4a, 0x3b59, 0x3b4a, 0x3b59, 0x2c3b,
-  0x4a59, 0x3b4a, 0x4a4a4a4a, 0x594a4a59, 0x594a4a59, 0x4a4a4a4a, 0x594a4a59, 0x594a4a59,
-  0x4a3b3b4a, 0x3b3b3b3b, 0x4a3b3b4a, 0x3b3b3b3b, 0x4a3b3b4a, 0x4a3b3b4a, 0x2c2c2c2c, 0x2c2c2c,
-  0x4a4a4a, 0x595959, 0x3b3b3b, 0x2c2c2c, 0x4a4a4a, 0x595959, 0x3b3b3b, 0x0,
-  0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0,
-  0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x4440, 0x0, 0x4
+  0x22c2c2c, 0x22d2d2d, (1U<<31) | 175, 0x2c2c2c, 0x2d2d2d, (1U<<31) | 566, 0xE2, 2,
+  0xE2, 0xE0, 0xE52, 2, 0x552, 0, 0xE2, 0x595a5a,
+  0x5a5a5a, 0x595a5a5a, 0x4a4a4a4a, 0x4a4a4a4a, (1U<<31) | 1839, 0x4a4a4a, 0x4b4b4b, 0x4a4a4a,
+  0x4b4b4b, 0x0, 0x0, 0x40, 0x50, 0x40, 0x50, 0x540,
+  0x540, 0x540, 0x40, 0xe40, 0xe50, 0xe40, 0xe50, 0x20,
+  0x4, 0x0, 0x45, 0x8989, 0x8a8a, 0x7a7a, 0x7b7b, 0x8989,
+  0x7a7a, (1U<<31) | 323, (1U<<31) | 355, (1U<<31) | 270, (1U<<31) | 291, 0x2c4a, 0x2c59, 0x2c3b,
+  0x4a59, 0x2c4a, 0x2c59, 0x2c3b, 0x4a59, 0x3b4a, 0x3b59, 0x3b4a,
+  0x3b59, 0x2c3b, 0x4a59, 0x3b4a, 0x4a4a4a4a, 0x594a4a59, 0x594a4a59, 0x4a4a4a4a,
+  0x594a4a59, 0x594a4a59, 0x4a3b3b4a, 0x3b3b3b3b, 0x4a3b3b4a, 0x3b3b3b3b, 0x4a3b3b4a, 0x4a3b3b4a,
+  0x2c2c2c2c, 0x2c2c2c, 0x4a4a4a, 0x595959, 0x3b3b3b, 0x2c2c2c, 0x4a4a4a, 0x595959,
+  0x3b3b3b, 0x0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0,
+  0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x4440, 0x0,
+  0x4
 };
 
 static const unsigned char IIT_LongEncodingTable[] = {
@@ -7744,12 +7789,14 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     2, // llvm.x86.cast.vector.to.tile
     11, // llvm.x86.cldemote
     11, // llvm.x86.clflushopt
+    11, // llvm.x86.cli
     11, // llvm.x86.clrssbsy
     11, // llvm.x86.clui
     11, // llvm.x86.clwb
     11, // llvm.x86.clzero
     107, // llvm.x86.cmpccxadd32
     107, // llvm.x86.cmpccxadd64
+    11, // llvm.x86.cpuidex
     11, // llvm.x86.directstore32
     11, // llvm.x86.directstore64
     11, // llvm.x86.encodekey128
@@ -7767,17 +7814,24 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     11, // llvm.x86.fxsave
     11, // llvm.x86.fxsave64
     11, // llvm.x86.inbyte
+    11, // llvm.x86.inbytestring
     11, // llvm.x86.incsspd
     11, // llvm.x86.incsspq
     11, // llvm.x86.indword
+    11, // llvm.x86.indwordstring
     108, // llvm.x86.int
+    11, // llvm.x86.int2c
     11, // llvm.x86.invlpg
     11, // llvm.x86.invpcid
     11, // llvm.x86.inword
+    11, // llvm.x86.inwordstring
     11, // llvm.x86.ldtilecfg
     11, // llvm.x86.ldtilecfg.internal
+    11, // llvm.x86.lgdt
+    11, // llvm.x86.lidt
     11, // llvm.x86.llwpcb
     11, // llvm.x86.loadiwkey
+    11, // llvm.x86.lsl
     94, // llvm.x86.lwpins32
     94, // llvm.x86.lwpins64
     94, // llvm.x86.lwpval32
@@ -7855,10 +7909,17 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     2, // llvm.x86.mmx.pxor
     11, // llvm.x86.monitorx
     11, // llvm.x86.movdir64b
+    11, // llvm.x86.movsb
+    11, // llvm.x86.movsd.rep
+    11, // llvm.x86.movsq
+    11, // llvm.x86.movsw
     11, // llvm.x86.mwaitx
     11, // llvm.x86.outbyte
+    11, // llvm.x86.outbytestring
     11, // llvm.x86.outdword
+    11, // llvm.x86.outdwordstring
     11, // llvm.x86.outword
+    11, // llvm.x86.outwordstring
     3, // llvm.x86.pclmulqdq
     3, // llvm.x86.pclmulqdq.256
     3, // llvm.x86.pclmulqdq.512
@@ -7884,12 +7945,14 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     11, // llvm.x86.rdtsc
     11, // llvm.x86.rdtscp
     11, // llvm.x86.readcr
+    11, // llvm.x86.readdr
     11, // llvm.x86.rstorssp
     11, // llvm.x86.saveprevssp
     12, // llvm.x86.seh.lsda
     11, // llvm.x86.senduipi
     11, // llvm.x86.serialize
     11, // llvm.x86.setssbsy
+    11, // llvm.x86.sgdt
     2, // llvm.x86.sha1msg1
     2, // llvm.x86.sha1msg2
     2, // llvm.x86.sha1nexte
@@ -7897,6 +7960,7 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     2, // llvm.x86.sha256msg1
     2, // llvm.x86.sha256msg2
     2, // llvm.x86.sha256rnds2
+    11, // llvm.x86.sidt
     11, // llvm.x86.slwpcb
     3, // llvm.x86.sse.cmp.ps
     3, // llvm.x86.sse.cmp.ss
@@ -8069,6 +8133,11 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     2, // llvm.x86.ssse3.psign.d.128
     2, // llvm.x86.ssse3.psign.w
     2, // llvm.x86.ssse3.psign.w.128
+    11, // llvm.x86.sti
+    11, // llvm.x86.stosb
+    11, // llvm.x86.stosd
+    11, // llvm.x86.stosq
+    11, // llvm.x86.stosw
     11, // llvm.x86.sttilecfg
     11, // llvm.x86.stui
     2, // llvm.x86.subborrow.32
@@ -8131,6 +8200,15 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     2, // llvm.x86.vgf2p8mulb.128
     2, // llvm.x86.vgf2p8mulb.256
     2, // llvm.x86.vgf2p8mulb.512
+    11, // llvm.x86.vmclear
+    11, // llvm.x86.vmlaunch
+    11, // llvm.x86.vmptrld
+    11, // llvm.x86.vmptrst
+    11, // llvm.x86.vmread
+    11, // llvm.x86.vmresume
+    11, // llvm.x86.vmwrite
+    11, // llvm.x86.vmxoff
+    11, // llvm.x86.vmxon
     2, // llvm.x86.vsha512msg1
     2, // llvm.x86.vsha512msg2
     2, // llvm.x86.vsha512rnds2
@@ -8148,6 +8226,7 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     11, // llvm.x86.wrgsbase.32
     11, // llvm.x86.wrgsbase.64
     11, // llvm.x86.writecr
+    11, // llvm.x86.writedr
     11, // llvm.x86.wrmsr
     11, // llvm.x86.wrpkru
     11, // llvm.x86.wrssd

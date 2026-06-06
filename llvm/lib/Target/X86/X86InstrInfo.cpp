@@ -3973,6 +3973,21 @@ static unsigned CopyToFromAsymmetricReg(unsigned DestReg, unsigned SrcReg,
     return HasAVX512 ? X86::VMOVDI2PDIZrr
            : HasAVX  ? X86::VMOVDI2PDIrr
                      : X86::MOVDI2PDIrr;
+
+  if (X86::CONTROL_REGRegClass.contains(SrcReg) &&
+      X86::GR64RegClass.contains(DestReg))
+    return X86::MOV64rc;
+  if (X86::GR64RegClass.contains(SrcReg) &&
+      X86::CONTROL_REGRegClass.contains(DestReg))
+    return X86::MOV64cr;
+
+  if (X86::DEBUG_REGRegClass.contains(SrcReg) &&
+      X86::GR64RegClass.contains(DestReg))
+    return X86::MOV64rd;
+  if (X86::GR64RegClass.contains(SrcReg) &&
+      X86::DEBUG_REGRegClass.contains(DestReg))
+    return X86::MOV64dr;
+
   return 0;
 }
 
