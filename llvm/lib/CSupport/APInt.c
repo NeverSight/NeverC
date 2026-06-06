@@ -8,6 +8,15 @@
 #include <stdlib.h>
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <intrin.h>
+#if defined(__clang__) && !__has_builtin(_udiv128)
+static inline uint64_t _neverc_udiv128(uint64_t hi, uint64_t lo,
+                                       uint64_t divisor, uint64_t *rem) {
+  __uint128_t n = ((__uint128_t)hi << 64) | lo;
+  *rem = (uint64_t)(n % divisor);
+  return (uint64_t)(n / divisor);
+}
+#define _udiv128 _neverc_udiv128
+#endif
 #endif
 
 #define APINT_WORD_SIZE 64
