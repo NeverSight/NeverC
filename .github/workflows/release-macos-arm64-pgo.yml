@@ -268,7 +268,7 @@ jobs:
 
       - name: Run neverc tests
         run: |
-          cmake -B build-pgo-use -DNEVERC_INCLUDE_TESTS=ON
+          cmake -S llvm -B build-pgo-use -DNEVERC_INCLUDE_TESTS=ON
           cmake --build build-pgo-use --target check-neverc
 
       - name: Install neverc

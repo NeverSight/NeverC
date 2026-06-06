@@ -714,11 +714,15 @@ void csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
     while (!csupport_apint_tc_is_zero(tmp, num_words)) {
       uint64_t r = 0;
       for (int i = (int)num_words - 1; i >= 0; i--) {
-#if defined(_MSC_VER) && defined(_M_X64)
+#if defined(__SIZEOF_INT128__)
+        __uint128_t cur = ((__uint128_t)r << 64) | tmp[i];
+        tmp[i] = (uint64_t)(cur / radix);
+        r = (uint64_t)(cur % radix);
+#elif defined(_MSC_VER) && defined(_M_X64)
         uint64_t remainder;
         tmp[i] = _udiv128(r, tmp[i], (uint64_t)radix, &remainder);
         r = remainder;
-#elif defined(_MSC_VER)
+#else
         uint64_t w_hi = tmp[i] >> 32;
         uint64_t w_lo = tmp[i] & 0xFFFFFFFFULL;
         uint64_t a1 = (r << 32) | w_hi;
@@ -728,10 +732,6 @@ void csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
         uint64_t q0 = a0 / (uint64_t)radix;
         r = a0 % (uint64_t)radix;
         tmp[i] = (q1 << 32) | q0;
-#else
-        __uint128_t cur = ((__uint128_t)r << 64) | tmp[i];
-        tmp[i] = (uint64_t)(cur / radix);
-        r = (uint64_t)(cur % radix);
 #endif
       }
       digits[pos++] = digit_chars[r];
@@ -964,14 +964,18 @@ int csupport_apint_from_string(uint64_t *dst, unsigned bit_width,
     /* dst = dst * radix + digit */
     uint64_t carry = digit;
     for (unsigned w = 0; w < num_words; w++) {
-#if defined(_MSC_VER) && defined(_M_X64)
+#if defined(__SIZEOF_INT128__)
+      __uint128_t prod = (__uint128_t)dst[w] * radix + carry;
+      dst[w] = (uint64_t)prod;
+      carry = (uint64_t)(prod >> 64);
+#elif defined(_MSC_VER) && defined(_M_X64)
       uint64_t hi;
       uint64_t lo = _umul128(dst[w], (uint64_t)radix, &hi);
       lo += carry;
       if (lo < carry) hi++;
       dst[w] = lo;
       carry = hi;
-#elif defined(_MSC_VER)
+#else
       uint64_t a_lo = dst[w] & 0xFFFFFFFFULL;
       uint64_t a_hi = dst[w] >> 32;
       uint64_t p0 = a_lo * (uint64_t)radix;
@@ -983,10 +987,6 @@ int csupport_apint_from_string(uint64_t *dst, unsigned bit_width,
       if (lo < carry) hi++;
       dst[w] = lo;
       carry = hi;
-#else
-      __uint128_t prod = (__uint128_t)dst[w] * radix + carry;
-      dst[w] = (uint64_t)prod;
-      carry = (uint64_t)(prod >> 64);
 #endif
     }
   }

@@ -77,8 +77,12 @@ jobs:
         run: |
           cmake -S llvm -B build -G Ninja \
             -DCMAKE_SYSTEM_PROCESSOR=ARM64 \
+            -DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc \
+            -DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc \
+            -DCMAKE_ASM_COMPILER_TARGET=aarch64-pc-windows-msvc \
             -C neverc/cmake/caches/NeverC.cmake \
             -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_NATIVE_ARCH=OFF \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
             -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \

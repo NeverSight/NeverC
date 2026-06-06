@@ -32,6 +32,21 @@ jobs:
     # Build on glibc 2.35 so the PGO binary runs on Ubuntu 22.04+.
     runs-on: ubuntu-22.04
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android \
+            /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Create swap
+        run: |
+          sudo fallocate -l 4G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -211,6 +226,21 @@ jobs:
     # Build on glibc 2.35 so the PGO binary runs on Ubuntu 22.04+.
     runs-on: ubuntu-22.04
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android \
+            /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Create swap
+        run: |
+          sudo fallocate -l 4G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -300,7 +330,7 @@ jobs:
         id: tests
         continue-on-error: true
         run: |
-          cmake -B build-pgo-use -DNEVERC_INCLUDE_TESTS=ON
+          cmake -S llvm -B build-pgo-use -DNEVERC_INCLUDE_TESTS=ON
           cmake --build build-pgo-use --target check-neverc
 
       - name: Diagnose crashes

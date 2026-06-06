@@ -12,8 +12,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* MSVC compatibility for GCC/Clang builtins */
-#ifdef _MSC_VER
+/* MSVC compatibility: provide __builtin_clzll etc. for real MSVC only.
+ * Clang on Windows defines _MSC_VER for ABI compat but already has the
+ * builtins natively, so skip the shims for Clang. */
+#if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>
 #pragma intrinsic(_BitScanReverse, _BitScanReverse64)
 #pragma intrinsic(_BitScanForward, _BitScanForward64)
@@ -39,9 +41,11 @@ static __forceinline int csupport_compat_clz(unsigned int x) {
 #define __builtin_clz(x) csupport_compat_clz(x)
 #define __builtin_popcountll(x) ((int)__popcnt64(x))
 #define CSUPPORT_FALLTHROUGH
+#elif defined(_MSC_VER)
+#define CSUPPORT_FALLTHROUGH
 #else
 #define CSUPPORT_FALLTHROUGH __attribute__((fallthrough))
-#endif /* _MSC_VER */
+#endif
 
 #ifdef __cplusplus
 extern "C" {

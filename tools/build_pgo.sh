@@ -67,10 +67,9 @@ phase_generate() {
     -DNEVERC_ENABLE_MIMALLOC=OFF \
     -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -march=native -fprofile-instr-generate -DNEVERC_PGO_TRAINING -ffunction-sections -fdata-sections" \
     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -march=native -fprofile-instr-generate -DNEVERC_PGO_TRAINING -ffunction-sections -fdata-sections" \
-    -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate" \
-    2>&1 | tail -5
+    -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate"
 
-  ninja -C "$BUILD_PGO_GEN" -j"$JOBS" neverc 2>&1 | tail -3
+  cmake --build "$BUILD_PGO_GEN" --target neverc -- -j"$JOBS"
   echo "✓ Instrumented neverc: $BUILD_PGO_GEN/bin/neverc"
 }
 
@@ -250,10 +249,9 @@ phase_use() {
     -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -march=native -fprofile-instr-use=$PROFDATA -ffunction-sections -fdata-sections" \
     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -march=native -fprofile-instr-use=$PROFDATA -ffunction-sections -fdata-sections" \
     -DCMAKE_EXE_LINKER_FLAGS="$gc_flag" \
-    ${order_flag:+"$order_flag"} \
-    2>&1 | tail -5
+    ${order_flag:+"$order_flag"}
 
-  ninja -C "$BUILD_PGO_USE" -j"$JOBS" neverc 2>&1 | tail -3
+  cmake --build "$BUILD_PGO_USE" --target neverc -- -j"$JOBS"
   echo "✓ PGO-optimised neverc: $BUILD_PGO_USE/bin/neverc"
 
   local baseline_size pgo_size
