@@ -111,10 +111,12 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
       }
     }
 
-    // On a native Linux host, also add system library paths as fallback
-    // for any libs not included in the bundle.
+    // On a native Linux host with matching architecture, also add system
+    // library paths as fallback for any libs not included in the bundle.
+    // Skip when cross-compiling (different arch) to avoid picking up
+    // wrong-architecture libraries.
     llvm::Triple HostTriple(llvm::sys::getDefaultTargetTriple());
-    if (HostTriple.isOSLinux()) {
+    if (HostTriple.isOSLinux() && HostTriple.getArch() == Triple.getArch()) {
       addPathIfExists(D, concat("", "/lib", MultiarchTriple), Paths);
       addPathIfExists(D, concat("", "/lib/..", OSLibDir), Paths);
       addPathIfExists(D, concat("", "/usr/lib", MultiarchTriple), Paths);
@@ -226,9 +228,11 @@ void Linux::AddNeverCSystemIncludeArgs(const ArgList &DriverArgs,
 
   // When using the bundled sysroot on a native Linux host, also add
   // system include paths as fallback for headers not in the bundle.
+  // Skip when cross-compiling (different arch) to avoid picking up
+  // wrong-architecture system headers (e.g. x86_64 bits/*.h on aarch64).
   if (UseBundledSysroot) {
     llvm::Triple HostTriple(llvm::sys::getDefaultTargetTriple());
-    if (HostTriple.isOSLinux()) {
+    if (HostTriple.isOSLinux() && HostTriple.getArch() == getTriple().getArch()) {
       if (!MultiarchIncludeDir.empty() &&
           D.getVFS().exists(concat("", "/usr/include", MultiarchIncludeDir)))
         addExternCSystemInclude(DriverArgs, FrontendArgs,
