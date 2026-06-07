@@ -48,7 +48,7 @@ neverc_uuid_t neverc_uuid_nil(void);
 
 #ifdef __neverc__
 struct __neverc_std_uuid_t { char __tag; };
-extern struct __neverc_std_uuid_t uuid;
+extern struct __neverc_std_uuid_t __neverc_mod_uuid;
 #endif
 
 #endif /* NEVERC_UUID_H */

@@ -18,8 +18,8 @@ struct __neverc_std_encoding_t {
     struct __neverc_std_binary_t binary;
     struct __neverc_std_pem_t pem;
 };
-extern struct __neverc_std_encoding_t encoding;
 
+extern struct __neverc_std_encoding_t __neverc_mod_encoding;
 #endif /* __neverc__ */
 
 #endif /* NEVERC_ENCODING_H */

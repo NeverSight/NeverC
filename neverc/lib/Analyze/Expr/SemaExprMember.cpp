@@ -849,6 +849,29 @@ ExprResult Sema::OnMemberAccessExpr(Scope *S, Expr *Base, SourceLocation OpLoc,
     return ExprError();
   Base = Result.get();
 
+  // Handle std.module access: std.math → __neverc_mod_math
+  if (!IsArrow) {
+    Expr *Inner = Base->IgnoreParenImpCasts();
+    if (auto *DRE = dyn_cast<DeclRefExpr>(Inner)) {
+      if (auto *RT = DRE->getType()->getAs<RecordType>()) {
+        if (StdModule::isRootType(RT->getDecl()->getName())) {
+          IdentifierInfo *MemberII = Id.getIdentifierInfo();
+          if (MemberII && (StdModule::isModuleName(MemberII->getName()) ||
+                           StdModule::isCategoryName(MemberII->getName()))) {
+            std::string VarName =
+                StdModule::getModuleVarName(MemberII->getName());
+            IdentifierInfo &VarII = Context.Idents.get(VarName);
+            LookupResult R(*this, &VarII, OpLoc, ResolveOrdinary);
+            ResolveName(R, TUScope, /*AllowBuiltinCreation=*/false);
+            if (VarDecl *VD = R.getAsSingle<VarDecl>()) {
+              return MakeDeclRefExpr(VD, VD->getType(), VK_LValue, OpLoc);
+            }
+          }
+        }
+      }
+    }
+  }
+
   ExprResult Res =
       FormMemberReferenceExpr(Base, Base->getType(), OpLoc, IsArrow, NameInfo);
 

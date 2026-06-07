@@ -1,0 +1,28 @@
+#ifndef STD_MODULE
+#error "define STD_MODULE(name) before including this file"
+#endif
+STD_MODULE(math)
+STD_MODULE(strconv)
+STD_MODULE(path)
+STD_MODULE(sort)
+STD_MODULE(unicode)
+STD_MODULE(cmp)
+STD_MODULE(bytes)
+STD_MODULE(errors)
+STD_MODULE(html)
+STD_MODULE(fmt)
+STD_MODULE(io)
+STD_MODULE(bufio)
+STD_MODULE(flag)
+STD_MODULE(log)
+STD_MODULE(time)
+STD_MODULE(uuid)
+STD_MODULE(regexp)
+STD_MODULE(mime)
+STD_MODULE(sync)
+STD_MODULE(os)
+STD_MODULE(context)
+STD_MODULE(slices)
+STD_MODULE(maps)
+STD_MODULE(image)
+#undef STD_MODULE

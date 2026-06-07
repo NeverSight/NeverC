@@ -86,7 +86,7 @@ void neverc_bufio_writer_free(neverc_bufio_writer_t *bw);
 
 #ifdef __neverc__
 struct __neverc_std_bufio_t { char __tag; };
-extern struct __neverc_std_bufio_t bufio;
+extern struct __neverc_std_bufio_t __neverc_mod_bufio;
 #endif
 
 #endif /* NEVERC_BUFIO_H */

@@ -42,6 +42,18 @@ std::string getModuleTypeName(llvm::StringRef ModuleName);
 /// Returns empty StringRef if the name doesn't match the pattern.
 llvm::StringRef extractModuleName(llvm::StringRef TypeName);
 
+/// The root namespace type: __neverc_std_root_t
+constexpr const char *RootTypeName = "__neverc_std_root_t";
+
+/// Internal variable prefix for module variables: __neverc_mod_
+constexpr const char *ModVarPrefix = "__neverc_mod_";
+
+/// Returns true if \p TypeName is the root std namespace type.
+bool isRootType(llvm::StringRef TypeName);
+
+/// "math" → "__neverc_mod_math"
+std::string getModuleVarName(llvm::StringRef ModuleName);
+
 } // namespace StdModule
 } // namespace neverc
 

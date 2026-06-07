@@ -48,7 +48,7 @@ int neverc_fmt_appendf(char *buf, size_t cap, const char *format, ...);
 
 #ifdef __neverc__
 struct __neverc_std_fmt_t { char __tag; };
-extern struct __neverc_std_fmt_t fmt;
+extern struct __neverc_std_fmt_t __neverc_mod_fmt;
 #endif
 
 #endif /* NEVERC_FMT_H */

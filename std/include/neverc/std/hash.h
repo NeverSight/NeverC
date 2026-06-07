@@ -14,8 +14,8 @@ struct __neverc_std_hash_t {
     struct __neverc_std_fnv_t fnv;
     struct __neverc_std_adler32_t adler32;
 };
-extern struct __neverc_std_hash_t hash;
 
+extern struct __neverc_std_hash_t __neverc_mod_hash;
 #endif /* __neverc__ */
 
 #endif /* NEVERC_HASH_H */

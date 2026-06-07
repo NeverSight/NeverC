@@ -1,0 +1,126 @@
+#ifndef STD_SUBMODULE
+#error "define STD_SUBMODULE(category, name) before including this file"
+#endif
+
+// crypto
+STD_SUBMODULE(crypto, sha256)
+STD_SUBMODULE(crypto, sha1)
+STD_SUBMODULE(crypto, sha512)
+STD_SUBMODULE(crypto, sha384)
+STD_SUBMODULE(crypto, sha224)
+STD_SUBMODULE(crypto, sha3)
+STD_SUBMODULE(crypto, sha512_224)
+STD_SUBMODULE(crypto, sha512_256)
+STD_SUBMODULE(crypto, md5)
+STD_SUBMODULE(crypto, aes)
+STD_SUBMODULE(crypto, des)
+STD_SUBMODULE(crypto, rc4)
+STD_SUBMODULE(crypto, chacha20)
+STD_SUBMODULE(crypto, poly1305)
+STD_SUBMODULE(crypto, chacha20poly1305)
+STD_SUBMODULE(crypto, gcm)
+STD_SUBMODULE(crypto, cipher)
+STD_SUBMODULE(crypto, hmac)
+STD_SUBMODULE(crypto, subtle)
+STD_SUBMODULE(crypto, hkdf)
+STD_SUBMODULE(crypto, pbkdf2)
+STD_SUBMODULE(crypto, rand)
+STD_SUBMODULE(crypto, elliptic)
+STD_SUBMODULE(crypto, rsa)
+STD_SUBMODULE(crypto, ecdsa)
+STD_SUBMODULE(crypto, dsa)
+STD_SUBMODULE(crypto, ed25519)
+STD_SUBMODULE(crypto, ecdh)
+
+// net
+STD_SUBMODULE(net, url)
+STD_SUBMODULE(net, netip)
+STD_SUBMODULE(net, mail)
+STD_SUBMODULE(net, textproto)
+
+// image
+STD_SUBMODULE(image, color)
+STD_SUBMODULE(image, draw)
+STD_SUBMODULE(image, png)
+STD_SUBMODULE(image, jpeg)
+STD_SUBMODULE(image, gif)
+
+// hash
+STD_SUBMODULE(hash, crc32)
+STD_SUBMODULE(hash, crc64)
+STD_SUBMODULE(hash, fnv)
+STD_SUBMODULE(hash, adler32)
+STD_SUBMODULE(hash, maphash)
+
+// encoding
+STD_SUBMODULE(encoding, hex)
+STD_SUBMODULE(encoding, base64)
+STD_SUBMODULE(encoding, base32)
+STD_SUBMODULE(encoding, ascii85)
+STD_SUBMODULE(encoding, binary)
+STD_SUBMODULE(encoding, pem)
+STD_SUBMODULE(encoding, csv)
+STD_SUBMODULE(encoding, json)
+STD_SUBMODULE(encoding, xml)
+STD_SUBMODULE(encoding, asn1)
+
+// math
+STD_SUBMODULE(math, rand)
+STD_SUBMODULE(math, bits)
+STD_SUBMODULE(math, cmplx)
+STD_SUBMODULE(math, big)
+
+// unicode
+STD_SUBMODULE(unicode, utf8)
+STD_SUBMODULE(unicode, utf16)
+
+// container
+STD_SUBMODULE(container, heap)
+STD_SUBMODULE(container, list)
+STD_SUBMODULE(container, ring)
+
+// compress
+STD_SUBMODULE(compress, lzw)
+STD_SUBMODULE(compress, flate)
+STD_SUBMODULE(compress, gzip)
+STD_SUBMODULE(compress, zlib)
+STD_SUBMODULE(compress, bzip2)
+
+// archive
+STD_SUBMODULE(archive, tar)
+STD_SUBMODULE(archive, zip)
+
+// text
+STD_SUBMODULE(text, template)
+STD_SUBMODULE(text, scanner)
+STD_SUBMODULE(text, tabwriter)
+
+// log
+STD_SUBMODULE(log, slog)
+STD_SUBMODULE(log, syslog)
+
+// index
+STD_SUBMODULE(index, suffixarray)
+
+// sync
+STD_SUBMODULE(sync, atomic)
+
+// path
+STD_SUBMODULE(path, filepath)
+
+// mime
+STD_SUBMODULE(mime, quotedprintable)
+STD_SUBMODULE(mime, multipart)
+
+// os
+STD_SUBMODULE(os, exec)
+STD_SUBMODULE(os, signal)
+STD_SUBMODULE(os, user)
+
+// io
+STD_SUBMODULE(io, fs)
+
+// html
+STD_SUBMODULE(html, template)
+
+#undef STD_SUBMODULE

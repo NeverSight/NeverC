@@ -169,7 +169,7 @@ struct __neverc_std_math_t {
     struct __neverc_std_bits_t bits;
     struct __neverc_std_cmplx_t cmplx;
 };
-extern struct __neverc_std_math_t math;
+extern struct __neverc_std_math_t __neverc_mod_math;
 #endif
 
 #ifdef __cplusplus

@@ -1,0 +1,23 @@
+#ifndef STD_CATEGORY
+#error "define STD_CATEGORY(name) before including this file"
+#endif
+STD_CATEGORY(crypto)
+STD_CATEGORY(hash)
+STD_CATEGORY(encoding)
+STD_CATEGORY(math)
+STD_CATEGORY(unicode)
+STD_CATEGORY(container)
+STD_CATEGORY(compress)
+STD_CATEGORY(archive)
+STD_CATEGORY(text)
+STD_CATEGORY(log)
+STD_CATEGORY(index)
+STD_CATEGORY(sync)
+STD_CATEGORY(path)
+STD_CATEGORY(net)
+STD_CATEGORY(image)
+STD_CATEGORY(mime)
+STD_CATEGORY(os)
+STD_CATEGORY(io)
+STD_CATEGORY(html)
+#undef STD_CATEGORY

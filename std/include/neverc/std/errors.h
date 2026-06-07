@@ -35,7 +35,7 @@ void            neverc_errors_free(neverc_error_t *err);
 
 #ifdef __neverc__
 struct __neverc_std_errors_t { char __tag; };
-extern struct __neverc_std_errors_t errors;
+extern struct __neverc_std_errors_t __neverc_mod_errors;
 #endif
 
 #endif /* NEVERC_ERRORS_H */

@@ -45,7 +45,7 @@ int neverc_strconv_format_bool(int b, char *buf, size_t bufsize);
 
 #ifdef __neverc__
 struct __neverc_std_strconv_t { char __tag; };
-extern struct __neverc_std_strconv_t strconv;
+extern struct __neverc_std_strconv_t __neverc_mod_strconv;
 #endif
 
 #endif /* NEVERC_STRCONV_H */

@@ -4,18 +4,13 @@
 using namespace neverc;
 
 static constexpr llvm::StringLiteral TopLevelModules[] = {
-    "math",    "strconv", "path",    "sort",    "unicode",
-    "cmp",     "bytes",   "errors",  "html",    "fmt",
-    "io",      "bufio",   "flag",    "log",     "time",
-    "uuid",    "regexp",  "mime",    "sync",    "os",
-    "context", "slices",  "maps",    "image",
+#define STD_MODULE(name) #name,
+#include "neverc/Foundation/Std/StdTopLevelModules.def"
 };
 
 static constexpr llvm::StringLiteral Categories[] = {
-    "crypto",    "hash",      "encoding",  "math",      "unicode",
-    "container", "compress",  "archive",   "text",      "log",
-    "index",     "sync",      "path",      "net",       "image",
-    "mime",      "os",        "io",        "html",
+#define STD_CATEGORY(name) #name,
+#include "neverc/Foundation/Std/StdCategories.def"
 };
 
 struct SubModuleEntry {
@@ -24,82 +19,8 @@ struct SubModuleEntry {
 };
 
 static constexpr SubModuleEntry SubModules[] = {
-    // crypto
-    {"crypto", "sha256"},  {"crypto", "sha1"},
-    {"crypto", "sha512"},  {"crypto", "sha384"},
-    {"crypto", "sha224"},  {"crypto", "sha3"},
-    {"crypto", "sha512_224"}, {"crypto", "sha512_256"},
-    {"crypto", "md5"},     {"crypto", "aes"},
-    {"crypto", "des"},     {"crypto", "rc4"},
-    {"crypto", "chacha20"},{"crypto", "poly1305"},
-    {"crypto", "chacha20poly1305"}, {"crypto", "gcm"},
-    {"crypto", "cipher"},  {"crypto", "hmac"},
-    {"crypto", "subtle"},  {"crypto", "hkdf"},
-    {"crypto", "pbkdf2"},  {"crypto", "rand"},
-    {"crypto", "elliptic"},{"crypto", "rsa"},
-    {"crypto", "ecdsa"},   {"crypto", "dsa"},
-    {"crypto", "ed25519"},
-    {"crypto", "ecdh"},
-    // net
-    {"net", "url"},
-    {"net", "netip"},
-    {"net", "mail"},
-    // image
-    {"image", "color"},
-    // hash
-    {"hash", "crc32"},     {"hash", "crc64"},
-    {"hash", "fnv"},       {"hash", "adler32"},
-    {"hash", "maphash"},
-    // encoding
-    {"encoding", "hex"},   {"encoding", "base64"},
-    {"encoding", "base32"},{"encoding", "ascii85"},
-    {"encoding", "binary"},{"encoding", "pem"},
-    {"encoding", "csv"},   {"encoding", "json"},
-    {"encoding", "xml"},   {"encoding", "asn1"},
-    // math
-    {"math", "rand"},      {"math", "bits"},
-    {"math", "cmplx"},     {"math", "big"},
-    // unicode
-    {"unicode", "utf8"},   {"unicode", "utf16"},
-    // container
-    {"container", "heap"}, {"container", "list"},
-    {"container", "ring"},
-    // compress
-    {"compress", "lzw"},   {"compress", "flate"},
-    {"compress", "gzip"},  {"compress", "zlib"},
-    {"compress", "bzip2"},
-    // archive
-    {"archive", "tar"},    {"archive", "zip"},
-    // text
-    {"text", "template"},  {"text", "scanner"},
-    {"text", "tabwriter"},
-    // log
-    {"log", "slog"},
-    {"log", "syslog"},
-    // index
-    {"index", "suffixarray"},
-    // sync
-    {"sync", "atomic"},
-    // path
-    {"path", "filepath"},
-    // mime
-    {"mime", "quotedprintable"},
-    {"mime", "multipart"},
-    // os
-    {"os", "exec"},
-    {"os", "signal"},
-    {"os", "user"},
-    // io
-    {"io", "fs"},
-    // image
-    {"image", "draw"},
-    {"image", "png"},
-    {"image", "jpeg"},
-    {"image", "gif"},
-    // html
-    {"html", "template"},
-    // net (additional)
-    {"net", "textproto"},
+#define STD_SUBMODULE(cat, name) {#cat, #name},
+#include "neverc/Foundation/Std/StdSubModules.def"
 };
 
 bool StdModule::isTopLevelModuleName(llvm::StringRef Name) {
@@ -153,4 +74,12 @@ llvm::StringRef StdModule::extractModuleName(llvm::StringRef TypeName) {
   if (!TypeName.starts_with(Prefix) || !TypeName.ends_with(Suffix))
     return {};
   return TypeName.drop_front(Prefix.size()).drop_back(Suffix.size());
+}
+
+bool StdModule::isRootType(llvm::StringRef TypeName) {
+  return TypeName == RootTypeName;
+}
+
+std::string StdModule::getModuleVarName(llvm::StringRef ModuleName) {
+  return (llvm::Twine(ModVarPrefix) + ModuleName).str();
 }

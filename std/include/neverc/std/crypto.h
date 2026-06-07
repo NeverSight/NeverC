@@ -48,8 +48,8 @@ struct __neverc_std_crypto_t {
     struct __neverc_std_hkdf_t hkdf;
     struct __neverc_std_pbkdf2_t pbkdf2;
 };
-extern struct __neverc_std_crypto_t crypto;
 
+extern struct __neverc_std_crypto_t __neverc_mod_crypto;
 #endif /* __neverc__ */
 
 #endif /* NEVERC_CRYPTO_H */
