@@ -4,12 +4,13 @@
 # and converted to an embedded C header for linking into the compiler.
 #
 # Only headers are installed to the resource dir.  Sources (.c) are used
-# solely for building bitcode and running tests — they are not shipped.
+# solely for building bitcode — they are not shipped.
+# Runtime tests live in tests/neverc/std/ and are built as neverc-std-tests.
 
 include(GetNeverCResourceDir)
 get_neverc_resource_dir(std_hdr_install_dir SUBDIR include)
 
-# Install std headers alongside builtin headers so #include <neverc/math.h> works.
+# Install std headers alongside builtin headers so #include <neverc/std/math.h> works.
 install(DIRECTORY include/ DESTINATION ${std_hdr_install_dir} COMPONENT neverc-std)
 
 # During development builds, copy std headers to the build output's resource dir
