@@ -185,6 +185,7 @@ STD_TEST(draw, "src/image/draw/draw.c", "src/image/image/image.c", "src/image/co
 STD_TEST(png, "src/image/png/png.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/flate/flate.c", "src/hash/crc32/crc32.c")
 STD_TEST(jpeg, "src/image/jpeg/jpeg.c", "src/image/image/image.c", "src/image/color/color.c")
 STD_TEST(gif, "src/image/gif/gif.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/lzw/lzw.c")
+STD_TEST(palette, "src/image/color/palette/palette.c")
 
 // ===== OS =====
 STD_TEST(os, "src/os/os.c")
@@ -210,6 +211,30 @@ STD_TEST(elf, "src/debug/elf/elf.c")
 STD_TEST(pe, "src/debug/pe/pe.c")
 STD_TEST(macho, "src/debug/macho/macho.c")
 STD_TEST(dwarf, "src/debug/dwarf/dwarf.c")
+STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")
 
 // ===== Crypto (x509) =====
 STD_TEST(x509, "src/crypto/x509/x509.c")
+
+// ===== Dot-syntax =====
+STD_TEST(dot_syntax,
+    "src/math/abs.c", "src/math/acos.c", "src/math/acosh.c", "src/math/asin.c",
+    "src/math/asinh.c", "src/math/atan.c", "src/math/atan2.c", "src/math/atanh.c",
+    "src/math/cbrt.c", "src/math/ceil.c", "src/math/copysign.c", "src/math/cos.c",
+    "src/math/cosh.c", "src/math/dim.c", "src/math/erf.c", "src/math/erfc.c",
+    "src/math/erfcinv.c", "src/math/erfinv.c", "src/math/exp.c", "src/math/exp2.c",
+    "src/math/expm1.c", "src/math/float32bits.c", "src/math/float64bits.c",
+    "src/math/floor.c", "src/math/fma.c", "src/math/fmod.c", "src/math/frexp.c",
+    "src/math/gamma.c", "src/math/hypot.c", "src/math/ilogb.c", "src/math/inf.c",
+    "src/math/isinf.c", "src/math/isnan.c", "src/math/j0.c", "src/math/j1.c",
+    "src/math/jn.c", "src/math/ldexp.c", "src/math/lgamma.c", "src/math/log.c",
+    "src/math/log10.c", "src/math/log1p.c", "src/math/log2.c", "src/math/logb.c",
+    "src/math/max.c", "src/math/min.c", "src/math/modf.c", "src/math/nan.c",
+    "src/math/nextafter.c", "src/math/nextafter32.c", "src/math/pow.c",
+    "src/math/pow10.c", "src/math/remainder.c", "src/math/round.c",
+    "src/math/roundtoeven.c", "src/math/signbit.c", "src/math/sin.c",
+    "src/math/sincos.c", "src/math/sinh.c", "src/math/sqrt.c", "src/math/tan.c",
+    "src/math/tanh.c", "src/math/trunc.c",
+    "src/strconv/format_int.c", "src/strconv/parse_int.c", "src/strconv/format_bool.c",
+    "src/encoding/hex/encode.c", "src/encoding/hex/decode.c",
+    "src/hash/crc32/crc32.c")

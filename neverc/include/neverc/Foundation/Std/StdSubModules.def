@@ -44,6 +44,7 @@ STD_SUBMODULE(image, draw)
 STD_SUBMODULE(image, png)
 STD_SUBMODULE(image, jpeg)
 STD_SUBMODULE(image, gif)
+STD_SUBMODULE(image, palette)
 
 // hash
 STD_SUBMODULE(hash, crc32)
@@ -128,6 +129,7 @@ STD_SUBMODULE(debug, elf)
 STD_SUBMODULE(debug, pe)
 STD_SUBMODULE(debug, macho)
 STD_SUBMODULE(debug, dwarf)
+STD_SUBMODULE(debug, plan9obj)
 
 // crypto (x509 addition)
 STD_SUBMODULE(crypto, x509)

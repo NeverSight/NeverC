@@ -41,6 +41,15 @@ int  neverc_sort_search_strings(const char **arr, size_t n, const char *target);
 /* Reverse a sorted array in-place */
 void neverc_sort_reverse(void *base, size_t n, size_t elem_size);
 
+/* Type-specific sorted checks (Go: IntsAreSorted, Float64sAreSorted) */
+int  neverc_sort_ints_are_sorted(const int *arr, size_t n);
+int  neverc_sort_doubles_are_sorted(const double *arr, size_t n);
+
+/* Find: binary search returning (index, found).
+ * The cmp function compares the element at index i against the target.
+ * Returns the index where target would be inserted; sets *found to 1 if exact match. */
+size_t neverc_sort_find(size_t n, int (*cmp)(size_t i), int *found);
+
 #ifdef __cplusplus
 }
 #endif

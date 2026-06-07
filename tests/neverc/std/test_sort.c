@@ -166,6 +166,52 @@ static void test_reverse(void) {
     check_int("reverse single", one[0], 42);
 }
 
+static void test_ints_are_sorted(void) {
+    int sorted[] = {1, 2, 3, 4, 5};
+    check_int("ints_sorted_yes", neverc_sort_ints_are_sorted(sorted, 5), 1);
+
+    int unsorted[] = {3, 1, 2};
+    check_int("ints_sorted_no", neverc_sort_ints_are_sorted(unsorted, 3), 0);
+
+    int single[] = {42};
+    check_int("ints_sorted_single", neverc_sort_ints_are_sorted(single, 1), 1);
+    check_int("ints_sorted_empty", neverc_sort_ints_are_sorted(NULL, 0), 1);
+}
+
+static void test_doubles_are_sorted(void) {
+    double sorted[] = {1.1, 2.2, 3.3};
+    check_int("doubles_sorted_yes", neverc_sort_doubles_are_sorted(sorted, 3), 1);
+
+    double unsorted[] = {3.3, 1.1, 2.2};
+    check_int("doubles_sorted_no", neverc_sort_doubles_are_sorted(unsorted, 3), 0);
+}
+
+static int find_arr[5] = {10, 20, 30, 40, 50};
+
+static int find_cmp(size_t i) {
+    if (find_arr[i] < 30) return 1;
+    if (find_arr[i] > 30) return -1;
+    return 0;
+}
+
+static int find_cmp_missing(size_t i) {
+    if (find_arr[i] < 25) return 1;
+    if (find_arr[i] > 25) return -1;
+    return 0;
+}
+
+static void test_find(void) {
+    int found = 0;
+    size_t idx = neverc_sort_find(5, find_cmp, &found);
+    check_int("find_30_index", (int)idx, 2);
+    check_int("find_30_found", found, 1);
+
+    found = 0;
+    idx = neverc_sort_find(5, find_cmp_missing, &found);
+    check_int("find_25_not_found", found, 0);
+    check_int("find_25_insert_pos", (int)idx, 2);
+}
+
 int main(void) {
     printf("=== NeverC Sort Library Tests ===\n\n");
 
@@ -179,6 +225,9 @@ int main(void) {
     test_stable_sort();
     test_sort_strings();
     test_reverse();
+    test_ints_are_sorted();
+    test_doubles_are_sorted();
+    test_find();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0)

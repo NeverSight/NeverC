@@ -223,6 +223,41 @@ int neverc_sort_search_strings(const char **arr, size_t n, const char *target) {
     return -1;
 }
 
+/* --- Type-specific sorted checks --- */
+
+int neverc_sort_ints_are_sorted(const int *arr, size_t n) {
+    for (size_t i = 1; i < n; i++)
+        if (arr[i-1] > arr[i]) return 0;
+    return 1;
+}
+
+int neverc_sort_doubles_are_sorted(const double *arr, size_t n) {
+    for (size_t i = 1; i < n; i++)
+        if (arr[i-1] > arr[i]) return 0;
+    return 1;
+}
+
+/* --- Find (Go sort.Find) --- */
+
+size_t neverc_sort_find(size_t n, int (*cmp)(size_t i), int *found) {
+    size_t lo = 0, hi = n;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        int c = cmp(mid);
+        if (c > 0) {
+            lo = mid + 1;
+        } else if (c < 0) {
+            hi = mid;
+        } else {
+            if (found) *found = 1;
+            hi = mid;
+        }
+    }
+    if (found && lo < n && cmp(lo) == 0)
+        *found = 1;
+    return lo;
+}
+
 /* --- Reverse --- */
 
 void neverc_sort_reverse(void *base, size_t n, size_t elem_size) {

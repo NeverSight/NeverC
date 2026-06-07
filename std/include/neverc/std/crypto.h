@@ -1,6 +1,36 @@
 #ifndef NEVERC_CRYPTO_H
 #define NEVERC_CRYPTO_H
 
+#include "crypto/sha256.h"
+#include "crypto/sha1.h"
+#include "crypto/sha512.h"
+#include "crypto/sha384.h"
+#include "crypto/sha224.h"
+#include "crypto/sha3.h"
+#include "crypto/sha512_224.h"
+#include "crypto/sha512_256.h"
+#include "crypto/md5.h"
+#include "crypto/aes.h"
+#include "crypto/des.h"
+#include "crypto/rc4.h"
+#include "crypto/chacha20.h"
+#include "crypto/poly1305.h"
+#include "crypto/chacha20poly1305.h"
+#include "crypto/gcm.h"
+#include "crypto/cipher.h"
+#include "crypto/hmac.h"
+#include "crypto/subtle.h"
+#include "crypto/hkdf.h"
+#include "crypto/pbkdf2.h"
+#include "crypto/rand.h"
+#include "crypto/elliptic.h"
+#include "crypto/rsa.h"
+#include "crypto/ecdsa.h"
+#include "crypto/dsa.h"
+#include "crypto/ed25519.h"
+#include "crypto/ecdh.h"
+#include "crypto/x509.h"
+
 #ifdef __neverc__
 
 struct __neverc_std_sha256_t { char __tag; };

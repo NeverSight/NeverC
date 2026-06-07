@@ -1,6 +1,17 @@
 #ifndef NEVERC_ENCODING_H
 #define NEVERC_ENCODING_H
 
+#include "encoding/hex.h"
+#include "encoding/base64.h"
+#include "encoding/base32.h"
+#include "encoding/ascii85.h"
+#include "encoding/binary.h"
+#include "encoding/pem.h"
+#include "encoding/csv.h"
+#include "encoding/json.h"
+#include "encoding/xml.h"
+#include "encoding/asn1.h"
+
 #ifdef __neverc__
 
 struct __neverc_std_hex_t { char __tag; };

@@ -1,6 +1,12 @@
 #ifndef NEVERC_HASH_H
 #define NEVERC_HASH_H
 
+#include "hash/crc32.h"
+#include "hash/crc64.h"
+#include "hash/fnv.h"
+#include "hash/adler32.h"
+#include "hash/maphash.h"
+
 #ifdef __neverc__
 
 struct __neverc_std_crc32_t { char __tag; };

@@ -11,6 +11,7 @@
 #include "image/png.h"
 #include "image/jpeg.h"
 #include "image/gif.h"
+#include "image/color/palette.h"
 
 #ifdef __neverc__
 struct __neverc_std_color_t { char __tag; };
@@ -18,6 +19,7 @@ struct __neverc_std_draw_t { char __tag; };
 struct __neverc_std_png_t { char __tag; };
 struct __neverc_std_jpeg_t { char __tag; };
 struct __neverc_std_gif_t { char __tag; };
+struct __neverc_std_palette_t { char __tag; };
 
 struct __neverc_std_image_t {
     char __tag;
@@ -26,6 +28,7 @@ struct __neverc_std_image_t {
     struct __neverc_std_png_t png;
     struct __neverc_std_jpeg_t jpeg;
     struct __neverc_std_gif_t gif;
+    struct __neverc_std_palette_t palette;
 };
 extern struct __neverc_std_image_t __neverc_mod_image;
 extern struct __neverc_std_image_t image;
