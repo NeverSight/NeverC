@@ -25,4 +25,5 @@ STD_MODULE(context)
 STD_MODULE(slices)
 STD_MODULE(maps)
 STD_MODULE(image)
+STD_MODULE(cstring)
 #undef STD_MODULE

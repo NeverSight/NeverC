@@ -258,7 +258,6 @@ static node_t *parse_nodes(const char **src, int depth) {
         }
         if (tag->type == NODE_IF) {
             tag->children = parse_nodes(src, depth + 1);
-            const char *probe = *src;
             /* check if there was an else */
             const char *back = close + 2;
             (void)back;

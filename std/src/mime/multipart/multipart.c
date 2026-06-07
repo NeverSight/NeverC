@@ -83,7 +83,6 @@ int neverc_multipart_parse(const unsigned char *data, size_t data_len,
     if (!data || !boundary || !out) return -1;
     memset(out, 0, sizeof(*out));
 
-    size_t blen = strlen(boundary);
     char delim[256], end_delim[256];
     int dlen = snprintf(delim, sizeof(delim), "--%s", boundary);
     int edlen = snprintf(end_delim, sizeof(end_delim), "--%s--", boundary);

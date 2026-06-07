@@ -216,6 +216,9 @@ STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")
 // ===== Crypto (x509) =====
 STD_TEST(x509, "src/crypto/x509/x509.c")
 
+// ===== CString =====
+STD_TEST(cstring, "src/cstring/cstring.c")
+
 // ===== Dot-syntax =====
 STD_TEST(dot_syntax,
     "src/math/abs.c", "src/math/acos.c", "src/math/acosh.c", "src/math/asin.c",

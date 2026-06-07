@@ -156,7 +156,6 @@ static int parse_nodes(const char **p, const char *end,
         }
 
         *p = next;
-        const char *save = *p;
         const char *close = strstr(*p + 2, "}}");
         if (!close) { *p = end; return 0; }
 

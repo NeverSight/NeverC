@@ -238,7 +238,7 @@ static void test_32_arithmetic(void) {
 
     neverc_bits_mul32(0xFFFF, 0xFFFF, &hi, &lo);
     check_int("mul32 hi", (int)hi, 0);
-    check_int("mul32 lo", (int)lo, (int)(0xFFFF * 0xFFFF));
+    check_int("mul32 lo", (int)lo, (int)((uint32_t)0xFFFF * (uint32_t)0xFFFF));
 
     neverc_bits_mul32(0xFFFFFFFF, 2, &hi, &lo);
     check_int("mul32 big hi", (int)hi, 1);

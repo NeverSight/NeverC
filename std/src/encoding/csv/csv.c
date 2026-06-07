@@ -22,7 +22,7 @@ int neverc_csv_read_line(const char *line, size_t line_len,
                          const neverc_csv_reader_opts_t *opts) {
     char delim = (opts && opts->delimiter) ? opts->delimiter : ',';
     int trim = (opts && opts->trim_leading_space) ? 1 : 0;
-    int lazy = (opts && opts->lazy_quotes) ? 1 : 0;
+    (void)(opts && opts->lazy_quotes);
 
     int nfields = 0;
     size_t wpos = 0;

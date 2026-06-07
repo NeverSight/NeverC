@@ -597,7 +597,6 @@ char **neverc_regexp_split(neverc_regexp_t *re, const char *s,
         if (!found) break;
         if (found && end > pos) {
             /* Match at current position */
-            size_t seg_len = 0;
             char *seg = (char *)malloc(1);
             seg[0] = '\0';
             if (*count >= cap) { cap *= 2; results = (char **)realloc(results, cap * sizeof(char *)); }

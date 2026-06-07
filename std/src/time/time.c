@@ -2,6 +2,7 @@
 #include "neverc/std/_platform.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #ifdef __APPLE__
