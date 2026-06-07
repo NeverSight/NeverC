@@ -20,6 +20,7 @@
 #include "llvm/Support/thread.h"
 
 #include <atomic>
+#include <mutex>
 #include <thread>
 
 using namespace llvm;
@@ -86,6 +87,13 @@ struct ParallelCGContext {
   TargetOptions SharedTgtOpts;
 
   SmallVector<LinkageEntry, 64> SavedLinkage;
+
+  struct SavedNamedMD {
+    std::string Name;
+    SmallVector<MDNode *, 4> Operands;
+  };
+  SmallVector<SavedNamedMD, 4> SavedMD;
+
   SmallVector<SmallVector<std::string, 0>, 8> Assignments;
   DenseMap<StringRef, unsigned> FuncPartition;
   SmallString<0> FullBC;
@@ -97,8 +105,8 @@ struct ParallelCGContext {
   bool resolvePartitions(unsigned WeightDiv, unsigned MaxParts);
   void externalizeAndSerialize(Module &Mod);
   void preparePartitions(StringRef BCRef, TargetMachine &TM);
-  bool finalizeResults(raw_pwrite_stream &OS);
-  void restoreLinkage();
+  bool finalizeResults(Module &Mod, raw_pwrite_stream &OS);
+  void restoreLinkage(Module &Mod);
 };
 
 bool ParallelCGContext::init(Module &Mod, TargetMachine &TM) {
@@ -209,8 +217,14 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
   Mod.dropTriviallyDeadConstantArrays();
   for (StringRef MDName :
        {"llvm.ident", "llvm.linker.options", "llvm.dependent-libraries"})
-    if (auto *NMD = Mod.getNamedMetadata(MDName))
+    if (auto *NMD = Mod.getNamedMetadata(MDName)) {
+      SavedNamedMD S;
+      S.Name = MDName.str();
+      for (unsigned i = 0; i < NMD->getNumOperands(); ++i)
+        S.Operands.push_back(NMD->getOperand(i));
+      SavedMD.push_back(std::move(S));
       Mod.eraseNamedMetadata(NMD);
+    }
   for (Function &F : Mod) {
     if (F.isDeclaration())
       continue;
@@ -323,7 +337,7 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
     T.join();
 }
 
-bool ParallelCGContext::finalizeResults(raw_pwrite_stream &OS) {
+bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
   bool AllOK = true;
   for (unsigned i = 0; i < NumPartitions; ++i)
     if (!Results[i].Success) {
@@ -332,7 +346,7 @@ bool ParallelCGContext::finalizeResults(raw_pwrite_stream &OS) {
     }
 
   if (!AllOK) {
-    restoreLinkage();
+    restoreLinkage(Mod);
     return false;
   }
 
@@ -353,25 +367,19 @@ bool ParallelCGContext::finalizeResults(raw_pwrite_stream &OS) {
   for (unsigned i = 0; i < NumPartitions; ++i)
     Bufs.push_back(std::move(Results[i].ObjBuffer));
 
-  bool OK = mergePartitionObjects(TT, Bufs, OS);
-
-  // Push per-partition LLVMContext destruction onto a detached worker.
-  // Each context owns ~MB of type/metadata/constant state whose destructor
-  // would otherwise burn ~200ms of serial wall time on a Redis-sized link.
-  {
-    auto OwnedParts =
-        std::make_unique<std::vector<std::unique_ptr<PreparedPartition>>>(
-            std::move(Parts));
-    std::thread([P = std::move(OwnedParts)]() mutable { P.reset(); }).detach();
-  }
-  return OK;
+  return mergePartitionObjects(TT, Bufs, OS);
 }
 
-void ParallelCGContext::restoreLinkage() {
+void ParallelCGContext::restoreLinkage(Module &Mod) {
   for (auto &E : SavedLinkage) {
     E.GV->setName(E.OrigName);
     E.GV->setLinkage(E.Linkage);
     E.GV->setVisibility(E.Visibility);
+  }
+  for (auto &S : SavedMD) {
+    auto *NMD = Mod.getOrInsertNamedMetadata(S.Name);
+    for (auto *Op : S.Operands)
+      NMD->addOperand(Op);
   }
 }
 
@@ -380,6 +388,11 @@ void ParallelCGContext::restoreLinkage() {
 // ===----------------------------------------------------------------------===
 // Public API: parallel codegen (no per-partition optimization)
 // ===----------------------------------------------------------------------===
+
+// Legacy PM pass configuration (addPassesToEmitFile) touches LLVM global
+// state (pass registry, target-specific lazy init).  Serialize it so
+// only the actual PM.run() is concurrent.
+static std::mutex PassConfigMutex;
 
 bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
                         unsigned /*NumPartitions*/) {
@@ -395,7 +408,6 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
   StringRef BCRef(Ctx.FullBC.data(), Ctx.FullBC.size());
   Ctx.preparePartitions(BCRef, TM);
 
-  // Phase 2: codegen only (legacy PM).
   {
     unsigned ThreadCount =
         std::min(llvm::thread::hardware_concurrency(), Ctx.NumPartitions);
@@ -412,14 +424,17 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
         auto &PP = *Ctx.Parts[p];
         raw_svector_ostream ObjOS(*PP.ObjBuf);
         legacy::PassManager PM;
-        PM.add(createTargetTransformInfoWrapperPass(
-            PP.PTM->getTargetIRAnalysis()));
-        PM.add(new TargetLibraryInfoWrapperPass(*Ctx.SharedTLII));
-        if (!PP.PTM->addPassesToEmitFile(PM, ObjOS, nullptr,
-                                         CodeGenFileType::ObjectFile, true)) {
-          PM.run(*PP.M);
-          Ctx.Results[p].Success = true;
+        {
+          std::lock_guard<std::mutex> Lock(PassConfigMutex);
+          PM.add(createTargetTransformInfoWrapperPass(
+              PP.PTM->getTargetIRAnalysis()));
+          PM.add(new TargetLibraryInfoWrapperPass(*Ctx.SharedTLII));
+          if (PP.PTM->addPassesToEmitFile(PM, ObjOS, nullptr,
+                                          CodeGenFileType::ObjectFile, true))
+            continue;
         }
+        PM.run(*PP.M);
+        Ctx.Results[p].Success = true;
       }
     };
     for (unsigned i = 0; i < ThreadCount; ++i)
@@ -428,7 +443,7 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
       T.join();
   }
 
-  return Ctx.finalizeResults(OS);
+  return Ctx.finalizeResults(Mod, OS);
 }
 
 // ===----------------------------------------------------------------------===
@@ -515,14 +530,17 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
 
         raw_svector_ostream ObjOS(*PP.ObjBuf);
         legacy::PassManager PM;
-        PM.add(createTargetTransformInfoWrapperPass(
-            PP.PTM->getTargetIRAnalysis()));
-        PM.add(new TargetLibraryInfoWrapperPass(*Ctx.SharedTLII));
-        if (!PP.PTM->addPassesToEmitFile(PM, ObjOS, nullptr,
-                                         CodeGenFileType::ObjectFile, true)) {
-          PM.run(MPart);
-          Ctx.Results[p].Success = true;
+        {
+          std::lock_guard<std::mutex> Lock(PassConfigMutex);
+          PM.add(createTargetTransformInfoWrapperPass(
+              PP.PTM->getTargetIRAnalysis()));
+          PM.add(new TargetLibraryInfoWrapperPass(*Ctx.SharedTLII));
+          if (PP.PTM->addPassesToEmitFile(PM, ObjOS, nullptr,
+                                          CodeGenFileType::ObjectFile, true))
+            continue;
         }
+        PM.run(MPart);
+        Ctx.Results[p].Success = true;
       }
     };
     for (unsigned i = 0; i < ThreadCount; ++i)
@@ -531,7 +549,7 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
       T.join();
   }
 
-  return Ctx.finalizeResults(OS);
+  return Ctx.finalizeResults(Mod, OS);
 }
 
 } // namespace neverc
