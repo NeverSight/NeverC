@@ -86,8 +86,10 @@ TEST_F(BenchmarkTest, ParallelCodegenOptLevels) {
                   .exitCode,
               0);
 
-    ncc({serObj.string(), "-o", serBin.string()});
-    ncc({parObj.string(), "-o", parBin.string()});
+    ASSERT_EQ(ncc({serObj.string(), "-o", serBin.string()}).exitCode, 0)
+        << opt << " serial link";
+    ASSERT_EQ(ncc({parObj.string(), "-o", parBin.string()}).exitCode, 0)
+        << opt << " parallel link";
 
     auto serR = exec(serBin.string(), {});
     auto parR = exec(parBin.string(), {});

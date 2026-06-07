@@ -41,11 +41,4 @@ int neverc_utf8_valid_rune(uint32_t r);
 #endif
 
 
-/* ===== Std Module Dot-Syntax Support ===== */
-
-#ifdef __neverc__
-struct __neverc_std_utf8_t { char __tag; };
-extern struct __neverc_std_utf8_t utf8;
-#endif
-
 #endif /* NEVERC_UTF8_H */

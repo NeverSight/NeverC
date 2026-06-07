@@ -3,7 +3,7 @@
  * Originally from Cephes Math Library (Stephen L. Moshier).
  * All functions use neverc_math_* — zero libc math dependency.
  */
-#include "neverc/cmplx.h"
+#include "neverc/math/cmplx.h"
 
 #define RE(z) ((z).re)
 #define IM(z) ((z).im)

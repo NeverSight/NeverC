@@ -177,18 +177,18 @@
         "format_bool": "neverc_strconv_format_bool"
       }
     },
-    "rand": {
-      "header": "include/neverc/rand.h",
+    "math/rand": {
+      "header": "include/neverc/math/rand.h",
       "description": "Pseudo-random number generation using xoshiro256** (mirrors Go math/rand package)",
       "symbols": {
-        "neverc_rand_seed": "src/rand/rand.c",
-        "neverc_rand_uint32": "src/rand/rand.c",
-        "neverc_rand_uint64": "src/rand/rand.c",
-        "neverc_rand_int63": "src/rand/rand.c",
-        "neverc_rand_intn": "src/rand/rand.c",
-        "neverc_rand_float64": "src/rand/rand.c",
-        "neverc_rand_float32": "src/rand/rand.c",
-        "neverc_rand_shuffle": "src/rand/rand.c"
+        "neverc_rand_seed": "src/math/rand/rand.c",
+        "neverc_rand_uint32": "src/math/rand/rand.c",
+        "neverc_rand_uint64": "src/math/rand/rand.c",
+        "neverc_rand_int63": "src/math/rand/rand.c",
+        "neverc_rand_intn": "src/math/rand/rand.c",
+        "neverc_rand_float64": "src/math/rand/rand.c",
+        "neverc_rand_float32": "src/math/rand/rand.c",
+        "neverc_rand_shuffle": "src/math/rand/rand.c"
       },
       "dot_methods": {
         "seed": "neverc_rand_seed",
@@ -367,28 +367,28 @@
         "little_endian_put_uint64": "neverc_binary_little_endian_put_uint64"
       }
     },
-    "bits": {
-      "header": "include/neverc/bits.h",
+    "math/bits": {
+      "header": "include/neverc/math/bits.h",
       "description": "Bit counting and manipulation \u2014 popcount, CLZ, CTZ, rotate, reverse (mirrors Go math/bits package)",
       "symbols": {
-        "neverc_bits_leading_zeros32": "src/bits/bits.c",
-        "neverc_bits_leading_zeros64": "src/bits/bits.c",
-        "neverc_bits_trailing_zeros32": "src/bits/bits.c",
-        "neverc_bits_trailing_zeros64": "src/bits/bits.c",
-        "neverc_bits_ones_count32": "src/bits/bits.c",
-        "neverc_bits_ones_count64": "src/bits/bits.c",
-        "neverc_bits_len32": "src/bits/bits.c",
-        "neverc_bits_len64": "src/bits/bits.c",
-        "neverc_bits_rotate_left32": "src/bits/bits.c",
-        "neverc_bits_rotate_left64": "src/bits/bits.c",
-        "neverc_bits_reverse32": "src/bits/bits.c",
-        "neverc_bits_reverse64": "src/bits/bits.c",
-        "neverc_bits_reverse_bytes16": "src/bits/bits.c",
-        "neverc_bits_reverse_bytes32": "src/bits/bits.c",
-        "neverc_bits_reverse_bytes64": "src/bits/bits.c",
-        "neverc_bits_add64": "src/bits/bits.c",
-        "neverc_bits_sub64": "src/bits/bits.c",
-        "neverc_bits_mul64": "src/bits/bits.c"
+        "neverc_bits_leading_zeros32": "src/math/bits/bits.c",
+        "neverc_bits_leading_zeros64": "src/math/bits/bits.c",
+        "neverc_bits_trailing_zeros32": "src/math/bits/bits.c",
+        "neverc_bits_trailing_zeros64": "src/math/bits/bits.c",
+        "neverc_bits_ones_count32": "src/math/bits/bits.c",
+        "neverc_bits_ones_count64": "src/math/bits/bits.c",
+        "neverc_bits_len32": "src/math/bits/bits.c",
+        "neverc_bits_len64": "src/math/bits/bits.c",
+        "neverc_bits_rotate_left32": "src/math/bits/bits.c",
+        "neverc_bits_rotate_left64": "src/math/bits/bits.c",
+        "neverc_bits_reverse32": "src/math/bits/bits.c",
+        "neverc_bits_reverse64": "src/math/bits/bits.c",
+        "neverc_bits_reverse_bytes16": "src/math/bits/bits.c",
+        "neverc_bits_reverse_bytes32": "src/math/bits/bits.c",
+        "neverc_bits_reverse_bytes64": "src/math/bits/bits.c",
+        "neverc_bits_add64": "src/math/bits/bits.c",
+        "neverc_bits_sub64": "src/math/bits/bits.c",
+        "neverc_bits_mul64": "src/math/bits/bits.c"
       },
       "dot_methods": {
         "leading_zeros32": "neverc_bits_leading_zeros32",
@@ -411,17 +411,17 @@
         "mul64": "neverc_bits_mul64"
       }
     },
-    "utf8": {
-      "header": "include/neverc/utf8.h",
+    "unicode/utf8": {
+      "header": "include/neverc/unicode/utf8.h",
       "description": "UTF-8 encoding and decoding utilities (mirrors Go unicode/utf8 package)",
       "symbols": {
-        "neverc_utf8_rune_len": "src/utf8/utf8.c",
-        "neverc_utf8_encode_rune": "src/utf8/utf8.c",
-        "neverc_utf8_decode_rune": "src/utf8/utf8.c",
-        "neverc_utf8_rune_count": "src/utf8/utf8.c",
-        "neverc_utf8_valid": "src/utf8/utf8.c",
-        "neverc_utf8_rune_start": "src/utf8/utf8.c",
-        "neverc_utf8_valid_rune": "src/utf8/utf8.c"
+        "neverc_utf8_rune_len": "src/unicode/utf8/utf8.c",
+        "neverc_utf8_encode_rune": "src/unicode/utf8/utf8.c",
+        "neverc_utf8_decode_rune": "src/unicode/utf8/utf8.c",
+        "neverc_utf8_rune_count": "src/unicode/utf8/utf8.c",
+        "neverc_utf8_valid": "src/unicode/utf8/utf8.c",
+        "neverc_utf8_rune_start": "src/unicode/utf8/utf8.c",
+        "neverc_utf8_valid_rune": "src/unicode/utf8/utf8.c"
       },
       "dot_methods": {
         "rune_len": "neverc_utf8_rune_len",
@@ -551,14 +551,14 @@
         "constant_time_less_or_eq": "neverc_subtle_constant_time_less_or_eq"
       }
     },
-    "utf16": {
-      "header": "include/neverc/utf16.h",
+    "unicode/utf16": {
+      "header": "include/neverc/unicode/utf16.h",
       "description": "UTF-16 encoding and decoding with surrogate pair handling (mirrors Go unicode/utf16 package)",
       "symbols": {
-        "neverc_utf16_is_surrogate": "src/utf16/utf16.c",
-        "neverc_utf16_decode_rune": "src/utf16/utf16.c",
-        "neverc_utf16_encode_rune": "src/utf16/utf16.c",
-        "neverc_utf16_rune_len": "src/utf16/utf16.c"
+        "neverc_utf16_is_surrogate": "src/unicode/utf16/utf16.c",
+        "neverc_utf16_decode_rune": "src/unicode/utf16/utf16.c",
+        "neverc_utf16_encode_rune": "src/unicode/utf16/utf16.c",
+        "neverc_utf16_rune_len": "src/unicode/utf16/utf16.c"
       },
       "dot_methods": {
         "is_surrogate": "neverc_utf16_is_surrogate",
@@ -753,33 +753,33 @@
         "ctr": "neverc_cipher_ctr"
       }
     },
-    "cmplx": {
-      "header": "include/neverc/cmplx.h",
+    "math/cmplx": {
+      "header": "include/neverc/math/cmplx.h",
       "description": "Complex number math \u2014 exponential, logarithmic, trigonometric, and root functions (mirrors Go math/cmplx package)",
       "symbols": {
-        "neverc_cmplx_abs": "src/cmplx/cmplx.c",
-        "neverc_cmplx_phase": "src/cmplx/cmplx.c",
-        "neverc_cmplx_conj": "src/cmplx/cmplx.c",
-        "neverc_cmplx_polar": "src/cmplx/cmplx.c",
-        "neverc_cmplx_rect": "src/cmplx/cmplx.c",
-        "neverc_cmplx_exp": "src/cmplx/cmplx.c",
-        "neverc_cmplx_log": "src/cmplx/cmplx.c",
-        "neverc_cmplx_log10": "src/cmplx/cmplx.c",
-        "neverc_cmplx_sqrt": "src/cmplx/cmplx.c",
-        "neverc_cmplx_pow": "src/cmplx/cmplx.c",
-        "neverc_cmplx_sin": "src/cmplx/cmplx.c",
-        "neverc_cmplx_cos": "src/cmplx/cmplx.c",
-        "neverc_cmplx_tan": "src/cmplx/cmplx.c",
-        "neverc_cmplx_sinh": "src/cmplx/cmplx.c",
-        "neverc_cmplx_cosh": "src/cmplx/cmplx.c",
-        "neverc_cmplx_tanh": "src/cmplx/cmplx.c",
-        "neverc_cmplx_asin": "src/cmplx/cmplx.c",
-        "neverc_cmplx_acos": "src/cmplx/cmplx.c",
-        "neverc_cmplx_atan": "src/cmplx/cmplx.c",
-        "neverc_cmplx_isnan": "src/cmplx/cmplx.c",
-        "neverc_cmplx_isinf": "src/cmplx/cmplx.c",
-        "neverc_cmplx_nan_val": "src/cmplx/cmplx.c",
-        "neverc_cmplx_inf_val": "src/cmplx/cmplx.c"
+        "neverc_cmplx_abs": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_phase": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_conj": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_polar": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_rect": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_exp": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_log": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_log10": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_sqrt": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_pow": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_sin": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_cos": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_tan": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_sinh": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_cosh": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_tanh": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_asin": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_acos": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_atan": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_isnan": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_isinf": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_nan_val": "src/math/cmplx/cmplx.c",
+        "neverc_cmplx_inf_val": "src/math/cmplx/cmplx.c"
       },
       "dot_methods": {
         "abs": "neverc_cmplx_abs",

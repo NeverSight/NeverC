@@ -1,4 +1,4 @@
-#include "neverc/bits.h"
+#include "neverc/math/bits.h"
 
 /*
  * Bit manipulation functions — mirrors Go math/bits package.

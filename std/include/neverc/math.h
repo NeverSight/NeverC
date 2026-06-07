@@ -159,7 +159,16 @@ float    neverc_math_float32frombits(uint32_t bits);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-struct __neverc_std_math_t { char __tag; };
+struct __neverc_std_rand_t { char __tag; };
+struct __neverc_std_bits_t { char __tag; };
+struct __neverc_std_cmplx_t { char __tag; };
+
+struct __neverc_std_math_t {
+    char __tag;
+    struct __neverc_std_rand_t rand;
+    struct __neverc_std_bits_t bits;
+    struct __neverc_std_cmplx_t cmplx;
+};
 extern struct __neverc_std_math_t math;
 #endif
 

@@ -49,11 +49,4 @@ void neverc_bits_mul64(uint64_t x, uint64_t y,
 #endif
 
 
-/* ===== Std Module Dot-Syntax Support ===== */
-
-#ifdef __neverc__
-struct __neverc_std_bits_t { char __tag; };
-extern struct __neverc_std_bits_t bits;
-#endif
-
 #endif /* NEVERC_BITS_H */

@@ -1,4 +1,4 @@
-#include "neverc/rand.h"
+#include "neverc/math/rand.h"
 #include <stdio.h>
 
 static int tests_run = 0;

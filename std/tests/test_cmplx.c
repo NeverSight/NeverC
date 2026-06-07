@@ -2,7 +2,7 @@
  * NeverC Complex Math Library — Test Suite
  * Verifies mathematical identities, known values, and special case handling.
  */
-#include "neverc/cmplx.h"
+#include "neverc/math/cmplx.h"
 #include <stdio.h>
 #include <string.h>
 

@@ -1,4 +1,4 @@
-#include "neverc/rand.h"
+#include "neverc/math/rand.h"
 
 /*
  * xoshiro256** PRNG — fast, high quality, period 2^256-1.

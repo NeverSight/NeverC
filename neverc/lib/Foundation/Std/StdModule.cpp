@@ -4,12 +4,11 @@
 using namespace neverc;
 
 static constexpr llvm::StringLiteral TopLevelModules[] = {
-    "math",    "strconv", "path",    "rand",    "sort",
-    "bits",    "utf8",    "utf16",   "unicode", "cmplx",
+    "math",    "strconv", "path",    "sort",    "unicode",
 };
 
 static constexpr llvm::StringLiteral Categories[] = {
-    "crypto", "hash", "encoding",
+    "crypto", "hash", "encoding", "math", "unicode",
 };
 
 struct SubModuleEntry {
@@ -37,6 +36,11 @@ static constexpr SubModuleEntry SubModules[] = {
     {"encoding", "hex"},   {"encoding", "base64"},
     {"encoding", "base32"},{"encoding", "ascii85"},
     {"encoding", "binary"},{"encoding", "pem"},
+    // math
+    {"math", "rand"},      {"math", "bits"},
+    {"math", "cmplx"},
+    // unicode
+    {"unicode", "utf8"},   {"unicode", "utf16"},
 };
 
 bool StdModule::isTopLevelModuleName(llvm::StringRef Name) {
