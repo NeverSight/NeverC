@@ -765,7 +765,7 @@ ExprResult Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
 
       if (!LHS.isInvalid() && OpKind == tok::period && Tok.is(tok::l_paren) &&
           isNeverCStringMethodName(Name) &&
-          Actions.isNeverCStringType(LHS.get()->getType())) {
+          Actions.isNeverCStringOrLiteral(LHS.get())) {
         BalancedDelimiterTracker PT(*this, tok::l_paren);
         PT.consumeOpen();
         SourceLocation LParenLoc = PT.getOpenLocation();

@@ -70,6 +70,12 @@ bool Sema::isNeverCStringType(QualType T) const {
   return true;
 }
 
+bool Sema::isNeverCStringOrLiteral(Expr *E) const {
+  if (!E)
+    return false;
+  return isNeverCStringType(E->getType()) || getNeverCStringLiteral(E);
+}
+
 void Sema::ensureNeverCStringFnKinds() const {
   if (NeverCStringFnKindsReady)
     return;

@@ -2147,6 +2147,7 @@ public:
   ExprResult OnMemberAccessExpr(Scope *S, Expr *Base, SourceLocation OpLoc,
                                 tok::TokenKind OpKind, UnqualifiedId &Member);
   bool isNeverCStringType(QualType T) const;
+  bool isNeverCStringOrLiteral(Expr *E) const;
 
   mutable const RecordDecl *NeverCStringRDCache = nullptr;
 
