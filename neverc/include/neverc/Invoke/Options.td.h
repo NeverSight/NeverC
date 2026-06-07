@@ -483,6 +483,10 @@ OPTION(prefix_1, "-fbuiltin-mimalloc", fbuiltin_mimalloc, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
        "Enable mimalloc allocator override injection via IR bitcode embedding",
        nullptr, nullptr)
+OPTION(prefix_1, "-fbuiltin-std", fbuiltin_std, Flag, f_Group,
+       INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
+       "Enable std library bitcode embedding and link-time merging",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fbuiltin-string", fbuiltin_string, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis | DefaultVis, 0,
        "Enable NeverC builtin string runtime prelude (value-typed `string`, "
@@ -1236,6 +1240,10 @@ OPTION(prefix_1, "-fno-build-id", fno_build_id, Flag, f_Group, INVALID, nullptr,
 OPTION(prefix_1, "-fno-builtin-mimalloc", fno_builtin_mimalloc, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
        "Disable mimalloc allocator override injection",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fno-builtin-std", fno_builtin_std, Flag, f_Group,
+       INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
+       "Disable std library bitcode embedding and link-time merging",
        nullptr, nullptr)
 OPTION(prefix_1, "-fno-builtin-string", fno_builtin_string, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
@@ -5674,6 +5682,26 @@ LANG_OPTION_WITH_MARSHALLING(
     "Disable mimalloc allocator override injection",
     nullptr, nullptr, true, 1, LangOpts->BuiltinMimalloc, false, false, false,
     makeBooleanOptionNormalizer(false, true, OPT_fbuiltin_mimalloc),
+    makeBooleanOptionDenormalizer(false), mergeForwardValue,
+    extractForwardValue, -1)
+#endif // LANG_OPTION_WITH_MARSHALLING
+#ifdef LANG_OPTION_WITH_MARSHALLING
+LANG_OPTION_WITH_MARSHALLING(
+    prefix_1, "-fbuiltin-std", fbuiltin_std, Flag, f_Group,
+    INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
+    "Enable std library bitcode embedding and link-time merging",
+    nullptr, nullptr, true, 1, LangOpts->BuiltinStd, false, false, false,
+    makeBooleanOptionNormalizer(true, false, OPT_fno_builtin_std),
+    makeBooleanOptionDenormalizer(true), mergeForwardValue, extractForwardValue,
+    -1)
+#endif // LANG_OPTION_WITH_MARSHALLING
+#ifdef LANG_OPTION_WITH_MARSHALLING
+LANG_OPTION_WITH_MARSHALLING(
+    prefix_1, "-fno-builtin-std", fno_builtin_std, Flag, f_Group,
+    INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
+    "Disable std library bitcode embedding and link-time merging",
+    nullptr, nullptr, true, 1, LangOpts->BuiltinStd, false, false, false,
+    makeBooleanOptionNormalizer(false, true, OPT_fbuiltin_std),
     makeBooleanOptionDenormalizer(false), mergeForwardValue,
     extractForwardValue, -1)
 #endif // LANG_OPTION_WITH_MARSHALLING

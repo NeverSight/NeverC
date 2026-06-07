@@ -233,6 +233,36 @@ if(TARGET mimalloc-static)
   )
 endif()
 
+# ---------------------------------------------------------------------------
+# BuiltinStd precompiled bitcode (single merged blob)
+# ---------------------------------------------------------------------------
+set(BUILTIN_STD_SCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Std")
+set(BUILTIN_STD_SRC_DIR    "${NEVERC_SOURCE_DIR}/../std/src")
+set(BUILTIN_STD_INC_DIR    "${NEVERC_SOURCE_DIR}/../std/include")
+
+set(BUILTIN_STD_BITCODE_H
+    "${CMAKE_CURRENT_BINARY_DIR}/BuiltinStdBitcode.h")
+if(NOT EXISTS "${BUILTIN_STD_BITCODE_H}")
+  file(WRITE "${BUILTIN_STD_BITCODE_H}"
+    "/* Empty placeholder — run 'ninja neverc-bootstrap-std-bc' to populate. */\n"
+    "struct StdBitcodeEntry { const char *name; const unsigned char *data; unsigned int len; };\n"
+    "static const StdBitcodeEntry kStdBitcodeEntries[] = {{0, 0, 0}};\n"
+    "static const unsigned int kStdBitcodeEntryCount = 0;\n")
+endif()
+
+add_custom_target(neverc-bootstrap-std-bc
+  COMMAND ${Python3_EXECUTABLE}
+          "${BUILTIN_STD_SCRIPT_DIR}/build_std_bitcode.py"
+          "$<TARGET_FILE:neverc>"
+          "${BUILTIN_STD_SRC_DIR}"
+          "${BUILTIN_STD_INC_DIR}"
+          -o "${BUILTIN_STD_BITCODE_H}"
+  COMMAND ${CMAKE_COMMAND} -E touch
+          "${CMAKE_CURRENT_SOURCE_DIR}/Std/BuiltinStd.cpp"
+  DEPENDS neverc
+  COMMENT "[NeverC] Bootstrap: compiling std library to embedded bitcode"
+)
+
 add_neverc_library(nevercFoundation
   Core/Diagnostic.cpp
   Core/FileManager.cpp
@@ -241,6 +271,7 @@ add_neverc_library(nevercFoundation
   Builtin/BuiltinString.cpp
   Builtin/BuiltinMimalloc.cpp
   Std/StdModule.cpp
+  Std/BuiltinStd.cpp
 
   Target/TargetInfo.cpp
   Target/AArch64.cpp
@@ -252,6 +283,7 @@ add_neverc_library(nevercFoundation
   ${BUILTIN_STRING_THIN_DECLS}
   ${BUILTIN_STRING_BITCODE_H}
   ${BUILTIN_MIMALLOC_BITCODE_HDRS}
+  ${BUILTIN_STD_BITCODE_H}
 
   DEPENDS
   NeverCDriverOptions

@@ -2564,6 +2564,11 @@ void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
   if (!SuppressMimalloc)
     Args.addOptInFlag(CmdArgs, options::OPT_fbuiltin_mimalloc,
                       options::OPT_fno_builtin_mimalloc);
+
+  if (!Args.hasArg(options::OPT_fno_builtin) &&
+      !Args.hasArg(options::OPT_ffreestanding) &&
+      !Args.hasArg(options::OPT_fno_builtin_std))
+    CmdArgs.push_back("-fbuiltin-std");
 }
 
 /// Optionally embed the invocation command line into DWARF or a section.

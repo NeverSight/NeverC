@@ -2,6 +2,7 @@
 #include "Backend/BackendConsumer.h"
 #include "Backend/LinkInModulesPass.h"
 #include "Backend/MimallocRuntimeLinker.h"
+#include "Backend/StdRuntimeLinker.h"
 #include "Backend/StringRuntimeLinker.h"
 #include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
 #include "neverc/Transforms/XorStr/XorStrCleanupPass.h"
@@ -472,6 +473,13 @@ void GenAssemblyHelper::runOptimizationPipeline(
     PB.registerPipelineStartEPCallback(
         [](ModulePassManager &MPM, OptimizationLevel) {
           MPM.addPass(MimallocRuntimeLinkerPass());
+        });
+  }
+
+  if (LangOpts.BuiltinStd) {
+    PB.registerPipelineStartEPCallback(
+        [](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(StdRuntimeLinkerPass());
         });
   }
 
