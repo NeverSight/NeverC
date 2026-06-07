@@ -1,5 +1,5 @@
-#include "neverc/log/syslog.h"
-#include "neverc/_platform.h"
+#include "neverc/std/log/syslog.h"
+#include "neverc/std/_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>

@@ -1,7 +1,7 @@
 #ifndef NEVERC_CRYPTO_ECDSA_H
 #define NEVERC_CRYPTO_ECDSA_H
 
-#include "neverc/crypto/elliptic.h"
+#include "neverc/std/crypto/elliptic.h"
 #include <stddef.h>
 
 #ifdef __cplusplus

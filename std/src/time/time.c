@@ -1,5 +1,5 @@
-#include "neverc/time.h"
-#include "neverc/_platform.h"
+#include "neverc/std/time.h"
+#include "neverc/std/_platform.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>

@@ -1,5 +1,5 @@
-#include "neverc/crypto/rand.h"
-#include "neverc/_platform.h"
+#include "neverc/std/crypto/rand.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 int neverc_crypto_rand_read(uint8_t *buf, size_t len) {

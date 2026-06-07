@@ -1,4 +1,4 @@
-#include "neverc/encoding/base32.h"
+#include "neverc/std/encoding/base32.h"
 
 /*
  * Base32 encoding/decoding per RFC 4648.

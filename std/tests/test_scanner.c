@@ -1,4 +1,4 @@
-#include "neverc/text/scanner.h"
+#include "neverc/std/text/scanner.h"
 #include <stdio.h>
 #include <string.h>
 

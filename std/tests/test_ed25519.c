@@ -1,4 +1,4 @@
-#include "neverc/crypto/ed25519.h"
+#include "neverc/std/crypto/ed25519.h"
 #include <stdio.h>
 #include <string.h>
 

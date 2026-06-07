@@ -6,7 +6,7 @@
  *   - NIST CSRC SHA-3 test vectors
  *   - Go crypto/sha3 golden tests
  */
-#include "neverc/crypto/sha3.h"
+#include "neverc/std/crypto/sha3.h"
 #include <stdio.h>
 #include <string.h>
 

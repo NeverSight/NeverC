@@ -1,4 +1,4 @@
-#include "neverc/hash/crc32.h"
+#include "neverc/std/hash/crc32.h"
 
 static int ieee_table_initialized = 0;
 static neverc_crc32_table_t ieee_table;

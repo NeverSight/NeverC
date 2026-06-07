@@ -2,7 +2,7 @@
  * SHA-512 implementation per FIPS 180-4.
  * Pure C, no libc dependency beyond stdint/string.
  */
-#include "neverc/crypto/sha512.h"
+#include "neverc/std/crypto/sha512.h"
 #include <string.h>
 
 static const uint64_t K[80] = {

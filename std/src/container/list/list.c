@@ -5,7 +5,7 @@
  * Nodes are heap-allocated (malloc). Call neverc_list_free to release all.
  */
 
-#include "neverc/container/list.h"
+#include "neverc/std/container/list.h"
 #include <stdlib.h>
 #include <stddef.h>
 

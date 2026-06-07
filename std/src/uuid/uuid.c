@@ -1,5 +1,5 @@
-#include "neverc/uuid.h"
-#include "neverc/_platform.h"
+#include "neverc/std/uuid.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 static void fill_random(uint8_t *buf, size_t len) {

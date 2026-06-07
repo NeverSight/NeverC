@@ -1,5 +1,5 @@
-#include "neverc/sync/atomic.h"
-#include "neverc/_platform.h"
+#include "neverc/std/sync/atomic.h"
+#include "neverc/std/_platform.h"
 
 #if defined(_MSC_VER)
 #include <intrin.h>

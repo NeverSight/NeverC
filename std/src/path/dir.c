@@ -1,4 +1,4 @@
-#include "neverc/path.h"
+#include "neverc/std/path.h"
 #include <string.h>
 
 int neverc_path_dir(const char *path, char *buf, size_t bufsize) {

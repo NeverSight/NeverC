@@ -4,7 +4,7 @@
  * Open-addressing hash table with Robin Hood hashing.
  */
 
-#include "neverc/maps.h"
+#include "neverc/std/maps.h"
 #include <stdlib.h>
 #include <string.h>
 

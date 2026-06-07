@@ -2,8 +2,8 @@
  * PBKDF2 — Password-Based Key Derivation Function 2 (RFC 2898 / RFC 8018).
  * Uses HMAC-SHA256 as the PRF.
  */
-#include "neverc/crypto/pbkdf2.h"
-#include "neverc/crypto/hmac.h"
+#include "neverc/std/crypto/pbkdf2.h"
+#include "neverc/std/crypto/hmac.h"
 #include <string.h>
 
 int neverc_pbkdf2_sha256(uint8_t *dk, size_t dk_len,

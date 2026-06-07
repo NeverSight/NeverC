@@ -2,7 +2,7 @@
  * SHA-256 implementation per FIPS 180-4.
  * Pure C, no libc dependency beyond stdint/string.
  */
-#include "neverc/crypto/sha256.h"
+#include "neverc/std/crypto/sha256.h"
 #include <string.h>
 
 static const uint32_t K[64] = {

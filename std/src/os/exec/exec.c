@@ -6,8 +6,8 @@
  * Windows: CreateProcess() with redirected handles.
  */
 
-#include "neverc/os/exec.h"
-#include "neverc/_platform.h"
+#include "neverc/std/os/exec.h"
+#include "neverc/std/_platform.h"
 #include <stdlib.h>
 #include <string.h>
 

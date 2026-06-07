@@ -1,4 +1,4 @@
-#include "neverc/math.h"
+#include "neverc/std/math.h"
 #include "_math_internal.h"
 
 double neverc_math_atan2(double y, double x) {

@@ -1,7 +1,7 @@
 #ifndef NEVERC_CRYPTO_ELLIPTIC_H
 #define NEVERC_CRYPTO_ELLIPTIC_H
 
-#include "neverc/math/big.h"
+#include "neverc/std/math/big.h"
 #include <stddef.h>
 
 #ifdef __cplusplus

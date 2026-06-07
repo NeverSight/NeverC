@@ -1,7 +1,7 @@
 #ifndef NEVERC_IMAGE_DRAW_H
 #define NEVERC_IMAGE_DRAW_H
 
-#include "neverc/image/image.h"
+#include "neverc/std/image/image.h"
 
 #ifdef __cplusplus
 extern "C" {

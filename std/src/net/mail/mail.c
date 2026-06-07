@@ -1,4 +1,4 @@
-#include "neverc/net/mail.h"
+#include "neverc/std/net/mail.h"
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>

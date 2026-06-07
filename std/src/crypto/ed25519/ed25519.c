@@ -1,7 +1,7 @@
-#include "neverc/crypto/ed25519.h"
-#include "neverc/crypto/sha512.h"
-#include "neverc/math/big.h"
-#include "neverc/_platform.h"
+#include "neverc/std/crypto/ed25519.h"
+#include "neverc/std/crypto/sha512.h"
+#include "neverc/std/math/big.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 #include <stdlib.h>
 

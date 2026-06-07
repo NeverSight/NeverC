@@ -3,7 +3,7 @@
  * Pure C implementation using 64-bit arithmetic.
  * p = 2^130 - 5, represented as five 26-bit limbs.
  */
-#include "neverc/crypto/poly1305.h"
+#include "neverc/std/crypto/poly1305.h"
 #include <string.h>
 
 static uint32_t get_u32le(const uint8_t *p) {

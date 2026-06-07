@@ -1,5 +1,5 @@
-#include "neverc/crypto/ecdsa.h"
-#include "neverc/_platform.h"
+#include "neverc/std/crypto/ecdsa.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 #include <stdlib.h>
 

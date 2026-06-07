@@ -6,7 +6,7 @@
  * (Len / Less / Swap / Push / Pop) — same abstraction as Go's heap.Interface.
  */
 
-#include "neverc/container/heap.h"
+#include "neverc/std/container/heap.h"
 
 static void heap_up(neverc_heap_interface_t *h, int j) {
     for (;;) {

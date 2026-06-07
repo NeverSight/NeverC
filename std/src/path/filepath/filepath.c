@@ -3,7 +3,7 @@
  * Mirrors Go path/filepath. Uses compile-target separator.
  */
 
-#include "neverc/path/filepath.h"
+#include "neverc/std/path/filepath.h"
 #include <string.h>
 
 static int is_sep(char c) {

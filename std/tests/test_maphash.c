@@ -2,7 +2,7 @@
  * NeverC hash/maphash tests.
  * Tests wyhash-based non-cryptographic hash: determinism, distribution, streaming.
  */
-#include "neverc/hash/maphash.h"
+#include "neverc/std/hash/maphash.h"
 #include <stdio.h>
 #include <string.h>
 

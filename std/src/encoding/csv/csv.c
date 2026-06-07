@@ -3,7 +3,7 @@
  * Supports quoted fields, escaped quotes (""), configurable delimiters.
  */
 
-#include "neverc/encoding/csv.h"
+#include "neverc/std/encoding/csv.h"
 #include <string.h>
 
 static int needs_quoting(const char *s, char delim, int use_crlf) {

@@ -1,6 +1,6 @@
-#include "neverc/crypto/rsa.h"
-#include "neverc/crypto/sha256.h"
-#include "neverc/_platform.h"
+#include "neverc/std/crypto/rsa.h"
+#include "neverc/std/crypto/sha256.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 #include <stdlib.h>
 

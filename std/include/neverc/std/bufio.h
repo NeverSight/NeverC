@@ -9,7 +9,7 @@
  * Writer: buffered wrapper around neverc_io_writer_t.
  */
 
-#include "neverc/io.h"
+#include "neverc/std/io.h"
 #include <stddef.h>
 #include <stdint.h>
 

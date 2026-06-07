@@ -1,4 +1,4 @@
-#include "neverc/math.h"
+#include "neverc/std/math.h"
 #include "_math_internal.h"
 
 float neverc_math_nextafter32(float x, float y) {

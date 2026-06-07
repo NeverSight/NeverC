@@ -1,7 +1,7 @@
 #ifndef NEVERC_CMPLX_H
 #define NEVERC_CMPLX_H
 
-#include "neverc/math.h"
+#include "neverc/std/math.h"
 
 #ifdef __cplusplus
 extern "C" {

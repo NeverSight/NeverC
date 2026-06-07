@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "neverc/crypto/sha256.h"
+#include "neverc/std/crypto/sha256.h"
 
 #ifdef __cplusplus
 extern "C" {

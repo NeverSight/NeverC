@@ -2,7 +2,7 @@
  * ChaCha20 stream cipher — RFC 7539.
  * Pure C implementation.
  */
-#include "neverc/crypto/chacha20.h"
+#include "neverc/std/crypto/chacha20.h"
 #include <string.h>
 
 static uint32_t get_u32le(const uint8_t *p) {

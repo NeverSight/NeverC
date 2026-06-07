@@ -3,9 +3,9 @@
  * Wraps DEFLATE with gzip header (10 bytes) and trailer (CRC32 + ISIZE).
  */
 
-#include "neverc/compress/gzip.h"
-#include "neverc/compress/flate.h"
-#include "neverc/hash/crc32.h"
+#include "neverc/std/compress/gzip.h"
+#include "neverc/std/compress/flate.h"
+#include "neverc/std/hash/crc32.h"
 #include <string.h>
 
 int neverc_gzip_compress(const uint8_t *src, size_t src_len,

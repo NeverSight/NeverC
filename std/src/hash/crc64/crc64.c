@@ -1,4 +1,4 @@
-#include "neverc/hash/crc64.h"
+#include "neverc/std/hash/crc64.h"
 
 void neverc_crc64_make_table(uint64_t poly, neverc_crc64_table_t table) {
     for (int i = 0; i < 256; i++) {

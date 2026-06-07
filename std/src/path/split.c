@@ -1,4 +1,4 @@
-#include "neverc/path.h"
+#include "neverc/std/path.h"
 #include <string.h>
 
 int neverc_path_split(const char *path, char *dir, size_t dirsize,

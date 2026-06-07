@@ -1,5 +1,5 @@
-#include "neverc/image/png.h"
-#include "neverc/compress/flate.h"
+#include "neverc/std/image/png.h"
+#include "neverc/std/compress/flate.h"
 #include <stdlib.h>
 #include <string.h>
 

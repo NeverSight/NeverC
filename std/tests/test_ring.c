@@ -2,7 +2,7 @@
  * NeverC container/ring tests.
  * Tests circular list operations — mirrors Go container/ring test cases.
  */
-#include "neverc/container/ring.h"
+#include "neverc/std/container/ring.h"
 #include <stdio.h>
 #include <stdlib.h>
 

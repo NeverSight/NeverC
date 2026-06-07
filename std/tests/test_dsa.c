@@ -2,8 +2,8 @@
  * NeverC crypto/dsa tests.
  * Uses Go's official DSA test parameters (from crypto/dsa/dsa_test.go).
  */
-#include "neverc/crypto/dsa.h"
-#include "neverc/crypto/sha256.h"
+#include "neverc/std/crypto/dsa.h"
+#include "neverc/std/crypto/sha256.h"
 #include <stdio.h>
 #include <string.h>
 

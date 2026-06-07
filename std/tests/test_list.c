@@ -2,7 +2,7 @@
  * NeverC container/list tests.
  * Tests doubly linked list operations — mirrors Go container/list test cases.
  */
-#include "neverc/container/list.h"
+#include "neverc/std/container/list.h"
 #include <stdio.h>
 #include <stdlib.h>
 

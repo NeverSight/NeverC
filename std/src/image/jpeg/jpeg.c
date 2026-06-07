@@ -1,4 +1,4 @@
-#include "neverc/image/jpeg.h"
+#include "neverc/std/image/jpeg.h"
 #include <stdlib.h>
 #include <string.h>
 

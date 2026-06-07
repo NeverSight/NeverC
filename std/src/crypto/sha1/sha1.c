@@ -2,7 +2,7 @@
  * SHA-1 implementation per FIPS 180-4.
  * Pure C, no libc dependency beyond stdint/string.
  */
-#include "neverc/crypto/sha1.h"
+#include "neverc/std/crypto/sha1.h"
 #include <string.h>
 
 #define ROTL(x, n) (((x) << (n)) | ((x) >> (32 - (n))))

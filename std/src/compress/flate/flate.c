@@ -5,7 +5,7 @@
  * Decompression: supports stored, fixed Huffman, and dynamic Huffman blocks.
  */
 
-#include "neverc/compress/flate.h"
+#include "neverc/std/compress/flate.h"
 #include <string.h>
 #include <stdlib.h>
 

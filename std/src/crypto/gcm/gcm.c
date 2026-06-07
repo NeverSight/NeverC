@@ -2,7 +2,7 @@
  * AES-GCM authenticated encryption — NIST SP 800-38D.
  * Pure C implementation with GHASH (GF(2^128) multiplication).
  */
-#include "neverc/crypto/gcm.h"
+#include "neverc/std/crypto/gcm.h"
 #include <string.h>
 
 static void xor_block(uint8_t *dst, const uint8_t *a, const uint8_t *b, size_t len) {

@@ -2,7 +2,7 @@
  * MD5 implementation per RFC 1321.
  * Pure C, no libc dependency beyond stdint/string.
  */
-#include "neverc/crypto/md5.h"
+#include "neverc/std/crypto/md5.h"
 #include <string.h>
 
 #define F(x, y, z) (((x) & (y)) | (~(x) & (z)))

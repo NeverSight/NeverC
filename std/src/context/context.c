@@ -4,8 +4,8 @@
  * Thread-safe using atomics.
  */
 
-#include "neverc/context.h"
-#include "neverc/_platform.h"
+#include "neverc/std/context.h"
+#include "neverc/std/_platform.h"
 #include <stdlib.h>
 #include <string.h>
 

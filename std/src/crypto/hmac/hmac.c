@@ -1,9 +1,9 @@
-#include "neverc/crypto/hmac.h"
-#include "neverc/crypto/sha256.h"
-#include "neverc/crypto/sha512.h"
-#include "neverc/crypto/sha1.h"
-#include "neverc/crypto/md5.h"
-#include "neverc/crypto/subtle.h"
+#include "neverc/std/crypto/hmac.h"
+#include "neverc/std/crypto/sha256.h"
+#include "neverc/std/crypto/sha512.h"
+#include "neverc/std/crypto/sha1.h"
+#include "neverc/std/crypto/md5.h"
+#include "neverc/std/crypto/subtle.h"
 #include <string.h>
 
 /*

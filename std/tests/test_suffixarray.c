@@ -1,4 +1,4 @@
-#include "neverc/index/suffixarray.h"
+#include "neverc/std/index/suffixarray.h"
 #include <stdio.h>
 #include <string.h>
 

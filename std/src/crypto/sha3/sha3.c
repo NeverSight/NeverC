@@ -3,7 +3,7 @@
  * Pure C implementation of Keccak-f[1600] sponge construction.
  * Supports SHA3-224/256/384/512 and SHAKE128/256.
  */
-#include "neverc/crypto/sha3.h"
+#include "neverc/std/crypto/sha3.h"
 #include <string.h>
 
 static const uint64_t RC[24] = {

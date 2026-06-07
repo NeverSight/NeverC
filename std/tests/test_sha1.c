@@ -1,7 +1,7 @@
 /*
  * SHA-1 test suite — vectors from FIPS 180-4.
  */
-#include "neverc/crypto/sha1.h"
+#include "neverc/std/crypto/sha1.h"
 #include <stdio.h>
 #include <string.h>
 

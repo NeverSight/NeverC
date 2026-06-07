@@ -6,7 +6,7 @@
  * and very fast on modern hardware.
  */
 
-#include "neverc/hash/maphash.h"
+#include "neverc/std/hash/maphash.h"
 #include <string.h>
 
 /* ---- wyhash core ---- */

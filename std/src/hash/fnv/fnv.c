@@ -1,4 +1,4 @@
-#include "neverc/hash/fnv.h"
+#include "neverc/std/hash/fnv.h"
 
 /*
  * FNV-1 and FNV-1a hash functions.

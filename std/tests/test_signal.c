@@ -2,7 +2,7 @@
  * NeverC os/signal tests.
  * Tests signal handler registration and notification.
  */
-#include "neverc/os/signal.h"
+#include "neverc/std/os/signal.h"
 #include <stdio.h>
 #include <signal.h>
 #include <unistd.h>

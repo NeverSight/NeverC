@@ -1,7 +1,7 @@
 /*
  * SHA-224 tests — FIPS 180-4 official vectors + incremental + stress.
  */
-#include "neverc/crypto/sha224.h"
+#include "neverc/std/crypto/sha224.h"
 #include <stdio.h>
 #include <string.h>
 

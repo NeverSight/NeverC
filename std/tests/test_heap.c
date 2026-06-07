@@ -2,7 +2,7 @@
  * NeverC container/heap tests.
  * Tests min-heap property with Init / Push / Pop / Remove / Fix.
  */
-#include "neverc/container/heap.h"
+#include "neverc/std/container/heap.h"
 #include <stdio.h>
 #include <string.h>
 

@@ -3,7 +3,7 @@
  * Tests bzip2 decompression with known compressed data.
  * bzip2 is decompress-only (mirrors Go compress/bzip2).
  */
-#include "neverc/compress/bzip2.h"
+#include "neverc/std/compress/bzip2.h"
 #include <stdio.h>
 #include <string.h>
 

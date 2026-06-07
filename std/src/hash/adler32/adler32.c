@@ -1,4 +1,4 @@
-#include "neverc/hash/adler32.h"
+#include "neverc/std/hash/adler32.h"
 
 /*
  * Adler-32 checksum — mirrors Go hash/adler32 package.

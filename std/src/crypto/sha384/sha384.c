@@ -2,7 +2,7 @@
  * SHA-384 — FIPS 180-4.
  * Same compression as SHA-512, different IV, output truncated to 48 bytes.
  */
-#include "neverc/crypto/sha384.h"
+#include "neverc/std/crypto/sha384.h"
 #include <string.h>
 
 void neverc_sha384_init(neverc_sha384_ctx *ctx) {

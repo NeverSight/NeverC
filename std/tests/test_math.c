@@ -5,7 +5,7 @@
  * high precision calculators to 26 significant digits).
  * Zero libc math dependency in tests — uses only neverc_math_* functions.
  */
-#include "neverc/math.h"
+#include "neverc/std/math.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

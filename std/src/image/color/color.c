@@ -1,4 +1,4 @@
-#include "neverc/image/color.h"
+#include "neverc/std/image/color.h"
 #include <string.h>
 
 neverc_color_rgba_t neverc_color_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {

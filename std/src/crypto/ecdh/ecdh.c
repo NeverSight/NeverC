@@ -1,7 +1,7 @@
-#include "neverc/crypto/ecdh.h"
-#include "neverc/crypto/elliptic.h"
-#include "neverc/crypto/rand.h"
-#include "neverc/_platform.h"
+#include "neverc/std/crypto/ecdh.h"
+#include "neverc/std/crypto/elliptic.h"
+#include "neverc/std/crypto/rand.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 #include <stdio.h>
 

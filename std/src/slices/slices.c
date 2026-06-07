@@ -3,7 +3,7 @@
  * C adaptation of Go slices package.
  */
 
-#include "neverc/slices.h"
+#include "neverc/std/slices.h"
 #include <stdlib.h>
 #include <string.h>
 

@@ -1,4 +1,4 @@
-#include "neverc/unicode.h"
+#include "neverc/std/unicode.h"
 
 /*
  * Unicode character classification — mirrors subset of Go unicode package.

@@ -1,4 +1,4 @@
-#include "neverc/image/gif.h"
+#include "neverc/std/image/gif.h"
 #include <stdlib.h>
 #include <string.h>
 

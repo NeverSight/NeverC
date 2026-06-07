@@ -2,7 +2,7 @@
  * NeverC compress/lzw tests.
  * Tests LZW compression + decompression roundtrip.
  */
-#include "neverc/compress/lzw.h"
+#include "neverc/std/compress/lzw.h"
 #include <stdio.h>
 #include <string.h>
 

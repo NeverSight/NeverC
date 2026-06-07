@@ -1,5 +1,5 @@
-#include "neverc/archive/zip.h"
-#include "neverc/hash/crc32.h"
+#include "neverc/std/archive/zip.h"
+#include "neverc/std/hash/crc32.h"
 #include <stdlib.h>
 #include <string.h>
 

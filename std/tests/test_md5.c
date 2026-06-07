@@ -1,7 +1,7 @@
 /*
  * MD5 test suite — vectors from RFC 1321 and Go crypto/md5.
  */
-#include "neverc/crypto/md5.h"
+#include "neverc/std/crypto/md5.h"
 #include <stdio.h>
 #include <string.h>
 

@@ -3,7 +3,7 @@
  * RFC 8259 compliant. Self-implemented — no libc beyond malloc/free/memcpy/strlen.
  */
 
-#include "neverc/encoding/json.h"
+#include "neverc/std/encoding/json.h"
 #include <stdlib.h>
 #include <string.h>
 

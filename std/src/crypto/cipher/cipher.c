@@ -2,8 +2,8 @@
  * AES block cipher modes: CBC and CTR.
  * Uses neverc_aes for the underlying block cipher.
  */
-#include "neverc/crypto/cipher.h"
-#include "neverc/crypto/aes.h"
+#include "neverc/std/crypto/cipher.h"
+#include "neverc/std/crypto/aes.h"
 #include <string.h>
 
 static void xor_block(uint8_t *dst, const uint8_t *a, const uint8_t *b) {

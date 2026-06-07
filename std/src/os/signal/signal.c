@@ -6,8 +6,8 @@
  * Windows: SetConsoleCtrlHandler() for SIGINT/SIGTERM equivalent.
  */
 
-#include "neverc/os/signal.h"
-#include "neverc/_platform.h"
+#include "neverc/std/os/signal.h"
+#include "neverc/std/_platform.h"
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 

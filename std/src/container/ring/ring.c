@@ -6,7 +6,7 @@
  * Nodes are heap-allocated (malloc). Call neverc_ring_free to release all.
  */
 
-#include "neverc/container/ring.h"
+#include "neverc/std/container/ring.h"
 #include <stdlib.h>
 
 static neverc_ring_t *ring_init(neverc_ring_t *r) {

@@ -2,7 +2,7 @@
  * NeverC compress/flate tests.
  * Tests DEFLATE compression + decompression roundtrip.
  */
-#include "neverc/compress/flate.h"
+#include "neverc/std/compress/flate.h"
 #include <stdio.h>
 #include <string.h>
 

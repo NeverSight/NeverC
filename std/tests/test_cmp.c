@@ -2,7 +2,7 @@
  * NeverC cmp module tests.
  * Validates Compare/Less semantics with NaN handling (Go cmp semantics).
  */
-#include "neverc/cmp.h"
+#include "neverc/std/cmp.h"
 #include <stdio.h>
 #include <string.h>
 

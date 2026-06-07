@@ -2,7 +2,7 @@
  * NeverC os/exec tests.
  * Tests process execution, output capture, LookPath.
  */
-#include "neverc/os/exec.h"
+#include "neverc/std/os/exec.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

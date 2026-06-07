@@ -6,7 +6,7 @@
  * Reference: https://en.wikipedia.org/wiki/Bzip2#File_format
  */
 
-#include "neverc/compress/bzip2.h"
+#include "neverc/std/compress/bzip2.h"
 #include <stdlib.h>
 #include <string.h>
 

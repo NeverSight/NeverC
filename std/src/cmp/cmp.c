@@ -4,7 +4,7 @@
  * NaN is considered less than any non-NaN, and NaN == NaN.
  */
 
-#include "neverc/cmp.h"
+#include "neverc/std/cmp.h"
 
 static int isnan_f32(float x)  { return x != x; }
 static int isnan_f64(double x) { return x != x; }

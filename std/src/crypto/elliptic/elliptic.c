@@ -1,4 +1,4 @@
-#include "neverc/crypto/elliptic.h"
+#include "neverc/std/crypto/elliptic.h"
 #include <string.h>
 
 static neverc_elliptic_curve_t g_p256;

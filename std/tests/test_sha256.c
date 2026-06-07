@@ -1,7 +1,7 @@
 /*
  * SHA-256 test suite — vectors from FIPS 180-4 and Go crypto/sha256.
  */
-#include "neverc/crypto/sha256.h"
+#include "neverc/std/crypto/sha256.h"
 #include <stdio.h>
 #include <string.h>
 

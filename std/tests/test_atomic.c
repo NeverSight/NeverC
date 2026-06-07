@@ -1,4 +1,4 @@
-#include "neverc/sync/atomic.h"
+#include "neverc/std/sync/atomic.h"
 #include <stdio.h>
 #include <pthread.h>
 

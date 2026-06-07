@@ -1,7 +1,7 @@
 /*
  * NeverC compress/zlib tests.
  */
-#include "neverc/compress/zlib.h"
+#include "neverc/std/compress/zlib.h"
 #include <stdio.h>
 #include <string.h>
 

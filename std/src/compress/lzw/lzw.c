@@ -4,7 +4,7 @@
  * Variable-width codes up to 12 bits, with clear and EOF codes.
  */
 
-#include "neverc/compress/lzw.h"
+#include "neverc/std/compress/lzw.h"
 #include <string.h>
 
 #define MAX_WIDTH       12

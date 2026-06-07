@@ -2,9 +2,9 @@
  * ChaCha20-Poly1305 AEAD — RFC 8439 (formerly RFC 7539).
  * Combines ChaCha20 stream cipher with Poly1305 MAC.
  */
-#include "neverc/crypto/chacha20poly1305.h"
-#include "neverc/crypto/chacha20.h"
-#include "neverc/crypto/poly1305.h"
+#include "neverc/std/crypto/chacha20poly1305.h"
+#include "neverc/std/crypto/chacha20.h"
+#include "neverc/std/crypto/poly1305.h"
 #include <string.h>
 
 static void put_le64(uint8_t *p, uint64_t v) {

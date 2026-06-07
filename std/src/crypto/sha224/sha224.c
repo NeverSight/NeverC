@@ -2,7 +2,7 @@
  * SHA-224 — FIPS 180-4.
  * Same compression as SHA-256, different IV, output truncated to 28 bytes.
  */
-#include "neverc/crypto/sha224.h"
+#include "neverc/std/crypto/sha224.h"
 #include <string.h>
 
 void neverc_sha224_init(neverc_sha224_ctx *ctx) {

@@ -2,7 +2,7 @@
  * NeverC encoding/json tests.
  * Tests parse, marshal, query, constructors, edge cases.
  */
-#include "neverc/encoding/json.h"
+#include "neverc/std/encoding/json.h"
 #include <stdio.h>
 #include <string.h>
 

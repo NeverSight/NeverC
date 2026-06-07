@@ -1,7 +1,7 @@
 /*
  * NeverC compress/gzip tests.
  */
-#include "neverc/compress/gzip.h"
+#include "neverc/std/compress/gzip.h"
 #include <stdio.h>
 #include <string.h>
 

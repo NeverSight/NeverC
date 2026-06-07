@@ -1392,18 +1392,8 @@ void DarwinNeverC::AddNeverCSystemIncludeArgs(
     addSystemInclude(DriverArgs, FrontendArgs, P);
   }
 
-  // Add the NeverC std library headers (<install>/../std/include)
-  if (!NoStdInc && !NoStdlibInc) {
-    llvm::SmallString<128> StdInc(D.getInstalledDir());
-    llvm::sys::path::append(StdInc, "..", "std", "include");
-    if (llvm::sys::fs::is_directory(StdInc))
-      addSystemInclude(DriverArgs, FrontendArgs, StdInc);
-    // Also try <install>/../../std/include (local dev build layout)
-    llvm::SmallString<128> StdIncDev(D.getInstalledDir());
-    llvm::sys::path::append(StdIncDev, "..", "..", "std", "include");
-    if (llvm::sys::fs::is_directory(StdIncDev))
-      addSystemInclude(DriverArgs, FrontendArgs, StdIncDev);
-  }
+  // NeverC std library headers are installed alongside builtin headers
+  // at <resource>/include/neverc/*.h, so no extra search path needed.
 
   if (NoStdInc || NoStdlibInc)
     return;

@@ -1,7 +1,7 @@
 /*
  * AES-GCM test suite — NIST SP 800-38D test vectors.
  */
-#include "neverc/crypto/gcm.h"
+#include "neverc/std/crypto/gcm.h"
 #include <stdio.h>
 #include <string.h>
 

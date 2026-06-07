@@ -2,8 +2,8 @@
  * HKDF — HMAC-based Key Derivation Function (RFC 5869).
  * Uses HMAC-SHA256 as the underlying PRF.
  */
-#include "neverc/crypto/hkdf.h"
-#include "neverc/crypto/hmac.h"
+#include "neverc/std/crypto/hkdf.h"
+#include "neverc/std/crypto/hmac.h"
 #include <string.h>
 
 int neverc_hkdf_extract_sha256(uint8_t prk[32],

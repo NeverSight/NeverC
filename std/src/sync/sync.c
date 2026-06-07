@@ -1,5 +1,5 @@
-#include "neverc/sync.h"
-#include "neverc/_platform.h"
+#include "neverc/std/sync.h"
+#include "neverc/std/_platform.h"
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 

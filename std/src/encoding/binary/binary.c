@@ -1,4 +1,4 @@
-#include "neverc/encoding/binary.h"
+#include "neverc/std/encoding/binary.h"
 
 /*
  * Binary encoding — mirrors Go encoding/binary BigEndian/LittleEndian.

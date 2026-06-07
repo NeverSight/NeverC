@@ -1,4 +1,4 @@
-#include "neverc/math.h"
+#include "neverc/std/math.h"
 #include "_math_internal.h"
 
 void neverc_math_sincos(double x, double *sin_val, double *cos_val) {

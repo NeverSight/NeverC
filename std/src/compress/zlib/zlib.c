@@ -3,9 +3,9 @@
  * Wraps DEFLATE with zlib header (2 bytes) and Adler-32 checksum (4 bytes).
  */
 
-#include "neverc/compress/zlib.h"
-#include "neverc/compress/flate.h"
-#include "neverc/hash/adler32.h"
+#include "neverc/std/compress/zlib.h"
+#include "neverc/std/compress/flate.h"
+#include "neverc/std/hash/adler32.h"
 #include <string.h>
 
 int neverc_zlib_compress(const uint8_t *src, size_t src_len,

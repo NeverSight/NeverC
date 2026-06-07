@@ -1,5 +1,5 @@
-#include "neverc/os.h"
-#include "neverc/_platform.h"
+#include "neverc/std/os.h"
+#include "neverc/std/_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>

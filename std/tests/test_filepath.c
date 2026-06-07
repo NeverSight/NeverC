@@ -1,7 +1,7 @@
 /*
  * NeverC path/filepath tests.
  */
-#include "neverc/path/filepath.h"
+#include "neverc/std/path/filepath.h"
 #include <stdio.h>
 #include <string.h>
 
