@@ -27,7 +27,7 @@ void neverc_sha384_sum(const uint8_t *data, size_t len, uint8_t digest[48]);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_SHA384_H */

@@ -31,7 +31,7 @@ void     neverc_binary_little_endian_put_uint64(uint8_t *b, uint64_t v);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/encoding.h>
+#include <neverc/std/encoding.h>
 #endif
 
 #endif /* NEVERC_BINARY_H */

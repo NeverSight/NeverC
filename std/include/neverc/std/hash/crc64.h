@@ -33,7 +33,7 @@ uint64_t neverc_crc64_checksum(const neverc_crc64_table_t table,
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/hash.h>
+#include <neverc/std/hash.h>
 #endif
 
 #endif /* NEVERC_CRC64_H */

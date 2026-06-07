@@ -23,7 +23,7 @@ int neverc_subtle_constant_time_less_or_eq(int x, int y);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_SUBTLE_H */

@@ -27,7 +27,7 @@ int    neverc_base32_hex_decode(uint8_t *dst, const char *src, size_t src_len);
 #endif
 
 #ifdef __neverc__
-#include <neverc/encoding.h>
+#include <neverc/std/encoding.h>
 #endif
 
 #endif /* NEVERC_BASE32_H */

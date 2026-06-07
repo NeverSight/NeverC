@@ -46,7 +46,7 @@ int neverc_chacha20poly1305_open(
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_CHACHA20POLY1305_H */

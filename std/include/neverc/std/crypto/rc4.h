@@ -28,7 +28,7 @@ void neverc_rc4_reset(neverc_rc4_cipher_t *c);
 #endif
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_RC4_H */

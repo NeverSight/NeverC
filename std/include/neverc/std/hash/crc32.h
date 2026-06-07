@@ -34,7 +34,7 @@ uint32_t neverc_crc32_ieee(const void *data, size_t len);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/hash.h>
+#include <neverc/std/hash.h>
 #endif
 
 #endif /* NEVERC_CRC32_H */

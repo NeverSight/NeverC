@@ -21,7 +21,7 @@ int neverc_pbkdf2_sha256(uint8_t *dk, size_t dk_len,
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_PBKDF2_H */

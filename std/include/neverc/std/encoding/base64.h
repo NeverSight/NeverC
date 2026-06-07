@@ -30,7 +30,7 @@ int    neverc_base64_url_decode(uint8_t *dst, const char *src, size_t src_len);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/encoding.h>
+#include <neverc/std/encoding.h>
 #endif
 
 #endif /* NEVERC_BASE64_H */

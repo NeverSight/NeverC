@@ -51,7 +51,7 @@ int neverc_gcm_open(const neverc_gcm_ctx *ctx,
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_GCM_H */

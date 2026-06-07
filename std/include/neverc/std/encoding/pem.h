@@ -36,7 +36,7 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/encoding.h>
+#include <neverc/std/encoding.h>
 #endif
 
 #endif /* NEVERC_PEM_H */

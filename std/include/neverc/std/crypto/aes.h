@@ -30,7 +30,7 @@ void neverc_aes_decrypt_block(const neverc_aes_ctx_t *ctx, uint8_t dst[16], cons
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_AES_H */

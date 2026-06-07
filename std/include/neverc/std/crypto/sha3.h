@@ -64,7 +64,7 @@ void neverc_shake256_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_SHA3_H */

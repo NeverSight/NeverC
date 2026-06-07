@@ -32,7 +32,7 @@ void neverc_md5_sum(const uint8_t *data, size_t len, uint8_t digest[16]);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_MD5_H */

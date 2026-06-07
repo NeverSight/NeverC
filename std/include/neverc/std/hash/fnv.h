@@ -29,7 +29,7 @@ uint64_t neverc_fnv_64a(const void *data, size_t len);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/hash.h>
+#include <neverc/std/hash.h>
 #endif
 
 #endif /* NEVERC_FNV_H */

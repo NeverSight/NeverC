@@ -25,7 +25,7 @@ uint32_t neverc_adler32_checksum(const uint8_t *data, size_t len);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/hash.h>
+#include <neverc/std/hash.h>
 #endif
 
 #endif /* NEVERC_ADLER32_H */

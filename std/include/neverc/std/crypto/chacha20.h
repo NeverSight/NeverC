@@ -34,7 +34,7 @@ void neverc_chacha20_block(const uint32_t state[16], uint8_t out[64]);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_CHACHA20_H */

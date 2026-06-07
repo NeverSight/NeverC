@@ -43,7 +43,7 @@ void neverc_cipher_ctr(
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_CIPHER_H */

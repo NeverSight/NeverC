@@ -24,7 +24,7 @@ int  neverc_poly1305_verify(const uint8_t tag[16], const uint8_t *msg, size_t ms
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_POLY1305_H */

@@ -32,7 +32,7 @@ int    neverc_hex_decode(uint8_t *dst, const char *src, size_t src_len);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/encoding.h>
+#include <neverc/std/encoding.h>
 #endif
 
 #endif /* NEVERC_HEX_H */

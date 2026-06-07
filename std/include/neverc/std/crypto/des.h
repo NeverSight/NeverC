@@ -42,7 +42,7 @@ void neverc_3des_decrypt_block(const neverc_3des_cipher_t *c,
 #endif
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_DES_H */

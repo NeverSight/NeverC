@@ -46,7 +46,7 @@ int neverc_hmac_equal(const uint8_t *mac1, const uint8_t *mac2, size_t len);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_HMAC_H */

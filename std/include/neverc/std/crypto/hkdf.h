@@ -29,7 +29,7 @@ int neverc_hkdf_expand_sha256(uint8_t *okm, size_t okm_len,
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/crypto.h>
+#include <neverc/std/crypto.h>
 #endif
 
 #endif /* NEVERC_HKDF_H */

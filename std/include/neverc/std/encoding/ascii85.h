@@ -27,7 +27,7 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-#include <neverc/encoding.h>
+#include <neverc/std/encoding.h>
 #endif
 
 #endif /* NEVERC_ASCII85_H */
