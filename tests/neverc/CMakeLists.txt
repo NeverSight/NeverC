@@ -78,3 +78,34 @@ gtest_discover_tests(neverc-merge-tests
     TIMEOUT 120
   DISCOVERY_TIMEOUT 30
 )
+
+# Standard library runtime tests — compile std/tests/*.c with neverc, run, verify
+add_executable(neverc-std-tests
+  NeverCTestFixture.cpp
+  StdLibTests.cpp
+)
+
+target_link_libraries(neverc-std-tests PRIVATE GTest::gtest GTest::gtest_main)
+
+target_compile_features(neverc-std-tests PRIVATE cxx_std_17)
+
+target_compile_definitions(neverc-std-tests PRIVATE
+  NEVERC_BINARY="$<TARGET_FILE:neverc>"
+  TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+  TEST_C_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../C"
+  NEVERC_PLUGINSDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk"
+  NEVERC_NEVERC_INCLUDE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include"
+)
+
+if(TARGET neverc)
+  add_dependencies(neverc-std-tests neverc)
+endif()
+if(TARGET neverc-std-headers)
+  add_dependencies(neverc-std-tests neverc-std-headers)
+endif()
+
+gtest_discover_tests(neverc-std-tests
+  PROPERTIES
+    TIMEOUT 600
+  DISCOVERY_TIMEOUT 30
+)
