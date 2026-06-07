@@ -58,6 +58,7 @@ neverc_regexp_t *neverc_regexp_must_compile(const char *pattern);
 #ifdef __neverc__
 struct __neverc_std_regexp_t { char __tag; };
 extern struct __neverc_std_regexp_t __neverc_mod_regexp;
+extern struct __neverc_std_regexp_t regexp;
 #endif
 
 #endif /* NEVERC_REGEXP_H */

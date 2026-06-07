@@ -42,4 +42,10 @@ int           neverc_map_equal(const neverc_map_t *a, const neverc_map_t *b);
 }
 #endif
 
+#ifdef __neverc__
+struct __neverc_std_maps_t { char __tag; };
+extern struct __neverc_std_maps_t __neverc_mod_maps;
+extern struct __neverc_std_maps_t maps;
+#endif
+
 #endif

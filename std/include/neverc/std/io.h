@@ -139,8 +139,14 @@ void neverc_io_nop_closer_init(neverc_io_nop_closer_t *nc,
 #endif
 
 #ifdef __neverc__
-struct __neverc_std_io_t { char __tag; };
+struct __neverc_std_fs_t { char __tag; };
+
+struct __neverc_std_io_t {
+    char __tag;
+    struct __neverc_std_fs_t fs;
+};
 extern struct __neverc_std_io_t __neverc_mod_io;
+extern struct __neverc_std_io_t io;
 #endif
 
 #endif /* NEVERC_IO_H */

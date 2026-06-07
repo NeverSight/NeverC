@@ -16,6 +16,7 @@ struct __neverc_std_debug_t {
 };
 
 extern struct __neverc_std_debug_t __neverc_mod_debug;
+extern struct __neverc_std_debug_t debug;
 #endif /* __neverc__ */
 
 #endif /* NEVERC_DEBUG_H */

@@ -52,4 +52,10 @@ void neverc_context_free(neverc_context_t *ctx);
 }
 #endif
 
+#ifdef __neverc__
+struct __neverc_std_context_t { char __tag; };
+extern struct __neverc_std_context_t __neverc_mod_context;
+extern struct __neverc_std_context_t context;
+#endif
+
 #endif

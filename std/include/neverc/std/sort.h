@@ -51,6 +51,7 @@ void neverc_sort_reverse(void *base, size_t n, size_t elem_size);
 #ifdef __neverc__
 struct __neverc_std_sort_t { char __tag; };
 extern struct __neverc_std_sort_t __neverc_mod_sort;
+extern struct __neverc_std_sort_t sort;
 #endif
 
 #endif /* NEVERC_SORT_H */

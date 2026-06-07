@@ -43,4 +43,10 @@ void neverc_slices_sort_ints(int *slice, size_t len);
 }
 #endif
 
+#ifdef __neverc__
+struct __neverc_std_slices_t { char __tag; };
+extern struct __neverc_std_slices_t __neverc_mod_slices;
+extern struct __neverc_std_slices_t slices;
+#endif
+
 #endif

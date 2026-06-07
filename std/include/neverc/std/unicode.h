@@ -42,6 +42,7 @@ struct __neverc_std_unicode_t {
     struct __neverc_std_utf16_t utf16;
 };
 extern struct __neverc_std_unicode_t __neverc_mod_unicode;
+extern struct __neverc_std_unicode_t unicode;
 #endif
 
 #endif /* NEVERC_UNICODE_H */

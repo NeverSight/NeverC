@@ -98,6 +98,7 @@ char *neverc_time_format_duration(neverc_duration_t d);
 #ifdef __neverc__
 struct __neverc_std_time_t { char __tag; };
 extern struct __neverc_std_time_t __neverc_mod_time_mod;
+extern struct __neverc_std_time_t time_mod;
 #endif
 
 #endif /* NEVERC_TIME_H */

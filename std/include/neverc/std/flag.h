@@ -38,6 +38,7 @@ void  neverc_flag_reset(void);
 #ifdef __neverc__
 struct __neverc_std_flag_t { char __tag; };
 extern struct __neverc_std_flag_t __neverc_mod_flag;
+extern struct __neverc_std_flag_t flag;
 #endif
 
 #endif /* NEVERC_FLAG_H */

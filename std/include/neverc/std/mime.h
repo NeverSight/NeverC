@@ -30,4 +30,17 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
 }
 #endif
 
+#ifdef __neverc__
+struct __neverc_std_quotedprintable_t { char __tag; };
+struct __neverc_std_multipart_t { char __tag; };
+
+struct __neverc_std_mime_t {
+    char __tag;
+    struct __neverc_std_quotedprintable_t quotedprintable;
+    struct __neverc_std_multipart_t multipart;
+};
+extern struct __neverc_std_mime_t __neverc_mod_mime;
+extern struct __neverc_std_mime_t mime;
+#endif
+
 #endif

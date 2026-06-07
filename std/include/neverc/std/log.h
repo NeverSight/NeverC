@@ -54,8 +54,16 @@ void neverc_log_default_fatal(const char *msg);
 #endif
 
 #ifdef __neverc__
-struct __neverc_std_log_t { char __tag; };
+struct __neverc_std_slog_t { char __tag; };
+struct __neverc_std_syslog_t { char __tag; };
+
+struct __neverc_std_log_t {
+    char __tag;
+    struct __neverc_std_slog_t slog;
+    struct __neverc_std_syslog_t syslog;
+};
 extern struct __neverc_std_log_t __neverc_mod_log;
+extern struct __neverc_std_log_t log_mod;
 #endif
 
 #endif /* NEVERC_LOG_H */

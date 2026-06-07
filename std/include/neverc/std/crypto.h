@@ -66,6 +66,7 @@ struct __neverc_std_crypto_t {
 };
 
 extern struct __neverc_std_crypto_t __neverc_mod_crypto;
+extern struct __neverc_std_crypto_t crypto;
 #endif /* __neverc__ */
 
 #endif /* NEVERC_CRYPTO_H */

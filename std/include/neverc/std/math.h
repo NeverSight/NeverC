@@ -162,14 +162,17 @@ float    neverc_math_float32frombits(uint32_t bits);
 struct __neverc_std_rand_t { char __tag; };
 struct __neverc_std_bits_t { char __tag; };
 struct __neverc_std_cmplx_t { char __tag; };
+struct __neverc_std_big_t { char __tag; };
 
 struct __neverc_std_math_t {
     char __tag;
     struct __neverc_std_rand_t rand;
     struct __neverc_std_bits_t bits;
     struct __neverc_std_cmplx_t cmplx;
+    struct __neverc_std_big_t big;
 };
 extern struct __neverc_std_math_t __neverc_mod_math;
+extern struct __neverc_std_math_t math;
 #endif
 
 #ifdef __cplusplus

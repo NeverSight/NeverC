@@ -132,4 +132,19 @@ int         neverc_os_is_permission(int err);
 }
 #endif
 
+#ifdef __neverc__
+struct __neverc_std_exec_t { char __tag; };
+struct __neverc_std_signal_t { char __tag; };
+struct __neverc_std_user_t { char __tag; };
+
+struct __neverc_std_os_t {
+    char __tag;
+    struct __neverc_std_exec_t exec;
+    struct __neverc_std_signal_t signal;
+    struct __neverc_std_user_t user;
+};
+extern struct __neverc_std_os_t __neverc_mod_os;
+extern struct __neverc_std_os_t os;
+#endif
+
 #endif

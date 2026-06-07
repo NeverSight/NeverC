@@ -43,4 +43,10 @@ double neverc_cmp_clamp_float64(double x, double lo, double hi);
 }
 #endif
 
+#ifdef __neverc__
+struct __neverc_std_cmp_t { char __tag; };
+extern struct __neverc_std_cmp_t __neverc_mod_cmp;
+extern struct __neverc_std_cmp_t cmp;
+#endif
+
 #endif

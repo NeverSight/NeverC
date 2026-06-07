@@ -171,6 +171,7 @@ uint8_t *neverc_bytes_to_valid_utf8(const uint8_t *s, size_t slen,
 #ifdef __neverc__
 struct __neverc_std_bytes_t { char __tag; };
 extern struct __neverc_std_bytes_t __neverc_mod_bytes;
+extern struct __neverc_std_bytes_t bytes;
 #endif
 
 #endif /* NEVERC_BYTES_H */

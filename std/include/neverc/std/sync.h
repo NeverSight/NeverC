@@ -86,4 +86,15 @@ void neverc_cond_broadcast(neverc_cond_t *c);
 }
 #endif
 
+#ifdef __neverc__
+struct __neverc_std_atomic_t { char __tag; };
+
+struct __neverc_std_sync_t {
+    char __tag;
+    struct __neverc_std_atomic_t atomic;
+};
+extern struct __neverc_std_sync_t __neverc_mod_sync;
+extern struct __neverc_std_sync_t sync_mod;
+#endif
+
 #endif

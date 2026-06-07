@@ -21,8 +21,14 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen);
 #endif
 
 #ifdef __neverc__
-struct __neverc_std_html_t { char __tag; };
+struct __neverc_std_html_template_t { char __tag; };
+
+struct __neverc_std_html_t {
+    char __tag;
+    struct __neverc_std_html_template_t template_mod;
+};
 extern struct __neverc_std_html_t __neverc_mod_html;
+extern struct __neverc_std_html_t html;
 #endif
 
 #endif /* NEVERC_HTML_H */

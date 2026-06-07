@@ -33,8 +33,14 @@ int neverc_path_match(const char *pattern, const char *name);
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__
-struct __neverc_std_path_t { char __tag; };
+struct __neverc_std_filepath_t { char __tag; };
+
+struct __neverc_std_path_t {
+    char __tag;
+    struct __neverc_std_filepath_t filepath;
+};
 extern struct __neverc_std_path_t __neverc_mod_path;
+extern struct __neverc_std_path_t path;
 #endif
 
 #endif /* NEVERC_PATH_H */
