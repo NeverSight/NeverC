@@ -44,4 +44,12 @@ int  neverc_url_query_unescape(const char *s, char *buf, size_t cap);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
+
+
 #endif

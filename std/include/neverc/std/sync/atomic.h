@@ -40,4 +40,12 @@ int neverc_atomic_cas_pointer(void *volatile *addr, void *old_val, void *new_val
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/sync.h>
+#endif
+
+
 #endif

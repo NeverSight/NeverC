@@ -52,4 +52,12 @@ void neverc_png_pixel_set(neverc_png_image_t *img, uint32_t x, uint32_t y, const
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/image.h>
+#endif
+
+
 #endif /* NEVERC_IMAGE_PNG_H */

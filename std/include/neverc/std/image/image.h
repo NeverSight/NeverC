@@ -66,4 +66,12 @@ neverc_rect_t neverc_image_gray_bounds(const neverc_image_gray_t *img);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/image.h>
+#endif
+
+
 #endif /* NEVERC_IMAGE_IMAGE_H */

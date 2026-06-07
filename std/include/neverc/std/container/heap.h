@@ -34,4 +34,12 @@ void neverc_heap_fix(neverc_heap_interface_t *h, int i);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/container.h>
+#endif
+
+
 #endif

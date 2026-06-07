@@ -53,4 +53,12 @@ int  neverc_rsa_key_size(const neverc_rsa_public_key_t *pub);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/crypto.h>
+#endif
+
+
 #endif

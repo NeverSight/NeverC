@@ -135,6 +135,28 @@ static void test_many_entries(void) {
     neverc_map_free(m);
 }
 
+static void test_copy(void) {
+    printf("[copy]\n");
+    static int v1 = 1, v2 = 2, v3 = 3, v4 = 4;
+    neverc_map_t *dst = neverc_map_new();
+    neverc_map_t *src = neverc_map_new();
+
+    neverc_map_set(dst, "a", &v1);
+    neverc_map_set(dst, "b", &v2);
+    neverc_map_set(src, "b", &v3);
+    neverc_map_set(src, "c", &v4);
+
+    neverc_map_copy(dst, src);
+
+    ASSERT_INT_EQ((int)neverc_map_len(dst), 3);
+    ASSERT_INT_EQ(*(int *)neverc_map_get(dst, "a"), 1);
+    ASSERT_INT_EQ(*(int *)neverc_map_get(dst, "b"), 3);
+    ASSERT_INT_EQ(*(int *)neverc_map_get(dst, "c"), 4);
+
+    neverc_map_free(dst);
+    neverc_map_free(src);
+}
+
 int main(void) {
     printf("=== NeverC maps Tests ===\n");
     test_basic();
@@ -144,6 +166,7 @@ int main(void) {
     test_keys_values();
     test_clone();
     test_many_entries();
+    test_copy();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

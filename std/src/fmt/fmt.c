@@ -819,3 +819,214 @@ int neverc_fmt_appendf(char *buf, size_t cap, const char *format, ...) {
     free(s);
     return (int)copy;
 }
+
+int neverc_fmt_append(char *buf, size_t cap, const char *s) {
+    if (!buf || !s) return 0;
+    size_t existing = my_strlen(buf);
+    size_t slen = my_strlen(s);
+    size_t space = cap > existing ? cap - existing - 1 : 0;
+    size_t copy = slen < space ? slen : space;
+    for (size_t i = 0; i < copy; i++) buf[existing + i] = s[i];
+    buf[existing + copy] = '\0';
+    return (int)copy;
+}
+
+int neverc_fmt_appendln(char *buf, size_t cap, const char *s) {
+    if (!buf || !s) return 0;
+    size_t existing = my_strlen(buf);
+    size_t slen = my_strlen(s);
+    size_t space = cap > existing ? cap - existing - 1 : 0;
+    size_t need = slen + 1;
+    size_t copy = need < space ? need : space;
+    size_t scopy = copy > 0 ? (copy > slen ? slen : copy) : 0;
+    for (size_t i = 0; i < scopy; i++) buf[existing + i] = s[i];
+    if (scopy < copy) buf[existing + scopy] = '\n';
+    buf[existing + copy] = '\0';
+    return (int)copy;
+}
+
+char *neverc_fmt_sprintfln(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    char *s = neverc_fmt_vsprintf(format, args);
+    va_end(args);
+    if (!s) return NULL;
+    size_t len = my_strlen(s);
+    char *out = (char *)realloc(s, len + 2);
+    if (!out) { free(s); return NULL; }
+    out[len] = '\n';
+    out[len + 1] = '\0';
+    return out;
+}
+
+int neverc_fmt_fscan(FILE *f, int *out_int) {
+    if (!f || !out_int) return 0;
+    char line[256];
+    if (!fgets(line, sizeof(line), f)) return 0;
+    const char *p = line;
+    int64_t val;
+    if (scan_int(&p, &val)) { *out_int = (int)val; return 1; }
+    return 0;
+}
+
+int neverc_fmt_scanln(const char *format, ...) {
+    char line[4096];
+    if (!fgets(line, sizeof(line), stdin)) return 0;
+    size_t len = my_strlen(line);
+    if (len > 0 && line[len-1] == '\n') line[--len] = '\0';
+
+    va_list args;
+    va_start(args, format);
+    const char *sp = line;
+    const char *fp = format;
+    int matched = 0;
+
+    while (*fp && *sp) {
+        if (*fp == '%') {
+            fp++;
+            int is_long = 0;
+            if (*fp == 'l') { is_long = 1; fp++; if (*fp == 'l') fp++; }
+            switch (*fp) {
+            case 'd': case 'i': {
+                int64_t val;
+                if (!scan_int(&sp, &val)) goto sldone;
+                if (is_long) *va_arg(args, long long *) = (long long)val;
+                else *va_arg(args, int *) = (int)val;
+                matched++;
+                break;
+            }
+            case 'f': {
+                double val;
+                if (!scan_float(&sp, &val)) goto sldone;
+                *va_arg(args, double *) = val;
+                matched++;
+                break;
+            }
+            case 's': {
+                char *buf = va_arg(args, char *);
+                if (!scan_string(&sp, buf, 256)) goto sldone;
+                matched++;
+                break;
+            }
+            default: goto sldone;
+            }
+            fp++;
+        } else {
+            if (*sp != *fp) goto sldone;
+            sp++; fp++;
+        }
+    }
+sldone:
+    va_end(args);
+    return matched;
+}
+
+int neverc_fmt_sscanln(const char *str, const char *format, ...) {
+    if (!str || !format) return 0;
+    char line[4096];
+    size_t slen = my_strlen(str);
+    size_t copy = slen < sizeof(line) - 1 ? slen : sizeof(line) - 1;
+    for (size_t i = 0; i < copy; i++) line[i] = str[i];
+    line[copy] = '\0';
+    for (size_t i = 0; i < copy; i++) {
+        if (line[i] == '\n') { line[i] = '\0'; break; }
+    }
+
+    va_list args;
+    va_start(args, format);
+    const char *sp = line;
+    const char *fp = format;
+    int matched = 0;
+
+    while (*fp && *sp) {
+        if (*fp == '%') {
+            fp++;
+            int is_long = 0;
+            if (*fp == 'l') { is_long = 1; fp++; if (*fp == 'l') fp++; }
+            switch (*fp) {
+            case 'd': case 'i': {
+                int64_t val;
+                if (!scan_int(&sp, &val)) goto ssldone;
+                if (is_long) *va_arg(args, long long *) = (long long)val;
+                else *va_arg(args, int *) = (int)val;
+                matched++;
+                break;
+            }
+            case 'f': {
+                double val;
+                if (!scan_float(&sp, &val)) goto ssldone;
+                *va_arg(args, double *) = val;
+                matched++;
+                break;
+            }
+            case 's': {
+                char *buf = va_arg(args, char *);
+                if (!scan_string(&sp, buf, 256)) goto ssldone;
+                matched++;
+                break;
+            }
+            default: goto ssldone;
+            }
+            fp++;
+        } else {
+            if (*sp != *fp) goto ssldone;
+            sp++; fp++;
+        }
+    }
+ssldone:
+    va_end(args);
+    return matched;
+}
+
+int neverc_fmt_fscanln(FILE *f, const char *format, ...) {
+    if (!f || !format) return 0;
+    char line[4096];
+    if (!fgets(line, sizeof(line), f)) return 0;
+    size_t len = my_strlen(line);
+    if (len > 0 && line[len-1] == '\n') line[--len] = '\0';
+
+    va_list args;
+    va_start(args, format);
+    const char *sp = line;
+    const char *fp = format;
+    int matched = 0;
+
+    while (*fp && *sp) {
+        if (*fp == '%') {
+            fp++;
+            int is_long = 0;
+            if (*fp == 'l') { is_long = 1; fp++; if (*fp == 'l') fp++; }
+            switch (*fp) {
+            case 'd': case 'i': {
+                int64_t val;
+                if (!scan_int(&sp, &val)) goto fldone;
+                if (is_long) *va_arg(args, long long *) = (long long)val;
+                else *va_arg(args, int *) = (int)val;
+                matched++;
+                break;
+            }
+            case 'f': {
+                double val;
+                if (!scan_float(&sp, &val)) goto fldone;
+                *va_arg(args, double *) = val;
+                matched++;
+                break;
+            }
+            case 's': {
+                char *buf = va_arg(args, char *);
+                if (!scan_string(&sp, buf, 256)) goto fldone;
+                matched++;
+                break;
+            }
+            default: goto fldone;
+            }
+            fp++;
+        } else {
+            if (*sp != *fp) goto fldone;
+            sp++; fp++;
+        }
+    }
+fldone:
+    va_end(args);
+    return matched;
+}

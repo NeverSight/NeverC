@@ -91,4 +91,12 @@ int  neverc_plan9_valid_magic(uint32_t magic);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/debug.h>
+#endif
+
+
 #endif /* NEVERC_DEBUG_PLAN9OBJ_H */

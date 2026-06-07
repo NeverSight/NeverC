@@ -131,6 +131,20 @@ static void test_clamp(void) {
     ASSERT_TRUE(neverc_cmp_isnan_float64(neverc_cmp_clamp_float64(NaN, 1.0, 10.0)));
 }
 
+static void test_or(void) {
+    printf("[or]\n");
+    ASSERT_INT_EQ(neverc_cmp_or_int(0, 42), 42);
+    ASSERT_INT_EQ(neverc_cmp_or_int(7, 42), 7);
+    ASSERT_INT_EQ(neverc_cmp_or_int(0, 0), 0);
+    ASSERT_INT_EQ(neverc_cmp_or_int(-1, 5), -1);
+
+    ASSERT_INT_EQ((int)neverc_cmp_or_int64(0LL, 100LL), 100);
+    ASSERT_INT_EQ((int)neverc_cmp_or_int64(50LL, 100LL), 50);
+
+    ASSERT_DBL_EQ(neverc_cmp_or_float64(0.0, 3.14), 3.14);
+    ASSERT_DBL_EQ(neverc_cmp_or_float64(2.71, 3.14), 2.71);
+}
+
 int main(void) {
     printf("=== NeverC cmp Tests ===\n");
     test_compare_int();
@@ -143,6 +157,7 @@ int main(void) {
     test_min_max_int();
     test_min_max_float64();
     test_clamp();
+    test_or();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

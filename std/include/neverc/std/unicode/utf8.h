@@ -41,4 +41,12 @@ int neverc_utf8_valid_rune(uint32_t r);
 #endif
 
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/unicode.h>
+#endif
+
+
 #endif /* NEVERC_UTF8_H */

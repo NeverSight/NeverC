@@ -41,4 +41,12 @@ uint64_t neverc_maphash_string(uint64_t seed, const char *s);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/hash.h>
+#endif
+
+
 #endif

@@ -164,6 +164,12 @@ static void check_int(const char *name, int got, int expected) {
     }
 }
 
+static void check_true(const char *name, int cond) {
+    tests_run++;
+    if (cond) tests_passed++;
+    else { tests_failed++; printf("  FAIL: %s: expected true\n", name); }
+}
+
 static void test_sscanf(void) {
     printf("[sscanf]\n");
     int a, b;
@@ -227,6 +233,31 @@ static void test_sprint_family(void) {
 
     r = neverc_fmt_sprintln("hello");
     check_str("sprintln", r, "hello\n"); free(r);
+
+    r = neverc_fmt_sprintfln("%d", 42);
+    check_str("sprintfln", r, "42\n"); free(r);
+}
+
+static void test_append_family(void) {
+    printf("[append family]\n");
+    char buf[64] = "hello";
+
+    int n = neverc_fmt_append(buf, sizeof(buf), " world");
+    check_int("append wrote", n, 6);
+    check_str("append result", buf, "hello world");
+
+    char buf2[64] = "line1";
+    n = neverc_fmt_appendln(buf2, sizeof(buf2), ": data");
+    check_true("appendln wrote", n > 0);
+    check_true("appendln has newline", buf2[strlen(buf2)-1] == '\n');
+}
+
+static void test_sscanln(void) {
+    printf("[sscanln]\n");
+    int a = 0;
+    int n = neverc_fmt_sscanln("42 hello\nmore", "%d", &a);
+    check_int("sscanln matched", n, 1);
+    check_int("sscanln val", a, 42);
 }
 
 int main(void) {
@@ -241,6 +272,8 @@ int main(void) {
     test_appendf();
     test_errorf();
     test_sprint_family();
+    test_append_family();
+    test_sscanln();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

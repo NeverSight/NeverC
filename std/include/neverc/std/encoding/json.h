@@ -105,4 +105,12 @@ int neverc_json_valid(const char *text, size_t len);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/encoding.h>
+#endif
+
+
 #endif

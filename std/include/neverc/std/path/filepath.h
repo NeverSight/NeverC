@@ -37,4 +37,12 @@ const char *neverc_filepath_from_slash(const char *path, char *buf, size_t buf_l
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/path.h>
+#endif
+
+
 #endif

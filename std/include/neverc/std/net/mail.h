@@ -50,4 +50,12 @@ long long neverc_mail_parse_date(const char *s);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
+
+
 #endif

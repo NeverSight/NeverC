@@ -212,6 +212,27 @@ static void test_find(void) {
     check_int("find_25_insert_pos", (int)idx, 2);
 }
 
+static int cmp_int_generic(const void *a, const void *b) {
+    int ia = *(const int *)a;
+    int ib = *(const int *)b;
+    return (ia > ib) - (ia < ib);
+}
+
+static void test_slice_aliases(void) {
+    printf("[slice aliases]\n");
+    int arr[] = {5, 3, 1, 4, 2};
+    neverc_sort_slice(arr, 5, sizeof(int), cmp_int_generic);
+    check_int("slice[0]", arr[0], 1);
+    check_int("slice[4]", arr[4], 5);
+
+    check_int("slice_is_sorted sorted", neverc_sort_slice_is_sorted(arr, 5, sizeof(int), cmp_int_generic), 1);
+
+    int arr2[] = {5, 3, 1, 4, 2};
+    neverc_sort_slice_stable(arr2, 5, sizeof(int), cmp_int_generic);
+    check_int("slice_stable[0]", arr2[0], 1);
+    check_int("slice_stable[4]", arr2[4], 5);
+}
+
 int main(void) {
     printf("=== NeverC Sort Library Tests ===\n\n");
 
@@ -228,6 +249,7 @@ int main(void) {
     test_ints_are_sorted();
     test_doubles_are_sorted();
     test_find();
+    test_slice_aliases();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0)

@@ -37,4 +37,12 @@ void neverc_jpeg_free(neverc_jpeg_image_t *img);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/image.h>
+#endif
+
+
 #endif /* NEVERC_IMAGE_JPEG_H */

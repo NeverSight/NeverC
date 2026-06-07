@@ -105,3 +105,7 @@ double neverc_cmp_clamp_float64(double x, double lo, double hi) {
     if (x > hi) return hi;
     return x;
 }
+
+int neverc_cmp_or_int(int a, int b) { return a != 0 ? a : b; }
+int64_t neverc_cmp_or_int64(int64_t a, int64_t b) { return a != 0 ? a : b; }
+double neverc_cmp_or_float64(double a, double b) { return a != 0.0 ? a : b; }

@@ -39,4 +39,12 @@ void           neverc_ring_do(neverc_ring_t *r, void (*f)(void *value, void *ctx
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/container.h>
+#endif
+
+
 #endif

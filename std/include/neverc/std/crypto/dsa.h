@@ -51,4 +51,12 @@ int  neverc_dsa_verify(const neverc_dsa_public_key_t *key,
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/crypto.h>
+#endif
+
+
 #endif

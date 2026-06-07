@@ -59,4 +59,12 @@ void neverc_tabwriter_reset(neverc_tabwriter_t *w);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/text.h>
+#endif
+
+
 #endif

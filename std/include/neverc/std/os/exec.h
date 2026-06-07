@@ -50,4 +50,12 @@ const char *neverc_exec_look_path(const char *file, char *buf, size_t cap);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/os.h>
+#endif
+
+
 #endif

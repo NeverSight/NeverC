@@ -272,3 +272,18 @@ void neverc_sort_reverse(void *base, size_t n, size_t elem_size) {
     }
     if (tmp != tmp_buf) free(tmp);
 }
+
+void neverc_sort_slice(void *base, size_t n, size_t elem_size,
+                       neverc_sort_cmp_t cmp) {
+    neverc_sort_custom(base, n, elem_size, cmp);
+}
+
+void neverc_sort_slice_stable(void *base, size_t n, size_t elem_size,
+                              neverc_sort_cmp_t cmp) {
+    neverc_sort_stable(base, n, elem_size, cmp);
+}
+
+int neverc_sort_slice_is_sorted(const void *base, size_t n, size_t elem_size,
+                                neverc_sort_cmp_t cmp) {
+    return neverc_sort_is_sorted(base, n, elem_size, cmp);
+}

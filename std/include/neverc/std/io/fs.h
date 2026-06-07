@@ -65,4 +65,12 @@ void neverc_fs_free_matches(char **matches, size_t count);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/io.h>
+#endif
+
+
 #endif /* NEVERC_IO_FS_H */

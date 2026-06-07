@@ -68,4 +68,12 @@ const char *neverc_scanner_token_name(int tok);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/text.h>
+#endif
+
+
 #endif

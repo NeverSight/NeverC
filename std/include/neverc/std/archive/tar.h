@@ -63,4 +63,12 @@ void neverc_tar_writer_free(neverc_tar_writer_t *w);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/archive.h>
+#endif
+
+
 #endif /* NEVERC_ARCHIVE_TAR_H */

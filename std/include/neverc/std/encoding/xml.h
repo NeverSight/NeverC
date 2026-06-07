@@ -73,4 +73,12 @@ char *neverc_xml_escape(const char *s, size_t *outlen);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/encoding.h>
+#endif
+
+
 #endif /* NEVERC_ENCODING_XML_H */

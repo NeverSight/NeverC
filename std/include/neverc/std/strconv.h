@@ -36,6 +36,53 @@ int neverc_strconv_format_uint(unsigned long long n, int base, char *buf, size_t
 int neverc_strconv_format_float(double f, char fmt, int prec, char *buf, size_t bufsize);
 int neverc_strconv_format_bool(int b, char *buf, size_t bufsize);
 
+/* ===== Quote / Unquote ===== */
+
+/* Returns malloc'd quoted string (double-quoted, with escape sequences). Caller frees. */
+char *neverc_strconv_quote(const char *s);
+char *neverc_strconv_quote_to_ascii(const char *s);
+char *neverc_strconv_quote_to_graphic(const char *s);
+
+/* Returns malloc'd single-quoted rune literal. Caller frees. */
+char *neverc_strconv_quote_rune(uint32_t r);
+char *neverc_strconv_quote_rune_to_ascii(uint32_t r);
+char *neverc_strconv_quote_rune_to_graphic(uint32_t r);
+
+/* Unquote: interprets a Go-style quoted string literal.
+   Writes unquoted result into buf, returns length, or -1 on error. */
+int neverc_strconv_unquote(const char *s, char *buf, size_t bufsize);
+
+/* UnquoteChar: decode first char/escape from s.
+   Returns rune in *r, bytes consumed in return value, or -1 on error. */
+int neverc_strconv_unquote_char(const char *s, size_t slen, char quote,
+                                uint32_t *r, int *multibyte);
+
+int neverc_strconv_can_backquote(const char *s);
+int neverc_strconv_is_print(uint32_t r);
+int neverc_strconv_is_graphic(uint32_t r);
+
+/* Append variants: format into caller-provided buffer at offset *pos.
+   Returns bytes written (excluding NUL), or -1 if too small. */
+int neverc_strconv_append_bool(char *buf, size_t cap, int b);
+int neverc_strconv_append_int(char *buf, size_t cap, long long n, int base);
+int neverc_strconv_append_uint(char *buf, size_t cap, unsigned long long n, int base);
+int neverc_strconv_append_float(char *buf, size_t cap, double f, char fmt, int prec);
+
+int neverc_strconv_append_quote(char *buf, size_t cap, const char *s);
+int neverc_strconv_append_quote_to_ascii(char *buf, size_t cap, const char *s);
+int neverc_strconv_append_quote_to_graphic(char *buf, size_t cap, const char *s);
+int neverc_strconv_append_quote_rune(char *buf, size_t cap, uint32_t r);
+int neverc_strconv_append_quote_rune_to_ascii(char *buf, size_t cap, uint32_t r);
+int neverc_strconv_append_quote_rune_to_graphic(char *buf, size_t cap, uint32_t r);
+
+/* QuotedPrefix: returns length of the quoted string prefix, or -1 on error. */
+int neverc_strconv_quoted_prefix(const char *s, size_t *prefix_len);
+
+/* Complex number formatting/parsing (a+bi form). */
+int neverc_strconv_format_complex(double re, double im, char fmt, int prec,
+                                   char *buf, size_t bufsize);
+int neverc_strconv_parse_complex(const char *s, double *re, double *im);
+
 #ifdef __cplusplus
 }
 #endif

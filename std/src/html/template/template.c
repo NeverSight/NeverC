@@ -2,7 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <ctype.h>
+
+static int nc_isalnum(int c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+}
 
 /* --- Data dictionary --- */
 
@@ -107,7 +110,7 @@ char *neverc_html_css_escape(const char *s) {
     char *buf = (char *)malloc(cap);
     buf[0] = '\0';
     for (const char *p = s; *p; p++) {
-        if (isalnum((unsigned char)*p) || *p == '-' || *p == '_') {
+        if (nc_isalnum((unsigned char)*p) || *p == '-' || *p == '_') {
             buf_append(&buf, &len, &cap, p, 1);
         } else {
             char esc[12];
@@ -124,7 +127,7 @@ char *neverc_html_url_query_escape(const char *s) {
     char *buf = (char *)malloc(cap);
     buf[0] = '\0';
     for (const char *p = s; *p; p++) {
-        if (isalnum((unsigned char)*p) || *p == '-' || *p == '_' ||
+        if (nc_isalnum((unsigned char)*p) || *p == '-' || *p == '_' ||
             *p == '.' || *p == '~') {
             buf_append(&buf, &len, &cap, p, 1);
         } else {

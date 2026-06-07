@@ -75,4 +75,12 @@ const char *neverc_slog_level_name(neverc_slog_level_t level);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/log.h>
+#endif
+
+
 #endif

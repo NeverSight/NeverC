@@ -1,7 +1,10 @@
 #include "neverc/std/net/textproto.h"
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
+
+static int nc_toupper(int c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
+static int nc_tolower(int c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
+static int nc_isdigit(int c) { return c >= '0' && c <= '9'; }
 
 void neverc_mime_header_init(neverc_mime_header_t *h) {
     memset(h, 0, sizeof(*h));
@@ -28,10 +31,10 @@ char *neverc_textproto_canonical_mime_header_key(const char *key) {
             out[i] = '-';
             upper = 1;
         } else if (upper) {
-            out[i] = (char)toupper((unsigned char)key[i]);
+            out[i] = (char)nc_toupper((unsigned char)key[i]);
             upper = 0;
         } else {
-            out[i] = (char)tolower((unsigned char)key[i]);
+            out[i] = (char)nc_tolower((unsigned char)key[i]);
         }
     }
     out[len] = '\0';
@@ -156,8 +159,8 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
 int neverc_textproto_read_code_line(const char *line, int *code,
                                      const char **msg) {
     if (!line || strlen(line) < 3) return -1;
-    if (!isdigit((unsigned char)line[0]) || !isdigit((unsigned char)line[1]) ||
-        !isdigit((unsigned char)line[2])) return -1;
+    if (!nc_isdigit((unsigned char)line[0]) || !nc_isdigit((unsigned char)line[1]) ||
+        !nc_isdigit((unsigned char)line[2])) return -1;
     *code = (line[0] - '0') * 100 + (line[1] - '0') * 10 + (line[2] - '0');
     if (line[3] == ' ' || line[3] == '-') {
         if (msg) *msg = line + 4;

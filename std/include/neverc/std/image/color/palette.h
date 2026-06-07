@@ -31,4 +31,12 @@ int neverc_palette_websafe_index(uint8_t r, uint8_t g, uint8_t b);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/image.h>
+#endif
+
+
 #endif /* NEVERC_IMAGE_COLOR_PALETTE_H */

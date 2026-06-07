@@ -59,4 +59,12 @@ neverc_cmplx_t  neverc_cmplx_inf_val(void);
 #endif
 
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/math.h>
+#endif
+
+
 #endif /* NEVERC_CMPLX_H */

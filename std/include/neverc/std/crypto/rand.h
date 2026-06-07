@@ -23,4 +23,12 @@ int neverc_crypto_rand_prime(uint8_t *out, size_t bits);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/crypto.h>
+#endif
+
+
 #endif /* NEVERC_CRYPTO_RAND_H */

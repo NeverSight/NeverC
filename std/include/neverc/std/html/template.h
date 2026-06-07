@@ -42,4 +42,12 @@ char *neverc_html_url_query_escape(const char *s);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/html.h>
+#endif
+
+
 #endif /* NEVERC_HTML_TEMPLATE_H */

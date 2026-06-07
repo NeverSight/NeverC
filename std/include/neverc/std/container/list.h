@@ -61,4 +61,12 @@ neverc_list_element_t *neverc_list_element_prev(const neverc_list_element_t *e);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/container.h>
+#endif
+
+
 #endif

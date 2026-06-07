@@ -66,4 +66,12 @@ int neverc_ecdh_private_key_bytes(const neverc_ecdh_key_t *key,
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/crypto.h>
+#endif
+
+
 #endif

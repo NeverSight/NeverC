@@ -211,3 +211,10 @@ int neverc_map_equal(const neverc_map_t *a, const neverc_map_t *b) {
     }
     return 1;
 }
+
+void neverc_map_copy(neverc_map_t *dst, const neverc_map_t *src) {
+    if (!dst || !src) return;
+    for (size_t i = 0; i < src->cap; i++)
+        if (src->entries[i].occupied)
+            neverc_map_set(dst, src->entries[i].key, src->entries[i].value);
+}

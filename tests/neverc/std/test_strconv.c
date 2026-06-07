@@ -1,6 +1,7 @@
 #include "neverc/std/strconv.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <limits.h>
 
 static int tests_run = 0;
@@ -205,6 +206,229 @@ static void test_format_bool(void) {
     check_str("false", buf, "false");
 }
 
+/* ===== Quote ===== */
+static void test_quote(void) {
+    printf("[quote]\n");
+    char *q;
+
+    q = neverc_strconv_quote("hello");
+    check_str("quote hello", q, "\"hello\"");
+    free(q);
+
+    q = neverc_strconv_quote("hello\nworld");
+    check_str("quote newline", q, "\"hello\\nworld\"");
+    free(q);
+
+    q = neverc_strconv_quote("tab\there");
+    check_str("quote tab", q, "\"tab\\there\"");
+    free(q);
+
+    q = neverc_strconv_quote("say \"hi\"");
+    check_str("quote dquote", q, "\"say \\\"hi\\\"\"");
+    free(q);
+
+    q = neverc_strconv_quote("back\\slash");
+    check_str("quote backslash", q, "\"back\\\\slash\"");
+    free(q);
+
+    q = neverc_strconv_quote("");
+    check_str("quote empty", q, "\"\"");
+    free(q);
+
+    q = neverc_strconv_quote("\x01\x02\x03");
+    check_str("quote control", q, "\"\\x01\\x02\\x03\"");
+    free(q);
+}
+
+/* ===== QuoteRune ===== */
+static void test_quote_rune(void) {
+    printf("[quote_rune]\n");
+    char *q;
+
+    q = neverc_strconv_quote_rune('A');
+    check_str("rune A", q, "'A'");
+    free(q);
+
+    q = neverc_strconv_quote_rune('\n');
+    check_str("rune newline", q, "'\\n'");
+    free(q);
+
+    q = neverc_strconv_quote_rune('\'');
+    check_str("rune squote", q, "'\\''");
+    free(q);
+
+    q = neverc_strconv_quote_rune(0x4e16);
+    check_str("rune unicode", q, "'\xe4\xb8\x96'");
+    free(q);
+}
+
+/* ===== QuoteToASCII ===== */
+static void test_quote_to_ascii(void) {
+    printf("[quote_to_ascii]\n");
+    char *q;
+
+    q = neverc_strconv_quote_to_ascii("hello");
+    check_str("ascii hello", q, "\"hello\"");
+    free(q);
+
+    q = neverc_strconv_quote_to_ascii("\xe4\xb8\x96");
+    check_str("ascii unicode", q, "\"\\u4e16\"");
+    free(q);
+}
+
+/* ===== Unquote ===== */
+static void test_unquote(void) {
+    printf("[unquote]\n");
+    char buf[256];
+    int n;
+
+    n = neverc_strconv_unquote("\"hello\"", buf, sizeof(buf));
+    check_int("unquote hello len", n, 5);
+    check_str("unquote hello val", buf, "hello");
+
+    n = neverc_strconv_unquote("\"hello\\nworld\"", buf, sizeof(buf));
+    check_int("unquote newline len", n, 11);
+    check_str("unquote newline val", buf, "hello\nworld");
+
+    n = neverc_strconv_unquote("\"tab\\there\"", buf, sizeof(buf));
+    check_int("unquote tab len", n, 8);
+    check_str("unquote tab val", buf, "tab\there");
+
+    n = neverc_strconv_unquote("\"say \\\"hi\\\"\"", buf, sizeof(buf));
+    check_int("unquote dquote len", n, 8);
+    check_str("unquote dquote val", buf, "say \"hi\"");
+
+    n = neverc_strconv_unquote("`raw string`", buf, sizeof(buf));
+    check_int("unquote backtick len", n, 10);
+    check_str("unquote backtick val", buf, "raw string");
+
+    n = neverc_strconv_unquote("\"\\x41\"", buf, sizeof(buf));
+    check_int("unquote hex len", n, 1);
+    check_str("unquote hex val", buf, "A");
+
+    n = neverc_strconv_unquote("\"\\u4e16\"", buf, sizeof(buf));
+    check_int("unquote unicode len", n, 3);
+
+    n = neverc_strconv_unquote("bad", buf, sizeof(buf));
+    check_int("unquote bad", n, -1);
+
+    n = neverc_strconv_unquote("\"", buf, sizeof(buf));
+    check_int("unquote single quote", n, -1);
+}
+
+/* ===== CanBackquote ===== */
+static void test_can_backquote(void) {
+    printf("[can_backquote]\n");
+    check_int("normal", neverc_strconv_can_backquote("hello world"), 1);
+    check_int("tab ok", neverc_strconv_can_backquote("hello\tworld"), 1);
+    check_int("newline bad", neverc_strconv_can_backquote("hello\nworld"), 0);
+    check_int("backtick bad", neverc_strconv_can_backquote("back`tick"), 0);
+    check_int("control bad", neverc_strconv_can_backquote("\x01"), 0);
+    check_int("empty ok", neverc_strconv_can_backquote(""), 1);
+}
+
+/* ===== IsPrint / IsGraphic ===== */
+static void test_is_print_graphic(void) {
+    printf("[is_print_graphic]\n");
+    check_int("print A", neverc_strconv_is_print('A'), 1);
+    check_int("print space", neverc_strconv_is_print(' '), 1);
+    check_int("print ctrl", neverc_strconv_is_print('\n'), 0);
+    check_int("print del", neverc_strconv_is_print(0x7F), 0);
+    check_int("graphic A", neverc_strconv_is_graphic('A'), 1);
+    check_int("graphic ctrl", neverc_strconv_is_graphic('\n'), 0);
+}
+
+/* ===== Append variants ===== */
+static void test_append_variants(void) {
+    printf("[append_variants]\n");
+    char buf[256];
+
+    check_int("append_bool true", neverc_strconv_append_bool(buf, sizeof(buf), 1), 4);
+    check_str("val", buf, "true");
+
+    check_int("append_bool false", neverc_strconv_append_bool(buf, sizeof(buf), 0), 5);
+    check_str("val", buf, "false");
+
+    check_int("append_int 42", neverc_strconv_append_int(buf, sizeof(buf), 42, 10), 2);
+    check_str("val", buf, "42");
+
+    check_int("append_int -99", neverc_strconv_append_int(buf, sizeof(buf), -99, 10), 3);
+    check_str("val", buf, "-99");
+
+    check_int("append_uint ff", neverc_strconv_append_uint(buf, sizeof(buf), 255, 16), 2);
+    check_str("val", buf, "ff");
+
+    check_int("append_float pi", neverc_strconv_append_float(buf, sizeof(buf), 3.14, 'f', 2), 4);
+    check_str("val", buf, "3.14");
+
+    check_int("append_quote hello",
+              neverc_strconv_append_quote(buf, sizeof(buf), "hello"), 7);
+    check_str("val", buf, "\"hello\"");
+
+    check_int("append_quote_to_ascii",
+              neverc_strconv_append_quote_to_ascii(buf, sizeof(buf), "hi"), 4);
+    check_str("val", buf, "\"hi\"");
+
+    check_int("append_quote_to_graphic",
+              neverc_strconv_append_quote_to_graphic(buf, sizeof(buf), "hi"), 4);
+    check_str("val", buf, "\"hi\"");
+
+    check_int("append_quote_rune A",
+              neverc_strconv_append_quote_rune(buf, sizeof(buf), 'A'), 3);
+    check_str("val", buf, "'A'");
+
+    check_int("append_quote_rune_to_ascii A",
+              neverc_strconv_append_quote_rune_to_ascii(buf, sizeof(buf), 'A'), 3);
+    check_str("val", buf, "'A'");
+
+    check_int("append_quote_rune_to_graphic A",
+              neverc_strconv_append_quote_rune_to_graphic(buf, sizeof(buf), 'A'), 3);
+    check_str("val", buf, "'A'");
+}
+
+/* ===== QuotedPrefix ===== */
+static void test_quoted_prefix(void) {
+    printf("[quoted_prefix]\n");
+    size_t plen;
+
+    check_int("dquote prefix", neverc_strconv_quoted_prefix("\"hello\" world", &plen), 0);
+    check_int("dquote plen", (int)plen, 7);
+
+    check_int("squote prefix", neverc_strconv_quoted_prefix("'A' rest", &plen), 0);
+    check_int("squote plen", (int)plen, 3);
+
+    check_int("backtick prefix", neverc_strconv_quoted_prefix("`raw`+more", &plen), 0);
+    check_int("backtick plen", (int)plen, 5);
+
+    check_int("bad prefix", neverc_strconv_quoted_prefix("not quoted", &plen), -1);
+    check_int("unclosed", neverc_strconv_quoted_prefix("\"unclosed", &plen), -1);
+}
+
+/* ===== FormatComplex / ParseComplex ===== */
+static void test_complex(void) {
+    printf("[complex]\n");
+    char buf[128];
+
+    int n = neverc_strconv_format_complex(1.0, 2.0, 'f', 1, buf, sizeof(buf));
+    check_true("format_complex len", n > 0);
+    check_true("format_complex has paren", buf[0] == '(');
+    check_true("format_complex has i", buf[n-2] == 'i');
+
+    double re, im;
+    check_int("parse_complex basic",
+              neverc_strconv_parse_complex("(1.5+2.5i)", &re, &im), 0);
+    check_double_approx("re", re, 1.5, 1e-10);
+    check_double_approx("im", im, 2.5, 1e-10);
+
+    check_int("parse_complex negative im",
+              neverc_strconv_parse_complex("(3.0-1.0i)", &re, &im), 0);
+    check_double_approx("re", re, 3.0, 1e-10);
+    check_double_approx("im", im, -1.0, 1e-10);
+
+    check_int("parse_complex bad", neverc_strconv_parse_complex("abc", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
+}
+
 int main(void) {
     printf("=== NeverC Strconv Library Tests ===\n\n");
 
@@ -218,6 +442,15 @@ int main(void) {
     test_format_uint();
     test_format_float();
     test_format_bool();
+    test_quote();
+    test_quote_rune();
+    test_quote_to_ascii();
+    test_unquote();
+    test_can_backquote();
+    test_is_print_graphic();
+    test_append_variants();
+    test_quoted_prefix();
+    test_complex();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0)

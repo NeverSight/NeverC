@@ -70,4 +70,12 @@ int neverc_csv_write_all(const char ***records, const int *field_counts,
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/encoding.h>
+#endif
+
+
 #endif

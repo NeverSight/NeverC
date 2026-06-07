@@ -58,4 +58,12 @@ int  neverc_bigint_string(const neverc_bigint_t *x, int base, char *buf, size_t 
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/math.h>
+#endif
+
+
 #endif

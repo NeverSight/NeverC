@@ -50,4 +50,12 @@ char *neverc_template_render(const char *tmpl_text,
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/text.h>
+#endif
+
+
 #endif /* NEVERC_TEXT_TEMPLATE_H */

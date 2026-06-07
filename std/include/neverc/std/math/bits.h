@@ -49,4 +49,12 @@ void neverc_bits_mul64(uint64_t x, uint64_t y,
 #endif
 
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/math.h>
+#endif
+
+
 #endif /* NEVERC_BITS_H */

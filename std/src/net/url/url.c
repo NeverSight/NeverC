@@ -1,7 +1,14 @@
 #include "neverc/std/net/url.h"
 #include <string.h>
-#include <ctype.h>
 #include <stdio.h>
+
+static int nc_isalnum(int c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+}
+
+static int nc_tolower(int c) {
+    return (c >= 'A' && c <= 'Z') ? c + 32 : c;
+}
 
 static int hex_digit(int c) {
     if (c >= '0' && c <= '9') return c - '0';
@@ -11,13 +18,13 @@ static int hex_digit(int c) {
 }
 
 static int should_escape_path(unsigned char c) {
-    if (isalnum(c)) return 0;
+    if (nc_isalnum(c)) return 0;
     if (c == '-' || c == '_' || c == '.' || c == '~' || c == '/' || c == ':' || c == '@') return 0;
     return 1;
 }
 
 static int should_escape_query(unsigned char c) {
-    if (isalnum(c)) return 0;
+    if (nc_isalnum(c)) return 0;
     if (c == '-' || c == '_' || c == '.' || c == '~') return 0;
     return 1;
 }
@@ -39,7 +46,7 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
     if (scheme_end) {
         safe_copy(u->scheme, sizeof(u->scheme), p, (size_t)(scheme_end - p));
         for (size_t i = 0; u->scheme[i]; i++)
-            u->scheme[i] = (char)tolower((unsigned char)u->scheme[i]);
+            u->scheme[i] = (char)nc_tolower((unsigned char)u->scheme[i]);
         p = scheme_end + 3;
 
         const char *at = NULL;

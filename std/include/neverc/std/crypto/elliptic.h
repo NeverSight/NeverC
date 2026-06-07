@@ -62,4 +62,12 @@ int  neverc_elliptic_unmarshal(const neverc_elliptic_curve_t *curve,
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/crypto.h>
+#endif
+
+
 #endif

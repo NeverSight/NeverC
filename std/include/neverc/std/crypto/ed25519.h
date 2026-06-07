@@ -30,4 +30,12 @@ void neverc_ed25519_seed(const unsigned char priv[64], unsigned char seed[32]);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/crypto.h>
+#endif
+
+
 #endif

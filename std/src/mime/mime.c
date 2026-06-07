@@ -1,6 +1,5 @@
 #include "neverc/std/mime.h"
 #include <string.h>
-#include <ctype.h>
 #include <stdlib.h>
 
 typedef struct {
@@ -87,10 +86,18 @@ static const mime_entry_t mime_table[] = {
     {NULL, NULL}
 };
 
+static int nc_tolower(int c) {
+    return (c >= 'A' && c <= 'Z') ? c + 32 : c;
+}
+
+static int nc_isspace(int c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
 static int strcasecmp_local(const char *a, const char *b) {
     while (*a && *b) {
-        int ca = tolower((unsigned char)*a);
-        int cb = tolower((unsigned char)*b);
+        int ca = nc_tolower((unsigned char)*a);
+        int cb = nc_tolower((unsigned char)*b);
         if (ca != cb) return ca - cb;
         a++; b++;
     }
@@ -124,41 +131,41 @@ int neverc_mime_parse_media_type(const char *v,
     if (!v || !media_type) return -1;
     *nparams = 0;
 
-    while (*v && isspace((unsigned char)*v)) v++;
+    while (*v && nc_isspace((unsigned char)*v)) v++;
 
     const char *semi = strchr(v, ';');
     size_t mt_len = semi ? (size_t)(semi - v) : strlen(v);
-    while (mt_len > 0 && isspace((unsigned char)v[mt_len - 1])) mt_len--;
+    while (mt_len > 0 && nc_isspace((unsigned char)v[mt_len - 1])) mt_len--;
 
     if (mt_len >= mt_cap) mt_len = mt_cap - 1;
     memcpy(media_type, v, mt_len);
     media_type[mt_len] = '\0';
 
     for (size_t i = 0; i < mt_len; i++)
-        media_type[i] = (char)tolower((unsigned char)media_type[i]);
+        media_type[i] = (char)nc_tolower((unsigned char)media_type[i]);
 
     if (!semi) return 0;
     const char *p = semi + 1;
 
     while (*p && *nparams < max_params) {
-        while (*p && isspace((unsigned char)*p)) p++;
+        while (*p && nc_isspace((unsigned char)*p)) p++;
         if (!*p) break;
 
         const char *eq = strchr(p, '=');
         if (!eq) break;
 
         size_t klen = (size_t)(eq - p);
-        while (klen > 0 && isspace((unsigned char)p[klen - 1])) klen--;
+        while (klen > 0 && nc_isspace((unsigned char)p[klen - 1])) klen--;
 
         if (params_keys && params_vals) {
             char *key = (char *)malloc(klen + 1);
             memcpy(key, p, klen);
             key[klen] = '\0';
             for (size_t i = 0; i < klen; i++)
-                key[i] = (char)tolower((unsigned char)key[i]);
+                key[i] = (char)nc_tolower((unsigned char)key[i]);
 
             const char *vs = eq + 1;
-            while (*vs && isspace((unsigned char)*vs)) vs++;
+            while (*vs && nc_isspace((unsigned char)*vs)) vs++;
 
             const char *ve;
             if (*vs == '"') {
@@ -167,7 +174,7 @@ int neverc_mime_parse_media_type(const char *v,
                 if (!ve) ve = vs + strlen(vs);
             } else {
                 ve = vs;
-                while (*ve && *ve != ';' && !isspace((unsigned char)*ve)) ve++;
+                while (*ve && *ve != ';' && !nc_isspace((unsigned char)*ve)) ve++;
             }
 
             size_t vlen = (size_t)(ve - vs);

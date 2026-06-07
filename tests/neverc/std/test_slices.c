@@ -101,6 +101,81 @@ static void test_min_max(void) {
     ASSERT_INT_EQ(neverc_slices_max(arr, 5, sizeof(int), cmp_int), 0);
 }
 
+static void test_stable_sort(void) {
+    printf("[stable_sort]\n");
+    int arr[] = {5, 3, 1, 4, 2};
+    int exp[] = {1, 2, 3, 4, 5};
+    neverc_slices_sort_stable(arr, 5, sizeof(int), cmp_int);
+    ASSERT_TRUE(neverc_slices_equal_ints(arr, 5, exp, 5));
+}
+
+static void test_delete(void) {
+    printf("[delete]\n");
+    int arr[] = {1, 2, 3, 4, 5};
+    size_t newlen = neverc_slices_delete(arr, 5, sizeof(int), 1, 3);
+    ASSERT_INT_EQ((int)newlen, 3);
+    ASSERT_INT_EQ(arr[0], 1);
+    ASSERT_INT_EQ(arr[1], 4);
+    ASSERT_INT_EQ(arr[2], 5);
+}
+
+static void test_insert(void) {
+    printf("[insert]\n");
+    int arr[10] = {1, 2, 5, 6};
+    int ins[] = {3, 4};
+    size_t newlen = neverc_slices_insert(arr, 4, sizeof(int), 2, ins, 2);
+    ASSERT_INT_EQ((int)newlen, 6);
+    ASSERT_INT_EQ(arr[0], 1);
+    ASSERT_INT_EQ(arr[1], 2);
+    ASSERT_INT_EQ(arr[2], 3);
+    ASSERT_INT_EQ(arr[3], 4);
+    ASSERT_INT_EQ(arr[4], 5);
+    ASSERT_INT_EQ(arr[5], 6);
+}
+
+static void test_replace(void) {
+    printf("[replace]\n");
+    int arr[10] = {1, 2, 3, 4, 5};
+    int rep[] = {10, 20, 30};
+    size_t newlen = neverc_slices_replace(arr, 5, sizeof(int), 1, 3, rep, 3);
+    ASSERT_INT_EQ((int)newlen, 6);
+    ASSERT_INT_EQ(arr[0], 1);
+    ASSERT_INT_EQ(arr[1], 10);
+    ASSERT_INT_EQ(arr[2], 20);
+    ASSERT_INT_EQ(arr[3], 30);
+    ASSERT_INT_EQ(arr[4], 4);
+    ASSERT_INT_EQ(arr[5], 5);
+}
+
+static void test_concat(void) {
+    printf("[concat]\n");
+    int a[] = {1, 2, 3}, b[] = {4, 5};
+    int *c = (int *)neverc_slices_concat(a, 3, b, 2, sizeof(int));
+    ASSERT_TRUE(c != NULL);
+    ASSERT_INT_EQ(c[0], 1);
+    ASSERT_INT_EQ(c[1], 2);
+    ASSERT_INT_EQ(c[2], 3);
+    ASSERT_INT_EQ(c[3], 4);
+    ASSERT_INT_EQ(c[4], 5);
+    free(c);
+}
+
+static int is_even(const void *elem) { return (*(const int *)elem) % 2 == 0; }
+
+static void test_func_ops(void) {
+    printf("[func_ops]\n");
+    int arr[] = {1, 2, 3, 4, 5};
+    ASSERT_TRUE(neverc_slices_contains_func(arr, 5, sizeof(int), is_even));
+    ASSERT_INT_EQ(neverc_slices_index_func(arr, 5, sizeof(int), is_even), 1);
+
+    int arr2[] = {1, 2, 3, 4, 5, 6};
+    size_t newlen = neverc_slices_delete_func(arr2, 6, sizeof(int), is_even);
+    ASSERT_INT_EQ((int)newlen, 3);
+    ASSERT_INT_EQ(arr2[0], 1);
+    ASSERT_INT_EQ(arr2[1], 3);
+    ASSERT_INT_EQ(arr2[2], 5);
+}
+
 int main(void) {
     printf("=== NeverC slices Tests ===\n");
     test_equal();
@@ -113,6 +188,12 @@ int main(void) {
     test_compact();
     test_clone();
     test_min_max();
+    test_stable_sort();
+    test_delete();
+    test_insert();
+    test_replace();
+    test_concat();
+    test_func_ops();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

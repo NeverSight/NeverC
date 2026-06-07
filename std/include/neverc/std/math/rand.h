@@ -27,4 +27,12 @@ void     neverc_rand_shuffle(int n, void (*swap)(int i, int j));
 #endif
 
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/math.h>
+#endif
+
+
 #endif /* NEVERC_RAND_H */

@@ -39,6 +39,11 @@ int neverc_cmp_clamp_int(int x, int lo, int hi);
 int64_t neverc_cmp_clamp_int64(int64_t x, int64_t lo, int64_t hi);
 double neverc_cmp_clamp_float64(double x, double lo, double hi);
 
+/* Or: returns the first non-zero value, or zero if all are zero. */
+int neverc_cmp_or_int(int a, int b);
+int64_t neverc_cmp_or_int64(int64_t a, int64_t b);
+double neverc_cmp_or_float64(double a, double b);
+
 #ifdef __cplusplus
 }
 #endif

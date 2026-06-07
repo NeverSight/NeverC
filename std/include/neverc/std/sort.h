@@ -50,6 +50,18 @@ int  neverc_sort_doubles_are_sorted(const double *arr, size_t n);
  * Returns the index where target would be inserted; sets *found to 1 if exact match. */
 size_t neverc_sort_find(size_t n, int (*cmp)(size_t i), int *found);
 
+/* Go sort.Slice equivalent — alias for custom */
+void neverc_sort_slice(void *base, size_t n, size_t elem_size,
+                       neverc_sort_cmp_t cmp);
+
+/* Go sort.SliceStable equivalent — alias for stable */
+void neverc_sort_slice_stable(void *base, size_t n, size_t elem_size,
+                              neverc_sort_cmp_t cmp);
+
+/* Go sort.SliceIsSorted equivalent — alias for is_sorted */
+int  neverc_sort_slice_is_sorted(const void *base, size_t n, size_t elem_size,
+                                 neverc_sort_cmp_t cmp);
+
 #ifdef __cplusplus
 }
 #endif

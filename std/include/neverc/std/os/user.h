@@ -49,4 +49,12 @@ const char *neverc_user_config_dir(void);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/os.h>
+#endif
+
+
 #endif /* NEVERC_OS_USER_H */

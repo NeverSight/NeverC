@@ -26,4 +26,12 @@ size_t neverc_qp_max_encoded_len(size_t src_len);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/mime.h>
+#endif
+
+
 #endif

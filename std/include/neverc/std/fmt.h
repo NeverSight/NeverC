@@ -41,6 +41,17 @@ int neverc_fmt_fscanf(FILE *f, const char *format, ...);
 
 /* Append functions — format into caller-provided buffer */
 int neverc_fmt_appendf(char *buf, size_t cap, const char *format, ...);
+int neverc_fmt_append(char *buf, size_t cap, const char *s);
+int neverc_fmt_appendln(char *buf, size_t cap, const char *s);
+
+/* Line-oriented scan functions (read until newline) */
+int neverc_fmt_scanln(const char *format, ...);
+int neverc_fmt_sscanln(const char *str, const char *format, ...);
+int neverc_fmt_fscan(FILE *f, int *out_int);
+int neverc_fmt_fscanln(FILE *f, const char *format, ...);
+
+/* Print to string (variadic) */
+char *neverc_fmt_sprintfln(const char *format, ...);
 
 #ifdef __cplusplus
 }

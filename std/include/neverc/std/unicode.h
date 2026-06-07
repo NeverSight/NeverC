@@ -24,6 +24,7 @@ int neverc_unicode_is_print(uint32_t r);
 
 uint32_t neverc_unicode_to_upper(uint32_t r);
 uint32_t neverc_unicode_to_lower(uint32_t r);
+uint32_t neverc_unicode_to_title(uint32_t r);
 
 #ifdef __cplusplus
 }

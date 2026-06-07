@@ -20,4 +20,12 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/compress.h>
+#endif
+
+
 #endif

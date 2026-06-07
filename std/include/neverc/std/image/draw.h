@@ -28,4 +28,12 @@ void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/image.h>
+#endif
+
+
 #endif /* NEVERC_IMAGE_DRAW_H */

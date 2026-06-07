@@ -43,4 +43,12 @@ int neverc_textproto_trim_string(const char *s, char *out, size_t cap);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
+
+
 #endif /* NEVERC_NET_TEXTPROTO_H */

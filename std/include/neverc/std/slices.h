@@ -32,6 +32,39 @@ void *neverc_slices_clone(const void *slice, size_t len, size_t elem_size);
 int  neverc_slices_min(const void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp);
 int  neverc_slices_max(const void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp);
 
+/* Stable sort */
+void neverc_slices_sort_stable(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp);
+
+/* Delete elements [i,j) in-place. Returns new length.
+   Caller ensures 0 <= i <= j <= len. */
+size_t neverc_slices_delete(void *slice, size_t len, size_t elem_size, size_t i, size_t j);
+
+/* Insert 'count' elements from 'elems' at position 'i'.
+   slice must have capacity >= (len + count) * elem_size.
+   Returns new length. */
+size_t neverc_slices_insert(void *slice, size_t len, size_t elem_size,
+                             size_t i, const void *elems, size_t count);
+
+/* Replace elements [i,j) with 'elems' (count elements).
+   slice must have capacity >= (len - (j-i) + count) * elem_size.
+   Returns new length. */
+size_t neverc_slices_replace(void *slice, size_t len, size_t elem_size,
+                              size_t i, size_t j, const void *elems, size_t count);
+
+/* Concat: allocate new slice = s1 + s2. Caller frees. */
+void *neverc_slices_concat(const void *s1, size_t len1, const void *s2, size_t len2,
+                            size_t elem_size);
+
+/* Func-based operations */
+typedef int (*neverc_slices_pred_func_t)(const void *elem);
+
+int  neverc_slices_contains_func(const void *slice, size_t len, size_t elem_size,
+                                  neverc_slices_pred_func_t f);
+int  neverc_slices_index_func(const void *slice, size_t len, size_t elem_size,
+                               neverc_slices_pred_func_t f);
+size_t neverc_slices_delete_func(void *slice, size_t len, size_t elem_size,
+                                  neverc_slices_pred_func_t f);
+
 /* Type-specific convenience */
 int  neverc_slices_equal_ints(const int *s1, size_t len1, const int *s2, size_t len2);
 int  neverc_slices_contains_int(const int *slice, size_t len, int val);

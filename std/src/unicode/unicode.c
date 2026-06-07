@@ -175,3 +175,13 @@ uint32_t neverc_unicode_to_lower(uint32_t r) {
     if (r >= 0x100 && r <= 0x17E && !(r & 1)) return r + 1;
     return r;
 }
+
+uint32_t neverc_unicode_to_title(uint32_t r) {
+    /* For most characters, title case == upper case.
+       Special cases: Dz/Lj/Nj digraphs have distinct titlecase forms. */
+    if (r == 0x01C6 || r == 0x01C5) return 0x01C5; /* Dz -> Dz (titlecase) */
+    if (r == 0x01C9 || r == 0x01C8) return 0x01C8; /* Lj -> Lj (titlecase) */
+    if (r == 0x01CC || r == 0x01CB) return 0x01CB; /* Nj -> Nj (titlecase) */
+    if (r == 0x01F3 || r == 0x01F2) return 0x01F2; /* Dz -> Dz (titlecase) */
+    return neverc_unicode_to_upper(r);
+}

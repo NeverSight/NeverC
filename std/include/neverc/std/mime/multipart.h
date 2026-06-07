@@ -50,4 +50,12 @@ int neverc_multipart_write(const neverc_multipart_part_t *parts, int count,
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/mime.h>
+#endif
+
+
 #endif

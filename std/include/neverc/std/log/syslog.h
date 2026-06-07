@@ -64,4 +64,12 @@ int neverc_syslog_debug(neverc_syslog_t *log, const char *msg);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/log.h>
+#endif
+
+
 #endif

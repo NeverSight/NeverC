@@ -71,4 +71,12 @@ int neverc_asn1_encode_tag(uint8_t *buf, size_t cap, int tag_class,
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/encoding.h>
+#endif
+
+
 #endif /* NEVERC_ENCODING_ASN1_H */

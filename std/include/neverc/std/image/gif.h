@@ -57,4 +57,12 @@ int neverc_gif_from_rgba(const uint8_t *rgba, uint32_t width, uint32_t height,
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/image.h>
+#endif
+
+
 #endif /* NEVERC_IMAGE_GIF_H */

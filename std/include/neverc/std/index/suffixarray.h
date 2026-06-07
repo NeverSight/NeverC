@@ -32,4 +32,12 @@ int  neverc_suffixarray_at(const neverc_suffixarray_t *idx, size_t i);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/index.h>
+#endif
+
+
 #endif

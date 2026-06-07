@@ -36,4 +36,12 @@ int  neverc_signal_wait(const int *sigs, int nsigs);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/os.h>
+#endif
+
+
 #endif

@@ -38,6 +38,9 @@ void   neverc_map_delete_func(neverc_map_t *m, neverc_map_filter_func_t fn);
 neverc_map_t *neverc_map_clone(const neverc_map_t *m);
 int           neverc_map_equal(const neverc_map_t *a, const neverc_map_t *b);
 
+/* Copy: merge all entries from src into dst (overwrites existing keys). */
+void          neverc_map_copy(neverc_map_t *dst, const neverc_map_t *src);
+
 #ifdef __cplusplus
 }
 #endif

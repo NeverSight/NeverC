@@ -73,4 +73,12 @@ int  neverc_netip_addr_as16(const neverc_netip_addr_t *addr, uint8_t out[16]);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
+
+
 #endif

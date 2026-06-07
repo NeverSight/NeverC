@@ -22,4 +22,12 @@ int neverc_utf16_rune_len(int32_t r);
 #endif
 
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+#include <neverc/std/unicode.h>
+#endif
+
+
 #endif /* NEVERC_UTF16_H */

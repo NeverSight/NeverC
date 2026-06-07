@@ -1,7 +1,6 @@
 #include "neverc/std/net/mail.h"
 #include <string.h>
 #include <stdio.h>
-#include <ctype.h>
 
 static void trim(const char *s, size_t len, const char **out_start, size_t *out_len) {
     while (len > 0 && (*s == ' ' || *s == '\t')) { s++; len--; }
