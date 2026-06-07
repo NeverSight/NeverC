@@ -1,0 +1,55 @@
+/*
+ * NeverC compress/zlib tests.
+ */
+#include "neverc/compress/zlib.h"
+#include <stdio.h>
+#include <string.h>
+
+static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+
+#define ASSERT_INT_EQ(expr, expected) do { \
+    int _v = (expr); int _e = (expected); tests_run++; \
+    if (_v == _e) { tests_passed++; } \
+    else { tests_failed++; \
+           printf("  FAIL line %d: %s = %d, expected %d\n", __LINE__, #expr, _v, _e); } \
+} while(0)
+
+#define ASSERT_TRUE(expr) ASSERT_INT_EQ(!!(expr), 1)
+
+static void test_roundtrip(const char *label, const uint8_t *data, size_t len, int level) {
+    printf("[zlib %s level=%d]\n", label, level);
+    uint8_t comp[131072], decomp[131072];
+    size_t comp_len = sizeof(comp);
+    size_t decomp_len = sizeof(decomp);
+
+    int rc = neverc_zlib_compress(data, len, comp, &comp_len, level);
+    ASSERT_INT_EQ(rc, 0);
+
+    /* verify zlib magic (CMF=0x78) */
+    ASSERT_INT_EQ(comp[0], 0x78);
+
+    rc = neverc_zlib_decompress(comp, comp_len, decomp, &decomp_len);
+    ASSERT_INT_EQ(rc, 0);
+    ASSERT_INT_EQ((int)decomp_len, (int)len);
+
+    tests_run++;
+    if (len == 0 || memcmp(data, decomp, len) == 0) tests_passed++;
+    else { tests_failed++; printf("  FAIL: roundtrip mismatch\n"); }
+}
+
+int main(void) {
+    printf("=== NeverC compress/zlib Tests ===\n");
+    test_roundtrip("empty", (uint8_t *)"", 0, 0);
+    test_roundtrip("hello", (uint8_t *)"Hello, World!", 13, 0);
+    test_roundtrip("hello", (uint8_t *)"Hello, World!", 13, 6);
+
+    uint8_t data[4096];
+    memset(data, 'B', sizeof(data));
+    test_roundtrip("repetitive", data, sizeof(data), 6);
+
+    for (int i = 0; i < 4096; i++) data[i] = (uint8_t)((i * 7) & 0xFF);
+    test_roundtrip("mixed", data, sizeof(data), 1);
+
+    printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    return tests_failed > 0 ? 1 : 0;
+}

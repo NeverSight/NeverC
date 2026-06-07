@@ -1,0 +1,426 @@
+#include "neverc/net/netip.h"
+#include <string.h>
+#include <stdio.h>
+
+static int parse_decimal(const char *s, int len, unsigned *out) {
+    if (len <= 0 || len > 5) return -1;
+    unsigned v = 0;
+    for (int i = 0; i < len; i++) {
+        if (s[i] < '0' || s[i] > '9') return -1;
+        v = v * 10 + (unsigned)(s[i] - '0');
+    }
+    *out = v;
+    return 0;
+}
+
+static int parse_hex16(const char *s, int len, uint16_t *out) {
+    if (len <= 0 || len > 4) return -1;
+    uint16_t v = 0;
+    for (int i = 0; i < len; i++) {
+        char c = s[i];
+        int d;
+        if (c >= '0' && c <= '9') d = c - '0';
+        else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+        else return -1;
+        v = (uint16_t)(v * 16 + d);
+    }
+    *out = v;
+    return 0;
+}
+
+static int parse_ipv4(const char *s, size_t len, uint8_t out[4]) {
+    int octet = 0, start = 0;
+    for (int i = 0; i <= (int)len && octet < 4; i++) {
+        if (i == (int)len || s[i] == '.') {
+            unsigned v;
+            if (parse_decimal(s + start, i - start, &v) != 0 || v > 255)
+                return -1;
+            out[octet++] = (uint8_t)v;
+            start = i + 1;
+        }
+    }
+    return (octet == 4 && start == (int)len + 1) ? 0 : -1;
+}
+
+int neverc_netip_parse_addr(const char *s, neverc_netip_addr_t *out) {
+    if (!s || !out) return -1;
+    memset(out, 0, sizeof(*out));
+
+    size_t slen = strlen(s);
+    if (slen == 0 || slen > 255) return -1;
+
+    /* Try IPv4 */
+    if (slen <= 15) {
+        uint8_t v4[4];
+        if (parse_ipv4(s, slen, v4) == 0) {
+            out->is_v4 = 1;
+            out->valid = 1;
+            out->addr[10] = 0xff;
+            out->addr[11] = 0xff;
+            out->addr[12] = v4[0];
+            out->addr[13] = v4[1];
+            out->addr[14] = v4[2];
+            out->addr[15] = v4[3];
+            return 0;
+        }
+    }
+
+    /* IPv6 */
+    const char *zone_start = NULL;
+    size_t iplen = slen;
+    for (size_t i = 0; i < slen; i++) {
+        if (s[i] == '%') {
+            zone_start = s + i + 1;
+            iplen = i;
+            break;
+        }
+    }
+
+    uint16_t groups[8] = {0};
+    int ngroups = 0, dcolon_pos = -1;
+    int pos = 0;
+
+    if (iplen >= 2 && s[0] == ':' && s[1] == ':') {
+        dcolon_pos = 0;
+        pos = 2;
+        if ((int)iplen == 2) goto done_parse;
+    }
+
+    while (pos < (int)iplen) {
+        /* Check for embedded IPv4 */
+        int has_dot = 0;
+        for (int j = pos; j < (int)iplen; j++) {
+            if (s[j] == '.') { has_dot = 1; break; }
+            if (s[j] == ':') break;
+        }
+        if (has_dot) {
+            int end = (int)iplen;
+            uint8_t v4[4];
+            if (parse_ipv4(s + pos, (size_t)(end - pos), v4) != 0) return -1;
+            if (ngroups > 6) return -1;
+            groups[ngroups++] = (uint16_t)((v4[0] << 8) | v4[1]);
+            groups[ngroups++] = (uint16_t)((v4[2] << 8) | v4[3]);
+            pos = end;
+            break;
+        }
+
+        int gstart = pos;
+        while (pos < (int)iplen && s[pos] != ':') pos++;
+        int glen = pos - gstart;
+        if (glen <= 0 || glen > 4 || ngroups >= 8) return -1;
+        if (parse_hex16(s + gstart, glen, &groups[ngroups]) != 0) return -1;
+        ngroups++;
+
+        if (pos >= (int)iplen) break;
+        /* Skip the colon */
+        pos++;
+        /* Check for double colon */
+        if (pos < (int)iplen && s[pos] == ':') {
+            if (dcolon_pos >= 0) return -1;
+            dcolon_pos = ngroups;
+            pos++;
+            if (pos >= (int)iplen) break;
+        } else if (pos >= (int)iplen) {
+            /* Trailing single colon like "2001:db8::" — the :: was already handled */
+            break;
+        }
+    }
+
+done_parse:
+    if (dcolon_pos >= 0) {
+        int missing = 8 - ngroups;
+        if (missing < 0) return -1;
+        uint16_t expanded[8] = {0};
+        for (int i = 0; i < dcolon_pos; i++) expanded[i] = groups[i];
+        for (int i = dcolon_pos; i < ngroups; i++) expanded[i + missing] = groups[i];
+        memcpy(groups, expanded, sizeof(groups));
+    } else if (ngroups != 8) {
+        return -1;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        out->addr[i*2]   = (uint8_t)(groups[i] >> 8);
+        out->addr[i*2+1] = (uint8_t)(groups[i] & 0xff);
+    }
+    out->is_v4 = 0;
+    out->valid = 1;
+    if (zone_start) {
+        size_t zlen = slen - (size_t)(zone_start - s);
+        if (zlen >= sizeof(out->zone)) zlen = sizeof(out->zone) - 1;
+        memcpy(out->zone, zone_start, zlen);
+        out->zone[zlen] = '\0';
+    }
+    return 0;
+}
+
+int neverc_netip_addr_from4(uint8_t a, uint8_t b, uint8_t c, uint8_t d, neverc_netip_addr_t *out) {
+    if (!out) return -1;
+    memset(out, 0, sizeof(*out));
+    out->is_v4 = 1; out->valid = 1;
+    out->addr[10] = 0xff; out->addr[11] = 0xff;
+    out->addr[12] = a; out->addr[13] = b; out->addr[14] = c; out->addr[15] = d;
+    return 0;
+}
+
+int neverc_netip_addr_from16(const uint8_t addr[16], neverc_netip_addr_t *out) {
+    if (!out || !addr) return -1;
+    memset(out, 0, sizeof(*out));
+    memcpy(out->addr, addr, 16);
+    out->valid = 1;
+    return 0;
+}
+
+int neverc_netip_addr_string(const neverc_netip_addr_t *addr, char *buf, size_t cap) {
+    if (!addr || !buf || !addr->valid) return -1;
+    if (addr->is_v4) {
+        return snprintf(buf, cap, "%d.%d.%d.%d",
+                        addr->addr[12], addr->addr[13], addr->addr[14], addr->addr[15]);
+    }
+    /* IPv6 — find longest run of zeros for :: */
+    uint16_t groups[8];
+    for (int i = 0; i < 8; i++)
+        groups[i] = (uint16_t)((addr->addr[i*2] << 8) | addr->addr[i*2+1]);
+
+    int best_start = -1, best_len = 0, cur_start = -1, cur_len = 0;
+    for (int i = 0; i < 8; i++) {
+        if (groups[i] == 0) {
+            if (cur_start < 0) cur_start = i;
+            cur_len++;
+        } else {
+            if (cur_len > best_len && cur_len >= 2) { best_start = cur_start; best_len = cur_len; }
+            cur_start = -1; cur_len = 0;
+        }
+    }
+    if (cur_len > best_len && cur_len >= 2) { best_start = cur_start; best_len = cur_len; }
+
+    int pos = 0;
+    for (int i = 0; i < 8; i++) {
+        if (i == best_start) {
+            pos += snprintf(buf + pos, cap - (size_t)pos, "::");
+            i += best_len - 1;
+            continue;
+        }
+        if (i > 0 && i != best_start + best_len) pos += snprintf(buf + pos, cap - (size_t)pos, ":");
+        pos += snprintf(buf + pos, cap - (size_t)pos, "%x", groups[i]);
+    }
+    if (addr->zone[0]) pos += snprintf(buf + pos, cap - (size_t)pos, "%%%s", addr->zone);
+    return pos;
+}
+
+int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
+    if (!s || !out) return -1;
+    memset(out, 0, sizeof(*out));
+    size_t slen = strlen(s);
+
+    const char *colon = NULL;
+    if (s[0] == '[') {
+        const char *rb = strchr(s, ']');
+        if (!rb || rb[1] != ':') return -1;
+        char addrbuf[256];
+        size_t alen = (size_t)(rb - s - 1);
+        if (alen >= sizeof(addrbuf)) return -1;
+        memcpy(addrbuf, s+1, alen);
+        addrbuf[alen] = '\0';
+        if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
+        colon = rb + 1;
+    } else {
+        /* IPv4: find last colon */
+        colon = strrchr(s, ':');
+        if (!colon) return -1;
+        char addrbuf[256];
+        size_t alen = (size_t)(colon - s);
+        if (alen >= sizeof(addrbuf)) return -1;
+        memcpy(addrbuf, s, alen);
+        addrbuf[alen] = '\0';
+        if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
+    }
+
+    const char *port_str = colon + 1;
+    size_t plen = slen - (size_t)(port_str - s);
+    unsigned port;
+    if (parse_decimal(port_str, (int)plen, &port) != 0 || port > 65535) return -1;
+    out->port = (uint16_t)port;
+    return 0;
+}
+
+int neverc_netip_addrport_string(const neverc_netip_addrport_t *ap, char *buf, size_t cap) {
+    if (!ap || !buf) return -1;
+    char addrbuf[128];
+    neverc_netip_addr_string(&ap->addr, addrbuf, sizeof(addrbuf));
+    if (ap->addr.is_v4)
+        return snprintf(buf, cap, "%s:%u", addrbuf, ap->port);
+    else
+        return snprintf(buf, cap, "[%s]:%u", addrbuf, ap->port);
+}
+
+int neverc_netip_parse_prefix(const char *s, neverc_netip_prefix_t *out) {
+    if (!s || !out) return -1;
+    memset(out, 0, sizeof(*out));
+    const char *slash = strchr(s, '/');
+    if (!slash) return -1;
+    char addrbuf[256];
+    size_t alen = (size_t)(slash - s);
+    if (alen >= sizeof(addrbuf)) return -1;
+    memcpy(addrbuf, s, alen);
+    addrbuf[alen] = '\0';
+    if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
+
+    unsigned bits;
+    size_t blen = strlen(slash + 1);
+    if (parse_decimal(slash + 1, (int)blen, &bits) != 0) return -1;
+    int maxbits = out->addr.is_v4 ? 32 : 128;
+    if ((int)bits > maxbits) return -1;
+    out->bits = (uint8_t)bits;
+    out->valid = 1;
+    return 0;
+}
+
+int neverc_netip_prefix_string(const neverc_netip_prefix_t *pfx, char *buf, size_t cap) {
+    if (!pfx || !buf || !pfx->valid) return -1;
+    char addrbuf[128];
+    neverc_netip_addr_string(&pfx->addr, addrbuf, sizeof(addrbuf));
+    return snprintf(buf, cap, "%s/%u", addrbuf, pfx->bits);
+}
+
+int neverc_netip_addr_is_valid(const neverc_netip_addr_t *addr) { return addr && addr->valid; }
+int neverc_netip_addr_is4(const neverc_netip_addr_t *addr)     { return addr && addr->valid && addr->is_v4; }
+int neverc_netip_addr_is6(const neverc_netip_addr_t *addr)     { return addr && addr->valid && !addr->is_v4; }
+
+int neverc_netip_addr_bit_len(const neverc_netip_addr_t *addr) {
+    if (!addr || !addr->valid) return 0;
+    return addr->is_v4 ? 32 : 128;
+}
+
+int neverc_netip_addr_is_loopback(const neverc_netip_addr_t *addr) {
+    if (!addr || !addr->valid) return 0;
+    if (addr->is_v4) return addr->addr[12] == 127;
+    /* ::1 */
+    for (int i = 0; i < 15; i++) if (addr->addr[i] != 0) return 0;
+    return addr->addr[15] == 1;
+}
+
+int neverc_netip_addr_is_multicast(const neverc_netip_addr_t *addr) {
+    if (!addr || !addr->valid) return 0;
+    if (addr->is_v4) return (addr->addr[12] & 0xf0) == 0xe0;
+    return addr->addr[0] == 0xff;
+}
+
+int neverc_netip_addr_is_private(const neverc_netip_addr_t *addr) {
+    if (!addr || !addr->valid) return 0;
+    if (addr->is_v4) {
+        uint8_t a = addr->addr[12], b = addr->addr[13];
+        return a == 10 || (a == 172 && (b & 0xf0) == 16) || (a == 192 && b == 168);
+    }
+    return (addr->addr[0] & 0xfe) == 0xfc;
+}
+
+int neverc_netip_addr_is_link_local_unicast(const neverc_netip_addr_t *addr) {
+    if (!addr || !addr->valid) return 0;
+    if (addr->is_v4) return addr->addr[12] == 169 && addr->addr[13] == 254;
+    return addr->addr[0] == 0xfe && (addr->addr[1] & 0xc0) == 0x80;
+}
+
+int neverc_netip_addr_is_link_local_multicast(const neverc_netip_addr_t *addr) {
+    if (!addr || !addr->valid) return 0;
+    if (addr->is_v4) return addr->addr[12] == 224 && addr->addr[13] == 0 && addr->addr[14] == 0;
+    return addr->addr[0] == 0xff && (addr->addr[1] & 0x0f) == 0x02;
+}
+
+int neverc_netip_addr_is_global_unicast(const neverc_netip_addr_t *addr) {
+    if (!addr || !addr->valid) return 0;
+    return !neverc_netip_addr_is_loopback(addr) &&
+           !neverc_netip_addr_is_multicast(addr) &&
+           !neverc_netip_addr_is_link_local_unicast(addr) &&
+           !neverc_netip_addr_is_unspecified(addr);
+}
+
+int neverc_netip_addr_is_unspecified(const neverc_netip_addr_t *addr) {
+    if (!addr || !addr->valid) return 0;
+    if (addr->is_v4) {
+        return addr->addr[12] == 0 && addr->addr[13] == 0 &&
+               addr->addr[14] == 0 && addr->addr[15] == 0;
+    }
+    for (int i = 0; i < 16; i++) if (addr->addr[i] != 0) return 0;
+    return 1;
+}
+
+int neverc_netip_addr_compare(const neverc_netip_addr_t *a, const neverc_netip_addr_t *b) {
+    if (!a || !b) return 0;
+    if (a->is_v4 != b->is_v4) return a->is_v4 ? -1 : 1;
+    int start = a->is_v4 ? 12 : 0;
+    return memcmp(a->addr + start, b->addr + start, a->is_v4 ? 4 : 16);
+}
+
+int neverc_netip_addr_equal(const neverc_netip_addr_t *a, const neverc_netip_addr_t *b) {
+    return neverc_netip_addr_compare(a, b) == 0;
+}
+
+int neverc_netip_prefix_contains(const neverc_netip_prefix_t *pfx, const neverc_netip_addr_t *addr) {
+    if (!pfx || !addr || !pfx->valid || !addr->valid) return 0;
+    if (pfx->addr.is_v4 != addr->is_v4) return 0;
+
+    int start = pfx->addr.is_v4 ? 12 : 0;
+    int bytes = pfx->addr.is_v4 ? 4 : 16;
+    int bits = pfx->bits;
+
+    for (int i = 0; i < bytes; i++) {
+        if (bits >= 8) {
+            if (pfx->addr.addr[start+i] != addr->addr[start+i]) return 0;
+            bits -= 8;
+        } else if (bits > 0) {
+            uint8_t mask = (uint8_t)(0xff << (8 - bits));
+            if ((pfx->addr.addr[start+i] & mask) != (addr->addr[start+i] & mask)) return 0;
+            bits = 0;
+        }
+    }
+    return 1;
+}
+
+int neverc_netip_prefix_masked(const neverc_netip_prefix_t *pfx, neverc_netip_addr_t *out) {
+    if (!pfx || !out || !pfx->valid) return -1;
+    *out = pfx->addr;
+    int start = out->is_v4 ? 12 : 0;
+    int bytes = out->is_v4 ? 4 : 16;
+    int bits = pfx->bits;
+    for (int i = 0; i < bytes; i++) {
+        if (bits >= 8) { bits -= 8; continue; }
+        uint8_t mask = bits > 0 ? (uint8_t)(0xff << (8 - bits)) : 0;
+        out->addr[start+i] &= mask;
+        bits = 0;
+    }
+    return 0;
+}
+
+int neverc_netip_prefix_bits(const neverc_netip_prefix_t *pfx) {
+    return (pfx && pfx->valid) ? pfx->bits : -1;
+}
+
+void neverc_netip_addr_ipv4_unspecified(neverc_netip_addr_t *out) {
+    neverc_netip_addr_from4(0, 0, 0, 0, out);
+}
+
+void neverc_netip_addr_ipv6_unspecified(neverc_netip_addr_t *out) {
+    if (!out) return;
+    memset(out, 0, sizeof(*out));
+    out->valid = 1;
+}
+
+void neverc_netip_addr_ipv6_loopback(neverc_netip_addr_t *out) {
+    if (!out) return;
+    memset(out, 0, sizeof(*out));
+    out->addr[15] = 1;
+    out->valid = 1;
+}
+
+int neverc_netip_addr_as4(const neverc_netip_addr_t *addr, uint8_t out[4]) {
+    if (!addr || !addr->valid || !addr->is_v4 || !out) return -1;
+    memcpy(out, addr->addr + 12, 4);
+    return 4;
+}
+
+int neverc_netip_addr_as16(const neverc_netip_addr_t *addr, uint8_t out[16]) {
+    if (!addr || !addr->valid || !out) return -1;
+    memcpy(out, addr->addr, 16);
+    return 16;
+}

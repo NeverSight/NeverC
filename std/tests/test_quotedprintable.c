@@ -1,0 +1,88 @@
+#include "neverc/mime/quotedprintable.h"
+#include <stdio.h>
+#include <string.h>
+
+static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+
+#define ASSERT_EQ(a, b) do { int _a=(a), _b=(b); tests_run++; \
+    if (_a==_b) { tests_passed++; } \
+    else { tests_failed++; printf("  FAIL [%d]: %s = %d, expected %d\n", __LINE__, #a, _a, _b); } \
+} while(0)
+
+#define ASSERT_MEMEQ(a, b, n) do { tests_run++; \
+    if (memcmp(a,b,n)==0) { tests_passed++; } \
+    else { tests_failed++; printf("  FAIL [%d]: memory mismatch\n", __LINE__); } \
+} while(0)
+
+static void test_decode_basic(void) {
+    printf("[decode basic]\n");
+    unsigned char out[256];
+    int n;
+
+    n = neverc_qp_decode("Hello=20World", 13, out, sizeof(out));
+    ASSERT_EQ(n, 11);
+    ASSERT_MEMEQ(out, "Hello World", 11);
+
+    n = neverc_qp_decode("=48=65=6C=6C=6F", 15, out, sizeof(out));
+    ASSERT_EQ(n, 5);
+    ASSERT_MEMEQ(out, "Hello", 5);
+
+    n = neverc_qp_decode("line1\r\nline2", 12, out, sizeof(out));
+    ASSERT_EQ(n, 12);
+    ASSERT_MEMEQ(out, "line1\r\nline2", 12);
+}
+
+static void test_decode_soft_break(void) {
+    printf("[decode soft break]\n");
+    unsigned char out[256];
+    int n;
+
+    n = neverc_qp_decode("Hello=\r\n World", 14, out, sizeof(out));
+    ASSERT_EQ(n, 11);
+    ASSERT_MEMEQ(out, "Hello World", 11);
+
+    n = neverc_qp_decode("abc=\ndef", 8, out, sizeof(out));
+    ASSERT_EQ(n, 6);
+    ASSERT_MEMEQ(out, "abcdef", 6);
+}
+
+static void test_encode_basic(void) {
+    printf("[encode basic]\n");
+    char out[1024];
+    int n;
+
+    n = neverc_qp_encode((const unsigned char*)"Hello World", 11, out, sizeof(out), 76);
+    out[n] = '\0';
+    /* Space in the middle is not trailing, so it's kept as-is */
+    ASSERT_EQ(n > 0, 1);
+
+    n = neverc_qp_encode((const unsigned char*)"\x00\x01\xff", 3, out, sizeof(out), 76);
+    ASSERT_EQ(n, 9); /* =00=01=FF */
+    out[n] = '\0';
+    ASSERT_MEMEQ(out, "=00=01=FF", 9);
+}
+
+static void test_roundtrip(void) {
+    printf("[roundtrip]\n");
+    const char *original = "Hello, this is a test with special chars: =, \t, and \x80\x90\xff end.";
+    size_t orig_len = strlen(original);
+
+    char encoded[4096];
+    int elen = neverc_qp_encode((const unsigned char*)original, orig_len, encoded, sizeof(encoded), 76);
+    ASSERT_EQ(elen > 0, 1);
+
+    unsigned char decoded[4096];
+    int dlen = neverc_qp_decode(encoded, (size_t)elen, decoded, sizeof(decoded));
+    ASSERT_EQ((size_t)dlen, orig_len);
+    ASSERT_MEMEQ(decoded, original, orig_len);
+}
+
+int main(void) {
+    printf("=== NeverC mime/quotedprintable Tests ===\n");
+    test_decode_basic();
+    test_decode_soft_break();
+    test_encode_basic();
+    test_roundtrip();
+    printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    return tests_failed > 0 ? 1 : 0;
+}

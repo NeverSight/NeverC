@@ -5,10 +5,17 @@ using namespace neverc;
 
 static constexpr llvm::StringLiteral TopLevelModules[] = {
     "math",    "strconv", "path",    "sort",    "unicode",
+    "cmp",     "bytes",   "errors",  "html",    "fmt",
+    "io",      "bufio",   "flag",    "log",     "time",
+    "uuid",    "regexp",  "mime",    "sync",    "os",
+    "context", "slices",  "maps",    "image",
 };
 
 static constexpr llvm::StringLiteral Categories[] = {
-    "crypto", "hash", "encoding", "math", "unicode",
+    "crypto",    "hash",      "encoding",  "math",      "unicode",
+    "container", "compress",  "archive",   "text",      "log",
+    "index",     "sync",      "path",      "net",       "image",
+    "mime",      "os",        "io",        "html",
 };
 
 struct SubModuleEntry {
@@ -28,19 +35,71 @@ static constexpr SubModuleEntry SubModules[] = {
     {"crypto", "chacha20poly1305"}, {"crypto", "gcm"},
     {"crypto", "cipher"},  {"crypto", "hmac"},
     {"crypto", "subtle"},  {"crypto", "hkdf"},
-    {"crypto", "pbkdf2"},
+    {"crypto", "pbkdf2"},  {"crypto", "rand"},
+    {"crypto", "elliptic"},{"crypto", "rsa"},
+    {"crypto", "ecdsa"},   {"crypto", "dsa"},
+    {"crypto", "ed25519"},
+    {"crypto", "ecdh"},
+    // net
+    {"net", "url"},
+    {"net", "netip"},
+    {"net", "mail"},
+    // image
+    {"image", "color"},
     // hash
     {"hash", "crc32"},     {"hash", "crc64"},
     {"hash", "fnv"},       {"hash", "adler32"},
+    {"hash", "maphash"},
     // encoding
     {"encoding", "hex"},   {"encoding", "base64"},
     {"encoding", "base32"},{"encoding", "ascii85"},
     {"encoding", "binary"},{"encoding", "pem"},
+    {"encoding", "csv"},   {"encoding", "json"},
+    {"encoding", "xml"},   {"encoding", "asn1"},
     // math
     {"math", "rand"},      {"math", "bits"},
-    {"math", "cmplx"},
+    {"math", "cmplx"},     {"math", "big"},
     // unicode
     {"unicode", "utf8"},   {"unicode", "utf16"},
+    // container
+    {"container", "heap"}, {"container", "list"},
+    {"container", "ring"},
+    // compress
+    {"compress", "lzw"},   {"compress", "flate"},
+    {"compress", "gzip"},  {"compress", "zlib"},
+    {"compress", "bzip2"},
+    // archive
+    {"archive", "tar"},    {"archive", "zip"},
+    // text
+    {"text", "template"},  {"text", "scanner"},
+    {"text", "tabwriter"},
+    // log
+    {"log", "slog"},
+    {"log", "syslog"},
+    // index
+    {"index", "suffixarray"},
+    // sync
+    {"sync", "atomic"},
+    // path
+    {"path", "filepath"},
+    // mime
+    {"mime", "quotedprintable"},
+    {"mime", "multipart"},
+    // os
+    {"os", "exec"},
+    {"os", "signal"},
+    {"os", "user"},
+    // io
+    {"io", "fs"},
+    // image
+    {"image", "draw"},
+    {"image", "png"},
+    {"image", "jpeg"},
+    {"image", "gif"},
+    // html
+    {"html", "template"},
+    // net (additional)
+    {"net", "textproto"},
 };
 
 bool StdModule::isTopLevelModuleName(llvm::StringRef Name) {

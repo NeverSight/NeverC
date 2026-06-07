@@ -1,0 +1,729 @@
+#include "neverc/os.h"
+#include "neverc/_platform.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <errno.h>
+
+#if defined(NEVERC_PLATFORM_APPLE)
+#include <mach-o/dyld.h>
+#endif
+
+#if defined(NEVERC_PLATFORM_WINDOWS)
+#include <windows.h>
+#include <direct.h>
+#include <io.h>
+#include <process.h>
+#else
+#include <unistd.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#endif
+
+struct neverc_os_file {
+    FILE *fp;
+    int   fd;
+    int   is_std;
+};
+
+static neverc_os_file_t g_stdin  = { NULL, 0, 1 };
+static neverc_os_file_t g_stdout = { NULL, 1, 1 };
+static neverc_os_file_t g_stderr = { NULL, 2, 1 };
+static int g_std_init = 0;
+
+static void init_std(void) {
+    if (!g_std_init) {
+        g_stdin.fp = stdin;
+        g_stdout.fp = stdout;
+        g_stderr.fp = stderr;
+        g_std_init = 1;
+    }
+}
+
+neverc_os_file_t *neverc_os_stdin(void)  { init_std(); return &g_stdin; }
+neverc_os_file_t *neverc_os_stdout(void) { init_std(); return &g_stdout; }
+neverc_os_file_t *neverc_os_stderr(void) { init_std(); return &g_stderr; }
+
+/* ---- Environment ---- */
+
+const char *neverc_os_getenv(const char *key) {
+    return key ? getenv(key) : NULL;
+}
+
+int neverc_os_setenv(const char *key, const char *value) {
+    if (!key || !value) return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return SetEnvironmentVariableA(key, value) ? 0 : -1;
+#else
+    return setenv(key, value, 1);
+#endif
+}
+
+int neverc_os_unsetenv(const char *key) {
+    if (!key) return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return SetEnvironmentVariableA(key, NULL) ? 0 : -1;
+#else
+    return unsetenv(key);
+#endif
+}
+
+int neverc_os_hostname(char *buf, size_t cap) {
+    if (!buf || cap == 0) return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    DWORD sz = (DWORD)cap;
+    return GetComputerNameA(buf, &sz) ? 0 : -1;
+#else
+    return gethostname(buf, cap);
+#endif
+}
+
+/* ---- Working Directory ---- */
+
+int neverc_os_getwd(char *buf, size_t cap) {
+    if (!buf || cap == 0) return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return _getcwd(buf, (int)cap) ? 0 : -1;
+#else
+    return getcwd(buf, cap) ? 0 : -1;
+#endif
+}
+
+int neverc_os_chdir(const char *dir) {
+    if (!dir) return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return _chdir(dir);
+#else
+    return chdir(dir);
+#endif
+}
+
+/* ---- File Operations ---- */
+
+neverc_os_file_t *neverc_os_open(const char *name, int flags, uint32_t perm) {
+    if (!name) return NULL;
+    const char *mode;
+    int rw = flags & 0x03;
+    int create = flags & NEVERC_OS_O_CREATE;
+    int trunc = flags & NEVERC_OS_O_TRUNC;
+    int append = flags & NEVERC_OS_O_APPEND;
+
+    if (rw == NEVERC_OS_O_RDONLY) mode = "rb";
+    else if (append) mode = create ? "ab+" : "ab";
+    else if (trunc || create) mode = (rw == NEVERC_OS_O_RDWR) ? "wb+" : "wb";
+    else mode = (rw == NEVERC_OS_O_RDWR) ? "rb+" : "wb";
+
+    FILE *fp = fopen(name, mode);
+    if (!fp) return NULL;
+
+    neverc_os_file_t *f = (neverc_os_file_t*)calloc(1, sizeof(*f));
+    if (!f) { fclose(fp); return NULL; }
+    f->fp = fp;
+    f->fd = fileno(fp);
+    (void)perm;
+    return f;
+}
+
+neverc_os_file_t *neverc_os_create(const char *name) {
+    return neverc_os_open(name, NEVERC_OS_O_RDWR | NEVERC_OS_O_CREATE | NEVERC_OS_O_TRUNC, 0666);
+}
+
+void neverc_os_close(neverc_os_file_t *f) {
+    if (!f || f->is_std) return;
+    if (f->fp) fclose(f->fp);
+    free(f);
+}
+
+int neverc_os_read(neverc_os_file_t *f, void *buf, size_t count) {
+    if (!f || !f->fp || !buf) return -1;
+    size_t n = fread(buf, 1, count, f->fp);
+    if (n == 0 && ferror(f->fp)) return -1;
+    return (int)n;
+}
+
+int neverc_os_write(neverc_os_file_t *f, const void *buf, size_t count) {
+    if (!f || !f->fp || !buf) return -1;
+    size_t n = fwrite(buf, 1, count, f->fp);
+    if (n == 0 && ferror(f->fp)) return -1;
+    return (int)n;
+}
+
+int64_t neverc_os_seek(neverc_os_file_t *f, int64_t offset, int whence) {
+    if (!f || !f->fp) return -1;
+    if (fseek(f->fp, (long)offset, whence) != 0) return -1;
+    return (int64_t)ftell(f->fp);
+}
+
+int neverc_os_sync(neverc_os_file_t *f) {
+    if (!f || !f->fp) return -1;
+    fflush(f->fp);
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return 0;
+#else
+    return fsync(f->fd);
+#endif
+}
+
+/* ---- Convenience File Operations ---- */
+
+int neverc_os_read_file(const char *name, unsigned char **out, size_t *out_len) {
+    if (!name || !out || !out_len) return -1;
+    FILE *fp = fopen(name, "rb");
+    if (!fp) return -1;
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (sz < 0) { fclose(fp); return -1; }
+    unsigned char *buf = (unsigned char*)malloc((size_t)sz + 1);
+    if (!buf) { fclose(fp); return -1; }
+    size_t n = fread(buf, 1, (size_t)sz, fp);
+    fclose(fp);
+    buf[n] = '\0';
+    *out = buf;
+    *out_len = n;
+    return 0;
+}
+
+int neverc_os_write_file(const char *name, const unsigned char *data, size_t len, uint32_t perm) {
+    if (!name || !data) return -1;
+    (void)perm;
+    FILE *fp = fopen(name, "wb");
+    if (!fp) return -1;
+    size_t n = fwrite(data, 1, len, fp);
+    fclose(fp);
+    return n == len ? 0 : -1;
+}
+
+/* ---- Directory Operations ---- */
+
+int neverc_os_mkdir(const char *name, uint32_t perm) {
+    if (!name) return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    (void)perm;
+    return _mkdir(name);
+#else
+    return mkdir(name, (mode_t)perm);
+#endif
+}
+
+int neverc_os_mkdir_all(const char *path, uint32_t perm) {
+    if (!path) return -1;
+    char buf[4096];
+    size_t len = strlen(path);
+    if (len >= sizeof(buf)) return -1;
+    memcpy(buf, path, len + 1);
+
+    for (size_t i = 1; i <= len; i++) {
+        if (buf[i] == '/' || buf[i] == '\\' || buf[i] == '\0') {
+            char saved = buf[i];
+            buf[i] = '\0';
+            neverc_os_mkdir(buf, perm);
+            buf[i] = saved;
+        }
+    }
+    return neverc_os_is_dir(path) ? 0 : -1;
+}
+
+int neverc_os_remove(const char *name) {
+    if (!name) return -1;
+    return remove(name);
+}
+
+int neverc_os_remove_all(const char *path) {
+    if (!path) return -1;
+    if (!neverc_os_exists(path)) return 0;
+    if (!neverc_os_is_dir(path)) return remove(path);
+
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    WIN32_FIND_DATAA fd;
+    char pattern[4096];
+    snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return -1;
+    do {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        char child[4096];
+        snprintf(child, sizeof(child), "%s\\%s", path, fd.cFileName);
+        neverc_os_remove_all(child);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return _rmdir(path);
+#else
+    DIR *d = opendir(path);
+    if (!d) return -1;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+        char child[4096];
+        snprintf(child, sizeof(child), "%s/%s", path, ent->d_name);
+        neverc_os_remove_all(child);
+    }
+    closedir(d);
+    return rmdir(path);
+#endif
+}
+
+int neverc_os_rename(const char *oldpath, const char *newpath) {
+    if (!oldpath || !newpath) return -1;
+    return rename(oldpath, newpath);
+}
+
+/* ---- File Info ---- */
+
+int neverc_os_stat(const char *name, neverc_os_fileinfo_t *info) {
+    if (!name || !info) return -1;
+    memset(info, 0, sizeof(*info));
+
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    struct _stat64 st;
+    if (_stat64(name, &st) != 0) return -1;
+    info->size = st.st_size;
+    info->mode = (uint32_t)st.st_mode;
+    info->mod_time = (int64_t)st.st_mtime;
+    info->is_dir = (st.st_mode & _S_IFDIR) != 0;
+#else
+    struct stat st;
+    if (stat(name, &st) != 0) return -1;
+    info->size = (int64_t)st.st_size;
+    info->mode = (uint32_t)st.st_mode & 0777;
+    if (S_ISDIR(st.st_mode)) info->mode |= NEVERC_OS_MODE_DIR;
+    info->mod_time = (int64_t)st.st_mtime;
+    info->is_dir = S_ISDIR(st.st_mode);
+#endif
+
+    const char *base = strrchr(name, '/');
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    const char *base2 = strrchr(name, '\\');
+    if (base2 && (!base || base2 > base)) base = base2;
+#endif
+    base = base ? base + 1 : name;
+    strncpy(info->name, base, sizeof(info->name) - 1);
+    return 0;
+}
+
+int neverc_os_lstat(const char *name, neverc_os_fileinfo_t *info) {
+    if (!name || !info) return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return neverc_os_stat(name, info);
+#else
+    memset(info, 0, sizeof(*info));
+    struct stat st;
+    if (lstat(name, &st) != 0) return -1;
+    info->size = (int64_t)st.st_size;
+    info->mode = (uint32_t)st.st_mode & 0777;
+    if (S_ISDIR(st.st_mode)) info->mode |= NEVERC_OS_MODE_DIR;
+    if (S_ISLNK(st.st_mode)) info->mode |= NEVERC_OS_MODE_SYMLINK;
+    info->mod_time = (int64_t)st.st_mtime;
+    info->is_dir = S_ISDIR(st.st_mode);
+
+    const char *base = strrchr(name, '/');
+    base = base ? base + 1 : name;
+    strncpy(info->name, base, sizeof(info->name) - 1);
+    return 0;
+#endif
+}
+
+int neverc_os_exists(const char *name) {
+    if (!name) return 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return GetFileAttributesA(name) != INVALID_FILE_ATTRIBUTES;
+#else
+    struct stat st;
+    return stat(name, &st) == 0;
+#endif
+}
+
+int neverc_os_is_dir(const char *name) {
+    neverc_os_fileinfo_t info;
+    if (neverc_os_stat(name, &info) != 0) return 0;
+    return info.is_dir;
+}
+
+/* ---- Process ---- */
+
+int neverc_os_getpid(void) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return (int)GetCurrentProcessId();
+#else
+    return (int)getpid();
+#endif
+}
+
+int neverc_os_getppid(void) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return 0;
+#else
+    return (int)getppid();
+#endif
+}
+
+int neverc_os_getuid(void) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return 0;
+#else
+    return (int)getuid();
+#endif
+}
+
+int neverc_os_getgid(void) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return 0;
+#else
+    return (int)getgid();
+#endif
+}
+
+void neverc_os_exit(int code) {
+    exit(code);
+}
+
+/* ---- Temp ---- */
+
+int neverc_os_temp_dir(char *buf, size_t cap) {
+    if (!buf || cap == 0) return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    DWORD n = GetTempPathA((DWORD)cap, buf);
+    return n > 0 ? 0 : -1;
+#else
+    const char *tmp = getenv("TMPDIR");
+    if (!tmp) tmp = "/tmp";
+    strncpy(buf, tmp, cap - 1);
+    buf[cap-1] = '\0';
+    return 0;
+#endif
+}
+
+neverc_os_file_t *neverc_os_create_temp(const char *dir, const char *pattern) {
+    char path[4096];
+    char tmpdir[1024];
+    if (!dir || dir[0] == '\0') {
+        neverc_os_temp_dir(tmpdir, sizeof(tmpdir));
+        dir = tmpdir;
+    }
+    if (!pattern) pattern = "neverc_tmp_";
+
+    unsigned char rnd[8];
+    neverc_platform_random(rnd, sizeof(rnd));
+    char hex[17];
+    for (int i = 0; i < 8; i++) {
+        static const char h[] = "0123456789abcdef";
+        hex[i*2] = h[rnd[i]>>4];
+        hex[i*2+1] = h[rnd[i]&0xf];
+    }
+    hex[16] = '\0';
+
+    snprintf(path, sizeof(path), "%s/%s%s", dir, pattern, hex);
+    return neverc_os_create(path);
+}
+
+/* ---- Extended environment ---- */
+
+int neverc_os_lookup_env(const char *key, const char **value) {
+    const char *v = getenv(key);
+    if (value) *value = v;
+    return v != NULL;
+}
+
+char **neverc_os_environ(int *count) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    char *env = GetEnvironmentStringsA();
+    if (!env) { *count = 0; return NULL; }
+    int n = 0;
+    char *p = env;
+    while (*p) { n++; p += strlen(p) + 1; }
+    char **result = (char **)malloc((size_t)(n + 1) * sizeof(char *));
+    p = env;
+    for (int i = 0; i < n; i++) {
+        result[i] = strdup(p);
+        p += strlen(p) + 1;
+    }
+    result[n] = NULL;
+    *count = n;
+    FreeEnvironmentStringsA(env);
+    return result;
+#else
+    extern char **environ;
+    int n = 0;
+    while (environ[n]) n++;
+    char **result = (char **)malloc((size_t)(n + 1) * sizeof(char *));
+    for (int i = 0; i < n; i++) result[i] = strdup(environ[i]);
+    result[n] = NULL;
+    *count = n;
+    return result;
+#endif
+}
+
+void neverc_os_clearenv(void) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    char *env = GetEnvironmentStringsA();
+    if (!env) return;
+    char *p = env;
+    while (*p) {
+        char *eq = strchr(p, '=');
+        if (eq && eq != p) {
+            char name[256];
+            size_t nlen = (size_t)(eq - p);
+            if (nlen < sizeof(name)) {
+                memcpy(name, p, nlen);
+                name[nlen] = '\0';
+                SetEnvironmentVariableA(name, NULL);
+            }
+        }
+        p += strlen(p) + 1;
+    }
+    FreeEnvironmentStringsA(env);
+#else
+    extern char **environ;
+    environ[0] = NULL;
+#endif
+}
+
+char *neverc_os_expand_env(const char *s) {
+    if (!s) return NULL;
+    size_t cap = 256, len = 0;
+    char *out = (char *)malloc(cap);
+    const char *p = s;
+    while (*p) {
+        if (*p == '$') {
+            p++;
+            char varname[256];
+            size_t vlen = 0;
+            if (*p == '{') {
+                p++;
+                while (*p && *p != '}' && vlen < sizeof(varname) - 1)
+                    varname[vlen++] = *p++;
+                if (*p == '}') p++;
+            } else {
+                while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+                       (*p >= '0' && *p <= '9') || *p == '_')
+                    varname[vlen++] = *p++;
+            }
+            varname[vlen] = '\0';
+            const char *val = getenv(varname);
+            if (val) {
+                size_t vallen = strlen(val);
+                while (len + vallen >= cap) { cap *= 2; out = (char *)realloc(out, cap); }
+                memcpy(out + len, val, vallen);
+                len += vallen;
+            }
+        } else {
+            if (len + 1 >= cap) { cap *= 2; out = (char *)realloc(out, cap); }
+            out[len++] = *p++;
+        }
+    }
+    out[len] = '\0';
+    return out;
+}
+
+/* ---- Extended file operations ---- */
+
+int neverc_os_chmod(const char *name, uint32_t mode) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    (void)name; (void)mode;
+    return 0;
+#else
+    return chmod(name, (mode_t)mode) == 0 ? 0 : -1;
+#endif
+}
+
+int neverc_os_truncate(const char *name, int64_t size) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    HANDLE h = CreateFileA(name, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    if (h == INVALID_HANDLE_VALUE) return -1;
+    LARGE_INTEGER li; li.QuadPart = size;
+    SetFilePointerEx(h, li, NULL, FILE_BEGIN);
+    SetEndOfFile(h);
+    CloseHandle(h);
+    return 0;
+#else
+    return truncate(name, (off_t)size) == 0 ? 0 : -1;
+#endif
+}
+
+int neverc_os_link(const char *oldname, const char *newname) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return CreateHardLinkA(newname, oldname, NULL) ? 0 : -1;
+#else
+    return link(oldname, newname) == 0 ? 0 : -1;
+#endif
+}
+
+int neverc_os_symlink(const char *oldname, const char *newname) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    DWORD flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
+    DWORD attr = GetFileAttributesA(oldname);
+    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+        flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
+    return CreateSymbolicLinkA(newname, oldname, flags) ? 0 : -1;
+#else
+    return symlink(oldname, newname) == 0 ? 0 : -1;
+#endif
+}
+
+int neverc_os_readlink(const char *name, char *buf, size_t cap) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    (void)name; (void)buf; (void)cap;
+    return -1;
+#else
+    ssize_t n = readlink(name, buf, cap - 1);
+    if (n < 0) return -1;
+    buf[n] = '\0';
+    return 0;
+#endif
+}
+
+int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
+                       size_t *count) {
+    *entries = NULL; *count = 0;
+    size_t cap = 16;
+    neverc_os_dir_entry_t *arr = (neverc_os_dir_entry_t *)malloc(cap * sizeof(*arr));
+
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    char pattern[4096];
+    snprintf(pattern, sizeof(pattern), "%s\\*", dirname);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) { free(arr); return -1; }
+    do {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        if (*count >= cap) { cap *= 2; arr = (neverc_os_dir_entry_t *)realloc(arr, cap * sizeof(*arr)); }
+        strncpy(arr[*count].name, fd.cFileName, sizeof(arr[*count].name) - 1);
+        arr[*count].is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
+        (*count)++;
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR *d = opendir(dirname);
+    if (!d) { free(arr); return -1; }
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+        if (*count >= cap) { cap *= 2; arr = (neverc_os_dir_entry_t *)realloc(arr, cap * sizeof(*arr)); }
+        strncpy(arr[*count].name, ent->d_name, sizeof(arr[*count].name) - 1);
+        arr[*count].is_dir = (ent->d_type == DT_DIR) ? 1 : 0;
+        (*count)++;
+    }
+    closedir(d);
+#endif
+    *entries = arr;
+    return 0;
+}
+
+int neverc_os_mkdir_temp(const char *dir, const char *pattern,
+                         char *buf, size_t cap) {
+    char tmpdir[1024];
+    if (!dir || dir[0] == '\0') {
+        neverc_os_temp_dir(tmpdir, sizeof(tmpdir));
+        dir = tmpdir;
+    }
+    if (!pattern) pattern = "neverc_tmp_";
+
+    unsigned char rnd[8];
+    neverc_platform_random(rnd, sizeof(rnd));
+    char hex[17];
+    for (int i = 0; i < 8; i++) {
+        static const char h[] = "0123456789abcdef";
+        hex[i*2] = h[rnd[i]>>4];
+        hex[i*2+1] = h[rnd[i]&0xf];
+    }
+    hex[16] = '\0';
+
+    snprintf(buf, cap, "%s/%s%s", dir, pattern, hex);
+    return neverc_os_mkdir(buf, 0700);
+}
+
+int neverc_os_getegid(void) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return 0;
+#else
+    return (int)getegid();
+#endif
+}
+
+int neverc_os_geteuid(void) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return 0;
+#else
+    return (int)geteuid();
+#endif
+}
+
+int neverc_os_executable(char *buf, size_t cap) {
+    if (!buf || cap == 0) return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    DWORD n = GetModuleFileNameA(NULL, buf, (DWORD)cap);
+    return n > 0 ? 0 : -1;
+#elif defined(NEVERC_PLATFORM_APPLE)
+    uint32_t size = (uint32_t)cap;
+    return _NSGetExecutablePath(buf, &size) == 0 ? 0 : -1;
+#elif defined(NEVERC_PLATFORM_LINUX)
+    ssize_t n = readlink("/proc/self/exe", buf, cap - 1);
+    if (n < 0) return -1;
+    buf[n] = '\0';
+    return 0;
+#else
+    return -1;
+#endif
+}
+
+int neverc_os_user_home_dir(char *buf, size_t cap) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    const char *h = getenv("USERPROFILE");
+    if (!h) return -1;
+    strncpy(buf, h, cap - 1); buf[cap-1] = '\0';
+    return 0;
+#else
+    const char *h = getenv("HOME");
+    if (!h) return -1;
+    strncpy(buf, h, cap - 1); buf[cap-1] = '\0';
+    return 0;
+#endif
+}
+
+int neverc_os_user_cache_dir(char *buf, size_t cap) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    const char *d = getenv("LocalAppData");
+    if (!d) return -1;
+    strncpy(buf, d, cap - 1); buf[cap-1] = '\0';
+    return 0;
+#elif defined(NEVERC_PLATFORM_APPLE)
+    char home[1024];
+    if (neverc_os_user_home_dir(home, sizeof(home)) < 0) return -1;
+    snprintf(buf, cap, "%s/Library/Caches", home);
+    return 0;
+#else
+    const char *xdg = getenv("XDG_CACHE_HOME");
+    if (xdg) { strncpy(buf, xdg, cap - 1); buf[cap-1] = '\0'; return 0; }
+    char home[1024];
+    if (neverc_os_user_home_dir(home, sizeof(home)) < 0) return -1;
+    snprintf(buf, cap, "%s/.cache", home);
+    return 0;
+#endif
+}
+
+int neverc_os_user_config_dir(char *buf, size_t cap) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    const char *d = getenv("AppData");
+    if (!d) return -1;
+    strncpy(buf, d, cap - 1); buf[cap-1] = '\0';
+    return 0;
+#elif defined(NEVERC_PLATFORM_APPLE)
+    char home[1024];
+    if (neverc_os_user_home_dir(home, sizeof(home)) < 0) return -1;
+    snprintf(buf, cap, "%s/Library/Application Support", home);
+    return 0;
+#else
+    const char *xdg = getenv("XDG_CONFIG_HOME");
+    if (xdg) { strncpy(buf, xdg, cap - 1); buf[cap-1] = '\0'; return 0; }
+    char home[1024];
+    if (neverc_os_user_home_dir(home, sizeof(home)) < 0) return -1;
+    snprintf(buf, cap, "%s/.config", home);
+    return 0;
+#endif
+}
+
+int neverc_os_is_exist(int err) { return err == 17; /* EEXIST */ }
+int neverc_os_is_not_exist(int err) { return err == 2; /* ENOENT */ }
+int neverc_os_is_permission(int err) { return err == 13; /* EACCES */ }

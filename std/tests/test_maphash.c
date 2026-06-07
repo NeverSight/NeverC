@@ -1,0 +1,187 @@
+/*
+ * NeverC hash/maphash tests.
+ * Tests wyhash-based non-cryptographic hash: determinism, distribution, streaming.
+ */
+#include "neverc/hash/maphash.h"
+#include <stdio.h>
+#include <string.h>
+
+static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+
+#define ASSERT_TRUE(expr) do { tests_run++; \
+    if (expr) tests_passed++; \
+    else { tests_failed++; printf("  FAIL: %s\n", #expr); } } while(0)
+
+#define ASSERT_U64_EQ(expr, expected) do { \
+    uint64_t _v = (expr); uint64_t _e = (expected); tests_run++; \
+    if (_v == _e) { tests_passed++; } \
+    else { tests_failed++; \
+           printf("  FAIL: %s = %llu, expected %llu\n", #expr, \
+                  (unsigned long long)_v, (unsigned long long)_e); } \
+} while(0)
+
+#define ASSERT_U64_NE(expr, unexpected) do { \
+    uint64_t _v = (expr); uint64_t _u = (unexpected); tests_run++; \
+    if (_v != _u) { tests_passed++; } \
+    else { tests_failed++; \
+           printf("  FAIL: %s should not be %llu\n", #expr, (unsigned long long)_u); } \
+} while(0)
+
+static void test_determinism(void) {
+    printf("[determinism]\n");
+    uint64_t seed = 12345;
+    uint64_t h1 = neverc_maphash_bytes(seed, "hello", 5);
+    uint64_t h2 = neverc_maphash_bytes(seed, "hello", 5);
+    ASSERT_U64_EQ(h1, h2);
+
+    uint64_t h3 = neverc_maphash_string(seed, "hello");
+    ASSERT_U64_EQ(h1, h3);
+}
+
+static void test_different_seeds(void) {
+    printf("[different_seeds]\n");
+    uint64_t h1 = neverc_maphash_string(111, "test");
+    uint64_t h2 = neverc_maphash_string(222, "test");
+    ASSERT_U64_NE(h1, h2);
+}
+
+static void test_different_data(void) {
+    printf("[different_data]\n");
+    uint64_t seed = 42;
+    uint64_t h1 = neverc_maphash_string(seed, "abc");
+    uint64_t h2 = neverc_maphash_string(seed, "abd");
+    ASSERT_U64_NE(h1, h2);
+
+    uint64_t h3 = neverc_maphash_string(seed, "");
+    uint64_t h4 = neverc_maphash_string(seed, "a");
+    ASSERT_U64_NE(h3, h4);
+}
+
+static void test_streaming(void) {
+    printf("[streaming]\n");
+    uint64_t seed = 99999;
+
+    /* one-shot */
+    uint64_t oneshot = neverc_maphash_string(seed, "hello world");
+
+    /* streaming in chunks */
+    neverc_maphash_t h;
+    neverc_maphash_init(&h, seed);
+    neverc_maphash_write(&h, "hello ", 6);
+    neverc_maphash_write(&h, "world", 5);
+    uint64_t streamed = neverc_maphash_sum64(&h);
+
+    /* streaming byte-by-byte */
+    neverc_maphash_init(&h, seed);
+    const char *s = "hello world";
+    for (int i = 0; s[i]; i++)
+        neverc_maphash_write_byte(&h, (uint8_t)s[i]);
+    uint64_t bytebyb = neverc_maphash_sum64(&h);
+
+    ASSERT_U64_EQ(oneshot, streamed);
+    ASSERT_U64_EQ(oneshot, bytebyb);
+}
+
+static void test_reset(void) {
+    printf("[reset]\n");
+    neverc_maphash_t h;
+    neverc_maphash_init(&h, 42);
+    neverc_maphash_write_string(&h, "abc");
+    uint64_t h1 = neverc_maphash_sum64(&h);
+
+    neverc_maphash_reset(&h);
+    neverc_maphash_write_string(&h, "abc");
+    uint64_t h2 = neverc_maphash_sum64(&h);
+    ASSERT_U64_EQ(h1, h2);
+
+    neverc_maphash_reset(&h);
+    neverc_maphash_write_string(&h, "xyz");
+    uint64_t h3 = neverc_maphash_sum64(&h);
+    ASSERT_U64_NE(h1, h3);
+}
+
+static void test_make_seed(void) {
+    printf("[make_seed]\n");
+    uint64_t s1 = neverc_maphash_make_seed();
+    uint64_t s2 = neverc_maphash_make_seed();
+    ASSERT_U64_NE(s1, 0);
+    ASSERT_U64_NE(s2, 0);
+    ASSERT_U64_NE(s1, s2);
+}
+
+static void test_empty_data(void) {
+    printf("[empty_data]\n");
+    uint64_t h1 = neverc_maphash_bytes(42, "", 0);
+    uint64_t h2 = neverc_maphash_bytes(42, "a", 1);
+    ASSERT_U64_NE(h1, h2);
+}
+
+static void test_large_data(void) {
+    printf("[large_data]\n");
+    char buf[1024];
+    memset(buf, 'A', sizeof(buf));
+    uint64_t seed = 777;
+
+    uint64_t h1 = neverc_maphash_bytes(seed, buf, sizeof(buf));
+
+    neverc_maphash_t h;
+    neverc_maphash_init(&h, seed);
+    neverc_maphash_write(&h, buf, sizeof(buf));
+    uint64_t h2 = neverc_maphash_sum64(&h);
+    ASSERT_U64_EQ(h1, h2);
+
+    /* streaming in 100-byte chunks */
+    neverc_maphash_init(&h, seed);
+    for (int i = 0; i < 1024; i += 100) {
+        int chunk = 100;
+        if (i + chunk > 1024) chunk = 1024 - i;
+        neverc_maphash_write(&h, buf + i, (size_t)chunk);
+    }
+    uint64_t h3 = neverc_maphash_sum64(&h);
+    ASSERT_U64_EQ(h1, h3);
+}
+
+static void test_distribution(void) {
+    printf("[distribution]\n");
+    /* Hash 1000 sequential integers and check that bits are well distributed */
+    uint64_t seed = 31415;
+    uint64_t bit_counts[64];
+    memset(bit_counts, 0, sizeof(bit_counts));
+
+    for (int i = 0; i < 1000; i++) {
+        uint64_t h = neverc_maphash_bytes(seed, &i, sizeof(i));
+        for (int b = 0; b < 64; b++)
+            if (h & (1ULL << b))
+                bit_counts[b]++;
+    }
+
+    int good_bits = 0;
+    for (int b = 0; b < 64; b++) {
+        /* each bit should be set ~500 times out of 1000 (±15% tolerance) */
+        if (bit_counts[b] > 350 && bit_counts[b] < 650)
+            good_bits++;
+    }
+    /* at least 58/64 bits should pass the distribution check */
+    tests_run++;
+    if (good_bits >= 58) {
+        tests_passed++;
+    } else {
+        tests_failed++;
+        printf("  FAIL: only %d/64 bits well-distributed\n", good_bits);
+    }
+}
+
+int main(void) {
+    printf("=== NeverC hash/maphash Tests ===\n");
+    test_determinism();
+    test_different_seeds();
+    test_different_data();
+    test_streaming();
+    test_reset();
+    test_make_seed();
+    test_empty_data();
+    test_large_data();
+    test_distribution();
+    printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    return tests_failed > 0 ? 1 : 0;
+}

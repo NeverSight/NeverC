@@ -1,0 +1,108 @@
+#include "neverc/html.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+
+static void check_str(const char *name, const char *got, const char *expected) {
+    tests_run++;
+    if (got && expected && strcmp(got, expected) == 0) tests_passed++;
+    else {
+        tests_failed++;
+        printf("  FAIL: %s: got \"%s\", expected \"%s\"\n",
+               name, got ? got : "(null)", expected ? expected : "(null)");
+    }
+}
+
+static void test_escape(void) {
+    printf("[escape]\n");
+    size_t outlen;
+
+    char *r1 = neverc_html_escape_string("Hello, <World>!", &outlen);
+    check_str("basic tags", r1, "Hello, &lt;World&gt;!");
+    free(r1);
+
+    char *r2 = neverc_html_escape_string("\"foo\" & 'bar'", &outlen);
+    check_str("quotes and amp", r2, "&#34;foo&#34; &amp; &#39;bar&#39;");
+    free(r2);
+
+    char *r3 = neverc_html_escape_string("no special chars", &outlen);
+    check_str("no escape needed", r3, "no special chars");
+    free(r3);
+
+    char *r4 = neverc_html_escape_string("", &outlen);
+    check_str("empty", r4, "");
+    free(r4);
+
+    char *r5 = neverc_html_escape_string("<script>alert('xss')</script>", &outlen);
+    check_str("xss", r5, "&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;");
+    free(r5);
+
+    char *r6 = neverc_html_escape_string("a < b && c > d", &outlen);
+    check_str("operators", r6, "a &lt; b &amp;&amp; c &gt; d");
+    free(r6);
+}
+
+static void test_unescape(void) {
+    printf("[unescape]\n");
+    size_t outlen;
+
+    char *r1 = neverc_html_unescape_string("&lt;b&gt;hello&lt;/b&gt;", &outlen);
+    check_str("basic", r1, "<b>hello</b>");
+    free(r1);
+
+    char *r2 = neverc_html_unescape_string("&#34;foo&#34; &amp; &#39;bar&#39;", &outlen);
+    check_str("entities", r2, "\"foo\" & 'bar'");
+    free(r2);
+
+    char *r3 = neverc_html_unescape_string("no entities", &outlen);
+    check_str("passthrough", r3, "no entities");
+    free(r3);
+
+    char *r4 = neverc_html_unescape_string("&#65;&#66;&#67;", &outlen);
+    check_str("decimal entities", r4, "ABC");
+    free(r4);
+
+    char *r5 = neverc_html_unescape_string("&#x41;&#x42;&#x43;", &outlen);
+    check_str("hex entities", r5, "ABC");
+    free(r5);
+
+    char *r6 = neverc_html_unescape_string("&quot;hi&quot;", &outlen);
+    check_str("quot entity", r6, "\"hi\"");
+    free(r6);
+}
+
+static void test_roundtrip(void) {
+    printf("[roundtrip]\n");
+    size_t len1, len2;
+    const char *originals[] = {
+        "Hello, World!",
+        "<script>alert('xss')</script>",
+        "a < b && c > d",
+        "\"quoted\" & 'single'",
+        "normal text no escaping"
+    };
+    for (int i = 0; i < 5; i++) {
+        char *escaped = neverc_html_escape_string(originals[i], &len1);
+        char *unescaped = neverc_html_unescape_string(escaped, &len2);
+        tests_run++;
+        if (strcmp(unescaped, originals[i]) == 0) tests_passed++;
+        else {
+            tests_failed++;
+            printf("  FAIL: roundtrip[%d]: \"%s\" -> \"%s\" -> \"%s\"\n",
+                   i, originals[i], escaped, unescaped);
+        }
+        free(escaped);
+        free(unescaped);
+    }
+}
+
+int main(void) {
+    printf("=== NeverC HTML Module Tests ===\n\n");
+    test_escape();
+    test_unescape();
+    test_roundtrip();
+    printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    return tests_failed > 0 ? 1 : 0;
+}

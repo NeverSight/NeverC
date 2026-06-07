@@ -1,0 +1,231 @@
+#include "neverc/net/netip.h"
+#include <stdio.h>
+#include <string.h>
+
+static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+
+#define ASSERT_TRUE(expr) do { tests_run++; \
+    if (expr) { tests_passed++; } \
+    else { tests_failed++; printf("  FAIL [%d]: %s\n", __LINE__, #expr); } \
+} while(0)
+
+#define ASSERT_EQ(a, b) do { int _a=(a), _b=(b); tests_run++; \
+    if (_a==_b) { tests_passed++; } \
+    else { tests_failed++; printf("  FAIL [%d]: %s = %d, expected %d\n", __LINE__, #a, _a, _b); } \
+} while(0)
+
+#define ASSERT_STREQ(a, b) do { tests_run++; \
+    if (strcmp(a,b)==0) { tests_passed++; } \
+    else { tests_failed++; printf("  FAIL [%d]: got \"%s\", expected \"%s\"\n", __LINE__, a, b); } \
+} while(0)
+
+static void test_parse_ipv4(void) {
+    printf("[parse IPv4]\n");
+    neverc_netip_addr_t addr;
+    ASSERT_EQ(neverc_netip_parse_addr("192.168.1.1", &addr), 0);
+    ASSERT_TRUE(addr.is_v4);
+    ASSERT_TRUE(addr.valid);
+    char buf[64];
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "192.168.1.1");
+
+    ASSERT_EQ(neverc_netip_parse_addr("0.0.0.0", &addr), 0);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "0.0.0.0");
+
+    ASSERT_EQ(neverc_netip_parse_addr("255.255.255.255", &addr), 0);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "255.255.255.255");
+
+    ASSERT_EQ(neverc_netip_parse_addr("256.0.0.0", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("1.2.3", &addr), -1);
+}
+
+static void test_parse_ipv6(void) {
+    printf("[parse IPv6]\n");
+    neverc_netip_addr_t addr;
+    char buf[128];
+
+    ASSERT_EQ(neverc_netip_parse_addr("::1", &addr), 0);
+    ASSERT_TRUE(!addr.is_v4);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "::1");
+
+    ASSERT_EQ(neverc_netip_parse_addr("::", &addr), 0);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "::");
+
+    ASSERT_EQ(neverc_netip_parse_addr("2001:db8::1", &addr), 0);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "2001:db8::1");
+
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%eth0", &addr), 0);
+    ASSERT_STREQ(addr.zone, "eth0");
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "fe80::1%eth0");
+
+    ASSERT_EQ(neverc_netip_parse_addr("ff02::1", &addr), 0);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "ff02::1");
+}
+
+static void test_addr_from4(void) {
+    printf("[addr_from4]\n");
+    neverc_netip_addr_t addr;
+    neverc_netip_addr_from4(10, 0, 0, 1, &addr);
+    char buf[64];
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "10.0.0.1");
+    ASSERT_TRUE(neverc_netip_addr_is4(&addr));
+}
+
+static void test_properties(void) {
+    printf("[properties]\n");
+    neverc_netip_addr_t addr;
+
+    neverc_netip_parse_addr("127.0.0.1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_loopback(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is_multicast(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is_private(&addr));
+
+    neverc_netip_parse_addr("10.0.0.1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_private(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is_loopback(&addr));
+
+    neverc_netip_parse_addr("172.16.0.1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_private(&addr));
+
+    neverc_netip_parse_addr("192.168.0.1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_private(&addr));
+
+    neverc_netip_parse_addr("224.0.0.1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_multicast(&addr));
+
+    neverc_netip_parse_addr("169.254.1.1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_link_local_unicast(&addr));
+
+    neverc_netip_parse_addr("0.0.0.0", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_unspecified(&addr));
+
+    neverc_netip_parse_addr("8.8.8.8", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_global_unicast(&addr));
+
+    neverc_netip_parse_addr("::1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_loopback(&addr));
+    ASSERT_EQ(neverc_netip_addr_bit_len(&addr), 128);
+
+    neverc_netip_parse_addr("fe80::1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_link_local_unicast(&addr));
+
+    neverc_netip_parse_addr("ff02::1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_multicast(&addr));
+    ASSERT_TRUE(neverc_netip_addr_is_link_local_multicast(&addr));
+
+    neverc_netip_parse_addr("fc00::1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_private(&addr));
+
+    neverc_netip_parse_addr("::", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_unspecified(&addr));
+}
+
+static void test_compare(void) {
+    printf("[compare]\n");
+    neverc_netip_addr_t a, b;
+    neverc_netip_parse_addr("1.2.3.4", &a);
+    neverc_netip_parse_addr("1.2.3.5", &b);
+    ASSERT_TRUE(neverc_netip_addr_compare(&a, &b) < 0);
+    ASSERT_TRUE(neverc_netip_addr_compare(&b, &a) > 0);
+    ASSERT_TRUE(neverc_netip_addr_equal(&a, &a));
+    ASSERT_TRUE(!neverc_netip_addr_equal(&a, &b));
+}
+
+static void test_prefix(void) {
+    printf("[prefix]\n");
+    neverc_netip_prefix_t pfx;
+    char buf[128];
+
+    ASSERT_EQ(neverc_netip_parse_prefix("192.168.1.0/24", &pfx), 0);
+    ASSERT_EQ(neverc_netip_prefix_bits(&pfx), 24);
+    neverc_netip_prefix_string(&pfx, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "192.168.1.0/24");
+
+    neverc_netip_addr_t addr;
+    neverc_netip_parse_addr("192.168.1.100", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+
+    neverc_netip_parse_addr("192.168.2.1", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("10.0.0.0/8", &pfx), 0);
+    neverc_netip_parse_addr("10.255.255.255", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("11.0.0.0", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("2001:db8::/32", &pfx), 0);
+    neverc_netip_parse_addr("2001:db8::1", &addr);
+    ASSERT_TRUE(neverc_netip_prefix_contains(&pfx, &addr));
+    neverc_netip_parse_addr("2001:db9::1", &addr);
+    ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
+
+    ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/33", &pfx), -1);
+}
+
+static void test_addrport(void) {
+    printf("[addrport]\n");
+    neverc_netip_addrport_t ap;
+    char buf[128];
+
+    ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1:8080", &ap), 0);
+    ASSERT_EQ(ap.port, 8080);
+    neverc_netip_addrport_string(&ap, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "192.168.1.1:8080");
+
+    ASSERT_EQ(neverc_netip_parse_addrport("[::1]:443", &ap), 0);
+    ASSERT_EQ(ap.port, 443);
+    neverc_netip_addrport_string(&ap, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "[::1]:443");
+}
+
+static void test_wellknown(void) {
+    printf("[well-known addresses]\n");
+    neverc_netip_addr_t addr;
+    char buf[128];
+
+    neverc_netip_addr_ipv4_unspecified(&addr);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "0.0.0.0");
+
+    neverc_netip_addr_ipv6_loopback(&addr);
+    neverc_netip_addr_string(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "::1");
+    ASSERT_TRUE(neverc_netip_addr_is_loopback(&addr));
+}
+
+static void test_as_bytes(void) {
+    printf("[as bytes]\n");
+    neverc_netip_addr_t addr;
+    neverc_netip_addr_from4(10, 20, 30, 40, &addr);
+    uint8_t v4[4];
+    ASSERT_EQ(neverc_netip_addr_as4(&addr, v4), 4);
+    ASSERT_EQ(v4[0], 10); ASSERT_EQ(v4[1], 20); ASSERT_EQ(v4[2], 30); ASSERT_EQ(v4[3], 40);
+
+    uint8_t v16[16];
+    ASSERT_EQ(neverc_netip_addr_as16(&addr, v16), 16);
+    ASSERT_EQ(v16[12], 10); ASSERT_EQ(v16[13], 20);
+}
+
+int main(void) {
+    printf("=== NeverC net/netip Tests ===\n");
+    test_parse_ipv4();
+    test_parse_ipv6();
+    test_addr_from4();
+    test_properties();
+    test_compare();
+    test_prefix();
+    test_addrport();
+    test_wellknown();
+    test_as_bytes();
+    printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    return tests_failed > 0 ? 1 : 0;
+}
