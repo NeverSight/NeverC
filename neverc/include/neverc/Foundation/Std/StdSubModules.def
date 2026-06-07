@@ -33,6 +33,10 @@ STD_SUBMODULE(crypto, ed25519)
 STD_SUBMODULE(crypto, ecdh)
 
 // net
+STD_SUBMODULE(net, tcp)
+STD_SUBMODULE(net, udp)
+STD_SUBMODULE(net, http)
+STD_SUBMODULE(net, websocket)
 STD_SUBMODULE(net, url)
 STD_SUBMODULE(net, netip)
 STD_SUBMODULE(net, mail)

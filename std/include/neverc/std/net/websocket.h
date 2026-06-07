@@ -1,0 +1,85 @@
+#ifndef NEVERC_NET_WEBSOCKET_H
+#define NEVERC_NET_WEBSOCKET_H
+
+/*
+ * NeverC net/websocket — WebSocket protocol (RFC 6455).
+ *
+ * Server-side upgrade + framed I/O on top of TCP.
+ * Cross-platform: POSIX + WinSock.
+ */
+
+#include "neverc/std/net/http.h"
+#include "neverc/std/net/tcp.h"
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define NC_WS_OPCODE_CONTINUATION 0x0
+#define NC_WS_OPCODE_TEXT         0x1
+#define NC_WS_OPCODE_BINARY       0x2
+#define NC_WS_OPCODE_CLOSE        0x8
+#define NC_WS_OPCODE_PING         0x9
+#define NC_WS_OPCODE_PONG         0xA
+
+typedef struct neverc_ws_conn neverc_ws_conn_t;
+
+/* --- Handshake (server) --- */
+
+/* Compute Sec-WebSocket-Accept from Sec-WebSocket-Key. */
+int neverc_ws_compute_accept(const char *key, char *accept, size_t accept_cap);
+
+/* Validate upgrade headers and write HTTP 101 response. Returns 0 on success. */
+int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
+                                size_t raw_len, size_t *consumed);
+
+/* Upgrade an HTTP handler connection to WebSocket (RFC 6455).
+ * Validates request headers, sends 101, hijacks the connection.
+ * Returns ws conn on success (caller must free), NULL on failure. */
+neverc_ws_conn_t *neverc_ws_upgrade_http(neverc_http_request_t *req,
+                                          neverc_http_response_writer_t *w);
+
+/* --- Connection --- */
+
+/* Create WebSocket connection from TCP conn (takes ownership of socket). */
+neverc_ws_conn_t *neverc_ws_conn_new(neverc_tcp_conn_t *conn);
+
+void neverc_ws_conn_free(neverc_ws_conn_t *conn);
+
+/* Set read timeout in milliseconds (0 = no timeout). */
+int neverc_ws_set_timeout(neverc_ws_conn_t *conn, int ms);
+
+/* --- Frame I/O --- */
+
+/* Read next frame. Returns 0 on success, -1 on error.
+ * If fin is non-NULL, set to 1 when this is the final fragment. */
+int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
+                          void *buf, size_t buflen, size_t *out_len);
+
+/* Write text/binary frame. Server frames are unmasked. */
+int neverc_ws_write_text(neverc_ws_conn_t *conn, const void *data, size_t len);
+int neverc_ws_write_binary(neverc_ws_conn_t *conn, const void *data, size_t len);
+
+/* Control frames */
+int neverc_ws_send_ping(neverc_ws_conn_t *conn, const void *data, size_t len);
+int neverc_ws_send_pong(neverc_ws_conn_t *conn, const void *data, size_t len);
+int neverc_ws_send_close(neverc_ws_conn_t *conn, uint16_t code, const char *reason);
+
+/* Read a complete text message (handles fragmentation). */
+int neverc_ws_read_message(neverc_ws_conn_t *conn, char *buf, size_t buflen,
+                            size_t *out_len);
+
+/* Write a complete text message. */
+int neverc_ws_write_message(neverc_ws_conn_t *conn, const char *msg);
+
+#ifdef __cplusplus
+}
+#endif
+
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
+
+#endif /* NEVERC_NET_WEBSOCKET_H */

@@ -170,6 +170,11 @@ STD_TEST(sync, "src/sync/sync.c")
 STD_TEST(atomic, "src/sync/atomic/atomic.c")
 
 // ===== Net =====
+STD_TEST(tcp, "src/net/tcp/tcp.c")
+STD_TEST(udp, "src/net/udp/udp.c")
+STD_TEST(http, "src/net/http/http.c", "src/net/tcp/tcp.c")
+STD_TEST(websocket, "src/net/websocket/websocket.c", "src/net/tcp/tcp.c",
+    "src/net/http/http.c", "src/crypto/sha1/sha1.c", "src/encoding/base64/base64.c")
 STD_TEST(url, "src/net/url/url.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c")

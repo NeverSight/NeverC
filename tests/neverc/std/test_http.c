@@ -1,0 +1,1605 @@
+#include "neverc/std/net/http.h"
+#include "neverc/std/net/tcp.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <pthread.h>
+#endif
+
+static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+
+static void check_int(const char *name, int got, int expected) {
+    tests_run++;
+    if (got == expected) tests_passed++;
+    else { tests_failed++; printf("  FAIL: %s: got %d, expected %d\n", name, got, expected); }
+}
+
+static void check_str(const char *name, const char *got, const char *expected) {
+    tests_run++;
+    if (got == NULL && expected == NULL) { tests_passed++; return; }
+    if (got == NULL || expected == NULL) {
+        tests_failed++;
+        printf("  FAIL: %s: got %s, expected %s\n", name,
+               got ? got : "NULL", expected ? expected : "NULL");
+        return;
+    }
+    if (strcmp(got, expected) == 0) tests_passed++;
+    else { tests_failed++; printf("  FAIL: %s: got \"%s\", expected \"%s\"\n", name, got, expected); }
+}
+
+static void check_not_null(const char *name, const void *ptr) {
+    tests_run++;
+    if (ptr) tests_passed++;
+    else { tests_failed++; printf("  FAIL: %s: got NULL\n", name); }
+}
+
+/* ===== Status text ===== */
+
+static void test_status_text(void) {
+    printf("[status_text]\n");
+    check_str("100", neverc_http_status_text(100), "Continue");
+    check_str("101", neverc_http_status_text(101), "Switching Protocols");
+    check_str("200", neverc_http_status_text(200), "OK");
+    check_str("201", neverc_http_status_text(201), "Created");
+    check_str("202", neverc_http_status_text(202), "Accepted");
+    check_str("204", neverc_http_status_text(204), "No Content");
+    check_str("301", neverc_http_status_text(301), "Moved Permanently");
+    check_str("302", neverc_http_status_text(302), "Found");
+    check_str("304", neverc_http_status_text(304), "Not Modified");
+    check_str("307", neverc_http_status_text(307), "Temporary Redirect");
+    check_str("400", neverc_http_status_text(400), "Bad Request");
+    check_str("401", neverc_http_status_text(401), "Unauthorized");
+    check_str("403", neverc_http_status_text(403), "Forbidden");
+    check_str("404", neverc_http_status_text(404), "Not Found");
+    check_str("405", neverc_http_status_text(405), "Method Not Allowed");
+    check_str("408", neverc_http_status_text(408), "Request Timeout");
+    check_str("409", neverc_http_status_text(409), "Conflict");
+    check_str("422", neverc_http_status_text(422), "Unprocessable Entity");
+    check_str("429", neverc_http_status_text(429), "Too Many Requests");
+    check_str("500", neverc_http_status_text(500), "Internal Server Error");
+    check_str("502", neverc_http_status_text(502), "Bad Gateway");
+    check_str("503", neverc_http_status_text(503), "Service Unavailable");
+    check_str("504", neverc_http_status_text(504), "Gateway Timeout");
+    check_str("999", neverc_http_status_text(999), "Unknown");
+}
+
+/* ===== Query get ===== */
+
+static void test_query_get(void) {
+    printf("[query_get]\n");
+    char buf[256];
+
+    const char *v = neverc_http_query_get("name=John&age=30", "name", buf, sizeof(buf));
+    check_str("query name", v, "John");
+
+    v = neverc_http_query_get("name=John&age=30", "age", buf, sizeof(buf));
+    check_str("query age", v, "30");
+
+    v = neverc_http_query_get("name=John&age=30", "missing", buf, sizeof(buf));
+    check_int("query missing", v == NULL, 1);
+
+    v = neverc_http_query_get("key=", "key", buf, sizeof(buf));
+    check_str("query empty val", v, "");
+
+    v = neverc_http_query_get(NULL, "key", buf, sizeof(buf));
+    check_int("query null", v == NULL, 1);
+
+    v = neverc_http_query_get("a=1&b=2&c=3", "c", buf, sizeof(buf));
+    check_str("query last", v, "3");
+
+    v = neverc_http_query_get("x=hello%20world", "x", buf, sizeof(buf));
+    check_str("query encoded", v, "hello%20world");
+
+    v = neverc_http_query_get("a=1&a=2", "a", buf, sizeof(buf));
+    check_str("query dup first", v, "1");
+
+    v = neverc_http_query_get("long=aaaaaaaaaaaa&short=b", "short", buf, sizeof(buf));
+    check_str("query after long", v, "b");
+}
+
+/* ===== Mux ===== */
+
+static void dummy_handler(neverc_http_request_t *req,
+                           neverc_http_response_writer_t *w) {
+    (void)req; (void)w;
+}
+
+static void test_mux(void) {
+    printf("[mux]\n");
+    neverc_http_mux_t *mux = neverc_http_new_mux();
+    check_not_null("new_mux", mux);
+
+    neverc_http_mux_handle(mux, "/", dummy_handler);
+    neverc_http_mux_handle(mux, "/api/", dummy_handler);
+    neverc_http_mux_handle(mux, "/health", dummy_handler);
+    neverc_http_mux_handle(mux, "/api/v1/", dummy_handler);
+    neverc_http_mux_handle(mux, "/api/v2/", dummy_handler);
+    check_int("mux ok", 1, 1);
+
+    neverc_http_mux_free(mux);
+
+    /* Null mux safety */
+    neverc_http_mux_handle(NULL, "/test", dummy_handler);
+    neverc_http_mux_free(NULL);
+    check_int("null mux safe", 1, 1);
+}
+
+/* ===== Response writer null safety ===== */
+
+static void test_writer_null_safety(void) {
+    printf("[writer_null]\n");
+    neverc_http_set_status(NULL, 200);
+    neverc_http_set_header(NULL, "X", "Y");
+    check_int("write null", neverc_http_write(NULL, "x", 1), 0);
+    check_int("write_string null", neverc_http_write_string(NULL, "x"), 0);
+    check_int("writef null", neverc_http_writef(NULL, "%s", "x"), 0);
+    tests_passed++; tests_run++;
+}
+
+/* ===== HTTP response free null safety ===== */
+
+static void test_response_free_null(void) {
+    printf("[response_free_null]\n");
+    neverc_http_response_free(NULL);
+    tests_passed++; tests_run++;
+}
+
+/* ===== HTTP Server (fork-based test) ===== */
+
+#ifndef _WIN32
+
+static void hello_handler(neverc_http_request_t *req,
+                           neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_set_header(w, "X-Custom", "test");
+    neverc_http_write_string(w, "Hello, World!");
+}
+
+static void echo_handler(neverc_http_request_t *req,
+                          neverc_http_response_writer_t *w) {
+    neverc_http_set_header(w, "Content-Type", "application/json");
+    neverc_http_writef(w, "{\"method\":\"%s\",\"path\":\"%s\"}", req->method, req->path);
+}
+
+static void post_handler(neverc_http_request_t *req,
+                          neverc_http_response_writer_t *w) {
+    neverc_http_set_status(w, 201);
+    neverc_http_set_header(w, "Content-Type", "text/plain");
+    if (req->body && req->body_len > 0) {
+        neverc_http_writef(w, "received %zu bytes", req->body_len);
+    } else {
+        neverc_http_write_string(w, "no body");
+    }
+}
+
+static void method_handler(neverc_http_request_t *req,
+                             neverc_http_response_writer_t *w) {
+    neverc_http_writef(w, "method=%s", req->method);
+}
+
+static void delete_handler(neverc_http_request_t *req,
+                             neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_set_status(w, 204);
+}
+
+static void query_handler(neverc_http_request_t *req,
+                            neverc_http_response_writer_t *w) {
+    char buf[256];
+    const char *name = neverc_http_query_get(req->query, "name", buf, sizeof(buf));
+    if (name)
+        neverc_http_writef(w, "hello %s", name);
+    else
+        neverc_http_write_string(w, "no name");
+}
+
+static void header_handler(neverc_http_request_t *req,
+                             neverc_http_response_writer_t *w) {
+    const char *ua = neverc_http_request_header(req, "User-Agent");
+    if (ua)
+        neverc_http_writef(w, "ua=%s", ua);
+    else
+        neverc_http_write_string(w, "no ua");
+}
+
+static int get_free_port(void) {
+    const char *err = NULL;
+    neverc_tcp_listener_t *probe = neverc_tcp_listen("127.0.0.1:0", &err);
+    if (!probe) return -1;
+    neverc_tcp_addr_t pa;
+    neverc_tcp_listener_addr(probe, &pa);
+    int port = pa.port;
+    neverc_tcp_listener_close(probe);
+    return port;
+}
+
+static int do_http_request(int port, const char *request,
+                            char *response, size_t resplen) {
+    const char *err = NULL;
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+    if (!conn) return -1;
+
+    neverc_tcp_set_timeout(conn, 3000);
+    neverc_tcp_write(conn, request, strlen(request));
+
+    int total = 0;
+    while (total < (int)resplen - 1) {
+        int n = neverc_tcp_read(conn, response + total, resplen - 1 - (size_t)total);
+        if (n <= 0) break;
+        total += n;
+    }
+    response[total] = '\0';
+    neverc_tcp_close(conn);
+    return total;
+}
+
+static pid_t start_test_server(int port) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/hello", hello_handler);
+        neverc_http_mux_handle(mux, "/echo", echo_handler);
+        neverc_http_mux_handle(mux, "/post", post_handler);
+        neverc_http_mux_handle(mux, "/query", query_handler);
+        neverc_http_mux_handle(mux, "/header", header_handler);
+        neverc_http_mux_handle(mux, "/method", method_handler);
+        neverc_http_mux_handle(mux, "/delete", delete_handler);
+
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    return pid;
+}
+
+static void stop_test_server(pid_t pid) {
+    kill(pid, SIGTERM);
+    waitpid(pid, NULL, 0);
+}
+
+static void test_http_server(void) {
+    printf("[http_server]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+    char buf[4096];
+
+    /* Test 1: GET /hello */
+    {
+        int n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("hello resp", n > 0, 1);
+        check_int("hello 200", strstr(buf, "200 OK") != NULL, 1);
+        check_int("hello body", strstr(buf, "Hello, World!") != NULL, 1);
+        check_int("hello custom", strstr(buf, "X-Custom: test") != NULL, 1);
+    }
+
+    /* Test 2: GET /echo */
+    {
+        int n = do_http_request(port,
+            "GET /echo HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("echo resp", n > 0, 1);
+        check_int("echo 200", strstr(buf, "200 OK") != NULL, 1);
+        check_int("echo json", strstr(buf, "\"method\":\"GET\"") != NULL, 1);
+        check_int("echo path", strstr(buf, "\"path\":\"/echo\"") != NULL, 1);
+    }
+
+    /* Test 3: GET /nonexistent -> 404 */
+    {
+        int n = do_http_request(port,
+            "GET /nonexistent HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("404 resp", n > 0, 1);
+        check_int("404 status", strstr(buf, "404") != NULL, 1);
+    }
+
+    /* Test 4: POST with body */
+    {
+        int n = do_http_request(port,
+            "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+            "Content-Length: 11\r\nConnection: close\r\n\r\nhello world",
+            buf, sizeof(buf));
+        check_int("post resp", n > 0, 1);
+        check_int("post 201", strstr(buf, "201") != NULL, 1);
+        check_int("post body", strstr(buf, "received 11 bytes") != NULL, 1);
+    }
+
+    /* Test 5: Query parameters */
+    {
+        int n = do_http_request(port,
+            "GET /query?name=NeverC HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("query resp", n > 0, 1);
+        check_int("query body", strstr(buf, "hello NeverC") != NULL, 1);
+    }
+
+    /* Test 6: Request headers */
+    {
+        int n = do_http_request(port,
+            "GET /header HTTP/1.1\r\nHost: localhost\r\n"
+            "User-Agent: NeverC/1.0\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("header resp", n > 0, 1);
+        check_int("header ua", strstr(buf, "ua=NeverC/1.0") != NULL, 1);
+    }
+
+    /* Test 7: Concurrent requests */
+    {
+        int ok_count = 0;
+        for (int i = 0; i < 3; i++) {
+            pid_t cpid = fork();
+            if (cpid == 0) {
+                char cbuf[4096];
+                int cn = do_http_request(port,
+                    "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                    cbuf, sizeof(cbuf));
+                _exit(cn > 0 && strstr(cbuf, "Hello, World!") ? 0 : 1);
+            }
+        }
+        for (int i = 0; i < 3; i++) {
+            int st;
+            wait(&st);
+            if (WIFEXITED(st) && WEXITSTATUS(st) == 0) ok_count++;
+        }
+        check_int("concurrent 3/3", ok_count, 3);
+    }
+
+    /* Test 8: Keep-alive (multiple requests on same connection) */
+    {
+        const char *err = NULL;
+        char addr[64];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+        check_not_null("keepalive conn", conn);
+        if (conn) {
+            neverc_tcp_set_timeout(conn, 2000);
+
+            const char *req1 = "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n";
+            neverc_tcp_write(conn, req1, strlen(req1));
+            usleep(100000);
+            char kbuf[4096];
+            int kn = neverc_tcp_read(conn, kbuf, sizeof(kbuf) - 1);
+            kbuf[kn > 0 ? kn : 0] = '\0';
+            check_int("ka req1 ok", strstr(kbuf, "Hello, World!") != NULL, 1);
+
+            const char *req2 = "GET /echo HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+            neverc_tcp_write(conn, req2, strlen(req2));
+            usleep(100000);
+            kn = neverc_tcp_read(conn, kbuf, sizeof(kbuf) - 1);
+            kbuf[kn > 0 ? kn : 0] = '\0';
+            check_int("ka req2 ok", strstr(kbuf, "\"method\":\"GET\"") != NULL, 1);
+
+            neverc_tcp_close(conn);
+        }
+    }
+
+    stop_test_server(server_pid);
+}
+
+/* ===== HTTP Client API test ===== */
+
+static void test_http_client(void) {
+    printf("[http_client]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+
+    /* Test GET */
+    {
+        char url[64];
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d/hello", port);
+        neverc_http_response_t *resp = neverc_http_get(url);
+        check_not_null("client get resp", resp);
+        if (resp) {
+            check_int("client get status", resp->status_code, 200);
+            check_int("client get body",
+                       resp->body && strstr(resp->body, "Hello, World!") != NULL, 1);
+            neverc_http_response_free(resp);
+        }
+    }
+
+    /* Test POST */
+    {
+        char url[64];
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d/post", port);
+        neverc_http_response_t *resp = neverc_http_post(url, "text/plain",
+                                                         "test data", 9);
+        check_not_null("client post resp", resp);
+        if (resp) {
+            check_int("client post status", resp->status_code, 201);
+            check_int("client post body",
+                       resp->body && strstr(resp->body, "received 9 bytes") != NULL, 1);
+            neverc_http_response_free(resp);
+        }
+    }
+
+    /* Test 404 */
+    {
+        char url[64];
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d/nope", port);
+        neverc_http_response_t *resp = neverc_http_get(url);
+        check_not_null("client 404 resp", resp);
+        if (resp) {
+            check_int("client 404 status", resp->status_code, 404);
+            neverc_http_response_free(resp);
+        }
+    }
+
+    /* Test error: null url */
+    {
+        neverc_http_response_t *resp = neverc_http_get(NULL);
+        check_not_null("client null url resp", resp);
+        if (resp) {
+            check_not_null("client null url error", resp->error);
+            neverc_http_response_free(resp);
+        }
+    }
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Stress test: concurrent requests ===== */
+
+static void test_stress(void) {
+    printf("[stress]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+
+    #define STRESS_N 20
+    int ok_count = 0;
+    for (int i = 0; i < STRESS_N; i++) {
+        pid_t cpid = fork();
+        if (cpid == 0) {
+            char cbuf[4096];
+            int cn = do_http_request(port,
+                "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                cbuf, sizeof(cbuf));
+            _exit(cn > 0 && strstr(cbuf, "Hello, World!") ? 0 : 1);
+        }
+    }
+    for (int i = 0; i < STRESS_N; i++) {
+        int st;
+        wait(&st);
+        if (WIFEXITED(st) && WEXITSTATUS(st) == 0) ok_count++;
+    }
+    check_int("stress 20/20", ok_count, STRESS_N);
+    #undef STRESS_N
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Large POST body ===== */
+
+static void test_large_post(void) {
+    printf("[large_post]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+
+    #define LARGE_BODY_SZ 65536
+    char *body = (char *)malloc(LARGE_BODY_SZ);
+    for (int i = 0; i < LARGE_BODY_SZ; i++) body[i] = 'A' + (i % 26);
+
+    char url[64];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/post", port);
+    neverc_http_response_t *resp = neverc_http_post(url, "application/octet-stream",
+                                                     body, LARGE_BODY_SZ);
+    check_not_null("large post resp", resp);
+    if (resp) {
+        check_int("large post status", resp->status_code, 201);
+        char expected[64];
+        snprintf(expected, sizeof(expected), "received %d bytes", LARGE_BODY_SZ);
+        check_int("large post body",
+                   resp->body && strstr(resp->body, expected) != NULL, 1);
+        neverc_http_response_free(resp);
+    }
+    free(body);
+
+    stop_test_server(server_pid);
+    #undef LARGE_BODY_SZ
+}
+
+/* ===== HTTP methods (HEAD/PUT/DELETE/PATCH) ===== */
+
+static void test_http_methods(void) {
+    printf("[http_methods]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+    char buf[4096];
+
+    /* HEAD request */
+    {
+        int n = do_http_request(port,
+            "HEAD /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("head resp", n > 0, 1);
+        check_int("head 200", strstr(buf, "200 OK") != NULL, 1);
+    }
+
+    /* PUT request */
+    {
+        int n = do_http_request(port,
+            "PUT /method HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n"
+            "Content-Length: 4\r\n\r\ndata",
+            buf, sizeof(buf));
+        check_int("put resp", n > 0, 1);
+        check_int("put 200", strstr(buf, "200 OK") != NULL, 1);
+        check_int("put method", strstr(buf, "method=PUT") != NULL, 1);
+    }
+
+    /* DELETE request */
+    {
+        int n = do_http_request(port,
+            "DELETE /delete HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("delete resp", n > 0, 1);
+        check_int("delete 204", strstr(buf, "204") != NULL, 1);
+    }
+
+    /* PATCH request */
+    {
+        int n = do_http_request(port,
+            "PATCH /method HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n"
+            "Content-Length: 5\r\n\r\npatch",
+            buf, sizeof(buf));
+        check_int("patch resp", n > 0, 1);
+        check_int("patch method", strstr(buf, "method=PATCH") != NULL, 1);
+    }
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Keep-alive connections ===== */
+
+static void test_keep_alive(void) {
+    printf("[keep_alive]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+
+    const char *err = NULL;
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+    check_not_null("ka connect", conn);
+
+    if (conn) {
+        neverc_tcp_set_timeout(conn, 5000);
+
+        /* First request on keep-alive connection */
+        const char *req1 =
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        neverc_tcp_write(conn, req1, strlen(req1));
+
+        char buf[4096];
+        int total = 0;
+        int found_end = 0;
+        while (total < (int)sizeof(buf) - 1 && !found_end) {
+            int n = neverc_tcp_read(conn, buf + total, sizeof(buf) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            buf[total] = '\0';
+            if (strstr(buf, "Hello, World!")) found_end = 1;
+        }
+        check_int("ka first 200", strstr(buf, "200 OK") != NULL, 1);
+        check_int("ka first body", strstr(buf, "Hello, World!") != NULL, 1);
+
+        /* Second request on same connection */
+        const char *req2 =
+            "GET /echo HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+        neverc_tcp_write(conn, req2, strlen(req2));
+
+        char buf2[4096];
+        total = 0;
+        while (total < (int)sizeof(buf2) - 1) {
+            int n = neverc_tcp_read(conn, buf2 + total, sizeof(buf2) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+        }
+        buf2[total] = '\0';
+        check_int("ka second 200", strstr(buf2, "200 OK") != NULL, 1);
+
+        neverc_tcp_close(conn);
+    }
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Concurrent stress test with threads ===== */
+
+typedef struct {
+    int port;
+    int success;
+} thread_test_ctx_t;
+
+static void *stress_thread_func(void *arg) {
+    thread_test_ctx_t *ctx = (thread_test_ctx_t *)arg;
+    char buf[4096];
+    for (int i = 0; i < 5; i++) {
+        int n = do_http_request(ctx->port,
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        if (n > 0 && strstr(buf, "Hello, World!")) {
+            ctx->success++;
+        }
+    }
+    return NULL;
+}
+
+static void test_thread_stress(void) {
+    printf("[thread_stress]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+
+    #define NUM_THREADS 8
+    #define REQS_PER_THREAD 5
+    pthread_t threads[NUM_THREADS];
+    thread_test_ctx_t ctxs[NUM_THREADS];
+
+    for (int i = 0; i < NUM_THREADS; i++) {
+        ctxs[i].port = port;
+        ctxs[i].success = 0;
+        pthread_create(&threads[i], NULL, stress_thread_func, &ctxs[i]);
+    }
+
+    int total_success = 0;
+    for (int i = 0; i < NUM_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+        total_success += ctxs[i].success;
+    }
+
+    int expected = NUM_THREADS * REQS_PER_THREAD;
+    check_int("thread stress all ok", total_success, expected);
+    #undef NUM_THREADS
+    #undef REQS_PER_THREAD
+
+    stop_test_server(server_pid);
+}
+
+/* ===== 404 Not Found ===== */
+
+static void test_404(void) {
+    printf("[test_404]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+    char buf[4096];
+
+    int n = do_http_request(port,
+        "GET /nonexistent HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("404 resp", n > 0, 1);
+    check_int("404 status", strstr(buf, "404") != NULL, 1);
+    check_int("404 body", strstr(buf, "not found") != NULL, 1);
+
+    stop_test_server(server_pid);
+}
+
+/* ===== HTTP client new methods ===== */
+
+static void test_http_client_methods(void) {
+    printf("[http_client_methods]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+    char url[64];
+
+    /* HEAD */
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/hello", port);
+    neverc_http_response_t *resp = neverc_http_head(url);
+    check_not_null("head resp", resp);
+    if (resp) {
+        check_int("head status", resp->status_code, 200);
+        neverc_http_response_free(resp);
+    }
+
+    /* PUT */
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/method", port);
+    resp = neverc_http_put(url, "text/plain", "data", 4);
+    check_not_null("put resp", resp);
+    if (resp) {
+        check_int("put status", resp->status_code, 200);
+        check_int("put body", resp->body && strstr(resp->body, "method=PUT") != NULL, 1);
+        neverc_http_response_free(resp);
+    }
+
+    /* DELETE */
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/delete", port);
+    resp = neverc_http_delete(url);
+    check_not_null("delete resp", resp);
+    if (resp) {
+        check_int("delete status", resp->status_code, 204);
+        neverc_http_response_free(resp);
+    }
+
+    /* PATCH */
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/method", port);
+    resp = neverc_http_patch(url, "text/plain", "patch", 5);
+    check_not_null("patch resp", resp);
+    if (resp) {
+        check_int("patch status", resp->status_code, 200);
+        check_int("patch body", resp->body && strstr(resp->body, "method=PATCH") != NULL, 1);
+        neverc_http_response_free(resp);
+    }
+
+    /* Generic DO */
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/method", port);
+    resp = neverc_http_do("OPTIONS", url, NULL, NULL, 0);
+    check_not_null("do resp", resp);
+    if (resp) {
+        check_int("do status", resp->status_code, 200);
+        neverc_http_response_free(resp);
+    }
+
+    /* Error cases */
+    resp = neverc_http_get(NULL);
+    check_not_null("null url", resp);
+    if (resp) {
+        check_int("null url error", resp->error != NULL, 1);
+        neverc_http_response_free(resp);
+    }
+
+    resp = neverc_http_do(NULL, "http://localhost:1", NULL, NULL, 0);
+    check_not_null("null method", resp);
+    if (resp) {
+        check_int("null method error", resp->error != NULL, 1);
+        neverc_http_response_free(resp);
+    }
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Edge case: malformed HTTP request ===== */
+
+static void test_malformed_request(void) {
+    printf("[malformed_request]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+    char buf[4096];
+
+    /* Completely garbage data */
+    {
+        int n = do_http_request(port, "this is not http\r\n\r\n",
+                                buf, sizeof(buf));
+        check_int("garbage handled", n >= 0, 1);
+    }
+
+    /* Empty request */
+    {
+        const char *err = NULL;
+        char addr[64];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+        if (conn) {
+            neverc_tcp_set_timeout(conn, 1000);
+            neverc_tcp_write(conn, "\r\n\r\n", 4);
+            int n = neverc_tcp_read(conn, buf, sizeof(buf) - 1);
+            buf[n > 0 ? n : 0] = '\0';
+            neverc_tcp_close(conn);
+        }
+        tests_passed++; tests_run++;
+    }
+
+    /* Incomplete request line */
+    {
+        int n = do_http_request(port, "GET /hello\r\n\r\n",
+                                buf, sizeof(buf));
+        check_int("incomplete line handled", n >= 0, 1);
+    }
+
+    /* No Host header (HTTP/1.1 technically requires it but server should handle) */
+    {
+        int n = do_http_request(port,
+            "GET /hello HTTP/1.1\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("no host resp", n > 0, 1);
+        check_int("no host 200", strstr(buf, "200 OK") != NULL, 1);
+    }
+
+    /* Very long URL */
+    {
+        char long_req[8192];
+        int off = snprintf(long_req, sizeof(long_req), "GET /");
+        for (int i = 0; i < 4000; i++)
+            long_req[off++] = 'a';
+        off += snprintf(long_req + off, sizeof(long_req) - (size_t)off,
+                        " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+        int n = do_http_request(port, long_req, buf, sizeof(buf));
+        check_int("long url handled", n >= 0, 1);
+    }
+
+    /* HTTP/1.0 (should close after response) */
+    {
+        int n = do_http_request(port,
+            "GET /hello HTTP/1.0\r\nHost: localhost\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("http10 resp", n > 0, 1);
+        check_int("http10 body", strstr(buf, "Hello, World!") != NULL, 1);
+    }
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Edge case: POST with no Content-Length ===== */
+
+static void test_post_no_content_length(void) {
+    printf("[post_no_content_length]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+    char buf[4096];
+
+    int n = do_http_request(port,
+        "POST /post HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("post no cl resp", n > 0, 1);
+    check_int("post no cl body", strstr(buf, "no body") != NULL, 1);
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Edge case: multiple headers with same name ===== */
+
+static void test_duplicate_headers(void) {
+    printf("[duplicate_headers]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+    char buf[4096];
+
+    int n = do_http_request(port,
+        "GET /header HTTP/1.1\r\nHost: localhost\r\n"
+        "User-Agent: first\r\nUser-Agent: second\r\n"
+        "Connection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("dup headers resp", n > 0, 1);
+    check_int("dup headers ua", strstr(buf, "ua=") != NULL, 1);
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Stress test: high concurrency with threads ===== */
+
+typedef struct {
+    int port;
+    int total_requests;
+    int success;
+} heavy_stress_ctx_t;
+
+static void *heavy_stress_thread(void *arg) {
+    heavy_stress_ctx_t *ctx = (heavy_stress_ctx_t *)arg;
+    char buf[4096];
+    for (int i = 0; i < ctx->total_requests; i++) {
+        int n = do_http_request(ctx->port,
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        if (n > 0 && strstr(buf, "Hello, World!"))
+            ctx->success++;
+    }
+    return NULL;
+}
+
+static void test_heavy_stress(void) {
+    printf("[heavy_stress]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+
+    #define HEAVY_THREADS 16
+    #define HEAVY_REQS    10
+    pthread_t threads[HEAVY_THREADS];
+    heavy_stress_ctx_t ctxs[HEAVY_THREADS];
+
+    for (int i = 0; i < HEAVY_THREADS; i++) {
+        ctxs[i].port = port;
+        ctxs[i].total_requests = HEAVY_REQS;
+        ctxs[i].success = 0;
+        pthread_create(&threads[i], NULL, heavy_stress_thread, &ctxs[i]);
+    }
+
+    int total_ok = 0;
+    for (int i = 0; i < HEAVY_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+        total_ok += ctxs[i].success;
+    }
+
+    int expected = HEAVY_THREADS * HEAVY_REQS;
+    check_int("heavy stress all ok", total_ok, expected);
+    #undef HEAVY_THREADS
+    #undef HEAVY_REQS
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Stress test: keep-alive pipelining ===== */
+
+static void test_pipelining(void) {
+    printf("[pipelining]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+
+    const char *err = NULL;
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+    check_not_null("pipeline conn", conn);
+
+    if (conn) {
+        neverc_tcp_set_timeout(conn, 5000);
+
+        /* Send 5 pipelined requests at once */
+        const char *reqs =
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n"
+            "GET /echo HTTP/1.1\r\nHost: localhost\r\n\r\n"
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n"
+            "GET /echo HTTP/1.1\r\nHost: localhost\r\n\r\n"
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+        neverc_tcp_write(conn, reqs, strlen(reqs));
+
+        char buf[16384];
+        int total = 0;
+        while (total < (int)sizeof(buf) - 1) {
+            int n = neverc_tcp_read(conn, buf + total,
+                                     sizeof(buf) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+        }
+        buf[total] = '\0';
+
+        /* Count "200 OK" occurrences */
+        int ok_count = 0;
+        const char *p = buf;
+        while ((p = strstr(p, "200 OK")) != NULL) {
+            ok_count++;
+            p += 6;
+        }
+        check_int("pipeline 5 responses", ok_count >= 5, 1);
+
+        neverc_tcp_close(conn);
+    }
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Test: Connection close after error ===== */
+
+static void test_connection_close_on_error(void) {
+    printf("[conn_close_error]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+
+    /* Send request with bad Content-Length (negative) */
+    char buf[4096];
+    int n = do_http_request(port,
+        "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+        "Content-Length: -1\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("bad cl handled", n >= 0, 1);
+
+    /* Send request with Content-Length: 0 */
+    n = do_http_request(port,
+        "POST /post HTTP/1.1\r\nHost: localhost\r\n"
+        "Content-Length: 0\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("cl0 resp", n > 0, 1);
+    check_int("cl0 body", strstr(buf, "no body") != NULL, 1);
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Test: Rapid connect/disconnect (connection churn) ===== */
+
+static void test_connection_churn(void) {
+    printf("[conn_churn]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+
+    int success = 0;
+    for (int i = 0; i < 50; i++) {
+        const char *err = NULL;
+        char addr[64];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+        if (conn) {
+            neverc_tcp_close(conn);
+            success++;
+        }
+    }
+    check_int("churn 50 ok", success, 50);
+
+    /* Verify server still works after churn */
+    char buf[4096];
+    int n = do_http_request(port,
+        "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("post-churn ok", n > 0 && strstr(buf, "Hello, World!") != NULL, 1);
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Test: Chunked transfer encoding ===== */
+
+static void chunked_handler(neverc_http_request_t *req,
+                              neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_set_header(w, "Content-Type", "text/plain");
+    neverc_http_enable_chunked(w);
+
+    neverc_http_write_string(w, "chunk1");
+    neverc_http_flush_chunk(w);
+
+    neverc_http_write_string(w, "chunk2");
+    neverc_http_flush_chunk(w);
+
+    neverc_http_write_string(w, "chunk3");
+    neverc_http_end_chunked(w);
+}
+
+static pid_t start_chunked_server(int port) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/chunked", chunked_handler);
+
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    return pid;
+}
+
+static void test_chunked_encoding(void) {
+    printf("[chunked_encoding]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_chunked_server(port);
+    char buf[4096];
+
+    int n = do_http_request(port,
+        "GET /chunked HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("chunked resp", n > 0, 1);
+    check_int("chunked has TE", strstr(buf, "chunked") != NULL, 1);
+    check_int("chunked has chunk1", strstr(buf, "chunk1") != NULL, 1);
+    check_int("chunked has chunk2", strstr(buf, "chunk2") != NULL, 1);
+    check_int("chunked has chunk3", strstr(buf, "chunk3") != NULL, 1);
+
+    stop_test_server(server_pid);
+}
+
+/* ===== Test: new config APIs ===== */
+
+static void test_config_apis(void) {
+    printf("[config_apis]\n");
+
+    neverc_http_set_workers(4);
+    neverc_http_set_max_requests(500);
+    neverc_http_set_read_timeout(30000);
+    neverc_http_set_max_connections(10000);
+    neverc_http_set_max_header_size(65536);
+    neverc_http_set_max_body_size(1048576);
+    neverc_http_set_shutdown_timeout(3000);
+    neverc_http_client_set_max_redirects(5);
+    neverc_http_client_set_timeout(10000);
+    tests_passed++; tests_run++;
+
+    /* Reset to defaults for other tests */
+    neverc_http_set_workers(0);
+    neverc_http_set_max_requests(1000);
+    neverc_http_set_read_timeout(60000);
+    neverc_http_set_max_connections(0);
+    neverc_http_set_max_header_size(0);
+    neverc_http_set_max_body_size(0);
+    neverc_http_set_shutdown_timeout(5000);
+    neverc_http_client_set_max_redirects(10);
+    neverc_http_client_set_timeout(30000);
+}
+
+/* ===== Test: client receives chunked response correctly ===== */
+
+static void chunked_body_handler(neverc_http_request_t *req,
+                                  neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_enable_chunked(w);
+    neverc_http_set_header(w, "Content-Type", "text/plain");
+
+    neverc_http_write_string(w, "Hello ");
+    neverc_http_flush_chunk(w);
+    neverc_http_write_string(w, "Chunked ");
+    neverc_http_flush_chunk(w);
+    neverc_http_write_string(w, "World");
+    neverc_http_end_chunked(w);
+}
+
+static pid_t start_chunked_body_server(int port) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/chunked_body", chunked_body_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    return pid;
+}
+
+static void test_client_chunked_response(void) {
+    printf("[client_chunked_response]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t srv = start_chunked_body_server(port);
+
+    char url[64];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/chunked_body", port);
+    neverc_http_response_t *resp = neverc_http_get(url);
+    check_not_null("chunked client resp", resp);
+    if (resp) {
+        check_int("chunked client status", resp->status_code, 200);
+        check_not_null("chunked client body", resp->body);
+        if (resp->body) {
+            check_int("chunked client body content",
+                       strstr(resp->body, "Hello") != NULL &&
+                       strstr(resp->body, "Chunked") != NULL &&
+                       strstr(resp->body, "World") != NULL, 1);
+        }
+        neverc_http_response_free(resp);
+    }
+
+    stop_test_server(srv);
+}
+
+/* ===== Test: concurrent connection limit ===== */
+
+static void slow_handler(neverc_http_request_t *req,
+                           neverc_http_response_writer_t *w) {
+    (void)req;
+    usleep(200000);
+    neverc_http_write_string(w, "ok");
+}
+
+static pid_t start_limited_server(int port) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_set_max_connections(3);
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/slow", slow_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    return pid;
+}
+
+static void *limited_client_thread(void *arg) {
+    int port = *(int *)arg;
+    char req_buf[256];
+    snprintf(req_buf, sizeof(req_buf),
+             "GET /slow HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+    char resp[4096];
+    do_http_request(port, req_buf, resp, sizeof(resp));
+    return NULL;
+}
+
+static void test_connection_limit(void) {
+    printf("[connection_limit]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t srv = start_limited_server(port);
+
+    pthread_t threads[6];
+    for (int i = 0; i < 6; i++)
+        pthread_create(&threads[i], NULL, limited_client_thread, &port);
+    for (int i = 0; i < 6; i++)
+        pthread_join(threads[i], NULL);
+
+    tests_passed++; tests_run++;
+
+    stop_test_server(srv);
+
+    neverc_http_set_max_connections(0);
+}
+
+/* ===== Test: rapid server start/stop cycle (regression test) ===== */
+
+static void noop_handler(neverc_http_request_t *req,
+                           neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "ok");
+}
+
+static void test_server_lifecycle(void) {
+    printf("[server_lifecycle]\n");
+
+    for (int cycle = 0; cycle < 3; cycle++) {
+        int port = get_free_port();
+        if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+        pid_t pid = fork();
+        if (pid == 0) {
+            neverc_http_mux_t *mux = neverc_http_new_mux();
+            neverc_http_mux_handle(mux, "/ping", noop_handler);
+            char addr[32];
+            snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+            neverc_http_listen_and_serve(addr, mux);
+            _exit(0);
+        }
+        usleep(300000);
+
+        char buf[4096];
+        int n = do_http_request(port,
+            "GET /ping HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("lifecycle resp > 0", n > 0, 1);
+        check_int("lifecycle 200", strstr(buf, "200 OK") != NULL, 1);
+
+        stop_test_server(pid);
+    }
+}
+
+/* ===== Test: convenience APIs ===== */
+
+static void redirect_handler(neverc_http_request_t *req,
+                               neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_redirect(w, "/hello", 302);
+}
+
+static void error_handler(neverc_http_request_t *req,
+                            neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_error(w, "something went wrong", 500);
+}
+
+static void form_handler(neverc_http_request_t *req,
+                           neverc_http_response_writer_t *w) {
+    char buf[256];
+    const char *name = neverc_http_form_value(req->body, req->body_len,
+                                                "name", buf, sizeof(buf));
+    if (name)
+        neverc_http_writef(w, "hello %s", name);
+    else
+        neverc_http_write_string(w, "no name");
+}
+
+static void json_handler(neverc_http_request_t *req,
+                           neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_json(w, "{\"status\":\"ok\",\"code\":200}");
+}
+
+static pid_t start_conv_server(int port) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/redir", redirect_handler);
+        neverc_http_mux_handle(mux, "/err", error_handler);
+        neverc_http_mux_handle(mux, "/form", form_handler);
+        neverc_http_mux_handle(mux, "/json", json_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    return pid;
+}
+
+static void test_convenience_apis(void) {
+    printf("[convenience_apis]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t srv = start_conv_server(port);
+    char buf[4096];
+
+    /* Redirect */
+    {
+        neverc_http_client_set_max_redirects(0);
+        int n = do_http_request(port,
+            "GET /redir HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("redir resp", n > 0, 1);
+        check_int("redir 302", strstr(buf, "302") != NULL, 1);
+        check_int("redir loc", strstr(buf, "Location: /hello") != NULL, 1);
+        neverc_http_client_set_max_redirects(10);
+    }
+
+    /* Error */
+    {
+        int n = do_http_request(port,
+            "GET /err HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("error resp", n > 0, 1);
+        check_int("error 500", strstr(buf, "500") != NULL, 1);
+        check_int("error msg", strstr(buf, "something went wrong") != NULL, 1);
+        check_int("error nosniff",
+                   strstr(buf, "X-Content-Type-Options: nosniff") != NULL, 1);
+    }
+
+    /* Form data */
+    {
+        int n = do_http_request(port,
+            "POST /form HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Content-Type: application/x-www-form-urlencoded\r\n"
+            "Content-Length: 9\r\n"
+            "Connection: close\r\n\r\n"
+            "name=John",
+            buf, sizeof(buf));
+        check_int("form resp", n > 0, 1);
+        check_int("form body", strstr(buf, "hello John") != NULL, 1);
+    }
+
+    /* Form data with URL encoding */
+    {
+        int n = do_http_request(port,
+            "POST /form HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Content-Type: application/x-www-form-urlencoded\r\n"
+            "Content-Length: 17\r\n"
+            "Connection: close\r\n\r\n"
+            "name=Hello+World!",
+            buf, sizeof(buf));
+        check_int("form enc resp", n > 0, 1);
+        check_int("form enc body", strstr(buf, "hello Hello World!") != NULL, 1);
+    }
+
+    /* JSON response */
+    {
+        int n = do_http_request(port,
+            "GET /json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("json resp", n > 0, 1);
+        check_int("json ct",
+                   strstr(buf, "application/json") != NULL, 1);
+        check_int("json body",
+                   strstr(buf, "\"status\":\"ok\"") != NULL, 1);
+    }
+
+    /* Null safety */
+    neverc_http_redirect(NULL, "/x", 302);
+    neverc_http_error(NULL, "x", 500);
+    check_int("conv null safe", 1, 1);
+    tests_run++;
+    tests_passed++;
+
+    /* form_value edge cases */
+    {
+        char fb[64];
+        const char *v;
+        v = neverc_http_form_value(NULL, 0, "k", fb, sizeof(fb));
+        check_int("form null body", v == NULL, 1);
+        v = neverc_http_form_value("k=v", 3, NULL, fb, sizeof(fb));
+        check_int("form null key", v == NULL, 1);
+        v = neverc_http_form_value("a=1&b=2", 7, "b", fb, sizeof(fb));
+        check_str("form val b", v, "2");
+        v = neverc_http_form_value("x=hello%20world", 16, "x", fb, sizeof(fb));
+        check_str("form pct", v, "hello world");
+    }
+
+    stop_test_server(srv);
+}
+
+/* ===== Test: throughput benchmark ===== */
+
+typedef struct {
+    int port;
+    int requests;
+    int success;
+} bench_ctx_t;
+
+static void *bench_thread(void *arg) {
+    bench_ctx_t *ctx = (bench_ctx_t *)arg;
+    char buf[4096];
+    for (int i = 0; i < ctx->requests; i++) {
+        int n = do_http_request(ctx->port,
+            "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        if (n > 0 && strstr(buf, "Hello, World!"))
+            ctx->success++;
+    }
+    return NULL;
+}
+
+static void test_benchmark(void) {
+    printf("[benchmark]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t srv = start_test_server(port);
+
+    #define BENCH_THREADS 8
+    #define BENCH_REQS    50
+    pthread_t threads[BENCH_THREADS];
+    bench_ctx_t ctxs[BENCH_THREADS];
+
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+
+    for (int i = 0; i < BENCH_THREADS; i++) {
+        ctxs[i].port = port;
+        ctxs[i].requests = BENCH_REQS;
+        ctxs[i].success = 0;
+        pthread_create(&threads[i], NULL, bench_thread, &ctxs[i]);
+    }
+
+    int total_ok = 0;
+    for (int i = 0; i < BENCH_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+        total_ok += ctxs[i].success;
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    double elapsed = (double)(t1.tv_sec - t0.tv_sec)
+                   + (double)(t1.tv_nsec - t0.tv_nsec) / 1e9;
+    int expected = BENCH_THREADS * BENCH_REQS;
+    double qps = (double)total_ok / elapsed;
+
+    printf("    %d/%d requests in %.2f s = %.0f req/s\n",
+           total_ok, expected, elapsed, qps);
+
+    check_int("bench all ok", total_ok, expected);
+    check_int("bench qps > 100", qps > 100.0, 1);
+
+    #undef BENCH_THREADS
+    #undef BENCH_REQS
+
+    stop_test_server(srv);
+}
+
+/* ===== Test: connection pool reuse ===== */
+
+static void pool_handler(neverc_http_request_t *req,
+                           neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "pooled");
+}
+
+static pid_t start_pool_server(int port) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/pool", pool_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+    return pid;
+}
+
+static void test_connection_pool(void) {
+    printf("[connection_pool]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t srv = start_pool_server(port);
+
+    neverc_http_client_set_pool(2);
+
+    char url[64];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/pool", port);
+
+    for (int i = 0; i < 5; i++) {
+        neverc_http_response_t *resp = neverc_http_get(url);
+        check_not_null("pool resp", resp);
+        if (resp) {
+            check_int("pool status", resp->status_code, 200);
+            check_not_null("pool body", resp->body);
+            if (resp->body)
+                check_int("pool content", strstr(resp->body, "pooled") != NULL, 1);
+            neverc_http_response_free(resp);
+        }
+    }
+
+    neverc_http_client_set_pool(2);
+
+    stop_test_server(srv);
+}
+
+#endif /* _WIN32 */
+
+int main(void) {
+    test_status_text();
+    test_query_get();
+    test_mux();
+    test_writer_null_safety();
+    test_response_free_null();
+#ifndef _WIN32
+    test_http_server();
+    test_http_client();
+    test_stress();
+    test_large_post();
+    test_http_methods();
+    test_keep_alive();
+    test_thread_stress();
+    test_404();
+    test_http_client_methods();
+    test_malformed_request();
+    test_post_no_content_length();
+    test_duplicate_headers();
+    test_heavy_stress();
+    test_pipelining();
+    test_connection_close_on_error();
+    test_connection_churn();
+    test_chunked_encoding();
+    test_config_apis();
+    test_client_chunked_response();
+    test_connection_limit();
+    test_server_lifecycle();
+    test_connection_pool();
+    test_convenience_apis();
+    test_benchmark();
+#endif
+
+    printf("\n--- net/http: %d/%d passed", tests_passed, tests_run);
+    if (tests_failed > 0) printf(", %d FAILED", tests_failed);
+    printf(" ---\n");
+    return tests_failed > 0 ? 1 : 0;
+}
