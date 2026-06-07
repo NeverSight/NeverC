@@ -298,11 +298,77 @@ compile_and_run "rsa" src/crypto/rsa/rsa.c src/math/big/big.c src/crypto/rand/ra
 # ECDSA (needs elliptic + big + crypto)
 compile_and_run "ecdsa" src/crypto/ecdsa/ecdsa.c src/crypto/elliptic/elliptic.c src/math/big/big.c src/crypto/rand/rand.c src/crypto/sha256/sha256.c
 
-# DSA (needs big + crypto)
-# compile_and_run "dsa" src/crypto/dsa/dsa.c src/math/big/big.c src/crypto/rand/rand.c
+# DSA (needs big + crypto + sha256)
+compile_and_run "dsa" src/crypto/dsa/dsa.c src/math/big/big.c src/crypto/rand/rand.c src/crypto/sha256/sha256.c
 
 # Ed25519 (needs sha512 + big)
 compile_and_run "ed25519" src/crypto/ed25519/ed25519.c src/crypto/sha512/sha512.c src/crypto/rand/rand.c src/math/big/big.c
+
+# ECDH (needs elliptic + big + crypto)
+compile_and_run "ecdh" src/crypto/ecdh/ecdh.c src/crypto/elliptic/elliptic.c src/math/big/big.c src/crypto/rand/rand.c src/crypto/sha256/sha256.c
+
+# Compress bzip2
+compile_and_run "bzip2" src/compress/bzip2/bzip2.c
+
+# Context
+compile_and_run "context" src/context/context.c
+
+# OS
+compile_and_run "os" src/os/os.c
+
+# OS exec
+compile_and_run "exec" src/os/exec/exec.c
+
+# OS signal
+compile_and_run "signal" src/os/signal/signal.c
+
+# OS user
+compile_and_run "user" src/os/user/user.c
+
+# Maps
+compile_and_run "maps" src/maps/maps.c
+
+# Slices
+compile_and_run "slices" src/slices/slices.c
+
+# Image
+compile_and_run "image" src/image/image/image.c src/image/color/color.c
+
+# Image draw
+compile_and_run "draw" src/image/draw/draw.c src/image/image/image.c src/image/color/color.c
+
+# Image PNG
+compile_and_run "png" src/image/png/png.c src/image/image/image.c src/image/color/color.c src/compress/flate/flate.c src/hash/crc32/crc32.c
+
+# Image JPEG
+compile_and_run "jpeg" src/image/jpeg/jpeg.c src/image/image/image.c src/image/color/color.c
+
+# Image GIF
+compile_and_run "gif" src/image/gif/gif.c src/image/image/image.c src/image/color/color.c src/compress/lzw/lzw.c
+
+# Net mail
+compile_and_run "mail" src/net/mail/mail.c
+
+# Net netip
+compile_and_run "netip" src/net/netip/netip.c
+
+# Net textproto
+compile_and_run "textproto" src/net/textproto/textproto.c
+
+# HTML template
+compile_and_run "html_template" src/html/template/template.c src/html/html.c
+
+# MIME quotedprintable
+compile_and_run "quotedprintable" src/mime/quotedprintable/quotedprintable.c
+
+# MIME multipart
+compile_and_run "multipart" src/mime/multipart/multipart.c
+
+# IO FS
+compile_and_run "fs" src/io/fs/fs.c
+
+# Log syslog
+compile_and_run "syslog" src/log/syslog/syslog.c
 
 echo ""
 echo "============================================"
