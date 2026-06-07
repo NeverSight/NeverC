@@ -2776,6 +2776,138 @@
         "free": "neverc_gif_free",
         "from_rgba": "neverc_gif_from_rgba"
       }
+    },
+    "debug/elf": {
+      "header": "include/neverc/debug/elf.h",
+      "description": "ELF binary format parser \u2014 sections, symbols, segments for ELF32/ELF64 (mirrors Go debug/elf)",
+      "symbols": {
+        "neverc_elf_open": "src/debug/elf/elf.c",
+        "neverc_elf_close": "src/debug/elf/elf.c",
+        "neverc_elf_open_file": "src/debug/elf/elf.c",
+        "neverc_elf_section": "src/debug/elf/elf.c",
+        "neverc_elf_section_by_type": "src/debug/elf/elf.c",
+        "neverc_elf_section_data": "src/debug/elf/elf.c",
+        "neverc_elf_symbols": "src/debug/elf/elf.c",
+        "neverc_elf_dynamic_symbols": "src/debug/elf/elf.c",
+        "neverc_elf_imported_libraries": "src/debug/elf/elf.c",
+        "neverc_elf_is_valid": "src/debug/elf/elf.c",
+        "neverc_elf_machine_string": "src/debug/elf/elf.c",
+        "neverc_elf_type_string": "src/debug/elf/elf.c"
+      },
+      "dot_methods": {
+        "open": "neverc_elf_open",
+        "close": "neverc_elf_close",
+        "open_file": "neverc_elf_open_file",
+        "section": "neverc_elf_section",
+        "section_by_type": "neverc_elf_section_by_type",
+        "section_data": "neverc_elf_section_data",
+        "symbols": "neverc_elf_symbols",
+        "dynamic_symbols": "neverc_elf_dynamic_symbols",
+        "imported_libraries": "neverc_elf_imported_libraries",
+        "is_valid": "neverc_elf_is_valid",
+        "machine_string": "neverc_elf_machine_string",
+        "type_string": "neverc_elf_type_string"
+      }
+    },
+    "debug/pe": {
+      "header": "include/neverc/debug/pe.h",
+      "description": "PE (Portable Executable) format parser \u2014 sections, symbols, imports for PE32/PE32+ (mirrors Go debug/pe)",
+      "symbols": {
+        "neverc_pe_open": "src/debug/pe/pe.c",
+        "neverc_pe_close": "src/debug/pe/pe.c",
+        "neverc_pe_open_file": "src/debug/pe/pe.c",
+        "neverc_pe_section": "src/debug/pe/pe.c",
+        "neverc_pe_section_data": "src/debug/pe/pe.c",
+        "neverc_pe_symbols": "src/debug/pe/pe.c",
+        "neverc_pe_imported_symbols": "src/debug/pe/pe.c",
+        "neverc_pe_imported_libraries": "src/debug/pe/pe.c",
+        "neverc_pe_is_valid": "src/debug/pe/pe.c",
+        "neverc_pe_machine_string": "src/debug/pe/pe.c"
+      },
+      "dot_methods": {
+        "open": "neverc_pe_open",
+        "close": "neverc_pe_close",
+        "open_file": "neverc_pe_open_file",
+        "section": "neverc_pe_section",
+        "section_data": "neverc_pe_section_data",
+        "symbols": "neverc_pe_symbols",
+        "imported_symbols": "neverc_pe_imported_symbols",
+        "imported_libraries": "neverc_pe_imported_libraries",
+        "is_valid": "neverc_pe_is_valid",
+        "machine_string": "neverc_pe_machine_string"
+      }
+    },
+    "debug/macho": {
+      "header": "include/neverc/debug/macho.h",
+      "description": "Mach-O format parser \u2014 segments, sections, symbols, dylibs for 32/64-bit (mirrors Go debug/macho)",
+      "symbols": {
+        "neverc_macho_open": "src/debug/macho/macho.c",
+        "neverc_macho_close": "src/debug/macho/macho.c",
+        "neverc_macho_open_file": "src/debug/macho/macho.c",
+        "neverc_macho_section": "src/debug/macho/macho.c",
+        "neverc_macho_segment": "src/debug/macho/macho.c",
+        "neverc_macho_section_data": "src/debug/macho/macho.c",
+        "neverc_macho_symbols": "src/debug/macho/macho.c",
+        "neverc_macho_is_valid": "src/debug/macho/macho.c",
+        "neverc_macho_cpu_string": "src/debug/macho/macho.c",
+        "neverc_macho_type_string": "src/debug/macho/macho.c"
+      },
+      "dot_methods": {
+        "open": "neverc_macho_open",
+        "close": "neverc_macho_close",
+        "open_file": "neverc_macho_open_file",
+        "section": "neverc_macho_section",
+        "segment": "neverc_macho_segment",
+        "section_data": "neverc_macho_section_data",
+        "symbols": "neverc_macho_symbols",
+        "is_valid": "neverc_macho_is_valid",
+        "cpu_string": "neverc_macho_cpu_string",
+        "type_string": "neverc_macho_type_string"
+      }
+    },
+    "debug/dwarf": {
+      "header": "include/neverc/debug/dwarf.h",
+      "description": "DWARF debug info parser (v2-v5) \u2014 abbreviations, DIE trees, string tables (mirrors Go debug/dwarf)",
+      "symbols": {
+        "neverc_dwarf_init": "src/debug/dwarf/dwarf.c",
+        "neverc_dwarf_free": "src/debug/dwarf/dwarf.c",
+        "neverc_dwarf_parse_comp_unit": "src/debug/dwarf/dwarf.c",
+        "neverc_dwarf_walk_entries": "src/debug/dwarf/dwarf.c",
+        "neverc_dwarf_get_string": "src/debug/dwarf/dwarf.c",
+        "neverc_dwarf_tag_string": "src/debug/dwarf/dwarf.c",
+        "neverc_dwarf_attr_string": "src/debug/dwarf/dwarf.c"
+      },
+      "dot_methods": {
+        "init": "neverc_dwarf_init",
+        "free": "neverc_dwarf_free",
+        "parse_comp_unit": "neverc_dwarf_parse_comp_unit",
+        "walk_entries": "neverc_dwarf_walk_entries",
+        "get_string": "neverc_dwarf_get_string",
+        "tag_string": "neverc_dwarf_tag_string",
+        "attr_string": "neverc_dwarf_attr_string"
+      }
+    },
+    "crypto/x509": {
+      "header": "include/neverc/crypto/x509.h",
+      "description": "X.509 certificate parser \u2014 DER decode, name/validity/key parsing (mirrors Go crypto/x509)",
+      "symbols": {
+        "neverc_x509_parse_certificate": "src/crypto/x509/x509.c",
+        "neverc_x509_cert_free": "src/crypto/x509/x509.c",
+        "neverc_x509_is_self_signed": "src/crypto/x509/x509.c",
+        "neverc_x509_sig_algorithm_string": "src/crypto/x509/x509.c",
+        "neverc_x509_key_algorithm_string": "src/crypto/x509/x509.c",
+        "neverc_x509_format_name": "src/crypto/x509/x509.c",
+        "neverc_x509_time_compare": "src/crypto/x509/x509.c"
+      },
+      "dot_methods": {
+        "parse_certificate": "neverc_x509_parse_certificate",
+        "cert_free": "neverc_x509_cert_free",
+        "is_self_signed": "neverc_x509_is_self_signed",
+        "sig_algorithm_string": "neverc_x509_sig_algorithm_string",
+        "key_algorithm_string": "neverc_x509_key_algorithm_string",
+        "format_name": "neverc_x509_format_name",
+        "time_compare": "neverc_x509_time_compare"
+      }
     }
   }
 }

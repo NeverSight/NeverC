@@ -204,3 +204,12 @@ STD_TEST(fs, "src/io/fs/fs.c")
 
 // ===== Log =====
 STD_TEST(syslog, "src/log/syslog/syslog.c")
+
+// ===== Debug =====
+STD_TEST(elf, "src/debug/elf/elf.c")
+STD_TEST(pe, "src/debug/pe/pe.c")
+STD_TEST(macho, "src/debug/macho/macho.c")
+STD_TEST(dwarf, "src/debug/dwarf/dwarf.c")
+
+// ===== Crypto (x509) =====
+STD_TEST(x509, "src/crypto/x509/x509.c")

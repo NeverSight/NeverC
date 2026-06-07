@@ -123,4 +123,13 @@ STD_SUBMODULE(io, fs)
 // html
 STD_SUBMODULE(html, template)
 
+// debug
+STD_SUBMODULE(debug, elf)
+STD_SUBMODULE(debug, pe)
+STD_SUBMODULE(debug, macho)
+STD_SUBMODULE(debug, dwarf)
+
+// crypto (x509 addition)
+STD_SUBMODULE(crypto, x509)
+
 #undef STD_SUBMODULE

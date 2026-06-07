@@ -1,0 +1,475 @@
+/*
+ * ELF (Executable and Linkable Format) parser.
+ * Supports ELF32 and ELF64 on all platforms.
+ * Modeled after Go's debug/elf package.
+ */
+#include "neverc/std/debug/elf.h"
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+/* ===== Endian Helpers ===== */
+
+static uint16_t rd16le(const uint8_t *p) {
+    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+static uint32_t rd32le(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+static uint64_t rd64le(const uint8_t *p) {
+    return (uint64_t)rd32le(p) | ((uint64_t)rd32le(p + 4) << 32);
+}
+
+static uint16_t rd16be(const uint8_t *p) {
+    return ((uint16_t)p[0] << 8) | (uint16_t)p[1];
+}
+static uint32_t rd32be(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+static uint64_t rd64be(const uint8_t *p) {
+    return ((uint64_t)rd32be(p) << 32) | (uint64_t)rd32be(p + 4);
+}
+
+typedef uint16_t (*rd16_fn)(const uint8_t *);
+typedef uint32_t (*rd32_fn)(const uint8_t *);
+typedef uint64_t (*rd64_fn)(const uint8_t *);
+
+/* ===== String Table Helper ===== */
+
+static const char *elf_get_string(const uint8_t *strtab, size_t strtab_len,
+                                   uint32_t offset) {
+    if (offset >= strtab_len) return "";
+    return (const char *)(strtab + offset);
+}
+
+/* ===== Parsing ===== */
+
+int neverc_elf_is_valid(const uint8_t *data, size_t len) {
+    if (len < 16) return 0;
+    return data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' && data[3] == 'F';
+}
+
+static int parse_sections_32(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32) {
+    const uint8_t *d = f->data;
+    uint32_t shoff = r32(d + 32);
+    uint16_t shentsize = r16(d + 46);
+    uint16_t shnum = r16(d + 48);
+    uint16_t shstrndx = r16(d + 50);
+
+    if (shoff == 0 || shnum == 0) return 0;
+    if (shoff + (uint64_t)shnum * shentsize > f->data_len) return -1;
+
+    f->sections = (neverc_elf_section_t *)calloc(shnum, sizeof(neverc_elf_section_t));
+    if (!f->sections) return -1;
+    f->section_count = shnum;
+
+    for (uint16_t i = 0; i < shnum; i++) {
+        const uint8_t *sh = d + shoff + i * shentsize;
+        f->sections[i].name_idx = r32(sh + 0);
+        f->sections[i].type     = r32(sh + 4);
+        f->sections[i].flags    = r32(sh + 8);
+        f->sections[i].addr     = r32(sh + 12);
+        f->sections[i].offset   = r32(sh + 16);
+        f->sections[i].size     = r32(sh + 20);
+        f->sections[i].link     = r32(sh + 24);
+        f->sections[i].info     = r32(sh + 28);
+        f->sections[i].addralign= r32(sh + 32);
+        f->sections[i].entsize  = r32(sh + 36);
+    }
+
+    if (shstrndx < shnum) {
+        const uint8_t *strtab = d + (size_t)f->sections[shstrndx].offset;
+        size_t strtab_len = (size_t)f->sections[shstrndx].size;
+        if (f->sections[shstrndx].offset + strtab_len <= f->data_len) {
+            for (uint32_t i = 0; i < shnum; i++) {
+                const char *name = elf_get_string(strtab, strtab_len,
+                                                   f->sections[i].name_idx);
+                size_t nlen = strlen(name);
+                if (nlen >= sizeof(f->sections[i].name))
+                    nlen = sizeof(f->sections[i].name) - 1;
+                memcpy(f->sections[i].name, name, nlen);
+                f->sections[i].name[nlen] = '\0';
+            }
+        }
+    }
+    return 0;
+}
+
+static int parse_sections_64(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
+                              rd64_fn r64) {
+    const uint8_t *d = f->data;
+    uint64_t shoff = r64(d + 40);
+    uint16_t shentsize = r16(d + 58);
+    uint16_t shnum = r16(d + 60);
+    uint16_t shstrndx = r16(d + 62);
+
+    if (shoff == 0 || shnum == 0) return 0;
+    if (shoff + (uint64_t)shnum * shentsize > f->data_len) return -1;
+
+    f->sections = (neverc_elf_section_t *)calloc(shnum, sizeof(neverc_elf_section_t));
+    if (!f->sections) return -1;
+    f->section_count = shnum;
+
+    for (uint16_t i = 0; i < shnum; i++) {
+        const uint8_t *sh = d + (size_t)shoff + i * shentsize;
+        f->sections[i].name_idx = r32(sh + 0);
+        f->sections[i].type     = r32(sh + 4);
+        f->sections[i].flags    = r64(sh + 8);
+        f->sections[i].addr     = r64(sh + 16);
+        f->sections[i].offset   = r64(sh + 24);
+        f->sections[i].size     = r64(sh + 32);
+        f->sections[i].link     = r32(sh + 40);
+        f->sections[i].info     = r32(sh + 44);
+        f->sections[i].addralign= r64(sh + 48);
+        f->sections[i].entsize  = r64(sh + 56);
+    }
+
+    if (shstrndx < shnum) {
+        uint64_t str_off = f->sections[shstrndx].offset;
+        uint64_t str_sz  = f->sections[shstrndx].size;
+        if (str_off + str_sz <= f->data_len) {
+            const uint8_t *strtab = d + (size_t)str_off;
+            for (uint32_t i = 0; i < shnum; i++) {
+                const char *name = elf_get_string(strtab, (size_t)str_sz,
+                                                   f->sections[i].name_idx);
+                size_t nlen = strlen(name);
+                if (nlen >= sizeof(f->sections[i].name))
+                    nlen = sizeof(f->sections[i].name) - 1;
+                memcpy(f->sections[i].name, name, nlen);
+                f->sections[i].name[nlen] = '\0';
+            }
+        }
+    }
+    return 0;
+}
+
+static int parse_progs_32(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32) {
+    const uint8_t *d = f->data;
+    uint32_t phoff = r32(d + 28);
+    uint16_t phentsize = r16(d + 42);
+    uint16_t phnum = r16(d + 44);
+
+    if (phoff == 0 || phnum == 0) return 0;
+    if (phoff + (uint64_t)phnum * phentsize > f->data_len) return -1;
+
+    f->progs = (neverc_elf_prog_t *)calloc(phnum, sizeof(neverc_elf_prog_t));
+    if (!f->progs) return -1;
+    f->prog_count = phnum;
+
+    for (uint16_t i = 0; i < phnum; i++) {
+        const uint8_t *ph = d + phoff + i * phentsize;
+        f->progs[i].type   = r32(ph + 0);
+        f->progs[i].offset = r32(ph + 4);
+        f->progs[i].vaddr  = r32(ph + 8);
+        f->progs[i].paddr  = r32(ph + 12);
+        f->progs[i].filesz = r32(ph + 16);
+        f->progs[i].memsz  = r32(ph + 20);
+        f->progs[i].flags  = r32(ph + 24);
+        f->progs[i].align  = r32(ph + 28);
+    }
+    return 0;
+}
+
+static int parse_progs_64(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
+                           rd64_fn r64) {
+    const uint8_t *d = f->data;
+    uint64_t phoff = r64(d + 32);
+    uint16_t phentsize = r16(d + 54);
+    uint16_t phnum = r16(d + 56);
+
+    if (phoff == 0 || phnum == 0) return 0;
+    if (phoff + (uint64_t)phnum * phentsize > f->data_len) return -1;
+
+    f->progs = (neverc_elf_prog_t *)calloc(phnum, sizeof(neverc_elf_prog_t));
+    if (!f->progs) return -1;
+    f->prog_count = phnum;
+
+    for (uint16_t i = 0; i < phnum; i++) {
+        const uint8_t *ph = d + (size_t)phoff + i * phentsize;
+        f->progs[i].type   = r32(ph + 0);
+        f->progs[i].flags  = r32(ph + 4);
+        f->progs[i].offset = r64(ph + 8);
+        f->progs[i].vaddr  = r64(ph + 16);
+        f->progs[i].paddr  = r64(ph + 24);
+        f->progs[i].filesz = r64(ph + 32);
+        f->progs[i].memsz  = r64(ph + 40);
+        f->progs[i].align  = r64(ph + 48);
+    }
+    return 0;
+}
+
+int neverc_elf_open(neverc_elf_file_t *f, const uint8_t *data, size_t len) {
+    memset(f, 0, sizeof(*f));
+    if (!neverc_elf_is_valid(data, len)) return -1;
+    if (len < 64) return -1;
+
+    f->data = data;
+    f->data_len = len;
+    f->owns_data = 0;
+
+    uint8_t class_ = data[4];
+    uint8_t data_enc = data[5];
+
+    f->header.class_ = class_;
+    f->header.data = data_enc;
+    f->header.osabi = data[7];
+    f->header.abi_version = data[8];
+    memcpy(f->header.ident, data, 16);
+
+    rd16_fn r16 = (data_enc == NEVERC_ELFDATA2MSB) ? rd16be : rd16le;
+    rd32_fn r32 = (data_enc == NEVERC_ELFDATA2MSB) ? rd32be : rd32le;
+    rd64_fn r64 = (data_enc == NEVERC_ELFDATA2MSB) ? rd64be : rd64le;
+
+    if (class_ == NEVERC_ELFCLASS32) {
+        if (len < 52) return -1;
+        f->header.type = r16(data + 16);
+        f->header.machine = r16(data + 18);
+        f->header.version = r32(data + 20);
+        f->header.entry = r32(data + 24);
+        if (parse_progs_32(f, r16, r32) < 0) goto fail;
+        if (parse_sections_32(f, r16, r32) < 0) goto fail;
+    } else if (class_ == NEVERC_ELFCLASS64) {
+        if (len < 64) return -1;
+        f->header.type = r16(data + 16);
+        f->header.machine = r16(data + 18);
+        f->header.version = r32(data + 20);
+        f->header.entry = r64(data + 24);
+        if (parse_progs_64(f, r16, r32, r64) < 0) goto fail;
+        if (parse_sections_64(f, r16, r32, r64) < 0) goto fail;
+    } else {
+        return -1;
+    }
+    return 0;
+
+fail:
+    neverc_elf_close(f);
+    return -1;
+}
+
+void neverc_elf_close(neverc_elf_file_t *f) {
+    free(f->sections);
+    free(f->progs);
+    if (f->owns_data) free((void *)f->data);
+    memset(f, 0, sizeof(*f));
+}
+
+int neverc_elf_open_file(neverc_elf_file_t *f, const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return -1;
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    if (sz <= 0) { fclose(fp); return -1; }
+    fseek(fp, 0, SEEK_SET);
+
+    uint8_t *buf = (uint8_t *)malloc((size_t)sz);
+    if (!buf) { fclose(fp); return -1; }
+    if (fread(buf, 1, (size_t)sz, fp) != (size_t)sz) {
+        free(buf);
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
+
+    int rc = neverc_elf_open(f, buf, (size_t)sz);
+    if (rc < 0) { free(buf); return -1; }
+    f->owns_data = 1;
+    return 0;
+}
+
+const neverc_elf_section_t *neverc_elf_section(const neverc_elf_file_t *f,
+                                                const char *name) {
+    for (uint32_t i = 0; i < f->section_count; i++) {
+        if (strcmp(f->sections[i].name, name) == 0)
+            return &f->sections[i];
+    }
+    return NULL;
+}
+
+const neverc_elf_section_t *neverc_elf_section_by_type(const neverc_elf_file_t *f,
+                                                        uint32_t type) {
+    for (uint32_t i = 0; i < f->section_count; i++) {
+        if (f->sections[i].type == type)
+            return &f->sections[i];
+    }
+    return NULL;
+}
+
+int neverc_elf_section_data(const neverc_elf_file_t *f,
+                             const neverc_elf_section_t *s,
+                             uint8_t **out, size_t *out_len) {
+    if (!s || s->type == NEVERC_SHT_NOBITS) {
+        *out = NULL;
+        *out_len = 0;
+        return 0;
+    }
+    if (s->offset + s->size > f->data_len) return -1;
+
+    *out = (uint8_t *)malloc((size_t)s->size);
+    if (!*out) return -1;
+    memcpy(*out, f->data + (size_t)s->offset, (size_t)s->size);
+    *out_len = (size_t)s->size;
+    return 0;
+}
+
+static int get_symbols_common(const neverc_elf_file_t *f, uint32_t sh_type,
+                               neverc_elf_symbol_t **syms, int *count) {
+    *syms = NULL;
+    *count = 0;
+
+    const neverc_elf_section_t *symtab = NULL;
+    for (uint32_t i = 0; i < f->section_count; i++) {
+        if (f->sections[i].type == sh_type) { symtab = &f->sections[i]; break; }
+    }
+    if (!symtab) return 0;
+
+    if (symtab->link >= f->section_count) return -1;
+    const neverc_elf_section_t *strtab = &f->sections[symtab->link];
+    if (strtab->offset + strtab->size > f->data_len) return -1;
+    const uint8_t *str_data = f->data + (size_t)strtab->offset;
+    size_t str_len = (size_t)strtab->size;
+
+    if (symtab->offset + symtab->size > f->data_len) return -1;
+    const uint8_t *sym_data = f->data + (size_t)symtab->offset;
+
+    rd32_fn r32 = (f->header.data == NEVERC_ELFDATA2MSB) ? rd32be : rd32le;
+    rd64_fn r64 = (f->header.data == NEVERC_ELFDATA2MSB) ? rd64be : rd64le;
+    rd16_fn r16 = (f->header.data == NEVERC_ELFDATA2MSB) ? rd16be : rd16le;
+
+    int entry_size, sym_count;
+    if (f->header.class_ == NEVERC_ELFCLASS32) {
+        entry_size = 16;
+    } else {
+        entry_size = 24;
+    }
+    sym_count = (int)(symtab->size / (uint64_t)entry_size);
+    if (sym_count <= 1) return 0;
+
+    /* Skip first null entry */
+    *syms = (neverc_elf_symbol_t *)calloc((size_t)(sym_count - 1),
+                                          sizeof(neverc_elf_symbol_t));
+    if (!*syms) return -1;
+    *count = sym_count - 1;
+
+    for (int i = 1; i < sym_count; i++) {
+        const uint8_t *e = sym_data + i * entry_size;
+        neverc_elf_symbol_t *s = &(*syms)[i - 1];
+
+        if (f->header.class_ == NEVERC_ELFCLASS32) {
+            uint32_t name_idx = r32(e + 0);
+            s->value   = r32(e + 4);
+            s->size    = r32(e + 8);
+            uint8_t info = e[12];
+            s->bind    = info >> 4;
+            s->type    = info & 0xf;
+            s->visibility = e[13] & 0x3;
+            s->section = r16(e + 14);
+            const char *name = elf_get_string(str_data, str_len, name_idx);
+            size_t nlen = strlen(name);
+            if (nlen >= sizeof(s->name)) nlen = sizeof(s->name) - 1;
+            memcpy(s->name, name, nlen);
+            s->name[nlen] = '\0';
+        } else {
+            uint32_t name_idx = r32(e + 0);
+            uint8_t info = e[4];
+            s->bind    = info >> 4;
+            s->type    = info & 0xf;
+            s->visibility = e[5] & 0x3;
+            s->section = r16(e + 6);
+            s->value   = r64(e + 8);
+            s->size    = r64(e + 16);
+            const char *name = elf_get_string(str_data, str_len, name_idx);
+            size_t nlen = strlen(name);
+            if (nlen >= sizeof(s->name)) nlen = sizeof(s->name) - 1;
+            memcpy(s->name, name, nlen);
+            s->name[nlen] = '\0';
+        }
+    }
+    return 0;
+}
+
+int neverc_elf_symbols(const neverc_elf_file_t *f,
+                        neverc_elf_symbol_t **syms, int *count) {
+    return get_symbols_common(f, NEVERC_SHT_SYMTAB, syms, count);
+}
+
+int neverc_elf_dynamic_symbols(const neverc_elf_file_t *f,
+                                neverc_elf_symbol_t **syms, int *count) {
+    return get_symbols_common(f, NEVERC_SHT_DYNSYM, syms, count);
+}
+
+int neverc_elf_imported_libraries(const neverc_elf_file_t *f,
+                                   char **names, int max_names) {
+    rd64_fn r64 = (f->header.data == NEVERC_ELFDATA2MSB) ? rd64be : rd64le;
+    rd32_fn r32 = (f->header.data == NEVERC_ELFDATA2MSB) ? rd32be : rd32le;
+
+    const neverc_elf_section_t *dyn = NULL;
+    for (uint32_t i = 0; i < f->section_count; i++) {
+        if (f->sections[i].type == NEVERC_SHT_DYNAMIC) {
+            dyn = &f->sections[i];
+            break;
+        }
+    }
+    if (!dyn) return 0;
+    if (dyn->link >= f->section_count) return 0;
+
+    const neverc_elf_section_t *strtab = &f->sections[dyn->link];
+    if (strtab->offset + strtab->size > f->data_len) return 0;
+    const uint8_t *str_data = f->data + (size_t)strtab->offset;
+    size_t str_len = (size_t)strtab->size;
+
+    if (dyn->offset + dyn->size > f->data_len) return 0;
+    const uint8_t *dyn_data = f->data + (size_t)dyn->offset;
+
+    int lib_count = 0;
+    int entry_size = (f->header.class_ == NEVERC_ELFCLASS32) ? 8 : 16;
+    int entries = (int)(dyn->size / (uint64_t)entry_size);
+
+    for (int i = 0; i < entries && lib_count < max_names; i++) {
+        const uint8_t *e = dyn_data + i * entry_size;
+        int64_t tag;
+        uint64_t val;
+        if (f->header.class_ == NEVERC_ELFCLASS32) {
+            tag = (int32_t)r32(e);
+            val = r32(e + 4);
+        } else {
+            tag = (int64_t)r64(e);
+            val = r64(e + 8);
+        }
+        /* DT_NEEDED = 1 */
+        if (tag == 1) {
+            const char *name = elf_get_string(str_data, str_len, (uint32_t)val);
+            names[lib_count++] = (char *)name;
+        }
+        /* DT_NULL = 0 terminates */
+        if (tag == 0) break;
+    }
+    return lib_count;
+}
+
+const char *neverc_elf_machine_string(uint16_t machine) {
+    switch (machine) {
+    case NEVERC_EM_NONE:    return "None";
+    case NEVERC_EM_386:     return "Intel 80386";
+    case NEVERC_EM_ARM:     return "ARM";
+    case NEVERC_EM_X86_64:  return "x86-64";
+    case NEVERC_EM_AARCH64: return "AArch64";
+    case NEVERC_EM_RISCV:   return "RISC-V";
+    case NEVERC_EM_MIPS:    return "MIPS";
+    case NEVERC_EM_PPC:     return "PowerPC";
+    case NEVERC_EM_PPC64:   return "PowerPC64";
+    default: return "Unknown";
+    }
+}
+
+const char *neverc_elf_type_string(uint16_t type) {
+    switch (type) {
+    case NEVERC_ET_NONE: return "NONE";
+    case NEVERC_ET_REL:  return "REL";
+    case NEVERC_ET_EXEC: return "EXEC";
+    case NEVERC_ET_DYN:  return "DYN";
+    case NEVERC_ET_CORE: return "CORE";
+    default: return "Unknown";
+    }
+}

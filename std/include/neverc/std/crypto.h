@@ -24,6 +24,14 @@ struct __neverc_std_hmac_t { char __tag; };
 struct __neverc_std_subtle_t { char __tag; };
 struct __neverc_std_hkdf_t { char __tag; };
 struct __neverc_std_pbkdf2_t { char __tag; };
+struct __neverc_std_x509_t { char __tag; };
+struct __neverc_std_crypto_rand_t { char __tag; };
+struct __neverc_std_elliptic_t { char __tag; };
+struct __neverc_std_rsa_t { char __tag; };
+struct __neverc_std_ecdsa_t { char __tag; };
+struct __neverc_std_dsa_t { char __tag; };
+struct __neverc_std_ed25519_t { char __tag; };
+struct __neverc_std_ecdh_t { char __tag; };
 
 struct __neverc_std_crypto_t {
     struct __neverc_std_sha256_t sha256;
@@ -47,6 +55,14 @@ struct __neverc_std_crypto_t {
     struct __neverc_std_subtle_t subtle;
     struct __neverc_std_hkdf_t hkdf;
     struct __neverc_std_pbkdf2_t pbkdf2;
+    struct __neverc_std_x509_t x509;
+    struct __neverc_std_crypto_rand_t rand;
+    struct __neverc_std_elliptic_t elliptic;
+    struct __neverc_std_rsa_t rsa;
+    struct __neverc_std_ecdsa_t ecdsa;
+    struct __neverc_std_dsa_t dsa;
+    struct __neverc_std_ed25519_t ed25519;
+    struct __neverc_std_ecdh_t ecdh;
 };
 
 extern struct __neverc_std_crypto_t __neverc_mod_crypto;
