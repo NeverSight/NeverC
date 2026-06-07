@@ -76,7 +76,7 @@ NeverC поддерживает два источника SDK **без жёст�
 `-mshellcode-context=user|kernel` как второе измерение конвейера:
 
 - **Режим пользователя**: Конвейер PEB walk / syscall stub.
-- **Режим ядра**: `SyscallStubPass` / `WinPEBImportPass` досрочно возвращают; `KernelImportPass` переписывает неразрешённые extern вызовы; `<neverc/kernel.h>` предоставляет типы ядра.
+- **Режим ядра**: `SyscallStubPass` / `WinPEBImportPass` досрочно возвращают; `KernelImportPass` переписывает неразрешённые extern вызовы; `<neverc/shellcode/kernel.h>` предоставляет типы ядра.
 
 См. [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.ru.md).
 

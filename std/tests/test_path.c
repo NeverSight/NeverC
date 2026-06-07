@@ -155,6 +155,23 @@ static void test_split(void) {
     check_str("split root - file", file, "");
 }
 
+static void test_match(void) {
+    printf("[match]\n");
+    check_int("match star", neverc_path_match("*.txt", "hello.txt"), 1);
+    check_int("match star no", neverc_path_match("*.txt", "hello.go"), 0);
+    check_int("match exact", neverc_path_match("hello", "hello"), 1);
+    check_int("match exact no", neverc_path_match("hello", "world"), 0);
+    check_int("match question", neverc_path_match("h?llo", "hello"), 1);
+    check_int("match question no", neverc_path_match("h?llo", "hllo"), 0);
+    check_int("match class", neverc_path_match("[abc]", "b"), 1);
+    check_int("match class no", neverc_path_match("[abc]", "d"), 0);
+    check_int("match range", neverc_path_match("[a-z]", "m"), 1);
+    check_int("match range no", neverc_path_match("[a-z]", "M"), 0);
+    check_int("match complex", neverc_path_match("test_*.c", "test_math.c"), 1);
+    check_int("match empty", neverc_path_match("", ""), 1);
+    check_int("match star empty", neverc_path_match("*", "anything"), 1);
+}
+
 int main(void) {
     printf("=== NeverC Path Library Tests ===\n\n");
 
@@ -165,6 +182,7 @@ int main(void) {
     test_clean();
     test_join();
     test_split();
+    test_match();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0)

@@ -331,6 +331,77 @@ static void test_fields_func(void) {
     free(parts);
 }
 
+static void test_cut_last(void) {
+    printf("[cut_last]\n");
+    const uint8_t *before, *after;
+    size_t blen, alen;
+
+    int found = neverc_bytes_cut_last(B("foo::bar::baz"), B("::"), &before, &blen, &after, &alen);
+    check_bool("cut_last found", found, 1);
+    check_bool("cut_last before", blen == 8 && memcmp(before, "foo::bar", 8) == 0, 1);
+    check_bool("cut_last after", alen == 3 && memcmp(after, "baz", 3) == 0, 1);
+
+    found = neverc_bytes_cut_last(B("hello"), B("::"), &before, &blen, &after, &alen);
+    check_bool("cut_last not found", found, 0);
+    check_bool("cut_last nf before", blen == 5 && memcmp(before, "hello", 5) == 0, 1);
+
+    found = neverc_bytes_cut_last(B("a.b.c"), B("."), &before, &blen, &after, &alen);
+    check_bool("cut_last dot found", found, 1);
+    check_bool("cut_last dot before", blen == 3 && memcmp(before, "a.b", 3) == 0, 1);
+    check_bool("cut_last dot after", alen == 1 && after[0] == 'c', 1);
+}
+
+static void test_index_rune(void) {
+    printf("[index_rune]\n");
+    check_bool("index_rune 'a'", neverc_bytes_index_rune(B("hello"), 'l') == 2, 1);
+    check_bool("index_rune not found", neverc_bytes_index_rune(B("hello"), 'z') == (size_t)-1, 1);
+
+    /* UTF-8 multibyte: U+4E16 (世) is 0xE4 0xB8 0x96 */
+    const uint8_t s[] = { 'h', 'i', 0xE4, 0xB8, 0x96, 0 };
+    check_bool("index_rune utf8", neverc_bytes_index_rune(s, 5, 0x4E16) == 2, 1);
+}
+
+static void test_runes(void) {
+    printf("[runes]\n");
+    size_t count;
+    uint32_t *r = neverc_bytes_runes(B("ABC"), &count);
+    check_bool("runes ASCII count", count == 3, 1);
+    check_bool("runes A", r[0] == 'A', 1);
+    check_bool("runes B", r[1] == 'B', 1);
+    check_bool("runes C", r[2] == 'C', 1);
+    free(r);
+
+    /* "A世B" = 0x41 0xE4 0xB8 0x96 0x42 */
+    const uint8_t utf[] = { 0x41, 0xE4, 0xB8, 0x96, 0x42 };
+    r = neverc_bytes_runes(utf, 5, &count);
+    check_bool("runes utf8 count", count == 3, 1);
+    check_bool("runes utf8[0]", r[0] == 0x41, 1);
+    check_bool("runes utf8[1]", r[1] == 0x4E16, 1);
+    check_bool("runes utf8[2]", r[2] == 0x42, 1);
+    free(r);
+}
+
+static void test_to_valid_utf8(void) {
+    printf("[to_valid_utf8]\n");
+    size_t outlen;
+    /* Valid UTF-8 should pass through */
+    uint8_t *r = neverc_bytes_to_valid_utf8(B("hello"), B("?"), &outlen);
+    check_bool("valid passthrough", outlen == 5 && memcmp(r, "hello", 5) == 0, 1);
+    free(r);
+
+    /* Invalid byte 0xFF should be replaced */
+    const uint8_t bad[] = { 'h', 0xFF, 'i' };
+    r = neverc_bytes_to_valid_utf8(bad, 3, B("?"), &outlen);
+    check_bool("invalid replaced len", outlen == 3, 1);
+    check_bool("invalid replaced val", r[0] == 'h' && r[1] == '?' && r[2] == 'i', 1);
+    free(r);
+
+    /* Multiple replacement bytes */
+    r = neverc_bytes_to_valid_utf8(bad, 3, (const uint8_t *)"\xEF\xBF\xBD", 3, &outlen);
+    check_bool("replacement U+FFFD len", outlen == 5, 1);
+    free(r);
+}
+
 int main(void) {
     printf("=== NeverC Bytes Module Tests ===\n\n");
     test_compare();
@@ -346,6 +417,10 @@ int main(void) {
     test_map();
     test_split_after();
     test_fields_func();
+    test_cut_last();
+    test_index_rune();
+    test_runes();
+    test_to_valid_utf8();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

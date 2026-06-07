@@ -44,7 +44,7 @@
 - [x] テーブル駆動精製（アーキテクチャ分岐ハードコーディング → ゼロ）
 - [x] `KernelImportPass`：ring-0 自動リゾルババック付きコールサイト書き換え
 - [x] カーネルヘルパー名テーブル駆動診断（`KernelHelperNames.def`）
-- [x] `<neverc/kernel.h>`：ring-0 エントリ規約用
+- [x] `<neverc/shellcode/kernel.h>`：ring-0 エントリ規約用
 - [x] エントリオフセットゼロ強制（`placeEntryFirst`）
 - [x] ファイナライズパイプライン：バッドバイトリライター SDK + 文字セットエンコーダー SDK + サイズ制約
 - [x] アウトオブツリー C プラグイン API（`NevercPluginAPI.h`）：11 shellcode フックポイント（`NEVERC_HOOK_SC_*`）

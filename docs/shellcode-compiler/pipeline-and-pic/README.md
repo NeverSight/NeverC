@@ -80,7 +80,7 @@ Shellcode mode introduces `-mshellcode-context=user|kernel` as the pipeline's se
   - `SyscallStubPass` / `WinPEBImportPass` early-return at the pass level.
   - `TargetDesc::KernelInjectFlags` appends OS/arch-appropriate backend flags (Unix x86_64: `-mno-red-zone -mcmodel=kernel`, Windows: `/kernel`, AArch64: `-mgeneral-regs-only`).
   - `KernelImportPass` rewrites unresolved extern direct calls to resolver-backed indirect calls, injecting `(resolver, cookie)` implicit prefix parameters when needed.
-  - `<neverc/kernel.h>` exposes `neverc_kern_resolve_t`, `neverc_kern_hash()`, and related kernel-side signatures; user-mode shims (`<windows.h>`, `<unistd.h>`, etc.) reject via `#error` in kernel mode.
+  - `<neverc/shellcode/kernel.h>` exposes `neverc_kern_resolve_t`, `neverc_kern_hash()`, and related kernel-side signatures; user-mode shims (`<windows.h>`, `<unistd.h>`, etc.) reject via `#error` in kernel mode.
 
 See [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.md) for details.
 

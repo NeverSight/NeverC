@@ -45,6 +45,12 @@ char **neverc_regexp_split(neverc_regexp_t *re, const char *s,
 
 void neverc_regexp_free_strings(char **strs, int count);
 
+/* QuoteMeta: escape all regex metacharacters in s.  Caller frees result. */
+char *neverc_regexp_quote_meta(const char *s);
+
+/* MustCompile: like Compile but aborts on error */
+neverc_regexp_t *neverc_regexp_must_compile(const char *pattern);
+
 #ifdef __cplusplus
 }
 #endif

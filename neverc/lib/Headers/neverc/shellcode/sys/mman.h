@@ -11,7 +11,7 @@
 
 #if defined(__NEVERC_SHELLCODE_KERNEL__)
 #error                                                                         \
-    "<sys/mman.h> is a user-mode header. In -mshellcode-context=kernel mode use vmalloc / ExAllocatePool2 / IOMalloc via the kernel resolver shim instead."
+    "<sys/mman.h> is a user-mode header. In -mshellcode-context=kernel mode include <neverc/shellcode/kernel.h> and use vmalloc / ExAllocatePool2 / IOMalloc via the kernel resolver shim instead."
 #endif
 
 #if !defined(__NEVERC_SHELLCODE__)

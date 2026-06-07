@@ -231,7 +231,12 @@
         "neverc_sort_is_sorted": "src/sort/sort.c",
         "neverc_sort_search": "src/sort/sort.c",
         "neverc_sort_search_ints": "src/sort/sort.c",
-        "neverc_sort_search_doubles": "src/sort/sort.c"
+        "neverc_sort_search_doubles": "src/sort/sort.c",
+        "neverc_sort_stable": "src/sort/sort.c",
+        "neverc_sort_strings": "src/sort/sort.c",
+        "neverc_sort_strings_are_sorted": "src/sort/sort.c",
+        "neverc_sort_search_strings": "src/sort/sort.c",
+        "neverc_sort_reverse": "src/sort/sort.c"
       },
       "dot_methods": {
         "ints": "neverc_sort_ints",
@@ -240,7 +245,12 @@
         "is_sorted": "neverc_sort_is_sorted",
         "search": "neverc_sort_search",
         "search_ints": "neverc_sort_search_ints",
-        "search_doubles": "neverc_sort_search_doubles"
+        "search_doubles": "neverc_sort_search_doubles",
+        "stable": "neverc_sort_stable",
+        "strings": "neverc_sort_strings",
+        "strings_are_sorted": "neverc_sort_strings_are_sorted",
+        "search_strings": "neverc_sort_search_strings",
+        "reverse": "neverc_sort_reverse"
       }
     },
     "encoding/hex": {
@@ -455,7 +465,8 @@
         "neverc_path_isabs": "src/path/isabs.c",
         "neverc_path_clean": "src/path/clean.c",
         "neverc_path_join2": "src/path/join.c",
-        "neverc_path_split": "src/path/split.c"
+        "neverc_path_split": "src/path/split.c",
+        "neverc_path_match": "src/path/match.c"
       },
       "dot_methods": {
         "base": "neverc_path_base",
@@ -464,7 +475,8 @@
         "isabs": "neverc_path_isabs",
         "clean": "neverc_path_clean",
         "join2": "neverc_path_join2",
-        "split": "neverc_path_split"
+        "split": "neverc_path_split",
+        "match": "neverc_path_match"
       }
     },
     "crypto/sha256": {
@@ -1293,7 +1305,11 @@
         "neverc_bytes_fields_func": "src/bytes/bytes.c",
         "neverc_bytes_map": "src/bytes/bytes.c",
         "neverc_bytes_split_after": "src/bytes/bytes.c",
-        "neverc_bytes_split_after_n": "src/bytes/bytes.c"
+        "neverc_bytes_split_after_n": "src/bytes/bytes.c",
+        "neverc_bytes_cut_last": "src/bytes/bytes.c",
+        "neverc_bytes_index_rune": "src/bytes/bytes.c",
+        "neverc_bytes_runes": "src/bytes/bytes.c",
+        "neverc_bytes_to_valid_utf8": "src/bytes/bytes.c"
       },
       "dot_methods": {
         "equal": "neverc_bytes_equal",
@@ -1340,7 +1356,11 @@
         "fields_func": "neverc_bytes_fields_func",
         "map": "neverc_bytes_map",
         "split_after": "neverc_bytes_split_after",
-        "split_after_n": "neverc_bytes_split_after_n"
+        "split_after_n": "neverc_bytes_split_after_n",
+        "cut_last": "neverc_bytes_cut_last",
+        "index_rune": "neverc_bytes_index_rune",
+        "runes": "neverc_bytes_runes",
+        "to_valid_utf8": "neverc_bytes_to_valid_utf8"
       }
     },
     "errors": {
@@ -1631,7 +1651,9 @@
         "neverc_regexp_find_all": "src/regexp/regexp.c",
         "neverc_regexp_replace_all": "src/regexp/regexp.c",
         "neverc_regexp_split": "src/regexp/regexp.c",
-        "neverc_regexp_free": "src/regexp/regexp.c"
+        "neverc_regexp_free": "src/regexp/regexp.c",
+        "neverc_regexp_quote_meta": "src/regexp/regexp.c",
+        "neverc_regexp_must_compile": "src/regexp/regexp.c"
       },
       "dot_methods": {
         "compile": "neverc_regexp_compile",
@@ -1643,7 +1665,9 @@
         "replace_all": "neverc_regexp_replace_all",
         "split": "neverc_regexp_split",
         "free": "neverc_regexp_free",
-        "free_strings": "neverc_regexp_free_strings"
+        "free_strings": "neverc_regexp_free_strings",
+        "quote_meta": "neverc_regexp_quote_meta",
+        "must_compile": "neverc_regexp_must_compile"
       }
     },
     "archive/tar": {

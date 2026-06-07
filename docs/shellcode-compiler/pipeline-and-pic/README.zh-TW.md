@@ -80,7 +80,7 @@ shellcode 模式引入 `-mshellcode-context=user|kernel` 作為流水線的第�
   - `SyscallStubPass` / `WinPEBImportPass` 在 pass 級別提前返回。
   - `TargetDesc::KernelInjectFlags` 追加 OS/arch 適當的後端旗標（Unix x86_64：`-mno-red-zone -mcmodel=kernel`，Windows：`/kernel`，AArch64：`-mgeneral-regs-only`）。
   - `KernelImportPass` 重寫未解析的 extern 直接呼叫為解析器支援的間接呼叫，在需要時注入 `(resolver, cookie)` 隱式前綴參數。
-  - `<neverc/kernel.h>` 暴露 `neverc_kern_resolve_t`、`neverc_kern_hash()` 和相關核心側簽章；使用者態 shim（`<windows.h>`、`<unistd.h>` 等）在核心模式下透過 `#error` 拒絕。
+  - `<neverc/shellcode/kernel.h>` 暴露 `neverc_kern_resolve_t`、`neverc_kern_hash()` 和相關核心側簽章；使用者態 shim（`<windows.h>`、`<unistd.h>` 等）在核心模式下透過 `#error` 拒絕。
 
 詳見 [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.zh-TW.md)。
 

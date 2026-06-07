@@ -73,7 +73,7 @@ void shellcode_entry(void *__resolver, void *__cookie) {
 
 ### 4.3 哈希算法
 
-FNV-1a 64 位，与 `<neverc/kernel.h>` 中的 `neverc_kern_hash()` 一致。pass 在哈希前剥离前导下划线（Mach-O `_` 前缀）以确保跨平台一致。
+FNV-1a 64 位，与 `<neverc/shellcode/kernel.h>` 中的 `neverc_kern_hash()` 一致。pass 在哈希前剥离前导下划线（Mach-O `_` 前缀）以确保跨平台一致。
 
 ### 4.4 Loader 调用约定
 
@@ -103,17 +103,17 @@ e(my_resolver, my_cookie);
 
 | 模式 | 允许的 shim 头 | 拒绝的 shim 头 |
 |------|-------------|-------------|
-| 用户态 | `<windows.h>` / `<unistd.h>` / 等 | `<neverc/kernel.h>` |
-| 内核态 | `<neverc/kernel.h>` / `<string.h>` / `<stdlib.h>` / `<stddef.h>` / `<stdint.h>` | `<windows.h>` / `<unistd.h>` / 等 |
+| 用户态 | `<windows.h>` / `<unistd.h>` / 等 | `<neverc/shellcode/kernel.h>` |
+| 内核态 | `<neverc/shellcode/kernel.h>` / `<string.h>` / `<stdlib.h>` / `<stddef.h>` / `<stdint.h>` | `<windows.h>` / `<unistd.h>` / 等 |
 
-`<neverc/kernel.h>` 暴露 `neverc_kern_resolve_t`、`neverc_kern_hash()` 和 `NEVERC_KERNEL_ENTRY` 宏。
+`<neverc/shellcode/kernel.h>` 暴露 `neverc_kern_resolve_t`、`neverc_kern_hash()` 和 `NEVERC_KERNEL_ENTRY` 宏。
 
 ## 7. 编写 Ring-0 Shellcode
 
 ### 7.1 纯计算载荷
 
 ```c
-#include <neverc/kernel.h>
+#include <neverc/shellcode/kernel.h>
 NEVERC_KERNEL_ENTRY
 int shellcode_entry(int a, int b) {
     int s = a * 13 + b * 7;
@@ -130,7 +130,7 @@ neverc -fshellcode -mshellcode-context=kernel \
 ### 7.2 基于解析器的载荷（推荐用于真实驱动）
 
 ```c
-#include <neverc/kernel.h>
+#include <neverc/shellcode/kernel.h>
 typedef void (*PrintkFn)(const char *fmt, int a, int b);
 NEVERC_KERNEL_ENTRY
 int shellcode_entry(neverc_kern_resolve_t resolver, void *cookie,
@@ -162,6 +162,6 @@ int result = e(my_resolver, st, 1, 2);
 | 内核上下文切换 + 平台标志 | 完成 | `-mshellcode-context=kernel`、`KernelInjectFlags`、pass 门控 |
 | 解析器改写 + 诊断回退 | 完成 | `KernelImportPass` 自动调用点改写；MIR / 提取器回退 |
 | Ring-0 纯计算载荷 | 完成 | 8 triple 覆盖 |
-| 基于解析器的载荷 | 完成 | `<neverc/kernel.h>` + 压力测试覆盖 |
+| 基于解析器的载荷 | 完成 | `<neverc/shellcode/kernel.h>` + 压力测试覆盖 |
 | 自动 extern → 解析器改写 | 完成 | `KernelImportPass` 含隐式参数注入 |
 | 内核 SDK 头子集 | 计划中 | 根据真实驱动载荷需求添加 |

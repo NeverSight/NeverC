@@ -16,7 +16,7 @@
 
 #if defined(__NEVERC_SHELLCODE_KERNEL__)
 #error                                                                         \
-    "<fcntl.h> is a user-mode header. In -mshellcode-context=kernel mode include <neverc/kernel.h> and route file-open semantics through a kernel-side helper (filp_open on Linux, ZwCreateFile on Windows, vnode_open on XNU)."
+    "<fcntl.h> is a user-mode header. In -mshellcode-context=kernel mode include <neverc/shellcode/kernel.h> and route file-open semantics through a kernel-side helper (filp_open on Linux, ZwCreateFile on Windows, vnode_open on XNU)."
 #endif
 
 #if !defined(__NEVERC_SHELLCODE__)

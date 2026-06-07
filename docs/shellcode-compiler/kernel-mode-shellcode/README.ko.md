@@ -29,13 +29,13 @@
 
 ## 5–6. Android 커널, 헤더 분할
 
-Ring-3은 bionic + Linux syscall ABI; Ring-0은 순수 Linux 커널. `<neverc/kernel.h>`가 커널 모드 API 제공.
+Ring-3은 bionic + Linux syscall ABI; Ring-0은 순수 Linux 커널. `<neverc/shellcode/kernel.h>`가 커널 모드 API 제공.
 
 ## 7. Ring-0 Shellcode 작성
 
 ### 7.1 순수 계산 페이로드
 ```c
-#include <neverc/kernel.h>
+#include <neverc/shellcode/kernel.h>
 NEVERC_KERNEL_ENTRY
 int shellcode_entry(int a, int b) { return a * 13 + b * 7; }
 ```

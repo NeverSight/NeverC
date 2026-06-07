@@ -1,6 +1,7 @@
 #include "neverc/regexp.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 /* NFA state types */
 enum { NFA_MATCH, NFA_CHAR, NFA_ANY, NFA_SPLIT, NFA_CLASS, NFA_ANCHOR_START, NFA_ANCHOR_END };
@@ -619,4 +620,33 @@ char **neverc_regexp_split(neverc_regexp_t *re, const char *s,
 void neverc_regexp_free_strings(char **strs, int count) {
     for (int i = 0; i < count; i++) free(strs[i]);
     free(strs);
+}
+
+char *neverc_regexp_quote_meta(const char *s) {
+    if (!s) return NULL;
+    size_t slen = strlen(s);
+    char *result = (char *)malloc(slen * 2 + 1);
+    if (!result) return NULL;
+    size_t j = 0;
+    for (size_t i = 0; i < slen; i++) {
+        char c = s[i];
+        if (c == '\\' || c == '.' || c == '+' || c == '*' || c == '?' ||
+            c == '(' || c == ')' || c == '|' || c == '[' || c == ']' ||
+            c == '{' || c == '}' || c == '^' || c == '$') {
+            result[j++] = '\\';
+        }
+        result[j++] = c;
+    }
+    result[j] = '\0';
+    return result;
+}
+
+neverc_regexp_t *neverc_regexp_must_compile(const char *pattern) {
+    const char *err = NULL;
+    neverc_regexp_t *re = neverc_regexp_compile(pattern, &err);
+    if (!re) {
+        fprintf(stderr, "neverc_regexp_must_compile: %s: %s\n", pattern, err ? err : "unknown error");
+        abort();
+    }
+    return re;
 }

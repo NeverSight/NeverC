@@ -17,7 +17,7 @@
 Automatisches Umschreiben ungelöster extern-Aufrufe in Resolver-gestützte indirekte Aufrufe. FNV-1a-64-Hash. Drei-Schicht-Verteidigung.
 
 ## 5–7. Android Kernel, Header, Ring-0 Code schreiben
-`<neverc/kernel.h>` bietet `neverc_kern_resolve_t` und `neverc_kern_hash()`. Reine Berechnung oder Resolver-basierte Payloads.
+`<neverc/shellcode/kernel.h>` bietet `neverc_kern_resolve_t` und `neverc_kern_hash()`. Reine Berechnung oder Resolver-basierte Payloads.
 
 ## 8. Roadmap
 Kernel-Kontextwechsel, Resolver-Umschreibung, beide Payload-Typen — alles erledigt. Kernel-SDK-Header geplant.

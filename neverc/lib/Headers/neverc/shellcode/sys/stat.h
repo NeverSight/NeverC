@@ -15,7 +15,7 @@
 
 #if defined(__NEVERC_SHELLCODE_KERNEL__)
 #error                                                                         \
-    "<sys/stat.h> is a user-mode header. In -mshellcode-context=kernel mode call vfs_statx / ZwQueryInformationFile / vnode_getattr directly via the KernelImportPass resolver instead."
+    "<sys/stat.h> is a user-mode header. In -mshellcode-context=kernel mode include <neverc/shellcode/kernel.h> and call vfs_statx / ZwQueryInformationFile / vnode_getattr directly via the KernelImportPass resolver instead."
 #endif
 
 #if !defined(__NEVERC_SHELLCODE__)

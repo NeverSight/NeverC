@@ -80,7 +80,7 @@ Der Shellcode-Modus führt `-mshellcode-context=user|kernel` als zweite Pipeline
   - `SyscallStubPass` / `WinPEBImportPass` kehren auf Pass-Ebene früh zurück.
   - `TargetDesc::KernelInjectFlags` fügt OS/arch-gerechte Backend-Flags hinzu (Unix x86_64: `-mno-red-zone -mcmodel=kernel`, Windows: `/kernel`, AArch64: `-mgeneral-regs-only`).
   - `KernelImportPass` schreibt ungelöste extern-Direktaufrufe in resolver-gestützte indirekte Aufrufe um, injiziert bei Bedarf `(resolver, cookie)` implizite Präfixparameter.
-  - `<neverc/kernel.h>` exponiert `neverc_kern_resolve_t`, `neverc_kern_hash()` und verwandte Kernel-Signaturen; Benutzermodus-Shims (`<windows.h>`, `<unistd.h>` etc.) lehnen im Kernelmodus via `#error` ab.
+  - `<neverc/shellcode/kernel.h>` exponiert `neverc_kern_resolve_t`, `neverc_kern_hash()` und verwandte Kernel-Signaturen; Benutzermodus-Shims (`<windows.h>`, `<unistd.h>` etc.) lehnen im Kernelmodus via `#error` ab.
 
 Siehe [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.de.md) für Details.
 

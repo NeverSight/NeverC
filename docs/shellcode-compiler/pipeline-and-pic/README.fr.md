@@ -80,7 +80,7 @@ Le mode shellcode introduit `-mshellcode-context=user|kernel` comme seconde dime
   - `SyscallStubPass` / `WinPEBImportPass` retournent tôt au niveau passe.
   - `TargetDesc::KernelInjectFlags` ajoute les flags backend appropriés OS/arch.
   - `KernelImportPass` réécrit les appels directs extern non résolus en appels indirects via résolveur.
-  - `<neverc/kernel.h>` expose `neverc_kern_resolve_t`, `neverc_kern_hash()` ; les shims mode utilisateur rejettent via `#error`.
+  - `<neverc/shellcode/kernel.h>` expose `neverc_kern_resolve_t`, `neverc_kern_hash()` ; les shims mode utilisateur rejettent via `#error`.
 
 Voir [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.fr.md) pour les détails.
 

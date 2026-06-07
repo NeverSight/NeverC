@@ -12,7 +12,7 @@
 
 #if defined(__NEVERC_SHELLCODE_KERNEL__)
 #error                                                                         \
-    "<unistd.h> is a user-mode header and cannot be used in -mshellcode-context=kernel builds. Ring-0 payloads have no POSIX syscall stub surface; include <neverc/kernel.h> and request the helper through the KernelImportPass resolver shim instead."
+    "<unistd.h> is a user-mode header and cannot be used in -mshellcode-context=kernel builds. Ring-0 payloads have no POSIX syscall stub surface; include <neverc/shellcode/kernel.h> and request the helper through the KernelImportPass resolver shim instead."
 #endif
 
 #if !defined(__NEVERC_SHELLCODE__)

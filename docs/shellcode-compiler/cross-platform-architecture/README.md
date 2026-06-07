@@ -107,7 +107,7 @@ ExecutionLevel is orthogonal to (OS, arch):
   - All platforms: `SyscallStubPass` / `WinPEBImportPass` both short-circuit.
   - `KernelInjectFlags` stacked per arch (x86_64: `-mno-red-zone`/`-mcmodel=kernel`/`-mno-{sse,sse2,mmx}`; AArch64: `-mgeneral-regs-only`).
   - `KernelImportPass` activated: auto-injects `(resolver, cookie)` prefix parameters, rewrites extern callsites to resolver-backed indirect calls, preserving variadic arguments.
-  - Users still just write normal C. `<neverc/kernel.h>` provides `neverc_kern_resolve_t` and `neverc_kern_hash()`.
+  - Users still just write normal C. `<neverc/shellcode/kernel.h>` provides `neverc_kern_resolve_t` and `neverc_kern_hash()`.
 
 ## 5. User-Mode "Normal C" Support Matrix
 

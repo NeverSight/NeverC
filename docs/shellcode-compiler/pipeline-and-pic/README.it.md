@@ -76,7 +76,7 @@ Entrambe funzionano senza registro o variabili d'ambiente VS dell'OS.
 `-mshellcode-context=user|kernel` come seconda dimensione:
 
 - **Modalità utente**: Pipeline PEB walk / syscall stub.
-- **Modalità kernel**: `SyscallStubPass` / `WinPEBImportPass` ritornano anticipatamente; `KernelImportPass` riscrive chiamate extern non risolte; `<neverc/kernel.h>` espone i tipi kernel.
+- **Modalità kernel**: `SyscallStubPass` / `WinPEBImportPass` ritornano anticipatamente; `KernelImportPass` riscrive chiamate extern non risolte; `<neverc/shellcode/kernel.h>` espone i tipi kernel.
 
 Vedere [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.it.md).
 

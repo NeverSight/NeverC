@@ -124,6 +124,48 @@ static void test_search_generic(void) {
     check_int("search(>=100)", (int)idx, 5);
 }
 
+typedef struct { int key; int order; } pair_t;
+
+static int cmp_pair(const void *a, const void *b) {
+    return ((const pair_t*)a)->key - ((const pair_t*)b)->key;
+}
+
+static void test_stable_sort(void) {
+    printf("[stable_sort]\n");
+    pair_t data[] = {{3,0},{1,1},{3,2},{2,3},{1,4}};
+    neverc_sort_stable(data, 5, sizeof(pair_t), cmp_pair);
+    check_true("stable sorted", data[0].key == 1 && data[1].key == 1 && data[2].key == 2);
+    check_true("stable order preserved", data[0].order == 1 && data[1].order == 4);
+    check_true("stable 3s order", data[3].order == 0 && data[4].order == 2);
+}
+
+static void test_sort_strings(void) {
+    printf("[sort_strings]\n");
+    const char *strs[] = {"cherry", "apple", "banana", "date"};
+    neverc_sort_strings(strs, 4);
+    check_true("strings[0]", strcmp(strs[0], "apple") == 0);
+    check_true("strings[1]", strcmp(strs[1], "banana") == 0);
+    check_true("strings[2]", strcmp(strs[2], "cherry") == 0);
+    check_true("strings[3]", strcmp(strs[3], "date") == 0);
+    check_true("strings are sorted", neverc_sort_strings_are_sorted(strs, 4));
+
+    check_int("search banana", neverc_sort_search_strings(strs, 4, "banana"), 1);
+    check_int("search miss", neverc_sort_search_strings(strs, 4, "elderberry"), -1);
+}
+
+static void test_reverse(void) {
+    printf("[reverse]\n");
+    int arr[] = {1, 2, 3, 4, 5};
+    neverc_sort_reverse(arr, 5, sizeof(int));
+    check_int("reverse[0]", arr[0], 5);
+    check_int("reverse[1]", arr[1], 4);
+    check_int("reverse[4]", arr[4], 1);
+
+    int one[] = {42};
+    neverc_sort_reverse(one, 1, sizeof(int));
+    check_int("reverse single", one[0], 42);
+}
+
 int main(void) {
     printf("=== NeverC Sort Library Tests ===\n\n");
 
@@ -134,6 +176,9 @@ int main(void) {
     test_search_ints();
     test_search_doubles();
     test_search_generic();
+    test_stable_sort();
+    test_sort_strings();
+    test_reverse();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0)

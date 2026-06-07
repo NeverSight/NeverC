@@ -107,7 +107,7 @@ ExecutionLevel 与 (OS, arch) 正交：
   - 所有平台：`SyscallStubPass` / `WinPEBImportPass` 均短路。
   - `KernelInjectFlags` 按架构叠加（x86_64：`-mno-red-zone`/`-mcmodel=kernel`/`-mno-{sse,sse2,mmx}`；AArch64：`-mgeneral-regs-only`）。
   - `KernelImportPass` 激活：自动注入 `(resolver, cookie)` 前缀参数，重写 extern 调用点为解析器支持的间接调用，保留可变参数。
-  - 用户仍只写普通 C。`<neverc/kernel.h>` 提供 `neverc_kern_resolve_t` 和 `neverc_kern_hash()`。
+  - 用户仍只写普通 C。`<neverc/shellcode/kernel.h>` 提供 `neverc_kern_resolve_t` 和 `neverc_kern_hash()`。
 
 ## 5. 用户态"普通 C"支持矩阵
 

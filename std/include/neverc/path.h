@@ -20,6 +20,11 @@ int neverc_path_split(const char *path, char *dir, size_t dirsize,
 const char *neverc_path_ext(const char *path);
 int         neverc_path_isabs(const char *path);
 
+/* Match: glob-style pattern matching (mirrors Go path.Match).
+ * Pattern: * matches any non-/ sequence, ? matches any single non-/ char,
+ * [...] matches character class. Returns 1 if matched, 0 if not, -1 on error. */
+int neverc_path_match(const char *pattern, const char *name);
+
 #ifdef __cplusplus
 }
 #endif

@@ -627,3 +627,105 @@ uint8_t *neverc_bytes_clone(const uint8_t *b, size_t blen) {
     for (size_t i = 0; i < blen; i++) r[i] = b[i];
     return r;
 }
+
+/* --- CutLast --- */
+
+int neverc_bytes_cut_last(const uint8_t *s, size_t slen,
+                          const uint8_t *sep, size_t seplen,
+                          const uint8_t **before, size_t *blen,
+                          const uint8_t **after, size_t *alen) {
+    size_t idx = neverc_bytes_last_index(s, slen, sep, seplen);
+    if (idx == (size_t)-1) {
+        *before = s; *blen = slen;
+        *after = s + slen; *alen = 0;
+        return 0;
+    }
+    *before = s; *blen = idx;
+    *after = s + idx + seplen; *alen = slen - idx - seplen;
+    return 1;
+}
+
+/* --- UTF-8 helpers for rune operations --- */
+
+static size_t utf8_decode(const uint8_t *p, size_t remaining, uint32_t *r) {
+    if (remaining == 0) { *r = 0; return 0; }
+    uint8_t b = p[0];
+    if (b < 0x80) { *r = b; return 1; }
+    if ((b & 0xE0) == 0xC0 && remaining >= 2 && (p[1] & 0xC0) == 0x80) {
+        *r = ((uint32_t)(b & 0x1F) << 6) | (p[1] & 0x3F);
+        return (*r >= 0x80) ? 2 : 0;
+    }
+    if ((b & 0xF0) == 0xE0 && remaining >= 3 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+        *r = ((uint32_t)(b & 0x0F) << 12) | ((uint32_t)(p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+        if (*r >= 0x800 && (*r < 0xD800 || *r > 0xDFFF)) return 3;
+        return 0;
+    }
+    if ((b & 0xF8) == 0xF0 && remaining >= 4 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80 && (p[3] & 0xC0) == 0x80) {
+        *r = ((uint32_t)(b & 0x07) << 18) | ((uint32_t)(p[1] & 0x3F) << 12) | ((uint32_t)(p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+        if (*r >= 0x10000 && *r <= 0x10FFFF) return 4;
+        return 0;
+    }
+    *r = 0xFFFD; return 0;
+}
+
+static size_t utf8_encode(uint32_t r, uint8_t *buf) {
+    if (r < 0x80) { buf[0] = (uint8_t)r; return 1; }
+    if (r < 0x800) { buf[0] = 0xC0 | (r >> 6); buf[1] = 0x80 | (r & 0x3F); return 2; }
+    if (r < 0x10000) { buf[0] = 0xE0 | (r >> 12); buf[1] = 0x80 | ((r >> 6) & 0x3F); buf[2] = 0x80 | (r & 0x3F); return 3; }
+    buf[0] = 0xF0 | (r >> 18); buf[1] = 0x80 | ((r >> 12) & 0x3F); buf[2] = 0x80 | ((r >> 6) & 0x3F); buf[3] = 0x80 | (r & 0x3F); return 4;
+}
+
+/* --- IndexRune --- */
+
+size_t neverc_bytes_index_rune(const uint8_t *s, size_t slen, uint32_t r) {
+    if (r < 0x80) return neverc_bytes_index_byte(s, slen, (uint8_t)r);
+    uint8_t enc[4];
+    size_t elen = utf8_encode(r, enc);
+    return neverc_bytes_index(s, slen, enc, elen);
+}
+
+/* --- Runes --- */
+
+uint32_t *neverc_bytes_runes(const uint8_t *s, size_t slen, size_t *count) {
+    *count = 0;
+    size_t cap = slen > 0 ? slen : 1;
+    uint32_t *result = (uint32_t *)malloc(cap * sizeof(uint32_t));
+    if (!result) return NULL;
+    size_t i = 0;
+    while (i < slen) {
+        uint32_t r;
+        size_t n = utf8_decode(s + i, slen - i, &r);
+        if (n == 0) { r = 0xFFFD; n = 1; }
+        if (*count >= cap) { cap *= 2; result = (uint32_t *)realloc(result, cap * sizeof(uint32_t)); }
+        result[(*count)++] = r;
+        i += n;
+    }
+    return result;
+}
+
+/* --- ToValidUTF8 --- */
+
+uint8_t *neverc_bytes_to_valid_utf8(const uint8_t *s, size_t slen,
+                                     const uint8_t *replacement, size_t rlen,
+                                     size_t *outlen) {
+    size_t cap = slen + rlen * 4;
+    uint8_t *result = (uint8_t *)malloc(cap);
+    if (!result) { *outlen = 0; return NULL; }
+    size_t out = 0;
+    size_t i = 0;
+    while (i < slen) {
+        uint32_t r;
+        size_t n = utf8_decode(s + i, slen - i, &r);
+        if (n == 0) {
+            while (out + rlen >= cap) { cap *= 2; result = (uint8_t *)realloc(result, cap); }
+            for (size_t j = 0; j < rlen; j++) result[out++] = replacement[j];
+            i++;
+        } else {
+            while (out + n >= cap) { cap *= 2; result = (uint8_t *)realloc(result, cap); }
+            for (size_t j = 0; j < n; j++) result[out++] = s[i + j];
+            i += n;
+        }
+    }
+    *outlen = out;
+    return result;
+}

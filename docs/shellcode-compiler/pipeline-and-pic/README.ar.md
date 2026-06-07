@@ -70,7 +70,7 @@ NeverC يدعم مصدرين لـ SDK **بدون مسارات مطلقة مشف�
 `-mshellcode-context=user|kernel` كبُعد ثانٍ للمسار:
 
 - **وضع المستخدم**: مسار PEB walk / syscall stub.
-- **وضع النواة**: `SyscallStubPass` / `WinPEBImportPass` يعودان مبكراً؛ `KernelImportPass` يُعيد كتابة الاستدعاءات الخارجية غير المحلولة؛ `<neverc/kernel.h>` يكشف أنواع النواة.
+- **وضع النواة**: `SyscallStubPass` / `WinPEBImportPass` يعودان مبكراً؛ `KernelImportPass` يُعيد كتابة الاستدعاءات الخارجية غير المحلولة؛ `<neverc/shellcode/kernel.h>` يكشف أنواع النواة.
 
 راجع [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.ar.md).
 

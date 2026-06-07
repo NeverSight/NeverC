@@ -17,7 +17,7 @@
 Réécriture automatique des appels extern non résolus en appels indirects via résolveur. Hash FNV-1a 64-bit. Défense trois couches.
 
 ## 5–7. Noyau Android, en-têtes, écriture de code Ring-0
-`<neverc/kernel.h>` fournit `neverc_kern_resolve_t` et `neverc_kern_hash()`. Charges calcul pur ou basées sur résolveur.
+`<neverc/shellcode/kernel.h>` fournit `neverc_kern_resolve_t` et `neverc_kern_hash()`. Charges calcul pur ou basées sur résolveur.
 
 ## 8. Feuille de route
 Changement contexte noyau, réécriture résolveur, deux types de charges — tout terminé. En-têtes SDK noyau planifiés.

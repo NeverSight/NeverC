@@ -1,4 +1,6 @@
 #include "neverc/sort.h"
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 /*
@@ -157,4 +159,81 @@ int neverc_sort_search_doubles(const double *arr, size_t n, double target) {
     }
     if (lo < n && arr[lo] == target) return (int)lo;
     return -1;
+}
+
+/* --- Stable sort (merge sort) --- */
+
+static void merge(uint8_t *base, uint8_t *tmp, size_t lo, size_t mid, size_t hi,
+                  size_t es, neverc_sort_cmp_t cmp) {
+    memcpy(tmp + lo * es, base + lo * es, (hi - lo) * es);
+    size_t i = lo, j = mid, k = lo;
+    while (i < mid && j < hi) {
+        if (cmp(tmp + i * es, tmp + j * es) <= 0)
+            memcpy(base + k * es, tmp + i * es, es), i++;
+        else
+            memcpy(base + k * es, tmp + j * es, es), j++;
+        k++;
+    }
+    while (i < mid) { memcpy(base + k * es, tmp + i * es, es); i++; k++; }
+    while (j < hi)  { memcpy(base + k * es, tmp + j * es, es); j++; k++; }
+}
+
+static void merge_sort(uint8_t *base, uint8_t *tmp, size_t lo, size_t hi,
+                       size_t es, neverc_sort_cmp_t cmp) {
+    if (hi - lo <= 1) return;
+    size_t mid = lo + (hi - lo) / 2;
+    merge_sort(base, tmp, lo, mid, es, cmp);
+    merge_sort(base, tmp, mid, hi, es, cmp);
+    merge(base, tmp, lo, mid, hi, es, cmp);
+}
+
+void neverc_sort_stable(void *base, size_t n, size_t elem_size,
+                        neverc_sort_cmp_t cmp) {
+    if (n <= 1) return;
+    uint8_t *tmp = (uint8_t *)malloc(n * elem_size);
+    if (!tmp) { neverc_sort_custom(base, n, elem_size, cmp); return; }
+    merge_sort((uint8_t *)base, tmp, 0, n, elem_size, cmp);
+    free(tmp);
+}
+
+/* --- String sorting --- */
+
+static int cmp_strings(const void *a, const void *b) {
+    return strcmp(*(const char **)a, *(const char **)b);
+}
+
+void neverc_sort_strings(const char **arr, size_t n) {
+    neverc_sort_custom(arr, n, sizeof(const char *), cmp_strings);
+}
+
+int neverc_sort_strings_are_sorted(const char **arr, size_t n) {
+    for (size_t i = 1; i < n; i++)
+        if (strcmp(arr[i-1], arr[i]) > 0) return 0;
+    return 1;
+}
+
+int neverc_sort_search_strings(const char **arr, size_t n, const char *target) {
+    size_t lo = 0, hi = n;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (strcmp(arr[mid], target) < 0) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo < n && strcmp(arr[lo], target) == 0) return (int)lo;
+    return -1;
+}
+
+/* --- Reverse --- */
+
+void neverc_sort_reverse(void *base, size_t n, size_t elem_size) {
+    if (n <= 1) return;
+    uint8_t *b = (uint8_t *)base;
+    uint8_t tmp_buf[256];
+    uint8_t *tmp = elem_size <= sizeof(tmp_buf) ? tmp_buf : (uint8_t *)malloc(elem_size);
+    for (size_t i = 0, j = n - 1; i < j; i++, j--) {
+        memcpy(tmp, b + i * elem_size, elem_size);
+        memcpy(b + i * elem_size, b + j * elem_size, elem_size);
+        memcpy(b + j * elem_size, tmp, elem_size);
+    }
+    if (tmp != tmp_buf) free(tmp);
 }

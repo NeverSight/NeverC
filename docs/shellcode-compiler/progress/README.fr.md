@@ -44,7 +44,7 @@
 - [x] Purification pilotée par table (codage en dur des branches d'architecture → zéro)
 - [x] `KernelImportPass` : réécriture automatique des sites d'appel ring-0 avec résolveur
 - [x] Diagnostics pilotés par table de noms d'helpers du noyau (`KernelHelperNames.def`)
-- [x] `<neverc/kernel.h>` pour les conventions de point d'entrée ring-0
+- [x] `<neverc/shellcode/kernel.h>` pour les conventions de point d'entrée ring-0
 - [x] Forçage du décalage zéro du point d'entrée (`placeEntryFirst`)
 - [x] Pipeline de finalisation : SDK de réécriture d'octets interdits + SDK d'encodeur de charset + contraintes de taille
 - [x] API Plugin C hors arbre (`NevercPluginAPI.h`) : 11 points d'accroche shellcode (`NEVERC_HOOK_SC_*`)

@@ -44,7 +44,7 @@
 - [x] 表驅動淨化（架構分支硬編碼 → 零）
 - [x] `KernelImportPass`：ring-0 自動解析器支援的呼叫點改寫
 - [x] 核心輔助函式名表驅動診斷（`KernelHelperNames.def`）
-- [x] `<neverc/kernel.h>` 用於 ring-0 進入點慣例
+- [x] `<neverc/shellcode/kernel.h>` 用於 ring-0 進入點慣例
 - [x] 進入點偏移零強制（`placeEntryFirst`）
 - [x] Finalize 管線：壞位元組重寫器 SDK + 字元集編碼器 SDK + 大小約束
 - [x] 樹外 C 外掛 API（`NevercPluginAPI.h`）：11 個 shellcode 掛鈎點（`NEVERC_HOOK_SC_*`）

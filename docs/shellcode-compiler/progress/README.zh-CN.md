@@ -44,7 +44,7 @@
 - [x] 表驱动净化（架构分支硬编码 → 零）
 - [x] `KernelImportPass`：ring-0 自动解析器支持的调用点改写
 - [x] 内核辅助函数名表驱动诊断（`KernelHelperNames.def`）
-- [x] `<neverc/kernel.h>` 用于 ring-0 入口约定
+- [x] `<neverc/shellcode/kernel.h>` 用于 ring-0 入口约定
 - [x] 入口偏移零强制（`placeEntryFirst`）
 - [x] Finalize 流水线：坏字节重写器 SDK + 字符集编码器 SDK + 大小约束
 - [x] 树外 C 插件 API（`NevercPluginAPI.h`）：11 个 shellcode 钩子点（`NEVERC_HOOK_SC_*`）

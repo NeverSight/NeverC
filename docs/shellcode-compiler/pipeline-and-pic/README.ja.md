@@ -80,7 +80,7 @@ shellcode モードは `-mshellcode-context=user|kernel` をパイプライン�
   - `SyscallStubPass` / `WinPEBImportPass` が pass レベルで早期リターン。
   - `TargetDesc::KernelInjectFlags` が OS/arch 適切なバックエンドフラグを追加（Unix x86_64：`-mno-red-zone -mcmodel=kernel`、Windows：`/kernel`、AArch64：`-mgeneral-regs-only`）。
   - `KernelImportPass` が未解決 extern 直接呼出をリゾルバ支援間接呼出に書換、必要に応じ `(resolver, cookie)` 暗黙プレフィクスパラメータを注入。
-  - `<neverc/kernel.h>` が `neverc_kern_resolve_t`、`neverc_kern_hash()` と関連カーネル側シグネチャを公開；ユーザーモード shim（`<windows.h>`、`<unistd.h>` 等）はカーネルモードで `#error` により拒否。
+  - `<neverc/shellcode/kernel.h>` が `neverc_kern_resolve_t`、`neverc_kern_hash()` と関連カーネル側シグネチャを公開；ユーザーモード shim（`<windows.h>`、`<unistd.h>` 等）はカーネルモードで `#error` により拒否。
 
 詳細は [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.ja.md) を参照。
 

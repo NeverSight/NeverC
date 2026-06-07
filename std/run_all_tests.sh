@@ -59,7 +59,7 @@ compile_and_run "math" $MATH_SRCS
 compile_and_run "strconv" src/strconv/*.c
 
 # Path
-compile_and_run "path" src/path/base.c src/path/dir.c src/path/ext.c src/path/isabs.c src/path/clean.c src/path/join.c src/path/split.c
+compile_and_run "path" src/path/base.c src/path/dir.c src/path/ext.c src/path/isabs.c src/path/clean.c src/path/join.c src/path/split.c src/path/match.c
 
 # Sort
 compile_and_run "sort" src/sort/sort.c

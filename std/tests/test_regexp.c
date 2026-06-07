@@ -139,6 +139,45 @@ static void test_empty_and_edge_cases(void) {
     check_bool("escaped dot no", neverc_regexp_match_string("\\.", "a"), 0);
 }
 
+static void test_quote_meta(void) {
+    printf("[quote_meta]\n");
+    char *q = neverc_regexp_quote_meta("hello");
+    check_bool("quote_meta plain", strcmp(q, "hello") == 0, 1);
+    free(q);
+
+    q = neverc_regexp_quote_meta("a.b+c*d?e");
+    check_bool("quote_meta special", strcmp(q, "a\\.b\\+c\\*d\\?e") == 0, 1);
+    free(q);
+
+    q = neverc_regexp_quote_meta("[foo](bar){baz}");
+    check_bool("quote_meta brackets", strcmp(q, "\\[foo\\]\\(bar\\)\\{baz\\}") == 0, 1);
+    free(q);
+
+    q = neverc_regexp_quote_meta("^start|end$");
+    check_bool("quote_meta anchors", strcmp(q, "\\^start\\|end\\$") == 0, 1);
+    free(q);
+
+    q = neverc_regexp_quote_meta("");
+    check_bool("quote_meta empty", strcmp(q, "") == 0, 1);
+    free(q);
+
+    /* Verify quoted pattern matches literally */
+    q = neverc_regexp_quote_meta("a.b+c");
+    neverc_regexp_t *re = neverc_regexp_must_compile(q);
+    check_bool("quote_meta literal match", neverc_regexp_match(re, "a.b+c"), 1);
+    check_bool("quote_meta no wild match", neverc_regexp_match(re, "axbbc"), 0);
+    neverc_regexp_free(re);
+    free(q);
+}
+
+static void test_must_compile(void) {
+    printf("[must_compile]\n");
+    neverc_regexp_t *re = neverc_regexp_must_compile("[a-z]+");
+    check_bool("must_compile ok", re != NULL, 1);
+    check_bool("must_compile match", neverc_regexp_match(re, "hello"), 1);
+    neverc_regexp_free(re);
+}
+
 int main(void) {
     printf("=== NeverC Regexp Module Tests ===\n\n");
     test_compile();
@@ -149,6 +188,8 @@ int main(void) {
     test_replace();
     test_anchors();
     test_empty_and_edge_cases();
+    test_quote_meta();
+    test_must_compile();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

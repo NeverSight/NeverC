@@ -29,13 +29,13 @@
 
 ## 5–6. Android カーネル、ヘッダ分割
 
-Ring-3 は bionic + Linux syscall ABI；Ring-0 は純 Linux カーネル。`<neverc/kernel.h>` がカーネルモード API を提供。
+Ring-3 は bionic + Linux syscall ABI；Ring-0 は純 Linux カーネル。`<neverc/shellcode/kernel.h>` がカーネルモード API を提供。
 
 ## 7. Ring-0 Shellcode の記述
 
 ### 7.1 純計算ペイロード
 ```c
-#include <neverc/kernel.h>
+#include <neverc/shellcode/kernel.h>
 NEVERC_KERNEL_ENTRY
 int shellcode_entry(int a, int b) { return a * 13 + b * 7; }
 ```

@@ -70,7 +70,7 @@ int shellcode_entry(int seed) {
 TEST_F(ShellcodeCrossTargetTest, R0Extern) {
   auto src = tmpFile("cross_r0_extern.c");
   writeFile(src, R"(
-#include <neverc/kernel.h>
+#include <neverc/shellcode/kernel.h>
 extern void platform_log(const char *msg);
 NEVERC_KERNEL_ENTRY
 int shellcode_entry(int seed) {

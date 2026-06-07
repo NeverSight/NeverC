@@ -44,7 +44,7 @@
 - [x] 테이블 기반 정제 (아키텍처 분기 하드코딩 → 제로)
 - [x] `KernelImportPass`: ring-0 자동 리졸버 기반 호출 사이트 재작성
 - [x] 커널 헬퍼 이름 테이블 기반 진단 (`KernelHelperNames.def`)
-- [x] `<neverc/kernel.h>`: ring-0 진입점 규약용
+- [x] `<neverc/shellcode/kernel.h>`: ring-0 진입점 규약용
 - [x] 진입점 오프셋 0 강제 (`placeEntryFirst`)
 - [x] 파이널라이즈 파이프라인: 배드바이트 리라이터 SDK + 문자 집합 인코더 SDK + 크기 제약
 - [x] 아웃오브트리 C 플러그인 API (`NevercPluginAPI.h`): 11개 shellcode 훅 포인트 (`NEVERC_HOOK_SC_*`)

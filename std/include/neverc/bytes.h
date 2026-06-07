@@ -146,6 +146,23 @@ neverc_bytes_slice_t *neverc_bytes_split_after_n(const uint8_t *s, size_t slen,
 /* --- Clone --- */
 uint8_t *neverc_bytes_clone(const uint8_t *b, size_t blen);
 
+/* --- CutLast (Go 1.24+) --- */
+int neverc_bytes_cut_last(const uint8_t *s, size_t slen,
+                          const uint8_t *sep, size_t seplen,
+                          const uint8_t **before, size_t *blen,
+                          const uint8_t **after, size_t *alen);
+
+/* --- IndexRune --- */
+size_t neverc_bytes_index_rune(const uint8_t *s, size_t slen, uint32_t r);
+
+/* --- Runes: decode byte slice to array of Unicode codepoints --- */
+uint32_t *neverc_bytes_runes(const uint8_t *s, size_t slen, size_t *count);
+
+/* --- ToValidUTF8: replace invalid UTF-8 with replacement bytes --- */
+uint8_t *neverc_bytes_to_valid_utf8(const uint8_t *s, size_t slen,
+                                     const uint8_t *replacement, size_t rlen,
+                                     size_t *outlen);
+
 #ifdef __cplusplus
 }
 #endif

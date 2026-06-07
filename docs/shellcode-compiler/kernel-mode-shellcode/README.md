@@ -83,7 +83,7 @@ Address-taken externs are not automatically wrapped; diagnostics direct the user
 
 ### 4.3 Hash Algorithm
 
-FNV-1a 64-bit, identical to `neverc_kern_hash()` in `<neverc/kernel.h>`:
+FNV-1a 64-bit, identical to `neverc_kern_hash()` in `<neverc/shellcode/kernel.h>`:
 ```c
 uint64_t h = 0xcbf29ce484222325ull;
 while (*s) { h ^= (unsigned char)*s++; h *= 0x100000001b3ull; }
@@ -128,10 +128,10 @@ The table is user-extensible via CMake variable `NEVERC_EXTRA_KernelHelperNames`
 
 | Mode | Allowed shim headers | Rejected shim headers |
 |------|---------------------|----------------------|
-| User-mode `-fshellcode` | `<windows.h>` / `<unistd.h>` / `<fcntl.h>` / `<sys/stat.h>` / `<sys/mman.h>` / `<string.h>` / `<stdlib.h>` | `<neverc/kernel.h>` |
-| Kernel-mode `-mshellcode-context=kernel` | `<neverc/kernel.h>` / `<string.h>` / `<stdlib.h>` / `<stddef.h>` / `<stdint.h>` (pure type headers) | `<windows.h>` / `<unistd.h>` / `<fcntl.h>` / `<sys/stat.h>` / `<sys/mman.h>` |
+| User-mode `-fshellcode` | `<windows.h>` / `<unistd.h>` / `<fcntl.h>` / `<sys/stat.h>` / `<sys/mman.h>` / `<string.h>` / `<stdlib.h>` | `<neverc/shellcode/kernel.h>` |
+| Kernel-mode `-mshellcode-context=kernel` | `<neverc/shellcode/kernel.h>` / `<string.h>` / `<stdlib.h>` / `<stddef.h>` / `<stdint.h>` (pure type headers) | `<windows.h>` / `<unistd.h>` / `<fcntl.h>` / `<sys/stat.h>` / `<sys/mman.h>` |
 
-`<neverc/kernel.h>` exposes:
+`<neverc/shellcode/kernel.h>` exposes:
 - `neverc_kern_resolve_t` type alias
 - `neverc_kern_hash()`: inline FNV-1a 64-bit hash, identical to the pass's internal algorithm
 - `NEVERC_KERNEL_ENTRY`: kernel entry marker macro (equivalent to `__attribute__((used))`)
@@ -143,7 +143,7 @@ The shim layer intentionally does **not** emulate any OS kernel SDK — kernel A
 ### 7.1 Pure Computation Payload
 
 ```c
-#include <neverc/kernel.h>
+#include <neverc/shellcode/kernel.h>
 
 NEVERC_KERNEL_ENTRY
 int shellcode_entry(int a, int b) {
@@ -161,7 +161,7 @@ neverc -fshellcode -mshellcode-context=kernel \
 ### 7.2 Resolver-Based Payload (recommended for real drivers)
 
 ```c
-#include <neverc/kernel.h>
+#include <neverc/shellcode/kernel.h>
 
 typedef void (*PrintkFn)(const char *fmt, int a, int b);
 typedef void *(*AllocFn)(unsigned int kind, unsigned long size);
@@ -216,6 +216,6 @@ This is the **hosting driver's** code, compiled separately from the shellcode.
 | Kernel context switch + platform flags | Done | `-mshellcode-context=kernel`, `KernelInjectFlags`, pass gates |
 | Resolver rewrite + diagnostic fallback | Done | `KernelImportPass` automatic callsite rewriting; MIR / extractor fallback |
 | Ring-0 pure computation payload | Done | 8 triple coverage |
-| Resolver-based payload | Done | `<neverc/kernel.h>` + stress test coverage |
+| Resolver-based payload | Done | `<neverc/shellcode/kernel.h>` + stress test coverage |
 | Automatic extern → resolver rewrite | Done | `KernelImportPass` with implicit parameter injection |
 | Kernel SDK header subsets (`<linux/kernel.h>` / `<wdm.h>`) | Planned | To be added based on real driver payload needs |

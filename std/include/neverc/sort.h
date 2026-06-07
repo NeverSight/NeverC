@@ -29,6 +29,18 @@ size_t neverc_sort_search(size_t n, int (*f)(size_t i));
 int  neverc_sort_search_ints(const int *arr, size_t n, int target);
 int  neverc_sort_search_doubles(const double *arr, size_t n, double target);
 
+/* Stable sort (preserves order of equal elements) */
+void neverc_sort_stable(void *base, size_t n, size_t elem_size,
+                        neverc_sort_cmp_t cmp);
+
+/* String array sort */
+void neverc_sort_strings(const char **arr, size_t n);
+int  neverc_sort_strings_are_sorted(const char **arr, size_t n);
+int  neverc_sort_search_strings(const char **arr, size_t n, const char *target);
+
+/* Reverse a sorted array in-place */
+void neverc_sort_reverse(void *base, size_t n, size_t elem_size);
+
 #ifdef __cplusplus
 }
 #endif

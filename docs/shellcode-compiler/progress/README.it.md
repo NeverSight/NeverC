@@ -44,7 +44,7 @@
 - [x] Purificazione guidata da tabella (codifica rigida rami architettura → zero)
 - [x] `KernelImportPass`: riscrittura automatica dei callsite ring-0 con resolver
 - [x] Diagnostica guidata da tabella nomi helper del kernel (`KernelHelperNames.def`)
-- [x] `<neverc/kernel.h>` per le convenzioni di punto d'ingresso ring-0
+- [x] `<neverc/shellcode/kernel.h>` per le convenzioni di punto d'ingresso ring-0
 - [x] Imposizione offset zero del punto d'ingresso (`placeEntryFirst`)
 - [x] Pipeline di finalizzazione: SDK rewriter byte proibiti + SDK encoder charset + vincoli dimensionali
 - [x] API Plugin C fuori dall'albero (`NevercPluginAPI.h`): 11 hook point shellcode (`NEVERC_HOOK_SC_*`)

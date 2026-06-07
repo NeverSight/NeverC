@@ -29,13 +29,13 @@
 
 ## 5–6. Android 核心、標頭檔劃分
 
-Ring-3 使用 bionic + Linux syscall ABI；Ring-0 使用純 Linux 核心。`<neverc/kernel.h>` 提供核心模式 API。
+Ring-3 使用 bionic + Linux syscall ABI；Ring-0 使用純 Linux 核心。`<neverc/shellcode/kernel.h>` 提供核心模式 API。
 
 ## 7. 編寫 Ring-0 Shellcode
 
 ### 7.1 純計算載荷
 ```c
-#include <neverc/kernel.h>
+#include <neverc/shellcode/kernel.h>
 NEVERC_KERNEL_ENTRY
 int shellcode_entry(int a, int b) { return a * 13 + b * 7; }
 ```

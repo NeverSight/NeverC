@@ -44,7 +44,7 @@
 - [x] Table-driven purification (arch branch hardcoding → zero)
 - [x] `KernelImportPass`: ring-0 automatic resolver-backed callsite rewriting
 - [x] Kernel helper name table-driven diagnostics (`KernelHelperNames.def`)
-- [x] `<neverc/kernel.h>` for ring-0 entry conventions
+- [x] `<neverc/shellcode/kernel.h>` for ring-0 entry conventions
 - [x] Entry offset zero enforcement (`placeEntryFirst`)
 - [x] Finalize pipeline: bad-byte rewriter SDK + charset encoder SDK + sizing constraints
 - [x] Out-of-tree C Plugin API (`NevercPluginAPI.h`): 11 shellcode hook points (`NEVERC_HOOK_SC_*`)

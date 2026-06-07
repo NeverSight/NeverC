@@ -44,7 +44,7 @@
 - [x] Tabellengesteuerte Bereinigung (Architekturzweig-Hardcodierung → null)
 - [x] `KernelImportPass`: Ring-0 automatisches resolvergestütztes Callsite-Umschreiben
 - [x] Kernel-Helpername tabellengesteuerte Diagnostik (`KernelHelperNames.def`)
-- [x] `<neverc/kernel.h>` für Ring-0-Eintrittspunktkonventionen
+- [x] `<neverc/shellcode/kernel.h>` für Ring-0-Eintrittspunktkonventionen
 - [x] Einstiegspunkt-Offset-Null-Erzwingung (`placeEntryFirst`)
 - [x] Finalize-Pipeline: Bad-Byte-Rewriter SDK + Charset-Encoder SDK + Größenbeschränkungen
 - [x] Out-of-Tree C Plugin-API (`NevercPluginAPI.h`): 11 Shellcode-Hook-Punkte (`NEVERC_HOOK_SC_*`)

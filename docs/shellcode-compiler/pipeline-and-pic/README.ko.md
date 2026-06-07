@@ -80,7 +80,7 @@ shellcode 모드는 `-mshellcode-context=user|kernel`을 파이프라인의 두 
   - `SyscallStubPass` / `WinPEBImportPass`가 pass 수준에서 조기 리턴.
   - `TargetDesc::KernelInjectFlags`가 OS/arch 적절한 백엔드 플래그 추가(Unix x86_64: `-mno-red-zone -mcmodel=kernel`, Windows: `/kernel`, AArch64: `-mgeneral-regs-only`).
   - `KernelImportPass`가 미해결 extern 직접 호출을 리졸버 지원 간접 호출로 재작성, 필요 시 `(resolver, cookie)` 암시적 접두 매개변수 주입.
-  - `<neverc/kernel.h>`가 `neverc_kern_resolve_t`, `neverc_kern_hash()` 및 관련 커널 측 시그니처를 노출; 사용자 모드 shim(`<windows.h>`, `<unistd.h>` 등)은 커널 모드에서 `#error`로 거부.
+  - `<neverc/shellcode/kernel.h>`가 `neverc_kern_resolve_t`, `neverc_kern_hash()` 및 관련 커널 측 시그니처를 노출; 사용자 모드 shim(`<windows.h>`, `<unistd.h>` 등)은 커널 모드에서 `#error`로 거부.
 
 자세한 내용은 [kernel-mode-shellcode.md](../kernel-mode-shellcode/README.ko.md) 참조.
 

@@ -17,7 +17,7 @@
 Riscrittura automatica di chiamate extern non risolte in chiamate indirette via resolver. Hash FNV-1a 64-bit. Difesa a tre livelli.
 
 ## 5–7. Kernel Android, header, scrivere codice Ring-0
-`<neverc/kernel.h>` fornisce `neverc_kern_resolve_t` e `neverc_kern_hash()`. Payload calcolo puro o basati su resolver.
+`<neverc/shellcode/kernel.h>` fornisce `neverc_kern_resolve_t` e `neverc_kern_hash()`. Payload calcolo puro o basati su resolver.
 
 ## 8. Roadmap
 Cambio contesto kernel, riscrittura resolver, entrambi i tipi di payload — tutto completato. Header SDK kernel pianificati.

@@ -1,4 +1,4 @@
-/*===---- neverc/kernel.h - kernel-mode shellcode entry header ------------===*\
+/*===---- neverc/shellcode/kernel.h - kernel-mode shellcode entry header ---===*\
  *
  * Pulled in by user source that wants to write ring-0 shellcode with
  * `-mshellcode-context=kernel`.  This header intentionally does NOT
@@ -55,7 +55,7 @@
  *     Hosting kext calls OSKextLookupKextWithIdentifier or reads
  *     the kernel symbol table directly.
  *
- * Using `#include <neverc/kernel.h>` outside of kernel mode is an
+ * Using `#include <neverc/shellcode/kernel.h>` outside of kernel mode is an
  * error; user-mode payloads keep using the regular user-mode shims
  * (`<windows.h>`, `<unistd.h>`, `<string.h>`, ...).
  *
@@ -65,12 +65,12 @@
 #define _NEVERC_KERNEL_H_
 
 #if !defined(__NEVERC_SHELLCODE__)
-#error "<neverc/kernel.h> is only meaningful with -fshellcode."
+#error "<neverc/shellcode/kernel.h> is only meaningful with -fshellcode."
 #endif
 
 #if !defined(__NEVERC_SHELLCODE_KERNEL__)
 #error                                                                         \
-    "<neverc/kernel.h> requires -mshellcode-context=kernel. For ring-3 payloads include <windows.h> / <unistd.h> / <string.h> instead."
+    "<neverc/shellcode/kernel.h> requires -mshellcode-context=kernel. For ring-3 payloads include <windows.h> / <unistd.h> / <string.h> instead."
 #endif
 
 #include <stddef.h>

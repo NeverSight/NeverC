@@ -507,6 +507,18 @@ void MSVCToolChain::AddNeverCSystemIncludeArgs(
                                   getDriver().ResourceDir, "include");
   }
 
+  // Add the NeverC std library headers (<install>/../std/include)
+  if (!DriverArgs.hasArg(options::OPT_nostdlibinc)) {
+    llvm::SmallString<128> StdInc(getDriver().getInstalledDir());
+    llvm::sys::path::append(StdInc, "..", "std", "include");
+    if (llvm::sys::fs::is_directory(StdInc))
+      addSystemInclude(DriverArgs, FrontendArgs, StdInc);
+    llvm::SmallString<128> StdIncDev(getDriver().getInstalledDir());
+    llvm::sys::path::append(StdIncDev, "..", "..", "std", "include");
+    if (llvm::sys::fs::is_directory(StdIncDev))
+      addSystemInclude(DriverArgs, FrontendArgs, StdIncDev);
+  }
+
   // Add %INCLUDE%-like directories from the -imsvc flag.
   for (const auto &Path : DriverArgs.getAllArgValues(options::OPT_imsvc))
     addSystemInclude(DriverArgs, FrontendArgs, Path);
