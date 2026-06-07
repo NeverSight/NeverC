@@ -729,3 +729,7 @@ uint8_t *neverc_bytes_to_valid_utf8(const uint8_t *s, size_t slen,
     *outlen = out;
     return result;
 }
+
+int neverc_bytes_contains_rune(const uint8_t *s, size_t slen, uint32_t r) {
+    return neverc_bytes_index_rune(s, slen, r) != (size_t)-1;
+}

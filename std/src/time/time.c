@@ -347,3 +347,114 @@ char *neverc_time_format_duration(neverc_duration_t d) {
     for (int i = 0; i <= pos; i++) result[i] = buf[i];
     return result;
 }
+
+neverc_time_t neverc_time_unix_milli_to_time(int64_t msec) {
+    neverc_time_t t;
+    t.sec = msec / 1000;
+    t.nsec = (int32_t)((msec % 1000) * 1000000);
+    if (t.nsec < 0) { t.sec--; t.nsec += 1000000000; }
+    return t;
+}
+
+char *neverc_time_format(neverc_time_t t, const char *layout) {
+    if (!layout) return NULL;
+    int yr = neverc_time_year(t);
+    int mo = neverc_time_month(t);
+    int dy = neverc_time_day(t);
+    int hr = neverc_time_hour(t);
+    int mi = neverc_time_minute(t);
+    int sc = neverc_time_second(t);
+    int ns = neverc_time_nanosecond(t);
+    (void)ns;
+
+    char buf[256];
+    size_t out = 0, llen = strlen(layout);
+
+    for (size_t i = 0; i < llen && out < sizeof(buf) - 20;) {
+        if (i + 4 <= llen && memcmp(layout + i, "2006", 4) == 0) {
+            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%04d", yr); i += 4;
+        } else if (i + 2 <= llen && memcmp(layout + i, "01", 2) == 0) {
+            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%02d", mo); i += 2;
+        } else if (i + 2 <= llen && memcmp(layout + i, "02", 2) == 0) {
+            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%02d", dy); i += 2;
+        } else if (i + 2 <= llen && memcmp(layout + i, "15", 2) == 0) {
+            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%02d", hr); i += 2;
+        } else if (i + 2 <= llen && memcmp(layout + i, "04", 2) == 0) {
+            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%02d", mi); i += 2;
+        } else if (i + 2 <= llen && memcmp(layout + i, "05", 2) == 0) {
+            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%02d", sc); i += 2;
+        } else {
+            buf[out++] = layout[i++];
+        }
+    }
+    buf[out] = '\0';
+    char *result = (char *)malloc(out + 1);
+    if (result) memcpy(result, buf, out + 1);
+    return result;
+}
+
+int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out) {
+    if (!layout || !value || !out) return -1;
+    int yr = 0, mo = 1, dy = 1, hr = 0, mi = 0, sc = 0;
+    size_t li = 0, vi = 0;
+    size_t llen = strlen(layout), vlen = strlen(value);
+
+    while (li < llen && vi < vlen) {
+        if (li + 4 <= llen && memcmp(layout + li, "2006", 4) == 0) {
+            for (int j = 0; j < 4 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
+                yr = yr * 10 + (value[vi] - '0');
+            li += 4;
+        } else if (li + 2 <= llen && memcmp(layout + li, "01", 2) == 0) {
+            for (int j = 0; j < 2 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
+                mo = mo * 10 + (value[vi] - '0');
+            mo -= 1;
+            li += 2;
+        } else if (li + 2 <= llen && memcmp(layout + li, "02", 2) == 0) {
+            for (int j = 0; j < 2 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
+                dy = dy * 10 + (value[vi] - '0');
+            dy -= 1;
+            li += 2;
+        } else if (li + 2 <= llen && memcmp(layout + li, "15", 2) == 0) {
+            for (int j = 0; j < 2 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
+                hr = hr * 10 + (value[vi] - '0');
+            li += 2;
+        } else if (li + 2 <= llen && memcmp(layout + li, "04", 2) == 0) {
+            for (int j = 0; j < 2 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
+                mi = mi * 10 + (value[vi] - '0');
+            li += 2;
+        } else if (li + 2 <= llen && memcmp(layout + li, "05", 2) == 0) {
+            for (int j = 0; j < 2 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
+                sc = sc * 10 + (value[vi] - '0');
+            li += 2;
+        } else {
+            li++; vi++;
+        }
+    }
+    *out = neverc_time_date(yr, mo, dy, hr, mi, sc, 0);
+    return 0;
+}
+
+neverc_time_t neverc_time_truncate(neverc_time_t t, neverc_duration_t d) {
+    if (d <= 0) return t;
+    int64_t ns = t.sec * 1000000000LL + t.nsec;
+    int64_t rem = ns % d;
+    if (rem < 0) rem += d;
+    ns -= rem;
+    neverc_time_t result;
+    result.sec = ns / 1000000000LL;
+    result.nsec = (int32_t)(ns % 1000000000LL);
+    return result;
+}
+
+neverc_time_t neverc_time_round(neverc_time_t t, neverc_duration_t d) {
+    if (d <= 0) return t;
+    int64_t ns = t.sec * 1000000000LL + t.nsec;
+    int64_t rem = ns % d;
+    if (rem < 0) rem += d;
+    if (rem * 2 >= d) ns += d - rem;
+    else ns -= rem;
+    neverc_time_t result;
+    result.sec = ns / 1000000000LL;
+    result.nsec = (int32_t)(ns % 1000000000LL);
+    return result;
+}

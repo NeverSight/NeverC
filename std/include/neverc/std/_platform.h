@@ -73,6 +73,17 @@
   }
 #endif
 
+/* Secure memory zeroing — cannot be optimized away by the compiler.
+   Use for zeroing sensitive cryptographic key material. */
+static inline void neverc_platform_secure_zero(void *ptr, size_t len) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    SecureZeroMemory(ptr, len);
+#else
+    volatile unsigned char *p = (volatile unsigned char *)ptr;
+    while (len--) *p++ = 0;
+#endif
+}
+
 /* Atomic operations */
 #if defined(_MSC_VER)
   #include <intrin.h>

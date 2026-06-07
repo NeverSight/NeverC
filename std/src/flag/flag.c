@@ -3,21 +3,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { FLAG_STRING, FLAG_INT, FLAG_BOOL, FLAG_DOUBLE };
+enum { FLAG_STRING, FLAG_INT, FLAG_BOOL, FLAG_DOUBLE, FLAG_INT64, FLAG_UINT64 };
 
 typedef struct {
     const char *name;
     const char *usage;
     int         type;
+    int         was_set;
     union {
-        const char **s;
-        int         *i;
-        double      *d;
+        const char      **s;
+        int              *i;
+        long long        *i64;
+        unsigned long long *u64;
+        double           *d;
     } ptr;
 } flag_entry_t;
 
 static flag_entry_t flags[NEVERC_FLAG_MAX];
 static int flag_count = 0;
+static int flag_parsed = 0;
 static const char **remaining_args = NULL;
 static int remaining_count = 0;
 
@@ -54,7 +58,25 @@ void neverc_flag_double(const char *name, double defval,
     *ptr = defval;
     flag_entry_t *f = &flags[flag_count++];
     f->name = name; f->usage = usage;
-    f->type = FLAG_DOUBLE; f->ptr.d = ptr;
+    f->type = FLAG_DOUBLE; f->ptr.d = ptr; f->was_set = 0;
+}
+
+void neverc_flag_int64(const char *name, long long defval,
+                       const char *usage, long long *ptr) {
+    if (flag_count >= NEVERC_FLAG_MAX) return;
+    *ptr = defval;
+    flag_entry_t *f = &flags[flag_count++];
+    f->name = name; f->usage = usage;
+    f->type = FLAG_INT64; f->ptr.i64 = ptr; f->was_set = 0;
+}
+
+void neverc_flag_uint64(const char *name, unsigned long long defval,
+                        const char *usage, unsigned long long *ptr) {
+    if (flag_count >= NEVERC_FLAG_MAX) return;
+    *ptr = defval;
+    flag_entry_t *f = &flags[flag_count++];
+    f->name = name; f->usage = usage;
+    f->type = FLAG_UINT64; f->ptr.u64 = ptr; f->was_set = 0;
 }
 
 static int parse_int(const char *s) {
@@ -133,6 +155,7 @@ int neverc_flag_parse(int argc, char **argv) {
             return -1;
         }
 
+        f->was_set = 1;
         switch (f->type) {
         case FLAG_BOOL:
             if (value) {
@@ -162,6 +185,26 @@ int neverc_flag_parse(int argc, char **argv) {
             }
             *f->ptr.i = parse_int(value);
             break;
+        case FLAG_INT64:
+            if (!value) {
+                if (++i >= argc) {
+                    fprintf(stderr, "flag -%s needs value\n", f->name);
+                    return -1;
+                }
+                value = argv[i];
+            }
+            *f->ptr.i64 = (long long)parse_int(value);
+            break;
+        case FLAG_UINT64:
+            if (!value) {
+                if (++i >= argc) {
+                    fprintf(stderr, "flag -%s needs value\n", f->name);
+                    return -1;
+                }
+                value = argv[i];
+            }
+            *f->ptr.u64 = (unsigned long long)parse_int(value);
+            break;
         case FLAG_DOUBLE:
             if (!value) {
                 if (++i >= argc) {
@@ -175,6 +218,7 @@ int neverc_flag_parse(int argc, char **argv) {
         }
         i++;
     }
+    flag_parsed = 1;
     return 0;
 }
 
@@ -194,8 +238,54 @@ void neverc_flag_print_defaults(void) {
     }
 }
 
+int neverc_flag_parsed(void) { return flag_parsed; }
+
+int neverc_flag_nflag(void) {
+    int n = 0;
+    for (int i = 0; i < flag_count; i++)
+        if (flags[i].was_set) n++;
+    return n;
+}
+
+int neverc_flag_set(const char *name, const char *value) {
+    flag_entry_t *f = find_flag(name);
+    if (!f) return -1;
+    f->was_set = 1;
+    switch (f->type) {
+    case FLAG_BOOL:
+        *f->ptr.i = (!value || strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
+        break;
+    case FLAG_STRING:  *f->ptr.s = value; break;
+    case FLAG_INT:     *f->ptr.i = parse_int(value ? value : "0"); break;
+    case FLAG_INT64:   *f->ptr.i64 = (long long)parse_int(value ? value : "0"); break;
+    case FLAG_UINT64:  *f->ptr.u64 = (unsigned long long)parse_int(value ? value : "0"); break;
+    case FLAG_DOUBLE:  *f->ptr.d = parse_double(value ? value : "0"); break;
+    }
+    return 0;
+}
+
+int neverc_flag_lookup(const char *name, const char **usage_out) {
+    flag_entry_t *f = find_flag(name);
+    if (!f) return -1;
+    if (usage_out) *usage_out = f->usage;
+    return 0;
+}
+
+void neverc_flag_visit(neverc_flag_visit_fn fn, void *ctx) {
+    for (int i = 0; i < flag_count; i++) {
+        if (flags[i].was_set)
+            fn(flags[i].name, flags[i].usage, ctx);
+    }
+}
+
+void neverc_flag_visit_all(neverc_flag_visit_fn fn, void *ctx) {
+    for (int i = 0; i < flag_count; i++)
+        fn(flags[i].name, flags[i].usage, ctx);
+}
+
 void neverc_flag_reset(void) {
     flag_count = 0;
+    flag_parsed = 0;
     remaining_args = NULL;
     remaining_count = 0;
 }

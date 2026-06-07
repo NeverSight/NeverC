@@ -91,6 +91,20 @@ int neverc_time_parse_duration(const char *s, neverc_duration_t *out);
 /* Format duration to string (returns malloc'd string) */
 char *neverc_time_format_duration(neverc_duration_t d);
 
+/* Unix from milliseconds */
+neverc_time_t neverc_time_unix_milli_to_time(int64_t msec);
+
+/* Format: custom layout (Go-style: "2006-01-02 15:04:05").
+   Returns malloc'd string, caller frees. */
+char *neverc_time_format(neverc_time_t t, const char *layout);
+
+/* Parse: parse time string with layout. Returns 0 on success. */
+int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out);
+
+/* Truncate / Round to duration boundary */
+neverc_time_t neverc_time_truncate(neverc_time_t t, neverc_duration_t d);
+neverc_time_t neverc_time_round(neverc_time_t t, neverc_duration_t d);
+
 #ifdef __cplusplus
 }
 #endif

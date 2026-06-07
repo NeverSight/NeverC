@@ -92,6 +92,35 @@ void neverc_log_fatalf(neverc_log_logger_t *l, const char *fmt, ...) {
     exit(1);
 }
 
+void neverc_log_fatalln(neverc_log_logger_t *l, const char *msg) {
+    neverc_log_println(l, msg);
+    exit(1);
+}
+
+void neverc_log_panic(neverc_log_logger_t *l, const char *msg) {
+    neverc_log_print(l, msg);
+    abort();
+}
+
+void neverc_log_panicf(neverc_log_logger_t *l, const char *fmt, ...) {
+    write_header(l);
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(l->output, fmt, args);
+    va_end(args);
+    fputc('\n', l->output);
+    abort();
+}
+
+void neverc_log_panicln(neverc_log_logger_t *l, const char *msg) {
+    neverc_log_println(l, msg);
+    abort();
+}
+
+int neverc_log_flags(neverc_log_logger_t *l) { return l->flags; }
+const char *neverc_log_prefix(neverc_log_logger_t *l) { return l->prefix; }
+FILE *neverc_log_writer(neverc_log_logger_t *l) { return l->output; }
+
 /* Default logger */
 static neverc_log_logger_t default_logger = { NULL, "", NEVERC_LOG_LSTD };
 
@@ -119,4 +148,30 @@ void neverc_log_default_println(const char *msg) {
 
 void neverc_log_default_fatal(const char *msg) {
     neverc_log_fatal(get_default(), msg);
+}
+
+void neverc_log_default_fatalf(const char *fmt, ...) {
+    neverc_log_logger_t *l = get_default();
+    write_header(l);
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(l->output, fmt, args);
+    va_end(args);
+    fputc('\n', l->output);
+    exit(1);
+}
+
+void neverc_log_default_panic(const char *msg) {
+    neverc_log_panic(get_default(), msg);
+}
+
+void neverc_log_default_panicf(const char *fmt, ...) {
+    neverc_log_logger_t *l = get_default();
+    write_header(l);
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(l->output, fmt, args);
+    va_end(args);
+    fputc('\n', l->output);
+    abort();
 }

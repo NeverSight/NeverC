@@ -152,8 +152,9 @@ int neverc_bytes_cut_last(const uint8_t *s, size_t slen,
                           const uint8_t **before, size_t *blen,
                           const uint8_t **after, size_t *alen);
 
-/* --- IndexRune --- */
+/* --- IndexRune / ContainsRune --- */
 size_t neverc_bytes_index_rune(const uint8_t *s, size_t slen, uint32_t r);
+int    neverc_bytes_contains_rune(const uint8_t *s, size_t slen, uint32_t r);
 
 /* --- Runes: decode byte slice to array of Unicode codepoints --- */
 uint32_t *neverc_bytes_runes(const uint8_t *s, size_t slen, size_t *count);
