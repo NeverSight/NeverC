@@ -16,15 +16,20 @@ int neverc_unicode_is_upper(uint32_t r);
 int neverc_unicode_is_lower(uint32_t r);
 int neverc_unicode_is_letter(uint32_t r);
 int neverc_unicode_is_digit(uint32_t r);
+int neverc_unicode_is_number(uint32_t r);
 int neverc_unicode_is_space(uint32_t r);
 int neverc_unicode_is_punct(uint32_t r);
 int neverc_unicode_is_control(uint32_t r);
 int neverc_unicode_is_graphic(uint32_t r);
 int neverc_unicode_is_print(uint32_t r);
+int neverc_unicode_is_symbol(uint32_t r);
+int neverc_unicode_is_title(uint32_t r);
+int neverc_unicode_is_mark(uint32_t r);
 
 uint32_t neverc_unicode_to_upper(uint32_t r);
 uint32_t neverc_unicode_to_lower(uint32_t r);
 uint32_t neverc_unicode_to_title(uint32_t r);
+uint32_t neverc_unicode_simple_fold(uint32_t r);
 
 #ifdef __cplusplus
 }

@@ -177,11 +177,87 @@ uint32_t neverc_unicode_to_lower(uint32_t r) {
 }
 
 uint32_t neverc_unicode_to_title(uint32_t r) {
-    /* For most characters, title case == upper case.
-       Special cases: Dz/Lj/Nj digraphs have distinct titlecase forms. */
-    if (r == 0x01C6 || r == 0x01C5) return 0x01C5; /* Dz -> Dz (titlecase) */
-    if (r == 0x01C9 || r == 0x01C8) return 0x01C8; /* Lj -> Lj (titlecase) */
-    if (r == 0x01CC || r == 0x01CB) return 0x01CB; /* Nj -> Nj (titlecase) */
-    if (r == 0x01F3 || r == 0x01F2) return 0x01F2; /* Dz -> Dz (titlecase) */
+    if (r == 0x01C6 || r == 0x01C5) return 0x01C5;
+    if (r == 0x01C9 || r == 0x01C8) return 0x01C8;
+    if (r == 0x01CC || r == 0x01CB) return 0x01CB;
+    if (r == 0x01F3 || r == 0x01F2) return 0x01F2;
     return neverc_unicode_to_upper(r);
+}
+
+int neverc_unicode_is_number(uint32_t r) {
+    if (r >= '0' && r <= '9') return 1;
+    if (r >= 0x0660 && r <= 0x0669) return 1;
+    if (r >= 0x06F0 && r <= 0x06F9) return 1;
+    if (r >= 0x0966 && r <= 0x096F) return 1;
+    if (r >= 0x09E6 && r <= 0x09EF) return 1;
+    if (r >= 0x0A66 && r <= 0x0A6F) return 1;
+    if (r >= 0x0AE6 && r <= 0x0AEF) return 1;
+    if (r >= 0x0B66 && r <= 0x0B6F) return 1;
+    if (r >= 0x0BE6 && r <= 0x0BEF) return 1;
+    if (r >= 0x0C66 && r <= 0x0C6F) return 1;
+    if (r >= 0x0CE6 && r <= 0x0CEF) return 1;
+    if (r >= 0x0D66 && r <= 0x0D6F) return 1;
+    if (r >= 0x0E50 && r <= 0x0E59) return 1;
+    if (r >= 0x0ED0 && r <= 0x0ED9) return 1;
+    if (r >= 0x0F20 && r <= 0x0F29) return 1;
+    if (r >= 0xFF10 && r <= 0xFF19) return 1;
+    if (r >= 0x2070 && r <= 0x2079) return 1;
+    if (r >= 0x2080 && r <= 0x2089) return 1;
+    if (r >= 0x00B2 && r <= 0x00B3) return 1;
+    if (r == 0x00B9 || r == 0x00BC || r == 0x00BD || r == 0x00BE) return 1;
+    return 0;
+}
+
+int neverc_unicode_is_symbol(uint32_t r) {
+    if (r == '$' || r == '+' || r == '<' || r == '=' || r == '>' ||
+        r == '^' || r == '`' || r == '|' || r == '~') return 1;
+    if (r >= 0x00A2 && r <= 0x00A9) return 1;
+    if (r == 0x00AC || r == 0x00AE || r == 0x00AF) return 1;
+    if (r == 0x00B0 || r == 0x00B1) return 1;
+    if (r >= 0x00B4 && r <= 0x00B8) return 1;
+    if (r == 0x00D7 || r == 0x00F7) return 1;
+    if (r >= 0x2190 && r <= 0x21FF) return 1;
+    if (r >= 0x2200 && r <= 0x22FF) return 1;
+    if (r >= 0x2300 && r <= 0x23FF) return 1;
+    if (r >= 0x2600 && r <= 0x26FF) return 1;
+    if (r >= 0x2700 && r <= 0x27BF) return 1;
+    if (r >= 0x20A0 && r <= 0x20CF) return 1;
+    return 0;
+}
+
+int neverc_unicode_is_title(uint32_t r) {
+    if (r == 0x01C5) return 1;
+    if (r == 0x01C8) return 1;
+    if (r == 0x01CB) return 1;
+    if (r == 0x01F2) return 1;
+    if (r >= 0x1F88 && r <= 0x1F8F) return 1;
+    if (r >= 0x1F98 && r <= 0x1F9F) return 1;
+    if (r >= 0x1FA8 && r <= 0x1FAF) return 1;
+    if (r == 0x1FBC || r == 0x1FCC || r == 0x1FFC) return 1;
+    return 0;
+}
+
+int neverc_unicode_is_mark(uint32_t r) {
+    if (r >= 0x0300 && r <= 0x036F) return 1;
+    if (r >= 0x0483 && r <= 0x0489) return 1;
+    if (r >= 0x0591 && r <= 0x05BD) return 1;
+    if (r == 0x05BF || r == 0x05C1 || r == 0x05C2 || r == 0x05C4 || r == 0x05C5 || r == 0x05C7) return 1;
+    if (r >= 0x0610 && r <= 0x061A) return 1;
+    if (r >= 0x064B && r <= 0x065F) return 1;
+    if (r >= 0x0900 && r <= 0x0903) return 1;
+    if (r >= 0x093A && r <= 0x094F) return 1;
+    if (r >= 0x0951 && r <= 0x0957) return 1;
+    if (r >= 0xFE20 && r <= 0xFE2F) return 1;
+    if (r >= 0x20D0 && r <= 0x20F0) return 1;
+    return 0;
+}
+
+uint32_t neverc_unicode_simple_fold(uint32_t r) {
+    if (r >= 'A' && r <= 'Z') return r + 32;
+    if (r >= 'a' && r <= 'z') return r - 32;
+    uint32_t lo = neverc_unicode_to_lower(r);
+    if (lo != r) return lo;
+    uint32_t up = neverc_unicode_to_upper(r);
+    if (up != r) return up;
+    return r;
 }

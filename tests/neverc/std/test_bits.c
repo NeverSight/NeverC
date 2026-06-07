@@ -179,6 +179,93 @@ static void test_consistency(void) {
     }
 }
 
+static void test_8_16_variants(void) {
+    printf("[8/16 bit variants]\n");
+
+    check_int("len8(0)", neverc_bits_len8(0), 0);
+    check_int("len8(1)", neverc_bits_len8(1), 1);
+    check_int("len8(128)", neverc_bits_len8(128), 8);
+    check_int("len8(255)", neverc_bits_len8(255), 8);
+    check_int("len16(0)", neverc_bits_len16(0), 0);
+    check_int("len16(1)", neverc_bits_len16(1), 1);
+    check_int("len16(0x8000)", neverc_bits_len16(0x8000), 16);
+
+    check_int("clz8(1)", neverc_bits_leading_zeros8(1), 7);
+    check_int("clz8(0)", neverc_bits_leading_zeros8(0), 8);
+    check_int("clz16(1)", neverc_bits_leading_zeros16(1), 15);
+    check_int("clz16(0x8000)", neverc_bits_leading_zeros16(0x8000), 0);
+
+    check_int("ctz8(1)", neverc_bits_trailing_zeros8(1), 0);
+    check_int("ctz8(0)", neverc_bits_trailing_zeros8(0), 8);
+    check_int("ctz8(128)", neverc_bits_trailing_zeros8(128), 7);
+    check_int("ctz16(1)", neverc_bits_trailing_zeros16(1), 0);
+    check_int("ctz16(0)", neverc_bits_trailing_zeros16(0), 16);
+
+    check_int("pop8(0)", neverc_bits_ones_count8(0), 0);
+    check_int("pop8(0xFF)", neverc_bits_ones_count8(0xFF), 8);
+    check_int("pop8(0x55)", neverc_bits_ones_count8(0x55), 4);
+    check_int("pop16(0)", neverc_bits_ones_count16(0), 0);
+    check_int("pop16(0xFFFF)", neverc_bits_ones_count16(0xFFFF), 16);
+
+    check_int("rev8(0x01)", (int)neverc_bits_reverse8(0x01), 0x80);
+    check_int("rev8(0xAA)", (int)neverc_bits_reverse8(0xAA), 0x55);
+    check_int("rev16(0x0001)", (int)neverc_bits_reverse16(0x0001), (int)0x8000);
+
+    check_int("rotl8(0x01,1)", (int)neverc_bits_rotate_left8(0x01, 1), 0x02);
+    check_int("rotl8(0x80,1)", (int)neverc_bits_rotate_left8(0x80, 1), 0x01);
+    check_int("rotl16(0x0001,1)", (int)neverc_bits_rotate_left16(0x0001, 1), 0x0002);
+}
+
+static void test_32_arithmetic(void) {
+    printf("[32-bit arithmetic]\n");
+    uint32_t sum, carry, diff, borrow, hi, lo;
+
+    neverc_bits_add32(0xFFFFFFFF, 1, 0, &sum, &carry);
+    check_int("add32 overflow sum", (int)sum, 0);
+    check_int("add32 overflow carry", (int)carry, 1);
+
+    neverc_bits_add32(100, 200, 0, &sum, &carry);
+    check_int("add32 normal", (int)sum, 300);
+    check_int("add32 no carry", (int)carry, 0);
+
+    neverc_bits_sub32(100, 50, 0, &diff, &borrow);
+    check_int("sub32 normal", (int)diff, 50);
+    check_int("sub32 no borrow", (int)borrow, 0);
+
+    neverc_bits_sub32(0, 1, 0, &diff, &borrow);
+    check_int("sub32 underflow", (int)diff, (int)0xFFFFFFFF);
+    check_int("sub32 borrow", (int)borrow, 1);
+
+    neverc_bits_mul32(0xFFFF, 0xFFFF, &hi, &lo);
+    check_int("mul32 hi", (int)hi, 0);
+    check_int("mul32 lo", (int)lo, (int)(0xFFFF * 0xFFFF));
+
+    neverc_bits_mul32(0xFFFFFFFF, 2, &hi, &lo);
+    check_int("mul32 big hi", (int)hi, 1);
+    check_int("mul32 big lo", (int)lo, (int)0xFFFFFFFE);
+}
+
+static void test_division(void) {
+    printf("[division]\n");
+    uint32_t q32, r32;
+    uint64_t q64, r64;
+
+    neverc_bits_div32(0, 100, 7, &q32, &r32);
+    check_int("div32(100,7).q", (int)q32, 14);
+    check_int("div32(100,7).r", (int)r32, 2);
+
+    neverc_bits_div32(1, 0, 0xFFFFFFFF, &q32, &r32);
+    check_int("div32(1<<32, max).q", (int)q32, 1);
+
+    check_int("rem32(0,100,7)", (int)neverc_bits_rem32(0, 100, 7), 2);
+
+    neverc_bits_div64(0, 100, 7, &q64, &r64);
+    check_u64("div64(100,7).q", q64, 14);
+    check_u64("div64(100,7).r", r64, 2);
+
+    check_u64("rem64(0,100,7)", neverc_bits_rem64(0, 100, 7), 2);
+}
+
 int main(void) {
     printf("=== NeverC Bits Library Tests ===\n\n");
 
@@ -192,6 +279,9 @@ int main(void) {
     test_add_sub();
     test_mul64();
     test_consistency();
+    test_8_16_variants();
+    test_32_arithmetic();
+    test_division();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

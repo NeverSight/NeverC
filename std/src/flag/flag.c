@@ -31,7 +31,7 @@ void neverc_flag_string(const char *name, const char *defval,
     *ptr = defval;
     flag_entry_t *f = &flags[flag_count++];
     f->name = name; f->usage = usage;
-    f->type = FLAG_STRING; f->ptr.s = ptr;
+    f->type = FLAG_STRING; f->ptr.s = ptr; f->was_set = 0;
 }
 
 void neverc_flag_int(const char *name, int defval,
@@ -40,7 +40,7 @@ void neverc_flag_int(const char *name, int defval,
     *ptr = defval;
     flag_entry_t *f = &flags[flag_count++];
     f->name = name; f->usage = usage;
-    f->type = FLAG_INT; f->ptr.i = ptr;
+    f->type = FLAG_INT; f->ptr.i = ptr; f->was_set = 0;
 }
 
 void neverc_flag_bool(const char *name, int defval,
@@ -49,7 +49,7 @@ void neverc_flag_bool(const char *name, int defval,
     *ptr = defval;
     flag_entry_t *f = &flags[flag_count++];
     f->name = name; f->usage = usage;
-    f->type = FLAG_BOOL; f->ptr.i = ptr;
+    f->type = FLAG_BOOL; f->ptr.i = ptr; f->was_set = 0;
 }
 
 void neverc_flag_double(const char *name, double defval,

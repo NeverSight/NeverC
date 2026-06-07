@@ -34,6 +34,20 @@ static const uint8_t deBruijn64tab[64] = {
 
 /* --- Len (bit length) --- */
 
+int neverc_bits_len8(uint8_t x) { return (int)len8tab[x]; }
+
+int neverc_bits_len16(uint16_t x) {
+    int n = 0;
+    if (x >= (1U << 8)) { x >>= 8; n = 8; }
+    return n + (int)len8tab[x];
+}
+
+int neverc_bits_len(unsigned int x) {
+    if (sizeof(unsigned int) == 8)
+        return neverc_bits_len64((uint64_t)x);
+    return neverc_bits_len32((uint32_t)x);
+}
+
 int neverc_bits_len32(uint32_t x) {
     int n = 0;
     if (x >= (1U << 16)) { x >>= 16; n = 16; }
@@ -49,28 +63,50 @@ int neverc_bits_len64(uint64_t x) {
 
 /* --- Leading Zeros --- */
 
-int neverc_bits_leading_zeros32(uint32_t x) {
-    return 32 - neverc_bits_len32(x);
+int neverc_bits_leading_zeros(unsigned int x) {
+    if (sizeof(unsigned int) == 8) return 64 - neverc_bits_len64((uint64_t)x);
+    return 32 - neverc_bits_len32((uint32_t)x);
 }
-
-int neverc_bits_leading_zeros64(uint64_t x) {
-    return 64 - neverc_bits_len64(x);
-}
+int neverc_bits_leading_zeros8(uint8_t x) { return 8 - (int)len8tab[x]; }
+int neverc_bits_leading_zeros16(uint16_t x) { return 16 - neverc_bits_len16(x); }
+int neverc_bits_leading_zeros32(uint32_t x) { return 32 - neverc_bits_len32(x); }
+int neverc_bits_leading_zeros64(uint64_t x) { return 64 - neverc_bits_len64(x); }
 
 /* --- Trailing Zeros (de Bruijn) --- */
 
+int neverc_bits_trailing_zeros(unsigned int x) {
+    if (sizeof(unsigned int) == 8) return neverc_bits_trailing_zeros64((uint64_t)x);
+    return neverc_bits_trailing_zeros32((uint32_t)x);
+}
+int neverc_bits_trailing_zeros8(uint8_t x) {
+    return x == 0 ? 8 : neverc_bits_trailing_zeros32((uint32_t)x & -(int32_t)(uint32_t)x);
+}
+int neverc_bits_trailing_zeros16(uint16_t x) {
+    return x == 0 ? 16 : neverc_bits_trailing_zeros32((uint32_t)x & -(int32_t)(uint32_t)x);
+}
 int neverc_bits_trailing_zeros32(uint32_t x) {
     if (x == 0) return 32;
-    return (int)deBruijn32tab[(x & -x) * deBruijn32 >> 27];
+    return (int)deBruijn32tab[((uint32_t)(x & -(int32_t)x)) * deBruijn32 >> 27];
 }
-
 int neverc_bits_trailing_zeros64(uint64_t x) {
     if (x == 0) return 64;
-    return (int)deBruijn64tab[(x & -x) * deBruijn64 >> 58];
+    return (int)deBruijn64tab[((uint64_t)(x & -(int64_t)x)) * deBruijn64 >> 58];
 }
 
 /* --- OnesCount (Hacker's Delight parallel summation) --- */
 
+int neverc_bits_ones_count(unsigned int x) {
+    if (sizeof(unsigned int) == 8) return neverc_bits_ones_count64((uint64_t)x);
+    return neverc_bits_ones_count32((uint32_t)x);
+}
+int neverc_bits_ones_count8(uint8_t x) {
+    x = x - ((x >> 1) & 0x55);
+    x = (x & 0x33) + ((x >> 2) & 0x33);
+    return (int)((x + (x >> 4)) & 0x0F);
+}
+int neverc_bits_ones_count16(uint16_t x) {
+    return neverc_bits_ones_count32((uint32_t)x);
+}
 int neverc_bits_ones_count32(uint32_t x) {
     x = x - ((x >> 1) & 0x55555555U);
     x = (x & 0x33333333U) + ((x >> 2) & 0x33333333U);
@@ -87,6 +123,14 @@ int neverc_bits_ones_count64(uint64_t x) {
 
 /* --- Rotate Left --- */
 
+uint8_t neverc_bits_rotate_left8(uint8_t x, int k) {
+    unsigned s = (unsigned)k & 7;
+    return (uint8_t)((x << s) | (x >> (8 - s)));
+}
+uint16_t neverc_bits_rotate_left16(uint16_t x, int k) {
+    unsigned s = (unsigned)k & 15;
+    return (uint16_t)((x << s) | (x >> (16 - s)));
+}
 uint32_t neverc_bits_rotate_left32(uint32_t x, int k) {
     unsigned s = (unsigned)k & 31;
     return (x << s) | (x >> (32 - s));
@@ -99,6 +143,15 @@ uint64_t neverc_bits_rotate_left64(uint64_t x, int k) {
 
 /* --- Bit Reverse --- */
 
+uint8_t neverc_bits_reverse8(uint8_t x) {
+    x = ((x >> 1) & 0x55) | ((x & 0x55) << 1);
+    x = ((x >> 2) & 0x33) | ((x & 0x33) << 2);
+    return (x >> 4) | (x << 4);
+}
+uint16_t neverc_bits_reverse16(uint16_t x) {
+    return (uint16_t)((neverc_bits_reverse8((uint8_t)x) << 8) |
+                      neverc_bits_reverse8((uint8_t)(x >> 8)));
+}
 uint32_t neverc_bits_reverse32(uint32_t x) {
     x = ((x >> 1) & 0x55555555U) | ((x & 0x55555555U) << 1);
     x = ((x >> 2) & 0x33333333U) | ((x & 0x33333333U) << 2);
@@ -153,6 +206,27 @@ void neverc_bits_sub64(uint64_t x, uint64_t y, uint64_t borrow,
     *borrow_out = ((~x & y) | (~(x ^ y) & d)) >> 63;
 }
 
+void neverc_bits_add32(uint32_t x, uint32_t y, uint32_t carry,
+                       uint32_t *sum, uint32_t *carry_out) {
+    uint64_t s = (uint64_t)x + (uint64_t)y + (uint64_t)carry;
+    *sum = (uint32_t)s;
+    *carry_out = (uint32_t)(s >> 32);
+}
+
+void neverc_bits_sub32(uint32_t x, uint32_t y, uint32_t borrow,
+                       uint32_t *diff, uint32_t *borrow_out) {
+    uint64_t d = (uint64_t)x - (uint64_t)y - (uint64_t)borrow;
+    *diff = (uint32_t)d;
+    *borrow_out = (uint32_t)((d >> 63) & 1);
+}
+
+void neverc_bits_mul32(uint32_t x, uint32_t y,
+                       uint32_t *hi, uint32_t *lo) {
+    uint64_t p = (uint64_t)x * (uint64_t)y;
+    *hi = (uint32_t)(p >> 32);
+    *lo = (uint32_t)p;
+}
+
 void neverc_bits_mul64(uint64_t x, uint64_t y,
                        uint64_t *hi, uint64_t *lo) {
     uint64_t x0 = x & 0xFFFFFFFFULL;
@@ -166,4 +240,41 @@ void neverc_bits_mul64(uint64_t x, uint64_t y,
     w1 += x0 * y1;
     *hi = x1 * y1 + w2 + (w1 >> 32);
     *lo = x * y;
+}
+
+void neverc_bits_div32(uint32_t hi, uint32_t lo, uint32_t y,
+                       uint32_t *quo, uint32_t *rem) {
+    uint64_t n = ((uint64_t)hi << 32) | (uint64_t)lo;
+    *quo = (uint32_t)(n / y);
+    *rem = (uint32_t)(n % y);
+}
+
+void neverc_bits_div64(uint64_t hi, uint64_t lo, uint64_t y,
+                       uint64_t *quo, uint64_t *rem) {
+    if (hi == 0) {
+        *quo = lo / y;
+        *rem = lo % y;
+        return;
+    }
+    uint64_t q = 0, r = hi;
+    for (int i = 63; i >= 0; i--) {
+        r = (r << 1) | ((lo >> i) & 1);
+        if (r >= y) { r -= y; q |= (1ULL << i); }
+    }
+    *quo = q;
+    *rem = r;
+}
+
+uint32_t neverc_bits_rem32(uint32_t hi, uint32_t lo, uint32_t y) {
+    uint32_t q, r;
+    neverc_bits_div32(hi, lo, y, &q, &r);
+    (void)q;
+    return r;
+}
+
+uint64_t neverc_bits_rem64(uint64_t hi, uint64_t lo, uint64_t y) {
+    uint64_t q, r;
+    neverc_bits_div64(hi, lo, y, &q, &r);
+    (void)q;
+    return r;
 }

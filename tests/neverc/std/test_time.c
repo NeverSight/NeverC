@@ -219,6 +219,51 @@ static void test_format_duration(void) {
     free(s);
 }
 
+static void test_format_layout(void) {
+    printf("[format layout]\n");
+    neverc_time_t t = neverc_time_date(2024, 3, 15, 14, 30, 45, 0);
+    char *s = neverc_time_format(t, "2006-01-02 15:04:05");
+    check_bool("format date", strcmp(s, "2024-03-15 14:30:45") == 0, 1);
+    free(s);
+
+    s = neverc_time_format(t, "2006/01/02");
+    check_bool("format date only", strcmp(s, "2024/03/15") == 0, 1);
+    free(s);
+}
+
+static void test_parse_layout(void) {
+    printf("[parse layout]\n");
+    neverc_time_t t;
+    int ok = neverc_time_parse("2006-01-02", "2024-06-15", &t);
+    check_int("parse ok", ok, 0);
+    check_int("parse year", neverc_time_year(t), 2024);
+    check_int("parse month", neverc_time_month(t), 6);
+    check_int("parse day", neverc_time_day(t), 15);
+}
+
+static void test_truncate_round(void) {
+    printf("[truncate/round]\n");
+    neverc_time_t t = neverc_time_date(2024, 1, 1, 12, 34, 56, 789000000);
+    neverc_time_t tr = neverc_time_truncate(t, NEVERC_TIME_SECOND);
+    check_int("truncate sec nsec", tr.nsec, 0);
+    check_int("truncate sec same sec", neverc_time_second(tr), 56);
+
+    neverc_time_t t2 = neverc_time_date(2024, 1, 1, 12, 0, 30, 0);
+    neverc_time_t rnd = neverc_time_round(t2, NEVERC_TIME_MINUTE);
+    check_int("round up sec", neverc_time_second(rnd), 0);
+    check_int("round up min", neverc_time_minute(rnd), 1);
+}
+
+static void test_unix_milli_to_time(void) {
+    printf("[unix_milli_to_time]\n");
+    neverc_time_t t = neverc_time_unix_milli_to_time(1000);
+    check_bool("1000ms == 1s", t.sec == 1 && t.nsec == 0, 1);
+
+    t = neverc_time_unix_milli_to_time(1500);
+    check_bool("1500ms sec", t.sec == 1, 1);
+    check_bool("1500ms nsec", t.nsec == 500000000, 1);
+}
+
 int main(void) {
     printf("=== NeverC Time Module Tests ===\n\n");
     test_unix_epoch();
@@ -235,6 +280,10 @@ int main(void) {
     test_unix_micro();
     test_parse_duration();
     test_format_duration();
+    test_format_layout();
+    test_parse_layout();
+    test_truncate_round();
+    test_unix_milli_to_time();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

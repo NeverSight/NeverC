@@ -121,6 +121,35 @@ static void test_unicode_beyond_ascii(void) {
     check_int("!is_print(0x7F)", neverc_unicode_is_print(0x7F), 0);
 }
 
+static void test_new_classification(void) {
+    printf("[new classification]\n");
+    check_int("is_number('0')", neverc_unicode_is_number('0'), 1);
+    check_int("is_number('9')", neverc_unicode_is_number('9'), 1);
+    check_int("is_number('A')", neverc_unicode_is_number('A'), 0);
+    check_int("is_number(Arabic-0)", neverc_unicode_is_number(0x0660), 1);
+    check_int("is_number(superscript2)", neverc_unicode_is_number(0x00B2), 1);
+
+    check_int("is_symbol('$')", neverc_unicode_is_symbol('$'), 1);
+    check_int("is_symbol('+')", neverc_unicode_is_symbol('+'), 1);
+    check_int("is_symbol('A')", neverc_unicode_is_symbol('A'), 0);
+    check_int("is_symbol(copyright)", neverc_unicode_is_symbol(0x00A9), 1);
+    check_int("is_symbol(arrow)", neverc_unicode_is_symbol(0x2192), 1);
+
+    check_int("is_title(Dz)", neverc_unicode_is_title(0x01C5), 1);
+    check_int("is_title(A)", neverc_unicode_is_title('A'), 0);
+    check_int("is_title(a)", neverc_unicode_is_title('a'), 0);
+
+    check_int("is_mark(combining_acute)", neverc_unicode_is_mark(0x0301), 1);
+    check_int("is_mark(A)", neverc_unicode_is_mark('A'), 0);
+}
+
+static void test_simple_fold(void) {
+    printf("[simple_fold]\n");
+    check_int("fold('A')==a", (int)neverc_unicode_simple_fold('A'), (int)'a');
+    check_int("fold('a')==A", (int)neverc_unicode_simple_fold('a'), (int)'A');
+    check_int("fold('0')==0", (int)neverc_unicode_simple_fold('0'), (int)'0');
+}
+
 int main(void) {
     printf("=== NeverC Unicode Library Tests ===\n\n");
     test_ascii_classification();
@@ -129,6 +158,8 @@ int main(void) {
     test_control();
     test_case_conversion();
     test_unicode_beyond_ascii();
+    test_new_classification();
+    test_simple_fold();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

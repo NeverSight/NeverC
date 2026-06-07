@@ -123,6 +123,13 @@ int         neverc_os_user_home_dir(char *buf, size_t cap);
 int         neverc_os_user_cache_dir(char *buf, size_t cap);
 int         neverc_os_user_config_dir(char *buf, size_t cap);
 
+/* Pipe: creates connected read/write file descriptors */
+int         neverc_os_pipe(neverc_os_file_t **r, neverc_os_file_t **w);
+
+/* Ownership (POSIX; no-op on Windows) */
+int         neverc_os_chown(const char *name, int uid, int gid);
+int         neverc_os_lchown(const char *name, int uid, int gid);
+
 /* Error classification */
 int         neverc_os_is_exist(int err);
 int         neverc_os_is_not_exist(int err);

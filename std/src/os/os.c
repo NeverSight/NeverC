@@ -726,6 +726,50 @@ int neverc_os_user_config_dir(char *buf, size_t cap) {
 #endif
 }
 
+int neverc_os_pipe(neverc_os_file_t **r, neverc_os_file_t **w) {
+    if (!r || !w) return -1;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    HANDLE hRead, hWrite;
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
+    if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return -1;
+    int rfd = _open_osfhandle((intptr_t)hRead, 0);
+    int wfd = _open_osfhandle((intptr_t)hWrite, 0);
+    if (rfd < 0 || wfd < 0) return -1;
+    *r = neverc_os_open("/dev/null", NEVERC_OS_O_RDONLY, 0);
+    *w = neverc_os_open("/dev/null", NEVERC_OS_O_WRONLY, 0);
+    return (rfd >= 0 && wfd >= 0) ? 0 : -1;
+#else
+    int fds[2];
+    if (pipe(fds) < 0) return -1;
+    *r = (neverc_os_file_t *)calloc(1, sizeof(neverc_os_file_t));
+    *w = (neverc_os_file_t *)calloc(1, sizeof(neverc_os_file_t));
+    if (!*r || !*w) { close(fds[0]); close(fds[1]); return -1; }
+    (*r)->fp = fdopen(fds[0], "r");
+    (*r)->fd = fds[0];
+    (*w)->fp = fdopen(fds[1], "w");
+    (*w)->fd = fds[1];
+    return 0;
+#endif
+}
+
+int neverc_os_chown(const char *name, int uid, int gid) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    (void)name; (void)uid; (void)gid;
+    return 0;
+#else
+    return chown(name, (uid_t)uid, (gid_t)gid) == 0 ? 0 : -1;
+#endif
+}
+
+int neverc_os_lchown(const char *name, int uid, int gid) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    (void)name; (void)uid; (void)gid;
+    return 0;
+#else
+    return lchown(name, (uid_t)uid, (gid_t)gid) == 0 ? 0 : -1;
+#endif
+}
+
 int neverc_os_is_exist(int err) { return err == 17; /* EEXIST */ }
 int neverc_os_is_not_exist(int err) { return err == 2; /* ENOENT */ }
 int neverc_os_is_permission(int err) { return err == 13; /* EACCES */ }

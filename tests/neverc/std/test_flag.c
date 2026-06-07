@@ -118,6 +118,81 @@ static void test_double_dash(void) {
     check_str("arg0 after --", neverc_flag_arg(0), "-other");
 }
 
+static void test_int64_uint64(void) {
+    printf("[int64/uint64]\n");
+    neverc_flag_reset();
+
+    long long big = 0;
+    unsigned long long ubig = 0;
+    neverc_flag_int64("big", 0, "big number", &big);
+    neverc_flag_uint64("ubig", 0, "unsigned big", &ubig);
+
+    char *argv[] = {"prog", "-big", "999", "-ubig", "1234"};
+    neverc_flag_parse(5, argv);
+
+    check_int("big val", (int)big, 999);
+    check_int("ubig val", (int)ubig, 1234);
+}
+
+static void test_parsed_nflag(void) {
+    printf("[parsed/nflag]\n");
+    neverc_flag_reset();
+
+    check_int("not parsed yet", neverc_flag_parsed(), 0);
+
+    int x = 0;
+    neverc_flag_int("x", 0, "test", &x);
+
+    char *argv[] = {"prog", "-x", "42"};
+    neverc_flag_parse(3, argv);
+
+    check_int("parsed after parse", neverc_flag_parsed(), 1);
+    check_int("nflag", neverc_flag_nflag(), 1);
+}
+
+static void test_set_lookup(void) {
+    printf("[set/lookup]\n");
+    neverc_flag_reset();
+
+    int val = 0;
+    neverc_flag_int("count", 0, "item count", &val);
+
+    check_int("set count", neverc_flag_set("count", "99"), 0);
+    check_int("val after set", val, 99);
+
+    const char *usage = NULL;
+    check_int("lookup count", neverc_flag_lookup("count", &usage), 0);
+    check_str("lookup usage", usage, "item count");
+
+    check_int("lookup missing", neverc_flag_lookup("missing", &usage), -1);
+}
+
+static int visit_count_ctx;
+static void visit_counter(const char *name, const char *usage, void *ctx) {
+    (void)name; (void)usage; (void)ctx;
+    visit_count_ctx++;
+}
+
+static void test_visit(void) {
+    printf("[visit]\n");
+    neverc_flag_reset();
+
+    int a = 0, b = 0;
+    neverc_flag_int("a", 0, "alpha", &a);
+    neverc_flag_int("b", 0, "beta", &b);
+
+    char *argv[] = {"prog", "-a", "1"};
+    neverc_flag_parse(3, argv);
+
+    visit_count_ctx = 0;
+    neverc_flag_visit(visit_counter, NULL);
+    check_int("visit set count", visit_count_ctx, 1);
+
+    visit_count_ctx = 0;
+    neverc_flag_visit_all(visit_counter, NULL);
+    check_int("visit_all count", visit_count_ctx, 2);
+}
+
 int main(void) {
     printf("=== NeverC Flag Module Tests ===\n\n");
     test_basic();
@@ -125,6 +200,10 @@ int main(void) {
     test_equals_syntax();
     test_remaining_args();
     test_double_dash();
+    test_int64_uint64();
+    test_parsed_nflag();
+    test_set_lookup();
+    test_visit();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

@@ -393,6 +393,15 @@ char *neverc_time_format(neverc_time_t t, const char *layout) {
     return result;
 }
 
+static int parse_n_digits(const char *value, size_t vlen, size_t *vi, int n) {
+    int result = 0;
+    for (int j = 0; j < n && *vi < vlen && value[*vi] >= '0' && value[*vi] <= '9'; j++) {
+        result = result * 10 + (value[*vi] - '0');
+        (*vi)++;
+    }
+    return result;
+}
+
 int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out) {
     if (!layout || !value || !out) return -1;
     int yr = 0, mo = 1, dy = 1, hr = 0, mi = 0, sc = 0;
@@ -401,30 +410,22 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
 
     while (li < llen && vi < vlen) {
         if (li + 4 <= llen && memcmp(layout + li, "2006", 4) == 0) {
-            for (int j = 0; j < 4 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
-                yr = yr * 10 + (value[vi] - '0');
+            yr = parse_n_digits(value, vlen, &vi, 4);
             li += 4;
         } else if (li + 2 <= llen && memcmp(layout + li, "01", 2) == 0) {
-            for (int j = 0; j < 2 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
-                mo = mo * 10 + (value[vi] - '0');
-            mo -= 1;
+            mo = parse_n_digits(value, vlen, &vi, 2);
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "02", 2) == 0) {
-            for (int j = 0; j < 2 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
-                dy = dy * 10 + (value[vi] - '0');
-            dy -= 1;
+            dy = parse_n_digits(value, vlen, &vi, 2);
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "15", 2) == 0) {
-            for (int j = 0; j < 2 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
-                hr = hr * 10 + (value[vi] - '0');
+            hr = parse_n_digits(value, vlen, &vi, 2);
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "04", 2) == 0) {
-            for (int j = 0; j < 2 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
-                mi = mi * 10 + (value[vi] - '0');
+            mi = parse_n_digits(value, vlen, &vi, 2);
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "05", 2) == 0) {
-            for (int j = 0; j < 2 && vi < vlen && value[vi] >= '0' && value[vi] <= '9'; j++, vi++)
-                sc = sc * 10 + (value[vi] - '0');
+            sc = parse_n_digits(value, vlen, &vi, 2);
             li += 2;
         } else {
             li++; vi++;
