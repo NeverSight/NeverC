@@ -239,21 +239,6 @@ void darwin::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs, JA);
 
-  // Auto-link NeverC std library if available
-  if (!Args.hasArg(options::OPT_nostdlib)) {
-    const Driver &D = getToolChain().getDriver();
-    for (const char *Rel : {"/../std/lib", "/../../std/lib", "/../lib"}) {
-      llvm::SmallString<128> StdLib(D.getInstalledDir());
-      StdLib += Rel;
-      llvm::SmallString<128> StdA(StdLib);
-      llvm::sys::path::append(StdA, "libneverc_std.a");
-      if (llvm::sys::fs::exists(StdA)) {
-        CmdArgs.push_back(Args.MakeArgString(StdA));
-        break;
-      }
-    }
-  }
-
   // Build the input file for -filelist (list of linker input files) in case we
   // need it later
   for (const auto &II : Inputs) {

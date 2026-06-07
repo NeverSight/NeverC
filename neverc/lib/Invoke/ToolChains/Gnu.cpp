@@ -210,20 +210,6 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs, JA);
 
-  // Auto-link NeverC std library if available
-  if (!Args.hasArg(options::OPT_nostdlib, options::OPT_r)) {
-    for (const char *Rel : {"/../std/lib", "/../../std/lib", "/../lib"}) {
-      llvm::SmallString<128> StdLib(D.getInstalledDir());
-      StdLib += Rel;
-      llvm::SmallString<128> StdA(StdLib);
-      llvm::sys::path::append(StdA, "libneverc_std.a");
-      if (llvm::sys::fs::exists(StdA)) {
-        CmdArgs.push_back(Args.MakeArgString(StdA));
-        break;
-      }
-    }
-  }
-
   if (!Args.hasArg(options::OPT_nostdlib, options::OPT_r)) {
     if (!Args.hasArg(options::OPT_nodefaultlibs)) {
       if (IsStatic || IsStaticPIE)
