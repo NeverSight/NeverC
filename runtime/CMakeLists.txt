@@ -15,6 +15,23 @@
 set(RUNTIME_SRC  "${CMAKE_CURRENT_SOURCE_DIR}")
 set(RUNTIME_DST  "${LLVM_LIBRARY_OUTPUT_INTDIR}/../runtime")
 
+# Safety: if RUNTIME_DST is a symlink (e.g. leftover from an earlier setup),
+# the rm+copy cycle below would follow it and destroy the source tree.
+# Remove the symlink so a real directory is created instead.
+if(IS_SYMLINK "${RUNTIME_DST}")
+  message(WARNING "runtime: removing stale symlink ${RUNTIME_DST} "
+                  "to prevent source-tree destruction")
+  file(REMOVE "${RUNTIME_DST}")
+endif()
+
+get_filename_component(_rt_dst_real "${RUNTIME_DST}" REALPATH)
+get_filename_component(_rt_src_real "${RUNTIME_SRC}" REALPATH)
+if(_rt_dst_real STREQUAL _rt_src_real)
+  message(FATAL_ERROR
+    "runtime build destination (${RUNTIME_DST}) resolves to the source tree "
+    "(${_rt_src_real}). Use an out-of-source build or remove the symlink.")
+endif()
+
 # Helper: register a directory tree for build-copy + install.
 # COPY_SPEC is a list of "src_subdir:dst_subdir" pairs.
 macro(runtime_sdk_target _name)
