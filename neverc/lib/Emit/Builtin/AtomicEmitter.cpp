@@ -3,7 +3,7 @@
 #include "Core/ModuleEmitter.h"
 #include "Core/RecordLayoutInfo.h"
 #include "Stmt/CallEmitterInfo.h"
-#include "neverc/Compiler/FrontendDiag.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
 #include "neverc/Emit/ABI/ABIFunctionInfo.h"
 #include "neverc/Tree/Core/TreeContext.h"
 #include "llvm/ADT/DenseMap.h"

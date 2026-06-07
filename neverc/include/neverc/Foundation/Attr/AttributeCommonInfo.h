@@ -43,7 +43,7 @@ public:
   };
   enum Kind {
 #define PARSED_ATTR(NAME) AT_##NAME,
-#include "neverc/Analyze/AttrParsedAttrList.td.h"
+#include "neverc/Foundation/Attr/AttrParsedAttrList.td.h"
 #undef PARSED_ATTR
     NoSemaHandlerAttribute,
     IgnoredAttribute,

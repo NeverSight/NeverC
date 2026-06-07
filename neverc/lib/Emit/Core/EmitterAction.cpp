@@ -1,9 +1,9 @@
 #include "neverc/Emit/Core/EmitterAction.h"
+#include "neverc/Emit/Core/EmitterFactory.h"
 #include "Backend/BackendConsumer.h"
 #include "Core/ModuleEmitter.h"
 #include "Stmt/CallEmitterInfo.h"
 #include "neverc/Compiler/CompilerInstance.h"
-#include "neverc/Compiler/FrontendDiag.h"
 #include "neverc/Emit/Backend/BackendUtil.h"
 #include "neverc/Emit/Core/ModuleBuilder.h"
 #include "neverc/Foundation/Core/FileManager.h"
@@ -1046,3 +1046,18 @@ GenLLVMAction::GenLLVMAction(llvm::LLVMContext *_VMContext)
 void GenObjAction::anchor() {}
 GenObjAction::GenObjAction(llvm::LLVMContext *_VMContext)
     : EmitterAction(Backend_EmitObj, _VMContext) {}
+
+std::unique_ptr<FrontendAction> neverc::CreateEmitterAction(unsigned Act) {
+  switch (static_cast<frontend::ActionKind>(Act)) {
+  case frontend::GenAssembly:
+    return std::make_unique<GenAssemblyAction>();
+  case frontend::GenBC:
+    return std::make_unique<GenBCAction>();
+  case frontend::GenLLVM:
+    return std::make_unique<GenLLVMAction>();
+  case frontend::GenObj:
+    return std::make_unique<GenObjAction>();
+  default:
+    return nullptr;
+  }
+}

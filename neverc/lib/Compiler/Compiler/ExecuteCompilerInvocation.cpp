@@ -6,7 +6,7 @@
 #include "neverc/Compiler/FrontendTool.h"
 #include "neverc/Compiler/TextDiagnosticBuffer.h"
 #include "neverc/Compiler/Utils.h"
-#include "neverc/Emit/Core/EmitterAction.h"
+#include "neverc/Emit/Core/EmitterFactory.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticDriver.h"
 #include "neverc/Foundation/Target/TargetOptions.h"
 #include "neverc/Invoke/DirectInvocationOpts.h"
@@ -38,21 +38,19 @@ namespace neverc {
 std::unique_ptr<FrontendAction> CreateFrontendAction(CompilerInstance &CI) {
   using namespace neverc::frontend;
 
-  switch (CI.getFrontendOpts().ProgramAction) {
-  case GenAssembly:
-    return std::make_unique<GenAssemblyAction>();
-  case GenBC:
-    return std::make_unique<GenBCAction>();
-  case GenLLVM:
-    return std::make_unique<GenLLVMAction>();
-  case GenObj:
-    return std::make_unique<GenObjAction>();
+  auto Action = CI.getFrontendOpts().ProgramAction;
+  if (auto EmitAction = CreateEmitterAction(Action))
+    return EmitAction;
+
+  switch (Action) {
   case ParseSyntaxOnly:
     return std::make_unique<SyntaxOnlyAction>();
   case PrintPreprocessedInput:
     return std::make_unique<PrintPreprocessedAction>();
   case RunPreprocessorOnly:
     return std::make_unique<PreprocessOnlyAction>();
+  default:
+    break;
   }
 
   llvm_unreachable("Invalid program action!");

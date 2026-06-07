@@ -6,7 +6,7 @@
 #include "Backend/StringRuntimeLinker.h"
 #include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
 #include "neverc/Transforms/XorStr/XorStrCleanupPass.h"
-#include "neverc/Compiler/FrontendDiag.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
 #include "neverc/Compiler/Utils.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"

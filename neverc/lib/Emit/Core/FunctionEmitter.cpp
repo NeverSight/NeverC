@@ -4,7 +4,7 @@
 #include "Core/ModuleEmitter.h"
 #include "Debug/DebugEmitterInfo.h"
 #include "Stmt/CleanupEmitterInfo.h"
-#include "neverc/Compiler/FrontendDiag.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
 #include "neverc/Emit/ABI/ABIFunctionInfo.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
 #include "neverc/Tree/Core/Attr.h"

@@ -6,7 +6,7 @@
 #include "Core/FunctionEmitter.h"
 #include "Debug/DebugEmitterInfo.h"
 #include "Stmt/CallEmitterInfo.h"
-#include "neverc/Compiler/FrontendDiag.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
 #include "neverc/Emit/Backend/BackendUtil.h"
 #include "neverc/Emit/Decl/ConstantInitBuilder.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"

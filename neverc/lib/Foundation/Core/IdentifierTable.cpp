@@ -550,7 +550,7 @@ bool AttributeCommonInfo::isNeverCScope() const {
          (ScopeName->isStr("neverc") || ScopeName->isStr("_NeverC"));
 }
 
-#include "neverc/Analyze/AttrParsedAttrKinds.td.h"
+#include "neverc/Foundation/Attr/AttrParsedAttrKinds.td.h"
 
 namespace {
 llvm::SmallString<64>
@@ -588,7 +588,7 @@ unsigned AttributeCommonInfo::calculateAttributeSpellingListIndex() const {
   const auto [Scope, Name] =
       canonicalizeAttrSpelling(getAttrName(), getScopeName(), Syntax);
 
-#include "neverc/Analyze/AttrSpellingListIndex.td.h"
+#include "neverc/Foundation/Attr/AttrSpellingListIndex.td.h"
 }
 
 namespace neverc {

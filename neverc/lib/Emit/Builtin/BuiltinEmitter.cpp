@@ -6,7 +6,7 @@
 #include "Core/ModuleEmitter.h"
 #include "Core/RecordLayoutInfo.h"
 #include "Decl/PatternInit.h"
-#include "neverc/Compiler/FrontendDiag.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
 #include "neverc/Emit/ABI/ABIFunctionInfo.h"
 #include "neverc/Foundation/Builtin/TargetBuiltins.h"
 #include "neverc/Tree/Core/Attr.h"
