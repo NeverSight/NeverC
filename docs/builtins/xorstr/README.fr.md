@@ -18,7 +18,7 @@ Les deux niveaux utilisent des tampons alloués sur la pile (pas d'allocation su
 ## Démarrage rapide
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 FARPROC addr = GetProcAddress(hModule, NC_XORSTR("NtQuerySystemInformation"));
 ```
 

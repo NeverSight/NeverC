@@ -20,7 +20,7 @@ NeverC 提供兩層編譯期字串加密機制，專為安全場景設計——�
 ### 第 1 層：顯式巨集
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 
 FARPROC addr = GetProcAddress(hModule, NC_XORSTR("NtQuerySystemInformation"));
 ```
@@ -38,7 +38,7 @@ neverc -fencrypt-call-strings main.c -o main
 ### 用法
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 
 const char *api = NC_XORSTR("GetProcAddress");
 const char *api = NEVERC_XORSTR("GetProcAddress");

@@ -33,8 +33,8 @@ set(core_files
   unwind.h
   string.h
   stdlib.h
-  neverc/xorstr.h
-  neverc/xorstr_impl.inc
+  neverc/xorstr/xorstr.h
+  neverc/xorstr/xorstr_impl.inc
   varargs.h
   )
 

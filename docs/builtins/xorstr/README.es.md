@@ -18,7 +18,7 @@ Ambas capas usan búferes asignados en la pila (sin asignación en el montón), 
 ## Inicio rápido
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 FARPROC addr = GetProcAddress(hModule, NC_XORSTR("NtQuerySystemInformation"));
 ```
 

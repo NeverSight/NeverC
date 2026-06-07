@@ -133,7 +133,7 @@ ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
   if (!FD) {
     unsigned DiagID = S.Diags.getCustomDiagID(
         DiagnosticsEngine::Error,
-        "'__builtin_neverc_xorstr' requires '#include <neverc/xorstr.h>'");
+        "'__builtin_neverc_xorstr' requires '#include <neverc/xorstr/xorstr.h>'");
     S.Diag(Loc, DiagID);
     return ExprError();
   }

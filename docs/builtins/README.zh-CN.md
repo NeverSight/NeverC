@@ -76,7 +76,7 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 |---------|--------|------|
 | `string` | `BuiltinString.h` | `BuiltinString.cpp` |
 | `mimalloc` | `BuiltinMimalloc.h` | `BuiltinMimalloc.cpp` |
-| `xorstr` | `lib/Headers/neverc/xorstr.h` *(用户头文件)* | `lib/Transforms/XorStr/EncryptCallStringsPass.cpp` |
+| `xorstr` | `lib/Headers/neverc/xorstr/xorstr.h` *(用户头文件)* | `lib/Transforms/XorStr/EncryptCallStringsPass.cpp` |
 
 API 提供 `getEmbeddedBitcode()` 用于获取预编译的 LLVM bitcode，以及 `isSupported()` 用于检查平台可用性。
 

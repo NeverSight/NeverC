@@ -18,7 +18,7 @@
 ## البداية السريعة
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 FARPROC addr = GetProcAddress(hModule, NC_XORSTR("NtQuerySystemInformation"));
 ```
 

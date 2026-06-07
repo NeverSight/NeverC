@@ -1,11 +1,11 @@
-/*===---- neverc/xorstr.h - compile-time string encryption for C code -----===*\
+/*===---- neverc/xorstr/xorstr.h - compile-time string encryption for C ---===*\
  *
  * Wraps the __builtin_neverc_xorstr compiler builtin so that plain C
  * (and C++) source can encrypt string literals without relying on the
  * NeverC `.encrypt()` syntax extension.
  *
  * Usage:
- *     #include <neverc/xorstr.h>
+ *     #include <neverc/xorstr/xorstr.h>
  *     GetProcAddress(hModule, NC_XORSTR("NtQuerySystemInformation"));
  *
  * The macro expands to a `const char*` pointing to a stack-allocated

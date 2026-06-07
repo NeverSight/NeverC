@@ -18,7 +18,7 @@ Entrambi i livelli utilizzano buffer allocati sullo stack (nessuna allocazione h
 ## Avvio rapido
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 FARPROC addr = GetProcAddress(hModule, NC_XORSTR("NtQuerySystemInformation"));
 ```
 

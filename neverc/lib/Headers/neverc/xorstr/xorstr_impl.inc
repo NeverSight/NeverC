@@ -1,7 +1,7 @@
-/*===---- neverc/xorstr_impl.inc - XOR string decrypt implementation ------===*\
+/*===---- neverc/xorstr/xorstr_impl.inc - XOR string decrypt impl ---------===*\
  *
  * Stack-allocated XOR decrypt helper for NC_XORSTR().
- * Included by <neverc/xorstr.h> -- do not include directly.
+ * Included by <neverc/xorstr/xorstr.h> -- do not include directly.
  *
  * The decrypt byte operation avoids the XOR instruction to reduce
  * signature visibility: a ^ b == a + b - 2*(a & b).

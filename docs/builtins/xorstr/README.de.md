@@ -18,7 +18,7 @@ Beide Stufen verwenden Stack-allozierte Puffer (keine Heap-Allokation), einen En
 ## Schnellstart
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 FARPROC addr = GetProcAddress(hModule, NC_XORSTR("NtQuerySystemInformation"));
 ```
 

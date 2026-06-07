@@ -78,7 +78,7 @@ Each built-in has a header + implementation pair in `neverc/Foundation/Builtin/`
 | ---------- | ----------------------------------------------- | ------------------------------------------------- |
 | `string`   | `BuiltinString.h`                               | `BuiltinString.cpp`                               |
 | `mimalloc` | `BuiltinMimalloc.h`                             | `BuiltinMimalloc.cpp`                             |
-| `xorstr`   | `lib/Headers/neverc/xorstr.h` *(user-facing)*   | `lib/Transforms/XorStr/EncryptCallStringsPass.cpp` |
+| `xorstr`   | `lib/Headers/neverc/xorstr/xorstr.h` *(user-facing)*   | `lib/Transforms/XorStr/EncryptCallStringsPass.cpp` |
 
 
 The API provides `getEmbeddedBitcode()` to retrieve the precompiled LLVM bitcode blob, and `isSupported()` to check platform availability.

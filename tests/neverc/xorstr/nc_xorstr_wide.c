@@ -1,4 +1,4 @@
-// RUN: %nevercc -fsyntax-only %s -include neverc/xorstr.h 2>&1 | FileCheck %s --check-prefix=CHECK-OK
+// RUN: %nevercc -fsyntax-only %s -include neverc/xorstr/xorstr.h 2>&1 | FileCheck %s --check-prefix=CHECK-OK
 
 // CHECK-OK-NOT: error
 

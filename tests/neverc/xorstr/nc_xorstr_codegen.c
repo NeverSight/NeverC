@@ -1,4 +1,4 @@
-// RUN: %nevercc -S -emit-llvm -O1 %s -include neverc/xorstr.h -o - | FileCheck %s
+// RUN: %nevercc -S -emit-llvm -O1 %s -include neverc/xorstr/xorstr.h -o - | FileCheck %s
 
 // Verify that NC_XORSTR generates a call to __neverc_xorstr_decrypt
 // and that the encrypted string literal is different from the original.

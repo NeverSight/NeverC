@@ -20,7 +20,7 @@ Both layers use stack-allocated buffers (no heap allocation), XOR-based decrypti
 ### Layer 1: Explicit Macro
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 
 // String is encrypted at compile time, decrypted on stack at runtime
 FARPROC addr = GetProcAddress(hModule, NC_XORSTR("NtQuerySystemInformation"));
@@ -41,7 +41,7 @@ All string literal arguments in function calls are automatically encrypted — n
 ### Usage
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 
 const char *api = NC_XORSTR("GetProcAddress");    // short form
 const char *api = NEVERC_XORSTR("GetProcAddress"); // long form (alias)

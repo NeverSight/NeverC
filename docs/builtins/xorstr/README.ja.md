@@ -20,7 +20,7 @@ NeverC は C コード向けの二層コンパイル時文字列暗号化を提�
 ### レイヤー 1: 明示的マクロ
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 
 FARPROC addr = GetProcAddress(hModule, NC_XORSTR("NtQuerySystemInformation"));
 ```

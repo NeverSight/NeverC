@@ -20,7 +20,7 @@ NeverC는 C 코드를 위한 2계층 컴파일 타임 문자열 암호화를 제
 ### 레이어 1: 명시적 매크로
 
 ```c
-#include <neverc/xorstr.h>
+#include <neverc/xorstr/xorstr.h>
 
 FARPROC addr = GetProcAddress(hModule, NC_XORSTR("NtQuerySystemInformation"));
 ```

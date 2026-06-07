@@ -1,5 +1,5 @@
-// RUN: %nevercc -fsyntax-only %s -include neverc/xorstr.h 2>&1 | FileCheck %s --check-prefix=CHECK-OK
-// RUN: %nevercc -fsyntax-only %s -include neverc/xorstr.h -DTEST_BAD_ARG 2>&1 | FileCheck %s --check-prefix=CHECK-ERR
+// RUN: %nevercc -fsyntax-only %s -include neverc/xorstr/xorstr.h 2>&1 | FileCheck %s --check-prefix=CHECK-OK
+// RUN: %nevercc -fsyntax-only %s -include neverc/xorstr/xorstr.h -DTEST_BAD_ARG 2>&1 | FileCheck %s --check-prefix=CHECK-ERR
 
 // CHECK-OK-NOT: error
 
