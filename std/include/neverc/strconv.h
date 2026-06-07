@@ -40,4 +40,12 @@ int neverc_strconv_format_bool(int b, char *buf, size_t bufsize);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+struct __neverc_std_strconv_t { char __tag; };
+extern struct __neverc_std_strconv_t strconv;
+#endif
+
 #endif /* NEVERC_STRCONV_H */

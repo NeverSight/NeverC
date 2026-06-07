@@ -2194,6 +2194,12 @@ public:
                             SourceLocation LParenLoc, MultiExprArg ArgExprs,
                             SourceLocation RParenLoc);
 
+  bool isStdModuleDotSyntax(Expr *Base, const IdentifierInfo *MethodII) const;
+  ExprResult
+  OnStdModuleMethodCall(Scope *S, Expr *Base, SourceLocation OpLoc,
+                        UnqualifiedId &Member, SourceLocation LParenLoc,
+                        MultiExprArg ArgExprs, SourceLocation RParenLoc);
+
   MemberExpr *FormMemberExpr(Expr *Base, bool IsArrow, SourceLocation OpLoc,
                              ValueDecl *Member, NamedDecl *FoundDecl,
                              const DeclarationNameInfo &MemberNameInfo,

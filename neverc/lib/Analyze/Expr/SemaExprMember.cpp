@@ -1,6 +1,7 @@
 #include "neverc/Analyze/ScopeInfo.h"
 #include "neverc/Analyze/SemaInternal.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
+#include "neverc/Foundation/Std/StdModule.h"
 #include "neverc/Tree/Core/TreeContext.h"
 #include "neverc/Tree/Expr/Expr.h"
 #include "llvm/ADT/APInt.h"
@@ -764,6 +765,76 @@ Sema::OnBuiltinStringMethodCall(Scope *S, Expr *Base, SourceLocation OpLoc,
 
   return buildNeverCStringRuntimeCall(*this, S, LParenLoc, FunctionName,
                                       CallArgs, RParenLoc);
+}
+
+// ===----------------------------------------------------------------------===
+// Std module dot-syntax: math.sqrt(x) → neverc_math_sqrt(x)
+// ===----------------------------------------------------------------------===
+
+bool Sema::isStdModuleDotSyntax(Expr *Base,
+                                const IdentifierInfo *MethodII) const {
+  if (!Base || !MethodII)
+    return false;
+  Expr *Inner = Base->IgnoreParenImpCasts();
+
+  QualType Ty;
+  if (auto *DRE = dyn_cast<DeclRefExpr>(Inner))
+    Ty = DRE->getType();
+  else if (auto *ME = dyn_cast<MemberExpr>(Inner))
+    Ty = ME->getType();
+  else
+    return false;
+
+  const RecordType *RT = Ty->getAs<RecordType>();
+  if (!RT)
+    return false;
+  llvm::StringRef TypeName = RT->getDecl()->getName();
+  llvm::StringRef ModName = StdModule::extractModuleName(TypeName);
+  return !ModName.empty();
+}
+
+ExprResult
+Sema::OnStdModuleMethodCall(Scope *S, Expr *Base, SourceLocation OpLoc,
+                            UnqualifiedId &Member, SourceLocation LParenLoc,
+                            MultiExprArg ArgExprs, SourceLocation RParenLoc) {
+  Expr *Inner = Base->IgnoreParenImpCasts();
+
+  QualType Ty;
+  if (auto *DRE = dyn_cast<DeclRefExpr>(Inner))
+    Ty = DRE->getType();
+  else if (auto *ME = dyn_cast<MemberExpr>(Inner))
+    Ty = ME->getType();
+  else
+    return ExprError();
+
+  const RecordType *RT = Ty->getAs<RecordType>();
+  if (!RT)
+    return ExprError();
+  llvm::StringRef ModName =
+      StdModule::extractModuleName(RT->getDecl()->getName());
+  if (ModName.empty())
+    return ExprError();
+
+  IdentifierInfo *MethodII = Member.getIdentifierInfo();
+  if (!MethodII)
+    return ExprError();
+
+  std::string FuncName =
+      StdModule::getModuleFunctionName(ModName, MethodII->getName());
+
+  IdentifierInfo &FuncII = Context.Idents.get(FuncName);
+  LookupResult R(*this, &FuncII, OpLoc, ResolveOrdinary);
+  ResolveName(R, TUScope, /*AllowBuiltinCreation=*/false);
+  FunctionDecl *FD = R.getAsSingle<FunctionDecl>();
+  if (!FD) {
+    Diag(OpLoc, diag::err_undeclared_var_use) << FuncName;
+    return ExprError();
+  }
+
+  ExprResult FnRef = MakeDeclRefExpr(FD, FD->getType(), VK_LValue, OpLoc);
+  if (FnRef.isInvalid())
+    return ExprError();
+  return FormCallExpr(S, FnRef.get(), LParenLoc, ArgExprs, RParenLoc);
 }
 
 ExprResult Sema::OnMemberAccessExpr(Scope *S, Expr *Base, SourceLocation OpLoc,

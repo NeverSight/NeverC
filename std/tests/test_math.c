@@ -1556,6 +1556,435 @@ static void test_lgamma_sign(void) {
     check_double("lgamma_sign(5,NULL)", val, neverc_math_log(24.0));
 }
 
+/* ========== 2^52 boundary & signed zero tests (Go all_test.go) ========== */
+
+static void test_rounding_boundaries(void) {
+    printf("[rounding 2^52 boundaries]\n");
+
+    /*
+     * 2^52 boundary rationale:
+     * float64 has 52 mantissa bits. For |x| >= 2^52, all float64 values
+     * are exact integers — no fractional part can be represented.
+     * So ceil/floor/trunc must return x unchanged for |x| >= 2^52.
+     *
+     * Key test values from Go all_test.go:
+     *   4503599627370495   = 2^52 - 1     (last integer before boundary)
+     *   4503599627370495.5 = 2^52 - 0.5   (largest fractional float64)
+     *   4503599627370496   = 2^52         (boundary: no fractions possible)
+     */
+    const double p52   = (double)(1ULL << 52);
+    const double p52m1 = (double)((1ULL << 52) - 1);
+    const double p52mh = p52 - 0.5;
+    const double p53   = (double)(1ULL << 53);
+
+    /* ceil at 2^52 boundary */
+    check_double("ceil(2^52-1)", neverc_math_ceil(p52m1), p52m1);
+    check_double("ceil(2^52-0.5)", neverc_math_ceil(p52mh), p52);
+    check_double("ceil(2^52)", neverc_math_ceil(p52), p52);
+    check_double("ceil(2^53)", neverc_math_ceil(p53), p53);
+
+    /* floor at 2^52 boundary */
+    check_double("floor(2^52-1)", neverc_math_floor(p52m1), p52m1);
+    check_double("floor(2^52-0.5)", neverc_math_floor(p52mh), p52m1);
+    check_double("floor(2^52)", neverc_math_floor(p52), p52);
+    check_double("floor(2^53)", neverc_math_floor(p53), p53);
+
+    /* trunc at 2^52 boundary */
+    check_double("trunc(2^52-1)", neverc_math_trunc(p52m1), p52m1);
+    check_double("trunc(2^52-0.5)", neverc_math_trunc(p52mh), p52m1);
+    check_double("trunc(2^52)", neverc_math_trunc(p52), p52);
+    check_double("trunc(2^53)", neverc_math_trunc(p53), p53);
+
+    /* negative 2^52 boundary */
+    check_double("ceil(-(2^52)+0.5)", neverc_math_ceil(-p52 + 0.5), -p52m1);
+    check_double("floor(-(2^52))", neverc_math_floor(-p52), -p52);
+    check_double("floor(-(2^52)+0.5)", neverc_math_floor(-p52 + 0.5), -p52);
+    check_double("trunc(-(2^52)+0.5)", neverc_math_trunc(-p52 + 0.5), -p52m1);
+
+    /* round at 2^52 boundary */
+    check_double("round(2^52-0.5)", neverc_math_round(p52mh), p52);
+    check_double("round(2^52)", neverc_math_round(p52), p52);
+    check_double("rte(2^52-0.5)", neverc_math_roundtoeven(p52mh), p52);
+    check_double("rte(2^52)", neverc_math_roundtoeven(p52), p52);
+}
+
+static void test_signed_zero_preservation(void) {
+    printf("[signed zero preservation]\n");
+
+    /*
+     * IEEE 754 requires rounding functions to preserve the sign of zero.
+     * This is critical for correct behavior in complex number branch cuts
+     * and other mathematical contexts.
+     */
+
+    /* ceil(-0) = -0, floor(-0) = -0, trunc(-0) = -0, round(-0) = -0 */
+    double neg_zero = neverc_math_copysign(0.0, -1.0);
+
+    check_double("ceil(-0)==-0", neverc_math_ceil(neg_zero), neg_zero);
+    check_signbit("ceil(-0) is neg", neverc_math_ceil(neg_zero), 1);
+
+    check_double("floor(-0)==-0", neverc_math_floor(neg_zero), neg_zero);
+    check_signbit("floor(-0) is neg", neverc_math_floor(neg_zero), 1);
+
+    check_double("trunc(-0)==-0", neverc_math_trunc(neg_zero), neg_zero);
+    check_signbit("trunc(-0) is neg", neverc_math_trunc(neg_zero), 1);
+
+    check_double("round(-0)==-0", neverc_math_round(neg_zero), neg_zero);
+    check_signbit("round(-0) is neg", neverc_math_round(neg_zero), 1);
+
+    check_double("rte(-0)==-0", neverc_math_roundtoeven(neg_zero), neg_zero);
+    check_signbit("rte(-0) is neg", neverc_math_roundtoeven(neg_zero), 1);
+
+    /* modf(-0) = (-0, -0) */
+    double ipart;
+    double fpart = neverc_math_modf(neg_zero, &ipart);
+    check_double("modf(-0).int==-0", ipart, neg_zero);
+    check_signbit("modf(-0).int neg", ipart, 1);
+    check_double("modf(-0).frac==-0", fpart, neg_zero);
+    check_signbit("modf(-0).frac neg", fpart, 1);
+
+    /* frexp(-0) = (-0, 0) */
+    int exp;
+    double frac = neverc_math_frexp(neg_zero, &exp);
+    check_double("frexp(-0)==-0", frac, neg_zero);
+    check_signbit("frexp(-0) neg", frac, 1);
+    check_int("frexp(-0).exp==0", exp, 0);
+
+    /* fmod(-0, y) = -0, fmod(+0, y) = +0 */
+    double fm_neg = neverc_math_fmod(neg_zero, 1.0);
+    check_double("fmod(-0,1)==-0", fm_neg, neg_zero);
+    check_signbit("fmod(-0,1) neg", fm_neg, 1);
+
+    double fm_pos = neverc_math_fmod(0.0, 1.0);
+    check_double("fmod(+0,1)==+0", fm_pos, 0.0);
+    check_signbit("fmod(+0,1) pos", fm_pos, 0);
+
+    /* remainder(-0, y) = -0, sin(-0) = -0, atan(-0) = -0 */
+    double rem_neg = neverc_math_remainder(neg_zero, 1.0);
+    check_double("rem(-0,1)==-0", rem_neg, neg_zero);
+    check_signbit("rem(-0,1) neg", rem_neg, 1);
+
+    check_signbit("sin(-0) neg", neverc_math_sin(neg_zero), 1);
+    check_signbit("atan(-0) neg", neverc_math_atan(neg_zero), 1);
+    check_signbit("asin(-0) neg", neverc_math_asin(neg_zero), 1);
+    check_signbit("sinh(-0) neg", neverc_math_sinh(neg_zero), 1);
+    check_signbit("asinh(-0) neg", neverc_math_asinh(neg_zero), 1);
+    check_signbit("atanh(-0) neg", neverc_math_atanh(neg_zero), 1);
+    check_signbit("tanh(-0) neg", neverc_math_tanh(neg_zero), 1);
+
+    /* copysign preserves magnitude, takes sign from 2nd arg */
+    check_signbit("copysign(1,-0) neg", neverc_math_copysign(1.0, neg_zero), 1);
+    check_signbit("copysign(-1,+0) pos", neverc_math_copysign(-1.0, 0.0), 0);
+}
+
+/* ========== atan2 comprehensive special cases (Go all_test.go vfatan2SC) ========== */
+
+static void test_atan2_special_cases(void) {
+    printf("[atan2 special cases — Go all_test.go]\n");
+    double neg_zero = -0.0;
+
+    /* atan2(-Inf, x) */
+    check_double("atan2(-Inf,-Inf)=-3pi/4",
+        neverc_math_atan2(NC_NEGINF, NC_NEGINF), -3.0 * NEVERC_MATH_PI / 4.0);
+    check_double("atan2(-Inf,-Pi)=-pi/2",
+        neverc_math_atan2(NC_NEGINF, -NEVERC_MATH_PI), -NEVERC_MATH_PI / 2.0);
+    check_double("atan2(-Inf,0)=-pi/2",
+        neverc_math_atan2(NC_NEGINF, 0.0), -NEVERC_MATH_PI / 2.0);
+    check_double("atan2(-Inf,+Pi)=-pi/2",
+        neverc_math_atan2(NC_NEGINF, NEVERC_MATH_PI), -NEVERC_MATH_PI / 2.0);
+    check_double("atan2(-Inf,+Inf)=-pi/4",
+        neverc_math_atan2(NC_NEGINF, NC_INF), -NEVERC_MATH_PI / 4.0);
+    check_double("atan2(-Inf,NaN)=NaN",
+        neverc_math_atan2(NC_NEGINF, NC_NAN), NC_NAN);
+
+    /* atan2(-Pi, x) */
+    check_double("atan2(-Pi,-Inf)=-pi",
+        neverc_math_atan2(-NEVERC_MATH_PI, NC_NEGINF), -NEVERC_MATH_PI);
+    check_double("atan2(-Pi,0)=-pi/2",
+        neverc_math_atan2(-NEVERC_MATH_PI, 0.0), -NEVERC_MATH_PI / 2.0);
+    {
+        double r = neverc_math_atan2(-NEVERC_MATH_PI, NC_INF);
+        check_double("atan2(-Pi,+Inf)=-0", r, neg_zero);
+        check_signbit("atan2(-Pi,+Inf) neg", r, 1);
+    }
+    check_double("atan2(-Pi,NaN)=NaN",
+        neverc_math_atan2(-NEVERC_MATH_PI, NC_NAN), NC_NAN);
+
+    /* atan2(-0, x) */
+    check_double("atan2(-0,-Inf)=-pi",
+        neverc_math_atan2(neg_zero, NC_NEGINF), -NEVERC_MATH_PI);
+    check_double("atan2(-0,-Pi)=-pi",
+        neverc_math_atan2(neg_zero, -NEVERC_MATH_PI), -NEVERC_MATH_PI);
+    check_double("atan2(-0,-0)=-pi",
+        neverc_math_atan2(neg_zero, neg_zero), -NEVERC_MATH_PI);
+    {
+        double r = neverc_math_atan2(neg_zero, 0.0);
+        check_double("atan2(-0,+0)=-0", r, neg_zero);
+        check_signbit("atan2(-0,+0) neg", r, 1);
+    }
+    {
+        double r = neverc_math_atan2(neg_zero, NEVERC_MATH_PI);
+        check_double("atan2(-0,+Pi)=-0", r, neg_zero);
+        check_signbit("atan2(-0,+Pi) neg", r, 1);
+    }
+    {
+        double r = neverc_math_atan2(neg_zero, NC_INF);
+        check_double("atan2(-0,+Inf)=-0", r, neg_zero);
+        check_signbit("atan2(-0,+Inf) neg", r, 1);
+    }
+    check_double("atan2(-0,NaN)=NaN",
+        neverc_math_atan2(neg_zero, NC_NAN), NC_NAN);
+
+    /* atan2(+0, x) */
+    check_double("atan2(+0,-Inf)=+pi",
+        neverc_math_atan2(0.0, NC_NEGINF), NEVERC_MATH_PI);
+    check_double("atan2(+0,-Pi)=+pi",
+        neverc_math_atan2(0.0, -NEVERC_MATH_PI), NEVERC_MATH_PI);
+    check_double("atan2(+0,-0)=+pi",
+        neverc_math_atan2(0.0, neg_zero), NEVERC_MATH_PI);
+    check_double("atan2(+0,+0)=0",
+        neverc_math_atan2(0.0, 0.0), 0.0);
+    check_double("atan2(+0,+Pi)=0",
+        neverc_math_atan2(0.0, NEVERC_MATH_PI), 0.0);
+    check_double("atan2(+0,+Inf)=0",
+        neverc_math_atan2(0.0, NC_INF), 0.0);
+    check_double("atan2(+0,NaN)=NaN",
+        neverc_math_atan2(0.0, NC_NAN), NC_NAN);
+
+    /* atan2(+Pi, x) */
+    check_double("atan2(+Pi,-Inf)=+pi",
+        neverc_math_atan2(NEVERC_MATH_PI, NC_NEGINF), NEVERC_MATH_PI);
+    check_double("atan2(+Pi,0)=pi/2",
+        neverc_math_atan2(NEVERC_MATH_PI, 0.0), NEVERC_MATH_PI / 2.0);
+    check_double("atan2(+Pi,+Inf)=0",
+        neverc_math_atan2(NEVERC_MATH_PI, NC_INF), 0.0);
+    check_double("atan2(+1,+Inf)=0",
+        neverc_math_atan2(1.0, NC_INF), 0.0);
+    {
+        double r = neverc_math_atan2(-1.0, NC_INF);
+        check_double("atan2(-1,+Inf)=-0", r, neg_zero);
+        check_signbit("atan2(-1,+Inf) neg", r, 1);
+    }
+    check_double("atan2(+Pi,NaN)=NaN",
+        neverc_math_atan2(NEVERC_MATH_PI, NC_NAN), NC_NAN);
+
+    /* atan2(+Inf, x) */
+    check_double("atan2(+Inf,-Inf)=3pi/4",
+        neverc_math_atan2(NC_INF, NC_NEGINF), 3.0 * NEVERC_MATH_PI / 4.0);
+    check_double("atan2(+Inf,-Pi)=pi/2",
+        neverc_math_atan2(NC_INF, -NEVERC_MATH_PI), NEVERC_MATH_PI / 2.0);
+    check_double("atan2(+Inf,0)=pi/2",
+        neverc_math_atan2(NC_INF, 0.0), NEVERC_MATH_PI / 2.0);
+    check_double("atan2(+Inf,+Pi)=pi/2",
+        neverc_math_atan2(NC_INF, NEVERC_MATH_PI), NEVERC_MATH_PI / 2.0);
+    check_double("atan2(+Inf,+Inf)=pi/4",
+        neverc_math_atan2(NC_INF, NC_INF), NEVERC_MATH_PI / 4.0);
+    check_double("atan2(+Inf,NaN)=NaN",
+        neverc_math_atan2(NC_INF, NC_NAN), NC_NAN);
+
+    /* atan2(NaN, NaN) */
+    check_double("atan2(NaN,NaN)=NaN",
+        neverc_math_atan2(NC_NAN, NC_NAN), NC_NAN);
+}
+
+/* ========== exp2 special cases (Go all_test.go vfexp2SC) ========== */
+
+static void test_exp2_special_cases(void) {
+    printf("[exp2 special cases — Go all_test.go]\n");
+
+    check_double("exp2(-Inf)=0", neverc_math_exp2(NC_NEGINF), 0.0);
+    check_double("exp2(-2000)=0", neverc_math_exp2(-2000.0), 0.0);
+    check_double("exp2(2000)=+Inf", neverc_math_exp2(2000.0), NC_INF);
+    check_double("exp2(+Inf)=+Inf", neverc_math_exp2(NC_INF), NC_INF);
+    check_double("exp2(NaN)=NaN", neverc_math_exp2(NC_NAN), NC_NAN);
+    check_double("exp2(1024)=+Inf", neverc_math_exp2(1024.0), NC_INF);
+
+    /* Near underflow: exp2(-1073.99...) should be very small but non-zero */
+    double near_uf = neverc_math_exp2(-1073.99);
+    check_true("exp2(-1073.99) > 0", near_uf > 0.0);
+
+    /* Near zero: exp2(tiny) ≈ 1 */
+    check_double("exp2(~0)~1", neverc_math_exp2(3.725290298461915e-09), 1.0000000025821745);
+
+    /* Exact integer powers */
+    check_double("exp2(0)=1", neverc_math_exp2(0.0), 1.0);
+    check_double("exp2(1)=2", neverc_math_exp2(1.0), 2.0);
+    check_double("exp2(-1)=0.5", neverc_math_exp2(-1.0), 0.5);
+    check_double("exp2(10)=1024", neverc_math_exp2(10.0), 1024.0);
+    check_double("exp2(-10)=1/1024", neverc_math_exp2(-10.0), 1.0 / 1024.0);
+
+    /* Go all_test.go exhaustive range: exp2(n) for n in [-1074, 1023] */
+    for (int n = -1074; n < 1024; n++) {
+        double f = neverc_math_exp2((double)n);
+        int vf_exp;
+        double vf_frac = neverc_math_frexp(f, &vf_exp);
+        if (neverc_math_abs(vf_frac) != 0.5) {
+            tests_run++;
+            tests_failed++;
+            printf("  FAIL: exp2(%d) fraction = %.17g, want ±0.5\n", n, vf_frac);
+        } else if (vf_exp != n + 1) {
+            tests_run++;
+            tests_failed++;
+            printf("  FAIL: exp2(%d) exponent = %d, want %d\n", n, vf_exp, n + 1);
+        } else {
+            tests_run++;
+            tests_passed++;
+        }
+    }
+}
+
+/* ========== logb/ilogb special cases (Go all_test.go vflogbSC) ========== */
+
+static void test_logb_ilogb_special_cases(void) {
+    printf("[logb/ilogb special cases — Go all_test.go]\n");
+
+    /* logb special cases */
+    check_double("logb(-Inf)=+Inf", neverc_math_logb(NC_NEGINF), NC_INF);
+    check_double("logb(0)=-Inf", neverc_math_logb(0.0), NC_NEGINF);
+    check_double("logb(+Inf)=+Inf", neverc_math_logb(NC_INF), NC_INF);
+    check_double("logb(NaN)=NaN", neverc_math_logb(NC_NAN), NC_NAN);
+
+    /* ilogb special cases (Go spec: Ilogb(±Inf) = MaxInt32, Ilogb(0) = MinInt32) */
+    check_int("ilogb(-Inf)=MaxInt32", neverc_math_ilogb(NC_NEGINF), NEVERC_MATH_MAX_INT32);
+    check_int("ilogb(0)=MinInt32", neverc_math_ilogb(0.0), NEVERC_MATH_MIN_INT32);
+    check_int("ilogb(+Inf)=MaxInt32", neverc_math_ilogb(NC_INF), NEVERC_MATH_MAX_INT32);
+    check_int("ilogb(NaN)=MaxInt32", neverc_math_ilogb(NC_NAN), NEVERC_MATH_MAX_INT32);
+
+    /* Known exact values */
+    check_double("logb(1)=0", neverc_math_logb(1.0), 0.0);
+    check_double("logb(2)=1", neverc_math_logb(2.0), 1.0);
+    check_double("logb(4)=2", neverc_math_logb(4.0), 2.0);
+    check_double("logb(0.5)=-1", neverc_math_logb(0.5), -1.0);
+    check_double("logb(0.25)=-2", neverc_math_logb(0.25), -2.0);
+    check_double("logb(3)=1", neverc_math_logb(3.0), 1.0);
+
+    check_int("ilogb(1)=0", neverc_math_ilogb(1.0), 0);
+    check_int("ilogb(2)=1", neverc_math_ilogb(2.0), 1);
+    check_int("ilogb(0.5)=-1", neverc_math_ilogb(0.5), -1);
+    check_int("ilogb(3)=1", neverc_math_ilogb(3.0), 1);
+
+    /* Subnormal: logb/ilogb must handle subnormals correctly */
+    double subnorm = 5e-324;
+    check_int("ilogb(5e-324)=-1074", neverc_math_ilogb(subnorm), -1074);
+    check_double("logb(5e-324)=-1074", neverc_math_logb(subnorm), -1074.0);
+
+    /* Consistency: logb(x) == (double)ilogb(x) for normal values */
+    for (int i = 0; i < 10; i++) {
+        double ax = neverc_math_abs(vf[i]);
+        char buf[128];
+        snprintf(buf, sizeof(buf), "logb==ilogb (|vf[%d]|)", i);
+        check_double(buf, neverc_math_logb(ax), (double)neverc_math_ilogb(ax));
+    }
+}
+
+/* ========== gamma/lgamma negative value precision (exact known values) ========== */
+
+static void test_gamma_negative_precision(void) {
+    printf("[gamma negative precision — exact known values]\n");
+
+    /* Gamma at half-integers has closed-form values involving sqrt(pi) */
+    double sqrt_pi = neverc_math_sqrt(NEVERC_MATH_PI);
+
+    /* Gamma(1/2) = sqrt(pi) */
+    check_double("gamma(0.5)=sqrt(pi)",
+        neverc_math_gamma(0.5), sqrt_pi);
+
+    /* Gamma(3/2) = sqrt(pi)/2 */
+    check_double("gamma(1.5)=sqrt(pi)/2",
+        neverc_math_gamma(1.5), sqrt_pi / 2.0);
+
+    /* Gamma(5/2) = 3*sqrt(pi)/4 */
+    check_double("gamma(2.5)=3sqrt(pi)/4",
+        neverc_math_gamma(2.5), 3.0 * sqrt_pi / 4.0);
+
+    /* Gamma(-1/2) = -2*sqrt(pi) */
+    check_double("gamma(-0.5)=-2sqrt(pi)",
+        neverc_math_gamma(-0.5), -2.0 * sqrt_pi);
+
+    /* Gamma(-3/2) = 4*sqrt(pi)/3 */
+    check_double("gamma(-1.5)=4sqrt(pi)/3",
+        neverc_math_gamma(-1.5), 4.0 * sqrt_pi / 3.0);
+
+    /* Gamma(-5/2) = -8*sqrt(pi)/15 */
+    check_double("gamma(-2.5)=-8sqrt(pi)/15",
+        neverc_math_gamma(-2.5), -8.0 * sqrt_pi / 15.0);
+
+    /* Integer factorials: Gamma(n) = (n-1)! */
+    check_double("gamma(1)=1", neverc_math_gamma(1.0), 1.0);
+    check_double("gamma(2)=1", neverc_math_gamma(2.0), 1.0);
+    check_double("gamma(3)=2", neverc_math_gamma(3.0), 2.0);
+    check_double("gamma(4)=6", neverc_math_gamma(4.0), 6.0);
+    check_double("gamma(5)=24", neverc_math_gamma(5.0), 24.0);
+    check_double("gamma(6)=120", neverc_math_gamma(6.0), 120.0);
+    check_double("gamma(7)=720", neverc_math_gamma(7.0), 720.0);
+    check_double("gamma(10)=362880", neverc_math_gamma(10.0), 362880.0);
+
+    /* Special cases */
+    check_double("gamma(+Inf)=+Inf", neverc_math_gamma(NC_INF), NC_INF);
+    check_double("gamma(-Inf)=NaN", neverc_math_gamma(NC_NEGINF), NC_NAN);
+    check_double("gamma(NaN)=NaN", neverc_math_gamma(NC_NAN), NC_NAN);
+    check_double("gamma(0)=+Inf", neverc_math_gamma(0.0), NC_INF);
+    check_double("gamma(-1)=NaN", neverc_math_gamma(-1.0), NC_NAN);
+    check_double("gamma(-2)=NaN", neverc_math_gamma(-2.0), NC_NAN);
+
+    /* Reflection formula check: Gamma(x)*Gamma(1-x) = pi/sin(pi*x) */
+    double test_reflect[] = {0.25, 0.3, 0.4, 0.6, 0.75};
+    for (int i = 0; i < 5; i++) {
+        double x = test_reflect[i];
+        double lhs = neverc_math_gamma(x) * neverc_math_gamma(1.0 - x);
+        double rhs = NEVERC_MATH_PI / neverc_math_sin(NEVERC_MATH_PI * x);
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Gamma(%.2f)*Gamma(%.2f)=pi/sin(pi*%.2f)", x, 1-x, x);
+        check_double(buf, lhs, rhs);
+    }
+}
+
+/* ========== hypot edge cases ========== */
+
+static void test_hypot_edge_cases(void) {
+    printf("[hypot edge cases]\n");
+
+    /* Inf absorbs everything (Go spec) */
+    check_double("hypot(+Inf,NaN)=+Inf",
+        neverc_math_hypot(NC_INF, NC_NAN), NC_INF);
+    check_double("hypot(NaN,+Inf)=+Inf",
+        neverc_math_hypot(NC_NAN, NC_INF), NC_INF);
+    check_double("hypot(-Inf,NaN)=+Inf",
+        neverc_math_hypot(NC_NEGINF, NC_NAN), NC_INF);
+    check_double("hypot(-Inf,5)=+Inf",
+        neverc_math_hypot(NC_NEGINF, 5.0), NC_INF);
+
+    /* NaN propagation (when no Inf) */
+    check_double("hypot(NaN,5)=NaN",
+        neverc_math_hypot(NC_NAN, 5.0), NC_NAN);
+
+    /* Overflow prevention: values that would overflow if squared naively */
+    double big = 1e200;
+    double expected = neverc_math_sqrt(2.0) * big;
+    check_double("hypot(1e200,1e200)",
+        neverc_math_hypot(big, big), expected);
+
+    /* Underflow prevention: very small values */
+    double tiny = 1e-300;
+    double expected_tiny = neverc_math_sqrt(2.0) * tiny;
+    check_double("hypot(1e-300,1e-300)",
+        neverc_math_hypot(tiny, tiny), expected_tiny);
+
+    /* One zero arg */
+    check_double("hypot(5,0)=5", neverc_math_hypot(5.0, 0.0), 5.0);
+    check_double("hypot(0,5)=5", neverc_math_hypot(0.0, 5.0), 5.0);
+
+    /* Commutativity */
+    check_double("hypot(3,4)==hypot(4,3)",
+        neverc_math_hypot(3.0, 4.0), neverc_math_hypot(4.0, 3.0));
+
+    /* Sign irrelevance */
+    check_double("hypot(-3,4)==hypot(3,4)",
+        neverc_math_hypot(-3.0, 4.0), neverc_math_hypot(3.0, 4.0));
+    check_double("hypot(3,-4)==hypot(3,4)",
+        neverc_math_hypot(3.0, -4.0), neverc_math_hypot(3.0, 4.0));
+}
+
 /* ========== Main ========== */
 
 int main(void) {
@@ -1604,6 +2033,17 @@ int main(void) {
     /* New function tests */
     test_nextafter32();
     test_lgamma_sign();
+
+    /* IEEE 754 boundary & signed zero compliance */
+    test_rounding_boundaries();
+    test_signed_zero_preservation();
+
+    /* Go all_test.go special-case vectors (functions previously lacking edge tests) */
+    test_atan2_special_cases();
+    test_exp2_special_cases();
+    test_logb_ilogb_special_cases();
+    test_gamma_negative_precision();
+    test_hypot_edge_cases();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0)

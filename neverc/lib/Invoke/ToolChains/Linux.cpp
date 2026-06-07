@@ -190,6 +190,18 @@ void Linux::AddNeverCSystemIncludeArgs(const ArgList &DriverArgs,
   if (!DriverArgs.hasArg(options::OPT_nobuiltininc))
     addSystemInclude(DriverArgs, FrontendArgs, ResourceDirInclude);
 
+  // Add the NeverC std library headers (<install>/../std/include)
+  if (!DriverArgs.hasArg(options::OPT_nostdlibinc)) {
+    llvm::SmallString<128> StdInc(D.getInstalledDir());
+    llvm::sys::path::append(StdInc, "..", "std", "include");
+    if (llvm::sys::fs::is_directory(StdInc))
+      addSystemInclude(DriverArgs, FrontendArgs, StdInc);
+    llvm::SmallString<128> StdIncDev(D.getInstalledDir());
+    llvm::sys::path::append(StdIncDev, "..", "..", "std", "include");
+    if (llvm::sys::fs::is_directory(StdIncDev))
+      addSystemInclude(DriverArgs, FrontendArgs, StdIncDev);
+  }
+
   if (DriverArgs.hasArg(options::OPT_nostdlibinc))
     return;
 

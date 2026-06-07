@@ -1,4 +1,4 @@
-#include "neverc/binary.h"
+#include "neverc/encoding/binary.h"
 #include <stdio.h>
 #include <string.h>
 

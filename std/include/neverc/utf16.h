@@ -21,4 +21,12 @@ int neverc_utf16_rune_len(int32_t r);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+struct __neverc_std_utf16_t { char __tag; };
+extern struct __neverc_std_utf16_t utf16;
+#endif
+
 #endif /* NEVERC_UTF16_H */

@@ -1,4 +1,4 @@
-#include "neverc/crc32.h"
+#include "neverc/hash/crc32.h"
 #include <stdio.h>
 #include <string.h>
 

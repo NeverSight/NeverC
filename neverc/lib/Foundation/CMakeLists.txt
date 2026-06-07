@@ -240,6 +240,7 @@ add_neverc_library(nevercFoundation
   Core/LangOptions.cpp
   Builtin/BuiltinString.cpp
   Builtin/BuiltinMimalloc.cpp
+  Std/StdModule.cpp
 
   Target/TargetInfo.cpp
   Target/AArch64.cpp

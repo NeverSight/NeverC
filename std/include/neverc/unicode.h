@@ -29,4 +29,12 @@ uint32_t neverc_unicode_to_lower(uint32_t r);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+struct __neverc_std_unicode_t { char __tag; };
+extern struct __neverc_std_unicode_t unicode;
+#endif
+
 #endif /* NEVERC_UNICODE_H */

@@ -1,4 +1,4 @@
-#include "neverc/subtle.h"
+#include "neverc/crypto/subtle.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -85,6 +85,15 @@ static void test_constant_time_eq(void) {
     check_int("eq(INT32_MAX,INT32_MAX)", neverc_subtle_constant_time_eq(2147483647, 2147483647), 1);
     check_int("eq(INT32_MIN,INT32_MIN)", neverc_subtle_constant_time_eq(-2147483647-1, -2147483647-1), 1);
     check_int("eq(INT32_MAX,INT32_MIN)", neverc_subtle_constant_time_eq(2147483647, -2147483647-1), 0);
+
+    /* Regression: x^y = 0x80000000 triggered -(int32_t)d UB before fix.
+       The old code had `(uint32_t)(-(int32_t)d)` which is signed integer
+       overflow when d = INT32_MIN. Fixed to use uint64 subtraction. */
+    check_int("eq(0x40000000,0xC0000000)", neverc_subtle_constant_time_eq(0x40000000, (int32_t)0xC0000000), 0);
+    check_int("eq(0,INT32_MIN)", neverc_subtle_constant_time_eq(0, -2147483647-1), 0);
+    check_int("eq(1,-1) xor=0xFFFFFFFE", neverc_subtle_constant_time_eq(1, -1), 0);
+    check_int("eq(-1,1) xor=0xFFFFFFFE", neverc_subtle_constant_time_eq(-1, 1), 0);
+    check_int("eq(0x7FFFFFFF,0xFFFFFFFF)", neverc_subtle_constant_time_eq(2147483647, -1), 0);
 }
 
 static void test_constant_time_copy(void) {

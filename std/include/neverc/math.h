@@ -156,6 +156,13 @@ double   neverc_math_float64frombits(uint64_t bits);
 uint32_t neverc_math_float32bits(float f);
 float    neverc_math_float32frombits(uint32_t bits);
 
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+struct __neverc_std_math_t { char __tag; };
+extern struct __neverc_std_math_t math;
+#endif
+
 #ifdef __cplusplus
 }
 #endif

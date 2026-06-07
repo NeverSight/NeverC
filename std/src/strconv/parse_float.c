@@ -54,12 +54,25 @@ int neverc_strconv_parse_float(const char *s, double *result) {
     if ((s[0] == 'i' || s[0] == 'I') &&
         (s[1] == 'n' || s[1] == 'N') &&
         (s[2] == 'f' || s[2] == 'F')) {
+        s += 3;
+        /* Accept "infinity" (case-insensitive) like Go's ParseFloat */
+        if ((s[0] == 'i' || s[0] == 'I') &&
+            (s[1] == 'n' || s[1] == 'N') &&
+            (s[2] == 'i' || s[2] == 'I') &&
+            (s[3] == 't' || s[3] == 'T') &&
+            (s[4] == 'y' || s[4] == 'Y'))
+            s += 5;
+        while (is_space(*s)) s++;
+        if (*s != '\0') return NEVERC_STRCONV_ERR_SYNTAX;
         *result = nc_make_inf(sign < 0);
         return NEVERC_STRCONV_OK;
     }
     if ((s[0] == 'n' || s[0] == 'N') &&
         (s[1] == 'a' || s[1] == 'A') &&
         (s[2] == 'n' || s[2] == 'N')) {
+        s += 3;
+        while (is_space(*s)) s++;
+        if (*s != '\0') return NEVERC_STRCONV_ERR_SYNTAX;
         *result = nc_make_nan();
         return NEVERC_STRCONV_OK;
     }

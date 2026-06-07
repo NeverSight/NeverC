@@ -1,5 +1,6 @@
 #include "neverc/Analyze/EnterExpressionEvaluationContext.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
+#include "neverc/Foundation/Std/StdModule.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Syntax/ParserGuards.h"
@@ -793,6 +794,35 @@ ExprResult Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
           LHS = Actions.OnBuiltinStringMethodCall(
               getCurScope(), LHS.get(), OpLoc, OpKind, Name, LParenLoc,
               ArgExprs, RParenLoc);
+          PT.consumeClose();
+        }
+        break;
+      }
+
+      if (!LHS.isInvalid() && OpKind == tok::period && Tok.is(tok::l_paren) &&
+          Name.getIdentifierInfo() &&
+          Actions.isStdModuleDotSyntax(LHS.get(),
+                                       Name.getIdentifierInfo())) {
+        BalancedDelimiterTracker PT(*this, tok::l_paren);
+        PT.consumeOpen();
+        SourceLocation LParenLoc = PT.getOpenLocation();
+
+        ExprVector ArgExprs;
+        if (Tok.isNot(tok::r_paren) && ParseExpressionList(ArgExprs)) {
+          (void)Actions.CorrectDelayedTyposInExpr(LHS);
+          LHS = ExprError();
+        }
+
+        if (LHS.isInvalid()) {
+          SkipUntil(tok::r_paren, StopAtSemi);
+        } else if (Tok.isNot(tok::r_paren)) {
+          PT.consumeClose();
+          LHS = ExprError();
+        } else {
+          SourceLocation RParenLoc = Tok.getLocation();
+          LHS = Actions.OnStdModuleMethodCall(
+              getCurScope(), LHS.get(), OpLoc, Name, LParenLoc, ArgExprs,
+              RParenLoc);
           PT.consumeClose();
         }
         break;

@@ -24,4 +24,12 @@ int         neverc_path_isabs(const char *path);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+struct __neverc_std_path_t { char __tag; };
+extern struct __neverc_std_path_t path;
+#endif
+
 #endif /* NEVERC_PATH_H */

@@ -1,7 +1,7 @@
 /*
  * ChaCha20-Poly1305 AEAD tests — RFC 8439 Section 2.8.2 official vectors.
  */
-#include "neverc/chacha20poly1305.h"
+#include "neverc/crypto/chacha20poly1305.h"
 #include <stdio.h>
 #include <string.h>
 

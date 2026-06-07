@@ -58,4 +58,12 @@ neverc_cmplx_t  neverc_cmplx_inf_val(void);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+struct __neverc_std_cmplx_t { char __tag; };
+extern struct __neverc_std_cmplx_t cmplx;
+#endif
+
 #endif /* NEVERC_CMPLX_H */

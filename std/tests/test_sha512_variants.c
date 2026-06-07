@@ -1,9 +1,9 @@
 /*
  * SHA-512/224 and SHA-512/256 tests — FIPS 180-4 official vectors.
  */
-#include "neverc/sha256.h"
-#include "neverc/sha512_224.h"
-#include "neverc/sha512_256.h"
+#include "neverc/crypto/sha256.h"
+#include "neverc/crypto/sha512_224.h"
+#include "neverc/crypto/sha512_256.h"
 #include <stdio.h>
 #include <string.h>
 

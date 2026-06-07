@@ -346,6 +346,10 @@ add_subdirectory(lib)
 # libraries are consumed by the `neverc` executable below.
 add_subdirectory(lib/Linker)
 
+# NeverC standard library (std)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../std
+                 ${CMAKE_CURRENT_BINARY_DIR}/std)
+
 # Platform-specific runtime SDKs (WDK, future Windows SDK, etc.)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../runtime
                  ${CMAKE_CURRENT_BINARY_DIR}/runtime)

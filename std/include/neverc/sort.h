@@ -33,4 +33,12 @@ int  neverc_sort_search_doubles(const double *arr, size_t n, double target);
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+struct __neverc_std_sort_t { char __tag; };
+extern struct __neverc_std_sort_t sort;
+#endif
+
 #endif /* NEVERC_SORT_H */

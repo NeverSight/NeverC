@@ -2,7 +2,7 @@
  * AES-CBC and AES-CTR cipher mode tests.
  * Vectors from NIST SP 800-38A.
  */
-#include "neverc/cipher.h"
+#include "neverc/crypto/cipher.h"
 #include <stdio.h>
 #include <string.h>
 

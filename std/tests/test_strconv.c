@@ -110,6 +110,21 @@ static void test_parse_float(void) {
 
     check_int("float bad",    neverc_strconv_parse_float("abc", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("float empty",  neverc_strconv_parse_float("", &v), NEVERC_STRCONV_ERR_SYNTAX);
+
+    /* Regression: trailing chars after inf/nan were not detected */
+    check_int("float inf",       neverc_strconv_parse_float("inf", &v), 0);
+    check_int("float Inf",       neverc_strconv_parse_float("Inf", &v), 0);
+    check_int("float -inf",      neverc_strconv_parse_float("-inf", &v), 0);
+    check_int("float infinity",  neverc_strconv_parse_float("infinity", &v), 0);
+    check_int("float Infinity",  neverc_strconv_parse_float("Infinity", &v), 0);
+    check_int("float NaN",       neverc_strconv_parse_float("NaN", &v), 0);
+    check_int("float nan",       neverc_strconv_parse_float("nan", &v), 0);
+    check_int("float info=ERR",  neverc_strconv_parse_float("info", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float nan123=ERR",neverc_strconv_parse_float("nan123", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float infix=ERR", neverc_strconv_parse_float("infix", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float nanny=ERR", neverc_strconv_parse_float("nanny", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("float +inf",     neverc_strconv_parse_float("+inf", &v), 0);
+    check_int("float +Infinity",neverc_strconv_parse_float("+Infinity", &v), 0);
 }
 
 /* ===== Itoa ===== */

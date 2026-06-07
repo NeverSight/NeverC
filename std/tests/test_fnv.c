@@ -1,4 +1,4 @@
-#include "neverc/fnv.h"
+#include "neverc/hash/fnv.h"
 #include <stdio.h>
 #include <string.h>
 

@@ -26,4 +26,12 @@ void     neverc_rand_shuffle(int n, void (*swap)(int i, int j));
 }
 #endif
 
+
+/* ===== Std Module Dot-Syntax Support ===== */
+
+#ifdef __neverc__
+struct __neverc_std_rand_t { char __tag; };
+extern struct __neverc_std_rand_t rand;
+#endif
+
 #endif /* NEVERC_RAND_H */

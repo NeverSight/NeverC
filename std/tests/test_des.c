@@ -1,0 +1,261 @@
+#include "neverc/crypto/des.h"
+#include <stdio.h>
+#include <string.h>
+
+static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+
+static void check_int(const char *name, int got, int expected) {
+    tests_run++;
+    if (got == expected) { tests_passed++; }
+    else { tests_failed++; printf("  FAIL: %s: got %d, expected %d\n", name, got, expected); }
+}
+
+static void check_bytes(const char *name, const uint8_t *got, const uint8_t *expected, size_t len) {
+    tests_run++;
+    if (memcmp(got, expected, len) == 0) { tests_passed++; }
+    else {
+        tests_failed++;
+        printf("  FAIL: %s: got [", name);
+        for (size_t i = 0; i < len; i++) printf("%02x", got[i]);
+        printf("], expected [");
+        for (size_t i = 0; i < len; i++) printf("%02x", expected[i]);
+        printf("]\n");
+    }
+}
+
+static void check_true(const char *name, int cond) {
+    tests_run++;
+    if (cond) { tests_passed++; }
+    else { tests_failed++; printf("  FAIL: %s\n", name); }
+}
+
+/*
+ * NIST SP 800-67 Appendix B — DES test vectors.
+ *
+ * Key1 = 0123456789ABCDEF
+ * Key2 = 23456789ABCDEF01
+ * Key3 = 456789ABCDEF0123
+ * Plaintext = "The quic" (5468652071756963)
+ */
+static void test_des_nist(void) {
+    printf("[DES NIST vectors]\n");
+
+    const uint8_t key[] = {0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF};
+    const uint8_t pt[]  = {0x54,0x68,0x65,0x20,0x71,0x75,0x69,0x63};
+
+    neverc_des_cipher_t c;
+    check_int("des init", neverc_des_init(&c, key), 0);
+
+    uint8_t ct[8], decrypted[8];
+    neverc_des_encrypt_block(&c, ct, pt);
+
+    check_true("ciphertext differs from plaintext",
+               memcmp(ct, pt, 8) != 0);
+
+    neverc_des_decrypt_block(&c, decrypted, ct);
+    check_bytes("decrypt recovers plaintext", decrypted, pt, 8);
+}
+
+/*
+ * FIPS PUB 81 — DES known answer test.
+ * Key: 0123456789ABCDEF
+ * Plaintext: 4E6F772069732074 ("Now is t")
+ * Ciphertext: 3FA40E8A984D4815
+ */
+static void test_des_fips81(void) {
+    printf("[DES FIPS 81 vector]\n");
+
+    const uint8_t key[] = {0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF};
+    const uint8_t pt[]  = {0x4E,0x6F,0x77,0x20,0x69,0x73,0x20,0x74};
+    const uint8_t expected_ct[] = {0x3F,0xA4,0x0E,0x8A,0x98,0x4D,0x48,0x15};
+
+    neverc_des_cipher_t c;
+    neverc_des_init(&c, key);
+
+    uint8_t ct[8];
+    neverc_des_encrypt_block(&c, ct, pt);
+    check_bytes("FIPS 81 encrypt", ct, expected_ct, 8);
+
+    uint8_t decrypted[8];
+    neverc_des_decrypt_block(&c, decrypted, ct);
+    check_bytes("FIPS 81 decrypt", decrypted, pt, 8);
+}
+
+/*
+ * 3DES consistency: when K1=K2=K3, 3DES reduces to single DES.
+ * This is because E_K(D_K(E_K(x))) = E_K(x).
+ * This validates the 3DES Feistel round ordering is correct.
+ */
+static void test_3des_consistency_with_des(void) {
+    printf("[3DES consistency with DES]\n");
+
+    const uint8_t single_key[8] = {0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF};
+    const uint8_t triple_key[24] = {
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+    };
+    const uint8_t pt[] = {0x54,0x68,0x65,0x20,0x71,0x75,0x69,0x63};
+
+    neverc_des_cipher_t des;
+    neverc_3des_cipher_t tdes;
+    neverc_des_init(&des, single_key);
+    neverc_3des_init(&tdes, triple_key);
+
+    uint8_t ct_des[8], ct_3des[8];
+    neverc_des_encrypt_block(&des, ct_des, pt);
+    neverc_3des_encrypt_block(&tdes, ct_3des, pt);
+
+    check_bytes("3DES(K,K,K) == DES(K)", ct_3des, ct_des, 8);
+
+    uint8_t dec_des[8], dec_3des[8];
+    neverc_des_decrypt_block(&des, dec_des, ct_des);
+    neverc_3des_decrypt_block(&tdes, dec_3des, ct_3des);
+    check_bytes("3DES decrypt == DES decrypt", dec_3des, dec_des, 8);
+    check_bytes("3DES decrypt recovers pt", dec_3des, pt, 8);
+}
+
+static void test_3des_roundtrip_different_keys(void) {
+    printf("[3DES roundtrip with 3 different keys]\n");
+
+    const uint8_t key[24] = {
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+        0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,0x01,
+        0x45,0x67,0x89,0xAB,0xCD,0xEF,0x01,0x23,
+    };
+    const uint8_t pt[] = {0x54,0x68,0x65,0x20,0x71,0x75,0x69,0x63};
+
+    neverc_3des_cipher_t c;
+    check_int("3des init", neverc_3des_init(&c, key), 0);
+
+    uint8_t ct[8], decrypted[8];
+    neverc_3des_encrypt_block(&c, ct, pt);
+    check_true("3DES ct differs from pt", memcmp(ct, pt, 8) != 0);
+
+    neverc_3des_decrypt_block(&c, decrypted, ct);
+    check_bytes("3DES decrypt recovers pt", decrypted, pt, 8);
+}
+
+static void test_3des_roundtrip(void) {
+    printf("[3DES roundtrip]\n");
+
+    const uint8_t key[24] = {
+        0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,
+        0xAA,0xBB,0xCC,0xDD,0xEE,0xFF,0x00,0x11,
+        0x99,0x88,0x77,0x66,0x55,0x44,0x33,0x22,
+    };
+
+    neverc_3des_cipher_t c;
+    neverc_3des_init(&c, key);
+
+    uint8_t blocks[8][8] = {
+        {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
+        {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
+        {0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08},
+        {0xDE,0xAD,0xBE,0xEF,0xCA,0xFE,0xBA,0xBE},
+        {0x80,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
+        {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01},
+        {0x48,0x65,0x6C,0x6C,0x6F,0x21,0x21,0x21},
+        {0x55,0xAA,0x55,0xAA,0x55,0xAA,0x55,0xAA},
+    };
+
+    char name[64];
+    for (int i = 0; i < 8; i++) {
+        uint8_t ct[8], dec[8];
+        neverc_3des_encrypt_block(&c, ct, blocks[i]);
+        neverc_3des_decrypt_block(&c, dec, ct);
+        snprintf(name, sizeof(name), "3DES roundtrip block %d", i);
+        check_bytes(name, dec, blocks[i], 8);
+    }
+}
+
+static void test_des_all_zeros(void) {
+    printf("[DES all-zeros key]\n");
+
+    const uint8_t key[8] = {0,0,0,0,0,0,0,0};
+    const uint8_t pt[8]  = {0,0,0,0,0,0,0,0};
+    const uint8_t expected_ct[] = {0x8C,0xA6,0x4D,0xE9,0xC1,0xB1,0x23,0xA7};
+
+    neverc_des_cipher_t c;
+    neverc_des_init(&c, key);
+    uint8_t ct[8];
+    neverc_des_encrypt_block(&c, ct, pt);
+    check_bytes("all zeros encrypt", ct, expected_ct, 8);
+
+    uint8_t dec[8];
+    neverc_des_decrypt_block(&c, dec, ct);
+    check_bytes("all zeros decrypt", dec, pt, 8);
+}
+
+static void test_des_weak_keys(void) {
+    printf("[DES weak key detection]\n");
+
+    /* DES weak keys encrypt == decrypt (each subkey is the same) */
+    const uint8_t weak_key[] = {0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01};
+    const uint8_t pt[] = {0x12,0x34,0x56,0x78,0x9A,0xBC,0xDE,0xF0};
+
+    neverc_des_cipher_t c;
+    neverc_des_init(&c, weak_key);
+
+    uint8_t ct[8], double_enc[8];
+    neverc_des_encrypt_block(&c, ct, pt);
+    neverc_des_encrypt_block(&c, double_enc, ct);
+
+    check_bytes("weak key: E(E(pt)) == pt (involution)", double_enc, pt, 8);
+}
+
+static void test_des_different_keys(void) {
+    printf("[DES different keys]\n");
+
+    const uint8_t key1[] = {0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF};
+    const uint8_t key2[] = {0xFE,0xDC,0xBA,0x98,0x76,0x54,0x32,0x10};
+    const uint8_t pt[]   = {0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48};
+
+    neverc_des_cipher_t c1, c2;
+    neverc_des_init(&c1, key1);
+    neverc_des_init(&c2, key2);
+
+    uint8_t ct1[8], ct2[8];
+    neverc_des_encrypt_block(&c1, ct1, pt);
+    neverc_des_encrypt_block(&c2, ct2, pt);
+
+    check_true("different keys produce different ciphertext",
+               memcmp(ct1, ct2, 8) != 0);
+}
+
+static void test_3des_two_key(void) {
+    printf("[3DES two-key (K1=K3)]\n");
+
+    const uint8_t key[24] = {
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+        0xFE,0xDC,0xBA,0x98,0x76,0x54,0x32,0x10,
+        0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,
+    };
+    const uint8_t pt[] = {0x48,0x65,0x6C,0x6C,0x6F,0x2C,0x20,0x57};
+
+    neverc_3des_cipher_t c;
+    neverc_3des_init(&c, key);
+
+    uint8_t ct[8], dec[8];
+    neverc_3des_encrypt_block(&c, ct, pt);
+    neverc_3des_decrypt_block(&c, dec, ct);
+    check_bytes("two-key 3DES roundtrip", dec, pt, 8);
+}
+
+int main(void) {
+    printf("=== NeverC DES Tests ===\n\n");
+    test_des_nist();
+    test_des_fips81();
+    test_3des_consistency_with_des();
+    test_3des_roundtrip_different_keys();
+    test_3des_roundtrip();
+    test_des_all_zeros();
+    test_des_weak_keys();
+    test_des_different_keys();
+    test_3des_two_key();
+
+    printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
+    if (tests_failed > 0) printf(", %d FAILED", tests_failed);
+    printf(" ===\n");
+    return tests_failed > 0 ? 1 : 0;
+}

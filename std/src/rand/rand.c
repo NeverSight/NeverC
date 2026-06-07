@@ -77,7 +77,12 @@ float neverc_rand_float32(void) {
 
 void neverc_rand_shuffle(int n, void (*swap)(int i, int j)) {
     for (int i = n - 1; i > 0; i--) {
-        int j = (int)(next() % (uint64_t)(i + 1));
-        swap(i, j);
+        /* Rejection sampling to eliminate modulo bias, consistent with intn */
+        uint64_t bound = (uint64_t)(i + 1);
+        uint64_t max = (uint64_t)((1ULL << 63) - 1 - (1ULL << 63) % bound);
+        uint64_t v = next() >> 1;
+        while (v > max)
+            v = next() >> 1;
+        swap(i, (int)(v % bound));
     }
 }
