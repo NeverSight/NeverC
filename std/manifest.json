@@ -2996,6 +2996,52 @@
         "clone": "neverc_cstring_clone",
         "len": "neverc_cstring_len"
       }
+    },
+    "regexp/syntax": {
+      "header": "include/neverc/std/regexp_syntax.h",
+      "description": "Regex parse tree — parses regex patterns into ASTs (mirrors Go regexp/syntax)",
+      "symbols": {
+        "neverc_regexp_syntax_parse": "src/regexp/syntax/syntax.c",
+        "neverc_regexp_syntax_free": "src/regexp/syntax/syntax.c",
+        "neverc_regexp_syntax_string": "src/regexp/syntax/syntax.c",
+        "neverc_regexp_syntax_equal": "src/regexp/syntax/syntax.c",
+        "neverc_regexp_syntax_op_string": "src/regexp/syntax/syntax.c",
+        "neverc_regexp_syntax_node_count": "src/regexp/syntax/syntax.c"
+      },
+      "dot_methods": {
+        "parse": "neverc_regexp_syntax_parse",
+        "free": "neverc_regexp_syntax_free",
+        "string": "neverc_regexp_syntax_string",
+        "equal": "neverc_regexp_syntax_equal",
+        "op_string": "neverc_regexp_syntax_op_string",
+        "node_count": "neverc_regexp_syntax_node_count"
+      }
+    },
+    "time/tzdata": {
+      "header": "include/neverc/std/time_tzdata.h",
+      "description": "Embedded timezone data — 100+ IANA timezones with UTC offsets and DST rules (mirrors Go time/tzdata)",
+      "symbols": {
+        "neverc_tzdata_lookup": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_lookup_abbrev": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_fixed_zone": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_count": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_at": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_list": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_utc": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_local": "src/time/tzdata/tzdata.c",
+        "neverc_tzdata_offset_for_month": "src/time/tzdata/tzdata.c"
+      },
+      "dot_methods": {
+        "lookup": "neverc_tzdata_lookup",
+        "lookup_abbrev": "neverc_tzdata_lookup_abbrev",
+        "fixed_zone": "neverc_tzdata_fixed_zone",
+        "count": "neverc_tzdata_count",
+        "at": "neverc_tzdata_at",
+        "list": "neverc_tzdata_list",
+        "utc": "neverc_tzdata_utc",
+        "local": "neverc_tzdata_local",
+        "offset_for_month": "neverc_tzdata_offset_for_month"
+      }
     }
   }
 }

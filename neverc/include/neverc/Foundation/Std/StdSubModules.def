@@ -134,4 +134,10 @@ STD_SUBMODULE(debug, plan9obj)
 // crypto (x509 addition)
 STD_SUBMODULE(crypto, x509)
 
+// regexp
+STD_SUBMODULE(regexp, syntax)
+
+// time
+STD_SUBMODULE(time, tzdata)
+
 #undef STD_SUBMODULE

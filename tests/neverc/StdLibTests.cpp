@@ -216,6 +216,12 @@ STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")
 // ===== Crypto (x509) =====
 STD_TEST(x509, "src/crypto/x509/x509.c")
 
+// ===== Regexp =====
+STD_TEST(regexp_syntax, "src/regexp/syntax/syntax.c")
+
+// ===== Time =====
+STD_TEST(tzdata, "src/time/tzdata/tzdata.c")
+
 // ===== CString =====
 STD_TEST(cstring, "src/cstring/cstring.c")
 
