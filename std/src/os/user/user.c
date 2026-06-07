@@ -8,6 +8,8 @@
 #include <sddl.h>
 #include <lmcons.h>
 #include <shlobj.h>
+#pragma comment(lib, "advapi32.lib")
+#pragma comment(lib, "shell32.lib")
 
 int neverc_user_current(neverc_user_t *u) {
     if (!u) return -1;

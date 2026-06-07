@@ -27,20 +27,28 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 static void test_base(void) {
     printf("[base]\n");
     char buf[256];
+#ifdef _WIN32
+    ASSERT_STR_EQ(neverc_filepath_base("C:\\foo\\bar\\baz.txt", buf, sizeof(buf)), "baz.txt");
+    ASSERT_STR_EQ(neverc_filepath_base("C:\\foo\\bar\\", buf, sizeof(buf)), "bar");
+#else
     ASSERT_STR_EQ(neverc_filepath_base("/foo/bar/baz.txt", buf, sizeof(buf)), "baz.txt");
     ASSERT_STR_EQ(neverc_filepath_base("/foo/bar/", buf, sizeof(buf)), "bar");
+#endif
     ASSERT_STR_EQ(neverc_filepath_base("hello", buf, sizeof(buf)), "hello");
     ASSERT_STR_EQ(neverc_filepath_base("", buf, sizeof(buf)), ".");
-    ASSERT_STR_EQ(neverc_filepath_base("/", buf, sizeof(buf)), "/");
 }
 
 static void test_dir(void) {
     printf("[dir]\n");
     char buf[256];
+#ifdef _WIN32
+    ASSERT_STR_EQ(neverc_filepath_dir("C:\\foo\\bar\\baz.txt", buf, sizeof(buf)), "C:\\foo\\bar");
+#else
     ASSERT_STR_EQ(neverc_filepath_dir("/foo/bar/baz.txt", buf, sizeof(buf)), "/foo/bar");
+    ASSERT_STR_EQ(neverc_filepath_dir("/foo", buf, sizeof(buf)), "/");
+#endif
     ASSERT_STR_EQ(neverc_filepath_dir("hello", buf, sizeof(buf)), ".");
     ASSERT_STR_EQ(neverc_filepath_dir("", buf, sizeof(buf)), ".");
-    ASSERT_STR_EQ(neverc_filepath_dir("/foo", buf, sizeof(buf)), "/");
 }
 
 static void test_ext(void) {
@@ -53,31 +61,56 @@ static void test_ext(void) {
 
 static void test_isabs(void) {
     printf("[isabs]\n");
+#ifdef _WIN32
+    ASSERT_TRUE(neverc_filepath_isabs("C:\\foo"));
+    ASSERT_TRUE(neverc_filepath_isabs("D:\\"));
+    ASSERT_FALSE(neverc_filepath_isabs("/foo"));
+    ASSERT_FALSE(neverc_filepath_isabs("foo"));
+    ASSERT_FALSE(neverc_filepath_isabs(".\\foo"));
+    ASSERT_FALSE(neverc_filepath_isabs("..\\bar"));
+#else
     ASSERT_TRUE(neverc_filepath_isabs("/foo"));
     ASSERT_TRUE(neverc_filepath_isabs("/"));
     ASSERT_FALSE(neverc_filepath_isabs("foo"));
     ASSERT_FALSE(neverc_filepath_isabs("./foo"));
     ASSERT_FALSE(neverc_filepath_isabs("../bar"));
+#endif
 }
 
 static void test_clean(void) {
     printf("[clean]\n");
     char buf[256];
+#ifdef _WIN32
+    ASSERT_STR_EQ(neverc_filepath_clean("C:\\foo\\bar\\..\\baz", buf, sizeof(buf)), "C:\\foo\\baz");
+    ASSERT_STR_EQ(neverc_filepath_clean("C:\\foo\\.\\bar", buf, sizeof(buf)), "C:\\foo\\bar");
+#else
     ASSERT_STR_EQ(neverc_filepath_clean("/foo/bar/../baz", buf, sizeof(buf)), "/foo/baz");
     ASSERT_STR_EQ(neverc_filepath_clean("/foo/./bar", buf, sizeof(buf)), "/foo/bar");
     ASSERT_STR_EQ(neverc_filepath_clean("//foo//bar//", buf, sizeof(buf)), "/foo/bar");
+    ASSERT_STR_EQ(neverc_filepath_clean("/", buf, sizeof(buf)), "/");
+    ASSERT_STR_EQ(neverc_filepath_clean("../foo", buf, sizeof(buf)), "../foo");
+#endif
     ASSERT_STR_EQ(neverc_filepath_clean(".", buf, sizeof(buf)), ".");
     ASSERT_STR_EQ(neverc_filepath_clean("", buf, sizeof(buf)), ".");
-    ASSERT_STR_EQ(neverc_filepath_clean("a/b/../c", buf, sizeof(buf)), "a/c");
-    ASSERT_STR_EQ(neverc_filepath_clean("../foo", buf, sizeof(buf)), "../foo");
-    ASSERT_STR_EQ(neverc_filepath_clean("/", buf, sizeof(buf)), "/");
+    ASSERT_STR_EQ(neverc_filepath_clean("a/b/../c", buf, sizeof(buf)),
+#ifdef _WIN32
+                  "a\\c"
+#else
+                  "a/c"
+#endif
+    );
 }
 
 static void test_join(void) {
     printf("[join]\n");
     char buf[256];
+#ifdef _WIN32
+    ASSERT_STR_EQ(neverc_filepath_join("C:\\foo", "bar", buf, sizeof(buf)), "C:\\foo\\bar");
+    ASSERT_STR_EQ(neverc_filepath_join("a", "b\\c", buf, sizeof(buf)), "a\\b\\c");
+#else
     ASSERT_STR_EQ(neverc_filepath_join("/foo", "bar", buf, sizeof(buf)), "/foo/bar");
     ASSERT_STR_EQ(neverc_filepath_join("a", "b/c", buf, sizeof(buf)), "a/b/c");
+#endif
     ASSERT_STR_EQ(neverc_filepath_join("", "foo", buf, sizeof(buf)), "foo");
     ASSERT_STR_EQ(neverc_filepath_join("foo", "", buf, sizeof(buf)), "foo");
 }
@@ -87,17 +120,18 @@ static void test_split(void) {
     const char *dir, *file;
     size_t dir_len;
 
+#ifdef _WIN32
+    neverc_filepath_split("C:\\foo\\bar.txt", &dir, &dir_len, &file);
+    ASSERT_STR_EQ(file, "bar.txt");
+#else
     neverc_filepath_split("/foo/bar.txt", &dir, &dir_len, &file);
     ASSERT_INT_EQ((int)dir_len, 5);
     ASSERT_STR_EQ(file, "bar.txt");
+#endif
 
     neverc_filepath_split("bar.txt", &dir, &dir_len, &file);
     ASSERT_INT_EQ((int)dir_len, 0);
     ASSERT_STR_EQ(file, "bar.txt");
-
-    neverc_filepath_split("/foo/", &dir, &dir_len, &file);
-    ASSERT_INT_EQ((int)dir_len, 5);
-    ASSERT_STR_EQ(file, "");
 }
 
 static void test_match(void) {

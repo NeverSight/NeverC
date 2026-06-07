@@ -1,6 +1,7 @@
 #include "neverc/std/mime/multipart.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -32,17 +33,18 @@ static void test_parse_basic(void) {
         "<p>Hi</p>\r\n"
         "--boundary--\r\n";
 
-    neverc_multipart_reader_t reader;
-    ASSERT_EQ(neverc_multipart_parse((const unsigned char*)data, strlen(data), "boundary", &reader), 0);
-    ASSERT_EQ(reader.part_count, 2);
+    neverc_multipart_reader_t *reader = (neverc_multipart_reader_t *)calloc(1, sizeof(*reader));
+    ASSERT_EQ(neverc_multipart_parse((const unsigned char*)data, strlen(data), "boundary", reader), 0);
+    ASSERT_EQ(reader->part_count, 2);
 
-    ASSERT_STREQ(neverc_multipart_part_header(&reader.parts[0], "Content-Type"), "text/plain");
-    ASSERT_EQ(reader.parts[0].body_len, 11);
-    ASSERT_TRUE(memcmp(reader.parts[0].body, "Hello World", 11) == 0);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "Content-Type"), "text/plain");
+    ASSERT_EQ(reader->parts[0].body_len, 11);
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "Hello World", 11) == 0);
 
-    ASSERT_STREQ(neverc_multipart_part_header(&reader.parts[1], "Content-Type"), "text/html");
-    ASSERT_EQ(reader.parts[1].body_len, 9);
-    ASSERT_TRUE(memcmp(reader.parts[1].body, "<p>Hi</p>", 9) == 0);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[1], "Content-Type"), "text/html");
+    ASSERT_EQ(reader->parts[1].body_len, 9);
+    ASSERT_TRUE(memcmp(reader->parts[1].body, "<p>Hi</p>", 9) == 0);
+    free(reader);
 }
 
 static void test_parse_multiple_headers(void) {
@@ -55,12 +57,13 @@ static void test_parse_multiple_headers(void) {
         "binary data here\r\n"
         "--sep--\r\n";
 
-    neverc_multipart_reader_t reader;
-    ASSERT_EQ(neverc_multipart_parse((const unsigned char*)data, strlen(data), "sep", &reader), 0);
-    ASSERT_EQ(reader.part_count, 1);
-    ASSERT_EQ(reader.parts[0].header_count, 2);
-    ASSERT_STREQ(neverc_multipart_part_header(&reader.parts[0], "content-disposition"),
+    neverc_multipart_reader_t *reader = (neverc_multipart_reader_t *)calloc(1, sizeof(*reader));
+    ASSERT_EQ(neverc_multipart_parse((const unsigned char*)data, strlen(data), "sep", reader), 0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_EQ(reader->parts[0].header_count, 2);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "content-disposition"),
                  "form-data; name=\"file\"");
+    free(reader);
 }
 
 static void test_write_roundtrip(void) {
@@ -86,14 +89,14 @@ static void test_write_roundtrip(void) {
     int n = neverc_multipart_write(parts, 2, "testbnd", out, sizeof(out));
     ASSERT_TRUE(n > 0);
 
-    /* Parse it back */
-    neverc_multipart_reader_t reader;
-    ASSERT_EQ(neverc_multipart_parse(out, (size_t)n, "testbnd", &reader), 0);
-    ASSERT_EQ(reader.part_count, 2);
-    ASSERT_EQ(reader.parts[0].body_len, 5);
-    ASSERT_TRUE(memcmp(reader.parts[0].body, "Hello", 5) == 0);
-    ASSERT_EQ(reader.parts[1].body_len, 9);
-    ASSERT_TRUE(memcmp(reader.parts[1].body, "<b>Hi</b>", 9) == 0);
+    neverc_multipart_reader_t *reader = (neverc_multipart_reader_t *)calloc(1, sizeof(*reader));
+    ASSERT_EQ(neverc_multipart_parse(out, (size_t)n, "testbnd", reader), 0);
+    ASSERT_EQ(reader->part_count, 2);
+    ASSERT_EQ(reader->parts[0].body_len, 5);
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "Hello", 5) == 0);
+    ASSERT_EQ(reader->parts[1].body_len, 9);
+    ASSERT_TRUE(memcmp(reader->parts[1].body, "<b>Hi</b>", 9) == 0);
+    free(reader);
 }
 
 static void test_generate_boundary(void) {

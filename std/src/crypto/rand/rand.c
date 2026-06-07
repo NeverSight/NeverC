@@ -21,6 +21,21 @@ int neverc_crypto_rand_int(uint64_t *out, uint64_t max) {
     }
 }
 
+static uint64_t mulmod64(uint64_t a, uint64_t b, uint64_t m) {
+#if defined(_WIN32)
+    uint64_t result = 0;
+    a %= m;
+    while (b > 0) {
+        if (b & 1) { result = result > m - a ? result - (m - a) : result + a; }
+        a = a > m - a ? a - (m - a) : a + a;
+        b >>= 1;
+    }
+    return result;
+#else
+    return (uint64_t)((__uint128_t)a * b % m);
+#endif
+}
+
 static int miller_rabin_small(uint64_t n, uint64_t a) {
     if (n < 2) return 0;
     if (n == 2 || n == 3) return 1;
@@ -30,21 +45,18 @@ static int miller_rabin_small(uint64_t n, uint64_t a) {
     int r = 0;
     while ((d & 1) == 0) { d >>= 1; r++; }
 
-    /* Compute a^d mod n using modular exponentiation */
-    __uint128_t x = 1;
-    __uint128_t base = a % n;
+    uint64_t xval = 1;
+    uint64_t base = a % n;
     uint64_t exp = d;
     while (exp > 0) {
-        if (exp & 1) x = (x * base) % n;
-        base = (base * base) % n;
+        if (exp & 1) xval = mulmod64(xval, base, n);
+        base = mulmod64(base, base, n);
         exp >>= 1;
     }
-    uint64_t xval = (uint64_t)x;
 
     if (xval == 1 || xval == n - 1) return 1;
     for (int i = 0; i < r - 1; i++) {
-        x = ((__uint128_t)xval * xval) % n;
-        xval = (uint64_t)x;
+        xval = mulmod64(xval, xval, n);
         if (xval == n - 1) return 1;
     }
     return 0;

@@ -14,6 +14,8 @@
 #include <direct.h>
 #include <io.h>
 #include <process.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #else
 #include <unistd.h>
 #include <sys/stat.h>

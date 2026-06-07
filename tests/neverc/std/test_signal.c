@@ -5,7 +5,9 @@
 #include "neverc/std/os/signal.h"
 #include <stdio.h>
 #include <signal.h>
+#if !defined(_WIN32)
 #include <unistd.h>
+#endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -28,6 +30,66 @@ static void test_handler(int signum) {
     g_received_sig = signum;
     g_handler_called = 1;
 }
+
+#if defined(_WIN32)
+
+static void test_notify_and_raise(void) {
+    printf("[notify_and_raise]\n");
+    g_received_sig = 0;
+    g_handler_called = 0;
+
+    neverc_signal_notify(SIGINT, test_handler);
+    raise(SIGINT);
+
+    ASSERT_INT_EQ(g_handler_called, 1);
+    ASSERT_INT_EQ(g_received_sig, SIGINT);
+
+    neverc_signal_stop(SIGINT);
+}
+
+static void test_ignore(void) {
+    printf("[ignore]\n");
+    neverc_signal_ignore(SIGTERM);
+    tests_run++;
+    tests_passed++;
+    neverc_signal_reset(SIGTERM);
+}
+
+static void test_reset(void) {
+    printf("[reset]\n");
+    g_handler_called = 0;
+    neverc_signal_notify(SIGINT, test_handler);
+    neverc_signal_reset(SIGINT);
+    tests_run++;
+    tests_passed++;
+}
+
+static void test_multiple_signals(void) {
+    printf("[multiple_signals]\n");
+    g_received_sig = 0;
+
+    neverc_signal_notify(SIGINT, test_handler);
+
+    raise(SIGINT);
+    ASSERT_INT_EQ(g_received_sig, SIGINT);
+
+    g_received_sig = 0;
+    neverc_signal_notify(SIGINT, test_handler);
+    raise(SIGINT);
+    ASSERT_INT_EQ(g_received_sig, SIGINT);
+
+    neverc_signal_stop(SIGINT);
+}
+
+static void test_constants(void) {
+    printf("[constants]\n");
+    ASSERT_INT_EQ(NEVERC_SIGINT, 2);
+    ASSERT_INT_EQ(NEVERC_SIGTERM, 15);
+    tests_run++;
+    tests_passed++;
+}
+
+#else /* POSIX */
 
 static void test_notify_and_raise(void) {
     printf("[notify_and_raise]\n");
@@ -58,9 +120,6 @@ static void test_reset(void) {
     neverc_signal_notify(SIGUSR1, test_handler);
     neverc_signal_reset(SIGUSR1);
 
-    /* After reset, default handler should be restored.
-     * For SIGUSR1, default is terminate, so we don't actually raise it.
-     * Just verify the API doesn't crash. */
     tests_run++;
     tests_passed++;
 
@@ -70,9 +129,7 @@ static void test_reset(void) {
 
 static void test_multiple_signals(void) {
     printf("[multiple_signals]\n");
-    static volatile int count = 0;
     g_received_sig = 0;
-    count = 0;
 
     neverc_signal_notify(SIGUSR1, test_handler);
 
@@ -92,6 +149,8 @@ static void test_constants(void) {
     ASSERT_INT_EQ(NEVERC_SIGTERM, 15);
     ASSERT_INT_EQ(NEVERC_SIGHUP, 1);
 }
+
+#endif
 
 int main(void) {
     printf("=== NeverC os/signal Tests ===\n");

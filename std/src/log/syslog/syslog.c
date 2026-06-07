@@ -16,6 +16,7 @@ struct neverc_syslog {
 #if defined(NEVERC_PLATFORM_WINDOWS)
 /* Windows: use Event Log API */
 #include <windows.h>
+#pragma comment(lib, "advapi32.lib")
 
 neverc_syslog_t *neverc_syslog_open(const char *tag,
                                      neverc_syslog_facility_t facility,

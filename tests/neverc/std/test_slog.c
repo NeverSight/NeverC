@@ -67,7 +67,11 @@ static void test_handler_init(void) {
 static void test_level_filtering(void) {
     printf("[level_filtering]\n");
     neverc_slog_handler_t h;
+#if defined(_WIN32)
+    FILE *f = fopen("NUL", "w");
+#else
     FILE *f = fopen("/dev/null", "w");
+#endif
     neverc_slog_init(&h, f, NEVERC_SLOG_WARN, NEVERC_SLOG_FORMAT_TEXT);
 
     neverc_slog_log(&h, NEVERC_SLOG_INFO, "should not appear", NULL, 0);
@@ -82,7 +86,12 @@ static void test_level_filtering(void) {
 static void test_text_output(void) {
     printf("[text_output]\n");
     char buf[4096];
+    memset(buf, 0, sizeof(buf));
+#if defined(_WIN32)
+    FILE *f = tmpfile();
+#else
     FILE *f = fmemopen(buf, sizeof(buf), "w");
+#endif
     neverc_slog_handler_t h;
     neverc_slog_init(&h, f, NEVERC_SLOG_DEBUG, NEVERC_SLOG_FORMAT_TEXT);
 
@@ -91,6 +100,12 @@ static void test_text_output(void) {
         neverc_slog_int64("age", 30)
     };
     neverc_slog_log(&h, NEVERC_SLOG_INFO, "hello", attrs, 2);
+#if defined(_WIN32)
+    fflush(f);
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+#endif
     fclose(f);
 
     ASSERT_TRUE(strstr(buf, "level=INFO") != NULL);
@@ -102,7 +117,12 @@ static void test_text_output(void) {
 static void test_json_output(void) {
     printf("[json_output]\n");
     char buf[4096];
+    memset(buf, 0, sizeof(buf));
+#if defined(_WIN32)
+    FILE *f = tmpfile();
+#else
     FILE *f = fmemopen(buf, sizeof(buf), "w");
+#endif
     neverc_slog_handler_t h;
     neverc_slog_init(&h, f, NEVERC_SLOG_DEBUG, NEVERC_SLOG_FORMAT_JSON);
 
@@ -111,6 +131,12 @@ static void test_json_output(void) {
         neverc_slog_bool("ok", 1)
     };
     neverc_slog_log(&h, NEVERC_SLOG_ERROR, "fail", attrs, 2);
+#if defined(_WIN32)
+    fflush(f);
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+#endif
     fclose(f);
 
     ASSERT_TRUE(strstr(buf, "\"level\":\"ERROR\"") != NULL);

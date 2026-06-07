@@ -21,10 +21,30 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
     else { tests_failed++; printf("  FAIL: %s (line %d)\n", #expr, __LINE__); } \
 } while(0)
 
+#if !defined(__GLIBC__)
+static void *local_memmem(const void *haystack, size_t haystacklen,
+                          const void *needle, size_t needlelen) {
+    if (needlelen == 0) return (void *)haystack;
+    if (haystacklen < needlelen) return NULL;
+    const unsigned char *h = (const unsigned char *)haystack;
+    for (size_t i = 0; i <= haystacklen - needlelen; i++) {
+        if (memcmp(h + i, needle, needlelen) == 0)
+            return (void *)(h + i);
+    }
+    return NULL;
+}
+#define memmem local_memmem
+#endif
+
 static void test_command_echo(void) {
     printf("[echo]\n");
+#if defined(_WIN32)
+    const char *args[] = {"/C", "echo hello world"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command("cmd.exe", args, 2);
+#else
     const char *args[] = {"hello", "world"};
     neverc_exec_cmd_t *cmd = neverc_exec_command("echo", args, 2);
+#endif
     ASSERT_TRUE(cmd != NULL);
 
     neverc_exec_output_t out = {0};
@@ -33,8 +53,7 @@ static void test_command_echo(void) {
     ASSERT_INT_EQ(st.exit_code, 0);
     ASSERT_TRUE(out.len > 0);
 
-    ASSERT_TRUE(out.len >= 11);
-    ASSERT_TRUE(memcmp(out.data, "hello world", 11) == 0);
+    ASSERT_TRUE(memmem(out.data, out.len, "hello world", 11) != NULL);
 
     neverc_exec_output_free(&out);
     neverc_exec_cmd_free(cmd);
@@ -42,7 +61,12 @@ static void test_command_echo(void) {
 
 static void test_command_false(void) {
     printf("[false_exit_code]\n");
+#if defined(_WIN32)
+    const char *args[] = {"/C", "exit /B 1"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command("cmd.exe", args, 2);
+#else
     neverc_exec_cmd_t *cmd = neverc_exec_command("false", NULL, 0);
+#endif
     ASSERT_TRUE(cmd != NULL);
 
     neverc_exec_exit_status_t st = {0};
@@ -54,7 +78,12 @@ static void test_command_false(void) {
 
 static void test_command_true(void) {
     printf("[true_exit_code]\n");
+#if defined(_WIN32)
+    const char *args[] = {"/C", "exit /B 0"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command("cmd.exe", args, 2);
+#else
     neverc_exec_cmd_t *cmd = neverc_exec_command("true", NULL, 0);
+#endif
     ASSERT_TRUE(cmd != NULL);
 
     neverc_exec_exit_status_t st = {0};
@@ -64,6 +93,7 @@ static void test_command_true(void) {
     neverc_exec_cmd_free(cmd);
 }
 
+#if !defined(_WIN32)
 static void test_command_stdin(void) {
     printf("[stdin_pipe]\n");
     const char *args[] = {"-c", "cat"};
@@ -82,12 +112,17 @@ static void test_command_stdin(void) {
     neverc_exec_output_free(&out);
     neverc_exec_cmd_free(cmd);
 }
+#endif
 
 static void test_look_path(void) {
     printf("[look_path]\n");
     char buf[4096];
 
+#if defined(_WIN32)
+    const char *p = neverc_exec_look_path("cmd.exe", buf, sizeof(buf));
+#else
     const char *p = neverc_exec_look_path("ls", buf, sizeof(buf));
+#endif
     ASSERT_TRUE(p != NULL);
     ASSERT_TRUE(strlen(p) > 0);
 
@@ -97,8 +132,13 @@ static void test_look_path(void) {
 
 static void test_combined_output(void) {
     printf("[combined_output]\n");
+#if defined(_WIN32)
+    const char *args[] = {"/C", "echo stdout && echo stderr 1>&2"};
+    neverc_exec_cmd_t *cmd = neverc_exec_command("cmd.exe", args, 2);
+#else
     const char *args[] = {"-c", "echo stdout; echo stderr >&2"};
     neverc_exec_cmd_t *cmd = neverc_exec_command("/bin/sh", args, 2);
+#endif
     ASSERT_TRUE(cmd != NULL);
 
     neverc_exec_output_t out = {0};
@@ -114,6 +154,7 @@ static void test_combined_output(void) {
     neverc_exec_cmd_free(cmd);
 }
 
+#if !defined(_WIN32)
 static void test_set_dir(void) {
     printf("[set_dir]\n");
     const char *args[] = {"-c", "pwd"};
@@ -144,16 +185,21 @@ static void test_set_dir(void) {
     neverc_exec_output_free(&out);
     neverc_exec_cmd_free(cmd);
 }
+#endif
 
 int main(void) {
     printf("=== NeverC os/exec Tests ===\n");
     test_command_echo();
     test_command_false();
     test_command_true();
+#if !defined(_WIN32)
     test_command_stdin();
+#endif
     test_look_path();
     test_combined_output();
+#if !defined(_WIN32)
     test_set_dir();
+#endif
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

@@ -1,6 +1,10 @@
 #include "neverc/std/sync/atomic.h"
 #include <stdio.h>
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <pthread.h>
+#endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -93,21 +97,39 @@ static volatile int32_t shared_counter = 0;
 #define NUM_THREADS 4
 #define INCREMENTS 100000
 
+#if defined(_WIN32)
+static DWORD WINAPI thread_increment(LPVOID arg) {
+    (void)arg;
+    for (int i = 0; i < INCREMENTS; i++)
+        neverc_atomic_add_int32(&shared_counter, 1);
+    return 0;
+}
+#else
 static void *thread_increment(void *arg) {
     (void)arg;
     for (int i = 0; i < INCREMENTS; i++)
         neverc_atomic_add_int32(&shared_counter, 1);
     return NULL;
 }
+#endif
 
 static void test_concurrent_add(void) {
     printf("[concurrent_add]\n");
     shared_counter = 0;
+#if defined(_WIN32)
+    HANDLE threads[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++)
+        threads[i] = CreateThread(NULL, 0, thread_increment, NULL, 0, NULL);
+    WaitForMultipleObjects(NUM_THREADS, threads, TRUE, INFINITE);
+    for (int i = 0; i < NUM_THREADS; i++)
+        CloseHandle(threads[i]);
+#else
     pthread_t threads[NUM_THREADS];
     for (int i = 0; i < NUM_THREADS; i++)
         pthread_create(&threads[i], NULL, thread_increment, NULL);
     for (int i = 0; i < NUM_THREADS; i++)
         pthread_join(threads[i], NULL);
+#endif
     ASSERT_INT_EQ(neverc_atomic_load_int32(&shared_counter), NUM_THREADS * INCREMENTS);
 }
 

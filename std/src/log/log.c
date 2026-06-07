@@ -31,10 +31,17 @@ static void write_header(neverc_log_logger_t *l) {
         time_t now = time(NULL);
         struct tm tm_buf;
         struct tm *tm;
+#if defined(_WIN32)
+        if (l->flags & NEVERC_LOG_LUTC)
+            { gmtime_s(&tm_buf, &now); tm = &tm_buf; }
+        else
+            { localtime_s(&tm_buf, &now); tm = &tm_buf; }
+#else
         if (l->flags & NEVERC_LOG_LUTC)
             tm = gmtime_r(&now, &tm_buf);
         else
             tm = localtime_r(&now, &tm_buf);
+#endif
 
         if (l->flags & NEVERC_LOG_LDATE) {
             fprintf(l->output, "%04d/%02d/%02d ",

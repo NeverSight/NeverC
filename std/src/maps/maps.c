@@ -5,6 +5,7 @@
  */
 
 #include "neverc/std/maps.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
