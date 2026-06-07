@@ -30,14 +30,17 @@ protected:
               const std::string &opt,
               const std::vector<std::string> &required,
               const std::vector<std::string> &forbidden = {"failed"}) {
-    if (!isWindows())
-      GTEST_SKIP() << "SEH is a Windows-only mechanism; skipped on this host.";
-
     SCOPED_TRACE("runSeh: " + name);
+
+    if (!isWindows()) {
+      verifySehCrossCompile(name, sources, opt);
+      return;
+    }
+
     auto exe = tmpFile(name + ".exe");
 
     std::vector<std::string> args = splitFlags(opt);
-    args.push_back("-w"); // silence the suite's benign %d/LONG -Wformat noise
+    args.push_back("-w");
     for (auto &f : sysrootFlags())
       args.push_back(f);
     for (auto &f : archFlags())
@@ -60,6 +63,61 @@ protected:
     for (auto &m : forbidden)
       EXPECT_FALSE(r.contains(m))
           << name << ": stdout contains '" << m << "'\n" << r.out;
+  }
+
+  void verifySehCrossCompile(const std::string &name,
+                             const std::vector<std::string> &sources,
+                             const std::string &opt) {
+    static const char *Targets[] = {
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+    };
+    SCOPED_TRACE("verifySehCrossCompile: " + name);
+
+    for (const char *target : Targets) {
+      std::string arch(target);
+      arch = arch.substr(0, arch.find('-'));
+
+      for (const auto &src : sources) {
+        std::string tag = name + "_" + arch + "_" + src;
+        auto asmOut = tmpFile(tag + ".s");
+        auto objOut = tmpFile(tag + ".o");
+        auto srcPath = (testDir() / "seh" / src).string();
+
+        // Compile to assembly and verify SEH directives.
+        {
+          std::vector<std::string> args = splitFlags(opt);
+          args.push_back("-w");
+          args.insert(args.end(),
+                      {"--target=" + std::string(target), "-S",
+                       srcPath, "-o", asmOut.string()});
+          auto r = ncc(args);
+          ASSERT_EQ(r.exitCode, 0)
+              << tag << ": cross-compile to asm failed\n" << r.err;
+
+          std::string asmText = readFile(asmOut);
+          EXPECT_TRUE(asmText.find(".seh_proc") != std::string::npos)
+              << tag << ": assembly missing .seh_proc directive — "
+                 "no SEH unwind data will be emitted\n";
+          EXPECT_TRUE(asmText.find(".seh_endprologue") != std::string::npos)
+              << tag << ": assembly missing .seh_endprologue\n";
+        }
+
+        // Compile to object to verify full code generation.
+        {
+          std::vector<std::string> args = splitFlags(opt);
+          args.push_back("-w");
+          args.insert(args.end(),
+                      {"--target=" + std::string(target), "-c",
+                       srcPath, "-o", objOut.string()});
+          auto r = ncc(args);
+          ASSERT_EQ(r.exitCode, 0)
+              << tag << ": cross-compile to obj failed\n" << r.err;
+          EXPECT_GT(fileSize(objOut), 0u)
+              << tag << ": object file is empty\n";
+        }
+      }
+    }
   }
 };
 
@@ -89,10 +147,14 @@ TEST_F(SEHTest, Xcpt4_NoLTO) {
 // across the module boundary). The DLL must sit next to the EXE so the runtime
 // loader finds it; both are emitted into the same tmp dir.
 TEST_F(SEHTest, XframeEh) {
-  if (!isWindows())
-    GTEST_SKIP() << "SEH is a Windows-only mechanism; skipped on this host.";
-
   SCOPED_TRACE("XframeEh");
+
+  if (!isWindows()) {
+    verifySehCrossCompile("xframe",
+                          {"xframe_eh_dll.c", "xframe_eh_exe.c"}, "-O2");
+    return;
+  }
+
   auto dll = tmpFile("xframe_eh_dll.dll");
   auto exe = tmpFile("xframe_eh_exe.exe");
 
