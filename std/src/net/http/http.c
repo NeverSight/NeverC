@@ -974,7 +974,7 @@ struct neverc_http_server {
 
     http_worker_t         *workers;
     int                    nworkers;
-    int                    next_worker; /* round-robin index */
+    volatile int           next_worker; /* atomic round-robin index */
 
     int                    max_requests_per_conn;
     int                    read_timeout_ms;

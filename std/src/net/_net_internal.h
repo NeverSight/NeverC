@@ -107,8 +107,12 @@
   }
 #endif
 
-/* Event polling backend detection */
-#if defined(__linux__) || defined(__ANDROID__)
+/* Event polling backend detection.
+ * Priority: io_uring > epoll > kqueue > IOCP > poll
+ * Set NC_USE_IO_URING=1 at compile time to enable io_uring (Linux 5.1+). */
+#if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
+  #include <liburing.h>
+#elif defined(__linux__) || defined(__ANDROID__)
   #define NC_USE_EPOLL 1
   #include <sys/epoll.h>
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
