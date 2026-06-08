@@ -1798,6 +1798,8 @@ static void test_sse(void) {
     stop_test_server(srv);
 }
 
+#endif /* _WIN32 */
+
 /* ===== DetectContentType (like Go http.DetectContentType) ===== */
 
 static void test_detect_content_type(void) {
@@ -1958,12 +1960,12 @@ static void test_not_found_handler(void) {
     neverc_http_memory_writer_free(w);
 }
 
+#ifndef _WIN32
 /* ===== ServeFile test ===== */
 
 static void test_serve_file(void) {
     printf("[serve_file]\n");
 
-#ifndef _WIN32
     int port = get_free_port();
     if (port < 0) { printf("  SKIP: no free port\n"); return; }
 
@@ -2018,7 +2020,6 @@ static void test_serve_file(void) {
     }
 
     unlink(tmppath);
-#endif
 }
 
 /* ===== StripPrefix via server test ===== */
@@ -2031,7 +2032,6 @@ static void strip_inner_handler(neverc_http_request_t *req,
 static void test_strip_prefix(void) {
     printf("[strip_prefix]\n");
 
-#ifndef _WIN32
     int port = get_free_port();
     if (port < 0) { printf("  SKIP: no free port\n"); return; }
 
@@ -2055,8 +2055,9 @@ static void test_strip_prefix(void) {
     check_int("strip body", strstr(buf, "stripped_path=/users") != NULL, 1);
 
     stop_test_server(pid);
-#endif
 }
+
+#endif /* _WIN32 */
 
 /* ===== ResponseHeader test ===== */
 
@@ -2095,8 +2096,6 @@ static void test_response_header(void) {
 
     free(resp.headers);
 }
-
-#endif /* _WIN32 */
 
 int main(void) {
     test_status_text();

@@ -8,6 +8,19 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 #define ASSERT_TRUE(e) do{tests_run++;if(e){tests_passed++;}else{tests_failed++;printf("  FAIL [%d]: %s\n",__LINE__,#e);}}while(0)
 #define ASSERT_EQ(a,b) do{int _a=(a),_b=(b);tests_run++;if(_a==_b){tests_passed++;}else{tests_failed++;printf("  FAIL [%d]: %s=%d, want %d\n",__LINE__,#a,_a,_b);}}while(0)
 
+static void make_test_path(char *path, size_t path_size, const char *name) {
+    char tmpdir[1024];
+    if (neverc_os_temp_dir(tmpdir, sizeof(tmpdir)) != 0) {
+        snprintf(path, path_size, "%s", name);
+        return;
+    }
+#if defined(_WIN32)
+    snprintf(path, path_size, "%s\\%s", tmpdir, name);
+#else
+    snprintf(path, path_size, "%s/%s", tmpdir, name);
+#endif
+}
+
 static void test_env(void) {
     printf("[env]\n");
     ASSERT_EQ(neverc_os_setenv("NEVERC_TEST_KEY", "hello"), 0);
@@ -34,7 +47,9 @@ static void test_hostname(void) {
 
 static void test_file_ops(void) {
     printf("[file ops]\n");
-    const char *path = "/tmp/neverc_test_os_file.txt";
+    char pathbuf[1024];
+    make_test_path(pathbuf, sizeof(pathbuf), "neverc_test_os_file.txt");
+    const char *path = pathbuf;
     const char *data = "Hello from NeverC os module!";
 
     neverc_os_file_t *f = neverc_os_create(path);
@@ -57,7 +72,9 @@ static void test_file_ops(void) {
 
 static void test_read_write_file(void) {
     printf("[read/write file]\n");
-    const char *path = "/tmp/neverc_test_os_rw.txt";
+    char pathbuf[1024];
+    make_test_path(pathbuf, sizeof(pathbuf), "neverc_test_os_rw.txt");
+    const char *path = pathbuf;
     const unsigned char *data = (const unsigned char*)"test data 123";
 
     ASSERT_EQ(neverc_os_write_file(path, data, 13, 0644), 0);
@@ -75,7 +92,9 @@ static void test_read_write_file(void) {
 
 static void test_stat(void) {
     printf("[stat]\n");
-    const char *path = "/tmp/neverc_test_os_stat.txt";
+    char pathbuf[1024];
+    make_test_path(pathbuf, sizeof(pathbuf), "neverc_test_os_stat.txt");
+    const char *path = pathbuf;
     neverc_os_write_file(path, (const unsigned char*)"hello", 5, 0644);
 
     neverc_os_fileinfo_t info;
@@ -89,13 +108,20 @@ static void test_stat(void) {
 
 static void test_mkdir(void) {
     printf("[mkdir]\n");
-    const char *dir = "/tmp/neverc_test_os_dir";
+    char dirbuf[1024], nestedbuf[1024];
+    make_test_path(dirbuf, sizeof(dirbuf), "neverc_test_os_dir");
+    const char *dir = dirbuf;
     neverc_os_remove_all(dir);
 
     ASSERT_EQ(neverc_os_mkdir(dir, 0755), 0);
     ASSERT_TRUE(neverc_os_is_dir(dir));
 
-    const char *nested = "/tmp/neverc_test_os_dir/a/b/c";
+#if defined(_WIN32)
+    snprintf(nestedbuf, sizeof(nestedbuf), "%s\\a\\b\\c", dir);
+#else
+    snprintf(nestedbuf, sizeof(nestedbuf), "%s/a/b/c", dir);
+#endif
+    const char *nested = nestedbuf;
     ASSERT_EQ(neverc_os_mkdir_all(nested, 0755), 0);
     ASSERT_TRUE(neverc_os_is_dir(nested));
 
@@ -105,8 +131,11 @@ static void test_mkdir(void) {
 
 static void test_rename(void) {
     printf("[rename]\n");
-    const char *old = "/tmp/neverc_test_rename_old.txt";
-    const char *new_path = "/tmp/neverc_test_rename_new.txt";
+    char oldbuf[1024], newbuf[1024];
+    make_test_path(oldbuf, sizeof(oldbuf), "neverc_test_rename_old.txt");
+    make_test_path(newbuf, sizeof(newbuf), "neverc_test_rename_new.txt");
+    const char *old = oldbuf;
+    const char *new_path = newbuf;
     neverc_os_write_file(old, (const unsigned char*)"x", 1, 0644);
     ASSERT_EQ(neverc_os_rename(old, new_path), 0);
     ASSERT_TRUE(!neverc_os_exists(old));
@@ -213,8 +242,9 @@ static void test_executable(void) {
 
 static void test_chmod_truncate(void) {
     printf("[chmod/truncate]\n");
-    char path[1024];
-    snprintf(path, sizeof(path), "/tmp/neverc_chmod_test_%d", neverc_os_getpid());
+    char path[1024], name[64];
+    snprintf(name, sizeof(name), "neverc_chmod_test_%d", neverc_os_getpid());
+    make_test_path(path, sizeof(path), name);
     neverc_os_write_file(path, (const unsigned char *)"hello world", 11, 0644);
 
     int rc = neverc_os_chmod(path, 0755);

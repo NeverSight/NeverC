@@ -4,7 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef _WIN32
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <pthread.h>
 #include <unistd.h>
 #include <signal.h>

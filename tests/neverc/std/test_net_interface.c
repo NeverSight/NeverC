@@ -53,10 +53,25 @@ static void test_interface_by_name(void) {
     printf("[interface_by_name]\n");
     neverc_net_interface_t iface;
 
+    int rc = -1;
+#if defined(_WIN32)
+    /* Windows reports friendly names such as "Loopback Pseudo-Interface 1". */
+    neverc_net_interface_list_t list;
+    if (neverc_net_interfaces(&list) == 0) {
+        for (int i = 0; i < list.count; i++) {
+            if (list.ifaces[i].flags & NEVERC_NET_FLAG_LOOPBACK) {
+                rc = neverc_net_interface_by_name(list.ifaces[i].name, &iface);
+                if (rc == 0)
+                    break;
+            }
+        }
+    }
+#else
     /* lo0 on macOS, lo on Linux */
-    int rc = neverc_net_interface_by_name("lo0", &iface);
+    rc = neverc_net_interface_by_name("lo0", &iface);
     if (rc != 0)
         rc = neverc_net_interface_by_name("lo", &iface);
+#endif
     check_int("find loopback by name", rc, 0);
     if (rc == 0) {
         check_true("loopback flag set", (iface.flags & NEVERC_NET_FLAG_LOOPBACK) != 0);

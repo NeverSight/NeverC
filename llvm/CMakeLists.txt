@@ -58,6 +58,65 @@ project(LLVM
   VERSION ${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.${LLVM_VERSION_PATCH}
   LANGUAGES C CXX ASM)
 
+# MSVC environment fixup: when building outside a VS Developer Command Prompt,
+# the INCLUDE and LIB environment variables are empty, causing cl.exe to fail
+# with "cannot open include file: assert.h / inttypes.h".  Derive the paths
+# from the compiler and SDK tool locations that CMake already discovered.
+if(MSVC AND "$ENV{INCLUDE}" STREQUAL "")
+  # VCToolsInstallDir: cl.exe lives at <root>/bin/Host<host>/<target>/cl.exe
+  get_filename_component(_nc_cl_dir  "${CMAKE_CXX_COMPILER}" DIRECTORY)
+  get_filename_component(_nc_arch    "${_nc_cl_dir}" NAME)
+  get_filename_component(_nc_tmp     "${_nc_cl_dir}" DIRECTORY)
+  get_filename_component(_nc_tmp     "${_nc_tmp}"    DIRECTORY)
+  get_filename_component(_nc_vc_root "${_nc_tmp}"    DIRECTORY)
+
+  # Windows SDK root: mt.exe / rc.exe lives at <root>/bin/<ver>/<arch>/<tool>
+  set(_nc_sdk_tool "")
+  if(CMAKE_MT)
+    set(_nc_sdk_tool "${CMAKE_MT}")
+  elseif(CMAKE_RC_COMPILER)
+    set(_nc_sdk_tool "${CMAKE_RC_COMPILER}")
+  endif()
+  if(_nc_sdk_tool)
+    get_filename_component(_nc_stdir  "${_nc_sdk_tool}" DIRECTORY)
+    get_filename_component(_nc_svdir  "${_nc_stdir}"    DIRECTORY)
+    get_filename_component(_nc_sdk_v  "${_nc_svdir}"    NAME)
+    get_filename_component(_nc_sbdir  "${_nc_svdir}"    DIRECTORY)
+    get_filename_component(_nc_sdkr   "${_nc_sbdir}"    DIRECTORY)
+  endif()
+
+  set(_nc_inc_dirs "")
+  foreach(_d
+      "${_nc_vc_root}/include"
+      "${_nc_sdkr}/Include/${_nc_sdk_v}/ucrt"
+      "${_nc_sdkr}/Include/${_nc_sdk_v}/shared"
+      "${_nc_sdkr}/Include/${_nc_sdk_v}/um")
+    if(EXISTS "${_d}")
+      list(APPEND _nc_inc_dirs "${_d}")
+    endif()
+  endforeach()
+
+  set(_nc_lib_dirs "")
+  foreach(_d
+      "${_nc_vc_root}/lib/${_nc_arch}"
+      "${_nc_sdkr}/Lib/${_nc_sdk_v}/ucrt/${_nc_arch}"
+      "${_nc_sdkr}/Lib/${_nc_sdk_v}/um/${_nc_arch}")
+    if(EXISTS "${_d}")
+      list(APPEND _nc_lib_dirs "${_d}")
+    endif()
+  endforeach()
+
+  if(_nc_inc_dirs)
+    include_directories(SYSTEM ${_nc_inc_dirs})
+  endif()
+  if(_nc_lib_dirs)
+    link_directories(${_nc_lib_dirs})
+  endif()
+  if(_nc_inc_dirs OR _nc_lib_dirs)
+    message(STATUS "NeverC: INCLUDE env empty – auto-injected MSVC/UCRT/WinSDK paths")
+  endif()
+endif()
+
 if (NOT DEFINED CMAKE_INSTALL_LIBDIR AND DEFINED LLVM_LIBDIR_SUFFIX)
   # Must go before `include(GNUInstallDirs)`.
   set(CMAKE_INSTALL_LIBDIR "lib${LLVM_LIBDIR_SUFFIX}")

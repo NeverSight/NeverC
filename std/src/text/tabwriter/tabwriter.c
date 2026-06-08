@@ -158,6 +158,16 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
 void neverc_tabwriter_flush(neverc_tabwriter_t *w) {
     end_cell(w, 0);
     flush_lines(w);
+    if (w->out_len + 1 >= w->out_cap) {
+        size_t newcap = w->out_cap ? w->out_cap * 2 : 1024;
+        char *nb = (char *)realloc(w->out_buf, newcap);
+        if (nb) {
+            w->out_buf = nb;
+            w->out_cap = newcap;
+        }
+    }
+    if (w->out_buf)
+        w->out_buf[w->out_len] = '\0';
 }
 
 const char *neverc_tabwriter_output(const neverc_tabwriter_t *w, size_t *len) {

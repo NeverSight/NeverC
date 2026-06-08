@@ -39,7 +39,9 @@ void __cpuidex(int[4], int, int);
 __int64 __emul(int, int);
 unsigned __int64 __emulu(unsigned int, unsigned int);
 unsigned int __getcallerseflags(void);
+#if !defined(__x86_64__)
 void __halt(void);
+#endif
 unsigned char __inbyte(unsigned short);
 void __inbytestring(unsigned short, unsigned char *, unsigned long);
 unsigned long __indword(unsigned short);
@@ -53,7 +55,9 @@ void __lidt(void *);
 void __movsb(unsigned char *, unsigned char const *, size_t);
 void __movsd(unsigned long *, unsigned long const *, size_t);
 void __movsw(unsigned short *, unsigned short const *, size_t);
+#if !defined(__x86_64__)
 void __nop(void);
+#endif
 void __nvreg_restore_fence(void);
 void __nvreg_save_fence(void);
 void __outbyte(unsigned short, unsigned char);

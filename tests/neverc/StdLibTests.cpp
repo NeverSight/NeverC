@@ -36,8 +36,12 @@ protected:
     args.push_back(testFile.string());
     for (const auto &s : srcs)
       args.push_back(sd + "/" + s);
+#ifndef _WIN32
     args.push_back("-lm");
     args.push_back("-lpthread");
+#else
+    args.push_back("-Wno-deprecated-declarations");
+#endif
 
     CmdResult compile = ncc(args);
     if (!compile.ok())
@@ -172,38 +176,46 @@ STD_TEST(atomic, "src/sync/atomic/atomic.c")
 // ===== Net =====
 STD_TEST(tcp, "src/net/tcp/tcp.c")
 STD_TEST(udp, "src/net/udp/udp.c")
-STD_TEST(http, "src/net/http/http.c", "src/net/tcp/tcp.c")
+
+// http.c embeds HTTPS support; the COFF linker (Windows) requires all
+// referenced TLS symbols to be present at link time even when the test
+// only exercises plain HTTP.  Include the full TLS dependency chain for
+// every target that compiles http.c.
+#define HTTP_TLS_DEPS \
+    "src/crypto/tls/tls.c", "src/crypto/ecdh/ecdh.c", \
+    "src/crypto/aes/aes.c", "src/crypto/gcm/gcm.c", \
+    "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c", \
+    "src/crypto/chacha20poly1305/chacha20poly1305.c", \
+    "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c", \
+    "src/crypto/sha384/sha384.c", "src/crypto/sha1/sha1.c", "src/crypto/md5/md5.c", \
+    "src/crypto/hmac/hmac.c", "src/crypto/hkdf/hkdf.c", \
+    "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c", \
+    "src/crypto/x509/x509.c", "src/crypto/elliptic/elliptic.c", \
+    "src/math/big/big.c", "src/encoding/base64/base64.c"
+
+STD_TEST(http, "src/net/http/http.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
 STD_TEST(websocket, "src/net/websocket/websocket.c", "src/net/tcp/tcp.c",
-    "src/net/http/http.c", "src/crypto/sha1/sha1.c", "src/encoding/base64/base64.c")
+    "src/net/http/http.c", HTTP_TLS_DEPS)
 STD_TEST(url, "src/net/url/url.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c")
 STD_TEST(textproto, "src/net/textproto/textproto.c")
 STD_TEST(httptest, "src/net/http/httptest/httptest.c",
-    "src/net/http/http.c", "src/net/tcp/tcp.c",
-    "src/crypto/tls/tls.c", "src/crypto/ecdh/ecdh.c",
-    "src/crypto/aes/aes.c", "src/crypto/gcm/gcm.c",
-    "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c",
-    "src/crypto/chacha20poly1305/chacha20poly1305.c",
-    "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c",
-    "src/crypto/sha384/sha384.c", "src/crypto/sha1/sha1.c",
-    "src/crypto/hmac/hmac.c", "src/crypto/hkdf/hkdf.c",
-    "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c",
-    "src/crypto/x509/x509.c", "src/crypto/elliptic/elliptic.c",
-    "src/math/big/big.c", "src/encoding/base64/base64.c")
+    "src/net/http/http.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
 
 // ===== io_uring =====
-STD_TEST(io_uring, "src/net/tcp/tcp.c", "src/net/http/http.c")
+STD_TEST(io_uring, "src/net/tcp/tcp.c", "src/net/http/http.c", HTTP_TLS_DEPS)
 
 // ===== HTTP/2 =====
-STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http.c", "src/net/tcp/tcp.c")
+STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http.c", "src/net/tcp/tcp.c",
+    HTTP_TLS_DEPS)
 
 // ===== HTTP Benchmark =====
-STD_TEST(http_bench, "src/net/http/http.c", "src/net/tcp/tcp.c")
+STD_TEST(http_bench, "src/net/http/http.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
 
 // ===== HTTP Util =====
 STD_TEST(httputil, "src/net/http/httputil/httputil.c",
-    "src/net/http/http.c", "src/net/tcp/tcp.c")
+    "src/net/http/http.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
 
 // ===== SMTP =====
 STD_TEST(smtp, "src/net/smtp/smtp.c", "src/net/tcp/tcp.c")
@@ -252,17 +264,7 @@ STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")
 
 // ===== Crypto (x509) =====
 STD_TEST(x509, "src/crypto/x509/x509.c")
-STD_TEST(tls, "src/crypto/tls/tls.c", "src/crypto/ecdh/ecdh.c",
-    "src/crypto/aes/aes.c", "src/crypto/gcm/gcm.c",
-    "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c",
-    "src/crypto/chacha20poly1305/chacha20poly1305.c",
-    "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c",
-    "src/crypto/sha384/sha384.c", "src/crypto/sha1/sha1.c",
-    "src/crypto/hmac/hmac.c", "src/crypto/hkdf/hkdf.c",
-    "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c",
-    "src/crypto/x509/x509.c", "src/crypto/elliptic/elliptic.c",
-    "src/math/big/big.c", "src/net/tcp/tcp.c",
-    "src/encoding/base64/base64.c")
+STD_TEST(tls, HTTP_TLS_DEPS, "src/net/tcp/tcp.c")
 
 // ===== Regexp =====
 STD_TEST(regexp_syntax, "src/regexp/syntax/syntax.c")

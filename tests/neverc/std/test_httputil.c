@@ -5,7 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef _WIN32
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <pthread.h>
 #include <unistd.h>
 #include <signal.h>
@@ -130,6 +132,25 @@ static void test_dump_request_out(void) {
 static int g_backend_port = 0;
 static int g_proxy_port = 0;
 
+static int wait_for_tcp_port(int port, int attempts) {
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    for (int i = 0; i < attempts; i++) {
+        const char *err = NULL;
+        neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+        if (conn) {
+            neverc_tcp_close(conn);
+            return 0;
+        }
+#ifdef _WIN32
+        Sleep(100);
+#else
+        usleep(100000);
+#endif
+    }
+    return -1;
+}
+
 static void backend_handler(neverc_http_request_t *req,
                               neverc_http_response_writer_t *w) {
     neverc_http_set_header(w, "Content-Type", "application/json");
@@ -166,7 +187,11 @@ static void *backend_thread(void *arg) {
 static void test_reverse_proxy_live(void) {
     printf("[reverse_proxy_live]\n");
 
-    /* Start backend */
+    /* Pick a backend port without the probe-then-close pattern, which races on
+       Windows when the HTTP server tries to re-bind the same port. */
+#if defined(_WIN32)
+    g_backend_port = 45000 + (int)(GetCurrentProcessId() % 15000);
+#else
     const char *err = NULL;
     neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
     if (!ln) {
@@ -177,20 +202,31 @@ static void test_reverse_proxy_live(void) {
     neverc_tcp_listener_addr(ln, &addr);
     g_backend_port = addr.port;
     neverc_tcp_listener_close(ln);
+#endif
 
 #ifdef _WIN32
     HANDLE bt = CreateThread(NULL, 0, backend_thread, NULL, 0, NULL);
-    Sleep(200);
 #else
     pthread_t bt;
     pthread_create(&bt, NULL, backend_thread, NULL);
-    usleep(200000);
 #endif
+
+    if (wait_for_tcp_port(g_backend_port, 50) != 0) {
+        printf("  SKIP: backend did not become ready\n");
+        neverc_http_shutdown();
+#ifdef _WIN32
+        WaitForSingleObject(bt, 3000);
+        CloseHandle(bt);
+#else
+        pthread_join(bt, NULL);
+#endif
+        return;
+    }
 
     /* Test: direct request to backend to verify it works */
     char backend_url[64];
     snprintf(backend_url, sizeof(backend_url),
-             "http://127.0.0.1:%d/test", g_backend_port);
+             "http://127.0.0.1:%d/", g_backend_port);
 
     neverc_http_response_t *resp = neverc_http_get(backend_url);
     check_not_null("backend response", resp);

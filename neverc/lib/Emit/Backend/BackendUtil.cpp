@@ -37,6 +37,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/BuryPointer.h"
+#include "neverc/Invoke/LLVMCommandLine.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -331,7 +332,7 @@ void setCommandLineOpts(const CodeGenOptions &CodeGenOpts) {
   if (BackendArgs.size() == 1)
     return;
   BackendArgs.push_back(nullptr);
-  llvm::cl::ParseCommandLineOptions(BackendArgs.size() - 1, BackendArgs.data());
+  neverc::parseLLVMCommandLineOptions(BackendArgs.size() - 1, BackendArgs.data());
 }
 
 } // namespace

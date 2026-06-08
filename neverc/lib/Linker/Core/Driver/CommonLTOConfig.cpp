@@ -6,6 +6,7 @@
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
 #include "neverc/Plugin/PluginLoader.h"
 #include "llvm/CodeGen/CommandFlags.h"
+#include "neverc/Invoke/LLVMCommandLine.h"
 #include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
@@ -155,6 +156,5 @@ void linker::parseMllvmOptions(const LinkerDriverConfig &Cfg) {
   Argv.push_back("-enable-linkonceodr-outlining");
   for (const auto &Opt : Cfg.mllvmOpts)
     Argv.push_back(Opt.c_str());
-  cl::ResetAllOptionOccurrences();
-  cl::ParseCommandLineOptions(Argv.size(), Argv.data());
+  neverc::parseLLVMCommandLineOptions(Argv.size(), Argv.data());
 }

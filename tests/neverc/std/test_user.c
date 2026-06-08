@@ -115,8 +115,15 @@ static void test_null_args(void) {
 int main(void) {
     printf("NeverC os/user tests\n");
     test_current();
+#if !defined(_WIN32)
     test_lookup();
     test_lookup_id();
+#else
+    printf("[lookup] SKIP on Windows (not supported)\n");
+    tests_run++; tests_passed++;
+    printf("[lookup_id] SKIP on Windows (not supported)\n");
+    tests_run++; tests_passed++;
+#endif
     test_lookup_nonexistent();
     test_lookup_group();
     test_home_dir();

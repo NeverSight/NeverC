@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 #if defined(_WIN32)
-typedef struct { CRITICAL_SECTION cs; } neverc_mutex_t;
+typedef struct { SRWLOCK srw; } neverc_mutex_t;
 #else
 typedef struct { pthread_mutex_t mu; } neverc_mutex_t;
 #endif
@@ -71,7 +71,7 @@ void neverc_once_destroy(neverc_once_t *o);
 void neverc_once_do(neverc_once_t *o, void (*f)(void));
 
 #if defined(_WIN32)
-typedef struct { CONDITION_VARIABLE cond; CRITICAL_SECTION *cs; } neverc_cond_t;
+typedef struct { CONDITION_VARIABLE cond; SRWLOCK *srw; } neverc_cond_t;
 #else
 typedef struct { pthread_cond_t cond; pthread_mutex_t *mu; } neverc_cond_t;
 #endif

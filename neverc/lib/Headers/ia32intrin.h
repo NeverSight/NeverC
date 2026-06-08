@@ -13,6 +13,18 @@
 #define __DEFAULT_FN_ATTRS_CAST __attribute__((__always_inline__))
 #define __DEFAULT_FN_ATTRS_CONSTEXPR __DEFAULT_FN_ATTRS
 
+#if !defined(__neverc__) && defined(__has_builtin) &&                         \
+    __has_builtin(__builtin_bit_cast)
+#define __NEVERC_BIT_CAST(type, value) __builtin_bit_cast(type, value)
+#else
+#define __NEVERC_BIT_CAST(type, value)                                       \
+  __extension__({                                                            \
+    type __neverc_bit_cast_tmp;                                              \
+    __builtin_memcpy(&__neverc_bit_cast_tmp, &(value), sizeof(type));        \
+    __neverc_bit_cast_tmp;                                                   \
+  })
+#endif
+
 /** Find the first set bit starting from the lsb. Result is undefined if
  *  input is 0.
  *
@@ -168,7 +180,7 @@ __popcntq(unsigned long long __A) {
  *  \returns a 32-bit unsigned integer containing the converted value.
  */
 static __inline__ unsigned int __DEFAULT_FN_ATTRS_CAST _castf32_u32(float __A) {
-  return __builtin_bit_cast(unsigned int, __A);
+  return __NEVERC_BIT_CAST(unsigned int, __A);
 }
 
 /** Cast a 64-bit float value to a 64-bit unsigned integer value
@@ -182,7 +194,7 @@ static __inline__ unsigned int __DEFAULT_FN_ATTRS_CAST _castf32_u32(float __A) {
  */
 static __inline__ unsigned long long __DEFAULT_FN_ATTRS_CAST
 _castf64_u64(double __A) {
-  return __builtin_bit_cast(unsigned long long, __A);
+  return __NEVERC_BIT_CAST(unsigned long long, __A);
 }
 
 /** Cast a 32-bit unsigned integer value to a 32-bit float value
@@ -195,7 +207,7 @@ _castf64_u64(double __A) {
  *  \returns a 32-bit float value containing the converted value.
  */
 static __inline__ float __DEFAULT_FN_ATTRS_CAST _castu32_f32(unsigned int __A) {
-  return __builtin_bit_cast(float, __A);
+  return __NEVERC_BIT_CAST(float, __A);
 }
 
 /** Cast a 64-bit unsigned integer value to a 64-bit float value
@@ -209,7 +221,7 @@ static __inline__ float __DEFAULT_FN_ATTRS_CAST _castu32_f32(unsigned int __A) {
  */
 static __inline__ double __DEFAULT_FN_ATTRS_CAST
 _castu64_f64(unsigned long long __A) {
-  return __builtin_bit_cast(double, __A);
+  return __NEVERC_BIT_CAST(double, __A);
 }
 
 /** Adds the unsigned integer operand to the CRC-32C checksum of the

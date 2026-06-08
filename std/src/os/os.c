@@ -50,8 +50,23 @@ neverc_os_file_t *neverc_os_stderr(void) { init_std(); return &g_stderr; }
 
 /* ---- Environment ---- */
 
+#if defined(NEVERC_PLATFORM_WINDOWS)
+/* getenv() reads a CRT snapshot; SetEnvironmentVariableA updates the process
+   environment block directly.  Route all NeverC os env reads through Win32 so
+   neverc_os_setenv/unsetenv are immediately visible to neverc_os_getenv. */
+static char neverc_os_getenv_buf[32768];
+#endif
+
 const char *neverc_os_getenv(const char *key) {
-    return key ? getenv(key) : NULL;
+    if (!key) return NULL;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    DWORD n = GetEnvironmentVariableA(key, neverc_os_getenv_buf,
+                                    (DWORD)sizeof(neverc_os_getenv_buf));
+    if (n == 0 || n >= sizeof(neverc_os_getenv_buf)) return NULL;
+    return neverc_os_getenv_buf;
+#else
+    return getenv(key);
+#endif
 }
 
 int neverc_os_setenv(const char *key, const char *value) {
@@ -423,7 +438,7 @@ neverc_os_file_t *neverc_os_create_temp(const char *dir, const char *pattern) {
 /* ---- Extended environment ---- */
 
 int neverc_os_lookup_env(const char *key, const char **value) {
-    const char *v = getenv(key);
+    const char *v = neverc_os_getenv(key);
     if (value) *value = v;
     return v != NULL;
 }
@@ -503,7 +518,7 @@ char *neverc_os_expand_env(const char *s) {
                     varname[vlen++] = *p++;
             }
             varname[vlen] = '\0';
-            const char *val = getenv(varname);
+            const char *val = neverc_os_getenv(varname);
             if (val) {
                 size_t vallen = strlen(val);
                 while (len + vallen >= cap) { cap *= 2; out = (char *)realloc(out, cap); }
@@ -672,7 +687,7 @@ int neverc_os_executable(char *buf, size_t cap) {
 
 int neverc_os_user_home_dir(char *buf, size_t cap) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    const char *h = getenv("USERPROFILE");
+    const char *h = neverc_os_getenv("USERPROFILE");
     if (!h) return -1;
     strncpy(buf, h, cap - 1); buf[cap-1] = '\0';
     return 0;
@@ -686,7 +701,7 @@ int neverc_os_user_home_dir(char *buf, size_t cap) {
 
 int neverc_os_user_cache_dir(char *buf, size_t cap) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    const char *d = getenv("LocalAppData");
+    const char *d = neverc_os_getenv("LOCALAPPDATA");
     if (!d) return -1;
     strncpy(buf, d, cap - 1); buf[cap-1] = '\0';
     return 0;
@@ -707,7 +722,7 @@ int neverc_os_user_cache_dir(char *buf, size_t cap) {
 
 int neverc_os_user_config_dir(char *buf, size_t cap) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    const char *d = getenv("AppData");
+    const char *d = neverc_os_getenv("APPDATA");
     if (!d) return -1;
     strncpy(buf, d, cap - 1); buf[cap-1] = '\0';
     return 0;

@@ -10,6 +10,7 @@
 #include "neverc/Foundation/Diagnostic/DiagnosticDriver.h"
 #include "neverc/Foundation/Target/TargetOptions.h"
 #include "neverc/Invoke/DirectInvocationOpts.h"
+#include "neverc/Invoke/LLVMCommandLine.h"
 #include "neverc/Invoke/Options.h"
 #include "neverc/Scan/HeaderIndexOptions.h"
 #include "neverc/Scan/PrepOptions.h"
@@ -83,7 +84,7 @@ bool ExecuteCompilerInvocation(CompilerInstance *CI) {
     for (unsigned i = 0; i != NumArgs; ++i)
       Args[i + 1] = CI->getFrontendOpts().LLVMArgs[i].c_str();
     Args[NumArgs + 1] = nullptr;
-    llvm::cl::ParseCommandLineOptions(NumArgs + 1, Args.get());
+    parseLLVMCommandLineOptions(NumArgs + 1, Args.get());
   }
 
   // If there were errors in processing arguments, don't do anything else.

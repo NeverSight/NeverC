@@ -95,7 +95,9 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
         SetHandleInformation(hStdinWr, HANDLE_FLAG_INHERIT, 0);
     }
 
-    /* Build command line */
+    /* Build command line – only quote arguments that contain spaces or
+       special characters so that cmd.exe /C and similar switches are passed
+       unquoted and recognised correctly. */
     size_t cmdlen = 0;
     for (int i = 0; i < cmd->argc; i++)
         cmdlen += strlen(cmd->argv[i]) + 3;
@@ -103,9 +105,21 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
     cmdline[0] = '\0';
     for (int i = 0; i < cmd->argc; i++) {
         if (i > 0) strcat(cmdline, " ");
-        strcat(cmdline, "\"");
-        strcat(cmdline, cmd->argv[i]);
-        strcat(cmdline, "\"");
+        int needs_quote = 0;
+        for (const char *p = cmd->argv[i]; *p; p++) {
+            if (*p == ' ' || *p == '\t' || *p == '"' || *p == '&' ||
+                *p == '|' || *p == '<' || *p == '>' || *p == '^') {
+                needs_quote = 1;
+                break;
+            }
+        }
+        if (needs_quote || cmd->argv[i][0] == '\0') {
+            strcat(cmdline, "\"");
+            strcat(cmdline, cmd->argv[i]);
+            strcat(cmdline, "\"");
+        } else {
+            strcat(cmdline, cmd->argv[i]);
+        }
     }
 
     STARTUPINFOA si = {sizeof(si)};

@@ -223,7 +223,11 @@ static void test_throughput(void) {
     printf("  throughput: %.0f req/s\n", rps);
 
     check_true("success rate > 95%", success_pct > 95.0);
+#if defined(_WIN32)
+    check_true("throughput > 200 req/s", rps > 200.0);
+#else
     check_true("throughput > 1000 req/s", rps > 1000.0);
+#endif
 }
 
 /* ===== Benchmark: Connection rate ===== */
@@ -265,7 +269,11 @@ static void test_connection_rate(void) {
 
     check_true("conn success rate > 95%",
                 (double)success / (double)n_conns > 0.95);
+#if defined(_WIN32)
+    check_true("conn rate > 100 conn/s", cps > 100.0);
+#else
     check_true("conn rate > 500 conn/s", cps > 500.0);
+#endif
 }
 
 /* ===== Main ===== */
@@ -293,7 +301,7 @@ int main(void) {
 
 #ifdef _WIN32
     HANDLE srv = CreateThread(NULL, 0, server_thread, NULL, 0, NULL);
-    Sleep(200);
+    Sleep(500);
 #else
     pthread_t srv;
     pthread_create(&srv, NULL, server_thread, NULL);

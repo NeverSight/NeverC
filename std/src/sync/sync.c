@@ -3,11 +3,11 @@
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 
-void neverc_mutex_init(neverc_mutex_t *m) { InitializeCriticalSection(&m->cs); }
-void neverc_mutex_destroy(neverc_mutex_t *m) { DeleteCriticalSection(&m->cs); }
-void neverc_mutex_lock(neverc_mutex_t *m) { EnterCriticalSection(&m->cs); }
-void neverc_mutex_unlock(neverc_mutex_t *m) { LeaveCriticalSection(&m->cs); }
-int  neverc_mutex_trylock(neverc_mutex_t *m) { return TryEnterCriticalSection(&m->cs); }
+void neverc_mutex_init(neverc_mutex_t *m) { InitializeSRWLock(&m->srw); }
+void neverc_mutex_destroy(neverc_mutex_t *m) { (void)m; }
+void neverc_mutex_lock(neverc_mutex_t *m) { AcquireSRWLockExclusive(&m->srw); }
+void neverc_mutex_unlock(neverc_mutex_t *m) { ReleaseSRWLockExclusive(&m->srw); }
+int  neverc_mutex_trylock(neverc_mutex_t *m) { return TryAcquireSRWLockExclusive(&m->srw); }
 
 void neverc_rwmutex_init(neverc_rwmutex_t *rw) { InitializeSRWLock(&rw->rw); }
 void neverc_rwmutex_destroy(neverc_rwmutex_t *rw) { (void)rw; }
@@ -44,10 +44,10 @@ void neverc_once_do(neverc_once_t *o, void (*f)(void)) {
 }
 
 void neverc_cond_init(neverc_cond_t *c, neverc_mutex_t *m) {
-    InitializeConditionVariable(&c->cond); c->cs = &m->cs;
+    InitializeConditionVariable(&c->cond); c->srw = &m->srw;
 }
 void neverc_cond_destroy(neverc_cond_t *c) { (void)c; }
-void neverc_cond_wait(neverc_cond_t *c) { SleepConditionVariableCS(&c->cond, c->cs, INFINITE); }
+void neverc_cond_wait(neverc_cond_t *c) { SleepConditionVariableSRW(&c->cond, c->srw, INFINITE, 0); }
 void neverc_cond_signal(neverc_cond_t *c) { WakeConditionVariable(&c->cond); }
 void neverc_cond_broadcast(neverc_cond_t *c) { WakeAllConditionVariable(&c->cond); }
 
