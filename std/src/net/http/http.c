@@ -403,6 +403,8 @@ typedef struct {
     char *content_type;
     int   content_length;
     int   keep_alive;
+    int   is_chunked;
+    int   expect_continue;
 
     char **header_names;
     char **header_values;
@@ -539,13 +541,27 @@ static int parse_request(const char *raw, size_t rawlen,
                 size_t cl = vallen < 31 ? vallen : 31;
                 memcpy(tmp, val, cl);
                 tmp[cl] = '\0';
-                pr->content_length = atoi(tmp);
+                long long clval = 0;
+                for (size_t ci = 0; ci < cl && tmp[ci] >= '0' && tmp[ci] <= '9'; ci++)
+                    clval = clval * 10 + (tmp[ci] - '0');
+                if (clval < 0 || clval > 1073741824LL) /* 1GB max */
+                    pr->content_length = -2; /* signal overflow */
+                else
+                    pr->content_length = (int)clval;
+            }
+            if (namelen == 17 && strcasecmp_n(p, "Transfer-Encoding", 17) == 0) {
+                if (vallen >= 7 && strcasecmp_n(val, "chunked", 7) == 0)
+                    pr->is_chunked = 1;
             }
             if (namelen == 10 && strcasecmp_n(p, "Connection", 10) == 0) {
                 if (vallen == 5 && strcasecmp_n(val, "close", 5) == 0)
                     pr->keep_alive = 0;
                 else if (vallen == 10 && strcasecmp_n(val, "keep-alive", 10) == 0)
                     pr->keep_alive = 1;
+            }
+            if (namelen == 6 && strcasecmp_n(p, "Expect", 6) == 0) {
+                if (vallen >= 12 && strcasecmp_n(val, "100-continue", 12) == 0)
+                    pr->expect_continue = 1;
             }
 
             if (pr->nheaders >= pr->header_cap) {
@@ -562,7 +578,78 @@ static int parse_request(const char *raw, size_t rawlen,
         p = hline_end + 2;
     }
 
+    if (pr->content_length == -2) {
+        parsed_request_free(pr);
+        memset(pr, 0, sizeof(*pr));
+        return -2; /* content-length overflow */
+    }
+
+    /* RFC 7230 §3.3.3: Transfer-Encoding takes precedence over Content-Length */
+    if (pr->is_chunked && pr->content_length >= 0)
+        pr->content_length = -1; /* ignore Content-Length when chunked */
+
     size_t header_size = (size_t)(hdr_end + 4 - raw);
+
+    if (pr->is_chunked) {
+        const char *chunk_start = raw + header_size;
+        size_t chunk_avail = rawlen - header_size;
+        /* Look for the terminating 0\r\n\r\n */
+        const char *term = NULL;
+        for (size_t ci = 0; ci + 4 < chunk_avail; ci++) {
+            if (chunk_start[ci] == '0' &&
+                chunk_start[ci+1] == '\r' && chunk_start[ci+2] == '\n' &&
+                chunk_start[ci+3] == '\r' && chunk_start[ci+4] == '\n') {
+                term = chunk_start + ci;
+                break;
+            }
+        }
+        if (!term) {
+            parsed_request_free(pr);
+            memset(pr, 0, sizeof(*pr));
+            return -1; /* need more chunked data */
+        }
+        /* Decode chunked body in-place */
+        nc_buf_t decoded;
+        nc_buf_init(&decoded);
+        size_t cpos = 0;
+        while (cpos < chunk_avail) {
+            const char *cline_end = NULL;
+            for (size_t ci = cpos; ci + 1 < chunk_avail; ci++) {
+                if (chunk_start[ci] == '\r' && chunk_start[ci+1] == '\n') {
+                    cline_end = chunk_start + ci;
+                    break;
+                }
+            }
+            if (!cline_end) break;
+            unsigned long csz = 0;
+            const char *cp = chunk_start + cpos;
+            while (cp < cline_end) {
+                char cc = *cp;
+                if (cc >= '0' && cc <= '9') csz = csz * 16 + (unsigned long)(cc - '0');
+                else if (cc >= 'a' && cc <= 'f') csz = csz * 16 + (unsigned long)(cc - 'a' + 10);
+                else if (cc >= 'A' && cc <= 'F') csz = csz * 16 + (unsigned long)(cc - 'A' + 10);
+                else break;
+                cp++;
+            }
+            cpos = (size_t)(cline_end - chunk_start) + 2;
+            if (csz == 0) break;
+            if (cpos + csz > chunk_avail) break;
+            nc_buf_append(&decoded, chunk_start + cpos, csz);
+            cpos += csz + 2;
+        }
+        /* Store decoded body in the raw buffer area (overwrite) */
+        if (decoded.len > 0) {
+            pr->body = decoded.data;
+            pr->body_len = decoded.len;
+        }
+        *consumed = (size_t)(term + 5 - raw);
+        /* Note: decoded.data ownership transfers to caller via pr->body;
+         * parsed_request_free doesn't free pr->body (it's normally a pointer
+         * into the read buffer), so caller must handle this for chunked.
+         * For simplicity, we copy into the read buffer area. */
+        return 0;
+    }
+
     int body_expected = pr->content_length > 0 ? pr->content_length : 0;
     size_t total_expected = header_size + (size_t)body_expected;
 
@@ -700,8 +787,18 @@ static void http_conn_process(http_conn_t *hc) {
                                 &pr, &consumed);
         if (rc == -1) return; /* need more data */
         if (rc == -2) {
+            const char *err_resp =
+                "HTTP/1.1 400 Bad Request\r\n"
+                "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            sock_write_all(hc->fd, err_resp, strlen(err_resp));
             hc->state = HC_STATE_CLOSING;
             return;
+        }
+
+        /* Send 100 Continue if client expects it */
+        if (pr.expect_continue) {
+            const char *cont = "HTTP/1.1 100 Continue\r\n\r\n";
+            sock_write_all(hc->fd, cont, strlen(cont));
         }
 
         neverc_http_request_t req;
@@ -716,6 +813,12 @@ static void http_conn_process(http_conn_t *hc) {
         } else {
             neverc_http_set_status(w, 404);
             neverc_http_write_string(w, "404 page not found\n");
+        }
+
+        /* Free chunked body if it was allocated separately */
+        if (pr.is_chunked && pr.body) {
+            free((void *)pr.body);
+            pr.body = NULL;
         }
 
         if (w->hijacked) {
@@ -1202,6 +1305,17 @@ int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
     for (int i = 0; i < nw; i++) {
         nc_evloop_stop(srv->workers[i].loop);
         nc_thread_join(srv->workers[i].thread);
+
+        /* Clean up any remaining connections in this worker */
+        http_conn_t *hc = srv->workers[i].conns.head;
+        while (hc) {
+            http_conn_t *next = hc->next;
+            nc_conn_limiter_release(&g_conn_limiter);
+            http_conn_free(hc);
+            hc = next;
+        }
+        nc_mutex_destroy(&srv->workers[i].conns.lock);
+
         nc_evloop_destroy(srv->workers[i].loop);
     }
 
@@ -1557,9 +1671,6 @@ static void static_file_handler(neverc_http_request_t *req,
             }
             fclose(f);
 #else
-            char clbuf[32];
-            snprintf(clbuf, sizeof(clbuf), "%ld", fsize);
-            neverc_http_set_header(w, "Content-Length", clbuf);
             neverc_http_enable_chunked(w);
             char buf[65536];
             size_t nread;
@@ -1968,6 +2079,7 @@ static neverc_http_response_t *do_request(const char *method,
     char *hdr_end_ptr = NULL;
     int resp_content_length = -1;
     int is_chunked = 0;
+    int is_head = (strcmp(method, "HEAD") == 0);
 
     char chunk[8192];
     while (1) {
@@ -1978,6 +2090,9 @@ static neverc_http_response_t *do_request(const char *method,
         if (!hdr_end_ptr) {
             hdr_end_ptr = strstr(resp_buf.data, "\r\n\r\n");
             if (hdr_end_ptr) {
+                /* HEAD responses have no body regardless of Content-Length */
+                if (is_head) break;
+
                 size_t hdr_size = (size_t)(hdr_end_ptr - resp_buf.data);
                 resp_content_length = parse_response_header_int(
                     resp_buf.data, hdr_size, "Content-Length");
