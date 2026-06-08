@@ -9,6 +9,7 @@
 #include "neverc/std/strconv.h"
 #include "neverc/std/encoding.h"
 #include "neverc/std/hash.h"
+#include "neverc/std/container.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -79,6 +80,28 @@ static void test_hash_dot_syntax(void) {
     CHECK("hash.crc32.ieee_known", c == 0x3610a686);
 }
 
+static void test_container_vector_dot_syntax(void) {
+    neverc_vector_t *v = container.vector.new(sizeof(int));
+    CHECK("container.vector.new", v != NULL);
+    CHECK("container.vector.empty", container.vector.empty(v));
+    CHECK("container.vector.size_0", container.vector.size(v) == 0);
+
+    int val = 42;
+    container.vector.push_back(v, &val);
+    CHECK("container.vector.push_back", container.vector.size(v) == 1);
+    CHECK("container.vector.at", *(int *)container.vector.at(v, 0) == 42);
+
+    val = 99;
+    container.vector.push_back(v, &val);
+    CHECK("container.vector.back", *(int *)container.vector.back(v) == 99);
+
+    container.vector.clear(v);
+    CHECK("container.vector.clear", container.vector.size(v) == 0);
+
+    container.vector.free(v);
+    CHECK("container.vector.free", 1 == 1);
+}
+
 #else
 static void test_math_dot_syntax(void) {
     CHECK("dot_syntax_unavailable_math", 1);
@@ -92,6 +115,9 @@ static void test_encoding_dot_syntax(void) {
 static void test_hash_dot_syntax(void) {
     CHECK("dot_syntax_unavailable_hash", 1);
 }
+static void test_container_vector_dot_syntax(void) {
+    CHECK("dot_syntax_unavailable_container_vector", 1);
+}
 #endif /* __neverc__ */
 
 int main(void) {
@@ -99,6 +125,7 @@ int main(void) {
     test_strconv_dot_syntax();
     test_encoding_dot_syntax();
     test_hash_dot_syntax();
+    test_container_vector_dot_syntax();
 
     printf("%d/%d tests passed\n", tests_passed, tests_run);
     if (tests_failed > 0)

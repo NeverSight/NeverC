@@ -144,6 +144,7 @@ STD_TEST(slices, "src/slices/slices.c")
 STD_TEST(heap, "src/container/heap/heap.c")
 STD_TEST(list, "src/container/list/list.c")
 STD_TEST(ring, "src/container/ring/ring.c")
+STD_TEST(vector, "src/container/vector/vector.c")
 
 // ===== Compress =====
 STD_TEST(lzw, "src/compress/lzw/lzw.c")
@@ -302,4 +303,5 @@ STD_TEST(dot_syntax,
     "src/math/tanh.c", "src/math/trunc.c",
     "src/strconv/format_int.c", "src/strconv/parse_int.c", "src/strconv/format_bool.c",
     "src/encoding/hex/encode.c", "src/encoding/hex/decode.c",
-    "src/hash/crc32/crc32.c")
+    "src/hash/crc32/crc32.c",
+    "src/container/vector/vector.c")

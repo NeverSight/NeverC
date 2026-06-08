@@ -90,6 +90,7 @@ STD_SUBMODULE(unicode, utf16)
 STD_SUBMODULE(container, heap)
 STD_SUBMODULE(container, list)
 STD_SUBMODULE(container, ring)
+STD_SUBMODULE(container, vector)
 
 // compress
 STD_SUBMODULE(compress, lzw)
