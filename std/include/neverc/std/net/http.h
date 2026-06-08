@@ -316,6 +316,64 @@ typedef void (*neverc_http_access_log_func_t)(
  * If func is NULL, logs to stdout in Apache Combined format. */
 void neverc_http_enable_access_log(neverc_http_access_log_func_t func);
 
+/* ======================================================================
+ * Server-Sent Events (SSE) — like Go's http.Flusher for event streams
+ * ====================================================================== */
+
+/* Begin an SSE stream. Sets appropriate headers (Content-Type: text/event-stream,
+ * Cache-Control: no-cache, Connection: keep-alive) and sends them.
+ * After calling this, use neverc_http_sse_event to send events.
+ * Returns 0 on success, -1 on error. */
+int neverc_http_sse_begin(neverc_http_response_writer_t *w);
+
+/* Send an SSE event. Fields:
+ * - event: event type (optional, NULL for default "message")
+ * - data: event data (required)
+ * - id: event ID (optional, NULL to omit)
+ * Returns 0 on success, -1 on error. */
+int neverc_http_sse_event(neverc_http_response_writer_t *w,
+                            const char *event, const char *data,
+                            const char *id);
+
+/* Send an SSE retry directive (milliseconds). */
+int neverc_http_sse_retry(neverc_http_response_writer_t *w, int ms);
+
+/* End the SSE stream and close the connection. */
+void neverc_http_sse_end(neverc_http_response_writer_t *w);
+
+/* ======================================================================
+ * Multipart Form Parsing — like Go r.FormFile / r.MultipartReader
+ * ====================================================================== */
+
+typedef struct {
+    const char *name;          /* form field name */
+    const char *filename;      /* original filename (NULL if not a file) */
+    const char *content_type;  /* MIME type (NULL if not specified) */
+    const char *data;          /* field/file data */
+    size_t      data_len;      /* length of data */
+} neverc_http_multipart_part_t;
+
+typedef struct neverc_http_multipart neverc_http_multipart_t;
+
+/* Parse a multipart/form-data body. boundary is extracted from Content-Type.
+ * Returns NULL on error. Caller must call neverc_http_multipart_free(). */
+neverc_http_multipart_t *neverc_http_multipart_parse(
+    const char *content_type, const char *body, size_t body_len);
+
+/* Get the number of parts. */
+int neverc_http_multipart_count(const neverc_http_multipart_t *mp);
+
+/* Get part by index. Returns NULL if out of bounds. */
+const neverc_http_multipart_part_t *neverc_http_multipart_get(
+    const neverc_http_multipart_t *mp, int index);
+
+/* Get part by field name. Returns NULL if not found. */
+const neverc_http_multipart_part_t *neverc_http_multipart_field(
+    const neverc_http_multipart_t *mp, const char *name);
+
+/* Free a multipart result. */
+void neverc_http_multipart_free(neverc_http_multipart_t *mp);
+
 #ifdef __cplusplus
 }
 #endif

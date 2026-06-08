@@ -1381,29 +1381,12 @@ int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
                           &srv->workers[i]);
     }
 
-    /* Run accept loop on this thread (blocks) */
+    /* Run accept loop on this thread (blocks until neverc_http_shutdown) */
     nc_evloop_run(srv->accept_loop, accept_event_handler);
 
-    /* Graceful shutdown: wait for in-flight requests to drain */
-    int drain_deadline = g_config_shutdown_timeout;
-    uint64_t drain_start = nc_monotonic_ms();
-    while (drain_deadline > 0) {
-        int active = 0;
-        for (int i = 0; i < nw; i++)
-            active += nc_atomic_load(&srv->workers[i].conn_count);
-        if (active <= 0) break;
-        uint64_t elapsed = nc_monotonic_ms() - drain_start;
-        if (elapsed >= (uint64_t)drain_deadline) break;
-#ifdef _WIN32
-        Sleep(10);
-#else
-        usleep(10000);
-#endif
-    }
-
-    /* Stop workers */
+    /* neverc_http_shutdown() has already drained in-flight requests
+     * and signaled workers to stop. Now join them. */
     for (int i = 0; i < nw; i++) {
-        nc_evloop_stop(srv->workers[i].loop);
         nc_thread_join(srv->workers[i].thread);
 
         /* Clean up any remaining connections in this worker */
@@ -1439,7 +1422,26 @@ void neverc_http_shutdown(void) {
     srv->listen_fd = NC_INVALID_SOCK;
     nc_evloop_stop(srv->accept_loop);
 
-    /* Signal all workers to drain and stop */
+    /* Let workers drain in-flight requests before stopping them.
+     * Workers keep running their event loops so current requests
+     * can complete. Only after the timeout do we force-stop. */
+    uint64_t drain_start = nc_monotonic_ms();
+    int drain_ms = g_config_shutdown_timeout;
+    while (drain_ms > 0) {
+        int active = 0;
+        for (int i = 0; i < srv->nworkers; i++)
+            active += nc_atomic_load(&srv->workers[i].conn_count);
+        if (active <= 0) break;
+        uint64_t elapsed = nc_monotonic_ms() - drain_start;
+        if (elapsed >= (uint64_t)drain_ms) break;
+#ifdef _WIN32
+        Sleep(10);
+#else
+        usleep(10000);
+#endif
+    }
+
+    /* Now stop all workers */
     for (int i = 0; i < srv->nworkers; i++) {
         nc_evloop_stop(srv->workers[i].loop);
     }
@@ -1575,7 +1577,12 @@ static void https_handle_connection(void *arg) {
         nc_buf_free(&resp_buf);
 
         int should_close = !pr.keep_alive;
-        rw_free(w);
+        for (int hi = 0; hi < w->nheaders; hi++) {
+            free(w->header_names[hi]);
+            free(w->header_values[hi]);
+        }
+        nc_buf_free(&w->body);
+        free(w);
         nc_buf_free(&raw_hdr_buf);
 
         if (pr.is_chunked && pr.body) free((void *)pr.body);
@@ -1819,7 +1826,13 @@ int neverc_http_memory_writer_result(neverc_http_response_writer_t *w,
 }
 
 void neverc_http_memory_writer_free(neverc_http_response_writer_t *w) {
-    rw_free(w);
+    if (!w) return;
+    for (int i = 0; i < w->nheaders; i++) {
+        free(w->header_names[i]);
+        free(w->header_values[i]);
+    }
+    nc_buf_free(&w->body);
+    free(w);
 }
 
 /* ======================================================================
@@ -2804,5 +2817,275 @@ static int g_access_log_enabled = 0;
 void neverc_http_enable_access_log(neverc_http_access_log_func_t func) {
     g_access_log_enabled = 1;
     g_access_log_func = func;
+}
+
+/* ======================================================================
+ * Server-Sent Events (SSE)
+ * ====================================================================== */
+
+int neverc_http_sse_begin(neverc_http_response_writer_t *w) {
+    if (!w || w->fd == NC_INVALID_SOCK) return -1;
+    w->headers_sent = 1;
+
+    const char *hdr =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/event-stream\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Connection: keep-alive\r\n"
+        "X-Accel-Buffering: no\r\n"
+        "\r\n";
+    return sock_write_all(w->fd, hdr, strlen(hdr));
+}
+
+int neverc_http_sse_event(neverc_http_response_writer_t *w,
+                            const char *event, const char *data,
+                            const char *id) {
+    if (!w || !data || w->fd == NC_INVALID_SOCK) return -1;
+
+    nc_buf_t buf;
+    nc_buf_init(&buf);
+
+    if (id) {
+        nc_buf_append(&buf, "id: ", 4);
+        nc_buf_append(&buf, id, strlen(id));
+        nc_buf_append(&buf, "\n", 1);
+    }
+    if (event) {
+        nc_buf_append(&buf, "event: ", 7);
+        nc_buf_append(&buf, event, strlen(event));
+        nc_buf_append(&buf, "\n", 1);
+    }
+
+    const char *p = data;
+    while (*p) {
+        const char *nl = strchr(p, '\n');
+        if (nl) {
+            nc_buf_append(&buf, "data: ", 6);
+            nc_buf_append(&buf, p, (size_t)(nl - p));
+            nc_buf_append(&buf, "\n", 1);
+            p = nl + 1;
+        } else {
+            nc_buf_append(&buf, "data: ", 6);
+            nc_buf_append(&buf, p, strlen(p));
+            nc_buf_append(&buf, "\n", 1);
+            break;
+        }
+    }
+    nc_buf_append(&buf, "\n", 1);
+
+    int rc = sock_write_all(w->fd, buf.data, buf.len);
+    nc_buf_free(&buf);
+    return rc;
+}
+
+int neverc_http_sse_retry(neverc_http_response_writer_t *w, int ms) {
+    if (!w || w->fd == NC_INVALID_SOCK) return -1;
+    char buf[64];
+    int n = snprintf(buf, sizeof(buf), "retry: %d\n\n", ms);
+    return sock_write_all(w->fd, buf, (size_t)n);
+}
+
+void neverc_http_sse_end(neverc_http_response_writer_t *w) {
+    if (w) w->keep_alive = 0;
+}
+
+/* ======================================================================
+ * Multipart Form Parsing (RFC 2046)
+ * ====================================================================== */
+
+#define MULTIPART_MAX_PARTS 256
+
+struct neverc_http_multipart {
+    neverc_http_multipart_part_t *parts;
+    int nparts;
+    char *storage;
+};
+
+static const char *find_boundary(const char *content_type) {
+    if (!content_type) return NULL;
+    const char *bp = strstr(content_type, "boundary=");
+    if (!bp) return NULL;
+    bp += 9;
+    if (*bp == '"') {
+        bp++;
+        const char *end = strchr(bp, '"');
+        if (!end) return NULL;
+        return bp;
+    }
+    return bp;
+}
+
+static size_t boundary_len(const char *boundary) {
+    size_t len = 0;
+    while (boundary[len] && boundary[len] != '"' &&
+           boundary[len] != ';' && boundary[len] != ' ' &&
+           boundary[len] != '\r' && boundary[len] != '\n')
+        len++;
+    return len;
+}
+
+static void parse_part_headers(const char *hdr, size_t hdrlen,
+                                neverc_http_multipart_part_t *part) {
+    const char *end = hdr + hdrlen;
+    const char *p = hdr;
+    while (p < end) {
+        const char *line_end = NULL;
+        for (const char *q = p; q + 1 < end; q++) {
+            if (q[0] == '\r' && q[1] == '\n') { line_end = q; break; }
+        }
+        if (!line_end) break;
+        if (line_end == p) { p = line_end + 2; break; }
+
+        size_t llen = (size_t)(line_end - p);
+        if (llen > 20 && strncasecmp(p, "Content-Disposition:", 20) == 0) {
+            const char *cd = p + 20;
+            while (cd < line_end && *cd == ' ') cd++;
+
+            const char *nm = strstr(cd, "name=\"");
+            if (nm && nm < line_end) {
+                nm += 6;
+                const char *ne = strchr(nm, '"');
+                if (ne && ne <= line_end) {
+                    char *s = strndup_safe(nm, (size_t)(ne - nm));
+                    part->name = s;
+                }
+            }
+            const char *fn = strstr(cd, "filename=\"");
+            if (fn && fn < line_end) {
+                fn += 10;
+                const char *fe = strchr(fn, '"');
+                if (fe && fe <= line_end) {
+                    char *s = strndup_safe(fn, (size_t)(fe - fn));
+                    part->filename = s;
+                }
+            }
+        }
+        if (llen > 13 && strncasecmp(p, "Content-Type:", 13) == 0) {
+            const char *ct = p + 13;
+            while (ct < line_end && *ct == ' ') ct++;
+            char *s = strndup_safe(ct, (size_t)(line_end - ct));
+            part->content_type = s;
+        }
+        p = line_end + 2;
+    }
+}
+
+neverc_http_multipart_t *neverc_http_multipart_parse(
+    const char *content_type, const char *body, size_t body_len) {
+    const char *boundary = find_boundary(content_type);
+    if (!boundary || !body || body_len == 0) return NULL;
+
+    size_t blen = boundary_len(boundary);
+    if (blen == 0 || blen > 200) return NULL;
+
+    char delim[256];
+    delim[0] = '-';
+    delim[1] = '-';
+    memcpy(delim + 2, boundary, blen);
+    size_t dlen = blen + 2;
+
+    neverc_http_multipart_t *mp =
+        (neverc_http_multipart_t *)calloc(1, sizeof(*mp));
+    if (!mp) return NULL;
+    mp->parts = (neverc_http_multipart_part_t *)calloc(
+        MULTIPART_MAX_PARTS, sizeof(neverc_http_multipart_part_t));
+    if (!mp->parts) { free(mp); return NULL; }
+
+    const char *end = body + body_len;
+    const char *pos = body;
+
+    /* Skip preamble: find first boundary */
+    const char *first = NULL;
+    for (const char *s = pos; s + dlen <= end; s++) {
+        if (memcmp(s, delim, dlen) == 0) { first = s; break; }
+    }
+    if (!first) { free(mp->parts); free(mp); return NULL; }
+
+    pos = first + dlen;
+    if (pos + 2 <= end && pos[0] == '-' && pos[1] == '-') {
+        /* No parts, just closing delimiter */
+        free(mp->parts);
+        free(mp);
+        return NULL;
+    }
+    while (pos < end && (*pos == '\r' || *pos == '\n')) pos++;
+
+    while (pos < end && mp->nparts < MULTIPART_MAX_PARTS) {
+        /* Find next boundary */
+        const char *next_bound = NULL;
+        for (const char *s = pos; s + dlen <= end; s++) {
+            if (s[0] == '\r' && s[1] == '\n' &&
+                memcmp(s + 2, delim, dlen) == 0) {
+                next_bound = s;
+                break;
+            }
+        }
+        if (!next_bound) break;
+
+        /* Part content is from pos to next_bound */
+        const char *part_data = pos;
+        size_t part_len = (size_t)(next_bound - pos);
+
+        /* Find headers/body separator within part */
+        const char *hdr_end = NULL;
+        for (size_t i = 0; i + 3 < part_len; i++) {
+            if (part_data[i] == '\r' && part_data[i+1] == '\n' &&
+                part_data[i+2] == '\r' && part_data[i+3] == '\n') {
+                hdr_end = part_data + i;
+                break;
+            }
+        }
+
+        neverc_http_multipart_part_t *p = &mp->parts[mp->nparts];
+        if (hdr_end) {
+            parse_part_headers(part_data, (size_t)(hdr_end + 2 - part_data), p);
+            p->data = hdr_end + 4;
+            p->data_len = part_len - (size_t)(hdr_end + 4 - part_data);
+        } else {
+            p->data = part_data;
+            p->data_len = part_len;
+        }
+        mp->nparts++;
+
+        /* Move past boundary */
+        pos = next_bound + 2 + dlen;
+        if (pos + 2 <= end && pos[0] == '-' && pos[1] == '-')
+            break; /* closing delimiter */
+        while (pos < end && (*pos == '\r' || *pos == '\n')) pos++;
+    }
+
+    return mp;
+}
+
+int neverc_http_multipart_count(const neverc_http_multipart_t *mp) {
+    return mp ? mp->nparts : 0;
+}
+
+const neverc_http_multipart_part_t *neverc_http_multipart_get(
+    const neverc_http_multipart_t *mp, int index) {
+    if (!mp || index < 0 || index >= mp->nparts) return NULL;
+    return &mp->parts[index];
+}
+
+const neverc_http_multipart_part_t *neverc_http_multipart_field(
+    const neverc_http_multipart_t *mp, const char *name) {
+    if (!mp || !name) return NULL;
+    for (int i = 0; i < mp->nparts; i++) {
+        if (mp->parts[i].name && strcmp(mp->parts[i].name, name) == 0)
+            return &mp->parts[i];
+    }
+    return NULL;
+}
+
+void neverc_http_multipart_free(neverc_http_multipart_t *mp) {
+    if (!mp) return;
+    for (int i = 0; i < mp->nparts; i++) {
+        free((void *)mp->parts[i].name);
+        free((void *)mp->parts[i].filename);
+        free((void *)mp->parts[i].content_type);
+    }
+    free(mp->parts);
+    free(mp->storage);
+    free(mp);
 }
 

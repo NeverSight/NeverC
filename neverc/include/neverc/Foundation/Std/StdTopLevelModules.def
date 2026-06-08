@@ -35,4 +35,5 @@ STD_MODULE(compress)
 STD_MODULE(archive)
 STD_MODULE(text)
 STD_MODULE(debug)
+STD_MODULE(index)
 #undef STD_MODULE

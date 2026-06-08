@@ -1668,6 +1668,136 @@ static void test_cookies(void) {
     stop_test_server(srv);
 }
 
+/* ===== Multipart form parsing ===== */
+
+static void test_multipart_parsing(void) {
+    printf("[multipart_parsing]\n");
+
+    const char *ct = "multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW";
+    const char *body =
+        "------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n"
+        "Content-Disposition: form-data; name=\"username\"\r\n"
+        "\r\n"
+        "john_doe\r\n"
+        "------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n"
+        "Content-Disposition: form-data; name=\"avatar\"; filename=\"photo.png\"\r\n"
+        "Content-Type: image/png\r\n"
+        "\r\n"
+        "PNG_DATA_HERE\r\n"
+        "------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n"
+        "Content-Disposition: form-data; name=\"bio\"\r\n"
+        "\r\n"
+        "Hello\nWorld\r\n"
+        "------WebKitFormBoundary7MA4YWxkTrZu0gW--\r\n";
+
+    neverc_http_multipart_t *mp = neverc_http_multipart_parse(ct, body, strlen(body));
+    check_not_null("multipart parse", mp);
+
+    if (mp) {
+        check_int("multipart count", neverc_http_multipart_count(mp), 3);
+
+        const neverc_http_multipart_part_t *p0 = neverc_http_multipart_get(mp, 0);
+        check_not_null("part 0", p0);
+        if (p0) {
+            check_str("part 0 name", p0->name, "username");
+            check_int("part 0 not file", p0->filename == NULL, 1);
+            check_int("part 0 data len", (int)p0->data_len, 8);
+        }
+
+        const neverc_http_multipart_part_t *p1 = neverc_http_multipart_get(mp, 1);
+        check_not_null("part 1", p1);
+        if (p1) {
+            check_str("part 1 name", p1->name, "avatar");
+            check_str("part 1 filename", p1->filename, "photo.png");
+            check_str("part 1 content_type", p1->content_type, "image/png");
+            check_int("part 1 data len", (int)p1->data_len, 13);
+        }
+
+        const neverc_http_multipart_part_t *bio = neverc_http_multipart_field(mp, "bio");
+        check_not_null("field bio", bio);
+        if (bio) {
+            check_str("bio name", bio->name, "bio");
+            check_int("bio data len", (int)bio->data_len, 11);
+        }
+
+        check_int("field missing", neverc_http_multipart_field(mp, "missing") == NULL, 1);
+        check_int("get out of bounds", neverc_http_multipart_get(mp, 99) == NULL, 1);
+
+        neverc_http_multipart_free(mp);
+    }
+
+    check_int("null content_type", neverc_http_multipart_parse(NULL, body, strlen(body)) == NULL, 1);
+    check_int("null body", neverc_http_multipart_parse(ct, NULL, 0) == NULL, 1);
+    check_int("no boundary", neverc_http_multipart_parse("text/plain", body, strlen(body)) == NULL, 1);
+}
+
+/* ===== SSE (Server-Sent Events) ===== */
+
+static void sse_handler(neverc_http_request_t *req,
+                         neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_sse_begin(w);
+    neverc_http_sse_event(w, NULL, "hello", NULL);
+    neverc_http_sse_event(w, "update", "data1", "1");
+    neverc_http_sse_event(w, "chat", "line1\nline2", "2");
+    neverc_http_sse_retry(w, 3000);
+    neverc_http_sse_end(w);
+}
+
+static void test_sse(void) {
+    printf("[sse]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t srv = fork();
+    if (srv == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/events", sse_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    const char *err = NULL;
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+    check_not_null("sse conn", conn);
+
+    if (conn) {
+        neverc_tcp_set_timeout(conn, 3000);
+        const char *req_str =
+            "GET /events HTTP/1.1\r\n"
+            "Host: 127.0.0.1\r\n"
+            "Accept: text/event-stream\r\n"
+            "Connection: close\r\n\r\n";
+        neverc_tcp_write(conn, req_str, strlen(req_str));
+
+        char resp[8192];
+        size_t total = 0;
+        int n;
+        while ((n = neverc_tcp_read(conn, resp + total,
+                                      sizeof(resp) - total - 1)) > 0)
+            total += (size_t)n;
+        resp[total] = '\0';
+        neverc_tcp_close(conn);
+
+        check_int("sse content-type", strstr(resp, "text/event-stream") != NULL, 1);
+        check_int("sse default event", strstr(resp, "data: hello\n") != NULL, 1);
+        check_int("sse named event", strstr(resp, "event: update\n") != NULL, 1);
+        check_int("sse event data", strstr(resp, "data: data1\n") != NULL, 1);
+        check_int("sse event id", strstr(resp, "id: 1\n") != NULL, 1);
+        check_int("sse multiline data1", strstr(resp, "data: line1\n") != NULL, 1);
+        check_int("sse multiline data2", strstr(resp, "data: line2\n") != NULL, 1);
+        check_int("sse retry", strstr(resp, "retry: 3000\n") != NULL, 1);
+    }
+
+    stop_test_server(srv);
+}
+
 #endif /* _WIN32 */
 
 int main(void) {
@@ -1702,6 +1832,8 @@ int main(void) {
     test_convenience_apis();
     test_benchmark();
     test_cookies();
+    test_multipart_parsing();
+    test_sse();
 #endif
 
     printf("\n--- net/http: %d/%d passed", tests_passed, tests_run);
