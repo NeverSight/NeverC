@@ -399,8 +399,8 @@ int main(void) {
     test_http_ws_upgrade();
 #endif
 
-    printf("\n--- net/websocket: %d/%d passed", tests_passed, tests_run);
+    printf("\n%d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
-    printf(" ---\n");
+    printf("\n");
     return tests_failed > 0 ? 1 : 0;
 }

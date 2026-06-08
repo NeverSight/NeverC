@@ -12,8 +12,12 @@ typedef CRITICAL_SECTION jar_mutex_t;
 #define jar_mutex_destroy(m) DeleteCriticalSection(m)
 #define jar_mutex_lock(m)    EnterCriticalSection(m)
 #define jar_mutex_unlock(m)  LeaveCriticalSection(m)
+static int strncasecmp(const char *a, const char *b, size_t n) {
+    return _strnicmp(a, b, n);
+}
 #else
 #include <pthread.h>
+#include <strings.h>
 typedef pthread_mutex_t jar_mutex_t;
 #define jar_mutex_init(m)    pthread_mutex_init(m, NULL)
 #define jar_mutex_destroy(m) pthread_mutex_destroy(m)

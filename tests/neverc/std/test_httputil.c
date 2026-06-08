@@ -129,19 +129,19 @@ static void test_dump_request_out(void) {
 
 /* ===== Test: Reverse proxy with real backend ===== */
 
-static volatile int g_backend_port = 0;
-static volatile int g_backend_ready = 0;
+static int g_backend_port = 0;
 static int g_proxy_port = 0;
 
-static int do_http_request(int port, const char *request,
-                         char *response, size_t resplen) {
+static int do_http_request_timeout(int port, const char *request,
+                                 char *response, size_t resplen,
+                                 int timeout_ms) {
     const char *err = NULL;
     char addr[64];
     snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
     neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
     if (!conn) return -1;
 
-    neverc_tcp_set_timeout(conn, 3000);
+    neverc_tcp_set_timeout(conn, timeout_ms);
     neverc_tcp_write(conn, request, strlen(request));
 
     int total = 0;
@@ -155,23 +155,9 @@ static int do_http_request(int port, const char *request,
     return total;
 }
 
-static int wait_for_tcp_port(int port, int attempts) {
-    char addr[32];
-    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
-    for (int i = 0; i < attempts; i++) {
-        const char *err = NULL;
-        neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
-        if (conn) {
-            neverc_tcp_close(conn);
-            return 0;
-        }
-#ifdef _WIN32
-        Sleep(100);
-#else
-        usleep(100000);
-#endif
-    }
-    return -1;
+static int do_http_request(int port, const char *request,
+                           char *response, size_t resplen) {
+    return do_http_request_timeout(port, request, response, resplen, 3000);
 }
 
 static void backend_handler(neverc_http_request_t *req,
@@ -197,29 +183,8 @@ static void *backend_thread(void *arg) {
     neverc_http_mux_t *mux = neverc_http_new_mux();
     neverc_http_mux_handle(mux, "/", backend_handler);
 
-    const char *err = NULL;
-    neverc_tcp_listener_t *probe = neverc_tcp_listen("127.0.0.1:0", &err);
-    if (!probe) {
-        neverc_http_mux_free(mux);
-#ifdef _WIN32
-        return 0;
-#else
-        return NULL;
-#endif
-    }
-    neverc_tcp_addr_t pa;
-    neverc_tcp_listener_addr(probe, &pa);
-    g_backend_port = pa.port;
-    neverc_tcp_listener_close(probe);
-
     char addr[32];
     snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_backend_port);
-#if defined(_WIN32)
-    Sleep(100);
-#else
-    usleep(100000);
-#endif
-    g_backend_ready = 1;
     neverc_http_listen_and_serve(addr, mux);
     neverc_http_mux_free(mux);
 
@@ -235,7 +200,7 @@ static int wait_for_backend_http(int port, int attempts) {
         "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
     for (int i = 0; i < attempts; i++) {
         char buf[512];
-        if (do_http_request(port, req, buf, sizeof(buf)) > 0 &&
+        if (do_http_request_timeout(port, req, buf, sizeof(buf), 500) > 0 &&
             strstr(buf, "200 OK") != NULL)
             return 0;
 #ifdef _WIN32
@@ -250,36 +215,27 @@ static int wait_for_backend_http(int port, int attempts) {
 static void test_reverse_proxy_live(void) {
     printf("[reverse_proxy_live]\n");
 
-    g_backend_port = 0;
-    g_backend_ready = 0;
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    if (!ln) {
+        printf("  SKIP: cannot create backend listener\n");
+        return;
+    }
+    neverc_tcp_addr_t addr;
+    neverc_tcp_listener_addr(ln, &addr);
+    g_backend_port = addr.port;
+    neverc_tcp_listener_close(ln);
 
 #ifdef _WIN32
     HANDLE bt = CreateThread(NULL, 0, backend_thread, NULL, 0, NULL);
+    Sleep(500);
 #else
     pthread_t bt;
     pthread_create(&bt, NULL, backend_thread, NULL);
+    usleep(500000);
 #endif
 
-    for (int i = 0; i < 100 && !g_backend_ready; i++) {
-#ifdef _WIN32
-        Sleep(10);
-#else
-        usleep(10000);
-#endif
-    }
-    if (!g_backend_ready || g_backend_port <= 0) {
-        printf("  SKIP: backend thread did not publish a port\n");
-        neverc_http_shutdown();
-#ifdef _WIN32
-        WaitForSingleObject(bt, 3000);
-        CloseHandle(bt);
-#else
-        pthread_join(bt, NULL);
-#endif
-        return;
-    }
-
-    if (wait_for_backend_http(g_backend_port, 50) != 0) {
+    if (wait_for_backend_http(g_backend_port, 30) != 0) {
         printf("  SKIP: backend did not become ready\n");
         neverc_http_shutdown();
 #ifdef _WIN32
