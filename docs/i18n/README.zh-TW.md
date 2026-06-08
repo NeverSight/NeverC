@@ -98,59 +98,9 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 詳細設計說明、平台矩陣、CLI 參考與範例見 **[文件索引](../README.zh-TW.md)**。更多完整可建置範例見 **[examples](../examples/README.zh-TW.md)**。
 
-## macOS 預編譯產物
-
-發布產物已使用 Apple Developer ID 憑證簽名並經過 Apple 公證。解壓後可直接使用，無需任何額外操作。
-
 ## 建置
 
-### 需求
-
-- CMake 3.20+
-- Ninja
-- 支援 C++17 的宿主編譯器（GCC、Clang 或 MSVC）
-
-### 設定
-
-```bash
-cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake
-```
-
-### 編譯
-
-```bash
-cmake --build build-neverc --target neverc
-```
-
-若存在 `ccache` / `sccache` 將自動偵測並啟用。
-
-### 測試
-
-`check-neverc` 目標僅在啟用測試時才會生成。請先使用 `-DNEVERC_INCLUDE_TESTS=ON` 重新配置：
-
-```bash
-cmake -S llvm -B build-neverc -DNEVERC_INCLUDE_TESTS=ON
-cmake --build build-neverc --target check-neverc
-```
-
-### 驗證
-
-```bash
-./build-neverc/bin/neverc --version
-echo 'int main(void) { return 0; }' > /tmp/hello.c
-./build-neverc/bin/neverc -c /tmp/hello.c -o /tmp/hello.o
-```
-
-## 交叉編譯到 Windows
-
-NeverC 在 `runtime/` 中內建了 Windows SDK 和 WDK，無需額外設定。
-
-```bash
-./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -fbuiltin-string -o hello.exe hello.c -lkernel32
-```
-
-Windows shellcode（`-fshellcode`、PEB 匯入解析等）詳見 [shellcode 編譯器文件](../shellcode-compiler/README.zh-TW.md)。
+建置需求、建置命令、macOS 預編譯產物、Windows 交叉編譯、PATH 設定和環境配置詳見 **[本地開發](../local-dev/README.zh-TW.md)**。
 
 ## 貢獻
 

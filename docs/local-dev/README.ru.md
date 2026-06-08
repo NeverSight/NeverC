@@ -88,6 +88,25 @@ tools\neverc-env.bat --global -r &REM удалить из PATH пользова�
 
 ---
 
+## Готовые бинарники для macOS
+
+Релиз подписан сертификатом Apple Developer ID и нотариально заверен Apple. Распакуйте архив и используйте напрямую.
+
+---
+
+## Кросс-компиляция под Windows
+
+NeverC включает Windows SDK и WDK в `runtime/`; внешняя настройка SDK не требуется.
+
+```bash
+neverc --target=x86_64-pc-windows-msvc \
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
+```
+
+О шеллкоде для Windows (`-fshellcode`, PEB-разрешение импортов и т.д.) см. [документацию shellcode-компилятора](../shellcode-compiler/README.ru.md).
+
+---
+
 ## Проверка
 
 ```bash

@@ -88,6 +88,25 @@ Unix 스크립트와 달리 `source`가 필요 없습니다 — `.bat`는 현재
 
 ---
 
+## macOS 사전 빌드 바이너리
+
+릴리스는 Apple Developer ID 인증서로 서명되고 Apple에 의해 공증되었습니다. 아카이브를 추출하여 바로 사용할 수 있습니다.
+
+---
+
+## Windows로 크로스 컴파일
+
+NeverC는 `runtime/`에 Windows SDK와 WDK를 번들로 포함하고 있어 외부 SDK 설정이 필요 없습니다.
+
+```bash
+neverc --target=x86_64-pc-windows-msvc \
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
+```
+
+Windows shellcode(`-fshellcode`, PEB 임포트 해결 등)에 대해서는 [shellcode 컴파일러 문서](../shellcode-compiler/README.ko.md)를 참조하세요.
+
+---
+
 ## 확인
 
 ```bash

@@ -98,59 +98,9 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 Подробности: **[индекс документации](../README.ru.md)** — дизайн, матрица платформ, справочник CLI, примеры. Полные собираемые примеры: **[examples](../examples/README.ru.md)**.
 
-## Готовые бинарники macOS
-
-Релиз подписан сертификатом Apple Developer ID и нотаризован Apple. Извлеките архив и используйте напрямую.
-
 ## Сборка
 
-### Требования
-
-- CMake 3.20+
-- Ninja
-- Хост-компилятор C++17 (GCC, Clang или MSVC)
-
-### Конфигурация
-
-```bash
-cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake
-```
-
-### Сборка
-
-```bash
-cmake --build build-neverc --target neverc
-```
-
-`ccache` / `sccache` определяется автоматически и включается при наличии.
-
-### Тестирование
-
-Цель `check-neverc` создаётся только при включённых тестах. Сначала переконфигурируйте с `-DNEVERC_INCLUDE_TESTS=ON`:
-
-```bash
-cmake -S llvm -B build-neverc -DNEVERC_INCLUDE_TESTS=ON
-cmake --build build-neverc --target check-neverc
-```
-
-### Проверка
-
-```bash
-./build-neverc/bin/neverc --version
-echo 'int main(void) { return 0; }' > /tmp/hello.c
-./build-neverc/bin/neverc -c /tmp/hello.c -o /tmp/hello.o
-```
-
-## Кросс-компиляция под Windows
-
-NeverC включает Windows SDK и WDK в `runtime/`; внешняя настройка не требуется.
-
-```bash
-./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -fbuiltin-string -o hello.exe hello.c -lkernel32
-```
-
-Shellcode для Windows (`-fshellcode`, разрешение через PEB и т.д.): [документация компилятора shellcode](../shellcode-compiler/README.ru.md).
+Требования, команды сборки, готовые бинарники macOS, кросс-компиляция под Windows, настройка PATH и конфигурация среды — см. **[Локальная разработка](../local-dev/README.ru.md)**.
 
 ## Участие в разработке
 

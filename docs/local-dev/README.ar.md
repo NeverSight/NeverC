@@ -88,6 +88,25 @@ tools\neverc-env.bat --global -r &REM إزالة من PATH المستخدم عب
 
 ---
 
+## ملفات macOS التنفيذية الجاهزة
+
+الإصدار موقَّع بشهادة Apple Developer ID ومُوثَّق من Apple. فُكَّ ضغط الأرشيف واستخدمه مباشرةً.
+
+---
+
+## التجميع المتقاطع إلى Windows
+
+يتضمن NeverC حزمة Windows SDK و WDK في `runtime/`؛ لا حاجة لإعداد خارجي.
+
+```bash
+neverc --target=x86_64-pc-windows-msvc \
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
+```
+
+لمزيد من المعلومات حول shellcode لـ Windows (`-fshellcode`، تحليل استيراد PEB، إلخ)، راجع [وثائق مُجمِّع shellcode](../shellcode-compiler/README.ar.md).
+
+---
+
 ## التحقق
 
 ```bash

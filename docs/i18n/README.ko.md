@@ -98,59 +98,9 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 상세 설계, 플랫폼 매트릭스, CLI 참조, 예제는 **[문서 색인](../README.ko.md)** 을 참조하세요. 빌드 가능한 샘플은 **[examples](../examples/README.ko.md)** 참조.
 
-## 사전 빌드된 macOS 바이너리
-
-릴리스는 Apple Developer ID 인증서로 서명되고 Apple에 의해 공증되었습니다. 아카이브를 압축 해제하면 바로 사용할 수 있습니다.
-
 ## 빌드
 
-### 요구 사항
-
-- CMake 3.20+
-- Ninja
-- C++17 호스트 컴파일러(GCC, Clang 또는 MSVC)
-
-### 구성
-
-```bash
-cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake
-```
-
-### 빌드
-
-```bash
-cmake --build build-neverc --target neverc
-```
-
-`ccache` / `sccache`는 자동 감지되어 있으면 활성화됩니다.
-
-### 테스트
-
-`check-neverc` 타깃은 테스트가 활성화된 경우에만 생성됩니다. 먼저 `-DNEVERC_INCLUDE_TESTS=ON` 으로 재구성하세요:
-
-```bash
-cmake -S llvm -B build-neverc -DNEVERC_INCLUDE_TESTS=ON
-cmake --build build-neverc --target check-neverc
-```
-
-### 검증
-
-```bash
-./build-neverc/bin/neverc --version
-echo 'int main(void) { return 0; }' > /tmp/hello.c
-./build-neverc/bin/neverc -c /tmp/hello.c -o /tmp/hello.o
-```
-
-## Windows로 크로스 컴파일
-
-NeverC는 `runtime/`에 Windows SDK와 WDK를 번들로 포함하고 있어 별도 설정이 필요 없습니다.
-
-```bash
-./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -fbuiltin-string -o hello.exe hello.c -lkernel32
-```
-
-Windows shellcode(`-fshellcode`, PEB 임포트 해석 등)는 [shellcode 컴파일러 문서](../shellcode-compiler/README.ko.md)를 참조하세요.
+빌드 요구 사항, 빌드 명령, macOS 사전 빌드 바이너리, Windows 크로스 컴파일, PATH 설정, 환경 구성은 **[로컬 개발](../local-dev/README.ko.md)**을 참조하세요.
 
 ## 기여
 

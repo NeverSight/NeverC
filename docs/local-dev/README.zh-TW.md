@@ -88,6 +88,25 @@ tools\neverc-env.bat --global -r &REM 透過 setx 從使用者 PATH 移除
 
 ---
 
+## macOS 預編譯產物
+
+發佈產物已使用 Apple Developer ID 憑證簽署並經 Apple 公證。解壓後可直接使用，無需任何額外操作。
+
+---
+
+## 交叉編譯到 Windows
+
+NeverC 在 `runtime/` 中內建了 Windows SDK 和 WDK，無需額外設定。
+
+```bash
+neverc --target=x86_64-pc-windows-msvc \
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
+```
+
+Windows shellcode（`-fshellcode`、PEB 匯入解析等）詳見 [shellcode 編譯器文件](../shellcode-compiler/README.zh-TW.md)。
+
+---
+
 ## 驗證
 
 ```bash

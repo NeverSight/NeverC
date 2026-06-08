@@ -98,59 +98,9 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 Voir l'**[index de documentation](../README.fr.md)** pour la conception détaillée, la matrice des plateformes, la référence CLI et les exemples. Exemples compilables complets : **[examples](../examples/README.fr.md)**.
 
-## Binaires macOS pré-compilés
-
-La release est signée avec un certificat Apple Developer ID et notarisée par Apple. Extrayez l'archive et utilisez-la directement.
-
 ## Compilation
 
-### Prérequis
-
-- CMake 3.20+
-- Ninja
-- Compilateur hôte C++17 (GCC, Clang ou MSVC)
-
-### Configuration
-
-```bash
-cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake
-```
-
-### Build
-
-```bash
-cmake --build build-neverc --target neverc
-```
-
-`ccache` / `sccache` est détecté et activé automatiquement s'il est présent.
-
-### Tests
-
-La cible `check-neverc` n'est générée que lorsque les tests sont activés. Reconfigurez d'abord avec `-DNEVERC_INCLUDE_TESTS=ON` :
-
-```bash
-cmake -S llvm -B build-neverc -DNEVERC_INCLUDE_TESTS=ON
-cmake --build build-neverc --target check-neverc
-```
-
-### Vérification
-
-```bash
-./build-neverc/bin/neverc --version
-echo 'int main(void) { return 0; }' > /tmp/hello.c
-./build-neverc/bin/neverc -c /tmp/hello.c -o /tmp/hello.o
-```
-
-## Compilation croisée vers Windows
-
-NeverC embarque un Windows SDK et WDK dans `runtime/` ; aucune configuration externe n'est requise.
-
-```bash
-./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -fbuiltin-string -o hello.exe hello.c -lkernel32
-```
-
-Pour le shellcode Windows (`-fshellcode`, résolution PEB, etc.), voir la [documentation du compilateur shellcode](../shellcode-compiler/README.fr.md).
+Prérequis, commandes de compilation, binaires macOS précompilés, compilation croisée Windows, configuration PATH et environnement — voir **[Développement local](../local-dev/README.fr.md)**.
 
 ## Contribution
 

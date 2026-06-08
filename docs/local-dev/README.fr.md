@@ -88,6 +88,25 @@ Contrairement au script Unix, pas besoin de `source` — le `.bat` modifie direc
 
 ---
 
+## Binaires macOS précompilés
+
+Le package est signé avec un certificat Apple Developer ID et notarisé par Apple. Extrayez l'archive et utilisez directement.
+
+---
+
+## Compilation croisée vers Windows
+
+NeverC intègre un SDK Windows et un WDK dans `runtime/` ; aucune configuration externe n'est nécessaire.
+
+```bash
+neverc --target=x86_64-pc-windows-msvc \
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
+```
+
+Pour le shellcode Windows (`-fshellcode`, résolution d'imports PEB, etc.), voir la [documentation du compilateur shellcode](../shellcode-compiler/README.fr.md).
+
+---
+
 ## Vérification
 
 ```bash

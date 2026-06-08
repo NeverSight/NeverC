@@ -88,6 +88,25 @@ Unlike the Unix script, no `source` is needed — the `.bat` modifies the curren
 
 ---
 
+## Prebuilt macOS Binaries
+
+The release is signed with an Apple Developer ID certificate and notarized by Apple. Extract the archive and use directly — no quarantine workaround needed.
+
+---
+
+## Cross-Compiling to Windows
+
+NeverC bundles a Windows SDK and WDK in `runtime/`; no external SDK setup is needed.
+
+```bash
+neverc --target=x86_64-pc-windows-msvc \
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
+```
+
+See [shellcode compiler docs](../shellcode-compiler/README.md) for Windows shellcode (`-fshellcode`, PEB import resolution, etc.).
+
+---
+
 ## Verify
 
 ```bash

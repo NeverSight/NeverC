@@ -100,59 +100,9 @@ neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 للتفاصيل راجع **[فهرس التوثيق](../README.ar.md)** — التصميم، مصفوفة المنصات، مرجع CLI، الأمثلة. لأمثلة قابلة للبناء راجع **[examples](../examples/README.ar.md)**.
 
-## ثنائيات macOS مُسبقة البناء
-
-الإصدار موقَّع بشهادة Apple Developer ID ومُوثَّق من Apple. فُكَّ ضغط الأرشيف واستخدمه مباشرةً.
-
 ## البناء
 
-### المتطلبات
-
-- CMake 3.20+
-- Ninja
-- مُجمِّع مضيف C++17 (GCC أو Clang أو MSVC)
-
-### التكوين
-
-```bash
-cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake
-```
-
-### التجميع
-
-```bash
-cmake --build build-neverc --target neverc
-```
-
-يُكتشف `ccache` / `sccache` ويُفعَّل تلقائيًا إن وُجد.
-
-### الاختبار
-
-يتم إنشاء الهدف `check-neverc` فقط عند تفعيل الاختبارات. أعد التهيئة أولاً باستخدام `-DNEVERC_INCLUDE_TESTS=ON`:
-
-```bash
-cmake -S llvm -B build-neverc -DNEVERC_INCLUDE_TESTS=ON
-cmake --build build-neverc --target check-neverc
-```
-
-### التحقق
-
-```bash
-./build-neverc/bin/neverc --version
-echo 'int main(void) { return 0; }' > /tmp/hello.c
-./build-neverc/bin/neverc -c /tmp/hello.c -o /tmp/hello.o
-```
-
-## التجميع المتقاطع إلى Windows
-
-يتضمن NeverC حزمة Windows SDK و WDK في `runtime/`؛ لا حاجة لإعداد خارجي.
-
-```bash
-./build-neverc/bin/neverc --target=x86_64-pc-windows-msvc \
-  -fbuiltin-string -o hello.exe hello.c -lkernel32
-```
-
-لـ shellcode على Windows (`-fshellcode`، حل الاستيراد عبر PEB، إلخ): [توثيق مُجمِّع shellcode](../shellcode-compiler/README.ar.md).
+المتطلبات وأوامر البناء وثنائيات macOS الجاهزة والتجميع المتقاطع إلى Windows وإعداد PATH وتهيئة البيئة — راجع **[التطوير المحلي](../local-dev/README.ar.md)**.
 
 ## المساهمة
 

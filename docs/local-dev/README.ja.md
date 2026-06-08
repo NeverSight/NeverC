@@ -88,6 +88,25 @@ Unix スクリプトとは異なり、`source` は不要です — `.bat` は現
 
 ---
 
+## macOS プリビルドバイナリ
+
+リリースは Apple Developer ID 証明書で署名され、Apple による公証済みです。アーカイブを展開してそのまま使用できます。
+
+---
+
+## Windows へのクロスコンパイル
+
+NeverC は `runtime/` に Windows SDK と WDK を同梱しており、外部 SDK の設定は不要です。
+
+```bash
+neverc --target=x86_64-pc-windows-msvc \
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
+```
+
+Windows shellcode（`-fshellcode`、PEB インポート解決など）については [shellcode コンパイラドキュメント](../shellcode-compiler/README.ja.md)を参照してください。
+
+---
+
 ## 動作確認
 
 ```bash
