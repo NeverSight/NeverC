@@ -218,15 +218,16 @@ static int get_free_port(void) {
     return port;
 }
 
-static int do_http_request(int port, const char *request,
-                            char *response, size_t resplen) {
+static int do_http_request_ex(int port, const char *request,
+                               char *response, size_t resplen,
+                               int timeout_ms) {
     const char *err = NULL;
     char addr[64];
     snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
     neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
     if (!conn) return -1;
 
-    neverc_tcp_set_timeout(conn, 3000);
+    neverc_tcp_set_timeout(conn, timeout_ms);
     neverc_tcp_write(conn, request, strlen(request));
 
     int total = 0;
@@ -238,6 +239,11 @@ static int do_http_request(int port, const char *request,
     response[total] = '\0';
     neverc_tcp_close(conn);
     return total;
+}
+
+static int do_http_request(int port, const char *request,
+                            char *response, size_t resplen) {
+    return do_http_request_ex(port, request, response, resplen, 2000);
 }
 
 static pid_t start_test_server(int port) {
@@ -257,7 +263,15 @@ static pid_t start_test_server(int port) {
         neverc_http_listen_and_serve(addr, mux);
         _exit(0);
     }
-    usleep(300000);
+    /* Wait for server to be ready by probing the port */
+    for (int i = 0; i < 100; i++) {
+        usleep(30000);
+        const char *err = NULL;
+        char addr[64];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_tcp_conn_t *c = neverc_tcp_dial(addr, &err);
+        if (c) { neverc_tcp_close(c); break; }
+    }
     return pid;
 }
 
@@ -794,8 +808,8 @@ static void test_malformed_request(void) {
 
     /* Completely garbage data */
     {
-        int n = do_http_request(port, "this is not http\r\n\r\n",
-                                buf, sizeof(buf));
+        int n = do_http_request_ex(port, "this is not http\r\n\r\n",
+                                   buf, sizeof(buf), 500);
         check_int("garbage handled", n >= 0, 1);
     }
 
@@ -806,7 +820,7 @@ static void test_malformed_request(void) {
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
         neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
         if (conn) {
-            neverc_tcp_set_timeout(conn, 1000);
+            neverc_tcp_set_timeout(conn, 500);
             neverc_tcp_write(conn, "\r\n\r\n", 4);
             int n = neverc_tcp_read(conn, buf, sizeof(buf) - 1);
             buf[n > 0 ? n : 0] = '\0';
@@ -817,8 +831,8 @@ static void test_malformed_request(void) {
 
     /* Incomplete request line */
     {
-        int n = do_http_request(port, "GET /hello\r\n\r\n",
-                                buf, sizeof(buf));
+        int n = do_http_request_ex(port, "GET /hello\r\n\r\n",
+                                   buf, sizeof(buf), 500);
         check_int("incomplete line handled", n >= 0, 1);
     }
 
@@ -2137,6 +2151,10 @@ int main(void) {
     test_sse();
     test_serve_file();
     test_strip_prefix();
+    test_path_params();
+    test_rate_limiter();
+    test_cors();
+    test_json_helpers();
 #endif
 
     printf("\n--- net/http: %d/%d passed", tests_passed, tests_run);

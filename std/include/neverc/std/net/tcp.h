@@ -83,6 +83,22 @@ int neverc_tcp_set_nodelay(neverc_tcp_conn_t *conn, int enable);
 /* Set SO_REUSEADDR on listener. */
 int neverc_tcp_set_reuseaddr(neverc_tcp_listener_t *ln, int enable);
 
+/* Set SO_KEEPALIVE on connection. */
+int neverc_tcp_set_keepalive(neverc_tcp_conn_t *conn, int enable);
+
+/* Set socket read buffer size. */
+int neverc_tcp_set_read_buffer(neverc_tcp_conn_t *conn, int bytes);
+
+/* Set socket write buffer size. */
+int neverc_tcp_set_write_buffer(neverc_tcp_conn_t *conn, int bytes);
+
+/* --- Pipe (like Go net.Pipe) --- */
+
+/* Create an in-memory synchronous full-duplex pipe using socketpair.
+ * Returns 0 on success, writes to *a and *b.
+ * Both connections must be freed with neverc_tcp_close(). */
+int neverc_tcp_pipe(neverc_tcp_conn_t **a, neverc_tcp_conn_t **b);
+
 #ifdef __cplusplus
 }
 #endif

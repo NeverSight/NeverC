@@ -390,3 +390,88 @@ int neverc_tcp_set_reuseaddr(neverc_tcp_listener_t *ln, int enable) {
     return setsockopt(ln->fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
 #endif
 }
+
+int neverc_tcp_set_keepalive(neverc_tcp_conn_t *conn, int enable) {
+    if (!conn) return -1;
+    int val = enable ? 1 : 0;
+#ifdef _WIN32
+    return setsockopt(conn->fd, SOL_SOCKET, SO_KEEPALIVE, (const char *)&val,
+                      sizeof(val));
+#else
+    return setsockopt(conn->fd, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val));
+#endif
+}
+
+int neverc_tcp_set_read_buffer(neverc_tcp_conn_t *conn, int bytes) {
+    if (!conn || bytes <= 0) return -1;
+#ifdef _WIN32
+    return setsockopt(conn->fd, SOL_SOCKET, SO_RCVBUF, (const char *)&bytes,
+                      sizeof(bytes));
+#else
+    return setsockopt(conn->fd, SOL_SOCKET, SO_RCVBUF, &bytes, sizeof(bytes));
+#endif
+}
+
+int neverc_tcp_set_write_buffer(neverc_tcp_conn_t *conn, int bytes) {
+    if (!conn || bytes <= 0) return -1;
+#ifdef _WIN32
+    return setsockopt(conn->fd, SOL_SOCKET, SO_SNDBUF, (const char *)&bytes,
+                      sizeof(bytes));
+#else
+    return setsockopt(conn->fd, SOL_SOCKET, SO_SNDBUF, &bytes, sizeof(bytes));
+#endif
+}
+
+/* --- Pipe (like Go net.Pipe) --- */
+
+int neverc_tcp_pipe(neverc_tcp_conn_t **a, neverc_tcp_conn_t **b) {
+    if (!a || !b) return -1;
+    nc_net_init();
+
+#ifdef _WIN32
+    SOCKET sv[2];
+    struct sockaddr_in addr;
+    int addrlen = sizeof(addr);
+    SOCKET listener = socket(AF_INET, SOCK_STREAM, 0);
+    if (listener == INVALID_SOCKET) return -1;
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+    if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) == SOCKET_ERROR ||
+        listen(listener, 1) == SOCKET_ERROR ||
+        getsockname(listener, (struct sockaddr *)&addr, &addrlen) == SOCKET_ERROR) {
+        closesocket(listener);
+        return -1;
+    }
+
+    sv[0] = socket(AF_INET, SOCK_STREAM, 0);
+    if (sv[0] == INVALID_SOCKET) { closesocket(listener); return -1; }
+    if (connect(sv[0], (struct sockaddr *)&addr, sizeof(addr)) == SOCKET_ERROR) {
+        closesocket(sv[0]); closesocket(listener); return -1;
+    }
+    sv[1] = accept(listener, NULL, NULL);
+    closesocket(listener);
+    if (sv[1] == INVALID_SOCKET) { closesocket(sv[0]); return -1; }
+#else
+    int sv[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+        return -1;
+#endif
+
+    const char *err = NULL;
+    *a = neverc_tcp_adopt(sv[0], NULL, 0, &err);
+    *b = neverc_tcp_adopt(sv[1], NULL, 0, &err);
+    if (!*a || !*b) {
+        if (*a) neverc_tcp_close(*a);
+        else nc_sock_close(sv[0]);
+        if (*b) neverc_tcp_close(*b);
+        else nc_sock_close(sv[1]);
+        *a = *b = NULL;
+        return -1;
+    }
+    return 0;
+}
+
+/* DNS/address utilities are in resolve.h / resolve.c */
