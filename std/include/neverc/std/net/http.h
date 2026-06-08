@@ -374,6 +374,57 @@ const neverc_http_multipart_part_t *neverc_http_multipart_field(
 /* Free a multipart result. */
 void neverc_http_multipart_free(neverc_http_multipart_t *mp);
 
+/* ======================================================================
+ * Content Type Detection — like Go http.DetectContentType
+ *
+ * Implements the WHATWG MIME Sniffing Standard algorithm.
+ * Considers at most the first 512 bytes.
+ * Always returns a valid MIME type string.
+ * ====================================================================== */
+
+/* Detect the content type of data by examining magic bytes.
+ * Returns a static string — caller must NOT free it. */
+const char *neverc_http_detect_content_type(const void *data, size_t len);
+
+/* ======================================================================
+ * Handler Wrappers — like Go http.StripPrefix, http.TimeoutHandler
+ * ====================================================================== */
+
+/* Create a handler that strips prefix from the URL path before passing
+ * to the inner handler. If the path doesn't have the prefix, returns 404.
+ * (like Go http.StripPrefix) */
+void neverc_http_strip_prefix(neverc_http_mux_t *mux, const char *prefix,
+                                const char *pattern,
+                                neverc_http_handler_func_t handler);
+
+/* Send a 404 Not Found response (like Go http.NotFound). */
+void neverc_http_not_found(neverc_http_request_t *req,
+                             neverc_http_response_writer_t *w);
+
+/* Serve a single file with proper Content-Type, Content-Length, and
+ * Last-Modified headers. Supports Range requests and If-Modified-Since.
+ * (like Go http.ServeFile) */
+void neverc_http_serve_file(neverc_http_response_writer_t *w,
+                              neverc_http_request_t *req,
+                              const char *filepath);
+
+/* ======================================================================
+ * Header Utilities — like Go http.CanonicalHeaderKey
+ * ====================================================================== */
+
+/* Convert header name to canonical form: first letter and letters
+ * following '-' are uppercased, rest lowercased.
+ * E.g. "accept-encoding" → "Accept-Encoding".
+ * Writes result to buf. Returns buf. */
+char *neverc_http_canonical_header_key(const char *key, char *buf,
+                                         size_t buflen);
+
+/* Get a response header value by name from the raw response headers string.
+ * Returns NULL if not found. Result is written to buf. */
+const char *neverc_http_response_header(const neverc_http_response_t *resp,
+                                          const char *name,
+                                          char *buf, size_t buflen);
+
 #ifdef __cplusplus
 }
 #endif

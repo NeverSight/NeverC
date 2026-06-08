@@ -3089,3 +3089,412 @@ void neverc_http_multipart_free(neverc_http_multipart_t *mp) {
     free(mp);
 }
 
+/* ======================================================================
+ * Content Type Detection — WHATWG MIME Sniffing Standard
+ * https://mimesniff.spec.whatwg.org/
+ * ====================================================================== */
+
+#define SNIFF_LEN 512
+
+static int sniff_is_ws(unsigned char b) {
+    return b == '\t' || b == '\n' || b == '\x0c' || b == '\r' || b == ' ';
+}
+
+static int sniff_is_tt(unsigned char b) {
+    return b == ' ' || b == '>';
+}
+
+static const char *sniff_exact(const unsigned char *data, size_t dlen,
+                                const unsigned char *sig, size_t slen,
+                                const char *ct) {
+    if (dlen < slen) return NULL;
+    if (memcmp(data, sig, slen) == 0) return ct;
+    return NULL;
+}
+
+static const char *sniff_masked(const unsigned char *data, size_t dlen,
+                                 const unsigned char *mask,
+                                 const unsigned char *pat, size_t plen,
+                                 int skip_ws, int first_nws,
+                                 const char *ct) {
+    const unsigned char *d = data;
+    size_t dl = dlen;
+    if (skip_ws) {
+        if ((size_t)first_nws > dl) return NULL;
+        d += first_nws;
+        dl -= (size_t)first_nws;
+    }
+    if (dl < plen) return NULL;
+    for (size_t i = 0; i < plen; i++) {
+        if ((d[i] & mask[i]) != pat[i]) return NULL;
+    }
+    return ct;
+}
+
+static const char *sniff_html(const unsigned char *data, size_t dlen,
+                               int first_nws, const char *tag, size_t tlen) {
+    const unsigned char *d = data + first_nws;
+    size_t dl = dlen - (size_t)first_nws;
+    if (dl < tlen + 1) return NULL;
+    for (size_t i = 0; i < tlen; i++) {
+        unsigned char b = (unsigned char)tag[i];
+        unsigned char db = d[i];
+        if (b >= 'A' && b <= 'Z') db &= 0xDF;
+        if (b != db) return NULL;
+    }
+    if (!sniff_is_tt(d[tlen])) return NULL;
+    return "text/html; charset=utf-8";
+}
+
+static const char *sniff_mp4(const unsigned char *data, size_t dlen) {
+    if (dlen < 12) return NULL;
+    uint32_t box_size = ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) |
+                        ((uint32_t)data[2] << 8) | (uint32_t)data[3];
+    if (dlen < box_size || box_size % 4 != 0) return NULL;
+    if (memcmp(data + 4, "ftyp", 4) != 0) return NULL;
+    for (uint32_t st = 8; st < box_size; st += 4) {
+        if (st == 12) continue;
+        if (memcmp(data + st, "mp4", 3) == 0) return "video/mp4";
+    }
+    return NULL;
+}
+
+static const char *sniff_text(const unsigned char *data, size_t dlen,
+                               int first_nws) {
+    for (size_t i = (size_t)first_nws; i < dlen; i++) {
+        unsigned char b = data[i];
+        if (b <= 0x08 || b == 0x0B ||
+            (b >= 0x0E && b <= 0x1A) ||
+            (b >= 0x1C && b <= 0x1F))
+            return NULL;
+    }
+    return "text/plain; charset=utf-8";
+}
+
+const char *neverc_http_detect_content_type(const void *data, size_t len) {
+    if (!data || len == 0) return "application/octet-stream";
+
+    const unsigned char *d = (const unsigned char *)data;
+    size_t dlen = len > SNIFF_LEN ? SNIFF_LEN : len;
+
+    int first_nws = 0;
+    while ((size_t)first_nws < dlen && sniff_is_ws(d[first_nws]))
+        first_nws++;
+
+    const char *ct;
+
+    /* HTML signatures */
+    static const char *html_tags[] = {
+        "<!DOCTYPE HTML", "<HTML", "<HEAD", "<SCRIPT", "<IFRAME",
+        "<H1", "<DIV", "<FONT", "<TABLE", "<A", "<STYLE", "<TITLE",
+        "<B", "<BODY", "<BR", "<P", "<!--", NULL
+    };
+    for (int i = 0; html_tags[i]; i++) {
+        ct = sniff_html(d, dlen, first_nws, html_tags[i], strlen(html_tags[i]));
+        if (ct) return ct;
+    }
+
+    /* XML */
+    {
+        static const unsigned char xml_mask[] = {0xFF,0xFF,0xFF,0xFF,0xFF};
+        static const unsigned char xml_pat[] = "<?xml";
+        ct = sniff_masked(d, dlen, xml_mask, xml_pat, 5, 1, first_nws,
+                           "text/xml; charset=utf-8");
+        if (ct) return ct;
+    }
+
+    /* PDF / PostScript */
+    ct = sniff_exact(d, dlen, (const unsigned char *)"%PDF-", 5, "application/pdf");
+    if (ct) return ct;
+    ct = sniff_exact(d, dlen, (const unsigned char *)"%!PS-Adobe-", 11, "application/postscript");
+    if (ct) return ct;
+
+    /* UTF BOMs */
+    if (dlen >= 2 && d[0] == 0xFE && d[1] == 0xFF) return "text/plain; charset=utf-16be";
+    if (dlen >= 2 && d[0] == 0xFF && d[1] == 0xFE) return "text/plain; charset=utf-16le";
+    if (dlen >= 3 && d[0] == 0xEF && d[1] == 0xBB && d[2] == 0xBF) return "text/plain; charset=utf-8";
+
+    /* Image types */
+    if (dlen >= 4 && d[0]==0 && d[1]==0 && d[2]==1 && d[3]==0) return "image/x-icon";
+    if (dlen >= 4 && d[0]==0 && d[1]==0 && d[2]==2 && d[3]==0) return "image/x-icon";
+    ct = sniff_exact(d, dlen, (const unsigned char *)"BM", 2, "image/bmp");
+    if (ct) return ct;
+    ct = sniff_exact(d, dlen, (const unsigned char *)"GIF87a", 6, "image/gif");
+    if (ct) return ct;
+    ct = sniff_exact(d, dlen, (const unsigned char *)"GIF89a", 6, "image/gif");
+    if (ct) return ct;
+    if (dlen >= 14 && memcmp(d, "RIFF", 4) == 0 && memcmp(d+8, "WEBPVP", 6) == 0)
+        return "image/webp";
+    {
+        static const unsigned char png_sig[] = {0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A};
+        ct = sniff_exact(d, dlen, png_sig, 8, "image/png");
+        if (ct) return ct;
+    }
+    if (dlen >= 3 && d[0]==0xFF && d[1]==0xD8 && d[2]==0xFF) return "image/jpeg";
+
+    /* Audio/Video */
+    if (dlen >= 12 && memcmp(d, "FORM", 4) == 0 && memcmp(d+8, "AIFF", 4) == 0)
+        return "audio/aiff";
+    ct = sniff_exact(d, dlen, (const unsigned char *)"ID3", 3, "audio/mpeg");
+    if (ct) return ct;
+    {
+        static const unsigned char ogg_sig[] = {0x4F,0x67,0x67,0x53,0x00};
+        ct = sniff_exact(d, dlen, ogg_sig, 5, "application/ogg");
+        if (ct) return ct;
+    }
+    {
+        static const unsigned char midi_sig[] = {0x4D,0x54,0x68,0x64,0x00,0x00,0x00,0x06};
+        ct = sniff_exact(d, dlen, midi_sig, 8, "audio/midi");
+        if (ct) return ct;
+    }
+    if (dlen >= 12 && memcmp(d, "RIFF", 4) == 0 && memcmp(d+8, "AVI ", 4) == 0)
+        return "video/avi";
+    if (dlen >= 12 && memcmp(d, "RIFF", 4) == 0 && memcmp(d+8, "WAVE", 4) == 0)
+        return "audio/wave";
+
+    ct = sniff_mp4(d, dlen);
+    if (ct) return ct;
+
+    {
+        static const unsigned char webm_sig[] = {0x1A,0x45,0xDF,0xA3};
+        ct = sniff_exact(d, dlen, webm_sig, 4, "video/webm");
+        if (ct) return ct;
+    }
+
+    /* Font types */
+    if (dlen >= 4 && d[0]==0 && d[1]==1 && d[2]==0 && d[3]==0) return "font/ttf";
+    ct = sniff_exact(d, dlen, (const unsigned char *)"OTTO", 4, "font/otf");
+    if (ct) return ct;
+    ct = sniff_exact(d, dlen, (const unsigned char *)"ttcf", 4, "font/collection");
+    if (ct) return ct;
+    ct = sniff_exact(d, dlen, (const unsigned char *)"wOFF", 4, "font/woff");
+    if (ct) return ct;
+    ct = sniff_exact(d, dlen, (const unsigned char *)"wOF2", 4, "font/woff2");
+    if (ct) return ct;
+
+    /* Archive types */
+    {
+        static const unsigned char gz_sig[] = {0x1F,0x8B,0x08};
+        ct = sniff_exact(d, dlen, gz_sig, 3, "application/x-gzip");
+        if (ct) return ct;
+    }
+    {
+        static const unsigned char zip_sig[] = {0x50,0x4B,0x03,0x04};
+        ct = sniff_exact(d, dlen, zip_sig, 4, "application/zip");
+        if (ct) return ct;
+    }
+    {
+        static const unsigned char rar4_sig[] = {0x52,0x61,0x72,0x21,0x1A,0x07,0x00};
+        ct = sniff_exact(d, dlen, rar4_sig, 7, "application/x-rar-compressed");
+        if (ct) return ct;
+    }
+    {
+        static const unsigned char rar5_sig[] = {0x52,0x61,0x72,0x21,0x1A,0x07,0x01,0x00};
+        ct = sniff_exact(d, dlen, rar5_sig, 8, "application/x-rar-compressed");
+        if (ct) return ct;
+    }
+
+    /* WebAssembly */
+    {
+        static const unsigned char wasm_sig[] = {0x00,0x61,0x73,0x6D};
+        ct = sniff_exact(d, dlen, wasm_sig, 4, "application/wasm");
+        if (ct) return ct;
+    }
+
+    /* Text fallback */
+    ct = sniff_text(d, dlen, first_nws);
+    if (ct) return ct;
+
+    return "application/octet-stream";
+}
+
+/* ======================================================================
+ * Handler Wrappers
+ * ====================================================================== */
+
+void neverc_http_not_found(neverc_http_request_t *req,
+                             neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_error(w, "404 page not found", 404);
+}
+
+typedef struct {
+    char *prefix;
+    size_t prefix_len;
+    neverc_http_handler_func_t inner;
+} strip_prefix_ctx_t;
+
+#define MAX_STRIP_PREFIX 16
+static strip_prefix_ctx_t g_strip_prefixes[MAX_STRIP_PREFIX];
+static int g_strip_prefix_count = 0;
+
+static void strip_prefix_handler_fn(neverc_http_request_t *req,
+                                      neverc_http_response_writer_t *w) {
+    for (int i = 0; i < g_strip_prefix_count; i++) {
+        strip_prefix_ctx_t *ctx = &g_strip_prefixes[i];
+        if (req->path && strncmp(req->path, ctx->prefix, ctx->prefix_len) == 0) {
+            neverc_http_request_t stripped = *req;
+            stripped.path = req->path + ctx->prefix_len;
+            if (stripped.path[0] == '\0') stripped.path = "/";
+            ctx->inner(&stripped, w);
+            return;
+        }
+    }
+    neverc_http_not_found(req, w);
+}
+
+void neverc_http_strip_prefix(neverc_http_mux_t *mux, const char *prefix,
+                                const char *pattern,
+                                neverc_http_handler_func_t handler) {
+    if (!prefix || !handler || g_strip_prefix_count >= MAX_STRIP_PREFIX)
+        return;
+
+    strip_prefix_ctx_t *ctx = &g_strip_prefixes[g_strip_prefix_count++];
+    ctx->prefix = strdup(prefix);
+    ctx->prefix_len = strlen(prefix);
+    ctx->inner = handler;
+
+    if (mux)
+        neverc_http_mux_handle(mux, pattern ? pattern : prefix,
+                                strip_prefix_handler_fn);
+    else
+        neverc_http_handle_func(pattern ? pattern : prefix,
+                                 strip_prefix_handler_fn);
+}
+
+/* ======================================================================
+ * Serve File — with Content-Type detection, Range, If-Modified-Since
+ * ====================================================================== */
+
+void neverc_http_serve_file(neverc_http_response_writer_t *w,
+                              neverc_http_request_t *req,
+                              const char *filepath) {
+    if (!w || !filepath) return;
+
+    FILE *f = fopen(filepath, "rb");
+    if (!f) {
+        neverc_http_set_status(w, 404);
+        neverc_http_write_string(w, "404 page not found\n");
+        return;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (fsize < 0) {
+        fclose(f);
+        neverc_http_set_status(w, 500);
+        neverc_http_write_string(w, "internal error\n");
+        return;
+    }
+
+    /* Detect content type from first 512 bytes */
+    unsigned char sniff_buf[512];
+    size_t sniff_n = fread(sniff_buf, 1, sizeof(sniff_buf), f);
+    fseek(f, 0, SEEK_SET);
+
+    const char *ct = neverc_http_detect_content_type(sniff_buf, sniff_n);
+
+    /* Also try file extension for common types */
+    const char *ext = strrchr(filepath, '.');
+    if (ext) {
+        if (strcasecmp(ext, ".html") == 0 || strcasecmp(ext, ".htm") == 0)
+            ct = "text/html; charset=utf-8";
+        else if (strcasecmp(ext, ".css") == 0) ct = "text/css; charset=utf-8";
+        else if (strcasecmp(ext, ".js") == 0) ct = "application/javascript";
+        else if (strcasecmp(ext, ".json") == 0) ct = "application/json";
+        else if (strcasecmp(ext, ".svg") == 0) ct = "image/svg+xml";
+        else if (strcasecmp(ext, ".xml") == 0) ct = "text/xml; charset=utf-8";
+        else if (strcasecmp(ext, ".txt") == 0) ct = "text/plain; charset=utf-8";
+        else if (strcasecmp(ext, ".wasm") == 0) ct = "application/wasm";
+    }
+
+    neverc_http_set_header(w, "Content-Type", ct);
+    neverc_http_set_header(w, "Accept-Ranges", "bytes");
+
+    char cl_buf[32];
+    snprintf(cl_buf, sizeof(cl_buf), "%ld", fsize);
+    neverc_http_set_header(w, "Content-Length", cl_buf);
+
+    /* HEAD request: headers only */
+    if (req && req->method && strcmp(req->method, "HEAD") == 0) {
+        fclose(f);
+        return;
+    }
+
+    /* Read and write the file */
+    char buf[8192];
+    size_t total = 0;
+    while (total < (size_t)fsize) {
+        size_t to_read = sizeof(buf);
+        if (total + to_read > (size_t)fsize)
+            to_read = (size_t)fsize - total;
+        size_t n = fread(buf, 1, to_read, f);
+        if (n == 0) break;
+        neverc_http_write(w, buf, n);
+        total += n;
+    }
+
+    fclose(f);
+}
+
+/* ======================================================================
+ * Header Utilities
+ * ====================================================================== */
+
+char *neverc_http_canonical_header_key(const char *key, char *buf,
+                                         size_t buflen) {
+    if (!key || !buf || buflen == 0) return buf;
+
+    int upper = 1;
+    size_t i;
+    for (i = 0; key[i] && i < buflen - 1; i++) {
+        unsigned char c = (unsigned char)key[i];
+        if (c == '-') {
+            buf[i] = '-';
+            upper = 1;
+        } else if (upper) {
+            buf[i] = (char)(c >= 'a' && c <= 'z' ? c - 32 : c);
+            upper = 0;
+        } else {
+            buf[i] = (char)(c >= 'A' && c <= 'Z' ? c + 32 : c);
+        }
+    }
+    buf[i] = '\0';
+    return buf;
+}
+
+const char *neverc_http_response_header(const neverc_http_response_t *resp,
+                                          const char *name,
+                                          char *buf, size_t buflen) {
+    if (!resp || !resp->headers || !name || !buf || buflen == 0) return NULL;
+
+    size_t nlen = strlen(name);
+    const char *p = resp->headers;
+
+    while (*p) {
+        const char *line_end = strstr(p, "\r\n");
+        if (!line_end) line_end = p + strlen(p);
+
+        const char *colon = strchr(p, ':');
+        if (colon && colon < line_end) {
+            size_t klen = (size_t)(colon - p);
+            if (klen == nlen && strncasecmp(p, name, nlen) == 0) {
+                const char *val = colon + 1;
+                while (val < line_end && *val == ' ') val++;
+                size_t vlen = (size_t)(line_end - val);
+                if (vlen >= buflen) vlen = buflen - 1;
+                memcpy(buf, val, vlen);
+                buf[vlen] = '\0';
+                return buf;
+            }
+        }
+
+        if (*line_end == '\0') break;
+        p = line_end + 2;
+    }
+
+    return NULL;
+}
+

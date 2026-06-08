@@ -1798,6 +1798,304 @@ static void test_sse(void) {
     stop_test_server(srv);
 }
 
+/* ===== DetectContentType (like Go http.DetectContentType) ===== */
+
+static void test_detect_content_type(void) {
+    printf("[detect_content_type]\n");
+
+    /* HTML */
+    check_str("html doctype",
+              neverc_http_detect_content_type("<!DOCTYPE HTML><html>", 21),
+              "text/html; charset=utf-8");
+    check_str("html tag",
+              neverc_http_detect_content_type("<HTML>", 6),
+              "text/html; charset=utf-8");
+    check_str("html head",
+              neverc_http_detect_content_type("<HEAD>", 6),
+              "text/html; charset=utf-8");
+    check_str("html with ws",
+              neverc_http_detect_content_type("  \t<HTML>", 9),
+              "text/html; charset=utf-8");
+    check_str("html comment",
+              neverc_http_detect_content_type("<!-- comment -->", 16),
+              "text/html; charset=utf-8");
+
+    /* XML */
+    check_str("xml",
+              neverc_http_detect_content_type("<?xml version=\"1.0\"?>", 21),
+              "text/xml; charset=utf-8");
+
+    /* PDF */
+    check_str("pdf",
+              neverc_http_detect_content_type("%PDF-1.4", 8),
+              "application/pdf");
+
+    /* Images */
+    {
+        unsigned char png[] = {0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,0x00};
+        check_str("png", neverc_http_detect_content_type(png, 8), "image/png");
+    }
+    {
+        unsigned char jpg[] = {0xFF,0xD8,0xFF,0xE0};
+        check_str("jpeg", neverc_http_detect_content_type(jpg, 4), "image/jpeg");
+    }
+    check_str("gif87",
+              neverc_http_detect_content_type("GIF87a", 6), "image/gif");
+    check_str("gif89",
+              neverc_http_detect_content_type("GIF89a", 6), "image/gif");
+    check_str("bmp",
+              neverc_http_detect_content_type("BM\x00\x00", 4), "image/bmp");
+
+    /* Audio/Video */
+    check_str("mp3/id3",
+              neverc_http_detect_content_type("ID3\x03\x00", 5), "audio/mpeg");
+    {
+        unsigned char ogg[] = {0x4F,0x67,0x67,0x53,0x00};
+        check_str("ogg", neverc_http_detect_content_type(ogg, 5), "application/ogg");
+    }
+    {
+        unsigned char webm[] = {0x1A,0x45,0xDF,0xA3};
+        check_str("webm", neverc_http_detect_content_type(webm, 4), "video/webm");
+    }
+
+    /* Archives */
+    {
+        unsigned char gz[] = {0x1F,0x8B,0x08};
+        check_str("gzip", neverc_http_detect_content_type(gz, 3), "application/x-gzip");
+    }
+    {
+        unsigned char zip[] = {0x50,0x4B,0x03,0x04};
+        check_str("zip", neverc_http_detect_content_type(zip, 4), "application/zip");
+    }
+
+    /* Fonts */
+    check_str("woff",
+              neverc_http_detect_content_type("wOFF\x00", 5), "font/woff");
+    check_str("woff2",
+              neverc_http_detect_content_type("wOF2\x00", 5), "font/woff2");
+    check_str("otf",
+              neverc_http_detect_content_type("OTTO\x00", 5), "font/otf");
+
+    /* WebAssembly */
+    {
+        unsigned char wasm[] = {0x00,0x61,0x73,0x6D};
+        check_str("wasm", neverc_http_detect_content_type(wasm, 4), "application/wasm");
+    }
+
+    /* Plain text */
+    check_str("plain text",
+              neverc_http_detect_content_type("Hello, world!", 13),
+              "text/plain; charset=utf-8");
+
+    /* Binary data → octet-stream */
+    {
+        unsigned char bin[] = {0x01,0x02,0x03,0x04};
+        check_str("binary", neverc_http_detect_content_type(bin, 4),
+                  "application/octet-stream");
+    }
+
+    /* Edge cases */
+    check_str("null data",
+              neverc_http_detect_content_type(NULL, 0),
+              "application/octet-stream");
+    check_str("empty data",
+              neverc_http_detect_content_type("", 0),
+              "application/octet-stream");
+}
+
+/* ===== CanonicalHeaderKey ===== */
+
+static void test_canonical_header_key(void) {
+    printf("[canonical_header_key]\n");
+    char buf[128];
+
+    neverc_http_canonical_header_key("accept-encoding", buf, sizeof(buf));
+    check_str("accept-encoding", buf, "Accept-Encoding");
+
+    neverc_http_canonical_header_key("content-type", buf, sizeof(buf));
+    check_str("content-type", buf, "Content-Type");
+
+    neverc_http_canonical_header_key("x-custom-header", buf, sizeof(buf));
+    check_str("x-custom-header", buf, "X-Custom-Header");
+
+    neverc_http_canonical_header_key("HOST", buf, sizeof(buf));
+    check_str("HOST -> Host", buf, "Host");
+
+    neverc_http_canonical_header_key("x", buf, sizeof(buf));
+    check_str("single char", buf, "X");
+
+    neverc_http_canonical_header_key("", buf, sizeof(buf));
+    check_str("empty key", buf, "");
+
+    neverc_http_canonical_header_key("already-Canonical", buf, sizeof(buf));
+    check_str("mixed case", buf, "Already-Canonical");
+}
+
+/* ===== NotFound handler ===== */
+
+static void test_not_found_handler(void) {
+    printf("[not_found_handler]\n");
+
+    neverc_http_response_writer_t *w = neverc_http_memory_writer_new();
+    check_not_null("mem writer", w);
+    if (!w) return;
+
+    neverc_http_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/nonexistent";
+
+    neverc_http_not_found(&req, w);
+
+    char *data = NULL;
+    size_t data_len = 0;
+    int status = neverc_http_memory_writer_result(w, &data, &data_len);
+
+    check_int("not_found status", status, 404);
+    check_int("not_found body", data && strstr(data, "404 page not found") != NULL, 1);
+
+    free(data);
+    neverc_http_memory_writer_free(w);
+}
+
+/* ===== ServeFile test ===== */
+
+static void test_serve_file(void) {
+    printf("[serve_file]\n");
+
+#ifndef _WIN32
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    /* Create a temp file to serve */
+    const char *tmppath = "/tmp/neverc_serve_test.txt";
+    FILE *f = fopen(tmppath, "w");
+    if (!f) { printf("  SKIP: cannot create temp file\n"); return; }
+    fprintf(f, "Hello from served file!");
+    fclose(f);
+
+    /* Memory writer test for ServeFile */
+    neverc_http_response_writer_t *w = neverc_http_memory_writer_new();
+    check_not_null("serve_file mem writer", w);
+    if (w) {
+        neverc_http_request_t req;
+        memset(&req, 0, sizeof(req));
+        req.method = "GET";
+        req.path = "/test.txt";
+
+        neverc_http_serve_file(w, &req, tmppath);
+
+        char *data = NULL;
+        size_t data_len = 0;
+        int status = neverc_http_memory_writer_result(w, &data, &data_len);
+
+        check_int("serve_file status", status, 200);
+        check_int("serve_file body",
+                   data && strstr(data, "Hello from served file!") != NULL, 1);
+
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
+    /* Test non-existent file */
+    w = neverc_http_memory_writer_new();
+    if (w) {
+        neverc_http_request_t req;
+        memset(&req, 0, sizeof(req));
+        req.method = "GET";
+        req.path = "/nope.txt";
+
+        neverc_http_serve_file(w, &req, "/tmp/neverc_nonexistent_file.txt");
+
+        char *data = NULL;
+        size_t data_len = 0;
+        int status = neverc_http_memory_writer_result(w, &data, &data_len);
+
+        check_int("serve_file 404 status", status, 404);
+
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
+    unlink(tmppath);
+#endif
+}
+
+/* ===== StripPrefix via server test ===== */
+
+static void strip_inner_handler(neverc_http_request_t *req,
+                                  neverc_http_response_writer_t *w) {
+    neverc_http_writef(w, "stripped_path=%s", req->path);
+}
+
+static void test_strip_prefix(void) {
+    printf("[strip_prefix]\n");
+
+#ifndef _WIN32
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_strip_prefix(mux, "/api", "/api/",
+                                  strip_inner_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+
+    char buf[4096];
+    int n = do_http_request(port,
+        "GET /api/users HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("strip resp", n > 0, 1);
+    check_int("strip body", strstr(buf, "stripped_path=/users") != NULL, 1);
+
+    stop_test_server(pid);
+#endif
+}
+
+/* ===== ResponseHeader test ===== */
+
+static void test_response_header(void) {
+    printf("[response_header]\n");
+
+    neverc_http_response_t resp;
+    memset(&resp, 0, sizeof(resp));
+    resp.headers = strdup("Content-Type: application/json\r\n"
+                          "X-Custom: test-value\r\n"
+                          "Cache-Control: no-cache\r\n");
+
+    char buf[128];
+    const char *v;
+
+    v = neverc_http_response_header(&resp, "Content-Type", buf, sizeof(buf));
+    check_not_null("resp hdr content-type", v);
+    if (v) check_str("resp hdr ct val", v, "application/json");
+
+    v = neverc_http_response_header(&resp, "X-Custom", buf, sizeof(buf));
+    check_not_null("resp hdr x-custom", v);
+    if (v) check_str("resp hdr custom val", v, "test-value");
+
+    v = neverc_http_response_header(&resp, "Cache-Control", buf, sizeof(buf));
+    check_not_null("resp hdr cache-control", v);
+    if (v) check_str("resp hdr cache val", v, "no-cache");
+
+    v = neverc_http_response_header(&resp, "Missing", buf, sizeof(buf));
+    check_int("resp hdr missing", v == NULL, 1);
+
+    /* Null safety */
+    v = neverc_http_response_header(NULL, "X", buf, sizeof(buf));
+    check_int("resp hdr null resp", v == NULL, 1);
+    v = neverc_http_response_header(&resp, NULL, buf, sizeof(buf));
+    check_int("resp hdr null name", v == NULL, 1);
+
+    free(resp.headers);
+}
+
 #endif /* _WIN32 */
 
 int main(void) {
@@ -1806,6 +2104,10 @@ int main(void) {
     test_mux();
     test_writer_null_safety();
     test_response_free_null();
+    test_detect_content_type();
+    test_canonical_header_key();
+    test_not_found_handler();
+    test_response_header();
 #ifndef _WIN32
     test_http_server();
     test_http_client();
@@ -1834,6 +2136,8 @@ int main(void) {
     test_cookies();
     test_multipart_parsing();
     test_sse();
+    test_serve_file();
+    test_strip_prefix();
 #endif
 
     printf("\n--- net/http: %d/%d passed", tests_passed, tests_run);
