@@ -268,6 +268,123 @@ static void test_connection_rate(void) {
     check_true("conn rate > 500 conn/s", cps > 500.0);
 }
 
+/* ===== Benchmark: Concurrent connections (many open simultaneously) ===== */
+
+static void test_concurrent_connections(void) {
+    printf("[concurrent_conns]\n");
+
+    int max_conns = 500;
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_server_port);
+
+    neverc_tcp_conn_t **conns =
+        (neverc_tcp_conn_t **)calloc((size_t)max_conns, sizeof(neverc_tcp_conn_t *));
+    int open_count = 0;
+
+    uint64_t start = now_us();
+
+    for (int i = 0; i < max_conns; i++) {
+        const char *err = NULL;
+        conns[i] = neverc_tcp_dial(addr, &err);
+        if (conns[i]) {
+            neverc_tcp_set_timeout(conns[i], 2000);
+            open_count++;
+        }
+    }
+
+    int success_count = 0;
+    for (int i = 0; i < max_conns; i++) {
+        if (!conns[i]) continue;
+        const char *req =
+            "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+        if (neverc_tcp_write(conns[i], req, strlen(req)) > 0) {
+            char resp[2048];
+            int n = neverc_tcp_read(conns[i], resp, sizeof(resp) - 1);
+            if (n > 0) {
+                resp[n] = '\0';
+                if (strstr(resp, "200 OK")) success_count++;
+            }
+        }
+        neverc_tcp_close(conns[i]);
+    }
+
+    uint64_t elapsed = now_us() - start;
+    free(conns);
+
+    printf("  opened: %d/%d, responded: %d\n",
+           open_count, max_conns, success_count);
+    printf("  elapsed: %.2f ms\n", (double)elapsed / 1000.0);
+
+    check_true("open rate > 90%",
+                (double)open_count / (double)max_conns > 0.90);
+    check_true("response rate > 80%",
+                (double)success_count / (double)open_count > 0.80);
+}
+
+/* ===== Benchmark: Pipelining throughput ===== */
+
+static void test_pipelining_bench(void) {
+    printf("[pipelining]\n");
+
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_server_port);
+
+    const char *err = NULL;
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+    if (!conn) { printf("  SKIP: cannot connect\n"); return; }
+
+    neverc_tcp_set_timeout(conn, 5000);
+
+    int batch_size = 50;
+    int batches = 10;
+    int success = 0;
+
+    uint64_t start = now_us();
+
+    for (int b = 0; b < batches; b++) {
+        char pipeline[8192];
+        int off = 0;
+        for (int i = 0; i < batch_size; i++) {
+            off += snprintf(pipeline + off, sizeof(pipeline) - (size_t)off,
+                "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+        }
+        neverc_tcp_write(conn, pipeline, (size_t)off);
+
+        char resp[65536];
+        size_t total = 0;
+        int responses_found = 0;
+        while (responses_found < batch_size && total < sizeof(resp) - 1) {
+            int n = neverc_tcp_read(conn, resp + total,
+                                    sizeof(resp) - total - 1);
+            if (n <= 0) break;
+            total += (size_t)n;
+            resp[total] = '\0';
+
+            char *scan = resp;
+            while ((scan = strstr(scan, "200 OK")) != NULL) {
+                responses_found++;
+                scan += 6;
+            }
+        }
+        success += responses_found;
+    }
+
+    neverc_tcp_close(conn);
+    uint64_t elapsed = now_us() - start;
+
+    int total_requests = batch_size * batches;
+    double rps = (double)success / ((double)elapsed / 1000000.0);
+
+    printf("  pipelined: %d requests in %d batches\n",
+           total_requests, batches);
+    printf("  success: %d, elapsed: %.2f ms\n",
+           success, (double)elapsed / 1000.0);
+    printf("  pipelining throughput: %.0f req/s\n", rps);
+
+    check_true("pipeline success > 80%",
+                (double)success / (double)total_requests > 0.80);
+}
+
 /* ===== Main ===== */
 
 int main(void) {
@@ -277,7 +394,6 @@ int main(void) {
     signal(SIGPIPE, SIG_IGN);
 #endif
 
-    /* Start server on a random port */
     const char *err = NULL;
     neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
     if (!ln) {
@@ -302,6 +418,8 @@ int main(void) {
 
     test_connection_rate();
     test_throughput();
+    test_concurrent_connections();
+    test_pipelining_bench();
 
     neverc_http_shutdown();
 

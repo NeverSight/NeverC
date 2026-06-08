@@ -1704,6 +1704,243 @@ static inline int nc_conn_limiter_count(nc_conn_limiter_t *l) {
 }
 
 /* ======================================================================
+ * Timer Wheel — O(1) timer scheduling for connection timeouts
+ *
+ * Hierarchical hashed timing wheel. Granularity = 1 ms, slots = 512.
+ * Each slot is a doubly-linked list of timers. nc_tw_tick() advances
+ * the wheel and fires all expired timers in the current slot.
+ * ====================================================================== */
+
+#define NC_TW_SLOTS 512
+
+typedef struct nc_timer nc_timer_t;
+
+typedef void (*nc_timer_cb_t)(nc_timer_t *timer, void *data);
+
+struct nc_timer {
+    nc_timer_cb_t   cb;
+    void           *data;
+    uint64_t        expire_ms;
+    int             active;
+    nc_timer_t     *tw_next;
+    nc_timer_t     *tw_prev;
+};
+
+typedef struct {
+    nc_timer_t *slots[NC_TW_SLOTS];
+    uint64_t    last_ms;
+} nc_timer_wheel_t;
+
+static inline void nc_tw_init(nc_timer_wheel_t *tw) {
+    memset(tw, 0, sizeof(*tw));
+    tw->last_ms = nc_monotonic_ms();
+}
+
+static inline void nc_timer_init(nc_timer_t *t, nc_timer_cb_t cb, void *data) {
+    memset(t, 0, sizeof(*t));
+    t->cb = cb;
+    t->data = data;
+}
+
+static inline void nc_tw_unlink(nc_timer_wheel_t *tw, nc_timer_t *t) {
+    int slot = (int)(t->expire_ms % NC_TW_SLOTS);
+    nc_timer_t *p = t->tw_prev;
+    nc_timer_t *n = t->tw_next;
+    if (p) p->tw_next = n;
+    else   tw->slots[slot] = n;
+    if (n) n->tw_prev = p;
+    t->tw_prev = NULL;
+    t->tw_next = NULL;
+}
+
+static inline void nc_tw_add(nc_timer_wheel_t *tw, nc_timer_t *t,
+                              uint32_t delay_ms) {
+    if (t->active)
+        nc_tw_unlink(tw, t);
+
+    t->expire_ms = nc_monotonic_ms() + delay_ms;
+    t->active = 1;
+    int slot = (int)(t->expire_ms % NC_TW_SLOTS);
+    t->tw_prev = NULL;
+    t->tw_next = tw->slots[slot];
+    if (tw->slots[slot]) tw->slots[slot]->tw_prev = t;
+    tw->slots[slot] = t;
+}
+
+static inline void nc_tw_cancel(nc_timer_wheel_t *tw, nc_timer_t *t) {
+    if (!t->active) return;
+    nc_tw_unlink(tw, t);
+    t->active = 0;
+}
+
+static inline void nc_tw_tick(nc_timer_wheel_t *tw) {
+    uint64_t now = nc_monotonic_ms();
+    if (now <= tw->last_ms) return;
+
+    for (uint64_t ms = tw->last_ms + 1; ms <= now; ms++) {
+        int slot = (int)(ms % NC_TW_SLOTS);
+        nc_timer_t *t = tw->slots[slot];
+        while (t) {
+            nc_timer_t *next = t->tw_next;
+            if (t->expire_ms <= now) {
+                nc_tw_unlink(tw, t);
+                t->active = 0;
+                if (t->cb) t->cb(t, t->data);
+            }
+            t = next;
+        }
+    }
+    tw->last_ms = now;
+}
+
+/* ======================================================================
+ * Connection Context — state machine for keep-alive connection tracking
+ * ====================================================================== */
+
+typedef enum {
+    NC_CONN_IDLE,
+    NC_CONN_READING,
+    NC_CONN_PROCESSING,
+    NC_CONN_WRITING,
+    NC_CONN_CLOSING
+} nc_conn_state_t;
+
+typedef struct {
+    nc_sock_t       fd;
+    nc_conn_state_t state;
+    int             max_requests;
+    int             requests_served;
+    uint64_t        created_ms;
+    uint64_t        last_active_ms;
+    nc_buf_t        read_buf;
+    nc_buf_t        write_buf;
+} nc_conn_ctx_t;
+
+static inline void nc_conn_ctx_init(nc_conn_ctx_t *ctx, nc_sock_t fd,
+                                     int max_requests) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->fd = fd;
+    ctx->state = NC_CONN_IDLE;
+    ctx->max_requests = max_requests;
+    ctx->created_ms = nc_monotonic_ms();
+    ctx->last_active_ms = ctx->created_ms;
+    nc_buf_init(&ctx->read_buf);
+    nc_buf_init(&ctx->write_buf);
+}
+
+static inline void nc_conn_ctx_touch(nc_conn_ctx_t *ctx) {
+    ctx->last_active_ms = nc_monotonic_ms();
+}
+
+static inline int nc_conn_ctx_expired(nc_conn_ctx_t *ctx, int timeout_ms) {
+    return (int)(nc_monotonic_ms() - ctx->last_active_ms > (uint64_t)timeout_ms);
+}
+
+static inline int nc_conn_ctx_max_reached(nc_conn_ctx_t *ctx) {
+    return ctx->requests_served >= ctx->max_requests;
+}
+
+/* ======================================================================
+ * Graceful Shutdown Controller
+ * ====================================================================== */
+
+typedef struct {
+    volatile int  draining;
+    volatile int  active_conns;
+    uint64_t      deadline_ms;
+} nc_shutdown_ctl_t;
+
+static inline void nc_shutdown_init(nc_shutdown_ctl_t *ctl) {
+    memset(ctl, 0, sizeof(*ctl));
+}
+
+static inline int nc_shutdown_should_accept(nc_shutdown_ctl_t *ctl) {
+    return !nc_atomic_load(&ctl->draining);
+}
+
+static inline int nc_shutdown_is_draining(nc_shutdown_ctl_t *ctl) {
+    return nc_atomic_load(&ctl->draining);
+}
+
+static inline void nc_shutdown_begin(nc_shutdown_ctl_t *ctl, int timeout_ms) {
+    nc_atomic_store(&ctl->draining, 1);
+    ctl->deadline_ms = nc_monotonic_ms() + (uint64_t)timeout_ms;
+}
+
+static inline void nc_shutdown_conn_add(nc_shutdown_ctl_t *ctl) {
+    nc_atomic_inc(&ctl->active_conns);
+}
+
+static inline void nc_shutdown_conn_remove(nc_shutdown_ctl_t *ctl) {
+    nc_atomic_dec(&ctl->active_conns);
+}
+
+static inline int nc_shutdown_complete(nc_shutdown_ctl_t *ctl) {
+    return nc_atomic_load(&ctl->active_conns) <= 0;
+}
+
+static inline int nc_shutdown_deadline_reached(nc_shutdown_ctl_t *ctl) {
+    return nc_monotonic_ms() >= ctl->deadline_ms;
+}
+
+/* ======================================================================
+ * SO_REUSEPORT — multi-listener (one per CPU core)
+ * ====================================================================== */
+
+#define NC_REUSEPORT_MAX 64
+
+typedef struct {
+    nc_sock_t fds[NC_REUSEPORT_MAX];
+    int       count;
+    int       max;
+} nc_reuseport_group_t;
+
+static inline int nc_reuseport_init(nc_reuseport_group_t *g, int max) {
+    memset(g, 0, sizeof(*g));
+    g->max = max > NC_REUSEPORT_MAX ? NC_REUSEPORT_MAX : max;
+    return 0;
+}
+
+static inline int nc_reuseport_listen(nc_reuseport_group_t *g,
+                                       const char *host, uint16_t port,
+                                       int backlog) {
+    if (g->count >= g->max) return -1;
+
+    nc_sock_t fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == NC_INVALID_SOCK) return -1;
+
+    nc_set_reuseaddr(fd);
+    nc_set_reuseport(fd);
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    if (host && host[0])
+        inet_pton(AF_INET, host, &addr.sin_addr);
+    else
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        nc_sock_close(fd);
+        return -1;
+    }
+    if (listen(fd, backlog) != 0) {
+        nc_sock_close(fd);
+        return -1;
+    }
+
+    g->fds[g->count++] = fd;
+    return 0;
+}
+
+static inline void nc_reuseport_close(nc_reuseport_group_t *g) {
+    for (int i = 0; i < g->count; i++)
+        nc_sock_close(g->fds[i]);
+    g->count = 0;
+}
+
+/* ======================================================================
  * io_uring Native Async I/O Engine (Linux 5.1+)
  *
  * Provides true async accept/recv/send via io_uring, eliminating all

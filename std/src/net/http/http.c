@@ -229,10 +229,12 @@ static void rw_flush(neverc_http_response_writer_t *w) {
     nc_buf_append(&hdr, "\r\n", 2);
 
     if (w->fd != NC_INVALID_SOCK) {
-        /* Merge header + body into single write to reduce syscalls */
-        if (w->body.len > 0)
-            nc_buf_append(&hdr, w->body.data, w->body.len);
-        sock_write_all(w->fd, hdr.data, hdr.len);
+        if (w->body.len > 0) {
+            nc_writev(w->fd, hdr.data, hdr.len,
+                      w->body.data, w->body.len);
+        } else {
+            sock_write_all(w->fd, hdr.data, hdr.len);
+        }
     }
 
     nc_buf_free(&hdr);
@@ -1464,9 +1466,17 @@ static void accept_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
                                              &client_len);
         if (cfd == NC_INVALID_SOCK) {
 #ifdef _WIN32
-            if (WSAGetLastError() == WSAEWOULDBLOCK) break;
+            int werr = WSAGetLastError();
+            if (werr == WSAEWOULDBLOCK) break;
+            if (werr == WSAEINTR) continue;
 #else
             if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            if (errno == EINTR) continue;
+            if (errno == EMFILE || errno == ENFILE) {
+                /* FD exhaustion — back off briefly to avoid spin */
+                usleep(50000);
+                break;
+            }
 #endif
             break;
         }
@@ -1517,6 +1527,9 @@ static void *accept_thread_func(void *arg) {
 static int g_config_workers = 0;
 static int g_config_max_requests = 1000;
 static int g_config_read_timeout = 60000;
+static int g_config_read_header_timeout = 10000;
+static int g_config_write_timeout = 60000;
+static int g_config_idle_timeout = 60000;
 static int g_config_max_conns = 0;        /* 0 = unlimited */
 static int g_config_max_header_size = 0;  /* 0 = default 1MB */
 static int g_config_max_body_size = 0;    /* 0 = default 10MB */
@@ -1534,6 +1547,18 @@ void neverc_http_set_max_requests(int n) {
 
 void neverc_http_set_read_timeout(int ms) {
     if (ms >= 0) g_config_read_timeout = ms;
+}
+
+void neverc_http_set_read_header_timeout(int ms) {
+    if (ms >= 0) g_config_read_header_timeout = ms;
+}
+
+void neverc_http_set_write_timeout(int ms) {
+    if (ms >= 0) g_config_write_timeout = ms;
+}
+
+void neverc_http_set_idle_timeout(int ms) {
+    if (ms >= 0) g_config_idle_timeout = ms;
 }
 
 void neverc_http_set_max_connections(int n) {
@@ -1818,14 +1843,42 @@ static void https_handle_connection(void *arg) {
         nc_buf_init(&raw_hdr_buf);
         fill_request(&pr, &req, &raw_hdr_buf);
 
-        /* Build response into a buffer, then write via TLS */
-        neverc_http_handler_func_t handler = mux_match(mux, req.path);
+        /* Rate limiting */
+        if (g_global_rate_limiter &&
+            !neverc_http_rate_limiter_allow(g_global_rate_limiter)) {
+            const char *rate_resp =
+                "HTTP/1.1 429 Too Many Requests\r\n"
+                "Content-Type: text/plain\r\n"
+                "Content-Length: 20\r\n"
+                "Retry-After: 1\r\n"
+                "Connection: close\r\n\r\n"
+                "Too Many Requests\r\n";
+            neverc_tls_write(tls, rate_resp, strlen(rate_resp));
+            nc_buf_free(&raw_hdr_buf);
+            parsed_request_free(&pr);
+            goto done;
+        }
 
-        /* Create a temporary in-memory response writer */
+        /* 100-Continue */
+        if (pr.expect_continue) {
+            const char *cont = "HTTP/1.1 100 Continue\r\n\r\n";
+            neverc_tls_write(tls, cont, strlen(cont));
+        }
+
+        /* Route with path parameter extraction (like HTTP handler) */
+        path_params_t params;
+        memset(&params, 0, sizeof(params));
+        neverc_http_handler_func_t handler =
+            mux_match_ex(mux, req.method, req.path, &params);
+
+        if (params.count > 0) {
+            req.path_params = params.buf;
+            req.nparams = params.count;
+        }
+
         nc_buf_t resp_buf;
         nc_buf_init(&resp_buf);
 
-        /* Use a pipe-like approach: allocate a response_writer that buffers */
         neverc_http_response_writer_t *w =
             (neverc_http_response_writer_t *)calloc(1, sizeof(*w));
         if (!w) {
@@ -1833,10 +1886,16 @@ static void https_handle_connection(void *arg) {
             parsed_request_free(&pr);
             goto done;
         }
-        w->fd = NC_INVALID_SOCK; /* signal that we'll manually flush */
+        w->fd = NC_INVALID_SOCK;
         w->status = 200;
         w->keep_alive = pr.keep_alive;
         nc_buf_init(&w->body);
+
+        /* CORS headers for HTTPS */
+        if (g_cors_enabled) {
+            const char *origin = neverc_http_request_header(&req, "Origin");
+            neverc_http_cors_headers(w, &g_cors_config, origin);
+        }
 
         if (handler) {
             handler(&req, w);

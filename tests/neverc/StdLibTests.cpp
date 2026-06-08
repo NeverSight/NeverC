@@ -205,12 +205,18 @@ STD_TEST(http_bench, "src/net/http/http.c", "src/net/tcp/tcp.c")
 STD_TEST(httputil, "src/net/http/httputil/httputil.c",
     "src/net/http/http.c", "src/net/tcp/tcp.c")
 
+// ===== Cookie Jar =====
+STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c")
+
 // ===== SMTP =====
 STD_TEST(smtp, "src/net/smtp/smtp.c", "src/net/tcp/tcp.c")
 
 // ===== Net Core (DNS, Pipe, SplitHostPort) =====
 STD_TEST(resolve, "src/net/resolve/resolve.c")
 STD_TEST(net_interface, "src/net/interface/interface.c")
+
+// ===== Net Internals (Timer Wheel, Buffer Pool, Poller, Event Loop) =====
+STD_TEST(net_internals, "src/net/tcp/tcp.c")
 
 // ===== Path =====
 STD_TEST(filepath, "src/path/filepath/filepath.c")
