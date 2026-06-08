@@ -78,6 +78,14 @@ Grandes orientations du projet NeverC : bibliothèque standard, backend EVM pour
 
 ---
 
+## Développement local
+
+Compiler NeverC à partir des sources et configurer l'environnement de développement local, y compris le PATH.
+
+**[Développement local →](local-dev/README.fr.md)**
+
+---
+
 ## Exemples
 
 Exemples compilables démontrant les capacités de compilation croisée de NeverC. Tous compilent depuis macOS / Linux.

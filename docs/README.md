@@ -78,6 +78,14 @@ Major planned directions for the NeverC project: standard library, EVM smart con
 
 ---
 
+## Local Development
+
+Build NeverC from source and set up the local development environment with PATH configuration.
+
+**[Local Development →](local-dev/README.md)**
+
+---
+
 ## Examples
 
 Complete buildable samples demonstrating NeverC's cross-platform compilation capabilities. All examples cross-compile from macOS / Linux.

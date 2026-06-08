@@ -78,6 +78,14 @@ NeverC 项目的主要规划方向：标准库、EVM 智能合约后端和 Solan
 
 ---
 
+## 本地开发
+
+从源码构建 NeverC 并配置本地开发环境，包括 PATH 设置。
+
+**[本地开发 →](local-dev/README.zh-CN.md)**
+
+---
+
 ## 示例
 
 完整的可构建示例，展示 NeverC 的跨平台编译能力。所有示例均可从 macOS / Linux 交叉编译。

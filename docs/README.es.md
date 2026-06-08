@@ -78,6 +78,14 @@ Principales direcciones planificadas del proyecto NeverC: biblioteca estándar, 
 
 ---
 
+## Desarrollo local
+
+Compilar NeverC desde el código fuente y configurar el entorno de desarrollo local, incluida la configuración del PATH.
+
+**[Desarrollo local →](local-dev/README.es.md)**
+
+---
+
 ## Ejemplos
 
 Ejemplos compilables que demuestran las capacidades de compilación cruzada de NeverC. Todos compilan desde macOS / Linux.

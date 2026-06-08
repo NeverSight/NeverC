@@ -78,6 +78,14 @@ Principali direzioni pianificate del progetto NeverC: libreria standard, backend
 
 ---
 
+## Sviluppo locale
+
+Compilare NeverC dal codice sorgente e configurare l'ambiente di sviluppo locale, inclusa la configurazione del PATH.
+
+**[Sviluppo locale →](local-dev/README.it.md)**
+
+---
+
 ## Esempi
 
 Esempi compilabili che dimostrano le capacità di cross-compilazione di NeverC. Tutti compilano da macOS / Linux.

@@ -78,6 +78,14 @@ Wichtigste geplante Richtungen des NeverC-Projekts: Standardbibliothek, EVM-Smar
 
 ---
 
+## Lokale Entwicklung
+
+NeverC aus dem Quellcode kompilieren und die lokale Entwicklungsumgebung einrichten, einschließlich PATH-Konfiguration.
+
+**[Lokale Entwicklung →](local-dev/README.de.md)**
+
+---
+
 ## Beispiele
 
 Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilierung mit NeverC. Cross-Kompilierung von macOS / Linux.
