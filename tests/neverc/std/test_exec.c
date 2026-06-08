@@ -21,7 +21,6 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
     else { tests_failed++; printf("  FAIL: %s (line %d)\n", #expr, __LINE__); } \
 } while(0)
 
-#if !defined(__GLIBC__)
 static void *local_memmem(const void *haystack, size_t haystacklen,
                           const void *needle, size_t needlelen) {
     if (needlelen == 0) return (void *)haystack;
@@ -34,7 +33,6 @@ static void *local_memmem(const void *haystack, size_t haystacklen,
     return NULL;
 }
 #define memmem local_memmem
-#endif
 
 static void test_command_echo(void) {
     printf("[echo]\n");

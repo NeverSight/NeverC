@@ -1408,6 +1408,10 @@ static inline ssize_t nc_sendfile(nc_sock_t out_fd, int in_fd,
  * accept4 — atomic non-blocking accept (Linux)
  * ====================================================================== */
 
+#if defined(__linux__) && defined(SOCK_NONBLOCK) && defined(SOCK_CLOEXEC)
+extern int accept4(int, struct sockaddr *, socklen_t *, int);
+#endif
+
 static inline nc_sock_t nc_accept_nonblock(nc_sock_t listen_fd,
                                              struct sockaddr *addr,
                                              socklen_t *addrlen) {

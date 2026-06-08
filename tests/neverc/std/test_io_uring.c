@@ -24,6 +24,7 @@
 
 #include "neverc/std/net/tcp.h"
 #include "neverc/std/net/http.h"
+#include "../../std/src/net/_net_internal.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;

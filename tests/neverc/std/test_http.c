@@ -2071,6 +2071,235 @@ static void test_strip_prefix(void) {
     stop_test_server(pid);
 }
 
+/* ===== Path params test ===== */
+
+static void path_param_handler(neverc_http_request_t *req,
+                                 neverc_http_response_writer_t *w) {
+    const char *id = neverc_http_path_value(req, "id");
+    const char *action = neverc_http_path_value(req, "action");
+    neverc_http_writef(w, "id=%s,action=%s",
+                        id ? id : "NULL", action ? action : "NULL");
+}
+
+static void test_path_params(void) {
+    printf("[path_params]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "GET /users/{id}", path_param_handler);
+        neverc_http_mux_handle(mux, "GET /items/{id}/{action}",
+                                path_param_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+
+    char buf[4096];
+
+    /* Single param */
+    int n = do_http_request(port,
+        "GET /users/42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("path_params resp", n > 0, 1);
+    check_int("path_params id=42",
+               strstr(buf, "id=42") != NULL, 1);
+
+    /* Two params */
+    n = do_http_request(port,
+        "GET /items/99/edit HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("path_params two resp", n > 0, 1);
+    check_int("path_params id=99",
+               strstr(buf, "id=99") != NULL, 1);
+    check_int("path_params action=edit",
+               strstr(buf, "action=edit") != NULL, 1);
+
+    /* No match → 404 */
+    n = do_http_request(port,
+        "GET /nonexistent HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("path_params 404 resp", n > 0, 1);
+    check_int("path_params 404",
+               strstr(buf, "404") != NULL, 1);
+
+    /* neverc_http_path_value null safety */
+    check_int("path_value null req",
+               neverc_http_path_value(NULL, "x") == NULL, 1);
+    {
+        neverc_http_request_t empty_req;
+        memset(&empty_req, 0, sizeof(empty_req));
+        check_int("path_value no params",
+                   neverc_http_path_value(&empty_req, "x") == NULL, 1);
+    }
+
+    stop_test_server(pid);
+}
+
+/* ===== Rate limiter test ===== */
+
+static void test_rate_limiter(void) {
+    printf("[rate_limiter]\n");
+
+    /* Null safety */
+    check_int("rl allow null", neverc_http_rate_limiter_allow(NULL), 1);
+    neverc_http_rate_limiter_free(NULL);
+
+    /* Create rate limiter with burst=3 */
+    neverc_http_rate_limiter_t *rl = neverc_http_rate_limiter_new(10.0, 3);
+    check_not_null("rl created", rl);
+
+    /* Burst allows first 3 requests immediately */
+    check_int("rl allow 1", neverc_http_rate_limiter_allow(rl), 1);
+    check_int("rl allow 2", neverc_http_rate_limiter_allow(rl), 1);
+    check_int("rl allow 3", neverc_http_rate_limiter_allow(rl), 1);
+
+    /* 4th request should be denied (burst exhausted, no time to refill) */
+    check_int("rl deny 4", neverc_http_rate_limiter_allow(rl), 0);
+
+    /* After a brief sleep, tokens should refill (rate=10/s → ~1 token per 100ms) */
+    usleep(250000);
+    check_int("rl allow after refill", neverc_http_rate_limiter_allow(rl), 1);
+
+    neverc_http_rate_limiter_free(rl);
+}
+
+/* ===== CORS test ===== */
+
+static void cors_test_handler(neverc_http_request_t *req,
+                                neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "cors_ok");
+}
+
+static void test_cors(void) {
+    printf("[cors]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/test", cors_test_handler);
+
+        neverc_http_cors_config_t cfg;
+        memset(&cfg, 0, sizeof(cfg));
+        cfg.allowed_origins = "*";
+        cfg.allowed_methods = "GET, POST";
+        cfg.allowed_headers = "Content-Type";
+        cfg.max_age = 3600;
+        neverc_http_enable_cors(mux, &cfg);
+
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+
+    char buf[4096];
+
+    /* OPTIONS preflight should get 204 with CORS headers */
+    int n = do_http_request(port,
+        "OPTIONS / HTTP/1.1\r\nHost: localhost\r\n"
+        "Origin: http://example.com\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("cors preflight resp", n > 0, 1);
+    check_int("cors allow-origin",
+               strstr(buf, "Access-Control-Allow-Origin") != NULL, 1);
+    check_int("cors allow-methods",
+               strstr(buf, "Access-Control-Allow-Methods") != NULL, 1);
+
+    /* Normal request should also get CORS headers */
+    n = do_http_request(port,
+        "GET /test HTTP/1.1\r\nHost: localhost\r\n"
+        "Origin: http://example.com\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("cors normal resp", n > 0, 1);
+    check_int("cors normal allow-origin",
+               strstr(buf, "Access-Control-Allow-Origin") != NULL, 1);
+    check_int("cors normal body",
+               strstr(buf, "cors_ok") != NULL, 1);
+
+    stop_test_server(pid);
+}
+
+/* ===== JSON helpers test ===== */
+
+static void test_json_helpers(void) {
+    printf("[json_helpers]\n");
+
+    /* neverc_http_json_get — extract values from JSON request body */
+    neverc_http_request_t req;
+    memset(&req, 0, sizeof(req));
+
+    const char *json_body = "{\"name\": \"Alice\", \"age\": 30, \"active\": true}";
+    req.body = json_body;
+    req.body_len = strlen(json_body);
+
+    char vbuf[128];
+
+    /* String value */
+    const char *v = neverc_http_json_get(&req, "name", vbuf, sizeof(vbuf));
+    check_not_null("json get name", v);
+    if (v) check_str("json name val", v, "Alice");
+
+    /* Number value */
+    v = neverc_http_json_get(&req, "age", vbuf, sizeof(vbuf));
+    check_not_null("json get age", v);
+    if (v) check_str("json age val", v, "30");
+
+    /* Boolean value */
+    v = neverc_http_json_get(&req, "active", vbuf, sizeof(vbuf));
+    check_not_null("json get active", v);
+    if (v) check_str("json active val", v, "true");
+
+    /* Missing key */
+    v = neverc_http_json_get(&req, "missing", vbuf, sizeof(vbuf));
+    check_int("json missing key", v == NULL, 1);
+
+    /* Null safety */
+    check_int("json get null req",
+               neverc_http_json_get(NULL, "x", vbuf, sizeof(vbuf)) == NULL, 1);
+    check_int("json get null key",
+               neverc_http_json_get(&req, NULL, vbuf, sizeof(vbuf)) == NULL, 1);
+
+    /* Empty body */
+    neverc_http_request_t empty_req;
+    memset(&empty_req, 0, sizeof(empty_req));
+    check_int("json empty body",
+               neverc_http_json_get(&empty_req, "x", vbuf, sizeof(vbuf)) == NULL, 1);
+
+    /* neverc_http_json_error — write JSON error response */
+    neverc_http_response_writer_t *w = neverc_http_memory_writer_new();
+    check_not_null("json_error writer", w);
+    if (w) {
+        neverc_http_json_error(w, 400, "bad request");
+
+        char *data = NULL;
+        size_t data_len = 0;
+        int status = neverc_http_memory_writer_result(w, &data, &data_len);
+
+        check_int("json_error status", status, 400);
+        check_int("json_error body has error",
+                   data && strstr(data, "bad request") != NULL, 1);
+        check_int("json_error body has code",
+                   data && strstr(data, "400") != NULL, 1);
+
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
+    /* json_error null safety */
+    check_int("json_error null w", neverc_http_json_error(NULL, 500, "err"), 0);
+}
+
 #endif /* _WIN32 */
 
 /* ===== ResponseHeader test ===== */
