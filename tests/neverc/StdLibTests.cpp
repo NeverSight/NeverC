@@ -220,6 +220,17 @@ STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")
 
 // ===== Crypto (x509) =====
 STD_TEST(x509, "src/crypto/x509/x509.c")
+STD_TEST(tls, "src/crypto/tls/tls.c", "src/crypto/ecdh/ecdh.c",
+    "src/crypto/aes/aes.c", "src/crypto/gcm/gcm.c",
+    "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c",
+    "src/crypto/chacha20poly1305/chacha20poly1305.c",
+    "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c",
+    "src/crypto/sha384/sha384.c", "src/crypto/sha1/sha1.c",
+    "src/crypto/hmac/hmac.c", "src/crypto/hkdf/hkdf.c",
+    "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c",
+    "src/crypto/x509/x509.c", "src/crypto/elliptic/elliptic.c",
+    "src/math/big/big.c", "src/net/tcp/tcp.c",
+    "src/encoding/base64/base64.c")
 
 // ===== Regexp =====
 STD_TEST(regexp_syntax, "src/regexp/syntax/syntax.c")

@@ -137,6 +137,7 @@ STD_SUBMODULE(debug, plan9obj)
 
 // crypto (x509 addition)
 STD_SUBMODULE(crypto, x509)
+STD_SUBMODULE(crypto, tls)
 
 // regexp
 STD_SUBMODULE(regexp, syntax)
