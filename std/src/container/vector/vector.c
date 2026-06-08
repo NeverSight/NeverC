@@ -13,9 +13,16 @@ static bool vec_grow(neverc_vector_t *v, size_t min_cap) {
     if (v->capacity >= min_cap)
         return true;
     size_t new_cap = v->capacity ? v->capacity : VEC_INITIAL_CAP;
-    while (new_cap < min_cap)
-        new_cap *= VEC_GROWTH_FACTOR;
-    void *new_data = realloc(v->data, new_cap * v->elem_size);
+    while (new_cap < min_cap) {
+        size_t doubled = new_cap * VEC_GROWTH_FACTOR;
+        if (doubled <= new_cap)
+            return false;
+        new_cap = doubled;
+    }
+    size_t alloc_size = new_cap * v->elem_size;
+    if (v->elem_size != 0 && alloc_size / v->elem_size != new_cap)
+        return false;
+    void *new_data = realloc(v->data, alloc_size);
     if (!new_data)
         return false;
     v->data = new_data;
@@ -30,6 +37,8 @@ neverc_vector_t *neverc_vector_new(size_t elem_size) {
 }
 
 neverc_vector_t *neverc_vector_new_with_capacity(size_t elem_size, size_t cap) {
+    if (elem_size == 0)
+        return NULL;
     neverc_vector_t *v = (neverc_vector_t *)calloc(1, sizeof(*v));
     if (!v)
         return NULL;
