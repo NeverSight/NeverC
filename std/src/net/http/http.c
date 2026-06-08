@@ -119,10 +119,10 @@ static const char *fast_status_line(int code, size_t *len) {
     switch (code) {
     case 200: *len = 17; return "HTTP/1.1 200 OK\r\n";
     case 201: *len = 22; return "HTTP/1.1 201 Created\r\n";
-    case 204: *len = 26; return "HTTP/1.1 204 No Content\r\n";
+    case 204: *len = 25; return "HTTP/1.1 204 No Content\r\n";
     case 301: *len = 32; return "HTTP/1.1 301 Moved Permanently\r\n";
     case 302: *len = 20; return "HTTP/1.1 302 Found\r\n";
-    case 304: *len = 26; return "HTTP/1.1 304 Not Modified\r\n";
+    case 304: *len = 27; return "HTTP/1.1 304 Not Modified\r\n";
     case 400: *len = 26; return "HTTP/1.1 400 Bad Request\r\n";
     case 401: *len = 27; return "HTTP/1.1 401 Unauthorized\r\n";
     case 403: *len = 24; return "HTTP/1.1 403 Forbidden\r\n";
