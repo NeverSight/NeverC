@@ -44,11 +44,21 @@ struct neverc_http_response_writer {
     size_t      request_consumed;
 };
 
+static nc_bufpool_t g_rw_pool;
+static volatile int g_rw_pool_inited = 0;
+
+static void ensure_rw_pool(void) {
+    if (g_rw_pool_inited) return;
+    nc_bufpool_init(&g_rw_pool, sizeof(neverc_http_response_writer_t));
+    g_rw_pool_inited = 1;
+}
+
 static neverc_http_response_writer_t *rw_new(nc_sock_t fd, int keep_alive,
                                                http_conn_t *owner,
                                                size_t request_consumed) {
+    ensure_rw_pool();
     neverc_http_response_writer_t *w =
-        (neverc_http_response_writer_t *)calloc(1, sizeof(*w));
+        (neverc_http_response_writer_t *)nc_bufpool_pop(&g_rw_pool);
     if (!w) return NULL;
     w->fd = fd;
     w->status = 200;
@@ -66,7 +76,8 @@ static void rw_free(neverc_http_response_writer_t *w) {
         free(w->header_values[i]);
     }
     nc_buf_free(&w->body);
-    free(w);
+    memset(w, 0, sizeof(*w));
+    nc_bufpool_push(&g_rw_pool, w);
 }
 
 static int sock_write_all(nc_sock_t fd, const void *data, size_t len) {
@@ -89,6 +100,24 @@ static int sock_write_all(nc_sock_t fd, const void *data, size_t len) {
     return 0;
 }
 
+/* Pre-computed status lines for common codes (avoid snprintf per-request) */
+static const char *fast_status_line(int code, size_t *len) {
+    switch (code) {
+    case 200: *len = 17; return "HTTP/1.1 200 OK\r\n";
+    case 201: *len = 22; return "HTTP/1.1 201 Created\r\n";
+    case 204: *len = 26; return "HTTP/1.1 204 No Content\r\n";
+    case 301: *len = 32; return "HTTP/1.1 301 Moved Permanently\r\n";
+    case 302: *len = 20; return "HTTP/1.1 302 Found\r\n";
+    case 304: *len = 26; return "HTTP/1.1 304 Not Modified\r\n";
+    case 400: *len = 26; return "HTTP/1.1 400 Bad Request\r\n";
+    case 401: *len = 27; return "HTTP/1.1 401 Unauthorized\r\n";
+    case 403: *len = 24; return "HTTP/1.1 403 Forbidden\r\n";
+    case 404: *len = 24; return "HTTP/1.1 404 Not Found\r\n";
+    case 500: *len = 36; return "HTTP/1.1 500 Internal Server Error\r\n";
+    default:  return NULL;
+    }
+}
+
 static void rw_flush(neverc_http_response_writer_t *w) {
     if (!w || w->hijacked) return;
     if (w->headers_sent) return;
@@ -97,14 +126,22 @@ static void rw_flush(neverc_http_response_writer_t *w) {
     nc_buf_t hdr;
     nc_buf_init(&hdr);
 
-    char line[256];
-    int n = snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n",
-                     w->status, neverc_http_status_text(w->status));
-    nc_buf_append(&hdr, line, (size_t)n);
+    size_t sl_len = 0;
+    const char *sl = fast_status_line(w->status, &sl_len);
+    if (sl) {
+        nc_buf_append(&hdr, sl, sl_len);
+    } else {
+        char line[256];
+        int n = snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n",
+                         w->status, neverc_http_status_text(w->status));
+        nc_buf_append(&hdr, line, (size_t)n);
+    }
 
     int has_content_type = 0;
     int has_content_length = 0;
     int has_connection = 0;
+    char line[256];
+    int n;
 
     for (int i = 0; i < w->nheaders; i++) {
         n = snprintf(line, sizeof(line), "%s: %s\r\n",
@@ -380,16 +417,18 @@ static neverc_http_handler_func_t mux_match(neverc_http_mux_t *mux,
     neverc_http_handler_func_t best = NULL;
     size_t best_len = 0;
 
-    nc_mutex_lock(&mux->lock);
-    for (int i = 0; i < mux->nroutes; i++) {
+    /* Lock-free read: nroutes is only modified during registration
+     * (before serving starts), so reads during serving are safe.
+     * We use a memory fence to ensure route data is visible. */
+    int nr = mux->nroutes;
+    __sync_synchronize(); /* acquire fence */
+
+    for (int i = 0; i < nr; i++) {
         const char *pat = mux->routes[i].pattern;
         size_t plen = strlen(pat);
 
-        if (strcmp(pat, path) == 0) {
-            best = mux->routes[i].handler;
-            nc_mutex_unlock(&mux->lock);
-            return best;
-        }
+        if (strcmp(pat, path) == 0)
+            return mux->routes[i].handler;
 
         if (plen > 0 && pat[plen - 1] == '/' &&
             strncmp(path, pat, plen) == 0 && plen > best_len) {
@@ -397,7 +436,6 @@ static neverc_http_handler_func_t mux_match(neverc_http_mux_t *mux,
             best_len = plen;
         }
     }
-    nc_mutex_unlock(&mux->lock);
     return best;
 }
 
@@ -517,10 +555,10 @@ static int parse_request(const char *raw, size_t rawlen,
     if (pr->http_version && strstr(pr->http_version, "1.0"))
         pr->keep_alive = 0;
 
-    /* Parse headers */
+    /* Parse headers — start with stack-friendly capacity */
     pr->header_cap = 32;
-    pr->header_names = (char **)calloc((size_t)pr->header_cap, sizeof(char *));
-    pr->header_values = (char **)calloc((size_t)pr->header_cap, sizeof(char *));
+    pr->header_names = (char **)malloc((size_t)pr->header_cap * sizeof(char *));
+    pr->header_values = (char **)malloc((size_t)pr->header_cap * sizeof(char *));
 
     p = eol + 2;
 
