@@ -114,6 +114,7 @@
 #if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
   #include <sys/mman.h>
   #include <sys/syscall.h>
+  #include <poll.h>
   #include <linux/io_uring.h>
 #elif defined(__linux__) || defined(__ANDROID__)
   #define NC_USE_EPOLL 1
@@ -193,6 +194,9 @@
 #endif
 #ifndef IORING_OP_CLOSE
 #define IORING_OP_CLOSE        19
+#endif
+#ifndef IORING_OP_TIMEOUT
+#define IORING_OP_TIMEOUT      11
 #endif
 
 #ifndef IORING_ACCEPT_MULTISHOT
@@ -350,9 +354,11 @@ static inline void nc_uring_destroy(nc_uring_t *ring) {
     ring->ring_fd = -1;
 }
 
-/* Get next available SQE. Returns NULL if ring is full. */
+/* Get next available SQE. Returns NULL if ring is full.
+ * We are the sole SQ producer, so sq_tail is a local read.
+ * Only sq_head needs acquire (kernel is the consumer). */
 static inline struct io_uring_sqe *nc_uring_get_sqe(nc_uring_t *ring) {
-    unsigned tail = nc_io_smp_load_acquire(ring->sq_tail);
+    unsigned tail = *ring->sq_tail;
     unsigned head = nc_io_smp_load_acquire(ring->sq_head);
     unsigned mask = *ring->sq_mask;
 
@@ -406,11 +412,7 @@ static inline void nc_uring_prep_poll_add(struct io_uring_sqe *sqe,
                                            uint64_t user_data) {
     sqe->opcode = IORING_OP_POLL_ADD;
     sqe->fd = fd;
-#ifdef __x86_64__
     sqe->poll32_events = poll_mask;
-#else
-    sqe->poll32_events = poll_mask;
-#endif
     sqe->user_data = user_data;
 }
 
@@ -1090,17 +1092,18 @@ static inline int nc_poller_wait(nc_poller_t *p, nc_event_t *out,
                 return 0; /* non-blocking, nothing ready */
             }
 
-            /* Submit a timeout SQE alongside the wait */
+            /* Submit IORING_OP_TIMEOUT so io_uring_enter returns
+             * after either 1 event or the timeout elapses.
+             * ts is stack-local — safe for multi-threaded workers. */
             struct io_uring_sqe *tsqe = nc_uring_get_sqe(&p->ring);
             if (tsqe) {
-                /* Use NOP with timeout to wake up the enter call */
-                static struct __kernel_timespec ts;
+                struct __kernel_timespec ts;
                 ts.tv_sec = timeout_ms / 1000;
                 ts.tv_nsec = (long long)(timeout_ms % 1000) * 1000000LL;
-                tsqe->opcode = 13; /* IORING_OP_TIMEOUT */
+                tsqe->opcode = IORING_OP_TIMEOUT;
                 tsqe->addr = (unsigned long)&ts;
                 tsqe->len = 1;
-                tsqe->off = 1; /* count = 1, timeout after 1 completion or ts */
+                tsqe->off = 1;
                 tsqe->user_data = (uint64_t)-1; /* sentinel: timeout marker */
                 nc_uring_sq_advance(&p->ring, 1);
             }
