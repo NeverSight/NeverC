@@ -1,0 +1,300 @@
+#include "neverc/std/net/resolve.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+#ifndef _WIN32
+#include <pthread.h>
+#endif
+
+static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+
+static void check_int(const char *name, int got, int expected) {
+    tests_run++;
+    if (got == expected) tests_passed++;
+    else { tests_failed++; printf("  FAIL: %s: got %d, expected %d\n", name, got, expected); }
+}
+
+static void check_str(const char *name, const char *got, const char *expected) {
+    tests_run++;
+    if (got && expected && strcmp(got, expected) == 0) tests_passed++;
+    else {
+        tests_failed++;
+        printf("  FAIL: %s: got \"%s\", expected \"%s\"\n", name,
+               got ? got : "NULL", expected ? expected : "NULL");
+    }
+}
+
+static void check_true(const char *name, int cond) {
+    tests_run++;
+    if (cond) tests_passed++;
+    else { tests_failed++; printf("  FAIL: %s\n", name); }
+}
+
+/* ===== SplitHostPort ===== */
+
+static void test_split_host_port(void) {
+    printf("[split_host_port]\n");
+    char host[128], port[32];
+
+    check_int("split host:port", neverc_net_split_host_port("127.0.0.1:8080", host, sizeof(host), port, sizeof(port)), 0);
+    check_str("host", host, "127.0.0.1");
+    check_str("port", port, "8080");
+
+    check_int("split localhost:80", neverc_net_split_host_port("localhost:80", host, sizeof(host), port, sizeof(port)), 0);
+    check_str("host localhost", host, "localhost");
+    check_str("port 80", port, "80");
+
+    check_int("split [::1]:443", neverc_net_split_host_port("[::1]:443", host, sizeof(host), port, sizeof(port)), 0);
+    check_str("ipv6 host", host, "::1");
+    check_str("ipv6 port", port, "443");
+
+    check_int("split [2001:db8::1]:8080", neverc_net_split_host_port("[2001:db8::1]:8080", host, sizeof(host), port, sizeof(port)), 0);
+    check_str("ipv6 full host", host, "2001:db8::1");
+    check_str("ipv6 full port", port, "8080");
+
+    /* Error cases */
+    check_int("no port", neverc_net_split_host_port("localhost", host, sizeof(host), port, sizeof(port)), -1);
+    check_int("null input", neverc_net_split_host_port(NULL, host, sizeof(host), port, sizeof(port)), -1);
+
+    /* Just :port */
+    check_int("split :8080", neverc_net_split_host_port(":8080", host, sizeof(host), port, sizeof(port)), 0);
+    check_str("empty host", host, "");
+    check_str("port only", port, "8080");
+}
+
+/* ===== JoinHostPort ===== */
+
+static void test_join_host_port(void) {
+    printf("[join_host_port]\n");
+    char buf[128];
+
+    check_true("join ipv4", neverc_net_join_host_port("127.0.0.1", "8080", buf, sizeof(buf)) > 0);
+    check_str("ipv4 result", buf, "127.0.0.1:8080");
+
+    check_true("join hostname", neverc_net_join_host_port("localhost", "80", buf, sizeof(buf)) > 0);
+    check_str("hostname result", buf, "localhost:80");
+
+    check_true("join ipv6", neverc_net_join_host_port("::1", "443", buf, sizeof(buf)) > 0);
+    check_str("ipv6 result", buf, "[::1]:443");
+
+    check_true("join ipv6 full", neverc_net_join_host_port("2001:db8::1", "8080", buf, sizeof(buf)) > 0);
+    check_str("ipv6 full result", buf, "[2001:db8::1]:8080");
+}
+
+/* ===== LookupHost ===== */
+
+static void test_lookup_host(void) {
+    printf("[lookup_host]\n");
+    neverc_net_addrs_t addrs;
+
+    /* Resolve localhost — should always work */
+    int rc = neverc_net_lookup_host("localhost", &addrs);
+    check_int("lookup localhost", rc, 0);
+    check_true("localhost has addrs", addrs.count > 0);
+
+    if (addrs.count > 0) {
+        int found_127 = 0;
+        int found_v6_lo = 0;
+        for (int i = 0; i < addrs.count; i++) {
+            if (strcmp(addrs.addrs[i], "127.0.0.1") == 0) found_127 = 1;
+            if (strcmp(addrs.addrs[i], "::1") == 0) found_v6_lo = 1;
+        }
+        check_true("localhost resolves to 127.0.0.1 or ::1", found_127 || found_v6_lo);
+    }
+}
+
+/* ===== LookupIP with network filter ===== */
+
+static void test_lookup_ip(void) {
+    printf("[lookup_ip]\n");
+    neverc_net_addrs_t addrs;
+
+    int rc = neverc_net_lookup_ip("ip4", "localhost", &addrs);
+    check_int("lookup ip4 localhost", rc, 0);
+    if (addrs.count > 0) {
+        /* All results should be IPv4 (no colons) */
+        int all_v4 = 1;
+        for (int i = 0; i < addrs.count; i++)
+            if (strchr(addrs.addrs[i], ':')) all_v4 = 0;
+        check_true("ip4 filter works", all_v4);
+    }
+}
+
+/* ===== LookupPort ===== */
+
+static void test_lookup_port(void) {
+    printf("[lookup_port]\n");
+
+    check_int("http port", neverc_net_lookup_port("tcp", "http"), 80);
+    check_int("https port", neverc_net_lookup_port("tcp", "https"), 443);
+    check_int("numeric port", neverc_net_lookup_port("tcp", "8080"), 8080);
+    check_int("ssh port", neverc_net_lookup_port("tcp", "ssh"), 22);
+    check_int("dns port", neverc_net_lookup_port("udp", "domain"), 53);
+}
+
+/* ===== LookupCNAME ===== */
+
+static void test_lookup_cname(void) {
+    printf("[lookup_cname]\n");
+    char buf[256];
+
+    int rc = neverc_net_lookup_cname("localhost", buf, sizeof(buf));
+    check_int("cname localhost", rc, 0);
+    check_true("cname has value", buf[0] != '\0');
+}
+
+/* ===== Pipe ===== */
+
+typedef struct {
+    neverc_net_pipe_t *pipe;
+    char recv_buf[256];
+    int recv_len;
+} pipe_thread_arg_t;
+
+#ifndef _WIN32
+static void *pipe_reader_thread(void *arg) {
+    pipe_thread_arg_t *a = (pipe_thread_arg_t *)arg;
+    a->recv_len = neverc_net_pipe_read(a->pipe, a->recv_buf,
+                                         sizeof(a->recv_buf) - 1);
+    if (a->recv_len > 0)
+        a->recv_buf[a->recv_len] = '\0';
+    return NULL;
+}
+#endif
+
+static void test_pipe(void) {
+    printf("[pipe]\n");
+
+    neverc_net_pipe_t *end1, *end2;
+    check_int("pipe create", neverc_net_pipe(&end1, &end2), 0);
+
+    /* Test basic write+read */
+    const char *msg = "Hello, Pipe!";
+    int wn = neverc_net_pipe_write(end1, msg, strlen(msg));
+    check_int("pipe write", wn, (int)strlen(msg));
+
+    char buf[256] = {0};
+    int rn = neverc_net_pipe_read(end2, buf, sizeof(buf));
+    check_int("pipe read len", rn, (int)strlen(msg));
+    check_str("pipe read data", buf, msg);
+
+    /* Test reverse direction */
+    const char *reply = "Reply!";
+    wn = neverc_net_pipe_write(end2, reply, strlen(reply));
+    check_int("pipe reverse write", wn, (int)strlen(reply));
+
+    memset(buf, 0, sizeof(buf));
+    rn = neverc_net_pipe_read(end1, buf, sizeof(buf));
+    check_int("pipe reverse read len", rn, (int)strlen(reply));
+    check_str("pipe reverse read data", buf, reply);
+
+#ifndef _WIN32
+    /* Test concurrent read/write with threads */
+    pipe_thread_arg_t targ;
+    targ.pipe = end2;
+    targ.recv_len = 0;
+    memset(targ.recv_buf, 0, sizeof(targ.recv_buf));
+
+    pthread_t th;
+    pthread_create(&th, NULL, pipe_reader_thread, &targ);
+
+    const char *concurrent_msg = "Concurrent!";
+    neverc_net_pipe_write(end1, concurrent_msg, strlen(concurrent_msg));
+
+    pthread_join(th, NULL);
+    check_int("concurrent read len", targ.recv_len, (int)strlen(concurrent_msg));
+    check_str("concurrent read data", targ.recv_buf, concurrent_msg);
+#endif
+
+    /* Test close + EOF */
+    neverc_net_pipe_close(end1);
+    rn = neverc_net_pipe_read(end2, buf, sizeof(buf));
+    check_int("read after close = EOF", rn, 0);
+
+    neverc_net_pipe_close(end2);
+}
+
+/* ===== Large pipe transfer ===== */
+
+#ifndef _WIN32
+typedef struct {
+    neverc_net_pipe_t *p;
+    char *buf;
+    int total;
+    int target_size;
+} large_pipe_arg_t;
+
+static void *large_reader_thread(void *arg) {
+    large_pipe_arg_t *a = (large_pipe_arg_t *)arg;
+    while (a->total < a->target_size) {
+        int n = neverc_net_pipe_read(a->p, a->buf + a->total,
+                                      (size_t)(a->target_size - a->total));
+        if (n <= 0) break;
+        a->total += n;
+    }
+    return NULL;
+}
+#endif
+
+static void test_pipe_large(void) {
+    printf("[pipe_large]\n");
+
+    neverc_net_pipe_t *end1, *end2;
+    check_int("large pipe create", neverc_net_pipe(&end1, &end2), 0);
+
+    char big[4096];
+    memset(big, 'X', sizeof(big));
+
+#ifndef _WIN32
+    char *big_recv = (char *)calloc(1, sizeof(big) + 1);
+
+    pthread_t th;
+    large_pipe_arg_t la = {end2, big_recv, 0, (int)sizeof(big)};
+
+    pthread_create(&th, NULL, large_reader_thread, &la);
+
+    int total_written = 0;
+    while (total_written < (int)sizeof(big)) {
+        int chunk = 512;
+        if (total_written + chunk > (int)sizeof(big))
+            chunk = (int)sizeof(big) - total_written;
+        int n = neverc_net_pipe_write(end1, big + total_written, (size_t)chunk);
+        if (n <= 0) break;
+        total_written += n;
+    }
+
+    pthread_join(th, NULL);
+    check_int("large write total", total_written, (int)sizeof(big));
+    check_int("large read total", la.total, (int)sizeof(big));
+
+    int match = (memcmp(big, big_recv, sizeof(big)) == 0);
+    check_true("large data match", match);
+
+    free(big_recv);
+#endif
+
+    neverc_net_pipe_close(end1);
+    neverc_net_pipe_close(end2);
+}
+
+int main(void) {
+    printf("=== NeverC net/resolve tests ===\n");
+
+    test_split_host_port();
+    test_join_host_port();
+    test_lookup_host();
+    test_lookup_ip();
+    test_lookup_port();
+    test_lookup_cname();
+    test_pipe();
+    test_pipe_large();
+
+    printf("\n%d tests, %d passed, %d failed\n",
+           tests_run, tests_passed, tests_failed);
+
+    if (tests_failed == 0)
+        printf("ALL PASSED (%d tests passed)\n", tests_passed);
+
+    return tests_failed;
+}

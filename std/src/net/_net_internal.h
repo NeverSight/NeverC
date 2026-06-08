@@ -1445,7 +1445,6 @@ static inline int nc_writev(nc_sock_t fd, const void *hdr, size_t hdr_len,
                               const void *body, size_t body_len) {
     WSABUF bufs[2];
     int nbufs = 0;
-    DWORD sent = 0;
     if (hdr && hdr_len > 0) {
         bufs[nbufs].buf = (char *)hdr;
         bufs[nbufs].len = (ULONG)hdr_len;
@@ -1457,28 +1456,74 @@ static inline int nc_writev(nc_sock_t fd, const void *hdr, size_t hdr_len,
         nbufs++;
     }
     if (nbufs == 0) return 0;
-    int rc = WSASend(fd, bufs, nbufs, &sent, 0, NULL, NULL);
-    return rc == 0 ? (int)sent : -1;
+    size_t total = hdr_len + body_len;
+    size_t sent = 0;
+    while (sent < total) {
+        DWORD n = 0;
+        int cur = 0;
+        WSABUF wb[2];
+        int wn = 0;
+        size_t skip = sent;
+        if (hdr && hdr_len > 0) {
+            if (skip < hdr_len) {
+                wb[wn].buf = (char *)hdr + skip;
+                wb[wn].len = (ULONG)(hdr_len - skip);
+                wn++;
+                skip = 0;
+            } else {
+                skip -= hdr_len;
+            }
+        }
+        if (body && body_len > 0 && wn < 2) {
+            if (skip < body_len) {
+                wb[wn].buf = (char *)body + skip;
+                wb[wn].len = (ULONG)(body_len - skip);
+                wn++;
+            }
+        }
+        if (wn == 0) break;
+        cur = WSASend(fd, wb, wn, &n, 0, NULL, NULL);
+        if (cur != 0) return -1;
+        sent += (size_t)n;
+    }
+    return (int)sent;
 }
 #else
 #include <sys/uio.h>
 static inline int nc_writev(nc_sock_t fd, const void *hdr, size_t hdr_len,
                               const void *body, size_t body_len) {
-    struct iovec iov[2];
-    int iovcnt = 0;
-    if (hdr && hdr_len > 0) {
-        iov[iovcnt].iov_base = (void *)hdr;
-        iov[iovcnt].iov_len = hdr_len;
-        iovcnt++;
+    size_t total = hdr_len + body_len;
+    size_t sent = 0;
+    while (sent < total) {
+        struct iovec iov[2];
+        int iovcnt = 0;
+        size_t skip = sent;
+        if (hdr && hdr_len > 0) {
+            if (skip < hdr_len) {
+                iov[iovcnt].iov_base = (char *)hdr + skip;
+                iov[iovcnt].iov_len = hdr_len - skip;
+                iovcnt++;
+                skip = 0;
+            } else {
+                skip -= hdr_len;
+            }
+        }
+        if (body && body_len > 0 && iovcnt < 2) {
+            if (skip < body_len) {
+                iov[iovcnt].iov_base = (char *)body + skip;
+                iov[iovcnt].iov_len = body_len - skip;
+                iovcnt++;
+            }
+        }
+        if (iovcnt == 0) break;
+        ssize_t n = writev(fd, iov, iovcnt);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        sent += (size_t)n;
     }
-    if (body && body_len > 0) {
-        iov[iovcnt].iov_base = (void *)body;
-        iov[iovcnt].iov_len = body_len;
-        iovcnt++;
-    }
-    if (iovcnt == 0) return 0;
-    ssize_t n = writev(fd, iov, iovcnt);
-    return n >= 0 ? (int)n : -1;
+    return (int)sent;
 }
 #endif
 
@@ -1515,10 +1560,10 @@ static inline int nc_set_quickack(nc_sock_t fd) {
  * ====================================================================== */
 
 #if defined(__GNUC__) || defined(__clang__)
-  #define nc_atomic_inc(ptr) __sync_add_and_fetch(ptr, 1)
-  #define nc_atomic_dec(ptr) __sync_sub_and_fetch(ptr, 1)
-  #define nc_atomic_load(ptr) __sync_add_and_fetch(ptr, 0)
-  #define nc_atomic_store(ptr, val) __sync_lock_test_and_set(ptr, val)
+  #define nc_atomic_inc(ptr) __atomic_add_fetch(ptr, 1, __ATOMIC_SEQ_CST)
+  #define nc_atomic_dec(ptr) __atomic_sub_fetch(ptr, 1, __ATOMIC_SEQ_CST)
+  #define nc_atomic_load(ptr) __atomic_load_n(ptr, __ATOMIC_SEQ_CST)
+  #define nc_atomic_store(ptr, val) __atomic_store_n(ptr, val, __ATOMIC_SEQ_CST)
   #define nc_atomic_cas(ptr, expected, desired) \
       __sync_bool_compare_and_swap(ptr, expected, desired)
 #elif defined(_WIN32)

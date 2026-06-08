@@ -198,6 +198,20 @@ STD_TEST(io_uring, "src/net/tcp/tcp.c", "src/net/http/http.c")
 // ===== HTTP/2 =====
 STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http.c", "src/net/tcp/tcp.c")
 
+// ===== HTTP Benchmark =====
+STD_TEST(http_bench, "src/net/http/http.c", "src/net/tcp/tcp.c")
+
+// ===== HTTP Util =====
+STD_TEST(httputil, "src/net/http/httputil/httputil.c",
+    "src/net/http/http.c", "src/net/tcp/tcp.c")
+
+// ===== SMTP =====
+STD_TEST(smtp, "src/net/smtp/smtp.c", "src/net/tcp/tcp.c")
+
+// ===== Net Core (DNS, Pipe, SplitHostPort) =====
+STD_TEST(resolve, "src/net/resolve/resolve.c")
+STD_TEST(net_interface, "src/net/interface/interface.c")
+
 // ===== Path =====
 STD_TEST(filepath, "src/path/filepath/filepath.c")
 

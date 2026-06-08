@@ -48,9 +48,23 @@ static nc_bufpool_t g_rw_pool;
 static volatile int g_rw_pool_inited = 0;
 
 static void ensure_rw_pool(void) {
-    if (g_rw_pool_inited) return;
-    nc_bufpool_init(&g_rw_pool, sizeof(neverc_http_response_writer_t));
-    g_rw_pool_inited = 1;
+    if (nc_atomic_load(&g_rw_pool_inited)) return;
+#ifdef _WIN32
+    static volatile LONG rw_lock = 0;
+    while (InterlockedCompareExchange(&rw_lock, 1, 0) != 0) { Sleep(0); }
+#else
+    static volatile int rw_lock = 0;
+    while (!__sync_bool_compare_and_swap(&rw_lock, 0, 1)) { /* spin */ }
+#endif
+    if (!nc_atomic_load(&g_rw_pool_inited)) {
+        nc_bufpool_init(&g_rw_pool, sizeof(neverc_http_response_writer_t));
+        nc_atomic_store(&g_rw_pool_inited, 1);
+    }
+#ifdef _WIN32
+    InterlockedExchange(&rw_lock, 0);
+#else
+    __sync_lock_release(&rw_lock);
+#endif
 }
 
 static neverc_http_response_writer_t *rw_new(nc_sock_t fd, int keep_alive,
@@ -173,25 +187,35 @@ static void rw_flush(neverc_http_response_writer_t *w) {
     }
 
     {
-        /* Cache the Date header — update only once per second */
-        static char cached_date[64];
-        static int  cached_date_len = 0;
-        static volatile time_t cached_date_time = 0;
+        /* Cache the Date header — update once per second.
+         * Double-buffer to avoid reader/writer races: we write into the
+         * inactive slot, then atomically flip the index. Readers always
+         * see a fully-formed string. */
+        static char   date_bufs[2][64];
+        static int    date_lens[2] = {0, 0};
+        static volatile int date_idx = 0;
+        static volatile time_t date_time = 0;
 
         time_t now = time(NULL);
-        if (now != cached_date_time) {
+        if (now != date_time) {
+            int wi = 1 - date_idx; /* write to inactive slot */
             struct tm gmt;
 #ifdef _WIN32
             gmtime_s(&gmt, &now);
 #else
             gmtime_r(&now, &gmt);
 #endif
-            cached_date_len = (int)strftime(cached_date, sizeof(cached_date),
+            date_lens[wi] = (int)strftime(date_bufs[wi],
+                sizeof(date_bufs[wi]),
                 "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", &gmt);
-            cached_date_time = now;
+            __sync_synchronize();
+            date_idx = wi;
+            date_time = now;
         }
-        if (cached_date_len > 0)
-            nc_buf_append(&hdr, cached_date, (size_t)cached_date_len);
+        int ri = date_idx;
+        __sync_synchronize();
+        if (date_lens[ri] > 0)
+            nc_buf_append(&hdr, date_bufs[ri], (size_t)date_lens[ri]);
     }
 
     nc_buf_append(&hdr, "\r\n", 2);
@@ -801,9 +825,23 @@ static nc_bufpool_t g_conn_pool_cache;
 static volatile int g_conn_pool_inited = 0;
 
 static void ensure_conn_pool(void) {
-    if (g_conn_pool_inited) return;
-    nc_bufpool_init(&g_conn_pool_cache, sizeof(http_conn_t));
-    g_conn_pool_inited = 1;
+    if (nc_atomic_load(&g_conn_pool_inited)) return;
+#ifdef _WIN32
+    static volatile LONG cp_lock = 0;
+    while (InterlockedCompareExchange(&cp_lock, 1, 0) != 0) { Sleep(0); }
+#else
+    static volatile int cp_lock = 0;
+    while (!__sync_bool_compare_and_swap(&cp_lock, 0, 1)) { /* spin */ }
+#endif
+    if (!nc_atomic_load(&g_conn_pool_inited)) {
+        nc_bufpool_init(&g_conn_pool_cache, sizeof(http_conn_t));
+        nc_atomic_store(&g_conn_pool_inited, 1);
+    }
+#ifdef _WIN32
+    InterlockedExchange(&cp_lock, 0);
+#else
+    __sync_lock_release(&cp_lock);
+#endif
 }
 
 static http_conn_t *http_conn_new(nc_sock_t fd, nc_evloop_t *loop,
@@ -2673,3 +2711,98 @@ void neverc_http_response_free(neverc_http_response_t *resp) {
     free(resp->headers);
     free(resp);
 }
+
+/* ======================================================================
+ * Cookie API
+ * ====================================================================== */
+
+void neverc_http_set_cookie(neverc_http_response_writer_t *w,
+                              const neverc_http_cookie_t *c) {
+    if (!w || !c || !c->name || !c->value) return;
+
+    char buf[2048];
+    int n = snprintf(buf, sizeof(buf), "%s=%s", c->name, c->value);
+
+    if (c->path && c->path[0])
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; Path=%s", c->path);
+    if (c->domain && c->domain[0])
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; Domain=%s", c->domain);
+    if (c->max_age != 0)
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; Max-Age=%d", c->max_age);
+    if (c->secure)
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; Secure");
+    if (c->http_only)
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; HttpOnly");
+    if (c->same_site == 1)
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; SameSite=Lax");
+    else if (c->same_site == 2)
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; SameSite=Strict");
+    else if (c->same_site == 3)
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; SameSite=None");
+
+    neverc_http_set_header(w, "Set-Cookie", buf);
+}
+
+const char *neverc_http_get_cookie(const neverc_http_request_t *req,
+                                     const char *name,
+                                     char *buf, size_t buflen) {
+    if (!req || !name || !buf || buflen == 0) return NULL;
+
+    const char *cookie_hdr = neverc_http_request_header(req, "Cookie");
+    if (!cookie_hdr) return NULL;
+
+    size_t nlen = strlen(name);
+    const char *p = cookie_hdr;
+
+    while (*p) {
+        while (*p == ' ' || *p == ';') p++;
+        if (!*p) break;
+
+        if (strncmp(p, name, nlen) == 0 && p[nlen] == '=') {
+            const char *val = p + nlen + 1;
+            size_t i = 0;
+            while (val[i] && val[i] != ';' && val[i] != ' ' && i < buflen - 1) {
+                buf[i] = val[i];
+                i++;
+            }
+            buf[i] = '\0';
+            return buf;
+        }
+
+        while (*p && *p != ';') p++;
+    }
+    return NULL;
+}
+
+/* ======================================================================
+ * Gzip Response Compression
+ * ====================================================================== */
+
+#include "neverc/std/compress/gzip.h"
+
+static int g_gzip_enabled = 0;
+static int g_gzip_level = 6;
+static size_t g_gzip_min_size = 256;
+
+void neverc_http_enable_gzip(int level, size_t min_size) {
+    g_gzip_enabled = 1;
+    g_gzip_level = (level >= 1 && level <= 9) ? level : 6;
+    g_gzip_min_size = min_size > 0 ? min_size : 256;
+}
+
+void neverc_http_disable_gzip(void) {
+    g_gzip_enabled = 0;
+}
+
+/* ======================================================================
+ * Access Logging
+ * ====================================================================== */
+
+static neverc_http_access_log_func_t g_access_log_func = NULL;
+static int g_access_log_enabled = 0;
+
+void neverc_http_enable_access_log(neverc_http_access_log_func_t func) {
+    g_access_log_enabled = 1;
+    g_access_log_func = func;
+}
+

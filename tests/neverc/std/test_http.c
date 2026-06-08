@@ -1563,6 +1563,111 @@ static void test_connection_pool(void) {
     stop_test_server(srv);
 }
 
+/* ===== Test: Cookie API ===== */
+
+static void cookie_handler(neverc_http_request_t *req,
+                              neverc_http_response_writer_t *w) {
+    neverc_http_cookie_t c = {0};
+    c.name = "session";
+    c.value = "abc123";
+    c.path = "/";
+    c.max_age = 3600;
+    c.http_only = 1;
+    c.same_site = 1; /* Lax */
+    neverc_http_set_cookie(w, &c);
+
+    /* Check incoming cookie */
+    char buf[128];
+    const char *v = neverc_http_get_cookie(req, "test_cookie", buf, sizeof(buf));
+    if (v)
+        neverc_http_writef(w, "cookie=%s", v);
+    else
+        neverc_http_write_string(w, "no-cookie");
+}
+
+static void test_cookies(void) {
+    printf("[cookies]\n");
+
+    /* Test cookie parsing from request header */
+    neverc_http_request_t req;
+    memset(&req, 0, sizeof(req));
+    char hdr_data[256];
+    const char *hname = "Cookie";
+    const char *hval = "session=abc123; theme=dark; lang=en";
+    size_t pos = 0;
+    memcpy(hdr_data + pos, hname, strlen(hname) + 1); pos += strlen(hname) + 1;
+    memcpy(hdr_data + pos, hval, strlen(hval) + 1); pos += strlen(hval) + 1;
+    req.raw_headers = hdr_data;
+    req.nheaders = 1;
+
+    char buf[128];
+    const char *v = neverc_http_get_cookie(&req, "session", buf, sizeof(buf));
+    check_not_null("get session cookie", v);
+    if (v) check_int("session value", strcmp(v, "abc123") == 0, 1);
+
+    v = neverc_http_get_cookie(&req, "theme", buf, sizeof(buf));
+    check_not_null("get theme cookie", v);
+    if (v) check_int("theme value", strcmp(v, "dark") == 0, 1);
+
+    v = neverc_http_get_cookie(&req, "lang", buf, sizeof(buf));
+    check_not_null("get lang cookie", v);
+    if (v) check_int("lang value", strcmp(v, "en") == 0, 1);
+
+    v = neverc_http_get_cookie(&req, "nonexistent", buf, sizeof(buf));
+    check_int("nonexistent cookie", v == NULL, 1);
+
+    /* Test Set-Cookie via real server */
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: no free port\n"); return; }
+
+    pid_t srv = fork();
+    if (srv == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/cookie", cookie_handler);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+
+    /* Send request with Cookie header, verify Set-Cookie in response */
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    const char *err = NULL;
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+    check_not_null("cookie conn", conn);
+    if (conn) {
+        neverc_tcp_set_timeout(conn, 3000);
+        const char *req_str =
+            "GET /cookie HTTP/1.1\r\n"
+            "Host: 127.0.0.1\r\n"
+            "Cookie: test_cookie=hello_world\r\n"
+            "Connection: close\r\n\r\n";
+        neverc_tcp_write(conn, req_str, strlen(req_str));
+
+        char resp[4096];
+        size_t total = 0;
+        int n;
+        while ((n = neverc_tcp_read(conn, resp + total,
+                                      sizeof(resp) - total - 1)) > 0)
+            total += (size_t)n;
+        resp[total] = '\0';
+        neverc_tcp_close(conn);
+
+        check_int("has Set-Cookie header",
+                     strstr(resp, "Set-Cookie: session=abc123") != NULL, 1);
+        check_int("has HttpOnly",
+                     strstr(resp, "HttpOnly") != NULL, 1);
+        check_int("has SameSite=Lax",
+                     strstr(resp, "SameSite=Lax") != NULL, 1);
+        check_int("body has cookie value",
+                     strstr(resp, "cookie=hello_world") != NULL, 1);
+    }
+
+    stop_test_server(srv);
+}
+
 #endif /* _WIN32 */
 
 int main(void) {
@@ -1596,6 +1701,7 @@ int main(void) {
     test_connection_pool();
     test_convenience_apis();
     test_benchmark();
+    test_cookies();
 #endif
 
     printf("\n--- net/http: %d/%d passed", tests_passed, tests_run);

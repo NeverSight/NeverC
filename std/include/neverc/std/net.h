@@ -15,6 +15,8 @@
 #include "net/netip.h"
 #include "net/mail.h"
 #include "net/textproto.h"
+#include "net/resolve.h"
+#include "net/interface.h"
 
 #ifdef __neverc__
 struct __neverc_std_tcp_t { char __tag; };
@@ -25,6 +27,8 @@ struct __neverc_std_url_t { char __tag; };
 struct __neverc_std_netip_t { char __tag; };
 struct __neverc_std_mail_t { char __tag; };
 struct __neverc_std_textproto_t { char __tag; };
+struct __neverc_std_resolve_t { char __tag; };
+struct __neverc_std_interface_t { char __tag; };
 
 struct __neverc_std_net_t {
     struct __neverc_std_tcp_t tcp;
@@ -35,6 +39,8 @@ struct __neverc_std_net_t {
     struct __neverc_std_netip_t netip;
     struct __neverc_std_mail_t mail;
     struct __neverc_std_textproto_t textproto;
+    struct __neverc_std_resolve_t resolve;
+    struct __neverc_std_interface_t interface;
 };
 extern struct __neverc_std_net_t __neverc_mod_net;
 extern struct __neverc_std_net_t net;

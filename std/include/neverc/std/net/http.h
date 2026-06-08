@@ -264,6 +264,58 @@ void neverc_http_client_set_timeout(int ms);
  * max_idle_per_host: max idle connections per host (default 2, 0 = disable). */
 void neverc_http_client_set_pool(int max_idle_per_host);
 
+/* ======================================================================
+ * Cookies — like Go http.Cookie / http.SetCookie / r.Cookie
+ * ====================================================================== */
+
+typedef struct {
+    const char *name;
+    const char *value;
+    const char *path;
+    const char *domain;
+    int         max_age;   /* seconds; 0 = session, <0 = delete */
+    int         secure;
+    int         http_only;
+    /* SameSite: 0=default, 1=Lax, 2=Strict, 3=None */
+    int         same_site;
+} neverc_http_cookie_t;
+
+/* Set a cookie on the response (like Go http.SetCookie). */
+void neverc_http_set_cookie(neverc_http_response_writer_t *w,
+                              const neverc_http_cookie_t *cookie);
+
+/* Get a cookie value from the request by name (like Go r.Cookie).
+ * Returns the value or NULL if not found. Writes to buf. */
+const char *neverc_http_get_cookie(const neverc_http_request_t *req,
+                                     const char *name,
+                                     char *buf, size_t buflen);
+
+/* ======================================================================
+ * Response Compression — automatic gzip when Accept-Encoding allows it
+ * ====================================================================== */
+
+/* Enable automatic gzip compression for responses > min_size bytes
+ * when the client sends Accept-Encoding: gzip.
+ * Call before listen_and_serve. level: 1-9 (default 6).
+ * min_size: minimum response size to compress (default 256). */
+void neverc_http_enable_gzip(int level, size_t min_size);
+
+/* Disable automatic gzip compression. */
+void neverc_http_disable_gzip(void);
+
+/* ======================================================================
+ * Access Logging Middleware
+ * ====================================================================== */
+
+/* Log callback: receives method, path, status, duration_ms, body_size. */
+typedef void (*neverc_http_access_log_func_t)(
+    const char *method, const char *path,
+    int status, double duration_ms, size_t body_size);
+
+/* Enable access logging with a custom callback.
+ * If func is NULL, logs to stdout in Apache Combined format. */
+void neverc_http_enable_access_log(neverc_http_access_log_func_t func);
+
 #ifdef __cplusplus
 }
 #endif

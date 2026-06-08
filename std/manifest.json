@@ -3042,6 +3042,66 @@
         "local": "neverc_tzdata_local",
         "offset_for_month": "neverc_tzdata_offset_for_month"
       }
+    },
+    "httputil": {
+      "header": "include/neverc/std/net/http/httputil.h",
+      "description": "HTTP utilities — reverse proxy and request dumping (mirrors Go net/http/httputil)",
+      "symbols": {
+        "neverc_httputil_new_single_host_reverse_proxy": "src/net/http/httputil/httputil.c",
+        "neverc_httputil_proxy_set_rewrite": "src/net/http/httputil/httputil.c",
+        "neverc_httputil_proxy_set_error_handler": "src/net/http/httputil/httputil.c",
+        "neverc_httputil_proxy_set_forwarded_headers": "src/net/http/httputil/httputil.c",
+        "neverc_httputil_proxy_handler": "src/net/http/httputil/httputil.c",
+        "neverc_httputil_proxy_free": "src/net/http/httputil/httputil.c",
+        "neverc_httputil_dump_request": "src/net/http/httputil/httputil.c",
+        "neverc_httputil_dump_request_out": "src/net/http/httputil/httputil.c"
+      },
+      "dot_methods": {
+        "new_single_host_reverse_proxy": "neverc_httputil_new_single_host_reverse_proxy",
+        "proxy_set_rewrite": "neverc_httputil_proxy_set_rewrite",
+        "proxy_set_error_handler": "neverc_httputil_proxy_set_error_handler",
+        "proxy_set_forwarded_headers": "neverc_httputil_proxy_set_forwarded_headers",
+        "proxy_handler": "neverc_httputil_proxy_handler",
+        "proxy_free": "neverc_httputil_proxy_free",
+        "dump_request": "neverc_httputil_dump_request",
+        "dump_request_out": "neverc_httputil_dump_request_out"
+      }
+    },
+    "smtp": {
+      "header": "include/neverc/std/net/smtp.h",
+      "description": "SMTP client — send email (mirrors Go net/smtp, RFC 5321)",
+      "symbols": {
+        "neverc_smtp_dial": "src/net/smtp/smtp.c",
+        "neverc_smtp_close": "src/net/smtp/smtp.c",
+        "neverc_smtp_hello": "src/net/smtp/smtp.c",
+        "neverc_smtp_auth": "src/net/smtp/smtp.c",
+        "neverc_smtp_mail": "src/net/smtp/smtp.c",
+        "neverc_smtp_rcpt": "src/net/smtp/smtp.c",
+        "neverc_smtp_data": "src/net/smtp/smtp.c",
+        "neverc_smtp_write_data": "src/net/smtp/smtp.c",
+        "neverc_smtp_data_close": "src/net/smtp/smtp.c",
+        "neverc_smtp_reset": "src/net/smtp/smtp.c",
+        "neverc_smtp_noop": "src/net/smtp/smtp.c",
+        "neverc_smtp_quit": "src/net/smtp/smtp.c",
+        "neverc_smtp_last_response": "src/net/smtp/smtp.c",
+        "neverc_smtp_send_mail": "src/net/smtp/smtp.c"
+      },
+      "dot_methods": {
+        "dial": "neverc_smtp_dial",
+        "close": "neverc_smtp_close",
+        "hello": "neverc_smtp_hello",
+        "auth": "neverc_smtp_auth",
+        "mail": "neverc_smtp_mail",
+        "rcpt": "neverc_smtp_rcpt",
+        "data": "neverc_smtp_data",
+        "write_data": "neverc_smtp_write_data",
+        "data_close": "neverc_smtp_data_close",
+        "reset": "neverc_smtp_reset",
+        "noop": "neverc_smtp_noop",
+        "quit": "neverc_smtp_quit",
+        "last_response": "neverc_smtp_last_response",
+        "send_mail": "neverc_smtp_send_mail"
+      }
     }
   }
 }
