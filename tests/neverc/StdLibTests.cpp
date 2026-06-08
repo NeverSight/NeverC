@@ -192,6 +192,11 @@ STD_TEST(httptest, "src/net/http/httptest/httptest.c",
     "src/crypto/x509/x509.c", "src/crypto/elliptic/elliptic.c",
     "src/math/big/big.c", "src/encoding/base64/base64.c")
 
+// ===== io_uring =====
+// io_uring tests use the same test harness but internally skip on non-Linux.
+// On macOS/Windows they compile and output "passed" (trivial tests).
+STD_TEST(io_uring, "src/net/tcp/tcp.c", "src/net/http/http.c")
+
 // ===== Path =====
 STD_TEST(filepath, "src/path/filepath/filepath.c")
 
