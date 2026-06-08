@@ -1,5 +1,6 @@
 #include "neverc/std/net/http.h"
 #include "neverc/std/net/tcp.h"
+#include "neverc/std/crypto/tls.h"
 #include "../_net_internal.h"
 #include <stdarg.h>
 #include <time.h>
@@ -150,10 +151,12 @@ static void rw_flush(neverc_http_response_writer_t *w) {
 
     nc_buf_append(&hdr, "\r\n", 2);
 
-    /* Merge header + body into single write to reduce syscalls */
-    if (w->body.len > 0)
-        nc_buf_append(&hdr, w->body.data, w->body.len);
-    sock_write_all(w->fd, hdr.data, hdr.len);
+    if (w->fd != NC_INVALID_SOCK) {
+        /* Merge header + body into single write to reduce syscalls */
+        if (w->body.len > 0)
+            nc_buf_append(&hdr, w->body.data, w->body.len);
+        sock_write_all(w->fd, hdr.data, hdr.len);
+    }
 
     nc_buf_free(&hdr);
 }
@@ -1043,6 +1046,7 @@ static void distribute_conn_task(void *arg) {
 #endif
     nc_set_nodelay(hc->fd);
     nc_set_keepalive(hc->fd);
+    nc_set_quickack(hc->fd);
 
     conn_list_add(&worker->conns, hc);
     nc_poller_add(hc->loop->poller, hc->fd, NC_EV_READ, hc);
@@ -1205,6 +1209,8 @@ int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
     nc_set_reuseport(lfd);
 #endif
 
+    nc_set_defer_accept(lfd);
+
     if (bind(lfd, result->ai_addr, (int)result->ai_addrlen) == NC_SOCK_ERR) {
         nc_sock_close(lfd);
         freeaddrinfo(result);
@@ -1346,6 +1352,233 @@ void neverc_http_shutdown(void) {
 }
 
 /* ======================================================================
+ * HTTPS — TLS-wrapped HTTP server (like Go http.ListenAndServeTLS)
+ *
+ * Accepts TLS connections via a TLS listener, performs handshake,
+ * then wraps the decrypted stream through the existing HTTP pipeline
+ * using a thread-per-connection model (TLS handshake is blocking).
+ * ====================================================================== */
+
+typedef struct {
+    neverc_tls_listener_t *tls_ln;
+    neverc_tls_config_t   *tls_cfg;
+    neverc_http_mux_t     *mux;
+    volatile int           running;
+    nc_threadpool_t       *pool;
+} https_server_t;
+
+static https_server_t *g_https_server = NULL;
+
+typedef struct {
+    neverc_tls_conn_t     *tls;
+    neverc_http_mux_t     *mux;
+} https_conn_ctx_t;
+
+static void https_handle_connection(void *arg) {
+    https_conn_ctx_t *ctx = (https_conn_ctx_t *)arg;
+    neverc_tls_conn_t *tls = ctx->tls;
+    neverc_http_mux_t *mux = ctx->mux;
+    free(ctx);
+
+    char buf[65536];
+    nc_buf_t req_buf;
+    nc_buf_init(&req_buf);
+
+    /* Read and serve HTTP requests over the TLS connection */
+    for (int req_count = 0; req_count < g_config_max_requests; req_count++) {
+        /* Read request data */
+        int got_headers = 0;
+        while (!got_headers) {
+            int n = neverc_tls_read(tls, buf, sizeof(buf));
+            if (n <= 0) goto done;
+            nc_buf_append(&req_buf, buf, (size_t)n);
+
+            if (strstr(req_buf.data, "\r\n\r\n"))
+                got_headers = 1;
+
+            if (req_buf.len > 1048576) goto done; /* 1MB header limit */
+        }
+
+        /* Parse the request */
+        parsed_request_t pr;
+        size_t consumed = 0;
+        int rc = parse_request(req_buf.data, req_buf.len, &pr, &consumed);
+        if (rc != 0) goto done;
+
+        /* Read remaining body if needed */
+        while (pr.content_length > 0 &&
+               req_buf.len < consumed + (size_t)pr.content_length) {
+            int n = neverc_tls_read(tls, buf, sizeof(buf));
+            if (n <= 0) { parsed_request_free(&pr); goto done; }
+            nc_buf_append(&req_buf, buf, (size_t)n);
+        }
+
+        neverc_http_request_t req;
+        nc_buf_t raw_hdr_buf;
+        nc_buf_init(&raw_hdr_buf);
+        fill_request(&pr, &req, &raw_hdr_buf);
+
+        /* Build response into a buffer, then write via TLS */
+        neverc_http_handler_func_t handler = mux_match(mux, req.path);
+
+        /* Create a temporary in-memory response writer */
+        nc_buf_t resp_buf;
+        nc_buf_init(&resp_buf);
+
+        /* Use a pipe-like approach: allocate a response_writer that buffers */
+        neverc_http_response_writer_t *w =
+            (neverc_http_response_writer_t *)calloc(1, sizeof(*w));
+        if (!w) {
+            nc_buf_free(&raw_hdr_buf);
+            parsed_request_free(&pr);
+            goto done;
+        }
+        w->fd = NC_INVALID_SOCK; /* signal that we'll manually flush */
+        w->status = 200;
+        w->keep_alive = pr.keep_alive;
+        nc_buf_init(&w->body);
+
+        if (handler) {
+            handler(&req, w);
+        } else {
+            neverc_http_set_status(w, 404);
+            neverc_http_write_string(w, "404 page not found\n");
+        }
+
+        /* Build HTTP response */
+        char line[256];
+        int n = snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n",
+                         w->status, neverc_http_status_text(w->status));
+        nc_buf_append(&resp_buf, line, (size_t)n);
+
+        int has_ct = 0, has_cl = 0, has_conn = 0;
+        for (int i = 0; i < w->nheaders; i++) {
+            n = snprintf(line, sizeof(line), "%s: %s\r\n",
+                         w->header_names[i], w->header_values[i]);
+            nc_buf_append(&resp_buf, line, (size_t)n);
+            if (strcasecmp(w->header_names[i], "Content-Type") == 0) has_ct = 1;
+            if (strcasecmp(w->header_names[i], "Content-Length") == 0) has_cl = 1;
+            if (strcasecmp(w->header_names[i], "Connection") == 0) has_conn = 1;
+        }
+        if (!has_ct) nc_buf_append(&resp_buf,
+            "Content-Type: text/plain; charset=utf-8\r\n", 41);
+        if (!has_cl) {
+            n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n",
+                         w->body.len);
+            nc_buf_append(&resp_buf, line, (size_t)n);
+        }
+        if (!has_conn) {
+            const char *cv = w->keep_alive
+                ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
+            nc_buf_append(&resp_buf, cv, strlen(cv));
+        }
+        nc_buf_append(&resp_buf, "\r\n", 2);
+        if (w->body.len > 0)
+            nc_buf_append(&resp_buf, w->body.data, w->body.len);
+
+        /* Send response over TLS */
+        neverc_tls_write(tls, resp_buf.data, resp_buf.len);
+        nc_buf_free(&resp_buf);
+
+        int should_close = !pr.keep_alive;
+        rw_free(w);
+        nc_buf_free(&raw_hdr_buf);
+
+        if (pr.is_chunked && pr.body) free((void *)pr.body);
+        nc_buf_consume(&req_buf, consumed);
+        parsed_request_free(&pr);
+
+        if (should_close) break;
+    }
+
+done:
+    nc_buf_free(&req_buf);
+    neverc_tls_close(tls);
+    if (g_https_server)
+        nc_conn_limiter_release(&g_conn_limiter);
+}
+
+int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
+                                      const char *cert_file,
+                                      const char *key_file) {
+    nc_net_init();
+
+    if (!mux) {
+        ensure_default_mux();
+        mux = &default_mux;
+    }
+
+    neverc_tls_config_t *cfg = neverc_tls_config_new();
+    if (!cfg) return -1;
+
+    if (neverc_tls_config_load_cert(cfg, cert_file, key_file) != 0) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    const char *err = NULL;
+    neverc_tls_listener_t *tls_ln = neverc_tls_listen(addr, cfg, &err);
+    if (!tls_ln) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    int nw = g_config_workers > 0 ? g_config_workers : nc_cpu_count();
+    if (nw < 1) nw = 1;
+    if (nw > 64) nw = 64;
+
+    nc_threadpool_t *pool = nc_threadpool_create(nw);
+    if (!pool) {
+        neverc_tls_listener_close(tls_ln);
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    nc_conn_limiter_init(&g_conn_limiter,
+                          g_config_max_conns > 0 ? g_config_max_conns : 0);
+
+    https_server_t srv = {
+        .tls_ln = tls_ln,
+        .tls_cfg = cfg,
+        .mux = mux,
+        .running = 1,
+        .pool = pool,
+    };
+    g_https_server = &srv;
+
+    while (srv.running) {
+        neverc_tls_conn_t *tls = neverc_tls_accept(tls_ln, &err);
+        if (!tls) {
+            if (!srv.running) break;
+            continue;
+        }
+
+        if (!nc_conn_limiter_try_acquire(&g_conn_limiter)) {
+            neverc_tls_close(tls);
+            continue;
+        }
+
+        https_conn_ctx_t *ctx =
+            (https_conn_ctx_t *)malloc(sizeof(*ctx));
+        if (!ctx) {
+            neverc_tls_close(tls);
+            nc_conn_limiter_release(&g_conn_limiter);
+            continue;
+        }
+        ctx->tls = tls;
+        ctx->mux = mux;
+        nc_threadpool_submit(pool, https_handle_connection, ctx);
+    }
+
+    g_https_server = NULL;
+    nc_threadpool_destroy(pool);
+    neverc_tls_listener_close(tls_ln);
+    neverc_tls_config_free(cfg);
+
+    return 0;
+}
+
+/* ======================================================================
  * Helpers
  * ====================================================================== */
 
@@ -1457,6 +1690,42 @@ const char *neverc_http_status_text(int code) {
     case 504: return "Gateway Timeout";
     default:  return "Unknown";
     }
+}
+
+/* ======================================================================
+ * Memory Writer — for testing / httptest (writes to buffer, not socket)
+ * ====================================================================== */
+
+neverc_http_response_writer_t *neverc_http_memory_writer_new(void) {
+    neverc_http_response_writer_t *w =
+        (neverc_http_response_writer_t *)calloc(1, sizeof(*w));
+    if (!w) return NULL;
+    w->fd = NC_INVALID_SOCK;
+    w->status = 200;
+    nc_buf_init(&w->body);
+    return w;
+}
+
+int neverc_http_memory_writer_result(neverc_http_response_writer_t *w,
+                                      char **out_data, size_t *out_len) {
+    if (!w) return 0;
+    if (out_data) {
+        if (w->body.len > 0) {
+            *out_data = (char *)malloc(w->body.len + 1);
+            if (*out_data) {
+                memcpy(*out_data, w->body.data, w->body.len);
+                (*out_data)[w->body.len] = '\0';
+            }
+        } else {
+            *out_data = NULL;
+        }
+    }
+    if (out_len) *out_len = w->body.len;
+    return w->status;
+}
+
+void neverc_http_memory_writer_free(neverc_http_response_writer_t *w) {
+    rw_free(w);
 }
 
 /* ======================================================================

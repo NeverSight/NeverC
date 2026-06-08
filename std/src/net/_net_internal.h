@@ -895,6 +895,80 @@ static inline int nc_set_cork(nc_sock_t fd, int enable) {
 }
 
 /* ======================================================================
+ * Performance: writev() — scatter/gather write (header + body in one syscall)
+ * ====================================================================== */
+
+#ifdef _WIN32
+static inline int nc_writev(nc_sock_t fd, const void *hdr, size_t hdr_len,
+                              const void *body, size_t body_len) {
+    WSABUF bufs[2];
+    int nbufs = 0;
+    DWORD sent = 0;
+    if (hdr && hdr_len > 0) {
+        bufs[nbufs].buf = (char *)hdr;
+        bufs[nbufs].len = (ULONG)hdr_len;
+        nbufs++;
+    }
+    if (body && body_len > 0) {
+        bufs[nbufs].buf = (char *)body;
+        bufs[nbufs].len = (ULONG)body_len;
+        nbufs++;
+    }
+    if (nbufs == 0) return 0;
+    int rc = WSASend(fd, bufs, nbufs, &sent, 0, NULL, NULL);
+    return rc == 0 ? (int)sent : -1;
+}
+#else
+#include <sys/uio.h>
+static inline int nc_writev(nc_sock_t fd, const void *hdr, size_t hdr_len,
+                              const void *body, size_t body_len) {
+    struct iovec iov[2];
+    int iovcnt = 0;
+    if (hdr && hdr_len > 0) {
+        iov[iovcnt].iov_base = (void *)hdr;
+        iov[iovcnt].iov_len = hdr_len;
+        iovcnt++;
+    }
+    if (body && body_len > 0) {
+        iov[iovcnt].iov_base = (void *)body;
+        iov[iovcnt].iov_len = body_len;
+        iovcnt++;
+    }
+    if (iovcnt == 0) return 0;
+    ssize_t n = writev(fd, iov, iovcnt);
+    return n >= 0 ? (int)n : -1;
+}
+#endif
+
+/* ======================================================================
+ * Performance: TCP_DEFER_ACCEPT — don't wake listener until data arrives
+ * ====================================================================== */
+
+static inline int nc_set_defer_accept(nc_sock_t fd) {
+#if defined(__linux__) && defined(TCP_DEFER_ACCEPT)
+    int timeout = 10; /* seconds */
+    return setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &timeout, sizeof(timeout));
+#else
+    (void)fd;
+    return 0;
+#endif
+}
+
+/* ======================================================================
+ * Performance: TCP_QUICKACK — disable delayed ACK for fast responses
+ * ====================================================================== */
+
+static inline int nc_set_quickack(nc_sock_t fd) {
+#if defined(__linux__) && defined(TCP_QUICKACK)
+    int opt = 1;
+    return setsockopt(fd, IPPROTO_TCP, TCP_QUICKACK, &opt, sizeof(opt));
+#else
+    (void)fd;
+    return 0;
+#endif
+}
+
+/* ======================================================================
  * Atomic operations (for lock-free counters)
  * ====================================================================== */
 

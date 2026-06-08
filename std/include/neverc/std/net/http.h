@@ -101,6 +101,13 @@ void neverc_http_handle_func(const char *pattern,
  * Blocks until server is stopped. Returns 0 on normal shutdown, -1 on error. */
 int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux);
 
+/* Start serving HTTPS on addr with TLS (like Go http.ListenAndServeTLS).
+ * cert_file and key_file are PEM-encoded certificate and private key.
+ * Blocks until server is stopped. Returns 0 on normal shutdown, -1 on error. */
+int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
+                                      const char *cert_file,
+                                      const char *key_file);
+
 /* Stop a running server (call from another thread or signal handler). */
 void neverc_http_shutdown(void);
 
@@ -166,6 +173,20 @@ neverc_tcp_conn_t *neverc_http_hijack(neverc_http_response_writer_t *w);
 
 /* Common status text. */
 const char *neverc_http_status_text(int code);
+
+/* --- Memory Writer (for testing, httptest) --- */
+
+/* Create a response writer that buffers output in memory instead of a socket.
+ * Use neverc_http_memory_writer_result to retrieve the buffered response. */
+neverc_http_response_writer_t *neverc_http_memory_writer_new(void);
+
+/* Get the buffered response from a memory writer. Caller must free *out_data.
+ * Returns the status code used. */
+int neverc_http_memory_writer_result(neverc_http_response_writer_t *w,
+                                      char **out_data, size_t *out_len);
+
+/* Free a memory writer. */
+void neverc_http_memory_writer_free(neverc_http_response_writer_t *w);
 
 /* --- Go-style convenience APIs --- */
 

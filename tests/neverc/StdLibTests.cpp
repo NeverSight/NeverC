@@ -179,6 +179,18 @@ STD_TEST(url, "src/net/url/url.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c")
 STD_TEST(textproto, "src/net/textproto/textproto.c")
+STD_TEST(httptest, "src/net/http/httptest/httptest.c",
+    "src/net/http/http.c", "src/net/tcp/tcp.c",
+    "src/crypto/tls/tls.c", "src/crypto/ecdh/ecdh.c",
+    "src/crypto/aes/aes.c", "src/crypto/gcm/gcm.c",
+    "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c",
+    "src/crypto/chacha20poly1305/chacha20poly1305.c",
+    "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c",
+    "src/crypto/sha384/sha384.c", "src/crypto/sha1/sha1.c",
+    "src/crypto/hmac/hmac.c", "src/crypto/hkdf/hkdf.c",
+    "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c",
+    "src/crypto/x509/x509.c", "src/crypto/elliptic/elliptic.c",
+    "src/math/big/big.c", "src/encoding/base64/base64.c")
 
 // ===== Path =====
 STD_TEST(filepath, "src/path/filepath/filepath.c")

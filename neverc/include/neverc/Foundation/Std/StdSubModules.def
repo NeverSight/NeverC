@@ -41,6 +41,8 @@ STD_SUBMODULE(net, url)
 STD_SUBMODULE(net, netip)
 STD_SUBMODULE(net, mail)
 STD_SUBMODULE(net, textproto)
+STD_SUBMODULE(net, httptest)
+STD_SUBMODULE(net, httputil)
 
 // image
 STD_SUBMODULE(image, color)
