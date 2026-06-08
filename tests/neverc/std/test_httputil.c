@@ -168,6 +168,8 @@ static void *backend_thread(void *arg) {
     neverc_http_set_workers(1);
     neverc_http_set_max_requests(100);
     neverc_http_set_read_timeout(3000);
+    neverc_http_set_idle_timeout(1000);
+    neverc_http_set_shutdown_timeout(2000);
 
     neverc_http_mux_t *mux = neverc_http_new_mux();
     neverc_http_mux_handle(mux, "/", backend_handler);

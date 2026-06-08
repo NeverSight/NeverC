@@ -1910,7 +1910,9 @@ static inline int nc_reuseport_listen(nc_reuseport_group_t *g,
     if (fd == NC_INVALID_SOCK) return -1;
 
     nc_set_reuseaddr(fd);
+#if !defined(_WIN32) && defined(SO_REUSEPORT)
     nc_set_reuseport(fd);
+#endif
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));

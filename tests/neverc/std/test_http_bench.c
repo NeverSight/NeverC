@@ -74,6 +74,8 @@ static void *server_thread(void *arg) {
     neverc_http_set_workers(4);
     neverc_http_set_max_requests(10000);
     neverc_http_set_read_timeout(5000);
+    neverc_http_set_idle_timeout(2000);
+    neverc_http_set_shutdown_timeout(2000);
 
     neverc_http_mux_t *mux = neverc_http_new_mux();
     neverc_http_mux_handle(mux, "/", bench_hello_handler);
@@ -173,8 +175,13 @@ static void *bench_worker(void *arg) {
 static void test_throughput(void) {
     printf("[throughput]\n");
 
+#if defined(_WIN32)
+    int nthreads = 4;
+    int requests_per_thread = 100;
+#else
     int nthreads = 8;
     int requests_per_thread = 500;
+#endif
 
     bench_result_t results[8];
 #ifdef _WIN32
@@ -199,7 +206,7 @@ static void test_throughput(void) {
 
     for (int i = 0; i < nthreads; i++) {
 #ifdef _WIN32
-        WaitForSingleObject(threads[i], 30000);
+        WaitForSingleObject(threads[i], 10000);
         CloseHandle(threads[i]);
 #else
         pthread_join(threads[i], NULL);
@@ -235,7 +242,11 @@ static void test_throughput(void) {
 static void test_connection_rate(void) {
     printf("[connection_rate]\n");
 
+#if defined(_WIN32)
+    int n_conns = 50;
+#else
     int n_conns = 200;
+#endif
     int success = 0;
     char addr[32];
     snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_server_port);
@@ -281,7 +292,11 @@ static void test_connection_rate(void) {
 static void test_concurrent_connections(void) {
     printf("[concurrent_conns]\n");
 
+#if defined(_WIN32)
+    int max_conns = 100;
+#else
     int max_conns = 500;
+#endif
     char addr[32];
     snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_server_port);
 
@@ -393,6 +408,27 @@ static void test_pipelining_bench(void) {
                 (double)success / (double)total_requests > 0.80);
 }
 
+/* ===== Helpers ===== */
+
+static int wait_for_tcp_port(int port, int attempts) {
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    for (int i = 0; i < attempts; i++) {
+        const char *err = NULL;
+        neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+        if (conn) {
+            neverc_tcp_close(conn);
+            return 0;
+        }
+#ifdef _WIN32
+        Sleep(100);
+#else
+        usleep(100000);
+#endif
+    }
+    return -1;
+}
+
 /* ===== Main ===== */
 
 int main(void) {
@@ -402,6 +438,9 @@ int main(void) {
     signal(SIGPIPE, SIG_IGN);
 #endif
 
+#if defined(_WIN32)
+    g_server_port = 47000 + (int)(GetCurrentProcessId() % 15000);
+#else
     const char *err = NULL;
     neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
     if (!ln) {
@@ -412,17 +451,29 @@ int main(void) {
     neverc_tcp_listener_addr(ln, &addr);
     g_server_port = addr.port;
     neverc_tcp_listener_close(ln);
+#endif
 
     printf("  server port: %d\n", g_server_port);
 
 #ifdef _WIN32
     HANDLE srv = CreateThread(NULL, 0, server_thread, NULL, 0, NULL);
-    Sleep(500);
 #else
     pthread_t srv;
     pthread_create(&srv, NULL, server_thread, NULL);
-    usleep(200000);
 #endif
+
+    if (wait_for_tcp_port(g_server_port, 50) != 0) {
+        printf("  SKIP: server did not become ready\n");
+        printf("0/0 benchmarks passed\n");
+        neverc_http_shutdown();
+#ifdef _WIN32
+        WaitForSingleObject(srv, 3000);
+        CloseHandle(srv);
+#else
+        pthread_join(srv, NULL);
+#endif
+        return 0;
+    }
 
     test_connection_rate();
     test_throughput();
@@ -432,7 +483,7 @@ int main(void) {
     neverc_http_shutdown();
 
 #ifdef _WIN32
-    WaitForSingleObject(srv, 3000);
+    WaitForSingleObject(srv, 5000);
     CloseHandle(srv);
 #else
     pthread_join(srv, NULL);

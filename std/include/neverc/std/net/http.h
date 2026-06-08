@@ -141,6 +141,9 @@ void neverc_http_set_max_requests(int n);
 /* Set read timeout in milliseconds (default 60000). */
 void neverc_http_set_read_timeout(int ms);
 
+/* Set keep-alive idle timeout in milliseconds (default 60000). */
+void neverc_http_set_idle_timeout(int ms);
+
 /* Set max concurrent connections (default 0 = unlimited). */
 void neverc_http_set_max_connections(int n);
 
