@@ -136,17 +136,25 @@ static void rw_flush(neverc_http_response_writer_t *w) {
     }
 
     {
+        /* Cache the Date header — update only once per second */
+        static char cached_date[64];
+        static int  cached_date_len = 0;
+        static volatile time_t cached_date_time = 0;
+
         time_t now = time(NULL);
-        struct tm gmt;
+        if (now != cached_date_time) {
+            struct tm gmt;
 #ifdef _WIN32
-        gmtime_s(&gmt, &now);
+            gmtime_s(&gmt, &now);
 #else
-        gmtime_r(&now, &gmt);
+            gmtime_r(&now, &gmt);
 #endif
-        char datebuf[64];
-        n = (int)strftime(datebuf, sizeof(datebuf),
-                          "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", &gmt);
-        if (n > 0) nc_buf_append(&hdr, datebuf, (size_t)n);
+            cached_date_len = (int)strftime(cached_date, sizeof(cached_date),
+                "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", &gmt);
+            cached_date_time = now;
+        }
+        if (cached_date_len > 0)
+            nc_buf_append(&hdr, cached_date, (size_t)cached_date_len);
     }
 
     nc_buf_append(&hdr, "\r\n", 2);
@@ -751,11 +759,21 @@ static void conn_list_remove(http_conn_list_t *l, http_conn_t *hc) {
     hc->prev = NULL;
 }
 
+static nc_bufpool_t g_conn_pool_cache;
+static volatile int g_conn_pool_inited = 0;
+
+static void ensure_conn_pool(void) {
+    if (g_conn_pool_inited) return;
+    nc_bufpool_init(&g_conn_pool_cache, sizeof(http_conn_t));
+    g_conn_pool_inited = 1;
+}
+
 static http_conn_t *http_conn_new(nc_sock_t fd, nc_evloop_t *loop,
                                     neverc_http_mux_t *mux, int max_req,
                                     int idle_timeout_ms,
                                     size_t max_read_size) {
-    http_conn_t *hc = (http_conn_t *)calloc(1, sizeof(*hc));
+    ensure_conn_pool();
+    http_conn_t *hc = (http_conn_t *)nc_bufpool_pop(&g_conn_pool_cache);
     if (!hc) return NULL;
     hc->fd = fd;
     hc->state = HC_STATE_READING;
@@ -779,7 +797,7 @@ static void http_conn_free(http_conn_t *hc) {
         nc_sock_close(hc->fd);
     nc_buf_free(&hc->read_buf);
     nc_buf_free(&hc->raw_hdr_buf);
-    free(hc);
+    nc_bufpool_push(&g_conn_pool_cache, hc);
 }
 
 static void http_conn_process(http_conn_t *hc) {
