@@ -610,6 +610,13 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
     DEPENDS neverc-tests neverc-build-tests neverc-merge-tests neverc-std-tests ${_neverc_check_runtime_deps}
     USES_TERMINAL
     COMMENT "Running NeverC test suite (GoogleTest + CTest)")
+
+  add_custom_target(check-neverc-std
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG> -R "StdLibTest[.]"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
+    DEPENDS neverc-std-tests ${_neverc_check_runtime_deps}
+    USES_TERMINAL
+    COMMENT "Running NeverC stdlib tests")
 endif()
 
 set(NEVERC_INSTALL_LIBDIR_BASENAME "lib${NEVERC_LIBDIR_SUFFIX}")

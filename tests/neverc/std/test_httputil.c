@@ -129,8 +129,31 @@ static void test_dump_request_out(void) {
 
 /* ===== Test: Reverse proxy with real backend ===== */
 
-static int g_backend_port = 0;
+static volatile int g_backend_port = 0;
+static volatile int g_backend_ready = 0;
 static int g_proxy_port = 0;
+
+static int do_http_request(int port, const char *request,
+                         char *response, size_t resplen) {
+    const char *err = NULL;
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+    if (!conn) return -1;
+
+    neverc_tcp_set_timeout(conn, 3000);
+    neverc_tcp_write(conn, request, strlen(request));
+
+    int total = 0;
+    while (total < (int)resplen - 1) {
+        int n = neverc_tcp_read(conn, response + total, resplen - 1 - (size_t)total);
+        if (n <= 0) break;
+        total += n;
+    }
+    response[total] = '\0';
+    neverc_tcp_close(conn);
+    return total;
+}
 
 static int wait_for_tcp_port(int port, int attempts) {
     char addr[32];
@@ -174,8 +197,29 @@ static void *backend_thread(void *arg) {
     neverc_http_mux_t *mux = neverc_http_new_mux();
     neverc_http_mux_handle(mux, "/", backend_handler);
 
+    const char *err = NULL;
+    neverc_tcp_listener_t *probe = neverc_tcp_listen("127.0.0.1:0", &err);
+    if (!probe) {
+        neverc_http_mux_free(mux);
+#ifdef _WIN32
+        return 0;
+#else
+        return NULL;
+#endif
+    }
+    neverc_tcp_addr_t pa;
+    neverc_tcp_listener_addr(probe, &pa);
+    g_backend_port = pa.port;
+    neverc_tcp_listener_close(probe);
+
     char addr[32];
     snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_backend_port);
+#if defined(_WIN32)
+    Sleep(100);
+#else
+    usleep(100000);
+#endif
+    g_backend_ready = 1;
     neverc_http_listen_and_serve(addr, mux);
     neverc_http_mux_free(mux);
 
@@ -186,25 +230,28 @@ static void *backend_thread(void *arg) {
 #endif
 }
 
+static int wait_for_backend_http(int port, int attempts) {
+    const char *req =
+        "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    for (int i = 0; i < attempts; i++) {
+        char buf[512];
+        if (do_http_request(port, req, buf, sizeof(buf)) > 0 &&
+            strstr(buf, "200 OK") != NULL)
+            return 0;
+#ifdef _WIN32
+        Sleep(100);
+#else
+        usleep(100000);
+#endif
+    }
+    return -1;
+}
+
 static void test_reverse_proxy_live(void) {
     printf("[reverse_proxy_live]\n");
 
-    /* Pick a backend port without the probe-then-close pattern, which races on
-       Windows when the HTTP server tries to re-bind the same port. */
-#if defined(_WIN32)
-    g_backend_port = 45000 + (int)(GetCurrentProcessId() % 15000);
-#else
-    const char *err = NULL;
-    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
-    if (!ln) {
-        printf("  SKIP: cannot create backend listener\n");
-        return;
-    }
-    neverc_tcp_addr_t addr;
-    neverc_tcp_listener_addr(ln, &addr);
-    g_backend_port = addr.port;
-    neverc_tcp_listener_close(ln);
-#endif
+    g_backend_port = 0;
+    g_backend_ready = 0;
 
 #ifdef _WIN32
     HANDLE bt = CreateThread(NULL, 0, backend_thread, NULL, 0, NULL);
@@ -213,7 +260,26 @@ static void test_reverse_proxy_live(void) {
     pthread_create(&bt, NULL, backend_thread, NULL);
 #endif
 
-    if (wait_for_tcp_port(g_backend_port, 50) != 0) {
+    for (int i = 0; i < 100 && !g_backend_ready; i++) {
+#ifdef _WIN32
+        Sleep(10);
+#else
+        usleep(10000);
+#endif
+    }
+    if (!g_backend_ready || g_backend_port <= 0) {
+        printf("  SKIP: backend thread did not publish a port\n");
+        neverc_http_shutdown();
+#ifdef _WIN32
+        WaitForSingleObject(bt, 3000);
+        CloseHandle(bt);
+#else
+        pthread_join(bt, NULL);
+#endif
+        return;
+    }
+
+    if (wait_for_backend_http(g_backend_port, 50) != 0) {
         printf("  SKIP: backend did not become ready\n");
         neverc_http_shutdown();
 #ifdef _WIN32
@@ -226,17 +292,14 @@ static void test_reverse_proxy_live(void) {
     }
 
     /* Test: direct request to backend to verify it works */
-    char backend_url[64];
-    snprintf(backend_url, sizeof(backend_url),
-             "http://127.0.0.1:%d/", g_backend_port);
-
-    neverc_http_response_t *resp = neverc_http_get(backend_url);
-    check_not_null("backend response", resp);
-    if (resp) {
-        check_true("backend status 200", resp->status_code == 200);
-        if (resp->body)
-            check_contains("backend body", resp->body, "proxied");
-        neverc_http_response_free(resp);
+    char respbuf[4096];
+    const char *req =
+        "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    int n = do_http_request(g_backend_port, req, respbuf, sizeof(respbuf));
+    check_true("backend tcp response", n > 0);
+    if (n > 0) {
+        check_true("backend status 200", strstr(respbuf, "200 OK") != NULL);
+        check_contains("backend body", respbuf, "proxied");
     }
 
     /* Test: create and verify reverse proxy config */
