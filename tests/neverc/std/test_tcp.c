@@ -24,6 +24,19 @@ static void check_not_null(const char *name, const void *ptr) {
     else { tests_failed++; printf("  FAIL: %s: got NULL\n", name); }
 }
 
+static void check_str(const char *name, const char *got, const char *expected) {
+    tests_run++;
+    if (got == NULL && expected == NULL) { tests_passed++; return; }
+    if (got == NULL || expected == NULL) {
+        tests_failed++;
+        printf("  FAIL: %s: got %s, expected %s\n", name,
+               got ? got : "NULL", expected ? expected : "NULL");
+        return;
+    }
+    if (strcmp(got, expected) == 0) tests_passed++;
+    else { tests_failed++; printf("  FAIL: %s: got \"%s\", expected \"%s\"\n", name, got, expected); }
+}
+
 static void check_null(const char *name, const void *ptr) {
     tests_run++;
     if (!ptr) tests_passed++;
@@ -343,6 +356,89 @@ static void test_nodelay(void) {
     neverc_tcp_listener_close(ln);
 }
 
+/* ===== Pipe test ===== */
+
+static void test_pipe(void) {
+    printf("[pipe]\n");
+
+    neverc_tcp_conn_t *a = NULL, *b = NULL;
+    int rc = neverc_tcp_pipe(&a, &b);
+    check_int("pipe create", rc, 0);
+    check_not_null("pipe a", a);
+    check_not_null("pipe b", b);
+
+    if (a && b) {
+        const char *msg = "hello pipe!";
+        neverc_tcp_write(a, msg, strlen(msg));
+
+        char buf[64];
+        int n = neverc_tcp_read(b, buf, sizeof(buf));
+        check_int("pipe read len", n, (int)strlen(msg));
+        buf[n] = '\0';
+        check_str("pipe read data", buf, "hello pipe!");
+
+        const char *reply = "pong";
+        neverc_tcp_write(b, reply, strlen(reply));
+        n = neverc_tcp_read(a, buf, sizeof(buf));
+        check_int("pipe reply len", n, 4);
+        buf[n] = '\0';
+        check_str("pipe reply data", buf, "pong");
+
+        neverc_tcp_close(a);
+        neverc_tcp_close(b);
+    }
+
+    /* Null safety */
+    check_int("pipe null a", neverc_tcp_pipe(NULL, &b), -1);
+    check_int("pipe null b", neverc_tcp_pipe(&a, NULL), -1);
+}
+
+/* Split/join and DNS are tested in test_resolve.c */
+
+/* ===== Socket buffer size test ===== */
+
+static void test_socket_options(void) {
+    printf("[socket_options]\n");
+
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("sockopts ln", ln);
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        usleep(50000);
+        char addr[64];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", laddr.port);
+        neverc_tcp_conn_t *c = neverc_tcp_dial(addr, &err);
+        if (!c) _exit(1);
+        neverc_tcp_write(c, "x", 1);
+        neverc_tcp_close(c);
+        _exit(0);
+    }
+
+    neverc_tcp_conn_t *c = neverc_tcp_accept(ln, &err);
+    if (c) {
+        check_int("set keepalive", neverc_tcp_set_keepalive(c, 1), 0);
+        check_int("set read buf", neverc_tcp_set_read_buffer(c, 65536), 0);
+        check_int("set write buf", neverc_tcp_set_write_buffer(c, 65536), 0);
+
+        char buf[4];
+        neverc_tcp_read(c, buf, sizeof(buf));
+        neverc_tcp_close(c);
+    }
+
+    waitpid(pid, NULL, 0);
+    neverc_tcp_listener_close(ln);
+
+    /* Null safety */
+    check_int("keepalive null", neverc_tcp_set_keepalive(NULL, 1), -1);
+    check_int("readbuf null", neverc_tcp_set_read_buffer(NULL, 1024), -1);
+    check_int("writebuf null", neverc_tcp_set_write_buffer(NULL, 1024), -1);
+}
+
 #endif /* _WIN32 */
 
 int main(void) {
@@ -357,6 +453,8 @@ int main(void) {
     test_multiple_clients();
     test_large_data();
     test_nodelay();
+    test_pipe();
+    test_socket_options();
 #endif
 
     printf("\n--- net/tcp: %d/%d passed", tests_passed, tests_run);

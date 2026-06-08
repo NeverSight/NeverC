@@ -34,6 +34,11 @@ typedef struct {
     /* Raw headers: name\0value\0name\0value\0\0 */
     const char *raw_headers;
     int         nheaders;
+
+    /* Path parameters from pattern matching (Go 1.22+ style).
+     * E.g. pattern "GET /users/{id}" matches "/users/42" → id="42" */
+    const char *path_params;  /* name\0value\0name\0value\0\0 */
+    int         nparams;
 } neverc_http_request_t;
 
 /* --- Response Writer --- */
@@ -81,7 +86,13 @@ typedef struct neverc_http_mux neverc_http_mux_t;
 /* Create a new ServeMux (router). */
 neverc_http_mux_t *neverc_http_new_mux(void);
 
-/* Register a handler for a pattern. */
+/* Register a handler for a pattern.
+ * Supports Go 1.22+ style patterns:
+ *   "/users/{id}"         — captures path parameter "id"
+ *   "GET /api/items"      — method-specific route
+ *   "GET /files/{path...}" — wildcard captures rest of path
+ *   "/static/"            — prefix match (trailing /)
+ *   "/exact"              — exact match (no trailing /) */
 void neverc_http_mux_handle(neverc_http_mux_t *mux, const char *pattern,
                              neverc_http_handler_func_t handler);
 
@@ -93,6 +104,14 @@ void neverc_http_mux_free(neverc_http_mux_t *mux);
 /* Register on the default mux (like Go http.HandleFunc). */
 void neverc_http_handle_func(const char *pattern,
                               neverc_http_handler_func_t handler);
+
+/* --- Path Parameters (Go 1.22+ style) --- */
+
+/* Get a path parameter by name from the request.
+ * E.g. if pattern is "/users/{id}" and path is "/users/42", returns "42".
+ * Returns NULL if not found. */
+const char *neverc_http_path_value(const neverc_http_request_t *req,
+                                    const char *name);
 
 /* --- Server --- */
 
@@ -424,6 +443,94 @@ char *neverc_http_canonical_header_key(const char *key, char *buf,
 const char *neverc_http_response_header(const neverc_http_response_t *resp,
                                           const char *name,
                                           char *buf, size_t buflen);
+
+/* ======================================================================
+ * CORS Middleware — Cross-Origin Resource Sharing
+ *
+ * Essential for web API development. Handles preflight OPTIONS requests
+ * automatically and adds proper Access-Control-* headers.
+ * ====================================================================== */
+
+typedef struct {
+    const char *allowed_origins;   /* "*" or "https://example.com" */
+    const char *allowed_methods;   /* "GET, POST, PUT, DELETE" */
+    const char *allowed_headers;   /* "Content-Type, Authorization" */
+    const char *exposed_headers;   /* headers visible to client JS */
+    int         allow_credentials; /* 1 to send Access-Control-Allow-Credentials */
+    int         max_age;           /* preflight cache seconds (default 86400) */
+} neverc_http_cors_config_t;
+
+/* Enable CORS on a mux with the given configuration.
+ * If config is NULL, uses permissive defaults (origin=*, all methods).
+ * Automatically handles OPTIONS preflight requests. */
+void neverc_http_enable_cors(neverc_http_mux_t *mux,
+                               const neverc_http_cors_config_t *config);
+
+/* Apply CORS headers to a single response (for manual use). */
+void neverc_http_cors_headers(neverc_http_response_writer_t *w,
+                                const neverc_http_cors_config_t *config,
+                                const char *origin);
+
+/* ======================================================================
+ * JSON Request Helpers — convenient body parsing
+ * ====================================================================== */
+
+/* Read a string value from a JSON request body by key.
+ * Simple top-level key extraction (no nested objects).
+ * Returns the value or NULL if not found. Writes to buf. */
+const char *neverc_http_json_get(const neverc_http_request_t *req,
+                                   const char *key, char *buf, size_t buflen);
+
+/* Write a JSON error response with status code and message. */
+int neverc_http_json_error(neverc_http_response_writer_t *w,
+                             int code, const char *message);
+
+/* ======================================================================
+ * Rate Limiter — token bucket for per-handler or global rate limiting
+ * ====================================================================== */
+
+typedef struct neverc_http_rate_limiter neverc_http_rate_limiter_t;
+
+/* Create a rate limiter: rate requests per second, burst is max tokens.
+ * E.g. rate=100, burst=200 allows 100 req/s sustained with 200 burst. */
+neverc_http_rate_limiter_t *neverc_http_rate_limiter_new(double rate, int burst);
+
+/* Free a rate limiter. */
+void neverc_http_rate_limiter_free(neverc_http_rate_limiter_t *rl);
+
+/* Check if a request is allowed (consumes 1 token).
+ * Returns 1 if allowed, 0 if rate limited. */
+int neverc_http_rate_limiter_allow(neverc_http_rate_limiter_t *rl);
+
+/* Enable global rate limiting for all requests.
+ * Requests exceeding the rate get 429 Too Many Requests.
+ * Call before listen_and_serve. */
+void neverc_http_set_rate_limit(double rate, int burst);
+
+/* ======================================================================
+ * MaxBytesReader — like Go http.MaxBytesReader
+ * ====================================================================== */
+
+/* Limit the request body size for a specific handler.
+ * If body exceeds max_bytes, the server responds with 413. */
+void neverc_http_set_max_bytes(neverc_http_response_writer_t *w, int64_t max_bytes);
+
+/* ======================================================================
+ * Timeout Handler — like Go http.TimeoutHandler
+ * ====================================================================== */
+
+/* Set per-request handler timeout in milliseconds.
+ * If handler doesn't complete in time, responds with 503.
+ * Call before listen_and_serve. 0 = no timeout. */
+void neverc_http_set_handler_timeout(int ms);
+
+/* ======================================================================
+ * ListenAndServe on addr ":0" — automatic port selection
+ * Get the actual port the server is listening on.
+ * ====================================================================== */
+
+/* Get the port the server bound to (useful when addr is ":0"). */
+int neverc_http_server_port(void);
 
 #ifdef __cplusplus
 }

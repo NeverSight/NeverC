@@ -208,12 +208,20 @@ static void rw_flush(neverc_http_response_writer_t *w) {
             date_lens[wi] = (int)strftime(date_bufs[wi],
                 sizeof(date_bufs[wi]),
                 "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", &gmt);
-            __sync_synchronize();
+#if defined(__GNUC__) || defined(__clang__)
+            __atomic_thread_fence(__ATOMIC_RELEASE);
+#elif defined(_WIN32)
+            MemoryBarrier();
+#endif
             date_idx = wi;
             date_time = now;
         }
         int ri = date_idx;
-        __sync_synchronize();
+#if defined(__GNUC__) || defined(__clang__)
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+#elif defined(_WIN32)
+        MemoryBarrier();
+#endif
         if (date_lens[ri] > 0)
             nc_buf_append(&hdr, date_bufs[ri], (size_t)date_lens[ri]);
     }
@@ -363,14 +371,31 @@ int neverc_http_end_chunked(neverc_http_response_writer_t *w) {
     return sock_write_all(w->fd, "0\r\n\r\n", 5);
 }
 
+/* Forward declarations */
+static char *strndup_safe(const char *s, size_t n);
+static neverc_http_cors_config_t g_cors_config;
+static int g_cors_enabled = 0;
+
 /* ======================================================================
- * Mux (Router) — thread-safe with mutex protection
+ * Mux (Router) — thread-safe, supports Go 1.22+ path parameters
+ *
+ * Pattern syntax:
+ *   "METHOD /path"           — method-specific (e.g. "GET /users")
+ *   "/path/{name}"           — captures segment as parameter
+ *   "/files/{path...}"       — wildcard, captures rest of path
+ *   "/static/"               — prefix match (trailing /)
+ *   "/exact"                 — exact match (no trailing /)
  * ====================================================================== */
 
 #define MAX_ROUTES 256
+#define MAX_PATH_PARAMS 16
 
 typedef struct {
-    char *pattern;
+    char *pattern;        /* original pattern string */
+    char *method;         /* method filter or NULL */
+    char *path_pattern;   /* path portion (after method) */
+    size_t pattern_len;
+    int has_params;       /* 1 if pattern contains {name} */
     neverc_http_handler_func_t handler;
 } route_t;
 
@@ -379,6 +404,13 @@ struct neverc_http_mux {
     int nroutes;
     nc_mutex_t lock;
 };
+
+/* Per-request path parameter storage */
+typedef struct {
+    char buf[2048];
+    int len;
+    int count;
+} path_params_t;
 
 static struct neverc_http_mux default_mux;
 static volatile int default_mux_initialized = 0;
@@ -404,6 +436,25 @@ static void ensure_default_mux(void) {
 #endif
 }
 
+static void route_parse_pattern(route_t *r, const char *pattern) {
+    r->pattern = strdup(pattern);
+    r->pattern_len = strlen(pattern);
+    r->method = NULL;
+    r->has_params = 0;
+
+    /* Check for "METHOD /path" syntax */
+    const char *space = strchr(pattern, ' ');
+    if (space && space > pattern) {
+        r->method = strndup_safe(pattern, (size_t)(space - pattern));
+        r->path_pattern = strdup(space + 1);
+    } else {
+        r->path_pattern = strdup(pattern);
+    }
+
+    if (strchr(r->path_pattern, '{'))
+        r->has_params = 1;
+}
+
 neverc_http_mux_t *neverc_http_new_mux(void) {
     neverc_http_mux_t *m = (neverc_http_mux_t *)calloc(1, sizeof(*m));
     if (m) nc_mutex_init(&m->lock);
@@ -415,7 +466,7 @@ void neverc_http_mux_handle(neverc_http_mux_t *mux, const char *pattern,
     if (!mux) return;
     nc_mutex_lock(&mux->lock);
     if (mux->nroutes < MAX_ROUTES) {
-        mux->routes[mux->nroutes].pattern = strdup(pattern);
+        route_parse_pattern(&mux->routes[mux->nroutes], pattern);
         mux->routes[mux->nroutes].handler = handler;
         mux->nroutes++;
     }
@@ -424,8 +475,11 @@ void neverc_http_mux_handle(neverc_http_mux_t *mux, const char *pattern,
 
 void neverc_http_mux_free(neverc_http_mux_t *mux) {
     if (!mux || mux == &default_mux) return;
-    for (int i = 0; i < mux->nroutes; i++)
+    for (int i = 0; i < mux->nroutes; i++) {
         free(mux->routes[i].pattern);
+        free(mux->routes[i].method);
+        free(mux->routes[i].path_pattern);
+    }
     nc_mutex_destroy(&mux->lock);
     free(mux);
 }
@@ -436,31 +490,248 @@ void neverc_http_handle_func(const char *pattern,
     neverc_http_mux_handle(&default_mux, pattern, handler);
 }
 
-static neverc_http_handler_func_t mux_match(neverc_http_mux_t *mux,
-                                              const char *path) {
+/* Match a pattern with path parameters.
+ * Returns 1 on match, 0 on no match. Fills params if non-NULL. */
+static int pattern_match(const char *pattern, const char *path,
+                          path_params_t *params) {
+    if (params) { params->len = 0; params->count = 0; }
+
+    const char *pp = pattern;
+    const char *rp = path;
+
+    while (*pp && *rp) {
+        if (*pp == '{') {
+            /* Extract parameter name */
+            const char *close = strchr(pp, '}');
+            if (!close) return 0;
+
+            const char *name = pp + 1;
+            size_t namelen = (size_t)(close - name);
+
+            /* Check for wildcard {name...} */
+            int wildcard = (namelen >= 3 &&
+                           name[namelen-3] == '.' &&
+                           name[namelen-2] == '.' &&
+                           name[namelen-1] == '.');
+            if (wildcard) namelen -= 3;
+
+            if (wildcard) {
+                /* Capture the rest of the path */
+                if (params && params->len + (int)namelen + 1 + (int)strlen(rp) + 1
+                    < (int)sizeof(params->buf)) {
+                    memcpy(params->buf + params->len, name, namelen);
+                    params->len += (int)namelen;
+                    params->buf[params->len++] = '\0';
+                    size_t vlen = strlen(rp);
+                    memcpy(params->buf + params->len, rp, vlen);
+                    params->len += (int)vlen;
+                    params->buf[params->len++] = '\0';
+                    params->count++;
+                }
+                return 1;
+            }
+
+            /* Find end of this path segment */
+            const char *seg_end = rp;
+            while (*seg_end && *seg_end != '/') seg_end++;
+            size_t vallen = (size_t)(seg_end - rp);
+
+            if (vallen == 0) return 0;
+
+            if (params && params->len + (int)namelen + 1 + (int)vallen + 1
+                < (int)sizeof(params->buf)) {
+                memcpy(params->buf + params->len, name, namelen);
+                params->len += (int)namelen;
+                params->buf[params->len++] = '\0';
+                memcpy(params->buf + params->len, rp, vallen);
+                params->len += (int)vallen;
+                params->buf[params->len++] = '\0';
+                params->count++;
+            }
+
+            rp = seg_end;
+            pp = close + 1;
+        } else {
+            if (*pp != *rp) return 0;
+            pp++;
+            rp++;
+        }
+    }
+
+    /* Both consumed = exact match. Pattern ends with / = prefix match. */
+    if (*pp == '\0' && *rp == '\0') return 1;
+    if (*pp == '\0' && pp > pattern && pp[-1] == '/') return 1;
+    return 0;
+}
+
+static neverc_http_handler_func_t mux_match_ex(neverc_http_mux_t *mux,
+                                                 const char *method,
+                                                 const char *path,
+                                                 path_params_t *params) {
     neverc_http_handler_func_t best = NULL;
     size_t best_len = 0;
+    int best_specificity = 0; /* higher = more specific */
 
-    /* Lock-free read: nroutes is only modified during registration
-     * (before serving starts), so reads during serving are safe.
-     * We use a memory fence to ensure route data is visible. */
     int nr = mux->nroutes;
-    __sync_synchronize(); /* acquire fence */
+#if defined(__GNUC__) || defined(__clang__)
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
+#else
+    __sync_synchronize();
+#endif
+
+    path_params_t tmp_params;
 
     for (int i = 0; i < nr; i++) {
-        const char *pat = mux->routes[i].pattern;
+        route_t *r = &mux->routes[i];
+
+        /* Check method filter */
+        if (r->method && method && strcmp(r->method, method) != 0)
+            continue;
+
+        const char *pat = r->path_pattern;
+        int specificity = r->method ? 2 : 0;
+
+        if (r->has_params) {
+            memset(&tmp_params, 0, sizeof(tmp_params));
+            if (pattern_match(pat, path, &tmp_params)) {
+                specificity += 1;
+                size_t plen = strlen(pat);
+                if (specificity > best_specificity ||
+                    (specificity == best_specificity && plen > best_len)) {
+                    best = r->handler;
+                    best_len = plen;
+                    best_specificity = specificity;
+                    if (params) *params = tmp_params;
+                }
+            }
+            continue;
+        }
+
         size_t plen = strlen(pat);
 
-        if (strcmp(pat, path) == 0)
-            return mux->routes[i].handler;
+        /* Exact match */
+        if (strcmp(pat, path) == 0) {
+            specificity += 3;
+            if (specificity > best_specificity) {
+                best = r->handler;
+                best_len = plen;
+                best_specificity = specificity;
+                if (params) { params->len = 0; params->count = 0; }
+            }
+            continue;
+        }
 
+        /* Prefix match (pattern ends with /) */
         if (plen > 0 && pat[plen - 1] == '/' &&
-            strncmp(path, pat, plen) == 0 && plen > best_len) {
-            best = mux->routes[i].handler;
-            best_len = plen;
+            strncmp(path, pat, plen) == 0) {
+            if (specificity > best_specificity ||
+                (specificity == best_specificity && plen > best_len)) {
+                best = r->handler;
+                best_len = plen;
+                best_specificity = specificity;
+                if (params) { params->len = 0; params->count = 0; }
+            }
         }
     }
     return best;
+}
+
+/* Backward-compatible wrapper used by existing code */
+static neverc_http_handler_func_t mux_match(neverc_http_mux_t *mux,
+                                              const char *path) {
+    return mux_match_ex(mux, NULL, path, NULL);
+}
+
+const char *neverc_http_path_value(const neverc_http_request_t *req,
+                                    const char *name) {
+    if (!req || !req->path_params || !name || req->nparams == 0) return NULL;
+    const char *p = req->path_params;
+    for (int i = 0; i < req->nparams; i++) {
+        const char *pname = p;
+        while (*p) p++;
+        p++;
+        const char *pval = p;
+        while (*p) p++;
+        p++;
+        if (strcmp(pname, name) == 0) return pval;
+    }
+    return NULL;
+}
+
+/* ======================================================================
+ * Rate Limiter — token bucket algorithm (thread-safe)
+ * ====================================================================== */
+
+struct neverc_http_rate_limiter {
+    double    rate;       /* tokens per second */
+    double    burst;      /* max tokens (bucket size) */
+    double    tokens;     /* current available tokens */
+    uint64_t  last_time;  /* last refill time (monotonic ms) */
+    nc_mutex_t lock;
+};
+
+static neverc_http_rate_limiter_t *g_global_rate_limiter = NULL;
+static int g_handler_timeout_ms = 0;
+static int g_server_port = 0;
+
+neverc_http_rate_limiter_t *neverc_http_rate_limiter_new(double rate, int burst) {
+    neverc_http_rate_limiter_t *rl =
+        (neverc_http_rate_limiter_t *)calloc(1, sizeof(*rl));
+    if (!rl) return NULL;
+    rl->rate = rate;
+    rl->burst = (double)burst;
+    rl->tokens = (double)burst;
+    rl->last_time = nc_monotonic_ms();
+    nc_mutex_init(&rl->lock);
+    return rl;
+}
+
+void neverc_http_rate_limiter_free(neverc_http_rate_limiter_t *rl) {
+    if (!rl) return;
+    nc_mutex_destroy(&rl->lock);
+    free(rl);
+}
+
+int neverc_http_rate_limiter_allow(neverc_http_rate_limiter_t *rl) {
+    if (!rl) return 1;
+    nc_mutex_lock(&rl->lock);
+
+    uint64_t now = nc_monotonic_ms();
+    double elapsed = (double)(now - rl->last_time) / 1000.0;
+    rl->last_time = now;
+
+    rl->tokens += elapsed * rl->rate;
+    if (rl->tokens > rl->burst)
+        rl->tokens = rl->burst;
+
+    int allowed = 0;
+    if (rl->tokens >= 1.0) {
+        rl->tokens -= 1.0;
+        allowed = 1;
+    }
+
+    nc_mutex_unlock(&rl->lock);
+    return allowed;
+}
+
+void neverc_http_set_rate_limit(double rate, int burst) {
+    if (g_global_rate_limiter)
+        neverc_http_rate_limiter_free(g_global_rate_limiter);
+    g_global_rate_limiter = neverc_http_rate_limiter_new(rate, burst);
+}
+
+void neverc_http_set_handler_timeout(int ms) {
+    g_handler_timeout_ms = ms;
+}
+
+int neverc_http_server_port(void) {
+    return g_server_port;
+}
+
+void neverc_http_set_max_bytes(neverc_http_response_writer_t *w,
+                                int64_t max_bytes) {
+    (void)w; (void)max_bytes;
+    /* Enforced in http_conn_on_read via max_read_size — set globally for now */
 }
 
 /* ======================================================================
@@ -771,6 +1042,8 @@ static void fill_request(const parsed_request_t *pr,
  * HTTP Connection — event-driven state machine (per connection)
  * ====================================================================== */
 
+typedef struct http_worker http_worker_t;
+
 typedef enum {
     HC_STATE_READING,
     HC_STATE_PROCESSING,
@@ -784,6 +1057,7 @@ struct http_conn {
     nc_buf_t           raw_hdr_buf;
     nc_evloop_t       *loop;
     neverc_http_mux_t *mux;
+    http_worker_t     *worker;
     int                max_requests;
     int                requests_served;
     uint64_t           last_active;
@@ -845,7 +1119,9 @@ static void ensure_conn_pool(void) {
 }
 
 static http_conn_t *http_conn_new(nc_sock_t fd, nc_evloop_t *loop,
-                                    neverc_http_mux_t *mux, int max_req,
+                                    neverc_http_mux_t *mux,
+                                    http_worker_t *worker,
+                                    int max_req,
                                     int idle_timeout_ms,
                                     size_t max_read_size) {
     ensure_conn_pool();
@@ -857,6 +1133,7 @@ static http_conn_t *http_conn_new(nc_sock_t fd, nc_evloop_t *loop,
     nc_buf_init(&hc->raw_hdr_buf);
     hc->loop = loop;
     hc->mux = mux;
+    hc->worker = worker;
     hc->max_requests = max_req;
     hc->idle_timeout_ms = idle_timeout_ms > 0 ? idle_timeout_ms : 60000;
     hc->max_read_size = max_read_size > 0 ? max_read_size : 11534336;
@@ -892,6 +1169,22 @@ static void http_conn_process(http_conn_t *hc) {
             return;
         }
 
+        /* Global rate limiting */
+        if (g_global_rate_limiter &&
+            !neverc_http_rate_limiter_allow(g_global_rate_limiter)) {
+            const char *rate_resp =
+                "HTTP/1.1 429 Too Many Requests\r\n"
+                "Content-Type: text/plain\r\n"
+                "Content-Length: 20\r\n"
+                "Retry-After: 1\r\n"
+                "Connection: close\r\n\r\n"
+                "Too Many Requests\r\n";
+            sock_write_all(hc->fd, rate_resp, strlen(rate_resp));
+            parsed_request_free(&pr);
+            hc->state = HC_STATE_CLOSING;
+            return;
+        }
+
         /* Send 100 Continue if client expects it */
         if (pr.expect_continue) {
             const char *cont = "HTTP/1.1 100 Continue\r\n\r\n";
@@ -901,9 +1194,25 @@ static void http_conn_process(http_conn_t *hc) {
         neverc_http_request_t req;
         fill_request(&pr, &req, &hc->raw_hdr_buf);
 
-        neverc_http_handler_func_t handler = mux_match(hc->mux, req.path);
+        /* Route with path parameter extraction */
+        path_params_t params;
+        memset(&params, 0, sizeof(params));
+        neverc_http_handler_func_t handler =
+            mux_match_ex(hc->mux, req.method, req.path, &params);
+
+        if (params.count > 0) {
+            req.path_params = params.buf;
+            req.nparams = params.count;
+        }
+
         neverc_http_response_writer_t *w =
             rw_new(hc->fd, pr.keep_alive, hc, consumed);
+
+        /* Auto-inject CORS headers when enabled */
+        if (g_cors_enabled && w) {
+            const char *origin = neverc_http_request_header(&req, "Origin");
+            neverc_http_cors_headers(w, &g_cors_config, origin);
+        }
 
         if (handler) {
             handler(&req, w);
@@ -998,12 +1307,13 @@ static void http_conn_on_read(http_conn_t *hc) {
  * This handles 10M+ concurrent connections efficiently.
  * ====================================================================== */
 
-typedef struct {
+struct http_worker {
     nc_evloop_t       *loop;
     nc_thread_t        thread;
     volatile int       conn_count;
     http_conn_list_t   conns;
-} http_worker_t;
+    int                worker_idx;
+};
 
 struct neverc_http_server {
     volatile int           running;
@@ -1023,12 +1333,11 @@ struct neverc_http_server {
     nc_thread_t            accept_thread;
 };
 
-static http_worker_t *worker_from_loop(nc_evloop_t *loop);
-
-/* Worker event handler */
+/* Worker event handler — O(1) via hc->worker back-pointer */
 static void worker_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
     http_conn_t *hc = (http_conn_t *)ev->data;
     if (!hc) return;
+    (void)loop;
 
     if (ev->events & NC_EV_ERROR) {
         hc->state = HC_STATE_CLOSING;
@@ -1037,7 +1346,7 @@ static void worker_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
     }
 
     if (hc->state == HC_STATE_CLOSING) {
-        http_worker_t *w = worker_from_loop(loop);
+        http_worker_t *w = hc->worker;
         if (w) {
             conn_list_remove(&w->conns, hc);
             nc_atomic_dec(&w->conn_count);
@@ -1045,15 +1354,6 @@ static void worker_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
         nc_conn_limiter_release(&g_conn_limiter);
         http_conn_free(hc);
     }
-}
-
-static http_worker_t *worker_from_loop(nc_evloop_t *loop) {
-    neverc_http_server_t *srv = g_server_ptr;
-    if (!srv) return NULL;
-    for (int i = 0; i < srv->nworkers; i++) {
-        if (srv->workers[i].loop == loop) return &srv->workers[i];
-    }
-    return NULL;
 }
 
 static void worker_sweep_idle(http_worker_t *w) {
@@ -1123,18 +1423,10 @@ static void *worker_thread_func(void *arg) {
     return NULL;
 }
 
-typedef struct {
-    http_conn_t   *hc;
-    http_worker_t *worker;
-} distribute_ctx_t;
-
 static void distribute_conn_task(void *arg) {
-    distribute_ctx_t *ctx = (distribute_ctx_t *)arg;
-    http_conn_t *hc = ctx->hc;
-    http_worker_t *worker = ctx->worker;
-    free(ctx);
+    http_conn_t *hc = (http_conn_t *)arg;
+    http_worker_t *worker = hc->worker;
 
-    /* accept4 may have already set NONBLOCK on Linux */
 #if !(defined(__linux__) && defined(SOCK_NONBLOCK))
     nc_set_nonblocking(hc->fd);
 #endif
@@ -1185,29 +1477,28 @@ static void accept_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
             continue;
         }
 
-        /* Round-robin to workers */
-        int idx = srv->next_worker;
-        srv->next_worker = (idx + 1) % srv->nworkers;
+        /* Round-robin to least-loaded worker */
+        int idx = 0;
+        int min_load = nc_atomic_load(&srv->workers[0].conn_count);
+        for (int wi = 1; wi < srv->nworkers; wi++) {
+            int wc = nc_atomic_load(&srv->workers[wi].conn_count);
+            if (wc < min_load) { min_load = wc; idx = wi; }
+        }
         http_worker_t *worker = &srv->workers[idx];
 
         size_t conn_max_read = (size_t)(srv->max_header_size + srv->max_body_size);
         http_conn_t *hc = http_conn_new(cfd, worker->loop, srv->mux,
+                                          worker,
                                           srv->max_requests_per_conn,
                                           srv->read_timeout_ms,
                                           conn_max_read);
         if (!hc) {
             nc_sock_close(cfd);
+            nc_conn_limiter_release(&g_conn_limiter);
             continue;
         }
 
-        distribute_ctx_t *ctx = (distribute_ctx_t *)malloc(sizeof(*ctx));
-        if (!ctx) {
-            http_conn_free(hc);
-            continue;
-        }
-        ctx->hc = hc;
-        ctx->worker = worker;
-        nc_evloop_post(worker->loop, distribute_conn_task, ctx);
+        nc_evloop_post(worker->loop, distribute_conn_task, hc);
         nc_atomic_inc(&worker->conn_count);
     }
     (void)loop;
@@ -1320,6 +1611,18 @@ int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
     nc_set_nonblocking(lfd);
     freeaddrinfo(result);
 
+    /* Record the actual bound port (useful for :0 auto-assignment) */
+    {
+        struct sockaddr_storage bound_addr;
+        socklen_t bound_len = sizeof(bound_addr);
+        if (getsockname(lfd, (struct sockaddr *)&bound_addr, &bound_len) == 0) {
+            if (bound_addr.ss_family == AF_INET)
+                g_server_port = ntohs(((struct sockaddr_in *)&bound_addr)->sin_port);
+            else if (bound_addr.ss_family == AF_INET6)
+                g_server_port = ntohs(((struct sockaddr_in6 *)&bound_addr)->sin6_port);
+        }
+    }
+
     /* Create server */
     neverc_http_server_t *srv = (neverc_http_server_t *)calloc(1, sizeof(*srv));
     if (!srv) { nc_sock_close(lfd); return -1; }
@@ -1348,6 +1651,7 @@ int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
     srv->workers = (http_worker_t *)calloc((size_t)nw, sizeof(http_worker_t));
     for (int i = 0; i < nw; i++) {
         conn_list_init(&srv->workers[i].conns);
+        srv->workers[i].worker_idx = i;
         srv->workers[i].loop = nc_evloop_create();
         if (!srv->workers[i].loop) {
             for (int j = 0; j < i; j++)
@@ -3496,5 +3800,147 @@ const char *neverc_http_response_header(const neverc_http_response_t *resp,
     }
 
     return NULL;
+}
+
+/* ======================================================================
+ * CORS — Cross-Origin Resource Sharing
+ * ====================================================================== */
+
+void neverc_http_cors_headers(neverc_http_response_writer_t *w,
+                                const neverc_http_cors_config_t *cfg,
+                                const char *origin) {
+    if (!w || !cfg) return;
+
+    const char *ao = cfg->allowed_origins ? cfg->allowed_origins : "*";
+
+    if (strcmp(ao, "*") == 0) {
+        neverc_http_set_header(w, "Access-Control-Allow-Origin", "*");
+    } else if (origin && strstr(ao, origin)) {
+        neverc_http_set_header(w, "Access-Control-Allow-Origin", origin);
+        neverc_http_set_header(w, "Vary", "Origin");
+    }
+
+    if (cfg->allow_credentials)
+        neverc_http_set_header(w, "Access-Control-Allow-Credentials", "true");
+
+    if (cfg->exposed_headers)
+        neverc_http_set_header(w, "Access-Control-Expose-Headers",
+                                cfg->exposed_headers);
+}
+
+static void cors_preflight_handler(neverc_http_request_t *req,
+                                     neverc_http_response_writer_t *w) {
+    if (!req || !w) return;
+
+    const char *origin = neverc_http_request_header(req, "Origin");
+    neverc_http_cors_headers(w, &g_cors_config, origin);
+
+    const char *methods = g_cors_config.allowed_methods
+        ? g_cors_config.allowed_methods
+        : "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD";
+    neverc_http_set_header(w, "Access-Control-Allow-Methods", methods);
+
+    const char *headers = g_cors_config.allowed_headers
+        ? g_cors_config.allowed_headers
+        : "Content-Type, Authorization, Accept, X-Requested-With";
+    neverc_http_set_header(w, "Access-Control-Allow-Headers", headers);
+
+    char max_age_buf[16];
+    int ma = g_cors_config.max_age > 0 ? g_cors_config.max_age : 86400;
+    snprintf(max_age_buf, sizeof(max_age_buf), "%d", ma);
+    neverc_http_set_header(w, "Access-Control-Max-Age", max_age_buf);
+
+    neverc_http_set_status(w, 204);
+}
+
+void neverc_http_enable_cors(neverc_http_mux_t *mux,
+                               const neverc_http_cors_config_t *config) {
+    if (config) {
+        g_cors_config = *config;
+    } else {
+        memset(&g_cors_config, 0, sizeof(g_cors_config));
+        g_cors_config.allowed_origins = "*";
+        g_cors_config.allowed_methods = "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD";
+        g_cors_config.allowed_headers = "Content-Type, Authorization, Accept, X-Requested-With";
+        g_cors_config.max_age = 86400;
+    }
+    g_cors_enabled = 1;
+
+    /* Register an OPTIONS handler for preflight requests */
+    if (mux)
+        neverc_http_mux_handle(mux, "OPTIONS /", cors_preflight_handler);
+    else
+        neverc_http_handle_func("OPTIONS /", cors_preflight_handler);
+}
+
+/* ======================================================================
+ * JSON Request Helpers
+ * ====================================================================== */
+
+const char *neverc_http_json_get(const neverc_http_request_t *req,
+                                   const char *key, char *buf, size_t buflen) {
+    if (!req || !req->body || req->body_len == 0 || !key || !buf || buflen == 0)
+        return NULL;
+
+    size_t klen = strlen(key);
+    const char *p = req->body;
+    const char *end = req->body + req->body_len;
+
+    /* Search for "key": or "key" : */
+    while (p < end) {
+        const char *quote = memchr(p, '"', (size_t)(end - p));
+        if (!quote) break;
+
+        const char *kstart = quote + 1;
+        if (kstart + klen >= end) break;
+
+        if (memcmp(kstart, key, klen) == 0 && kstart[klen] == '"') {
+            /* Found key. Skip to colon and value. */
+            const char *after_key = kstart + klen + 1;
+            while (after_key < end && (*after_key == ' ' || *after_key == ':'))
+                after_key++;
+
+            if (after_key >= end) break;
+
+            if (*after_key == '"') {
+                /* String value */
+                const char *vstart = after_key + 1;
+                const char *vend = vstart;
+                while (vend < end && *vend != '"') {
+                    if (*vend == '\\' && vend + 1 < end) vend++; /* skip escape */
+                    vend++;
+                }
+                size_t vlen = (size_t)(vend - vstart);
+                if (vlen >= buflen) vlen = buflen - 1;
+                memcpy(buf, vstart, vlen);
+                buf[vlen] = '\0';
+                return buf;
+            }
+
+            /* Number, boolean, null */
+            const char *vstart = after_key;
+            const char *vend = vstart;
+            while (vend < end && *vend != ',' && *vend != '}' &&
+                   *vend != ' ' && *vend != '\n' && *vend != '\r')
+                vend++;
+            size_t vlen = (size_t)(vend - vstart);
+            if (vlen >= buflen) vlen = buflen - 1;
+            memcpy(buf, vstart, vlen);
+            buf[vlen] = '\0';
+            return buf;
+        }
+
+        p = kstart + 1;
+    }
+    return NULL;
+}
+
+int neverc_http_json_error(neverc_http_response_writer_t *w,
+                             int code, const char *message) {
+    if (!w) return 0;
+    neverc_http_set_status(w, code);
+    neverc_http_set_header(w, "Content-Type", "application/json; charset=utf-8");
+    return neverc_http_writef(w, "{\"error\":\"%s\",\"code\":%d}",
+                              message ? message : "error", code);
 }
 

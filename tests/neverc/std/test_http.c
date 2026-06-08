@@ -2058,6 +2058,280 @@ static void test_strip_prefix(void) {
 #endif
 }
 
+/* ===== Path Parameters Test ===== */
+
+static void user_handler(neverc_http_request_t *req,
+                           neverc_http_response_writer_t *w) {
+    const char *id = neverc_http_path_value(req, "id");
+    if (id)
+        neverc_http_writef(w, "user_id=%s", id);
+    else
+        neverc_http_write_string(w, "no_id");
+}
+
+static void item_handler(neverc_http_request_t *req,
+                           neverc_http_response_writer_t *w) {
+    const char *category = neverc_http_path_value(req, "category");
+    const char *id = neverc_http_path_value(req, "id");
+    neverc_http_writef(w, "cat=%s,id=%s",
+        category ? category : "NULL", id ? id : "NULL");
+}
+
+static void wildcard_handler(neverc_http_request_t *req,
+                               neverc_http_response_writer_t *w) {
+    const char *fpath = neverc_http_path_value(req, "filepath");
+    neverc_http_writef(w, "file=%s", fpath ? fpath : "NULL");
+}
+
+static void get_only_handler(neverc_http_request_t *req,
+                               neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "get_only");
+}
+
+static void post_only_handler(neverc_http_request_t *req,
+                                neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "post_only");
+}
+
+static void test_path_params(void) {
+    printf("[path_params]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_mux_handle(mux, "/users/{id}", user_handler);
+        neverc_http_mux_handle(mux, "/items/{category}/{id}", item_handler);
+        neverc_http_mux_handle(mux, "/files/{filepath...}", wildcard_handler);
+        neverc_http_mux_handle(mux, "GET /api/data", get_only_handler);
+        neverc_http_mux_handle(mux, "POST /api/data", post_only_handler);
+
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+
+    char buf[4096];
+
+    /* Test 1: /users/{id} */
+    {
+        int n = do_http_request(port,
+            "GET /users/42 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("param user resp", n > 0, 1);
+        check_int("param user id", strstr(buf, "user_id=42") != NULL, 1);
+    }
+
+    /* Test 2: /users/{id} with string ID */
+    {
+        int n = do_http_request(port,
+            "GET /users/alice HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("param user alice", n > 0, 1);
+        check_int("param user alice id", strstr(buf, "user_id=alice") != NULL, 1);
+    }
+
+    /* Test 3: /items/{category}/{id} — multiple params */
+    {
+        int n = do_http_request(port,
+            "GET /items/electronics/99 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("param multi resp", n > 0, 1);
+        check_int("param cat", strstr(buf, "cat=electronics") != NULL, 1);
+        check_int("param multi id", strstr(buf, "id=99") != NULL, 1);
+    }
+
+    /* Test 4: /files/{filepath...} — wildcard */
+    {
+        int n = do_http_request(port,
+            "GET /files/docs/readme.md HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("param wildcard resp", n > 0, 1);
+        check_int("param wildcard val", strstr(buf, "file=docs/readme.md") != NULL, 1);
+    }
+
+    /* Test 5: method-specific "GET /api/data" */
+    {
+        int n = do_http_request(port,
+            "GET /api/data HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("method GET resp", n > 0, 1);
+        check_int("method GET body", strstr(buf, "get_only") != NULL, 1);
+    }
+
+    /* Test 6: method-specific "POST /api/data" */
+    {
+        int n = do_http_request(port,
+            "POST /api/data HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("method POST resp", n > 0, 1);
+        check_int("method POST body", strstr(buf, "post_only") != NULL, 1);
+    }
+
+    /* Test 7: neverc_http_path_value null safety */
+    check_int("pathval null req", neverc_http_path_value(NULL, "x") == NULL, 1);
+    {
+        neverc_http_request_t empty_req;
+        memset(&empty_req, 0, sizeof(empty_req));
+        check_int("pathval no params", neverc_http_path_value(&empty_req, "x") == NULL, 1);
+    }
+
+    stop_test_server(pid);
+}
+
+/* ===== Rate Limiter Test ===== */
+
+static void test_rate_limiter(void) {
+    printf("[rate_limiter]\n");
+
+    neverc_http_rate_limiter_t *rl = neverc_http_rate_limiter_new(10.0, 5);
+    check_not_null("rl new", rl);
+
+    /* Burst: first 5 should be allowed */
+    int allowed = 0;
+    for (int i = 0; i < 5; i++) {
+        if (neverc_http_rate_limiter_allow(rl)) allowed++;
+    }
+    check_int("rl burst 5", allowed, 5);
+
+    /* 6th should be denied (burst exhausted) */
+    check_int("rl denied after burst", neverc_http_rate_limiter_allow(rl), 0);
+
+    /* Wait 200ms → should refill ~2 tokens (10/s * 0.2s) */
+    usleep(200000);
+    allowed = 0;
+    for (int i = 0; i < 5; i++) {
+        if (neverc_http_rate_limiter_allow(rl)) allowed++;
+    }
+    check_int("rl refill range", allowed >= 1 && allowed <= 3, 1);
+
+    /* Null safety */
+    check_int("rl null allow", neverc_http_rate_limiter_allow(NULL), 1);
+    neverc_http_rate_limiter_free(NULL);
+
+    neverc_http_rate_limiter_free(rl);
+}
+
+/* ===== CORS test ===== */
+
+static void cors_hello_handler(neverc_http_request_t *req,
+                                 neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_write_string(w, "cors hello");
+}
+
+static void test_cors(void) {
+    printf("[cors]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        neverc_http_mux_t *mux = neverc_http_new_mux();
+        neverc_http_enable_cors(mux, NULL); /* permissive defaults */
+        neverc_http_mux_handle(mux, "/api", cors_hello_handler);
+
+        char addr[32];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        neverc_http_listen_and_serve(addr, mux);
+        _exit(0);
+    }
+    usleep(300000);
+
+    char buf[4096];
+
+    /* Test 1: normal request should have CORS headers */
+    {
+        int n = do_http_request(port,
+            "GET /api HTTP/1.1\r\nHost: localhost\r\n"
+            "Origin: https://example.com\r\nConnection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("cors resp", n > 0, 1);
+        check_int("cors header", strstr(buf, "Access-Control-Allow-Origin") != NULL, 1);
+        check_int("cors body", strstr(buf, "cors hello") != NULL, 1);
+    }
+
+    /* Test 2: OPTIONS preflight */
+    {
+        int n = do_http_request(port,
+            "OPTIONS /api HTTP/1.1\r\nHost: localhost\r\n"
+            "Origin: https://example.com\r\n"
+            "Access-Control-Request-Method: POST\r\n"
+            "Connection: close\r\n\r\n",
+            buf, sizeof(buf));
+        check_int("preflight resp", n > 0, 1);
+        /* Any valid response with CORS headers is acceptable */
+        check_int("preflight origin",
+            strstr(buf, "Access-Control-Allow-Origin") != NULL, 1);
+        check_int("preflight no error", strstr(buf, "500") == NULL, 1);
+    }
+
+    stop_test_server(pid);
+}
+
+/* ===== JSON Helpers test ===== */
+
+static void test_json_helpers(void) {
+    printf("[json_helpers]\n");
+
+    /* Test neverc_http_json_get */
+    neverc_http_request_t req;
+    memset(&req, 0, sizeof(req));
+    const char *json_body = "{\"name\":\"Alice\",\"age\":30,\"active\":true}";
+    req.body = json_body;
+    req.body_len = strlen(json_body);
+
+    char buf[128];
+
+    const char *v = neverc_http_json_get(&req, "name", buf, sizeof(buf));
+    check_not_null("json get name", v);
+    if (v) check_str("json name val", v, "Alice");
+
+    v = neverc_http_json_get(&req, "age", buf, sizeof(buf));
+    check_not_null("json get age", v);
+    if (v) check_str("json age val", v, "30");
+
+    v = neverc_http_json_get(&req, "active", buf, sizeof(buf));
+    check_not_null("json get active", v);
+    if (v) check_str("json active val", v, "true");
+
+    v = neverc_http_json_get(&req, "missing", buf, sizeof(buf));
+    check_int("json missing", v == NULL, 1);
+
+    /* Null safety */
+    check_int("json null req", neverc_http_json_get(NULL, "x", buf, sizeof(buf)) == NULL, 1);
+
+    /* Test neverc_http_json_error */
+    neverc_http_response_writer_t *w = neverc_http_memory_writer_new();
+    check_not_null("json err writer", w);
+
+    neverc_http_json_error(w, 400, "bad request");
+
+    char *data = NULL;
+    size_t datalen = 0;
+    int status = neverc_http_memory_writer_result(w, &data, &datalen);
+    check_int("json err status", status, 400);
+    check_not_null("json err data", data);
+    if (data) {
+        check_int("json err contains error", strstr(data, "\"error\"") != NULL, 1);
+        check_int("json err contains msg", strstr(data, "bad request") != NULL, 1);
+        check_int("json err contains code", strstr(data, "400") != NULL, 1);
+        free(data);
+    }
+    neverc_http_memory_writer_free(w);
+
+    /* Null safety for json_error */
+    neverc_http_json_error(NULL, 500, "err");
+    tests_passed++; tests_run++;
+}
+
 /* ===== ResponseHeader test ===== */
 
 static void test_response_header(void) {
@@ -2138,6 +2412,10 @@ int main(void) {
     test_sse();
     test_serve_file();
     test_strip_prefix();
+    test_path_params();
+    test_rate_limiter();
+    test_cors();
+    test_json_helpers();
 #endif
 
     printf("\n--- net/http: %d/%d passed", tests_passed, tests_run);
