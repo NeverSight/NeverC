@@ -165,19 +165,48 @@ jobs:
           done
         }
 
-        # BuiltinStringQStringParity -g variant crashes (SIGSEGV) during
-        # compile+link.  Test with/without parallel codegen to isolate.
-        diagnose "string_qstring" \
-          "$TESTDIR/string/test_neverc_string_qstring_parity.c" \
-          "-std=c23 -fbuiltin-string"
+        # ---- Sort test codegen isolation ----
+        STDDIR=$PWD/neverc/std
+        SORT_FLAGS="-I$STDDIR/include -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -fno-builtin-std"
+        SORT_TEST="$TESTDIR/std/test_sort.c"
+        SORT_SRC="$STDDIR/src/sort/sort.c"
 
-        diagnose "string_qstring_g" \
-          "$TESTDIR/string/test_neverc_string_qstring_parity.c" \
-          "-std=c23 -fbuiltin-string -g"
+        run_sort_variant() {
+          local label=$1 flags=$2
+          echo "=== [sort:$label] compiling ==="
+          if $NCC $flags -o /tmp/sort_${label} $SORT_TEST $SORT_SRC -lm -lpthread 2>&1; then
+            echo "=== [sort:$label] running ==="
+            /tmp/sort_${label} 2>&1 && echo "PASS" || echo "EXIT=$?"
+          else
+            echo "COMPILE_FAIL"
+          fi
+        }
 
-        diagnose "string_qstring_g_nopcg" \
-          "$TESTDIR/string/test_neverc_string_qstring_parity.c" \
-          "-std=c23 -fbuiltin-string -g -fno-parallel-codegen"
+        run_sort_variant "O1"           "$SORT_FLAGS -O1"
+        run_sort_variant "O0"           "$SORT_FLAGS -O0"
+        run_sort_variant "O1_nopcg"     "$SORT_FLAGS -O1 -fno-parallel-codegen"
+        run_sort_variant "O2"           "$SORT_FLAGS -O2"
+        run_sort_variant "O2_nopcg"     "$SORT_FLAGS -O2 -fno-parallel-codegen"
+
+        echo "=== [sort:O1] dumping introsort/swap_bytes assembly ==="
+        $NCC $SORT_FLAGS -O1 -S -o /tmp/sort_O1.s $SORT_SRC 2>&1 || true
+        if [ -f /tmp/sort_O1.s ]; then
+          echo "--- swap_bytes ---"
+          awk '/^swap_bytes/,/^\./' /tmp/sort_O1.s | head -40
+          echo "--- neverc_sort_ints ---"
+          awk '/^neverc_sort_ints/,/^\./' /tmp/sort_O1.s | head -60
+        fi
+
+        echo "=== [sort:O1] LLVM IR ==="
+        $NCC $SORT_FLAGS -O1 -S -emit-llvm -o /tmp/sort_O1.ll $SORT_SRC 2>&1 || true
+        if [ -f /tmp/sort_O1.ll ]; then
+          echo "--- swap_bytes ---"
+          awk '/@swap_bytes\(/,/^}/' /tmp/sort_O1.ll | head -40
+          echo "--- introsort ---"
+          awk '/@introsort\(/,/^}/' /tmp/sort_O1.ll | head -80
+          echo "--- neverc_sort_ints ---"
+          awk '/@neverc_sort_ints\(/,/^}/' /tmp/sort_O1.ll | head -30
+        fi
 
     - name: Fail if tests failed
       if: steps.tests.outcome == 'failure'
