@@ -287,7 +287,8 @@ enum {
   TuneX2 = 271,
   TuneX3 = 272,
   TuneX4 = 273,
-  NumSubtargetFeatures = 274
+  TuneA320 = 274,
+  NumSubtargetFeatures = 275
 };
 } // end namespace AArch64
 } // end namespace llvm
@@ -494,6 +495,7 @@ namespace llvm {
 // Sorted (by key) array of values for CPU features.
 extern const llvm::SubtargetFeatureKV AArch64FeatureKV[] = {
   { "CONTEXTIDREL2", "Enable RW operand CONTEXTIDR_EL2", AArch64::FeatureCONTEXTIDREL2, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
+  { "a320", "Cortex-A320 ARM processors", AArch64::TuneA320, { { { 0x0ULL, 0x800000000048ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "a35", "Cortex-A35 ARM processors", AArch64::TuneA35, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "a510", "Cortex-A510 ARM processors", AArch64::TuneA510, { { { 0x0ULL, 0x800000000048ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
   { "a520", "Cortex-A520 ARM processors", AArch64::TuneA520, { { { 0x0ULL, 0x800000000048ULL, 0x0ULL, 0x0ULL, 0x0ULL, } } } },
@@ -40464,6 +40466,7 @@ extern const llvm::SubtargetSubTypeKV AArch64SubTypeKV[] = {
  { "apple-s4", { { { 0x800004000000000ULL, 0x400200000004ULL, 0x0ULL, 0x10000ULL, 0x0ULL, } } }, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x10000000000000ULL, 0x0ULL, } } }, &CycloneModel },
  { "apple-s5", { { { 0x800004000000000ULL, 0x400200000004ULL, 0x0ULL, 0x10000ULL, 0x0ULL, } } }, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x10000000000000ULL, 0x0ULL, } } }, &CycloneModel },
  { "carmel", { { { 0x4000000000ULL, 0x200000004ULL, 0x0ULL, 0x8000ULL, 0x0ULL, } } }, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x400000000000000ULL, 0x0ULL, } } }, &NoSchedModel },
+ { "cortex-a320", { { { 0x400800000000004ULL, 0x400020000000ULL, 0x200000000000ULL, 0x2000000ULL, 0x0ULL, } } }, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x0ULL, 0x40000ULL, } } }, &CortexA510Model },
  { "cortex-a34", { { { 0x800004001000000ULL, 0x400200000000ULL, 0x0ULL, 0x1000ULL, 0x0ULL, } } }, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x20000000ULL, 0x0ULL, } } }, &CortexA53Model },
  { "cortex-a35", { { { 0x800004001000000ULL, 0x400200000000ULL, 0x0ULL, 0x1000ULL, 0x0ULL, } } }, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x20000000ULL, 0x0ULL, } } }, &CortexA53Model },
  { "cortex-a510", { { { 0x400800000004004ULL, 0x400320000000ULL, 0x200000000000ULL, 0x800000ULL, 0x0ULL, } } }, { { { 0x0ULL, 0x0ULL, 0x0ULL, 0x40000000000ULL, 0x0ULL, } } }, &CortexA510Model },
@@ -47430,6 +47433,7 @@ void llvm::AArch64Subtarget::ParseSubtargetFeatures(StringRef CPU, StringRef Tun
   if (Bits[AArch64::TuneA77] && ARMProcFamily < CortexA77) ARMProcFamily = CortexA77;
   if (Bits[AArch64::TuneA78] && ARMProcFamily < CortexA78) ARMProcFamily = CortexA78;
   if (Bits[AArch64::TuneA78C] && ARMProcFamily < CortexA78C) ARMProcFamily = CortexA78C;
+  if (Bits[AArch64::TuneA320] && ARMProcFamily < CortexA320) ARMProcFamily = CortexA320;
   if (Bits[AArch64::TuneA510] && ARMProcFamily < CortexA510) ARMProcFamily = CortexA510;
   if (Bits[AArch64::TuneA520] && ARMProcFamily < CortexA520) ARMProcFamily = CortexA520;
   if (Bits[AArch64::TuneA710] && ARMProcFamily < CortexA710) ARMProcFamily = CortexA710;
@@ -47505,7 +47509,7 @@ extern const llvm::MCWriteProcResEntry AArch64WriteProcResTable[];
 extern const llvm::MCWriteLatencyEntry AArch64WriteLatencyTable[];
 extern const llvm::MCReadAdvanceEntry AArch64ReadAdvanceTable[];
 AArch64GenSubtargetInfo::AArch64GenSubtargetInfo(const Triple &TT, StringRef CPU, StringRef TuneCPU, StringRef FS)
-  : TargetSubtargetInfo(TT, CPU, TuneCPU, FS, ArrayRef(AArch64FeatureKV, 274), ArrayRef(AArch64SubTypeKV, 68), 
+  : TargetSubtargetInfo(TT, CPU, TuneCPU, FS, ArrayRef(AArch64FeatureKV, 275), ArrayRef(AArch64SubTypeKV, 69), 
                         AArch64WriteProcResTable, AArch64WriteLatencyTable, AArch64ReadAdvanceTable, 
                         nullptr, nullptr, nullptr) {}
 

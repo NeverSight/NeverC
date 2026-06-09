@@ -18952,6 +18952,82 @@ performSVEMulAddSubCombine(SDNode *N, TargetLowering::DAGCombinerInfo &DCI) {
   return SDValue();
 }
 
+// LLVM 21-22 backport: When SVE is available, use its immediate-form
+// ADD/SUB for fixed-length vector operations.  SVE encodes the immediate
+// directly in the instruction, eliminating the MOVI needed by NEON.
+//   ADD(vec, splat(imm))  ->  extract(ADD(insert(vec), DUP(imm)))
+//   SUB(vec, splat(imm))  ->  extract(SUB(insert(vec), DUP(imm)))
+// Also converts ADD(vec, splat(-imm)) -> SUB and vice-versa when the
+// negated immediate fits the SVE range.
+static SDValue
+performVectorAddSubImmSVECombine(SDNode *N,
+                                 TargetLowering::DAGCombinerInfo &DCI) {
+  SelectionDAG &DAG = DCI.DAG;
+  if (!DCI.isAfterLegalizeDAG())
+    return SDValue();
+
+  const AArch64Subtarget &ST = DAG.getSubtarget<AArch64Subtarget>();
+  if (!ST.hasSVE())
+    return SDValue();
+
+  EVT VT = N->getValueType(0);
+  if (!VT.isFixedLengthVector() || !VT.isInteger())
+    return SDValue();
+
+  unsigned Opc = N->getOpcode();
+  if (Opc != ISD::ADD && Opc != ISD::SUB)
+    return SDValue();
+
+  SDValue Vec = N->getOperand(0);
+  SDValue ImmOp = N->getOperand(1);
+
+  if (Opc == ISD::ADD && !isa<BuildVectorSDNode>(ImmOp))
+    std::swap(Vec, ImmOp);
+
+  auto *BVN = dyn_cast<BuildVectorSDNode>(ImmOp);
+  if (!BVN || !ImmOp.hasOneUse())
+    return SDValue();
+
+  ConstantSDNode *CN = BVN->getConstantSplatNode();
+  if (!CN)
+    return SDValue();
+
+  unsigned EltBits = VT.getScalarSizeInBits();
+  APInt EltVal = CN->getAPIntValue().zextOrTrunc(EltBits);
+  uint64_t Imm = EltVal.getZExtValue();
+  if (Imm == 0)
+    return SDValue();
+
+  // SVE ADD/SUB immediate: uint8, or uint8 << 8 for elements >= 16 bits.
+  auto FitsRange = [](uint64_t V, unsigned Bits) -> bool {
+    if (V <= 255)
+      return true;
+    return Bits >= 16 && (V & 0xFF) == 0 && (V >> 8) <= 255 &&
+           (V >> 16) == 0;
+  };
+
+  unsigned FinalOpc = Opc;
+  if (!FitsRange(Imm, EltBits)) {
+    uint64_t NegImm = (-EltVal).zextOrTrunc(EltBits).getZExtValue();
+    if (FitsRange(NegImm, EltBits)) {
+      FinalOpc = (Opc == ISD::ADD) ? (unsigned)ISD::SUB : (unsigned)ISD::ADD;
+      Imm = NegImm;
+    } else {
+      return SDValue();
+    }
+  }
+
+  SDLoc DL(N);
+  EVT ContainerVT = getContainerForFixedLengthVector(DAG, VT);
+  EVT EltVT = VT.getVectorElementType();
+
+  SDValue Scaled = convertToScalableVector(DAG, ContainerVT, Vec);
+  SDValue Dup = DAG.getNode(AArch64ISD::DUP, DL, ContainerVT,
+                            DAG.getConstant(Imm, DL, EltVT));
+  SDValue Res = DAG.getNode(FinalOpc, DL, ContainerVT, Scaled, Dup);
+  return convertFromScalableVector(DAG, VT, Res);
+}
+
 // Given a i64 add from a v1i64 extract, convert to a neon v1i64 add. This can
 // help, for example, to produce ssra from sshr+add.
 static SDValue performAddSubIntoVectorOp(SDNode *N, SelectionDAG &DAG) {
@@ -19251,6 +19327,8 @@ static SDValue performAddSubCombine(SDNode *N,
   if (SDValue Val = performSubAddMULCombine(N, DCI.DAG))
     return Val;
   if (SDValue Val = performSVEMulAddSubCombine(N, DCI))
+    return Val;
+  if (SDValue Val = performVectorAddSubImmSVECombine(N, DCI))
     return Val;
   if (SDValue Val = performAddSubIntoVectorOp(N, DCI.DAG))
     return Val;

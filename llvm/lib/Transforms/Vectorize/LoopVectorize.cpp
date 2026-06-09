@@ -468,9 +468,27 @@ static Value *interleaveVectors(IRBuilderBase &Builder, ArrayRef<Value *> Vals,
   // Scalable vectors cannot use arbitrary shufflevectors (only splats), so
   // must use intrinsics to interleave.
   if (VecTy->isScalableTy()) {
-    VectorType *WideVecTy = VectorType::getDoubleElementsVectorType(VecTy);
+    if (Factor == 2) {
+      VectorType *WideVecTy = VectorType::getDoubleElementsVectorType(VecTy);
+      return Builder.CreateIntrinsic(
+          WideVecTy, Intrinsic::experimental_vector_interleave2, Vals,
+          /*FMFSource=*/nullptr, Name);
+    }
+    // factor=4: compose interleave2 in two levels.
+    //   pair_02 = interleave2(v0, v2)
+    //   pair_13 = interleave2(v1, v3)
+    //   result  = interleave2(pair_02, pair_13)
+    assert(Factor == 4 && "Only factor 2 and 4 supported for scalable vectors");
+    VectorType *DoubleTy = VectorType::getDoubleElementsVectorType(VecTy);
+    VectorType *QuadTy = VectorType::getDoubleElementsVectorType(DoubleTy);
+    Value *Pair02 = Builder.CreateIntrinsic(
+        DoubleTy, Intrinsic::experimental_vector_interleave2,
+        {Vals[0], Vals[2]}, /*FMFSource=*/nullptr, Name);
+    Value *Pair13 = Builder.CreateIntrinsic(
+        DoubleTy, Intrinsic::experimental_vector_interleave2,
+        {Vals[1], Vals[3]}, /*FMFSource=*/nullptr, Name);
     return Builder.CreateIntrinsic(
-        WideVecTy, Intrinsic::experimental_vector_interleave2, Vals,
+        QuadTy, Intrinsic::experimental_vector_interleave2, {Pair02, Pair13},
         /*FMFSource=*/nullptr, Name);
   }
 
@@ -2534,15 +2552,26 @@ void InnerLoopVectorizer::vectorizeInterleaveGroup(
                              unsigned Part, Value *MaskForGaps) -> Value * {
     if (VF.isScalable()) {
       assert(!MaskForGaps && "Interleaved groups with gaps are not supported.");
-      assert(InterleaveFactor == 2 &&
+      assert((InterleaveFactor == 2 || InterleaveFactor == 4) &&
              "Unsupported deinterleave factor for scalable vectors");
       auto *BlockInMaskPart = State.get(BlockInMask, Part);
+      // Build the wide mask by composing interleave2 intrinsics.
+      // factor=2: interleave2(m, m)        → [m0,m0, m1,m1, ...]
+      // factor=4: interleave2(pair, pair)   → [m0,m0,m0,m0, m1,m1,m1,m1, ...]
       SmallVector<Value *, 2> Ops = {BlockInMaskPart, BlockInMaskPart};
       auto *MaskTy =
           VectorType::get(Builder.getInt1Ty(), VF.getKnownMinValue() * 2, true);
-      return Builder.CreateIntrinsic(
+      Value *Mask = Builder.CreateIntrinsic(
           MaskTy, Intrinsic::experimental_vector_interleave2, Ops,
           /*FMFSource=*/nullptr, "interleaved.mask");
+      if (InterleaveFactor == 4) {
+        auto *WideMaskTy = VectorType::get(Builder.getInt1Ty(),
+                                           VF.getKnownMinValue() * 4, true);
+        Mask = Builder.CreateIntrinsic(
+            WideMaskTy, Intrinsic::experimental_vector_interleave2,
+            {Mask, Mask}, /*FMFSource=*/nullptr, "interleaved.mask");
+      }
+      return Mask;
     }
 
     if (!BlockInMask)
@@ -2586,15 +2615,49 @@ void InnerLoopVectorizer::vectorizeInterleaveGroup(
     }
 
     if (VecTy->isScalableTy()) {
-      assert(InterleaveFactor == 2 &&
+      assert((InterleaveFactor == 2 || InterleaveFactor == 4) &&
              "Unsupported deinterleave factor for scalable vectors");
 
       for (unsigned Part = 0; Part < UF; ++Part) {
         // Scalable vectors cannot use arbitrary shufflevectors (only splats),
         // so must use intrinsics to deinterleave.
-        Value *DI = Builder.CreateIntrinsic(
-            Intrinsic::experimental_vector_deinterleave2, VecTy, NewLoads[Part],
-            /*FMFSource=*/nullptr, "strided.vec");
+        //
+        // factor=2: deinterleave2(wide) → (m0, m1)
+        //
+        // factor=4: Recursive deinterleave2 decomposition:
+        //   (A, B)     = deinterleave2(wide)
+        //   (m0, m2)   = deinterleave2(A)
+        //   (m1, m3)   = deinterleave2(B)
+        // Result order: m0, m1, m2, m3 at indices 0, 1, 2, 3.
+        SmallVector<Value *, 4> DeinterleavedVecs(InterleaveFactor);
+
+        if (InterleaveFactor == 2) {
+          Value *DI = Builder.CreateIntrinsic(
+              Intrinsic::experimental_vector_deinterleave2, VecTy,
+              NewLoads[Part], /*FMFSource=*/nullptr, "strided.vec");
+          DeinterleavedVecs[0] = Builder.CreateExtractValue(DI, 0);
+          DeinterleavedVecs[1] = Builder.CreateExtractValue(DI, 1);
+        } else {
+          // factor=4: two-level recursive deinterleave2
+          Value *DI0 = Builder.CreateIntrinsic(
+              Intrinsic::experimental_vector_deinterleave2, VecTy,
+              NewLoads[Part], /*FMFSource=*/nullptr, "strided.vec");
+          Value *Half0 = Builder.CreateExtractValue(DI0, 0);
+          Value *Half1 = Builder.CreateExtractValue(DI0, 1);
+
+          auto *HalfTy = cast<VectorType>(Half0->getType());
+          Value *DI_A = Builder.CreateIntrinsic(
+              Intrinsic::experimental_vector_deinterleave2, HalfTy, Half0,
+              /*FMFSource=*/nullptr, "strided.vec");
+          Value *DI_B = Builder.CreateIntrinsic(
+              Intrinsic::experimental_vector_deinterleave2, HalfTy, Half1,
+              /*FMFSource=*/nullptr, "strided.vec");
+          DeinterleavedVecs[0] = Builder.CreateExtractValue(DI_A, 0); // m0
+          DeinterleavedVecs[2] = Builder.CreateExtractValue(DI_A, 1); // m2
+          DeinterleavedVecs[1] = Builder.CreateExtractValue(DI_B, 0); // m1
+          DeinterleavedVecs[3] = Builder.CreateExtractValue(DI_B, 1); // m3
+        }
+
         unsigned J = 0;
         for (unsigned I = 0; I < InterleaveFactor; ++I) {
           Instruction *Member = Group->getMember(I);
@@ -2602,8 +2665,7 @@ void InnerLoopVectorizer::vectorizeInterleaveGroup(
           if (!Member)
             continue;
 
-          Value *StridedVec = Builder.CreateExtractValue(DI, I);
-          // If this member has different type, cast the result type.
+          Value *StridedVec = DeinterleavedVecs[I];
           if (Member->getType() != ScalarTy) {
             VectorType *OtherVTy = VectorType::get(Member->getType(), VF);
             StridedVec = createBitOrPointerCast(StridedVec, OtherVTy, DL);
@@ -8702,10 +8764,10 @@ LoopVectorizationPlanner::tryToBuildVPlanWithVPRecipes(VFRange &Range) {
       bool Result = (VF.isVector() && // Query is illegal for VF == 1
                      CM.getWideningDecision(IG->getInsertPos(), VF) ==
                          LoopVectorizationCostModel::CM_Interleave);
-      // For scalable vectors, the only interleave factor currently supported
-      // is 2 since we require the (de)interleave2 intrinsics instead of
-      // shufflevectors.
-      assert((!Result || !VF.isScalable() || IG->getFactor() == 2) &&
+      // For scalable vectors, interleave factors 2 and 4 are supported via
+      // composed (de)interleave2 intrinsics.
+      assert((!Result || !VF.isScalable() ||
+              IG->getFactor() == 2 || IG->getFactor() == 4) &&
              "Unsupported interleave factor for scalable vectors");
       return Result;
     };

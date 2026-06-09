@@ -50,6 +50,7 @@ public:
     CortexA35,
     CortexA53,
     CortexA55,
+    CortexA320,
     CortexA510,
     CortexA520,
     CortexA57,
@@ -235,6 +236,11 @@ public:
            hasFuseAES() || hasFuseArithmeticLogic() || hasFuseCCSelect() ||
            hasFuseAdrpAdd() || hasFuseLiterals();
   }
+
+  // LLVM 22 backport: code layout optimization subtarget queries.
+  // Delegate to hasFuseCCSelect() which covers both int and FP csel fusion.
+  bool hasFuseFCmpFCSel() const { return hasFuseCCSelect(); }
+  bool hasFuseCmpCSel() const { return hasFuseCCSelect(); }
 
   unsigned getMaxInterleaveFactor() const { return MaxInterleaveFactor; }
   unsigned getVectorInsertExtractBaseCost() const;

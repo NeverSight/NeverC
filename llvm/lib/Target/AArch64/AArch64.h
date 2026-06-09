@@ -47,6 +47,7 @@ FunctionPass *createAArch64A57FPLoadBalancing();
 FunctionPass *createAArch64A53Fix835769();
 FunctionPass *createAArch64PointerAuthPass();
 FunctionPass *createAArch64BranchTargetsPass();
+FunctionPass *createAArch64CodeLayoutOptPass();
 FunctionPass *createAArch64MIPeepholeOptPass();
 
 FunctionPass *createAArch64CleanupLocalDynamicTLSPass();
@@ -73,6 +74,7 @@ void initializeAArch64DeadRegisterDefinitionsPass(PassRegistry &);
 void initializeAArch64ExpandPseudoPass(PassRegistry &);
 void initializeAArch64GlobalsTaggingPass(PassRegistry &);
 void initializeAArch64LoadStoreOptPass(PassRegistry &);
+void initializeAArch64CodeLayoutOptPass(PassRegistry &);
 void initializeAArch64MIPeepholeOptPass(PassRegistry &);
 void initializeAArch64PromoteConstantPass(PassRegistry &);
 void initializeAArch64RedundantCopyEliminationPass(PassRegistry &);

@@ -4,6 +4,7 @@ add_custom_target(AArch64CommonTableGen)
 
 add_llvm_target(AArch64CodeGen
   AArch64A57FPLoadBalancing.cpp
+  AArch64CodeLayoutOpt.cpp
   AArch64AsmPrinter.cpp
   AArch64BranchTargets.cpp
   AArch64CallingConvention.cpp

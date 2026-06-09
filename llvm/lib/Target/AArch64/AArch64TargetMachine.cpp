@@ -175,6 +175,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64Target() {
   auto PR = PassRegistry::getPassRegistry();
   initializeAArch64A53Fix835769Pass(*PR);
   initializeAArch64A57FPLoadBalancingPass(*PR);
+  initializeAArch64CodeLayoutOptPass(*PR);
   initializeAArch64BranchTargetsPass(*PR);
   initializeAArch64CollectLOHPass(*PR);
   initializeAArch64CompressJumpTablesPass(*PR);
@@ -617,6 +618,9 @@ void AArch64PassConfig::addPostRegAlloc() {
 }
 
 void AArch64PassConfig::addPreSched2() {
+  // Apply code layout optimizations for instruction pairs (LLVM 22 backport).
+  if (TM->getOptLevel() != CodeGenOptLevel::None)
+    addPass(createAArch64CodeLayoutOptPass());
   // Expand some pseudo instructions to allow proper scheduling.
   addPass(createAArch64ExpandPseudoPass());
   // Use load/store pair instructions when possible.
