@@ -186,7 +186,7 @@ typedef UINT_PTR WPARAM;
 typedef LONG_PTR LPARAM;
 typedef LONG_PTR LRESULT;
 
-#ifndef NOMINMAX
+#if !defined(NOMINMAX) && !defined(__neverc__)
 
 #ifndef max
 #define max(a, b) (((a) > (b)) ? (a) : (b))
@@ -196,7 +196,7 @@ typedef LONG_PTR LRESULT;
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #endif
 
-#endif /* NOMINMAX */
+#endif /* NOMINMAX || __neverc__ */
 
 #define MAKEWORD(a, b)                                                         \
   ((WORD)(((BYTE)(((DWORD_PTR)(a)) & 0xff)) |                                  \
