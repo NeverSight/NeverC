@@ -402,16 +402,16 @@ jobs:
             done
           }
 
-          diagnose "string_qstring" \
-            "$TESTDIR/string/test_neverc_string_qstring_parity.c" \
+          diagnose "string_alias" \
+            "$TESTDIR/string/test_neverc_string_alias.c" \
             "-std=c23 -fbuiltin-string"
 
-          diagnose "string_qstring_g" \
-            "$TESTDIR/string/test_neverc_string_qstring_parity.c" \
+          diagnose "string_alias_g" \
+            "$TESTDIR/string/test_neverc_string_alias.c" \
             "-std=c23 -fbuiltin-string -g"
 
-          diagnose "string_qstring_g_nopcg" \
-            "$TESTDIR/string/test_neverc_string_qstring_parity.c" \
+          diagnose "string_alias_g_nopcg" \
+            "$TESTDIR/string/test_neverc_string_alias.c" \
             "-std=c23 -fbuiltin-string -g -fno-parallel-codegen"
 
       - name: Fail if tests failed

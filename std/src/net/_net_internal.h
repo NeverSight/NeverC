@@ -115,6 +115,7 @@
   #include <sys/mman.h>
   #include <sys/syscall.h>
   #include <poll.h>
+  #include <linux/time_types.h>
   #include <linux/io_uring.h>
 #elif defined(__linux__) || defined(__ANDROID__)
   #define NC_USE_EPOLL 1
