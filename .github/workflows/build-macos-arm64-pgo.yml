@@ -1,5 +1,5 @@
 # Profile-guided build for macOS arm64.
-# Runs the full PGO pipeline on manual dispatch to verify the release build
+# Manual dispatch only — runs the full PGO pipeline to verify the release build
 # compiles and tests pass.  No signing, notarization, or GitHub Release.
 #
 # Optimisation: profdata is cached across runs (keyed on neverc source hash).
@@ -11,8 +11,6 @@ permissions:
   contents: write
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
     inputs:
       force-rebuild-profdata:

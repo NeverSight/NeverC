@@ -1,6 +1,6 @@
 # Profile-guided build for Linux arm64.
-# Runs the full PGO pipeline on push/PR to verify the release build compiles
-# and tests pass.  No GitHub Release – artifacts only.
+# Manual dispatch only — runs the full PGO pipeline to verify the release build
+# compiles and tests pass.  No GitHub Release – artifacts only.
 #
 # Optimisation: profdata is cached across runs (keyed on neverc source hash).
 # When the cache hits, the expensive instrumented-build + training phase is
@@ -11,8 +11,6 @@ permissions:
   contents: write
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
     inputs:
       force-rebuild-profdata:
