@@ -20,14 +20,19 @@ MacroArgStorage *MacroArgStorage::create(const MacroRecord *MI,
   assert(MI->isFunctionLike() && "Can't have args for an object-like macro!");
   MacroArgStorage **ResultEnt = nullptr;
 
-  // LRU first-fit: recently released entries are at the head. Take the first
-  // entry with sufficient capacity rather than scanning for the best fit.
+  // Bounded first-fit: scan at most MaxScanDepth entries to avoid O(n)
+  // degradation when deeply nested macro expansions (e.g. SAL annotations
+  // in <windows.h>) build up a long free list.
+  static constexpr unsigned MaxScanDepth = 16;
+  unsigned Scanned = 0;
   for (MacroArgStorage **Entry = &PP.MacroArgCache; *Entry;
        Entry = &(*Entry)->ArgCache) {
     if ((*Entry)->NumUnexpArgTokens >= UnexpArgTokens.size()) {
       ResultEnt = Entry;
       break;
     }
+    if (++Scanned >= MaxScanDepth)
+      break;
   }
   MacroArgStorage *Result;
   if (LLVM_UNLIKELY(!ResultEnt)) {
@@ -37,8 +42,8 @@ MacroArgStorage *MacroArgStorage::create(const MacroRecord *MI,
                             MI->getNumParams());
   } else {
     Result = *ResultEnt;
-    // Unlink this node from the preprocessors singly linked list.
     *ResultEnt = Result->ArgCache;
+    --PP.MacroArgCacheSize;
     Result->NumUnexpArgTokens = UnexpArgTokens.size();
     Result->VarargsElided = VarargsElided;
     Result->NumMacroArgStorage = MI->getNumParams();
@@ -63,9 +68,21 @@ void MacroArgStorage::destroy(PrepEngine &PP) {
   for (unsigned i = 0, e = PreExpArgTokens.size(); i != e; ++i)
     PreExpArgTokens[i].clear();
 
-  // Add this to the preprocessor's free list.
+  // Bound the cache to avoid unbounded memory growth from heavy macro
+  // expansion (e.g. SAL annotations expanding thousands of small arg
+  // storages). Excess entries are freed immediately.
+  static constexpr unsigned MaxCacheEntries = 128;
+  if (PP.MacroArgCacheSize >= MaxCacheEntries) {
+    this->~MacroArgStorage();
+    static_assert(std::is_trivially_destructible_v<Token>,
+                  "assume trivially destructible and forego destructors");
+    free(this);
+    return;
+  }
+
   ArgCache = PP.MacroArgCache;
   PP.MacroArgCache = this;
+  ++PP.MacroArgCacheSize;
 }
 
 MacroArgStorage *MacroArgStorage::deallocate() {

@@ -378,6 +378,7 @@ private:
   llvm::DenseMap<const IdentifierInfo *, MacroAnnotations> AnnotationInfos;
 
   MacroArgStorage *MacroArgCache = nullptr;
+  unsigned MacroArgCacheSize = 0;
 
   llvm::DenseMap<IdentifierInfo *, std::vector<MacroRecord *>>
       PragmaPushMacroRecord;
