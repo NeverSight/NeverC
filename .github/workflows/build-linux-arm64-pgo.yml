@@ -368,19 +368,40 @@ jobs:
             $NCC $flags "$src" -o /tmp/diag_${label}_oneshot 2>&1 && echo "OK" || echo "EXIT=$?"
 
             nm -n --defined-only -C $NCC 2>/dev/null | awk 'NF>=3{print $1,$3}' > /tmp/nm_syms.txt
-            echo "Symbol table: $(wc -l < /tmp/nm_syms.txt) symbols"
+            local sym_count=$(wc -l < /tmp/nm_syms.txt)
+            echo "Symbol table: $sym_count symbols"
+
+            if [ "$sym_count" -eq 0 ]; then
+              echo "=== Trying dynamic symbols ==="
+              nm -n --defined-only -D -C $NCC 2>/dev/null | awk 'NF>=3{print $1,$3}' > /tmp/nm_syms.txt
+              echo "Dynamic symbol table: $(wc -l < /tmp/nm_syms.txt) symbols"
+            fi
+
+            LLVM_SYM=$(command -v llvm-symbolizer 2>/dev/null || command -v "$LLVM_ROOT/bin/llvm-symbolizer" 2>/dev/null || true)
 
             for core in cores/core.*; do
               [ -f "$core" ] || continue
 
+              echo "=== GDB backtrace from $core ==="
+              gdb -batch \
+                -ex "set print demangle on" \
+                -ex "bt 40" \
+                -ex "info registers" \
+                -ex "x/4i \$pc" \
+                $NCC "$core" 2>&1 | head -80
+
               echo "=== eu-stack backtrace from $core ==="
               eu-stack -e $NCC --core="$core" 2>&1 | head -40
 
-              echo "=== GDB full backtrace from $core ==="
-              gdb -batch -ex "bt full 30" -ex "info registers" $NCC "$core" 2>&1 | head -60
+              if [ -n "$LLVM_SYM" ]; then
+                echo "=== llvm-symbolizer stack ==="
+                eu-stack -e $NCC --core="$core" 2>&1 | grep -oP '0x[0-9a-f]+' | head -20 | while read ADDR; do
+                  echo -n "$ADDR: "
+                  echo "$ADDR" | "$LLVM_SYM" --obj=$NCC 2>/dev/null || echo "??"
+                done
+              fi
 
               PC=$(gdb -batch -ex "print/x \$pc" $NCC "$core" 2>&1 | grep -oP '0x[0-9a-f]+' | tail -1)
-
               LOAD_BASE=$(readelf -l "$core" 2>/dev/null | awk '/LOAD/{print $3; exit}')
               echo "PC=$PC LOAD_BASE=$LOAD_BASE"
 
@@ -388,7 +409,7 @@ jobs:
                 FILE_OFF=$(printf "0x%x" $(($PC - $LOAD_BASE)))
                 echo "File offset: $FILE_OFF"
 
-                echo "=== symbolized stack ==="
+                echo "=== nm symbolized stack ==="
                 eu-stack -e $NCC --core="$core" 2>&1 | grep '^ *#' | head -22 | while read line; do
                   ADDR=$(echo "$line" | grep -oP '0x[0-9a-f]+')
                   if [ -n "$ADDR" ]; then
