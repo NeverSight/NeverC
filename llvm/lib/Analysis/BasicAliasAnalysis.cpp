@@ -690,7 +690,7 @@ BasicAAResult::DecomposeGEPExpression(const Value *V, const DataLayout &DL,
       Decomposed.Offset += LE.Offset.sext(MaxIndexSize);
       APInt Scale = LE.Scale.sext(MaxIndexSize);
 
-      if (!LE.IsNUW)
+      if (!LE.IsNUW && Decomposed.NWFlags)
         Decomposed.NWFlags = Decomposed.NWFlags->withoutNoUnsignedWrap();
 
       // If we already had an occurrence of this index variable, merge this
@@ -1108,7 +1108,8 @@ AliasResult BasicAAResult::aliasGEP(const GEPOperator *GEP1,
   // for the two to alias, then we can assume noalias.
   // TODO: Remove !isScalable() once BasicAA fully support scalable location
   // size
-  if (DecompGEP1.NWFlags->isInBounds() && DecompGEP1.VarIndices.empty() &&
+  if (DecompGEP1.NWFlags && DecompGEP1.NWFlags->isInBounds() &&
+      DecompGEP1.VarIndices.empty() &&
       V2Size.hasValue() && !V2Size.isScalable() &&
       DecompGEP1.Offset.sge(V2Size.getValue()) &&
       isBaseOfObject(DecompGEP2.Base))
@@ -1116,7 +1117,8 @@ AliasResult BasicAAResult::aliasGEP(const GEPOperator *GEP1,
 
   if (isa<GEPOperator>(V2)) {
     // Symmetric case to above.
-    if (DecompGEP2.NWFlags->isInBounds() && DecompGEP1.VarIndices.empty() &&
+    if (DecompGEP2.NWFlags && DecompGEP2.NWFlags->isInBounds() &&
+        DecompGEP1.VarIndices.empty() &&
         V1Size.hasValue() && !V1Size.isScalable() &&
         DecompGEP1.Offset.sle(-V1Size.getValue()) &&
         isBaseOfObject(DecompGEP1.Base))
@@ -1152,7 +1154,8 @@ AliasResult BasicAAResult::aliasGEP(const GEPOperator *GEP1,
   //  |-->VLeftSize    |                     |-------> VRightSize
   //  LHS                                   RHS
   if (!DecompGEP1.VarIndices.empty() &&
-      DecompGEP1.NWFlags->hasNoUnsignedWrap() && V2Size.hasValue() &&
+      DecompGEP1.NWFlags && DecompGEP1.NWFlags->hasNoUnsignedWrap() &&
+      V2Size.hasValue() &&
       !V2Size.isScalable() && DecompGEP1.Offset.uge(V2Size.getValue()))
     return AliasResult::NoAlias;
 
