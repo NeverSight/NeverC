@@ -453,6 +453,7 @@ class SourceManager : public llvm::RefCountedBase<SourceManager> {
   ExternalSLocEntrySource *ExternalSLocEntries = nullptr;
 
   mutable FileID LastFileIDLookup;
+  mutable FileID SecondFileIDLookup;
 
   std::unique_ptr<LineTableInfo> LineTable;
 
@@ -1138,10 +1139,12 @@ private:
   }
 
   FileID getFileID(SourceLocation::UIntTy SLocOffset) const {
-    // If our one-entry cache covers this offset, just return it.
     if (isOffsetInFileID(LastFileIDLookup, SLocOffset))
       return LastFileIDLookup;
-
+    if (isOffsetInFileID(SecondFileIDLookup, SLocOffset)) {
+      std::swap(LastFileIDLookup, SecondFileIDLookup);
+      return LastFileIDLookup;
+    }
     return getFileIDSlow(SLocOffset);
   }
 

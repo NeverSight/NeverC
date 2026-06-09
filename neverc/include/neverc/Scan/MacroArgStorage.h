@@ -17,6 +17,7 @@ class MacroArgStorage final
 
   friend TrailingObjects;
   unsigned NumUnexpArgTokens;
+  unsigned AllocatedCapacity;
 
   bool VarargsElided;
 
@@ -31,8 +32,9 @@ class MacroArgStorage final
 
   MacroArgStorage(unsigned NumToks, bool varargsElided,
                   unsigned MacroArgStorage)
-      : NumUnexpArgTokens(NumToks), VarargsElided(varargsElided),
-        ArgCache(nullptr), NumMacroArgStorage(MacroArgStorage) {}
+      : NumUnexpArgTokens(NumToks), AllocatedCapacity(NumToks),
+        VarargsElided(varargsElided), ArgCache(nullptr),
+        NumMacroArgStorage(MacroArgStorage) {}
   ~MacroArgStorage() = default;
 
 public:

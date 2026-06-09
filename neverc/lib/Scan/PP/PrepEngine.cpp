@@ -80,8 +80,9 @@ PrepEngine::~PrepEngine() {
 
   CurExpansionLexer.reset();
 
-  for (MacroArgStorage *ArgList = MacroArgCache; ArgList;)
-    ArgList = ArgList->deallocate();
+  for (auto &Bucket : MacroArgBuckets)
+    for (MacroArgStorage *ArgList = Bucket.Head; ArgList;)
+      ArgList = ArgList->deallocate();
 
   if (OwnsIncludeResolver)
     delete &HeaderInfo;
@@ -185,6 +186,25 @@ void PrepEngine::DumpStats() {
                << llvm::capacity_in_bytes(PoisonReasons);
   llvm::errs() << "\n  Comment Handlers: "
                << llvm::capacity_in_bytes(CommentHandlers) << "\n";
+
+#ifndef NDEBUG
+  if (MacroArgCreateCalls) {
+    llvm::errs() << "\n*** MacroArgStorage Cache Stats:\n";
+    llvm::errs() << "  create() calls: " << MacroArgCreateCalls << "\n";
+    llvm::errs() << "  destroy() calls: " << MacroArgDestroyCalls << "\n";
+    llvm::errs() << "  cache hits: " << MacroArgCacheHits << " ("
+                 << (MacroArgCacheHits * 100 / MacroArgCreateCalls) << "%)\n";
+    llvm::errs() << "  cache misses: " << MacroArgCacheMisses << " ("
+                 << (MacroArgCacheMisses * 100 / MacroArgCreateCalls) << "%)\n";
+    llvm::errs() << "  max total cache size: " << MacroArgMaxCacheLen << "\n";
+    llvm::errs() << "  destroy evictions (cache full): "
+                 << MacroArgDestroyEvictions << "\n";
+    llvm::errs() << "  bucket distribution:";
+    for (unsigned i = 0; i < NumArgCacheBuckets; ++i)
+      llvm::errs() << " [" << i << "]=" << MacroArgBuckets[i].Count;
+    llvm::errs() << "\n";
+  }
+#endif
 }
 
 PrepEngine::macro_iterator

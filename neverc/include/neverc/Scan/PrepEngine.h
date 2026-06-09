@@ -377,12 +377,39 @@ private:
 
   llvm::DenseMap<const IdentifierInfo *, MacroAnnotations> AnnotationInfos;
 
-  MacroArgStorage *MacroArgCache = nullptr;
+  // Size-bucketed MacroArgStorage free lists for O(1) cache lookup.
+  // Bucket i holds entries with AllocatedCapacity in [2^i, 2^(i+1)).
+  // Bucket 0: 0-1, 1: 2-3, 2: 4-7, 3: 8-15, 4: 16-31, 5: 32+
+  static constexpr unsigned NumArgCacheBuckets = 6;
+  static constexpr unsigned MaxArgCacheEntries = 256;
+  struct ArgCacheBucket {
+    MacroArgStorage *Head = nullptr;
+    unsigned Count = 0;
+  };
+  ArgCacheBucket MacroArgBuckets[NumArgCacheBuckets];
   unsigned MacroArgCacheSize = 0;
+
+  static unsigned getArgBucketIndex(unsigned NumTokens) {
+    if (NumTokens <= 1) return 0;
+    if (NumTokens <= 3) return 1;
+    if (NumTokens <= 7) return 2;
+    if (NumTokens <= 15) return 3;
+    if (NumTokens <= 31) return 4;
+    return 5;
+  }
 
   // Scratch buffer reused across CollectMacroArgs() calls to avoid repeated
   // heap allocation when processing macro-heavy headers (e.g. SAL annotations).
   llvm::SmallVector<Token, 64> MacroArgScratch;
+
+#ifndef NDEBUG
+  unsigned MacroArgCreateCalls = 0;
+  unsigned MacroArgCacheHits = 0;
+  unsigned MacroArgCacheMisses = 0;
+  unsigned MacroArgMaxCacheLen = 0;
+  unsigned MacroArgDestroyCalls = 0;
+  unsigned MacroArgDestroyEvictions = 0;
+#endif
 
   llvm::DenseMap<IdentifierInfo *, std::vector<MacroRecord *>>
       PragmaPushMacroRecord;

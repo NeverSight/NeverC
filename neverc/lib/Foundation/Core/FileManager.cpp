@@ -1438,8 +1438,6 @@ SourceManager::getFileIDSlow(SourceLocation::UIntTy SLocOffset) const {
   if (!SLocOffset)
     return FileID::get(0);
 
-  // Now it is time to search for the correct file. See where the SLocOffset
-  // sits in the global view and consult local or loaded buffers for it.
   if (SLocOffset < NextLocalOffset)
     return getFileIDLocal(SLocOffset);
   return getFileIDLoaded(SLocOffset);
@@ -1481,7 +1479,7 @@ SourceManager::getFileIDLocal(SourceLocation::UIntTy SLocOffset) const {
     assert(GreaterIndex < LocalSLocEntryTable.size());
     if (LocalSLocEntryTable[GreaterIndex].getOffset() <= SLocOffset) {
       FileID Res = FileID::get(int(GreaterIndex));
-      // Remember it.  We have good locality across FileID lookups.
+      SecondFileIDLookup = LastFileIDLookup;
       LastFileIDLookup = Res;
       NumLinearScans += NumProbes + 1;
       return Res;
@@ -1514,7 +1512,7 @@ SourceManager::getFileIDLocal(SourceLocation::UIntTy SLocOffset) const {
         SLocOffset < getLocalSLocEntry(MiddleIndex + 1).getOffset()) {
       FileID Res = FileID::get(MiddleIndex);
 
-      // Remember it.  We have good locality across FileID lookups.
+      SecondFileIDLookup = LastFileIDLookup;
       LastFileIDLookup = Res;
       NumBinaryProbes += NumProbes;
       return Res;

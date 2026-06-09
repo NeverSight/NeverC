@@ -18,40 +18,73 @@ MacroArgStorage *MacroArgStorage::create(const MacroRecord *MI,
                                          llvm::ArrayRef<Token> UnexpArgTokens,
                                          bool VarargsElided, PrepEngine &PP) {
   assert(MI->isFunctionLike() && "Can't have args for an object-like macro!");
-  MacroArgStorage **ResultEnt = nullptr;
 
-  // Bounded first-fit: scan at most MaxScanDepth entries to avoid O(n)
-  // degradation when deeply nested macro expansions (e.g. SAL annotations
-  // in <windows.h>) build up a long free list.
-  static constexpr unsigned MaxScanDepth = 16;
-  unsigned Scanned = 0;
-  for (MacroArgStorage **Entry = &PP.MacroArgCache; *Entry;
-       Entry = &(*Entry)->ArgCache) {
-    if ((*Entry)->NumUnexpArgTokens >= UnexpArgTokens.size()) {
-      ResultEnt = Entry;
+#ifndef NDEBUG
+  ++PP.MacroArgCreateCalls;
+#endif
+  const unsigned Needed = UnexpArgTokens.size();
+  const unsigned StartBucket = PrepEngine::getArgBucketIndex(Needed);
+
+  // Bucketed lookup: check the target bucket first, then try larger buckets.
+  // Within the target bucket, verify AllocatedCapacity >= Needed since bucket
+  // ranges span [2^i, 2^(i+1)) and the request might exceed a smaller entry.
+  MacroArgStorage *Result = nullptr;
+  for (unsigned B = StartBucket; B < PrepEngine::NumArgCacheBuckets; ++B) {
+    auto &Bucket = PP.MacroArgBuckets[B];
+    if (!Bucket.Head)
+      continue;
+    if (B == StartBucket) {
+      // Target bucket: scan up to 4 entries for a capacity match.
+      MacroArgStorage **Prev = &Bucket.Head;
+      unsigned Checked = 0;
+      while (*Prev && Checked < 4) {
+        if ((*Prev)->AllocatedCapacity >= Needed) {
+          Result = *Prev;
+          *Prev = Result->ArgCache;
+          --Bucket.Count;
+          --PP.MacroArgCacheSize;
+#ifndef NDEBUG
+          ++PP.MacroArgCacheHits;
+#endif
+          goto found;
+        }
+        Prev = &(*Prev)->ArgCache;
+        ++Checked;
+      }
+    } else {
+      // Larger bucket: all entries are guaranteed >= Needed. Pop the head.
+      Result = Bucket.Head;
+      Bucket.Head = Result->ArgCache;
+      --Bucket.Count;
+      --PP.MacroArgCacheSize;
+#ifndef NDEBUG
+      ++PP.MacroArgCacheHits;
+#endif
       break;
     }
-    if (++Scanned >= MaxScanDepth)
-      break;
   }
-  MacroArgStorage *Result;
-  if (LLVM_UNLIKELY(!ResultEnt)) {
+found:
+
+#ifndef NDEBUG
+  if (PP.MacroArgCacheSize > PP.MacroArgMaxCacheLen)
+    PP.MacroArgMaxCacheLen = PP.MacroArgCacheSize;
+#endif
+
+  if (LLVM_UNLIKELY(!Result)) {
+#ifndef NDEBUG
+    ++PP.MacroArgCacheMisses;
+#endif
     Result =
-        new (llvm::safe_malloc(totalSizeToAlloc<Token>(UnexpArgTokens.size())))
-            MacroArgStorage(UnexpArgTokens.size(), VarargsElided,
-                            MI->getNumParams());
+        new (llvm::safe_malloc(totalSizeToAlloc<Token>(Needed)))
+            MacroArgStorage(Needed, VarargsElided, MI->getNumParams());
   } else {
-    Result = *ResultEnt;
-    *ResultEnt = Result->ArgCache;
-    --PP.MacroArgCacheSize;
-    Result->NumUnexpArgTokens = UnexpArgTokens.size();
+    Result->NumUnexpArgTokens = Needed;
     Result->VarargsElided = VarargsElided;
     Result->NumMacroArgStorage = MI->getNumParams();
     Result->ArgStartOffsets.clear();
     Result->ArgAccessCount = 0;
   }
 
-  // Copy the actual unexpanded tokens to immediately after the result ptr.
   if (!UnexpArgTokens.empty()) {
     static_assert(std::is_trivial_v<Token>,
                   "assume trivial copyability if copying into the "
@@ -68,11 +101,13 @@ void MacroArgStorage::destroy(PrepEngine &PP) {
   for (unsigned i = 0, e = PreExpArgTokens.size(); i != e; ++i)
     PreExpArgTokens[i].clear();
 
-  // Bound the cache to avoid unbounded memory growth from heavy macro
-  // expansion (e.g. SAL annotations expanding thousands of small arg
-  // storages). Excess entries are freed immediately.
-  static constexpr unsigned MaxCacheEntries = 128;
-  if (PP.MacroArgCacheSize >= MaxCacheEntries) {
+#ifndef NDEBUG
+  ++PP.MacroArgDestroyCalls;
+#endif
+  if (PP.MacroArgCacheSize >= PrepEngine::MaxArgCacheEntries) {
+#ifndef NDEBUG
+    ++PP.MacroArgDestroyEvictions;
+#endif
     this->~MacroArgStorage();
     static_assert(std::is_trivially_destructible_v<Token>,
                   "assume trivially destructible and forego destructors");
@@ -80,8 +115,13 @@ void MacroArgStorage::destroy(PrepEngine &PP) {
     return;
   }
 
-  ArgCache = PP.MacroArgCache;
-  PP.MacroArgCache = this;
+  // Bucket by AllocatedCapacity (not NumUnexpArgTokens) so reuse matches
+  // the true trailing-object size, not the last user's token count.
+  const unsigned B = PrepEngine::getArgBucketIndex(AllocatedCapacity);
+  auto &Bucket = PP.MacroArgBuckets[B];
+  ArgCache = Bucket.Head;
+  Bucket.Head = this;
+  ++Bucket.Count;
   ++PP.MacroArgCacheSize;
 }
 
