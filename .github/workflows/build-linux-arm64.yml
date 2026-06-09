@@ -24,17 +24,28 @@ jobs:
         path: neverc
 
     - name: Setup build deps
-      run: |
-        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-        echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm-18.list
-        sudo apt-get update
-        sudo apt-get install -y ninja-build cmake p7zip-full clang-18 lld-18 gdb elfutils
+      run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full gdb elfutils
+
+    - name: Resolve latest LLVM version
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        LLVM_VERIFY_ASSET_SUFFIX: Linux-ARM64.tar.xz
+      run: bash neverc/.github/scripts/resolve-llvm-version.sh
+
+    - name: Cache LLVM toolchain
+      uses: actions/cache@v4
+      with:
+        path: /tmp/llvm-pgo
+        key: llvm-${{ env.LLVM_VER }}-linux-arm64
+
+    - name: Install latest LLVM
+      run: bash neverc/.github/scripts/install-llvm-linux.sh
 
     - name: Build neverc
       run: |
         cmake -GNinja -Bbuild \
-        -DCMAKE_C_COMPILER=clang-18 \
-        -DCMAKE_CXX_COMPILER=clang++-18 \
+        -DCMAKE_C_COMPILER=$CC \
+        -DCMAKE_CXX_COMPILER=$CXX \
         -DCMAKE_INSTALL_PREFIX=install \
         -DLLVM_ENABLE_ASSERTIONS=OFF \
         -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
