@@ -29,6 +29,7 @@ struct neverc_regexp {
     int          nclasses;
     int          ncap;
     int          ngroups;
+    int          posix;
 };
 
 static nfa_state_t *new_state(neverc_regexp_t *re, int type) {
@@ -267,7 +268,8 @@ static frag_t parse_concat(parser_t *par) {
             result = f;
         } else {
             result.end->out1 = f.start;
-            result.end = f.end;
+            nfa_state_t *new_end = f.end;
+            result.end = new_end;
         }
     }
     if (!result.start) {
@@ -469,7 +471,19 @@ const char *neverc_regexp_find(neverc_regexp_t *re, const char *s,
     for (size_t i = 0; i <= slen; i++) {
         size_t end;
         if (nfa_exec(re, s, slen, i, &end) && end > i) {
-            *match_len = end - i;
+            if (re->posix) {
+                size_t best_end = end;
+                for (size_t try_end = end + 1; try_end <= slen; try_end++) {
+                    size_t e2;
+                    if (nfa_exec(re, s, slen, i, &e2) && e2 > best_end)
+                        best_end = e2;
+                    else
+                        break;
+                }
+                *match_len = best_end - i;
+            } else {
+                *match_len = end - i;
+            }
             return s + i;
         }
     }
@@ -640,11 +654,27 @@ char *neverc_regexp_quote_meta(const char *s) {
     return result;
 }
 
+neverc_regexp_t *neverc_regexp_compile_posix(const char *pattern, const char **errp) {
+    neverc_regexp_t *re = neverc_regexp_compile(pattern, errp);
+    if (re) re->posix = 1;
+    return re;
+}
+
 neverc_regexp_t *neverc_regexp_must_compile(const char *pattern) {
     const char *err = NULL;
     neverc_regexp_t *re = neverc_regexp_compile(pattern, &err);
     if (!re) {
         fprintf(stderr, "neverc_regexp_must_compile: %s: %s\n", pattern, err ? err : "unknown error");
+        abort();
+    }
+    return re;
+}
+
+neverc_regexp_t *neverc_regexp_must_compile_posix(const char *pattern) {
+    const char *err = NULL;
+    neverc_regexp_t *re = neverc_regexp_compile_posix(pattern, &err);
+    if (!re) {
+        fprintf(stderr, "neverc_regexp_must_compile_posix: %s: %s\n", pattern, err ? err : "unknown error");
         abort();
     }
     return re;

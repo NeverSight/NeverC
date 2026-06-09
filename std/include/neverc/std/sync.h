@@ -19,11 +19,17 @@ typedef struct { SRWLOCK srw; } neverc_mutex_t;
 typedef struct { pthread_mutex_t mu; } neverc_mutex_t;
 #endif
 
-void neverc_mutex_init(neverc_mutex_t *m);
-void neverc_mutex_destroy(neverc_mutex_t *m);
-void neverc_mutex_lock(neverc_mutex_t *m);
-void neverc_mutex_unlock(neverc_mutex_t *m);
-int  neverc_mutex_trylock(neverc_mutex_t *m);
+void neverc_sync_mutex_init(neverc_mutex_t *m);
+void neverc_sync_mutex_destroy(neverc_mutex_t *m);
+void neverc_sync_mutex_lock(neverc_mutex_t *m);
+void neverc_sync_mutex_unlock(neverc_mutex_t *m);
+int  neverc_sync_mutex_trylock(neverc_mutex_t *m);
+
+#define neverc_mutex_init    neverc_sync_mutex_init
+#define neverc_mutex_destroy neverc_sync_mutex_destroy
+#define neverc_mutex_lock    neverc_sync_mutex_lock
+#define neverc_mutex_unlock  neverc_sync_mutex_unlock
+#define neverc_mutex_trylock neverc_sync_mutex_trylock
 
 #if defined(_WIN32)
 typedef struct { SRWLOCK rw; } neverc_rwmutex_t;
@@ -31,12 +37,23 @@ typedef struct { SRWLOCK rw; } neverc_rwmutex_t;
 typedef struct { pthread_rwlock_t rw; } neverc_rwmutex_t;
 #endif
 
-void neverc_rwmutex_init(neverc_rwmutex_t *rw);
-void neverc_rwmutex_destroy(neverc_rwmutex_t *rw);
-void neverc_rwmutex_rlock(neverc_rwmutex_t *rw);
-void neverc_rwmutex_runlock(neverc_rwmutex_t *rw);
-void neverc_rwmutex_lock(neverc_rwmutex_t *rw);
-void neverc_rwmutex_unlock(neverc_rwmutex_t *rw);
+void neverc_sync_rwmutex_init(neverc_rwmutex_t *rw);
+void neverc_sync_rwmutex_destroy(neverc_rwmutex_t *rw);
+void neverc_sync_rwmutex_rlock(neverc_rwmutex_t *rw);
+int  neverc_sync_rwmutex_tryrlock(neverc_rwmutex_t *rw);
+void neverc_sync_rwmutex_runlock(neverc_rwmutex_t *rw);
+void neverc_sync_rwmutex_lock(neverc_rwmutex_t *rw);
+int  neverc_sync_rwmutex_trylock(neverc_rwmutex_t *rw);
+void neverc_sync_rwmutex_unlock(neverc_rwmutex_t *rw);
+
+#define neverc_rwmutex_init     neverc_sync_rwmutex_init
+#define neverc_rwmutex_destroy  neverc_sync_rwmutex_destroy
+#define neverc_rwmutex_rlock    neverc_sync_rwmutex_rlock
+#define neverc_rwmutex_tryrlock neverc_sync_rwmutex_tryrlock
+#define neverc_rwmutex_runlock  neverc_sync_rwmutex_runlock
+#define neverc_rwmutex_lock     neverc_sync_rwmutex_lock
+#define neverc_rwmutex_trylock  neverc_sync_rwmutex_trylock
+#define neverc_rwmutex_unlock   neverc_sync_rwmutex_unlock
 
 #if defined(_WIN32)
 typedef struct {
@@ -54,11 +71,17 @@ typedef struct {
 } neverc_waitgroup_t;
 #endif
 
-void neverc_waitgroup_init(neverc_waitgroup_t *wg);
-void neverc_waitgroup_destroy(neverc_waitgroup_t *wg);
-void neverc_waitgroup_add(neverc_waitgroup_t *wg, int delta);
-void neverc_waitgroup_done(neverc_waitgroup_t *wg);
-void neverc_waitgroup_wait(neverc_waitgroup_t *wg);
+void neverc_sync_waitgroup_init(neverc_waitgroup_t *wg);
+void neverc_sync_waitgroup_destroy(neverc_waitgroup_t *wg);
+void neverc_sync_waitgroup_add(neverc_waitgroup_t *wg, int delta);
+void neverc_sync_waitgroup_done(neverc_waitgroup_t *wg);
+void neverc_sync_waitgroup_wait(neverc_waitgroup_t *wg);
+
+#define neverc_waitgroup_init    neverc_sync_waitgroup_init
+#define neverc_waitgroup_destroy neverc_sync_waitgroup_destroy
+#define neverc_waitgroup_add     neverc_sync_waitgroup_add
+#define neverc_waitgroup_done    neverc_sync_waitgroup_done
+#define neverc_waitgroup_wait    neverc_sync_waitgroup_wait
 
 #if defined(_WIN32)
 typedef struct { volatile int32_t done; CRITICAL_SECTION mu; } neverc_once_t;
@@ -66,9 +89,13 @@ typedef struct { volatile int32_t done; CRITICAL_SECTION mu; } neverc_once_t;
 typedef struct { volatile int32_t done; pthread_mutex_t mu; } neverc_once_t;
 #endif
 
-void neverc_once_init(neverc_once_t *o);
-void neverc_once_destroy(neverc_once_t *o);
-void neverc_once_do(neverc_once_t *o, void (*f)(void));
+void neverc_sync_once_init(neverc_once_t *o);
+void neverc_sync_once_destroy(neverc_once_t *o);
+void neverc_sync_once_do(neverc_once_t *o, void (*f)(void));
+
+#define neverc_once_init    neverc_sync_once_init
+#define neverc_once_destroy neverc_sync_once_destroy
+#define neverc_once_do      neverc_sync_once_do
 
 #if defined(_WIN32)
 typedef struct { CONDITION_VARIABLE cond; SRWLOCK *srw; } neverc_cond_t;
@@ -76,11 +103,47 @@ typedef struct { CONDITION_VARIABLE cond; SRWLOCK *srw; } neverc_cond_t;
 typedef struct { pthread_cond_t cond; pthread_mutex_t *mu; } neverc_cond_t;
 #endif
 
-void neverc_cond_init(neverc_cond_t *c, neverc_mutex_t *m);
-void neverc_cond_destroy(neverc_cond_t *c);
-void neverc_cond_wait(neverc_cond_t *c);
-void neverc_cond_signal(neverc_cond_t *c);
-void neverc_cond_broadcast(neverc_cond_t *c);
+void neverc_sync_cond_init(neverc_cond_t *c, neverc_mutex_t *m);
+void neverc_sync_cond_destroy(neverc_cond_t *c);
+void neverc_sync_cond_wait(neverc_cond_t *c);
+void neverc_sync_cond_signal(neverc_cond_t *c);
+void neverc_sync_cond_broadcast(neverc_cond_t *c);
+
+#define neverc_cond_init      neverc_sync_cond_init
+#define neverc_cond_destroy   neverc_sync_cond_destroy
+#define neverc_cond_wait      neverc_sync_cond_wait
+#define neverc_cond_signal    neverc_sync_cond_signal
+#define neverc_cond_broadcast neverc_sync_cond_broadcast
+
+/*
+ * sync.Pool — thread-safe reusable object pool.
+ * Mirrors Go sync.Pool: Put returns an object; Get retrieves or creates one.
+ */
+typedef struct neverc_sync_pool neverc_sync_pool_t;
+
+neverc_sync_pool_t *neverc_sync_pool_new(void *(*new_func)(void));
+void  neverc_sync_pool_free(neverc_sync_pool_t *p);
+void  neverc_sync_pool_put(neverc_sync_pool_t *p, void *x);
+void *neverc_sync_pool_get(neverc_sync_pool_t *p);
+
+/*
+ * sync.Map — concurrent-safe string-keyed map.
+ * Mirrors Go sync.Map: thread-safe without external locking.
+ */
+typedef struct neverc_sync_map neverc_sync_map_t;
+
+neverc_sync_map_t *neverc_sync_map_new(void);
+void   neverc_sync_map_free(neverc_sync_map_t *m);
+void   neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value);
+void  *neverc_sync_map_load(neverc_sync_map_t *m, const char *key, int *ok);
+void  *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void *value, int *loaded);
+void  *neverc_sync_map_load_and_delete(neverc_sync_map_t *m, const char *key, int *loaded);
+void   neverc_sync_map_delete(neverc_sync_map_t *m, const char *key);
+void   neverc_sync_map_clear(neverc_sync_map_t *m);
+void   neverc_sync_map_range(neverc_sync_map_t *m, int (*f)(const char *key, void *value, void *user), void *user);
+void  *neverc_sync_map_swap(neverc_sync_map_t *m, const char *key, void *value, int *loaded);
+int    neverc_sync_map_compare_and_swap(neverc_sync_map_t *m, const char *key, void *old_val, void *new_val);
+int    neverc_sync_map_compare_and_delete(neverc_sync_map_t *m, const char *key, void *old_val);
 
 #ifdef __cplusplus
 }

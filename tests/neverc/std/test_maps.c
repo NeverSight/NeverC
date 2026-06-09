@@ -157,6 +157,65 @@ static void test_copy(void) {
     neverc_map_free(src);
 }
 
+static int delete_even_filter(const char *key, void *value) {
+    (void)key;
+    return (*(int *)value) % 2 == 0;
+}
+
+static void test_delete_func_probe_chain(void) {
+    printf("[delete_func_probe_chain]\n");
+    neverc_map_t *m = neverc_map_new();
+    int vals[50];
+    char key[32];
+    for (int i = 0; i < 50; i++) {
+        vals[i] = i;
+        snprintf(key, sizeof(key), "k%d", i);
+        neverc_map_set(m, key, &vals[i]);
+    }
+
+    neverc_maps_delete_func(m, delete_even_filter);
+
+    for (int i = 0; i < 50; i++) {
+        snprintf(key, sizeof(key), "k%d", i);
+        if (i % 2 == 0) {
+            ASSERT_TRUE(!neverc_map_has(m, key));
+        } else {
+            ASSERT_TRUE(neverc_map_has(m, key));
+            ASSERT_INT_EQ(*(int *)neverc_map_get(m, key), i);
+        }
+    }
+
+    neverc_map_free(m);
+}
+
+static void test_delete_then_reinsert(void) {
+    printf("[delete_then_reinsert]\n");
+    neverc_map_t *m = neverc_map_new();
+    int v1 = 1, v2 = 2, v3 = 3, v4 = 4, v5 = 5;
+    neverc_map_set(m, "alpha", &v1);
+    neverc_map_set(m, "beta",  &v2);
+    neverc_map_set(m, "gamma", &v3);
+    neverc_map_set(m, "delta", &v4);
+    neverc_map_set(m, "epsilon", &v5);
+
+    neverc_map_delete(m, "beta");
+    neverc_map_delete(m, "delta");
+
+    ASSERT_TRUE(neverc_map_has(m, "alpha"));
+    ASSERT_TRUE(!neverc_map_has(m, "beta"));
+    ASSERT_TRUE(neverc_map_has(m, "gamma"));
+    ASSERT_TRUE(!neverc_map_has(m, "delta"));
+    ASSERT_TRUE(neverc_map_has(m, "epsilon"));
+
+    int v6 = 66;
+    neverc_map_set(m, "beta", &v6);
+    ASSERT_TRUE(neverc_map_has(m, "beta"));
+    ASSERT_INT_EQ(*(int *)neverc_map_get(m, "beta"), 66);
+    ASSERT_INT_EQ((int)neverc_map_len(m), 4);
+
+    neverc_map_free(m);
+}
+
 int main(void) {
     printf("=== NeverC maps Tests ===\n");
     test_basic();
@@ -167,6 +226,8 @@ int main(void) {
     test_clone();
     test_many_entries();
     test_copy();
+    test_delete_func_probe_chain();
+    test_delete_then_reinsert();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

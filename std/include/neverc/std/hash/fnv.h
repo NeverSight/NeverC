@@ -16,10 +16,24 @@ extern "C" {
  * FNV-1a: hash ^= byte; hash = hash * prime   (better avalanche)
  */
 
-uint32_t neverc_fnv_32(const void *data, size_t len);
-uint32_t neverc_fnv_32a(const void *data, size_t len);
-uint64_t neverc_fnv_64(const void *data, size_t len);
-uint64_t neverc_fnv_64a(const void *data, size_t len);
+uint32_t neverc_fnv_sum32(const void *data, size_t len);
+uint32_t neverc_fnv_sum32a(const void *data, size_t len);
+uint64_t neverc_fnv_sum64(const void *data, size_t len);
+uint64_t neverc_fnv_sum64a(const void *data, size_t len);
+
+typedef struct {
+    uint64_t hi;
+    uint64_t lo;
+} neverc_fnv_128_t;
+
+neverc_fnv_128_t neverc_fnv_sum128(const void *data, size_t len);
+neverc_fnv_128_t neverc_fnv_sum128a(const void *data, size_t len);
+
+/* Backward-compat aliases */
+#define neverc_fnv_32  neverc_fnv_sum32
+#define neverc_fnv_32a neverc_fnv_sum32a
+#define neverc_fnv_64  neverc_fnv_sum64
+#define neverc_fnv_64a neverc_fnv_sum64a
 
 #ifdef __cplusplus
 }

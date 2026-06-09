@@ -37,8 +37,20 @@ neverc_context_t *neverc_context_with_deadline(neverc_context_t *parent,
                                                 int64_t deadline_ms,
                                                 neverc_cancel_func_t *cancel_out);
 
+neverc_context_t *neverc_context_with_timeout_cause(neverc_context_t *parent,
+                                                     int64_t timeout_ms,
+                                                     neverc_cancel_func_t *cancel_out,
+                                                     const char *cause);
+
+neverc_context_t *neverc_context_with_deadline_cause(neverc_context_t *parent,
+                                                      int64_t deadline_ms,
+                                                      neverc_cancel_func_t *cancel_out,
+                                                      const char *cause);
+
 neverc_context_t *neverc_context_with_value(neverc_context_t *parent,
                                              const char *key, const void *value);
+
+neverc_context_t *neverc_context_without_cancel(neverc_context_t *parent);
 
 int         neverc_context_done(const neverc_context_t *ctx);
 const char *neverc_context_err(const neverc_context_t *ctx);
@@ -47,6 +59,10 @@ const void *neverc_context_value(const neverc_context_t *ctx, const char *key);
 int64_t     neverc_context_deadline(const neverc_context_t *ctx);
 
 void neverc_context_free(neverc_context_t *ctx);
+
+typedef int (*neverc_context_stop_func_t)(void);
+neverc_context_stop_func_t neverc_context_after_func(neverc_context_t *ctx,
+                                                      void (*f)(void));
 
 #ifdef __cplusplus
 }

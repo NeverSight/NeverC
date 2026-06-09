@@ -61,6 +61,50 @@ static void test_fnv64a(void) {
     check_u64("fnv64a(foobar)", neverc_fnv_64a("foobar", 6), 0x85944171f73967e8ULL);
 }
 
+static void check_128(const char *name, neverc_fnv_128_t got, uint64_t exp_hi, uint64_t exp_lo) {
+    tests_run++;
+    if (got.hi == exp_hi && got.lo == exp_lo) {
+        tests_passed++;
+    } else {
+        tests_failed++;
+        printf("  FAIL: %s: got {0x%016llx, 0x%016llx}, expected {0x%016llx, 0x%016llx}\n",
+               name, (unsigned long long)got.hi, (unsigned long long)got.lo,
+               (unsigned long long)exp_hi, (unsigned long long)exp_lo);
+    }
+}
+
+static void test_fnv128(void) {
+    printf("[fnv128]\n");
+    neverc_fnv_128_t h0 = neverc_fnv_sum128("", 0);
+    check_128("fnv128(empty)", h0, 0x6c62272e07bb0142ULL, 0x62b821756295c58dULL);
+
+    neverc_fnv_128_t ha = neverc_fnv_sum128("a", 1);
+    tests_run++;
+    if (ha.hi != h0.hi || ha.lo != h0.lo) tests_passed++;
+    else { tests_failed++; printf("  FAIL: fnv128(a) should differ from empty\n"); }
+
+    neverc_fnv_128_t h1 = neverc_fnv_sum128("test", 4);
+    neverc_fnv_128_t h2 = neverc_fnv_sum128("test", 4);
+    check_128("fnv128 deterministic", h2, h1.hi, h1.lo);
+}
+
+static void test_fnv128a(void) {
+    printf("[fnv128a]\n");
+    neverc_fnv_128_t h0 = neverc_fnv_sum128a("", 0);
+    check_128("fnv128a(empty)", h0, 0x6c62272e07bb0142ULL, 0x62b821756295c58dULL);
+
+    neverc_fnv_128_t ha = neverc_fnv_sum128a("a", 1);
+    tests_run++;
+    if (ha.hi != h0.hi || ha.lo != h0.lo) tests_passed++;
+    else { tests_failed++; printf("  FAIL: fnv128a(a) should differ from empty\n"); }
+
+    neverc_fnv_128_t h1_128 = neverc_fnv_sum128("abc", 3);
+    neverc_fnv_128_t h1a_128 = neverc_fnv_sum128a("abc", 3);
+    tests_run++;
+    if (h1_128.hi != h1a_128.hi || h1_128.lo != h1a_128.lo) tests_passed++;
+    else { tests_failed++; printf("  FAIL: fnv128 vs fnv128a should differ\n"); }
+}
+
 static void test_consistency(void) {
     printf("[consistency]\n");
     const char *data = "The quick brown fox jumps over the lazy dog";
@@ -85,6 +129,8 @@ int main(void) {
     test_fnv32a();
     test_fnv64();
     test_fnv64a();
+    test_fnv128();
+    test_fnv128a();
     test_consistency();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

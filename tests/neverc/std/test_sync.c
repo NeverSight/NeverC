@@ -112,13 +112,35 @@ static void test_rwmutex(void) {
     tests_run++; tests_passed++;
 }
 
+static void test_rwmutex_try(void) {
+    printf("[rwmutex_try]\n");
+    neverc_rwmutex_t rw;
+    neverc_rwmutex_init(&rw);
+
+    ASSERT_TRUE(neverc_rwmutex_tryrlock(&rw));
+    ASSERT_TRUE(neverc_rwmutex_tryrlock(&rw));
+    ASSERT_TRUE(!neverc_rwmutex_trylock(&rw));
+    neverc_rwmutex_runlock(&rw);
+    neverc_rwmutex_runlock(&rw);
+
+    ASSERT_TRUE(neverc_rwmutex_trylock(&rw));
+    ASSERT_TRUE(!neverc_rwmutex_tryrlock(&rw));
+    ASSERT_TRUE(!neverc_rwmutex_trylock(&rw));
+    neverc_rwmutex_unlock(&rw);
+
+    ASSERT_TRUE(neverc_rwmutex_tryrlock(&rw));
+    neverc_rwmutex_runlock(&rw);
+
+    neverc_rwmutex_destroy(&rw);
+}
+
 static neverc_waitgroup_t g_wg;
 static volatile int wg_sum = 0;
 
 #if defined(_WIN32)
 static DWORD WINAPI wg_worker(LPVOID arg) {
     int val = *(int *)arg;
-    __atomic_fetch_add(&wg_sum, val, __ATOMIC_SEQ_CST);
+    InterlockedExchangeAdd((volatile long *)&wg_sum, (long)val);
     neverc_waitgroup_done(&g_wg);
     return 0;
 }
@@ -218,15 +240,388 @@ static void test_cond(void) {
     tests_run++; tests_passed++;
 }
 
+#include <stdlib.h>
+#include <string.h>
+
+static void *pool_new_func(void) {
+    int *p = (int *)malloc(sizeof(int));
+    *p = 42;
+    return p;
+}
+
+static void test_pool_basic(void) {
+    printf("[pool_basic]\n");
+    neverc_sync_pool_t *pool = neverc_sync_pool_new(pool_new_func);
+    ASSERT_TRUE(pool != NULL);
+
+    void *obj = neverc_sync_pool_get(pool);
+    ASSERT_TRUE(obj != NULL);
+    ASSERT_INT_EQ(*(int *)obj, 42);
+
+    *(int *)obj = 100;
+    neverc_sync_pool_put(pool, obj);
+
+    void *obj2 = neverc_sync_pool_get(pool);
+    ASSERT_TRUE(obj2 == obj);
+    ASSERT_INT_EQ(*(int *)obj2, 100);
+
+    free(obj2);
+    neverc_sync_pool_free(pool);
+}
+
+static void test_pool_no_new_func(void) {
+    printf("[pool_no_new_func]\n");
+    neverc_sync_pool_t *pool = neverc_sync_pool_new(NULL);
+    void *obj = neverc_sync_pool_get(pool);
+    ASSERT_TRUE(obj == NULL);
+
+    int val = 77;
+    neverc_sync_pool_put(pool, &val);
+    void *got = neverc_sync_pool_get(pool);
+    ASSERT_TRUE(got == &val);
+
+    neverc_sync_pool_free(pool);
+}
+
+static void test_sync_map_basic(void) {
+    printf("[sync_map_basic]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    ASSERT_TRUE(m != NULL);
+
+    int val1 = 10, val2 = 20, val3 = 30;
+    neverc_sync_map_store(m, "key1", &val1);
+    neverc_sync_map_store(m, "key2", &val2);
+    neverc_sync_map_store(m, "key3", &val3);
+
+    int ok = 0;
+    void *got = neverc_sync_map_load(m, "key1", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 10);
+
+    got = neverc_sync_map_load(m, "key2", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 20);
+
+    got = neverc_sync_map_load(m, "nonexist", &ok);
+    ASSERT_TRUE(!ok);
+    ASSERT_TRUE(got == NULL);
+
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_overwrite(void) {
+    printf("[sync_map_overwrite]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    int v1 = 1, v2 = 2;
+    neverc_sync_map_store(m, "x", &v1);
+    neverc_sync_map_store(m, "x", &v2);
+
+    int ok = 0;
+    void *got = neverc_sync_map_load(m, "x", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 2);
+
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_delete(void) {
+    printf("[sync_map_delete]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    int v = 99;
+    neverc_sync_map_store(m, "del_me", &v);
+
+    int ok = 0;
+    neverc_sync_map_load(m, "del_me", &ok);
+    ASSERT_TRUE(ok);
+
+    neverc_sync_map_delete(m, "del_me");
+    neverc_sync_map_load(m, "del_me", &ok);
+    ASSERT_TRUE(!ok);
+
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_load_or_store(void) {
+    printf("[sync_map_load_or_store]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    int v1 = 111, v2 = 222;
+    int loaded = 0;
+
+    void *actual = neverc_sync_map_load_or_store(m, "los", &v1, &loaded);
+    ASSERT_TRUE(!loaded);
+    ASSERT_INT_EQ(*(int *)actual, 111);
+
+    actual = neverc_sync_map_load_or_store(m, "los", &v2, &loaded);
+    ASSERT_TRUE(loaded);
+    ASSERT_INT_EQ(*(int *)actual, 111);
+
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_load_and_delete(void) {
+    printf("[sync_map_load_and_delete]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    int v = 555;
+    neverc_sync_map_store(m, "lad", &v);
+
+    int loaded = 0;
+    void *got = neverc_sync_map_load_and_delete(m, "lad", &loaded);
+    ASSERT_TRUE(loaded);
+    ASSERT_INT_EQ(*(int *)got, 555);
+
+    int ok = 0;
+    neverc_sync_map_load(m, "lad", &ok);
+    ASSERT_TRUE(!ok);
+
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_clear(void) {
+    printf("[sync_map_clear]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    int v = 1;
+    neverc_sync_map_store(m, "a", &v);
+    neverc_sync_map_store(m, "b", &v);
+    neverc_sync_map_store(m, "c", &v);
+
+    neverc_sync_map_clear(m);
+
+    int ok = 0;
+    neverc_sync_map_load(m, "a", &ok);
+    ASSERT_TRUE(!ok);
+    neverc_sync_map_load(m, "b", &ok);
+    ASSERT_TRUE(!ok);
+
+    neverc_sync_map_free(m);
+}
+
+static int range_count;
+static int range_cb(const char *key, void *value, void *user) {
+    (void)key; (void)value; (void)user;
+    range_count++;
+    return 1;
+}
+
+static void test_sync_map_range(void) {
+    printf("[sync_map_range]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    int v = 1;
+    neverc_sync_map_store(m, "r1", &v);
+    neverc_sync_map_store(m, "r2", &v);
+    neverc_sync_map_store(m, "r3", &v);
+
+    range_count = 0;
+    neverc_sync_map_range(m, range_cb, NULL);
+    ASSERT_INT_EQ(range_count, 3);
+
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_grow(void) {
+    printf("[sync_map_grow]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    char key[32];
+    int vals[100];
+    for (int i = 0; i < 100; i++) {
+        vals[i] = i;
+        snprintf(key, sizeof(key), "key_%d", i);
+        neverc_sync_map_store(m, key, &vals[i]);
+    }
+    int ok = 0;
+    for (int i = 0; i < 100; i++) {
+        snprintf(key, sizeof(key), "key_%d", i);
+        void *got = neverc_sync_map_load(m, key, &ok);
+        ASSERT_TRUE(ok);
+        ASSERT_INT_EQ(*(int *)got, i);
+    }
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_delete_then_lookup(void) {
+    printf("[sync_map_delete_then_lookup]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+
+    int v1 = 1, v2 = 2, v3 = 3, v4 = 4, v5 = 5;
+    neverc_sync_map_store(m, "alpha", &v1);
+    neverc_sync_map_store(m, "beta",  &v2);
+    neverc_sync_map_store(m, "gamma", &v3);
+    neverc_sync_map_store(m, "delta", &v4);
+    neverc_sync_map_store(m, "epsilon", &v5);
+
+    neverc_sync_map_delete(m, "beta");
+    neverc_sync_map_delete(m, "delta");
+
+    int ok = 0;
+    void *got = neverc_sync_map_load(m, "alpha", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 1);
+
+    got = neverc_sync_map_load(m, "gamma", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 3);
+
+    got = neverc_sync_map_load(m, "epsilon", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 5);
+
+    neverc_sync_map_load(m, "beta", &ok);
+    ASSERT_TRUE(!ok);
+    neverc_sync_map_load(m, "delta", &ok);
+    ASSERT_TRUE(!ok);
+
+    int v6 = 66;
+    neverc_sync_map_store(m, "beta", &v6);
+    got = neverc_sync_map_load(m, "beta", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 66);
+
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_stress_delete(void) {
+    printf("[sync_map_stress_delete]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    char key[32];
+    int vals[200];
+
+    for (int i = 0; i < 200; i++) {
+        vals[i] = i * 10;
+        snprintf(key, sizeof(key), "stress_%d", i);
+        neverc_sync_map_store(m, key, &vals[i]);
+    }
+
+    for (int i = 0; i < 200; i += 2) {
+        snprintf(key, sizeof(key), "stress_%d", i);
+        neverc_sync_map_delete(m, key);
+    }
+
+    int ok = 0;
+    for (int i = 0; i < 200; i++) {
+        snprintf(key, sizeof(key), "stress_%d", i);
+        void *got = neverc_sync_map_load(m, key, &ok);
+        if (i % 2 == 0) {
+            ASSERT_TRUE(!ok);
+        } else {
+            ASSERT_TRUE(ok);
+            ASSERT_INT_EQ(*(int *)got, i * 10);
+        }
+    }
+
+    for (int i = 0; i < 200; i += 2) {
+        vals[i] = i * 100;
+        snprintf(key, sizeof(key), "stress_%d", i);
+        neverc_sync_map_store(m, key, &vals[i]);
+    }
+
+    for (int i = 0; i < 200; i++) {
+        snprintf(key, sizeof(key), "stress_%d", i);
+        void *got = neverc_sync_map_load(m, key, &ok);
+        ASSERT_TRUE(ok);
+        if (i % 2 == 0) {
+            ASSERT_INT_EQ(*(int *)got, i * 100);
+        } else {
+            ASSERT_INT_EQ(*(int *)got, i * 10);
+        }
+    }
+
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_swap(void) {
+    printf("[sync_map_swap]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    int v1 = 10, v2 = 20, v3 = 30;
+    int loaded = 0;
+
+    void *prev = neverc_sync_map_swap(m, "sw", &v1, &loaded);
+    ASSERT_TRUE(!loaded);
+    ASSERT_TRUE(prev == NULL);
+
+    prev = neverc_sync_map_swap(m, "sw", &v2, &loaded);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(prev == &v1);
+
+    prev = neverc_sync_map_swap(m, "sw", &v3, &loaded);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(prev == &v2);
+
+    int ok = 0;
+    void *got = neverc_sync_map_load(m, "sw", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 30);
+
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_compare_and_swap(void) {
+    printf("[sync_map_compare_and_swap]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    int v1 = 100, v2 = 200, v3 = 300;
+    neverc_sync_map_store(m, "cas", &v1);
+
+    ASSERT_TRUE(!neverc_sync_map_compare_and_swap(m, "cas", &v2, &v3));
+
+    int ok = 0;
+    void *got = neverc_sync_map_load(m, "cas", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 100);
+
+    ASSERT_TRUE(neverc_sync_map_compare_and_swap(m, "cas", &v1, &v2));
+    got = neverc_sync_map_load(m, "cas", &ok);
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(*(int *)got, 200);
+
+    ASSERT_TRUE(!neverc_sync_map_compare_and_swap(m, "nonexist", &v1, &v2));
+
+    neverc_sync_map_free(m);
+}
+
+static void test_sync_map_compare_and_delete(void) {
+    printf("[sync_map_compare_and_delete]\n");
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    int v1 = 42, v2 = 99;
+    neverc_sync_map_store(m, "cad", &v1);
+
+    ASSERT_TRUE(!neverc_sync_map_compare_and_delete(m, "cad", &v2));
+
+    int ok = 0;
+    neverc_sync_map_load(m, "cad", &ok);
+    ASSERT_TRUE(ok);
+
+    ASSERT_TRUE(neverc_sync_map_compare_and_delete(m, "cad", &v1));
+    neverc_sync_map_load(m, "cad", &ok);
+    ASSERT_TRUE(!ok);
+
+    ASSERT_TRUE(!neverc_sync_map_compare_and_delete(m, "nonexist", &v1));
+
+    neverc_sync_map_free(m);
+}
+
 int main(void) {
     printf("=== NeverC sync Tests ===\n");
     test_mutex_basic();
     test_mutex_trylock();
     test_mutex_concurrent();
     test_rwmutex();
+    test_rwmutex_try();
     test_waitgroup();
     test_once();
     test_cond();
+    test_pool_basic();
+    test_pool_no_new_func();
+    test_sync_map_basic();
+    test_sync_map_overwrite();
+    test_sync_map_delete();
+    test_sync_map_load_or_store();
+    test_sync_map_load_and_delete();
+    test_sync_map_clear();
+    test_sync_map_range();
+    test_sync_map_grow();
+    test_sync_map_delete_then_lookup();
+    test_sync_map_stress_delete();
+    test_sync_map_swap();
+    test_sync_map_compare_and_swap();
+    test_sync_map_compare_and_delete();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

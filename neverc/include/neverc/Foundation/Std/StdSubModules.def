@@ -50,6 +50,7 @@ STD_SUBMODULE(net, resolve)
 STD_SUBMODULE(net, interface)
 
 // image
+STD_SUBMODULE(image, image)
 STD_SUBMODULE(image, color)
 STD_SUBMODULE(image, draw)
 STD_SUBMODULE(image, png)

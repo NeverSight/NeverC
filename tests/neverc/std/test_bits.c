@@ -245,6 +245,54 @@ static void test_32_arithmetic(void) {
     check_int("mul32 big lo", (int)lo, (int)0xFFFFFFFE);
 }
 
+static void test_rotate_edge_cases(void) {
+    printf("[rotate edge cases — k=0 (was UB)]\n");
+    check_u32("rot32(0xABCD,0)", neverc_bits_rotate_left32(0xABCD1234U, 0), 0xABCD1234U);
+    check_u64("rot64(0xDEAD,0)", neverc_bits_rotate_left64(0xDEADBEEFCAFEBABEULL, 0), 0xDEADBEEFCAFEBABEULL);
+    check_int("rot8(0x5A,0)", (int)neverc_bits_rotate_left8(0x5A, 0), 0x5A);
+    check_int("rot16(0x1234,0)", (int)neverc_bits_rotate_left16(0x1234, 0), 0x1234);
+    check_u32("rot32(0x12345678,32)", neverc_bits_rotate_left32(0x12345678U, 32), 0x12345678U);
+    check_u64("rot64(x,64)", neverc_bits_rotate_left64(0x123ULL, 64), 0x123ULL);
+    check_int("rot8(x,8)", (int)neverc_bits_rotate_left8(0xAB, 8), 0xAB);
+    check_int("rot16(x,16)", (int)neverc_bits_rotate_left16(0xABCD, 16), (int)(uint16_t)0xABCD);
+
+    unsigned int val = 0xDEADBEEFU;
+    check_int("rotate(x,0) generic", (int)neverc_bits_rotate_left(val, 0), (int)val);
+}
+
+static void test_generic_versions(void) {
+    printf("[generic uint-sized versions]\n");
+    unsigned int x = 42, y = 58;
+
+    unsigned int sum, carry;
+    neverc_bits_add(x, y, 0, &sum, &carry);
+    check_int("add(42,58,0).sum", (int)sum, 100);
+    check_int("add(42,58,0).carry", (int)carry, 0);
+
+    unsigned int diff, borrow;
+    neverc_bits_sub(100, 42, 0, &diff, &borrow);
+    check_int("sub(100,42,0).diff", (int)diff, 58);
+    check_int("sub(100,42,0).borrow", (int)borrow, 0);
+
+    unsigned int hi, lo;
+    neverc_bits_mul(6, 7, &hi, &lo);
+    check_int("mul(6,7).lo", (int)lo, 42);
+    check_int("mul(6,7).hi", (int)hi, 0);
+
+    unsigned int quo, rem;
+    neverc_bits_div(0, 100, 7, &quo, &rem);
+    check_int("div(0,100,7).quo", (int)quo, 14);
+    check_int("div(0,100,7).rem", (int)rem, 2);
+
+    check_int("rem(0,100,7)", (int)neverc_bits_rem(0, 100, 7), 2);
+
+    unsigned int rv = neverc_bits_reverse(neverc_bits_reverse(0x12345678U));
+    check_int("reverse(reverse(x))==x", (int)rv, (int)0x12345678U);
+
+    unsigned int bsw = neverc_bits_reverse_bytes(neverc_bits_reverse_bytes(0xDEADBEEFU));
+    check_int("rbytes(rbytes(x))==x", (int)bsw, (int)0xDEADBEEFU);
+}
+
 static void test_division(void) {
     printf("[division]\n");
     uint32_t q32, r32;
@@ -281,6 +329,8 @@ int main(void) {
     test_consistency();
     test_8_16_variants();
     test_32_arithmetic();
+    test_rotate_edge_cases();
+    test_generic_versions();
     test_division();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

@@ -289,10 +289,6 @@ static void test_shuffle_uniformity(void) {
     check_true("shuffle chi2 < 40 (df=12)", chi2 < 40.0);
 }
 
-/*
- * Output quality: all 64 bits should be exercised.
- * OR together many outputs — result should have all bits set.
- */
 static void test_bit_coverage(void) {
     printf("[bit coverage]\n");
     neverc_rand_seed(7777);
@@ -300,6 +296,239 @@ static void test_bit_coverage(void) {
     for (int i = 0; i < 200; i++)
         or_all |= neverc_rand_uint64();
     check_true("all 64 bits exercised", or_all == 0xFFFFFFFFFFFFFFFFULL);
+}
+
+static void test_int32(void) {
+    printf("[int32]\n");
+    neverc_rand_seed(4444);
+    int all_nonneg = 1;
+    int saw_large = 0;
+    for (int i = 0; i < 10000; i++) {
+        int32_t v = neverc_rand_int32();
+        if (v < 0) { all_nonneg = 0; break; }
+        if (v > (1 << 28)) saw_large = 1;
+    }
+    check_true("int32 all non-negative", all_nonneg);
+    check_true("int32 saw large values", saw_large);
+}
+
+static void test_int32n(void) {
+    printf("[int32n]\n");
+    neverc_rand_seed(5678);
+    int all_ok = 1;
+    for (int i = 0; i < 10000; i++) {
+        int32_t v = neverc_rand_int32n(100);
+        if (v < 0 || v >= 100) { all_ok = 0; break; }
+    }
+    check_true("int32n(100) in [0,100)", all_ok);
+    check_true("int32n(1) == 0", neverc_rand_int32n(1) == 0);
+    check_true("int32n(0) == 0", neverc_rand_int32n(0) == 0);
+}
+
+static void test_uint32n(void) {
+    printf("[uint32n]\n");
+    neverc_rand_seed(9012);
+    int all_ok = 1;
+    for (int i = 0; i < 10000; i++) {
+        uint32_t v = neverc_rand_uint32n(1000);
+        if (v >= 1000) { all_ok = 0; break; }
+    }
+    check_true("uint32n(1000) in [0,1000)", all_ok);
+}
+
+static void test_uint64n(void) {
+    printf("[uint64n]\n");
+    neverc_rand_seed(3456);
+    int all_ok = 1;
+    for (int i = 0; i < 10000; i++) {
+        uint64_t v = neverc_rand_uint64n(999999999ULL);
+        if (v >= 999999999ULL) { all_ok = 0; break; }
+    }
+    check_true("uint64n(999999999) in range", all_ok);
+    check_true("uint64n(1) == 0", neverc_rand_uint64n(1) == 0);
+}
+
+static void test_norm_float64(void) {
+    printf("[norm_float64]\n");
+    neverc_rand_seed(2024);
+    double sum = 0.0, sum_sq = 0.0;
+    const int N = 100000;
+    int saw_neg = 0, saw_pos = 0;
+    for (int i = 0; i < N; i++) {
+        double v = neverc_rand_norm_float64();
+        sum += v;
+        sum_sq += v * v;
+        if (v < -2.0) saw_neg = 1;
+        if (v > 2.0) saw_pos = 1;
+    }
+    double mean = sum / N;
+    double variance = sum_sq / N - mean * mean;
+    check_true("norm mean near 0", mean > -0.05 && mean < 0.05);
+    check_true("norm variance near 1", variance > 0.9 && variance < 1.1);
+    check_true("norm saw negative tail", saw_neg);
+    check_true("norm saw positive tail", saw_pos);
+}
+
+static void test_exp_float64(void) {
+    printf("[exp_float64]\n");
+    neverc_rand_seed(2025);
+    double sum = 0.0;
+    const int N = 100000;
+    int all_positive = 1;
+    int saw_large = 0;
+    for (int i = 0; i < N; i++) {
+        double v = neverc_rand_exp_float64();
+        if (v <= 0.0) { all_positive = 0; break; }
+        if (v > 5.0) saw_large = 1;
+        sum += v;
+    }
+    double mean = sum / N;
+    check_true("exp all positive", all_positive);
+    check_true("exp mean near 1", mean > 0.9 && mean < 1.1);
+    check_true("exp saw large values (tail)", saw_large);
+}
+
+static void test_int63n(void) {
+    printf("[int63n]\n");
+    neverc_rand_seed(11111);
+    int all_ok = 1;
+    for (int i = 0; i < 10000; i++) {
+        int64_t v = neverc_rand_int63n(100);
+        if (v < 0 || v >= 100) { all_ok = 0; break; }
+    }
+    check_true("int63n(100) in [0,100)", all_ok);
+    check_true("int63n(1) == 0", neverc_rand_int63n(1) == 0);
+    check_true("int63n(0) == 0", neverc_rand_int63n(0) == 0);
+
+    neverc_rand_seed(22222);
+    all_ok = 1;
+    for (int i = 0; i < 10000; i++) {
+        int64_t v = neverc_rand_int63n(1000000000LL);
+        if (v < 0 || v >= 1000000000LL) { all_ok = 0; break; }
+    }
+    check_true("int63n(1B) in range", all_ok);
+}
+
+static void test_read(void) {
+    printf("[read]\n");
+    neverc_rand_seed(33333);
+    unsigned char buf[64];
+    for (int i = 0; i < 64; i++) buf[i] = 0;
+    neverc_rand_read(buf, 64);
+
+    int nonzero = 0;
+    for (int i = 0; i < 64; i++) {
+        if (buf[i] != 0) nonzero++;
+    }
+    check_true("read fills buffer (>50% nonzero)", nonzero > 32);
+
+    neverc_rand_seed(33333);
+    unsigned char buf2[64];
+    neverc_rand_read(buf2, 64);
+    int same = 1;
+    for (int i = 0; i < 64; i++) {
+        if (buf[i] != buf2[i]) { same = 0; break; }
+    }
+    check_true("read deterministic with same seed", same);
+
+    unsigned char small[3];
+    neverc_rand_seed(44444);
+    neverc_rand_read(small, 3);
+    check_true("read handles non-aligned size", 1);
+
+    neverc_rand_read(small, 0);
+    check_true("read handles zero length", 1);
+}
+
+static void test_perm(void) {
+    printf("[perm]\n");
+    int perm[10];
+    neverc_rand_seed(7890);
+    neverc_rand_perm(10, perm);
+
+    int sum = 0, identity = 1;
+    int seen[10] = {0};
+    for (int i = 0; i < 10; i++) {
+        sum += perm[i];
+        if (perm[i] != i) identity = 0;
+        if (perm[i] >= 0 && perm[i] < 10) seen[perm[i]] = 1;
+    }
+    int all_seen = 1;
+    for (int i = 0; i < 10; i++) if (!seen[i]) all_seen = 0;
+    check_true("perm preserves elements (sum)", sum == 45);
+    check_true("perm all elements present", all_seen);
+    check_true("perm reorders", !identity);
+}
+
+static void test_zipf(void) {
+    printf("[zipf]\n");
+    neverc_rand_seed(8888);
+    neverc_rand_zipf_t z;
+
+    check_true("zipf init fails for s<=1", neverc_rand_zipf_init(&z, 0.5, 1.0, 100) == 0);
+    check_true("zipf init fails for v<1", neverc_rand_zipf_init(&z, 2.0, 0.5, 100) == 0);
+    check_true("zipf init succeeds", neverc_rand_zipf_init(&z, 2.0, 1.0, 100) == 1);
+
+    int all_in_range = 1;
+    int counts[101] = {0};
+    const int N = 100000;
+    for (int i = 0; i < N; i++) {
+        uint64_t v = neverc_rand_zipf_uint64(&z);
+        if (v > 100) { all_in_range = 0; break; }
+        counts[v]++;
+    }
+    check_true("zipf all in [0, imax]", all_in_range);
+    check_true("zipf k=0 most frequent", counts[0] > counts[10]);
+    check_true("zipf monotone decreasing (0>1>10)", counts[0] > counts[1] && counts[1] > counts[10]);
+
+    neverc_rand_zipf_t z2;
+    neverc_rand_zipf_init(&z2, 1.5, 2.0, 50);
+    neverc_rand_seed(1234);
+    int all_ok = 1;
+    for (int i = 0; i < 10000; i++) {
+        uint64_t v = neverc_rand_zipf_uint64(&z2);
+        if (v > 50) { all_ok = 0; break; }
+    }
+    check_true("zipf(s=1.5,v=2,imax=50) in range", all_ok);
+}
+
+static void test_int_uint(void) {
+    printf("[int/uint/intn_int/uintn]\n");
+    neverc_rand_seed(777);
+
+    int all_nonneg = 1;
+    int saw_large = 0;
+    for (int i = 0; i < 10000; i++) {
+        int v = neverc_rand_int();
+        if (v < 0) { all_nonneg = 0; break; }
+        if (v > (1 << 20)) saw_large = 1;
+    }
+    check_true("int() all non-negative", all_nonneg);
+    check_true("int() uses high bits", saw_large);
+
+    neverc_rand_seed(888);
+    int saw_uint_nonzero = 0;
+    for (int i = 0; i < 1000; i++) {
+        unsigned int v = neverc_rand_uint();
+        if (v != 0) saw_uint_nonzero = 1;
+    }
+    check_true("uint() produces non-zero", saw_uint_nonzero);
+
+    neverc_rand_seed(999);
+    int intn_ok = 1;
+    for (int i = 0; i < 10000; i++) {
+        int v = neverc_rand_intn_int(100);
+        if (v < 0 || v >= 100) { intn_ok = 0; break; }
+    }
+    check_true("intn_int(100) in [0,100)", intn_ok);
+
+    neverc_rand_seed(111);
+    int uintn_ok = 1;
+    for (int i = 0; i < 10000; i++) {
+        unsigned int v = neverc_rand_uintn(200);
+        if (v >= 200) { uintn_ok = 0; break; }
+    }
+    check_true("uintn(200) in [0,200)", uintn_ok);
 }
 
 int main(void) {
@@ -319,6 +548,17 @@ int main(void) {
     test_shuffle();
     test_shuffle_uniformity();
     test_bit_coverage();
+    test_int32();
+    test_int32n();
+    test_uint32n();
+    test_uint64n();
+    test_norm_float64();
+    test_exp_float64();
+    test_int63n();
+    test_read();
+    test_perm();
+    test_zipf();
+    test_int_uint();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0)

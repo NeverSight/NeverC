@@ -63,7 +63,7 @@ STD_TEST(math, "src/math/abs.c", "src/math/acos.c", "src/math/acosh.c", "src/mat
 STD_TEST(strconv, "src/strconv/format_bool.c", "src/strconv/format_float.c", "src/strconv/format_int.c", "src/strconv/parse_bool.c", "src/strconv/parse_float.c", "src/strconv/parse_int.c", "src/strconv/quote.c", "src/unicode/utf8/utf8.c", "src/unicode/unicode.c")
 STD_TEST(path, "src/path/base.c", "src/path/dir.c", "src/path/ext.c", "src/path/isabs.c", "src/path/clean.c", "src/path/join.c", "src/path/split.c", "src/path/match.c")
 STD_TEST(sort, "src/sort/sort.c")
-STD_TEST(rand, "src/math/rand/rand.c")
+STD_TEST(rand, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/math/frexp.c", "src/math/ldexp.c", "src/math/floor.c", "src/math/modf.c", "src/math/trunc.c", "src/math/sqrt.c")
 STD_TEST(bits, "src/math/bits/bits.c")
 STD_TEST(cmplx, "src/math/cmplx/cmplx.c", "src/math/abs.c", "src/math/acos.c", "src/math/acosh.c", "src/math/asin.c", "src/math/asinh.c", "src/math/atan.c", "src/math/atan2.c", "src/math/atanh.c", "src/math/cbrt.c", "src/math/ceil.c", "src/math/copysign.c", "src/math/cos.c", "src/math/cosh.c", "src/math/dim.c", "src/math/erf.c", "src/math/erfc.c", "src/math/erfcinv.c", "src/math/erfinv.c", "src/math/exp.c", "src/math/exp2.c", "src/math/expm1.c", "src/math/float32bits.c", "src/math/float64bits.c", "src/math/floor.c", "src/math/fma.c", "src/math/fmod.c", "src/math/frexp.c", "src/math/gamma.c", "src/math/hypot.c", "src/math/ilogb.c", "src/math/inf.c", "src/math/isinf.c", "src/math/isnan.c", "src/math/j0.c", "src/math/j1.c", "src/math/jn.c", "src/math/ldexp.c", "src/math/lgamma.c", "src/math/log.c", "src/math/log10.c", "src/math/log1p.c", "src/math/log2.c", "src/math/logb.c", "src/math/max.c", "src/math/min.c", "src/math/modf.c", "src/math/nan.c", "src/math/nextafter.c", "src/math/nextafter32.c", "src/math/pow.c", "src/math/pow10.c", "src/math/remainder.c", "src/math/round.c", "src/math/roundtoeven.c", "src/math/signbit.c", "src/math/sin.c", "src/math/sincos.c", "src/math/sinh.c", "src/math/sqrt.c", "src/math/tan.c", "src/math/tanh.c", "src/math/trunc.c")
 STD_TEST(big, "src/math/big/big.c")
@@ -282,7 +282,16 @@ STD_TEST(tzdata, "src/time/tzdata/tzdata.c")
 // ===== CString =====
 STD_TEST(cstring, "src/cstring/cstring.c")
 
-// ===== Dot-syntax =====
+// ===== Arena =====
+STD_TEST(arena, "src/arena/arena.c")
+
+// ===== Unique =====
+STD_TEST(unique, "src/unique/unique.c")
+
+// ===== Weak =====
+STD_TEST(weak, "src/weak/weak.c")
+
+// ===== Dot-syntax (comprehensive) =====
 STD_TEST(dot_syntax,
     "src/math/abs.c", "src/math/acos.c", "src/math/acosh.c", "src/math/asin.c",
     "src/math/asinh.c", "src/math/atan.c", "src/math/atan2.c", "src/math/atanh.c",
@@ -301,7 +310,48 @@ STD_TEST(dot_syntax,
     "src/math/roundtoeven.c", "src/math/signbit.c", "src/math/sin.c",
     "src/math/sincos.c", "src/math/sinh.c", "src/math/sqrt.c", "src/math/tan.c",
     "src/math/tanh.c", "src/math/trunc.c",
+    "src/math/rand/rand.c",
+    "src/math/bits/bits.c",
     "src/strconv/format_int.c", "src/strconv/parse_int.c", "src/strconv/format_bool.c",
     "src/encoding/hex/encode.c", "src/encoding/hex/decode.c",
+    "src/encoding/base64/base64.c",
     "src/hash/crc32/crc32.c",
-    "src/container/vector/vector.c")
+    "src/hash/fnv/fnv.c",
+    "src/hash/adler32/adler32.c",
+    "src/container/vector/vector.c",
+    "src/sort/sort.c",
+    "src/cmp/cmp.c",
+    "src/errors/errors.c",
+    "src/crypto/sha256/sha256.c",
+    "src/crypto/sha1/sha1.c",
+    "src/crypto/md5/md5.c",
+    "src/bytes/bytes.c",
+    "src/unicode/unicode.c",
+    "src/html/html.c",
+    "src/path/base.c", "src/path/dir.c", "src/path/ext.c", "src/path/isabs.c", "src/path/clean.c",
+    "src/slices/slices.c",
+    "src/maps/maps.c",
+    "src/regexp/regexp.c",
+    "src/uuid/uuid.c",
+    "src/fmt/fmt.c",
+    "src/cstring/cstring.c",
+    "src/context/context.c",
+    "src/io/io.c",
+    "src/time/time.c",
+    "src/compress/gzip/gzip.c", "src/compress/flate/flate.c",
+    "src/compress/zlib/zlib.c",
+    "src/sync/sync.c",
+    "src/sync/atomic/atomic.c",
+    "src/os/os.c",
+    "src/log/log.c",
+    "src/encoding/json/json.c",
+    "src/encoding/binary/binary.c",
+    "src/container/list/list.c",
+    "src/container/ring/ring.c",
+    "src/path/filepath/filepath.c",
+    "src/hash/crc64/crc64.c",
+    "src/image/color/color.c",
+    "src/flag/flag.c",
+    "src/arena/arena.c",
+    "src/unique/unique.c",
+    "src/weak/weak.c")

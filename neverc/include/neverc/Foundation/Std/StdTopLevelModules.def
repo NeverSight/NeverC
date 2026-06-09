@@ -36,4 +36,7 @@ STD_MODULE(archive)
 STD_MODULE(text)
 STD_MODULE(debug)
 STD_MODULE(index)
+STD_MODULE(arena)
+STD_MODULE(unique)
+STD_MODULE(weak)
 #undef STD_MODULE

@@ -48,8 +48,12 @@ void neverc_regexp_free_strings(char **strs, int count);
 /* QuoteMeta: escape all regex metacharacters in s.  Caller frees result. */
 char *neverc_regexp_quote_meta(const char *s);
 
+/* CompilePOSIX: leftmost-longest match semantics (POSIX ERE rules). */
+neverc_regexp_t *neverc_regexp_compile_posix(const char *pattern, const char **errp);
+
 /* MustCompile: like Compile but aborts on error */
 neverc_regexp_t *neverc_regexp_must_compile(const char *pattern);
+neverc_regexp_t *neverc_regexp_must_compile_posix(const char *pattern);
 
 #ifdef __cplusplus
 }

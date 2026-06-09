@@ -36,41 +36,53 @@ int neverc_bits_len32(uint32_t x);
 int neverc_bits_len64(uint64_t x);
 
 /* --- Rotate Left --- */
+unsigned int neverc_bits_rotate_left(unsigned int x, int k);
 uint8_t  neverc_bits_rotate_left8(uint8_t x, int k);
 uint16_t neverc_bits_rotate_left16(uint16_t x, int k);
 uint32_t neverc_bits_rotate_left32(uint32_t x, int k);
 uint64_t neverc_bits_rotate_left64(uint64_t x, int k);
 
 /* --- Bit Reverse --- */
+unsigned int neverc_bits_reverse(unsigned int x);
 uint8_t  neverc_bits_reverse8(uint8_t x);
 uint16_t neverc_bits_reverse16(uint16_t x);
 uint32_t neverc_bits_reverse32(uint32_t x);
 uint64_t neverc_bits_reverse64(uint64_t x);
 
 /* --- Byte Swap --- */
+unsigned int neverc_bits_reverse_bytes(unsigned int x);
 uint16_t neverc_bits_reverse_bytes16(uint16_t x);
 uint32_t neverc_bits_reverse_bytes32(uint32_t x);
 uint64_t neverc_bits_reverse_bytes64(uint64_t x);
 
 /* --- Multi-precision arithmetic --- */
+void neverc_bits_add(unsigned int x, unsigned int y, unsigned int carry,
+                     unsigned int *sum, unsigned int *carry_out);
 void neverc_bits_add32(uint32_t x, uint32_t y, uint32_t carry,
                        uint32_t *sum, uint32_t *carry_out);
 void neverc_bits_add64(uint64_t x, uint64_t y, uint64_t carry,
                        uint64_t *sum, uint64_t *carry_out);
+void neverc_bits_sub(unsigned int x, unsigned int y, unsigned int borrow,
+                     unsigned int *diff, unsigned int *borrow_out);
 void neverc_bits_sub32(uint32_t x, uint32_t y, uint32_t borrow,
                        uint32_t *diff, uint32_t *borrow_out);
 void neverc_bits_sub64(uint64_t x, uint64_t y, uint64_t borrow,
                        uint64_t *diff, uint64_t *borrow_out);
+void neverc_bits_mul(unsigned int x, unsigned int y,
+                     unsigned int *hi, unsigned int *lo);
 void neverc_bits_mul32(uint32_t x, uint32_t y,
                        uint32_t *hi, uint32_t *lo);
 void neverc_bits_mul64(uint64_t x, uint64_t y,
                        uint64_t *hi, uint64_t *lo);
 
 /* --- Division --- */
+void neverc_bits_div(unsigned int hi, unsigned int lo, unsigned int y,
+                     unsigned int *quo, unsigned int *rem);
 void neverc_bits_div32(uint32_t hi, uint32_t lo, uint32_t y,
                        uint32_t *quo, uint32_t *rem);
 void neverc_bits_div64(uint64_t hi, uint64_t lo, uint64_t y,
                        uint64_t *quo, uint64_t *rem);
+unsigned int neverc_bits_rem(unsigned int hi, unsigned int lo, unsigned int y);
 uint32_t neverc_bits_rem32(uint32_t hi, uint32_t lo, uint32_t y);
 uint64_t neverc_bits_rem64(uint64_t hi, uint64_t lo, uint64_t y);
 

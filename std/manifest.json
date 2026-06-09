@@ -179,26 +179,56 @@
     },
     "math/rand": {
       "header": "include/neverc/math/rand.h",
-      "description": "Pseudo-random number generation using xoshiro256** (mirrors Go math/rand package)",
+      "description": "Pseudo-random number generation using xoshiro256** with Ziggurat distributions (mirrors Go math/rand + rand/v2)",
       "symbols": {
         "neverc_rand_seed": "src/math/rand/rand.c",
         "neverc_rand_uint32": "src/math/rand/rand.c",
         "neverc_rand_uint64": "src/math/rand/rand.c",
+        "neverc_rand_int32": "src/math/rand/rand.c",
         "neverc_rand_int63": "src/math/rand/rand.c",
         "neverc_rand_intn": "src/math/rand/rand.c",
+        "neverc_rand_int32n": "src/math/rand/rand.c",
+        "neverc_rand_uint32n": "src/math/rand/rand.c",
+        "neverc_rand_uint64n": "src/math/rand/rand.c",
         "neverc_rand_float64": "src/math/rand/rand.c",
         "neverc_rand_float32": "src/math/rand/rand.c",
-        "neverc_rand_shuffle": "src/math/rand/rand.c"
+        "neverc_rand_norm_float64": "src/math/rand/rand.c",
+        "neverc_rand_int63n": "src/math/rand/rand.c",
+        "neverc_rand_exp_float64": "src/math/rand/rand.c",
+        "neverc_rand_read": "src/math/rand/rand.c",
+        "neverc_rand_perm": "src/math/rand/rand.c",
+        "neverc_rand_shuffle": "src/math/rand/rand.c",
+        "neverc_rand_int": "src/math/rand/rand.c",
+        "neverc_rand_uint": "src/math/rand/rand.c",
+        "neverc_rand_intn_int": "src/math/rand/rand.c",
+        "neverc_rand_uintn": "src/math/rand/rand.c",
+        "neverc_rand_zipf_init": "src/math/rand/rand.c",
+        "neverc_rand_zipf_uint64": "src/math/rand/rand.c"
       },
       "dot_methods": {
         "seed": "neverc_rand_seed",
         "uint32": "neverc_rand_uint32",
         "uint64": "neverc_rand_uint64",
+        "int32": "neverc_rand_int32",
         "int63": "neverc_rand_int63",
         "intn": "neverc_rand_intn",
+        "int32n": "neverc_rand_int32n",
+        "uint32n": "neverc_rand_uint32n",
+        "uint64n": "neverc_rand_uint64n",
         "float64": "neverc_rand_float64",
         "float32": "neverc_rand_float32",
-        "shuffle": "neverc_rand_shuffle"
+        "norm_float64": "neverc_rand_norm_float64",
+        "int63n": "neverc_rand_int63n",
+        "exp_float64": "neverc_rand_exp_float64",
+        "read": "neverc_rand_read",
+        "perm": "neverc_rand_perm",
+        "shuffle": "neverc_rand_shuffle",
+        "int": "neverc_rand_int",
+        "uint": "neverc_rand_uint",
+        "intn_int": "neverc_rand_intn_int",
+        "uintn": "neverc_rand_uintn",
+        "zipf_init": "neverc_rand_zipf_init",
+        "zipf_uint64": "neverc_rand_zipf_uint64"
       }
     },
     "encoding/base64": {
@@ -273,16 +303,20 @@
       "header": "include/neverc/hash/fnv.h",
       "description": "FNV-1 and FNV-1a non-cryptographic hash functions (mirrors Go hash/fnv package)",
       "symbols": {
-        "neverc_fnv_32": "src/hash/fnv/fnv.c",
-        "neverc_fnv_32a": "src/hash/fnv/fnv.c",
-        "neverc_fnv_64": "src/hash/fnv/fnv.c",
-        "neverc_fnv_64a": "src/hash/fnv/fnv.c"
+        "neverc_fnv_sum32": "src/hash/fnv/fnv.c",
+        "neverc_fnv_sum32a": "src/hash/fnv/fnv.c",
+        "neverc_fnv_sum64": "src/hash/fnv/fnv.c",
+        "neverc_fnv_sum64a": "src/hash/fnv/fnv.c",
+        "neverc_fnv_sum128": "src/hash/fnv/fnv.c",
+        "neverc_fnv_sum128a": "src/hash/fnv/fnv.c"
       },
       "dot_methods": {
-        "fnv32": "neverc_fnv_32",
-        "fnv32a": "neverc_fnv_32a",
-        "fnv64": "neverc_fnv_64",
-        "fnv64a": "neverc_fnv_64a"
+        "sum32": "neverc_fnv_sum32",
+        "sum32a": "neverc_fnv_sum32a",
+        "sum64": "neverc_fnv_sum64",
+        "sum64a": "neverc_fnv_sum64a",
+        "sum128": "neverc_fnv_sum128",
+        "sum128a": "neverc_fnv_sum128a"
       }
     },
     "hash/crc32": {
@@ -381,44 +415,106 @@
       "header": "include/neverc/math/bits.h",
       "description": "Bit counting and manipulation \u2014 popcount, CLZ, CTZ, rotate, reverse (mirrors Go math/bits package)",
       "symbols": {
+        "neverc_bits_leading_zeros": "src/math/bits/bits.c",
+        "neverc_bits_leading_zeros8": "src/math/bits/bits.c",
+        "neverc_bits_leading_zeros16": "src/math/bits/bits.c",
         "neverc_bits_leading_zeros32": "src/math/bits/bits.c",
         "neverc_bits_leading_zeros64": "src/math/bits/bits.c",
+        "neverc_bits_trailing_zeros": "src/math/bits/bits.c",
+        "neverc_bits_trailing_zeros8": "src/math/bits/bits.c",
+        "neverc_bits_trailing_zeros16": "src/math/bits/bits.c",
         "neverc_bits_trailing_zeros32": "src/math/bits/bits.c",
         "neverc_bits_trailing_zeros64": "src/math/bits/bits.c",
+        "neverc_bits_ones_count": "src/math/bits/bits.c",
+        "neverc_bits_ones_count8": "src/math/bits/bits.c",
+        "neverc_bits_ones_count16": "src/math/bits/bits.c",
         "neverc_bits_ones_count32": "src/math/bits/bits.c",
         "neverc_bits_ones_count64": "src/math/bits/bits.c",
+        "neverc_bits_len": "src/math/bits/bits.c",
+        "neverc_bits_len8": "src/math/bits/bits.c",
+        "neverc_bits_len16": "src/math/bits/bits.c",
         "neverc_bits_len32": "src/math/bits/bits.c",
         "neverc_bits_len64": "src/math/bits/bits.c",
+        "neverc_bits_rotate_left": "src/math/bits/bits.c",
+        "neverc_bits_rotate_left8": "src/math/bits/bits.c",
+        "neverc_bits_rotate_left16": "src/math/bits/bits.c",
         "neverc_bits_rotate_left32": "src/math/bits/bits.c",
         "neverc_bits_rotate_left64": "src/math/bits/bits.c",
+        "neverc_bits_reverse": "src/math/bits/bits.c",
+        "neverc_bits_reverse8": "src/math/bits/bits.c",
+        "neverc_bits_reverse16": "src/math/bits/bits.c",
         "neverc_bits_reverse32": "src/math/bits/bits.c",
         "neverc_bits_reverse64": "src/math/bits/bits.c",
+        "neverc_bits_reverse_bytes": "src/math/bits/bits.c",
         "neverc_bits_reverse_bytes16": "src/math/bits/bits.c",
         "neverc_bits_reverse_bytes32": "src/math/bits/bits.c",
         "neverc_bits_reverse_bytes64": "src/math/bits/bits.c",
+        "neverc_bits_add": "src/math/bits/bits.c",
+        "neverc_bits_add32": "src/math/bits/bits.c",
         "neverc_bits_add64": "src/math/bits/bits.c",
+        "neverc_bits_sub": "src/math/bits/bits.c",
+        "neverc_bits_sub32": "src/math/bits/bits.c",
         "neverc_bits_sub64": "src/math/bits/bits.c",
-        "neverc_bits_mul64": "src/math/bits/bits.c"
+        "neverc_bits_mul": "src/math/bits/bits.c",
+        "neverc_bits_mul32": "src/math/bits/bits.c",
+        "neverc_bits_mul64": "src/math/bits/bits.c",
+        "neverc_bits_div": "src/math/bits/bits.c",
+        "neverc_bits_div32": "src/math/bits/bits.c",
+        "neverc_bits_div64": "src/math/bits/bits.c",
+        "neverc_bits_rem": "src/math/bits/bits.c",
+        "neverc_bits_rem32": "src/math/bits/bits.c",
+        "neverc_bits_rem64": "src/math/bits/bits.c"
       },
       "dot_methods": {
+        "leading_zeros": "neverc_bits_leading_zeros",
+        "leading_zeros8": "neverc_bits_leading_zeros8",
+        "leading_zeros16": "neverc_bits_leading_zeros16",
         "leading_zeros32": "neverc_bits_leading_zeros32",
         "leading_zeros64": "neverc_bits_leading_zeros64",
+        "trailing_zeros": "neverc_bits_trailing_zeros",
+        "trailing_zeros8": "neverc_bits_trailing_zeros8",
+        "trailing_zeros16": "neverc_bits_trailing_zeros16",
         "trailing_zeros32": "neverc_bits_trailing_zeros32",
         "trailing_zeros64": "neverc_bits_trailing_zeros64",
+        "ones_count": "neverc_bits_ones_count",
+        "ones_count8": "neverc_bits_ones_count8",
+        "ones_count16": "neverc_bits_ones_count16",
         "ones_count32": "neverc_bits_ones_count32",
         "ones_count64": "neverc_bits_ones_count64",
+        "len": "neverc_bits_len",
+        "len8": "neverc_bits_len8",
+        "len16": "neverc_bits_len16",
         "len32": "neverc_bits_len32",
         "len64": "neverc_bits_len64",
+        "rotate_left": "neverc_bits_rotate_left",
+        "rotate_left8": "neverc_bits_rotate_left8",
+        "rotate_left16": "neverc_bits_rotate_left16",
         "rotate_left32": "neverc_bits_rotate_left32",
         "rotate_left64": "neverc_bits_rotate_left64",
+        "reverse": "neverc_bits_reverse",
+        "reverse8": "neverc_bits_reverse8",
+        "reverse16": "neverc_bits_reverse16",
         "reverse32": "neverc_bits_reverse32",
         "reverse64": "neverc_bits_reverse64",
+        "reverse_bytes": "neverc_bits_reverse_bytes",
         "reverse_bytes16": "neverc_bits_reverse_bytes16",
         "reverse_bytes32": "neverc_bits_reverse_bytes32",
         "reverse_bytes64": "neverc_bits_reverse_bytes64",
+        "add": "neverc_bits_add",
+        "add32": "neverc_bits_add32",
         "add64": "neverc_bits_add64",
+        "sub": "neverc_bits_sub",
+        "sub32": "neverc_bits_sub32",
         "sub64": "neverc_bits_sub64",
-        "mul64": "neverc_bits_mul64"
+        "mul": "neverc_bits_mul",
+        "mul32": "neverc_bits_mul32",
+        "mul64": "neverc_bits_mul64",
+        "div": "neverc_bits_div",
+        "div32": "neverc_bits_div32",
+        "div64": "neverc_bits_div64",
+        "rem": "neverc_bits_rem",
+        "rem32": "neverc_bits_rem32",
+        "rem64": "neverc_bits_rem64"
       }
     },
     "unicode/utf8": {
@@ -880,7 +976,23 @@
         "shake128_squeeze": "neverc_shake128_squeeze",
         "shake256_init": "neverc_shake256_init",
         "shake256_update": "neverc_shake256_update",
-        "shake256_squeeze": "neverc_shake256_squeeze"
+        "shake256_squeeze": "neverc_shake256_squeeze",
+        "224_init": "neverc_sha3_224_init",
+        "224_update": "neverc_sha3_224_update",
+        "224_final": "neverc_sha3_224_final",
+        "224_sum": "neverc_sha3_224_sum",
+        "256_init": "neverc_sha3_256_init",
+        "256_update": "neverc_sha3_256_update",
+        "256_final": "neverc_sha3_256_final",
+        "256_sum": "neverc_sha3_256_sum",
+        "384_init": "neverc_sha3_384_init",
+        "384_update": "neverc_sha3_384_update",
+        "384_final": "neverc_sha3_384_final",
+        "384_sum": "neverc_sha3_384_sum",
+        "512_init": "neverc_sha3_512_init",
+        "512_update": "neverc_sha3_512_update",
+        "512_final": "neverc_sha3_512_final",
+        "512_sum": "neverc_sha3_512_sum"
       }
     },
     "crypto/gcm": {
@@ -931,7 +1043,10 @@
       "dot_methods": {
         "init": "neverc_des_init",
         "encrypt_block": "neverc_des_encrypt_block",
-        "decrypt_block": "neverc_des_decrypt_block"
+        "decrypt_block": "neverc_des_decrypt_block",
+        "triple_init": "neverc_3des_init",
+        "triple_encrypt_block": "neverc_3des_encrypt_block",
+        "triple_decrypt_block": "neverc_3des_decrypt_block"
       }
     },
     "crypto/rc4": {
@@ -985,7 +1100,15 @@
         "isnan_float64": "neverc_cmp_isnan_float64",
         "min_int": "neverc_cmp_min_int",
         "max_int": "neverc_cmp_max_int",
-        "clamp_int": "neverc_cmp_clamp_int"
+        "clamp_int": "neverc_cmp_clamp_int",
+        "min_int64": "neverc_cmp_min_int64",
+        "max_int64": "neverc_cmp_max_int64",
+        "min_float32": "neverc_cmp_min_float32",
+        "max_float32": "neverc_cmp_max_float32",
+        "min_float64": "neverc_cmp_min_float64",
+        "max_float64": "neverc_cmp_max_float64",
+        "clamp_int64": "neverc_cmp_clamp_int64",
+        "clamp_float64": "neverc_cmp_clamp_float64"
       }
     },
     "container/heap": {
@@ -1037,7 +1160,15 @@
         "back": "neverc_list_back",
         "push_front": "neverc_list_push_front",
         "push_back": "neverc_list_push_back",
-        "remove": "neverc_list_remove"
+        "remove": "neverc_list_remove",
+        "insert_before": "neverc_list_insert_before",
+        "insert_after": "neverc_list_insert_after",
+        "move_to_front": "neverc_list_move_to_front",
+        "move_to_back": "neverc_list_move_to_back",
+        "move_before": "neverc_list_move_before",
+        "move_after": "neverc_list_move_after",
+        "element_next": "neverc_list_element_next",
+        "element_prev": "neverc_list_element_prev"
       }
     },
     "container/ring": {
@@ -1179,7 +1310,23 @@
         "parse": "neverc_json_parse",
         "free": "neverc_json_free",
         "marshal": "neverc_json_marshal",
-        "valid": "neverc_json_valid"
+        "valid": "neverc_json_valid",
+        "type": "neverc_json_type",
+        "bool": "neverc_json_bool",
+        "number": "neverc_json_number",
+        "string": "neverc_json_string",
+        "array_len": "neverc_json_array_len",
+        "array_get": "neverc_json_array_get",
+        "object_len": "neverc_json_object_len",
+        "object_get": "neverc_json_object_get",
+        "new_null": "neverc_json_new_null",
+        "new_bool": "neverc_json_new_bool",
+        "new_number": "neverc_json_new_number",
+        "new_string": "neverc_json_new_string",
+        "new_array": "neverc_json_new_array",
+        "new_object": "neverc_json_new_object",
+        "array_append": "neverc_json_array_append",
+        "object_set": "neverc_json_object_set"
       }
     },
     "path/filepath": {
@@ -1243,7 +1390,11 @@
         "decoder_init": "neverc_xml_decoder_init",
         "decode_token": "neverc_xml_decode_token",
         "token_free": "neverc_xml_token_free",
-        "node_free": "neverc_xml_node_free"
+        "node_free": "neverc_xml_node_free",
+        "parse": "neverc_xml_parse",
+        "node_attr": "neverc_xml_node_attr",
+        "node_child": "neverc_xml_node_child",
+        "escape": "neverc_xml_escape"
       }
     },
     "encoding/asn1": {
@@ -1257,7 +1408,9 @@
         "neverc_asn1_encode_int64": "src/encoding/asn1/asn1.c",
         "neverc_asn1_encode_bool": "src/encoding/asn1/asn1.c",
         "neverc_asn1_encode_octet_string": "src/encoding/asn1/asn1.c",
-        "neverc_asn1_encode_null": "src/encoding/asn1/asn1.c"
+        "neverc_asn1_encode_null": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_encode_length": "src/encoding/asn1/asn1.c",
+        "neverc_asn1_encode_tag": "src/encoding/asn1/asn1.c"
       },
       "dot_methods": {
         "decode_element": "neverc_asn1_decode_element",
@@ -1268,7 +1421,8 @@
         "encode_octet_string": "neverc_asn1_encode_octet_string",
         "encode_null": "neverc_asn1_encode_null",
         "encode_length": "neverc_asn1_encode_length",
-        "encode_tag": "neverc_asn1_encode_tag"
+        "encode_tag": "neverc_asn1_encode_tag",
+        "decode_oid": "neverc_asn1_decode_oid"
       }
     },
     "bytes": {
@@ -1309,7 +1463,21 @@
         "neverc_bytes_cut_last": "src/bytes/bytes.c",
         "neverc_bytes_index_rune": "src/bytes/bytes.c",
         "neverc_bytes_runes": "src/bytes/bytes.c",
-        "neverc_bytes_to_valid_utf8": "src/bytes/bytes.c"
+        "neverc_bytes_to_valid_utf8": "src/bytes/bytes.c",
+        "neverc_bytes_equal_fold": "src/bytes/bytes.c",
+        "neverc_bytes_contains_byte": "src/bytes/bytes.c",
+        "neverc_bytes_contains_any": "src/bytes/bytes.c",
+        "neverc_bytes_index_any": "src/bytes/bytes.c",
+        "neverc_bytes_last_index_byte": "src/bytes/bytes.c",
+        "neverc_bytes_last_index_any": "src/bytes/bytes.c",
+        "neverc_bytes_cut_prefix": "src/bytes/bytes.c",
+        "neverc_bytes_cut_suffix": "src/bytes/bytes.c",
+        "neverc_bytes_to_title": "src/bytes/bytes.c",
+        "neverc_bytes_trim_left": "src/bytes/bytes.c",
+        "neverc_bytes_trim_right": "src/bytes/bytes.c",
+        "neverc_bytes_trim_prefix": "src/bytes/bytes.c",
+        "neverc_bytes_trim_suffix": "src/bytes/bytes.c",
+        "neverc_bytes_split_n": "src/bytes/bytes.c"
       },
       "dot_methods": {
         "equal": "neverc_bytes_equal",
@@ -1433,7 +1601,8 @@
         "scanf": "neverc_fmt_scanf",
         "scan": "neverc_fmt_scan",
         "fscanf": "neverc_fmt_fscanf",
-        "appendf": "neverc_fmt_appendf"
+        "appendf": "neverc_fmt_appendf",
+        "vsprintf": "neverc_fmt_vsprintf"
       }
     },
     "io": {
@@ -1474,7 +1643,14 @@
         "pipe": "neverc_io_pipe",
         "pipe_close": "neverc_io_pipe_close",
         "pipe_free": "neverc_io_pipe_free",
-        "nop_closer_init": "neverc_io_nop_closer_init"
+        "nop_closer_init": "neverc_io_nop_closer_init",
+        "discard_init": "neverc_io_discard_init",
+        "limit_reader_init": "neverc_io_limit_reader_init",
+        "tee_reader_init": "neverc_io_tee_reader_init",
+        "mem_reader_init": "neverc_io_mem_reader_init",
+        "mem_writer_init": "neverc_io_mem_writer_init",
+        "multi_reader_read": "neverc_io_multi_reader_read",
+        "multi_writer_write": "neverc_io_multi_writer_write"
       }
     },
     "bufio": {
@@ -1488,7 +1664,16 @@
         "neverc_bufio_reader_read_line": "src/bufio/bufio.c",
         "neverc_bufio_writer_init": "src/bufio/bufio.c",
         "neverc_bufio_writer_write": "src/bufio/bufio.c",
-        "neverc_bufio_writer_flush": "src/bufio/bufio.c"
+        "neverc_bufio_writer_flush": "src/bufio/bufio.c",
+        "neverc_bufio_scanner_err": "src/bufio/bufio.c",
+        "neverc_bufio_scanner_free": "src/bufio/bufio.c",
+        "neverc_bufio_reader_init_size": "src/bufio/bufio.c",
+        "neverc_bufio_reader_read": "src/bufio/bufio.c",
+        "neverc_bufio_reader_peek": "src/bufio/bufio.c",
+        "neverc_bufio_reader_free": "src/bufio/bufio.c",
+        "neverc_bufio_writer_init_size": "src/bufio/bufio.c",
+        "neverc_bufio_writer_write_byte": "src/bufio/bufio.c",
+        "neverc_bufio_writer_free": "src/bufio/bufio.c"
       },
       "dot_methods": {
         "scanner_init": "neverc_bufio_scanner_init",
@@ -1506,7 +1691,8 @@
         "writer_write": "neverc_bufio_writer_write",
         "writer_write_byte": "neverc_bufio_writer_write_byte",
         "writer_flush": "neverc_bufio_writer_flush",
-        "writer_free": "neverc_bufio_writer_free"
+        "writer_free": "neverc_bufio_writer_free",
+        "reader_read_line": "neverc_bufio_reader_read_line"
       }
     },
     "flag": {
@@ -1531,7 +1717,8 @@
         "parse": "neverc_flag_parse",
         "narg": "neverc_flag_narg",
         "print_defaults": "neverc_flag_print_defaults",
-        "reset": "neverc_flag_reset"
+        "reset": "neverc_flag_reset",
+        "arg": "neverc_flag_arg"
       }
     },
     "log": {
@@ -1544,7 +1731,13 @@
         "neverc_log_println": "src/log/log.c",
         "neverc_log_fatal": "src/log/log.c",
         "neverc_log_default_print": "src/log/log.c",
-        "neverc_log_default_printf": "src/log/log.c"
+        "neverc_log_default_printf": "src/log/log.c",
+        "neverc_log_fatalf": "src/log/log.c",
+        "neverc_log_set_prefix": "src/log/log.c",
+        "neverc_log_set_flags": "src/log/log.c",
+        "neverc_log_set_output": "src/log/log.c",
+        "neverc_log_default_println": "src/log/log.c",
+        "neverc_log_default_fatal": "src/log/log.c"
       },
       "dot_methods": {
         "init": "neverc_log_init",
@@ -1578,7 +1771,31 @@
         "neverc_time_unix_micro": "src/time/time.c",
         "neverc_time_unix_micro_to_time": "src/time/time.c",
         "neverc_time_parse_duration": "src/time/time.c",
-        "neverc_time_format_duration": "src/time/time.c"
+        "neverc_time_format_duration": "src/time/time.c",
+        "neverc_time_unix_sec": "src/time/time.c",
+        "neverc_time_unix_milli": "src/time/time.c",
+        "neverc_time_unix_nano": "src/time/time.c",
+        "neverc_time_month": "src/time/time.c",
+        "neverc_time_day": "src/time/time.c",
+        "neverc_time_hour": "src/time/time.c",
+        "neverc_time_minute": "src/time/time.c",
+        "neverc_time_second": "src/time/time.c",
+        "neverc_time_nanosecond": "src/time/time.c",
+        "neverc_time_weekday": "src/time/time.c",
+        "neverc_time_yearday": "src/time/time.c",
+        "neverc_time_since": "src/time/time.c",
+        "neverc_time_until": "src/time/time.c",
+        "neverc_time_before": "src/time/time.c",
+        "neverc_time_after": "src/time/time.c",
+        "neverc_time_equal": "src/time/time.c",
+        "neverc_time_is_zero": "src/time/time.c",
+        "neverc_time_format_rfc": "src/time/time.c",
+        "neverc_time_format_unix_date": "src/time/time.c",
+        "neverc_time_parse_rfc": "src/time/time.c",
+        "neverc_time_duration_seconds": "src/time/time.c",
+        "neverc_time_duration_milliseconds": "src/time/time.c",
+        "neverc_time_duration_microseconds": "src/time/time.c",
+        "neverc_time_duration_nanoseconds": "src/time/time.c"
       },
       "dot_methods": {
         "now": "neverc_time_now",
@@ -1615,7 +1832,9 @@
         "unix_micro": "neverc_time_unix_micro",
         "unix_micro_to_time": "neverc_time_unix_micro_to_time",
         "parse_duration": "neverc_time_parse_duration",
-        "format_duration": "neverc_time_format_duration"
+        "format_duration": "neverc_time_format_duration",
+        "format_rfc3339": "neverc_time_format_rfc3339",
+        "parse_rfc3339": "neverc_time_parse_rfc3339"
       }
     },
     "uuid": {
@@ -1627,7 +1846,9 @@
         "neverc_uuid_parse": "src/uuid/uuid.c",
         "neverc_uuid_equal": "src/uuid/uuid.c",
         "neverc_uuid_is_nil": "src/uuid/uuid.c",
-        "neverc_uuid_nil": "src/uuid/uuid.c"
+        "neverc_uuid_nil": "src/uuid/uuid.c",
+        "neverc_uuid_version": "src/uuid/uuid.c",
+        "neverc_uuid_variant": "src/uuid/uuid.c"
       },
       "dot_methods": {
         "new": "neverc_uuid_new",
@@ -1653,7 +1874,11 @@
         "neverc_regexp_split": "src/regexp/regexp.c",
         "neverc_regexp_free": "src/regexp/regexp.c",
         "neverc_regexp_quote_meta": "src/regexp/regexp.c",
-        "neverc_regexp_must_compile": "src/regexp/regexp.c"
+        "neverc_regexp_must_compile": "src/regexp/regexp.c",
+        "neverc_regexp_find_submatch": "src/regexp/regexp.c",
+        "neverc_regexp_free_strings": "src/regexp/regexp.c",
+        "neverc_regexp_compile_posix": "src/regexp/regexp.c",
+        "neverc_regexp_must_compile_posix": "src/regexp/regexp.c"
       },
       "dot_methods": {
         "compile": "neverc_regexp_compile",
@@ -1667,7 +1892,9 @@
         "free": "neverc_regexp_free",
         "free_strings": "neverc_regexp_free_strings",
         "quote_meta": "neverc_regexp_quote_meta",
-        "must_compile": "neverc_regexp_must_compile"
+        "must_compile": "neverc_regexp_must_compile",
+        "compile_posix": "neverc_regexp_compile_posix",
+        "must_compile_posix": "neverc_regexp_must_compile_posix"
       }
     },
     "archive/tar": {
@@ -1680,7 +1907,8 @@
         "neverc_tar_writer_init": "src/archive/tar/tar.c",
         "neverc_tar_writer_write_header": "src/archive/tar/tar.c",
         "neverc_tar_writer_write": "src/archive/tar/tar.c",
-        "neverc_tar_writer_close": "src/archive/tar/tar.c"
+        "neverc_tar_writer_close": "src/archive/tar/tar.c",
+        "neverc_tar_writer_free": "src/archive/tar/tar.c"
       },
       "dot_methods": {
         "reader_init": "neverc_tar_reader_init",
@@ -1703,7 +1931,9 @@
         "neverc_zip_reader_file_data": "src/archive/zip/zip.c",
         "neverc_zip_writer_init": "src/archive/zip/zip.c",
         "neverc_zip_writer_add": "src/archive/zip/zip.c",
-        "neverc_zip_writer_close": "src/archive/zip/zip.c"
+        "neverc_zip_writer_close": "src/archive/zip/zip.c",
+        "neverc_zip_reader_free": "src/archive/zip/zip.c",
+        "neverc_zip_writer_free": "src/archive/zip/zip.c"
       },
       "dot_methods": {
         "reader_init": "neverc_zip_reader_init",
@@ -1713,7 +1943,8 @@
         "writer_init": "neverc_zip_writer_init",
         "writer_add": "neverc_zip_writer_add",
         "writer_close": "neverc_zip_writer_close",
-        "writer_free": "neverc_zip_writer_free"
+        "writer_free": "neverc_zip_writer_free",
+        "reader_file_data": "neverc_zip_reader_file_data"
       }
     },
     "text/template": {
@@ -1726,7 +1957,8 @@
         "neverc_template_data_init": "src/text/template/template.c",
         "neverc_template_data_set": "src/text/template/template.c",
         "neverc_template_data_get": "src/text/template/template.c",
-        "neverc_template_free": "src/text/template/template.c"
+        "neverc_template_free": "src/text/template/template.c",
+        "neverc_template_data_free": "src/text/template/template.c"
       },
       "dot_methods": {
         "parse": "neverc_template_parse",
@@ -1778,7 +2010,9 @@
         "scalar_mult": "neverc_elliptic_scalar_mult",
         "scalar_base_mult": "neverc_elliptic_scalar_base_mult",
         "marshal": "neverc_elliptic_marshal",
-        "unmarshal": "neverc_elliptic_unmarshal"
+        "unmarshal": "neverc_elliptic_unmarshal",
+        "point_init": "neverc_elliptic_point_init",
+        "point_free": "neverc_elliptic_point_free"
       }
     },
     "crypto/rsa": {
@@ -1800,7 +2034,13 @@
         "decrypt": "neverc_rsa_decrypt_pkcs1v15",
         "sign_sha256": "neverc_rsa_sign_pkcs1v15_sha256",
         "verify_sha256": "neverc_rsa_verify_pkcs1v15_sha256",
-        "key_size": "neverc_rsa_key_size"
+        "key_size": "neverc_rsa_key_size",
+        "public_key_init": "neverc_rsa_public_key_init",
+        "private_key_init": "neverc_rsa_private_key_init",
+        "encrypt_pkcs1v15": "neverc_rsa_encrypt_pkcs1v15",
+        "decrypt_pkcs1v15": "neverc_rsa_decrypt_pkcs1v15",
+        "sign_pkcs1v15_sha256": "neverc_rsa_sign_pkcs1v15_sha256",
+        "verify_pkcs1v15_sha256": "neverc_rsa_verify_pkcs1v15_sha256"
       }
     },
     "crypto/ecdsa": {
@@ -1816,7 +2056,9 @@
       "dot_methods": {
         "generate_key": "neverc_ecdsa_generate_key",
         "sign": "neverc_ecdsa_sign",
-        "verify": "neverc_ecdsa_verify"
+        "verify": "neverc_ecdsa_verify",
+        "public_key_init": "neverc_ecdsa_public_key_init",
+        "private_key_init": "neverc_ecdsa_private_key_init"
       }
     },
     "crypto/dsa": {
@@ -1830,7 +2072,9 @@
       },
       "dot_methods": {
         "sign": "neverc_dsa_sign",
-        "verify": "neverc_dsa_verify"
+        "verify": "neverc_dsa_verify",
+        "public_key_init": "neverc_dsa_public_key_init",
+        "private_key_init": "neverc_dsa_private_key_init"
       }
     },
     "net/url": {
@@ -2107,47 +2351,92 @@
       "header": "include/neverc/sync.h",
       "description": "Synchronization primitives \u2014 Mutex, RWMutex, WaitGroup, Once, Cond (mirrors Go sync package)",
       "symbols": {
-        "neverc_mutex_init": "src/sync/sync.c",
-        "neverc_mutex_destroy": "src/sync/sync.c",
-        "neverc_mutex_lock": "src/sync/sync.c",
-        "neverc_mutex_unlock": "src/sync/sync.c",
-        "neverc_mutex_trylock": "src/sync/sync.c",
-        "neverc_rwmutex_init": "src/sync/sync.c",
-        "neverc_rwmutex_destroy": "src/sync/sync.c",
-        "neverc_rwmutex_rlock": "src/sync/sync.c",
-        "neverc_rwmutex_runlock": "src/sync/sync.c",
-        "neverc_rwmutex_lock": "src/sync/sync.c",
-        "neverc_rwmutex_unlock": "src/sync/sync.c",
-        "neverc_waitgroup_init": "src/sync/sync.c",
-        "neverc_waitgroup_destroy": "src/sync/sync.c",
-        "neverc_waitgroup_add": "src/sync/sync.c",
-        "neverc_waitgroup_done": "src/sync/sync.c",
-        "neverc_waitgroup_wait": "src/sync/sync.c",
-        "neverc_once_init": "src/sync/sync.c",
-        "neverc_once_destroy": "src/sync/sync.c",
-        "neverc_once_do": "src/sync/sync.c",
-        "neverc_cond_init": "src/sync/sync.c",
-        "neverc_cond_destroy": "src/sync/sync.c",
-        "neverc_cond_wait": "src/sync/sync.c",
-        "neverc_cond_signal": "src/sync/sync.c",
-        "neverc_cond_broadcast": "src/sync/sync.c"
+        "neverc_sync_mutex_init": "src/sync/sync.c",
+        "neverc_sync_mutex_destroy": "src/sync/sync.c",
+        "neverc_sync_mutex_lock": "src/sync/sync.c",
+        "neverc_sync_mutex_unlock": "src/sync/sync.c",
+        "neverc_sync_mutex_trylock": "src/sync/sync.c",
+        "neverc_sync_rwmutex_init": "src/sync/sync.c",
+        "neverc_sync_rwmutex_destroy": "src/sync/sync.c",
+        "neverc_sync_rwmutex_rlock": "src/sync/sync.c",
+        "neverc_sync_rwmutex_tryrlock": "src/sync/sync.c",
+        "neverc_sync_rwmutex_runlock": "src/sync/sync.c",
+        "neverc_sync_rwmutex_lock": "src/sync/sync.c",
+        "neverc_sync_rwmutex_trylock": "src/sync/sync.c",
+        "neverc_sync_rwmutex_unlock": "src/sync/sync.c",
+        "neverc_sync_waitgroup_init": "src/sync/sync.c",
+        "neverc_sync_waitgroup_destroy": "src/sync/sync.c",
+        "neverc_sync_waitgroup_add": "src/sync/sync.c",
+        "neverc_sync_waitgroup_done": "src/sync/sync.c",
+        "neverc_sync_waitgroup_wait": "src/sync/sync.c",
+        "neverc_sync_once_init": "src/sync/sync.c",
+        "neverc_sync_once_destroy": "src/sync/sync.c",
+        "neverc_sync_once_do": "src/sync/sync.c",
+        "neverc_sync_cond_init": "src/sync/sync.c",
+        "neverc_sync_cond_destroy": "src/sync/sync.c",
+        "neverc_sync_cond_wait": "src/sync/sync.c",
+        "neverc_sync_cond_signal": "src/sync/sync.c",
+        "neverc_sync_cond_broadcast": "src/sync/sync.c",
+        "neverc_sync_pool_new": "src/sync/sync.c",
+        "neverc_sync_pool_free": "src/sync/sync.c",
+        "neverc_sync_pool_put": "src/sync/sync.c",
+        "neverc_sync_pool_get": "src/sync/sync.c",
+        "neverc_sync_map_new": "src/sync/sync.c",
+        "neverc_sync_map_free": "src/sync/sync.c",
+        "neverc_sync_map_store": "src/sync/sync.c",
+        "neverc_sync_map_load": "src/sync/sync.c",
+        "neverc_sync_map_load_or_store": "src/sync/sync.c",
+        "neverc_sync_map_load_and_delete": "src/sync/sync.c",
+        "neverc_sync_map_delete": "src/sync/sync.c",
+        "neverc_sync_map_clear": "src/sync/sync.c",
+        "neverc_sync_map_range": "src/sync/sync.c",
+        "neverc_sync_map_swap": "src/sync/sync.c",
+        "neverc_sync_map_compare_and_swap": "src/sync/sync.c",
+        "neverc_sync_map_compare_and_delete": "src/sync/sync.c"
       },
       "dot_methods": {
-        "mutex_init": "neverc_mutex_init",
-        "mutex_lock": "neverc_mutex_lock",
-        "mutex_unlock": "neverc_mutex_unlock",
-        "mutex_trylock": "neverc_mutex_trylock",
-        "rwmutex_init": "neverc_rwmutex_init",
-        "rwmutex_rlock": "neverc_rwmutex_rlock",
-        "rwmutex_runlock": "neverc_rwmutex_runlock",
-        "rwmutex_lock": "neverc_rwmutex_lock",
-        "rwmutex_unlock": "neverc_rwmutex_unlock",
-        "waitgroup_init": "neverc_waitgroup_init",
-        "waitgroup_add": "neverc_waitgroup_add",
-        "waitgroup_done": "neverc_waitgroup_done",
-        "waitgroup_wait": "neverc_waitgroup_wait",
-        "once_init": "neverc_once_init",
-        "once_do": "neverc_once_do"
+        "mutex_init": "neverc_sync_mutex_init",
+        "mutex_destroy": "neverc_sync_mutex_destroy",
+        "mutex_lock": "neverc_sync_mutex_lock",
+        "mutex_unlock": "neverc_sync_mutex_unlock",
+        "mutex_trylock": "neverc_sync_mutex_trylock",
+        "rwmutex_init": "neverc_sync_rwmutex_init",
+        "rwmutex_destroy": "neverc_sync_rwmutex_destroy",
+        "rwmutex_rlock": "neverc_sync_rwmutex_rlock",
+        "rwmutex_tryrlock": "neverc_sync_rwmutex_tryrlock",
+        "rwmutex_runlock": "neverc_sync_rwmutex_runlock",
+        "rwmutex_lock": "neverc_sync_rwmutex_lock",
+        "rwmutex_trylock": "neverc_sync_rwmutex_trylock",
+        "rwmutex_unlock": "neverc_sync_rwmutex_unlock",
+        "waitgroup_init": "neverc_sync_waitgroup_init",
+        "waitgroup_destroy": "neverc_sync_waitgroup_destroy",
+        "waitgroup_add": "neverc_sync_waitgroup_add",
+        "waitgroup_done": "neverc_sync_waitgroup_done",
+        "waitgroup_wait": "neverc_sync_waitgroup_wait",
+        "once_init": "neverc_sync_once_init",
+        "once_destroy": "neverc_sync_once_destroy",
+        "once_do": "neverc_sync_once_do",
+        "cond_init": "neverc_sync_cond_init",
+        "cond_destroy": "neverc_sync_cond_destroy",
+        "cond_wait": "neverc_sync_cond_wait",
+        "cond_signal": "neverc_sync_cond_signal",
+        "cond_broadcast": "neverc_sync_cond_broadcast",
+        "pool_new": "neverc_sync_pool_new",
+        "pool_free": "neverc_sync_pool_free",
+        "pool_put": "neverc_sync_pool_put",
+        "pool_get": "neverc_sync_pool_get",
+        "map_new": "neverc_sync_map_new",
+        "map_free": "neverc_sync_map_free",
+        "map_store": "neverc_sync_map_store",
+        "map_load": "neverc_sync_map_load",
+        "map_load_or_store": "neverc_sync_map_load_or_store",
+        "map_load_and_delete": "neverc_sync_map_load_and_delete",
+        "map_delete": "neverc_sync_map_delete",
+        "map_clear": "neverc_sync_map_clear",
+        "map_range": "neverc_sync_map_range",
+        "map_swap": "neverc_sync_map_swap",
+        "map_compare_and_swap": "neverc_sync_map_compare_and_swap",
+        "map_compare_and_delete": "neverc_sync_map_compare_and_delete"
       }
     },
     "sync/atomic": {
@@ -2195,7 +2484,15 @@
         "swap_int32": "neverc_atomic_swap_int32",
         "swap_int64": "neverc_atomic_swap_int64",
         "cas_int32": "neverc_atomic_cas_int32",
-        "cas_int64": "neverc_atomic_cas_int64"
+        "cas_int64": "neverc_atomic_cas_int64",
+        "load_pointer": "neverc_atomic_load_pointer",
+        "store_pointer": "neverc_atomic_store_pointer",
+        "swap_uint32": "neverc_atomic_swap_uint32",
+        "swap_uint64": "neverc_atomic_swap_uint64",
+        "swap_pointer": "neverc_atomic_swap_pointer",
+        "cas_uint32": "neverc_atomic_cas_uint32",
+        "cas_uint64": "neverc_atomic_cas_uint64",
+        "cas_pointer": "neverc_atomic_cas_pointer"
       }
     },
     "crypto/ecdh": {
@@ -2260,7 +2557,26 @@
         "is_multicast": "neverc_netip_addr_is_multicast",
         "is_private": "neverc_netip_addr_is_private",
         "is_unspecified": "neverc_netip_addr_is_unspecified",
-        "prefix_contains": "neverc_netip_prefix_contains"
+        "prefix_contains": "neverc_netip_prefix_contains",
+        "addrport_string": "neverc_netip_addrport_string",
+        "prefix_string": "neverc_netip_prefix_string",
+        "addr_is_valid": "neverc_netip_addr_is_valid",
+        "addr_is4": "neverc_netip_addr_is4",
+        "addr_is6": "neverc_netip_addr_is6",
+        "addr_is_loopback": "neverc_netip_addr_is_loopback",
+        "addr_is_multicast": "neverc_netip_addr_is_multicast",
+        "addr_is_private": "neverc_netip_addr_is_private",
+        "addr_is_link_local_unicast": "neverc_netip_addr_is_link_local_unicast",
+        "addr_is_link_local_multicast": "neverc_netip_addr_is_link_local_multicast",
+        "addr_is_global_unicast": "neverc_netip_addr_is_global_unicast",
+        "addr_is_unspecified": "neverc_netip_addr_is_unspecified",
+        "addr_bit_len": "neverc_netip_addr_bit_len",
+        "addr_compare": "neverc_netip_addr_compare",
+        "addr_equal": "neverc_netip_addr_equal",
+        "prefix_masked": "neverc_netip_prefix_masked",
+        "prefix_bits": "neverc_netip_prefix_bits",
+        "addr_as4": "neverc_netip_addr_as4",
+        "addr_as16": "neverc_netip_addr_as16"
       }
     },
     "mime/quotedprintable": {
@@ -2443,7 +2759,14 @@
         "user_config_dir": "neverc_os_user_config_dir",
         "is_exist": "neverc_os_is_exist",
         "is_not_exist": "neverc_os_is_not_exist",
-        "is_permission": "neverc_os_is_permission"
+        "is_permission": "neverc_os_is_permission",
+        "seek": "neverc_os_seek",
+        "sync": "neverc_os_sync",
+        "lstat": "neverc_os_lstat",
+        "getppid": "neverc_os_getppid",
+        "getuid": "neverc_os_getuid",
+        "getgid": "neverc_os_getgid",
+        "create_temp": "neverc_os_create_temp"
       }
     },
     "os/exec": {
@@ -2466,7 +2789,15 @@
         "run": "neverc_exec_cmd_run",
         "output": "neverc_exec_cmd_output",
         "combined_output": "neverc_exec_cmd_combined_output",
-        "look_path": "neverc_exec_look_path"
+        "look_path": "neverc_exec_look_path",
+        "cmd_set_dir": "neverc_exec_cmd_set_dir",
+        "cmd_set_env": "neverc_exec_cmd_set_env",
+        "cmd_set_stdin": "neverc_exec_cmd_set_stdin",
+        "cmd_run": "neverc_exec_cmd_run",
+        "cmd_output": "neverc_exec_cmd_output",
+        "cmd_combined_output": "neverc_exec_cmd_combined_output",
+        "cmd_free": "neverc_exec_cmd_free",
+        "output_free": "neverc_exec_output_free"
       }
     },
     "os/signal": {
@@ -2503,12 +2834,18 @@
         "neverc_context_todo": "src/context/context.c",
         "neverc_context_with_cancel_cause": "src/context/context.c",
         "neverc_context_with_deadline": "src/context/context.c",
-        "neverc_context_cause": "src/context/context.c"
+        "neverc_context_cause": "src/context/context.c",
+        "neverc_context_without_cancel": "src/context/context.c",
+        "neverc_context_with_timeout_cause": "src/context/context.c",
+        "neverc_context_with_deadline_cause": "src/context/context.c",
+        "neverc_context_after_func": "src/context/context.c"
       },
       "dot_methods": {
         "background": "neverc_context_background",
         "with_cancel": "neverc_context_with_cancel",
         "with_timeout": "neverc_context_with_timeout",
+        "with_timeout_cause": "neverc_context_with_timeout_cause",
+        "with_deadline_cause": "neverc_context_with_deadline_cause",
         "with_value": "neverc_context_with_value",
         "done": "neverc_context_done",
         "err": "neverc_context_err",
@@ -2517,7 +2854,10 @@
         "todo": "neverc_context_todo",
         "with_cancel_cause": "neverc_context_with_cancel_cause",
         "with_deadline": "neverc_context_with_deadline",
-        "cause": "neverc_context_cause"
+        "cause": "neverc_context_cause",
+        "without_cancel": "neverc_context_without_cancel",
+        "after_func": "neverc_context_after_func",
+        "free": "neverc_context_free"
       }
     },
     "slices": {
@@ -2556,35 +2896,38 @@
       "header": "include/neverc/maps.h",
       "description": "String-keyed hash map \u2014 set, get, delete, keys, values, clone (mirrors Go maps package)",
       "symbols": {
-        "neverc_map_new": "src/maps/maps.c",
-        "neverc_map_free": "src/maps/maps.c",
-        "neverc_map_clear": "src/maps/maps.c",
-        "neverc_map_set": "src/maps/maps.c",
-        "neverc_map_get": "src/maps/maps.c",
-        "neverc_map_has": "src/maps/maps.c",
-        "neverc_map_delete": "src/maps/maps.c",
-        "neverc_map_len": "src/maps/maps.c",
-        "neverc_map_keys": "src/maps/maps.c",
-        "neverc_map_values": "src/maps/maps.c",
-        "neverc_map_foreach": "src/maps/maps.c",
-        "neverc_map_delete_func": "src/maps/maps.c",
-        "neverc_map_clone": "src/maps/maps.c",
-        "neverc_map_equal": "src/maps/maps.c"
+        "neverc_maps_new": "src/maps/maps.c",
+        "neverc_maps_free": "src/maps/maps.c",
+        "neverc_maps_clear": "src/maps/maps.c",
+        "neverc_maps_set": "src/maps/maps.c",
+        "neverc_maps_get": "src/maps/maps.c",
+        "neverc_maps_has": "src/maps/maps.c",
+        "neverc_maps_delete": "src/maps/maps.c",
+        "neverc_maps_len": "src/maps/maps.c",
+        "neverc_maps_keys": "src/maps/maps.c",
+        "neverc_maps_values": "src/maps/maps.c",
+        "neverc_maps_foreach": "src/maps/maps.c",
+        "neverc_maps_delete_func": "src/maps/maps.c",
+        "neverc_maps_clone": "src/maps/maps.c",
+        "neverc_maps_equal": "src/maps/maps.c",
+        "neverc_maps_copy": "src/maps/maps.c"
       },
       "dot_methods": {
-        "new": "neverc_map_new",
-        "free": "neverc_map_free",
-        "clear": "neverc_map_clear",
-        "set": "neverc_map_set",
-        "get": "neverc_map_get",
-        "has": "neverc_map_has",
-        "delete": "neverc_map_delete",
-        "len": "neverc_map_len",
-        "keys": "neverc_map_keys",
-        "values": "neverc_map_values",
-        "foreach": "neverc_map_foreach",
-        "clone": "neverc_map_clone",
-        "equal": "neverc_map_equal"
+        "new": "neverc_maps_new",
+        "free": "neverc_maps_free",
+        "clear": "neverc_maps_clear",
+        "set": "neverc_maps_set",
+        "get": "neverc_maps_get",
+        "has": "neverc_maps_has",
+        "delete": "neverc_maps_delete",
+        "len": "neverc_maps_len",
+        "keys": "neverc_maps_keys",
+        "values": "neverc_maps_values",
+        "foreach": "neverc_maps_foreach",
+        "clone": "neverc_maps_clone",
+        "equal": "neverc_maps_equal",
+        "copy": "neverc_maps_copy",
+        "delete_func": "neverc_maps_delete_func"
       }
     },
     "image": {
@@ -2623,7 +2966,34 @@
       },
       "dot_methods": {
         "pt": "neverc_pt",
-        "rect": "neverc_rect"
+        "rect": "neverc_rect",
+        "rgba_init": "neverc_image_rgba_init",
+        "rgba_free": "neverc_image_rgba_free",
+        "rgba_set": "neverc_image_rgba_set",
+        "rgba_at": "neverc_image_rgba_at",
+        "gray_init": "neverc_image_gray_init",
+        "gray_free": "neverc_image_gray_free",
+        "gray_set": "neverc_image_gray_set",
+        "gray_at": "neverc_image_gray_at",
+        "point_add": "neverc_point_add",
+        "point_sub": "neverc_point_sub",
+        "point_mul": "neverc_point_mul",
+        "point_div": "neverc_point_div",
+        "point_eq": "neverc_point_eq",
+        "point_in": "neverc_point_in",
+        "point_mod": "neverc_point_mod",
+        "rect_dx": "neverc_rect_dx",
+        "rect_dy": "neverc_rect_dy",
+        "rect_add": "neverc_rect_add",
+        "rect_sub": "neverc_rect_sub",
+        "rect_inset": "neverc_rect_inset",
+        "rect_intersect": "neverc_rect_intersect",
+        "rect_union": "neverc_rect_union",
+        "rect_empty": "neverc_rect_empty",
+        "rect_eq": "neverc_rect_eq",
+        "rect_overlaps": "neverc_rect_overlaps",
+        "rect_in": "neverc_rect_in",
+        "rect_canon": "neverc_rect_canon"
       }
     },
     "image/draw": {
@@ -2636,7 +3006,9 @@
       },
       "dot_methods": {
         "draw": "neverc_draw",
-        "draw_uniform": "neverc_draw_uniform"
+        "draw_uniform": "neverc_draw_uniform",
+        "uniform": "neverc_draw_uniform",
+        "gray_over": "neverc_draw_gray_over"
       }
     },
     "io/fs": {
@@ -2679,7 +3051,10 @@
         "escape": "neverc_html_escape",
         "js_escape": "neverc_html_js_escape",
         "css_escape": "neverc_html_css_escape",
-        "url_escape": "neverc_html_url_query_escape"
+        "url_escape": "neverc_html_url_query_escape",
+        "free": "neverc_html_template_free",
+        "execute": "neverc_html_template_execute",
+        "attr_escape": "neverc_html_attr_escape"
       }
     },
     "net/textproto": {
@@ -2702,7 +3077,16 @@
         "canonical_key": "neverc_textproto_canonical_mime_header_key",
         "read_header": "neverc_textproto_read_mime_header",
         "read_line": "neverc_textproto_read_line",
-        "read_code_line": "neverc_textproto_read_code_line"
+        "read_code_line": "neverc_textproto_read_code_line",
+        "canonical_mime_header_key": "neverc_textproto_canonical_mime_header_key",
+        "read_mime_header": "neverc_textproto_read_mime_header",
+        "read_dot_lines": "neverc_textproto_read_dot_lines",
+        "mime_header_init": "neverc_mime_header_init",
+        "mime_header_free": "neverc_mime_header_free",
+        "mime_header_add": "neverc_mime_header_add",
+        "mime_header_set": "neverc_mime_header_set",
+        "mime_header_get": "neverc_mime_header_get",
+        "mime_header_del": "neverc_mime_header_del"
       }
     },
     "os/user": {
@@ -2911,7 +3295,7 @@
     },
     "cstring": {
       "header": "include/neverc/std/cstring.h",
-      "description": "C-string manipulation — search, transform, split, trim, join, cut (mirrors Go strings package for null-terminated C strings)",
+      "description": "C-string manipulation \u2014 search, transform, split, trim, join, cut (mirrors Go strings package for null-terminated C strings)",
       "symbols": {
         "neverc_cstring_compare": "src/cstring/cstring.c",
         "neverc_cstring_equal_fold": "src/cstring/cstring.c",
@@ -2999,7 +3383,7 @@
     },
     "regexp/syntax": {
       "header": "include/neverc/std/regexp_syntax.h",
-      "description": "Regex parse tree — parses regex patterns into ASTs (mirrors Go regexp/syntax)",
+      "description": "Regex parse tree \u2014 parses regex patterns into ASTs (mirrors Go regexp/syntax)",
       "symbols": {
         "neverc_regexp_syntax_parse": "src/regexp/syntax/syntax.c",
         "neverc_regexp_syntax_free": "src/regexp/syntax/syntax.c",
@@ -3019,7 +3403,7 @@
     },
     "time/tzdata": {
       "header": "include/neverc/std/time_tzdata.h",
-      "description": "Embedded timezone data — 100+ IANA timezones with UTC offsets and DST rules (mirrors Go time/tzdata)",
+      "description": "Embedded timezone data \u2014 100+ IANA timezones with UTC offsets and DST rules (mirrors Go time/tzdata)",
       "symbols": {
         "neverc_tzdata_lookup": "src/time/tzdata/tzdata.c",
         "neverc_tzdata_lookup_abbrev": "src/time/tzdata/tzdata.c",
@@ -3045,7 +3429,7 @@
     },
     "http": {
       "header": "include/neverc/std/net/http.h",
-      "description": "HTTP server and client — production-grade with thread pool, event loop, keep-alive, chunked transfer, SSE, multipart (mirrors Go net/http)",
+      "description": "HTTP server and client \u2014 production-grade with thread pool, event loop, keep-alive, chunked transfer, SSE, multipart (mirrors Go net/http)",
       "symbols": {
         "neverc_http_set_status": "src/net/http/http.c",
         "neverc_http_set_header": "src/net/http/http.c",
@@ -3113,10 +3497,7 @@
         "neverc_http_client_set_max_redirects": "src/net/http/http.c",
         "neverc_http_enable_gzip": "src/net/http/http.c",
         "neverc_http_disable_gzip": "src/net/http/http.c",
-        "neverc_http_enable_access_log": "src/net/http/http.c",
-        "neverc_http_enable_chunked": "src/net/http/http.c",
-        "neverc_http_flush_chunk": "src/net/http/http.c",
-        "neverc_http_end_chunked": "src/net/http/http.c"
+        "neverc_http_enable_access_log": "src/net/http/http.c"
       },
       "dot_methods": {
         "set_status": "neverc_http_set_status",
@@ -3174,12 +3555,23 @@
         "response_free": "neverc_http_response_free",
         "memory_writer_new": "neverc_http_memory_writer_new",
         "memory_writer_result": "neverc_http_memory_writer_result",
-        "memory_writer_free": "neverc_http_memory_writer_free"
+        "memory_writer_free": "neverc_http_memory_writer_free",
+        "mux_free": "neverc_http_mux_free",
+        "set_max_requests": "neverc_http_set_max_requests",
+        "set_read_timeout": "neverc_http_set_read_timeout",
+        "set_max_connections": "neverc_http_set_max_connections",
+        "set_max_header_size": "neverc_http_set_max_header_size",
+        "set_max_body_size": "neverc_http_set_max_body_size",
+        "set_shutdown_timeout": "neverc_http_set_shutdown_timeout",
+        "use": "neverc_http_use",
+        "client_set_pool": "neverc_http_client_set_pool",
+        "client_set_timeout": "neverc_http_client_set_timeout",
+        "client_set_max_redirects": "neverc_http_client_set_max_redirects"
       }
     },
     "httputil": {
       "header": "include/neverc/std/net/http/httputil.h",
-      "description": "HTTP utilities — reverse proxy and request dumping (mirrors Go net/http/httputil)",
+      "description": "HTTP utilities \u2014 reverse proxy and request dumping (mirrors Go net/http/httputil)",
       "symbols": {
         "neverc_httputil_new_single_host_reverse_proxy": "src/net/http/httputil/httputil.c",
         "neverc_httputil_proxy_set_rewrite": "src/net/http/httputil/httputil.c",
@@ -3203,7 +3595,7 @@
     },
     "smtp": {
       "header": "include/neverc/std/net/smtp.h",
-      "description": "SMTP client — send email (mirrors Go net/smtp, RFC 5321)",
+      "description": "SMTP client \u2014 send email (mirrors Go net/smtp, RFC 5321)",
       "symbols": {
         "neverc_smtp_dial": "src/net/smtp/smtp.c",
         "neverc_smtp_close": "src/net/smtp/smtp.c",
@@ -3239,7 +3631,7 @@
     },
     "container/vector": {
       "header": "include/neverc/std/container/vector.h",
-      "description": "Dynamic array (C equivalent of std::vector) — contiguous, resizable, type-generic",
+      "description": "Dynamic array (C equivalent of std::vector) \u2014 contiguous, resizable, type-generic",
       "symbols": {
         "neverc_vector_new": "src/container/vector/vector.c",
         "neverc_vector_new_with_capacity": "src/container/vector/vector.c",
@@ -3377,7 +3769,460 @@
         "none": "neverc_vector_none",
         "partition": "neverc_vector_partition",
         "generate": "neverc_vector_generate",
-        "merge": "neverc_vector_merge"
+        "merge": "neverc_vector_merge",
+        "init": "neverc_vector_init",
+        "destroy": "neverc_vector_destroy",
+        "elem_size": "neverc_vector_elem_size",
+        "insert_range": "neverc_vector_insert_range",
+        "erase_range": "neverc_vector_erase_range",
+        "assign": "neverc_vector_assign",
+        "foreach": "neverc_vector_foreach",
+        "any": "neverc_vector_any",
+        "all": "neverc_vector_all",
+        "begin": "neverc_vector_begin",
+        "end": "neverc_vector_end"
+      }
+    },
+    "net/tcp": {
+      "header": "include/neverc/std/net/tcp.h",
+      "description": "net/tcp module",
+      "symbols": {
+        "neverc_tcp_accept": "src/net/tcp/tcp.c",
+        "neverc_tcp_adopt": "src/net/tcp/tcp.c",
+        "neverc_tcp_close": "src/net/tcp/tcp.c",
+        "neverc_tcp_dial": "src/net/tcp/tcp.c",
+        "neverc_tcp_listen": "src/net/tcp/tcp.c",
+        "neverc_tcp_listener_addr": "src/net/tcp/tcp.c",
+        "neverc_tcp_listener_close": "src/net/tcp/tcp.c",
+        "neverc_tcp_local_addr": "src/net/tcp/tcp.c",
+        "neverc_tcp_pipe": "src/net/tcp/tcp.c",
+        "neverc_tcp_read": "src/net/tcp/tcp.c",
+        "neverc_tcp_remote_addr": "src/net/tcp/tcp.c",
+        "neverc_tcp_set_keepalive": "src/net/tcp/tcp.c",
+        "neverc_tcp_set_nodelay": "src/net/tcp/tcp.c",
+        "neverc_tcp_set_read_buffer": "src/net/tcp/tcp.c",
+        "neverc_tcp_set_reuseaddr": "src/net/tcp/tcp.c",
+        "neverc_tcp_set_timeout": "src/net/tcp/tcp.c",
+        "neverc_tcp_set_write_buffer": "src/net/tcp/tcp.c",
+        "neverc_tcp_write": "src/net/tcp/tcp.c"
+      },
+      "dot_methods": {
+        "accept": "neverc_tcp_accept",
+        "adopt": "neverc_tcp_adopt",
+        "close": "neverc_tcp_close",
+        "dial": "neverc_tcp_dial",
+        "listen": "neverc_tcp_listen",
+        "listener_addr": "neverc_tcp_listener_addr",
+        "listener_close": "neverc_tcp_listener_close",
+        "local_addr": "neverc_tcp_local_addr",
+        "pipe": "neverc_tcp_pipe",
+        "read": "neverc_tcp_read",
+        "remote_addr": "neverc_tcp_remote_addr",
+        "set_keepalive": "neverc_tcp_set_keepalive",
+        "set_nodelay": "neverc_tcp_set_nodelay",
+        "set_read_buffer": "neverc_tcp_set_read_buffer",
+        "set_reuseaddr": "neverc_tcp_set_reuseaddr",
+        "set_timeout": "neverc_tcp_set_timeout",
+        "set_write_buffer": "neverc_tcp_set_write_buffer",
+        "write": "neverc_tcp_write"
+      }
+    },
+    "net/udp": {
+      "header": "include/neverc/std/net/udp.h",
+      "description": "net/udp module",
+      "symbols": {
+        "neverc_udp_close": "src/net/udp/udp.c",
+        "neverc_udp_dial": "src/net/udp/udp.c",
+        "neverc_udp_listen": "src/net/udp/udp.c",
+        "neverc_udp_local_addr": "src/net/udp/udp.c",
+        "neverc_udp_read": "src/net/udp/udp.c",
+        "neverc_udp_read_from": "src/net/udp/udp.c",
+        "neverc_udp_resolve_addr": "src/net/udp/udp.c",
+        "neverc_udp_set_broadcast": "src/net/udp/udp.c",
+        "neverc_udp_set_timeout": "src/net/udp/udp.c",
+        "neverc_udp_write": "src/net/udp/udp.c",
+        "neverc_udp_write_to": "src/net/udp/udp.c"
+      },
+      "dot_methods": {
+        "close": "neverc_udp_close",
+        "dial": "neverc_udp_dial",
+        "listen": "neverc_udp_listen",
+        "local_addr": "neverc_udp_local_addr",
+        "read": "neverc_udp_read",
+        "read_from": "neverc_udp_read_from",
+        "resolve_addr": "neverc_udp_resolve_addr",
+        "set_broadcast": "neverc_udp_set_broadcast",
+        "set_timeout": "neverc_udp_set_timeout",
+        "write": "neverc_udp_write",
+        "write_to": "neverc_udp_write_to"
+      }
+    },
+    "net/websocket": {
+      "header": "include/neverc/std/net/websocket.h",
+      "description": "net/websocket module",
+      "symbols": {
+        "neverc_ws_compute_accept": "src/net/websocket/websocket.c",
+        "neverc_ws_conn_free": "src/net/websocket/websocket.c",
+        "neverc_ws_conn_new": "src/net/websocket/websocket.c",
+        "neverc_ws_handshake_server": "src/net/websocket/websocket.c",
+        "neverc_ws_read_frame": "src/net/websocket/websocket.c",
+        "neverc_ws_read_message": "src/net/websocket/websocket.c",
+        "neverc_ws_send_close": "src/net/websocket/websocket.c",
+        "neverc_ws_send_ping": "src/net/websocket/websocket.c",
+        "neverc_ws_send_pong": "src/net/websocket/websocket.c",
+        "neverc_ws_set_timeout": "src/net/websocket/websocket.c",
+        "neverc_ws_upgrade_http": "src/net/websocket/websocket.c",
+        "neverc_ws_write_binary": "src/net/websocket/websocket.c",
+        "neverc_ws_write_message": "src/net/websocket/websocket.c",
+        "neverc_ws_write_text": "src/net/websocket/websocket.c"
+      },
+      "dot_methods": {
+        "compute_accept": "neverc_ws_compute_accept",
+        "conn_free": "neverc_ws_conn_free",
+        "conn_new": "neverc_ws_conn_new",
+        "handshake_server": "neverc_ws_handshake_server",
+        "read_frame": "neverc_ws_read_frame",
+        "read_message": "neverc_ws_read_message",
+        "send_close": "neverc_ws_send_close",
+        "send_ping": "neverc_ws_send_ping",
+        "send_pong": "neverc_ws_send_pong",
+        "set_timeout": "neverc_ws_set_timeout",
+        "upgrade_http": "neverc_ws_upgrade_http",
+        "write_binary": "neverc_ws_write_binary",
+        "write_message": "neverc_ws_write_message",
+        "write_text": "neverc_ws_write_text"
+      }
+    },
+    "net/resolve": {
+      "header": "include/neverc/std/net/resolve.h",
+      "description": "net/resolve module",
+      "symbols": {
+        "neverc_net_join_host_port": "src/net/resolve/resolve.c",
+        "neverc_net_lookup_addr": "src/net/resolve/resolve.c",
+        "neverc_net_lookup_cname": "src/net/resolve/resolve.c",
+        "neverc_net_lookup_host": "src/net/resolve/resolve.c",
+        "neverc_net_lookup_ip": "src/net/resolve/resolve.c",
+        "neverc_net_lookup_mx": "src/net/resolve/resolve.c",
+        "neverc_net_lookup_ns": "src/net/resolve/resolve.c",
+        "neverc_net_lookup_port": "src/net/resolve/resolve.c",
+        "neverc_net_lookup_srv": "src/net/resolve/resolve.c",
+        "neverc_net_lookup_txt": "src/net/resolve/resolve.c",
+        "neverc_net_pipe": "src/net/resolve/resolve.c",
+        "neverc_net_pipe_close": "src/net/resolve/resolve.c",
+        "neverc_net_pipe_read": "src/net/resolve/resolve.c",
+        "neverc_net_pipe_write": "src/net/resolve/resolve.c",
+        "neverc_net_split_host_port": "src/net/resolve/resolve.c"
+      },
+      "dot_methods": {
+        "join_host_port": "neverc_net_join_host_port",
+        "lookup_addr": "neverc_net_lookup_addr",
+        "lookup_cname": "neverc_net_lookup_cname",
+        "lookup_host": "neverc_net_lookup_host",
+        "lookup_ip": "neverc_net_lookup_ip",
+        "lookup_mx": "neverc_net_lookup_mx",
+        "lookup_ns": "neverc_net_lookup_ns",
+        "lookup_port": "neverc_net_lookup_port",
+        "lookup_srv": "neverc_net_lookup_srv",
+        "lookup_txt": "neverc_net_lookup_txt",
+        "pipe": "neverc_net_pipe",
+        "pipe_close": "neverc_net_pipe_close",
+        "pipe_read": "neverc_net_pipe_read",
+        "pipe_write": "neverc_net_pipe_write",
+        "split_host_port": "neverc_net_split_host_port"
+      }
+    },
+    "net/interface": {
+      "header": "include/neverc/std/net/interface.h",
+      "description": "net/interface module",
+      "symbols": {
+        "neverc_net_interface_addrs": "src/net/interface/interface.c",
+        "neverc_net_interface_by_index": "src/net/interface/interface.c",
+        "neverc_net_interface_by_name": "src/net/interface/interface.c",
+        "neverc_net_interfaces": "src/net/interface/interface.c"
+      },
+      "dot_methods": {
+        "_addrs": "neverc_net_interface_addrs",
+        "_by_index": "neverc_net_interface_by_index",
+        "_by_name": "neverc_net_interface_by_name",
+        "s": "neverc_net_interfaces",
+        "interface_addrs": "neverc_net_interface_addrs",
+        "interface_by_index": "neverc_net_interface_by_index",
+        "interface_by_name": "neverc_net_interface_by_name",
+        "interfaces": "neverc_net_interfaces"
+      }
+    },
+    "net/http2": {
+      "header": "include/neverc/std/net/http2.h",
+      "description": "net/http2 module",
+      "symbols": {
+        "neverc_h2_frame_header_read": "src/net/http/http2/http2.c",
+        "neverc_h2_frame_header_write": "src/net/http/http2/http2.c",
+        "neverc_h2_listen_and_serve": "src/net/http/http2/http2.c",
+        "neverc_h2_listen_and_serve_h2c": "src/net/http/http2/http2.c",
+        "neverc_h2_serve_conn": "src/net/http/http2/http2.c",
+        "neverc_h2_server_create": "src/net/http/http2/http2.c",
+        "neverc_h2_server_destroy": "src/net/http/http2/http2.c",
+        "neverc_h2_server_set_initial_window_size": "src/net/http/http2/http2.c",
+        "neverc_h2_server_set_max_frame_size": "src/net/http/http2/http2.c",
+        "neverc_h2_server_set_max_header_list_size": "src/net/http/http2/http2.c",
+        "neverc_h2_server_set_max_streams": "src/net/http/http2/http2.c",
+        "neverc_h2_settings_init": "src/net/http/http2/http2.c",
+        "neverc_hpack_decode": "src/net/http/http2/http2.c",
+        "neverc_hpack_decoder_create": "src/net/http/http2/http2.c",
+        "neverc_hpack_decoder_destroy": "src/net/http/http2/http2.c",
+        "neverc_hpack_encode": "src/net/http/http2/http2.c",
+        "neverc_hpack_encoder_create": "src/net/http/http2/http2.c",
+        "neverc_hpack_encoder_destroy": "src/net/http/http2/http2.c",
+        "neverc_hpack_huffman_decode": "src/net/http/http2/http2.c",
+        "neverc_hpack_huffman_encode": "src/net/http/http2/http2.c",
+        "neverc_http2_listen_and_serve": "src/net/http/http2/http2.c",
+        "neverc_http2_server_create": "src/net/http/http2/http2.c",
+        "neverc_http2_server_set_max_streams": "src/net/http/http2/http2.c"
+      },
+      "dot_methods": {
+        "frame_header_read": "neverc_h2_frame_header_read",
+        "frame_header_write": "neverc_h2_frame_header_write",
+        "listen_and_serve": "neverc_h2_listen_and_serve",
+        "listen_and_serve_h2c": "neverc_h2_listen_and_serve_h2c",
+        "serve_conn": "neverc_h2_serve_conn",
+        "server_create": "neverc_h2_server_create",
+        "server_destroy": "neverc_h2_server_destroy",
+        "server_set_initial_window_size": "neverc_h2_server_set_initial_window_size",
+        "server_set_max_frame_size": "neverc_h2_server_set_max_frame_size",
+        "server_set_max_header_list_size": "neverc_h2_server_set_max_header_list_size",
+        "server_set_max_streams": "neverc_h2_server_set_max_streams",
+        "settings_init": "neverc_h2_settings_init",
+        "hpack_decode": "neverc_hpack_decode",
+        "hpack_decoder_create": "neverc_hpack_decoder_create",
+        "hpack_decoder_destroy": "neverc_hpack_decoder_destroy",
+        "hpack_encode": "neverc_hpack_encode",
+        "hpack_encoder_create": "neverc_hpack_encoder_create",
+        "hpack_encoder_destroy": "neverc_hpack_encoder_destroy",
+        "hpack_huffman_decode": "neverc_hpack_huffman_decode",
+        "hpack_huffman_encode": "neverc_hpack_huffman_encode"
+      }
+    },
+    "net/httptest": {
+      "header": "include/neverc/std/net/httptest.h",
+      "description": "net/httptest module",
+      "symbols": {
+        "neverc_httptest_addr": "src/net/http/httptest/httptest.c",
+        "neverc_httptest_close": "src/net/http/httptest/httptest.c",
+        "neverc_httptest_new_recorder": "src/net/http/httptest/httptest.c",
+        "neverc_httptest_new_server": "src/net/http/httptest/httptest.c",
+        "neverc_httptest_recorder_free": "src/net/http/httptest/httptest.c",
+        "neverc_httptest_recorder_header": "src/net/http/httptest/httptest.c",
+        "neverc_httptest_recorder_writer": "src/net/http/httptest/httptest.c",
+        "neverc_httptest_url": "src/net/http/httptest/httptest.c"
+      },
+      "dot_methods": {
+        "addr": "neverc_httptest_addr",
+        "close": "neverc_httptest_close",
+        "new_recorder": "neverc_httptest_new_recorder",
+        "new_server": "neverc_httptest_new_server",
+        "recorder_free": "neverc_httptest_recorder_free",
+        "recorder_header": "neverc_httptest_recorder_header",
+        "recorder_writer": "neverc_httptest_recorder_writer",
+        "url": "neverc_httptest_url"
+      }
+    },
+    "net/cookiejar": {
+      "header": "include/neverc/std/net/cookiejar.h",
+      "description": "net/cookiejar module",
+      "symbols": {
+        "neverc_cookiejar_clear_all": "src/net/http/cookiejar/cookiejar.c",
+        "neverc_cookiejar_clear_domain": "src/net/http/cookiejar/cookiejar.c",
+        "neverc_cookiejar_cookie_header": "src/net/http/cookiejar/cookiejar.c",
+        "neverc_cookiejar_cookies": "src/net/http/cookiejar/cookiejar.c",
+        "neverc_cookiejar_count": "src/net/http/cookiejar/cookiejar.c",
+        "neverc_cookiejar_free": "src/net/http/cookiejar/cookiejar.c",
+        "neverc_cookiejar_new": "src/net/http/cookiejar/cookiejar.c",
+        "neverc_cookiejar_set_cookie_header": "src/net/http/cookiejar/cookiejar.c",
+        "neverc_cookiejar_set_cookies": "src/net/http/cookiejar/cookiejar.c"
+      },
+      "dot_methods": {
+        "clear_all": "neverc_cookiejar_clear_all",
+        "clear_domain": "neverc_cookiejar_clear_domain",
+        "cookie_header": "neverc_cookiejar_cookie_header",
+        "cookies": "neverc_cookiejar_cookies",
+        "count": "neverc_cookiejar_count",
+        "free": "neverc_cookiejar_free",
+        "new": "neverc_cookiejar_new",
+        "set_cookie_header": "neverc_cookiejar_set_cookie_header",
+        "set_cookies": "neverc_cookiejar_set_cookies"
+      }
+    },
+    "crypto/tls": {
+      "header": "include/neverc/std/crypto/tls.h",
+      "description": "crypto/tls module",
+      "symbols": {
+        "neverc_tls_accept": "src/crypto/tls/tls.c",
+        "neverc_tls_alpn": "src/crypto/tls/tls.c",
+        "neverc_tls_cipher_suite": "src/crypto/tls/tls.c",
+        "neverc_tls_client": "src/crypto/tls/tls.c",
+        "neverc_tls_close": "src/crypto/tls/tls.c",
+        "neverc_tls_config_free": "src/crypto/tls/tls.c",
+        "neverc_tls_config_insecure_skip_verify": "src/crypto/tls/tls.c",
+        "neverc_tls_config_load_cert": "src/crypto/tls/tls.c",
+        "neverc_tls_config_load_cert_mem": "src/crypto/tls/tls.c",
+        "neverc_tls_config_new": "src/crypto/tls/tls.c",
+        "neverc_tls_config_set_alpn": "src/crypto/tls/tls.c",
+        "neverc_tls_config_set_server_name": "src/crypto/tls/tls.c",
+        "neverc_tls_dial": "src/crypto/tls/tls.c",
+        "neverc_tls_listen": "src/crypto/tls/tls.c",
+        "neverc_tls_listener_close": "src/crypto/tls/tls.c",
+        "neverc_tls_peer_certificate": "src/crypto/tls/tls.c",
+        "neverc_tls_read": "src/crypto/tls/tls.c",
+        "neverc_tls_server": "src/crypto/tls/tls.c",
+        "neverc_tls_write": "src/crypto/tls/tls.c"
+      },
+      "dot_methods": {
+        "accept": "neverc_tls_accept",
+        "alpn": "neverc_tls_alpn",
+        "cipher_suite": "neverc_tls_cipher_suite",
+        "client": "neverc_tls_client",
+        "close": "neverc_tls_close",
+        "config_free": "neverc_tls_config_free",
+        "config_insecure_skip_verify": "neverc_tls_config_insecure_skip_verify",
+        "config_load_cert": "neverc_tls_config_load_cert",
+        "config_load_cert_mem": "neverc_tls_config_load_cert_mem",
+        "config_new": "neverc_tls_config_new",
+        "config_set_alpn": "neverc_tls_config_set_alpn",
+        "config_set_server_name": "neverc_tls_config_set_server_name",
+        "dial": "neverc_tls_dial",
+        "listen": "neverc_tls_listen",
+        "listener_close": "neverc_tls_listener_close",
+        "peer_certificate": "neverc_tls_peer_certificate",
+        "read": "neverc_tls_read",
+        "server": "neverc_tls_server",
+        "write": "neverc_tls_write"
+      }
+    },
+    "image/palette": {
+      "header": "include/neverc/image/color/palette.h",
+      "description": "image/palette module",
+      "symbols": {
+        "neverc_palette_plan9_index": "src/src/image/color/palette/palette.c",
+        "neverc_palette_websafe_index": "src/src/image/color/palette/palette.c"
+      },
+      "dot_methods": {
+        "plan9_index": "neverc_palette_plan9_index",
+        "websafe_index": "neverc_palette_websafe_index"
+      }
+    },
+    "debug/plan9obj": {
+      "header": "include/neverc/debug/plan9obj.h",
+      "description": "debug/plan9obj module",
+      "symbols": {
+        "neverc_plan9_close": "src/src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_open": "src/src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_parse": "src/src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_section": "src/src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_section_data": "src/src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_symbols": "src/src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_valid_magic": "src/src/debug/plan9obj/plan9obj.c"
+      },
+      "dot_methods": {
+        "close": "neverc_plan9_close",
+        "open": "neverc_plan9_open",
+        "parse": "neverc_plan9_parse",
+        "section": "neverc_plan9_section",
+        "section_data": "neverc_plan9_section_data",
+        "symbols": "neverc_plan9_symbols",
+        "valid_magic": "neverc_plan9_valid_magic"
+      }
+    },
+    "arena": {
+      "header": "include/neverc/std/arena.h",
+      "symbols": {
+        "neverc_arena_new": "src/arena/arena.c",
+        "neverc_arena_free": "src/arena/arena.c",
+        "neverc_arena_reset": "src/arena/arena.c",
+        "neverc_arena_alloc": "src/arena/arena.c",
+        "neverc_arena_alloc_aligned": "src/arena/arena.c",
+        "neverc_arena_calloc": "src/arena/arena.c",
+        "neverc_arena_strdup": "src/arena/arena.c",
+        "neverc_arena_strndup": "src/arena/arena.c",
+        "neverc_arena_memdup": "src/arena/arena.c",
+        "neverc_arena_bytes_allocated": "src/arena/arena.c",
+        "neverc_arena_num_chunks": "src/arena/arena.c"
+      },
+      "dot_methods": {
+        "new": "neverc_arena_new",
+        "free": "neverc_arena_free",
+        "reset": "neverc_arena_reset",
+        "alloc": "neverc_arena_alloc",
+        "alloc_aligned": "neverc_arena_alloc_aligned",
+        "calloc": "neverc_arena_calloc",
+        "strdup": "neverc_arena_strdup",
+        "strndup": "neverc_arena_strndup",
+        "memdup": "neverc_arena_memdup",
+        "bytes_allocated": "neverc_arena_bytes_allocated",
+        "num_chunks": "neverc_arena_num_chunks"
+      }
+    },
+    "unique": {
+      "header": "include/neverc/std/unique.h",
+      "symbols": {
+        "neverc_unique_init": "src/unique/unique.c",
+        "neverc_unique_destroy": "src/unique/unique.c",
+        "neverc_unique_make_string": "src/unique/unique.c",
+        "neverc_unique_make_int64": "src/unique/unique.c",
+        "neverc_unique_make_uint64": "src/unique/unique.c",
+        "neverc_unique_make_bytes": "src/unique/unique.c",
+        "neverc_unique_string_value": "src/unique/unique.c",
+        "neverc_unique_int64_value": "src/unique/unique.c",
+        "neverc_unique_uint64_value": "src/unique/unique.c",
+        "neverc_unique_bytes_value": "src/unique/unique.c",
+        "neverc_unique_handle_equal": "src/unique/unique.c",
+        "neverc_unique_handle_valid": "src/unique/unique.c",
+        "neverc_unique_count": "src/unique/unique.c"
+      },
+      "dot_methods": {
+        "init": "neverc_unique_init",
+        "destroy": "neverc_unique_destroy",
+        "make_string": "neverc_unique_make_string",
+        "make_int64": "neverc_unique_make_int64",
+        "make_uint64": "neverc_unique_make_uint64",
+        "make_bytes": "neverc_unique_make_bytes",
+        "string_value": "neverc_unique_string_value",
+        "int64_value": "neverc_unique_int64_value",
+        "uint64_value": "neverc_unique_uint64_value",
+        "bytes_value": "neverc_unique_bytes_value",
+        "handle_equal": "neverc_unique_handle_equal",
+        "handle_valid": "neverc_unique_handle_valid",
+        "count": "neverc_unique_count"
+      }
+    },
+    "weak": {
+      "header": "include/neverc/std/weak.h",
+      "symbols": {
+        "neverc_weak_new": "src/weak/weak.c",
+        "neverc_weak_new_with_free": "src/weak/weak.c",
+        "neverc_weak_strong_retain": "src/weak/weak.c",
+        "neverc_weak_strong_release": "src/weak/weak.c",
+        "neverc_weak_make": "src/weak/weak.c",
+        "neverc_weak_ref_retain": "src/weak/weak.c",
+        "neverc_weak_ref_release": "src/weak/weak.c",
+        "neverc_weak_value": "src/weak/weak.c",
+        "neverc_weak_upgrade": "src/weak/weak.c",
+        "neverc_weak_ref_equal": "src/weak/weak.c",
+        "neverc_weak_strong_count": "src/weak/weak.c",
+        "neverc_weak_ref_count": "src/weak/weak.c"
+      },
+      "dot_methods": {
+        "new": "neverc_weak_new",
+        "new_with_free": "neverc_weak_new_with_free",
+        "strong_retain": "neverc_weak_strong_retain",
+        "strong_release": "neverc_weak_strong_release",
+        "make": "neverc_weak_make",
+        "ref_retain": "neverc_weak_ref_retain",
+        "ref_release": "neverc_weak_ref_release",
+        "value": "neverc_weak_value",
+        "upgrade": "neverc_weak_upgrade",
+        "ref_equal": "neverc_weak_ref_equal",
+        "strong_count": "neverc_weak_strong_count",
+        "ref_count": "neverc_weak_ref_count"
       }
     }
   }
