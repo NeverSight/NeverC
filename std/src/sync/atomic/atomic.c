@@ -1,7 +1,7 @@
 #include "neverc/std/sync/atomic.h"
 #include "neverc/std/_platform.h"
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(__clang__) && !defined(__neverc__)
 #include <intrin.h>
 
 int32_t neverc_atomic_load_int32(const volatile int32_t *addr) { return _InterlockedOr((volatile long*)addr, 0); }

@@ -884,11 +884,20 @@ static void test_filepath_dot_syntax(void) {
     const char *e = path.filepath.ext("hello.tar.gz");
     CHECK("path.filepath.ext", strcmp(e, ".gz") == 0);
 
+#ifdef _WIN32
+    CHECK("path.filepath.isabs_true", path.filepath.isabs("C:\\Windows") == 1);
+#else
     CHECK("path.filepath.isabs_true", path.filepath.isabs("/usr/bin") == 1);
+#endif
     CHECK("path.filepath.isabs_false", path.filepath.isabs("relative/path") == 0);
 
+#ifdef _WIN32
+    const char *j = path.filepath.join("C:\\usr", "local", buf, sizeof(buf));
+    CHECK("path.filepath.join", strcmp(j, "C:\\usr\\local") == 0);
+#else
     const char *j = path.filepath.join("/usr", "local", buf, sizeof(buf));
     CHECK("path.filepath.join", strcmp(j, "/usr/local") == 0);
+#endif
 }
 
 static void test_sha1_dot_syntax(void) {

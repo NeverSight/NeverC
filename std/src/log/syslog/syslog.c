@@ -14,9 +14,19 @@ struct neverc_syslog {
 };
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
-/* Windows: use Event Log API */
+/* Windows: use Event Log API when available, else stderr fallback */
 #include <windows.h>
 #pragma comment(lib, "advapi32.lib")
+
+static int neverc_syslog_write_fallback(neverc_syslog_t *log,
+                                        neverc_syslog_priority_t priority,
+                                        const char *msg) {
+    static const char *pnames[] = {
+        "EMERG", "ALERT", "CRIT", "ERR", "WARN", "NOTICE", "INFO", "DEBUG"
+    };
+    fprintf(stderr, "%s: [%s] %s\n", log->tag, pnames[priority], msg);
+    return 0;
+}
 
 neverc_syslog_t *neverc_syslog_open(const char *tag,
                                      neverc_syslog_facility_t facility,
@@ -41,7 +51,8 @@ int neverc_syslog_write(neverc_syslog_t *log,
                         neverc_syslog_priority_t priority,
                         const char *msg) {
     if (!log || !msg || priority > log->min_priority) return -1;
-    if (!log->event_log) return -1;
+    if (!log->event_log)
+        return neverc_syslog_write_fallback(log, priority, msg);
     WORD etype = EVENTLOG_INFORMATION_TYPE;
     if (priority <= NEVERC_SYSLOG_ERR) etype = EVENTLOG_ERROR_TYPE;
     else if (priority <= NEVERC_SYSLOG_WARNING) etype = EVENTLOG_WARNING_TYPE;

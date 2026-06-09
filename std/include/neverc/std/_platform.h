@@ -7,6 +7,7 @@
  */
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #if defined(_WIN32)
@@ -35,6 +36,9 @@
 /* Secure random: use the platform's CSPRNG */
 #if defined(NEVERC_PLATFORM_WINDOWS)
   /* Link with bcrypt.lib */
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
   #include <windows.h>
   #include <bcrypt.h>
   #pragma comment(lib, "bcrypt.lib")
@@ -84,8 +88,12 @@ static inline void neverc_platform_secure_zero(void *ptr, size_t len) {
 #endif
 }
 
-/* Atomic operations */
-#if defined(_MSC_VER)
+/* Atomic operations.
+   NeverC and Clang on Windows also define _MSC_VER for ABI compatibility.
+   Avoid pulling in <intrin.h> for them because the SSE header chain
+   (xmmintrin.h → mm_malloc.h → UCRT malloc.h) relies on UCRT internal
+   macros that aren't available outside MSVC.  Use __atomic_* builtins. */
+#if defined(_MSC_VER) && !defined(__clang__) && !defined(__neverc__)
   #include <intrin.h>
   #define NEVERC_ATOMIC_LOAD32(addr)          _InterlockedOr((volatile long*)(addr), 0)
   #define NEVERC_ATOMIC_STORE32(addr, val)    _InterlockedExchange((volatile long*)(addr), (long)(val))

@@ -928,8 +928,10 @@ _DCRTIMP void __cdecl _sleep(_In_ unsigned long _Duration);
 #if !__STDC__
 
 #ifndef __cplusplus
+#ifndef __neverc__
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #define min(a, b) (((a) < (b)) ? (a) : (b))
+#endif
 #endif
 
 #define sys_errlist _sys_errlist

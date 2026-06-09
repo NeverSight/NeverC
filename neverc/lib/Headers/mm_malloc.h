@@ -4,7 +4,13 @@
 #include <stdlib.h>
 
 #ifdef _WIN32
+#if defined(__neverc__) || defined(__clang__)
+/* NeverC/Clang: avoid system UCRT <malloc.h> (_UCRT_DISABLE_CLANG_WARNINGS). */
+void *_aligned_malloc(size_t size, size_t alignment);
+void _aligned_free(void *ptr);
+#else
 #include <malloc.h>
+#endif
 #else
 extern int posix_memalign(void **__memptr, size_t __alignment, size_t __size);
 #endif
