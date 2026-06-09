@@ -1803,6 +1803,28 @@ bool GetElementPtrInst::isInBounds() const {
   return cast<GEPOperator>(this)->isInBounds();
 }
 
+void GetElementPtrInst::setHasNoUnsignedWrap(bool B) {
+  GEPOperator *Op = cast<GEPOperator>(this);
+  GEPNoWrapFlags NW = Op->getNoWrapFlags();
+  if (B)
+    NW = NW | GEPNoWrapFlags::noUnsignedWrap();
+  else
+    NW = NW.withoutNoUnsignedWrap();
+  Op->setNoWrapFlags(NW);
+}
+
+bool GetElementPtrInst::hasNoUnsignedWrap() const {
+  return cast<GEPOperator>(this)->hasNoUnsignedWrap();
+}
+
+void GetElementPtrInst::setNoWrapFlags(GEPNoWrapFlags NW) {
+  cast<GEPOperator>(this)->setNoWrapFlags(NW);
+}
+
+GEPNoWrapFlags GetElementPtrInst::getNoWrapFlags() const {
+  return cast<GEPOperator>(this)->getNoWrapFlags();
+}
+
 bool GetElementPtrInst::accumulateConstantOffset(const DataLayout &DL,
                                                  APInt &Offset) const {
   // Delegate to the generic GEPOperator implementation.

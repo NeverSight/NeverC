@@ -342,21 +342,25 @@ struct LinearExpression {
   /// True if all operations in this expression are NSW.
   bool IsNSW;
 
-  LinearExpression(const CastedValue &Val, const APInt &Scale,
-                   const APInt &Offset, bool IsNSW)
-      : Val(Val), Scale(Scale), Offset(Offset), IsNSW(IsNSW) {}
+  /// True if all operations in this expression are NUW.
+  bool IsNUW;
 
-  LinearExpression(const CastedValue &Val) : Val(Val), IsNSW(true) {
+  LinearExpression(const CastedValue &Val, const APInt &Scale,
+                   const APInt &Offset, bool IsNSW, bool IsNUW = true)
+      : Val(Val), Scale(Scale), Offset(Offset), IsNSW(IsNSW), IsNUW(IsNUW) {}
+
+  LinearExpression(const CastedValue &Val) : Val(Val), IsNSW(true), IsNUW(true) {
     unsigned BitWidth = Val.getBitWidth();
     Scale = APInt(BitWidth, 1);
     Offset = APInt(BitWidth, 0);
   }
 
-  LinearExpression mul(const APInt &Other, bool MulIsNSW) const {
+  LinearExpression mul(const APInt &Other, bool MulIsNUW, bool MulIsNSW) const {
     // The check for zero offset is necessary, because generally
     // (X +nsw Y) *nsw Z does not imply (X *nsw Z) +nsw (Y *nsw Z).
     bool NSW = IsNSW && (Other.isOne() || (MulIsNSW && Offset.isZero()));
-    return LinearExpression(Val, Scale * Other, Offset * Other, NSW);
+    bool NUW = IsNUW && (Other.isOne() || (MulIsNUW && Offset.isZero()));
+    return LinearExpression(Val, Scale * Other, Offset * Other, NSW, NUW);
   }
 };
 } // namespace
@@ -412,6 +416,7 @@ static LinearExpression GetLinearExpression(const CastedValue &Val,
                                 Depth + 1, AC, DT);
         E.Offset += RHS;
         E.IsNSW &= NSW;
+        E.IsNUW &= NUW;
         break;
       }
       case Instruction::Sub: {
@@ -419,12 +424,13 @@ static LinearExpression GetLinearExpression(const CastedValue &Val,
                                 Depth + 1, AC, DT);
         E.Offset -= RHS;
         E.IsNSW &= NSW;
+        E.IsNUW = false; // sub cannot preserve nuw in general
         break;
       }
       case Instruction::Mul:
         E = GetLinearExpression(Val.withValue(BOp->getOperand(0)), DL,
                                 Depth + 1, AC, DT)
-                .mul(RHS, NSW);
+                .mul(RHS, NUW, NSW);
         break;
       case Instruction::Shl:
         // We're trying to linearize an expression of the kind:
@@ -440,6 +446,7 @@ static LinearExpression GetLinearExpression(const CastedValue &Val,
         E.Offset <<= RHS.getLimitedValue();
         E.Scale <<= RHS.getLimitedValue();
         E.IsNSW &= NSW;
+        E.IsNUW &= NUW;
         break;
       }
       return E;
@@ -519,9 +526,9 @@ struct BasicAAResult::DecomposedGEP {
   APInt Offset;
   // Scaled variable (non-constant) indices.
   SmallVector<VariableGEPIndex, 4> VarIndices;
-  // Are all operations inbounds GEPs or non-indexing operations?
+  // Nowrap flags common to all GEP operations involved in expression.
   // (std::nullopt iff expression doesn't involve any geps)
-  std::optional<bool> InBounds;
+  std::optional<GEPNoWrapFlags> NWFlags;
 
   void dump() const {
     print(dbgs());
@@ -529,6 +536,8 @@ struct BasicAAResult::DecomposedGEP {
   }
   void print(raw_ostream &OS) const {
     OS << "(DecomposedGEP Base=" << Base->getName() << ", Offset=" << Offset
+       << ", inbounds=" << (NWFlags && NWFlags->isInBounds() ? "1" : "0")
+       << ", nuw=" << (NWFlags && NWFlags->hasNoUnsignedWrap() ? "1" : "0")
        << ", VarIndices=[";
     for (size_t i = 0; i < VarIndices.size(); i++) {
       if (i != 0)
@@ -606,12 +615,11 @@ BasicAAResult::DecomposeGEPExpression(const Value *V, const DataLayout &DL,
       return Decomposed;
     }
 
-    // Track whether we've seen at least one in bounds gep, and if so, whether
-    // all geps parsed were in bounds.
-    if (Decomposed.InBounds == std::nullopt)
-      Decomposed.InBounds = GEPOp->isInBounds();
-    else if (!GEPOp->isInBounds())
-      Decomposed.InBounds = false;
+    // Track the common nowrap flags for all GEPs we see.
+    if (Decomposed.NWFlags == std::nullopt)
+      Decomposed.NWFlags = GEPOp->getNoWrapFlags();
+    else
+      *Decomposed.NWFlags &= GEPOp->getNoWrapFlags();
 
     assert(GEPOp->getSourceElementType()->isSized() && "GEP must be sized");
 
@@ -662,17 +670,28 @@ BasicAAResult::DecomposeGEPExpression(const Value *V, const DataLayout &DL,
 
       // If the integer type is smaller than the index size, it is implicitly
       // sign extended or truncated to index size.
+      bool NUSW = GEPOp->hasNoUnsignedSignedWrap();
+      bool NUW = GEPOp->hasNoUnsignedWrap();
+      bool NonNeg = NUSW && NUW;
       unsigned Width = Index->getType()->getIntegerBitWidth();
       unsigned SExtBits = IndexSize > Width ? IndexSize - Width : 0;
       unsigned TruncBits = IndexSize < Width ? Width - IndexSize : 0;
+      // For nuw GEPs with nusw, indices are non-negative so use zext.
+      if (NonNeg && SExtBits)
+        SExtBits = 0;
       LinearExpression LE = GetLinearExpression(
-          CastedValue(Index, 0, SExtBits, TruncBits), DL, 0, AC, DT);
+          CastedValue(Index, NonNeg ? SExtBits : 0, NonNeg ? 0 : SExtBits,
+                      TruncBits),
+          DL, 0, AC, DT);
 
       // Scale by the type size.
       unsigned TypeSize = AllocTypeSize.getFixedValue();
-      LE = LE.mul(APInt(IndexSize, TypeSize), GEPOp->isInBounds());
+      LE = LE.mul(APInt(IndexSize, TypeSize), NUW, NUSW);
       Decomposed.Offset += LE.Offset.sext(MaxIndexSize);
       APInt Scale = LE.Scale.sext(MaxIndexSize);
+
+      if (!LE.IsNUW)
+        Decomposed.NWFlags = Decomposed.NWFlags->withoutNoUnsignedWrap();
 
       // If we already had an occurrence of this index variable, merge this
       // scale into it.  For example, we want to handle:
@@ -682,7 +701,8 @@ BasicAAResult::DecomposeGEPExpression(const Value *V, const DataLayout &DL,
         if (Decomposed.VarIndices[i].Val.V == LE.Val.V &&
             Decomposed.VarIndices[i].Val.hasSameCastsAs(LE.Val)) {
           Scale += Decomposed.VarIndices[i].Scale;
-          LE.IsNSW = false; // We cannot guarantee nsw for the merge.
+          // We cannot guarantee no-wrap for the merge.
+          LE.IsNSW = LE.IsNUW = false;
           Decomposed.VarIndices.erase(Decomposed.VarIndices.begin() + i);
           break;
         }
@@ -1072,6 +1092,14 @@ AliasResult BasicAAResult::aliasGEP(const GEPOperator *GEP1,
   if (DecompGEP1.Base == GEP1 && DecompGEP2.Base == V2)
     return AliasResult::MayAlias;
 
+  // Swap GEP1 and GEP2 if GEP2 has more variable indices, so that the
+  // subtraction preserves NUW flags correctly.
+  if (DecompGEP1.VarIndices.size() < DecompGEP2.VarIndices.size()) {
+    std::swap(DecompGEP1, DecompGEP2);
+    std::swap(V1Size, V2Size);
+    std::swap(UnderlyingV1, UnderlyingV2);
+  }
+
   // Subtract the GEP2 pointer from the GEP1 pointer to find out their
   // symbolic difference.
   subtractDecomposedGEPs(DecompGEP1, DecompGEP2, AAQI);
@@ -1080,7 +1108,7 @@ AliasResult BasicAAResult::aliasGEP(const GEPOperator *GEP1,
   // for the two to alias, then we can assume noalias.
   // TODO: Remove !isScalable() once BasicAA fully support scalable location
   // size
-  if (*DecompGEP1.InBounds && DecompGEP1.VarIndices.empty() &&
+  if (DecompGEP1.NWFlags->isInBounds() && DecompGEP1.VarIndices.empty() &&
       V2Size.hasValue() && !V2Size.isScalable() &&
       DecompGEP1.Offset.sge(V2Size.getValue()) &&
       isBaseOfObject(DecompGEP2.Base))
@@ -1088,7 +1116,7 @@ AliasResult BasicAAResult::aliasGEP(const GEPOperator *GEP1,
 
   if (isa<GEPOperator>(V2)) {
     // Symmetric case to above.
-    if (*DecompGEP2.InBounds && DecompGEP1.VarIndices.empty() &&
+    if (DecompGEP2.NWFlags->isInBounds() && DecompGEP1.VarIndices.empty() &&
         V1Size.hasValue() && !V1Size.isScalable() &&
         DecompGEP1.Offset.sle(-V1Size.getValue()) &&
         isBaseOfObject(DecompGEP1.Base))
@@ -1113,6 +1141,20 @@ AliasResult BasicAAResult::aliasGEP(const GEPOperator *GEP1,
            BaseAlias == AliasResult::MayAlias);
     return BaseAlias;
   }
+
+  // If the difference between pointers is Offset +<nuw> Indices then we know
+  // that the addition does not wrap the pointer index type (add nuw) and the
+  // constant Offset is a lower bound on the distance between the pointers. We
+  // can then prove NoAlias via Offset u>= VLeftSize.
+  //  +                +                     +
+  //  | BaseOffset     |   +<nuw> Indices    |
+  //  ---------------->|-------------------->|
+  //  |-->VLeftSize    |                     |-------> VRightSize
+  //  LHS                                   RHS
+  if (!DecompGEP1.VarIndices.empty() &&
+      DecompGEP1.NWFlags->hasNoUnsignedWrap() && V2Size.hasValue() &&
+      !V2Size.isScalable() && DecompGEP1.Offset.uge(V2Size.getValue()))
+    return AliasResult::NoAlias;
 
   // Bail on analysing scalable LocationSize
   if (V1Size.isScalable() || V2Size.isScalable())
@@ -1729,6 +1771,12 @@ bool BasicAAResult::isValueEqualInPotentialCycles(const Value *V,
 void BasicAAResult::subtractDecomposedGEPs(DecomposedGEP &DestGEP,
                                            const DecomposedGEP &SrcGEP,
                                            const AAQueryInfo &AAQI) {
+  // If the LHS offset is less than the RHS offset (unsigned), the subtraction
+  // may wrap, so drop the NUW flag.
+  if (DestGEP.NWFlags && SrcGEP.NWFlags &&
+      DestGEP.Offset.ult(SrcGEP.Offset))
+    *DestGEP.NWFlags = DestGEP.NWFlags->withoutNoUnsignedWrap();
+
   DestGEP.Offset -= SrcGEP.Offset;
   for (const VariableGEPIndex &Src : SrcGEP.VarIndices) {
     // Find V in Dest.  This is N^2, but pointer indices almost never have more

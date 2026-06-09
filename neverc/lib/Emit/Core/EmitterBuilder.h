@@ -151,8 +151,11 @@ public:
     const llvm::StructLayout *Layout = DL.getStructLayout(ElTy);
     auto Offset = CharUnits::fromQuantity(Layout->getElementOffset(Index));
 
+    // Struct member accesses are always constant positive offsets, so we can
+    // mark them as inbounds+nuw for better alias analysis (LLVM 20 backport).
     return Address(
-        CreateStructGEP(Addr.getElementType(), Addr.getPointer(), Index, Name),
+        CreateNUWStructGEP(Addr.getElementType(), Addr.getPointer(), Index,
+                           Name),
         ElTy->getElementType(Index),
         Addr.getAlignment().alignmentAtOffset(Offset), Addr.isKnownNonNull());
   }

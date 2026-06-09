@@ -2327,8 +2327,10 @@ Constant *ConstantExpr::getGetElementPtr(Type *Ty, Constant *C,
   }
 
   unsigned SubClassOptionalData = InBounds ? GEPOperator::IsInBounds : 0;
-  if (InRangeIndex && *InRangeIndex < 63)
-    SubClassOptionalData |= (*InRangeIndex + 1) << 1;
+  if (InBounds)
+    SubClassOptionalData |= (1 << 1); // HasNUSW: inbounds implies nusw
+  if (InRangeIndex && *InRangeIndex < 15)
+    SubClassOptionalData |= (*InRangeIndex + 1) << 3;
   const ConstantExprKeyType Key(Instruction::GetElementPtr, ArgVec, 0,
                                 SubClassOptionalData, std::nullopt, Ty);
 

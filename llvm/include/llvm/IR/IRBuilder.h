@@ -1848,6 +1848,15 @@ public:
                   Name);
   }
 
+  Value *CreateGEP(Type *Ty, Value *Ptr, ArrayRef<Value *> IdxList,
+                   const Twine &Name, GEPNoWrapFlags NW) {
+    if (auto *V = Folder.FoldGEP(Ty, Ptr, IdxList, NW.isInBounds()))
+      return V;
+    auto *GEP = GetElementPtrInst::Create(Ty, Ptr, IdxList);
+    GEP->setNoWrapFlags(NW);
+    return Insert(GEP, Name);
+  }
+
   Value *CreateInBoundsGEP(Type *Ty, Value *Ptr, ArrayRef<Value *> IdxList,
                            const Twine &Name = "") {
     return CreateGEP(Ty, Ptr, IdxList, Name, /* IsInBounds */ true);
@@ -1940,6 +1949,23 @@ public:
   Value *CreateStructGEP(Type *Ty, Value *Ptr, unsigned Idx,
                          const Twine &Name = "") {
     return CreateConstInBoundsGEP2_32(Ty, Ptr, 0, Idx, Name);
+  }
+
+  /// Create a struct GEP with inbounds+nuw flags (struct member access is
+  /// always a constant positive offset).
+  Value *CreateNUWStructGEP(Type *Ty, Value *Ptr, unsigned Idx,
+                            const Twine &Name = "") {
+    Value *Idxs[] = {ConstantInt::get(Type::getInt32Ty(Context), 0),
+                     ConstantInt::get(Type::getInt32Ty(Context), Idx)};
+
+    if (auto *V = Folder.FoldGEP(Ty, Ptr, Idxs, /*IsInBounds=*/true))
+      return V;
+
+    GEPNoWrapFlags NW = GEPNoWrapFlags::inBounds() |
+                         GEPNoWrapFlags::noUnsignedWrap();
+    auto *GEP = GetElementPtrInst::Create(Ty, Ptr, Idxs);
+    GEP->setNoWrapFlags(NW);
+    return Insert(GEP, Name);
   }
 
   /// Same as CreateGlobalString, but return a pointer with "i8*" type

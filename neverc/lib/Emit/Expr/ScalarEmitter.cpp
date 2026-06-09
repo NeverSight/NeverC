@@ -12,6 +12,7 @@
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/GEPNoWrapFlags.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/FixedPointBuilder.h"
 #include "llvm/IR/Function.h"
@@ -3526,7 +3527,15 @@ FunctionEmitter::genCompoundAssignmentLValue(const CompoundAssignOperator *E) {
 
 Value *FunctionEmitter::genCheckedInBoundsGEP(llvm::Type *ElemTy, Value *Ptr,
                                               llvm::ArrayRef<Value *> IdxList,
-                                              bool, bool, SourceLocation,
+                                              bool SignedIndices,
+                                              bool IsSubtraction,
+                                              SourceLocation,
                                               const llvm::Twine &Name) {
-  return Builder.CreateInBoundsGEP(ElemTy, Ptr, IdxList, Name);
+  // When indices are unsigned and the operation is not a subtraction, we can
+  // add the nuw flag for better alias analysis (LLVM 20 backport).
+  llvm::GEPNoWrapFlags NWFlags = llvm::GEPNoWrapFlags::inBounds();
+  if (!SignedIndices && !IsSubtraction)
+    NWFlags = NWFlags | llvm::GEPNoWrapFlags::noUnsignedWrap();
+
+  return Builder.CreateGEP(ElemTy, Ptr, IdxList, Name, NWFlags);
 }

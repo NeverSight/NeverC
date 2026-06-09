@@ -17,6 +17,7 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/FMF.h"
+#include "llvm/IR/GEPNoWrapFlags.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
@@ -351,24 +352,56 @@ class GEPOperator
 
   enum {
     IsInBounds = (1 << 0),
-    // InRangeIndex: bits 1-6
+    HasNUSW = (1 << 1),
+    HasNUW = (1 << 2),
+    // InRangeIndex: bits 3-6
   };
 
   void setIsInBounds(bool B) {
     SubclassOptionalData =
         (SubclassOptionalData & ~IsInBounds) | (B * IsInBounds);
+    if (B)
+      SubclassOptionalData |= HasNUSW; // inbounds implies nusw
+  }
+
+  void setNoWrapFlags(GEPNoWrapFlags NW) {
+    unsigned Preserved = SubclassOptionalData & ~(IsInBounds | HasNUSW | HasNUW);
+    SubclassOptionalData = Preserved;
+    if (NW.isInBounds())
+      SubclassOptionalData |= IsInBounds;
+    if (NW.hasNoUnsignedSignedWrap())
+      SubclassOptionalData |= HasNUSW;
+    if (NW.hasNoUnsignedWrap())
+      SubclassOptionalData |= HasNUW;
   }
 
 public:
   /// Test whether this is an inbounds GEP, as defined by LangRef.html.
   bool isInBounds() const { return SubclassOptionalData & IsInBounds; }
 
+  bool hasNoUnsignedSignedWrap() const {
+    return (SubclassOptionalData & HasNUSW) || isInBounds();
+  }
+
+  bool hasNoUnsignedWrap() const { return SubclassOptionalData & HasNUW; }
+
+  GEPNoWrapFlags getNoWrapFlags() const {
+    GEPNoWrapFlags NW;
+    if (isInBounds())
+      NW = NW | GEPNoWrapFlags::inBounds();
+    if (SubclassOptionalData & HasNUSW)
+      NW = NW | GEPNoWrapFlags::noUnsignedSignedWrap();
+    if (SubclassOptionalData & HasNUW)
+      NW = NW | GEPNoWrapFlags::noUnsignedWrap();
+    return NW;
+  }
+
   /// Returns the offset of the index with an inrange attachment, or
   /// std::nullopt if none.
   std::optional<unsigned> getInRangeIndex() const {
-    if (SubclassOptionalData >> 1 == 0)
+    if (SubclassOptionalData >> 3 == 0)
       return std::nullopt;
-    return (SubclassOptionalData >> 1) - 1;
+    return (SubclassOptionalData >> 3) - 1;
   }
 
   inline op_iterator idx_begin() { return op_begin() + 1; }

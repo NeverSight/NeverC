@@ -26,6 +26,7 @@
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/GEPNoWrapFlags.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/OperandTraits.h"
@@ -1083,6 +1084,18 @@ public:
 
   /// Determine whether the GEP has the inbounds flag.
   bool isInBounds() const;
+
+  /// Set the nuw (no unsigned wrap) flag on this GEP instruction.
+  void setHasNoUnsignedWrap(bool b = true);
+
+  /// Determine whether the GEP has the nuw flag.
+  bool hasNoUnsignedWrap() const;
+
+  /// Set no-wrap flags from a GEPNoWrapFlags value.
+  void setNoWrapFlags(GEPNoWrapFlags NW);
+
+  /// Get no-wrap flags.
+  GEPNoWrapFlags getNoWrapFlags() const;
 
   /// Accumulate the constant address offset of this GEP if possible.
   ///
