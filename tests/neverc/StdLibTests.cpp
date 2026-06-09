@@ -115,6 +115,18 @@ STD_TEST(ecdsa, "src/crypto/ecdsa/ecdsa.c", "src/crypto/elliptic/elliptic.c", "s
 STD_TEST(dsa, "src/crypto/dsa/dsa.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c")
 STD_TEST(ed25519, "src/crypto/ed25519/ed25519.c", "src/crypto/sha512/sha512.c", "src/crypto/rand/rand.c", "src/math/big/big.c")
 STD_TEST(ecdh, "src/crypto/ecdh/ecdh.c", "src/crypto/elliptic/elliptic.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c")
+STD_TEST(hpke, "src/crypto/hpke/hpke.c", "src/crypto/ecdh/ecdh.c",
+    "src/crypto/elliptic/elliptic.c", "src/math/big/big.c",
+    "src/crypto/hkdf/hkdf.c", "src/crypto/hmac/hmac.c",
+    "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c",
+    "src/crypto/aes/aes.c", "src/crypto/gcm/gcm.c",
+    "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c",
+    "src/crypto/chacha20poly1305/chacha20poly1305.c",
+    "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c")
+STD_TEST(mlkem, "src/crypto/mlkem/mlkem.c", "src/crypto/sha3/sha3.c",
+    "src/crypto/rand/rand.c")
+STD_TEST(mldsa, "src/crypto/mldsa/mldsa.c", "src/crypto/sha3/sha3.c",
+    "src/crypto/rand/rand.c")
 
 // ===== Unicode =====
 STD_TEST(unicode, "src/unicode/unicode.c")

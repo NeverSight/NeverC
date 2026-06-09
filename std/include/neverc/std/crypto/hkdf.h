@@ -21,6 +21,19 @@ int neverc_hkdf_expand_sha256(uint8_t *okm, size_t okm_len,
                               const uint8_t prk[32],
                               const uint8_t *info, size_t info_len);
 
+int neverc_hkdf_sha512(uint8_t *okm, size_t okm_len,
+                       const uint8_t *ikm, size_t ikm_len,
+                       const uint8_t *salt, size_t salt_len,
+                       const uint8_t *info, size_t info_len);
+
+int neverc_hkdf_extract_sha512(uint8_t prk[64],
+                               const uint8_t *salt, size_t salt_len,
+                               const uint8_t *ikm, size_t ikm_len);
+
+int neverc_hkdf_expand_sha512(uint8_t *okm, size_t okm_len,
+                              const uint8_t prk[64],
+                              const uint8_t *info, size_t info_len);
+
 #ifdef __cplusplus
 }
 #endif

@@ -4194,6 +4194,79 @@
         "count": "neverc_unique_count"
       }
     },
+    "crypto/hpke": {
+      "header": "include/neverc/std/crypto/hpke.h",
+      "description": "Hybrid Public Key Encryption (RFC 9180) — DHKEM + HKDF + AEAD",
+      "symbols": {
+        "neverc_hpke_sender_new": "src/crypto/hpke/hpke.c",
+        "neverc_hpke_recipient_new": "src/crypto/hpke/hpke.c",
+        "neverc_hpke_sender_seal": "src/crypto/hpke/hpke.c",
+        "neverc_hpke_recipient_open": "src/crypto/hpke/hpke.c",
+        "neverc_hpke_sender_export": "src/crypto/hpke/hpke.c",
+        "neverc_hpke_recipient_export": "src/crypto/hpke/hpke.c",
+        "neverc_hpke_seal": "src/crypto/hpke/hpke.c",
+        "neverc_hpke_open": "src/crypto/hpke/hpke.c"
+      },
+      "dot_methods": {
+        "sender_new": "neverc_hpke_sender_new",
+        "recipient_new": "neverc_hpke_recipient_new",
+        "sender_seal": "neverc_hpke_sender_seal",
+        "recipient_open": "neverc_hpke_recipient_open",
+        "sender_export": "neverc_hpke_sender_export",
+        "recipient_export": "neverc_hpke_recipient_export",
+        "seal": "neverc_hpke_seal",
+        "open": "neverc_hpke_open"
+      }
+    },
+    "crypto/mldsa": {
+      "header": "include/neverc/std/crypto/mldsa.h",
+      "description": "ML-DSA post-quantum digital signatures (NIST FIPS 204) — ML-DSA-44",
+      "symbols": {
+        "neverc_mldsa44_generate_key": "src/crypto/mldsa/mldsa.c",
+        "neverc_mldsa44_new_sk": "src/crypto/mldsa/mldsa.c",
+        "neverc_mldsa44_sk_public_key": "src/crypto/mldsa/mldsa.c",
+        "neverc_mldsa44_new_pk": "src/crypto/mldsa/mldsa.c",
+        "neverc_mldsa44_sign": "src/crypto/mldsa/mldsa.c",
+        "neverc_mldsa44_verify": "src/crypto/mldsa/mldsa.c",
+        "neverc_mldsa44_sk_bytes": "src/crypto/mldsa/mldsa.c",
+        "neverc_mldsa44_pk_bytes": "src/crypto/mldsa/mldsa.c"
+      },
+      "dot_methods": {
+        "generate_key44": "neverc_mldsa44_generate_key",
+        "sign44": "neverc_mldsa44_sign",
+        "verify44": "neverc_mldsa44_verify"
+      }
+    },
+    "crypto/mlkem": {
+      "header": "include/neverc/std/crypto/mlkem.h",
+      "description": "ML-KEM post-quantum key encapsulation (NIST FIPS 203) — ML-KEM-768 and ML-KEM-1024",
+      "symbols": {
+        "neverc_mlkem768_generate_key": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem768_new_dk": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem768_dk_encapsulation_key": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem768_new_ek": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem768_encapsulate": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem768_decapsulate": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem768_dk_bytes": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem768_ek_bytes": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem1024_generate_key": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem1024_new_dk": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem1024_dk_encapsulation_key": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem1024_new_ek": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem1024_encapsulate": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem1024_decapsulate": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem1024_dk_bytes": "src/crypto/mlkem/mlkem.c",
+        "neverc_mlkem1024_ek_bytes": "src/crypto/mlkem/mlkem.c"
+      },
+      "dot_methods": {
+        "generate_key768": "neverc_mlkem768_generate_key",
+        "generate_key1024": "neverc_mlkem1024_generate_key",
+        "encapsulate768": "neverc_mlkem768_encapsulate",
+        "decapsulate768": "neverc_mlkem768_decapsulate",
+        "encapsulate1024": "neverc_mlkem1024_encapsulate",
+        "decapsulate1024": "neverc_mlkem1024_decapsulate"
+      }
+    },
     "weak": {
       "header": "include/neverc/std/weak.h",
       "symbols": {
