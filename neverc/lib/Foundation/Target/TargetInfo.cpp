@@ -1034,7 +1034,7 @@ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
     if (Triple.isOSDarwin())
       return std::make_unique<DarwinX86_64TargetInfo>(Triple, Opts);
     if (os == llvm::Triple::Linux)
-      return std::make_unique<X86_64TargetInfo>(Triple, Opts);
+      return std::make_unique<LinuxTargetInfo<X86_64TargetInfo>>(Triple, Opts);
     return nullptr;
   }
 }
