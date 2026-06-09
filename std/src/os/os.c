@@ -317,6 +317,7 @@ int neverc_os_stat(const char *name, neverc_os_fileinfo_t *info) {
 #endif
     base = base ? base + 1 : name;
     strncpy(info->name, base, sizeof(info->name) - 1);
+    info->name[sizeof(info->name) - 1] = '\0';
     return 0;
 }
 
@@ -338,6 +339,7 @@ int neverc_os_lstat(const char *name, neverc_os_fileinfo_t *info) {
     const char *base = strrchr(name, '/');
     base = base ? base + 1 : name;
     strncpy(info->name, base, sizeof(info->name) - 1);
+    info->name[sizeof(info->name) - 1] = '\0';
     return 0;
 #endif
 }
@@ -462,9 +464,11 @@ char **neverc_os_environ(int *count) {
     return result;
 #else
     extern char **environ;
+    if (!environ) { *count = 0; return NULL; }
     int n = 0;
     while (environ[n]) n++;
     char **result = (char **)malloc((size_t)(n + 1) * sizeof(char *));
+    if (!result) { *count = 0; return NULL; }
     for (int i = 0; i < n; i++) result[i] = strdup(environ[i]);
     result[n] = NULL;
     *count = n;
@@ -493,7 +497,7 @@ void neverc_os_clearenv(void) {
     FreeEnvironmentStringsA(env);
 #else
     extern char **environ;
-    environ[0] = NULL;
+    if (environ) environ[0] = NULL;
 #endif
 }
 

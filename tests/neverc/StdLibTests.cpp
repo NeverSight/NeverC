@@ -54,7 +54,8 @@ protected:
 #define STD_TEST(name, ...)                                     \
   TEST_F(StdLibTest, name) {                                    \
     auto r = compileAndRunStdTest(#name, {__VA_ARGS__});         \
-    ASSERT_TRUE(r.ok()) << "stderr: " << r.err;                \
+    ASSERT_TRUE(r.ok()) << "stdout: " << r.out                 \
+                        << "\nstderr: " << r.err;               \
     EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;  \
   }
 

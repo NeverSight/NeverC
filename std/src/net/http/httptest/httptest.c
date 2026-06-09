@@ -179,7 +179,15 @@ const char *neverc_httptest_addr(neverc_httptest_server_t *ts) {
 void neverc_httptest_close(neverc_httptest_server_t *ts) {
     if (!ts) return;
     ts->running = 0;
-    neverc_tcp_listener_close(ts->listener);
+
+    /* Wake the server thread's blocking accept() by making a dummy
+       connection.  On Linux, close() on a listener fd does NOT reliably
+       unblock another thread's accept() — this is undefined behavior in
+       POSIX.  A dummy connect always works and avoids a use-after-free
+       (the old code freed the listener before the thread could exit). */
+    const char *err = NULL;
+    neverc_tcp_conn_t *dummy = neverc_tcp_dial(ts->addr, &err);
+    if (dummy) neverc_tcp_close(dummy);
 
 #ifdef _WIN32
     WaitForSingleObject(ts->thread, 3000);
@@ -188,6 +196,7 @@ void neverc_httptest_close(neverc_httptest_server_t *ts) {
     pthread_join(ts->thread, NULL);
 #endif
 
+    neverc_tcp_listener_close(ts->listener);
     free(ts);
 }
 

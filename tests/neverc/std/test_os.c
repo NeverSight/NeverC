@@ -5,8 +5,12 @@
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
-#define ASSERT_TRUE(e) do{tests_run++;if(e){tests_passed++;}else{tests_failed++;printf("  FAIL [%d]: %s\n",__LINE__,#e);}}while(0)
-#define ASSERT_EQ(a,b) do{int _a=(a),_b=(b);tests_run++;if(_a==_b){tests_passed++;}else{tests_failed++;printf("  FAIL [%d]: %s=%d, want %d\n",__LINE__,#a,_a,_b);}}while(0)
+#define ASSERT_TRUE(e) do{tests_run++;if(e){tests_passed++;}else{tests_failed++;\
+    printf("  FAIL [%d]: %s\n",__LINE__,#e);\
+    fprintf(stderr,"FAIL [%d]: %s\n",__LINE__,#e);}}while(0)
+#define ASSERT_EQ(a,b) do{int _a=(a),_b=(b);tests_run++;if(_a==_b){tests_passed++;}else{tests_failed++;\
+    printf("  FAIL [%d]: %s=%d, want %d\n",__LINE__,#a,_a,_b);\
+    fprintf(stderr,"FAIL [%d]: %s=%d, want %d\n",__LINE__,#a,_a,_b);}}while(0)
 
 static void make_test_path(char *path, size_t path_size, const char *name) {
     char tmpdir[1024];

@@ -9,8 +9,8 @@ extern "C" {
 #endif
 
 /* File mode bits (mirrors Go os.FileMode) */
-#define NEVERC_OS_MODE_DIR     (1 << 31)
-#define NEVERC_OS_MODE_SYMLINK (1 << 27)
+#define NEVERC_OS_MODE_DIR     (1U << 31)
+#define NEVERC_OS_MODE_SYMLINK (1U << 27)
 #define NEVERC_OS_MODE_PERM    0777
 
 /* Open flags */
