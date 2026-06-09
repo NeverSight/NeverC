@@ -798,10 +798,11 @@ bool TypePromotionImpl::TryToPromote(Value *V, unsigned PromotedWidth,
     if (CurrentVisited.count(V))
       return true;
 
-    // Ignore GEPs because they don't need promoting and the constant indices
-    // will prevent the transformation.
+    // Exclude GEPs: their indexes are signed, so including them in the
+    // (unsigned) promotion set would incorrectly zero-extend the index.
+    // See llvm/llvm-project#133928.
     if (isa<GetElementPtrInst>(V))
-      return true;
+      return false;
 
     if (!isSupportedValue(V) || (shouldPromote(V) && !isLegalToPromote(V))) {
       LLVM_DEBUG(dbgs() << "IR Promotion: Can't handle: " << *V << "\n");
