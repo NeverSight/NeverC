@@ -2,7 +2,7 @@
 # Manual dispatch: artifacts only (no release).
 #
 # Uses MSVC (cl.exe) via Ninja on a native Windows-11-arm runner.
-# LTO is disabled under MSVC; compiler speed comes from:
+# Compiler speed comes from:
 #   - NEVERC_RELEASE_OPT_LEVEL=3  (/O2 via MSVC defaults)
 #   - mimalloc, static linking (NeverC.cmake)
 name: windows-arm64-neverc-release
@@ -54,6 +54,7 @@ jobs:
             -DCMAKE_SYSTEM_PROCESSOR=ARM64 \
             -C neverc/cmake/caches/NeverC.cmake \
             -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_ENABLE_LTO=ON \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
 

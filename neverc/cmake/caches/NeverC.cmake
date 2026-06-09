@@ -21,7 +21,7 @@ endif()
 set(_NEVERC_HOST_MSVC FALSE)
 if(CMAKE_HOST_WIN32 AND NOT DEFINED CMAKE_C_COMPILER)
   set(_NEVERC_HOST_MSVC TRUE)
-elseif(DEFINED CMAKE_C_COMPILER AND CMAKE_C_COMPILER MATCHES "cl\\.exe$")
+elseif(DEFINED CMAKE_C_COMPILER AND CMAKE_C_COMPILER MATCHES "[/\\\\]cl\\.exe$")
   set(_NEVERC_HOST_MSVC TRUE)
 endif()
 
@@ -177,20 +177,20 @@ endif()
 # a release tag is cut.  Always disabled under MSVC, when cross-compiling,
 # or in Debug builds.
 #
-# Disabled on Windows HOSTS: the Windows LLVM/clang + Full LTO toolchain
-# miscompiles parts of neverc.exe, detonating latent unspecified-evaluation-
-# order / UB in the sources (e.g. the ParseUnqualifiedId bug fixed in
-# e473c35fd) into wrong codegen, parser/lexer failures and runtime crashes
-# that do NOT reproduce with the same sources on macOS/Linux (or on a non-LTO
-# Windows build).  The Windows CI uses clang.exe (GNU driver, so `MSVC` is
-# false here), which is why the NOT MSVC guard alone let LTO through.  Keep
-# Windows on a non-LTO build until those UB sites are hunted down (ASan/UBSan)
-# and the sources are proven LTO-clean; then drop the CMAKE_HOST_WIN32 guard.
+# Full LTO / WPO for the neverc binary. Disabled in Debug builds and when
+# cross-compiling. On MSVC this uses /GL + /LTCG via cmake's
+# CMAKE_INTERPROCEDURAL_OPTIMIZATION; on Clang/GCC it uses LLVM Full LTO.
 option(NEVERC_ENABLE_LTO "Enable Full LTO for the neverc binary" OFF)
-if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING AND NOT _NEVERC_HOST_MSVC
-   AND NOT CMAKE_HOST_WIN32
+if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING
    AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(LLVM_ENABLE_LTO Full CACHE STRING "" FORCE)
+  if(_NEVERC_HOST_MSVC)
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /GL" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /GL" CACHE STRING "" FORCE)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LTCG" CACHE STRING "" FORCE)
+    set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /LTCG" CACHE STRING "" FORCE)
+  else()
+    set(LLVM_ENABLE_LTO Full CACHE STRING "" FORCE)
+  endif()
 else()
   set(LLVM_ENABLE_LTO OFF CACHE STRING "" FORCE)
 endif()
