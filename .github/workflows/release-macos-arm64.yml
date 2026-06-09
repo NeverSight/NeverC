@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: neverc
 
       - name: Select latest stable Xcode (Apple Clang)
         uses: maxim-lobanov/setup-xcode@v1
@@ -42,11 +44,13 @@ jobs:
           -DCMAKE_INSTALL_PREFIX=install \
           -DLLVM_ENABLE_ASSERTIONS=OFF \
           -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+          -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0 \
           -DNEVERC_INCLUDE_TESTS=ON \
           -DNEVERC_STRIP_BINARY=ON \
+          -DNEVERC_ENABLE_LTO=ON \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-          -C neverc/cmake/caches/NeverC.cmake \
-          llvm
+          -C neverc/neverc/cmake/caches/NeverC.cmake \
+          neverc/llvm
           time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
 
       - name: Run neverc tests
