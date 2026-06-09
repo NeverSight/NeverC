@@ -75,9 +75,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: pgo-profiles/merged.profdata
-          key: pgo-profdata-linux-arm64-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
-          restore-keys: |
-            pgo-profdata-linux-arm64-
+          key: pgo-profdata-linux-arm64-${{ hashFiles('neverc/lib/**', 'neverc/include/**', 'llvm/lib/**', 'llvm/include/**') }}
 
       - name: Check for usable profdata
         id: check-profdata
@@ -211,7 +209,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: pgo-profiles/merged.profdata
-          key: pgo-profdata-linux-arm64-${{ hashFiles('neverc/lib/**', 'neverc/include/**') }}
+          key: pgo-profdata-linux-arm64-${{ hashFiles('neverc/lib/**', 'neverc/include/**', 'llvm/lib/**', 'llvm/include/**') }}
 
       - name: Upload profile data
         uses: actions/upload-artifact@v4
