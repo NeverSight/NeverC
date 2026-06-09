@@ -94,9 +94,8 @@ public:
   MCAssembler *getAssemblerPtr() override { return nullptr; }
 
   inline void EmitEOL() {
-    // Dump Explicit Comments here.
-    emitExplicitComments();
-    // If we don't have any comments, just emit a \n.
+    if (LLVM_UNLIKELY(!ExplicitCommentToEmit.empty()))
+      emitExplicitComments();
     if (!IsVerboseAsm) {
       OS << '\n';
       return;
@@ -1935,13 +1934,12 @@ void MCAsmStreamer::emitCGProfileEntry(const MCSymbolRefExpr *From,
 
 void MCAsmStreamer::AddEncodingComment(const MCInst &Inst,
                                        const MCSubtargetInfo &STI) {
+  if (!getAssembler().getEmitterPtr())
+    return;
+
   raw_ostream &OS = getCommentOS();
   SmallString<256> Code;
   SmallVector<MCFixup, 4> Fixups;
-
-  // If we have no code emitter, don't emit code.
-  if (!getAssembler().getEmitterPtr())
-    return;
 
   getAssembler().getEmitter().encodeInstruction(Inst, Code, Fixups, STI);
 

@@ -190,6 +190,7 @@ private:
   const TargetInstrInfo *TII = nullptr;
   RegisterClassInfo RegClassInfo;
   const RegClassFilterFunc ShouldAllocateClass;
+  bool AllocateAllClasses = true;
 
   /// Basic block currently being allocated.
   MachineBasicBlock *MBB = nullptr;
@@ -416,6 +417,8 @@ INITIALIZE_PASS(RegAllocFast, "regallocfast", "Fast Register Allocator", false,
                 false)
 
 bool RegAllocFast::shouldAllocateRegister(const Register Reg) const {
+  if (LLVM_LIKELY(AllocateAllClasses))
+    return true;
   assert(Reg.isVirtual());
   const TargetRegisterClass &RC = *MRI->getRegClass(Reg);
   return ShouldAllocateClass(*TRI, RC);
@@ -1676,7 +1679,7 @@ void RegAllocFast::allocateBasicBlock(MachineBasicBlock &MBB) {
   LLVM_DEBUG(dbgs() << "\nAllocating " << MBB);
 
   PosIndexes.unsetInitialized();
-  RegUnitStates.assign(TRI->getNumRegUnits(), regFree);
+  std::fill(RegUnitStates.begin(), RegUnitStates.end(), regFree);
   assert(LiveVirtRegs.empty() && "Mapping not cleared from last block?");
 
   for (const auto &LiveReg : MBB.liveouts())
@@ -1742,7 +1745,17 @@ bool RegAllocFast::runOnMachineFunction(MachineFunction &MF) {
   MFI = &MF.getFrameInfo();
   MRI->freezeReservedRegs(MF);
   RegClassInfo.runOnMachineFunction(MF);
+
+  AllocateAllClasses = true;
+  for (unsigned i = 0, e = TRI->getNumRegClasses(); i != e; ++i) {
+    if (!ShouldAllocateClass(*TRI, *TRI->getRegClass(i))) {
+      AllocateAllClasses = false;
+      break;
+    }
+  }
+
   unsigned NumRegUnits = TRI->getNumRegUnits();
+  RegUnitStates.resize(NumRegUnits);
   UsedInInstr.clear();
   UsedInInstr.setUniverse(NumRegUnits);
   PhysRegUses.clear();

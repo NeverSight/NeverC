@@ -220,8 +220,8 @@ class DAGCombiner {
   }
 
   SDNode *getNextWorklistEntry() {
-    // Before we do any work, remove nodes that are not in use.
-    clearAddedDanglingWorklistEntries();
+    if (LLVM_UNLIKELY(!PruningList.empty()))
+      clearAddedDanglingWorklistEntries();
     SDNode *N = nullptr;
     // The Worklist holds the SDNodes in order, but it may contain null
     // entries.
@@ -1805,6 +1805,9 @@ void DAGCombiner::Run(CombineLevel AtLevel) {
   // nodes which can be deleted are those which have no uses and all other nodes
   // which would otherwise be added to the worklist by the first call to
   // getNextWorklistEntry are already present in it.
+  unsigned NumNodes = DAG.allnodes_size();
+  Worklist.reserve(NumNodes);
+  WorklistMap.reserve(NumNodes);
   for (SDNode &Node : DAG.allnodes())
     AddToWorklist(&Node, /* IsCandidateForPruning */ Node.use_empty());
 

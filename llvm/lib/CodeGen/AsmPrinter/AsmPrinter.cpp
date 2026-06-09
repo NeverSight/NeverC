@@ -1541,11 +1541,8 @@ void AsmPrinter::emitFunctionBody() {
       if (MDNode *MD = MI.getPCSections())
         emitPCSectionsLabel(*MF, *MD);
 
-      for (const HandlerInfo &HI : Handlers) {
-        NamedRegionTimer T(HI.TimerName, HI.TimerDescription, HI.TimerGroupName,
-                           HI.TimerGroupDescription, TimePassesIsEnabled);
+      for (const HandlerInfo &HI : Handlers)
         HI.Handler->beginInstruction(&MI);
-      }
 
       if (isVerbose())
         emitComments(MI, OutStreamer->getCommentOS());
@@ -1631,11 +1628,8 @@ void AsmPrinter::emitFunctionBody() {
       if (MCSymbol *S = MI.getPostInstrSymbol())
         OutStreamer->emitLabel(S);
 
-      for (const HandlerInfo &HI : Handlers) {
-        NamedRegionTimer T(HI.TimerName, HI.TimerDescription, HI.TimerGroupName,
-                           HI.TimerGroupDescription, TimePassesIsEnabled);
+      for (const HandlerInfo &HI : Handlers)
         HI.Handler->endInstruction();
-      }
     }
 
     // We must emit temporary symbol for the end of this basic block, if either
