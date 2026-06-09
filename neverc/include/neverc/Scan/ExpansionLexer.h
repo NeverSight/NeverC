@@ -38,6 +38,10 @@ class ExpansionLexer {
   bool DisableMacroExpansion : 1;
   bool IsReinject : 1;
 
+  // Scratch buffer reused across substituteFunctionParams() calls to avoid
+  // repeated heap allocation when ExpansionLexer objects are pooled.
+  llvm::SmallVector<Token, 32> SubstScratch;
+
 public:
   ExpansionLexer(Token &Tok, SourceLocation ILEnd, MacroRecord *MI,
                  MacroArgStorage *ActualArgs, PrepEngine &pp)

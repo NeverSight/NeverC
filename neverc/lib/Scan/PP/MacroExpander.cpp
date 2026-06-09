@@ -500,7 +500,8 @@ MacroArgStorage *PrepEngine::CollectMacroArgs(Token &MacroName, MacroRecord *MI,
   LexWithoutExpansion(Tok);
   assert(Tok.is(tok::l_paren) && "Error computing l-paren-ness?");
 
-  llvm::SmallVector<Token, 64> ArgTokens;
+  MacroArgScratch.clear();
+  auto &ArgTokens = MacroArgScratch;
   ArgTokens.reserve(NumFixedArgsLeft * 8);
   bool FoundElidedComma = false;
 

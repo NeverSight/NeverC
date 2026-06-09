@@ -312,7 +312,8 @@ void ExpansionLexer::substituteFunctionParams() {
   const bool MSVCMode =
       PP.getLangOpts().MSVCCompat || PP.getLangOpts().MicrosoftExt;
 
-  llvm::SmallVector<Token, 128> ResultToks;
+  SubstScratch.clear();
+  auto &ResultToks = SubstScratch;
   ResultToks.reserve(E + NParams * 4);
 
   bool MadeChange = false;

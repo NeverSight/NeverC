@@ -380,6 +380,10 @@ private:
   MacroArgStorage *MacroArgCache = nullptr;
   unsigned MacroArgCacheSize = 0;
 
+  // Scratch buffer reused across CollectMacroArgs() calls to avoid repeated
+  // heap allocation when processing macro-heavy headers (e.g. SAL annotations).
+  llvm::SmallVector<Token, 64> MacroArgScratch;
+
   llvm::DenseMap<IdentifierInfo *, std::vector<MacroRecord *>>
       PragmaPushMacroRecord;
 
