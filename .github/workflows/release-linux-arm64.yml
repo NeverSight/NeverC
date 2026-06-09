@@ -1,0 +1,126 @@
+# Release build for Linux arm64 (non-PGO).
+# Tag push: build + test + GitHub Release upload.
+# Manual dispatch: same pipeline but artifacts only (no release).
+name: linux-arm64-neverc-release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Build + test + release
+    runs-on: ubuntu-22.04-arm
+    env:
+      BUILD_TYPE: Release
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android \
+            /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Create swap
+        run: |
+          if ! swapon --show | grep -q /mnt/swapfile; then
+            sudo swapoff /mnt/swapfile 2>/dev/null || true
+            sudo rm -f /mnt/swapfile
+            sudo fallocate -l 4G /mnt/swapfile
+            sudo chmod 600 /mnt/swapfile
+            sudo mkswap /mnt/swapfile
+            sudo swapon /mnt/swapfile
+          fi
+          free -h
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full
+
+      - name: Resolve latest LLVM version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LLVM_VERIFY_ASSET_SUFFIX: Linux-ARM64.tar.xz
+        run: bash neverc/.github/scripts/resolve-llvm-version.sh
+
+      - name: Cache LLVM toolchain
+        uses: actions/cache@v4
+        with:
+          path: /tmp/llvm-pgo
+          key: llvm-${{ env.LLVM_VER }}-linux-arm64
+
+      - name: Install LLVM
+        run: bash neverc/.github/scripts/install-llvm-linux.sh
+
+      - name: Build neverc
+        run: |
+          cmake -GNinja -Bbuild \
+          -DCMAKE_C_COMPILER=$CC \
+          -DCMAKE_CXX_COMPILER=$CXX \
+          -DCMAKE_INSTALL_PREFIX=install \
+          -DLLVM_ENABLE_ASSERTIONS=OFF \
+          -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+          -DNEVERC_INCLUDE_TESTS=ON \
+          -DNEVERC_STRIP_BINARY=ON \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -C neverc/neverc/cmake/caches/NeverC.cmake \
+          neverc/llvm
+          time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+
+      - name: Run neverc tests
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
+
+      - name: Build Plugin SDK
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
+
+      - name: Test Plugin SDK (build + load)
+        run: |
+          set -e
+          make -C build/pluginsdk/examples \
+            NEVERC=$PWD/build/bin/neverc \
+            INCLUDE_DIR=$PWD/build/pluginsdk/include \
+            HOST_TARGET=aarch64-unknown-linux-gnu
+          printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
+          for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
+            echo "--- Testing $plugin ---"
+            build/bin/neverc \
+              --target=x86_64-pc-windows-msvc \
+              -fplugin-pass=build/pluginsdk/examples/${plugin}.so \
+              -c /tmp/plugin_test.c -o /tmp/plugin_test.obj
+            echo "--- $plugin OK ---"
+          done
+
+      - name: Install neverc
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+
+      - name: Package (full, with runtime)
+        run: 7z a linux-arm64-neverc.zip install
+
+      - name: Package (binary + headers, for curl installer)
+        run: cd install && zip -r ../neverc-linux-arm64.zip bin lib
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-neverc
+          path: |
+            linux-arm64-neverc.zip
+            neverc-linux-arm64.zip
+
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
+          files: |
+            linux-arm64-neverc.zip
+            neverc-linux-arm64.zip

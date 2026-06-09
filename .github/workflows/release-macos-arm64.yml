@@ -1,0 +1,217 @@
+# Release build for macOS arm64 (non-PGO).
+# Tag push: build + test + sign + notarize + GitHub Release upload.
+# Manual dispatch: same pipeline but artifacts only (no release).
+name: macos-arm64-neverc-release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Build + test + sign + release
+    if: github.repository == 'NeverSight/NeverC'
+    runs-on: macos-latest
+    env:
+      BUILD_TYPE: Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode (Apple Clang)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show Apple toolchain
+        run: |
+          xcodebuild -version
+          clang --version
+
+      - name: Install deps
+        run: brew install ninja cmake p7zip
+
+      - name: Build neverc
+        run: |
+          cmake -GNinja -Bbuild \
+          -DCMAKE_INSTALL_PREFIX=install \
+          -DLLVM_ENABLE_ASSERTIONS=OFF \
+          -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+          -DNEVERC_INCLUDE_TESTS=ON \
+          -DNEVERC_STRIP_BINARY=ON \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -C neverc/cmake/caches/NeverC.cmake \
+          llvm
+          time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+
+      - name: Run neverc tests
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
+
+      - name: Build Plugin SDK
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
+
+      - name: Test Plugin SDK (build + load)
+        run: |
+          set -e
+          make -C build/pluginsdk/examples \
+            NEVERC=$PWD/build/bin/neverc \
+            INCLUDE_DIR=$PWD/build/pluginsdk/include
+          printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
+          for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
+            echo "--- Testing $plugin ---"
+            build/bin/neverc \
+              --target=x86_64-pc-windows-msvc \
+              -fplugin-pass=build/pluginsdk/examples/${plugin}.dylib \
+              -c /tmp/plugin_test.c -o /tmp/plugin_test.obj
+            echo "--- $plugin OK ---"
+          done
+
+      - name: Install neverc
+        run: cmake --install build --prefix "${GITHUB_WORKSPACE}/install"
+
+      # ── Apple Developer ID signing + notarization ───────────
+      - name: Import Apple signing certificate
+        if: github.repository == 'NeverSight/NeverC'
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          rm -f "$CERT_PATH"
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Sign neverc binaries
+        if: github.repository == 'NeverSight/NeverC'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          IDENTITY="Developer ID Application: NEVERSIGHT LLC ($APPLE_TEAM_ID)"
+          INSTALL_DIR="${GITHUB_WORKSPACE}/install"
+          SIGNED=0
+
+          while IFS= read -r -d '' bin; do
+            filetype=$(file -b "$bin")
+            case "$filetype" in
+              *Mach-O*)
+                echo "Signing: $bin"
+                codesign --force --timestamp --options runtime \
+                  --sign "$IDENTITY" \
+                  --keychain "$SIGNING_KEYCHAIN" \
+                  "$bin"
+                SIGNED=$((SIGNED + 1))
+                ;;
+            esac
+          done < <(find "$INSTALL_DIR" -type f -print0)
+
+          echo "Signed $SIGNED Mach-O binaries"
+          [ "$SIGNED" -gt 0 ] || { echo "ERROR: no binaries were signed" >&2; exit 1; }
+
+          echo "Verifying signatures..."
+          find "$INSTALL_DIR" -type f -print0 | while IFS= read -r -d '' bin; do
+            if file -b "$bin" | grep -q 'Mach-O'; then
+              codesign --verify --deep --strict "$bin"
+              echo "  ✓ $(basename "$bin")"
+            fi
+          done
+
+      - name: Notarize neverc
+        if: github.repository == 'NeverSight/NeverC'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          NOTARIZE_ZIP="$RUNNER_TEMP/neverc-notarize.zip"
+
+          ditto -c -k --keepParent "${GITHUB_WORKSPACE}/install" "$NOTARIZE_ZIP"
+
+          echo "Submitting to Apple for notarization..."
+          xcrun notarytool submit "$NOTARIZE_ZIP" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_NOTARIZATION_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --timeout 30m
+
+          echo "Notarization complete"
+          rm -f "$NOTARIZE_ZIP"
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          if [ -n "${SIGNING_KEYCHAIN:-}" ] && [ -f "$SIGNING_KEYCHAIN" ]; then
+            security delete-keychain "$SIGNING_KEYCHAIN"
+          fi
+      # ── End signing ─────────────────────────────────────────
+
+      - name: Package (full, with runtime)
+        run: 7z a macos-arm64-neverc.zip install
+
+      - name: Package (binary + headers, for curl installer)
+        run: cd install && zip -r ../neverc-macos-arm64.zip bin lib
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-neverc
+          path: |
+            macos-arm64-neverc.zip
+            neverc-macos-arm64.zip
+
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
+          files: |
+            macos-arm64-neverc.zip
+            neverc-macos-arm64.zip
+          generate_release_notes: true
+          body: |
+            ### Quick install (macOS / Linux)
+
+            ```
+            curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/main/install.sh | sh
+            ```
+
+            ### macOS note
+
+            Signed with Apple Developer ID and notarized by Apple.
+            Extract the archive and use directly — no quarantine workaround needed.
+
+            ### Cross-compilation runtimes (optional)
+
+            ```
+            neverc runtime install windows-x64
+            neverc runtime list
+            ```
