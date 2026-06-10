@@ -43,8 +43,23 @@ using namespace lto;
 // Merged-module size (defined functions) at which the LTO ParallelOpt serial
 // phase switches from the CGSCC inliner to the flat module inliner.  See the
 // comment in runNewPMPasses.  0 disables the module inliner entirely.
+//
+// The default is anchored on two measured data points:
+//  - Redis 7.4.2 (real project, 4649 defined functions, benign call graph):
+//    the CGSCC inliner is not a bottleneck there (~0.5s of an 8s link) and
+//    produces a 5% smaller binary than the module inliner, so real projects
+//    of this size must stay below the threshold.
+//  - A synthetic 8000-function project with a deep call cycle: the CGSCC
+//    inliner's incremental call-graph maintenance explodes superlinearly
+//    (86s vs 2.9s link), so huge modules must be above it.
+// CGSCC blowup is really a property of pathological call-graph shape, not
+// function count alone; the count is a cheap proxy.  Projects that hit the
+// blowup below the threshold can lower it via
+// -mllvm -neverc-module-inliner-threshold=N on the link (the driver
+// forwards -mllvm to the link job); size-sensitive huge projects can raise
+// it or pass 0.
 static cl::opt<unsigned> NevercModuleInlinerThreshold(
-    "neverc-module-inliner-threshold", cl::init(600), cl::Hidden,
+    "neverc-module-inliner-threshold", cl::init(6000), cl::Hidden,
     cl::desc("Number of defined functions in the merged LTO module above "
              "which the module inliner replaces the CGSCC inliner "
              "(0 = never)"));
