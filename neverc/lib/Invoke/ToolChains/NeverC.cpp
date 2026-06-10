@@ -3218,8 +3218,11 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
   //
   // In auto-LTO mode, the frontend runs at -O0: LTO does the real
   // optimization, and -O0 keeps bitcode small so LTO runs ~3x faster.
+  // Suppress the optnone attribute that -O0 normally adds, otherwise LTO
+  // passes (SROA, InstCombine, etc.) will skip every function body.
   if (IsUsingLTO && D.isAutoLTO()) {
     CmdArgs.push_back("-O0");
+    CmdArgs.push_back("-disable-O0-optnone");
   } else if (Arg *A = Args.getLastArg(options::OPT_O_Group)) {
     if (A->getOption().matches(options::OPT_O4)) {
       CmdArgs.push_back("-O3");
