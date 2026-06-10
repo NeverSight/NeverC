@@ -53,7 +53,7 @@ jobs:
           cmake -S llvm -B build -G Ninja \
             -DCMAKE_SYSTEM_PROCESSOR=ARM64 \
             -C neverc/cmake/caches/NeverC.cmake \
-            -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_INCLUDE_TESTS=OFF \
             -DNEVERC_ENABLE_LTO=ON \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
