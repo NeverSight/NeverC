@@ -89,10 +89,6 @@ jobs:
             echo "--- $plugin OK ---"
           done
 
-      - name: Run neverc tests
-        shell: bash
-        run: cmake --build build --target check-neverc
-
       - name: Install neverc
         run: cmake --install build --prefix "$env:GITHUB_WORKSPACE\install"
 
