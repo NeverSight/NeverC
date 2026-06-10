@@ -170,17 +170,17 @@ else()
   set(NEVERC_STRIP_BINARY ON CACHE BOOL "")
 endif()
 
-# Full LTO for the final neverc binary: interprocedural optimisation.
-# Defaults OFF for fast incremental rebuilds during local development.
-# CI build workflows (push/PR) and PGO release workflows pass
-# -DNEVERC_ENABLE_LTO=ON, so LTO is validated on every push before
-# a release tag is cut.  Always disabled under MSVC, when cross-compiling,
+# LTO for the neverc binary.  Defaults OFF for fast incremental rebuilds
+# during local development.  CI workflows pass -DNEVERC_ENABLE_LTO=ON so
+# LTO is validated on every push.  Disabled under MSVC, when cross-compiling,
 # or in Debug builds.
 #
-# Full LTO / WPO for the neverc binary. Disabled in Debug builds and when
-# cross-compiling. On MSVC this uses /GL + /LTCG via cmake's
-# CMAKE_INTERPROCEDURAL_OPTIMIZATION; on Clang/GCC it uses LLVM Full LTO.
-option(NEVERC_ENABLE_LTO "Enable Full LTO for the neverc binary" OFF)
+# On MSVC: /GL + /LTCG.  On Clang/GCC: LLVM ThinLTO by default (fast link,
+# low memory, nearly identical runtime perf to Full LTO).  Override with
+# -DNEVERC_LTO_MODE=Full for whole-program optimisation when build time and
+# memory are not a concern.
+option(NEVERC_ENABLE_LTO "Enable LTO for the neverc binary" OFF)
+set(NEVERC_LTO_MODE "Thin" CACHE STRING "LTO flavour: Thin (default) or Full")
 if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING
    AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   if(_NEVERC_HOST_MSVC)
@@ -189,7 +189,7 @@ if(NEVERC_ENABLE_LTO AND NOT CMAKE_CROSSCOMPILING
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LTCG" CACHE STRING "" FORCE)
     set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /LTCG" CACHE STRING "" FORCE)
   else()
-    set(LLVM_ENABLE_LTO Full CACHE STRING "" FORCE)
+    set(LLVM_ENABLE_LTO "${NEVERC_LTO_MODE}" CACHE STRING "" FORCE)
   endif()
 else()
   set(LLVM_ENABLE_LTO OFF CACHE STRING "" FORCE)
