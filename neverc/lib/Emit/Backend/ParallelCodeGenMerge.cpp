@@ -268,6 +268,12 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
       PP->M = std::move(*MOrErr);
       auto &MPart = *PP->M;
 
+      // Materialize only the functions assigned to this partition; every
+      // other body stays unparsed in the bitcode buffer, keeping prepare
+      // CPU at O(total IR) instead of O(partitions x total IR).
+      // Global-variable initializers are not lazy (the reader resolves
+      // them when module parsing suspends at the first function block),
+      // so the p != 0 initializer dropping below needs no materialization.
       bool Failed = false;
       for (const std::string &Name : Assignments[p]) {
         Function *F = MPart.getFunction(Name);
@@ -281,20 +287,7 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
       }
       if (Failed)
         continue;
-      if (auto Err = MPart.materializeAll()) {
-        consumeError(std::move(Err));
-        continue;
-      }
-      if (p == 0) {
-        for (GlobalVariable &GV : MPart.globals())
-          if (auto Err = GV.materialize()) {
-            consumeError(std::move(Err));
-            Failed = true;
-            break;
-          }
-        if (Failed)
-          continue;
-      } else {
+      if (p != 0) {
         for (GlobalVariable &GV : make_early_inc_range(MPart.globals())) {
           if (GV.isDeclaration())
             continue;
@@ -306,6 +299,9 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
           GV.setLinkage(GlobalValue::ExternalLinkage);
         }
       }
+      // deleteBody() also clears the materializable bit, so unassigned
+      // functions (still lazy, hence !isDeclaration()) become true
+      // declarations without their bodies ever being parsed.
       for (Function &F : MPart) {
         if (F.isDeclaration())
           continue;
