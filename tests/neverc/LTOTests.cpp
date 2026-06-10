@@ -2,6 +2,26 @@
 
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 
+#include <cstdlib>
+
+// MSVC has no POSIX setenv/unsetenv; _putenv_s keeps the CRT and Win32
+// environment blocks in sync so spawned neverc children inherit the value.
+static void setEnvVar(const char *Name, const char *Value) {
+#ifdef _WIN32
+  _putenv_s(Name, Value);
+#else
+  setenv(Name, Value, 1);
+#endif
+}
+
+static void unsetEnvVar(const char *Name) {
+#ifdef _WIN32
+  _putenv_s(Name, "");
+#else
+  unsetenv(Name);
+#endif
+}
+
 class LTOTest : public NeverCTest {};
 
 TEST_F(LTOTest, HelloLTO) {
@@ -124,7 +144,7 @@ TEST_F(LTOTest, MllvmReachesLinkJob) {
 TEST_F(LTOTest, LtoLinkCache) {
   auto ltoDir = testDir() / "lto";
   auto cacheDir = tmpFile("ltocache_dir");
-  setenv(linker::ltoCacheDirEnvVar, cacheDir.string().c_str(), 1);
+  setEnvVar(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
 
   std::vector<std::string> base = {"-std=c11"};
   for (auto &f : sysrootFlags()) base.push_back(f);
@@ -160,11 +180,11 @@ TEST_F(LTOTest, LtoLinkCache) {
 
   // Disabled: no entries may be written.
   auto exeOff = tmpFile("ltocache_off");
-  setenv(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue, 1);
+  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
   auto off = link;
   off.insert(off.end(), {"-o", exeOff.string()});
   ASSERT_EQ(ncc(off).exitCode, 0);
-  unsetenv(linker::ltoCacheEnvVar);
+  unsetEnvVar(linker::ltoCacheEnvVar);
   EXPECT_EQ(countEntries(), 0u);
 
   // Cold link populates the cache; warm link must be bit-identical.
@@ -191,7 +211,7 @@ TEST_F(LTOTest, LtoLinkCache) {
   ASSERT_EQ(ncc(l2).exitCode, 0);
   EXPECT_GT(countEntries(), afterCold) << "flag change must be a cache miss";
 
-  unsetenv(linker::ltoCacheDirEnvVar);
+  unsetEnvVar(linker::ltoCacheDirEnvVar);
 }
 
 TEST_F(LTOTest, InlineAsmLTO) {
