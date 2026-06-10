@@ -781,8 +781,8 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
   // incremental call-graph maintenance dominates wall time superlinearly on
   // large merged modules (profiled: 99% of a 1000-module link).  Use the
   // module-level inliner with a flat priority worklist instead; the per-SCC
-  // interleaved simplification it loses is compensated by the frontend SROA
-  // run (auto-LTO) and the per-partition optimization pipeline.
+  // interleaved simplification it loses is compensated by the EarlyFPM
+  // simplification above and the per-partition optimization pipeline.
   if (PTO.NevercModuleInliner) {
     InlineParams IP;
     if (PTO.InlinerThreshold == -1)
