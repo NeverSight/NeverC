@@ -66,7 +66,7 @@ jobs:
         -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
         -DNEVERC_INCLUDE_TESTS=ON \
         -DNEVERC_STRIP_BINARY=OFF \
-        -DNEVERC_ENABLE_LTO=ON \
+        -DNEVERC_ENABLE_LTO=OFF \
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
         -C neverc/neverc/cmake/caches/NeverC.cmake \
         neverc/llvm
