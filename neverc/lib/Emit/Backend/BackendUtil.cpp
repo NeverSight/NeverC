@@ -52,6 +52,7 @@
 #include "llvm/Transforms/IPO/Annotation2Metadata.h"
 #include "llvm/Transforms/IPO/MSVCMacroRebuilding.h"
 #include "llvm/Transforms/Instrumentation.h"
+#include "llvm/Transforms/Scalar/SROA.h"
 #include "llvm/Transforms/Utils/Debugify.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include <memory>
@@ -616,6 +617,14 @@ void GenAssemblyHelper::runOptimizationPipeline(
 
     if (PrepareForLTO) {
       MPM.addPass(PB.buildLTOPreLinkDefaultPipeline(Level));
+      // Auto-LTO runs the frontend at -O0, so each function is alloca-heavy
+      // (~3-5x more IR than simplified form).  That inflated IR is then
+      // processed by every *serial* LTO stage: bitcode parse, IRMover merge,
+      // and inliner body cloning.  Run SROA here, in the parallel per-file
+      // frontend, to shrink the IR before it reaches the serial bottleneck.
+      if (Level == OptimizationLevel::O0)
+        MPM.addPass(
+            createModuleToFunctionPassAdaptor(SROAPass(SROAOptions::ModifyCFG)));
     } else {
       MPM.addPass(PB.buildPerModuleDefaultPipeline(Level));
     }
