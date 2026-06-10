@@ -165,6 +165,13 @@ TEST_F(LTOTest, LtoLinkCache) {
   for (auto &f : sysrootFlags()) link.push_back(f);
   for (auto &f : archFlags()) link.push_back(f);
   link.insert(link.end(), {"-flto", objA.string(), objB.string()});
+  // COFF stamps the PE header with the wall-clock second by default
+  // (incremental-linker compatibility); two otherwise identical links
+  // differ whenever that second ticks over.  Request reproducible output
+  // (timestamp = content hash) so the cold/warm byte comparison below
+  // only measures cache correctness.
+  if (isWindows())
+    link.push_back("-mno-incremental-linker-compatible");
 
   auto countEntries = [&] {
     size_t n = 0;
