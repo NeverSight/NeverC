@@ -58,6 +58,63 @@ TEST_F(LTOTest, MultiTU_AB) {
   EXPECT_TRUE(r.contains("add(3,4)=7"));
 }
 
+// Guards the driver forwarding of user -mllvm flags into the link job
+// (populateLinkerDriverConfig -> LinkerDriverConfig::mllvmOpts ->
+// parseMllvmOptions).  Under (auto-)LTO the optimizer runs at link time,
+// so flags like -neverc-module-inliner-threshold are meaningless unless
+// they reach the linker's cl::opt parsing.
+TEST_F(LTOTest, MllvmReachesLinkJob) {
+  auto ltoDir = testDir() / "lto";
+  auto objA = tmpFile("mllvm_a.o");
+  auto objB = tmpFile("mllvm_b.o");
+
+  std::vector<std::string> base = {"-std=c11"};
+  for (auto &f : sysrootFlags()) base.push_back(f);
+  for (auto &f : archFlags()) base.push_back(f);
+
+  auto a1 = base;
+  a1.insert(a1.end(),
+            {"-flto", "-c", (ltoDir / "test_lto_a.c").string(), "-o",
+             objA.string()});
+  ASSERT_EQ(ncc(a1).exitCode, 0);
+
+  auto a2 = base;
+  a2.insert(a2.end(),
+            {"-flto", "-c", (ltoDir / "test_lto_b.c").string(), "-o",
+             objB.string()});
+  ASSERT_EQ(ncc(a2).exitCode, 0);
+
+  std::vector<std::string> link;
+  for (auto &f : sysrootFlags()) link.push_back(f);
+  for (auto &f : archFlags()) link.push_back(f);
+  link.insert(link.end(), {"-flto", objA.string(), objB.string()});
+
+  // A valid link-stage LLVM option must be accepted and produce a working
+  // binary.
+  auto good = link;
+  auto exeGood = tmpFile("mllvm_good");
+  good.insert(good.end(), {"-mllvm", "-neverc-module-inliner-threshold=0",
+                           "-o", exeGood.string()});
+  ASSERT_EQ(ncc(good).exitCode, 0);
+  auto r = exec(exeGood.string(), {});
+  EXPECT_EQ(r.exitCode, 0);
+  EXPECT_TRUE(r.contains("add(3,4)=7"));
+
+  // An unknown option must make the link fail: this proves the flag was
+  // actually parsed by the link job instead of being silently dropped
+  // (the pre-fix behavior).
+  auto bad = link;
+  auto exeBad = tmpFile("mllvm_bad");
+  bad.insert(bad.end(), {"-mllvm", "-neverc-no-such-option-guard", "-o",
+                         exeBad.string()});
+  auto br = ncc(bad);
+  EXPECT_NE(br.exitCode, 0)
+      << "link must fail on unknown -mllvm option; succeeding means the "
+         "flag was dropped before reaching the linker";
+  EXPECT_TRUE(br.stderrContains("Unknown command line argument"))
+      << "stderr: " << br.err;
+}
+
 TEST_F(LTOTest, InlineAsmLTO) {
   auto asmDir = testDir() / "asm";
   auto objMain = tmpFile("asm_lto_main.o");
