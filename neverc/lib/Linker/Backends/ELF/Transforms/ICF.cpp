@@ -6,6 +6,7 @@
 #include "Linker/ELF/SymbolTable.h"
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELF.h"
@@ -403,7 +404,7 @@ bool combineRelocHashes(unsigned cnt, InputSection *isec,
       }
     } else if (isa<SharedSymbol>(s)) {
       uint32_t refHash =
-          static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&s) >> 4);
+          static_cast<uint32_t>(llvm::hash_value(s.getName()));
       hash ^= refHash + 0x9e3779b9 + (hash << 6) + (hash >> 2);
     }
   }
@@ -449,7 +450,15 @@ template <class ELFT> void ICF<ELFT>::foldLeafSectionsEarly() {
 
   parallelSort(leafSections,
                [](const LeafCandidate &a, const LeafCandidate &b) {
-                 return a.hash < b.hash;
+                 if (a.hash != b.hash)
+                   return a.hash < b.hash;
+                 if (a.sec->file != b.sec->file) {
+                   int cmp =
+                       a.sec->file->getName().compare(b.sec->file->getName());
+                   if (cmp != 0)
+                     return cmp < 0;
+                 }
+                 return a.sec->name.compare(b.sec->name) < 0;
                });
 
   SmallPtrSet<InputSection *, 32> removed;
@@ -583,8 +592,17 @@ template <class ELFT> void ICF<ELFT>::run() {
 
   // From now on, sections in Sections vector are ordered so that sections
   // in the same equivalence class are consecutive in the vector.
+  // Use a deterministic tiebreaker (file name, then section name) so
+  // that the leader chosen for each ICF class is stable across runs.
   auto byEqClass = [](const InputSection *a, const InputSection *b) {
-    return a->eqClass[0] < b->eqClass[0];
+    if (a->eqClass[0] != b->eqClass[0])
+      return a->eqClass[0] < b->eqClass[0];
+    if (a->file != b->file) {
+      int cmp = a->file->getName().compare(b->file->getName());
+      if (cmp != 0)
+        return cmp < 0;
+    }
+    return a->name.compare(b->name) < 0;
   };
   parallelSort(sections, byEqClass);
 

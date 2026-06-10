@@ -8,6 +8,7 @@
 
 #include "Linker/Core/Runtime/Session.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/Parallel.h"
@@ -320,7 +321,7 @@ void ICF::run() {
           } else {
             assert(isa<Undefined>(sym) || isa<DylibSymbol>(sym));
             uint32_t refHash =
-                static_cast<uint32_t>(reinterpret_cast<uintptr_t>(sym) >> 4);
+                static_cast<uint32_t>(llvm::hash_value(sym->getName()));
             hash ^= refHash + 0x9e3779b9 + (hash << 6) + (hash >> 2);
           }
         } else {
@@ -373,7 +374,14 @@ void ICF::run() {
 
   parallelSort(icfInputs, [hashSlot](const ConcatInputSection *a,
                                      const ConcatInputSection *b) {
-    return a->icfEqClass[hashSlot] < b->icfEqClass[hashSlot];
+    if (a->icfEqClass[hashSlot] != b->icfEqClass[hashSlot])
+      return a->icfEqClass[hashSlot] < b->icfEqClass[hashSlot];
+    if (a->getFile() != b->getFile()) {
+      int cmp = a->getFile()->getName().compare(b->getFile()->getName());
+      if (cmp != 0)
+        return cmp < 0;
+    }
+    return a->getName().compare(b->getName()) < 0;
   });
   forEachClass([&](size_t begin, size_t end) {
     if (end - begin > 1)

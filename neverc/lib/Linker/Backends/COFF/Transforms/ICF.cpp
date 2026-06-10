@@ -284,7 +284,14 @@ void ICF::foldLeafSectionsEarly() {
     return;
 
   parallelSort(leaves, [](const LeafCandidate &a, const LeafCandidate &b) {
-    return a.hash < b.hash;
+    if (a.hash != b.hash)
+      return a.hash < b.hash;
+    if (a.chunk->file != b.chunk->file) {
+      int cmp = a.chunk->file->getName().compare(b.chunk->file->getName());
+      if (cmp != 0)
+        return cmp < 0;
+    }
+    return a.chunk->getSectionNumber() < b.chunk->getSectionNumber();
   });
 
   SmallPtrSet<SectionChunk *, 32> removed;
@@ -374,7 +381,7 @@ void ICF::run() {
           hash ^= refHash + 0x9e3779b9 + (hash << 6) + (hash >> 2);
         } else {
           uint32_t refHash =
-              static_cast<uint32_t>(reinterpret_cast<uintptr_t>(b) >> 4);
+              static_cast<uint32_t>(llvm::hash_value(b->getName()));
           hash ^= refHash + 0x9e3779b9 + (hash << 6) + (hash >> 2);
         }
       }
@@ -420,8 +427,17 @@ void ICF::run() {
 
   // From now on, sections in Chunks are ordered so that sections in
   // the same group are consecutive in the vector.
+  // Use a deterministic tiebreaker (file name, then section number)
+  // so that the leader chosen for each ICF class is stable across runs.
   auto byEqClass = [](const SectionChunk *a, const SectionChunk *b) {
-    return a->eqClass[0] < b->eqClass[0];
+    if (a->eqClass[0] != b->eqClass[0])
+      return a->eqClass[0] < b->eqClass[0];
+    if (a->file != b->file) {
+      int cmp = a->file->getName().compare(b->file->getName());
+      if (cmp != 0)
+        return cmp < 0;
+    }
+    return a->getSectionNumber() < b->getSectionNumber();
   };
   parallelSort(chunks, byEqClass);
 
