@@ -261,18 +261,18 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
 #include "neverc/Invoke/Options.td.h"
 #undef CODEGEN_OPTION_WITH_MARSHALLING
 
-  if (Opts.OptimizationLevel == 0) {
-    Opts.setInlining(CodeGenOptions::OnlyAlwaysInlining);
-  } else if (const Arg *A = Args.getLastArg(options::OPT_finline_functions,
-                                            options::OPT_finline_hint_functions,
-                                            options::OPT_fno_inline_functions,
-                                            options::OPT_fno_inline)) {
+  if (const Arg *A = Args.getLastArg(options::OPT_finline_functions,
+                                    options::OPT_finline_hint_functions,
+                                    options::OPT_fno_inline_functions,
+                                    options::OPT_fno_inline)) {
     if (A->getOption().matches(options::OPT_finline_functions))
       Opts.setInlining(CodeGenOptions::NormalInlining);
     else if (A->getOption().matches(options::OPT_finline_hint_functions))
       Opts.setInlining(CodeGenOptions::OnlyHintInlining);
     else
       Opts.setInlining(CodeGenOptions::OnlyAlwaysInlining);
+  } else if (Opts.OptimizationLevel == 0) {
+    Opts.setInlining(CodeGenOptions::OnlyAlwaysInlining);
   } else {
     Opts.setInlining(CodeGenOptions::NormalInlining);
   }

@@ -3218,8 +3218,16 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
   //
   // In auto-LTO mode, the frontend runs at -O0: LTO does the real
   // optimization, and -O0 keeps bitcode small so LTO runs ~3x faster.
+  // Two suppressions are needed:
+  //  1. -disable-O0-optnone: prevent optnone on every function, otherwise
+  //     all LTO passes (SROA, InstCombine, …) skip every function body.
+  //  2. -finline-functions: at -O0 the default inlining policy
+  //     (OnlyAlwaysInlining) marks every non-always_inline function as
+  //     noinline.  Override to NormalInlining so LTO's inliner can decide.
   if (IsUsingLTO && D.isAutoLTO()) {
     CmdArgs.push_back("-O0");
+    CmdArgs.push_back("-disable-O0-optnone");
+    CmdArgs.push_back("-finline-functions");
   } else if (Arg *A = Args.getLastArg(options::OPT_O_Group)) {
     if (A->getOption().matches(options::OPT_O4)) {
       CmdArgs.push_back("-O3");
