@@ -26,6 +26,21 @@ jobs:
           sudo docker image prune --all --force || true
           df -h /
 
+      # The LTO link of the final neverc binary needs more memory than the
+      # 4-vCPU arm64 runner provides; without swap the VM thrashes and the
+      # runner loses communication with GitHub (job dies with exit code 143).
+      - name: Create swap
+        run: |
+          if ! swapon --show | grep -q /mnt/swapfile; then
+            sudo swapoff /mnt/swapfile 2>/dev/null || true
+            sudo rm -f /mnt/swapfile
+            sudo fallocate -l 4G /mnt/swapfile
+            sudo chmod 600 /mnt/swapfile
+            sudo mkswap /mnt/swapfile
+            sudo swapon /mnt/swapfile
+          fi
+          free -h
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
