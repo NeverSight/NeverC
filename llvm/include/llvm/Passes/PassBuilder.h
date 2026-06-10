@@ -108,6 +108,15 @@ public:
   // them from the serial CGSCC walk saves ~15-20% of buildInlinerPipeline
   // wall time on Redis-sized projects.
   bool NevercInlinerLiteFSimpl = false;
+
+  // NeverC: when true, replace the CGSCC inliner pipeline with the
+  // module-level inliner during LTO simplify-only.  The CGSCC framework's
+  // incremental call-graph maintenance (updateCGAndAnalysisManagerForCGSCCPass
+  // plus RefSCC walks) shows superlinear behavior on call-chain-heavy merged
+  // modules: profiled at 65% + 34% of a 143s inliner run on a 1000-module
+  // project where actual InlineFunction cloning was only 0.15%.  The module
+  // inliner uses a flat priority worklist with no call-graph maintenance.
+  bool NevercModuleInliner = false;
 };
 
 /// This class provides access to building LLVM's passes.

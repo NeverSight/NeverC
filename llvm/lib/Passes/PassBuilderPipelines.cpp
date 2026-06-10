@@ -46,6 +46,7 @@
 #include "llvm/Transforms/IPO/GlobalOpt.h"
 #include "llvm/Transforms/IPO/InferFunctionAttrs.h"
 #include "llvm/Transforms/IPO/Inliner.h"
+#include "llvm/Transforms/IPO/ModuleInliner.h"
 #include "llvm/Transforms/IPO/LowerTypeTests.h"
 #include "llvm/Transforms/IPO/SCCP.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
@@ -776,7 +777,31 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
 
   MPM.addPass(AlwaysInlinerPass(/*InsertLifetimeIntrinsics=*/true));
 
-  MPM.addPass(buildInlinerPipeline(Level, Phase));
+  // NeverC: in the LTO ParallelOpt serial phase, the CGSCC inliner's
+  // incremental call-graph maintenance dominates wall time superlinearly on
+  // large merged modules (profiled: 99% of a 1000-module link).  Use the
+  // module-level inliner with a flat priority worklist instead; the per-SCC
+  // interleaved simplification it loses is compensated by the frontend SROA
+  // run (auto-LTO) and the per-partition optimization pipeline.
+  if (PTO.NevercModuleInliner) {
+    InlineParams IP;
+    if (PTO.InlinerThreshold == -1)
+      IP = getInlineParamsFromOptLevel(Level);
+    else
+      IP = getInlineParams(PTO.InlinerThreshold);
+    MPM.addPass(RequireAnalysisPass<ProfileSummaryAnalysis, Module>());
+    MPM.addPass(
+        ModuleInlinerPass(IP, InliningAdvisorMode::Default, Phase));
+    // Clean up inlining byproducts so partition cost models and downstream
+    // IPO passes see realistic function bodies.
+    FunctionPassManager PostInlineFPM;
+    PostInlineFPM.addPass(SROAPass(SROAOptions::ModifyCFG));
+    PostInlineFPM.addPass(InstCombinePass());
+    MPM.addPass(createModuleToFunctionPassAdaptor(
+        std::move(PostInlineFPM), PTO.EagerlyInvalidateAnalyses));
+  } else {
+    MPM.addPass(buildInlinerPipeline(Level, Phase));
+  }
 
   // Remove any dead arguments exposed by cleanups, constant folding globals,
   // and argument promotion.

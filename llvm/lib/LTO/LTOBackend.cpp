@@ -40,6 +40,15 @@
 using namespace llvm;
 using namespace lto;
 
+// Merged-module size (defined functions) at which the LTO ParallelOpt serial
+// phase switches from the CGSCC inliner to the flat module inliner.  See the
+// comment in runNewPMPasses.  0 disables the module inliner entirely.
+static cl::opt<unsigned> NevercModuleInlinerThreshold(
+    "neverc-module-inliner-threshold", cl::init(600), cl::Hidden,
+    cl::desc("Number of defined functions in the merged LTO module above "
+             "which the module inliner replaces the CGSCC inliner "
+             "(0 = never)"));
+
 #define DEBUG_TYPE "lto-backend"
 
 [[noreturn]] static void reportOpenError(StringRef Path, Twine Msg) {
@@ -196,6 +205,20 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
   if (Conf.LTOParallelOpt && Conf.ParallelOptCodeGenHook) {
     LocalPTO.NevercFastIPO = true;
     LocalPTO.NevercInlinerLiteFSimpl = true;
+    // The CGSCC inliner's incremental call-graph maintenance is superlinear
+    // in the merged module's call-graph size (measured 99% of a 145s link on
+    // a 1000-module project, vs 0.15% spent in actual inlining).  Switch to
+    // the flat module inliner once the merged module is big enough for that
+    // overhead to dominate; below the threshold the CGSCC inliner's
+    // interleaved per-SCC simplification yields slightly better code at
+    // negligible framework cost.
+    if (NevercModuleInlinerThreshold != 0) {
+      unsigned DefinedFns = 0;
+      for (Function &F : Mod)
+        if (!F.isDeclaration())
+          ++DefinedFns;
+      LocalPTO.NevercModuleInliner = DefinedFns >= NevercModuleInlinerThreshold;
+    }
   }
   PassBuilder PB(TM, LocalPTO, /*PGOOpt=*/std::nullopt, &PIC);
 

@@ -15,6 +15,7 @@ set(LLVMIPO_SOURCES
   InferFunctionAttrs.cpp
   Inliner.cpp
   Internalize.cpp
+  ModuleInliner.cpp
   LowerTypeTests.cpp
   SCCP.cpp
 
