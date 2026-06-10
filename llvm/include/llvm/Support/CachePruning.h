@@ -321,7 +321,9 @@ inline bool pruneCache(StringRef Path, CachePruningPolicy Policy,
       Policy.MaxSizePercentageOfAvailableSpace = 100;
     if (Policy.MaxSizeBytes == 0)
       Policy.MaxSizeBytes = AvailableSpace;
-    auto TotalSizeTarget = std::min(
+    // Explicit <uint64_t>: on LP64 Linux uint64_t is unsigned long, so the
+    // mixed unsigned-long-long / uint64_t operands fail template deduction.
+    auto TotalSizeTarget = std::min<uint64_t>(
         AvailableSpace * Policy.MaxSizePercentageOfAvailableSpace / 100ull,
         Policy.MaxSizeBytes);
 
