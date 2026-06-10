@@ -1,5 +1,7 @@
 #include "NeverCTestFixture.h"
 
+#include "neverc/Linker/Core/Driver/LTOCacheContract.h"
+
 class LTOTest : public NeverCTest {};
 
 TEST_F(LTOTest, HelloLTO) {
@@ -113,6 +115,83 @@ TEST_F(LTOTest, MllvmReachesLinkJob) {
          "flag was dropped before reaching the linker";
   EXPECT_TRUE(br.stderrContains("Unknown command line argument"))
       << "stderr: " << br.err;
+}
+
+// LTO link cache (LTOCache.cpp): a second link with identical inputs and
+// flags must hit the cache and produce a bit-identical binary; disabling
+// via NEVERC_LTO_CACHE=0 must not write entries; changing a flag that
+// affects codegen must miss.
+TEST_F(LTOTest, LtoLinkCache) {
+  auto ltoDir = testDir() / "lto";
+  auto cacheDir = tmpFile("ltocache_dir");
+  setenv(linker::ltoCacheDirEnvVar, cacheDir.string().c_str(), 1);
+
+  std::vector<std::string> base = {"-std=c11"};
+  for (auto &f : sysrootFlags()) base.push_back(f);
+  for (auto &f : archFlags()) base.push_back(f);
+
+  auto objA = tmpFile("ltocache_a.o");
+  auto objB = tmpFile("ltocache_b.o");
+  auto a1 = base;
+  a1.insert(a1.end(), {"-flto", "-c", (ltoDir / "test_lto_a.c").string(), "-o",
+                       objA.string()});
+  ASSERT_EQ(ncc(a1).exitCode, 0);
+  auto a2 = base;
+  a2.insert(a2.end(), {"-flto", "-c", (ltoDir / "test_lto_b.c").string(), "-o",
+                       objB.string()});
+  ASSERT_EQ(ncc(a2).exitCode, 0);
+
+  std::vector<std::string> link;
+  for (auto &f : sysrootFlags()) link.push_back(f);
+  for (auto &f : archFlags()) link.push_back(f);
+  link.insert(link.end(), {"-flto", objA.string(), objB.string()});
+
+  auto countEntries = [&] {
+    size_t n = 0;
+    std::error_code ec;
+    for (fs::directory_iterator it(cacheDir, ec), e; !ec && it != e;
+         it.increment(ec))
+      if (it->path().filename().string().rfind(linker::ltoCacheEntryPrefix,
+                                               0) == 0 &&
+          it->path().extension() != linker::ltoCacheTmpSuffix)
+        ++n;
+    return n;
+  };
+
+  // Disabled: no entries may be written.
+  auto exeOff = tmpFile("ltocache_off");
+  setenv(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue, 1);
+  auto off = link;
+  off.insert(off.end(), {"-o", exeOff.string()});
+  ASSERT_EQ(ncc(off).exitCode, 0);
+  unsetenv(linker::ltoCacheEnvVar);
+  EXPECT_EQ(countEntries(), 0u);
+
+  // Cold link populates the cache; warm link must be bit-identical.
+  auto exe = tmpFile("ltocache_exe");
+  auto l1 = link;
+  l1.insert(l1.end(), {"-o", exe.string()});
+  ASSERT_EQ(ncc(l1).exitCode, 0);
+  size_t afterCold = countEntries();
+  EXPECT_GE(afterCold, 1u);
+  std::string cold = readFile(exe);
+
+  ASSERT_EQ(ncc(l1).exitCode, 0);
+  std::string warm = readFile(exe);
+  EXPECT_EQ(countEntries(), afterCold) << "warm link must not add entries";
+  EXPECT_TRUE(cold == warm) << "cache hit produced a different binary";
+  auto r = exec(exe.string(), {});
+  EXPECT_EQ(r.exitCode, 0);
+  EXPECT_TRUE(r.contains("add(3,4)=7"));
+
+  // A codegen-relevant flag change must miss (new entry).
+  auto exeO0 = tmpFile("ltocache_o0");
+  auto l2 = link;
+  l2.insert(l2.end(), {"-O0", "-o", exeO0.string()});
+  ASSERT_EQ(ncc(l2).exitCode, 0);
+  EXPECT_GT(countEntries(), afterCold) << "flag change must be a cache miss";
+
+  unsetenv(linker::ltoCacheDirEnvVar);
 }
 
 TEST_F(LTOTest, InlineAsmLTO) {

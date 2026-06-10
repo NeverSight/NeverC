@@ -5,11 +5,27 @@
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
 #include "neverc/Plugin/PluginLoader.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "neverc/Invoke/LLVMCommandLine.h"
 #include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
+
+// Keyword modes of -lto-basic-block-sections; every other non-empty value
+// names a function-list file.  Single definition point for the keyword
+// strings, shared with ltoBasicBlockSectionsIsListFile().
+static std::optional<BasicBlockSection> bbSectionsKeywordMode(StringRef BBS) {
+  return StringSwitch<std::optional<BasicBlockSection>>(BBS)
+      .Case("all", BasicBlockSection::All)
+      .Case("labels", BasicBlockSection::Labels)
+      .Case("none", BasicBlockSection::None)
+      .Default(std::nullopt);
+}
+
+bool linker::ltoBasicBlockSectionsIsListFile(StringRef BBS) {
+  return !BBS.empty() && !bbSectionsKeywordMode(BBS).has_value();
+}
 
 lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
                                     DiagnosticHandlerFunction DiagHandler,
@@ -116,12 +132,8 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
 
   if (!Cfg.ltoBasicBlockSections.empty()) {
     StringRef BBS = Cfg.ltoBasicBlockSections;
-    if (BBS == "all")
-      c.Options.BBSections = BasicBlockSection::All;
-    else if (BBS == "labels")
-      c.Options.BBSections = BasicBlockSection::Labels;
-    else if (BBS == "none")
-      c.Options.BBSections = BasicBlockSection::None;
+    if (std::optional<BasicBlockSection> Mode = bbSectionsKeywordMode(BBS))
+      c.Options.BBSections = *Mode;
     else {
       ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr =
           MemoryBuffer::getFile(BBS.str());

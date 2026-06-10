@@ -25,8 +25,13 @@ using namespace linker::elf;
 
 namespace {
 
+// Backend inputs to createLTOConfig() beyond the driver config.  They
+// shape the LTO output, so they also enter the cache key (finalize()).
+constexpr char ltoCacheBackendTag[] = "elf";
+constexpr bool emitAddrsig = true;
+
 lto::Config createConfig() {
-  return createLTOConfig(*config->driverCfg, diagnosticHandler);
+  return createLTOConfig(*config->driverCfg, diagnosticHandler, emitAddrsig);
 }
 
 } // namespace
@@ -38,6 +43,7 @@ lto::Config createConfig() {
 BitcodeCompiler::BitcodeCompiler() {
   ltoObj = std::make_unique<lto::LTO>(createConfig(),
                                       config->driverCfg->ltoPartitions);
+  cacheUsable = ltoCacheUsable(*config->driverCfg);
 
   if (ctx.bitcodeFiles.empty())
     return;
@@ -125,6 +131,8 @@ void BitcodeCompiler::commit(BitcodeFile &f,
     Undefined(nullptr, StringRef(), STB_GLOBAL, STV_DEFAULT, sym->type)
         .overwrite(*sym);
   }
+  if (cacheUsable)
+    cacheKey.addInput(f.mb, resols);
   checkError(ltoObj->add(std::move(f.obj), resols));
 }
 
@@ -148,10 +156,8 @@ std::vector<InputFile *> BitcodeCompiler::compile() {
   buf.resize(maxTasks);
 
   if (!ctx.bitcodeFiles.empty())
-    checkError(ltoObj->run([&](size_t task, const Twine &moduleName) {
-      return std::make_unique<CachedFileStream>(
-          std::make_unique<raw_svector_ostream>(buf[task]));
-    }));
+    runLTOWithCache(*ltoObj, cacheKey, cacheUsable, *config->driverCfg,
+                    ltoCacheBackendTag, emitAddrsig, buf);
 
   std::vector<InputFile *> ret;
   for (unsigned i = 0; i != maxTasks; ++i) {

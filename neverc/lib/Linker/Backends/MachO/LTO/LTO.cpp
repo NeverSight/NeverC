@@ -21,9 +21,16 @@ using namespace llvm::MachO;
 
 namespace {
 
+// Backend inputs to createLTOConfig() beyond the driver config.  They
+// shape the LTO output, so they also enter the cache key (finalize()).
+constexpr char ltoCacheBackendTag[] = "macho";
+
+// Safe ICF needs the address-significance table.
+bool emitAddrsig() { return config->icfLevel == ICFLevel::safe; }
+
 lto::Config createConfig() {
   return createLTOConfig(*config->driverCfg, diagnosticHandler,
-                         config->icfLevel == ICFLevel::safe);
+                         emitAddrsig());
 }
 
 } // namespace
@@ -35,6 +42,7 @@ lto::Config createConfig() {
 BitcodeCompiler::BitcodeCompiler() {
   ltoObj = std::make_unique<lto::LTO>(createConfig(),
                                       config->driverCfg->ltoPartitions);
+  cacheUsable = ltoCacheUsable(*config->driverCfg);
 }
 
 // ===----------------------------------------------------------------------===
@@ -98,6 +106,8 @@ void BitcodeCompiler::commit(BitcodeFile &f,
     replaceSymbol<Undefined>(sym, sym->getName(), sym->getFile(),
                              RefState::Strong, /*wasBitcodeSymbol=*/true);
   }
+  if (cacheUsable)
+    cacheKey.addInput(f.mb, resols);
   checkError(ltoObj->add(std::move(f.obj), resols));
   hasFiles = true;
 }
@@ -120,10 +130,8 @@ std::vector<ObjFile *> BitcodeCompiler::compile() {
   buf.resize(maxTasks);
 
   if (hasFiles)
-    checkError(ltoObj->run([&](size_t task, const Twine &moduleName) {
-      return std::make_unique<CachedFileStream>(
-          std::make_unique<raw_svector_ostream>(buf[task]));
-    }));
+    runLTOWithCache(*ltoObj, cacheKey, cacheUsable, *config->driverCfg,
+                    ltoCacheBackendTag, emitAddrsig(), buf);
 
   const auto &D = *config->driverCfg;
   std::vector<ObjFile *> ret;

@@ -22,6 +22,12 @@ add_executable(neverc-tests ${NEVERC_TEST_SOURCES})
 
 target_link_libraries(neverc-tests PRIVATE GTest::gtest GTest::gtest_main)
 
+# Dependency-free contract headers (e.g. LTOCacheContract.h) shared with
+# the product code so tests never restate env var names or file naming.
+target_include_directories(neverc-tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+
 target_compile_features(neverc-tests PRIVATE cxx_std_17)
 
 target_compile_definitions(neverc-tests PRIVATE

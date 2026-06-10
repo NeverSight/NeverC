@@ -19,8 +19,14 @@ using namespace linker::coff;
 // LTO configuration
 // ===----------------------------------------------------------------------===
 
+// Backend inputs to createLTOConfig() beyond the driver config.  They
+// shape the LTO output, so they also enter the cache key (finalize()).
+static constexpr char ltoCacheBackendTag[] = "coff";
+static constexpr bool emitAddrsig = true;
+
 lto::Config BitcodeCompiler::createConfig() {
-  return createLTOConfig(*ctx.config.driverCfg, diagnosticHandler);
+  return createLTOConfig(*ctx.config.driverCfg, diagnosticHandler,
+                         emitAddrsig);
 }
 
 // ===----------------------------------------------------------------------===
@@ -30,6 +36,7 @@ lto::Config BitcodeCompiler::createConfig() {
 BitcodeCompiler::BitcodeCompiler(COFFLinkerContext &c) : ctx(c) {
   ltoObj = std::make_unique<lto::LTO>(createConfig(),
                                       ctx.config.driverCfg->ltoPartitions);
+  cacheUsable = ltoCacheUsable(*ctx.config.driverCfg);
 }
 
 BitcodeCompiler::~BitcodeCompiler() = default;
@@ -86,6 +93,8 @@ void BitcodeCompiler::add(BitcodeFile &f) {
     // their values are still not final.
     r.LinkerRedefined = !sym->canInline;
   }
+  if (cacheUsable)
+    cacheKey.addInput(f.mb, resols);
   checkError(ltoObj->add(std::move(f.obj), resols));
 }
 
@@ -99,10 +108,8 @@ std::vector<InputFile *> BitcodeCompiler::compile() {
   unsigned maxTasks = ltoObj->getMaxTasks();
   buf.resize(maxTasks);
 
-  checkError(ltoObj->run([&](size_t task, const Twine &moduleName) {
-    return std::make_unique<CachedFileStream>(
-        std::make_unique<raw_svector_ostream>(buf[task]));
-  }));
+  runLTOWithCache(*ltoObj, cacheKey, cacheUsable, *ctx.config.driverCfg,
+                  ltoCacheBackendTag, emitAddrsig, buf);
 
   const auto &D = *ctx.config.driverCfg;
   std::vector<InputFile *> ret;

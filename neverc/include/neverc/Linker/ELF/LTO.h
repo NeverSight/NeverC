@@ -1,6 +1,7 @@
 #ifndef LINKER_ELF_LTO_H
 #define LINKER_ELF_LTO_H
 
+#include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallString.h"
@@ -33,6 +34,8 @@ private:
   std::unique_ptr<llvm::lto::LTO> ltoObj;
   std::vector<SmallString<0>> buf;
   llvm::DenseSet<StringRef> usedStartStop;
+  LTOCacheKey cacheKey;
+  bool cacheUsable = false;
 };
 } // namespace linker::elf
 

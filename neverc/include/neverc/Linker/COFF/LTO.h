@@ -1,6 +1,7 @@
 #ifndef LINKER_COFF_LTO_H
 #define LINKER_COFF_LTO_H
 
+#include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "llvm/ADT/SmallString.h"
 #include <memory>
@@ -32,6 +33,8 @@ public:
   llvm::lto::Config createConfig();
 
   COFFLinkerContext &ctx;
+  LTOCacheKey cacheKey;
+  bool cacheUsable = false;
 };
 } // namespace linker::coff
 

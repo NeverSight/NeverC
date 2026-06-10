@@ -27,7 +27,8 @@
 set(linker_core_driver
   Driver/ArgList.cpp
   Driver/CodegenFlags.cpp
-  Driver/CommonLTOConfig.cpp)
+  Driver/CommonLTOConfig.cpp
+  Driver/LTOCache.cpp)
 
 set(linker_core_runtime
   Runtime/Allocator.cpp

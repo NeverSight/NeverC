@@ -1,6 +1,7 @@
 #ifndef LINKER_MACHO_LTO_H
 #define LINKER_MACHO_LTO_H
 
+#include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallString.h"
@@ -38,6 +39,8 @@ private:
   std::unique_ptr<llvm::lto::LTO> ltoObj;
   std::vector<llvm::SmallString<0>> buf;
   bool hasFiles = false;
+  LTOCacheKey cacheKey;
+  bool cacheUsable = false;
 };
 
 } // namespace linker::macho
