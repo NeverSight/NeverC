@@ -64,6 +64,25 @@ static cl::opt<unsigned> NevercModuleInlinerThreshold(
              "which the module inliner replaces the CGSCC inliner "
              "(0 = never)"));
 
+// Whether the LTO ParallelOpt serial phase trims the inliner's per-SCC
+// function simplification down to SROA + InstCombine + ADCE.
+//
+// Default off: the lite pipeline drops the entire loop pipeline (LICM,
+// loop-idiom, IndVarSimplify, full unrolling) and Reassociate, and nothing
+// downstream recovers them -- the per-partition optimization pipeline only
+// re-rotates loops before the vectorizers.  Loops then reach LoopVectorize/
+// SLP with un-promoted loads/stores and non-canonical IVs, which defeats
+// vectorization outright: a TBAA-friendly FP-reduction microbenchmark runs
+// 2.2x slower (160.8ms vs 73.7ms) with the lite pipeline, exactly matching
+// the gap between default auto-LTO and explicit -flto=full -O2 artifacts.
+// The serial-time saving it bought is small (~6% link time on a 121-file
+// project, 300.9ms vs 318.1ms) next to that artifact regression.
+static cl::opt<bool> NevercInlinerLiteFSimplOpt(
+    "neverc-inliner-lite-fsimpl", cl::init(false), cl::Hidden,
+    cl::desc("Use the trimmed per-SCC function simplification pipeline in "
+             "the LTO ParallelOpt serial phase (trades artifact quality "
+             "for serial link time)"));
+
 #define DEBUG_TYPE "lto-backend"
 
 [[noreturn]] static void reportOpenError(StringRef Path, Twine Msg) {
@@ -219,7 +238,7 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
   PipelineTuningOptions LocalPTO = Conf.PTO;
   if (Conf.LTOParallelOpt && Conf.ParallelOptCodeGenHook) {
     LocalPTO.NevercFastIPO = true;
-    LocalPTO.NevercInlinerLiteFSimpl = true;
+    LocalPTO.NevercInlinerLiteFSimpl = NevercInlinerLiteFSimplOpt;
     // The CGSCC inliner's incremental call-graph maintenance is superlinear
     // in the merged module's call-graph size (measured 99% of a 145s link on
     // a 1000-module project, vs 0.15% spent in actual inlining).  Switch to
