@@ -379,12 +379,27 @@ PassBuilder::buildFunctionSimplificationPipeline(OptimizationLevel Level,
   // NeverC LTO Inliner-Lite: the inliner cost model only needs a canonical
   // view of each callee.  SROA + InstCombine + ADCE give a clean IR shape
   // without the expense of JumpThreading, CVP, AggressiveInstCombine,
-  // TailCallElim, Reassociate, ConstraintElimination, or loop/memory
-  // passes.  All of these re-run per partition in the parallel post-link
-  // buildModuleOptimizationPipeline.
+  // TailCallElim, Reassociate, ConstraintElimination, or most loop/memory
+  // passes.
+  //
+  // LoopRotate + LICM must stay, however: nothing downstream re-runs LICM
+  // before the vectorizers (the per-partition optimization pipeline only
+  // re-rotates loops), so without scalar promotion here loops reach
+  // LoopVectorize/SLP with loop-invariant loads/stores still in the body,
+  // which defeats vectorization outright (measured 2.2x runtime regression
+  // on FP-reduction kernels vs explicit -flto=full -O2).
   if (PTO.NevercInlinerLiteFSimpl) {
     FPM.addPass(SROAPass(SROAOptions::ModifyCFG));
     FPM.addPass(InstCombinePass());
+    LoopPassManager LiteLPM;
+    LiteLPM.addPass(
+        LoopRotatePass(Level != OptimizationLevel::Oz, isLTOPreLink(Phase)));
+    LiteLPM.addPass(LICMPass(PTO.LicmMssaOptCap,
+                             PTO.LicmMssaNoAccForPromotionCap,
+                             /*AllowSpeculation=*/true));
+    FPM.addPass(createFunctionToLoopPassAdaptor(std::move(LiteLPM),
+                                                /*UseMemorySSA=*/true,
+                                                /*UseBlockFrequencyInfo=*/false));
     FPM.addPass(ADCEPass());
     return FPM;
   }

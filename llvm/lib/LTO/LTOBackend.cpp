@@ -64,24 +64,29 @@ static cl::opt<unsigned> NevercModuleInlinerThreshold(
              "which the module inliner replaces the CGSCC inliner "
              "(0 = never)"));
 
-// Whether the LTO ParallelOpt serial phase trims the inliner's per-SCC
-// function simplification down to SROA + InstCombine + ADCE.
+// Whether the LTO ParallelOpt serial phase uses the trimmed per-SCC
+// function simplification (SROA + InstCombine + LoopRotate/LICM + ADCE)
+// instead of the full O2/O3 function simplification pipeline.
 //
-// Default off: the lite pipeline drops the entire loop pipeline (LICM,
-// loop-idiom, IndVarSimplify, full unrolling) and Reassociate, and nothing
-// downstream recovers them -- the per-partition optimization pipeline only
-// re-rotates loops before the vectorizers.  Loops then reach LoopVectorize/
-// SLP with un-promoted loads/stores and non-canonical IVs, which defeats
-// vectorization outright: a TBAA-friendly FP-reduction microbenchmark runs
-// 2.2x slower (160.8ms vs 73.7ms) with the lite pipeline, exactly matching
-// the gap between default auto-LTO and explicit -flto=full -O2 artifacts.
-// The serial-time saving it bought is small (~6% link time on a 121-file
-// project, 300.9ms vs 318.1ms) next to that artifact regression.
+// The lite pipeline must keep LoopRotate + LICM: nothing downstream re-runs
+// LICM before the vectorizers, and without scalar promotion loops reach
+// LoopVectorize/SLP with loop-invariant loads/stores still in the body,
+// which defeats vectorization outright (2.2x runtime regression on
+// FP-reduction kernels vs explicit -flto=full -O2).
+//
+// Measured on Redis 7.4.2 (4649 functions, full cold build, -j12):
+//   lite+LICM: 6.1s link, binary 3,598,960, vector code = full pipeline
+//   full:      8.0s link, binary 3,548,864 (-1.4%, extra Reassociate/GVN/
+//              loop-idiom simplification), same kernel runtime
+// The lite pipeline is the default; pass
+// -mllvm -neverc-inliner-lite-fsimpl=0 on the link to run the full
+// pipeline when the last percent of binary size matters more than link
+// time.
 static cl::opt<bool> NevercInlinerLiteFSimplOpt(
-    "neverc-inliner-lite-fsimpl", cl::init(false), cl::Hidden,
+    "neverc-inliner-lite-fsimpl", cl::init(true), cl::Hidden,
     cl::desc("Use the trimmed per-SCC function simplification pipeline in "
-             "the LTO ParallelOpt serial phase (trades artifact quality "
-             "for serial link time)"));
+             "the LTO ParallelOpt serial phase (0 = full O2 function "
+             "simplification: slower link, slightly smaller binary)"));
 
 #define DEBUG_TYPE "lto-backend"
 
