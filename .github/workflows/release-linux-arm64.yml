@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-22.04-arm
     env:
       BUILD_TYPE: Release
+      LLVM_APT_VER: '22'
     steps:
       - name: Free disk space
         run: |
@@ -49,20 +50,14 @@ jobs:
       - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full
 
-      - name: Resolve latest LLVM version
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          LLVM_VERIFY_ASSET_SUFFIX: Linux-ARM64.tar.xz
-        run: bash neverc/.github/scripts/resolve-llvm-version.sh
-
-      - name: Cache LLVM toolchain
-        uses: actions/cache@v4
-        with:
-          path: /tmp/llvm-pgo
-          key: llvm-${{ env.LLVM_VER }}-linux-arm64
-
-      - name: Install LLVM
-        run: bash neverc/.github/scripts/install-llvm-linux.sh
+      - name: Install Clang (apt.llvm.org, non-PGO)
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          clang-${LLVM_APT_VER} --version
 
       - name: Build neverc
         run: |
