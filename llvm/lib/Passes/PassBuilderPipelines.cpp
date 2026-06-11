@@ -732,19 +732,14 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
 
   invokePipelineEarlySimplificationEPCallbacks(MPM, Level);
 
-  // NeverC: In LTO ParallelOpt mode, IPSCCP (151ms) and GlobalOpt (117ms)
-  // dominate the serial simplification pipeline (~72% of 325ms on Redis).
-  // Per-partition buildModuleOptimizationPipeline re-runs IPSCCP, so the
-  // serial run mainly benefits inlining decisions.  Skip both when
-  // NevercFastIPO is set.
-  if (!PTO.NevercFastIPO)
-    MPM.addPass(IPSCCPPass());
-
-  if (!PTO.NevercFastIPO)
-    MPM.addPass(CalledValuePropagationPass());
-
-  if (!PTO.NevercFastIPO)
-    MPM.addPass(GlobalOptPass());
+  // IPSCCP + GlobalOpt are the core IPO passes that drive cross-function
+  // constant propagation, global internalization, and dead-global elimination.
+  // They must run even under NevercFastIPO because no downstream pipeline
+  // (including per-partition buildModuleOptimizationPipeline) re-runs them.
+  // Cost on Redis: ~270ms serial — a small price for correct IPO.
+  MPM.addPass(IPSCCPPass());
+  MPM.addPass(CalledValuePropagationPass());
+  MPM.addPass(GlobalOptPass());
 
   // Create a small function pass pipeline to cleanup after all the global
   // optimizations.
@@ -808,10 +803,10 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
   MPM.addPass(DeadArgumentEliminationPass());
 
   // Optimize globals now that functions are fully simplified.
-  // NeverC: the second GlobalOpt (after Inliner) is recaptured per-partition
-  // by the parallel post-link pipeline.  Skip when NevercFastIPO is set.
-  if (!PTO.NevercFastIPO)
-    MPM.addPass(GlobalOptPass());
+  // Must run even under NevercFastIPO: the per-partition
+  // buildModuleOptimizationPipeline does not include GlobalOpt, and the
+  // post-inline pass has the best view of inlined/dead globals.
+  MPM.addPass(GlobalOptPass());
   MPM.addPass(GlobalDCEPass());
 
   return MPM;
