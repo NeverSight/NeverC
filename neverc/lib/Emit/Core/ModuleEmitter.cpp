@@ -156,8 +156,10 @@ ModuleEmitter::ModuleEmitter(TreeContext &C,
 
   RuntimeCC = getTargetCodeGenInfo().getABIInfo().getRuntimeCC();
 
-  // Enable TBAA unless it's suppressed.
-  if (!CodeGenOpts.RelaxedAliasing && CodeGenOpts.OptimizationLevel > 0)
+  // Enable TBAA unless it's suppressed.  hasDownstreamOptimization() keeps
+  // it on for auto-LTO, where the frontend runs at -O0 but the LTO link
+  // optimizes with full strict-aliasing semantics.
+  if (!CodeGenOpts.RelaxedAliasing && CodeGenOpts.hasDownstreamOptimization())
     TBAA.reset(new TBAAEmitter(Context, TheModule.getContext(), CodeGenOpts,
                                getLangOpts()));
 

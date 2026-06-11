@@ -769,7 +769,7 @@ FunctionEmitter::genLoadOfScalar(Address Addr, bool Volatile, QualType Ty,
 
   ME.decorateInstructionWithTBAA(Load, TBAAInfo);
 
-  if (ME.getCodeGenOpts().OptimizationLevel > 0)
+  if (ME.getCodeGenOpts().hasDownstreamOptimization())
     if (llvm::MDNode *RangeInfo = getRangeForLoadFromType(Ty)) {
       Load->setMetadata(llvm::LLVMContext::MD_range, RangeInfo);
       Load->setMetadata(llvm::LLVMContext::MD_noundef,

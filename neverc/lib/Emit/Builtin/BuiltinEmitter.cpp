@@ -1730,7 +1730,7 @@ RValue FunctionEmitter::genBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
   // attribute opt-none hasn't been seen.
   bool ErrnoOverridenToFalseWithOpt =
       ErrnoOverriden.has_value() && !ErrnoOverriden.value() && !OptNone &&
-      ME.getCodeGenOpts().OptimizationLevel != 0;
+      ME.getCodeGenOpts().hasDownstreamOptimization();
 
   // There are LLVM math intrinsics/instructions corresponding to math library
   // functions except the LLVM op will never set errno while the math library
@@ -2353,10 +2353,10 @@ RValue FunctionEmitter::genBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
     llvm::Type *ArgType = ArgValue->getType();
 
     Value *ExpectedValue = genScalarExpr(E->getArg(1));
-    // Don't generate llvm.expect on -O0 as the backend won't use it for
-    // anything.
+    // Don't generate llvm.expect when nothing downstream (neither the
+    // backend nor an LTO link) will use it.
     // Note, we still IRGen ExpectedValue because it could have side-effects.
-    if (ME.getCodeGenOpts().OptimizationLevel == 0)
+    if (!ME.getCodeGenOpts().hasDownstreamOptimization())
       return RValue::get(ArgValue);
 
     Function *FnExpect = ME.getIntrinsic(Intrinsic::expect, ArgType);
@@ -2379,10 +2379,10 @@ RValue FunctionEmitter::genBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
                         llvm::RoundingMode::Dynamic, &LoseInfo);
     llvm::Type *Ty = convertType(ProbArg->getType());
     Constant *Confidence = ConstantFP::get(Ty, Probability);
-    // Don't generate llvm.expect.with.probability on -O0 as the backend
-    // won't use it for anything.
+    // Don't generate llvm.expect.with.probability when nothing downstream
+    // (neither the backend nor an LTO link) will use it.
     // Note, we still IRGen ExpectedValue because it could have side-effects.
-    if (ME.getCodeGenOpts().OptimizationLevel == 0)
+    if (!ME.getCodeGenOpts().hasDownstreamOptimization())
       return RValue::get(ArgValue);
 
     Function *FnExpect =

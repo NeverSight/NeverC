@@ -607,6 +607,11 @@ void LoopInfoStack::push(BasicBlock *Header, neverc::TreeContext &Ctx,
 
   setMustProgress(MustProgress);
 
+  // Deliberately gated on OptimizationLevel, NOT hasDownstreamOptimization():
+  // under auto-LTO the frontend runs at -O0 where UnrollLoops defaults to
+  // false as a side effect of the optimization level, not user intent.
+  // Emitting llvm.loop.unroll.disable here would permanently veto the LTO
+  // stage's O2 loop unrolling for every loop in the program.
   if (CGOpts.OptimizationLevel > 0)
     // Disable unrolling for the loop, if unrolling is disabled (via
     // -fno-unroll-loops) and no pragmas override the decision.

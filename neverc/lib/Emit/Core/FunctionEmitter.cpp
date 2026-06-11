@@ -41,7 +41,9 @@ bool needsLifetimeMarkers(const CodeGenOptions &CGOpts,
   if (CGOpts.DisableLifetimeMarkers)
     return false;
 
-  return CGOpts.OptimizationLevel != 0;
+  // hasDownstreamOptimization() keeps markers on for auto-LTO: the LTO
+  // backend's stack coloring needs them to merge disjoint stack slots.
+  return CGOpts.hasDownstreamOptimization();
 }
 
 } // namespace
@@ -750,9 +752,9 @@ FunctionEmitter::generateCode(GlobalDecl GD, llvm::Function *Fn,
   finishFunction(BodyRange.getEnd());
 
   // If we haven't marked the function nothrow through other means, do
-  // a quick pass now to see if we can.  Skip at -O0 since the attribute
-  // won't drive any optimization and the full-function scan is expensive.
-  if (ME.getCodeGenOpts().OptimizationLevel != 0 && !CurFn->doesNotThrow())
+  // a quick pass now to see if we can.  Skip when nothing downstream
+  // (neither the backend nor an LTO link) would benefit from nothrow.
+  if (ME.getCodeGenOpts().hasDownstreamOptimization() && !CurFn->doesNotThrow())
     markNoThrowIfSafe(CurFn);
 }
 
@@ -998,9 +1000,10 @@ NEVERC_HOT void FunctionEmitter::genBranchOnBoolExpr(
 
   // If the branch has a condition wrapped by __builtin_unpredictable,
   // create metadata that specifies that the branch is unpredictable.
-  // Don't bother if not optimizing because that metadata would not be used.
+  // Don't bother when nothing downstream (neither the backend nor an LTO
+  // link) would use that metadata.
   auto *Call = dyn_cast<CallExpr>(Cond->IgnoreImpCasts());
-  if (Call && ME.getCodeGenOpts().OptimizationLevel != 0) {
+  if (Call && ME.getCodeGenOpts().hasDownstreamOptimization()) {
     auto *FD = dyn_cast_or_null<FunctionDecl>(Call->getCalleeDecl());
     if (FD && FD->getBuiltinID() == Builtin::BI__builtin_unpredictable) {
       llvm::MDBuilder MDHelper(getLLVMContext());
@@ -1804,9 +1807,9 @@ FunctionEmitter::emitCondLikelihoodViaExpectIntrinsic(llvm::Value *Cond,
     return Cond;
   case Stmt::LH_Likely:
   case Stmt::LH_Unlikely:
-    // Don't generate llvm.expect on -O0 as the backend won't use it for
-    // anything.
-    if (ME.getCodeGenOpts().OptimizationLevel == 0)
+    // Don't generate llvm.expect when nothing downstream (neither the
+    // backend nor an LTO link) will use it.
+    if (!ME.getCodeGenOpts().hasDownstreamOptimization())
       return Cond;
     llvm::Type *CondTy = Cond->getType();
     assert(CondTy->isIntegerTy(1) && "expecting condition to be a boolean");

@@ -1375,9 +1375,10 @@ NEVERC_HOT void FunctionEmitter::genSwitchStmt(const SwitchStmt &S) {
 
   // If the switch has a condition wrapped by __builtin_unpredictable,
   // create metadata that specifies that the switch is unpredictable.
-  // Don't bother if not optimizing because that metadata would not be used.
+  // Don't bother when nothing downstream (neither the backend nor an LTO
+  // link) would use that metadata.
   auto *Call = dyn_cast<CallExpr>(S.getCond());
-  if (Call && ME.getCodeGenOpts().OptimizationLevel != 0) {
+  if (Call && ME.getCodeGenOpts().hasDownstreamOptimization()) {
     auto *FD = dyn_cast_or_null<FunctionDecl>(Call->getCalleeDecl());
     if (FD && FD->getBuiltinID() == Builtin::BI__builtin_unpredictable) {
       llvm::MDBuilder MDHelper(getLLVMContext());

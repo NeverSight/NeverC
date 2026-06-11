@@ -456,7 +456,7 @@ llvm::Value *shouldUseMemSetToInitialize(llvm::Constant *Init,
 bool shouldSplitConstantStore(ModuleEmitter &ME, uint64_t GlobalByteSize) {
   // Don't break things that occupy more than one cacheline.
   uint64_t ByteSizeLimit = 64;
-  if (ME.getCodeGenOpts().OptimizationLevel == 0)
+  if (!ME.getCodeGenOpts().hasDownstreamOptimization())
     return false;
   if (GlobalByteSize <= ByteSizeLimit)
     return true;

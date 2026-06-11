@@ -258,6 +258,19 @@ public:
   bool hasMaybeUnusedDebugInfo() const {
     return getDebugInfo() >= llvm::codegenoptions::UnusedTypeInfo;
   }
+
+  /// True when the IR produced by this invocation will be optimized
+  /// downstream, even though the frontend itself runs at -O0.  Auto-LTO
+  /// compiles at -O0 (the LTO link does the real optimization), so
+  /// optimization-relevant metadata (TBAA, llvm.expect, range/noundef,
+  /// lifetime markers) must still be emitted or the LTO pipeline
+  /// permanently loses it -- the frontend is the only producer.
+  /// DisableO0ImplyOptNone distinguishes auto-LTO from an explicit
+  /// "-O0 -flto", where every function is optnone and such metadata would
+  /// be dead weight.
+  bool hasDownstreamOptimization() const {
+    return OptimizationLevel > 0 || (PrepareForLTO && DisableO0ImplyOptNone);
+  }
 };
 
 } // end namespace neverc

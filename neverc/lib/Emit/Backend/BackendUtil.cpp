@@ -593,7 +593,7 @@ void GenAssemblyHelper::runOptimizationPipeline(
     if (LangOpts.MicrosoftExt || LangOpts.MSVCCompat)
       MPM.addPassToFront(MSVCMacroRebuildingPass());
 
-    if (CodeGenOpts.OptimizationLevel > 0)
+    if (CodeGenOpts.hasDownstreamOptimization())
       MPM.addPassToFront(Annotation2MetadataPass());
 
     if (CodeGenOpts.AutoGenerateBitcode)

@@ -164,7 +164,7 @@ llvm::MDNode *TBAAEmitter::getTypeInfoHelper(const Type *Ty) {
 }
 
 llvm::MDNode *TBAAEmitter::getTypeInfo(QualType QTy) {
-  if (LLVM_UNLIKELY(CodeGenOpts.OptimizationLevel == 0 ||
+  if (LLVM_UNLIKELY(!CodeGenOpts.hasDownstreamOptimization() ||
                     CodeGenOpts.RelaxedAliasing))
     return nullptr;
 
