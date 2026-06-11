@@ -16,6 +16,11 @@ namespace linker {
 inline constexpr char ltoCacheEnvVar[] = "NEVERC_LTO_CACHE";
 inline constexpr char ltoCacheDisableValue[] = "0";
 
+/// Set to ltoCacheDisableValue to disable only the per-partition object
+/// cache layer; the full-link cache above is governed by ltoCacheEnvVar.
+/// Partition entries share the cache directory and pruning policy.
+inline constexpr char ltoPartitionCacheEnvVar[] = "NEVERC_LTO_PCACHE";
+
 /// Overrides the cache directory
 /// (default: <user cache dir>/ltoCacheDefaultDirName).
 inline constexpr char ltoCacheDirEnvVar[] = "NEVERC_LTO_CACHE_DIR";

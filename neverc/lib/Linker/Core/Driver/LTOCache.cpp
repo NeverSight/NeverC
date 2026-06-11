@@ -60,10 +60,20 @@ void linker::LTOCacheKey::addInput(MemoryBufferRef mb,
                             r.LinkerRedefined << 4));
 }
 
-std::string linker::LTOCacheKey::finalize(const LinkerDriverConfig &cfg,
-                                          unsigned maxTasks,
-                                          StringRef backendTag,
-                                          bool emitAddrsig) {
+// Two independently salted 64-bit lanes give a 128-bit key.  Consumes the
+// material (a lane salt is appended in place).
+static std::string hexKeyFromMaterial(SmallVectorImpl<char> &material) {
+  static constexpr char hiLaneSalt = '\x9e';
+  uint64_t lo = xxh3_64bits(StringRef(material.data(), material.size()));
+  material.push_back(hiLaneSalt);
+  uint64_t hi = xxh3_64bits(StringRef(material.data(), material.size()));
+  SmallString<33> hex;
+  raw_svector_ostream os(hex);
+  os << format_hex_no_prefix(hi, 16) << format_hex_no_prefix(lo, 16);
+  return std::string(hex);
+}
+
+void linker::LTOCacheKey::appendConfig(const LinkerDriverConfig &cfg) {
   // Every LinkerDriverConfig field consumed by createLTOConfig() or by the
   // partitioning hooks.  Fields that only affect native-link output (map
   // files, strip level, build-id, ...) are deliberately excluded; fields
@@ -89,22 +99,34 @@ std::string linker::LTOCacheKey::finalize(const LinkerDriverConfig &cfg,
                 uint64_t(cfg.pie) << 2 | uint64_t(cfg.relocatable) << 3 |
                 uint64_t(cfg.staticLink) << 4 |
                 uint64_t(cfg.exportDynamic) << 5);
+}
+
+std::string linker::LTOCacheKey::finalize(const LinkerDriverConfig &cfg,
+                                          unsigned maxTasks,
+                                          StringRef backendTag,
+                                          bool emitAddrsig) {
+  appendConfig(cfg);
   appendStr(material, backendTag);
   appendU64(material, emitAddrsig);
   // Output shape: the task vector layout and the partition count chosen by
   // the parallel codegen hooks depend on these.
   appendU64(material, maxTasks);
   appendU64(material, llvm::thread::hardware_concurrency());
+  return hexKeyFromMaterial(material);
+}
 
-  // Two independently salted 64-bit lanes give a 128-bit key.
-  static constexpr char hiLaneSalt = '\x9e';
-  uint64_t lo = xxh3_64bits(material);
-  material.push_back(hiLaneSalt);
-  uint64_t hi = xxh3_64bits(material);
-  SmallString<33> hex;
-  raw_svector_ostream os(hex);
-  os << format_hex_no_prefix(hi, 16) << format_hex_no_prefix(lo, 16);
-  return std::string(hex);
+std::string linker::ltoPartitionCacheSalt(const LinkerDriverConfig &cfg,
+                                          bool emitAddrsig) {
+  // No backendTag: the partition object is produced purely by TargetMachine
+  // codegen from the partition module, and the module triple is part of the
+  // hashed bitcode.  No maxTasks/hardware_concurrency either: a different
+  // partitioning changes the partition contents, which the content hash
+  // already covers.
+  LTOCacheKey k;
+  k.appendConfig(cfg);
+  appendStr(k.material, "neverc-pcg-salt-v1");
+  appendU64(k.material, emitAddrsig);
+  return hexKeyFromMaterial(k.material);
 }
 
 // ===----------------------------------------------------------------------===
@@ -316,6 +338,44 @@ static void ltoCacheStore(StringRef key, ArrayRef<SmallString<0>> bufs) {
       consumeError(p.takeError());
   }
   pruneCache(dir, policy);
+}
+
+// ===----------------------------------------------------------------------===
+// Per-partition object cache
+// ===----------------------------------------------------------------------===
+//
+// Entries reuse the pack format above with a single task-0 buffer, so the
+// directory, pruning policy and corruption handling are shared with the
+// full-link cache.
+
+bool linker::ltoPartitionCacheUsable(const LinkerDriverConfig &cfg) {
+  if (const char *env = getenv(ltoPartitionCacheEnvVar))
+    if (StringRef(env) == ltoCacheDisableValue)
+      return false;
+  return ltoCacheUsable(cfg);
+}
+
+bool linker::ltoPartitionCacheLookup(StringRef salt, StringRef pipeTag,
+                                     StringRef bitcode, std::string &keyOut,
+                                     SmallVectorImpl<char> &obj) {
+  SmallString<64> material;
+  appendStr(material, salt);
+  appendStr(material, pipeTag);
+  appendU64(material, bitcode.size());
+  appendU64(material, xxh3_64bits(bitcode));
+  keyOut = hexKeyFromMaterial(material);
+
+  SmallString<0> buf[1];
+  if (!ltoCacheLookup(keyOut, buf))
+    return false;
+  obj.assign(buf[0].begin(), buf[0].end());
+  return true;
+}
+
+void linker::ltoPartitionCacheStore(StringRef key, ArrayRef<char> obj) {
+  SmallString<0> buf[1];
+  buf[0].assign(obj.begin(), obj.end());
+  ltoCacheStore(key, buf);
 }
 
 // ===----------------------------------------------------------------------===

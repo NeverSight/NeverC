@@ -2,6 +2,7 @@
 #include "Linker/Core/Driver/ArgList.h"
 #include "Linker/Core/Driver/CodegenFlags.h"
 #include "Linker/Core/Driver/Dispatcher.h"
+#include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
 #include "neverc/Plugin/PluginLoader.h"
@@ -84,8 +85,30 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
   c.PTO.LoopVectorization = OptLevel > 1;
   c.PTO.SLPVectorization = OptLevel > 1;
 
-  c.ParallelCodeGenHook = neverc::runParallelCodeGen;
-  c.ParallelOptCodeGenHook = neverc::runParallelOptAndCodeGen;
+  // Per-partition object cache: with stable partition assignment, an
+  // incremental relink re-runs optimization + codegen only for the
+  // partitions whose post-IPO bitcode actually changed.  The hooks own
+  // the storage and the configuration digest; the partitioner only sees
+  // content-addressed Lookup/Store callbacks.
+  std::shared_ptr<neverc::PartitionCacheHooks> pcgCache;
+  if (ltoPartitionCacheUsable(Cfg)) {
+    pcgCache = std::make_shared<neverc::PartitionCacheHooks>();
+    pcgCache->Lookup = [salt = ltoPartitionCacheSalt(Cfg, EmitAddrsig)](
+                           StringRef pipeTag, StringRef bitcode,
+                           std::string &keyOut, SmallVectorImpl<char> &obj) {
+      return ltoPartitionCacheLookup(salt, pipeTag, bitcode, keyOut, obj);
+    };
+    pcgCache->Store = ltoPartitionCacheStore;
+  }
+  c.ParallelCodeGenHook = [pcgCache](Module &M, TargetMachine &TM,
+                                     raw_pwrite_stream &OS, unsigned NP) {
+    return neverc::runParallelCodeGen(M, TM, OS, NP, pcgCache.get());
+  };
+  c.ParallelOptCodeGenHook = [pcgCache](Module &M, TargetMachine &TM,
+                                        raw_pwrite_stream &OS, unsigned NP,
+                                        unsigned OL) {
+    return neverc::runParallelOptAndCodeGen(M, TM, OS, NP, OL, pcgCache.get());
+  };
   c.LTOParallelOpt = true;
 
   c.TimeTraceEnabled = Cfg.timeTraceEnabled;

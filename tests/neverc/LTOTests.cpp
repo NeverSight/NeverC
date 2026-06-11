@@ -221,6 +221,138 @@ TEST_F(LTOTest, LtoLinkCache) {
   unsetEnvVar(linker::ltoCacheDirEnvVar);
 }
 
+// Per-partition object cache (LTOCache.cpp + ParallelCodeGenMerge.cpp):
+// partition assignment is a stable name hash, and each partition's object
+// is cached keyed on its post-IPO bitcode.  Editing one function must
+// invalidate only the full-link entry plus the single partition that
+// contains the function; the relink mixing cached and fresh partitions
+// must be byte-identical to a cache-disabled clean relink.
+TEST_F(LTOTest, LtoPartitionCache) {
+  auto cacheDir = tmpFile("pcache_dir");
+  setEnvVar(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
+
+  // Generate a project that crosses the partitioned-codegen thresholds
+  // (>= 8 surviving functions, >= 10000 merged IR instructions) and
+  // stays partition-stable: noinline bodies seeded from a volatile
+  // global, no cross-file calls.
+  constexpr int NFiles = 16, NFuncs = 4, NStmts = 100;
+  auto srcDir = tmpFile("pcache_src");
+  fs::create_directories(srcDir);
+
+  auto fnBody = [&](int fi, int fj, int extra) {
+    std::string b;
+    b += "__attribute__((noinline)) unsigned f_" + std::to_string(fi) + "_" +
+         std::to_string(fj) + "(unsigned a) {\n";
+    b += "  unsigned x = g_seed + a;\n";
+    for (int s = 0; s < NStmts + extra; ++s) {
+      unsigned mul = (2654435761u + 2654435761u * unsigned(s) +
+                      97u * unsigned(fi) + 31u * unsigned(fj)) |
+                     1u;
+      b += "  x ^= x >> " + std::to_string(5 + (s % 11)) + "; x *= " +
+           std::to_string(mul) + "u; x ^= x << " +
+           std::to_string(3 + (s % 7)) + ";\n";
+    }
+    b += "  return x;\n}\n";
+    return b;
+  };
+  auto writeUnit = [&](int fi, int extraInLastFn) {
+    std::string src = "extern volatile unsigned g_seed;\n";
+    for (int fj = 0; fj < NFuncs; ++fj)
+      src += fnBody(fi, fj, fj == NFuncs - 1 ? extraInLastFn : 0);
+    writeFile(srcDir / ("u" + std::to_string(fi) + ".c"), src);
+  };
+  for (int fi = 0; fi < NFiles; ++fi)
+    writeUnit(fi, 0);
+  {
+    std::string m = "#include <stdio.h>\nvolatile unsigned g_seed = "
+                    "0x12345678u;\n";
+    for (int fi = 0; fi < NFiles; ++fi)
+      for (int fj = 0; fj < NFuncs; ++fj)
+        m += "extern unsigned f_" + std::to_string(fi) + "_" +
+             std::to_string(fj) + "(unsigned);\n";
+    m += "int main(void) {\n  unsigned acc = 0;\n";
+    for (int fi = 0; fi < NFiles; ++fi)
+      for (int fj = 0; fj < NFuncs; ++fj)
+        m += "  acc ^= f_" + std::to_string(fi) + "_" + std::to_string(fj) +
+             "(" + std::to_string(fi * NFuncs + fj) + "u);\n";
+    m += "  printf(\"CK=%08x\\n\", acc);\n  return 0;\n}\n";
+    writeFile(srcDir / "main.c", m);
+  }
+
+  std::vector<std::string> base = {"-std=c11"};
+  for (auto &f : sysrootFlags()) base.push_back(f);
+  for (auto &f : archFlags()) base.push_back(f);
+
+  // Default driver mode = auto-LTO: objects carry bitcode, the link runs
+  // the partitioned LTO pipeline this test exercises.
+  auto compileUnit = [&](const std::string &stem) {
+    auto c = base;
+    c.insert(c.end(), {"-c", (srcDir / (stem + ".c")).string(), "-o",
+                       (srcDir / (stem + ".o")).string()});
+    ASSERT_EQ(ncc(c).exitCode, 0) << stem;
+  };
+  for (int fi = 0; fi < NFiles; ++fi)
+    compileUnit("u" + std::to_string(fi));
+  compileUnit("main");
+
+  std::vector<std::string> link;
+  for (auto &f : sysrootFlags()) link.push_back(f);
+  for (auto &f : archFlags()) link.push_back(f);
+  for (int fi = 0; fi < NFiles; ++fi)
+    link.push_back((srcDir / ("u" + std::to_string(fi) + ".o")).string());
+  link.push_back((srcDir / "main.o").string());
+  if (isWindows())
+    link.push_back("-mno-incremental-linker-compatible");
+  auto exe = tmpFile("pcache_exe");
+  link.insert(link.end(), {"-o", exe.string()});
+
+  auto countEntries = [&] {
+    size_t n = 0;
+    std::error_code ec;
+    for (fs::directory_iterator it(cacheDir, ec), e; !ec && it != e;
+         it.increment(ec))
+      if (it->path().filename().string().rfind(linker::ltoCacheEntryPrefix,
+                                               0) == 0 &&
+          it->path().extension() != linker::ltoCacheTmpSuffix)
+        ++n;
+    return n;
+  };
+
+  // Cold link: one full-link entry + one entry per partition.
+  ASSERT_EQ(ncc(link).exitCode, 0);
+  size_t afterCold = countEntries();
+  ASSERT_GE(afterCold, 3u) << "expected partitioned codegen (>= 2 partitions)";
+  auto r1 = exec(exe.string(), {});
+  ASSERT_EQ(r1.exitCode, 0);
+  ASSERT_TRUE(r1.contains("CK=")) << r1.out;
+
+  // Edit one function body in one unit: only that partition plus the
+  // full-link key may miss.
+  writeUnit(3, 2);
+  compileUnit("u3");
+  ASSERT_EQ(ncc(link).exitCode, 0);
+  size_t afterEdit = countEntries();
+  EXPECT_EQ(afterEdit, afterCold + 2)
+      << "an edit to one function must add exactly one full-link entry and "
+         "one partition entry; more means partition assignment is unstable";
+  std::string mixed = readFile(exe);
+
+  // The mixed cached/fresh link must equal a cache-disabled clean link.
+  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
+  ASSERT_EQ(ncc(link).exitCode, 0);
+  unsetEnvVar(linker::ltoCacheEnvVar);
+  std::string clean = readFile(exe);
+  EXPECT_TRUE(mixed == clean)
+      << "cached-partition relink differs from clean relink";
+
+  auto r2 = exec(exe.string(), {});
+  EXPECT_EQ(r2.exitCode, 0);
+  EXPECT_TRUE(r2.contains("CK=")) << r2.out;
+  EXPECT_NE(r1.out, r2.out) << "edit must change the checksum";
+
+  unsetEnvVar(linker::ltoCacheDirEnvVar);
+}
+
 TEST_F(LTOTest, InlineAsmLTO) {
   auto asmDir = testDir() / "asm";
   auto objMain = tmpFile("asm_lto_main.o");

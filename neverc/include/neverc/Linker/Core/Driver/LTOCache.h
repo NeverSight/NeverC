@@ -50,8 +50,36 @@ public:
                        llvm::StringRef backendTag, bool emitAddrsig);
 
 private:
+  void appendConfig(const LinkerDriverConfig &cfg);
+
+  friend std::string ltoPartitionCacheSalt(const LinkerDriverConfig &cfg,
+                                           bool emitAddrsig);
+
   llvm::SmallString<512> material;
 };
+
+/// Salt for per-partition object cache keys: compiler identity plus the
+/// configuration digest, without any input contents (the partition bitcode
+/// itself carries those).  Computed once per link and captured by the
+/// partition-cache hooks.
+std::string ltoPartitionCacheSalt(const LinkerDriverConfig &cfg,
+                                  bool emitAddrsig);
+
+/// True when the per-partition object cache layer may run: the link cache
+/// is usable for this configuration and NEVERC_LTO_PCACHE does not disable
+/// the partition layer.
+bool ltoPartitionCacheUsable(const LinkerDriverConfig &cfg);
+
+/// Computes the entry key for one codegen partition -- salt + pipeline tag
+/// + partition bitcode content -- writes it to keyOut, and returns true on
+/// a cache hit with the stored object copied into obj.
+bool ltoPartitionCacheLookup(llvm::StringRef salt, llvm::StringRef pipeTag,
+                             llvm::StringRef bitcode, std::string &keyOut,
+                             llvm::SmallVectorImpl<char> &obj);
+
+/// Stores one partition object under a key produced by
+/// ltoPartitionCacheLookup.
+void ltoPartitionCacheStore(llvm::StringRef key, llvm::ArrayRef<char> obj);
 
 /// False when caching is disabled (NEVERC_LTO_CACHE=0) or the link uses
 /// features whose side effects a cache hit cannot reproduce: save-temps,

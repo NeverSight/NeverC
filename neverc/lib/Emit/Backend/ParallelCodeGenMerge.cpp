@@ -18,6 +18,7 @@
 #include "llvm/TargetParser/Triple.h"
 
 #include "llvm/Support/thread.h"
+#include "llvm/Support/xxhash.h"
 
 #include <atomic>
 #include <mutex>
@@ -68,8 +69,28 @@ struct PreparedPartition {
   std::unique_ptr<Module> M;
   std::unique_ptr<TargetMachine> PTM;
   SmallVector<char, 0> *ObjBuf = nullptr;
+  /// Partition cache entry key; empty when caching is off or the key
+  /// could not be computed.  Set by preparePartitions on a miss, consumed
+  /// by the codegen worker to store the produced object.
+  std::string CacheKey;
   PreparedPartition() = default;
 };
+
+/// Erases declarations nothing in this partition refers to.  Each partition
+/// module starts as a copy of the full merged module, so without this the
+/// partition's bitcode (and thus its cache key) would change whenever any
+/// symbol is added or renamed anywhere in the program, not just when the
+/// partition's own code changes.  Metadata references (ValueAsMetadata,
+/// e.g. debug info) are not uses, so check isUsedByMetadata separately:
+/// erasing such a declaration would null out those metadata operands.
+static void stripUnreferencedDeclarations(Module &M) {
+  for (Function &F : make_early_inc_range(M))
+    if (F.isDeclaration() && F.use_empty() && !F.isUsedByMetadata())
+      F.eraseFromParent();
+  for (GlobalVariable &GV : make_early_inc_range(M.globals()))
+    if (GV.isDeclaration() && GV.use_empty() && !GV.isUsedByMetadata())
+      GV.eraseFromParent();
+}
 
 struct ParallelCGContext {
   const Target *TheTarget;
@@ -100,6 +121,12 @@ struct ParallelCGContext {
 
   std::unique_ptr<TargetLibraryInfoImpl> SharedTLII;
   std::vector<std::unique_ptr<PreparedPartition>> Parts;
+
+  /// Optional per-partition object cache (linker-injected) and the
+  /// pipeline tag distinguishing the two public entry points, whose
+  /// outputs differ for identical partition bitcode.
+  const PartitionCacheHooks *Cache = nullptr;
+  StringRef PipeTag;
 
   bool init(Module &Mod, TargetMachine &TM);
   bool resolvePartitions(unsigned WeightDiv, unsigned MaxParts);
@@ -193,22 +220,32 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
     if (auto *F = dyn_cast<Function>(IF.getResolver()->stripPointerCasts()))
       PinnedToP0.insert(F->getName());
 
-  Assignments.resize(NumPartitions);
+  // Stable assignment: bin by function-name hash instead of greedy
+  // weight balancing.  Greedy reshuffles every partition whenever one
+  // function's weight changes, which would zero the per-partition object
+  // cache hit rate on incremental rebuilds; name binning keeps an edit
+  // confined to the partitions whose contents actually changed.  The lost
+  // load balance is bounded: bins receive ~FuncCount/NumPartitions random
+  // functions each, and a single oversized function dominates wall time
+  // under either policy.
   {
-    SmallVector<unsigned, 16> Load(NumPartitions, 0);
-    llvm::sort(FuncList, [](const FuncEntry &A, const FuncEntry &B) {
-      return A.Weight > B.Weight;
-    });
+    SmallVector<SmallVector<std::string, 0>, 8> Bins(NumPartitions);
     for (auto &FE : FuncList) {
       StringRef Name = FE.Fn->getName();
-      unsigned Best = 0;
-      if (!PinnedToP0.count(Name))
-        for (unsigned p = 1; p < NumPartitions; ++p)
-          if (Load[p] < Load[Best])
-            Best = p;
-      Assignments[Best].push_back(Name.str());
-      Load[Best] += FE.Weight;
+      unsigned B = PinnedToP0.count(Name)
+                       ? 0
+                       : unsigned(xxh3_64bits(Name) % NumPartitions);
+      Bins[B].push_back(Name.str());
     }
+    // Drop empty bins (possible at small function counts).  Bin 0 keeps
+    // its slot whenever it is non-empty, so alias/ifunc targets stay in
+    // the partition that retains aliases and global initializers.
+    Assignments.clear();
+    for (auto &Bin : Bins)
+      if (!Bin.empty())
+        Assignments.push_back(std::move(Bin));
+    NumPartitions = Assignments.size();
+    Results.resize(NumPartitions);
     for (unsigned p = 0; p < NumPartitions; ++p)
       for (auto &N : Assignments[p])
         FuncPartition[N] = p;
@@ -324,6 +361,30 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
       if (!PP->PTM)
         continue;
       MPart.setDataLayout(PP->PTM->createDataLayout());
+
+      if (Cache && Cache->enabled()) {
+        // Key = this partition's exact post-IPO bitcode.  Serializing it
+        // requires releasing the lazy materializer (assigned bodies are
+        // already parsed, every other body was dropped, so this only
+        // drains the module tail).  On failure fall through uncached.
+        if (Error Err = MPart.materializeAll()) {
+          consumeError(std::move(Err));
+          continue;
+        }
+        stripUnreferencedDeclarations(MPart);
+        SmallString<0> PartBC;
+        {
+          raw_svector_ostream BCOS(PartBC);
+          WriteBitcodeToFile(MPart, BCOS, false);
+        }
+        if (Cache->Lookup(PipeTag, StringRef(PartBC.data(), PartBC.size()),
+                          PP->CacheKey, Results[p].ObjBuffer)) {
+          // Hit: object restored; leave Parts[p] empty so the codegen
+          // worker skips this partition.
+          Results[p].Success = true;
+          continue;
+        }
+      }
       Parts[p] = std::move(PP);
     }
   };
@@ -391,10 +452,13 @@ void ParallelCGContext::restoreLinkage(Module &Mod) {
 static std::mutex PassConfigMutex;
 
 bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
-                        unsigned /*NumPartitions*/) {
+                        unsigned /*NumPartitions*/,
+                        const PartitionCacheHooks *Cache) {
   ParallelCGContext Ctx;
   if (!Ctx.init(Mod, TM))
     return false;
+  Ctx.Cache = Cache;
+  Ctx.PipeTag = "p-cg";
 
   if (!Ctx.resolvePartitions(/*WeightDiv=*/5000,
                              /*MaxParts=*/Ctx.FuncCount))
@@ -431,6 +495,8 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
         }
         PM.run(*PP.M);
         Ctx.Results[p].Success = true;
+        if (Ctx.Cache && !PP.CacheKey.empty())
+          Ctx.Cache->Store(PP.CacheKey, *PP.ObjBuf);
       }
     };
     for (unsigned i = 0; i < ThreadCount; ++i)
@@ -448,13 +514,16 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
 
 bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
                               raw_pwrite_stream &OS, unsigned /*NumPartitions*/,
-                              unsigned OptLevel) {
+                              unsigned OptLevel,
+                              const PartitionCacheHooks *Cache) {
   if (OptLevel == 0)
     return false;
 
   ParallelCGContext Ctx;
   if (!Ctx.init(Mod, TM))
     return false;
+  Ctx.Cache = Cache;
+  Ctx.PipeTag = "p-opt";
 
   if (!Ctx.resolvePartitions(/*WeightDiv=*/12000, /*MaxParts=*/16))
     return false;
@@ -537,6 +606,8 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
         }
         PM.run(MPart);
         Ctx.Results[p].Success = true;
+        if (Ctx.Cache && !PP.CacheKey.empty())
+          Ctx.Cache->Store(PP.CacheKey, *PP.ObjBuf);
       }
     };
     for (unsigned i = 0; i < ThreadCount; ++i)

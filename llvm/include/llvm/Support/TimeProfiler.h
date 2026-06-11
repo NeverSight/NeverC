@@ -215,9 +215,12 @@ inline TimeTraceProfilerInstances &getTimeTraceProfilerInstances() {
 
 } // anonymous namespace
 
-// Per Thread instance
-inline static LLVM_THREAD_LOCAL TimeTraceProfiler *TimeTraceProfilerInstance =
-    0;
+// Per Thread instance — must NOT be `static` (internal linkage): the inline
+// functions below have external linkage, so the linker deduplicates them
+// across TUs; if the variable were static each TU would get its own copy
+// and the surviving inline function could reference a different TU's copy
+// than the one that was initialised.
+inline LLVM_THREAD_LOCAL TimeTraceProfiler *TimeTraceProfilerInstance = 0;
 
 inline TimeTraceProfiler *getTimeTraceProfilerInstance() {
   return TimeTraceProfilerInstance;
