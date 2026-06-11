@@ -353,13 +353,11 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
     } else if (A->getOption().matches(options::OPT_O0))
       Level = 0;
     Cfg.ltoOptLevel = Level;
-    // For auto-LTO (user did not explicitly ask for -flto), cap LTO link
-    // optimization at O2: O3 in LTO link adds ~15-20% link time on
-    // medium-size projects (Redis ~26K IR insts: +600ms) for ~2% binary
-    // shrink, which is a poor tradeoff for the default. Users wanting full
-    // O3 LTO can pass -flto explicitly.
-    if (Level > 2 && TC.getDriver().isAutoLTO())
-      Cfg.ltoOptLevel = 2;
+    // Auto-LTO is enabled by default (no explicit -flto).  When the user did
+    // not pass any -O flag, ltoOptLevel stays unset and createLTOConfig
+    // defaults to O2.  Do not second-guess an explicit -O3/-Ofast/-O4: projects
+    // like Redis build with -O3 -flto=auto and expect O3 at the LTO link
+    // (clang honors this); capping here produced ~25% larger __text on Redis.
     // Linker output optimization (ICF, section merge, string dedup) caps at 2.
     Cfg.linkerOptLevel = Level > 2 ? 2 : Level;
   }
