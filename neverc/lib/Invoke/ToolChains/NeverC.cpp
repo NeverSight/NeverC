@@ -2889,6 +2889,16 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
 
   CodeGenOptions::FramePointerKind FPKeepKind =
       getFramePointerKind(Args, RawTriple);
+  // Auto-LTO produces O2-optimized binaries even though the user passes no -O
+  // flag.  On Linux x86_64/aarch64 the default without -O is FP=All (matching
+  // -O0 behavior), but the product is actually O2-level.  Follow the -O2
+  // default (omit frame pointers) unless the user explicitly requested them.
+  if (IsUsingLTO && D.isAutoLTO() &&
+      FPKeepKind != CodeGenOptions::FramePointerKind::None &&
+      !Args.hasArg(options::OPT_fno_omit_frame_pointer) &&
+      !Args.getLastArg(options::OPT_O_Group) &&
+      RawTriple.isOSLinux())
+    FPKeepKind = CodeGenOptions::FramePointerKind::None;
   const char *FPKeepKindStr = nullptr;
   switch (FPKeepKind) {
   case CodeGenOptions::FramePointerKind::None:
