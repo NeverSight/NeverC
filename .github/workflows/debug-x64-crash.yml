@@ -19,7 +19,7 @@ on:
       iterations:
         description: 'compile iterations per test'
         required: false
-        default: '12'
+        default: '60'
 
 permissions:
   contents: read
@@ -58,49 +58,66 @@ jobs:
           file install/bin/neverc
           ./install/bin/neverc --version
 
-      - name: Determinism matrix (locate the non-deterministic stage)
+      - name: High-iteration compile+run (exact harness flags, no -g)
         run: |
           set +e
+          ITERS="${{ github.event.inputs.iterations }}"
           NCC="$PWD/install/bin/neverc"
           SD="$PWD/src/std"
           T="$PWD/src/tests/neverc/std"
-          echo "nproc=$(nproc)"
-          SRC="$T/test_time.c $SD/src/time/time.c"
-          BASE="-I$SD/include -fno-builtin-std"
+          ulimit -c unlimited
+          echo "$PWD/core.%e.%p" | sudo tee /proc/sys/kernel/core_pattern
+          echo "nproc=$(nproc)  iters=$ITERS"
+          # EXACT flags from StdLibTest::compileAndRunStdTest (no -g).
+          FLAGS="-I$SD/include -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -O1 -fno-builtin-std"
 
-          # Compile the same source N times under a given config and report how
-          # many DISTINCT output binaries result.  >1 == non-deterministic.
-          det() {
-            local label="$1"; local flags="$2"; local env="$3"
-            declare -A H
-            for i in $(seq 1 8); do
-              rm -f /tmp/b
-              env $env $NCC $BASE $flags -o /tmp/b $SRC -lm -lpthread 2>/tmp/ce
-              if [ $? -ne 0 ]; then echo "[$label] COMPILE FAIL: $(head -1 /tmp/ce)"; return; fi
-              H["$(sha256sum /tmp/b | cut -c1-16)"]=1
-            done
-            local n=${#H[@]}
-            printf '%-46s distinct=%s %s\n' "$label" "$n" "$([ $n -gt 1 ] && echo NON-DETERMINISTIC || echo deterministic)"
+          bt() {  # $1=binary $2=core
+            echo "  === gdb backtrace ==="
+            gdb -batch -ex 'bt' -ex 'info registers rip rsp' -ex 'x/i $rip' "$1" "$2" 2>&1 | head -40
           }
 
-          echo "==== determinism per config (8 compiles each) ===="
-          det "O1 auto-LTO (baseline)"               "-O1" ""
-          det "O2 auto-LTO"                           "-O2" ""
-          det "O0 auto-LTO"                           "-O0" ""
-          det "O1 -fno-lto"                           "-O1 -fno-lto" ""
-          det "O1 -fno-lto -fno-parallel-codegen"     "-O1 -fno-lto -fno-parallel-codegen" ""
-          det "O1 -fno-lto -fparallel-codegen=1"      "-O1 -fno-lto -fparallel-codegen=1" ""
-          det "O1 -fno-parallel-codegen"              "-O1 -fno-parallel-codegen" ""
-          det "O1 NEVERC_LTO_CACHE=0"                 "-O1" "NEVERC_LTO_CACHE=0"
-          det "O1 NEVERC_LTO_CACHE=0 PCACHE=0"        "-O1" "NEVERC_LTO_CACHE=0 NEVERC_LTO_PCACHE=0"
-          echo "==== single-cpu experiment (taskset) ===="
-          for ts in 1 2; do
-            unset HT; declare -A HT
-            for i in $(seq 1 8); do
-              rm -f /tmp/b
-              taskset -c 0-$((ts-1)) $NCC $BASE -O1 -o /tmp/b $SRC -lm -lpthread 2>/dev/null
-              HT["$(sha256sum /tmp/b | cut -c1-16)"]=1
+          repro() {
+            local name="$1" src="$2"
+            echo "================= $name : $ITERS x (compile+run) ================="
+            declare -A H
+            local comp_fail=0 run_fail=0
+            for i in $(seq 1 "$ITERS"); do
+              local bin="/tmp/${name}"
+              rm -f "$bin" core.*
+              $NCC $FLAGS -o "$bin" $src -lm -lpthread 2>/tmp/ce
+              if [ $? -ne 0 ]; then
+                echo "[$name #$i] COMPILER FAIL: $(head -2 /tmp/ce | tr '\n' ' ')"
+                for c in core.neverc.*; do [ -f "$c" ] || continue; bt "$NCC" "$c"; rm -f "$c"; done
+                comp_fail=$((comp_fail+1)); continue
+              fi
+              H["$(sha256sum "$bin" | cut -c1-16)"]=1
+              "$bin" >/tmp/o 2>/tmp/e
+              local rc=$?
+              if [ $rc -ne 0 ]; then
+                echo "[$name #$i] RUN exit=$rc  out-tail: $(tail -1 /tmp/o)"
+                for c in core.*; do [ -f "$c" ] || continue; bt "$bin" "$c"; rm -f "$c"; done
+                run_fail=$((run_fail+1))
+              fi
             done
-            printf '%-46s distinct=%s\n' "O1 taskset ${ts}cpu" "${#HT[@]}"
-          done
+            echo "[$name] distinct hashes=${#H[@]}  compile_fails=$comp_fail  run_fails=$run_fail"
+          }
+
+          repro time  "$T/test_time.c $SD/src/time/time.c"
+          repro netip "$T/test_netip.c $SD/src/net/netip/netip.c"
+
+          echo "================= PARALLEL stress (shared cache, 6 workers) ================="
+          worker() {
+            local id=$1
+            for i in $(seq 1 "$ITERS"); do
+              for pair in "ti:$T/test_time.c $SD/src/time/time.c" "ne:$T/test_netip.c $SD/src/net/netip/netip.c"; do
+                local nm=${pair%%:*}; local s=${pair#*:}
+                local b="/tmp/w${id}_${nm}"
+                rm -f "$b"
+                $NCC $FLAGS -o "$b" $s -lm -lpthread 2>/dev/null || { echo "W$id $nm #$i COMPILE-FAIL"; continue; }
+                "$b" >/dev/null 2>&1 || echo "W$id $nm #$i RUN-FAIL exit=$?"
+              done
+            done
+          }
+          for w in 1 2 3 4 5 6; do worker $w & done
+          wait
           echo "=== DONE ==="
