@@ -4,20 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ─── Type-specific comparators ─── */
-
-static int cmp_int(const void *a, const void *b) {
-    int ia = *(const int *)a;
-    int ib = *(const int *)b;
-    return (ia > ib) - (ia < ib);
-}
-
-static int cmp_double(const void *a, const void *b) {
-    double da = *(const double *)a;
-    double db = *(const double *)b;
-    return (da > db) - (da < db);
-}
-
 /* ─── Sorting ─── */
 
 void neverc_sort_ints(int *arr, size_t n) {

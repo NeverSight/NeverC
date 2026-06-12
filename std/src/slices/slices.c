@@ -151,11 +151,6 @@ void neverc_slices_reverse_ints(int *slice, size_t len) {
     }
 }
 
-static int cmp_int(const void *a, const void *b) {
-    int va = *(const int *)a, vb = *(const int *)b;
-    return (va > vb) - (va < vb);
-}
-
 void neverc_slices_sort_ints(int *slice, size_t len) {
     nci_pdqsort_int(slice, len);
 }
