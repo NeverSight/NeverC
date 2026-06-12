@@ -100,7 +100,7 @@ static void test_strconv_dot_syntax(void) {
     n = strconv.format_int(-7, 10, buf, sizeof(buf));
     CHECK("strconv.format_int_neg", n > 0 && strcmp(buf, "-7") == 0);
 
-    int64_t val;
+    long long val;
     int ok = strconv.parse_int("12345", 10, &val);
     CHECK("strconv.parse_int_ok", ok == 0 && val == 12345);
 

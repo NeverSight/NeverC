@@ -76,7 +76,7 @@ size_t neverc_bytes_index_byte(const uint8_t *b, size_t blen, uint8_t c) {
 
 size_t neverc_bytes_last_index_byte(const uint8_t *s, size_t slen, uint8_t c) {
     if (slen == 0) return (size_t)-1;
-#if defined(__GLIBC__)
+#if defined(__GLIBC__) && !defined(__neverc__)
     const void *p = memrchr(s, c, slen);
     return p ? (size_t)((const uint8_t *)p - s) : (size_t)-1;
 #else
