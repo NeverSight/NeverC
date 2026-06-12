@@ -157,7 +157,7 @@ static int cmp_int(const void *a, const void *b) {
 }
 
 void neverc_slices_sort_ints(int *slice, size_t len) {
-    neverc_slices_sort(slice, len, sizeof(int), cmp_int);
+    nci_pdqsort_int(slice, len);
 }
 
 void neverc_slices_sort_stable(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
