@@ -2490,8 +2490,19 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     for (SectionCommand *cmd : script->sectionCommands)
       if (auto *osd = dyn_cast<OutputDesc>(cmd))
         osecs.push_back(&osd->osec);
-    parallelForEach(osecs,
-                    [](OutputSection *os) { os->finalizeInputSections(); });
+    // Finalize output sections serially (matching upstream LLD).
+    // finalizeInputSections() creates merge synthetic sections via the
+    // global, non-thread-safe make<>() arena (see Allocator.h — parallel
+    // callers must use makeThreadLocal<>()).  Running it under
+    // parallelForEach raced the shared SpecificBumpPtrAllocator, corrupting
+    // the heap and intermittently crashing the linker on native x86_64
+    // (StringTableBuilder::add in MergeNoTailSection::finalizeContents).
+    // The hot work — per-shard string-table building — is still parallel
+    // inside MergeNoTailSection::finalizeContents(), which now runs on the
+    // root thread and therefore actually parallelizes (the previous nested
+    // parallelForEach was demoted to serial by the TaskGroup nesting guard).
+    for (OutputSection *os : osecs)
+      os->finalizeInputSections();
   }
 
   if (config->icf != ICFLevel::None) {

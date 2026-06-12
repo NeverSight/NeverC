@@ -200,8 +200,14 @@ void OutputSection::finalizeInputSections() {
     for (InputSection *s : isd->sections)
       commitSection(s);
   }
-  parallelForEach(mergeSections,
-                  [](MergeSyntheticSection *ms) { ms->finalizeContents(); });
+  // Serial (matching upstream LLD): MergeNoTailSection::finalizeContents()
+  // is itself internally parallel (parallelFor over hash shards).  Wrapping
+  // it in an outer parallelForEach only nests parallelism — the inner
+  // parallelFor is then demoted to serial by the TaskGroup nesting guard,
+  // losing the shard parallelism — and contributed to the nested-parallel
+  // heap corruption described in ElfDriver's "Merge/finalize input sections".
+  for (MergeSyntheticSection *ms : mergeSections)
+    ms->finalizeContents();
 }
 
 namespace {
