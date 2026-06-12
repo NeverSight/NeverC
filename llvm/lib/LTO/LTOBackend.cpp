@@ -419,7 +419,13 @@ Error lto::backend(const Config &C, AddStreamFn AddStream,
   }
 
   auto RunDeferredFuncOpt = [&]() {
-    PassBuilder PB(TM.get());
+    PipelineTuningOptions PTO;
+    PTO.NevercFastIPO = true;
+    PTO.LoopUnrolling = C.OptLevel >= 2;
+    PTO.LoopInterleaving = C.OptLevel >= 2;
+    PTO.LoopVectorization = C.PTO.LoopVectorization;
+    PTO.SLPVectorization = C.PTO.SLPVectorization;
+    PassBuilder PB(TM.get(), PTO);
     LoopAnalysisManager LAM;
     FunctionAnalysisManager FAM;
     CGSCCAnalysisManager CGAM;

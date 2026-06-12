@@ -740,12 +740,31 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
   EarlyFPM.addPass(SimplifyCFGPass());
   EarlyFPM.addPass(SROAPass(SROAOptions::ModifyCFG));
   EarlyFPM.addPass(EarlyCSEPass());
-  if (Level == OptimizationLevel::O3)
+  if (Level == OptimizationLevel::O3 && !PTO.NevercFastIPO)
     EarlyFPM.addPass(CallSiteSplittingPass());
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(EarlyFPM),
                                                 PTO.EagerlyInvalidateAnalyses));
 
   invokePipelineEarlySimplificationEPCallbacks(MPM, Level);
+
+  // Match clang-22's buildLTODefaultPipeline pre-IPSCCP ordering for the
+  // ParallelOpt serial phase: call-site splitting and ICP expose direct
+  // targets before argument promotion and IPSCCP.
+  if (PTO.NevercFastIPO && Level.getSpeedupLevel() > 1) {
+    MPM.addPass(createModuleToFunctionPassAdaptor(
+        CallSiteSplittingPass(), PTO.EagerlyInvalidateAnalyses));
+    MPM.addPass(PGOIndirectCallPromotion(
+        true /* InLTO */, PGOOpt && PGOOpt->Action == PGOOptions::SampleUse));
+
+    // Promote by-reference arguments to by-value before IPSCCP.
+    CGSCCPassManager PreIPSCCPCGPM;
+    PreIPSCCPCGPM.addPass(PostOrderFunctionAttrsPass());
+    PreIPSCCPCGPM.addPass(ArgumentPromotionPass());
+    PreIPSCCPCGPM.addPass(
+        createCGSCCToFunctionPassAdaptor(SROAPass(SROAOptions::ModifyCFG)));
+    MPM.addPass(
+        createModuleToPostOrderCGSCCPassAdaptor(std::move(PreIPSCCPCGPM)));
+  }
 
   // IPSCCP + GlobalOpt are the core IPO passes that drive cross-function
   // constant propagation, global internalization, and dead-global elimination.
@@ -754,6 +773,8 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
   // Cost on Redis: ~270ms serial — a small price for correct IPO.
   MPM.addPass(IPSCCPPass());
   MPM.addPass(CalledValuePropagationPass());
+  if (PTO.NevercFastIPO)
+    MPM.addPass(ReversePostOrderFunctionAttrsPass());
   MPM.addPass(GlobalOptPass());
 
   // Create a small function pass pipeline to cleanup after all the global
@@ -768,6 +789,20 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
       SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(GlobalCleanupPM),
                                                 PTO.EagerlyInvalidateAnalyses));
+
+  // clang-22 ordering: ConstantMerge + DAE *before* the peephole FPM so
+  // InstCombine benefits from merged constants and removed dead arguments.
+  if (PTO.NevercFastIPO && Level.getSpeedupLevel() > 1) {
+    MPM.addPass(ConstantMergePass());
+    MPM.addPass(DeadArgumentEliminationPass());
+
+    FunctionPassManager PeepholeFPM;
+    PeepholeFPM.addPass(InstCombinePass());
+    PeepholeFPM.addPass(AggressiveInstCombinePass());
+    invokePeepholeEPCallbacks(PeepholeFPM, Level);
+    MPM.addPass(createModuleToFunctionPassAdaptor(std::move(PeepholeFPM),
+                                                  PTO.EagerlyInvalidateAnalyses));
+  }
 
   // Invoke the pre-inliner passes for instrumentation PGO or MemProf.
   if (PGOOpt &&
@@ -823,6 +858,35 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
   // post-inline pass has the best view of inlined/dead globals.
   MPM.addPass(GlobalOptPass());
   MPM.addPass(GlobalDCEPass());
+
+  // NeverC ParallelOpt: after this point the merged module is partitioned and
+  // each slice runs buildModuleOptimizationPipeline.  Run the same post-inline
+  // IPO cleanup that buildLTODefaultPipeline performs before LICM/GVN so
+  // partitions start from IR of comparable quality to unified full LTO.
+  if (PTO.NevercFastIPO) {
+    MPM.addPass(
+        createModuleToPostOrderCGSCCPassAdaptor(ArgumentPromotionPass()));
+
+    FunctionPassManager PostInlineIPOCleanupPM;
+    PostInlineIPOCleanupPM.addPass(InstCombinePass());
+    invokePeepholeEPCallbacks(PostInlineIPOCleanupPM, Level);
+    if (EnableConstraintElimination)
+      PostInlineIPOCleanupPM.addPass(ConstraintEliminationPass());
+    PostInlineIPOCleanupPM.addPass(JumpThreadingPass());
+    PostInlineIPOCleanupPM.addPass(SROAPass(SROAOptions::ModifyCFG));
+    PostInlineIPOCleanupPM.addPass(TailCallElimPass());
+    MPM.addPass(createModuleToFunctionPassAdaptor(
+        std::move(PostInlineIPOCleanupPM), PTO.EagerlyInvalidateAnalyses));
+
+    MPM.addPass(
+        createModuleToPostOrderCGSCCPassAdaptor(PostOrderFunctionAttrsPass()));
+
+    if (EnableGlobalAnalyses) {
+      MPM.addPass(RequireAnalysisPass<GlobalsAA, Module>());
+      MPM.addPass(createModuleToFunctionPassAdaptor(
+          InvalidateAnalysisPass<AAManager>()));
+    }
+  }
 
   return MPM;
 }
@@ -1022,11 +1086,7 @@ PassBuilder::buildModuleOptimizationPipeline(OptimizationLevel Level,
   // the vectorizer will be able to use them to help recognize vectorizable
   // memory operations.
   //
-  // NeverC: in the LTO ParallelOpt path, GlobalsAA was already computed and
-  // used during the merged-module simplification pipeline; partition-local
-  // recomputation only sees the partition's restricted callgraph and offers
-  // little additional benefit for our scalar-c-heavy workloads.
-  if (EnableGlobalAnalyses && !PTO.NevercFastIPO)
+  if (EnableGlobalAnalyses)
     MPM.addPass(RecomputeGlobalsAAPass());
 
   invokeOptimizerEarlyEPCallbacks(MPM, Level);
@@ -1036,13 +1096,20 @@ PassBuilder::buildModuleOptimizationPipeline(OptimizationLevel Level,
     OptimizePM.addPass(Float2IntPass());
   OptimizePM.addPass(LowerConstantIntrinsicsPass());
 
-  // NeverC: in the LTO ParallelOpt path the simplification pipeline skipped
-  // GVN inside the inliner's per-SCC function simplification to keep the
-  // serial critical path short.  Run GVN here (per partition, in parallel)
-  // before the vectorizer kicks in so that redundancy elimination still
-  // benefits loop vectorization / SLP without burning serial wall time.
-  if (PTO.NevercFastIPO && Level.getSpeedupLevel() >= 2)
+  // NeverC: mirror clang-22's buildLTODefaultPipeline MainFPM prefix here
+  // (per partition, in parallel) so partitions see LICM/GVN/memory opts
+  // before loop rotation and vectorization.
+  if (PTO.NevercFastIPO && Level.getSpeedupLevel() >= 2) {
+    OptimizePM.addPass(createFunctionToLoopPassAdaptor(
+        LICMPass(PTO.LicmMssaOptCap, PTO.LicmMssaNoAccForPromotionCap,
+                 /*AllowSpeculation=*/true),
+        /*UseMemorySSA=*/true, /*UseBlockFrequencyInfo=*/false));
     OptimizePM.addPass(GVNPass());
+    OptimizePM.addPass(MemCpyOptPass());
+    OptimizePM.addPass(DSEPass());
+    OptimizePM.addPass(MoveAutoInitPass());
+    OptimizePM.addPass(MergedLoadStoreMotionPass());
+  }
 
   // FIXME: We need to run some loop optimizations to re-rotate loops after
   // simplifycfg and others undo their rotation.
@@ -1057,24 +1124,33 @@ PassBuilder::buildModuleOptimizationPipeline(OptimizationLevel Level,
   // First rotate loops that may have been un-rotated by prior passes.
   // Disable header duplication at -Oz.
   LPM.addPass(LoopRotatePass(Level != OptimizationLevel::Oz, LTOPreLink));
+  if (PTO.NevercFastIPO)
+    LPM.addPass(IndVarSimplifyPass());
   // Some loops may have become dead by now. Try to delete them.
   // FIXME: see discussion in https://reviews.llvm.org/D112851,
   //        this may need to be revisited once we run GVN before loop deletion
   //        in the simplification pipeline.
   LPM.addPass(LoopDeletionPass());
+  if (PTO.NevercFastIPO && Level.getSpeedupLevel() >= 2)
+    LPM.addPass(LoopFullUnrollPass(Level.getSpeedupLevel(),
+                                   /*OnlyWhenForced=*/!PTO.LoopUnrolling,
+                                   PTO.ForgetAllSCEVInLoopUnroll));
   OptimizePM.addPass(createFunctionToLoopPassAdaptor(
-      std::move(LPM), /*UseMemorySSA=*/false, /*UseBlockFrequencyInfo=*/false));
+      std::move(LPM), /*UseMemorySSA=*/false,
+      /*UseBlockFrequencyInfo=*/PTO.NevercFastIPO));
 
-  if (Level == OptimizationLevel::O3)
+  if (PTO.NevercFastIPO ? Level.getSpeedupLevel() >= 2
+                        : Level == OptimizationLevel::O3)
     OptimizePM.addPass(LoopDistributePass());
   OptimizePM.addPass(InjectTLIMappings());
-  addVectorPasses(Level, OptimizePM, /* IsFullLTO */ false);
+  addVectorPasses(Level, OptimizePM, /* IsFullLTO */ PTO.NevercFastIPO);
 
   // LoopSink pass sinks instructions hoisted by LICM, which serves as a
   // canonicalization pass that enables other optimizations. As a result,
   // LoopSink pass needs to be a very late IR pass to avoid undoing LICM
   // result too early.
-  if (Level == OptimizationLevel::O3)
+  if (PTO.NevercFastIPO ? Level.getSpeedupLevel() >= 2
+                        : Level == OptimizationLevel::O3)
     OptimizePM.addPass(LoopSinkPass());
 
   // And finally clean up LCSSA form before generating code.
@@ -1083,7 +1159,8 @@ PassBuilder::buildModuleOptimizationPipeline(OptimizationLevel Level,
   // This hoists/decomposes div/rem ops. It should run after other sink/hoist
   // passes to avoid re-sinking, but before SimplifyCFG because it can allow
   // flattening of blocks.
-  if (Level == OptimizationLevel::O3)
+  if (PTO.NevercFastIPO ? Level.getSpeedupLevel() >= 2
+                        : Level == OptimizationLevel::O3)
     OptimizePM.addPass(DivRemPairsPass());
 
   // Try to annotate calls that were created during optimization.
@@ -1092,10 +1169,17 @@ PassBuilder::buildModuleOptimizationPipeline(OptimizationLevel Level,
   if (Level == OptimizationLevel::O3)
     OptimizePM.addPass(TailCallElimPass());
 
+  if (PTO.NevercFastIPO && Level.getSpeedupLevel() >= 2)
+    OptimizePM.addPass(JumpThreadingPass());
+
   // LoopSink (and other loop passes since the last simplifyCFG) might have
   // resulted in single-entry-single-exit or empty blocks. Clean up the CFG.
-  OptimizePM.addPass(
-      SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
+  {
+    auto Opts = SimplifyCFGOptions().convertSwitchRangeToICmp(true);
+    if (PTO.NevercFastIPO)
+      Opts.hoistCommonInsts(true);
+    OptimizePM.addPass(SimplifyCFGPass(Opts));
+  }
 
   // Add the core optimizing pipeline.
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(OptimizePM),
@@ -1212,6 +1296,16 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
     MPM.addPass(PGOIndirectCallPromotion(
         true /* InLTO */, PGOOpt && PGOOpt->Action == PGOOptions::SampleUse));
 
+    // Promoting by-reference arguments to by-value exposes more constants to
+    // IPSCCP.
+    CGSCCPassManager PreIPSCCPCGPM;
+    PreIPSCCPCGPM.addPass(PostOrderFunctionAttrsPass());
+    PreIPSCCPCGPM.addPass(ArgumentPromotionPass());
+    PreIPSCCPCGPM.addPass(createCGSCCToFunctionPassAdaptor(
+        SROAPass(SROAOptions::ModifyCFG)));
+    MPM.addPass(
+        createModuleToPostOrderCGSCCPassAdaptor(std::move(PreIPSCCPCGPM)));
+
     // Propagate constants at call sites into the functions they call.  This
     // opens opportunities for globalopt (and inlining) by substituting function
     // pointers passed as arguments to direct uses of functions.
@@ -1221,10 +1315,6 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
     // they may target at run-time. This should follow IPSCCP.
     MPM.addPass(CalledValuePropagationPass());
   }
-
-  // Now deduce any function attributes based in the current code.
-  MPM.addPass(
-      createModuleToPostOrderCGSCCPassAdaptor(PostOrderFunctionAttrsPass()));
 
   // Do RPO function attribute inference across the module to forward-propagate
   // attributes where applicable.
@@ -1419,6 +1509,8 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
 
   // Now that we have optimized the program, discard unreachable functions.
   MPM.addPass(GlobalDCEPass(/*InLTOPostLink=*/true));
+
+  MPM.addPass(RelLookupTableConverterPass());
 
   if (PTO.CallGraphProfile)
     MPM.addPass(CGProfilePass());
