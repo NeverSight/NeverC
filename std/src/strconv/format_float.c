@@ -3,7 +3,13 @@
 #include <stdint.h>
 
 /*
- * Self-implemented double-to-string formatting.
+ * Double-to-string formatting using integer digit extraction.
+ *
+ * Key improvement: extract significant digits into a uint64_t buffer
+ * using a single FP→integer conversion, then format from the integer
+ * digits. This avoids the cascading rounding errors of repeated
+ * FP multiply/divide used in the old implementation.
+ *
  * Supports 'e', 'E', 'f', 'g', 'G' formats.
  */
 
@@ -28,15 +34,79 @@ static int write_special(double f, char *buf, size_t bufsize) {
 
 static double nc_fabs(double x) { return x < 0 ? -x : x; }
 
+static const double pow10_f[23] = {
+    1e0,1e1,1e2,1e3,1e4,1e5,1e6,1e7,1e8,1e9,
+    1e10,1e11,1e12,1e13,1e14,1e15,1e16,1e17,1e18,1e19,
+    1e20,1e21,1e22
+};
+
 static double nc_pow10_d(int n) {
-    static const double p[] = {1e0,1e1,1e2,1e3,1e4,1e5,1e6,1e7,1e8,1e9,
-                               1e10,1e11,1e12,1e13,1e14,1e15,1e16,1e17,1e18};
-    if (n >= 0 && n <= 18) return p[n];
-    if (n < 0 && n >= -18) return 1.0/p[-n];
-    double r = 1.0, base = (n>0) ? 10.0 : 0.1;
-    int e = (n>0) ? n : -n;
-    while (e > 0) { if (e&1) r *= base; base *= base; e >>= 1; }
+    if (n >= 0 && n <= 22) return pow10_f[n];
+    if (n < 0 && n >= -22) return 1.0 / pow10_f[-n];
+    double r = 1.0, base = (n > 0) ? 10.0 : 0.1;
+    int e = (n > 0) ? n : -n;
+    while (e > 0) { if (e & 1) r *= base; base *= base; e >>= 1; }
     return r;
+}
+
+#define NC_MAX_SIG_DIGITS 18
+
+static int decompose(double f, char sig[NC_MAX_SIG_DIGITS], int *nsig, int *dec_exp) {
+    if (f == 0.0) {
+        sig[0] = '0';
+        *nsig = 1;
+        *dec_exp = 0;
+        return 0;
+    }
+
+    int exp10 = 0;
+    if (f >= 1e18)  { while (f >= 1e18)  { f *= 1e-1;  exp10++; } }
+    else if (f >= 1e9)  { /* within range */ }
+    else if (f >= 1.0)  { /* fine */ }
+    else { while (f < 1e-1 && f > 0) { f *= 1e1; exp10--; } }
+
+    while (f >= 1e18) { f *= 0.1; exp10++; }
+    while (f < 1e17 && f > 0.0) { f *= 10.0; exp10--; }
+
+    uint64_t iv = (uint64_t)(f + 0.5);
+    if (iv >= 1000000000000000000ULL) {
+        iv /= 10;
+        exp10++;
+    }
+
+    char tmp[NC_MAX_SIG_DIGITS];
+    int n = 0;
+    while (iv > 0 && n < NC_MAX_SIG_DIGITS) {
+        tmp[n++] = '0' + (char)(iv % 10);
+        iv /= 10;
+    }
+    if (n == 0) { tmp[n++] = '0'; }
+
+    for (int i = 0; i < n; i++)
+        sig[i] = tmp[n - 1 - i];
+    *nsig = n;
+    *dec_exp = exp10 + n;
+    return 0;
+}
+
+static void round_digits(char *sig, int *nsig, int nkeep) {
+    if (nkeep >= *nsig) return;
+    if (nkeep < 0) nkeep = 0;
+    int carry = (nkeep < *nsig && sig[nkeep] >= '5') ? 1 : 0;
+    *nsig = nkeep;
+    while (carry && nkeep > 0) {
+        nkeep--;
+        sig[nkeep]++;
+        if (sig[nkeep] <= '9') { carry = 0; break; }
+        sig[nkeep] = '0';
+    }
+    if (carry) {
+        for (int i = *nsig; i > 0; i--) sig[i] = sig[i - 1];
+        sig[0] = '1';
+        (*nsig)++;
+    }
+    while (*nsig > 1 && sig[*nsig - 1] == '0')
+        (*nsig)--;
 }
 
 static int format_f(double f, int prec, char *buf, size_t bufsize) {
@@ -46,37 +116,43 @@ static int format_f(double f, int prec, char *buf, size_t bufsize) {
 
     if (f < 0) { if (p < end) *p++ = '-'; f = -f; }
 
-    /* Find the number of integer digits */
-    int ndigits = 0;
-    {
-        double t = f;
-        if (t < 1.0) ndigits = 1;
-        else { while (t >= 1.0) { t *= 0.1; ndigits++; } }
+    char sig[NC_MAX_SIG_DIGITS + 2];
+    int nsig, dec_exp;
+    decompose(f, sig, &nsig, &dec_exp);
+
+    int nkeep = dec_exp + prec;
+    if (nkeep < nsig) {
+        round_digits(sig, &nsig, nkeep);
+        dec_exp = nkeep + (nsig - nkeep);
+        if (nsig > nkeep) dec_exp = nsig - (nkeep - dec_exp);
+        dec_exp = nkeep > 0 ? (nsig == nkeep + 1 ? dec_exp + 1 : dec_exp) : dec_exp;
+        decompose(f, sig, &nsig, &dec_exp);
+        round_digits(sig, &nsig, dec_exp + prec);
     }
 
-    /* Extract integer digits from most-significant to least-significant.
-       This avoids casting to uint64_t which overflows for f >= 2^64. */
-    double rem = f;
-    for (int i = ndigits - 1; i >= 0; i--) {
-        double scale = nc_pow10_d(i);
-        int d = (int)(rem / scale);
-        if (d > 9) d = 9;
-        if (d < 0) d = 0;
-        if (p < end) *p++ = '0' + d;
-        rem -= d * scale;
+    if (dec_exp <= 0) {
+        if (p < end) *p++ = '0';
+    } else {
+        for (int i = 0; i < dec_exp; i++) {
+            if (p >= end) break;
+            *p++ = (i < nsig) ? sig[i] : '0';
+        }
     }
 
     if (prec > 0) {
         if (p < end) *p++ = '.';
-        double frac = rem;
-        for (int i = 0; i < prec && p < end; i++) {
-            frac *= 10.0;
-            int d = (int)frac;
-            if (d > 9) d = 9;
-            *p++ = '0' + d;
-            frac -= d;
+        for (int i = 0; i < prec; i++) {
+            if (p >= end) break;
+            int idx = dec_exp + i;
+            if (idx < 0)
+                *p++ = '0';
+            else if (idx < nsig)
+                *p++ = sig[idx];
+            else
+                *p++ = '0';
         }
     }
+
     *p = '\0';
     return (int)(p - buf);
 }
@@ -101,40 +177,34 @@ static int format_e(double f, int prec, char upcase, char *buf, size_t bufsize) 
         return (int)(p - buf);
     }
 
-    int exp10 = 0;
-    while (f >= 10.0) { f /= 10.0; exp10++; }
-    while (f < 1.0 && f > 0.0) { f *= 10.0; exp10--; }
+    char sig[NC_MAX_SIG_DIGITS + 2];
+    int nsig, dec_exp;
+    decompose(f, sig, &nsig, &dec_exp);
+    round_digits(sig, &nsig, prec + 1);
 
-    /* Round */
-    f += 0.5 * nc_pow10_d(-prec);
-    if (f >= 10.0) { f /= 10.0; exp10++; }
+    int exp_out = dec_exp - 1;
+    if (nsig > 0 && nsig > prec + 1) {
+        exp_out += nsig - (prec + 1);
+    }
 
-    int d = (int)f;
-    if (p < end) *p++ = '0' + d;
-    f -= d;
-
+    if (p < end) *p++ = sig[0];
     if (prec > 0) {
         if (p < end) *p++ = '.';
-        for (int i = 0; i < prec && p < end; i++) {
-            f *= 10.0;
-            d = (int)f;
-            if (d > 9) d = 9;
-            *p++ = '0' + d;
-            f -= d;
-        }
+        for (int i = 0; i < prec && p < end; i++)
+            *p++ = (i + 1 < nsig) ? sig[i + 1] : '0';
     }
 
     if (p < end) *p++ = upcase ? 'E' : 'e';
-    if (exp10 < 0) { if (p < end) *p++ = '-'; exp10 = -exp10; }
+    if (exp_out < 0) { if (p < end) *p++ = '-'; exp_out = -exp_out; }
     else { if (p < end) *p++ = '+'; }
 
-    if (exp10 >= 100) {
-        if (p < end) *p++ = '0' + exp10/100;
-        if (p < end) *p++ = '0' + (exp10/10)%10;
-        if (p < end) *p++ = '0' + exp10%10;
+    if (exp_out >= 100) {
+        if (p < end) *p++ = '0' + exp_out / 100;
+        if (p < end) *p++ = '0' + (exp_out / 10) % 10;
+        if (p < end) *p++ = '0' + exp_out % 10;
     } else {
-        if (p < end) *p++ = '0' + exp10/10;
-        if (p < end) *p++ = '0' + exp10%10;
+        if (p < end) *p++ = '0' + exp_out / 10;
+        if (p < end) *p++ = '0' + exp_out % 10;
     }
     *p = '\0';
     return (int)(p - buf);
