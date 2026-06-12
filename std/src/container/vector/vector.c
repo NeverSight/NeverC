@@ -278,8 +278,19 @@ bool neverc_vector_insert_fill(neverc_vector_t *v, size_t index,
         memmove(vec_elem_ptr(v, index + count), vec_elem_ptr(v, index),
                 (v->size - index) * v->elem_size);
     }
-    for (size_t i = 0; i < count; i++)
-        memcpy(vec_elem_ptr(v, index + i), value, v->elem_size);
+    char *dst = (char *)vec_elem_ptr(v, index);
+    size_t sz = v->elem_size;
+    if (sz == 1) {
+        memset(dst, *(const unsigned char *)value, count);
+    } else {
+        memcpy(dst, value, sz);
+        for (size_t copied = 1; copied < count; ) {
+            size_t chunk = count - copied;
+            if (chunk > copied) chunk = copied;
+            memcpy(dst + copied * sz, dst, chunk * sz);
+            copied += chunk;
+        }
+    }
     v->size += count;
     return true;
 }
