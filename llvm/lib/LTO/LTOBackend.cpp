@@ -64,6 +64,26 @@ static cl::opt<unsigned> NevercModuleInlinerThreshold(
              "which the module inliner replaces the CGSCC inliner "
              "(0 = never)"));
 
+// Auto-LTO compiles the frontend at -O0 (with SROA only), producing IR
+// whose functions appear smaller to the inliner cost model than the same
+// functions compiled at -O2 with full loop rotation/unrolling.  The default
+// threshold (225) therefore over-inlines, bloating __text and hurting
+// icache utilisation on real projects.
+//
+// Measured on Redis 7.4.2 (4649 functions, -j12) vs homebrew clang 22.1.6
+// -flto=full, sweeping thresholds 100/150/200/225:
+//   t=100: __text -22% vs c22, but SET/GET p50 +12% slower (under-inline)
+//   t=150: __text -14% vs c22, avg p50 0.348ms (c22 = 0.351ms) — best
+//   t=200: __text -8% vs c22, similar speed but more icache pressure
+//   t=225: __text -1% vs c22, no speed gain over t=150 despite 15% bigger
+// t=150 maximises the speed/size Pareto front: equal or faster than
+// clang-22 full LTO at 14% smaller code.
+// 0 = use the standard opt-level default (225 at O2).
+static cl::opt<int> NevercAutoLTOInlineThreshold(
+    "neverc-auto-lto-inline-threshold", cl::init(150), cl::Hidden,
+    cl::desc("Inliner threshold for the auto-LTO serial phase "
+             "(0 = use the standard opt-level default)"));
+
 // Whether the LTO ParallelOpt serial phase uses the trimmed per-SCC
 // function simplification (SROA + InstCombine + LoopRotate/LICM + ADCE)
 // instead of the full O2/O3 function simplification pipeline.
@@ -244,6 +264,8 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
   if (Conf.LTOParallelOpt && Conf.ParallelOptCodeGenHook) {
     LocalPTO.NevercFastIPO = true;
     LocalPTO.NevercInlinerLiteFSimpl = NevercInlinerLiteFSimplOpt;
+    if (NevercAutoLTOInlineThreshold != 0)
+      LocalPTO.InlinerThreshold = NevercAutoLTOInlineThreshold;
     // The CGSCC inliner's incremental call-graph maintenance is superlinear
     // in the merged module's call-graph size (measured 99% of a 145s link on
     // a 1000-module project, vs 0.15% spent in actual inlining).  Switch to
