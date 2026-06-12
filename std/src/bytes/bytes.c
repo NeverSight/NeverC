@@ -29,7 +29,17 @@ static uint8_t to_lower_ascii(uint8_t c) {
 int neverc_bytes_equal_fold(const uint8_t *s, size_t slen,
                             const uint8_t *t, size_t tlen) {
     if (slen != tlen) return 0;
-    for (size_t i = 0; i < slen; i++)
+    size_t i = 0;
+    typedef unsigned long word_t;
+    while (i + sizeof(word_t) <= slen) {
+        word_t ws, wt;
+        memcpy(&ws, s + i, sizeof(word_t));
+        memcpy(&wt, t + i, sizeof(word_t));
+        if (ws == wt) { i += sizeof(word_t); continue; }
+        for (size_t j = 0; j < sizeof(word_t); j++, i++)
+            if (to_lower_ascii(s[i]) != to_lower_ascii(t[i])) return 0;
+    }
+    for (; i < slen; i++)
         if (to_lower_ascii(s[i]) != to_lower_ascii(t[i])) return 0;
     return 1;
 }
@@ -185,8 +195,15 @@ size_t neverc_bytes_count(const uint8_t *s, size_t slen,
     if (seplen > slen) return 0;
     if (seplen == 1) {
         size_t n = 0;
-        for (size_t i = 0; i < slen; i++)
-            if (s[i] == sep[0]) n++;
+        const uint8_t *p = s;
+        const uint8_t *end = s + slen;
+        uint8_t c = sep[0];
+        while (p < end) {
+            const uint8_t *f = (const uint8_t *)memchr(p, c, (size_t)(end - p));
+            if (!f) break;
+            n++;
+            p = f + 1;
+        }
         return n;
     }
 

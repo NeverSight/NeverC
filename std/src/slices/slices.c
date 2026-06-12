@@ -70,23 +70,26 @@ int neverc_slices_is_sorted(const void *slice, size_t len, size_t elem_size, nev
 
 int neverc_slices_binary_search(const void *slice, size_t len, const void *target,
                                  size_t elem_size, neverc_cmp_func_t cmp, int *found) {
-    int lo = 0, hi = (int)len;
-    while (lo < hi) {
-        int mid = lo + (hi - lo) / 2;
-        const char *p = (const char *)slice + (size_t)mid * elem_size;
-        int c = cmp(p, target);
-        if (c < 0) lo = mid + 1;
-        else hi = mid;
+    size_t lo = 0, n = len;
+    while (n > 1) {
+        size_t half = n >> 1;
+        const char *p = (const char *)slice + (lo + half) * elem_size;
+        lo += ((size_t)(cmp(p, target) < 0)) * half;
+        n -= half;
+    }
+    if (n > 0) {
+        const char *p = (const char *)slice + lo * elem_size;
+        lo += (size_t)(cmp(p, target) < 0);
     }
     if (found) {
-        if (lo < (int)len) {
-            const char *p = (const char *)slice + (size_t)lo * elem_size;
+        if (lo < len) {
+            const char *p = (const char *)slice + lo * elem_size;
             *found = (cmp(p, target) == 0);
         } else {
             *found = 0;
         }
     }
-    return lo;
+    return (int)lo;
 }
 
 size_t neverc_slices_compact(void *slice, size_t len, size_t elem_size, neverc_eq_func_t eq) {
@@ -167,12 +170,13 @@ void neverc_slices_sort_ints(int *slice, size_t len) {
 }
 
 int neverc_slices_binary_search_int(const int *slice, size_t len, int target, int *found) {
-    size_t lo = 0, hi = len;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (slice[mid] < target) lo = mid + 1;
-        else hi = mid;
+    size_t lo = 0, n = len;
+    while (n > 1) {
+        size_t half = n >> 1;
+        lo += ((size_t)(slice[lo + half] < target)) * half;
+        n -= half;
     }
+    if (n > 0) lo += (size_t)(slice[lo] < target);
     if (found) *found = (lo < len && slice[lo] == target);
     return (int)lo;
 }

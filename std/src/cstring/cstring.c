@@ -57,12 +57,22 @@ int neverc_cstring_compare(const char *a, const char *b) {
 }
 
 int neverc_cstring_equal_fold(const char *s, const char *t) {
-    while (*s && *t) {
-        if (to_lower_ch(*s) != to_lower_ch(*t)) return 0;
-        s++;
-        t++;
+    size_t slen = strlen(s);
+    size_t tlen = strlen(t);
+    if (slen != tlen) return 0;
+    size_t i = 0;
+    typedef unsigned long word_t;
+    while (i + sizeof(word_t) <= slen) {
+        word_t ws, wt;
+        memcpy(&ws, s + i, sizeof(word_t));
+        memcpy(&wt, t + i, sizeof(word_t));
+        if (ws == wt) { i += sizeof(word_t); continue; }
+        for (size_t j = 0; j < sizeof(word_t); j++, i++)
+            if (to_lower_ch(s[i]) != to_lower_ch(t[i])) return 0;
     }
-    return *s == '\0' && *t == '\0';
+    for (; i < slen; i++)
+        if (to_lower_ch(s[i]) != to_lower_ch(t[i])) return 0;
+    return 1;
 }
 
 /* ======================================================================
@@ -192,8 +202,12 @@ int neverc_cstring_count(const char *s, const char *substr) {
     if (sublen > slen) return 0;
     if (sublen == 1) {
         int n = 0;
-        for (const char *p = s; *p; p++)
-            if (*p == substr[0]) n++;
+        const char *p = s;
+        char c = substr[0];
+        while ((p = strchr(p, c)) != NULL) {
+            n++;
+            p++;
+        }
         return n;
     }
 

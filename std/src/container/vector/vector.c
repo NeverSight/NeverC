@@ -668,17 +668,15 @@ long neverc_vector_binary_search(const neverc_vector_t *v,
                                   neverc_vector_cmp_fn cmp) {
     if (!v || !value || !cmp || v->size == 0)
         return -1;
-    size_t lo = 0, hi = v->size;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        int r = cmp(vec_elem_ptr(v, mid), value);
-        if (r == 0)
-            return (long)mid;
-        if (r < 0)
-            lo = mid + 1;
-        else
-            hi = mid;
+    size_t lo = 0, n = v->size;
+    while (n > 1) {
+        size_t half = n >> 1;
+        lo += ((size_t)(cmp(vec_elem_ptr(v, lo + half), value) < 0)) * half;
+        n -= half;
     }
+    if (cmp(vec_elem_ptr(v, lo), value) < 0) lo++;
+    if (lo < v->size && cmp(vec_elem_ptr(v, lo), value) == 0)
+        return (long)lo;
     return -1;
 }
 
@@ -687,14 +685,13 @@ long neverc_vector_lower_bound(const neverc_vector_t *v,
                                 neverc_vector_cmp_fn cmp) {
     if (!v || !value || !cmp)
         return 0;
-    size_t lo = 0, hi = v->size;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (cmp(vec_elem_ptr(v, mid), value) < 0)
-            lo = mid + 1;
-        else
-            hi = mid;
+    size_t lo = 0, n = v->size;
+    while (n > 1) {
+        size_t half = n >> 1;
+        lo += ((size_t)(cmp(vec_elem_ptr(v, lo + half), value) < 0)) * half;
+        n -= half;
     }
+    if (n > 0 && cmp(vec_elem_ptr(v, lo), value) < 0) lo++;
     return (long)lo;
 }
 
@@ -703,14 +700,13 @@ long neverc_vector_upper_bound(const neverc_vector_t *v,
                                 neverc_vector_cmp_fn cmp) {
     if (!v || !value || !cmp)
         return 0;
-    size_t lo = 0, hi = v->size;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (cmp(vec_elem_ptr(v, mid), value) <= 0)
-            lo = mid + 1;
-        else
-            hi = mid;
+    size_t lo = 0, n = v->size;
+    while (n > 1) {
+        size_t half = n >> 1;
+        lo += ((size_t)(cmp(vec_elem_ptr(v, lo + half), value) <= 0)) * half;
+        n -= half;
     }
+    if (n > 0 && cmp(vec_elem_ptr(v, lo), value) <= 0) lo++;
     return (long)lo;
 }
 
