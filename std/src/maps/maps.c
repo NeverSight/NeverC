@@ -17,6 +17,7 @@ typedef struct {
     char    *key;
     void    *value;
     uint64_t hash;
+    uint32_t key_len;
 } map_entry_t;
 
 struct neverc_map {
@@ -131,9 +132,10 @@ void neverc_maps_clear(neverc_map_t *m) {
 }
 
 static void map_insert_entry(map_entry_t *entries, size_t cap,
-                              char *key, void *value, uint64_t hash) {
+                              char *key, void *value, uint64_t hash,
+                              uint32_t key_len) {
     size_t idx = (size_t)(hash & (cap - 1));
-    map_entry_t incoming = { key, value, hash };
+    map_entry_t incoming = { key, value, hash, key_len };
 
     for (;;) {
         if (entries[idx].hash == HASH_EMPTY) {
@@ -159,7 +161,8 @@ static int map_grow(neverc_map_t *m) {
     for (size_t i = 0; i < m->cap; i++) {
         if (m->entries[i].hash == HASH_EMPTY) continue;
         map_insert_entry(new_entries, new_cap,
-                         m->entries[i].key, m->entries[i].value, m->entries[i].hash);
+                         m->entries[i].key, m->entries[i].value,
+                         m->entries[i].hash, m->entries[i].key_len);
     }
     free(m->entries);
     m->entries = new_entries;
@@ -173,11 +176,14 @@ int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
         if (map_grow(m) < 0) return -1;
     }
     uint64_t h = fix_hash(hash_string(key));
+    uint32_t klen = (uint32_t)strlen(key);
     size_t idx = (size_t)(h & (m->cap - 1));
 
     for (;;) {
         if (m->entries[idx].hash == HASH_EMPTY) break;
-        if (m->entries[idx].hash == h && strcmp(m->entries[idx].key, key) == 0) {
+        if (m->entries[idx].hash == h &&
+            m->entries[idx].key_len == klen &&
+            memcmp(m->entries[idx].key, key, klen) == 0) {
             m->entries[idx].value = value;
             return 0;
         }
@@ -187,20 +193,24 @@ int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
         idx = (idx + 1) & (m->cap - 1);
     }
 
-    char *dup = strdup(key);
+    char *dup = (char *)malloc(klen + 1);
     if (!dup) return -1;
+    memcpy(dup, key, klen + 1);
 
     if (m->entries[idx].hash == HASH_EMPTY) {
         m->entries[idx].key = dup;
         m->entries[idx].value = value;
         m->entries[idx].hash = h;
+        m->entries[idx].key_len = klen;
     } else {
         map_entry_t displaced = m->entries[idx];
         m->entries[idx].key = dup;
         m->entries[idx].value = value;
         m->entries[idx].hash = h;
+        m->entries[idx].key_len = klen;
         map_insert_entry(m->entries, m->cap,
-                         displaced.key, displaced.value, displaced.hash);
+                         displaced.key, displaced.value, displaced.hash,
+                         displaced.key_len);
     }
     m->len++;
     return 0;
@@ -209,11 +219,14 @@ int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
 void *neverc_maps_get(const neverc_map_t *m, const char *key) {
     if (!m || !key) return NULL;
     uint64_t h = fix_hash(hash_string(key));
+    uint32_t klen = (uint32_t)strlen(key);
     size_t idx = (size_t)(h & (m->cap - 1));
     for (size_t dist = 0; ; dist++, idx = (idx + 1) & (m->cap - 1)) {
         if (m->entries[idx].hash == HASH_EMPTY) return NULL;
         if (probe_dist(idx, m->entries[idx].hash, m->cap) < dist) return NULL;
-        if (m->entries[idx].hash == h && strcmp(m->entries[idx].key, key) == 0)
+        if (m->entries[idx].hash == h &&
+            m->entries[idx].key_len == klen &&
+            memcmp(m->entries[idx].key, key, klen) == 0)
             return m->entries[idx].value;
     }
 }
@@ -221,11 +234,14 @@ void *neverc_maps_get(const neverc_map_t *m, const char *key) {
 int neverc_maps_has(const neverc_map_t *m, const char *key) {
     if (!m || !key) return 0;
     uint64_t h = fix_hash(hash_string(key));
+    uint32_t klen = (uint32_t)strlen(key);
     size_t idx = (size_t)(h & (m->cap - 1));
     for (size_t dist = 0; ; dist++, idx = (idx + 1) & (m->cap - 1)) {
         if (m->entries[idx].hash == HASH_EMPTY) return 0;
         if (probe_dist(idx, m->entries[idx].hash, m->cap) < dist) return 0;
-        if (m->entries[idx].hash == h && strcmp(m->entries[idx].key, key) == 0)
+        if (m->entries[idx].hash == h &&
+            m->entries[idx].key_len == klen &&
+            memcmp(m->entries[idx].key, key, klen) == 0)
             return 1;
     }
 }
@@ -233,11 +249,14 @@ int neverc_maps_has(const neverc_map_t *m, const char *key) {
 int neverc_maps_delete(neverc_map_t *m, const char *key) {
     if (!m || !key) return -1;
     uint64_t h = fix_hash(hash_string(key));
+    uint32_t klen = (uint32_t)strlen(key);
     size_t idx = (size_t)(h & (m->cap - 1));
     for (size_t dist = 0; ; dist++, idx = (idx + 1) & (m->cap - 1)) {
         if (m->entries[idx].hash == HASH_EMPTY) return -1;
         if (probe_dist(idx, m->entries[idx].hash, m->cap) < dist) return -1;
-        if (m->entries[idx].hash == h && strcmp(m->entries[idx].key, key) == 0)
+        if (m->entries[idx].hash == h &&
+            m->entries[idx].key_len == klen &&
+            memcmp(m->entries[idx].key, key, klen) == 0)
             break;
     }
     free(m->entries[idx].key);
@@ -304,7 +323,8 @@ void neverc_maps_delete_func(neverc_map_t *m, neverc_maps_filter_func_t fn) {
         if (fn(old[i].key, old[i].value)) {
             free(old[i].key);
         } else {
-            map_insert_entry(m->entries, m->cap, old[i].key, old[i].value, old[i].hash);
+            map_insert_entry(m->entries, m->cap, old[i].key, old[i].value,
+                             old[i].hash, old[i].key_len);
             m->len++;
         }
     }
@@ -321,9 +341,12 @@ neverc_map_t *neverc_maps_clone(const neverc_map_t *m) {
     if (!c->entries) { free(c); return NULL; }
     for (size_t i = 0; i < m->cap; i++) {
         if (m->entries[i].hash == HASH_EMPTY) continue;
-        char *dup = strdup(m->entries[i].key);
+        uint32_t klen = m->entries[i].key_len;
+        char *dup = (char *)malloc(klen + 1);
         if (!dup) { neverc_maps_free(c); return NULL; }
-        map_insert_entry(c->entries, c->cap, dup, m->entries[i].value, m->entries[i].hash);
+        memcpy(dup, m->entries[i].key, klen + 1);
+        map_insert_entry(c->entries, c->cap, dup, m->entries[i].value,
+                         m->entries[i].hash, klen);
         c->len++;
     }
     return c;
@@ -337,12 +360,15 @@ int neverc_maps_equal(const neverc_map_t *a, const neverc_map_t *b) {
         if (a->entries[i].hash == HASH_EMPTY) continue;
         uint64_t h = a->entries[i].hash;
         const char *key = a->entries[i].key;
+        uint32_t klen = a->entries[i].key_len;
         size_t idx = (size_t)(h & (b->cap - 1));
         int found = 0;
         for (size_t dist = 0; ; dist++, idx = (idx + 1) & (b->cap - 1)) {
             if (b->entries[idx].hash == HASH_EMPTY) break;
             if (probe_dist(idx, b->entries[idx].hash, b->cap) < dist) break;
-            if (b->entries[idx].hash == h && strcmp(b->entries[idx].key, key) == 0) {
+            if (b->entries[idx].hash == h &&
+                b->entries[idx].key_len == klen &&
+                memcmp(b->entries[idx].key, key, klen) == 0) {
                 if (b->entries[idx].value != a->entries[i].value) return 0;
                 found = 1;
                 break;

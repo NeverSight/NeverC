@@ -19,46 +19,49 @@ int neverc_strconv_format_uint(unsigned long long n, int base, char *buf, size_t
     if (!buf || bufsize == 0 || base < 2 || base > 36)
         return -1;
 
-    char tmp[65];
-    int len = 0;
-
     if (n == 0) {
-        tmp[len++] = '0';
-    } else if (base == 10) {
+        if (bufsize < 2) return -1;
+        buf[0] = '0';
+        buf[1] = '\0';
+        return 1;
+    }
+
+    char tmp[65];
+    int pos = 65;
+
+    if (base == 10) {
         while (n >= 100) {
             unsigned idx = (unsigned)(n % 100) * 2;
             n /= 100;
-            tmp[len]     = digit_pairs[idx + 1];
-            tmp[len + 1] = digit_pairs[idx];
-            len += 2;
+            tmp[--pos] = digit_pairs[idx + 1];
+            tmp[--pos] = digit_pairs[idx];
         }
         if (n >= 10) {
             unsigned idx = (unsigned)n * 2;
-            tmp[len]     = digit_pairs[idx + 1];
-            tmp[len + 1] = digit_pairs[idx];
-            len += 2;
+            tmp[--pos] = digit_pairs[idx + 1];
+            tmp[--pos] = digit_pairs[idx];
         } else {
-            tmp[len++] = '0' + (char)n;
+            tmp[--pos] = '0' + (char)n;
         }
     } else if ((base & (base - 1)) == 0) {
         int shift = __builtin_ctz(base);
         unsigned mask = (unsigned)base - 1;
         while (n > 0) {
-            tmp[len++] = digits[n & mask];
+            tmp[--pos] = digits[n & mask];
             n >>= shift;
         }
     } else {
         while (n > 0) {
-            tmp[len++] = digits[n % (unsigned)base];
+            tmp[--pos] = digits[n % (unsigned)base];
             n /= (unsigned)base;
         }
     }
 
+    int len = 65 - pos;
     if ((size_t)(len + 1) > bufsize)
         return -1;
 
-    for (int i = 0; i < len; i++)
-        buf[i] = tmp[len - 1 - i];
+    memcpy(buf, tmp + pos, (size_t)len);
     buf[len] = '\0';
     return len;
 }
