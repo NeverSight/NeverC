@@ -15,6 +15,7 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
+#include "neverc/Merge/Merger.h"
 #include "neverc/Plugin/PluginLoader.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
@@ -783,11 +784,12 @@ bool shouldKeepInSymtab(const Defined &sym) {
        (sym.section && (sym.section->flags & SHF_MERGE))))
     return false;
 
-  // The parallel codegen merger demotes externalized locals (with .__pcg<hash>
-  // suffix) back to STB_LOCAL.  Strip non-.text PCG symbols from the output
-  // symbol table to avoid bloat; keep .text symbols for debugger backtraces.
-  if (sym.getName().contains(".__pcg") && sym.section &&
-      sym.section->name != ".text")
+  // The parallel codegen merger demotes externalized locals (with the
+  // merge::PcgSymbolMarker suffix) back to STB_LOCAL.  Strip non-code PCG
+  // symbols from the output symbol table to avoid bloat; keep code-section
+  // symbols for debugger backtraces.
+  if (sym.getName().contains(neverc::merge::PcgSymbolMarker) && sym.section &&
+      !(sym.section->flags & SHF_EXECINSTR))
     return false;
 
   return true;

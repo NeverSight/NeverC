@@ -11,6 +11,7 @@
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
 #include "Linker/Core/Support/FileIO.h"
+#include "neverc/Merge/Merger.h"
 #include "neverc/Plugin/PluginLoader.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -1532,15 +1533,18 @@ void OutputWriter::createSymbolAndStringTable() {
           if (symRef.isSectionDefinition() ||
               symRef.getStorageClass() == COFF::IMAGE_SYM_CLASS_LABEL)
             continue;
-          // The parallel codegen merger demotes externalized locals (with
-          // .__pcg<hash> suffix) to IMAGE_SYM_CLASS_STATIC.  Strip non-.text
-          // PCG symbols from the output to avoid bloat; keep .text symbols
-          // for debugger backtraces.
+          // The parallel codegen merger demotes externalized locals (with the
+          // merge::PcgSymbolMarker suffix) to IMAGE_SYM_CLASS_STATIC.  Strip
+          // non-code PCG symbols from the output to avoid bloat; keep
+          // code-section symbols for debugger backtraces.
           if (symRef.getStorageClass() == COFF::IMAGE_SYM_CLASS_STATIC &&
-              d->getName().contains(".__pcg")) {
+              d->getName().contains(neverc::merge::PcgSymbolMarker)) {
+            bool keep = false;
             if (auto *sc = dyn_cast<SectionChunk>(d->getChunk()))
-              if (sc->getSectionName() != ".text")
-                continue;
+              if (OutputSection *os = ctx.getOutputSection(sc))
+                keep = os->isCodeSection();
+            if (!keep)
+              continue;
           }
         }
 
