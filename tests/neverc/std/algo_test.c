@@ -16,6 +16,11 @@
 #include "neverc/std/index/suffixarray.h"
 #include "neverc/std/slices.h"
 #include "neverc/std/math/bits.h"
+#include "neverc/std/hash/crc32.h"
+#include "neverc/std/hash/adler32.h"
+#include "neverc/std/unicode/utf8.h"
+#include "neverc/std/encoding/hex.h"
+#include "neverc/std/math/rand.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -522,6 +527,173 @@ static void test_bits_mul64(void) {
     CHECK(hi == 0, "mul64 small hi");
 }
 
+/* ---- CRC32 slicing-by-8 tests ---- */
+static void test_crc32_ieee(void) {
+    CHECK(neverc_crc32_ieee("", 0) == 0, "crc32 empty");
+
+    const char *hello = "hello world";
+    uint32_t crc = neverc_crc32_ieee(hello, strlen(hello));
+    CHECK(crc == 0x0D4A1185, "crc32 hello world");
+
+    CHECK(neverc_crc32_ieee("a", 1) == 0xE8B7BE43, "crc32 single a");
+
+    uint8_t buf[256];
+    for (int i = 0; i < 256; i++) buf[i] = (uint8_t)i;
+    uint32_t c256 = neverc_crc32_ieee(buf, 256);
+    CHECK(c256 == 0x29058C73, "crc32 0..255");
+
+    uint32_t inc = neverc_crc32_update(0, (const uint32_t *)NULL, NULL, 0);
+    (void)inc;
+    neverc_crc32_table_t tab;
+    neverc_crc32_make_table(NEVERC_CRC32_IEEE, tab);
+    uint32_t c1 = neverc_crc32_update(0, tab, hello, 5);
+    uint32_t c2 = neverc_crc32_update(c1, tab, hello + 5, 6);
+    CHECK(c2 == crc, "crc32 incremental == full");
+
+    uint8_t big[4096];
+    memset(big, 'x', sizeof(big));
+    uint32_t cbig = neverc_crc32_ieee(big, sizeof(big));
+    uint32_t cbig_ref = neverc_crc32_checksum(tab, big, sizeof(big));
+    CHECK(cbig == cbig_ref, "crc32 4KB slicing8 == byte-at-a-time");
+}
+
+/* ---- Adler32 unrolled tests ---- */
+static void test_adler32(void) {
+    CHECK(neverc_adler32_checksum((const uint8_t *)"", 0) == 1, "adler32 empty");
+
+    const uint8_t *hello = (const uint8_t *)"hello world";
+    uint32_t a = neverc_adler32_checksum(hello, 11);
+    CHECK(a == 0x1A0B045D, "adler32 hello world");
+
+    uint32_t inc = neverc_adler32_update(NEVERC_ADLER32_INIT, hello, 5);
+    inc = neverc_adler32_update(inc, hello + 5, 6);
+    CHECK(inc == a, "adler32 incremental == full");
+
+    uint8_t big[8192];
+    memset(big, 'A', sizeof(big));
+    uint32_t abig = neverc_adler32_checksum(big, sizeof(big));
+    uint32_t abig2 = neverc_adler32_update(NEVERC_ADLER32_INIT, big, 4096);
+    abig2 = neverc_adler32_update(abig2, big + 4096, 4096);
+    CHECK(abig == abig2, "adler32 8KB incremental");
+    CHECK(abig != 0 && abig != 1, "adler32 8KB non-trivial");
+}
+
+/* ---- UTF-8 word-at-a-time tests ---- */
+static void test_utf8_fast(void) {
+    CHECK(neverc_utf8_rune_count((const uint8_t *)"", 0) == 0, "utf8 count empty");
+    CHECK(neverc_utf8_rune_count((const uint8_t *)"hello", 5) == 5, "utf8 count ascii");
+
+    const uint8_t ascii64[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-";
+    CHECK(neverc_utf8_rune_count(ascii64, 64) == 64, "utf8 count 64 ascii");
+
+    uint8_t big[1024];
+    memset(big, 'x', sizeof(big));
+    CHECK(neverc_utf8_rune_count(big, sizeof(big)) == 1024, "utf8 count 1K ascii");
+
+    CHECK(neverc_utf8_valid(big, sizeof(big)), "utf8 valid 1K ascii");
+    CHECK(neverc_utf8_valid((const uint8_t *)"", 0), "utf8 valid empty");
+
+    const uint8_t utf8_hello[] = {0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD};
+    CHECK(neverc_utf8_rune_count(utf8_hello, 6) == 2, "utf8 count chinese");
+    CHECK(neverc_utf8_valid(utf8_hello, 6), "utf8 valid chinese");
+
+    uint8_t mixed[32];
+    memcpy(mixed, "hello ", 6);
+    memcpy(mixed + 6, utf8_hello, 6);
+    memcpy(mixed + 12, " world", 6);
+    CHECK(neverc_utf8_rune_count(mixed, 18) == 14, "utf8 count mixed");
+    CHECK(neverc_utf8_valid(mixed, 18), "utf8 valid mixed");
+
+    uint8_t bad[] = {0xFF, 0xFE};
+    CHECK(!neverc_utf8_valid(bad, 2), "utf8 invalid bytes");
+}
+
+/* ---- Hex encode pair-table tests ---- */
+static void test_hex_encode(void) {
+    char out[64];
+    uint8_t data[] = {0x00, 0x01, 0x0F, 0x10, 0xFF, 0xAB, 0xCD, 0xEF};
+    neverc_hex_encode(out, data, 8);
+    CHECK(strcmp(out, "00010f10ffabcdef") == 0, "hex encode");
+
+    neverc_hex_encode(out, (const uint8_t *)"", 0);
+    CHECK(out[0] == '\0', "hex encode empty");
+
+    uint8_t single[] = {0x42};
+    neverc_hex_encode(out, single, 1);
+    CHECK(strcmp(out, "42") == 0, "hex encode single");
+
+    uint8_t all[256];
+    char all_hex[513];
+    for (int i = 0; i < 256; i++) all[i] = (uint8_t)i;
+    neverc_hex_encode(all_hex, all, 256);
+    int hex_ok = 1;
+    for (int i = 0; i < 256; i++) {
+        uint8_t hi = (uint8_t)(all_hex[i*2] <= '9' ? all_hex[i*2] - '0' : all_hex[i*2] - 'a' + 10);
+        uint8_t lo = (uint8_t)(all_hex[i*2+1] <= '9' ? all_hex[i*2+1] - '0' : all_hex[i*2+1] - 'a' + 10);
+        if ((hi << 4 | lo) != (uint8_t)i) { hex_ok = 0; break; }
+    }
+    CHECK(hex_ok, "hex encode all 256 bytes");
+}
+
+/* ---- to_upper/to_lower SWAR tests ---- */
+static void test_swar_case(void) {
+    char *up = neverc_cstring_to_upper("hello world 123 !@#");
+    CHECK(strcmp(up, "HELLO WORLD 123 !@#") == 0, "swar to_upper");
+    free(up);
+
+    char *lo = neverc_cstring_to_lower("HELLO WORLD 123 !@#");
+    CHECK(strcmp(lo, "hello world 123 !@#") == 0, "swar to_lower");
+    free(lo);
+
+    char long_str[129];
+    for (int i = 0; i < 128; i++) long_str[i] = 'a' + (char)(i % 26);
+    long_str[128] = '\0';
+    up = neverc_cstring_to_upper(long_str);
+    int upper_ok = 1;
+    for (int i = 0; i < 128; i++)
+        if (up[i] != 'A' + (char)(i % 26)) { upper_ok = 0; break; }
+    CHECK(upper_ok, "swar to_upper 128 chars");
+    free(up);
+
+    size_t outlen;
+    uint8_t *bup = neverc_bytes_to_upper((const uint8_t *)"abcDEF123", 9, &outlen);
+    CHECK(outlen == 9 && memcmp(bup, "ABCDEF123", 9) == 0, "bytes swar to_upper");
+    free(bup);
+
+    uint8_t *blo = neverc_bytes_to_lower((const uint8_t *)"ABCdef456", 9, &outlen);
+    CHECK(outlen == 9 && memcmp(blo, "abcdef456", 9) == 0, "bytes swar to_lower");
+    free(blo);
+
+    up = neverc_cstring_to_upper("");
+    CHECK(strcmp(up, "") == 0, "swar to_upper empty");
+    free(up);
+
+    up = neverc_cstring_to_upper("A");
+    CHECK(strcmp(up, "A") == 0, "swar to_upper single");
+    free(up);
+}
+
+/* ---- rand_read memcpy tests ---- */
+static void test_rand_read(void) {
+    neverc_rand_seed(42);
+    uint8_t buf1[64], buf2[64];
+    neverc_rand_read(buf1, sizeof(buf1));
+
+    neverc_rand_seed(42);
+    neverc_rand_read(buf2, sizeof(buf2));
+    CHECK(memcmp(buf1, buf2, sizeof(buf1)) == 0, "rand_read deterministic");
+
+    int all_zero = 1;
+    for (int i = 0; i < 64; i++) if (buf1[i] != 0) { all_zero = 0; break; }
+    CHECK(!all_zero, "rand_read non-trivial");
+
+    neverc_rand_seed(12345);
+    uint8_t small[3];
+    neverc_rand_read(small, 3);
+    int small_all_zero = (small[0] == 0 && small[1] == 0 && small[2] == 0);
+    CHECK(!small_all_zero, "rand_read small non-trivial");
+}
+
 int main(void) {
     printf("=== std algorithm optimization tests ===\n\n");
 
@@ -566,6 +738,24 @@ int main(void) {
     test_bits_ones_count();
     test_bits_reverse_bytes();
     test_bits_mul64();
+
+    printf("--- crc32 (slicing-by-8) ---\n");
+    test_crc32_ieee();
+
+    printf("--- adler32 (16-way unrolled) ---\n");
+    test_adler32();
+
+    printf("--- utf8 (word-at-a-time) ---\n");
+    test_utf8_fast();
+
+    printf("--- hex encode (pair table) ---\n");
+    test_hex_encode();
+
+    printf("--- to_upper/to_lower (SWAR) ---\n");
+    test_swar_case();
+
+    printf("--- rand_read (memcpy) ---\n");
+    test_rand_read();
 
     printf("\n=== Results: %d passed, %d failed ===\n",
            tests_passed, tests_failed);

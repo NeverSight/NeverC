@@ -141,13 +141,31 @@ bad:
     *size = 1;
 }
 
+/*
+ * Word-at-a-time ASCII fast path for rune_count and valid.
+ * Skips 8 pure-ASCII bytes per iteration (~8x faster on ASCII text).
+ * High-bit check: if (word & 0x8080808080808080) == 0, all 8 bytes are ASCII.
+ */
+
+#include <string.h>
+
+#define NCI_ASCII_MASK ((uint64_t)0x8080808080808080ULL)
+
 size_t neverc_utf8_rune_count(const uint8_t *buf, size_t len) {
     size_t count = 0;
     size_t i = 0;
+
     while (i < len) {
-        uint8_t b = buf[i];
-        if (b < TX) {
-            i++; count++; continue;
+        if (buf[i] < TX) {
+            while (i + 8 <= len) {
+                uint64_t w;
+                memcpy(&w, buf + i, 8);
+                if ((w & NCI_ASCII_MASK) != 0) break;
+                count += 8;
+                i += 8;
+            }
+            while (i < len && buf[i] < TX) { i++; count++; }
+            continue;
         }
         uint32_t r; int sz;
         neverc_utf8_decode_rune(buf + i, len - i, &r, &sz);
@@ -159,9 +177,18 @@ size_t neverc_utf8_rune_count(const uint8_t *buf, size_t len) {
 
 int neverc_utf8_valid(const uint8_t *buf, size_t len) {
     size_t i = 0;
+
     while (i < len) {
-        uint8_t b = buf[i];
-        if (b < TX) { i++; continue; }
+        if (buf[i] < TX) {
+            while (i + 8 <= len) {
+                uint64_t w;
+                memcpy(&w, buf + i, 8);
+                if ((w & NCI_ASCII_MASK) != 0) break;
+                i += 8;
+            }
+            while (i < len && buf[i] < TX) i++;
+            continue;
+        }
         uint32_t r; int sz;
         neverc_utf8_decode_rune(buf + i, len - i, &r, &sz);
         if (r == NEVERC_UTF8_RUNE_ERROR && sz <= 1) return 0;

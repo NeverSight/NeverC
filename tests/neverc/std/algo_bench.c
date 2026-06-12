@@ -86,6 +86,11 @@ static int old_binary_search_generic(const int *arr, size_t len, int target, int
  * ============================================================ */
 #include "neverc/std/bytes.h"
 #include "neverc/std/slices.h"
+#include "neverc/std/cstring.h"
+#include "neverc/std/hash/crc32.h"
+#include "neverc/std/hash/adler32.h"
+#include "neverc/std/unicode/utf8.h"
+#include "neverc/std/encoding/hex.h"
 
 /* New wyhash — duplicated for direct benchmark */
 static inline uint64_t nci_read8(const uint8_t *p) {
@@ -334,11 +339,292 @@ static void bench_bsearch(void) {
     }
 }
 
+/* ============================================================
+ * Benchmark: CRC32 Slicing-by-8 vs byte-at-a-time
+ * ============================================================ */
+
+__attribute__((noinline))
+static uint32_t old_crc32_ieee(const void *data, size_t len) {
+    static uint32_t tab[256];
+    static int init = 0;
+    if (!init) {
+        for (uint32_t i = 0; i < 256; i++) {
+            uint32_t crc = i;
+            for (int j = 0; j < 8; j++)
+                crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320U : 0);
+            tab[i] = crc;
+        }
+        init = 1;
+    }
+    const uint8_t *p = (const uint8_t *)data;
+    uint32_t crc = ~(uint32_t)0;
+    for (size_t i = 0; i < len; i++)
+        crc = tab[(crc ^ p[i]) & 0xFF] ^ (crc >> 8);
+    return ~crc;
+}
+
+static volatile uint32_t sink32;
+
+static void bench_crc32(void) {
+    printf("\n=== CRC32: Slicing-by-8 vs byte-at-a-time ===\n");
+    printf("%-15s  %10s  %10s  %8s\n", "size", "old", "new(s8)", "speedup");
+
+    size_t sizes[] = {64, 1024, 16384, 65536};
+    int nsizes = sizeof(sizes) / sizeof(sizes[0]);
+    uint8_t *buf = (uint8_t *)malloc(65536);
+    srand(42);
+    for (size_t i = 0; i < 65536; i++) buf[i] = (uint8_t)(rand() & 0xFF);
+
+    for (int s = 0; s < nsizes; s++) {
+        size_t n = sizes[s];
+        int iters = (int)(500000000 / (n + 1));
+        if (iters < 100) iters = 100;
+
+        double t0 = now_sec();
+        for (int i = 0; i < iters; i++)
+            sink32 = old_crc32_ieee(buf, n);
+        double t_old = now_sec() - t0;
+
+        t0 = now_sec();
+        for (int i = 0; i < iters; i++)
+            sink32 = neverc_crc32_ieee(buf, n);
+        double t_new = now_sec() - t0;
+
+        printf("n=%-13zu  %8.1f ms  %8.1f ms  %6.1fx\n",
+               n, t_old * 1000, t_new * 1000, t_old / t_new);
+    }
+    free(buf);
+}
+
+/* ============================================================
+ * Benchmark: Adler32 unrolled vs byte-at-a-time
+ * ============================================================ */
+
+__attribute__((noinline))
+static uint32_t old_adler32(const uint8_t *data, size_t len) {
+    uint32_t s1 = 1, s2 = 0;
+    while (len > 0) {
+        size_t block = len > 5552 ? 5552 : len;
+        len -= block;
+        for (size_t i = 0; i < block; i++) {
+            s1 += data[i];
+            s2 += s1;
+        }
+        data += block;
+        s1 %= 65521U;
+        s2 %= 65521U;
+    }
+    return (s2 << 16) | s1;
+}
+
+static void bench_adler32(void) {
+    printf("\n=== Adler32: 16-way unrolled vs byte-at-a-time ===\n");
+    printf("%-15s  %10s  %10s  %8s\n", "size", "old", "new", "speedup");
+
+    size_t sizes[] = {64, 1024, 16384, 65536};
+    int nsizes = sizeof(sizes) / sizeof(sizes[0]);
+    uint8_t *buf = (uint8_t *)malloc(65536);
+    for (size_t i = 0; i < 65536; i++) buf[i] = (uint8_t)(rand() & 0xFF);
+
+    for (int s = 0; s < nsizes; s++) {
+        size_t n = sizes[s];
+        int iters = (int)(500000000 / (n + 1));
+        if (iters < 100) iters = 100;
+
+        double t0 = now_sec();
+        for (int i = 0; i < iters; i++)
+            sink32 = old_adler32(buf, n);
+        double t_old = now_sec() - t0;
+
+        t0 = now_sec();
+        for (int i = 0; i < iters; i++)
+            sink32 = neverc_adler32_checksum(buf, n);
+        double t_new = now_sec() - t0;
+
+        printf("n=%-13zu  %8.1f ms  %8.1f ms  %6.1fx\n",
+               n, t_old * 1000, t_new * 1000, t_old / t_new);
+    }
+    free(buf);
+}
+
+/* ============================================================
+ * Benchmark: UTF-8 rune_count word-at-a-time vs byte-at-a-time
+ * ============================================================ */
+
+__attribute__((noinline))
+static size_t old_utf8_rune_count(const uint8_t *buf, size_t len) {
+    size_t count = 0;
+    size_t i = 0;
+    while (i < len) {
+        uint8_t b = buf[i];
+        if (b < 0x80) { i++; count++; continue; }
+        uint32_t r; int sz;
+        neverc_utf8_decode_rune(buf + i, len - i, &r, &sz);
+        i += (size_t)(sz > 0 ? sz : 1);
+        count++;
+    }
+    return count;
+}
+
+static void bench_utf8(void) {
+    printf("\n=== UTF-8 rune_count: word-at-a-time vs byte-at-a-time ===\n");
+    printf("%-25s  %10s  %10s  %8s\n", "case", "old", "new", "speedup");
+
+    size_t n = 65536;
+    uint8_t *ascii_buf = (uint8_t *)malloc(n);
+    for (size_t i = 0; i < n; i++) ascii_buf[i] = 'A' + (uint8_t)(i % 26);
+    int iters = 10000;
+
+    double t0 = now_sec();
+    for (int i = 0; i < iters; i++)
+        sink_sz = old_utf8_rune_count(ascii_buf, n);
+    double t_old = now_sec() - t0;
+
+    t0 = now_sec();
+    for (int i = 0; i < iters; i++)
+        sink_sz = neverc_utf8_rune_count(ascii_buf, n);
+    double t_new = now_sec() - t0;
+
+    printf("%-25s  %8.1f ms  %8.1f ms  %6.1fx\n",
+           "64KB pure ASCII", t_old * 1000, t_new * 1000, t_old / t_new);
+
+    uint8_t *mixed = (uint8_t *)malloc(n);
+    size_t j = 0;
+    for (size_t i = 0; j < n; i++) {
+        if (i % 10 < 7 && j < n) mixed[j++] = 'A' + (uint8_t)(i % 26);
+        else if (j + 3 <= n) {
+            mixed[j++] = 0xE4; mixed[j++] = 0xBD; mixed[j++] = 0xA0;
+        }
+    }
+    size_t mlen = j;
+
+    t0 = now_sec();
+    for (int i = 0; i < iters; i++)
+        sink_sz = old_utf8_rune_count(mixed, mlen);
+    t_old = now_sec() - t0;
+
+    t0 = now_sec();
+    for (int i = 0; i < iters; i++)
+        sink_sz = neverc_utf8_rune_count(mixed, mlen);
+    t_new = now_sec() - t0;
+
+    printf("%-25s  %8.1f ms  %8.1f ms  %6.1fx\n",
+           "64KB 70% ASCII + CJK", t_old * 1000, t_new * 1000, t_old / t_new);
+
+    free(ascii_buf);
+    free(mixed);
+}
+
+/* ============================================================
+ * Benchmark: Hex encode pair table vs byte-at-a-time
+ * ============================================================ */
+
+static const char old_hextable[] = "0123456789abcdef";
+
+__attribute__((noinline))
+static size_t old_hex_encode(char *dst, const uint8_t *src, size_t src_len) {
+    size_t j = 0;
+    for (size_t i = 0; i < src_len; i++) {
+        dst[j]     = old_hextable[src[i] >> 4];
+        dst[j + 1] = old_hextable[src[i] & 0x0f];
+        j += 2;
+    }
+    dst[j] = '\0';
+    return src_len * 2;
+}
+
+static void bench_hex(void) {
+    printf("\n=== Hex encode: pair-table vs byte-at-a-time ===\n");
+    printf("%-15s  %10s  %10s  %8s\n", "size", "old", "new", "speedup");
+
+    size_t sizes[] = {32, 256, 4096, 65536};
+    int nsizes = sizeof(sizes) / sizeof(sizes[0]);
+    uint8_t *buf = (uint8_t *)malloc(65536);
+    char *out = (char *)malloc(65536 * 2 + 1);
+    for (size_t i = 0; i < 65536; i++) buf[i] = (uint8_t)(rand() & 0xFF);
+
+    for (int s = 0; s < nsizes; s++) {
+        size_t n = sizes[s];
+        int iters = (int)(200000000 / (n + 1));
+        if (iters < 100) iters = 100;
+
+        double t0 = now_sec();
+        for (int i = 0; i < iters; i++)
+            sink_sz = old_hex_encode(out, buf, n);
+        double t_old = now_sec() - t0;
+
+        t0 = now_sec();
+        for (int i = 0; i < iters; i++)
+            sink_sz = neverc_hex_encode(out, buf, n);
+        double t_new = now_sec() - t0;
+
+        printf("n=%-13zu  %8.1f ms  %8.1f ms  %6.1fx\n",
+               n, t_old * 1000, t_new * 1000, t_old / t_new);
+    }
+    free(buf);
+    free(out);
+}
+
+/* ============================================================
+ * Benchmark: to_upper SWAR vs byte-at-a-time
+ * ============================================================ */
+
+__attribute__((noinline))
+static char *old_to_upper(const char *s) {
+    size_t len = strlen(s);
+    char *r = (char *)malloc(len + 1);
+    for (size_t i = 0; i < len; i++)
+        r[i] = (s[i] >= 'a' && s[i] <= 'z') ? (char)(s[i] - 32) : s[i];
+    r[len] = '\0';
+    return r;
+}
+
+static void bench_toupper(void) {
+    printf("\n=== to_upper: SWAR vs byte-at-a-time ===\n");
+    printf("%-15s  %10s  %10s  %8s\n", "size", "old", "new(SWAR)", "speedup");
+
+    int sizes[] = {16, 64, 256, 1024};
+    int nsizes = sizeof(sizes) / sizeof(sizes[0]);
+
+    for (int s = 0; s < nsizes; s++) {
+        int n = sizes[s];
+        char *input = (char *)malloc((size_t)n + 1);
+        for (int i = 0; i < n; i++) input[i] = 'a' + (char)(i % 26);
+        input[n] = '\0';
+
+        int iters = 5000000 / (n + 1);
+        if (iters < 1000) iters = 1000;
+
+        double t0 = now_sec();
+        for (int i = 0; i < iters; i++) {
+            char *r = old_to_upper(input);
+            free(r);
+        }
+        double t_old = now_sec() - t0;
+
+        t0 = now_sec();
+        for (int i = 0; i < iters; i++) {
+            char *r = neverc_cstring_to_upper(input);
+            free(r);
+        }
+        double t_new = now_sec() - t0;
+
+        printf("n=%-13d  %8.1f ms  %8.1f ms  %6.1fx\n",
+               n, t_old * 1000, t_new * 1000, t_old / t_new);
+        free(input);
+    }
+}
+
 int main(void) {
     printf("=== std algorithm optimization benchmarks ===\n");
     bench_hash();
     bench_substr();
     bench_bsearch();
+    bench_crc32();
+    bench_adler32();
+    bench_utf8();
+    bench_hex();
+    bench_toupper();
     printf("\n=== Done ===\n");
     return 0;
 }
