@@ -147,6 +147,7 @@ int neverc_slices_index_int(const int *slice, size_t len, int val) {
 }
 
 void neverc_slices_reverse_ints(int *slice, size_t len) {
+    if (len <= 1) return;
     for (size_t i = 0, j = len - 1; i < j; i++, j--) {
         int tmp = slice[i]; slice[i] = slice[j]; slice[j] = tmp;
     }

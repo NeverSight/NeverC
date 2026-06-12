@@ -42,9 +42,15 @@ size_t neverc_bytes_index_byte(const uint8_t *b, size_t blen, uint8_t c) {
 }
 
 size_t neverc_bytes_last_index_byte(const uint8_t *s, size_t slen, uint8_t c) {
+    if (slen == 0) return (size_t)-1;
+#if defined(__GLIBC__)
+    const void *p = memrchr(s, c, slen);
+    return p ? (size_t)((const uint8_t *)p - s) : (size_t)-1;
+#else
     for (size_t i = slen; i > 0; i--)
         if (s[i - 1] == c) return i - 1;
     return (size_t)-1;
+#endif
 }
 
 #define NCI_RK_PRIME 16777619U
@@ -89,29 +95,56 @@ size_t neverc_bytes_last_index(const uint8_t *s, size_t slen,
     if (seplen == 1) return neverc_bytes_last_index_byte(s, slen, sep[0]);
     if (seplen == slen) return memcmp(s, sep, slen) == 0 ? 0 : (size_t)-1;
 
-    uint8_t clast = sep[seplen - 1];
-    for (size_t i = slen; i >= seplen; i--)
-        if (s[i - 1] == clast && memcmp(s + i - seplen, sep, seplen) == 0)
-            return i - seplen;
+    if (seplen <= 8 || slen <= 64) {
+        uint8_t clast = sep[seplen - 1];
+        for (size_t i = slen; i >= seplen; i--)
+            if (s[i - 1] == clast && memcmp(s + i - seplen, sep, seplen) == 0)
+                return i - seplen;
+        return (size_t)-1;
+    }
+
+    uint32_t h_sep = 0, h_win = 0, pk = 1;
+    size_t last_start = slen - seplen;
+    for (size_t i = 0; i < seplen; i++) {
+        h_sep += (uint32_t)sep[i] * pk;
+        h_win += (uint32_t)s[last_start + i] * pk;
+        pk *= NCI_RK_PRIME;
+    }
+    if (h_win == h_sep && memcmp(s + last_start, sep, seplen) == 0)
+        return last_start;
+    for (size_t pos = last_start; pos > 0; pos--) {
+        h_win = h_win * NCI_RK_PRIME + (uint32_t)s[pos - 1]
+              - pk * (uint32_t)s[pos - 1 + seplen];
+        if (h_win == h_sep && memcmp(s + pos - 1, sep, seplen) == 0)
+            return pos - 1;
+    }
     return (size_t)-1;
 }
 
+static void build_ascii_set(const char *chars, uint32_t set[8]) {
+    memset(set, 0, 8 * sizeof(uint32_t));
+    for (const char *c = chars; *c; c++)
+        set[((uint8_t)*c) >> 5] |= 1u << (((uint8_t)*c) & 31);
+}
+
+#define ASCII_SET_HAS(set, c) ((set)[(c) >> 5] & (1u << ((c) & 31)))
+
 size_t neverc_bytes_index_any(const uint8_t *s, size_t slen, const char *chars) {
-    for (size_t i = 0; i < slen; i++) {
-        for (const char *c = chars; *c; c++) {
-            if (s[i] == (uint8_t)*c) return i;
-        }
-    }
+    if (!chars[0]) return (size_t)-1;
+    uint32_t set[8];
+    build_ascii_set(chars, set);
+    for (size_t i = 0; i < slen; i++)
+        if (ASCII_SET_HAS(set, s[i])) return i;
     return (size_t)-1;
 }
 
 size_t neverc_bytes_last_index_any(const uint8_t *s, size_t slen,
                                    const char *chars) {
-    for (size_t i = slen; i > 0; i--) {
-        for (const char *c = chars; *c; c++) {
-            if (s[i - 1] == (uint8_t)*c) return i - 1;
-        }
-    }
+    if (!chars[0]) return (size_t)-1;
+    uint32_t set[8];
+    build_ascii_set(chars, set);
+    for (size_t i = slen; i > 0; i--)
+        if (ASCII_SET_HAS(set, s[i - 1])) return i - 1;
     return (size_t)-1;
 }
 
@@ -279,10 +312,8 @@ uint8_t *neverc_bytes_join(const uint8_t **slices, const size_t *lens,
 
 /* --- Trim helpers --- */
 
-static int in_cutset(uint8_t c, const char *cutset) {
-    for (const char *p = cutset; *p; p++)
-        if ((uint8_t)*p == c) return 1;
-    return 0;
+static int in_cutset(uint8_t c, const uint32_t set[8]) {
+    return (set[c >> 5] & (1u << (c & 31))) != 0;
 }
 
 static int is_space(uint8_t c) {
@@ -292,8 +323,10 @@ static int is_space(uint8_t c) {
 
 uint8_t *neverc_bytes_trim_left(const uint8_t *s, size_t slen,
                                 const char *cutset, size_t *outlen) {
+    uint32_t set[8];
+    build_ascii_set(cutset, set);
     size_t start = 0;
-    while (start < slen && in_cutset(s[start], cutset)) start++;
+    while (start < slen && in_cutset(s[start], set)) start++;
     *outlen = slen - start;
     uint8_t *r = (uint8_t *)malloc(*outlen + 1);
     if (*outlen > 0) memcpy(r, s + start, *outlen);
@@ -302,8 +335,10 @@ uint8_t *neverc_bytes_trim_left(const uint8_t *s, size_t slen,
 
 uint8_t *neverc_bytes_trim_right(const uint8_t *s, size_t slen,
                                  const char *cutset, size_t *outlen) {
+    uint32_t set[8];
+    build_ascii_set(cutset, set);
     size_t end = slen;
-    while (end > 0 && in_cutset(s[end - 1], cutset)) end--;
+    while (end > 0 && in_cutset(s[end - 1], set)) end--;
     *outlen = end;
     uint8_t *r = (uint8_t *)malloc(*outlen + 1);
     if (*outlen > 0) memcpy(r, s, *outlen);
@@ -312,9 +347,11 @@ uint8_t *neverc_bytes_trim_right(const uint8_t *s, size_t slen,
 
 uint8_t *neverc_bytes_trim(const uint8_t *s, size_t slen,
                            const char *cutset, size_t *outlen) {
+    uint32_t set[8];
+    build_ascii_set(cutset, set);
     size_t start = 0, end = slen;
-    while (start < end && in_cutset(s[start], cutset)) start++;
-    while (end > start && in_cutset(s[end - 1], cutset)) end--;
+    while (start < end && in_cutset(s[start], set)) start++;
+    while (end > start && in_cutset(s[end - 1], set)) end--;
     *outlen = end - start;
     uint8_t *r = (uint8_t *)malloc(*outlen + 1);
     if (*outlen > 0) memcpy(r, s + start, *outlen);

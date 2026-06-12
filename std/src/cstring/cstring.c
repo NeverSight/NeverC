@@ -27,10 +27,16 @@ static int is_space(char c) {
            c == '\f' || c == '\v';
 }
 
-static int in_cutset(char c, const char *cutset) {
-    for (const char *p = cutset; *p; p++)
-        if (*p == c) return 1;
-    return 0;
+static void build_ascii_set(const char *chars, uint32_t set[8]) {
+    memset(set, 0, 8 * sizeof(uint32_t));
+    for (const char *c = chars; *c; c++)
+        set[((unsigned char)*c) >> 5] |= 1u << (((unsigned char)*c) & 31);
+}
+
+#define ASCII_SET_HAS(set, c) ((set)[((unsigned char)(c)) >> 5] & (1u << (((unsigned char)(c)) & 31)))
+
+static int in_cutset(char c, const uint32_t set[8]) {
+    return ASCII_SET_HAS(set, c) != 0;
 }
 
 static int is_separator(char c) {
@@ -46,15 +52,8 @@ static int is_separator(char c) {
  * ====================================================================== */
 
 int neverc_cstring_compare(const char *a, const char *b) {
-    while (*a && *b) {
-        if ((unsigned char)*a < (unsigned char)*b) return -1;
-        if ((unsigned char)*a > (unsigned char)*b) return 1;
-        a++;
-        b++;
-    }
-    if (*a) return 1;
-    if (*b) return -1;
-    return 0;
+    int r = strcmp(a, b);
+    return r < 0 ? -1 : r > 0 ? 1 : 0;
 }
 
 int neverc_cstring_equal_fold(const char *s, const char *t) {
@@ -71,16 +70,13 @@ int neverc_cstring_equal_fold(const char *s, const char *t) {
  * ====================================================================== */
 
 int neverc_cstring_index_byte(const char *s, char c) {
-    for (int i = 0; s[i]; i++)
-        if (s[i] == c) return i;
-    return -1;
+    const char *p = strchr(s, c);
+    return p ? (int)(p - s) : -1;
 }
 
 int neverc_cstring_last_index_byte(const char *s, char c) {
-    int last = -1;
-    for (int i = 0; s[i]; i++)
-        if (s[i] == c) last = i;
-    return last;
+    const char *p = strrchr(s, c);
+    return p ? (int)(p - s) : -1;
 }
 
 #define NCI_RK_PRIME 16777619U
@@ -130,26 +126,51 @@ int neverc_cstring_last_index(const char *s, const char *substr) {
     if (sublen == 1) return neverc_cstring_last_index_byte(s, substr[0]);
     if (sublen == slen) return memcmp(s, substr, slen) == 0 ? 0 : -1;
 
-    unsigned char clast = (unsigned char)substr[sublen - 1];
     const unsigned char *us = (const unsigned char *)s;
-    for (size_t i = slen; i >= sublen; i--)
-        if (us[i - 1] == clast && memcmp(s + i - sublen, substr, sublen) == 0)
-            return (int)(i - sublen);
+    const unsigned char *up = (const unsigned char *)substr;
+
+    if (sublen <= 8 || slen <= 64) {
+        unsigned char clast = up[sublen - 1];
+        for (size_t i = slen; i >= sublen; i--)
+            if (us[i - 1] == clast && memcmp(s + i - sublen, substr, sublen) == 0)
+                return (int)(i - sublen);
+        return -1;
+    }
+
+    uint32_t h_pat = 0, h_win = 0, pk = 1;
+    size_t last_start = slen - sublen;
+    for (size_t i = 0; i < sublen; i++) {
+        h_pat += (uint32_t)up[i] * pk;
+        h_win += (uint32_t)us[last_start + i] * pk;
+        pk *= NCI_RK_PRIME;
+    }
+    if (h_win == h_pat && memcmp(s + last_start, substr, sublen) == 0)
+        return (int)last_start;
+    for (size_t pos = last_start; pos > 0; pos--) {
+        h_win = h_win * NCI_RK_PRIME + (uint32_t)us[pos - 1]
+              - pk * (uint32_t)us[pos - 1 + sublen];
+        if (h_win == h_pat && memcmp(s + pos - 1, substr, sublen) == 0)
+            return (int)(pos - 1);
+    }
     return -1;
 }
 
 int neverc_cstring_index_any(const char *s, const char *chars) {
     if (!chars[0]) return -1;
+    uint32_t set[8];
+    build_ascii_set(chars, set);
     for (int i = 0; s[i]; i++)
-        if (in_cutset(s[i], chars)) return i;
+        if (ASCII_SET_HAS(set, s[i])) return i;
     return -1;
 }
 
 int neverc_cstring_last_index_any(const char *s, const char *chars) {
     if (!chars[0]) return -1;
+    uint32_t set[8];
+    build_ascii_set(chars, set);
     int last = -1;
     for (int i = 0; s[i]; i++)
-        if (in_cutset(s[i], chars)) last = i;
+        if (ASCII_SET_HAS(set, s[i])) last = i;
     return last;
 }
 
@@ -249,8 +270,13 @@ char *neverc_cstring_repeat(const char *s, int count) {
     size_t total = len * (size_t)count;
     char *r = (char *)malloc(total + 1);
     if (!r) return NULL;
-    for (int i = 0; i < count; i++)
-        memcpy(r + (size_t)i * len, s, len);
+    memcpy(r, s, len);
+    for (size_t copied = len; copied < total; ) {
+        size_t chunk = total - copied;
+        if (chunk > copied) chunk = copied;
+        memcpy(r + copied, r, chunk);
+        copied += chunk;
+    }
     r[total] = '\0';
     return r;
 }
@@ -382,20 +408,26 @@ char *neverc_cstring_join(const char **strs, size_t count, const char *sep) {
  * ====================================================================== */
 
 char *neverc_cstring_trim_left(const char *s, const char *cutset) {
-    while (*s && in_cutset(*s, cutset)) s++;
+    uint32_t set[8];
+    build_ascii_set(cutset, set);
+    while (*s && in_cutset(*s, set)) s++;
     return nc_strdup(s, strlen(s));
 }
 
 char *neverc_cstring_trim_right(const char *s, const char *cutset) {
+    uint32_t set[8];
+    build_ascii_set(cutset, set);
     size_t len = strlen(s);
-    while (len > 0 && in_cutset(s[len - 1], cutset)) len--;
+    while (len > 0 && in_cutset(s[len - 1], set)) len--;
     return nc_strdup(s, len);
 }
 
 char *neverc_cstring_trim(const char *s, const char *cutset) {
-    while (*s && in_cutset(*s, cutset)) s++;
+    uint32_t set[8];
+    build_ascii_set(cutset, set);
+    while (*s && in_cutset(*s, set)) s++;
     size_t len = strlen(s);
-    while (len > 0 && in_cutset(s[len - 1], cutset)) len--;
+    while (len > 0 && in_cutset(s[len - 1], set)) len--;
     return nc_strdup(s, len);
 }
 
