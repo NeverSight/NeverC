@@ -13,51 +13,54 @@
 static const char std_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 static const char hex_table[] = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
 
+/*
+ * Combined decode+validate tables: valid entries are 0-31, invalid = 0x80.
+ * Single lookup decodes AND validates; batch check: OR 8 values and test
+ * any high bits → (a|b|c|d|e|f|g|h) & 0x80.
+ * Eliminates the separate validation tables and loops.
+ */
+#define B32_INV 0x80
+#define X B32_INV
+
 static const uint8_t decode_std[256] = {
-    ['A']= 0, ['B']= 1, ['C']= 2, ['D']= 3, ['E']= 4, ['F']= 5, ['G']= 6, ['H']= 7,
-    ['I']= 8, ['J']= 9, ['K']=10, ['L']=11, ['M']=12, ['N']=13, ['O']=14, ['P']=15,
-    ['Q']=16, ['R']=17, ['S']=18, ['T']=19, ['U']=20, ['V']=21, ['W']=22, ['X']=23,
-    ['Y']=24, ['Z']=25,
-    ['2']=26, ['3']=27, ['4']=28, ['5']=29, ['6']=30, ['7']=31,
-    ['a']= 0, ['b']= 1, ['c']= 2, ['d']= 3, ['e']= 4, ['f']= 5, ['g']= 6, ['h']= 7,
-    ['i']= 8, ['j']= 9, ['k']=10, ['l']=11, ['m']=12, ['n']=13, ['o']=14, ['p']=15,
-    ['q']=16, ['r']=17, ['s']=18, ['t']=19, ['u']=20, ['v']=21, ['w']=22, ['x']=23,
-    ['y']=24, ['z']=25,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X,26,27,28,29,30,31, X, X, X, X, X, X, X, X,
+    X, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+   15,16,17,18,19,20,21,22,23,24,25, X, X, X, X, X,
+    X, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+   15,16,17,18,19,20,21,22,23,24,25, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
 };
 
 static const uint8_t decode_hex[256] = {
-    ['0']= 0, ['1']= 1, ['2']= 2, ['3']= 3, ['4']= 4, ['5']= 5, ['6']= 6, ['7']= 7,
-    ['8']= 8, ['9']= 9,
-    ['A']=10, ['B']=11, ['C']=12, ['D']=13, ['E']=14, ['F']=15, ['G']=16, ['H']=17,
-    ['I']=18, ['J']=19, ['K']=20, ['L']=21, ['M']=22, ['N']=23, ['O']=24, ['P']=25,
-    ['Q']=26, ['R']=27, ['S']=28, ['T']=29, ['U']=30, ['V']=31,
-    ['a']=10, ['b']=11, ['c']=12, ['d']=13, ['e']=14, ['f']=15, ['g']=16, ['h']=17,
-    ['i']=18, ['j']=19, ['k']=20, ['l']=21, ['m']=22, ['n']=23, ['o']=24, ['p']=25,
-    ['q']=26, ['r']=27, ['s']=28, ['t']=29, ['u']=30, ['v']=31,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, X, X, X, X, X, X,
+    X,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,
+   25,26,27,28,29,30,31, X, X, X, X, X, X, X, X, X,
+    X,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,
+   25,26,27,28,29,30,31, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
+    X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,
 };
 
-static const uint8_t valid_std[256] = {
-    ['A']=1,['B']=1,['C']=1,['D']=1,['E']=1,['F']=1,['G']=1,['H']=1,
-    ['I']=1,['J']=1,['K']=1,['L']=1,['M']=1,['N']=1,['O']=1,['P']=1,
-    ['Q']=1,['R']=1,['S']=1,['T']=1,['U']=1,['V']=1,['W']=1,['X']=1,
-    ['Y']=1,['Z']=1, ['2']=1,['3']=1,['4']=1,['5']=1,['6']=1,['7']=1,
-    ['a']=1,['b']=1,['c']=1,['d']=1,['e']=1,['f']=1,['g']=1,['h']=1,
-    ['i']=1,['j']=1,['k']=1,['l']=1,['m']=1,['n']=1,['o']=1,['p']=1,
-    ['q']=1,['r']=1,['s']=1,['t']=1,['u']=1,['v']=1,['w']=1,['x']=1,
-    ['y']=1,['z']=1, ['=']=1,
-};
-
-static const uint8_t valid_hex[256] = {
-    ['0']=1,['1']=1,['2']=1,['3']=1,['4']=1,['5']=1,['6']=1,['7']=1,
-    ['8']=1,['9']=1,
-    ['A']=1,['B']=1,['C']=1,['D']=1,['E']=1,['F']=1,['G']=1,['H']=1,
-    ['I']=1,['J']=1,['K']=1,['L']=1,['M']=1,['N']=1,['O']=1,['P']=1,
-    ['Q']=1,['R']=1,['S']=1,['T']=1,['U']=1,['V']=1,
-    ['a']=1,['b']=1,['c']=1,['d']=1,['e']=1,['f']=1,['g']=1,['h']=1,
-    ['i']=1,['j']=1,['k']=1,['l']=1,['m']=1,['n']=1,['o']=1,['p']=1,
-    ['q']=1,['r']=1,['s']=1,['t']=1,['u']=1,['v']=1,
-    ['=']=1,
-};
+#undef X
 
 size_t neverc_base32_encoded_len(size_t n) {
     return ((n + 4) / 5) * 8;
@@ -122,7 +125,7 @@ static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
 }
 
 static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
-                       const uint8_t *dec_table, const uint8_t *val_table) {
+                       const uint8_t *dec_table) {
     while (src_len > 0 && src[src_len - 1] == '=')
         src_len--;
 
@@ -131,17 +134,19 @@ static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
 
     size_t n = (src_len / 8) * 8;
     while (si < n) {
-        for (int k = 0; k < 8; k++)
-            if (!val_table[(uint8_t)src[si + k]]) return -1;
-
-        uint64_t val = ((uint64_t)dec_table[(uint8_t)src[si]]   << 35) |
-                       ((uint64_t)dec_table[(uint8_t)src[si+1]] << 30) |
-                       ((uint64_t)dec_table[(uint8_t)src[si+2]] << 25) |
-                       ((uint64_t)dec_table[(uint8_t)src[si+3]] << 20) |
-                       ((uint64_t)dec_table[(uint8_t)src[si+4]] << 15) |
-                       ((uint64_t)dec_table[(uint8_t)src[si+5]] << 10) |
-                       ((uint64_t)dec_table[(uint8_t)src[si+6]] << 5)  |
-                       (uint64_t)dec_table[(uint8_t)src[si+7]];
+        uint8_t a = dec_table[(uint8_t)src[si]];
+        uint8_t b = dec_table[(uint8_t)src[si+1]];
+        uint8_t c = dec_table[(uint8_t)src[si+2]];
+        uint8_t d = dec_table[(uint8_t)src[si+3]];
+        uint8_t e = dec_table[(uint8_t)src[si+4]];
+        uint8_t f = dec_table[(uint8_t)src[si+5]];
+        uint8_t g = dec_table[(uint8_t)src[si+6]];
+        uint8_t h = dec_table[(uint8_t)src[si+7]];
+        if ((a | b | c | d | e | f | g | h) & B32_INV) return -1;
+        uint64_t val = ((uint64_t)a << 35) | ((uint64_t)b << 30) |
+                       ((uint64_t)c << 25) | ((uint64_t)d << 20) |
+                       ((uint64_t)e << 15) | ((uint64_t)f << 10) |
+                       ((uint64_t)g << 5)  | (uint64_t)h;
         dst[di]   = (uint8_t)(val >> 32);
         dst[di+1] = (uint8_t)(val >> 24);
         dst[di+2] = (uint8_t)(val >> 16);
@@ -153,12 +158,14 @@ static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
 
     size_t remain = src_len - si;
     if (remain > 0) {
-        for (size_t k = 0; k < remain; k++)
-            if (!val_table[(uint8_t)src[si + k]]) return -1;
-
         uint64_t val = 0;
-        for (size_t k = 0; k < remain; k++)
-            val |= (uint64_t)dec_table[(uint8_t)src[si + k]] << (35 - k * 5);
+        uint8_t check = 0;
+        for (size_t k = 0; k < remain; k++) {
+            uint8_t v = dec_table[(uint8_t)src[si + k]];
+            check |= v;
+            val |= (uint64_t)v << (35 - k * 5);
+        }
+        if (check & B32_INV) return -1;
 
         int out_bytes;
         switch (remain) {
@@ -182,7 +189,7 @@ size_t neverc_base32_encode(char *dst, const uint8_t *src, size_t src_len) {
 }
 
 int neverc_base32_decode(uint8_t *dst, const char *src, size_t src_len) {
-    return decode_impl(dst, src, src_len, decode_std, valid_std);
+    return decode_impl(dst, src, src_len, decode_std);
 }
 
 size_t neverc_base32_hex_encode(char *dst, const uint8_t *src, size_t src_len) {
@@ -190,5 +197,5 @@ size_t neverc_base32_hex_encode(char *dst, const uint8_t *src, size_t src_len) {
 }
 
 int neverc_base32_hex_decode(uint8_t *dst, const char *src, size_t src_len) {
-    return decode_impl(dst, src, src_len, decode_hex, valid_hex);
+    return decode_impl(dst, src, src_len, decode_hex);
 }

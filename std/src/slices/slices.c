@@ -146,16 +146,26 @@ int neverc_slices_equal_ints(const int *s1, size_t len1, const int *s2, size_t l
     return neverc_slices_equal(s1, len1, s2, len2, sizeof(int));
 }
 
-int neverc_slices_contains_int(const int *slice, size_t len, int val) {
-    for (size_t i = 0; i < len; i++)
-        if (slice[i] == val) return 1;
-    return 0;
-}
-
 int neverc_slices_index_int(const int *slice, size_t len, int val) {
-    for (size_t i = 0; i < len; i++)
+    size_t i = 0;
+#if UINT_MAX == 0xFFFFFFFFU
+    uint64_t target = ((uint64_t)(uint32_t)val << 32) | (uint32_t)val;
+    for (; i + 2 <= len; i += 2) {
+        uint64_t pair;
+        memcpy(&pair, slice + i, 8);
+        uint64_t xor = pair ^ target;
+        uint32_t lo = (uint32_t)xor, hi = (uint32_t)(xor >> 32);
+        if (lo == 0) return (int)i;
+        if (hi == 0) return (int)(i + 1);
+    }
+#endif
+    for (; i < len; i++)
         if (slice[i] == val) return (int)i;
     return -1;
+}
+
+int neverc_slices_contains_int(const int *slice, size_t len, int val) {
+    return neverc_slices_index_int(slice, len, val) >= 0;
 }
 
 void neverc_slices_reverse_ints(int *slice, size_t len) {

@@ -403,6 +403,11 @@ void neverc_bits_div64(uint64_t hi, uint64_t lo, uint64_t y,
         *rem = lo % y;
         return;
     }
+#ifdef __SIZEOF_INT128__
+    __uint128_t n = ((__uint128_t)hi << 64) | lo;
+    *quo = (uint64_t)(n / y);
+    *rem = (uint64_t)(n % y);
+#else
     uint64_t q = 0, r = hi;
     for (int i = 63; i >= 0; i--) {
         r = (r << 1) | ((lo >> i) & 1);
@@ -410,6 +415,7 @@ void neverc_bits_div64(uint64_t hi, uint64_t lo, uint64_t y,
     }
     *quo = q;
     *rem = r;
+#endif
 }
 
 uint32_t neverc_bits_rem32(uint32_t hi, uint32_t lo, uint32_t y) {
