@@ -287,28 +287,11 @@ int neverc_cstring_has_suffix(const char *s, const char *suffix) {
  * Transform
  * ====================================================================== */
 
-/* SWAR 8-byte parallel ASCII case conversion */
-#define NCI_SWAR_HIGHS 0x8080808080808080ULL
-
-static inline uint64_t nci_swar_range(uint64_t w, uint8_t lo, uint8_t hi) {
-    uint64_t cleared = w & ~NCI_SWAR_HIGHS;
-    uint64_t t_hi = cleared + (uint64_t)(0x7fu - hi) * 0x0101010101010101ULL;
-    uint64_t t_lo = cleared + (uint64_t)(0x80u - lo) * 0x0101010101010101ULL;
-    return (t_lo ^ t_hi) & NCI_SWAR_HIGHS;
-}
-
 char *neverc_cstring_to_upper(const char *s) {
     size_t len = strlen(s);
     char *r = (char *)malloc(len + 1);
     if (!r) return NULL;
-    size_t i = 0;
-    for (; i + 8 <= len; i += 8) {
-        uint64_t w;
-        memcpy(&w, s + i, 8);
-        w ^= nci_swar_range(w, 'a', 'z') >> 2;
-        memcpy(r + i, &w, 8);
-    }
-    for (; i < len; i++) r[i] = to_upper_ch(s[i]);
+    for (size_t i = 0; i < len; i++) r[i] = to_upper_ch(s[i]);
     r[len] = '\0';
     return r;
 }
@@ -317,14 +300,7 @@ char *neverc_cstring_to_lower(const char *s) {
     size_t len = strlen(s);
     char *r = (char *)malloc(len + 1);
     if (!r) return NULL;
-    size_t i = 0;
-    for (; i + 8 <= len; i += 8) {
-        uint64_t w;
-        memcpy(&w, s + i, 8);
-        w ^= nci_swar_range(w, 'A', 'Z') >> 2;
-        memcpy(r + i, &w, 8);
-    }
-    for (; i < len; i++) r[i] = to_lower_ch(s[i]);
+    for (size_t i = 0; i < len; i++) r[i] = to_lower_ch(s[i]);
     r[len] = '\0';
     return r;
 }
