@@ -178,15 +178,8 @@ uint64_t neverc_maphash_sum64(const neverc_maphash_t *h) {
 /* ---- one-shot convenience ---- */
 
 uint64_t neverc_maphash_bytes(uint64_t seed, const void *data, size_t len) {
-    const uint8_t *p = (const uint8_t *)data;
-    uint64_t state = seed;
-    while (len > NEVERC_MAPHASH_BUF_SIZE) {
-        state = wyhash(p, NEVERC_MAPHASH_BUF_SIZE, state);
-        p += NEVERC_MAPHASH_BUF_SIZE;
-        len -= NEVERC_MAPHASH_BUF_SIZE;
-    }
-    if (len == 0) return state;
-    return wyhash(p, len, state);
+    if (len == 0) return seed;
+    return wyhash(data, len, seed);
 }
 
 uint64_t neverc_maphash_string(uint64_t seed, const char *s) {
