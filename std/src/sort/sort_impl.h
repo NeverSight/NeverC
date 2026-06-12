@@ -750,7 +750,20 @@ static void NAME##_loop_(TYPE *a, size_t n, int limit) {                     \
     while (1) {                                                              \
         if (n <= NCI_TYPED_ISORT_THRESHOLD) { NAME##_isort_(a,n); return; }  \
         if (limit==0) { NAME##_heap_(a,n); return; }                         \
-        if (!wb) { limit--; }                                                \
+        if (!wb) {                                                           \
+            if (n >= 8) {                                                    \
+                size_t md_=1; while(md_<n)md_<<=1;                           \
+                uint64_t rr_=(uint64_t)n; size_t mm_=n/2;                    \
+                for(size_t kk_=0;kk_<3;kk_++){                              \
+                    size_t ix_=mm_-1+kk_;                                    \
+                    rr_=rr_*UINT64_C(0xd1342543de82ef95)+1;                  \
+                    size_t oo_=(size_t)(rr_&(uint64_t)(md_-1));              \
+                    if(oo_>=n)oo_-=n;                                        \
+                    TYPE tt_=a[ix_];a[ix_]=a[oo_];a[oo_]=tt_;               \
+                }                                                            \
+            }                                                                \
+            limit--;                                                         \
+        }                                                                    \
         int hint;                                                            \
         size_t pi = NAME##_pivot_(a, n, &hint);                              \
         if (hint==1) {                                                       \
@@ -758,8 +771,14 @@ static void NAME##_loop_(TYPE *a, size_t n, int limit) {                     \
             pi=n-1-pi; hint=0;                                              \
         }                                                                    \
         if (wp && hint==0) {                                                 \
-            int ok=1; for(size_t i=1;i<n&&ok;i++) ok=!LESS(a[i],a[i-1]);     \
-            if (ok) return;                                                  \
+            int mv_=0, ok_=1;                                                \
+            for(size_t i=1;i<n&&ok_;i++){                                    \
+                TYPE t=a[i]; size_t j=i;                                     \
+                while(j>0&&LESS(t,a[j-1])){a[j]=a[j-1];j--;                 \
+                    if(++mv_>NCI_PDQ_PARTIAL_LIMIT){a[j]=t;ok_=0;break;}}   \
+                if(ok_) a[j]=t;                                              \
+            }                                                                \
+            if (ok_) return;                                                 \
         }                                                                    \
         int ap; size_t p = NAME##_part_(a, n, pi, &ap);                      \
         wp = ap;                                                             \
