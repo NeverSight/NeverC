@@ -1,22 +1,21 @@
 #include "neverc/std/bytes.h"
 #include <stdlib.h>
+#include <string.h>
 
 /* --- Comparison --- */
 
 int neverc_bytes_equal(const uint8_t *a, size_t alen,
                        const uint8_t *b, size_t blen) {
     if (alen != blen) return 0;
-    for (size_t i = 0; i < alen; i++)
-        if (a[i] != b[i]) return 0;
-    return 1;
+    return alen == 0 || memcmp(a, b, alen) == 0;
 }
 
 int neverc_bytes_compare(const uint8_t *a, size_t alen,
                          const uint8_t *b, size_t blen) {
     size_t n = alen < blen ? alen : blen;
-    for (size_t i = 0; i < n; i++) {
-        if (a[i] < b[i]) return -1;
-        if (a[i] > b[i]) return 1;
+    if (n > 0) {
+        int r = memcmp(a, b, n);
+        if (r != 0) return r < 0 ? -1 : 1;
     }
     if (alen < blen) return -1;
     if (alen > blen) return 1;
@@ -38,9 +37,8 @@ int neverc_bytes_equal_fold(const uint8_t *s, size_t slen,
 /* --- Search --- */
 
 size_t neverc_bytes_index_byte(const uint8_t *b, size_t blen, uint8_t c) {
-    for (size_t i = 0; i < blen; i++)
-        if (b[i] == c) return i;
-    return (size_t)-1;
+    const uint8_t *p = (const uint8_t *)memchr(b, c, blen);
+    return p ? (size_t)(p - b) : (size_t)-1;
 }
 
 size_t neverc_bytes_last_index_byte(const uint8_t *s, size_t slen, uint8_t c) {
@@ -49,17 +47,37 @@ size_t neverc_bytes_last_index_byte(const uint8_t *s, size_t slen, uint8_t c) {
     return (size_t)-1;
 }
 
+#define NCI_RK_PRIME 16777619U
+
 size_t neverc_bytes_index(const uint8_t *s, size_t slen,
                           const uint8_t *sep, size_t seplen) {
     if (seplen == 0) return 0;
     if (seplen > slen) return (size_t)-1;
     if (seplen == 1) return neverc_bytes_index_byte(s, slen, sep[0]);
-    for (size_t i = 0; i <= slen - seplen; i++) {
-        int match = 1;
-        for (size_t j = 0; j < seplen; j++) {
-            if (s[i + j] != sep[j]) { match = 0; break; }
+    if (seplen == slen) return memcmp(s, sep, slen) == 0 ? 0 : (size_t)-1;
+
+    if (seplen <= 8 || slen <= 64) {
+        uint8_t c0 = sep[0];
+        for (size_t i = 0; i <= slen - seplen; i++)
+            if (s[i] == c0 && memcmp(s + i + 1, sep + 1, seplen - 1) == 0)
+                return i;
+        return (size_t)-1;
+    }
+
+    uint32_t h_sep = 0, h_win = 0, pw = 1;
+    for (size_t i = 0; i < seplen; i++) {
+        h_sep = h_sep * NCI_RK_PRIME + (uint32_t)sep[i];
+        h_win = h_win * NCI_RK_PRIME + (uint32_t)s[i];
+        pw *= NCI_RK_PRIME;
+    }
+    if (h_win == h_sep && memcmp(s, sep, seplen) == 0) return 0;
+    for (size_t i = seplen; i < slen; i++) {
+        h_win = h_win * NCI_RK_PRIME + (uint32_t)s[i]
+              - pw * (uint32_t)s[i - seplen];
+        if (h_win == h_sep) {
+            size_t pos = i - seplen + 1;
+            if (memcmp(s + pos, sep, seplen) == 0) return pos;
         }
-        if (match) return i;
     }
     return (size_t)-1;
 }
@@ -68,13 +86,13 @@ size_t neverc_bytes_last_index(const uint8_t *s, size_t slen,
                                const uint8_t *sep, size_t seplen) {
     if (seplen == 0) return slen;
     if (seplen > slen) return (size_t)-1;
-    for (size_t i = slen - seplen + 1; i > 0; i--) {
-        int match = 1;
-        for (size_t j = 0; j < seplen; j++) {
-            if (s[i - 1 + j] != sep[j]) { match = 0; break; }
-        }
-        if (match) return i - 1;
-    }
+    if (seplen == 1) return neverc_bytes_last_index_byte(s, slen, sep[0]);
+    if (seplen == slen) return memcmp(s, sep, slen) == 0 ? 0 : (size_t)-1;
+
+    uint8_t clast = sep[seplen - 1];
+    for (size_t i = slen; i >= seplen; i--)
+        if (s[i - 1] == clast && memcmp(s + i - seplen, sep, seplen) == 0)
+            return i - seplen;
     return (size_t)-1;
 }
 
@@ -183,9 +201,13 @@ uint8_t *neverc_bytes_repeat(const uint8_t *b, size_t blen,
     size_t total = blen * (size_t)count;
     uint8_t *r = (uint8_t *)malloc(total);
     if (!r) { *outlen = 0; return NULL; }
-    for (int i = 0; i < count; i++)
-        for (size_t j = 0; j < blen; j++)
-            r[i * blen + j] = b[j];
+    memcpy(r, b, blen);
+    for (size_t copied = blen; copied < total; ) {
+        size_t chunk = total - copied;
+        if (chunk > copied) chunk = copied;
+        memcpy(r + copied, r, chunk);
+        copied += chunk;
+    }
     *outlen = total;
     return r;
 }
@@ -196,18 +218,13 @@ uint8_t *neverc_bytes_replace(const uint8_t *s, size_t slen,
                               int n, size_t *outlen) {
     if (n == 0) {
         uint8_t *r = (uint8_t *)malloc(slen);
-        for (size_t i = 0; i < slen; i++) r[i] = s[i];
+        if (slen > 0) memcpy(r, s, slen);
         *outlen = slen;
         return r;
     }
     if (n < 0) n = (int)neverc_bytes_count(s, slen, old, oldlen);
 
-    size_t result_len = slen + (size_t)n * (newlen - oldlen + (oldlen == 0 ? 0 : 0));
-    if (newlen > oldlen)
-        result_len = slen + (size_t)n * (newlen - oldlen);
-    else
-        result_len = slen - (size_t)n * (oldlen - newlen);
-
+    size_t result_len = slen - (size_t)n * oldlen + (size_t)n * newlen;
     uint8_t *r = (uint8_t *)malloc(result_len + 1);
     if (!r) { *outlen = 0; return NULL; }
 
@@ -216,13 +233,13 @@ uint8_t *neverc_bytes_replace(const uint8_t *s, size_t slen,
     while (ri < slen && replaced < n) {
         size_t idx = neverc_bytes_index(s + ri, slen - ri, old, oldlen);
         if (idx == (size_t)-1) break;
-        for (size_t i = 0; i < idx; i++) r[wi++] = s[ri + i];
+        if (idx > 0) { memcpy(r + wi, s + ri, idx); wi += idx; }
         ri += idx;
-        for (size_t i = 0; i < newlen; i++) r[wi++] = new_[i];
+        if (newlen > 0) { memcpy(r + wi, new_, newlen); wi += newlen; }
         ri += oldlen;
         replaced++;
     }
-    while (ri < slen) r[wi++] = s[ri++];
+    if (ri < slen) { memcpy(r + wi, s + ri, slen - ri); wi += slen - ri; }
     *outlen = wi;
     return r;
 }
@@ -249,10 +266,12 @@ uint8_t *neverc_bytes_join(const uint8_t **slices, const size_t *lens,
     if (!r) { *outlen = 0; return NULL; }
     size_t wi = 0;
     for (size_t i = 0; i < count; i++) {
-        if (i > 0) {
-            for (size_t j = 0; j < seplen; j++) r[wi++] = sep[j];
+        if (i > 0 && seplen > 0) {
+            memcpy(r + wi, sep, seplen); wi += seplen;
         }
-        for (size_t j = 0; j < lens[i]; j++) r[wi++] = slices[i][j];
+        if (lens[i] > 0) {
+            memcpy(r + wi, slices[i], lens[i]); wi += lens[i];
+        }
     }
     *outlen = wi;
     return r;
@@ -277,7 +296,7 @@ uint8_t *neverc_bytes_trim_left(const uint8_t *s, size_t slen,
     while (start < slen && in_cutset(s[start], cutset)) start++;
     *outlen = slen - start;
     uint8_t *r = (uint8_t *)malloc(*outlen + 1);
-    for (size_t i = 0; i < *outlen; i++) r[i] = s[start + i];
+    if (*outlen > 0) memcpy(r, s + start, *outlen);
     return r;
 }
 
@@ -287,7 +306,7 @@ uint8_t *neverc_bytes_trim_right(const uint8_t *s, size_t slen,
     while (end > 0 && in_cutset(s[end - 1], cutset)) end--;
     *outlen = end;
     uint8_t *r = (uint8_t *)malloc(*outlen + 1);
-    for (size_t i = 0; i < *outlen; i++) r[i] = s[i];
+    if (*outlen > 0) memcpy(r, s, *outlen);
     return r;
 }
 
@@ -298,7 +317,7 @@ uint8_t *neverc_bytes_trim(const uint8_t *s, size_t slen,
     while (end > start && in_cutset(s[end - 1], cutset)) end--;
     *outlen = end - start;
     uint8_t *r = (uint8_t *)malloc(*outlen + 1);
-    for (size_t i = 0; i < *outlen; i++) r[i] = s[start + i];
+    if (*outlen > 0) memcpy(r, s + start, *outlen);
     return r;
 }
 
@@ -308,7 +327,7 @@ uint8_t *neverc_bytes_trim_space(const uint8_t *s, size_t slen, size_t *outlen) 
     while (end > start && is_space(s[end - 1])) end--;
     *outlen = end - start;
     uint8_t *r = (uint8_t *)malloc(*outlen + 1);
-    for (size_t i = 0; i < *outlen; i++) r[i] = s[start + i];
+    if (*outlen > 0) memcpy(r, s + start, *outlen);
     return r;
 }
 
@@ -318,12 +337,12 @@ uint8_t *neverc_bytes_trim_prefix(const uint8_t *s, size_t slen,
     if (neverc_bytes_has_prefix(s, slen, prefix, plen)) {
         *outlen = slen - plen;
         uint8_t *r = (uint8_t *)malloc(*outlen + 1);
-        for (size_t i = 0; i < *outlen; i++) r[i] = s[plen + i];
+        if (*outlen > 0) memcpy(r, s + plen, *outlen);
         return r;
     }
     *outlen = slen;
     uint8_t *r = (uint8_t *)malloc(slen + 1);
-    for (size_t i = 0; i < slen; i++) r[i] = s[i];
+    if (slen > 0) memcpy(r, s, slen);
     return r;
 }
 
@@ -333,12 +352,12 @@ uint8_t *neverc_bytes_trim_suffix(const uint8_t *s, size_t slen,
     if (neverc_bytes_has_suffix(s, slen, suffix, sfxlen)) {
         *outlen = slen - sfxlen;
         uint8_t *r = (uint8_t *)malloc(*outlen + 1);
-        for (size_t i = 0; i < *outlen; i++) r[i] = s[i];
+        if (*outlen > 0) memcpy(r, s, *outlen);
         return r;
     }
     *outlen = slen;
     uint8_t *r = (uint8_t *)malloc(slen + 1);
-    for (size_t i = 0; i < slen; i++) r[i] = s[i];
+    if (slen > 0) memcpy(r, s, slen);
     return r;
 }
 
@@ -504,7 +523,7 @@ uint8_t *neverc_bytes_trim_func(const uint8_t *s, size_t slen,
     *outlen = end - start;
     if (*outlen == 0) return NULL;
     uint8_t *r = (uint8_t *)malloc(*outlen);
-    for (size_t i = 0; i < *outlen; i++) r[i] = s[start + i];
+    memcpy(r, s + start, *outlen);
     return r;
 }
 
@@ -515,7 +534,7 @@ uint8_t *neverc_bytes_trim_left_func(const uint8_t *s, size_t slen,
     *outlen = slen - start;
     if (*outlen == 0) return NULL;
     uint8_t *r = (uint8_t *)malloc(*outlen);
-    for (size_t i = 0; i < *outlen; i++) r[i] = s[start + i];
+    memcpy(r, s + start, *outlen);
     return r;
 }
 
@@ -526,7 +545,7 @@ uint8_t *neverc_bytes_trim_right_func(const uint8_t *s, size_t slen,
     *outlen = end;
     if (*outlen == 0) return NULL;
     uint8_t *r = (uint8_t *)malloc(*outlen);
-    for (size_t i = 0; i < *outlen; i++) r[i] = s[i];
+    memcpy(r, s, *outlen);
     return r;
 }
 
@@ -590,16 +609,9 @@ neverc_bytes_slice_t *neverc_bytes_split_after_n(const uint8_t *s, size_t slen,
             (*count)++;
             break;
         }
-        size_t idx = (size_t)-1;
-        if (seplen > 0 && remaining >= seplen) {
-            for (size_t i = 0; i <= remaining - seplen; i++) {
-                int match = 1;
-                for (size_t j = 0; j < seplen; j++) {
-                    if (p[i+j] != sep[j]) { match = 0; break; }
-                }
-                if (match) { idx = i; break; }
-            }
-        }
+        size_t idx = (seplen > 0 && remaining >= seplen)
+            ? neverc_bytes_index(p, remaining, sep, seplen)
+            : (size_t)-1;
         if (idx == (size_t)-1) {
             if (*count >= cap) { cap *= 2; result = (neverc_bytes_slice_t *)realloc(result, cap * sizeof(*result)); }
             result[*count].data = p;
@@ -624,7 +636,7 @@ uint8_t *neverc_bytes_clone(const uint8_t *b, size_t blen) {
     if (blen == 0) return NULL;
     uint8_t *r = (uint8_t *)malloc(blen);
     if (!r) return NULL;
-    for (size_t i = 0; i < blen; i++) r[i] = b[i];
+    memcpy(r, b, blen);
     return r;
 }
 
@@ -718,11 +730,11 @@ uint8_t *neverc_bytes_to_valid_utf8(const uint8_t *s, size_t slen,
         size_t n = utf8_decode(s + i, slen - i, &r);
         if (n == 0) {
             while (out + rlen >= cap) { cap *= 2; result = (uint8_t *)realloc(result, cap); }
-            for (size_t j = 0; j < rlen; j++) result[out++] = replacement[j];
+            if (rlen > 0) { memcpy(result + out, replacement, rlen); out += rlen; }
             i++;
         } else {
             while (out + n >= cap) { cap *= 2; result = (uint8_t *)realloc(result, cap); }
-            for (size_t j = 0; j < n; j++) result[out++] = s[i + j];
+            memcpy(result + out, s + i, n); out += n;
             i += n;
         }
     }

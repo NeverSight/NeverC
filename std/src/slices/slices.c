@@ -45,13 +45,14 @@ int neverc_slices_index(const void *slice, size_t len, const void *elem,
 void neverc_slices_reverse(void *slice, size_t len, size_t elem_size) {
     if (len <= 1) return;
     char *p = (char *)slice;
-    char *tmp = (char *)malloc(elem_size);
+    char stack_buf[256];
+    char *tmp = elem_size <= sizeof(stack_buf) ? stack_buf : (char *)malloc(elem_size);
     for (size_t i = 0, j = len - 1; i < j; i++, j--) {
         memcpy(tmp, p + i * elem_size, elem_size);
         memcpy(p + i * elem_size, p + j * elem_size, elem_size);
         memcpy(p + j * elem_size, tmp, elem_size);
     }
-    free(tmp);
+    if (tmp != stack_buf) free(tmp);
 }
 
 void neverc_slices_sort(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {

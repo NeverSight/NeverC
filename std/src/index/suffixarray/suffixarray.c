@@ -1,136 +1,143 @@
 #include "neverc/std/index/suffixarray.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 /*
- * Simple O(n log^2 n) suffix array construction using prefix doubling.
- * Not as fast as SA-IS but much simpler and more robust.
+ * SA-IS: O(n) suffix array construction.
+ * Based on Nong, Zhang & Chan (2009) "Two Efficient Algorithms for
+ * Linear Time Suffix Array Construction".
  */
 
-typedef struct {
-    int32_t idx;
-    int32_t rank[2];
-} suffix_pair_t;
+#define SAIS_TP(i) ((st[(i)>>3]>>((i)&7))&1)
+#define SAIS_SET(i) (st[(i)>>3] |= (uint8_t)(1<<((i)&7)))
+#define SAIS_LMS(i) ((i)>0 && SAIS_TP(i) && !SAIS_TP((i)-1))
 
-static int pair_less(const suffix_pair_t *a, const suffix_pair_t *b) {
-    if (a->rank[0] != b->rank[0]) return a->rank[0] < b->rank[0];
-    return a->rank[1] < b->rank[1];
-}
-
-static void pair_swap(suffix_pair_t *a, suffix_pair_t *b) {
-    suffix_pair_t t = *a; *a = *b; *b = t;
-}
-
-static void insertion_sort_pairs(suffix_pair_t *arr, size_t n) {
-    for (size_t i = 1; i < n; i++) {
-        suffix_pair_t key = arr[i];
-        size_t j = i;
-        while (j > 0 && pair_less(&key, &arr[j - 1])) {
-            arr[j] = arr[j - 1];
-            j--;
-        }
-        arr[j] = key;
+static void sais_core(int32_t *T, int32_t *SA, int32_t n, int32_t K) {
+    if (n <= 1) { if (n == 1) SA[0] = 0; return; }
+    if (n == 2) {
+        SA[0] = (T[0] < T[1]) ? 0 : 1;
+        SA[1] = 1 - SA[0];
+        return;
     }
+
+    uint8_t *st = (uint8_t *)calloc(((size_t)n + 7u) >> 3, 1);
+    SAIS_SET(n - 1);
+    for (int32_t i = n - 2; i >= 0; i--)
+        if (T[i] < T[i+1] || (T[i] == T[i+1] && SAIS_TP(i+1)))
+            SAIS_SET(i);
+
+    int32_t *bkt = (int32_t *)calloc((size_t)K, sizeof(int32_t));
+    for (int32_t i = 0; i < n; i++) bkt[T[i]]++;
+    int32_t *cur = (int32_t *)malloc((size_t)K * sizeof(int32_t));
+
+#define BUCKET_ENDS   { int32_t s=0; for(int32_t c=0;c<K;c++){s+=bkt[c];cur[c]=s;} }
+#define BUCKET_STARTS { int32_t s=0; for(int32_t c=0;c<K;c++){cur[c]=s;s+=bkt[c];} }
+
+    /* --- Step 1: sort LMS substrings via induced sort --- */
+    for (int32_t i = 0; i < n; i++) SA[i] = -1;
+    BUCKET_ENDS;
+    for (int32_t i = n - 1; i >= 1; i--)
+        if (SAIS_LMS(i)) SA[--cur[T[i]]] = i;
+
+    BUCKET_STARTS;
+    for (int32_t i = 0; i < n; i++) {
+        if (SA[i] <= 0) continue;
+        int32_t j = SA[i] - 1;
+        if (!SAIS_TP(j)) SA[cur[T[j]]++] = j;
+    }
+    BUCKET_ENDS;
+    for (int32_t i = n - 1; i >= 0; i--) {
+        if (SA[i] <= 0) continue;
+        int32_t j = SA[i] - 1;
+        if (SAIS_TP(j)) SA[--cur[T[j]]] = j;
+    }
+
+    /* --- Step 2: name sorted LMS substrings --- */
+    int32_t m = 0;
+    for (int32_t i = 0; i < n; i++)
+        if (SAIS_LMS(SA[i])) SA[m++] = SA[i];
+    for (int32_t i = m; i < n; i++) SA[i] = -1;
+
+    int32_t name = 0, prev = -1;
+    for (int32_t i = 0; i < m; i++) {
+        int32_t pos = SA[i];
+        int diff = 1;
+        if (prev >= 0) {
+            diff = 0;
+            for (int32_t d = 0; ; d++) {
+                if (pos + d >= n || prev + d >= n ||
+                    T[pos+d] != T[prev+d] || SAIS_TP(pos+d) != SAIS_TP(prev+d)) {
+                    diff = 1; break;
+                }
+                if (d > 0 && (SAIS_LMS(pos+d) || SAIS_LMS(prev+d)))
+                    break;
+            }
+        }
+        if (diff) name++;
+        prev = pos;
+        SA[m + (pos >> 1)] = name - 1;
+    }
+    { int32_t j = n - 1;
+      for (int32_t i = n - 1; i >= m; i--)
+          if (SA[i] >= 0) SA[j--] = SA[i]; }
+
+    /* --- Step 3: recurse or directly compute --- */
+    int32_t *s1 = SA + n - m;
+    if (name < m)
+        sais_core(s1, SA, m, name);
+    else
+        for (int32_t i = 0; i < m; i++) SA[s1[i]] = i;
+
+    /* --- Step 4: final induced sort --- */
+    { int32_t k = 0;
+      for (int32_t i = 1; i < n; i++)
+          if (SAIS_LMS(i)) s1[k++] = i; }
+    for (int32_t i = 0; i < m; i++) SA[i] = s1[SA[i]];
+    for (int32_t i = m; i < n; i++) SA[i] = -1;
+
+    BUCKET_ENDS;
+    for (int32_t i = m - 1; i >= 0; i--) {
+        int32_t p = SA[i]; SA[i] = -1;
+        SA[--cur[T[p]]] = p;
+    }
+    BUCKET_STARTS;
+    for (int32_t i = 0; i < n; i++) {
+        if (SA[i] <= 0) continue;
+        int32_t j = SA[i] - 1;
+        if (!SAIS_TP(j)) SA[cur[T[j]]++] = j;
+    }
+    BUCKET_ENDS;
+    for (int32_t i = n - 1; i >= 0; i--) {
+        if (SA[i] <= 0) continue;
+        int32_t j = SA[i] - 1;
+        if (SAIS_TP(j)) SA[--cur[T[j]]] = j;
+    }
+
+    free(st); free(bkt); free(cur);
+#undef BUCKET_ENDS
+#undef BUCKET_STARTS
 }
 
-static void heapsort_pairs(suffix_pair_t *arr, size_t n) {
-    if (n < 2) return;
-    for (size_t i = n / 2; i > 0; i--) {
-        size_t p = i - 1;
-        for (;;) {
-            size_t c = 2 * p + 1;
-            if (c >= n) break;
-            if (c + 1 < n && pair_less(&arr[c], &arr[c + 1])) c++;
-            if (!pair_less(&arr[p], &arr[c])) break;
-            pair_swap(&arr[p], &arr[c]);
-            p = c;
-        }
-    }
-    for (size_t i = n - 1; i > 0; i--) {
-        pair_swap(&arr[0], &arr[i]);
-        size_t p = 0;
-        for (;;) {
-            size_t c = 2 * p + 1;
-            if (c >= i) break;
-            if (c + 1 < i && pair_less(&arr[c], &arr[c + 1])) c++;
-            if (!pair_less(&arr[p], &arr[c])) break;
-            pair_swap(&arr[p], &arr[c]);
-            p = c;
-        }
-    }
-}
-
-static void sort_pairs(suffix_pair_t *arr, size_t n, int depth) {
-    while (n > 16) {
-        if (depth == 0) { heapsort_pairs(arr, n); return; }
-        depth--;
-        size_t mid = n / 2;
-        if (pair_less(&arr[mid], &arr[0])) pair_swap(&arr[0], &arr[mid]);
-        if (pair_less(&arr[n-1], &arr[0])) pair_swap(&arr[0], &arr[n-1]);
-        if (pair_less(&arr[mid], &arr[0])) pair_swap(&arr[0], &arr[mid]);
-        suffix_pair_t pivot = arr[mid];
-        size_t i = 0, j = n;
-        for (;;) {
-            while (++i < n && pair_less(&arr[i], &pivot));
-            while (--j > 0 && pair_less(&pivot, &arr[j]));
-            if (i >= j) break;
-            pair_swap(&arr[i], &arr[j]);
-        }
-        pair_swap(&arr[0], &arr[j]);
-        sort_pairs(arr, j, depth);
-        arr += j + 1;
-        n -= j + 1;
-    }
-    insertion_sort_pairs(arr, n);
-}
+#undef SAIS_TP
+#undef SAIS_SET
+#undef SAIS_LMS
 
 static void build_suffix_array(const unsigned char *data, size_t n, int32_t *sa) {
     if (n == 0) return;
     if (n == 1) { sa[0] = 0; return; }
 
-    suffix_pair_t *pairs = (suffix_pair_t *)malloc(n * sizeof(suffix_pair_t));
-    int32_t *rank = (int32_t *)malloc(n * sizeof(int32_t));
-    int32_t *tmp = (int32_t *)malloc(n * sizeof(int32_t));
+    int32_t n1 = (int32_t)(n + 1);
+    int32_t *T  = (int32_t *)malloc((size_t)n1 * sizeof(int32_t));
+    int32_t *SA = (int32_t *)malloc((size_t)n1 * sizeof(int32_t));
+    for (size_t i = 0; i < n; i++) T[i] = (int32_t)data[i] + 1;
+    T[n] = 0;
 
-    for (size_t i = 0; i < n; i++) {
-        rank[i] = data[i];
-        pairs[i].idx = (int32_t)i;
-    }
+    sais_core(T, SA, n1, 257);
 
-    for (int32_t gap = 1; ; gap *= 2) {
-        for (size_t i = 0; i < n; i++) {
-            pairs[i].rank[0] = rank[i];
-            size_t j = (size_t)((int32_t)i + gap);
-            pairs[i].rank[1] = (j < n) ? rank[j] : -1;
-            pairs[i].idx = (int32_t)i;
-        }
-
-        {
-            int depth = 0;
-            for (size_t nn = n; nn > 1; nn >>= 1) depth++;
-            depth *= 2;
-            sort_pairs(pairs, n, depth);
-        }
-
-        tmp[pairs[0].idx] = 0;
-        for (size_t i = 1; i < n; i++) {
-            tmp[pairs[i].idx] = tmp[pairs[i - 1].idx];
-            if (pairs[i].rank[0] != pairs[i - 1].rank[0] ||
-                pairs[i].rank[1] != pairs[i - 1].rank[1])
-                tmp[pairs[i].idx]++;
-        }
-        memcpy(rank, tmp, n * sizeof(int32_t));
-
-        if (rank[pairs[n - 1].idx] == (int32_t)(n - 1))
-            break;
-    }
-
-    for (size_t i = 0; i < n; i++)
-        sa[i] = pairs[i].idx;
-
-    free(pairs);
-    free(rank);
-    free(tmp);
+    for (int32_t i = 1; i < n1; i++) sa[i - 1] = SA[i];
+    free(T);
+    free(SA);
 }
 
 int neverc_suffixarray_new(neverc_suffixarray_t *idx, const unsigned char *data, size_t len) {
