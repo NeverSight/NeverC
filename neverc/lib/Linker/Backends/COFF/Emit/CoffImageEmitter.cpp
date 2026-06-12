@@ -1532,6 +1532,16 @@ void OutputWriter::createSymbolAndStringTable() {
           if (symRef.isSectionDefinition() ||
               symRef.getStorageClass() == COFF::IMAGE_SYM_CLASS_LABEL)
             continue;
+          // The parallel codegen merger demotes externalized locals (with
+          // .__pcg<hash> suffix) to IMAGE_SYM_CLASS_STATIC.  Strip non-.text
+          // PCG symbols from the output to avoid bloat; keep .text symbols
+          // for debugger backtraces.
+          if (symRef.getStorageClass() == COFF::IMAGE_SYM_CLASS_STATIC &&
+              d->getName().contains(".__pcg")) {
+            if (auto *sc = dyn_cast<SectionChunk>(d->getChunk()))
+              if (sc->getSectionName() != ".text")
+                continue;
+          }
         }
 
         if (std::optional<coff_symbol16> sym = createSymbol(d))

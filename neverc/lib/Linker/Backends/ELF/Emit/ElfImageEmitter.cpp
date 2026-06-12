@@ -782,6 +782,14 @@ bool shouldKeepInSymtab(const Defined &sym) {
       (config->discard == DiscardPolicy::Locals ||
        (sym.section && (sym.section->flags & SHF_MERGE))))
     return false;
+
+  // The parallel codegen merger demotes externalized locals (with .__pcg<hash>
+  // suffix) back to STB_LOCAL.  Strip non-.text PCG symbols from the output
+  // symbol table to avoid bloat; keep .text symbols for debugger backtraces.
+  if (sym.getName().contains(".__pcg") && sym.section &&
+      sym.section->name != ".text")
+    return false;
+
   return true;
 }
 
