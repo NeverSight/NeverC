@@ -872,6 +872,97 @@ static void test_rand_read(void) {
     CHECK(!small_all_zero, "rand_read small non-trivial");
 }
 
+/* ---- rand_uintn Lemire tests ---- */
+static void test_rand_uintn_lemire(void) {
+    neverc_rand_seed(42);
+
+    for (int i = 0; i < 10000; i++) {
+        unsigned int v = neverc_rand_uintn(100);
+        if (v >= 100) { CHECK(0, "uintn range"); return; }
+    }
+    CHECK(1, "uintn all in range [0,100)");
+
+    CHECK(neverc_rand_uintn(1) == 0, "uintn(1) always 0");
+    CHECK(neverc_rand_uintn(0) == 0, "uintn(0) returns 0");
+
+    int buckets[10] = {0};
+    neverc_rand_seed(54321);
+    for (int i = 0; i < 100000; i++)
+        buckets[neverc_rand_uintn(10)]++;
+    int uniform = 1;
+    for (int i = 0; i < 10; i++)
+        if (buckets[i] < 8000 || buckets[i] > 12000) { uniform = 0; break; }
+    CHECK(uniform, "uintn(10) roughly uniform (Lemire)");
+
+    neverc_rand_seed(77);
+    for (int i = 0; i < 1000; i++) {
+        unsigned int v = neverc_rand_uintn(UINT32_MAX);
+        (void)v;
+    }
+    CHECK(1, "uintn(MAX) no crash");
+}
+
+/* ---- FNV-128 unrolled consistency tests ---- */
+static void test_fnv128_unrolled(void) {
+    neverc_fnv_128_t r1 = neverc_fnv_sum128("", 0);
+    CHECK(r1.hi != 0 || r1.lo != 0, "fnv128 empty non-zero");
+
+    neverc_fnv_128_t r2 = neverc_fnv_sum128a("", 0);
+    CHECK(r2.hi != 0 || r2.lo != 0, "fnv128a empty non-zero");
+
+    uint8_t buf[256];
+    for (int i = 0; i < 256; i++) buf[i] = (uint8_t)i;
+
+    neverc_fnv_128_t h1 = neverc_fnv_sum128(buf, 256);
+    neverc_fnv_128_t h2 = neverc_fnv_sum128(buf, 256);
+    CHECK(h1.hi == h2.hi && h1.lo == h2.lo, "fnv128 deterministic");
+
+    neverc_fnv_128_t h3 = neverc_fnv_sum128a(buf, 256);
+    neverc_fnv_128_t h4 = neverc_fnv_sum128a(buf, 256);
+    CHECK(h3.hi == h4.hi && h3.lo == h4.lo, "fnv128a deterministic");
+
+    CHECK(h1.hi != h3.hi || h1.lo != h3.lo, "fnv128 != fnv128a");
+
+    neverc_fnv_128_t short1 = neverc_fnv_sum128(buf, 7);
+    neverc_fnv_128_t short2 = neverc_fnv_sum128(buf, 7);
+    CHECK(short1.hi == short2.hi && short1.lo == short2.lo,
+          "fnv128 short deterministic");
+
+    neverc_fnv_128_t full = neverc_fnv_sum128(buf, 16);
+    neverc_fnv_128_t part = neverc_fnv_sum128(buf, 8);
+    CHECK(full.hi != part.hi || full.lo != part.lo,
+          "fnv128 different lengths differ");
+}
+
+/* ---- CRC32 update slicing-by-8 tests ---- */
+static void test_crc32_update_slicing(void) {
+    neverc_crc32_table_t tab;
+    neverc_crc32_make_table(NEVERC_CRC32_IEEE, tab);
+
+    uint8_t big[4096];
+    memset(big, 'A', sizeof(big));
+
+    uint32_t c_ieee = neverc_crc32_ieee(big, sizeof(big));
+    uint32_t c_update = neverc_crc32_update(0, tab, big, sizeof(big));
+    CHECK(c_ieee == c_update, "crc32 update 4KB == ieee (slicing-by-8)");
+
+    uint8_t small[32];
+    memset(small, 'B', sizeof(small));
+    uint32_t c_small_ieee = neverc_crc32_ieee(small, sizeof(small));
+    uint32_t c_small_upd = neverc_crc32_update(0, tab, small, sizeof(small));
+    CHECK(c_small_ieee == c_small_upd, "crc32 update 32B == ieee (byte path)");
+
+    uint32_t c1 = neverc_crc32_update(0, tab, big, 2048);
+    uint32_t c2 = neverc_crc32_update(c1, tab, big + 2048, 2048);
+    CHECK(c2 == c_update, "crc32 update incremental 2x2KB == full 4KB");
+
+    uint8_t varying[1024];
+    for (int i = 0; i < 1024; i++) varying[i] = (uint8_t)(i * 37);
+    uint32_t cv1 = neverc_crc32_ieee(varying, sizeof(varying));
+    uint32_t cv2 = neverc_crc32_update(0, tab, varying, sizeof(varying));
+    CHECK(cv1 == cv2, "crc32 update 1KB varying == ieee");
+}
+
 int main(void) {
     printf("=== std algorithm optimization tests ===\n\n");
 
@@ -949,6 +1040,15 @@ int main(void) {
 
     printf("--- rand_read (memcpy) ---\n");
     test_rand_read();
+
+    printf("--- rand_uintn (Lemire fix) ---\n");
+    test_rand_uintn_lemire();
+
+    printf("--- fnv128 (8-way unrolled) ---\n");
+    test_fnv128_unrolled();
+
+    printf("--- crc32 update (slicing-by-8) ---\n");
+    test_crc32_update_slicing();
 
     printf("\n=== Results: %d passed, %d failed ===\n",
            tests_passed, tests_failed);

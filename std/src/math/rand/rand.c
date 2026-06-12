@@ -480,7 +480,11 @@ int neverc_rand_intn_int(int n) {
 
 unsigned int neverc_rand_uintn(unsigned int n) {
     if (n == 0) return 0;
-    return (unsigned int)(neverc_rand_uint64() % (uint64_t)n);
+#if UINT_MAX <= 0xFFFFFFFFU
+    return (unsigned int)neverc_rand_uint32n((uint32_t)n);
+#else
+    return (unsigned int)neverc_rand_uint64n((uint64_t)n);
+#endif
 }
 
 /*

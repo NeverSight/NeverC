@@ -134,7 +134,18 @@ static inline void mul128(uint64_t *hi, uint64_t *lo) {
 neverc_fnv_128_t neverc_fnv_sum128(const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
     uint64_t hi = FNV_OFFSET_128_HI, lo = FNV_OFFSET_128_LO;
-    for (size_t i = 0; i < len; i++) {
+    size_t i = 0;
+    for (; i + 8 <= len; i += 8) {
+        mul128(&hi, &lo); lo ^= p[i  ];
+        mul128(&hi, &lo); lo ^= p[i+1];
+        mul128(&hi, &lo); lo ^= p[i+2];
+        mul128(&hi, &lo); lo ^= p[i+3];
+        mul128(&hi, &lo); lo ^= p[i+4];
+        mul128(&hi, &lo); lo ^= p[i+5];
+        mul128(&hi, &lo); lo ^= p[i+6];
+        mul128(&hi, &lo); lo ^= p[i+7];
+    }
+    for (; i < len; i++) {
         mul128(&hi, &lo);
         lo ^= p[i];
     }
@@ -144,7 +155,18 @@ neverc_fnv_128_t neverc_fnv_sum128(const void *data, size_t len) {
 neverc_fnv_128_t neverc_fnv_sum128a(const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
     uint64_t hi = FNV_OFFSET_128_HI, lo = FNV_OFFSET_128_LO;
-    for (size_t i = 0; i < len; i++) {
+    size_t i = 0;
+    for (; i + 8 <= len; i += 8) {
+        lo ^= p[i  ]; mul128(&hi, &lo);
+        lo ^= p[i+1]; mul128(&hi, &lo);
+        lo ^= p[i+2]; mul128(&hi, &lo);
+        lo ^= p[i+3]; mul128(&hi, &lo);
+        lo ^= p[i+4]; mul128(&hi, &lo);
+        lo ^= p[i+5]; mul128(&hi, &lo);
+        lo ^= p[i+6]; mul128(&hi, &lo);
+        lo ^= p[i+7]; mul128(&hi, &lo);
+    }
+    for (; i < len; i++) {
         lo ^= p[i];
         mul128(&hi, &lo);
     }

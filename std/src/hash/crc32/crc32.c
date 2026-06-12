@@ -66,13 +66,31 @@ static uint32_t crc32_slicing8(uint32_t crc, const uint32_t tab[8][256],
     return ~crc;
 }
 
+static void build_slicing8_from_table(const neverc_crc32_table_t base,
+                                       uint32_t tab[8][256]) {
+    for (int i = 0; i < 256; i++)
+        tab[0][i] = base[i];
+    for (int i = 0; i < 256; i++) {
+        uint32_t crc = tab[0][i];
+        for (int k = 1; k < 8; k++) {
+            crc = tab[0][crc & 0xFF] ^ (crc >> 8);
+            tab[k][i] = crc;
+        }
+    }
+}
+
 uint32_t neverc_crc32_update(uint32_t crc, const neverc_crc32_table_t table,
                              const void *data, size_t len) {
-    const uint8_t *p = (const uint8_t *)data;
-    crc = ~crc;
-    for (size_t i = 0; i < len; i++)
-        crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
-    return ~crc;
+    if (len < 64) {
+        const uint8_t *p = (const uint8_t *)data;
+        crc = ~crc;
+        for (size_t i = 0; i < len; i++)
+            crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
+        return ~crc;
+    }
+    uint32_t s8[8][256];
+    build_slicing8_from_table(table, s8);
+    return crc32_slicing8(crc, s8, data, len);
 }
 
 uint32_t neverc_crc32_checksum(const neverc_crc32_table_t table,
