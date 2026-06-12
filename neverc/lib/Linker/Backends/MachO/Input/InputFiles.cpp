@@ -772,6 +772,13 @@ macho::Symbol *createDefined(const NList &sym, StringRef name,
         sym.n_desc & N_NO_DEAD_STRIP, isWeakDefCanBeHidden);
   }
   bool includeInSymtab = !isPrivateLabel(name) && !isEhFrameSection(isec);
+  // N_PEXT on a local symbol means the object merger demoted it from
+  // external; for non-text symbols (string literals, constants externalized
+  // by parallel codegen) strip them from the output symbol table.  Keep
+  // text symbols so debugger backtraces show function names.
+  if ((sym.n_type & MachO::N_PEXT) && isec &&
+      isec->getName() != section_names::text)
+    includeInSymtab = false;
   return make<Defined>(
       name, isec->getFile(), isec, value, size, sym.n_desc & N_WEAK_DEF,
       /*isExternal=*/false, /*isPrivateExtern=*/false, includeInSymtab,

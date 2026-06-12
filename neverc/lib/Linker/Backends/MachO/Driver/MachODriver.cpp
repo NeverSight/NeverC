@@ -848,7 +848,9 @@ bool shouldEmitChainedFixups(const InputArgList &args) {
     return false;
   }
 
-  return isRequested;
+  // Apple's ld enables chained fixups by default on supported platforms.
+  // Match that behavior: enable unless the user passed --no-fixup-chains.
+  return true;
 }
 
 } // namespace

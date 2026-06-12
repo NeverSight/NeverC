@@ -592,6 +592,25 @@ void UnwindInfoSectionImpl::finalize() {
       entriesWithLsda.push_back(idx);
   }
 
+  // Compute each page's actual byte count.  Apple's ld (ld-prime) emits
+  // tightly-packed second-level pages rather than padding every page to
+  // SECOND_LEVEL_PAGE_BYTES.  The unwinder reads entry counts from the
+  // page header and level-1 index offsets to locate each page, so it
+  // never assumes a fixed page size.
+  for (auto &page : secondLevelPages) {
+    if (page.kind == UNWIND_SECOND_LEVEL_COMPRESSED) {
+      page.byteCount =
+          sizeof(unwind_info_compressed_second_level_page_header) +
+          page.entryCount * sizeof(uint32_t) +
+          page.localEncodings.size() * sizeof(uint32_t);
+    } else {
+      page.byteCount =
+          sizeof(unwind_info_regular_second_level_page_header) +
+          page.entryCount * 2 * sizeof(uint32_t);
+    }
+    page.byteCount = llvm::alignTo(page.byteCount, sizeof(uint32_t));
+  }
+
   // compute size of __TEXT,__unwind_info section
   level2PagesOffset = sizeof(unwind_info_section_header) +
                       commonEncodings.size() * sizeof(uint32_t) +
@@ -601,8 +620,10 @@ void UnwindInfoSectionImpl::finalize() {
                           sizeof(unwind_info_section_header_index_entry) +
                       entriesWithLsda.size() *
                           sizeof(unwind_info_section_header_lsda_index_entry);
-  unwindInfoSize =
-      level2PagesOffset + secondLevelPages.size() * SECOND_LEVEL_PAGE_BYTES;
+  uint64_t totalPageBytes = 0;
+  for (const auto &page : secondLevelPages)
+    totalPageBytes += page.byteCount;
+  unwindInfoSize = level2PagesOffset + totalPageBytes;
 }
 
 // All inputs are relocated and output addresses are known, so write!
@@ -646,7 +667,7 @@ void UnwindInfoSectionImpl::writeTo(uint8_t *buf) const {
         lsdaOffset + lsdaIndex.lookup(idx) *
                          sizeof(unwind_info_section_header_lsda_index_entry);
     iep++;
-    l2PagesOffset += SECOND_LEVEL_PAGE_BYTES;
+    l2PagesOffset += page.byteCount;
   }
   // Level-1 sentinel: function offset is the end-of-text boundary minus
   // the image base so the unwinder treats it as a one-past-the-end marker.
@@ -711,7 +732,7 @@ void UnwindInfoSectionImpl::writeTo(uint8_t *buf) const {
         *ep++ = cue.encoding;
       }
     }
-    pp += SECOND_LEVEL_PAGE_WORDS;
+    pp += page.byteCount / sizeof(uint32_t);
   }
 }
 
