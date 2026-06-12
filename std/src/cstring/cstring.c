@@ -579,7 +579,6 @@ static char **gen_split(const char *s, const char *sep,
     size_t seplen = strlen(sep);
 
     if (seplen == 0) {
-        /* Split into individual characters */
         int cnt = (int)slen;
         if (n > 0 && cnt > n) cnt = n;
         if (cnt == 0) { *out_count = 0; return NULL; }
@@ -601,15 +600,29 @@ static char **gen_split(const char *s, const char *sep,
     char **arr = (char **)malloc(cap * sizeof(char *));
     if (!arr) { *out_count = 0; return NULL; }
 
+    int use_bmh = (seplen > 8 && slen > 64);
+    size_t skip[256];
+    const unsigned char *up = (const unsigned char *)sep;
+    if (use_bmh) {
+        for (int c = 0; c < 256; c++) skip[c] = seplen;
+        for (size_t i = 0; i < seplen - 1; i++) skip[up[i]] = seplen - 1 - i;
+    }
+
     size_t cnt = 0;
     const char *p = s;
+    size_t remaining = slen;
     int limit = n - 1;
     while (cnt < (size_t)limit) {
-        int idx = neverc_cstring_index(p, sep);
+        int idx;
+        if (use_bmh)
+            idx = nci_cstring_index_with_skip(p, remaining, up, seplen, skip);
+        else
+            idx = neverc_cstring_index(p, sep);
         if (idx < 0) break;
         arr[cnt] = nc_strdup(p, (size_t)idx + (size_t)sep_save);
         cnt++;
         p += idx + (int)seplen;
+        remaining -= (size_t)idx + seplen;
     }
     arr[cnt] = nc_strdup(p, strlen(p));
     cnt++;

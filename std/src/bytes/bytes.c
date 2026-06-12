@@ -568,6 +568,13 @@ neverc_bytes_slice_t *neverc_bytes_split_n(const uint8_t *s, size_t slen,
     *count = 0;
     size_t pos = 0;
 
+    int use_bmh = (seplen > 8 && slen > 64);
+    size_t skip[256];
+    if (use_bmh) {
+        for (int c = 0; c < 256; c++) skip[c] = seplen;
+        for (size_t i = 0; i < seplen - 1; i++) skip[sep[i]] = seplen - 1 - i;
+    }
+
     while (pos <= slen) {
         if (n > 0 && (int)*count >= n - 1) {
             result[*count].data = s + pos;
@@ -590,7 +597,10 @@ neverc_bytes_slice_t *neverc_bytes_split_n(const uint8_t *s, size_t slen,
             }
             continue;
         }
-        idx = neverc_bytes_index(s + pos, slen - pos, sep, seplen);
+        if (use_bmh)
+            idx = nci_bytes_index_with_skip(s + pos, slen - pos, sep, seplen, skip);
+        else
+            idx = neverc_bytes_index(s + pos, slen - pos, sep, seplen);
         if (idx == (size_t)-1) {
             result[*count].data = s + pos;
             result[*count].len = slen - pos;
@@ -795,6 +805,13 @@ neverc_bytes_slice_t *neverc_bytes_split_after_n(const uint8_t *s, size_t slen,
     const uint8_t *p = s;
     size_t remaining = slen;
 
+    int use_bmh = (seplen > 8 && slen > 64);
+    size_t skip[256];
+    if (use_bmh) {
+        for (int c = 0; c < 256; c++) skip[c] = seplen;
+        for (size_t i = 0; i < seplen - 1; i++) skip[sep[i]] = seplen - 1 - i;
+    }
+
     while (remaining > 0) {
         if (n > 0 && (int)*count >= n - 1) {
             if (*count >= cap) { cap *= 2; result = (neverc_bytes_slice_t *)realloc(result, cap * sizeof(*result)); }
@@ -803,9 +820,13 @@ neverc_bytes_slice_t *neverc_bytes_split_after_n(const uint8_t *s, size_t slen,
             (*count)++;
             break;
         }
-        size_t idx = (seplen > 0 && remaining >= seplen)
-            ? neverc_bytes_index(p, remaining, sep, seplen)
-            : (size_t)-1;
+        size_t idx;
+        if (seplen == 0 || remaining < seplen)
+            idx = (size_t)-1;
+        else if (use_bmh)
+            idx = nci_bytes_index_with_skip(p, remaining, sep, seplen, skip);
+        else
+            idx = neverc_bytes_index(p, remaining, sep, seplen);
         if (idx == (size_t)-1) {
             if (*count >= cap) { cap *= 2; result = (neverc_bytes_slice_t *)realloc(result, cap * sizeof(*result)); }
             result[*count].data = p;

@@ -55,6 +55,9 @@ static uint64_t crc64_slicing8(uint64_t crc, const uint64_t tab[8][256],
     return ~crc;
 }
 
+static const uint64_t *cached_crc64_src;
+static uint64_t cached_crc64_s8[8][256];
+
 uint64_t neverc_crc64_update(uint64_t crc, const neverc_crc64_table_t table,
                               const uint8_t *data, size_t len) {
     if (len < 64) {
@@ -63,9 +66,11 @@ uint64_t neverc_crc64_update(uint64_t crc, const neverc_crc64_table_t table,
             crc = table[(uint8_t)(crc) ^ data[i]] ^ (crc >> 8);
         return ~crc;
     }
-    uint64_t s8[8][256];
-    build_slicing8_from_table(table, s8);
-    return crc64_slicing8(crc, s8, data, len);
+    if (table != cached_crc64_src) {
+        build_slicing8_from_table(table, cached_crc64_s8);
+        cached_crc64_src = table;
+    }
+    return crc64_slicing8(crc, cached_crc64_s8, data, len);
 }
 
 uint64_t neverc_crc64_checksum(const neverc_crc64_table_t table,

@@ -79,6 +79,13 @@ static void build_slicing8_from_table(const neverc_crc32_table_t base,
     }
 }
 
+/*
+ * Single-entry cache: avoids rebuilding the 8KB slicing-8 tables when the
+ * same polynomial table is passed across repeated calls (the common case).
+ */
+static const uint32_t *cached_crc32_src;
+static uint32_t cached_crc32_s8[8][256];
+
 uint32_t neverc_crc32_update(uint32_t crc, const neverc_crc32_table_t table,
                              const void *data, size_t len) {
     if (len < 64) {
@@ -88,9 +95,11 @@ uint32_t neverc_crc32_update(uint32_t crc, const neverc_crc32_table_t table,
             crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
         return ~crc;
     }
-    uint32_t s8[8][256];
-    build_slicing8_from_table(table, s8);
-    return crc32_slicing8(crc, s8, data, len);
+    if (table != cached_crc32_src) {
+        build_slicing8_from_table(table, cached_crc32_s8);
+        cached_crc32_src = table;
+    }
+    return crc32_slicing8(crc, cached_crc32_s8, data, len);
 }
 
 uint32_t neverc_crc32_checksum(const neverc_crc32_table_t table,
