@@ -25,22 +25,22 @@ uint32_t neverc_adler32_update(uint32_t adler, const uint8_t *data, size_t len) 
         len -= block;
 
         while (block >= 16) {
-            s2 += s1; s1 += data[ 0];
-            s2 += s1; s1 += data[ 1];
-            s2 += s1; s1 += data[ 2];
-            s2 += s1; s1 += data[ 3];
-            s2 += s1; s1 += data[ 4];
-            s2 += s1; s1 += data[ 5];
-            s2 += s1; s1 += data[ 6];
-            s2 += s1; s1 += data[ 7];
-            s2 += s1; s1 += data[ 8];
-            s2 += s1; s1 += data[ 9];
-            s2 += s1; s1 += data[10];
-            s2 += s1; s1 += data[11];
-            s2 += s1; s1 += data[12];
-            s2 += s1; s1 += data[13];
-            s2 += s1; s1 += data[14];
-            s2 += s1; s1 += data[15];
+            s1 += data[ 0]; s2 += s1;
+            s1 += data[ 1]; s2 += s1;
+            s1 += data[ 2]; s2 += s1;
+            s1 += data[ 3]; s2 += s1;
+            s1 += data[ 4]; s2 += s1;
+            s1 += data[ 5]; s2 += s1;
+            s1 += data[ 6]; s2 += s1;
+            s1 += data[ 7]; s2 += s1;
+            s1 += data[ 8]; s2 += s1;
+            s1 += data[ 9]; s2 += s1;
+            s1 += data[10]; s2 += s1;
+            s1 += data[11]; s2 += s1;
+            s1 += data[12]; s2 += s1;
+            s1 += data[13]; s2 += s1;
+            s1 += data[14]; s2 += s1;
+            s1 += data[15]; s2 += s1;
             data += 16;
             block -= 16;
         }
