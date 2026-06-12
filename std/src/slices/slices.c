@@ -93,11 +93,20 @@ size_t neverc_slices_compact(void *slice, size_t len, size_t elem_size, neverc_e
     if (len <= 1) return len;
     char *p = (char *)slice;
     size_t w = 1;
-    for (size_t r = 1; r < len; r++) {
-        if (!eq(p + (w - 1) * elem_size, p + r * elem_size)) {
-            if (w != r) memcpy(p + w * elem_size, p + r * elem_size, elem_size);
-            w++;
+    size_t r = 1;
+    while (r < len) {
+        if (eq(p + (w - 1) * elem_size, p + r * elem_size)) {
+            r++;
+            continue;
         }
+        size_t run_start = r;
+        r++;
+        while (r < len && !eq(p + (r - 1) * elem_size, p + r * elem_size))
+            r++;
+        size_t run_len = r - run_start;
+        if (w != run_start)
+            memmove(p + w * elem_size, p + run_start * elem_size, run_len * elem_size);
+        w += run_len;
     }
     return w;
 }

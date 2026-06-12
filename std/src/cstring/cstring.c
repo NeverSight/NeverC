@@ -164,10 +164,10 @@ int neverc_cstring_last_index_any(const char *s, const char *chars) {
     if (!chars[0]) return -1;
     uint32_t set[8];
     build_ascii_set(chars, set);
-    int last = -1;
-    for (int i = 0; s[i]; i++)
-        if (ASCII_SET_HAS(set, s[i])) last = i;
-    return last;
+    size_t len = strlen(s);
+    for (size_t i = len; i > 0; i--)
+        if (ASCII_SET_HAS(set, s[i - 1])) return (int)(i - 1);
+    return -1;
 }
 
 int neverc_cstring_contains(const char *s, const char *substr) {
@@ -185,18 +185,51 @@ int neverc_cstring_contains_char(const char *s, char c) {
 int neverc_cstring_count(const char *s, const char *substr) {
     size_t sublen = strlen(substr);
     if (sublen == 0) {
-        /* Go: Count("", "") == 1, Count("abc", "") == 4 */
-        int n = 0;
-        while (s[n]) n++;
-        return n + 1;
+        size_t len = strlen(s);
+        return (int)len + 1;
     }
+    size_t slen = strlen(s);
+    if (sublen > slen) return 0;
+    if (sublen == 1) {
+        int n = 0;
+        for (const char *p = s; *p; p++)
+            if (*p == substr[0]) n++;
+        return n;
+    }
+
+    const unsigned char *us = (const unsigned char *)s;
+    const unsigned char *up = (const unsigned char *)substr;
     int n = 0;
-    int pos = 0;
-    while (s[pos]) {
-        int idx = neverc_cstring_index(s + pos, substr);
-        if (idx < 0) break;
-        n++;
-        pos += idx + (int)sublen;
+
+    if (sublen <= 8 || slen <= 64) {
+        unsigned char c0 = up[0];
+        size_t pos = 0;
+        while (pos <= slen - sublen) {
+            if (us[pos] == c0 && memcmp(us + pos + 1, up + 1, sublen - 1) == 0) {
+                n++;
+                pos += sublen;
+            } else {
+                pos++;
+            }
+        }
+        return n;
+    }
+
+    /* BMH with skip table built once */
+    size_t skip[256];
+    for (int c = 0; c < 256; c++) skip[c] = sublen;
+    for (size_t i = 0; i < sublen - 1; i++) skip[up[i]] = sublen - 1 - i;
+
+    unsigned char last = up[sublen - 1];
+    size_t pos = 0;
+    while (pos <= slen - sublen) {
+        unsigned char c = us[pos + sublen - 1];
+        if (c == last && memcmp(us + pos, up, sublen - 1) == 0) {
+            n++;
+            pos += sublen;
+        } else {
+            pos += skip[c];
+        }
     }
     return n;
 }

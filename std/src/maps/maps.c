@@ -294,33 +294,38 @@ void neverc_maps_foreach(const neverc_map_t *m, neverc_maps_iter_func_t fn, void
 
 void neverc_maps_delete_func(neverc_map_t *m, neverc_maps_filter_func_t fn) {
     if (!m || !fn || m->len == 0) return;
-    size_t cap = m->len < 16 ? 16 : m->len;
-    const char **keys = (const char **)malloc(cap * sizeof(const char *));
-    if (!keys) return;
-    size_t count = 0;
-    for (size_t i = 0; i < m->cap; i++) {
-        if (m->entries[i].hash != HASH_EMPTY &&
-            fn(m->entries[i].key, m->entries[i].value)) {
-            if (count >= cap) {
-                cap *= 2;
-                keys = (const char **)realloc(keys, cap * sizeof(const char *));
-                if (!keys) return;
-            }
-            keys[count++] = m->entries[i].key;
+    map_entry_t *old = m->entries;
+    size_t old_cap = m->cap;
+    m->entries = (map_entry_t *)calloc(m->cap, sizeof(map_entry_t));
+    if (!m->entries) { m->entries = old; return; }
+    m->len = 0;
+    for (size_t i = 0; i < old_cap; i++) {
+        if (old[i].hash == HASH_EMPTY) continue;
+        if (fn(old[i].key, old[i].value)) {
+            free(old[i].key);
+        } else {
+            map_insert_entry(m->entries, m->cap, old[i].key, old[i].value, old[i].hash);
+            m->len++;
         }
     }
-    for (size_t i = 0; i < count; i++)
-        neverc_maps_delete(m, keys[i]);
-    free(keys);
+    free(old);
 }
 
 neverc_map_t *neverc_maps_clone(const neverc_map_t *m) {
     if (!m) return NULL;
-    neverc_map_t *c = neverc_maps_new();
+    neverc_map_t *c = (neverc_map_t *)calloc(1, sizeof(*c));
     if (!c) return NULL;
-    for (size_t i = 0; i < m->cap; i++)
-        if (m->entries[i].hash != HASH_EMPTY)
-            neverc_maps_set(c, m->entries[i].key, m->entries[i].value);
+    c->cap = m->cap;
+    c->len = 0;
+    c->entries = (map_entry_t *)calloc(c->cap, sizeof(map_entry_t));
+    if (!c->entries) { free(c); return NULL; }
+    for (size_t i = 0; i < m->cap; i++) {
+        if (m->entries[i].hash == HASH_EMPTY) continue;
+        char *dup = strdup(m->entries[i].key);
+        if (!dup) { neverc_maps_free(c); return NULL; }
+        map_insert_entry(c->entries, c->cap, dup, m->entries[i].value, m->entries[i].hash);
+        c->len++;
+    }
     return c;
 }
 

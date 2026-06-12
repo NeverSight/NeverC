@@ -47,9 +47,29 @@ size_t neverc_bytes_last_index_byte(const uint8_t *s, size_t slen, uint8_t c) {
     const void *p = memrchr(s, c, slen);
     return p ? (size_t)((const uint8_t *)p - s) : (size_t)-1;
 #else
-    for (size_t i = slen; i > 0; i--)
-        if (s[i - 1] == c) return i - 1;
+    size_t i = slen;
+    /* Word-at-a-time scan for the aligned tail */
+    typedef unsigned long word_t;
+    #define ONES ((word_t)-1 / 255)
+    #define HIGHS (ONES * 128)
+    word_t mask = ONES * c;
+    while (i >= sizeof(word_t)) {
+        i -= sizeof(word_t);
+        word_t w;
+        memcpy(&w, s + i, sizeof(word_t));
+        w ^= mask;
+        if ((w - ONES) & ~w & HIGHS) {
+            for (size_t j = i + sizeof(word_t); j > i; j--)
+                if (s[j - 1] == c) return j - 1;
+        }
+    }
+    while (i > 0) {
+        i--;
+        if (s[i] == c) return i;
+    }
     return (size_t)-1;
+    #undef ONES
+    #undef HIGHS
 #endif
 }
 
@@ -162,13 +182,44 @@ int neverc_bytes_contains_any(const uint8_t *b, size_t blen, const char *chars) 
 size_t neverc_bytes_count(const uint8_t *s, size_t slen,
                           const uint8_t *sep, size_t seplen) {
     if (seplen == 0) return slen + 1;
+    if (seplen > slen) return 0;
+    if (seplen == 1) {
+        size_t n = 0;
+        for (size_t i = 0; i < slen; i++)
+            if (s[i] == sep[0]) n++;
+        return n;
+    }
+
     size_t n = 0;
+    if (seplen <= 8 || slen <= 64) {
+        uint8_t c0 = sep[0];
+        size_t pos = 0;
+        while (pos <= slen - seplen) {
+            if (s[pos] == c0 && memcmp(s + pos + 1, sep + 1, seplen - 1) == 0) {
+                n++;
+                pos += seplen;
+            } else {
+                pos++;
+            }
+        }
+        return n;
+    }
+
+    /* BMH with skip table built once, reused across all matches */
+    size_t skip[256];
+    for (int c = 0; c < 256; c++) skip[c] = seplen;
+    for (size_t i = 0; i < seplen - 1; i++) skip[sep[i]] = seplen - 1 - i;
+
+    uint8_t last = sep[seplen - 1];
     size_t pos = 0;
     while (pos <= slen - seplen) {
-        size_t idx = neverc_bytes_index(s + pos, slen - pos, sep, seplen);
-        if (idx == (size_t)-1) break;
-        n++;
-        pos += idx + seplen;
+        uint8_t c = s[pos + seplen - 1];
+        if (c == last && memcmp(s + pos, sep, seplen - 1) == 0) {
+            n++;
+            pos += seplen;
+        } else {
+            pos += skip[c];
+        }
     }
     return n;
 }

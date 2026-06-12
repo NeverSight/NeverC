@@ -400,16 +400,23 @@ void neverc_vector_reverse(neverc_vector_t *v) {
 void neverc_vector_unique(neverc_vector_t *v, neverc_vector_cmp_fn cmp) {
     if (!v || v->size < 2 || !cmp)
         return;
-    size_t write = 1;
-    for (size_t read = 1; read < v->size; read++) {
-        if (cmp(vec_elem_ptr(v, read), vec_elem_ptr(v, write - 1)) != 0) {
-            if (write != read)
-                memcpy(vec_elem_ptr(v, write), vec_elem_ptr(v, read),
-                       v->elem_size);
-            write++;
+    size_t sz = v->elem_size;
+    size_t w = 1, r = 1;
+    while (r < v->size) {
+        if (cmp(vec_elem_ptr(v, r), vec_elem_ptr(v, w - 1)) == 0) {
+            r++;
+            continue;
         }
+        size_t run_start = r;
+        r++;
+        while (r < v->size && cmp(vec_elem_ptr(v, r), vec_elem_ptr(v, r - 1)) != 0)
+            r++;
+        size_t run_len = r - run_start;
+        if (w != run_start)
+            memmove(vec_elem_ptr(v, w), vec_elem_ptr(v, run_start), run_len * sz);
+        w += run_len;
     }
-    v->size = write;
+    v->size = w;
 }
 
 long neverc_vector_find(const neverc_vector_t *v, const void *value,
@@ -538,25 +545,42 @@ size_t neverc_vector_erase_if(neverc_vector_t *v,
                                bool (*pred)(const void *elem)) {
     if (!v || !pred || v->size == 0)
         return 0;
-    size_t write = 0;
-    for (size_t read = 0; read < v->size; read++) {
-        if (!pred(vec_elem_ptr(v, read))) {
-            if (write != read)
-                memcpy(vec_elem_ptr(v, write), vec_elem_ptr(v, read),
-                       v->elem_size);
-            write++;
+    size_t sz = v->elem_size;
+    size_t w = 0, r = 0;
+    while (r < v->size) {
+        if (pred(vec_elem_ptr(v, r))) {
+            r++;
+            continue;
         }
+        size_t run_start = r;
+        r++;
+        while (r < v->size && !pred(vec_elem_ptr(v, r)))
+            r++;
+        size_t run_len = r - run_start;
+        if (w != run_start)
+            memmove(vec_elem_ptr(v, w), vec_elem_ptr(v, run_start), run_len * sz);
+        w += run_len;
     }
-    size_t removed = v->size - write;
-    v->size = write;
+    size_t removed = v->size - w;
+    v->size = w;
     return removed;
 }
 
 void neverc_vector_fill(neverc_vector_t *v, const void *value) {
-    if (!v || !value)
+    if (!v || !value || v->size == 0)
         return;
-    for (size_t i = 0; i < v->size; i++)
-        memcpy(vec_elem_ptr(v, i), value, v->elem_size);
+    size_t sz = v->elem_size;
+    if (sz == 1) {
+        memset(v->data, *(const unsigned char *)value, v->size);
+        return;
+    }
+    memcpy(v->data, value, sz);
+    for (size_t copied = 1; copied < v->size; ) {
+        size_t chunk = v->size - copied;
+        if (chunk > copied) chunk = copied;
+        memcpy((char *)v->data + copied * sz, v->data, chunk * sz);
+        copied += chunk;
+    }
 }
 
 void neverc_vector_swap_elements(neverc_vector_t *v, size_t i, size_t j) {
@@ -845,28 +869,34 @@ neverc_vector_t *neverc_vector_merge(const neverc_vector_t *a,
         return neverc_vector_copy(a);
     if (a->elem_size != b->elem_size || !cmp)
         return NULL;
-    neverc_vector_t *result = neverc_vector_new_with_capacity(a->elem_size,
-                                                               a->size + b->size);
+    size_t total = a->size + b->size;
+    size_t sz = a->elem_size;
+    neverc_vector_t *result = neverc_vector_new_with_capacity(sz, total);
     if (!result)
         return NULL;
-    size_t i = 0, j = 0;
+    char *out = (char *)result->data;
+    size_t w = 0, i = 0, j = 0;
     while (i < a->size && j < b->size) {
         if (cmp(vec_elem_ptr(a, i), vec_elem_ptr(b, j)) <= 0) {
-            neverc_vector_push_back(result, vec_elem_ptr(a, i));
+            memcpy(out + w * sz, vec_elem_ptr(a, i), sz);
             i++;
         } else {
-            neverc_vector_push_back(result, vec_elem_ptr(b, j));
+            memcpy(out + w * sz, vec_elem_ptr(b, j), sz);
             j++;
         }
+        w++;
     }
-    while (i < a->size) {
-        neverc_vector_push_back(result, vec_elem_ptr(a, i));
-        i++;
+    if (i < a->size) {
+        size_t rem = a->size - i;
+        memcpy(out + w * sz, vec_elem_ptr(a, i), rem * sz);
+        w += rem;
     }
-    while (j < b->size) {
-        neverc_vector_push_back(result, vec_elem_ptr(b, j));
-        j++;
+    if (j < b->size) {
+        size_t rem = b->size - j;
+        memcpy(out + w * sz, vec_elem_ptr(b, j), rem * sz);
+        w += rem;
     }
+    result->size = w;
     return result;
 }
 
