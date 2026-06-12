@@ -91,6 +91,8 @@ static int old_binary_search_generic(const int *arr, size_t len, int target, int
 #include "neverc/std/hash/adler32.h"
 #include "neverc/std/unicode/utf8.h"
 #include "neverc/std/encoding/hex.h"
+#include "neverc/std/encoding/base64.h"
+#include "neverc/std/math/rand.h"
 
 /* New wyhash — duplicated for direct benchmark */
 static inline uint64_t nci_read8(const uint8_t *p) {
@@ -615,6 +617,116 @@ static void bench_toupper(void) {
     }
 }
 
+/* ============================================================
+ * Benchmark: Lemire bounded random vs old modulo
+ * ============================================================ */
+
+__attribute__((noinline))
+static uint32_t old_rand_uint32n(uint32_t n) {
+    static uint64_t state[4] = {
+        0x180ec6d33cfd0abaULL, 0xd5a61266f0c9392cULL,
+        0xa9582618e03fc9aaULL, 0x39abdc4529b1661cULL
+    };
+    uint64_t result = ((state[1] * 5) << 7 | (state[1] * 5) >> 57) * 9;
+    uint64_t t = state[1] << 17;
+    state[2] ^= state[0]; state[3] ^= state[1];
+    state[1] ^= state[2]; state[0] ^= state[3];
+    state[2] ^= t; state[3] = (state[3] << 45) | (state[3] >> 19);
+    return (uint32_t)((result >> 32) % (uint64_t)n);
+}
+
+static void bench_rand_bounded(void) {
+    printf("\n=== Bounded Random: Lemire vs modulo ===\n");
+    printf("%-15s  %10s  %10s  %8s\n", "bound", "old(mod)", "new(Lem)", "speedup");
+
+    uint32_t bounds[] = {7, 100, 1000, 99991, 0xFFFFFFFFU};
+    int nbounds = sizeof(bounds) / sizeof(bounds[0]);
+
+    for (int b = 0; b < nbounds; b++) {
+        uint32_t n = bounds[b];
+        int iters = 20000000;
+
+        double t0 = now_sec();
+        for (int i = 0; i < iters; i++)
+            sink32 = old_rand_uint32n(n);
+        double t_old = now_sec() - t0;
+
+        neverc_rand_seed(42);
+        t0 = now_sec();
+        for (int i = 0; i < iters; i++)
+            sink32 = neverc_rand_uint32n(n);
+        double t_new = now_sec() - t0;
+
+        printf("n=%-13u  %8.1f ms  %8.1f ms  %6.1fx\n",
+               n, t_old * 1000, t_new * 1000, t_old / t_new);
+    }
+}
+
+/* ============================================================
+ * Benchmark: Base64 encode unrolled vs single-group
+ * ============================================================ */
+
+__attribute__((noinline))
+static size_t old_base64_encode(char *dst, const uint8_t *src, size_t src_len) {
+    static const char tab[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t di = 0, si = 0;
+    size_t n = (src_len / 3) * 3;
+    while (si < n) {
+        uint32_t val = ((uint32_t)src[si] << 16) |
+                       ((uint32_t)src[si+1] << 8) | (uint32_t)src[si+2];
+        dst[di]   = tab[(val >> 18) & 0x3f];
+        dst[di+1] = tab[(val >> 12) & 0x3f];
+        dst[di+2] = tab[(val >> 6)  & 0x3f];
+        dst[di+3] = tab[val         & 0x3f];
+        si += 3; di += 4;
+    }
+    size_t remain = src_len - si;
+    if (remain == 1) {
+        uint32_t val = (uint32_t)src[si] << 16;
+        dst[di] = tab[(val>>18)&0x3f]; dst[di+1] = tab[(val>>12)&0x3f];
+        dst[di+2] = '='; dst[di+3] = '='; di += 4;
+    } else if (remain == 2) {
+        uint32_t val = ((uint32_t)src[si] << 16) | ((uint32_t)src[si+1] << 8);
+        dst[di] = tab[(val>>18)&0x3f]; dst[di+1] = tab[(val>>12)&0x3f];
+        dst[di+2] = tab[(val>>6)&0x3f]; dst[di+3] = '='; di += 4;
+    }
+    dst[di] = '\0';
+    return di;
+}
+
+static void bench_base64(void) {
+    printf("\n=== Base64 Encode: 2x unrolled vs single-group ===\n");
+    printf("%-15s  %10s  %10s  %8s\n", "size", "old", "new", "speedup");
+
+    size_t sizes[] = {48, 300, 4096, 65536};
+    int nsizes = sizeof(sizes) / sizeof(sizes[0]);
+    uint8_t *buf = (uint8_t *)malloc(65536);
+    char *out = (char *)malloc(65536 * 2);
+    for (size_t i = 0; i < 65536; i++) buf[i] = (uint8_t)(rand() & 0xFF);
+
+    for (int s = 0; s < nsizes; s++) {
+        size_t n = sizes[s];
+        int iters = (int)(200000000 / (n + 1));
+        if (iters < 100) iters = 100;
+
+        double t0 = now_sec();
+        for (int i = 0; i < iters; i++)
+            sink_sz = old_base64_encode(out, buf, n);
+        double t_old = now_sec() - t0;
+
+        t0 = now_sec();
+        for (int i = 0; i < iters; i++)
+            sink_sz = neverc_base64_encode(out, buf, n);
+        double t_new = now_sec() - t0;
+
+        printf("n=%-13zu  %8.1f ms  %8.1f ms  %6.1fx\n",
+               n, t_old * 1000, t_new * 1000, t_old / t_new);
+    }
+    free(buf);
+    free(out);
+}
+
 int main(void) {
     printf("=== std algorithm optimization benchmarks ===\n");
     bench_hash();
@@ -625,6 +737,8 @@ int main(void) {
     bench_utf8();
     bench_hex();
     bench_toupper();
+    bench_rand_bounded();
+    bench_base64();
     printf("\n=== Done ===\n");
     return 0;
 }

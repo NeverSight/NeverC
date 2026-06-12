@@ -29,9 +29,23 @@ size_t neverc_hex_encoded_len(size_t n) {
 }
 
 size_t neverc_hex_encode(char *dst, const uint8_t *src, size_t src_len) {
-    size_t j = 0;
-    for (size_t i = 0; i < src_len; i++) {
+    size_t i = 0, j = 0;
+    size_t n4 = src_len & ~(size_t)3;
+    while (i < n4) {
+        uint64_t w;
+        uint16_t a, b, c, d;
+        memcpy(&a, hex_pair[src[i  ]], 2);
+        memcpy(&b, hex_pair[src[i+1]], 2);
+        memcpy(&c, hex_pair[src[i+2]], 2);
+        memcpy(&d, hex_pair[src[i+3]], 2);
+        w = (uint64_t)a | ((uint64_t)b << 16) | ((uint64_t)c << 32) | ((uint64_t)d << 48);
+        memcpy(dst + j, &w, 8);
+        i += 4;
+        j += 8;
+    }
+    while (i < src_len) {
         memcpy(dst + j, hex_pair[src[i]], 2);
+        i++;
         j += 2;
     }
     dst[j] = '\0';

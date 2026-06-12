@@ -1,9 +1,11 @@
 /*
  * Quick correctness tests for optimized std algorithms:
- * - bytes: memcpy/memcmp + Rabin-Karp substring search
- * - cstring: libc functions + Rabin-Karp substring search
+ * - bytes: memcpy/memcmp + BMH substring search + SWAR case conversion
+ * - cstring: libc functions + BMH substring search + SWAR case conversion
  * - suffixarray: SA-IS construction
- * - slices: reverse with stack buffer
+ * - slices: reverse with stack buffer + branchless binary search
+ * - crc32: slicing-by-8, crc64: slicing-by-8
+ * - fnv: 8-way unrolled, hex: batch encode/decode
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,9 +19,12 @@
 #include "neverc/std/slices.h"
 #include "neverc/std/math/bits.h"
 #include "neverc/std/hash/crc32.h"
+#include "neverc/std/hash/crc64.h"
 #include "neverc/std/hash/adler32.h"
+#include "neverc/std/hash/fnv.h"
 #include "neverc/std/unicode/utf8.h"
 #include "neverc/std/encoding/hex.h"
+#include "neverc/std/encoding/base64.h"
 #include "neverc/std/math/rand.h"
 
 static int tests_passed = 0;
@@ -673,6 +678,179 @@ static void test_swar_case(void) {
     free(up);
 }
 
+/* ---- Lemire bounded random tests ---- */
+static void test_rand_bounded(void) {
+    neverc_rand_seed(42);
+
+    for (int i = 0; i < 10000; i++) {
+        uint32_t v = neverc_rand_uint32n(100);
+        if (v >= 100) { CHECK(0, "uint32n range"); return; }
+    }
+    CHECK(1, "uint32n all in range [0,100)");
+
+    for (int i = 0; i < 10000; i++) {
+        int64_t v = neverc_rand_intn(1000);
+        if (v < 0 || v >= 1000) { CHECK(0, "intn range"); return; }
+    }
+    CHECK(1, "intn all in range [0,1000)");
+
+    CHECK(neverc_rand_uint32n(1) == 0, "uint32n(1) always 0");
+    CHECK(neverc_rand_intn(1) == 0, "intn(1) always 0");
+    CHECK(neverc_rand_uint32n(0) == 0, "uint32n(0) returns 0");
+    CHECK(neverc_rand_intn(0) == 0, "intn(0) returns 0");
+    CHECK(neverc_rand_intn(-5) == 0, "intn(-5) returns 0");
+
+    int buckets[10] = {0};
+    neverc_rand_seed(12345);
+    for (int i = 0; i < 100000; i++)
+        buckets[neverc_rand_uint32n(10)]++;
+    int uniform = 1;
+    for (int i = 0; i < 10; i++)
+        if (buckets[i] < 8000 || buckets[i] > 12000) { uniform = 0; break; }
+    CHECK(uniform, "uint32n(10) roughly uniform");
+
+    neverc_rand_seed(99);
+    for (int i = 0; i < 10000; i++) {
+        uint64_t v = neverc_rand_uint64n(1000000000ULL);
+        if (v >= 1000000000ULL) { CHECK(0, "uint64n range"); return; }
+    }
+    CHECK(1, "uint64n all in range [0,1B)");
+
+    for (int i = 0; i < 1000; i++) {
+        uint32_t v = neverc_rand_uint32n(0xFFFFFFFFU);
+        (void)v;
+    }
+    CHECK(1, "uint32n(MAX) no crash");
+}
+
+/* ---- Base64 encode/decode roundtrip tests ---- */
+static void test_base64_roundtrip(void) {
+    char enc[256];
+    uint8_t dec[256];
+
+    uint8_t data6[] = {0, 1, 2, 3, 4, 5};
+    size_t elen = neverc_base64_encode(enc, data6, 6);
+    CHECK(elen == 8, "b64 6-byte encode len");
+    int dlen = neverc_base64_decode(dec, enc, elen);
+    CHECK(dlen == 6 && memcmp(dec, data6, 6) == 0, "b64 6-byte roundtrip");
+
+    uint8_t data7[] = {0, 1, 2, 3, 4, 5, 6};
+    elen = neverc_base64_encode(enc, data7, 7);
+    dlen = neverc_base64_decode(dec, enc, elen);
+    CHECK(dlen == 7 && memcmp(dec, data7, 7) == 0, "b64 7-byte roundtrip");
+
+    uint8_t data12[12];
+    for (int i = 0; i < 12; i++) data12[i] = (uint8_t)(i * 17);
+    elen = neverc_base64_encode(enc, data12, 12);
+    CHECK(elen == 16, "b64 12-byte encode len");
+    dlen = neverc_base64_decode(dec, enc, elen);
+    CHECK(dlen == 12 && memcmp(dec, data12, 12) == 0, "b64 12-byte roundtrip");
+
+    elen = neverc_base64_encode(enc, (const uint8_t *)"", 0);
+    CHECK(elen == 0 && enc[0] == '\0', "b64 empty encode");
+
+    elen = neverc_base64_encode(enc, (const uint8_t *)"A", 1);
+    dlen = neverc_base64_decode(dec, enc, elen);
+    CHECK(dlen == 1 && dec[0] == 'A', "b64 1-byte roundtrip");
+
+    uint8_t big[200];
+    for (int i = 0; i < 200; i++) big[i] = (uint8_t)i;
+    char bigenc[300];
+    elen = neverc_base64_encode(bigenc, big, 200);
+    uint8_t bigdec[200];
+    dlen = neverc_base64_decode(bigdec, bigenc, elen);
+    CHECK(dlen == 200 && memcmp(bigdec, big, 200) == 0, "b64 200-byte roundtrip");
+}
+
+/* ---- CRC64 slicing-by-8 tests ---- */
+static void test_crc64_ecma(void) {
+    neverc_crc64_table_t tab;
+    neverc_crc64_make_table(NEVERC_CRC64_ECMA, tab);
+
+    CHECK(neverc_crc64_checksum(tab, (const uint8_t *)"", 0) == 0, "crc64 empty");
+
+    const char *hello = "hello world";
+    uint64_t c = neverc_crc64_checksum(tab, (const uint8_t *)hello, strlen(hello));
+    CHECK(c != 0, "crc64 hello non-zero");
+
+    uint64_t c1 = neverc_crc64_update(0, tab, (const uint8_t *)hello, 5);
+    uint64_t c2 = neverc_crc64_update(c1, tab, (const uint8_t *)hello + 5, 6);
+    CHECK(c2 == c, "crc64 incremental == full");
+
+    uint8_t big[4096];
+    memset(big, 'x', sizeof(big));
+    uint64_t cbig1 = neverc_crc64_checksum(tab, big, sizeof(big));
+    uint64_t cbig2 = neverc_crc64_checksum(tab, big, sizeof(big));
+    CHECK(cbig1 == cbig2, "crc64 deterministic");
+    CHECK(cbig1 != 0, "crc64 4KB non-zero");
+
+    uint64_t csmall = neverc_crc64_checksum(tab, big, 7);
+    CHECK(csmall != 0, "crc64 small non-zero");
+}
+
+/* ---- FNV 8-way unrolled tests ---- */
+static void test_fnv_hash(void) {
+    CHECK(neverc_fnv_sum32a("", 0) == 0x811c9dc5U, "fnv32a empty");
+    CHECK(neverc_fnv_sum64a("", 0) == 0xcbf29ce484222325ULL, "fnv64a empty");
+
+    uint32_t h32 = neverc_fnv_sum32a("hello world", 11);
+    CHECK(h32 != 0 && h32 != 0x811c9dc5U, "fnv32a hello non-trivial");
+
+    uint64_t h64 = neverc_fnv_sum64a("hello world", 11);
+    CHECK(h64 != 0 && h64 != 0xcbf29ce484222325ULL, "fnv64a hello non-trivial");
+
+    uint8_t buf[256];
+    for (int i = 0; i < 256; i++) buf[i] = (uint8_t)i;
+    uint32_t h1 = neverc_fnv_sum32a(buf, 256);
+    uint32_t h2 = neverc_fnv_sum32a(buf, 256);
+    CHECK(h1 == h2, "fnv32a deterministic");
+
+    uint64_t h3 = neverc_fnv_sum64a(buf, 256);
+    uint64_t h4 = neverc_fnv_sum64a(buf, 256);
+    CHECK(h3 == h4, "fnv64a deterministic");
+
+    CHECK(neverc_fnv_sum32(buf, 256) != neverc_fnv_sum32a(buf, 256),
+          "fnv1 != fnv1a");
+    CHECK(neverc_fnv_sum64(buf, 256) != neverc_fnv_sum64a(buf, 256),
+          "fnv1-64 != fnv1a-64");
+
+    neverc_fnv_128_t r128 = neverc_fnv_sum128a(buf, 256);
+    CHECK(r128.hi != 0 || r128.lo != 0, "fnv128a non-zero");
+}
+
+/* ---- hex decode batch tests ---- */
+static void test_hex_decode(void) {
+    uint8_t out[256];
+    int n;
+
+    n = neverc_hex_decode(out, "48656c6c6f", 10);
+    CHECK(n == 5 && memcmp(out, "Hello", 5) == 0, "hex decode Hello");
+
+    n = neverc_hex_decode(out, "", 0);
+    CHECK(n == 0, "hex decode empty");
+
+    n = neverc_hex_decode(out, "ff", 2);
+    CHECK(n == 1 && out[0] == 0xFF, "hex decode ff");
+
+    n = neverc_hex_decode(out, "0", 1);
+    CHECK(n == -1, "hex decode odd length");
+
+    n = neverc_hex_decode(out, "zz", 2);
+    CHECK(n == -1, "hex decode invalid");
+
+    char all_hex[513];
+    uint8_t all_data[256];
+    for (int i = 0; i < 256; i++) all_data[i] = (uint8_t)i;
+    neverc_hex_encode(all_hex, all_data, 256);
+    uint8_t decoded[256];
+    n = neverc_hex_decode(decoded, all_hex, 512);
+    CHECK(n == 256 && memcmp(decoded, all_data, 256) == 0, "hex roundtrip all 256");
+
+    n = neverc_hex_decode(out, "ABCDEF", 6);
+    CHECK(n == 3 && out[0] == 0xAB && out[1] == 0xCD && out[2] == 0xEF,
+          "hex decode uppercase");
+}
+
 /* ---- rand_read memcpy tests ---- */
 static void test_rand_read(void) {
     neverc_rand_seed(42);
@@ -753,6 +931,21 @@ int main(void) {
 
     printf("--- to_upper/to_lower (SWAR) ---\n");
     test_swar_case();
+
+    printf("--- rand bounded (Lemire) ---\n");
+    test_rand_bounded();
+
+    printf("--- crc64 (slicing-by-8) ---\n");
+    test_crc64_ecma();
+
+    printf("--- fnv (8-way unrolled) ---\n");
+    test_fnv_hash();
+
+    printf("--- hex decode (batch) ---\n");
+    test_hex_decode();
+
+    printf("--- base64 roundtrip ---\n");
+    test_base64_roundtrip();
 
     printf("--- rand_read (memcpy) ---\n");
     test_rand_read();

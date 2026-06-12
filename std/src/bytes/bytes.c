@@ -255,12 +255,28 @@ int neverc_bytes_has_suffix(const uint8_t *s, size_t slen,
     return neverc_bytes_equal(s + slen - sfxlen, sfxlen, suffix, sfxlen);
 }
 
-/* --- Transform --- */
+/* --- Transform (SWAR 8-byte parallel ASCII case conversion) --- */
+
+#define NCI_SWAR_HIGHS 0x8080808080808080ULL
+
+static inline uint64_t nci_swar_range(uint64_t w, uint8_t lo, uint8_t hi) {
+    uint64_t cleared = w & ~NCI_SWAR_HIGHS;
+    uint64_t t_hi = cleared + (uint64_t)(0x7fu - hi) * 0x0101010101010101ULL;
+    uint64_t t_lo = cleared + (uint64_t)(0x80u - lo) * 0x0101010101010101ULL;
+    return (t_lo ^ t_hi) & NCI_SWAR_HIGHS;
+}
 
 uint8_t *neverc_bytes_to_upper(const uint8_t *s, size_t slen, size_t *outlen) {
     uint8_t *r = (uint8_t *)malloc(slen);
     if (!r) { *outlen = 0; return NULL; }
-    for (size_t i = 0; i < slen; i++)
+    size_t i = 0;
+    for (; i + 8 <= slen; i += 8) {
+        uint64_t w;
+        memcpy(&w, s + i, 8);
+        w ^= nci_swar_range(w, 'a', 'z') >> 2;
+        memcpy(r + i, &w, 8);
+    }
+    for (; i < slen; i++)
         r[i] = (s[i] >= 'a' && s[i] <= 'z') ? s[i] - 32 : s[i];
     *outlen = slen;
     return r;
@@ -269,7 +285,14 @@ uint8_t *neverc_bytes_to_upper(const uint8_t *s, size_t slen, size_t *outlen) {
 uint8_t *neverc_bytes_to_lower(const uint8_t *s, size_t slen, size_t *outlen) {
     uint8_t *r = (uint8_t *)malloc(slen);
     if (!r) { *outlen = 0; return NULL; }
-    for (size_t i = 0; i < slen; i++)
+    size_t i = 0;
+    for (; i + 8 <= slen; i += 8) {
+        uint64_t w;
+        memcpy(&w, s + i, 8);
+        w ^= nci_swar_range(w, 'A', 'Z') >> 2;
+        memcpy(r + i, &w, 8);
+    }
+    for (; i < slen; i++)
         r[i] = (s[i] >= 'A' && s[i] <= 'Z') ? s[i] + 32 : s[i];
     *outlen = slen;
     return r;

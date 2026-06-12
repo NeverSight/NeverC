@@ -46,8 +46,28 @@ static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
     size_t di = 0;
     size_t si = 0;
 
-    size_t n = (src_len / 3) * 3;
-    while (si < n) {
+    size_t n6 = (src_len / 6) * 6;
+    while (si < n6) {
+        uint32_t v0 = ((uint32_t)src[si] << 16) |
+                       ((uint32_t)src[si+1] << 8) |
+                       (uint32_t)src[si+2];
+        uint32_t v1 = ((uint32_t)src[si+3] << 16) |
+                       ((uint32_t)src[si+4] << 8) |
+                       (uint32_t)src[si+5];
+        dst[di]   = table[(v0 >> 18) & 0x3f];
+        dst[di+1] = table[(v0 >> 12) & 0x3f];
+        dst[di+2] = table[(v0 >> 6)  & 0x3f];
+        dst[di+3] = table[v0         & 0x3f];
+        dst[di+4] = table[(v1 >> 18) & 0x3f];
+        dst[di+5] = table[(v1 >> 12) & 0x3f];
+        dst[di+6] = table[(v1 >> 6)  & 0x3f];
+        dst[di+7] = table[v1         & 0x3f];
+        si += 6;
+        di += 8;
+    }
+
+    size_t n3 = (src_len / 3) * 3;
+    while (si < n3) {
         uint32_t val = ((uint32_t)src[si] << 16) |
                        ((uint32_t)src[si+1] << 8) |
                        (uint32_t)src[si+2];

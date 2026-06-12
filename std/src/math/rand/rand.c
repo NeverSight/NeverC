@@ -52,34 +52,60 @@ int32_t neverc_rand_int32(void) { return (int32_t)(next() >> 33); }
 
 int64_t neverc_rand_int63(void) { return (int64_t)(next() >> 1); }
 
-int64_t neverc_rand_intn(int64_t n) {
-    if (n <= 0) return 0;
-    uint64_t un = (uint64_t)n;
-    if ((un & (un - 1)) == 0)
-        return (int64_t)((next() >> 1) & (un - 1));
-    uint64_t max = (uint64_t)((1ULL << 63) - 1 - (1ULL << 63) % un);
-    uint64_t v = next() >> 1;
-    while (v > max) v = next() >> 1;
-    return (int64_t)(v % un);
-}
-
-int32_t neverc_rand_int32n(int32_t n) {
-    if (n <= 0) return 0;
-    return (int32_t)neverc_rand_intn((int64_t)n);
-}
+/*
+ * Lemire's nearly-divisionless method for bounded random numbers.
+ * (Daniel Lemire, "Fast Random Integer Generation in an Interval", 2019)
+ *
+ * Core idea: multiply a random value r by n to get a [0, n*MAX) product.
+ * The high bits give a value in [0, n). Rejection is only needed when the
+ * low bits indicate a "fractional" remainder that crosses a bucket boundary.
+ * This eliminates division/modulo in the fast path (~98%+ of calls).
+ */
 
 uint32_t neverc_rand_uint32n(uint32_t n) {
     if (n == 0) return 0;
-    return (uint32_t)(neverc_rand_uint64() % (uint64_t)n);
+    uint64_t m = (uint64_t)neverc_rand_uint32() * (uint64_t)n;
+    uint32_t lo = (uint32_t)m;
+    if (lo < n) {
+        uint32_t threshold = (uint32_t)(-(int32_t)n) % n;
+        while (lo < threshold) {
+            m = (uint64_t)neverc_rand_uint32() * (uint64_t)n;
+            lo = (uint32_t)m;
+        }
+    }
+    return (uint32_t)(m >> 32);
 }
 
 uint64_t neverc_rand_uint64n(uint64_t n) {
     if (n == 0) return 0;
+#ifdef __SIZEOF_INT128__
+    __uint128_t m = (__uint128_t)next() * n;
+    uint64_t lo = (uint64_t)m;
+    if (lo < n) {
+        uint64_t threshold = (uint64_t)(-(int64_t)n) % n;
+        while (lo < threshold) {
+            m = (__uint128_t)next() * n;
+            lo = (uint64_t)m;
+        }
+    }
+    return (uint64_t)(m >> 64);
+#else
     uint64_t threshold = -n % n;
     for (;;) {
         uint64_t v = next();
         if (v >= threshold) return v % n;
     }
+#endif
+}
+
+int64_t neverc_rand_intn(int64_t n) {
+    if (n <= 0) return 0;
+    return (int64_t)neverc_rand_uint64n((uint64_t)n);
+}
+
+int32_t neverc_rand_int32n(int32_t n) {
+    if (n <= 0) return 0;
+    return (int32_t)neverc_rand_uint32n((uint32_t)n);
 }
 
 int64_t neverc_rand_int63n(int64_t n) {

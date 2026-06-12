@@ -1,5 +1,9 @@
 #include "neverc/std/encoding/hex.h"
 
+/*
+ * Combined lookup table: valid entries 0-15, invalid = 0xFF.
+ * Batch validation: OR 4 lookups and check high bit.
+ */
 static const uint8_t reverse_hex[256] = {
     0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff, 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
     0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff, 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
@@ -27,11 +31,29 @@ int neverc_hex_decode(uint8_t *dst, const char *src, size_t src_len) {
     if (src_len % 2 != 0)
         return -1;
 
+    const uint8_t *s = (const uint8_t *)src;
     size_t out = 0;
-    for (size_t j = 0; j < src_len; j += 2) {
-        uint8_t a = reverse_hex[(uint8_t)src[j]];
-        uint8_t b = reverse_hex[(uint8_t)src[j + 1]];
-        if (a > 0x0f || b > 0x0f)
+    size_t j = 0;
+
+    size_t n8 = src_len & ~(size_t)7;
+    for (; j < n8; j += 8) {
+        uint8_t a0 = reverse_hex[s[j  ]], b0 = reverse_hex[s[j+1]];
+        uint8_t a1 = reverse_hex[s[j+2]], b1 = reverse_hex[s[j+3]];
+        uint8_t a2 = reverse_hex[s[j+4]], b2 = reverse_hex[s[j+5]];
+        uint8_t a3 = reverse_hex[s[j+6]], b3 = reverse_hex[s[j+7]];
+        if ((a0 | b0 | a1 | b1 | a2 | b2 | a3 | b3) & 0xF0)
+            return -1;
+        dst[out  ] = (a0 << 4) | b0;
+        dst[out+1] = (a1 << 4) | b1;
+        dst[out+2] = (a2 << 4) | b2;
+        dst[out+3] = (a3 << 4) | b3;
+        out += 4;
+    }
+
+    for (; j < src_len; j += 2) {
+        uint8_t a = reverse_hex[s[j]];
+        uint8_t b = reverse_hex[s[j+1]];
+        if ((a | b) & 0xF0)
             return -1;
         dst[out++] = (a << 4) | b;
     }

@@ -13,7 +13,18 @@
 uint32_t neverc_fnv_sum32(const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
     uint32_t hash = FNV_OFFSET_32;
-    for (size_t i = 0; i < len; i++) {
+    size_t i = 0;
+    for (; i + 8 <= len; i += 8) {
+        hash *= FNV_PRIME_32; hash ^= p[i  ];
+        hash *= FNV_PRIME_32; hash ^= p[i+1];
+        hash *= FNV_PRIME_32; hash ^= p[i+2];
+        hash *= FNV_PRIME_32; hash ^= p[i+3];
+        hash *= FNV_PRIME_32; hash ^= p[i+4];
+        hash *= FNV_PRIME_32; hash ^= p[i+5];
+        hash *= FNV_PRIME_32; hash ^= p[i+6];
+        hash *= FNV_PRIME_32; hash ^= p[i+7];
+    }
+    for (; i < len; i++) {
         hash *= FNV_PRIME_32;
         hash ^= p[i];
     }
@@ -23,7 +34,18 @@ uint32_t neverc_fnv_sum32(const void *data, size_t len) {
 uint32_t neverc_fnv_sum32a(const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
     uint32_t hash = FNV_OFFSET_32;
-    for (size_t i = 0; i < len; i++) {
+    size_t i = 0;
+    for (; i + 8 <= len; i += 8) {
+        hash ^= p[i  ]; hash *= FNV_PRIME_32;
+        hash ^= p[i+1]; hash *= FNV_PRIME_32;
+        hash ^= p[i+2]; hash *= FNV_PRIME_32;
+        hash ^= p[i+3]; hash *= FNV_PRIME_32;
+        hash ^= p[i+4]; hash *= FNV_PRIME_32;
+        hash ^= p[i+5]; hash *= FNV_PRIME_32;
+        hash ^= p[i+6]; hash *= FNV_PRIME_32;
+        hash ^= p[i+7]; hash *= FNV_PRIME_32;
+    }
+    for (; i < len; i++) {
         hash ^= p[i];
         hash *= FNV_PRIME_32;
     }
@@ -33,7 +55,18 @@ uint32_t neverc_fnv_sum32a(const void *data, size_t len) {
 uint64_t neverc_fnv_sum64(const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
     uint64_t hash = FNV_OFFSET_64;
-    for (size_t i = 0; i < len; i++) {
+    size_t i = 0;
+    for (; i + 8 <= len; i += 8) {
+        hash *= FNV_PRIME_64; hash ^= p[i  ];
+        hash *= FNV_PRIME_64; hash ^= p[i+1];
+        hash *= FNV_PRIME_64; hash ^= p[i+2];
+        hash *= FNV_PRIME_64; hash ^= p[i+3];
+        hash *= FNV_PRIME_64; hash ^= p[i+4];
+        hash *= FNV_PRIME_64; hash ^= p[i+5];
+        hash *= FNV_PRIME_64; hash ^= p[i+6];
+        hash *= FNV_PRIME_64; hash ^= p[i+7];
+    }
+    for (; i < len; i++) {
         hash *= FNV_PRIME_64;
         hash ^= p[i];
     }
@@ -43,7 +76,18 @@ uint64_t neverc_fnv_sum64(const void *data, size_t len) {
 uint64_t neverc_fnv_sum64a(const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
     uint64_t hash = FNV_OFFSET_64;
-    for (size_t i = 0; i < len; i++) {
+    size_t i = 0;
+    for (; i + 8 <= len; i += 8) {
+        hash ^= p[i  ]; hash *= FNV_PRIME_64;
+        hash ^= p[i+1]; hash *= FNV_PRIME_64;
+        hash ^= p[i+2]; hash *= FNV_PRIME_64;
+        hash ^= p[i+3]; hash *= FNV_PRIME_64;
+        hash ^= p[i+4]; hash *= FNV_PRIME_64;
+        hash ^= p[i+5]; hash *= FNV_PRIME_64;
+        hash ^= p[i+6]; hash *= FNV_PRIME_64;
+        hash ^= p[i+7]; hash *= FNV_PRIME_64;
+    }
+    for (; i < len; i++) {
         hash ^= p[i];
         hash *= FNV_PRIME_64;
     }
