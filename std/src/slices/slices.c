@@ -191,6 +191,34 @@ int neverc_slices_binary_search_int(const int *slice, size_t len, int target, in
     return (int)lo;
 }
 
+int neverc_slices_min_int(const int *slice, size_t len) {
+    if (len == 0) return -1;
+    int mi = 0;
+    int mv = slice[0];
+    for (size_t i = 1; i < len; i++) {
+        if (slice[i] < mv) { mv = slice[i]; mi = (int)i; }
+    }
+    return mi;
+}
+
+int neverc_slices_max_int(const int *slice, size_t len) {
+    if (len == 0) return -1;
+    int mi = 0;
+    int mv = slice[0];
+    for (size_t i = 1; i < len; i++) {
+        if (slice[i] > mv) { mv = slice[i]; mi = (int)i; }
+    }
+    return mi;
+}
+
+int neverc_slices_is_sorted_ints(const int *slice, size_t len) {
+    if (len <= 1) return 1;
+    for (size_t i = 1; i < len; i++) {
+        if (slice[i - 1] > slice[i]) return 0;
+    }
+    return 1;
+}
+
 void neverc_slices_sort_stable(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
     nci_timsort(slice, len, elem_size, (nci_cmp_fn)cmp);
 }

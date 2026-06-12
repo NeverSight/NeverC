@@ -357,6 +357,25 @@ uint8_t *neverc_bytes_repeat(const uint8_t *b, size_t blen,
     return r;
 }
 
+/*
+ * Internal BMH search with pre-built skip table.
+ * Avoids rebuilding the 256-entry table on every call in replace/count loops.
+ */
+static size_t nci_bytes_index_with_skip(const uint8_t *s, size_t slen,
+                                        const uint8_t *sep, size_t seplen,
+                                        const size_t skip[256]) {
+    if (slen < seplen) return (size_t)-1;
+    uint8_t last = sep[seplen - 1];
+    size_t pos = 0;
+    while (pos <= slen - seplen) {
+        uint8_t c = s[pos + seplen - 1];
+        if (c == last && memcmp(s + pos, sep, seplen - 1) == 0)
+            return pos;
+        pos += skip[c];
+    }
+    return (size_t)-1;
+}
+
 uint8_t *neverc_bytes_replace(const uint8_t *s, size_t slen,
                               const uint8_t *old, size_t oldlen,
                               const uint8_t *new_, size_t newlen,
@@ -367,7 +386,29 @@ uint8_t *neverc_bytes_replace(const uint8_t *s, size_t slen,
         *outlen = slen;
         return r;
     }
-    if (n < 0) n = (int)neverc_bytes_count(s, slen, old, oldlen);
+
+    int use_bmh = (oldlen > 8 && slen > 64);
+    size_t skip[256];
+    if (use_bmh) {
+        for (int c = 0; c < 256; c++) skip[c] = oldlen;
+        for (size_t i = 0; i < oldlen - 1; i++) skip[old[i]] = oldlen - 1 - i;
+    }
+
+    if (n < 0) {
+        if (!use_bmh) {
+            n = (int)neverc_bytes_count(s, slen, old, oldlen);
+        } else {
+            n = 0;
+            size_t pos = 0;
+            while (slen >= oldlen && pos <= slen - oldlen) {
+                size_t idx = nci_bytes_index_with_skip(s + pos, slen - pos,
+                                                       old, oldlen, skip);
+                if (idx == (size_t)-1) break;
+                n++;
+                pos += idx + oldlen;
+            }
+        }
+    }
 
     size_t result_len = slen - (size_t)n * oldlen + (size_t)n * newlen;
     uint8_t *r = (uint8_t *)malloc(result_len + 1);
@@ -376,7 +417,11 @@ uint8_t *neverc_bytes_replace(const uint8_t *s, size_t slen,
     size_t wi = 0, ri = 0;
     int replaced = 0;
     while (ri < slen && replaced < n) {
-        size_t idx = neverc_bytes_index(s + ri, slen - ri, old, oldlen);
+        size_t idx;
+        if (use_bmh)
+            idx = nci_bytes_index_with_skip(s + ri, slen - ri, old, oldlen, skip);
+        else
+            idx = neverc_bytes_index(s + ri, slen - ri, old, oldlen);
         if (idx == (size_t)-1) break;
         if (idx > 0) { memcpy(r + wi, s + ri, idx); wi += idx; }
         ri += idx;

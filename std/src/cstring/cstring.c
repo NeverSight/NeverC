@@ -363,6 +363,25 @@ char *neverc_cstring_repeat(const char *s, int count) {
     return r;
 }
 
+/*
+ * Internal BMH search with pre-built skip table for cstring.
+ * Returns index or -1. Avoids rebuilding the table per call in replace loops.
+ */
+static int nci_cstring_index_with_skip(const char *s, size_t slen,
+                                       const unsigned char *pat, size_t patlen,
+                                       const size_t skip[256]) {
+    if (slen < patlen) return -1;
+    unsigned char last = pat[patlen - 1];
+    size_t pos = 0;
+    while (pos <= slen - patlen) {
+        unsigned char c = (unsigned char)s[pos + patlen - 1];
+        if (c == last && memcmp(s + pos, pat, patlen - 1) == 0)
+            return (int)pos;
+        pos += skip[c];
+    }
+    return -1;
+}
+
 char *neverc_cstring_replace(const char *s, const char *old_s,
                               const char *new_s, int n) {
     if (n == 0) return nc_strdup(s, strlen(s));
@@ -372,7 +391,6 @@ char *neverc_cstring_replace(const char *s, const char *old_s,
     size_t newlen = strlen(new_s);
 
     if (oldlen == 0) {
-        /* Go semantics: empty old matches before each char + at end */
         int reps = (n < 0) ? (int)slen + 1 : (n < (int)slen + 1 ? n : (int)slen + 1);
         size_t total = slen + (size_t)reps * newlen;
         char *r = (char *)malloc(total + 1);
@@ -395,46 +413,60 @@ char *neverc_cstring_replace(const char *s, const char *old_s,
         return r;
     }
 
-    /* Count replacements */
+    int use_bmh = (oldlen > 8 && slen > 64);
+    size_t skip[256];
+    const unsigned char *up = (const unsigned char *)old_s;
+    if (use_bmh) {
+        for (int c = 0; c < 256; c++) skip[c] = oldlen;
+        for (size_t i = 0; i < oldlen - 1; i++) skip[up[i]] = oldlen - 1 - i;
+    }
+
     int cnt = 0;
     {
         const char *p = s;
-        while (*p) {
-            int idx = neverc_cstring_index(p, old_s);
+        size_t remaining = slen;
+        while (remaining >= oldlen) {
+            int idx;
+            if (use_bmh)
+                idx = nci_cstring_index_with_skip(p, remaining, up, oldlen, skip);
+            else
+                idx = neverc_cstring_index(p, old_s);
             if (idx < 0) break;
             cnt++;
-            p += idx + (int)oldlen;
+            p += idx + oldlen;
+            remaining -= (size_t)idx + oldlen;
         }
     }
     if (n >= 0 && cnt > n) cnt = n;
 
-    size_t total = slen + (size_t)cnt * (newlen > oldlen ? newlen - oldlen : 0)
-                        - (size_t)cnt * (oldlen > newlen ? oldlen - newlen : 0);
-    /* Safer calculation */
-    total = slen - (size_t)cnt * oldlen + (size_t)cnt * newlen;
+    size_t total = slen - (size_t)cnt * oldlen + (size_t)cnt * newlen;
 
     char *r = (char *)malloc(total + 1);
     if (!r) return NULL;
     size_t w = 0;
     int done = 0;
     const char *p = s;
-    while (*p) {
+    size_t remaining = slen;
+    while (remaining > 0) {
         if (done < cnt) {
-            int idx = neverc_cstring_index(p, old_s);
+            int idx;
+            if (use_bmh)
+                idx = nci_cstring_index_with_skip(p, remaining, up, oldlen, skip);
+            else
+                idx = neverc_cstring_index(p, old_s);
             if (idx >= 0) {
                 memcpy(r + w, p, (size_t)idx);
                 w += (size_t)idx;
                 memcpy(r + w, new_s, newlen);
                 w += newlen;
                 p += idx + oldlen;
+                remaining -= (size_t)idx + oldlen;
                 done++;
                 continue;
             }
         }
-        /* Copy rest */
-        size_t rest = strlen(p);
-        memcpy(r + w, p, rest);
-        w += rest;
+        memcpy(r + w, p, remaining);
+        w += remaining;
         break;
     }
     r[w] = '\0';

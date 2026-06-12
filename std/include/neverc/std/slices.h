@@ -72,6 +72,9 @@ int  neverc_slices_index_int(const int *slice, size_t len, int val);
 void neverc_slices_reverse_ints(int *slice, size_t len);
 void neverc_slices_sort_ints(int *slice, size_t len);
 int  neverc_slices_binary_search_int(const int *slice, size_t len, int target, int *found);
+int  neverc_slices_min_int(const int *slice, size_t len);
+int  neverc_slices_max_int(const int *slice, size_t len);
+int  neverc_slices_is_sorted_ints(const int *slice, size_t len);
 
 #ifdef __cplusplus
 }
