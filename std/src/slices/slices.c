@@ -4,6 +4,7 @@
  */
 
 #include "neverc/std/slices.h"
+#include "../sort/sort_impl.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -53,95 +54,8 @@ void neverc_slices_reverse(void *slice, size_t len, size_t elem_size) {
     free(tmp);
 }
 
-static void insertion_sort(char *base, size_t len, size_t es, neverc_cmp_func_t cmp, char *tmp) {
-    for (size_t i = 1; i < len; i++) {
-        memcpy(tmp, base + i * es, es);
-        size_t j = i;
-        while (j > 0 && cmp(base + (j - 1) * es, tmp) > 0) {
-            memcpy(base + j * es, base + (j - 1) * es, es);
-            j--;
-        }
-        memcpy(base + j * es, tmp, es);
-    }
-}
-
-static void sift_down(char *base, size_t node, size_t len, size_t es,
-                       neverc_cmp_func_t cmp, char *tmp) {
-    while (1) {
-        size_t child = 2 * node + 1;
-        if (child >= len) break;
-        if (child + 1 < len && cmp(base + child * es, base + (child + 1) * es) < 0)
-            child++;
-        if (cmp(base + node * es, base + child * es) >= 0) break;
-        memcpy(tmp, base + node * es, es);
-        memcpy(base + node * es, base + child * es, es);
-        memcpy(base + child * es, tmp, es);
-        node = child;
-    }
-}
-
-static void heap_sort(char *base, size_t len, size_t es, neverc_cmp_func_t cmp, char *tmp) {
-    if (len <= 1) return;
-    for (size_t i = len / 2; i > 0; i--)
-        sift_down(base, i - 1, len, es, cmp, tmp);
-    for (size_t i = len - 1; i > 0; i--) {
-        memcpy(tmp, base, es);
-        memcpy(base, base + i * es, es);
-        memcpy(base + i * es, tmp, es);
-        sift_down(base, 0, i, es, cmp, tmp);
-    }
-}
-
-static size_t partition(char *base, size_t len, size_t es, neverc_cmp_func_t cmp, char *tmp) {
-    size_t mid = len / 2;
-    if (len > 8) {
-        if (cmp(base, base + mid * es) > 0) {
-            memcpy(tmp, base, es); memcpy(base, base + mid * es, es); memcpy(base + mid * es, tmp, es);
-        }
-        if (cmp(base + mid * es, base + (len - 1) * es) > 0) {
-            memcpy(tmp, base + mid * es, es); memcpy(base + mid * es, base + (len - 1) * es, es); memcpy(base + (len - 1) * es, tmp, es);
-            if (cmp(base, base + mid * es) > 0) {
-                memcpy(tmp, base, es); memcpy(base, base + mid * es, es); memcpy(base + mid * es, tmp, es);
-            }
-        }
-    }
-    memcpy(tmp, base + mid * es, es);
-    memcpy(base + mid * es, base + (len - 1) * es, es);
-    memcpy(base + (len - 1) * es, tmp, es);
-
-    size_t i = 0;
-    for (size_t j = 0; j < len - 1; j++) {
-        if (cmp(base + j * es, base + (len - 1) * es) < 0) {
-            memcpy(tmp, base + i * es, es);
-            memcpy(base + i * es, base + j * es, es);
-            memcpy(base + j * es, tmp, es);
-            i++;
-        }
-    }
-    memcpy(tmp, base + i * es, es);
-    memcpy(base + i * es, base + (len - 1) * es, es);
-    memcpy(base + (len - 1) * es, tmp, es);
-    return i;
-}
-
-static void introsort_impl(char *base, size_t len, size_t es,
-                            neverc_cmp_func_t cmp, int depth, char *tmp) {
-    if (len <= 16) { insertion_sort(base, len, es, cmp, tmp); return; }
-    if (depth == 0) { heap_sort(base, len, es, cmp, tmp); return; }
-    size_t pivot = partition(base, len, es, cmp, tmp);
-    introsort_impl(base, pivot, es, cmp, depth - 1, tmp);
-    if (pivot + 1 < len)
-        introsort_impl(base + (pivot + 1) * es, len - pivot - 1, es, cmp, depth - 1, tmp);
-}
-
 void neverc_slices_sort(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
-    if (len <= 1) return;
-    int depth = 0;
-    for (size_t n = len; n > 0; n >>= 1) depth++;
-    depth *= 2;
-    char *tmp = (char *)malloc(elem_size);
-    introsort_impl((char *)slice, len, elem_size, cmp, depth, tmp);
-    free(tmp);
+    nci_pdqsort(slice, len, elem_size, (nci_cmp_fn)cmp);
 }
 
 int neverc_slices_is_sorted(const void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
@@ -246,33 +160,8 @@ void neverc_slices_sort_ints(int *slice, size_t len) {
     neverc_slices_sort(slice, len, sizeof(int), cmp_int);
 }
 
-/* Stable sort: bottom-up merge sort */
 void neverc_slices_sort_stable(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
-    if (len <= 1) return;
-    char *arr = (char *)slice;
-    char *aux = (char *)malloc(len * elem_size);
-    if (!aux) return;
-
-    for (size_t width = 1; width < len; width *= 2) {
-        for (size_t i = 0; i < len; i += 2 * width) {
-            size_t mid = i + width;
-            size_t end = i + 2 * width;
-            if (mid > len) mid = len;
-            if (end > len) end = len;
-            size_t l = i, r = mid, k = i;
-            while (l < mid && r < end) {
-                if (cmp(arr + l * elem_size, arr + r * elem_size) <= 0)
-                    memcpy(aux + k * elem_size, arr + (l++) * elem_size, elem_size);
-                else
-                    memcpy(aux + k * elem_size, arr + (r++) * elem_size, elem_size);
-                k++;
-            }
-            while (l < mid) { memcpy(aux + k * elem_size, arr + (l++) * elem_size, elem_size); k++; }
-            while (r < end) { memcpy(aux + k * elem_size, arr + (r++) * elem_size, elem_size); k++; }
-        }
-        memcpy(arr, aux, len * elem_size);
-    }
-    free(aux);
+    nci_timsort(slice, len, elem_size, (nci_cmp_fn)cmp);
 }
 
 size_t neverc_slices_delete(void *slice, size_t len, size_t elem_size, size_t i, size_t j) {

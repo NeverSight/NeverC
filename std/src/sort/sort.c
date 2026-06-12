@@ -1,93 +1,10 @@
 #include "neverc/std/sort.h"
+#include "sort_impl.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-/*
- * Introsort (quicksort + heapsort fallback) — no qsort dependency.
- * Based on Go's sort.pdqsort approach, simplified.
- */
-
-static void swap_bytes(void *a, void *b, size_t size) {
-    char *pa = (char *)a, *pb = (char *)b;
-    for (size_t i = 0; i < size; i++) {
-        char t = pa[i];
-        pa[i] = pb[i];
-        pb[i] = t;
-    }
-}
-
-#define ELEM(base, i, sz) ((char *)(base) + (i) * (sz))
-
-static void sift_down(void *base, size_t n, size_t elem_size,
-                      neverc_sort_cmp_t cmp, size_t i) {
-    while (1) {
-        size_t child = 2 * i + 1;
-        if (child >= n) break;
-        if (child + 1 < n && cmp(ELEM(base, child, elem_size),
-                                   ELEM(base, child+1, elem_size)) < 0)
-            child++;
-        if (cmp(ELEM(base, i, elem_size), ELEM(base, child, elem_size)) >= 0)
-            break;
-        swap_bytes(ELEM(base, i, elem_size), ELEM(base, child, elem_size), elem_size);
-        i = child;
-    }
-}
-
-static void heapsort_impl(void *base, size_t n, size_t elem_size,
-                          neverc_sort_cmp_t cmp) {
-    for (size_t i = n / 2; i > 0; i--)
-        sift_down(base, n, elem_size, cmp, i - 1);
-    for (size_t i = n - 1; i > 0; i--) {
-        swap_bytes(ELEM(base, 0, elem_size), ELEM(base, i, elem_size), elem_size);
-        sift_down(base, i, elem_size, cmp, 0);
-    }
-}
-
-static size_t partition(void *base, size_t n, size_t elem_size,
-                        neverc_sort_cmp_t cmp) {
-    size_t pivot = n / 2;
-    swap_bytes(ELEM(base, pivot, elem_size), ELEM(base, n-1, elem_size), elem_size);
-
-    size_t i = 0;
-    for (size_t j = 0; j < n - 1; j++) {
-        if (cmp(ELEM(base, j, elem_size), ELEM(base, n-1, elem_size)) < 0) {
-            swap_bytes(ELEM(base, i, elem_size), ELEM(base, j, elem_size), elem_size);
-            i++;
-        }
-    }
-    swap_bytes(ELEM(base, i, elem_size), ELEM(base, n-1, elem_size), elem_size);
-    return i;
-}
-
-static void introsort(void *base, size_t n, size_t elem_size,
-                      neverc_sort_cmp_t cmp, int depth_limit) {
-    while (n > 16) {
-        if (depth_limit == 0) {
-            heapsort_impl(base, n, elem_size, cmp);
-            return;
-        }
-        depth_limit--;
-        size_t p = partition(base, n, elem_size, cmp);
-        introsort(ELEM(base, p+1, elem_size), n - p - 1, elem_size, cmp, depth_limit);
-        n = p;
-    }
-    /* insertion sort for small arrays */
-    for (size_t i = 1; i < n; i++) {
-        size_t j = i;
-        while (j > 0 && cmp(ELEM(base, j-1, elem_size),
-                             ELEM(base, j, elem_size)) > 0) {
-            swap_bytes(ELEM(base, j-1, elem_size), ELEM(base, j, elem_size), elem_size);
-            j--;
-        }
-    }
-}
-
-static int depth_for(size_t n) {
-    int d = 0;
-    while (n > 1) { n >>= 1; d++; }
-    return d * 2;
-}
+/* ─── Type-specific comparators ─── */
 
 static int cmp_int(const void *a, const void *b) {
     int ia = *(const int *)a;
@@ -101,20 +18,19 @@ static int cmp_double(const void *a, const void *b) {
     return (da > db) - (da < db);
 }
 
+/* ─── Sorting ─── */
+
 void neverc_sort_ints(int *arr, size_t n) {
-    if (n < 2) return;
-    introsort(arr, n, sizeof(int), cmp_int, depth_for(n));
+    nci_pdqsort_int(arr, n);
 }
 
 void neverc_sort_doubles(double *arr, size_t n) {
-    if (n < 2) return;
-    introsort(arr, n, sizeof(double), cmp_double, depth_for(n));
+    nci_pdqsort_double(arr, n);
 }
 
 void neverc_sort_custom(void *base, size_t n, size_t elem_size,
                         neverc_sort_cmp_t cmp) {
-    if (n < 2) return;
-    introsort(base, n, elem_size, cmp, depth_for(n));
+    nci_pdqsort(base, n, elem_size, cmp);
 }
 
 int neverc_sort_is_sorted(const void *base, size_t n, size_t elem_size,
@@ -161,49 +77,21 @@ int neverc_sort_search_doubles(const double *arr, size_t n, double target) {
     return -1;
 }
 
-/* --- Stable sort (merge sort) --- */
-
-static void merge(uint8_t *base, uint8_t *tmp, size_t lo, size_t mid, size_t hi,
-                  size_t es, neverc_sort_cmp_t cmp) {
-    memcpy(tmp + lo * es, base + lo * es, (hi - lo) * es);
-    size_t i = lo, j = mid, k = lo;
-    while (i < mid && j < hi) {
-        if (cmp(tmp + i * es, tmp + j * es) <= 0)
-            memcpy(base + k * es, tmp + i * es, es), i++;
-        else
-            memcpy(base + k * es, tmp + j * es, es), j++;
-        k++;
-    }
-    while (i < mid) { memcpy(base + k * es, tmp + i * es, es); i++; k++; }
-    while (j < hi)  { memcpy(base + k * es, tmp + j * es, es); j++; k++; }
-}
-
-static void merge_sort(uint8_t *base, uint8_t *tmp, size_t lo, size_t hi,
-                       size_t es, neverc_sort_cmp_t cmp) {
-    if (hi - lo <= 1) return;
-    size_t mid = lo + (hi - lo) / 2;
-    merge_sort(base, tmp, lo, mid, es, cmp);
-    merge_sort(base, tmp, mid, hi, es, cmp);
-    merge(base, tmp, lo, mid, hi, es, cmp);
-}
+/* ─── Stable sort (Timsort) ─── */
 
 void neverc_sort_stable(void *base, size_t n, size_t elem_size,
                         neverc_sort_cmp_t cmp) {
-    if (n <= 1) return;
-    uint8_t *tmp = (uint8_t *)malloc(n * elem_size);
-    if (!tmp) { neverc_sort_custom(base, n, elem_size, cmp); return; }
-    merge_sort((uint8_t *)base, tmp, 0, n, elem_size, cmp);
-    free(tmp);
+    nci_timsort(base, n, elem_size, cmp);
 }
 
-/* --- String sorting --- */
+/* ─── String sorting ─── */
 
 static int cmp_strings(const void *a, const void *b) {
     return strcmp(*(const char **)a, *(const char **)b);
 }
 
 void neverc_sort_strings(const char **arr, size_t n) {
-    neverc_sort_custom(arr, n, sizeof(const char *), cmp_strings);
+    nci_pdqsort(arr, n, sizeof(const char *), cmp_strings);
 }
 
 int neverc_sort_strings_are_sorted(const char **arr, size_t n) {
@@ -223,7 +111,7 @@ int neverc_sort_search_strings(const char **arr, size_t n, const char *target) {
     return -1;
 }
 
-/* --- Type-specific sorted checks --- */
+/* ─── Type-specific sorted checks ─── */
 
 int neverc_sort_ints_are_sorted(const int *arr, size_t n) {
     for (size_t i = 1; i < n; i++)
@@ -237,7 +125,7 @@ int neverc_sort_doubles_are_sorted(const double *arr, size_t n) {
     return 1;
 }
 
-/* --- Find (Go sort.Find) --- */
+/* ─── Find (Go sort.Find) ─── */
 
 size_t neverc_sort_find(size_t n, int (*cmp)(size_t i), int *found) {
     size_t lo = 0, hi = n;
@@ -258,7 +146,7 @@ size_t neverc_sort_find(size_t n, int (*cmp)(size_t i), int *found) {
     return lo;
 }
 
-/* --- Reverse --- */
+/* ─── Reverse ─── */
 
 void neverc_sort_reverse(void *base, size_t n, size_t elem_size) {
     if (n <= 1) return;
@@ -275,12 +163,12 @@ void neverc_sort_reverse(void *base, size_t n, size_t elem_size) {
 
 void neverc_sort_slice(void *base, size_t n, size_t elem_size,
                        neverc_sort_cmp_t cmp) {
-    neverc_sort_custom(base, n, elem_size, cmp);
+    nci_pdqsort(base, n, elem_size, cmp);
 }
 
 void neverc_sort_slice_stable(void *base, size_t n, size_t elem_size,
                               neverc_sort_cmp_t cmp) {
-    neverc_sort_stable(base, n, elem_size, cmp);
+    nci_timsort(base, n, elem_size, cmp);
 }
 
 int neverc_sort_slice_is_sorted(const void *base, size_t n, size_t elem_size,

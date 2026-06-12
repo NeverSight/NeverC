@@ -1,4 +1,5 @@
 #include <neverc/std/container/vector.h>
+#include "../../sort/sort_impl.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -368,152 +369,10 @@ bool neverc_vector_append(neverc_vector_t *v, const neverc_vector_t *other) {
 
 /* ===== Algorithms ===== */
 
-static void vec_introsort(void *base, size_t nmemb, size_t size,
-                           neverc_vector_cmp_fn cmp, int depth_limit);
-
-static void vec_insertion_sort(void *base, size_t nmemb, size_t size,
-                                neverc_vector_cmp_fn cmp) {
-    char *arr = (char *)base;
-    char tmp[256];
-    char *buf = size <= sizeof(tmp) ? tmp : (char *)malloc(size);
-    if (!buf)
-        return;
-    for (size_t i = 1; i < nmemb; i++) {
-        memcpy(buf, arr + i * size, size);
-        size_t j = i;
-        while (j > 0 && cmp(arr + (j - 1) * size, buf) > 0) {
-            memcpy(arr + j * size, arr + (j - 1) * size, size);
-            j--;
-        }
-        memcpy(arr + j * size, buf, size);
-    }
-    if (buf != tmp)
-        free(buf);
-}
-
-static void vec_sift_down(char *arr, size_t start, size_t end, size_t size,
-                           neverc_vector_cmp_fn cmp) {
-    char tmp[256];
-    char *buf = size <= sizeof(tmp) ? tmp : (char *)malloc(size);
-    if (!buf)
-        return;
-    size_t root = start;
-    while (root * 2 + 1 <= end) {
-        size_t child = root * 2 + 1;
-        if (child + 1 <= end &&
-            cmp(arr + child * size, arr + (child + 1) * size) < 0)
-            child++;
-        if (cmp(arr + root * size, arr + child * size) < 0) {
-            memcpy(buf, arr + root * size, size);
-            memcpy(arr + root * size, arr + child * size, size);
-            memcpy(arr + child * size, buf, size);
-            root = child;
-        } else {
-            break;
-        }
-    }
-    if (buf != tmp)
-        free(buf);
-}
-
-static void vec_heapsort(void *base, size_t nmemb, size_t size,
-                          neverc_vector_cmp_fn cmp) {
-    if (nmemb < 2)
-        return;
-    char *arr = (char *)base;
-    char tmp[256];
-    char *buf = size <= sizeof(tmp) ? tmp : (char *)malloc(size);
-    if (!buf)
-        return;
-    for (size_t i = nmemb / 2; i > 0; i--)
-        vec_sift_down(arr, i - 1, nmemb - 1, size, cmp);
-    for (size_t end = nmemb - 1; end > 0; end--) {
-        memcpy(buf, arr, size);
-        memcpy(arr, arr + end * size, size);
-        memcpy(arr + end * size, buf, size);
-        vec_sift_down(arr, 0, end - 1, size, cmp);
-    }
-    if (buf != tmp)
-        free(buf);
-}
-
-static size_t vec_partition(char *arr, size_t lo, size_t hi, size_t size,
-                             neverc_vector_cmp_fn cmp) {
-    size_t mid = lo + (hi - lo) / 2;
-    char tmp[256];
-    char *buf = size <= sizeof(tmp) ? tmp : (char *)malloc(size);
-    if (!buf)
-        return lo;
-
-    if (cmp(arr + mid * size, arr + lo * size) < 0) {
-        memcpy(buf, arr + lo * size, size);
-        memcpy(arr + lo * size, arr + mid * size, size);
-        memcpy(arr + mid * size, buf, size);
-    }
-    if (cmp(arr + hi * size, arr + lo * size) < 0) {
-        memcpy(buf, arr + lo * size, size);
-        memcpy(arr + lo * size, arr + hi * size, size);
-        memcpy(arr + hi * size, buf, size);
-    }
-    if (cmp(arr + mid * size, arr + lo * size) < 0) {
-        memcpy(buf, arr + lo * size, size);
-        memcpy(arr + lo * size, arr + mid * size, size);
-        memcpy(arr + mid * size, buf, size);
-    }
-
-    memcpy(buf, arr + lo * size, size);
-    memcpy(arr + lo * size, arr + mid * size, size);
-    memcpy(arr + mid * size, buf, size);
-
-    char *pivot = arr + lo * size;
-    size_t i = lo;
-    size_t j = hi + 1;
-    for (;;) {
-        do { i++; } while (i <= hi && cmp(arr + i * size, pivot) < 0);
-        do { j--; } while (cmp(arr + j * size, pivot) > 0);
-        if (i >= j)
-            break;
-        memcpy(buf, arr + i * size, size);
-        memcpy(arr + i * size, arr + j * size, size);
-        memcpy(arr + j * size, buf, size);
-    }
-    memcpy(buf, arr + lo * size, size);
-    memcpy(arr + lo * size, arr + j * size, size);
-    memcpy(arr + j * size, buf, size);
-
-    if (buf != tmp)
-        free(buf);
-    return j;
-}
-
-static void vec_introsort(void *base, size_t nmemb, size_t size,
-                           neverc_vector_cmp_fn cmp, int depth_limit) {
-    if (nmemb <= 16) {
-        vec_insertion_sort(base, nmemb, size, cmp);
-        return;
-    }
-    if (depth_limit == 0) {
-        vec_heapsort(base, nmemb, size, cmp);
-        return;
-    }
-    char *arr = (char *)base;
-    size_t p = vec_partition(arr, 0, nmemb - 1, size, cmp);
-    vec_introsort(arr, p, size, cmp, depth_limit - 1);
-    vec_introsort(arr + (p + 1) * size, nmemb - p - 1, size, cmp,
-                  depth_limit - 1);
-}
-
-static int vec_log2(size_t n) {
-    int k = 0;
-    while (n > 1) { n >>= 1; k++; }
-    return k;
-}
-
 void neverc_vector_sort(neverc_vector_t *v, neverc_vector_cmp_fn cmp) {
     if (!v || v->size < 2 || !cmp)
         return;
-    int depth = 2 * vec_log2(v->size);
-    vec_introsort(v->data, v->size, v->elem_size, cmp, depth);
+    nci_pdqsort(v->data, v->size, v->elem_size, (nci_cmp_fn)cmp);
 }
 
 void neverc_vector_reverse(neverc_vector_t *v) {
@@ -844,53 +703,11 @@ bool neverc_vector_is_sorted(const neverc_vector_t *v,
 
 /* ===== Sorting Variants ===== */
 
-static void vec_merge(char *arr, size_t lo, size_t mid, size_t hi,
-                       size_t size, neverc_vector_cmp_fn cmp, char *aux) {
-    memcpy(aux + lo * size, arr + lo * size, (hi - lo + 1) * size);
-    size_t i = lo, j = mid + 1, k = lo;
-    while (i <= mid && j <= hi) {
-        if (cmp(aux + i * size, aux + j * size) <= 0) {
-            memcpy(arr + k * size, aux + i * size, size);
-            i++;
-        } else {
-            memcpy(arr + k * size, aux + j * size, size);
-            j++;
-        }
-        k++;
-    }
-    while (i <= mid) {
-        memcpy(arr + k * size, aux + i * size, size);
-        i++;
-        k++;
-    }
-    while (j <= hi) {
-        memcpy(arr + k * size, aux + j * size, size);
-        j++;
-        k++;
-    }
-}
-
-static void vec_mergesort(char *arr, size_t lo, size_t hi, size_t size,
-                           neverc_vector_cmp_fn cmp, char *aux) {
-    if (lo >= hi)
-        return;
-    size_t mid = lo + (hi - lo) / 2;
-    vec_mergesort(arr, lo, mid, size, cmp, aux);
-    vec_mergesort(arr, mid + 1, hi, size, cmp, aux);
-    if (cmp(arr + mid * size, arr + (mid + 1) * size) <= 0)
-        return;
-    vec_merge(arr, lo, mid, hi, size, cmp, aux);
-}
-
 void neverc_vector_stable_sort(neverc_vector_t *v,
                                 neverc_vector_cmp_fn cmp) {
     if (!v || v->size < 2 || !cmp)
         return;
-    char *aux = (char *)malloc(v->size * v->elem_size);
-    if (!aux)
-        return;
-    vec_mergesort((char *)v->data, 0, v->size - 1, v->elem_size, cmp, aux);
-    free(aux);
+    nci_timsort(v->data, v->size, v->elem_size, (nci_cmp_fn)cmp);
 }
 
 void neverc_vector_partial_sort(neverc_vector_t *v, size_t k,
@@ -901,26 +718,28 @@ void neverc_vector_partial_sort(neverc_vector_t *v, size_t k,
         k = v->size;
     char *arr = (char *)v->data;
     size_t sz = v->elem_size;
-    char tmp[256];
-    char *buf = sz <= sizeof(tmp) ? tmp : (char *)malloc(sz);
+    char stack_tmp[256];
+    char *buf = sz <= sizeof(stack_tmp) ? stack_tmp : (char *)malloc(sz);
     if (!buf)
         return;
 
+    nci_cmp_fn icmp = (nci_cmp_fn)cmp;
+
     for (size_t i = k / 2; i > 0; i--)
-        vec_sift_down(arr, i - 1, k - 1, sz, cmp);
+        nci_sift_down(arr, k, sz, icmp, buf, i - 1);
 
     for (size_t i = k; i < v->size; i++) {
         if (cmp(arr + i * sz, arr) < 0) {
             memcpy(buf, arr, sz);
             memcpy(arr, arr + i * sz, sz);
             memcpy(arr + i * sz, buf, sz);
-            vec_sift_down(arr, 0, k - 1, sz, cmp);
+            nci_sift_down(arr, k, sz, icmp, buf, 0);
         }
     }
 
-    vec_heapsort(arr, k, sz, cmp);
+    nci_heapsort(arr, k, sz, icmp, buf);
 
-    if (buf != tmp)
+    if (buf != stack_tmp)
         free(buf);
 }
 
