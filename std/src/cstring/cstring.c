@@ -79,8 +79,6 @@ int neverc_cstring_last_index_byte(const char *s, char c) {
     return p ? (int)(p - s) : -1;
 }
 
-#define NCI_RK_PRIME 16777619U
-
 int neverc_cstring_index(const char *s, const char *substr) {
     size_t slen = strlen(s);
     size_t sublen = strlen(substr);
@@ -100,20 +98,18 @@ int neverc_cstring_index(const char *s, const char *substr) {
         return -1;
     }
 
-    uint32_t h_pat = 0, h_win = 0, pw = 1;
-    for (size_t i = 0; i < sublen; i++) {
-        h_pat = h_pat * NCI_RK_PRIME + (uint32_t)up[i];
-        h_win = h_win * NCI_RK_PRIME + (uint32_t)us[i];
-        pw *= NCI_RK_PRIME;
-    }
-    if (h_win == h_pat && memcmp(s, substr, sublen) == 0) return 0;
-    for (size_t i = sublen; i < slen; i++) {
-        h_win = h_win * NCI_RK_PRIME + (uint32_t)us[i]
-              - pw * (uint32_t)us[i - sublen];
-        if (h_win == h_pat) {
-            size_t pos = i - sublen + 1;
-            if (memcmp(s + pos, substr, sublen) == 0) return (int)pos;
-        }
+    /* Boyer-Moore-Horspool */
+    size_t skip[256];
+    for (int c = 0; c < 256; c++) skip[c] = sublen;
+    for (size_t i = 0; i < sublen - 1; i++) skip[up[i]] = sublen - 1 - i;
+
+    unsigned char last = up[sublen - 1];
+    size_t pos = 0;
+    while (pos <= slen - sublen) {
+        unsigned char c = us[pos + sublen - 1];
+        if (c == last && memcmp(us + pos, up, sublen - 1) == 0)
+            return (int)pos;
+        pos += skip[c];
     }
     return -1;
 }
@@ -137,20 +133,20 @@ int neverc_cstring_last_index(const char *s, const char *substr) {
         return -1;
     }
 
-    uint32_t h_pat = 0, h_win = 0, pk = 1;
-    size_t last_start = slen - sublen;
-    for (size_t i = 0; i < sublen; i++) {
-        h_pat += (uint32_t)up[i] * pk;
-        h_win += (uint32_t)us[last_start + i] * pk;
-        pk *= NCI_RK_PRIME;
-    }
-    if (h_win == h_pat && memcmp(s + last_start, substr, sublen) == 0)
-        return (int)last_start;
-    for (size_t pos = last_start; pos > 0; pos--) {
-        h_win = h_win * NCI_RK_PRIME + (uint32_t)us[pos - 1]
-              - pk * (uint32_t)us[pos - 1 + sublen];
-        if (h_win == h_pat && memcmp(s + pos - 1, substr, sublen) == 0)
-            return (int)(pos - 1);
+    /* Reverse Boyer-Moore-Horspool */
+    size_t skip[256];
+    for (int c = 0; c < 256; c++) skip[c] = sublen;
+    for (size_t i = sublen - 1; i > 0; i--) skip[up[i]] = i;
+
+    unsigned char first = up[0];
+    size_t pos = slen - sublen;
+    for (;;) {
+        unsigned char c = us[pos];
+        if (c == first && memcmp(us + pos + 1, up + 1, sublen - 1) == 0)
+            return (int)pos;
+        size_t shift = skip[c];
+        if (pos < shift) break;
+        pos -= shift;
     }
     return -1;
 }

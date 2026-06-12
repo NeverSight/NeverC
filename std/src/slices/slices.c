@@ -157,6 +157,17 @@ void neverc_slices_sort_ints(int *slice, size_t len) {
     nci_pdqsort_int(slice, len);
 }
 
+int neverc_slices_binary_search_int(const int *slice, size_t len, int target, int *found) {
+    size_t lo = 0, hi = len;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (slice[mid] < target) lo = mid + 1;
+        else hi = mid;
+    }
+    if (found) *found = (lo < len && slice[lo] == target);
+    return (int)lo;
+}
+
 void neverc_slices_sort_stable(void *slice, size_t len, size_t elem_size, neverc_cmp_func_t cmp) {
     nci_timsort(slice, len, elem_size, (nci_cmp_fn)cmp);
 }

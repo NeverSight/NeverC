@@ -53,8 +53,6 @@ size_t neverc_bytes_last_index_byte(const uint8_t *s, size_t slen, uint8_t c) {
 #endif
 }
 
-#define NCI_RK_PRIME 16777619U
-
 size_t neverc_bytes_index(const uint8_t *s, size_t slen,
                           const uint8_t *sep, size_t seplen) {
     if (seplen == 0) return 0;
@@ -70,20 +68,19 @@ size_t neverc_bytes_index(const uint8_t *s, size_t slen,
         return (size_t)-1;
     }
 
-    uint32_t h_sep = 0, h_win = 0, pw = 1;
-    for (size_t i = 0; i < seplen; i++) {
-        h_sep = h_sep * NCI_RK_PRIME + (uint32_t)sep[i];
-        h_win = h_win * NCI_RK_PRIME + (uint32_t)s[i];
-        pw *= NCI_RK_PRIME;
-    }
-    if (h_win == h_sep && memcmp(s, sep, seplen) == 0) return 0;
-    for (size_t i = seplen; i < slen; i++) {
-        h_win = h_win * NCI_RK_PRIME + (uint32_t)s[i]
-              - pw * (uint32_t)s[i - seplen];
-        if (h_win == h_sep) {
-            size_t pos = i - seplen + 1;
-            if (memcmp(s + pos, sep, seplen) == 0) return pos;
-        }
+    /* Boyer-Moore-Horspool: build bad-character skip table, then scan
+       with last-char alignment. Average case skips ~seplen/2 per step. */
+    size_t skip[256];
+    for (int c = 0; c < 256; c++) skip[c] = seplen;
+    for (size_t i = 0; i < seplen - 1; i++) skip[sep[i]] = seplen - 1 - i;
+
+    uint8_t last = sep[seplen - 1];
+    size_t pos = 0;
+    while (pos <= slen - seplen) {
+        uint8_t c = s[pos + seplen - 1];
+        if (c == last && memcmp(s + pos, sep, seplen - 1) == 0)
+            return pos;
+        pos += skip[c];
     }
     return (size_t)-1;
 }
@@ -103,20 +100,21 @@ size_t neverc_bytes_last_index(const uint8_t *s, size_t slen,
         return (size_t)-1;
     }
 
-    uint32_t h_sep = 0, h_win = 0, pk = 1;
-    size_t last_start = slen - seplen;
-    for (size_t i = 0; i < seplen; i++) {
-        h_sep += (uint32_t)sep[i] * pk;
-        h_win += (uint32_t)s[last_start + i] * pk;
-        pk *= NCI_RK_PRIME;
-    }
-    if (h_win == h_sep && memcmp(s + last_start, sep, seplen) == 0)
-        return last_start;
-    for (size_t pos = last_start; pos > 0; pos--) {
-        h_win = h_win * NCI_RK_PRIME + (uint32_t)s[pos - 1]
-              - pk * (uint32_t)s[pos - 1 + seplen];
-        if (h_win == h_sep && memcmp(s + pos - 1, sep, seplen) == 0)
-            return pos - 1;
+    /* Reverse Boyer-Moore-Horspool: skip table on first character,
+       scan right-to-left. */
+    size_t skip[256];
+    for (int c = 0; c < 256; c++) skip[c] = seplen;
+    for (size_t i = seplen - 1; i > 0; i--) skip[sep[i]] = i;
+
+    uint8_t first = sep[0];
+    size_t pos = slen - seplen;
+    for (;;) {
+        uint8_t c = s[pos];
+        if (c == first && memcmp(s + pos + 1, sep + 1, seplen - 1) == 0)
+            return pos;
+        size_t shift = skip[c];
+        if (pos < shift) break;
+        pos -= shift;
     }
     return (size_t)-1;
 }
