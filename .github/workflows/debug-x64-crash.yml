@@ -58,73 +58,49 @@ jobs:
           file install/bin/neverc
           ./install/bin/neverc --version
 
-      - name: Reproduce and capture backtrace
+      - name: Determinism matrix (locate the non-deterministic stage)
         run: |
           set +e
-          ITERS="${{ github.event.inputs.iterations }}"
           NCC="$PWD/install/bin/neverc"
           SD="$PWD/src/std"
           T="$PWD/src/tests/neverc/std"
-          # Core dumps to a known path (overrides apport).
-          ulimit -c unlimited
-          echo "$PWD/core.%e.%p" | sudo tee /proc/sys/kernel/core_pattern
           echo "nproc=$(nproc)"
+          SRC="$T/test_time.c $SD/src/time/time.c"
+          BASE="-I$SD/include -fno-builtin-std"
 
-          # Exact flags used by the StdLibTest harness, plus -g for symbols.
-          COMMON="-I$SD/include -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -O1 -fno-builtin-std -g"
-
-          repro() {
-            local name="$1"; shift
-            echo "==================================================================="
-            echo "===== $name :: $ITERS compiles, run each 3x ====="
-            echo "==================================================================="
-            declare -A HASHES
-            local crashed=0
-            for i in $(seq 1 "$ITERS"); do
-              local bin="/tmp/${name}_${i}"
-              rm -f "$bin"
-              $NCC $COMMON -o "$bin" "$@" -lm -lpthread 2> "/tmp/${name}_${i}.cerr"
-              local crc=$?
-              if [ $crc -ne 0 ]; then
-                echo "[$name #$i] COMPILER exit=$crc  <-- neverc itself failed"
-                echo "  --- neverc stderr (head) ---"
-                head -40 "/tmp/${name}_${i}.cerr"
-                # core from neverc?
-                for c in core.neverc.*; do [ -f "$c" ] || continue
-                  echo "  === gdb bt (neverc core) ==="
-                  gdb -batch -ex 'thread apply all bt' "$NCC" "$c" 2>&1 | head -80
-                  rm -f "$c"
-                done
-                crashed=1
-                continue
-              fi
-              local h=$(sha256sum "$bin" | cut -c1-16)
-              HASHES["$h"]=1
-              for r in 1 2 3; do
-                rm -f core.*
-                "$bin" >/tmp/o 2>/tmp/e
-                local rc=$?
-                if [ $rc -ne 0 ]; then
-                  echo "[$name #$i hash=$h] RUN exit=$rc (signal? $((rc-128)))  tail-out: $(tail -1 /tmp/o)"
-                  for c in core.*; do [ -f "$c" ] || continue
-                    echo "  === gdb backtrace (test-binary core) ==="
-                    gdb -batch -ex 'bt' -ex 'info registers rsp rip' \
-                        -ex 'x/i $rip' -ex 'thread apply all bt' "$bin" "$c" 2>&1 | head -60
-                    rm -f "$c"
-                  done
-                  crashed=1
-                fi
-              done
+          # Compile the same source N times under a given config and report how
+          # many DISTINCT output binaries result.  >1 == non-deterministic.
+          det() {
+            local label="$1"; local flags="$2"; local env="$3"
+            declare -A H
+            for i in $(seq 1 8); do
+              rm -f /tmp/b
+              env $env $NCC $BASE $flags -o /tmp/b $SRC -lm -lpthread 2>/tmp/ce
+              if [ $? -ne 0 ]; then echo "[$label] COMPILE FAIL: $(head -1 /tmp/ce)"; return; fi
+              H["$(sha256sum /tmp/b | cut -c1-16)"]=1
             done
-            echo "[$name] distinct binary hashes across $ITERS compiles: ${#HASHES[@]} -> ${!HASHES[@]}"
-            if [ ${#HASHES[@]} -gt 1 ]; then
-              echo "[$name] *** NON-DETERMINISTIC CODEGEN on native x86_64 ***"
-            fi
-            if [ $crashed -eq 0 ]; then
-              echo "[$name] no crash reproduced in this attempt"
-            fi
+            local n=${#H[@]}
+            printf '%-46s distinct=%s %s\n' "$label" "$n" "$([ $n -gt 1 ] && echo NON-DETERMINISTIC || echo deterministic)"
           }
 
-          repro time  "$T/test_time.c"  "$SD/src/time/time.c"
-          repro netip "$T/test_netip.c" "$SD/src/net/netip/netip.c"
+          echo "==== determinism per config (8 compiles each) ===="
+          det "O1 auto-LTO (baseline)"               "-O1" ""
+          det "O2 auto-LTO"                           "-O2" ""
+          det "O0 auto-LTO"                           "-O0" ""
+          det "O1 -fno-lto"                           "-O1 -fno-lto" ""
+          det "O1 -fno-lto -fno-parallel-codegen"     "-O1 -fno-lto -fno-parallel-codegen" ""
+          det "O1 -fno-lto -fparallel-codegen=1"      "-O1 -fno-lto -fparallel-codegen=1" ""
+          det "O1 -fno-parallel-codegen"              "-O1 -fno-parallel-codegen" ""
+          det "O1 NEVERC_LTO_CACHE=0"                 "-O1" "NEVERC_LTO_CACHE=0"
+          det "O1 NEVERC_LTO_CACHE=0 PCACHE=0"        "-O1" "NEVERC_LTO_CACHE=0 NEVERC_LTO_PCACHE=0"
+          echo "==== single-cpu experiment (taskset) ===="
+          for ts in 1 2; do
+            unset HT; declare -A HT
+            for i in $(seq 1 8); do
+              rm -f /tmp/b
+              taskset -c 0-$((ts-1)) $NCC $BASE -O1 -o /tmp/b $SRC -lm -lpthread 2>/dev/null
+              HT["$(sha256sum /tmp/b | cut -c1-16)"]=1
+            done
+            printf '%-46s distinct=%s\n' "O1 taskset ${ts}cpu" "${#HT[@]}"
+          done
           echo "=== DONE ==="
