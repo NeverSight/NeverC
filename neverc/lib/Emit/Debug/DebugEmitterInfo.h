@@ -238,6 +238,8 @@ public:
                                          SourceLocation LineLoc,
                                          SourceLocation FileLoc);
 
+  static constexpr llvm::StringLiteral TrapMsgPrefix = "__neverc_trap_msg";
+
   /// Create a debug location for a verbose trap with category and message
   /// encoded into an artificial inline frame. The encoded function name is:
   ///   `__neverc_trap_msg$<Category>$<Message>`

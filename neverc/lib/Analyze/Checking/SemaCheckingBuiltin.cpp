@@ -3,6 +3,7 @@
 #include "neverc/Analyze/ScopeInfo.h"
 #include "neverc/Foundation/Builtin/TargetBuiltins.h"
 #include "neverc/Foundation/Core/SyncScope.h"
+#include "neverc/Foundation/Builtin/XorStrNames.h"
 #include "neverc/Foundation/Core/TokenKinds.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
@@ -129,7 +130,7 @@ ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
       S.Context, llvm::APInt(SizeBits, Key), SizeTy, Loc);
 
   FunctionDecl *FD = S.lookupNeverCStringFunctionDecl(
-      "__neverc_xorstr_decrypt", nullptr, Loc);
+      neverc::XorStrNames::DecryptFunctionName, nullptr, Loc);
   if (!FD) {
     unsigned DiagID = S.Diags.getCustomDiagID(
         DiagnosticsEngine::Error,

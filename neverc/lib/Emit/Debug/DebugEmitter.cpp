@@ -1448,7 +1448,7 @@ llvm::DIMacroFile *DebugEmitter::CreateTempMacroFile(llvm::DIMacroFile *Parent,
 llvm::DILocation *DebugEmitter::CreateTrapFailureMessageFor(
     llvm::DebugLoc TrapLocation, llvm::StringRef Category,
     llvm::StringRef FailureMsg) {
-  llvm::SmallString<64> FuncName("__neverc_trap_msg");
+  llvm::SmallString<64> FuncName(TrapMsgPrefix);
   FuncName += "$";
   FuncName += Category;
   FuncName += "$";
