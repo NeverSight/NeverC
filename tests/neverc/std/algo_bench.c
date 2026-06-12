@@ -582,8 +582,8 @@ static char *old_to_upper(const char *s) {
 }
 
 static void bench_toupper(void) {
-    printf("\n=== to_upper: SWAR vs byte-at-a-time ===\n");
-    printf("%-15s  %10s  %10s  %8s\n", "size", "old", "new(SWAR)", "speedup");
+    printf("\n=== to_upper: auto-vectorized vs byte-at-a-time ===\n");
+    printf("%-15s  %10s  %10s  %8s\n", "size", "old", "new", "speedup");
 
     int sizes[] = {16, 64, 256, 1024};
     int nsizes = sizeof(sizes) / sizeof(sizes[0]);

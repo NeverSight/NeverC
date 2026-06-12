@@ -1,7 +1,7 @@
 /*
  * Quick correctness tests for optimized std algorithms:
- * - bytes: memcpy/memcmp + BMH substring search + SWAR case conversion
- * - cstring: libc functions + BMH substring search + SWAR case conversion
+ * - bytes: memcpy/memcmp + BMH substring search + auto-vectorized case conversion
+ * - cstring: libc functions + BMH substring search + auto-vectorized case conversion
  * - suffixarray: SA-IS construction
  * - slices: reverse with stack buffer + branchless binary search
  * - crc32: slicing-by-8, crc64: slicing-by-8
@@ -640,7 +640,7 @@ static void test_hex_encode(void) {
     CHECK(hex_ok, "hex encode all 256 bytes");
 }
 
-/* ---- to_upper/to_lower SWAR tests ---- */
+/* ---- to_upper/to_lower tests ---- */
 static void test_swar_case(void) {
     char *up = neverc_cstring_to_upper("hello world 123 !@#");
     CHECK(strcmp(up, "HELLO WORLD 123 !@#") == 0, "swar to_upper");
@@ -1020,7 +1020,7 @@ int main(void) {
     printf("--- hex encode (pair table) ---\n");
     test_hex_encode();
 
-    printf("--- to_upper/to_lower (SWAR) ---\n");
+    printf("--- to_upper/to_lower ---\n");
     test_swar_case();
 
     printf("--- rand bounded (Lemire) ---\n");
