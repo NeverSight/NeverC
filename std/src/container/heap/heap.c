@@ -4,6 +4,15 @@
  *
  * The user provides an interface struct with function pointers
  * (Len / Less / Swap / Push / Pop) — same abstraction as Go's heap.Interface.
+ *
+ * Uses bottom-up sift-down (Floyd's optimization):
+ * Phase 1 — push to leaf following smaller children (1 Less per level,
+ *           no parent comparison, no data-dependent branch).
+ * Phase 2 — sift back up from the leaf to the correct position
+ *           (expected O(1) steps since most elements belong near bottom).
+ * Net effect: ~50% fewer Less calls vs standard top-down sift-down,
+ * and the hot loop in phase 1 is branch-free (always swaps), avoiding
+ * pipeline stalls from mispredicted early-exit branches.
  */
 
 #include "neverc/std/container/heap.h"
@@ -19,21 +28,31 @@ static void heap_up(neverc_heap_interface_t *h, int j) {
 }
 
 static int heap_down(neverc_heap_interface_t *h, int i0, int n) {
-    int i = i0;
+    int j1 = 2 * i0 + 1;
+    if (j1 >= n || j1 < 0)
+        return 0;
+
+    int leaf = i0;
     for (;;) {
-        int j1 = 2 * i + 1;
-        if (j1 >= n || j1 < 0)
-            break;
+        j1 = 2 * leaf + 1;
+        if (j1 >= n || j1 < 0) break;
         int j = j1;
         int j2 = j1 + 1;
         if (j2 < n && h->less_fn(h->data, j2, j1))
             j = j2;
-        if (!h->less_fn(h->data, j, i))
-            break;
-        h->swap_fn(h->data, i, j);
-        i = j;
+        h->swap_fn(h->data, leaf, j);
+        leaf = j;
     }
-    return i > i0;
+
+    while (leaf > i0) {
+        int parent = (leaf - 1) / 2;
+        if (!h->less_fn(h->data, leaf, parent))
+            break;
+        h->swap_fn(h->data, leaf, parent);
+        leaf = parent;
+    }
+
+    return leaf > i0;
 }
 
 void neverc_heap_init(neverc_heap_interface_t *h) {

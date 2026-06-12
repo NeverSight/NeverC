@@ -267,12 +267,20 @@ int neverc_slices_index_func(const void *slice, size_t len, size_t elem_size,
 size_t neverc_slices_delete_func(void *slice, size_t len, size_t elem_size,
                                   neverc_slices_pred_func_t f) {
     char *p = (char *)slice;
-    size_t w = 0;
-    for (size_t r = 0; r < len; r++) {
-        if (!f(p + r * elem_size)) {
-            if (w != r) memcpy(p + w * elem_size, p + r * elem_size, elem_size);
-            w++;
+    size_t w = 0, r = 0;
+    while (r < len) {
+        if (f(p + r * elem_size)) {
+            r++;
+            continue;
         }
+        size_t run_start = r;
+        r++;
+        while (r < len && !f(p + r * elem_size))
+            r++;
+        size_t run_len = r - run_start;
+        if (w != run_start)
+            memmove(p + w * elem_size, p + run_start * elem_size, run_len * elem_size);
+        w += run_len;
     }
     return w;
 }
