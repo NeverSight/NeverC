@@ -118,6 +118,21 @@ static char *quote_with(const char *s, char quote, int ascii_only, int graphic_o
 
     size_t i = 0;
     while (i < slen) {
+        /* Fast path: bulk-copy a run of printable ASCII bytes that quote to
+         * themselves (everything in 0x20..0x7E except the quote char and '\').
+         * These are emitted verbatim in every mode, so this avoids per-byte
+         * rune decoding and per-character buffer appends for typical text. */
+        unsigned char c0 = (unsigned char)s[i];
+        if (c0 >= 0x20 && c0 <= 0x7E && c0 != (unsigned char)quote && c0 != '\\') {
+            size_t start = i;
+            do {
+                i++;
+                c0 = (unsigned char)s[i];
+            } while (i < slen && c0 >= 0x20 && c0 <= 0x7E &&
+                     c0 != (unsigned char)quote && c0 != '\\');
+            buf_puts(&b, s + start, i - start);
+            continue;
+        }
         uint32_t r;
         int width;
         neverc_utf8_decode_rune((const uint8_t *)s + i, slen - i, &r, &width);
