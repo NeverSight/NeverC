@@ -1,5 +1,7 @@
 #include "neverc/std/image/png.h"
 #include "neverc/std/compress/flate.h"
+#include "neverc/std/hash/crc32.h"
+#include "neverc/std/hash/adler32.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,50 +19,14 @@ static void write_u32be(uint8_t *p, uint32_t v) {
     p[3] = (uint8_t)(v);
 }
 
-static const uint32_t crc_table[256] = {
-    0x00000000,0x77073096,0xEE0E612C,0x990951BA,0x076DC419,0x706AF48F,0xE963A535,0x9E6495A3,
-    0x0EDB8832,0x79DCB8A4,0xE0D5E91B,0x97D2D988,0x09B64C2B,0x7EB17CBE,0xE7B82D09,0x90BF1D9F,
-    0x1DB71064,0x6AB020F2,0xF3B97148,0x84BE41DE,0x1ADAD47D,0x6DDDE4EB,0xF4D4B551,0x83D385C7,
-    0x136C9856,0x646BA8C0,0xFD62F97A,0x8A65C9EC,0x14015C4F,0x63066CD9,0xFA0F3D63,0x8D080DF5,
-    0x3B6E20C8,0x4C69105E,0xD56041E4,0xA2677172,0x3C03E4D1,0x4B04D447,0xD20D85FD,0xA50AB56B,
-    0x35B5A8FA,0x42B2986C,0xDBBBC9D6,0xACBCF940,0x32D86CE3,0x45DF5C75,0xDCD60DCF,0xABD13D59,
-    0x26D930AC,0x51DE003A,0xC8D75180,0xBFD06116,0x21B4F6B5,0x56B3C423,0xCFBA9599,0xB8BDA50F,
-    0x2802B89E,0x5F058808,0xC60CD9B2,0xB10BE924,0x2F6F7C87,0x58684C11,0xC1611DAB,0xB6662D3D,
-    0x76DC4190,0x01DB7106,0x98D220BC,0xEFD5102A,0x71B18589,0x06B6B51F,0x9FBFE4A5,0xE8B8D433,
-    0x7807C9A2,0x0F00F934,0x9609A88E,0xE10E9818,0x7F6A0DBB,0x086D3D2D,0x91646C97,0xE6635C01,
-    0x6B6B51F4,0x1C6C6162,0x856530D8,0xF262004E,0x6C0695ED,0x1B01A57B,0x8208F4C1,0xF50FC457,
-    0x65B0D9C6,0x12B7E950,0x8BBEB8EA,0xFCB9887C,0x62DD1DDF,0x15DA2D49,0x8CD37CF3,0xFBD44C65,
-    0x4DB26158,0x3AB551CE,0xA3BC0074,0xD4BB30E2,0x4ADFA541,0x3DD895D7,0xA4D1C46D,0xD3D6F4FB,
-    0x4369E96A,0x346ED9FC,0xAD678846,0xDA60B8D0,0x44042D73,0x33031DE5,0xAA0A4C5F,0xDD0D7822,
-    0x3B6E20C8,0x4C69105E,0xD56041E4,0xA2677172,0x3C03E4D1,0x4B04D447,0xD20D85FD,0xA50AB56B,
-    0x35B5A8FA,0x42B2986C,0xDBBBC9D6,0xACBCF940,0x32D86CE3,0x45DF5C75,0xDCD60DCF,0xABD13D59,
-    0x26D930AC,0x51DE003A,0xC8D75180,0xBFD06116,0x21B4F6B5,0x56B3C423,0xCFBA9599,0xB8BDA50F,
-    0x2802B89E,0x5F058808,0xC60CD9B2,0xB10BE924,0x2F6F7C87,0x58684C11,0xC1611DAB,0xB6662D3D,
-    0x76DC4190,0x01DB7106,0x98D220BC,0xEFD5102A,0x71B18589,0x06B6B51F,0x9FBFE4A5,0xE8B8D433,
-    0x7807C9A2,0x0F00F934,0x9609A88E,0xE10E9818,0x7F6A0DBB,0x086D3D2D,0x91646C97,0xE6635C01,
-    0x6B6B51F4,0x1C6C6162,0x856530D8,0xF262004E,0x6C0695ED,0x1B01A57B,0x8208F4C1,0xF50FC457,
-    0x65B0D9C6,0x12B7E950,0x8BBEB8EA,0xFCB9887C,0x62DD1DDF,0x15DA2D49,0x8CD37CF3,0xFBD44C65,
-    0x4DB26158,0x3AB551CE,0xA3BC0074,0xD4BB30E2,0x4ADFA541,0x3DD895D7,0xA4D1C46D,0xD3D6F4FB,
-    0x4369E96A,0x346ED9FC,0xAD678846,0xDA60B8D0,0x44042D73,0x33031DE5,0xAA0A4C5F,0xDD0D7822,
-    0x5005713C,0x270241AA,0xBE0B1010,0xC90C2086,0x5768B525,0x206F85B3,0xB966D409,0xCE61E49F,
-    0x5EDEF90E,0x29D9C998,0xB0D09822,0xC7D7A8B4,0x59B33D17,0x2EB40D81,0xB7BD5C3B,0xC0BA6CAD,
-    0xEDB88320,0x9ABFB3B6,0x03B6E20C,0x74B1D29A,0xEAD54739,0x9DD277AF,0x04DB2615,0x73DC1683,
-    0xE3630B12,0x94643B84,0x0D6D6A3E,0x7A6A5AA8,0xE40ECF0B,0x9309FF9D,0x0A00AE27,0x7D079EB1,
-    0xF00F9344,0x8708A3D2,0x1E01F268,0x6906C2FE,0xF762575D,0x806567CB,0x196C3671,0x6E6B06E7,
-    0xFED41B76,0x89D32BE0,0x10DA7A5A,0x67DD4ACC,0xF9B9DF6F,0x8EBEEFF9,0x17B7BE43,0x60B08ED5,
-    0xD6D6A3E8,0xA1D1937E,0x38D8C2C4,0x4FDFF252,0xD1BB67F1,0xA6BC5767,0x3FB506DD,0x48B2364B,
-    0xD80D2BDA,0xAF0A1B4C,0x36034AF6,0x41047A60,0xDF60EFC3,0xA867DF55,0x316E8EEF,0x4669BE79,
-};
-
-static uint32_t png_crc32(const uint8_t *data, size_t len) {
-    uint32_t c = 0xFFFFFFFF;
-    for (size_t i = 0; i < len; i++)
-        c = crc_table[(c ^ data[i]) & 0xFF] ^ (c >> 8);
-    return c ^ 0xFFFFFFFF;
-}
-
+/* Chunk CRC is the standard CRC-32/IEEE over the chunk's type+data (RFC 2083
+ * §5). Use the shared slicing-by-8 implementation instead of a private
+ * byte-at-a-time table: it is both faster and correct. (The previous private
+ * table was corrupted — duplicated rows — so every emitted chunk carried an
+ * invalid CRC that conformant decoders such as libpng reject; only this
+ * library's own decoder, which skips CRC verification, accepted them.) */
 static uint32_t png_chunk_crc(const uint8_t *type_and_data, size_t len) {
-    return png_crc32(type_and_data, len);
+    return neverc_crc32_ieee(type_and_data, len);
 }
 
 static uint8_t paeth_predictor(uint8_t a, uint8_t b, uint8_t c) {
@@ -81,6 +47,62 @@ static int channels_for_color_type(uint8_t ct) {
         case 4: return 2;
         case 6: return 4;
         default: return 0;
+    }
+}
+
+/*
+ * Reverse one scanline's PNG filter (RFC 2083 §6) into dst.
+ *
+ * The previous decoder ran a per-byte switch on filter_type plus a per-byte
+ * `x >= bpp` / `prev != NULL` test. Both are loop-invariant, so this hoists the
+ * filter and the prev/no-prev cases out: a None/Up row with no left neighbour
+ * collapses to memcpy / a tight vectorizable add, and Sub/Average/Paeth split
+ * into a `bpp`-byte prefix (left neighbour = 0) and a branch-free main loop.
+ * The arithmetic per byte is identical to the old switch, so output is
+ * bit-for-bit unchanged. Returns 0, or -1 on an unknown filter type.
+ */
+static int png_unfilter_row(uint8_t *dst, const uint8_t *src,
+                            const uint8_t *prev, size_t stride, size_t bpp,
+                            uint8_t filter_type) {
+    size_t x;
+    switch (filter_type) {
+    case 0:                                   /* None */
+        memcpy(dst, src, stride);
+        return 0;
+    case 1:                                   /* Sub: a = left */
+        for (x = 0; x < bpp; x++) dst[x] = src[x];
+        for (x = bpp; x < stride; x++) dst[x] = (uint8_t)(src[x] + dst[x - bpp]);
+        return 0;
+    case 2:                                   /* Up: b = above */
+        if (prev) for (x = 0; x < stride; x++) dst[x] = (uint8_t)(src[x] + prev[x]);
+        else      memcpy(dst, src, stride);
+        return 0;
+    case 3:                                   /* Average: (a + b) / 2 */
+        if (prev) {
+            for (x = 0; x < bpp; x++)
+                dst[x] = (uint8_t)(src[x] + (uint8_t)((int)prev[x] / 2));
+            for (x = bpp; x < stride; x++)
+                dst[x] = (uint8_t)(src[x] + (uint8_t)(((int)dst[x - bpp] + (int)prev[x]) / 2));
+        } else {
+            for (x = 0; x < bpp; x++) dst[x] = src[x];
+            for (x = bpp; x < stride; x++)
+                dst[x] = (uint8_t)(src[x] + (uint8_t)((int)dst[x - bpp] / 2));
+        }
+        return 0;
+    case 4:                                   /* Paeth */
+        if (prev) {
+            for (x = 0; x < bpp; x++)
+                dst[x] = (uint8_t)(src[x] + paeth_predictor(0, prev[x], 0));
+            for (x = bpp; x < stride; x++)
+                dst[x] = (uint8_t)(src[x] + paeth_predictor(dst[x - bpp], prev[x], prev[x - bpp]));
+        } else {
+            for (x = 0; x < bpp; x++) dst[x] = src[x];
+            for (x = bpp; x < stride; x++)
+                dst[x] = (uint8_t)(src[x] + paeth_predictor(dst[x - bpp], 0, 0));
+        }
+        return 0;
+    default:
+        return -1;
     }
 }
 
@@ -154,25 +176,52 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
         uint8_t *dst = img->pixels + y * img->stride;
         uint8_t *prev = (y > 0) ? img->pixels + (y - 1) * img->stride : NULL;
 
-        for (size_t x = 0; x < img->stride; x++) {
-            uint8_t a = (x >= bpp) ? dst[x - bpp] : 0;
-            uint8_t b = prev ? prev[x] : 0;
-            uint8_t c = (prev && x >= bpp) ? prev[x - bpp] : 0;
-            uint8_t raw_byte = src[x];
-
-            switch (filter_type) {
-                case 0: dst[x] = raw_byte; break;
-                case 1: dst[x] = raw_byte + a; break;
-                case 2: dst[x] = raw_byte + b; break;
-                case 3: dst[x] = raw_byte + (uint8_t)(((int)a + (int)b) / 2); break;
-                case 4: dst[x] = raw_byte + paeth_predictor(a, b, c); break;
-                default: free(raw); free(img->pixels); img->pixels = NULL; return -1;
-            }
+        if (png_unfilter_row(dst, src, prev, img->stride, bpp, filter_type) != 0) {
+            free(raw); free(img->pixels); img->pixels = NULL; return -1;
         }
     }
 
     free(raw);
     return 0;
+}
+
+/*
+ * Filter one scanline with the PNG spec's recommended minimum-sum-of-absolute-
+ * residuals heuristic: try all five filter types and keep the one whose signed
+ * residuals are smallest, which leaves DEFLATE the most redundancy to exploit.
+ * Writes the chosen type to *out_filter and the filtered bytes to out_row
+ * (stride bytes); scratch is stride scratch bytes. a/b/c follow RFC 2083:
+ * a = left, b = above, c = upper-left, in the raw (unfiltered) image.
+ */
+static void png_filter_row(const uint8_t *cur, const uint8_t *prev,
+                           size_t stride, size_t bpp,
+                           uint8_t *out_filter, uint8_t *out_row,
+                           uint8_t *scratch) {
+    unsigned long best_score = ~0UL;
+    int best = 0;
+    for (int f = 0; f < 5; f++) {
+        unsigned long score = 0;
+        for (size_t x = 0; x < stride; x++) {
+            uint8_t a = (x >= bpp) ? cur[x - bpp] : 0;
+            uint8_t b = prev ? prev[x] : 0;
+            uint8_t c = (prev && x >= bpp) ? prev[x - bpp] : 0;
+            uint8_t v;
+            switch (f) {
+                case 0:  v = cur[x]; break;
+                case 1:  v = (uint8_t)(cur[x] - a); break;
+                case 2:  v = (uint8_t)(cur[x] - b); break;
+                case 3:  v = (uint8_t)(cur[x] - (uint8_t)(((unsigned)a + b) / 2)); break;
+                default: v = (uint8_t)(cur[x] - paeth_predictor(a, b, c)); break;
+            }
+            scratch[x] = v;
+            score += (v < 128) ? v : (256u - v);   /* |signed byte| */
+        }
+        if (score < best_score) {
+            best_score = score; best = f;
+            memcpy(out_row, scratch, stride);
+        }
+    }
+    *out_filter = (uint8_t)best;
 }
 
 int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t *out_len) {
@@ -181,14 +230,23 @@ int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t 
 
     size_t raw_size = (img->stride + 1) * img->height;
     uint8_t *raw = (uint8_t *)malloc(raw_size);
-    if (!raw) return -1;
+    uint8_t *scratch = (uint8_t *)malloc(img->stride ? img->stride : 1);
+    if (!raw || !scratch) { free(raw); free(scratch); return -1; }
 
-    /* Apply no filter (type 0) for simplicity */
+    /* Adaptive per-scanline filtering (decoder reverses all five types). */
+    size_t bpp = img->channels ? img->channels : 1;
     for (uint32_t y = 0; y < img->height; y++) {
-        raw[y * (img->stride + 1)] = 0; /* filter None */
-        memcpy(raw + y * (img->stride + 1) + 1,
-               img->pixels + y * img->stride, img->stride);
+        const uint8_t *cur = img->pixels + (size_t)y * img->stride;
+        const uint8_t *prev = (y > 0)
+            ? img->pixels + (size_t)(y - 1) * img->stride : NULL;
+        uint8_t *row = raw + (size_t)y * (img->stride + 1);
+        png_filter_row(cur, prev, img->stride, bpp, &row[0], &row[1], scratch);
     }
+    free(scratch);
+
+    /* zlib's adler32 is over the filtered bytes that DEFLATE compresses; use the
+     * shared unrolled implementation instead of a byte-at-a-time loop. */
+    uint32_t adler = neverc_adler32_checksum(raw, raw_size);
 
     /* DEFLATE compress */
     size_t comp_cap = raw_size + raw_size / 100 + 64;
@@ -199,24 +257,6 @@ int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t 
     int rc = neverc_flate_compress(raw, raw_size, comp, &comp_len, NEVERC_FLATE_DEFAULT);
     free(raw);
     if (rc != 0) { free(comp); return -1; }
-
-    /* Build zlib wrapper: 2-byte header + deflate data + 4-byte adler32 */
-    /* Calculate adler32 of original raw data for zlib */
-    /* Re-create raw for adler32 calc */
-    raw = (uint8_t *)malloc(raw_size);
-    if (!raw) { free(comp); return -1; }
-    for (uint32_t y = 0; y < img->height; y++) {
-        raw[y * (img->stride + 1)] = 0;
-        memcpy(raw + y * (img->stride + 1) + 1,
-               img->pixels + y * img->stride, img->stride);
-    }
-    uint32_t a32_s1 = 1, a32_s2 = 0;
-    for (size_t i = 0; i < raw_size; i++) {
-        a32_s1 = (a32_s1 + raw[i]) % 65521;
-        a32_s2 = (a32_s2 + a32_s1) % 65521;
-    }
-    uint32_t adler = (a32_s2 << 16) | a32_s1;
-    free(raw);
 
     size_t zlib_len = 2 + comp_len + 4;
     uint8_t *zlib_data = (uint8_t *)malloc(zlib_len);

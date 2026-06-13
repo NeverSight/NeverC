@@ -1,4 +1,5 @@
 #include "neverc/std/image/png.h"
+#include "neverc/std/hash/crc32.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -230,6 +231,49 @@ static void test_large_image(void) {
     free(img.pixels);
 }
 
+/* Every emitted chunk must carry a valid CRC-32/IEEE over its type+data, or a
+ * conformant decoder (libpng, browsers) rejects the file. Walk the chunks and
+ * recompute. The IEND CRC is the universal constant 0xAE426082, a strong canary
+ * for the checksum being correct end to end. */
+static uint32_t rd_be32(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | p[3];
+}
+
+static void test_chunk_crc_valid(void) {
+    printf("[chunk_crc_valid]\n");
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 23; img.height = 19; img.bit_depth = 8;
+    img.color_type = NEVERC_PNG_COLOR_TRUECOLOR_ALPHA;
+    img.channels = 4; img.stride = (size_t)img.width * 4;
+    img.pixels = (uint8_t *)malloc(img.height * img.stride);
+    for (size_t i = 0; i < img.height * img.stride; i++)
+        img.pixels[i] = (uint8_t)(i * 53 + 11);
+
+    uint8_t *png = NULL; size_t len = 0;
+    ASSERT_EQ(neverc_png_encode(&img, &png, &len), 0);
+
+    size_t pos = 8; int saw_iend = 0;
+    while (pos + 12 <= len) {
+        uint32_t clen = rd_be32(png + pos);
+        if (pos + 12 + clen > len) break;
+        uint32_t stored = rd_be32(png + pos + 8 + clen);
+        uint32_t calc = neverc_crc32_ieee(png + pos + 4, 4 + clen);
+        ASSERT_EQ(stored, calc);
+        if (memcmp(png + pos + 4, "IEND", 4) == 0) {
+            ASSERT_EQ(stored, 0xAE426082u);   /* universal PNG IEND CRC */
+            saw_iend = 1;
+            break;
+        }
+        pos += 12 + clen;
+    }
+    ASSERT_TRUE(saw_iend);
+
+    free(png);
+    free(img.pixels);
+}
+
 int main(void) {
     printf("NeverC image/png tests\n");
     test_encode_decode_rgba();
@@ -238,6 +282,7 @@ int main(void) {
     test_pixel_at_bounds();
     test_invalid_data();
     test_large_image();
+    test_chunk_crc_valid();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

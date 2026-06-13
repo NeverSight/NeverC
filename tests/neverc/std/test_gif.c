@@ -145,12 +145,63 @@ static void test_single_color(void) {
     free(frame.indices);
 }
 
+/* Large patterned images exercise LZW dictionary growth, code-size boundaries,
+ * and the KwKwK case — none of which the small 4x4/8x8 cases above reach. This
+ * is the regression guard for the encoder child/sibling list and the decoder
+ * code-width timing (both previously corrupted any non-trivial GIF). */
+static void rt_check(const char *name, int w, int h, int pal,
+                     uint8_t (*pat)(int, int, int)) {
+    neverc_gif_frame_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.width = w;
+    frame.height = h;
+    frame.palette_size = pal;
+    for (int i = 0; i < pal; i++)
+        frame.palette[i] = (neverc_gif_color_t){(uint8_t)(i*5), (uint8_t)(i*3), (uint8_t)(i*7)};
+    size_t n = (size_t)w * h;
+    frame.indices = (uint8_t *)malloc(n);
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++)
+            frame.indices[y*w+x] = pat(x, y, pal);
+
+    uint8_t *gif = NULL; size_t glen = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &gif, &glen), 0);
+    neverc_gif_image_t img;
+    ASSERT_EQ(neverc_gif_decode(gif, glen, &img), 0);
+    ASSERT_TRUE(img.num_frames >= 1);
+    ASSERT_EQ(img.frames[0].width, w);
+    ASSERT_EQ(img.frames[0].height, h);
+    int ok = 1;
+    for (size_t i = 0; i < n; i++)
+        if (img.frames[0].indices[i] != frame.indices[i]) { ok = 0; break; }
+    if (!ok) printf("  %s roundtrip mismatch\n", name);
+    ASSERT_TRUE(ok);
+
+    free(gif); neverc_gif_free(&img); free(frame.indices);
+}
+
+static uint8_t rt_gradient(int x, int y, int ps){ return (uint8_t)((x + y) % ps); }
+static uint8_t rt_runs(int x, int y, int ps){ (void)y; return (uint8_t)((x / 17) % ps); }
+static uint8_t rt_mix(int x, int y, int ps){ return (uint8_t)((x*7 + y*13 + (x/3)*(y/5)) % ps); }
+static uint8_t rt_checker(int x, int y, int ps){ return (uint8_t)(((x ^ y) & 1) ? (1 % ps) : 0); }
+
+static void test_large_roundtrip(void) {
+    printf("[large_roundtrip]\n");
+    rt_check("gradient", 200, 200, 64,  rt_gradient);
+    rt_check("runs",     300, 120, 32,  rt_runs);
+    rt_check("mix",      256, 256, 128, rt_mix);
+    rt_check("mix256",   200, 200, 256, rt_mix);
+    rt_check("checker",  150, 150, 4,   rt_checker);
+    rt_check("grad2",    64,  64,  2,   rt_gradient);
+}
+
 int main(void) {
     printf("NeverC image/gif tests\n");
     test_encode_decode();
     test_from_rgba();
     test_invalid_data();
     test_single_color();
+    test_large_roundtrip();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

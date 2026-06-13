@@ -8,26 +8,16 @@
  * No libc math dependency — all trig via precomputed tables.
  * ========================================================================= */
 
-/* Precomputed: cos((2*x+1)*u*PI/16) for x,u in [0,7] */
-static const double dct_cos[8][8] = {
-    { 1.000000000000000, 0.980785280403230, 0.923879532511287, 0.831469612302545,
-      0.707106781186548, 0.555570233019602, 0.382683432365090, 0.195090322016128},
-    { 1.000000000000000, 0.831469612302545, 0.382683432365090,-0.195090322016128,
-     -0.707106781186548,-0.980785280403230,-0.923879532511287,-0.555570233019602},
-    { 1.000000000000000, 0.555570233019602,-0.382683432365090,-0.980785280403230,
-     -0.707106781186548, 0.195090322016128, 0.923879532511287, 0.831469612302545},
-    { 1.000000000000000, 0.195090322016128,-0.923879532511287,-0.555570233019602,
-      0.707106781186548, 0.831469612302545,-0.382683432365090,-0.980785280403230},
-    { 1.000000000000000,-0.195090322016128,-0.923879532511287, 0.555570233019602,
-      0.707106781186548,-0.831469612302545,-0.382683432365090, 0.980785280403230},
-    { 1.000000000000000,-0.555570233019602,-0.382683432365090, 0.980785280403230,
-     -0.707106781186548,-0.195090322016128, 0.923879532511287,-0.831469612302545},
-    { 1.000000000000000,-0.831469612302545, 0.382683432365090, 0.195090322016128,
-     -0.707106781186548, 0.980785280403230,-0.923879532511287, 0.555570233019602},
-    { 1.000000000000000,-0.980785280403230, 0.923879532511287,-0.831469612302545,
-      0.707106781186548,-0.555570233019602, 0.382683432365090,-0.195090322016128},
+/* AAN (Arai-Agui-Nakajima) per-coefficient scale factors, shared by the forward
+ * DCT (encoder) and the inverse DCT (decoder). The fast transforms emit/consume
+ * coefficients pre-scaled by aanscale[row]*aanscale[col]; that factor is folded
+ * into the quantization divisor (encoder) and the dequantization multiplier
+ * (decoder), so only ~5 multiplies are needed per 8-point 1-D transform instead
+ * of 64. (Same approach as libjpeg's float DCT/IDCT, jfdctflt/jidctflt.) */
+static const double aanscale[8] = {
+    1.0, 1.387039845322148, 1.306562964876377, 1.175875602419359,
+    1.0, 0.785694958387102, 0.541196100146197, 0.275899379282943
 };
-static const double INV_SQRT2 = 0.707106781186548;
 
 /* Standard JPEG luminance quantization table (quality-scaled) */
 static const uint8_t std_lum_quant[64] = {
@@ -177,24 +167,41 @@ static void scale_quant_table(uint8_t *out, const uint8_t *base, int quality) {
     }
 }
 
-static void fdct_block(const int *input, int *output) {
-    double tmp[64];
-    for (int i = 0; i < 8; i++) {
-        for (int u = 0; u < 8; u++) {
-            double sum = 0.0;
-            for (int x = 0; x < 8; x++)
-                sum += input[i * 8 + x] * dct_cos[x][u];
-            double cu = (u == 0) ? INV_SQRT2 : 1.0;
-            tmp[i * 8 + u] = cu * sum / 2.0;
-        }
-    }
-    for (int u = 0; u < 8; u++) {
-        for (int v = 0; v < 8; v++) {
-            double sum = 0.0;
-            for (int y = 0; y < 8; y++)
-                sum += tmp[y * 8 + u] * dct_cos[y][v];
-            double cv = (v == 0) ? INV_SQRT2 : 1.0;
-            output[v * 8 + u] = (int)(cv * sum / 2.0);
+/*
+ * AAN fast forward DCT (after Arai, Agui & Nakajima 1988; port of libjpeg
+ * jfdctflt). In-place on a row-major 8x8 float block; output[row*8+col] is the
+ * DCT coefficient scaled by aanscale[row]*aanscale[col] (descaled during
+ * quantization). 8 row + 8 column 1-D transforms, 5 multiplies each.
+ */
+static void fdct_aan(float *data) {
+    for (int pass = 0; pass < 2; pass++) {
+        int stride = pass == 0 ? 1 : 8;   /* rows first, then columns */
+        int step   = pass == 0 ? 8 : 1;
+        for (int k = 0; k < 8; k++) {
+            float *d = data + k * step;
+            float t0 = d[0*stride] + d[7*stride], t7 = d[0*stride] - d[7*stride];
+            float t1 = d[1*stride] + d[6*stride], t6 = d[1*stride] - d[6*stride];
+            float t2 = d[2*stride] + d[5*stride], t5 = d[2*stride] - d[5*stride];
+            float t3 = d[3*stride] + d[4*stride], t4 = d[3*stride] - d[4*stride];
+
+            float t10 = t0 + t3, t13 = t0 - t3;
+            float t11 = t1 + t2, t12 = t1 - t2;
+            d[0*stride] = t10 + t11;
+            d[4*stride] = t10 - t11;
+            float z1 = (t12 + t13) * 0.707106781f;
+            d[2*stride] = t13 + z1;
+            d[6*stride] = t13 - z1;
+
+            t10 = t4 + t5; t11 = t5 + t6; t12 = t6 + t7;
+            float z5 = (t10 - t12) * 0.382683433f;
+            float z2 = 0.541196100f * t10 + z5;
+            float z4 = 1.306562965f * t12 + z5;
+            float z3 = t11 * 0.707106781f;
+            float z11 = t7 + z3, z13 = t7 - z3;
+            d[5*stride] = z13 + z2;
+            d[3*stride] = z13 - z2;
+            d[1*stride] = z11 + z4;
+            d[7*stride] = z11 - z4;
         }
     }
 }
@@ -209,13 +216,18 @@ static int bit_length(int val) {
 static void encode_block(bitwriter_t *bw, int *block, const uint8_t *quant,
                          int *prev_dc, const huff_entry_t *dc_table,
                          const huff_entry_t *ac_table) {
-    int dct[64];
-    fdct_block(block, dct);
+    float fdata[64];
+    for (int i = 0; i < 64; i++) fdata[i] = (float)block[i];
+    fdct_aan(fdata);
 
-    /* Quantize */
+    /* Quantize. The fast DCT leaves each coefficient scaled by
+     * aanscale[row]*aanscale[col]; fold that and the 1/8 DCT normalization into
+     * the divisor so the result matches a reference DCT to within rounding. */
     int quantized[64];
     for (int i = 0; i < 64; i++) {
-        double val = (double)dct[zigzag[i]] / quant[i];
+        int nat = zigzag[i];
+        double div = (double)quant[i] * 8.0 * aanscale[nat >> 3] * aanscale[nat & 7];
+        double val = (double)fdata[nat] / div;
         quantized[i] = (int)(val > 0 ? val + 0.5 : val - 0.5);
     }
 
@@ -440,25 +452,35 @@ static uint16_t br_read_u16(bitreader_t *br) {
     return ((uint16_t)h << 8) | l;
 }
 
-static int br_read_bit(bitreader_t *br) {
-    if (br->bit_cnt == 0) {
-        uint8_t b = br_read_byte_raw(br);
-        if (b == 0xFF) {
-            uint8_t next = br_read_byte_raw(br);
-            (void)next; /* skip stuffed 0x00 */
+/* Refill the MSB-first bit buffer so the low `bit_cnt` bits are valid (up to 32
+ * after the call, always >= 25 so a 16-bit peek is safe). 0xFF is a literal data
+ * byte whose following stuffed byte is skipped; past end-of-data we pad with
+ * zero bits. Several bytes are pulled per call so the hot entropy loop amortizes
+ * the work, replacing the old one-bit-at-a-time reader. Decoded bits are
+ * identical to the old reader (same 0xFF handling, same zero padding). */
+static void br_refill(bitreader_t *br) {
+    while (br->bit_cnt <= 24) {
+        uint8_t b = 0;
+        if (br->pos < br->len) {
+            b = br->data[br->pos++];
+            if (b == 0xFF && br->pos < br->len) br->pos++;   /* skip stuffed byte */
         }
-        br->bit_buf = b;
-        br->bit_cnt = 8;
+        br->bit_buf = (br->bit_buf << 8) | b;
+        br->bit_cnt += 8;
     }
-    br->bit_cnt--;
-    return (br->bit_buf >> br->bit_cnt) & 1;
 }
 
 static int br_read_bits(bitreader_t *br, int n) {
-    int val = 0;
-    for (int i = 0; i < n; i++)
-        val = (val << 1) | br_read_bit(br);
-    return val;
+    if (n == 0) return 0;
+    if (br->bit_cnt < n) br_refill(br);
+    br->bit_cnt -= n;
+    return (int)((br->bit_buf >> br->bit_cnt) & (((uint32_t)1 << n) - 1));
+}
+
+static int br_read_bit(bitreader_t *br) {
+    if (br->bit_cnt < 1) br_refill(br);
+    br->bit_cnt -= 1;
+    return (int)((br->bit_buf >> br->bit_cnt) & 1u);
 }
 
 typedef struct {
@@ -466,12 +488,19 @@ typedef struct {
     uint8_t length;
 } huff_decode_entry_t;
 
+/* Look up codes this many bits or shorter in one table hit; longer codes (rare)
+ * fall back to the canonical bit-by-bit walk. 8 covers the vast majority of
+ * JPEG symbols. (Same fast-decode strategy as the flate decoder.) */
+#define JPEG_HUFF_LOOKAHEAD 8
+
 typedef struct {
     int mincode[17];
     int maxcode[17];
     int valptr[17];
     uint8_t *vals;
     int num_vals;
+    uint8_t look_nbits[1 << JPEG_HUFF_LOOKAHEAD];   /* code length, 0 => slow path */
+    uint8_t look_sym[1 << JPEG_HUFF_LOOKAHEAD];     /* decoded symbol */
 } huff_decode_table_t;
 
 static void build_decode_table(huff_decode_table_t *t, const uint8_t *bits, const uint8_t *vals) {
@@ -496,11 +525,44 @@ static void build_decode_table(huff_decode_table_t *t, const uint8_t *bits, cons
         idx += bits[len];
         code <<= 1;
     }
+
+    /* Lookahead table: for every code of length <= LOOKAHEAD, fill all entries
+     * whose top `len` bits equal the code with (length, symbol). The remaining
+     * entries stay 0 (== "code is longer than LOOKAHEAD, use the slow path"). */
+    memset(t->look_nbits, 0, sizeof(t->look_nbits));
+    for (int len = 1; len <= JPEG_HUFF_LOOKAHEAD; len++) {
+        if (bits[len] == 0) continue;
+        for (int i = 0; i < bits[len]; i++) {
+            int codeword = t->mincode[len] + i;
+            int sym = t->vals[t->valptr[len] + i];
+            int lookbits = codeword << (JPEG_HUFF_LOOKAHEAD - len);
+            for (int ctr = 1 << (JPEG_HUFF_LOOKAHEAD - len); ctr > 0; ctr--) {
+                t->look_nbits[lookbits] = (uint8_t)len;
+                t->look_sym[lookbits] = (uint8_t)sym;
+                lookbits++;
+            }
+        }
+    }
 }
 
 static int huff_decode(bitreader_t *br, const huff_decode_table_t *t) {
-    int code = 0;
-    for (int len = 1; len <= 16; len++) {
+    if (br->bit_cnt < 16) br_refill(br);
+
+    /* Fast path: one table hit resolves any code <= LOOKAHEAD bits. */
+    int look = (int)((br->bit_buf >> (br->bit_cnt - JPEG_HUFF_LOOKAHEAD))
+                     & ((1 << JPEG_HUFF_LOOKAHEAD) - 1));
+    int nb = t->look_nbits[look];
+    if (nb) {
+        br->bit_cnt -= nb;
+        return t->look_sym[look];
+    }
+
+    /* Slow path: code is longer than LOOKAHEAD bits. Continue the canonical
+     * walk from where the lookahead left off (identical result to the old
+     * bit-by-bit decoder). */
+    int code = look;
+    br->bit_cnt -= JPEG_HUFF_LOOKAHEAD;
+    for (int len = JPEG_HUFF_LOOKAHEAD + 1; len <= 16; len++) {
         code = (code << 1) | br_read_bit(br);
         if (t->maxcode[len] >= 0 && code <= t->maxcode[len]) {
             int idx = t->valptr[len] + code - t->mincode[len];
@@ -519,30 +581,98 @@ static int decode_value(bitreader_t *br, int bits) {
     return val;
 }
 
-static void idct_block(const int *input, int *output) {
-    double tmp[64];
-    for (int y = 0; y < 8; y++) {
-        for (int x = 0; x < 8; x++) {
-            double sum = 0.0;
-            for (int u = 0; u < 8; u++) {
-                double cu = (u == 0) ? INV_SQRT2 : 1.0;
-                sum += cu * input[y * 8 + u] * dct_cos[x][u];
-            }
-            tmp[y * 8 + x] = sum / 2.0;
+/*
+ * AAN fast inverse DCT (after Arai, Agui & Nakajima 1988; port of libjpeg
+ * jidctflt). Replaces the O(8^3) reference IDCT (~1024 multiplies per 8x8 block)
+ * with 8 column + 8 row 1-D transforms of ~5 multiplies each (~80 total), the
+ * inverse-direction counterpart of the encoder's fdct_aan.
+ *
+ * `input` holds the dequantized coefficients in natural (row-major) order,
+ * already pre-scaled by aanscale[row]*aanscale[col] (folded into the dequant
+ * multiplier, exactly as the encoder folds the forward scale into quantization).
+ * `output` is the spatial 8x8 block, descaled by 8, level-shifted by +128 and
+ * clamped to [0,255]. The all-AC-zero column shortcut (the common case, since
+ * most coefficients quantize to zero) skips a full butterfly.
+ */
+static void idct_block(const float *input, int *output) {
+    float ws[64];
+
+    /* Pass 1: columns -> workspace. */
+    for (int c = 0; c < 8; c++) {
+        const float *in = input + c;
+        float *w = ws + c;
+
+        if (in[8] == 0.0f && in[16] == 0.0f && in[24] == 0.0f && in[32] == 0.0f &&
+            in[40] == 0.0f && in[48] == 0.0f && in[56] == 0.0f) {
+            float dc = in[0];
+            w[0] = w[8] = w[16] = w[24] = w[32] = w[40] = w[48] = w[56] = dc;
+            continue;
         }
+
+        /* Even part */
+        float tmp0 = in[0], tmp1 = in[16], tmp2 = in[32], tmp3 = in[48];
+        float t10 = tmp0 + tmp2, t11 = tmp0 - tmp2;
+        float t13 = tmp1 + tmp3;
+        float t12 = (tmp1 - tmp3) * 1.414213562f - t13;
+        tmp0 = t10 + t13; tmp3 = t10 - t13;
+        tmp1 = t11 + t12; tmp2 = t11 - t12;
+
+        /* Odd part */
+        float tmp4 = in[8], tmp5 = in[24], tmp6 = in[40], tmp7 = in[56];
+        float z13 = tmp6 + tmp5, z10 = tmp6 - tmp5;
+        float z11 = tmp4 + tmp7, z12 = tmp4 - tmp7;
+        tmp7 = z11 + z13;
+        t11 = (z11 - z13) * 1.414213562f;
+        float z5 = (z10 + z12) * 1.847759065f;
+        t10 = 1.082392200f * z12 - z5;
+        t12 = -2.613125930f * z10 + z5;
+        tmp6 = t12 - tmp7;
+        tmp5 = t11 - tmp6;
+        tmp4 = t10 + tmp5;
+
+        w[0]  = tmp0 + tmp7; w[56] = tmp0 - tmp7;
+        w[8]  = tmp1 + tmp6; w[48] = tmp1 - tmp6;
+        w[16] = tmp2 + tmp5; w[40] = tmp2 - tmp5;
+        w[32] = tmp3 + tmp4; w[24] = tmp3 - tmp4;
     }
-    for (int x = 0; x < 8; x++) {
-        for (int y = 0; y < 8; y++) {
-            double sum = 0.0;
-            for (int v = 0; v < 8; v++) {
-                double cv = (v == 0) ? INV_SQRT2 : 1.0;
-                sum += cv * tmp[v * 8 + x] * dct_cos[y][v];
-            }
-            int val = (int)(sum / 2.0 + 128.5);
-            if (val < 0) val = 0;
-            if (val > 255) val = 255;
-            output[y * 8 + x] = val;
-        }
+
+    /* Pass 2: rows -> descale by 8, level-shift +128, clamp. */
+    for (int r = 0; r < 8; r++) {
+        const float *w = ws + r * 8;
+        int *o = output + r * 8;
+
+        /* Even part */
+        float t10 = w[0] + w[4], t11 = w[0] - w[4];
+        float t13 = w[2] + w[6];
+        float t12 = (w[2] - w[6]) * 1.414213562f - t13;
+        float tmp0 = t10 + t13, tmp3 = t10 - t13;
+        float tmp1 = t11 + t12, tmp2 = t11 - t12;
+
+        /* Odd part */
+        float z13 = w[5] + w[3], z10 = w[5] - w[3];
+        float z11 = w[1] + w[7], z12 = w[1] - w[7];
+        float tmp7 = z11 + z13;
+        t11 = (z11 - z13) * 1.414213562f;
+        float z5 = (z10 + z12) * 1.847759065f;
+        t10 = 1.082392200f * z12 - z5;
+        t12 = -2.613125930f * z10 + z5;
+        float tmp6 = t12 - tmp7;
+        float tmp5 = t11 - tmp6;
+        float tmp4 = t10 + tmp5;
+
+#define IDCT_OUT(idx, val) do { \
+    int v = (int)((val) * 0.125f + 128.5f); \
+    o[idx] = v < 0 ? 0 : (v > 255 ? 255 : v); \
+} while (0)
+        IDCT_OUT(0, tmp0 + tmp7);
+        IDCT_OUT(7, tmp0 - tmp7);
+        IDCT_OUT(1, tmp1 + tmp6);
+        IDCT_OUT(6, tmp1 - tmp6);
+        IDCT_OUT(2, tmp2 + tmp5);
+        IDCT_OUT(5, tmp2 - tmp5);
+        IDCT_OUT(4, tmp3 + tmp4);
+        IDCT_OUT(3, tmp3 - tmp4);
+#undef IDCT_OUT
     }
 }
 
@@ -649,6 +779,31 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     uint32_t mcu_h = (height + 7) / 8;
     int prev_dc[4] = {0};
 
+    /* Per-table float dequant multipliers, AAN-prescaled by the row*col factor
+     * the fast inverse DCT expects. Built once so the MCU loop's dequantize
+     * stays a single multiply (the scale rides along for free), the decode-side
+     * mirror of the encoder folding aanscale into its quantization divisor. */
+    float fquant[4][64];
+    for (int t = 0; t < 4; t++)
+        for (int i = 0; i < 64; i++) {
+            int nat = zigzag[i];
+            fquant[t][i] = (float)((double)quant_tables[t][i]
+                         * aanscale[nat >> 3] * aanscale[nat & 7]);
+        }
+
+    /* YCbCr->RGB integer LUTs (libjpeg jdcolor): turn 6 float multiplies per
+     * pixel into table lookups + adds. Indexed by the raw 0..255 sample, with
+     * the -128 level shift and 16-bit fixed-point scaling baked in. */
+    int ycc_cr_r[256], ycc_cb_b[256], ycc_cr_g[256], ycc_cb_g[256];
+    for (int i = 0; i < 256; i++) {
+        int x = i - 128;
+        ycc_cr_r[i] = (91881 * x + 32768) >> 16;     /*  1.40200 * Cr */
+        ycc_cb_b[i] = (116130 * x + 32768) >> 16;    /*  1.77200 * Cb */
+        ycc_cr_g[i] = -46802 * x;                    /* -0.71414 * Cr (scaled) */
+        ycc_cb_g[i] = -22554 * x + 32768;            /* -0.34414 * Cb (+rounding) */
+    }
+
+    br.bit_buf = 0;
     br.bit_cnt = 0;
 
     for (uint32_t my = 0; my < mcu_h; my++) {
@@ -679,12 +834,13 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                     }
                 }
 
-                /* Dequantize */
-                int dequant[64];
+                /* Dequantize into AAN-scaled floats (the fast inverse DCT folds
+                 * the row*col scale into this multiply, so it costs nothing). */
+                float dequant[64];
                 int qt = comp_quant[c];
                 if (qt >= 4) qt = 0;
                 for (int i = 0; i < 64; i++)
-                    dequant[zigzag[i]] = quantized[i] * (int)quant_tables[qt][i];
+                    dequant[zigzag[i]] = (float)quantized[i] * fquant[qt][i];
 
                 /* IDCT */
                 idct_block(dequant, blocks[c]);
@@ -701,11 +857,11 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                         img->pixels[py * img->stride + px] = (uint8_t)blocks[0][by * 8 + bx];
                     } else {
                         int Y  = blocks[0][by * 8 + bx];
-                        int Cb = blocks[1][by * 8 + bx] - 128;
-                        int Cr = blocks[2][by * 8 + bx] - 128;
-                        int r = (int)(Y + 1.402 * Cr);
-                        int g = (int)(Y - 0.34414 * Cb - 0.71414 * Cr);
-                        int b = (int)(Y + 1.772 * Cb);
+                        int Cb = blocks[1][by * 8 + bx];   /* raw 0..255 */
+                        int Cr = blocks[2][by * 8 + bx];
+                        int r = Y + ycc_cr_r[Cr];
+                        int g = Y + ((ycc_cb_g[Cb] + ycc_cr_g[Cr]) >> 16);
+                        int b = Y + ycc_cb_b[Cb];
                         if (r < 0) r = 0; if (r > 255) r = 255;
                         if (g < 0) g = 0; if (g > 255) g = 255;
                         if (b < 0) b = 0; if (b > 255) b = 255;

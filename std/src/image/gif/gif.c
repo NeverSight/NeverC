@@ -50,7 +50,8 @@ static void gw_u16le(gif_writer_t *w, uint16_t v) {
 typedef struct {
     int prefix;
     int suffix;
-    int next;
+    int child;  /* first child string (this entry + one more byte) */
+    int next;   /* next sibling sharing the same prefix */
 } lzw_entry_t;
 
 static void gif_lzw_compress(gif_writer_t *out, const uint8_t *data, size_t len,
@@ -64,6 +65,7 @@ static void gif_lzw_compress(gif_writer_t *out, const uint8_t *data, size_t len,
     for (int i = 0; i < LZW_MAX_CODE; i++) {
         table[i].prefix = -1;
         table[i].suffix = -1;
+        table[i].child = -1;
         table[i].next = -1;
     }
 
@@ -99,8 +101,14 @@ static void gif_lzw_compress(gif_writer_t *out, const uint8_t *data, size_t len,
     for (size_t i = 1; i < len; i++) {
         int pixel = data[i];
 
+        /* Find child (current + pixel) by walking current's child/sibling list.
+         * The list previously overloaded a single `next` field for both the
+         * first-child link and the sibling link, so adding a child to a node
+         * clobbered that node's sibling pointer — truncating the parent's child
+         * list, defeating string reuse and emitting a corrupt code stream for
+         * any image whose dictionary actually grew. Separate child/next fix it. */
         int found = -1;
-        for (int e = table[current].next; e != -1; e = table[e].next) {
+        for (int e = table[current].child; e != -1; e = table[e].next) {
             if (table[e].suffix == pixel) { found = e; break; }
         }
 
@@ -112,8 +120,9 @@ static void gif_lzw_compress(gif_writer_t *out, const uint8_t *data, size_t len,
             if (next_code < LZW_MAX_CODE) {
                 table[next_code].prefix = current;
                 table[next_code].suffix = pixel;
-                table[next_code].next = table[current].next;
-                table[current].next = next_code;
+                table[next_code].child = -1;
+                table[next_code].next = table[current].child;
+                table[current].child = next_code;
                 next_code++;
             }
 
@@ -125,6 +134,7 @@ static void gif_lzw_compress(gif_writer_t *out, const uint8_t *data, size_t len,
                 for (int j = 0; j < LZW_MAX_CODE; j++) {
                     table[j].prefix = -1;
                     table[j].suffix = -1;
+                    table[j].child = -1;
                     table[j].next = -1;
                 }
                 next_code = eoi_code + 1;
@@ -342,21 +352,21 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             uint8_t *indices = (uint8_t *)calloc(1, pixel_count);
             size_t pix_pos = 0;
 
-            /* Simple LZW string table */
+            /* LZW dictionary as prefix/suffix chains. The previous version
+             * stored each entry's fully expanded byte string and malloc'd +
+             * memcpy'd a growing copy for every new code — O(sum of entry
+             * lengths) time and memory. Prefix-chain entries are fixed-size
+             * (one prefix index + one suffix byte) with zero per-entry
+             * allocation; output is reconstructed through a small stack. */
             #define LZW_TABLE_SIZE 4096
-            uint8_t *strings[LZW_TABLE_SIZE];
-            int str_lens[LZW_TABLE_SIZE];
+            uint16_t prefix[LZW_TABLE_SIZE];
+            uint8_t  suffix[LZW_TABLE_SIZE];
+            uint8_t  estack[LZW_TABLE_SIZE];
             int next_code_d = eoi_code + 1;
 
-            memset(strings, 0, sizeof(strings));
             for (int i = 0; i < clear_code; i++) {
-                strings[i] = (uint8_t *)malloc(1);
-                strings[i][0] = (uint8_t)i;
-                str_lens[i] = 1;
-            }
-            for (int i = clear_code; i < LZW_TABLE_SIZE; i++) {
-                strings[i] = NULL;
-                str_lens[i] = 0;
+                prefix[i] = 0;
+                suffix[i] = (uint8_t)i;
             }
 
             uint32_t bit_buf = 0;
@@ -375,63 +385,61 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             })
 
             int prev_code = -1;
+            uint8_t first_byte = 0;
             int done = 0;
             while (!done && byte_pos < lzw_len) {
                 int code = READ_CODE();
 
                 if (code == eoi_code) { done = 1; break; }
                 if (code == clear_code) {
-                    for (int i = eoi_code + 1; i < LZW_TABLE_SIZE; i++) {
-                        free(strings[i]); strings[i] = NULL; str_lens[i] = 0;
-                    }
                     next_code_d = eoi_code + 1;
                     code_size = min_code_size + 1;
                     prev_code = -1;
                     continue;
                 }
 
-                uint8_t *output_str = NULL;
-                int output_len = 0;
-
-                if (code < next_code_d && strings[code]) {
-                    output_str = strings[code];
-                    output_len = str_lens[code];
-                } else if (code == next_code_d && prev_code >= 0 && strings[prev_code]) {
-                    output_len = str_lens[prev_code] + 1;
-                    output_str = (uint8_t *)malloc((size_t)output_len);
-                    memcpy(output_str, strings[prev_code], (size_t)str_lens[prev_code]);
-                    output_str[output_len - 1] = strings[prev_code][0];
-                    if (next_code_d < LZW_TABLE_SIZE) {
-                        strings[next_code_d] = output_str;
-                        str_lens[next_code_d] = output_len;
-                        next_code_d++;
-                    }
-                    if (next_code_d > (1 << code_size) && code_size < 12) code_size++;
-                    for (int i = 0; i < output_len && pix_pos < pixel_count; i++) {
-                        uint8_t idx_val = output_str[i];
-                        if (idx_val >= pal_size) idx_val = 0;
-                        indices[pix_pos++] = idx_val;
-                    }
-                    prev_code = code;
-                    continue;
+                /* Reconstruct `code` onto estack (reversed); the root literal is
+                 * the string's first byte. code == next_code_d is the KwKwK case
+                 * (entry not yet defined) = prev string + prev's first byte. */
+                int sp = 0;
+                int c;
+                if (code < next_code_d) {
+                    c = code;
+                } else if (code == next_code_d && prev_code >= 0) {
+                    estack[sp++] = first_byte;
+                    c = prev_code;
                 } else {
                     break;
                 }
 
-                for (int i = 0; i < output_len && pix_pos < pixel_count; i++) {
-                    uint8_t idx = output_str[i];
-                    if (idx >= pal_size) idx = 0;
-                    indices[pix_pos++] = idx;
+                while (c >= clear_code) {
+                    if (c >= LZW_TABLE_SIZE || sp >= LZW_TABLE_SIZE) { done = 1; break; }
+                    estack[sp++] = suffix[c];
+                    c = prefix[c];
+                }
+                if (done) break;
+                estack[sp++] = (uint8_t)c;
+                first_byte = (uint8_t)c;
+
+                for (int i = sp - 1; i >= 0 && pix_pos < pixel_count; i--) {
+                    uint8_t idx_val = estack[i];
+                    if (idx_val >= pal_size) idx_val = 0;
+                    indices[pix_pos++] = idx_val;
                 }
 
-                if (prev_code >= 0 && strings[prev_code] && next_code_d < LZW_TABLE_SIZE) {
-                    int new_len = str_lens[prev_code] + 1;
-                    strings[next_code_d] = (uint8_t *)malloc((size_t)new_len);
-                    memcpy(strings[next_code_d], strings[prev_code], (size_t)str_lens[prev_code]);
-                    strings[next_code_d][new_len - 1] = output_str[0];
-                    str_lens[next_code_d] = new_len;
+                /* New dictionary entry = prev string followed by this string's
+                 * first byte. */
+                if (prev_code >= 0 && next_code_d < LZW_TABLE_SIZE) {
+                    prefix[next_code_d] = (uint16_t)prev_code;
+                    suffix[next_code_d] = first_byte;
                     next_code_d++;
-                    if (next_code_d > (1 << code_size) && code_size < 12) code_size++;
+                    /* The decoder's dictionary trails the encoder's by one
+                     * entry, so it must widen the code one step earlier than the
+                     * encoder's `next_code > 2^code_size`: use `>=` so the read
+                     * width matches the write width (classic GIF early change).
+                     * The old `>` desynced as soon as the table grew, corrupting
+                     * every non-trivial / third-party GIF. */
+                    if (next_code_d >= (1 << code_size) && code_size < 12) code_size++;
                 }
 
                 prev_code = code;
@@ -439,7 +447,6 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
 
             #undef READ_CODE
 
-            for (int i = clear_code; i < LZW_TABLE_SIZE; i++) free(strings[i]);
             free(lzw_data);
 
             /* Store frame */
