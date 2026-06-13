@@ -224,16 +224,36 @@ int neverc_url_values_encode(const neverc_url_values_t *v, char *buf, size_t cap
     return (int)pos;
 }
 
+/*
+ * Per-mode escape tables (1 = byte must be percent-encoded), built once from
+ * the should_escape_* predicates. This turns the hot loop's per-byte
+ * un-inlinable indirect call into a single table load.
+ */
+static unsigned char esc_table_path[256];
+static unsigned char esc_table_query[256];
+static int esc_tables_ready = 0;
+
+static void build_esc_tables(void) {
+    for (int c = 0; c < 256; c++) {
+        esc_table_path[c]  = (unsigned char)should_escape_path((unsigned char)c);
+        esc_table_query[c] = (unsigned char)should_escape_query((unsigned char)c);
+    }
+    esc_tables_ready = 1;
+}
+
 static int percent_encode(const char *s, char *buf, size_t cap,
-                           int (*should_escape)(unsigned char)) {
+                           const unsigned char *esc) {
+    static const char hexU[] = "0123456789ABCDEF";
+    if (cap == 0) return 0;
+    size_t limit = cap - 1;            /* reserve buf[limit] for '\0' */
     size_t si = 0, di = 0;
-    while (s[si] && di < cap - 1) {
+    while (s[si] && di < limit) {
         unsigned char c = (unsigned char)s[si];
-        if (should_escape(c)) {
-            if (di + 3 > cap - 1) break;
+        if (esc[c]) {
+            if (di + 3 > limit) break;
             buf[di++] = '%';
-            buf[di++] = "0123456789ABCDEF"[c >> 4];
-            buf[di++] = "0123456789ABCDEF"[c & 0x0F];
+            buf[di++] = hexU[c >> 4];
+            buf[di++] = hexU[c & 0x0F];
         } else {
             buf[di++] = (char)c;
         }
@@ -267,7 +287,8 @@ static int percent_decode(const char *s, char *buf, size_t cap) {
 }
 
 int neverc_url_path_escape(const char *s, char *buf, size_t cap) {
-    return percent_encode(s, buf, cap, should_escape_path);
+    if (!esc_tables_ready) build_esc_tables();
+    return percent_encode(s, buf, cap, esc_table_path);
 }
 
 int neverc_url_path_unescape(const char *s, char *buf, size_t cap) {
@@ -275,7 +296,8 @@ int neverc_url_path_unescape(const char *s, char *buf, size_t cap) {
 }
 
 int neverc_url_query_escape(const char *s, char *buf, size_t cap) {
-    return percent_encode(s, buf, cap, should_escape_query);
+    if (!esc_tables_ready) build_esc_tables();
+    return percent_encode(s, buf, cap, esc_table_query);
 }
 
 int neverc_url_query_unescape(const char *s, char *buf, size_t cap) {
