@@ -1,6 +1,8 @@
 #include "neverc/std/fmt.h"
+#include "neverc/std/strconv.h"
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 
 /* Dynamic buffer for building formatted strings */
 typedef struct {
@@ -85,130 +87,23 @@ static uint64_t f64_to_bits(double x) {
 }
 
 static int f64_isnan(double x) { return x != x; }
-static int f64_isinf(double x) {
-    uint64_t bits = f64_to_bits(x);
-    return (bits & 0x7FFFFFFFFFFFFFFFULL) == 0x7FF0000000000000ULL;
-}
 
-/* Simple double-to-string: 'f' format with given precision */
-static int fmt_float_f(char *buf, double val, int prec) {
+/* Float formatting delegates to strconv's correctly-rounded engine
+ * (Ryu shortest + exact decimal), shared so fmt and strconv stay consistent. */
+static int fmt_float_f(char *buf, size_t cap, double val, int prec) {
     if (prec < 0) prec = 6;
-    int wi = 0;
-
-    if (f64_isnan(val)) {
-        buf[0] = 'N'; buf[1] = 'a'; buf[2] = 'N'; return 3;
-    }
-    if (f64_isinf(val)) {
-        if (val < 0) buf[wi++] = '-';
-        buf[wi++] = '+'; buf[wi++] = 'I'; buf[wi++] = 'n'; buf[wi++] = 'f';
-        if (val < 0) { buf[0] = '-'; wi = 4; buf[1] = 'I'; buf[2] = 'n'; buf[3] = 'f'; }
-        return wi;
-    }
-
-    if (val < 0) { buf[wi++] = '-'; val = -val; }
-
-    uint64_t integer_part = (uint64_t)val;
-    double frac_part = val - (double)integer_part;
-
-    char itmp[24];
-    int ilen = 0;
-    if (integer_part == 0) { itmp[ilen++] = '0'; }
-    else {
-        while (integer_part > 0) {
-            itmp[ilen++] = '0' + (integer_part % 10);
-            integer_part /= 10;
-        }
-    }
-    for (int i = ilen - 1; i >= 0; i--) buf[wi++] = itmp[i];
-
-    if (prec > 0) {
-        buf[wi++] = '.';
-        for (int i = 0; i < prec; i++) {
-            frac_part *= 10.0;
-            int digit = (int)frac_part;
-            if (digit > 9) digit = 9;
-            buf[wi++] = '0' + digit;
-            frac_part -= digit;
-        }
-    }
-    /* Rounding: check if next fractional digit >= 5 */
-    {
-        double check = frac_part;
-        if (prec == 0) check = frac_part;
-        if (check * 10.0 >= 5.0 || (prec == 0 && frac_part >= 0.5)) {
-            int carry = 1;
-            for (int i = wi - 1; i >= 0 && carry; i--) {
-                if (buf[i] == '.') continue;
-                if (buf[i] == '-') break;
-                int d = buf[i] - '0' + carry;
-                if (d >= 10) { buf[i] = '0'; carry = 1; }
-                else { buf[i] = '0' + d; carry = 0; }
-            }
-            if (carry) {
-                for (int i = wi; i > 0; i--) buf[i] = buf[i-1];
-                buf[0] = '1'; wi++;
-            }
-        }
-    }
-    return wi;
+    int n = neverc_strconv_format_float(val, 'f', prec, buf, cap);
+    return n < 0 ? 0 : n;
 }
-
-/* 'e' format: scientific notation */
-static int fmt_float_e(char *buf, double val, int prec, int uppercase) {
+static int fmt_float_e(char *buf, size_t cap, double val, int prec, int uppercase) {
     if (prec < 0) prec = 6;
-    int wi = 0;
-
-    if (f64_isnan(val)) { buf[0]='N'; buf[1]='a'; buf[2]='N'; return 3; }
-    if (f64_isinf(val)) {
-        if (val < 0) buf[wi++] = '-';
-        buf[wi++]='I'; buf[wi++]='n'; buf[wi++]='f';
-        return wi;
-    }
-    if (val < 0) { buf[wi++] = '-'; val = -val; }
-
-    int exponent = 0;
-    if (val != 0.0) {
-        while (val >= 10.0) { val /= 10.0; exponent++; }
-        while (val < 1.0) { val *= 10.0; exponent--; }
-    }
-
-    wi += fmt_float_f(buf + wi, val, prec);
-    buf[wi++] = uppercase ? 'E' : 'e';
-    if (exponent >= 0) buf[wi++] = '+';
-    else { buf[wi++] = '-'; exponent = -exponent; }
-    if (exponent < 10) buf[wi++] = '0';
-    char etmp[8];
-    int elen = 0;
-    if (exponent == 0) { etmp[elen++] = '0'; }
-    else {
-        while (exponent > 0) { etmp[elen++] = '0' + exponent % 10; exponent /= 10; }
-    }
-    for (int i = elen - 1; i >= 0; i--) buf[wi++] = etmp[i];
-    return wi;
+    int n = neverc_strconv_format_float(val, uppercase ? 'E' : 'e', prec, buf, cap);
+    return n < 0 ? 0 : n;
 }
-
-/* 'g' format: shortest of 'f' and 'e' */
-static int fmt_float_g(char *buf, double val, int prec) {
-    if (prec < 0) prec = -1;
-    if (prec == 0) prec = 1;
-
-    if (f64_isnan(val) || f64_isinf(val))
-        return fmt_float_f(buf, val, 0);
-
-    double aval = val < 0 ? -val : val;
-    if (prec == -1) prec = 6;
-
-    if (aval >= 1e-4 && aval < 1e6) {
-        int flen = fmt_float_f(buf, val, prec);
-        while (flen > 0 && buf[flen-1] == '0') flen--;
-        if (flen > 0 && buf[flen-1] == '.') flen--;
-        return flen;
-    } else if (aval == 0.0) {
-        return fmt_float_f(buf, val, 0);
-    } else {
-        int elen = fmt_float_e(buf, val, prec > 0 ? prec - 1 : 0, 0);
-        return elen;
-    }
+/* prec < 0 => shortest round-trippable form (Go's %v / %g default). */
+static int fmt_float_g(char *buf, size_t cap, double val, int prec, int uppercase) {
+    int n = neverc_strconv_format_float(val, uppercase ? 'G' : 'g', prec, buf, cap);
+    return n < 0 ? 0 : n;
 }
 
 /* Core formatting engine */
@@ -278,7 +173,7 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
 
         if (i >= flen) break;
         char verb = format[i];
-        char tmp[128];
+        char tmp[512];   /* large enough for %f of values up to ~1e308 */
         int tlen = 0;
         int is_negative = 0;
 
@@ -341,18 +236,18 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
         }
         case 'f': {
             double val = va_arg(args, double);
-            tlen = fmt_float_f(tmp, val, prec);
+            tlen = fmt_float_f(tmp, sizeof tmp, val, prec);
             is_negative = (f64_to_bits(val) >> 63) && !f64_isnan(val);
             break;
         }
         case 'e': case 'E': {
             double val = va_arg(args, double);
-            tlen = fmt_float_e(tmp, val, prec, verb == 'E');
+            tlen = fmt_float_e(tmp, sizeof tmp, val, prec, verb == 'E');
             break;
         }
         case 'g': case 'G': {
             double val = va_arg(args, double);
-            tlen = fmt_float_g(tmp, val, prec);
+            tlen = fmt_float_g(tmp, sizeof tmp, val, prec, verb == 'G');
             break;
         }
         case 'p': {
@@ -519,40 +414,30 @@ static int scan_uint(const char **p, uint64_t *out) {
 static int scan_float(const char **p, double *out) {
     skip_ws(p);
     const char *start = *p;
-    int neg = 0;
-    if (**p == '-') { neg = 1; (*p)++; }
-    else if (**p == '+') { (*p)++; }
+    if (**p == '-' || **p == '+') (*p)++;
     if ((**p < '0' || **p > '9') && **p != '.') { *p = start; return 0; }
 
-    double val = 0.0;
-    while (**p >= '0' && **p <= '9') {
-        val = val * 10.0 + (**p - '0');
-        (*p)++;
-    }
-    if (**p == '.') {
-        (*p)++;
-        double frac = 0.1;
-        while (**p >= '0' && **p <= '9') {
-            val += (**p - '0') * frac;
-            frac *= 0.1;
-            (*p)++;
-        }
-    }
+    /* Delimit the numeric token, then hand it to strconv's correctly-rounded
+     * parser instead of accumulating in floating point. */
+    while (**p >= '0' && **p <= '9') (*p)++;
+    if (**p == '.') { (*p)++; while (**p >= '0' && **p <= '9') (*p)++; }
     if (**p == 'e' || **p == 'E') {
+        const char *esave = *p;
         (*p)++;
-        int eneg = 0;
-        if (**p == '-') { eneg = 1; (*p)++; }
-        else if (**p == '+') { (*p)++; }
-        int exp = 0;
-        while (**p >= '0' && **p <= '9') {
-            exp = exp * 10 + (**p - '0');
-            (*p)++;
-        }
-        double mul = 1.0;
-        for (int i = 0; i < exp; i++) mul *= 10.0;
-        if (eneg) val /= mul; else val *= mul;
+        if (**p == '-' || **p == '+') (*p)++;
+        if (**p >= '0' && **p <= '9') { while (**p >= '0' && **p <= '9') (*p)++; }
+        else *p = esave;            /* lone 'e' is not part of the number */
     }
-    *out = neg ? -val : val;
+
+    size_t len = (size_t)(*p - start);
+    char stackbuf[128];
+    char *tok = (len < sizeof stackbuf) ? stackbuf : (char *)malloc(len + 1);
+    if (!tok) { *p = start; return 0; }
+    memcpy(tok, start, len);
+    tok[len] = '\0';
+    int rc = neverc_strconv_parse_float(tok, out);
+    if (tok != stackbuf) free(tok);
+    if (rc != NEVERC_STRCONV_OK && rc != NEVERC_STRCONV_ERR_RANGE) { *p = start; return 0; }
     return 1;
 }
 

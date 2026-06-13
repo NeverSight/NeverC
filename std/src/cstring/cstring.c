@@ -1,4 +1,5 @@
 #include "neverc/std/cstring.h"
+#include "../bytes/strsearch.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -107,73 +108,19 @@ int neverc_cstring_last_index_byte(const char *s, char c) {
 int neverc_cstring_index(const char *s, const char *substr) {
     size_t slen = strlen(s);
     size_t sublen = strlen(substr);
-    if (sublen == 0) return 0;
-    if (sublen > slen) return -1;
     if (sublen == 1) return neverc_cstring_index_byte(s, substr[0]);
-    if (sublen == slen) return memcmp(s, substr, slen) == 0 ? 0 : -1;
-
-    const unsigned char *us = (const unsigned char *)s;
-    const unsigned char *up = (const unsigned char *)substr;
-
-    if (sublen <= 8 || slen <= 64) {
-        unsigned char c0 = up[0];
-        for (size_t i = 0; i <= slen - sublen; i++)
-            if (us[i] == c0 && memcmp(us + i + 1, up + 1, sublen - 1) == 0)
-                return (int)i;
-        return -1;
-    }
-
-    /* Boyer-Moore-Horspool */
-    size_t skip[256];
-    for (int c = 0; c < 256; c++) skip[c] = sublen;
-    for (size_t i = 0; i < sublen - 1; i++) skip[up[i]] = sublen - 1 - i;
-
-    unsigned char last = up[sublen - 1];
-    size_t pos = 0;
-    while (pos <= slen - sublen) {
-        unsigned char c = us[pos + sublen - 1];
-        if (c == last && memcmp(us + pos, up, sublen - 1) == 0)
-            return (int)pos;
-        pos += skip[c];
-    }
-    return -1;
+    size_t r = nci_ss_index((const uint8_t *)s, slen,
+                            (const uint8_t *)substr, sublen);
+    return r == (size_t)-1 ? -1 : (int)r;
 }
 
 int neverc_cstring_last_index(const char *s, const char *substr) {
     size_t slen = strlen(s);
     size_t sublen = strlen(substr);
-    if (sublen == 0) return (int)slen;
-    if (sublen > slen) return -1;
     if (sublen == 1) return neverc_cstring_last_index_byte(s, substr[0]);
-    if (sublen == slen) return memcmp(s, substr, slen) == 0 ? 0 : -1;
-
-    const unsigned char *us = (const unsigned char *)s;
-    const unsigned char *up = (const unsigned char *)substr;
-
-    if (sublen <= 8 || slen <= 64) {
-        unsigned char clast = up[sublen - 1];
-        for (size_t i = slen; i >= sublen; i--)
-            if (us[i - 1] == clast && memcmp(s + i - sublen, substr, sublen) == 0)
-                return (int)(i - sublen);
-        return -1;
-    }
-
-    /* Reverse Boyer-Moore-Horspool */
-    size_t skip[256];
-    for (int c = 0; c < 256; c++) skip[c] = sublen;
-    for (size_t i = sublen - 1; i > 0; i--) skip[up[i]] = i;
-
-    unsigned char first = up[0];
-    size_t pos = slen - sublen;
-    for (;;) {
-        unsigned char c = us[pos];
-        if (c == first && memcmp(us + pos + 1, up + 1, sublen - 1) == 0)
-            return (int)pos;
-        size_t shift = skip[c];
-        if (pos < shift) break;
-        pos -= shift;
-    }
-    return -1;
+    size_t r = nci_ss_last_index((const uint8_t *)s, slen,
+                                 (const uint8_t *)substr, sublen);
+    return r == (size_t)-1 ? -1 : (int)r;
 }
 
 int neverc_cstring_index_any(const char *s, const char *chars) {
@@ -226,39 +173,17 @@ int neverc_cstring_count(const char *s, const char *substr) {
         return n;
     }
 
-    const unsigned char *us = (const unsigned char *)s;
-    const unsigned char *up = (const unsigned char *)substr;
+    /* Two-Way finder: preprocess once, count non-overlapping matches. */
     int n = 0;
-
-    if (sublen <= 8 || slen <= 64) {
-        unsigned char c0 = up[0];
-        size_t pos = 0;
-        while (pos <= slen - sublen) {
-            if (us[pos] == c0 && memcmp(us + pos + 1, up + 1, sublen - 1) == 0) {
-                n++;
-                pos += sublen;
-            } else {
-                pos++;
-            }
-        }
-        return n;
-    }
-
-    /* BMH with skip table built once */
-    size_t skip[256];
-    for (int c = 0; c < 256; c++) skip[c] = sublen;
-    for (size_t i = 0; i < sublen - 1; i++) skip[up[i]] = sublen - 1 - i;
-
-    unsigned char last = up[sublen - 1];
     size_t pos = 0;
-    while (pos <= slen - sublen) {
-        unsigned char c = us[pos + sublen - 1];
-        if (c == last && memcmp(us + pos, up, sublen - 1) == 0) {
-            n++;
-            pos += sublen;
-        } else {
-            pos += skip[c];
-        }
+    nci_ss_finder_t f;
+    nci_ss_finder_init(&f, (const uint8_t *)substr, sublen);
+    for (;;) {
+        size_t idx = nci_ss_finder_next(&f, (const uint8_t *)s + pos, slen - pos);
+        if (idx == (size_t)-1) break;
+        n++;
+        pos += idx + sublen;
+        if (pos > slen) break;
     }
     return n;
 }
@@ -339,25 +264,6 @@ char *neverc_cstring_repeat(const char *s, int count) {
     return r;
 }
 
-/*
- * Internal BMH search with pre-built skip table for cstring.
- * Returns index or -1. Avoids rebuilding the table per call in replace loops.
- */
-static int nci_cstring_index_with_skip(const char *s, size_t slen,
-                                       const unsigned char *pat, size_t patlen,
-                                       const size_t skip[256]) {
-    if (slen < patlen) return -1;
-    unsigned char last = pat[patlen - 1];
-    size_t pos = 0;
-    while (pos <= slen - patlen) {
-        unsigned char c = (unsigned char)s[pos + patlen - 1];
-        if (c == last && memcmp(s + pos, pat, patlen - 1) == 0)
-            return (int)pos;
-        pos += skip[c];
-    }
-    return -1;
-}
-
 char *neverc_cstring_replace(const char *s, const char *old_s,
                               const char *new_s, int n) {
     if (n == 0) return nc_strdup(s, strlen(s));
@@ -389,28 +295,19 @@ char *neverc_cstring_replace(const char *s, const char *old_s,
         return r;
     }
 
-    int use_bmh = (oldlen > 8 && slen > 64);
-    size_t skip[256];
-    const unsigned char *up = (const unsigned char *)old_s;
-    if (use_bmh) {
-        for (int c = 0; c < 256; c++) skip[c] = oldlen;
-        for (size_t i = 0; i < oldlen - 1; i++) skip[up[i]] = oldlen - 1 - i;
-    }
+    /* Two-Way finder: preprocess `old_s` once, reuse for counting and building. */
+    nci_ss_finder_t f;
+    nci_ss_finder_init(&f, (const uint8_t *)old_s, oldlen);
 
     int cnt = 0;
     {
-        const char *p = s;
-        size_t remaining = slen;
-        while (remaining >= oldlen) {
-            int idx;
-            if (use_bmh)
-                idx = nci_cstring_index_with_skip(p, remaining, up, oldlen, skip);
-            else
-                idx = neverc_cstring_index(p, old_s);
-            if (idx < 0) break;
+        size_t pos = 0;
+        while (pos + oldlen <= slen) {
+            size_t idx = nci_ss_finder_next(&f, (const uint8_t *)s + pos,
+                                            slen - pos);
+            if (idx == (size_t)-1) break;
             cnt++;
-            p += idx + oldlen;
-            remaining -= (size_t)idx + oldlen;
+            pos += idx + oldlen;
         }
     }
     if (n >= 0 && cnt > n) cnt = n;
@@ -425,18 +322,14 @@ char *neverc_cstring_replace(const char *s, const char *old_s,
     size_t remaining = slen;
     while (remaining > 0) {
         if (done < cnt) {
-            int idx;
-            if (use_bmh)
-                idx = nci_cstring_index_with_skip(p, remaining, up, oldlen, skip);
-            else
-                idx = neverc_cstring_index(p, old_s);
-            if (idx >= 0) {
-                memcpy(r + w, p, (size_t)idx);
-                w += (size_t)idx;
+            size_t idx = nci_ss_finder_next(&f, (const uint8_t *)p, remaining);
+            if (idx != (size_t)-1) {
+                memcpy(r + w, p, idx);
+                w += idx;
                 memcpy(r + w, new_s, newlen);
                 w += newlen;
                 p += idx + oldlen;
-                remaining -= (size_t)idx + oldlen;
+                remaining -= idx + oldlen;
                 done++;
                 continue;
             }
@@ -576,29 +469,20 @@ static char **gen_split(const char *s, const char *sep,
     char **arr = (char **)malloc(cap * sizeof(char *));
     if (!arr) { *out_count = 0; return NULL; }
 
-    int use_bmh = (seplen > 8 && slen > 64);
-    size_t skip[256];
-    const unsigned char *up = (const unsigned char *)sep;
-    if (use_bmh) {
-        for (int c = 0; c < 256; c++) skip[c] = seplen;
-        for (size_t i = 0; i < seplen - 1; i++) skip[up[i]] = seplen - 1 - i;
-    }
+    nci_ss_finder_t f;
+    nci_ss_finder_init(&f, (const uint8_t *)sep, seplen);
 
     size_t cnt = 0;
     const char *p = s;
     size_t remaining = slen;
     int limit = n - 1;
     while (cnt < (size_t)limit) {
-        int idx;
-        if (use_bmh)
-            idx = nci_cstring_index_with_skip(p, remaining, up, seplen, skip);
-        else
-            idx = neverc_cstring_index(p, sep);
-        if (idx < 0) break;
-        arr[cnt] = nc_strdup(p, (size_t)idx + (size_t)sep_save);
+        size_t idx = nci_ss_finder_next(&f, (const uint8_t *)p, remaining);
+        if (idx == (size_t)-1) break;
+        arr[cnt] = nc_strdup(p, idx + (size_t)sep_save);
         cnt++;
-        p += idx + (int)seplen;
-        remaining -= (size_t)idx + seplen;
+        p += idx + seplen;
+        remaining -= idx + seplen;
     }
     arr[cnt] = nc_strdup(p, strlen(p));
     cnt++;

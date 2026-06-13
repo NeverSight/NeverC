@@ -1,4 +1,5 @@
 #include "neverc/std/flag.h"
+#include "neverc/std/strconv.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,20 +89,28 @@ static int parse_int(const char *s) {
 }
 
 static double parse_double(const char *s) {
-    int neg = 0;
-    if (*s == '-') { neg = 1; s++; }
-    else if (*s == '+') s++;
-    double val = 0.0;
-    while (*s >= '0' && *s <= '9') { val = val * 10.0 + (*s - '0'); s++; }
-    if (*s == '.') {
+    /* Delimit the leading numeric token (now including an exponent), then use
+     * strconv's correctly-rounded parser instead of hand-rolled FP scaling. */
+    const char *start = s;
+    if (*s == '-' || *s == '+') s++;
+    while (*s >= '0' && *s <= '9') s++;
+    if (*s == '.') { s++; while (*s >= '0' && *s <= '9') s++; }
+    if (*s == 'e' || *s == 'E') {
+        const char *esave = s;
         s++;
-        double frac = 0.1;
-        while (*s >= '0' && *s <= '9') {
-            val += (*s - '0') * frac;
-            frac *= 0.1; s++;
-        }
+        if (*s == '-' || *s == '+') s++;
+        if (*s >= '0' && *s <= '9') { while (*s >= '0' && *s <= '9') s++; }
+        else s = esave;            /* lone 'e' is not part of the number */
     }
-    return neg ? -val : val;
+    size_t len = (size_t)(s - start);
+    char buf[64];
+    double val = 0.0;
+    if (len > 0 && len < sizeof buf) {
+        memcpy(buf, start, len);
+        buf[len] = '\0';
+        neverc_strconv_parse_float(buf, &val);
+    }
+    return val;
 }
 
 static flag_entry_t *find_flag(const char *name) {

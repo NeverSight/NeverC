@@ -1,5 +1,6 @@
 #include "neverc/std/mime/multipart.h"
 #include "neverc/std/_platform.h"
+#include "../../bytes/strsearch.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -14,14 +15,15 @@ static int ci_strncmp(const char *a, const char *b, size_t n) {
     return 0;
 }
 
-static const unsigned char *find_boundary(const unsigned char *data, size_t len,
-                                           const char *marker, size_t marker_len) {
-    if (len < marker_len) return NULL;
-    for (size_t i = 0; i <= len - marker_len; i++) {
-        if (memcmp(data + i, marker, marker_len) == 0)
-            return data + i;
-    }
-    return NULL;
+/* Locate `marker` inside `data` via the shared substring engine: memchr to the
+ * first byte then Boyer-Moore-Horspool (with a Two-Way guard for adversarial
+ * inputs). Replaces a naive O(len*marker_len) scan that re-compared the whole
+ * marker at every offset — pathological for MB-sized upload bodies. The finder
+ * is preprocessed once by the caller and reused across every part. */
+static const unsigned char *find_boundary_f(const nci_ss_finder_t *f,
+                                             const unsigned char *data, size_t len) {
+    size_t off = nci_ss_finder_next(f, data, len);
+    return (off == SIZE_MAX) ? NULL : data + off;
 }
 
 static int parse_headers(const unsigned char *data, size_t len,
@@ -86,9 +88,14 @@ int neverc_multipart_parse(const unsigned char *data, size_t data_len,
     char delim[256], end_delim[256];
     int dlen = snprintf(delim, sizeof(delim), "--%s", boundary);
     int edlen = snprintf(end_delim, sizeof(end_delim), "--%s--", boundary);
+    if (dlen <= 0) return -1;
+
+    /* Preprocess the boundary delimiter once; reused for every part. */
+    nci_ss_finder_t df;
+    nci_ss_finder_init(&df, (const uint8_t *)delim, (size_t)dlen);
 
     /* Find first boundary */
-    const unsigned char *pos = find_boundary(data, data_len, delim, (size_t)dlen);
+    const unsigned char *pos = find_boundary_f(&df, data, data_len);
     if (!pos) return -1;
 
     /* Skip past first boundary line */
@@ -99,7 +106,7 @@ int neverc_multipart_parse(const unsigned char *data, size_t data_len,
 
     while (remaining > 0 && out->part_count < NEVERC_MULTIPART_MAX_PARTS) {
         /* Find next boundary */
-        const unsigned char *next = find_boundary(pos, remaining, delim, (size_t)dlen);
+        const unsigned char *next = find_boundary_f(&df, pos, remaining);
         if (!next) break;
 
         /* Part data is between pos and next (minus preceding \r\n) */

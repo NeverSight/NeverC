@@ -1,6 +1,6 @@
 /*
  * Benchmark: new optimized algorithms vs old implementations.
- * Covers: hash (wyhash vs FNV-1a), substring search (BMH vs Rabin-Karp),
+ * Covers: hash (wyhash vs FNV-1a), substring search (Two-Way vs BMH),
  *         binary search (typed vs generic).
  */
 #include <stdio.h>
@@ -23,10 +23,12 @@ static uint64_t old_hash_fnv1a(const char *s) {
     return h;
 }
 
-#define OLD_RK_PRIME 16777619U
-
+/* Previous library implementation: Boyer-Moore-Horspool with a brute-force
+ * fallback for short needles / small haystacks. Reproduced verbatim so the
+ * benchmark measures the actual old-vs-new substring search. BMH degrades to
+ * O(n*m) on periodic/adversarial inputs — the very case Two-Way fixes. */
 __attribute__((noinline))
-static size_t old_bytes_index_rk(const uint8_t *s, size_t slen,
+static size_t old_bytes_index_bmh(const uint8_t *s, size_t slen,
                                   const uint8_t *sep, size_t seplen) {
     if (seplen == 0) return 0;
     if (seplen > slen) return (size_t)-1;
@@ -44,20 +46,17 @@ static size_t old_bytes_index_rk(const uint8_t *s, size_t slen,
         return (size_t)-1;
     }
 
-    uint32_t h_sep = 0, h_win = 0, pw = 1;
-    for (size_t i = 0; i < seplen; i++) {
-        h_sep = h_sep * OLD_RK_PRIME + (uint32_t)sep[i];
-        h_win = h_win * OLD_RK_PRIME + (uint32_t)s[i];
-        pw *= OLD_RK_PRIME;
-    }
-    if (h_win == h_sep && memcmp(s, sep, seplen) == 0) return 0;
-    for (size_t i = seplen; i < slen; i++) {
-        h_win = h_win * OLD_RK_PRIME + (uint32_t)s[i]
-              - pw * (uint32_t)s[i - seplen];
-        if (h_win == h_sep) {
-            size_t pos = i - seplen + 1;
-            if (memcmp(s + pos, sep, seplen) == 0) return pos;
-        }
+    size_t skip[256];
+    for (int c = 0; c < 256; c++) skip[c] = seplen;
+    for (size_t i = 0; i < seplen - 1; i++) skip[sep[i]] = seplen - 1 - i;
+
+    uint8_t last = sep[seplen - 1];
+    size_t pos = 0;
+    while (pos <= slen - seplen) {
+        uint8_t c = s[pos + seplen - 1];
+        if (c == last && memcmp(s + pos, sep, seplen - 1) == 0)
+            return pos;
+        pos += skip[c];
     }
     return (size_t)-1;
 }
@@ -210,20 +209,20 @@ static void bench_hash(void) {
  * Benchmark: Substring search
  * ============================================================ */
 static void bench_substr(void) {
-    printf("\n=== Substring Search: BMH vs Rabin-Karp ===\n");
-    printf("%-25s  %10s  %10s  %8s\n", "case", "RK", "BMH", "speedup");
+    printf("\n=== Substring Search: Two-Way (new) vs BMH (old) ===\n");
+    printf("%-28s  %10s  %10s  %8s\n", "case", "BMH", "Two-Way", "speedup");
 
     size_t hlen = 100000;
     uint8_t *haystack = (uint8_t *)malloc(hlen);
     srand(42);
     for (size_t i = 0; i < hlen; i++) haystack[i] = 'a' + (rand() % 26);
 
-    /* Use realistic diverse patterns (not all same char) */
+    /* --- Average case: random text, diverse needles (BMH's strong suit) --- */
     struct { const char *label; const char *pat; } cases[] = {
-        {"div_pat=10 miss",   "QzXrT9pLm7"},
-        {"div_pat=18 miss",   "QzXrT9pLm7kYuBw3Hn"},
-        {"div_pat=30 miss",   "QzXrT9pLm7kYuBw3HnFcVdSj2A5eRg"},
-        {"div_pat=50 miss",   "QzXrT9pLm7kYuBw3HnFcVdSj2A5eRgMiOl4Ks6NqWx8JyUp"},
+        {"random div_pat=10 miss",   "QzXrT9pLm7"},
+        {"random div_pat=18 miss",   "QzXrT9pLm7kYuBw3Hn"},
+        {"random div_pat=30 miss",   "QzXrT9pLm7kYuBw3HnFcVdSj2A5eRg"},
+        {"random div_pat=50 miss",   "QzXrT9pLm7kYuBw3HnFcVdSj2A5eRgMiOl4Ks6NqWx8JyUp"},
     };
     int ncases = sizeof(cases) / sizeof(cases[0]);
 
@@ -232,11 +231,10 @@ static void bench_substr(void) {
         size_t plen = strlen(cases[c].pat);
         int iters = 5000;
 
-        /* Vary start offset to prevent compiler caching pure-function results */
         double t0 = now_sec();
         for (int i = 0; i < iters; i++) {
             size_t off = (size_t)(i & 0x7F);
-            sink_sz = old_bytes_index_rk(haystack + off, hlen - off, pat, plen);
+            sink_sz = old_bytes_index_bmh(haystack + off, hlen - off, pat, plen);
         }
         double t_old = now_sec() - t0;
 
@@ -247,12 +245,11 @@ static void bench_substr(void) {
         }
         double t_new = now_sec() - t0;
 
-        printf("%-25s  %8.1f ms  %8.1f ms  %6.1fx\n",
+        printf("%-28s  %8.1f ms  %8.1f ms  %6.1fx\n",
                cases[c].label, t_old * 1000, t_new * 1000, t_old / t_new);
     }
 
     /* Pattern found at middle */
-    printf("\n--- Pattern found case ---\n");
     const char *needle = "FINDTHISNEEDLEHERE";
     size_t nlen = strlen(needle);
     memcpy(haystack + hlen / 2, needle, nlen);
@@ -261,7 +258,7 @@ static void bench_substr(void) {
     double t0 = now_sec();
     for (int i = 0; i < iters; i++) {
         size_t off = (size_t)(i & 0x7F);
-        sink_sz = old_bytes_index_rk(haystack + off, hlen - off, (const uint8_t *)needle, nlen);
+        sink_sz = old_bytes_index_bmh(haystack + off, hlen - off, (const uint8_t *)needle, nlen);
     }
     double t_old = now_sec() - t0;
 
@@ -272,33 +269,82 @@ static void bench_substr(void) {
     }
     double t_new = now_sec() - t0;
 
-    printf("%-25s  %8.1f ms  %8.1f ms  %6.1fx\n",
-           "found@50K (18 chars)", t_old * 1000, t_new * 1000, t_old / t_new);
+    printf("%-28s  %8.1f ms  %8.1f ms  %6.1fx\n",
+           "random found@50K (18ch)", t_old * 1000, t_new * 1000, t_old / t_new);
 
-    /* Worst case for BMH: pattern with repeated chars */
-    printf("\n--- Worst case (repeated pattern) ---\n");
-    uint8_t bad_pat[21];
-    memset(bad_pat, 'a', 20);
-    bad_pat[19] = 'Z';
-    bad_pat[20] = '\0';
+    /* --- Small-alphabet stress (periodicity-heavy, realistic) ---
+     * Binary / DNA-like text has tiny alphabets, so BMH's skips shrink and its
+     * verification fires far more often (genomics, binary protocols). memchr
+     * still anchors on the first byte, and the Two-Way fallback bounds the
+     * remaining work. */
+    printf("\n--- Small-alphabet stress (n=100K, miss) ---\n");
+    struct { const char *label; int alpha; int m; } scases[] = {
+        {"binary {0,1}  m=32",   2, 32},
+        {"binary {0,1}  m=64",   2, 64},
+        {"DNA {ACGT}    m=32",   4, 32},
+        {"DNA {ACGT}    m=64",   4, 64},
+    };
+    int nscases = sizeof(scases) / sizeof(scases[0]);
+    const char *alphabets[5] = {0, 0, "AB", 0, "ACGT"};
+    for (int c = 0; c < nscases; c++) {
+        int m = scases[c].m, alpha = scases[c].alpha;
+        const char *sym = alphabets[alpha];
+        for (size_t i = 0; i < hlen; i++) haystack[i] = (uint8_t)sym[rand() % alpha];
+        uint8_t *pat = (uint8_t *)malloc((size_t)m);
+        /* Construct a miss: a run that does not occur (extra symbol 'Z'). */
+        for (int i = 0; i < m; i++) pat[i] = (uint8_t)sym[rand() % alpha];
+        pat[m / 2] = 'Z';
+        int wi = 2000;
 
-    iters = 5000;
-    t0 = now_sec();
-    for (int i = 0; i < iters; i++) {
-        size_t off = (size_t)(i & 0x7F);
-        sink_sz = old_bytes_index_rk(haystack + off, hlen - off, bad_pat, 20);
+        /* Vary start offset each iteration so the optimizer cannot hoist the
+         * pure static old_* call out of the loop (keeps the A/B fair). */
+        t0 = now_sec();
+        for (int i = 0; i < wi; i++) {
+            size_t off = (size_t)(i & 0x3F);
+            sink_sz = old_bytes_index_bmh(haystack + off, hlen - off, pat, (size_t)m);
+        }
+        t_old = now_sec() - t0;
+
+        t0 = now_sec();
+        for (int i = 0; i < wi; i++) {
+            size_t off = (size_t)(i & 0x3F);
+            sink_sz = neverc_bytes_index(haystack + off, hlen - off, pat, (size_t)m);
+        }
+        t_new = now_sec() - t0;
+
+        printf("%-28s  %8.1f ms  %8.1f ms  %6.1fx\n",
+               scases[c].label, t_old * 1000, t_new * 1000, t_old / t_new);
+        free(pat);
     }
-    t_old = now_sec() - t0;
 
-    t0 = now_sec();
-    for (int i = 0; i < iters; i++) {
-        size_t off = (size_t)(i & 0x7F);
-        sink_sz = neverc_bytes_index(haystack + off, hlen - off, bad_pat, 20);
+    /* --- Worst-case guarantee: a^(m-2)+'b'+'a' in an all-'a' haystack ---
+     * The textbook O(n*m) trap for BMH/brute search. BMH stays fast here only
+     * because libc memcmp is SIMD-accelerated; the point is that the new engine
+     * is provably bounded (O(n+m) comparisons) rather than quadratic. */
+    printf("\n--- Worst-case guarantee (all-'a', large needle) ---\n");
+    memset(haystack, 'a', hlen);
+    {
+        int m = 2048;
+        uint8_t *bad = (uint8_t *)malloc((size_t)m);
+        memset(bad, 'a', (size_t)m);
+        bad[m - 2] = 'b';
+        int wi = 50;
+        t0 = now_sec();
+        for (int i = 0; i < wi; i++) {
+            size_t off = (size_t)(i & 0x3F);
+            sink_sz = old_bytes_index_bmh(haystack + off, hlen - off, bad, (size_t)m);
+        }
+        t_old = now_sec() - t0;
+        t0 = now_sec();
+        for (int i = 0; i < wi; i++) {
+            size_t off = (size_t)(i & 0x3F);
+            sink_sz = neverc_bytes_index(haystack + off, hlen - off, bad, (size_t)m);
+        }
+        t_new = now_sec() - t0;
+        printf("%-28s  %8.1f ms  %8.1f ms  %6.1fx\n",
+               "a^2046.b.a (m=2048)", t_old * 1000, t_new * 1000, t_old / t_new);
+        free(bad);
     }
-    t_new = now_sec() - t0;
-
-    printf("%-25s  %8.1f ms  %8.1f ms  %6.1fx\n",
-           "repeat_a*19+Z miss", t_old * 1000, t_new * 1000, t_old / t_new);
 
     free(haystack);
 }

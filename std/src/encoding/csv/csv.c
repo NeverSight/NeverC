@@ -62,10 +62,16 @@ int neverc_csv_read_line(const char *line, size_t line_len,
                 }
             }
         } else {
-            while (i < line_len && line[i] != delim) {
-                if (wpos >= work_buf_len) return -1;
-                work_buf[wpos++] = line[i++];
-            }
+            /* Unquoted field: jump to the delimiter with memchr (SIMD) and copy
+             * the whole run at once instead of one byte at a time. */
+            const char *start = line + i;
+            size_t remain = line_len - i;
+            const char *d = (const char *)memchr(start, delim, remain);
+            size_t flen = d ? (size_t)(d - start) : remain;
+            if (flen > work_buf_len - wpos) return -1;
+            memcpy(work_buf + wpos, start, flen);
+            wpos += flen;
+            i += flen;
         }
 
         if (wpos >= work_buf_len) return -1;

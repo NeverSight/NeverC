@@ -268,8 +268,36 @@ int neverc_hpack_huffman_encode(const uint8_t *in, size_t in_len,
 
 int neverc_hpack_huffman_decode(const uint8_t *in, size_t in_len,
                                  uint8_t *out, size_t out_cap, size_t *out_len) {
-    /* Bit-by-bit decode using the Huffman table.
-     * This is a simple but correct implementation. */
+    /* Canonical Huffman decode. The previous version scanned all 256 symbols
+     * for every input *bit* — O(in_len * 8 * 256). RFC 7541's Huffman code is
+     * canonical, so we build per-length decode tables once (on the stack: cheap,
+     * thread-safe, no global state) and then each bit is an O(1) range test.
+     *
+     *   first_code[L]  = smallest code value of length L
+     *   count_len[L]   = number of symbols of length L
+     *   base_index[L]  = offset of length-L symbols in sorted_sym[]
+     *   sorted_sym[]   = symbols ordered by (length, code)
+     *
+     * A code of length L is complete iff first_code[L] <= code <
+     * first_code[L] + count_len[L]; otherwise it is a prefix of a longer code. */
+    int      count_len[31];
+    uint32_t first_code[31];
+    int      base_index[31];
+    uint8_t  sorted_sym[256];
+
+    for (int L = 0; L <= 30; L++) { count_len[L] = 0; first_code[L] = 0xFFFFFFFFu; }
+    for (int s = 0; s < 256; s++) {
+        int L = hpack_huffman_code_len[s];
+        count_len[L]++;
+        if (hpack_huffman_codes[s] < first_code[L]) first_code[L] = hpack_huffman_codes[s];
+    }
+    int idx = 0;
+    for (int L = 1; L <= 30; L++) { base_index[L] = idx; idx += count_len[L]; }
+    for (int s = 0; s < 256; s++) {
+        int L = hpack_huffman_code_len[s];
+        sorted_sym[base_index[L] + (int)(hpack_huffman_codes[s] - first_code[L])] = (uint8_t)s;
+    }
+
     size_t pos = 0;
     uint32_t code = 0;
     uint8_t code_len = 0;
@@ -279,15 +307,15 @@ int neverc_hpack_huffman_decode(const uint8_t *in, size_t in_len,
             code = (code << 1) | ((in[i] >> bit) & 1);
             code_len++;
 
-            /* Search for matching symbol */
-            for (int sym = 0; sym < 256; sym++) {
-                if (hpack_huffman_code_len[sym] == code_len &&
-                    hpack_huffman_codes[sym] == code) {
+            if (count_len[code_len] > 0) {
+                uint32_t off = code - first_code[code_len];
+                if (code >= first_code[code_len] &&
+                    off < (uint32_t)count_len[code_len]) {
                     if (pos >= out_cap) return -1;
-                    out[pos++] = (uint8_t)sym;
+                    out[pos++] = sorted_sym[base_index[code_len] + (int)off];
                     code = 0;
                     code_len = 0;
-                    break;
+                    continue;
                 }
             }
             if (code_len > 30) return -1; /* invalid */

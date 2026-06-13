@@ -41,12 +41,26 @@ char *neverc_textproto_canonical_mime_header_key(const char *key) {
     return out;
 }
 
-static int canon_key_cmp(const char *a, const char *b) {
-    char *ca = neverc_textproto_canonical_mime_header_key(a);
-    char *cb = neverc_textproto_canonical_mime_header_key(b);
-    int r = strcmp(ca, cb);
-    free(ca); free(cb);
-    return r;
+/*
+ * Compare an already-canonical stored key against an arbitrary lookup key,
+ * canonicalizing the lookup key on the fly. Returns 1 on match.
+ *
+ * The previous canon_key_cmp() canonicalized *both* sides into freshly
+ * malloc'd buffers on every comparison — 2 mallocs + 2 frees per stored
+ * header, per get/set/del. Since stored keys are canonical at insertion time,
+ * only the lookup key needs normalizing, and that can be done allocation-free.
+ */
+static int canon_eq(const char *canonical, const char *key) {
+    int upper = 1;
+    size_t i = 0;
+    for (; key[i]; i++) {
+        char kc = key[i], c;
+        if (kc == '-')      { c = '-'; upper = 1; }
+        else if (upper)     { c = (char)nc_toupper((unsigned char)kc); upper = 0; }
+        else                { c = (char)nc_tolower((unsigned char)kc); }
+        if (canonical[i] != c) return 0;
+    }
+    return canonical[i] == '\0';
 }
 
 void neverc_mime_header_add(neverc_mime_header_t *h, const char *key, const char *value) {
@@ -62,7 +76,7 @@ void neverc_mime_header_add(neverc_mime_header_t *h, const char *key, const char
 
 void neverc_mime_header_set(neverc_mime_header_t *h, const char *key, const char *value) {
     for (size_t i = 0; i < h->count; i++) {
-        if (canon_key_cmp(h->keys[i], key) == 0) {
+        if (canon_eq(h->keys[i], key)) {
             free(h->values[i]);
             h->values[i] = strdup(value ? value : "");
             return;
@@ -73,13 +87,13 @@ void neverc_mime_header_set(neverc_mime_header_t *h, const char *key, const char
 
 const char *neverc_mime_header_get(const neverc_mime_header_t *h, const char *key) {
     for (size_t i = 0; i < h->count; i++)
-        if (canon_key_cmp(h->keys[i], key) == 0) return h->values[i];
+        if (canon_eq(h->keys[i], key)) return h->values[i];
     return NULL;
 }
 
 void neverc_mime_header_del(neverc_mime_header_t *h, const char *key) {
     for (size_t i = 0; i < h->count; i++) {
-        if (canon_key_cmp(h->keys[i], key) == 0) {
+        if (canon_eq(h->keys[i], key)) {
             free(h->keys[i]); free(h->values[i]);
             h->count--;
             if (i < h->count) {

@@ -681,11 +681,78 @@ static void test_edge_cases(void) {
     neverc_cstring_free_split(arr, cnt);
 }
 
+/* Brute-force references (NUL-terminated). */
+static int ref_cindex(const char *s, const char *sub) {
+    size_t sl = strlen(s), nl = strlen(sub);
+    if (nl == 0) return 0;
+    if (nl > sl) return -1;
+    for (size_t i = 0; i + nl <= sl; i++)
+        if (memcmp(s + i, sub, nl) == 0) return (int)i;
+    return -1;
+}
+static int ref_clast(const char *s, const char *sub) {
+    size_t sl = strlen(s), nl = strlen(sub);
+    if (nl == 0) return (int)sl;
+    if (nl > sl) return -1;
+    size_t i = sl - nl + 1;
+    while (i > 0) { i--; if (memcmp(s + i, sub, nl) == 0) return (int)i; }
+    return -1;
+}
+static int ref_ccount(const char *s, const char *sub) {
+    size_t sl = strlen(s), nl = strlen(sub);
+    if (nl == 0) return (int)sl + 1;
+    if (nl > sl) return 0;
+    int c = 0; size_t p = 0;
+    while (p + nl <= sl) { if (memcmp(s + p, sub, nl) == 0) { c++; p += nl; } else p++; }
+    return c;
+}
+
+/* Adversarial + randomized cross-check of the substring search engine. */
+static void test_search_engine(void) {
+    printf("[search_engine]\n");
+
+    /* Worst case: a^(m-2)+b+a in all-'a' text. */
+    char *hay = (char *)malloc(20001);
+    memset(hay, 'a', 20000); hay[20000] = '\0';
+    char needle[201]; memset(needle, 'a', 200); needle[198] = 'b'; needle[200] = '\0';
+    check_int("adversarial miss", neverc_cstring_index(hay, needle), -1);
+    memcpy(hay + 20000 - 200, needle, 200);
+    check_int("adversarial found", neverc_cstring_index(hay, needle), 20000 - 200);
+    memset(hay, 'a', 20000);
+    check_int("periodic count", neverc_cstring_count(hay, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), 20000 / 32);
+    check_int("absent first byte", neverc_cstring_index(hay, "Zaaaaaaaaaaaaaaaaaaa"), -1);
+    free(hay);
+
+    srand(2026);
+    int mism = 0;
+    char sb[513], nb[121];
+    for (int it = 0; it < 40000 && mism == 0; it++) {
+        int alpha = (it & 1) ? 2 : 4;
+        size_t sl = (size_t)(rand() % 512);
+        size_t nl = (size_t)(rand() % 120);
+        for (size_t i = 0; i < sl; i++) sb[i] = (char)('a' + rand() % alpha);
+        sb[sl] = '\0';
+        if (nl > 0 && sl >= nl && (rand() & 3)) {
+            size_t st = (size_t)(rand() % (int)(sl - nl + 1));
+            memcpy(nb, sb + st, nl);
+            if ((rand() & 1) && nl) nb[rand() % (int)nl] = (char)('a' + rand() % alpha);
+        } else {
+            for (size_t i = 0; i < nl; i++) nb[i] = (char)('a' + rand() % alpha);
+        }
+        nb[nl] = '\0';
+        if (neverc_cstring_index(sb, nb) != ref_cindex(sb, nb)) mism++;
+        if (neverc_cstring_last_index(sb, nb) != ref_clast(sb, nb)) mism++;
+        if (neverc_cstring_count(sb, nb) != ref_ccount(sb, nb)) mism++;
+    }
+    check_int("randomized cross-check vs brute force", mism, 0);
+}
+
 /* ===== Main ===== */
 
 int main(void) {
     test_compare();
     test_equal_fold();
+    test_search_engine();
     test_index();
     test_last_index();
     test_index_byte();

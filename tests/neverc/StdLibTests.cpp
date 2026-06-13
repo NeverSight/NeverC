@@ -76,7 +76,7 @@ STD_TEST(base32, "src/encoding/base32/base32.c")
 STD_TEST(binary, "src/encoding/binary/binary.c")
 STD_TEST(ascii85, "src/encoding/ascii85/ascii85.c")
 STD_TEST(pem, "src/encoding/pem/pem.c", "src/encoding/base64/base64.c")
-STD_TEST(json, "src/encoding/json/json.c")
+STD_TEST(json, "src/encoding/json/json.c", "src/strconv/format_float.c", "src/strconv/parse_float.c")
 STD_TEST(csv, "src/encoding/csv/csv.c")
 STD_TEST(xml, "src/encoding/xml/xml.c")
 STD_TEST(asn1, "src/encoding/asn1/asn1.c")
@@ -140,10 +140,10 @@ STD_TEST(cmp, "src/cmp/cmp.c")
 STD_TEST(bytes, "src/bytes/bytes.c")
 STD_TEST(errors, "src/errors/errors.c")
 STD_TEST(html, "src/html/html.c")
-STD_TEST(fmt, "src/fmt/fmt.c")
+STD_TEST(fmt, "src/fmt/fmt.c", "src/strconv/format_float.c", "src/strconv/parse_float.c")
 STD_TEST(io, "src/io/io.c")
 STD_TEST(bufio, "src/bufio/bufio.c", "src/io/io.c")
-STD_TEST(flag, "src/flag/flag.c")
+STD_TEST(flag, "src/flag/flag.c", "src/strconv/parse_float.c")
 STD_TEST(log, "src/log/log.c")
 STD_TEST(slog, "src/log/slog/slog.c")
 STD_TEST(time, "src/time/time.c")
@@ -252,7 +252,7 @@ STD_TEST(filepath, "src/path/filepath/filepath.c")
 STD_TEST(color, "src/image/color/color.c")
 STD_TEST(image, "src/image/image/image.c", "src/image/color/color.c")
 STD_TEST(draw, "src/image/draw/draw.c", "src/image/image/image.c", "src/image/color/color.c")
-STD_TEST(png, "src/image/png/png.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/flate/flate.c", "src/hash/crc32/crc32.c")
+STD_TEST(png, "src/image/png/png.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/flate/flate.c", "src/hash/crc32/crc32.c", "src/hash/adler32/adler32.c")
 STD_TEST(jpeg, "src/image/jpeg/jpeg.c", "src/image/image/image.c", "src/image/color/color.c")
 STD_TEST(gif, "src/image/gif/gif.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/lzw/lzw.c")
 STD_TEST(palette, "src/image/color/palette/palette.c")
@@ -327,6 +327,7 @@ STD_TEST(dot_syntax,
     "src/math/rand/rand.c",
     "src/math/bits/bits.c",
     "src/strconv/format_int.c", "src/strconv/parse_int.c", "src/strconv/format_bool.c",
+    "src/strconv/format_float.c", "src/strconv/parse_float.c",
     "src/encoding/hex/encode.c", "src/encoding/hex/decode.c",
     "src/encoding/base64/base64.c",
     "src/hash/crc32/crc32.c",
