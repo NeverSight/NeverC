@@ -310,6 +310,25 @@ int neverc_strconv_unquote(const char *s, char *buf, size_t bufsize) {
     size_t out = 0;
 
     while (src_len > 0) {
+        /* Fast path: bulk-copy a run of plain ASCII characters that decode to
+         * themselves (single-byte, not a backslash escape or the quote char).
+         * Avoids per-character unquote_char + utf8 re-encode for typical text. */
+        unsigned char c0 = (unsigned char)src[0];
+        if (c0 < 0x80 && c0 != '\\' && c0 != (unsigned char)quote) {
+            size_t run = 1;
+            while (run < src_len) {
+                unsigned char cc = (unsigned char)src[run];
+                if (cc >= 0x80 || cc == '\\' || cc == (unsigned char)quote) break;
+                run++;
+            }
+            if (out + run >= bufsize) return -1;
+            memcpy(buf + out, src, run);
+            out += run;
+            src += run;
+            src_len -= run;
+            continue;
+        }
+
         uint32_t r;
         int mb;
         int consumed = neverc_strconv_unquote_char(src, src_len, quote, &r, &mb);
