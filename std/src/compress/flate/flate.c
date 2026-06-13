@@ -60,35 +60,55 @@ static int fbw_align(flate_bw_t *w) {
 typedef struct {
     const uint8_t *buf;
     size_t len, pos;
-    uint32_t bits;
-    unsigned nbits;
+    uint64_t bits;     /* little-endian bit accumulator (LSB = next bit) */
+    unsigned nbits;    /* number of valid bits held in `bits` (0..64) */
 } flate_br_t;
 
-static int fbr_bit(flate_br_t *r) {
-    if (r->nbits == 0) {
-        if (r->pos >= r->len) return -1;
-        r->bits = r->buf[r->pos++];
-        r->nbits = 8;
+/*
+ * Refill the bit accumulator. The fast path issues a single unaligned 64-bit
+ * little-endian load and advances by whole bytes, leaving 56..63 buffered bits
+ * — the libdeflate technique that lets several Huffman symbols be decoded per
+ * refill instead of reloading one byte at a time. Re-reading the partially
+ * consumed top byte on the next refill is harmless: `|=` rewrites identical
+ * bits at identical positions (invariant: pos*8 == consumed + nbits). Near
+ * end-of-stream it falls back to a safe byte-at-a-time fill that never reads
+ * past `len`.
+ */
+static void fbr_refill(flate_br_t *r) {
+    if (r->pos + 8 <= r->len) {
+        uint64_t w;
+        memcpy(&w, r->buf + r->pos, 8);
+        r->bits |= w << r->nbits;
+        unsigned add = (63u - r->nbits) >> 3;   /* whole bytes consumed, 0..7 */
+        r->pos += add;
+        r->nbits += add << 3;                    /* now 56..63 */
+    } else {
+        while (r->nbits <= 56 && r->pos < r->len) {
+            r->bits |= (uint64_t)r->buf[r->pos++] << r->nbits;
+            r->nbits += 8;
+        }
     }
-    int b = r->bits & 1;
-    r->bits >>= 1;
-    r->nbits--;
-    return b;
 }
 
 static int fbr_bits(flate_br_t *r, unsigned n, uint32_t *out) {
-    while (r->nbits < n) {
-        if (r->pos >= r->len) return -1;
-        r->bits |= (uint32_t)r->buf[r->pos++] << r->nbits;
-        r->nbits += 8;
+    if (r->nbits < n) {
+        fbr_refill(r);
+        if (r->nbits < n) return -1;
     }
-    *out = r->bits & ((1u << n) - 1);
+    *out = (uint32_t)(r->bits & (((uint64_t)1 << n) - 1));
     r->bits >>= n;
     r->nbits -= n;
     return 0;
 }
 
+/*
+ * Drop bits back to a byte boundary and hand the still-buffered whole bytes
+ * back to the stream so the direct byte reads of a stored block resume from the
+ * correct position. `nbits >> 3` is exactly the count of buffered whole bytes;
+ * the partial byte's leftover bits are discarded by the alignment.
+ */
 static void fbr_align(flate_br_t *r) {
+    r->pos -= r->nbits >> 3;
     r->bits = 0;
     r->nbits = 0;
 }
@@ -798,17 +818,10 @@ static void copy_match(uint8_t *dst, size_t out_pos,
 }
 
 static int huff_decode(huff_table_t *ht, flate_br_t *r, uint16_t *sym) {
-    while (r->nbits < ht->max_bits) {
-        if (r->pos >= r->len) {
-            if (r->nbits == 0) return -1;
-            break;
-        }
-        r->bits |= (uint32_t)r->buf[r->pos++] << r->nbits;
-        r->nbits += 8;
-    }
-    unsigned idx = r->bits & ((1u << ht->max_bits) - 1);
+    if (r->nbits < ht->max_bits) fbr_refill(r);
+    unsigned idx = (unsigned)(r->bits & ((1u << ht->max_bits) - 1));
     huff_entry_t e = ht->table[idx];
-    if (e.len == 0) return -1;
+    if (e.len == 0 || e.len > r->nbits) return -1;
     r->bits >>= e.len;
     r->nbits -= e.len;
     *sym = e.sym;
@@ -823,7 +836,12 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
     size_t out_pos = 0;
     size_t out_cap = *dst_len;
 
-    huff_table_t *lit_ht = NULL, *dist_ht = NULL;
+    /* Allocate the (large) Huffman tables once and reuse them across every
+     * block — a long stream is split into many blocks, so a malloc/free per
+     * block would repeatedly churn ~128 KiB twice over. */
+    huff_table_t *lit_ht = (huff_table_t *)malloc(sizeof(huff_table_t));
+    huff_table_t *dist_ht = (huff_table_t *)malloc(sizeof(huff_table_t));
+    if (!lit_ht || !dist_ht) { free(lit_ht); free(dist_ht); return -1; }
 
     for (;;) {
         uint32_t bfinal, btype;
@@ -844,10 +862,6 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
             br.pos += len16;
             out_pos += len16;
         } else if (btype == 1 || btype == 2) {
-            lit_ht = (huff_table_t *)malloc(sizeof(huff_table_t));
-            dist_ht = (huff_table_t *)malloc(sizeof(huff_table_t));
-            if (!lit_ht || !dist_ht) goto err;
-
             if (btype == 1) {
                 /* Fixed Huffman codes */
                 uint8_t lit_lens[288], dist_lens[32];
@@ -954,9 +968,6 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
                     out_pos += length;
                 }
             }
-
-            free(lit_ht); lit_ht = NULL;
-            free(dist_ht); dist_ht = NULL;
         } else {
             goto err;
         }
@@ -964,6 +975,8 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
         if (bfinal) break;
     }
 
+    free(lit_ht);
+    free(dist_ht);
     *dst_len = out_pos;
     return 0;
 

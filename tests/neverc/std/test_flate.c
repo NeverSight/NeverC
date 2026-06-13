@@ -80,6 +80,27 @@ static void test_large(void) {
     test_roundtrip("large_32k", data, sizeof(data), 6);
 }
 
+/* Exercise the inflate back-reference copy across every overlap shape:
+ * distance == 1 (RLE/memset), small periodic distances (overlapping runs),
+ * and large periods (disjoint memcpy), at lengths that span the short/long
+ * thresholds inside copy_match. */
+static void test_overlap_copy(void) {
+    static uint8_t data[20000];
+    for (int period = 1; period <= 259; period++) {
+        size_t n = sizeof(data);
+        for (size_t i = 0; i < n; i++)
+            data[i] = (uint8_t)((i % period) * 31 + 7);
+        char label[32];
+        snprintf(label, sizeof(label), "overlap_p%d", period);
+        test_roundtrip(label, data, n, 6);
+        if (period <= 4 || period == 32 || period == 258)
+            test_roundtrip(label, data, n, 9);
+    }
+    /* Pure single-byte run (distance 1, max-length matches). */
+    memset(data, 0x5A, sizeof(data));
+    test_roundtrip("single_byte_run", data, sizeof(data), 9);
+}
+
 static void test_stored_blocks(void) {
     /* level=0 uses stored blocks, test block splitting for >64K */
     uint8_t data[70000];
@@ -110,6 +131,7 @@ int main(void) {
     test_repetitive();
     test_sequential();
     test_large();
+    test_overlap_copy();
     test_stored_blocks();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

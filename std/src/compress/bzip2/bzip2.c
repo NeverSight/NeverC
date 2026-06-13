@@ -2,8 +2,17 @@
  * NeverC compress/bzip2 — bzip2 decompression.
  * Mirrors Go compress/bzip2 (decompression only).
  *
- * Implements: stream magic, block headers, Huffman, MTF, IBWT, RLE.
+ * Pipeline (decode order): stream magic, block headers, Huffman, MTF + RLE2,
+ * inverse Burrows-Wheeler transform (IBWT), final run-length decode (RLE1).
  * Reference: https://en.wikipedia.org/wiki/Bzip2#File_format
+ *
+ * Performance notes:
+ *  - Bit reader uses a 64-bit accumulator with bulk (multi-byte) refill so the
+ *    hot Huffman path extracts bits with a shift/mask instead of a per-bit
+ *    function call.
+ *  - IBWT uses Seward's packed T-vector: each entry stores the successor index
+ *    in the high bits and the output byte in the low 8 bits, so the output walk
+ *    performs a single (cache-bound) random load per byte instead of two.
  */
 
 #include "neverc/std/compress/bzip2.h"
@@ -17,38 +26,43 @@
 #define BZ_MAX_ALPHA      258
 #define BZ_MAX_CODE_LEN   20
 
+/* ---- Bit reader: MSB-first, 64-bit accumulator with bulk refill ---- */
 typedef struct {
     const uint8_t *buf;
     size_t len, pos;
-    uint32_t live;
-    uint32_t buff;
+    uint64_t acc;   /* valid bits live in the low `nbits` bits of acc */
+    int nbits;
+    int eof;        /* set when a read could not be fully satisfied */
 } bz_br_t;
 
 static void bz_br_init(bz_br_t *br, const uint8_t *data, size_t len) {
     br->buf = data; br->len = len; br->pos = 0;
-    br->live = 0; br->buff = 0;
+    br->acc = 0; br->nbits = 0; br->eof = 0;
 }
 
-static int bz_br_bits(bz_br_t *br, unsigned n, uint32_t *out) {
-    *out = 0;
-    while (n > 0) {
-        if (br->live == 0) {
-            if (br->pos >= br->len) return -1;
-            br->buff = br->buf[br->pos++];
-            br->live = 8;
-        }
-        unsigned take = n < br->live ? n : br->live;
-        *out = (*out << take) | ((br->buff >> (br->live - take)) & ((1u << take) - 1));
-        br->live -= take;
-        n -= take;
+static inline void bz_refill(bz_br_t *br) {
+    while (br->nbits <= 56 && br->pos < br->len) {
+        br->acc = (br->acc << 8) | (uint64_t)br->buf[br->pos++];
+        br->nbits += 8;
     }
-    return 0;
 }
 
-static int bz_br_bit(bz_br_t *br) {
-    uint32_t v;
-    if (bz_br_bits(br, 1, &v) < 0) return -1;
-    return (int)v;
+/* Read n bits (1..32), MSB-first. On underflow, sets eof and returns the
+ * available bits zero-padded on the right; subsequent reads return 0. */
+static inline uint32_t bz_bits(bz_br_t *br, int n) {
+    if (br->nbits < n) {
+        bz_refill(br);
+        if (br->nbits < n) {
+            int avail = br->nbits;
+            uint32_t v = avail ? (uint32_t)(br->acc & (((uint64_t)1 << avail) - 1)) : 0;
+            v <<= (n - avail);
+            br->eof = 1;
+            br->nbits = 0; br->acc = 0;
+            return v;
+        }
+    }
+    br->nbits -= n;
+    return (uint32_t)((br->acc >> br->nbits) & (((uint64_t)1 << n) - 1));
 }
 
 typedef struct {
@@ -90,27 +104,44 @@ static int huff_build(huff_table_t *ht, const uint8_t *lens, int n_syms) {
     return 0;
 }
 
-static int huff_decode(bz_br_t *br, const huff_table_t *ht) {
-    int zn = ht->min_len;
-    int b = bz_br_bit(br);
-    if (b < 0) return -1;
-    int zvec = b;
+/* Canonical Huffman decode driven by the fast bit reader. The common path
+ * refills once so all bits of the longest possible code are buffered, then
+ * peeks/extends the code directly out of the accumulator (no per-bit function
+ * call or refill branch). A bit-at-a-time slow path covers the end of stream. */
+static inline int huff_decode(bz_br_t *br, const huff_table_t *ht) {
+    if (br->nbits < BZ_MAX_CODE_LEN)
+        bz_refill(br);
 
-    for (int i = 1; i < zn; i++) {
-        b = bz_br_bit(br);
-        if (b < 0) return -1;
-        zvec = (zvec << 1) | b;
+    if (br->nbits >= ht->max_len) {
+        int zn = ht->min_len;
+        int consumed = zn;
+        uint32_t zvec = (uint32_t)((br->acc >> (br->nbits - zn)) &
+                                   (((uint32_t)1 << zn) - 1));
+        for (;;) {
+            if ((int)zvec <= ht->limit[zn]) {
+                br->nbits -= consumed;
+                int idx = (int)zvec - ht->base[zn];
+                if (idx < 0 || idx >= BZ_MAX_ALPHA) return -1;
+                return ht->perm[idx];
+            }
+            if (++zn > ht->max_len) return -1;
+            uint32_t bit = (uint32_t)((br->acc >> (br->nbits - consumed - 1)) & 1);
+            zvec = (zvec << 1) | bit;
+            consumed++;
+        }
     }
 
+    /* End-of-stream slow path: fewer than max_len bits remain buffered. */
+    int zn = ht->min_len;
+    uint32_t zvec = bz_bits(br, zn);
     while (zn <= ht->max_len) {
-        if (zvec <= ht->limit[zn]) {
-            int idx = zvec - ht->base[zn];
+        if (br->eof) return -1;
+        if ((int)zvec <= ht->limit[zn]) {
+            int idx = (int)zvec - ht->base[zn];
             if (idx < 0 || idx >= BZ_MAX_ALPHA) return -1;
             return ht->perm[idx];
         }
-        b = bz_br_bit(br);
-        if (b < 0) return -1;
-        zvec = (zvec << 1) | b;
+        zvec = (zvec << 1) | bz_bits(br, 1);
         zn++;
     }
     return -1;
@@ -121,45 +152,43 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
     bz_br_t br;
     bz_br_init(&br, src, src_len);
 
-    uint32_t magic;
-    if (bz_br_bits(&br, 16, &magic) < 0 || magic != 0x425A) return -1;
-    uint32_t h;
-    if (bz_br_bits(&br, 8, &h) < 0 || h != 'h') return -1;
-    uint32_t bsc;
-    if (bz_br_bits(&br, 8, &bsc) < 0 || bsc < '1' || bsc > '9') return -1;
+    uint32_t magic = bz_bits(&br, 16);
+    if (br.eof || magic != 0x425A) return -1;
+    uint32_t h = bz_bits(&br, 8);
+    if (br.eof || h != 'h') return -1;
+    uint32_t bsc = bz_bits(&br, 8);
+    if (br.eof || bsc < '1' || bsc > '9') return -1;
     int block_size100k = (int)bsc - '0';
 
     size_t out_pos = 0;
     size_t out_cap = *dst_len;
+    int block_cap = block_size100k * 100000;
     uint32_t *tt = NULL;
+    uint8_t *block = NULL;
 
     for (;;) {
-        uint32_t hdr_hi, hdr_lo;
-        if (bz_br_bits(&br, 24, &hdr_hi) < 0) goto err;
-        if (bz_br_bits(&br, 24, &hdr_lo) < 0) goto err;
+        uint32_t hdr_hi = bz_bits(&br, 24);
+        uint32_t hdr_lo = bz_bits(&br, 24);
+        if (br.eof) goto err;
 
         if (hdr_hi == 0x177245 && hdr_lo == 0x385090) break;
         if (hdr_hi != 0x314159 || hdr_lo != 0x265359) goto err;
 
-        uint32_t block_crc;
-        if (bz_br_bits(&br, 32, &block_crc) < 0) goto err;
-        (void)block_crc;
+        (void)bz_bits(&br, 32);          /* block CRC (unchecked) */
 
-        int randomized = bz_br_bit(&br);
-        if (randomized < 0 || randomized) goto err;
+        uint32_t randomized = bz_bits(&br, 1);
+        if (br.eof || randomized) goto err;
 
-        uint32_t orig_ptr;
-        if (bz_br_bits(&br, 24, &orig_ptr) < 0) goto err;
-
-        uint32_t used_map;
-        if (bz_br_bits(&br, 16, &used_map) < 0) goto err;
+        uint32_t orig_ptr = bz_bits(&br, 24);
+        uint32_t used_map = bz_bits(&br, 16);
+        if (br.eof) goto err;
         uint8_t in_use[256];
         memset(in_use, 0, sizeof(in_use));
         int n_in_use = 0;
         for (int i = 0; i < 16; i++) {
             if (used_map & (1u << (15 - i))) {
-                uint32_t sub;
-                if (bz_br_bits(&br, 16, &sub) < 0) goto err;
+                uint32_t sub = bz_bits(&br, 16);
+                if (br.eof) goto err;
                 for (int j = 0; j < 16; j++) {
                     if (sub & (1u << (15 - j))) {
                         in_use[i * 16 + j] = 1;
@@ -171,11 +200,10 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
         if (n_in_use == 0) goto err;
         int alpha_size = n_in_use + 2;
 
-        uint32_t n_groups, n_selectors;
-        if (bz_br_bits(&br, 3, &n_groups) < 0) goto err;
-        if (n_groups < 2 || n_groups > 6) goto err;
-        if (bz_br_bits(&br, 15, &n_selectors) < 0) goto err;
-        if (n_selectors == 0 || n_selectors > BZ_MAX_SELECTORS) goto err;
+        uint32_t n_groups = bz_bits(&br, 3);
+        if (br.eof || n_groups < 2 || n_groups > 6) goto err;
+        uint32_t n_selectors = bz_bits(&br, 15);
+        if (br.eof || n_selectors == 0 || n_selectors > BZ_MAX_SELECTORS) goto err;
 
         uint8_t selector_list[BZ_MAX_SELECTORS];
         uint8_t mtf_sel[BZ_N_GROUPS];
@@ -184,8 +212,8 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
         for (unsigned i = 0; i < n_selectors; i++) {
             int j = 0;
             for (;;) {
-                int b = bz_br_bit(&br);
-                if (b < 0) goto err;
+                uint32_t b = bz_bits(&br, 1);
+                if (br.eof) goto err;
                 if (!b) break;
                 j++;
                 if (j >= (int)n_groups) goto err;
@@ -200,16 +228,16 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
         uint8_t tree_lens[BZ_MAX_ALPHA];
 
         for (unsigned g = 0; g < n_groups; g++) {
-            uint32_t curr;
-            if (bz_br_bits(&br, 5, &curr) < 0) goto err;
+            uint32_t curr = bz_bits(&br, 5);
+            if (br.eof) goto err;
             for (int i = 0; i < alpha_size; i++) {
                 for (;;) {
                     if (curr < 1 || curr > 20) goto err;
-                    int b = bz_br_bit(&br);
-                    if (b < 0) goto err;
+                    uint32_t b = bz_bits(&br, 1);
+                    if (br.eof) goto err;
                     if (!b) break;
-                    b = bz_br_bit(&br);
-                    if (b < 0) goto err;
+                    b = bz_bits(&br, 1);
+                    if (br.eof) goto err;
                     if (b) curr--;
                     else curr++;
                 }
@@ -218,8 +246,7 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
             if (huff_build(&tables[g], tree_lens, alpha_size) < 0) goto err;
         }
 
-        int block_cap = block_size100k * 100000;
-        uint8_t *block = (uint8_t *)malloc((size_t)block_cap + 1);
+        block = (uint8_t *)malloc((size_t)block_cap + 1);
         if (!block) goto err;
         int nblock = 0;
 
@@ -234,7 +261,7 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
 
         for (;;) {
             if (group_pos == 0) {
-                if (sel_idx >= (int)n_selectors) { free(block); goto err; }
+                if (sel_idx >= (int)n_selectors) goto err;
                 group_pos = BZ_G_SIZE;
                 sel_idx++;
             }
@@ -242,7 +269,7 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
 
             int grp = selector_list[sel_idx - 1];
             int sym = huff_decode(&br, &tables[grp]);
-            if (sym < 0) { free(block); goto err; }
+            if (sym < 0) goto err;
 
             if (sym == eob) break;
 
@@ -251,73 +278,96 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
                 for (;;) {
                     run += (sym == 0 ? 1 : 2) * power;
                     power <<= 1;
+                    if (run > block_cap) goto err;
 
-                    group_pos--;
                     if (group_pos == 0) {
-                        if (sel_idx >= (int)n_selectors) { free(block); goto err; }
+                        if (sel_idx >= (int)n_selectors) goto err;
                         group_pos = BZ_G_SIZE;
                         sel_idx++;
                     }
+                    group_pos--;
 
                     grp = selector_list[sel_idx - 1];
                     sym = huff_decode(&br, &tables[grp]);
-                    if (sym < 0) { free(block); goto err; }
+                    if (sym < 0) goto err;
                     if (sym != 0 && sym != 1) break;
                 }
                 uint8_t ch = mtf_arr[0];
-                for (int r = 0; r < run; r++) {
-                    if (nblock >= block_cap) { free(block); goto err; }
-                    block[nblock++] = ch;
-                }
+                if (nblock + run > block_cap) goto err;
+                memset(block + nblock, ch, (size_t)run);
+                nblock += run;
                 if (sym == eob) break;
             }
 
             if (sym >= 2) {
                 int s = sym - 1;
-                if (s >= nm) { free(block); goto err; }
+                if (s >= nm) goto err;
                 uint8_t tmp = mtf_arr[s];
-                for (int k = s; k > 0; k--) mtf_arr[k] = mtf_arr[k - 1];
+                memmove(&mtf_arr[1], &mtf_arr[0], (size_t)s);
                 mtf_arr[0] = tmp;
-                if (nblock >= block_cap) { free(block); goto err; }
+                if (nblock >= block_cap) goto err;
                 block[nblock++] = tmp;
             }
         }
 
-        if ((int)orig_ptr >= nblock) { free(block); goto err; }
+        if ((int)orig_ptr >= nblock) goto err;
 
         if (!tt) tt = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)block_cap);
-        if (!tt) { free(block); goto err; }
+        if (!tt) goto err;
 
-        uint32_t ftab[256];
-        memset(ftab, 0, sizeof(ftab));
-        for (int i = 0; i < nblock; i++) ftab[block[i]]++;
-        uint32_t cumul[256];
-        uint32_t sum = 0;
-        for (int i = 0; i < 256; i++) {
-            cumul[i] = sum;
-            sum += ftab[i];
-        }
+        /* Build Seward's packed T-vector: tt[j] = (successor_index << 8) | byte.
+         * cftab[c] holds the first sorted-order slot for byte value c. */
+        uint32_t cftab[257];
+        memset(cftab, 0, sizeof(cftab));
+        for (int i = 0; i < nblock; i++) cftab[block[i] + 1]++;
+        for (int i = 1; i < 257; i++) cftab[i] += cftab[i - 1];
         for (int i = 0; i < nblock; i++) {
-            uint8_t ch = block[i];
-            tt[cumul[ch]] = (uint32_t)i;
-            cumul[ch]++;
+            uint8_t uc = block[i];
+            uint32_t j = cftab[uc]++;
+            tt[j] = ((uint32_t)i << 8) | block[j];
         }
 
-        uint32_t t_pos = tt[orig_ptr];
+        free(block);
+        block = NULL;
+
+        /* Walk the permutation, applying the final RLE1 decode on the fly.
+         * RLE1: a run of >= 4 equal bytes is stored as 4 literal bytes followed
+         * by a byte giving the count of additional copies. */
+        uint32_t t_pos = tt[orig_ptr] >> 8;
+        int rprev = -1, rrun = 0;
         for (int i = 0; i < nblock; i++) {
-            uint8_t ch = block[t_pos];
-            t_pos = tt[t_pos];
-            if (out_pos >= out_cap) { free(block); goto err; }
+            uint32_t e = tt[t_pos];
+            uint8_t ch = (uint8_t)(e & 0xff);
+            t_pos = e >> 8;
+
+            if (rrun == 4) {
+                uint32_t extra = ch;
+                if (extra > out_cap - out_pos) goto err;
+                memset(dst + out_pos, rprev, extra);
+                out_pos += extra;
+                rrun = 0;
+                rprev = -1;
+                continue;
+            }
+
+            if ((int)ch == rprev) {
+                rrun++;
+            } else {
+                rrun = 1;
+                rprev = ch;
+            }
+            if (out_pos >= out_cap) goto err;
             dst[out_pos++] = ch;
         }
-        free(block);
     }
 
     free(tt);
+    free(block);
     *dst_len = out_pos;
     return 0;
 
 err:
     free(tt);
+    free(block);
     return -1;
 }
