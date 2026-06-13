@@ -13,6 +13,11 @@ typedef struct {
     size_t               data_len;
     int32_t             *sa;
     size_t               sa_len;
+    /* LCP-LR arrays for O(m + log n) pattern search (Manber & Myers). Indexed by
+     * the midpoint of each binary-search interval; NULL if construction ran out
+     * of memory, in which case queries fall back to a plain binary search. */
+    int32_t             *llcp;
+    int32_t             *rlcp;
 } neverc_suffixarray_t;
 
 int  neverc_suffixarray_new(neverc_suffixarray_t *idx, const unsigned char *data, size_t len);

@@ -402,10 +402,88 @@ static void test_to_valid_utf8(void) {
     free(r);
 }
 
+/* Brute-force references for cross-checking the Two-Way/BMH search engine. */
+static size_t ref_index(const uint8_t *h, size_t hlen, const uint8_t *n, size_t nlen) {
+    if (nlen == 0) return 0;
+    if (nlen > hlen) return NOT_FOUND;
+    for (size_t i = 0; i + nlen <= hlen; i++)
+        if (memcmp(h + i, n, nlen) == 0) return i;
+    return NOT_FOUND;
+}
+static size_t ref_last_index(const uint8_t *h, size_t hlen, const uint8_t *n, size_t nlen) {
+    if (nlen == 0) return hlen;
+    if (nlen > hlen) return NOT_FOUND;
+    size_t i = hlen - nlen + 1;
+    while (i > 0) { i--; if (memcmp(h + i, n, nlen) == 0) return i; }
+    return NOT_FOUND;
+}
+static size_t ref_count(const uint8_t *h, size_t hlen, const uint8_t *n, size_t nlen) {
+    if (nlen == 0) return hlen + 1;
+    if (nlen > hlen) return 0;
+    size_t c = 0, p = 0;
+    while (p + nlen <= hlen) {
+        if (memcmp(h + p, n, nlen) == 0) { c++; p += nlen; } else p++;
+    }
+    return c;
+}
+
+/* Adversarial / large-input correctness for the substring search engine:
+ * periodic needles, all-same haystacks, rare/absent first bytes, and a
+ * randomized cross-check against the brute-force references above. */
+static void test_search_engine(void) {
+    printf("[search_engine]\n");
+
+    /* Worst case for naive/BMH search: a^(m-2)+b+a in an all-'a' haystack. */
+    size_t hlen = 20000;
+    uint8_t *hay = (uint8_t *)malloc(hlen);
+    memset(hay, 'a', hlen);
+    uint8_t needle[200];
+    memset(needle, 'a', 200); needle[198] = 'b'; /* m=200, late mismatch */
+    check_size("adversarial miss", neverc_bytes_index(hay, hlen, needle, 200), NOT_FOUND);
+    /* Plant it so it matches near the end. */
+    memcpy(hay + hlen - 200, needle, 200);
+    check_size("adversarial found", neverc_bytes_index(hay, hlen, needle, 200), hlen - 200);
+    check_size("adversarial last",  neverc_bytes_last_index(hay, hlen, needle, 200), hlen - 200);
+
+    /* Periodic needle present many times. */
+    memset(hay, 'a', hlen);
+    uint8_t per[40]; memset(per, 'a', 40);
+    check_size("periodic found@0", neverc_bytes_index(hay, hlen, per, 40), 0);
+    check_size("periodic count", neverc_bytes_count(hay, hlen, per, 40), hlen / 40);
+
+    /* Rare/absent first byte → memchr fast path. */
+    check_size("absent first byte", neverc_bytes_index(hay, hlen, (const uint8_t *)"Zaaaaaaaaaaaaaaaaaaa", 20), NOT_FOUND);
+    free(hay);
+
+    /* Randomized cross-check against brute force over small alphabets (high
+     * periodicity) and varied lengths that cross the engine's thresholds. */
+    srand(12345);
+    int mism = 0;
+    uint8_t hb[600], nb[120];
+    for (int it = 0; it < 40000 && mism == 0; it++) {
+        int alpha = (it & 1) ? 2 : 4;
+        size_t hl = (size_t)(rand() % 600);
+        size_t nl = (size_t)(rand() % 120);
+        for (size_t i = 0; i < hl; i++) hb[i] = (uint8_t)('a' + rand() % alpha);
+        if (nl > 0 && hl >= nl && (rand() & 3)) {
+            size_t st = (size_t)(rand() % (int)(hl - nl + 1));
+            memcpy(nb, hb + st, nl);
+            if ((rand() & 1) && nl) nb[rand() % (int)nl] = (uint8_t)('a' + rand() % alpha);
+        } else {
+            for (size_t i = 0; i < nl; i++) nb[i] = (uint8_t)('a' + rand() % alpha);
+        }
+        if (neverc_bytes_index(hb, hl, nb, nl) != ref_index(hb, hl, nb, nl)) mism++;
+        if (neverc_bytes_last_index(hb, hl, nb, nl) != ref_last_index(hb, hl, nb, nl)) mism++;
+        if (neverc_bytes_count(hb, hl, nb, nl) != ref_count(hb, hl, nb, nl)) mism++;
+    }
+    check_bool("randomized cross-check vs brute force", mism, 0);
+}
+
 int main(void) {
     printf("=== NeverC Bytes Module Tests ===\n\n");
     test_compare();
     test_search();
+    test_search_engine();
     test_prefix_suffix();
     test_transform();
     test_trim();

@@ -170,12 +170,239 @@ static void test_quote_meta(void) {
     free(q);
 }
 
+/* Anchored find/find_all/replace: not covered by the differential test (its
+ * brute-force reference matches substrings, where ^/$ would mean the substring
+ * edge rather than the whole-text edge). These pin the single-pass engine's
+ * position-aware anchor handling to known-correct results. */
+static const char *find_str(neverc_regexp_t *re, const char *s, char *buf) {
+    size_t mlen;
+    const char *m = neverc_regexp_find(re, s, &mlen);
+    if (!m) return NULL;
+    memcpy(buf, m, mlen); buf[mlen] = '\0';
+    return buf;
+}
+
+static void test_find_anchors(void) {
+    printf("[find anchors]\n");
+    char buf[64];
+    size_t mlen;
+
+    neverc_regexp_t *re = neverc_regexp_compile("^abc", NULL);
+    check_str("^abc in abcx", find_str(re, "abcx", buf), "abc");
+    check_bool("^abc in xabc", neverc_regexp_find(re, "xabc", &mlen) == NULL, 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("abc$", NULL);
+    check_str("abc$ in abcabc", find_str(re, "abcabc", buf), "abc");
+    {   /* the match must be the trailing one (offset 3), not the leading one */
+        const char *m = neverc_regexp_find(re, "abcabc", &mlen);
+        check_int("abc$ offset", m ? (int)(m - "abcabc") : -1, 3);
+    }
+    check_bool("abc$ in abcx", neverc_regexp_find(re, "abcx", &mlen) == NULL, 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("^abc$", NULL);
+    check_str("^abc$ exact", find_str(re, "abc", buf), "abc");
+    check_bool("^abc$ no trail", neverc_regexp_find(re, "abcd", &mlen) == NULL, 1);
+    check_bool("^abc$ no lead", neverc_regexp_find(re, "xabc", &mlen) == NULL, 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("a^b", NULL);   /* mid-pattern ^ can never match */
+    check_bool("a^b impossible", neverc_regexp_find(re, "ab", &mlen) == NULL, 1);
+    neverc_regexp_free(re);
+
+    /* find_all: ^a only matches once (at offset 0) */
+    re = neverc_regexp_compile("^a", NULL);
+    int count;
+    char **ms = neverc_regexp_find_all(re, "aaa", -1, &count);
+    check_int("^a find_all count", count, 1);
+    if (count >= 1) check_str("^a find_all[0]", ms[0], "a");
+    neverc_regexp_free_strings(ms, count);
+    neverc_regexp_free(re);
+
+    /* replace_all with trailing anchor only touches the final match */
+    re = neverc_regexp_compile("a$", NULL);
+    size_t outlen;
+    char *r = neverc_regexp_replace_all(re, "xaa", "Z", &outlen);
+    check_str("a$ replace", r, "xaZ");
+    free(r);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("[0-9]+$", NULL);
+    check_str("digits$ tail", find_str(re, "a1b22c333", buf), "333");
+    neverc_regexp_free(re);
+}
+
+/* Bounded repetition {n}, {n,}, {n,m}: previously parsed but silently ignored
+ * (a no-op), so these are all new behavior the engine must now honour. */
+static void test_repeat_braces(void) {
+    printf("[repeat braces]\n");
+    /* exact count */
+    check_bool("a{3} aaa",  neverc_regexp_match_string("^a{3}$", "aaa"), 1);
+    check_bool("a{3} aa",   neverc_regexp_match_string("^a{3}$", "aa"), 0);
+    check_bool("a{3} aaaa", neverc_regexp_match_string("^a{3}$", "aaaa"), 0);
+    /* range */
+    check_bool("a{2,4} a",     neverc_regexp_match_string("^a{2,4}$", "a"), 0);
+    check_bool("a{2,4} aa",    neverc_regexp_match_string("^a{2,4}$", "aa"), 1);
+    check_bool("a{2,4} aaaa",  neverc_regexp_match_string("^a{2,4}$", "aaaa"), 1);
+    check_bool("a{2,4} aaaaa", neverc_regexp_match_string("^a{2,4}$", "aaaaa"), 0);
+    /* unbounded n, */
+    check_bool("a{2,} a",      neverc_regexp_match_string("^a{2,}$", "a"), 0);
+    check_bool("a{2,} aa",     neverc_regexp_match_string("^a{2,}$", "aa"), 1);
+    check_bool("a{2,} a*6",    neverc_regexp_match_string("^a{2,}$", "aaaaaa"), 1);
+    /* zero lower bound */
+    check_bool("a{0,2} empty", neverc_regexp_match_string("^a{0,2}$", ""), 1);
+    check_bool("a{0,2} aa",    neverc_regexp_match_string("^a{0,2}$", "aa"), 1);
+    check_bool("a{0,2} aaa",   neverc_regexp_match_string("^a{0,2}$", "aaa"), 0);
+    check_bool("a{0} empty",   neverc_regexp_match_string("^a{0}$", ""), 1);
+    check_bool("a{0} a",       neverc_regexp_match_string("^a{0}$", "a"), 0);
+    /* group and class as the repeated unit */
+    check_bool("(ab){2} abab",   neverc_regexp_match_string("^(ab){2}$", "abab"), 1);
+    check_bool("(ab){2} ab",     neverc_regexp_match_string("^(ab){2}$", "ab"), 0);
+    check_bool("[0-9]{3} 123",   neverc_regexp_match_string("^[0-9]{3}$", "123"), 1);
+    check_bool("[0-9]{3} 12",    neverc_regexp_match_string("^[0-9]{3}$", "12"), 0);
+    /* nested bounded repeats */
+    check_bool("(a{2}){2} aaaa", neverc_regexp_match_string("^(a{2}){2}$", "aaaa"), 1);
+    check_bool("(a{2}){2} aaa",  neverc_regexp_match_string("^(a{2}){2}$", "aaa"), 0);
+
+    /* find returns the leftmost-longest bounded match */
+    char buf[64];
+    neverc_regexp_t *re = neverc_regexp_compile("a{2,3}", NULL);
+    check_str("a{2,3} find", find_str(re, "baaaab", buf), "aaa");
+    neverc_regexp_free(re);
+
+    /* a count over the cap is rejected rather than silently expanded */
+    const char *err = NULL;
+    re = neverc_regexp_compile("a{5000}", &err);
+    check_bool("a{5000} rejected", re == NULL, 1);
+    neverc_regexp_free(re);
+
+    /* an incomplete brace is a literal '{' (matches Go) */
+    check_bool("literal {", neverc_regexp_match_string("^a{$", "a{"), 1);
+}
+
 static void test_must_compile(void) {
     printf("[must_compile]\n");
     neverc_regexp_t *re = neverc_regexp_must_compile("[a-z]+");
     check_bool("must_compile ok", re != NULL, 1);
     check_bool("must_compile match", neverc_regexp_match(re, "hello"), 1);
     neverc_regexp_free(re);
+}
+
+/* ---- differential test: optimized search vs brute-force reference ----
+ * The reference finds the leftmost-longest non-empty match by testing, for each
+ * (i, j), whether the pattern matches the substring s[i:j] exactly (via the
+ * anchored match API). It is independent of find()'s scanning/first-byte logic,
+ * so agreement over many random anchor-free patterns proves the optimization
+ * (shared context + first-byte skip) preserves semantics. */
+
+static uint64_t rrng = 0x243f6a8885a308d3ULL;
+static unsigned rr(void) {
+    rrng ^= rrng << 13; rrng ^= rrng >> 7; rrng ^= rrng << 17;
+    return (unsigned)(rrng >> 32);
+}
+
+/* leftmost i, longest j>i such that pattern matches s[i:j] exactly. */
+static int ref_find(neverc_regexp_t *re, const char *s, size_t *rs, size_t *rl) {
+    size_t slen = strlen(s);
+    char buf[64];
+    for (size_t i = 0; i <= slen; i++) {
+        for (size_t j = slen; j > i; j--) {
+            size_t L = j - i;
+            if (L >= sizeof(buf)) continue;
+            memcpy(buf, s + i, L); buf[L] = '\0';
+            if (neverc_regexp_match(re, buf)) { *rs = i; *rl = L; return 1; }
+        }
+    }
+    return 0;
+}
+
+/* random anchor-free pattern over a small alphabet */
+static void gen_pattern(char *out) {
+    int p = 0;
+    int units = 1 + (int)(rr() % 4);
+    for (int u = 0; u < units; u++) {
+        int atom = (int)(rr() % 6);
+        if (atom < 3) {
+            out[p++] = (char)('a' + (rr() % 4));
+        } else if (atom == 3) {
+            out[p++] = '.';
+        } else if (atom == 4) {
+            out[p++] = '[';
+            if (rr() & 1) out[p++] = '^';
+            int cls = 1 + (int)(rr() % 3);
+            for (int k = 0; k < cls; k++) out[p++] = (char)('a' + (rr() % 4));
+            out[p++] = ']';
+        } else {
+            out[p++] = '(';
+            out[p++] = (char)('a' + (rr() % 4));
+            out[p++] = '|';
+            out[p++] = (char)('a' + (rr() % 4));
+            out[p++] = ')';
+        }
+        int q = (int)(rr() % 4);            /* 0:none 1:* 2:+ 3:? */
+        if (q == 1) out[p++] = '*';
+        else if (q == 2) out[p++] = '+';
+        else if (q == 3) out[p++] = '?';
+    }
+    out[p] = '\0';
+}
+
+static void test_find_differential(void) {
+    printf("[find_differential]\n");
+    rrng = 0x9e3779b97f4a7c15ULL;
+    int find_mis = 0, all_mis = 0, cases = 0;
+
+    for (int it = 0; it < 4000; it++) {
+        char pat[64];
+        gen_pattern(pat);
+        neverc_regexp_t *re = neverc_regexp_compile(pat, NULL);
+        if (!re) continue;
+
+        char text[20];
+        int tlen = (int)(rr() % 16);
+        for (int k = 0; k < tlen; k++) text[k] = (char)('a' + (rr() % 5));
+        text[tlen] = '\0';
+        cases++;
+
+        size_t rs, rl;
+        int rfound = ref_find(re, text, &rs, &rl);
+        size_t mlen = 0;
+        const char *m = neverc_regexp_find(re, text, &mlen);
+        int nfound = (m != NULL);
+        if (nfound != rfound ||
+            (nfound && ((size_t)(m - text) != rs || mlen != rl))) {
+            find_mis++;
+            if (find_mis <= 3)
+                printf("  find diff: pat=\"%s\" text=\"%s\" ref=(%d,%zu,%zu) new=(%d,%zu,%zu)\n",
+                       pat, text, rfound, rs, rl, nfound,
+                       nfound ? (size_t)(m - text) : 0, mlen);
+        }
+
+        /* compare full find_all against repeated ref_find advancing past each */
+        int ncount = 0;
+        char **got = neverc_regexp_find_all(re, text, -1, &ncount);
+        int ri = 0, ok = 1;
+        size_t pos = 0;
+        while (pos <= strlen(text)) {
+            size_t s2, l2;
+            char sub[20];
+            if (!ref_find(re, text + pos, &s2, &l2)) break;
+            /* reconstruct expected match string */
+            memcpy(sub, text + pos + s2, l2); sub[l2] = '\0';
+            if (ri >= ncount || strcmp(got[ri], sub) != 0) { ok = 0; break; }
+            ri++;
+            pos = pos + s2 + l2;
+        }
+        if (ok && ri != ncount) ok = 0;
+        if (!ok) all_mis++;
+        neverc_regexp_free_strings(got, ncount);
+
+        neverc_regexp_free(re);
+    }
+    printf("  (%d random cases)\n", cases);
+    check_int("find differential mismatches", find_mis, 0);
+    check_int("find_all differential mismatches", all_mis, 0);
 }
 
 int main(void) {
@@ -187,9 +414,12 @@ int main(void) {
     test_find_all();
     test_replace();
     test_anchors();
+    test_find_anchors();
+    test_repeat_braces();
     test_empty_and_edge_cases();
     test_quote_meta();
     test_must_compile();
+    test_find_differential();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

@@ -20,9 +20,19 @@ void neverc_bufio_scanner_init(neverc_bufio_scanner_t *s,
 int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
     if (s->done) return 0;
 
+    /* `scan_pos` marks the first not-yet-examined byte. The previous code
+     * rescanned the whole [start, buf_len) window after every refill, turning a
+     * long line read in small chunks into O(n^2); tracking the scan frontier
+     * keeps each byte examined once (O(n)). memchr does the newline search with
+     * a single SIMD scan instead of a byte-at-a-time loop. */
+    size_t scan_pos = s->start;
+
     for (;;) {
-        for (size_t i = s->start; i < s->buf_len; i++) {
-            if (s->buf[i] == '\n') {
+        if (scan_pos < s->buf_len) {
+            const uint8_t *nl = (const uint8_t *)memchr(s->buf + scan_pos, '\n',
+                                                        s->buf_len - scan_pos);
+            if (nl) {
+                size_t i = (size_t)(nl - s->buf);
                 s->token = s->buf + s->start;
                 s->token_len = i - s->start;
                 if (s->token_len > 0 && s->token[s->token_len - 1] == '\r')
@@ -30,16 +40,15 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
                 s->start = i + 1;
                 return 1;
             }
+            scan_pos = s->buf_len;
         }
 
-        if (s->start > 0 && s->buf_len > s->start) {
+        if (s->start > 0) {
             size_t remaining = s->buf_len - s->start;
-            for (size_t i = 0; i < remaining; i++)
-                s->buf[i] = s->buf[s->start + i];
+            if (remaining > 0)
+                memmove(s->buf, s->buf + s->start, remaining);
             s->buf_len = remaining;
-            s->start = 0;
-        } else if (s->start > 0) {
-            s->buf_len = 0;
+            scan_pos = remaining;   /* already-scanned bytes now live at [0,remaining) */
             s->start = 0;
         }
 
@@ -111,7 +120,7 @@ void neverc_bufio_reader_init_size(neverc_bufio_reader_t *br,
 static int bufio_fill(neverc_bufio_reader_t *br) {
     if (br->r > 0) {
         size_t n = br->w - br->r;
-        for (size_t i = 0; i < n; i++) br->buf[i] = br->buf[br->r + i];
+        if (n > 0) memmove(br->buf, br->buf + br->r, n);
         br->w = n;
         br->r = 0;
     }
@@ -146,7 +155,7 @@ int neverc_bufio_reader_read(neverc_bufio_reader_t *br,
         size_t avail = br->w - br->r;
         size_t want = len - *n;
         size_t copy = avail < want ? avail : want;
-        for (size_t i = 0; i < copy; i++) buf[*n + i] = br->buf[br->r + i];
+        memcpy(buf + *n, br->buf + br->r, copy);
         br->r += copy;
         *n += copy;
     }
@@ -183,7 +192,7 @@ int neverc_bufio_reader_peek(neverc_bufio_reader_t *br,
     while (br->w - br->r < n && !br->eof) bufio_fill(br);
     size_t avail = br->w - br->r;
     size_t copy = avail < n ? avail : n;
-    for (size_t i = 0; i < copy; i++) buf[i] = br->buf[br->r + i];
+    memcpy(buf, br->buf + br->r, copy);
     return (int)copy;
 }
 
@@ -213,7 +222,7 @@ int neverc_bufio_writer_flush(neverc_bufio_writer_t *bw) {
     int err = bw->writer.write(bw->writer.ctx, bw->buf, bw->n, &nw);
     if (nw < bw->n) {
         size_t remaining = bw->n - nw;
-        for (size_t i = 0; i < remaining; i++) bw->buf[i] = bw->buf[nw + i];
+        memmove(bw->buf, bw->buf + nw, remaining);
         bw->n = remaining;
     } else {
         bw->n = 0;
@@ -227,7 +236,7 @@ int neverc_bufio_writer_write(neverc_bufio_writer_t *bw,
     while (*n < len) {
         size_t avail = bw->buf_cap - bw->n;
         size_t copy = (len - *n) < avail ? (len - *n) : avail;
-        for (size_t i = 0; i < copy; i++) bw->buf[bw->n + i] = data[*n + i];
+        memcpy(bw->buf + bw->n, data + *n, copy);
         bw->n += copy;
         *n += copy;
         if (bw->n >= bw->buf_cap) {

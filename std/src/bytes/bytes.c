@@ -1,4 +1,5 @@
 #include "neverc/std/bytes.h"
+#include "strsearch.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -108,68 +109,14 @@ size_t neverc_bytes_last_index_byte(const uint8_t *s, size_t slen, uint8_t c) {
 
 size_t neverc_bytes_index(const uint8_t *s, size_t slen,
                           const uint8_t *sep, size_t seplen) {
-    if (seplen == 0) return 0;
-    if (seplen > slen) return (size_t)-1;
     if (seplen == 1) return neverc_bytes_index_byte(s, slen, sep[0]);
-    if (seplen == slen) return memcmp(s, sep, slen) == 0 ? 0 : (size_t)-1;
-
-    if (seplen <= 8 || slen <= 64) {
-        uint8_t c0 = sep[0];
-        for (size_t i = 0; i <= slen - seplen; i++)
-            if (s[i] == c0 && memcmp(s + i + 1, sep + 1, seplen - 1) == 0)
-                return i;
-        return (size_t)-1;
-    }
-
-    /* Boyer-Moore-Horspool: build bad-character skip table, then scan
-       with last-char alignment. Average case skips ~seplen/2 per step. */
-    size_t skip[256];
-    for (int c = 0; c < 256; c++) skip[c] = seplen;
-    for (size_t i = 0; i < seplen - 1; i++) skip[sep[i]] = seplen - 1 - i;
-
-    uint8_t last = sep[seplen - 1];
-    size_t pos = 0;
-    while (pos <= slen - seplen) {
-        uint8_t c = s[pos + seplen - 1];
-        if (c == last && memcmp(s + pos, sep, seplen - 1) == 0)
-            return pos;
-        pos += skip[c];
-    }
-    return (size_t)-1;
+    return nci_ss_index(s, slen, sep, seplen);
 }
 
 size_t neverc_bytes_last_index(const uint8_t *s, size_t slen,
                                const uint8_t *sep, size_t seplen) {
-    if (seplen == 0) return slen;
-    if (seplen > slen) return (size_t)-1;
     if (seplen == 1) return neverc_bytes_last_index_byte(s, slen, sep[0]);
-    if (seplen == slen) return memcmp(s, sep, slen) == 0 ? 0 : (size_t)-1;
-
-    if (seplen <= 8 || slen <= 64) {
-        uint8_t clast = sep[seplen - 1];
-        for (size_t i = slen; i >= seplen; i--)
-            if (s[i - 1] == clast && memcmp(s + i - seplen, sep, seplen) == 0)
-                return i - seplen;
-        return (size_t)-1;
-    }
-
-    /* Reverse Boyer-Moore-Horspool: skip table on first character,
-       scan right-to-left. */
-    size_t skip[256];
-    for (int c = 0; c < 256; c++) skip[c] = seplen;
-    for (size_t i = seplen - 1; i > 0; i--) skip[sep[i]] = i;
-
-    uint8_t first = sep[0];
-    size_t pos = slen - seplen;
-    for (;;) {
-        uint8_t c = s[pos];
-        if (c == first && memcmp(s + pos + 1, sep + 1, seplen - 1) == 0)
-            return pos;
-        size_t shift = skip[c];
-        if (pos < shift) break;
-        pos -= shift;
-    }
-    return (size_t)-1;
+    return nci_ss_last_index(s, slen, sep, seplen);
 }
 
 static void build_ascii_set(const char *chars, uint32_t set[8]) {
@@ -230,36 +177,16 @@ size_t neverc_bytes_count(const uint8_t *s, size_t slen,
         return n;
     }
 
-    size_t n = 0;
-    if (seplen <= 8 || slen <= 64) {
-        uint8_t c0 = sep[0];
-        size_t pos = 0;
-        while (pos <= slen - seplen) {
-            if (s[pos] == c0 && memcmp(s + pos + 1, sep + 1, seplen - 1) == 0) {
-                n++;
-                pos += seplen;
-            } else {
-                pos++;
-            }
-        }
-        return n;
-    }
-
-    /* BMH with skip table built once, reused across all matches */
-    size_t skip[256];
-    for (int c = 0; c < 256; c++) skip[c] = seplen;
-    for (size_t i = 0; i < seplen - 1; i++) skip[sep[i]] = seplen - 1 - i;
-
-    uint8_t last = sep[seplen - 1];
-    size_t pos = 0;
-    while (pos <= slen - seplen) {
-        uint8_t c = s[pos + seplen - 1];
-        if (c == last && memcmp(s + pos, sep, seplen - 1) == 0) {
-            n++;
-            pos += seplen;
-        } else {
-            pos += skip[c];
-        }
+    /* Two-Way finder: preprocess once, count non-overlapping matches. */
+    size_t n = 0, pos = 0;
+    nci_ss_finder_t f;
+    nci_ss_finder_init(&f, sep, seplen);
+    for (;;) {
+        size_t idx = nci_ss_finder_next(&f, s + pos, slen - pos);
+        if (idx == (size_t)-1) break;
+        n++;
+        pos += idx + seplen;
+        if (pos > slen) break;
     }
     return n;
 }
@@ -334,25 +261,6 @@ uint8_t *neverc_bytes_repeat(const uint8_t *b, size_t blen,
     return r;
 }
 
-/*
- * Internal BMH search with pre-built skip table.
- * Avoids rebuilding the 256-entry table on every call in replace/count loops.
- */
-static size_t nci_bytes_index_with_skip(const uint8_t *s, size_t slen,
-                                        const uint8_t *sep, size_t seplen,
-                                        const size_t skip[256]) {
-    if (slen < seplen) return (size_t)-1;
-    uint8_t last = sep[seplen - 1];
-    size_t pos = 0;
-    while (pos <= slen - seplen) {
-        uint8_t c = s[pos + seplen - 1];
-        if (c == last && memcmp(s + pos, sep, seplen - 1) == 0)
-            return pos;
-        pos += skip[c];
-    }
-    return (size_t)-1;
-}
-
 uint8_t *neverc_bytes_replace(const uint8_t *s, size_t slen,
                               const uint8_t *old, size_t oldlen,
                               const uint8_t *new_, size_t newlen,
@@ -364,41 +272,20 @@ uint8_t *neverc_bytes_replace(const uint8_t *s, size_t slen,
         return r;
     }
 
-    int use_bmh = (oldlen > 8 && slen > 64);
-    size_t skip[256];
-    if (use_bmh) {
-        for (int c = 0; c < 256; c++) skip[c] = oldlen;
-        for (size_t i = 0; i < oldlen - 1; i++) skip[old[i]] = oldlen - 1 - i;
-    }
-
-    if (n < 0) {
-        if (!use_bmh) {
-            n = (int)neverc_bytes_count(s, slen, old, oldlen);
-        } else {
-            n = 0;
-            size_t pos = 0;
-            while (slen >= oldlen && pos <= slen - oldlen) {
-                size_t idx = nci_bytes_index_with_skip(s + pos, slen - pos,
-                                                       old, oldlen, skip);
-                if (idx == (size_t)-1) break;
-                n++;
-                pos += idx + oldlen;
-            }
-        }
-    }
+    if (n < 0) n = (int)neverc_bytes_count(s, slen, old, oldlen);
 
     size_t result_len = slen - (size_t)n * oldlen + (size_t)n * newlen;
     uint8_t *r = (uint8_t *)malloc(result_len + 1);
     if (!r) { *outlen = 0; return NULL; }
 
+    /* Two-Way finder: preprocess `old` once, reuse across every replacement. */
+    nci_ss_finder_t f;
+    nci_ss_finder_init(&f, old, oldlen);
+
     size_t wi = 0, ri = 0;
     int replaced = 0;
     while (ri < slen && replaced < n) {
-        size_t idx;
-        if (use_bmh)
-            idx = nci_bytes_index_with_skip(s + ri, slen - ri, old, oldlen, skip);
-        else
-            idx = neverc_bytes_index(s + ri, slen - ri, old, oldlen);
+        size_t idx = nci_ss_finder_next(&f, s + ri, slen - ri);
         if (idx == (size_t)-1) break;
         if (idx > 0) { memcpy(r + wi, s + ri, idx); wi += idx; }
         ri += idx;
@@ -545,12 +432,8 @@ neverc_bytes_slice_t *neverc_bytes_split_n(const uint8_t *s, size_t slen,
     *count = 0;
     size_t pos = 0;
 
-    int use_bmh = (seplen > 8 && slen > 64);
-    size_t skip[256];
-    if (use_bmh) {
-        for (int c = 0; c < 256; c++) skip[c] = seplen;
-        for (size_t i = 0; i < seplen - 1; i++) skip[sep[i]] = seplen - 1 - i;
-    }
+    nci_ss_finder_t f;
+    nci_ss_finder_init(&f, sep, seplen);
 
     while (pos <= slen) {
         if (n > 0 && (int)*count >= n - 1) {
@@ -574,10 +457,7 @@ neverc_bytes_slice_t *neverc_bytes_split_n(const uint8_t *s, size_t slen,
             }
             continue;
         }
-        if (use_bmh)
-            idx = nci_bytes_index_with_skip(s + pos, slen - pos, sep, seplen, skip);
-        else
-            idx = neverc_bytes_index(s + pos, slen - pos, sep, seplen);
+        idx = nci_ss_finder_next(&f, s + pos, slen - pos);
         if (idx == (size_t)-1) {
             result[*count].data = s + pos;
             result[*count].len = slen - pos;
@@ -782,12 +662,8 @@ neverc_bytes_slice_t *neverc_bytes_split_after_n(const uint8_t *s, size_t slen,
     const uint8_t *p = s;
     size_t remaining = slen;
 
-    int use_bmh = (seplen > 8 && slen > 64);
-    size_t skip[256];
-    if (use_bmh) {
-        for (int c = 0; c < 256; c++) skip[c] = seplen;
-        for (size_t i = 0; i < seplen - 1; i++) skip[sep[i]] = seplen - 1 - i;
-    }
+    nci_ss_finder_t f;
+    nci_ss_finder_init(&f, sep, seplen);
 
     while (remaining > 0) {
         if (n > 0 && (int)*count >= n - 1) {
@@ -800,10 +676,8 @@ neverc_bytes_slice_t *neverc_bytes_split_after_n(const uint8_t *s, size_t slen,
         size_t idx;
         if (seplen == 0 || remaining < seplen)
             idx = (size_t)-1;
-        else if (use_bmh)
-            idx = nci_bytes_index_with_skip(p, remaining, sep, seplen, skip);
         else
-            idx = neverc_bytes_index(p, remaining, sep, seplen);
+            idx = nci_ss_finder_next(&f, p, remaining);
         if (idx == (size_t)-1) {
             if (*count >= cap) { cap *= 2; result = (neverc_bytes_slice_t *)realloc(result, cap * sizeof(*result)); }
             result[*count].data = p;
