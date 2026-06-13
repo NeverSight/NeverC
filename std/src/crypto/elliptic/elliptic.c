@@ -233,38 +233,171 @@ void neverc_elliptic_double(const neverc_elliptic_curve_t *curve,
     neverc_bigint_free(&three); neverc_bigint_free(&inv);
 }
 
+/* ------------------------------------------------------------------ *
+ * Jacobian-coordinate scalar multiplication.
+ *
+ * The affine neverc_elliptic_add / _double above each need a modular inverse
+ * (mod_inv = a^(p-2) mod p, a full modexp), so the old affine double-and-add
+ * paid ~2 inversions per scalar bit — hundreds of modexps for one P-256 mult.
+ *
+ * Jacobian coordinates (X,Y,Z) represent affine (X/Z^2, Y/Z^3), so point
+ * doubling and addition use only field mul/sqr/add — no inversion. The whole
+ * ladder runs inversion-free and a single inversion at the end converts back to
+ * affine. The doubling uses the a = -3 formula (dbl-2001-b) that the NIST P
+ * curves admit, and addition uses mixed Jacobian+affine (madd-2007-bl). This is
+ * the standard fast ECC scalar multiplication (SEC1 / Guide to ECC).
+ * ------------------------------------------------------------------ */
+
+typedef struct { neverc_bigint_t X, Y, Z; } jac_t;
+
+static void jac_init(jac_t *j) {
+    neverc_bigint_init(&j->X); neverc_bigint_init(&j->Y); neverc_bigint_init(&j->Z);
+}
+static void jac_free(jac_t *j) {
+    neverc_bigint_free(&j->X); neverc_bigint_free(&j->Y); neverc_bigint_free(&j->Z);
+}
+
+/* Field ops modulo the curve prime p (results normalized into [0,p)). The
+ * inputs to fadd/fsub are always reduced field elements in [0,p), so a sum lies
+ * in [0,2p) and a difference in (-p,p): a single conditional subtract/add
+ * normalizes them without the full trial division that neverc_bigint_mod runs. */
+static void fadd(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_bigint_t *b, const neverc_bigint_t *p) {
+    neverc_bigint_add(r, a, b);
+    if (neverc_bigint_cmp(r, p) >= 0) neverc_bigint_sub(r, r, p);
+}
+static void fsub(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_bigint_t *b, const neverc_bigint_t *p) {
+    neverc_bigint_sub(r, a, b);
+    if (r->neg) neverc_bigint_add(r, r, p);
+}
+static void fmul(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_bigint_t *b, const neverc_bigint_t *p) {
+    neverc_bigint_mul(r, a, b); neverc_bigint_mod(r, r, p);
+}
+static void fsqr(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_bigint_t *p) {
+    neverc_bigint_mul(r, a, a); neverc_bigint_mod(r, r, p);   /* a*a routes to nat_sqr */
+}
+static void fmulc(neverc_bigint_t *r, const neverc_bigint_t *a, uint64_t c, const neverc_bigint_t *p) {
+    neverc_bigint_t cc; neverc_bigint_init(&cc); neverc_bigint_set_uint64(&cc, c);
+    neverc_bigint_mul(r, a, &cc); neverc_bigint_mod(r, r, p); neverc_bigint_free(&cc);
+}
+
+/* o = 2*P in Jacobian (a = -3). Safe when o aliases P. Z3 == 0 keeps infinity. */
+static void jac_double(const neverc_elliptic_curve_t *cv, jac_t *o, const jac_t *P) {
+    const neverc_bigint_t *p = &cv->p;
+    neverc_bigint_t delta, gamma, beta, alpha, t0, t1, t2, X3, Y3, Z3;
+    neverc_bigint_t *all[] = {&delta,&gamma,&beta,&alpha,&t0,&t1,&t2,&X3,&Y3,&Z3};
+    for (size_t i = 0; i < sizeof(all)/sizeof(all[0]); i++) neverc_bigint_init(all[i]);
+
+    fsqr(&delta, &P->Z, p);                       /* delta = Z^2 */
+    fsqr(&gamma, &P->Y, p);                       /* gamma = Y^2 */
+    fmul(&beta, &P->X, &gamma, p);                /* beta  = X*gamma */
+    fsub(&t0, &P->X, &delta, p);
+    fadd(&t1, &P->X, &delta, p);
+    fmul(&alpha, &t0, &t1, p); fmulc(&alpha, &alpha, 3, p);   /* alpha = 3(X-Z^2)(X+Z^2) */
+    fsqr(&X3, &alpha, p);
+    fmulc(&t2, &beta, 8, p); fsub(&X3, &X3, &t2, p);          /* X3 = alpha^2 - 8 beta */
+    fadd(&t0, &P->Y, &P->Z, p); fsqr(&t0, &t0, p);
+    fsub(&t0, &t0, &gamma, p); fsub(&Z3, &t0, &delta, p);     /* Z3 = (Y+Z)^2 - gamma - delta */
+    fmulc(&t1, &beta, 4, p); fsub(&t1, &t1, &X3, p);
+    fmul(&Y3, &alpha, &t1, p);
+    fsqr(&t2, &gamma, p); fmulc(&t2, &t2, 8, p);
+    fsub(&Y3, &Y3, &t2, p);                                   /* Y3 = alpha(4beta-X3) - 8 gamma^2 */
+
+    neverc_bigint_set(&o->X, &X3);
+    neverc_bigint_set(&o->Y, &Y3);
+    neverc_bigint_set(&o->Z, &Z3);
+    for (size_t i = 0; i < sizeof(all)/sizeof(all[0]); i++) neverc_bigint_free(all[i]);
+}
+
+/* o = P + Q, Q = (qx,qy) affine (Zq = 1). Mixed addition. Safe when o aliases P. */
+static void jac_add_affine(const neverc_elliptic_curve_t *cv, jac_t *o, const jac_t *P,
+                           const neverc_bigint_t *qx, const neverc_bigint_t *qy) {
+    const neverc_bigint_t *p = &cv->p;
+    if (neverc_bigint_is_zero(&P->Z)) {           /* P = infinity -> o = Q */
+        neverc_bigint_set(&o->X, qx);
+        neverc_bigint_set(&o->Y, qy);
+        neverc_bigint_set_int64(&o->Z, 1);
+        return;
+    }
+    neverc_bigint_t Z1Z1, U2, S2, H, r, HH, I, J, V, X3, Y3, Z3, t;
+    neverc_bigint_t *all[] = {&Z1Z1,&U2,&S2,&H,&r,&HH,&I,&J,&V,&X3,&Y3,&Z3,&t};
+    for (size_t i = 0; i < sizeof(all)/sizeof(all[0]); i++) neverc_bigint_init(all[i]);
+
+    fsqr(&Z1Z1, &P->Z, p);                        /* Z1^2 */
+    fmul(&U2, qx, &Z1Z1, p);                      /* U2 = qx*Z1^2 */
+    fmul(&S2, qy, &P->Z, p); fmul(&S2, &S2, &Z1Z1, p);   /* S2 = qy*Z1^3 */
+    fsub(&H, &U2, &P->X, p);                      /* H = U2 - X1 */
+    fsub(&r, &S2, &P->Y, p); fmulc(&r, &r, 2, p); /* r = 2(S2 - Y1) */
+
+    if (neverc_bigint_is_zero(&H)) {              /* qx == X1/Z1^2 */
+        int dbl = neverc_bigint_is_zero(&r);      /* qy == Y1/Z1^3 -> P == Q */
+        for (size_t i = 0; i < sizeof(all)/sizeof(all[0]); i++) neverc_bigint_free(all[i]);
+        if (dbl) { jac_double(cv, o, P); }
+        else { neverc_bigint_set_int64(&o->X, 1); neverc_bigint_set_int64(&o->Y, 1);
+               neverc_bigint_set_int64(&o->Z, 0); }    /* P == -Q -> infinity */
+        return;
+    }
+
+    fsqr(&HH, &H, p);
+    fmulc(&I, &HH, 4, p);
+    fmul(&J, &H, &I, p);
+    fmul(&V, &P->X, &I, p);
+    fsqr(&X3, &r, p); fsub(&X3, &X3, &J, p);
+    fmulc(&t, &V, 2, p); fsub(&X3, &X3, &t, p);   /* X3 = r^2 - J - 2V */
+    fsub(&t, &V, &X3, p); fmul(&Y3, &r, &t, p);
+    fmul(&t, &P->Y, &J, p); fmulc(&t, &t, 2, p);
+    fsub(&Y3, &Y3, &t, p);                         /* Y3 = r(V-X3) - 2 Y1 J */
+    fadd(&Z3, &P->Z, &H, p); fsqr(&Z3, &Z3, p);
+    fsub(&Z3, &Z3, &Z1Z1, p); fsub(&Z3, &Z3, &HH, p);   /* Z3 = (Z1+H)^2 - Z1Z1 - HH */
+
+    neverc_bigint_set(&o->X, &X3);
+    neverc_bigint_set(&o->Y, &Y3);
+    neverc_bigint_set(&o->Z, &Z3);
+    for (size_t i = 0; i < sizeof(all)/sizeof(all[0]); i++) neverc_bigint_free(all[i]);
+}
+
 void neverc_elliptic_scalar_mult(const neverc_elliptic_curve_t *curve,
                                   neverc_elliptic_point_t *r,
                                   const neverc_elliptic_point_t *p,
                                   const neverc_bigint_t *k) {
-    neverc_elliptic_point_t acc, tmp;
-    neverc_elliptic_point_init(&acc);
-    neverc_elliptic_point_init(&tmp);
-    neverc_bigint_set(&tmp.x, &p->x);
-    neverc_bigint_set(&tmp.y, &p->y);
-
-    int bits = neverc_bigint_bit_len(k);
-    for (int i = 0; i < bits; i++) {
-        if (neverc_bigint_bit(k, (unsigned)i)) {
-            neverc_elliptic_point_t sum;
-            neverc_elliptic_point_init(&sum);
-            neverc_elliptic_add(curve, &sum, &acc, &tmp);
-            neverc_bigint_set(&acc.x, &sum.x);
-            neverc_bigint_set(&acc.y, &sum.y);
-            neverc_elliptic_point_free(&sum);
-        }
-        neverc_elliptic_point_t dbl;
-        neverc_elliptic_point_init(&dbl);
-        neverc_elliptic_double(curve, &dbl, &tmp);
-        neverc_bigint_set(&tmp.x, &dbl.x);
-        neverc_bigint_set(&tmp.y, &dbl.y);
-        neverc_elliptic_point_free(&dbl);
+    /* k == 0 or P == infinity -> result is the point at infinity (0,0). */
+    if (neverc_bigint_is_zero(k) ||
+        (neverc_bigint_is_zero(&p->x) && neverc_bigint_is_zero(&p->y))) {
+        neverc_bigint_set_int64(&r->x, 0);
+        neverc_bigint_set_int64(&r->y, 0);
+        return;
     }
 
-    neverc_bigint_set(&r->x, &acc.x);
-    neverc_bigint_set(&r->y, &acc.y);
-    neverc_elliptic_point_free(&acc);
-    neverc_elliptic_point_free(&tmp);
+    jac_t acc;
+    jac_init(&acc);
+    neverc_bigint_set_int64(&acc.X, 1);           /* infinity: Z = 0 */
+    neverc_bigint_set_int64(&acc.Y, 1);
+    neverc_bigint_set_int64(&acc.Z, 0);
+
+    int bits = neverc_bigint_bit_len(k);
+    for (int i = bits - 1; i >= 0; i--) {         /* left-to-right double-and-add */
+        jac_double(curve, &acc, &acc);
+        if (neverc_bigint_bit(k, (unsigned)i))
+            jac_add_affine(curve, &acc, &acc, &p->x, &p->y);
+    }
+
+    if (neverc_bigint_is_zero(&acc.Z)) {          /* result is infinity */
+        neverc_bigint_set_int64(&r->x, 0);
+        neverc_bigint_set_int64(&r->y, 0);
+    } else {                                       /* one inversion back to affine */
+        neverc_bigint_t zinv, zinv2, zinv3, x, y;
+        neverc_bigint_init(&zinv); neverc_bigint_init(&zinv2); neverc_bigint_init(&zinv3);
+        neverc_bigint_init(&x); neverc_bigint_init(&y);
+        mod_inv(&zinv, &acc.Z, &curve->p);
+        fsqr(&zinv2, &zinv, &curve->p);
+        fmul(&zinv3, &zinv2, &zinv, &curve->p);
+        fmul(&x, &acc.X, &zinv2, &curve->p);
+        fmul(&y, &acc.Y, &zinv3, &curve->p);
+        neverc_bigint_set(&r->x, &x);
+        neverc_bigint_set(&r->y, &y);
+        neverc_bigint_free(&zinv); neverc_bigint_free(&zinv2); neverc_bigint_free(&zinv3);
+        neverc_bigint_free(&x); neverc_bigint_free(&y);
+    }
+    jac_free(&acc);
 }
 
 void neverc_elliptic_scalar_base_mult(const neverc_elliptic_curve_t *curve,

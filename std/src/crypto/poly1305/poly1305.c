@@ -1,10 +1,131 @@
 /*
  * Poly1305 MAC — RFC 7539.
- * Pure C implementation using 64-bit arithmetic.
- * p = 2^130 - 5, represented as five 26-bit limbs.
+ * p = 2^130 - 5.
+ *
+ * On 64-bit targets (where __int128 is available) we use the "donna-64"
+ * representation: 3 limbs of 44/44/42 bits with 128-bit products. This roughly
+ * halves the multiply count per block versus the portable 32-bit (5x26) path,
+ * which is kept as a fallback for platforms without __int128.
  */
 #include "neverc/std/crypto/poly1305.h"
 #include <string.h>
+
+#if defined(__SIZEOF_INT128__)
+
+/* ───────────────────────── donna-64 (64-bit limbs) ─────────────────────── */
+
+typedef unsigned __int128 nci_u128;
+
+static uint64_t get_u64le(const uint8_t *p) {
+    return (uint64_t)p[0]        | ((uint64_t)p[1] << 8)  |
+           ((uint64_t)p[2] << 16)| ((uint64_t)p[3] << 24) |
+           ((uint64_t)p[4] << 32)| ((uint64_t)p[5] << 40) |
+           ((uint64_t)p[6] << 48)| ((uint64_t)p[7] << 56);
+}
+
+void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
+                          const uint8_t key[32]) {
+    uint64_t t0 = get_u64le(key + 0);
+    uint64_t t1 = get_u64le(key + 8);
+
+    /* Clamp r and split into 44/44/42-bit limbs. */
+    uint64_t r0 = ( t0                    ) & 0xffc0fffffffULL;
+    uint64_t r1 = ((t0 >> 44) | (t1 << 20)) & 0xfffffc0ffffULL;
+    uint64_t r2 = ((t1 >> 24)             ) & 0x00ffffffc0fULL;
+
+    uint64_t s1 = r1 * (5 << 2);
+    uint64_t s2 = r2 * (5 << 2);
+
+    uint64_t h0 = 0, h1 = 0, h2 = 0;
+    uint64_t c;
+
+    size_t off = 0;
+    while (off < msg_len) {
+        size_t blen = msg_len - off;
+        uint64_t m0, m1, hibit;
+        if (blen >= 16) {
+            blen = 16;
+            m0 = get_u64le(msg + off);
+            m1 = get_u64le(msg + off + 8);
+            hibit = (uint64_t)1 << 40; /* 2^128 in limb2 */
+        } else {
+            uint8_t buf[16];
+            memset(buf, 0, sizeof(buf));
+            memcpy(buf, msg + off, blen);
+            buf[blen] = 1; /* high bit for final partial block */
+            m0 = get_u64le(buf);
+            m1 = get_u64le(buf + 8);
+            hibit = 0;
+        }
+
+        /* h += m */
+        h0 += ( m0                    ) & 0xfffffffffffULL;
+        h1 += ((m0 >> 44) | (m1 << 20)) & 0xfffffffffffULL;
+        h2 += (((m1 >> 24)            ) & 0x3ffffffffffULL) | hibit;
+
+        /* h *= r  (mod 2^130 - 5) */
+        nci_u128 d, d0, d1, d2;
+        d0 = (nci_u128)h0 * r0; d = (nci_u128)h1 * s2; d0 += d; d = (nci_u128)h2 * s1; d0 += d;
+        d1 = (nci_u128)h0 * r1; d = (nci_u128)h1 * r0; d1 += d; d = (nci_u128)h2 * s2; d1 += d;
+        d2 = (nci_u128)h0 * r2; d = (nci_u128)h1 * r1; d2 += d; d = (nci_u128)h2 * r0; d2 += d;
+
+        /* partial reduction */
+                     c = (uint64_t)(d0 >> 44); h0 = (uint64_t)d0 & 0xfffffffffffULL;
+        d1 += c;     c = (uint64_t)(d1 >> 44); h1 = (uint64_t)d1 & 0xfffffffffffULL;
+        d2 += c;     c = (uint64_t)(d2 >> 42); h2 = (uint64_t)d2 & 0x3ffffffffffULL;
+        h0 += c * 5; c = (h0 >> 44);           h0 = h0 & 0xfffffffffffULL;
+        h1 += c;
+
+        off += blen;
+    }
+
+    /* fully carry h */
+                 c = (h1 >> 44); h1 &= 0xfffffffffffULL;
+    h2 += c;     c = (h2 >> 42); h2 &= 0x3ffffffffffULL;
+    h0 += c * 5; c = (h0 >> 44); h0 &= 0xfffffffffffULL;
+    h1 += c;     c = (h1 >> 44); h1 &= 0xfffffffffffULL;
+    h2 += c;     c = (h2 >> 42); h2 &= 0x3ffffffffffULL;
+    h0 += c * 5; c = (h0 >> 44); h0 &= 0xfffffffffffULL;
+    h1 += c;
+
+    /* compute h + -p */
+    uint64_t g0 = h0 + 5; c = (g0 >> 44); g0 &= 0xfffffffffffULL;
+    uint64_t g1 = h1 + c; c = (g1 >> 44); g1 &= 0xfffffffffffULL;
+    uint64_t g2 = h2 + c - ((uint64_t)1 << 42);
+
+    /* select h if h < p, else h + -p */
+    c = (g2 >> 63) - 1;
+    g0 &= c; g1 &= c; g2 &= c;
+    c = ~c;
+    h0 = (h0 & c) | g0;
+    h1 = (h1 & c) | g1;
+    h2 = (h2 & c) | g2;
+
+    /* h = (h + pad) */
+    t0 = get_u64le(key + 16);
+    t1 = get_u64le(key + 24);
+
+    h0 += (( t0                    ) & 0xfffffffffffULL)    ; c = (h0 >> 44); h0 &= 0xfffffffffffULL;
+    h1 += (((t0 >> 44) | (t1 << 20)) & 0xfffffffffffULL) + c; c = (h1 >> 44); h1 &= 0xfffffffffffULL;
+    h2 += (((t1 >> 24)             ) & 0x3ffffffffffULL) + c;                  h2 &= 0x3ffffffffffULL;
+
+    /* mac = h % 2^128 */
+    h0 = (h0      ) | (h1 << 44);
+    h1 = (h1 >> 20) | (h2 << 24);
+
+    tag[0]  = (uint8_t)(h0);       tag[1]  = (uint8_t)(h0 >> 8);
+    tag[2]  = (uint8_t)(h0 >> 16); tag[3]  = (uint8_t)(h0 >> 24);
+    tag[4]  = (uint8_t)(h0 >> 32); tag[5]  = (uint8_t)(h0 >> 40);
+    tag[6]  = (uint8_t)(h0 >> 48); tag[7]  = (uint8_t)(h0 >> 56);
+    tag[8]  = (uint8_t)(h1);       tag[9]  = (uint8_t)(h1 >> 8);
+    tag[10] = (uint8_t)(h1 >> 16); tag[11] = (uint8_t)(h1 >> 24);
+    tag[12] = (uint8_t)(h1 >> 32); tag[13] = (uint8_t)(h1 >> 40);
+    tag[14] = (uint8_t)(h1 >> 48); tag[15] = (uint8_t)(h1 >> 56);
+}
+
+#else
+
+/* ─────────────────────── portable 32-bit (5x26) path ───────────────────── */
 
 static uint32_t get_u32le(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1]<<8) |
@@ -119,6 +240,8 @@ void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
     tag[12] = (uint8_t)(f3);       tag[13] = (uint8_t)(f3 >> 8);
     tag[14] = (uint8_t)(f3 >> 16); tag[15] = (uint8_t)(f3 >> 24);
 }
+
+#endif /* __SIZEOF_INT128__ */
 
 int neverc_poly1305_verify(const uint8_t tag[16], const uint8_t *msg, size_t msg_len,
                            const uint8_t key[32]) {

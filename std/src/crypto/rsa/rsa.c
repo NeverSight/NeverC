@@ -99,6 +99,36 @@ static int miller_rabin(const neverc_bigint_t *n, int rounds) {
     return result;
 }
 
+/* Odd primes below 1000: a candidate divisible by any of them is composite. */
+static const uint32_t small_primes[] = {
+    3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83,89,97,
+    101,103,107,109,113,127,131,137,139,149,151,157,163,167,173,179,181,191,
+    193,197,199,211,223,227,229,233,239,241,251,257,263,269,271,277,281,283,
+    293,307,311,313,317,331,337,347,349,353,359,367,373,379,383,389,397,401,
+    409,419,421,431,433,439,443,449,457,461,463,467,479,487,491,499,503,509,
+    521,523,541,547,557,563,569,571,577,587,593,599,601,607,613,617,619,631,
+    641,643,647,653,659,661,673,677,683,691,701,709,719,727,733,739,743,751,
+    757,761,769,773,787,797,809,811,821,823,827,829,839,853,857,859,863,877,
+    881,883,887,907,911,919,929,937,941,947,953,967,971,977,983,991,997
+};
+
+/* a mod m for a small m, walking the public limb array high-to-low. */
+static uint32_t bigint_mod_u32(const neverc_bigint_t *a, uint32_t m) {
+    uint64_t r = 0;
+    for (size_t i = a->len; i-- > 0; )
+        r = ((r << 32) | a->digits[i]) % m;
+    return (uint32_t)r;
+}
+
+/* Trial division by the small primes: a cheap O(len) reject that screens out
+ * ~80% of random odd candidates before the (far costlier) Miller-Rabin rounds.
+ * The RSA factors are hundreds of bits, so no true factor equals a small prime. */
+static int has_small_factor(const neverc_bigint_t *p) {
+    for (size_t i = 0; i < sizeof(small_primes)/sizeof(small_primes[0]); i++)
+        if (bigint_mod_u32(p, small_primes[i]) == 0) return 1;
+    return 0;
+}
+
 static void gen_prime(neverc_bigint_t *p, int bits) {
     for (;;) {
         random_bigint(p, bits);
@@ -109,6 +139,7 @@ static void gen_prime(neverc_bigint_t *p, int bits) {
             neverc_bigint_add(p, p, &one);
             neverc_bigint_free(&one);
         }
+        if (has_small_factor(p)) continue;   /* cheap pre-screen before Miller-Rabin */
         if (miller_rabin(p, 12)) return;
     }
 }
@@ -234,6 +265,39 @@ int neverc_rsa_encrypt_pkcs1v15(const neverc_rsa_public_key_t *pub,
     return 0;
 }
 
+/*
+ * Private-key exponentiation m = c^d mod n via the CRT (Garner's recombination):
+ *   m1 = c^dp mod p,  m2 = c^dq mod q,  h = qinv*(m1-m2) mod p,  m = m2 + h*q.
+ * The two exponentiations are over half-size (p,q) moduli, so each costs ~1/8 of
+ * the full c^d mod n; together with the recombination this is the standard
+ * ~3-4x faster RSA private operation. dp/dq/qinv are precomputed at key gen.
+ * Falls back to the plain full-width exponent if the CRT factors are absent.
+ */
+static void rsa_private_exp(neverc_bigint_t *out, const neverc_bigint_t *base,
+                            const neverc_rsa_private_key_t *priv) {
+    if (priv->p.len == 0 || priv->q.len == 0) {
+        neverc_bigint_exp(out, base, &priv->d, &priv->pub.n);
+        return;
+    }
+    neverc_bigint_t m1, m2, h, t;
+    neverc_bigint_init(&m1); neverc_bigint_init(&m2);
+    neverc_bigint_init(&h);  neverc_bigint_init(&t);
+
+    neverc_bigint_exp(&m1, base, &priv->dp, &priv->p);   /* c^dp mod p */
+    neverc_bigint_exp(&m2, base, &priv->dq, &priv->q);   /* c^dq mod q */
+
+    neverc_bigint_sub(&h, &m1, &m2);                      /* m1 - m2 (may be < 0) */
+    neverc_bigint_mod(&h, &h, &priv->p);                 /* normalize into [0,p) */
+    neverc_bigint_mul(&h, &h, &priv->qinv);
+    neverc_bigint_mod(&h, &h, &priv->p);                 /* h = qinv*(m1-m2) mod p */
+
+    neverc_bigint_mul(&t, &h, &priv->q);
+    neverc_bigint_add(out, &m2, &t);                     /* m = m2 + h*q, in [0,n) */
+
+    neverc_bigint_free(&m1); neverc_bigint_free(&m2);
+    neverc_bigint_free(&h);  neverc_bigint_free(&t);
+}
+
 int neverc_rsa_decrypt_pkcs1v15(const neverc_rsa_private_key_t *priv,
                                  const unsigned char *ct, size_t ct_len,
                                  unsigned char *out, size_t out_cap, size_t *out_len) {
@@ -243,7 +307,7 @@ int neverc_rsa_decrypt_pkcs1v15(const neverc_rsa_private_key_t *priv,
     neverc_bigint_t c, m;
     neverc_bigint_init(&c); neverc_bigint_init(&m);
     bytes_to_bigint(&c, ct, ct_len);
-    neverc_bigint_exp(&m, &c, &priv->d, &priv->pub.n);
+    rsa_private_exp(&m, &c, priv);
 
     unsigned char *em = (unsigned char *)malloc((size_t)k);
     bigint_to_bytes(&m, em, k);
@@ -306,7 +370,7 @@ int neverc_rsa_sign_pkcs1v15_sha256(const neverc_rsa_private_key_t *priv,
     neverc_bigint_t m, s;
     neverc_bigint_init(&m); neverc_bigint_init(&s);
     bytes_to_bigint(&m, em, (size_t)k);
-    neverc_bigint_exp(&s, &m, &priv->d, &priv->pub.n);
+    rsa_private_exp(&s, &m, priv);
     bigint_to_bytes(&s, sig, k);
 
     if (sig_len) *sig_len = (size_t)k;

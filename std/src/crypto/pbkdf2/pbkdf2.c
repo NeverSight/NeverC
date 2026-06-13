@@ -1,16 +1,66 @@
 /*
  * PBKDF2 — Password-Based Key Derivation Function 2 (RFC 2898 / RFC 8018).
  * Uses HMAC-SHA256 as the PRF.
+ *
+ * Performance: the HMAC key (the password) is constant across every one of
+ * the (often 100k+) iterations.  HMAC absorbs one fixed block for (key^ipad)
+ * and one for (key^opad) on *every* call, so a naive `hmac_sha256` loop pays
+ * 4 SHA-256 compressions per iteration (ipad-block, inner-msg, opad-block,
+ * outer-msg).  We precompute the two midstates once and resume from them,
+ * cutting the steady-state cost to 2 compressions per iteration — ~2x.
  */
 #include "neverc/std/crypto/pbkdf2.h"
-#include "neverc/std/crypto/hmac.h"
+#include "neverc/std/crypto/sha256.h"
 #include <string.h>
+
+/* HMAC-SHA256 with the key's ipad/opad blocks already absorbed. */
+typedef struct {
+    neverc_sha256_ctx ipad; /* state after SHA256(key' ^ ipad) */
+    neverc_sha256_ctx opad; /* state after SHA256(key' ^ opad) */
+} hmac_sha256_pre;
+
+static void hmac_sha256_pre_init(hmac_sha256_pre *p,
+                                 const uint8_t *key, size_t key_len) {
+    uint8_t k[64];
+    memset(k, 0, sizeof(k));
+    if (key_len > 64)
+        neverc_sha256_sum(key, key_len, k);
+    else
+        memcpy(k, key, key_len);
+
+    uint8_t pad[64];
+    for (int i = 0; i < 64; i++) pad[i] = k[i] ^ 0x36;
+    neverc_sha256_init(&p->ipad);
+    neverc_sha256_update(&p->ipad, pad, 64);
+
+    for (int i = 0; i < 64; i++) pad[i] = k[i] ^ 0x5c;
+    neverc_sha256_init(&p->opad);
+    neverc_sha256_update(&p->opad, pad, 64);
+}
+
+/* out = HMAC-SHA256(key, msg), resuming from the precomputed midstates. */
+static void hmac_sha256_pre_compute(const hmac_sha256_pre *p,
+                                    const uint8_t *msg, size_t msg_len,
+                                    uint8_t out[32]) {
+    neverc_sha256_ctx c = p->ipad;   /* resume after (key^ipad) block */
+    neverc_sha256_update(&c, msg, msg_len);
+    uint8_t inner[32];
+    neverc_sha256_final(&c, inner);
+
+    c = p->opad;                     /* resume after (key^opad) block */
+    neverc_sha256_update(&c, inner, 32);
+    neverc_sha256_final(&c, out);
+}
 
 int neverc_pbkdf2_sha256(uint8_t *dk, size_t dk_len,
                          const uint8_t *password, size_t password_len,
                          const uint8_t *salt, size_t salt_len,
                          int iterations) {
     if (iterations < 1 || dk_len == 0) return -1;
+    if (salt_len > 256) return -1;
+
+    hmac_sha256_pre pre;
+    hmac_sha256_pre_init(&pre, password, password_len);
 
     uint32_t block_num = 1;
     size_t off = 0;
@@ -19,7 +69,6 @@ int neverc_pbkdf2_sha256(uint8_t *dk, size_t dk_len,
         /* U_1 = HMAC(password, salt || INT_32_BE(block_num)) */
         uint8_t salt_block[256 + 4];
         size_t sb_len = salt_len + 4;
-        if (salt_len > 256) return -1;
         if (salt != NULL && salt_len > 0)
             memcpy(salt_block, salt, salt_len);
         salt_block[salt_len]     = (uint8_t)(block_num >> 24);
@@ -28,11 +77,11 @@ int neverc_pbkdf2_sha256(uint8_t *dk, size_t dk_len,
         salt_block[salt_len + 3] = (uint8_t)(block_num);
 
         uint8_t u[32], t[32];
-        neverc_hmac_sha256(password, password_len, salt_block, sb_len, u);
+        hmac_sha256_pre_compute(&pre, salt_block, sb_len, u);
         memcpy(t, u, 32);
 
         for (int i = 1; i < iterations; i++) {
-            neverc_hmac_sha256(password, password_len, u, 32, u);
+            hmac_sha256_pre_compute(&pre, u, 32, u);
             for (int j = 0; j < 32; j++) t[j] ^= u[j];
         }
 

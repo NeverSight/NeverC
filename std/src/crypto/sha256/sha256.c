@@ -56,13 +56,26 @@ static void sha256_block(uint32_t state[8], const uint8_t block[64]) {
 
     uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
     uint32_t e = state[4], f = state[5], g = state[6], h = state[7];
+    uint32_t t1, t2;
 
-    for (int i = 0; i < 64; i++) {
-        uint32_t t1 = h + EP1(e) + CH(e, f, g) + K[i] + W[i];
-        uint32_t t2 = EP0(a) + MAJ(a, b, c);
-        h = g; g = f; f = e; e = d + t1;
-        d = c; c = b; b = a; a = t1 + t2;
+    /* Eight rounds unrolled with rotation-by-renaming: the a..h working set is
+     * advanced by argument order rather than copied each round, so there is no
+     * per-round 8-way shuffle for the compiler to schedule. */
+#define NCI_SHA256_R(a, b, c, d, e, f, g, h, i) \
+        t1 = (h) + EP1(e) + CH(e, f, g) + K[i] + W[i]; \
+        t2 = EP0(a) + MAJ(a, b, c); \
+        (d) += t1; (h) = t1 + t2;
+    for (int i = 0; i < 64; i += 8) {
+        NCI_SHA256_R(a, b, c, d, e, f, g, h, i + 0)
+        NCI_SHA256_R(h, a, b, c, d, e, f, g, i + 1)
+        NCI_SHA256_R(g, h, a, b, c, d, e, f, i + 2)
+        NCI_SHA256_R(f, g, h, a, b, c, d, e, i + 3)
+        NCI_SHA256_R(e, f, g, h, a, b, c, d, i + 4)
+        NCI_SHA256_R(d, e, f, g, h, a, b, c, i + 5)
+        NCI_SHA256_R(c, d, e, f, g, h, a, b, i + 6)
+        NCI_SHA256_R(b, c, d, e, f, g, h, a, i + 7)
     }
+#undef NCI_SHA256_R
 
     state[0] += a; state[1] += b; state[2] += c; state[3] += d;
     state[4] += e; state[5] += f; state[6] += g; state[7] += h;

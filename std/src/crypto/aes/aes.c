@@ -1,9 +1,22 @@
 #include "neverc/std/crypto/aes.h"
 #include <string.h>
+#include "aes_tables.h"
 
 /*
  * AES (Rijndael) block cipher — FIPS 197.
  * Pure C implementation, supports AES-128/192/256.
+ *
+ * Hot path uses fused T-tables (SubBytes+ShiftRows+MixColumns collapsed into
+ * four 1 KiB lookup tables, as in the Rijndael reference / OpenSSL's portable
+ * path), giving ~3-4x throughput over the byte-oriented reference. Decryption
+ * uses the equivalent inverse cipher (Td tables + an InvMixColumns-transformed
+ * key schedule built once at init into ctx->dec_key).
+ *
+ * NOTE ON SIDE CHANNELS: like the previous s-box implementation this is *not*
+ * constant-time — table indices depend on secret data. The larger T-tables
+ * widen the cache-timing surface versus a lone 256-byte s-box, so this code is
+ * unsuitable where an attacker can observe cache timing (use AES-NI there).
+ * The trade matches every portable software-AES path that targets speed.
  */
 
 static const uint8_t sbox[256] = {
@@ -94,12 +107,29 @@ int neverc_aes_init(neverc_aes_ctx_t *ctx, const uint8_t *key, int key_len) {
         ek[i] = ek[i - nk] ^ t;
     }
 
+    /*
+     * Decryption key schedule for the equivalent inverse cipher: the encryption
+     * round keys reversed by round group, then InvMixColumns applied to every
+     * interior round key. Td0[sbox[b]] == InvMixColumns(b), so the transform
+     * folds straight through the decrypt T-tables.
+     */
+    uint32_t *dk = ctx->dec_key;
+    for (int i = 0; i < total; i++)
+        dk[i] = ek[total - 4 - (i & ~3) + (i & 3)];
+    for (int r = 1; r < nr; r++) {
+        for (int c = 0; c < 4; c++) {
+            uint32_t w = dk[4 * r + c];
+            dk[4 * r + c] = Td0[sbox[(w >> 24) & 0xff]] ^
+                            Td1[sbox[(w >> 16) & 0xff]] ^
+                            Td2[sbox[(w >>  8) & 0xff]] ^
+                            Td3[sbox[(w      ) & 0xff]];
+        }
+    }
+
     return 0;
 }
 
 void neverc_aes_encrypt_block(const neverc_aes_ctx_t *ctx, uint8_t dst[16], const uint8_t src[16]) {
-    #define XTIME(x) ((((x) << 1) ^ ((((x) >> 7) & 1) * 0x1b)) & 0xFF)
-
     uint32_t s0 = get_u32be(src)      ^ ctx->enc_key[0];
     uint32_t s1 = get_u32be(src + 4)  ^ ctx->enc_key[1];
     uint32_t s2 = get_u32be(src + 8)  ^ ctx->enc_key[2];
@@ -108,39 +138,23 @@ void neverc_aes_encrypt_block(const neverc_aes_ctx_t *ctx, uint8_t dst[16], cons
     int nr = ctx->rounds;
     const uint32_t *rk = ctx->enc_key + 4;
 
+    /* Round = SubBytes + ShiftRows + MixColumns + AddRoundKey, fused into four
+     * table lookups per column. ShiftRows is the choice of which state word each
+     * byte is taken from. */
     for (int r = 1; r < nr; r++) {
-        uint8_t a[4][4];
-        a[0][0] = sbox[(s0>>24)&0xff]; a[0][1] = sbox[(s1>>24)&0xff];
-        a[0][2] = sbox[(s2>>24)&0xff]; a[0][3] = sbox[(s3>>24)&0xff];
-        a[1][0] = sbox[(s1>>16)&0xff]; a[1][1] = sbox[(s2>>16)&0xff];
-        a[1][2] = sbox[(s3>>16)&0xff]; a[1][3] = sbox[(s0>>16)&0xff];
-        a[2][0] = sbox[(s2>>8)&0xff];  a[2][1] = sbox[(s3>>8)&0xff];
-        a[2][2] = sbox[(s0>>8)&0xff];  a[2][3] = sbox[(s1>>8)&0xff];
-        a[3][0] = sbox[s3&0xff];       a[3][1] = sbox[s0&0xff];
-        a[3][2] = sbox[s1&0xff];       a[3][3] = sbox[s2&0xff];
-
-        for (int c = 0; c < 4; c++) {
-            uint8_t b0 = a[0][c], b1 = a[1][c], b2 = a[2][c], b3 = a[3][c];
-            a[0][c] = XTIME(b0) ^ XTIME(b1) ^ b1 ^ b2 ^ b3;
-            a[1][c] = b0 ^ XTIME(b1) ^ XTIME(b2) ^ b2 ^ b3;
-            a[2][c] = b0 ^ b1 ^ XTIME(b2) ^ XTIME(b3) ^ b3;
-            a[3][c] = XTIME(b0) ^ b0 ^ b1 ^ b2 ^ XTIME(b3);
-        }
-
-        s0 = ((uint32_t)a[0][0]<<24) | ((uint32_t)a[1][0]<<16) |
-             ((uint32_t)a[2][0]<<8)  | (uint32_t)a[3][0];
-        s1 = ((uint32_t)a[0][1]<<24) | ((uint32_t)a[1][1]<<16) |
-             ((uint32_t)a[2][1]<<8)  | (uint32_t)a[3][1];
-        s2 = ((uint32_t)a[0][2]<<24) | ((uint32_t)a[1][2]<<16) |
-             ((uint32_t)a[2][2]<<8)  | (uint32_t)a[3][2];
-        s3 = ((uint32_t)a[0][3]<<24) | ((uint32_t)a[1][3]<<16) |
-             ((uint32_t)a[2][3]<<8)  | (uint32_t)a[3][3];
-
-        s0 ^= rk[0]; s1 ^= rk[1]; s2 ^= rk[2]; s3 ^= rk[3];
+        uint32_t t0 = Te0[s0 >> 24] ^ Te1[(s1 >> 16) & 0xff] ^
+                      Te2[(s2 >> 8) & 0xff] ^ Te3[s3 & 0xff] ^ rk[0];
+        uint32_t t1 = Te0[s1 >> 24] ^ Te1[(s2 >> 16) & 0xff] ^
+                      Te2[(s3 >> 8) & 0xff] ^ Te3[s0 & 0xff] ^ rk[1];
+        uint32_t t2 = Te0[s2 >> 24] ^ Te1[(s3 >> 16) & 0xff] ^
+                      Te2[(s0 >> 8) & 0xff] ^ Te3[s1 & 0xff] ^ rk[2];
+        uint32_t t3 = Te0[s3 >> 24] ^ Te1[(s0 >> 16) & 0xff] ^
+                      Te2[(s1 >> 8) & 0xff] ^ Te3[s2 & 0xff] ^ rk[3];
+        s0 = t0; s1 = t1; s2 = t2; s3 = t3;
         rk += 4;
     }
 
-    /* Last round: SubBytes + ShiftRows + AddRoundKey (no MixColumns) */
+    /* Last round: SubBytes + ShiftRows + AddRoundKey (no MixColumns). */
     uint32_t t0 = ((uint32_t)sbox[(s0>>24)&0xff]<<24) | ((uint32_t)sbox[(s1>>16)&0xff]<<16) |
                   ((uint32_t)sbox[(s2>>8)&0xff]<<8)   | (uint32_t)sbox[s3&0xff];
     uint32_t t1 = ((uint32_t)sbox[(s1>>24)&0xff]<<24) | ((uint32_t)sbox[(s2>>16)&0xff]<<16) |
@@ -154,59 +168,37 @@ void neverc_aes_encrypt_block(const neverc_aes_ctx_t *ctx, uint8_t dst[16], cons
     put_u32be(dst + 4,  t1 ^ rk[1]);
     put_u32be(dst + 8,  t2 ^ rk[2]);
     put_u32be(dst + 12, t3 ^ rk[3]);
-    #undef XTIME
 }
 
 void neverc_aes_decrypt_block(const neverc_aes_ctx_t *ctx, uint8_t dst[16], const uint8_t src[16]) {
     /*
-     * FIPS 197 Section 5.3 — Inverse Cipher
-     * Uses encryption round keys in reverse order.
+     * Equivalent inverse cipher (FIPS 197 Section 5.3.5): same structure as the
+     * forward cipher but with InvSubBytes + InvShiftRows + InvMixColumns fused
+     * into the Td tables and the InvMixColumns-transformed dec_key schedule.
      */
-    #define XT(x) ((((x) << 1) ^ ((((x) >> 7) & 1) * 0x1b)) & 0xFF)
-    #define MUL9(x) ((x) ^ XT(XT(XT(x))))
-    #define MULB(x) ((x) ^ XT((x) ^ XT(XT(x))))
-    #define MULD(x) ((x) ^ XT(XT((x) ^ XT(x))))
-    #define MULE(x) (XT((x) ^ XT((x) ^ XT(x))))
-
     int nr = ctx->rounds;
-    const uint32_t *rk = ctx->enc_key + nr * 4;
+    const uint32_t *rk = ctx->dec_key;
 
     uint32_t s0 = get_u32be(src)      ^ rk[0];
     uint32_t s1 = get_u32be(src + 4)  ^ rk[1];
     uint32_t s2 = get_u32be(src + 8)  ^ rk[2];
     uint32_t s3 = get_u32be(src + 12) ^ rk[3];
+    rk += 4;
 
-    for (int r = nr - 1; r >= 1; r--) {
-        rk = ctx->enc_key + r * 4;
-
-        /* InvShiftRows + InvSubBytes */
-        uint32_t t0 = ((uint32_t)inv_sbox[(s0>>24)&0xff]<<24) | ((uint32_t)inv_sbox[(s3>>16)&0xff]<<16) |
-                      ((uint32_t)inv_sbox[(s2>>8)&0xff]<<8)   | (uint32_t)inv_sbox[s1&0xff];
-        uint32_t t1 = ((uint32_t)inv_sbox[(s1>>24)&0xff]<<24) | ((uint32_t)inv_sbox[(s0>>16)&0xff]<<16) |
-                      ((uint32_t)inv_sbox[(s3>>8)&0xff]<<8)   | (uint32_t)inv_sbox[s2&0xff];
-        uint32_t t2 = ((uint32_t)inv_sbox[(s2>>24)&0xff]<<24) | ((uint32_t)inv_sbox[(s1>>16)&0xff]<<16) |
-                      ((uint32_t)inv_sbox[(s0>>8)&0xff]<<8)   | (uint32_t)inv_sbox[s3&0xff];
-        uint32_t t3 = ((uint32_t)inv_sbox[(s3>>24)&0xff]<<24) | ((uint32_t)inv_sbox[(s2>>16)&0xff]<<16) |
-                      ((uint32_t)inv_sbox[(s1>>8)&0xff]<<8)   | (uint32_t)inv_sbox[s0&0xff];
-
-        /* AddRoundKey */
-        t0 ^= rk[0]; t1 ^= rk[1]; t2 ^= rk[2]; t3 ^= rk[3];
-
-        /* InvMixColumns */
-        uint32_t cols[4] = {t0, t1, t2, t3};
-        for (int c = 0; c < 4; c++) {
-            uint8_t b0 = (cols[c] >> 24) & 0xff, b1 = (cols[c] >> 16) & 0xff;
-            uint8_t b2 = (cols[c] >> 8)  & 0xff, b3 = (cols[c]) & 0xff;
-            cols[c] = ((uint32_t)(MULE(b0) ^ MULB(b1) ^ MULD(b2) ^ MUL9(b3)) << 24) |
-                      ((uint32_t)(MUL9(b0) ^ MULE(b1) ^ MULB(b2) ^ MULD(b3)) << 16) |
-                      ((uint32_t)(MULD(b0) ^ MUL9(b1) ^ MULE(b2) ^ MULB(b3)) << 8)  |
-                      (uint32_t)(MULB(b0) ^ MULD(b1) ^ MUL9(b2) ^ MULE(b3));
-        }
-        s0 = cols[0]; s1 = cols[1]; s2 = cols[2]; s3 = cols[3];
+    for (int r = 1; r < nr; r++) {
+        uint32_t t0 = Td0[s0 >> 24] ^ Td1[(s3 >> 16) & 0xff] ^
+                      Td2[(s2 >> 8) & 0xff] ^ Td3[s1 & 0xff] ^ rk[0];
+        uint32_t t1 = Td0[s1 >> 24] ^ Td1[(s0 >> 16) & 0xff] ^
+                      Td2[(s3 >> 8) & 0xff] ^ Td3[s2 & 0xff] ^ rk[1];
+        uint32_t t2 = Td0[s2 >> 24] ^ Td1[(s1 >> 16) & 0xff] ^
+                      Td2[(s0 >> 8) & 0xff] ^ Td3[s3 & 0xff] ^ rk[2];
+        uint32_t t3 = Td0[s3 >> 24] ^ Td1[(s2 >> 16) & 0xff] ^
+                      Td2[(s1 >> 8) & 0xff] ^ Td3[s0 & 0xff] ^ rk[3];
+        s0 = t0; s1 = t1; s2 = t2; s3 = t3;
+        rk += 4;
     }
 
-    /* Final round: InvShiftRows + InvSubBytes + AddRoundKey (no InvMixColumns) */
-    rk = ctx->enc_key;
+    /* Final round: InvSubBytes + InvShiftRows + AddRoundKey (no InvMixColumns). */
     uint32_t f0 = ((uint32_t)inv_sbox[(s0>>24)&0xff]<<24) | ((uint32_t)inv_sbox[(s3>>16)&0xff]<<16) |
                   ((uint32_t)inv_sbox[(s2>>8)&0xff]<<8)   | (uint32_t)inv_sbox[s1&0xff];
     uint32_t f1 = ((uint32_t)inv_sbox[(s1>>24)&0xff]<<24) | ((uint32_t)inv_sbox[(s0>>16)&0xff]<<16) |
@@ -220,10 +212,4 @@ void neverc_aes_decrypt_block(const neverc_aes_ctx_t *ctx, uint8_t dst[16], cons
     put_u32be(dst + 4,  f1 ^ rk[1]);
     put_u32be(dst + 8,  f2 ^ rk[2]);
     put_u32be(dst + 12, f3 ^ rk[3]);
-
-    #undef XT
-    #undef MUL9
-    #undef MULB
-    #undef MULD
-    #undef MULE
 }

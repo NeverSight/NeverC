@@ -24,23 +24,35 @@ static void put_u32le(uint8_t *p, uint32_t v) {
     c += d; b ^= c; b = ROTL32(b, 7);  \
 } while (0)
 
+/*
+ * Keep the whole 16-word working state in named locals so it stays in
+ * registers across all 20 rounds even at -O1 (an x[16] array reliably spills).
+ */
 void neverc_chacha20_block(const uint32_t state[16], uint8_t out[64]) {
-    uint32_t x[16];
-    memcpy(x, state, 64);
+    uint32_t x0  = state[0],  x1  = state[1],  x2  = state[2],  x3  = state[3];
+    uint32_t x4  = state[4],  x5  = state[5],  x6  = state[6],  x7  = state[7];
+    uint32_t x8  = state[8],  x9  = state[9],  x10 = state[10], x11 = state[11];
+    uint32_t x12 = state[12], x13 = state[13], x14 = state[14], x15 = state[15];
 
     for (int i = 0; i < 10; i++) {
-        QR(x[0], x[4], x[ 8], x[12]);
-        QR(x[1], x[5], x[ 9], x[13]);
-        QR(x[2], x[6], x[10], x[14]);
-        QR(x[3], x[7], x[11], x[15]);
-        QR(x[0], x[5], x[10], x[15]);
-        QR(x[1], x[6], x[11], x[12]);
-        QR(x[2], x[7], x[ 8], x[13]);
-        QR(x[3], x[4], x[ 9], x[14]);
+        QR(x0, x4, x8,  x12);
+        QR(x1, x5, x9,  x13);
+        QR(x2, x6, x10, x14);
+        QR(x3, x7, x11, x15);
+        QR(x0, x5, x10, x15);
+        QR(x1, x6, x11, x12);
+        QR(x2, x7, x8,  x13);
+        QR(x3, x4, x9,  x14);
     }
 
-    for (int i = 0; i < 16; i++)
-        put_u32le(out + 4 * i, x[i] + state[i]);
+    put_u32le(out +  0, x0  + state[0]);  put_u32le(out +  4, x1  + state[1]);
+    put_u32le(out +  8, x2  + state[2]);  put_u32le(out + 12, x3  + state[3]);
+    put_u32le(out + 16, x4  + state[4]);  put_u32le(out + 20, x5  + state[5]);
+    put_u32le(out + 24, x6  + state[6]);  put_u32le(out + 28, x7  + state[7]);
+    put_u32le(out + 32, x8  + state[8]);  put_u32le(out + 36, x9  + state[9]);
+    put_u32le(out + 40, x10 + state[10]); put_u32le(out + 44, x11 + state[11]);
+    put_u32le(out + 48, x12 + state[12]); put_u32le(out + 52, x13 + state[13]);
+    put_u32le(out + 56, x14 + state[14]); put_u32le(out + 60, x15 + state[15]);
 }
 
 void neverc_chacha20_init(neverc_chacha20_ctx *ctx,
@@ -60,20 +72,115 @@ void neverc_chacha20_init(neverc_chacha20_ctx *ctx,
     ctx->buf_used = 64;
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+#define NCI_CHACHA_SIMD 1
+/*
+ * 4-way SIMD keystream: compute four consecutive blocks at once. Lane j of each
+ * vector holds word i of the (counter+j)-th block, so the 20 rounds run as
+ * plain vector add/xor/rotate with NO cross-lane shuffles (the four blocks are
+ * independent). This is the layout that actually scales — unlike a single-block
+ * row layout, whose diagonalization shuffles serialize the pipeline.
+ */
+typedef uint32_t nci_u32x4 __attribute__((vector_size(16)));
+#define VROT(v, n) (((v) << (n)) | ((v) >> (32 - (n))))
+#define VQR(a, b, c, d) do {       \
+    a += b; d ^= a; d = VROT(d,16);\
+    c += d; b ^= c; b = VROT(b,12);\
+    a += b; d ^= a; d = VROT(d,8); \
+    c += d; b ^= c; b = VROT(b,7); \
+} while (0)
+
+/* Produce 4 keystream blocks (256 bytes) for counters state[12]+0..+3. */
+static void chacha20_4block(const uint32_t state[16], uint8_t out[256]) {
+    nci_u32x4 v[16];
+    for (int i = 0; i < 16; i++) {
+        uint32_t s = state[i];
+        v[i] = (nci_u32x4){ s, s, s, s };
+    }
+    uint32_t c0 = state[12];
+    v[12] = (nci_u32x4){ c0, c0 + 1, c0 + 2, c0 + 3 };
+
+    nci_u32x4 o[16];
+    for (int i = 0; i < 16; i++) o[i] = v[i];
+
+    for (int i = 0; i < 10; i++) {
+        VQR(v[0], v[4], v[ 8], v[12]);
+        VQR(v[1], v[5], v[ 9], v[13]);
+        VQR(v[2], v[6], v[10], v[14]);
+        VQR(v[3], v[7], v[11], v[15]);
+        VQR(v[0], v[5], v[10], v[15]);
+        VQR(v[1], v[6], v[11], v[12]);
+        VQR(v[2], v[7], v[ 8], v[13]);
+        VQR(v[3], v[4], v[ 9], v[14]);
+    }
+    for (int i = 0; i < 16; i++) v[i] += o[i];
+
+    /* De-interleave: lane j of v[i] is word i of block j. */
+    for (int i = 0; i < 16; i++) {
+        uint32_t w[4];
+        memcpy(w, &v[i], 16);
+        put_u32le(out +  0 + 4 * i, w[0]);
+        put_u32le(out + 64 + 4 * i, w[1]);
+        put_u32le(out + 128 + 4 * i, w[2]);
+        put_u32le(out + 192 + 4 * i, w[3]);
+    }
+}
+#endif
+
+/* dst[i] = src[i] ^ ks[i] for n bytes, 8 bytes at a time. */
+static void xor_keystream(uint8_t *dst, const uint8_t *src,
+                          const uint8_t *ks, size_t n) {
+    size_t i = 0;
+    for (; i + 8 <= n; i += 8) {
+        uint64_t s, k;
+        memcpy(&s, src + i, 8);
+        memcpy(&k, ks + i, 8);
+        s ^= k;
+        memcpy(dst + i, &s, 8);
+    }
+    for (; i < n; i++) dst[i] = src[i] ^ ks[i];
+}
+
 void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
                          uint8_t *dst, const uint8_t *src, size_t len) {
     size_t off = 0;
-    while (off < len) {
-        if (ctx->buf_used >= 64) {
-            neverc_chacha20_block(ctx->state, ctx->buf);
-            ctx->state[12]++;
-            ctx->buf_used = 0;
-        }
+
+    /* Consume any keystream left over from a previous partial block. */
+    if (ctx->buf_used < 64) {
         size_t avail = 64 - (size_t)ctx->buf_used;
-        size_t n = (len - off < avail) ? (len - off) : avail;
-        for (size_t i = 0; i < n; i++)
-            dst[off + i] = src[off + i] ^ ctx->buf[ctx->buf_used + (int)i];
+        size_t n = (len < avail) ? len : avail;
+        xor_keystream(dst, src, ctx->buf + ctx->buf_used, n);
         ctx->buf_used += (int)n;
         off += n;
+    }
+
+#ifdef NCI_CHACHA_SIMD
+    /* Bulk path: 4 blocks (256 bytes) per SIMD pass. */
+    while (len - off >= 256) {
+        uint8_t ks[256];
+        chacha20_4block(ctx->state, ks);
+        ctx->state[12] += 4;
+        xor_keystream(dst + off, src + off, ks, 256);
+        off += 256;
+    }
+#endif
+
+    /* Whole 64-byte blocks: generate keystream and XOR straight into dst,
+     * skipping the per-byte loop and the intermediate-buffer round trip. */
+    while (len - off >= 64) {
+        uint8_t ks[64];
+        neverc_chacha20_block(ctx->state, ks);
+        ctx->state[12]++;
+        xor_keystream(dst + off, src + off, ks, 64);
+        off += 64;
+    }
+
+    /* Final partial block: keep the unused keystream in ctx for next call. */
+    if (off < len) {
+        neverc_chacha20_block(ctx->state, ctx->buf);
+        ctx->state[12]++;
+        size_t n = len - off;
+        xor_keystream(dst + off, src + off, ctx->buf, n);
+        ctx->buf_used = (int)n;
     }
 }
