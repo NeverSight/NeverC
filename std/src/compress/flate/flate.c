@@ -1,7 +1,15 @@
 /*
  * NeverC compress/flate — DEFLATE compression & decompression (RFC 1951).
  *
- * Compression: level 0 = stored blocks, level 1-9 = LZ77 + fixed Huffman.
+ * Compression (level 1-9): zlib-class encoder —
+ *   - LZ77 match finding over a 32 KiB window with absolute-position hash
+ *     chains (correct past 64 KiB, unlike a 16-bit position scheme), greedy
+ *     for levels 1-3 and lazy (deflate_slow) for levels 4-9.
+ *   - Per-block entropy coding that picks the cheapest of stored / fixed /
+ *     dynamic Huffman, so every block uses codes tailored to its statistics.
+ *   - Dynamic Huffman trees built with package-merge, the optimal length-
+ *     limited prefix code (15-bit lit/len & dist, 7-bit code-length codes).
+ *   Level 0 emits stored blocks only.
  * Decompression: supports stored, fixed Huffman, and dynamic Huffman blocks.
  */
 
@@ -175,6 +183,400 @@ static unsigned hash3(const uint8_t *p) {
     return ((unsigned)p[0] | ((unsigned)p[1] << 8) | ((unsigned)p[2] << 16)) * 2654435761u >> (32 - HASH_BITS);
 }
 
+/* Length of the common prefix of a[] and b[], capped at maxl. Compares 8 bytes
+ * per step with a 64-bit load + XOR + count-trailing-zeros (the way zlib and
+ * libdeflate scan matches) instead of one byte at a time; the trailing byte
+ * loop finishes the final < 8 bytes. Both pointers are guaranteed to have at
+ * least maxl readable bytes by the caller, so the 8-byte reads never run past
+ * the source buffer (each is gated by ml + 8 <= maxl). */
+static unsigned match_len(const uint8_t *a, const uint8_t *b, unsigned maxl) {
+    unsigned ml = 0;
+    while (ml + 8 <= maxl) {
+        uint64_t x, y;
+        memcpy(&x, a + ml, 8);
+        memcpy(&y, b + ml, 8);
+        uint64_t d = x ^ y;
+        if (d) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            return ml + (unsigned)(__builtin_clzll(d) >> 3);
+#else
+            return ml + (unsigned)(__builtin_ctzll(d) >> 3);
+#endif
+        }
+        ml += 8;
+    }
+    while (ml < maxl && a[ml] == b[ml]) ml++;
+    return ml;
+}
+
+#define FLATE_BLOCK_TOKENS 16384        /* tokens buffered before a block flush */
+#define FLATE_NIL          0xFFFFFFFFu  /* empty hash-chain slot */
+
+/* One LZ77 output token: a literal (dist == 0) or a back-reference. */
+typedef struct { uint16_t lit, len, dist; } ftok_t;
+
+/* ---- Optimal length-limited Huffman (package-merge) ---- */
+
+/*
+ * Compute canonical Huffman code lengths for freq[0..n-1], each <= maxlen,
+ * via the package-merge algorithm (Larmore & Hirschberg) — the optimal
+ * length-limited prefix code, matching what zlib/Go target for DEFLATE's
+ * 15-bit (lit/len, dist) and 7-bit (code-length) limits. Zero-frequency
+ * symbols get length 0. A lone symbol is paired with a dummy so the code is
+ * *complete* (DEFLATE rejects an incomplete code-length code). Returns 0 on
+ * success, -1 on allocation failure (caller then skips the dynamic block).
+ */
+static int huff_lengths(const uint32_t *freq, int n, int maxlen, uint8_t *lens) {
+    for (int i = 0; i < n; i++) lens[i] = 0;
+
+    int sidx[288], m = 0;
+    for (int i = 0; i < n; i++) if (freq[i]) sidx[m++] = i;
+    if (m == 0) return 0;
+    if (m == 1) {
+        int s = sidx[0];
+        lens[s] = 1;
+        lens[s == 0 ? 1 : 0] = 1;      /* dummy 2nd code -> complete */
+        return 0;
+    }
+
+    for (int i = 1; i < m; i++) {       /* insertion sort, ascending by freq */
+        int k = sidx[i]; uint32_t f = freq[k]; int j = i - 1;
+        while (j >= 0 && (freq[sidx[j]] > f || (freq[sidx[j]] == f && sidx[j] > k))) {
+            sidx[j + 1] = sidx[j]; j--;
+        }
+        sidx[j + 1] = k;
+    }
+
+    int maxnodes = m * (maxlen + 1) + 8;
+    uint64_t *nw = (uint64_t *)malloc((size_t)maxnodes * sizeof(uint64_t));
+    int *nc0 = (int *)malloc((size_t)maxnodes * sizeof(int));
+    int *nc1 = (int *)malloc((size_t)maxnodes * sizeof(int));
+    int *nsy = (int *)malloc((size_t)maxnodes * sizeof(int));
+    int *prevl = (int *)malloc((size_t)(2 * m + 4) * sizeof(int));
+    int *curl  = (int *)malloc((size_t)(2 * m + 4) * sizeof(int));
+    int *cnt   = (int *)calloc((size_t)m, sizeof(int));
+    if (!nw || !nc0 || !nc1 || !nsy || !prevl || !curl || !cnt) {
+        free(nw); free(nc0); free(nc1); free(nsy); free(prevl); free(curl); free(cnt);
+        return -1;
+    }
+
+    int np = 0;
+    for (int i = 0; i < m; i++) {       /* leaf nodes 0..m-1, ascending */
+        nw[np] = freq[sidx[i]]; nc0[np] = -1; nc1[np] = -1; nsy[np] = i;
+        prevl[i] = np; np++;
+    }
+    int prevn = m;
+
+    for (int level = 1; level < maxlen; level++) {
+        int npk = prevn / 2, cn = 0, li = 0, pk = 0;
+        while (li < m || pk < npk) {    /* merge leaves with packaged pairs */
+            uint64_t lwt = (li < m) ? nw[li] : (uint64_t)-1;
+            uint64_t pwt = (pk < npk) ? (nw[prevl[2 * pk]] + nw[prevl[2 * pk + 1]])
+                                      : (uint64_t)-1;
+            if (lwt <= pwt) {
+                curl[cn++] = li; li++;
+            } else {
+                nw[np] = pwt; nc0[np] = prevl[2 * pk]; nc1[np] = prevl[2 * pk + 1];
+                nsy[np] = -1; curl[cn++] = np++; pk++;
+            }
+        }
+        for (int i = 0; i < cn; i++) prevl[i] = curl[i];
+        prevn = cn;
+    }
+
+    int sel = 2 * m - 2;
+    if (sel > prevn) sel = prevn;
+    for (int i = 0; i < sel; i++) {     /* count leaf occurrences in selection */
+        int stack[64], sp = 0;
+        stack[sp++] = prevl[i];
+        while (sp > 0) {
+            int nd = stack[--sp];
+            if (nsy[nd] >= 0) cnt[nsy[nd]]++;
+            else { stack[sp++] = nc0[nd]; stack[sp++] = nc1[nd]; }
+        }
+    }
+    for (int i = 0; i < m; i++) lens[sidx[i]] = (uint8_t)cnt[i];
+
+    free(nw); free(nc0); free(nc1); free(nsy); free(prevl); free(curl); free(cnt);
+    return 0;
+}
+
+/* A code is complete iff the Kraft sum equals 1 (no over/under-subscription). */
+static int code_complete(const uint8_t *lens, int n, int maxlen) {
+    unsigned long total = 0;
+    for (int i = 0; i < n; i++) {
+        if (lens[i] == 0) continue;
+        if (lens[i] > maxlen) return 0;
+        total += 1UL << (maxlen - lens[i]);
+    }
+    return total == (1UL << maxlen);
+}
+
+/* Build canonical codes (already bit-reversed for LSB-first DEFLATE packing). */
+static void build_enc(const uint8_t *lens, int n, uint16_t *codes) {
+    unsigned bl_count[16], next_code[16];
+    for (int i = 0; i < 16; i++) bl_count[i] = 0;
+    for (int i = 0; i < n; i++) if (lens[i]) bl_count[lens[i]]++;
+    unsigned code = 0; bl_count[0] = 0;
+    for (int bits = 1; bits <= 15; bits++) {
+        code = (code + bl_count[bits - 1]) << 1;
+        next_code[bits] = code;
+    }
+    for (int i = 0; i < n; i++) {
+        unsigned l = lens[i];
+        if (!l) { codes[i] = 0; continue; }
+        unsigned c = next_code[l]++, rev = 0;
+        for (unsigned b = 0; b < l; b++) rev |= ((c >> b) & 1u) << (l - 1 - b);
+        codes[i] = (uint16_t)rev;
+    }
+}
+
+static unsigned fixed_ll_len(unsigned s) {
+    if (s <= 143) return 8;
+    if (s <= 255) return 9;
+    if (s <= 279) return 7;
+    return 8;
+}
+
+/*
+ * Encode one block of tokens, choosing the cheapest of stored / fixed /
+ * dynamic Huffman. blk/blk_len give the block's raw bytes (for the stored
+ * option). bfinal marks the last block. Returns 0, or -1 if dst overflows.
+ */
+static int emit_block(flate_bw_t *bw, const ftok_t *toks, int ntok,
+                      const uint8_t *blk, size_t blk_len, int bfinal) {
+#define WB(v,nb) do { if (fbw_bits(bw, (uint32_t)(v), (unsigned)(nb)) < 0) return -1; } while (0)
+    uint32_t lfreq[288], dfreq[30];
+    memset(lfreq, 0, sizeof(lfreq));
+    memset(dfreq, 0, sizeof(dfreq));
+    for (int i = 0; i < ntok; i++) {
+        if (toks[i].dist == 0) { lfreq[toks[i].lit]++; continue; }
+        unsigned lc, leb, lev, dc, deb, dev;
+        len_to_code(toks[i].len, &lc, &leb, &lev);
+        dist_to_code(toks[i].dist, &dc, &deb, &dev);
+        lfreq[lc]++; dfreq[dc]++;
+    }
+    lfreq[256]++;                       /* end-of-block */
+
+    uint8_t llen[288], dlen[30];
+    int dyn_ok = (huff_lengths(lfreq, 286, 15, llen) == 0)
+              && (huff_lengths(dfreq, 30, 15, dlen) == 0);
+
+    int any_dist = 0;
+    if (dyn_ok) for (int i = 0; i < 30; i++) if (dlen[i]) { any_dist = 1; break; }
+    if (dyn_ok && !any_dist) { dlen[0] = 1; dlen[1] = 1; }  /* complete dummy */
+
+    int hlit = 286; while (hlit > 257 && (!dyn_ok || llen[hlit - 1] == 0)) hlit--;
+    int hdist = 30; while (hdist > 1 && (!dyn_ok || dlen[hdist - 1] == 0)) hdist--;
+
+    static const int cl_order[19] =
+        {16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15};
+    uint8_t cllen[19];
+    struct { uint8_t sym, eb; uint16_t ev; } rec[286 + 30];
+    int nrec = 0, hclen = 4;
+    uint64_t dyn_total = (uint64_t)-1;
+
+    if (dyn_ok) {
+        uint8_t comb[286 + 30];
+        int total = 0;
+        for (int i = 0; i < hlit; i++) comb[total++] = llen[i];
+        for (int i = 0; i < hdist; i++) comb[total++] = dlen[i];
+
+        uint32_t clfreq[19];
+        memset(clfreq, 0, sizeof(clfreq));
+        int i = 0;
+        while (i < total) {             /* run-length encode the code lengths */
+            int cur = comb[i], run = 1;
+            while (i + run < total && comb[i + run] == cur) run++;
+            if (cur == 0) {
+                int rem = run;
+                while (rem >= 11) { int r = rem < 138 ? rem : 138;
+                    rec[nrec].sym = 18; rec[nrec].eb = 7; rec[nrec].ev = (uint16_t)(r - 11);
+                    nrec++; clfreq[18]++; rem -= r; }
+                while (rem >= 3) { int r = rem < 10 ? rem : 10;
+                    rec[nrec].sym = 17; rec[nrec].eb = 3; rec[nrec].ev = (uint16_t)(r - 3);
+                    nrec++; clfreq[17]++; rem -= r; }
+                while (rem > 0) {
+                    rec[nrec].sym = 0; rec[nrec].eb = 0; rec[nrec].ev = 0;
+                    nrec++; clfreq[0]++; rem--; }
+            } else {
+                rec[nrec].sym = (uint8_t)cur; rec[nrec].eb = 0; rec[nrec].ev = 0;
+                nrec++; clfreq[cur]++;
+                int rem = run - 1;
+                while (rem >= 3) { int r = rem < 6 ? rem : 6;
+                    rec[nrec].sym = 16; rec[nrec].eb = 2; rec[nrec].ev = (uint16_t)(r - 3);
+                    nrec++; clfreq[16]++; rem -= r; }
+                while (rem > 0) {
+                    rec[nrec].sym = (uint8_t)cur; rec[nrec].eb = 0; rec[nrec].ev = 0;
+                    nrec++; clfreq[cur]++; rem--; }
+            }
+            i += run;
+        }
+
+        if (huff_lengths(clfreq, 19, 7, cllen) != 0) dyn_ok = 0;
+        if (dyn_ok && (!code_complete(llen, 286, 15) ||
+                       !code_complete(dlen, 30, 15) ||
+                       !code_complete(cllen, 19, 7))) dyn_ok = 0;
+
+        if (dyn_ok) {
+            hclen = 19; while (hclen > 4 && cllen[cl_order[hclen - 1]] == 0) hclen--;
+            uint64_t bits = 3 + 5 + 5 + 4 + 3 * (uint64_t)hclen;
+            for (int r = 0; r < nrec; r++) bits += cllen[rec[r].sym] + rec[r].eb;
+            bits += llen[256];
+            for (int t = 0; t < ntok; t++) {
+                if (toks[t].dist == 0) { bits += llen[toks[t].lit]; continue; }
+                unsigned lc, leb, lev, dc, deb, dev;
+                len_to_code(toks[t].len, &lc, &leb, &lev);
+                dist_to_code(toks[t].dist, &dc, &deb, &dev);
+                bits += llen[lc] + leb + dlen[dc] + deb;
+            }
+            dyn_total = bits;
+        }
+    }
+
+    uint64_t fix_total = 3 + 7;          /* header + fixed EOB (7 bits) */
+    for (int t = 0; t < ntok; t++) {
+        if (toks[t].dist == 0) { fix_total += fixed_ll_len(toks[t].lit); continue; }
+        unsigned lc, leb, lev, dc, deb, dev;
+        len_to_code(toks[t].len, &lc, &leb, &lev);
+        dist_to_code(toks[t].dist, &dc, &deb, &dev);
+        fix_total += fixed_ll_len(lc) + leb + 5 + deb;
+    }
+
+    uint64_t stored_total = (blk_len <= 65535)
+        ? (3 + 7 + 32 + 8 * (uint64_t)blk_len) : (uint64_t)-1;
+
+    /* ---- Stored ---- */
+    if (stored_total <= fix_total && stored_total <= dyn_total) {
+        WB(bfinal, 1); WB(0, 2);
+        if (fbw_align(bw) < 0) return -1;
+        uint16_t len16 = (uint16_t)blk_len, nlen = (uint16_t)~len16;
+        if (fbw_byte(bw, (uint8_t)len16) < 0) return -1;
+        if (fbw_byte(bw, (uint8_t)(len16 >> 8)) < 0) return -1;
+        if (fbw_byte(bw, (uint8_t)nlen) < 0) return -1;
+        if (fbw_byte(bw, (uint8_t)(nlen >> 8)) < 0) return -1;
+        for (size_t i = 0; i < blk_len; i++)
+            if (fbw_byte(bw, blk[i]) < 0) return -1;
+        return 0;
+    }
+
+    /* ---- Dynamic Huffman ---- */
+    if (dyn_ok && dyn_total <= fix_total) {
+        uint16_t lcode[288], dcode[30], clcode[19];
+        build_enc(llen, 286, lcode);
+        build_enc(dlen, 30, dcode);
+        build_enc(cllen, 19, clcode);
+
+        WB(bfinal, 1); WB(2, 2);
+        WB(hlit - 257, 5); WB(hdist - 1, 5); WB(hclen - 4, 4);
+        for (int k = 0; k < hclen; k++) WB(cllen[cl_order[k]], 3);
+        for (int r = 0; r < nrec; r++) {
+            WB(clcode[rec[r].sym], cllen[rec[r].sym]);
+            if (rec[r].eb) WB(rec[r].ev, rec[r].eb);
+        }
+        for (int t = 0; t < ntok; t++) {
+            if (toks[t].dist == 0) { WB(lcode[toks[t].lit], llen[toks[t].lit]); continue; }
+            unsigned lc, leb, lev, dc, deb, dev;
+            len_to_code(toks[t].len, &lc, &leb, &lev);
+            dist_to_code(toks[t].dist, &dc, &deb, &dev);
+            WB(lcode[lc], llen[lc]); if (leb) WB(lev, leb);
+            WB(dcode[dc], dlen[dc]); if (deb) WB(dev, deb);
+        }
+        WB(lcode[256], llen[256]);
+        return 0;
+    }
+
+    /* ---- Fixed Huffman ---- */
+    WB(bfinal, 1); WB(1, 2);
+    for (int t = 0; t < ntok; t++) {
+        if (toks[t].dist == 0) {
+            if (emit_fixed_litlen(bw, toks[t].lit) < 0) return -1;
+            continue;
+        }
+        unsigned lc, leb, lev, dc, deb, dev;
+        len_to_code(toks[t].len, &lc, &leb, &lev);
+        dist_to_code(toks[t].dist, &dc, &deb, &dev);
+        if (emit_fixed_litlen(bw, lc) < 0) return -1;
+        if (leb) WB(lev, leb);
+        if (emit_fixed_dist(bw, dc) < 0) return -1;
+        if (deb) WB(dev, deb);
+    }
+    if (emit_fixed_litlen(bw, 256) < 0) return -1;
+    return 0;
+#undef WB
+}
+
+/* Token accumulator: buffers tokens, flushing a block when full. */
+typedef struct {
+    flate_bw_t *bw;
+    ftok_t     *toks;
+    int         ntok;
+    const uint8_t *src;
+    size_t      block_start, block_bytes;
+} flate_enc_t;
+
+static int enc_flush(flate_enc_t *e, int bfinal) {
+    if (e->ntok == 0 && !bfinal) return 0;
+    if (emit_block(e->bw, e->toks, e->ntok,
+                   e->src + e->block_start, e->block_bytes, bfinal) < 0)
+        return -1;
+    e->block_start += e->block_bytes;
+    e->block_bytes = 0;
+    e->ntok = 0;
+    return 0;
+}
+
+static int enc_lit(flate_enc_t *e, uint8_t b) {
+    e->toks[e->ntok].lit = b; e->toks[e->ntok].len = 0; e->toks[e->ntok].dist = 0;
+    e->ntok++; e->block_bytes += 1;
+    return (e->ntok >= FLATE_BLOCK_TOKENS) ? enc_flush(e, 0) : 0;
+}
+
+static int enc_match(flate_enc_t *e, unsigned len, unsigned dist) {
+    e->toks[e->ntok].lit = 0;
+    e->toks[e->ntok].len = (uint16_t)len;
+    e->toks[e->ntok].dist = (uint16_t)dist;
+    e->ntok++; e->block_bytes += len;
+    return (e->ntok >= FLATE_BLOCK_TOKENS) ? enc_flush(e, 0) : 0;
+}
+
+/* Insert position pos into the hash chain (requires pos+MIN_MATCH <= src_len). */
+static void hash_insert(uint32_t *head, uint32_t *prev,
+                        const uint8_t *src, size_t pos) {
+    unsigned h = hash3(src + pos);
+    prev[pos & (WINDOW_SIZE - 1)] = head[h];
+    head[h] = (uint32_t)pos;
+}
+
+/* Longest match for `pos` against the chain (does not insert pos). Reports a
+ * match only when it reaches MIN_MATCH; stops early at `nice` or the window. */
+static void find_match(const uint8_t *src, size_t src_len, size_t pos,
+                       const uint32_t *head, const uint32_t *prev,
+                       int max_chain, unsigned nice,
+                       unsigned *best_len, unsigned *best_dist) {
+    *best_len = 0; *best_dist = 0;
+    unsigned h = hash3(src + pos);
+    uint32_t cand = head[h];
+    unsigned maxl = (unsigned)(src_len - pos);
+    if (maxl > MAX_MATCH) maxl = MAX_MATCH;
+    unsigned bl = 0, bd = 0;
+    int chain = max_chain;
+    while (cand != FLATE_NIL && chain-- > 0) {
+        size_t c = cand;
+        unsigned dist = (unsigned)(pos - c);
+        if (dist > WINDOW_SIZE) break;   /* chain is recency-ordered */
+        if (bl == 0 || src[c + bl] == src[pos + bl]) {
+            unsigned ml = match_len(src + c, src + pos, maxl);
+            if (ml > bl) {
+                bl = ml; bd = dist;
+                if (ml >= maxl || ml >= nice) break;
+            }
+        }
+        cand = prev[c & (WINDOW_SIZE - 1)];
+    }
+    if (bl >= MIN_MATCH) { *best_len = bl; *best_dist = bd; }
+}
+
 /* ---- Compress ---- */
 
 int neverc_flate_compress(const uint8_t *src, size_t src_len,
@@ -218,93 +620,76 @@ int neverc_flate_compress(const uint8_t *src, size_t src_len,
         return 0;
     }
 
-    /* LZ77 + Fixed Huffman (levels 1-9) */
-    int max_chain = (level <= 3) ? 4 : (level <= 6) ? 16 : 128;
+    /* LZ77 + adaptive Huffman (levels 1-9). Levels 1-3 are greedy, 4-9 lazy.
+     * head/prev hold absolute positions so matching is correct past 64 KiB. */
+    static const int  chain_by_level[10] = {0, 4, 8, 32, 16, 32, 128, 256, 1024, 4096};
+    static const unsigned nice_by_level[10] = {0, 8, 16, 32, 16, 32, 128, 256, 258, 258};
+    int max_chain = chain_by_level[level];
+    unsigned nice = nice_by_level[level];
+    int use_lazy  = (level >= 4);
 
-    int16_t *head = (int16_t *)calloc(HASH_SIZE, sizeof(int16_t));
-    int16_t *prev = (int16_t *)calloc(WINDOW_SIZE, sizeof(int16_t));
-    if (!head || !prev) { free(head); free(prev); return -1; }
-    for (int i = 0; i < HASH_SIZE; i++) head[i] = -1;
+    uint32_t *head = (uint32_t *)malloc(HASH_SIZE * sizeof(uint32_t));
+    uint32_t *prev = (uint32_t *)malloc(WINDOW_SIZE * sizeof(uint32_t));
+    ftok_t   *toks = (ftok_t *)malloc(FLATE_BLOCK_TOKENS * sizeof(ftok_t));
+    if (!head || !prev || !toks) { free(head); free(prev); free(toks); return -1; }
+    for (int i = 0; i < HASH_SIZE; i++) head[i] = FLATE_NIL;
 
-    /* BFINAL=1, BTYPE=01 (fixed Huffman) */
-    if (fbw_bits(&bw, 1, 1) < 0) goto fail;
-    if (fbw_bits(&bw, 1, 2) < 0) goto fail;
-
+    flate_enc_t e = { &bw, toks, 0, src, 0, 0 };
     size_t pos = 0;
+    unsigned prev_len = 0, prev_dist = 0;
+    int have = 0;                        /* a deferred match pending at pos-1 */
+
     while (pos < src_len) {
-        unsigned best_len = 0, best_dist = 0;
-
+        unsigned cl = 0, cd = 0;
         if (pos + MIN_MATCH <= src_len) {
-            unsigned h = hash3(src + pos);
-            int chain = max_chain;
-            int16_t p = head[h];
-
-            while (p >= 0 && chain-- > 0) {
-                size_t candidate = (size_t)(uint16_t)p;
-                if (candidate < pos) {
-                    unsigned dist = (unsigned)(pos - candidate);
-                    if (dist <= WINDOW_SIZE) {
-                        unsigned maxl = (unsigned)(src_len - pos);
-                        if (maxl > MAX_MATCH) maxl = MAX_MATCH;
-                        unsigned ml = 0;
-                        while (ml < maxl && src[candidate + ml] == src[pos + ml])
-                            ml++;
-                        if (ml >= MIN_MATCH && ml > best_len) {
-                            best_len = ml;
-                            best_dist = dist;
-                            if (best_len == MAX_MATCH) break;
-                        }
-                    }
-                }
-                p = prev[(size_t)(uint16_t)p];
-            }
-
-            /* update hash chain */
-            prev[pos & (WINDOW_SIZE - 1)] = head[h];
-            head[h] = (int16_t)(pos & 0xFFFF);
+            find_match(src, src_len, pos, head, prev, max_chain, nice, &cl, &cd);
+            hash_insert(head, prev, src, pos);
         }
 
-        if (best_len >= MIN_MATCH) {
-            /* emit length code */
-            unsigned lcode, lextra_bits, lextra_val;
-            if (len_to_code(best_len, &lcode, &lextra_bits, &lextra_val) < 0) goto fail;
-            if (emit_fixed_litlen(&bw, lcode) < 0) goto fail;
-            if (lextra_bits > 0)
-                if (fbw_bits(&bw, lextra_val, lextra_bits) < 0) goto fail;
-
-            /* emit distance code */
-            unsigned dcode, dextra_bits, dextra_val;
-            if (dist_to_code(best_dist, &dcode, &dextra_bits, &dextra_val) < 0) goto fail;
-            if (emit_fixed_dist(&bw, dcode) < 0) goto fail;
-            if (dextra_bits > 0)
-                if (fbw_bits(&bw, dextra_val, dextra_bits) < 0) goto fail;
-
-            /* update hash for skipped positions */
-            for (unsigned k = 1; k < best_len && pos + k + MIN_MATCH <= src_len; k++) {
-                unsigned hk = hash3(src + pos + k);
-                prev[(pos + k) & (WINDOW_SIZE - 1)] = head[hk];
-                head[hk] = (int16_t)((pos + k) & 0xFFFF);
+        if (!use_lazy) {                 /* greedy */
+            if (cl >= MIN_MATCH) {
+                if (enc_match(&e, cl, cd) < 0) goto fail;
+                size_t mend = pos + cl;
+                for (size_t k = pos + 1; k < mend; k++)
+                    if (k + MIN_MATCH <= src_len) hash_insert(head, prev, src, k);
+                pos = mend;
+            } else {
+                if (enc_lit(&e, src[pos]) < 0) goto fail;
+                pos++;
             }
-            pos += best_len;
+            continue;
+        }
+
+        if (have) {                      /* lazy: compare deferred vs current */
+            if (cl > prev_len) {         /* current wins -> flush deferred literal */
+                if (enc_lit(&e, src[pos - 1]) < 0) goto fail;
+                prev_len = cl; prev_dist = cd;
+                pos++;
+            } else {                     /* deferred match wins -> emit it */
+                if (enc_match(&e, prev_len, prev_dist) < 0) goto fail;
+                size_t mend = (pos - 1) + prev_len;
+                for (size_t k = pos + 1; k < mend; k++)
+                    if (k + MIN_MATCH <= src_len) hash_insert(head, prev, src, k);
+                pos = mend;
+                have = 0; prev_len = 0;
+            }
         } else {
-            /* emit literal */
-            if (emit_fixed_litlen(&bw, src[pos]) < 0) goto fail;
-            pos++;
+            if (cl >= MIN_MATCH) { prev_len = cl; prev_dist = cd; have = 1; pos++; }
+            else { if (enc_lit(&e, src[pos]) < 0) goto fail; pos++; }
         }
     }
+    if (have)                            /* flush a deferred trailing match */
+        if (enc_match(&e, prev_len, prev_dist) < 0) goto fail;
 
-    /* emit end-of-block (code 256) */
-    if (emit_fixed_litlen(&bw, 256) < 0) goto fail;
+    if (enc_flush(&e, 1) < 0) goto fail; /* final block carries BFINAL=1 */
     if (fbw_flush(&bw) < 0) goto fail;
 
-    free(head);
-    free(prev);
+    free(head); free(prev); free(toks);
     *dst_len = bw.pos;
     return 0;
 
 fail:
-    free(head);
-    free(prev);
+    free(head); free(prev); free(toks);
     return -1;
 }
 
@@ -366,6 +751,50 @@ static int build_huffman(huff_table_t *ht, const uint8_t *lens, int count) {
         }
     }
     return 0;
+}
+
+/*
+ * Expand one LZ77 back reference: dst[out_pos+k] = dst[out_pos-distance+k] for
+ * k in [0,length). Replaces the byte-at-a-time loop the way zlib/libdeflate
+ * inflate, picking the cheapest strategy per shape and writing exactly `length`
+ * bytes (no output slack, so the caller's bounds check is unchanged):
+ *   - distance == 1     : a single repeated byte -> memset.
+ *   - distance >= length: source/destination are disjoint; a big run uses the
+ *     SIMD libc memcpy, a short run uses inline 8-byte + byte moves so the tiny
+ *     copies common in text never pay memcpy's call overhead.
+ *   - short overlap     : plain byte copy (cheaper than several tiny memcpys).
+ *   - long overlap      : lay down the first `distance`-byte period, then
+ *     replicate it from the run's start, doubling the copied span each step
+ *     (O(log length) large memcpys instead of O(length) byte stores).
+ */
+static void copy_match(uint8_t *dst, size_t out_pos,
+                       unsigned distance, unsigned length) {
+    uint8_t *out = dst + out_pos;
+    const uint8_t *from = dst + (out_pos - distance);
+
+    if (distance == 1) { memset(out, from[0], length); return; }
+
+    if (distance >= length) {                 /* disjoint source and dest */
+        if (length >= 16) { memcpy(out, from, length); return; }
+        unsigned len = length;
+        while (len >= 8) { memcpy(out, from, 8); out += 8; from += 8; len -= 8; }
+        while (len) { *out++ = *from++; len--; }
+        return;
+    }
+
+    if (length < 16) {                         /* short overlapping run */
+        for (unsigned k = 0; k < length; k++) out[k] = from[k];
+        return;
+    }
+
+    memcpy(out, from, distance);               /* longer overlap: period doubling */
+    size_t filled = distance;
+    while (filled < length) {
+        size_t chunk = (size_t)length - filled;
+        if (chunk > filled) chunk = filled;
+        memcpy(out + filled, out, chunk);
+        filled += chunk;
+    }
 }
 
 static int huff_decode(huff_table_t *ht, flate_br_t *r, uint16_t *sym) {
@@ -521,8 +950,7 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
                     }
 
                     if (distance > out_pos || out_pos + length > out_cap) goto err;
-                    for (unsigned k = 0; k < length; k++)
-                        dst[out_pos + k] = dst[out_pos - distance + k];
+                    copy_match(dst, out_pos, distance, length);
                     out_pos += length;
                 }
             }
