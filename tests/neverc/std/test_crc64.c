@@ -72,12 +72,33 @@ static void test_different_polys(void) {
     check_true("ECMA != 0", c_ecma != 0);
 }
 
+/* Regression: reusing one table buffer for a different polynomial must not
+ * return a stale slicing-8 result for len >= 64. */
+static void test_table_buffer_reuse(void) {
+    printf("[table buffer reuse]\n");
+    uint8_t data[128];
+    for (int i = 0; i < 128; i++) data[i] = (uint8_t)(i * 7 + 1);
+
+    neverc_crc64_table_t reused;
+    neverc_crc64_make_table(NEVERC_CRC64_ECMA, reused);
+    (void)neverc_crc64_checksum(reused, data, sizeof data);  /* warm the cache */
+    neverc_crc64_make_table(NEVERC_CRC64_ISO, reused);        /* same buffer, new poly */
+    uint64_t got = neverc_crc64_checksum(reused, data, sizeof data);
+
+    neverc_crc64_table_t fresh;
+    neverc_crc64_make_table(NEVERC_CRC64_ISO, fresh);
+    uint64_t want = neverc_crc64_checksum(fresh, data, sizeof data);
+
+    check_u64("reuse buffer (iso after ecma)", got, want);
+}
+
 int main(void) {
     printf("=== NeverC CRC-64 Library Tests ===\n\n");
     test_ecma_known();
     test_iso_known();
     test_incremental();
     test_different_polys();
+    test_table_buffer_reuse();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

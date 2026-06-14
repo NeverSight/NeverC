@@ -70,6 +70,26 @@ static void test_castagnoli(void) {
               0xE3069283);
 }
 
+/* Regression: reusing one table buffer for a different polynomial must not
+ * return a stale slicing-8 result for len >= 64. */
+static void test_table_buffer_reuse(void) {
+    printf("[table_buffer_reuse]\n");
+    uint8_t data[128];
+    for (int i = 0; i < 128; i++) data[i] = (uint8_t)(i * 7 + 1);
+
+    neverc_crc32_table_t reused;
+    neverc_crc32_make_table(NEVERC_CRC32_IEEE, reused);
+    (void)neverc_crc32_checksum(reused, data, sizeof data);  /* warm the cache */
+    neverc_crc32_make_table(NEVERC_CRC32_CASTAGNOLI, reused); /* same buffer, new poly */
+    uint32_t got = neverc_crc32_checksum(reused, data, sizeof data);
+
+    neverc_crc32_table_t fresh;
+    neverc_crc32_make_table(NEVERC_CRC32_CASTAGNOLI, fresh);
+    uint32_t want = neverc_crc32_checksum(fresh, data, sizeof data);
+
+    check_u32("reuse buffer (castagnoli after ieee)", got, want);
+}
+
 static void test_zero_data(void) {
     printf("[zero_data]\n");
     uint8_t zeros[16] = {0};
@@ -90,6 +110,7 @@ int main(void) {
     test_make_table();
     test_update();
     test_castagnoli();
+    test_table_buffer_reuse();
     test_zero_data();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

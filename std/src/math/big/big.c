@@ -78,7 +78,8 @@ void neverc_bigint_free(neverc_bigint_t *z) {
 
 void neverc_bigint_set_int64(neverc_bigint_t *z, int64_t x) {
     z->neg = (x < 0);
-    uint64_t v = (uint64_t)(x < 0 ? -x : x);
+    /* Negate in unsigned space: -x on INT64_MIN is signed-overflow UB. */
+    uint64_t v = (x < 0) ? -(uint64_t)x : (uint64_t)x;
     if (v == 0) { z->len = 0; return; }
     ensure_cap(z, 2);
     z->digits[0] = (uint32_t)(v & 0xFFFFFFFFULL);
@@ -267,7 +268,9 @@ int64_t neverc_bigint_int64(const neverc_bigint_t *x) {
     uint64_t v = 0;
     if (x->len >= 1) v = x->digits[0];
     if (x->len >= 2) v |= (uint64_t)x->digits[1] << 32;
-    return x->neg ? -(int64_t)v : (int64_t)v;
+    /* Negate in unsigned space then reinterpret: -(int64_t)v is UB when the
+     * magnitude is 2^63 (e.g. a bigint equal to INT64_MIN). */
+    return x->neg ? (int64_t)(0ULL - v) : (int64_t)v;
 }
 
 uint64_t neverc_bigint_uint64(const neverc_bigint_t *x) {

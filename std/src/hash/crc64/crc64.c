@@ -66,7 +66,16 @@ uint64_t neverc_crc64_update(uint64_t crc, const neverc_crc64_table_t table,
             crc = table[(uint8_t)(crc) ^ data[i]] ^ (crc >> 8);
         return ~crc;
     }
-    if (table != cached_crc64_src) {
+    /* Rebuild the cached slicing-8 tables when the source table pointer
+     * changes OR when the same buffer was refilled with a different
+     * polynomial. cached_crc64_s8[0] is a copy of the source table, so a
+     * mismatch on a few sentinel entries means the cache is stale; without
+     * this check, reusing one neverc_crc64_table_t buffer across polynomials
+     * would silently return wrong checksums for len >= 64. */
+    if (table != cached_crc64_src ||
+        cached_crc64_s8[0][1]   != table[1]   ||
+        cached_crc64_s8[0][128] != table[128] ||
+        cached_crc64_s8[0][255] != table[255]) {
         build_slicing8_from_table(table, cached_crc64_s8);
         cached_crc64_src = table;
     }

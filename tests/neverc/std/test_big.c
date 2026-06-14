@@ -44,6 +44,27 @@ static void test_set_int64(void) {
     neverc_bigint_free(&a);
 }
 
+static void test_int64_min_boundary(void) {
+    printf("[int64_min_boundary]\n");
+    neverc_bigint_t a;
+    neverc_bigint_init(&a);
+    char buf[64];
+
+    /* INT64_MIN: magnitude 2^63 must not be reached via signed negation (UB). */
+    int64_t imin = -9223372036854775807LL - 1;
+    neverc_bigint_set_int64(&a, imin);
+    ASSERT_TRUE(neverc_bigint_int64(&a) == imin);
+    ASSERT_INT_EQ(neverc_bigint_sign(&a), -1);
+    ASSERT_INT_EQ(neverc_bigint_string(&a, 10, buf, sizeof buf) >= 0, 1);
+    ASSERT_STR_EQ(buf, "-9223372036854775808");
+
+    /* Round-trip the decimal form back. */
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "-9223372036854775808", 10), 0);
+    ASSERT_TRUE(neverc_bigint_int64(&a) == imin);
+
+    neverc_bigint_free(&a);
+}
+
 static void test_set_string(void) {
     printf("[set_string]\n");
     neverc_bigint_t a;
@@ -688,6 +709,7 @@ static void test_string_huge_roundtrip(void) {
 int main(void) {
     printf("=== NeverC math/big Tests ===\n");
     test_set_int64();
+    test_int64_min_boundary();
     test_set_string();
     test_add();
     test_sub();
