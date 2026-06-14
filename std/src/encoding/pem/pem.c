@@ -86,7 +86,19 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
     if (!begin) return -1;
 
     const char *type_start = begin + 11;
-    const char *dash_end = strstr(type_start, DASHES);
+    /* Find the closing "-----" within the buffer. strstr scans until a NUL, so
+     * on length-delimited input that is not NUL-terminated (mmap'd files,
+     * network buffers — the reason this API takes pem_len) it reads past
+     * pem_end. Bound the search to pem_end, mirroring the BEGIN/END scans. */
+    size_t dash_len = strlen(DASHES);
+    const char *dash_end = NULL;
+    for (const char *s = type_start; s + dash_len <= pem_end; ) {
+        const char *cand = (const char *)memchr(s, DASHES[0],
+                                                (size_t)((pem_end - dash_len) - s) + 1);
+        if (!cand) break;
+        if (memcmp(cand, DASHES, dash_len) == 0) { dash_end = cand; break; }
+        s = cand + 1;
+    }
     if (!dash_end) return -1;
 
     size_t type_len = (size_t)(dash_end - type_start);

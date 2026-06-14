@@ -72,12 +72,29 @@ int neverc_plan9_parse(neverc_plan9_file_t *f, const uint8_t *buf, size_t len) {
         return -1;
     }
 
-    uint32_t off = (uint32_t)f->hdr_size;
+    uint64_t off = f->hdr_size;
     for (int i = 0; i < 5; i++) {
+        if (off > len) {
+            for (int j = 0; j < i; j++) free(f->sections[j].name);
+            free(f->sections);
+            free(f->data);
+            f->sections = NULL;
+            f->data = NULL;
+            return -1;
+        }
         f->sections[i].name   = strdup(sect_names[i]);
         f->sections[i].size   = sect_sizes[i];
-        f->sections[i].offset = off;
-        off += sect_sizes[i];
+        f->sections[i].offset = (uint32_t)off;
+        uint64_t next = off + sect_sizes[i];
+        if (next > len) {
+            for (int j = 0; j <= i; j++) free(f->sections[j].name);
+            free(f->sections);
+            free(f->data);
+            f->sections = NULL;
+            f->data = NULL;
+            return -1;
+        }
+        off = next;
     }
 
     return 0;
@@ -138,7 +155,7 @@ int neverc_plan9_section_data(neverc_plan9_file_t *f,
         return -1;
     if (cap < sect->size)
         return -1;
-    if ((size_t)sect->offset + sect->size > f->data_len)
+    if (sect->offset > f->data_len || sect->size > f->data_len - sect->offset)
         return -1;
     memcpy(buf, f->data + sect->offset, sect->size);
     return 0;
@@ -148,7 +165,7 @@ int neverc_plan9_symbols(neverc_plan9_file_t *f) {
     neverc_plan9_section_t *syms = neverc_plan9_section(f, "syms");
     if (!syms || syms->size == 0)
         return -1;
-    if ((size_t)syms->offset + syms->size > f->data_len)
+    if (syms->offset > f->data_len || syms->size > f->data_len - syms->offset)
         return -1;
 
     const uint8_t *p = f->data + syms->offset;

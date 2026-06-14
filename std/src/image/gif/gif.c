@@ -306,6 +306,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             (void)left; (void)top;
 
             int has_lct = (img_packed >> 7) & 1;
+            int interlaced = (img_packed >> 6) & 1;
             int lct_size = has_lct ? (1 << ((img_packed & 7) + 1)) : 0;
 
             neverc_gif_color_t *palette = gct;
@@ -469,6 +470,30 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             }
 
             free(lzw_data);
+
+            /* De-interlace. A GIF marked interlaced stores its rows in four
+             * passes (start/step: 0/8, 4/8, 2/4, 1/2); the LZW output above is
+             * those rows back-to-back in pass order, so scatter each decoded
+             * row to its true position. indices is calloc'd, so any rows left
+             * undecoded on truncated input stay zero — same as before. */
+            if (interlaced && fw > 0 && fh > 0) {
+                uint8_t *deint = (uint8_t *)malloc(pixel_count);
+                if (deint) {
+                    static const int pass_start[4] = {0, 4, 2, 1};
+                    static const int pass_step[4]  = {8, 8, 4, 2};
+                    size_t src = 0;
+                    for (int p = 0; p < 4; p++) {
+                        for (size_t row = (size_t)pass_start[p]; row < fh;
+                             row += (size_t)pass_step[p]) {
+                            memcpy(deint + row * (size_t)fw,
+                                   indices + src * (size_t)fw, fw);
+                            src++;
+                        }
+                    }
+                    free(indices);
+                    indices = deint;
+                }
+            }
 
             /* Store frame */
             if (img->num_frames >= frame_cap) {

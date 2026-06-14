@@ -33,16 +33,27 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         uint16_t name_len = read16(data + pos + 26);
         uint16_t extra_len = read16(data + pos + 28);
 
+        /* Bound every field read and the advance step. comp_size/name_len/extra_len
+         * are attacker-controlled; `pos + 30 + name_len + extra_len + comp_size`
+         * can overflow size_t or run past `len`, leaving file_data dangling past the
+         * buffer (and pos stuck or wrapping on 32-bit). Use 64-bit sums and reject
+         * entries that do not fully fit. */
+        uint64_t hdr_end = (uint64_t)pos + 30u + (uint64_t)name_len + (uint64_t)extra_len;
+        if (hdr_end > len) break;
+        if ((uint64_t)comp_size > len - hdr_end) break;
+
         if (r->nfiles >= cap) {
             cap *= 2;
             r->files = (neverc_zip_file_header_t *)realloc(r->files, cap * sizeof(neverc_zip_file_header_t));
             r->file_data = (const uint8_t **)realloc(r->file_data, cap * sizeof(uint8_t *));
+            if (!r->files || !r->file_data) return -1;
         }
 
         neverc_zip_file_header_t *f = &r->files[r->nfiles];
         memset(f, 0, sizeof(*f));
         size_t nl = name_len < 255 ? name_len : 255;
-        memcpy(f->name, data + pos + 30, nl);
+        if (name_len > 0)
+            memcpy(f->name, data + pos + 30, nl);
         f->name[nl] = '\0';
         f->method = method;
         f->crc32 = crc;
@@ -51,10 +62,10 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         f->mod_time = mod_time;
         f->mod_date = mod_date;
 
-        r->file_data[r->nfiles] = data + pos + 30 + name_len + extra_len;
+        r->file_data[r->nfiles] = data + (size_t)hdr_end;
         r->nfiles++;
 
-        pos += 30 + name_len + extra_len + comp_size;
+        pos = (size_t)(hdr_end + comp_size);
     }
     return 0;
 }

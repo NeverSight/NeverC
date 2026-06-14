@@ -81,10 +81,28 @@ static void test_crc_integrity(void) {
     neverc_zip_writer_free(&w);
 }
 
+/* Crafted local header: huge comp_size must not advance pos past the buffer or
+ * leave file_data pointing OOB. */
+static void test_truncated_entry(void) {
+    printf("[truncated entry]\n");
+    uint8_t buf[64];
+    memset(buf, 0, sizeof(buf));
+    buf[0] = 0x50; buf[1] = 0x4b; buf[2] = 0x03; buf[3] = 0x04; /* PK\x03\x04 */
+    buf[26] = 4; buf[27] = 0;   /* name_len LE */
+    memcpy(buf + 30, "evil", 4);
+    buf[18] = 0xFF; buf[19] = 0xFF; buf[20] = 0xFF; buf[21] = 0xFF; /* comp_size */
+
+    neverc_zip_reader_t r;
+    check_int("init ok", neverc_zip_reader_init(&r, buf, sizeof(buf)), 0);
+    check_int("no files", neverc_zip_reader_count(&r), 0);
+    neverc_zip_reader_free(&r);
+}
+
 int main(void) {
     printf("=== NeverC Archive/ZIP Module Tests ===\n\n");
     test_roundtrip();
     test_crc_integrity();
+    test_truncated_entry();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

@@ -67,7 +67,15 @@ size_t neverc_base32_encoded_len(size_t n) {
 }
 
 size_t neverc_base32_decoded_len(size_t n) {
-    return (n / 8) * 5;
+    /* Upper bound on bytes the decoder may write for n input chars. The decoder
+     * strips trailing '=' then a leftover group of 2/4/5/7 chars yields 1/2/3/4
+     * bytes. Because stripping can turn n%8 into a *smaller* remainder with a
+     * *larger* yield (e.g. n%8==3 -> after one '=' m%8==2 writes 1 byte), the
+     * bound must be the prefix-maximum of that yield over all m<=n, not the
+     * yield at n%8 itself. The old (n/8)*5 (and a naive per-remainder bump)
+     * under-reported this, overflowing a caller's buffer on unpadded input. */
+    static const unsigned char extra[8] = {0, 0, 1, 1, 2, 3, 3, 4};
+    return (n / 8) * 5 + extra[n % 8];
 }
 
 static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,

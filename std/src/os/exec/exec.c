@@ -102,9 +102,13 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
     for (int i = 0; i < cmd->argc; i++)
         cmdlen += strlen(cmd->argv[i]) + 3;
     char *cmdline = (char *)malloc(cmdlen + 1);
-    cmdline[0] = '\0';
+    /* Append with a running offset instead of strcat: each strcat re-scanned the
+     * whole accumulated string, making the build O(total_len^2). memcpy at the
+     * tracked end is O(total_len) and writes byte-identical output. The +3/arg
+     * reservation (leading space + two quotes) bounds every write below. */
+    size_t pos = 0;
     for (int i = 0; i < cmd->argc; i++) {
-        if (i > 0) strcat(cmdline, " ");
+        if (i > 0) cmdline[pos++] = ' ';
         int needs_quote = 0;
         for (const char *p = cmd->argv[i]; *p; p++) {
             if (*p == ' ' || *p == '\t' || *p == '"' || *p == '&' ||
@@ -113,14 +117,16 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
                 break;
             }
         }
+        size_t alen = strlen(cmd->argv[i]);
         if (needs_quote || cmd->argv[i][0] == '\0') {
-            strcat(cmdline, "\"");
-            strcat(cmdline, cmd->argv[i]);
-            strcat(cmdline, "\"");
+            cmdline[pos++] = '"';
+            memcpy(cmdline + pos, cmd->argv[i], alen); pos += alen;
+            cmdline[pos++] = '"';
         } else {
-            strcat(cmdline, cmd->argv[i]);
+            memcpy(cmdline + pos, cmd->argv[i], alen); pos += alen;
         }
     }
+    cmdline[pos] = '\0';
 
     STARTUPINFOA si = {sizeof(si)};
     si.dwFlags = STARTF_USESTDHANDLES;

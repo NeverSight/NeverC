@@ -267,8 +267,14 @@ int neverc_lzw_decompress(const uint8_t *src, size_t src_len,
             if (out_pos >= out_cap) return -1;
             dst[out_pos++] = (uint8_t)code;
             cur_first = (uint8_t)code;
-        } else if (code < hi) {
-            /* already-defined entry: write the chain backwards into dst */
+        } else if (code < hi || (code == hi && last == INVALID_CODE16)) {
+            /* Already-defined entry: write the chain backwards into dst.
+             * `code == hi` is reachable here only in the frozen-dictionary
+             * state (table full at MAX_WIDTH, `last` reset to INVALID): the
+             * top entry `hi` was defined just before the freeze, so its chain
+             * is valid. This mirrors the textbook `code <= hi` acceptance and
+             * is required to decode TIFF/GIF "deferred clear" streams that keep
+             * using the highest code instead of emitting a clear. */
             size_t L = length[code];
             if (out_pos + L > out_cap) return -1;
             size_t w = out_pos + L;

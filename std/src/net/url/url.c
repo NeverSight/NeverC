@@ -102,6 +102,12 @@ int neverc_url_parse(neverc_url_t *u, const char *raw_url) {
     const char *query = strchr(p, '?');
     const char *frag = strchr(p, '#');
 
+    /* The fragment begins at the first '#'; a '?' after it is part of the
+     * fragment, not a query. Without this, `q_end - query - 1` below goes
+     * negative and, as a size_t, wraps to a huge length that safe_copy clamps to
+     * the destination capacity and memcpy reads out of bounds (e.g. "a#b?c"). */
+    if (query && frag && query > frag) query = NULL;
+
     if (frag) {
         safe_copy(u->fragment, sizeof(u->fragment), frag + 1, strlen(frag + 1));
     }

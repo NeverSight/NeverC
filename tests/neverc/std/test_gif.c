@@ -1,4 +1,5 @@
 #include "neverc/std/image/gif.h"
+#include "neverc/std/compress/lzw.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -195,6 +196,73 @@ static void test_large_roundtrip(void) {
     rt_check("grad2",    64,  64,  2,   rt_gradient);
 }
 
+/* Interlaced GIFs store rows in four passes (0/8, 4/8, 2/4, 1/2). Build a
+ * minimal 4x4 fixture with pass-ordered LZW payload and verify de-interlace. */
+static void gw_put(uint8_t **buf, size_t *cap, size_t *pos, uint8_t b) {
+    if (*pos >= *cap) {
+        *cap *= 2;
+        *buf = (uint8_t *)realloc(*buf, *cap);
+    }
+    (*buf)[(*pos)++] = b;
+}
+
+static void test_interlaced_decode(void) {
+    printf("[interlaced_decode]\n");
+    const int fw = 4, fh = 4;
+    uint8_t pass_rows[4][4] = {
+        {0,0,0,0}, {1,1,1,1}, {0,0,0,0}, {1,1,1,1}  /* raster rows 0..3 */
+    };
+    static const int pass_start[4] = {0, 4, 2, 1};
+    static const int pass_step[4]  = {8, 8, 4, 2};
+    uint8_t lzw_in[16];
+    size_t li = 0;
+    for (int p = 0; p < 4; p++)
+        for (int row = pass_start[p]; row < fh; row += pass_step[p])
+            memcpy(lzw_in + li, pass_rows[row], (size_t)fw), li += (size_t)fw;
+
+    uint8_t lzw[256];
+    size_t lzw_len = sizeof(lzw);
+    ASSERT_EQ(neverc_lzw_compress(lzw_in, sizeof(lzw_in), lzw, &lzw_len,
+                                  NEVERC_LZW_LSB, 2), 0);
+
+    size_t cap = 512, pos = 0;
+    uint8_t *gif = (uint8_t *)malloc(cap);
+    const uint8_t hdr[] = "GIF89a";
+    for (size_t i = 0; i < sizeof(hdr) - 1; i++) gw_put(&gif, &cap, &pos, hdr[i]);
+    gw_put(&gif, &cap, &pos, (uint8_t)fw); gw_put(&gif, &cap, &pos, 0);
+    gw_put(&gif, &cap, &pos, (uint8_t)fh); gw_put(&gif, &cap, &pos, 0);
+    gw_put(&gif, &cap, &pos, 0x91); /* GCT, 2-color */
+    gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0);
+    for (int i = 0; i < 8; i++) { gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0); }
+    gw_put(&gif, &cap, &pos, 0x2C);
+    gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0);
+    gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0);
+    gw_put(&gif, &cap, &pos, (uint8_t)fw); gw_put(&gif, &cap, &pos, 0);
+    gw_put(&gif, &cap, &pos, (uint8_t)fh); gw_put(&gif, &cap, &pos, 0);
+    gw_put(&gif, &cap, &pos, 0x40); /* interlaced, no local palette */
+    gw_put(&gif, &cap, &pos, 2);    /* LZW min code size */
+    size_t off = 0;
+    while (off < lzw_len) {
+        uint8_t n = (uint8_t)((lzw_len - off > 255) ? 255 : (lzw_len - off));
+        gw_put(&gif, &cap, &pos, n);
+        for (uint8_t i = 0; i < n; i++) gw_put(&gif, &cap, &pos, lzw[off++]);
+    }
+    gw_put(&gif, &cap, &pos, 0);
+    gw_put(&gif, &cap, &pos, 0x3B);
+
+    neverc_gif_image_t img;
+    ASSERT_EQ(neverc_gif_decode(gif, pos, &img), 0);
+    ASSERT_EQ(img.num_frames, 1);
+    ASSERT_EQ(img.frames[0].width, (uint32_t)fw);
+    ASSERT_EQ(img.frames[0].height, (uint32_t)fh);
+    for (int y = 0; y < fh; y++)
+        for (int x = 0; x < fw; x++)
+            ASSERT_EQ(img.frames[0].indices[y * fw + x], (uint8_t)(y & 1));
+
+    neverc_gif_free(&img);
+    free(gif);
+}
+
 int main(void) {
     printf("NeverC image/gif tests\n");
     test_encode_decode();
@@ -202,6 +270,7 @@ int main(void) {
     test_invalid_data();
     test_single_color();
     test_large_roundtrip();
+    test_interlaced_decode();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

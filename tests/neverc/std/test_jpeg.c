@@ -179,6 +179,43 @@ static void test_quality_levels(void) {
     free(img.pixels);
 }
 
+static void test_sof_chroma_420(void) {
+    printf("[sof_chroma_420]\n");
+    neverc_jpeg_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 32; img.height = 32; img.channels = 3;
+    img.stride = 32 * 3;
+    img.pixels = (uint8_t *)malloc(img.height * img.stride);
+    memset(img.pixels, 80, img.height * img.stride);
+
+    uint8_t *jpeg_data = NULL;
+    size_t jpeg_len = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&img, 85, &jpeg_data, &jpeg_len), 0);
+
+    /* Locate SOF0 (FF C0) and verify 4:2:0 sampling factors (Y=0x22, Cb/Cr=0x11). */
+    int saw_sof = 0;
+    for (size_t i = 0; i + 1 < jpeg_len; i++) {
+        if (jpeg_data[i] == 0xFF && jpeg_data[i + 1] == 0xC0) {
+            size_t p = i + 10; /* SOF0: marker(2)+len(2)+prec(1)+dims(4)+ncomp(1) */
+            ASSERT_EQ(jpeg_data[p + 0], 1); ASSERT_EQ(jpeg_data[p + 1], 0x22);
+            ASSERT_EQ(jpeg_data[p + 3], 2); ASSERT_EQ(jpeg_data[p + 4], 0x11);
+            ASSERT_EQ(jpeg_data[p + 6], 3); ASSERT_EQ(jpeg_data[p + 7], 0x11);
+            saw_sof = 1;
+            break;
+        }
+    }
+    ASSERT_TRUE(saw_sof);
+
+    neverc_jpeg_image_t decoded;
+    ASSERT_EQ(neverc_jpeg_decode(jpeg_data, jpeg_len, &decoded), 0);
+    ASSERT_EQ(decoded.width, 32);
+    ASSERT_EQ(decoded.height, 32);
+
+    free(jpeg_data);
+    neverc_jpeg_free(&decoded);
+    free(img.pixels);
+}
+
 int main(void) {
     printf("NeverC image/jpeg tests\n");
     test_encode_decode_rgb();
@@ -186,6 +223,7 @@ int main(void) {
     test_gradient();
     test_invalid_data();
     test_quality_levels();
+    test_sof_chroma_420();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

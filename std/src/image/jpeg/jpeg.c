@@ -33,16 +33,24 @@ static const uint8_t std_chrom_quant[64] = {
     99,99,99,99,99,99,99,99, 99,99,99,99,99,99,99,99
 };
 
-/* Zigzag ordering */
-static const int zigzag[64] = {
-     0, 1, 5, 6,14,15,27,28,
-     2, 4, 7,13,16,26,29,42,
-     3, 8,12,17,25,30,41,43,
-     9,11,18,24,31,40,44,53,
-    10,19,23,32,39,45,52,54,
-    20,22,33,38,46,51,55,60,
-    21,34,37,47,50,56,59,61,
-    35,36,48,49,57,58,62,63
+/* JPEG zigzag scan order: jpeg_natural_order[s] is the natural (row-major) 8x8
+ * index of the coefficient carried at zigzag scan position s. Entropy-coded
+ * coefficients arrive in scan order; this maps each to its row-major slot for
+ * the DCT/IDCT (and back). This is the standard JFIF / libjpeg ordering and is
+ * mandatory for interop with every other JPEG codec. NOTE: the previous table
+ * here was the *inverse* permutation (natural -> scan) and was applied as if it
+ * were scan -> natural in both the encoder and decoder; the two cancelled in
+ * NeverC's own round-trip but produced a stream no other decoder (browsers,
+ * libjpeg, cameras) could read, and likewise garbled real-world JPEGs. */
+static const int jpeg_natural_order[64] = {
+     0,  1,  8, 16,  9,  2,  3, 10,
+    17, 24, 32, 25, 18, 11,  4,  5,
+    12, 19, 26, 33, 40, 48, 41, 34,
+    27, 20, 13,  6,  7, 14, 21, 28,
+    35, 42, 49, 56, 57, 50, 43, 36,
+    29, 22, 15, 23, 30, 37, 44, 51,
+    58, 59, 52, 45, 38, 31, 39, 46,
+    53, 60, 61, 54, 47, 55, 62, 63
 };
 
 /* Standard Huffman tables (from JPEG spec, Annex K) */
@@ -216,13 +224,13 @@ static int bit_length(int val) {
 /* Precompute the per-coefficient quantization reciprocals once per table. The
  * AAN fast DCT leaves coefficient nat scaled by aanscale[row]*aanscale[col];
  * folding that, the 1/8 DCT normalization and 1/quant into a single reciprocal
- * (zigzag-ordered to match the emit loop) turns encode_block's hot path from a
+ * (scan-ordered to match the emit loop) turns encode_block's hot path from a
  * per-block divisor rebuild + true divide into one multiply — the libjpeg float
- * quantization. recip[i] pairs with fdata[zigzag[i]]. */
+ * quantization. recip[i] pairs with fdata[jpeg_natural_order[i]]. */
 static void jpeg_recip_table(double *recip, const uint8_t *quant) {
     for (int i = 0; i < 64; i++) {
-        int nat = zigzag[i];
-        double div = (double)quant[i] * 8.0 * aanscale[nat >> 3] * aanscale[nat & 7];
+        int nat = jpeg_natural_order[i];   /* natural slot for scan position i */
+        double div = (double)quant[nat] * 8.0 * aanscale[nat >> 3] * aanscale[nat & 7];
         recip[i] = 1.0 / div;
     }
 }
@@ -236,7 +244,7 @@ static void encode_block(bitwriter_t *bw, int *block, const double *recip,
 
     int quantized[64];
     for (int i = 0; i < 64; i++) {
-        double val = (double)fdata[zigzag[i]] * recip[i];
+        double val = (double)fdata[jpeg_natural_order[i]] * recip[i];
         quantized[i] = (int)(val > 0 ? val + 0.5 : val - 0.5);
     }
 
@@ -327,12 +335,13 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
     uint8_t app0[] = {0,16, 'J','F','I','F',0, 1,1, 0, 0,1,0,1, 0,0};
     bw_write_raw(&bw, app0, sizeof(app0));
 
-    /* DQT - luminance */
+    /* DQT - luminance. The DQT segment carries the 64 quant values in zigzag
+     * scan order (ITU T.81 B.2.4.1), so reorder our natural-order table. */
     write_marker(&bw, 0xDB);
     bw_ensure(&bw, 69);
     bw.buf[bw.pos++] = 0; bw.buf[bw.pos++] = 67; /* length */
     bw.buf[bw.pos++] = 0; /* table 0 */
-    memcpy(bw.buf + bw.pos, lum_quant, 64); bw.pos += 64;
+    for (int s = 0; s < 64; s++) bw.buf[bw.pos++] = lum_quant[jpeg_natural_order[s]];
 
     /* DQT - chrominance (only for color) */
     if (img->channels == 3) {
@@ -340,7 +349,7 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
         bw_ensure(&bw, 69);
         bw.buf[bw.pos++] = 0; bw.buf[bw.pos++] = 67;
         bw.buf[bw.pos++] = 1; /* table 1 */
-        memcpy(bw.buf + bw.pos, chrom_quant, 64); bw.pos += 64;
+        for (int s = 0; s < 64; s++) bw.buf[bw.pos++] = chrom_quant[jpeg_natural_order[s]];
     }
 
     /* SOF0 (baseline DCT) */
@@ -359,7 +368,7 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
     if (ncomp == 1) {
         bw.buf[bw.pos++] = 1; bw.buf[bw.pos++] = 0x11; bw.buf[bw.pos++] = 0;
     } else {
-        bw.buf[bw.pos++] = 1; bw.buf[bw.pos++] = 0x11; bw.buf[bw.pos++] = 0; /* Y */
+        bw.buf[bw.pos++] = 1; bw.buf[bw.pos++] = 0x22; bw.buf[bw.pos++] = 0; /* Y 4:2:0 */
         bw.buf[bw.pos++] = 2; bw.buf[bw.pos++] = 0x11; bw.buf[bw.pos++] = 1; /* Cb */
         bw.buf[bw.pos++] = 3; bw.buf[bw.pos++] = 0x11; bw.buf[bw.pos++] = 1; /* Cr */
     }
@@ -388,9 +397,10 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
     }
     bw.buf[bw.pos++] = 0; bw.buf[bw.pos++] = 63; bw.buf[bw.pos++] = 0;
 
-    /* Encode MCUs */
-    uint32_t mcu_w = (img->width + 7) / 8;
-    uint32_t mcu_h = (img->height + 7) / 8;
+    /* Encode MCUs. Color images use 4:2:0 (16x16 luma MCU = four 8x8 Y blocks
+     * plus one 8x8 Cb and one 8x8 Cr, each chroma block covering the MCU). */
+    uint32_t mcu_w = (ncomp == 1) ? (img->width + 7) / 8 : (img->width + 15) / 16;
+    uint32_t mcu_h = (ncomp == 1) ? (img->height + 7) / 8 : (img->height + 15) / 16;
     int prev_dc_y = 0, prev_dc_cb = 0, prev_dc_cr = 0;
 
     for (uint32_t my = 0; my < mcu_h; my++) {
@@ -409,32 +419,46 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
                 encode_block(&bw, block, lum_recip, &prev_dc_y, dc_lum, ac_lum);
             } else {
                 int y_block[64], cb_block[64], cr_block[64];
-                for (int by = 0; by < 8; by++) {
-                    for (int bx = 0; bx < 8; bx++) {
-                        uint32_t px = mx * 8 + (uint32_t)bx;
-                        uint32_t py = my * 8 + (uint32_t)by;
-                        if (px >= img->width) px = img->width - 1;
-                        if (py >= img->height) py = img->height - 1;
-                        const uint8_t *p = img->pixels + py * img->stride + px * 3;
-                        int r = p[0], g = p[1], b = p[2];
-                        /* ITU-R BT.601 in 16-bit fixed point (the JFIF/JPEG
-                         * coefficients; identical to libjpeg / Go's
-                         * color.RGBToYCbCr). Integer mul+shift replaces nine
-                         * per-pixel double multiplies plus the slow
-                         * int->double->int round trips. Cb/Cr are clamped before
-                         * the shift exactly as the reference does — pure blue
-                         * would otherwise round Cb up to 256 and wrap. */
-                        int yy =  19595*r + 38470*g +  7471*b + 32768;
-                        int cb = -11056*r - 21712*g + 32768*b + (257 << 15);
-                        int cr =  32768*r - 27440*g -  5328*b + (257 << 15);
-                        if (cb < 0) cb = 0; else if (cb > (255 << 16)) cb = 255 << 16;
-                        if (cr < 0) cr = 0; else if (cr > (255 << 16)) cr = 255 << 16;
-                        y_block[by * 8 + bx]  = (yy >> 16) - 128;
-                        cb_block[by * 8 + bx] = (cb >> 16) - 128;
-                        cr_block[by * 8 + bx] = (cr >> 16) - 128;
+                for (int sby = 0; sby < 2; sby++) {
+                    for (int sbx = 0; sbx < 2; sbx++) {
+                        for (int by = 0; by < 8; by++) {
+                            for (int bx = 0; bx < 8; bx++) {
+                                uint32_t px = mx * 16 + (uint32_t)sbx * 8 + (uint32_t)bx;
+                                uint32_t py = my * 16 + (uint32_t)sby * 8 + (uint32_t)by;
+                                if (px >= img->width) px = img->width - 1;
+                                if (py >= img->height) py = img->height - 1;
+                                const uint8_t *p = img->pixels + py * img->stride + px * 3;
+                                int r = p[0], g = p[1], b = p[2];
+                                int yy =  19595*r + 38470*g +  7471*b + 32768;
+                                y_block[by * 8 + bx] = (yy >> 16) - 128;
+                            }
+                        }
+                        encode_block(&bw, y_block, lum_recip, &prev_dc_y, dc_lum, ac_lum);
                     }
                 }
-                encode_block(&bw, y_block, lum_recip, &prev_dc_y, dc_lum, ac_lum);
+                for (int by = 0; by < 8; by++) {
+                    for (int bx = 0; bx < 8; bx++) {
+                        int sum_cb = 0, sum_cr = 0;
+                        for (int dy = 0; dy < 2; dy++) {
+                            for (int dx = 0; dx < 2; dx++) {
+                                uint32_t px = mx * 16 + (uint32_t)bx * 2 + (uint32_t)dx;
+                                uint32_t py = my * 16 + (uint32_t)by * 2 + (uint32_t)dy;
+                                if (px >= img->width) px = img->width - 1;
+                                if (py >= img->height) py = img->height - 1;
+                                const uint8_t *p = img->pixels + py * img->stride + px * 3;
+                                int r = p[0], g = p[1], b = p[2];
+                                int cb = -11056*r - 21712*g + 32768*b + (257 << 15);
+                                int cr =  32768*r - 27440*g -  5328*b + (257 << 15);
+                                if (cb < 0) cb = 0; else if (cb > (255 << 16)) cb = 255 << 16;
+                                if (cr < 0) cr = 0; else if (cr > (255 << 16)) cr = 255 << 16;
+                                sum_cb += (cb >> 16) - 128;
+                                sum_cr += (cr >> 16) - 128;
+                            }
+                        }
+                        cb_block[by * 8 + bx] = sum_cb / 4;
+                        cr_block[by * 8 + bx] = sum_cr / 4;
+                    }
+                }
                 encode_block(&bw, cb_block, chrom_recip, &prev_dc_cb, dc_chr, ac_chr);
                 encode_block(&bw, cr_block, chrom_recip, &prev_dc_cr, dc_chr, ac_chr);
             }
@@ -480,20 +504,49 @@ static uint16_t br_read_u16(bitreader_t *br) {
 }
 
 /* Refill the MSB-first bit buffer so the low `bit_cnt` bits are valid (up to 32
- * after the call, always >= 25 so a 16-bit peek is safe). 0xFF is a literal data
- * byte whose following stuffed byte is skipped; past end-of-data we pad with
- * zero bits. Several bytes are pulled per call so the hot entropy loop amortizes
- * the work, replacing the old one-bit-at-a-time reader. Decoded bits are
- * identical to the old reader (same 0xFF handling, same zero padding). */
+ * after the call, always >= 25 so a 16-bit peek is safe). Inside entropy data
+ * 0xFF is followed by a stuffed 0x00 (emit the 0xFF, drop the 0x00); 0xFF
+ * followed by anything else is a marker (RST restart, EOI, ...), so we stop
+ * consuming there, pad with zero bits, and leave pos parked on the 0xFF for the
+ * restart handler / scan loop. Past end-of-data we likewise pad with zeros.
+ * Several bytes are pulled per call so the hot entropy loop amortizes the work.
+ * For marker-free interiors this is bit-for-bit identical to the old reader. */
 static void br_refill(bitreader_t *br) {
     while (br->bit_cnt <= 24) {
         uint8_t b = 0;
         if (br->pos < br->len) {
-            b = br->data[br->pos++];
-            if (b == 0xFF && br->pos < br->len) br->pos++;   /* skip stuffed byte */
+            if (br->data[br->pos] == 0xFF) {
+                uint8_t nx = (br->pos + 1 < br->len) ? br->data[br->pos + 1] : 0xFF;
+                if (nx == 0x00) {
+                    b = 0xFF;
+                    br->pos += 2;                 /* stuffed 0xFF 0x00 -> 0xFF */
+                } else {
+                    br->bit_buf <<= 8;            /* marker: pad, don't advance */
+                    br->bit_cnt += 8;
+                    continue;
+                }
+            } else {
+                b = br->data[br->pos++];
+            }
         }
         br->bit_buf = (br->bit_buf << 8) | b;
         br->bit_cnt += 8;
+    }
+}
+
+/* Resynchronize at a restart-marker (FF D0..D7) boundary: drop the buffered
+ * (now padding) bits and consume the marker so entropy decoding resumes byte-
+ * aligned on the next interval. refill leaves pos on the marker's 0xFF; any
+ * 0xFF fill bytes that legally precede a marker are skipped. The caller resets
+ * the per-component DC predictors. */
+static void br_restart(bitreader_t *br) {
+    br->bit_buf = 0;
+    br->bit_cnt = 0;
+    while (br->pos + 1 < br->len && br->data[br->pos] == 0xFF) {
+        uint8_t m = br->data[br->pos + 1];
+        if (m == 0xFF) { br->pos++; continue; }       /* fill byte */
+        if (m >= 0xD0 && m <= 0xD7) br->pos += 2;      /* consume RST marker */
+        break;
     }
 }
 
@@ -530,10 +583,17 @@ typedef struct {
     uint8_t look_sym[1 << JPEG_HUFF_LOOKAHEAD];     /* decoded symbol */
 } huff_decode_table_t;
 
-static void build_decode_table(huff_decode_table_t *t, const uint8_t *bits, const uint8_t *vals) {
+/* Returns 0 on success, -1 if `bits` describes an invalid (over-subscribed)
+ * Huffman table. Rejecting those is a safety requirement, not just hygiene: an
+ * over-subscribed table pushes a code past its bit-width, so the lookahead fill
+ * below (lookbits = codeword << (LOOKAHEAD-len)) would index past the 2^LOOKAHEAD
+ * look_* arrays and corrupt memory on crafted JPEGs. A valid canonical table
+ * obeys Kraft (codes through length L number <= 2^L), keeping lookbits < 2^LOOKAHEAD. */
+static int build_decode_table(huff_decode_table_t *t, const uint8_t *bits, const uint8_t *vals) {
     int total = 0;
     for (int i = 1; i <= 16; i++) total += bits[i];
-    t->vals = (uint8_t *)malloc((size_t)total);
+    t->vals = (uint8_t *)malloc(total ? (size_t)total : 1);
+    if (!t->vals) return -1;
     t->num_vals = total;
     memcpy(t->vals, vals, (size_t)total);
 
@@ -549,6 +609,7 @@ static void build_decode_table(huff_decode_table_t *t, const uint8_t *bits, cons
             t->mincode[len] = -1;
             t->maxcode[len] = -1;
         }
+        if (code > (1 << len)) return -1;   /* over-subscribed → invalid table */
         idx += bits[len];
         code <<= 1;
     }
@@ -570,6 +631,7 @@ static void build_decode_table(huff_decode_table_t *t, const uint8_t *bits, cons
             }
         }
     }
+    return 0;
 }
 
 static int huff_decode(bitreader_t *br, const huff_decode_table_t *t) {
@@ -601,7 +663,14 @@ static int huff_decode(bitreader_t *br, const huff_decode_table_t *t) {
 }
 
 static int decode_value(bitreader_t *br, int bits) {
-    if (bits == 0) return 0;
+    if (bits <= 0) return 0;
+    /* `bits` is a magnitude category. For DC it is the Huffman symbol itself,
+     * which a corrupt DHT can make any byte 0..255 (the AC path masks to 0..15,
+     * the DC path does not). A category above 16 makes br_read_bits subtract
+     * more than the refill guarantee, underflowing bit_cnt into a negative
+     * shift (UB), and overflows `1 << bits`. Valid 8-bit baseline categories are
+     * <= 11, so treat anything past 16 as a corrupt-stream zero. */
+    if (bits > 16) return 0;
     int val = br_read_bits(br, bits);
     if (val < (1 << (bits - 1)))
         val = val - (1 << bits) + 1;
@@ -715,11 +784,14 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
 
     uint32_t width = 0, height = 0;
     int ncomp = 0;
+    uint32_t restart_interval = 0;   /* MCUs between RST markers (0 = none) */
     uint8_t quant_tables[4][64];
     memset(quant_tables, 0, sizeof(quant_tables));
     int comp_quant[4] = {0};
     int comp_dc_table[4] = {0};
     int comp_ac_table[4] = {0};
+    int comp_h[4] = {1, 1, 1, 1};   /* horizontal sampling factor per component */
+    int comp_v[4] = {1, 1, 1, 1};   /* vertical sampling factor per component   */
 
     huff_decode_table_t dc_tables[4], ac_tables[4];
     memset(dc_tables, 0, sizeof(dc_tables));
@@ -736,10 +808,18 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
         if (marker == 0x00 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) continue;
 
         uint16_t seg_len = br_read_u16(&br);
+        if (seg_len < 2) goto fail;     /* length counts its own 2 bytes */
         size_t seg_start = br.pos;
+        /* Clamp the segment to the available buffer. A crafted or truncated
+         * length must never let the per-segment loops below spin forever:
+         * br_read_byte_raw stops advancing at end-of-data, so an end past
+         * br.len would otherwise stay > br.pos and the `pos < end` loops would
+         * never terminate (DoS on malformed input). */
+        size_t seg_end = seg_start + (size_t)(seg_len - 2);
+        if (seg_end > br.len) seg_end = br.len;
 
         if (marker == 0xDB) { /* DQT */
-            while (br.pos < seg_start + seg_len - 2) {
+            while (br.pos < seg_end) {
                 uint8_t info = br_read_byte_raw(&br);
                 int table_id = info & 0x0F;
                 if (table_id >= 4) break;
@@ -754,11 +834,15 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
             if (ncomp != 1 && ncomp != 3) goto fail;
             for (int i = 0; i < ncomp; i++) {
                 br_read_byte_raw(&br); /* component id */
-                br_read_byte_raw(&br); /* sampling factors */
+                uint8_t samp = br_read_byte_raw(&br);
+                comp_h[i] = (samp >> 4) & 0x0F;
+                comp_v[i] = samp & 0x0F;
+                if (comp_h[i] < 1 || comp_h[i] > 4 ||
+                    comp_v[i] < 1 || comp_v[i] > 4) goto fail;
                 comp_quant[i] = br_read_byte_raw(&br);
             }
         } else if (marker == 0xC4) { /* DHT */
-            while (br.pos < seg_start + seg_len - 2) {
+            while (br.pos < seg_end) {
                 uint8_t info = br_read_byte_raw(&br);
                 int cls = (info >> 4) & 1;
                 int table_id = info & 0x0F;
@@ -769,31 +853,55 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                     bits[i] = br_read_byte_raw(&br);
                     total += bits[i];
                 }
-                uint8_t *vals = (uint8_t *)malloc((size_t)total);
+                uint8_t *vals = (uint8_t *)malloc(total ? (size_t)total : 1);
+                if (!vals) goto fail;
                 for (int i = 0; i < total; i++)
                     vals[i] = br_read_byte_raw(&br);
                 huff_decode_table_t *tbl = cls ? &ac_tables[table_id] : &dc_tables[table_id];
-                if (tbl->vals) free(tbl->vals);
-                build_decode_table(tbl, bits, vals);
+                if (tbl->vals) { free(tbl->vals); tbl->vals = NULL; }
+                int bdt = build_decode_table(tbl, bits, vals);
                 free(vals);
+                if (bdt != 0) goto fail;   /* reject malformed Huffman table */
             }
         } else if (marker == 0xDA) { /* SOS */
             int ns = br_read_byte_raw(&br);
+            /* Ns is 1..4 per ITU T.81 B.2.3; the comp_*_table[] arrays hold 4.
+             * Bound it before indexing so a crafted scan header can't overflow
+             * the stack (the loop writes comp_dc_table[i]/comp_ac_table[i]). */
+            if (ns < 1 || ns > 4) goto fail;
             for (int i = 0; i < ns; i++) {
                 br_read_byte_raw(&br); /* component selector */
                 uint8_t td_ta = br_read_byte_raw(&br);
                 comp_dc_table[i] = (td_ta >> 4) & 0x0F;
                 comp_ac_table[i] = td_ta & 0x0F;
+                /* Td/Ta each select one of 4 Huffman tables (ITU T.81 B.2.3),
+                 * but the nibble carries 0..15. The decode loop indexes
+                 * dc_tables[]/ac_tables[] (size 4) with these, so a crafted scan
+                 * header with a selector >= 4 reads out of bounds. Reject it,
+                 * matching the DHT table_id and sampling-factor validation. */
+                if (comp_dc_table[i] >= 4 || comp_ac_table[i] >= 4) goto fail;
             }
             br_read_byte_raw(&br); br_read_byte_raw(&br); br_read_byte_raw(&br);
             scan_found = 1;
             break;
+        } else if (marker == 0xDD) { /* DRI — define restart interval */
+            restart_interval = br_read_u16(&br);
+            br.pos = seg_end;
         } else {
-            br.pos = seg_start + seg_len - 2;
+            br.pos = seg_end;
         }
     }
 
     if (!scan_found || width == 0 || height == 0) goto fail;
+    /* Reject implausibly large geometry before allocating. A 16-bit SOF can
+     * claim up to 65535x65535 (~4 gigapixels); honoring that from a tiny
+     * malformed header would (a) overflow the size_t buffer/plane arithmetic on
+     * 32-bit targets — a heap overflow — and (b) force multi-GB allocations plus
+     * a multi-minute grind (DoS). 2^28 px (e.g. 16384x16384) sits far above any
+     * real photo yet keeps every allocation < 4 GiB even on 32-bit. The product
+     * is done in 64-bit so the check itself never overflows. (libjpeg/stb-image
+     * apply equivalent caps.) */
+    if ((uint64_t)width * (uint64_t)height > (1u << 28)) goto fail;
 
     img->width = width;
     img->height = height;
@@ -802,8 +910,21 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     img->pixels = (uint8_t *)calloc(1, img->stride * height);
     if (!img->pixels) goto fail;
 
-    uint32_t mcu_w = (width + 7) / 8;
-    uint32_t mcu_h = (height + 7) / 8;
+    /* Sampling geometry. Hmax/Vmax define the MCU footprint (8*Hmax x 8*Vmax
+     * pixels); each component contributes comp_h[c]*comp_v[c] blocks per MCU and
+     * is decoded into its own (MCU-aligned) plane, then box-upsampled to full
+     * resolution. This is what lets the decoder read the 4:2:0 / 4:2:2 chroma
+     * subsampling that virtually every real-world JPEG uses (cameras, browsers,
+     * libjpeg's default); the previous decoder assumed one block per component
+     * per 8x8 MCU and so produced garbage on any non-4:4:4 file. */
+    int Hmax = 1, Vmax = 1;
+    for (int c = 0; c < ncomp; c++) {
+        if (comp_h[c] > Hmax) Hmax = comp_h[c];
+        if (comp_v[c] > Vmax) Vmax = comp_v[c];
+    }
+    uint32_t mcu_pw = (uint32_t)Hmax * 8, mcu_ph = (uint32_t)Vmax * 8;
+    uint32_t mcus_x = (width + mcu_pw - 1) / mcu_pw;
+    uint32_t mcus_y = (height + mcu_ph - 1) / mcu_ph;
     int prev_dc[4] = {0};
 
     /* Per-table float dequant multipliers, AAN-prescaled by the row*col factor
@@ -813,7 +934,7 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     float fquant[4][64];
     for (int t = 0; t < 4; t++)
         for (int i = 0; i < 64; i++) {
-            int nat = zigzag[i];
+            int nat = jpeg_natural_order[i];   /* DQT is in scan order */
             fquant[t][i] = (float)((double)quant_tables[t][i]
                          * aanscale[nat >> 3] * aanscale[nat & 7]);
         }
@@ -833,76 +954,110 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     br.bit_buf = 0;
     br.bit_cnt = 0;
 
-    for (uint32_t my = 0; my < mcu_h; my++) {
-        for (uint32_t mx = 0; mx < mcu_w; mx++) {
-            int blocks[3][64];
+    /* Per-component sample planes at each component's own (MCU-aligned)
+     * resolution; chroma planes are smaller when subsampled. */
+    uint8_t *plane[3] = {0};
+    uint32_t plane_w[3] = {0}, plane_h[3] = {0};
+    for (int c = 0; c < ncomp; c++) {
+        plane_w[c] = mcus_x * (uint32_t)comp_h[c] * 8;
+        plane_h[c] = mcus_y * (uint32_t)comp_v[c] * 8;
+        plane[c] = (uint8_t *)malloc((size_t)plane_w[c] * plane_h[c]);
+        if (!plane[c]) { for (int k = 0; k < c; k++) free(plane[k]); goto fail; }
+    }
+
+    uint32_t mcu_idx = 0;
+    for (uint32_t my = 0; my < mcus_y; my++) {
+        for (uint32_t mx = 0; mx < mcus_x; mx++) {
+            /* At each restart interval the encoder byte-aligned the bitstream
+             * and emitted an RST marker, resetting the DC predictors. Mirror it
+             * so cameras' / libjpeg's restart-enabled JPEGs decode correctly. */
+            if (restart_interval && mcu_idx && mcu_idx % restart_interval == 0) {
+                br_restart(&br);
+                prev_dc[0] = prev_dc[1] = prev_dc[2] = prev_dc[3] = 0;
+            }
+            mcu_idx++;
             for (int c = 0; c < ncomp; c++) {
-                int quantized[64] = {0};
-                /* DC */
-                int dc_sym = huff_decode(&br, &dc_tables[comp_dc_table[c]]);
-                if (dc_sym < 0) dc_sym = 0;
-                int dc_val = decode_value(&br, dc_sym);
-                prev_dc[c] += dc_val;
-                quantized[0] = prev_dc[c];
-
-                /* AC */
-                int idx = 1;
-                while (idx < 64) {
-                    int ac_sym = huff_decode(&br, &ac_tables[comp_ac_table[c]]);
-                    if (ac_sym < 0) break;
-                    if (ac_sym == 0x00) break; /* EOB */
-                    if (ac_sym == 0xF0) { idx += 16; continue; }
-                    int run = (ac_sym >> 4) & 0x0F;
-                    int size = ac_sym & 0x0F;
-                    idx += run;
-                    if (idx < 64) {
-                        quantized[idx] = decode_value(&br, size);
-                        idx++;
-                    }
-                }
-
-                /* Dequantize into AAN-scaled floats (the fast inverse DCT folds
-                 * the row*col scale into this multiply, so it costs nothing). */
-                float dequant[64];
                 int qt = comp_quant[c];
                 if (qt >= 4) qt = 0;
-                for (int i = 0; i < 64; i++)
-                    dequant[zigzag[i]] = (float)quantized[i] * fquant[qt][i];
+                /* Blocks within an MCU are interleaved component-by-component,
+                 * each component's comp_v[c] x comp_h[c] blocks in raster order. */
+                for (int sby = 0; sby < comp_v[c]; sby++) {
+                    for (int sbx = 0; sbx < comp_h[c]; sbx++) {
+                        int quantized[64] = {0};
+                        /* DC (differential within the component) */
+                        int dc_sym = huff_decode(&br, &dc_tables[comp_dc_table[c]]);
+                        if (dc_sym < 0) dc_sym = 0;
+                        prev_dc[c] += decode_value(&br, dc_sym);
+                        quantized[0] = prev_dc[c];
 
-                /* IDCT */
-                idct_block(dequant, blocks[c]);
-            }
+                        /* AC */
+                        int idx = 1;
+                        while (idx < 64) {
+                            int ac_sym = huff_decode(&br, &ac_tables[comp_ac_table[c]]);
+                            if (ac_sym < 0) break;
+                            if (ac_sym == 0x00) break;            /* EOB */
+                            if (ac_sym == 0xF0) { idx += 16; continue; }
+                            int run = (ac_sym >> 4) & 0x0F;
+                            int size = ac_sym & 0x0F;
+                            idx += run;
+                            if (idx < 64) { quantized[idx] = decode_value(&br, size); idx++; }
+                        }
 
-            /* Write pixels */
-            for (int by = 0; by < 8; by++) {
-                for (int bx = 0; bx < 8; bx++) {
-                    uint32_t px = mx * 8 + (uint32_t)bx;
-                    uint32_t py = my * 8 + (uint32_t)by;
-                    if (px >= width || py >= height) continue;
+                        /* Dequantize into AAN-scaled floats, then IDCT. The
+                         * coefficients are in zigzag scan order; scatter each to
+                         * its natural row-major slot for the IDCT. */
+                        float dequant[64];
+                        for (int i = 0; i < 64; i++)
+                            dequant[jpeg_natural_order[i]] = (float)quantized[i] * fquant[qt][i];
+                        int blk[64];
+                        idct_block(dequant, blk);
 
-                    if (ncomp == 1) {
-                        img->pixels[py * img->stride + px] = (uint8_t)blocks[0][by * 8 + bx];
-                    } else {
-                        int Y  = blocks[0][by * 8 + bx];
-                        int Cb = blocks[1][by * 8 + bx];   /* raw 0..255 */
-                        int Cr = blocks[2][by * 8 + bx];
-                        int r = Y + ycc_cr_r[Cr];
-                        int g = Y + ((ycc_cb_g[Cb] + ycc_cr_g[Cr]) >> 16);
-                        int b = Y + ycc_cb_b[Cb];
-                        if (r < 0) r = 0;
-                        if (r > 255) r = 255;
-                        if (g < 0) g = 0;
-                        if (g > 255) g = 255;
-                        if (b < 0) b = 0;
-                        if (b > 255) b = 255;
-                        uint8_t *p = img->pixels + py * img->stride + px * 3;
-                        p[0] = (uint8_t)r; p[1] = (uint8_t)g; p[2] = (uint8_t)b;
+                        /* Scatter the 8x8 block into the component plane. */
+                        uint32_t ox = (mx * (uint32_t)comp_h[c] + (uint32_t)sbx) * 8;
+                        uint32_t oy = (my * (uint32_t)comp_v[c] + (uint32_t)sby) * 8;
+                        for (int yy = 0; yy < 8; yy++) {
+                            uint8_t *prow = plane[c] + (size_t)(oy + yy) * plane_w[c] + ox;
+                            for (int xx = 0; xx < 8; xx++) {
+                                int v = blk[yy * 8 + xx];
+                                prow[xx] = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
+    /* Compose the output: box-upsample each component to full resolution (sample
+     * c at px*comp_h[c]/Hmax, py*comp_v[c]/Vmax), then YCbCr->RGB. The row index
+     * is hoisted out of the inner loop. */
+    for (uint32_t py = 0; py < height; py++) {
+        if (ncomp == 1) {
+            memcpy(img->pixels + (size_t)py * img->stride,
+                   plane[0] + (size_t)py * plane_w[0], width);
+            continue;
+        }
+        const uint8_t *yrow  = plane[0] + (size_t)(py * (uint32_t)comp_v[0] / (uint32_t)Vmax) * plane_w[0];
+        const uint8_t *cbrow = plane[1] + (size_t)(py * (uint32_t)comp_v[1] / (uint32_t)Vmax) * plane_w[1];
+        const uint8_t *crrow = plane[2] + (size_t)(py * (uint32_t)comp_v[2] / (uint32_t)Vmax) * plane_w[2];
+        uint8_t *out = img->pixels + (size_t)py * img->stride;
+        for (uint32_t px = 0; px < width; px++) {
+            int Y  = yrow [px * (uint32_t)comp_h[0] / (uint32_t)Hmax];
+            int Cb = cbrow[px * (uint32_t)comp_h[1] / (uint32_t)Hmax];
+            int Cr = crrow[px * (uint32_t)comp_h[2] / (uint32_t)Hmax];
+            int r = Y + ycc_cr_r[Cr];
+            int g = Y + ((ycc_cb_g[Cb] + ycc_cr_g[Cr]) >> 16);
+            int b = Y + ycc_cb_b[Cb];
+            if (r < 0) r = 0; else if (r > 255) r = 255;
+            if (g < 0) g = 0; else if (g > 255) g = 255;
+            if (b < 0) b = 0; else if (b > 255) b = 255;
+            out[px * 3 + 0] = (uint8_t)r;
+            out[px * 3 + 1] = (uint8_t)g;
+            out[px * 3 + 2] = (uint8_t)b;
+        }
+    }
+
+    for (int c = 0; c < ncomp; c++) free(plane[c]);
     for (int i = 0; i < 4; i++) { free(dc_tables[i].vals); free(ac_tables[i].vals); }
     return 0;
 

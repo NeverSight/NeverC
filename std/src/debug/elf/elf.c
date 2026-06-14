@@ -41,6 +41,11 @@ typedef uint64_t (*rd64_fn)(const uint8_t *);
 static const char *elf_get_string(const uint8_t *strtab, size_t strtab_len,
                                    uint32_t offset) {
     if (offset >= strtab_len) return "";
+    /* The string table is attacker-controlled file data and may lack a NUL
+     * terminator before its end; without this guard a caller's strlen() reads
+     * past the table (and past the file) on crafted input. Require a NUL within
+     * the table bounds, otherwise treat the entry as empty. */
+    if (memchr(strtab + offset, 0, strtab_len - offset) == NULL) return "";
     return (const char *)(strtab + offset);
 }
 
@@ -59,7 +64,12 @@ static int parse_sections_32(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32) {
     uint16_t shstrndx = r16(d + 50);
 
     if (shoff == 0 || shnum == 0) return 0;
-    if (shoff + (uint64_t)shnum * shentsize > f->data_len) return -1;
+    /* Each entry is read as a fixed 40-byte Elf32_Shdr; a smaller (or zero)
+     * shentsize would defeat the table bound while the fixed-offset reads still
+     * run off the buffer. The shoff>len guard + division avoid overflow. */
+    if (shentsize < 40) return -1;
+    if (shoff > f->data_len ||
+        (uint64_t)shnum > (f->data_len - shoff) / shentsize) return -1;
 
     f->sections = (neverc_elf_section_t *)calloc(shnum, sizeof(neverc_elf_section_t));
     if (!f->sections) return -1;
@@ -106,7 +116,12 @@ static int parse_sections_64(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
     uint16_t shstrndx = r16(d + 62);
 
     if (shoff == 0 || shnum == 0) return 0;
-    if (shoff + (uint64_t)shnum * shentsize > f->data_len) return -1;
+    /* Each entry is read as a fixed 64-byte Elf64_Shdr; reject a smaller/zero
+     * shentsize and bound the table without overflowing (shoff is 64-bit and
+     * attacker-controlled, so shoff + shnum*shentsize could wrap). */
+    if (shentsize < 64) return -1;
+    if (shoff > f->data_len ||
+        (uint64_t)shnum > (f->data_len - shoff) / shentsize) return -1;
 
     f->sections = (neverc_elf_section_t *)calloc(shnum, sizeof(neverc_elf_section_t));
     if (!f->sections) return -1;
@@ -129,7 +144,7 @@ static int parse_sections_64(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
     if (shstrndx < shnum) {
         uint64_t str_off = f->sections[shstrndx].offset;
         uint64_t str_sz  = f->sections[shstrndx].size;
-        if (str_off + str_sz <= f->data_len) {
+        if (str_off <= f->data_len && str_sz <= f->data_len - str_off) {
             const uint8_t *strtab = d + (size_t)str_off;
             for (uint32_t i = 0; i < shnum; i++) {
                 const char *name = elf_get_string(strtab, (size_t)str_sz,
@@ -152,7 +167,11 @@ static int parse_progs_32(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32) {
     uint16_t phnum = r16(d + 44);
 
     if (phoff == 0 || phnum == 0) return 0;
-    if (phoff + (uint64_t)phnum * phentsize > f->data_len) return -1;
+    /* Each entry is read as a fixed 32-byte Elf32_Phdr; reject a smaller/zero
+     * phentsize and bound the table without overflowing. */
+    if (phentsize < 32) return -1;
+    if (phoff > f->data_len ||
+        (uint64_t)phnum > (f->data_len - phoff) / phentsize) return -1;
 
     f->progs = (neverc_elf_prog_t *)calloc(phnum, sizeof(neverc_elf_prog_t));
     if (!f->progs) return -1;
@@ -180,7 +199,11 @@ static int parse_progs_64(neverc_elf_file_t *f, rd16_fn r16, rd32_fn r32,
     uint16_t phnum = r16(d + 56);
 
     if (phoff == 0 || phnum == 0) return 0;
-    if (phoff + (uint64_t)phnum * phentsize > f->data_len) return -1;
+    /* Each entry is read as a fixed 56-byte Elf64_Phdr; reject a smaller/zero
+     * phentsize and bound the table without overflowing (phoff is 64-bit). */
+    if (phentsize < 56) return -1;
+    if (phoff > f->data_len ||
+        (uint64_t)phnum > (f->data_len - phoff) / phentsize) return -1;
 
     f->progs = (neverc_elf_prog_t *)calloc(phnum, sizeof(neverc_elf_prog_t));
     if (!f->progs) return -1;
@@ -304,7 +327,7 @@ int neverc_elf_section_data(const neverc_elf_file_t *f,
         *out_len = 0;
         return 0;
     }
-    if (s->offset + s->size > f->data_len) return -1;
+    if (s->offset > f->data_len || s->size > f->data_len - s->offset) return -1;
 
     *out = (uint8_t *)malloc((size_t)s->size);
     if (!*out) return -1;
@@ -326,11 +349,11 @@ static int get_symbols_common(const neverc_elf_file_t *f, uint32_t sh_type,
 
     if (symtab->link >= f->section_count) return -1;
     const neverc_elf_section_t *strtab = &f->sections[symtab->link];
-    if (strtab->offset + strtab->size > f->data_len) return -1;
+    if (strtab->offset > f->data_len || strtab->size > f->data_len - strtab->offset) return -1;
     const uint8_t *str_data = f->data + (size_t)strtab->offset;
     size_t str_len = (size_t)strtab->size;
 
-    if (symtab->offset + symtab->size > f->data_len) return -1;
+    if (symtab->offset > f->data_len || symtab->size > f->data_len - symtab->offset) return -1;
     const uint8_t *sym_data = f->data + (size_t)symtab->offset;
 
     rd32_fn r32 = (f->header.data == NEVERC_ELFDATA2MSB) ? rd32be : rd32le;
@@ -415,11 +438,11 @@ int neverc_elf_imported_libraries(const neverc_elf_file_t *f,
     if (dyn->link >= f->section_count) return 0;
 
     const neverc_elf_section_t *strtab = &f->sections[dyn->link];
-    if (strtab->offset + strtab->size > f->data_len) return 0;
+    if (strtab->offset > f->data_len || strtab->size > f->data_len - strtab->offset) return 0;
     const uint8_t *str_data = f->data + (size_t)strtab->offset;
     size_t str_len = (size_t)strtab->size;
 
-    if (dyn->offset + dyn->size > f->data_len) return 0;
+    if (dyn->offset > f->data_len || dyn->size > f->data_len - dyn->offset) return 0;
     const uint8_t *dyn_data = f->data + (size_t)dyn->offset;
 
     int lib_count = 0;

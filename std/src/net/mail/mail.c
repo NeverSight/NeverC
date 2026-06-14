@@ -219,14 +219,17 @@ long long neverc_mail_parse_date(const char *s) {
 
     if (year < 100) year += (year < 50) ? 2000 : 1900;
 
-    /* Days from epoch (simplified, no leap second) */
-    static const int mdays[] = {0,31,59,90,120,151,181,212,243,273,304,334};
-    long long days = (long long)(year - 1970) * 365 + mdays[month] + day - 1;
-    /* Leap years */
-    for (int y = 1970; y < year; y++) {
-        if ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0) days++;
-    }
-    if (month > 1 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) days++;
+    /* Days since the Unix epoch via Howard Hinnant's O(1) days_from_civil (the
+     * same closed form time.c uses). Replaces a naive O(year-1970) leap-day loop
+     * that grew without bound for far-future dates. `month` is 0-based here, so
+     * convert to the 1..12 the formula expects. */
+    int m1 = month + 1;
+    long long y = (long long)year - (m1 <= 2);
+    long long era = (y >= 0 ? y : y - 399) / 400;
+    long long yoe = y - era * 400;                                  /* [0, 399]    */
+    long long doy = (153 * (m1 + (m1 > 2 ? -3 : 9)) + 2) / 5 + (day - 1); /* [0,365] */
+    long long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;          /* [0, 146096] */
+    long long days = era * 146097 + doe - 719468;
 
     return days * 86400 + (long long)hour * 3600 + (long long)min * 60 + sec;
 }

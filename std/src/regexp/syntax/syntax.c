@@ -26,18 +26,33 @@ static neverc_regexp_syntax_node_t *mk_node(neverc_regexp_op_t op) {
     return n;
 }
 
+/* Append helpers. Capacity grows by doubling (it is the next power of two >=
+ * the count), so building an n-element concat/alternation or an n-rune char
+ * class is amortized O(n) instead of the O(n^2) that an exact-size realloc per
+ * element caused. nsubs/nrunes stay the exact element count, so the rounded-up
+ * allocation is invisible to every reader (count, string, equal) and to free(),
+ * which just releases the pointer — no struct/API change. realloc is only
+ * issued when the count crosses a power-of-two boundary. */
 static void add_sub(neverc_regexp_syntax_node_t *parent,
                     neverc_regexp_syntax_node_t *child) {
+    size_t n = (size_t)parent->nsubs;
+    if ((n & (n - 1)) == 0) {
+        size_t cap = n ? n * 2 : 1;
+        parent->subs = (neverc_regexp_syntax_node_t **)realloc(
+            parent->subs, cap * sizeof(neverc_regexp_syntax_node_t *));
+    }
+    parent->subs[n] = child;
     parent->nsubs++;
-    parent->subs = (neverc_regexp_syntax_node_t **)realloc(
-        parent->subs, (size_t)parent->nsubs * sizeof(neverc_regexp_syntax_node_t *));
-    parent->subs[parent->nsubs - 1] = child;
 }
 
 static void add_rune(neverc_regexp_syntax_node_t *n, int r) {
+    size_t k = (size_t)n->nrunes;
+    if ((k & (k - 1)) == 0) {
+        size_t cap = k ? k * 2 : 1;
+        n->runes = (int *)realloc(n->runes, cap * sizeof(int));
+    }
+    n->runes[k] = r;
     n->nrunes++;
-    n->runes = (int *)realloc(n->runes, (size_t)n->nrunes * sizeof(int));
-    n->runes[n->nrunes - 1] = r;
 }
 
 /* ======================================================================

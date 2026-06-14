@@ -170,6 +170,12 @@ static void add_child(neverc_xml_node_t *parent, neverc_xml_node_t *child) {
     parent->children[parent->nchildren++] = child;
 }
 
+/* Cap nesting depth. The tokenizer/builder loop is iterative (heap stack), but
+ * neverc_xml_node_free recurses per child, so an unbounded-depth tree would
+ * overflow the C stack when freed. 1000 is well beyond real documents and safe
+ * on small (≈512 KiB) thread stacks. */
+#define NCI_XML_MAX_DEPTH 1000
+
 neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
     neverc_xml_decoder_t d;
     neverc_xml_decoder_init(&d, data, len);
@@ -185,6 +191,15 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
     while (neverc_xml_decode_token(&d, &tok) > 0) {
         switch (tok.type) {
         case NEVERC_XML_START_ELEMENT: {
+            if (stack_top >= NCI_XML_MAX_DEPTH) {
+                /* Too deep: bail rather than build a tree that node_free can't
+                 * recurse through. root stays within the depth cap, so freeing
+                 * it here is safe. */
+                neverc_xml_token_free(&tok);
+                free(stack);
+                neverc_xml_node_free(root);
+                return NULL;
+            }
             neverc_xml_node_t *child = new_node(tok.name);
             child->attrs = tok.attrs;
             child->nattrs = tok.nattrs;

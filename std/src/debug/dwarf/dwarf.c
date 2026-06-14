@@ -165,13 +165,17 @@ void neverc_dwarf_free(neverc_dwarf_data_t *d) {
 const char *neverc_dwarf_get_string(const neverc_dwarf_data_t *d,
                                      uint64_t offset) {
     if (!d->debug_str || offset >= d->debug_str_len) return "";
+    /* debug_str is file data and may lack a NUL before its end; require one
+     * within the table bounds so callers' strlen() cannot read past it. */
+    if (memchr(d->debug_str + offset, 0, d->debug_str_len - (size_t)offset) == NULL)
+        return "";
     return (const char *)(d->debug_str + offset);
 }
 
 int neverc_dwarf_parse_comp_unit(const neverc_dwarf_data_t *d,
                                   size_t offset,
                                   neverc_dwarf_comp_unit_header_t *hdr) {
-    if (offset + 11 > d->debug_info_len) return -1;
+    if (offset > d->debug_info_len - 11) return -1;
     const uint8_t *p = d->debug_info + offset;
 
     uint32_t init_len = rd32(p);

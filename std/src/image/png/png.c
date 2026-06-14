@@ -135,15 +135,20 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
             img->stride = (size_t)img->width * img->channels;
             ihdr_found = 1;
         } else if (memcmp(chunk_type, "IDAT", 4) == 0) {
-            size_t need = idat_len + chunk_len;
-            if (need > idat_cap) {
-                idat_cap = need * 2;
-                uint8_t *nb = (uint8_t *)realloc(idat_buf, idat_cap);
-                if (!nb) { free(idat_buf); return -1; }
-                idat_buf = nb;
+            /* Skip empty IDAT chunks: a zero-length chunk is legal, but with no
+             * data accumulated yet idat_buf is still NULL and `idat_buf + 0`
+             * (and the zero-length memcpy onto it) is undefined behavior. */
+            if (chunk_len) {
+                size_t need = idat_len + chunk_len;
+                if (need > idat_cap) {
+                    idat_cap = need * 2;
+                    uint8_t *nb = (uint8_t *)realloc(idat_buf, idat_cap);
+                    if (!nb) { free(idat_buf); return -1; }
+                    idat_buf = nb;
+                }
+                memcpy(idat_buf + idat_len, chunk_data, chunk_len);
+                idat_len += chunk_len;
             }
-            memcpy(idat_buf + idat_len, chunk_data, chunk_len);
-            idat_len += chunk_len;
         } else if (memcmp(chunk_type, "IEND", 4) == 0) {
             break;
         }
@@ -152,6 +157,16 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
     }
 
     if (!ihdr_found || idat_len < 6) { free(idat_buf); return -1; }
+
+    /* Reject implausible geometry before sizing the raster. A crafted IHDR can
+     * claim ~2^32 x 2^32, overflowing (stride+1)*height — a small allocation
+     * followed by a huge write (heap overflow) on 32-bit, an astronomic malloc
+     * elsewhere (DoS). 2^28 px is far above any real PNG yet keeps
+     * (width*channels+1)*height well within size_t on every target. */
+    if (img->width == 0 || img->height == 0 ||
+        (uint64_t)img->width * (uint64_t)img->height > (1u << 28)) {
+        free(idat_buf); return -1;
+    }
 
     /* Skip zlib header (2 bytes) and checksum (4 bytes at end) */
     size_t raw_size = (img->stride + 1) * img->height;
@@ -291,10 +306,14 @@ int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t 
     uint8_t *zlib_data = (uint8_t *)malloc(zlib_len);
     if (!zlib_data) { free(comp); return -1; }
     zlib_data[0] = 0x78; /* CMF: CM=8 (deflate), CINFO=7 (32K window) */
-    zlib_data[1] = 0x01; /* FLG: FCHECK so (CMF*256+FLG) % 31 == 0 */
-    /* Fix FCHECK */
+    zlib_data[1] = 0x00; /* FLG: FLEVEL=0, FDICT=0; FCHECK filled in below */
+    /* FCHECK: bump FLG to the next value making (CMF*256+FLG) a multiple of 31.
+     * Must NOT add a full 31 when already aligned (that would overflow into the
+     * FDICT bit and make strict zlib decoders expect a preset-dictionary id,
+     * which is exactly the corruption this replaces). */
     uint16_t check = (uint16_t)zlib_data[0] * 256 + zlib_data[1];
-    zlib_data[1] += (uint8_t)(31 - (check % 31));
+    uint8_t rem = (uint8_t)(check % 31);
+    if (rem != 0) zlib_data[1] += (uint8_t)(31 - rem);
     memcpy(zlib_data + 2, comp, comp_len);
     free(comp);
     write_u32be(zlib_data + 2 + comp_len, adler);

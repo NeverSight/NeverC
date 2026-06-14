@@ -55,19 +55,23 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
         while (link_len < 100 && block[157 + link_len]) link_len++;
         memcpy(hdr->linkname, block + 157, link_len);
 
-        /* ustar prefix */
+        /* ustar prefix: full path is prefix + '/' + name. POSIX allows
+         * prefix[155] + name[100] = up to 256 chars, which together with the
+         * NUL does not fit hdr->name[256]; the previous code also sized `full`
+         * at exactly 256 and wrote full[256] / memcpy'd 257 bytes — a stack
+         * (and hdr->name) overflow on long-but-valid ustar headers. Bound every
+         * write to the buffer and truncate to fit. */
         if (memcmp(block + 257, "ustar", 5) == 0) {
-            char prefix[156];
             size_t plen = 0;
             while (plen < 155 && block[345 + plen]) plen++;
             if (plen > 0) {
-                memcpy(prefix, block + 345, plen);
-                prefix[plen] = '\0';
                 char full[256];
                 size_t fi = 0;
-                for (size_t i = 0; i < plen; i++) full[fi++] = prefix[i];
-                full[fi++] = '/';
-                for (size_t i = 0; i < name_len; i++) full[fi++] = hdr->name[i];
+                for (size_t i = 0; i < plen && fi < sizeof(full) - 1; i++)
+                    full[fi++] = (char)block[345 + i];
+                if (fi < sizeof(full) - 1) full[fi++] = '/';
+                for (size_t i = 0; i < name_len && fi < sizeof(full) - 1; i++)
+                    full[fi++] = hdr->name[i];
                 full[fi] = '\0';
                 memcpy(hdr->name, full, fi + 1);
             }
@@ -81,6 +85,11 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
 
 int neverc_tar_reader_read(neverc_tar_reader_t *r, const neverc_tar_header_t *hdr,
                            uint8_t *buf, size_t len, size_t *nread) {
+    /* Guard pos > len up front: otherwise `r->len - r->pos` below underflows to
+     * a huge size_t and memcpy runs off the buffer. pos can sit past len after a
+     * prior read consumed an oversized entry, so this also hardens callers that
+     * don't gate every read on reader_next()'s return. */
+    if (r->pos >= r->len) { *nread = 0; return 0; }
     size_t avail = (size_t)hdr->size;
     if (avail > len) avail = len;
     if (r->pos + avail > r->len) avail = r->len - r->pos;

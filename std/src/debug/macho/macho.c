@@ -56,6 +56,11 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
     rd32_fn r32 = f->is_swap ? rd32be : rd32le;
     rd64_fn r64 = f->is_swap ? rd64be : rd64le;
 
+    /* is_valid only checked the 4-byte magic; confirm the whole header fits
+     * before reading its fields, or a truncated buffer is read past its end. */
+    uint32_t hdr_size = f->is_64bit ? 32 : 28;
+    if (len < hdr_size) return -1;
+
     f->header.magic = r32(data);
     f->header.cpu = (int32_t)r32(data + 4);
     f->header.subcpu = (int32_t)r32(data + 8);
@@ -64,22 +69,35 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
     f->header.sizeofcmds = r32(data + 20);
     f->header.flags = r32(data + 24);
 
-    uint32_t hdr_size = f->is_64bit ? 32 : 28;
-    if (hdr_size + f->header.sizeofcmds > len) return -1;
+    if ((uint64_t)hdr_size + f->header.sizeofcmds > len) return -1;
 
-    /* First pass: count segments, sections, dylibs */
+    /* First pass: count segments, sections, dylibs. Every field is bounded to
+     * the declared command and the file: cmd_size < 8 (no forward progress) or a
+     * command overrunning the file stops the walk, the nsects read is gated on a
+     * full segment header, and the section count mirrors the populate pass below
+     * exactly so the allocations are always sufficient. */
     uint32_t seg_count = 0, sec_count = 0, dylib_count = 0;
     const uint8_t *cmd = data + hdr_size;
     for (uint32_t i = 0; i < f->header.ncmds; i++) {
         if ((size_t)(cmd - data) + 8 > len) break;
         uint32_t cmd_type = r32(cmd);
         uint32_t cmd_size = r32(cmd + 4);
-        if (cmd_type == NEVERC_LC_SEGMENT) {
+        if (cmd_size < 8 || (size_t)(cmd - data) + cmd_size > len) break;
+        size_t cmd_end = (size_t)(cmd - data) + cmd_size;
+        if (cmd_type == NEVERC_LC_SEGMENT && cmd_size >= 56) {
             seg_count++;
-            sec_count += r32(cmd + 48);
-        } else if (cmd_type == NEVERC_LC_SEGMENT_64) {
+            uint32_t ns = r32(cmd + 48);
+            const uint8_t *sec = cmd + 56;
+            for (uint32_t j = 0; j < ns && (size_t)(sec - data) + 68 <= cmd_end; j++) {
+                sec_count++; sec += 68;
+            }
+        } else if (cmd_type == NEVERC_LC_SEGMENT_64 && cmd_size >= 72) {
             seg_count++;
-            sec_count += r32(cmd + 64);
+            uint32_t ns = r32(cmd + 64);
+            const uint8_t *sec = cmd + 72;
+            for (uint32_t j = 0; j < ns && (size_t)(sec - data) + 80 <= cmd_end; j++) {
+                sec_count++; sec += 80;
+            }
         } else if (cmd_type == NEVERC_LC_LOAD_DYLIB) {
             dylib_count++;
         }
@@ -94,15 +112,20 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
                                                 sizeof(neverc_macho_dylib_t));
     if (!f->segments || !f->sections || !f->dylibs) goto fail;
 
-    /* Second pass: populate */
+    /* Second pass: populate. Bounds mirror the counting pass exactly: the same
+     * whole-command and per-section guards, so sci/si/di never exceed the
+     * allocated arrays and no field is read past the command (and thus the
+     * file). */
     cmd = data + hdr_size;
     uint32_t si = 0, sci = 0, di = 0;
     for (uint32_t i = 0; i < f->header.ncmds; i++) {
         if ((size_t)(cmd - data) + 8 > len) break;
         uint32_t cmd_type = r32(cmd);
         uint32_t cmd_size = r32(cmd + 4);
+        if (cmd_size < 8 || (size_t)(cmd - data) + cmd_size > len) break;
+        size_t cmd_end = (size_t)(cmd - data) + cmd_size;
 
-        if (cmd_type == NEVERC_LC_SEGMENT && si < seg_count) {
+        if (cmd_type == NEVERC_LC_SEGMENT && cmd_size >= 56 && si < seg_count) {
             neverc_macho_segment_t *seg = &f->segments[si++];
             copy_name(seg->name, sizeof(seg->name), cmd + 8, 16);
             seg->addr    = r32(cmd + 24);
@@ -114,7 +137,8 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
             uint32_t nsects = r32(cmd + 48);
             seg->nsects = nsects;
             const uint8_t *sec = cmd + 56;
-            for (uint32_t j = 0; j < nsects && sci < sec_count; j++) {
+            for (uint32_t j = 0; j < nsects && sci < sec_count &&
+                                (size_t)(sec - data) + 68 <= cmd_end; j++) {
                 neverc_macho_section_t *s = &f->sections[sci++];
                 copy_name(s->name, sizeof(s->name), sec, 16);
                 copy_name(s->segname, sizeof(s->segname), sec + 16, 16);
@@ -127,7 +151,7 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
                 s->flags  = r32(sec + 56);
                 sec += 68;
             }
-        } else if (cmd_type == NEVERC_LC_SEGMENT_64 && si < seg_count) {
+        } else if (cmd_type == NEVERC_LC_SEGMENT_64 && cmd_size >= 72 && si < seg_count) {
             neverc_macho_segment_t *seg = &f->segments[si++];
             copy_name(seg->name, sizeof(seg->name), cmd + 8, 16);
             seg->addr    = r64(cmd + 24);
@@ -139,7 +163,8 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
             uint32_t nsects = r32(cmd + 64);
             seg->nsects = nsects;
             const uint8_t *sec = cmd + 72;
-            for (uint32_t j = 0; j < nsects && sci < sec_count; j++) {
+            for (uint32_t j = 0; j < nsects && sci < sec_count &&
+                                (size_t)(sec - data) + 80 <= cmd_end; j++) {
                 neverc_macho_section_t *s = &f->sections[sci++];
                 copy_name(s->name, sizeof(s->name), sec, 16);
                 copy_name(s->segname, sizeof(s->segname), sec + 16, 16);
@@ -152,12 +177,12 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
                 s->flags  = r32(sec + 64);
                 sec += 80;
             }
-        } else if (cmd_type == NEVERC_LC_SYMTAB) {
+        } else if (cmd_type == NEVERC_LC_SYMTAB && cmd_size >= 24) {
             f->symoff  = r32(cmd + 8);
             f->nsyms   = r32(cmd + 12);
             f->stroff  = r32(cmd + 16);
             f->strsize = r32(cmd + 20);
-        } else if (cmd_type == NEVERC_LC_LOAD_DYLIB && di < dylib_count) {
+        } else if (cmd_type == NEVERC_LC_LOAD_DYLIB && cmd_size >= 24 && di < dylib_count) {
             uint32_t name_off = r32(cmd + 8);
             if (name_off < cmd_size) {
                 copy_name(f->dylibs[di].name, sizeof(f->dylibs[di].name),
@@ -232,7 +257,7 @@ int neverc_macho_section_data(const neverc_macho_file_t *f,
     if (!s || s->size == 0) {
         *out = NULL; *out_len = 0; return 0;
     }
-    if ((uint64_t)s->offset + s->size > f->data_len) return -1;
+    if (s->offset > f->data_len || s->size > f->data_len - s->offset) return -1;
     *out = (uint8_t *)malloc((size_t)s->size);
     if (!*out) return -1;
     memcpy(*out, f->data + s->offset, (size_t)s->size);
@@ -266,7 +291,11 @@ int neverc_macho_symbols(const neverc_macho_file_t *f,
         uint32_t strx = r32(e);
         if (strx < f->strsize) {
             const char *name = (const char *)(str_data + strx);
-            size_t nlen = strlen(name);
+            /* The string table may not be NUL-terminated before its end; bound
+             * the scan to the table so strlen can't read past it (and the file). */
+            size_t maxn = (size_t)(f->strsize - strx);
+            size_t nlen = 0;
+            while (nlen < maxn && name[nlen]) nlen++;
             if (nlen >= sizeof(s->name)) nlen = sizeof(s->name) - 1;
             memcpy(s->name, name, nlen);
             s->name[nlen] = '\0';

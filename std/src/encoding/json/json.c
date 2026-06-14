@@ -24,10 +24,16 @@ static char *dup_str(const char *s, size_t len) {
 
 /* ---- parser state ---- */
 
+/* Bound parser recursion so adversarial deep nesting ("[[[[..." / "{...") can't
+ * overflow the C stack (a crash/DoS). 1000 is far beyond real-world JSON yet
+ * stays safe even on small (≈512 KiB iOS/Windows) thread stacks. */
+#define NCI_JSON_MAX_DEPTH 1000
+
 typedef struct {
     const char *src;
     size_t      len;
     size_t      pos;
+    int         depth;
 } parser_t;
 
 static void skip_ws(parser_t *p) {
@@ -457,20 +463,26 @@ err:
 static neverc_json_value_t *parse_value(parser_t *p) {
     int c = peek(p);
     if (c < 0) return NULL;
+    /* Recursion guard: parse_array/parse_object re-enter parse_value, so capping
+     * it here bounds total nesting depth and prevents a stack-overflow DoS. */
+    if (++p->depth > NCI_JSON_MAX_DEPTH) { p->depth--; return NULL; }
+    neverc_json_value_t *v;
     switch (c) {
-        case 'n': return parse_null(p);
-        case 't': case 'f': return parse_bool(p);
-        case '"': return parse_string(p);
-        case '[': return parse_array(p);
-        case '{': return parse_object(p);
-        default:  return parse_number(p);
+        case 'n': v = parse_null(p); break;
+        case 't': case 'f': v = parse_bool(p); break;
+        case '"': v = parse_string(p); break;
+        case '[': v = parse_array(p); break;
+        case '{': v = parse_object(p); break;
+        default:  v = parse_number(p); break;
     }
+    p->depth--;
+    return v;
 }
 
 /* ---- public API ---- */
 
 neverc_json_value_t *neverc_json_parse(const char *text, size_t len) {
-    parser_t p = { .src = text, .len = len, .pos = 0 };
+    parser_t p = { .src = text, .len = len, .pos = 0, .depth = 0 };
     neverc_json_value_t *v = parse_value(&p);
     if (!v) return NULL;
     skip_ws(&p);

@@ -101,11 +101,18 @@ static frag_t frag(nfa_state_t *s, nfa_state_t *e) {
     return f;
 }
 
+/* Cap parenthesis nesting: parse_atom recurses into parse_expr for each '(', so
+ * an adversarial pattern of many '(' would overflow the C stack at compile time
+ * (a DoS). 400 is far past any real pattern and safe on small thread stacks
+ * (this cycle is ~4 frames deep per level). */
+#define NCI_REGEXP_MAX_DEPTH 400
+
 /* Recursive-descent parser for regex */
 typedef struct {
     const char *p;
     neverc_regexp_t *re;
     const char *err;
+    int depth;
 } parser_t;
 
 static frag_t parse_expr(parser_t *par);
@@ -125,7 +132,13 @@ static frag_t parse_atom(parser_t *par) {
     if (c == '(') {
         par->p++;
         par->re->ngroups++;
+        if (++par->depth > NCI_REGEXP_MAX_DEPTH) {
+            par->err = "expression nested too deeply";
+            par->depth--;
+            return frag(NULL, NULL);
+        }
         frag_t f = parse_expr(par);
+        par->depth--;
         if (*par->p == ')') par->p++;
         else par->err = "missing )";
         return f;
@@ -432,7 +445,7 @@ neverc_regexp_t *neverc_regexp_compile(const char *pattern, const char **errp) {
     neverc_regexp_t *re = (neverc_regexp_t *)calloc(1, sizeof(neverc_regexp_t));
     if (!re) { if (errp) *errp = "out of memory"; return NULL; }
 
-    parser_t par = { pattern, re, NULL };
+    parser_t par = { pattern, re, NULL, 0 };
     frag_t f = parse_expr(&par);
 
     if (par.err || re->oom) {

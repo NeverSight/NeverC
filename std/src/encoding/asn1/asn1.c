@@ -13,12 +13,21 @@ int neverc_asn1_decode_element(const uint8_t *data, size_t len,
     elem->tag_number = tag_byte & 0x1F;
 
     if (elem->tag_number == 0x1F) {
-        elem->tag_number = 0;
+        /* High-tag-number form. Accumulate in a 64-bit unsigned (the shift is
+         * well-defined there — int overflowed its sign bit, which is UB, and
+         * `long` is only 32-bit on Windows/LLP64) and reject tags that exceed
+         * the int field so the value can't wrap into a negative/garbage tag. */
+        uint64_t tn = 0;
+        int got = 0;
         while (pos < len) {
             uint8_t b = data[pos++];
-            elem->tag_number = (elem->tag_number << 7) | (b & 0x7F);
+            tn = (tn << 7) | (uint64_t)(b & 0x7F);
+            got = 1;
+            if (tn > 0x7FFFFFFF) return -1;   /* tag number too large */
             if (!(b & 0x80)) break;
         }
+        if (!got) return -1;
+        elem->tag_number = (int)tn;
     }
 
     if (pos >= len) return -1;
@@ -47,10 +56,14 @@ int neverc_asn1_decode_int64(const neverc_asn1_element_t *elem, int64_t *val) {
     if (elem->tag_number != NEVERC_ASN1_INTEGER) return -1;
     if (elem->value_len == 0 || elem->value_len > 8) return -1;
 
-    int64_t v = (elem->value[0] & 0x80) ? -1 : 0;
+    /* DER INTEGER is big-endian two's complement. Accumulate in uint64_t so the
+     * shift is always well-defined — `(v << 8)` on a negative int64_t is UB. The
+     * leading 0xFF... sign fill makes the final reinterpret reproduce the signed
+     * value on every two's-complement target (all of ours). */
+    uint64_t v = (elem->value[0] & 0x80) ? ~(uint64_t)0 : 0;
     for (size_t i = 0; i < elem->value_len; i++)
         v = (v << 8) | elem->value[i];
-    *val = v;
+    *val = (int64_t)v;
     return 0;
 }
 

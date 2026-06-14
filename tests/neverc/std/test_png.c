@@ -274,6 +274,42 @@ static void test_chunk_crc_valid(void) {
     free(img.pixels);
 }
 
+/* IDAT carries a zlib wrapper (RFC 1950). FCHECK must make (CMF*256+FLG) a
+ * multiple of 31 and FDICT must be clear — otherwise libpng/browsers reject the
+ * file. The old encoder always added (31 - rem) even when rem==0, flipping FDICT. */
+static void test_zlib_fcheck_valid(void) {
+    printf("[zlib_fcheck_valid]\n");
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 3; img.height = 3; img.bit_depth = 8;
+    img.color_type = NEVERC_PNG_COLOR_TRUECOLOR;
+    img.channels = 3; img.stride = (size_t)img.width * 3;
+    img.pixels = (uint8_t *)calloc(1, img.height * img.stride);
+
+    uint8_t *png = NULL; size_t len = 0;
+    ASSERT_EQ(neverc_png_encode(&img, &png, &len), 0);
+
+    size_t pos = 8; int saw_idat = 0;
+    while (pos + 12 <= len) {
+        uint32_t clen = rd_be32(png + pos);
+        if (pos + 12 + clen > len) break;
+        if (memcmp(png + pos + 4, "IDAT", 4) == 0 && clen >= 2) {
+            uint8_t cmf = png[pos + 8];
+            uint8_t flg = png[pos + 9];
+            unsigned check = (unsigned)cmf * 256u + (unsigned)flg;
+            ASSERT_EQ(check % 31, 0);
+            ASSERT_EQ(flg & 0x20, 0);   /* no preset dictionary */
+            saw_idat = 1;
+            break;
+        }
+        pos += 12 + clen;
+    }
+    ASSERT_TRUE(saw_idat);
+
+    free(png);
+    free(img.pixels);
+}
+
 int main(void) {
     printf("NeverC image/png tests\n");
     test_encode_decode_rgba();
@@ -283,6 +319,7 @@ int main(void) {
     test_invalid_data();
     test_large_image();
     test_chunk_crc_valid();
+    test_zlib_fcheck_valid();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

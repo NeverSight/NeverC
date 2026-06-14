@@ -38,7 +38,16 @@ size_t neverc_base64_encoded_len(size_t n) {
 }
 
 size_t neverc_base64_decoded_len(size_t n) {
-    return (n / 4) * 3;
+    /* Upper bound on bytes the decoder may write for n input chars. The decoder
+     * accepts unpadded input (RawStd/RawURL, as in JWTs), where a trailing group
+     * of 2 or 3 chars yields 1 or 2 bytes beyond (n/4)*3. Reporting only the
+     * padded (n/4)*3 made callers that size a buffer by this overflow the heap on
+     * unpadded input; include the remainder so the bound is exact. */
+    size_t full = (n / 4) * 3;
+    size_t rem = n % 4;
+    if (rem == 2) full += 1;
+    else if (rem == 3) full += 2;
+    return full;
 }
 
 static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,

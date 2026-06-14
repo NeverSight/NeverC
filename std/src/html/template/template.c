@@ -227,6 +227,11 @@ static const char *skip_ws(const char *s) {
     return s;
 }
 
+/* Cap {{if}}/{{range}} nesting: parse_nodes recurses per block, so an adversarial
+ * template of many nested tags would overflow the C stack at compile time. 400 is
+ * far beyond real templates and safe on small (≈512 KiB) thread stacks. */
+#define NCI_HTML_TEMPLATE_MAX_DEPTH 400
+
 static node_t *parse_nodes(const char **src, int depth);
 
 static node_t *parse_tag(const char *inner, size_t len) {
@@ -259,6 +264,9 @@ static node_t *parse_tag(const char *inner, size_t len) {
 }
 
 static node_t *parse_nodes(const char **src, int depth) {
+    if (depth > NCI_HTML_TEMPLATE_MAX_DEPTH)
+        return NULL;
+
     node_t head = {0};
     node_t *tail = &head;
 
