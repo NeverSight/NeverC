@@ -85,6 +85,14 @@ STD_TEST(asn1, "src/encoding/asn1/asn1.c")
 STD_TEST(fnv, "src/hash/fnv/fnv.c")
 STD_TEST(crc32, "src/hash/crc32/crc32.c")
 STD_TEST(crc64, "src/hash/crc64/crc64.c")
+#ifndef _WIN32
+TEST_F(StdLibTest, crc_concurrency) {
+  auto r = compileAndRunStdTest("crc_concurrency",
+                                {"src/hash/crc32/crc32.c", "src/hash/crc64/crc64.c"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+#endif
 STD_TEST(adler32, "src/hash/adler32/adler32.c")
 STD_TEST(maphash, "src/hash/maphash/maphash.c")
 
