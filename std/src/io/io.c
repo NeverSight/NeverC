@@ -106,6 +106,8 @@ int neverc_io_mem_reader_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
     if (mr->pos >= mr->len) { *n = 0; return NEVERC_IO_EOF; }
     size_t avail = mr->len - mr->pos;
     size_t count = len < avail ? len : avail;
+    /* Scalar copy: the const source lets the compiler auto-vectorize this, and
+     * it beats a memcpy call for the common small-read sizes (measured). */
     for (size_t i = 0; i < count; i++) buf[i] = mr->data[mr->pos + i];
     mr->pos += count;
     *n = count;
@@ -126,7 +128,7 @@ int neverc_io_mem_writer_write(void *ctx, const uint8_t *buf, size_t len,
         mw->cap *= 2;
         mw->data = (uint8_t *)realloc(mw->data, mw->cap);
     }
-    for (size_t i = 0; i < len; i++) mw->data[mw->len + i] = buf[i];
+    memcpy(mw->data + mw->len, buf, len);
     mw->len += len;
     *n = len;
     return 0;
@@ -266,9 +268,9 @@ static int pipe_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
     *n = 0;
     if (p->len == 0) return p->closed ? NEVERC_IO_EOF : 0;
     size_t to_read = len < p->len ? len : p->len;
-    for (size_t i = 0; i < to_read; i++) buf[i] = p->buf[i];
+    memcpy(buf, p->buf, to_read);
     size_t remaining = p->len - to_read;
-    for (size_t i = 0; i < remaining; i++) p->buf[i] = p->buf[to_read + i];
+    memmove(p->buf, p->buf + to_read, remaining);   /* ranges overlap when to_read < remaining */
     p->len = remaining;
     *n = to_read;
     return 0;
@@ -282,7 +284,7 @@ static int pipe_write(void *ctx, const uint8_t *buf, size_t len, size_t *n) {
         p->cap = p->cap == 0 ? 256 : p->cap * 2;
         p->buf = (uint8_t *)realloc(p->buf, p->cap);
     }
-    for (size_t i = 0; i < len; i++) p->buf[p->len + i] = buf[i];
+    memcpy(p->buf + p->len, buf, len);
     p->len += len;
     *n = len;
     return 0;

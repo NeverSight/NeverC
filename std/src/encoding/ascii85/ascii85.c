@@ -4,43 +4,62 @@ int neverc_ascii85_max_encoded_len(int n) {
     return (n + 3) / 4 * 5;
 }
 
+/*
+ * Powers of 85. The five base-85 digits of a 32-bit group are extracted with
+ * independent divisions by these constants (each lowered to a multiply-high by
+ * the compiler), instead of the previous five serial `v /= 85` steps whose
+ * data dependency serialized the whole group. The top digit needs no `% 85`
+ * because v/85^4 < 2^32/85^4 < 85.
+ */
+#define A85_P4 52200625u  /* 85^4 */
+#define A85_P3   614125u  /* 85^3 */
+#define A85_P2     7225u  /* 85^2 */
+#define A85_P1       85u  /* 85^1 */
+
 int neverc_ascii85_encode(unsigned char *dst, const unsigned char *src, size_t src_len) {
     if (src_len == 0) return 0;
 
     int n = 0;
     size_t off = 0;
-    while (off < src_len) {
-        unsigned int v = 0;
-        size_t remain = src_len - off;
 
-        switch (remain >= 4 ? 4 : remain) {
-        case 4: v |= (unsigned int)src[off + 3]; /* fall through */
-        case 3: v |= (unsigned int)src[off + 2] << 8;  /* fall through */
-        case 2: v |= (unsigned int)src[off + 1] << 16; /* fall through */
-        case 1: v |= (unsigned int)src[off + 0] << 24; break;
-        }
-
-        if (v == 0 && remain >= 4) {
+    /* Hot path: full 4-byte groups. */
+    while (src_len - off >= 4) {
+        unsigned int v = ((unsigned int)src[off + 0] << 24) |
+                         ((unsigned int)src[off + 1] << 16) |
+                         ((unsigned int)src[off + 2] << 8)  |
+                          (unsigned int)src[off + 3];
+        if (v == 0) {
             dst[n++] = 'z';
             off += 4;
             continue;
         }
+        dst[n + 0] = (unsigned char)('!' + v / A85_P4);
+        dst[n + 1] = (unsigned char)('!' + v / A85_P3 % 85u);
+        dst[n + 2] = (unsigned char)('!' + v / A85_P2 % 85u);
+        dst[n + 3] = (unsigned char)('!' + v / A85_P1 % 85u);
+        dst[n + 4] = (unsigned char)('!' + v % 85u);
+        n += 5;
+        off += 4;
+    }
 
-        unsigned char tmp[5];
-        for (int i = 4; i >= 0; i--) {
-            tmp[i] = '!' + (unsigned char)(v % 85);
-            v /= 85;
+    /* Tail: 1..3 bytes, high-aligned; the 'z' shorthand never applies here. */
+    size_t remain = src_len - off;
+    if (remain > 0) {
+        unsigned int v = 0;
+        switch (remain) {
+        case 3: v |= (unsigned int)src[off + 2] << 8;  /* fall through */
+        case 2: v |= (unsigned int)src[off + 1] << 16; /* fall through */
+        case 1: v |= (unsigned int)src[off + 0] << 24; break;
         }
-
-        int m = 5;
-        if (remain < 4)
-            m = (int)remain + 1;
-
+        unsigned char tmp[5];
+        tmp[0] = (unsigned char)('!' + v / A85_P4);
+        tmp[1] = (unsigned char)('!' + v / A85_P3 % 85u);
+        tmp[2] = (unsigned char)('!' + v / A85_P2 % 85u);
+        tmp[3] = (unsigned char)('!' + v / A85_P1 % 85u);
+        tmp[4] = (unsigned char)('!' + v % 85u);
+        int m = (int)remain + 1;
         for (int i = 0; i < m; i++)
             dst[n++] = tmp[i];
-
-        if (remain < 4) break;
-        off += 4;
     }
     return n;
 }

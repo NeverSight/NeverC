@@ -7,6 +7,7 @@ enum { NODE_TEXT, NODE_VAR, NODE_IF, NODE_RANGE };
 typedef struct tnode {
     int            type;
     char          *text;
+    size_t         text_len;
     char          *key;
     struct tnode  *children;
     int            nchildren;
@@ -21,6 +22,7 @@ struct neverc_template {
     tnode_t *nodes;
     int      nnodes;
     int      cap;
+    size_t   out_hint;   /* total literal-text bytes, for output presizing */
 };
 
 static void add_node(tnode_t **list, int *count, int *cap, tnode_t node) {
@@ -140,7 +142,8 @@ static int parse_nodes(const char **p, const char *end,
                 tnode_t node;
                 memset(&node, 0, sizeof(node));
                 node.type = NODE_TEXT;
-                node.text = dup_str(*p, end - *p);
+                node.text_len = (size_t)(end - *p);
+                node.text = dup_str(*p, node.text_len);
                 add_node(nodes, count, cap, node);
             }
             *p = end;
@@ -151,7 +154,8 @@ static int parse_nodes(const char **p, const char *end,
             tnode_t node;
             memset(&node, 0, sizeof(node));
             node.type = NODE_TEXT;
-            node.text = dup_str(*p, next - *p);
+            node.text_len = (size_t)(next - *p);
+            node.text = dup_str(*p, node.text_len);
             add_node(nodes, count, cap, node);
         }
 
@@ -177,11 +181,27 @@ static int parse_nodes(const char **p, const char *end,
     return 0;
 }
 
+/* Sum every literal-text node's length (including nested branches) so execute()
+ * can presize its output buffer and skip the grow-by-doubling reallocs. Unused
+ * if/else branches are included — it is only a hint, and over-reserving a render
+ * buffer is cheaper than repeatedly reallocating it. */
+static size_t sum_text_len(const tnode_t *nodes, int count) {
+    size_t total = 0;
+    for (int i = 0; i < count; i++) {
+        const tnode_t *n = &nodes[i];
+        if (n->type == NODE_TEXT) total += n->text_len;
+        if (n->children)    total += sum_text_len(n->children, n->nchildren);
+        if (n->else_branch) total += sum_text_len(n->else_branch, n->nelse);
+    }
+    return total;
+}
+
 neverc_template_t *neverc_template_parse(const char *text, const char **errp) {
     neverc_template_t *tmpl = (neverc_template_t *)calloc(1, sizeof(*tmpl));
     const char *p = text;
     const char *end = text + strlen(text);
     parse_nodes(&p, end, &tmpl->nodes, &tmpl->nnodes, &tmpl->cap, 0, 0);
+    tmpl->out_hint = sum_text_len(tmpl->nodes, tmpl->nnodes);
     if (errp) *errp = NULL;
     return tmpl;
 }
@@ -250,7 +270,11 @@ typedef struct {
     size_t cap;
 } outbuf_t;
 
-static void out_init(outbuf_t *b) { b->cap = 256; b->data = (char *)malloc(b->cap); b->len = 0; }
+static void out_init(outbuf_t *b, size_t hint) {
+    b->cap = (hint < 64) ? 64 : hint + 16;
+    b->data = (char *)malloc(b->cap);
+    b->len = 0;
+}
 static void out_puts(outbuf_t *b, const char *s, size_t n) {
     while (b->len + n >= b->cap) { b->cap *= 2; b->data = (char *)realloc(b->data, b->cap); }
     memcpy(b->data + b->len, s, n);
@@ -263,7 +287,7 @@ static void exec_nodes(outbuf_t *out, tnode_t *nodes, int count,
         tnode_t *n = &nodes[i];
         switch (n->type) {
         case NODE_TEXT:
-            out_puts(out, n->text, strlen(n->text));
+            out_puts(out, n->text, n->text_len);
             break;
         case NODE_VAR: {
             const char *val = neverc_template_data_get(data, n->key);
@@ -293,7 +317,7 @@ char *neverc_template_execute(neverc_template_t *tmpl,
                                const neverc_template_data_t *data,
                                size_t *outlen) {
     outbuf_t out;
-    out_init(&out);
+    out_init(&out, tmpl->out_hint);
     exec_nodes(&out, tmpl->nodes, tmpl->nnodes, data);
     out.data[out.len] = '\0';
     *outlen = out.len;

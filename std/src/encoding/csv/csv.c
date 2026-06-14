@@ -7,6 +7,7 @@
 #include <string.h>
 
 static int needs_quoting(const char *s, char delim, int use_crlf) {
+    (void)use_crlf; /* \r and \n always force quoting regardless of line ending */
     for (const char *p = s; *p; p++) {
         if (*p == delim || *p == '"' || *p == '\n' || *p == '\r')
             return 1;
@@ -46,19 +47,44 @@ int neverc_csv_read_line(const char *line, size_t line_len,
 
         if (i < line_len && line[i] == '"') {
             i++;
-            while (i < line_len) {
+            /* Quoted field: '"' is the only special byte. */
+            for (;;) {
+                if (i >= line_len) break;                /* unterminated: end of line */
                 if (line[i] == '"') {
                     if (i + 1 < line_len && line[i + 1] == '"') {
                         if (wpos >= work_buf_len) return -1;
                         work_buf[wpos++] = '"';
-                        i += 2;
-                    } else {
-                        i++;
-                        break;
+                        i += 2;                          /* escaped doubled quote */
+                        continue;
                     }
-                } else {
+                    i++;
+                    break;                               /* closing quote */
+                }
+                /* Run of ordinary bytes up to the next quote. Copy a short window
+                 * inline (scan and copy fused in one pass, as the old code did),
+                 * so escape-dense fields pay no extra cost; only a run still
+                 * unbroken after the window escalates to memchr + memcpy, so a
+                 * long quoted cell moves at SIMD speed. */
+                size_t remain = line_len - i;
+                size_t k = 0;
+                while (k < 16 && k < remain && line[i + k] != '"') {
                     if (wpos >= work_buf_len) return -1;
-                    work_buf[wpos++] = line[i++];
+                    work_buf[wpos++] = line[i + k];
+                    k++;
+                }
+                i += k;
+                if (k == 16) {                           /* long run -> bulk copy */
+                    const char *start = line + i;
+                    size_t rem2 = line_len - i;
+                    const char *q = (const char *)memchr(start, '"', rem2);
+                    size_t run = q ? (size_t)(q - start) : rem2;
+                    if (run > work_buf_len - wpos) return -1;
+                    memcpy(work_buf + wpos, start, run);
+                    wpos += run;
+                    i += run;
+                    if (!q) break;                       /* unterminated: end of line */
+                } else if (k == remain) {
+                    break;                               /* ran off the end */
                 }
             }
         } else {
@@ -165,20 +191,35 @@ int neverc_csv_write_record(const char **fields, int nfields,
 
         const char *f = fields[i];
         if (needs_quoting(f, delim, crlf)) {
-            if (pos >= dst_len) return -1;
-            dst[pos++] = '"';
-            for (const char *p = f; *p; p++) {
-                if (*p == '"') {
-                    if (pos + 1 >= dst_len) return -1;
-                    dst[pos++] = '"';
-                    dst[pos++] = '"';
-                } else {
-                    if (pos >= dst_len) return -1;
-                    dst[pos++] = *p;
+            /* The common quoted field (forced by a comma or newline) carries no
+             * embedded '"', so its body copies verbatim — wrap it in a single
+             * memcpy. Only when a '"' is actually present fall back to the
+             * byte-at-a-time path that doubles each quote, which keeps that
+             * (rarer, quote-dense) case at its original speed. strchr avoids a
+             * length scan on the quoted path. */
+            if (!strchr(f, '"')) {
+                size_t flen = strlen(f);
+                if (pos + flen + 2 > dst_len) return -1;
+                dst[pos++] = '"';
+                memcpy(dst + pos, f, flen);
+                pos += flen;
+                dst[pos++] = '"';
+            } else {
+                if (pos >= dst_len) return -1;
+                dst[pos++] = '"';
+                for (const char *p = f; *p; p++) {
+                    if (*p == '"') {
+                        if (pos + 1 >= dst_len) return -1;
+                        dst[pos++] = '"';
+                        dst[pos++] = '"';
+                    } else {
+                        if (pos >= dst_len) return -1;
+                        dst[pos++] = *p;
+                    }
                 }
+                if (pos >= dst_len) return -1;
+                dst[pos++] = '"';
             }
-            if (pos >= dst_len) return -1;
-            dst[pos++] = '"';
         } else {
             size_t flen = strlen(f);
             if (pos + flen > dst_len) return -1;

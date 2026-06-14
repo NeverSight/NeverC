@@ -65,14 +65,23 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
     if (bytes_written) *bytes_written = 0;
     if (rest_offset) *rest_offset = pem_len;
 
+    /*
+     * Locate "-----BEGIN " at start-of-input or immediately after a line
+     * break. The marker starts with '-', so memchr() jumps straight to each
+     * candidate dash instead of memcmp-probing every offset, while preserving
+     * the previous first-match scan order.
+     */
+    const char *pem_end = pem_data + pem_len;
     const char *begin = NULL;
-    for (size_t i = 0; i + 11 <= pem_len; i++) {
-        if (memcmp(pem_data + i, BEGIN_PREFIX, 11) == 0) {
-            if (i == 0 || pem_data[i - 1] == '\n' || pem_data[i - 1] == '\r') {
-                begin = pem_data + i;
-                break;
-            }
+    for (const char *s = pem_data; s + 11 <= pem_end; ) {
+        const char *cand = (const char *)memchr(s, '-', (size_t)((pem_end - 11) - s) + 1);
+        if (!cand) break;
+        if (memcmp(cand, BEGIN_PREFIX, 11) == 0 &&
+            (cand == pem_data || cand[-1] == '\n' || cand[-1] == '\r')) {
+            begin = cand;
+            break;
         }
+        s = cand + 1;
     }
     if (!begin) return -1;
 
@@ -99,12 +108,22 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
     memcpy(end_marker + em_len, DASHES, ds_len); em_len += ds_len;
     end_marker[em_len] = '\0';
 
+    /*
+     * Find "-----END <type>-----". A standard base64 body contains no '-', so
+     * memchr() on the leading dash leaps past the payload to the marker
+     * instead of memcmp-probing every body offset; the loop still returns the
+     * first full match like the previous scan.
+     */
     const char *end = NULL;
-    for (const char *s = body_start; s + em_len <= pem_data + pem_len; s++) {
-        if (memcmp(s, end_marker, (size_t)em_len) == 0) {
-            end = s;
+    for (const char *s = body_start; s + em_len <= pem_end; ) {
+        const char *cand = (const char *)memchr(s, end_marker[0],
+                                                (size_t)((pem_end - em_len) - s) + 1);
+        if (!cand) break;
+        if (memcmp(cand, end_marker, (size_t)em_len) == 0) {
+            end = cand;
             break;
         }
+        s = cand + 1;
     }
     if (!end) return -1;
 
@@ -121,9 +140,20 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
     size_t decoded_max = neverc_base64_decoded_len(clean_len);
     if (decoded_max > out_cap) return -1;
 
-    /* Decode base64 inline, skipping whitespace. Since decoded output
-       is always shorter than encoded input, we can safely use out_buf. */
-    static const int8_t b64tab[256] = {
+    /*
+     * Decode base64 inline, skipping whitespace. Decoded output is always
+     * shorter than the encoded input, so we can write straight into out_buf.
+     *
+     * FT[] folds three roles into one lookup: standard base64 chars map to
+     * their 0-63 value; ASCII whitespace and '=' map to the PEM_SKIP sentinel
+     * (high bit set); any other byte maps to 0, matching the previous table's
+     * lenient treatment of stray characters. The sentinel's high bit lets the
+     * hot loop validate four characters with a single OR-and-test and only
+     * drop to the careful per-character path when a quad straddles a newline,
+     * whitespace, or padding.
+     */
+    #define PEM_SKIP 0x80u
+    static const uint8_t FT[256] = {
         ['A']=0, ['B']=1, ['C']=2, ['D']=3, ['E']=4, ['F']=5, ['G']=6, ['H']=7,
         ['I']=8, ['J']=9, ['K']=10,['L']=11,['M']=12,['N']=13,['O']=14,['P']=15,
         ['Q']=16,['R']=17,['S']=18,['T']=19,['U']=20,['V']=21,['W']=22,['X']=23,
@@ -134,28 +164,54 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
         ['y']=50,['z']=51,
         ['0']=52,['1']=53,['2']=54,['3']=55,['4']=56,['5']=57,['6']=58,['7']=59,
         ['8']=60,['9']=61,['+']=62,['/']=63,
+        ['\t']=PEM_SKIP, ['\n']=PEM_SKIP, ['\r']=PEM_SKIP, [' ']=PEM_SKIP,
+        ['=']=PEM_SKIP,
     };
 
     uint8_t quad[4];
     int qi = 0;
     size_t out_i = 0;
     int pad = 0;
-    for (size_t i = 0; i < b64_raw_len; i++) {
-        unsigned char c = (unsigned char)body_start[i];
-        if (c == '\n' || c == '\r' || c == ' ' || c == '\t') continue;
-        if (c == '=') { quad[qi++] = 0; pad++; }
-        else quad[qi++] = (uint8_t)b64tab[c];
+    size_t i = 0;
+    while (i < b64_raw_len) {
+        /*
+         * Fast path: with an empty accumulator, consume four consecutive
+         * base64 characters at once. Standard PEM emits 64-char lines
+         * (16 aligned quads) before each newline, so virtually the whole
+         * body is decoded here without per-character branching.
+         */
+        if (qi == 0 && i + 4 <= b64_raw_len && out_i + 3 <= out_cap) {
+            uint8_t a = FT[(unsigned char)body_start[i]];
+            uint8_t b = FT[(unsigned char)body_start[i + 1]];
+            uint8_t c = FT[(unsigned char)body_start[i + 2]];
+            uint8_t d = FT[(unsigned char)body_start[i + 3]];
+            if (((a | b | c | d) & PEM_SKIP) == 0) {
+                out_buf[out_i++] = (uint8_t)((a << 2) | (b >> 4));
+                out_buf[out_i++] = (uint8_t)((b << 4) | (c >> 2));
+                out_buf[out_i++] = (uint8_t)((c << 6) | d);
+                i += 4;
+                continue;
+            }
+        }
+
+        unsigned char ch = (unsigned char)body_start[i++];
+        uint8_t f = FT[ch];
+        if (f & PEM_SKIP) {
+            if (ch != '=') continue;   /* whitespace: skip */
+            quad[qi++] = 0; pad++;      /* '=': padding */
+        } else {
+            quad[qi++] = f;             /* base64 value (stray bytes -> 0) */
+        }
         if (qi == 4) {
-            if (out_i < out_cap) out_buf[out_i++] = (quad[0]<<2) | (quad[1]>>4);
-            if (pad < 2 && out_i < out_cap) out_buf[out_i++] = (quad[1]<<4) | (quad[2]>>2);
-            if (pad < 1 && out_i < out_cap) out_buf[out_i++] = (quad[2]<<6) | quad[3];
+            if (out_i < out_cap) out_buf[out_i++] = (uint8_t)((quad[0]<<2) | (quad[1]>>4));
+            if (pad < 2 && out_i < out_cap) out_buf[out_i++] = (uint8_t)((quad[1]<<4) | (quad[2]>>2));
+            if (pad < 1 && out_i < out_cap) out_buf[out_i++] = (uint8_t)((quad[2]<<6) | quad[3]);
             qi = 0; pad = 0;
         }
     }
-    int decoded = (int)out_i;
-    if (decoded < 0) return -1;
+    #undef PEM_SKIP
 
-    if (bytes_written) *bytes_written = (size_t)decoded;
+    if (bytes_written) *bytes_written = out_i;
 
     const char *after_end = end + em_len;
     while (after_end < pem_data + pem_len && (*after_end == '-' || *after_end == '\n' || *after_end == '\r'))

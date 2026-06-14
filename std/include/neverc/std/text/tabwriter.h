@@ -36,6 +36,7 @@ typedef struct {
 
     char    buf[NEVERC_TABWRITER_MAX_BUF];
     size_t  buf_len;
+    int     buf_carved;   /* running total of carved cell sizes (= next cell start) */
 
     neverc_tabwriter_cell_t cells[NEVERC_TABWRITER_MAX_COLS];
     int     ncells;

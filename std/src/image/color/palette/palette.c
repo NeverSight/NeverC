@@ -125,13 +125,19 @@ int neverc_palette_plan9_index(uint8_t r, uint8_t g, uint8_t b) {
     return best;
 }
 
+/*
+ * WebSafe is an axis-aligned 6x6x6 cube: channel levels are {0x00,0x33,0x66,
+ * 0x99,0xcc,0xff} and entry index == r_level*36 + g_level*6 + b_level. Squared
+ * Euclidean distance is separable across channels, so the nearest entry is the
+ * one whose per-channel level is closest to each input channel — found directly
+ * instead of scanning all 216 entries. The gap between levels is 51 (odd), so
+ * every channel value has a single nearest level (no halfway ties), which makes
+ * this identical to the old first-match linear search for all 2^24 inputs.
+ */
+static int websafe_level(uint8_t c) {
+    return (c + 25) / 51; /* round(c / 0x33) */
+}
+
 int neverc_palette_websafe_index(uint8_t r, uint8_t g, uint8_t b) {
-    int best = 0, best_dist = color_dist_sq(r, g, b,
-        neverc_palette_websafe[0].r, neverc_palette_websafe[0].g, neverc_palette_websafe[0].b);
-    for (int i = 1; i < NEVERC_PALETTE_WEBSAFE_LEN; i++) {
-        int d = color_dist_sq(r, g, b,
-            neverc_palette_websafe[i].r, neverc_palette_websafe[i].g, neverc_palette_websafe[i].b);
-        if (d < best_dist) { best_dist = d; best = i; }
-    }
-    return best;
+    return websafe_level(r) * 36 + websafe_level(g) * 6 + websafe_level(b);
 }

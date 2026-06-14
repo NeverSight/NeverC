@@ -1,12 +1,28 @@
 #include "neverc/std/mime/quotedprintable.h"
 #include <string.h>
 
-static int hex_digit(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    return -1;
-}
+/* Hex value per byte, -1 for non-hex, so the =XX hot loop avoids the branchy
+ * hex_digit(). A compile-time constant table keeps the decoder reentrant with
+ * no lazy-init data race (a lazily built table can be seen half-initialized by
+ * another thread on weakly-ordered targets such as arm64). */
+static const signed char qp_hex_val[256] = {
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+     0, 1, 2, 3, 4, 5, 6, 7,  8, 9,-1,-1,-1,-1,-1,-1,
+    -1,10,11,12,13,14,15,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,10,11,12,13,14,15,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+};
 
 int neverc_qp_decode(const char *src, size_t src_len,
                      unsigned char *out, size_t out_cap) {
@@ -15,6 +31,25 @@ int neverc_qp_decode(const char *src, size_t src_len,
 
     while (si < src_len) {
         if (src[si] == '=') {
+            /* Consecutive =XX hex escapes — tight inner loop, no outer overhead. */
+            if (si + 2 < src_len &&
+                src[si + 1] != '\r' && src[si + 1] != '\n') {
+                int hi = qp_hex_val[(unsigned char)src[si + 1]];
+                int lo = qp_hex_val[(unsigned char)src[si + 2]];
+                if (hi >= 0 && lo >= 0) {
+                    do {
+                        if (di >= out_cap) return -1;
+                        out[di++] = (unsigned char)((hi << 4) | lo);
+                        si += 3;
+                        if (si + 2 >= src_len || src[si] != '=' ||
+                            src[si + 1] == '\r' || src[si + 1] == '\n')
+                            break;
+                        hi = qp_hex_val[(unsigned char)src[si + 1]];
+                        lo = qp_hex_val[(unsigned char)src[si + 2]];
+                    } while (hi >= 0 && lo >= 0);
+                    continue;
+                }
+            }
             if (si + 2 >= src_len) return -1;
             /* Soft line break: =\r\n or =\n */
             if (src[si+1] == '\r' && si + 2 < src_len && src[si+2] == '\n') {
@@ -23,15 +58,25 @@ int neverc_qp_decode(const char *src, size_t src_len,
             if (src[si+1] == '\n') {
                 si += 2; continue;
             }
-            int hi = hex_digit(src[si+1]);
-            int lo = hex_digit(src[si+2]);
-            if (hi < 0 || lo < 0) return -1;
-            if (di >= out_cap) return -1;
-            out[di++] = (unsigned char)((hi << 4) | lo);
-            si += 3;
-        } else {
-            if (di >= out_cap) return -1;
-            out[di++] = (unsigned char)src[si++];
+            {
+                int hi = qp_hex_val[(unsigned char)src[si+1]];
+                int lo = qp_hex_val[(unsigned char)src[si+2]];
+                if (hi < 0 || lo < 0) return -1;
+                if (di >= out_cap) return -1;
+                out[di++] = (unsigned char)((hi << 4) | lo);
+                si += 3;
+            }
+            continue;
+        }
+
+        /* Literal run up to the next '=' (or end). */
+        {
+            const char *eq = (const char *)memchr(src + si, '=', src_len - si);
+            size_t run = eq ? (size_t)(eq - (src + si)) : (src_len - si);
+            if (run > out_cap - di) return -1;
+            memcpy(out + di, src + si, run);
+            di += run;
+            si += run;
         }
     }
     return (int)di;
@@ -39,18 +84,58 @@ int neverc_qp_decode(const char *src, size_t src_len,
 
 static const char hex_chars[] = "0123456789ABCDEF";
 
+/* Bytes that QP copies verbatim as one output char in the common case:
+ * printable ASCII except '=', plus space and tab. (Space/tab still need
+ * =XX-encoding when they are the last byte before a line break or EOF; that
+ * single position is excluded from a bulk run below.) A 256-entry table keeps
+ * the per-byte test in the scan to a single load, so escape-dense input — where
+ * most bytes are not literal — pays almost nothing for the fast-path probe.
+ * Compile-time constant: immutable and shared, so the encoder is reentrant with
+ * no lazy-init data race on weakly-ordered targets (e.g. arm64). Generated as
+ * ((c>=33 && c<=126 && c!='=') || c==' ' || c=='\t'). */
+static const unsigned char qp_literal_tab[256] = {
+    0,0,0,0,0,0,0,0, 0,1,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,0,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,0,
+    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+};
+
+/* Per-chunk threshold: copy with memcpy once a chunk reaches this length, and
+ * with a tiny inline loop below it, so a few-byte literal run never pays the
+ * call overhead of memcpy. */
+#define QP_BULK_MIN 8
+
 int neverc_qp_encode(const unsigned char *src, size_t src_len,
                      char *out, size_t out_cap, int max_line) {
     if (!src || !out) return -1;
     if (max_line <= 0) max_line = 76;
     size_t di = 0, line_len = 0;
+    const size_t line_cap = (size_t)(max_line - 1);  /* literal chars per line */
 
-    for (size_t i = 0; i < src_len; i++) {
+    size_t i = 0;
+    while (i < src_len) {
         unsigned char c = src[i];
-        int need_encode = 0;
 
+        /* Classify exactly as the original routine, and emit the non-literal
+         * cases here. Doing this first means escape-dense input — mostly bytes
+         * that need =XX-encoding — keeps the original per-byte cost: the
+         * literal-run fast path is reached only after a byte is confirmed to be
+         * an ordinary one-char literal. */
+        int need_encode = 0;
         if (c == '\t' || c == ' ') {
-            /* Encode trailing whitespace before line end */
+            /* Trailing whitespace before a line end must be encoded. */
             if (i + 1 == src_len || src[i+1] == '\r' || src[i+1] == '\n')
                 need_encode = 1;
         } else if (c == '\r' || c == '\n') {
@@ -59,27 +144,74 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
             need_encode = 1;
         }
 
-        int char_len = need_encode ? 3 : 1;
-
-        /* Line wrapping with soft break */
-        if (c != '\r' && c != '\n' && (int)(line_len + (size_t)char_len) > max_line - 1) {
-            if (di + 3 > out_cap) return -1;
-            out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
-            line_len = 0;
-        }
-
-        if (need_encode) {
+        if (need_encode) {                 /* c is never '\r'/'\n' here */
+            if ((int)(line_len + 3) > max_line - 1) {
+                if (di + 3 > out_cap) return -1;
+                out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
+                line_len = 0;
+            }
             if (di + 3 > out_cap) return -1;
             out[di++] = '=';
             out[di++] = hex_chars[c >> 4];
             out[di++] = hex_chars[c & 0x0f];
             line_len += 3;
-        } else {
+            i++;
+            continue;
+        }
+
+        if (c == '\r' || c == '\n') {      /* passed through, no wrapping */
             if (di + 1 > out_cap) return -1;
             out[di++] = (char)c;
             if (c == '\n') line_len = 0;
-            else if (c != '\r') line_len++;
+            i++;
+            continue;
         }
+
+        /* c is an ordinary literal (one output char, increments line_len). If
+         * the next byte is literal too, bulk-copy the whole run, splitting it at
+         * the wrap column with soft breaks; otherwise emit the single byte. The
+         * lookahead keeps isolated literals (escape-dense data) on the cheap
+         * single-byte path. */
+        if (line_cap >= 1 && i + 1 < src_len && qp_literal_tab[src[i+1]]) {
+            size_t j = i + 2;
+            while (j < src_len && qp_literal_tab[src[j]]) j++;
+            /* Trailing whitespace right before a line break / EOF must be
+             * =XX-encoded, so exclude that one byte from the run. */
+            size_t end = j;
+            if ((src[end-1] == ' ' || src[end-1] == '\t') &&
+                (end == src_len || src[end] == '\r' || src[end] == '\n'))
+                end--;
+            size_t run = end - i;                 /* >= 1: src[i] is literal */
+            while (run > 0) {
+                if (line_len >= line_cap) {        /* full line -> soft break */
+                    if (di + 3 > out_cap) return -1;
+                    out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
+                    line_len = 0;
+                }
+                size_t budget = line_cap - line_len;
+                size_t chunk = run < budget ? run : budget;
+                if (di + chunk > out_cap) return -1;
+                if (chunk >= QP_BULK_MIN) {
+                    memcpy(out + di, src + i, chunk);
+                } else {
+                    for (size_t k = 0; k < chunk; k++) out[di+k] = (char)src[i+k];
+                }
+                di += chunk; i += chunk;
+                line_len += chunk; run -= chunk;
+            }
+            continue;
+        }
+
+        /* Single literal byte. */
+        if ((int)(line_len + 1) > max_line - 1) {
+            if (di + 3 > out_cap) return -1;
+            out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
+            line_len = 0;
+        }
+        if (di + 1 > out_cap) return -1;
+        out[di++] = (char)c;
+        line_len++;
+        i++;
     }
     return (int)di;
 }

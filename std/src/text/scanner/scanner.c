@@ -17,6 +17,31 @@ static int is_oct_digit(int ch) {
     return ch >= '0' && ch <= '7';
 }
 
+/*
+ * Identifier-continuation lookup: 1 for letter, digit or '_' (i.e. the bytes
+ * accepted after the first identifier rune). Lets scan_identifier locate the
+ * end of a run in a tight branch-light loop instead of two helper calls per
+ * byte, so the whole run can be copied with one memcpy.
+ */
+static const unsigned char nci_ident_char[256] = {
+    /* 0x00 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    /* 0x10 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    /* 0x20 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    /* 0x30 */ 1,1,1,1,1,1,1,1, 1,1,0,0,0,0,0,0,  /* 0-9 */
+    /* 0x40 */ 0,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,  /* A-O */
+    /* 0x50 */ 1,1,1,1,1,1,1,1, 1,1,1,0,0,0,0,1,  /* P-Z, '_' */
+    /* 0x60 */ 0,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,  /* a-o */
+    /* 0x70 */ 1,1,1,1,1,1,1,1, 1,1,1,0,0,0,0,0,  /* p-z */
+    /* 0x80 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    /* 0x90 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    /* 0xA0 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    /* 0xB0 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    /* 0xC0 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    /* 0xD0 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    /* 0xE0 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    /* 0xF0 */ 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+};
+
 static int peek_ch(neverc_scanner_t *s) {
     if (s->pos >= s->src_len) return NEVERC_SCANNER_EOF;
     return (unsigned char)s->src[s->pos];
@@ -45,12 +70,25 @@ static void skip_whitespace(neverc_scanner_t *s) {
 }
 
 static int scan_identifier(neverc_scanner_t *s) {
-    while (s->pos < s->src_len) {
-        int ch = peek_ch(s);
-        if (!is_letter(ch) && !is_digit(ch)) break;
-        emit(s, ch);
-        next_ch(s);
+    const char *src = s->src;
+    size_t len = s->src_len;
+    size_t start = s->pos;
+    size_t i = start;
+    while (i < len && nci_ident_char[(unsigned char)src[i]])
+        i++;
+
+    size_t run = i - start;
+    /* Bulk-copy the run, preserving the per-byte emit() cap (sizeof-1). */
+    size_t cap = sizeof(s->tok_buf) - 1;
+    if (s->tok_len < cap) {
+        size_t space = cap - s->tok_len;
+        size_t ncopy = run < space ? run : space;
+        memcpy(s->tok_buf + s->tok_len, src + start, ncopy);
+        s->tok_len += ncopy;
     }
+    /* Identifier bytes never include '\n', so only the column advances. */
+    s->pos = i;
+    s->col += (int)run;
     return NEVERC_SCANNER_IDENT;
 }
 
@@ -190,8 +228,23 @@ static int scan_comment(neverc_scanner_t *s, int second) {
     emit(s, '/');
     emit(s, second);
     if (second == '/') {
-        while (s->pos < s->src_len && peek_ch(s) != '\n')
-            emit(s, next_ch(s));
+        /* Line comment: bulk-copy up to the next '\n' (none of which it can
+         * contain) instead of emitting one byte at a time. */
+        const char *src = s->src;
+        size_t cur = s->pos;
+        size_t len = s->src_len;
+        const char *nl = (const char *)memchr(src + cur, '\n', len - cur);
+        size_t end = nl ? (size_t)(nl - src) : len;
+        size_t run = end - cur;
+        size_t cap = sizeof(s->tok_buf) - 1;
+        if (s->tok_len < cap) {
+            size_t space = cap - s->tok_len;
+            size_t ncopy = run < space ? run : space;
+            memcpy(s->tok_buf + s->tok_len, src + cur, ncopy);
+            s->tok_len += ncopy;
+        }
+        s->pos = end;
+        s->col += (int)run;
     } else {
         int depth = 1;
         while (s->pos < s->src_len && depth > 0) {

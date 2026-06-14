@@ -1,6 +1,93 @@
 #include "neverc/std/net/netip.h"
 #include <string.h>
-#include <stdio.h>
+
+/*
+ * Hand-written integer/hex formatting for the string paths. Replaces the
+ * previous per-component snprintf calls (which dominated runtime: format-string
+ * parsing + locale handling per call, and one call per IPv6 group/separator).
+ */
+
+static inline int fmt_u32_dec(char *p, uint32_t v) {
+    char tmp[10];
+    int n = 0;
+    do { tmp[n++] = (char)('0' + (v % 10)); v /= 10; } while (v);
+    for (int i = 0; i < n; i++) p[i] = tmp[n - 1 - i];
+    return n;
+}
+
+static inline int fmt_u16_hex(char *p, uint16_t v) {
+    static const char hexd[] = "0123456789abcdef";
+    char tmp[4];
+    int n = 0;
+    do { tmp[n++] = hexd[v & 0xf]; v >>= 4; } while (v);
+    for (int i = 0; i < n; i++) p[i] = tmp[n - 1 - i];
+    return n;
+}
+
+/*
+ * Format an address into out (caller guarantees >= 110 bytes of room).
+ * Returns the number of bytes written (no NUL terminator). Produces output
+ * byte-for-byte identical to the previous snprintf implementation.
+ */
+static int format_addr_raw(const neverc_netip_addr_t *addr, char *out) {
+    if (addr->is_v4) {
+        int pos = 0;
+        pos += fmt_u32_dec(out + pos, addr->addr[12]); out[pos++] = '.';
+        pos += fmt_u32_dec(out + pos, addr->addr[13]); out[pos++] = '.';
+        pos += fmt_u32_dec(out + pos, addr->addr[14]); out[pos++] = '.';
+        pos += fmt_u32_dec(out + pos, addr->addr[15]);
+        return pos;
+    }
+
+    uint16_t groups[8];
+    for (int i = 0; i < 8; i++)
+        groups[i] = (uint16_t)((addr->addr[i*2] << 8) | addr->addr[i*2+1]);
+
+    int best_start = -1, best_len = 0, cur_start = -1, cur_len = 0;
+    for (int i = 0; i < 8; i++) {
+        if (groups[i] == 0) {
+            if (cur_start < 0) cur_start = i;
+            cur_len++;
+        } else {
+            if (cur_len > best_len && cur_len >= 2) { best_start = cur_start; best_len = cur_len; }
+            cur_start = -1; cur_len = 0;
+        }
+    }
+    if (cur_len > best_len && cur_len >= 2) { best_start = cur_start; best_len = cur_len; }
+
+    int pos = 0;
+    for (int i = 0; i < 8; i++) {
+        if (i == best_start) {
+            out[pos++] = ':';
+            out[pos++] = ':';
+            i += best_len - 1;
+            continue;
+        }
+        if (i > 0 && i != best_start + best_len) out[pos++] = ':';
+        pos += fmt_u16_hex(out + pos, groups[i]);
+    }
+    if (addr->zone[0]) {
+        out[pos++] = '%';
+        size_t zl = strlen(addr->zone);
+        memcpy(out + pos, addr->zone, zl);
+        pos += (int)zl;
+    }
+    return pos;
+}
+
+/*
+ * Copy a freshly formatted string into the caller buffer with snprintf-style
+ * truncation semantics: write at most cap-1 bytes plus a NUL, and return the
+ * full length that would have been written.
+ */
+static int emit_str(char *buf, size_t cap, const char *src, int len) {
+    if (cap > 0) {
+        size_t n = (size_t)len < cap ? (size_t)len : cap - 1;
+        memcpy(buf, src, n);
+        buf[n] = '\0';
+    }
+    return len;
+}
 
 static int parse_decimal(const char *s, int len, unsigned *out) {
     if (len <= 0 || len > 5) return -1;
@@ -173,39 +260,9 @@ int neverc_netip_addr_from16(const uint8_t addr[16], neverc_netip_addr_t *out) {
 
 int neverc_netip_addr_string(const neverc_netip_addr_t *addr, char *buf, size_t cap) {
     if (!addr || !buf || !addr->valid) return -1;
-    if (addr->is_v4) {
-        return snprintf(buf, cap, "%d.%d.%d.%d",
-                        addr->addr[12], addr->addr[13], addr->addr[14], addr->addr[15]);
-    }
-    /* IPv6 — find longest run of zeros for :: */
-    uint16_t groups[8];
-    for (int i = 0; i < 8; i++)
-        groups[i] = (uint16_t)((addr->addr[i*2] << 8) | addr->addr[i*2+1]);
-
-    int best_start = -1, best_len = 0, cur_start = -1, cur_len = 0;
-    for (int i = 0; i < 8; i++) {
-        if (groups[i] == 0) {
-            if (cur_start < 0) cur_start = i;
-            cur_len++;
-        } else {
-            if (cur_len > best_len && cur_len >= 2) { best_start = cur_start; best_len = cur_len; }
-            cur_start = -1; cur_len = 0;
-        }
-    }
-    if (cur_len > best_len && cur_len >= 2) { best_start = cur_start; best_len = cur_len; }
-
-    int pos = 0;
-    for (int i = 0; i < 8; i++) {
-        if (i == best_start) {
-            pos += snprintf(buf + pos, cap - (size_t)pos, "::");
-            i += best_len - 1;
-            continue;
-        }
-        if (i > 0 && i != best_start + best_len) pos += snprintf(buf + pos, cap - (size_t)pos, ":");
-        pos += snprintf(buf + pos, cap - (size_t)pos, "%x", groups[i]);
-    }
-    if (addr->zone[0]) pos += snprintf(buf + pos, cap - (size_t)pos, "%%%s", addr->zone);
-    return pos;
+    char tmp[120];
+    int len = format_addr_raw(addr, tmp);
+    return emit_str(buf, cap, tmp, len);
 }
 
 int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
@@ -246,12 +303,20 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
 
 int neverc_netip_addrport_string(const neverc_netip_addrport_t *ap, char *buf, size_t cap) {
     if (!ap || !buf) return -1;
-    char addrbuf[128];
-    neverc_netip_addr_string(&ap->addr, addrbuf, sizeof(addrbuf));
-    if (ap->addr.is_v4)
-        return snprintf(buf, cap, "%s:%u", addrbuf, ap->port);
-    else
-        return snprintf(buf, cap, "[%s]:%u", addrbuf, ap->port);
+    char tmp[144];
+    int pos = 0;
+    if (ap->addr.is_v4) {
+        pos += format_addr_raw(&ap->addr, tmp + pos);
+        tmp[pos++] = ':';
+        pos += fmt_u32_dec(tmp + pos, ap->port);
+    } else {
+        tmp[pos++] = '[';
+        pos += format_addr_raw(&ap->addr, tmp + pos);
+        tmp[pos++] = ']';
+        tmp[pos++] = ':';
+        pos += fmt_u32_dec(tmp + pos, ap->port);
+    }
+    return emit_str(buf, cap, tmp, pos);
 }
 
 int neverc_netip_parse_prefix(const char *s, neverc_netip_prefix_t *out) {
@@ -278,9 +343,11 @@ int neverc_netip_parse_prefix(const char *s, neverc_netip_prefix_t *out) {
 
 int neverc_netip_prefix_string(const neverc_netip_prefix_t *pfx, char *buf, size_t cap) {
     if (!pfx || !buf || !pfx->valid) return -1;
-    char addrbuf[128];
-    neverc_netip_addr_string(&pfx->addr, addrbuf, sizeof(addrbuf));
-    return snprintf(buf, cap, "%s/%u", addrbuf, pfx->bits);
+    char tmp[144];
+    int pos = format_addr_raw(&pfx->addr, tmp);
+    tmp[pos++] = '/';
+    pos += fmt_u32_dec(tmp + pos, pfx->bits);
+    return emit_str(buf, cap, tmp, pos);
 }
 
 int neverc_netip_addr_is_valid(const neverc_netip_addr_t *addr) { return addr && addr->valid; }

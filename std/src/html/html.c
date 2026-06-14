@@ -1,37 +1,53 @@
 #include "neverc/std/html.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+
+/*
+ * Per-byte expansion table: html_esc_extra[c] is how many *extra* bytes the
+ * escaped form of c needs beyond the original byte (0 for bytes that escape to
+ * themselves). It doubles as the "is special" predicate (nonzero == escaped).
+ *   & " '  -> 5-char entity (extra 4),  < >  -> 4-char entity (extra 3).
+ */
+static const uint8_t html_esc_extra[256] = {
+    ['&'] = 4, ['"'] = 4, ['\''] = 4, ['<'] = 3, ['>'] = 3,
+};
 
 char *neverc_html_escape_string(const char *s, size_t *outlen) {
     size_t slen = strlen(s);
-    size_t cap = slen * 2;
-    char *r = (char *)malloc(cap + 1);
+
+    /* Pass 1: branchless sum of the extra bytes escaping will add. With no early
+     * exit this pipelines well, so the common "nothing to escape" check is cheap
+     * and the result lets us allocate the output exactly (no realloc, no slack). */
+    size_t extra = 0;
+    for (size_t i = 0; i < slen; i++)
+        extra += html_esc_extra[(unsigned char)s[i]];
+
+    char *r = (char *)malloc(slen + extra + 1);
     if (!r) { *outlen = 0; return NULL; }
 
+    /* Fast path: nothing needs escaping, copy the whole string in one go. */
+    if (extra == 0) {
+        memcpy(r, s, slen);
+        r[slen] = '\0';
+        *outlen = slen;
+        return r;
+    }
+
+    /* Pass 2: single read of the input. Self-representing bytes are stored
+     * directly (no bounds check, the buffer is exact); specials expand via a
+     * constant-size memcpy the compiler inlines. Reading each byte once keeps
+     * escape-dense input from paying a second scan. */
     size_t wi = 0;
     for (size_t i = 0; i < slen; i++) {
-        const char *esc = NULL;
-        size_t elen = 0;
-        switch (s[i]) {
-            case '&':  esc = "&amp;";  elen = 5; break;
-            case '<':  esc = "&lt;";   elen = 4; break;
-            case '>':  esc = "&gt;";   elen = 4; break;
-            case '"':  esc = "&#34;";  elen = 5; break;
-            case '\'': esc = "&#39;";  elen = 5; break;
-            default: break;
-        }
-        if (esc) {
-            if (wi + elen >= cap) {
-                cap = (wi + elen) * 2;
-                r = (char *)realloc(r, cap + 1);
-            }
-            for (size_t j = 0; j < elen; j++) r[wi++] = esc[j];
-        } else {
-            if (wi + 1 >= cap) {
-                cap *= 2;
-                r = (char *)realloc(r, cap + 1);
-            }
-            r[wi++] = s[i];
+        unsigned char c = (unsigned char)s[i];
+        if (html_esc_extra[c] == 0) { r[wi++] = (char)c; continue; }
+        switch (c) {
+            case '&':  memcpy(r + wi, "&amp;", 5); wi += 5; break;
+            case '<':  memcpy(r + wi, "&lt;",  4); wi += 4; break;
+            case '>':  memcpy(r + wi, "&gt;",  4); wi += 4; break;
+            case '"':  memcpy(r + wi, "&#34;", 5); wi += 5; break;
+            case '\'': memcpy(r + wi, "&#39;", 5); wi += 5; break;
         }
     }
     r[wi] = '\0';
@@ -52,7 +68,21 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen) {
     char *r = (char *)malloc(slen + 1);
     if (!r) { *outlen = 0; return NULL; }
 
-    size_t wi = 0, i = 0;
+    /* Entities only begin at '&'. Bulk-copy the clean prefix up to the first
+     * one (and short-circuit entirely when there is none); the byte-at-a-time
+     * decoder below only runs from the first '&' onward. This keeps dense-entity
+     * input at the original speed while making entity-free text a pure memcpy. */
+    const char *amp = (const char *)memchr(s, '&', slen);
+    if (!amp) {
+        memcpy(r, s, slen);
+        r[slen] = '\0';
+        *outlen = slen;
+        return r;
+    }
+    size_t i = (size_t)(amp - s);
+    memcpy(r, s, i);
+    size_t wi = i;
+
     while (i < slen) {
         if (s[i] == '&') {
             if (starts_with(s + i, "&amp;"))  { r[wi++] = '&';  i += 5; continue; }

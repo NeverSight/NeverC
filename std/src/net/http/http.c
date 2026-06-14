@@ -803,24 +803,30 @@ static int parse_request(const char *raw, size_t rawlen,
     pr->content_length = -1;
     pr->keep_alive = 1;
 
-    /* Find end of headers */
+    /* Find end of headers: the blank line "\r\n\r\n". memchr hops between the
+       (rare) '\n' bytes instead of testing the 4-byte terminator at every
+       offset; hdr_end still points at the first '\r' of the blank line. */
+    const char *raw_end = raw + rawlen;
     const char *hdr_end = NULL;
-    for (size_t i = 0; i + 3 < rawlen; i++) {
-        if (raw[i] == '\r' && raw[i+1] == '\n' &&
-            raw[i+2] == '\r' && raw[i+3] == '\n') {
-            hdr_end = raw + i;
+    for (const char *q = raw; q < raw_end; ) {
+        const char *nl = (const char *)memchr(q, '\n', (size_t)(raw_end - q));
+        if (!nl) break;
+        size_t pidx = (size_t)(nl - raw);
+        if (pidx >= 3 && raw[pidx-1] == '\r' && raw[pidx-2] == '\n' && raw[pidx-3] == '\r') {
+            hdr_end = raw + (pidx - 3);
             break;
         }
+        q = nl + 1;
     }
     if (!hdr_end) return -1; /* incomplete */
 
-    /* Find end of request line */
+    /* Find end of request line: the first "\r\n". */
     const char *eol = NULL;
-    for (size_t i = 0; i + 1 < rawlen; i++) {
-        if (raw[i] == '\r' && raw[i + 1] == '\n') {
-            eol = raw + i;
-            break;
-        }
+    for (const char *q = raw; q < raw_end; ) {
+        const char *nl = (const char *)memchr(q, '\n', (size_t)(raw_end - q));
+        if (!nl) break;
+        if (nl > raw && nl[-1] == '\r') { eol = nl - 1; break; }
+        q = nl + 1;
     }
     if (!eol) return -2;
 
@@ -835,10 +841,7 @@ static int parse_request(const char *raw, size_t rawlen,
     const char *sp2 = (const char *)memchr(p, ' ', (size_t)(eol - p));
     if (!sp2) return -2;
 
-    const char *qmark = NULL;
-    for (const char *q = p; q < sp2; q++) {
-        if (*q == '?') { qmark = q; break; }
-    }
+    const char *qmark = (const char *)memchr(p, '?', (size_t)(sp2 - p));
 
     if (qmark) {
         pr->path = strndup_safe(p, (size_t)(qmark - p));
@@ -864,13 +867,18 @@ static int parse_request(const char *raw, size_t rawlen,
     const char *hdr_scan_end = hdr_end + 2;
 
     while (p < hdr_scan_end) {
-        const char *colon = NULL;
+        /* Locate the line's "\r\n" with memchr, then its first colon, instead
+           of a byte-at-a-time scan testing two conditions per character. The
+           result (first CRLF, first colon before it) is unchanged. */
         const char *hline_end = NULL;
-        for (const char *q = p; q + 1 < hdr_scan_end; q++) {
-            if (*q == ':' && !colon) colon = q;
-            if (q[0] == '\r' && q[1] == '\n') { hline_end = q; break; }
+        for (const char *q = p; q < hdr_scan_end; ) {
+            const char *nl = (const char *)memchr(q, '\n', (size_t)(hdr_scan_end - q));
+            if (!nl) break;
+            if (nl > p && nl[-1] == '\r') { hline_end = nl - 1; break; }
+            q = nl + 1;
         }
         if (!hline_end) break;
+        const char *colon = (const char *)memchr(p, ':', (size_t)(hline_end - p));
 
         if (colon) {
             size_t namelen = (size_t)(colon - p);
@@ -939,14 +947,21 @@ static int parse_request(const char *raw, size_t rawlen,
     if (pr->is_chunked) {
         const char *chunk_start = raw + header_size;
         size_t chunk_avail = rawlen - header_size;
-        /* Look for the terminating 0\r\n\r\n */
+        /* Look for the terminating 0\r\n\r\n. memchr skips to each '0'
+         * candidate (vectorized) instead of testing all five bytes at every
+         * offset; the matched position is identical to the byte-loop scan. */
         const char *term = NULL;
-        for (size_t ci = 0; ci + 4 < chunk_avail; ci++) {
-            if (chunk_start[ci] == '0' &&
-                chunk_start[ci+1] == '\r' && chunk_start[ci+2] == '\n' &&
-                chunk_start[ci+3] == '\r' && chunk_start[ci+4] == '\n') {
-                term = chunk_start + ci;
-                break;
+        if (chunk_avail >= 5) {
+            const char *cur = chunk_start;
+            const char *limit = chunk_start + (chunk_avail - 4); /* need ci+4 < chunk_avail */
+            while (cur < limit) {
+                const char *z = (const char *)memchr(cur, '0', (size_t)(limit - cur));
+                if (!z) break;
+                if (z[1] == '\r' && z[2] == '\n' && z[3] == '\r' && z[4] == '\n') {
+                    term = z;
+                    break;
+                }
+                cur = z + 1;
             }
         }
         if (!term) {
@@ -959,11 +974,20 @@ static int parse_request(const char *raw, size_t rawlen,
         nc_buf_init(&decoded);
         size_t cpos = 0;
         while (cpos < chunk_avail) {
+            /* Find the chunk-size line's CRLF: memchr to each '\r' candidate
+             * (vectorized) then confirm the following '\n'. Same match as the
+             * byte-loop scan. */
             const char *cline_end = NULL;
-            for (size_t ci = cpos; ci + 1 < chunk_avail; ci++) {
-                if (chunk_start[ci] == '\r' && chunk_start[ci+1] == '\n') {
-                    cline_end = chunk_start + ci;
-                    break;
+            {
+                const char *cur = chunk_start + cpos;
+                size_t avail = chunk_avail - cpos;
+                while (avail >= 2) {
+                    const char *cr = (const char *)memchr(cur, '\r', avail - 1);
+                    if (!cr) break;
+                    if (cr[1] == '\n') { cline_end = cr; break; }
+                    size_t adv = (size_t)(cr - cur) + 1;
+                    cur += adv;
+                    avail -= adv;
                 }
             }
             if (!cline_end) break;

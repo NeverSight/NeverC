@@ -26,6 +26,13 @@
 #define BZ_MAX_ALPHA      258
 #define BZ_MAX_CODE_LEN   20
 
+/* Width of the Huffman prefix lookup table. Codes no longer than BZ_FAST_BITS
+ * are decoded with a single table load; longer codes (rare in practice) fall
+ * back to the canonical limit/base walk. */
+#define BZ_FAST_BITS      12
+#define BZ_FAST_SIZE      (1u << BZ_FAST_BITS)
+#define BZ_FAST_MASK      (BZ_FAST_SIZE - 1u)
+
 /* ---- Bit reader: MSB-first, 64-bit accumulator with bulk refill ---- */
 typedef struct {
     const uint8_t *buf;
@@ -54,8 +61,15 @@ static inline uint32_t bz_bits(bz_br_t *br, int n) {
         bz_refill(br);
         if (br->nbits < n) {
             int avail = br->nbits;
-            uint32_t v = avail ? (uint32_t)(br->acc & (((uint64_t)1 << avail) - 1)) : 0;
-            v <<= (n - avail);
+            uint32_t v = 0;
+            if (avail) {
+                /* Left-align the available low bits into the n-bit field,
+                 * zero-padded on the right. avail >= 1 and n <= 32 keep the
+                 * shift < 32, so a uint32_t is never shifted by its full width
+                 * (which is undefined); when avail == 0 the result is just 0. */
+                v = (uint32_t)(br->acc & (((uint64_t)1 << avail) - 1));
+                v <<= (n - avail);
+            }
             br->eof = 1;
             br->nbits = 0; br->acc = 0;
             return v;
@@ -70,9 +84,15 @@ typedef struct {
     int limit[BZ_MAX_CODE_LEN + 2];
     int base[BZ_MAX_CODE_LEN + 2];
     int perm[BZ_MAX_ALPHA];
+    /* Prefix table indexed by the next BZ_FAST_BITS bits. Each entry packs the
+     * code length in the high bits and the symbol in the low 9 bits, or 0 when
+     * the prefix belongs to a code longer than BZ_FAST_BITS. Storage is owned by
+     * the caller (a per-decompress pool), so this is just a view. */
+    const uint16_t *fast;
 } huff_table_t;
 
-static int huff_build(huff_table_t *ht, const uint8_t *lens, int n_syms) {
+static int huff_build(huff_table_t *ht, const uint8_t *lens, int n_syms,
+                      uint16_t *fast) {
     int minLen = BZ_MAX_CODE_LEN + 1, maxLen = 0;
     for (int i = 0; i < n_syms; i++) {
         if (lens[i] < minLen) minLen = lens[i];
@@ -91,6 +111,10 @@ static int huff_build(huff_table_t *ht, const uint8_t *lens, int n_syms) {
     memset(ht->base, 0, sizeof(ht->base));
     memset(ht->limit, 0, sizeof(ht->limit));
 
+    /* Prefixes of long codes (and any gaps) stay 0, marking the slow path. */
+    memset(fast, 0, sizeof(uint16_t) * BZ_FAST_SIZE);
+    ht->fast = fast;
+
     int code = 0, perm_idx = 0;
     for (int L = minLen; L <= maxLen; L++) {
         int cnt = 0;
@@ -98,6 +122,27 @@ static int huff_build(huff_table_t *ht, const uint8_t *lens, int n_syms) {
             if (lens[j] == L) cnt++;
         ht->base[L] = code - perm_idx;
         ht->limit[L] = code + cnt - 1;
+
+        /* Reject over-subscribed (corrupt) code-length sets: the codes assigned
+         * at length L must fit in L bits, i.e. code + cnt <= 2^L. Without this
+         * guard a malformed stream can push code past BZ_FAST_SIZE and drive an
+         * out-of-bounds write while filling the prefix table below. */
+        if (cnt > 0 && (long)code + cnt > (1L << L)) return -1;
+
+        /* Fill the prefix table for every code of this length. The symbols of
+         * length L occupy perm[perm_idx .. perm_idx+cnt-1], matching canonical
+         * code values code .. code+cnt-1. */
+        if (L <= BZ_FAST_BITS) {
+            int shift = BZ_FAST_BITS - L;
+            for (int k = 0; k < cnt; k++) {
+                int sym = ht->perm[perm_idx + k];
+                uint16_t packed = (uint16_t)((L << 9) | sym);
+                unsigned start = (unsigned)(code + k) << shift;
+                unsigned end = start + (1u << shift);
+                for (unsigned e = start; e < end; e++) fast[e] = packed;
+            }
+        }
+
         perm_idx += cnt;
         code = (code + cnt) << 1;
     }
@@ -111,6 +156,17 @@ static int huff_build(huff_table_t *ht, const uint8_t *lens, int n_syms) {
 static inline int huff_decode(bz_br_t *br, const huff_table_t *ht) {
     if (br->nbits < BZ_MAX_CODE_LEN)
         bz_refill(br);
+
+    /* Fast path: resolve any code of length <= BZ_FAST_BITS with one load. */
+    if (br->nbits >= BZ_FAST_BITS) {
+        uint32_t peek = (uint32_t)((br->acc >> (br->nbits - BZ_FAST_BITS)) & BZ_FAST_MASK);
+        uint32_t packed = ht->fast[peek];
+        if (packed) {
+            br->nbits -= (int)(packed >> 9);
+            return (int)(packed & 0x1ff);
+        }
+        /* Longer code: fall through to the canonical walk below. */
+    }
 
     if (br->nbits >= ht->max_len) {
         int zn = ht->min_len;
@@ -163,8 +219,17 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
     size_t out_pos = 0;
     size_t out_cap = *dst_len;
     int block_cap = block_size100k * 100000;
-    uint32_t *tt = NULL;
-    uint8_t *block = NULL;
+
+    /* One prefix table per group, reused across every block. */
+    uint16_t *fast_pool = (uint16_t *)malloc(sizeof(uint16_t) *
+                                             ((size_t)BZ_N_GROUPS << BZ_FAST_BITS));
+    if (!fast_pool) return -1;
+
+    /* The packed T-vector doubles as the decode buffer: MTF/RLE2 output is
+     * written straight into the low bytes, then successor indices are ORed into
+     * the high bits. Allocated once and reused across every block. */
+    uint32_t *tt = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)block_cap);
+    if (!tt) { free(fast_pool); return -1; }
 
     for (;;) {
         uint32_t hdr_hi = bz_bits(&br, 24);
@@ -243,17 +308,27 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
                 }
                 tree_lens[i] = (uint8_t)curr;
             }
-            if (huff_build(&tables[g], tree_lens, alpha_size) < 0) goto err;
+            if (huff_build(&tables[g], tree_lens, alpha_size,
+                           fast_pool + ((size_t)g << BZ_FAST_BITS)) < 0) goto err;
         }
 
-        block = (uint8_t *)malloc((size_t)block_cap + 1);
-        if (!block) goto err;
         int nblock = 0;
 
+        /* Move-to-front list of the in-use byte values. A move-to-front of the
+         * element at position s is a shift-by-one (memmove), which the platform
+         * implements as a branchless SIMD copy — measurably faster here than a
+         * bucketed mtfa scheme, whose data-dependent inner loops mispredict on
+         * the uniform-random positions seen in high-entropy data. */
         uint8_t mtf_arr[256];
         int nm = 0;
         for (int i = 0; i < 256; i++)
             if (in_use[i]) mtf_arr[nm++] = (uint8_t)i;
+
+        /* cftab[c+1] accumulates the number of byte c as the MTF/RLE2 output is
+         * produced; a post-decode prefix sum then turns cftab[c] into the first
+         * sorted-order slot for byte value c. */
+        uint32_t cftab[257];
+        memset(cftab, 0, sizeof(cftab));
 
         int sel_idx = 0;
         int group_pos = 0;
@@ -294,7 +369,12 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
                 }
                 uint8_t ch = mtf_arr[0];
                 if (nblock + run > block_cap) goto err;
-                memset(block + nblock, ch, (size_t)run);
+                /* Fill the run directly into the T-vector's low bytes (high bits
+                 * stay 0 for the successor-index OR in the build below). */
+                uint32_t *d = tt + nblock;
+                uint32_t fillv = ch;
+                for (int k = 0; k < run; k++) d[k] = fillv;
+                cftab[ch + 1] += (uint32_t)run;
                 nblock += run;
                 if (sym == eob) break;
             }
@@ -306,29 +386,32 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
                 memmove(&mtf_arr[1], &mtf_arr[0], (size_t)s);
                 mtf_arr[0] = tmp;
                 if (nblock >= block_cap) goto err;
-                block[nblock++] = tmp;
+                tt[nblock++] = tmp;
+                cftab[tmp + 1]++;
             }
         }
 
         if ((int)orig_ptr >= nblock) goto err;
 
-        if (!tt) tt = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)block_cap);
-        if (!tt) goto err;
-
         /* Build Seward's packed T-vector: tt[j] = (successor_index << 8) | byte.
-         * cftab[c] holds the first sorted-order slot for byte value c. */
-        uint32_t cftab[257];
-        memset(cftab, 0, sizeof(cftab));
-        for (int i = 0; i < nblock; i++) cftab[block[i] + 1]++;
+         * The low bytes already hold the block bytes (written during decode), so
+         * this pass only ORs each successor index into its sorted-order slot — a
+         * single random access per byte. Because the |= touches only the high
+         * bits, the sequential tt[i] read always observes the original byte. */
         for (int i = 1; i < 257; i++) cftab[i] += cftab[i - 1];
+        /* The destination slot tt[cftab[uc]] is a data-dependent random write,
+         * but the writes are independent across i, so prefetching the slot a few
+         * iterations ahead exposes memory-level parallelism the hardware
+         * prefetcher cannot (the address is not a stride). The predicted slot is
+         * only approximate (cftab keeps advancing), but a prefetch hint to the
+         * wrong-but-nearby line is harmless. */
+        enum { BZ_BUILD_PD = 32 };
         for (int i = 0; i < nblock; i++) {
-            uint8_t uc = block[i];
-            uint32_t j = cftab[uc]++;
-            tt[j] = ((uint32_t)i << 8) | block[j];
+            if (i + BZ_BUILD_PD < nblock)
+                __builtin_prefetch(&tt[cftab[(uint8_t)(tt[i + BZ_BUILD_PD] & 0xff)]], 1, 0);
+            uint8_t uc = (uint8_t)(tt[i] & 0xff);
+            tt[cftab[uc]++] |= (uint32_t)i << 8;
         }
-
-        free(block);
-        block = NULL;
 
         /* Walk the permutation, applying the final RLE1 decode on the fly.
          * RLE1: a run of >= 4 equal bytes is stored as 4 literal bytes followed
@@ -339,6 +422,13 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
             uint32_t e = tt[t_pos];
             uint8_t ch = (uint8_t)(e & 0xff);
             t_pos = e >> 8;
+            /* The successor slot is loaded again at the top of the next
+             * iteration; issuing the prefetch now lets that dependent load
+             * overlap this iteration's RLE1 work. It is a measurable win when
+             * the permutation chain is cache-resident/structured and neutral
+             * when it is fully scattered (the line is needed immediately
+             * anyway), so it never regresses the random-access case. */
+            __builtin_prefetch(&tt[t_pos], 0, 0);
 
             if (rrun == 4) {
                 uint32_t extra = ch;
@@ -362,12 +452,12 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
     }
 
     free(tt);
-    free(block);
+    free(fast_pool);
     *dst_len = out_pos;
     return 0;
 
 err:
     free(tt);
-    free(block);
+    free(fast_pool);
     return -1;
 }

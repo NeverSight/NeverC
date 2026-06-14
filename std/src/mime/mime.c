@@ -238,34 +238,88 @@ int neverc_mime_format_media_type(const char *media_type,
     return (int)pos;
 }
 
-static int hex_val(int c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    return -1;
-}
+/* Hex value per byte, -1 for non-hex. A compile-time constant table: it is
+ * immutable and shared, so the decoder is reentrant/thread-safe with no
+ * lazy-init data race (a lazily built table can be observed half-initialized
+ * by another thread on weakly-ordered targets such as arm64). */
+static const signed char mime_qp_hex[256] = {
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+     0, 1, 2, 3, 4, 5, 6, 7,  8, 9,-1,-1,-1,-1,-1,-1,
+    -1,10,11,12,13,14,15,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,10,11,12,13,14,15,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+};
 
 int neverc_mime_qp_decode(const char *src, size_t src_len,
                            char *dst, size_t dst_cap, size_t *out_len) {
     size_t si = 0, di = 0;
     while (si < src_len && di < dst_cap) {
-        if (src[si] == '=' && si + 2 < src_len) {
-            if (src[si + 1] == '\r' && si + 3 <= src_len && src[si + 2] == '\n') {
-                si += 3;
-            } else if (src[si + 1] == '\n') {
-                si += 2;
-            } else {
-                int h = hex_val(src[si + 1]);
-                int l = hex_val(src[si + 2]);
+        if (src[si] == '=') {
+            /* Tight loop for consecutive =XX hex escapes. */
+            if (si + 2 < src_len &&
+                src[si + 1] != '\r' && src[si + 1] != '\n') {
+                int h = mime_qp_hex[(unsigned char)src[si + 1]];
+                int l = mime_qp_hex[(unsigned char)src[si + 2]];
                 if (h >= 0 && l >= 0) {
-                    dst[di++] = (char)((h << 4) | l);
-                    si += 3;
-                } else {
-                    dst[di++] = src[si++];
+                    do {
+                        dst[di++] = (char)((h << 4) | l);
+                        si += 3;
+                        if (di >= dst_cap ||
+                            si + 2 >= src_len || src[si] != '=' ||
+                            src[si + 1] == '\r' || src[si + 1] == '\n')
+                            break;
+                        h = mime_qp_hex[(unsigned char)src[si + 1]];
+                        l = mime_qp_hex[(unsigned char)src[si + 2]];
+                    } while (h >= 0 && l >= 0);
+                    continue;
                 }
             }
-        } else {
+            if (si + 2 < src_len) {
+                if (src[si + 1] == '\r' && si + 3 <= src_len && src[si + 2] == '\n') {
+                    si += 3;
+                    continue;
+                }
+                if (src[si + 1] == '\n') {
+                    si += 2;
+                    continue;
+                }
+                {
+                    int h = mime_qp_hex[(unsigned char)src[si + 1]];
+                    int l = mime_qp_hex[(unsigned char)src[si + 2]];
+                    if (h >= 0 && l >= 0) {
+                        dst[di++] = (char)((h << 4) | l);
+                        si += 3;
+                        continue;
+                    }
+                }
+            }
             dst[di++] = src[si++];
+            continue;
+        }
+
+        /* Literal run up to the next '='. */
+        {
+            const char *from = src + si;
+            size_t rem = src_len - si;
+            const char *eq = memchr(from, '=', rem);
+            size_t run = eq ? (size_t)(eq - from) : rem;
+            if (run > dst_cap - di) run = dst_cap - di;
+            if (run) {
+                memcpy(dst + di, from, run);
+                di += run;
+                si += run;
+            }
         }
     }
     if (out_len) *out_len = di;

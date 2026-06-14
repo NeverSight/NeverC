@@ -30,8 +30,13 @@ static void buf_putc(fmtbuf_t *b, char c) {
 }
 
 static void buf_puts(fmtbuf_t *b, const char *s, size_t n) {
+    /* One capacity check for the whole run (vs. one per byte through buf_putc),
+     * then a copy the compiler lowers to memcpy/vector stores. The single grow
+     * check is what makes copying literal runs and verb output cheap. */
     buf_grow(b, n);
-    for (size_t i = 0; i < n; i++) b->data[b->len++] = s[i];
+    char *d = b->data + b->len;
+    for (size_t i = 0; i < n; i++) d[i] = s[i];
+    b->len += n;
 }
 
 static void buf_pad(fmtbuf_t *b, char c, int count) {
@@ -44,35 +49,70 @@ static size_t my_strlen(const char *s) {
     return n;
 }
 
-/* Integer to string conversion */
-static int fmt_int(char *buf, int64_t val, int base, int uppercase) {
-    if (val == 0) { buf[0] = '0'; return 1; }
-    int neg = 0;
-    uint64_t uval;
-    if (val < 0) { neg = 1; uval = (uint64_t)(-val); }
-    else { uval = (uint64_t)val; }
+/* Two-digit lookup table for base-10 conversion: emit two decimal digits per
+ * 64-bit divide instead of one per byte. */
+static const char fmt_digit_pairs[201] =
+    "00010203040506070809"
+    "10111213141516171819"
+    "20212223242526272829"
+    "30313233343536373839"
+    "40414243444546474849"
+    "50515253545556575859"
+    "60616263646566676869"
+    "70717273747576777879"
+    "80818283848586878889"
+    "90919293949596979899";
 
-    const char *digits = uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
-    char tmp[72];
+/* Integer to string conversion */
+#if defined(__GNUC__) || defined(__clang__)
+#define NCI_FMT_INLINE static inline __attribute__((always_inline))
+#else
+#define NCI_FMT_INLINE static inline
+#endif
+
+/* Base 10 (the overwhelmingly common case): two digits per divide via the pair
+ * table. Kept separate from the general path so neither carries a base switch. */
+NCI_FMT_INLINE int fmt_uint10(char *buf, uint64_t val) {
+    if (val == 0) { buf[0] = '0'; return 1; }
+    char tmp[24];
     int pos = 0;
-    while (uval > 0) {
-        tmp[pos++] = digits[uval % base];
-        uval /= base;
+    while (val >= 100) {
+        unsigned idx = (unsigned)(val % 100) * 2;
+        val /= 100;
+        tmp[pos++] = fmt_digit_pairs[idx + 1];
+        tmp[pos++] = fmt_digit_pairs[idx];
+    }
+    if (val >= 10) {
+        unsigned idx = (unsigned)val * 2;
+        tmp[pos++] = fmt_digit_pairs[idx + 1];
+        tmp[pos++] = fmt_digit_pairs[idx];
+    } else {
+        tmp[pos++] = (char)('0' + val);
     }
     int wi = 0;
-    if (neg) buf[wi++] = '-';
     for (int i = pos - 1; i >= 0; i--) buf[wi++] = tmp[i];
     return wi;
 }
 
-static int fmt_uint(char *buf, uint64_t val, int base, int uppercase) {
+NCI_FMT_INLINE int fmt_int10(char *buf, int64_t val) {
+    if (val < 0) {
+        buf[0] = '-';
+        /* Negate in unsigned space: -(int64)val overflows (UB) for INT64_MIN;
+         * 0 - (uint64)val wraps to the correct magnitude on two's complement. */
+        return 1 + fmt_uint10(buf + 1, 0ULL - (uint64_t)val);
+    }
+    return fmt_uint10(buf, (uint64_t)val);
+}
+
+/* Non-decimal bases (x/X/o/b/p): unchanged one-digit-per-divide path. */
+static int fmt_uint_base(char *buf, uint64_t val, int base, int uppercase) {
     if (val == 0) { buf[0] = '0'; return 1; }
     const char *digits = uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
     char tmp[72];
     int pos = 0;
     while (val > 0) {
-        tmp[pos++] = digits[val % base];
-        val /= base;
+        tmp[pos++] = digits[val % (unsigned)base];
+        val /= (unsigned)base;
     }
     int wi = 0;
     for (int i = pos - 1; i >= 0; i--) buf[wi++] = tmp[i];
@@ -114,7 +154,21 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
     size_t flen = my_strlen(format);
     for (size_t i = 0; i < flen; i++) {
         if (format[i] != '%') {
-            buf_putc(&buf, format[i]);
+            /* Copy the literal run up to the next '%' in one shot instead of one
+             * char (and one capacity check) at a time. A single-char run (the
+             * common separator between verbs) takes the cheap buf_putc path with
+             * no memchr/memcpy call overhead; longer runs locate the next '%'
+             * with memchr and bulk-copy. */
+            size_t start = i;
+            i++;
+            if (i < flen && format[i] != '%') {
+                const char *pct = (const char *)memchr(format + i, '%', flen - i);
+                i = pct ? (size_t)(pct - format) : flen;
+            }
+            size_t runlen = i - start;
+            if (runlen == 1) buf_putc(&buf, format[start]);
+            else buf_puts(&buf, format + start, runlen);
+            i--;   /* loop's i++ lands on '%' or one past the end */
             continue;
         }
         i++;
@@ -186,35 +240,35 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
                           is_long ? (int64_t)va_arg(args, long) :
                           (int64_t)va_arg(args, int);
             is_negative = val < 0;
-            tlen = fmt_int(tmp, val, 10, 0);
+            tlen = fmt_int10(tmp, val);
             break;
         }
         case 'u': {
             uint64_t val = is_longlong ? va_arg(args, unsigned long long) :
                            is_long ? (uint64_t)va_arg(args, unsigned long) :
                            (uint64_t)va_arg(args, unsigned int);
-            tlen = fmt_uint(tmp, val, 10, 0);
+            tlen = fmt_uint10(tmp, val);
             break;
         }
         case 'x': case 'X': {
             uint64_t val = is_longlong ? va_arg(args, unsigned long long) :
                            is_long ? (uint64_t)va_arg(args, unsigned long) :
                            (uint64_t)va_arg(args, unsigned int);
-            tlen = fmt_uint(tmp, val, 16, verb == 'X');
+            tlen = fmt_uint_base(tmp, val, 16, verb == 'X');
             break;
         }
         case 'o': {
             uint64_t val = is_longlong ? va_arg(args, unsigned long long) :
                            is_long ? (uint64_t)va_arg(args, unsigned long) :
                            (uint64_t)va_arg(args, unsigned int);
-            tlen = fmt_uint(tmp, val, 8, 0);
+            tlen = fmt_uint_base(tmp, val, 8, 0);
             break;
         }
         case 'b': {
             uint64_t val = is_longlong ? va_arg(args, unsigned long long) :
                            is_long ? (uint64_t)va_arg(args, unsigned long) :
                            (uint64_t)va_arg(args, unsigned int);
-            tlen = fmt_uint(tmp, val, 2, 0);
+            tlen = fmt_uint_base(tmp, val, 2, 0);
             break;
         }
         case 'c': {
@@ -253,7 +307,7 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
         case 'p': {
             void *ptr = va_arg(args, void *);
             tmp[0] = '0'; tmp[1] = 'x';
-            tlen = 2 + fmt_uint(tmp + 2, (uint64_t)(uintptr_t)ptr, 16, 0);
+            tlen = 2 + fmt_uint_base(tmp + 2, (uint64_t)(uintptr_t)ptr, 16, 0);
             break;
         }
         default:

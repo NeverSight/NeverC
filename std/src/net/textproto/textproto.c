@@ -112,14 +112,18 @@ size_t neverc_mime_header_len(const neverc_mime_header_t *h) {
 int neverc_textproto_read_line(const char *data, size_t len,
                                 char *line, size_t line_cap, size_t *consumed) {
     if (!data || len == 0) return -1;
-    size_t i = 0;
-    while (i < len && data[i] != '\n') i++;
+    /* Find the '\n' terminator with memchr rather than a byte-at-a-time scan.
+       libc's memchr is vectorized, so long lines and large header/body blocks
+       fed through this primitive (read_mime_header, read_dot_lines) locate the
+       line boundary several times faster. */
+    const char *nl = (const char *)memchr(data, '\n', len);
+    size_t i = nl ? (size_t)(nl - data) : len;
     size_t line_len = i;
     if (line_len > 0 && data[line_len - 1] == '\r') line_len--;
     if (line_len >= line_cap) line_len = line_cap - 1;
     memcpy(line, data, line_len);
     line[line_len] = '\0';
-    if (consumed) *consumed = (i < len) ? i + 1 : i;
+    if (consumed) *consumed = nl ? i + 1 : i;
     return 0;
 }
 

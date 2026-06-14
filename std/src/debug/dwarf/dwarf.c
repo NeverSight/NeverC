@@ -10,6 +10,12 @@
 /* ===== LEB128 decoding ===== */
 
 static uint64_t read_uleb128(const uint8_t **p, const uint8_t *end) {
+    /* Single-byte fast path: in DWARF the vast majority of LEB128 values
+     * (abbrev codes, tags, attrs, forms, small constants) fit in one byte,
+     * so skip the shift/continuation bookkeeping for the common case. */
+    if (*p < end && **p < 0x80)
+        return *(*p)++;
+
     uint64_t result = 0;
     int shift = 0;
     while (*p < end) {
@@ -22,6 +28,15 @@ static uint64_t read_uleb128(const uint8_t **p, const uint8_t *end) {
 }
 
 static int64_t read_sleb128(const uint8_t **p, const uint8_t *end) {
+    /* Single-byte fast path with sign extension from bit 6. */
+    if (*p < end && **p < 0x80) {
+        uint8_t b = *(*p)++;
+        int64_t result = b;
+        if (b & 0x40)
+            result |= -(((int64_t)1) << 7);
+        return result;
+    }
+
     int64_t result = 0;
     int shift = 0;
     uint8_t b = 0;

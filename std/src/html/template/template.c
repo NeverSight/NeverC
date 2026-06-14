@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 
 static int nc_isalnum(int c) {
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
@@ -61,82 +62,124 @@ static void buf_append(char **buf, size_t *len, size_t *cap,
     (*buf)[*len] = '\0';
 }
 
+static const char nc_uphex[] = "0123456789ABCDEF";
+
+/* Extra bytes each escaped byte adds beyond itself (0 == self-representing),
+ * doubling as the "is special" predicate.  &#34; / &#39; / &amp; add 4,
+ * &lt; / &gt; add 3. */
+static const uint8_t html_esc_extra[256] = {
+    ['&'] = 4, ['<'] = 3, ['>'] = 3, ['"'] = 4, ['\''] = 4,
+};
+
 char *neverc_html_escape(const char *s) {
     if (!s) return strdup("");
-    size_t len = 0, cap = strlen(s) * 2 + 16;
-    char *buf = (char *)malloc(cap);
-    buf[0] = '\0';
-    for (const char *p = s; *p; p++) {
-        switch (*p) {
-        case '&':  buf_append(&buf, &len, &cap, "&amp;", 5); break;
-        case '<':  buf_append(&buf, &len, &cap, "&lt;", 4); break;
-        case '>':  buf_append(&buf, &len, &cap, "&gt;", 4); break;
-        case '"':  buf_append(&buf, &len, &cap, "&#34;", 5); break;
-        case '\'': buf_append(&buf, &len, &cap, "&#39;", 5); break;
-        default:   buf_append(&buf, &len, &cap, p, 1); break;
+    size_t slen = strlen(s), extra = 0;
+    for (size_t i = 0; i < slen; i++) extra += html_esc_extra[(unsigned char)s[i]];
+
+    char *r = (char *)malloc(slen + extra + 1);
+    if (extra == 0) { memcpy(r, s, slen); r[slen] = '\0'; return r; }
+
+    size_t wi = 0;
+    for (size_t i = 0; i < slen; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (html_esc_extra[c] == 0) { r[wi++] = (char)c; continue; }
+        switch (c) {
+            case '&':  memcpy(r + wi, "&amp;", 5); wi += 5; break;
+            case '<':  memcpy(r + wi, "&lt;",  4); wi += 4; break;
+            case '>':  memcpy(r + wi, "&gt;",  4); wi += 4; break;
+            case '"':  memcpy(r + wi, "&#34;", 5); wi += 5; break;
+            case '\'': memcpy(r + wi, "&#39;", 5); wi += 5; break;
         }
     }
-    return buf;
+    r[wi] = '\0';
+    return r;
 }
 
 char *neverc_html_attr_escape(const char *s) {
     return neverc_html_escape(s);
 }
 
+/* \ ' " \n \r escape to 2 chars (extra 1); < > & escape to \u00XX (extra 5). */
+static const uint8_t js_esc_extra[256] = {
+    ['\\'] = 1, ['\''] = 1, ['"'] = 1, ['\n'] = 1, ['\r'] = 1,
+    ['<'] = 5, ['>'] = 5, ['&'] = 5,
+};
+
 char *neverc_html_js_escape(const char *s) {
     if (!s) return strdup("");
-    size_t len = 0, cap = strlen(s) * 2 + 16;
-    char *buf = (char *)malloc(cap);
-    buf[0] = '\0';
-    for (const char *p = s; *p; p++) {
-        switch (*p) {
-        case '\\': buf_append(&buf, &len, &cap, "\\\\", 2); break;
-        case '\'': buf_append(&buf, &len, &cap, "\\'", 2); break;
-        case '"':  buf_append(&buf, &len, &cap, "\\\"", 2); break;
-        case '\n': buf_append(&buf, &len, &cap, "\\n", 2); break;
-        case '\r': buf_append(&buf, &len, &cap, "\\r", 2); break;
-        case '<':  buf_append(&buf, &len, &cap, "\\u003c", 6); break;
-        case '>':  buf_append(&buf, &len, &cap, "\\u003e", 6); break;
-        case '&':  buf_append(&buf, &len, &cap, "\\u0026", 6); break;
-        default:   buf_append(&buf, &len, &cap, p, 1); break;
+    size_t slen = strlen(s), extra = 0;
+    for (size_t i = 0; i < slen; i++) extra += js_esc_extra[(unsigned char)s[i]];
+
+    char *r = (char *)malloc(slen + extra + 1);
+    if (extra == 0) { memcpy(r, s, slen); r[slen] = '\0'; return r; }
+
+    size_t wi = 0;
+    for (size_t i = 0; i < slen; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (js_esc_extra[c] == 0) { r[wi++] = (char)c; continue; }
+        switch (c) {
+            case '\\': memcpy(r + wi, "\\\\",   2); wi += 2; break;
+            case '\'': memcpy(r + wi, "\\'",    2); wi += 2; break;
+            case '"':  memcpy(r + wi, "\\\"",   2); wi += 2; break;
+            case '\n': memcpy(r + wi, "\\n",    2); wi += 2; break;
+            case '\r': memcpy(r + wi, "\\r",    2); wi += 2; break;
+            case '<':  memcpy(r + wi, "\\u003c", 6); wi += 6; break;
+            case '>':  memcpy(r + wi, "\\u003e", 6); wi += 6; break;
+            case '&':  memcpy(r + wi, "\\u0026", 6); wi += 6; break;
         }
     }
-    return buf;
+    r[wi] = '\0';
+    return r;
 }
 
 char *neverc_html_css_escape(const char *s) {
     if (!s) return strdup("");
-    size_t len = 0, cap = strlen(s) * 6 + 16;
-    char *buf = (char *)malloc(cap);
-    buf[0] = '\0';
-    for (const char *p = s; *p; p++) {
-        if (nc_isalnum((unsigned char)*p) || *p == '-' || *p == '_') {
-            buf_append(&buf, &len, &cap, p, 1);
-        } else {
-            char esc[12];
-            snprintf(esc, sizeof(esc), "\\%02X", (unsigned char)*p);
-            buf_append(&buf, &len, &cap, esc, strlen(esc));
+    size_t slen = strlen(s);
+    /* Worst case is "\\XX" (3 bytes) per input byte; allocate the bound once. */
+    char *r = (char *)malloc(slen * 3 + 1);
+    size_t wi = 0, i = 0;
+    while (i < slen) {
+        /* Bulk-copy a run of bytes that pass through unescaped. */
+        size_t start = i;
+        while (i < slen) {
+            unsigned char c = (unsigned char)s[i];
+            if (!(nc_isalnum(c) || c == '-' || c == '_')) break;
+            i++;
         }
+        if (i > start) { memcpy(r + wi, s + start, i - start); wi += i - start; }
+        if (i >= slen) break;
+        unsigned char c = (unsigned char)s[i++];
+        r[wi++] = '\\';
+        r[wi++] = nc_uphex[c >> 4];
+        r[wi++] = nc_uphex[c & 0x0f];
     }
-    return buf;
+    r[wi] = '\0';
+    return r;
 }
 
 char *neverc_html_url_query_escape(const char *s) {
     if (!s) return strdup("");
-    size_t len = 0, cap = strlen(s) * 3 + 16;
-    char *buf = (char *)malloc(cap);
-    buf[0] = '\0';
-    for (const char *p = s; *p; p++) {
-        if (nc_isalnum((unsigned char)*p) || *p == '-' || *p == '_' ||
-            *p == '.' || *p == '~') {
-            buf_append(&buf, &len, &cap, p, 1);
-        } else {
-            char esc[4];
-            snprintf(esc, sizeof(esc), "%%%02X", (unsigned char)*p);
-            buf_append(&buf, &len, &cap, esc, 3);
+    size_t slen = strlen(s);
+    /* Worst case is "%XX" (3 bytes) per input byte; allocate the bound once. */
+    char *r = (char *)malloc(slen * 3 + 1);
+    size_t wi = 0, i = 0;
+    while (i < slen) {
+        /* Bulk-copy a run of unreserved bytes. */
+        size_t start = i;
+        while (i < slen) {
+            unsigned char c = (unsigned char)s[i];
+            if (!(nc_isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~')) break;
+            i++;
         }
+        if (i > start) { memcpy(r + wi, s + start, i - start); wi += i - start; }
+        if (i >= slen) break;
+        unsigned char c = (unsigned char)s[i++];
+        r[wi++] = '%';
+        r[wi++] = nc_uphex[c >> 4];
+        r[wi++] = nc_uphex[c & 0x0f];
     }
-    return buf;
+    r[wi] = '\0';
+    return r;
 }
 
 /* --- Template parser --- */

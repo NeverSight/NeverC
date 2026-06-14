@@ -9,6 +9,19 @@ static void trim(const char *s, size_t len, const char **out_start, size_t *out_
     *out_len = len;
 }
 
+/* Offset of the first `lead` or `bound` byte in base[0,n), else n. `bound`
+ * (the line terminator '\n') is located first so the `lead` search is capped at
+ * that point — neither memchr over-scans past the earlier delimiter. This is an
+ * exact, vectorized replacement for a `data[i] != lead && data[i] != bound`
+ * byte-at-a-time loop. */
+static size_t scan_first2(const char *base, size_t n, char lead, char bound) {
+    const char *pb = (const char *)memchr(base, bound, n);
+    size_t lim = pb ? (size_t)(pb - base) : n;
+    const char *pl = (const char *)memchr(base, lead, lim);
+    if (pl) return (size_t)(pl - base);
+    return lim;
+}
+
 int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
     if (!s || !out) return -1;
     memset(out, 0, sizeof(*out));
@@ -111,9 +124,8 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
             return 0;
         }
 
-        /* Find colon */
-        size_t colon = i;
-        while (colon < len && data[colon] != ':' && data[colon] != '\n') colon++;
+        /* Find colon (or the line's '\n', whichever comes first) */
+        size_t colon = i + scan_first2(data + i, len - i, ':', '\n');
         if (colon >= len || data[colon] != ':') break;
 
         neverc_mail_header_t *h = &out->headers[out->header_count];
@@ -129,8 +141,7 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
         size_t vpos = 0;
         size_t pos = vstart;
         while (pos < len) {
-            size_t line_end = pos;
-            while (line_end < len && data[line_end] != '\r' && data[line_end] != '\n') line_end++;
+            size_t line_end = pos + scan_first2(data + pos, len - pos, '\r', '\n');
 
             size_t line_len = line_end - pos;
             if (vpos + line_len + 1 < sizeof(h->value)) {

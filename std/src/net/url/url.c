@@ -2,32 +2,32 @@
 #include <string.h>
 #include <stdio.h>
 
-static int nc_isalnum(int c) {
-    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
-}
-
 static int nc_tolower(int c) {
     return (c >= 'A' && c <= 'Z') ? c + 32 : c;
 }
 
-static int hex_digit(int c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return -1;
-}
-
-static int should_escape_path(unsigned char c) {
-    if (nc_isalnum(c)) return 0;
-    if (c == '-' || c == '_' || c == '.' || c == '~' || c == '/' || c == ':' || c == '@') return 0;
-    return 1;
-}
-
-static int should_escape_query(unsigned char c) {
-    if (nc_isalnum(c)) return 0;
-    if (c == '-' || c == '_' || c == '.' || c == '~') return 0;
-    return 1;
-}
+/* Hex value per byte, -1 for non-hex. Lets the percent-decode hot path resolve
+ * a '%XX' escape with two table loads instead of a branch ladder, and validate
+ * both nibbles with a single sign test ((h | l) < 0 is true iff either is -1).
+ * Compile-time constant, so it is immutable and shared with no init. */
+static const signed char hex_val[256] = {
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+     0, 1, 2, 3, 4, 5, 6, 7,  8, 9,-1,-1,-1,-1,-1,-1,
+    -1,10,11,12,13,14,15,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,10,11,12,13,14,15,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+};
 
 static size_t safe_copy(char *dst, size_t cap, const char *src, size_t len) {
     size_t n = len < cap - 1 ? len : cap - 1;
@@ -225,21 +225,51 @@ int neverc_url_values_encode(const neverc_url_values_t *v, char *buf, size_t cap
 }
 
 /*
- * Per-mode escape tables (1 = byte must be percent-encoded), built once from
- * the should_escape_* predicates. This turns the hot loop's per-byte
- * un-inlinable indirect call into a single table load.
+ * Per-mode escape tables (1 = byte must be percent-encoded). Compile-time
+ * constants, so the hot loop's per-byte test is a single table load and the
+ * encoders are reentrant with no lazy-init data race (a lazily built table can
+ * be observed half-initialized by another thread on weakly-ordered targets such
+ * as arm64).
+ *
+ * path:  left as-is only for ALPHA / DIGIT and "-_.~/:@"  (0); else escape (1).
+ * query: left as-is only for ALPHA / DIGIT and "-_.~"     (0); else escape (1).
  */
-static unsigned char esc_table_path[256];
-static unsigned char esc_table_query[256];
-static int esc_tables_ready = 0;
-
-static void build_esc_tables(void) {
-    for (int c = 0; c < 256; c++) {
-        esc_table_path[c]  = (unsigned char)should_escape_path((unsigned char)c);
-        esc_table_query[c] = (unsigned char)should_escape_query((unsigned char)c);
-    }
-    esc_tables_ready = 1;
-}
+static const unsigned char esc_table_path[256] = {
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,1,1,1,1,1,
+    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,1,1,1,1,0,
+    1,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,1,1,1,0,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+};
+static const unsigned char esc_table_query[256] = {
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,0,0,1,
+    0,0,0,0,0,0,0,0, 0,0,1,1,1,1,1,1,
+    1,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,1,1,1,1,0,
+    1,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0, 0,0,0,1,1,1,0,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+};
 
 static int percent_encode(const char *s, char *buf, size_t cap,
                            const unsigned char *esc) {
@@ -264,30 +294,48 @@ static int percent_encode(const char *s, char *buf, size_t cap,
 }
 
 static int percent_decode(const char *s, char *buf, size_t cap) {
+    if (cap == 0) return 0;
     size_t si = 0, di = 0;
-    while (s[si] && di < cap - 1) {
-        if (s[si] == '%' && s[si+1] && s[si+2]) {
-            int h = hex_digit(s[si+1]);
-            int l = hex_digit(s[si+2]);
-            if (h >= 0 && l >= 0) {
-                buf[di++] = (char)((h << 4) | l);
-                si += 3;
-                continue;
+    const size_t limit = cap - 1;          /* reserve buf[limit] for the NUL */
+    while (di < limit) {
+        char c = s[si];
+        if (c == '\0') break;
+        if (c == '%') {
+            /* '%XX' escape, or a bare/invalid '%'. Handled byte-wise with no
+             * scan so escape-dense input keeps its original cost. */
+            if (s[si+1] && s[si+2]) {
+                int h = hex_val[(unsigned char)s[si+1]];
+                int l = hex_val[(unsigned char)s[si+2]];
+                if ((h | l) >= 0) {
+                    buf[di++] = (char)((h << 4) | l);
+                    si += 3;
+                    continue;
+                }
             }
-        }
-        if (s[si] == '+') {
-            buf[di++] = ' ';
+            buf[di++] = '%';
             si++;
-        } else {
-            buf[di++] = s[si++];
+            continue;
         }
+        /* Ordinary run: copy everything up to the next '%' in one shot. strchr
+         * finds that boundary in a single pass and the '+'->' ' substitution is
+         * folded into the (auto-vectorizable) copy, so escape-free stretches —
+         * including '+'-heavy ones — skip the per-byte branch ladder. */
+        const char *from = s + si;
+        const char *pct = strchr(from, '%');
+        size_t seg = pct ? (size_t)(pct - from) : strlen(from);
+        if (seg > limit - di) seg = limit - di;
+        for (size_t k = 0; k < seg; k++) {
+            char ch = from[k];
+            buf[di + k] = (ch == '+') ? ' ' : ch;
+        }
+        di += seg;
+        si += seg;
     }
     buf[di] = '\0';
     return (int)di;
 }
 
 int neverc_url_path_escape(const char *s, char *buf, size_t cap) {
-    if (!esc_tables_ready) build_esc_tables();
     return percent_encode(s, buf, cap, esc_table_path);
 }
 
@@ -296,7 +344,6 @@ int neverc_url_path_unescape(const char *s, char *buf, size_t cap) {
 }
 
 int neverc_url_query_escape(const char *s, char *buf, size_t cap) {
-    if (!esc_tables_ready) build_esc_tables();
     return percent_encode(s, buf, cap, esc_table_query);
 }
 

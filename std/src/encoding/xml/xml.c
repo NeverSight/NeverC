@@ -1,6 +1,7 @@
 #include "neverc/std/encoding/xml.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 void neverc_xml_decoder_init(neverc_xml_decoder_t *d, const char *data, size_t len) {
     d->src = data;
@@ -24,8 +25,11 @@ static void skip_ws(neverc_xml_decoder_t *d) {
 }
 
 static neverc_xml_attr_t *parse_attrs(neverc_xml_decoder_t *d, int *count) {
-    int cap = 4;
-    neverc_xml_attr_t *attrs = (neverc_xml_attr_t *)malloc(cap * sizeof(neverc_xml_attr_t));
+    /* Allocate lazily: attribute-less tags (the common case) return NULL with
+     * count 0 and pay no malloc/free. All consumers already guard on a NULL
+     * attrs pointer (token_free, node_free, node_attr, the DOM builder). */
+    int cap = 0;
+    neverc_xml_attr_t *attrs = NULL;
     *count = 0;
 
     while (d->pos < d->len) {
@@ -53,7 +57,7 @@ static neverc_xml_attr_t *parse_attrs(neverc_xml_decoder_t *d, int *count) {
         }
 
         if (*count >= cap) {
-            cap *= 2;
+            cap = cap ? cap * 2 : 4;
             attrs = (neverc_xml_attr_t *)realloc(attrs, cap * sizeof(neverc_xml_attr_t));
         }
         attrs[*count].name = name;
@@ -70,7 +74,10 @@ int neverc_xml_decode_token(neverc_xml_decoder_t *d, neverc_xml_token_t *tok) {
 
     if (d->src[d->pos] != '<') {
         size_t start = d->pos;
-        while (d->pos < d->len && d->src[d->pos] != '<') d->pos++;
+        /* Character data runs until the next '<'; memchr scans it in bulk
+         * instead of byte-by-byte (text content dominates most documents). */
+        const char *lt = (const char *)memchr(d->src + d->pos, '<', d->len - d->pos);
+        d->pos = lt ? (size_t)(lt - d->src) : d->len;
         tok->type = NEVERC_XML_CHAR_DATA;
         tok->data = dup_range(d->src + start, d->pos - start);
         tok->data_len = d->pos - start;
@@ -249,27 +256,47 @@ neverc_xml_node_t *neverc_xml_node_child(const neverc_xml_node_t *node,
     return NULL;
 }
 
+/*
+ * Per-byte expansion table: xml_esc_extra[c] is the extra bytes c's escape adds
+ * beyond the original byte (0 for self-representing bytes), doubling as the
+ * "is special" predicate.  & -> &amp; (4),  < > -> 4-char (3),  " ' -> 6-char (5).
+ */
+static const uint8_t xml_esc_extra[256] = {
+    ['&'] = 4, ['<'] = 3, ['>'] = 3, ['"'] = 5, ['\''] = 5,
+};
+
 char *neverc_xml_escape(const char *s, size_t *outlen) {
     size_t slen = strlen(s);
-    size_t cap = slen * 2;
-    char *r = (char *)malloc(cap + 1);
+
+    /* Branchless pass to size the output exactly (no realloc, no slack). */
+    size_t extra = 0;
+    for (size_t i = 0; i < slen; i++)
+        extra += xml_esc_extra[(unsigned char)s[i]];
+
+    char *r = (char *)malloc(slen + extra + 1);
+    if (!r) { *outlen = 0; return NULL; }
+
+    /* Fast path: nothing needs escaping, copy the whole string in one go. */
+    if (extra == 0) {
+        memcpy(r, s, slen);
+        r[slen] = '\0';
+        *outlen = slen;
+        return r;
+    }
+
+    /* Single read: store self-representing bytes directly (buffer is exact, no
+     * bounds check); specials expand via constant-size memcpy the compiler
+     * inlines. */
     size_t wi = 0;
     for (size_t i = 0; i < slen; i++) {
-        const char *esc = NULL; size_t elen = 0;
-        switch (s[i]) {
-            case '&': esc = "&amp;"; elen = 5; break;
-            case '<': esc = "&lt;";  elen = 4; break;
-            case '>': esc = "&gt;";  elen = 4; break;
-            case '"': esc = "&quot;"; elen = 6; break;
-            case '\'': esc = "&apos;"; elen = 6; break;
-            default: break;
-        }
-        if (esc) {
-            if (wi + elen >= cap) { cap = (wi + elen) * 2; r = (char *)realloc(r, cap + 1); }
-            memcpy(r + wi, esc, elen); wi += elen;
-        } else {
-            if (wi + 1 >= cap) { cap *= 2; r = (char *)realloc(r, cap + 1); }
-            r[wi++] = s[i];
+        unsigned char c = (unsigned char)s[i];
+        if (xml_esc_extra[c] == 0) { r[wi++] = (char)c; continue; }
+        switch (c) {
+            case '&':  memcpy(r + wi, "&amp;",  5); wi += 5; break;
+            case '<':  memcpy(r + wi, "&lt;",   4); wi += 4; break;
+            case '>':  memcpy(r + wi, "&gt;",   4); wi += 4; break;
+            case '"':  memcpy(r + wi, "&quot;", 6); wi += 6; break;
+            case '\'': memcpy(r + wi, "&apos;", 6); wi += 6; break;
         }
     }
     r[wi] = '\0';

@@ -174,6 +174,21 @@ static int days_in_month(int y, int m) {
     return dm[m - 1];
 }
 
+/*
+ * Days since 1970-01-01 for a proleptic-Gregorian date, in O(1) (Howard
+ * Hinnant's days_from_civil, as used by C++20 <chrono>). Replaces the previous
+ * O(year) loops that summed one term per year and per month — those grew
+ * without bound for far-off years. Precondition: m in [1,12], d a valid day.
+ */
+static int64_t days_from_civil(int64_t y, int m, int d) {
+    y -= (m <= 2);
+    int64_t era = (y >= 0 ? y : y - 399) / 400;
+    int64_t yoe = y - era * 400;                                    /* [0, 399]    */
+    int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;   /* [0, 365]    */
+    int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;            /* [0, 146096] */
+    return era * 146097 + doe - 719468;
+}
+
 int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {
     const char *p = s;
     int year = parse_digits(&p, 4); if (year < 0 || *p++ != '-') return -1;
@@ -212,12 +227,7 @@ int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {
     }
 
     /* Convert to Unix timestamp */
-    int64_t days = 0;
-    for (int y = 1970; y < year; y++)
-        days += is_leap(y) ? 366 : 365;
-    for (int m = 1; m < month; m++)
-        days += days_in_month(year, m);
-    days += day - 1;
+    int64_t days = days_from_civil(year, month, day);
 
     int64_t total_sec = days * 86400 + hour * 3600 + min * 60 + sec - tz_offset;
     out->sec = total_sec;
@@ -239,14 +249,7 @@ void neverc_time_sleep(neverc_duration_t d) {
 
 neverc_time_t neverc_time_date(int year, int month, int day,
                                 int hour, int min, int sec, int nsec) {
-    int64_t days = 0;
-    for (int y = 1970; y < year; y++)
-        days += is_leap(y) ? 366 : 365;
-    for (int y = year; y < 1970; y++)
-        days -= is_leap(y) ? 366 : 365;
-    for (int m = 1; m < month; m++)
-        days += days_in_month(year, m);
-    days += day - 1;
+    int64_t days = days_from_civil(year, month, day);
 
     neverc_time_t t;
     t.sec = days * 86400 + hour * 3600 + min * 60 + sec;
@@ -359,38 +362,41 @@ neverc_time_t neverc_time_unix_milli_to_time(int64_t msec) {
 
 char *neverc_time_format(neverc_time_t t, const char *layout) {
     if (!layout) return NULL;
-    int yr = neverc_time_year(t);
-    int mo = neverc_time_month(t);
-    int dy = neverc_time_day(t);
-    int hr = neverc_time_hour(t);
-    int mi = neverc_time_minute(t);
-    int sc = neverc_time_second(t);
-    int ns = neverc_time_nanosecond(t);
-    (void)ns;
+    /* Decompose once: the previous code called six accessors, each doing its
+     * own gmtime_r, so a single format cost six broken-down-time conversions. */
+    struct tm m;
+    decompose(t, &m);
+    int yr = m.tm_year + 1900;
+    int mo = m.tm_mon + 1;
+    int dy = m.tm_mday;
+    int hr = m.tm_hour;
+    int mi = m.tm_min;
+    int sc = m.tm_sec;
 
     char buf[256];
-    size_t out = 0, llen = strlen(layout);
+    int out = 0;
+    size_t llen = strlen(layout);
 
-    for (size_t i = 0; i < llen && out < sizeof(buf) - 20;) {
+    for (size_t i = 0; i < llen && out < (int)sizeof(buf) - 20;) {
         if (i + 4 <= llen && memcmp(layout + i, "2006", 4) == 0) {
-            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%04d", yr); i += 4;
+            write_int(buf, &out, yr, 4); i += 4;
         } else if (i + 2 <= llen && memcmp(layout + i, "01", 2) == 0) {
-            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%02d", mo); i += 2;
+            write_int(buf, &out, mo, 2); i += 2;
         } else if (i + 2 <= llen && memcmp(layout + i, "02", 2) == 0) {
-            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%02d", dy); i += 2;
+            write_int(buf, &out, dy, 2); i += 2;
         } else if (i + 2 <= llen && memcmp(layout + i, "15", 2) == 0) {
-            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%02d", hr); i += 2;
+            write_int(buf, &out, hr, 2); i += 2;
         } else if (i + 2 <= llen && memcmp(layout + i, "04", 2) == 0) {
-            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%02d", mi); i += 2;
+            write_int(buf, &out, mi, 2); i += 2;
         } else if (i + 2 <= llen && memcmp(layout + i, "05", 2) == 0) {
-            out += (size_t)snprintf(buf + out, sizeof(buf) - out, "%02d", sc); i += 2;
+            write_int(buf, &out, sc, 2); i += 2;
         } else {
             buf[out++] = layout[i++];
         }
     }
     buf[out] = '\0';
-    char *result = (char *)malloc(out + 1);
-    if (result) memcpy(result, buf, out + 1);
+    char *result = (char *)malloc((size_t)out + 1);
+    if (result) memcpy(result, buf, (size_t)out + 1);
     return result;
 }
 

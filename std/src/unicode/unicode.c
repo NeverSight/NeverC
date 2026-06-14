@@ -60,6 +60,10 @@ int neverc_unicode_is_lower(uint32_t r) {
 }
 
 int neverc_unicode_is_letter(uint32_t r) {
+    /* ASCII fast path: a letter is exactly A-Z or a-z, so skip the Latin-1,
+     * Greek, Cyrillic and CJK range checks for the common case. */
+    if (r < 0x80)
+        return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z');
     if (neverc_unicode_is_upper(r) || neverc_unicode_is_lower(r)) return 1;
     if (r == '_') return 0;
     /* CJK Unified Ideographs */
@@ -125,6 +129,10 @@ int neverc_unicode_is_punct(uint32_t r) {
 }
 
 int neverc_unicode_is_graphic(uint32_t r) {
+    /* ASCII fast path: every printable ASCII byte (0x20..0x7E) is graphic;
+     * controls and DEL are not. Matches the per-category checks below. */
+    if (r < 0x80)
+        return r >= 0x20 && r != 0x7F;
     if (neverc_unicode_is_letter(r)) return 1;
     if (neverc_unicode_is_digit(r)) return 1;
     if (neverc_unicode_is_punct(r)) return 1;
@@ -138,6 +146,9 @@ int neverc_unicode_is_graphic(uint32_t r) {
 }
 
 int neverc_unicode_is_print(uint32_t r) {
+    /* ASCII fast path: printable ASCII is 0x20..0x7E (DEL and controls are not). */
+    if (r < 0x80)
+        return r >= 0x20 && r != 0x7F;
     if (neverc_unicode_is_control(r)) return 0;
     if (r == 0x7F) return 0;
     if (r > NEVERC_UNICODE_MAX_RUNE) return 0;

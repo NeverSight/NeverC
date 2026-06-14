@@ -1046,20 +1046,40 @@ void neverc_regexp_free_strings(char **strs, int count) {
     free(strs);
 }
 
+/* RE2/POSIX special bytes that QuoteMeta must backslash-escape. A 256-entry
+ * lookup collapses the previous 14-way `c == X || ...` comparison chain — which
+ * every ordinary byte ran in full because none of the disjuncts short-circuit —
+ * into a single branch-predictable load per byte. The flat single loop keeps
+ * branch prediction stable on special-dense input, so the table is a strict win
+ * across both ordinary and metacharacter-heavy strings. */
+static const uint8_t regexp_meta_tbl[256] = {
+    ['\\'] = 1, ['.'] = 1, ['+'] = 1, ['*'] = 1, ['?'] = 1,
+    ['(']  = 1, [')'] = 1, ['|'] = 1, ['['] = 1, [']'] = 1,
+    ['{']  = 1, ['}'] = 1, ['^'] = 1, ['$'] = 1,
+};
+
 char *neverc_regexp_quote_meta(const char *s) {
     if (!s) return NULL;
     size_t slen = strlen(s);
     char *result = (char *)malloc(slen * 2 + 1);
     if (!result) return NULL;
-    size_t j = 0;
-    for (size_t i = 0; i < slen; i++) {
-        char c = s[i];
-        if (c == '\\' || c == '.' || c == '+' || c == '*' || c == '?' ||
-            c == '(' || c == ')' || c == '|' || c == '[' || c == ']' ||
-            c == '{' || c == '}' || c == '^' || c == '$') {
-            result[j++] = '\\';
-        }
-        result[j++] = c;
+
+    /* Copy the leading run of ordinary bytes in one shot. A string with no
+     * special bytes (the common case for QuoteMeta — escaping literal text)
+     * thus reduces to a single scan plus one memcpy. */
+    size_t i = 0;
+    while (i < slen && !regexp_meta_tbl[(unsigned char)s[i]]) i++;
+    memcpy(result, s, i);
+    size_t j = i;
+
+    /* Past the first special byte, emit branchlessly: write the backslash
+     * unconditionally, then advance over it only for special bytes. Avoiding a
+     * data-dependent branch keeps special-dense tails from mispredicting. */
+    for (; i < slen; i++) {
+        unsigned char c = (unsigned char)s[i];
+        result[j] = '\\';
+        j += regexp_meta_tbl[c];
+        result[j++] = (char)c;
     }
     result[j] = '\0';
     return result;

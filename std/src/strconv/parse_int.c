@@ -8,6 +8,35 @@
 #define NC_INT_MAX     2147483647
 #define NC_INT_MIN     (-2147483647 - 1)
 
+/*
+ * digit_val[c] maps an ASCII byte to its numeric value (0-35) for bases up to
+ * 36, or 0xFF for any non-alphanumeric byte. A single table lookup followed by
+ * one unsigned compare ("d >= base") replaces the old three-way range branch
+ * and the separate "digit >= base" test: 0xFF is rejected for every base 2-36,
+ * and '_' (0xFF here) still falls through to the separator/syntax handling, so
+ * results are identical to the previous classifier.
+ */
+#define NC_X 0xFF
+static const uint8_t digit_val[256] = {
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+       0,   1,   2,   3,   4,   5,   6,   7,    8,   9,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,  10,  11,  12,  13,  14,  15,  16,   17,  18,  19,  20,  21,  22,  23,  24,
+      25,  26,  27,  28,  29,  30,  31,  32,   33,  34,  35,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,  10,  11,  12,  13,  14,  15,  16,   17,  18,  19,  20,  21,  22,  23,  24,
+      25,  26,  27,  28,  29,  30,  31,  32,   33,  34,  35,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+    NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X, NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,NC_X,
+};
+#undef NC_X
+
 int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *result) {
     if (!s || !result || *s == '\0')
         return NEVERC_STRCONV_ERR_SYNTAX;
@@ -41,33 +70,51 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
     if (*p == '\0')
         return NEVERC_STRCONV_ERR_SYNTAX;
 
-    unsigned long long cutoff = NC_ULLONG_MAX / (unsigned long long)base;
     unsigned long long val = 0;
     int any = 0;
 
-    for (; *p; p++) {
-        if (*p == '_' && any)
-            continue;
-
-        int digit;
-        if (*p >= '0' && *p <= '9')
-            digit = *p - '0';
-        else if (*p >= 'a' && *p <= 'z')
-            digit = *p - 'a' + 10;
-        else if (*p >= 'A' && *p <= 'Z')
-            digit = *p - 'A' + 10;
-        else
-            return NEVERC_STRCONV_ERR_SYNTAX;
-
-        if (digit >= base)
-            return NEVERC_STRCONV_ERR_SYNTAX;
-
-        if (val > cutoff || (val == cutoff && (unsigned long long)digit > NC_ULLONG_MAX % (unsigned long long)base)) {
-            *result = NC_ULLONG_MAX;
-            return NEVERC_STRCONV_ERR_RANGE;
+    if (base == 10) {
+        /*
+         * Fast path for base 10 (covers Atoi and the vast majority of calls).
+         * The cutoff/remainder are now compile-time constants and the digit
+         * test "(unsigned)(c-'0') > 9" needs a single comparison.
+         */
+        const unsigned long long cutoff = NC_ULLONG_MAX / 10ULL;       /* 1844674407370955161 */
+        const unsigned rem = (unsigned)(NC_ULLONG_MAX % 10ULL);        /* 5 */
+        for (; *p; p++) {
+            unsigned d = (unsigned)(unsigned char)*p - '0';
+            if (d > 9) {
+                if (*p == '_' && any)
+                    continue;
+                return NEVERC_STRCONV_ERR_SYNTAX;
+            }
+            if (val > cutoff || (val == cutoff && d > rem)) {
+                *result = NC_ULLONG_MAX;
+                return NEVERC_STRCONV_ERR_RANGE;
+            }
+            val = val * 10ULL + d;
+            any = 1;
         }
-        val = val * (unsigned long long)base + (unsigned long long)digit;
-        any = 1;
+    } else {
+        const unsigned long long ubase = (unsigned long long)base;
+        const unsigned long long cutoff = NC_ULLONG_MAX / ubase;
+        const unsigned rem = (unsigned)(NC_ULLONG_MAX % ubase);
+        for (; *p; p++) {
+            unsigned char c = (unsigned char)*p;
+            if (c == '_' && any)
+                continue;
+
+            unsigned d = digit_val[c];
+            if (d >= (unsigned)base)
+                return NEVERC_STRCONV_ERR_SYNTAX;
+
+            if (val > cutoff || (val == cutoff && d > rem)) {
+                *result = NC_ULLONG_MAX;
+                return NEVERC_STRCONV_ERR_RANGE;
+            }
+            val = val * ubase + d;
+            any = 1;
+        }
     }
 
     if (!any)
@@ -102,7 +149,10 @@ int neverc_strconv_parse_int(const char *s, int base, long long *result) {
             *result = NC_LLONG_MIN;
             return NEVERC_STRCONV_ERR_RANGE;
         }
-        *result = -(long long)uval;
+        /* Negate in unsigned space: -(long long)uval would overflow (UB) for
+         * uval == LLONG_MAX+1; unsigned wraparound + cast is well-defined and
+         * yields the identical value on two's-complement targets. */
+        *result = (long long)(0ULL - uval);
     } else {
         if (uval > (unsigned long long)NC_LLONG_MAX) {
             *result = NC_LLONG_MAX;
