@@ -58,6 +58,73 @@ static void test_bytes_interning(void) {
     ASSERT_TRUE(memcmp(out, data1, 4) == 0);
 }
 
+/* Exercises the O(1) length header: bytes_value with a non-NULL len out-param
+ * (the previous table-scan implementation left this path untested) plus the
+ * string/int64 length-consistency that the shared [len][data] block guarantees. */
+static void test_bytes_length(void) {
+    printf("[bytes_length]\n");
+    neverc_unique_destroy();
+    neverc_unique_init();
+
+    unsigned char blob[300];
+    for (int i = 0; i < 300; i++) blob[i] = (unsigned char)(i * 7 + 1);
+
+    size_t sizes[] = {1, 2, 7, 8, 16, 64, 255, 256, 300};
+    for (int s = 0; s < (int)(sizeof(sizes) / sizeof(sizes[0])); s++) {
+        size_t n = sizes[s];
+        neverc_unique_handle_t h = neverc_unique_make_bytes(blob, n);
+        ASSERT_TRUE(neverc_unique_handle_valid(h));
+        size_t got = 0;
+        const unsigned char *p = (const unsigned char *)neverc_unique_bytes_value(h, &got);
+        ASSERT_INT_EQ((long long)got, (long long)n);            /* O(1) header length */
+        ASSERT_TRUE(p && memcmp(p, blob, n) == 0);              /* data intact */
+        /* Re-interning the same prefix returns the identical canonical pointer. */
+        neverc_unique_handle_t h2 = neverc_unique_make_bytes(blob, n);
+        ASSERT_TRUE(neverc_unique_handle_equal(h, h2));
+    }
+
+    /* Length header is correct for non-byte kinds too (string => strlen+1). */
+    neverc_unique_handle_t hs = neverc_unique_make_string("hello");
+    size_t slen = 0;
+    neverc_unique_bytes_value(hs, &slen);
+    ASSERT_INT_EQ((long long)slen, 6);
+
+    neverc_unique_handle_t hi = neverc_unique_make_int64(42);
+    size_t ilen = 0;
+    neverc_unique_bytes_value(hi, &ilen);
+    ASSERT_INT_EQ((long long)ilen, (long long)sizeof(int64_t));
+}
+
+/* Stress the power-of-two probing + grow path with many distinct byte values of
+ * varying length, then verify every handle still reports the right length/data. */
+static void test_bytes_stress(void) {
+    printf("[bytes_stress]\n");
+    neverc_unique_destroy();
+    neverc_unique_init();
+
+    enum { N = 800 };
+    static neverc_unique_handle_t hs[N];
+    static unsigned char ref[N][24];
+    static size_t reflen[N];
+    for (int i = 0; i < N; i++) {
+        size_t n = (size_t)(i % 24) + 1;
+        for (size_t j = 0; j < n; j++) ref[i][j] = (unsigned char)(i * 31 + (int)j);
+        reflen[i] = n;
+        hs[i] = neverc_unique_make_bytes(ref[i], n);
+        ASSERT_TRUE(neverc_unique_handle_valid(hs[i]));
+    }
+    int ok = 1;
+    for (int i = 0; i < N; i++) {
+        size_t got = 0;
+        const unsigned char *p = (const unsigned char *)neverc_unique_bytes_value(hs[i], &got);
+        if (got != reflen[i] || !p || memcmp(p, ref[i], reflen[i]) != 0) { ok = 0; break; }
+        /* idempotent interning: same bytes -> same canonical handle */
+        neverc_unique_handle_t again = neverc_unique_make_bytes(ref[i], reflen[i]);
+        if (!neverc_unique_handle_equal(again, hs[i])) { ok = 0; break; }
+    }
+    ASSERT_TRUE(ok);
+}
+
 static void test_null_handling(void) {
     printf("[null_handling]\n");
     neverc_unique_handle_t h = neverc_unique_make_string(NULL);
@@ -106,6 +173,8 @@ int main(void) {
     test_int64_interning();
     test_uint64_interning();
     test_bytes_interning();
+    test_bytes_length();
+    test_bytes_stress();
     test_null_handling();
     test_count();
     test_many_strings();

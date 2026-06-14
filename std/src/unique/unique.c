@@ -6,6 +6,14 @@
 /*
  * Intern table: open-addressing hash map with linear probing.
  * Each entry stores: kind, hash, data copy, data length.
+ *
+ * The capacity is always a power of two, so the probe wraps with a bit-mask
+ * (`& (cap - 1)`) instead of a `% cap` division on every step — the same trick
+ * the SwissTable in maps.c relies on.
+ *
+ * Each interned value is allocated as a [size_t len][data...] block and the
+ * handle points at the data, so a handle can recover its own length in O(1)
+ * (header read) instead of scanning the whole table.
  */
 
 typedef enum { UK_EMPTY = 0, UK_STRING, UK_INT64, UK_UINT64, UK_BYTES } uk_kind_t;
@@ -46,11 +54,33 @@ static uint64_t fnv64(const void *data, size_t len) {
     return h;
 }
 
+/*
+ * Value storage: [size_t len][data bytes]. The returned/stored pointer is the
+ * data, so the length is recoverable in O(1) from any handle via intern_len().
+ * Reads/writes of the header use memcpy so unaligned size_t access is never an
+ * issue (the block is malloc-aligned, but this keeps it portable regardless).
+ */
+static void *intern_alloc(const void *data, size_t len) {
+    unsigned char *base = (unsigned char *)malloc(sizeof(size_t) + len);
+    if (!base) return NULL;
+    memcpy(base, &len, sizeof(size_t));
+    memcpy(base + sizeof(size_t), data, len);
+    return base + sizeof(size_t);
+}
+static void intern_free(void *dataptr) {
+    if (dataptr) free((unsigned char *)dataptr - sizeof(size_t));
+}
+static size_t intern_len(const void *dataptr) {
+    size_t len;
+    memcpy(&len, (const unsigned char *)dataptr - sizeof(size_t), sizeof(size_t));
+    return len;
+}
+
 void neverc_unique_init(void) {
     LOCK();
     if (!g_table) {
-        g_cap = INTERN_INIT_CAP;
-        g_table = (intern_entry_t *)calloc(g_cap, sizeof(intern_entry_t));
+        g_table = (intern_entry_t *)calloc(INTERN_INIT_CAP, sizeof(intern_entry_t));
+        g_cap = g_table ? INTERN_INIT_CAP : 0;   /* keep state consistent on OOM */
         g_count = 0;
     }
     UNLOCK();
@@ -60,7 +90,7 @@ void neverc_unique_destroy(void) {
     LOCK();
     if (g_table) {
         for (size_t i = 0; i < g_cap; i++)
-            if (g_table[i].kind != UK_EMPTY) free(g_table[i].data);
+            if (g_table[i].kind != UK_EMPTY) intern_free(g_table[i].data);
         free(g_table);
         g_table = NULL;
         g_cap = 0;
@@ -69,18 +99,22 @@ void neverc_unique_destroy(void) {
     UNLOCK();
 }
 
-static void grow_table(void) {
-    size_t new_cap = g_cap * 2;
+/* Returns 1 on success, 0 on allocation failure (table left unchanged). */
+static int grow_table(void) {
+    size_t new_cap = g_cap * 2;                  /* stays a power of two */
     intern_entry_t *new_tab = (intern_entry_t *)calloc(new_cap, sizeof(intern_entry_t));
+    if (!new_tab) return 0;
+    size_t mask = new_cap - 1;
     for (size_t i = 0; i < g_cap; i++) {
         if (g_table[i].kind == UK_EMPTY) continue;
-        size_t idx = (size_t)(g_table[i].hash % new_cap);
-        while (new_tab[idx].kind != UK_EMPTY) idx = (idx + 1) % new_cap;
+        size_t idx = (size_t)(g_table[i].hash & mask);
+        while (new_tab[idx].kind != UK_EMPTY) idx = (idx + 1) & mask;
         new_tab[idx] = g_table[i];
     }
     free(g_table);
     g_table = new_tab;
     g_cap = new_cap;
+    return 1;
 }
 
 static int entry_matches(const intern_entry_t *e, uk_kind_t kind, uint64_t hash,
@@ -97,28 +131,41 @@ static neverc_unique_handle_t intern(uk_kind_t kind, const void *data, size_t le
 
     LOCK();
     if (!g_table) {
+        g_table = (intern_entry_t *)calloc(INTERN_INIT_CAP, sizeof(intern_entry_t));
+        if (!g_table) { UNLOCK(); return h; }     /* OOM: invalid handle */
         g_cap = INTERN_INIT_CAP;
-        g_table = (intern_entry_t *)calloc(g_cap, sizeof(intern_entry_t));
     }
 
-    size_t idx = (size_t)(hash % g_cap);
+    size_t mask = g_cap - 1;
+    size_t idx = (size_t)(hash & mask);
     while (g_table[idx].kind != UK_EMPTY) {
         if (entry_matches(&g_table[idx], kind, hash, data, len)) {
             h.ptr = g_table[idx].data;
             UNLOCK();
             return h;
         }
-        idx = (idx + 1) % g_cap;
+        idx = (idx + 1) & mask;
     }
 
+    /* Grow at 75% load. */
     if ((g_count + 1) * 4 > g_cap * 3) {
-        grow_table();
-        idx = (size_t)(hash % g_cap);
-        while (g_table[idx].kind != UK_EMPTY) idx = (idx + 1) % g_cap;
+        if (grow_table()) {
+            mask = g_cap - 1;
+            idx = (size_t)(hash & mask);
+            while (g_table[idx].kind != UK_EMPTY) idx = (idx + 1) & mask;
+        } else if (g_count + 1 >= g_cap) {
+            /* Grow failed under memory pressure and the table is otherwise
+             * full: consuming the last EMPTY slot would make every future
+             * probe loop (lookup and insert) non-terminating, so refuse the
+             * insert instead. Below 100% the empty slot found above is still
+             * valid, so only this exact corner is rejected. */
+            UNLOCK();
+            return h;   /* OOM: invalid handle */
+        }
     }
 
-    void *copy = malloc(len);
-    memcpy(copy, data, len);
+    void *copy = intern_alloc(data, len);
+    if (!copy) { UNLOCK(); return h; }            /* OOM: invalid handle */
     g_table[idx].kind = kind;
     g_table[idx].hash = hash;
     g_table[idx].data = copy;
@@ -164,13 +211,7 @@ uint64_t neverc_unique_uint64_value(neverc_unique_handle_t h) {
 
 const void *neverc_unique_bytes_value(neverc_unique_handle_t h, size_t *len) {
     if (!h.ptr) { if (len) *len = 0; return NULL; }
-    if (len) {
-        LOCK();
-        for (size_t i = 0; i < g_cap; i++) {
-            if (g_table[i].data == h.ptr) { *len = g_table[i].len; break; }
-        }
-        UNLOCK();
-    }
+    if (len) *len = intern_len(h.ptr);   /* O(1) header read, no table scan/lock */
     return h.ptr;
 }
 

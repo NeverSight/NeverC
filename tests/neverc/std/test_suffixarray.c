@@ -211,6 +211,93 @@ static void test_random_oracle(void) {
     ASSERT_TRUE(pos_ok);
 }
 
+/* xorshift RNG (independent of rand()) for large deterministic inputs. */
+static uint64_t sa_rng = 0xabcdef0123456789ULL;
+static uint32_t sa_rand(void) {
+    sa_rng ^= sa_rng << 13; sa_rng ^= sa_rng >> 7; sa_rng ^= sa_rng << 17;
+    return (uint32_t)(sa_rng >> 32);
+}
+
+/* Lexicographic "suffix a < suffix b" over data[0..n). Distinct starts are
+ * never equal: when one suffix is a prefix of the other, the shorter is less. */
+static int suf_less(const unsigned char *d, size_t n, int32_t a, int32_t b) {
+    size_t i = (size_t)a, j = (size_t)b;
+    while (i < n && j < n) { if (d[i] != d[j]) return d[i] < d[j]; i++; j++; }
+    return i == n;   /* a ran out first -> a is the shorter -> a < b */
+}
+
+/*
+ * Build the SA over `data` and assert the two defining SA-IS invariants
+ * directly: it is a permutation of [0,n) AND it lists the suffixes in strict
+ * lexicographic order. test_random_oracle only checks count/lookup at n<48, so
+ * SA-IS's recursive reduction (which needs many LMS substrings, i.e. large n +
+ * small alphabets) was effectively untested. A handful of differential counts
+ * also exercise the LCP-LR search at scale.
+ */
+static void check_sais(const unsigned char *data, size_t n) {
+    neverc_suffixarray_t idx;
+    if (neverc_suffixarray_new(&idx, data, n) != 0) { ASSERT_TRUE(1); return; } /* OOM: skip */
+
+    unsigned char *seen = (unsigned char *)calloc(n ? n : 1, 1);
+    int perm = (seen != NULL), ordered = 1;
+    if (seen) {
+        for (size_t i = 0; i < n; i++) {
+            int32_t s = idx.sa[i];
+            if (s < 0 || (size_t)s >= n || seen[s]) { perm = 0; break; }
+            seen[s] = 1;
+        }
+        for (size_t i = 1; i < n && perm; i++)
+            if (!suf_less(data, n, idx.sa[i - 1], idx.sa[i])) { ordered = 0; break; }
+    }
+    free(seen);
+    ASSERT_TRUE(perm);      /* SA is a permutation of [0,n) */
+    ASSERT_TRUE(ordered);   /* SA is in strict lexicographic suffix order */
+
+    int cnt_ok = 1;
+    for (int q = 0; q < 8 && n > 0; q++) {
+        unsigned char pat[40];
+        size_t m;
+        if (q & 1) {                         /* real substring -> guaranteed hits */
+            size_t start = sa_rand() % n;
+            size_t maxm = n - start; if (maxm > 32) maxm = 32;
+            m = 1 + (maxm > 1 ? sa_rand() % maxm : 0);
+            memcpy(pat, data + start, m);
+        } else {                             /* random short needle (often a miss) */
+            m = 1 + sa_rand() % 6;
+            for (size_t i = 0; i < m; i++) pat[i] = (unsigned char)('a' + sa_rand() % 5);
+        }
+        if (neverc_suffixarray_count(&idx, pat, m) != naive_count(data, n, pat, m)) {
+            cnt_ok = 0; break;
+        }
+    }
+    ASSERT_TRUE(cnt_ok);
+    neverc_suffixarray_free(&idx);
+}
+
+/* Large-input SA-IS battery: binary/periodic/all-equal maximise LMS substrings
+ * and drive the recursive reduction the small oracle never reaches. */
+static void test_sais_large(void) {
+    printf("[sais_large]\n");
+    sa_rng = 0xabcdef0123456789ULL;
+    size_t sizes[] = {200, 511, 1000, 2003, 4096};
+    for (int si = 0; si < (int)(sizeof(sizes) / sizeof(sizes[0])); si++) {
+        size_t n = sizes[si];
+        unsigned char *d = (unsigned char *)malloc(n);
+        if (!d) { ASSERT_TRUE(1); continue; }
+        for (size_t i = 0; i < n; i++) d[i] = (unsigned char)('a' + (sa_rand() & 1));
+        check_sais(d, n);                                                  /* binary */
+        for (size_t i = 0; i < n; i++) d[i] = (unsigned char)('a' + sa_rand() % 4);
+        check_sais(d, n);                                                  /* 4-letter */
+        memset(d, 'm', n);
+        check_sais(d, n);                                                  /* all-equal */
+        for (size_t i = 0; i < n; i++) d[i] = (unsigned char)('a' + (i % 3));
+        check_sais(d, n);                                                  /* periodic */
+        for (size_t i = 0; i < n; i++) d[i] = (unsigned char)('a' + (i % 16));
+        check_sais(d, n);                                                  /* sawtooth */
+        free(d);
+    }
+}
+
 int main(void) {
     printf("=== NeverC index/suffixarray Tests ===\n");
     test_new_free();
@@ -222,6 +309,7 @@ int main(void) {
     test_max_results();
     test_at();
     test_random_oracle();
+    test_sais_large();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

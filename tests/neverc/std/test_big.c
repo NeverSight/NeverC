@@ -706,6 +706,70 @@ static void test_string_huge_roundtrip(void) {
     neverc_bigint_free(&a); neverc_bigint_free(&b);
 }
 
+/* Large random multiply + dedicated squaring-path differential test.
+ *
+ * big.c takes the symmetric squaring path (nat_sqr -> Karatsuba-sqr at 80
+ * words, Toom-3-sqr at 120) ONLY when both mul operands are the same pointer
+ * (`if (x == y)`). The existing randomized tests reach it only through small-
+ * operand modexp, so the large-operand squaring code had no direct coverage.
+ * Here neverc_bigint_mul(z, a, a) drives it at word counts straddling every
+ * tier, cross-checked against the independent general-mul path with identities
+ * that no single-path carry/interpolation bug can satisfy simultaneously:
+ *   a*a (square path) == a*acopy (general mul)   a^2 >= 0
+ *   a*b == b*a                                   commutativity at Toom-3 scale
+ *   (a+b)*(a-b) == a^2 - b^2                      difference of squares
+ *   (a+b)^2 == a^2 + 2ab + b^2                    square of sum */
+static void test_mul_sqr_large_random(void) {
+    printf("[mul_sqr_large_random]\n");
+    rng_state = 0x5151aaaa33337777ULL;
+    neverc_bigint_t a, ac, b, aa, bb, ab, ba, t, s, d, lhs, rhs;
+    neverc_bigint_init(&a);  neverc_bigint_init(&ac); neverc_bigint_init(&b);
+    neverc_bigint_init(&aa); neverc_bigint_init(&bb); neverc_bigint_init(&ab);
+    neverc_bigint_init(&ba); neverc_bigint_init(&t);  neverc_bigint_init(&s);
+    neverc_bigint_init(&d);  neverc_bigint_init(&lhs); neverc_bigint_init(&rhs);
+
+    int bad = 0;
+    for (int it = 0; it < 40; it++) {
+        /* 40..269 words straddles Karatsuba(40)/Toom-3(144) multiply and
+         * Karatsuba-sqr(80)/Toom-3-sqr(120) squaring thresholds. */
+        int wa = 40 + (int)(rng32() % 230);
+        int wb = 40 + (int)(rng32() % 230);
+        make_random(&a, wa);
+        make_random(&b, wb);
+        if (it & 1) a.neg = (a.len > 0);              /* sign must not affect a^2 */
+        if (it & 2) b.neg = (b.len > 0);
+
+        neverc_bigint_set(&ac, &a);                   /* distinct copy of a */
+        neverc_bigint_mul(&aa, &a, &a);               /* a^2 via squaring path (x==y) */
+        neverc_bigint_mul(&bb, &b, &b);               /* b^2 via squaring path */
+        neverc_bigint_mul(&t,  &a, &ac);              /* a*a via general mul   (x!=y) */
+        if (neverc_bigint_cmp(&t, &aa) != 0) bad++;   /* square path == general mul */
+        if (neverc_bigint_sign(&aa) < 0)    bad++;    /* a^2 is nonnegative */
+
+        neverc_bigint_mul(&ab, &a, &b);
+        neverc_bigint_mul(&ba, &b, &a);
+        if (neverc_bigint_cmp(&ab, &ba) != 0) bad++;  /* commutativity */
+
+        neverc_bigint_add(&s, &a, &b);                /* a+b */
+        neverc_bigint_sub(&d, &a, &b);                /* a-b */
+        neverc_bigint_mul(&lhs, &s, &d);              /* (a+b)(a-b) */
+        neverc_bigint_sub(&rhs, &aa, &bb);            /* a^2 - b^2 */
+        if (neverc_bigint_cmp(&lhs, &rhs) != 0) bad++;
+
+        neverc_bigint_mul(&t, &s, &s);                /* (a+b)^2 via squaring path */
+        neverc_bigint_add(&rhs, &aa, &bb);            /* a^2 + b^2 */
+        neverc_bigint_add(&rhs, &rhs, &ab);           /* + ab */
+        neverc_bigint_add(&rhs, &rhs, &ab);           /* + ab => a^2 + 2ab + b^2 */
+        if (neverc_bigint_cmp(&t, &rhs) != 0) bad++;
+    }
+    ASSERT_INT_EQ(bad, 0);
+
+    neverc_bigint_free(&a);  neverc_bigint_free(&ac); neverc_bigint_free(&b);
+    neverc_bigint_free(&aa); neverc_bigint_free(&bb); neverc_bigint_free(&ab);
+    neverc_bigint_free(&ba); neverc_bigint_free(&t);  neverc_bigint_free(&s);
+    neverc_bigint_free(&d);  neverc_bigint_free(&lhs); neverc_bigint_free(&rhs);
+}
+
 int main(void) {
     printf("=== NeverC math/big Tests ===\n");
     test_set_int64();
@@ -728,6 +792,7 @@ int main(void) {
     test_string_roundtrip();
     test_string_large_roundtrip();
     test_div_large_random();
+    test_mul_sqr_large_random();
     test_string_huge_roundtrip();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

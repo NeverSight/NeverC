@@ -129,6 +129,8 @@ static void build_ascii_set(const char *chars, uint32_t set[8]) {
 
 size_t neverc_bytes_index_any(const uint8_t *s, size_t slen, const char *chars) {
     if (!chars[0]) return (size_t)-1;
+    if (!chars[1])   /* single-byte cutset: SIMD memchr beats the bitmap loop */
+        return neverc_bytes_index_byte(s, slen, (uint8_t)chars[0]);
     uint32_t set[8];
     build_ascii_set(chars, set);
     for (size_t i = 0; i < slen; i++)
@@ -139,6 +141,8 @@ size_t neverc_bytes_index_any(const uint8_t *s, size_t slen, const char *chars) 
 size_t neverc_bytes_last_index_any(const uint8_t *s, size_t slen,
                                    const char *chars) {
     if (!chars[0]) return (size_t)-1;
+    if (!chars[1])   /* single-byte cutset: word-at-a-time reverse scan */
+        return neverc_bytes_last_index_byte(s, slen, (uint8_t)chars[0]);
     uint32_t set[8];
     build_ascii_set(chars, set);
     for (size_t i = slen; i > 0; i--)

@@ -175,6 +175,87 @@ static void test_valid(void) {
     check_int("invalid surrogate", neverc_utf8_valid(inv4, 3), 0);
 }
 
+/* Independent oracle: validate rune-by-rune through the (unchanged) public
+ * decoder. This is exactly the semantics neverc_utf8_valid must preserve, so the
+ * DFA rewrite is pinned byte-for-byte against it. */
+static int ref_valid(const uint8_t *buf, size_t len) {
+    size_t i = 0;
+    while (i < len) {
+        uint32_t r; int sz;
+        neverc_utf8_decode_rune(buf + i, len - i, &r, &sz);
+        if (r == NEVERC_UTF8_RUNE_ERROR && sz <= 1) return 0;
+        i += (size_t)sz;
+    }
+    return 1;
+}
+
+static uint64_t u8_rng = 0x9e3779b97f4a7c15ULL;
+static uint32_t u8_rand(void) {
+    u8_rng ^= u8_rng << 13; u8_rng ^= u8_rng >> 7; u8_rng ^= u8_rng << 17;
+    return (uint32_t)(u8_rng >> 32);
+}
+
+static void test_valid_fuzz(void) {
+    printf("[valid_fuzz]\n");
+    u8_rng = 0x9e3779b97f4a7c15ULL;
+    static uint8_t buf[1024];
+    int mismatches = 0;
+
+    /* (a) Fully random bytes across every alphabet density — heavy on invalid. */
+    for (int it = 0; it < 60000 && mismatches == 0; it++) {
+        size_t n = u8_rand() % 64;
+        int mode = (int)(u8_rand() % 3);
+        for (size_t i = 0; i < n; i++) {
+            switch (mode) {
+            case 0: buf[i] = (uint8_t)u8_rand(); break;             /* any byte */
+            case 1: buf[i] = (uint8_t)(0x80 + (u8_rand() % 0x80)); break; /* high only */
+            default: buf[i] = (uint8_t)(u8_rand() % 0x90); break;   /* ascii + lead-ish */
+            }
+        }
+        if (neverc_utf8_valid(buf, n) != ref_valid(buf, n)) mismatches++;
+    }
+
+    /* (b) Structurally-valid streams (random valid runes) sometimes corrupted by
+     *     a single byte flip — exercises both the accept and reject paths deeply,
+     *     including the ASCII fast-path boundary between multibyte spans. */
+    for (int it = 0; it < 60000 && mismatches == 0; it++) {
+        size_t n = 0;
+        int runes = (int)(u8_rand() % 40);
+        for (int k = 0; k < runes && n + 4 < sizeof(buf); k++) {
+            uint32_t r;
+            switch (u8_rand() % 5) {
+            case 0: r = u8_rand() % 0x80; break;                    /* ASCII */
+            case 1: r = 0x80 + u8_rand() % (0x800 - 0x80); break;   /* 2-byte */
+            case 2: r = 0x800 + u8_rand() % (0xF000); break;        /* 3-byte (some surrogate range) */
+            default: r = 0x10000 + u8_rand() % 0x100000; break;     /* 4-byte */
+            }
+            if (!neverc_utf8_valid_rune(r)) r = 'a';
+            n += (size_t)neverc_utf8_encode_rune(buf + n, r);
+        }
+        if (n && (u8_rand() & 3) == 0) buf[u8_rand() % n] ^= (uint8_t)(1u << (u8_rand() % 8));
+        if (neverc_utf8_valid(buf, n) != ref_valid(buf, n)) mismatches++;
+    }
+
+    /* (c) Hand-picked RFC-3629 edge cases. */
+    static const struct { const char *bytes; size_t n; } cases[] = {
+        {"\xC0\x80", 2}, {"\xC1\xBF", 2},                 /* overlong 2-byte */
+        {"\xE0\x80\x80", 3}, {"\xE0\x9F\xBF", 3},         /* overlong 3-byte */
+        {"\xF0\x80\x80\x80", 4}, {"\xF0\x8F\xBF\xBF", 4}, /* overlong 4-byte */
+        {"\xED\xA0\x80", 3}, {"\xED\xBF\xBF", 3},         /* surrogates */
+        {"\xF4\x90\x80\x80", 4}, {"\xF5\x80\x80\x80", 4}, /* > U+10FFFF */
+        {"\xEF\xBF\xBD", 3},                              /* valid U+FFFD */
+        {"\xF0\x9F\x98\x80", 4},                          /* valid emoji */
+        {"\xE4\xB8", 2}, {"\xF0\x9F\x98", 3},             /* truncated tails */
+        {"\x80", 1}, {"\xBF", 1}, {"\xFE", 1}, {"\xFF", 1},
+    };
+    for (int i = 0; i < (int)(sizeof(cases)/sizeof(cases[0])); i++) {
+        const uint8_t *p = (const uint8_t *)cases[i].bytes;
+        if (neverc_utf8_valid(p, cases[i].n) != ref_valid(p, cases[i].n)) mismatches++;
+    }
+
+    check_int("valid==oracle over fuzz+edges", mismatches, 0);
+}
+
 static void test_rune_start(void) {
     printf("[rune_start]\n");
     check_int("start 'A'", neverc_utf8_rune_start('A'), 1);
@@ -215,6 +296,7 @@ int main(void) {
     test_decode_specific();
     test_rune_count();
     test_valid();
+    test_valid_fuzz();
     test_rune_start();
     test_valid_rune();
     test_encode_surrogate();

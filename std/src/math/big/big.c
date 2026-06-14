@@ -390,7 +390,9 @@ static void nat_sub_into(uint32_t *r, size_t rn, const uint32_t *a, size_t an) {
 /* Word count at/above which squaring (x*x) switches from symmetric schoolbook
  * to Karatsuba squaring. Higher than the multiply threshold because the basic
  * squaring already halves the word-multiplies, so Karatsuba's recursion only
- * pays off later. Overridable for fuzzing (set to 2 for deep recursion). */
+ * pays off later. Overridable for fuzzing; 4 is the smallest value that forces
+ * deep recursion while still terminating (2 or 3 loop forever — the
+ * (xl+xh)^2 sub-square stays the same word count, so it never shrinks). */
 #ifndef NCI_KARATSUBA_SQR_THRESHOLD
 #define NCI_KARATSUBA_SQR_THRESHOLD 80
 #endif
@@ -408,8 +410,9 @@ static void nat_sub_into(uint32_t *r, size_t rn, const uint32_t *a, size_t an) {
 #endif
 /* Squaring crossover (measured lower than the multiply one): Toom-3 squaring
  * replaces 3 Karatsuba sub-squares with 5 smaller dedicated squares, so it
- * pulls ahead from ~120 words. Overridable for fuzzing (set to 3 to force
- * deep recursion). */
+ * pulls ahead from ~120 words. Overridable for fuzzing; use a small value such
+ * as 7 to force deep recursion (Toom-3 needs three non-degenerate parts, so
+ * values below ~5 split into too few limbs to make progress). */
 #ifndef NCI_TOOM3_SQR_THRESHOLD
 #define NCI_TOOM3_SQR_THRESHOLD 120
 #endif

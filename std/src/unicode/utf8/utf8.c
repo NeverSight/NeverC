@@ -175,11 +175,49 @@ size_t neverc_utf8_rune_count(const uint8_t *buf, size_t len) {
     return count;
 }
 
+/*
+ * Validation uses Björn Höhrmann's DFA
+ * (https://bjoern.hoehrmann.de/utf-8/decoder/dfa/): one table-driven, branchless
+ * transition per byte (a single load + add). It is strictly RFC 3629 — rejecting
+ * overlong forms, UTF-16 surrogates (U+D800..U+DFFF) and code points above
+ * U+10FFFF — and fully portable (no SIMD, no platform deps), so it behaves
+ * identically on every target. The ASCII SWAR fast path still skips runs of
+ * plain ASCII 8 bytes at a time; the DFA only walks the multibyte spans.
+ * Byte-exact equivalence with decode_rune() is pinned by a differential fuzz
+ * test (tests/neverc/std/test_utf8.c).
+ */
+#define NCI_UTF8_ACCEPT 0
+#define NCI_UTF8_REJECT 12
+
+static const uint8_t nci_utf8d[] = {
+    /* 0x00..0xFF -> character class */
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,  9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+    10,3,3,3,3,3,3,3,3,3,3,3,3,4,3,3, 11,6,6,6,5,8,8,8,8,8,8,8,8,8,8,8,
+    /* 256 + state + class -> next state */
+    0,12,24,36,60,96,84,12,12,12,48,72,  12,12,12,12,12,12,12,12,12,12,12,12,
+    12, 0,12,12,12,12,12, 0,12, 0,12,12,  12,24,12,12,12,12,12,24,12,24,12,12,
+    12,12,12,12,12,12,12,24,12,12,12,12,  12,24,12,12,12,12,12,12,12,24,12,12,
+    12,12,12,12,12,12,12,36,12,36,12,12,  12,36,12,12,12,12,12,36,12,36,12,12,
+    12,36,12,12,12,12,12,12,12,12,12,12,
+};
+
+static inline uint32_t nci_utf8_step(uint32_t state, uint8_t byte) {
+    return nci_utf8d[256u + state + nci_utf8d[byte]];
+}
+
 int neverc_utf8_valid(const uint8_t *buf, size_t len) {
+    uint32_t state = NCI_UTF8_ACCEPT;
     size_t i = 0;
 
     while (i < len) {
-        if (buf[i] < TX) {
+        /* Only resync to the ASCII fast path on a rune boundary. */
+        if (state == NCI_UTF8_ACCEPT && buf[i] < TX) {
             while (i + 8 <= len) {
                 uint64_t w;
                 memcpy(&w, buf + i, 8);
@@ -189,10 +227,9 @@ int neverc_utf8_valid(const uint8_t *buf, size_t len) {
             while (i < len && buf[i] < TX) i++;
             continue;
         }
-        uint32_t r; int sz;
-        neverc_utf8_decode_rune(buf + i, len - i, &r, &sz);
-        if (r == NEVERC_UTF8_RUNE_ERROR && sz <= 1) return 0;
-        i += (size_t)sz;
+        state = nci_utf8_step(state, buf[i]);
+        if (state == NCI_UTF8_REJECT) return 0;
+        i++;
     }
-    return 1;
+    return state == NCI_UTF8_ACCEPT;   /* trailing truncated sequence => invalid */
 }

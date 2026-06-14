@@ -479,10 +479,50 @@ static void test_search_engine(void) {
     check_bool("randomized cross-check vs brute force", mism, 0);
 }
 
+/* Differential fuzz for index_any/last_index_any vs a brute-force oracle. The
+ * single-byte cutset now delegates to memchr / last_index_byte, so this checks
+ * both that fast path and the multi-byte ASCII-set path stay correct. */
+static uint64_t ia_rng = 0xfeedface12345678ULL;
+static uint32_t ia_rand(void) {
+    ia_rng ^= ia_rng << 13; ia_rng ^= ia_rng >> 7; ia_rng ^= ia_rng << 17;
+    return (uint32_t)(ia_rng >> 32);
+}
+static size_t ref_index_any(const uint8_t *s, size_t n, const char *cut) {
+    for (size_t i = 0; i < n; i++)
+        for (const char *c = cut; *c; c++)
+            if ((uint8_t)*c == s[i]) return i;
+    return (size_t)-1;
+}
+static size_t ref_last_index_any(const uint8_t *s, size_t n, const char *cut) {
+    for (size_t i = n; i > 0; i--)
+        for (const char *c = cut; *c; c++)
+            if ((uint8_t)*c == s[i - 1]) return i - 1;
+    return (size_t)-1;
+}
+static void test_index_any_fuzz(void) {
+    printf("[index_any_fuzz]\n");
+    ia_rng = 0xfeedface12345678ULL;
+    static uint8_t s[300];
+    char cut[9];
+    int bad = 0;
+    for (int it = 0; it < 40000 && !bad; it++) {
+        size_t n = ia_rand() % 300;
+        int alpha = 1 + (int)(ia_rand() % 6);              /* small alphabet => hits */
+        for (size_t i = 0; i < n; i++) s[i] = (uint8_t)('a' + ia_rand() % alpha);
+        size_t clen = 1 + ia_rand() % 4;                   /* 1..4 (covers single-byte) */
+        for (size_t i = 0; i < clen; i++) cut[i] = (char)('a' + ia_rand() % 6);
+        cut[clen] = '\0';
+        if (neverc_bytes_index_any(s, n, cut) != ref_index_any(s, n, cut)) bad = 1;
+        if (neverc_bytes_last_index_any(s, n, cut) != ref_last_index_any(s, n, cut)) bad = 1;
+    }
+    check_bool("index_any/last fuzz == oracle", bad, 0);
+}
+
 int main(void) {
     printf("=== NeverC Bytes Module Tests ===\n\n");
     test_compare();
     test_search();
+    test_index_any_fuzz();
     test_search_engine();
     test_prefix_suffix();
     test_transform();
