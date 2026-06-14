@@ -131,6 +131,68 @@ static void test_typed(size_t n, int mode) {
     free(ad); free(bd); free(k);
 }
 
+/* ---- string sort (multikey quicksort) vs qsort+strcmp ----
+ * neverc_sort_strings is a 3-way radix quicksort whose correctness hinges on
+ * NUL-vs-byte handling, unsigned-byte ordering, the iterative equal-group
+ * descent and the introspective heapsort fallback. Diff it against the libc
+ * oracle over shared-prefix, duplicate, empty and high-bit-byte inputs. */
+static int cmp_strptr(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+/* Build a random NUL-terminated string into buf (cap incl. terminator).
+ * mode picks a distribution that stresses a different part of the algorithm. */
+static void gen_str(char *buf, size_t cap, int mode) {
+    static const char *pre[] = {
+        "/usr/local/bin/", "com.example.app.", "https://host/path/", "key_"
+    };
+    size_t len = 0;
+    switch (mode) {
+    case 0:                                   /* short, tiny alphabet -> dups */
+        len = ru((unsigned)(cap > 6 ? 6 : cap - 1));
+        for (size_t i = 0; i < len; i++) buf[i] = (char)('a' + ru(3));
+        break;
+    case 1: {                                 /* shared long prefix (paths) */
+        const char *p = pre[ru(4)];
+        size_t pl = strlen(p);
+        if (pl >= cap) pl = cap - 1;
+        memcpy(buf, p, pl);
+        size_t extra = ru((unsigned)(cap - pl - 1 > 8 ? 8 : cap - pl - 1));
+        for (size_t i = 0; i < extra; i++) buf[pl + i] = (char)('a' + ru(4));
+        len = pl + extra;
+        break;
+    }
+    case 2:                                   /* full-range incl. high bit */
+        len = ru((unsigned)(cap > 20 ? 20 : cap - 1));
+        for (size_t i = 0; i < len; i++) buf[i] = (char)(1 + ru(255));
+        break;
+    default:                                  /* often empty / prefix pairs */
+        len = ru(3);
+        for (size_t i = 0; i < len; i++) buf[i] = (char)('x' + ru(2));
+        break;
+    }
+    buf[len] = '\0';
+}
+
+static void test_strsort(size_t n, int mode) {
+    const char **a = (const char **)malloc((n ? n : 1) * sizeof(char *));
+    const char **b = (const char **)malloc((n ? n : 1) * sizeof(char *));
+    char *pool = (char *)malloc((n ? n : 1) * 40);
+    if (!a || !b || !pool) { ok(0, "oom strsort"); free(a); free(b); free(pool); return; }
+    for (size_t i = 0; i < n; i++) {
+        char *s = pool + i * 40;
+        gen_str(s, 40, mode);
+        a[i] = s; b[i] = s;
+    }
+    neverc_sort_strings(a, n);
+    qsort(b, n, sizeof(char *), cmp_strptr);
+    int good = 1;
+    for (size_t i = 0; i < n; i++)
+        if (strcmp(a[i], b[i]) != 0) { good = 0; break; }
+    ok(good, "string sort matches qsort+strcmp");
+    free(a); free(b); free(pool);
+}
+
 /* ---- substring search vs brute force ---- */
 static size_t ref_index(const uint8_t *h, size_t hl, const uint8_t *n, size_t nl) {
     if (nl == 0) return 0;
@@ -198,6 +260,12 @@ int main(void) {
                     test_pdqsort_generic(sizes[s], mode, esz[e]);
             }
     printf("sort battery done\n");
+
+    for (int rep = 0; rep < 6; rep++)
+        for (int s = 0; s < nsizes; s++)
+            for (int mode = 0; mode < 4; mode++)
+                test_strsort(sizes[s], mode);
+    printf("string-sort battery done\n");
 
     fuzz_strsearch();
     printf("strsearch battery done\n");

@@ -829,4 +829,102 @@ static void NAME(TYPE *a, size_t n) {                                        \
 NCI_DEFINE_TYPED_SORT(nci_pdqsort_int,    int,    NCI_INT_LESS)
 NCI_DEFINE_TYPED_SORT(nci_pdqsort_double, double, NCI_DBL_LESS)
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  String Array Sort — 3-way radix quicksort (multikey quicksort)
+ *
+ *  Sorts an array of NUL-terminated C strings into unsigned-byte lexicographic
+ *  order (identical to strcmp ordering, so it is a drop-in for a comparison
+ *  sort). A comparison sort calls strcmp on every comparison and therefore
+ *  re-reads shared prefixes O(n log n) times; multikey quicksort (Bentley &
+ *  Sedgewick, "Fast Algorithms for Sorting and Searching Strings", 1997)
+ *  partitions on a single byte position at a time and descends to the next
+ *  position only for the equal group, so each byte of each string is examined
+ *  about once. The win grows with the length of common prefixes — exactly the
+ *  shape of real string data (paths, URLs, identifiers, sorted keys).
+ *
+ *  Robustness (no worst-case regression versus the previous pdqsort):
+ *   - median-of-three pivot keeps the </> recursion balanced, including on
+ *     already-sorted input;
+ *   - an introspective depth limit falls back to heapsort-by-strcmp, so the
+ *     worst case stays O(n log n) comparisons;
+ *   - the equal group is *iterated* (d -> d+1) rather than recursed, so an
+ *     arbitrarily long shared prefix can never grow the call stack.
+ *
+ *  Safety of the s[d] read: a string only reaches depth d through equal-group
+ *  descents whose pivot byte was non-zero, so it has no NUL in [0, d); thus
+ *  s[d] is always within [0, strlen(s)] and never reads past the terminator.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#define NCI_STR_ISORT_THRESHOLD 16
+#define NCI_STR_B(s, d) ((int)(unsigned char)(s)[d])
+
+static int nci_cmp_strptr(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+/* Insertion sort a[lo..hi] (inclusive) by full strcmp — the small-range base
+ * case, where re-scanning whole strings is cheaper than partition bookkeeping. */
+static void nci_str_isort(const char **a, size_t lo, size_t hi) {
+    for (size_t i = lo + 1; i <= hi; i++) {
+        const char *t = a[i];
+        size_t j = i;
+        while (j > lo && strcmp(a[j - 1], t) > 0) { a[j] = a[j - 1]; j--; }
+        a[j] = t;
+    }
+}
+
+static void nci_sort_strings_rec(const char **a, size_t lo, size_t hi,
+                                 size_t d, int limit) {
+    if (limit < 0) {                      /* adversarial </> recursion: bail out */
+        char tmp[sizeof(const char *)];
+        nci_heapsort((char *)(a + lo), hi - lo + 1, sizeof(const char *),
+                     nci_cmp_strptr, tmp);
+        return;
+    }
+    while (hi - lo > NCI_STR_ISORT_THRESHOLD) {
+        /* median-of-three pivot byte at depth d; move the median to a[lo] so the
+         * equal group is never empty (keeps the partition cursors in bounds). */
+        size_t mid = lo + (hi - lo) / 2;
+        int blo = NCI_STR_B(a[lo], d);
+        int bmid = NCI_STR_B(a[mid], d);
+        int bhi = NCI_STR_B(a[hi], d);
+        size_t medi;
+        if (blo <= bmid)
+            medi = (bmid <= bhi) ? mid : (blo <= bhi ? hi : lo);
+        else
+            medi = (blo <= bhi) ? lo : (bmid <= bhi ? hi : mid);
+        if (medi != lo) { const char *t = a[lo]; a[lo] = a[medi]; a[medi] = t; }
+        int pv = NCI_STR_B(a[lo], d);
+
+        /* Sedgewick 3-way partition: [lo,lt) < pv, [lt,gt] == pv, (gt,hi] > pv.
+         * The pivot a[lo] is itself == pv, so the equal band always holds at
+         * least one element and gt never underflows below lo. */
+        size_t lt = lo, gt = hi, i = lo + 1;
+        while (i <= gt) {
+            int c = NCI_STR_B(a[i], d);
+            if (c < pv) {
+                const char *t = a[lt]; a[lt] = a[i]; a[i] = t; lt++; i++;
+            } else if (c > pv) {
+                const char *t = a[i]; a[i] = a[gt]; a[gt] = t; gt--;
+            } else {
+                i++;
+            }
+        }
+
+        /* Recurse on the smaller-alphabet </> groups (same depth); the limit
+         * bounds only this quicksort-style recursion. */
+        if (lt > lo) nci_sort_strings_rec(a, lo, lt - 1, d, limit - 1);
+        if (gt < hi) nci_sort_strings_rec(a, gt + 1, hi, d, limit - 1);
+
+        if (pv == 0) return;              /* equal group are completed strings */
+        lo = lt; hi = gt; d++;            /* descend the equal group iteratively */
+    }
+    nci_str_isort(a, lo, hi);
+}
+
+static void nci_sort_strings(const char **a, size_t n) {
+    if (n <= 1) return;
+    nci_sort_strings_rec(a, 0, n - 1, 0, 2 * nci_log2(n) + 3);
+}
+
 #endif /* NEVERC_SORT_IMPL_H */

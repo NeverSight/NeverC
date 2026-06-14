@@ -72,12 +72,8 @@ void neverc_sort_stable(void *base, size_t n, size_t elem_size,
 
 /* ─── String sorting ─── */
 
-static int cmp_strings(const void *a, const void *b) {
-    return strcmp(*(const char **)a, *(const char **)b);
-}
-
 void neverc_sort_strings(const char **arr, size_t n) {
-    nci_pdqsort(arr, n, sizeof(const char *), cmp_strings);
+    nci_sort_strings(arr, n);
 }
 
 int neverc_sort_strings_are_sorted(const char **arr, size_t n) {
