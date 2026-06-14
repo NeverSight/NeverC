@@ -221,9 +221,27 @@ int neverc_lzw_decompress(const uint8_t *src, size_t src_len,
     uint16_t overflow_val = (uint16_t)(1u << width);
     uint16_t last = INVALID_CODE16;
 
-    uint8_t  suffix[1 << MAX_WIDTH];
-    uint16_t prefix[1 << MAX_WIDTH];
-    uint8_t  stack[1 << MAX_WIDTH];
+    /*
+     * Decode tables. A non-literal code expands to a byte string by walking its
+     * prefix chain (prefix[c] is always < c, so the walk strictly decreases and
+     * can never loop). Recording length[code] lets us reserve the exact output
+     * span and emit the string by writing it *backwards directly into dst* — the
+     * scheme Go's compress/lzw uses — instead of the textbook
+     * push-onto-a-stack-then-reverse-copy, which touches every emitted byte ~3x
+     * (stack write + stack read + dst write) versus one dst write here. Since
+     * length[code] equals the chain length exactly (length[c] = length[prefix]+1
+     * by construction), the backward cursor lands precisely on out_pos, so the
+     * single up-front bound check is sufficient and writes stay in range even on
+     * corrupt input. The first byte of the previous code's string — needed for
+     * the new dictionary entry and the KwKwK self-referential case — is the only
+     * first-byte ever read, so it is carried in a scalar instead of a table.
+     */
+    uint8_t  suffix[1 << MAX_WIDTH];   /* last byte of each code's string */
+    uint16_t prefix[1 << MAX_WIDTH];   /* parent code (strictly smaller)  */
+    uint16_t length[1 << MAX_WIDTH];   /* byte length of each code's string */
+
+    for (uint16_t c = 0; c < clear_code; c++) length[c] = 1;   /* literals */
+    uint8_t last_first = 0;
 
     size_t out_pos = 0;
     size_t out_cap = *dst_len;
@@ -242,49 +260,47 @@ int neverc_lzw_decompress(const uint8_t *src, size_t src_len,
             continue;
         }
 
+        /* Emit S(code) into dst and capture its first byte (cur_first). */
+        uint8_t cur_first;
         if (code < clear_code) {
             /* literal */
             if (out_pos >= out_cap) return -1;
             dst[out_pos++] = (uint8_t)code;
-            if (last != INVALID_CODE16) {
-                suffix[hi] = (uint8_t)code;
-                prefix[hi] = last;
-            }
-        } else if (code <= hi) {
-            /* non-literal: decode suffix chain into stack (reverse order) */
-            int sp = 0;
+            cur_first = (uint8_t)code;
+        } else if (code < hi) {
+            /* already-defined entry: write the chain backwards into dst */
+            size_t L = length[code];
+            if (out_pos + L > out_cap) return -1;
+            size_t w = out_pos + L;
             uint16_t c = code;
-
-            if (code == hi && last != INVALID_CODE16) {
-                /* special KwKwK case */
-                uint16_t t = last;
-                while (t >= clear_code)
-                    t = prefix[t];
-                stack[sp++] = (uint8_t)t;
-                c = last;
-            }
-
-            while (c >= clear_code) {
-                if (sp >= (1 << MAX_WIDTH)) return -1;
-                stack[sp++] = suffix[c];
-                c = prefix[c];
-            }
-            stack[sp++] = (uint8_t)c;
-
-            /* write stack in reverse to output */
-            if (out_pos + (size_t)sp > out_cap) return -1;
-            for (int j = sp - 1; j >= 0; j--)
-                dst[out_pos++] = stack[j];
-
-            if (last != INVALID_CODE16) {
-                suffix[hi] = (uint8_t)c;
-                prefix[hi] = last;
-            }
+            while (c >= clear_code) { dst[--w] = suffix[c]; c = prefix[c]; }
+            dst[--w] = (uint8_t)c;                 /* w now == out_pos */
+            cur_first = (uint8_t)c;
+            out_pos += L;
+        } else if (code == hi && last != INVALID_CODE16) {
+            /* KwKwK: S(code) = S(last) + firstByte(S(last)) */
+            size_t L = (size_t)length[last] + 1;
+            if (out_pos + L > out_cap) return -1;
+            size_t w = out_pos + L;
+            dst[--w] = last_first;                 /* the self-referential byte */
+            uint16_t c = last;
+            while (c >= clear_code) { dst[--w] = suffix[c]; c = prefix[c]; }
+            dst[--w] = (uint8_t)c;                 /* w now == out_pos */
+            cur_first = (uint8_t)c;
+            out_pos += L;
         } else {
-            return -1;
+            return -1;                             /* code > hi, or hi w/o last */
+        }
+
+        /* Define the new entry S(last)+cur_first as code `hi`. */
+        if (last != INVALID_CODE16) {
+            prefix[hi] = last;
+            suffix[hi] = cur_first;
+            length[hi] = (uint16_t)(length[last] + 1);
         }
 
         last = code;
+        last_first = cur_first;
         hi++;
         if (hi >= overflow_val) {
             if (width == MAX_WIDTH) {
