@@ -193,28 +193,55 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
  * (stride bytes); scratch is stride scratch bytes. a/b/c follow RFC 2083:
  * a = left, b = above, c = upper-left, in the raw (unfiltered) image.
  */
+/* Sum of |signed residual| for one candidate row in `scratch`, tracking the
+ * best filter so far. Same minimum-residual decision and identical residual
+ * bytes as the per-byte version; only the loop shape changed. */
+#define PNG_SCORE_BYTE(v) (score += (unsigned)((v) < 128 ? (v) : 256u - (v)))
+
 static void png_filter_row(const uint8_t *cur, const uint8_t *prev,
                            size_t stride, size_t bpp,
                            uint8_t *out_filter, uint8_t *out_row,
                            uint8_t *scratch) {
     unsigned long best_score = ~0UL;
     int best = 0;
+    size_t x;
+
+    /* The filter type and the prev/no-prev case are loop-invariant, so they are
+     * hoisted out of the per-byte loop (mirrors png_unfilter_row on decode): a
+     * `bpp`-byte prefix handles the missing left neighbour, then a branch-free
+     * main loop the compiler can vectorize. Arithmetic per byte is unchanged. */
     for (int f = 0; f < 5; f++) {
         unsigned long score = 0;
-        for (size_t x = 0; x < stride; x++) {
-            uint8_t a = (x >= bpp) ? cur[x - bpp] : 0;
-            uint8_t b = prev ? prev[x] : 0;
-            uint8_t c = (prev && x >= bpp) ? prev[x - bpp] : 0;
-            uint8_t v;
-            switch (f) {
-                case 0:  v = cur[x]; break;
-                case 1:  v = (uint8_t)(cur[x] - a); break;
-                case 2:  v = (uint8_t)(cur[x] - b); break;
-                case 3:  v = (uint8_t)(cur[x] - (uint8_t)(((unsigned)a + b) / 2)); break;
-                default: v = (uint8_t)(cur[x] - paeth_predictor(a, b, c)); break;
+        switch (f) {
+        case 0:                                   /* None */
+            for (x = 0; x < stride; x++) { uint8_t v = cur[x]; scratch[x] = v; PNG_SCORE_BYTE(v); }
+            break;
+        case 1:                                   /* Sub: a = left */
+            for (x = 0; x < bpp; x++)    { uint8_t v = cur[x]; scratch[x] = v; PNG_SCORE_BYTE(v); }
+            for (x = bpp; x < stride; x++) { uint8_t v = (uint8_t)(cur[x] - cur[x - bpp]); scratch[x] = v; PNG_SCORE_BYTE(v); }
+            break;
+        case 2:                                   /* Up: b = above */
+            if (prev) for (x = 0; x < stride; x++) { uint8_t v = (uint8_t)(cur[x] - prev[x]); scratch[x] = v; PNG_SCORE_BYTE(v); }
+            else      for (x = 0; x < stride; x++) { uint8_t v = cur[x]; scratch[x] = v; PNG_SCORE_BYTE(v); }
+            break;
+        case 3:                                   /* Average: (a + b) / 2 */
+            if (prev) {
+                for (x = 0; x < bpp; x++)    { uint8_t v = (uint8_t)(cur[x] - (uint8_t)((unsigned)prev[x] / 2)); scratch[x] = v; PNG_SCORE_BYTE(v); }
+                for (x = bpp; x < stride; x++) { uint8_t v = (uint8_t)(cur[x] - (uint8_t)(((unsigned)cur[x - bpp] + prev[x]) / 2)); scratch[x] = v; PNG_SCORE_BYTE(v); }
+            } else {
+                for (x = 0; x < bpp; x++)    { uint8_t v = cur[x]; scratch[x] = v; PNG_SCORE_BYTE(v); }
+                for (x = bpp; x < stride; x++) { uint8_t v = (uint8_t)(cur[x] - (uint8_t)((unsigned)cur[x - bpp] / 2)); scratch[x] = v; PNG_SCORE_BYTE(v); }
             }
-            scratch[x] = v;
-            score += (v < 128) ? v : (256u - v);   /* |signed byte| */
+            break;
+        default:                                  /* 4: Paeth */
+            if (prev) {
+                for (x = 0; x < bpp; x++)    { uint8_t v = (uint8_t)(cur[x] - paeth_predictor(0, prev[x], 0)); scratch[x] = v; PNG_SCORE_BYTE(v); }
+                for (x = bpp; x < stride; x++) { uint8_t v = (uint8_t)(cur[x] - paeth_predictor(cur[x - bpp], prev[x], prev[x - bpp])); scratch[x] = v; PNG_SCORE_BYTE(v); }
+            } else {
+                for (x = 0; x < bpp; x++)    { uint8_t v = cur[x]; scratch[x] = v; PNG_SCORE_BYTE(v); }
+                for (x = bpp; x < stride; x++) { uint8_t v = (uint8_t)(cur[x] - paeth_predictor(cur[x - bpp], 0, 0)); scratch[x] = v; PNG_SCORE_BYTE(v); }
+            }
+            break;
         }
         if (score < best_score) {
             best_score = score; best = f;
@@ -223,6 +250,8 @@ static void png_filter_row(const uint8_t *cur, const uint8_t *prev,
     }
     *out_filter = (uint8_t)best;
 }
+
+#undef PNG_SCORE_BYTE
 
 int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t *out_len) {
     if (!img || !img->pixels || !out_data || !out_len) return -1;

@@ -213,21 +213,30 @@ static int bit_length(int val) {
     return n;
 }
 
-static void encode_block(bitwriter_t *bw, int *block, const uint8_t *quant,
+/* Precompute the per-coefficient quantization reciprocals once per table. The
+ * AAN fast DCT leaves coefficient nat scaled by aanscale[row]*aanscale[col];
+ * folding that, the 1/8 DCT normalization and 1/quant into a single reciprocal
+ * (zigzag-ordered to match the emit loop) turns encode_block's hot path from a
+ * per-block divisor rebuild + true divide into one multiply — the libjpeg float
+ * quantization. recip[i] pairs with fdata[zigzag[i]]. */
+static void jpeg_recip_table(double *recip, const uint8_t *quant) {
+    for (int i = 0; i < 64; i++) {
+        int nat = zigzag[i];
+        double div = (double)quant[i] * 8.0 * aanscale[nat >> 3] * aanscale[nat & 7];
+        recip[i] = 1.0 / div;
+    }
+}
+
+static void encode_block(bitwriter_t *bw, int *block, const double *recip,
                          int *prev_dc, const huff_entry_t *dc_table,
                          const huff_entry_t *ac_table) {
     float fdata[64];
     for (int i = 0; i < 64; i++) fdata[i] = (float)block[i];
     fdct_aan(fdata);
 
-    /* Quantize. The fast DCT leaves each coefficient scaled by
-     * aanscale[row]*aanscale[col]; fold that and the 1/8 DCT normalization into
-     * the divisor so the result matches a reference DCT to within rounding. */
     int quantized[64];
     for (int i = 0; i < 64; i++) {
-        int nat = zigzag[i];
-        double div = (double)quant[i] * 8.0 * aanscale[nat >> 3] * aanscale[nat & 7];
-        double val = (double)fdata[nat] / div;
+        double val = (double)fdata[zigzag[i]] * recip[i];
         quantized[i] = (int)(val > 0 ? val + 0.5 : val - 0.5);
     }
 
@@ -294,6 +303,12 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
     uint8_t lum_quant[64], chrom_quant[64];
     scale_quant_table(lum_quant, std_lum_quant, quality);
     scale_quant_table(chrom_quant, std_chrom_quant, quality);
+
+    /* One reciprocal table per quant table, reused by every block (the divisor
+     * is constant across blocks of the same component). */
+    double lum_recip[64], chrom_recip[64];
+    jpeg_recip_table(lum_recip, lum_quant);
+    jpeg_recip_table(chrom_recip, chrom_quant);
 
     huff_entry_t dc_lum[256], ac_lum[256], dc_chr[256], ac_chr[256];
     build_huffman_table(dc_lum_bits, dc_lum_val, dc_lum, 256);
@@ -391,7 +406,7 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
                         block[by * 8 + bx] = (int)img->pixels[py * img->stride + px] - 128;
                     }
                 }
-                encode_block(&bw, block, lum_quant, &prev_dc_y, dc_lum, ac_lum);
+                encode_block(&bw, block, lum_recip, &prev_dc_y, dc_lum, ac_lum);
             } else {
                 int y_block[64], cb_block[64], cr_block[64];
                 for (int by = 0; by < 8; by++) {
@@ -402,14 +417,26 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
                         if (py >= img->height) py = img->height - 1;
                         const uint8_t *p = img->pixels + py * img->stride + px * 3;
                         int r = p[0], g = p[1], b = p[2];
-                        y_block[by * 8 + bx]  = (int)( 0.299*r + 0.587*g + 0.114*b) - 128;
-                        cb_block[by * 8 + bx] = (int)(-0.1687*r - 0.3313*g + 0.5*b + 128) - 128;
-                        cr_block[by * 8 + bx] = (int)( 0.5*r - 0.4187*g - 0.0813*b + 128) - 128;
+                        /* ITU-R BT.601 in 16-bit fixed point (the JFIF/JPEG
+                         * coefficients; identical to libjpeg / Go's
+                         * color.RGBToYCbCr). Integer mul+shift replaces nine
+                         * per-pixel double multiplies plus the slow
+                         * int->double->int round trips. Cb/Cr are clamped before
+                         * the shift exactly as the reference does — pure blue
+                         * would otherwise round Cb up to 256 and wrap. */
+                        int yy =  19595*r + 38470*g +  7471*b + 32768;
+                        int cb = -11056*r - 21712*g + 32768*b + (257 << 15);
+                        int cr =  32768*r - 27440*g -  5328*b + (257 << 15);
+                        if (cb < 0) cb = 0; else if (cb > (255 << 16)) cb = 255 << 16;
+                        if (cr < 0) cr = 0; else if (cr > (255 << 16)) cr = 255 << 16;
+                        y_block[by * 8 + bx]  = (yy >> 16) - 128;
+                        cb_block[by * 8 + bx] = (cb >> 16) - 128;
+                        cr_block[by * 8 + bx] = (cr >> 16) - 128;
                     }
                 }
-                encode_block(&bw, y_block, lum_quant, &prev_dc_y, dc_lum, ac_lum);
-                encode_block(&bw, cb_block, chrom_quant, &prev_dc_cb, dc_chr, ac_chr);
-                encode_block(&bw, cr_block, chrom_quant, &prev_dc_cr, dc_chr, ac_chr);
+                encode_block(&bw, y_block, lum_recip, &prev_dc_y, dc_lum, ac_lum);
+                encode_block(&bw, cb_block, chrom_recip, &prev_dc_cb, dc_chr, ac_chr);
+                encode_block(&bw, cr_block, chrom_recip, &prev_dc_cr, dc_chr, ac_chr);
             }
         }
     }
@@ -862,9 +889,12 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                         int r = Y + ycc_cr_r[Cr];
                         int g = Y + ((ycc_cb_g[Cb] + ycc_cr_g[Cr]) >> 16);
                         int b = Y + ycc_cb_b[Cb];
-                        if (r < 0) r = 0; if (r > 255) r = 255;
-                        if (g < 0) g = 0; if (g > 255) g = 255;
-                        if (b < 0) b = 0; if (b > 255) b = 255;
+                        if (r < 0) r = 0;
+                        if (r > 255) r = 255;
+                        if (g < 0) g = 0;
+                        if (g > 255) g = 255;
+                        if (b < 0) b = 0;
+                        if (b > 255) b = 255;
                         uint8_t *p = img->pixels + py * img->stride + px * 3;
                         p[0] = (uint8_t)r; p[1] = (uint8_t)g; p[2] = (uint8_t)b;
                     }
