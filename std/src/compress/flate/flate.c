@@ -130,32 +130,73 @@ static const uint8_t dist_extra[30] = {
     0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13
 };
 
+/*
+ * O(1) length/distance -> code lookups (Go/zlib do the same). emit_block calls
+ * these ~4x per match token (frequency, two cost estimates, emit), so the old
+ * linear scan over 29/30 entries was a per-token tax on the entropy stage.
+ *
+ * len_code_tab[length-3] gives the length code index for length in [3,258].
+ * For distances, dist_code_tab[d-1] covers d in [1,256]; larger distances reuse
+ * the same table via ((d-1)>>7)+14 — the distance-code structure repeats every
+ * factor of 128. Both tables are generated from len_base/dist_base and were
+ * verified entry-for-entry against the old linear scan over the whole DEFLATE
+ * range (lengths 3..258, distances 1..32768).
+ */
+static const uint8_t len_code_tab[256] = {
+    0,1,2,3,4,5,6,7,8,8,9,9,10,10,11,11,
+    12,12,12,12,13,13,13,13,14,14,14,14,15,15,15,15,
+    16,16,16,16,16,16,16,16,17,17,17,17,17,17,17,17,
+    18,18,18,18,18,18,18,18,19,19,19,19,19,19,19,19,
+    20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
+    21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,
+    22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,
+    23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+    24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,
+    24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,
+    25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,
+    25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,
+    26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,
+    26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,
+    27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,
+    27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,28,
+};
+static const uint8_t dist_code_tab[256] = {
+    0,1,2,3,4,4,5,5,6,6,6,6,7,7,7,7,
+    8,8,8,8,8,8,8,8,9,9,9,9,9,9,9,9,
+    10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,
+    11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,
+    12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,
+    12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,
+    13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,
+    13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,13,
+    14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,
+    14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,
+    14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,
+    14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,
+    15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
+    15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
+    15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
+    15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
+};
+
 static int len_to_code(unsigned length, unsigned *code, unsigned *extra_bits, unsigned *extra_val) {
-    for (int i = 0; i < 29; i++) {
-        unsigned base = len_base[i];
-        unsigned top = (i < 28) ? len_base[i+1] : 259;
-        if (length >= base && length < top) {
-            *code = 257 + (unsigned)i;
-            *extra_bits = len_extra[i];
-            *extra_val = length - base;
-            return 0;
-        }
-    }
-    return -1;
+    if (length < 3 || length > 258) { *code = *extra_bits = *extra_val = 0; return -1; }
+    unsigned i = len_code_tab[length - 3];
+    *code = 257 + i;
+    *extra_bits = len_extra[i];
+    *extra_val = length - len_base[i];
+    return 0;
 }
 
 static int dist_to_code(unsigned distance, unsigned *code, unsigned *extra_bits, unsigned *extra_val) {
-    for (int i = 0; i < 30; i++) {
-        unsigned base = dist_base[i];
-        unsigned top = (i < 29) ? dist_base[i+1] : 32769;
-        if (distance >= base && distance < top) {
-            *code = (unsigned)i;
-            *extra_bits = dist_extra[i];
-            *extra_val = distance - base;
-            return 0;
-        }
-    }
-    return -1;
+    if (distance < 1 || distance > 32768) { *code = *extra_bits = *extra_val = 0; return -1; }
+    unsigned off = distance - 1;
+    unsigned i = (off < 256) ? dist_code_tab[off]
+                             : (unsigned)dist_code_tab[off >> 7] + 14;
+    *code = i;
+    *extra_bits = dist_extra[i];
+    *extra_val = distance - dist_base[i];
+    return 0;
 }
 
 /* Encode a fixed Huffman literal/length code (RFC 1951 §3.2.6) */
@@ -717,19 +758,50 @@ fail:
 
 #define HUFFMAX 288
 
+/*
+ * Two-level decode table (the libdeflate / zlib-inflate layout). The previous
+ * code used one flat 2^15-entry (128 KiB) table: a single load decoded any
+ * symbol, but the table blew past L1/L2 and re-initialising up to 32768 entries
+ * per dynamic block was itself costly. Here a small HUFF_ROOT_BITS-wide root
+ * table resolves every code no longer than the root in one L1-resident load;
+ * the few longer codes (>9 bits, rare in real data) point at a compact subtable
+ * indexed by the remaining bits. Net effect: the hot path stays in L1, builds
+ * touch ~1 KB instead of ~128 KB, and the per-table footprint drops 16x — which
+ * also removes a 128 KiB stack object (the code-length table) that threatened
+ * small thread stacks on mobile targets.
+ *
+ * Entry encoding: a FULL entry has len >= 1 (total code length) and sym = the
+ * symbol. A LINK entry (root only) has len == 0, sublen >= 1 (the subtable's
+ * index width) and sym = the subtable's base offset within table[]. An unused
+ * slot is all-zero (len == 0 && sublen == 0) and decodes as an error.
+ */
+#define HUFF_ROOT_BITS 9
+/* > zlib's proven ENOUGH_LENS (852) for root=9, max length 15: a valid DEFLATE
+ * code can never need more, and the build guards the bound regardless. */
+#define HUFF_TABLE_CAP 2048
+
 typedef struct {
-    uint16_t sym;
-    uint16_t len;
+    uint16_t sym;     /* FULL: symbol;  LINK: subtable base offset */
+    uint8_t  len;     /* FULL: total code length (>=1);  LINK/empty: 0 */
+    uint8_t  sublen;  /* LINK: subtable index-bit count (>=1);  else 0 */
 } huff_entry_t;
 
 typedef struct {
-    huff_entry_t table[1 << 15];
-    unsigned max_bits;
+    huff_entry_t table[HUFF_TABLE_CAP];
+    unsigned root_bits;
+    unsigned root_mask;
 } huff_table_t;
+
+/* Reverse the low `len` bits of `c` (DEFLATE packs codes LSB-first). */
+static unsigned huff_rev(unsigned c, unsigned len) {
+    unsigned rev = 0;
+    for (unsigned b = 0; b < len; b++) rev |= ((c >> b) & 1u) << (len - 1 - b);
+    return rev;
+}
 
 static int build_huffman(huff_table_t *ht, const uint8_t *lens, int count) {
     unsigned bl_count[16] = {0};
-    unsigned next_code[16];
+    unsigned next_code[16] = {0};
     int max_bl = 0;
 
     for (int i = 0; i < count; i++) {
@@ -739,35 +811,75 @@ static int build_huffman(huff_table_t *ht, const uint8_t *lens, int count) {
         }
     }
     if (max_bl > 15) return -1;
-    ht->max_bits = (unsigned)max_bl;
+
+    memset(ht->table, 0, sizeof(ht->table));
+    ht->root_bits = 0;
+    ht->root_mask = 0;
+    if (max_bl == 0) return 0;        /* no codes: every decode errors */
 
     unsigned code = 0;
-    bl_count[0] = 0;
     for (int bits = 1; bits <= max_bl; bits++) {
         code = (code + bl_count[bits - 1]) << 1;
         next_code[bits] = code;
     }
 
-    if (max_bl == 0) return 0;
-    unsigned tsize = 1u << max_bl;
-    for (unsigned i = 0; i < tsize; i++) {
-        ht->table[i].sym = 0;
-        ht->table[i].len = 0;
+    unsigned rb = (max_bl < HUFF_ROOT_BITS) ? (unsigned)max_bl
+                                            : (unsigned)HUFF_ROOT_BITS;
+    unsigned root_size = 1u << rb;
+    ht->root_bits = rb;
+    ht->root_mask = root_size - 1;
+
+    /* Pass A: for codes longer than the root, find the longest code sharing each
+     * root prefix, then carve out a right-sized subtable and write its LINK. */
+    if (max_bl > (int)rb) {
+        unsigned sub_max[1u << HUFF_ROOT_BITS];
+        for (unsigned p = 0; p < root_size; p++) sub_max[p] = 0;
+
+        unsigned nc[16];
+        memcpy(nc, next_code, sizeof(nc));   /* private cursor, leaves Pass B's intact */
+        for (int i = 0; i < count; i++) {
+            unsigned L = lens[i];
+            if (L == 0) continue;
+            unsigned c2 = nc[L]++;
+            if (L <= rb) continue;
+            unsigned prefix = huff_rev(c2, L) & (root_size - 1);
+            if (L > sub_max[prefix]) sub_max[prefix] = L;
+        }
+
+        unsigned off = root_size;
+        for (unsigned p = 0; p < root_size; p++) {
+            if (sub_max[p] == 0) continue;
+            unsigned sublen = sub_max[p] - rb;
+            unsigned ssize = 1u << sublen;
+            if (off + ssize > HUFF_TABLE_CAP) return -1;   /* unreachable for valid DEFLATE */
+            ht->table[p].sym = (uint16_t)off;              /* subtable base */
+            ht->table[p].len = 0;                          /* mark as LINK */
+            ht->table[p].sublen = (uint8_t)sublen;
+            off += ssize;
+        }
     }
 
+    /* Pass B: write FULL entries — short codes into the root, long codes into
+     * the subtable their prefix links to. */
     for (int i = 0; i < count; i++) {
-        unsigned len = lens[i];
-        if (len == 0) continue;
-        unsigned c = next_code[len]++;
-        /* reverse bits */
-        unsigned rev = 0;
-        for (unsigned b = 0; b < len; b++)
-            rev |= ((c >> b) & 1) << (len - 1 - b);
-        /* fill table entries */
-        unsigned step = 1u << len;
-        for (unsigned j = rev; j < tsize; j += step) {
-            ht->table[j].sym = (uint16_t)i;
-            ht->table[j].len = (uint16_t)len;
+        unsigned L = lens[i];
+        if (L == 0) continue;
+        unsigned rev = huff_rev(next_code[L]++, L);
+        if (L <= rb) {
+            unsigned step = 1u << L;
+            for (unsigned j = rev; j < root_size; j += step) {
+                ht->table[j].sym = (uint16_t)i;
+                ht->table[j].len = (uint8_t)L;
+            }
+        } else {
+            unsigned prefix = rev & (root_size - 1);
+            unsigned base = ht->table[prefix].sym;         /* subtable base from Pass A */
+            unsigned subsize = 1u << ht->table[prefix].sublen;
+            unsigned step = 1u << (L - rb);
+            for (unsigned j = rev >> rb; j < subsize; j += step) {
+                ht->table[base + j].sym = (uint16_t)i;
+                ht->table[base + j].len = (uint8_t)L;
+            }
         }
     }
     return 0;
@@ -818,12 +930,22 @@ static void copy_match(uint8_t *dst, size_t out_pos,
 }
 
 static int huff_decode(huff_table_t *ht, flate_br_t *r, uint16_t *sym) {
-    if (r->nbits < ht->max_bits) fbr_refill(r);
-    unsigned idx = (unsigned)(r->bits & ((1u << ht->max_bits) - 1));
-    huff_entry_t e = ht->table[idx];
-    if (e.len == 0 || e.len > r->nbits) return -1;
-    r->bits >>= e.len;
-    r->nbits -= e.len;
+    /* 15 = longest possible DEFLATE code; one refill buffers a whole code (and
+     * usually several), and near EOF the len > nbits checks reject truncation. */
+    if (r->nbits < 15) fbr_refill(r);
+    huff_entry_t e = ht->table[r->bits & ht->root_mask];
+    unsigned n = e.len;
+    if (n == 0) {                                   /* LINK or empty root slot */
+        if (e.sublen == 0) return -1;               /* no code here */
+        unsigned si = (unsigned)((r->bits >> ht->root_bits) &
+                                 ((1u << e.sublen) - 1));
+        e = ht->table[e.sym + si];                  /* e.sym is the subtable base */
+        n = e.len;
+        if (n == 0) return -1;
+    }
+    if (n > r->nbits) return -1;
+    r->bits >>= n;
+    r->nbits -= n;
     *sym = e.sym;
     return 0;
 }
@@ -875,9 +997,12 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
             } else {
                 /* Dynamic Huffman codes */
                 uint32_t hlit, hdist, hclen;
-                if (fbr_bits(&br, 5, &hlit) < 0) goto err;  hlit += 257;
-                if (fbr_bits(&br, 5, &hdist) < 0) goto err; hdist += 1;
-                if (fbr_bits(&br, 4, &hclen) < 0) goto err; hclen += 4;
+                if (fbr_bits(&br, 5, &hlit) < 0) goto err;
+                hlit += 257;
+                if (fbr_bits(&br, 5, &hdist) < 0) goto err;
+                hdist += 1;
+                if (fbr_bits(&br, 4, &hclen) < 0) goto err;
+                hclen += 4;
 
                 static const int cl_order[19] = {
                     16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15
