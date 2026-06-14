@@ -139,6 +139,7 @@ void neverc_sort_reverse(void *base, size_t n, size_t elem_size) {
     uint8_t *b = (uint8_t *)base;
     uint8_t tmp_buf[256];
     uint8_t *tmp = elem_size <= sizeof(tmp_buf) ? tmp_buf : (uint8_t *)malloc(elem_size);
+    if (!tmp) return;
     for (size_t i = 0, j = n - 1; i < j; i++, j--) {
         memcpy(tmp, b + i * elem_size, elem_size);
         memcpy(b + i * elem_size, b + j * elem_size, elem_size);

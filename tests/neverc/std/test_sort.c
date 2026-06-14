@@ -139,6 +139,48 @@ static void test_stable_sort(void) {
     check_true("stable 3s order", data[3].order == 0 && data[4].order == 2);
 }
 
+/*
+ * Regression for the Timsort run-stack invariant fix (de Gouw et al. 2015):
+ * build many natural runs of varied length/direction with a small key range
+ * (forcing equal keys) so neverc_sort_stable exercises merge_collapse across
+ * many stack levels.  Verifies both sortedness and stability at scale.
+ */
+static unsigned long long ts_seed = 0x9e3779b97f4a7c15ULL;
+static unsigned long long ts_rand(void) {
+    ts_seed ^= ts_seed << 13; ts_seed ^= ts_seed >> 7; ts_seed ^= ts_seed << 17;
+    return ts_seed;
+}
+
+static void test_stable_many_runs(void) {
+    printf("[stable_many_runs]\n");
+    enum { N = 50000 };
+    static pair_t data[N];   /* static: avoid a large stack frame */
+    size_t i = 0;
+    int order = 0;
+    while (i < (size_t)N) {
+        size_t rl = 1 + (size_t)(ts_rand() % 50);
+        if (i + rl > (size_t)N) rl = (size_t)N - i;
+        int base = (int)(ts_rand() % 200);
+        int up = (int)(ts_rand() & 1);
+        for (size_t k = 0; k < rl; k++) {
+            int v = (up ? base + (int)k : base - (int)k) % 137;
+            if (v < 0) v += 137;
+            data[i + k].key = v;            /* small range -> many ties */
+            data[i + k].order = order++;    /* original position */
+        }
+        i += rl;
+    }
+    neverc_sort_stable(data, N, sizeof(pair_t), cmp_pair);
+    int ok_sorted = 1, ok_stable = 1;
+    for (size_t j = 1; j < (size_t)N; j++) {
+        if (data[j - 1].key > data[j].key) ok_sorted = 0;
+        if (data[j - 1].key == data[j].key && data[j - 1].order >= data[j].order)
+            ok_stable = 0;
+    }
+    check_true("many-runs sorted", ok_sorted);
+    check_true("many-runs stable", ok_stable);
+}
+
 static void test_sort_strings(void) {
     printf("[sort_strings]\n");
     const char *strs[] = {"cherry", "apple", "banana", "date"};
@@ -244,6 +286,7 @@ int main(void) {
     test_search_doubles();
     test_search_generic();
     test_stable_sort();
+    test_stable_many_runs();
     test_sort_strings();
     test_reverse();
     test_ints_are_sorted();

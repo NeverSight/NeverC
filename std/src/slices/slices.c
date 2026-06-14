@@ -47,6 +47,7 @@ void neverc_slices_reverse(void *slice, size_t len, size_t elem_size) {
     char *p = (char *)slice;
     char stack_buf[256];
     char *tmp = elem_size <= sizeof(stack_buf) ? stack_buf : (char *)malloc(elem_size);
+    if (!tmp) return;
     for (size_t i = 0, j = len - 1; i < j; i++, j--) {
         memcpy(tmp, p + i * elem_size, elem_size);
         memcpy(p + i * elem_size, p + j * elem_size, elem_size);

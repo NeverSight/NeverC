@@ -561,16 +561,25 @@ static void nci_tim_merge(char *base, size_t lo1, size_t len1,
 
 /*
  * Maintain the Timsort merge invariants on the run stack.
- * After each push, merge runs until:
- *   |run[i-2]| > |run[i-1]| + |run[i]|   AND   |run[i-1]| > |run[i]|
+ * After each push, merge runs until, for the top runs W, X, Y, Z:
+ *   |X| > |Y| + |Z|   AND   |W| > |X| + |Y|   AND   |Y| > |Z|
+ *
+ * Both the 3-run check (X <= Y+Z) AND the 4-run check (W <= X+Y) are
+ * required.  Omitting the latter is the well-known Timsort bug proven by
+ * de Gouw et al. (2015, "OpenJDK's java.util.Collection.sort() is broken"):
+ * it lets the invariant silently break deeper in the stack, so the number of
+ * pending runs can exceed the Fibonacci bound that NCI_TIM_MAX_STACK (85) is
+ * sized for, overflowing the fixed-size run stack on adversarial input.
  */
 static void nci_tim_merge_collapse(char *base, size_t es, nci_cmp_fn cmp,
                                     nci_tim_run *stack, int *stack_size,
                                     char *aux) {
     while (*stack_size > 1) {
         int top = *stack_size - 1;
-        if (*stack_size >= 3 &&
-            stack[top - 2].len <= stack[top - 1].len + stack[top].len) {
+        if ((*stack_size >= 3 &&
+             stack[top - 2].len <= stack[top - 1].len + stack[top].len) ||
+            (*stack_size >= 4 &&
+             stack[top - 3].len <= stack[top - 2].len + stack[top - 1].len)) {
             if (stack[top - 2].len < stack[top].len) {
                 nci_tim_merge(base, stack[top - 2].start,
                               stack[top - 2].len, stack[top - 1].len,
