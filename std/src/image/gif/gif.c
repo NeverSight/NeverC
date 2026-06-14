@@ -357,40 +357,47 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
              * memcpy'd a growing copy for every new code — O(sum of entry
              * lengths) time and memory. Prefix-chain entries are fixed-size
              * (one prefix index + one suffix byte) with zero per-entry
-             * allocation; output is reconstructed through a small stack. */
+             * allocation; each code's expansion is then written backwards
+             * straight into the pixel buffer (length[] gives the exact span),
+             * skipping the stack + reverse-copy the textbook decoder needs. */
             #define LZW_TABLE_SIZE 4096
             uint16_t prefix[LZW_TABLE_SIZE];
             uint8_t  suffix[LZW_TABLE_SIZE];
-            uint8_t  estack[LZW_TABLE_SIZE];
+            uint16_t length[LZW_TABLE_SIZE];   /* code -> expanded byte length */
             int next_code_d = eoi_code + 1;
 
             for (int i = 0; i < clear_code; i++) {
                 prefix[i] = 0;
                 suffix[i] = (uint8_t)i;
+                length[i] = 1;
             }
 
             uint32_t bit_buf = 0;
             int bit_cnt = 0;
             size_t byte_pos = 0;
 
-            #define READ_CODE() ({ \
-                while (bit_cnt < code_size && byte_pos < lzw_len) { \
-                    bit_buf |= ((uint32_t)lzw_data[byte_pos++]) << bit_cnt; \
-                    bit_cnt += 8; \
-                } \
-                int _c = (int)(bit_buf & ((1u << code_size) - 1)); \
-                bit_buf >>= code_size; \
-                bit_cnt -= code_size; \
-                _c; \
-            })
-
             int prev_code = -1;
             uint8_t first_byte = 0;
-            int done = 0;
-            while (!done && byte_pos < lzw_len) {
-                int code = READ_CODE();
+            /*
+             * Decode every *complete* code, not just while input bytes remain.
+             * The final sub-block byte(s) usually pack several codes — including
+             * the last data code and the End-Of-Information marker — so stopping
+             * once `byte_pos == lzw_len` discarded whatever was still buffered in
+             * bit_buf, truncating the trailing pixel run on tightly-packed (small
+             * or just unlucky) images. Refill from the remaining bytes, then stop
+             * only when fewer than code_size bits are left to form a code.
+             */
+            for (;;) {
+                while (bit_cnt < code_size && byte_pos < lzw_len) {
+                    bit_buf |= ((uint32_t)lzw_data[byte_pos++]) << bit_cnt;
+                    bit_cnt += 8;
+                }
+                if (bit_cnt < code_size) break;        /* no complete code left */
+                int code = (int)(bit_buf & ((1u << code_size) - 1));
+                bit_buf >>= code_size;
+                bit_cnt -= code_size;
 
-                if (code == eoi_code) { done = 1; break; }
+                if (code == eoi_code) break;
                 if (code == clear_code) {
                     next_code_d = eoi_code + 1;
                     code_size = min_code_size + 1;
@@ -398,40 +405,56 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                     continue;
                 }
 
-                /* Reconstruct `code` onto estack (reversed); the root literal is
-                 * the string's first byte. code == next_code_d is the KwKwK case
-                 * (entry not yet defined) = prev string + prev's first byte. */
-                int sp = 0;
-                int c;
+                /* Emit S(code) backwards directly into indices[], clamping each
+                 * byte to the palette and keeping only the leading run that fits
+                 * pixel_count — byte-for-byte what the old stack-then-forward-copy
+                 * produced. length[code] gives the precise span; code ==
+                 * next_code_d is the KwKwK case (entry not yet defined) = prev
+                 * string + prev's first byte. prefix[c] < c, so the walk strictly
+                 * decreases and is self-bounding. */
+                size_t L;
+                int walk;
+                int is_kwkwk = 0;
                 if (code < next_code_d) {
-                    c = code;
+                    L = length[code];
+                    walk = code;
                 } else if (code == next_code_d && prev_code >= 0) {
-                    estack[sp++] = first_byte;
-                    c = prev_code;
+                    L = (size_t)length[prev_code] + 1;
+                    walk = prev_code;
+                    is_kwkwk = 1;
                 } else {
                     break;
                 }
 
+                size_t avail = pixel_count - pix_pos;
+                size_t emit = (L <= avail) ? L : avail;
+                size_t w = pix_pos + L;
+                if (is_kwkwk) {
+                    w--;
+                    if (w < pix_pos + emit)
+                        indices[w] = (first_byte < pal_size) ? first_byte : 0;
+                }
+                int c = walk;
                 while (c >= clear_code) {
-                    if (c >= LZW_TABLE_SIZE || sp >= LZW_TABLE_SIZE) { done = 1; break; }
-                    estack[sp++] = suffix[c];
+                    w--;
+                    if (w < pix_pos + emit) {
+                        uint8_t v = suffix[c];
+                        indices[w] = (v < pal_size) ? v : 0;
+                    }
                     c = prefix[c];
                 }
-                if (done) break;
-                estack[sp++] = (uint8_t)c;
+                w--;
+                if (w < pix_pos + emit)
+                    indices[w] = ((uint8_t)c < pal_size) ? (uint8_t)c : 0;
                 first_byte = (uint8_t)c;
-
-                for (int i = sp - 1; i >= 0 && pix_pos < pixel_count; i--) {
-                    uint8_t idx_val = estack[i];
-                    if (idx_val >= pal_size) idx_val = 0;
-                    indices[pix_pos++] = idx_val;
-                }
+                pix_pos += emit;
 
                 /* New dictionary entry = prev string followed by this string's
                  * first byte. */
                 if (prev_code >= 0 && next_code_d < LZW_TABLE_SIZE) {
                     prefix[next_code_d] = (uint16_t)prev_code;
                     suffix[next_code_d] = first_byte;
+                    length[next_code_d] = (uint16_t)(length[prev_code] + 1);
                     next_code_d++;
                     /* The decoder's dictionary trails the encoder's by one
                      * entry, so it must widen the code one step earlier than the
@@ -444,8 +467,6 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
 
                 prev_code = code;
             }
-
-            #undef READ_CODE
 
             free(lzw_data);
 
