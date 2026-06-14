@@ -9,10 +9,13 @@
  *   - Heapsort fallback on degenerate partitions
  *   - O(n log n) worst case, adaptive for nearly-sorted data
  *
- * Stable sort:  Timsort
+ * Stable sort:  Timsort runs + PowerSort merge policy
  *   - Natural run detection (ascending & descending)
  *   - Binary insertion sort to extend short runs
- *   - Stack-based adaptive merge policy
+ *   - Galloping (binary-search) merge that trims ordered prefixes/suffixes
+ *   - PowerSort node-power merge order (Munro & Wild 2018; CPython 3.11+):
+ *     a provably near-optimal merge tree that also replaces the fragile
+ *     Timsort length invariant with a strictly-increasing power stack
  *   - O(n log n) worst case, O(n) for pre-sorted data
  *
  * All functions are static — include this header from each .c file that
@@ -412,7 +415,10 @@ static void nci_heapsort_entry(void *base, size_t n, size_t es,
 #define NCI_TIM_MIN_MERGE 32
 #define NCI_TIM_MAX_STACK 85   /* sufficient for arrays up to 2^64 */
 
-typedef struct { size_t start; size_t len; } nci_tim_run;
+/* `power` is the PowerSort node power of the boundary on this run's right edge
+ * (Munro & Wild 2018; the merge policy CPython adopted in 3.11). It is filled
+ * in lazily when the next run is discovered. */
+typedef struct { size_t start; size_t len; int power; } nci_tim_run;
 
 /*
  * Compute the minimum run length so that n / min_run is close to a power
@@ -560,49 +566,61 @@ static void nci_tim_merge(char *base, size_t lo1, size_t len1,
 }
 
 /*
- * Maintain the Timsort merge invariants on the run stack.
- * After each push, merge runs until, for the top runs W, X, Y, Z:
- *   |X| > |Y| + |Z|   AND   |W| > |X| + |Y|   AND   |Y| > |Z|
+ * PowerSort node power (Munro & Wild, "Nearly-Optimal Mergesorts", 2018;
+ * the policy CPython adopted in 3.11). Returns the "power" of the boundary
+ * between run 1 ([s1, s1+n1)) and the adjacent run 2 ([s1+n1, s1+n1+n2)) in an
+ * array of total length n: the depth at which the scaled midpoints of the two
+ * runs first differ in their binary expansion. Higher power = a boundary that
+ * must be merged sooner. This drives a merge tree provably within a small
+ * additive term of optimal, and the stack of strictly-increasing powers can
+ * never exceed ~log2(n) entries — so it also removes the fragile Timsort
+ * merge_collapse length invariant (the de Gouw et al. 2015 bug class).
  *
- * Both the 3-run check (X <= Y+Z) AND the 4-run check (W <= X+Y) are
- * required.  Omitting the latter is the well-known Timsort bug proven by
- * de Gouw et al. (2015, "OpenJDK's java.util.Collection.sort() is broken"):
- * it lets the invariant silently break deeper in the stack, so the number of
- * pending runs can exceed the Fibonacci bound that NCI_TIM_MAX_STACK (85) is
- * sized for, overflowing the fixed-size run stack on adversarial input.
+ * Branch-free of floats: a = 2*s1+n1 and b = a+n1+n2 are the run midpoints
+ * scaled by 2n; comparing them against n bit by bit yields the power. All
+ * subtractions are guarded (a -= n only when a >= n, and then b >= a >= n too),
+ * so the unsigned arithmetic never underflows.
  */
-static void nci_tim_merge_collapse(char *base, size_t es, nci_cmp_fn cmp,
-                                    nci_tim_run *stack, int *stack_size,
-                                    char *aux) {
-    while (*stack_size > 1) {
-        int top = *stack_size - 1;
-        if ((*stack_size >= 3 &&
-             stack[top - 2].len <= stack[top - 1].len + stack[top].len) ||
-            (*stack_size >= 4 &&
-             stack[top - 3].len <= stack[top - 2].len + stack[top - 1].len)) {
-            if (stack[top - 2].len < stack[top].len) {
-                nci_tim_merge(base, stack[top - 2].start,
-                              stack[top - 2].len, stack[top - 1].len,
-                              es, cmp, aux);
-                stack[top - 2].len += stack[top - 1].len;
-                stack[top - 1] = stack[top];
-            } else {
-                nci_tim_merge(base, stack[top - 1].start,
-                              stack[top - 1].len, stack[top].len,
-                              es, cmp, aux);
-                stack[top - 1].len += stack[top].len;
-            }
-            (*stack_size)--;
-        } else if (stack[top - 1].len <= stack[top].len) {
-            nci_tim_merge(base, stack[top - 1].start,
-                          stack[top - 1].len, stack[top].len,
-                          es, cmp, aux);
-            stack[top - 1].len += stack[top].len;
-            (*stack_size)--;
-        } else {
-            break;
-        }
+static int nci_tim_power(size_t s1, size_t n1, size_t n2, size_t n) {
+    int power = 0;
+    size_t a = 2 * s1 + n1;
+    size_t b = a + n1 + n2;
+    for (;;) {
+        power++;
+        if (a >= n) { a -= n; b -= n; }
+        else if (b >= n) break;
+        a <<= 1;
+        b <<= 1;
     }
+    return power;
+}
+
+/* Merge the top two runs on the stack (PowerSort merge_at(top-1)). */
+static void nci_tim_merge_top2(char *base, size_t es, nci_cmp_fn cmp,
+                               nci_tim_run *stack, int *stack_size, char *aux) {
+    int top = *stack_size - 1;
+    nci_tim_merge(base, stack[top - 1].start, stack[top - 1].len,
+                  stack[top].len, es, cmp, aux);
+    stack[top - 1].len += stack[top].len;
+    (*stack_size)--;
+}
+
+/*
+ * On discovering a new run of length n2 (about to be pushed), resolve every
+ * pending boundary whose power exceeds the new boundary's power, then record
+ * the new boundary's power on the current top run. Mirrors CPython's
+ * found_new_run: it only ever merges the top two runs, keeping the policy
+ * simple and the stack powers strictly increasing toward the top.
+ */
+static void nci_tim_found_new_run(char *base, size_t es, nci_cmp_fn cmp,
+                                  nci_tim_run *stack, int *stack_size,
+                                  char *aux, size_t n2, size_t total) {
+    if (*stack_size == 0) return;
+    int top = *stack_size - 1;
+    int power = nci_tim_power(stack[top].start, stack[top].len, n2, total);
+    while (*stack_size > 1 && stack[*stack_size - 2].power > power)
+        nci_tim_merge_top2(base, es, cmp, stack, stack_size, aux);
+    stack[*stack_size - 1].power = power;
 }
 
 /* Force-merge all remaining runs on the stack. */
@@ -670,11 +688,14 @@ static void nci_timsort(void *base_, size_t n, size_t es, nci_cmp_fn cmp) {
             run_len = force;
         }
 
+        /* PowerSort: resolve higher-power boundaries before pushing this run. */
+        nci_tim_found_new_run(base, es, cmp, stack, &stack_size, aux,
+                              run_len, n);
+
         stack[stack_size].start = lo;
         stack[stack_size].len = run_len;
+        stack[stack_size].power = 0;
         stack_size++;
-
-        nci_tim_merge_collapse(base, es, cmp, stack, &stack_size, aux);
 
         lo += run_len;
     }

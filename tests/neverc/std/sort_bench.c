@@ -145,6 +145,71 @@ static void old_stable_sort(void *base, size_t n, size_t es, old_cmp_fn cmp) {
 #include "../../../std/src/sort/sort_impl.h"
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  PRIOR stable merge policy: Timsort's merge_collapse length invariant.
+ *  Reuses the exact same merge / run-detection / insertion primitives as the
+ *  current engine, so an A/B against nci_timsort isolates the merge-ORDER
+ *  decision alone (merge_collapse heuristic vs PowerSort node powers).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void old_tim_merge_collapse(char *base, size_t es, nci_cmp_fn cmp,
+                                   nci_tim_run *stack, int *ss, char *aux) {
+    while (*ss > 1) {
+        int top = *ss - 1;
+        if ((*ss >= 3 && stack[top-2].len <= stack[top-1].len + stack[top].len) ||
+            (*ss >= 4 && stack[top-3].len <= stack[top-2].len + stack[top-1].len)) {
+            if (stack[top-2].len < stack[top].len) {
+                nci_tim_merge(base, stack[top-2].start, stack[top-2].len,
+                              stack[top-1].len, es, cmp, aux);
+                stack[top-2].len += stack[top-1].len;
+                stack[top-1] = stack[top];
+            } else {
+                nci_tim_merge(base, stack[top-1].start, stack[top-1].len,
+                              stack[top].len, es, cmp, aux);
+                stack[top-1].len += stack[top].len;
+            }
+            (*ss)--;
+        } else if (stack[top-1].len <= stack[top].len) {
+            nci_tim_merge(base, stack[top-1].start, stack[top-1].len,
+                          stack[top].len, es, cmp, aux);
+            stack[top-1].len += stack[top].len;
+            (*ss)--;
+        } else break;
+    }
+}
+
+static void old_tim_sort(void *base_, size_t n, size_t es, nci_cmp_fn cmp) {
+    if (n <= 1 || es == 0) return;
+    char *base = (char *)base_;
+    if (n <= NCI_TIM_MIN_MERGE) {
+        char st[256]; char *tmp = es <= sizeof(st) ? st : (char *)malloc(es);
+        if (!tmp) return;
+        size_t run = nci_tim_count_run(base, 0, n, es, cmp, tmp);
+        nci_binary_insertion_sort(base, 0, n, run, es, cmp, tmp);
+        if (tmp != st) free(tmp);
+        return;
+    }
+    char *aux = (char *)malloc(n * es);
+    if (!aux) { nci_pdqsort(base_, n, es, cmp); return; }
+    char *tmp = aux;
+    size_t min_run = nci_tim_min_run(n);
+    nci_tim_run stack[NCI_TIM_MAX_STACK];
+    int ss = 0;
+    size_t lo = 0;
+    while (lo < n) {
+        size_t rl = nci_tim_count_run(base, lo, n, es, cmp, tmp);
+        if (rl < min_run) {
+            size_t f = n - lo; if (f > min_run) f = min_run;
+            nci_binary_insertion_sort(base, lo, lo + f, lo + rl, es, cmp, tmp);
+            rl = f;
+        }
+        stack[ss].start = lo; stack[ss].len = rl; stack[ss].power = 0; ss++;
+        old_tim_merge_collapse(base, es, cmp, stack, &ss, aux);
+        lo += rl;
+    }
+    nci_tim_merge_force(base, es, cmp, stack, &ss, aux);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Benchmark infrastructure
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -192,6 +257,22 @@ static void gen_few_unique(int *arr, size_t n) {
 static void gen_sawtooth(int *arr, size_t n) {
     for (size_t i = 0; i < n; i++) arr[i] = (int)(i % 100);
 }
+/* Skewed natural-run lengths: one long ascending run followed by a burst of
+ * tiny runs, repeated. This is the case where Timsort's length-ratio heuristic
+ * builds a lopsided merge tree and PowerSort's node powers win. */
+static void gen_varruns(int *arr, size_t n) {
+    size_t pos = 0;
+    while (pos < n) {
+        size_t big = 200 + xrand() % 2000;
+        for (size_t i = 0; i < big && pos < n; i++) arr[pos++] = (int)i;
+        int bursts = 3 + (int)(xrand() % 6);
+        for (int b = 0; b < bursts && pos < n; b++) {
+            size_t sm = 1 + xrand() % 8;
+            int base = (int)(xrand() % 1000);
+            for (size_t i = 0; i < sm && pos < n; i++) arr[pos++] = base + (int)i;
+        }
+    }
+}
 
 typedef struct {
     const char *name;
@@ -207,6 +288,7 @@ static const pattern_t patterns[] = {
     {"all_equal",     gen_all_equal},
     {"few_unique",    gen_few_unique},
     {"sawtooth",      gen_sawtooth},
+    {"varruns",       gen_varruns},
 };
 #define NUM_PATTERNS (sizeof(patterns) / sizeof(patterns[0]))
 
@@ -231,6 +313,10 @@ static void new_sort_wrapper(void *base, size_t n, size_t es, old_cmp_fn cmp) {
 
 static void new_stable_wrapper(void *base, size_t n, size_t es, old_cmp_fn cmp) {
     nci_timsort(base, n, es, (nci_cmp_fn)cmp);
+}
+
+static void old_tim_wrapper(void *base, size_t n, size_t es, old_cmp_fn cmp) {
+    old_tim_sort(base, n, es, (nci_cmp_fn)cmp);
 }
 
 int main(void) {
@@ -343,6 +429,38 @@ int main(void) {
         }
         free(data);
         free(buf);
+        printf("\n");
+    }
+
+    printf("╔══════════════════════════════════════════════════════════════════════════════╗\n");
+    printf("║   Stable Merge Policy: Timsort merge_collapse vs PowerSort (node powers)    ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════════════════╝\n\n");
+
+    for (int si = 0; si < num_sizes; si++) {
+        size_t n = sizes[si];
+        int iters = (n <= 1000) ? 2000 : (n <= 10000) ? 200 : 20;
+
+        printf("━━━ n = %zu  (%d iterations) ━━━\n", n, iters);
+        printf("%-16s  %12s  %12s  %8s\n", "pattern", "collapse", "powersort", "speedup");
+        printf("%-16s  %12s  %12s  %8s\n", "───────────────", "───────────", "───────────", "───────");
+
+        int *data = (int *)malloc(n * sizeof(int));
+
+        for (size_t pi = 0; pi < NUM_PATTERNS; pi++) {
+            xor_state = 12345;
+            patterns[pi].gen(data, n);
+
+            double old_us = time_sort(old_tim_wrapper, data, n, iters);
+
+            xor_state = 12345;
+            patterns[pi].gen(data, n);
+
+            double new_us = time_sort(new_stable_wrapper, data, n, iters);
+
+            printf("%-16s  %10.1f µs  %10.1f µs  %6.2fx\n",
+                   patterns[pi].name, old_us, new_us, old_us / new_us);
+        }
+        free(data);
         printf("\n");
     }
 
