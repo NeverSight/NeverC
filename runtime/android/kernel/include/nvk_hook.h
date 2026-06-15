@@ -85,6 +85,16 @@ static __always_inline int nvk_a64_is_pac(u32 i)
 	    || i == 0xD50323FFU; /* AUTIBSP */
 }
 
+static __always_inline int nvk_a64_is_pac_sign(u32 i)
+{
+	return i == NVK_A64_PACIASP || i == NVK_A64_PACIBSP;
+}
+
+static __always_inline int nvk_a64_is_pac_auth(u32 i)
+{
+	return i == 0xD50323BFU || i == 0xD50323FFU;
+}
+
 
 static __always_inline u32 nvk_a64_movz(int rd, u16 imm, int hw)
 { return 0xD2800000U | ((u32)hw << 21) | ((u32)imm << 5) | rd; }
@@ -373,9 +383,18 @@ typedef int (*nvk_ksize_fn)(unsigned long addr, unsigned long *sz,
 			    unsigned long *off);
 static nvk_ksize_fn _nvk_ksize;
 
+static void *_nvk_alloc_exec(unsigned long size)
+{
+	if (_nvk_modalloc)
+		return _nvk_modalloc(size);
+	if (_nvk_execmem_alloc)
+		return _nvk_execmem_alloc(0 /* EXECMEM_MODULE_TEXT */, size);
+	return (void *)0;
+}
+
 #define _NVK_POOL_MIN_PAGE 4096
 #define _NVK_POOL_ALIGN    16
-#define _NVK_POOL_MAX      8
+#define _NVK_POOL_MAX      32
 
 static __always_inline int _nvk_pool_page_size(void)
 {
@@ -497,15 +516,6 @@ static void _nvk_pool_free(u32 *ptr)
 static volatile u64 _nvk_hook_install_cnt;
 static volatile u64 _nvk_hook_remove_cnt;
 
-static void *_nvk_alloc_exec(unsigned long size)
-{
-	if (_nvk_modalloc)
-		return _nvk_modalloc(size);
-	if (_nvk_execmem_alloc)
-		return _nvk_execmem_alloc(0 /* EXECMEM_MODULE_TEXT */, size);
-	return (void *)0;
-}
-
 static int nvk_hook_init(void)
 {
 	if (_nvk_inited) return 0;
@@ -570,6 +580,16 @@ static __always_inline int nvk_a64_is_hook_patch(u32 insn)
 {
 	if (insn == NVK_A64_BRK_KPROBE) return 1;
 	if (insn == 0x58000050U) return 1;  /* LDR X16, [PC+8] */
+	return 0;
+}
+
+static __always_inline int nvk_a64_is_kcfi_tag(u32 *addr)
+{
+	u32 insn = *(volatile u32 *)((unsigned long)addr - 4);
+	if (insn == 0 || insn == NVK_A64_NOP)
+		return 0;
+	if ((insn & 0xFFE0001FU) == 0xD4A00000U)
+		return 1;
 	return 0;
 }
 
@@ -685,8 +705,8 @@ static int _nvk_patch_multi(u32 *target, u32 *insns, int count)
 static void _nvk_scan_entry(u32 *code, int *skip, int *total)
 {
 	int s = 0;
-	if (nvk_a64_is_bti(code[s]))      s++;
-	if (nvk_a64_is_pac(code[s]))      s++;
+	if (nvk_a64_is_bti(code[s]))       s++;
+	if (nvk_a64_is_pac_sign(code[s]))  s++;
 	if (nvk_a64_is_stp_fp_lr(code[s])) s++;
 	if (code[s] == NVK_A64_NOP)       s++;
 	*total = s + 4; /* prefix + LDR + BR + .quad(2) */
@@ -828,6 +848,10 @@ static int nvk_hook_install(struct nvk_hook *h, void *target,
 				if (nvk_a64_is_bti(insn) ||
 				    insn == NVK_A64_NOP)
 					continue;
+				if (nvk_a64_is_pac_sign(insn)) {
+					tramp[tidx++] = insn;
+					continue;
+				}
 				if (nvk_a64_is_hazardous(insn))
 					return NVK_HOOK_E_RELOC;
 				unsigned long insn_pc =
@@ -924,6 +948,8 @@ static int nvk_hook_install(struct nvk_hook *h, void *target,
 #define _A64E_MOVK32(rd)      (0xF2C00000U|(u32)(rd))
 #define _A64E_MOVK48(rd)      (0xF2E00000U|(u32)(rd))
 
+#define _A64E_DMB_ISH  0xD5033BBFu
+
 static const u32 _nvk_ctx_stub_template[] = {
 	/*  0 */ NVK_A64_BTI_JC,
 	/*  1 */ _A64E_STP_PRE16(16, 17),
@@ -932,113 +958,114 @@ static const u32 _nvk_ctx_stub_template[] = {
 	/*  4 */ _A64E_MOVK32(16),
 	/*  5 */ _A64E_MOVK48(16),
 	/*  6 */ _A64E_LDR_WREG(16, 16),
-	/*  7 */ _A64E_CBZ_W_FWD(16, 97-7),
-	/*  8 */ _A64E_MRS_SP_EL0(16),
-	/*  9 */ _A64E_MOVZ(17, 0),
-	/* 10 */ _A64E_MOVK16(17),
-	/* 11 */ _A64E_MOVK32(17),
-	/* 12 */ _A64E_MOVK48(17),
-	/* 13 */ _A64E_LDR_XREG(17, 17),
-	/* 14 */ _A64E_CMP_REG(16, 17),
-	/* 15 */ _A64E_BEQ_FWD(97-15),
-	/* 16 */ _A64E_LDP_POST16(16, 17),
-	/* 17 */ _A64E_SUB_SP_I(_CTX_SIZE),
-	/* 18 */ _A64E_STP_SP( 0,  1,   0),
-	/* 19 */ _A64E_STP_SP( 2,  3,  16),
-	/* 20 */ _A64E_STP_SP( 4,  5,  32),
-	/* 21 */ _A64E_STP_SP( 6,  7,  48),
-	/* 22 */ _A64E_STP_SP( 8,  9,  64),
-	/* 23 */ _A64E_STP_SP(10, 11,  80),
-	/* 24 */ _A64E_STP_SP(12, 13,  96),
-	/* 25 */ _A64E_STP_SP(14, 15, 112),
-	/* 26 */ _A64E_STP_SP(16, 17, 128),
-	/* 27 */ _A64E_STP_SP(18, 19, 144),
-	/* 28 */ _A64E_STP_SP(20, 21, 160),
-	/* 29 */ _A64E_STP_SP(22, 23, 176),
-	/* 30 */ _A64E_STP_SP(24, 25, 192),
-	/* 31 */ _A64E_STP_SP(26, 27, 208),
-	/* 32 */ _A64E_STP_SP(28, 29, 224),
-	/* 33 */ _A64E_STP_SP(30, 31, 240),
-	/* 34 */ _A64E_MRS_NZCV(1),
-	/* 35 */ _A64E_STR_SP(1,  _CTX_NZCV),
-	/* 36 */ _A64E_STR_SP(31, _CTX_FORCE),
-	/* 37 */ _A64E_MRS_SP_EL0(0),
-	/* 38 */ _A64E_MOVZ(19, 0),
-	/* 39 */ _A64E_MOVK16(19),
-	/* 40 */ _A64E_MOVK32(19),
-	/* 41 */ _A64E_MOVK48(19),
-	/* 42 */ _A64E_STR_XREG(0, 19),
-	/* 43 */ _A64E_MOV_FROM_SP(0),
-	/* 44 */ _A64E_MOVZ(3, 0),
-	/* 45 */ _A64E_MOVK16(3),
-	/* 46 */ _A64E_MOVK32(3),
-	/* 47 */ _A64E_MOVK48(3),
-	/* 48 */ 0xD63F0060U,                    /* BLR X3 */
-	/* 49 */ _A64E_STR_XREG(31, 19),
-	/* 50 */ _A64E_LDR_SP(1, _CTX_FORCE),
-	/* 51 */ _A64E_CBNZ_FWD(1, 76-51),  /* → force_jump path */
-	/* 52 */ _A64E_LDR_SP(2, _CTX_NZCV),
-	/* 53 */ _A64E_MSR_NZCV(2),
-	/* 54 */ _A64E_LDP_SP( 2,  3,  16),
-	/* 55 */ _A64E_LDP_SP( 4,  5,  32),
-	/* 56 */ _A64E_LDP_SP( 6,  7,  48),
-	/* 57 */ _A64E_LDP_SP( 8,  9,  64),
-	/* 58 */ _A64E_LDP_SP(10, 11,  80),
-	/* 59 */ _A64E_LDP_SP(12, 13,  96),
-	/* 60 */ _A64E_LDP_SP(14, 15, 112),
-	/* 61 */ _A64E_LDP_SP(16, 17, 128),
-	/* 62 */ _A64E_LDP_SP(18, 19, 144),
-	/* 63 */ _A64E_LDP_SP(20, 21, 160),
-	/* 64 */ _A64E_LDP_SP(22, 23, 176),
-	/* 65 */ _A64E_LDP_SP(24, 25, 192),
-	/* 66 */ _A64E_LDP_SP(26, 27, 208),
-	/* 67 */ _A64E_LDP_SP(28, 29, 224),
-	/* 68 */ _A64E_LDP_SP(30, 31, 240),
-	/* 69 */ _A64E_LDP_SP( 0,  1,   0),
-	/* 70 */ _A64E_ADD_SP_I(_CTX_SIZE),
-	/* 71 */ _A64E_MOVZ(17, 0),
-	/* 72 */ _A64E_MOVK16(17),
-	/* 73 */ _A64E_MOVK32(17),
-	/* 74 */ _A64E_MOVK48(17),
-	/* 75 */ NVK_A64_RET_X17,
-	/* 76 */ _A64E_LDR_SP(16, 128),
-	/* 77 */ _A64E_MOV_REG(17, 1),
-	/* 78 */ _A64E_LDR_SP(2, _CTX_NZCV),
-	/* 79 */ _A64E_MSR_NZCV(2),
-	/* 80 */ _A64E_LDP_SP( 2,  3,  16),
-	/* 81 */ _A64E_LDP_SP( 4,  5,  32),
-	/* 82 */ _A64E_LDP_SP( 6,  7,  48),
-	/* 83 */ _A64E_LDP_SP( 8,  9,  64),
-	/* 84 */ _A64E_LDP_SP(10, 11,  80),
-	/* 85 */ _A64E_LDP_SP(12, 13,  96),
-	/* 86 */ _A64E_LDP_SP(14, 15, 112),
-	/* 87 */ _A64E_LDP_SP(18, 19, 144),
-	/* 88 */ _A64E_LDP_SP(20, 21, 160),
-	/* 89 */ _A64E_LDP_SP(22, 23, 176),
-	/* 90 */ _A64E_LDP_SP(24, 25, 192),
-	/* 91 */ _A64E_LDP_SP(26, 27, 208),
-	/* 92 */ _A64E_LDP_SP(28, 29, 224),
-	/* 93 */ _A64E_LDR_SP(30, 240),
-	/* 94 */ _A64E_LDP_SP( 0,  1,   0),
-	/* 95 */ _A64E_ADD_SP_I(_CTX_SIZE),
-	/* 96 */ NVK_A64_RET_X17,
-	/* 97 */ _A64E_LDP_POST16(16, 17),
-	/* 98 */ _A64E_MOVZ(17, 0),
-	/* 99 */ _A64E_MOVK16(17),
-	/*100 */ _A64E_MOVK32(17),
-	/*101 */ _A64E_MOVK48(17),
-	/*102 */ NVK_A64_RET_X17,
+	/*  7 */ _A64E_DMB_ISH,
+	/*  8 */ _A64E_CBZ_W_FWD(16, 98-8),
+	/*  9 */ _A64E_MRS_SP_EL0(16),
+	/* 10 */ _A64E_MOVZ(17, 0),
+	/* 11 */ _A64E_MOVK16(17),
+	/* 12 */ _A64E_MOVK32(17),
+	/* 13 */ _A64E_MOVK48(17),
+	/* 14 */ _A64E_LDR_XREG(17, 17),
+	/* 15 */ _A64E_CMP_REG(16, 17),
+	/* 16 */ _A64E_BEQ_FWD(98-16),
+	/* 17 */ _A64E_LDP_POST16(16, 17),
+	/* 18 */ _A64E_SUB_SP_I(_CTX_SIZE),
+	/* 19 */ _A64E_STP_SP( 0,  1,   0),
+	/* 20 */ _A64E_STP_SP( 2,  3,  16),
+	/* 21 */ _A64E_STP_SP( 4,  5,  32),
+	/* 22 */ _A64E_STP_SP( 6,  7,  48),
+	/* 23 */ _A64E_STP_SP( 8,  9,  64),
+	/* 24 */ _A64E_STP_SP(10, 11,  80),
+	/* 25 */ _A64E_STP_SP(12, 13,  96),
+	/* 26 */ _A64E_STP_SP(14, 15, 112),
+	/* 27 */ _A64E_STP_SP(16, 17, 128),
+	/* 28 */ _A64E_STP_SP(18, 19, 144),
+	/* 29 */ _A64E_STP_SP(20, 21, 160),
+	/* 30 */ _A64E_STP_SP(22, 23, 176),
+	/* 31 */ _A64E_STP_SP(24, 25, 192),
+	/* 32 */ _A64E_STP_SP(26, 27, 208),
+	/* 33 */ _A64E_STP_SP(28, 29, 224),
+	/* 34 */ _A64E_STP_SP(30, 31, 240),
+	/* 35 */ _A64E_MRS_NZCV(1),
+	/* 36 */ _A64E_STR_SP(1,  _CTX_NZCV),
+	/* 37 */ _A64E_STR_SP(31, _CTX_FORCE),
+	/* 38 */ _A64E_MRS_SP_EL0(0),
+	/* 39 */ _A64E_MOVZ(19, 0),
+	/* 40 */ _A64E_MOVK16(19),
+	/* 41 */ _A64E_MOVK32(19),
+	/* 42 */ _A64E_MOVK48(19),
+	/* 43 */ _A64E_STR_XREG(0, 19),
+	/* 44 */ _A64E_MOV_FROM_SP(0),
+	/* 45 */ _A64E_MOVZ(3, 0),
+	/* 46 */ _A64E_MOVK16(3),
+	/* 47 */ _A64E_MOVK32(3),
+	/* 48 */ _A64E_MOVK48(3),
+	/* 49 */ 0xD63F0060U,                    /* BLR X3 */
+	/* 50 */ _A64E_STR_XREG(31, 19),
+	/* 51 */ _A64E_LDR_SP(1, _CTX_FORCE),
+	/* 52 */ _A64E_CBNZ_FWD(1, 77-52),  /* → force_jump path */
+	/* 53 */ _A64E_LDR_SP(2, _CTX_NZCV),
+	/* 54 */ _A64E_MSR_NZCV(2),
+	/* 55 */ _A64E_LDP_SP( 2,  3,  16),
+	/* 56 */ _A64E_LDP_SP( 4,  5,  32),
+	/* 57 */ _A64E_LDP_SP( 6,  7,  48),
+	/* 58 */ _A64E_LDP_SP( 8,  9,  64),
+	/* 59 */ _A64E_LDP_SP(10, 11,  80),
+	/* 60 */ _A64E_LDP_SP(12, 13,  96),
+	/* 61 */ _A64E_LDP_SP(14, 15, 112),
+	/* 62 */ _A64E_LDP_SP(16, 17, 128),
+	/* 63 */ _A64E_LDP_SP(18, 19, 144),
+	/* 64 */ _A64E_LDP_SP(20, 21, 160),
+	/* 65 */ _A64E_LDP_SP(22, 23, 176),
+	/* 66 */ _A64E_LDP_SP(24, 25, 192),
+	/* 67 */ _A64E_LDP_SP(26, 27, 208),
+	/* 68 */ _A64E_LDP_SP(28, 29, 224),
+	/* 69 */ _A64E_LDP_SP(30, 31, 240),
+	/* 70 */ _A64E_LDP_SP( 0,  1,   0),
+	/* 71 */ _A64E_ADD_SP_I(_CTX_SIZE),
+	/* 72 */ _A64E_MOVZ(17, 0),
+	/* 73 */ _A64E_MOVK16(17),
+	/* 74 */ _A64E_MOVK32(17),
+	/* 75 */ _A64E_MOVK48(17),
+	/* 76 */ NVK_A64_RET_X17,
+	/* 77 */ _A64E_LDR_SP(16, 128),
+	/* 78 */ _A64E_MOV_REG(17, 1),
+	/* 79 */ _A64E_LDR_SP(2, _CTX_NZCV),
+	/* 80 */ _A64E_MSR_NZCV(2),
+	/* 81 */ _A64E_LDP_SP( 2,  3,  16),
+	/* 82 */ _A64E_LDP_SP( 4,  5,  32),
+	/* 83 */ _A64E_LDP_SP( 6,  7,  48),
+	/* 84 */ _A64E_LDP_SP( 8,  9,  64),
+	/* 85 */ _A64E_LDP_SP(10, 11,  80),
+	/* 86 */ _A64E_LDP_SP(12, 13,  96),
+	/* 87 */ _A64E_LDP_SP(14, 15, 112),
+	/* 88 */ _A64E_LDP_SP(18, 19, 144),
+	/* 89 */ _A64E_LDP_SP(20, 21, 160),
+	/* 90 */ _A64E_LDP_SP(22, 23, 176),
+	/* 91 */ _A64E_LDP_SP(24, 25, 192),
+	/* 92 */ _A64E_LDP_SP(26, 27, 208),
+	/* 93 */ _A64E_LDP_SP(28, 29, 224),
+	/* 94 */ _A64E_LDR_SP(30, 240),
+	/* 95 */ _A64E_LDP_SP( 0,  1,   0),
+	/* 96 */ _A64E_ADD_SP_I(_CTX_SIZE),
+	/* 97 */ NVK_A64_RET_X17,
+	/* 98 */ _A64E_LDP_POST16(16, 17),
+	/* 99 */ _A64E_MOVZ(17, 0),
+	/*100 */ _A64E_MOVK16(17),
+	/*101 */ _A64E_MOVK32(17),
+	/*102 */ _A64E_MOVK48(17),
+	/*103 */ NVK_A64_RET_X17,
 };
 
 #define _CTX_STUB_LEN     (sizeof(_nvk_ctx_stub_template) / sizeof(u32))
 #define _CTX_ENABLED_SLOT 2
-#define _CTX_GUARD_SLOT_A 9
-#define _CTX_GUARD_SLOT_B 38
-#define _CTX_HANDLER_SLOT 44
-#define _CTX_TRAMP_SLOT_A 71
-#define _CTX_TRAMP_SLOT_B 98
+#define _CTX_GUARD_SLOT_A 10
+#define _CTX_GUARD_SLOT_B 39
+#define _CTX_HANDLER_SLOT 45
+#define _CTX_TRAMP_SLOT_A 72
+#define _CTX_TRAMP_SLOT_B 99
 
-_Static_assert(_CTX_STUB_LEN == 103, "context stub v4 size mismatch");
+_Static_assert(_CTX_STUB_LEN == 104, "context stub v5 size mismatch");
 _Static_assert(_CTX_SIZE % 16 == 0, "context frame must be 16-byte aligned");
 
 typedef void (*nvk_ctx_handler_t)(nvk_reg_ctx *ctx);
@@ -1121,6 +1148,10 @@ static int nvk_hook_install_ctx(struct nvk_hook_ctx *h, void *target,
 				if (nvk_a64_is_bti(insn) ||
 				    insn == NVK_A64_NOP)
 					continue;
+				if (nvk_a64_is_pac_sign(insn)) {
+					tramp[tidx++] = insn;
+					continue;
+				}
 				if (nvk_a64_is_hazardous(insn))
 					return NVK_HOOK_E_RELOC;
 				n = nvk_a64_relocate_abs(
@@ -1204,18 +1235,43 @@ static int nvk_hook_install_ctx(struct nvk_hook_ctx *h, void *target,
 }
 
 
-static void _nvk_quiesce(void)
-{
-	if (_nvk_syncrcu)
-		_nvk_syncrcu();
-	else if (_nvk_msleep)
-		_nvk_msleep(50);
-}
-
 static void _nvk_full_barrier(void)
 {
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");
+}
+
+static void _nvk_quiesce(void)
+{
+	if (_nvk_syncrcu) {
+		_nvk_syncrcu();
+		return;
+	}
+	if (_nvk_msleep)
+		_nvk_msleep(100);
+	_nvk_full_barrier();
+}
+
+static void _nvk_quiesce_deep(void)
+{
+	_nvk_quiesce();
+	_nvk_full_barrier();
+	_nvk_quiesce();
+	_nvk_full_barrier();
+}
+
+static void nvk_hook_pause(struct nvk_hook *h)
+{
+	WRITE_ONCE(h->enabled, 0);
+	_nvk_full_barrier();
+	_nvk_quiesce();
+	_nvk_full_barrier();
+}
+
+static void nvk_hook_resume(struct nvk_hook *h)
+{
+	_nvk_full_barrier();
+	WRITE_ONCE(h->enabled, 1);
 }
 
 static void nvk_hook_remove(struct nvk_hook *h)
@@ -1227,14 +1283,12 @@ static void nvk_hook_remove(struct nvk_hook *h)
 	_nvk_full_barrier();
 	__asm__ __volatile__("sev" ::: "memory");
 
-	_nvk_quiesce();
+	_nvk_quiesce_deep();
 
 	u32 *code = (u32 *)h->target;
 	_nvk_patch_multi(code, h->orig_insns, h->patch_count);
 
-	_nvk_full_barrier();
-	_nvk_quiesce();
-	_nvk_full_barrier();
+	_nvk_quiesce_deep();
 
 	if (h->trampoline) {
 		_nvk_pool_free(h->trampoline);
@@ -1254,7 +1308,7 @@ static int nvk_hook_replace(struct nvk_hook *h, void *new_replace,
 	if (!h->active) return -1;
 	WRITE_ONCE(h->enabled, 0);
 	_nvk_full_barrier();
-	_nvk_quiesce();
+	_nvk_quiesce_deep();
 
 	h->replace = new_replace;
 	code = (u32 *)h->target;
@@ -1297,14 +1351,12 @@ static void nvk_hook_remove_ctx(struct nvk_hook_ctx *h)
 	_nvk_full_barrier();
 	__asm__ __volatile__("sev" ::: "memory");
 
-	_nvk_quiesce();
+	_nvk_quiesce_deep();
 
 	u32 *code = (u32 *)h->base.target;
 	_nvk_patch_multi(code, h->base.orig_insns, h->base.patch_count);
 
-	_nvk_full_barrier();
-	_nvk_quiesce();
-	_nvk_full_barrier();
+	_nvk_quiesce_deep();
 
 	if (h->stub) {
 		_nvk_modfree(h->stub);
@@ -1322,7 +1374,7 @@ static int nvk_hook_replace_ctx(struct nvk_hook_ctx *h,
 	if (!h->base.active || !h->stub) return -1;
 	WRITE_ONCE(h->base.enabled, 0);
 	_nvk_full_barrier();
-	_nvk_quiesce();
+	_nvk_quiesce_deep();
 	h->base.replace = (void *)new_handler;
 	_nvk_patch_mov64(h->stub, _CTX_HANDLER_SLOT, 3,
 			 (u64)(unsigned long)new_handler);

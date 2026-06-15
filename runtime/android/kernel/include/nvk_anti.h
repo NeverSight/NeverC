@@ -446,17 +446,17 @@ static int nvk_anti_detect_su_binary(void)
 	filp_close_fn fclose = (filp_close_fn)NVK_LOOKUP("filp_close");
 	if (!fopen) return -1;
 
-	static const char * const paths[] = {
-		"/system/bin/su",
-		"/system/xbin/su",
-		"/sbin/su",
-		"/su/bin/su",
-		"/data/local/su",
-		"/data/local/xbin/su",
+	const char *su_paths[] = {
+		NC_XORSTR("/system/bin/su"),
+		NC_XORSTR("/system/xbin/su"),
+		NC_XORSTR("/sbin/su"),
+		NC_XORSTR("/su/bin/su"),
+		NC_XORSTR("/data/local/su"),
+		NC_XORSTR("/data/local/xbin/su"),
 	};
 	int i, found = 0;
-	for (i = 0; i < (int)(sizeof(paths)/sizeof(paths[0])); i++) {
-		void *fp = fopen(paths[i], 0 /* O_RDONLY */, 0);
+	for (i = 0; i < (int)(sizeof(su_paths)/sizeof(su_paths[0])); i++) {
+		void *fp = fopen(su_paths[i], 0 /* O_RDONLY */, 0);
 		if (fp && (long)fp > 0) {
 			found++;
 			if (fclose) fclose(fp, (void *)0);
@@ -476,15 +476,15 @@ static int nvk_anti_detect_magisk(void)
 	filp_close_fn fclose = (filp_close_fn)NVK_LOOKUP("filp_close");
 	if (!fopen) return -1;
 
-	static const char * const paths[] = {
-		"/data/adb/magisk",
-		"/sbin/.magisk",
-		"/data/adb/ksu",
-		"/data/adb/ap",
+	const char *mg_paths[] = {
+		NC_XORSTR("/data/adb/magisk"),
+		NC_XORSTR("/sbin/.magisk"),
+		NC_XORSTR("/data/adb/ksu"),
+		NC_XORSTR("/data/adb/ap"),
 	};
 	int i, found = 0;
-	for (i = 0; i < (int)(sizeof(paths)/sizeof(paths[0])); i++) {
-		void *fp = fopen(paths[i], 0, 0);
+	for (i = 0; i < (int)(sizeof(mg_paths)/sizeof(mg_paths[0])); i++) {
+		void *fp = fopen(mg_paths[i], 0, 0);
 		if (fp && (long)fp > 0) {
 			found++;
 			if (fclose) fclose(fp, (void *)0);

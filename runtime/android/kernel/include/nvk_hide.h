@@ -559,18 +559,13 @@ static int _nvk_vmalloc_show_filter(void *seq, void *v)
 
 static void *_nvk_resolve_vmalloc_s_show(void)
 {
-	typedef void *(*nvk_seq_open_fn)(void *, void *);
-	void *proc_create =
-		(void *)NVK_LOOKUP("proc_create_seq_private");
-	if (!proc_create)
-		proc_create =
-			(void *)NVK_LOOKUP("proc_create_seq");
-	if (!proc_create) {
-		void *fn = (void *)NVK_LOOKUP("vmalloc_info_show");
-		if (fn) return fn;
-	}
-
-	void *fn = (void *)NVK_LOOKUP("s_show");
+	void *fn = (void *)NVK_LOOKUP("vmalloc_info_show");
+	if (fn) return fn;
+	fn = (void *)NVK_LOOKUP("s_show.23");
+	if (fn) return fn;
+	fn = (void *)NVK_LOOKUP("s_show.24");
+	if (fn) return fn;
+	fn = (void *)NVK_LOOKUP("s_show.25");
 	return fn;
 }
 
