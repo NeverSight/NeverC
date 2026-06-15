@@ -208,6 +208,7 @@ main() {
   say "Cross-compilation runtimes (optional):"
   say "  neverc runtime install windows-x64"
   say "  neverc runtime install linux-arm64"
+  say "  neverc runtime install macos-arm64"
   say "  neverc runtime list"
 }
 
