@@ -13,6 +13,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -152,6 +153,36 @@ void   neverc_vector_stable_sort(neverc_vector_t *v,
                                   neverc_vector_cmp_fn cmp);
 void   neverc_vector_partial_sort(neverc_vector_t *v, size_t k,
                                    neverc_vector_cmp_fn cmp);
+/* Introselect (std::nth_element): O(n) average rearrange so element k is the
+ * k-th smallest, [0,k) <= v[k] <= (k,size). No-op if k is out of range. */
+void   neverc_vector_nth_element(neverc_vector_t *v, size_t k,
+                                  neverc_vector_cmp_fn cmp);
+/* std::inplace_merge: merge the two consecutive sorted runs [0,mid) and
+ * [mid,size) into one stable sorted run. O(n) using the Timsort gallop-merge
+ * engine when a buffer is available, O(n log n) via rotations otherwise.
+ * No-op if mid is 0 or >= size. */
+void   neverc_vector_inplace_merge(neverc_vector_t *v, size_t mid,
+                                    neverc_vector_cmp_fn cmp);
+
+/* ===== Randomized & Partition Algorithms ===== */
+
+/* Fisher-Yates shuffle driven by an unbiased splitmix64 generator (no 128-bit
+ * math or platform intrinsics). `seed` makes the permutation reproducible. */
+void   neverc_vector_shuffle(neverc_vector_t *v, uint64_t seed);
+
+/* std::stable_partition: move every element satisfying pred to the front while
+ * preserving the relative order within each group. Returns the partition point
+ * (number of elements satisfying pred). O(n) with a buffer, O(n log n) in place
+ * via rotations if allocation fails. */
+size_t neverc_vector_stable_partition(neverc_vector_t *v,
+                                       bool (*pred)(const void *elem));
+
+/* std::sample: return a new vector holding k elements chosen uniformly at
+ * random without replacement, preserving their original relative order (Knuth
+ * Algorithm S). k is clamped to size; `seed` makes the choice reproducible.
+ * Caller frees the result. */
+neverc_vector_t *neverc_vector_sample(const neverc_vector_t *v, size_t k,
+                                       uint64_t seed);
 
 /* ===== Reduction / Transformation ===== */
 

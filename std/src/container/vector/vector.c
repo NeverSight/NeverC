@@ -2,6 +2,7 @@
 #include "../../sort/sort_impl.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #define VEC_INITIAL_CAP 8
 #define VEC_GROWTH_FACTOR 2
@@ -772,6 +773,263 @@ void neverc_vector_partial_sort(neverc_vector_t *v, size_t k,
 
     if (buf != stack_tmp)
         free(buf);
+}
+
+void neverc_vector_nth_element(neverc_vector_t *v, size_t k,
+                               neverc_vector_cmp_fn cmp) {
+    if (!v || !cmp || v->size < 2 || k >= v->size)
+        return;
+    nci_nth_element(v->data, v->size, v->elem_size, (nci_cmp_fn)cmp, k);
+}
+
+/* ===== Shared in-place rotation helpers (reused by merge / partition) ===== */
+
+/* Reverse the half-open range [lo, hi) using a caller-provided element scratch
+ * so a deep recursion never re-allocates per rotation. */
+static void vec_reverse_buf(neverc_vector_t *v, size_t lo, size_t hi,
+                            char *tmp) {
+    if (hi <= lo)
+        return;
+    size_t es = v->elem_size;
+    size_t i = lo, j = hi - 1;
+    while (i < j) {
+        memcpy(tmp, vec_elem_ptr(v, i), es);
+        memcpy(vec_elem_ptr(v, i), vec_elem_ptr(v, j), es);
+        memcpy(vec_elem_ptr(v, j), tmp, es);
+        i++;
+        j--;
+    }
+}
+
+/* Rotate [lo, hi) left so the block starting at `mid` comes first
+ * (reversal algorithm: O(n), no extra storage beyond one element). */
+static void vec_rotate_buf(neverc_vector_t *v, size_t lo, size_t mid,
+                           size_t hi, char *tmp) {
+    if (mid <= lo || mid >= hi)
+        return;
+    vec_reverse_buf(v, lo, mid, tmp);
+    vec_reverse_buf(v, mid, hi, tmp);
+    vec_reverse_buf(v, lo, hi, tmp);
+}
+
+/* ===== inplace_merge ===== */
+
+/* first index in [lo,hi) whose element is not < key (std lower_bound) */
+static size_t vec_lower_bound_idx(neverc_vector_t *v, size_t lo, size_t hi,
+                                  const void *key, nci_cmp_fn cmp) {
+    while (lo < hi) {
+        size_t m = lo + (hi - lo) / 2;
+        if (cmp(vec_elem_ptr(v, m), key) < 0) lo = m + 1;
+        else hi = m;
+    }
+    return lo;
+}
+
+/* first index in [lo,hi) whose element is > key (std upper_bound) */
+static size_t vec_upper_bound_idx(neverc_vector_t *v, size_t lo, size_t hi,
+                                  const void *key, nci_cmp_fn cmp) {
+    while (lo < hi) {
+        size_t m = lo + (hi - lo) / 2;
+        if (cmp(key, vec_elem_ptr(v, m)) < 0) hi = m;
+        else lo = m + 1;
+    }
+    return lo;
+}
+
+/*
+ * Kronrod's symmetric rotation merge of the sorted runs [lo,mid) and [mid,hi):
+ * O(n log n), stable, and allocation-free (one element of scratch). Used as the
+ * fallback when the O(n) buffer cannot be allocated. Stability mirrors
+ * libstdc++ __merge_without_buffer: split the longer run at its midpoint and
+ * locate the cut in the other run with lower_bound when the pivot comes from
+ * the left run (equal right elements stay after it) and upper_bound when it
+ * comes from the right run (equal left elements stay before it).
+ */
+static void vec_merge_rotate(neverc_vector_t *v, size_t lo, size_t mid,
+                             size_t hi, nci_cmp_fn cmp, char *tmp) {
+    size_t len1 = mid - lo, len2 = hi - mid;
+    if (len1 == 0 || len2 == 0)
+        return;
+    if (len1 + len2 == 2) {
+        if (cmp(vec_elem_ptr(v, mid), vec_elem_ptr(v, lo)) < 0) {
+            size_t es = v->elem_size;
+            memcpy(tmp, vec_elem_ptr(v, lo), es);
+            memcpy(vec_elem_ptr(v, lo), vec_elem_ptr(v, mid), es);
+            memcpy(vec_elem_ptr(v, mid), tmp, es);
+        }
+        return;
+    }
+    size_t mid1, mid2;
+    if (len1 >= len2) {
+        mid1 = lo + len1 / 2;
+        mid2 = vec_lower_bound_idx(v, mid, hi, vec_elem_ptr(v, mid1), cmp);
+    } else {
+        mid2 = mid + len2 / 2;
+        mid1 = vec_upper_bound_idx(v, lo, mid, vec_elem_ptr(v, mid2), cmp);
+    }
+    size_t newmid = mid1 + (mid2 - mid);
+    vec_rotate_buf(v, mid1, mid, mid2, tmp);
+    vec_merge_rotate(v, lo, mid1, newmid, cmp, tmp);
+    vec_merge_rotate(v, newmid, mid2, hi, cmp, tmp);
+}
+
+void neverc_vector_inplace_merge(neverc_vector_t *v, size_t mid,
+                                 neverc_vector_cmp_fn cmp) {
+    if (!v || !cmp || mid == 0 || mid >= v->size)
+        return;
+    size_t es = v->elem_size, n = v->size;
+    size_t len1 = mid, len2 = n - mid;
+    size_t bufn = len1 < len2 ? len1 : len2;   /* gallop-merge buffers the smaller run */
+
+    char stack_buf[256];
+    char *aux = (bufn * es <= sizeof(stack_buf)) ? stack_buf
+                                                 : (char *)malloc(bufn * es);
+    if (aux) {
+        nci_tim_merge((char *)v->data, 0, len1, len2, es, (nci_cmp_fn)cmp, aux);
+        if (aux != stack_buf)
+            free(aux);
+        return;
+    }
+    /* OOM: allocation-free rotation merge (still stable, O(n log n)). */
+    char el_buf[256];
+    char *tmp = es <= sizeof(el_buf) ? el_buf : (char *)malloc(es);
+    if (!tmp)
+        return;
+    vec_merge_rotate(v, 0, mid, n, (nci_cmp_fn)cmp, tmp);
+    if (tmp != el_buf)
+        free(tmp);
+}
+
+/* ===== Randomized & Partition Algorithms ===== */
+
+/* splitmix64: a high-quality, fully portable 64-bit generator — no 128-bit
+ * math and no platform intrinsics, so shuffles/samples are reproducible and
+ * identical on every target. */
+static inline uint64_t vec_sm64(uint64_t *s) {
+    uint64_t z = (*s += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
+/* Unbiased uniform in [0, bound) by Lemire-style rejection using only 64-bit
+ * arithmetic: discard the short biased tail, then take a modulo. bound > 0. */
+static uint64_t vec_rand_bounded(uint64_t *s, uint64_t bound) {
+    uint64_t threshold = (0ULL - bound) % bound;   /* == 2^64 mod bound */
+    uint64_t r;
+    do { r = vec_sm64(s); } while (r < threshold);
+    return r % bound;
+}
+
+void neverc_vector_shuffle(neverc_vector_t *v, uint64_t seed) {
+    if (!v || v->size < 2)
+        return;
+    size_t es = v->elem_size;
+    char stack_buf[256];
+    char *tmp = es <= sizeof(stack_buf) ? stack_buf : (char *)malloc(es);
+    if (!tmp)
+        return;
+    uint64_t s = seed;
+    for (size_t i = v->size - 1; i > 0; i--) {
+        size_t j = (size_t)vec_rand_bounded(&s, (uint64_t)i + 1);
+        if (j != i) {
+            memcpy(tmp, vec_elem_ptr(v, i), es);
+            memcpy(vec_elem_ptr(v, i), vec_elem_ptr(v, j), es);
+            memcpy(vec_elem_ptr(v, j), tmp, es);
+        }
+    }
+    if (tmp != stack_buf)
+        free(tmp);
+}
+
+/* Allocation-free stable partition, O(n log n): partition each half, then
+ * rotate the second half's true-group in front of the first half's
+ * false-group. Used when the O(n) buffer cannot be allocated. */
+static size_t vec_stable_part_rotate(neverc_vector_t *v, size_t lo, size_t hi,
+                                     bool (*pred)(const void *), char *tmp) {
+    size_t n = hi - lo;
+    if (n == 0)
+        return lo;
+    if (n == 1)
+        return pred(vec_elem_ptr(v, lo)) ? hi : lo;
+    size_t mid = lo + n / 2;
+    size_t left = vec_stable_part_rotate(v, lo, mid, pred, tmp);
+    size_t right = vec_stable_part_rotate(v, mid, hi, pred, tmp);
+    vec_rotate_buf(v, left, mid, right, tmp);
+    return left + (right - mid);
+}
+
+size_t neverc_vector_stable_partition(neverc_vector_t *v,
+                                      bool (*pred)(const void *elem)) {
+    if (!v || !pred || v->size == 0)
+        return 0;
+    size_t es = v->elem_size, n = v->size;
+
+    size_t ntrue = 0;
+    for (size_t i = 0; i < n; i++)
+        if (pred(vec_elem_ptr(v, i)))
+            ntrue++;
+    if (ntrue == 0 || ntrue == n)
+        return ntrue;
+
+    /* O(n) fast path: compact the true group to the front in place while
+     * staging the false group in a buffer, then append the buffer. Stable
+     * because both groups are visited left to right. */
+    size_t nfalse = n - ntrue;
+    char *buf = (char *)malloc(nfalse * es);
+    if (buf) {
+        size_t w = 0, f = 0;
+        for (size_t i = 0; i < n; i++) {
+            const void *e = vec_elem_ptr(v, i);
+            if (pred(e)) {
+                if (w != i)
+                    memcpy(vec_elem_ptr(v, w), e, es);
+                w++;
+            } else {
+                memcpy(buf + f * es, e, es);
+                f++;
+            }
+        }
+        memcpy(vec_elem_ptr(v, w), buf, nfalse * es);
+        free(buf);
+        return ntrue;
+    }
+    /* OOM: allocation-free rotation partition (one element of scratch). */
+    char el_buf[256];
+    char *tmp = es <= sizeof(el_buf) ? el_buf : (char *)malloc(es);
+    if (!tmp)
+        return ntrue;   /* cannot reorder; report the count so callers still know */
+    size_t p = vec_stable_part_rotate(v, 0, n, pred, tmp);
+    if (tmp != el_buf)
+        free(tmp);
+    return p;
+}
+
+neverc_vector_t *neverc_vector_sample(const neverc_vector_t *v, size_t k,
+                                      uint64_t seed) {
+    if (!v)
+        return NULL;
+    size_t es = v->elem_size, n = v->size;
+    if (k > n)
+        k = n;
+    neverc_vector_t *out = neverc_vector_new_with_capacity(es, k);
+    if (!out)
+        return NULL;
+    if (k == 0)
+        return out;
+    /* Knuth Algorithm S: keep element i with probability need/remain. Produces
+     * a uniform k-subset in original order, O(n), no scratch buffer. */
+    uint64_t s = seed;
+    size_t need = k, remain = n;
+    for (size_t i = 0; i < n && need > 0; i++) {
+        if (vec_rand_bounded(&s, (uint64_t)remain) < (uint64_t)need) {
+            memcpy(vec_elem_ptr(out, out->size), vec_elem_ptr(v, i), es);
+            out->size++;
+            need--;
+        }
+        remain--;
+    }
+    return out;
 }
 
 /* ===== Reduction / Transformation ===== */

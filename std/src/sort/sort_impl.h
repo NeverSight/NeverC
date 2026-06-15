@@ -397,6 +397,69 @@ static void nci_pdqsort(void *base, size_t n, size_t es, nci_cmp_fn cmp) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Introselect — quickselect built on the PDQSort partition engine
+ *
+ *  Rearranges base[] so base[nth] holds the value that would occupy that slot
+ *  in a fully sorted array, with every element in [0, nth) <= base[nth] and
+ *  every element in (nth, n) >= base[nth] (the std::nth_element contract).
+ *
+ *  It reuses PDQSort's median-of-three / ninther pivot, cache-friendly block
+ *  partition, and deterministic pattern breaking, but descends into only the
+ *  side that contains `nth` — so the expected cost is O(n), not O(n log n).
+ *  An introspective depth limit falls back to heapsort on a degenerate run of
+ *  partitions, bounding the worst case at O(n log n); the same guard PDQSort
+ *  uses, so adversarial input can never make selection go quadratic.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void nci_nth_element_loop(char *base, size_t n, size_t es,
+                                 nci_cmp_fn cmp, char *tmp,
+                                 size_t nth, int limit) {
+    int was_balanced = 1;
+    while (n > NCI_PDQ_THRESHOLD) {
+        if (limit == 0) {
+            nci_heapsort(base, n, es, cmp, tmp);   /* worst-case guard */
+            return;
+        }
+        if (!was_balanced) {
+            nci_break_patterns(base, n, es, tmp);
+            limit--;
+        }
+
+        int hint;
+        size_t pivot_idx = nci_choose_pivot(base, n, es, cmp, tmp, &hint);
+        int already_partitioned;
+        size_t p = nci_partition(base, n, es, cmp, tmp,
+                                 pivot_idx, &already_partitioned);
+        if (p == nth) return;          /* pivot landed exactly on the target */
+
+        size_t l_size = p;
+        size_t r_size = n - p - 1;
+        was_balanced = (l_size >= n / 8) && (r_size >= n / 8);
+
+        if (nth < p) {
+            n = l_size;                /* target is in the left partition */
+        } else {
+            base = NCI_ELEM(base, p + 1, es);
+            nth -= p + 1;              /* target is in the right partition */
+            n = r_size;
+        }
+    }
+    /* Small window: a full sort places base[nth] correctly, and the partition
+     * invariant already orders everything outside the window around it. */
+    nci_insertion_sort(base, n, es, cmp, tmp);
+}
+
+static void nci_nth_element(void *base, size_t n, size_t es,
+                            nci_cmp_fn cmp, size_t nth) {
+    if (n <= 1 || es == 0 || nth >= n) return;
+    char stack_tmp[256];
+    char *tmp = es <= sizeof(stack_tmp) ? stack_tmp : (char *)malloc(es);
+    if (!tmp) return;
+    nci_nth_element_loop((char *)base, n, es, cmp, tmp, nth, nci_log2(n) + 1);
+    if (tmp != stack_tmp) free(tmp);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Timsort — Adaptive Stable Merge Sort
  * ═══════════════════════════════════════════════════════════════════════════ */
 
