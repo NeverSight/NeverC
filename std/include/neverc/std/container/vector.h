@@ -254,6 +254,22 @@ neverc_vector_t *neverc_vector_set_difference(const neverc_vector_t *a,
 neverc_vector_t *neverc_vector_set_symmetric_difference(const neverc_vector_t *a,
                                                          const neverc_vector_t *b,
                                                          neverc_vector_cmp_fn cmp);
+/* std::includes: true if sorted vector a contains every element of sorted vector
+ * b honouring multiplicity (b is a sub-multiset of a). O(a->size + b->size). An
+ * empty b is included in any a; returns false on NULL/incompatible input. */
+bool   neverc_vector_includes(const neverc_vector_t *a, const neverc_vector_t *b,
+                               neverc_vector_cmp_fn cmp);
+
+/* ===== Permutations ===== */
+
+/* std::next_permutation / std::prev_permutation: rearrange the vector in place
+ * to the next (resp. previous) lexicographic permutation by cmp. Returns true
+ * normally; returns false and resets to the last (resp. first) permutation when
+ * the sequence was already the final (resp. first) one. O(n), no allocation. */
+bool   neverc_vector_next_permutation(neverc_vector_t *v,
+                                       neverc_vector_cmp_fn cmp);
+bool   neverc_vector_prev_permutation(neverc_vector_t *v,
+                                       neverc_vector_cmp_fn cmp);
 
 /* ===== Iterators (pointer-based) ===== */
 

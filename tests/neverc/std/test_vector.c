@@ -1840,6 +1840,135 @@ static void test_set_operations(void) {
     ASSERT(allok, "set operations match reference multiset oracle (fuzz)");
 }
 
+/* ========== includes ========== */
+
+static void test_includes(void) {
+    printf("test_includes:\n");
+    int a[] = {1, 2, 2, 3, 4};
+    int sub1[] = {2, 2, 3};
+    int sub2[] = {2, 2, 2};   /* more 2s than a has */
+    int sub3[] = {5};
+    neverc_vector_t *va = neverc_vector_from_array(a, 5, sizeof(int));
+    neverc_vector_t *vs1 = neverc_vector_from_array(sub1, 3, sizeof(int));
+    neverc_vector_t *vs2 = neverc_vector_from_array(sub2, 3, sizeof(int));
+    neverc_vector_t *vs3 = neverc_vector_from_array(sub3, 1, sizeof(int));
+    neverc_vector_t *vempty = neverc_vector_new(sizeof(int));
+
+    ASSERT(neverc_vector_includes(va, vs1, cmp_int), "includes multiset subset");
+    ASSERT(!neverc_vector_includes(va, vs2, cmp_int), "includes respects multiplicity");
+    ASSERT(!neverc_vector_includes(va, vs3, cmp_int), "includes missing element false");
+    ASSERT(neverc_vector_includes(va, vempty, cmp_int), "includes empty -> true");
+    ASSERT(neverc_vector_includes(va, va, cmp_int), "includes self -> true");
+    ASSERT(!neverc_vector_includes(vempty, vs1, cmp_int), "empty includes non-empty -> false");
+    ASSERT(!neverc_vector_includes(NULL, vs1, cmp_int), "includes NULL -> false");
+
+    neverc_vector_free(va); neverc_vector_free(vs1); neverc_vector_free(vs2);
+    neverc_vector_free(vs3); neverc_vector_free(vempty);
+
+    /* differential fuzz: includes(a,b) iff set_difference(b,a) is empty */
+    int allok = 1;
+    for (int it = 0; it < 5000 && allok; it++) {
+        size_t na = (size_t)(vt_next() % 20), nb = (size_t)(vt_next() % 12);
+        int ba[20], bb[12];
+        int mod = (int)(vt_next() % 8) + 1;
+        for (size_t i = 0; i < na; i++) ba[i] = (int)(vt_next() % (unsigned)mod);
+        for (size_t i = 0; i < nb; i++) bb[i] = (int)(vt_next() % (unsigned)mod);
+        qsort(ba, na, sizeof(int), cmp_int);
+        qsort(bb, nb, sizeof(int), cmp_int);
+        neverc_vector_t *xa = neverc_vector_from_array(ba, na, sizeof(int));
+        neverc_vector_t *xb = neverc_vector_from_array(bb, nb, sizeof(int));
+        bool inc = neverc_vector_includes(xa, xb, cmp_int);
+        neverc_vector_t *bdiffa = neverc_vector_set_difference(xb, xa, cmp_int);
+        bool ref = (neverc_vector_size(bdiffa) == 0);
+        if (inc != ref) allok = 0;
+        neverc_vector_free(bdiffa);
+        neverc_vector_free(xa); neverc_vector_free(xb);
+    }
+    ASSERT(allok, "includes(a,b) == (b\\a empty) (fuzz)");
+}
+
+/* ========== Permutations ========== */
+
+static unsigned long vt_fact(int n) {
+    unsigned long f = 1;
+    for (int i = 2; i <= n; i++) f *= (unsigned long)i;
+    return f;
+}
+
+static void test_permutations(void) {
+    printf("test_permutations:\n");
+
+    /* enumerate all permutations of {1,2,3,4}: exactly 4! in strict lexicographic
+     * order, then a final false that wraps back to the sorted sequence */
+    int base[] = {1, 2, 3, 4};
+    neverc_vector_t *v = neverc_vector_from_array(base, 4, sizeof(int));
+    unsigned long count = 1;          /* the initial (sorted) permutation */
+    int strict_inc = 1, ok_more = 1;
+    int prev[4]; for (int i = 0; i < 4; i++) prev[i] = base[i];
+    while (neverc_vector_next_permutation(v, cmp_int)) {
+        count++;
+        /* lexicographically greater than the previous */
+        int cur[4], greater = 0;
+        for (int i = 0; i < 4; i++) cur[i] = *(int *)neverc_vector_at(v, (size_t)i);
+        for (int i = 0; i < 4; i++) {
+            if (cur[i] != prev[i]) { greater = cur[i] > prev[i]; break; }
+        }
+        if (!greater) strict_inc = 0;
+        for (int i = 0; i < 4; i++) prev[i] = cur[i];
+        if (count > 100) { ok_more = 0; break; }   /* runaway guard */
+    }
+    ASSERT(ok_more, "next_permutation terminates");
+    ASSERT(count == vt_fact(4), "next_permutation yields 4! permutations");
+    ASSERT(strict_inc, "next_permutation strictly lexicographically increasing");
+    /* after returning false it is back to the sorted order */
+    int wrapped = 1;
+    for (int i = 0; i < 4; i++)
+        if (*(int *)neverc_vector_at(v, (size_t)i) != base[i]) wrapped = 0;
+    ASSERT(wrapped, "next_permutation wraps to first");
+    neverc_vector_free(v);
+
+    /* prev_permutation is the exact inverse: from the largest, enumerate down */
+    int desc[] = {4, 3, 2, 1};
+    v = neverc_vector_from_array(desc, 4, sizeof(int));
+    unsigned long dcount = 1;
+    while (neverc_vector_prev_permutation(v, cmp_int)) {
+        dcount++;
+        if (dcount > 100) break;
+    }
+    ASSERT(dcount == vt_fact(4), "prev_permutation yields 4! permutations");
+    int dwrapped = 1;
+    for (int i = 0; i < 4; i++)
+        if (*(int *)neverc_vector_at(v, (size_t)i) != desc[i]) dwrapped = 0;
+    ASSERT(dwrapped, "prev_permutation wraps to last");
+    neverc_vector_free(v);
+
+    /* round trip: next then prev restores the original (non-extremal) order */
+    int mid[] = {2, 4, 1, 3};
+    v = neverc_vector_from_array(mid, 4, sizeof(int));
+    ASSERT(neverc_vector_next_permutation(v, cmp_int), "next on interior perm");
+    ASSERT(neverc_vector_prev_permutation(v, cmp_int), "prev on interior perm");
+    int restored = 1;
+    for (int i = 0; i < 4; i++)
+        if (*(int *)neverc_vector_at(v, (size_t)i) != mid[i]) restored = 0;
+    ASSERT(restored, "next then prev round-trips");
+    neverc_vector_free(v);
+
+    /* duplicates: {1,1,2} has 3 distinct permutations (3!/2!), non-decreasing */
+    int dup[] = {1, 1, 2};
+    v = neverc_vector_from_array(dup, 3, sizeof(int));
+    unsigned long dc = 1;
+    while (neverc_vector_next_permutation(v, cmp_int)) { dc++; if (dc > 50) break; }
+    ASSERT(dc == 3, "next_permutation counts distinct perms with duplicates");
+    neverc_vector_free(v);
+
+    /* size < 2 is always false */
+    int one[] = {7};
+    v = neverc_vector_from_array(one, 1, sizeof(int));
+    ASSERT(!neverc_vector_next_permutation(v, cmp_int), "next size-1 false");
+    ASSERT(!neverc_vector_prev_permutation(v, cmp_int), "prev size-1 false");
+    neverc_vector_free(v);
+}
+
 /* ========== Main ========== */
 
 int main(void) {
@@ -1906,6 +2035,8 @@ int main(void) {
     test_minmax_element();
     test_equal_range();
     test_set_operations();
+    test_includes();
+    test_permutations();
 
     printf("\n=== vector: %d/%d tests passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

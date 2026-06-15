@@ -1317,6 +1317,70 @@ neverc_vector_t *neverc_vector_set_symmetric_difference(const neverc_vector_t *a
     return vec_set_op(a, b, cmp, VEC_SET_SYMDIFF);
 }
 
+bool neverc_vector_includes(const neverc_vector_t *a, const neverc_vector_t *b,
+                            neverc_vector_cmp_fn cmp) {
+    if (!a || !b || !cmp || a->elem_size != b->elem_size)
+        return false;
+    size_t i = 0, j = 0;
+    while (j < b->size) {
+        if (i >= a->size)
+            return false;                  /* a exhausted, b still has elements */
+        int c = cmp(vec_elem_ptr(a, i), vec_elem_ptr(b, j));
+        if (c < 0) i++;                     /* a[i] < b[j]: skip a[i] */
+        else if (c > 0) return false;       /* a[i] > b[j]: b[j] missing from a */
+        else { i++; j++; }                  /* equal: consume one of each */
+    }
+    return true;
+}
+
+/* ===== Permutations ===== */
+
+bool neverc_vector_next_permutation(neverc_vector_t *v,
+                                    neverc_vector_cmp_fn cmp) {
+    if (!v || !cmp || v->size < 2)
+        return false;
+    size_t n = v->size, i = n - 1;
+    for (;;) {
+        size_t j = i;
+        i--;
+        if (cmp(vec_elem_ptr(v, i), vec_elem_ptr(v, j)) < 0) {  /* v[i] < v[j] */
+            size_t k = n - 1;
+            while (!(cmp(vec_elem_ptr(v, i), vec_elem_ptr(v, k)) < 0))
+                k--;                        /* rightmost k with v[i] < v[k] */
+            neverc_vector_swap_elements(v, i, k);
+            vec_reverse_range(v, j, n - 1); /* make the suffix ascending */
+            return true;
+        }
+        if (i == 0) {                       /* whole range non-increasing: wrap */
+            vec_reverse_range(v, 0, n - 1);
+            return false;
+        }
+    }
+}
+
+bool neverc_vector_prev_permutation(neverc_vector_t *v,
+                                    neverc_vector_cmp_fn cmp) {
+    if (!v || !cmp || v->size < 2)
+        return false;
+    size_t n = v->size, i = n - 1;
+    for (;;) {
+        size_t j = i;
+        i--;
+        if (cmp(vec_elem_ptr(v, j), vec_elem_ptr(v, i)) < 0) {  /* v[j] < v[i] */
+            size_t k = n - 1;
+            while (!(cmp(vec_elem_ptr(v, k), vec_elem_ptr(v, i)) < 0))
+                k--;                        /* rightmost k with v[k] < v[i] */
+            neverc_vector_swap_elements(v, i, k);
+            vec_reverse_range(v, j, n - 1); /* make the suffix descending */
+            return true;
+        }
+        if (i == 0) {                       /* whole range non-decreasing: wrap */
+            vec_reverse_range(v, 0, n - 1);
+            return false;
+        }
+    }
+}
+
 /* ===== Iterators ===== */
 
 void *neverc_vector_begin(const neverc_vector_t *v) {
