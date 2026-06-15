@@ -1626,6 +1626,220 @@ static void test_merge(void) {
     neverc_vector_free(vb);
 }
 
+/* ========== minmax_element ========== */
+
+static unsigned vt_rng = 0x1234abcdu;
+static unsigned vt_next(void) {
+    vt_rng = vt_rng * 1103515245u + 12345u;
+    return vt_rng >> 8;
+}
+
+static void test_minmax_element(void) {
+    printf("test_minmax_element:\n");
+
+    int arr[] = {5, 2, 8, 1, 9, 3, 9, 1};
+    neverc_vector_t *v = neverc_vector_from_array(arr, 8, sizeof(int));
+    void *mn = (void *)1, *mx = (void *)1;
+    neverc_vector_minmax_element(v, cmp_int, &mn, &mx);
+    ASSERT(mn && *(int *)mn == 1, "minmax min == 1");
+    ASSERT(mx && *(int *)mx == 9, "minmax max == 9");
+    ASSERT(mn == neverc_vector_at(v, 3), "minmax min is FIRST smallest (idx 3)");
+    ASSERT(mx == neverc_vector_at(v, 6), "minmax max is LAST largest (idx 6)");
+    neverc_vector_free(v);
+
+    /* empty -> both NULL; out-params may be NULL individually */
+    v = neverc_vector_new(sizeof(int));
+    mn = (void *)1; mx = (void *)1;
+    neverc_vector_minmax_element(v, cmp_int, &mn, &mx);
+    ASSERT(mn == NULL && mx == NULL, "minmax empty -> NULL,NULL");
+    neverc_vector_minmax_element(v, cmp_int, NULL, NULL); /* must not crash */
+    neverc_vector_free(v);
+
+    /* single element -> min == max == that element */
+    int one[] = {42};
+    v = neverc_vector_from_array(one, 1, sizeof(int));
+    neverc_vector_minmax_element(v, cmp_int, &mn, &mx);
+    ASSERT(mn == neverc_vector_at(v, 0) && mx == neverc_vector_at(v, 0),
+           "minmax size-1 min==max");
+    neverc_vector_free(v);
+
+    /* differential fuzz: first-min / last-max oracle, even & odd lengths */
+    int allok = 1;
+    for (int it = 0; it < 4000 && allok; it++) {
+        size_t n = (size_t)(vt_next() % 64) + 1;
+        neverc_vector_t *vv = neverc_vector_new(sizeof(int));
+        int emn = 0, emx = 0;
+        for (size_t i = 0; i < n; i++) {
+            int x = (int)(vt_next() % 7);
+            neverc_vector_push_back(vv, &x);
+            if (i == 0) { emn = emx = 0; }
+            else {
+                int cur = *(int *)neverc_vector_at(vv, i);
+                if (cur < *(int *)neverc_vector_at(vv, (size_t)emn)) emn = (int)i;
+                if (cur >= *(int *)neverc_vector_at(vv, (size_t)emx)) emx = (int)i;
+            }
+        }
+        neverc_vector_minmax_element(vv, cmp_int, &mn, &mx);
+        if (mn != neverc_vector_at(vv, (size_t)emn) ||
+            mx != neverc_vector_at(vv, (size_t)emx))
+            allok = 0;
+        neverc_vector_free(vv);
+    }
+    ASSERT(allok, "minmax matches first-min/last-max oracle (fuzz)");
+}
+
+/* ========== equal_range / partition_point ========== */
+
+static int vt_thresh;
+static bool vt_pred_lt(const void *e) { return *(const int *)e < vt_thresh; }
+
+static void test_equal_range(void) {
+    printf("test_equal_range:\n");
+
+    int arr[] = {1, 2, 2, 2, 4, 4, 7};
+    neverc_vector_t *v = neverc_vector_from_array(arr, 7, sizeof(int));
+    size_t lo = 99, hi = 99;
+    int key = 2;
+    ASSERT(neverc_vector_equal_range(v, &key, cmp_int, &lo, &hi),
+           "equal_range(2) found");
+    ASSERT(lo == 1 && hi == 4, "equal_range(2) == [1,4)");
+    key = 5;
+    ASSERT(!neverc_vector_equal_range(v, &key, cmp_int, &lo, &hi),
+           "equal_range(5) absent");
+    ASSERT(lo == hi && lo == 6, "equal_range(5) empty at insertion point 6");
+    key = 0;
+    neverc_vector_equal_range(v, &key, cmp_int, &lo, &hi);
+    ASSERT(lo == 0 && hi == 0, "equal_range(0) == [0,0)");
+    key = 7;
+    neverc_vector_equal_range(v, &key, cmp_int, &lo, &hi);
+    ASSERT(lo == 6 && hi == 7, "equal_range(7) == [6,7)");
+    /* NULL out-params must be tolerated */
+    key = 4;
+    ASSERT(neverc_vector_equal_range(v, &key, cmp_int, NULL, NULL),
+           "equal_range NULL out-params, returns presence");
+    neverc_vector_free(v);
+
+    /* differential fuzz: equal_range and partition_point vs linear scan */
+    int allok = 1;
+    for (int it = 0; it < 6000 && allok; it++) {
+        size_t n = (size_t)(vt_next() % 40);
+        int mod = (int)(vt_next() % 8) + 1;
+        int buf[40];
+        for (size_t i = 0; i < n; i++) buf[i] = (int)(vt_next() % (unsigned)mod);
+        qsort(buf, n, sizeof(int), cmp_int);
+        neverc_vector_t *vv = neverc_vector_from_array(buf, n, sizeof(int));
+
+        int k = (int)(vt_next() % (unsigned)(mod + 1));
+        neverc_vector_equal_range(vv, &k, cmp_int, &lo, &hi);
+        size_t elo = n, ehi = n, found_lo = 0;
+        for (size_t i = 0; i < n; i++) if (buf[i] >= k) { elo = i; found_lo = 1; break; }
+        if (!found_lo) elo = n;
+        ehi = n;
+        for (size_t i = 0; i < n; i++) if (buf[i] > k) { ehi = i; break; }
+        if (lo != elo || hi != ehi) allok = 0;
+
+        vt_thresh = (int)(vt_next() % (unsigned)(mod + 1));
+        size_t pp = neverc_vector_partition_point(vv, vt_pred_lt);
+        size_t epp = 0;
+        while (epp < n && buf[epp] < vt_thresh) epp++;
+        if (pp != epp) allok = 0;
+
+        neverc_vector_free(vv);
+    }
+    ASSERT(allok, "equal_range/partition_point match linear oracle (fuzz)");
+}
+
+/* ========== Sorted-set operations ========== */
+
+/* op: 0=union 1=intersect 2=diff 3=symdiff — reference multiset semantics. */
+static size_t vt_ref_setop(int op, const int *a, size_t na,
+                           const int *b, size_t nb, int *out) {
+    size_t i = 0, j = 0, w = 0;
+    while (i < na && j < nb) {
+        if (a[i] < b[j]) { if (op != 1) out[w++] = a[i]; i++; }
+        else if (a[i] > b[j]) { if (op == 0 || op == 3) out[w++] = b[j]; j++; }
+        else { if (op == 0 || op == 1) out[w++] = a[i]; i++; j++; }
+    }
+    if (op != 1) while (i < na) out[w++] = a[i++];
+    if (op == 0 || op == 3) while (j < nb) out[w++] = b[j++];
+    return w;
+}
+
+static int vt_vec_eq_ref(const neverc_vector_t *v, const int *ref, size_t rn) {
+    if (neverc_vector_size(v) != rn) return 0;
+    for (size_t i = 0; i < rn; i++)
+        if (*(int *)neverc_vector_at((neverc_vector_t *)v, i) != ref[i]) return 0;
+    return 1;
+}
+
+static void test_set_operations(void) {
+    printf("test_set_operations:\n");
+
+    int a[] = {1, 2, 2, 3, 5};
+    int b[] = {2, 3, 3, 6};
+    neverc_vector_t *va = neverc_vector_from_array(a, 5, sizeof(int));
+    neverc_vector_t *vb = neverc_vector_from_array(b, 4, sizeof(int));
+
+    int u[]  = {1, 2, 2, 3, 3, 5, 6};   /* union: max counts */
+    int in[] = {2, 3};                  /* intersection: min counts */
+    int df[] = {1, 2, 5};               /* a\b: max(m-n,0) */
+    int sd[] = {1, 2, 3, 5, 6};         /* symmetric diff: |m-n| */
+
+    neverc_vector_t *r = neverc_vector_set_union(va, vb, cmp_int);
+    ASSERT(r && vt_vec_eq_ref(r, u, 7), "set_union multiset semantics");
+    neverc_vector_free(r);
+    r = neverc_vector_set_intersection(va, vb, cmp_int);
+    ASSERT(r && vt_vec_eq_ref(r, in, 2), "set_intersection multiset semantics");
+    neverc_vector_free(r);
+    r = neverc_vector_set_difference(va, vb, cmp_int);
+    ASSERT(r && vt_vec_eq_ref(r, df, 3), "set_difference multiset semantics");
+    neverc_vector_free(r);
+    r = neverc_vector_set_symmetric_difference(va, vb, cmp_int);
+    ASSERT(r && vt_vec_eq_ref(r, sd, 5), "set_symmetric_difference semantics");
+    neverc_vector_free(r);
+
+    /* empty inputs and NULL handling */
+    neverc_vector_t *empty = neverc_vector_new(sizeof(int));
+    r = neverc_vector_set_union(va, empty, cmp_int);
+    ASSERT(r && neverc_vector_size(r) == 5, "union with empty == a");
+    neverc_vector_free(r);
+    r = neverc_vector_set_intersection(va, empty, cmp_int);
+    ASSERT(r && neverc_vector_size(r) == 0, "intersection with empty == empty");
+    neverc_vector_free(r);
+    ASSERT(neverc_vector_set_union(NULL, vb, cmp_int) == NULL,
+           "set op NULL input -> NULL");
+    neverc_vector_free(empty);
+    neverc_vector_free(va);
+    neverc_vector_free(vb);
+
+    /* differential fuzz vs reference multiset oracle */
+    int allok = 1;
+    for (int it = 0; it < 5000 && allok; it++) {
+        size_t na = (size_t)(vt_next() % 24), nb = (size_t)(vt_next() % 24);
+        int ba[24], bb[24], ref[48];
+        int mod = (int)(vt_next() % 12) + 1;
+        for (size_t i = 0; i < na; i++) ba[i] = (int)(vt_next() % (unsigned)mod);
+        for (size_t i = 0; i < nb; i++) bb[i] = (int)(vt_next() % (unsigned)mod);
+        qsort(ba, na, sizeof(int), cmp_int);
+        qsort(bb, nb, sizeof(int), cmp_int);
+        neverc_vector_t *xa = neverc_vector_from_array(ba, na, sizeof(int));
+        neverc_vector_t *xb = neverc_vector_from_array(bb, nb, sizeof(int));
+        neverc_vector_t *(*ops[4])(const neverc_vector_t *, const neverc_vector_t *,
+                                   neverc_vector_cmp_fn) = {
+            neverc_vector_set_union, neverc_vector_set_intersection,
+            neverc_vector_set_difference, neverc_vector_set_symmetric_difference};
+        for (int op = 0; op < 4 && allok; op++) {
+            size_t rn = vt_ref_setop(op, ba, na, bb, nb, ref);
+            neverc_vector_t *got = ops[op](xa, xb, cmp_int);
+            if (!got || !vt_vec_eq_ref(got, ref, rn)) allok = 0;
+            neverc_vector_free(got);
+        }
+        neverc_vector_free(xa);
+        neverc_vector_free(xb);
+    }
+    ASSERT(allok, "set operations match reference multiset oracle (fuzz)");
+}
+
 /* ========== Main ========== */
 
 int main(void) {
@@ -1689,6 +1903,9 @@ int main(void) {
     test_partition();
     test_generate();
     test_merge();
+    test_minmax_element();
+    test_equal_range();
+    test_set_operations();
 
     printf("\n=== vector: %d/%d tests passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

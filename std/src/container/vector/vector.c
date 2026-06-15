@@ -733,6 +733,37 @@ bool neverc_vector_is_sorted(const neverc_vector_t *v,
     return true;
 }
 
+bool neverc_vector_equal_range(const neverc_vector_t *v, const void *value,
+                               neverc_vector_cmp_fn cmp,
+                               size_t *first, size_t *last) {
+    size_t lo = 0, hi = 0;
+    if (v && value && cmp) {
+        lo = (size_t)neverc_vector_lower_bound(v, value, cmp);
+        hi = (size_t)neverc_vector_upper_bound(v, value, cmp);
+    }
+    if (first) *first = lo;
+    if (last)  *last  = hi;
+    return hi > lo;
+}
+
+size_t neverc_vector_partition_point(const neverc_vector_t *v,
+                                     bool (*pred)(const void *elem)) {
+    if (!v || !pred)
+        return 0;
+    size_t lo = 0, n = v->size;
+    while (n > 0) {                       /* binary search for the false region */
+        size_t half = n / 2;
+        size_t mid = lo + half;
+        if (pred(vec_elem_ptr(v, mid))) {
+            lo = mid + 1;
+            n -= half + 1;
+        } else {
+            n = half;
+        }
+    }
+    return lo;
+}
+
 /* ===== Sorting Variants ===== */
 
 void neverc_vector_stable_sort(neverc_vector_t *v,
@@ -1058,6 +1089,43 @@ void *neverc_vector_max_element(const neverc_vector_t *v,
     return vec_elem_ptr(v, max_idx);
 }
 
+void neverc_vector_minmax_element(const neverc_vector_t *v,
+                                  neverc_vector_cmp_fn cmp,
+                                  void **min_out, void **max_out) {
+    if (min_out) *min_out = NULL;
+    if (max_out) *max_out = NULL;
+    if (!v || !cmp || v->size == 0)
+        return;
+    size_t n = v->size, mn, mx, i;
+    /* Seed from the first element (odd n) or first pair (even n). Pairing keeps
+     * the total at the comparison-optimal ~3n/2 (1 intra-pair + 2 vs running
+     * extrema per pair) instead of the 2n a separate min and max would cost. */
+    if (n & 1) {
+        mn = mx = 0;
+        i = 1;
+    } else {
+        if (cmp(vec_elem_ptr(v, 1), vec_elem_ptr(v, 0)) < 0) { mn = 1; mx = 0; }
+        else                                                 { mn = 0; mx = 1; }
+        i = 2;
+    }
+    for (; i + 1 < n; i += 2) {
+        size_t a = i, b = i + 1;
+        if (cmp(vec_elem_ptr(v, b), vec_elem_ptr(v, a)) < 0) {   /* b < a */
+            if (cmp(vec_elem_ptr(v, b), vec_elem_ptr(v, mn)) < 0) mn = b;
+            if (!(cmp(vec_elem_ptr(v, a), vec_elem_ptr(v, mx)) < 0)) mx = a;
+        } else {                                                 /* a <= b */
+            if (cmp(vec_elem_ptr(v, a), vec_elem_ptr(v, mn)) < 0) mn = a;
+            if (!(cmp(vec_elem_ptr(v, b), vec_elem_ptr(v, mx)) < 0)) mx = b;
+        }
+    }
+    if (i < n) {                                                 /* odd leftover */
+        if (cmp(vec_elem_ptr(v, i), vec_elem_ptr(v, mn)) < 0) mn = i;
+        else if (!(cmp(vec_elem_ptr(v, i), vec_elem_ptr(v, mx)) < 0)) mx = i;
+    }
+    if (min_out) *min_out = vec_elem_ptr(v, mn);
+    if (max_out) *max_out = vec_elem_ptr(v, mx);
+}
+
 void neverc_vector_transform(neverc_vector_t *v,
                               void (*fn)(void *elem, void *ctx),
                               void *ctx) {
@@ -1163,6 +1231,90 @@ neverc_vector_t *neverc_vector_merge(const neverc_vector_t *a,
     }
     result->size = w;
     return result;
+}
+
+/* ===== Sorted-Set Operations ===== */
+
+enum { VEC_SET_UNION, VEC_SET_INTERSECT, VEC_SET_DIFF, VEC_SET_SYMDIFF };
+
+/* One linear merge pass drives all four set operations; `op` selects which of
+ * the a-only / b-only / common elements are emitted. Multiset semantics fall
+ * out naturally: the equal branch advances both cursors once, so a value kept
+ * by `op` lands min(m,n) times and any surplus is drained by the tail copies. */
+static neverc_vector_t *vec_set_op(const neverc_vector_t *a,
+                                   const neverc_vector_t *b,
+                                   neverc_vector_cmp_fn cmp, int op) {
+    if (!a || !b || !cmp || a->elem_size != b->elem_size)
+        return NULL;
+    size_t sz = a->elem_size;
+    size_t cap;
+    if (op == VEC_SET_INTERSECT)   cap = a->size < b->size ? a->size : b->size;
+    else if (op == VEC_SET_DIFF)   cap = a->size;
+    else                           cap = a->size + b->size;
+    neverc_vector_t *r = neverc_vector_new_with_capacity(sz, cap);
+    if (!r)
+        return NULL;
+    char *out = (char *)r->data;
+    size_t w = 0, i = 0, j = 0;
+    while (i < a->size && j < b->size) {
+        int c = cmp(vec_elem_ptr(a, i), vec_elem_ptr(b, j));
+        if (c < 0) {                                   /* a[i] only */
+            if (op != VEC_SET_INTERSECT) {
+                memcpy(out + w * sz, vec_elem_ptr(a, i), sz);
+                w++;
+            }
+            i++;
+        } else if (c > 0) {                            /* b[j] only */
+            if (op == VEC_SET_UNION || op == VEC_SET_SYMDIFF) {
+                memcpy(out + w * sz, vec_elem_ptr(b, j), sz);
+                w++;
+            }
+            j++;
+        } else {                                       /* common value */
+            if (op == VEC_SET_UNION || op == VEC_SET_INTERSECT) {
+                memcpy(out + w * sz, vec_elem_ptr(a, i), sz);
+                w++;
+            }
+            i++;
+            j++;
+        }
+    }
+    if (op != VEC_SET_INTERSECT && i < a->size) {      /* drain a's tail */
+        size_t rem = a->size - i;
+        memcpy(out + w * sz, vec_elem_ptr(a, i), rem * sz);
+        w += rem;
+    }
+    if ((op == VEC_SET_UNION || op == VEC_SET_SYMDIFF) && j < b->size) {
+        size_t rem = b->size - j;                      /* drain b's tail */
+        memcpy(out + w * sz, vec_elem_ptr(b, j), rem * sz);
+        w += rem;
+    }
+    r->size = w;
+    return r;
+}
+
+neverc_vector_t *neverc_vector_set_union(const neverc_vector_t *a,
+                                          const neverc_vector_t *b,
+                                          neverc_vector_cmp_fn cmp) {
+    return vec_set_op(a, b, cmp, VEC_SET_UNION);
+}
+
+neverc_vector_t *neverc_vector_set_intersection(const neverc_vector_t *a,
+                                                 const neverc_vector_t *b,
+                                                 neverc_vector_cmp_fn cmp) {
+    return vec_set_op(a, b, cmp, VEC_SET_INTERSECT);
+}
+
+neverc_vector_t *neverc_vector_set_difference(const neverc_vector_t *a,
+                                               const neverc_vector_t *b,
+                                               neverc_vector_cmp_fn cmp) {
+    return vec_set_op(a, b, cmp, VEC_SET_DIFF);
+}
+
+neverc_vector_t *neverc_vector_set_symmetric_difference(const neverc_vector_t *a,
+                                                         const neverc_vector_t *b,
+                                                         neverc_vector_cmp_fn cmp) {
+    return vec_set_op(a, b, cmp, VEC_SET_SYMDIFF);
 }
 
 /* ===== Iterators ===== */

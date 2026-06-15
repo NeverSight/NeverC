@@ -146,6 +146,18 @@ long   neverc_vector_upper_bound(const neverc_vector_t *v,
                                   neverc_vector_cmp_fn cmp);
 bool   neverc_vector_is_sorted(const neverc_vector_t *v,
                                 neverc_vector_cmp_fn cmp);
+/* std::equal_range: the half-open index range [*first,*last) of elements equal
+ * to value in a sorted vector (i.e. [lower_bound, upper_bound)). Returns true
+ * when the range is non-empty (value present). O(log n); either out-param may
+ * be NULL. */
+bool   neverc_vector_equal_range(const neverc_vector_t *v, const void *value,
+                                  neverc_vector_cmp_fn cmp,
+                                  size_t *first, size_t *last);
+/* std::partition_point: index of the first element for which pred is false in a
+ * vector already partitioned (every pred-true element precedes every pred-false
+ * one). Equals the count of leading pred-true elements. O(log n). */
+size_t neverc_vector_partition_point(const neverc_vector_t *v,
+                                      bool (*pred)(const void *elem));
 
 /* ===== Sorting Variants ===== */
 
@@ -190,6 +202,13 @@ void  *neverc_vector_min_element(const neverc_vector_t *v,
                                   neverc_vector_cmp_fn cmp);
 void  *neverc_vector_max_element(const neverc_vector_t *v,
                                   neverc_vector_cmp_fn cmp);
+/* std::minmax_element: locate a smallest and a largest element in a single
+ * ~3n/2-comparison pass (vs ~2n for separate min + max). On ties *min_out is
+ * the first smallest and *max_out is the last largest (the std::minmax_element
+ * rule). Either out-param may be NULL; both are set to NULL for an empty vector. */
+void   neverc_vector_minmax_element(const neverc_vector_t *v,
+                                     neverc_vector_cmp_fn cmp,
+                                     void **min_out, void **max_out);
 void   neverc_vector_transform(neverc_vector_t *v,
                                 void (*fn)(void *elem, void *ctx),
                                 void *ctx);
@@ -209,6 +228,32 @@ neverc_vector_t *neverc_vector_map(const neverc_vector_t *v,
 neverc_vector_t *neverc_vector_merge(const neverc_vector_t *a,
                                       const neverc_vector_t *b,
                                       neverc_vector_cmp_fn cmp);
+
+/* ===== Sorted-Set Operations ===== */
+
+/* Each mirrors the matching C++ <algorithm> set operation with multiset
+ * (duplicate-preserving) semantics, runs in O(a->size + b->size), and returns a
+ * new sorted vector the caller frees. Both inputs must share elem_size and be
+ * sorted by cmp; each returns NULL on NULL/incompatible input or OOM.
+ *
+ * For a value occurring m times in a and n times in b, the result holds it:
+ *   union                  -> max(m,n) times
+ *   intersection           -> min(m,n) times
+ *   difference (a \ b)     -> max(m-n,0) times
+ *   symmetric_difference   -> |m-n| times
+ */
+neverc_vector_t *neverc_vector_set_union(const neverc_vector_t *a,
+                                          const neverc_vector_t *b,
+                                          neverc_vector_cmp_fn cmp);
+neverc_vector_t *neverc_vector_set_intersection(const neverc_vector_t *a,
+                                                 const neverc_vector_t *b,
+                                                 neverc_vector_cmp_fn cmp);
+neverc_vector_t *neverc_vector_set_difference(const neverc_vector_t *a,
+                                               const neverc_vector_t *b,
+                                               neverc_vector_cmp_fn cmp);
+neverc_vector_t *neverc_vector_set_symmetric_difference(const neverc_vector_t *a,
+                                                         const neverc_vector_t *b,
+                                                         neverc_vector_cmp_fn cmp);
 
 /* ===== Iterators (pointer-based) ===== */
 
