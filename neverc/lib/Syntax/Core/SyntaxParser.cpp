@@ -345,6 +345,16 @@ bool Parser::ParseFirstTopLevelDecl(DeclGroupPtrTy &Result) {
 
 bool Parser::ParseTopLevelDecl(DeclGroupPtrTy &Result) {
   Result = nullptr;
+
+  // Once a fatal diagnostic has been emitted (a missing #include, the error
+  // limit being reached, -Wfatal-errors, ...) the remaining token stream is
+  // meaningless and the lexer/include state may be inconsistent.  Stop as if at
+  // end-of-file instead of parsing on, which has been observed to crash deep in
+  // Sema on the corrupt state.  This mirrors Clang, which halts compilation
+  // after a fatal error.
+  if (LLVM_UNLIKELY(PP.getDiagnostics().hasFatalErrorOccurred()))
+    Tok.setKind(tok::eof);
+
   switch (Tok.getKind()) {
   case tok::annot_pragma_unused:
     ProcessPragmaUnused();
