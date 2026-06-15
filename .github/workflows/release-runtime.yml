@@ -48,6 +48,10 @@ jobs:
         if: hashFiles('runtime/linux/arm64') != ''
         run: cd runtime && zip -r ../neverc-runtime-linux-arm64.zip linux/arm64
 
+      - name: Package runtime — macos-arm64
+        if: hashFiles('runtime/macos/arm64') != ''
+        run: cd runtime && zip -r ../neverc-runtime-macos-arm64.zip macos/arm64
+
       - name: Package runtime — android-arm64
         if: hashFiles('runtime/android/arm64') != ''
         run: cd runtime && zip -r ../neverc-runtime-android-arm64.zip android/arm64

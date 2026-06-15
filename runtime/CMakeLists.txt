@@ -120,6 +120,15 @@ if(IS_DIRECTORY "${RUNTIME_SRC}/linux/arm64")
 endif()
 
 # ---------------------------------------------------------------------------
+# macOS / arm64 sysroot  (macOS 14, Sonoma)
+# ---------------------------------------------------------------------------
+if(IS_DIRECTORY "${RUNTIME_SRC}/macos/arm64")
+  runtime_sdk_target(neverc-runtime-macos-arm64
+    "macos/arm64:macos/arm64"
+  )
+endif()
+
+# ---------------------------------------------------------------------------
 # Android / arm64 sysroot  (NDK r26c, API 21+)
 # ---------------------------------------------------------------------------
 if(IS_DIRECTORY "${RUNTIME_SRC}/android/arm64")
