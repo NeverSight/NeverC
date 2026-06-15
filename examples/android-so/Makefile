@@ -22,8 +22,8 @@ $(OUTPUT): $(SRCS) $(HEADERS)
 	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 push: $(OUTPUT)
-	adb push $(OUTPUT) /data/local/tmp/
-	adb shell chmod 755 /data/local/tmp/$(OUTPUT)
+	adb push $(OUTPUT) /data/local/tests/
+	adb shell chmod 755 /data/local/tests/$(OUTPUT)
 
 clean:
 	rm -f $(OUTPUT)

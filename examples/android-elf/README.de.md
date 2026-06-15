@@ -38,9 +38,9 @@ neverc make run
 Oder manuell:
 
 ```bash
-adb push android-elf /data/local/tmp/
-adb shell chmod 755 /data/local/tmp/android-elf
-adb shell /data/local/tmp/android-elf
+adb push android-elf /data/local/tests/
+adb shell chmod 755 /data/local/tests/android-elf
+adb shell /data/local/tests/android-elf
 ```
 
 ## Funktionen

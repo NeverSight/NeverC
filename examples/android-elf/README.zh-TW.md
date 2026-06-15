@@ -38,9 +38,9 @@ neverc make run
 或手動操作：
 
 ```bash
-adb push android-elf /data/local/tmp/
-adb shell chmod 755 /data/local/tmp/android-elf
-adb shell /data/local/tmp/android-elf
+adb push android-elf /data/local/tests/
+adb shell chmod 755 /data/local/tests/android-elf
+adb shell /data/local/tests/android-elf
 ```
 
 ## 功能說明
