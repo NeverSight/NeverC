@@ -9,11 +9,26 @@
 #include <nvk_mem.h>
 #include <nvk_process.h>
 #include <nvk_addr.h>
+#include <nvk_hook.h>
 
-static __always_inline int nvk_anti_is_root(void)
+static int nvk_anti_is_root(void)
 {
-	unsigned long cred;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(cred));
+	unsigned long task;
+	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+
+	const unsigned char *p = (const unsigned char *)task;
+	unsigned long i;
+	for (i = 0x500; i < 0x800; i += 8) {
+		unsigned long v = *(unsigned long *)(p + i);
+		if (v < 0xFFFF000000000000UL || v >= 0xFFFFFFFFFFFFF000UL)
+			continue;
+		const u32 *cp = (const u32 *)v;
+		u32 refcnt = cp[0];
+		if (refcnt < 1 || refcnt > 10000) continue;
+		if (cp[1] == 0 && cp[2] == 0 && cp[3] == 0 &&
+		    cp[4] == 0 && cp[5] == 0)
+			return 1;
+	}
 	return 0;
 }
 
@@ -105,22 +120,42 @@ static int nvk_anti_detect_kprobe_on(void *addr)
 	return 0;
 }
 
+static int nvk_anti_detect_hook_ex(void *addr,
+				   struct nvk_hook *own_hooks,
+				   int own_count);
+
 static int nvk_anti_detect_hook_on(void *addr)
+{
+	return nvk_anti_detect_hook_ex(addr, (void *)0, 0);
+}
+
+static int nvk_anti_detect_hook_ex(void *addr,
+				   struct nvk_hook *own_hooks,
+				   int own_count)
 {
 	u32 insn;
 	if (nvk_mem_read(&insn, addr, 4))
 		return -1;
 
-	if (insn == 0x58000050U)
-		return 1;
-
+	int is_ldr_x16 = (insn == 0x58000050U);
+	int is_ldr_x16_next = 0;
 	u32 insn2;
-	if (nvk_mem_read(&insn2, (char *)addr + 4, 4))
-		return -1;
-	if (insn2 == 0x58000050U)
-		return 1;
+	if (!nvk_mem_read(&insn2, (char *)addr + 4, 4))
+		is_ldr_x16_next = (insn2 == 0x58000050U);
 
-	return 0;
+	if (!is_ldr_x16 && !is_ldr_x16_next)
+		return 0;
+
+	if (own_hooks && own_count > 0) {
+		int i;
+		for (i = 0; i < own_count; i++) {
+			if (own_hooks[i].active &&
+			    own_hooks[i].target == addr)
+				return 0;
+		}
+	}
+
+	return 1;
 }
 
 static int nvk_anti_verify_text_integrity(const void *addr, size_t len,
@@ -257,6 +292,237 @@ static void nvk_anti_full_check(struct nvk_anti_env *env)
 	env->va_bits     = nvk_va_bits();
 	env->page_size   = nvk_page_size();
 	env->timer_freq  = nvk_anti_timer_freq();
+}
+
+
+/* --- Watchdog: periodic hook integrity check --- */
+
+#define NVK_WD_MAX_HOOKS 16
+
+struct nvk_watchdog_entry {
+	struct nvk_hook *hook;
+	u32              orig_patch[NVK_HOOK_MAX_PATCH];
+	u32              expected_patch[NVK_HOOK_MAX_PATCH];
+	int              patch_count;
+};
+
+struct nvk_watchdog {
+	struct nvk_watchdog_entry entries[NVK_WD_MAX_HOOKS];
+	int                       count;
+	volatile u64              check_count;
+	volatile u64              violation_count;
+	volatile int              running;
+};
+
+static struct nvk_watchdog _nvk_wd;
+
+static int nvk_wd_register(struct nvk_hook *h)
+{
+	int idx;
+
+	if (!h || !h->active) return -1;
+	if (_nvk_wd.count >= NVK_WD_MAX_HOOKS) return -2;
+
+	idx = _nvk_wd.count;
+	_nvk_wd.entries[idx].hook = h;
+	_nvk_wd.entries[idx].patch_count = h->patch_count;
+
+	u32 *target = (u32 *)h->target;
+	int i;
+	for (i = 0; i < h->patch_count; i++) {
+		_nvk_wd.entries[idx].orig_patch[i] = h->orig_insns[i];
+		_nvk_wd.entries[idx].expected_patch[i] = target[i];
+	}
+
+	_nvk_wd.count++;
+	return 0;
+}
+
+static int nvk_wd_check(void)
+{
+	int i, j, violations = 0;
+
+	for (i = 0; i < _nvk_wd.count; i++) {
+		struct nvk_watchdog_entry *e = &_nvk_wd.entries[i];
+		struct nvk_hook *h = e->hook;
+
+		if (!h || !h->active) continue;
+
+		u32 *target = (u32 *)h->target;
+		for (j = 0; j < e->patch_count; j++) {
+			u32 current_insn;
+			if (nvk_mem_read(&current_insn, &target[j], 4))
+				continue;
+			if (current_insn != e->expected_patch[j]) {
+				violations++;
+				_nvk_wd.violation_count++;
+			}
+		}
+	}
+
+	_nvk_wd.check_count++;
+	return violations;
+}
+
+static int nvk_wd_repair(void)
+{
+	int i, j, repaired = 0;
+
+	for (i = 0; i < _nvk_wd.count; i++) {
+		struct nvk_watchdog_entry *e = &_nvk_wd.entries[i];
+		struct nvk_hook *h = e->hook;
+
+		if (!h || !h->active) continue;
+
+		u32 *target = (u32 *)h->target;
+		for (j = 0; j < e->patch_count; j++) {
+			u32 current_insn;
+			if (nvk_mem_read(&current_insn, &target[j], 4))
+				continue;
+			if (current_insn != e->expected_patch[j]) {
+				_nvk_patch_multi(target, e->expected_patch,
+						 e->patch_count);
+				repaired++;
+				break;
+			}
+		}
+	}
+	return repaired;
+}
+
+static __always_inline u64 nvk_wd_checks(void)
+{
+	return __atomic_load_n(&_nvk_wd.check_count, __ATOMIC_RELAXED);
+}
+
+static __always_inline u64 nvk_wd_violations(void)
+{
+	return __atomic_load_n(&_nvk_wd.violation_count, __ATOMIC_RELAXED);
+}
+
+
+static int nvk_anti_scan_for_brk(const void *start, size_t len)
+{
+	const u32 *code = (const u32 *)start;
+	size_t count = len / 4;
+	size_t i;
+	int found = 0;
+
+	for (i = 0; i < count; i++) {
+		u32 insn = code[i];
+		if ((insn & 0xFFE0001FU) == 0xD4200000U)
+			found++;
+	}
+	return found;
+}
+
+static __always_inline int nvk_anti_check_stack_depth(void)
+{
+	unsigned long sp, sp_el0;
+	__asm__ __volatile__("mov %0, sp" : "=r"(sp));
+	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(sp_el0));
+	unsigned long depth = sp_el0 - sp;
+	if (depth > 0x4000)
+		return 1;
+	return 0;
+}
+
+static __always_inline u64 nvk_anti_read_midr(void)
+{
+	u64 v;
+	__asm__ __volatile__("mrs %0, midr_el1" : "=r"(v));
+	return v;
+}
+
+
+static int nvk_anti_detect_su_binary(void)
+{
+	if (!_nvk_mem_inited) return -1;
+
+	typedef void *(*filp_open_fn)(const char *, int, u16);
+	typedef int   (*filp_close_fn)(void *, void *);
+
+	filp_open_fn fopen = (filp_open_fn)NVK_LOOKUP("filp_open");
+	filp_close_fn fclose = (filp_close_fn)NVK_LOOKUP("filp_close");
+	if (!fopen) return -1;
+
+	static const char * const paths[] = {
+		"/system/bin/su",
+		"/system/xbin/su",
+		"/sbin/su",
+		"/su/bin/su",
+		"/data/local/su",
+		"/data/local/xbin/su",
+	};
+	int i, found = 0;
+	for (i = 0; i < (int)(sizeof(paths)/sizeof(paths[0])); i++) {
+		void *fp = fopen(paths[i], 0 /* O_RDONLY */, 0);
+		if (fp && (long)fp > 0) {
+			found++;
+			if (fclose) fclose(fp, (void *)0);
+		}
+	}
+	return found;
+}
+
+static int nvk_anti_detect_magisk(void)
+{
+	if (!_nvk_mem_inited) return -1;
+
+	typedef void *(*filp_open_fn)(const char *, int, u16);
+	typedef int   (*filp_close_fn)(void *, void *);
+
+	filp_open_fn fopen = (filp_open_fn)NVK_LOOKUP("filp_open");
+	filp_close_fn fclose = (filp_close_fn)NVK_LOOKUP("filp_close");
+	if (!fopen) return -1;
+
+	static const char * const paths[] = {
+		"/data/adb/magisk",
+		"/sbin/.magisk",
+		"/data/adb/ksu",
+		"/data/adb/ap",
+	};
+	int i, found = 0;
+	for (i = 0; i < (int)(sizeof(paths)/sizeof(paths[0])); i++) {
+		void *fp = fopen(paths[i], 0, 0);
+		if (fp && (long)fp > 0) {
+			found++;
+			if (fclose) fclose(fp, (void *)0);
+		}
+	}
+	return found;
+}
+
+static int nvk_anti_detect_selinux_permissive(void)
+{
+	int *enforcing = (int *)NVK_LOOKUP("selinux_enforcing");
+	if (!enforcing) {
+		void *state = (void *)NVK_LOOKUP("selinux_state");
+		if (state)
+			enforcing = (int *)((unsigned long)state + 4);
+	}
+	if (!enforcing) return -1;
+	return (*enforcing == 0) ? 1 : 0;
+}
+
+struct nvk_anti_full_env {
+	struct nvk_anti_env base;
+	int is_rooted;
+	int su_binaries;
+	int magisk_detected;
+	int selinux_permissive;
+	int kprobe_on_self;
+};
+
+static void nvk_anti_full_scan(struct nvk_anti_full_env *env)
+{
+	if (!env) return;
+	nvk_anti_full_check(&env->base);
+	env->is_rooted = nvk_anti_is_root();
+	env->su_binaries = nvk_anti_detect_su_binary();
+	env->magisk_detected = nvk_anti_detect_magisk();
+	env->selinux_permissive = nvk_anti_detect_selinux_permissive();
+	env->kprobe_on_self = 0;
 }
 
 #endif /* NVK_ANTI_H */

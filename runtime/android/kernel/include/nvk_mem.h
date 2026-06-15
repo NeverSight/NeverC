@@ -239,4 +239,53 @@ static int nvk_mem_cmp(const void *a, const void *b, size_t len)
 	return 0;
 }
 
+static int nvk_mem_cmp_ct(const void *a, const void *b, size_t len)
+{
+	const unsigned char *pa = (const unsigned char *)a;
+	const unsigned char *pb = (const unsigned char *)b;
+	unsigned int diff = 0;
+	size_t i;
+	for (i = 0; i < len; i++)
+		diff |= pa[i] ^ pb[i];
+	return diff ? 1 : 0;
+}
+
+static void *nvk_mem_scan_safe(const void *start, size_t region_len,
+			       const void *pattern, size_t pat_len)
+{
+	const unsigned char *base = (const unsigned char *)start;
+	const unsigned char *pat  = (const unsigned char *)pattern;
+	unsigned char buf[64];
+	size_t i, j;
+
+	if (pat_len == 0 || pat_len > region_len || pat_len > sizeof(buf))
+		return (void *)0;
+	if (!_nvk_probe_read)
+		return nvk_mem_scan(start, region_len, pattern, pat_len);
+
+	for (i = 0; i <= region_len - pat_len; i++) {
+		long ret = _nvk_probe_read(buf, &base[i], pat_len);
+		if (ret) continue;
+		int match = 1;
+		for (j = 0; j < pat_len; j++) {
+			if (buf[j] != pat[j]) { match = 0; break; }
+		}
+		if (match) return (void *)&base[i];
+	}
+	return (void *)0;
+}
+
+static void nvk_mem_fill(void *dst, unsigned char val, size_t len)
+{
+	volatile unsigned char *d = (volatile unsigned char *)dst;
+	size_t i;
+	for (i = 0; i < len; i++)
+		d[i] = val;
+}
+
+static void nvk_mem_zero(void *dst, size_t len)
+{
+	nvk_mem_fill(dst, 0, len);
+}
+
 #endif /* NVK_MEM_H */

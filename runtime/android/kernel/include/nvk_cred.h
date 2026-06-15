@@ -19,6 +19,10 @@ static int                  _nvk_cred_inited;
 static unsigned long _nvk_off_cred;
 static unsigned long _nvk_off_uid;
 
+#define _NVK_CRED_SB_OFF   32
+#define _NVK_CRED_CAP_OFF  36
+#define _NVK_CRED_CAP_SIZE  8
+
 struct nvk_cred_ids {
 	u32 uid, gid, suid, sgid, euid, egid, fsuid, fsgid;
 };
@@ -46,8 +50,20 @@ static int _nvk_cred_find_uid_offset(void)
 {
 	if (_nvk_off_uid) return 0;
 
-	void *cred = _nvk_prepare_creds();
-	if (!cred) return -1;
+	const void *cred = (void *)0;
+	unsigned long task;
+	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+
+	if (_nvk_off_cred) {
+		cred = *(const void **)((unsigned long)task + _nvk_off_cred);
+	} else if (_nvk_get_task_cred) {
+		cred = _nvk_get_task_cred((struct task_struct *)task);
+	}
+
+	if (!cred) {
+		_nvk_off_uid = 4;
+		return 0;
+	}
 
 	const unsigned char *p = (const unsigned char *)cred;
 
@@ -67,7 +83,8 @@ static int _nvk_cred_find_uid_offset(void)
 		}
 	}
 
-	_nvk_commit_creds(cred);
+	if (_nvk_cred_put && _nvk_get_task_cred)
+		_nvk_cred_put(cred);
 
 	if (!_nvk_off_uid)
 		_nvk_off_uid = 4;
@@ -86,17 +103,29 @@ static int nvk_cred_get_ids(struct task_struct *task,
 		const unsigned char *tp = (const unsigned char *)task;
 		unsigned long i;
 		for (i = 0x500; i < 0x800; i += 8) {
-			unsigned long v = *(unsigned long *)(tp + i);
-			if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {
-				const u32 *cp = (const u32 *)v;
-				int match = 1;
-				for (int j = 1; j < 8; j++) {
-					if (cp[j] > 65535) { match = 0; break; }
-				}
-				if (match) {
-					_nvk_off_cred = i;
-					break;
-				}
+			unsigned long v1 = *(unsigned long *)(tp + i);
+			unsigned long v2 = *(unsigned long *)(tp + i + 8);
+			if (v1 <= 0xFFFF000000000000UL ||
+			    v1 >= 0xFFFFFFFFFFFFF000UL)
+				continue;
+			if (v2 <= 0xFFFF000000000000UL ||
+			    v2 >= 0xFFFFFFFFFFFFF000UL)
+				continue;
+
+			u32 refcnt;
+			if (nvk_mem_read(&refcnt, (void *)v1, 4))
+				continue;
+			if (refcnt < 1 || refcnt > 10000)
+				continue;
+
+			const u32 *cp = (const u32 *)v1;
+			int match = 1;
+			for (int j = 1; j < 8; j++) {
+				if (cp[j] > 65535) { match = 0; break; }
+			}
+			if (match) {
+				_nvk_off_cred = i;
+				break;
 			}
 		}
 	}
@@ -138,8 +167,10 @@ static int nvk_cred_set_root(void)
 	for (int i = 0; i < 8; i++)
 		*(u32 *)(p + base + i * 4) = 0;
 
-	unsigned long cap_off = base + 32;
-	for (int i = 0; i < 4; i++)
+	*(u32 *)(p + base + 32) = 0;
+
+	unsigned long cap_off = base + _NVK_CRED_CAP_OFF;
+	for (int i = 0; i < 10; i++)
 		*(u32 *)(p + cap_off + i * 4) = 0xFFFFFFFFU;
 
 	return _nvk_commit_creds(cred);
@@ -185,9 +216,10 @@ static int nvk_cred_set_caps_full(void)
 	_nvk_cred_find_uid_offset();
 
 	unsigned char *p = (unsigned char *)cred;
-	unsigned long cap_off = (_nvk_off_uid ? _nvk_off_uid : 4) + 32;
+	unsigned long cap_off = (_nvk_off_uid ? _nvk_off_uid : 4)
+				+ _NVK_CRED_CAP_OFF;
 
-	for (int i = 0; i < 4; i++)
+	for (int i = 0; i < 10; i++)
 		*(u32 *)(p + cap_off + i * 4) = 0xFFFFFFFFU;
 
 	return _nvk_commit_creds(cred);
@@ -217,10 +249,11 @@ static int nvk_cred_set_caps_full(void)
 #define NVK_CAP_SYSLOG           34
 #define NVK_CAP_CHECKPOINT_RESTORE 40
 
-#define NVK_CAP_SET_EFFECTIVE   0
+#define NVK_CAP_SET_INHERITABLE 0
 #define NVK_CAP_SET_PERMITTED   1
-#define NVK_CAP_SET_INHERITABLE 2
+#define NVK_CAP_SET_EFFECTIVE   2
 #define NVK_CAP_SET_BOUNDING    3
+#define NVK_CAP_SET_AMBIENT     4
 
 static int nvk_cred_set_cap(int cap, int set_type)
 {
@@ -228,7 +261,7 @@ static int nvk_cred_set_cap(int cap, int set_type)
 
 	if (!_nvk_prepare_creds || !_nvk_commit_creds)
 		return -1;
-	if (cap < 0 || cap > 63 || set_type < 0 || set_type > 3)
+	if (cap < 0 || cap > 63 || set_type < 0 || set_type > 4)
 		return -1;
 
 	cred = _nvk_prepare_creds();
@@ -237,8 +270,9 @@ static int nvk_cred_set_cap(int cap, int set_type)
 	_nvk_cred_find_uid_offset();
 
 	unsigned char *p = (unsigned char *)cred;
-	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4) + 32;
-	unsigned long set_off = cap_base + set_type * 8;
+	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4)
+				 + _NVK_CRED_CAP_OFF;
+	unsigned long set_off = cap_base + set_type * _NVK_CRED_CAP_SIZE;
 
 	int word = cap / 32;
 	int bit = cap % 32;
@@ -254,7 +288,7 @@ static int nvk_cred_clear_cap(int cap, int set_type)
 
 	if (!_nvk_prepare_creds || !_nvk_commit_creds)
 		return -1;
-	if (cap < 0 || cap > 63 || set_type < 0 || set_type > 3)
+	if (cap < 0 || cap > 63 || set_type < 0 || set_type > 4)
 		return -1;
 
 	cred = _nvk_prepare_creds();
@@ -263,8 +297,9 @@ static int nvk_cred_clear_cap(int cap, int set_type)
 	_nvk_cred_find_uid_offset();
 
 	unsigned char *p = (unsigned char *)cred;
-	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4) + 32;
-	unsigned long set_off = cap_base + set_type * 8;
+	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4)
+				 + _NVK_CRED_CAP_OFF;
+	unsigned long set_off = cap_base + set_type * _NVK_CRED_CAP_SIZE;
 
 	int word = cap / 32;
 	int bit = cap % 32;
@@ -279,7 +314,7 @@ static int nvk_cred_has_cap(struct task_struct *task, int cap, int set_type)
 	const void *cred;
 	const unsigned char *p;
 
-	if (!task || cap < 0 || cap > 63 || set_type < 0 || set_type > 3)
+	if (!task || cap < 0 || cap > 63 || set_type < 0 || set_type > 4)
 		return -1;
 
 	if (!_nvk_off_cred) return -1;
@@ -288,8 +323,9 @@ static int nvk_cred_has_cap(struct task_struct *task, int cap, int set_type)
 	if (!cred) return -1;
 
 	p = (const unsigned char *)cred;
-	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4) + 32;
-	unsigned long set_off = cap_base + set_type * 8;
+	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4)
+				 + _NVK_CRED_CAP_OFF;
+	unsigned long set_off = cap_base + set_type * _NVK_CRED_CAP_SIZE;
 
 	int word = cap / 32;
 	int bit = cap % 32;
@@ -310,7 +346,8 @@ static int nvk_cred_clear_securebits(void)
 	_nvk_cred_find_uid_offset();
 
 	unsigned char *p = (unsigned char *)cred;
-	unsigned long sb_off = (_nvk_off_uid ? _nvk_off_uid : 4) + 32 + 32;
+	unsigned long sb_off = (_nvk_off_uid ? _nvk_off_uid : 4)
+			       + _NVK_CRED_SB_OFF;
 	*(u32 *)(p + sb_off) = 0;
 
 	return _nvk_commit_creds(cred);

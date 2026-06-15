@@ -68,6 +68,32 @@ check_elf() {
       ;;
   esac
 
+  # Verify no GOT section (modules must use direct access)
+  case "$sections" in
+    *".got"*)
+      echo "  WARN: $name — has .got section (unexpected)"
+      ;;
+  esac
+
+  # Verify init/exit relocations exist
+  local relocs
+  relocs=$("$OBJDUMP" -r "$ko" 2>/dev/null || true)
+  case "$relocs" in
+    *init_module*) ;;
+    *)
+      echo "  FAIL: $name — missing init_module relocation"
+      return 1
+      ;;
+  esac
+
+  # Verify no leaked kernel symbol names (xorstr check)
+  # Only flag exact standalone kernel symbol names, not our own nvk_ variables
+  local leaked
+  leaked=$(strings "$ko" 2>/dev/null | grep -xc "kallsyms_lookup_name\|module_alloc\|flush_icache_range\|_printk\|sys_call_table\|selinux_enforcing" || true)
+  if [ "$leaked" -gt 0 ]; then
+    echo "  WARN: $name — $leaked unencrypted kernel symbol names"
+  fi
+
   return 0
 }
 

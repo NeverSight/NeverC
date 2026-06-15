@@ -229,4 +229,92 @@ static __always_inline int nvk_has_mte(void)
 	return ((pfr1 >> 8) & 0xF) >= 2;
 }
 
+static __always_inline int nvk_has_epac(void)
+{
+	unsigned long isar1;
+	__asm__ __volatile__("mrs %0, id_aa64isar1_el1" : "=r"(isar1));
+	int apa = (isar1 >> 4) & 0xF;
+	int api = (isar1 >> 8) & 0xF;
+	return (apa >= 2) || (api >= 2);
+}
+
+static __always_inline int nvk_has_fpac(void)
+{
+	unsigned long isar1;
+	__asm__ __volatile__("mrs %0, id_aa64isar1_el1" : "=r"(isar1));
+	int apa = (isar1 >> 4) & 0xF;
+	int api = (isar1 >> 8) & 0xF;
+	return (apa >= 3) || (api >= 3);
+}
+
+static __always_inline int nvk_has_sve(void)
+{
+	unsigned long pfr0;
+	__asm__ __volatile__("mrs %0, id_aa64pfr0_el1" : "=r"(pfr0));
+	return ((pfr0 >> 32) & 0xF) != 0;
+}
+
+struct nvk_hw_caps {
+	int pac;
+	int epac;
+	int fpac;
+	int bti;
+	int mte;
+	int sve;
+	int cfi;
+};
+
+static void nvk_detect_hw_caps(struct nvk_hw_caps *caps)
+{
+	if (!caps) return;
+	caps->pac  = nvk_has_pac();
+	caps->epac = nvk_has_epac();
+	caps->fpac = nvk_has_fpac();
+	caps->bti  = nvk_has_bti();
+	caps->mte  = nvk_has_mte();
+	caps->sve  = nvk_has_sve();
+	caps->cfi  = nvk_has_cfi();
+}
+
+enum nvk_version_match {
+	NVK_VER_EXACT   =  0,
+	NVK_VER_COMPAT  =  1,
+	NVK_VER_MISMATCH = -1,
+	NVK_VER_UNKNOWN  = -2,
+};
+
+static int nvk_check_kernel_match(void)
+{
+	if (!_nvk_kinfo.detected)
+		return NVK_VER_UNKNOWN;
+
+	u32 expected_major = 0, expected_minor = 0;
+#if NVK_KERNEL == 510
+	expected_major = 5; expected_minor = 10;
+#elif NVK_KERNEL == 515
+	expected_major = 5; expected_minor = 15;
+#elif NVK_KERNEL == 601
+	expected_major = 6; expected_minor = 1;
+#elif NVK_KERNEL == 606
+	expected_major = 6; expected_minor = 6;
+#elif NVK_KERNEL == 612
+	expected_major = 6; expected_minor = 12;
+#endif
+
+	if (_nvk_kinfo.major == expected_major &&
+	    _nvk_kinfo.minor == expected_minor)
+		return NVK_VER_EXACT;
+
+	if (_nvk_kinfo.major == expected_major)
+		return NVK_VER_COMPAT;
+
+	return NVK_VER_MISMATCH;
+}
+
+static __always_inline int nvk_should_abort_on_mismatch(void)
+{
+	int r = nvk_check_kernel_match();
+	return r == NVK_VER_MISMATCH;
+}
+
 #endif /* NVK_COMPAT_H */

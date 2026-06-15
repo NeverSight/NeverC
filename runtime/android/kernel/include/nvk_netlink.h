@@ -108,12 +108,27 @@ struct nvk_nl_sock {
 			const void *data, u32 len);
 };
 
+#define NVK_NL_MAX_SOCKS 4
+
 static void _nvk_nl_dispatch(void *skb);
-static struct nvk_nl_sock *_nvk_nl_active;
+static struct nvk_nl_sock *_nvk_nl_socks[NVK_NL_MAX_SOCKS];
+static int _nvk_nl_sock_count;
+
+static struct nvk_nl_sock *_nvk_nl_find_by_sock(void *sock)
+{
+	int i;
+	for (i = 0; i < _nvk_nl_sock_count; i++) {
+		if (_nvk_nl_socks[i] && _nvk_nl_socks[i]->sock == sock)
+			return _nvk_nl_socks[i];
+	}
+	return _nvk_nl_sock_count > 0 ? _nvk_nl_socks[0] : (void *)0;
+}
+
+static struct nvk_nl_sock *_nvk_nl_active_dispatch;
 
 static void _nvk_nl_dispatch(void *skb)
 {
-	struct nvk_nl_sock *ns = _nvk_nl_active;
+	struct nvk_nl_sock *ns = _nvk_nl_active_dispatch;
 	void *nlh;
 	unsigned char *data;
 	u32 pid, type, seq, payload_len;
@@ -167,22 +182,36 @@ static int nvk_nl_open(struct nvk_nl_sock *ns, int proto,
 
 	ns->proto = proto;
 	ns->handler = handler;
-	_nvk_nl_active = ns;
+	_nvk_nl_active_dispatch = ns;
 
 	ns->sock = _nvk_nl_create(*_nvk_nl_init_net, proto, &cfg);
 	if (!ns->sock)
 		return -3;
+
+	if (_nvk_nl_sock_count < NVK_NL_MAX_SOCKS)
+		_nvk_nl_socks[_nvk_nl_sock_count++] = ns;
 
 	return 0;
 }
 
 static void nvk_nl_close(struct nvk_nl_sock *ns)
 {
+	int i;
 	if (!ns || !ns->sock) return;
 	_nvk_nl_release(ns->sock);
 	ns->sock = (void *)0;
-	if (_nvk_nl_active == ns)
-		_nvk_nl_active = (void *)0;
+
+	for (i = 0; i < _nvk_nl_sock_count; i++) {
+		if (_nvk_nl_socks[i] == ns) {
+			_nvk_nl_socks[i] =
+				_nvk_nl_socks[--_nvk_nl_sock_count];
+			break;
+		}
+	}
+	if (_nvk_nl_active_dispatch == ns) {
+		_nvk_nl_active_dispatch = _nvk_nl_sock_count > 0
+				? _nvk_nl_socks[0] : (void *)0;
+	}
 }
 
 static int nvk_nl_send(struct nvk_nl_sock *ns, u32 pid,
@@ -226,6 +255,36 @@ static int nvk_nl_reply(struct nvk_nl_sock *ns, u32 pid,
 			u32 seq, const void *data, u32 len)
 {
 	return nvk_nl_send(ns, pid, 0, seq, data, len);
+}
+
+
+static u64 _nvk_nl_auth_key;
+static u32 _nvk_nl_auth_pid;
+static int _nvk_nl_auth_ok;
+
+static __always_inline void nvk_nl_set_auth_key(u64 key)
+{
+	_nvk_nl_auth_key = key;
+}
+
+static __always_inline int nvk_nl_check_auth(u32 pid, u64 token)
+{
+	if (_nvk_nl_auth_key == 0)
+		return 1;
+	if (token == _nvk_nl_auth_key) {
+		_nvk_nl_auth_pid = pid;
+		_nvk_nl_auth_ok = 1;
+		return 1;
+	}
+	if (_nvk_nl_auth_ok && pid == _nvk_nl_auth_pid)
+		return 1;
+	return 0;
+}
+
+static __always_inline void nvk_nl_revoke_auth(void)
+{
+	_nvk_nl_auth_pid = 0;
+	_nvk_nl_auth_ok = 0;
 }
 
 #endif /* NVK_NETLINK_H */

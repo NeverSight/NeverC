@@ -51,6 +51,11 @@ trap "rm -f $TMP" EXIT
 
 cp "$INPUT" "$TMP"
 
+READELF="$(find_llvm_tool llvm-readelf)"
+if [ -z "$READELF" ]; then
+  READELF="$(find_llvm_tool readelf)"
+fi
+
 if [ -n "$OBJCOPY" ]; then
   "$OBJCOPY" \
     --strip-debug \
@@ -60,6 +65,10 @@ if [ -n "$OBJCOPY" ]; then
     --remove-section=.note.gnu.property \
     --remove-section=.eh_frame \
     --remove-section=.eh_frame_hdr \
+    --remove-section=.BTF \
+    --remove-section=.BTF_ext \
+    --remove-section=.llvm_addrsig \
+    --remove-section=.debug_* \
     "$TMP" 2>/dev/null || true
 fi
 
@@ -71,6 +80,16 @@ if [ -n "$STRIP" ]; then
     --keep-symbol=__this_module \
     "$TMP" 2>/dev/null || true
 fi
+
+scrub_modinfo() {
+  local file="$1"
+  [ -z "$OBJCOPY" ] && return
+
+  local sensitive_keys="srcversion= retpoline= depends= staging= intree="
+  for key in $sensitive_keys; do
+    "$OBJCOPY" --update-section .modinfo=/dev/null "$file" 2>/dev/null || true
+  done
+}
 
 cp "$TMP" "$OUTPUT"
 
@@ -84,3 +103,9 @@ else
 fi
 
 echo "stripped: $BEFORE -> $AFTER bytes (-${SAVED}B / -${PCT}%)"
+
+if [ -n "$READELF" ]; then
+  sections=$("$READELF" -S "$OUTPUT" 2>/dev/null | wc -l)
+  syms=$("$READELF" -s "$OUTPUT" 2>/dev/null | grep -c "FUNC\|OBJECT" || true)
+  echo "  sections: $sections, symbols: $syms"
+fi

@@ -118,7 +118,7 @@ static const char *nvk_task_comm(struct task_struct *task)
 		struct task_struct *init = _nvk_init_task;
 		const unsigned char *p = (const unsigned char *)init;
 		unsigned long i;
-		for (i = 0x400; i < 0x1000; i++) {
+		for (i = 0x300; i < 0x1000; i++) {
 			if (p[i] == 's' && p[i+1] == 'w' &&
 			    p[i+2] == 'a' && p[i+3] == 'p' &&
 			    p[i+4] == 'p' && p[i+5] == 'e' &&
@@ -151,12 +151,18 @@ static int nvk_for_each_task(nvk_task_callback_t callback, void *data)
 		const unsigned char *p = (const unsigned char *)init;
 		unsigned long i;
 		for (i = 0x300; i < 0xA00; i += 8) {
-			unsigned long v1 = *(unsigned long *)(p + i);
-			unsigned long v2 = *(unsigned long *)(p + i + 8);
-			if (v1 > 0xFFFF000000000000UL &&
-			    v2 > 0xFFFF000000000000UL &&
-			    v1 != v2 &&
-			    v1 != (unsigned long)(p + i)) {
+			unsigned long next = *(unsigned long *)(p + i);
+			unsigned long prev = *(unsigned long *)(p + i + 8);
+			if (next <= 0xFFFF000000000000UL ||
+			    prev <= 0xFFFF000000000000UL)
+				continue;
+			if (next == (unsigned long)(p + i))
+				continue;
+			unsigned long peer_prev;
+			if (nvk_mem_read(&peer_prev,
+					 (void *)(next + 8), 8))
+				continue;
+			if (peer_prev == (unsigned long)(p + i)) {
 				_nvk_off_tasks = i;
 				break;
 			}
@@ -237,10 +243,35 @@ static int nvk_send_signal(int pid, int sig)
 	if (!_nvk_send_sig_info || !_nvk_find_task_by_vpid)
 		return -1;
 
+	if (_nvk_rcu_read_lock) _nvk_rcu_read_lock();
 	task = _nvk_find_task_by_vpid(pid);
-	if (!task) return -3;
+	if (!task) {
+		if (_nvk_rcu_read_unlock) _nvk_rcu_read_unlock();
+		return -3;
+	}
 
-	return _nvk_send_sig_info(sig, (void *)0, task, 0);
+	int ret = _nvk_send_sig_info(sig, (void *)0, task, 0);
+	if (_nvk_rcu_read_unlock) _nvk_rcu_read_unlock();
+	return ret;
+}
+
+static int nvk_is_current_root(void)
+{
+	if (!_nvk_proc_inited) return -1;
+
+	unsigned char *task = (unsigned char *)current;
+	unsigned long i;
+	for (i = 0x500; i < 0x800; i += 8) {
+		unsigned long v = *(unsigned long *)(task + i);
+		if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {
+			const u32 *cp = (const u32 *)v;
+			u32 refcnt = cp[0];
+			if (refcnt < 1 || refcnt > 10000) continue;
+			if (cp[1] == 0 && cp[2] == 0 && cp[3] == 0)
+				return 1;
+		}
+	}
+	return 0;
 }
 
 #endif /* NVK_PROCESS_H */

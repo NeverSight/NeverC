@@ -35,6 +35,18 @@ static __always_inline int nvk_log_get_level(void)
 	return __atomic_load_n(&_nvk_log_level, __ATOMIC_ACQUIRE);
 }
 
+#ifdef NVK_LOG_STRIP
+#define nvk_log_err(...)    ((void)0)
+#define nvk_log_warn(...)   ((void)0)
+#define nvk_log_info(...)   ((void)0)
+#define nvk_log_dbg(...)    ((void)0)
+#define nvk_log_trace(...)  ((void)0)
+#define nvk_log_once(...)   ((void)0)
+#define nvk_log_ratelimit(...)     ((void)0)
+#define nvk_log_ratelimit_n(...)   ((void)0)
+#define nvk_log_hexdump(...)       ((void)0)
+#else
+
 #define nvk_log_err(fmt, ...)                                       \
 	do {                                                         \
 		if (nvk_log_get_level() >= NVK_LOG_ERROR)           \
@@ -76,11 +88,30 @@ static __always_inline int nvk_log_get_level(void)
 
 #define nvk_log_ratelimit(fmt, ...)                                 \
 	do {                                                         \
-		static u64 __last_jiffies;                           \
+		static u64 __last_ts;                                \
 		u64 __now;                                           \
 		__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(__now));\
-		if (__now - __last_jiffies > 100000000ULL) {          \
-			__last_jiffies = __now;                      \
+		if (__now - __last_ts > 100000000ULL) {               \
+			__last_ts = __now;                           \
+			nvk_log_info(fmt, ##__VA_ARGS__);            \
+		}                                                    \
+	} while (0)
+
+#define nvk_log_ratelimit_n(n, interval_ns, fmt, ...)               \
+	do {                                                         \
+		static u64 __rl_ts;                                  \
+		static int __rl_cnt;                                 \
+		u64 __now;                                           \
+		__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(__now));\
+		u64 __freq;                                          \
+		__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(__freq));\
+		u64 __ticks = (u64)(interval_ns) * __freq / 1000000000ULL;\
+		if (__now - __rl_ts > __ticks) {                     \
+			__rl_ts = __now;                             \
+			__rl_cnt = 0;                                \
+		}                                                    \
+		if (__rl_cnt < (n)) {                                \
+			__rl_cnt++;                                  \
 			nvk_log_info(fmt, ##__VA_ARGS__);            \
 		}                                                    \
 	} while (0)
@@ -110,5 +141,7 @@ static __always_inline void nvk_log_hexdump(const char *prefix,
 		pr_info("%s: %04zx: %s\n", prefix, i, line);
 	}
 }
+
+#endif /* NVK_LOG_STRIP */
 
 #endif /* NVK_LOG_H */

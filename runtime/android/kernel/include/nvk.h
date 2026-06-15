@@ -90,4 +90,30 @@ static int nvk_hook_ctx_by_sym(struct nvk_hook_ctx *h, const char *sym_name,
 	return nvk_hook_install_ctx(h, target, handler, call_orig);
 }
 
+static int nvk_hook_auto_by_sym(struct nvk_hook *h, const char *sym_name,
+				void *replace, void **orig,
+				struct nvk_ftrace_hook *ft)
+{
+	void *target = (void *)kallsyms_lookup_name(sym_name);
+	if (!target) return -1;
+	return nvk_hook_auto(h, target, replace, orig, ft);
+}
+
+static void nvk_cleanup_all(void)
+{
+	_nvk_state.ready = 0;
+	nvk_thread_stop_all();
+	nvk_dmesg_suppress_cleanup();
+	nvk_kmsg_read_filter_cleanup();
+	nvk_pid_hide_cleanup();
+	nvk_mount_filter_cleanup();
+	nvk_maps_filter_clear();
+	nvk_hook_cleanup();
+}
+
+static int nvk_init_ftrace(void)
+{
+	return nvk_ftrace_init();
+}
+
 #endif /* NVK_H */

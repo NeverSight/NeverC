@@ -64,14 +64,13 @@ static int nvk_log_bootstrap(void)
 	return nvk_printk ? 0 : -1;
 }
 
-/* Resolve kallsyms + printk in one call.  Use at the top of module init. */
-#define NVK_BOOTSTRAP()                                                        \
-	({                                                                     \
-		int __r = nvk_ksym_bootstrap();                                \
-		if (__r == 0)                                                  \
-			__r = nvk_log_bootstrap();                             \
-		__r;                                                           \
-	})
+static __always_inline int NVK_BOOTSTRAP(void)
+{
+	int r = nvk_ksym_bootstrap();
+	if (r == 0)
+		r = nvk_log_bootstrap();
+	return r;
+}
 
 #define NVK_DEFINE_MODULE(modname)                                            \
 	MODULE_INFO(name, modname);                                           \

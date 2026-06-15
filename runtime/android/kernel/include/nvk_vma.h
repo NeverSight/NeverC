@@ -21,8 +21,8 @@ typedef void *(*nvk_page_address_fn)(void *page);
 typedef void  (*nvk_put_page_fn)(void *page);
 typedef void  (*nvk_kunmap_fn)(void *page);
 typedef void *(*nvk_kmap_fn)(void *page);
-typedef int   (*nvk_mmap_write_lock_fn)(void *mm);
-typedef void  (*nvk_mmap_write_unlock_fn)(void *mm);
+typedef void  (*nvk_mmap_read_lock_fn)(void *mm);
+typedef void  (*nvk_mmap_read_unlock_fn)(void *mm);
 
 static nvk_find_vma_fn          _nvk_find_vma;
 static nvk_access_remote_fn     _nvk_access_remote;
@@ -31,8 +31,8 @@ static nvk_page_address_fn      _nvk_page_address;
 static nvk_put_page_fn          _nvk_put_page;
 static nvk_kmap_fn              _nvk_kmap;
 static nvk_kunmap_fn            _nvk_kunmap;
-static nvk_mmap_write_lock_fn   _nvk_mmap_write_lock;
-static nvk_mmap_write_unlock_fn _nvk_mmap_write_unlock;
+static nvk_mmap_read_lock_fn    _nvk_mmap_read_lock;
+static nvk_mmap_read_unlock_fn  _nvk_mmap_read_unlock;
 static int                      _nvk_vma_inited;
 
 static unsigned long _nvk_off_mm;
@@ -75,16 +75,16 @@ static int nvk_vma_init(void)
 		(nvk_kmap_fn)NVK_LOOKUP("kmap");
 	_nvk_kunmap =
 		(nvk_kunmap_fn)NVK_LOOKUP("kunmap");
-	_nvk_mmap_write_lock =
-		(nvk_mmap_write_lock_fn)NVK_LOOKUP("mmap_write_lock");
-	if (!_nvk_mmap_write_lock)
-		_nvk_mmap_write_lock =
-			(nvk_mmap_write_lock_fn)NVK_LOOKUP("down_write");
-	_nvk_mmap_write_unlock =
-		(nvk_mmap_write_unlock_fn)NVK_LOOKUP("mmap_write_unlock");
-	if (!_nvk_mmap_write_unlock)
-		_nvk_mmap_write_unlock =
-			(nvk_mmap_write_unlock_fn)NVK_LOOKUP("up_write");
+	_nvk_mmap_read_lock =
+		(nvk_mmap_read_lock_fn)NVK_LOOKUP("mmap_read_lock");
+	if (!_nvk_mmap_read_lock)
+		_nvk_mmap_read_lock =
+			(nvk_mmap_read_lock_fn)NVK_LOOKUP("down_read");
+	_nvk_mmap_read_unlock =
+		(nvk_mmap_read_unlock_fn)NVK_LOOKUP("mmap_read_unlock");
+	if (!_nvk_mmap_read_unlock)
+		_nvk_mmap_read_unlock =
+			(nvk_mmap_read_unlock_fn)NVK_LOOKUP("up_read");
 
 	_nvk_vma_inited = 1;
 	return _nvk_find_vma ? 0 : -1;
@@ -122,6 +122,7 @@ static int nvk_vma_find(struct task_struct *task, unsigned long addr,
 			struct nvk_vma_info *info)
 {
 	void *mm, *vma;
+	int locked = 0;
 
 	if (!_nvk_find_vma || !info)
 		return -1;
@@ -129,14 +130,24 @@ static int nvk_vma_find(struct task_struct *task, unsigned long addr,
 	mm = _nvk_task_mm(task);
 	if (!mm) return -2;
 
+	if (_nvk_mmap_read_lock) {
+		_nvk_mmap_read_lock(mm);
+		locked = 1;
+	}
+
 	vma = _nvk_find_vma(mm, addr);
-	if (!vma) return -3;
+	if (!vma) {
+		if (locked) _nvk_mmap_read_unlock(mm);
+		return -3;
+	}
 
 	const unsigned long *v = (const unsigned long *)vma;
 	info->start = v[0];
 	info->end   = v[1];
 	info->flags = v[2] & 0xFFFF;
 	info->pgoff = v[3];
+
+	if (locked) _nvk_mmap_read_unlock(mm);
 
 	if (addr < info->start)
 		return -3;
@@ -150,13 +161,18 @@ static int nvk_vma_walk(struct task_struct *task,
 			nvk_vma_callback_t callback, void *data)
 {
 	void *mm;
-	int count = 0;
+	int count = 0, locked = 0;
 
 	if (!_nvk_find_vma || !callback)
 		return -1;
 
 	mm = _nvk_task_mm(task);
 	if (!mm) return -2;
+
+	if (_nvk_mmap_read_lock) {
+		_nvk_mmap_read_lock(mm);
+		locked = 1;
+	}
 
 	unsigned long addr = 0;
 	for (;;) {
@@ -182,6 +198,8 @@ static int nvk_vma_walk(struct task_struct *task,
 		addr = info.end;
 		if (count > 65536) break;
 	}
+
+	if (locked) _nvk_mmap_read_unlock(mm);
 	return count;
 }
 

@@ -82,18 +82,21 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | Header | Purpose |
 |--------|---------|
 | `nvkmod.h` | Module entry point, kprobe bootstrap, `NVK_BOOTSTRAP()`, `NVK_DEFINE_MODULE()` |
-| `nvk_hook.h` | arm64 inline-hook engine — simple replacement + full-register context + FP/SIMD save + reentry guard + WFE/SEV spinlock + STP X29/X30 frame-pointer detection |
+| `nvk_hook.h` | arm64 inline-hook engine — simple/context/FP-SIMD modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + atomic stop_machine patch + D-cache→I-cache coherent flush + trampoline pool + ftrace fallback + hook chain + 6.12 execmem support |
 | `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` |
 | `nvk_syscall.h` | `nvk_syscall_replace/restore`, `nvk_syscall_get`, arm64 syscall number definitions |
 | `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
 | `nvk_cred.h` | `nvk_cred_set_root`, `nvk_cred_set_uid`, `nvk_cred_set_caps_full`, `nvk_cred_get_ids` |
 | `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_bypass_install/remove` (AVC + inode hook) |
-| `nvk_hide.h` | `nvk_mod_hide/show`, `nvk_mod_full_hide` (list + sysfs + /proc/modules seq_show filter) |
+| `nvk_hide.h` | `nvk_mod_hide/show`, `nvk_mod_full_hide` (list + sysfs + /proc/modules + /proc/vmallocinfo + dmesg + PID + mount + maps filter) |
 | `nvk_log.h` | `nvk_log_err/warn/info/dbg/trace`, `nvk_log_once`, `nvk_log_ratelimit`, `nvk_log_hexdump` |
 | `nvk_thread.h` | `nvk_thread_run`, `nvk_thread_stop`, `nvk_thread_sleep_ms`, `nvk_thread_stop_all` |
 | `nvk_netlink.h` | `nvk_nl_open/close/send/reply` — bidirectional netlink IPC with dispatch callback |
 | `nvk_addr.h` | `nvk_virt_to_phys`, `nvk_translate_user`, `nvk_walk_pgtable`, VA bits / page size detection |
 | `nvk_compat.h` | `nvk_kernel_version()`, `NVK_KERNEL_GE(maj,min)`, `nvk_has_pac/bti/mte`, versioned symbol lookup helpers |
+| `nvk_file.h` | `nvk_file_open/read/write/close`, `nvk_file_exists`, `nvk_file_read_all/write_all` |
+| `nvk_anti.h` | Environment detection (emulator, debugger, root, su binary, Magisk/KSU/APatch, SELinux permissive, hook/kprobe tampering), integrity verification, watchdog |
+| `nvk_vma.h` | VMA operations, process memory map inspection |
 
 All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xorstr.
 
@@ -108,6 +111,7 @@ All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xor
 | `android-kernel-syscall-hook` | sys_call_table replacement + inline hook (dual mode) |
 | `android-kernel-stealth` | Module concealment (list / sysfs / proc + SELinux + root) |
 | `android-kernel-netlink` | User↔kernel netlink IPC channel (ping/version/echo) |
+| `android-kernel-full` | Full SDK demo — initializes all subsystems, exercises hook/cred/hide/netlink |
 
 ## struct module offsets (important before loading on a device)
 

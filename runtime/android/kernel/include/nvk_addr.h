@@ -144,11 +144,12 @@ static int nvk_walk_pgtable(unsigned long vaddr, struct nvk_pte_info *info)
 {
 	unsigned long ttbr, table_addr, entry;
 	int shift = nvk_page_shift();
-	int bits = nvk_va_bits();
+	int bits = (int)nvk_va_bits();
 	int level, levels;
 	int idx_bits = shift - 3;
 
 	if (!info) return -1;
+	if (!_nvk_kimage_voffset_a) return -5;
 
 	info->valid = 0;
 	info->pte_val = 0;
@@ -173,24 +174,17 @@ static int nvk_walk_pgtable(unsigned long vaddr, struct nvk_pte_info *info)
 		int s;
 		unsigned long idx, mask;
 
-		if (shift == 12)       s = 39 - 9 * (level - 1);
-		else if (shift == 14)  s = 47 - 11 * (level - 1);
-		else                   s = 42 - 13 * (level - 1);
-
-		if (level == 3) s = shift;
-		else if (level == 2) s = shift + idx_bits;
-		else if (level == 1) s = shift + idx_bits * 2;
-		else                 s = shift + idx_bits * 3;
+		s = shift + idx_bits * (3 - level);
 
 		mask = (1UL << idx_bits) - 1;
 		idx = (vaddr >> s) & mask;
 
+		unsigned long pte_phys = table_addr + idx * 8;
 		unsigned long pte_addr;
 		if (_nvk_kimage_voffset_a)
-			pte_addr = table_addr + *_nvk_kimage_voffset_a
-				   + idx * 8;
+			pte_addr = pte_phys + *_nvk_kimage_voffset_a;
 		else
-			pte_addr = table_addr + idx * 8;
+			pte_addr = pte_phys;
 
 		if (nvk_mem_read(&entry, (void *)pte_addr, 8))
 			return -2;

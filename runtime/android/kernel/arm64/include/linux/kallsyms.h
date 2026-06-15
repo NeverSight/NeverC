@@ -8,33 +8,75 @@
 typedef unsigned long (*nvk_kallsyms_lookup_name_fn)(const char *name);
 extern nvk_kallsyms_lookup_name_fn nvk_kallsyms_lookup_name;
 
-/* Raw lookup (caller manages string encryption). */
-#define kallsyms_lookup_name(name)                                            \
-	(nvk_kallsyms_lookup_name ? nvk_kallsyms_lookup_name(name) : 0UL)
+#define _NVK_SYM_CACHE_BITS  7
+#define _NVK_SYM_CACHE_SIZE  (1 << _NVK_SYM_CACHE_BITS)
+#define _NVK_SYM_CACHE_MASK  (_NVK_SYM_CACHE_SIZE - 1)
 
-/* Resolve a symbol to a typed pointer.  String is XOR-encrypted. */
+struct _nvk_sym_entry {
+	u32           hash;
+	unsigned long addr;
+};
+
+static struct _nvk_sym_entry _nvk_sym_cache[_NVK_SYM_CACHE_SIZE];
+
+static __always_inline u32 _nvk_sym_hash(const char *s)
+{
+	u32 h = 0x811C9DC5U;
+	while (*s) {
+		h ^= (unsigned char)*s++;
+		h *= 0x01000193U;
+	}
+	return h;
+}
+
+static __always_inline unsigned long _nvk_sym_cached(const char *name)
+{
+	u32 h = _nvk_sym_hash(name);
+	u32 idx = h & _NVK_SYM_CACHE_MASK;
+
+	if (_nvk_sym_cache[idx].hash == h && _nvk_sym_cache[idx].addr)
+		return _nvk_sym_cache[idx].addr;
+
+	if (!nvk_kallsyms_lookup_name)
+		return 0;
+
+	unsigned long addr = nvk_kallsyms_lookup_name(name);
+	if (addr) {
+		_nvk_sym_cache[idx].hash = h;
+		_nvk_sym_cache[idx].addr = addr;
+	}
+	return addr;
+}
+
+#define kallsyms_lookup_name(name) _nvk_sym_cached(name)
+
 #define NVK_LOOKUP(sym)                                                       \
 	((void *)kallsyms_lookup_name(NC_XORSTR(sym)))
 
-/* Declare + lazily resolve a kernel function pointer on first use. */
 #define NVK_RESOLVE(fnptr, sym)                                                \
 	((fnptr) ? (fnptr) : ((fnptr) = (__typeof__(fnptr))NVK_LOOKUP(sym)))
 
-/* Resolve into a typed local var, or return error code on failure. */
 #define NVK_LOOKUP_OR_FAIL(var, sym, errval)                                   \
 	do {                                                                   \
 		(var) = (__typeof__(var))NVK_LOOKUP(sym);                      \
 		if (!(var)) return (errval);                                   \
 	} while (0)
 
-/* Cast-assign a function pointer from kallsyms in one statement. */
 #define NVK_LOOKUP_FN(fnptr, sym)                                              \
 	((fnptr) = (__typeof__(fnptr))NVK_LOOKUP(sym))
 
-/* Try sym first, fallback to alt if not found. */
 #define NVK_LOOKUP2(sym, alt)                                                  \
 	({ void *__p = NVK_LOOKUP(sym);                                       \
 	   if (!__p) __p = NVK_LOOKUP(alt);                                   \
 	   __p; })
+
+static __always_inline void nvk_sym_cache_clear(void)
+{
+	unsigned long i;
+	for (i = 0; i < _NVK_SYM_CACHE_SIZE; i++) {
+		_nvk_sym_cache[i].hash = 0;
+		_nvk_sym_cache[i].addr = 0;
+	}
+}
 
 #endif /* _NVK_LINUX_KALLSYMS_H */
