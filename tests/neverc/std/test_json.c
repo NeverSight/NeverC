@@ -430,6 +430,68 @@ static void test_large_strings(void) {
     free(jo);
 }
 
+/* Append `"<klen bytes of c>":val,` to buf (klen==0 produces the empty key ""). */
+static void jkey_put(char *buf, size_t *off, size_t cap, char c, int klen, int val) {
+    size_t o = *off;
+    buf[o++] = '"';
+    for (int i = 0; i < klen; i++) buf[o++] = c;
+    o += (size_t)snprintf(buf + o, cap - o, "\":%d,", val);
+    *off = o;
+}
+
+/* Exercises every length branch of the object key index hash (the FNV-1a ->
+ * wyhash upgrade): empty / 1-3 / 4-16 / 17-48 / >48-byte keys, duplicate
+ * collapse at several lengths (last value wins), index growth past its initial
+ * capacity, and a guaranteed miss. The 17-48 and >48 byte keys are not covered
+ * by test_large_and_dup_objects, which only uses short "kN" keys. */
+static void test_keymap_hash_lengths(void) {
+    printf("[keymap_hash_lengths]\n");
+    static char buf[8192];
+    size_t off = 0;
+    buf[off++] = '{';
+    jkey_put(buf, &off, sizeof buf, 'a', 0,   1);    /* empty key (len 0)      */
+    jkey_put(buf, &off, sizeof buf, 'b', 1,   2);    /* len 1   (1-3 path)     */
+    jkey_put(buf, &off, sizeof buf, 'c', 2,   3);
+    jkey_put(buf, &off, sizeof buf, 'd', 3,   4);
+    jkey_put(buf, &off, sizeof buf, 'e', 4,   5);    /* len 4   (4-16 path)    */
+    jkey_put(buf, &off, sizeof buf, 'f', 8,   6);
+    jkey_put(buf, &off, sizeof buf, 'g', 15,  7);
+    jkey_put(buf, &off, sizeof buf, 'h', 16,  8);
+    jkey_put(buf, &off, sizeof buf, 'i', 17,  9);    /* len 17  (17-48 path)   */
+    jkey_put(buf, &off, sizeof buf, 'j', 32, 10);
+    jkey_put(buf, &off, sizeof buf, 'k', 47, 11);
+    jkey_put(buf, &off, sizeof buf, 'l', 48, 12);
+    jkey_put(buf, &off, sizeof buf, 'm', 49, 13);    /* len 49  (>48 stride)   */
+    jkey_put(buf, &off, sizeof buf, 'n', 100,14);    /* len 100 (>48 stride)   */
+    jkey_put(buf, &off, sizeof buf, 'a', 0,   100);  /* duplicates: last wins  */
+    jkey_put(buf, &off, sizeof buf, 'e', 4,   105);
+    jkey_put(buf, &off, sizeof buf, 'm', 49, 113);
+    jkey_put(buf, &off, sizeof buf, 'n', 100,114);
+    if (off && buf[off-1] == ',') off--;
+    buf[off++] = '}';
+
+    neverc_json_value_t *v = neverc_json_parse(buf, off);
+    ASSERT_NOT_NULL(v);
+    if (!v) return;
+    ASSERT_INT_EQ(neverc_json_object_len(v), 14);    /* duplicates collapsed   */
+
+    struct { char c; int klen; int want; } exp[] = {
+        {'a',0,100}, {'b',1,2}, {'c',2,3}, {'d',3,4}, {'e',4,105},
+        {'f',8,6}, {'g',15,7}, {'h',16,8}, {'i',17,9}, {'j',32,10},
+        {'k',47,11}, {'l',48,12}, {'m',49,113}, {'n',100,114},
+    };
+    char key[128];
+    for (size_t i = 0; i < sizeof exp / sizeof exp[0]; i++) {
+        memset(key, exp[i].c, (size_t)exp[i].klen);
+        key[exp[i].klen] = '\0';
+        neverc_json_value_t *e = neverc_json_object_get(v, key);
+        ASSERT_NOT_NULL(e);
+        if (e) ASSERT_INT_EQ((int)neverc_json_number(e), exp[i].want);
+    }
+    ASSERT_NULL(neverc_json_object_get(v, "definitely-absent-key"));
+    neverc_json_free(v);
+}
+
 int main(void) {
     printf("=== NeverC encoding/json Tests ===\n");
     test_parse_null();
@@ -448,6 +510,7 @@ int main(void) {
     test_unicode_escape();
     test_large_strings();
     test_large_and_dup_objects();
+    test_keymap_hash_lengths();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

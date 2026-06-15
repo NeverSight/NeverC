@@ -234,13 +234,73 @@ struct neverc_sync_map {
     neverc_rwmutex_t rw;
 };
 
+/*
+ * wyhash (final v3) for sync.Map keys — same family as maps.c / unique.c /
+ * hash/maphash. Hash only picks the probe start; strcmp re-verifies every hit,
+ * so swapping FNV-1a for wyhash cannot change observable map behavior.
+ * memcpy reads and the nci_wymix portable 64x64 fallback match maps.c.
+ */
+static inline uint64_t smap_read8(const uint8_t *p) {
+    uint64_t v; memcpy(&v, p, 8); return v;
+}
+static inline uint64_t smap_read4(const uint8_t *p) {
+    uint32_t v; memcpy(&v, p, 4); return (uint64_t)v;
+}
+static inline uint64_t smap_wymix(uint64_t a, uint64_t b) {
+#ifdef __SIZEOF_INT128__
+    __uint128_t r = (__uint128_t)a * b;
+    return (uint64_t)r ^ (uint64_t)(r >> 64);
+#else
+    uint64_t ha = a >> 32, la = (uint32_t)a;
+    uint64_t hb = b >> 32, lb = (uint32_t)b;
+    uint64_t rh = ha * hb, rl = la * lb;
+    uint64_t rm0 = ha * lb, rm1 = hb * la;
+    uint64_t t = rl + (rm0 << 32), c = (t < rl);
+    uint64_t lo = t + (rm1 << 32); c += (lo < t);
+    return lo ^ (rh + (rm0 >> 32) + (rm1 >> 32) + c);
+#endif
+}
+
+#define SMAP_WY_S0 0xa0761d6478bd642fULL
+#define SMAP_WY_S1 0xe7037ed1a0b428dbULL
+#define SMAP_WY_S2 0x8ebc6af09c88c6e3ULL
+
 static uint64_t smap_hash(const char *key) {
-    uint64_t h = 14695981039346656037ULL;
-    for (const char *p = key; *p; p++) {
-        h ^= (uint64_t)(unsigned char)*p;
-        h *= 1099511628211ULL;
+    const uint8_t *p = (const uint8_t *)key;
+
+    if (!p[0]) return SMAP_WY_S0;
+    if (!p[1]) return p[0] * SMAP_WY_S1;
+    if (!p[2]) return (((uint64_t)p[0] << 8) | p[1]) * SMAP_WY_S1 ^ SMAP_WY_S0;
+    if (!p[3]) return (((uint64_t)p[0] << 16) | ((uint64_t)p[1] << 8) | p[2]) * SMAP_WY_S1 ^ SMAP_WY_S0;
+
+    size_t len = 4 + strlen(key + 4);
+    uint64_t seed = SMAP_WY_S0;
+    uint64_t a, b;
+
+    if (len <= 16) {
+        a = (smap_read4(p) << 32) | smap_read4(p + ((len >> 3) << 2));
+        b = (smap_read4(p + len - 4) << 32) | smap_read4(p + len - 4 - ((len >> 3) << 2));
+    } else if (len <= 48) {
+        size_t i = 0;
+        for (; i + 16 <= len; i += 16)
+            seed = smap_wymix(smap_read8(p + i) ^ SMAP_WY_S1, smap_read8(p + i + 8) ^ seed);
+        a = smap_read8(p + len - 16);
+        b = smap_read8(p + len - 8);
+    } else {
+        uint64_t s1 = seed, s2 = seed;
+        size_t i = 0;
+        for (; i + 48 <= len; i += 48) {
+            seed = smap_wymix(smap_read8(p + i)      ^ SMAP_WY_S0, smap_read8(p + i + 8)  ^ seed);
+            s1   = smap_wymix(smap_read8(p + i + 16) ^ SMAP_WY_S1, smap_read8(p + i + 24) ^ s1);
+            s2   = smap_wymix(smap_read8(p + i + 32) ^ SMAP_WY_S2, smap_read8(p + i + 40) ^ s2);
+        }
+        seed ^= s1 ^ s2;
+        for (; i + 16 <= len; i += 16)
+            seed = smap_wymix(smap_read8(p + i) ^ SMAP_WY_S1, smap_read8(p + i + 8) ^ seed);
+        a = smap_read8(p + len - 16);
+        b = smap_read8(p + len - 8);
     }
-    return h;
+    return smap_wymix(SMAP_WY_S1 ^ len, smap_wymix(a ^ SMAP_WY_S1, b ^ seed));
 }
 
 neverc_sync_map_t *neverc_sync_map_new(void) {

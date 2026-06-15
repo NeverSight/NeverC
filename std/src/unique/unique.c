@@ -44,14 +44,82 @@ static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 #define UNLOCK() pthread_mutex_unlock(&g_lock)
 #endif
 
-static uint64_t fnv64(const void *data, size_t len) {
-    const unsigned char *p = (const unsigned char *)data;
-    uint64_t h = 14695981039346656037ULL;
-    for (size_t i = 0; i < len; i++) {
-        h ^= p[i];
-        h *= 1099511628211ULL;
+/*
+ * wyhash (final v3) over (data, len) — the same hash maps.c and hash/maphash
+ * use, so the whole std library now shares one hash. It replaces a byte-at-a-time
+ * FNV-1a: wyhash folds 8 bytes per step (and a 48-byte stride past 48 bytes), so
+ * interning long byte slices is dramatically faster, and its stronger mixing
+ * spreads keys better across the linear-probe table (fewer collisions). The hash
+ * only picks a bucket and is re-verified by a full memcmp in entry_matches(), so
+ * swapping the function cannot change which values are considered equal.
+ *
+ * Reads go through memcpy (no unaligned-access UB) and nci_wymix has a portable
+ * 64x64 fallback when __int128 is unavailable, so this is identical on
+ * Windows / Linux / macOS / Android / iOS. The table lives only in process
+ * memory and is never serialized, so endianness affecting the hash is harmless.
+ */
+static inline uint64_t nci_read8(const uint8_t *p) {
+    uint64_t v; memcpy(&v, p, 8); return v;
+}
+static inline uint64_t nci_read4(const uint8_t *p) {
+    uint32_t v; memcpy(&v, p, 4); return (uint64_t)v;
+}
+static inline uint64_t nci_wymix(uint64_t a, uint64_t b) {
+#ifdef __SIZEOF_INT128__
+    __uint128_t r = (__uint128_t)a * b;
+    return (uint64_t)r ^ (uint64_t)(r >> 64);
+#else
+    uint64_t ha = a >> 32, la = (uint32_t)a;
+    uint64_t hb = b >> 32, lb = (uint32_t)b;
+    uint64_t rh = ha * hb, rl = la * lb;
+    uint64_t rm0 = ha * lb, rm1 = hb * la;
+    uint64_t t = rl + (rm0 << 32), c = (t < rl);
+    uint64_t lo = t + (rm1 << 32); c += (lo < t);
+    return lo ^ (rh + (rm0 >> 32) + (rm1 >> 32) + c);
+#endif
+}
+
+#define NCI_WY_S0 0xa0761d6478bd642fULL
+#define NCI_WY_S1 0xe7037ed1a0b428dbULL
+#define NCI_WY_S2 0x8ebc6af09c88c6e3ULL
+
+static uint64_t intern_hash(const void *data, size_t len) {
+    const uint8_t *p = (const uint8_t *)data;
+    uint64_t seed = NCI_WY_S0;
+    uint64_t a, b;
+
+    if (len <= 16) {
+        if (len >= 4) {
+            a = (nci_read4(p) << 32) | nci_read4(p + ((len >> 3) << 2));
+            b = (nci_read4(p + len - 4) << 32)
+              | nci_read4(p + len - 4 - ((len >> 3) << 2));
+        } else if (len > 0) {
+            a = ((uint64_t)p[0] << 16) | ((uint64_t)p[len >> 1] << 8) | p[len - 1];
+            b = 0;
+        } else {
+            a = 0; b = 0;
+        }
+    } else if (len <= 48) {
+        size_t i = 0;
+        for (; i + 16 <= len; i += 16)
+            seed = nci_wymix(nci_read8(p + i) ^ NCI_WY_S1, nci_read8(p + i + 8) ^ seed);
+        a = nci_read8(p + len - 16);
+        b = nci_read8(p + len - 8);
+    } else {
+        uint64_t s1 = seed, s2 = seed;
+        size_t i = 0;
+        for (; i + 48 <= len; i += 48) {
+            seed = nci_wymix(nci_read8(p + i)      ^ NCI_WY_S0, nci_read8(p + i + 8)  ^ seed);
+            s1   = nci_wymix(nci_read8(p + i + 16) ^ NCI_WY_S1, nci_read8(p + i + 24) ^ s1);
+            s2   = nci_wymix(nci_read8(p + i + 32) ^ NCI_WY_S2, nci_read8(p + i + 40) ^ s2);
+        }
+        seed ^= s1 ^ s2;
+        for (; i + 16 <= len; i += 16)
+            seed = nci_wymix(nci_read8(p + i) ^ NCI_WY_S1, nci_read8(p + i + 8) ^ seed);
+        a = nci_read8(p + len - 16);
+        b = nci_read8(p + len - 8);
     }
-    return h;
+    return nci_wymix(NCI_WY_S1 ^ len, nci_wymix(a ^ NCI_WY_S1, b ^ seed));
 }
 
 /*
@@ -127,7 +195,7 @@ static neverc_unique_handle_t intern(uk_kind_t kind, const void *data, size_t le
     neverc_unique_handle_t h = {NULL};
     if (!data && kind != UK_BYTES) return h;
 
-    uint64_t hash = fnv64(data, len);
+    uint64_t hash = intern_hash(data, len);
 
     LOCK();
     if (!g_table) {
