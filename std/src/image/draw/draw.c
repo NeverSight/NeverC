@@ -26,6 +26,17 @@ void neverc_draw(neverc_image_rgba_t *dst, neverc_rect_t r,
                  const neverc_image_rgba_t *src, neverc_point_t sp,
                  neverc_draw_op_t op) {
     neverc_rect_t clip = neverc_rect_intersect(r, dst->rect);
+    /* Also clip against the source bounds, translated into dst space, so the row
+     * copies below never read past src->pix. A dst pixel (x,y) samples src at
+     * (x - r.min.x + sp.x, y - r.min.y + sp.y), so staying inside src->rect
+     * bounds the dst rect by src->rect shifted by (r.min - sp). Without this, a
+     * source smaller than r over-reads its buffer (Go does this in
+     * image/draw.clip). */
+    neverc_rect_t src_clip = {
+        { src->rect.min.x + r.min.x - sp.x, src->rect.min.y + r.min.y - sp.y },
+        { src->rect.max.x + r.min.x - sp.x, src->rect.max.y + r.min.y - sp.y }
+    };
+    clip = neverc_rect_intersect(clip, src_clip);
     if (neverc_rect_empty(clip)) return;
 
     int dx0 = clip.min.x, dy0 = clip.min.y;
@@ -125,6 +136,13 @@ void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
                            const neverc_image_gray_t *mask, neverc_point_t mp,
                            uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) {
     neverc_rect_t clip = neverc_rect_intersect(r, dst->rect);
+    /* Clip against the mask bounds (translated into dst space) so the mrow[]
+     * reads stay inside mask->pix when the mask is smaller than r. */
+    neverc_rect_t mask_clip = {
+        { mask->rect.min.x + r.min.x - mp.x, mask->rect.min.y + r.min.y - mp.y },
+        { mask->rect.max.x + r.min.x - mp.x, mask->rect.max.y + r.min.y - mp.y }
+    };
+    clip = neverc_rect_intersect(clip, mask_clip);
     if (neverc_rect_empty(clip)) return;
 
     int x0 = clip.min.x, y0 = clip.min.y;

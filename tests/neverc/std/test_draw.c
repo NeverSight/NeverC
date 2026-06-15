@@ -92,11 +92,64 @@ static void test_draw_clipping(void) {
     neverc_image_rgba_free(&src);
 }
 
+/* Regression: a draw rect larger than the source must clip source reads to
+ * src->rect. Before the fix this over-read src->pix on the right/bottom edges
+ * (heap-buffer-overflow caught by AddressSanitizer). Exercises the OVER path. */
+static void test_draw_source_clip(void) {
+    printf("[draw_source_clip]\n");
+    neverc_image_rgba_t dst, src;
+    neverc_image_rgba_init(&dst, neverc_rect(0, 0, 10, 10));
+    neverc_image_rgba_init(&src, neverc_rect(0, 0, 4, 4));
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            neverc_image_rgba_set(&src, x, y, 10, 20, 30, 255);
+
+    neverc_draw(&dst, neverc_rect(0, 0, 8, 8), &src, neverc_pt(0, 0), NEVERC_DRAW_OVER);
+    uint8_t r, g, b, a;
+    neverc_image_rgba_at(&dst, 3, 3, &r, &g, &b, &a);   /* inside source */
+    check("src_clip_inside", r == 10 && g == 20 && b == 30 && a == 255);
+    neverc_image_rgba_at(&dst, 5, 5, &r, &g, &b, &a);   /* beyond source -> untouched */
+    check("src_clip_beyond_untouched", r == 0 && g == 0 && b == 0 && a == 0);
+
+    /* Source mapped entirely off the draw region: clean no-op, no read. */
+    neverc_draw(&dst, neverc_rect(0, 0, 8, 8), &src, neverc_pt(100, 100), NEVERC_DRAW_SRC);
+    check("src_clip_offscreen_noop", 1);
+
+    neverc_image_rgba_free(&dst);
+    neverc_image_rgba_free(&src);
+}
+
+/* Regression: draw_gray_over must clip mask reads to mask->rect when the mask is
+ * smaller than the draw rect (same over-read class as neverc_draw). */
+static void test_draw_gray_clip(void) {
+    printf("[draw_gray_clip]\n");
+    neverc_image_rgba_t dst;
+    neverc_image_gray_t mask;
+    neverc_image_rgba_init(&dst, neverc_rect(0, 0, 10, 10));
+    neverc_image_gray_init(&mask, neverc_rect(0, 0, 4, 4));
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            neverc_image_gray_set(&mask, x, y, 255);
+
+    neverc_draw_gray_over(&dst, neverc_rect(0, 0, 8, 8), &mask, neverc_pt(0, 0),
+                          200, 100, 50, 255);
+    uint8_t r, g, b, a;
+    neverc_image_rgba_at(&dst, 1, 1, &r, &g, &b, &a);   /* under mask */
+    check("gray_clip_masked", r == 200 && g == 100 && b == 50 && a == 255);
+    neverc_image_rgba_at(&dst, 6, 6, &r, &g, &b, &a);   /* beyond mask -> untouched */
+    check("gray_clip_beyond_untouched", r == 0 && g == 0 && b == 0 && a == 0);
+
+    neverc_image_gray_free(&mask);
+    neverc_image_rgba_free(&dst);
+}
+
 int main(void) {
     test_draw_src();
     test_draw_uniform();
     test_draw_over_opaque();
     test_draw_clipping();
+    test_draw_source_clip();
+    test_draw_gray_clip();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
 }
