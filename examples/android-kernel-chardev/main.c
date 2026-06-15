@@ -1,38 +1,17 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * NeverC Android kernel chardev + ioctl demo (GKI .ko).
- *
- * Features:
- *   - /dev/nvk_chardev via misc_register (dynamic minor)
- *   - read:  returns kernel greeting or last-written data
- *   - write: stores data into a mutex-protected ring buffer
- *   - ioctl: NVK_IOC_GET_VERSION  → SDK version
- *            NVK_IOC_SET_VALUE    → store a u32
- *            NVK_IOC_GET_VALUE    → retrieve the stored u32
- *            NVK_IOC_GET_STATS   → read/write/ioctl counters
- *            NVK_IOC_RESET       → clear buffer and counters
- *   - /proc/nvk_chardev status entry via proc_create + single_open
- *
- * Build:  make                    (or: make KERNEL=601 etc.)
- * Deploy: adb push nvk_chardev.ko /data/local/tests/
- *         adb shell su -c 'insmod /data/local/tests/nvk_chardev.ko'
- *         adb shell su -c 'cat /dev/nvk_chardev'
- *         adb shell su -c 'echo hello > /dev/nvk_chardev'
- *         adb shell su -c 'cat /proc/nvk_chardev'
- *         adb shell su -c 'rmmod nvk_chardev'
- */
 #include <nvkmod.h>
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
 #include <linux/ioctl.h>
-#include <linux/uaccess.h>
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/mutex.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <nvk_mem.h>
 
-/* ---- ioctl definitions ------------------------------------------------ */
+#define NVK_LOG_TAG "nvk_chardev"
+#include <nvk_log.h>
 
 #define NVK_IOC_MAGIC 'N'
 
@@ -48,10 +27,8 @@ struct nvk_stats {
 #define NVK_IOC_GET_STATS   _IOR(NVK_IOC_MAGIC, 4, struct nvk_stats)
 #define NVK_IOC_RESET       _IO(NVK_IOC_MAGIC, 5)
 
-#define NVK_CHARDEV_VERSION 0x00010001  /* 1.0.1 */
+#define NVK_CHARDEV_VERSION 0x00010001
 #define NVK_BUF_SIZE 4096
-
-/* ---- device state (mutex-protected) ----------------------------------- */
 
 static struct {
 	char buf[NVK_BUF_SIZE];
@@ -60,21 +37,15 @@ static struct {
 	struct nvk_stats stats;
 } dev_state;
 
-/* Mutex: opaque 8-byte blob, zero-init = unlocked on arm64 GKI. */
 static struct { unsigned char __opaque[8]; } dev_lock;
 
+typedef void (*mutex_init_fn)(void *);
 typedef void (*mutex_lock_fn)(void *);
 typedef void (*mutex_unlock_fn)(void *);
 
+static mutex_init_fn   fn_mutex_init;
 static mutex_lock_fn   fn_mutex_lock;
 static mutex_unlock_fn fn_mutex_unlock;
-
-typedef unsigned long (*copy_from_user_fn)(void *, const void __user *,
-					   unsigned long);
-typedef unsigned long (*copy_to_user_fn)(void __user *, const void *,
-					 unsigned long);
-static copy_from_user_fn fn_copy_from_user;
-static copy_to_user_fn   fn_copy_to_user;
 
 static void dev_lock_acquire(void)
 {
@@ -87,8 +58,6 @@ static void dev_lock_release(void)
 	if (fn_mutex_unlock)
 		fn_mutex_unlock(&dev_lock);
 }
-
-/* ---- file operations -------------------------------------------------- */
 
 static int nvk_open(struct inode *inode, struct file *filp)
 {
@@ -108,7 +77,7 @@ static ssize_t nvk_read(struct file *filp, char __user *buf, size_t count,
 			loff_t *ppos)
 {
 	static const char greeting[] = "nvk_chardev: hello from kernel!\n";
-	const char *src;
+	char local[NVK_BUF_SIZE];
 	unsigned int len;
 
 	(void)filp;
@@ -117,24 +86,23 @@ static ssize_t nvk_read(struct file *filp, char __user *buf, size_t count,
 	dev_state.stats.reads++;
 
 	if (dev_state.len > 0) {
-		src = dev_state.buf;
 		len = dev_state.len;
+		for (unsigned int i = 0; i < len; i++)
+			local[i] = dev_state.buf[i];
 	} else {
-		src = greeting;
 		len = sizeof(greeting) - 1;
+		for (unsigned int i = 0; i < len; i++)
+			local[i] = greeting[i];
 	}
-
-	if (*ppos >= len) {
-		dev_lock_release();
-		return 0;
-	}
-	if (count > len - *ppos)
-		count = len - *ppos;
 
 	dev_lock_release();
 
-	if (!fn_copy_to_user ||
-	    fn_copy_to_user(buf, src + *ppos, count))
+	if ((unsigned long long)*ppos >= len)
+		return 0;
+	if (count > len - (unsigned int)*ppos)
+		count = len - (unsigned int)*ppos;
+
+	if (nvk_mem_write_user(buf, local + *ppos, count))
 		return -14; /* -EFAULT */
 	*ppos += count;
 	return count;
@@ -151,8 +119,7 @@ static ssize_t nvk_write(struct file *filp, const char __user *buf,
 
 	dev_lock_acquire();
 
-	if (!fn_copy_from_user ||
-	    fn_copy_from_user(dev_state.buf, buf, count)) {
+	if (nvk_mem_read_user(dev_state.buf, buf, count)) {
 		dev_lock_release();
 		return -14; /* -EFAULT */
 	}
@@ -162,7 +129,7 @@ static ssize_t nvk_write(struct file *filp, const char __user *buf,
 
 	dev_lock_release();
 
-	pr_info("nvk_chardev: wrote %zu bytes\n", count);
+	nvk_log_dbg("wrote %zu bytes\n", count);
 	return count;
 }
 
@@ -180,35 +147,31 @@ static long nvk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case NVK_IOC_GET_VERSION:
 		val = NVK_CHARDEV_VERSION;
 		dev_lock_release();
-		if (!fn_copy_to_user ||
-		    fn_copy_to_user((void __user *)arg, &val, sizeof(val)))
+		if (nvk_mem_write_user((void __user *)arg, &val, sizeof(val)))
 			return -14;
 		return 0;
 
 	case NVK_IOC_SET_VALUE:
 		dev_lock_release();
-		if (!fn_copy_from_user ||
-		    fn_copy_from_user(&val, (void __user *)arg, sizeof(val)))
+		if (nvk_mem_read_user(&val, (void __user *)arg, sizeof(val)))
 			return -14;
 		dev_lock_acquire();
 		dev_state.value = val;
 		dev_lock_release();
-		pr_info("nvk_chardev: SET_VALUE = %u\n", val);
+		nvk_log_dbg("SET_VALUE = %u\n", val);
 		return 0;
 
 	case NVK_IOC_GET_VALUE:
 		val = dev_state.value;
 		dev_lock_release();
-		if (!fn_copy_to_user ||
-		    fn_copy_to_user((void __user *)arg, &val, sizeof(val)))
+		if (nvk_mem_write_user((void __user *)arg, &val, sizeof(val)))
 			return -14;
 		return 0;
 
 	case NVK_IOC_GET_STATS:
 		st = dev_state.stats;
 		dev_lock_release();
-		if (!fn_copy_to_user ||
-		    fn_copy_to_user((void __user *)arg, &st, sizeof(st)))
+		if (nvk_mem_write_user((void __user *)arg, &st, sizeof(st)))
 			return -14;
 		return 0;
 
@@ -219,7 +182,7 @@ static long nvk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		dev_state.stats.writes = 0;
 		dev_state.stats.ioctls = 0;
 		dev_lock_release();
-		pr_info("nvk_chardev: reset\n");
+		nvk_log_info("reset\n");
 		return 0;
 
 	default:
@@ -242,8 +205,6 @@ static struct miscdevice nvk_misc = {
 	.name  = "nvk_chardev",
 	.fops  = &nvk_fops,
 };
-
-/* ---- /proc/nvk_chardev status ----------------------------------------- */
 
 typedef struct proc_dir_entry *(*proc_create_fn)(
 	const char *name, umode_t mode, struct proc_dir_entry *parent,
@@ -319,8 +280,7 @@ static void setup_proc(void)
 		(single_release_fn)NVK_LOOKUP("single_release");
 
 	if (!fn_proc_create || !fn_single_open || !fn_seq_read) {
-		pr_info("nvk_chardev: proc helpers not found, "
-			"skipping /proc entry\n");
+		nvk_log_warn("proc helpers not found, skipping /proc entry\n");
 		return;
 	}
 
@@ -332,10 +292,8 @@ static void setup_proc(void)
 	proc_entry = fn_proc_create("nvk_chardev", 0444,
 				    (void *)0, &nvk_proc_ops);
 	if (proc_entry)
-		pr_info("nvk_chardev: /proc/nvk_chardev created\n");
+		nvk_log_info("/proc/nvk_chardev created\n");
 }
-
-/* ---- module init / exit ----------------------------------------------- */
 
 typedef int  (*misc_register_fn)(struct miscdevice *);
 typedef void (*misc_deregister_fn)(struct miscdevice *);
@@ -351,40 +309,35 @@ static int nvk_chardev_init(void)
 	if (ret)
 		return ret;
 
+	nvk_mem_init();
+
+	fn_mutex_init = (mutex_init_fn)NVK_LOOKUP("__mutex_init");
 	fn_mutex_lock = (mutex_lock_fn)NVK_LOOKUP("mutex_lock");
 	fn_mutex_unlock = (mutex_unlock_fn)NVK_LOOKUP("mutex_unlock");
-	fn_copy_from_user =
-		(copy_from_user_fn)NVK_LOOKUP("_copy_from_user");
-	if (!fn_copy_from_user)
-		fn_copy_from_user =
-			(copy_from_user_fn)NVK_LOOKUP("raw_copy_from_user");
-	fn_copy_to_user =
-		(copy_to_user_fn)NVK_LOOKUP("_copy_to_user");
-	if (!fn_copy_to_user)
-		fn_copy_to_user =
-			(copy_to_user_fn)NVK_LOOKUP("raw_copy_to_user");
 
-	/* Resolve misc device helpers. */
+	if (fn_mutex_init)
+		fn_mutex_init(&dev_lock);
+
 	do_misc_register =
 		(misc_register_fn)NVK_LOOKUP("misc_register");
 	do_misc_deregister =
 		(misc_deregister_fn)NVK_LOOKUP("misc_deregister");
 
 	if (!do_misc_register || !do_misc_deregister) {
-		pr_info("nvk_chardev: misc_register not found\n");
+		nvk_log_err("misc_register not found\n");
 		return -1;
 	}
 
 	ret = do_misc_register(&nvk_misc);
 	if (ret) {
-		pr_info("nvk_chardev: misc_register failed: %d\n", ret);
+		nvk_log_err("misc_register failed: %d\n", ret);
 		return ret;
 	}
 
 	setup_proc();
 
-	pr_info("nvk_chardev: loaded on %s, /dev/nvk_chardev ready\n",
-		NVK_KERNEL_STR);
+	nvk_log_info("loaded on %s, /dev/nvk_chardev ready\n",
+		     NVK_KERNEL_STR);
 	return 0;
 }
 
@@ -394,7 +347,7 @@ static void nvk_chardev_exit(void)
 		fn_proc_remove(proc_entry);
 	if (do_misc_deregister)
 		do_misc_deregister(&nvk_misc);
-	pr_info("nvk_chardev: unloaded\n");
+	nvk_log_info("unloaded\n");
 }
 
 module_init(nvk_chardev_init);
@@ -402,6 +355,6 @@ module_exit(nvk_chardev_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("NeverC");
-MODULE_DESCRIPTION("NeverC Android kernel chardev + ioctl + proc demo");
+MODULE_DESCRIPTION("NeverC chardev + ioctl + proc demo");
 
 NVK_DEFINE_MODULE("nvk_chardev");

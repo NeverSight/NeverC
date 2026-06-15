@@ -35,16 +35,25 @@ with `-DNVK_KERNEL=510|515|601|606|612` (default `510` = android12-5.10).
 
 ```
 runtime/android/kernel/
-  include/                     # arch-independent NeverC kernel SDK
-    nvkmod.h                   #   umbrella: module macros, kprobe/kallsyms bootstrap, NVK_DEFINE_MODULE
-    nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10/5.15/6.1/6.6/6.12)
+  include/                     # NeverC kernel SDK
+    nvkmod.h                   #   module macros, kprobe/kallsyms bootstrap, NVK_DEFINE_MODULE
+    nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.12)
+    nvk_hook.h                 #   arm64 inline-hook engine (simple + context + FP/SIMD + reentry)
+    nvk_mem.h                  #   safe memory read/write, pattern scan, write-protection bypass
+    nvk_syscall.h              #   sys_call_table operations + arm64 syscall number table
+    nvk_process.h              #   process enumeration, PID lookup, task walking
+    nvk_cred.h                 #   credential manipulation (root, uid/gid, capabilities)
+    nvk_selinux.h              #   SELinux enforcement control + AVC/inode bypass hooks
+    nvk_hide.h                 #   module concealment from lsmod / /proc / sysfs
+    nvk_log.h                  #   leveled logging (silent/error/warn/info/debug/trace)
   arm64/
-    include/                   # NeverC's own minimal kernel headers
-      linux/*.h                #   types, kernel, printk, list, slab, kprobes, kallsyms, module, fs, ...
-      asm/*.h                  #   arch barriers, etc.
-    lib/                       # optional libclang_rt.builtins-aarch64.a (see lib/README.md)
+    include/                   # minimal kernel headers (115 total)
+      linux/*.h                #   99 headers: types, kernel, printk, list, slab, fs, ...
+      asm/*.h                  #   8 headers: barrier, current, page, ptrace, syscall, ...
+    lib/                       # optional libclang_rt.builtins-aarch64.a
   tools/
-    gen_struct_module_offsets.c# regenerate exact struct module offsets per kernel
+    gen_struct_module_offsets.c # regenerate exact struct module offsets per kernel
+    test-all.sh                # full verification: 6 demos × 5 kernels × extra modes + ELF check
 ```
 
 `neverc -fandroid-kernel-driver-mode` automatically:
@@ -72,8 +81,32 @@ aggregates are concrete, while version-sensitive structures (`task_struct`,
 `mm_struct`, `device`, ...) are intentionally opaque — access their fields by
 resolving offsets dynamically. `current` is read from `sp_el0` (stable on arm64).
 
-See `examples/android-kernel-hello` (zero-import load test) and
-`examples/android-kernel-driver` (dynamic-kallsyms template).
+## SDK headers
+
+| Header | Purpose |
+|--------|---------|
+| `nvkmod.h` | Module entry point, kprobe bootstrap, `NVK_BOOTSTRAP()`, `NVK_DEFINE_MODULE()` |
+| `nvk_hook.h` | arm64 inline-hook engine — simple replacement (`nvk_hook_install`) + full-register context (`nvk_hook_install_ctx`) + FP/SIMD save (`NVK_CTX_HANDLER_FP`) + reentry guard (`nvk_hook_enter/leave`) |
+| `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` |
+| `nvk_syscall.h` | `nvk_syscall_replace/restore`, `nvk_syscall_get`, arm64 syscall number definitions |
+| `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
+| `nvk_cred.h` | `nvk_cred_set_root`, `nvk_cred_set_uid`, `nvk_cred_set_caps_full`, `nvk_cred_get_ids` |
+| `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_bypass_install/remove` |
+| `nvk_hide.h` | `nvk_mod_hide/show`, integrates with `nvk_hook` for `find_module` hooking |
+| `nvk_log.h` | `nvk_log_err/warn/info/dbg/trace`, `nvk_log_once`, `nvk_log_ratelimit`, `nvk_log_hexdump` |
+
+All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xorstr.
+
+## Examples
+
+| Example | Description |
+|---------|-------------|
+| `android-kernel-hello` | Zero-import minimal module (load test) |
+| `android-kernel-driver` | Dynamic kallsyms template |
+| `android-kernel-chardev` | misc device + ioctl + /proc status page |
+| `android-kernel-inline-hook` | Inline hook on `do_faccessat` (simple + context modes) |
+| `android-kernel-syscall-hook` | sys_call_table replacement + inline hook (dual mode) |
+| `android-kernel-stealth` | Module concealment using `nvk_hide.h` SDK |
 
 ## struct module offsets (important before loading on a device)
 

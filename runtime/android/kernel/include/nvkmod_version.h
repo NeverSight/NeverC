@@ -6,6 +6,11 @@
 #define NVK_KERNEL 510
 #endif
 
+/* offsetof(struct module, list): enum state(4) + pad(4) */
+#ifndef NVK_OFF_LIST
+#define NVK_OFF_LIST 8
+#endif
+
 /* offsetof(struct module, name): enum state(4) + pad(4) + struct list_head(16) */
 #ifndef NVK_OFF_NAME
 #define NVK_OFF_NAME 24

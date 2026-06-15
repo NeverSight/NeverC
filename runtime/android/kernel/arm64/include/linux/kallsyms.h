@@ -20,4 +20,21 @@ extern nvk_kallsyms_lookup_name_fn nvk_kallsyms_lookup_name;
 #define NVK_RESOLVE(fnptr, sym)                                                \
 	((fnptr) ? (fnptr) : ((fnptr) = (__typeof__(fnptr))NVK_LOOKUP(sym)))
 
+/* Resolve into a typed local var, or return error code on failure. */
+#define NVK_LOOKUP_OR_FAIL(var, sym, errval)                                   \
+	do {                                                                   \
+		(var) = (__typeof__(var))NVK_LOOKUP(sym);                      \
+		if (!(var)) return (errval);                                   \
+	} while (0)
+
+/* Cast-assign a function pointer from kallsyms in one statement. */
+#define NVK_LOOKUP_FN(fnptr, sym)                                              \
+	((fnptr) = (__typeof__(fnptr))NVK_LOOKUP(sym))
+
+/* Try sym first, fallback to alt if not found. */
+#define NVK_LOOKUP2(sym, alt)                                                  \
+	({ void *__p = NVK_LOOKUP(sym);                                       \
+	   if (!__p) __p = NVK_LOOKUP(alt);                                   \
+	   __p; })
+
 #endif /* _NVK_LINUX_KALLSYMS_H */

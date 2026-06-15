@@ -40,8 +40,59 @@ static __always_inline int atomic_cmpxchg(atomic_t *v, int old, int new_)
 	return old;
 }
 
-#define smp_mb() __atomic_thread_fence(__ATOMIC_SEQ_CST)
-#define smp_rmb() __atomic_thread_fence(__ATOMIC_ACQUIRE)
-#define smp_wmb() __atomic_thread_fence(__ATOMIC_RELEASE)
+static __always_inline int atomic_xchg(atomic_t *v, int new_)
+{
+	return __atomic_exchange_n(&v->counter, new_, __ATOMIC_SEQ_CST);
+}
+
+static __always_inline int atomic_dec_and_test(atomic_t *v)
+{
+	return atomic_dec_return(v) == 0;
+}
+
+static __always_inline int atomic_inc_and_test(atomic_t *v)
+{
+	return atomic_inc_return(v) == 0;
+}
+
+static __always_inline int atomic_add_negative(int i, atomic_t *v)
+{
+	return atomic_add_return(i, v) < 0;
+}
+
+static __always_inline void atomic_add(int i, atomic_t *v)
+{
+	(void)atomic_add_return(i, v);
+}
+
+static __always_inline void atomic_sub(int i, atomic_t *v)
+{
+	(void)atomic_sub_return(i, v);
+}
+
+static __always_inline s64 atomic64_read(const atomic64_t *v)
+{
+	return __atomic_load_n(&v->counter, __ATOMIC_RELAXED);
+}
+
+static __always_inline void atomic64_set(atomic64_t *v, s64 i)
+{
+	__atomic_store_n(&v->counter, i, __ATOMIC_RELAXED);
+}
+
+static __always_inline s64 atomic64_add_return(s64 i, atomic64_t *v)
+{
+	return __atomic_add_fetch(&v->counter, i, __ATOMIC_SEQ_CST);
+}
+
+static __always_inline void atomic64_inc(atomic64_t *v)
+{
+	(void)atomic64_add_return(1, v);
+}
+
+static __always_inline void atomic64_dec(atomic64_t *v)
+{
+	(void)atomic64_add_return(-1, v);
+}
 
 #endif /* _NVK_LINUX_ATOMIC_H */

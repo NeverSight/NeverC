@@ -2651,6 +2651,10 @@ void addNeverCSpecificFlags(const ArgList &Args, ArgStringList &CmdArgs) {
     CmdArgs.push_back("-fdirect-access-external-data");
     CmdArgs.push_back("-target-feature");
     CmdArgs.push_back("+reserve-x18");
+    CmdArgs.push_back("-mgeneral-regs-only");
+    CmdArgs.push_back("-fno-strict-aliasing");
+    CmdArgs.push_back("-fno-delete-null-pointer-checks");
+    CmdArgs.push_back("-fno-common");
     //   * expand wide div/rem inline    the kernel does not export the
     //                                   compiler-rt 128-bit helpers
     //                                   (__udivti3/__umodti3/__divti3/__modti3),
