@@ -536,6 +536,213 @@ void neverc_gif_free(neverc_gif_image_t *img) {
     img->num_frames = 0;
 }
 
+/* =========================================================================
+ * Wu's color quantizer — Xiaolin Wu, "Efficient Statistical Computation of
+ * Greedy Binary Partitioning" (Graphics Gems vol. II, 1991).
+ *
+ * The previous from_rgba used a fixed 216-entry web-safe cube and rounded each
+ * channel to the nearest 1/5, so every image — however few colors it actually
+ * contained — was forced onto the same coarse grid (visible banding, wasted
+ * palette slots). Wu instead chooses up to 256 palette colors *from the image*:
+ * it builds a 3D color histogram (5 bits/channel), computes cumulative moments
+ * so any axis-aligned box's count / colour sums / squared error are O(1), then
+ * greedily splits the box of largest weighted variance until 256 boxes remain.
+ * Each box's mean becomes a palette entry; pixels map through a per-cell tag.
+ *
+ * This is the same non-iterative, deterministic statistical method used by
+ * ImageMagick / libimagequant's fast path and is strictly better quality than
+ * median-cut at the same cost. Pure standard C (heap-allocated moment arrays,
+ * no platform APIs / SIMD / VLAs), so it is identical on every target.
+ * ========================================================================= */
+
+#define WU_SIDE   33          /* 32 histogram levels (5-bit) + 1 moment base   */
+#define WU_TARGET 256         /* maximum palette entries (GIF limit)           */
+enum { WU_DIR_R = 0, WU_DIR_G = 1, WU_DIR_B = 2 };
+
+typedef struct { int r0, r1, g0, g1, b0, b1; long vol; } wu_box;
+typedef struct { int64_t *wt, *mr, *mg, *mb; double *m2; } wu_moments;
+
+static long wu_ind(int r, int g, int b) {
+    return ((long)r * WU_SIDE + g) * WU_SIDE + b;
+}
+
+/* Convert the raw histogram into cumulative moments so that any box sum is an
+ * 8-corner inclusion-exclusion lookup (the summed-area-table trick in 3D). */
+static void wu_m3d(wu_moments *m) {
+    int64_t area[WU_SIDE], area_r[WU_SIDE], area_g[WU_SIDE], area_b[WU_SIDE];
+    double  area2[WU_SIDE];
+    for (int r = 1; r < WU_SIDE; r++) {
+        for (int i = 0; i < WU_SIDE; i++) {
+            area[i] = area_r[i] = area_g[i] = area_b[i] = 0;
+            area2[i] = 0.0;
+        }
+        for (int g = 1; g < WU_SIDE; g++) {
+            int64_t line = 0, line_r = 0, line_g = 0, line_b = 0;
+            double  line2 = 0.0;
+            for (int b = 1; b < WU_SIDE; b++) {
+                long i1 = wu_ind(r, g, b);
+                line   += m->wt[i1]; line_r += m->mr[i1];
+                line_g += m->mg[i1]; line_b += m->mb[i1]; line2 += m->m2[i1];
+                area[b]   += line;   area_r[b] += line_r;
+                area_g[b] += line_g; area_b[b] += line_b; area2[b] += line2;
+                long i0 = wu_ind(r - 1, g, b);
+                m->wt[i1] = m->wt[i0] + area[b];
+                m->mr[i1] = m->mr[i0] + area_r[b];
+                m->mg[i1] = m->mg[i0] + area_g[b];
+                m->mb[i1] = m->mb[i0] + area_b[b];
+                m->m2[i1] = m->m2[i0] + area2[b];
+            }
+        }
+    }
+}
+
+static int64_t wu_vol(const wu_box *c, const int64_t *mmt) {
+    return mmt[wu_ind(c->r1, c->g1, c->b1)] - mmt[wu_ind(c->r1, c->g1, c->b0)]
+         - mmt[wu_ind(c->r1, c->g0, c->b1)] + mmt[wu_ind(c->r1, c->g0, c->b0)]
+         - mmt[wu_ind(c->r0, c->g1, c->b1)] + mmt[wu_ind(c->r0, c->g1, c->b0)]
+         + mmt[wu_ind(c->r0, c->g0, c->b1)] - mmt[wu_ind(c->r0, c->g0, c->b0)];
+}
+
+static double wu_vol_d(const wu_box *c, const double *mmt) {
+    return mmt[wu_ind(c->r1, c->g1, c->b1)] - mmt[wu_ind(c->r1, c->g1, c->b0)]
+         - mmt[wu_ind(c->r1, c->g0, c->b1)] + mmt[wu_ind(c->r1, c->g0, c->b0)]
+         - mmt[wu_ind(c->r0, c->g1, c->b1)] + mmt[wu_ind(c->r0, c->g1, c->b0)]
+         + mmt[wu_ind(c->r0, c->g0, c->b1)] - mmt[wu_ind(c->r0, c->g0, c->b0)];
+}
+
+/* Sum over the box face opposite the cut direction (the part independent of the
+ * cut position). */
+static int64_t wu_bottom(const wu_box *c, int dir, const int64_t *mmt) {
+    switch (dir) {
+    case WU_DIR_R:
+        return -mmt[wu_ind(c->r0, c->g1, c->b1)] + mmt[wu_ind(c->r0, c->g1, c->b0)]
+             + mmt[wu_ind(c->r0, c->g0, c->b1)] - mmt[wu_ind(c->r0, c->g0, c->b0)];
+    case WU_DIR_G:
+        return -mmt[wu_ind(c->r1, c->g0, c->b1)] + mmt[wu_ind(c->r1, c->g0, c->b0)]
+             + mmt[wu_ind(c->r0, c->g0, c->b1)] - mmt[wu_ind(c->r0, c->g0, c->b0)];
+    default: /* WU_DIR_B */
+        return -mmt[wu_ind(c->r1, c->g1, c->b0)] + mmt[wu_ind(c->r1, c->g0, c->b0)]
+             + mmt[wu_ind(c->r0, c->g1, c->b0)] - mmt[wu_ind(c->r0, c->g0, c->b0)];
+    }
+}
+
+/* Sum over the box up to plane `pos` along the cut direction. */
+static int64_t wu_top(const wu_box *c, int dir, int pos, const int64_t *mmt) {
+    switch (dir) {
+    case WU_DIR_R:
+        return mmt[wu_ind(pos, c->g1, c->b1)] - mmt[wu_ind(pos, c->g1, c->b0)]
+             - mmt[wu_ind(pos, c->g0, c->b1)] + mmt[wu_ind(pos, c->g0, c->b0)];
+    case WU_DIR_G:
+        return mmt[wu_ind(c->r1, pos, c->b1)] - mmt[wu_ind(c->r1, pos, c->b0)]
+             - mmt[wu_ind(c->r0, pos, c->b1)] + mmt[wu_ind(c->r0, pos, c->b0)];
+    default: /* WU_DIR_B */
+        return mmt[wu_ind(c->r1, c->g1, pos)] - mmt[wu_ind(c->r1, c->g0, pos)]
+             - mmt[wu_ind(c->r0, c->g1, pos)] + mmt[wu_ind(c->r0, c->g0, pos)];
+    }
+}
+
+/* Total squared error of a box (the quantity each cut tries to reduce). */
+static double wu_var(const wu_box *c, const wu_moments *m) {
+    double dr = (double)wu_vol(c, m->mr);
+    double dg = (double)wu_vol(c, m->mg);
+    double db = (double)wu_vol(c, m->mb);
+    double xx = wu_vol_d(c, m->m2);
+    int64_t w = wu_vol(c, m->wt);
+    if (w == 0) return 0.0;
+    return xx - (dr * dr + dg * dg + db * db) / (double)w;
+}
+
+/* Best cut plane along one axis: maximizes the sum of the two halves' weighted
+ * squared means (equivalently minimizes the combined variance). */
+static double wu_maximize(const wu_box *c, int dir, int first, int last, int *cut,
+                          int64_t whole_w, int64_t whole_r, int64_t whole_g,
+                          int64_t whole_b, const wu_moments *m) {
+    int64_t base_r = wu_bottom(c, dir, m->mr);
+    int64_t base_g = wu_bottom(c, dir, m->mg);
+    int64_t base_b = wu_bottom(c, dir, m->mb);
+    int64_t base_w = wu_bottom(c, dir, m->wt);
+    double max = 0.0;
+    *cut = -1;
+    for (int i = first; i < last; i++) {
+        int64_t half_r = base_r + wu_top(c, dir, i, m->mr);
+        int64_t half_g = base_g + wu_top(c, dir, i, m->mg);
+        int64_t half_b = base_b + wu_top(c, dir, i, m->mb);
+        int64_t half_w = base_w + wu_top(c, dir, i, m->wt);
+        if (half_w == 0) continue;                 /* nothing below the plane */
+        int64_t other_w = whole_w - half_w;
+        if (other_w == 0) continue;                /* nothing above the plane */
+        double temp = ((double)half_r * (double)half_r
+                     + (double)half_g * (double)half_g
+                     + (double)half_b * (double)half_b) / (double)half_w;
+        double or_ = (double)(whole_r - half_r);
+        double og_ = (double)(whole_g - half_g);
+        double ob_ = (double)(whole_b - half_b);
+        temp += (or_ * or_ + og_ * og_ + ob_ * ob_) / (double)other_w;
+        if (temp > max) { max = temp; *cut = i; }
+    }
+    return max;
+}
+
+/* Split set1 in two; the new half is written to set2. Returns 0 if the box is a
+ * single point that cannot be cut. */
+static int wu_cut(wu_box *set1, wu_box *set2, const wu_moments *m) {
+    int64_t whole_w = wu_vol(set1, m->wt);
+    int64_t whole_r = wu_vol(set1, m->mr);
+    int64_t whole_g = wu_vol(set1, m->mg);
+    int64_t whole_b = wu_vol(set1, m->mb);
+    int cutr, cutg, cutb;
+    double maxr = wu_maximize(set1, WU_DIR_R, set1->r0 + 1, set1->r1, &cutr,
+                              whole_w, whole_r, whole_g, whole_b, m);
+    double maxg = wu_maximize(set1, WU_DIR_G, set1->g0 + 1, set1->g1, &cutg,
+                              whole_w, whole_r, whole_g, whole_b, m);
+    double maxb = wu_maximize(set1, WU_DIR_B, set1->b0 + 1, set1->b1, &cutb,
+                              whole_w, whole_r, whole_g, whole_b, m);
+    int dir;
+    if (maxr >= maxg && maxr >= maxb) {
+        dir = WU_DIR_R;
+        if (cutr < 0) return 0;                    /* cannot split on any axis */
+    } else if (maxg >= maxr && maxg >= maxb) {
+        dir = WU_DIR_G;
+    } else {
+        dir = WU_DIR_B;
+    }
+    *set2 = *set1;
+    switch (dir) {
+    case WU_DIR_R: set2->r0 = set1->r1 = cutr; break;
+    case WU_DIR_G: set2->g0 = set1->g1 = cutg; break;
+    default:       set2->b0 = set1->b1 = cutb; break;
+    }
+    set1->vol = (long)(set1->r1 - set1->r0) * (set1->g1 - set1->g0)
+              * (set1->b1 - set1->b0);
+    set2->vol = (long)(set2->r1 - set2->r0) * (set2->g1 - set2->g0)
+              * (set2->b1 - set2->b0);
+    return 1;
+}
+
+/* Fallback used when the (~1.5 MB) moment arrays cannot be allocated: the old
+ * fixed 216-color web-safe cube. Always succeeds without large scratch. */
+static int gif_quantize_uniform(const uint8_t *rgba, size_t npixels,
+                                neverc_gif_frame_t *frame) {
+    frame->palette_size = 216;
+    for (int r = 0; r < 6; r++)
+        for (int g = 0; g < 6; g++)
+            for (int b = 0; b < 6; b++) {
+                int idx = r * 36 + g * 6 + b;
+                frame->palette[idx].r = (uint8_t)(r * 51);
+                frame->palette[idx].g = (uint8_t)(g * 51);
+                frame->palette[idx].b = (uint8_t)(b * 51);
+            }
+    frame->indices = (uint8_t *)malloc(npixels ? npixels : 1);
+    if (!frame->indices) return -1;
+    for (size_t i = 0; i < npixels; i++) {
+        int ri = (rgba[i * 4 + 0] + 25) / 51; if (ri > 5) ri = 5;
+        int gi = (rgba[i * 4 + 1] + 25) / 51; if (gi > 5) gi = 5;
+        int bi = (rgba[i * 4 + 2] + 25) / 51; if (bi > 5) bi = 5;
+        frame->indices[i] = (uint8_t)(ri * 36 + gi * 6 + bi);
+    }
+    return 0;
+}
+
 int neverc_gif_from_rgba(const uint8_t *rgba, uint32_t width, uint32_t height,
                          neverc_gif_frame_t *frame) {
     if (!rgba || !frame || width == 0 || height == 0) return -1;
@@ -543,31 +750,88 @@ int neverc_gif_from_rgba(const uint8_t *rgba, uint32_t width, uint32_t height,
     frame->width = width;
     frame->height = height;
 
-    /* Simple uniform quantization to 216 web-safe colors (6x6x6 cube) */
-    frame->palette_size = 216;
-    for (int r = 0; r < 6; r++) {
-        for (int g = 0; g < 6; g++) {
-            for (int b = 0; b < 6; b++) {
-                int idx = r * 36 + g * 6 + b;
-                frame->palette[idx].r = (uint8_t)(r * 51);
-                frame->palette[idx].g = (uint8_t)(g * 51);
-                frame->palette[idx].b = (uint8_t)(b * 51);
-            }
-        }
-    }
-
     size_t npixels = (size_t)width * height;
-    frame->indices = (uint8_t *)malloc(npixels);
+    size_t cells = (size_t)WU_SIDE * WU_SIDE * WU_SIDE;
 
-    for (size_t i = 0; i < npixels; i++) {
-        int r = rgba[i * 4 + 0];
-        int g = rgba[i * 4 + 1];
-        int b = rgba[i * 4 + 2];
-        int ri = (r + 25) / 51; if (ri > 5) ri = 5;
-        int gi = (g + 25) / 51; if (gi > 5) gi = 5;
-        int bi = (b + 25) / 51; if (bi > 5) bi = 5;
-        frame->indices[i] = (uint8_t)(ri * 36 + gi * 6 + bi);
+    wu_moments m;
+    m.wt = (int64_t *)calloc(cells, sizeof(int64_t));
+    m.mr = (int64_t *)calloc(cells, sizeof(int64_t));
+    m.mg = (int64_t *)calloc(cells, sizeof(int64_t));
+    m.mb = (int64_t *)calloc(cells, sizeof(int64_t));
+    m.m2 = (double  *)calloc(cells, sizeof(double));
+    unsigned char *tag = (unsigned char *)malloc(cells);
+    if (!m.wt || !m.mr || !m.mg || !m.mb || !m.m2 || !tag) {
+        free(m.wt); free(m.mr); free(m.mg); free(m.mb); free(m.m2); free(tag);
+        return gif_quantize_uniform(rgba, npixels, frame);
     }
 
+    /* 3D histogram at 5-bit precision; cells are 1-indexed (0 = moment base). */
+    for (size_t i = 0; i < npixels; i++) {
+        int r = rgba[i * 4 + 0], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2];
+        long idx = wu_ind((r >> 3) + 1, (g >> 3) + 1, (b >> 3) + 1);
+        m.wt[idx] += 1;
+        m.mr[idx] += r;
+        m.mg[idx] += g;
+        m.mb[idx] += b;
+        m.m2[idx] += (double)(r * r + g * g + b * b);
+    }
+    wu_m3d(&m);
+
+    wu_box cube[WU_TARGET];
+    double  vv[WU_TARGET];
+    memset(&cube[0], 0, sizeof(cube[0]));
+    cube[0].r1 = cube[0].g1 = cube[0].b1 = WU_SIDE - 1;
+    int ncolors = WU_TARGET, next = 0;
+    for (int i = 1; i < WU_TARGET; i++) {
+        if (wu_cut(&cube[next], &cube[i], &m)) {
+            vv[next] = cube[next].vol > 1 ? wu_var(&cube[next], &m) : 0.0;
+            vv[i]    = cube[i].vol    > 1 ? wu_var(&cube[i], &m)    : 0.0;
+        } else {
+            vv[next] = 0.0;     /* this box is a single point; never revisit it */
+            i--;                /* reuse the slot for the next candidate        */
+        }
+        double temp = 0.0;
+        next = 0;
+        for (int j = 0; j <= i; j++)
+            if (vv[j] > temp) { temp = vv[j]; next = j; }
+        if (temp <= 0.0) { ncolors = i + 1; break; }
+    }
+
+    /* Tag every histogram cell with the box (palette index) that owns it, then
+     * derive each box's mean colour. */
+    for (int k = 0; k < ncolors; k++) {
+        int64_t w = wu_vol(&cube[k], m.wt);
+        if (w > 0) {
+            frame->palette[k].r = (uint8_t)(wu_vol(&cube[k], m.mr) / w);
+            frame->palette[k].g = (uint8_t)(wu_vol(&cube[k], m.mg) / w);
+            frame->palette[k].b = (uint8_t)(wu_vol(&cube[k], m.mb) / w);
+        } else {
+            frame->palette[k].r = frame->palette[k].g = frame->palette[k].b = 0;
+        }
+        for (int r = cube[k].r0 + 1; r <= cube[k].r1; r++)
+            for (int g = cube[k].g0 + 1; g <= cube[k].g1; g++)
+                for (int b = cube[k].b0 + 1; b <= cube[k].b1; b++)
+                    tag[wu_ind(r, g, b)] = (unsigned char)k;
+    }
+
+    /* GIF local color tables need >= 2 entries; pad a degenerate single-color
+     * image so the encoder accepts it. */
+    if (ncolors < 2) {
+        frame->palette[1] = frame->palette[0];
+        ncolors = 2;
+    }
+    frame->palette_size = ncolors;
+
+    frame->indices = (uint8_t *)malloc(npixels);
+    if (!frame->indices) {
+        free(m.wt); free(m.mr); free(m.mg); free(m.mb); free(m.m2); free(tag);
+        return -1;
+    }
+    for (size_t i = 0; i < npixels; i++) {
+        int r = rgba[i * 4 + 0], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2];
+        frame->indices[i] = tag[wu_ind((r >> 3) + 1, (g >> 3) + 1, (b >> 3) + 1)];
+    }
+
+    free(m.wt); free(m.mr); free(m.mg); free(m.mb); free(m.m2); free(tag);
     return 0;
 }

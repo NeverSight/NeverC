@@ -49,7 +49,8 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
 
 void neverc_gif_free(neverc_gif_image_t *img);
 
-/* Convert an RGBA image to a paletted GIF frame using median-cut quantization. */
+/* Convert an RGBA image to a paletted GIF frame, choosing up to 256 palette
+ * colors from the image with Wu's variance-minimizing quantizer. */
 int neverc_gif_from_rgba(const uint8_t *rgba, uint32_t width, uint32_t height,
                          neverc_gif_frame_t *frame);
 

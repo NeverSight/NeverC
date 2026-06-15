@@ -266,6 +266,9 @@ STD_TEST(draw, "src/image/draw/draw.c", "src/image/image/image.c", "src/image/co
 STD_TEST(png, "src/image/png/png.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/flate/flate.c", "src/hash/crc32/crc32.c", "src/hash/adler32/adler32.c")
 STD_TEST(jpeg, "src/image/jpeg/jpeg.c", "src/image/image/image.c", "src/image/color/color.c")
 STD_TEST(gif, "src/image/gif/gif.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/lzw/lzw.c")
+// Locks in the Wu-quantizer quality win in neverc_gif_from_rgba (lower error
+// than the old 216-color web-safe cube; near-lossless on small off-grid palettes).
+STD_TEST(gif_quant, "src/image/gif/gif.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/lzw/lzw.c")
 STD_TEST(palette, "src/image/color/palette/palette.c")
 
 // ===== OS =====
