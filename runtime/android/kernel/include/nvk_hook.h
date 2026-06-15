@@ -379,12 +379,13 @@ static volatile int _nvk_pool_lock;
 static __always_inline void _nvk_spin_lock(volatile int *lock)
 {
 	while (__atomic_exchange_n(lock, 1, __ATOMIC_ACQUIRE))
-		__asm__ __volatile__("yield" ::: "memory");
+		__asm__ __volatile__("wfe" ::: "memory");
 }
 
 static __always_inline void _nvk_spin_unlock(volatile int *lock)
 {
 	__atomic_store_n(lock, 0, __ATOMIC_RELEASE);
+	__asm__ __volatile__("sev" ::: "memory");
 }
 
 struct _nvk_pool_page {
@@ -466,7 +467,11 @@ static int nvk_hook_init(void)
 {
 	if (_nvk_inited) return 0;
 	_nvk_modalloc = (nvk_modalloc_fn)NVK_LOOKUP("module_alloc");
+	if (!_nvk_modalloc)
+		_nvk_modalloc = (nvk_modalloc_fn)NVK_LOOKUP("execmem_alloc");
 	_nvk_modfree  = (nvk_modfree_fn)NVK_LOOKUP("module_memfree");
+	if (!_nvk_modfree)
+		_nvk_modfree = (nvk_modfree_fn)NVK_LOOKUP("execmem_free");
 	if (!_nvk_modfree)
 		_nvk_modfree = (nvk_modfree_fn)NVK_LOOKUP("vfree");
 	_nvk_flushic = (nvk_flushic_fn)NVK_LOOKUP("flush_icache_range");
@@ -499,7 +504,21 @@ static __always_inline unsigned long nvk_strip_pac(unsigned long addr)
 	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
 	va_bits = 64 - ((tcr >> 16) & 0x3FUL);
 	mask = (1UL << va_bits) - 1;
-	return (addr & (1UL << 63)) ? (addr | ~mask) : (addr & mask);
+	addr = (addr & (1UL << 63)) ? (addr | ~mask) : (addr & mask);
+	addr &= ~(0xFFUL << 56);
+	return addr;
+}
+
+static __always_inline int nvk_a64_is_stp_fp_lr(u32 insn)
+{
+	return (insn & 0xFFC07FFF) == 0xA9807BFD;
+}
+
+static __always_inline int nvk_a64_is_frame_setup(u32 insn)
+{
+	if ((insn & 0x7FE0FFE0) == 0x2A0003E0) return 1; /* MOV Wd, Wn */
+	if ((insn & 0xFFE0FFE0) == 0xAA0003E0) return 1; /* MOV Xd, Xn */
+	return 0;
 }
 
 static __always_inline int nvk_a64_is_hook_patch(u32 insn)
@@ -595,9 +614,10 @@ static int _nvk_patch_multi(u32 *target, u32 *insns, int count)
 static void _nvk_scan_entry(u32 *code, int *skip, int *total)
 {
 	int s = 0;
-	if (nvk_a64_is_bti(code[s]))  s++;
-	if (nvk_a64_is_pac(code[s]))  s++;
-	if (code[s] == NVK_A64_NOP)   s++;
+	if (nvk_a64_is_bti(code[s]))      s++;
+	if (nvk_a64_is_pac(code[s]))      s++;
+	if (nvk_a64_is_stp_fp_lr(code[s])) s++;
+	if (code[s] == NVK_A64_NOP)       s++;
 	*total = s + 4; /* prefix + LDR + BR + .quad(2) */
 	if (*total > NVK_HOOK_MAX_PATCH)
 		*total = NVK_HOOK_MAX_PATCH;

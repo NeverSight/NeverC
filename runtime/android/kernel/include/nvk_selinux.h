@@ -34,12 +34,10 @@ static __always_inline int nvk_selinux_is_enforcing(void)
 static int nvk_selinux_set_permissive(void)
 {
 	if (!_nvk_selinux_enforcing) return -1;
-	int ret = nvk_mem_make_rw((unsigned long)_nvk_selinux_enforcing);
-	if (ret) {
-		*(volatile int *)_nvk_selinux_enforcing = 0;
-		return 0;
-	}
+	if (nvk_mem_make_rw((unsigned long)_nvk_selinux_enforcing))
+		return -2;
 	*(volatile int *)_nvk_selinux_enforcing = 0;
+	__asm__ __volatile__("dsb ish" ::: "memory");
 	nvk_mem_make_ro((unsigned long)_nvk_selinux_enforcing);
 	return 0;
 }
@@ -47,12 +45,10 @@ static int nvk_selinux_set_permissive(void)
 static int nvk_selinux_set_enforcing(void)
 {
 	if (!_nvk_selinux_enforcing) return -1;
-	int ret = nvk_mem_make_rw((unsigned long)_nvk_selinux_enforcing);
-	if (ret) {
-		*(volatile int *)_nvk_selinux_enforcing = 1;
-		return 0;
-	}
+	if (nvk_mem_make_rw((unsigned long)_nvk_selinux_enforcing))
+		return -2;
 	*(volatile int *)_nvk_selinux_enforcing = 1;
+	__asm__ __volatile__("dsb ish" ::: "memory");
 	nvk_mem_make_ro((unsigned long)_nvk_selinux_enforcing);
 	return 0;
 }

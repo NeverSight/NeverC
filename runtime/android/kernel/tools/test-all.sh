@@ -3,9 +3,9 @@
 # Usage: ./test-all.sh [path-to-neverc]
 
 set -euo pipefail
-NEVERC="${1:-../../build-neverc/bin/neverc}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+NEVERC="${1:-$REPO_ROOT/build-neverc/bin/neverc}"
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 
@@ -17,11 +17,14 @@ DEMOS=(
   "android-kernel-inline-hook"
   "android-kernel-syscall-hook"
   "android-kernel-stealth"
+  "android-kernel-netlink"
+  "android-kernel-full"
 )
 EXTRA_MODES=(
   "android-kernel-inline-hook:-DNVK_CONTEXT_HOOK"
   "android-kernel-syscall-hook:-DNVK_SYSCALL_INLINE_HOOK"
   "android-kernel-stealth:-DNVK_STEALTH_HIDE"
+  "android-kernel-stealth:-DNVK_STEALTH_FULL_HIDE"
   "android-kernel-stealth:-DNVK_STEALTH_ROOT"
   "android-kernel-stealth:-DNVK_STEALTH_SELINUX"
 )
@@ -37,24 +40,33 @@ check_elf() {
   local name="$2"
 
   local filetype
-  filetype=$(file "$ko" 2>/dev/null)
-  if ! printf '%s' "$filetype" | grep -qi "elf.*64.*aarch64\|elf.*64.*arm"; then
-    echo "  FAIL: $name — not AArch64 ELF"
-    return 1
-  fi
+  filetype=$(file "$ko" 2>/dev/null || true)
+  case "$filetype" in
+    *ELF*64*aarch64*|*ELF*64*ARM*|*ELF*64*arm*) ;;
+    *)
+      echo "  FAIL: $name — not AArch64 ELF"
+      return 1
+      ;;
+  esac
 
   local sections
   sections=$("$OBJDUMP" -h "$ko" 2>/dev/null || true)
 
-  if ! printf '%s' "$sections" | grep -q "\.modinfo"; then
-    echo "  FAIL: $name — missing .modinfo section"
-    return 1
-  fi
+  case "$sections" in
+    *".modinfo"*) ;;
+    *)
+      echo "  FAIL: $name — missing .modinfo section"
+      return 1
+      ;;
+  esac
 
-  if ! printf '%s' "$sections" | grep -q "gnu.linkonce.this_module"; then
-    echo "  FAIL: $name — missing .gnu.linkonce.this_module"
-    return 1
-  fi
+  case "$sections" in
+    *"gnu.linkonce.this_module"*) ;;
+    *)
+      echo "  FAIL: $name — missing .gnu.linkonce.this_module"
+      return 1
+      ;;
+  esac
 
   return 0
 }

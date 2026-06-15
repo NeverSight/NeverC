@@ -205,4 +205,127 @@ static int nvk_cred_set_caps_full(void)
 	return _nvk_cred_commit(cred);
 }
 
+#define NVK_CAP_CHOWN            0
+#define NVK_CAP_DAC_OVERRIDE     1
+#define NVK_CAP_DAC_READ_SEARCH  2
+#define NVK_CAP_FOWNER           3
+#define NVK_CAP_FSETID           4
+#define NVK_CAP_KILL             5
+#define NVK_CAP_SETGID           6
+#define NVK_CAP_SETUID           7
+#define NVK_CAP_SETPCAP          8
+#define NVK_CAP_NET_BIND_SERVICE 10
+#define NVK_CAP_NET_BROADCAST    11
+#define NVK_CAP_NET_ADMIN        12
+#define NVK_CAP_NET_RAW          13
+#define NVK_CAP_SYS_MODULE       16
+#define NVK_CAP_SYS_RAWIO        17
+#define NVK_CAP_SYS_PTRACE       19
+#define NVK_CAP_SYS_ADMIN        21
+#define NVK_CAP_SYS_RESOURCE     24
+#define NVK_CAP_SYS_TIME         25
+#define NVK_CAP_AUDIT_CONTROL    30
+#define NVK_CAP_AUDIT_READ       37
+#define NVK_CAP_SYSLOG           34
+#define NVK_CAP_CHECKPOINT_RESTORE 40
+
+#define NVK_CAP_SET_EFFECTIVE   0
+#define NVK_CAP_SET_PERMITTED   1
+#define NVK_CAP_SET_INHERITABLE 2
+#define NVK_CAP_SET_BOUNDING    3
+
+static int nvk_cred_set_cap(int cap, int set_type)
+{
+	void *cred;
+
+	if (!_nvk_cred_prepare || !_nvk_cred_commit)
+		return -1;
+	if (cap < 0 || cap > 63 || set_type < 0 || set_type > 3)
+		return -1;
+
+	cred = _nvk_cred_prepare();
+	if (!cred) return -1;
+
+	_nvk_cred_find_uid_offset();
+
+	unsigned char *p = (unsigned char *)cred;
+	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4) + 32;
+	unsigned long set_off = cap_base + set_type * 8;
+
+	int word = cap / 32;
+	int bit = cap % 32;
+	u32 *cap_word = (u32 *)(p + set_off + word * 4);
+	*cap_word |= (1U << bit);
+
+	return _nvk_cred_commit(cred);
+}
+
+static int nvk_cred_clear_cap(int cap, int set_type)
+{
+	void *cred;
+
+	if (!_nvk_cred_prepare || !_nvk_cred_commit)
+		return -1;
+	if (cap < 0 || cap > 63 || set_type < 0 || set_type > 3)
+		return -1;
+
+	cred = _nvk_cred_prepare();
+	if (!cred) return -1;
+
+	_nvk_cred_find_uid_offset();
+
+	unsigned char *p = (unsigned char *)cred;
+	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4) + 32;
+	unsigned long set_off = cap_base + set_type * 8;
+
+	int word = cap / 32;
+	int bit = cap % 32;
+	u32 *cap_word = (u32 *)(p + set_off + word * 4);
+	*cap_word &= ~(1U << bit);
+
+	return _nvk_cred_commit(cred);
+}
+
+static int nvk_cred_has_cap(struct task_struct *task, int cap, int set_type)
+{
+	const void *cred;
+	const unsigned char *p;
+
+	if (!task || cap < 0 || cap > 63 || set_type < 0 || set_type > 3)
+		return -1;
+
+	if (!_nvk_off_cred) return -1;
+
+	cred = *(const void **)((unsigned long)task + _nvk_off_cred);
+	if (!cred) return -1;
+
+	p = (const unsigned char *)cred;
+	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4) + 32;
+	unsigned long set_off = cap_base + set_type * 8;
+
+	int word = cap / 32;
+	int bit = cap % 32;
+	u32 cap_val = *(u32 *)(p + set_off + word * 4);
+	return (cap_val >> bit) & 1;
+}
+
+static int nvk_cred_clear_securebits(void)
+{
+	void *cred;
+
+	if (!_nvk_cred_prepare || !_nvk_cred_commit)
+		return -1;
+
+	cred = _nvk_cred_prepare();
+	if (!cred) return -1;
+
+	_nvk_cred_find_uid_offset();
+
+	unsigned char *p = (unsigned char *)cred;
+	unsigned long sb_off = (_nvk_off_uid ? _nvk_off_uid : 4) + 32 + 32;
+	*(u32 *)(p + sb_off) = 0;
+
+	return _nvk_cred_commit(cred);
+}
+
 #endif /* NVK_CRED_H */

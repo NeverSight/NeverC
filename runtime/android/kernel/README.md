@@ -35,25 +35,29 @@ with `-DNVK_KERNEL=510|515|601|606|612` (default `510` = android12-5.10).
 
 ```
 runtime/android/kernel/
-  include/                     # NeverC kernel SDK
-    nvkmod.h                   #   module macros, kprobe/kallsyms bootstrap, NVK_DEFINE_MODULE
+  include/                     # NeverC kernel SDK (15 headers)
+    nvkmod.h                   #   module macros, kprobe/kallsyms bootstrap
     nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.12)
-    nvk_hook.h                 #   arm64 inline-hook engine (simple + context + FP/SIMD + reentry)
+    nvk_hook.h                 #   arm64 inline-hook engine (simple + context + FP/SIMD)
     nvk_mem.h                  #   safe memory read/write, pattern scan, write-protection bypass
     nvk_syscall.h              #   sys_call_table operations + arm64 syscall number table
     nvk_process.h              #   process enumeration, PID lookup, task walking
     nvk_cred.h                 #   credential manipulation (root, uid/gid, capabilities)
     nvk_selinux.h              #   SELinux enforcement control + AVC/inode bypass hooks
-    nvk_hide.h                 #   module concealment from lsmod / /proc / sysfs
+    nvk_hide.h                 #   module concealment (list + sysfs + /proc/modules filtering)
     nvk_log.h                  #   leveled logging (silent/error/warn/info/debug/trace)
+    nvk_thread.h               #   kernel thread management (kthread create/stop/sleep)
+    nvk_netlink.h              #   user↔kernel netlink IPC channel
+    nvk_addr.h                 #   virtual↔physical address translation, page table walking
+    nvk_compat.h               #   runtime kernel version detection + feature probing
   arm64/
     include/                   # minimal kernel headers (115 total)
-      linux/*.h                #   99 headers: types, kernel, printk, list, slab, fs, ...
+      linux/*.h                #   99+ headers: types, kernel, printk, list, slab, fs, ...
       asm/*.h                  #   8 headers: barrier, current, page, ptrace, syscall, ...
     lib/                       # optional libclang_rt.builtins-aarch64.a
   tools/
     gen_struct_module_offsets.c # regenerate exact struct module offsets per kernel
-    test-all.sh                # full verification: 6 demos × 5 kernels × extra modes + ELF check
+    test-all.sh                # full verification: 7 demos × 5 kernels × extra modes + ELF check
 ```
 
 `neverc -fandroid-kernel-driver-mode` automatically:
@@ -73,27 +77,23 @@ runtime/android/kernel/
 
 You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 
-## Writing a driver
-
-The headers are organized like the kernel's own (`#include <linux/...>`), but are
-NeverC's own minimal, layout-agnostic definitions: scalars and a few ABI-stable
-aggregates are concrete, while version-sensitive structures (`task_struct`,
-`mm_struct`, `device`, ...) are intentionally opaque — access their fields by
-resolving offsets dynamically. `current` is read from `sp_el0` (stable on arm64).
-
 ## SDK headers
 
 | Header | Purpose |
 |--------|---------|
 | `nvkmod.h` | Module entry point, kprobe bootstrap, `NVK_BOOTSTRAP()`, `NVK_DEFINE_MODULE()` |
-| `nvk_hook.h` | arm64 inline-hook engine — simple replacement (`nvk_hook_install`) + full-register context (`nvk_hook_install_ctx`) + FP/SIMD save (`NVK_CTX_HANDLER_FP`) + reentry guard (`nvk_hook_enter/leave`) |
+| `nvk_hook.h` | arm64 inline-hook engine — simple replacement + full-register context + FP/SIMD save + reentry guard + WFE/SEV spinlock + STP X29/X30 frame-pointer detection |
 | `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` |
 | `nvk_syscall.h` | `nvk_syscall_replace/restore`, `nvk_syscall_get`, arm64 syscall number definitions |
 | `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
 | `nvk_cred.h` | `nvk_cred_set_root`, `nvk_cred_set_uid`, `nvk_cred_set_caps_full`, `nvk_cred_get_ids` |
-| `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_bypass_install/remove` |
-| `nvk_hide.h` | `nvk_mod_hide/show`, integrates with `nvk_hook` for `find_module` hooking |
+| `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_bypass_install/remove` (AVC + inode hook) |
+| `nvk_hide.h` | `nvk_mod_hide/show`, `nvk_mod_full_hide` (list + sysfs + /proc/modules seq_show filter) |
 | `nvk_log.h` | `nvk_log_err/warn/info/dbg/trace`, `nvk_log_once`, `nvk_log_ratelimit`, `nvk_log_hexdump` |
+| `nvk_thread.h` | `nvk_thread_run`, `nvk_thread_stop`, `nvk_thread_sleep_ms`, `nvk_thread_stop_all` |
+| `nvk_netlink.h` | `nvk_nl_open/close/send/reply` — bidirectional netlink IPC with dispatch callback |
+| `nvk_addr.h` | `nvk_virt_to_phys`, `nvk_translate_user`, `nvk_walk_pgtable`, VA bits / page size detection |
+| `nvk_compat.h` | `nvk_kernel_version()`, `NVK_KERNEL_GE(maj,min)`, `nvk_has_pac/bti/mte`, versioned symbol lookup helpers |
 
 All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xorstr.
 
@@ -106,7 +106,8 @@ All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xor
 | `android-kernel-chardev` | misc device + ioctl + /proc status page |
 | `android-kernel-inline-hook` | Inline hook on `do_faccessat` (simple + context modes) |
 | `android-kernel-syscall-hook` | sys_call_table replacement + inline hook (dual mode) |
-| `android-kernel-stealth` | Module concealment using `nvk_hide.h` SDK |
+| `android-kernel-stealth` | Module concealment (list / sysfs / proc + SELinux + root) |
+| `android-kernel-netlink` | User↔kernel netlink IPC channel (ping/version/echo) |
 
 ## struct module offsets (important before loading on a device)
 
