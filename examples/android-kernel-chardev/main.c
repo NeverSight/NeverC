@@ -69,6 +69,13 @@ typedef void (*mutex_unlock_fn)(void *);
 static mutex_lock_fn   fn_mutex_lock;
 static mutex_unlock_fn fn_mutex_unlock;
 
+typedef unsigned long (*copy_from_user_fn)(void *, const void __user *,
+					   unsigned long);
+typedef unsigned long (*copy_to_user_fn)(void __user *, const void *,
+					 unsigned long);
+static copy_from_user_fn fn_copy_from_user;
+static copy_to_user_fn   fn_copy_to_user;
+
 static void dev_lock_acquire(void)
 {
 	if (fn_mutex_lock)
@@ -126,7 +133,8 @@ static ssize_t nvk_read(struct file *filp, char __user *buf, size_t count,
 
 	dev_lock_release();
 
-	if (copy_to_user(buf, src + *ppos, count))
+	if (!fn_copy_to_user ||
+	    fn_copy_to_user(buf, src + *ppos, count))
 		return -14; /* -EFAULT */
 	*ppos += count;
 	return count;
@@ -143,7 +151,8 @@ static ssize_t nvk_write(struct file *filp, const char __user *buf,
 
 	dev_lock_acquire();
 
-	if (copy_from_user(dev_state.buf, buf, count)) {
+	if (!fn_copy_from_user ||
+	    fn_copy_from_user(dev_state.buf, buf, count)) {
 		dev_lock_release();
 		return -14; /* -EFAULT */
 	}
@@ -171,13 +180,15 @@ static long nvk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case NVK_IOC_GET_VERSION:
 		val = NVK_CHARDEV_VERSION;
 		dev_lock_release();
-		if (copy_to_user((void __user *)arg, &val, sizeof(val)))
+		if (!fn_copy_to_user ||
+		    fn_copy_to_user((void __user *)arg, &val, sizeof(val)))
 			return -14;
 		return 0;
 
 	case NVK_IOC_SET_VALUE:
 		dev_lock_release();
-		if (copy_from_user(&val, (void __user *)arg, sizeof(val)))
+		if (!fn_copy_from_user ||
+		    fn_copy_from_user(&val, (void __user *)arg, sizeof(val)))
 			return -14;
 		dev_lock_acquire();
 		dev_state.value = val;
@@ -188,14 +199,16 @@ static long nvk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case NVK_IOC_GET_VALUE:
 		val = dev_state.value;
 		dev_lock_release();
-		if (copy_to_user((void __user *)arg, &val, sizeof(val)))
+		if (!fn_copy_to_user ||
+		    fn_copy_to_user((void __user *)arg, &val, sizeof(val)))
 			return -14;
 		return 0;
 
 	case NVK_IOC_GET_STATS:
 		st = dev_state.stats;
 		dev_lock_release();
-		if (copy_to_user((void __user *)arg, &st, sizeof(st)))
+		if (!fn_copy_to_user ||
+		    fn_copy_to_user((void __user *)arg, &st, sizeof(st)))
 			return -14;
 		return 0;
 
@@ -338,9 +351,18 @@ static int nvk_chardev_init(void)
 	if (ret)
 		return ret;
 
-	/* Resolve mutex helpers. */
 	fn_mutex_lock = (mutex_lock_fn)NVK_LOOKUP("mutex_lock");
 	fn_mutex_unlock = (mutex_unlock_fn)NVK_LOOKUP("mutex_unlock");
+	fn_copy_from_user =
+		(copy_from_user_fn)NVK_LOOKUP("_copy_from_user");
+	if (!fn_copy_from_user)
+		fn_copy_from_user =
+			(copy_from_user_fn)NVK_LOOKUP("raw_copy_from_user");
+	fn_copy_to_user =
+		(copy_to_user_fn)NVK_LOOKUP("_copy_to_user");
+	if (!fn_copy_to_user)
+		fn_copy_to_user =
+			(copy_to_user_fn)NVK_LOOKUP("raw_copy_to_user");
 
 	/* Resolve misc device helpers. */
 	do_misc_register =

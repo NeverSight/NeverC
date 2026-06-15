@@ -195,14 +195,24 @@ static int nvk_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 }
 
 
-#define NVK_HOOK_MAX_PATCH   4   /* 16 bytes at target */
-#define NVK_HOOK_TRAMP_CAP  64   /* max trampoline instructions */
-#define NVK_HOOK_STUB_CAP  128   /* max context-stub instructions */
+enum nvk_hook_err {
+	NVK_HOOK_OK         =  0,
+	NVK_HOOK_E_NOINIT   = -1,
+	NVK_HOOK_E_SHORT    = -2,
+	NVK_HOOK_E_RELOC    = -3,
+	NVK_HOOK_E_ALLOC    = -4,
+	NVK_HOOK_E_PATCH    = -5,
+	NVK_HOOK_E_ALREADY  = -6,
+};
+
+#define NVK_HOOK_MAX_PATCH   6   /* BTI + PAC + LDR + BR + .quad(2) */
+#define NVK_HOOK_TRAMP_CAP  64
+#define NVK_HOOK_STUB_CAP  128
 
 struct nvk_hook {
 	void       *target;
 	void       *replace;
-	u32        *trampoline;          /* module_alloc'd code page */
+	u32        *trampoline;
 	u32         orig_insns[NVK_HOOK_MAX_PATCH];
 	int         patch_count;
 	int         active;
@@ -293,9 +303,11 @@ static void _nvk_scan_entry(u32 *code, int *skip, int *total)
 	int s = 0;
 	if (nvk_a64_is_bti(code[s]))  s++;
 	if (nvk_a64_is_pac(code[s]))  s++;
-	/* Always patch 4 instructions (16 bytes = LDR+BR+.quad) */
-	*total = (s + 3 > NVK_HOOK_MAX_PATCH) ? NVK_HOOK_MAX_PATCH : s + 3;
-	if (*total < 4) *total = 4;
+	*total = s + 4; /* prefix + LDR + BR + .quad(2) */
+	if (*total > NVK_HOOK_MAX_PATCH)
+		*total = NVK_HOOK_MAX_PATCH;
+	if (*total < 4)
+		*total = 4;
 	*skip = s;
 }
 
@@ -308,17 +320,19 @@ static int nvk_hook_install(struct nvk_hook *h, void *target,
 	int  tidx = 0, skip, patch_count, i;
 	u32  patch[NVK_HOOK_MAX_PATCH];
 
-	if (!_nvk_inited) return -1;
+	if (!_nvk_inited) return NVK_HOOK_E_NOINIT;
 	h->target = target;
 	h->replace = replace;
 	h->trampoline = (void *)0;
 	h->active = 0;
 
-	/* Short function guard. */
+	if (nvk_a64_is_hook_patch(code[0]))
+		return NVK_HOOK_E_ALREADY;
+
 	{
 		unsigned long fn_sz = _nvk_fn_size(target);
 		if (fn_sz > 0 && fn_sz < NVK_HOOK_MAX_PATCH * 4)
-			return -2; /* function too short */
+			return NVK_HOOK_E_SHORT;
 	}
 
 	_nvk_scan_entry(code, &skip, &patch_count);
@@ -334,19 +348,17 @@ static int nvk_hook_install(struct nvk_hook *h, void *target,
 			continue;
 		unsigned long insn_pc = (unsigned long)&code[i];
 		int n = nvk_a64_relocate_abs(insn, insn_pc, &tramp[tidx]);
-		if (n == 0) goto fail;
+		if (n == 0) return NVK_HOOK_E_RELOC;
 		tidx += n;
-		if (tidx >= NVK_HOOK_TRAMP_CAP - 8) goto fail;
+		if (tidx >= NVK_HOOK_TRAMP_CAP - 8) return NVK_HOOK_E_RELOC;
 	}
 
-	/* Jump back to target + patch_count*4 using RET X17. */
 	unsigned long back = (unsigned long)target + patch_count * 4;
 	tidx += nvk_a64_gen_mov64(&tramp[tidx], 17, back);
 	tramp[tidx++] = NVK_A64_RET_X17;
 
-	/* Allocate and fill trampoline. */
 	h->trampoline = (u32 *)_nvk_modalloc(4096);
-	if (!h->trampoline) return -1;
+	if (!h->trampoline) return NVK_HOOK_E_ALLOC;
 
 	for (i = 0; i < tidx; i++)
 		h->trampoline[i] = tramp[i];
@@ -355,105 +367,159 @@ static int nvk_hook_install(struct nvk_hook *h, void *target,
 
 	*orig = (void *)h->trampoline;
 
-	patch[0] = 0x58000050U;  /* LDR X16, [PC, #8] */
-	patch[1] = 0xD61F0200U;  /* BR  X16 */
-	*(unsigned long *)&patch[2] = (unsigned long)replace;
+	for (i = 0; i < patch_count; i++)
+		patch[i] = NVK_A64_NOP;
+	{
+		int jmp = 0;
+		if (nvk_a64_is_bti(code[0])) {
+			patch[0] = code[0]; /* keep BTI landing pad */
+			jmp = 1;
+		}
+		patch[jmp + 0] = 0x58000050U;  /* LDR X16, [PC, #8] */
+		patch[jmp + 1] = 0xD61F0200U;  /* BR  X16 */
+		*(unsigned long *)&patch[jmp + 2] = (unsigned long)replace;
+	}
 
-	if (_nvk_patch_multi(code, patch, patch_count) != 0)
-		goto fail;
-
-	h->active = 1;
-	return 0;
-
-fail:
-	if (h->trampoline) {
+	if (_nvk_patch_multi(code, patch, patch_count) != 0) {
 		_nvk_modfree(h->trampoline);
 		h->trampoline = (void *)0;
+		return NVK_HOOK_E_PATCH;
 	}
-	return -1;
+
+	h->active = 1;
+	return NVK_HOOK_OK;
 }
 
 
-#define _CTX_SIZE  272   /* 31*8 + 8(pad) + 8(nzcv) + 8(force_jump) */
+#define _CTX_SIZE  272
 #define _CTX_NZCV  256
 #define _CTX_FORCE 264
 
+/*
+ * ARM64 instruction encoding macros.
+ * Every instruction in the context stub template is generated via these macros,
+ * eliminating any chance of hand-encoding errors.
+ */
+#define _A64E_SUB_SP_I(imm)  (0xD10003FFU | ((u32)(imm) << 10))
+#define _A64E_ADD_SP_I(imm)  (0x910003FFU | ((u32)(imm) << 10))
+#define _A64E_STP_SP(t1, t2, off) \
+	(0xA9000000U | ((u32)((off)/8) << 15) | \
+	 ((u32)(t2) << 10) | (31U << 5) | (u32)(t1))
+#define _A64E_LDP_SP(t1, t2, off) \
+	(0xA9400000U | ((u32)((off)/8) << 15) | \
+	 ((u32)(t2) << 10) | (31U << 5) | (u32)(t1))
+#define _A64E_STR_SP(t, off) \
+	(0xF9000000U | ((u32)((off)/8) << 10) | (31U << 5) | (u32)(t))
+#define _A64E_LDR_SP(t, off) \
+	(0xF9400000U | ((u32)((off)/8) << 10) | (31U << 5) | (u32)(t))
+#define _A64E_MRS_NZCV(t)   (0xD53B4200U | (u32)(t))
+#define _A64E_MSR_NZCV(t)   (0xD51B4200U | (u32)(t))
+#define _A64E_MOV_FROM_SP(d) (0x910003E0U | (u32)(d))
+#define _A64E_MOV_REG(d, n)  (0xAA0003E0U | ((u32)(n) << 16) | (u32)(d))
+#define _A64E_CBNZ_FWD(t, off) \
+	(0xB5000000U | (((u32)(off) & 0x7FFFFU) << 5) | (u32)(t))
+#define _A64E_MOVZ(rd, hw)   (0xD2800000U | ((u32)(hw) << 21) | (u32)(rd))
+#define _A64E_MOVK16(rd)     (0xF2A00000U | (u32)(rd))
+#define _A64E_MOVK32(rd)     (0xF2C00000U | (u32)(rd))
+#define _A64E_MOVK48(rd)     (0xF2E00000U | (u32)(rd))
+
+/*
+ * Context stub: saves all 31 GPRs + NZCV, calls handler(nvk_reg_ctx*),
+ * checks force_jump, restores regs and enters trampoline (or force target).
+ *
+ * Layout on stack (_CTX_SIZE = 272, 16-byte aligned):
+ *   [SP+0..247]  regs[31] (X0-X30)  +  _pad
+ *   [SP+256]     nzcv
+ *   [SP+264]     force_jump
+ */
 static const u32 _nvk_ctx_stub_template[] = {
-	/* [0]  */ NVK_A64_BTI_JC,
-	/* [1]  */ 0xD1044400,  /* SUB SP, SP, #272 */
-	/* [2]  */ 0xA9000FE0,  /* STP X0, X1, [SP, #0] */
-	/* [3]  */ 0xA9010FE2,  /* STP X2, X3, [SP, #16] */
-	/* [4]  */ 0xA9020FE4,  /* STP X4, X5, [SP, #32] */
-	/* [5]  */ 0xA9030FE6,  /* STP X6, X7, [SP, #48] */
-	/* [6]  */ 0xA9040FE8,  /* STP X8, X9, [SP, #64] */
-	/* [7]  */ 0xA9050FEA,  /* STP X10, X11, [SP, #80] */
-	/* [8]  */ 0xA9060FEC,  /* STP X12, X13, [SP, #96] */
-	/* [9]  */ 0xA9070FEE,  /* STP X14, X15, [SP, #112] */
-	/* [10] */ 0xA9080FF0,  /* STP X16, X17, [SP, #128] */
-	/* [11] */ 0xA9090FF2,  /* STP X18, X19, [SP, #144] */
-	/* [12] */ 0xA90A0FF4,  /* STP X20, X21, [SP, #160] */
-	/* [13] */ 0xA90B0FF6,  /* STP X22, X23, [SP, #176] */
-	/* [14] */ 0xA90C0FF8,  /* STP X24, X25, [SP, #192] */
-	/* [15] */ 0xA90D0FFA,  /* STP X26, X27, [SP, #208] */
-	/* [16] */ 0xA90E0FFC,  /* STP X28, X29, [SP, #224] */
-	/* [17] */ 0xA90F7FFE,  /* STP X30, XZR, [SP, #240] */
-	/* [18] */ 0xD53B4201,  /* MRS X1, NZCV */
-	/* [19] */ 0xA9100FE1,  /* STP X1, XZR, [SP, #256] */
-	/* [21] */ 0xD2800003,  /* MOVZ X3, #0 (patched) */
-	/* [22] */ 0xF2A00003,  /* MOVK X3, #0, LSL#16 (patched) */
-	/* [23] */ 0xF2C00003,  /* MOVK X3, #0, LSL#32 (patched) */
-	/* [24] */ 0xF2E00003,  /* MOVK X3, #0, LSL#48 (patched) */
-	/* [25] */ 0xD63F0060,  /* BLR X3 */
+	/* ---- save all registers ---- */
+	/*  0 */ NVK_A64_BTI_JC,
+	/*  1 */ _A64E_SUB_SP_I(_CTX_SIZE),
+	/*  2 */ _A64E_STP_SP( 0,  1,   0),
+	/*  3 */ _A64E_STP_SP( 2,  3,  16),
+	/*  4 */ _A64E_STP_SP( 4,  5,  32),
+	/*  5 */ _A64E_STP_SP( 6,  7,  48),
+	/*  6 */ _A64E_STP_SP( 8,  9,  64),
+	/*  7 */ _A64E_STP_SP(10, 11,  80),
+	/*  8 */ _A64E_STP_SP(12, 13,  96),
+	/*  9 */ _A64E_STP_SP(14, 15, 112),
+	/* 10 */ _A64E_STP_SP(16, 17, 128),
+	/* 11 */ _A64E_STP_SP(18, 19, 144),
+	/* 12 */ _A64E_STP_SP(20, 21, 160),
+	/* 13 */ _A64E_STP_SP(22, 23, 176),
+	/* 14 */ _A64E_STP_SP(24, 25, 192),
+	/* 15 */ _A64E_STP_SP(26, 27, 208),
+	/* 16 */ _A64E_STP_SP(28, 29, 224),
+	/* 17 */ _A64E_STP_SP(30, 31, 240),   /* X30 + XZR padding */
+	/* 18 */ _A64E_MRS_NZCV(1),
+	/* 19 */ _A64E_STR_SP(1,  _CTX_NZCV),
+	/* 20 */ _A64E_STR_SP(31, _CTX_FORCE), /* force_jump = 0 */
+	/* ---- call handler(ctx) ---- */
+	/* 21 */ _A64E_MOV_FROM_SP(0),         /* X0 = SP (ctx pointer) */
+	/* 22 */ _A64E_MOVZ(3, 0),             /* handler address (patched) */
+	/* 23 */ _A64E_MOVK16(3),
+	/* 24 */ _A64E_MOVK32(3),
+	/* 25 */ _A64E_MOVK48(3),
+	/* 26 */ 0xD63F0060U,                  /* BLR X3 */
+	/* ---- check force_jump ---- */
+	/* 27 */ _A64E_LDR_SP(1, _CTX_FORCE),
+	/* 28 */ _A64E_CBNZ_FWD(1, 24),        /* if nonzero → slot 52 */
 	/* ---- normal restore path ---- */
-	/* [28] */ 0xF94080E1,  /* LDR X1, [SP, #256] (nzcv) */
-	/* [29] */ 0xD51B4201,  /* MSR NZCV, X1 */
-	/* [30] */ 0xA9410FE2,  /* LDP X2, X3, [SP, #16] */
-	/* [31] */ 0xA9420FE4,  /* LDP X4, X5, [SP, #32] */
-	/* [32] */ 0xA9430FE6,  /* LDP X6, X7, [SP, #48] */
-	/* [33] */ 0xA9440FE8,  /* LDP X8, X9, [SP, #64] */
-	/* [34] */ 0xA9450FEA,  /* LDP X10, X11, [SP, #80] */
-	/* [35] */ 0xA9460FEC,  /* LDP X12, X13, [SP, #96] */
-	/* [36] */ 0xA9470FEE,  /* LDP X14, X15, [SP, #112] */
-	/* [37] */ 0xA9480FF0,  /* LDP X16, X17, [SP, #128] */
-	/* [38] */ 0xA9490FF2,  /* LDP X18, X19, [SP, #144] */
-	/* [39] */ 0xA94A0FF4,  /* LDP X20, X21, [SP, #160] */
-	/* [40] */ 0xA94B0FF6,  /* LDP X22, X23, [SP, #176] */
-	/* [41] */ 0xA94C0FF8,  /* LDP X24, X25, [SP, #192] */
-	/* [42] */ 0xA94D0FFA,  /* LDP X26, X27, [SP, #208] */
-	/* [43] */ 0xA94E0FFC,  /* LDP X28, X29, [SP, #224] */
-	/* [44] */ 0xA94F7FFE,  /* LDP X30, XZR, [SP, #240] */
-	/* [45] */ 0xA9400FE0,  /* LDP X0, X1, [SP, #0] */
-	/* [46] */ 0x91044400,  /* ADD SP, SP, #272 */
-	/* -- PATCH: jump to trampoline (slots 47-50) -- */
-	/* [47] */ 0xD2800011,  /* MOVZ X17, #0 (patched) */
-	/* [48] */ 0xF2A00011,  /* MOVK X17, #0, LSL#16 (patched) */
-	/* [49] */ 0xF2C00011,  /* MOVK X17, #0, LSL#32 (patched) */
-	/* [50] */ NVK_A64_RET_X17,
-	/* ---- force jump path ---- */
-	/* [51] */ NVK_A64_BTI_JC,
-	/* [53] */ 0xF94080E1,  /* LDR X1, [SP, #256] (nzcv) */
-	/* [54] */ 0xD51B4201,  /* MSR NZCV, X1 */
-	/* [55] */ 0xA9410FE2,  /* LDP X2, X3, [SP, #16] */
-	/* [56] */ 0xA9420FE4,  /* LDP X4, X5, [SP, #32] */
-	/* [57] */ 0xA9430FE6,  /* LDP X6, X7, [SP, #48] */
-	/* [58] */ 0xA9440FE8,  /* LDP X8, X9, [SP, #64] */
-	/* [59] */ 0xA9450FEA,  /* LDP X10, X11, [SP, #80] */
-	/* [60] */ 0xA9460FEC,  /* LDP X12, X13, [SP, #96] */
-	/* [61] */ 0xA9470FEE,  /* LDP X14, X15, [SP, #112] */
-	/* [63] */ 0xA94A0FF4,  /* LDP X20, X21, [SP, #160] */
-	/* [64] */ 0xA94B0FF6,  /* LDP X22, X23, [SP, #176] */
-	/* [65] */ 0xA94C0FF8,  /* LDP X24, X25, [SP, #192] */
-	/* [66] */ 0xA94D0FFA,  /* LDP X26, X27, [SP, #208] */
-	/* [67] */ 0xA94E0FFC,  /* LDP X28, X29, [SP, #224] */
-	/* [68] */ 0xF9407BFE,  /* LDR X30, [SP, #240] */
-	/* [69] */ 0xA9400FE0,  /* LDP X0, X1, [SP, #0] */
-	/* [70] */ 0x91044400,  /* ADD SP, SP, #272 */
+	/* 29 */ _A64E_LDR_SP(2, _CTX_NZCV),
+	/* 30 */ _A64E_MSR_NZCV(2),
+	/* 31 */ _A64E_LDP_SP( 2,  3,  16),
+	/* 32 */ _A64E_LDP_SP( 4,  5,  32),
+	/* 33 */ _A64E_LDP_SP( 6,  7,  48),
+	/* 34 */ _A64E_LDP_SP( 8,  9,  64),
+	/* 35 */ _A64E_LDP_SP(10, 11,  80),
+	/* 36 */ _A64E_LDP_SP(12, 13,  96),
+	/* 37 */ _A64E_LDP_SP(14, 15, 112),
+	/* 38 */ _A64E_LDP_SP(16, 17, 128),
+	/* 39 */ _A64E_LDP_SP(18, 19, 144),
+	/* 40 */ _A64E_LDP_SP(20, 21, 160),
+	/* 41 */ _A64E_LDP_SP(22, 23, 176),
+	/* 42 */ _A64E_LDP_SP(24, 25, 192),
+	/* 43 */ _A64E_LDP_SP(26, 27, 208),
+	/* 44 */ _A64E_LDP_SP(28, 29, 224),
+	/* 45 */ _A64E_LDP_SP(30, 31, 240),
+	/* 46 */ _A64E_LDP_SP( 0,  1,   0),   /* restore X0, X1 last */
+	/* 47 */ _A64E_ADD_SP_I(_CTX_SIZE),
+	/* 48 */ _A64E_MOVZ(17, 0),            /* trampoline addr (patched) */
+	/* 49 */ _A64E_MOVK16(17),
+	/* 50 */ _A64E_MOVK32(17),
+	/* 51 */ NVK_A64_RET_X17,
+	/* ---- force jump path (target of CBNZ at slot 28) ---- */
+	/* 52 */ _A64E_MOV_REG(17, 1),         /* X17 = force_jump addr */
+	/* 53 */ _A64E_LDR_SP(2, _CTX_NZCV),
+	/* 54 */ _A64E_MSR_NZCV(2),
+	/* 55 */ _A64E_LDP_SP( 2,  3,  16),
+	/* 56 */ _A64E_LDP_SP( 4,  5,  32),
+	/* 57 */ _A64E_LDP_SP( 6,  7,  48),
+	/* 58 */ _A64E_LDP_SP( 8,  9,  64),
+	/* 59 */ _A64E_LDP_SP(10, 11,  80),
+	/* 60 */ _A64E_LDP_SP(12, 13,  96),
+	/* 61 */ _A64E_LDP_SP(14, 15, 112),
+	/* 62 */ _A64E_LDP_SP(18, 19, 144),   /* skip X16/X17 (scratch) */
+	/* 63 */ _A64E_LDP_SP(20, 21, 160),
+	/* 64 */ _A64E_LDP_SP(22, 23, 176),
+	/* 65 */ _A64E_LDP_SP(24, 25, 192),
+	/* 66 */ _A64E_LDP_SP(26, 27, 208),
+	/* 67 */ _A64E_LDP_SP(28, 29, 224),
+	/* 68 */ _A64E_LDR_SP(30, 240),        /* X30 only */
+	/* 69 */ _A64E_LDP_SP( 0,  1,   0),
+	/* 70 */ _A64E_ADD_SP_I(_CTX_SIZE),
+	/* 71 */ NVK_A64_RET_X17,
 };
 
-#define _CTX_STUB_LEN (sizeof(_nvk_ctx_stub_template) / sizeof(u32))
-#define _CTX_HANDLER_SLOT 21  /* first MOVZ for handler address */
-#define _CTX_TRAMP_SLOT   47  /* first MOVZ for trampoline address */
-#define _CTX_CBNZ_SLOT    27  /* CBNZ force_jump check */
+#define _CTX_STUB_LEN     (sizeof(_nvk_ctx_stub_template) / sizeof(u32))
+#define _CTX_HANDLER_SLOT 22
+#define _CTX_TRAMP_SLOT   48
+
+_Static_assert(_CTX_STUB_LEN == 72, "context stub size mismatch");
+_Static_assert(_CTX_SIZE % 16 == 0, "context frame must be 16-byte aligned");
+_Static_assert(_CTX_HANDLER_SLOT + 4 < _CTX_TRAMP_SLOT,
+	       "handler slots must not overlap trampoline slots");
 
 typedef void (*nvk_ctx_handler_t)(nvk_reg_ctx *ctx);
 
@@ -474,19 +540,21 @@ static int nvk_hook_install_ctx(struct nvk_hook_ctx *h, void *target,
 	int  n;
 	u32 *page;
 
-	if (!_nvk_inited) return -1;
+	if (!_nvk_inited) return NVK_HOOK_E_NOINIT;
 	h->base.target = target;
 	h->base.replace = (void *)handler;
 	h->base.trampoline = (void *)0;
 	h->base.active = 0;
 	h->stub = (void *)0;
 
+	if (nvk_a64_is_hook_patch(code[0]))
+		return NVK_HOOK_E_ALREADY;
+
 	{
 		unsigned long fn_sz = _nvk_fn_size(target);
 		if (fn_sz > 0 && fn_sz < NVK_HOOK_MAX_PATCH * 4)
-			return -2;
+			return NVK_HOOK_E_SHORT;
 	}
-	h->stub = (void *)0;
 
 	_nvk_scan_entry(code, &skip, &patch_count);
 	h->base.patch_count = patch_count;
@@ -500,41 +568,35 @@ static int nvk_hook_install_ctx(struct nvk_hook_ctx *h, void *target,
 			continue;
 		n = nvk_a64_relocate_abs(insn, (unsigned long)&code[i],
 					 &tramp[tidx]);
-		if (n == 0) return -1;
+		if (n == 0) return NVK_HOOK_E_RELOC;
 		tidx += n;
-		if (tidx >= NVK_HOOK_TRAMP_CAP - 8) return -1;
+		if (tidx >= NVK_HOOK_TRAMP_CAP - 8) return NVK_HOOK_E_RELOC;
 	}
 	unsigned long back = (unsigned long)target + patch_count * 4;
 	tidx += nvk_a64_gen_mov64(&tramp[tidx], 17, back);
 	tramp[tidx++] = NVK_A64_RET_X17;
 
 	page = (u32 *)_nvk_modalloc(4096);
-	if (!page) return -1;
+	if (!page) return NVK_HOOK_E_ALLOC;
 
 	h->stub = page;
 	h->tramp_code = page + _CTX_STUB_LEN + 16;
 	h->base.trampoline = page;
 
-	/* Copy stub template. */
 	for (i = 0; i < (int)_CTX_STUB_LEN; i++)
 		page[i] = _nvk_ctx_stub_template[i];
 
-	/* Patch handler address (X3, slots 21-24). */
+	/* Patch handler address into X3 load sequence (slots 22-25). */
 	n = nvk_a64_gen_mov64(mov_buf, 3, (u64)(unsigned long)handler);
 	for (i = 0; i < n && i < 4; i++)
 		page[_CTX_HANDLER_SLOT + i] = mov_buf[i];
 
-	/* Patch trampoline address (X17, slots 47-49). */
+	/* Patch trampoline address into X17 load sequence (slots 48-50). */
 	n = nvk_a64_gen_mov64(mov_buf, 17,
 			      (u64)(unsigned long)h->tramp_code);
 	for (i = 0; i < n && i < 3; i++)
 		page[_CTX_TRAMP_SLOT + i] = mov_buf[i];
 
-	int cbnz_offset = 51 - _CTX_CBNZ_SLOT;
-	page[_CTX_CBNZ_SLOT] = 0xB5000001U |
-				(((u32)cbnz_offset & 0x7FFFF) << 5);
-
-	/* Copy trampoline after stub. */
 	for (i = 0; i < tidx; i++)
 		h->tramp_code[i] = tramp[i];
 
@@ -543,19 +605,27 @@ static int nvk_hook_install_ctx(struct nvk_hook_ctx *h, void *target,
 	if (call_orig)
 		*call_orig = (void *)h->tramp_code;
 
-	/* 16-byte atomic patch at target. */
-	patch[0] = 0x58000050U;
-	patch[1] = 0xD61F0200U;
-	*(unsigned long *)&patch[2] = (unsigned long)h->stub;
+	for (i = 0; i < patch_count; i++)
+		patch[i] = NVK_A64_NOP;
+	{
+		int jmp = 0;
+		if (nvk_a64_is_bti(code[0])) {
+			patch[0] = code[0];
+			jmp = 1;
+		}
+		patch[jmp + 0] = 0x58000050U;  /* LDR X16, [PC, #8] */
+		patch[jmp + 1] = 0xD61F0200U;  /* BR  X16 */
+		*(unsigned long *)&patch[jmp + 2] = (unsigned long)h->stub;
+	}
 
 	if (_nvk_patch_multi(code, patch, patch_count) != 0) {
 		_nvk_modfree(page);
 		h->stub = (void *)0;
-		return -1;
+		return NVK_HOOK_E_PATCH;
 	}
 
 	h->base.active = 1;
-	return 0;
+	return NVK_HOOK_OK;
 }
 
 

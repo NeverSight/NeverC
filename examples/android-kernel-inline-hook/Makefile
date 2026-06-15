@@ -1,5 +1,9 @@
 # Android GKI kernel inline-hook demo (.ko)
-# Usage: make            (or: make KERNEL=601 for 6.1, etc.)
+#
+# Usage:
+#   make                                       (simple hook mode)
+#   make EXTRA=-DNVK_CONTEXT_HOOK              (context hook mode)
+#   make KERNEL=601                            (target 6.1)
 
 NEVERC ?= ../../build-neverc/bin/neverc
 
@@ -7,13 +11,14 @@ TARGET  = aarch64-linux-android
 MODULE  = nvk_inline_hook.ko
 SRCS    = main.c
 
-# -DNVK_KERNEL=510|515|601|606|612 selects the target kernel preset.
 KERNEL ?= 510
+EXTRA  ?=
 
 FLAGS = \
 	--target=$(TARGET) \
 	-fandroid-kernel-driver-mode \
 	-DNVK_KERNEL=$(KERNEL) \
+	$(EXTRA) \
 	-Wall -Wno-unused
 
 all: $(MODULE)

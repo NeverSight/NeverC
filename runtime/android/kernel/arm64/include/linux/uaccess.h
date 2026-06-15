@@ -4,20 +4,12 @@
 
 #include <linux/types.h>
 
-unsigned long copy_to_user(void __user *to, const void *from, unsigned long n);
-unsigned long copy_from_user(void *to, const void __user *from, unsigned long n);
-
-#define get_user(x, ptr)                                                      \
-	({                                                                     \
-		__typeof__(*(ptr)) __v;                                        \
-		unsigned long __e = copy_from_user(&__v, (ptr), sizeof(__v));  \
-		(x) = __v;                                                     \
-		__e ? -EFAULT : 0;                                             \
-	})
-#define put_user(x, ptr)                                                      \
-	({                                                                     \
-		__typeof__(*(ptr)) __v = (x);                                  \
-		copy_to_user((ptr), &__v, sizeof(__v)) ? -EFAULT : 0;         \
-	})
+/*
+ * GKI kernels do NOT export copy_{from,to}_user directly.
+ * Resolve via NVK_LOOKUP("_copy_from_user") at runtime.
+ * Type signatures for function pointers:
+ *   unsigned long (*)(void *, const void __user *, unsigned long)
+ *   unsigned long (*)(void __user *, const void *, unsigned long)
+ */
 
 #endif /* _NVK_LINUX_UACCESS_H */
