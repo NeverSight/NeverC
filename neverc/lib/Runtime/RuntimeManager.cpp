@@ -41,6 +41,7 @@ constexpr TargetDef Targets[] = {
     {{"windows-arm64"}, {"windows/arm64"}},
     {{"linux-x64"}, {"linux/x64"}},
     {{"linux-arm64"}, {"linux/arm64"}},
+    {{"macos-arm64"}, {"macos/arm64"}},
     {{"android-arm64"}, {"android/arm64"}},
 };
 
