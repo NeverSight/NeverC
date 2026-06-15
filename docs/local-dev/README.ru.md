@@ -96,7 +96,7 @@ tools\neverc-env.bat --global -r &REM удалить из PATH пользова�
 
 ## Кросс-компиляция под Windows
 
-NeverC включает Windows SDK и WDK в `runtime/`; внешняя настройка SDK не требуется.
+NeverC включает SDK всех платформ в `runtime/` (Windows SDK/WDK, Linux sysroot, macOS sysroot, Android NDK); внешняя настройка SDK не требуется.
 
 ```bash
 neverc --target=x86_64-pc-windows-msvc \

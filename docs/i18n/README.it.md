@@ -42,7 +42,7 @@ C è già il linguaggio di sistema più semplice. NeverC lo rende ancora più se
 
 - **[Compilatore shellcode](../shellcode-compiler/README.it.md)** — pipeline IR/MIR multistadio, estrazione multipiattaforma, risoluzione import/syscall, modalità kernel, audit byte vietati, architettura a plugin
 - **Linker integrato** — COFF, ELF e Mach-O in un solo binario; nessun `ld` o `link.exe` esterno
-- **Cross-compilazione** — PE Windows da macOS/Linux con SDK MSVC incluso
+- **Cross-compilazione** — Windows PE, Linux ELF, macOS Mach-O e Android ELF da qualsiasi host con SDK di piattaforma integrati
 - **[Runtime integrati](../builtins/README.it.md)** — runtime LLVM bitcode integrati nel compilatore: [`string`](../builtins/string/README.it.md) (stringa a semantica di valore, gestione automatica della memoria), [`mimalloc`](../builtins/mimalloc/README.it.md) (sostituzione trasparente allocatore ad alte prestazioni) e [`xorstr`](../builtins/xorstr/README.it.md) (cifratura di stringhe a tempo di compilazione con decifratura anti-firma)
 - **[API Plugin](../plugin-api/README.it.md)** — ABI C pura per plugin di pass fuori dall'albero; SDK a singolo header, zero dipendenze LLVM/CRT, hook point IR, MIR, Binary e Linker
 - **[Estensione `.nc`](../nc-extension/README.it.md)** — usa `.nc` per abilitare automaticamente tutte le funzionalità NeverC (`string`, tipi interi stile Rust) senza flag aggiuntivi

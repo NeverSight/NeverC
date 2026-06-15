@@ -96,7 +96,7 @@ tools\neverc-env.bat --global -r &REM إزالة من PATH المستخدم عب
 
 ## التجميع المتقاطع إلى Windows
 
-يتضمن NeverC حزمة Windows SDK و WDK في `runtime/`؛ لا حاجة لإعداد خارجي.
+يتضمن NeverC حزم SDK لكل منصة في `runtime/` (Windows SDK/WDK، Linux sysroot، macOS sysroot، Android NDK)؛ لا حاجة لإعداد خارجي.
 
 ```bash
 neverc --target=x86_64-pc-windows-msvc \

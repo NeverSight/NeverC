@@ -88,7 +88,7 @@ neverc make run        # Build + push to device + run via adb
 ## Cross-Platform Highlights
 
 - **Single toolchain**: NeverC handles preprocessing, compilation, optimization (auto-LTO), and linking in one invocation
-- **Bundled SDK**: Windows SDK/WDK, Linux sysroot (Ubuntu 22.04), and Android sysroot (NDK r26c, API 21+) are bundled in `runtime/` — zero external dependencies
+- **Bundled SDK**: Windows SDK/WDK, Linux sysroot (Ubuntu 22.04), macOS sysroot (macOS 14), and Android sysroot (NDK r26c, API 21+) are bundled in `runtime/` — zero external dependencies
 - **Host-agnostic**: Build from macOS (arm64/x86_64), Linux (x86_64/aarch64), or Windows with identical commands
 - **Multi-target**: Cross-compile to Windows PE (`.sys`/`.exe`/`.dll`), Linux ELF, macOS Mach-O (`.dylib`), and Android ELF from any host
 - **Debug support**: Pass `-g` for DWARF debug info; inspect with `llvm-dwarfdump`

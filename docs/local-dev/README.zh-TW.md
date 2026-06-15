@@ -96,7 +96,7 @@ tools\neverc-env.bat --global -r &REM 透過 setx 從使用者 PATH 移除
 
 ## 交叉編譯到 Windows
 
-NeverC 在 `runtime/` 中內建了 Windows SDK 和 WDK，無需額外設定。
+NeverC 在 `runtime/` 中內建了各平台 SDK（Windows SDK/WDK、Linux sysroot、macOS sysroot、Android NDK），無需額外設定。
 
 ```bash
 neverc --target=x86_64-pc-windows-msvc \

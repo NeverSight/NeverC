@@ -96,7 +96,7 @@ The release is signed with an Apple Developer ID certificate and notarized by Ap
 
 ## Cross-Compiling to Windows
 
-NeverC bundles a Windows SDK and WDK in `runtime/`; no external SDK setup is needed.
+NeverC bundles platform SDKs in `runtime/` (Windows SDK/WDK, Linux sysroot, macOS sysroot, Android NDK); no external SDK setup is needed.
 
 ```bash
 neverc --target=x86_64-pc-windows-msvc \

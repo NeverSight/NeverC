@@ -88,7 +88,7 @@ neverc make run        # 构建 + 推送到设备 + 通过 adb 运行
 ## 跨平台亮点
 
 - **单一工具链**：NeverC 在一次调用中处理预处理、编译、优化（自动 LTO）和链接
-- **捆绑 SDK**：Windows SDK/WDK、Linux sysroot（Ubuntu 22.04）和 Android sysroot（NDK r26c, API 21+）头文件/库已捆绑在 `runtime/` 中 — 零外部依赖
+- **捆绑 SDK**：Windows SDK/WDK、Linux sysroot（Ubuntu 22.04）、macOS sysroot（macOS 14）和 Android sysroot（NDK r26c, API 21+）头文件/库已捆绑在 `runtime/` 中 — 零外部依赖
 - **宿主无关**：从 macOS（arm64/x86_64）、Linux（x86_64/aarch64）或 Windows 使用相同命令构建
 - **多目标**：从任意宿主交叉编译到 Windows PE（`.sys`/`.exe`/`.dll`）、Linux ELF、macOS Mach-O（`.dylib`）和 Android ELF
 - **调试支持**：传入 `-g` 可嵌入 DWARF 调试信息；使用 `llvm-dwarfdump` 检查

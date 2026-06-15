@@ -96,7 +96,7 @@ Le package est signé avec un certificat Apple Developer ID et notarisé par App
 
 ## Compilation croisée vers Windows
 
-NeverC intègre un SDK Windows et un WDK dans `runtime/` ; aucune configuration externe n'est nécessaire.
+NeverC intègre les SDK de chaque plateforme dans `runtime/` (Windows SDK/WDK, sysroot Linux, sysroot macOS, Android NDK) ; aucune configuration externe n'est nécessaire.
 
 ```bash
 neverc --target=x86_64-pc-windows-msvc \

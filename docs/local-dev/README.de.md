@@ -96,7 +96,7 @@ Das Release ist mit einem Apple Developer ID-Zertifikat signiert und von Apple n
 
 ## Cross-Kompilierung nach Windows
 
-NeverC enthält ein Windows SDK und WDK in `runtime/`; kein externes SDK-Setup erforderlich.
+NeverC enthält Plattform-SDKs in `runtime/` (Windows SDK/WDK, Linux-Sysroot, macOS-Sysroot, Android NDK); kein externes SDK-Setup erforderlich.
 
 ```bash
 neverc --target=x86_64-pc-windows-msvc \

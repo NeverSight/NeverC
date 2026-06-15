@@ -96,7 +96,7 @@ Unix 스크립트와 달리 `source`가 필요 없습니다 — `.bat`는 현재
 
 ## Windows로 크로스 컴파일
 
-NeverC는 `runtime/`에 Windows SDK와 WDK를 번들로 포함하고 있어 외부 SDK 설정이 필요 없습니다.
+NeverC는 `runtime/`에 각 플랫폼 SDK(Windows SDK/WDK, Linux sysroot, macOS sysroot, Android NDK)를 번들로 포함하고 있어 외부 SDK 설정이 필요 없습니다.
 
 ```bash
 neverc --target=x86_64-pc-windows-msvc \
