@@ -145,6 +145,51 @@ static void test_nested(void) {
     neverc_xml_node_free(root);
 }
 
+/* Regression: an element whose text is split into many runs by interspersed
+ * children (mixed content) must concatenate every run in order. The builder
+ * previously did strlen + realloc-to-exact on each run -> O(n^2); the parallel
+ * length/capacity stack makes it O(n) with geometric growth. Large N here both
+ * checks correctness and would crawl under the old quadratic path. */
+static void test_mixed_content(void) {
+    printf("[mixed content]\n");
+    const int N = 4000;
+
+    /* Document: <p>t0<b></b>t1<b></b>...<b></b>t{N}</p>, segment i = "[i]".
+     * Each <b></b> opens and closes, so every text run belongs to <p> and the
+     * reused stack slot for <b> must reset its text accumulator each time. */
+    size_t cap = (size_t)N * 32 + 64, len = 0;
+    char *xml = (char *)malloc(cap);
+    char *want = (char *)malloc(cap);
+    size_t wlen = 0;
+    len += (size_t)snprintf(xml + len, cap - len, "<p>");
+    for (int i = 0; i <= N; i++) {
+        len  += (size_t)snprintf(xml + len, cap - len, "[%d]", i);
+        wlen += (size_t)snprintf(want + wlen, cap - wlen, "[%d]", i);
+        if (i < N) len += (size_t)snprintf(xml + len, cap - len, "<b></b>");
+    }
+    len += (size_t)snprintf(xml + len, cap - len, "</p>");
+
+    neverc_xml_node_t *root = neverc_xml_parse(xml, len);
+    check_bool("mixed parse ok", root != NULL, 1);
+    neverc_xml_node_t *p = root ? neverc_xml_node_child(root, "p") : NULL;
+    check_bool("mixed p found", p != NULL, 1);
+    if (p) {
+        check_str("mixed concatenated text", p->text, want);
+        check_int("mixed child count", p->nchildren, N);
+    }
+    neverc_xml_node_free(root);
+    free(xml);
+    free(want);
+
+    /* Text before, between and after children all belong to the parent. */
+    const char *mc = "<a>x<b></b>y<c></c>z</a>";
+    neverc_xml_node_t *r2 = neverc_xml_parse(mc, strlen(mc));
+    neverc_xml_node_t *a = r2 ? neverc_xml_node_child(r2, "a") : NULL;
+    if (a) check_str("mixed around children", a->text, "xyz");
+    else   check_bool("mixed around children", 0, 1);
+    neverc_xml_node_free(r2);
+}
+
 int main(void) {
     printf("=== NeverC Encoding/XML Module Tests ===\n\n");
     test_tokenizer();
@@ -153,6 +198,7 @@ int main(void) {
     test_proc_inst();
     test_escape();
     test_nested();
+    test_mixed_content();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

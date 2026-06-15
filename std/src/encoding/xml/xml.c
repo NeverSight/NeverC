@@ -184,8 +184,18 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
 
     int stack_cap = 32;
     neverc_xml_node_t **stack = (neverc_xml_node_t **)malloc(stack_cap * sizeof(void *));
+    /* Parallel per-depth text accumulators. Tracking each open element's text
+     * length and buffer capacity lets repeated character-data runs (mixed
+     * content like <p>a<b/>c<b/>d...</p>, where each child splits the text) grow
+     * the buffer geometrically instead of strlen + realloc-to-exact on every
+     * run, which was O(n^2) in the number of runs per element. */
+    size_t *tlen = (size_t *)malloc(stack_cap * sizeof(size_t));
+    size_t *tcap = (size_t *)malloc(stack_cap * sizeof(size_t));
     int stack_top = 0;
-    stack[stack_top++] = root;
+    stack[stack_top] = root;
+    tlen[stack_top] = 0;
+    tcap[stack_top] = 0;
+    stack_top++;
 
     neverc_xml_token_t tok;
     while (neverc_xml_decode_token(&d, &tok) > 0) {
@@ -197,6 +207,8 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
                  * it here is safe. */
                 neverc_xml_token_free(&tok);
                 free(stack);
+                free(tlen);
+                free(tcap);
                 neverc_xml_node_free(root);
                 return NULL;
             }
@@ -208,24 +220,40 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
             if (stack_top >= stack_cap) {
                 stack_cap *= 2;
                 stack = (neverc_xml_node_t **)realloc(stack, stack_cap * sizeof(void *));
+                tlen  = (size_t *)realloc(tlen, stack_cap * sizeof(size_t));
+                tcap  = (size_t *)realloc(tcap, stack_cap * sizeof(size_t));
             }
-            stack[stack_top++] = child;
+            stack[stack_top] = child;
+            tlen[stack_top] = 0;
+            tcap[stack_top] = 0;
+            stack_top++;
             break;
         }
         case NEVERC_XML_END_ELEMENT:
             if (stack_top > 1) stack_top--;
             break;
         case NEVERC_XML_CHAR_DATA: {
-            neverc_xml_node_t *cur = stack[stack_top - 1];
+            int si = stack_top - 1;
+            neverc_xml_node_t *cur = stack[si];
+            size_t nlen = tok.data_len;
             if (!cur->text) {
+                /* First run for this element: steal the token's buffer
+                 * (dup_range already allocated exactly data_len + 1). */
                 cur->text = tok.data;
                 tok.data = NULL;
-            } else {
-                size_t olen = strlen(cur->text);
-                size_t nlen = tok.data_len;
-                cur->text = (char *)realloc(cur->text, olen + nlen + 1);
-                memcpy(cur->text + olen, tok.data, nlen);
-                cur->text[olen + nlen] = '\0';
+                tlen[si] = nlen;
+                tcap[si] = nlen + 1;
+            } else if (nlen > 0) {
+                size_t need = tlen[si] + nlen + 1;
+                if (need > tcap[si]) {
+                    size_t nc = tcap[si] * 2;
+                    if (nc < need) nc = need;
+                    cur->text = (char *)realloc(cur->text, nc);
+                    tcap[si] = nc;
+                }
+                memcpy(cur->text + tlen[si], tok.data, nlen);
+                tlen[si] += nlen;
+                cur->text[tlen[si]] = '\0';
             }
             break;
         }
@@ -236,6 +264,8 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
     }
 
     free(stack);
+    free(tlen);
+    free(tcap);
     return root;
 }
 
