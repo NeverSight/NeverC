@@ -7,18 +7,13 @@
 #include <linux/kallsyms.h>
 #include <linux/sched.h>
 #include <nvk_mem.h>
+#include <nvk_process.h>
 
-typedef void *(*nvk_prepare_creds_fn)(void);
-typedef int   (*nvk_commit_creds_fn)(void *);
 typedef void *(*nvk_get_cred_fn)(const void *);
 typedef void  (*nvk_put_cred_fn)(const void *);
-typedef int   (*nvk_task_pid_nr_fn)(struct task_struct *);
 
-static nvk_prepare_creds_fn _nvk_cred_prepare;
-static nvk_commit_creds_fn  _nvk_cred_commit;
 static nvk_get_cred_fn      _nvk_cred_get;
 static nvk_put_cred_fn      _nvk_cred_put;
-static nvk_task_pid_nr_fn   _nvk_cred_pid_nr;
 static int                  _nvk_cred_inited;
 
 static unsigned long _nvk_off_cred;
@@ -32,21 +27,15 @@ static int nvk_cred_init(void)
 {
 	if (_nvk_cred_inited) return 0;
 
-	if (!_nvk_mem_inited)
-		nvk_mem_init();
+	if (!_nvk_proc_inited)
+		nvk_process_init();
 
-	_nvk_cred_prepare =
-		(nvk_prepare_creds_fn)NVK_LOOKUP("prepare_creds");
-	_nvk_cred_commit =
-		(nvk_commit_creds_fn)NVK_LOOKUP("commit_creds");
 	_nvk_cred_get =
 		(nvk_get_cred_fn)NVK_LOOKUP("get_cred");
 	_nvk_cred_put =
 		(nvk_put_cred_fn)NVK_LOOKUP("put_cred");
-	_nvk_cred_pid_nr =
-		(nvk_task_pid_nr_fn)NVK_LOOKUP("task_pid_nr");
 
-	if (!_nvk_cred_prepare || !_nvk_cred_commit)
+	if (!_nvk_prepare_creds || !_nvk_commit_creds)
 		return -1;
 
 	_nvk_cred_inited = 1;
@@ -57,32 +46,31 @@ static int _nvk_cred_find_uid_offset(void)
 {
 	if (_nvk_off_uid) return 0;
 
-	void *cred = _nvk_cred_prepare();
+	void *cred = _nvk_prepare_creds();
 	if (!cred) return -1;
 
 	const unsigned char *p = (const unsigned char *)cred;
-	u32 my_uid = 0;
-	if (_nvk_cred_pid_nr) {
-		int pid = _nvk_cred_pid_nr(current);
-		(void)pid;
-	}
 
-	for (unsigned long i = 0; i < 128; i += 4) {
-		u32 v = *(u32 *)(p + i);
-		if (v == my_uid) {
-			u32 v2 = *(u32 *)(p + i + 4);
-			if (v2 == my_uid || v2 == 0) {
-				_nvk_off_uid = i;
-				break;
-			}
+	for (unsigned long i = 0; i + 24 < 128; i += 4) {
+		u32 uid  = *(u32 *)(p + i);
+		u32 gid  = *(u32 *)(p + i + 4);
+		u32 suid = *(u32 *)(p + i + 8);
+		u32 sgid = *(u32 *)(p + i + 12);
+		u32 euid = *(u32 *)(p + i + 16);
+		u32 egid = *(u32 *)(p + i + 20);
+
+		if (uid == suid && suid == euid &&
+		    gid == sgid && sgid == egid &&
+		    uid < 65536 && gid < 65536) {
+			_nvk_off_uid = i;
+			break;
 		}
 	}
 
-	_nvk_cred_commit(cred);
+	_nvk_commit_creds(cred);
 
-	if (!_nvk_off_uid) {
+	if (!_nvk_off_uid)
 		_nvk_off_uid = 4;
-	}
 	return 0;
 }
 
@@ -136,10 +124,10 @@ static int nvk_cred_set_root(void)
 {
 	void *cred;
 
-	if (!_nvk_cred_prepare || !_nvk_cred_commit)
+	if (!_nvk_prepare_creds || !_nvk_commit_creds)
 		return -1;
 
-	cred = _nvk_cred_prepare();
+	cred = _nvk_prepare_creds();
 	if (!cred) return -1;
 
 	_nvk_cred_find_uid_offset();
@@ -154,17 +142,17 @@ static int nvk_cred_set_root(void)
 	for (int i = 0; i < 4; i++)
 		*(u32 *)(p + cap_off + i * 4) = 0xFFFFFFFFU;
 
-	return _nvk_cred_commit(cred);
+	return _nvk_commit_creds(cred);
 }
 
 static int nvk_cred_set_uid(u32 uid, u32 gid)
 {
 	void *cred;
 
-	if (!_nvk_cred_prepare || !_nvk_cred_commit)
+	if (!_nvk_prepare_creds || !_nvk_commit_creds)
 		return -1;
 
-	cred = _nvk_cred_prepare();
+	cred = _nvk_prepare_creds();
 	if (!cred) return -1;
 
 	_nvk_cred_find_uid_offset();
@@ -181,17 +169,17 @@ static int nvk_cred_set_uid(u32 uid, u32 gid)
 	*(u32 *)(p + base + 24) = uid;   /* fsuid */
 	*(u32 *)(p + base + 28) = gid;   /* fsgid */
 
-	return _nvk_cred_commit(cred);
+	return _nvk_commit_creds(cred);
 }
 
 static int nvk_cred_set_caps_full(void)
 {
 	void *cred;
 
-	if (!_nvk_cred_prepare || !_nvk_cred_commit)
+	if (!_nvk_prepare_creds || !_nvk_commit_creds)
 		return -1;
 
-	cred = _nvk_cred_prepare();
+	cred = _nvk_prepare_creds();
 	if (!cred) return -1;
 
 	_nvk_cred_find_uid_offset();
@@ -202,7 +190,7 @@ static int nvk_cred_set_caps_full(void)
 	for (int i = 0; i < 4; i++)
 		*(u32 *)(p + cap_off + i * 4) = 0xFFFFFFFFU;
 
-	return _nvk_cred_commit(cred);
+	return _nvk_commit_creds(cred);
 }
 
 #define NVK_CAP_CHOWN            0
@@ -238,12 +226,12 @@ static int nvk_cred_set_cap(int cap, int set_type)
 {
 	void *cred;
 
-	if (!_nvk_cred_prepare || !_nvk_cred_commit)
+	if (!_nvk_prepare_creds || !_nvk_commit_creds)
 		return -1;
 	if (cap < 0 || cap > 63 || set_type < 0 || set_type > 3)
 		return -1;
 
-	cred = _nvk_cred_prepare();
+	cred = _nvk_prepare_creds();
 	if (!cred) return -1;
 
 	_nvk_cred_find_uid_offset();
@@ -257,19 +245,19 @@ static int nvk_cred_set_cap(int cap, int set_type)
 	u32 *cap_word = (u32 *)(p + set_off + word * 4);
 	*cap_word |= (1U << bit);
 
-	return _nvk_cred_commit(cred);
+	return _nvk_commit_creds(cred);
 }
 
 static int nvk_cred_clear_cap(int cap, int set_type)
 {
 	void *cred;
 
-	if (!_nvk_cred_prepare || !_nvk_cred_commit)
+	if (!_nvk_prepare_creds || !_nvk_commit_creds)
 		return -1;
 	if (cap < 0 || cap > 63 || set_type < 0 || set_type > 3)
 		return -1;
 
-	cred = _nvk_cred_prepare();
+	cred = _nvk_prepare_creds();
 	if (!cred) return -1;
 
 	_nvk_cred_find_uid_offset();
@@ -283,7 +271,7 @@ static int nvk_cred_clear_cap(int cap, int set_type)
 	u32 *cap_word = (u32 *)(p + set_off + word * 4);
 	*cap_word &= ~(1U << bit);
 
-	return _nvk_cred_commit(cred);
+	return _nvk_commit_creds(cred);
 }
 
 static int nvk_cred_has_cap(struct task_struct *task, int cap, int set_type)
@@ -313,10 +301,10 @@ static int nvk_cred_clear_securebits(void)
 {
 	void *cred;
 
-	if (!_nvk_cred_prepare || !_nvk_cred_commit)
+	if (!_nvk_prepare_creds || !_nvk_commit_creds)
 		return -1;
 
-	cred = _nvk_cred_prepare();
+	cred = _nvk_prepare_creds();
 	if (!cred) return -1;
 
 	_nvk_cred_find_uid_offset();
@@ -325,7 +313,7 @@ static int nvk_cred_clear_securebits(void)
 	unsigned long sb_off = (_nvk_off_uid ? _nvk_off_uid : 4) + 32 + 32;
 	*(u32 *)(p + sb_off) = 0;
 
-	return _nvk_cred_commit(cred);
+	return _nvk_commit_creds(cred);
 }
 
 #endif /* NVK_CRED_H */

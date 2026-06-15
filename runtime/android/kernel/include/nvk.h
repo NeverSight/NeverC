@@ -17,22 +17,61 @@
 #include <nvk_addr.h>
 #include <nvk_compat.h>
 #include <nvk_anti.h>
+#include <nvk_vma.h>
+
+#define NVK_SUB_MEM       0
+#define NVK_SUB_PROCESS   1
+#define NVK_SUB_CRED      2
+#define NVK_SUB_HIDE      3
+#define NVK_SUB_ADDR      4
+#define NVK_SUB_COMPAT    5
+#define NVK_SUB_FILE      6
+#define NVK_SUB_SELINUX   7
+#define NVK_SUB_THREAD    8
+#define NVK_SUB_NETLINK   9
+#define NVK_SUB_HOOK     10
+#define NVK_SUB_SYSCALL  11
+#define NVK_SUB_COUNT    12
+
+struct nvk_state {
+	u32 ready;
+	int sub_status[NVK_SUB_COUNT];
+};
+
+static struct nvk_state _nvk_state;
+
+static __always_inline int nvk_sub_ok(int sub)
+{
+	return sub >= 0 && sub < NVK_SUB_COUNT
+	       && _nvk_state.sub_status[sub] == 0;
+}
 
 static int nvk_init_all(void)
 {
 	int ret = NVK_BOOTSTRAP();
 	if (ret) return ret;
-	nvk_mem_init();
-	nvk_process_init();
-	nvk_cred_init();
-	nvk_hide_init();
-	nvk_addr_init();
-	nvk_compat_init();
-	nvk_file_init();
-	nvk_selinux_init();
-	nvk_thread_init();
-	nvk_nl_init();
-	return nvk_hook_init();
+
+	_nvk_state.sub_status[NVK_SUB_MEM]     = nvk_mem_init();
+	_nvk_state.sub_status[NVK_SUB_PROCESS] = nvk_process_init();
+	_nvk_state.sub_status[NVK_SUB_CRED]    = nvk_cred_init();
+	_nvk_state.sub_status[NVK_SUB_HIDE]    = nvk_hide_init();
+	_nvk_state.sub_status[NVK_SUB_ADDR]    = nvk_addr_init();
+	_nvk_state.sub_status[NVK_SUB_COMPAT]  = nvk_compat_init();
+	_nvk_state.sub_status[NVK_SUB_FILE]    = nvk_file_init();
+	_nvk_state.sub_status[NVK_SUB_SELINUX] = nvk_selinux_init();
+	_nvk_state.sub_status[NVK_SUB_THREAD]  = nvk_thread_init();
+	_nvk_state.sub_status[NVK_SUB_NETLINK] = nvk_nl_init();
+	_nvk_state.sub_status[NVK_SUB_HOOK]    = nvk_hook_init();
+	_nvk_state.sub_status[NVK_SUB_SYSCALL] = nvk_syscall_init();
+	nvk_vma_init();
+	_nvk_state.ready = 1;
+
+	return _nvk_state.sub_status[NVK_SUB_HOOK];
+}
+
+static __always_inline const struct nvk_state *nvk_get_state(void)
+{
+	return &_nvk_state;
 }
 
 static int nvk_hook_by_sym(struct nvk_hook *h, const char *sym_name,

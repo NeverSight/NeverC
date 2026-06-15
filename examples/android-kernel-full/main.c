@@ -12,6 +12,7 @@
 #include <nvk_compat.h>
 #include <nvk_anti.h>
 #include <nvk_addr.h>
+#include <nvk_vma.h>
 
 #define NVK_LOG_TAG "nvk_full"
 #include <nvk_log.h>
@@ -29,6 +30,7 @@ enum nvk_full_cmd {
 	CMD_HOOK_STATS = 8,
 	CMD_ENV_CHECK  = 9,
 	CMD_FILE_READ  = 10,
+	CMD_PROC_VMA   = 11,
 };
 
 struct status_reply {
@@ -183,6 +185,28 @@ static void nl_handler(struct nvk_nl_sock *ns, u32 pid,
 		break;
 	}
 
+	case CMD_PROC_VMA: {
+		if (!data || len < 4) break;
+		int target_pid = *(const int *)data;
+		struct task_struct *task = nvk_find_task(target_pid);
+		if (!task) {
+			nvk_nl_reply(ns, pid, seq, "err", 4);
+			break;
+		}
+		struct nvk_vma_info vinfo;
+		int ret = nvk_vma_find_exec(task, 0x1000, &vinfo);
+		if (ret == 0) {
+			struct { u64 start; u64 end; u64 flags; } vr;
+			vr.start = vinfo.start;
+			vr.end   = vinfo.end;
+			vr.flags = vinfo.flags;
+			nvk_nl_reply(ns, pid, seq, &vr, sizeof(vr));
+		} else {
+			nvk_nl_reply(ns, pid, seq, "err", 4);
+		}
+		break;
+	}
+
 	default:
 		nvk_log_warn("unknown cmd=%u from pid=%u\n", type, pid);
 		break;
@@ -212,6 +236,8 @@ static int nvk_full_init(void)
 		nvk_log_err("hook init: %d\n", ret);
 		return ret;
 	}
+
+	nvk_vma_init();
 
 	target = NVK_LOOKUP("do_faccessat");
 	if (target) {

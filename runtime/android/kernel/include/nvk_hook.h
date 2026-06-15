@@ -700,6 +700,10 @@ static int nvk_hook_install(struct nvk_hook *h, void *target,
 	int  use_short_b = 0;
 
 	if (!_nvk_inited) return NVK_HOOK_E_NOINIT;
+	if (!target || !replace || !orig) return NVK_HOOK_E_SHORT;
+	if (((unsigned long)target & 3) != 0) return NVK_HOOK_E_SHORT;
+	if ((unsigned long)target < 0xFFFF000000000000UL)
+		return NVK_HOOK_E_SHORT;
 
 	if (nvk_a64_is_kprobe_bp(code[0]))
 		return NVK_HOOK_E_CONFLICT;
@@ -1000,6 +1004,10 @@ static int nvk_hook_install_ctx(struct nvk_hook_ctx *h, void *target,
 	u32 *page;
 
 	if (!_nvk_inited) return NVK_HOOK_E_NOINIT;
+	if (!target || !handler) return NVK_HOOK_E_SHORT;
+	if (((unsigned long)target & 3) != 0) return NVK_HOOK_E_SHORT;
+	if ((unsigned long)target < 0xFFFF000000000000UL)
+		return NVK_HOOK_E_SHORT;
 
 	if (nvk_a64_is_kprobe_bp(code[0]))
 		return NVK_HOOK_E_CONFLICT;

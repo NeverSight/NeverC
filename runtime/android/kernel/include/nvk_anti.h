@@ -8,6 +8,7 @@
 #include <linux/string.h>
 #include <nvk_mem.h>
 #include <nvk_process.h>
+#include <nvk_addr.h>
 
 static __always_inline int nvk_anti_is_root(void)
 {
@@ -187,6 +188,75 @@ static __always_inline int nvk_anti_timing_check(u64 start, u64 max_cycles)
 {
 	u64 now = nvk_anti_timestamp();
 	return (now - start) > max_cycles;
+}
+
+static int nvk_anti_detect_trace(void)
+{
+	unsigned long mdscr;
+	__asm__ __volatile__("mrs %0, mdscr_el1" : "=r"(mdscr));
+	if (mdscr & 1UL)
+		return 1;
+	return 0;
+}
+
+static int nvk_anti_detect_virtualization(void)
+{
+	unsigned long aa64pfr0;
+	__asm__ __volatile__("mrs %0, id_aa64pfr0_el1" : "=r"(aa64pfr0));
+
+	int el2 = (aa64pfr0 >> 8) & 0xF;
+	if (el2 == 0)
+		return 0;
+
+	unsigned long midr;
+	__asm__ __volatile__("mrs %0, midr_el1" : "=r"(midr));
+	u32 implementer = (midr >> 24) & 0xFF;
+	if (implementer == 0x00)
+		return 1;
+
+	return 0;
+}
+
+static int nvk_anti_check_fn_patched(void *addr, int insn_count)
+{
+	u32 *code = (u32 *)addr;
+	int i;
+
+	for (i = 0; i < insn_count && i < 16; i++) {
+		u32 insn = code[i];
+
+		if (insn == 0xD4200080U)
+			return 1;
+		if ((insn & 0xFFE0001FU) == 0xD4200000U)
+			return 1;
+		if (insn == 0x58000050U && i + 3 < insn_count &&
+		    code[i + 1] == 0xD61F0200U)
+			return 1;
+	}
+	return 0;
+}
+
+struct nvk_anti_env {
+	int is_emulator;
+	int is_debugger;
+	int is_trace;
+	int is_virtual;
+	u64 va_bits;
+	u64 page_size;
+	u64 timer_freq;
+};
+
+static void nvk_anti_full_check(struct nvk_anti_env *env)
+{
+	if (!env) return;
+
+	env->is_emulator = nvk_anti_detect_emulator();
+	env->is_debugger = nvk_anti_detect_debugger();
+	env->is_trace    = nvk_anti_detect_trace();
+	env->is_virtual  = nvk_anti_detect_virtualization();
+	env->va_bits     = nvk_va_bits();
+	env->page_size   = nvk_page_size();
+	env->timer_freq  = nvk_anti_timer_freq();
 }
 
 #endif /* NVK_ANTI_H */

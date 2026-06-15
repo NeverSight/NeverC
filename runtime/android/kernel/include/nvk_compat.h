@@ -20,6 +20,29 @@ struct nvk_kernel_info {
 static struct nvk_kernel_info _nvk_kinfo;
 static int _nvk_compat_inited;
 
+typedef int (*nvk_snprintf_fn)(char *buf, size_t size, const char *fmt, ...);
+typedef int (*nvk_sscanf_fn)(const char *buf, const char *fmt, ...);
+
+static nvk_snprintf_fn _nvk_snprintf;
+static nvk_sscanf_fn   _nvk_sscanf;
+
+static __always_inline int nvk_fmt_init(void)
+{
+	if (!_nvk_snprintf) {
+		_nvk_snprintf = (nvk_snprintf_fn)NVK_LOOKUP("snprintf");
+		if (!_nvk_snprintf)
+			_nvk_snprintf = (nvk_snprintf_fn)NVK_LOOKUP("scnprintf");
+	}
+	_nvk_sscanf = (nvk_sscanf_fn)NVK_LOOKUP("sscanf");
+	return _nvk_snprintf ? 0 : -1;
+}
+
+#define nvk_snprintf(buf, sz, fmt, ...)                                       \
+	(_nvk_snprintf ? _nvk_snprintf((buf), (sz), (fmt), ##__VA_ARGS__) : -1)
+
+#define nvk_sscanf(buf, fmt, ...)                                             \
+	(_nvk_sscanf ? _nvk_sscanf((buf), (fmt), ##__VA_ARGS__) : -1)
+
 static void _nvk_parse_version(const char *str, struct nvk_kernel_info *info)
 {
 	const char *p = str;
@@ -102,6 +125,8 @@ static int nvk_compat_init(void)
 #endif
 		_nvk_kinfo.detected = 1;
 	}
+
+	nvk_fmt_init();
 
 	_nvk_compat_inited = 1;
 	return 0;
