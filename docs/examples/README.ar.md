@@ -30,6 +30,13 @@
 | [Linux شبكة](../../examples/linux-network/README.ar.md) | عرض مقبس TCP | عميل/خادم |
 | [Linux رياضيات + zlib](../../examples/linux-math/README.ar.md) | رياضيات + ضغط | حساب مثلثات، zlib، CRC32 |
 
+### macOS
+
+| مثال | الوصف | الميزات الرئيسية |
+|------|-------|-----------------|
+| [تطبيق macOS](../../examples/macos-app/README.ar.md) | ملف تنفيذي أصلي Mach-O | sysctl، uname، Mach host_info/task_info، فحص العمليات |
+| [مكتبة macOS الديناميكية](../../examples/macos-dylib/README.ar.md) | مكتبة `.dylib` أصلية | Mach vm_read/vm_write، vm_alloc/vm_dealloc، task_info، XOR |
+
 ### Android
 
 | مثال | الوصف | الميزات الرئيسية |

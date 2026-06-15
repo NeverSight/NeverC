@@ -28,6 +28,13 @@
 | [Linux Сеть](../../examples/linux-network/README.ru.md) | Демо TCP-сокетов | Клиент/сервер |
 | [Linux Math + zlib](../../examples/linux-math/README.ru.md) | Математика + сжатие | Тригонометрия, zlib, CRC32 |
 
+### macOS
+
+| Пример | Описание | Ключевые особенности |
+|--------|---------|---------------------|
+| [Приложение macOS](../../examples/macos-app/README.ru.md) | Нативный исполняемый файл Mach-O | sysctl, uname, Mach host_info/task_info, информация о процессах |
+| [Динамическая библиотека macOS](../../examples/macos-dylib/README.ru.md) | Нативная `.dylib` библиотека | Mach vm_read/vm_write, vm_alloc/vm_dealloc, task_info, XOR |
+
 ### Android
 
 | Пример | Описание | Ключевые особенности |

@@ -30,6 +30,13 @@ Complete, buildable examples demonstrating NeverC's cross-platform compilation c
 | [Linux Network](../../examples/linux-network/README.md) | TCP socket demo | Client/server, socket API, loopback communication |
 | [Linux Math + zlib](../../examples/linux-math/README.md) | Math + compression | Trigonometry, special functions, zlib compress/decompress, CRC32 |
 
+### macOS
+
+| Example | Description | Key Features |
+|---------|-------------|-------------|
+| [macOS Application](../../examples/macos-app/README.md) | Native Mach-O executable | sysctl, uname, Mach host_info/task_info, process introspection |
+| [macOS Dynamic Library](../../examples/macos-dylib/README.md) | Native `.dylib` library | Mach vm_read/vm_write, vm_alloc/vm_dealloc, task_info, XOR helper |
+
 ### Android
 
 | Example | Description | Key Features |
@@ -61,6 +68,13 @@ neverc make TARGET=aarch64-linux-gnu   # Build for ARM64
 neverc make TARGET=x86_64-linux-gnu    # Build for x86_64 (default)
 ```
 
+macOS examples support architecture selection:
+
+```bash
+neverc make TARGET=arm64-apple-macos     # Build for Apple Silicon (default)
+neverc make TARGET=x86_64-apple-macos    # Build for Intel
+```
+
 Android examples target ARM64 by default:
 
 ```bash
@@ -76,5 +90,5 @@ neverc make run        # Build + push to device + run via adb
 - **Single toolchain**: NeverC handles preprocessing, compilation, optimization (auto-LTO), and linking in one invocation
 - **Bundled SDK**: Windows SDK/WDK, Linux sysroot (Ubuntu 22.04), and Android sysroot (NDK r26c, API 21+) are bundled in `runtime/` — zero external dependencies
 - **Host-agnostic**: Build from macOS (arm64/x86_64), Linux (x86_64/aarch64), or Windows with identical commands
-- **Multi-target**: Cross-compile to Windows PE (`.sys`/`.exe`), Linux ELF, and Android ELF from any host
+- **Multi-target**: Cross-compile to Windows PE (`.sys`/`.exe`/`.dll`), Linux ELF, macOS Mach-O (`.dylib`), and Android ELF from any host
 - **Debug support**: Pass `-g` for DWARF debug info; inspect with `llvm-dwarfdump`

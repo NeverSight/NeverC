@@ -28,6 +28,13 @@ Ejemplos compilables que demuestran las capacidades de compilación cruzada de N
 | [Linux Red](../../examples/linux-network/README.es.md) | Demo socket TCP | Cliente/servidor |
 | [Linux Math + zlib](../../examples/linux-math/README.es.md) | Math + compresión | Trigonometría, zlib, CRC32 |
 
+### macOS
+
+| Ejemplo | Descripción | Características |
+|---------|-------------|----------------|
+| [Aplicación macOS](../../examples/macos-app/README.es.md) | Ejecutable nativo Mach-O | sysctl, uname, Mach host_info/task_info, introspección de procesos |
+| [Biblioteca dinámica macOS](../../examples/macos-dylib/README.es.md) | Biblioteca nativa `.dylib` | Mach vm_read/vm_write, vm_alloc/vm_dealloc, task_info, XOR |
+
 ### Android
 
 | Ejemplo | Descripción | Características |

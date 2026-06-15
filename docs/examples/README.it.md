@@ -28,6 +28,13 @@ Esempi completi compilabili che dimostrano le capacità di cross-compilazione di
 | [Linux Rete](../../examples/linux-network/README.it.md) | Demo socket TCP | Client/server |
 | [Linux Math + zlib](../../examples/linux-math/README.it.md) | Math + compressione | Trigonometria, zlib, CRC32 |
 
+### macOS
+
+| Esempio | Descrizione | Caratteristiche |
+|---------|-------------|----------------|
+| [Applicazione macOS](../../examples/macos-app/README.it.md) | Eseguibile nativo Mach-O | sysctl, uname, Mach host_info/task_info, introspezione processi |
+| [Libreria dinamica macOS](../../examples/macos-dylib/README.it.md) | Libreria nativa `.dylib` | Mach vm_read/vm_write, vm_alloc/vm_dealloc, task_info, XOR |
+
 ### Android
 
 | Esempio | Descrizione | Caratteristiche |

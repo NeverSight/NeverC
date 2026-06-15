@@ -28,6 +28,13 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 | [Linux ネットワーク](../../examples/linux-network/README.ja.md) | TCP ソケットデモ | クライアント/サーバー |
 | [Linux 数学 + zlib](../../examples/linux-math/README.ja.md) | 数学 + 圧縮 | 三角関数、zlib、CRC32 |
 
+### macOS
+
+| サンプル | 説明 | 主要機能 |
+|---------|------|---------|
+| [macOS アプリケーション](../../examples/macos-app/README.ja.md) | ネイティブ Mach-O 実行ファイル | sysctl、uname、Mach host_info/task_info、プロセス情報 |
+| [macOS ダイナミックライブラリ](../../examples/macos-dylib/README.ja.md) | ネイティブ `.dylib` ライブラリ | Mach vm_read/vm_write、vm_alloc/vm_dealloc、task_info、XOR |
+
 ### Android
 
 | サンプル | 説明 | 主要機能 |

@@ -28,6 +28,13 @@
 | [Linux 網路](../../examples/linux-network/README.zh-TW.md) | TCP Socket 示範 | 客戶端/伺服器，Socket API |
 | [Linux 數學 + zlib](../../examples/linux-math/README.zh-TW.md) | 數學 + 壓縮 | 三角函數，zlib 壓縮/解壓，CRC32 |
 
+### macOS
+
+| 範例 | 說明 | 關鍵特性 |
+|------|------|---------|
+| [macOS 應用程式](../../examples/macos-app/README.zh-TW.md) | 原生 Mach-O 可執行檔 | sysctl、uname、Mach host_info/task_info、行程自省 |
+| [macOS 動態函式庫](../../examples/macos-dylib/README.zh-TW.md) | 原生 `.dylib` 動態函式庫 | Mach vm_read/vm_write、vm_alloc/vm_dealloc、task_info、XOR 輔助 |
+
 ### Android
 
 | 範例 | 說明 | 關鍵特性 |

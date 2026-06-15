@@ -28,6 +28,13 @@ NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 
 | [Linux 네트워크](../../examples/linux-network/README.ko.md) | TCP 소켓 데모 | 클라이언트/서버 |
 | [Linux 수학 + zlib](../../examples/linux-math/README.ko.md) | 수학 + 압축 | 삼각 함수, zlib, CRC32 |
 
+### macOS
+
+| 예제 | 설명 | 주요 기능 |
+|------|------|---------|
+| [macOS 애플리케이션](../../examples/macos-app/README.ko.md) | 네이티브 Mach-O 실행 파일 | sysctl, uname, Mach host_info/task_info, 프로세스 조회 |
+| [macOS 동적 라이브러리](../../examples/macos-dylib/README.ko.md) | 네이티브 `.dylib` 라이브러리 | Mach vm_read/vm_write, vm_alloc/vm_dealloc, task_info, XOR |
+
 ### Android
 
 | 예제 | 설명 | 주요 기능 |

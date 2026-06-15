@@ -28,6 +28,13 @@ Exemples compilables démontrant les capacités de compilation croisée de Never
 | [Linux Réseau](../../examples/linux-network/README.fr.md) | Démo socket TCP | Client/serveur |
 | [Linux Math + zlib](../../examples/linux-math/README.fr.md) | Math + compression | Trigonométrie, zlib, CRC32 |
 
+### macOS
+
+| Exemple | Description | Caractéristiques |
+|---------|-------------|-----------------|
+| [Application macOS](../../examples/macos-app/README.fr.md) | Exécutable natif Mach-O | sysctl, uname, Mach host_info/task_info, introspection processus |
+| [Bibliothèque dynamique macOS](../../examples/macos-dylib/README.fr.md) | Bibliothèque native `.dylib` | Mach vm_read/vm_write, vm_alloc/vm_dealloc, task_info, XOR |
+
 ### Android
 
 | Exemple | Description | Caractéristiques |

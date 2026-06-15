@@ -28,6 +28,13 @@ Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilieru
 | [Linux Netzwerk](../../examples/linux-network/README.de.md) | TCP-Socket-Demo | Client/Server |
 | [Linux Math + zlib](../../examples/linux-math/README.de.md) | Math + Kompression | Trigonometrie, zlib, CRC32 |
 
+### macOS
+
+| Beispiel | Beschreibung | Hauptmerkmale |
+|----------|-------------|--------------|
+| [macOS-Anwendung](../../examples/macos-app/README.de.md) | Native Mach-O-Programmdatei | sysctl, uname, Mach host_info/task_info, Prozessabfrage |
+| [macOS Dynamische Bibliothek](../../examples/macos-dylib/README.de.md) | Native `.dylib` Bibliothek | Mach vm_read/vm_write, vm_alloc/vm_dealloc, task_info, XOR |
+
 ### Android
 
 | Beispiel | Beschreibung | Hauptmerkmale |
