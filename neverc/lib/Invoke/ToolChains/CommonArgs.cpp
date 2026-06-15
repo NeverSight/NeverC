@@ -1070,3 +1070,25 @@ bool tools::getBundledAndroidSysroot(const Driver &D,
   return false;
 }
 
+bool tools::getBundledMacOSSysroot(const Driver &D, const llvm::Triple &Triple,
+                                   llvm::SmallVectorImpl<char> &SysRoot) {
+  llvm::SmallString<128> P(llvm::sys::path::parent_path(D.getInstalledDir()));
+  llvm::StringRef Arch;
+  switch (Triple.getArch()) {
+  case llvm::Triple::x86_64:
+    Arch = "x64";
+    break;
+  case llvm::Triple::aarch64:
+    Arch = "arm64";
+    break;
+  default:
+    return false;
+  }
+  llvm::sys::path::append(P, "runtime", "macos", Arch);
+  if (llvm::sys::fs::is_directory(P)) {
+    SysRoot.assign(P.begin(), P.end());
+    return true;
+  }
+  return false;
+}
+

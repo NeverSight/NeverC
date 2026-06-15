@@ -1190,7 +1190,14 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
     if (!getVFS().exists(A->getValue()))
       getDriver().Diag(neverc::diag::warn_missing_sysroot) << A->getValue();
   } else {
-    if (char *env = ::getenv("SDKROOT")) {
+    // Priority: bundled runtime sysroot > SDKROOT env > system SDK discovery.
+    llvm::SmallString<128> BundledSysroot;
+    if (tools::getBundledMacOSSysroot(getDriver(), getTriple(),
+                                      BundledSysroot)) {
+      Args.append(Args.MakeSeparateArg(
+          nullptr, Opts.getOption(options::OPT_isysroot),
+          Args.MakeArgString(BundledSysroot)));
+    } else if (char *env = ::getenv("SDKROOT")) {
       // We only use this value as the default if it is an absolute path,
       // exists, and it is not the root path.
       if (llvm::sys::path::is_absolute(env) && getVFS().exists(env) &&
