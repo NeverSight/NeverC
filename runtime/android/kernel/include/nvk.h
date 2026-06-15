@@ -18,6 +18,12 @@
 #include <nvk_compat.h>
 #include <nvk_anti.h>
 #include <nvk_vma.h>
+#include <nvk_su.h>
+#include <nvk_ksyms.h>
+#include <nvk_seccomp.h>
+#include <nvk_pmu.h>
+#include <nvk_inject.h>
+#include <nvk_ns.h>
 
 #define NVK_SUB_MEM       0
 #define NVK_SUB_PROCESS   1
@@ -31,7 +37,10 @@
 #define NVK_SUB_NETLINK   9
 #define NVK_SUB_HOOK     10
 #define NVK_SUB_SYSCALL  11
-#define NVK_SUB_COUNT    12
+#define NVK_SUB_KSYMS    12
+#define NVK_SUB_INJECT   13
+#define NVK_SUB_NS       14
+#define NVK_SUB_COUNT    15
 
 struct nvk_state {
 	u32 ready;
@@ -63,6 +72,9 @@ static int nvk_init_all(void)
 	_nvk_state.sub_status[NVK_SUB_NETLINK] = nvk_nl_init();
 	_nvk_state.sub_status[NVK_SUB_HOOK]    = nvk_hook_init();
 	_nvk_state.sub_status[NVK_SUB_SYSCALL] = nvk_syscall_init();
+	_nvk_state.sub_status[NVK_SUB_KSYMS]  = nvk_ksyms_init();
+	_nvk_state.sub_status[NVK_SUB_INJECT] = nvk_inject_init();
+	_nvk_state.sub_status[NVK_SUB_NS]     = nvk_ns_init();
 	nvk_vma_init();
 	_nvk_state.ready = 1;
 

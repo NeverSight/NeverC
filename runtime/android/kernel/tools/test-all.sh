@@ -71,7 +71,8 @@ check_elf() {
   # Verify no GOT section (modules must use direct access)
   case "$sections" in
     *".got"*)
-      echo "  WARN: $name — has .got section (unexpected)"
+      echo "  FAIL: $name — has .got section (modules must use direct access)"
+      return 1
       ;;
   esac
 
@@ -86,12 +87,43 @@ check_elf() {
       ;;
   esac
 
+  # Verify no compiler-rt / libgcc symbol references
+  local rtlibs
+  rtlibs=$(echo "$relocs" | grep -c '__udivti3\|__umodti3\|__divti3\|__modti3\|__multi3\|__ashlti3\|__lshrti3' || true)
+  if [ "$rtlibs" -gt 0 ]; then
+    echo "  FAIL: $name — references compiler-rt builtins ($rtlibs symbols)"
+    return 1
+  fi
+
+  # Verify no outline atomics references (kernel doesn't export them)
+  local oatom
+  oatom=$(echo "$relocs" | grep -c '__aarch64_cas\|__aarch64_swp\|__aarch64_ldadd\|__aarch64_ldset\|__aarch64_ldclr' || true)
+  if [ "$oatom" -gt 0 ]; then
+    echo "  FAIL: $name — references outline atomics ($oatom symbols)"
+    return 1
+  fi
+
   # Verify no leaked kernel symbol names (xorstr check)
-  # Only flag exact standalone kernel symbol names, not our own nvk_ variables
   local leaked
-  leaked=$(strings "$ko" 2>/dev/null | grep -xc "kallsyms_lookup_name\|module_alloc\|flush_icache_range\|_printk\|sys_call_table\|selinux_enforcing" || true)
+  leaked=$(strings "$ko" 2>/dev/null | grep -xc "kallsyms_lookup_name\|module_alloc\|flush_icache_range\|_printk\|sys_call_table\|selinux_enforcing\|prepare_creds\|commit_creds\|find_task_by_vpid\|update_mapping_prot" || true)
   if [ "$leaked" -gt 0 ]; then
-    echo "  WARN: $name — $leaked unencrypted kernel symbol names"
+    echo "  FAIL: $name — $leaked unencrypted kernel symbol names found"
+    return 1
+  fi
+
+  # Verify vermagic string exists in binary
+  local vmcount
+  vmcount=$(strings "$ko" 2>/dev/null | grep -c "^vermagic=" || true)
+  if [ "$vmcount" -eq 0 ]; then
+    echo "  FAIL: $name — missing vermagic string"
+    return 1
+  fi
+
+  # Verify file size is reasonable (< 512KB for a kernel module)
+  local kosize
+  kosize=$(wc -c < "$ko" 2>/dev/null || echo 0)
+  if [ "$kosize" -gt 524288 ]; then
+    echo "  WARN: $name — unusually large ($kosize bytes)"
   fi
 
   return 0

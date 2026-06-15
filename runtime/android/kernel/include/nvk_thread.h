@@ -70,12 +70,14 @@ static int nvk_thread_init(void)
 
 #define NVK_THREAD_MAX 8
 
+#define NVK_THREAD_NAME_LEN 16
+
 struct nvk_thread {
 	struct task_struct *task;
 	volatile int        running;
 	volatile int        stop_req;
 	volatile u64        iter_count;
-	const char         *name;
+	char                name[NVK_THREAD_NAME_LEN];
 };
 
 static struct nvk_thread _nvk_threads[NVK_THREAD_MAX];
@@ -114,7 +116,16 @@ static struct task_struct *nvk_thread_run(int (*fn)(void *), void *data,
 		_nvk_threads[idx].running = 1;
 		_nvk_threads[idx].stop_req = 0;
 		_nvk_threads[idx].iter_count = 0;
-		_nvk_threads[idx].name = name;
+		{
+			int ni = 0;
+			if (name) {
+				while (name[ni] && ni < NVK_THREAD_NAME_LEN - 1) {
+					_nvk_threads[idx].name[ni] = name[ni];
+					ni++;
+				}
+			}
+			_nvk_threads[idx].name[ni] = '\0';
+		}
 		_nvk_thread_count = idx + 1;
 	}
 	_nvk_thr_unlock();

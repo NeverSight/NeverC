@@ -11,8 +11,10 @@
 #include <nvk_addr.h>
 
 typedef void *(*nvk_find_vma_fn)(void *mm, unsigned long addr);
-typedef int   (*nvk_access_remote_fn)(void *mm, unsigned long addr,
-				      void *buf, int len, unsigned int gup);
+typedef int   (*nvk_access_task_fn)(void *task, unsigned long addr,
+				    void *buf, int len, unsigned int gup);
+typedef int   (*nvk_access_mm_fn)(void *mm, unsigned long addr,
+				  void *buf, int len, unsigned int gup);
 typedef long  (*nvk_get_user_pages_fn)(unsigned long start,
 				       unsigned long nr_pages,
 				       unsigned int gup_flags,
@@ -25,7 +27,8 @@ typedef void  (*nvk_mmap_read_lock_fn)(void *mm);
 typedef void  (*nvk_mmap_read_unlock_fn)(void *mm);
 
 static nvk_find_vma_fn          _nvk_find_vma;
-static nvk_access_remote_fn     _nvk_access_remote;
+static nvk_access_task_fn       _nvk_access_task_vm;
+static nvk_access_mm_fn         _nvk_access_mm_vm;
 static nvk_get_user_pages_fn    _nvk_get_user_pages;
 static nvk_page_address_fn      _nvk_page_address;
 static nvk_put_page_fn          _nvk_put_page;
@@ -63,8 +66,10 @@ static int nvk_vma_init(void)
 
 	_nvk_find_vma =
 		(nvk_find_vma_fn)NVK_LOOKUP("find_vma");
-	_nvk_access_remote =
-		(nvk_access_remote_fn)NVK_LOOKUP("access_process_vm");
+	_nvk_access_task_vm =
+		(nvk_access_task_fn)NVK_LOOKUP("access_process_vm");
+	_nvk_access_mm_vm =
+		(nvk_access_mm_fn)NVK_LOOKUP("access_remote_vm");
 	_nvk_get_user_pages =
 		(nvk_get_user_pages_fn)NVK_LOOKUP("get_user_pages_remote");
 	_nvk_page_address =
@@ -87,7 +92,8 @@ static int nvk_vma_init(void)
 			(nvk_mmap_read_unlock_fn)NVK_LOOKUP("up_read");
 
 	_nvk_vma_inited = 1;
-	return _nvk_find_vma ? 0 : -1;
+	return _nvk_find_vma ? 0 :
+	       (_nvk_access_task_vm || _nvk_access_mm_vm) ? 0 : -1;
 }
 
 static void *_nvk_task_mm(struct task_struct *task)
@@ -207,48 +213,46 @@ static long nvk_vma_read_remote(struct task_struct *task,
 				unsigned long addr,
 				void *buf, size_t len)
 {
-	if (!_nvk_access_remote) {
+	if (_nvk_access_task_vm)
+		return _nvk_access_task_vm(task, addr, buf, (int)len, 0);
+
+	if (_nvk_access_mm_vm) {
 		void *mm = _nvk_task_mm(task);
 		if (!mm) return -1;
-
-		unsigned long pa = nvk_translate_user(addr);
-		if (!pa) return -2;
-
-		unsigned long va = nvk_phys_to_virt(pa);
-		if (!va) return -3;
-
-		return nvk_mem_read(buf, (void *)va, len);
+		return _nvk_access_mm_vm(mm, addr, buf, (int)len, 0);
 	}
 
-	void *mm = _nvk_task_mm(task);
-	if (!mm) return -1;
+	unsigned long pa = nvk_translate_user(addr);
+	if (!pa) return -2;
 
-	return _nvk_access_remote(mm, addr, buf, (int)len,
-				  0 /* FOLL_FORCE read */);
+	unsigned long va = nvk_phys_to_virt(pa);
+	if (!va) return -3;
+
+	return nvk_mem_read(buf, (void *)va, len);
 }
 
 static long nvk_vma_write_remote(struct task_struct *task,
 				 unsigned long addr,
 				 const void *buf, size_t len)
 {
-	if (!_nvk_access_remote) {
+	if (_nvk_access_task_vm)
+		return _nvk_access_task_vm(task, addr, (void *)buf,
+					   (int)len, 1);
+
+	if (_nvk_access_mm_vm) {
 		void *mm = _nvk_task_mm(task);
 		if (!mm) return -1;
-
-		unsigned long pa = nvk_translate_user(addr);
-		if (!pa) return -2;
-
-		unsigned long va = nvk_phys_to_virt(pa);
-		if (!va) return -3;
-
-		return nvk_mem_write((void *)va, buf, len);
+		return _nvk_access_mm_vm(mm, addr, (void *)buf,
+					 (int)len, 1);
 	}
 
-	void *mm = _nvk_task_mm(task);
-	if (!mm) return -1;
+	unsigned long pa = nvk_translate_user(addr);
+	if (!pa) return -2;
 
-	return _nvk_access_remote(mm, addr, (void *)buf, (int)len,
-				  1 /* FOLL_FORCE | FOLL_WRITE */);
+	unsigned long va = nvk_phys_to_virt(pa);
+	if (!va) return -3;
+
+	return nvk_mem_write((void *)va, buf, len);
 }
 
 struct _nvk_find_map_ctx {

@@ -151,14 +151,13 @@ static void _nvk_nl_dispatch(void *skb)
 
 	hdr = (u32 *)nlh;
 	u32 nlmsg_len  = hdr[0];
+	if (nlmsg_len < 16 || nlmsg_len > NVK_NL_MSG_MAX)
+		return;
 	u32 nlmsg_type = (u16)hdr[1];
-	u32 nlmsg_flags = (u16)(hdr[1] >> 16);
 	u32 nlmsg_seq  = hdr[2];
 	u32 nlmsg_pid  = hdr[3];
 
-	(void)nlmsg_flags;
-
-	payload_len = nlmsg_len > 16 ? nlmsg_len - 16 : 0;
+	payload_len = nlmsg_len - 16;
 
 	if (_nvk_nl_nlmsg_data)
 		data = (unsigned char *)_nvk_nl_nlmsg_data(nlh);

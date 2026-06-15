@@ -299,14 +299,39 @@ static void nvk_anti_full_check(struct nvk_anti_env *env)
 }
 
 
-/* --- Watchdog: periodic hook integrity check --- */
+/* --- Watchdog: periodic hook integrity check with sealed storage --- */
 
 #define NVK_WD_MAX_HOOKS 16
 
+static u64 _nvk_wd_seal_key;
+
+static __always_inline u64 _nvk_wd_gen_key(void)
+{
+	u64 ts, ctr;
+	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(ts));
+	__asm__ __volatile__("mrs %0, cntpct_el0" : "=r"(ctr));
+	u64 sp;
+	__asm__ __volatile__("mov %0, sp" : "=r"(sp));
+	return ts ^ (ctr * 0x9E3779B97F4A7C15ULL) ^ (sp >> 3);
+}
+
+static __always_inline u32 _nvk_wd_seal(u32 val, int slot)
+{
+	u32 k = (u32)(_nvk_wd_seal_key >> (slot & 1 ? 32 : 0));
+	return val ^ k ^ (u32)(slot * 0x45D9F3BU);
+}
+
+static __always_inline u32 _nvk_wd_unseal(u32 val, int slot)
+{
+	return _nvk_wd_seal(val, slot);
+}
+
 struct nvk_watchdog_entry {
 	struct nvk_hook *hook;
-	u32              orig_patch[NVK_HOOK_MAX_PATCH];
-	u32              expected_patch[NVK_HOOK_MAX_PATCH];
+	u32              sealed_orig[NVK_HOOK_MAX_PATCH];
+	u32              sealed_expect[NVK_HOOK_MAX_PATCH];
+	u32              tramp_crc;
+	int              tramp_len;
 	int              patch_count;
 };
 
@@ -315,27 +340,64 @@ struct nvk_watchdog {
 	int                       count;
 	volatile u64              check_count;
 	volatile u64              violation_count;
+	volatile u64              tramp_violations;
 	volatile int              running;
 };
 
 static struct nvk_watchdog _nvk_wd;
 
+static u32 _nvk_wd_crc32(const void *data, int len)
+{
+	const unsigned char *p = (const unsigned char *)data;
+	u32 crc = 0xFFFFFFFF;
+	int i, j;
+	for (i = 0; i < len; i++) {
+		unsigned char b;
+		if (nvk_mem_read(&b, &p[i], 1)) return 0;
+		crc ^= b;
+		for (j = 0; j < 8; j++)
+			crc = (crc & 1) ? (crc >> 1) ^ 0xEDB88320U : crc >> 1;
+	}
+	return crc ^ 0xFFFFFFFF;
+}
+
 static int nvk_wd_register(struct nvk_hook *h)
 {
-	int idx;
+	int idx, i;
 
 	if (!h || !h->active) return -1;
 	if (_nvk_wd.count >= NVK_WD_MAX_HOOKS) return -2;
+
+	if (!_nvk_wd_seal_key)
+		_nvk_wd_seal_key = _nvk_wd_gen_key();
 
 	idx = _nvk_wd.count;
 	_nvk_wd.entries[idx].hook = h;
 	_nvk_wd.entries[idx].patch_count = h->patch_count;
 
 	u32 *target = (u32 *)h->target;
-	int i;
 	for (i = 0; i < h->patch_count; i++) {
-		_nvk_wd.entries[idx].orig_patch[i] = h->orig_insns[i];
-		_nvk_wd.entries[idx].expected_patch[i] = target[i];
+		_nvk_wd.entries[idx].sealed_orig[i] =
+			_nvk_wd_seal(h->orig_insns[i], i);
+		u32 cur;
+		nvk_mem_read(&cur, &target[i], 4);
+		_nvk_wd.entries[idx].sealed_expect[i] =
+			_nvk_wd_seal(cur, i + NVK_HOOK_MAX_PATCH);
+	}
+
+	if (h->trampoline) {
+		int tlen = 0;
+		while (tlen < NVK_HOOK_TRAMP_CAP) {
+			u32 insn;
+			if (nvk_mem_read(&insn, &h->trampoline[tlen], 4))
+				break;
+			tlen++;
+			if (insn == NVK_A64_RET_X17 || insn == NVK_A64_RET_X16)
+				break;
+		}
+		_nvk_wd.entries[idx].tramp_len = tlen * 4;
+		_nvk_wd.entries[idx].tramp_crc =
+			_nvk_wd_crc32(h->trampoline, tlen * 4);
 	}
 
 	_nvk_wd.count++;
@@ -354,17 +416,29 @@ static int nvk_wd_check(void)
 
 		u32 *target = (u32 *)h->target;
 		for (j = 0; j < e->patch_count; j++) {
-			u32 current_insn;
-			if (nvk_mem_read(&current_insn, &target[j], 4))
+			u32 cur;
+			if (nvk_mem_read(&cur, &target[j], 4))
 				continue;
-			if (current_insn != e->expected_patch[j]) {
+			u32 expected = _nvk_wd_unseal(
+				e->sealed_expect[j], j + NVK_HOOK_MAX_PATCH);
+			if (cur != expected) {
 				violations++;
-				_nvk_wd.violation_count++;
+				__atomic_fetch_add(&_nvk_wd.violation_count,
+						   1, __ATOMIC_RELAXED);
+			}
+		}
+
+		if (h->trampoline && e->tramp_len > 0) {
+			u32 crc = _nvk_wd_crc32(h->trampoline, e->tramp_len);
+			if (crc != e->tramp_crc) {
+				violations++;
+				__atomic_fetch_add(&_nvk_wd.tramp_violations,
+						   1, __ATOMIC_RELAXED);
 			}
 		}
 	}
 
-	_nvk_wd.check_count++;
+	__atomic_fetch_add(&_nvk_wd.check_count, 1, __ATOMIC_RELAXED);
 	return violations;
 }
 
@@ -379,19 +453,37 @@ static int nvk_wd_repair(void)
 		if (!h || !h->active) continue;
 
 		u32 *target = (u32 *)h->target;
+		u32 expected[NVK_HOOK_MAX_PATCH];
+		int dirty = 0;
+
 		for (j = 0; j < e->patch_count; j++) {
-			u32 current_insn;
-			if (nvk_mem_read(&current_insn, &target[j], 4))
+			expected[j] = _nvk_wd_unseal(
+				e->sealed_expect[j], j + NVK_HOOK_MAX_PATCH);
+			u32 cur;
+			if (nvk_mem_read(&cur, &target[j], 4))
 				continue;
-			if (current_insn != e->expected_patch[j]) {
-				_nvk_patch_multi(target, e->expected_patch,
-						 e->patch_count);
-				repaired++;
-				break;
-			}
+			if (cur != expected[j])
+				dirty = 1;
+		}
+
+		if (dirty) {
+			_nvk_patch_multi(target, expected, e->patch_count);
+			repaired++;
 		}
 	}
 	return repaired;
+}
+
+static void nvk_wd_unregister(struct nvk_hook *h)
+{
+	int i;
+	for (i = 0; i < _nvk_wd.count; i++) {
+		if (_nvk_wd.entries[i].hook == h) {
+			_nvk_wd.entries[i] =
+				_nvk_wd.entries[--_nvk_wd.count];
+			return;
+		}
+	}
 }
 
 static __always_inline u64 nvk_wd_checks(void)
@@ -402,6 +494,11 @@ static __always_inline u64 nvk_wd_checks(void)
 static __always_inline u64 nvk_wd_violations(void)
 {
 	return __atomic_load_n(&_nvk_wd.violation_count, __ATOMIC_RELAXED);
+}
+
+static __always_inline u64 nvk_wd_tramp_violations(void)
+{
+	return __atomic_load_n(&_nvk_wd.tramp_violations, __ATOMIC_RELAXED);
 }
 
 

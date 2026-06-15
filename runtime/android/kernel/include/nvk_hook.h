@@ -460,7 +460,8 @@ static u32 *_nvk_pool_alloc(int bytes)
 		}
 	}
 
-	if (_nvk_pool_count >= _NVK_POOL_MAX || !_nvk_modalloc) {
+	if (_nvk_pool_count >= _NVK_POOL_MAX ||
+	    (!_nvk_modalloc && !_nvk_execmem_alloc)) {
 		_nvk_spin_unlock(&_nvk_pool_lock);
 		return (void *)0;
 	}
@@ -510,7 +511,7 @@ static void _nvk_pool_free(u32 *ptr)
 		}
 	}
 	_nvk_spin_unlock(&_nvk_pool_lock);
-	_nvk_modfree(ptr);
+	if (_nvk_modfree) _nvk_modfree(ptr);
 }
 
 static volatile u64 _nvk_hook_install_cnt;
@@ -1274,6 +1275,22 @@ static void nvk_hook_resume(struct nvk_hook *h)
 	WRITE_ONCE(h->enabled, 1);
 }
 
+static void _nvk_poison_tramp(u32 *tramp, int max_words)
+{
+	int i;
+	for (i = 0; i < max_words; i++) {
+		u32 insn;
+		if (nvk_mem_read(&insn, &tramp[i], 4)) break;
+		if (insn == 0) break;
+		tramp[i] = 0xD4200000U | (0xDEADU << 5); /* BRK #0xDEAD */
+	}
+	_nvk_dcache_clean((unsigned long)tramp,
+			  (unsigned long)&tramp[i]);
+	if (_nvk_flushic)
+		_nvk_flushic((unsigned long)tramp,
+			     (unsigned long)&tramp[i]);
+}
+
 static void nvk_hook_remove(struct nvk_hook *h)
 {
 	if (!h->active) return;
@@ -1291,6 +1308,8 @@ static void nvk_hook_remove(struct nvk_hook *h)
 	_nvk_quiesce_deep();
 
 	if (h->trampoline) {
+		_nvk_poison_tramp(h->trampoline, NVK_HOOK_TRAMP_CAP);
+		_nvk_quiesce();
 		_nvk_pool_free(h->trampoline);
 		h->trampoline = (void *)0;
 	}
@@ -1359,6 +1378,11 @@ static void nvk_hook_remove_ctx(struct nvk_hook_ctx *h)
 	_nvk_quiesce_deep();
 
 	if (h->stub) {
+		_nvk_poison_tramp(h->stub, (int)_CTX_STUB_LEN + 8);
+		if (h->tramp_code)
+			_nvk_poison_tramp(h->tramp_code,
+					  NVK_HOOK_TRAMP_CAP);
+		_nvk_quiesce();
 		_nvk_modfree(h->stub);
 		h->stub = (void *)0;
 		h->tramp_code = (void *)0;

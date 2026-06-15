@@ -322,7 +322,6 @@ static int nvk_verify_module_offsets(struct nvk_this_module *mod,
 {
 	struct list_head *list;
 	const char *name;
-	int ok = 0;
 
 	list = (struct list_head *)((char *)mod + NVK_OFF_LIST);
 	if ((unsigned long)list->next < 0xFFFF000000000000UL &&
@@ -347,6 +346,137 @@ static int nvk_verify_module_offsets(struct nvk_this_module *mod,
 	}
 
 	return 0;
+}
+
+
+static unsigned long _nvk_rt_off_init;
+static unsigned long _nvk_rt_off_exit;
+
+static int nvk_probe_module_offsets(struct nvk_this_module *mod,
+				    void *expected_init,
+				    void *expected_exit)
+{
+	if (!mod || !expected_init) return -1;
+
+	const unsigned char *base = (const unsigned char *)mod;
+	unsigned long i;
+
+	for (i = 64; i < NVK_MODULE_SIZE; i += 8) {
+		unsigned long v;
+		if (nvk_mem_read(&v, base + i, 8)) continue;
+		if (v == (unsigned long)expected_init) {
+			_nvk_rt_off_init = i;
+			break;
+		}
+	}
+
+	if (expected_exit && _nvk_rt_off_init) {
+		for (i = _nvk_rt_off_init + 8; i < NVK_MODULE_SIZE; i += 8) {
+			unsigned long v;
+			if (nvk_mem_read(&v, base + i, 8)) continue;
+			if (v == (unsigned long)expected_exit) {
+				_nvk_rt_off_exit = i;
+				break;
+			}
+		}
+	}
+
+	return _nvk_rt_off_init ? 0 : -1;
+}
+
+static __always_inline unsigned long nvk_rt_off_init(void)
+{
+	return _nvk_rt_off_init ? _nvk_rt_off_init : NVK_OFF_INIT;
+}
+
+static __always_inline unsigned long nvk_rt_off_exit(void)
+{
+	return _nvk_rt_off_exit ? _nvk_rt_off_exit : NVK_OFF_EXIT;
+}
+
+static int nvk_validate_runtime(struct nvk_this_module *mod,
+				const char *name,
+				void *init_fn, void *exit_fn)
+{
+	int ret;
+
+	ret = nvk_check_kernel_match();
+	if (ret == NVK_VER_MISMATCH) {
+		nvk_probe_module_offsets(mod, init_fn, exit_fn);
+	}
+
+	ret = nvk_verify_module_offsets(mod, name);
+	return ret;
+}
+
+static int nvk_patch_vermagic(struct nvk_this_module *mod)
+{
+	const char *banner;
+
+	banner = (const char *)NVK_LOOKUP("linux_banner");
+	if (!banner)
+		banner = (const char *)NVK_LOOKUP("linux_proc_banner");
+	if (!banner) return -1;
+
+	const char *p = banner;
+	while (*p && !(*p >= '0' && *p <= '9')) p++;
+	if (!*p) return -2;
+
+	char ver_buf[64];
+	int vi = 0;
+	while (*p && *p != ' ' && *p != '\n' && vi < 30) {
+		ver_buf[vi++] = *p++;
+	}
+
+	while (*p == ' ') p++;
+
+	const char *flags[] = {
+		"SMP", "preempt", "mod_unload", "aarch64", 0
+	};
+	int fi;
+	for (fi = 0; flags[fi]; fi++) {
+		if (vi > 0) ver_buf[vi++] = ' ';
+		const char *f = flags[fi];
+		while (*f && vi < 62) ver_buf[vi++] = *f++;
+	}
+	ver_buf[vi] = '\0';
+
+	unsigned char *base = (unsigned char *)mod;
+	unsigned long scan;
+	for (scan = 0; scan + 8 < NVK_MODULE_SIZE; scan++) {
+		if (base[scan] == 'v' && base[scan+1] == 'e' &&
+		    base[scan+2] == 'r' && base[scan+3] == 'm' &&
+		    base[scan+4] == 'a' && base[scan+5] == 'g' &&
+		    base[scan+6] == 'i' && base[scan+7] == 'c') {
+			unsigned long eq = scan + 8;
+			if (base[eq] == '=') {
+				char *dst = (char *)&base[eq + 1];
+				int di = 0;
+				while (di < vi && di < 60) {
+					dst[di] = ver_buf[di];
+					di++;
+				}
+				dst[di] = '\0';
+				return 0;
+			}
+		}
+	}
+
+	return -3;
+}
+
+static int nvk_fixup_runtime(struct nvk_this_module *mod,
+			     const char *name,
+			     void *init_fn, void *exit_fn)
+{
+	int ret;
+
+	ret = nvk_check_kernel_match();
+	if (ret == NVK_VER_MISMATCH || ret == NVK_VER_COMPAT) {
+		nvk_probe_module_offsets(mod, init_fn, exit_fn);
+	}
+
+	return nvk_verify_module_offsets(mod, name);
 }
 
 #endif /* NVK_COMPAT_H */
