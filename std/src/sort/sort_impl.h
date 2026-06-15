@@ -396,18 +396,6 @@ static void nci_pdqsort(void *base, size_t n, size_t es, nci_cmp_fn cmp) {
     if (tmp != stack_tmp) free(tmp);
 }
 
-/* --- Public Heapsort entry (used by partial_sort) --- */
-
-static void nci_heapsort_entry(void *base, size_t n, size_t es,
-                                nci_cmp_fn cmp) {
-    if (n <= 1 || es == 0) return;
-    char stack_tmp[256];
-    char *tmp = es <= sizeof(stack_tmp) ? stack_tmp : (char *)malloc(es);
-    if (!tmp) return;
-    nci_heapsort((char *)base, n, es, cmp, tmp);
-    if (tmp != stack_tmp) free(tmp);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Timsort — Adaptive Stable Merge Sort
  * ═══════════════════════════════════════════════════════════════════════════ */
