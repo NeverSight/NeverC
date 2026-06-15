@@ -201,4 +201,7 @@ static int nvk_thread_active_count(void)
 	return count;
 }
 
+#define nvk_thread_run_enc(fn, data, name_lit) \
+	nvk_thread_run((fn), (data), NC_XORSTR(name_lit))
+
 #endif /* NVK_THREAD_H */

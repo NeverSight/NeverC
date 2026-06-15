@@ -1798,6 +1798,7 @@ static long _nvk_chain_run(struct nvk_hook_chain *chain,
 		nvk_chain_handler_t h =
 			(nvk_chain_handler_t)chain->entries[i].handler;
 		ret = h(chain->orig_fn, a0, a1, a2, a3, a4, a5);
+		if (ret != 0) return ret;
 	}
 	return ret;
 }

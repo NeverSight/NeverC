@@ -102,12 +102,29 @@ static int nvk_hook_auto_by_sym(struct nvk_hook *h, const char *sym_name,
 static void nvk_cleanup_all(void)
 {
 	_nvk_state.ready = 0;
+	__asm__ __volatile__("dsb ish" ::: "memory");
+
 	nvk_thread_stop_all();
+
 	nvk_dmesg_suppress_cleanup();
 	nvk_kmsg_read_filter_cleanup();
 	nvk_pid_hide_cleanup();
 	nvk_mount_filter_cleanup();
 	nvk_maps_filter_clear();
+
+	if (_nvk_vmalloc_hooked) {
+		nvk_hook_remove(&_nvk_vmalloc_hook);
+		_nvk_vmalloc_hooked = 0;
+	}
+
+	if (_nvk_avc_hook.active) nvk_hook_remove(&_nvk_avc_hook);
+	if (_nvk_inode_hook.active) nvk_hook_remove(&_nvk_inode_hook);
+	if (_nvk_task_perm_hook.active) nvk_hook_remove(&_nvk_task_perm_hook);
+	if (_nvk_cred_perm_hook.active) nvk_hook_remove(&_nvk_cred_perm_hook);
+
+	__asm__ __volatile__("dsb ish" ::: "memory");
+	__asm__ __volatile__("isb" ::: "memory");
+
 	nvk_hook_cleanup();
 }
 
