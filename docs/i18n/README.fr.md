@@ -34,7 +34,7 @@ C est déjà le langage système le plus simple. NeverC le rend encore plus simp
 - **Pas d'exceptions** — La gestion d'erreurs reste explicite. Pas de déroulement de pile, pas de surprises de performance.
 - **Binaire unique** — Compilateur + éditeur de liens + runtimes dans un seul exécutable. Zéro dépendance externe.
 - **Compatible LLM** — Grammaire minimale et sémantique déterministe : le code NeverC généré par IA compile correctement plus souvent que les alternatives C++.
-- **Véritable compilation croisée** — Compilez des exécutables Windows et du shellcode depuis macOS ou Linux — pas de VM, pas de dual boot, pas de SDK à chercher. Le Windows SDK est intégré au compilateur.
+- **Véritable compilation croisée** — Compilez Windows PE, Linux ELF, macOS Mach-O, Android ELF et du shellcode depuis macOS ou Linux — pas de VM, pas de dual boot, pas de SDK à chercher. Les SDK de plateforme sont intégrés au compilateur.
 - **Extensible sans friction** — Un seul en-tête C, 20+ points d'accroche, et vous avez un [plugin compilateur](../plugin-api/README.fr.md) capable d'intervenir à toute étape — de l'optimisation IR à la sortie binaire finale — sans connaître LLVM.
 - **Recherche en sécurité intégrée** — Compilation shellcode, chiffrement de chaînes à la compilation et génération PE multiplateforme sont nativement intégrés au compilateur — pas des ajouts bricolés avec des scripts externes.
 
