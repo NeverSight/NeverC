@@ -114,21 +114,26 @@ static void _nvk_nl_dispatch(void *skb);
 static struct nvk_nl_sock *_nvk_nl_socks[NVK_NL_MAX_SOCKS];
 static int _nvk_nl_sock_count;
 
-static struct nvk_nl_sock *_nvk_nl_find_by_sock(void *sock)
+static struct nvk_nl_sock *_nvk_nl_find_by_proto(int proto)
 {
 	int i;
 	for (i = 0; i < _nvk_nl_sock_count; i++) {
-		if (_nvk_nl_socks[i] && _nvk_nl_socks[i]->sock == sock)
+		if (_nvk_nl_socks[i] && _nvk_nl_socks[i]->proto == proto)
 			return _nvk_nl_socks[i];
 	}
 	return _nvk_nl_sock_count > 0 ? _nvk_nl_socks[0] : (void *)0;
 }
 
-static struct nvk_nl_sock *_nvk_nl_active_dispatch;
-
 static void _nvk_nl_dispatch(void *skb)
 {
-	struct nvk_nl_sock *ns = _nvk_nl_active_dispatch;
+	struct nvk_nl_sock *ns = (void *)0;
+	int i;
+	for (i = 0; i < _nvk_nl_sock_count; i++) {
+		if (_nvk_nl_socks[i] && _nvk_nl_socks[i]->sock) {
+			ns = _nvk_nl_socks[i];
+			break;
+		}
+	}
 	void *nlh;
 	unsigned char *data;
 	u32 pid, type, seq, payload_len;
@@ -182,7 +187,6 @@ static int nvk_nl_open(struct nvk_nl_sock *ns, int proto,
 
 	ns->proto = proto;
 	ns->handler = handler;
-	_nvk_nl_active_dispatch = ns;
 
 	ns->sock = _nvk_nl_create(*_nvk_nl_init_net, proto, &cfg);
 	if (!ns->sock)
@@ -208,10 +212,7 @@ static void nvk_nl_close(struct nvk_nl_sock *ns)
 			break;
 		}
 	}
-	if (_nvk_nl_active_dispatch == ns) {
-		_nvk_nl_active_dispatch = _nvk_nl_sock_count > 0
-				? _nvk_nl_socks[0] : (void *)0;
-	}
+	(void)0;
 }
 
 static int nvk_nl_send(struct nvk_nl_sock *ns, u32 pid,

@@ -103,8 +103,9 @@ static int nvk_cred_get_ids(struct task_struct *task,
 		const unsigned char *tp = (const unsigned char *)task;
 		unsigned long i;
 		for (i = 0x500; i < 0x800; i += 8) {
-			unsigned long v1 = *(unsigned long *)(tp + i);
-			unsigned long v2 = *(unsigned long *)(tp + i + 8);
+			unsigned long v1, v2;
+			if (nvk_mem_read(&v1, tp + i, 8)) continue;
+			if (nvk_mem_read(&v2, tp + i + 8, 8)) continue;
 			if (v1 <= 0xFFFF000000000000UL ||
 			    v1 >= 0xFFFFFFFFFFFFF000UL)
 				continue;
@@ -112,13 +113,12 @@ static int nvk_cred_get_ids(struct task_struct *task,
 			    v2 >= 0xFFFFFFFFFFFFF000UL)
 				continue;
 
-			u32 refcnt;
-			if (nvk_mem_read(&refcnt, (void *)v1, 4))
+			u32 cp[8];
+			if (nvk_mem_read(cp, (void *)v1, sizeof(cp)))
 				continue;
-			if (refcnt < 1 || refcnt > 10000)
+			if (cp[0] < 1 || cp[0] > 10000)
 				continue;
 
-			const u32 *cp = (const u32 *)v1;
 			int match = 1;
 			for (int j = 1; j < 8; j++) {
 				if (cp[j] > 65535) { match = 0; break; }

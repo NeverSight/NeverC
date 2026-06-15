@@ -317,4 +317,36 @@ static __always_inline int nvk_should_abort_on_mismatch(void)
 	return r == NVK_VER_MISMATCH;
 }
 
+static int nvk_verify_module_offsets(struct nvk_this_module *mod,
+				     const char *expected_name)
+{
+	struct list_head *list;
+	const char *name;
+	int ok = 0;
+
+	list = (struct list_head *)((char *)mod + NVK_OFF_LIST);
+	if ((unsigned long)list->next < 0xFFFF000000000000UL &&
+	    list->next != list)
+		return -1;
+	if ((unsigned long)list->prev < 0xFFFF000000000000UL &&
+	    list->prev != list)
+		return -2;
+
+	name = (const char *)((char *)mod + NVK_OFF_NAME);
+	if (expected_name) {
+		const char *a = name;
+		const char *b = expected_name;
+		while (*a && *b && *a == *b) { a++; b++; }
+		if (*a != *b) return -3;
+	} else {
+		unsigned char c;
+		if (nvk_mem_read(&c, name, 1))
+			return -4;
+		if (c < 0x20 || c > 0x7E)
+			return -5;
+	}
+
+	return 0;
+}
+
 #endif /* NVK_COMPAT_H */

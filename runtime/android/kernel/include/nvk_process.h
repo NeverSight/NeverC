@@ -262,11 +262,13 @@ static int nvk_is_current_root(void)
 	unsigned char *task = (unsigned char *)current;
 	unsigned long i;
 	for (i = 0x500; i < 0x800; i += 8) {
-		unsigned long v = *(unsigned long *)(task + i);
+		unsigned long v;
+		if (nvk_mem_read(&v, task + i, 8)) continue;
 		if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {
-			const u32 *cp = (const u32 *)v;
-			u32 refcnt = cp[0];
-			if (refcnt < 1 || refcnt > 10000) continue;
+			u32 cp[4];
+			if (nvk_mem_read(cp, (void *)v, sizeof(cp)))
+				continue;
+			if (cp[0] < 1 || cp[0] > 10000) continue;
 			if (cp[1] == 0 && cp[2] == 0 && cp[3] == 0)
 				return 1;
 		}

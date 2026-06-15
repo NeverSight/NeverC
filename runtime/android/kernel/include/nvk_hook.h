@@ -1790,13 +1790,21 @@ static long _nvk_chain_run(struct nvk_hook_chain *chain,
 			   void *a0, void *a1, void *a2,
 			   void *a3, void *a4, void *a5)
 {
-	int i;
+	int i, cnt;
 	long ret = 0;
+	struct nvk_hook_chain_entry snap[NVK_CHAIN_MAX];
 	if (!chain) return 0;
-	for (i = 0; i < chain->count; i++) {
-		if (!chain->entries[i].active) continue;
-		nvk_chain_handler_t h =
-			(nvk_chain_handler_t)chain->entries[i].handler;
+	__asm__ __volatile__("dmb ish" ::: "memory");
+	cnt = READ_ONCE(chain->count);
+	if (cnt > NVK_CHAIN_MAX) cnt = NVK_CHAIN_MAX;
+	for (i = 0; i < cnt; i++) {
+		snap[i].handler  = READ_ONCE(chain->entries[i].handler);
+		snap[i].active   = READ_ONCE(chain->entries[i].active);
+	}
+	__asm__ __volatile__("dmb ish" ::: "memory");
+	for (i = 0; i < cnt; i++) {
+		if (!snap[i].active || !snap[i].handler) continue;
+		nvk_chain_handler_t h = (nvk_chain_handler_t)snap[i].handler;
 		ret = h(chain->orig_fn, a0, a1, a2, a3, a4, a5);
 		if (ret != 0) return ret;
 	}
@@ -1843,8 +1851,10 @@ static int nvk_chain_add(struct nvk_hook_chain *chain,
 
 	chain->entries[slot].handler = handler;
 	chain->entries[slot].priority = priority;
-	chain->entries[slot].active = 1;
-	chain->count++;
+	__asm__ __volatile__("dmb ish" ::: "memory");
+	WRITE_ONCE(chain->entries[slot].active, 1);
+	__asm__ __volatile__("dmb ish" ::: "memory");
+	WRITE_ONCE(chain->count, chain->count + 1);
 	return 0;
 }
 
@@ -1873,9 +1883,12 @@ static int nvk_chain_remove(struct nvk_hook_chain *chain, void *handler)
 
 	for (i = 0; i < chain->count; i++) {
 		if (chain->entries[i].handler == handler) {
+			WRITE_ONCE(chain->entries[i].active, 0);
+			__asm__ __volatile__("dmb ish" ::: "memory");
 			for (; i < chain->count - 1; i++)
 				chain->entries[i] = chain->entries[i + 1];
-			chain->count--;
+			__asm__ __volatile__("dmb ish" ::: "memory");
+			WRITE_ONCE(chain->count, chain->count - 1);
 			return 0;
 		}
 	}

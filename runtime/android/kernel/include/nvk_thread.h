@@ -172,21 +172,23 @@ static __always_inline void nvk_thread_yield(void)
 
 static void nvk_thread_stop_all(void)
 {
-	int i;
+	struct task_struct *tasks[NVK_THREAD_MAX];
+	int cnt, i;
+
 	_nvk_thr_lock();
-	for (i = 0; i < _nvk_thread_count; i++) {
-		if (_nvk_threads[i].task && _nvk_threads[i].running) {
-			struct task_struct *t = _nvk_threads[i].task;
-			_nvk_thr_unlock();
-			if (_nvk_kthread_stop)
-				_nvk_kthread_stop(t);
-			_nvk_thr_lock();
-			_nvk_threads[i].running = 0;
-			_nvk_threads[i].task = (void *)0;
-		}
+	cnt = _nvk_thread_count;
+	for (i = 0; i < cnt; i++) {
+		tasks[i] = _nvk_threads[i].task;
+		_nvk_threads[i].running = 0;
+		_nvk_threads[i].task = (void *)0;
 	}
 	_nvk_thread_count = 0;
 	_nvk_thr_unlock();
+
+	for (i = 0; i < cnt; i++) {
+		if (tasks[i] && _nvk_kthread_stop)
+			_nvk_kthread_stop(tasks[i]);
+	}
 }
 
 static int nvk_thread_active_count(void)

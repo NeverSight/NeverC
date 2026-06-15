@@ -117,6 +117,11 @@ static void nvk_cleanup_all(void)
 		_nvk_vmalloc_hooked = 0;
 	}
 
+	if (_nvk_ks_hooked) {
+		nvk_hook_remove(&_nvk_ks_hook);
+		_nvk_ks_hooked = 0;
+	}
+
 	if (_nvk_avc_hook.active) nvk_hook_remove(&_nvk_avc_hook);
 	if (_nvk_inode_hook.active) nvk_hook_remove(&_nvk_inode_hook);
 	if (_nvk_task_perm_hook.active) nvk_hook_remove(&_nvk_task_perm_hook);
