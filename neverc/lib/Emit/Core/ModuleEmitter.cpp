@@ -509,6 +509,20 @@ void ModuleEmitter::release() {
     getModule().addModuleFlag(llvm::Module::Override, "DisableInlineOpt", 1);
   if (CodeGenOpts.DisableTryStmt)
     getModule().addModuleFlag(llvm::Module::Override, "DisableTryStmt", 1);
+
+  // Android kernel module (.ko) codegen: the arm64 module loader routes long
+  // branches through per-module PLT sections and rejects (-ENOEXEC) any module
+  // missing .plt / .init.plt (arch/arm64/kernel/module-plts.c).  The in-tree
+  // build supplies these via arch/arm64 module.lds; emit empty placeholders
+  // here so a relocatably-linked .ko carries them without any external linker
+  // script.  The loader overwrites their type/flags/size, so a single
+  // placeholder byte is sufficient.
+  if (CodeGenOpts.AndroidKernelDriverMode && Arch == llvm::Triple::aarch64)
+    getModule().appendModuleInlineAsm(
+        ".pushsection .plt,\"ax\",%progbits\n\t.byte 0\n\t.popsection\n"
+        ".pushsection .init.plt,\"ax\",%progbits\n\t.byte 0\n\t.popsection\n"
+        ".pushsection .text.ftrace_trampoline,\"ax\",%progbits\n\t.byte 0\n\t"
+        ".popsection\n");
   if (CodeGenOpts.Jumptablerdata)
     getModule().addModuleFlag(llvm::Module::Override, "Jumptablerdata", 1);
 

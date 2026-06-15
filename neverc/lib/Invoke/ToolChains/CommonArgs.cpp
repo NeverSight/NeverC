@@ -1070,6 +1070,21 @@ bool tools::getBundledAndroidSysroot(const Driver &D,
   return false;
 }
 
+bool tools::getBundledAndroidKernelSysroot(
+    const Driver &D, const llvm::Triple &Triple,
+    llvm::SmallVectorImpl<char> &Root) {
+  // Only arm64 kernel modules are supported for now.
+  if (Triple.getArch() != llvm::Triple::aarch64)
+    return false;
+  llvm::SmallString<128> P(llvm::sys::path::parent_path(D.getInstalledDir()));
+  llvm::sys::path::append(P, "runtime", "android", "kernel");
+  if (llvm::sys::fs::is_directory(P)) {
+    Root.assign(P.begin(), P.end());
+    return true;
+  }
+  return false;
+}
+
 bool tools::getBundledMacOSSysroot(const Driver &D, const llvm::Triple &Triple,
                                    llvm::SmallVectorImpl<char> &SysRoot) {
   llvm::SmallString<128> P(llvm::sys::path::parent_path(D.getInstalledDir()));

@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _NVK_LINUX_KREF_H
+#define _NVK_LINUX_KREF_H
+
+#include <linux/types.h>
+#include <linux/compiler.h>
+
+struct kref { atomic_t refcount; };
+
+static __always_inline void kref_init(struct kref *kref)
+{ kref->refcount.counter = 1; }
+
+static __always_inline void kref_get(struct kref *kref)
+{ __atomic_add_fetch(&kref->refcount.counter, 1, __ATOMIC_RELAXED); }
+
+static __always_inline int kref_put(struct kref *kref,
+				    void (*release)(struct kref *))
+{
+	if (__atomic_sub_fetch(&kref->refcount.counter, 1,
+			      __ATOMIC_ACQ_REL) == 0) {
+		release(kref);
+		return 1;
+	}
+	return 0;
+}
+
+#endif /* _NVK_LINUX_KREF_H */

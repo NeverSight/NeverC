@@ -45,9 +45,17 @@ protected:
   Tool *buildLinker() const override;
   Tool *buildStaticLibTool() const override;
 
+  /// True when compiling an Android *kernel* module
+  /// (-fandroid-kernel-driver-mode with a bundled kernel runtime present).
+  bool isAndroidKernelDriver() const { return UseAndroidKernelRuntime; }
+  /// Root of the bundled Android kernel runtime (runtime/android/kernel).
+  llvm::StringRef androidKernelRoot() const { return AndroidKernelRoot; }
+
 private:
   bool UseBundledSysroot = false;
   bool UseBundledAndroidSysroot = false;
+  bool UseAndroidKernelRuntime = false;
+  std::string AndroidKernelRoot;
 };
 
 } // end namespace toolchains

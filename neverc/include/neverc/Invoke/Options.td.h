@@ -5120,6 +5120,17 @@ CODEGEN_OPTION_WITH_MARSHALLING(prefix_1, "-fdisable-cfi-check",
                                 denormalizeSimpleFlag, mergeForwardValue,
                                 extractForwardValue, -1)
 #endif // CODEGEN_OPTION_WITH_MARSHALLING
+#ifdef CODEGEN_OPTION_WITH_MARSHALLING
+CODEGEN_OPTION_WITH_MARSHALLING(prefix_1, "-fandroid-kernel-driver-mode",
+                                fandroid_kernel_driver_mode, Flag,
+                                f_neverc_Group, INVALID, nullptr, 0, DefaultVis,
+                                0, "Android kernel driver development mode",
+                                nullptr, nullptr, true, 0,
+                                CodeGenOpts.AndroidKernelDriverMode, false,
+                                false, false, normalizeSimpleFlag,
+                                denormalizeSimpleFlag, mergeForwardValue,
+                                extractForwardValue, -1)
+#endif // CODEGEN_OPTION_WITH_MARSHALLING
 #ifdef LANG_OPTION_WITH_MARSHALLING
 LANG_OPTION_WITH_MARSHALLING(prefix_1, "-funsafe-math-optimizations",
                              funsafe_math_optimizations, Flag, f_Group, INVALID,

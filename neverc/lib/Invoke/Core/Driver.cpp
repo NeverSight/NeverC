@@ -377,7 +377,10 @@ void Driver::setLTOMode(const llvm::opt::ArgList &Args) {
 
   if (LTOMode == LTOK_None && !Args.hasArg(options::OPT_fno_lto) &&
       !Args.hasArg(options::OPT_S) && !Args.hasArg(options::OPT_E) &&
-      !Args.hasArg(options::OPT_fsyntax_only)) {
+      !Args.hasArg(options::OPT_fsyntax_only) &&
+      // Android kernel modules must emit real ELF objects (the .ko is a
+      // relocatable link), so never silently enable auto-LTO bitcode here.
+      !Args.hasArg(options::OPT_fandroid_kernel_driver_mode)) {
     LTOMode = LTOK_Full;
     AutoLTO = true;
   }

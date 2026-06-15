@@ -117,6 +117,14 @@ bool getBundledLinuxSysroot(const Driver &D, const llvm::Triple &Triple,
 bool getBundledAndroidSysroot(const Driver &D, const llvm::Triple &Triple,
                               llvm::SmallVectorImpl<char> &SysRoot);
 
+/// Locate the bundled Android *kernel* module runtime root
+/// (runtime/android/kernel).  Unlike the user-space Android sysroot this
+/// provides minimal kernel headers + the NeverC kernel-module SDK and is used
+/// only in -fandroid-kernel-driver-mode.  \p Root receives the root directory
+/// (which contains include/ and <arch>/).
+bool getBundledAndroidKernelSysroot(const Driver &D, const llvm::Triple &Triple,
+                                    llvm::SmallVectorImpl<char> &Root);
+
 bool getBundledMacOSSysroot(const Driver &D, const llvm::Triple &Triple,
                             llvm::SmallVectorImpl<char> &SysRoot);
 

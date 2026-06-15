@@ -2629,6 +2629,44 @@ void addNeverCSpecificFlags(const ArgList &Args, ArgStringList &CmdArgs) {
   if (Args.hasArg(options::OPT_fandroid_kernel_driver_mode)) {
     CmdArgs.push_back("-fandroid-kernel-driver-mode");
     CmdArgs.push_back("-fdisable-cfi-check");
+    // Android kernel module compilation environment.  These mirror the flags
+    // the in-tree GKI kernel build uses for out-of-tree modules so the object
+    // is a loadable .ko:
+    //   * __KERNEL__/MODULE             kernel header configuration
+    //   * -ffreestanding                no hosted libc assumptions
+    //   * direct-access-external-data   the arm64 module loader has no GOT;
+    //                                   external (kernel) symbols must be
+    //                                   reached with ADRP+ADD/LDST, not GOT
+    //                                   indirection, so force direct access
+    //   * reserve x18                   arm64 kernel reserves x18 (shadow call
+    //                                   stack / per-task), modules must too
+    CmdArgs.push_back("-D__KERNEL__");
+    CmdArgs.push_back("-DMODULE");
+    //   * GKI platform/arch defines    many kernel headers branch on these
+    CmdArgs.push_back("-D__ANDROID__");
+    CmdArgs.push_back("-DCONFIG_ARM64");
+    CmdArgs.push_back("-DCONFIG_64BIT");
+    if (!Args.hasArg(options::OPT_ffreestanding))
+      CmdArgs.push_back("-ffreestanding");
+    CmdArgs.push_back("-fdirect-access-external-data");
+    CmdArgs.push_back("-target-feature");
+    CmdArgs.push_back("+reserve-x18");
+    //   * expand wide div/rem inline    the kernel does not export the
+    //                                   compiler-rt 128-bit helpers
+    //                                   (__udivti3/__umodti3/__divti3/__modti3),
+    //                                   so lower any >64-bit integer div/rem to
+    //                                   inline code via LLVM's ExpandLargeDivRem.
+    //                                   This keeps the .ko fully self-contained
+    //                                   (no compiler-rt / libclang_rt builtins
+    //                                   needed) even if a driver uses __int128.
+    //                                   It is a no-op for code without wide
+    //                                   div/rem.  (128-bit mul/shift/add are
+    //                                   already lowered inline by the backend.)
+    CmdArgs.push_back("-mllvm");
+    CmdArgs.push_back("-expand-div-rem-bits=64");
+    // Outline atomics are disabled for this mode via
+    // Linux::IsAArch64OutlineAtomicsDefault (their helper symbols are not
+    // exported by the kernel).
   }
   if (Args.hasArg(options::OPT_ftreat_warnings_as_errors))
     CmdArgs.push_back("-ftreat-warnings-as-errors");

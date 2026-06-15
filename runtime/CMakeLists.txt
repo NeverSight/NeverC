@@ -156,3 +156,14 @@ if(IS_DIRECTORY "${RUNTIME_SRC}/android/arm64")
     "android/arm64:android/arm64"
   )
 endif()
+
+# ---------------------------------------------------------------------------
+# Android / kernel module runtime  (minimal kernel headers + NeverC kernel SDK)
+# Separate from the user-space Android sysroot above; used only in
+# -fandroid-kernel-driver-mode to build .ko modules.
+# ---------------------------------------------------------------------------
+if(IS_DIRECTORY "${RUNTIME_SRC}/android/kernel")
+  runtime_sdk_target(neverc-runtime-android-kernel
+    "android/kernel:android/kernel"
+  )
+endif()

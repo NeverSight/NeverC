@@ -67,6 +67,19 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
     }
   }
 
+  // Android kernel-module mode: use the dedicated kernel runtime (minimal
+  // kernel headers + NeverC kernel SDK) instead of the user-space bionic
+  // sysroot.  Headers are wired up in AddNeverCSystemIncludeArgs.
+  llvm::SmallString<128> KernelRoot;
+  if (Args.hasArg(options::OPT_fandroid_kernel_driver_mode) &&
+      tools::getBundledAndroidKernelSysroot(D, Triple, KernelRoot)) {
+    UseAndroidKernelRuntime = true;
+    AndroidKernelRoot.assign(KernelRoot.begin(), KernelRoot.end());
+    // compiler-rt builtins (e.g. __aeabi_*) live under <root>/<arch>/lib.
+    addPathIfExists(D, concat(AndroidKernelRoot, "/arm64/lib"),
+                    getFilePaths());
+  }
+
   ToolChain::path_list &PPaths = getProgramPaths();
 
   Generic_GCC::PushPPaths(PPaths);
@@ -184,17 +197,29 @@ void Linux::AddNeverCSystemIncludeArgs(const ArgList &DriverArgs,
     return;
 
   // Add 'include' in the resource directory, which is similar to
-  // GCC_INCLUDE_DIR (private headers) in GCC.
+  // GCC_INCLUDE_DIR (private headers) in GCC.  Kept even in kernel mode so the
+  // compiler's own freestanding headers (stddef.h, stdarg.h) remain available.
   llvm::SmallString<128> ResourceDirInclude(D.ResourceDir);
   llvm::sys::path::append(ResourceDirInclude, "include");
   if (!DriverArgs.hasArg(options::OPT_nobuiltininc))
     addSystemInclude(DriverArgs, FrontendArgs, ResourceDirInclude);
 
-  // NeverC std library headers are installed alongside builtin headers
-  // at <resource>/include/neverc/*.h, so no extra search path needed.
-
   if (DriverArgs.hasArg(options::OPT_nostdlibinc))
     return;
+
+  // Android kernel-module mode: use NeverC's own minimal kernel headers from
+  // the bundled kernel runtime and skip the user-space bionic sysroot.
+  //   <root>/include        - arch-independent SDK (nvkmod.h, nvkmod_version.h)
+  //   <root>/arm64/include  - kernel headers (linux/*, asm/*)
+  if (UseAndroidKernelRuntime) {
+    llvm::StringRef Root(AndroidKernelRoot);
+    addSystemInclude(DriverArgs, FrontendArgs, concat(Root, "/include"));
+    addSystemInclude(DriverArgs, FrontendArgs, concat(Root, "/arm64/include"));
+    return;
+  }
+
+  // NeverC std library headers are installed alongside builtin headers
+  // at <resource>/include/neverc/*.h, so no extra search path needed.
 
   // LOCAL_INCLUDE_DIR
   addSystemInclude(DriverArgs, FrontendArgs,
@@ -246,6 +271,12 @@ void Linux::AddNeverCSystemIncludeArgs(const ArgList &DriverArgs,
 }
 
 bool Linux::IsAArch64OutlineAtomicsDefault(const ArgList &Args) const {
+  // Android kernel modules cannot use outline atomics: the helper symbols
+  // (__aarch64_ldadd4_acq_rel, ...) live in compiler-rt/libgcc and are not
+  // exported by the kernel, so calls to them fail to resolve at insmod.  Inline
+  // (LL/SC or LSE) atomics like the in-tree kernel build instead.
+  if (Args.hasArg(options::OPT_fandroid_kernel_driver_mode))
+    return false;
   // Outline atomics for AArch64 are supported by compiler-rt
   // and libgcc since 9.3.1
   assert(getTriple().isAArch64() && "expected AArch64 target!");

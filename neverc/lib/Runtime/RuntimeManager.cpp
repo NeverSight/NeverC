@@ -43,6 +43,7 @@ constexpr TargetDef Targets[] = {
     {{"linux-arm64"}, {"linux/arm64"}},
     {{"macos-arm64"}, {"macos/arm64"}},
     {{"android-arm64"}, {"android/arm64"}},
+    {{"android-kernel-arm64"}, {"android/kernel"}},
 };
 
 const TargetDef *lookupTarget(StringRef Name) {
