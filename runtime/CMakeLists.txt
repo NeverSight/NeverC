@@ -34,13 +34,22 @@ endif()
 
 # Helper: register a directory tree for build-copy + install.
 # COPY_SPEC is a list of "src_subdir:dst_subdir" pairs.
+# Optional DEREFERENCE_SYMLINKS: materialise in-tree symlinks (macOS sysroot).
 macro(runtime_sdk_target _name)
+  set(_options DEREFERENCE_SYMLINKS)
+  cmake_parse_arguments(_rt "${_options}" "" "" ${ARGN})
   set(_cmds)
 
-  foreach(_spec ${ARGN})
+  foreach(_spec ${_rt_UNPARSED_ARGUMENTS})
     string(REPLACE ":" ";" _parts "${_spec}")
     list(GET _parts 0 _src)
     list(GET _parts 1 _dst)
+
+    if(_rt_DEREFERENCE_SYMLINKS)
+      set(_deref_flag -DDEREFERENCE_SYMLINKS=ON)
+    else()
+      set(_deref_flag)
+    endif()
 
     list(APPEND _cmds
       COMMAND "${CMAKE_COMMAND}" -E rm -rf "${RUNTIME_DST}/${_dst}"
@@ -48,11 +57,22 @@ macro(runtime_sdk_target _name)
       COMMAND "${CMAKE_COMMAND}"
         -DSRC="${RUNTIME_SRC}/${_src}"
         -DDST="${RUNTIME_DST}/${_dst}"
+        ${_deref_flag}
         -P "${CMAKE_CURRENT_SOURCE_DIR}/copy_runtime_tree.cmake")
 
-    install(DIRECTORY "${RUNTIME_SRC}/${_src}/"
-            DESTINATION "runtime/${_dst}"
-            COMPONENT ${_name})
+    # DEREFERENCE_SYMLINKS targets must install from the staged build tree
+    # (where symlinks have been materialised).  Other targets install from
+    # the source tree so `cmake --install` works even when only a subset of
+    # targets was built (e.g. CI builds neverc + specific runtime targets).
+    if(_rt_DEREFERENCE_SYMLINKS)
+      install(DIRECTORY "${RUNTIME_DST}/${_dst}/"
+              DESTINATION "runtime/${_dst}"
+              COMPONENT ${_name})
+    else()
+      install(DIRECTORY "${RUNTIME_SRC}/${_src}/"
+              DESTINATION "runtime/${_dst}"
+              COMPONENT ${_name})
+    endif()
   endforeach()
 
   # add_custom_target with no OUTPUT is always considered out of date,
@@ -123,7 +143,7 @@ endif()
 # macOS / arm64 sysroot  (macOS 14, Sonoma)
 # ---------------------------------------------------------------------------
 if(IS_DIRECTORY "${RUNTIME_SRC}/macos/arm64")
-  runtime_sdk_target(neverc-runtime-macos-arm64
+  runtime_sdk_target(neverc-runtime-macos-arm64 DEREFERENCE_SYMLINKS
     "macos/arm64:macos/arm64"
   )
 endif()
