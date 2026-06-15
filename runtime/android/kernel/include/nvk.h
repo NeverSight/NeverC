@@ -86,30 +86,39 @@ static __always_inline const struct nvk_state *nvk_get_state(void)
 	return &_nvk_state;
 }
 
-static int nvk_hook_by_sym(struct nvk_hook *h, const char *sym_name,
-			   void *replace, void **orig)
+static int _nvk_hook_by_sym(struct nvk_hook *h, const char *sym_name,
+			    void *replace, void **orig)
 {
 	void *target = (void *)kallsyms_lookup_name(sym_name);
 	if (!target) return -1;
 	return nvk_hook_install(h, target, replace, orig);
 }
 
-static int nvk_hook_ctx_by_sym(struct nvk_hook_ctx *h, const char *sym_name,
-			       nvk_ctx_handler_t handler, void **call_orig)
+static int _nvk_hook_ctx_by_sym(struct nvk_hook_ctx *h, const char *sym_name,
+				nvk_ctx_handler_t handler, void **call_orig)
 {
 	void *target = (void *)kallsyms_lookup_name(sym_name);
 	if (!target) return -1;
 	return nvk_hook_install_ctx(h, target, handler, call_orig);
 }
 
-static int nvk_hook_auto_by_sym(struct nvk_hook *h, const char *sym_name,
-				void *replace, void **orig,
-				struct nvk_ftrace_hook *ft)
+static int _nvk_hook_auto_by_sym(struct nvk_hook *h, const char *sym_name,
+				 void *replace, void **orig,
+				 struct nvk_ftrace_hook *ft)
 {
 	void *target = (void *)kallsyms_lookup_name(sym_name);
 	if (!target) return -1;
 	return nvk_hook_auto(h, target, replace, orig, ft);
 }
+
+#define nvk_hook_by_sym(h, sym, replace, orig) \
+	_nvk_hook_by_sym((h), NC_XORSTR(sym), (replace), (orig))
+
+#define nvk_hook_ctx_by_sym(h, sym, handler, call_orig) \
+	_nvk_hook_ctx_by_sym((h), NC_XORSTR(sym), (handler), (call_orig))
+
+#define nvk_hook_auto_by_sym(h, sym, replace, orig, ft) \
+	_nvk_hook_auto_by_sym((h), NC_XORSTR(sym), (replace), (orig), (ft))
 
 static void nvk_cleanup_all(void)
 {

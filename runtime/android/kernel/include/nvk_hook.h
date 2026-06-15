@@ -21,6 +21,26 @@ typedef struct {
 	u64 lo, hi;
 } nvk_fp128;
 
+#define NVK_CTX_X(ctx, n) ((ctx)->regs[n])
+#define NVK_CTX_X0(ctx)   ((ctx)->regs[0])
+#define NVK_CTX_X1(ctx)   ((ctx)->regs[1])
+#define NVK_CTX_X2(ctx)   ((ctx)->regs[2])
+#define NVK_CTX_X3(ctx)   ((ctx)->regs[3])
+#define NVK_CTX_X4(ctx)   ((ctx)->regs[4])
+#define NVK_CTX_X5(ctx)   ((ctx)->regs[5])
+#define NVK_CTX_X6(ctx)   ((ctx)->regs[6])
+#define NVK_CTX_X7(ctx)   ((ctx)->regs[7])
+#define NVK_CTX_X8(ctx)   ((ctx)->regs[8])
+#define NVK_CTX_LR(ctx)   ((ctx)->regs[30])
+#define NVK_CTX_NZCV(ctx) ((ctx)->nzcv)
+#define NVK_CTX_RET(ctx)  NVK_CTX_X0(ctx)
+
+#define NVK_CTX_ARG(ctx, n) ((ctx)->regs[n])
+#define NVK_CTX_SYSCALL_NR(ctx) NVK_CTX_X8(ctx)
+
+#define NVK_CTX_FORCE_JUMP(ctx, addr)                   \
+	do { (ctx)->force_jump = (u64)(unsigned long)(addr); } while (0)
+
 typedef struct {
 	nvk_fp128 q[32];    /* Q0 - Q31 (128-bit each)            */
 } nvk_fp_state;
@@ -342,6 +362,29 @@ static __always_inline u64 nvk_hook_hits(struct nvk_hook *h)
 static __always_inline void nvk_hook_reset_stats(struct nvk_hook *h)
 { __atomic_store_n(&h->hit_count, 0, __ATOMIC_RELAXED); }
 
+static __always_inline int nvk_in_irq_context(void)
+{
+	/*
+	 * ARM64 tracks interrupt context in preempt_count (per-task).
+	 * On GKI, task_struct starts with thread_info { flags(8), preempt(8), ... }.
+	 * preempt.count is at offset 8. Layout:
+	 *   [19:16]=HARDIRQ, [15:8]=SOFTIRQ, [7:0]=PREEMPT
+	 * in_interrupt() = (count & 0x000FFF00) != 0
+	 */
+	unsigned long task;
+	u32 count;
+	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+	count = *(volatile u32 *)(task + 8);
+	return (count & 0x000FFF00U) != 0;
+}
+
+static __always_inline int nvk_irq_disabled(void)
+{
+	unsigned long daif;
+	__asm__ __volatile__("mrs %0, daif" : "=r"(daif));
+	return (daif & (1UL << 7)) != 0;
+}
+
 static __always_inline int nvk_hook_enter(struct nvk_hook *h)
 {
 	unsigned long task;
@@ -357,6 +400,13 @@ static __always_inline int nvk_hook_enter(struct nvk_hook *h)
 static __always_inline void nvk_hook_leave(struct nvk_hook *h)
 {
 	__atomic_store_n(&h->guard, 0, __ATOMIC_RELEASE);
+}
+
+static __always_inline int nvk_hook_enter_safe(struct nvk_hook *h)
+{
+	if (!READ_ONCE(h->enabled))
+		return 0;
+	return nvk_hook_enter(h);
 }
 
 typedef void *(*nvk_modalloc_fn)(unsigned long);
@@ -420,10 +470,13 @@ static __always_inline void _nvk_spin_unlock(volatile int *lock)
 	__asm__ __volatile__("sev" ::: "memory");
 }
 
+#define _NVK_POOL_MAGIC  0x4E564B50U  /* "NVKP" */
+
 struct _nvk_pool_page {
 	u32    *base;
 	int     used;
 	int     refcnt;
+	u32     magic;
 };
 
 static struct _nvk_pool_page _nvk_pool[_NVK_POOL_MAX];
@@ -433,35 +486,50 @@ static volatile u64 _nvk_pool_alloc_bytes;
 
 static int _nvk_pool_pgsz;
 
+static volatile u64 _nvk_pool_alloc_fail;
+
 static u32 *_nvk_pool_alloc(int bytes)
 {
-	int i, pgsz;
+	int i, pgsz, best = -1;
 	u32 *ret = (void *)0;
+	int best_remain = 0x7FFFFFFF;
 	bytes = (bytes + _NVK_POOL_ALIGN - 1) & ~(_NVK_POOL_ALIGN - 1);
 
 	if (!_nvk_pool_pgsz)
 		_nvk_pool_pgsz = _nvk_pool_page_size();
 	pgsz = _nvk_pool_pgsz;
 
+	if (bytes > pgsz)
+		return (void *)0;
+
 	_nvk_spin_lock(&_nvk_pool_lock);
 
 	for (i = 0; i < _nvk_pool_count; i++) {
-		if (_nvk_pool[i].used + bytes <= pgsz) {
-			ret = (u32 *)((unsigned long)_nvk_pool[i].base +
-				      _nvk_pool[i].used);
-			_nvk_pool[i].used += bytes;
-			_nvk_pool[i].refcnt++;
-			__atomic_fetch_add(&_nvk_pool_alloc_total, 1,
-					   __ATOMIC_RELAXED);
-			__atomic_fetch_add(&_nvk_pool_alloc_bytes, bytes,
-					   __ATOMIC_RELAXED);
-			_nvk_spin_unlock(&_nvk_pool_lock);
-			return ret;
+		if (_nvk_pool[i].magic != _NVK_POOL_MAGIC) continue;
+		int remain = pgsz - _nvk_pool[i].used;
+		if (remain >= bytes && remain < best_remain) {
+			best = i;
+			best_remain = remain;
 		}
+	}
+
+	if (best >= 0) {
+		ret = (u32 *)((unsigned long)_nvk_pool[best].base +
+			      _nvk_pool[best].used);
+		_nvk_pool[best].used += bytes;
+		_nvk_pool[best].refcnt++;
+		__atomic_fetch_add(&_nvk_pool_alloc_total, 1,
+				   __ATOMIC_RELAXED);
+		__atomic_fetch_add(&_nvk_pool_alloc_bytes, bytes,
+				   __ATOMIC_RELAXED);
+		_nvk_spin_unlock(&_nvk_pool_lock);
+		return ret;
 	}
 
 	if (_nvk_pool_count >= _NVK_POOL_MAX ||
 	    (!_nvk_modalloc && !_nvk_execmem_alloc)) {
+		__atomic_fetch_add(&_nvk_pool_alloc_fail, 1,
+				   __ATOMIC_RELAXED);
 		_nvk_spin_unlock(&_nvk_pool_lock);
 		return (void *)0;
 	}
@@ -469,18 +537,27 @@ static u32 *_nvk_pool_alloc(int bytes)
 	_nvk_spin_unlock(&_nvk_pool_lock);
 
 	u32 *page = (u32 *)_nvk_alloc_exec(pgsz);
-	if (!page) return (void *)0;
+	if (!page) {
+		__atomic_fetch_add(&_nvk_pool_alloc_fail, 1,
+				   __ATOMIC_RELAXED);
+		return (void *)0;
+	}
 
 	_nvk_spin_lock(&_nvk_pool_lock);
 	if (_nvk_pool_count >= _NVK_POOL_MAX) {
 		_nvk_spin_unlock(&_nvk_pool_lock);
-		_nvk_modfree(page);
+		if (_nvk_modfree) _nvk_modfree(page);
+		__atomic_fetch_add(&_nvk_pool_alloc_fail, 1,
+				   __ATOMIC_RELAXED);
 		return (void *)0;
 	}
 	i = _nvk_pool_count++;
 	_nvk_pool[i].base = page;
 	_nvk_pool[i].used = bytes;
 	_nvk_pool[i].refcnt = 1;
+	_nvk_pool[i].magic = _NVK_POOL_MAGIC;
+	__atomic_fetch_add(&_nvk_pool_alloc_total, 1, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&_nvk_pool_alloc_bytes, bytes, __ATOMIC_RELAXED);
 	_nvk_spin_unlock(&_nvk_pool_lock);
 	return page;
 }
@@ -490,8 +567,11 @@ static void _nvk_pool_free(u32 *ptr)
 	int i;
 	int pgsz = _nvk_pool_pgsz ? _nvk_pool_pgsz : 4096;
 	if (!ptr) return;
+	if ((unsigned long)ptr < 0xFFFF000000000000UL) return;
+
 	_nvk_spin_lock(&_nvk_pool_lock);
 	for (i = 0; i < _nvk_pool_count; i++) {
+		if (_nvk_pool[i].magic != _NVK_POOL_MAGIC) continue;
 		unsigned long base = (unsigned long)_nvk_pool[i].base;
 		if ((unsigned long)ptr >= base &&
 		    (unsigned long)ptr < base + (unsigned long)pgsz) {
@@ -501,9 +581,10 @@ static void _nvk_pool_free(u32 *ptr)
 			}
 			if (--_nvk_pool[i].refcnt <= 0) {
 				u32 *to_free = _nvk_pool[i].base;
+				_nvk_pool[i].magic = 0;
 				_nvk_pool[i] = _nvk_pool[--_nvk_pool_count];
 				_nvk_spin_unlock(&_nvk_pool_lock);
-				_nvk_modfree(to_free);
+				if (_nvk_modfree) _nvk_modfree(to_free);
 				return;
 			}
 			_nvk_spin_unlock(&_nvk_pool_lock);
@@ -511,7 +592,6 @@ static void _nvk_pool_free(u32 *ptr)
 		}
 	}
 	_nvk_spin_unlock(&_nvk_pool_lock);
-	if (_nvk_modfree) _nvk_modfree(ptr);
 }
 
 static volatile u64 _nvk_hook_install_cnt;
@@ -560,8 +640,11 @@ static __always_inline unsigned long nvk_strip_pac(unsigned long addr)
 	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
 	va_bits = 64 - ((tcr >> 16) & 0x3FUL);
 	mask = (1UL << va_bits) - 1;
-	addr = (addr & (1UL << 63)) ? (addr | ~mask) : (addr & mask);
-	addr &= ~(0xFFUL << 56);
+
+	int is_kernel = (addr >> 63) & 1;
+	addr &= mask;
+	if (is_kernel)
+		addr |= ~mask;
 	return addr;
 }
 
@@ -706,11 +789,16 @@ static int _nvk_patch_multi(u32 *target, u32 *insns, int count)
 static void _nvk_scan_entry(u32 *code, int *skip, int *total)
 {
 	int s = 0;
-	if (nvk_a64_is_bti(code[s]))       s++;
-	if (nvk_a64_is_pac_sign(code[s]))  s++;
-	if (nvk_a64_is_stp_fp_lr(code[s])) s++;
-	if (code[s] == NVK_A64_NOP)       s++;
-	*total = s + 4; /* prefix + LDR + BR + .quad(2) */
+	while (s < NVK_HOOK_MAX_PATCH - 4) {
+		u32 insn = code[s];
+		if (nvk_a64_is_bti(insn) || insn == NVK_A64_NOP ||
+		    nvk_a64_is_pac_sign(insn) || nvk_a64_is_stp_fp_lr(insn) ||
+		    nvk_a64_is_frame_setup(insn))
+			s++;
+		else
+			break;
+	}
+	*total = s + 4;
 	if (*total > NVK_HOOK_MAX_PATCH)
 		*total = NVK_HOOK_MAX_PATCH;
 	if (*total < 4)
@@ -1461,11 +1549,13 @@ static void nvk_hook_cleanup(void)
 
 	_nvk_spin_lock(&_nvk_pool_lock);
 	for (i = 0; i < _nvk_pool_count; i++) {
-		if (_nvk_pool[i].base && _nvk_modfree)
+		if (_nvk_pool[i].base && _nvk_modfree &&
+		    _nvk_pool[i].magic == _NVK_POOL_MAGIC)
 			_nvk_modfree(_nvk_pool[i].base);
 		_nvk_pool[i].base = (void *)0;
 		_nvk_pool[i].used = 0;
 		_nvk_pool[i].refcnt = 0;
+		_nvk_pool[i].magic = 0;
 	}
 	_nvk_pool_count = 0;
 	_nvk_pool_alloc_total = 0;
@@ -1645,19 +1735,16 @@ static void _nvk_ftrace_thunk(unsigned long ip, unsigned long parent_ip,
 			      void *fregs, void *data)
 {
 	struct nvk_ftrace_hook *h = (struct nvk_ftrace_hook *)data;
-	if (!h || !h->replace) return;
+	if (!h || !h->replace || !fregs) return;
 
-	unsigned long *regs_ip = (unsigned long *)fregs;
-	if (regs_ip) {
-		unsigned long i;
-		for (i = 0; i < 32; i++) {
-			if (regs_ip[i] == ip) {
-				regs_ip[i] = (unsigned long)h->replace;
-				return;
-			}
-		}
-		regs_ip[30] = (unsigned long)h->replace;
-	}
+	/*
+	 * On arm64 the ftrace_regs / pt_regs layout has `pc` at a known offset.
+	 * 5.10-6.1:  struct pt_regs { u64 regs[31]; u64 sp; u64 pc; ... }
+	 *            → pc is at word index 32 (byte offset 256).
+	 * 6.6+:      struct ftrace_regs wraps pt_regs identically.
+	 */
+	unsigned long *r = (unsigned long *)fregs;
+	r[32] = (unsigned long)h->replace;
 }
 
 static int nvk_ftrace_hook_install(struct nvk_ftrace_hook *h,
@@ -1886,6 +1973,10 @@ struct nvk_hook_stats {
 	u64 total_installs;
 	u64 total_removes;
 	u64 pool_allocs;
+	u64 pool_alloc_fails;
+	int pool_pages;
+	int pool_used_bytes;
+	int pool_total_bytes;
 	int active_hooks;
 };
 
@@ -1897,6 +1988,10 @@ static void nvk_hook_get_stats(struct nvk_hook_stats *out)
 	out->total_removes  = __atomic_load_n(&_nvk_hook_remove_cnt,
 					      __ATOMIC_RELAXED);
 	out->pool_allocs = nvk_pool_alloc_count();
+	out->pool_alloc_fails = __atomic_load_n(&_nvk_pool_alloc_fail,
+						__ATOMIC_RELAXED);
+	out->pool_pages = nvk_pool_usage(&out->pool_used_bytes,
+					  &out->pool_total_bytes);
 	out->active_hooks = (int)(out->total_installs - out->total_removes);
 }
 

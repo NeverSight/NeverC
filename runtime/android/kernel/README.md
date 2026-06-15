@@ -35,7 +35,7 @@ with `-DNVK_KERNEL=510|515|601|606|612` (default `510` = android12-5.10).
 
 ```
 runtime/android/kernel/
-  include/                     # NeverC kernel SDK (18 headers)
+  include/                     # NeverC kernel SDK (24 headers)
     nvkmod.h                   #   module macros, kprobe/kallsyms bootstrap
     nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.12) + SDK version
     nvk.h                      #   all-in-one include (initializes all subsystems)
@@ -54,6 +54,12 @@ runtime/android/kernel/
     nvk_compat.h               #   runtime kernel version detection + feature probing (PAC/BTI/MTE/SVE/CFI)
     nvk_anti.h                 #   environment detection + integrity verification + watchdog
     nvk_vma.h                  #   VMA operations, process memory map inspection
+    nvk_su.h                   #   root shell provisioning
+    nvk_ksyms.h                #   extended symbol table operations
+    nvk_seccomp.h              #   seccomp filter inspection and bypass
+    nvk_pmu.h                  #   ARM64 PMU counter access
+    nvk_inject.h               #   remote process memory injection
+    nvk_ns.h                   #   PID namespace operations
   arm64/
     include/                   # minimal kernel headers (110 total)
       linux/*.h                #   99+ headers: types, kernel, printk, list, slab, fs, ...
@@ -101,6 +107,12 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_file.h` | `nvk_file_open/read/write/close`, `nvk_file_exists`, `nvk_file_read_all/write_all` |
 | `nvk_anti.h` | Environment detection (emulator, debugger, root, su binary, Magisk/KSU/APatch, SELinux permissive, hook/kprobe tampering), integrity verification, watchdog — all detection paths xorstr-encrypted |
 | `nvk_vma.h` | VMA operations (find_vma, walk, read/write remote), process memory map inspection |
+| `nvk_su.h` | Root shell provisioning, su daemon lifecycle |
+| `nvk_ksyms.h` | Extended symbol operations (`nvk_ksyms_walk`, `nvk_ksyms_for_each`, prefix search, function size) |
+| `nvk_seccomp.h` | Seccomp filter inspection and bypass (per-process mode read/clear/set) |
+| `nvk_pmu.h` | ARM64 PMU counter access (cycle/instruction/cache/branch counters) |
+| `nvk_inject.h` | Remote process memory injection (shellcode, code cave discovery) |
+| `nvk_ns.h` | PID namespace operations (cross-namespace PID translation, nsproxy) |
 
 All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xorstr.
 

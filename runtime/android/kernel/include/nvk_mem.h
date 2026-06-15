@@ -175,6 +175,25 @@ static void *nvk_mem_scan(const void *start, size_t region_len,
 	if (pat_len == 0 || pat_len > region_len)
 		return (void *)0;
 
+	if (pat_len >= 4) {
+		size_t skip[256];
+		for (i = 0; i < 256; i++)
+			skip[i] = pat_len;
+		for (i = 0; i < pat_len - 1; i++)
+			skip[pat[i]] = pat_len - 1 - i;
+
+		i = 0;
+		while (i <= region_len - pat_len) {
+			j = pat_len;
+			while (j > 0 && base[i + j - 1] == pat[j - 1])
+				j--;
+			if (j == 0)
+				return (void *)&base[i];
+			i += skip[base[i + pat_len - 1]];
+		}
+		return (void *)0;
+	}
+
 	for (i = 0; i <= region_len - pat_len; i++) {
 		int match = 1;
 		for (j = 0; j < pat_len; j++) {
@@ -286,6 +305,104 @@ static void nvk_mem_fill(void *dst, unsigned char val, size_t len)
 static void nvk_mem_zero(void *dst, size_t len)
 {
 	nvk_mem_fill(dst, 0, len);
+}
+
+static long nvk_mem_read_cross_page(void *dst, const void *src, size_t len)
+{
+	unsigned long addr = (unsigned long)src;
+	unsigned char *d = (unsigned char *)dst;
+	size_t done = 0;
+
+	while (done < len) {
+		unsigned long page_end = (addr & ~0xFFFUL) + 0x1000;
+		size_t chunk = page_end - addr;
+		if (chunk > len - done) chunk = len - done;
+
+		long ret = nvk_mem_read(d + done, (const void *)addr, chunk);
+		if (ret) return ret;
+
+		done += chunk;
+		addr += chunk;
+	}
+	return 0;
+}
+
+static __always_inline u64 nvk_mem_atomic_read64(const volatile u64 *addr)
+{
+	u64 val;
+	__asm__ __volatile__("ldar %0, [%1]"
+			     : "=r"(val)
+			     : "r"(addr)
+			     : "memory");
+	return val;
+}
+
+static __always_inline void nvk_mem_atomic_write64(volatile u64 *addr, u64 val)
+{
+	__asm__ __volatile__("stlr %1, [%0]"
+			     : : "r"(addr), "r"(val)
+			     : "memory");
+}
+
+static __always_inline u64 nvk_mem_xchg64(volatile u64 *addr, u64 new_val)
+{
+	u64 old;
+	u32 tmp;
+	__asm__ __volatile__(
+		"1: ldaxr %0, [%2]\n"
+		"   stlxr %w1, %3, [%2]\n"
+		"   cbnz  %w1, 1b\n"
+		: "=&r"(old), "=&r"(tmp)
+		: "r"(addr), "r"(new_val)
+		: "memory");
+	return old;
+}
+
+static __always_inline int nvk_mem_cas64(volatile u64 *addr,
+					 u64 expected, u64 desired)
+{
+	u64 old;
+	u32 tmp;
+	__asm__ __volatile__(
+		"1: ldaxr %0, [%2]\n"
+		"   cmp   %0, %3\n"
+		"   b.ne  2f\n"
+		"   stlxr %w1, %4, [%2]\n"
+		"   cbnz  %w1, 1b\n"
+		"2:\n"
+		: "=&r"(old), "=&r"(tmp)
+		: "r"(addr), "r"(expected), "r"(desired)
+		: "memory", "cc");
+	return old == expected;
+}
+
+static void *nvk_mem_scan_mask_safe(const void *start, size_t region_len,
+				    const unsigned char *pattern,
+				    const unsigned char *mask, size_t pat_len)
+{
+	const unsigned char *base = (const unsigned char *)start;
+	unsigned char buf[64];
+	size_t i, j;
+
+	if (pat_len == 0 || pat_len > region_len || pat_len > sizeof(buf))
+		return (void *)0;
+	if (!_nvk_probe_read)
+		return nvk_mem_scan_mask(start, region_len, pattern,
+					mask, pat_len);
+
+	for (i = 0; i <= region_len - pat_len; i++) {
+		if (_nvk_probe_read(buf, &base[i], pat_len))
+			continue;
+		int match = 1;
+		for (j = 0; j < pat_len; j++) {
+			if ((buf[j] & mask[j]) != (pattern[j] & mask[j])) {
+				match = 0;
+				break;
+			}
+		}
+		if (match) return (void *)&base[i];
+	}
+	return (void *)0;
 }
 
 #endif /* NVK_MEM_H */

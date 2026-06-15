@@ -39,11 +39,32 @@ struct _nvk_ksym_ctx {
 	void               *data;
 };
 
-static int _nvk_ksym_adapt(const char *name, void *module,
-			    unsigned long addr)
+/*
+ * kallsyms_on_each_symbol callback layout varies by kernel version:
+ *   5.10-5.15: int cb(void *data, const char *name, struct module *, addr)
+ *   6.1+:      int cb(void *data, const char *name, addr)
+ *
+ * The caller prototype also changed:
+ *   5.10-5.15: int kallsyms_on_each_symbol(cb, void *data)
+ *   6.1+:      same
+ *
+ * Our callback uses 3 regs: (x0=data, x1=name, x2=addr_or_module).
+ * On 5.10 the 4-arg variant passes (data, name, module, addr) where addr
+ * arrives in x3 and module in x2. We detect which variant is in use by
+ * probing whether x2 looks like a valid kernel address and x3 is also valid:
+ * if x2 points to a module struct (low-ish kernel addr with valid name
+ * field) it's the 4-arg variant; otherwise x2 is the address directly.
+ */
+
+static int _nvk_ksym_adapt(void *data, const char *name,
+			    unsigned long arg2, unsigned long arg3)
 {
-	(void)module;
-	return 0;
+	struct _nvk_ksym_ctx *ctx = (struct _nvk_ksym_ctx *)data;
+	if (!ctx || !ctx->cb) return 0;
+	unsigned long addr = arg2;
+	if (arg2 < 0xFFFF000000000000UL && arg3 >= 0xFFFF000000000000UL)
+		addr = arg3;
+	return ctx->cb(name, addr, ctx->data);
 }
 
 struct _nvk_walk_ctx {
@@ -53,11 +74,49 @@ struct _nvk_walk_ctx {
 	int                 max;
 };
 
-static int _nvk_walk_cb(const char *name, void *module, unsigned long addr)
+static int _nvk_walk_cb(void *data, const char *name,
+			unsigned long arg2, unsigned long arg3)
 {
-	struct _nvk_walk_ctx *ctx = (struct _nvk_walk_ctx *)module;
-	(void)module;
-	return 0;
+	struct _nvk_walk_ctx *ctx = (struct _nvk_walk_ctx *)data;
+	if (!ctx || !ctx->cb) return 0;
+	if (ctx->max > 0 && ctx->count >= ctx->max) return 1;
+	unsigned long addr = arg2;
+	if (arg2 < 0xFFFF000000000000UL && arg3 >= 0xFFFF000000000000UL)
+		addr = arg3;
+	int ret = ctx->cb(name, addr, ctx->data);
+	if (ret >= 0) ctx->count++;
+	return ret;
+}
+
+static int nvk_ksyms_walk(nvk_ksym_callback_t cb, void *data, int max)
+{
+	if (!cb) return -1;
+	if (!_nvk_on_each_symbol) return -1;
+
+	struct _nvk_walk_ctx wctx;
+	wctx.cb = cb;
+	wctx.data = data;
+	wctx.count = 0;
+	wctx.max = max;
+
+	typedef int (*onesym_fn)(void *, void *);
+	((onesym_fn)_nvk_on_each_symbol)(
+		(void *)_nvk_walk_cb, (void *)&wctx);
+	return wctx.count;
+}
+
+static int nvk_ksyms_for_each(nvk_ksym_callback_t cb, void *data)
+{
+	if (!cb) return -1;
+	if (!_nvk_on_each_symbol) return -1;
+
+	struct _nvk_ksym_ctx ctx;
+	ctx.cb = cb;
+	ctx.data = data;
+
+	typedef int (*onesym_fn)(void *, void *);
+	return ((onesym_fn)_nvk_on_each_symbol)(
+		(void *)_nvk_ksym_adapt, (void *)&ctx);
 }
 
 static int nvk_ksyms_resolve(const char *name, unsigned long *out_addr)
