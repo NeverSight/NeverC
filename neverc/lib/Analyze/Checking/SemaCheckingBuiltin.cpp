@@ -26,9 +26,9 @@
 #include "llvm/TargetParser/Triple.h"
 #include <algorithm>
 #include <cassert>
-#include <chrono>
 #include <ctime>
 #include <optional>
+#include <random>
 #include <string>
 #include <utility>
 #include "neverc/Analyze/SemaInternal.h"
@@ -93,9 +93,8 @@ ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
   uint64_t BaseKey = S.getLangOpts().StringEncryptKey;
   if (BaseKey == 0) {
     static uint64_t SeedKey = [] {
-      auto ns = std::chrono::steady_clock::now().time_since_epoch().count();
-      uint64_t h = static_cast<uint64_t>(ns) * 0x9E3779B97F4A7C15ULL;
-      h ^= static_cast<uint64_t>(std::time(nullptr)) * 0x517CC1B727220A95ULL;
+      std::random_device rd;
+      uint64_t h = (static_cast<uint64_t>(rd()) << 32) | rd();
       return h | 1;
     }();
     BaseKey = SeedKey;
@@ -177,9 +176,8 @@ ExprResult semaBuiltinNeverCRandomU64(Sema &S, CallExpr *TheCall) {
   uint64_t BaseKey = S.getLangOpts().StringEncryptKey;
   if (BaseKey == 0) {
     static uint64_t Seed = [] {
-      auto ns = std::chrono::steady_clock::now().time_since_epoch().count();
-      uint64_t h = static_cast<uint64_t>(ns) * 0x9E3779B97F4A7C15ULL;
-      h ^= static_cast<uint64_t>(std::time(nullptr)) * 0x517CC1B727220A95ULL;
+      std::random_device rd;
+      uint64_t h = (static_cast<uint64_t>(rd()) << 32) | rd();
       return h | 1;
     }();
     BaseKey = Seed;
