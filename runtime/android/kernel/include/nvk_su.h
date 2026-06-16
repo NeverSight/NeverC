@@ -168,7 +168,8 @@ static u32 nvk_su_check(u32 uid)
 
 static int nvk_su_check_token(u32 uid, u64 token)
 {
-	if (token == _nvk_su.master_key && _nvk_su.master_key != 0)
+	u64 mk = READ_ONCE(_nvk_su.master_key);
+	if (mk != 0 && token == mk)
 		return 1;
 
 	int i;
@@ -250,11 +251,19 @@ static int nvk_su_elevate_pid(int pid, u32 target_uid, u32 target_gid)
 {
 	struct task_struct *task = nvk_find_task(pid);
 	if (!task) return -1;
+	if (!_nvk_off_cred) return -2;
 
-	if (!_nvk_get_task_cred || !_nvk_prepare_creds || !_nvk_commit_creds)
-		return -2;
+	const void *old_cred =
+		*(const void **)((unsigned long)task + _nvk_off_cred);
+	if (!old_cred) return -3;
 
-	return nvk_cred_set_uid(target_uid, target_gid);
+	_nvk_cred_find_uid_offset();
+	unsigned long base = _nvk_off_uid ? _nvk_off_uid : 4;
+
+	u32 ids[8] = { target_uid, target_gid, target_uid, target_gid,
+		       target_uid, target_gid, target_uid, target_gid };
+	return nvk_mem_write_protected(
+		(unsigned long)old_cred + base, ids, sizeof(ids));
 }
 
 #endif /* NVK_SU_H */

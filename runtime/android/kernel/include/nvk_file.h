@@ -47,8 +47,6 @@ static int nvk_file_init(void)
 
 	_nvk_filp_open = (nvk_filp_open_fn)NVK_LOOKUP("filp_open");
 	_nvk_filp_close = (nvk_filp_close_fn)NVK_LOOKUP("filp_close");
-	if (!_nvk_filp_close)
-		_nvk_filp_close = (nvk_filp_close_fn)NVK_LOOKUP("fput");
 
 	_nvk_kernel_read = (nvk_kernel_read_fn)NVK_LOOKUP("kernel_read");
 	_nvk_kernel_write = (nvk_kernel_write_fn)NVK_LOOKUP("kernel_write");

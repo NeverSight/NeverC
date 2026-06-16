@@ -24,7 +24,7 @@ static int _nvk_seccomp_find_offset(struct task_struct *task)
 	const unsigned char *p = (const unsigned char *)task;
 	unsigned long i;
 
-	for (i = 0x200; i < 0xA00; i += 4) {
+	for (i = 0x200; i < 0xE00; i += 4) {
 		u32 mode = *(u32 *)(p + i);
 		if (mode != NVK_SECCOMP_MODE_DISABLED &&
 		    mode != NVK_SECCOMP_MODE_STRICT &&
