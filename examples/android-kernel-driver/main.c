@@ -21,18 +21,14 @@ static int nvk_driver_init(void)
 	void *init_task_addr;
 	int ret;
 
-	/* Resolve kallsyms_lookup_name (via kprobe) and printk. */
 	ret = NVK_BOOTSTRAP();
-	if (ret) {
-		/* Nothing resolved yet, so no printk available to report it. */
+	if (ret)
 		return ret;
-	}
 
 	pr_info("nvk_driver: loaded on %s\n", NVK_KERNEL_STR);
 	pr_info("nvk_driver: kallsyms_lookup_name @ %lx\n",
 		(unsigned long)nvk_kallsyms_lookup_name);
 
-	/* Example: dynamically resolve an arbitrary kernel symbol. */
 	init_task_addr = NVK_LOOKUP("init_task");
 	pr_info("nvk_driver: &init_task = %lx\n",
 		(unsigned long)init_task_addr);
