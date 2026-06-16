@@ -1,5 +1,5 @@
 # Android GKI kernel chardev + ioctl demo (.ko)
-# Usage: make            (or: make KERNEL=601 for 6.1, etc.)
+# Usage: neverc make            (or: neverc make KERNEL=601 for 6.1, etc.)
 
 NEVERC ?= ../../build-neverc/bin/neverc
 

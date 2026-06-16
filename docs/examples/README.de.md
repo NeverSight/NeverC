@@ -51,6 +51,6 @@ cd examples/<beispiel-name>
 neverc make
 ```
 
-Compilerpfad angeben: `make NEVERC=/path/to/neverc`
+Compilerpfad angeben: `neverc make NEVERC=/path/to/neverc`
 
 Alle Beispiele verwenden **neverc** und erzeugen Windows-PE-Binärdateien (`.sys`) über den integrierten Linker.

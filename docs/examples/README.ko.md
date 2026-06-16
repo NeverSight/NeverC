@@ -51,6 +51,6 @@ cd examples/<예제명>
 neverc make
 ```
 
-컴파일러 경로 지정: `make NEVERC=/path/to/neverc`
+컴파일러 경로 지정: `neverc make NEVERC=/path/to/neverc`
 
 모든 예제는 **neverc**를 컴파일러로 사용하며 내장 링커를 통해 Windows PE 바이너리(`.sys`)를 생성합니다.

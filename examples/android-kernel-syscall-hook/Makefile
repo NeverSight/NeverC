@@ -1,9 +1,10 @@
 # Android GKI kernel syscall-hook demo (.ko)
 #
 # Usage:
-#   make                                       (method A: sys_call_table swap)
-#   make EXTRA=-DNVK_SYSCALL_INLINE_HOOK       (method B: inline hook)
-#   make KERNEL=601                            (target 6.1)
+#   neverc make                                       (method A: sys_call_table swap)
+#   neverc make EXTRA=-DNVK_SYSCALL_INLINE_HOOK       (method B: inline hook)
+#   neverc make EXTRA=-DNVK_SYSCALL_CONTEXT_HOOK      (method C: context hook)
+#   neverc make KERNEL=601                            (target 6.1)
 
 NEVERC ?= ../../build-neverc/bin/neverc
 

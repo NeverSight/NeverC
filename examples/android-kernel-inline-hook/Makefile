@@ -1,9 +1,9 @@
 # Android GKI kernel inline-hook demo (.ko)
 #
 # Usage:
-#   make                                       (simple hook mode)
-#   make EXTRA=-DNVK_CONTEXT_HOOK              (context hook mode)
-#   make KERNEL=601                            (target 6.1)
+#   neverc make                                       (simple hook mode)
+#   neverc make EXTRA=-DNVK_CONTEXT_HOOK              (context hook mode)
+#   neverc make KERNEL=601                            (target 6.1)
 
 NEVERC ?= ../../build-neverc/bin/neverc
 

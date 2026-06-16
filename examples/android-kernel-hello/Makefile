@@ -1,5 +1,5 @@
 # Android GKI kernel module (.ko) — minimal, cross-compiled from any host
-# Usage: neverc make        (or plain: make)
+# Usage: neverc make
 #
 # No kernel source tree / kernel build system required: neverc compiles against
 # the bundled minimal kernel runtime (runtime/android/kernel) and relocatably

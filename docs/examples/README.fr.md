@@ -51,6 +51,6 @@ cd examples/<nom-exemple>
 neverc make
 ```
 
-Spécifier le chemin du compilateur : `make NEVERC=/path/to/neverc`
+Spécifier le chemin du compilateur : `neverc make NEVERC=/path/to/neverc`
 
 Tous les exemples utilisent **neverc** et produisent des binaires Windows PE (`.sys`) via l'éditeur de liens intégré.

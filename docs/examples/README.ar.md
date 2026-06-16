@@ -53,7 +53,7 @@ cd examples/<اسم-المثال>
 neverc make
 ```
 
-تحديد مسار المترجم: `make NEVERC=/path/to/neverc`
+تحديد مسار المترجم: `neverc make NEVERC=/path/to/neverc`
 
 جميع الأمثلة تستخدم **neverc** وتُنتج ثنائيات Windows PE (`.sys`) عبر المُرابط المدمج.
 

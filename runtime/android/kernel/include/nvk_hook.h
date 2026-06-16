@@ -43,6 +43,33 @@ typedef struct {
 #define NVK_CTX_FORCE_JUMP(ctx, addr)                   \
 	do { (ctx)->force_jump = (u64)(unsigned long)(addr); } while (0)
 
+/*
+ * Skip the original function entirely; return ret_val to the caller.
+ * Works by redirecting execution to the saved LR (X30).
+ */
+#define NVK_CTX_SKIP(ctx, ret_val) do {                              \
+	(ctx)->regs[0] = (u64)(unsigned long)(ret_val);              \
+	(ctx)->force_jump = (ctx)->regs[30];                         \
+} while (0)
+
+/* Skip the original function (void return). */
+#define NVK_CTX_SKIP_VOID(ctx)                                       \
+	do { (ctx)->force_jump = (ctx)->regs[30]; } while (0)
+
+/* Redirect execution to a different function instead of the original. */
+#define NVK_CTX_REDIRECT(ctx, fn_addr)                               \
+	NVK_CTX_FORCE_JUMP(ctx, fn_addr)
+
+/* Set argument N (X0..X7 for standard AAPCS64 call convention). */
+#define NVK_CTX_SET_ARG(ctx, n, val)                                 \
+	do { (ctx)->regs[n] = (u64)(unsigned long)(val); } while (0)
+
+/*
+ * Cast a nvk_hook_ctx's trampoline to a callable original-function pointer.
+ * Usage:  faccessat_fn orig = NVK_CTX_ORIG_FN(&my_ctx, faccessat_fn);
+ */
+#define NVK_CTX_ORIG_FN(h, fn_type) ((fn_type)(h)->tramp_code)
+
 typedef struct {
 	nvk_fp128 q[32];    /* Q0 - Q31 (128-bit each)            */
 } nvk_fp_state;
@@ -1253,6 +1280,11 @@ _Static_assert(_CTX_SIZE % 16 == 0, "context frame must be 16-byte aligned");
 typedef void (*nvk_ctx_handler_t)(nvk_reg_ctx *ctx);
 typedef void (*nvk_ctx_fp_handler_t)(nvk_reg_ctx *ctx, nvk_fp_state *fp);
 
+/*
+ * Declare a wrapper that saves/restores Q0-Q31 around a user handler.
+ * user_fn must have signature: void fn(nvk_reg_ctx *ctx, nvk_fp_state *fp).
+ * Install the wrapper_name (not user_fn) with nvk_hook_install_ctx().
+ */
 #define NVK_CTX_HANDLER_FP(wrapper_name, user_fn)                        \
 	static void wrapper_name(nvk_reg_ctx *ctx) {                    \
 		nvk_fp_state __fp_state;                                \
@@ -1260,6 +1292,24 @@ typedef void (*nvk_ctx_fp_handler_t)(nvk_reg_ctx *ctx, nvk_fp_state *fp);
 		user_fn(ctx, &__fp_state);                              \
 		NVK_RESTORE_FP(&__fp_state);                            \
 	}
+
+/*
+ * Inline FP guard pair — use directly inside a ctx handler when the
+ * handler might touch SIMD/FP registers (e.g. calling functions that
+ * use floating-point arithmetic).  512 bytes of kernel stack.
+ *
+ *   static void my_handler(nvk_reg_ctx *ctx) {
+ *       NVK_CTX_FP_GUARD_BEGIN;
+ *       // ... safe to touch FP here ...
+ *       NVK_CTX_FP_GUARD_END;
+ *   }
+ */
+#define NVK_CTX_FP_GUARD_BEGIN                                           \
+	nvk_fp_state _nvk_fps_guard;                                    \
+	NVK_SAVE_FP(&_nvk_fps_guard)
+
+#define NVK_CTX_FP_GUARD_END                                            \
+	NVK_RESTORE_FP(&_nvk_fps_guard)
 
 struct nvk_hook_ctx {
 	struct nvk_hook     base;

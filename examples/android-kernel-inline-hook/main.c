@@ -20,13 +20,24 @@ static void resolve_helpers(void)
 
 static struct nvk_hook_ctx faccessat_hook_ctx;
 
+static int nvk_path_contains(const char *haystack, const char *needle)
+{
+	int i, j;
+	for (i = 0; haystack[i]; i++) {
+		for (j = 0; needle[j] && haystack[i + j] == needle[j]; j++)
+			;
+		if (!needle[j]) return 1;
+	}
+	return 0;
+}
+
 static void hook_faccessat_ctx(nvk_reg_ctx *ctx)
 {
 	char buf[128];
 	int pid = -1;
 
-	const char __user *filename = (const char __user *)ctx->regs[1];
-	int mode = (int)ctx->regs[2];
+	const char __user *filename = (const char __user *)NVK_CTX_ARG(ctx, 1);
+	int mode = (int)NVK_CTX_ARG(ctx, 2);
 
 	buf[0] = '\0';
 	if (filename)
@@ -36,13 +47,19 @@ static void hook_faccessat_ctx(nvk_reg_ctx *ctx)
 	if (fn_task_pid_nr)
 		pid = fn_task_pid_nr(current);
 
+	/* Hide /proc/modules from non-root processes. */
+	if (pid > 1000 && nvk_path_contains(buf, "/proc/modules")) {
+		NVK_CTX_SKIP(ctx, -2 /* -ENOENT */);
+		return;
+	}
+
 	nvk_log_ratelimit("[ctx] pid=%d faccessat(%s, mode=%d) "
 			  "x0=%lx x1=%lx x2=%lx x3=%lx\n",
 			  pid, buf, mode,
-			  (unsigned long)ctx->regs[0],
-			  (unsigned long)ctx->regs[1],
-			  (unsigned long)ctx->regs[2],
-			  (unsigned long)ctx->regs[3]);
+			  (unsigned long)NVK_CTX_ARG(ctx, 0),
+			  (unsigned long)NVK_CTX_ARG(ctx, 1),
+			  (unsigned long)NVK_CTX_ARG(ctx, 2),
+			  (unsigned long)NVK_CTX_ARG(ctx, 3));
 }
 
 static int hook_init(void *target)

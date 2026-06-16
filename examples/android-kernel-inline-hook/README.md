@@ -4,6 +4,23 @@
 
 Inline hook on `do_faccessat`. Default: simple replacement with trampoline. With `-DNVK_CONTEXT_HOOK`: context hook receiving full `nvk_reg_ctx` register state. Demonstrates BTI/PAC-safe patching, PC-relative relocation, and D-cache→I-cache coherent trampoline.
 
+## Hook Modes
+
+| | Simple Hook (default) | Context Hook (`-DNVK_CONTEXT_HOOK`) |
+|---|---|---|
+| **Signature** | Must declare exact function typedef | Not required — use `ctx->regs[0..7]` |
+| **Re-entrancy guard** | Manual (`nvk_hook_enter`/`leave`) | Built-in (`guard_task`) |
+| **Enable/disable** | Manual (`WRITE_ONCE`) | Built-in fast-check in stub |
+| **Call original** | Via `orig` function pointer | Automatic (runs after handler) |
+| **Skip original** | Don't call `orig` | `NVK_CTX_SKIP(ctx, ret)` |
+| **Redirect** | N/A | `NVK_CTX_REDIRECT(ctx, addr)` |
+| **Modify args** | Change params before calling `orig` | `NVK_CTX_SET_ARG(ctx, n, val)` |
+| **FP safety** | Caller-save convention | `NVK_CTX_FP_GUARD_BEGIN`/`END` |
+| **Overhead** | Lower (4-insn patch + trampoline) | Higher (116-insn stub + full reg save) |
+| **Best for** | Known signatures, perf-critical | Monitoring, unstable ABI, rapid prototyping |
+
+**Recommendation**: prefer context hook unless you need to intercept the return value or have tight performance constraints.
+
 ## Build
 
 ```bash

@@ -4,6 +4,23 @@
 
 Hook inline su `do_faccessat`. Default: sostituzione semplice con trampoline. Con `-DNVK_CONTEXT_HOOK`: hook contestuale che riceve lo stato completo dei registri `nvk_reg_ctx`. Dimostra patching sicuro BTI/PAC, rilocazione relativa al PC e trampoline coerente D-cache→I-cache.
 
+## Modalità di hook
+
+| | Simple Hook (predefinito) | Context Hook (`-DNVK_CONTEXT_HOOK`) |
+|---|---|---|
+| **Firma** | Typedef esatto richiesto | Non necessario — tramite `ctx->regs[0..7]` |
+| **Guardia rientro** | Manuale (`nvk_hook_enter`/`leave`) | Integrata (`guard_task`) |
+| **Abilitare/disabilitare** | Manuale (`WRITE_ONCE`) | Controllo rapido integrato nello stub |
+| **Chiamata originale** | Tramite puntatore `orig` | Automatica (dopo l'handler) |
+| **Saltare l'originale** | Non chiamare `orig` | `NVK_CTX_SKIP(ctx, ret)` |
+| **Reindirizzamento** | N/A | `NVK_CTX_REDIRECT(ctx, addr)` |
+| **Modificare args** | Cambiare parametri prima di `orig` | `NVK_CTX_SET_ARG(ctx, n, val)` |
+| **Sicurezza FP** | Convenzione caller-save | `NVK_CTX_FP_GUARD_BEGIN`/`END` |
+| **Costo** | Basso (4 insns patch + trampoline) | Maggiore (116 insns stub + salvataggio completo) |
+| **Ideale per** | Firme note, prestazioni critiche | Monitoraggio, ABI instabile, prototipazione rapida |
+
+**Raccomandazione**: preferire context hook a meno che non sia necessario intercettare il valore di ritorno o si abbiano vincoli di prestazione stringenti.
+
 ## Compilazione
 
 ```bash

@@ -4,6 +4,23 @@
 
 Inline Hook auf `do_faccessat`. Standard: einfache Ersetzung mit Trampoline. Mit `-DNVK_CONTEXT_HOOK`: Kontext-Hook mit vollständigem `nvk_reg_ctx` Registerzustand. Demonstriert BTI/PAC-sicheres Patching, PC-relative Relokation und D-Cache→I-Cache-kohärentes Trampoline.
 
+## Hook-Modi
+
+| | Simple Hook (Standard) | Context Hook (`-DNVK_CONTEXT_HOOK`) |
+|---|---|---|
+| **Signatur** | Exakte Typedef erforderlich | Nicht nötig — über `ctx->regs[0..7]` |
+| **Reentrance-Guard** | Manuell (`nvk_hook_enter`/`leave`) | Eingebaut (`guard_task`) |
+| **Aktivieren/Deaktivieren** | Manuell (`WRITE_ONCE`) | Eingebauter Schnellcheck im Stub |
+| **Original aufrufen** | Über `orig`-Funktionszeiger | Automatisch (nach Handler) |
+| **Original überspringen** | `orig` nicht aufrufen | `NVK_CTX_SKIP(ctx, ret)` |
+| **Umleitung** | N/A | `NVK_CTX_REDIRECT(ctx, addr)` |
+| **Argumente ändern** | Parameter vor `orig`-Aufruf ändern | `NVK_CTX_SET_ARG(ctx, n, val)` |
+| **FP-Sicherheit** | Caller-Save-Konvention | `NVK_CTX_FP_GUARD_BEGIN`/`END` |
+| **Overhead** | Niedrig (4 Insns Patch + Trampoline) | Höher (116 Insns Stub + vollst. Reg.-Sicherung) |
+| **Geeignet für** | Bekannte Signaturen, perf.-kritisch | Monitoring, instabile ABI, Rapid Prototyping |
+
+**Empfehlung**: Context Hook bevorzugen, es sei denn, Sie müssen den Rückgabewert abfangen oder haben strenge Performance-Anforderungen.
+
 ## Kompilierung
 
 ```bash

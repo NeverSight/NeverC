@@ -4,6 +4,23 @@
 
 Hook مضمّن على `do_faccessat`. الافتراضي: استبدال بسيط مع trampoline. مع `-DNVK_CONTEXT_HOOK`: hook سياقي يستقبل حالة السجلات الكاملة `nvk_reg_ctx`. يعرض التصحيح الآمن BTI/PAC، إعادة التموضع النسبي لـ PC، و trampoline متسق D-cache→I-cache.
 
+## أوضاع الـ Hook
+
+| | Simple Hook (افتراضي) | Context Hook (`-DNVK_CONTEXT_HOOK`) |
+|---|---|---|
+| **التوقيع** | يتطلب typedef دقيق | غير مطلوب — عبر `ctx->regs[0..7]` |
+| **حماية إعادة الدخول** | يدوية (`nvk_hook_enter`/`leave`) | مدمجة (`guard_task`) |
+| **تفعيل/تعطيل** | يدوي (`WRITE_ONCE`) | فحص سريع مدمج في stub |
+| **استدعاء الأصل** | عبر مؤشر `orig` | تلقائي (بعد المعالج) |
+| **تخطي الأصل** | عدم استدعاء `orig` | `NVK_CTX_SKIP(ctx, ret)` |
+| **إعادة توجيه** | غ/م | `NVK_CTX_REDIRECT(ctx, addr)` |
+| **تعديل المعاملات** | تغيير قبل استدعاء `orig` | `NVK_CTX_SET_ARG(ctx, n, val)` |
+| **أمان FP** | اتفاقية caller-save | `NVK_CTX_FP_GUARD_BEGIN`/`END` |
+| **التكلفة** | منخفضة (4 تعليمات patch + trampoline) | أعلى (116 تعليمة stub + حفظ كامل) |
+| **الأنسب لـ** | توقيعات معروفة، أداء حرج | مراقبة، ABI غير مستقر، نمذجة سريعة |
+
+**التوصية**: يُفضل استخدام context hook ما لم تكن بحاجة لاعتراض قيمة الإرجاع أو كانت لديك قيود أداء صارمة.
+
 ## البناء
 
 ```bash

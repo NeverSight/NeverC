@@ -9,7 +9,7 @@
 #define NVK_LOG_TAG "nvk_syscall"
 #include <nvk_log.h>
 
-#ifdef NVK_SYSCALL_INLINE_HOOK
+#if defined(NVK_SYSCALL_INLINE_HOOK) || defined(NVK_SYSCALL_CONTEXT_HOOK)
 #include <nvk_hook.h>
 #endif
 
@@ -21,7 +21,65 @@ static void resolve_common(void)
 	fn_task_pid_nr = (task_pid_nr_fn)NVK_LOOKUP("task_pid_nr");
 }
 
-#ifdef NVK_SYSCALL_INLINE_HOOK
+#ifdef NVK_SYSCALL_CONTEXT_HOOK
+
+static struct nvk_hook_ctx openat_ctx;
+
+static void hook_sys_openat_ctx(nvk_reg_ctx *ctx)
+{
+	char buf[256];
+	int pid = -1;
+	const struct pt_regs *regs =
+		(const struct pt_regs *)NVK_CTX_ARG(ctx, 0);
+	const char __user *user_filename =
+		(const char __user *)regs->regs[1];
+
+	buf[0] = '\0';
+	if (user_filename)
+		nvk_mem_read_user(buf, user_filename, sizeof(buf) - 1);
+	buf[sizeof(buf) - 1] = '\0';
+
+	if (fn_task_pid_nr)
+		pid = fn_task_pid_nr(current);
+
+	nvk_log_ratelimit("[ctx] pid=%d openat(%s)\n", pid, buf);
+}
+
+static int hook_init(void)
+{
+	void *target;
+	int ret;
+
+	ret = nvk_hook_init();
+	if (ret) {
+		nvk_log_err("nvk_hook_init failed\n");
+		return ret;
+	}
+
+	target = NVK_LOOKUP("__arm64_sys_openat");
+	if (!target) {
+		nvk_log_err("__arm64_sys_openat not found\n");
+		return -1;
+	}
+
+	ret = nvk_hook_install_ctx(&openat_ctx, target,
+				    hook_sys_openat_ctx, (void *)0);
+	if (ret) {
+		nvk_log_err("ctx hook failed: %d\n", ret);
+		return ret;
+	}
+
+	nvk_log_info("[ctx] openat hooked (patched %d insns)\n",
+		     openat_ctx.base.patch_count);
+	return 0;
+}
+
+static void hook_exit(void)
+{
+	nvk_hook_remove_ctx(&openat_ctx);
+}
+
+#elif defined(NVK_SYSCALL_INLINE_HOOK)
 
 static struct nvk_hook openat_hook;
 static nvk_syscall_fn_t orig_sys_openat;
@@ -139,7 +197,7 @@ static void hook_exit(void)
 		nvk_syscall_restore(__NR_openat, orig_openat);
 }
 
-#endif /* NVK_SYSCALL_INLINE_HOOK */
+#endif /* NVK_SYSCALL_CONTEXT_HOOK / NVK_SYSCALL_INLINE_HOOK */
 
 static int nvk_syscall_hook_init(void)
 {

@@ -1,8 +1,8 @@
 # Android GKI kernel netlink IPC demo (.ko)
 #
 # Usage:
-#   make                       (default kernel 510)
-#   make KERNEL=606            (target 6.6)
+#   neverc make                       (default kernel 510)
+#   neverc make KERNEL=606            (target 6.6)
 
 NEVERC ?= ../../build-neverc/bin/neverc
 

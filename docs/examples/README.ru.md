@@ -51,6 +51,6 @@ cd examples/<имя-примера>
 neverc make
 ```
 
-Указать путь компилятора: `make NEVERC=/path/to/neverc`
+Указать путь компилятора: `neverc make NEVERC=/path/to/neverc`
 
 Все примеры используют **neverc** и генерируют бинарники Windows PE (`.sys`) через встроенный линкер.

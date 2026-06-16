@@ -1,5 +1,5 @@
 # Android GKI kernel driver (.ko) — dynamic-kallsyms template, cross-host build
-# Usage: neverc make            (or plain: make ; make KERNEL=601 for 6.1)
+# Usage: neverc make            (or: neverc make KERNEL=601 for 6.1)
 
 NEVERC ?= ../../build-neverc/bin/neverc
 

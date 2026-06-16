@@ -51,6 +51,6 @@ cd examples/<サンプル名>
 neverc make
 ```
 
-コンパイラパス指定：`make NEVERC=/path/to/neverc`
+コンパイラパス指定：`neverc make NEVERC=/path/to/neverc`
 
 すべてのサンプルは **neverc** をコンパイラとして使用し、内蔵リンカ経由で Windows PE バイナリ（`.sys`）を生成します。
