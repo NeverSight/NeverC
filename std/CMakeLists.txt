@@ -3,8 +3,9 @@
 # Each .c is compiled to LLVM bitcode, merged into a single .bc blob,
 # and converted to an embedded C header for linking into the compiler.
 #
-# Only headers are installed to the resource dir.  Sources (.c) are used
-# solely for building bitcode — they are not shipped.
+# Headers are installed to the resource dir.  Sources (.c) are used for
+# building bitcode; they can optionally be shipped via `neverc runtime
+# install std-sources` for source-level debugging (see neverc-std-sources).
 # Runtime tests live in tests/neverc/std/ and are built as neverc-std-tests.
 
 include(GetNeverCResourceDir)
@@ -28,3 +29,9 @@ endif()
 
 # Manifest for the compiler's symbol→bitcode lookup.
 install(FILES manifest.json DESTINATION std COMPONENT neverc-std)
+
+# Optional: install std source files for source-level debugging.
+# Downloaded separately via `neverc runtime install std-sources`.
+install(DIRECTORY src/ DESTINATION runtime/std/src
+        COMPONENT neverc-std-sources
+        FILES_MATCHING PATTERN "*.c" PATTERN "*.h")

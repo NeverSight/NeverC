@@ -51,6 +51,9 @@ def main():
 
     entries = []  # (sanitized_name, bc_bytes)
 
+    src_dir_abs = os.path.abspath(args.std_src_dir)
+    inc_dir_abs = os.path.abspath(args.std_include_dir)
+
     with tempfile.TemporaryDirectory(prefix="neverc_std_bc_") as tmpdir:
         for src in sources:
             rel = os.path.relpath(src, args.std_src_dir)
@@ -64,6 +67,8 @@ def main():
                 "-fno-lto",
                 "-ffreestanding", "-std=gnu11", "-w",
                 f"-I{args.std_include_dir}",
+                f"-fdebug-prefix-map={src_dir_abs}=runtime/std/src",
+                f"-fdebug-prefix-map={inc_dir_abs}=runtime/std/include",
                 src, "-o", bc_path,
             ]
             print(f"  [bc] {rel}", file=sys.stderr)

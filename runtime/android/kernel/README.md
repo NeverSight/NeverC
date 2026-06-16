@@ -194,3 +194,23 @@ You can also override per build with
 
 `vermagic` is likewise device-specific; override with `-DNVK_VERMAGIC='"…"'` to
 match your target (`cat /proc/version` / `modinfo` of an existing module).
+
+## Source-level debugging
+
+NeverC embeds debug-prefix-mapped paths in the DWARF info of the kernel runtime
+bitcode so that debuggers can locate the original `.c` sources in your install
+tree. The DWARF paths are relative to the NeverC install root:
+
+- Kernel sources: `runtime/android/kernel/src/nvk_hook.c`, etc.
+- Kernel headers: `runtime/android/kernel/include/nvk_hook.h`, etc.
+
+These source files are already included in the `android-kernel-arm64` runtime
+package. Configure your debugger to map the relative prefix to your NeverC root:
+
+```bash
+# GDB
+(gdb) set substitute-path runtime/android/kernel /path/to/neverc/runtime/android/kernel
+
+# LLDB
+(lldb) settings set target.source-map "runtime/android/kernel" "/path/to/neverc/runtime/android/kernel"
+```

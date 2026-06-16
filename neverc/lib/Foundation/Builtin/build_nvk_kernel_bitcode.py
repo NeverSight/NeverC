@@ -49,6 +49,10 @@ def main():
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
 
+    src_dir_abs = os.path.abspath(src_dir)
+    inc_kern_abs = os.path.abspath(inc_kern)
+    inc_nvk_abs = os.path.abspath(inc_nvk)
+
     with tempfile.TemporaryDirectory(prefix="neverc_nvk_bc_") as tmpdir:
         unity_src = os.path.join(tmpdir, "nvk_kernel_unity.c")
         with open(unity_src, "w") as f:
@@ -66,6 +70,10 @@ def main():
             "-D__KERNEL__", "-DMODULE", "-D_NEVERC_KRT_IMPL",
             f"-I{inc_kern}",
             f"-I{inc_nvk}",
+            f"-fdebug-prefix-map={src_dir_abs}=runtime/android/kernel/src",
+            f"-fdebug-prefix-map={inc_kern_abs}=runtime/android/kernel/arm64/include",
+            f"-fdebug-prefix-map={inc_nvk_abs}=runtime/android/kernel/include",
+            f"-fdebug-prefix-map={tmpdir}=runtime/android/kernel",
             "-w",
             unity_src, "-o", bc_path,
         ]

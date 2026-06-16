@@ -60,6 +60,13 @@ jobs:
         if: hashFiles('runtime/android/kernel') != ''
         run: cd runtime && zip -r ../neverc-runtime-android-kernel-arm64.zip android/kernel
 
+      - name: Package runtime — std-sources
+        if: hashFiles('std/src') != ''
+        run: |
+          mkdir -p _std_pkg/std/src
+          cp -r std/src/* _std_pkg/std/src/
+          cd _std_pkg && zip -r ../neverc-runtime-std-sources.zip std/src
+
       - name: List packages
         run: ls -lh neverc-runtime-*.zip
 
