@@ -8,6 +8,14 @@
 typedef unsigned long (*nvk_kallsyms_lookup_name_fn)(const char *name);
 extern nvk_kallsyms_lookup_name_fn nvk_kallsyms_lookup_name;
 
+/*
+ * Pluggable resolver: set to nvk_kallsyms_lookup_name on non-CFI kernels,
+ * or to the kprobe-based resolver on CFI/GKI kernels where
+ * kallsyms_lookup_name is stubbed.  Initialised by nvk_ksym_bootstrap().
+ */
+typedef unsigned long (*_nvk_sym_resolver_fn)(const char *name);
+static _nvk_sym_resolver_fn _nvk_sym_resolver;
+
 #define _NVK_SYM_CACHE_BITS  7
 #define _NVK_SYM_CACHE_SIZE  (1 << _NVK_SYM_CACHE_BITS)
 #define _NVK_SYM_CACHE_MASK  (_NVK_SYM_CACHE_SIZE - 1)
@@ -37,10 +45,10 @@ static __always_inline unsigned long _nvk_sym_cached(const char *name)
 	if (_nvk_sym_cache[idx].hash == h && _nvk_sym_cache[idx].addr)
 		return _nvk_sym_cache[idx].addr;
 
-	if (!nvk_kallsyms_lookup_name)
+	if (!_nvk_sym_resolver)
 		return 0;
 
-	unsigned long addr = nvk_kallsyms_lookup_name(name);
+	unsigned long addr = _nvk_sym_resolver(name);
 	if (addr) {
 		_nvk_sym_cache[idx].hash = h;
 		_nvk_sym_cache[idx].addr = addr;
