@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_SEMAPHORE_H
-#define _NVK_LINUX_SEMAPHORE_H
+#ifndef _NEVERC_KRT_LINUX_SEMAPHORE_H
+#define _NEVERC_KRT_LINUX_SEMAPHORE_H
 
 #include <linux/types.h>
 
@@ -15,4 +15,4 @@ int down_trylock(struct semaphore *sem);
 int down_timeout(struct semaphore *sem, long jiffies);
 void up(struct semaphore *sem);
 
-#endif /* _NVK_LINUX_SEMAPHORE_H */
+#endif /* _NEVERC_KRT_LINUX_SEMAPHORE_H */

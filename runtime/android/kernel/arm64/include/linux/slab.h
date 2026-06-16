@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_SLAB_H
-#define _NVK_LINUX_SLAB_H
+#ifndef _NEVERC_KRT_LINUX_SLAB_H
+#define _NEVERC_KRT_LINUX_SLAB_H
 
 #include <linux/types.h>
 #include <linux/gfp.h>
@@ -16,4 +16,4 @@ void vfree(const void *addr);
 void *kvmalloc(size_t size, gfp_t flags);
 void kvfree(const void *addr);
 
-#endif /* _NVK_LINUX_SLAB_H */
+#endif /* _NEVERC_KRT_LINUX_SLAB_H */

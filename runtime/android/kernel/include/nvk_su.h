@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef NVK_SU_H
-#define NVK_SU_H
+#ifndef NEVERC_KRT_SU_H
+#define NEVERC_KRT_SU_H
 
 #include <linux/types.h>
 #include <nvk_rt.h>
@@ -10,15 +10,15 @@
 #include <nvk_process.h>
 #include <nvk_cred.h>
 
-#define NVK_SU_MAX_GRANTS 64
+#define NEVERC_KRT_SU_MAX_GRANTS 64
 
-#define NVK_SU_FLAG_ROOT        (1U << 0)
-#define NVK_SU_FLAG_CAPS        (1U << 1)
-#define NVK_SU_FLAG_MOUNT       (1U << 2)
-#define NVK_SU_FLAG_HIDE        (1U << 3)
-#define NVK_SU_FLAG_PERSIST     (1U << 4)
+#define NEVERC_KRT_SU_FLAG_ROOT        (1U << 0)
+#define NEVERC_KRT_SU_FLAG_CAPS        (1U << 1)
+#define NEVERC_KRT_SU_FLAG_MOUNT       (1U << 2)
+#define NEVERC_KRT_SU_FLAG_HIDE        (1U << 3)
+#define NEVERC_KRT_SU_FLAG_PERSIST     (1U << 4)
 
-struct nvk_su_grant {
+struct neverc_krt_su_grant {
 	u32  uid;
 	u32  flags;
 	u64  token;
@@ -26,8 +26,8 @@ struct nvk_su_grant {
 	volatile int active;
 };
 
-struct nvk_su_manager {
-	struct nvk_su_grant grants[NVK_SU_MAX_GRANTS];
+struct neverc_krt_su_manager {
+	struct neverc_krt_su_grant grants[NEVERC_KRT_SU_MAX_GRANTS];
 	volatile int        count;
 	volatile int        lock;
 	u64                 master_key;
@@ -35,33 +35,33 @@ struct nvk_su_manager {
 	volatile u64        deny_count;
 };
 
-NVK_RT_VAR struct nvk_su_manager _nvk_su;
+NEVERC_KRT_RT_VAR struct neverc_krt_su_manager _neverc_krt_su;
 
-static __always_inline void _nvk_su_lock(void)
+static __always_inline void _neverc_krt_su_lock(void)
 {
-	while (__atomic_exchange_n(&_nvk_su.lock, 1, __ATOMIC_ACQUIRE))
+	while (__atomic_exchange_n(&_neverc_krt_su.lock, 1, __ATOMIC_ACQUIRE))
 		__asm__ __volatile__("wfe" ::: "memory");
 }
 
-static __always_inline void _nvk_su_unlock(void)
+static __always_inline void _neverc_krt_su_unlock(void)
 {
-	__atomic_store_n(&_nvk_su.lock, 0, __ATOMIC_RELEASE);
+	__atomic_store_n(&_neverc_krt_su.lock, 0, __ATOMIC_RELEASE);
 	__asm__ __volatile__("sev" ::: "memory");
 }
 
-void nvk_su_init(u64 master_key);
+void neverc_krt_su_init(u64 master_key);
 
 
-int nvk_su_grant(u32 uid, u32 flags, u64 token, u64 ttl_ns);
+int neverc_krt_su_grant(u32 uid, u32 flags, u64 token, u64 ttl_ns);
 
 
-int nvk_su_revoke(u32 uid);
+int neverc_krt_su_revoke(u32 uid);
 
 
-void nvk_su_revoke_all(void);
+void neverc_krt_su_revoke_all(void);
 
 
-static __always_inline int _nvk_su_expired(struct nvk_su_grant *g)
+static __always_inline int _neverc_krt_su_expired(struct neverc_krt_su_grant *g)
 {
 	u64 now;
 	if (!g->expire_ts) return 0;
@@ -69,31 +69,31 @@ static __always_inline int _nvk_su_expired(struct nvk_su_grant *g)
 	return now > g->expire_ts;
 }
 
-u32 nvk_su_check(u32 uid);
+u32 neverc_krt_su_check(u32 uid);
 
 
-int nvk_su_check_token(u32 uid, u64 token);
+int neverc_krt_su_check_token(u32 uid, u64 token);
 
 
-int nvk_su_elevate(u32 uid, u64 token);
+int neverc_krt_su_elevate(u32 uid, u64 token);
 
 
-int nvk_su_drop(void);
+int neverc_krt_su_drop(void);
 
 
-int nvk_su_active_count(void);
+int neverc_krt_su_active_count(void);
 
 
-struct nvk_su_stats {
+struct neverc_krt_su_stats {
 	u64 total_grants;
 	u64 total_denies;
 	int active;
 };
 
-void nvk_su_get_stats(struct nvk_su_stats *out);
+void neverc_krt_su_get_stats(struct neverc_krt_su_stats *out);
 
 
-int nvk_su_elevate_pid(int pid, u32 target_uid, u32 target_gid);
+int neverc_krt_su_elevate_pid(int pid, u32 target_uid, u32 target_gid);
 
 
-#endif /* NVK_SU_H */
+#endif /* NEVERC_KRT_SU_H */

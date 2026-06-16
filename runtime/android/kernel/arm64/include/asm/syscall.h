@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_ASM_SYSCALL_H
-#define _NVK_ASM_SYSCALL_H
+#ifndef _NEVERC_KRT_ASM_SYSCALL_H
+#define _NEVERC_KRT_ASM_SYSCALL_H
 
 #include <linux/types.h>
 #include <asm/ptrace.h>
@@ -156,4 +156,4 @@ typedef long (*arm64_syscall_fn_t)(const struct pt_regs *regs);
 /* Access a syscall argument from pt_regs. */
 #define syscall_get_arg(regs, n) ((regs)->regs[(n)])
 
-#endif /* _NVK_ASM_SYSCALL_H */
+#endif /* _NEVERC_KRT_ASM_SYSCALL_H */

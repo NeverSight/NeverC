@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* nvk_seccomp.c — implementations extracted from nvk_seccomp.h. */
+/* neverc_krt_seccomp.c — implementations extracted from neverc_krt_seccomp.h. */
 #include <nvk.h>
 
-int _nvk_seccomp_find_offset(struct task_struct *task)
+int _neverc_krt_seccomp_find_offset(struct task_struct *task)
 {
-	if (_nvk_off_seccomp) return 0;
+	if (_neverc_krt_off_seccomp) return 0;
 	if (!task) return -1;
 
 	const unsigned char *p = (const unsigned char *)task;
@@ -12,22 +12,22 @@ int _nvk_seccomp_find_offset(struct task_struct *task)
 
 	for (i = 0x200; i < 0xE00; i += 4) {
 		u32 mode = *(u32 *)(p + i);
-		if (mode != NVK_SECCOMP_MODE_DISABLED &&
-		    mode != NVK_SECCOMP_MODE_STRICT &&
-		    mode != NVK_SECCOMP_MODE_FILTER)
+		if (mode != NEVERC_KRT_SECCOMP_MODE_DISABLED &&
+		    mode != NEVERC_KRT_SECCOMP_MODE_STRICT &&
+		    mode != NEVERC_KRT_SECCOMP_MODE_FILTER)
 			continue;
 
 		u32 next = *(u32 *)(p + i + 4);
 		if (next > 2) continue;
 
 		unsigned long filter_ptr = *(unsigned long *)(p + i + 8);
-		if (mode == NVK_SECCOMP_MODE_DISABLED && filter_ptr == 0) {
-			_nvk_off_seccomp = i;
+		if (mode == NEVERC_KRT_SECCOMP_MODE_DISABLED && filter_ptr == 0) {
+			_neverc_krt_off_seccomp = i;
 			return 0;
 		}
-		if (mode == NVK_SECCOMP_MODE_FILTER &&
+		if (mode == NEVERC_KRT_SECCOMP_MODE_FILTER &&
 		    filter_ptr > 0xFFFF000000000000UL) {
-			_nvk_off_seccomp = i;
+			_neverc_krt_off_seccomp = i;
 			return 0;
 		}
 	}
@@ -35,147 +35,147 @@ int _nvk_seccomp_find_offset(struct task_struct *task)
 	return -1;
 }
 
-int nvk_seccomp_get_mode(struct task_struct *task)
+int neverc_krt_seccomp_get_mode(struct task_struct *task)
 {
 	if (!task) return -1;
-	if (_nvk_seccomp_find_offset(task))
+	if (_neverc_krt_seccomp_find_offset(task))
 		return -1;
-	return *(int *)((unsigned long)task + _nvk_off_seccomp);
+	return *(int *)((unsigned long)task + _neverc_krt_off_seccomp);
 }
 
-int nvk_seccomp_is_filtered(struct task_struct *task)
+int neverc_krt_seccomp_is_filtered(struct task_struct *task)
 {
-	int mode = nvk_seccomp_get_mode(task);
-	return mode == NVK_SECCOMP_MODE_FILTER;
+	int mode = neverc_krt_seccomp_get_mode(task);
+	return mode == NEVERC_KRT_SECCOMP_MODE_FILTER;
 }
 
-int nvk_seccomp_disable(struct task_struct *task)
+int neverc_krt_seccomp_disable(struct task_struct *task)
 {
 	if (!task) return -1;
-	if (_nvk_seccomp_find_offset(task))
+	if (_neverc_krt_seccomp_find_offset(task))
 		return -1;
 
-	unsigned long addr = (unsigned long)task + _nvk_off_seccomp;
+	unsigned long addr = (unsigned long)task + _neverc_krt_off_seccomp;
 	int zero = 0;
-	return nvk_mem_write((void *)addr, &zero, 4);
+	return neverc_krt_mem_write((void *)addr, &zero, 4);
 }
 
-int nvk_seccomp_set_mode(struct task_struct *task, int mode)
+int neverc_krt_seccomp_set_mode(struct task_struct *task, int mode)
 {
 	if (!task || mode < 0 || mode > 2) return -1;
-	if (_nvk_seccomp_find_offset(task))
+	if (_neverc_krt_seccomp_find_offset(task))
 		return -1;
 
-	unsigned long addr = (unsigned long)task + _nvk_off_seccomp;
-	return nvk_mem_write((void *)addr, &mode, 4);
+	unsigned long addr = (unsigned long)task + _neverc_krt_off_seccomp;
+	return neverc_krt_mem_write((void *)addr, &mode, 4);
 }
 
-int _nvk_seccomp_is_allowed_pid(int pid)
+int _neverc_krt_seccomp_is_allowed_pid(int pid)
 {
-	int i, cnt = __atomic_load_n(&_nvk_seccomp_allow_cnt,
+	int i, cnt = __atomic_load_n(&_neverc_krt_seccomp_allow_cnt,
 				     __ATOMIC_ACQUIRE);
 	for (i = 0; i < cnt; i++) {
-		if (_nvk_seccomp_allow_pids[i] == pid)
+		if (_neverc_krt_seccomp_allow_pids[i] == pid)
 			return 1;
 	}
 	return 0;
 }
 
-int _nvk_seccomp_hook_fn(int this_syscall, void *sd)
+int _neverc_krt_seccomp_hook_fn(int this_syscall, void *sd)
 {
 	int pid = -1;
-	if (_nvk_task_pid_nr)
-		pid = _nvk_task_pid_nr(current);
+	if (_neverc_krt_task_pid_nr)
+		pid = _neverc_krt_task_pid_nr(current);
 
-	if (pid > 0 && _nvk_seccomp_is_allowed_pid(pid))
+	if (pid > 0 && _neverc_krt_seccomp_is_allowed_pid(pid))
 		return 0;
 
-	if (_nvk_orig_seccomp_check)
-		return _nvk_orig_seccomp_check(this_syscall, sd);
+	if (_neverc_krt_orig_seccomp_check)
+		return _neverc_krt_orig_seccomp_check(this_syscall, sd);
 	return 0;
 }
 
-int nvk_seccomp_hook_install(void)
+int neverc_krt_seccomp_hook_install(void)
 {
 	void *target;
 
-	if (_nvk_seccomp_hooked) return 0;
+	if (_neverc_krt_seccomp_hooked) return 0;
 
-	target = NVK_LOOKUP("__secure_computing");
+	target = NEVERC_KRT_LOOKUP("__secure_computing");
 	if (!target)
-		target = NVK_LOOKUP("__seccomp_filter");
+		target = NEVERC_KRT_LOOKUP("__seccomp_filter");
 	if (!target)
-		target = NVK_LOOKUP("seccomp_run_filters");
+		target = NEVERC_KRT_LOOKUP("seccomp_run_filters");
 	if (!target) return -1;
 
-	int ret = nvk_hook_install(&_nvk_seccomp_hook, target,
-				    (void *)_nvk_seccomp_hook_fn,
-				    (void **)&_nvk_orig_seccomp_check);
+	int ret = neverc_krt_hook_install(&_neverc_krt_seccomp_hook, target,
+				    (void *)_neverc_krt_seccomp_hook_fn,
+				    (void **)&_neverc_krt_orig_seccomp_check);
 	if (ret) return ret;
 
-	_nvk_seccomp_hooked = 1;
+	_neverc_krt_seccomp_hooked = 1;
 	return 0;
 }
 
-void nvk_seccomp_hook_remove(void)
+void neverc_krt_seccomp_hook_remove(void)
 {
-	if (!_nvk_seccomp_hooked) return;
-	nvk_hook_remove(&_nvk_seccomp_hook);
-	_nvk_seccomp_hooked = 0;
+	if (!_neverc_krt_seccomp_hooked) return;
+	neverc_krt_hook_remove(&_neverc_krt_seccomp_hook);
+	_neverc_krt_seccomp_hooked = 0;
 }
 
-int nvk_seccomp_allow_pid(int pid)
+int neverc_krt_seccomp_allow_pid(int pid)
 {
-	while (__atomic_exchange_n(&_nvk_seccomp_pid_lock, 1,
+	while (__atomic_exchange_n(&_neverc_krt_seccomp_pid_lock, 1,
 				   __ATOMIC_ACQUIRE))
 		__asm__ __volatile__("wfe" ::: "memory");
 
-	int cnt = _nvk_seccomp_allow_cnt;
-	if (cnt >= NVK_SECCOMP_ALLOW_MAX) {
-		__atomic_store_n(&_nvk_seccomp_pid_lock, 0,
+	int cnt = _neverc_krt_seccomp_allow_cnt;
+	if (cnt >= NEVERC_KRT_SECCOMP_ALLOW_MAX) {
+		__atomic_store_n(&_neverc_krt_seccomp_pid_lock, 0,
 				 __ATOMIC_RELEASE);
 		return -1;
 	}
 
 	int i;
 	for (i = 0; i < cnt; i++) {
-		if (_nvk_seccomp_allow_pids[i] == pid) {
-			__atomic_store_n(&_nvk_seccomp_pid_lock, 0,
+		if (_neverc_krt_seccomp_allow_pids[i] == pid) {
+			__atomic_store_n(&_neverc_krt_seccomp_pid_lock, 0,
 					 __ATOMIC_RELEASE);
 			return 0;
 		}
 	}
 
-	_nvk_seccomp_allow_pids[cnt] = pid;
+	_neverc_krt_seccomp_allow_pids[cnt] = pid;
 	__asm__ __volatile__("dmb ish" ::: "memory");
-	_nvk_seccomp_allow_cnt = cnt + 1;
+	_neverc_krt_seccomp_allow_cnt = cnt + 1;
 
-	__atomic_store_n(&_nvk_seccomp_pid_lock, 0, __ATOMIC_RELEASE);
+	__atomic_store_n(&_neverc_krt_seccomp_pid_lock, 0, __ATOMIC_RELEASE);
 	__asm__ __volatile__("sev" ::: "memory");
 	return 0;
 }
 
-int nvk_seccomp_disallow_pid(int pid)
+int neverc_krt_seccomp_disallow_pid(int pid)
 {
-	while (__atomic_exchange_n(&_nvk_seccomp_pid_lock, 1,
+	while (__atomic_exchange_n(&_neverc_krt_seccomp_pid_lock, 1,
 				   __ATOMIC_ACQUIRE))
 		__asm__ __volatile__("wfe" ::: "memory");
 
-	int i, cnt = _nvk_seccomp_allow_cnt;
+	int i, cnt = _neverc_krt_seccomp_allow_cnt;
 	for (i = 0; i < cnt; i++) {
-		if (_nvk_seccomp_allow_pids[i] == pid) {
-			_nvk_seccomp_allow_pids[i] =
-				_nvk_seccomp_allow_pids[cnt - 1];
+		if (_neverc_krt_seccomp_allow_pids[i] == pid) {
+			_neverc_krt_seccomp_allow_pids[i] =
+				_neverc_krt_seccomp_allow_pids[cnt - 1];
 			__asm__ __volatile__("dmb ish" ::: "memory");
-			_nvk_seccomp_allow_cnt = cnt - 1;
-			__atomic_store_n(&_nvk_seccomp_pid_lock, 0,
+			_neverc_krt_seccomp_allow_cnt = cnt - 1;
+			__atomic_store_n(&_neverc_krt_seccomp_pid_lock, 0,
 					 __ATOMIC_RELEASE);
 			__asm__ __volatile__("sev" ::: "memory");
 			return 0;
 		}
 	}
 
-	__atomic_store_n(&_nvk_seccomp_pid_lock, 0, __ATOMIC_RELEASE);
+	__atomic_store_n(&_neverc_krt_seccomp_pid_lock, 0, __ATOMIC_RELEASE);
 	__asm__ __volatile__("sev" ::: "memory");
 	return -1;
 }

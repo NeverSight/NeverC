@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_PROC_FS_H
-#define _NVK_LINUX_PROC_FS_H
+#ifndef _NEVERC_KRT_LINUX_PROC_FS_H
+#define _NEVERC_KRT_LINUX_PROC_FS_H
 
 #include <linux/types.h>
 
@@ -50,4 +50,4 @@ struct proc_dir_entry *proc_create_seq(const char *name, umode_t mode,
 				       struct proc_dir_entry *parent,
 				       const struct seq_operations *ops);
 
-#endif /* _NVK_LINUX_PROC_FS_H */
+#endif /* _NEVERC_KRT_LINUX_PROC_FS_H */

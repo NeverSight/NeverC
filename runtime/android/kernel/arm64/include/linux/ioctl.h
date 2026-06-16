@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_IOCTL_H
-#define _NVK_LINUX_IOCTL_H
+#ifndef _NEVERC_KRT_LINUX_IOCTL_H
+#define _NEVERC_KRT_LINUX_IOCTL_H
 
 #define _IOC_NRBITS   8
 #define _IOC_TYPEBITS 8
@@ -35,4 +35,4 @@
 #define _IOC_NR(nr)   (((nr) >> _IOC_NRSHIFT) & _IOC_NRMASK)
 #define _IOC_SIZE(nr) (((nr) >> _IOC_SIZESHIFT) & _IOC_SIZEMASK)
 
-#endif /* _NVK_LINUX_IOCTL_H */
+#endif /* _NEVERC_KRT_LINUX_IOCTL_H */

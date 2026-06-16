@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_INIT_H
-#define _NVK_LINUX_INIT_H
+#ifndef _NEVERC_KRT_LINUX_INIT_H
+#define _NEVERC_KRT_LINUX_INIT_H
 
 #include <linux/compiler.h>
 
@@ -9,4 +9,4 @@
 #define __devexit
 #define __refdata
 
-#endif /* _NVK_LINUX_INIT_H */
+#endif /* _NEVERC_KRT_LINUX_INIT_H */

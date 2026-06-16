@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_PID_H
-#define _NVK_LINUX_PID_H
+#ifndef _NEVERC_KRT_LINUX_PID_H
+#define _NEVERC_KRT_LINUX_PID_H
 
 #include <linux/types.h>
 
@@ -23,4 +23,4 @@ void put_pid(struct pid *pid);
 pid_t task_pid_nr(struct task_struct *tsk);
 pid_t task_tgid_nr(struct task_struct *tsk);
 
-#endif /* _NVK_LINUX_PID_H */
+#endif /* _NEVERC_KRT_LINUX_PID_H */

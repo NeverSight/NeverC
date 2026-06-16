@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_CACHE_H
-#define _NVK_LINUX_CACHE_H
+#ifndef _NEVERC_KRT_LINUX_CACHE_H
+#define _NEVERC_KRT_LINUX_CACHE_H
 
 #define L1_CACHE_SHIFT 6
 #define L1_CACHE_BYTES (1 << L1_CACHE_SHIFT)
@@ -11,4 +11,4 @@
 #define SMP_CACHE_BYTES L1_CACHE_BYTES
 #define cache_line_size() L1_CACHE_BYTES
 
-#endif /* _NVK_LINUX_CACHE_H */
+#endif /* _NEVERC_KRT_LINUX_CACHE_H */

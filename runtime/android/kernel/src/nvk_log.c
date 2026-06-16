@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* nvk_log.c — global variable definitions for nvk_log.h. */
+/* neverc_krt_log.c — global variable definitions for neverc_krt_log.h. */
 #include <nvk.h>
 
-volatile int _nvk_log_level = NVK_LOG_DEFAULT_LEVEL;
+volatile int _neverc_krt_log_level = NEVERC_KRT_LOG_DEFAULT_LEVEL;

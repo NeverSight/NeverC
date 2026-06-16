@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_TIMER_H
-#define _NVK_LINUX_TIMER_H
+#ifndef _NEVERC_KRT_LINUX_TIMER_H
+#define _NEVERC_KRT_LINUX_TIMER_H
 
 #include <linux/types.h>
 #include <linux/jiffies.h>
@@ -42,4 +42,4 @@ int del_timer_sync(struct timer_list *timer);
 void add_timer(struct timer_list *timer);
 int timer_pending(const struct timer_list *timer);
 
-#endif /* _NVK_LINUX_TIMER_H */
+#endif /* _NEVERC_KRT_LINUX_TIMER_H */

@@ -1,61 +1,61 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* nvk_mem.c — implementations extracted from nvk_mem.h. */
+/* neverc_krt_mem.c — implementations extracted from neverc_krt_mem.h. */
 #include <nvk.h>
 
-int nvk_mem_init(void)
+int neverc_krt_mem_init(void)
 {
-	if (_nvk_mem_inited) return 0;
+	if (_neverc_krt_mem_inited) return 0;
 
-	_nvk_probe_read = (nvk_probe_read_fn)NVK_LOOKUP("copy_from_kernel_nofault");
-	if (!_nvk_probe_read)
-		_nvk_probe_read = (nvk_probe_read_fn)NVK_LOOKUP("probe_kernel_read");
+	_neverc_krt_probe_read = (neverc_krt_probe_read_fn)NEVERC_KRT_LOOKUP("copy_from_kernel_nofault");
+	if (!_neverc_krt_probe_read)
+		_neverc_krt_probe_read = (neverc_krt_probe_read_fn)NEVERC_KRT_LOOKUP("probe_kernel_read");
 
-	_nvk_probe_write = (nvk_probe_write_fn)NVK_LOOKUP("copy_to_kernel_nofault");
-	if (!_nvk_probe_write)
-		_nvk_probe_write = (nvk_probe_write_fn)NVK_LOOKUP("probe_kernel_write");
+	_neverc_krt_probe_write = (neverc_krt_probe_write_fn)NEVERC_KRT_LOOKUP("copy_to_kernel_nofault");
+	if (!_neverc_krt_probe_write)
+		_neverc_krt_probe_write = (neverc_krt_probe_write_fn)NEVERC_KRT_LOOKUP("probe_kernel_write");
 
-	_nvk_copy_from_user = (nvk_copy_from_user_fn)NVK_LOOKUP("_copy_from_user");
-	if (!_nvk_copy_from_user)
-		_nvk_copy_from_user =
-			(nvk_copy_from_user_fn)NVK_LOOKUP("raw_copy_from_user");
+	_neverc_krt_copy_from_user = (neverc_krt_copy_from_user_fn)NEVERC_KRT_LOOKUP("_copy_from_user");
+	if (!_neverc_krt_copy_from_user)
+		_neverc_krt_copy_from_user =
+			(neverc_krt_copy_from_user_fn)NEVERC_KRT_LOOKUP("raw_copy_from_user");
 
-	_nvk_copy_to_user = (nvk_copy_to_user_fn)NVK_LOOKUP("_copy_to_user");
-	if (!_nvk_copy_to_user)
-		_nvk_copy_to_user =
-			(nvk_copy_to_user_fn)NVK_LOOKUP("raw_copy_to_user");
+	_neverc_krt_copy_to_user = (neverc_krt_copy_to_user_fn)NEVERC_KRT_LOOKUP("_copy_to_user");
+	if (!_neverc_krt_copy_to_user)
+		_neverc_krt_copy_to_user =
+			(neverc_krt_copy_to_user_fn)NEVERC_KRT_LOOKUP("raw_copy_to_user");
 
-	_nvk_set_memory_rw = (nvk_set_memory_fn)NVK_LOOKUP("set_memory_rw");
-	_nvk_set_memory_ro = (nvk_set_memory_fn)NVK_LOOKUP("set_memory_ro");
-	_nvk_update_prot =
-		(nvk_update_mapping_prot_fn)NVK_LOOKUP("update_mapping_prot");
-	_nvk_kimage_voffset =
-		(unsigned long *)NVK_LOOKUP("kimage_voffset");
+	_neverc_krt_set_memory_rw = (neverc_krt_set_memory_fn)NEVERC_KRT_LOOKUP("set_memory_rw");
+	_neverc_krt_set_memory_ro = (neverc_krt_set_memory_fn)NEVERC_KRT_LOOKUP("set_memory_ro");
+	_neverc_krt_update_prot =
+		(neverc_krt_update_mapping_prot_fn)NEVERC_KRT_LOOKUP("update_mapping_prot");
+	_neverc_krt_kimage_voffset =
+		(unsigned long *)NEVERC_KRT_LOOKUP("kimage_voffset");
 
-	_nvk_mem_inited = 1;
+	_neverc_krt_mem_inited = 1;
 	return 0;
 }
 
-long nvk_mem_read(void *dst, const void *src, size_t len)
+long neverc_krt_mem_read(void *dst, const void *src, size_t len)
 {
-	if (_nvk_probe_read)
-		return _nvk_probe_read(dst, src, len);
+	if (_neverc_krt_probe_read)
+		return _neverc_krt_probe_read(dst, src, len);
 
 	unsigned char *d = (unsigned char *)dst;
 	const volatile unsigned char *s =
-		(const volatile unsigned char *)_nvk_strip_tags((unsigned long)src);
+		(const volatile unsigned char *)_neverc_krt_strip_tags((unsigned long)src);
 	size_t i;
 	for (i = 0; i < len; i++)
 		d[i] = s[i];
 	return 0;
 }
 
-long nvk_mem_write(void *dst, const void *src, size_t len)
+long neverc_krt_mem_write(void *dst, const void *src, size_t len)
 {
-	if (_nvk_probe_write)
-		return _nvk_probe_write(dst, src, len);
+	if (_neverc_krt_probe_write)
+		return _neverc_krt_probe_write(dst, src, len);
 
 	volatile unsigned char *d =
-		(volatile unsigned char *)_nvk_strip_tags((unsigned long)dst);
+		(volatile unsigned char *)_neverc_krt_strip_tags((unsigned long)dst);
 	const unsigned char *s = (const unsigned char *)src;
 	size_t i;
 	for (i = 0; i < len; i++)
@@ -63,19 +63,19 @@ long nvk_mem_write(void *dst, const void *src, size_t len)
 	return 0;
 }
 
-long nvk_mem_read_user(void *dst, const void __user *src, size_t len)
+long neverc_krt_mem_read_user(void *dst, const void __user *src, size_t len)
 {
-	if (!_nvk_copy_from_user) return -1;
-	return _nvk_copy_from_user(dst, src, len) ? -14 : 0;
+	if (!_neverc_krt_copy_from_user) return -1;
+	return _neverc_krt_copy_from_user(dst, src, len) ? -14 : 0;
 }
 
-long nvk_mem_write_user(void __user *dst, const void *src, size_t len)
+long neverc_krt_mem_write_user(void __user *dst, const void *src, size_t len)
 {
-	if (!_nvk_copy_to_user) return -1;
-	return _nvk_copy_to_user(dst, src, len) ? -14 : 0;
+	if (!_neverc_krt_copy_to_user) return -1;
+	return _neverc_krt_copy_to_user(dst, src, len) ? -14 : 0;
 }
 
-int _nvk_pte_walk_set(unsigned long addr, int writable)
+int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 {
 	unsigned long tcr, t1sz, levels, pgsz;
 	unsigned long ttbr1, table, idx, desc;
@@ -85,7 +85,7 @@ int _nvk_pte_walk_set(unsigned long addr, int writable)
 	t1sz = (tcr >> 16) & 0x3F;
 	va_bits = 64 - (int)t1sz;
 
-	pgsz = _nvk_mem_get_page_size();
+	pgsz = _neverc_krt_mem_get_page_size();
 	if (pgsz == 4096) {
 		bits_per_level = 9;
 	} else if (pgsz == 16384) {
@@ -109,7 +109,7 @@ int _nvk_pte_walk_set(unsigned long addr, int writable)
 		idx = (addr >> shift) & mask;
 		unsigned long entry_addr = table + idx * 8;
 
-		if (nvk_mem_read(&desc, (void *)entry_addr, 8))
+		if (neverc_krt_mem_read(&desc, (void *)entry_addr, 8))
 			return -2;
 
 		if ((desc & 3) != 3) return -3;
@@ -122,16 +122,16 @@ int _nvk_pte_walk_set(unsigned long addr, int writable)
 		idx = (addr >> shift) & mask;
 		unsigned long pte_addr = table + idx * 8;
 
-		if (nvk_mem_read(&desc, (void *)pte_addr, 8))
+		if (neverc_krt_mem_read(&desc, (void *)pte_addr, 8))
 			return -4;
 
 		if ((desc & 1) == 0) return -5;
 
 		unsigned long new_desc;
 		if (writable)
-			new_desc = desc & ~_NVK_PTE_RDONLY;
+			new_desc = desc & ~_NEVERC_KRT_PTE_RDONLY;
 		else
-			new_desc = desc | _NVK_PTE_RDONLY;
+			new_desc = desc | _NEVERC_KRT_PTE_RDONLY;
 
 		if (new_desc == desc) return 0;
 
@@ -144,44 +144,44 @@ int _nvk_pte_walk_set(unsigned long addr, int writable)
 	return 0;
 }
 
-int nvk_mem_make_rw(unsigned long addr)
+int neverc_krt_mem_make_rw(unsigned long addr)
 {
-	unsigned long pgsz = _nvk_mem_get_page_size();
+	unsigned long pgsz = _neverc_krt_mem_get_page_size();
 	unsigned long page = addr & ~(pgsz - 1);
 
-	if (_nvk_update_prot && _nvk_kimage_voffset) {
-		u64 phys = page - *_nvk_kimage_voffset;
-		_nvk_update_prot(phys, page, pgsz, _NVK_PAGE_KERNEL);
+	if (_neverc_krt_update_prot && _neverc_krt_kimage_voffset) {
+		u64 phys = page - *_neverc_krt_kimage_voffset;
+		_neverc_krt_update_prot(phys, page, pgsz, _NEVERC_KRT_PAGE_KERNEL);
 		return 0;
 	}
-	if (_nvk_set_memory_rw)
-		return _nvk_set_memory_rw(page, 1);
-	if (_nvk_pte_make_rw)
-		return _nvk_pte_make_rw(page);
-	return _nvk_pte_walk_set(page, 1);
+	if (_neverc_krt_set_memory_rw)
+		return _neverc_krt_set_memory_rw(page, 1);
+	if (_neverc_krt_pte_make_rw)
+		return _neverc_krt_pte_make_rw(page);
+	return _neverc_krt_pte_walk_set(page, 1);
 }
 
-int nvk_mem_make_ro(unsigned long addr)
+int neverc_krt_mem_make_ro(unsigned long addr)
 {
-	unsigned long pgsz = _nvk_mem_get_page_size();
+	unsigned long pgsz = _neverc_krt_mem_get_page_size();
 	unsigned long page = addr & ~(pgsz - 1);
 
-	if (_nvk_update_prot && _nvk_kimage_voffset) {
-		u64 phys = page - *_nvk_kimage_voffset;
-		_nvk_update_prot(phys, page, pgsz, _NVK_PAGE_KERNEL_RO);
+	if (_neverc_krt_update_prot && _neverc_krt_kimage_voffset) {
+		u64 phys = page - *_neverc_krt_kimage_voffset;
+		_neverc_krt_update_prot(phys, page, pgsz, _NEVERC_KRT_PAGE_KERNEL_RO);
 		return 0;
 	}
-	if (_nvk_set_memory_ro)
-		return _nvk_set_memory_ro(page, 1);
-	if (_nvk_pte_make_ro)
-		return _nvk_pte_make_ro(page);
-	return _nvk_pte_walk_set(page, 0);
+	if (_neverc_krt_set_memory_ro)
+		return _neverc_krt_set_memory_ro(page, 1);
+	if (_neverc_krt_pte_make_ro)
+		return _neverc_krt_pte_make_ro(page);
+	return _neverc_krt_pte_walk_set(page, 0);
 }
 
-int nvk_mem_write_protected(unsigned long addr, const void *src,
+int neverc_krt_mem_write_protected(unsigned long addr, const void *src,
 				   size_t len)
 {
-	unsigned long pgsz = _nvk_mem_get_page_size();
+	unsigned long pgsz = _neverc_krt_mem_get_page_size();
 	unsigned long mask = pgsz - 1;
 	unsigned long page_start = addr & ~mask;
 	unsigned long page_end = (addr + len - 1) & ~mask;
@@ -189,14 +189,14 @@ int nvk_mem_write_protected(unsigned long addr, const void *src,
 	int ret;
 
 	for (p = page_start; p <= page_end; p += pgsz) {
-		ret = nvk_mem_make_rw(p);
+		ret = neverc_krt_mem_make_rw(p);
 		if (ret < 0) return ret;
 	}
 
-	ret = nvk_mem_write((void *)addr, src, len);
+	ret = neverc_krt_mem_write((void *)addr, src, len);
 
 	for (p = page_start; p <= page_end; p += pgsz)
-		nvk_mem_make_ro(p);
+		neverc_krt_mem_make_ro(p);
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");
@@ -204,7 +204,7 @@ int nvk_mem_write_protected(unsigned long addr, const void *src,
 	return ret;
 }
 
-void *nvk_mem_scan(const void *start, size_t region_len,
+void *neverc_krt_mem_scan(const void *start, size_t region_len,
 			  const void *pattern, size_t pat_len)
 {
 	const unsigned char *base = (const unsigned char *)start;
@@ -246,7 +246,7 @@ void *nvk_mem_scan(const void *start, size_t region_len,
 	return (void *)0;
 }
 
-void *nvk_mem_scan_mask(const void *start, size_t region_len,
+void *neverc_krt_mem_scan_mask(const void *start, size_t region_len,
 			       const unsigned char *pattern,
 			       const unsigned char *mask, size_t pat_len)
 {
@@ -269,19 +269,19 @@ void *nvk_mem_scan_mask(const void *start, size_t region_len,
 	return (void *)0;
 }
 
-u8  nvk_mem_read8(const void *addr)
-{ u8 v = 0;  nvk_mem_read(&v, addr, 1); return v; }
+u8  neverc_krt_mem_read8(const void *addr)
+{ u8 v = 0;  neverc_krt_mem_read(&v, addr, 1); return v; }
 
-u16 nvk_mem_read16(const void *addr)
-{ u16 v = 0; nvk_mem_read(&v, addr, 2); return v; }
+u16 neverc_krt_mem_read16(const void *addr)
+{ u16 v = 0; neverc_krt_mem_read(&v, addr, 2); return v; }
 
-u32 nvk_mem_read32(const void *addr)
-{ u32 v = 0; nvk_mem_read(&v, addr, 4); return v; }
+u32 neverc_krt_mem_read32(const void *addr)
+{ u32 v = 0; neverc_krt_mem_read(&v, addr, 4); return v; }
 
-u64 nvk_mem_read64(const void *addr)
-{ u64 v = 0; nvk_mem_read(&v, addr, 8); return v; }
+u64 neverc_krt_mem_read64(const void *addr)
+{ u64 v = 0; neverc_krt_mem_read(&v, addr, 8); return v; }
 
-int nvk_mem_cmp(const void *a, const void *b, size_t len)
+int neverc_krt_mem_cmp(const void *a, const void *b, size_t len)
 {
 	const unsigned char *pa = (const unsigned char *)a;
 	const unsigned char *pb = (const unsigned char *)b;
@@ -293,7 +293,7 @@ int nvk_mem_cmp(const void *a, const void *b, size_t len)
 	return 0;
 }
 
-int nvk_mem_cmp_ct(const void *a, const void *b, size_t len)
+int neverc_krt_mem_cmp_ct(const void *a, const void *b, size_t len)
 {
 	const unsigned char *pa = (const unsigned char *)a;
 	const unsigned char *pb = (const unsigned char *)b;
@@ -304,7 +304,7 @@ int nvk_mem_cmp_ct(const void *a, const void *b, size_t len)
 	return diff ? 1 : 0;
 }
 
-void *nvk_mem_scan_safe(const void *start, size_t region_len,
+void *neverc_krt_mem_scan_safe(const void *start, size_t region_len,
 			       const void *pattern, size_t pat_len)
 {
 	const unsigned char *base = (const unsigned char *)start;
@@ -314,11 +314,11 @@ void *nvk_mem_scan_safe(const void *start, size_t region_len,
 
 	if (pat_len == 0 || pat_len > region_len || pat_len > sizeof(buf))
 		return (void *)0;
-	if (!_nvk_probe_read)
-		return nvk_mem_scan(start, region_len, pattern, pat_len);
+	if (!_neverc_krt_probe_read)
+		return neverc_krt_mem_scan(start, region_len, pattern, pat_len);
 
 	for (i = 0; i <= region_len - pat_len; i++) {
-		long ret = _nvk_probe_read(buf, &base[i], pat_len);
+		long ret = _neverc_krt_probe_read(buf, &base[i], pat_len);
 		if (ret) continue;
 		int match = 1;
 		for (j = 0; j < pat_len; j++) {
@@ -329,7 +329,7 @@ void *nvk_mem_scan_safe(const void *start, size_t region_len,
 	return (void *)0;
 }
 
-void nvk_mem_fill(void *dst, unsigned char val, size_t len)
+void neverc_krt_mem_fill(void *dst, unsigned char val, size_t len)
 {
 	volatile unsigned char *d = (volatile unsigned char *)dst;
 	size_t i;
@@ -337,16 +337,16 @@ void nvk_mem_fill(void *dst, unsigned char val, size_t len)
 		d[i] = val;
 }
 
-void nvk_mem_zero(void *dst, size_t len)
+void neverc_krt_mem_zero(void *dst, size_t len)
 {
-	nvk_mem_fill(dst, 0, len);
+	neverc_krt_mem_fill(dst, 0, len);
 }
 
-long nvk_mem_read_cross_page(void *dst, const void *src, size_t len)
+long neverc_krt_mem_read_cross_page(void *dst, const void *src, size_t len)
 {
 	unsigned long addr = (unsigned long)src;
 	unsigned char *d = (unsigned char *)dst;
-	unsigned long pgsz = _nvk_mem_get_page_size();
+	unsigned long pgsz = _neverc_krt_mem_get_page_size();
 	unsigned long mask = pgsz - 1;
 	size_t done = 0;
 
@@ -355,7 +355,7 @@ long nvk_mem_read_cross_page(void *dst, const void *src, size_t len)
 		size_t chunk = page_end - addr;
 		if (chunk > len - done) chunk = len - done;
 
-		long ret = nvk_mem_read(d + done, (const void *)addr, chunk);
+		long ret = neverc_krt_mem_read(d + done, (const void *)addr, chunk);
 		if (ret) return ret;
 
 		done += chunk;
@@ -364,7 +364,7 @@ long nvk_mem_read_cross_page(void *dst, const void *src, size_t len)
 	return 0;
 }
 
-void *nvk_mem_scan_mask_safe(const void *start, size_t region_len,
+void *neverc_krt_mem_scan_mask_safe(const void *start, size_t region_len,
 				    const unsigned char *pattern,
 				    const unsigned char *mask, size_t pat_len)
 {
@@ -374,12 +374,12 @@ void *nvk_mem_scan_mask_safe(const void *start, size_t region_len,
 
 	if (pat_len == 0 || pat_len > region_len || pat_len > sizeof(buf))
 		return (void *)0;
-	if (!_nvk_probe_read)
-		return nvk_mem_scan_mask(start, region_len, pattern,
+	if (!_neverc_krt_probe_read)
+		return neverc_krt_mem_scan_mask(start, region_len, pattern,
 					mask, pat_len);
 
 	for (i = 0; i <= region_len - pat_len; i++) {
-		if (_nvk_probe_read(buf, &base[i], pat_len))
+		if (_neverc_krt_probe_read(buf, &base[i], pat_len))
 			continue;
 		int match = 1;
 		for (j = 0; j < pat_len; j++) {

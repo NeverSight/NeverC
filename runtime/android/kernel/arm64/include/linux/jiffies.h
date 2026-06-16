@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_JIFFIES_H
-#define _NVK_LINUX_JIFFIES_H
+#ifndef _NEVERC_KRT_LINUX_JIFFIES_H
+#define _NEVERC_KRT_LINUX_JIFFIES_H
 
 #include <linux/types.h>
 
@@ -11,4 +11,4 @@ extern unsigned long volatile jiffies;
 #define time_after(a, b) ((long)((b) - (a)) < 0)
 #define time_before(a, b) time_after(b, a)
 
-#endif /* _NVK_LINUX_JIFFIES_H */
+#endif /* _NEVERC_KRT_LINUX_JIFFIES_H */

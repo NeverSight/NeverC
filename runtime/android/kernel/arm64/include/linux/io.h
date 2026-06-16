@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_IO_H
-#define _NVK_LINUX_IO_H
+#ifndef _NEVERC_KRT_LINUX_IO_H
+#define _NEVERC_KRT_LINUX_IO_H
 
 #include <linux/types.h>
 #include <linux/compiler.h>
@@ -48,4 +48,4 @@ static __always_inline void __raw_writeq(u64 val, volatile void __iomem *addr)
 #define iowrite16(v,p) writew(v,p)
 #define iowrite32(v,p) writel(v,p)
 
-#endif /* _NVK_LINUX_IO_H */
+#endif /* _NEVERC_KRT_LINUX_IO_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef NVK_CPU_H
-#define NVK_CPU_H
+#ifndef NEVERC_KRT_CPU_H
+#define NEVERC_KRT_CPU_H
 
 #include <linux/types.h>
 #include <nvk_rt.h>
@@ -12,30 +12,30 @@
 /*  CPU topology queries  (no kernel symbol needed — all from regs)   */
 /* ------------------------------------------------------------------ */
 
-static __always_inline u32 nvk_cpu_id(void)
+static __always_inline u32 neverc_krt_cpu_id(void)
 {
 	u64 mpidr;
 	__asm__ __volatile__("mrs %0, mpidr_el1" : "=r"(mpidr));
 	return (u32)(mpidr & 0xFFUL);
 }
 
-static __always_inline u32 nvk_cpu_cluster(void)
+static __always_inline u32 neverc_krt_cpu_cluster(void)
 {
 	u64 mpidr;
 	__asm__ __volatile__("mrs %0, mpidr_el1" : "=r"(mpidr));
 	return (u32)((mpidr >> 8) & 0xFFUL);
 }
 
-static __always_inline u64 nvk_cpu_midr(void)
+static __always_inline u64 neverc_krt_cpu_midr(void)
 {
 	u64 midr;
 	__asm__ __volatile__("mrs %0, midr_el1" : "=r"(midr));
 	return midr;
 }
 
-static __always_inline int nvk_cpu_is_big_core(void)
+static __always_inline int neverc_krt_cpu_is_big_core(void)
 {
-	u64 midr = nvk_cpu_midr();
+	u64 midr = neverc_krt_cpu_midr();
 	u32 part = (u32)((midr >> 4) & 0xFFF);
 	/*
 	 * ARM big cores: A72=0xD08, A73=0xD09, A75=0xD0A, A76=0xD0B,
@@ -52,75 +52,75 @@ static __always_inline int nvk_cpu_is_big_core(void)
 /*  Online CPU enumeration                                            */
 /* ------------------------------------------------------------------ */
 
-typedef int (*nvk_nr_cpu_ids_fn)(void);
-typedef int (*nvk_cpu_online_fn)(unsigned int cpu);
+typedef int (*neverc_krt_nr_cpu_ids_fn)(void);
+typedef int (*neverc_krt_cpu_online_fn)(unsigned int cpu);
 
-NVK_RT_VAR nvk_nr_cpu_ids_fn    _nvk_nr_cpus;
-NVK_RT_VAR nvk_cpu_online_fn    _nvk_cpu_online_check;
-NVK_RT_VAR unsigned long       *_nvk_cpu_online_mask;
-NVK_RT_VAR int                 *_nvk_nr_cpu_ids_ptr;
-NVK_RT_VAR int                  _nvk_cpu_inited;
+NEVERC_KRT_RT_VAR neverc_krt_nr_cpu_ids_fn    _neverc_krt_nr_cpus;
+NEVERC_KRT_RT_VAR neverc_krt_cpu_online_fn    _neverc_krt_cpu_online_check;
+NEVERC_KRT_RT_VAR unsigned long       *_neverc_krt_cpu_online_mask;
+NEVERC_KRT_RT_VAR int                 *_neverc_krt_nr_cpu_ids_ptr;
+NEVERC_KRT_RT_VAR int                  _neverc_krt_cpu_inited;
 
-int nvk_cpu_init(void);
-
-
-int nvk_num_possible_cpus(void);
+int neverc_krt_cpu_init(void);
 
 
-int nvk_cpu_is_online(int cpu);
+int neverc_krt_num_possible_cpus(void);
 
 
-int nvk_num_online_cpus(void);
+int neverc_krt_cpu_is_online(int cpu);
 
 
-#define nvk_for_each_online_cpu(cpu)                                  \
-	for ((cpu) = 0; (cpu) < nvk_num_possible_cpus(); (cpu)++)     \
-		if (nvk_cpu_is_online(cpu))
+int neverc_krt_num_online_cpus(void);
+
+
+#define neverc_krt_for_each_online_cpu(cpu)                                  \
+	for ((cpu) = 0; (cpu) < neverc_krt_num_possible_cpus(); (cpu)++)     \
+		if (neverc_krt_cpu_is_online(cpu))
 
 
 /* ------------------------------------------------------------------ */
 /*  Per-CPU data (lightweight, module-local)                          */
 /* ------------------------------------------------------------------ */
 
-#define NVK_MAX_CPUS 16
+#define NEVERC_KRT_MAX_CPUS 16
 
-#define NVK_DEFINE_PER_CPU(type, name)                                \
-	type __nvk_pcpu_##name[NVK_MAX_CPUS]                  \
+#define NEVERC_KRT_DEFINE_PER_CPU(type, name)                                \
+	type __neverc_krt_pcpu_##name[NEVERC_KRT_MAX_CPUS]                  \
 		__attribute__((aligned(64)))
 
-static __always_inline u32 _nvk_cpu_idx_safe(u32 cpu);
+static __always_inline u32 _neverc_krt_cpu_idx_safe(u32 cpu);
 
 
-#define nvk_this_cpu(name)                                            \
-	__nvk_pcpu_##name[_nvk_cpu_idx_safe(nvk_cpu_id())]
+#define neverc_krt_this_cpu(name)                                            \
+	__neverc_krt_pcpu_##name[_neverc_krt_cpu_idx_safe(neverc_krt_cpu_id())]
 
-#define nvk_per_cpu(name, cpu)                                        \
-	__nvk_pcpu_##name[_nvk_cpu_idx_safe(cpu)]
+#define neverc_krt_per_cpu(name, cpu)                                        \
+	__neverc_krt_pcpu_##name[_neverc_krt_cpu_idx_safe(cpu)]
 
-#define nvk_per_cpu_ptr(name, cpu)                                    \
-	(&__nvk_pcpu_##name[_nvk_cpu_idx_safe(cpu)])
+#define neverc_krt_per_cpu_ptr(name, cpu)                                    \
+	(&__neverc_krt_pcpu_##name[_neverc_krt_cpu_idx_safe(cpu)])
 
 
 /* ------------------------------------------------------------------ */
 /*  SMP utilities                                                     */
 /* ------------------------------------------------------------------ */
 
-typedef void (*nvk_smp_call_fn)(void *info);
-typedef void (*nvk_on_each_cpu_fn)(nvk_smp_call_fn func, void *info,
+typedef void (*neverc_krt_smp_call_fn)(void *info);
+typedef void (*neverc_krt_on_each_cpu_fn)(neverc_krt_smp_call_fn func, void *info,
 				   int wait);
-typedef int  (*nvk_smp_call_single_fn)(int cpu, nvk_smp_call_fn func,
+typedef int  (*neverc_krt_smp_call_single_fn)(int cpu, neverc_krt_smp_call_fn func,
 				       void *info, int wait);
 
-NVK_RT_VAR nvk_on_each_cpu_fn     _nvk_on_each_cpu;
-NVK_RT_VAR nvk_smp_call_single_fn _nvk_smp_call_single;
+NEVERC_KRT_RT_VAR neverc_krt_on_each_cpu_fn     _neverc_krt_on_each_cpu;
+NEVERC_KRT_RT_VAR neverc_krt_smp_call_single_fn _neverc_krt_smp_call_single;
 
-int nvk_smp_init(void);
-
-
-int nvk_smp_on_each(nvk_smp_call_fn func, void *info, int wait);
+int neverc_krt_smp_init(void);
 
 
-int nvk_smp_call_on(int cpu, nvk_smp_call_fn func,
+int neverc_krt_smp_on_each(neverc_krt_smp_call_fn func, void *info, int wait);
+
+
+int neverc_krt_smp_call_on(int cpu, neverc_krt_smp_call_fn func,
 			   void *info, int wait);
 
 
@@ -129,39 +129,39 @@ int nvk_smp_call_on(int cpu, nvk_smp_call_fn func,
 /*  CPU feature detection  (ID_AA64* register reads)                  */
 /* ------------------------------------------------------------------ */
 
-static __always_inline int nvk_cpu_has_crc32(void)
+static __always_inline int neverc_krt_cpu_has_crc32(void)
 {
 	u64 isar0;
 	__asm__ __volatile__("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
 	return ((isar0 >> 16) & 0xF) >= 1;
 }
 
-static __always_inline int nvk_cpu_has_sha256(void)
+static __always_inline int neverc_krt_cpu_has_sha256(void)
 {
 	u64 isar0;
 	__asm__ __volatile__("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
 	return ((isar0 >> 12) & 0xF) >= 1;
 }
 
-static __always_inline int nvk_cpu_has_aes(void)
+static __always_inline int neverc_krt_cpu_has_aes(void)
 {
 	u64 isar0;
 	__asm__ __volatile__("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
 	return ((isar0 >> 4) & 0xF) >= 1;
 }
 
-static __always_inline int nvk_cpu_has_atomics(void)
+static __always_inline int neverc_krt_cpu_has_atomics(void)
 {
 	u64 isar0;
 	__asm__ __volatile__("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
 	return ((isar0 >> 20) & 0xF) >= 2;
 }
 
-static __always_inline int nvk_cpu_has_sve(void)
+static __always_inline int neverc_krt_cpu_has_sve(void)
 {
 	u64 pfr0;
 	__asm__ __volatile__("mrs %0, id_aa64pfr0_el1" : "=r"(pfr0));
 	return ((pfr0 >> 32) & 0xF) >= 1;
 }
 
-#endif /* NVK_CPU_H */
+#endif /* NEVERC_KRT_CPU_H */

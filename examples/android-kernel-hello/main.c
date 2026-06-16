@@ -8,31 +8,31 @@
  * right struct module offset and returned 0).
  *
  * Build:  neverc make            (or: make)
- * Deploy: adb push nvk_hello.ko /data/local/tests/
- *         adb shell su -c 'insmod /data/local/tests/nvk_hello.ko'
- *         adb shell su -c 'lsmod | grep nvk_hello'
- *         adb shell su -c 'rmmod nvk_hello'
+ * Deploy: adb push neverc_krt_hello.ko /data/local/tests/
+ *         adb shell su -c 'insmod /data/local/tests/neverc_krt_hello.ko'
+ *         adb shell su -c 'lsmod | grep neverc_krt_hello'
+ *         adb shell su -c 'rmmod neverc_krt_hello'
  */
 #include <nvkmod.h>
 
-static int nvk_hello_init(void)
+static int neverc_krt_hello_init(void)
 {
-	int ret = NVK_BOOTSTRAP();
+	int ret = NEVERC_KRT_BOOTSTRAP();
 	if (ret) return ret;
-	pr_info("nvk_hello: loaded (kernel %s)\n", NVK_KERNEL_STR);
+	pr_info("neverc_krt_hello: loaded (kernel %s)\n", NEVERC_KRT_KERNEL_STR);
 	return 0;
 }
 
-static void nvk_hello_exit(void)
+static void neverc_krt_hello_exit(void)
 {
-	pr_info("nvk_hello: unloaded\n");
+	pr_info("neverc_krt_hello: unloaded\n");
 }
 
-module_init(nvk_hello_init);
-module_exit(nvk_hello_exit);
+module_init(neverc_krt_hello_init);
+module_exit(neverc_krt_hello_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("NeverC");
 MODULE_DESCRIPTION("Minimal NeverC Android kernel module");
 
-NVK_DEFINE_MODULE("nvk_hello");
+NEVERC_KRT_DEFINE_MODULE("neverc_krt_hello");

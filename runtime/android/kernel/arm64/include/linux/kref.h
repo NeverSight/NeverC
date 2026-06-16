@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_KREF_H
-#define _NVK_LINUX_KREF_H
+#ifndef _NEVERC_KRT_LINUX_KREF_H
+#define _NEVERC_KRT_LINUX_KREF_H
 
 #include <linux/types.h>
 #include <linux/compiler.h>
@@ -24,4 +24,4 @@ static __always_inline int kref_put(struct kref *kref,
 	return 0;
 }
 
-#endif /* _NVK_LINUX_KREF_H */
+#endif /* _NEVERC_KRT_LINUX_KREF_H */

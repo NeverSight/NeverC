@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_REGMAP_H
-#define _NVK_LINUX_REGMAP_H
+#ifndef _NEVERC_KRT_LINUX_REGMAP_H
+#define _NEVERC_KRT_LINUX_REGMAP_H
 
 #include <linux/types.h>
 
@@ -25,4 +25,4 @@ int regmap_write(struct regmap *map, unsigned int reg, unsigned int val);
 int regmap_update_bits(struct regmap *map, unsigned int reg,
 		       unsigned int mask, unsigned int val);
 
-#endif /* _NVK_LINUX_REGMAP_H */
+#endif /* _NEVERC_KRT_LINUX_REGMAP_H */

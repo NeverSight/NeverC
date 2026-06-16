@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_COMPILER_H
-#define _NVK_LINUX_COMPILER_H
+#ifndef _NEVERC_KRT_LINUX_COMPILER_H
+#define _NEVERC_KRT_LINUX_COMPILER_H
 
 #ifndef __always_inline
 #define __always_inline inline __attribute__((always_inline))
@@ -36,4 +36,4 @@
 #define __always_unused __attribute__((unused))
 #endif
 
-#endif /* _NVK_LINUX_COMPILER_H */
+#endif /* _NEVERC_KRT_LINUX_COMPILER_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_MUTEX_H
-#define _NVK_LINUX_MUTEX_H
+#ifndef _NEVERC_KRT_LINUX_MUTEX_H
+#define _NEVERC_KRT_LINUX_MUTEX_H
 
 #include <linux/types.h>
 
@@ -17,4 +17,4 @@ int mutex_trylock(struct mutex *lock);
 int mutex_lock_interruptible(struct mutex *lock);
 int mutex_is_locked(struct mutex *lock);
 
-#endif /* _NVK_LINUX_MUTEX_H */
+#endif /* _NEVERC_KRT_LINUX_MUTEX_H */

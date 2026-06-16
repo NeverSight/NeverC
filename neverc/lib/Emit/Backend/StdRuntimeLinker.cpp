@@ -12,31 +12,6 @@ using namespace neverc;
 
 namespace {
 
-template <typename VisitFn>
-void forEachGlobalOperand(User *U, VisitFn Visit) {
-  for (Use &Op : U->operands()) {
-    if (auto *GV = dyn_cast<GlobalValue>(Op))
-      Visit(GV);
-    else if (auto *CE = dyn_cast<ConstantExpr>(Op))
-      if (auto *Inner = dyn_cast<GlobalValue>(CE->stripPointerCasts()))
-        Visit(Inner);
-  }
-}
-
-template <typename VisitFn>
-void forEachGlobalReferencedBy(Function &F, VisitFn Visit) {
-  for (BasicBlock &BB : F)
-    for (Instruction &I : BB)
-      forEachGlobalOperand(&I, Visit);
-}
-
-template <typename GlobalT>
-void poisonAndErase(GlobalT &GV) {
-  GV.replaceAllUsesWith(PoisonValue::get(GV.getType()));
-  GV.eraseFromParent();
-}
-
-/// Merge all embedded std bitcode modules into a single Module.
 std::unique_ptr<Module> mergeEmbeddedModules(Module &UserMod) {
   unsigned Count = BuiltinStd::getEmbeddedModuleCount();
   if (Count == 0)
@@ -71,7 +46,6 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   if (BuiltinStd::getEmbeddedModuleCount() == 0)
     return PreservedAnalyses::all();
 
-  // 1. Quick scan: does user code reference any neverc_* declarations?
   bool AnyStdUsed = false;
   for (const Function &F : M) {
     if (F.isDeclaration() && !F.use_empty() &&
@@ -83,7 +57,6 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   if (!AnyStdUsed)
     return PreservedAnalyses::all();
 
-  // 2. Merge all embedded bitcode into one module.
   auto StdMod = mergeEmbeddedModules(M);
   if (!StdMod)
     return PreservedAnalyses::all();
@@ -91,33 +64,50 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   StringSet<> StdFnNames, StdGlobalNames;
   captureDefinitionNames(*StdMod, StdFnNames, StdGlobalNames);
 
-  // 3. Call-graph prune: keep only functions reachable from user references.
+  // Call-graph + data-graph prune: walk both function bodies and
+  // global-variable initializers for transitive references.
   SmallPtrSet<Function *, 32> Needed;
   SmallPtrSet<GlobalVariable *, 16> NeededGlobals;
-  SmallVector<Function *, 32> Worklist;
+  SmallVector<GlobalValue *, 32> Worklist;
 
-  auto EnqueueIfNew = [&](Function *F) {
-    if (F && !F->isDeclaration() && Needed.insert(F).second)
+  auto EnqueueFn = [&](Function *F) {
+    if (F && !F->isDeclaration() && F->getParent() == StdMod.get() &&
+        Needed.insert(F).second)
       Worklist.push_back(F);
+  };
+  auto EnqueueGV = [&](GlobalVariable *GV) {
+    if (GV && !GV->isDeclaration() && GV->getParent() == StdMod.get() &&
+        NeededGlobals.insert(GV).second)
+      Worklist.push_back(GV);
+  };
+  auto ProcessRef = [&](GlobalValue *GV) {
+    if (auto *F = dyn_cast<Function>(GV))
+      EnqueueFn(F);
+    else if (auto *GVar = dyn_cast<GlobalVariable>(GV))
+      EnqueueGV(GVar);
   };
 
   for (Function &Decl : M) {
     if (!Decl.isDeclaration() || Decl.use_empty())
       continue;
-    EnqueueIfNew(StdMod->getFunction(Decl.getName()));
+    if (auto *F = StdMod->getFunction(Decl.getName()))
+      EnqueueFn(F);
+  }
+  for (GlobalVariable &GV : M.globals()) {
+    if (!GV.isDeclaration() || GV.use_empty())
+      continue;
+    if (auto *Def = StdMod->getGlobalVariable(GV.getName()))
+      EnqueueGV(Def);
   }
 
   while (!Worklist.empty()) {
-    Function *F = Worklist.pop_back_val();
-    forEachGlobalReferencedBy(*F, [&](GlobalValue *GV) {
-      if (auto *Callee = dyn_cast<Function>(GV)) {
-        if (Callee->getParent() == StdMod.get())
-          EnqueueIfNew(Callee);
-      } else if (auto *GVar = dyn_cast<GlobalVariable>(GV)) {
-        if (GVar->getParent() == StdMod.get() && !GVar->isDeclaration())
-          NeededGlobals.insert(GVar);
-      }
-    });
+    GlobalValue *GV = Worklist.pop_back_val();
+    if (auto *F = dyn_cast<Function>(GV)) {
+      forEachGlobalReferencedBy(*F, ProcessRef);
+    } else if (auto *GVar = dyn_cast<GlobalVariable>(GV)) {
+      if (GVar->hasInitializer())
+        forEachGlobalInConstant(GVar->getInitializer(), ProcessRef);
+    }
   }
 
   for (Function &F : make_early_inc_range(*StdMod)) {
@@ -131,10 +121,8 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     poisonAndErase(GV);
   }
 
-  // 4. Merge into user module.
   linkModuleOrFail(M, std::move(StdMod), "neverc std runtime");
 
-  // 5. Internalize std symbols for LTO inlining.
   auto IsStdFn = [&](const Function &F) {
     return StdFnNames.count(F.getName()) != 0;
   };
@@ -149,7 +137,7 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     if (!GV.isDeclaration() && IsStdGlobal(GV))
       GV.setLinkage(GlobalValue::InternalLinkage);
 
-  // 6. Mark-and-sweep DCE for internalized std symbols.
+  // Mark-and-sweep DCE for internalized symbols.
   SmallPtrSet<GlobalValue *, 32> Live;
   SmallVector<GlobalValue *, 32> ReachWorklist;
 
@@ -181,7 +169,7 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
       forEachGlobalReferencedBy(*Fn, Enqueue);
     if (auto *GVar = dyn_cast<GlobalVariable>(GV))
       if (GVar->hasInitializer())
-        forEachGlobalOperand(GVar->getInitializer(), Enqueue);
+        forEachGlobalInConstant(GVar->getInitializer(), Enqueue);
   }
 
   for (Function &F : make_early_inc_range(M)) {

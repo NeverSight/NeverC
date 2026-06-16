@@ -17,11 +17,11 @@
 #include <linux/kallsyms.h>
 #include <linux/kprobes.h>
 
-#define NVK_KSYM_STORAGE                                                       \
-	nvk_kallsyms_lookup_name_fn nvk_kallsyms_lookup_name = (void *)0
-#define NVK_PRINTK_STORAGE nvk_printk_fn nvk_printk = (void *)0
+#define NEVERC_KRT_KSYM_STORAGE                                                       \
+	neverc_krt_kallsyms_lookup_name_fn neverc_krt_kallsyms_lookup_name = (void *)0
+#define NEVERC_KRT_PRINTK_STORAGE neverc_krt_printk_fn neverc_krt_printk = (void *)0
 
-int nvk_kp_stub(struct kprobe *p, void *regs);
+int neverc_krt_kp_stub(struct kprobe *p, void *regs);
 
 
 /*
@@ -31,17 +31,17 @@ int nvk_kp_stub(struct kprobe *p, void *regs);
  * any code-address checks.  For data symbols register_kprobe returns an error
  * but kp.addr is already populated.
  */
-void *nvk_kprobe_lookup(const char *name);
+void *neverc_krt_kprobe_lookup(const char *name);
 
 
-#define NVK_KPROBE_LOOKUP(sym) nvk_kprobe_lookup(NC_XORSTR(sym))
+#define NEVERC_KRT_KPROBE_LOOKUP(sym) neverc_krt_kprobe_lookup(NC_XORSTR(sym))
 
 /*
  * kprobe-based symbol resolver with the same signature as
  * kallsyms_lookup_name.  Used as drop-in replacement when the kernel's
  * kallsyms_lookup_name is stubbed (CFI/GKI).
  */
-unsigned long nvk_kprobe_resolve_sym(const char *name);
+unsigned long neverc_krt_kprobe_resolve_sym(const char *name);
 
 
 /*
@@ -55,7 +55,7 @@ unsigned long nvk_kprobe_resolve_sym(const char *name);
  *   [BTI C;] MOV X0,XZR; RET                         return 0 (no PAC, alt)
  *   RET                                               bare return
  */
-static __always_inline int nvk_is_stub(void *addr)
+static __always_inline int neverc_krt_is_stub(void *addr)
 {
 	u32 *p = (u32 *)addr;
 	int off = 0;
@@ -104,34 +104,34 @@ static __always_inline int nvk_is_stub(void *addr)
  *       false → probe kallsyms_lookup_name first; fall back to kprobe
  *               only if it is a stub.
  */
-int nvk_ksym_bootstrap(int cfi);
+int neverc_krt_ksym_bootstrap(int cfi);
 
 
-int nvk_log_bootstrap(void);
+int neverc_krt_log_bootstrap(void);
 
 
-#define NVK_BOOTSTRAP()       _nvk_do_bootstrap(1)
-#define NVK_BOOTSTRAP_EX(cfi) _nvk_do_bootstrap(cfi)
+#define NEVERC_KRT_BOOTSTRAP()       _neverc_krt_do_bootstrap(1)
+#define NEVERC_KRT_BOOTSTRAP_EX(cfi) _neverc_krt_do_bootstrap(cfi)
 
-static __always_inline int _nvk_do_bootstrap(int cfi)
+static __always_inline int _neverc_krt_do_bootstrap(int cfi)
 {
-	int r = nvk_ksym_bootstrap(cfi);
+	int r = neverc_krt_ksym_bootstrap(cfi);
 	if (r == 0)
-		r = nvk_log_bootstrap();
+		r = neverc_krt_log_bootstrap();
 	return r;
 }
 
 /* __versions section is handled by -fandroid-kernel-driver-mode. */
 
-#define NVK_DEFINE_MODULE(modname)                                            \
+#define NEVERC_KRT_DEFINE_MODULE(modname)                                            \
 	MODULE_INFO(name, modname);                                           \
-	MODULE_INFO(vermagic, NVK_VERMAGIC);                                  \
+	MODULE_INFO(vermagic, NEVERC_KRT_VERMAGIC);                                  \
 	MODULE_INFO(depends, "");                                             \
-	NVK_KSYM_STORAGE;                                                     \
-	NVK_PRINTK_STORAGE;                                                   \
+	NEVERC_KRT_KSYM_STORAGE;                                                     \
+	NEVERC_KRT_PRINTK_STORAGE;                                                   \
 	__attribute__((section(".gnu.linkonce.this_module"), used,            \
 		       aligned(64)))                                          \
-	struct nvk_this_module __this_module = {                              \
+	struct neverc_krt_this_module __this_module = {                              \
 	    .name = modname,                                                 \
 	    .init = init_module,                                             \
 	    .exit = cleanup_module,                                          \

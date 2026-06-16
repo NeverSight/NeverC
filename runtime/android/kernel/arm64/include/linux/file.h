@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_FILE_H
-#define _NVK_LINUX_FILE_H
+#ifndef _NEVERC_KRT_LINUX_FILE_H
+#define _NEVERC_KRT_LINUX_FILE_H
 
 #include <linux/types.h>
 
@@ -21,4 +21,4 @@ ssize_t kernel_read(struct file *file, void *buf, size_t count, loff_t *pos);
 ssize_t kernel_write(struct file *file, const void *buf, size_t count,
 		     loff_t *pos);
 
-#endif /* _NVK_LINUX_FILE_H */
+#endif /* _NEVERC_KRT_LINUX_FILE_H */

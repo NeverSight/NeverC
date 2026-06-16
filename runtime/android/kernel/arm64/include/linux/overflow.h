@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_OVERFLOW_H
-#define _NVK_LINUX_OVERFLOW_H
+#ifndef _NEVERC_KRT_LINUX_OVERFLOW_H
+#define _NEVERC_KRT_LINUX_OVERFLOW_H
 
 #include <linux/types.h>
 #include <linux/compiler.h>
@@ -26,4 +26,4 @@
 	check_add_overflow(__a, __b, &__r) ? (size_t)-1 : __r;               \
 })
 
-#endif /* _NVK_LINUX_OVERFLOW_H */
+#endif /* _NEVERC_KRT_LINUX_OVERFLOW_H */

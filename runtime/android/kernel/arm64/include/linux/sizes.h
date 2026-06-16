@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_SIZES_H
-#define _NVK_LINUX_SIZES_H
+#ifndef _NEVERC_KRT_LINUX_SIZES_H
+#define _NEVERC_KRT_LINUX_SIZES_H
 
 #define SZ_1    0x00000001
 #define SZ_2    0x00000002
@@ -36,4 +36,4 @@
 #define SZ_2G   0x80000000UL
 #define SZ_4G   0x100000000ULL
 
-#endif /* _NVK_LINUX_SIZES_H */
+#endif /* _NEVERC_KRT_LINUX_SIZES_H */

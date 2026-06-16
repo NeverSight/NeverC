@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_SECURITY_H
-#define _NVK_LINUX_SECURITY_H
+#ifndef _NEVERC_KRT_LINUX_SECURITY_H
+#define _NEVERC_KRT_LINUX_SECURITY_H
 
 #include <linux/types.h>
 
@@ -15,4 +15,4 @@ int security_inode_permission(struct inode *inode, int mask);
 int security_task_fix_setuid(struct cred *new_cred,
 			     const struct cred *old, int flags);
 
-#endif /* _NVK_LINUX_SECURITY_H */
+#endif /* _NEVERC_KRT_LINUX_SECURITY_H */

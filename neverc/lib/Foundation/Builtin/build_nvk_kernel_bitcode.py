@@ -64,7 +64,7 @@ def main():
                 "-fno-lto",
                 "--target=aarch64-linux-gnu",
                 "-ffreestanding", "-std=gnu11",
-                "-D__KERNEL__", "-DMODULE",
+                "-D__KERNEL__", "-DMODULE", "-D_NEVERC_KRT_IMPL",
                 f"-I{inc_kern}",
                 f"-I{inc_nvk}",
                 "-w",

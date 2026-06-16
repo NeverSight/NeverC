@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_NOTIFIER_H
-#define _NVK_LINUX_NOTIFIER_H
+#ifndef _NEVERC_KRT_LINUX_NOTIFIER_H
+#define _NEVERC_KRT_LINUX_NOTIFIER_H
 
 #include <linux/types.h>
 
@@ -32,4 +32,4 @@ int atomic_notifier_call_chain(void *nh, unsigned long val, void *v);
 int register_reboot_notifier(struct notifier_block *nb);
 int unregister_reboot_notifier(struct notifier_block *nb);
 
-#endif /* _NVK_LINUX_NOTIFIER_H */
+#endif /* _NEVERC_KRT_LINUX_NOTIFIER_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_ERRNO_H
-#define _NVK_LINUX_ERRNO_H
+#ifndef _NEVERC_KRT_LINUX_ERRNO_H
+#define _NEVERC_KRT_LINUX_ERRNO_H
 
 #define EPERM 1
 #define ENOENT 2
@@ -34,4 +34,4 @@
 #define ETIMEDOUT 110
 #define ENOTSUPP 524
 
-#endif /* _NVK_LINUX_ERRNO_H */
+#endif /* _NEVERC_KRT_LINUX_ERRNO_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef NVK_INJECT_H
-#define NVK_INJECT_H
+#ifndef NEVERC_KRT_INJECT_H
+#define NEVERC_KRT_INJECT_H
 
 #include <linux/types.h>
 #include <nvk_rt.h>
@@ -11,41 +11,41 @@
 #include <nvk_vma.h>
 #include <nvk_addr.h>
 
-typedef void *(*nvk_do_mmap_fn)(void *file, unsigned long addr,
+typedef void *(*neverc_krt_do_mmap_fn)(void *file, unsigned long addr,
 				unsigned long len, unsigned long prot,
 				unsigned long flags, unsigned long pgoff,
 				unsigned long *populate, void *uf);
-typedef int   (*nvk_vm_mmap_fn)(void *file, unsigned long addr,
+typedef int   (*neverc_krt_vm_mmap_fn)(void *file, unsigned long addr,
 				unsigned long len, unsigned long prot,
 				unsigned long flags, unsigned long pgoff);
-typedef int   (*nvk_do_munmap_fn)(void *mm, unsigned long start,
+typedef int   (*neverc_krt_do_munmap_fn)(void *mm, unsigned long start,
 				  size_t len, void *uf);
 
-NVK_RT_VAR nvk_do_mmap_fn   _nvk_do_mmap;
-NVK_RT_VAR nvk_vm_mmap_fn   _nvk_vm_mmap;
-NVK_RT_VAR nvk_do_munmap_fn _nvk_do_munmap;
-NVK_RT_VAR int              _nvk_inject_inited;
+NEVERC_KRT_RT_VAR neverc_krt_do_mmap_fn   _neverc_krt_do_mmap;
+NEVERC_KRT_RT_VAR neverc_krt_vm_mmap_fn   _neverc_krt_vm_mmap;
+NEVERC_KRT_RT_VAR neverc_krt_do_munmap_fn _neverc_krt_do_munmap;
+NEVERC_KRT_RT_VAR int              _neverc_krt_inject_inited;
 
-#define NVK_INJECT_PROT_READ  0x1
-#define NVK_INJECT_PROT_WRITE 0x2
-#define NVK_INJECT_PROT_EXEC  0x4
-#define NVK_INJECT_MAP_ANON   0x20
-#define NVK_INJECT_MAP_PRIVATE 0x02
+#define NEVERC_KRT_INJECT_PROT_READ  0x1
+#define NEVERC_KRT_INJECT_PROT_WRITE 0x2
+#define NEVERC_KRT_INJECT_PROT_EXEC  0x4
+#define NEVERC_KRT_INJECT_MAP_ANON   0x20
+#define NEVERC_KRT_INJECT_MAP_PRIVATE 0x02
 
-int nvk_inject_init(void);
+int neverc_krt_inject_init(void);
 
 
-long nvk_inject_write(struct task_struct *task,
+long neverc_krt_inject_write(struct task_struct *task,
 			     unsigned long addr,
 			     const void *data, size_t len);
 
 
-long nvk_inject_read(struct task_struct *task,
+long neverc_krt_inject_read(struct task_struct *task,
 			    unsigned long addr,
 			    void *buf, size_t len);
 
 
-struct nvk_shellcode {
+struct neverc_krt_shellcode {
 	const u32   *code;
 	int          insn_count;
 	unsigned long entry_offset;
@@ -60,15 +60,15 @@ struct nvk_shellcode {
  * when it next runs on any core (the scheduler's context-switch path
  * issues ISB / IC IALLU on ARM64 GKI kernels).
  */
-void _nvk_inject_flush_code(unsigned long addr, size_t len);
+void _neverc_krt_inject_flush_code(unsigned long addr, size_t len);
 
 
-int nvk_inject_shellcode(struct task_struct *task,
-				const struct nvk_shellcode *sc,
+int neverc_krt_inject_shellcode(struct task_struct *task,
+				const struct neverc_krt_shellcode *sc,
 				unsigned long target_addr);
 
 
-unsigned long nvk_inject_find_cave(struct task_struct *task,
+unsigned long neverc_krt_inject_find_cave(struct task_struct *task,
 					  unsigned long min_size);
 
 
@@ -77,34 +77,34 @@ unsigned long nvk_inject_find_cave(struct task_struct *task,
 /*  Remote mmap — allocate memory in target process address space     */
 /* ------------------------------------------------------------------ */
 
-typedef void *(*nvk_get_task_mm_fn)(struct task_struct *task);
-typedef void  (*nvk_mmput_fn)(void *mm);
-typedef void  (*nvk_mmap_write_lock_fn)(void *mm);
-typedef void  (*nvk_mmap_write_unlock_fn)(void *mm);
+typedef void *(*neverc_krt_get_task_mm_fn)(struct task_struct *task);
+typedef void  (*neverc_krt_mmput_fn)(void *mm);
+typedef void  (*neverc_krt_mmap_write_lock_fn)(void *mm);
+typedef void  (*neverc_krt_mmap_write_unlock_fn)(void *mm);
 
-NVK_RT_VAR nvk_get_task_mm_fn      _nvk_get_task_mm;
-NVK_RT_VAR nvk_mmput_fn            _nvk_mmput;
-NVK_RT_VAR nvk_mmap_write_lock_fn  _nvk_mmap_wlock;
-NVK_RT_VAR nvk_mmap_write_unlock_fn _nvk_mmap_wunlock;
+NEVERC_KRT_RT_VAR neverc_krt_get_task_mm_fn      _neverc_krt_get_task_mm;
+NEVERC_KRT_RT_VAR neverc_krt_mmput_fn            _neverc_krt_mmput;
+NEVERC_KRT_RT_VAR neverc_krt_mmap_write_lock_fn  _neverc_krt_mmap_wlock;
+NEVERC_KRT_RT_VAR neverc_krt_mmap_write_unlock_fn _neverc_krt_mmap_wunlock;
 
 /*
  * do_mmap operates on current->mm. To map into a remote process we must
  * temporarily adopt its mm via kthread_use_mm (5.10+) or use_mm (older).
  */
-typedef void (*nvk_use_mm_fn)(void *mm);
-typedef void (*nvk_unuse_mm_fn)(void *mm);
+typedef void (*neverc_krt_use_mm_fn)(void *mm);
+typedef void (*neverc_krt_unuse_mm_fn)(void *mm);
 
-NVK_RT_VAR nvk_use_mm_fn   _nvk_use_mm;
-NVK_RT_VAR nvk_unuse_mm_fn _nvk_unuse_mm;
+NEVERC_KRT_RT_VAR neverc_krt_use_mm_fn   _neverc_krt_use_mm;
+NEVERC_KRT_RT_VAR neverc_krt_unuse_mm_fn _neverc_krt_unuse_mm;
 
-void _nvk_inject_resolve_mm(void);
+void _neverc_krt_inject_resolve_mm(void);
 
 
-unsigned long nvk_inject_mmap(struct task_struct *task,
+unsigned long neverc_krt_inject_mmap(struct task_struct *task,
 				     unsigned long len, unsigned long prot);
 
 
-int nvk_inject_munmap(struct task_struct *task,
+int neverc_krt_inject_munmap(struct task_struct *task,
 			     unsigned long addr, size_t len);
 
 
@@ -120,11 +120,11 @@ int nvk_inject_munmap(struct task_struct *task,
  *   pc           = offset 256
  *   pstate       = offset 264
  */
-#define NVK_PTREGS_PC_OFF     256
-#define NVK_PTREGS_SP_OFF     248
-#define NVK_PTREGS_LR_OFF     240
+#define NEVERC_KRT_PTREGS_PC_OFF     256
+#define NEVERC_KRT_PTREGS_SP_OFF     248
+#define NEVERC_KRT_PTREGS_LR_OFF     240
 
-struct nvk_thread_hijack {
+struct neverc_krt_thread_hijack {
 	unsigned long saved_pc;
 	unsigned long saved_sp;
 	unsigned long saved_lr;
@@ -134,9 +134,9 @@ struct nvk_thread_hijack {
 	int           active;
 };
 
-int nvk_inject_hijack_setup(struct nvk_thread_hijack *hj,
+int neverc_krt_inject_hijack_setup(struct neverc_krt_thread_hijack *hj,
 				   struct task_struct *task,
-				   const struct nvk_shellcode *sc);
+				   const struct neverc_krt_shellcode *sc);
 
 
 
@@ -144,11 +144,11 @@ int nvk_inject_hijack_setup(struct nvk_thread_hijack *hj,
 /*  Simple ELF segment loading for shared library injection           */
 /* ------------------------------------------------------------------ */
 
-#define NVK_ELF_MAGIC  0x464C457FU  /* "\x7fELF" */
-#define NVK_ET_DYN     3
-#define NVK_PT_LOAD    1
+#define NEVERC_KRT_ELF_MAGIC  0x464C457FU  /* "\x7fELF" */
+#define NEVERC_KRT_ET_DYN     3
+#define NEVERC_KRT_PT_LOAD    1
 
-struct nvk_elf64_hdr {
+struct neverc_krt_elf64_hdr {
 	u32 magic;
 	u8  ei_class, ei_data, ei_version, ei_osabi;
 	u8  _pad[8];
@@ -162,7 +162,7 @@ struct nvk_elf64_hdr {
 	u16 e_shentsize, e_shnum, e_shstrndx;
 };
 
-struct nvk_elf64_phdr {
+struct neverc_krt_elf64_phdr {
 	u32 p_type;
 	u32 p_flags;
 	u64 p_offset;
@@ -173,16 +173,16 @@ struct nvk_elf64_phdr {
 	u64 p_align;
 };
 
-struct nvk_elf_load_info {
+struct neverc_krt_elf_load_info {
 	unsigned long base;
 	unsigned long entry;
 	int           num_segments;
 	unsigned long total_size;
 };
 
-int nvk_inject_elf(struct task_struct *task,
+int neverc_krt_inject_elf(struct task_struct *task,
 			  const void *elf_data, size_t elf_len,
-			  struct nvk_elf_load_info *info);
+			  struct neverc_krt_elf_load_info *info);
 
 
-#endif /* NVK_INJECT_H */
+#endif /* NEVERC_KRT_INJECT_H */

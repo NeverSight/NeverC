@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_SPINLOCK_H
-#define _NVK_LINUX_SPINLOCK_H
+#ifndef _NEVERC_KRT_LINUX_SPINLOCK_H
+#define _NEVERC_KRT_LINUX_SPINLOCK_H
 
 #include <linux/types.h>
 
@@ -34,4 +34,4 @@ void read_unlock(rwlock_t *lock);
 void write_lock(rwlock_t *lock);
 void write_unlock(rwlock_t *lock);
 
-#endif /* _NVK_LINUX_SPINLOCK_H */
+#endif /* _NEVERC_KRT_LINUX_SPINLOCK_H */

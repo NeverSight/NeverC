@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_MISCDEVICE_H
-#define _NVK_LINUX_MISCDEVICE_H
+#ifndef _NEVERC_KRT_LINUX_MISCDEVICE_H
+#define _NEVERC_KRT_LINUX_MISCDEVICE_H
 
 #include <linux/types.h>
 
@@ -25,4 +25,4 @@ struct miscdevice {
 int misc_register(struct miscdevice *misc);
 void misc_deregister(struct miscdevice *misc);
 
-#endif /* _NVK_LINUX_MISCDEVICE_H */
+#endif /* _NEVERC_KRT_LINUX_MISCDEVICE_H */

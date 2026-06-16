@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef NVK_SECCOMP_H
-#define NVK_SECCOMP_H
+#ifndef NEVERC_KRT_SECCOMP_H
+#define NEVERC_KRT_SECCOMP_H
 
 #include <linux/types.h>
 #include <nvk_rt.h>
@@ -11,56 +11,56 @@
 #include <nvk_process.h>
 #include <nvk_hook.h>
 
-#define NVK_SECCOMP_MODE_DISABLED  0
-#define NVK_SECCOMP_MODE_STRICT    1
-#define NVK_SECCOMP_MODE_FILTER    2
+#define NEVERC_KRT_SECCOMP_MODE_DISABLED  0
+#define NEVERC_KRT_SECCOMP_MODE_STRICT    1
+#define NEVERC_KRT_SECCOMP_MODE_FILTER    2
 
-NVK_RT_VAR unsigned long _nvk_off_seccomp;
+NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_seccomp;
 
-int _nvk_seccomp_find_offset(struct task_struct *task);
-
-
-int nvk_seccomp_get_mode(struct task_struct *task);
+int _neverc_krt_seccomp_find_offset(struct task_struct *task);
 
 
-int nvk_seccomp_is_filtered(struct task_struct *task);
+int neverc_krt_seccomp_get_mode(struct task_struct *task);
 
 
-int nvk_seccomp_disable(struct task_struct *task);
+int neverc_krt_seccomp_is_filtered(struct task_struct *task);
 
 
-int nvk_seccomp_set_mode(struct task_struct *task, int mode);
+int neverc_krt_seccomp_disable(struct task_struct *task);
 
 
-typedef int (*nvk_seccomp_check_fn)(int this_syscall, void *sd);
-
-NVK_RT_VAR struct nvk_hook _nvk_seccomp_hook;
-NVK_RT_VAR nvk_seccomp_check_fn _nvk_orig_seccomp_check;
-NVK_RT_VAR int _nvk_seccomp_hooked;
-
-#define NVK_SECCOMP_ALLOW_MAX 32
-
-NVK_RT_VAR int _nvk_seccomp_allow_pids[NVK_SECCOMP_ALLOW_MAX];
-NVK_RT_VAR volatile int _nvk_seccomp_allow_cnt;
-
-int _nvk_seccomp_is_allowed_pid(int pid);
+int neverc_krt_seccomp_set_mode(struct task_struct *task, int mode);
 
 
-int _nvk_seccomp_hook_fn(int this_syscall, void *sd);
+typedef int (*neverc_krt_seccomp_check_fn)(int this_syscall, void *sd);
+
+NEVERC_KRT_RT_VAR struct neverc_krt_hook _neverc_krt_seccomp_hook;
+NEVERC_KRT_RT_VAR neverc_krt_seccomp_check_fn _neverc_krt_orig_seccomp_check;
+NEVERC_KRT_RT_VAR int _neverc_krt_seccomp_hooked;
+
+#define NEVERC_KRT_SECCOMP_ALLOW_MAX 32
+
+NEVERC_KRT_RT_VAR int _neverc_krt_seccomp_allow_pids[NEVERC_KRT_SECCOMP_ALLOW_MAX];
+NEVERC_KRT_RT_VAR volatile int _neverc_krt_seccomp_allow_cnt;
+
+int _neverc_krt_seccomp_is_allowed_pid(int pid);
 
 
-int nvk_seccomp_hook_install(void);
+int _neverc_krt_seccomp_hook_fn(int this_syscall, void *sd);
 
 
-void nvk_seccomp_hook_remove(void);
+int neverc_krt_seccomp_hook_install(void);
 
 
-NVK_RT_VAR volatile int _nvk_seccomp_pid_lock;
-
-int nvk_seccomp_allow_pid(int pid);
+void neverc_krt_seccomp_hook_remove(void);
 
 
-int nvk_seccomp_disallow_pid(int pid);
+NEVERC_KRT_RT_VAR volatile int _neverc_krt_seccomp_pid_lock;
+
+int neverc_krt_seccomp_allow_pid(int pid);
 
 
-#endif /* NVK_SECCOMP_H */
+int neverc_krt_seccomp_disallow_pid(int pid);
+
+
+#endif /* NEVERC_KRT_SECCOMP_H */

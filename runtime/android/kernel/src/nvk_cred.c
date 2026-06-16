@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* nvk_cred.c — implementations extracted from nvk_cred.h. */
+/* neverc_krt_cred.c — implementations extracted from neverc_krt_cred.h. */
 #include <nvk.h>
 
-void _nvk_cred_probe_cap_offset(const void *cred)
+void _neverc_krt_cred_probe_cap_offset(const void *cred)
 {
-	if (_nvk_cred_cap_off) return;
+	if (_neverc_krt_cred_cap_off) return;
 
 	const unsigned char *p = (const unsigned char *)cred;
-	unsigned long uid_base = _nvk_off_uid ? _nvk_off_uid : 4;
+	unsigned long uid_base = _neverc_krt_off_uid ? _neverc_krt_off_uid : 4;
 
 	
 	unsigned long scan_start = uid_base + 32;
@@ -19,10 +19,10 @@ void _nvk_cred_probe_cap_offset(const void *cred)
 		int j;
 		for (j = 0; j < 5; j++) {
 			u32 lo, hi;
-			if (nvk_mem_read(&lo, p + off + j * 8, 4)) {
+			if (neverc_krt_mem_read(&lo, p + off + j * 8, 4)) {
 				plausible = 0; break;
 			}
-			if (nvk_mem_read(&hi, p + off + j * 8 + 4, 4)) {
+			if (neverc_krt_mem_read(&hi, p + off + j * 8 + 4, 4)) {
 				plausible = 0; break;
 			}
 			if (lo == 0 && hi == 0 && j < 3) {
@@ -30,51 +30,51 @@ void _nvk_cred_probe_cap_offset(const void *cred)
 			}
 		}
 		if (plausible) {
-			_nvk_cred_cap_off = off - uid_base;
-			_nvk_cred_sb_off = _nvk_cred_cap_off - 4;
+			_neverc_krt_cred_cap_off = off - uid_base;
+			_neverc_krt_cred_sb_off = _neverc_krt_cred_cap_off - 4;
 			return;
 		}
 	}
 
-	_nvk_cred_cap_off = 36;
-	_nvk_cred_sb_off = 32;
+	_neverc_krt_cred_cap_off = 36;
+	_neverc_krt_cred_sb_off = 32;
 }
 
-int nvk_cred_init(void)
+int neverc_krt_cred_init(void)
 {
-	if (_nvk_cred_inited) return 0;
+	if (_neverc_krt_cred_inited) return 0;
 
-	if (!_nvk_proc_inited)
-		nvk_process_init();
+	if (!_neverc_krt_proc_inited)
+		neverc_krt_process_init();
 
-	_nvk_cred_get =
-		(nvk_get_cred_fn)NVK_LOOKUP("get_cred");
-	_nvk_cred_put =
-		(nvk_put_cred_fn)NVK_LOOKUP("put_cred");
+	_neverc_krt_cred_get =
+		(neverc_krt_get_cred_fn)NEVERC_KRT_LOOKUP("get_cred");
+	_neverc_krt_cred_put =
+		(neverc_krt_put_cred_fn)NEVERC_KRT_LOOKUP("put_cred");
 
-	if (!_nvk_prepare_creds || !_nvk_commit_creds)
+	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds)
 		return -1;
 
-	_nvk_cred_inited = 1;
+	_neverc_krt_cred_inited = 1;
 	return 0;
 }
 
-int _nvk_cred_find_uid_offset(void)
+int _neverc_krt_cred_find_uid_offset(void)
 {
-	if (_nvk_off_uid) return 0;
+	if (_neverc_krt_off_uid) return 0;
 
 	const void *cred = (void *)0;
 	unsigned long task;
 	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
 
-	if (_nvk_off_cred) {
-		cred = *(const void **)((unsigned long)task + _nvk_off_cred);
-	} else if (_nvk_get_task_cred) {
-		cred = _nvk_get_task_cred((struct task_struct *)task);
+	if (_neverc_krt_off_cred) {
+		cred = *(const void **)((unsigned long)task + _neverc_krt_off_cred);
+	} else if (_neverc_krt_get_task_cred) {
+		cred = _neverc_krt_get_task_cred((struct task_struct *)task);
 	}
 
 	if (!cred) {
-		_nvk_off_uid = 4;
+		_neverc_krt_off_uid = 4;
 		return 0;
 	}
 
@@ -91,34 +91,34 @@ int _nvk_cred_find_uid_offset(void)
 		if (uid == suid && suid == euid &&
 		    gid == sgid && sgid == egid &&
 		    uid < 65536 && gid < 65536) {
-			_nvk_off_uid = i;
+			_neverc_krt_off_uid = i;
 			break;
 		}
 	}
 
-	if (_nvk_cred_put && _nvk_get_task_cred)
-		_nvk_cred_put(cred);
+	if (_neverc_krt_cred_put && _neverc_krt_get_task_cred)
+		_neverc_krt_cred_put(cred);
 
-	if (!_nvk_off_uid)
-		_nvk_off_uid = 4;
+	if (!_neverc_krt_off_uid)
+		_neverc_krt_off_uid = 4;
 	return 0;
 }
 
-int nvk_cred_get_ids(struct task_struct *task,
-			    struct nvk_cred_ids *ids)
+int neverc_krt_cred_get_ids(struct task_struct *task,
+			    struct neverc_krt_cred_ids *ids)
 {
 	const void *cred;
 	const unsigned char *p;
 
 	if (!task || !ids) return -1;
 
-	if (!__atomic_load_n(&_nvk_off_cred, __ATOMIC_ACQUIRE)) {
+	if (!__atomic_load_n(&_neverc_krt_off_cred, __ATOMIC_ACQUIRE)) {
 		const unsigned char *tp = (const unsigned char *)task;
 		unsigned long i;
 		for (i = 0x400; i < 0xE00; i += 8) {
 			unsigned long v1, v2;
-			if (nvk_mem_read(&v1, tp + i, 8)) continue;
-			if (nvk_mem_read(&v2, tp + i + 8, 8)) continue;
+			if (neverc_krt_mem_read(&v1, tp + i, 8)) continue;
+			if (neverc_krt_mem_read(&v2, tp + i + 8, 8)) continue;
 			if (v1 <= 0xFFFF000000000000UL ||
 			    v1 >= 0xFFFFFFFFFFFFF000UL)
 				continue;
@@ -127,7 +127,7 @@ int nvk_cred_get_ids(struct task_struct *task,
 				continue;
 
 			u32 cp[8];
-			if (nvk_mem_read(cp, (void *)v1, sizeof(cp)))
+			if (neverc_krt_mem_read(cp, (void *)v1, sizeof(cp)))
 				continue;
 			if (cp[0] < 1 || cp[0] > 10000)
 				continue;
@@ -137,20 +137,20 @@ int nvk_cred_get_ids(struct task_struct *task,
 				if (cp[j] > 65535) { match = 0; break; }
 			}
 			if (match) {
-				__atomic_store_n(&_nvk_off_cred, i,
+				__atomic_store_n(&_neverc_krt_off_cred, i,
 						 __ATOMIC_RELEASE);
 				break;
 			}
 		}
 	}
 
-	if (!_nvk_off_cred) return -1;
+	if (!_neverc_krt_off_cred) return -1;
 
-	cred = *(const void **)((unsigned long)task + _nvk_off_cred);
+	cred = *(const void **)((unsigned long)task + _neverc_krt_off_cred);
 	if (!cred) return -1;
 
 	p = (const unsigned char *)cred;
-	unsigned long base = _nvk_off_uid ? _nvk_off_uid : 4;
+	unsigned long base = _neverc_krt_off_uid ? _neverc_krt_off_uid : 4;
 
 	ids->uid  = *(u32 *)(p + base);
 	ids->gid  = *(u32 *)(p + base + 4);
@@ -163,49 +163,49 @@ int nvk_cred_get_ids(struct task_struct *task,
 	return 0;
 }
 
-int nvk_cred_set_root(void)
+int neverc_krt_cred_set_root(void)
 {
 	void *cred;
 
-	if (!_nvk_prepare_creds || !_nvk_commit_creds)
+	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds)
 		return -1;
 
-	cred = _nvk_prepare_creds();
+	cred = _neverc_krt_prepare_creds();
 	if (!cred) return -1;
 
-	_nvk_cred_find_uid_offset();
-	_nvk_cred_probe_cap_offset(cred);
+	_neverc_krt_cred_find_uid_offset();
+	_neverc_krt_cred_probe_cap_offset(cred);
 
 	unsigned char *p = (unsigned char *)cred;
-	unsigned long base = _nvk_off_uid ? _nvk_off_uid : 4;
+	unsigned long base = _neverc_krt_off_uid ? _neverc_krt_off_uid : 4;
 
 	for (int i = 0; i < 8; i++)
 		*(u32 *)(p + base + i * 4) = 0;
 
-	unsigned long sb = base + _nvk_cred_sb_off;
+	unsigned long sb = base + _neverc_krt_cred_sb_off;
 	*(u32 *)(p + sb) = 0;
 
-	unsigned long cap_off = base + _nvk_cred_cap_off;
+	unsigned long cap_off = base + _neverc_krt_cred_cap_off;
 	for (int i = 0; i < 10; i++)
 		*(u32 *)(p + cap_off + i * 4) = 0xFFFFFFFFU;
 
-	return _nvk_commit_creds(cred);
+	return _neverc_krt_commit_creds(cred);
 }
 
-int nvk_cred_set_uid(u32 uid, u32 gid)
+int neverc_krt_cred_set_uid(u32 uid, u32 gid)
 {
 	void *cred;
 
-	if (!_nvk_prepare_creds || !_nvk_commit_creds)
+	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds)
 		return -1;
 
-	cred = _nvk_prepare_creds();
+	cred = _neverc_krt_prepare_creds();
 	if (!cred) return -1;
 
-	_nvk_cred_find_uid_offset();
+	_neverc_krt_cred_find_uid_offset();
 
 	unsigned char *p = (unsigned char *)cred;
-	unsigned long base = _nvk_off_uid ? _nvk_off_uid : 4;
+	unsigned long base = _neverc_krt_off_uid ? _neverc_krt_off_uid : 4;
 
 	*(u32 *)(p + base + 0)  = uid;   /* uid */
 	*(u32 *)(p + base + 4)  = gid;   /* gid */
@@ -216,89 +216,89 @@ int nvk_cred_set_uid(u32 uid, u32 gid)
 	*(u32 *)(p + base + 24) = uid;   /* fsuid */
 	*(u32 *)(p + base + 28) = gid;   /* fsgid */
 
-	return _nvk_commit_creds(cred);
+	return _neverc_krt_commit_creds(cred);
 }
 
-int nvk_cred_set_caps_full(void)
+int neverc_krt_cred_set_caps_full(void)
 {
 	void *cred;
 
-	if (!_nvk_prepare_creds || !_nvk_commit_creds)
+	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds)
 		return -1;
 
-	cred = _nvk_prepare_creds();
+	cred = _neverc_krt_prepare_creds();
 	if (!cred) return -1;
 
-	_nvk_cred_find_uid_offset();
-	_nvk_cred_probe_cap_offset(cred);
+	_neverc_krt_cred_find_uid_offset();
+	_neverc_krt_cred_probe_cap_offset(cred);
 
 	unsigned char *p = (unsigned char *)cred;
-	unsigned long cap_off = (_nvk_off_uid ? _nvk_off_uid : 4)
-				+ _nvk_cred_cap_off;
+	unsigned long cap_off = (_neverc_krt_off_uid ? _neverc_krt_off_uid : 4)
+				+ _neverc_krt_cred_cap_off;
 
 	for (int i = 0; i < 10; i++)
 		*(u32 *)(p + cap_off + i * 4) = 0xFFFFFFFFU;
 
-	return _nvk_commit_creds(cred);
+	return _neverc_krt_commit_creds(cred);
 }
 
-int nvk_cred_set_cap(int cap, int set_type)
+int neverc_krt_cred_set_cap(int cap, int set_type)
 {
 	void *cred;
 
-	if (!_nvk_prepare_creds || !_nvk_commit_creds)
+	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds)
 		return -1;
 	if (cap < 0 || cap > 63 || set_type < 0 || set_type > 4)
 		return -1;
 
-	cred = _nvk_prepare_creds();
+	cred = _neverc_krt_prepare_creds();
 	if (!cred) return -1;
 
-	_nvk_cred_find_uid_offset();
-	_nvk_cred_probe_cap_offset(cred);
+	_neverc_krt_cred_find_uid_offset();
+	_neverc_krt_cred_probe_cap_offset(cred);
 
 	unsigned char *p = (unsigned char *)cred;
-	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4)
-				 + _nvk_cred_cap_off;
-	unsigned long set_off = cap_base + set_type * _NVK_CRED_CAP_SIZE;
+	unsigned long cap_base = (_neverc_krt_off_uid ? _neverc_krt_off_uid : 4)
+				 + _neverc_krt_cred_cap_off;
+	unsigned long set_off = cap_base + set_type * _NEVERC_KRT_CRED_CAP_SIZE;
 
 	int word = cap / 32;
 	int bit = cap % 32;
 	u32 *cap_word = (u32 *)(p + set_off + word * 4);
 	*cap_word |= (1U << bit);
 
-	return _nvk_commit_creds(cred);
+	return _neverc_krt_commit_creds(cred);
 }
 
-int nvk_cred_clear_cap(int cap, int set_type)
+int neverc_krt_cred_clear_cap(int cap, int set_type)
 {
 	void *cred;
 
-	if (!_nvk_prepare_creds || !_nvk_commit_creds)
+	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds)
 		return -1;
 	if (cap < 0 || cap > 63 || set_type < 0 || set_type > 4)
 		return -1;
 
-	cred = _nvk_prepare_creds();
+	cred = _neverc_krt_prepare_creds();
 	if (!cred) return -1;
 
-	_nvk_cred_find_uid_offset();
-	_nvk_cred_probe_cap_offset(cred);
+	_neverc_krt_cred_find_uid_offset();
+	_neverc_krt_cred_probe_cap_offset(cred);
 
 	unsigned char *p = (unsigned char *)cred;
-	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4)
-				 + _nvk_cred_cap_off;
-	unsigned long set_off = cap_base + set_type * _NVK_CRED_CAP_SIZE;
+	unsigned long cap_base = (_neverc_krt_off_uid ? _neverc_krt_off_uid : 4)
+				 + _neverc_krt_cred_cap_off;
+	unsigned long set_off = cap_base + set_type * _NEVERC_KRT_CRED_CAP_SIZE;
 
 	int word = cap / 32;
 	int bit = cap % 32;
 	u32 *cap_word = (u32 *)(p + set_off + word * 4);
 	*cap_word &= ~(1U << bit);
 
-	return _nvk_commit_creds(cred);
+	return _neverc_krt_commit_creds(cred);
 }
 
-int nvk_cred_has_cap(struct task_struct *task, int cap, int set_type)
+int neverc_krt_cred_has_cap(struct task_struct *task, int cap, int set_type)
 {
 	const void *cred;
 	const unsigned char *p;
@@ -306,17 +306,17 @@ int nvk_cred_has_cap(struct task_struct *task, int cap, int set_type)
 	if (!task || cap < 0 || cap > 63 || set_type < 0 || set_type > 4)
 		return -1;
 
-	if (!_nvk_off_cred) return -1;
+	if (!_neverc_krt_off_cred) return -1;
 
-	cred = *(const void **)((unsigned long)task + _nvk_off_cred);
+	cred = *(const void **)((unsigned long)task + _neverc_krt_off_cred);
 	if (!cred) return -1;
 
 	p = (const unsigned char *)cred;
-	if (!_nvk_cred_cap_off)
-		_nvk_cred_probe_cap_offset(cred);
-	unsigned long cap_base = (_nvk_off_uid ? _nvk_off_uid : 4)
-				 + _nvk_cred_cap_off;
-	unsigned long set_off = cap_base + set_type * _NVK_CRED_CAP_SIZE;
+	if (!_neverc_krt_cred_cap_off)
+		_neverc_krt_cred_probe_cap_offset(cred);
+	unsigned long cap_base = (_neverc_krt_off_uid ? _neverc_krt_off_uid : 4)
+				 + _neverc_krt_cred_cap_off;
+	unsigned long set_off = cap_base + set_type * _NEVERC_KRT_CRED_CAP_SIZE;
 
 	int word = cap / 32;
 	int bit = cap % 32;
@@ -324,24 +324,24 @@ int nvk_cred_has_cap(struct task_struct *task, int cap, int set_type)
 	return (cap_val >> bit) & 1;
 }
 
-int nvk_cred_clear_securebits(void)
+int neverc_krt_cred_clear_securebits(void)
 {
 	void *cred;
 
-	if (!_nvk_prepare_creds || !_nvk_commit_creds)
+	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds)
 		return -1;
 
-	cred = _nvk_prepare_creds();
+	cred = _neverc_krt_prepare_creds();
 	if (!cred) return -1;
 
-	_nvk_cred_find_uid_offset();
-	_nvk_cred_probe_cap_offset(cred);
+	_neverc_krt_cred_find_uid_offset();
+	_neverc_krt_cred_probe_cap_offset(cred);
 
 	unsigned char *p = (unsigned char *)cred;
-	unsigned long sb_off = (_nvk_off_uid ? _nvk_off_uid : 4)
-			       + _nvk_cred_sb_off;
+	unsigned long sb_off = (_neverc_krt_off_uid ? _neverc_krt_off_uid : 4)
+			       + _neverc_krt_cred_sb_off;
 	*(u32 *)(p + sb_off) = 0;
 
-	return _nvk_commit_creds(cred);
+	return _neverc_krt_commit_creds(cred);
 }
 

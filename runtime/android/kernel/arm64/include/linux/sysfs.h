@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_SYSFS_H
-#define _NVK_LINUX_SYSFS_H
+#ifndef _NEVERC_KRT_LINUX_SYSFS_H
+#define _NEVERC_KRT_LINUX_SYSFS_H
 
 #include <linux/types.h>
 
@@ -29,4 +29,4 @@ void sysfs_remove_group(struct kobject *kobj, const struct attribute_group *grp)
 #define __ATTR_RO(_name) __ATTR(_name, 0444, _name##_show, (void *)0)
 #define __ATTR_RW(_name) __ATTR(_name, 0644, _name##_show, _name##_store)
 
-#endif /* _NVK_LINUX_SYSFS_H */
+#endif /* _NEVERC_KRT_LINUX_SYSFS_H */

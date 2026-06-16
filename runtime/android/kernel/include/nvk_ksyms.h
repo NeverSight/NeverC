@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef NVK_KSYMS_H
-#define NVK_KSYMS_H
+#ifndef NEVERC_KRT_KSYMS_H
+#define NEVERC_KRT_KSYMS_H
 
 #include <linux/types.h>
 #include <nvk_rt.h>
@@ -8,23 +8,23 @@
 #include <linux/kallsyms.h>
 #include <nvk_mem.h>
 
-typedef int (*nvk_ksym_on_each_fn)(const char *name, void *module,
+typedef int (*neverc_krt_ksym_on_each_fn)(const char *name, void *module,
 				   unsigned long addr);
-typedef unsigned long (*nvk_sprint_symbol_fn)(char *buf, unsigned long addr);
+typedef unsigned long (*neverc_krt_sprint_symbol_fn)(char *buf, unsigned long addr);
 
-NVK_RT_VAR nvk_ksym_on_each_fn    _nvk_on_each_symbol;
-NVK_RT_VAR nvk_sprint_symbol_fn   _nvk_sprint_symbol;
-NVK_RT_VAR nvk_sprint_symbol_fn   _nvk_sprint_symbol_no_off;
-NVK_RT_VAR int                    _nvk_ksyms_inited;
+NEVERC_KRT_RT_VAR neverc_krt_ksym_on_each_fn    _neverc_krt_on_each_symbol;
+NEVERC_KRT_RT_VAR neverc_krt_sprint_symbol_fn   _neverc_krt_sprint_symbol;
+NEVERC_KRT_RT_VAR neverc_krt_sprint_symbol_fn   _neverc_krt_sprint_symbol_no_off;
+NEVERC_KRT_RT_VAR int                    _neverc_krt_ksyms_inited;
 
-int nvk_ksyms_init(void);
+int neverc_krt_ksyms_init(void);
 
 
-typedef int (*nvk_ksym_callback_t)(const char *name, unsigned long addr,
+typedef int (*neverc_krt_ksym_callback_t)(const char *name, unsigned long addr,
 				   void *data);
 
-struct _nvk_ksym_ctx {
-	nvk_ksym_callback_t cb;
+struct _neverc_krt_ksym_ctx {
+	neverc_krt_ksym_callback_t cb;
 	void               *data;
 };
 
@@ -45,41 +45,41 @@ struct _nvk_ksym_ctx {
  * field) it's the 4-arg variant; otherwise x2 is the address directly.
  */
 
-int _nvk_ksym_adapt(void *data, const char *name,
+int _neverc_krt_ksym_adapt(void *data, const char *name,
 			    unsigned long arg2, unsigned long arg3);
 
 
-struct _nvk_walk_ctx {
-	nvk_ksym_callback_t cb;
+struct _neverc_krt_walk_ctx {
+	neverc_krt_ksym_callback_t cb;
 	void               *data;
 	int                 count;
 	int                 max;
 };
 
-int _nvk_walk_cb(void *data, const char *name,
+int _neverc_krt_walk_cb(void *data, const char *name,
 			unsigned long arg2, unsigned long arg3);
 
 
-int nvk_ksyms_walk(nvk_ksym_callback_t cb, void *data, int max);
+int neverc_krt_ksyms_walk(neverc_krt_ksym_callback_t cb, void *data, int max);
 
 
-int nvk_ksyms_for_each(nvk_ksym_callback_t cb, void *data);
+int neverc_krt_ksyms_for_each(neverc_krt_ksym_callback_t cb, void *data);
 
 
-int nvk_ksyms_resolve(const char *name, unsigned long *out_addr);
+int neverc_krt_ksyms_resolve(const char *name, unsigned long *out_addr);
 
 
-int nvk_ksyms_name(unsigned long addr, char *buf, int buflen);
+int neverc_krt_ksyms_name(unsigned long addr, char *buf, int buflen);
 
 
-struct _nvk_near_ctx {
+struct _neverc_krt_near_ctx {
 	unsigned long target;
 	unsigned long best_addr;
 	const char   *best_name;
 	unsigned long best_dist;
 };
 
-struct _nvk_match_ctx {
+struct _neverc_krt_match_ctx {
 	const char   *prefix;
 	int           prefix_len;
 	unsigned long results[16];
@@ -87,7 +87,7 @@ struct _nvk_match_ctx {
 	int           max;
 };
 
-static __always_inline int _nvk_prefix_match(const char *name,
+static __always_inline int _neverc_krt_prefix_match(const char *name,
 					     const char *prefix,
 					     int prefix_len)
 {
@@ -99,25 +99,25 @@ static __always_inline int _nvk_prefix_match(const char *name,
 	return 1;
 }
 
-int nvk_ksyms_find_prefix(const char *prefix,
+int neverc_krt_ksyms_find_prefix(const char *prefix,
 				 unsigned long *out, int max_results);
 
 
-int nvk_ksyms_find_in_range(unsigned long start, unsigned long end,
+int neverc_krt_ksyms_find_in_range(unsigned long start, unsigned long end,
 				   const char *name);
 
 
-struct nvk_ksym_info {
+struct neverc_krt_ksym_info {
 	unsigned long addr;
 	unsigned long size;
 	unsigned long offset;
 	char          name[64];
 };
 
-int nvk_ksyms_info(unsigned long addr, struct nvk_ksym_info *info);
+int neverc_krt_ksyms_info(unsigned long addr, struct neverc_krt_ksym_info *info);
 
 
-unsigned long nvk_ksyms_func_size(const char *name);
+unsigned long neverc_krt_ksyms_func_size(const char *name);
 
 
 
@@ -139,7 +139,7 @@ unsigned long nvk_ksyms_func_size(const char *name);
  *   kallsyms_token_index[]   — token indices
  */
 
-struct _nvk_raw_ksyms {
+struct _neverc_krt_raw_ksyms {
 	unsigned long *num_syms;
 	s32           *offsets;
 	unsigned long *relative_base;
@@ -150,48 +150,48 @@ struct _nvk_raw_ksyms {
 	int            valid;
 };
 
-NVK_RT_VAR struct _nvk_raw_ksyms _nvk_rks;
+NEVERC_KRT_RT_VAR struct _neverc_krt_raw_ksyms _neverc_krt_rks;
 
-int _nvk_rks_init(void);
-
-
-unsigned long _nvk_rks_sym_addr(unsigned long idx);
+int _neverc_krt_rks_init(void);
 
 
-int _nvk_rks_expand_sym(unsigned long name_off, char *buf, int bufsz);
+unsigned long _neverc_krt_rks_sym_addr(unsigned long idx);
 
 
-int _nvk_rks_streq(const char *a, const char *b);
+int _neverc_krt_rks_expand_sym(unsigned long name_off, char *buf, int bufsz);
 
 
-unsigned long nvk_ksyms_raw_lookup(const char *name);
+int _neverc_krt_rks_streq(const char *a, const char *b);
 
 
-typedef int (*nvk_raw_sym_callback_t)(const char *name, unsigned long addr,
+unsigned long neverc_krt_ksyms_raw_lookup(const char *name);
+
+
+typedef int (*neverc_krt_raw_sym_callback_t)(const char *name, unsigned long addr,
 				      char type, void *data);
 
-int nvk_ksyms_raw_walk(nvk_raw_sym_callback_t cb, void *data, int max);
+int neverc_krt_ksyms_raw_walk(neverc_krt_raw_sym_callback_t cb, void *data, int max);
 
 
-struct _nvk_batch_entry {
+struct _neverc_krt_batch_entry {
 	const char    *name;
 	unsigned long *out;
 };
 
-struct _nvk_batch_ctx {
-	struct _nvk_batch_entry *entries;
+struct _neverc_krt_batch_ctx {
+	struct _neverc_krt_batch_entry *entries;
 	int                      count;
 	int                      resolved;
 };
 
-int _nvk_batch_cb(const char *name, unsigned long addr,
+int _neverc_krt_batch_cb(const char *name, unsigned long addr,
 			  char type, void *data);
 
 
-int nvk_ksyms_raw_batch(struct _nvk_batch_entry *entries, int count);
+int neverc_krt_ksyms_raw_batch(struct _neverc_krt_batch_entry *entries, int count);
 
 
-#define NVK_BATCH_ENTRY(name_str, addr_var)  \
+#define NEVERC_KRT_BATCH_ENTRY(name_str, addr_var)  \
 	{ .name = (name_str), .out = (unsigned long *)&(addr_var) }
 
-#endif /* NVK_KSYMS_H */
+#endif /* NEVERC_KRT_KSYMS_H */

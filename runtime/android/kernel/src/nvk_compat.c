@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* nvk_compat.c — implementations extracted from nvk_compat.h. */
+/* neverc_krt_compat.c — implementations extracted from neverc_krt_compat.h. */
 #include <nvk.h>
 
-void _nvk_parse_version(const char *str, struct nvk_kernel_info *info)
+void _neverc_krt_parse_version(const char *str, struct neverc_krt_kernel_info *info)
 {
 	const char *p = str;
 	u32 parts[3] = {0, 0, 0};
@@ -38,18 +38,18 @@ void _nvk_parse_version(const char *str, struct nvk_kernel_info *info)
 	info->detected = 1;
 }
 
-int nvk_compat_init(void)
+int neverc_krt_compat_init(void)
 {
 	const char *banner;
 
-	if (_nvk_compat_inited) return 0;
+	if (_neverc_krt_compat_inited) return 0;
 
-	if (!_nvk_mem_inited)
-		nvk_mem_init();
+	if (!_neverc_krt_mem_inited)
+		neverc_krt_mem_init();
 
-	banner = (const char *)NVK_LOOKUP("linux_banner");
+	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
 	if (!banner) {
-		banner = (const char *)NVK_LOOKUP("linux_proc_banner");
+		banner = (const char *)NEVERC_KRT_LOOKUP("linux_proc_banner");
 	}
 
 	if (banner) {
@@ -57,87 +57,87 @@ int nvk_compat_init(void)
 		while (*ver_start && !(*ver_start >= '0' && *ver_start <= '9'))
 			ver_start++;
 		if (*ver_start)
-			_nvk_parse_version(ver_start, &_nvk_kinfo);
+			_neverc_krt_parse_version(ver_start, &_neverc_krt_kinfo);
 	}
 
-	if (!_nvk_kinfo.detected) {
-#if NVK_KERNEL == 510
-		_nvk_kinfo.major = 5;
-		_nvk_kinfo.minor = 10;
-		_nvk_kinfo.android_version = 12;
-#elif NVK_KERNEL == 515
-		_nvk_kinfo.major = 5;
-		_nvk_kinfo.minor = 15;
-		_nvk_kinfo.android_version = 13;
-#elif NVK_KERNEL == 601
-		_nvk_kinfo.major = 6;
-		_nvk_kinfo.minor = 1;
-		_nvk_kinfo.android_version = 14;
-#elif NVK_KERNEL == 606
-		_nvk_kinfo.major = 6;
-		_nvk_kinfo.minor = 6;
-		_nvk_kinfo.android_version = 15;
-#elif NVK_KERNEL == 612
-		_nvk_kinfo.major = 6;
-		_nvk_kinfo.minor = 12;
-		_nvk_kinfo.android_version = 16;
+	if (!_neverc_krt_kinfo.detected) {
+#if NEVERC_KRT_KERNEL == 510
+		_neverc_krt_kinfo.major = 5;
+		_neverc_krt_kinfo.minor = 10;
+		_neverc_krt_kinfo.android_version = 12;
+#elif NEVERC_KRT_KERNEL == 515
+		_neverc_krt_kinfo.major = 5;
+		_neverc_krt_kinfo.minor = 15;
+		_neverc_krt_kinfo.android_version = 13;
+#elif NEVERC_KRT_KERNEL == 601
+		_neverc_krt_kinfo.major = 6;
+		_neverc_krt_kinfo.minor = 1;
+		_neverc_krt_kinfo.android_version = 14;
+#elif NEVERC_KRT_KERNEL == 606
+		_neverc_krt_kinfo.major = 6;
+		_neverc_krt_kinfo.minor = 6;
+		_neverc_krt_kinfo.android_version = 15;
+#elif NEVERC_KRT_KERNEL == 612
+		_neverc_krt_kinfo.major = 6;
+		_neverc_krt_kinfo.minor = 12;
+		_neverc_krt_kinfo.android_version = 16;
 #endif
-		_nvk_kinfo.detected = 1;
+		_neverc_krt_kinfo.detected = 1;
 	}
 
-	nvk_fmt_init();
+	neverc_krt_fmt_init();
 
-	_nvk_compat_inited = 1;
+	_neverc_krt_compat_inited = 1;
 	return 0;
 }
 
-void nvk_detect_hw_caps(struct nvk_hw_caps *caps)
+void neverc_krt_detect_hw_caps(struct neverc_krt_hw_caps *caps)
 {
 	if (!caps) return;
-	caps->pac  = nvk_has_pac();
-	caps->epac = nvk_has_epac();
-	caps->fpac = nvk_has_fpac();
-	caps->bti  = nvk_has_bti();
-	caps->mte  = nvk_has_mte();
-	caps->sve  = nvk_has_sve();
-	caps->cfi  = nvk_has_cfi();
+	caps->pac  = neverc_krt_has_pac();
+	caps->epac = neverc_krt_has_epac();
+	caps->fpac = neverc_krt_has_fpac();
+	caps->bti  = neverc_krt_has_bti();
+	caps->mte  = neverc_krt_has_mte();
+	caps->sve  = neverc_krt_has_sve();
+	caps->cfi  = neverc_krt_has_cfi();
 }
 
-int nvk_check_kernel_match(void)
+int neverc_krt_check_kernel_match(void)
 {
-	if (!_nvk_kinfo.detected)
-		return NVK_VER_UNKNOWN;
+	if (!_neverc_krt_kinfo.detected)
+		return NEVERC_KRT_VER_UNKNOWN;
 
 	u32 expected_major = 0, expected_minor = 0;
-#if NVK_KERNEL == 510
+#if NEVERC_KRT_KERNEL == 510
 	expected_major = 5; expected_minor = 10;
-#elif NVK_KERNEL == 515
+#elif NEVERC_KRT_KERNEL == 515
 	expected_major = 5; expected_minor = 15;
-#elif NVK_KERNEL == 601
+#elif NEVERC_KRT_KERNEL == 601
 	expected_major = 6; expected_minor = 1;
-#elif NVK_KERNEL == 606
+#elif NEVERC_KRT_KERNEL == 606
 	expected_major = 6; expected_minor = 6;
-#elif NVK_KERNEL == 612
+#elif NEVERC_KRT_KERNEL == 612
 	expected_major = 6; expected_minor = 12;
 #endif
 
-	if (_nvk_kinfo.major == expected_major &&
-	    _nvk_kinfo.minor == expected_minor)
-		return NVK_VER_EXACT;
+	if (_neverc_krt_kinfo.major == expected_major &&
+	    _neverc_krt_kinfo.minor == expected_minor)
+		return NEVERC_KRT_VER_EXACT;
 
-	if (_nvk_kinfo.major == expected_major)
-		return NVK_VER_COMPAT;
+	if (_neverc_krt_kinfo.major == expected_major)
+		return NEVERC_KRT_VER_COMPAT;
 
-	return NVK_VER_MISMATCH;
+	return NEVERC_KRT_VER_MISMATCH;
 }
 
-int nvk_verify_module_offsets(struct nvk_this_module *mod,
+int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
 				     const char *expected_name)
 {
 	struct list_head *list;
 	const char *name;
 
-	list = (struct list_head *)((char *)mod + NVK_OFF_LIST);
+	list = (struct list_head *)((char *)mod + NEVERC_KRT_OFF_LIST);
 	if ((unsigned long)list->next < 0xFFFF000000000000UL &&
 	    list->next != list)
 		return -1;
@@ -145,7 +145,7 @@ int nvk_verify_module_offsets(struct nvk_this_module *mod,
 	    list->prev != list)
 		return -2;
 
-	name = (const char *)((char *)mod + NVK_OFF_NAME);
+	name = (const char *)((char *)mod + NEVERC_KRT_OFF_NAME);
 	if (expected_name) {
 		const char *a = name;
 		const char *b = expected_name;
@@ -153,7 +153,7 @@ int nvk_verify_module_offsets(struct nvk_this_module *mod,
 		if (*a != *b) return -3;
 	} else {
 		unsigned char c;
-		if (nvk_mem_read(&c, name, 1))
+		if (neverc_krt_mem_read(&c, name, 1))
 			return -4;
 		if (c < 0x20 || c > 0x7E)
 			return -5;
@@ -162,7 +162,7 @@ int nvk_verify_module_offsets(struct nvk_this_module *mod,
 	return 0;
 }
 
-int nvk_probe_module_offsets(struct nvk_this_module *mod,
+int neverc_krt_probe_module_offsets(struct neverc_krt_this_module *mod,
 				    void *expected_init,
 				    void *expected_exit)
 {
@@ -171,51 +171,51 @@ int nvk_probe_module_offsets(struct nvk_this_module *mod,
 	const unsigned char *base = (const unsigned char *)mod;
 	unsigned long i;
 
-	for (i = 64; i < NVK_MODULE_SIZE; i += 8) {
+	for (i = 64; i < NEVERC_KRT_MODULE_SIZE; i += 8) {
 		unsigned long v;
-		if (nvk_mem_read(&v, base + i, 8)) continue;
+		if (neverc_krt_mem_read(&v, base + i, 8)) continue;
 		if (v == (unsigned long)expected_init) {
-			_nvk_rt_off_init = i;
+			_neverc_krt_rt_off_init = i;
 			break;
 		}
 	}
 
-	if (expected_exit && _nvk_rt_off_init) {
-		for (i = _nvk_rt_off_init + 8; i < NVK_MODULE_SIZE; i += 8) {
+	if (expected_exit && _neverc_krt_rt_off_init) {
+		for (i = _neverc_krt_rt_off_init + 8; i < NEVERC_KRT_MODULE_SIZE; i += 8) {
 			unsigned long v;
-			if (nvk_mem_read(&v, base + i, 8)) continue;
+			if (neverc_krt_mem_read(&v, base + i, 8)) continue;
 			if (v == (unsigned long)expected_exit) {
-				_nvk_rt_off_exit = i;
+				_neverc_krt_rt_off_exit = i;
 				break;
 			}
 		}
 	}
 
-	return _nvk_rt_off_init ? 0 : -1;
+	return _neverc_krt_rt_off_init ? 0 : -1;
 }
 
-int nvk_validate_runtime(struct nvk_this_module *mod,
+int neverc_krt_validate_runtime(struct neverc_krt_this_module *mod,
 				const char *name,
 				void *init_fn, void *exit_fn)
 {
 	int ret;
 
-	ret = nvk_check_kernel_match();
-	if (ret == NVK_VER_MISMATCH) {
-		nvk_probe_module_offsets(mod, init_fn, exit_fn);
+	ret = neverc_krt_check_kernel_match();
+	if (ret == NEVERC_KRT_VER_MISMATCH) {
+		neverc_krt_probe_module_offsets(mod, init_fn, exit_fn);
 	}
 
-	ret = nvk_verify_module_offsets(mod, name);
+	ret = neverc_krt_verify_module_offsets(mod, name);
 	return ret;
 }
 
-int nvk_patch_vermagic(struct nvk_this_module *mod)
+int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod)
 {
 	const char *banner;
 
-	banner = (const char *)NVK_LOOKUP("linux_banner");
+	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
 	if (!banner)
-		banner = (const char *)NVK_LOOKUP("linux_proc_banner");
+		banner = (const char *)NEVERC_KRT_LOOKUP("linux_proc_banner");
 	if (!banner) return -1;
 
 	const char *p = banner;
@@ -243,7 +243,7 @@ int nvk_patch_vermagic(struct nvk_this_module *mod)
 
 	unsigned char *base = (unsigned char *)mod;
 	unsigned long scan;
-	for (scan = 0; scan + 8 < NVK_MODULE_SIZE; scan++) {
+	for (scan = 0; scan + 8 < NEVERC_KRT_MODULE_SIZE; scan++) {
 		if (base[scan] == 'v' && base[scan+1] == 'e' &&
 		    base[scan+2] == 'r' && base[scan+3] == 'm' &&
 		    base[scan+4] == 'a' && base[scan+5] == 'g' &&
@@ -265,17 +265,17 @@ int nvk_patch_vermagic(struct nvk_this_module *mod)
 	return -3;
 }
 
-int nvk_fixup_runtime(struct nvk_this_module *mod,
+int neverc_krt_fixup_runtime(struct neverc_krt_this_module *mod,
 			     const char *name,
 			     void *init_fn, void *exit_fn)
 {
 	int ret;
 
-	ret = nvk_check_kernel_match();
-	if (ret == NVK_VER_MISMATCH || ret == NVK_VER_COMPAT) {
-		nvk_probe_module_offsets(mod, init_fn, exit_fn);
+	ret = neverc_krt_check_kernel_match();
+	if (ret == NEVERC_KRT_VER_MISMATCH || ret == NEVERC_KRT_VER_COMPAT) {
+		neverc_krt_probe_module_offsets(mod, init_fn, exit_fn);
 	}
 
-	return nvk_verify_module_offsets(mod, name);
+	return neverc_krt_verify_module_offsets(mod, name);
 }
 

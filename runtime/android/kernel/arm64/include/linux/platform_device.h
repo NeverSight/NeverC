@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_PLATFORM_DEVICE_H
-#define _NVK_LINUX_PLATFORM_DEVICE_H
+#ifndef _NEVERC_KRT_LINUX_PLATFORM_DEVICE_H
+#define _NEVERC_KRT_LINUX_PLATFORM_DEVICE_H
 
 #include <linux/types.h>
 #include <linux/device.h>
@@ -37,4 +37,4 @@ struct resource {
 	struct resource *parent, *sibling, *child;
 };
 
-#endif /* _NVK_LINUX_PLATFORM_DEVICE_H */
+#endif /* _NEVERC_KRT_LINUX_PLATFORM_DEVICE_H */

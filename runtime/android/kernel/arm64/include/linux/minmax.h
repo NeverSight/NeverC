@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_MINMAX_H
-#define _NVK_LINUX_MINMAX_H
+#ifndef _NEVERC_KRT_LINUX_MINMAX_H
+#define _NEVERC_KRT_LINUX_MINMAX_H
 
 #define min(a, b) ({                                                          \
 	__typeof__(a) _a = (a);                                               \
@@ -34,4 +34,4 @@
 	(b) = _tmp;                                                           \
 })
 
-#endif /* _NVK_LINUX_MINMAX_H */
+#endif /* _NEVERC_KRT_LINUX_MINMAX_H */

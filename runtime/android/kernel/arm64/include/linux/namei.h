@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_NAMEI_H
-#define _NVK_LINUX_NAMEI_H
+#ifndef _NEVERC_KRT_LINUX_NAMEI_H
+#define _NEVERC_KRT_LINUX_NAMEI_H
 
 #include <linux/types.h>
 
@@ -27,4 +27,4 @@ struct dentry *kern_path_create(int dfd, const char *pathname,
 				struct path *path, unsigned int lookup_flags);
 void done_path_create(struct path *path, struct dentry *dentry);
 
-#endif /* _NVK_LINUX_NAMEI_H */
+#endif /* _NEVERC_KRT_LINUX_NAMEI_H */

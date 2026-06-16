@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_ASM_BARRIER_H
-#define _NVK_ASM_BARRIER_H
+#ifndef _NEVERC_KRT_ASM_BARRIER_H
+#define _NEVERC_KRT_ASM_BARRIER_H
 
 #define mb()  __asm__ __volatile__("dsb sy" : : : "memory")
 #define rmb() __asm__ __volatile__("dsb ld" : : : "memory")
@@ -38,4 +38,4 @@
 #define dma_rmb() dmb(oshld)
 #define dma_wmb() dmb(oshst)
 
-#endif /* _NVK_ASM_BARRIER_H */
+#endif /* _NEVERC_KRT_ASM_BARRIER_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_GFP_H
-#define _NVK_LINUX_GFP_H
+#ifndef _NEVERC_KRT_LINUX_GFP_H
+#define _NEVERC_KRT_LINUX_GFP_H
 
 #include <linux/types.h>
 
@@ -27,4 +27,4 @@
 #define GFP_NOWAIT ((gfp_t)(___GFP_KSWAPD_RECLAIM))
 #define GFP_USER ((gfp_t)(___GFP_IO | ___GFP_FS | __GFP_RECLAIM))
 
-#endif /* _NVK_LINUX_GFP_H */
+#endif /* _NEVERC_KRT_LINUX_GFP_H */

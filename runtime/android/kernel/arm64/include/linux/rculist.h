@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_RCULIST_H
-#define _NVK_LINUX_RCULIST_H
+#ifndef _NEVERC_KRT_LINUX_RCULIST_H
+#define _NEVERC_KRT_LINUX_RCULIST_H
 
 #include <linux/list.h>
 #include <linux/rcupdate.h>

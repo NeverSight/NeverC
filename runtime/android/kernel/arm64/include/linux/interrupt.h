@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_INTERRUPT_H
-#define _NVK_LINUX_INTERRUPT_H
+#ifndef _NEVERC_KRT_LINUX_INTERRUPT_H
+#define _NEVERC_KRT_LINUX_INTERRUPT_H
 
 #include <linux/types.h>
 
@@ -64,4 +64,4 @@ static __always_inline unsigned long local_irq_save(void)
 static __always_inline void local_irq_restore(unsigned long flags)
 { __asm__ volatile("msr daif, %0" :: "r"(flags) : "memory"); }
 
-#endif /* _NVK_LINUX_INTERRUPT_H */
+#endif /* _NEVERC_KRT_LINUX_INTERRUPT_H */

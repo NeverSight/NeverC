@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_ASM_BYTEORDER_H
-#define _NVK_ASM_BYTEORDER_H
+#ifndef _NEVERC_KRT_ASM_BYTEORDER_H
+#define _NEVERC_KRT_ASM_BYTEORDER_H
 
 #include <linux/types.h>
 

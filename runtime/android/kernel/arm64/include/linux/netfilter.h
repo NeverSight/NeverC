@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_NETFILTER_H
-#define _NVK_LINUX_NETFILTER_H
+#ifndef _NEVERC_KRT_LINUX_NETFILTER_H
+#define _NEVERC_KRT_LINUX_NETFILTER_H
 
 #include <linux/types.h>
 

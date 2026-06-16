@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_ASM_PTRACE_H
-#define _NVK_ASM_PTRACE_H
+#ifndef _NEVERC_KRT_ASM_PTRACE_H
+#define _NEVERC_KRT_ASM_PTRACE_H
 
 #include <linux/types.h>
 
@@ -20,4 +20,4 @@ struct pt_regs {
 #define ARM_pt_regs_sp(r)    ((r)->sp)
 #define ARM_pt_regs_pc(r)    ((r)->pc)
 
-#endif /* _NVK_ASM_PTRACE_H */
+#endif /* _NEVERC_KRT_ASM_PTRACE_H */

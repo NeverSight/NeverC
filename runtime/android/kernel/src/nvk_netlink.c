@@ -1,68 +1,68 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* nvk_netlink.c — implementations extracted from nvk_netlink.h. */
+/* neverc_krt_netlink.c — implementations extracted from neverc_krt_netlink.h. */
 #include <nvk.h>
 
-int nvk_nl_init(void)
+int neverc_krt_nl_init(void)
 {
-	if (_nvk_nl_inited) return 0;
+	if (_neverc_krt_nl_inited) return 0;
 
-	_nvk_nl_create =
-		(nvk_netlink_create_fn)NVK_LOOKUP("__netlink_kernel_create");
-	if (!_nvk_nl_create)
-		_nvk_nl_create =
-			(nvk_netlink_create_fn)NVK_LOOKUP("netlink_kernel_create");
+	_neverc_krt_nl_create =
+		(neverc_krt_netlink_create_fn)NEVERC_KRT_LOOKUP("__netlink_kernel_create");
+	if (!_neverc_krt_nl_create)
+		_neverc_krt_nl_create =
+			(neverc_krt_netlink_create_fn)NEVERC_KRT_LOOKUP("netlink_kernel_create");
 
-	_nvk_nl_release =
-		(nvk_netlink_release_fn)NVK_LOOKUP("netlink_kernel_release");
-	_nvk_nl_alloc_skb =
-		(nvk_alloc_skb_fn)NVK_LOOKUP("nlmsg_new");
-	if (!_nvk_nl_alloc_skb)
-		_nvk_nl_alloc_skb =
-			(nvk_alloc_skb_fn)NVK_LOOKUP("alloc_skb");
-	_nvk_nl_kfree_skb =
-		(nvk_kfree_skb_fn)NVK_LOOKUP("kfree_skb");
-	if (!_nvk_nl_kfree_skb)
-		_nvk_nl_kfree_skb =
-			(nvk_kfree_skb_fn)NVK_LOOKUP("consume_skb");
-	_nvk_nl_skb_put =
-		(nvk_skb_put_fn)NVK_LOOKUP("skb_put");
-	_nvk_nl_nlmsg_put =
-		(nvk_nlmsg_put_fn)NVK_LOOKUP("nlmsg_put");
-	_nvk_nl_unicast =
-		(nvk_netlink_unicast_fn)NVK_LOOKUP("netlink_unicast");
-	_nvk_nl_broadcast =
-		(nvk_netlink_broadcast_fn)NVK_LOOKUP("netlink_broadcast");
-	_nvk_nl_nlmsg_data =
-		(nvk_nlmsg_data_fn)NVK_LOOKUP("nlmsg_data");
-	_nvk_nl_nlmsg_hdr =
-		(nvk_nlmsg_hdr_fn)NVK_LOOKUP("nlmsg_hdr");
-	_nvk_nl_init_net =
-		(void **)NVK_LOOKUP("init_net");
+	_neverc_krt_nl_release =
+		(neverc_krt_netlink_release_fn)NEVERC_KRT_LOOKUP("netlink_kernel_release");
+	_neverc_krt_nl_alloc_skb =
+		(neverc_krt_alloc_skb_fn)NEVERC_KRT_LOOKUP("nlmsg_new");
+	if (!_neverc_krt_nl_alloc_skb)
+		_neverc_krt_nl_alloc_skb =
+			(neverc_krt_alloc_skb_fn)NEVERC_KRT_LOOKUP("alloc_skb");
+	_neverc_krt_nl_kfree_skb =
+		(neverc_krt_kfree_skb_fn)NEVERC_KRT_LOOKUP("kfree_skb");
+	if (!_neverc_krt_nl_kfree_skb)
+		_neverc_krt_nl_kfree_skb =
+			(neverc_krt_kfree_skb_fn)NEVERC_KRT_LOOKUP("consume_skb");
+	_neverc_krt_nl_skb_put =
+		(neverc_krt_skb_put_fn)NEVERC_KRT_LOOKUP("skb_put");
+	_neverc_krt_nl_nlmsg_put =
+		(neverc_krt_nlmsg_put_fn)NEVERC_KRT_LOOKUP("nlmsg_put");
+	_neverc_krt_nl_unicast =
+		(neverc_krt_netlink_unicast_fn)NEVERC_KRT_LOOKUP("netlink_unicast");
+	_neverc_krt_nl_broadcast =
+		(neverc_krt_netlink_broadcast_fn)NEVERC_KRT_LOOKUP("netlink_broadcast");
+	_neverc_krt_nl_nlmsg_data =
+		(neverc_krt_nlmsg_data_fn)NEVERC_KRT_LOOKUP("nlmsg_data");
+	_neverc_krt_nl_nlmsg_hdr =
+		(neverc_krt_nlmsg_hdr_fn)NEVERC_KRT_LOOKUP("nlmsg_hdr");
+	_neverc_krt_nl_init_net =
+		(void **)NEVERC_KRT_LOOKUP("init_net");
 
-	if (!_nvk_nl_create || !_nvk_nl_release)
+	if (!_neverc_krt_nl_create || !_neverc_krt_nl_release)
 		return -1;
 
-	_nvk_nl_inited = 1;
+	_neverc_krt_nl_inited = 1;
 	return 0;
 }
 
-struct nvk_nl_sock *_nvk_nl_find_by_proto(int proto)
+struct neverc_krt_nl_sock *_neverc_krt_nl_find_by_proto(int proto)
 {
 	int i;
-	for (i = 0; i < _nvk_nl_sock_count; i++) {
-		if (_nvk_nl_socks[i] && _nvk_nl_socks[i]->proto == proto)
-			return _nvk_nl_socks[i];
+	for (i = 0; i < _neverc_krt_nl_sock_count; i++) {
+		if (_neverc_krt_nl_socks[i] && _neverc_krt_nl_socks[i]->proto == proto)
+			return _neverc_krt_nl_socks[i];
 	}
-	return _nvk_nl_sock_count > 0 ? _nvk_nl_socks[0] : (void *)0;
+	return _neverc_krt_nl_sock_count > 0 ? _neverc_krt_nl_socks[0] : (void *)0;
 }
 
-void _nvk_nl_dispatch(void *skb)
+void _neverc_krt_nl_dispatch(void *skb)
 {
-	struct nvk_nl_sock *ns = (void *)0;
+	struct neverc_krt_nl_sock *ns = (void *)0;
 	int i;
-	for (i = 0; i < _nvk_nl_sock_count; i++) {
-		if (_nvk_nl_socks[i] && _nvk_nl_socks[i]->sock) {
-			ns = _nvk_nl_socks[i];
+	for (i = 0; i < _neverc_krt_nl_sock_count; i++) {
+		if (_neverc_krt_nl_socks[i] && _neverc_krt_nl_socks[i]->sock) {
+			ns = _neverc_krt_nl_socks[i];
 			break;
 		}
 	}
@@ -74,8 +74,8 @@ void _nvk_nl_dispatch(void *skb)
 	if (!ns || !ns->handler || !skb)
 		return;
 
-	if (_nvk_nl_nlmsg_hdr)
-		nlh = _nvk_nl_nlmsg_hdr(skb);
+	if (_neverc_krt_nl_nlmsg_hdr)
+		nlh = _neverc_krt_nl_nlmsg_hdr(skb);
 	else
 		return;
 
@@ -83,7 +83,7 @@ void _nvk_nl_dispatch(void *skb)
 
 	hdr = (u32 *)nlh;
 	u32 nlmsg_len  = hdr[0];
-	if (nlmsg_len < 16 || nlmsg_len > NVK_NL_MSG_MAX)
+	if (nlmsg_len < 16 || nlmsg_len > NEVERC_KRT_NL_MSG_MAX)
 		return;
 	u32 nlmsg_type = (u16)hdr[1];
 	u32 nlmsg_seq  = hdr[2];
@@ -91,8 +91,8 @@ void _nvk_nl_dispatch(void *skb)
 
 	payload_len = nlmsg_len - 16;
 
-	if (_nvk_nl_nlmsg_data)
-		data = (unsigned char *)_nvk_nl_nlmsg_data(nlh);
+	if (_neverc_krt_nl_nlmsg_data)
+		data = (unsigned char *)_neverc_krt_nl_nlmsg_data(nlh);
 	else
 		data = (unsigned char *)nlh + 16;
 
@@ -100,53 +100,53 @@ void _nvk_nl_dispatch(void *skb)
 		    data, payload_len);
 }
 
-int nvk_nl_open(struct nvk_nl_sock *ns, int proto,
-		       void (*handler)(struct nvk_nl_sock *, u32, u32, u32,
+int neverc_krt_nl_open(struct neverc_krt_nl_sock *ns, int proto,
+		       void (*handler)(struct neverc_krt_nl_sock *, u32, u32, u32,
 				       const void *, u32))
 {
-	struct nvk_nl_cfg cfg;
+	struct neverc_krt_nl_cfg cfg;
 	unsigned char *p = (unsigned char *)&cfg;
 	unsigned long i;
 
-	if (!_nvk_nl_inited) return -1;
-	if (!_nvk_nl_init_net) return -2;
+	if (!_neverc_krt_nl_inited) return -1;
+	if (!_neverc_krt_nl_init_net) return -2;
 
 	for (i = 0; i < sizeof(cfg); i++)
 		p[i] = 0;
 
-	cfg.input = _nvk_nl_dispatch;
+	cfg.input = _neverc_krt_nl_dispatch;
 
 	ns->proto = proto;
 	ns->handler = handler;
 
-	ns->sock = _nvk_nl_create(*_nvk_nl_init_net, proto, &cfg);
+	ns->sock = _neverc_krt_nl_create(*_neverc_krt_nl_init_net, proto, &cfg);
 	if (!ns->sock)
 		return -3;
 
-	if (_nvk_nl_sock_count < NVK_NL_MAX_SOCKS)
-		_nvk_nl_socks[_nvk_nl_sock_count++] = ns;
+	if (_neverc_krt_nl_sock_count < NEVERC_KRT_NL_MAX_SOCKS)
+		_neverc_krt_nl_socks[_neverc_krt_nl_sock_count++] = ns;
 
 	return 0;
 }
 
-void nvk_nl_close(struct nvk_nl_sock *ns)
+void neverc_krt_nl_close(struct neverc_krt_nl_sock *ns)
 {
 	int i;
 	if (!ns || !ns->sock) return;
-	_nvk_nl_release(ns->sock);
+	_neverc_krt_nl_release(ns->sock);
 	ns->sock = (void *)0;
 
-	for (i = 0; i < _nvk_nl_sock_count; i++) {
-		if (_nvk_nl_socks[i] == ns) {
-			_nvk_nl_socks[i] =
-				_nvk_nl_socks[--_nvk_nl_sock_count];
+	for (i = 0; i < _neverc_krt_nl_sock_count; i++) {
+		if (_neverc_krt_nl_socks[i] == ns) {
+			_neverc_krt_nl_socks[i] =
+				_neverc_krt_nl_socks[--_neverc_krt_nl_sock_count];
 			break;
 		}
 	}
 	(void)0;
 }
 
-int nvk_nl_send(struct nvk_nl_sock *ns, u32 pid,
+int neverc_krt_nl_send(struct neverc_krt_nl_sock *ns, u32 pid,
 		       u32 type, u32 seq,
 		       const void *data, u32 len)
 {
@@ -154,23 +154,23 @@ int nvk_nl_send(struct nvk_nl_sock *ns, u32 pid,
 	u32 total;
 
 	if (!ns || !ns->sock) return -1;
-	if (!_nvk_nl_alloc_skb || !_nvk_nl_nlmsg_put || !_nvk_nl_unicast)
+	if (!_neverc_krt_nl_alloc_skb || !_neverc_krt_nl_nlmsg_put || !_neverc_krt_nl_unicast)
 		return -2;
 
 	total = 16 + ((len + 3) & ~3U);
-	skb = _nvk_nl_alloc_skb(total, 0x14000C0U /* GFP_KERNEL */);
+	skb = _neverc_krt_nl_alloc_skb(total, 0x14000C0U /* GFP_KERNEL */);
 	if (!skb) return -3;
 
-	nlh = _nvk_nl_nlmsg_put(skb, 0, seq, type, len, 0);
+	nlh = _neverc_krt_nl_nlmsg_put(skb, 0, seq, type, len, 0);
 	if (!nlh) {
-		_nvk_nl_kfree_skb(skb);
+		_neverc_krt_nl_kfree_skb(skb);
 		return -4;
 	}
 
 	if (data && len > 0) {
 		void *payload;
-		if (_nvk_nl_nlmsg_data)
-			payload = _nvk_nl_nlmsg_data(nlh);
+		if (_neverc_krt_nl_nlmsg_data)
+			payload = _neverc_krt_nl_nlmsg_data(nlh);
 		else
 			payload = (void *)((unsigned long)nlh + 16);
 		const unsigned char *src = (const unsigned char *)data;
@@ -180,12 +180,12 @@ int nvk_nl_send(struct nvk_nl_sock *ns, u32 pid,
 			dst[i] = src[i];
 	}
 
-	return _nvk_nl_unicast(ns->sock, skb, pid, 0);
+	return _neverc_krt_nl_unicast(ns->sock, skb, pid, 0);
 }
 
-int nvk_nl_reply(struct nvk_nl_sock *ns, u32 pid,
+int neverc_krt_nl_reply(struct neverc_krt_nl_sock *ns, u32 pid,
 			u32 seq, const void *data, u32 len)
 {
-	return nvk_nl_send(ns, pid, 0, seq, data, len);
+	return neverc_krt_nl_send(ns, pid, 0, seq, data, len);
 }
 

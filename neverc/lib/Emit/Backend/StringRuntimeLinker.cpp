@@ -22,30 +22,6 @@ void markAllAsRuntime(Module &Mod) {
   stripHostTargetAttributes(Mod);
 }
 
-template <typename VisitFn>
-void forEachGlobalOperand(User *U, VisitFn Visit) {
-  for (Use &Op : U->operands()) {
-    if (auto *GV = dyn_cast<GlobalValue>(Op))
-      Visit(GV);
-    else if (auto *CE = dyn_cast<ConstantExpr>(Op))
-      if (auto *Inner = dyn_cast<GlobalValue>(CE->stripPointerCasts()))
-        Visit(Inner);
-  }
-}
-
-template <typename GlobalT>
-void poisonAndErase(GlobalT &GV) {
-  GV.replaceAllUsesWith(PoisonValue::get(GV.getType()));
-  GV.eraseFromParent();
-}
-
-template <typename VisitFn>
-void forEachGlobalReferencedBy(Function &F, VisitFn Visit) {
-  for (BasicBlock &BB : F)
-    for (Instruction &I : BB)
-      forEachGlobalOperand(&I, Visit);
-}
-
 } // namespace
 
 PreservedAnalyses
@@ -82,33 +58,43 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     if (!GV.isDeclaration())
       RuntimeGlobalNames.insert(GV.getName());
 
-  // Pre-merge call-graph prune: only link functions reachable from user code.
+  // Call-graph + data-graph prune.
   SmallPtrSet<Function *, 16> Needed;
   SmallPtrSet<GlobalVariable *, 8> NeededGlobals;
-  SmallVector<Function *, 32> Worklist;
+  SmallVector<GlobalValue *, 32> Worklist;
 
-  auto EnqueueIfNew = [&](Function *F) {
-    if (F && !F->isDeclaration() && Needed.insert(F).second)
+  auto EnqueueFn = [&](Function *F) {
+    if (F && !F->isDeclaration() && F->getParent() == RuntimeMod.get() &&
+        Needed.insert(F).second)
       Worklist.push_back(F);
+  };
+  auto EnqueueGV = [&](GlobalVariable *GV) {
+    if (GV && !GV->isDeclaration() && GV->getParent() == RuntimeMod.get() &&
+        NeededGlobals.insert(GV).second)
+      Worklist.push_back(GV);
+  };
+  auto ProcessRef = [&](GlobalValue *GV) {
+    if (auto *F = dyn_cast<Function>(GV))
+      EnqueueFn(F);
+    else if (auto *GVar = dyn_cast<GlobalVariable>(GV))
+      EnqueueGV(GVar);
   };
 
   for (Function &Decl : M) {
     if (!Decl.isDeclaration() || Decl.use_empty())
       continue;
-    EnqueueIfNew(RuntimeMod->getFunction(Decl.getName()));
+    if (auto *F = RuntimeMod->getFunction(Decl.getName()))
+      EnqueueFn(F);
   }
 
   while (!Worklist.empty()) {
-    Function *F = Worklist.pop_back_val();
-    forEachGlobalReferencedBy(*F, [&](GlobalValue *GV) {
-      if (auto *Callee = dyn_cast<Function>(GV)) {
-        if (Callee->getParent() == RuntimeMod.get())
-          EnqueueIfNew(Callee);
-      } else if (auto *GVar = dyn_cast<GlobalVariable>(GV)) {
-        if (GVar->getParent() == RuntimeMod.get() && !GVar->isDeclaration())
-          NeededGlobals.insert(GVar);
-      }
-    });
+    GlobalValue *GV = Worklist.pop_back_val();
+    if (auto *F = dyn_cast<Function>(GV)) {
+      forEachGlobalReferencedBy(*F, ProcessRef);
+    } else if (auto *GVar = dyn_cast<GlobalVariable>(GV)) {
+      if (GVar->hasInitializer())
+        forEachGlobalInConstant(GVar->getInitializer(), ProcessRef);
+    }
   }
 
   for (Function &F : make_early_inc_range(*RuntimeMod)) {
@@ -124,7 +110,6 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
 
   linkModuleOrFail(M, std::move(RuntimeMod), "neverc string runtime");
 
-  // Post-merge: internalize and DCE.
   auto IsRuntimeFn = [](const Function &F) {
     return F.hasFnAttribute(kRuntimeFnAttr);
   };
@@ -171,7 +156,7 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
       forEachGlobalReferencedBy(*Fn, Enqueue);
     if (auto *GVar = dyn_cast<GlobalVariable>(GV))
       if (GVar->hasInitializer())
-        forEachGlobalOperand(GVar->getInitializer(), Enqueue);
+        forEachGlobalInConstant(GVar->getInitializer(), Enqueue);
   }
 
   for (Function &F : make_early_inc_range(M)) {

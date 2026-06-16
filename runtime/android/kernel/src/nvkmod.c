@@ -2,14 +2,14 @@
 /* nvkmod.c — implementations extracted from nvkmod.h. */
 #include <nvk.h>
 
-int nvk_kp_stub(struct kprobe *p, void *regs)
+int neverc_krt_kp_stub(struct kprobe *p, void *regs)
 {
 	(void)p;
 	(void)regs;
 	return 0;
 }
 
-void *nvk_kprobe_lookup(const char *name)
+void *neverc_krt_kprobe_lookup(const char *name)
 {
 	struct kprobe kp;
 	unsigned char *p = (unsigned char *)&kp;
@@ -21,7 +21,7 @@ void *nvk_kprobe_lookup(const char *name)
 
 	kp.symbol_name = name;
 	kp.offset = 0;
-	kp.pre_handler = nvk_kp_stub;
+	kp.pre_handler = neverc_krt_kp_stub;
 
 	ret = register_kprobe(&kp);
 	if (ret == 0) {
@@ -32,42 +32,42 @@ void *nvk_kprobe_lookup(const char *name)
 	return (void *)kp.addr;
 }
 
-unsigned long nvk_kprobe_resolve_sym(const char *name)
+unsigned long neverc_krt_kprobe_resolve_sym(const char *name)
 {
-	return (unsigned long)nvk_kprobe_lookup(name);
+	return (unsigned long)neverc_krt_kprobe_lookup(name);
 }
 
-int nvk_ksym_bootstrap(int cfi)
+int neverc_krt_ksym_bootstrap(int cfi)
 {
-	nvk_kallsyms_lookup_name_fn resolved;
+	neverc_krt_kallsyms_lookup_name_fn resolved;
 
-	if (_nvk_sym_resolver)
+	if (_neverc_krt_sym_resolver)
 		return 0;
 
-	_nvk_cache_key_init();
+	_neverc_krt_cache_key_init();
 
 	if (!cfi) {
-		resolved = (nvk_kallsyms_lookup_name_fn)NVK_KPROBE_LOOKUP(
+		resolved = (neverc_krt_kallsyms_lookup_name_fn)NEVERC_KRT_KPROBE_LOOKUP(
 				"kallsyms_lookup_name");
-		if (resolved && !nvk_is_stub((void *)resolved)) {
-			nvk_kallsyms_lookup_name = resolved;
-			_nvk_sym_resolver = resolved;
+		if (resolved && !neverc_krt_is_stub((void *)resolved)) {
+			neverc_krt_kallsyms_lookup_name = resolved;
+			_neverc_krt_sym_resolver = resolved;
 			return 0;
 		}
 	}
 
-	nvk_kallsyms_lookup_name = nvk_kprobe_resolve_sym;
-	_nvk_sym_resolver = nvk_kprobe_resolve_sym;
+	neverc_krt_kallsyms_lookup_name = neverc_krt_kprobe_resolve_sym;
+	_neverc_krt_sym_resolver = neverc_krt_kprobe_resolve_sym;
 	return 0;
 }
 
-int nvk_log_bootstrap(void)
+int neverc_krt_log_bootstrap(void)
 {
-	if (nvk_printk)
+	if (neverc_krt_printk)
 		return 0;
-	nvk_printk = (nvk_printk_fn)NVK_KPROBE_LOOKUP("_printk");
-	if (!nvk_printk)
-		nvk_printk = (nvk_printk_fn)NVK_KPROBE_LOOKUP("printk");
-	return nvk_printk ? 0 : -1;
+	neverc_krt_printk = (neverc_krt_printk_fn)NEVERC_KRT_KPROBE_LOOKUP("_printk");
+	if (!neverc_krt_printk)
+		neverc_krt_printk = (neverc_krt_printk_fn)NEVERC_KRT_KPROBE_LOOKUP("printk");
+	return neverc_krt_printk ? 0 : -1;
 }
 

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_CRED_H
-#define _NVK_LINUX_CRED_H
+#ifndef _NEVERC_KRT_LINUX_CRED_H
+#define _NEVERC_KRT_LINUX_CRED_H
 
 #include <linux/types.h>
 
@@ -41,4 +41,4 @@ void revert_creds(const struct cred *old);
 #define GLOBAL_ROOT_UID KUIDT_INIT(0)
 #define GLOBAL_ROOT_GID KGIDT_INIT(0)
 
-#endif /* _NVK_LINUX_CRED_H */
+#endif /* _NEVERC_KRT_LINUX_CRED_H */

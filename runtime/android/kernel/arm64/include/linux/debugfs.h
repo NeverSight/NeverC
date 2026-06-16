@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_DEBUGFS_H
-#define _NVK_LINUX_DEBUGFS_H
+#ifndef _NEVERC_KRT_LINUX_DEBUGFS_H
+#define _NEVERC_KRT_LINUX_DEBUGFS_H
 
 #include <linux/types.h>
 
@@ -20,4 +20,4 @@ void debugfs_create_bool(const char *name, umode_t mode,
 void debugfs_remove(struct dentry *dentry);
 void debugfs_remove_recursive(struct dentry *dentry);
 
-#endif /* _NVK_LINUX_DEBUGFS_H */
+#endif /* _NEVERC_KRT_LINUX_DEBUGFS_H */

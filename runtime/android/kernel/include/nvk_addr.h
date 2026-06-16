@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef NVK_ADDR_H
-#define NVK_ADDR_H
+#ifndef NEVERC_KRT_ADDR_H
+#define NEVERC_KRT_ADDR_H
 
 #include <linux/types.h>
 #include <nvk_rt.h>
@@ -8,43 +8,43 @@
 #include <linux/kallsyms.h>
 #include <nvk_mem.h>
 
-NVK_RT_VAR unsigned long *_nvk_kimage_voffset_a;
-NVK_RT_VAR unsigned long *_nvk_phys_offset;
-NVK_RT_VAR int            _nvk_addr_inited;
+NEVERC_KRT_RT_VAR unsigned long *_neverc_krt_kimage_voffset_a;
+NEVERC_KRT_RT_VAR unsigned long *_neverc_krt_phys_offset;
+NEVERC_KRT_RT_VAR int            _neverc_krt_addr_inited;
 
-NVK_RT_VAR unsigned long _nvk_derived_voffset;
-NVK_RT_VAR int           _nvk_voffset_derived;
+NEVERC_KRT_RT_VAR unsigned long _neverc_krt_derived_voffset;
+NEVERC_KRT_RT_VAR int           _neverc_krt_voffset_derived;
 
 /*
  * kimage_voffset converts between kernel image virtual and physical addresses.
  * Page tables live in the linear map, which uses a DIFFERENT offset.
- * _nvk_linmap_offset = linear_map_virt - physical.
+ * _neverc_krt_linmap_offset = linear_map_virt - physical.
  */
-NVK_RT_VAR unsigned long _nvk_linmap_offset;
-NVK_RT_VAR int           _nvk_linmap_detected;
+NEVERC_KRT_RT_VAR unsigned long _neverc_krt_linmap_offset;
+NEVERC_KRT_RT_VAR int           _neverc_krt_linmap_detected;
 
-NVK_RT_VAR int nvk_pte_set_rw(unsigned long vaddr);
-NVK_RT_VAR int nvk_pte_set_ro(unsigned long vaddr);
+NEVERC_KRT_RT_VAR int neverc_krt_pte_set_rw(unsigned long vaddr);
+NEVERC_KRT_RT_VAR int neverc_krt_pte_set_ro(unsigned long vaddr);
 
-void _nvk_detect_linmap(void);
+void _neverc_krt_detect_linmap(void);
 
 
-static __always_inline unsigned long _nvk_linmap_phys_to_virt(unsigned long pa)
+static __always_inline unsigned long _neverc_krt_linmap_phys_to_virt(unsigned long pa)
 {
-	return pa + _nvk_linmap_offset;
+	return pa + _neverc_krt_linmap_offset;
 }
 
-int nvk_addr_init(void);
+int neverc_krt_addr_init(void);
 
 
-static __always_inline unsigned long nvk_va_bits(void)
+static __always_inline unsigned long neverc_krt_va_bits(void)
 {
 	unsigned long tcr;
 	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
 	return 64 - ((tcr >> 16) & 0x3FUL);
 }
 
-static __always_inline int nvk_page_shift(void)
+static __always_inline int neverc_krt_page_shift(void)
 {
 	unsigned long tcr;
 	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
@@ -54,40 +54,40 @@ static __always_inline int nvk_page_shift(void)
 	return 12;                 /* 4K (default on GKI) */
 }
 
-static __always_inline unsigned long nvk_page_size(void)
+static __always_inline unsigned long neverc_krt_page_size(void)
 {
-	return 1UL << nvk_page_shift();
+	return 1UL << neverc_krt_page_shift();
 }
 
-static __always_inline unsigned long nvk_page_mask(void)
+static __always_inline unsigned long neverc_krt_page_mask(void)
 {
-	return ~(nvk_page_size() - 1);
+	return ~(neverc_krt_page_size() - 1);
 }
 
-static __always_inline int nvk_is_kernel_addr(unsigned long addr)
+static __always_inline int neverc_krt_is_kernel_addr(unsigned long addr)
 {
-	unsigned long bits = nvk_va_bits();
+	unsigned long bits = neverc_krt_va_bits();
 	unsigned long mask = 1UL << (bits - 1);
 	return (addr & mask) != 0;
 }
 
-static __always_inline int nvk_is_user_addr(unsigned long addr)
+static __always_inline int neverc_krt_is_user_addr(unsigned long addr)
 {
-	return !nvk_is_kernel_addr(addr) && addr != 0;
+	return !neverc_krt_is_kernel_addr(addr) && addr != 0;
 }
 
-static __always_inline unsigned long _nvk_get_voffset(void)
+static __always_inline unsigned long _neverc_krt_get_voffset(void)
 {
-	if (_nvk_kimage_voffset_a)
-		return *_nvk_kimage_voffset_a;
-	if (_nvk_voffset_derived)
-		return _nvk_derived_voffset;
+	if (_neverc_krt_kimage_voffset_a)
+		return *_neverc_krt_kimage_voffset_a;
+	if (_neverc_krt_voffset_derived)
+		return _neverc_krt_derived_voffset;
 	return 0;
 }
 
-static __always_inline unsigned long nvk_virt_to_phys(unsigned long vaddr)
+static __always_inline unsigned long neverc_krt_virt_to_phys(unsigned long vaddr)
 {
-	unsigned long off = _nvk_get_voffset();
+	unsigned long off = _neverc_krt_get_voffset();
 	if (off)
 		return vaddr - off;
 
@@ -106,35 +106,35 @@ static __always_inline unsigned long nvk_virt_to_phys(unsigned long vaddr)
 	return (par & 0x0000FFFFFFFFF000UL) | (vaddr & 0xFFF);
 }
 
-static __always_inline unsigned long nvk_phys_to_virt(unsigned long paddr)
+static __always_inline unsigned long neverc_krt_phys_to_virt(unsigned long paddr)
 {
-	unsigned long off = _nvk_get_voffset();
+	unsigned long off = _neverc_krt_get_voffset();
 	if (off)
 		return paddr + off;
 	return 0;
 }
 
-static __always_inline unsigned long nvk_kimage_voffset(void)
+static __always_inline unsigned long neverc_krt_kimage_voffset(void)
 {
-	return _nvk_get_voffset();
+	return _neverc_krt_get_voffset();
 }
 
-unsigned long nvk_kaslr_offset(void);
+unsigned long neverc_krt_kaslr_offset(void);
 
 
-unsigned long nvk_translate_user(unsigned long uaddr);
+unsigned long neverc_krt_translate_user(unsigned long uaddr);
 
 
-#define NVK_PTE_VALID     (1UL << 0)
-#define NVK_PTE_TABLE     (1UL << 1)
-#define NVK_PTE_PAGE      (3UL << 0)
-#define NVK_PTE_AF        (1UL << 10)
-#define NVK_PTE_RO        (1UL << 7)
-#define NVK_PTE_UXN       (1UL << 54)
-#define NVK_PTE_PXN       (1UL << 53)
-#define NVK_PTE_ADDR_MASK 0x0000FFFFFFFFF000UL
+#define NEVERC_KRT_PTE_VALID     (1UL << 0)
+#define NEVERC_KRT_PTE_TABLE     (1UL << 1)
+#define NEVERC_KRT_PTE_PAGE      (3UL << 0)
+#define NEVERC_KRT_PTE_AF        (1UL << 10)
+#define NEVERC_KRT_PTE_RO        (1UL << 7)
+#define NEVERC_KRT_PTE_UXN       (1UL << 54)
+#define NEVERC_KRT_PTE_PXN       (1UL << 53)
+#define NEVERC_KRT_PTE_ADDR_MASK 0x0000FFFFFFFFF000UL
 
-struct nvk_pte_info {
+struct neverc_krt_pte_info {
 	unsigned long pte_val;
 	unsigned long phys_addr;
 	int           valid;
@@ -144,72 +144,72 @@ struct nvk_pte_info {
 	int           level;
 };
 
-struct nvk_pte_walk_result {
+struct neverc_krt_pte_walk_result {
 	unsigned long pte_phys;
 	unsigned long *pte_virt;
 };
 
-NVK_RT_VAR int nvk_walk_pgtable_ex(unsigned long vaddr, struct nvk_pte_info *info,
-			       struct nvk_pte_walk_result *result);
+NEVERC_KRT_RT_VAR int neverc_krt_walk_pgtable_ex(unsigned long vaddr, struct neverc_krt_pte_info *info,
+			       struct neverc_krt_pte_walk_result *result);
 
-int nvk_walk_pgtable(unsigned long vaddr, struct nvk_pte_info *info);
-
-
-int nvk_walk_pgtable_ex(unsigned long vaddr, struct nvk_pte_info *info,
-			       struct nvk_pte_walk_result *result);
+int neverc_krt_walk_pgtable(unsigned long vaddr, struct neverc_krt_pte_info *info);
 
 
-static __always_inline unsigned long nvk_strip_tag(unsigned long addr)
+int neverc_krt_walk_pgtable_ex(unsigned long vaddr, struct neverc_krt_pte_info *info,
+			       struct neverc_krt_pte_walk_result *result);
+
+
+static __always_inline unsigned long neverc_krt_strip_tag(unsigned long addr)
 {
-	return (addr & ((1UL << nvk_va_bits()) - 1))
+	return (addr & ((1UL << neverc_krt_va_bits()) - 1))
 	     | (addr & (1UL << 63));
 }
 
-static __always_inline unsigned long nvk_strip_mte(unsigned long addr)
+static __always_inline unsigned long neverc_krt_strip_mte(unsigned long addr)
 {
 	return addr & ~(0xFFUL << 56);
 }
 
-static __always_inline unsigned long nvk_clean_ptr(unsigned long addr)
+static __always_inline unsigned long neverc_krt_clean_ptr(unsigned long addr)
 {
-	addr = nvk_strip_mte(addr);
-	unsigned long bits = nvk_va_bits();
+	addr = neverc_krt_strip_mte(addr);
+	unsigned long bits = neverc_krt_va_bits();
 	unsigned long mask = (1UL << bits) - 1;
 	if (addr & (1UL << 63))
 		return addr | ~mask;
 	return addr & mask;
 }
 
-unsigned long nvk_read_ttbr0(void);
+unsigned long neverc_krt_read_ttbr0(void);
 
 
-unsigned long nvk_read_ttbr1(void);
+unsigned long neverc_krt_read_ttbr1(void);
 
 
 
-int nvk_pte_set_rw(unsigned long vaddr);
+int neverc_krt_pte_set_rw(unsigned long vaddr);
 
 
-int nvk_pte_set_ro(unsigned long vaddr);
+int neverc_krt_pte_set_ro(unsigned long vaddr);
 
 
-int nvk_pte_set_exec(unsigned long vaddr);
+int neverc_krt_pte_set_exec(unsigned long vaddr);
 
 
-int nvk_pte_set_rw_range(unsigned long start, unsigned long end);
+int neverc_krt_pte_set_rw_range(unsigned long start, unsigned long end);
 
 
-int nvk_pte_set_ro_range(unsigned long start, unsigned long end);
+int neverc_krt_pte_set_ro_range(unsigned long start, unsigned long end);
 
 
-static __always_inline int nvk_linmap_available(void)
+static __always_inline int neverc_krt_linmap_available(void)
 {
-	return _nvk_linmap_detected;
+	return _neverc_krt_linmap_detected;
 }
 
-static __always_inline unsigned long nvk_linmap_offset(void)
+static __always_inline unsigned long neverc_krt_linmap_offset(void)
 {
-	return _nvk_linmap_offset;
+	return _neverc_krt_linmap_offset;
 }
 
-#endif /* NVK_ADDR_H */
+#endif /* NEVERC_KRT_ADDR_H */

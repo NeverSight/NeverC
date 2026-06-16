@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_SCHED_H
-#define _NVK_LINUX_SCHED_H
+#ifndef _NEVERC_KRT_LINUX_SCHED_H
+#define _NEVERC_KRT_LINUX_SCHED_H
 
 #include <linux/types.h>
 #include <linux/compiler.h>
@@ -22,4 +22,4 @@ void msleep(unsigned int msecs);
 long schedule_timeout(long timeout);
 int wake_up_process(struct task_struct *tsk);
 
-#endif /* _NVK_LINUX_SCHED_H */
+#endif /* _NEVERC_KRT_LINUX_SCHED_H */

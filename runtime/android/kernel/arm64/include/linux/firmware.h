@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_FIRMWARE_H
-#define _NVK_LINUX_FIRMWARE_H
+#ifndef _NEVERC_KRT_LINUX_FIRMWARE_H
+#define _NEVERC_KRT_LINUX_FIRMWARE_H
 
 #include <linux/types.h>
 
@@ -20,4 +20,4 @@ int request_firmware_nowait(struct module *module, bool uevent,
 			    void (*cont)(const struct firmware *fw, void *ctx));
 void release_firmware(const struct firmware *fw);
 
-#endif /* _NVK_LINUX_FIRMWARE_H */
+#endif /* _NEVERC_KRT_LINUX_FIRMWARE_H */

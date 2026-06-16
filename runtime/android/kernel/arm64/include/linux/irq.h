@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_IRQ_H
-#define _NVK_LINUX_IRQ_H
+#ifndef _NEVERC_KRT_LINUX_IRQ_H
+#define _NEVERC_KRT_LINUX_IRQ_H
 
 #include <linux/types.h>
 #include <linux/interrupt.h>
@@ -18,4 +18,4 @@ void irq_set_irq_type(unsigned int irq, unsigned int type);
 #define IRQ_TYPE_LEVEL_HIGH 0x00000004
 #define IRQ_TYPE_LEVEL_LOW  0x00000008
 
-#endif /* _NVK_LINUX_IRQ_H */
+#endif /* _NEVERC_KRT_LINUX_IRQ_H */

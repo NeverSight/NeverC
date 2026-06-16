@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_WAIT_H
-#define _NVK_LINUX_WAIT_H
+#ifndef _NEVERC_KRT_LINUX_WAIT_H
+#define _NEVERC_KRT_LINUX_WAIT_H
 
 #include <linux/types.h>
 #include <linux/list.h>
@@ -139,4 +139,4 @@ bool completion_done(struct completion *x);
 void complete(struct completion *x);
 void complete_all(struct completion *x);
 
-#endif /* _NVK_LINUX_WAIT_H */
+#endif /* _NEVERC_KRT_LINUX_WAIT_H */

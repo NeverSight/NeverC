@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_TYPES_H
-#define _NVK_LINUX_TYPES_H
+#ifndef _NEVERC_KRT_LINUX_TYPES_H
+#define _NEVERC_KRT_LINUX_TYPES_H
 
 #include <stddef.h> /* size_t, ptrdiff_t, NULL (compiler builtin) */
 
@@ -86,4 +86,4 @@ typedef struct {
 	s64 counter;
 } atomic64_t;
 
-#endif /* _NVK_LINUX_TYPES_H */
+#endif /* _NEVERC_KRT_LINUX_TYPES_H */

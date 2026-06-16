@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_RBTREE_H
-#define _NVK_LINUX_RBTREE_H
+#ifndef _NEVERC_KRT_LINUX_RBTREE_H
+#define _NEVERC_KRT_LINUX_RBTREE_H
 
 #include <linux/types.h>
 #include <linux/kernel.h>
@@ -39,4 +39,4 @@ static __always_inline void rb_link_node(struct rb_node *node,
 #define rbtree_postorder_for_each_entry_safe(pos, n, root, field)             \
 	for (pos = (void *)0; (void)(pos), (void *)0;)
 
-#endif /* _NVK_LINUX_RBTREE_H */
+#endif /* _NEVERC_KRT_LINUX_RBTREE_H */

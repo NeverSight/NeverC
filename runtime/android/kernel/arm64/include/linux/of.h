@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_OF_H
-#define _NVK_LINUX_OF_H
+#ifndef _NEVERC_KRT_LINUX_OF_H
+#define _NEVERC_KRT_LINUX_OF_H
 
 #include <linux/types.h>
 
@@ -25,4 +25,4 @@ bool of_property_read_bool(const struct device_node *np, const char *propname);
 int of_property_count_elems_of_size(const struct device_node *np,
 				    const char *propname, int elem_size);
 
-#endif /* _NVK_LINUX_OF_H */
+#endif /* _NEVERC_KRT_LINUX_OF_H */

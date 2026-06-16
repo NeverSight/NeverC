@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_ERR_H
-#define _NVK_LINUX_ERR_H
+#ifndef _NEVERC_KRT_LINUX_ERR_H
+#define _NEVERC_KRT_LINUX_ERR_H
 
 #include <linux/compiler.h>
 #include <linux/types.h>
@@ -28,4 +28,4 @@ static __always_inline bool IS_ERR_OR_NULL(const void *ptr)
 	return unlikely(!ptr) || IS_ERR_VALUE((unsigned long)ptr);
 }
 
-#endif /* _NVK_LINUX_ERR_H */
+#endif /* _NEVERC_KRT_LINUX_ERR_H */

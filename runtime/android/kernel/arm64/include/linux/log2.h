@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_LOG2_H
-#define _NVK_LINUX_LOG2_H
+#ifndef _NEVERC_KRT_LINUX_LOG2_H
+#define _NEVERC_KRT_LINUX_LOG2_H
 
 #include <linux/types.h>
 #include <linux/bitops.h>
@@ -29,4 +29,4 @@ static __always_inline unsigned long rounddown_pow_of_two(unsigned long n)
 	return 1UL << ilog2(n);
 }
 
-#endif /* _NVK_LINUX_LOG2_H */
+#endif /* _NEVERC_KRT_LINUX_LOG2_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_STRING_H
-#define _NVK_LINUX_STRING_H
+#ifndef _NEVERC_KRT_LINUX_STRING_H
+#define _NEVERC_KRT_LINUX_STRING_H
 
 #include <linux/types.h>
 
@@ -22,19 +22,19 @@ char *strstr(const char *haystack, const char *needle);
 int snprintf(char *buf, size_t size, const char *fmt, ...) __printf(3, 4);
 int scnprintf(char *buf, size_t size, const char *fmt, ...) __printf(3, 4);
 
-#define __nvk_memset  __builtin_memset
-#define __nvk_memcpy  __builtin_memcpy
-#define __nvk_memmove __builtin_memmove
-#define __nvk_memcmp  __builtin_memcmp
-#define __nvk_strlen  __builtin_strlen
-#define __nvk_strcmp   __builtin_strcmp
-#define __nvk_strncmp __builtin_strncmp
-#define __nvk_strcpy  __builtin_strcpy
+#define __neverc_krt_memset  __builtin_memset
+#define __neverc_krt_memcpy  __builtin_memcpy
+#define __neverc_krt_memmove __builtin_memmove
+#define __neverc_krt_memcmp  __builtin_memcmp
+#define __neverc_krt_strlen  __builtin_strlen
+#define __neverc_krt_strcmp   __builtin_strcmp
+#define __neverc_krt_strncmp __builtin_strncmp
+#define __neverc_krt_strcpy  __builtin_strcpy
 
-static __always_inline void nvk_memzero(void *s, size_t n)
+static __always_inline void neverc_krt_memzero(void *s, size_t n)
 {
 	unsigned char *p = (unsigned char *)s;
 	while (n--) *p++ = 0;
 }
 
-#endif /* _NVK_LINUX_STRING_H */
+#endif /* _NEVERC_KRT_LINUX_STRING_H */

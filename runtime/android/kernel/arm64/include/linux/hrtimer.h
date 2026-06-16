@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_HRTIMER_H
-#define _NVK_LINUX_HRTIMER_H
+#ifndef _NEVERC_KRT_LINUX_HRTIMER_H
+#define _NEVERC_KRT_LINUX_HRTIMER_H
 
 #include <linux/types.h>
 
@@ -51,4 +51,4 @@ static __always_inline ktime_t ktime_set(const s64 secs, const unsigned long nse
 #define us_to_ktime(us) ((ktime_t)(us) * 1000LL)
 #define ns_to_ktime(ns) ((ktime_t)(ns))
 
-#endif /* _NVK_LINUX_HRTIMER_H */
+#endif /* _NEVERC_KRT_LINUX_HRTIMER_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef NVK_SYSCALL_H
-#define NVK_SYSCALL_H
+#ifndef NEVERC_KRT_SYSCALL_H
+#define NEVERC_KRT_SYSCALL_H
 
 #include <linux/types.h>
 #include <nvk_rt.h>
@@ -9,30 +9,30 @@
 #include <nvk_mem.h>
 #include <asm/ptrace.h>
 
-typedef long (*nvk_syscall_fn_t)(const struct pt_regs *regs);
+typedef long (*neverc_krt_syscall_fn_t)(const struct pt_regs *regs);
 
-NVK_RT_VAR nvk_syscall_fn_t *_nvk_sys_call_table;
-NVK_RT_VAR int _nvk_syscall_inited;
+NEVERC_KRT_RT_VAR neverc_krt_syscall_fn_t *_neverc_krt_sys_call_table;
+NEVERC_KRT_RT_VAR int _neverc_krt_syscall_inited;
 
-int nvk_syscall_init(void);
+int neverc_krt_syscall_init(void);
 
 
-static __always_inline nvk_syscall_fn_t *nvk_syscall_table(void)
+static __always_inline neverc_krt_syscall_fn_t *neverc_krt_syscall_table(void)
 {
-	return _nvk_sys_call_table;
+	return _neverc_krt_sys_call_table;
 }
 
-int nvk_syscall_replace(int nr, nvk_syscall_fn_t new_fn,
-			       nvk_syscall_fn_t *orig);
+int neverc_krt_syscall_replace(int nr, neverc_krt_syscall_fn_t new_fn,
+			       neverc_krt_syscall_fn_t *orig);
 
 
-int nvk_syscall_restore(int nr, nvk_syscall_fn_t orig);
+int neverc_krt_syscall_restore(int nr, neverc_krt_syscall_fn_t orig);
 
 
-static __always_inline nvk_syscall_fn_t nvk_syscall_get(int nr)
+static __always_inline neverc_krt_syscall_fn_t neverc_krt_syscall_get(int nr)
 {
-	if (!_nvk_sys_call_table || nr < 0) return (void *)0;
-	return _nvk_sys_call_table[nr];
+	if (!_neverc_krt_sys_call_table || nr < 0) return (void *)0;
+	return _neverc_krt_sys_call_table[nr];
 }
 
 #define __NR_io_setup         0
@@ -178,4 +178,4 @@ static __always_inline nvk_syscall_fn_t nvk_syscall_get(int nr)
 #define __NR_openat2        437
 #define __NR_faccessat2     439
 
-#endif /* NVK_SYSCALL_H */
+#endif /* NEVERC_KRT_SYSCALL_H */

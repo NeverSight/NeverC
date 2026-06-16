@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef NVK_PROCESS_H
-#define NVK_PROCESS_H
+#ifndef NEVERC_KRT_PROCESS_H
+#define NEVERC_KRT_PROCESS_H
 
 #include <linux/types.h>
 #include <nvk_rt.h>
@@ -10,35 +10,35 @@
 #include <linux/string.h>
 #include <nvk_mem.h>
 
-typedef int  (*nvk_task_pid_nr_fn)(struct task_struct *);
-typedef int  (*nvk_task_tgid_nr_fn)(struct task_struct *);
-typedef struct task_struct *(*nvk_find_task_fn)(int pid);
-typedef void *(*nvk_get_task_cred_fn)(struct task_struct *);
-typedef void *(*nvk_prepare_creds_fn)(void);
-typedef int   (*nvk_commit_creds_fn)(void *);
-typedef int   (*nvk_send_sig_info_fn)(int sig, void *info,
+typedef int  (*neverc_krt_task_pid_nr_fn)(struct task_struct *);
+typedef int  (*neverc_krt_task_tgid_nr_fn)(struct task_struct *);
+typedef struct task_struct *(*neverc_krt_find_task_fn)(int pid);
+typedef void *(*neverc_krt_get_task_cred_fn)(struct task_struct *);
+typedef void *(*neverc_krt_prepare_creds_fn)(void);
+typedef int   (*neverc_krt_commit_creds_fn)(void *);
+typedef int   (*neverc_krt_send_sig_info_fn)(int sig, void *info,
 				      struct task_struct *p, int type);
 
-NVK_RT_VAR nvk_task_pid_nr_fn   _nvk_task_pid_nr;
-NVK_RT_VAR nvk_task_tgid_nr_fn  _nvk_task_tgid_nr;
-NVK_RT_VAR nvk_find_task_fn     _nvk_find_task_by_vpid;
-NVK_RT_VAR nvk_get_task_cred_fn _nvk_get_task_cred;
-NVK_RT_VAR nvk_prepare_creds_fn _nvk_prepare_creds;
-NVK_RT_VAR nvk_commit_creds_fn  _nvk_commit_creds;
-NVK_RT_VAR nvk_send_sig_info_fn _nvk_send_sig_info;
-NVK_RT_VAR struct task_struct   *_nvk_init_task;
-NVK_RT_VAR int                   _nvk_proc_inited;
+NEVERC_KRT_RT_VAR neverc_krt_task_pid_nr_fn   _neverc_krt_task_pid_nr;
+NEVERC_KRT_RT_VAR neverc_krt_task_tgid_nr_fn  _neverc_krt_task_tgid_nr;
+NEVERC_KRT_RT_VAR neverc_krt_find_task_fn     _neverc_krt_find_task_by_vpid;
+NEVERC_KRT_RT_VAR neverc_krt_get_task_cred_fn _neverc_krt_get_task_cred;
+NEVERC_KRT_RT_VAR neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds;
+NEVERC_KRT_RT_VAR neverc_krt_commit_creds_fn  _neverc_krt_commit_creds;
+NEVERC_KRT_RT_VAR neverc_krt_send_sig_info_fn _neverc_krt_send_sig_info;
+NEVERC_KRT_RT_VAR struct task_struct   *_neverc_krt_init_task;
+NEVERC_KRT_RT_VAR int                   _neverc_krt_proc_inited;
 
-typedef void (*nvk_rcu_lock_fn)(void);
-typedef void (*nvk_rcu_unlock_fn)(void);
-NVK_RT_VAR nvk_rcu_lock_fn   _nvk_rcu_read_lock;
-NVK_RT_VAR nvk_rcu_unlock_fn _nvk_rcu_read_unlock;
+typedef void (*neverc_krt_rcu_lock_fn)(void);
+typedef void (*neverc_krt_rcu_unlock_fn)(void);
+NEVERC_KRT_RT_VAR neverc_krt_rcu_lock_fn   _neverc_krt_rcu_read_lock;
+NEVERC_KRT_RT_VAR neverc_krt_rcu_unlock_fn _neverc_krt_rcu_read_unlock;
 
-NVK_RT_VAR unsigned long _nvk_off_comm;
-NVK_RT_VAR unsigned long _nvk_off_tasks;
-NVK_RT_VAR unsigned long _nvk_off_real_cred;
+NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_comm;
+NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_tasks;
+NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_real_cred;
 
-struct nvk_task_offsets {
+struct neverc_krt_task_offsets {
 	unsigned long comm;
 	unsigned long tasks;
 	unsigned long cred;
@@ -47,99 +47,99 @@ struct nvk_task_offsets {
 	volatile int  resolved;
 };
 
-NVK_RT_VAR struct nvk_task_offsets _nvk_toff;
+NEVERC_KRT_RT_VAR struct neverc_krt_task_offsets _neverc_krt_toff;
 
-void _nvk_resolve_task_offsets(void);
+void _neverc_krt_resolve_task_offsets(void);
 
 
-static __always_inline const struct nvk_task_offsets *nvk_task_offsets(void)
+static __always_inline const struct neverc_krt_task_offsets *neverc_krt_task_offsets(void)
 {
-	if (!__atomic_load_n(&_nvk_toff.resolved, __ATOMIC_ACQUIRE))
-		_nvk_resolve_task_offsets();
-	return &_nvk_toff;
+	if (!__atomic_load_n(&_neverc_krt_toff.resolved, __ATOMIC_ACQUIRE))
+		_neverc_krt_resolve_task_offsets();
+	return &_neverc_krt_toff;
 }
 
-typedef unsigned long (*nvk_ksize_off_fn)(unsigned long addr,
+typedef unsigned long (*neverc_krt_ksize_off_fn)(unsigned long addr,
 					  unsigned long *sz,
 					  unsigned long *off);
 
-int nvk_process_init(void);
+int neverc_krt_process_init(void);
 
 
-static __always_inline int nvk_current_pid(void)
+static __always_inline int neverc_krt_current_pid(void)
 {
-	if (_nvk_task_pid_nr)
-		return _nvk_task_pid_nr(current);
+	if (_neverc_krt_task_pid_nr)
+		return _neverc_krt_task_pid_nr(current);
 	return -1;
 }
 
-static __always_inline int nvk_current_tgid(void)
+static __always_inline int neverc_krt_current_tgid(void)
 {
-	if (_nvk_task_tgid_nr)
-		return _nvk_task_tgid_nr(current);
+	if (_neverc_krt_task_tgid_nr)
+		return _neverc_krt_task_tgid_nr(current);
 	return -1;
 }
 
-static __always_inline int nvk_task_pid(struct task_struct *task)
+static __always_inline int neverc_krt_task_pid(struct task_struct *task)
 {
-	if (_nvk_task_pid_nr && task)
-		return _nvk_task_pid_nr(task);
+	if (_neverc_krt_task_pid_nr && task)
+		return _neverc_krt_task_pid_nr(task);
 	return -1;
 }
 
-static __always_inline struct task_struct *nvk_find_task(int pid)
+static __always_inline struct task_struct *neverc_krt_find_task(int pid)
 {
 	struct task_struct *t;
-	if (!_nvk_find_task_by_vpid) return (void *)0;
-	if (_nvk_rcu_read_lock) _nvk_rcu_read_lock();
-	t = _nvk_find_task_by_vpid(pid);
-	if (_nvk_rcu_read_unlock) _nvk_rcu_read_unlock();
+	if (!_neverc_krt_find_task_by_vpid) return (void *)0;
+	if (_neverc_krt_rcu_read_lock) _neverc_krt_rcu_read_lock();
+	t = _neverc_krt_find_task_by_vpid(pid);
+	if (_neverc_krt_rcu_read_unlock) _neverc_krt_rcu_read_unlock();
 	return t;
 }
 
-const char *nvk_task_comm(struct task_struct *task);
+const char *neverc_krt_task_comm(struct task_struct *task);
 
-typedef int (*nvk_task_callback_t)(struct task_struct *task, void *data);
+typedef int (*neverc_krt_task_callback_t)(struct task_struct *task, void *data);
 
-int nvk_for_each_task(nvk_task_callback_t callback, void *data);
+int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data);
 
 
-struct _nvk_find_ctx {
+struct _neverc_krt_find_ctx {
 	const char *target;
 	struct task_struct *result;
 };
 
-int _nvk_find_by_name_cb(struct task_struct *task, void *data);
+int _neverc_krt_find_by_name_cb(struct task_struct *task, void *data);
 
 
-struct task_struct *nvk_find_task_by_name(const char *name);
+struct task_struct *neverc_krt_find_task_by_name(const char *name);
 
 
-static __always_inline void *nvk_task_get_cred(struct task_struct *task)
+static __always_inline void *neverc_krt_task_get_cred(struct task_struct *task)
 {
-	if (_nvk_get_task_cred && task)
-		return _nvk_get_task_cred(task);
+	if (_neverc_krt_get_task_cred && task)
+		return _neverc_krt_get_task_cred(task);
 	return (void *)0;
 }
 
-static __always_inline void *nvk_prepare_creds(void)
+static __always_inline void *neverc_krt_prepare_creds(void)
 {
-	if (_nvk_prepare_creds)
-		return _nvk_prepare_creds();
+	if (_neverc_krt_prepare_creds)
+		return _neverc_krt_prepare_creds();
 	return (void *)0;
 }
 
-static __always_inline int nvk_commit_creds(void *cred)
+static __always_inline int neverc_krt_commit_creds(void *cred)
 {
-	if (_nvk_commit_creds && cred)
-		return _nvk_commit_creds(cred);
+	if (_neverc_krt_commit_creds && cred)
+		return _neverc_krt_commit_creds(cred);
 	return -1;
 }
 
-int nvk_send_signal(int pid, int sig);
+int neverc_krt_send_signal(int pid, int sig);
 
 
-int nvk_is_current_root(void);
+int neverc_krt_is_current_root(void);
 
 
-#endif /* NVK_PROCESS_H */
+#endif /* NEVERC_KRT_PROCESS_H */

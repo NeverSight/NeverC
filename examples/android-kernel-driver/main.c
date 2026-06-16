@@ -9,82 +9,82 @@
  * binary working across android12-5.10 ... android15-6.6.
  *
  * Build:  neverc make            (or: make ; make KERNEL=601 for 6.1, etc.)
- * Deploy: adb push nvk_driver.ko /data/local/tests/
- *         adb shell su -c 'insmod /data/local/tests/nvk_driver.ko'
+ * Deploy: adb push neverc_krt_driver.ko /data/local/tests/
+ *         adb shell su -c 'insmod /data/local/tests/neverc_krt_driver.ko'
  *         adb shell su -c 'dmesg | tail'
- *         adb shell su -c 'rmmod nvk_driver'
+ *         adb shell su -c 'rmmod neverc_krt_driver'
  */
 /*
  * Full enc/dec override example: rotate + ADD cipher.
  *
- * Overriding _nvk_ptr_enc/_nvk_ptr_dec directly replaces the entire
- * pointer encryption scheme.  The default _nvk_xor_opaque is NOT used
+ * Overriding _neverc_krt_ptr_enc/_neverc_krt_ptr_dec directly replaces the entire
+ * pointer encryption scheme.  The default _neverc_krt_xor_opaque is NOT used
  * (enc/dec are the consumers of xor_opaque; overriding them bypasses it).
  *
- * Forward-declare _nvk_cache_key here — C allows multiple tentative
+ * Forward-declare _neverc_krt_cache_key here — C allows multiple tentative
  * definitions of the same static variable in one translation unit;
  * kallsyms.h's declaration merges with this one at link time.
  */
-static unsigned long _nvk_cache_key;
+static unsigned long _neverc_krt_cache_key;
 
 static inline __attribute__((always_inline))
-unsigned long nvk_rot_enc(unsigned long addr)
+unsigned long neverc_krt_rot_enc(unsigned long addr)
 {
-	unsigned long k = __atomic_load_n(&_nvk_cache_key, __ATOMIC_RELAXED);
+	unsigned long k = __atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_RELAXED);
 	unsigned long r = addr + k;
 	r = (r << 7) | (r >> 57);
 	return r;
 }
 
 static inline __attribute__((always_inline))
-unsigned long nvk_rot_dec(unsigned long enc)
+unsigned long neverc_krt_rot_dec(unsigned long enc)
 {
-	unsigned long k = __atomic_load_n(&_nvk_cache_key, __ATOMIC_RELAXED);
+	unsigned long k = __atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_RELAXED);
 	unsigned long r = (enc >> 7) | (enc << 57);
 	r = r - k;
 	return r;
 }
 
-#define _nvk_ptr_enc nvk_rot_enc
-#define _nvk_ptr_dec nvk_rot_dec
+#define _neverc_krt_ptr_enc neverc_krt_rot_enc
+#define _neverc_krt_ptr_dec neverc_krt_rot_dec
 
 #include <nvkmod.h>
 
-static int nvk_driver_init(void)
+static int neverc_krt_driver_init(void)
 {
 	void *init_task_addr;
 	int ret;
 
-	ret = NVK_BOOTSTRAP();
+	ret = NEVERC_KRT_BOOTSTRAP();
 	if (ret)
 		return ret;
 
-	pr_info("nvk_driver: loaded on %s\n", NVK_KERNEL_STR);
-	pr_info("nvk_driver: kallsyms_lookup_name @ %lx\n",
-		(unsigned long)nvk_kallsyms_lookup_name);
+	pr_info("neverc_krt_driver: loaded on %s\n", NEVERC_KRT_KERNEL_STR);
+	pr_info("neverc_krt_driver: kallsyms_lookup_name @ %lx\n",
+		(unsigned long)neverc_krt_kallsyms_lookup_name);
 
-	init_task_addr = NVK_LOOKUP("init_task");
-	pr_info("nvk_driver: &init_task = %lx (fresh)\n",
+	init_task_addr = NEVERC_KRT_LOOKUP("init_task");
+	pr_info("neverc_krt_driver: &init_task = %lx (fresh)\n",
 		(unsigned long)init_task_addr);
 
-	init_task_addr = NVK_LOOKUP("init_task");
-	pr_info("nvk_driver: &init_task = %lx (cached)\n",
+	init_task_addr = NEVERC_KRT_LOOKUP("init_task");
+	pr_info("neverc_krt_driver: &init_task = %lx (cached)\n",
 		(unsigned long)init_task_addr);
 
 	return 0;
 }
 
-static void nvk_driver_exit(void)
+static void neverc_krt_driver_exit(void)
 {
-	nvk_sym_cache_clear();
-	pr_info("nvk_driver: unloaded\n");
+	neverc_krt_sym_cache_clear();
+	pr_info("neverc_krt_driver: unloaded\n");
 }
 
-module_init(nvk_driver_init);
-module_exit(nvk_driver_exit);
+module_init(neverc_krt_driver_init);
+module_exit(neverc_krt_driver_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("NeverC");
 MODULE_DESCRIPTION("NeverC Android kernel driver template (dynamic kallsyms)");
 
-NVK_DEFINE_MODULE("nvk_driver");
+NEVERC_KRT_DEFINE_MODULE("neverc_krt_driver");

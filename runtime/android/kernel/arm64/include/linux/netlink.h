@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_NETLINK_H
-#define _NVK_LINUX_NETLINK_H
+#ifndef _NEVERC_KRT_LINUX_NETLINK_H
+#define _NEVERC_KRT_LINUX_NETLINK_H
 
 #include <linux/types.h>
 
@@ -63,4 +63,4 @@ void nlmsg_free(struct sk_buff *skb);
 
 /* init_net: the default network namespace (resolve via kallsyms). */
 
-#endif /* _NVK_LINUX_NETLINK_H */
+#endif /* _NEVERC_KRT_LINUX_NETLINK_H */

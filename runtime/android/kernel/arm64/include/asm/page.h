@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_ASM_PAGE_H
-#define _NVK_ASM_PAGE_H
+#ifndef _NEVERC_KRT_ASM_PAGE_H
+#define _NEVERC_KRT_ASM_PAGE_H
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE  (1UL << PAGE_SHIFT)
@@ -10,4 +10,4 @@
 #define PFN_DOWN(x)  ((x) >> PAGE_SHIFT)
 #define PFN_PHYS(x)  ((unsigned long)(x) << PAGE_SHIFT)
 
-#endif /* _NVK_ASM_PAGE_H */
+#endif /* _NEVERC_KRT_ASM_PAGE_H */

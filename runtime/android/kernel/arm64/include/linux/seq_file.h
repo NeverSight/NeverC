@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_SEQ_FILE_H
-#define _NVK_LINUX_SEQ_FILE_H
+#ifndef _NEVERC_KRT_LINUX_SEQ_FILE_H
+#define _NEVERC_KRT_LINUX_SEQ_FILE_H
 
 #include <linux/types.h>
 
@@ -30,4 +30,4 @@ int single_open(struct file *file,
 		int (*show)(struct seq_file *, void *), void *data);
 int single_release(struct inode *inode, struct file *file);
 
-#endif /* _NVK_LINUX_SEQ_FILE_H */
+#endif /* _NEVERC_KRT_LINUX_SEQ_FILE_H */

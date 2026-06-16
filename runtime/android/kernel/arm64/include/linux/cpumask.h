@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_CPUMASK_H
-#define _NVK_LINUX_CPUMASK_H
+#ifndef _NEVERC_KRT_LINUX_CPUMASK_H
+#define _NEVERC_KRT_LINUX_CPUMASK_H
 
 #include <linux/types.h>
 #include <linux/bitops.h>
@@ -21,4 +21,4 @@ unsigned int num_possible_cpus(void);
 
 int smp_processor_id(void);
 
-#endif /* _NVK_LINUX_CPUMASK_H */
+#endif /* _NEVERC_KRT_LINUX_CPUMASK_H */

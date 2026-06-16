@@ -1,65 +1,65 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* nvk_timer.c — implementations extracted from nvk_timer.h. */
+/* neverc_krt_timer.c — implementations extracted from neverc_krt_timer.h. */
 #include <nvk.h>
 
-int _nvk_hrt_trampoline(void *hrt)
+int _neverc_krt_hrt_trampoline(void *hrt)
 {
-	struct nvk_timer *t = _nvk_timer_from_storage(hrt);
+	struct neverc_krt_timer *t = _neverc_krt_timer_from_storage(hrt);
 	if (t->callback)
 		t->callback(t);
 	return 0;  /* HRTIMER_NORESTART */
 }
 
-int _nvk_hrt_trampoline_repeat(void *hrt)
+int _neverc_krt_hrt_trampoline_repeat(void *hrt)
 {
-	struct nvk_timer *t = _nvk_timer_from_storage(hrt);
+	struct neverc_krt_timer *t = _neverc_krt_timer_from_storage(hrt);
 	if (t->callback)
 		t->callback(t);
 	return 1;  /* HRTIMER_RESTART */
 }
 
-int nvk_timer_init(void)
+int neverc_krt_timer_init(void)
 {
-	if (_nvk_timer_inited) return 0;
+	if (_neverc_krt_timer_inited) return 0;
 
-	_nvk_hrtimer_init   = (nvk_hrt_init_fn)NVK_LOOKUP("hrtimer_init");
-	_nvk_hrtimer_start  = (nvk_hrt_start_fn)NVK_LOOKUP("hrtimer_start");
-	if (!_nvk_hrtimer_start)
-		_nvk_hrtimer_start =
-			(nvk_hrt_start_fn)NVK_LOOKUP("hrtimer_start_range_ns");
-	_nvk_hrtimer_cancel = (nvk_hrt_cancel_fn)NVK_LOOKUP("hrtimer_cancel");
+	_neverc_krt_hrtimer_init   = (neverc_krt_hrt_init_fn)NEVERC_KRT_LOOKUP("hrtimer_init");
+	_neverc_krt_hrtimer_start  = (neverc_krt_hrt_start_fn)NEVERC_KRT_LOOKUP("hrtimer_start");
+	if (!_neverc_krt_hrtimer_start)
+		_neverc_krt_hrtimer_start =
+			(neverc_krt_hrt_start_fn)NEVERC_KRT_LOOKUP("hrtimer_start_range_ns");
+	_neverc_krt_hrtimer_cancel = (neverc_krt_hrt_cancel_fn)NEVERC_KRT_LOOKUP("hrtimer_cancel");
 
-	_nvk_init_delayed_work =
-		(nvk_init_work_fn)NVK_LOOKUP("__init_work");
-	_nvk_schedule_delayed_work =
-		(nvk_schedule_dw_fn)NVK_LOOKUP("schedule_delayed_work");
-	if (!_nvk_schedule_delayed_work)
-		_nvk_schedule_delayed_work =
-			(nvk_schedule_dw_fn)NVK_LOOKUP("queue_delayed_work_on");
-	_nvk_cancel_delayed_work =
-		(nvk_cancel_dw_fn)NVK_LOOKUP("cancel_delayed_work_sync");
+	_neverc_krt_init_delayed_work =
+		(neverc_krt_init_work_fn)NEVERC_KRT_LOOKUP("__init_work");
+	_neverc_krt_schedule_delayed_work =
+		(neverc_krt_schedule_dw_fn)NEVERC_KRT_LOOKUP("schedule_delayed_work");
+	if (!_neverc_krt_schedule_delayed_work)
+		_neverc_krt_schedule_delayed_work =
+			(neverc_krt_schedule_dw_fn)NEVERC_KRT_LOOKUP("queue_delayed_work_on");
+	_neverc_krt_cancel_delayed_work =
+		(neverc_krt_cancel_dw_fn)NEVERC_KRT_LOOKUP("cancel_delayed_work_sync");
 
-	_nvk_msecs_to_jiffies =
-		(nvk_msecs_to_jiffies_fn)NVK_LOOKUP("__msecs_to_jiffies");
-	if (!_nvk_msecs_to_jiffies)
-		_nvk_msecs_to_jiffies =
-			(nvk_msecs_to_jiffies_fn)NVK_LOOKUP("msecs_to_jiffies");
+	_neverc_krt_msecs_to_jiffies =
+		(neverc_krt_msecs_to_jiffies_fn)NEVERC_KRT_LOOKUP("__msecs_to_jiffies");
+	if (!_neverc_krt_msecs_to_jiffies)
+		_neverc_krt_msecs_to_jiffies =
+			(neverc_krt_msecs_to_jiffies_fn)NEVERC_KRT_LOOKUP("msecs_to_jiffies");
 
-	_nvk_ktime_get = (nvk_ktime_get_fn)NVK_LOOKUP("ktime_get");
-	if (!_nvk_ktime_get)
-		_nvk_ktime_get =
-			(nvk_ktime_get_fn)NVK_LOOKUP("ktime_get_mono_fast_ns");
-	_nvk_ktime_get_boot =
-		(nvk_ktime_get_fn)NVK_LOOKUP("ktime_get_boottime");
-	if (!_nvk_ktime_get_boot)
-		_nvk_ktime_get_boot =
-			(nvk_ktime_get_fn)NVK_LOOKUP("ktime_get_boot_fast_ns");
+	_neverc_krt_ktime_get = (neverc_krt_ktime_get_fn)NEVERC_KRT_LOOKUP("ktime_get");
+	if (!_neverc_krt_ktime_get)
+		_neverc_krt_ktime_get =
+			(neverc_krt_ktime_get_fn)NEVERC_KRT_LOOKUP("ktime_get_mono_fast_ns");
+	_neverc_krt_ktime_get_boot =
+		(neverc_krt_ktime_get_fn)NEVERC_KRT_LOOKUP("ktime_get_boottime");
+	if (!_neverc_krt_ktime_get_boot)
+		_neverc_krt_ktime_get_boot =
+			(neverc_krt_ktime_get_fn)NEVERC_KRT_LOOKUP("ktime_get_boot_fast_ns");
 
-	_nvk_timer_inited = 1;
+	_neverc_krt_timer_inited = 1;
 	return 0;
 }
 
-int _nvk_hrt_patch_fn(u8 *storage, unsigned long fn)
+int _neverc_krt_hrt_patch_fn(u8 *storage, unsigned long fn)
 {
 	int off;
 	for (off = 16; off <= 64; off += 8) {
@@ -74,59 +74,59 @@ int _nvk_hrt_patch_fn(u8 *storage, unsigned long fn)
 	return 0;
 }
 
-int nvk_timer_setup(struct nvk_timer *t,
-			   void (*cb)(struct nvk_timer *))
+int neverc_krt_timer_setup(struct neverc_krt_timer *t,
+			   void (*cb)(struct neverc_krt_timer *))
 {
 	if (!t || !cb) return -1;
-	if (!_nvk_hrtimer_init) return -2;
+	if (!_neverc_krt_hrtimer_init) return -2;
 	__builtin_memset(t, 0, sizeof(*t));
 	t->callback = cb;
-	_nvk_hrtimer_init(t->storage, NVK_CLOCK_MONOTONIC, NVK_HRTIMER_REL);
-	_nvk_hrt_patch_fn(t->storage, (unsigned long)_nvk_hrt_trampoline);
+	_neverc_krt_hrtimer_init(t->storage, NEVERC_KRT_CLOCK_MONOTONIC, NEVERC_KRT_HRTIMER_REL);
+	_neverc_krt_hrt_patch_fn(t->storage, (unsigned long)_neverc_krt_hrt_trampoline);
 	t->armed = 0;
 	return 0;
 }
 
-int nvk_timer_start_ns(struct nvk_timer *t, s64 nsecs)
+int neverc_krt_timer_start_ns(struct neverc_krt_timer *t, s64 nsecs)
 {
-	if (!t || !_nvk_hrtimer_start) return -1;
+	if (!t || !_neverc_krt_hrtimer_start) return -1;
 	t->armed = 1;
-	return _nvk_hrtimer_start(t->storage, nsecs, NVK_HRTIMER_REL);
+	return _neverc_krt_hrtimer_start(t->storage, nsecs, NEVERC_KRT_HRTIMER_REL);
 }
 
-int nvk_timer_start_ms(struct nvk_timer *t, unsigned int ms)
+int neverc_krt_timer_start_ms(struct neverc_krt_timer *t, unsigned int ms)
 {
-	return nvk_timer_start_ns(t, (s64)ms * 1000000LL);
+	return neverc_krt_timer_start_ns(t, (s64)ms * 1000000LL);
 }
 
-int nvk_timer_start_us(struct nvk_timer *t, unsigned int us)
+int neverc_krt_timer_start_us(struct neverc_krt_timer *t, unsigned int us)
 {
-	return nvk_timer_start_ns(t, (s64)us * 1000LL);
+	return neverc_krt_timer_start_ns(t, (s64)us * 1000LL);
 }
 
-int nvk_timer_cancel(struct nvk_timer *t)
+int neverc_krt_timer_cancel(struct neverc_krt_timer *t)
 {
-	if (!t || !_nvk_hrtimer_cancel) return -1;
+	if (!t || !_neverc_krt_hrtimer_cancel) return -1;
 	t->armed = 0;
-	return _nvk_hrtimer_cancel(t->storage);
+	return _neverc_krt_hrtimer_cancel(t->storage);
 }
 
-u64 nvk_ktime_get_ns(void)
+u64 neverc_krt_ktime_get_ns(void)
 {
-	return _nvk_ktime_get ? _nvk_ktime_get() : 0;
+	return _neverc_krt_ktime_get ? _neverc_krt_ktime_get() : 0;
 }
 
-u64 nvk_ktime_get_boot_ns(void)
+u64 neverc_krt_ktime_get_boot_ns(void)
 {
-	return _nvk_ktime_get_boot ? _nvk_ktime_get_boot() : 0;
+	return _neverc_krt_ktime_get_boot ? _neverc_krt_ktime_get_boot() : 0;
 }
 
-void nvk_udelay(unsigned int us)
+void neverc_krt_udelay(unsigned int us)
 {
-	u64 start = nvk_arch_counter();
-	u32 freq = nvk_arch_counter_freq();
+	u64 start = neverc_krt_arch_counter();
+	u32 freq = neverc_krt_arch_counter_freq();
 	u64 target = (u64)us * freq / 1000000ULL;
-	while (nvk_arch_counter() - start < target)
+	while (neverc_krt_arch_counter() - start < target)
 		__asm__ __volatile__("yield" ::: "memory");
 }
 

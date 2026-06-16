@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_PRINTK_H
-#define _NVK_LINUX_PRINTK_H
+#ifndef _NEVERC_KRT_LINUX_PRINTK_H
+#define _NEVERC_KRT_LINUX_PRINTK_H
 
 #include <linux/types.h>
 
-typedef int (*nvk_printk_fn)(const char *fmt, ...);
-extern nvk_printk_fn nvk_printk;
+typedef int (*neverc_krt_printk_fn)(const char *fmt, ...);
+extern neverc_krt_printk_fn neverc_krt_printk;
 
 #define KERN_SOH "\001"
 #define KERN_EMERG KERN_SOH "0"
@@ -19,7 +19,7 @@ extern nvk_printk_fn nvk_printk;
 #define KERN_DEFAULT ""
 #define KERN_CONT KERN_SOH "c"
 
-#define printk(fmt, ...) (nvk_printk ? nvk_printk(fmt, ##__VA_ARGS__) : 0)
+#define printk(fmt, ...) (neverc_krt_printk ? neverc_krt_printk(fmt, ##__VA_ARGS__) : 0)
 #define pr_emerg(fmt, ...) printk(KERN_EMERG fmt, ##__VA_ARGS__)
 #define pr_alert(fmt, ...) printk(KERN_ALERT fmt, ##__VA_ARGS__)
 #define pr_crit(fmt, ...) printk(KERN_CRIT fmt, ##__VA_ARGS__)
@@ -30,4 +30,4 @@ extern nvk_printk_fn nvk_printk;
 #define pr_debug(fmt, ...) printk(KERN_DEBUG fmt, ##__VA_ARGS__)
 #define pr_cont(fmt, ...) printk(KERN_CONT fmt, ##__VA_ARGS__)
 
-#endif /* _NVK_LINUX_PRINTK_H */
+#endif /* _NEVERC_KRT_LINUX_PRINTK_H */

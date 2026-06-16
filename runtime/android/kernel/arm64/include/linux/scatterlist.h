@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_SCATTERLIST_H
-#define _NVK_LINUX_SCATTERLIST_H
+#ifndef _NEVERC_KRT_LINUX_SCATTERLIST_H
+#define _NEVERC_KRT_LINUX_SCATTERLIST_H
 
 #include <linux/types.h>
 
@@ -29,4 +29,4 @@ struct scatterlist *sg_next(struct scatterlist *sg);
 int sg_alloc_table(struct sg_table *table, unsigned int nents, gfp_t gfp_mask);
 void sg_free_table(struct sg_table *table);
 
-#endif /* _NVK_LINUX_SCATTERLIST_H */
+#endif /* _NEVERC_KRT_LINUX_SCATTERLIST_H */

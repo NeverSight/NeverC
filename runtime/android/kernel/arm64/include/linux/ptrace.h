@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_PTRACE_H
-#define _NVK_LINUX_PTRACE_H
+#ifndef _NEVERC_KRT_LINUX_PTRACE_H
+#define _NEVERC_KRT_LINUX_PTRACE_H
 
 #include <linux/types.h>
 #include <asm/ptrace.h>

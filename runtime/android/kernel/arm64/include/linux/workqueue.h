@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_WORKQUEUE_H
-#define _NVK_LINUX_WORKQUEUE_H
+#ifndef _NEVERC_KRT_LINUX_WORKQUEUE_H
+#define _NEVERC_KRT_LINUX_WORKQUEUE_H
 
 #include <linux/types.h>
 #include <linux/list.h>
@@ -79,4 +79,4 @@ void flush_workqueue(struct workqueue_struct *wq);
 bool mod_delayed_work(struct workqueue_struct *wq,
 		      struct delayed_work *dwork, unsigned long delay);
 
-#endif /* _NVK_LINUX_WORKQUEUE_H */
+#endif /* _NEVERC_KRT_LINUX_WORKQUEUE_H */

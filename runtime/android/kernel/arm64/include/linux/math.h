@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_MATH_H
-#define _NVK_LINUX_MATH_H
+#ifndef _NEVERC_KRT_LINUX_MATH_H
+#define _NEVERC_KRT_LINUX_MATH_H
 
 #include <linux/align.h>
 
@@ -22,4 +22,4 @@
 	__x < 0 ? -__x : __x;                                                \
 })
 
-#endif /* _NVK_LINUX_MATH_H */
+#endif /* _NEVERC_KRT_LINUX_MATH_H */

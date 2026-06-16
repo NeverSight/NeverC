@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_ATOMIC_H
-#define _NVK_LINUX_ATOMIC_H
+#ifndef _NEVERC_KRT_LINUX_ATOMIC_H
+#define _NEVERC_KRT_LINUX_ATOMIC_H
 
 #include <linux/types.h>
 #include <linux/compiler.h>
@@ -95,4 +95,4 @@ static __always_inline void atomic64_dec(atomic64_t *v)
 	(void)atomic64_add_return(-1, v);
 }
 
-#endif /* _NVK_LINUX_ATOMIC_H */
+#endif /* _NEVERC_KRT_LINUX_ATOMIC_H */

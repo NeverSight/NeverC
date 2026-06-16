@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef NVK_CRYPTO_H
-#define NVK_CRYPTO_H
+#ifndef NEVERC_KRT_CRYPTO_H
+#define NEVERC_KRT_CRYPTO_H
 
 #include <linux/types.h>
 #include <nvk_rt.h>
@@ -11,7 +11,7 @@
  * Secure zeroing — prevents the compiler from optimizing away dead stores
  * to sensitive buffers (keys, intermediate hashes).
  */
-static __always_inline void _nvk_secure_zero(void *p, size_t n)
+static __always_inline void _neverc_krt_secure_zero(void *p, size_t n)
 {
 	volatile unsigned char *vp = (volatile unsigned char *)p;
 	size_t i;
@@ -23,13 +23,13 @@ static __always_inline void _nvk_secure_zero(void *p, size_t n)
 /*  SHA-256  (FIPS 180-4)                                             */
 /* ------------------------------------------------------------------ */
 
-struct nvk_sha256_ctx {
+struct neverc_krt_sha256_ctx {
 	u32 state[8];
 	u64 count;
 	u8  buf[64];
 };
 
-static const u32 _nvk_sha256_k[64] = {
+static const u32 _neverc_krt_sha256_k[64] = {
 	0x428A2F98U, 0x71374491U, 0xB5C0FBCFU, 0xE9B5DBA5U,
 	0x3956C25BU, 0x59F111F1U, 0x923F82A4U, 0xAB1C5ED5U,
 	0xD807AA98U, 0x12835B01U, 0x243185BEU, 0x550C7DC3U,
@@ -48,56 +48,56 @@ static const u32 _nvk_sha256_k[64] = {
 	0x90BEFFFAU, 0xA4506CEBU, 0xBEF9A3F7U, 0xC67178F2U,
 };
 
-static __always_inline u32 _nvk_ror32(u32 v, int n)
+static __always_inline u32 _neverc_krt_ror32(u32 v, int n)
 { return (v >> n) | (v << (32 - n)); }
 
-static __always_inline u32 _nvk_sha_ch(u32 x, u32 y, u32 z)
+static __always_inline u32 _neverc_krt_sha_ch(u32 x, u32 y, u32 z)
 { return (x & y) ^ (~x & z); }
 
-static __always_inline u32 _nvk_sha_maj(u32 x, u32 y, u32 z)
+static __always_inline u32 _neverc_krt_sha_maj(u32 x, u32 y, u32 z)
 { return (x & y) ^ (x & z) ^ (y & z); }
 
-static __always_inline u32 _nvk_sha_s0(u32 x)
-{ return _nvk_ror32(x, 2) ^ _nvk_ror32(x, 13) ^ _nvk_ror32(x, 22); }
+static __always_inline u32 _neverc_krt_sha_s0(u32 x)
+{ return _neverc_krt_ror32(x, 2) ^ _neverc_krt_ror32(x, 13) ^ _neverc_krt_ror32(x, 22); }
 
-static __always_inline u32 _nvk_sha_s1(u32 x)
-{ return _nvk_ror32(x, 6) ^ _nvk_ror32(x, 11) ^ _nvk_ror32(x, 25); }
+static __always_inline u32 _neverc_krt_sha_s1(u32 x)
+{ return _neverc_krt_ror32(x, 6) ^ _neverc_krt_ror32(x, 11) ^ _neverc_krt_ror32(x, 25); }
 
-static __always_inline u32 _nvk_sha_g0(u32 x)
-{ return _nvk_ror32(x, 7) ^ _nvk_ror32(x, 18) ^ (x >> 3); }
+static __always_inline u32 _neverc_krt_sha_g0(u32 x)
+{ return _neverc_krt_ror32(x, 7) ^ _neverc_krt_ror32(x, 18) ^ (x >> 3); }
 
-static __always_inline u32 _nvk_sha_g1(u32 x)
-{ return _nvk_ror32(x, 17) ^ _nvk_ror32(x, 19) ^ (x >> 10); }
+static __always_inline u32 _neverc_krt_sha_g1(u32 x)
+{ return _neverc_krt_ror32(x, 17) ^ _neverc_krt_ror32(x, 19) ^ (x >> 10); }
 
-static __always_inline u32 _nvk_be32(const u8 *p)
+static __always_inline u32 _neverc_krt_be32(const u8 *p)
 {
 	return ((u32)p[0] << 24) | ((u32)p[1] << 16) |
 	       ((u32)p[2] << 8)  | (u32)p[3];
 }
 
-static __always_inline void _nvk_put_be32(u8 *p, u32 v)
+static __always_inline void _neverc_krt_put_be32(u8 *p, u32 v)
 {
 	p[0] = (u8)(v >> 24); p[1] = (u8)(v >> 16);
 	p[2] = (u8)(v >> 8);  p[3] = (u8)v;
 }
 
-void _nvk_sha256_transform(u32 *state, const u8 *block);
+void _neverc_krt_sha256_transform(u32 *state, const u8 *block);
 
 
-void nvk_sha256_init(struct nvk_sha256_ctx *ctx);
+void neverc_krt_sha256_init(struct neverc_krt_sha256_ctx *ctx);
 
 
-void nvk_sha256_update(struct nvk_sha256_ctx *ctx,
+void neverc_krt_sha256_update(struct neverc_krt_sha256_ctx *ctx,
 			      const void *data, size_t len);
 
 
-void nvk_sha256_final(struct nvk_sha256_ctx *ctx, u8 *digest);
+void neverc_krt_sha256_final(struct neverc_krt_sha256_ctx *ctx, u8 *digest);
 
 
-void nvk_sha256(const void *data, size_t len, u8 *digest);
+void neverc_krt_sha256(const void *data, size_t len, u8 *digest);
 
 
-int nvk_sha256_eq(const u8 *a, const u8 *b);
+int neverc_krt_sha256_eq(const u8 *a, const u8 *b);
 
 
 
@@ -105,9 +105,9 @@ int nvk_sha256_eq(const u8 *a, const u8 *b);
 /*  HMAC-SHA256  (RFC 2104)                                           */
 /* ------------------------------------------------------------------ */
 
-#define NVK_HMAC_SHA256_LEN  32
+#define NEVERC_KRT_HMAC_SHA256_LEN  32
 
-void nvk_hmac_sha256(const void *key, size_t key_len,
+void neverc_krt_hmac_sha256(const void *key, size_t key_len,
 			    const void *data, size_t data_len,
 			    u8 *mac);
 
@@ -117,46 +117,46 @@ void nvk_hmac_sha256(const void *key, size_t key_len,
 /*  ChaCha20  (RFC 8439) — constant-time stream cipher                */
 /* ------------------------------------------------------------------ */
 
-struct nvk_chacha20_ctx {
+struct neverc_krt_chacha20_ctx {
 	u32 state[16];
 };
 
-static __always_inline u32 _nvk_rotl32(u32 v, int n)
+static __always_inline u32 _neverc_krt_rotl32(u32 v, int n)
 { return (v << n) | (v >> (32 - n)); }
 
-#define _NVK_QR(a, b, c, d)                  \
+#define _NEVERC_KRT_QR(a, b, c, d)                  \
 	do {                                  \
-		a += b; d ^= a; d = _nvk_rotl32(d, 16); \
-		c += d; b ^= c; b = _nvk_rotl32(b, 12); \
-		a += b; d ^= a; d = _nvk_rotl32(d, 8);  \
-		c += d; b ^= c; b = _nvk_rotl32(b, 7);  \
+		a += b; d ^= a; d = _neverc_krt_rotl32(d, 16); \
+		c += d; b ^= c; b = _neverc_krt_rotl32(b, 12); \
+		a += b; d ^= a; d = _neverc_krt_rotl32(d, 8);  \
+		c += d; b ^= c; b = _neverc_krt_rotl32(b, 7);  \
 	} while (0)
 
-static __always_inline u32 _nvk_le32(const u8 *p)
+static __always_inline u32 _neverc_krt_le32(const u8 *p)
 {
 	return (u32)p[0] | ((u32)p[1] << 8) |
 	       ((u32)p[2] << 16) | ((u32)p[3] << 24);
 }
 
-static __always_inline void _nvk_put_le32(u8 *p, u32 v)
+static __always_inline void _neverc_krt_put_le32(u8 *p, u32 v)
 {
 	p[0] = (u8)v; p[1] = (u8)(v >> 8);
 	p[2] = (u8)(v >> 16); p[3] = (u8)(v >> 24);
 }
 
-void nvk_chacha20_init(struct nvk_chacha20_ctx *ctx,
+void neverc_krt_chacha20_init(struct neverc_krt_chacha20_ctx *ctx,
 			      const u8 key[32], const u8 nonce[12],
 			      u32 counter);
 
 
-void _nvk_chacha20_block(const u32 *input, u8 *output);
+void _neverc_krt_chacha20_block(const u32 *input, u8 *output);
 
 
-void nvk_chacha20_crypt(struct nvk_chacha20_ctx *ctx,
+void neverc_krt_chacha20_crypt(struct neverc_krt_chacha20_ctx *ctx,
 			       void *out, const void *in, size_t len);
 
 
-void nvk_chacha20_encrypt(const u8 key[32], const u8 nonce[12],
+void neverc_krt_chacha20_encrypt(const u8 key[32], const u8 nonce[12],
 				 u32 counter,
 				 void *out, const void *in, size_t len);
 
@@ -166,8 +166,8 @@ void nvk_chacha20_encrypt(const u8 key[32], const u8 nonce[12],
 /*  Module self-integrity verification                                */
 /* ------------------------------------------------------------------ */
 
-int nvk_crypto_verify_region(const void *addr, size_t len,
+int neverc_krt_crypto_verify_region(const void *addr, size_t len,
 				    const u8 expected_hash[32]);
 
 
-#endif /* NVK_CRYPTO_H */
+#endif /* NEVERC_KRT_CRYPTO_H */

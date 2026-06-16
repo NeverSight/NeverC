@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_SIGNAL_H
-#define _NVK_LINUX_SIGNAL_H
+#ifndef _NEVERC_KRT_LINUX_SIGNAL_H
+#define _NEVERC_KRT_LINUX_SIGNAL_H
 
 #include <linux/types.h>
 
@@ -30,4 +30,4 @@ int send_sig(int sig, struct task_struct *t, int priv);
 int send_sig_info(int sig, void *info, struct task_struct *t);
 int force_sig(int sig);
 
-#endif /* _NVK_LINUX_SIGNAL_H */
+#endif /* _NEVERC_KRT_LINUX_SIGNAL_H */

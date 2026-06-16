@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _NVK_LINUX_DMA_MAPPING_H
-#define _NVK_LINUX_DMA_MAPPING_H
+#ifndef _NEVERC_KRT_LINUX_DMA_MAPPING_H
+#define _NEVERC_KRT_LINUX_DMA_MAPPING_H
 
 #include <linux/types.h>
 #include <linux/device.h>
@@ -24,4 +24,4 @@ int dma_set_mask_and_coherent(struct device *dev, u64 mask);
 
 #define DMA_BIT_MASK(n) (((n) == 64) ? ~0ULL : ((1ULL << (n)) - 1))
 
-#endif /* _NVK_LINUX_DMA_MAPPING_H */
+#endif /* _NEVERC_KRT_LINUX_DMA_MAPPING_H */
