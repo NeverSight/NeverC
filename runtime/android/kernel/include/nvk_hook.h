@@ -322,18 +322,13 @@ enum nvk_hook_err {
 	NVK_HOOK_E_CONFLICT = -6,
 };
 
-static __always_inline const char *nvk_hook_strerror(int err)
+static __always_inline int nvk_hook_strerror(int err, char *buf, int sz)
 {
-	switch (err) {
-	case NVK_HOOK_OK:         return "ok";
-	case NVK_HOOK_E_NOINIT:   return "engine not initialized";
-	case NVK_HOOK_E_SHORT:    return "target function too short";
-	case NVK_HOOK_E_RELOC:    return "instruction relocation failed";
-	case NVK_HOOK_E_ALLOC:    return "trampoline alloc failed";
-	case NVK_HOOK_E_PATCH:    return "code patch failed";
-	case NVK_HOOK_E_CONFLICT: return "target already hooked/kprobed";
-	default:                  return "unknown";
-	}
+	if (!buf || sz < 4) return -1;
+	char c0 = 'E', c1 = '0' + ((-err) / 10), c2 = '0' + ((-err) % 10);
+	if (err == 0) { buf[0] = '0'; buf[1] = '\0'; return 1; }
+	buf[0] = c0; buf[1] = c1; buf[2] = c2; buf[3] = '\0';
+	return 3;
 }
 
 #define NVK_HOOK_MAX_PATCH   6   /* BTI + PAC + LDR + BR + .quad(2) */
@@ -612,9 +607,18 @@ static void _nvk_pool_free(u32 *ptr)
 			}
 			if (--_nvk_pool[i].refcnt <= 0) {
 				u32 *to_free = _nvk_pool[i].base;
+				int sz = _nvk_pool[i].used;
 				_nvk_pool[i].magic = 0;
 				_nvk_pool[i] = _nvk_pool[--_nvk_pool_count];
 				_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
+				int w;
+				for (w = 0; w < sz / 4; w++)
+					to_free[w] = 0xD4200000U | (0xDEADU << 5);
+				_nvk_dcache_clean((unsigned long)to_free,
+						  (unsigned long)to_free + sz);
+				if (_nvk_flushic)
+					_nvk_flushic((unsigned long)to_free,
+						     (unsigned long)to_free + sz);
 				if (_nvk_modfree) _nvk_modfree(to_free);
 				return;
 			}
@@ -847,18 +851,14 @@ enum nvk_scan_result {
 	NVK_SCAN_KPROBE_ACTIVE   =  3,
 };
 
-static __always_inline const char *nvk_scan_strerror(int r)
+static __always_inline int nvk_scan_strerror(int r, char *buf, int sz)
 {
-	switch (r) {
-	case NVK_SCAN_OK:             return "hookable";
-	case NVK_SCAN_TOO_SHORT:      return "function too short";
-	case NVK_SCAN_HAZARDOUS:      return "contains hazardous instructions";
-	case NVK_SCAN_UNRELOCATABLE:  return "unrelocatable pc-relative insn";
-	case NVK_SCAN_ALREADY_HOOKED: return "already hooked";
-	case NVK_SCAN_FTRACE_ACTIVE:  return "ftrace active at entry";
-	case NVK_SCAN_KPROBE_ACTIVE:  return "kprobe active at entry";
-	default:                      return "unknown";
-	}
+	if (!buf || sz < 4) return -1;
+	char c0 = 'S', c1, c2;
+	if (r >= 0) { c1 = '+'; c2 = '0' + (r % 10); }
+	else        { c1 = '-'; c2 = '0' + ((-r) % 10); }
+	buf[0] = c0; buf[1] = c1; buf[2] = c2; buf[3] = '\0';
+	return 3;
 }
 
 static enum nvk_scan_result nvk_hook_scan(void *target)
@@ -1546,6 +1546,34 @@ struct nvk_hook_batch {
 	void           **orig;
 	int              result;
 };
+
+struct nvk_hook_ctx_batch {
+	struct nvk_hook_ctx *hook;
+	void               *target;
+	nvk_ctx_handler_t   handler;
+	void              **call_orig;
+	int                 result;
+};
+
+static int nvk_hook_install_ctx_batch(struct nvk_hook_ctx_batch *batch,
+				      int count)
+{
+	int i, ok = 0;
+	for (i = 0; i < count; i++) {
+		batch[i].result = nvk_hook_install_ctx(
+			batch[i].hook, batch[i].target,
+			batch[i].handler, batch[i].call_orig);
+		if (batch[i].result == NVK_HOOK_OK) ok++;
+	}
+	if (ok > 0 && ok < count) {
+		for (i = 0; i < count; i++) {
+			if (batch[i].result == NVK_HOOK_OK)
+				nvk_hook_remove_ctx(batch[i].hook);
+		}
+		return -1;
+	}
+	return ok == count ? 0 : -1;
+}
 
 static int nvk_hook_install_batch(struct nvk_hook_batch *batch, int count)
 {

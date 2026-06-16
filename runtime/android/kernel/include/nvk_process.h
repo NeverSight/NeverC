@@ -118,7 +118,7 @@ static const char *nvk_task_comm(struct task_struct *task)
 		struct task_struct *init = _nvk_init_task;
 		const unsigned char *p = (const unsigned char *)init;
 		unsigned long i;
-		for (i = 0x300; i < 0x1000; i++) {
+		for (i = 0x200; i < 0x1400; i++) {
 			if (p[i] == 's' && p[i+1] == 'w' &&
 			    p[i+2] == 'a' && p[i+3] == 'p' &&
 			    p[i+4] == 'p' && p[i+5] == 'e' &&
@@ -150,7 +150,7 @@ static int nvk_for_each_task(nvk_task_callback_t callback, void *data)
 	if (_nvk_off_tasks == 0) {
 		const unsigned char *p = (const unsigned char *)init;
 		unsigned long i;
-		for (i = 0x300; i < 0xA00; i += 8) {
+		for (i = 0x200; i < 0xE00; i += 8) {
 			unsigned long next = *(unsigned long *)(p + i);
 			unsigned long prev = *(unsigned long *)(p + i + 8);
 			if (next <= 0xFFFF000000000000UL ||
@@ -267,7 +267,7 @@ static int nvk_is_current_root(void)
 
 	unsigned char *task = (unsigned char *)current;
 	unsigned long i;
-	for (i = 0x500; i < 0x800; i += 8) {
+	for (i = 0x400; i < 0xC00; i += 8) {
 		unsigned long v;
 		if (nvk_mem_read(&v, task + i, 8)) continue;
 		if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {

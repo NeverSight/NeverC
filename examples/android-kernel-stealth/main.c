@@ -52,7 +52,7 @@ static int nvk_stealth_init(void)
 
 	ret = nvk_hook_init();
 	if (ret) {
-		nvk_log_err("hook init: %s\n", nvk_hook_strerror(ret));
+		nvk_log_err("hook init: %d\n", ret);
 		return ret;
 	}
 
@@ -62,8 +62,7 @@ static int nvk_stealth_init(void)
 				       target, (void *)hook_find_module,
 				       (void **)&orig_find_module);
 		if (ret)
-			nvk_log_warn("find_module hook: %s\n",
-				     nvk_hook_strerror(ret));
+			nvk_log_warn("find_module hook: %d\n", ret);
 		else
 			nvk_log_info("find_module hooked\n");
 	}

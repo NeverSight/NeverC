@@ -36,33 +36,33 @@ with `-DNVK_KERNEL=510|515|601|606|612` (default `510` = android12-5.10).
 ```
 runtime/android/kernel/
   include/                     # NeverC kernel SDK (24 headers)
-    nvkmod.h                   #   module macros, kprobe/kallsyms bootstrap
-    nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.12) + SDK version
-    nvk.h                      #   all-in-one include (initializes all subsystems)
-    nvk_hook.h                 #   arm64 inline-hook engine v2 (simple + context + FP-SIMD + kCFI + ftrace fallback)
-    nvk_mem.h                  #   safe memory read/write, pattern scan, write-protection bypass, MTE-aware
+    nvkmod.h                   #   module entry point, kprobe bootstrap, NVK_BOOTSTRAP()
+    nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.12)
+    nvk.h                      #   all-in-one include (initializes all subsystems, auto vermagic fix)
+    nvk_hook.h                 #   arm64 inline-hook engine v2 (simple + context + batch + chain + ftrace + kCFI)
+    nvk_mem.h                  #   safe memory read/write, pattern scan (BMH), write-protection bypass
     nvk_syscall.h              #   sys_call_table operations + arm64 syscall number table
-    nvk_process.h              #   process enumeration, PID lookup, task walking
+    nvk_process.h              #   process enumeration, PID lookup, task walking (6.12-safe ranges)
     nvk_cred.h                 #   credential manipulation (root, uid/gid, capabilities)
-    nvk_selinux.h              #   SELinux enforcement control + AVC/inode bypass hooks
-    nvk_hide.h                 #   module concealment (list + sysfs + /proc/modules + dmesg + PID + mount + maps filter)
-    nvk_log.h                  #   leveled logging (silent/error/warn/info/debug/trace) + ratelimit + hexdump
+    nvk_selinux.h              #   SELinux enforcement control + AVC/inode/capable bypass
+    nvk_hide.h                 #   module concealment (list + sysfs + proc + dmesg + PID + mount + maps)
+    nvk_log.h                  #   leveled logging (silent/error/warn/info/debug/trace) + ratelimit
     nvk_thread.h               #   kernel thread management (kthread create/stop/sleep)
-    nvk_netlink.h              #   user↔kernel netlink IPC channel + auth
+    nvk_netlink.h              #   user↔kernel netlink IPC channel
     nvk_file.h                 #   kernel file I/O (filp_open/kernel_read/write)
-    nvk_addr.h                 #   virtual↔physical address translation, page table walking
-    nvk_compat.h               #   runtime kernel version detection + feature probing (PAC/BTI/MTE/SVE/CFI)
-    nvk_anti.h                 #   environment detection + integrity verification + watchdog + HW CRC32
+    nvk_addr.h                 #   virtual↔physical address, page table walking, KASLR offset
+    nvk_compat.h               #   runtime kernel version detection + feature probing + vermagic patching
+    nvk_anti.h                 #   environment detection + integrity watchdog + HW CRC32
     nvk_vma.h                  #   VMA operations, process memory map inspection
     nvk_su.h                   #   root shell provisioning
-    nvk_ksyms.h                #   extended symbol table operations
+    nvk_ksyms.h                #   extended symbol table operations (walk, prefix search, info)
     nvk_seccomp.h              #   seccomp filter inspection and bypass
     nvk_pmu.h                  #   ARM64 PMU counter access
-    nvk_inject.h               #   remote process memory injection
+    nvk_inject.h               #   remote process memory injection (I-cache coherent)
     nvk_ns.h                   #   PID namespace operations
   arm64/
-    include/                   # minimal kernel headers (110 total)
-      linux/*.h                #   99+ headers: types, kernel, printk, list, slab, fs, ...
+    include/                   # minimal kernel headers (107 total)
+      linux/*.h                #   99 headers: types, kernel, printk, list, slab, fs, ...
       asm/*.h                  #   8 headers: barrier, current, page, ptrace, syscall, ...
     lib/                       # optional libclang_rt.builtins-aarch64.a
   tools/
@@ -92,7 +92,7 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | Header | Purpose |
 |--------|---------|
 | `nvkmod.h` | Module entry point, kprobe bootstrap, `NVK_BOOTSTRAP()`, `NVK_DEFINE_MODULE()` |
-| `nvk_hook.h` | arm64 inline-hook engine v2 — simple/context/FP-SIMD modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + SMP-safe DMB barriers + atomic stop_machine patch + D-cache→I-cache coherent + deep quiescence unhook + IRQ-safe trampoline pool (32 pages) + ftrace fallback + hook chain + pause/resume + 6.12 execmem support |
+| `nvk_hook.h` | arm64 inline-hook engine v2 — simple/context/batch modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + SMP-safe DMB barriers + atomic stop_machine patch + D-cache→I-cache coherent + deep quiescence unhook + poison-on-free pool (32 pages) + ftrace fallback + hook chain + pause/resume + 6.12 execmem support |
 | `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` — MTE-tag-aware, dynamic page size (4K/16K/64K) |
 | `nvk_syscall.h` | `nvk_syscall_replace/restore`, `nvk_syscall_get`, arm64 syscall number definitions |
 | `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
@@ -105,13 +105,13 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_addr.h` | `nvk_virt_to_phys`, `nvk_translate_user`, `nvk_walk_pgtable`, VA bits / page size detection |
 | `nvk_compat.h` | `nvk_kernel_version()`, `NVK_KERNEL_GE(maj,min)`, `nvk_has_pac/bti/mte`, versioned symbol lookup helpers |
 | `nvk_file.h` | `nvk_file_open/read/write/close`, `nvk_file_exists`, `nvk_file_read_all/write_all` |
-| `nvk_anti.h` | Environment detection (emulator, debugger, root, su binary, Magisk/KSU/APatch, SELinux permissive, hook/kprobe tampering), integrity verification, watchdog, ARM64 HW CRC32 accelerated — all detection paths xorstr-encrypted |
+| `nvk_anti.h` | Environment detection (emulator, debugger, root, su binary, Magisk/KSU/APatch, SELinux permissive, hook/kprobe tampering), integrity verification, sealed watchdog, ARM64 HW CRC32 — all detection paths xorstr-encrypted |
 | `nvk_vma.h` | VMA operations (find_vma, walk, read/write remote), process memory map inspection |
 | `nvk_su.h` | Root shell provisioning, su daemon lifecycle |
 | `nvk_ksyms.h` | Extended symbol operations (`nvk_ksyms_walk`, `nvk_ksyms_for_each`, prefix search, function size) |
 | `nvk_seccomp.h` | Seccomp filter inspection and bypass (per-process mode read/clear/set) |
 | `nvk_pmu.h` | ARM64 PMU counter access (cycle/instruction/cache/branch counters) |
-| `nvk_inject.h` | Remote process memory injection (shellcode, code cave discovery) |
+| `nvk_inject.h` | Remote process memory injection (shellcode, code cave discovery, I-cache coherent) |
 | `nvk_ns.h` | PID namespace operations (cross-namespace PID translation, nsproxy) |
 
 All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xorstr.

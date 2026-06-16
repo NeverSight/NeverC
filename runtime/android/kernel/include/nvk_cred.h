@@ -102,7 +102,7 @@ static int nvk_cred_get_ids(struct task_struct *task,
 	if (!_nvk_off_cred) {
 		const unsigned char *tp = (const unsigned char *)task;
 		unsigned long i;
-		for (i = 0x500; i < 0x800; i += 8) {
+		for (i = 0x400; i < 0xC00; i += 8) {
 			unsigned long v1, v2;
 			if (nvk_mem_read(&v1, tp + i, 8)) continue;
 			if (nvk_mem_read(&v2, tp + i + 8, 8)) continue;

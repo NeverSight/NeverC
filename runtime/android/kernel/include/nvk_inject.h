@@ -78,7 +78,16 @@ static int nvk_inject_shellcode(struct task_struct *task,
 				     sc->code, code_sz);
 	if (ret) return (int)ret;
 
+	unsigned long line;
+	for (line = target_addr & ~63UL; line < target_addr + code_sz;
+	     line += 64)
+		__asm__ __volatile__("dc cvau, %0" :: "r"(line) : "memory");
 	__asm__ __volatile__("dsb ish" ::: "memory");
+	for (line = target_addr & ~63UL; line < target_addr + code_sz;
+	     line += 64)
+		__asm__ __volatile__("ic ivau, %0" :: "r"(line) : "memory");
+	__asm__ __volatile__("dsb ish" ::: "memory");
+	__asm__ __volatile__("isb" ::: "memory");
 	return 0;
 }
 

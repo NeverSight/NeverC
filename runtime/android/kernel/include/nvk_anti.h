@@ -18,7 +18,7 @@ static int nvk_anti_is_root(void)
 
 	const unsigned char *p = (const unsigned char *)task;
 	unsigned long i;
-	for (i = 0x500; i < 0x800; i += 8) {
+	for (i = 0x400; i < 0xC00; i += 8) {
 		unsigned long v;
 		if (nvk_mem_read(&v, p + i, 8)) continue;
 		if (v < 0xFFFF000000000000UL || v >= 0xFFFFFFFFFFFFF000UL)
@@ -53,7 +53,7 @@ static int nvk_anti_check_caller_uid(u32 expected_uid)
 	unsigned char *task = (unsigned char *)current;
 	unsigned long i;
 
-	for (i = 0x500; i < 0x800; i += 8) {
+	for (i = 0x400; i < 0xC00; i += 8) {
 		unsigned long v;
 		if (nvk_mem_read(&v, task + i, 8)) continue;
 		if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {
