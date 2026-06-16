@@ -165,6 +165,26 @@ ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
   return S.FormCallExpr(nullptr, DeclRef.get(), Loc, Args, EndLoc);
 }
 
+ExprResult semaBuiltinNeverCRandomU64(Sema &S, CallExpr *TheCall) {
+  if (checkArgCount(S, TheCall, 0))
+    return ExprError();
+
+  static uint64_t Counter = 0;
+  uint64_t BaseKey = S.getLangOpts().StringEncryptKey;
+  if (BaseKey == 0) {
+    static uint64_t TimeKey =
+        static_cast<uint64_t>(std::time(nullptr)) * 0x9E3779B97F4A7C15ULL;
+    TimeKey |= 1;
+    BaseKey = TimeKey;
+  }
+  uint64_t Value = BaseKey ^ (++Counter * 0x6C62272E07BB0142ULL);
+
+  SourceLocation Loc = TheCall->getBeginLoc();
+  QualType Ty = S.Context.UnsignedLongLongTy;
+  unsigned Bits = S.Context.getTypeSize(Ty);
+  return IntegerLiteral::Create(S.Context, llvm::APInt(Bits, Value), Ty, Loc);
+}
+
 bool semaBuiltinMSVCAnnotation(Sema &S, CallExpr *TheCall) {
   // We need at least one argument.
   if (TheCall->getNumArgs() < 1) {

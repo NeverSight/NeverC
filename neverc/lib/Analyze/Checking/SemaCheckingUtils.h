@@ -39,6 +39,8 @@ bool checkBuiltinArgument(::neverc::Sema &S, ::neverc::CallExpr *E,
 bool semaBuiltinAnnotation(::neverc::Sema &S, ::neverc::CallExpr *TheCall);
 ::neverc::ExprResult semaBuiltinNeverCXorstr(::neverc::Sema &S,
                                              ::neverc::CallExpr *TheCall);
+::neverc::ExprResult semaBuiltinNeverCRandomU64(::neverc::Sema &S,
+                                                ::neverc::CallExpr *TheCall);
 bool semaBuiltinMSVCAnnotation(::neverc::Sema &S, ::neverc::CallExpr *TheCall);
 bool semaBuiltinFunctionStart(::neverc::Sema &S, ::neverc::CallExpr *TheCall);
 bool semaBuiltinPreserveAI(::neverc::Sema &S, ::neverc::CallExpr *TheCall);
