@@ -2652,6 +2652,13 @@ void addNeverCSpecificFlags(const ArgList &Args, ArgStringList &CmdArgs) {
     CmdArgs.push_back("-target-feature");
     CmdArgs.push_back("+reserve-x18");
     CmdArgs.push_back("-mgeneral-regs-only");
+    //   * branch protection              GKI uses pac-ret+leaf+bti for all
+    //                                   aarch64 modules.  Push the CC1-level
+    //                                   equivalents so LangOpts/codegen emit
+    //                                   PACIASP/BTI landing pads + module flags.
+    CmdArgs.push_back("-msign-return-address=all");
+    CmdArgs.push_back("-msign-return-address-key=a_key");
+    CmdArgs.push_back("-mbranch-target-enforce");
     CmdArgs.push_back("-fno-strict-aliasing");
     CmdArgs.push_back("-fno-delete-null-pointer-checks");
     CmdArgs.push_back("-fno-common");
