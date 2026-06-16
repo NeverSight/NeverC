@@ -63,20 +63,23 @@ static __always_inline unsigned long _nvk_xor_opaque(unsigned long a,
 /*
  * Per-build cache seed.
  *
- * -DNVK_CACHE_SEED=0x...  → use that (build system injects a random u64).
- * Otherwise              → auto-derive from __TIME__+__DATE__ (changes
- *                           every compilation, ~17 bits of entropy).
- *
- * The seed is mixed into the runtime key derivation so that identical
- * binaries loaded at the same address still produce different cache keys.
+ * Priority:
+ *   1. -DNVK_CACHE_SEED=0x...  (build system injects explicit seed)
+ *   2. __builtin_neverc_random_u64() (NeverC compiler: full 64-bit entropy,
+ *      unique per call site per compilation)
+ *   3. __TIME__+__DATE__ fallback (~17 bits, changes every second)
  */
 #ifndef NVK_CACHE_SEED
-#define _NVK_CT(s, i) ((unsigned long)((unsigned char)(s)[i]))
-#define NVK_CACHE_SEED (                                                      \
+#  if __has_builtin(__builtin_neverc_random_u64)
+#    define NVK_CACHE_SEED ((unsigned long)__builtin_neverc_random_u64())
+#  else
+#    define _NVK_CT(s, i) ((unsigned long)((unsigned char)(s)[i]))
+#    define NVK_CACHE_SEED (                                                  \
 	(_NVK_CT(__TIME__, 0) << 56) | (_NVK_CT(__TIME__, 1) << 48) |        \
 	(_NVK_CT(__TIME__, 3) << 40) | (_NVK_CT(__TIME__, 4) << 32) |        \
 	(_NVK_CT(__TIME__, 6) << 24) | (_NVK_CT(__TIME__, 7) << 16) |        \
 	(_NVK_CT(__DATE__, 4) <<  8) | (_NVK_CT(__DATE__, 5)      ))
+#  endif
 #endif
 
 static __always_inline void _nvk_cache_key_init(void)
