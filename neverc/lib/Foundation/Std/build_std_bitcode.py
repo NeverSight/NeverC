@@ -63,6 +63,7 @@ def main():
             cmd = [
                 args.neverc,
                 "-c", "-emit-llvm", "-O2",
+                "-gline-tables-only",
                 "-fno-builtin-std",
                 "-fno-lto",
                 "-ffreestanding", "-std=gnu11", "-w",
