@@ -1026,13 +1026,73 @@ int neverc_krt_file_spoof_add(const char *path,
 	return 0;
 }
 
+int _neverc_krt_try_dentry_at(unsigned long file_addr, unsigned long off,
+			      unsigned long *out_dentry)
+{
+	unsigned long dentry = 0, name_ptr = 0;
+	if (neverc_krt_mem_read(&dentry, (void *)(file_addr + off), 8))
+		return 0;
+	dentry &= ~(0xFFUL << 56);
+	if (dentry < 0xFFFF000000000000UL ||
+	    dentry >= 0xFFFFFFFFFFFFF000UL)
+		return 0;
+	if (neverc_krt_mem_read(&name_ptr,
+			 (void *)(dentry + _NEVERC_KRT_DENTRY_DNAME_NAME_OFF),
+			 8))
+		return 0;
+	name_ptr &= ~(0xFFUL << 56);
+	if (name_ptr < 0xFFFF000000000000UL)
+		return 0;
+	unsigned char ch;
+	if (neverc_krt_mem_read(&ch, (void *)name_ptr, 1))
+		return 0;
+	if (ch < 0x20 || ch > 0x7E)
+		return 0;
+	*out_dentry = dentry;
+	return 1;
+}
+
+int _neverc_krt_probe_file_dentry_off(void *file)
+{
+	unsigned long addr = (unsigned long)file;
+	unsigned long dentry;
+	unsigned long off;
+
+	unsigned long hint = _neverc_krt_get_file_dentry_off();
+	if (_neverc_krt_try_dentry_at(addr, hint, &dentry)) {
+		__atomic_store_n(&_neverc_krt_file_dentry_off, hint,
+				 __ATOMIC_RELEASE);
+		return 0;
+	}
+
+	static const unsigned long candidates[] = {
+		0x18, 0x48, 0xA0, 0x98, 0x50, 0x40, 0x58, 0x60,
+		0x68, 0x70, 0x78, 0x80, 0x88, 0x90, 0xA8, 0xB0
+	};
+	int i;
+	for (i = 0; i < (int)(sizeof(candidates)/sizeof(candidates[0])); i++) {
+		off = candidates[i];
+		if (off == hint)
+			continue;
+		if (_neverc_krt_try_dentry_at(addr, off, &dentry)) {
+			__atomic_store_n(&_neverc_krt_file_dentry_off, off,
+					 __ATOMIC_RELEASE);
+			return 0;
+		}
+	}
+
+	__atomic_store_n(&_neverc_krt_file_dentry_off, hint,
+			 __ATOMIC_RELEASE);
+	return -1;
+}
+
 int _neverc_krt_file_match_path(void *file, const char *target)
 {
 	unsigned long dentry = 0, name_ptr = 0;
+	unsigned long off = _neverc_krt_get_file_dentry_off();
 
 	if (neverc_krt_mem_read(&dentry,
-			 (void *)((unsigned long)file + _NEVERC_KRT_FILE_DENTRY_OFF),
-			 8))
+			 (void *)((unsigned long)file + off), 8))
 		return 0;
 	dentry &= ~(0xFFUL << 56);
 	if (dentry < 0xFFFF000000000000UL) return 0;
@@ -1061,6 +1121,10 @@ long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
 {
 	long ret;
 	if (!_neverc_krt_orig_vfs_read) return -1;
+
+	if (!__atomic_load_n(&_neverc_krt_file_dentry_off, __ATOMIC_ACQUIRE)
+	    && file)
+		_neverc_krt_probe_file_dentry_off(file);
 
 	ret = _neverc_krt_orig_vfs_read(file, buf, count, pos);
 	if (ret <= 0 || !_neverc_krt_file_spoof_cnt || !_neverc_krt_copy_from_user ||

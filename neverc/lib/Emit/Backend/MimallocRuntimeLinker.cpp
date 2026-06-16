@@ -33,16 +33,26 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
 
   linkModuleOrFail(M, std::move(MimallocMod), "neverc mimalloc runtime");
 
+  GlobalValue::LinkageTypes HelperLinkage = IsPreLink
+      ? GlobalValue::LinkOnceODRLinkage
+      : GlobalValue::InternalLinkage;
+
   for (Function &F : M) {
     if (!MimallocFnNames.count(F.getName()))
       continue;
-    if (!isMallocOverrideSymbol(F.getName()))
-      F.setLinkage(GlobalValue::InternalLinkage);
+    if (!isMallocOverrideSymbol(F.getName())) {
+      F.setLinkage(HelperLinkage);
+      if (IsPreLink)
+        F.setVisibility(GlobalValue::HiddenVisibility);
+    }
   }
 
   for (GlobalVariable &GV : M.globals()) {
-    if (!GV.isDeclaration() && MimallocGlobalNames.count(GV.getName()))
-      GV.setLinkage(GlobalValue::InternalLinkage);
+    if (!GV.isDeclaration() && MimallocGlobalNames.count(GV.getName())) {
+      GV.setLinkage(HelperLinkage);
+      if (IsPreLink)
+        GV.setVisibility(GlobalValue::HiddenVisibility);
+    }
   }
 
   removeFromUsedLists(M, [&](Constant *C) {

@@ -117,14 +117,33 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     return RuntimeGlobalNames.count(GV.getName()) != 0;
   };
 
-  for (Function &F : M)
-    if (IsRuntimeFn(F))
-      F.setLinkage(GlobalValue::InternalLinkage);
-  for (GlobalVariable &GV : M.globals())
-    if (!GV.isDeclaration() && IsRuntimeGlobal(GV))
-      GV.setLinkage(GlobalValue::InternalLinkage);
+  GlobalValue::LinkageTypes NewLinkage = IsPreLink
+      ? GlobalValue::LinkOnceODRLinkage
+      : GlobalValue::InternalLinkage;
 
-  // Mark-and-sweep DCE for runtime symbols.
+  for (Function &F : M)
+    if (IsRuntimeFn(F)) {
+      F.setLinkage(NewLinkage);
+      if (IsPreLink)
+        F.setVisibility(GlobalValue::HiddenVisibility);
+    }
+  for (GlobalVariable &GV : M.globals())
+    if (!GV.isDeclaration() && IsRuntimeGlobal(GV)) {
+      GV.setLinkage(NewLinkage);
+      if (IsPreLink)
+        GV.setVisibility(GlobalValue::HiddenVisibility);
+    }
+
+  if (IsPreLink) {
+    removeFromUsedLists(M, [&](Constant *C) {
+      if (isa<PoisonValue>(C) || isa<UndefValue>(C))
+        return true;
+      return false;
+    });
+    return PreservedAnalyses::none();
+  }
+
+  // Non-LTO path: mark-and-sweep DCE for runtime symbols.
   SmallPtrSet<GlobalValue *, 16> Live;
   SmallVector<GlobalValue *, 32> ReachWorklist;
 

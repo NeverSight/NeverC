@@ -460,36 +460,34 @@ void GenAssemblyHelper::runOptimizationPipeline(
   PassBuilder PB(TM.get(), PTO, PGOOpt, &PIC);
 
   if (LangOpts.BuiltinString) {
-    // Register the linker pass in BOTH hosted and shellcode modes.  In
-    // hosted mode it performs the bitcode merge fast path; in shellcode
-    // mode it auto-detects the legacy source-prelude path and just
-    // stamps `kRuntimeFnAttr` so downstream passes (StringRuntimePass,
-    // future obfuscation) can uniformly identify runtime functions via
-    // `F.hasFnAttribute(kRuntimeFnAttr)` instead of string-prefix matching.
+    bool IsPreLinkStr = CodeGenOpts.PrepareForLTO;
     PB.registerPipelineStartEPCallback(
-        [](ModulePassManager &MPM, OptimizationLevel) {
-          MPM.addPass(StringRuntimeLinkerPass());
+        [IsPreLinkStr](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(StringRuntimeLinkerPass(IsPreLinkStr));
         });
   }
 
   if (LangOpts.BuiltinMimalloc) {
+    bool IsPreLinkMi = CodeGenOpts.PrepareForLTO;
     PB.registerPipelineStartEPCallback(
-        [](ModulePassManager &MPM, OptimizationLevel) {
-          MPM.addPass(MimallocRuntimeLinkerPass());
+        [IsPreLinkMi](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(MimallocRuntimeLinkerPass(IsPreLinkMi));
         });
   }
 
   if (LangOpts.BuiltinStd) {
+    bool IsPreLinkStd = CodeGenOpts.PrepareForLTO;
     PB.registerPipelineStartEPCallback(
-        [](ModulePassManager &MPM, OptimizationLevel) {
-          MPM.addPass(StdRuntimeLinkerPass());
+        [IsPreLinkStd](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(StdRuntimeLinkerPass(IsPreLinkStd));
         });
   }
 
   if (CodeGenOpts.AndroidKernelDriverMode) {
+    bool IsPreLink = CodeGenOpts.PrepareForLTO;
     PB.registerPipelineStartEPCallback(
-        [](ModulePassManager &MPM, OptimizationLevel) {
-          MPM.addPass(NvkKernelRuntimeLinkerPass());
+        [IsPreLink](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(NvkKernelRuntimeLinkerPass(IsPreLink));
         });
   }
 

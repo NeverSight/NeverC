@@ -105,11 +105,14 @@ int neverc_krt_ns_get_info(struct task_struct *task, struct neverc_krt_ns_info *
 
 	void *nsproxy = _neverc_krt_get_nsproxy(task);
 	if (nsproxy) {
+		/* struct nsproxy layout (stable 5.10-6.12):
+		 *   [0] count(4)+pad(4)  [1] uts_ns  [2] ipc_ns
+		 *   [3] mnt_ns  [4] pid_ns_for_children  [5] net_ns */
 		unsigned long *np = (unsigned long *)nsproxy;
-		if (np[1] > 0xFFFF000000000000UL)
-			info->mnt_ns = (void *)np[1];
 		if (np[3] > 0xFFFF000000000000UL)
-			info->net_ns = (void *)np[3];
+			info->mnt_ns = (void *)np[3];
+		if (np[5] > 0xFFFF000000000000UL)
+			info->net_ns = (void *)np[5];
 	}
 
 	return 0;

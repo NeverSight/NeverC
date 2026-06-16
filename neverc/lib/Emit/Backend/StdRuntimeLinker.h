@@ -14,6 +14,11 @@ namespace neverc {
 struct StdRuntimeLinkerPass
     : public llvm::PassInfoMixin<StdRuntimeLinkerPass> {
 
+  bool IsPreLink = false;
+
+  StdRuntimeLinkerPass() = default;
+  explicit StdRuntimeLinkerPass(bool PreLink) : IsPreLink(PreLink) {}
+
   llvm::PreservedAnalyses run(llvm::Module &M,
                               llvm::ModuleAnalysisManager &MAM);
 

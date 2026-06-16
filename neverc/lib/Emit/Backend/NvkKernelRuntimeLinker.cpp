@@ -98,14 +98,41 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     return NvkGlobalNames.count(GV.getName()) != 0;
   };
 
-  for (Function &F : M)
-    if (IsNvkFn(F))
-      F.setLinkage(GlobalValue::InternalLinkage);
-  for (GlobalVariable &GV : M.globals())
-    if (!GV.isDeclaration() && IsNvkGlobal(GV))
-      GV.setLinkage(GlobalValue::InternalLinkage);
+  // In pre-link (auto-lto) mode, use LinkOnceODR so that multiple TUs
+  // sharing the same runtime symbols get merged correctly at LTO link
+  // time.  With InternalLinkage, each TU would get an independent copy
+  // of runtime globals (like _neverc_krt_mem_inited), breaking shared
+  // state across TUs.
+  GlobalValue::LinkageTypes NewLinkage = IsPreLink
+      ? GlobalValue::LinkOnceODRLinkage
+      : GlobalValue::InternalLinkage;
 
-  // Mark-and-sweep DCE for internalized symbols.
+  for (Function &F : M)
+    if (IsNvkFn(F)) {
+      F.setLinkage(NewLinkage);
+      if (IsPreLink)
+        F.setVisibility(GlobalValue::HiddenVisibility);
+    }
+  for (GlobalVariable &GV : M.globals())
+    if (!GV.isDeclaration() && IsNvkGlobal(GV)) {
+      GV.setLinkage(NewLinkage);
+      if (IsPreLink)
+        GV.setVisibility(GlobalValue::HiddenVisibility);
+    }
+
+  if (IsPreLink) {
+    // Pre-link: skip DCE. The LTO optimizer will internalize and DCE
+    // after merging all TUs.  Pruning (above) already removed functions
+    // not transitively reachable from this TU's references.
+    removeFromUsedLists(M, [&](Constant *C) {
+      if (isa<PoisonValue>(C) || isa<UndefValue>(C))
+        return true;
+      return false;
+    });
+    return PreservedAnalyses::none();
+  }
+
+  // Non-LTO path: full mark-and-sweep DCE for internalized symbols.
   SmallPtrSet<GlobalValue *, 32> Live;
   SmallVector<GlobalValue *, 32> ReachWorklist;
 

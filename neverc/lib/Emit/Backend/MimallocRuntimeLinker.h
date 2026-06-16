@@ -18,6 +18,11 @@ namespace neverc {
 struct MimallocRuntimeLinkerPass
     : public llvm::PassInfoMixin<MimallocRuntimeLinkerPass> {
 
+  bool IsPreLink = false;
+
+  MimallocRuntimeLinkerPass() = default;
+  explicit MimallocRuntimeLinkerPass(bool PreLink) : IsPreLink(PreLink) {}
+
   llvm::PreservedAnalyses run(llvm::Module &M,
                               llvm::ModuleAnalysisManager &MAM);
 

@@ -43,6 +43,9 @@
 #  ifndef NEVERC_KRT_MODULE_SIZE
 #    define NEVERC_KRT_MODULE_SIZE 1024 /* 0x400, sizeof(struct module) */
 #  endif
+#  ifndef NEVERC_KRT_FILE_DENTRY_OFF
+#    define NEVERC_KRT_FILE_DENTRY_OFF 0x18
+#  endif
 
 #elif NEVERC_KRT_KERNEL == 515
 /* Android 13, Linux 5.15 (GKI android13-5.15, KMI gen 8) */
@@ -63,6 +66,9 @@
 #  endif
 #  ifndef NEVERC_KRT_MODULE_SIZE
 #    define NEVERC_KRT_MODULE_SIZE 960 /* 0x3C0, sizeof(struct module) */
+#  endif
+#  ifndef NEVERC_KRT_FILE_DENTRY_OFF
+#    define NEVERC_KRT_FILE_DENTRY_OFF 0x18
 #  endif
 
 #elif NEVERC_KRT_KERNEL == 601
@@ -85,6 +91,9 @@
 #  ifndef NEVERC_KRT_MODULE_SIZE
 #    define NEVERC_KRT_MODULE_SIZE 1024 /* 0x400, sizeof(struct module) */
 #  endif
+#  ifndef NEVERC_KRT_FILE_DENTRY_OFF
+#    define NEVERC_KRT_FILE_DENTRY_OFF 0x18
+#  endif
 
 #elif NEVERC_KRT_KERNEL == 606
 /* Android 15, Linux 6.6 (GKI android15-6.6, KMI gen 8) */
@@ -105,6 +114,9 @@
 #  endif
 #  ifndef NEVERC_KRT_MODULE_SIZE
 #    define NEVERC_KRT_MODULE_SIZE 1536 /* 0x600, sizeof(struct module) */
+#  endif
+#  ifndef NEVERC_KRT_FILE_DENTRY_OFF
+#    define NEVERC_KRT_FILE_DENTRY_OFF 0xA0
 #  endif
 
 #elif NEVERC_KRT_KERNEL == 612
@@ -127,10 +139,32 @@
 #  ifndef NEVERC_KRT_MODULE_SIZE
 #    define NEVERC_KRT_MODULE_SIZE 1600 /* 0x640, sizeof(struct module) */
 #  endif
+#  ifndef NEVERC_KRT_FILE_DENTRY_OFF
+#    define NEVERC_KRT_FILE_DENTRY_OFF 0x48
+#  endif
 
 #else
 #  error                                                                        \
       "Unknown NEVERC_KRT_KERNEL; use 510 / 515 / 601 / 606 / 612 or define presets manually"
+#endif
+
+/*
+ * struct dentry d_name.name offset — stable across 5.10-6.12:
+ *   d_flags(4) + d_seq(4) + d_hash(16) + d_parent(8) + d_name.hash_len(8)
+ */
+#ifndef NEVERC_KRT_DENTRY_DNAME_OFF
+#define NEVERC_KRT_DENTRY_DNAME_OFF 0x28
+#endif
+
+/*
+ * struct sock_common skc_dport / skc_num offsets — stable across 5.10-6.12:
+ *   skc_addrpair(8) + skc_hash(4) + skc_dport(2) + skc_num(2)
+ */
+#ifndef NEVERC_KRT_SKC_DPORT_OFF
+#define NEVERC_KRT_SKC_DPORT_OFF 12
+#endif
+#ifndef NEVERC_KRT_SKC_NUM_OFF
+#define NEVERC_KRT_SKC_NUM_OFF 14
 #endif
 
 /*
