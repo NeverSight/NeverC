@@ -3,6 +3,7 @@
 #include "neverc/Foundation/Std/BuiltinStd.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
@@ -12,27 +13,93 @@ using namespace neverc;
 
 namespace {
 
-std::unique_ptr<Module> mergeEmbeddedModules(Module &UserMod) {
+/// On-demand module resolution for std runtime: lazy-parse all 180+
+/// modules to extract export name sets, then only fully parse and merge
+/// modules whose exports are transitively needed by the user module.
+///
+/// A user who only calls neverc_math_sqrt() will load ~2 modules instead
+/// of all 180+.
+std::unique_ptr<Module> mergeNeededModules(Module &UserMod) {
   unsigned Count = BuiltinStd::getEmbeddedModuleCount();
   if (Count == 0)
     return nullptr;
 
+  StringSet<> Unresolved;
+  for (Function &F : UserMod)
+    if (F.isDeclaration() && !F.use_empty())
+      Unresolved.insert(F.getName());
+  for (GlobalVariable &GV : UserMod.globals())
+    if (GV.isDeclaration() && !GV.use_empty())
+      Unresolved.insert(GV.getName());
+
+  struct ModInfo {
+    StringRef Name;
+    StringRef Data;
+    SmallVector<std::string, 0> Exports;
+    bool Loaded = false;
+  };
+  SmallVector<ModInfo, 0> Mods(Count);
+
+  {
+    LLVMContext LazyCtx;
+    for (unsigned I = 0; I < Count; ++I) {
+      auto [N, D] = BuiltinStd::getEmbeddedModule(I);
+      Mods[I].Name = N;
+      Mods[I].Data = D;
+      if (D.empty())
+        continue;
+
+      auto Buf =
+          MemoryBuffer::getMemBuffer(D, N, /*RequiresNullTerminator=*/false);
+      auto LazyMod = getLazyBitcodeModule(Buf->getMemBufferRef(), LazyCtx,
+                                          /*ShouldLazyLoadMetadata=*/true);
+      if (!LazyMod) {
+        consumeError(LazyMod.takeError());
+        continue;
+      }
+      for (Function &F : **LazyMod)
+        if (!F.isDeclaration())
+          Mods[I].Exports.push_back(F.getName().str());
+      for (GlobalVariable &GV : (*LazyMod)->globals())
+        if (!GV.isDeclaration())
+          Mods[I].Exports.push_back(GV.getName().str());
+    }
+  }
+
   std::unique_ptr<Module> Combined;
+  bool Changed = true;
+  while (Changed) {
+    Changed = false;
+    for (unsigned I = 0; I < Count; ++I) {
+      if (Mods[I].Loaded || Mods[I].Data.empty())
+        continue;
 
-  for (unsigned I = 0; I < Count; ++I) {
-    auto [Name, Data] = BuiltinStd::getEmbeddedModule(I);
-    if (Data.empty())
-      continue;
+      bool Needed = llvm::any_of(Mods[I].Exports, [&](const std::string &S) {
+        return Unresolved.count(S);
+      });
+      if (!Needed)
+        continue;
 
-    std::string Label = ("neverc std: " + Name).str();
-    auto Mod = parseBitcodeAndPrepare(Data, UserMod, Label);
+      std::string Label = ("neverc std: " + Mods[I].Name).str();
+      auto Mod = parseBitcodeAndPrepare(Mods[I].Data, UserMod, Label);
 
-    if (!Combined) {
-      Combined = std::move(Mod);
-    } else {
-      if (Linker::linkModules(*Combined, std::move(Mod),
-                              Linker::Flags::OverrideFromSrc))
-        report_fatal_error(Twine("Failed to merge std module: ") + Name);
+      for (Function &F : *Mod)
+        if (F.isDeclaration() && !F.use_empty())
+          Changed |= Unresolved.insert(F.getName()).second;
+      for (GlobalVariable &GV : Mod->globals())
+        if (GV.isDeclaration() && !GV.use_empty())
+          Changed |= Unresolved.insert(GV.getName()).second;
+
+      if (!Combined) {
+        Combined = std::move(Mod);
+      } else {
+        if (Linker::linkModules(*Combined, std::move(Mod),
+                                Linker::Flags::OverrideFromSrc))
+          report_fatal_error(Twine("Failed to merge std module: ") +
+                             Mods[I].Name);
+      }
+      Mods[I].Loaded = true;
+      Changed = true;
     }
   }
 
@@ -57,15 +124,14 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   if (!AnyStdUsed)
     return PreservedAnalyses::all();
 
-  auto StdMod = mergeEmbeddedModules(M);
+  auto StdMod = mergeNeededModules(M);
   if (!StdMod)
     return PreservedAnalyses::all();
 
   StringSet<> StdFnNames, StdGlobalNames;
   captureDefinitionNames(*StdMod, StdFnNames, StdGlobalNames);
 
-  // Call-graph + data-graph prune: walk both function bodies and
-  // global-variable initializers for transitive references.
+  // Call-graph + data-graph prune.
   SmallPtrSet<Function *, 32> Needed;
   SmallPtrSet<GlobalVariable *, 16> NeededGlobals;
   SmallVector<GlobalValue *, 32> Worklist;

@@ -1,6 +1,7 @@
 #include "Backend/NvkKernelRuntimeLinker.h"
 #include "Backend/RuntimeLinkerUtils.h"
 #include "neverc/Foundation/Builtin/BuiltinNvkKernel.h"
+#include "neverc/Foundation/Builtin/BuiltinNvkKernelNames.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringSet.h"
@@ -22,11 +23,7 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   if (Embedded.empty())
     return PreservedAnalyses::all();
 
-  bool AnyNvkUsed = M.getGlobalVariable("_neverc_krt_sym_resolver") != nullptr ||
-                    M.getGlobalVariable("_neverc_krt_inited") != nullptr ||
-                    M.getGlobalVariable("_neverc_krt_sym_cache") != nullptr ||
-                    M.getGlobalVariable("_neverc_krt_log_level") != nullptr;
-  if (!AnyNvkUsed)
+  if (!BuiltinNvkKernelNames::hasNvkKernelRuntimeSymbols(M))
     return PreservedAnalyses::all();
 
   auto NvkMod = parseBitcodeAndPrepare(Embedded, M, "nvk kernel runtime");
