@@ -486,8 +486,6 @@ int neverc_krt_file_spoof_add(const char *path,
  */
 #define _NEVERC_KRT_DENTRY_DNAME_NAME_OFF NEVERC_KRT_DENTRY_DNAME_OFF
 
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_file_dentry_off;
-
 int _neverc_krt_probe_file_dentry_off(void *file);
 
 

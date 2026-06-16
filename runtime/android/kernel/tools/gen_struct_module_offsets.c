@@ -34,10 +34,10 @@
 #include <linux/stddef.h>
 #include <linux/fs.h>
 #include <linux/dcache.h>
+#include <linux/sched.h>
+#include <linux/mm_types.h>
 #include <net/sock.h>
 
-/* asm-offsets style: function-scope asm can take operands; %0 is substituted
- * with the compile-time constant, captured from the generated assembly. */
 #define NVK_EMIT(name, val)                                                    \
 	__asm__ __volatile__("\n.ascii \"==NVK== " #name " %0 ==\"\n"           \
 			     :                                                 \
@@ -60,6 +60,10 @@ void nvk_gen_offsets(void)
 		  offsetof(struct sock_common, skc_dport));
 	NVK_EMIT(NVK_SKC_NUM,
 		  offsetof(struct sock_common, skc_num));
+
+	NVK_EMIT(NVK_TASK_MM, offsetof(struct task_struct, mm));
+	NVK_EMIT(NVK_TASK_ACTIVE_MM, offsetof(struct task_struct, active_mm));
+	NVK_EMIT(NVK_VMA_VM_FLAGS, offsetof(struct vm_area_struct, vm_flags));
 }
 #else
 const unsigned long nvk_gen_placeholder = 0; /* compile with -DNVK_GEN_KSRC=1 */

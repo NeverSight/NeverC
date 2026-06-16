@@ -192,18 +192,27 @@
  */
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_module_size;
 NEVERC_KRT_RT_VAR int           _neverc_krt_kernel_ver;
+NEVERC_KRT_RT_VAR unsigned long _neverc_krt_file_dentry_off;
 
 static __always_inline unsigned long _neverc_krt_get_module_size(void)
 {
-	unsigned long sz = _neverc_krt_module_size;
+	unsigned long sz = __atomic_load_n(&_neverc_krt_module_size,
+					   __ATOMIC_RELAXED);
 	return sz ? sz : 0x640;
 }
 
 static __always_inline void _neverc_krt_version_setup(void)
 {
-	if (!_neverc_krt_module_size) {
-		_neverc_krt_module_size = NEVERC_KRT_MODULE_SIZE;
-		_neverc_krt_kernel_ver  = NEVERC_KRT_KERNEL;
+	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
+		if (!__atomic_load_n(&_neverc_krt_file_dentry_off,
+				     __ATOMIC_RELAXED))
+			__atomic_store_n(&_neverc_krt_file_dentry_off,
+					 NEVERC_KRT_FILE_DENTRY_OFF,
+					 __ATOMIC_RELAXED);
+		__atomic_store_n(&_neverc_krt_module_size,
+				 NEVERC_KRT_MODULE_SIZE, __ATOMIC_RELAXED);
+		__atomic_store_n(&_neverc_krt_kernel_ver,
+				 NEVERC_KRT_KERNEL, __ATOMIC_RELEASE);
 	}
 }
 

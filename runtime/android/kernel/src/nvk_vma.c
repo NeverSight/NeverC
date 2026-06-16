@@ -38,6 +38,13 @@ int neverc_krt_vma_init(void)
 		_neverc_krt_mmap_read_unlock =
 			(neverc_krt_mmap_read_unlock_fn)NEVERC_KRT_LOOKUP("up_read");
 
+	if (!_neverc_krt_get_task_mm)
+		_neverc_krt_get_task_mm =
+			(neverc_krt_get_task_mm_fn)NEVERC_KRT_LOOKUP("get_task_mm");
+	if (!_neverc_krt_mmput)
+		_neverc_krt_mmput =
+			(neverc_krt_mmput_fn)NEVERC_KRT_LOOKUP("mmput");
+
 	_neverc_krt_vma_inited = 1;
 	return _neverc_krt_find_vma ? 0 :
 	       (_neverc_krt_access_task_vm || _neverc_krt_access_mm_vm) ? 0 : -1;
@@ -48,20 +55,62 @@ void *_neverc_krt_task_mm(struct task_struct *task)
 	if (!task) return (void *)0;
 
 	if (__atomic_load_n(&_neverc_krt_off_mm, __ATOMIC_ACQUIRE) == 0) {
-		const unsigned char *p = (const unsigned char *)task;
-		unsigned long i;
-		for (i = 0x200; i < 0xE00; i += 8) {
-			unsigned long v = *(unsigned long *)(p + i);
-			if (v < 0xFFFF000000000000UL || v == 0)
-				continue;
-			unsigned long pgd = *(unsigned long *)v;
-			if (pgd > 0xFFFF000000000000UL) {
-				unsigned long mmap_ptr =
-					*(unsigned long *)(v + 8);
-				if (mmap_ptr > 0xFFFF000000000000UL ||
-				    mmap_ptr == 0) {
-					__atomic_store_n(&_neverc_krt_off_mm, i, __ATOMIC_RELEASE);
-					break;
+		/*
+		 * Method 1 (6.1+safe): ask the kernel for mm, then scan
+		 * task_struct to discover at which offset the pointer lives.
+		 * Works regardless of mm_struct layout changes (5.10 mmap
+		 * pointer vs 6.1+ maple_tree first field).
+		 */
+		if (_neverc_krt_get_task_mm && _neverc_krt_mmput) {
+			void *mm = _neverc_krt_get_task_mm(task);
+			if (mm) {
+				const unsigned char *p =
+					(const unsigned char *)task;
+				unsigned long i;
+				for (i = 0x100; i < 0xE00; i += 8) {
+					unsigned long v;
+					if (neverc_krt_mem_read(&v, p + i, 8))
+						continue;
+					if (v == (unsigned long)mm) {
+						__atomic_store_n(
+							&_neverc_krt_off_mm,
+							i, __ATOMIC_RELEASE);
+						break;
+					}
+				}
+				_neverc_krt_mmput(mm);
+			}
+		}
+
+		/*
+		 * Method 2 (fallback): heuristic scan if get_task_mm was
+		 * not available.  Checks that the first 8 bytes of the
+		 * candidate struct look like a kernel pointer — only
+		 * reliable on 5.10/5.15 where mm_struct starts with the
+		 * mmap VMA pointer.
+		 */
+		if (__atomic_load_n(&_neverc_krt_off_mm, __ATOMIC_ACQUIRE)
+		    == 0) {
+			const unsigned char *p =
+				(const unsigned char *)task;
+			unsigned long i;
+			for (i = 0x200; i < 0xE00; i += 8) {
+				unsigned long v = *(unsigned long *)(p + i);
+				if (v < 0xFFFF000000000000UL || v == 0)
+					continue;
+				unsigned long first =
+					*(unsigned long *)v;
+				if (first > 0xFFFF000000000000UL) {
+					unsigned long second =
+						*(unsigned long *)(v + 8);
+					if (second > 0xFFFF000000000000UL ||
+					    second == 0) {
+						__atomic_store_n(
+							&_neverc_krt_off_mm,
+							i,
+							__ATOMIC_RELEASE);
+						break;
+					}
 				}
 			}
 		}
