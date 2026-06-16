@@ -95,14 +95,21 @@ void *_neverc_krt_task_mm(struct task_struct *task)
 				(const unsigned char *)task;
 			unsigned long i;
 			for (i = 0x200; i < 0xE00; i += 8) {
-				unsigned long v = *(unsigned long *)(p + i);
+				unsigned long v;
+				if (neverc_krt_mem_read(&v, p + i, 8))
+					continue;
 				if (v < 0xFFFF000000000000UL || v == 0)
 					continue;
-				unsigned long first =
-					*(unsigned long *)v;
+				unsigned long first;
+				if (neverc_krt_mem_read(&first,
+						       (void *)v, 8))
+					continue;
 				if (first > 0xFFFF000000000000UL) {
-					unsigned long second =
-						*(unsigned long *)(v + 8);
+					unsigned long second;
+					if (neverc_krt_mem_read(
+						    &second,
+						    (void *)(v + 8), 8))
+						continue;
 					if (second > 0xFFFF000000000000UL ||
 					    second == 0) {
 						__atomic_store_n(
