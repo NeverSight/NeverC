@@ -26,6 +26,7 @@
 #include "llvm/TargetParser/Triple.h"
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <ctime>
 #include <optional>
 #include <string>
@@ -172,10 +173,13 @@ ExprResult semaBuiltinNeverCRandomU64(Sema &S, CallExpr *TheCall) {
   static uint64_t Counter = 0;
   uint64_t BaseKey = S.getLangOpts().StringEncryptKey;
   if (BaseKey == 0) {
-    static uint64_t TimeKey =
-        static_cast<uint64_t>(std::time(nullptr)) * 0x9E3779B97F4A7C15ULL;
-    TimeKey |= 1;
-    BaseKey = TimeKey;
+    static uint64_t Seed = [] {
+      auto ns = std::chrono::steady_clock::now().time_since_epoch().count();
+      uint64_t h = static_cast<uint64_t>(ns) * 0x9E3779B97F4A7C15ULL;
+      h ^= static_cast<uint64_t>(std::time(nullptr)) * 0x517CC1B727220A95ULL;
+      return h | 1;
+    }();
+    BaseKey = Seed;
   }
   uint64_t Value = BaseKey ^ (++Counter * 0x6C62272E07BB0142ULL);
 
