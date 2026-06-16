@@ -52,26 +52,16 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   if (BuiltinNvkKernel::getEmbeddedModuleCount() == 0)
     return PreservedAnalyses::all();
 
-  // Quick scan: does user code reference any unresolved NVK declarations?
-  bool AnyNvkUsed = false;
-  for (const Function &F : M) {
-    if (F.isDeclaration() && !F.use_empty() &&
-        (F.getName().starts_with("_nvk_") ||
-         F.getName().starts_with("nvk_"))) {
-      AnyNvkUsed = true;
-      break;
-    }
-  }
-  if (!AnyNvkUsed) {
-    for (const GlobalVariable &GV : M.globals()) {
-      if (GV.isDeclaration() && !GV.use_empty() &&
-          (GV.getName().starts_with("_nvk_") ||
-           GV.getName().starts_with("nvk_"))) {
-        AnyNvkUsed = true;
-        break;
-      }
-    }
-  }
+  // Quick scan: does user code include any NVK runtime headers?
+  // Check for well-known runtime globals that are always declared when
+  // headers are included (NVK_RT_VAR → extern declarations).
+  // _nvk_sym_resolver / _nvk_sym_cache come from <linux/kallsyms.h>,
+  // _nvk_inited from <nvk_hook.h>, _nvk_log_level from <nvk_log.h>.
+  // Together they cover all realistic include combinations.
+  bool AnyNvkUsed = M.getGlobalVariable("_nvk_sym_resolver") != nullptr ||
+                    M.getGlobalVariable("_nvk_inited") != nullptr ||
+                    M.getGlobalVariable("_nvk_sym_cache") != nullptr ||
+                    M.getGlobalVariable("_nvk_log_level") != nullptr;
   if (!AnyNvkUsed)
     return PreservedAnalyses::all();
 
