@@ -42,6 +42,21 @@ Ejemplos compilables que demuestran las capacidades de compilación cruzada de N
 | [Android ELF](../../examples/android-elf/README.es.md) | Binario ARM64 nativo para dispositivos rooteados | Compilación cruzada Android, dlopen/liblog, /proc, detección root |
 | [Biblioteca compartida Android](../../examples/android-so/README.es.md) | Biblioteca `.so` nativa ARM64 | Biblioteca compartida, mmap RWX, cifrado XOR |
 
+### Módulos kernel Android (.ko)
+
+No se necesita árbol de fuentes del kernel — NeverC compila contra el runtime mínimo integrado. Fuente única para GKI 5.10–6.12.
+
+| Ejemplo | Descripción | Características |
+|---------|-------------|----------------|
+| [Kernel Hello](../../examples/android-kernel-hello/README.es.md) | Módulo `.ko` mínimo | Bootstrap kallsyms vía kprobe, validación insmod mínima |
+| [Plantilla driver kernel](../../examples/android-kernel-driver/README.es.md) | Plantilla de resolución dinámica de símbolos | `kallsyms_lookup_name`, ABI estable GKI, 5.10–6.12 |
+| [Kernel Inline Hook](../../examples/android-kernel-inline-hook/README.es.md) | Hook inline en `do_faccessat` | Parche seguro BTI/PAC, modo context hook, reubicación PC-relativa |
+| [Kernel Syscall Hook](../../examples/android-kernel-syscall-hook/README.es.md) | Tabla syscall / inline / context hook | Reemplazo `sys_call_table`, hook inline, context hook |
+| [Kernel Stealth](../../examples/android-kernel-stealth/README.es.md) | Ocultación de módulo | Ocultación list/sysfs/proc, otorgar root, SELinux permissive |
+| [Kernel Full SDK](../../examples/android-kernel-full/README.es.md) | Integración SDK completa | Netlink IPC, hooks, credenciales, ocultación, SELinux, VMA, archivos |
+| [Kernel Chardev](../../examples/android-kernel-chardev/README.es.md) | Dispositivo carácter + ioctl | `misc_register`, despacho ioctl, `/proc` seq_file |
+| [Kernel Netlink](../../examples/android-kernel-netlink/README.es.md) | IPC netlink bidireccional | Comandos PING/VERSION/ECHO, `nvk_nl_open`/`nvk_nl_reply` |
+
 ---
 
 ## Inicio rápido

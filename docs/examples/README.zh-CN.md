@@ -44,6 +44,21 @@
 | [Android ELF](../../examples/android-elf/README.zh-CN.md) | Root 设备上的原生 ARM64 可执行文件 | 交叉编译到 Android，dlopen/liblog，/proc 信息，root 检测 |
 | [Android 共享库](../../examples/android-so/README.zh-CN.md) | 原生 ARM64 `.so` 库 | 共享库，mmap RWX，XOR 加密，dlopen liblog |
 
+### Android 内核模块 (.ko)
+
+无需内核源码树 — NeverC 使用内置的最小化 runtime 编译。单源文件覆盖 GKI 5.10–6.12。
+
+| 示例 | 说明 | 关键特性 |
+|------|------|---------|
+| [内核 Hello](../../examples/android-kernel-hello/README.zh-CN.md) | 最小 `.ko` 模块 | kprobe 引导 kallsyms，最简 insmod 验证 |
+| [内核驱动模板](../../examples/android-kernel-driver/README.zh-CN.md) | 动态符号解析模板 | `kallsyms_lookup_name`，GKI 稳定 ABI，5.10–6.12 |
+| [内核 Inline Hook](../../examples/android-kernel-inline-hook/README.zh-CN.md) | `do_faccessat` 的 inline hook | BTI/PAC 安全补丁，context hook 模式，PC 相对重定位 |
+| [内核 Syscall Hook](../../examples/android-kernel-syscall-hook/README.zh-CN.md) | 系统调用表 / inline / context hook | `sys_call_table` 替换、inline hook、context hook 三种模式 |
+| [内核隐身](../../examples/android-kernel-stealth/README.zh-CN.md) | 模块隐藏 | list/sysfs/proc 隐藏，root 提权，SELinux permissive |
+| [内核全功能 SDK](../../examples/android-kernel-full/README.zh-CN.md) | 完整 SDK 集成 | Netlink IPC、hook、凭据、隐藏、SELinux、VMA、文件 I/O |
+| [内核字符设备](../../examples/android-kernel-chardev/README.zh-CN.md) | 字符设备 + ioctl | `misc_register`，ioctl 分发，`/proc` seq_file |
+| [内核 Netlink](../../examples/android-kernel-netlink/README.zh-CN.md) | 双向 netlink IPC | PING/VERSION/ECHO 命令，`nvk_nl_open`/`nvk_nl_reply` |
+
 ---
 
 ## 快速开始

@@ -42,6 +42,21 @@
 | [Android ELF](../../examples/android-elf/README.ru.md) | Нативный ARM64-бинарник для рутированных устройств | Кросс-компиляция для Android, dlopen/liblog, /proc, проверка root |
 | [Общая библиотека Android](../../examples/android-so/README.ru.md) | Нативная ARM64 `.so` библиотека | Разделяемая библиотека, mmap RWX, XOR-шифрование |
 
+### Модули ядра Android (.ko)
+
+Исходный код ядра не требуется — NeverC компилирует против встроенного минимального рантайма. Один файл поддерживает GKI 5.10–6.12.
+
+| Пример | Описание | Ключевые особенности |
+|--------|---------|---------------------|
+| [Kernel Hello](../../examples/android-kernel-hello/README.ru.md) | Минимальный `.ko` модуль | Бутстрап kallsyms через kprobe, простейшая проверка insmod |
+| [Шаблон драйвера](../../examples/android-kernel-driver/README.ru.md) | Шаблон динамического разрешения символов | `kallsyms_lookup_name`, стабильный ABI GKI, 5.10–6.12 |
+| [Kernel Inline Hook](../../examples/android-kernel-inline-hook/README.ru.md) | Инлайн-хук на `do_faccessat` | BTI/PAC-безопасный патч, контекстный хук, PC-относительная релокация |
+| [Kernel Syscall Hook](../../examples/android-kernel-syscall-hook/README.ru.md) | Таблица syscall / inline / context hook | Замена `sys_call_table`, инлайн-хук, контекстный хук |
+| [Kernel Stealth](../../examples/android-kernel-stealth/README.ru.md) | Сокрытие модуля | Скрытие list/sysfs/proc, предоставление root, SELinux permissive |
+| [Kernel Full SDK](../../examples/android-kernel-full/README.ru.md) | Полная интеграция SDK | Netlink IPC, хуки, учётные данные, сокрытие, SELinux, VMA, файловый I/O |
+| [Kernel Chardev](../../examples/android-kernel-chardev/README.ru.md) | Символьное устройство + ioctl | `misc_register`, диспетчеризация ioctl, `/proc` seq_file |
+| [Kernel Netlink](../../examples/android-kernel-netlink/README.ru.md) | Двунаправленный netlink IPC | Команды PING/VERSION/ECHO, `nvk_nl_open`/`nvk_nl_reply` |
+
 ---
 
 ## Быстрый старт

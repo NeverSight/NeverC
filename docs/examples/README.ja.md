@@ -42,6 +42,21 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 | [Android ELF](../../examples/android-elf/README.ja.md) | root 端末向けネイティブ ARM64 バイナリ | Android クロスコンパイル、dlopen/liblog、/proc 情報、root 検出 |
 | [Android 共有ライブラリ](../../examples/android-so/README.ja.md) | ネイティブ ARM64 `.so` ライブラリ | 共有ライブラリ、mmap RWX、XOR 暗号化 |
 
+### Android カーネルモジュール (.ko)
+
+カーネルソースツリー不要 — NeverC は組み込みの最小ランタイムに対してコンパイルします。単一ソースで GKI 5.10–6.12 をカバー。
+
+| サンプル | 説明 | 主要機能 |
+|---------|------|---------|
+| [カーネル Hello](../../examples/android-kernel-hello/README.ja.md) | 最小 `.ko` モジュール | kprobe 経由の kallsyms ブートストラップ、最小限の insmod 検証 |
+| [カーネルドライバテンプレート](../../examples/android-kernel-driver/README.ja.md) | 動的シンボル解決テンプレート | `kallsyms_lookup_name`、GKI 安定 ABI、5.10–6.12 |
+| [カーネルインラインフック](../../examples/android-kernel-inline-hook/README.ja.md) | `do_faccessat` のインラインフック | BTI/PAC セーフパッチ、コンテキストフックモード、PC 相対リロケーション |
+| [カーネル Syscall フック](../../examples/android-kernel-syscall-hook/README.ja.md) | syscall テーブル / inline / context hook | `sys_call_table` 置換、インラインフック、コンテキストフック |
+| [カーネルステルス](../../examples/android-kernel-stealth/README.ja.md) | モジュール隠蔽 | list/sysfs/proc 隠蔽、root 付与、SELinux permissive |
+| [カーネル Full SDK](../../examples/android-kernel-full/README.ja.md) | 完全 SDK 統合 | Netlink IPC、フック、資格情報、隠蔽、SELinux、VMA、ファイル I/O |
+| [カーネル Chardev](../../examples/android-kernel-chardev/README.ja.md) | キャラクタデバイス + ioctl | `misc_register`、ioctl ディスパッチ、`/proc` seq_file |
+| [カーネル Netlink](../../examples/android-kernel-netlink/README.ja.md) | 双方向 netlink IPC | PING/VERSION/ECHO コマンド、`nvk_nl_open`/`nvk_nl_reply` |
+
 ---
 
 ## クイックスタート

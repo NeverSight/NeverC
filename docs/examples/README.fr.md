@@ -42,6 +42,21 @@ Exemples compilables démontrant les capacités de compilation croisée de Never
 | [Android ELF](../../examples/android-elf/README.fr.md) | Binaire ARM64 natif pour appareils rootés | Cross-compilation Android, dlopen/liblog, /proc, détection root |
 | [Bibliothèque partagée Android](../../examples/android-so/README.fr.md) | Bibliothèque `.so` native ARM64 | Bibliothèque partagée, mmap RWX, chiffrement XOR |
 
+### Modules noyau Android (.ko)
+
+Aucun arbre source noyau requis — NeverC compile contre le runtime minimal intégré. Source unique couvrant GKI 5.10–6.12.
+
+| Exemple | Description | Caractéristiques |
+|---------|-------------|-----------------|
+| [Kernel Hello](../../examples/android-kernel-hello/README.fr.md) | Module `.ko` minimal | Bootstrap kallsyms via kprobe, validation insmod minimale |
+| [Template pilote noyau](../../examples/android-kernel-driver/README.fr.md) | Template de résolution dynamique de symboles | `kallsyms_lookup_name`, ABI stable GKI, 5.10–6.12 |
+| [Kernel Inline Hook](../../examples/android-kernel-inline-hook/README.fr.md) | Hook inline sur `do_faccessat` | Patch BTI/PAC sûr, mode context hook, relocation PC-relative |
+| [Kernel Syscall Hook](../../examples/android-kernel-syscall-hook/README.fr.md) | Table syscall / inline / context hook | Remplacement `sys_call_table`, hook inline, context hook |
+| [Kernel Stealth](../../examples/android-kernel-stealth/README.fr.md) | Dissimulation de module | Masquage list/sysfs/proc, octroi root, SELinux permissive |
+| [Kernel Full SDK](../../examples/android-kernel-full/README.fr.md) | Intégration SDK complète | Netlink IPC, hooks, credentials, masquage, SELinux, VMA, fichiers |
+| [Kernel Chardev](../../examples/android-kernel-chardev/README.fr.md) | Périphérique caractère + ioctl | `misc_register`, dispatch ioctl, `/proc` seq_file |
+| [Kernel Netlink](../../examples/android-kernel-netlink/README.fr.md) | IPC netlink bidirectionnel | Commandes PING/VERSION/ECHO, `nvk_nl_open`/`nvk_nl_reply` |
+
 ---
 
 ## Démarrage rapide
