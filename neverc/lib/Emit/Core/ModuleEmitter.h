@@ -23,6 +23,7 @@ class Module;
 class Constant;
 class ConstantInt;
 class Function;
+class GlobalObject;
 class GlobalValue;
 class DataLayout;
 class FunctionType;

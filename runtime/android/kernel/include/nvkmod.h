@@ -10,6 +10,7 @@
 #endif
 
 #include <linux/types.h>
+#include <nvk_rt.h>
 #include <linux/compiler.h>
 #include <linux/module.h>
 #include <linux/printk.h>
@@ -20,12 +21,8 @@
 	nvk_kallsyms_lookup_name_fn nvk_kallsyms_lookup_name = (void *)0
 #define NVK_PRINTK_STORAGE nvk_printk_fn nvk_printk = (void *)0
 
-static int nvk_kp_stub(struct kprobe *p, void *regs)
-{
-	(void)p;
-	(void)regs;
-	return 0;
-}
+int nvk_kp_stub(struct kprobe *p, void *regs);
+
 
 /*
  * Resolve a kernel symbol via kprobe — register, grab kp.addr, unregister.
@@ -34,28 +31,8 @@ static int nvk_kp_stub(struct kprobe *p, void *regs)
  * any code-address checks.  For data symbols register_kprobe returns an error
  * but kp.addr is already populated.
  */
-static void *nvk_kprobe_lookup(const char *name)
-{
-	struct kprobe kp;
-	unsigned char *p = (unsigned char *)&kp;
-	unsigned long i;
-	int ret;
+void *nvk_kprobe_lookup(const char *name);
 
-	for (i = 0; i < sizeof(kp); i++)
-		p[i] = 0;
-
-	kp.symbol_name = name;
-	kp.offset = 0;
-	kp.pre_handler = nvk_kp_stub;
-
-	ret = register_kprobe(&kp);
-	if (ret == 0) {
-		void *addr = (void *)kp.addr;
-		unregister_kprobe(&kp);
-		return addr;
-	}
-	return (void *)kp.addr;
-}
 
 #define NVK_KPROBE_LOOKUP(sym) nvk_kprobe_lookup(NC_XORSTR(sym))
 
@@ -64,10 +41,8 @@ static void *nvk_kprobe_lookup(const char *name)
  * kallsyms_lookup_name.  Used as drop-in replacement when the kernel's
  * kallsyms_lookup_name is stubbed (CFI/GKI).
  */
-static unsigned long nvk_kprobe_resolve_sym(const char *name)
-{
-	return (unsigned long)nvk_kprobe_lookup(name);
-}
+unsigned long nvk_kprobe_resolve_sym(const char *name);
+
 
 /*
  * Detect a CFI/GKI no-op stub or a trivial return-0 function.
@@ -129,39 +104,11 @@ static __always_inline int nvk_is_stub(void *addr)
  *       false → probe kallsyms_lookup_name first; fall back to kprobe
  *               only if it is a stub.
  */
-static int nvk_ksym_bootstrap(int cfi)
-{
-	nvk_kallsyms_lookup_name_fn resolved;
+int nvk_ksym_bootstrap(int cfi);
 
-	if (_nvk_sym_resolver)
-		return 0;
 
-	_nvk_cache_key_init();
+int nvk_log_bootstrap(void);
 
-	if (!cfi) {
-		resolved = (nvk_kallsyms_lookup_name_fn)NVK_KPROBE_LOOKUP(
-				"kallsyms_lookup_name");
-		if (resolved && !nvk_is_stub((void *)resolved)) {
-			nvk_kallsyms_lookup_name = resolved;
-			_nvk_sym_resolver = resolved;
-			return 0;
-		}
-	}
-
-	nvk_kallsyms_lookup_name = nvk_kprobe_resolve_sym;
-	_nvk_sym_resolver = nvk_kprobe_resolve_sym;
-	return 0;
-}
-
-static int nvk_log_bootstrap(void)
-{
-	if (nvk_printk)
-		return 0;
-	nvk_printk = (nvk_printk_fn)NVK_KPROBE_LOOKUP("_printk");
-	if (!nvk_printk)
-		nvk_printk = (nvk_printk_fn)NVK_KPROBE_LOOKUP("printk");
-	return nvk_printk ? 0 : -1;
-}
 
 #define NVK_BOOTSTRAP()       _nvk_do_bootstrap(1)
 #define NVK_BOOTSTRAP_EX(cfi) _nvk_do_bootstrap(cfi)

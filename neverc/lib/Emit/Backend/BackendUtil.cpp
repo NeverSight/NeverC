@@ -2,6 +2,7 @@
 #include "Backend/BackendConsumer.h"
 #include "Backend/LinkInModulesPass.h"
 #include "Backend/MimallocRuntimeLinker.h"
+#include "Backend/NvkKernelRuntimeLinker.h"
 #include "Backend/StdRuntimeLinker.h"
 #include "Backend/StringRuntimeLinker.h"
 #include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
@@ -482,6 +483,13 @@ void GenAssemblyHelper::runOptimizationPipeline(
     PB.registerPipelineStartEPCallback(
         [](ModulePassManager &MPM, OptimizationLevel) {
           MPM.addPass(StdRuntimeLinkerPass());
+        });
+  }
+
+  if (CodeGenOpts.AndroidKernelDriverMode) {
+    PB.registerPipelineStartEPCallback(
+        [](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(NvkKernelRuntimeLinkerPass());
         });
   }
 

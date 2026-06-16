@@ -3,6 +3,7 @@
 #define _NVK_LINUX_KALLSYMS_H
 
 #include <linux/types.h>
+#include <nvk_rt.h>
 #include <neverc/xorstr/xorstr.h>
 
 typedef unsigned long (*nvk_kallsyms_lookup_name_fn)(const char *name);
@@ -12,9 +13,14 @@ extern nvk_kallsyms_lookup_name_fn nvk_kallsyms_lookup_name;
  * Pluggable resolver: set to nvk_kallsyms_lookup_name on non-CFI kernels,
  * or to the kprobe-based resolver on CFI/GKI kernels where
  * kallsyms_lookup_name is stubbed.  Initialised by nvk_ksym_bootstrap().
+ *
+ * Defined in the precompiled NVK runtime bitcode (nvk_runtime_bc.c).
+ * NvkKernelRuntimeLinkerPass links the bitcode into each TU so all
+ * translation units share a single copy: NVK_BOOTSTRAP() only needs
+ * to be called once in module_init.
  */
 typedef unsigned long (*_nvk_sym_resolver_fn)(const char *name);
-static _nvk_sym_resolver_fn _nvk_sym_resolver;
+NVK_RT_VAR _nvk_sym_resolver_fn _nvk_sym_resolver;
 
 #define _NVK_SYM_CACHE_BITS  7
 #define _NVK_SYM_CACHE_SIZE  (1 << _NVK_SYM_CACHE_BITS)
@@ -25,8 +31,8 @@ struct _nvk_sym_entry {
 	unsigned long enc;
 };
 
-static struct _nvk_sym_entry _nvk_sym_cache[_NVK_SYM_CACHE_SIZE];
-static unsigned long _nvk_cache_key;
+NVK_RT_VAR struct _nvk_sym_entry _nvk_sym_cache[_NVK_SYM_CACHE_SIZE];
+NVK_RT_VAR unsigned long _nvk_cache_key;
 
 /*
  * Compile-time pluggable primitives — override by #define before #include.

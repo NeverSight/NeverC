@@ -263,6 +263,37 @@ add_custom_target(neverc-bootstrap-std-bc
   COMMENT "[NeverC] Bootstrap: compiling std library to embedded bitcode"
 )
 
+# ---------------------------------------------------------------------------
+# NVK Kernel Runtime precompiled bitcode (aarch64 only)
+# ---------------------------------------------------------------------------
+set(BUILTIN_NVK_KERNEL_SCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Builtin")
+set(BUILTIN_NVK_KERNEL_RUNTIME_DIR
+    "${NEVERC_SOURCE_DIR}/../runtime/android/kernel")
+set(BUILTIN_NVK_KERNEL_SRC
+    "${BUILTIN_NVK_KERNEL_RUNTIME_DIR}/src/nvk_runtime_bc.c")
+
+set(BUILTIN_NVK_KERNEL_BITCODE_H
+    "${CMAKE_CURRENT_BINARY_DIR}/BuiltinNvkKernelBitcode.h")
+if(NOT EXISTS "${BUILTIN_NVK_KERNEL_BITCODE_H}")
+  file(WRITE "${BUILTIN_NVK_KERNEL_BITCODE_H}"
+    "/* Empty placeholder — run 'ninja neverc-bootstrap-nvk-kernel-bc' to populate. */\n"
+    "struct NvkKernelBCEntry { const char *name; const unsigned char *data; unsigned int len; };\n"
+    "static const NvkKernelBCEntry kNvkKernelBCEntries[] = {{0, 0, 0}};\n"
+    "static const unsigned int kNvkKernelBCEntryCount = 0;\n")
+endif()
+
+add_custom_target(neverc-bootstrap-nvk-kernel-bc
+  COMMAND ${Python3_EXECUTABLE}
+          "${BUILTIN_NVK_KERNEL_SCRIPT_DIR}/build_nvk_kernel_bitcode.py"
+          "$<TARGET_FILE:neverc>"
+          "${BUILTIN_NVK_KERNEL_RUNTIME_DIR}"
+          -o "${BUILTIN_NVK_KERNEL_BITCODE_H}"
+  COMMAND ${CMAKE_COMMAND} -E touch
+          "${CMAKE_CURRENT_SOURCE_DIR}/Builtin/BuiltinNvkKernel.cpp"
+  DEPENDS neverc "${BUILTIN_NVK_KERNEL_SRC}"
+  COMMENT "[NeverC] Bootstrap: compiling NVK kernel runtime to embedded bitcode"
+)
+
 add_neverc_library(nevercFoundation
   Core/Diagnostic.cpp
   Core/FileManager.cpp
@@ -270,6 +301,7 @@ add_neverc_library(nevercFoundation
   Core/LangOptions.cpp
   Builtin/BuiltinString.cpp
   Builtin/BuiltinMimalloc.cpp
+  Builtin/BuiltinNvkKernel.cpp
   Std/StdModule.cpp
   Std/BuiltinStd.cpp
 
@@ -284,6 +316,7 @@ add_neverc_library(nevercFoundation
   ${BUILTIN_STRING_BITCODE_H}
   ${BUILTIN_MIMALLOC_BITCODE_HDRS}
   ${BUILTIN_STD_BITCODE_H}
+  ${BUILTIN_NVK_KERNEL_BITCODE_H}
 
   DEPENDS
   NeverCDriverOptions

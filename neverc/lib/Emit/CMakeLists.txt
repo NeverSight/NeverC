@@ -90,6 +90,7 @@ add_neverc_library(nevercEmit
   Backend/StringRuntimeLinker.cpp
   Backend/MimallocRuntimeLinker.cpp
   Backend/StdRuntimeLinker.cpp
+  Backend/NvkKernelRuntimeLinker.cpp
 
   DEPENDS
   intrinsics_gen

@@ -3,6 +3,7 @@
 #define NVK_LOG_H
 
 #include <linux/types.h>
+#include <nvk_rt.h>
 #include <linux/compiler.h>
 #include <linux/printk.h>
 
@@ -23,7 +24,7 @@ enum nvk_log_level {
 #define NVK_LOG_DEFAULT_LEVEL NVK_LOG_INFO
 #endif
 
-static volatile int _nvk_log_level = NVK_LOG_DEFAULT_LEVEL;
+NVK_RT_VAR volatile int _nvk_log_level;
 
 static __always_inline void nvk_log_set_level(int level)
 {
@@ -79,7 +80,7 @@ static __always_inline int nvk_log_get_level(void)
 
 #define nvk_log_once(fmt, ...)                                      \
 	do {                                                         \
-		static int __logged;                                 \
+		NVK_RT_VAR int __logged;                                 \
 		if (!__logged) {                                     \
 			__logged = 1;                                \
 			nvk_log_info(fmt, ##__VA_ARGS__);            \
@@ -88,7 +89,7 @@ static __always_inline int nvk_log_get_level(void)
 
 #define nvk_log_ratelimit(fmt, ...)                                 \
 	do {                                                         \
-		static u64 __last_ts;                                \
+		NVK_RT_VAR u64 __last_ts;                                \
 		u64 __now;                                           \
 		__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(__now));\
 		if (__now - __last_ts > 100000000ULL) {               \
@@ -99,8 +100,8 @@ static __always_inline int nvk_log_get_level(void)
 
 #define nvk_log_ratelimit_n(n, interval_ns, fmt, ...)               \
 	do {                                                         \
-		static u64 __rl_ts;                                  \
-		static int __rl_cnt;                                 \
+		NVK_RT_VAR u64 __rl_ts;                                  \
+		NVK_RT_VAR int __rl_cnt;                                 \
 		u64 __now;                                           \
 		__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(__now));\
 		u64 __freq;                                          \

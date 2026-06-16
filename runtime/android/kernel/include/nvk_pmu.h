@@ -3,6 +3,7 @@
 #define NVK_PMU_H
 
 #include <linux/types.h>
+#include <nvk_rt.h>
 #include <linux/compiler.h>
 
 #define NVK_PMU_EVT_SW_INCR        0x00
@@ -121,29 +122,9 @@ struct nvk_pmu_session {
 	int num_counters;
 };
 
-static void nvk_pmu_session_start(struct nvk_pmu_session *s,
-				  const u32 *events, int count)
-{
-	int i;
-	if (!s) return;
-	if (count > 4) count = 4;
-	if (count > nvk_pmu_counter_count())
-		count = nvk_pmu_counter_count();
+void nvk_pmu_session_start(struct nvk_pmu_session *s,
+				  const u32 *events, int count);
 
-	s->num_counters = count;
-	nvk_pmu_reset();
-	nvk_pmu_enable();
-	nvk_pmu_cycle_enable();
-
-	for (i = 0; i < count; i++) {
-		s->events[i] = events[i];
-		nvk_pmu_counter_setup(i, events[i]);
-		nvk_pmu_counter_enable(i);
-		s->start_cnt[i] = nvk_pmu_counter_read(i);
-	}
-
-	s->start_cycles = nvk_pmu_cycle_count();
-}
 
 struct nvk_pmu_result {
 	u64 cycles;
@@ -152,24 +133,9 @@ struct nvk_pmu_result {
 	int num_counters;
 };
 
-static void nvk_pmu_session_stop(struct nvk_pmu_session *s,
-				 struct nvk_pmu_result *r)
-{
-	int i;
-	if (!s || !r) return;
+void nvk_pmu_session_stop(struct nvk_pmu_session *s,
+				 struct nvk_pmu_result *r);
 
-	r->cycles = nvk_pmu_cycle_count() - s->start_cycles;
-	r->num_counters = s->num_counters;
-
-	for (i = 0; i < s->num_counters; i++) {
-		r->counters[i] = nvk_pmu_counter_read(i) - s->start_cnt[i];
-		r->events[i] = s->events[i];
-		nvk_pmu_counter_disable(i);
-	}
-
-	nvk_pmu_cycle_disable();
-	nvk_pmu_disable();
-}
 
 static __always_inline u64 nvk_pmu_rdtsc(void)
 {

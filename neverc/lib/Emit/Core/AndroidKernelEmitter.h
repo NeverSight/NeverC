@@ -7,12 +7,13 @@ class Module;
 
 namespace neverc::Emit::AndroidKernel {
 
-/// Emit sections and symbols required for loading an out-of-tree module on
-/// GKI (Generic Kernel Image) kernels.  Currently arm64-only.
+/// Emit sections, symbols, and linkage fixups required for loading an
+/// out-of-tree module on GKI (Generic Kernel Image) kernels.  arm64-only.
 ///
-/// This covers:
-///  - .plt / .init.plt / .text.ftrace_trampoline placeholder sections
-///  - __cfi_check / __cfi_check_fail weak no-op stubs (CONFIG_CFI_CLANG)
+/// NVK runtime global variables are now declared as `extern` in the headers
+/// (via NVK_RT_VAR) and defined in precompiled bitcode, so all TUs share
+/// a single copy automatically.  NvkKernelRuntimeLinkerPass links the
+/// bitcode at compile time.
 void emitFixups(llvm::Module &M, unsigned Arch);
 
 } // namespace neverc::Emit::AndroidKernel
