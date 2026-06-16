@@ -123,20 +123,27 @@ static __always_inline int nvk_is_stub(void *addr)
 	return 0;
 }
 
-static int nvk_ksym_bootstrap(void)
+/*
+ * @cfi: assume CFI/GKI kernel (kallsyms_lookup_name is stubbed).
+ *       true  → always use kprobe resolver (safe default for 5.10+ GKI).
+ *       false → probe kallsyms_lookup_name first; fall back to kprobe
+ *               only if it is a stub.
+ */
+static int nvk_ksym_bootstrap(int cfi)
 {
 	nvk_kallsyms_lookup_name_fn resolved;
 
 	if (_nvk_sym_resolver)
 		return 0;
 
-	resolved = (nvk_kallsyms_lookup_name_fn)NVK_KPROBE_LOOKUP(
-			"kallsyms_lookup_name");
-
-	if (resolved && !nvk_is_stub((void *)resolved)) {
-		nvk_kallsyms_lookup_name = resolved;
-		_nvk_sym_resolver = resolved;
-		return 0;
+	if (!cfi) {
+		resolved = (nvk_kallsyms_lookup_name_fn)NVK_KPROBE_LOOKUP(
+				"kallsyms_lookup_name");
+		if (resolved && !nvk_is_stub((void *)resolved)) {
+			nvk_kallsyms_lookup_name = resolved;
+			_nvk_sym_resolver = resolved;
+			return 0;
+		}
 	}
 
 	nvk_kallsyms_lookup_name = nvk_kprobe_resolve_sym;
@@ -154,9 +161,12 @@ static int nvk_log_bootstrap(void)
 	return nvk_printk ? 0 : -1;
 }
 
-static __always_inline int NVK_BOOTSTRAP(void)
+#define NVK_BOOTSTRAP()       _nvk_do_bootstrap(1)
+#define NVK_BOOTSTRAP_EX(cfi) _nvk_do_bootstrap(cfi)
+
+static __always_inline int _nvk_do_bootstrap(int cfi)
 {
-	int r = nvk_ksym_bootstrap();
+	int r = nvk_ksym_bootstrap(cfi);
 	if (r == 0)
 		r = nvk_log_bootstrap();
 	return r;
