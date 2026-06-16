@@ -24,6 +24,7 @@
 #include <nvk_pmu.h>
 #include <nvk_inject.h>
 #include <nvk_ns.h>
+#include <nvk_binder.h>
 
 #define NVK_SUB_MEM       0
 #define NVK_SUB_PROCESS   1
@@ -40,7 +41,8 @@
 #define NVK_SUB_KSYMS    12
 #define NVK_SUB_INJECT   13
 #define NVK_SUB_NS       14
-#define NVK_SUB_COUNT    15
+#define NVK_SUB_BINDER   15
+#define NVK_SUB_COUNT    16
 
 struct nvk_state {
 	u32 ready;
@@ -75,6 +77,7 @@ static int nvk_init_all(void)
 	_nvk_state.sub_status[NVK_SUB_KSYMS]  = nvk_ksyms_init();
 	_nvk_state.sub_status[NVK_SUB_INJECT] = nvk_inject_init();
 	_nvk_state.sub_status[NVK_SUB_NS]     = nvk_ns_init();
+	_nvk_state.sub_status[NVK_SUB_BINDER] = nvk_binder_init();
 	nvk_vma_init();
 
 	if (nvk_check_kernel_match() != NVK_VER_EXACT)
@@ -142,6 +145,7 @@ static void nvk_cleanup_all(void)
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
 
+	nvk_binder_cleanup();
 	nvk_dmesg_suppress_cleanup();
 	nvk_kmsg_read_filter_cleanup();
 	nvk_pid_hide_cleanup();

@@ -99,10 +99,10 @@ static int nvk_cred_get_ids(struct task_struct *task,
 
 	if (!task || !ids) return -1;
 
-	if (!_nvk_off_cred) {
+	if (!__atomic_load_n(&_nvk_off_cred, __ATOMIC_ACQUIRE)) {
 		const unsigned char *tp = (const unsigned char *)task;
 		unsigned long i;
-		for (i = 0x400; i < 0xC00; i += 8) {
+		for (i = 0x400; i < 0xE00; i += 8) {
 			unsigned long v1, v2;
 			if (nvk_mem_read(&v1, tp + i, 8)) continue;
 			if (nvk_mem_read(&v2, tp + i + 8, 8)) continue;
@@ -124,7 +124,8 @@ static int nvk_cred_get_ids(struct task_struct *task,
 				if (cp[j] > 65535) { match = 0; break; }
 			}
 			if (match) {
-				_nvk_off_cred = i;
+				__atomic_store_n(&_nvk_off_cred, i,
+						 __ATOMIC_RELEASE);
 				break;
 			}
 		}

@@ -14,6 +14,74 @@ static int            _nvk_addr_inited;
 static unsigned long _nvk_derived_voffset;
 static int           _nvk_voffset_derived;
 
+/*
+ * kimage_voffset converts between kernel image virtual and physical addresses.
+ * Page tables live in the linear map, which uses a DIFFERENT offset.
+ * _nvk_linmap_offset = linear_map_virt - physical.
+ */
+static unsigned long _nvk_linmap_offset;
+static int           _nvk_linmap_detected;
+
+static int nvk_pte_set_rw(unsigned long vaddr);
+static int nvk_pte_set_ro(unsigned long vaddr);
+
+static void _nvk_detect_linmap(void)
+{
+	if (_nvk_linmap_detected) return;
+
+	void *swapper = NVK_LOOKUP("swapper_pg_dir");
+	if (swapper) {
+		unsigned long ttbr1;
+		__asm__ __volatile__("mrs %0, ttbr1_el1" : "=r"(ttbr1));
+		unsigned long pgd_phys = ttbr1 & 0x0000FFFFFFFFFFC0UL;
+		_nvk_linmap_offset = (unsigned long)swapper - pgd_phys;
+		_nvk_linmap_detected = 1;
+		return;
+	}
+
+	unsigned long *memstart = (unsigned long *)NVK_LOOKUP("memstart_addr");
+	if (memstart) {
+		/*
+		 * PAGE_OFFSET can be derived from TCR_EL1.T1SZ:
+		 *   PAGE_OFFSET = ~((1UL << va_bits) - 1)
+		 * e.g. VA_BITS=48 → PAGE_OFFSET = 0xFFFF000000000000
+		 */
+		unsigned long tcr;
+		__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
+		unsigned long va_bits = 64 - ((tcr >> 16) & 0x3FUL);
+		unsigned long page_offset = ~((1UL << va_bits) - 1);
+		_nvk_linmap_offset = page_offset - *memstart;
+		_nvk_linmap_detected = 1;
+		return;
+	}
+
+	/*
+	 * Last resort: use AT instruction on a known linear-map address.
+	 * init_task lives in the linear map on all GKI kernels.
+	 */
+	void *init = NVK_LOOKUP("init_task");
+	if (init) {
+		unsigned long par;
+		__asm__ __volatile__(
+			"at s1e1r, %1\n"
+			"isb\n"
+			"mrs %0, par_el1\n"
+			: "=r"(par) : "r"(init) : "memory");
+		if (!(par & 1)) {
+			unsigned long phys =
+				(par & 0x0000FFFFFFFFF000UL)
+				| ((unsigned long)init & 0xFFF);
+			_nvk_linmap_offset = (unsigned long)init - phys;
+			_nvk_linmap_detected = 1;
+		}
+	}
+}
+
+static __always_inline unsigned long _nvk_linmap_phys_to_virt(unsigned long pa)
+{
+	return pa + _nvk_linmap_offset;
+}
+
 static int nvk_addr_init(void)
 {
 	if (_nvk_addr_inited) return 0;
@@ -43,6 +111,13 @@ static int nvk_addr_init(void)
 				_nvk_voffset_derived = 1;
 			}
 		}
+	}
+
+	_nvk_detect_linmap();
+
+	if (_nvk_linmap_detected) {
+		_nvk_pte_make_rw = nvk_pte_set_rw;
+		_nvk_pte_make_ro = nvk_pte_set_ro;
 	}
 
 	_nvk_addr_inited = 1;
@@ -190,7 +265,21 @@ struct nvk_pte_info {
 	int           level;
 };
 
+struct nvk_pte_walk_result {
+	unsigned long pte_phys;
+	unsigned long *pte_virt;
+};
+
+static int nvk_walk_pgtable_ex(unsigned long vaddr, struct nvk_pte_info *info,
+			       struct nvk_pte_walk_result *result);
+
 static int nvk_walk_pgtable(unsigned long vaddr, struct nvk_pte_info *info)
+{
+	return nvk_walk_pgtable_ex(vaddr, info, (void *)0);
+}
+
+static int nvk_walk_pgtable_ex(unsigned long vaddr, struct nvk_pte_info *info,
+			       struct nvk_pte_walk_result *result)
 {
 	unsigned long ttbr, table_addr, entry;
 	int shift = nvk_page_shift();
@@ -199,7 +288,8 @@ static int nvk_walk_pgtable(unsigned long vaddr, struct nvk_pte_info *info)
 	int idx_bits = shift - 3;
 
 	if (!info) return -1;
-	if (!_nvk_kimage_voffset_a && !_nvk_voffset_derived) return -5;
+	if (!_nvk_linmap_detected) _nvk_detect_linmap();
+	if (!_nvk_linmap_detected) return -5;
 
 	info->valid = 0;
 	info->pte_val = 0;
@@ -208,6 +298,7 @@ static int nvk_walk_pgtable(unsigned long vaddr, struct nvk_pte_info *info)
 	info->executable = 0;
 	info->user_accessible = 0;
 	info->level = -1;
+	if (result) { result->pte_phys = 0; result->pte_virt = (void *)0; }
 
 	if (vaddr & (1UL << 63))
 		__asm__ __volatile__("mrs %0, ttbr1_el1" : "=r"(ttbr));
@@ -230,8 +321,8 @@ static int nvk_walk_pgtable(unsigned long vaddr, struct nvk_pte_info *info)
 		idx = (vaddr >> s) & mask;
 
 		unsigned long pte_phys = table_addr + idx * 8;
-		unsigned long voff = _nvk_get_voffset();
-		unsigned long pte_addr = voff ? pte_phys + voff : pte_phys;
+		unsigned long pte_addr =
+			_nvk_linmap_phys_to_virt(pte_phys);
 
 		if (nvk_mem_read(&entry, (void *)pte_addr, 8))
 			return -2;
@@ -259,6 +350,10 @@ static int nvk_walk_pgtable(unsigned long vaddr, struct nvk_pte_info *info)
 		info->executable = !(entry & NVK_PTE_UXN)
 				   || !(entry & NVK_PTE_PXN);
 		info->user_accessible = ((entry >> 6) & 1) != 0;
+		if (result) {
+			result->pte_phys = pte_phys;
+			result->pte_virt = (unsigned long *)pte_addr;
+		}
 		return 0;
 	}
 
@@ -298,6 +393,100 @@ static unsigned long nvk_read_ttbr1(void)
 	unsigned long v;
 	__asm__ __volatile__("mrs %0, ttbr1_el1" : "=r"(v));
 	return v;
+}
+
+
+static int nvk_pte_set_rw(unsigned long vaddr)
+{
+	struct nvk_pte_info info;
+	struct nvk_pte_walk_result wr;
+	int ret = nvk_walk_pgtable_ex(vaddr, &info, &wr);
+	if (ret) return ret;
+	if (!info.valid) return -1;
+	if (info.writable) return 1;
+
+	unsigned long new_pte = info.pte_val & ~NVK_PTE_RO;
+	__atomic_store_n(wr.pte_virt, new_pte, __ATOMIC_RELEASE);
+	__asm__ __volatile__(
+		"dsb ishst\n"
+		"tlbi vale1is, %0\n"
+		"dsb ish\n"
+		"isb\n"
+		:: "r"(vaddr >> 12) : "memory");
+	return 0;
+}
+
+static int nvk_pte_set_ro(unsigned long vaddr)
+{
+	struct nvk_pte_info info;
+	struct nvk_pte_walk_result wr;
+	int ret = nvk_walk_pgtable_ex(vaddr, &info, &wr);
+	if (ret) return ret;
+	if (!info.valid) return -1;
+	if (!info.writable) return 1;
+
+	unsigned long new_pte = info.pte_val | NVK_PTE_RO;
+	__atomic_store_n(wr.pte_virt, new_pte, __ATOMIC_RELEASE);
+	__asm__ __volatile__(
+		"dsb ishst\n"
+		"tlbi vale1is, %0\n"
+		"dsb ish\n"
+		"isb\n"
+		:: "r"(vaddr >> 12) : "memory");
+	return 0;
+}
+
+static int nvk_pte_set_exec(unsigned long vaddr)
+{
+	struct nvk_pte_info info;
+	struct nvk_pte_walk_result wr;
+	int ret = nvk_walk_pgtable_ex(vaddr, &info, &wr);
+	if (ret) return ret;
+	if (!info.valid) return -1;
+
+	unsigned long new_pte = info.pte_val & ~(NVK_PTE_PXN | NVK_PTE_UXN);
+	__atomic_store_n(wr.pte_virt, new_pte, __ATOMIC_RELEASE);
+	__asm__ __volatile__(
+		"dsb ishst\n"
+		"tlbi vale1is, %0\n"
+		"dsb ish\n"
+		"isb\n"
+		:: "r"(vaddr >> 12) : "memory");
+	return 0;
+}
+
+static int nvk_pte_set_rw_range(unsigned long start, unsigned long end)
+{
+	unsigned long pgsz = nvk_page_size();
+	unsigned long addr;
+	int count = 0;
+	for (addr = start & ~(pgsz - 1); addr < end; addr += pgsz) {
+		if (nvk_pte_set_rw(addr) == 0)
+			count++;
+	}
+	return count;
+}
+
+static int nvk_pte_set_ro_range(unsigned long start, unsigned long end)
+{
+	unsigned long pgsz = nvk_page_size();
+	unsigned long addr;
+	int count = 0;
+	for (addr = start & ~(pgsz - 1); addr < end; addr += pgsz) {
+		if (nvk_pte_set_ro(addr) == 0)
+			count++;
+	}
+	return count;
+}
+
+static __always_inline int nvk_linmap_available(void)
+{
+	return _nvk_linmap_detected;
+}
+
+static __always_inline unsigned long nvk_linmap_offset(void)
+{
+	return _nvk_linmap_offset;
 }
 
 #endif /* NVK_ADDR_H */
