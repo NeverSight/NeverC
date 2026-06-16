@@ -56,6 +56,10 @@ jobs:
         if: hashFiles('runtime/android/arm64') != ''
         run: cd runtime && zip -r ../neverc-runtime-android-arm64.zip android/arm64
 
+      - name: Package runtime — android-kernel-arm64
+        if: hashFiles('runtime/android/kernel') != ''
+        run: cd runtime && zip -r ../neverc-runtime-android-kernel-arm64.zip android/kernel
+
       - name: List packages
         run: ls -lh neverc-runtime-*.zip
 

@@ -212,6 +212,7 @@ main() {
   say "  neverc runtime install linux-arm64"
   say "  neverc runtime install macos-arm64"
   say "  neverc runtime install android-arm64"
+  say "  neverc runtime install android-kernel-arm64"
   say "  neverc runtime list"
 }
 
