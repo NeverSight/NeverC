@@ -44,7 +44,6 @@ constexpr TargetDef Targets[] = {
     {{"macos-arm64"}, {"macos/arm64"}},
     {{"android-arm64"}, {"android/arm64"}},
     {{"android-kernel-arm64"}, {"android/kernel"}},
-    {{"std-sources"}, {"std/src"}},
 };
 
 const TargetDef *lookupTarget(StringRef Name) {
@@ -276,23 +275,7 @@ int fetchAndExtract(const TargetDef *T, StringRef RtDir, StringRef Version,
   return 0;
 }
 
-int installStdSourcesIfNeeded(StringRef RtDir, StringRef Version) {
-  const TargetDef *StdSrc = lookupTarget("std-sources");
-  if (!StdSrc)
-    return 0;
-  if (isInstalled(RtDir, StdSrc->CheckDir)) {
-    outs() << "std-sources already installed.\n";
-    return 0;
-  }
-  outs() << "\nInstalling std sources for debugging...\n";
-  int Rc = fetchAndExtract(StdSrc, RtDir, Version, /*RemoveFirst=*/false);
-  if (Rc == 0)
-    outs() << "Done! std-sources installed.\n";
-  return Rc;
-}
-
-int doInstall(StringRef TargetName, StringRef Root, StringRef Version,
-              bool WithSources) {
+int doInstall(StringRef TargetName, StringRef Root, StringRef Version) {
   const TargetDef *T = requireTarget(TargetName);
   if (!T)
     return 1;
@@ -309,8 +292,6 @@ int doInstall(StringRef TargetName, StringRef Root, StringRef Version,
     int Rc = fetchAndExtract(T, RtDir, Version, /*RemoveFirst=*/true);
     if (Rc == 0)
       outs() << "\nDone! Runtime '" << T->Name << "' updated.\n";
-    if (Rc == 0 && WithSources && T->Name != "std-sources")
-      Rc = installStdSourcesIfNeeded(RtDir, Version);
     return Rc;
   }
 
@@ -319,14 +300,11 @@ int doInstall(StringRef TargetName, StringRef Root, StringRef Version,
   if (Rc == 0)
     outs() << "\nDone! Runtime '" << T->Name << "' installed to " << RtDir
            << "/\n";
-  if (Rc == 0 && WithSources && T->Name != "std-sources")
-    Rc = installStdSourcesIfNeeded(RtDir, Version);
   return Rc;
 }
 
 /// `neverc runtime update <target>` — force-update without prompting.
-int doUpdate(StringRef TargetName, StringRef Root, StringRef Version,
-             bool WithSources) {
+int doUpdate(StringRef TargetName, StringRef Root, StringRef Version) {
   const TargetDef *T = requireTarget(TargetName);
   if (!T)
     return 1;
@@ -340,8 +318,6 @@ int doUpdate(StringRef TargetName, StringRef Root, StringRef Version,
   if (Rc == 0)
     outs() << "\nDone! Runtime '" << T->Name
            << (WasInstalled ? "' updated.\n" : "' installed.\n");
-  if (Rc == 0 && WithSources && T->Name != "std-sources")
-    Rc = installStdSourcesIfNeeded(RtDir, Version);
   return Rc;
 }
 
@@ -400,9 +376,7 @@ void printUsage() {
   outs() << "\n\n"
          << "Options:\n"
          << "  --version <tag>     Use a specific release version (e.g. "
-            "v0.1.0)\n"
-         << "  --with-sources      Also install std library sources for "
-            "source-level debugging\n";
+            "v0.1.0)\n";
 }
 
 } // anonymous namespace
@@ -425,31 +399,26 @@ int runRuntime(int Argc, const char **Argv, const char *Argv0) {
 
   StringRef Cmd(Argv[1]);
 
-  // Scan trailing args for --version <tag> and --with-sources.
   StringRef Version;
-  bool WithSources = false;
   for (int I = 2; I < Argc; ++I) {
-    if (StringRef(Argv[I]) == "--version" && I + 1 < Argc) {
+    if (StringRef(Argv[I]) == "--version" && I + 1 < Argc)
       Version = Argv[++I];
-    } else if (StringRef(Argv[I]) == "--with-sources") {
-      WithSources = true;
-    }
   }
 
   if (Cmd == "install") {
     if (Argc < 3) {
-      errs() << "usage: neverc runtime install <target> [--with-sources]\n";
+      errs() << "usage: neverc runtime install <target>\n";
       return 1;
     }
-    return doInstall(Argv[2], Root, Version, WithSources);
+    return doInstall(Argv[2], Root, Version);
   }
 
   if (Cmd == "update" || Cmd == "upgrade") {
     if (Argc < 3) {
-      errs() << "usage: neverc runtime update <target> [--with-sources]\n";
+      errs() << "usage: neverc runtime update <target>\n";
       return 1;
     }
-    return doUpdate(Argv[2], Root, Version, WithSources);
+    return doUpdate(Argv[2], Root, Version);
   }
 
   if (Cmd == "remove" || Cmd == "uninstall") {

@@ -67,7 +67,7 @@ def main():
                 "-fno-builtin-std",
                 "-fno-lto",
                 "-ffreestanding", "-std=gnu11", "-w",
-                f"-I{args.std_include_dir}",
+                f"-I{inc_dir_abs}",
                 f"-fdebug-prefix-map={src_dir_abs}=runtime/std/src",
                 f"-fdebug-prefix-map={inc_dir_abs}=runtime/std/include",
                 os.path.abspath(src), "-o", bc_path,

@@ -4,8 +4,8 @@
 # and converted to an embedded C header for linking into the compiler.
 #
 # Headers are installed to the resource dir.  Sources (.c) are used for
-# building bitcode; they can optionally be shipped via `neverc runtime
-# install std-sources` for source-level debugging (see neverc-std-sources).
+# building bitcode and always shipped alongside headers for source-level
+# debugging (DWARF paths map to runtime/std/src/ via -fdebug-prefix-map).
 # Runtime tests live in tests/neverc/std/ and are built as neverc-std-tests.
 
 include(GetNeverCResourceDir)
@@ -30,8 +30,21 @@ endif()
 # Manifest for the compiler's symbol→bitcode lookup.
 install(FILES manifest.json DESTINATION std COMPONENT neverc-std)
 
-# Optional: install std source files for source-level debugging.
-# Downloaded separately via `neverc runtime install std-sources`.
+# Install std source files for source-level debugging.
+# Debuggers use the DWARF paths mapped by -fdebug-prefix-map in
+# build_std_bitcode.py to locate these under runtime/std/src/.
 install(DIRECTORY src/ DESTINATION runtime/std/src
-        COMPONENT neverc-std-sources
+        COMPONENT neverc-std
         FILES_MATCHING PATTERN "*.c" PATTERN "*.h")
+
+# Copy std sources to the build tree so dev builds support source-level
+# debugging without a full install.
+set(_std_src_build_dst "${LLVM_LIBRARY_OUTPUT_INTDIR}/../runtime/std/src")
+add_custom_target(neverc-std-sources ALL
+  COMMAND ${CMAKE_COMMAND} -E rm -rf "${_std_src_build_dst}"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${_std_src_build_dst}
+  COMMENT "Syncing NeverC std sources to build output..."
+)
+set_target_properties(neverc-std-sources PROPERTIES FOLDER "Misc")
