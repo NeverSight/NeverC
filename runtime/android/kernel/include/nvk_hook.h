@@ -552,7 +552,15 @@ static __always_inline void _nvk_icache_inval(unsigned long addr,
 	__asm__ __volatile__("isb" ::: "memory");
 }
 
-#define _NVK_POOL_MAGIC  0x4E564B50U  /* "NVKP" */
+#ifndef _NVK_POOL_MAGIC
+#  if __has_builtin(__builtin_neverc_random_u64)
+#    define _NVK_POOL_MAGIC ((u32)__builtin_neverc_random_u64())
+#  elif defined(NVK_CACHE_SEED)
+#    define _NVK_POOL_MAGIC ((u32)(NVK_CACHE_SEED))
+#  else
+#    define _NVK_POOL_MAGIC 0x4E564B50U
+#  endif
+#endif
 
 struct _nvk_pool_page {
 	u32    *base;
