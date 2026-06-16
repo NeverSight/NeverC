@@ -1,40 +1,77 @@
 #include "Core/AndroidKernelEmitter.h"
 #include "llvm/IR/Attributes.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/TargetParser/Triple.h"
 
 using namespace neverc::Emit;
 
-// Emit placeholder sections that the arm64 module loader expects.
+static llvm::GlobalVariable *
+emitWeakPad(llvm::Module &M, llvm::StringRef Name, llvm::StringRef Section) {
+  if (auto *GV = M.getGlobalVariable(Name))
+    return GV;
+  auto &Ctx = M.getContext();
+  auto *I8 = llvm::Type::getInt8Ty(Ctx);
+  auto *GV = new llvm::GlobalVariable(
+      M, I8, true, llvm::GlobalValue::WeakAnyLinkage,
+      llvm::ConstantInt::get(I8, 0), Name);
+  GV->setSection(Section);
+  GV->setAlignment(llvm::Align(1));
+  GV->setDSOLocal(true);
+  return GV;
+}
+
 static void emitPLTSections(llvm::Module &M) {
-  M.appendModuleInlineAsm(
-      ".pushsection .plt,\"ax\",%progbits\n\t.byte 0\n\t.popsection\n"
-      ".pushsection .init.plt,\"ax\",%progbits\n\t.byte 0\n\t.popsection\n"
-      ".pushsection .text.ftrace_trampoline,\"ax\",%progbits\n\t"
-      ".byte 0\n\t.popsection\n");
+  emitWeakPad(M, "__nvk_plt", ".plt");
+  emitWeakPad(M, "__nvk_init_plt", ".init.plt");
+  emitWeakPad(M, "__nvk_ftrace", ".text.ftrace_trampoline");
 }
 
-// Emit an empty __versions section so CONFIG_MODVERSIONS=y kernels find
-// the section but skip all CRC checks.
 static void emitEmptyVersionsSection(llvm::Module &M) {
-  M.appendModuleInlineAsm(".pushsection __versions,\"a\"\n\t.popsection\n");
+  if (auto *GV = M.getGlobalVariable("__nvk_versions"))
+    return;
+  auto &Ctx = M.getContext();
+  auto *Arr = llvm::ArrayType::get(llvm::Type::getInt8Ty(Ctx), 0);
+  auto *GV = new llvm::GlobalVariable(
+      M, Arr, true, llvm::GlobalValue::WeakAnyLinkage,
+      llvm::ConstantAggregateZero::get(Arr), "__nvk_versions");
+  GV->setSection("__versions");
+  GV->setDSOLocal(true);
 }
 
-// Emit weak no-op stubs that CONFIG_CFI_CLANG kernels require.
-// Without these the module loader rejects the .ko or panics.
+static void emitCFIStubFn(llvm::Module &M, llvm::StringRef Name,
+                          llvm::GlobalValue::VisibilityTypes Vis,
+                          unsigned Align) {
+  if (M.getFunction(Name))
+    return;
+  auto &Ctx = M.getContext();
+  auto *FTy = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), false);
+  auto *F = llvm::Function::Create(FTy, llvm::GlobalValue::WeakAnyLinkage,
+                                   Name, &M);
+  F->setVisibility(Vis);
+  F->setDSOLocal(true);
+  F->setAlignment(llvm::Align(Align));
+  F->addFnAttr(llvm::Attribute::Naked);
+  F->addFnAttr(llvm::Attribute::NoUnwind);
+  auto *BB = llvm::BasicBlock::Create(Ctx, "", F);
+  auto *IAsmTy = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), false);
+  auto *Body = llvm::InlineAsm::get(IAsmTy, "hint #25\nhint #29\nret",
+                                    "", true, false);
+  auto *CI = llvm::CallInst::Create(IAsmTy, Body, "", BB);
+  CI->setDoesNotThrow();
+  llvm::ReturnInst::Create(Ctx, BB);
+}
+
 static void emitCFICheckStubs(llvm::Module &M) {
-  M.appendModuleInlineAsm(
-      ".weak __cfi_check\n"
-      ".type __cfi_check, %function\n"
-      ".p2align 12\n"
-      "__cfi_check:\n\thint #25\n\thint #29\n\tret\n"
-      ".size __cfi_check, .-__cfi_check\n"
-      ".weak __cfi_check_fail\n"
-      ".hidden __cfi_check_fail\n"
-      ".type __cfi_check_fail, %function\n"
-      "__cfi_check_fail:\n\thint #25\n\thint #29\n\tret\n"
-      ".size __cfi_check_fail, .-__cfi_check_fail\n");
+  emitCFIStubFn(M, "__cfi_check",
+                llvm::GlobalValue::DefaultVisibility, 4096);
+  emitCFIStubFn(M, "__cfi_check_fail",
+                llvm::GlobalValue::HiddenVisibility, 4);
 }
 
 
