@@ -113,18 +113,29 @@ unsigned long neverc_krt_inject_mmap(struct task_struct *task,
 
 	unsigned long flags = NEVERC_KRT_INJECT_MAP_PRIVATE | NEVERC_KRT_INJECT_MAP_ANON;
 	unsigned long populate = 0;
+	unsigned long result;
 
 	_neverc_krt_use_mm(mm);
 	if (_neverc_krt_mmap_wlock) _neverc_krt_mmap_wlock(mm);
-	void *ret = _neverc_krt_do_mmap((void *)0, 0, len, prot, flags,
-				  0, &populate, (void *)0);
+
+	if (_neverc_krt_kernel_ver >= 606) {
+		neverc_krt_do_mmap_v2_fn fn =
+			(neverc_krt_do_mmap_v2_fn)(void *)_neverc_krt_do_mmap;
+		result = fn((void *)0, 0, len, prot, flags,
+			    0, 0, &populate, (void *)0);
+	} else {
+		result = (unsigned long)_neverc_krt_do_mmap(
+			(void *)0, 0, len, prot, flags,
+			0, &populate, (void *)0);
+	}
+
 	if (_neverc_krt_mmap_wunlock) _neverc_krt_mmap_wunlock(mm);
 	_neverc_krt_unuse_mm(mm);
 
-	if ((unsigned long)ret < 0x1000UL)
+	if (result < 0x1000UL)
 		addr = 0;
 	else
-		addr = (unsigned long)ret;
+		addr = result;
 
 	if (_neverc_krt_mmput) _neverc_krt_mmput(mm);
 	return addr;

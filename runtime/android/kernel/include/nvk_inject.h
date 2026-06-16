@@ -11,10 +11,23 @@
 #include <nvk_vma.h>
 #include <nvk_addr.h>
 
+/*
+ * do_mmap signature changed in 6.6: an extra vm_flags parameter was
+ * inserted between flags and pgoff.  Both typedefs are kept so the
+ * runtime can cast to the right ABI depending on _neverc_krt_kernel_ver.
+ *
+ *   5.10/5.15/6.1:  do_mmap(file,addr,len,prot,flags,pgoff,*pop,*uf)       8 params
+ *   6.6/6.12:       do_mmap(file,addr,len,prot,flags,vm_flags,pgoff,*pop,*uf)  9 params
+ */
 typedef void *(*neverc_krt_do_mmap_fn)(void *file, unsigned long addr,
 				unsigned long len, unsigned long prot,
 				unsigned long flags, unsigned long pgoff,
 				unsigned long *populate, void *uf);
+typedef unsigned long (*neverc_krt_do_mmap_v2_fn)(void *file, unsigned long addr,
+				unsigned long len, unsigned long prot,
+				unsigned long flags, unsigned long vm_flags,
+				unsigned long pgoff, unsigned long *populate,
+				void *uf);
 typedef int   (*neverc_krt_vm_mmap_fn)(void *file, unsigned long addr,
 				unsigned long len, unsigned long prot,
 				unsigned long flags, unsigned long pgoff);
