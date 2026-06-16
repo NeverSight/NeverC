@@ -1,4 +1,6 @@
 #include "Core/AndroidKernelEmitter.h"
+#include "llvm/IR/Attributes.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/TargetParser/Triple.h"
 
@@ -74,10 +76,25 @@ static void emitCFIStubs(llvm::Module &M) {
       ".popsection\n");
 }
 
+// Apply per-function attributes that cannot be expressed via ToolChain flags:
+//   ShadowCallStack  — -fsanitize=shadow-call-stack would pull in the
+//                      sanitizer runtime which the kernel does not export
+//   remove UWTable   — kernel modules do not use .eh_frame
+static void applyKernelFunctionAttrs(llvm::Module &M) {
+  for (llvm::Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    F.addFnAttr(llvm::Attribute::ShadowCallStack);
+    F.removeFnAttr(llvm::Attribute::UWTable);
+    F.setUWTableKind(llvm::UWTableKind::None);
+  }
+}
+
 void AndroidKernel::emitFixups(llvm::Module &M, unsigned Arch) {
   if (Arch != llvm::Triple::aarch64)
     return;
 
+  applyKernelFunctionAttrs(M);
   emitPLTSections(M);
   emitEmptyVersionsSection(M);
   emitCFIStubs(M);
