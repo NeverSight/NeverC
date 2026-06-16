@@ -501,9 +501,10 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
   // Unified linker-level options derived from compiler flags.
   // gc-sections on for -O1+; ICF safe for -O2, all for -O3.
   bool Optimized = areOptimizationsEnabled(Args);
-  Cfg.gcSections = Optimized && !Cfg.relocatable;
+  bool IsRelocatable = Args.hasArg(options::OPT_r);
+  Cfg.gcSections = Optimized && !IsRelocatable;
   Cfg.ehFrameHdr = true;
-  if (Cfg.linkerOptLevel >= 2 && !Cfg.relocatable)
+  if (Cfg.linkerOptLevel >= 2 && !IsRelocatable)
     Cfg.icfLevel = (Cfg.linkerOptLevel >= 3) ? 2 : 1;
   Cfg.buildId = "fast";
 
