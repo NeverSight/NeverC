@@ -35,7 +35,7 @@ with `-DNVK_KERNEL=510|515|601|606|612` (default `510` = android12-5.10).
 
 ```
 runtime/android/kernel/
-  include/                     # NeverC kernel SDK (24 headers)
+  include/                     # NeverC kernel SDK (28 headers)
     nvkmod.h                   #   module entry point, kprobe bootstrap, NVK_BOOTSTRAP()
     nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.12)
     nvk.h                      #   all-in-one include (initializes all subsystems, auto vermagic fix)
@@ -58,8 +58,13 @@ runtime/android/kernel/
     nvk_ksyms.h                #   extended symbol table operations (walk, prefix search, info)
     nvk_seccomp.h              #   seccomp filter inspection and bypass
     nvk_pmu.h                  #   ARM64 PMU counter access
-    nvk_inject.h               #   remote process memory injection (I-cache coherent)
+    nvk_inject.h               #   remote process injection (mmap + ELF loader + I-cache coherent)
     nvk_ns.h                   #   PID namespace operations
+    nvk_binder.h               #   Binder transaction interception + filtering (lazy hook)
+    nvk_crypto.h               #   SHA-256, HMAC-SHA256, ChaCha20, integrity verification
+    nvk_timer.h                #   hrtimer, timestamps (ktime/arch counter), busy-wait
+    nvk_power.h                #   PM notifier (suspend/resume) + reboot notifier
+    nvk_cpu.h                  #   CPU topology, online enumeration, per-CPU data, SMP calls
   arm64/
     include/                   # minimal kernel headers (107 total)
       linux/*.h                #   99 headers: types, kernel, printk, list, slab, fs, ...
@@ -111,8 +116,13 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_ksyms.h` | Extended symbol operations (`nvk_ksyms_walk`, `nvk_ksyms_for_each`, prefix search, function size) |
 | `nvk_seccomp.h` | Seccomp filter inspection and bypass (per-process mode read/clear/set) |
 | `nvk_pmu.h` | ARM64 PMU counter access (cycle/instruction/cache/branch counters) |
-| `nvk_inject.h` | Remote process memory injection (shellcode, code cave discovery, I-cache coherent) |
+| `nvk_inject.h` | Remote process injection — `nvk_inject_mmap/munmap`, `nvk_inject_shellcode` (cross-process I-cache coherent via DC CIVAC + IC IALLU), `nvk_inject_elf` (ELF PT_LOAD segment loader), thread hijack setup |
 | `nvk_ns.h` | PID namespace operations (cross-namespace PID translation, nsproxy) |
+| `nvk_binder.h` | Binder transaction interception + filtering (lazy hook — only installed on first filter add) |
+| `nvk_crypto.h` | `nvk_sha256`, `nvk_hmac_sha256`, `nvk_chacha20_encrypt`, `nvk_crypto_verify_region` — constant-time, pure C, zero kernel dependencies |
+| `nvk_timer.h` | `nvk_timer_start_ms/us/ns`, `nvk_ktime_get_ns`, `nvk_arch_counter`, `nvk_udelay` — hrtimer wrapper + ARM64 generic timer |
+| `nvk_power.h` | `nvk_pm_register/unregister`, `nvk_reboot_register/unregister` — suspend/resume/shutdown awareness |
+| `nvk_cpu.h` | `nvk_cpu_id/cluster/midr`, `nvk_for_each_online_cpu`, `NVK_DEFINE_PER_CPU`, `nvk_smp_on_each`, CPU feature detection (CRC32/SHA/AES/LSE/SVE) |
 
 All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xorstr.
 

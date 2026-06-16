@@ -76,6 +76,11 @@ static int nvk_binder_filter_add(nvk_binder_filter_fn fn, u32 code)
 	int idx = __atomic_load_n(&_nvk_binder_filter_cnt, __ATOMIC_ACQUIRE);
 	if (idx >= NVK_BINDER_FILTER_MAX) return -1;
 
+	if (!_nvk_binder_hook.active) {
+		int ret = _nvk_binder_hook_install();
+		if (ret) return ret;
+	}
+
 	_nvk_binder_filters[idx].fn = fn;
 	_nvk_binder_filters[idx].target_code = code;
 	__asm__ __volatile__("dmb ish" ::: "memory");
@@ -191,20 +196,22 @@ static int _nvk_binder_ioctl_hook(void *filp, unsigned int cmd,
 	return ret;
 }
 
+static void *_nvk_binder_target;
+
+static int _nvk_binder_hook_install(void)
+{
+	if (_nvk_binder_hook.active) return 0;
+	if (!_nvk_binder_target) return -1;
+	return nvk_hook_install(&_nvk_binder_hook, _nvk_binder_target,
+				(void *)_nvk_binder_ioctl_hook,
+				(void **)&_nvk_orig_binder_ioctl);
+}
+
 static int nvk_binder_init(void)
 {
-	void *target;
-
 	if (_nvk_binder_inited) return 0;
-
-	target = NVK_LOOKUP("binder_ioctl");
-	if (!target) return -1;
-
-	int ret = nvk_hook_install(&_nvk_binder_hook, target,
-				   (void *)_nvk_binder_ioctl_hook,
-				   (void **)&_nvk_orig_binder_ioctl);
-	if (ret) return ret;
-
+	_nvk_binder_target = NVK_LOOKUP("binder_ioctl");
+	if (!_nvk_binder_target) return -1;
 	_nvk_binder_inited = 1;
 	return 0;
 }

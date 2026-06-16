@@ -25,6 +25,10 @@
 #include <nvk_inject.h>
 #include <nvk_ns.h>
 #include <nvk_binder.h>
+#include <nvk_crypto.h>
+#include <nvk_timer.h>
+#include <nvk_power.h>
+#include <nvk_cpu.h>
 
 #define NVK_SUB_MEM       0
 #define NVK_SUB_PROCESS   1
@@ -42,7 +46,10 @@
 #define NVK_SUB_INJECT   13
 #define NVK_SUB_NS       14
 #define NVK_SUB_BINDER   15
-#define NVK_SUB_COUNT    16
+#define NVK_SUB_TIMER    16
+#define NVK_SUB_POWER    17
+#define NVK_SUB_CPU      18
+#define NVK_SUB_COUNT    19
 
 struct nvk_state {
 	u32 ready;
@@ -78,6 +85,9 @@ static int nvk_init_all(void)
 	_nvk_state.sub_status[NVK_SUB_INJECT] = nvk_inject_init();
 	_nvk_state.sub_status[NVK_SUB_NS]     = nvk_ns_init();
 	_nvk_state.sub_status[NVK_SUB_BINDER] = nvk_binder_init();
+	_nvk_state.sub_status[NVK_SUB_TIMER]  = nvk_timer_init();
+	_nvk_state.sub_status[NVK_SUB_POWER]  = nvk_power_init();
+	_nvk_state.sub_status[NVK_SUB_CPU]    = nvk_cpu_init();
 	nvk_vma_init();
 
 	if (nvk_check_kernel_match() != NVK_VER_EXACT)
