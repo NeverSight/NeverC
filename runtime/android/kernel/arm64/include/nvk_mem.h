@@ -144,6 +144,75 @@ static long nvk_mem_write_user(void __user *dst, const void *src, size_t len)
 }
 
 
+static int _nvk_pte_walk_set(unsigned long addr, int writable)
+{
+	unsigned long tcr, t1sz, levels, pgsz;
+	unsigned long ttbr1, table, idx, desc;
+	int va_bits, bits_per_level;
+
+	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
+	t1sz = (tcr >> 16) & 0x3F;
+	va_bits = 64 - (int)t1sz;
+
+	pgsz = _nvk_mem_get_page_size();
+	if (pgsz == 4096) {
+		bits_per_level = 9;
+	} else if (pgsz == 16384) {
+		bits_per_level = 11;
+	} else {
+		bits_per_level = 13;
+	}
+
+	levels = (va_bits - 12 + bits_per_level - 1) / bits_per_level;
+	if (levels < 2) levels = 2;
+	if (levels > 4) levels = 4;
+
+	__asm__ __volatile__("mrs %0, ttbr1_el1" : "=r"(ttbr1));
+	table = ttbr1 & ~0xFFFFUL & ~1UL;
+	if (!table) return -1;
+
+	unsigned long level;
+	for (level = 4 - levels; level < 3; level++) {
+		int shift = (3 - level) * bits_per_level + 12;
+		unsigned long mask = (1UL << bits_per_level) - 1;
+		idx = (addr >> shift) & mask;
+		unsigned long entry_addr = table + idx * 8;
+
+		if (nvk_mem_read(&desc, (void *)entry_addr, 8))
+			return -2;
+
+		if ((desc & 3) != 3) return -3;
+		table = desc & ~0xFFFUL & ~(0xFFFFUL << 48);
+	}
+
+	{
+		int shift = 12;
+		unsigned long mask = (1UL << bits_per_level) - 1;
+		idx = (addr >> shift) & mask;
+		unsigned long pte_addr = table + idx * 8;
+
+		if (nvk_mem_read(&desc, (void *)pte_addr, 8))
+			return -4;
+
+		if ((desc & 1) == 0) return -5;
+
+		unsigned long new_desc;
+		if (writable)
+			new_desc = desc & ~_NVK_PTE_RDONLY;
+		else
+			new_desc = desc | _NVK_PTE_RDONLY;
+
+		if (new_desc == desc) return 0;
+
+		*(volatile unsigned long *)pte_addr = new_desc;
+		__asm__ __volatile__("dsb ishst" ::: "memory");
+		__asm__ __volatile__("tlbi vale1is, %0" :: "r"(addr >> 12) : "memory");
+		__asm__ __volatile__("dsb ish" ::: "memory");
+		__asm__ __volatile__("isb" ::: "memory");
+	}
+	return 0;
+}
+
 static int nvk_mem_make_rw(unsigned long addr)
 {
 	unsigned long pgsz = _nvk_mem_get_page_size();
@@ -158,7 +227,7 @@ static int nvk_mem_make_rw(unsigned long addr)
 		return _nvk_set_memory_rw(page, 1);
 	if (_nvk_pte_make_rw)
 		return _nvk_pte_make_rw(page);
-	return -1;
+	return _nvk_pte_walk_set(page, 1);
 }
 
 static int nvk_mem_make_ro(unsigned long addr)
@@ -175,7 +244,7 @@ static int nvk_mem_make_ro(unsigned long addr)
 		return _nvk_set_memory_ro(page, 1);
 	if (_nvk_pte_make_ro)
 		return _nvk_pte_make_ro(page);
-	return -1;
+	return _nvk_pte_walk_set(page, 0);
 }
 
 static int nvk_mem_write_protected(unsigned long addr, const void *src,

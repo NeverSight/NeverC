@@ -726,6 +726,17 @@ static __always_inline int nvk_a64_is_frame_setup(u32 insn)
 	return 0;
 }
 
+static __always_inline int nvk_a64_is_scs_push(u32 insn)
+{
+	/* str x30, [x18], #8 */
+	if (insn == 0xF800841EU) return 1;
+	/* str x30, [x18, #0]! (alternative) */
+	if (insn == 0xF81F0A5EU) return 1;
+	/* stur x30, [x18] (unsigned offset) */
+	if (insn == 0xF900025EU) return 1;
+	return 0;
+}
+
 static __always_inline int nvk_a64_is_hook_patch(u32 insn)
 {
 	if (insn == NVK_A64_BRK_KPROBE) return 1;
@@ -857,7 +868,7 @@ static void _nvk_scan_entry(u32 *code, int *skip, int *total)
 		u32 insn = code[s];
 		if (nvk_a64_is_bti(insn) || insn == NVK_A64_NOP ||
 		    nvk_a64_is_pac_sign(insn) || nvk_a64_is_stp_fp_lr(insn) ||
-		    nvk_a64_is_frame_setup(insn))
+		    nvk_a64_is_frame_setup(insn) || nvk_a64_is_scs_push(insn))
 			s++;
 		else
 			break;
@@ -1415,6 +1426,17 @@ static void _nvk_full_barrier(void)
 	__asm__ __volatile__("isb" ::: "memory");
 }
 
+static __always_inline void _nvk_tlbi_range(unsigned long start,
+					    unsigned long end)
+{
+	unsigned long addr;
+	for (addr = start & ~0xFFFUL; addr < end; addr += 0x1000)
+		__asm__ __volatile__("tlbi vale1is, %0"
+				     :: "r"(addr >> 12) : "memory");
+	__asm__ __volatile__("dsb ish" ::: "memory");
+	__asm__ __volatile__("isb" ::: "memory");
+}
+
 static void _nvk_quiesce(void)
 {
 	if (_nvk_syncrcu) {
@@ -1477,6 +1499,8 @@ static void nvk_hook_remove(struct nvk_hook *h)
 
 	u32 *code = (u32 *)h->target;
 	_nvk_patch_multi(code, h->orig_insns, h->patch_count);
+	_nvk_tlbi_range((unsigned long)code,
+			(unsigned long)&code[h->patch_count]);
 
 	_nvk_quiesce_deep();
 
@@ -1564,6 +1588,8 @@ static void nvk_hook_remove_ctx(struct nvk_hook_ctx *h)
 
 	u32 *code = (u32 *)h->base.target;
 	_nvk_patch_multi(code, h->base.orig_insns, h->base.patch_count);
+	_nvk_tlbi_range((unsigned long)code,
+			(unsigned long)&code[h->base.patch_count]);
 
 	_nvk_quiesce_deep();
 

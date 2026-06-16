@@ -253,13 +253,6 @@ static int nvk_su_elevate_pid(int pid, u32 target_uid, u32 target_gid)
 	if (!task) return -1;
 	if (!_nvk_off_cred) return -2;
 
-	/*
-	 * We write directly into the live cred's uid/gid fields.
-	 * This is intentional: calling prepare_creds/commit_creds
-	 * from another task's context would corrupt current's creds.
-	 * The target cred's refcount is not affected since we only
-	 * modify existing fields in-place.
-	 */
 	const void *cred =
 		*(const void **)((unsigned long)task + _nvk_off_cred);
 	if (!cred) return -3;
@@ -277,7 +270,7 @@ static int nvk_su_elevate_pid(int pid, u32 target_uid, u32 target_gid)
 	int ret = nvk_mem_write_protected(cred_addr + base, ids, sizeof(ids));
 	if (ret) return ret;
 
-	/* Also patch the real_cred pointer (offset cred - 8 on most kernels) */
+	/* Also patch the real_cred pointer. */
 	const void *real_cred;
 	unsigned long real_off = _nvk_off_cred - 8;
 	if (nvk_mem_read(&real_cred, (void *)((unsigned long)task + real_off), 8))
