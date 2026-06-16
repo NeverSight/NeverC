@@ -29,10 +29,10 @@ static struct _nvk_sym_entry _nvk_sym_cache[_NVK_SYM_CACHE_SIZE];
 
 static __always_inline u32 _nvk_sym_hash(const char *s)
 {
-	u32 h = 0x811C9DC5U;
+	u32 h = 0;
 	while (*s) {
-		h ^= (unsigned char)*s++;
-		h *= 0x01000193U;
+		unsigned long c = (unsigned char)*s++;
+		h = (h + (c << 4) + (c >> 4)) * 11;
 	}
 	return h;
 }
