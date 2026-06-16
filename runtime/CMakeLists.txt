@@ -141,9 +141,11 @@ endif()
 
 # ---------------------------------------------------------------------------
 # macOS / arm64 sysroot  (macOS 14, Sonoma)
+# Symlinks have been materialised in-tree so the sysroot works on every
+# host filesystem (NTFS, ext4, APFS) without DEREFERENCE_SYMLINKS.
 # ---------------------------------------------------------------------------
 if(IS_DIRECTORY "${RUNTIME_SRC}/macos/arm64")
-  runtime_sdk_target(neverc-runtime-macos-arm64 DEREFERENCE_SYMLINKS
+  runtime_sdk_target(neverc-runtime-macos-arm64
     "macos/arm64:macos/arm64"
   )
 endif()
