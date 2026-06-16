@@ -103,7 +103,7 @@ static void *_nvk_task_mm(struct task_struct *task)
 	if (_nvk_off_mm == 0) {
 		const unsigned char *p = (const unsigned char *)task;
 		unsigned long i;
-		for (i = 0x300; i < 0x600; i += 8) {
+		for (i = 0x200; i < 0xA00; i += 8) {
 			unsigned long v = *(unsigned long *)(p + i);
 			if (v < 0xFFFF000000000000UL || v == 0)
 				continue;
