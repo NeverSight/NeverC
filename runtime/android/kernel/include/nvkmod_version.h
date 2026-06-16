@@ -24,10 +24,10 @@
 #endif
 
 #if NVK_KERNEL == 510
-/* Android 12, Linux 5.10 (GKI android12-5.10) */
+/* Android 12, Linux 5.10 (GKI android12-5.10, KMI gen 9) */
 #  ifndef NVK_VERMAGIC
 #    define NVK_VERMAGIC                                                        \
-       "5.10.0-android12-9 SMP preempt mod_unload aarch64"
+       "5.10.198-android12-9 SMP preempt mod_unload modversions aarch64"
 #  endif
 #  ifndef NVK_KERNEL_STR
 #    define NVK_KERNEL_STR "android12-5.10"
@@ -45,10 +45,10 @@
 #  endif
 
 #elif NVK_KERNEL == 515
-/* Android 13, Linux 5.15 (GKI android13-5.15) */
+/* Android 13, Linux 5.15 (GKI android13-5.15, KMI gen 8) */
 #  ifndef NVK_VERMAGIC
 #    define NVK_VERMAGIC                                                        \
-       "5.15.0-android13-8 SMP preempt mod_unload aarch64"
+       "5.15.206-android13-8 SMP preempt mod_unload modversions aarch64"
 #  endif
 #  ifndef NVK_KERNEL_STR
 #    define NVK_KERNEL_STR "android13-5.15"
@@ -66,10 +66,10 @@
 #  endif
 
 #elif NVK_KERNEL == 601
-/* Android 14, Linux 6.1 (GKI android14-6.1) */
+/* Android 14, Linux 6.1 (GKI android14-6.1, KMI gen 11) */
 #  ifndef NVK_VERMAGIC
 #    define NVK_VERMAGIC                                                        \
-       "6.1.0-android14-11 SMP preempt mod_unload aarch64"
+       "6.1.172-android14-11 SMP preempt mod_unload modversions aarch64"
 #  endif
 #  ifndef NVK_KERNEL_STR
 #    define NVK_KERNEL_STR "android14-6.1"
@@ -87,10 +87,10 @@
 #  endif
 
 #elif NVK_KERNEL == 606
-/* Android 15, Linux 6.6 (GKI android15-6.6) */
+/* Android 15, Linux 6.6 (GKI android15-6.6, KMI gen 8) */
 #  ifndef NVK_VERMAGIC
 #    define NVK_VERMAGIC                                                        \
-       "6.6.0-android15-8 SMP preempt mod_unload aarch64"
+       "6.6.138-android15-8 SMP preempt mod_unload modversions aarch64"
 #  endif
 #  ifndef NVK_KERNEL_STR
 #    define NVK_KERNEL_STR "android15-6.6"
@@ -108,10 +108,10 @@
 #  endif
 
 #elif NVK_KERNEL == 612
-/* Android 16, Linux 6.12 (GKI android16-6.12) */
+/* Android 16, Linux 6.12 (GKI android16-6.12, KMI gen 6) */
 #  ifndef NVK_VERMAGIC
 #    define NVK_VERMAGIC                                                        \
-       "6.12.0-android16-0 SMP preempt mod_unload aarch64"
+       "6.12.81-android16-6 SMP preempt mod_unload modversions aarch64"
 #  endif
 #  ifndef NVK_KERNEL_STR
 #    define NVK_KERNEL_STR "android16-6.12"
