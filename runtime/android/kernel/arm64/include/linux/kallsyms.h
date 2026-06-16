@@ -84,13 +84,15 @@ static __always_inline unsigned long _nvk_xor_opaque(unsigned long a,
 
 static __always_inline void _nvk_cache_key_init(void)
 {
-	unsigned long k;
+	unsigned long k, expected;
 	if (__atomic_load_n(&_nvk_cache_key, __ATOMIC_ACQUIRE))
 		return;
 	k = _nvk_xor_opaque(
 		(unsigned long)(void *)_nvk_sym_cache + (unsigned long)NVK_CACHE_SEED,
 		(unsigned long)(void *)&_nvk_cache_key);
-	__atomic_store_n(&_nvk_cache_key, k, __ATOMIC_RELEASE);
+	expected = 0;
+	__atomic_compare_exchange_n(&_nvk_cache_key, &expected, k,
+				    0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
 }
 
 #ifndef _nvk_ptr_enc
@@ -173,6 +175,7 @@ static __always_inline void nvk_sym_cache_clear(void)
 		__atomic_store_n(&_nvk_sym_cache[i].enc, 0, __ATOMIC_RELEASE);
 		__atomic_store_n(&_nvk_sym_cache[i].hash, 0, __ATOMIC_RELEASE);
 	}
+	__atomic_store_n(&_nvk_cache_key, 0, __ATOMIC_RELEASE);
 }
 
 #endif /* _NVK_LINUX_KALLSYMS_H */
