@@ -44,6 +44,7 @@ set(NEVERC_EMIT_TARGET_SOURCES
 
 add_neverc_library(nevercEmit
   Core/ModuleEmitter.cpp
+  Core/AndroidKernelEmitter.cpp
   Core/FunctionEmitter.cpp
   Core/EmitterAction.cpp
   Core/TypeEmitter.cpp
