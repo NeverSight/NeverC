@@ -1,0 +1,40 @@
+**언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+# Android 커널 Hello
+
+최소한의 NeverC Android 커널 모듈(.ko). kprobe를 통해 `kallsyms_lookup_name`을 부트스트랩하고 로드 메시지를 출력한 후 정상 종료합니다. 컴파일→링크→insmod 전체 흐름 검증.
+
+## 빌드
+
+```bash
+cd examples/android-kernel-hello
+neverc make
+```
+
+다른 커널 버전은 `KERNEL`을 `515`, `601`, `606`, `612`로 변경하세요.
+
+## 배포 및 실행
+
+```bash
+neverc make run
+```
+
+또는 수동으로:
+
+```bash
+adb push nvk_hello.ko /data/local/tests/
+adb shell su -c 'insmod /data/local/tests/nvk_hello.ko'
+adb shell su -c 'dmesg | grep nvk_hello'
+```
+
+## 언로드
+
+```bash
+neverc make rmmod
+```
+
+또는 수동으로:
+
+```bash
+adb shell su -c 'rmmod nvk_hello'
+```

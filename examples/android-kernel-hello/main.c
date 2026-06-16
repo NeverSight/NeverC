@@ -17,11 +17,15 @@
 
 static int nvk_hello_init(void)
 {
+	int ret = NVK_BOOTSTRAP();
+	if (ret) return ret;
+	pr_info("nvk_hello: loaded (kernel %s)\n", NVK_KERNEL_STR);
 	return 0;
 }
 
 static void nvk_hello_exit(void)
 {
+	pr_info("nvk_hello: unloaded\n");
 }
 
 module_init(nvk_hello_init);

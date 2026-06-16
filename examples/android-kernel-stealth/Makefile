@@ -25,7 +25,19 @@ all: $(MODULE)
 $(MODULE): $(SRCS)
 	$(NEVERC) $(FLAGS) -r -nostdlib -o $@ $(SRCS)
 
+push: $(MODULE)
+	adb push $(MODULE) /data/local/tests/
+
+insmod: push
+	adb shell su -c 'insmod /data/local/tests/$(MODULE)'
+
+rmmod:
+	adb shell su -c 'rmmod $(MODULE:.ko=)'
+
+run: insmod
+	@echo "Module loaded and hidden. Check: adb shell su -c 'lsmod | grep nvk'"
+
 clean:
 	rm -f $(MODULE) *.o
 
-.PHONY: all clean
+.PHONY: all push insmod rmmod run clean

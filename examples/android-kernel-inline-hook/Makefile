@@ -26,7 +26,19 @@ all: $(MODULE)
 $(MODULE): $(SRCS)
 	$(NEVERC) $(FLAGS) -r -nostdlib -o $@ $(SRCS)
 
+push: $(MODULE)
+	adb push $(MODULE) /data/local/tests/
+
+insmod: push
+	adb shell su -c 'insmod /data/local/tests/$(MODULE)'
+
+rmmod:
+	adb shell su -c 'rmmod $(MODULE:.ko=)'
+
+run: insmod
+	adb shell su -c 'dmesg | tail -10'
+
 clean:
 	rm -f $(MODULE) *.o
 
-.PHONY: all clean
+.PHONY: all push insmod rmmod run clean
