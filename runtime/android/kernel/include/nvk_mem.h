@@ -26,6 +26,32 @@ static nvk_set_memory_fn          _nvk_set_memory_ro;
 static nvk_update_mapping_prot_fn _nvk_update_prot;
 static unsigned long             *_nvk_kimage_voffset;
 static int                        _nvk_mem_inited;
+static unsigned long              _nvk_mem_page_sz;
+
+static __always_inline unsigned long _nvk_strip_tags(unsigned long addr)
+{
+	return addr & ~(0xFFUL << 56);
+}
+
+static __always_inline unsigned long _nvk_mem_get_page_size(void)
+{
+	if (__builtin_expect(_nvk_mem_page_sz != 0, 1))
+		return _nvk_mem_page_sz;
+	unsigned long tcr;
+	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
+	u32 tg1 = (tcr >> 30) & 3;
+	unsigned long sz = 4096;
+	if (tg1 == 1) sz = 16384;
+	else if (tg1 == 2) sz = 65536;
+	_nvk_mem_page_sz = sz;
+	return sz;
+}
+
+static __always_inline unsigned long _nvk_mem_page_align_down(unsigned long addr)
+{
+	unsigned long sz = _nvk_mem_get_page_size();
+	return addr & ~(sz - 1);
+}
 
 #define _NVK_PTE_TYPE_PAGE  (3UL << 0)
 #define _NVK_PTE_AF         (1UL << 10)
@@ -78,7 +104,8 @@ static long nvk_mem_read(void *dst, const void *src, size_t len)
 		return _nvk_probe_read(dst, src, len);
 
 	unsigned char *d = (unsigned char *)dst;
-	const volatile unsigned char *s = (const volatile unsigned char *)src;
+	const volatile unsigned char *s =
+		(const volatile unsigned char *)_nvk_strip_tags((unsigned long)src);
 	size_t i;
 	for (i = 0; i < len; i++)
 		d[i] = s[i];
@@ -90,7 +117,8 @@ static long nvk_mem_write(void *dst, const void *src, size_t len)
 	if (_nvk_probe_write)
 		return _nvk_probe_write(dst, src, len);
 
-	volatile unsigned char *d = (volatile unsigned char *)dst;
+	volatile unsigned char *d =
+		(volatile unsigned char *)_nvk_strip_tags((unsigned long)dst);
 	const unsigned char *s = (const unsigned char *)src;
 	size_t i;
 	for (i = 0; i < len; i++)
@@ -114,11 +142,12 @@ static long nvk_mem_write_user(void __user *dst, const void *src, size_t len)
 
 static int nvk_mem_make_rw(unsigned long addr)
 {
-	unsigned long page = addr & ~0xFFFUL;
+	unsigned long pgsz = _nvk_mem_get_page_size();
+	unsigned long page = addr & ~(pgsz - 1);
 
 	if (_nvk_update_prot && _nvk_kimage_voffset) {
 		u64 phys = page - *_nvk_kimage_voffset;
-		_nvk_update_prot(phys, page, 0x1000, _NVK_PAGE_KERNEL);
+		_nvk_update_prot(phys, page, pgsz, _NVK_PAGE_KERNEL);
 		return 0;
 	}
 	if (_nvk_set_memory_rw)
@@ -128,11 +157,12 @@ static int nvk_mem_make_rw(unsigned long addr)
 
 static int nvk_mem_make_ro(unsigned long addr)
 {
-	unsigned long page = addr & ~0xFFFUL;
+	unsigned long pgsz = _nvk_mem_get_page_size();
+	unsigned long page = addr & ~(pgsz - 1);
 
 	if (_nvk_update_prot && _nvk_kimage_voffset) {
 		u64 phys = page - *_nvk_kimage_voffset;
-		_nvk_update_prot(phys, page, 0x1000, _NVK_PAGE_KERNEL_RO);
+		_nvk_update_prot(phys, page, pgsz, _NVK_PAGE_KERNEL_RO);
 		return 0;
 	}
 	if (_nvk_set_memory_ro)
@@ -143,19 +173,21 @@ static int nvk_mem_make_ro(unsigned long addr)
 static int nvk_mem_write_protected(unsigned long addr, const void *src,
 				   size_t len)
 {
-	unsigned long page_start = addr & ~0xFFFUL;
-	unsigned long page_end = (addr + len - 1) & ~0xFFFUL;
+	unsigned long pgsz = _nvk_mem_get_page_size();
+	unsigned long mask = pgsz - 1;
+	unsigned long page_start = addr & ~mask;
+	unsigned long page_end = (addr + len - 1) & ~mask;
 	unsigned long p;
 	int ret;
 
-	for (p = page_start; p <= page_end; p += 0x1000) {
+	for (p = page_start; p <= page_end; p += pgsz) {
 		ret = nvk_mem_make_rw(p);
 		if (ret) return ret;
 	}
 
 	ret = nvk_mem_write((void *)addr, src, len);
 
-	for (p = page_start; p <= page_end; p += 0x1000)
+	for (p = page_start; p <= page_end; p += pgsz)
 		nvk_mem_make_ro(p);
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
@@ -311,10 +343,12 @@ static long nvk_mem_read_cross_page(void *dst, const void *src, size_t len)
 {
 	unsigned long addr = (unsigned long)src;
 	unsigned char *d = (unsigned char *)dst;
+	unsigned long pgsz = _nvk_mem_get_page_size();
+	unsigned long mask = pgsz - 1;
 	size_t done = 0;
 
 	while (done < len) {
-		unsigned long page_end = (addr & ~0xFFFUL) + 0x1000;
+		unsigned long page_end = (addr & ~mask) + pgsz;
 		size_t chunk = page_end - addr;
 		if (chunk > len - done) chunk = len - done;
 

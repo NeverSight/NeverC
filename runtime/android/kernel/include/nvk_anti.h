@@ -162,49 +162,116 @@ static int nvk_anti_detect_hook_ex(void *addr,
 	return 1;
 }
 
-static int nvk_anti_verify_text_integrity(const void *addr, size_t len,
-					  u32 expected_crc)
+static __always_inline int _nvk_has_crc32_hw(void)
+{
+	u64 isar0;
+	__asm__ __volatile__("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
+	return ((isar0 >> 16) & 0xF) >= 1;
+}
+
+static __always_inline u32 _nvk_crc32_hw_byte(u32 crc, u8 val)
+{
+	u32 result;
+	__asm__("crc32b %w0, %w1, %w2" : "=r"(result) : "r"(crc), "r"(val));
+	return result;
+}
+
+static __always_inline u32 _nvk_crc32_hw_word(u32 crc, u32 val)
+{
+	u32 result;
+	__asm__("crc32w %w0, %w1, %w2" : "=r"(result) : "r"(crc), "r"(val));
+	return result;
+}
+
+static __always_inline u32 _nvk_crc32_hw_dword(u32 crc, u64 val)
+{
+	u32 result;
+	__asm__("crc32x %w0, %w1, %2" : "=r"(result) : "r"(crc), "r"(val));
+	return result;
+}
+
+static u32 _nvk_crc32_sw(u32 crc, const unsigned char *p, size_t len)
+{
+	size_t i;
+	for (i = 0; i < len; i++) {
+		crc ^= p[i];
+		int j;
+		for (j = 0; j < 8; j++)
+			crc = (crc & 1) ? (crc >> 1) ^ 0xEDB88320U : crc >> 1;
+	}
+	return crc;
+}
+
+static u32 _nvk_crc32_hw(u32 crc, const unsigned char *p, size_t len)
+{
+	while (len >= 8 && ((unsigned long)p & 7) == 0) {
+		crc = _nvk_crc32_hw_dword(crc, *(const u64 *)p);
+		p += 8; len -= 8;
+	}
+	while (len >= 4 && ((unsigned long)p & 3) == 0) {
+		crc = _nvk_crc32_hw_word(crc, *(const u32 *)p);
+		p += 4; len -= 4;
+	}
+	while (len > 0) {
+		crc = _nvk_crc32_hw_byte(crc, *p);
+		p++; len--;
+	}
+	return crc;
+}
+
+static u32 _nvk_crc32_auto(const void *addr, size_t len)
 {
 	const unsigned char *p = (const unsigned char *)addr;
 	u32 crc = 0xFFFFFFFF;
-	size_t i;
+	if (_nvk_has_crc32_hw())
+		crc = _nvk_crc32_hw(crc, p, len);
+	else
+		crc = _nvk_crc32_sw(crc, p, len);
+	return crc ^ 0xFFFFFFFF;
+}
 
-	for (i = 0; i < len; i++) {
-		unsigned char b;
-		if (nvk_mem_read(&b, &p[i], 1))
+static int nvk_anti_verify_text_integrity(const void *addr, size_t len,
+					  u32 expected_crc)
+{
+	unsigned char buf[256];
+	const unsigned char *p = (const unsigned char *)addr;
+	u32 crc = 0xFFFFFFFF;
+	size_t done = 0;
+	int use_hw = _nvk_has_crc32_hw();
+
+	while (done < len) {
+		size_t chunk = len - done;
+		if (chunk > sizeof(buf)) chunk = sizeof(buf);
+		if (nvk_mem_read(buf, &p[done], chunk))
 			return -1;
-		crc ^= b;
-		int j;
-		for (j = 0; j < 8; j++) {
-			if (crc & 1)
-				crc = (crc >> 1) ^ 0xEDB88320U;
-			else
-				crc >>= 1;
-		}
+		if (use_hw)
+			crc = _nvk_crc32_hw(crc, buf, chunk);
+		else
+			crc = _nvk_crc32_sw(crc, buf, chunk);
+		done += chunk;
 	}
 	crc ^= 0xFFFFFFFF;
-
 	return (crc == expected_crc) ? 0 : 1;
 }
 
 static u32 nvk_anti_compute_crc32(const void *addr, size_t len)
 {
+	unsigned char buf[256];
 	const unsigned char *p = (const unsigned char *)addr;
 	u32 crc = 0xFFFFFFFF;
-	size_t i;
+	size_t done = 0;
+	int use_hw = _nvk_has_crc32_hw();
 
-	for (i = 0; i < len; i++) {
-		unsigned char b;
-		if (nvk_mem_read(&b, &p[i], 1))
+	while (done < len) {
+		size_t chunk = len - done;
+		if (chunk > sizeof(buf)) chunk = sizeof(buf);
+		if (nvk_mem_read(buf, &p[done], chunk))
 			return 0;
-		crc ^= b;
-		int j;
-		for (j = 0; j < 8; j++) {
-			if (crc & 1)
-				crc = (crc >> 1) ^ 0xEDB88320U;
-			else
-				crc >>= 1;
-		}
+		if (use_hw)
+			crc = _nvk_crc32_hw(crc, buf, chunk);
+		else
+			crc = _nvk_crc32_sw(crc, buf, chunk);
+		done += chunk;
 	}
 	return crc ^ 0xFFFFFFFF;
 }
@@ -348,15 +415,21 @@ static struct nvk_watchdog _nvk_wd;
 
 static u32 _nvk_wd_crc32(const void *data, int len)
 {
+	unsigned char buf[128];
 	const unsigned char *p = (const unsigned char *)data;
 	u32 crc = 0xFFFFFFFF;
-	int i, j;
-	for (i = 0; i < len; i++) {
-		unsigned char b;
-		if (nvk_mem_read(&b, &p[i], 1)) return 0;
-		crc ^= b;
-		for (j = 0; j < 8; j++)
-			crc = (crc & 1) ? (crc >> 1) ^ 0xEDB88320U : crc >> 1;
+	int done = 0;
+	int use_hw = _nvk_has_crc32_hw();
+
+	while (done < len) {
+		int chunk = len - done;
+		if (chunk > (int)sizeof(buf)) chunk = (int)sizeof(buf);
+		if (nvk_mem_read(buf, &p[done], chunk)) return 0;
+		if (use_hw)
+			crc = _nvk_crc32_hw(crc, buf, chunk);
+		else
+			crc = _nvk_crc32_sw(crc, buf, chunk);
+		done += chunk;
 	}
 	return crc ^ 0xFFFFFFFF;
 }

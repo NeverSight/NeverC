@@ -174,13 +174,19 @@ static int nvk_for_each_task(nvk_task_callback_t callback, void *data)
 	if (_nvk_rcu_read_lock) _nvk_rcu_read_lock();
 
 	head = (struct list_head *)((unsigned long)init + _nvk_off_tasks);
-	for (pos = head->next; pos && pos != head; pos = pos->next) {
+	pos = head->next;
+	while (pos && pos != head && count < 32768) {
+		struct list_head *next_pos;
+		if (nvk_mem_read(&next_pos, &pos->next, sizeof(next_pos)))
+			break;
+		if ((unsigned long)pos < 0xFFFF000000000000UL)
+			break;
 		task = (struct task_struct *)
 			((unsigned long)pos - _nvk_off_tasks);
 		if (callback(task, data))
 			break;
 		count++;
-		if (count > 32768) break;
+		pos = next_pos;
 	}
 
 	if (_nvk_rcu_read_unlock) _nvk_rcu_read_unlock();

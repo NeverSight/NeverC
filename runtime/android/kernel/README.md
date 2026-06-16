@@ -40,7 +40,7 @@ runtime/android/kernel/
     nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.12) + SDK version
     nvk.h                      #   all-in-one include (initializes all subsystems)
     nvk_hook.h                 #   arm64 inline-hook engine v2 (simple + context + FP-SIMD + kCFI + ftrace fallback)
-    nvk_mem.h                  #   safe memory read/write, pattern scan, write-protection bypass
+    nvk_mem.h                  #   safe memory read/write, pattern scan, write-protection bypass, MTE-aware
     nvk_syscall.h              #   sys_call_table operations + arm64 syscall number table
     nvk_process.h              #   process enumeration, PID lookup, task walking
     nvk_cred.h                 #   credential manipulation (root, uid/gid, capabilities)
@@ -52,7 +52,7 @@ runtime/android/kernel/
     nvk_file.h                 #   kernel file I/O (filp_open/kernel_read/write)
     nvk_addr.h                 #   virtual↔physical address translation, page table walking
     nvk_compat.h               #   runtime kernel version detection + feature probing (PAC/BTI/MTE/SVE/CFI)
-    nvk_anti.h                 #   environment detection + integrity verification + watchdog
+    nvk_anti.h                 #   environment detection + integrity verification + watchdog + HW CRC32
     nvk_vma.h                  #   VMA operations, process memory map inspection
     nvk_su.h                   #   root shell provisioning
     nvk_ksyms.h                #   extended symbol table operations
@@ -92,8 +92,8 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | Header | Purpose |
 |--------|---------|
 | `nvkmod.h` | Module entry point, kprobe bootstrap, `NVK_BOOTSTRAP()`, `NVK_DEFINE_MODULE()` |
-| `nvk_hook.h` | arm64 inline-hook engine v2 — simple/context/FP-SIMD modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + SMP-safe DMB barriers + atomic stop_machine patch + D-cache→I-cache coherent + deep quiescence unhook + trampoline pool (32 pages) + ftrace fallback + hook chain + pause/resume + 6.12 execmem support |
-| `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` |
+| `nvk_hook.h` | arm64 inline-hook engine v2 — simple/context/FP-SIMD modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + SMP-safe DMB barriers + atomic stop_machine patch + D-cache→I-cache coherent + deep quiescence unhook + IRQ-safe trampoline pool (32 pages) + ftrace fallback + hook chain + pause/resume + 6.12 execmem support |
+| `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` — MTE-tag-aware, dynamic page size (4K/16K/64K) |
 | `nvk_syscall.h` | `nvk_syscall_replace/restore`, `nvk_syscall_get`, arm64 syscall number definitions |
 | `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
 | `nvk_cred.h` | `nvk_cred_set_root`, `nvk_cred_set_uid`, `nvk_cred_set_caps_full`, `nvk_cred_get_ids` |
@@ -105,7 +105,7 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_addr.h` | `nvk_virt_to_phys`, `nvk_translate_user`, `nvk_walk_pgtable`, VA bits / page size detection |
 | `nvk_compat.h` | `nvk_kernel_version()`, `NVK_KERNEL_GE(maj,min)`, `nvk_has_pac/bti/mte`, versioned symbol lookup helpers |
 | `nvk_file.h` | `nvk_file_open/read/write/close`, `nvk_file_exists`, `nvk_file_read_all/write_all` |
-| `nvk_anti.h` | Environment detection (emulator, debugger, root, su binary, Magisk/KSU/APatch, SELinux permissive, hook/kprobe tampering), integrity verification, watchdog — all detection paths xorstr-encrypted |
+| `nvk_anti.h` | Environment detection (emulator, debugger, root, su binary, Magisk/KSU/APatch, SELinux permissive, hook/kprobe tampering), integrity verification, watchdog, ARM64 HW CRC32 accelerated — all detection paths xorstr-encrypted |
 | `nvk_vma.h` | VMA operations (find_vma, walk, read/write remote), process memory map inspection |
 | `nvk_su.h` | Root shell provisioning, su daemon lifecycle |
 | `nvk_ksyms.h` | Extended symbol operations (`nvk_ksyms_walk`, `nvk_ksyms_for_each`, prefix search, function size) |

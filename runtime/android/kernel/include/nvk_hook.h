@@ -457,6 +457,21 @@ static __always_inline int _nvk_pool_page_size(void)
 }
 
 static volatile int _nvk_pool_lock;
+static unsigned long _nvk_pool_irqflags;
+
+static __always_inline unsigned long _nvk_irq_save(void)
+{
+	unsigned long flags;
+	__asm__ __volatile__("mrs %0, daif\n"
+			     "msr daifset, #3\n"
+			     : "=r"(flags) :: "memory");
+	return flags;
+}
+
+static __always_inline void _nvk_irq_restore(unsigned long flags)
+{
+	__asm__ __volatile__("msr daif, %0\n" :: "r"(flags) : "memory");
+}
 
 static __always_inline void _nvk_spin_lock(volatile int *lock)
 {
@@ -468,6 +483,20 @@ static __always_inline void _nvk_spin_unlock(volatile int *lock)
 {
 	__atomic_store_n(lock, 0, __ATOMIC_RELEASE);
 	__asm__ __volatile__("sev" ::: "memory");
+}
+
+static __always_inline unsigned long _nvk_spin_lock_irqsave(volatile int *lock)
+{
+	unsigned long flags = _nvk_irq_save();
+	_nvk_spin_lock(lock);
+	return flags;
+}
+
+static __always_inline void _nvk_spin_unlock_irqrestore(volatile int *lock,
+							unsigned long flags)
+{
+	_nvk_spin_unlock(lock);
+	_nvk_irq_restore(flags);
 }
 
 #define _NVK_POOL_MAGIC  0x4E564B50U  /* "NVKP" */
@@ -493,6 +522,7 @@ static u32 *_nvk_pool_alloc(int bytes)
 	int i, pgsz, best = -1;
 	u32 *ret = (void *)0;
 	int best_remain = 0x7FFFFFFF;
+	unsigned long flags;
 	bytes = (bytes + _NVK_POOL_ALIGN - 1) & ~(_NVK_POOL_ALIGN - 1);
 
 	if (!_nvk_pool_pgsz)
@@ -502,7 +532,7 @@ static u32 *_nvk_pool_alloc(int bytes)
 	if (bytes > pgsz)
 		return (void *)0;
 
-	_nvk_spin_lock(&_nvk_pool_lock);
+	flags = _nvk_spin_lock_irqsave(&_nvk_pool_lock);
 
 	for (i = 0; i < _nvk_pool_count; i++) {
 		if (_nvk_pool[i].magic != _NVK_POOL_MAGIC) continue;
@@ -522,7 +552,7 @@ static u32 *_nvk_pool_alloc(int bytes)
 				   __ATOMIC_RELAXED);
 		__atomic_fetch_add(&_nvk_pool_alloc_bytes, bytes,
 				   __ATOMIC_RELAXED);
-		_nvk_spin_unlock(&_nvk_pool_lock);
+		_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 		return ret;
 	}
 
@@ -530,11 +560,11 @@ static u32 *_nvk_pool_alloc(int bytes)
 	    (!_nvk_modalloc && !_nvk_execmem_alloc)) {
 		__atomic_fetch_add(&_nvk_pool_alloc_fail, 1,
 				   __ATOMIC_RELAXED);
-		_nvk_spin_unlock(&_nvk_pool_lock);
+		_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 		return (void *)0;
 	}
 
-	_nvk_spin_unlock(&_nvk_pool_lock);
+	_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 
 	u32 *page = (u32 *)_nvk_alloc_exec(pgsz);
 	if (!page) {
@@ -543,9 +573,9 @@ static u32 *_nvk_pool_alloc(int bytes)
 		return (void *)0;
 	}
 
-	_nvk_spin_lock(&_nvk_pool_lock);
+	flags = _nvk_spin_lock_irqsave(&_nvk_pool_lock);
 	if (_nvk_pool_count >= _NVK_POOL_MAX) {
-		_nvk_spin_unlock(&_nvk_pool_lock);
+		_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 		if (_nvk_modfree) _nvk_modfree(page);
 		__atomic_fetch_add(&_nvk_pool_alloc_fail, 1,
 				   __ATOMIC_RELAXED);
@@ -558,7 +588,7 @@ static u32 *_nvk_pool_alloc(int bytes)
 	_nvk_pool[i].magic = _NVK_POOL_MAGIC;
 	__atomic_fetch_add(&_nvk_pool_alloc_total, 1, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&_nvk_pool_alloc_bytes, bytes, __ATOMIC_RELAXED);
-	_nvk_spin_unlock(&_nvk_pool_lock);
+	_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 	return page;
 }
 
@@ -566,32 +596,33 @@ static void _nvk_pool_free(u32 *ptr)
 {
 	int i;
 	int pgsz = _nvk_pool_pgsz ? _nvk_pool_pgsz : 4096;
+	unsigned long flags;
 	if (!ptr) return;
 	if ((unsigned long)ptr < 0xFFFF000000000000UL) return;
 
-	_nvk_spin_lock(&_nvk_pool_lock);
+	flags = _nvk_spin_lock_irqsave(&_nvk_pool_lock);
 	for (i = 0; i < _nvk_pool_count; i++) {
 		if (_nvk_pool[i].magic != _NVK_POOL_MAGIC) continue;
 		unsigned long base = (unsigned long)_nvk_pool[i].base;
 		if ((unsigned long)ptr >= base &&
 		    (unsigned long)ptr < base + (unsigned long)pgsz) {
 			if (_nvk_pool[i].refcnt <= 0) {
-				_nvk_spin_unlock(&_nvk_pool_lock);
+				_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 				return;
 			}
 			if (--_nvk_pool[i].refcnt <= 0) {
 				u32 *to_free = _nvk_pool[i].base;
 				_nvk_pool[i].magic = 0;
 				_nvk_pool[i] = _nvk_pool[--_nvk_pool_count];
-				_nvk_spin_unlock(&_nvk_pool_lock);
+				_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 				if (_nvk_modfree) _nvk_modfree(to_free);
 				return;
 			}
-			_nvk_spin_unlock(&_nvk_pool_lock);
+			_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 			return;
 		}
 	}
-	_nvk_spin_unlock(&_nvk_pool_lock);
+	_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 }
 
 static volatile u64 _nvk_hook_install_cnt;
@@ -1538,6 +1569,7 @@ static int nvk_hook_install_batch(struct nvk_hook_batch *batch, int count)
 static void nvk_hook_cleanup(void)
 {
 	int i;
+	unsigned long flags;
 
 	_nvk_full_barrier();
 
@@ -1547,7 +1579,7 @@ static void nvk_hook_cleanup(void)
 
 	if (_nvk_msleep) _nvk_msleep(100);
 
-	_nvk_spin_lock(&_nvk_pool_lock);
+	flags = _nvk_spin_lock_irqsave(&_nvk_pool_lock);
 	for (i = 0; i < _nvk_pool_count; i++) {
 		if (_nvk_pool[i].base && _nvk_modfree &&
 		    _nvk_pool[i].magic == _NVK_POOL_MAGIC)
@@ -1560,7 +1592,7 @@ static void nvk_hook_cleanup(void)
 	_nvk_pool_count = 0;
 	_nvk_pool_alloc_total = 0;
 	_nvk_pool_alloc_bytes = 0;
-	_nvk_spin_unlock(&_nvk_pool_lock);
+	_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 	_nvk_inited = 0;
 }
 
@@ -1864,12 +1896,13 @@ static int nvk_pool_usage(int *total_used, int *total_cap)
 {
 	int i, used = 0, cap = 0;
 	int pgsz = _nvk_pool_pgsz ? _nvk_pool_pgsz : 4096;
-	_nvk_spin_lock(&_nvk_pool_lock);
+	unsigned long flags;
+	flags = _nvk_spin_lock_irqsave(&_nvk_pool_lock);
 	for (i = 0; i < _nvk_pool_count; i++) {
 		used += _nvk_pool[i].used;
 		cap += pgsz;
 	}
-	_nvk_spin_unlock(&_nvk_pool_lock);
+	_nvk_spin_unlock_irqrestore(&_nvk_pool_lock, flags);
 	if (total_used) *total_used = used;
 	if (total_cap)  *total_cap = cap;
 	return _nvk_pool_count;
