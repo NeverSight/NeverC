@@ -504,8 +504,6 @@ void ModuleEmitter::release() {
 
   llvm::Triple::ArchType Arch = Context.getTargetInfo().getTriple().getArch();
 
-  if (CodeGenOpts.DisableCFICheck)
-    getModule().addModuleFlag(llvm::Module::Override, "Disable CFI Check", 1);
   if (CodeGenOpts.DisableInlineOpt)
     getModule().addModuleFlag(llvm::Module::Override, "DisableInlineOpt", 1);
   if (CodeGenOpts.DisableTryStmt)

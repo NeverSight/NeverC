@@ -702,9 +702,6 @@ OPTION(prefix_1, "-fdirect-access-external-data", fdirect_access_external_data,
        nullptr)
 OPTION(prefix_1, "-fdirectives-only", fdirectives_only, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis | DefaultVis, 0, "", nullptr, nullptr)
-OPTION(prefix_1, "-fdisable-cfi-check", fdisable_cfi_check, Flag,
-       f_neverc_Group, INVALID, nullptr, 0, DefaultVis, 0,
-       "Disables the checks in CFI", nullptr, nullptr)
 OPTION(prefix_1, "-fdisable-inline-opt", fdisable_inline_opt, Flag,
        f_neverc_Group, INVALID, nullptr, 0, DefaultVis, 0,
        "Disables the optimization of inline functions", nullptr, nullptr)
@@ -5106,16 +5103,6 @@ CODEGEN_OPTION_WITH_MARSHALLING(prefix_1, "-fdisable-try-stmt",
                                 INVALID, nullptr, 0, DefaultVis, 0,
                                 "Disables the try statements", nullptr, nullptr,
                                 true, 0, CodeGenOpts.DisableTryStmt, false,
-                                false, false, normalizeSimpleFlag,
-                                denormalizeSimpleFlag, mergeForwardValue,
-                                extractForwardValue, -1)
-#endif // CODEGEN_OPTION_WITH_MARSHALLING
-#ifdef CODEGEN_OPTION_WITH_MARSHALLING
-CODEGEN_OPTION_WITH_MARSHALLING(prefix_1, "-fdisable-cfi-check",
-                                fdisable_cfi_check, Flag, f_neverc_Group,
-                                INVALID, nullptr, 0, DefaultVis, 0,
-                                "Disables the checks in CFI", nullptr, nullptr,
-                                true, 0, CodeGenOpts.DisableCFICheck, false,
                                 false, false, normalizeSimpleFlag,
                                 denormalizeSimpleFlag, mergeForwardValue,
                                 extractForwardValue, -1)

@@ -117,7 +117,6 @@ CODEGENOPT(SaveTempLabels    , 1, 0) ///< Save temporary labels.
 CODEGENOPT(Jumptablerdata, 1, 0) ///< Put switch case jump tables in .rdata
 CODEGENOPT(DisableInlineOpt, 1, 0) ///< Disables the optimization of inline functions.
 CODEGENOPT(DisableTryStmt, 1, 0) ///< Disables the try statements.
-CODEGENOPT(DisableCFICheck, 1, 0) ///< Disables the checks in CFI.
 CODEGENOPT(AndroidKernelDriverMode, 1, 0) ///< Android kernel module (.ko) codegen.
 CODEGENOPT(SimplifyLibCalls  , 1, 1) ///< Set when -fbuiltin is enabled.
 CODEGENOPT(SoftFloat         , 1, 0) ///< -soft-float.

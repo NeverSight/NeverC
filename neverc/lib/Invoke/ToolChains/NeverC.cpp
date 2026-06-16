@@ -2624,11 +2624,8 @@ void addNeverCSpecificFlags(const ArgList &Args, ArgStringList &CmdArgs) {
     CmdArgs.push_back("-fdisable-inline-opt");
   if (Args.hasArg(options::OPT_fdisable_try_stmt))
     CmdArgs.push_back("-fdisable-try-stmt");
-  if (Args.hasArg(options::OPT_fdisable_cfi_check))
-    CmdArgs.push_back("-fdisable-cfi-check");
   if (Args.hasArg(options::OPT_fandroid_kernel_driver_mode)) {
     CmdArgs.push_back("-fandroid-kernel-driver-mode");
-    CmdArgs.push_back("-fdisable-cfi-check");
     // Android kernel module compilation environment.  These mirror the flags
     // the in-tree GKI kernel build uses for out-of-tree modules so the object
     // is a loadable .ko:
