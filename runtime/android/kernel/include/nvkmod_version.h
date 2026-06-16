@@ -176,4 +176,35 @@
 #define NEVERC_KRT_MODULE_SIZE 0x600
 #endif
 
+/*
+ * Runtime-settable version parameters.  The bitcode is compiled once
+ * (with the default NEVERC_KRT_KERNEL=510), so compile-time #if chains
+ * inside .c files would always evaluate against 5.10 — wrong when the
+ * user targets 6.6 or 6.12.
+ *
+ * These globals are set by _neverc_krt_version_setup() (an inline in
+ * this header, compiled with the USER's -DNEVERC_KRT_KERNEL=xxx).
+ * The bitcode .c files read them at runtime instead of using
+ * NEVERC_KRT_MODULE_SIZE / NEVERC_KRT_KERNEL directly.
+ *
+ * Safe default: if never set (0), callers fall back to the maximum
+ * struct module size across 5.10-6.12 (0x640 = 1600).
+ */
+NEVERC_KRT_RT_VAR unsigned long _neverc_krt_module_size;
+NEVERC_KRT_RT_VAR int           _neverc_krt_kernel_ver;
+
+static __always_inline unsigned long _neverc_krt_get_module_size(void)
+{
+	unsigned long sz = _neverc_krt_module_size;
+	return sz ? sz : 0x640;
+}
+
+static __always_inline void _neverc_krt_version_setup(void)
+{
+	if (!_neverc_krt_module_size) {
+		_neverc_krt_module_size = NEVERC_KRT_MODULE_SIZE;
+		_neverc_krt_kernel_ver  = NEVERC_KRT_KERNEL;
+	}
+}
+
 #endif /* NVKMOD_VERSION_H */

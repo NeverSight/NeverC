@@ -61,27 +61,23 @@ int neverc_krt_compat_init(void)
 	}
 
 	if (!_neverc_krt_kinfo.detected) {
-#if NEVERC_KRT_KERNEL == 510
-		_neverc_krt_kinfo.major = 5;
-		_neverc_krt_kinfo.minor = 10;
-		_neverc_krt_kinfo.android_version = 12;
-#elif NEVERC_KRT_KERNEL == 515
-		_neverc_krt_kinfo.major = 5;
-		_neverc_krt_kinfo.minor = 15;
-		_neverc_krt_kinfo.android_version = 13;
-#elif NEVERC_KRT_KERNEL == 601
-		_neverc_krt_kinfo.major = 6;
-		_neverc_krt_kinfo.minor = 1;
-		_neverc_krt_kinfo.android_version = 14;
-#elif NEVERC_KRT_KERNEL == 606
-		_neverc_krt_kinfo.major = 6;
-		_neverc_krt_kinfo.minor = 6;
-		_neverc_krt_kinfo.android_version = 15;
-#elif NEVERC_KRT_KERNEL == 612
-		_neverc_krt_kinfo.major = 6;
-		_neverc_krt_kinfo.minor = 12;
-		_neverc_krt_kinfo.android_version = 16;
-#endif
+		int kv = _neverc_krt_kernel_ver;
+		if (kv == 515) {
+			_neverc_krt_kinfo.major = 5; _neverc_krt_kinfo.minor = 15;
+			_neverc_krt_kinfo.android_version = 13;
+		} else if (kv == 601) {
+			_neverc_krt_kinfo.major = 6; _neverc_krt_kinfo.minor = 1;
+			_neverc_krt_kinfo.android_version = 14;
+		} else if (kv == 606) {
+			_neverc_krt_kinfo.major = 6; _neverc_krt_kinfo.minor = 6;
+			_neverc_krt_kinfo.android_version = 15;
+		} else if (kv == 612) {
+			_neverc_krt_kinfo.major = 6; _neverc_krt_kinfo.minor = 12;
+			_neverc_krt_kinfo.android_version = 16;
+		} else {
+			_neverc_krt_kinfo.major = 5; _neverc_krt_kinfo.minor = 10;
+			_neverc_krt_kinfo.android_version = 12;
+		}
 		_neverc_krt_kinfo.detected = 1;
 	}
 
@@ -109,17 +105,12 @@ int neverc_krt_check_kernel_match(void)
 		return NEVERC_KRT_VER_UNKNOWN;
 
 	u32 expected_major = 0, expected_minor = 0;
-#if NEVERC_KRT_KERNEL == 510
-	expected_major = 5; expected_minor = 10;
-#elif NEVERC_KRT_KERNEL == 515
-	expected_major = 5; expected_minor = 15;
-#elif NEVERC_KRT_KERNEL == 601
-	expected_major = 6; expected_minor = 1;
-#elif NEVERC_KRT_KERNEL == 606
-	expected_major = 6; expected_minor = 6;
-#elif NEVERC_KRT_KERNEL == 612
-	expected_major = 6; expected_minor = 12;
-#endif
+	int kv = _neverc_krt_kernel_ver;
+	if (kv == 515)      { expected_major = 5; expected_minor = 15; }
+	else if (kv == 601) { expected_major = 6; expected_minor = 1; }
+	else if (kv == 606) { expected_major = 6; expected_minor = 6; }
+	else if (kv == 612) { expected_major = 6; expected_minor = 12; }
+	else                { expected_major = 5; expected_minor = 10; }
 
 	if (_neverc_krt_kinfo.major == expected_major &&
 	    _neverc_krt_kinfo.minor == expected_minor)
@@ -171,7 +162,7 @@ int neverc_krt_probe_module_offsets(struct neverc_krt_this_module *mod,
 	const unsigned char *base = (const unsigned char *)mod;
 	unsigned long i;
 
-	for (i = 64; i < NEVERC_KRT_MODULE_SIZE; i += 8) {
+	for (i = 64; i < _neverc_krt_get_module_size(); i += 8) {
 		unsigned long v;
 		if (neverc_krt_mem_read(&v, base + i, 8)) continue;
 		if (v == (unsigned long)expected_init) {
@@ -181,7 +172,7 @@ int neverc_krt_probe_module_offsets(struct neverc_krt_this_module *mod,
 	}
 
 	if (expected_exit && _neverc_krt_rt_off_init) {
-		for (i = _neverc_krt_rt_off_init + 8; i < NEVERC_KRT_MODULE_SIZE; i += 8) {
+		for (i = _neverc_krt_rt_off_init + 8; i < _neverc_krt_get_module_size(); i += 8) {
 			unsigned long v;
 			if (neverc_krt_mem_read(&v, base + i, 8)) continue;
 			if (v == (unsigned long)expected_exit) {
@@ -243,7 +234,7 @@ int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod)
 
 	unsigned char *base = (unsigned char *)mod;
 	unsigned long scan;
-	for (scan = 0; scan + 8 < NEVERC_KRT_MODULE_SIZE; scan++) {
+	for (scan = 0; scan + 8 < _neverc_krt_get_module_size(); scan++) {
 		if (base[scan] == 'v' && base[scan+1] == 'e' &&
 		    base[scan+2] == 'r' && base[scan+3] == 'm' &&
 		    base[scan+4] == 'a' && base[scan+5] == 'g' &&

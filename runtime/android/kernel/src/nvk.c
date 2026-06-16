@@ -2,7 +2,7 @@
 /* nvk.c — implementations extracted from nvk.h. */
 #include <nvk.h>
 
-int neverc_krt_init_all(void)
+int _neverc_krt_init_all_impl(void)
 {
 	int ret = NEVERC_KRT_BOOTSTRAP();
 	if (ret) return ret;
