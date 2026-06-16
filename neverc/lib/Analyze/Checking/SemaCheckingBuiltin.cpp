@@ -144,7 +144,24 @@ ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
   if (DeclRef.isInvalid())
     return ExprError();
 
-  Expr *Args[] = {EncSL, LenLit, KeyLit};
+  // Create a compound literal (char[Len+1]){0} for the output buffer.
+  // The size is a compile-time constant → static alloca after inlining,
+  // no stacksave/stackrestore.
+  QualType BufArrayTy = S.Context.getConstantArrayType(
+      S.Context.CharTy, llvm::APInt(32, Len + 1), /*SizeExpr=*/nullptr,
+      ArraySizeModifier::Normal, /*IndexTypeQuals=*/0);
+  TypeSourceInfo *BufTInfo =
+      S.Context.getTrivialTypeSourceInfo(BufArrayTy, Loc);
+  Expr *ZeroExpr = IntegerLiteral::Create(
+      S.Context, llvm::APInt(S.Context.getCharWidth(), 0),
+      S.Context.CharTy, Loc);
+  InitListExpr *BufInit =
+      new (S.Context) InitListExpr(S.Context, Loc, {ZeroExpr}, Loc);
+  BufInit->setType(BufArrayTy);
+  CompoundLiteralExpr *BufLit = new (S.Context) CompoundLiteralExpr(
+      Loc, BufTInfo, BufArrayTy, VK_LValue, BufInit, /*fileScope=*/false);
+
+  Expr *Args[] = {EncSL, LenLit, KeyLit, BufLit};
   return S.FormCallExpr(nullptr, DeclRef.get(), Loc, Args, EndLoc);
 }
 

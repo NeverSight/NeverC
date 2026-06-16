@@ -18,10 +18,16 @@ __neverc_xorstr_dec_byte(unsigned char a, unsigned char b) {
   return (unsigned char)(va + vb - ((va & vb) + (vb & va)));
 }
 
+/*
+ * The caller-provided buf must be at least len+1 bytes.  The Sema for
+ * __builtin_neverc_xorstr passes a compound literal (char[len+1]){0}
+ * whose size is a compile-time constant, producing a static alloca in
+ * LLVM IR that lives until the enclosing function returns — no
+ * stacksave/stackrestore and exact allocation.
+ */
 static __attribute__((always_inline)) const char *
 __neverc_xorstr_decrypt(const char *enc, __SIZE_TYPE__ len,
-                        __SIZE_TYPE__ key) {
-  char *buf = (char *)__builtin_alloca(len + 1);
+                        __SIZE_TYPE__ key, char *buf) {
   volatile __SIZE_TYPE__ vkey = key;
   for (__SIZE_TYPE__ i = 0; i < len; i++) {
     unsigned char kb =
