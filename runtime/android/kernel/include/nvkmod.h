@@ -136,6 +136,8 @@ static int nvk_ksym_bootstrap(int cfi)
 	if (_nvk_sym_resolver)
 		return 0;
 
+	_nvk_cache_key_init();
+
 	if (!cfi) {
 		resolved = (nvk_kallsyms_lookup_name_fn)NVK_KPROBE_LOOKUP(
 				"kallsyms_lookup_name");

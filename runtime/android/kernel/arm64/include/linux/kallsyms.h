@@ -22,10 +22,89 @@ static _nvk_sym_resolver_fn _nvk_sym_resolver;
 
 struct _nvk_sym_entry {
 	u32           hash;
-	unsigned long addr;
+	unsigned long enc;
 };
 
 static struct _nvk_sym_entry _nvk_sym_cache[_NVK_SYM_CACHE_SIZE];
+static unsigned long _nvk_cache_key;
+
+/*
+ * Compile-time pluggable primitives — override by #define before #include.
+ *
+ * Usage (in main.c, before #include <nvkmod.h>):
+ *
+ *   static __always_inline unsigned long my_xor(unsigned long a, unsigned long b) {
+ *       unsigned long r = a + b;
+ *       unsigned long m = a & b;
+ *       r = r - m - m;
+ *       return r;
+ *   }
+ *   #define _nvk_xor_opaque my_xor
+ *   #include <nvkmod.h>
+ *
+ * Overriding _nvk_xor_opaque is enough: _nvk_ptr_enc/_nvk_ptr_dec call
+ * through it automatically.  Override _nvk_ptr_enc/_nvk_ptr_dec directly
+ * to replace the full encrypt/decrypt logic.
+ *
+ * Everything is static __always_inline — no function pointers, no globals,
+ * no symbols in the final binary.
+ */
+
+#ifndef _nvk_xor_opaque
+static __always_inline unsigned long _nvk_xor_opaque(unsigned long a,
+						     unsigned long b)
+{
+	unsigned long sum  = a + b;
+	unsigned long both = a & b;
+	return sum - both - both;
+}
+#endif
+
+/*
+ * Per-build cache seed.
+ *
+ * -DNVK_CACHE_SEED=0x...  → use that (build system injects a random u64).
+ * Otherwise              → auto-derive from __TIME__+__DATE__ (changes
+ *                           every compilation, ~17 bits of entropy).
+ *
+ * The seed is mixed into the runtime key derivation so that identical
+ * binaries loaded at the same address still produce different cache keys.
+ */
+#ifndef NVK_CACHE_SEED
+#define _NVK_CT(s, i) ((unsigned long)((unsigned char)(s)[i]))
+#define NVK_CACHE_SEED (                                                      \
+	(_NVK_CT(__TIME__, 0) << 56) | (_NVK_CT(__TIME__, 1) << 48) |        \
+	(_NVK_CT(__TIME__, 3) << 40) | (_NVK_CT(__TIME__, 4) << 32) |        \
+	(_NVK_CT(__TIME__, 6) << 24) | (_NVK_CT(__TIME__, 7) << 16) |        \
+	(_NVK_CT(__DATE__, 4) <<  8) | (_NVK_CT(__DATE__, 5)      ))
+#endif
+
+static __always_inline void _nvk_cache_key_init(void)
+{
+	unsigned long k;
+	if (__atomic_load_n(&_nvk_cache_key, __ATOMIC_ACQUIRE))
+		return;
+	k = _nvk_xor_opaque(
+		(unsigned long)(void *)_nvk_sym_cache + (unsigned long)NVK_CACHE_SEED,
+		(unsigned long)(void *)&_nvk_cache_key);
+	__atomic_store_n(&_nvk_cache_key, k, __ATOMIC_RELEASE);
+}
+
+#ifndef _nvk_ptr_enc
+static __always_inline unsigned long _nvk_ptr_enc(unsigned long addr)
+{
+	return _nvk_xor_opaque(addr,
+		__atomic_load_n(&_nvk_cache_key, __ATOMIC_RELAXED));
+}
+#endif
+
+#ifndef _nvk_ptr_dec
+static __always_inline unsigned long _nvk_ptr_dec(unsigned long enc)
+{
+	return _nvk_xor_opaque(enc,
+		__atomic_load_n(&_nvk_cache_key, __ATOMIC_RELAXED));
+}
+#endif
 
 static __always_inline u32 _nvk_sym_hash(const char *s)
 {
@@ -41,17 +120,23 @@ static __always_inline unsigned long _nvk_sym_cached(const char *name)
 {
 	u32 h = _nvk_sym_hash(name);
 	u32 idx = h & _NVK_SYM_CACHE_MASK;
+	unsigned long e;
 
-	if (_nvk_sym_cache[idx].hash == h && _nvk_sym_cache[idx].addr)
-		return _nvk_sym_cache[idx].addr;
+	if (__atomic_load_n(&_nvk_sym_cache[idx].hash, __ATOMIC_ACQUIRE) == h) {
+		e = __atomic_load_n(&_nvk_sym_cache[idx].enc, __ATOMIC_ACQUIRE);
+		if (e)
+			return _nvk_ptr_dec(e);
+	}
 
 	if (!_nvk_sym_resolver)
 		return 0;
 
 	unsigned long addr = _nvk_sym_resolver(name);
 	if (addr) {
-		_nvk_sym_cache[idx].hash = h;
-		_nvk_sym_cache[idx].addr = addr;
+		__atomic_store_n(&_nvk_sym_cache[idx].enc,
+				 _nvk_ptr_enc(addr), __ATOMIC_RELEASE);
+		__atomic_store_n(&_nvk_sym_cache[idx].hash,
+				 h, __ATOMIC_RELEASE);
 	}
 	return addr;
 }
@@ -82,8 +167,8 @@ static __always_inline void nvk_sym_cache_clear(void)
 {
 	unsigned long i;
 	for (i = 0; i < _NVK_SYM_CACHE_SIZE; i++) {
-		_nvk_sym_cache[i].hash = 0;
-		_nvk_sym_cache[i].addr = 0;
+		__atomic_store_n(&_nvk_sym_cache[i].enc, 0, __ATOMIC_RELEASE);
+		__atomic_store_n(&_nvk_sym_cache[i].hash, 0, __ATOMIC_RELEASE);
 	}
 }
 

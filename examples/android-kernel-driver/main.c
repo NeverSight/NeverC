@@ -14,6 +14,40 @@
  *         adb shell su -c 'dmesg | tail'
  *         adb shell su -c 'rmmod nvk_driver'
  */
+/*
+ * Full enc/dec override example: rotate + ADD cipher.
+ *
+ * Overriding _nvk_ptr_enc/_nvk_ptr_dec directly replaces the entire
+ * pointer encryption scheme.  The default _nvk_xor_opaque is NOT used
+ * (enc/dec are the consumers of xor_opaque; overriding them bypasses it).
+ *
+ * Forward-declare _nvk_cache_key here — C allows multiple tentative
+ * definitions of the same static variable in one translation unit;
+ * kallsyms.h's declaration merges with this one at link time.
+ */
+static unsigned long _nvk_cache_key;
+
+static inline __attribute__((always_inline))
+unsigned long nvk_rot_enc(unsigned long addr)
+{
+	unsigned long k = __atomic_load_n(&_nvk_cache_key, __ATOMIC_RELAXED);
+	unsigned long r = addr + k;
+	r = (r << 7) | (r >> 57);
+	return r;
+}
+
+static inline __attribute__((always_inline))
+unsigned long nvk_rot_dec(unsigned long enc)
+{
+	unsigned long k = __atomic_load_n(&_nvk_cache_key, __ATOMIC_RELAXED);
+	unsigned long r = (enc >> 7) | (enc << 57);
+	r = r - k;
+	return r;
+}
+
+#define _nvk_ptr_enc nvk_rot_enc
+#define _nvk_ptr_dec nvk_rot_dec
+
 #include <nvkmod.h>
 
 static int nvk_driver_init(void)
@@ -30,7 +64,11 @@ static int nvk_driver_init(void)
 		(unsigned long)nvk_kallsyms_lookup_name);
 
 	init_task_addr = NVK_LOOKUP("init_task");
-	pr_info("nvk_driver: &init_task = %lx\n",
+	pr_info("nvk_driver: &init_task = %lx (fresh)\n",
+		(unsigned long)init_task_addr);
+
+	init_task_addr = NVK_LOOKUP("init_task");
+	pr_info("nvk_driver: &init_task = %lx (cached)\n",
 		(unsigned long)init_task_addr);
 
 	return 0;
@@ -38,6 +76,7 @@ static int nvk_driver_init(void)
 
 static void nvk_driver_exit(void)
 {
+	nvk_sym_cache_clear();
 	pr_info("nvk_driver: unloaded\n");
 }
 
