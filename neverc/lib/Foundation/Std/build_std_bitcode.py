@@ -70,7 +70,7 @@ def main():
                 f"-I{args.std_include_dir}",
                 f"-fdebug-prefix-map={src_dir_abs}=runtime/std/src",
                 f"-fdebug-prefix-map={inc_dir_abs}=runtime/std/include",
-                src, "-o", bc_path,
+                os.path.abspath(src), "-o", bc_path,
             ]
             print(f"  [bc] {rel}", file=sys.stderr)
             subprocess.check_call(cmd)
