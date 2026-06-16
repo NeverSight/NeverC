@@ -4,15 +4,9 @@ using namespace neverc;
 
 #include "BuiltinNvkKernelBitcode.h"
 
-unsigned BuiltinNvkKernel::getEmbeddedModuleCount() {
-  return kNvkKernelBCEntryCount;
-}
-
-std::pair<llvm::StringRef, llvm::StringRef>
-BuiltinNvkKernel::getEmbeddedModule(unsigned Idx) {
-  if (Idx >= kNvkKernelBCEntryCount)
+llvm::StringRef BuiltinNvkKernel::getEmbeddedBitcode() {
+  if (kNvkKernelBCLen == 0)
     return {};
-  auto &E = kNvkKernelBCEntries[Idx];
-  return {llvm::StringRef(E.name),
-          llvm::StringRef(reinterpret_cast<const char *>(E.data), E.len)};
+  return llvm::StringRef(reinterpret_cast<const char *>(kNvkKernelBC),
+                         kNvkKernelBCLen);
 }

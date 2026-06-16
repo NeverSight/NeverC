@@ -4,115 +4,13 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringSet.h"
-#include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Linker/Linker.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
 using namespace llvm;
 using namespace neverc;
-
-namespace {
-
-/// On-demand module resolution: only parse and merge bitcode modules
-/// whose exports are transitively needed by the user module.
-///
-/// Phase 1 — Lazy-parse every embedded module in a disposable context
-///           to extract export name sets (reads headers only, no function
-///           bodies).
-/// Phase 2 — Iteratively load modules whose exports overlap with the
-///           user's unresolved declarations.  Newly loaded modules may
-///           introduce new unresolved references, triggering additional
-///           module loads until a fixed point is reached.
-std::unique_ptr<Module> mergeNeededModules(Module &UserMod) {
-  unsigned Count = BuiltinNvkKernel::getEmbeddedModuleCount();
-  if (Count == 0)
-    return nullptr;
-
-  StringSet<> Unresolved;
-  for (Function &F : UserMod)
-    if (F.isDeclaration() && !F.use_empty())
-      Unresolved.insert(F.getName());
-  for (GlobalVariable &GV : UserMod.globals())
-    if (GV.isDeclaration() && !GV.use_empty())
-      Unresolved.insert(GV.getName());
-
-  struct ModInfo {
-    StringRef Name;
-    StringRef Data;
-    SmallVector<std::string, 0> Exports;
-    bool Loaded = false;
-  };
-  SmallVector<ModInfo, 32> Mods(Count);
-
-  {
-    LLVMContext LazyCtx;
-    for (unsigned I = 0; I < Count; ++I) {
-      auto [N, D] = BuiltinNvkKernel::getEmbeddedModule(I);
-      Mods[I].Name = N;
-      Mods[I].Data = D;
-      if (D.empty())
-        continue;
-
-      auto Buf = MemoryBuffer::getMemBuffer(D, N, /*RequiresNullTerminator=*/false);
-      auto LazyMod = getLazyBitcodeModule(Buf->getMemBufferRef(), LazyCtx,
-                                          /*ShouldLazyLoadMetadata=*/true);
-      if (!LazyMod) {
-        consumeError(LazyMod.takeError());
-        continue;
-      }
-      for (Function &F : **LazyMod)
-        if (!F.isDeclaration())
-          Mods[I].Exports.push_back(F.getName().str());
-      for (GlobalVariable &GV : (*LazyMod)->globals())
-        if (!GV.isDeclaration())
-          Mods[I].Exports.push_back(GV.getName().str());
-    }
-  }
-
-  std::unique_ptr<Module> Combined;
-  bool Changed = true;
-  while (Changed) {
-    Changed = false;
-    for (unsigned I = 0; I < Count; ++I) {
-      if (Mods[I].Loaded || Mods[I].Data.empty())
-        continue;
-
-      bool Needed = llvm::any_of(Mods[I].Exports, [&](const std::string &S) {
-        return Unresolved.count(S);
-      });
-      if (!Needed)
-        continue;
-
-      std::string Label = ("nvk kernel: " + Mods[I].Name).str();
-      auto Mod = parseBitcodeAndPrepare(Mods[I].Data, UserMod, Label);
-
-      for (Function &F : *Mod)
-        if (F.isDeclaration() && !F.use_empty())
-          Changed |= Unresolved.insert(F.getName()).second;
-      for (GlobalVariable &GV : Mod->globals())
-        if (GV.isDeclaration() && !GV.use_empty())
-          Changed |= Unresolved.insert(GV.getName()).second;
-
-      if (!Combined) {
-        Combined = std::move(Mod);
-      } else {
-        if (Linker::linkModules(*Combined, std::move(Mod),
-                                Linker::Flags::OverrideFromSrc))
-          report_fatal_error(Twine("Failed to merge nvk kernel module: ") +
-                             Mods[I].Name);
-      }
-      Mods[I].Loaded = true;
-      Changed = true;
-    }
-  }
-
-  return Combined;
-}
-
-} // namespace
 
 PreservedAnalyses
 NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
@@ -120,7 +18,8 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   if (TT.getArch() != Triple::aarch64)
     return PreservedAnalyses::all();
 
-  if (BuiltinNvkKernel::getEmbeddedModuleCount() == 0)
+  StringRef Embedded = BuiltinNvkKernel::getEmbeddedBitcode();
+  if (Embedded.empty())
     return PreservedAnalyses::all();
 
   bool AnyNvkUsed = M.getGlobalVariable("_neverc_krt_sym_resolver") != nullptr ||
@@ -130,9 +29,7 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   if (!AnyNvkUsed)
     return PreservedAnalyses::all();
 
-  auto NvkMod = mergeNeededModules(M);
-  if (!NvkMod)
-    return PreservedAnalyses::all();
+  auto NvkMod = parseBitcodeAndPrepare(Embedded, M, "nvk kernel runtime");
 
   StringSet<> NvkFnNames, NvkGlobalNames;
   captureDefinitionNames(*NvkMod, NvkFnNames, NvkGlobalNames);

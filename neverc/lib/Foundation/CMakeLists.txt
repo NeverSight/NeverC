@@ -277,9 +277,8 @@ set(BUILTIN_NVK_KERNEL_BITCODE_H
 if(NOT EXISTS "${BUILTIN_NVK_KERNEL_BITCODE_H}")
   file(WRITE "${BUILTIN_NVK_KERNEL_BITCODE_H}"
     "/* Empty placeholder — run 'ninja neverc-bootstrap-nvk-kernel-bc' to populate. */\n"
-    "struct NvkKernelBCEntry { const char *name; const unsigned char *data; unsigned int len; };\n"
-    "static const NvkKernelBCEntry kNvkKernelBCEntries[] = {{0, 0, 0}};\n"
-    "static const unsigned int kNvkKernelBCEntryCount = 0;\n")
+    "static const unsigned char kNvkKernelBC[] = {};\n"
+    "static const unsigned int kNvkKernelBCLen = 0;\n")
 endif()
 
 add_custom_target(neverc-bootstrap-nvk-kernel-bc
