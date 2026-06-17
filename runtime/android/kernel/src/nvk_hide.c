@@ -3,6 +3,17 @@
 #include <nvk.h>
 #include <nvk_internal.h>
 
+static __always_inline int _neverc_krt_str_starts_with(const char *str,
+						       const char *prefix)
+{
+	while (*prefix) {
+		if (*str != *prefix) return 0;
+		str++;
+		prefix++;
+	}
+	return 1;
+}
+
 static struct neverc_krt_hook _neverc_krt_ks_hook;
 static int _neverc_krt_ks_hooked;
 static struct neverc_krt_hook _neverc_krt_vmalloc_hook;

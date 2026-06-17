@@ -63,13 +63,12 @@ void neverc_krt_cleanup_all(void);
 int neverc_krt_init_ftrace(void);
 const struct neverc_krt_state *neverc_krt_get_state(void);
 
-/* ---- Symbol-name hook helpers (NC_XORSTR wrappers) ---- */
+/* ---- Symbol-name hook helpers ---- */
 
 /*
- * These _neverc_krt_ implementations must be in the public header
- * because the neverc_krt_hook_*_by_sym() macros expand to call them
- * with NC_XORSTR()-encrypted string literals.  They are NOT part of
- * the user-facing API — always use the macros below.
+ * Internal: called by the neverc_krt_hook_*_by_sym() macros only.
+ * NC_XORSTR() must expand at the call site, so these cannot be static.
+ * Do NOT call directly — use the macros below.
  */
 int _neverc_krt_hook_by_sym(struct neverc_krt_hook *h, const char *sym_name,
 			    void *replace, void **orig);

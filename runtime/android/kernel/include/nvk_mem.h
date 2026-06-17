@@ -3,7 +3,7 @@
 #define NEVERC_KRT_MEM_H
 
 #include <linux/types.h>
-#include <linux/compiler.h>  /* __user, __always_inline */
+#include <linux/compiler.h>  /* __user, static __always_inline */
 
 int neverc_krt_mem_init(void);
 
@@ -51,7 +51,7 @@ long neverc_krt_mem_read_cross_page(void *dst, const void *src, size_t len);
 
 /* --- Atomic operations (ARM64 exclusive monitors) --- */
 
-__always_inline u64 neverc_krt_mem_atomic_read64(const volatile u64 *addr)
+static __always_inline u64 neverc_krt_mem_atomic_read64(const volatile u64 *addr)
 {
 	u64 val;
 	__asm__ __volatile__("ldar %0, [%1]"
@@ -61,14 +61,14 @@ __always_inline u64 neverc_krt_mem_atomic_read64(const volatile u64 *addr)
 	return val;
 }
 
-__always_inline void neverc_krt_mem_atomic_write64(volatile u64 *addr, u64 val)
+static __always_inline void neverc_krt_mem_atomic_write64(volatile u64 *addr, u64 val)
 {
 	__asm__ __volatile__("stlr %1, [%0]"
 			     : : "r"(addr), "r"(val)
 			     : "memory");
 }
 
-__always_inline u64 neverc_krt_mem_xchg64(volatile u64 *addr, u64 new_val)
+static __always_inline u64 neverc_krt_mem_xchg64(volatile u64 *addr, u64 new_val)
 {
 	u64 old;
 	u32 tmp;
@@ -82,7 +82,7 @@ __always_inline u64 neverc_krt_mem_xchg64(volatile u64 *addr, u64 new_val)
 	return old;
 }
 
-__always_inline int neverc_krt_mem_cas64(volatile u64 *addr,
+static __always_inline int neverc_krt_mem_cas64(volatile u64 *addr,
 					 u64 expected, u64 desired)
 {
 	u64 old;

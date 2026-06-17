@@ -190,29 +190,9 @@
  * Safe default: if never set (0), callers fall back to the maximum
  * struct module size across 5.10-6.12 (0x640 = 1600).
  */
-/*
- * Canonical version→struct-size / dentry-offset mapping.
- * Pure lookup tables, no state access.
- */
-__always_inline unsigned long _neverc_krt_module_size_for(int kv)
-{
-	if (kv >= 612) return 1600;
-	if (kv >= 606) return 1536;
-	if (kv >= 601) return 1024;
-	if (kv >= 515) return 960;
-	return 1024;
-}
-
-__always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
-{
-	if (kv >= 612) return 0x48;
-	if (kv >= 606) return 0xA0;
-	return 0x18;
-}
-
 void _neverc_krt_version_setup_impl(int kv);
 
-__always_inline void _neverc_krt_version_setup(void)
+static __always_inline void _neverc_krt_version_setup(void)
 {
 	_neverc_krt_version_setup_impl(NEVERC_KRT_KERNEL);
 }

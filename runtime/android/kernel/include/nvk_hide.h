@@ -38,7 +38,7 @@ void neverc_krt_mod_hide(struct neverc_krt_hide_state *state,
 void neverc_krt_mod_show(struct neverc_krt_hide_state *state,
 			 struct neverc_krt_this_module *mod);
 
-__always_inline int neverc_krt_mod_is_hidden(struct neverc_krt_hide_state *state)
+static __always_inline int neverc_krt_mod_is_hidden(struct neverc_krt_hide_state *state)
 {
 	return state->hidden;
 }

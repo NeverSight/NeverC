@@ -9,28 +9,28 @@
 /*  CPU topology queries  (no kernel symbol needed — all from regs)   */
 /* ------------------------------------------------------------------ */
 
-__always_inline u32 neverc_krt_cpu_id(void)
+static __always_inline u32 neverc_krt_cpu_id(void)
 {
 	u64 mpidr;
 	__asm__ __volatile__("mrs %0, mpidr_el1" : "=r"(mpidr));
 	return (u32)(mpidr & 0xFFUL);
 }
 
-__always_inline u32 neverc_krt_cpu_cluster(void)
+static __always_inline u32 neverc_krt_cpu_cluster(void)
 {
 	u64 mpidr;
 	__asm__ __volatile__("mrs %0, mpidr_el1" : "=r"(mpidr));
 	return (u32)((mpidr >> 8) & 0xFFUL);
 }
 
-__always_inline u64 neverc_krt_cpu_midr(void)
+static __always_inline u64 neverc_krt_cpu_midr(void)
 {
 	u64 midr;
 	__asm__ __volatile__("mrs %0, midr_el1" : "=r"(midr));
 	return midr;
 }
 
-__always_inline int neverc_krt_cpu_is_big_core(void)
+static __always_inline int neverc_krt_cpu_is_big_core(void)
 {
 	u64 midr = neverc_krt_cpu_midr();
 	u32 part = (u32)((midr >> 4) & 0xFFF);
@@ -76,7 +76,7 @@ int neverc_krt_num_online_cpus(void);
 	type __neverc_krt_pcpu_##name[NEVERC_KRT_MAX_CPUS]                  \
 		__attribute__((aligned(64)))
 
-__always_inline u32 _neverc_krt_cpu_idx_safe(u32 cpu)
+static __always_inline u32 _neverc_krt_cpu_idx_safe(u32 cpu)
 {
 	return (cpu < NEVERC_KRT_MAX_CPUS) ? cpu : (NEVERC_KRT_MAX_CPUS - 1);
 }
@@ -113,35 +113,35 @@ int neverc_krt_smp_call_on(int cpu, neverc_krt_smp_call_fn func,
 /*  CPU feature detection  (ID_AA64* register reads)                  */
 /* ------------------------------------------------------------------ */
 
-__always_inline int neverc_krt_cpu_has_crc32(void)
+static __always_inline int neverc_krt_cpu_has_crc32(void)
 {
 	u64 isar0;
 	__asm__ __volatile__("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
 	return ((isar0 >> 16) & 0xF) >= 1;
 }
 
-__always_inline int neverc_krt_cpu_has_sha256(void)
+static __always_inline int neverc_krt_cpu_has_sha256(void)
 {
 	u64 isar0;
 	__asm__ __volatile__("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
 	return ((isar0 >> 12) & 0xF) >= 1;
 }
 
-__always_inline int neverc_krt_cpu_has_aes(void)
+static __always_inline int neverc_krt_cpu_has_aes(void)
 {
 	u64 isar0;
 	__asm__ __volatile__("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
 	return ((isar0 >> 4) & 0xF) >= 1;
 }
 
-__always_inline int neverc_krt_cpu_has_atomics(void)
+static __always_inline int neverc_krt_cpu_has_atomics(void)
 {
 	u64 isar0;
 	__asm__ __volatile__("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
 	return ((isar0 >> 20) & 0xF) >= 2;
 }
 
-__always_inline int neverc_krt_cpu_has_sve(void)
+static __always_inline int neverc_krt_cpu_has_sve(void)
 {
 	u64 pfr0;
 	__asm__ __volatile__("mrs %0, id_aa64pfr0_el1" : "=r"(pfr0));

@@ -68,46 +68,24 @@ extern unsigned long _neverc_krt_module_size;
 extern int           _neverc_krt_kernel_ver;
 extern unsigned long _neverc_krt_file_dentry_off;
 
+static __always_inline unsigned long _neverc_krt_module_size_for(int kv)
+{
+	if (kv >= 612) return 1600;
+	if (kv >= 606) return 1536;
+	if (kv >= 601) return 1024;
+	if (kv >= 515) return 960;
+	return 1024;
+}
+
+static __always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
+{
+	if (kv >= 612) return 0x48;
+	if (kv >= 606) return 0xA0;
+	return 0x18;
+}
+
 unsigned long _neverc_krt_get_module_size(void);
 unsigned long _neverc_krt_cred_uid_base(void);
 unsigned long _neverc_krt_get_file_dentry_off(void);
-
-/* ---- Shared inline string helpers ---- */
-
-__always_inline int _neverc_krt_str_starts_with(const char *str,
-						const char *prefix)
-{
-	while (*prefix) {
-		if (*str != *prefix) return 0;
-		str++;
-		prefix++;
-	}
-	return 1;
-}
-
-__always_inline int _neverc_krt_str_contains(const char *haystack,
-					     const char *needle)
-{
-	const char *h, *n;
-	if (!haystack || !needle || !*needle) return 0;
-	while (*haystack) {
-		h = haystack;
-		n = needle;
-		while (*h && *n && *h == *n) { h++; n++; }
-		if (!*n) return 1;
-		haystack++;
-	}
-	return 0;
-}
-
-__always_inline int _neverc_krt_atoi(const char *s, int len)
-{
-	int val = 0, i;
-	for (i = 0; i < len; i++) {
-		if (s[i] < '0' || s[i] > '9') return -1;
-		val = val * 10 + (s[i] - '0');
-	}
-	return val;
-}
 
 #endif /* NEVERC_KRT_INTERNAL_H */

@@ -7,6 +7,21 @@
 #define _NEVERC_KRT_SKC_NUM_OFF   NEVERC_KRT_SKC_NUM_OFF
 #define _NEVERC_KRT_DENTRY_DNAME_NAME_OFF NEVERC_KRT_DENTRY_DNAME_OFF
 
+static __always_inline int _neverc_krt_str_contains(const char *haystack,
+						    const char *needle)
+{
+	const char *h, *n;
+	if (!haystack || !needle || !*needle) return 0;
+	while (*haystack) {
+		h = haystack;
+		n = needle;
+		while (*h && *n && *h == *n) { h++; n++; }
+		if (!*n) return 1;
+		haystack++;
+	}
+	return 0;
+}
+
 /* ---- internal typedefs ---- */
 
 typedef int  (*neverc_krt_mounts_show_fn)(void *seq, void *v);

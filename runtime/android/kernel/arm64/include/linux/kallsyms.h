@@ -41,7 +41,7 @@ NEVERC_KRT_RT_VAR unsigned long _neverc_krt_cache_key;
  * ================================================================== */
 
 #ifndef _neverc_krt_xor_opaque
-__always_inline unsigned long _neverc_krt_xor_opaque(unsigned long a,
+static __always_inline unsigned long _neverc_krt_xor_opaque(unsigned long a,
 						     unsigned long b)
 {
 	unsigned long sum  = a + b;
@@ -75,7 +75,7 @@ __always_inline unsigned long _neverc_krt_xor_opaque(unsigned long a,
  *  Section 4: Inline cache engine (must be __always_inline)
  * ================================================================== */
 
-__always_inline void _neverc_krt_cache_key_init(void)
+static __always_inline void _neverc_krt_cache_key_init(void)
 {
 	unsigned long k, expected;
 	if (__atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_ACQUIRE))
@@ -90,7 +90,7 @@ __always_inline void _neverc_krt_cache_key_init(void)
 }
 
 #ifndef _neverc_krt_ptr_enc
-__always_inline unsigned long _neverc_krt_ptr_enc(unsigned long addr)
+static __always_inline unsigned long _neverc_krt_ptr_enc(unsigned long addr)
 {
 	return _neverc_krt_xor_opaque(addr,
 		__atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_RELAXED));
@@ -98,14 +98,14 @@ __always_inline unsigned long _neverc_krt_ptr_enc(unsigned long addr)
 #endif
 
 #ifndef _neverc_krt_ptr_dec
-__always_inline unsigned long _neverc_krt_ptr_dec(unsigned long enc)
+static __always_inline unsigned long _neverc_krt_ptr_dec(unsigned long enc)
 {
 	return _neverc_krt_xor_opaque(enc,
 		__atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_RELAXED));
 }
 #endif
 
-__always_inline u32 _neverc_krt_sym_hash(const char *s)
+static __always_inline u32 _neverc_krt_sym_hash(const char *s)
 {
 	u32 h = 0;
 	while (*s) {
@@ -115,7 +115,7 @@ __always_inline u32 _neverc_krt_sym_hash(const char *s)
 	return h;
 }
 
-__always_inline unsigned long _neverc_krt_sym_cached(const char *name)
+static __always_inline unsigned long _neverc_krt_sym_cached(const char *name)
 {
 	u32 h = _neverc_krt_sym_hash(name);
 	u32 idx = h & _NEVERC_KRT_SYM_CACHE_MASK;

