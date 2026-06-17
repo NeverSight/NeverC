@@ -248,6 +248,22 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       auto NameOrErr = EF.getSectionName(S);
       StringRef SecName = NameOrErr ? *NameOrErr : "";
 
+      if (Opts.mergeSections && !SecName.empty()) {
+        bool preserved = false;
+        for (StringRef ps : Opts.preservedSections)
+          if (SecName == ps) { preserved = true; break; }
+        if (!preserved) {
+          if (SecName.starts_with(".text."))
+            SecName = ".text";
+          else if (SecName.starts_with(".bss."))
+            SecName = ".bss";
+          else if (SecName.starts_with(".data."))
+            SecName = ".data";
+          else if (SecName.starts_with(".rodata."))
+            SecName = ".rodata";
+        }
+      }
+
       if (Opts.dropDebugInfo &&
           (SecName.starts_with(".debug_") || SecName == ".debug" ||
            SecName.starts_with(".zdebug_")))

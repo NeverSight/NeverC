@@ -1100,6 +1100,7 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   config->relax = args.hasFlag(OPT_relax, OPT_no_relax, true);
   config->rpath = getRpath(args);
   config->relocatable = driverCfg.relocatable;
+  config->androidKernelModule = driverCfg.androidKernelModule;
 
   config->searchPaths = args::getStrings(args, OPT_library_path);
   config->sectionStartMap = getSectionStartMap(args);
@@ -2373,6 +2374,15 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     neverc::merge::Options mergeOpts;
     mergeOpts.pureC = true;
     mergeOpts.dropDebugInfo = (config->strip != StripPolicy::None);
+    if (config->androidKernelModule) {
+      mergeOpts.mergeSections = true;
+      mergeOpts.preservedSections = {
+          ".modinfo",         "__versions",
+          ".gnu.linkonce.this_module",
+          ".plt",             ".init.plt",
+          ".text.ftrace_trampoline",
+      };
+    }
 
     std::error_code ec;
     raw_fd_ostream out(config->outputFile, ec, sys::fs::OF_None);

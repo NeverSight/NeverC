@@ -107,6 +107,7 @@ struct LinkerDriverConfig {
   bool bundle = false;      // MachO -bundle
   bool pie = false;         // ELF --pie, MachO -pie
   bool relocatable = false; // ELF -r / --relocatable
+  bool androidKernelModule = false; // merge sections for .ko
   bool staticLink = false;  // MachO -static (no dynamic libraries)
 
   // Dynamic linker path (ELF only), replaces --dynamic-linker.

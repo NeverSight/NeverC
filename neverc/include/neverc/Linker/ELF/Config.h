@@ -201,6 +201,7 @@ struct Config {
   bool printMemoryUsage;
   bool relax;
   bool relocatable;
+  bool androidKernelModule = false;
   bool relrGlibc = false;
   bool relrPackDynRelocs = false;
   llvm::SmallVector<std::pair<llvm::GlobPattern, uint32_t>, 0> shuffleSections;

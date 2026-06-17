@@ -56,6 +56,15 @@ struct Options {
   /// trying to re-link cross-section refs.  Matches LLD -r behavior
   /// when --strip-debug is active.
   bool dropDebugInfo = false;
+
+  /// Merge per-function/per-variable sections into canonical names:
+  /// .text.* → .text, .bss.* → .bss, .data.* → .data, .rodata.* → .rodata.
+  /// Used for Android kernel modules to hide symbol names from sections.
+  bool mergeSections = false;
+
+  /// Sections to preserve from merging (exact match).  Only consulted
+  /// when mergeSections is true.
+  llvm::SmallVector<llvm::StringRef, 8> preservedSections;
 };
 
 /// Merge \p Buffers (each is a complete .o image) into a single .o of
