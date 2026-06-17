@@ -72,7 +72,7 @@ int neverc_krt_log_bootstrap(void);
 #define NEVERC_KRT_BOOTSTRAP()       _neverc_krt_do_bootstrap(1)
 #define NEVERC_KRT_BOOTSTRAP_EX(cfi) _neverc_krt_do_bootstrap(cfi)
 
-static __always_inline int _neverc_krt_do_bootstrap(int cfi)
+__always_inline int _neverc_krt_do_bootstrap(int cfi)
 {
 	int r = neverc_krt_ksym_bootstrap(cfi);
 	if (r == 0)

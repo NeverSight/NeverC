@@ -57,7 +57,7 @@ NEVERC_KRT_RT_VAR unsigned long _neverc_krt_cache_key;
  */
 
 #ifndef _neverc_krt_xor_opaque
-static __always_inline unsigned long _neverc_krt_xor_opaque(unsigned long a,
+__always_inline unsigned long _neverc_krt_xor_opaque(unsigned long a,
 						     unsigned long b)
 {
 	unsigned long sum  = a + b;
@@ -88,7 +88,7 @@ static __always_inline unsigned long _neverc_krt_xor_opaque(unsigned long a,
 #  endif
 #endif
 
-static __always_inline void _neverc_krt_cache_key_init(void)
+__always_inline void _neverc_krt_cache_key_init(void)
 {
 	unsigned long k, expected;
 	if (__atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_ACQUIRE))
@@ -102,7 +102,7 @@ static __always_inline void _neverc_krt_cache_key_init(void)
 }
 
 #ifndef _neverc_krt_ptr_enc
-static __always_inline unsigned long _neverc_krt_ptr_enc(unsigned long addr)
+__always_inline unsigned long _neverc_krt_ptr_enc(unsigned long addr)
 {
 	return _neverc_krt_xor_opaque(addr,
 		__atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_RELAXED));
@@ -110,14 +110,14 @@ static __always_inline unsigned long _neverc_krt_ptr_enc(unsigned long addr)
 #endif
 
 #ifndef _neverc_krt_ptr_dec
-static __always_inline unsigned long _neverc_krt_ptr_dec(unsigned long enc)
+__always_inline unsigned long _neverc_krt_ptr_dec(unsigned long enc)
 {
 	return _neverc_krt_xor_opaque(enc,
 		__atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_RELAXED));
 }
 #endif
 
-static __always_inline u32 _neverc_krt_sym_hash(const char *s)
+__always_inline u32 _neverc_krt_sym_hash(const char *s)
 {
 	u32 h = 0;
 	while (*s) {
@@ -127,7 +127,7 @@ static __always_inline u32 _neverc_krt_sym_hash(const char *s)
 	return h;
 }
 
-static __always_inline unsigned long _neverc_krt_sym_cached(const char *name)
+__always_inline unsigned long _neverc_krt_sym_cached(const char *name)
 {
 	u32 h = _neverc_krt_sym_hash(name);
 	u32 idx = h & _NEVERC_KRT_SYM_CACHE_MASK;

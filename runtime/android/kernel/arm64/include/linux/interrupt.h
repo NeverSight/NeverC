@@ -32,12 +32,14 @@ void disable_irq(unsigned int irq);
 void enable_irq(unsigned int irq);
 void disable_irq_nosync(unsigned int irq);
 
-/* Tasklets. */
+/*
+ * Tasklets — opaque blob sized for GKI 5.10-6.12.
+ * Real layout: next(8) + state(8) + count(4) + use_callback(1) + pad(3)
+ *              + func/callback union(8) + data(8) = 40.
+ * Round up to 48 for KABI safety.
+ */
 struct tasklet_struct {
-	unsigned long state;
-	unsigned long count;
-	void (*func)(unsigned long data);
-	unsigned long data;
+	unsigned char __opaque[48];
 };
 
 void tasklet_init(struct tasklet_struct *t, void (*func)(unsigned long),
