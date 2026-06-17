@@ -37,11 +37,6 @@ unsigned long _neverc_krt_cred_uid_base(void)
 	return 4;
 }
 
-int _neverc_krt_get_kernel_ver(void)
-{
-	return __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-}
-
 unsigned long _neverc_krt_get_file_dentry_off(void)
 {
 	unsigned long off = __atomic_load_n(&_neverc_krt_file_dentry_off,

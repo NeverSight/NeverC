@@ -25,9 +25,12 @@ typedef unsigned long (*neverc_krt_copy_from_user_fn)(void *to,
 typedef unsigned long (*neverc_krt_copy_to_user_fn)(void __user *to,
 						    const void *from,
 						    unsigned long n);
-typedef int (*neverc_krt_pte_rw_fn)(unsigned long addr);
+typedef int  (*neverc_krt_pte_rw_fn)(unsigned long addr);
 typedef void *(*neverc_krt_get_task_mm_fn)(struct task_struct *task);
 typedef void  (*neverc_krt_mmput_fn)(void *mm);
+typedef void *(*neverc_krt_prepare_creds_fn)(void);
+typedef int   (*neverc_krt_commit_creds_fn)(void *);
+typedef void *(*neverc_krt_get_task_cred_fn)(struct task_struct *);
 
 /* ---- nvk_mem.c ---- */
 
@@ -41,15 +44,15 @@ unsigned long _neverc_krt_mem_get_page_size(void);
 
 /* ---- nvk_process.c ---- */
 
-extern unsigned long _neverc_krt_off_comm;
+extern unsigned long               _neverc_krt_off_comm;
+extern neverc_krt_get_task_cred_fn _neverc_krt_get_task_cred;
+extern neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds;
+extern neverc_krt_commit_creds_fn  _neverc_krt_commit_creds;
 
 /* ---- nvk_cred.c ---- */
 
 extern unsigned long _neverc_krt_off_cred;
 extern unsigned long _neverc_krt_off_uid;
-extern void *(*_neverc_krt_prepare_creds)(void);
-extern int   (*_neverc_krt_commit_creds)(void *);
-extern void *(*_neverc_krt_get_task_cred)(struct task_struct *);
 
 /* ---- nvk_selinux.c ---- */
 
@@ -67,13 +70,12 @@ extern unsigned long _neverc_krt_file_dentry_off;
 
 unsigned long _neverc_krt_get_module_size(void);
 unsigned long _neverc_krt_cred_uid_base(void);
-int           _neverc_krt_get_kernel_ver(void);
 unsigned long _neverc_krt_get_file_dentry_off(void);
 
 /* ---- Shared inline string helpers ---- */
 
-static __always_inline int _neverc_krt_str_starts_with(const char *str,
-						       const char *prefix)
+__always_inline int _neverc_krt_str_starts_with(const char *str,
+						const char *prefix)
 {
 	while (*prefix) {
 		if (*str != *prefix) return 0;
@@ -83,8 +85,8 @@ static __always_inline int _neverc_krt_str_starts_with(const char *str,
 	return 1;
 }
 
-static __always_inline int _neverc_krt_str_contains(const char *haystack,
-						    const char *needle)
+__always_inline int _neverc_krt_str_contains(const char *haystack,
+					     const char *needle)
 {
 	const char *h, *n;
 	if (!haystack || !needle || !*needle) return 0;
@@ -98,7 +100,7 @@ static __always_inline int _neverc_krt_str_contains(const char *haystack,
 	return 0;
 }
 
-static __always_inline int _neverc_krt_atoi(const char *s, int len)
+__always_inline int _neverc_krt_atoi(const char *s, int len)
 {
 	int val = 0, i;
 	for (i = 0; i < len; i++) {

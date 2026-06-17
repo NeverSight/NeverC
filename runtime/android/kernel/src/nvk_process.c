@@ -7,9 +7,6 @@
 typedef int  (*neverc_krt_task_pid_nr_fn)(struct task_struct *);
 typedef int  (*neverc_krt_task_tgid_nr_fn)(struct task_struct *);
 typedef struct task_struct *(*neverc_krt_find_task_fn)(int pid);
-typedef void *(*neverc_krt_get_task_cred_fn)(struct task_struct *);
-typedef void *(*neverc_krt_prepare_creds_fn)(void);
-typedef int   (*neverc_krt_commit_creds_fn)(void *);
 typedef int   (*neverc_krt_send_sig_info_fn)(int sig, void *info,
 					     struct task_struct *p, int type);
 typedef void (*neverc_krt_rcu_lock_fn)(void);

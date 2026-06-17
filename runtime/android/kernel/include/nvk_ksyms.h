@@ -6,6 +6,7 @@
 
 int neverc_krt_ksyms_init(void);
 
+void neverc_krt_sym_cache_clear(void);
 
 typedef int (*neverc_krt_ksym_callback_t)(const char *name, unsigned long addr,
 				   void *data);
