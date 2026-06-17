@@ -344,7 +344,7 @@ void neverc_krt_proc_status_filter_cleanup(void);
 
 
 
-/* --- /proc/pid/attr/* SELinux context filter --- */
+/* --- /proc/pid/attr SELinux context filter --- */
 
 typedef long (*neverc_krt_proc_attr_read_fn)(void *file, char __user *buf,
 				      size_t count, long long *ppos);
@@ -488,6 +488,7 @@ int neverc_krt_file_spoof_add(const char *path,
 
 int _neverc_krt_probe_file_dentry_off(void *file);
 
+NEVERC_KRT_RT_VAR int _neverc_krt_file_dentry_probed;
 
 static __always_inline unsigned long _neverc_krt_get_file_dentry_off(void)
 {
@@ -496,7 +497,10 @@ static __always_inline unsigned long _neverc_krt_get_file_dentry_off(void)
 	if (off)
 		return off;
 
-	return NEVERC_KRT_FILE_DENTRY_OFF;
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (!kv)
+		return _neverc_krt_file_dentry_off_for(NEVERC_KRT_KERNEL);
+	return _neverc_krt_file_dentry_off_for(kv);
 }
 
 int _neverc_krt_file_match_path(void *file, const char *target);

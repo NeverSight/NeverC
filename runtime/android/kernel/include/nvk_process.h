@@ -99,6 +99,13 @@ static __always_inline struct task_struct *neverc_krt_find_task(int pid)
 
 const char *neverc_krt_task_comm(struct task_struct *task);
 
+/*
+ * Safe variant: copies up to 15 bytes of task->comm into a caller-
+ * supplied buffer via neverc_krt_mem_read.  Always NUL-terminates.
+ * Returns 0 on success, -1 on failure (buf filled with "").
+ */
+int neverc_krt_task_comm_safe(struct task_struct *task, char *buf, int bufsz);
+
 typedef int (*neverc_krt_task_callback_t)(struct task_struct *task, void *data);
 
 int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data);

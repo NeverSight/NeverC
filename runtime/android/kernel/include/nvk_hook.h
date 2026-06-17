@@ -244,15 +244,22 @@ static __always_inline int neverc_krt_in_irq_context(void)
 {
 	/*
 	 * ARM64 tracks interrupt context in preempt_count (per-task).
-	 * On GKI, task_struct starts with thread_info { flags(8), preempt(8), ... }.
-	 * preempt.count is at offset 8. Layout:
+	 * thread_info layout with CONFIG_ARM64_SW_TTBR0_PAN=y (all GKI):
+	 *   5.10:  flags(8) + addr_limit(8) + ttbr0(8) → preempt at 24
+	 *   5.15+: flags(8) + ttbr0(8) → preempt at 16 (addr_limit removed)
+	 * preempt.count (u32, little-endian) layout:
 	 *   [19:16]=HARDIRQ, [15:8]=SOFTIRQ, [7:0]=PREEMPT
 	 * in_interrupt() = (count & 0x000FFF00) != 0
 	 */
 	unsigned long task;
 	u32 count;
 	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
-	count = *(volatile u32 *)(task + 8);
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (!kv)
+		return 0;
+	unsigned long off = (kv <= 510) ? 24 : 16;
+	if (neverc_krt_mem_read(&count, (void *)(task + off), 4))
+		return 0;
 	return (count & 0x000FFF00U) != 0;
 }
 
@@ -489,7 +496,9 @@ static __always_inline int neverc_krt_a64_is_hook_patch(u32 insn)
 
 static __always_inline int neverc_krt_a64_is_kcfi_tag(u32 *addr)
 {
-	u32 insn = *(volatile u32 *)((unsigned long)addr - 4);
+	u32 insn;
+	if (neverc_krt_mem_read(&insn, (void *)((unsigned long)addr - 4), 4))
+		return 0;
 	if (insn == 0 || insn == NEVERC_KRT_A64_NOP)
 		return 0;
 	if ((insn & 0xFFE0001FU) == 0xD4A00000U)
@@ -502,7 +511,9 @@ static __always_inline int neverc_krt_a64_is_kcfi_tag(u32 *addr)
 
 static __always_inline int neverc_krt_a64_is_ftrace_site(u32 *code)
 {
-	u32 insn = code[0];
+	u32 insn;
+	if (neverc_krt_mem_read(&insn, code, 4))
+		return 0;
 	if (insn == NEVERC_KRT_A64_BRK_FTRACE) return 1;
 	if ((insn & 0xFC000000) == 0x94000000) {
 		long imm26 = neverc_krt_sext(insn & 0x3FFFFFF, 26);
@@ -549,7 +560,7 @@ int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
 
 
 
-void _neverc_krt_scan_entry(u32 *code, int *skip, int *total);
+void _neverc_krt_scan_entry(const u32 *buf, int *skip, int *total);
 
 
 enum neverc_krt_scan_result {

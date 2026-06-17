@@ -201,19 +201,54 @@ static __always_inline unsigned long _neverc_krt_get_module_size(void)
 	return sz ? sz : 0x640;
 }
 
+/*
+ * Canonical version→struct-size / dentry-offset mapping.
+ * Used by both _neverc_krt_version_setup() (compile-time path) and
+ * the linux_banner fallback in _neverc_krt_mem_init() so the
+ * mapping is defined in exactly one place.
+ */
+static __always_inline unsigned long _neverc_krt_module_size_for(int kv)
+{
+	if (kv >= 612) return 1600;
+	if (kv >= 606) return 1536;
+	if (kv >= 601) return 1024;
+	if (kv >= 515) return 960;
+	return 1024;
+}
+
+static __always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
+{
+	if (kv >= 612) return 0x48;
+	if (kv >= 606) return 0xA0;
+	return 0x18;
+}
+
 static __always_inline void _neverc_krt_version_setup(void)
 {
 	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
 		if (!__atomic_load_n(&_neverc_krt_file_dentry_off,
 				     __ATOMIC_RELAXED))
 			__atomic_store_n(&_neverc_krt_file_dentry_off,
-					 NEVERC_KRT_FILE_DENTRY_OFF,
+					 _neverc_krt_file_dentry_off_for(
+						 NEVERC_KRT_KERNEL),
 					 __ATOMIC_RELAXED);
 		__atomic_store_n(&_neverc_krt_module_size,
-				 NEVERC_KRT_MODULE_SIZE, __ATOMIC_RELAXED);
+				 _neverc_krt_module_size_for(NEVERC_KRT_KERNEL),
+				 __ATOMIC_RELAXED);
 		__atomic_store_n(&_neverc_krt_kernel_ver,
 				 NEVERC_KRT_KERNEL, __ATOMIC_RELEASE);
 	}
+}
+
+/*
+ * struct cred.usage changed from atomic_t (4 bytes) to
+ * atomic_long_t (8 bytes) in 6.6, shifting uid from offset 4 to 8.
+ * Use this helper instead of hardcoding 4 as the fallback UID offset.
+ */
+static __always_inline unsigned long _neverc_krt_cred_uid_base(void)
+{
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	return (kv >= 606) ? 8 : 4;
 }
 
 #endif /* NVKMOD_VERSION_H */

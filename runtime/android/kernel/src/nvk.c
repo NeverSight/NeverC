@@ -7,7 +7,7 @@ int _neverc_krt_init_all_impl(void)
 	int ret = NEVERC_KRT_BOOTSTRAP();
 	if (ret) return ret;
 
-	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_MEM]     = neverc_krt_mem_init();
+	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_MEM]     = _neverc_krt_mem_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_PROCESS] = neverc_krt_process_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_CRED]    = neverc_krt_cred_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_HIDE]    = neverc_krt_hide_init();

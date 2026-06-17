@@ -4,21 +4,28 @@
 
 int neverc_krt_anti_is_root(void)
 {
+	if (!_neverc_krt_mem_inited) return -1;
+
 	unsigned long task;
 	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
 
 	const unsigned char *p = (const unsigned char *)task;
+	unsigned long uid_off = _neverc_krt_cred_uid_base();
 	unsigned long i;
 	for (i = 0x400; i < 0xE00; i += 8) {
 		unsigned long v;
 		if (neverc_krt_mem_read(&v, p + i, 8)) continue;
 		if (v < 0xFFFF000000000000UL || v >= 0xFFFFFFFFFFFFF000UL)
 			continue;
-		u32 cp[6];
-		if (neverc_krt_mem_read(cp, (void *)v, sizeof(cp))) continue;
-		if (cp[0] < 1 || cp[0] > 10000) continue;
-		if (cp[1] == 0 && cp[2] == 0 && cp[3] == 0 &&
-		    cp[4] == 0 && cp[5] == 0)
+		u32 refcnt;
+		if (neverc_krt_mem_read(&refcnt, (void *)v, 4)) continue;
+		if (refcnt < 1 || refcnt > 10000) continue;
+		u32 ids[6];
+		if (neverc_krt_mem_read(ids, (void *)(v + uid_off),
+					sizeof(ids)))
+			continue;
+		if (ids[0] == 0 && ids[1] == 0 && ids[2] == 0 &&
+		    ids[3] == 0 && ids[4] == 0 && ids[5] == 0)
 			return 1;
 	}
 	return 0;
@@ -26,10 +33,22 @@ int neverc_krt_anti_is_root(void)
 
 int neverc_krt_anti_check_caller_comm(const char *expected)
 {
-	const char *comm = neverc_krt_task_comm(current);
-	const char *a = comm;
-	const char *b = expected;
+	unsigned long off = __atomic_load_n(&_neverc_krt_off_comm,
+					    __ATOMIC_ACQUIRE);
+	if (!off) {
+		neverc_krt_task_comm(current);
+		off = __atomic_load_n(&_neverc_krt_off_comm,
+				      __ATOMIC_ACQUIRE);
+		if (!off) return 0;
+	}
 
+	char buf[16];
+	if (neverc_krt_mem_read(buf, (const char *)current + off, 16))
+		return 0;
+	buf[15] = '\0';
+
+	const char *a = buf;
+	const char *b = expected;
 	while (*a && *b) {
 		if (*a != *b) return 0;
 		a++; b++;
@@ -42,16 +61,22 @@ int neverc_krt_anti_check_caller_uid(u32 expected_uid)
 	if (!_neverc_krt_mem_inited) return -1;
 
 	unsigned char *task = (unsigned char *)current;
+	unsigned long uid_off = _neverc_krt_cred_uid_base();
 	unsigned long i;
 
 	for (i = 0x400; i < 0xE00; i += 8) {
 		unsigned long v;
 		if (neverc_krt_mem_read(&v, task + i, 8)) continue;
 		if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {
-			u32 cp[3];
-			if (neverc_krt_mem_read(cp, (void *)v, sizeof(cp)))
+			u32 refcnt;
+			if (neverc_krt_mem_read(&refcnt, (void *)v, 4))
 				continue;
-			if (cp[1] == expected_uid || cp[2] == expected_uid)
+			if (refcnt < 1 || refcnt > 10000) continue;
+			u32 ids[2];
+			if (neverc_krt_mem_read(ids, (void *)(v + uid_off),
+						sizeof(ids)))
+				continue;
+			if (ids[0] == expected_uid || ids[1] == expected_uid)
 				return 1;
 		}
 	}
@@ -261,15 +286,20 @@ int neverc_krt_anti_check_fn_patched(void *addr, int insn_count)
 	int i;
 
 	for (i = 0; i < insn_count && i < 16; i++) {
-		u32 insn = code[i];
+		u32 insn;
+		if (neverc_krt_mem_read(&insn, &code[i], 4))
+			return -1;
 
 		if (insn == 0xD4200080U)
 			return 1;
 		if ((insn & 0xFFE0001FU) == 0xD4200000U)
 			return 1;
-		if (insn == 0x58000050U && i + 3 < insn_count &&
-		    code[i + 1] == 0xD61F0200U)
-			return 1;
+		if (insn == 0x58000050U && i + 3 < insn_count) {
+			u32 next;
+			if (!neverc_krt_mem_read(&next, &code[i + 1], 4) &&
+			    next == 0xD61F0200U)
+				return 1;
+		}
 	}
 	return 0;
 }
@@ -327,7 +357,8 @@ int neverc_krt_wd_register(struct neverc_krt_hook *h)
 		_neverc_krt_wd.entries[idx].sealed_orig[i] =
 			_neverc_krt_wd_seal(h->orig_insns[i], i);
 		u32 cur;
-		neverc_krt_mem_read(&cur, &target[i], 4);
+		if (neverc_krt_mem_read(&cur, &target[i], 4))
+			cur = h->orig_insns[i];
 		_neverc_krt_wd.entries[idx].sealed_expect[i] =
 			_neverc_krt_wd_seal(cur, i + NEVERC_KRT_HOOK_MAX_PATCH);
 	}
@@ -441,7 +472,9 @@ int neverc_krt_anti_scan_for_brk(const void *start, size_t len)
 	int found = 0;
 
 	for (i = 0; i < count; i++) {
-		u32 insn = code[i];
+		u32 insn;
+		if (neverc_krt_mem_read(&insn, &code[i], 4))
+			continue;
 		if ((insn & 0xFFE0001FU) == 0xD4200000U)
 			found++;
 	}
@@ -502,14 +535,24 @@ int neverc_krt_anti_detect_magisk(void)
 
 int neverc_krt_anti_detect_selinux_permissive(void)
 {
+	int val;
 	int *enforcing = (int *)NEVERC_KRT_LOOKUP("selinux_enforcing");
-	if (!enforcing) {
-		void *state = (void *)NEVERC_KRT_LOOKUP("selinux_state");
-		if (state)
-			enforcing = (int *)((unsigned long)state + 4);
+	if (enforcing) {
+		if (neverc_krt_mem_read(&val, enforcing, 4))
+			return -1;
+		return (val == 0) ? 1 : 0;
 	}
-	if (!enforcing) return -1;
-	return (*enforcing == 0) ? 1 : 0;
+
+	void *state = (void *)NEVERC_KRT_LOOKUP("selinux_state");
+	if (state) {
+		volatile int *probed = _neverc_krt_se_probe_state(state);
+		if (probed) {
+			if (neverc_krt_mem_read(&val, (void *)probed, 4))
+				return -1;
+			return (val == 0) ? 1 : 0;
+		}
+	}
+	return -1;
 }
 
 void neverc_krt_anti_full_scan(struct neverc_krt_anti_full_env *env)

@@ -42,6 +42,12 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
       AnyDefined = true;
     }
   }
+  for (const GlobalVariable &GV : M.globals()) {
+    if (GV.isDeclaration() && !GV.use_empty() &&
+        (GV.getName().starts_with(BuiltinStringNames::PublicFunctionPrefix) ||
+         GV.getName().starts_with(BuiltinStringNames::InternalFunctionPrefix)))
+      AnyExternUsed = true;
+  }
   if (!AnyExternUsed) {
     if (AnyDefined)
       return PreservedAnalyses::none();
@@ -85,6 +91,12 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
       continue;
     if (auto *F = RuntimeMod->getFunction(Decl.getName()))
       EnqueueFn(F);
+  }
+  for (GlobalVariable &GV : M.globals()) {
+    if (!GV.isDeclaration() || GV.use_empty())
+      continue;
+    if (auto *Def = RuntimeMod->getGlobalVariable(GV.getName()))
+      EnqueueGV(Def);
   }
 
   while (!Worklist.empty()) {

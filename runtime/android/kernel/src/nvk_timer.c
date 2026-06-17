@@ -61,17 +61,29 @@ int neverc_krt_timer_init(void)
 
 int _neverc_krt_hrt_patch_fn(u8 *storage, unsigned long fn)
 {
+	/*
+	 * After hrtimer_init (which does memset(0) + sets base pointer):
+	 *   [0]  __rb_parent_color  (self-pointer, non-zero)
+	 *   [8]  rb_right           (0)
+	 *   [16] rb_left            (0)
+	 *   [24] expires            (0)
+	 *   [32] _softexpires       (0)
+	 *   [40] function           (0)   ← target
+	 *   [48] base               (kernel ptr, non-zero) ← landmark
+	 *
+	 * Find `base` (first kernel pointer after offset 16), then write
+	 * fn one slot before it.  Stable across GKI 5.10-6.12.
+	 */
 	int off;
-	for (off = 16; off <= 64; off += 8) {
-		unsigned long *slot = (unsigned long *)(storage + off);
-		if (*slot == 0) {
-			*slot = fn;
-			return 0;
-		}
+	for (off = 24; off <= 96; off += 8) {
+		unsigned long val;
+		if (neverc_krt_mem_read(&val, storage + off, 8))
+			continue;
+		if (val > 0xFFFF000000000000UL &&
+		    val < 0xFFFFFFFFFFFFF000UL)
+			return neverc_krt_mem_write(storage + off - 8, &fn, 8);
 	}
-	/* Fallback: try the known 5.10 offset */
-	*(unsigned long *)(storage + 24) = fn;
-	return 0;
+	return neverc_krt_mem_write(storage + 40, &fn, 8);
 }
 
 int neverc_krt_timer_setup(struct neverc_krt_timer *t,

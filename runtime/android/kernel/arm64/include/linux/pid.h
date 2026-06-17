@@ -15,8 +15,12 @@ enum pid_type {
 	PIDTYPE_MAX,
 };
 
-struct pid *find_get_pid(pid_t nr);
-struct task_struct *pid_task(struct pid *pid, enum pid_type type);
+/*
+ * find_get_pid / pid_task are intentionally omitted: using them
+ * directly would depend on struct pid internals and group_leader
+ * offsets that vary across GKI versions.  Use the runtime's
+ * neverc_krt_find_task (NEVERC_KRT_LOOKUP-based) instead.
+ */
 struct task_struct *find_task_by_vpid(pid_t vpid);
 pid_t pid_vnr(struct pid *pid);
 void put_pid(struct pid *pid);

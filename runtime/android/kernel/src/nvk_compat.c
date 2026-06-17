@@ -45,7 +45,7 @@ int neverc_krt_compat_init(void)
 	if (_neverc_krt_compat_inited) return 0;
 
 	if (!_neverc_krt_mem_inited)
-		neverc_krt_mem_init();
+		_neverc_krt_mem_init();
 
 	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
 	if (!banner) {
@@ -61,7 +61,8 @@ int neverc_krt_compat_init(void)
 	}
 
 	if (!_neverc_krt_kinfo.detected) {
-		int kv = _neverc_krt_kernel_ver;
+		int kv = __atomic_load_n(&_neverc_krt_kernel_ver,
+					__ATOMIC_ACQUIRE);
 		if (kv == 515) {
 			_neverc_krt_kinfo.major = 5; _neverc_krt_kinfo.minor = 15;
 			_neverc_krt_kinfo.android_version = 13;
@@ -105,7 +106,7 @@ int neverc_krt_check_kernel_match(void)
 		return NEVERC_KRT_VER_UNKNOWN;
 
 	u32 expected_major = 0, expected_minor = 0;
-	int kv = _neverc_krt_kernel_ver;
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
 	if (kv == 515)      { expected_major = 5; expected_minor = 15; }
 	else if (kv == 601) { expected_major = 6; expected_minor = 1; }
 	else if (kv == 606) { expected_major = 6; expected_minor = 6; }
@@ -222,7 +223,7 @@ int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod)
 	while (*p == ' ') p++;
 
 	const char *flags[] = {
-		"SMP", "preempt", "mod_unload", "aarch64", 0
+		"SMP", "preempt", "mod_unload", "modversions", "aarch64", 0
 	};
 	int fi;
 	for (fi = 0; flags[fi]; fi++) {

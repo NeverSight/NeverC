@@ -346,7 +346,10 @@ int _neverc_krt_verify_patch(u32 *target, u32 *expected, int count)
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");
 	for (i = 0; i < count; i++) {
-		if (*(volatile u32 *)&target[i] != expected[i])
+		u32 val;
+		if (neverc_krt_mem_read(&val, &target[i], 4))
+			return -1;
+		if (val != expected[i])
 			return -1;
 	}
 	return 0;
@@ -381,11 +384,11 @@ int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count)
 	return _neverc_krt_verify_patch(target, insns, count);
 }
 
-void _neverc_krt_scan_entry(u32 *code, int *skip, int *total)
+void _neverc_krt_scan_entry(const u32 *buf, int *skip, int *total)
 {
 	int s = 0;
 	while (s < NEVERC_KRT_HOOK_MAX_PATCH - 4) {
-		u32 insn = code[s];
+		u32 insn = buf[s];
 		if (neverc_krt_a64_is_bti(insn) || insn == NEVERC_KRT_A64_NOP ||
 		    neverc_krt_a64_is_pac_sign(insn) || neverc_krt_a64_is_stp_fp_lr(insn) ||
 		    neverc_krt_a64_is_frame_setup(insn) || neverc_krt_a64_is_scs_push(insn))
@@ -407,10 +410,14 @@ enum neverc_krt_scan_result neverc_krt_hook_scan(void *target)
 	u32 *code = (u32 *)target;
 	int skip, patch_count, i;
 
-	if (neverc_krt_a64_is_hook_patch(code[0]))
+	u32 scan_buf[NEVERC_KRT_HOOK_MAX_PATCH];
+	if (neverc_krt_mem_read(scan_buf, code, sizeof(scan_buf)))
+		return NEVERC_KRT_SCAN_TOO_SHORT;
+
+	if (neverc_krt_a64_is_hook_patch(scan_buf[0]))
 		return NEVERC_KRT_SCAN_ALREADY_HOOKED;
 
-	if (neverc_krt_a64_is_kprobe_bp(code[0]))
+	if (neverc_krt_a64_is_kprobe_bp(scan_buf[0]))
 		return NEVERC_KRT_SCAN_KPROBE_ACTIVE;
 
 	if (neverc_krt_a64_is_ftrace_site(code))
@@ -422,10 +429,10 @@ enum neverc_krt_scan_result neverc_krt_hook_scan(void *target)
 			return NEVERC_KRT_SCAN_TOO_SHORT;
 	}
 
-	_neverc_krt_scan_entry(code, &skip, &patch_count);
+	_neverc_krt_scan_entry(scan_buf, &skip, &patch_count);
 
 	for (i = 0; i < patch_count; i++) {
-		u32 insn = code[i];
+		u32 insn = scan_buf[i];
 		if (neverc_krt_a64_is_bti(insn) || insn == NEVERC_KRT_A64_NOP)
 			continue;
 		if (neverc_krt_a64_is_hazardous(insn))
@@ -455,7 +462,11 @@ int neverc_krt_hook_install(struct neverc_krt_hook *h, void *target,
 	if (!_neverc_krt_is_kern_ptr((unsigned long)target))
 		return NEVERC_KRT_HOOK_E_SHORT;
 
-	if (neverc_krt_a64_is_kprobe_bp(code[0]))
+	u32 ibuf[NEVERC_KRT_HOOK_MAX_PATCH];
+	if (neverc_krt_mem_read(ibuf, code, sizeof(ibuf)))
+		return NEVERC_KRT_HOOK_E_SHORT;
+
+	if (neverc_krt_a64_is_kprobe_bp(ibuf[0]))
 		return NEVERC_KRT_HOOK_E_CONFLICT;
 
 	h->target = target;
@@ -467,9 +478,9 @@ int neverc_krt_hook_install(struct neverc_krt_hook *h, void *target,
 	h->guard = 0;
 
 	{
-		int chained = neverc_krt_a64_is_hook_patch(code[0]);
+		int chained = neverc_krt_a64_is_hook_patch(ibuf[0]);
 
-		_neverc_krt_scan_entry(code, &skip, &patch_count);
+		_neverc_krt_scan_entry(ibuf, &skip, &patch_count);
 
 		if (!chained) {
 			unsigned long fn_sz = _neverc_krt_fn_size(target);
@@ -491,19 +502,21 @@ int neverc_krt_hook_install(struct neverc_krt_hook *h, void *target,
 		h->patch_count = patch_count;
 		h->short_b = use_short_b;
 		for (i = 0; i < patch_count; i++)
-			h->orig_insns[i] = code[i];
+			h->orig_insns[i] = ibuf[i];
 
 		tramp[tidx++] = NEVERC_KRT_A64_BTI_JC;
 
 		if (chained) {
 			int qoff = 0;
-			if (neverc_krt_a64_is_bti(code[0])) qoff = 1;
-			unsigned long prev = *(unsigned long *)&code[qoff + 2];
+			if (neverc_krt_a64_is_bti(ibuf[0])) qoff = 1;
+			unsigned long prev;
+			if (neverc_krt_mem_read(&prev, &code[qoff + 2], 8))
+				return NEVERC_KRT_HOOK_E_SHORT;
 			tidx += neverc_krt_a64_gen_mov64(&tramp[tidx], 17, prev);
 			tramp[tidx++] = NEVERC_KRT_A64_RET_X17;
 		} else {
 			for (i = 0; i < patch_count; i++) {
-				u32 insn = code[i];
+				u32 insn = ibuf[i];
 				if (neverc_krt_a64_is_bti(insn) ||
 				    insn == NEVERC_KRT_A64_NOP)
 					continue;
@@ -549,8 +562,8 @@ int neverc_krt_hook_install(struct neverc_krt_hook *h, void *target,
 		patch[i] = NEVERC_KRT_A64_NOP;
 	{
 		int jmp = 0;
-		if (neverc_krt_a64_is_bti(code[0])) {
-			patch[0] = code[0];
+		if (neverc_krt_a64_is_bti(ibuf[0])) {
+			patch[0] = ibuf[0];
 			jmp = 1;
 		}
 		if (use_short_b) {
@@ -609,7 +622,11 @@ int neverc_krt_hook_install_ctx(struct neverc_krt_hook_ctx *h, void *target,
 	if (!_neverc_krt_is_kern_ptr((unsigned long)target))
 		return NEVERC_KRT_HOOK_E_SHORT;
 
-	if (neverc_krt_a64_is_kprobe_bp(code[0]))
+	u32 ibuf[NEVERC_KRT_HOOK_MAX_PATCH];
+	if (neverc_krt_mem_read(ibuf, code, sizeof(ibuf)))
+		return NEVERC_KRT_HOOK_E_SHORT;
+
+	if (neverc_krt_a64_is_kprobe_bp(ibuf[0]))
 		return NEVERC_KRT_HOOK_E_CONFLICT;
 
 	h->base.target = target;
@@ -620,30 +637,31 @@ int neverc_krt_hook_install_ctx(struct neverc_krt_hook_ctx *h, void *target,
 	h->guard_task = 0;
 
 	{
-		int chained = neverc_krt_a64_is_hook_patch(code[0]);
+		int chained = neverc_krt_a64_is_hook_patch(ibuf[0]);
 		if (!chained) {
 			unsigned long fn_sz = _neverc_krt_fn_size(target);
 			if (fn_sz > 0 && fn_sz < NEVERC_KRT_HOOK_MAX_PATCH * 4)
 				return NEVERC_KRT_HOOK_E_SHORT;
 		}
 
-		_neverc_krt_scan_entry(code, &skip, &patch_count);
+		_neverc_krt_scan_entry(ibuf, &skip, &patch_count);
 		h->base.patch_count = patch_count;
 		for (i = 0; i < patch_count; i++)
-			h->base.orig_insns[i] = code[i];
+			h->base.orig_insns[i] = ibuf[i];
 
 		tramp[tidx++] = NEVERC_KRT_A64_BTI_JC;
 
 		if (chained) {
 			int qoff = 0;
-			if (neverc_krt_a64_is_bti(code[0])) qoff = 1;
-			unsigned long prev =
-				*(unsigned long *)&code[qoff + 2];
+			if (neverc_krt_a64_is_bti(ibuf[0])) qoff = 1;
+			unsigned long prev;
+			if (neverc_krt_mem_read(&prev, &code[qoff + 2], 8))
+				return NEVERC_KRT_HOOK_E_SHORT;
 			tidx += neverc_krt_a64_gen_mov64(&tramp[tidx], 17, prev);
 			tramp[tidx++] = NEVERC_KRT_A64_RET_X17;
 		} else {
 			for (i = 0; i < patch_count; i++) {
-				u32 insn = code[i];
+				u32 insn = ibuf[i];
 				if (neverc_krt_a64_is_bti(insn) ||
 				    insn == NEVERC_KRT_A64_NOP)
 					continue;
@@ -715,8 +733,8 @@ int neverc_krt_hook_install_ctx(struct neverc_krt_hook_ctx *h, void *target,
 		patch[i] = NEVERC_KRT_A64_NOP;
 	{
 		int jmp = 0;
-		if (neverc_krt_a64_is_bti(code[0])) {
-			patch[0] = code[0];
+		if (neverc_krt_a64_is_bti(ibuf[0])) {
+			patch[0] = ibuf[0];
 			jmp = 1;
 		}
 		patch[jmp + 0] = 0x58000050U;  /* LDR X16, [PC, #8] */

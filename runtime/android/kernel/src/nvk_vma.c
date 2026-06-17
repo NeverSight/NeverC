@@ -7,7 +7,7 @@ int neverc_krt_vma_init(void)
 	if (_neverc_krt_vma_inited) return 0;
 
 	if (!_neverc_krt_mem_inited)
-		neverc_krt_mem_init();
+		_neverc_krt_mem_init();
 	if (!_neverc_krt_proc_inited)
 		neverc_krt_process_init();
 
@@ -124,7 +124,11 @@ void *_neverc_krt_task_mm(struct task_struct *task)
 	}
 
 	if (!_neverc_krt_off_mm) return (void *)0;
-	return *(void **)((unsigned long)task + _neverc_krt_off_mm);
+	unsigned long mm_val;
+	if (neverc_krt_mem_read(&mm_val,
+			(void *)((unsigned long)task + _neverc_krt_off_mm), 8))
+		return (void *)0;
+	return (void *)mm_val;
 }
 
 void _neverc_krt_detect_vm_flags_off(const void *vma)
@@ -132,13 +136,18 @@ void _neverc_krt_detect_vm_flags_off(const void *vma)
 	if (__atomic_load_n(&_neverc_krt_off_vm_flags, __ATOMIC_ACQUIRE))
 		return;
 
-	const unsigned long *v = (const unsigned long *)vma;
-	unsigned long start = v[0], end = v[1];
+	unsigned long start, end;
+	if (neverc_krt_mem_read(&start, vma, 8))
+		return;
+	if (neverc_krt_mem_read(&end, (const char *)vma + 8, 8))
+		return;
 	if (end <= start || start == 0) return;
 
 	unsigned long i;
 	for (i = 2; i < 16; i++) {
-		unsigned long val = v[i];
+		unsigned long val;
+		if (neverc_krt_mem_read(&val, (const char *)vma + i * 8, 8))
+			continue;
 		if (val == 0 || val >= 0xFFFF000000000000UL) continue;
 		if (val > 0x100000) continue;
 		if (val & NEVERC_KRT_VM_READ) {
@@ -147,7 +156,8 @@ void _neverc_krt_detect_vm_flags_off(const void *vma)
 			return;
 		}
 	}
-	if (_neverc_krt_kernel_ver >= 601)
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (kv >= 601)
 		__atomic_store_n(&_neverc_krt_off_vm_flags, 32, __ATOMIC_RELEASE);
 	else
 		__atomic_store_n(&_neverc_krt_off_vm_flags, 80, __ATOMIC_RELEASE);
@@ -155,12 +165,19 @@ void _neverc_krt_detect_vm_flags_off(const void *vma)
 
 void _neverc_krt_read_vma_info(const void *vma, struct neverc_krt_vma_info *info)
 {
-	const unsigned long *v = (const unsigned long *)vma;
-	info->start = v[0];
-	info->end   = v[1];
+	if (neverc_krt_mem_read(&info->start, vma, 8)) {
+		info->start = 0; info->end = 0; info->flags = 0;
+		info->pgoff = 0; return;
+	}
+	if (neverc_krt_mem_read(&info->end, (const char *)vma + 8, 8)) {
+		info->end = 0; info->flags = 0; info->pgoff = 0; return;
+	}
 	_neverc_krt_detect_vm_flags_off(vma);
-	info->flags = *(unsigned long *)((unsigned long)vma + _neverc_krt_off_vm_flags)
-		      & 0xFFFF;
+	unsigned long raw_flags;
+	if (neverc_krt_mem_read(&raw_flags,
+			(const char *)vma + _neverc_krt_off_vm_flags, 8))
+		raw_flags = 0;
+	info->flags = raw_flags & 0xFFFF;
 	info->pgoff = 0;
 }
 

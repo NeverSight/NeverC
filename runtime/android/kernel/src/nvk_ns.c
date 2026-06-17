@@ -68,9 +68,12 @@ void *_neverc_krt_get_nsproxy(struct task_struct *task)
 	if (!task) return (void *)0;
 
 	if (_neverc_krt_off_nsproxy) {
-		unsigned long *p = (unsigned long *)
-			((unsigned long)task + _neverc_krt_off_nsproxy);
-		return (void *)*p;
+		unsigned long v;
+		if (neverc_krt_mem_read(&v,
+				(void *)((unsigned long)task +
+					 _neverc_krt_off_nsproxy), 8))
+			return (void *)0;
+		return (void *)v;
 	}
 
 	const unsigned char *p = (const unsigned char *)task;
@@ -108,11 +111,15 @@ int neverc_krt_ns_get_info(struct task_struct *task, struct neverc_krt_ns_info *
 		/* struct nsproxy layout (stable 5.10-6.12):
 		 *   [0] count(4)+pad(4)  [1] uts_ns  [2] ipc_ns
 		 *   [3] mnt_ns  [4] pid_ns_for_children  [5] net_ns */
-		unsigned long *np = (unsigned long *)nsproxy;
-		if (np[3] > 0xFFFF000000000000UL)
-			info->mnt_ns = (void *)np[3];
-		if (np[5] > 0xFFFF000000000000UL)
-			info->net_ns = (void *)np[5];
+		unsigned long mnt_val, net_val;
+		if (!neverc_krt_mem_read(&mnt_val,
+				(const char *)nsproxy + 3 * 8, 8) &&
+		    mnt_val > 0xFFFF000000000000UL)
+			info->mnt_ns = (void *)mnt_val;
+		if (!neverc_krt_mem_read(&net_val,
+				(const char *)nsproxy + 5 * 8, 8) &&
+		    net_val > 0xFFFF000000000000UL)
+			info->net_ns = (void *)net_val;
 	}
 
 	return 0;

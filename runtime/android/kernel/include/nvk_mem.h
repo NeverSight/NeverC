@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <nvk_rt.h>
+#include <nvkmod_version.h>
 #include <linux/compiler.h>
 #include <linux/kallsyms.h>
 #include <linux/string.h>
@@ -69,7 +70,13 @@ static __always_inline unsigned long _neverc_krt_mem_page_align_down(unsigned lo
 			      _NEVERC_KRT_PTE_UXN)
 #define _NEVERC_KRT_PAGE_KERNEL_RO  (_NEVERC_KRT_PAGE_KERNEL | _NEVERC_KRT_PTE_RDONLY)
 
-int neverc_krt_mem_init(void);
+int _neverc_krt_mem_init(void);
+
+static __always_inline int neverc_krt_mem_init(void)
+{
+	_neverc_krt_version_setup();
+	return _neverc_krt_mem_init();
+}
 
 
 

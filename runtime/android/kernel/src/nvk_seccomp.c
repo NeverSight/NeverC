@@ -11,16 +11,22 @@ int _neverc_krt_seccomp_find_offset(struct task_struct *task)
 	unsigned long i;
 
 	for (i = 0x200; i < 0xE00; i += 4) {
-		u32 mode = *(u32 *)(p + i);
+		u32 mode;
+		if (neverc_krt_mem_read(&mode, p + i, 4))
+			continue;
 		if (mode != NEVERC_KRT_SECCOMP_MODE_DISABLED &&
 		    mode != NEVERC_KRT_SECCOMP_MODE_STRICT &&
 		    mode != NEVERC_KRT_SECCOMP_MODE_FILTER)
 			continue;
 
-		u32 next = *(u32 *)(p + i + 4);
+		u32 next;
+		if (neverc_krt_mem_read(&next, p + i + 4, 4))
+			continue;
 		if (next > 2) continue;
 
-		unsigned long filter_ptr = *(unsigned long *)(p + i + 8);
+		unsigned long filter_ptr;
+		if (neverc_krt_mem_read(&filter_ptr, p + i + 8, 8))
+			continue;
 		if (mode == NEVERC_KRT_SECCOMP_MODE_DISABLED && filter_ptr == 0) {
 			_neverc_krt_off_seccomp = i;
 			return 0;
@@ -40,7 +46,11 @@ int neverc_krt_seccomp_get_mode(struct task_struct *task)
 	if (!task) return -1;
 	if (_neverc_krt_seccomp_find_offset(task))
 		return -1;
-	return *(int *)((unsigned long)task + _neverc_krt_off_seccomp);
+	int mode;
+	if (neverc_krt_mem_read(&mode, (void *)((unsigned long)task +
+				_neverc_krt_off_seccomp), 4))
+		return -1;
+	return mode;
 }
 
 int neverc_krt_seccomp_is_filtered(struct task_struct *task)

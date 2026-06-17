@@ -20,7 +20,7 @@ int neverc_krt_process_init(void)
 	if (_neverc_krt_proc_inited) return 0;
 
 	if (!_neverc_krt_mem_inited)
-		neverc_krt_mem_init();
+		_neverc_krt_mem_init();
 
 	_neverc_krt_task_pid_nr =
 		(neverc_krt_task_pid_nr_fn)NEVERC_KRT_LOOKUP("task_pid_nr");
@@ -68,8 +68,11 @@ int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
 		const unsigned char *p = (const unsigned char *)init;
 		unsigned long i;
 		for (i = 0x200; i < 0xE00; i += 8) {
-			unsigned long next = *(unsigned long *)(p + i);
-			unsigned long prev = *(unsigned long *)(p + i + 8);
+			unsigned long next, prev;
+			if (neverc_krt_mem_read(&next, p + i, 8))
+				continue;
+			if (neverc_krt_mem_read(&prev, p + i + 8, 8))
+				continue;
 			if (next <= 0xFFFF000000000000UL ||
 			    prev <= 0xFFFF000000000000UL)
 				continue;
@@ -92,7 +95,10 @@ int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
 	if (_neverc_krt_rcu_read_lock) _neverc_krt_rcu_read_lock();
 
 	head = (struct list_head *)((unsigned long)init + _neverc_krt_off_tasks);
-	pos = head->next;
+	if (neverc_krt_mem_read(&pos, &head->next, sizeof(pos))) {
+		if (_neverc_krt_rcu_read_unlock) _neverc_krt_rcu_read_unlock();
+		return -1;
+	}
 	while (pos && pos != head && count < 32768) {
 		struct list_head *next_pos;
 		if (neverc_krt_mem_read(&next_pos, &pos->next, sizeof(next_pos)))
@@ -115,10 +121,18 @@ int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
 int _neverc_krt_find_by_name_cb(struct task_struct *task, void *data)
 {
 	struct _neverc_krt_find_ctx *ctx = (struct _neverc_krt_find_ctx *)data;
-	const char *comm = neverc_krt_task_comm(task);
-	const char *a = comm;
-	const char *b = ctx->target;
+	unsigned long off = __atomic_load_n(&_neverc_krt_off_comm,
+					    __ATOMIC_ACQUIRE);
+	if (!off)
+		return 0;
 
+	char buf[16];
+	if (neverc_krt_mem_read(buf, (const char *)task + off, 16))
+		return 0;
+	buf[15] = '\0';
+
+	const char *a = buf;
+	const char *b = ctx->target;
 	while (*a && *b && *a == *b) { a++; b++; }
 	if (*a == *b) {
 		ctx->result = task;
@@ -130,6 +144,8 @@ int _neverc_krt_find_by_name_cb(struct task_struct *task, void *data)
 struct task_struct *neverc_krt_find_task_by_name(const char *name)
 {
 	struct _neverc_krt_find_ctx ctx = { .target = name, .result = (void *)0 };
+	if (_neverc_krt_init_task)
+		neverc_krt_task_comm(_neverc_krt_init_task);
 	neverc_krt_for_each_task(_neverc_krt_find_by_name_cb, &ctx);
 	return ctx.result;
 }
@@ -158,22 +174,70 @@ int neverc_krt_is_current_root(void)
 	if (!_neverc_krt_proc_inited) return -1;
 
 	unsigned char *task = (unsigned char *)current;
+
+	if (_neverc_krt_off_cred) {
+		unsigned long cv;
+		if (neverc_krt_mem_read(&cv, task + _neverc_krt_off_cred, 8))
+			return -1;
+		if (cv < 0xFFFF000000000000UL || cv >= 0xFFFFFFFFFFFFF000UL)
+			return -1;
+		unsigned long base = _neverc_krt_off_uid ? _neverc_krt_off_uid
+					  : _neverc_krt_cred_uid_base();
+		u32 uid;
+		if (neverc_krt_mem_read(&uid, (void *)(cv + base), 4))
+			return -1;
+		return uid == 0 ? 1 : 0;
+	}
+
+	unsigned long uid_off = _neverc_krt_cred_uid_base();
 	unsigned long i;
 	for (i = 0x400; i < 0xE00; i += 8) {
 		unsigned long v;
 		if (neverc_krt_mem_read(&v, task + i, 8)) continue;
 		if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {
-			u32 cp[4];
-			if (neverc_krt_mem_read(cp, (void *)v, sizeof(cp)))
+			u32 refcnt;
+			if (neverc_krt_mem_read(&refcnt, (void *)v, 4))
 				continue;
-			if (cp[0] < 1 || cp[0] > 10000) continue;
-			if (cp[1] == 0 && cp[2] == 0 && cp[3] == 0)
+			if (refcnt < 1 || refcnt > 10000) continue;
+			u32 ids[3];
+			if (neverc_krt_mem_read(ids,
+					(void *)(v + uid_off), sizeof(ids)))
+				continue;
+			if (ids[0] == 0 && ids[1] == 0 && ids[2] == 0)
 				return 1;
 		}
 	}
 	return 0;
 }
 
+int neverc_krt_task_comm_safe(struct task_struct *task, char *buf, int bufsz)
+{
+	if (!buf || bufsz < 1) return -1;
+	buf[0] = '\0';
+	if (!task) return -1;
+
+	if (!__atomic_load_n(&_neverc_krt_off_comm, __ATOMIC_ACQUIRE))
+		neverc_krt_task_comm(task);
+
+	unsigned long off = __atomic_load_n(&_neverc_krt_off_comm,
+					    __ATOMIC_ACQUIRE);
+	if (!off) return -1;
+
+	int n = bufsz < 16 ? bufsz - 1 : 15;
+	if (neverc_krt_mem_read(buf, (const char *)task + off, n)) {
+		buf[0] = '\0';
+		return -1;
+	}
+	buf[n] = '\0';
+	return 0;
+}
+
+/*
+ * Returns a pointer directly into task_struct->comm (embedded char[16]).
+ * Caller must ensure task remains valid (e.g. hold rcu_read_lock, or
+ * pass `current`).  The returned pointer is safe to dereference as long
+ * as the task is not freed.
+ */
 const char *neverc_krt_task_comm(struct task_struct *task)
 {
 	if (!task) return "";
@@ -183,11 +247,14 @@ const char *neverc_krt_task_comm(struct task_struct *task)
 		struct task_struct *init = _neverc_krt_init_task;
 		const unsigned char *p = (const unsigned char *)init;
 		unsigned long i;
-		for (i = 0x200; i < 0x1400; i++) {
-			if (p[i] == 's' && p[i+1] == 'w' &&
-			    p[i+2] == 'a' && p[i+3] == 'p' &&
-			    p[i+4] == 'p' && p[i+5] == 'e' &&
-			    p[i+6] == 'r' && p[i+7] == '\0') {
+		for (i = 0x200; i + 8 <= 0x1400; i++) {
+			unsigned char sw[8];
+			if (neverc_krt_mem_read(sw, p + i, 8))
+				continue;
+			if (sw[0] == 's' && sw[1] == 'w' &&
+			    sw[2] == 'a' && sw[3] == 'p' &&
+			    sw[4] == 'p' && sw[5] == 'e' &&
+			    sw[6] == 'r' && sw[7] == '\0') {
 				__atomic_store_n(&_neverc_krt_off_comm, i,
 						 __ATOMIC_RELEASE);
 				break;

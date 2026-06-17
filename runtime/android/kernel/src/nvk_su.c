@@ -193,8 +193,12 @@ int neverc_krt_su_elevate_pid(int pid, u32 target_uid, u32 target_gid)
 	if (!task) return -1;
 	if (!_neverc_krt_off_cred) return -2;
 
-	const void *cred =
-		*(const void **)((unsigned long)task + _neverc_krt_off_cred);
+	unsigned long cred_raw;
+	if (neverc_krt_mem_read(&cred_raw,
+			(void *)((unsigned long)task +
+				 _neverc_krt_off_cred), 8))
+		return -3;
+	const void *cred = (const void *)cred_raw;
 	if (!cred) return -3;
 
 	unsigned long cred_addr = (unsigned long)cred & ~(0xFFUL << 56);
@@ -203,14 +207,21 @@ int neverc_krt_su_elevate_pid(int pid, u32 target_uid, u32 target_gid)
 		return -4;
 
 	_neverc_krt_cred_find_uid_offset();
-	unsigned long base = _neverc_krt_off_uid ? _neverc_krt_off_uid : 4;
+	unsigned long base = _neverc_krt_off_uid ? _neverc_krt_off_uid
+				  : _neverc_krt_cred_uid_base();
 
 	u32 ids[8] = { target_uid, target_gid, target_uid, target_gid,
 		       target_uid, target_gid, target_uid, target_gid };
 	int ret = neverc_krt_mem_write_protected(cred_addr + base, ids, sizeof(ids));
 	if (ret) return ret;
 
-	/* Also patch the real_cred pointer. */
+	/*
+	 * Also patch real_cred.  In task_struct the layout is:
+	 *   const struct cred __rcu *ptracer_cred;  (off_cred - 16)
+	 *   const struct cred __rcu *real_cred;     (off_cred - 8)
+	 *   const struct cred __rcu *cred;          (off_cred)
+	 * Stable across GKI 5.10-6.12.
+	 */
 	const void *real_cred;
 	unsigned long real_off = _neverc_krt_off_cred - 8;
 	if (neverc_krt_mem_read(&real_cred, (void *)((unsigned long)task + real_off), 8))

@@ -2,7 +2,7 @@
 /* neverc_krt_mem.c — implementations extracted from neverc_krt_mem.h. */
 #include <nvk.h>
 
-int neverc_krt_mem_init(void)
+int _neverc_krt_mem_init(void)
 {
 	if (_neverc_krt_mem_inited) return 0;
 
@@ -30,6 +30,55 @@ int neverc_krt_mem_init(void)
 		(neverc_krt_update_mapping_prot_fn)NEVERC_KRT_LOOKUP("update_mapping_prot");
 	_neverc_krt_kimage_voffset =
 		(unsigned long *)NEVERC_KRT_LOOKUP("kimage_voffset");
+
+	/*
+	 * Auto-detect kernel version from linux_banner if the user's
+	 * inline _neverc_krt_version_setup() hasn't run yet (e.g. the
+	 * caller entered through neverc_krt_process_init() instead of
+	 * the public neverc_krt_mem_init() wrapper).
+	 */
+	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
+		const char *banner =
+			(const char *)NEVERC_KRT_LOOKUP("linux_banner");
+		if (!banner)
+			banner = (const char *)NEVERC_KRT_LOOKUP(
+				"linux_proc_banner");
+		if (banner) {
+			char buf[64];
+			if (neverc_krt_mem_read(buf, banner, sizeof(buf)) == 0) {
+				buf[63] = '\0';
+				const char *p = buf;
+				while (*p && !(*p >= '0' && *p <= '9')) p++;
+				u32 major = 0, minor = 0;
+				while (*p >= '0' && *p <= '9') {
+					major = major * 10 + (*p - '0');
+					p++;
+				}
+				if (*p == '.') {
+					p++;
+					while (*p >= '0' && *p <= '9') {
+						minor = minor * 10 + (*p - '0');
+						p++;
+					}
+				}
+				int kv = (int)(major * 100 + minor);
+				if (kv < 510) kv = 510;
+
+				if (!__atomic_load_n(
+					    &_neverc_krt_file_dentry_off,
+					    __ATOMIC_RELAXED))
+					__atomic_store_n(
+						&_neverc_krt_file_dentry_off,
+						_neverc_krt_file_dentry_off_for(kv),
+						__ATOMIC_RELAXED);
+				__atomic_store_n(&_neverc_krt_module_size,
+						 _neverc_krt_module_size_for(kv),
+						 __ATOMIC_RELAXED);
+				__atomic_store_n(&_neverc_krt_kernel_ver, kv,
+						 __ATOMIC_RELEASE);
+			}
+		}
+	}
 
 	_neverc_krt_mem_inited = 1;
 	return 0;

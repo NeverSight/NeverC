@@ -429,13 +429,23 @@ int neverc_krt_mount_filter_add(const char *path)
 
 int _neverc_krt_mnt_path_match(const char *haystack)
 {
+	char buf[NEVERC_KRT_MOUNT_PATH_MAX];
+	int plen = 0;
 	int i;
+
 	for (i = 0; i < _neverc_krt_mnt_filter.count; i++) {
 		const char *path = _neverc_krt_mnt_filter.paths[i];
-		const char *h = haystack;
-		const char *p = path;
-		while (*h && *p && *h == *p) { h++; p++; }
-		if (!*p) return 1;
+		plen = 0;
+		while (path[plen]) plen++;
+		if (plen <= 0 || plen >= NEVERC_KRT_MOUNT_PATH_MAX)
+			continue;
+		if (neverc_krt_mem_read(buf, haystack, plen))
+			continue;
+		int j, match = 1;
+		for (j = 0; j < plen; j++) {
+			if (buf[j] != path[j]) { match = 0; break; }
+		}
+		if (match) return 1;
 	}
 	return 0;
 }
@@ -1093,13 +1103,23 @@ int _neverc_krt_probe_file_dentry_off(void *file)
 int _neverc_krt_file_match_path(void *file, const char *target)
 {
 	unsigned long dentry = 0, name_ptr = 0;
+
+	if (!__atomic_load_n(&_neverc_krt_file_dentry_probed,
+			     __ATOMIC_ACQUIRE) && file) {
+		if (!__atomic_exchange_n(&_neverc_krt_file_dentry_probed, 1,
+					__ATOMIC_ACQ_REL))
+			_neverc_krt_probe_file_dentry_off(file);
+	}
+
 	unsigned long off = _neverc_krt_get_file_dentry_off();
 
 	if (neverc_krt_mem_read(&dentry,
 			 (void *)((unsigned long)file + off), 8))
 		return 0;
 	dentry &= ~(0xFFUL << 56);
-	if (dentry < 0xFFFF000000000000UL) return 0;
+	if (dentry < 0xFFFF000000000000UL ||
+	    dentry >= 0xFFFFFFFFFFFFF000UL)
+		return 0;
 
 	if (neverc_krt_mem_read(&name_ptr,
 			 (void *)(dentry + _NEVERC_KRT_DENTRY_DNAME_NAME_OFF), 8))
@@ -1107,17 +1127,20 @@ int _neverc_krt_file_match_path(void *file, const char *target)
 	name_ptr &= ~(0xFFUL << 56);
 	if (name_ptr < 0xFFFF000000000000UL) return 0;
 
-	const char *t = target;
-	while (*t) {
-		char c;
-		if (neverc_krt_mem_read(&c, (void *)name_ptr, 1) || c != *t)
-			return 0;
-		name_ptr++; t++;
-	}
-	char end;
-	if (neverc_krt_mem_read(&end, (void *)name_ptr, 1) || end != '\0')
+	int tlen = 0;
+	while (target[tlen]) tlen++;
+	if (tlen >= 256) return 0;
+
+	char buf[256];
+	if (neverc_krt_mem_read(buf, (void *)name_ptr, tlen + 1))
 		return 0;
-	return 1;
+
+	int i;
+	for (i = 0; i < tlen; i++) {
+		if (buf[i] != target[i])
+			return 0;
+	}
+	return buf[tlen] == '\0';
 }
 
 long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
@@ -1126,9 +1149,12 @@ long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
 	long ret;
 	if (!_neverc_krt_orig_vfs_read) return -1;
 
-	if (!__atomic_load_n(&_neverc_krt_file_dentry_off, __ATOMIC_ACQUIRE)
-	    && file)
-		_neverc_krt_probe_file_dentry_off(file);
+	if (!__atomic_load_n(&_neverc_krt_file_dentry_probed,
+			     __ATOMIC_ACQUIRE) && file) {
+		if (!__atomic_exchange_n(&_neverc_krt_file_dentry_probed, 1,
+					__ATOMIC_ACQ_REL))
+			_neverc_krt_probe_file_dentry_off(file);
+	}
 
 	ret = _neverc_krt_orig_vfs_read(file, buf, count, pos);
 	if (ret <= 0 || !_neverc_krt_file_spoof_cnt || !_neverc_krt_copy_from_user ||

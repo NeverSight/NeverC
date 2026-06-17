@@ -131,7 +131,7 @@ static __always_inline u32 _neverc_krt_se_current_uid(void)
 
 	unsigned long uid_off =
 		__atomic_load_n(&_neverc_krt_off_uid, __ATOMIC_ACQUIRE);
-	if (!uid_off) uid_off = 4;
+	if (!uid_off) uid_off = _neverc_krt_cred_uid_base();
 	u32 uid = 0xFFFFFFFFU;
 	neverc_krt_mem_read(&uid, (void *)(cred_ptr + uid_off), 4);
 	return uid;

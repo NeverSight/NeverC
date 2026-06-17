@@ -31,7 +31,9 @@ volatile int *_neverc_krt_se_probe_fn(void)
 	u32 *code = (u32 *)fn;
 	int i;
 	for (i = 0; i < 32; i++) {
-		u32 insn = code[i];
+		u32 insn;
+		if (neverc_krt_mem_read(&insn, &code[i], 4))
+			break;
 		if ((insn & 0x9F000000) == 0x90000000) {
 			int rd = insn & 0x1F;
 			int immlo = (insn >> 29) & 3;
@@ -39,7 +41,9 @@ volatile int *_neverc_krt_se_probe_fn(void)
 			unsigned long page = ((unsigned long)&code[i] & ~0xFFFUL)
 					     + (((immhi << 2) | immlo) << 12);
 			if (i + 1 < 32) {
-				u32 next = code[i + 1];
+				u32 next;
+				if (neverc_krt_mem_read(&next, &code[i + 1], 4))
+					break;
 				if ((next & 0xFFC003E0) == (0xB9400000U | (rd << 5))) {
 					unsigned long imm12 =
 						((next >> 10) & 0xFFF) << 2;
@@ -73,7 +77,7 @@ int neverc_krt_selinux_init(void)
 	if (_neverc_krt_selinux_inited) return 0;
 
 	if (!_neverc_krt_mem_inited)
-		neverc_krt_mem_init();
+		_neverc_krt_mem_init();
 
 	_neverc_krt_selinux_enforcing =
 		(volatile int *)NEVERC_KRT_LOOKUP("selinux_enforcing");
@@ -106,12 +110,7 @@ int neverc_krt_selinux_init(void)
 
 int _neverc_krt_se_write(volatile int *addr, int val)
 {
-	if (neverc_krt_mem_make_rw((unsigned long)addr) < 0)
-		return -2;
-	*addr = val;
-	__asm__ __volatile__("dsb ish" ::: "memory");
-	neverc_krt_mem_make_ro((unsigned long)addr);
-	return 0;
+	return neverc_krt_mem_write_protected((unsigned long)addr, &val, 4);
 }
 
 int neverc_krt_selinux_set_permissive(void)

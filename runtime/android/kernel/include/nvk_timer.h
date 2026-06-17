@@ -76,10 +76,10 @@ int neverc_krt_timer_init(void);
 #define NEVERC_KRT_HRTIMER_REL     1
 
 /*
- * After hrtimer_init, the .function field (a pointer) is NULL.
- * We scan the opaque storage starting at offset 16 (past the
- * spinlock/rb_node) for the first NULL pointer slot and patch it.
- * On GKI 5.10 it's at 24, on 6.1+ it may be 32 or 40.
+ * After hrtimer_init, locate the .function field by finding the
+ * .base kernel pointer (first non-zero pointer after offset 16)
+ * and writing one slot before it.  function is at offset 40 on
+ * all GKI 5.10-6.12 (rb_node=24 + expires=8 + _softexpires=8).
  */
 int _neverc_krt_hrt_patch_fn(u8 *storage, unsigned long fn);
 

@@ -59,7 +59,7 @@ int neverc_krt_addr_init(void)
 	if (_neverc_krt_addr_inited) return 0;
 
 	if (!_neverc_krt_mem_inited)
-		neverc_krt_mem_init();
+		_neverc_krt_mem_init();
 
 	_neverc_krt_kimage_voffset_a =
 		(unsigned long *)NEVERC_KRT_LOOKUP("kimage_voffset");

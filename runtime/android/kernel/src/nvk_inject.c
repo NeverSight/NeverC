@@ -104,6 +104,9 @@ unsigned long neverc_krt_inject_mmap(struct task_struct *task,
 	unsigned long addr = 0;
 	void *mm;
 
+	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE))
+		return 0;
+
 	_neverc_krt_inject_resolve_mm();
 	if (!_neverc_krt_get_task_mm || !_neverc_krt_do_mmap) return 0;
 	if (!_neverc_krt_use_mm || !_neverc_krt_unuse_mm) return 0;
@@ -118,7 +121,7 @@ unsigned long neverc_krt_inject_mmap(struct task_struct *task,
 	_neverc_krt_use_mm(mm);
 	if (_neverc_krt_mmap_wlock) _neverc_krt_mmap_wlock(mm);
 
-	if (_neverc_krt_kernel_ver >= 606) {
+	if (__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE) >= 606) {
 		neverc_krt_do_mmap_v2_fn fn =
 			(neverc_krt_do_mmap_v2_fn)(void *)_neverc_krt_do_mmap;
 		result = fn((void *)0, 0, len, prot, flags,
