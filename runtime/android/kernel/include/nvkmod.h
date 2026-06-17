@@ -55,48 +55,7 @@ unsigned long neverc_krt_kprobe_resolve_sym(const char *name);
  *   [BTI C;] MOV X0,XZR; RET                         return 0 (no PAC, alt)
  *   RET                                               bare return
  */
-static __always_inline int neverc_krt_is_stub(void *addr)
-{
-	u32 *p = (u32 *)addr;
-	int off = 0;
-
-#define _PACIASP   0xD503233Fu
-#define _AUTIASP   0xD50323BFu
-#define _RET       0xD65F03C0u
-#define _BTI_C     0xD503245Fu
-#define _MOV_X0_0  0xD2800000u  /* MOVZ X0, #0 */
-#define _MOV_X0_XZ 0xAA1F03E0u /* MOV  X0, XZR */
-#define _IS_ZERO(x) ((x) == _MOV_X0_0 || (x) == _MOV_X0_XZ)
-
-	if (p[0] == _RET)
-		return 1;
-
-	if (p[0] == _BTI_C)
-		off = 1;
-
-	/* [bti c;] paciasp; autiasp; ret */
-	if (p[off] == _PACIASP && p[off+1] == _AUTIASP && p[off+2] == _RET)
-		return 1;
-
-	/* [bti c;] paciasp; mov x0,#0|xzr; autiasp; ret */
-	if (p[off] == _PACIASP && _IS_ZERO(p[off+1]) &&
-	    p[off+2] == _AUTIASP && p[off+3] == _RET)
-		return 1;
-
-	/* [bti c;] mov x0,#0|xzr; ret  (no PAC) */
-	if (_IS_ZERO(p[off]) && p[off+1] == _RET)
-		return 1;
-
-#undef _PACIASP
-#undef _AUTIASP
-#undef _RET
-#undef _BTI_C
-#undef _MOV_X0_0
-#undef _MOV_X0_XZ
-#undef _IS_ZERO
-
-	return 0;
-}
+int neverc_krt_is_stub(void *addr);
 
 /*
  * @cfi: assume CFI/GKI kernel (kallsyms_lookup_name is stubbed).
@@ -113,7 +72,7 @@ int neverc_krt_log_bootstrap(void);
 #define NEVERC_KRT_BOOTSTRAP()       _neverc_krt_do_bootstrap(1)
 #define NEVERC_KRT_BOOTSTRAP_EX(cfi) _neverc_krt_do_bootstrap(cfi)
 
-static __always_inline int _neverc_krt_do_bootstrap(int cfi)
+__always_inline int _neverc_krt_do_bootstrap(int cfi)
 {
 	int r = neverc_krt_ksym_bootstrap(cfi);
 	if (r == 0)

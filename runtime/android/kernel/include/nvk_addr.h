@@ -10,14 +10,14 @@
 int neverc_krt_addr_init(void);
 
 
-static __always_inline unsigned long neverc_krt_va_bits(void)
+__always_inline unsigned long neverc_krt_va_bits(void)
 {
 	unsigned long tcr;
 	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
 	return 64 - ((tcr >> 16) & 0x3FUL);
 }
 
-static __always_inline int neverc_krt_page_shift(void)
+__always_inline int neverc_krt_page_shift(void)
 {
 	unsigned long tcr;
 	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
@@ -27,24 +27,24 @@ static __always_inline int neverc_krt_page_shift(void)
 	return 12;                 /* 4K (default on GKI) */
 }
 
-static __always_inline unsigned long neverc_krt_page_size(void)
+__always_inline unsigned long neverc_krt_page_size(void)
 {
 	return 1UL << neverc_krt_page_shift();
 }
 
-static __always_inline unsigned long neverc_krt_page_mask(void)
+__always_inline unsigned long neverc_krt_page_mask(void)
 {
 	return ~(neverc_krt_page_size() - 1);
 }
 
-static __always_inline int neverc_krt_is_kernel_addr(unsigned long addr)
+__always_inline int neverc_krt_is_kernel_addr(unsigned long addr)
 {
 	unsigned long bits = neverc_krt_va_bits();
 	unsigned long mask = 1UL << (bits - 1);
 	return (addr & mask) != 0;
 }
 
-static __always_inline int neverc_krt_is_user_addr(unsigned long addr)
+__always_inline int neverc_krt_is_user_addr(unsigned long addr)
 {
 	return !neverc_krt_is_kernel_addr(addr) && addr != 0;
 }
@@ -92,18 +92,18 @@ int neverc_krt_walk_pgtable_ex(unsigned long vaddr, struct neverc_krt_pte_info *
 			       struct neverc_krt_pte_walk_result *result);
 
 
-static __always_inline unsigned long neverc_krt_strip_tag(unsigned long addr)
+__always_inline unsigned long neverc_krt_strip_tag(unsigned long addr)
 {
 	return (addr & ((1UL << neverc_krt_va_bits()) - 1))
 	     | (addr & (1UL << 63));
 }
 
-static __always_inline unsigned long neverc_krt_strip_mte(unsigned long addr)
+__always_inline unsigned long neverc_krt_strip_mte(unsigned long addr)
 {
 	return addr & ~(0xFFUL << 56);
 }
 
-static __always_inline unsigned long neverc_krt_clean_ptr(unsigned long addr)
+__always_inline unsigned long neverc_krt_clean_ptr(unsigned long addr)
 {
 	addr = neverc_krt_strip_mte(addr);
 	unsigned long bits = neverc_krt_va_bits();

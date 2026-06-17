@@ -37,6 +37,36 @@ unsigned long neverc_krt_kprobe_resolve_sym(const char *name)
 	return (unsigned long)neverc_krt_kprobe_lookup(name);
 }
 
+int neverc_krt_is_stub(void *addr)
+{
+	u32 *p = (u32 *)addr;
+	int off = 0;
+
+	if (p[0] == 0xD65F03C0u) /* RET */
+		return 1;
+
+	if (p[0] == 0xD503245Fu) /* BTI C */
+		off = 1;
+
+	/* [bti c;] paciasp; autiasp; ret */
+	if (p[off] == 0xD503233Fu && p[off+1] == 0xD50323BFu &&
+	    p[off+2] == 0xD65F03C0u)
+		return 1;
+
+	/* [bti c;] paciasp; mov x0,#0|xzr; autiasp; ret */
+	if (p[off] == 0xD503233Fu &&
+	    (p[off+1] == 0xD2800000u || p[off+1] == 0xAA1F03E0u) &&
+	    p[off+2] == 0xD50323BFu && p[off+3] == 0xD65F03C0u)
+		return 1;
+
+	/* [bti c;] mov x0,#0|xzr; ret  (no PAC) */
+	if ((p[off] == 0xD2800000u || p[off] == 0xAA1F03E0u) &&
+	    p[off+1] == 0xD65F03C0u)
+		return 1;
+
+	return 0;
+}
+
 int neverc_krt_ksym_bootstrap(int cfi)
 {
 	neverc_krt_kallsyms_lookup_name_fn resolved;

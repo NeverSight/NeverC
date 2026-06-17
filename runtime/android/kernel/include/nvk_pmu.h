@@ -26,7 +26,7 @@
 #define NEVERC_KRT_PMU_EVT_STALL_FRONTEND 0x23
 #define NEVERC_KRT_PMU_EVT_STALL_BACKEND  0x24
 
-static __always_inline void neverc_krt_pmu_enable(void)
+__always_inline void neverc_krt_pmu_enable(void)
 {
 	u64 val;
 	__asm__ __volatile__("mrs %0, pmcr_el0" : "=r"(val));
@@ -35,7 +35,7 @@ static __always_inline void neverc_krt_pmu_enable(void)
 	__asm__ __volatile__("isb");
 }
 
-static __always_inline void neverc_krt_pmu_disable(void)
+__always_inline void neverc_krt_pmu_disable(void)
 {
 	u64 val;
 	__asm__ __volatile__("mrs %0, pmcr_el0" : "=r"(val));
@@ -44,7 +44,7 @@ static __always_inline void neverc_krt_pmu_disable(void)
 	__asm__ __volatile__("isb");
 }
 
-static __always_inline void neverc_krt_pmu_reset(void)
+__always_inline void neverc_krt_pmu_reset(void)
 {
 	u64 val;
 	__asm__ __volatile__("mrs %0, pmcr_el0" : "=r"(val));
@@ -53,35 +53,35 @@ static __always_inline void neverc_krt_pmu_reset(void)
 	__asm__ __volatile__("isb");
 }
 
-static __always_inline u64 neverc_krt_pmu_cycle_count(void)
+__always_inline u64 neverc_krt_pmu_cycle_count(void)
 {
 	u64 val;
 	__asm__ __volatile__("mrs %0, pmccntr_el0" : "=r"(val));
 	return val;
 }
 
-static __always_inline void neverc_krt_pmu_cycle_enable(void)
+__always_inline void neverc_krt_pmu_cycle_enable(void)
 {
 	u64 val = (1UL << 31);
 	__asm__ __volatile__("msr pmcntenset_el0, %0" : : "r"(val));
 	__asm__ __volatile__("isb");
 }
 
-static __always_inline void neverc_krt_pmu_cycle_disable(void)
+__always_inline void neverc_krt_pmu_cycle_disable(void)
 {
 	u64 val = (1UL << 31);
 	__asm__ __volatile__("msr pmcntenclr_el0, %0" : : "r"(val));
 	__asm__ __volatile__("isb");
 }
 
-static __always_inline int neverc_krt_pmu_counter_count(void)
+__always_inline int neverc_krt_pmu_counter_count(void)
 {
 	u64 pmcr;
 	__asm__ __volatile__("mrs %0, pmcr_el0" : "=r"(pmcr));
 	return (int)((pmcr >> 11) & 0x1F);
 }
 
-static __always_inline void neverc_krt_pmu_counter_setup(int idx, u32 event)
+__always_inline void neverc_krt_pmu_counter_setup(int idx, u32 event)
 {
 	u64 sel = (u64)idx;
 	__asm__ __volatile__("msr pmselr_el0, %0" : : "r"(sel));
@@ -91,21 +91,21 @@ static __always_inline void neverc_krt_pmu_counter_setup(int idx, u32 event)
 	__asm__ __volatile__("isb");
 }
 
-static __always_inline void neverc_krt_pmu_counter_enable(int idx)
+__always_inline void neverc_krt_pmu_counter_enable(int idx)
 {
 	u64 val = (1UL << idx);
 	__asm__ __volatile__("msr pmcntenset_el0, %0" : : "r"(val));
 	__asm__ __volatile__("isb");
 }
 
-static __always_inline void neverc_krt_pmu_counter_disable(int idx)
+__always_inline void neverc_krt_pmu_counter_disable(int idx)
 {
 	u64 val = (1UL << idx);
 	__asm__ __volatile__("msr pmcntenclr_el0, %0" : : "r"(val));
 	__asm__ __volatile__("isb");
 }
 
-static __always_inline u64 neverc_krt_pmu_counter_read(int idx)
+__always_inline u64 neverc_krt_pmu_counter_read(int idx)
 {
 	u64 sel = (u64)idx;
 	__asm__ __volatile__("msr pmselr_el0, %0" : : "r"(sel));
@@ -137,21 +137,21 @@ void neverc_krt_pmu_session_stop(struct neverc_krt_pmu_session *s,
 				 struct neverc_krt_pmu_result *r);
 
 
-static __always_inline u64 neverc_krt_pmu_rdtsc(void)
+__always_inline u64 neverc_krt_pmu_rdtsc(void)
 {
 	u64 val;
 	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(val));
 	return val;
 }
 
-static __always_inline u64 neverc_krt_pmu_freq(void)
+__always_inline u64 neverc_krt_pmu_freq(void)
 {
 	u64 val;
 	__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(val));
 	return val;
 }
 
-static __always_inline u64 neverc_krt_pmu_ns_elapsed(u64 start, u64 end)
+__always_inline u64 neverc_krt_pmu_ns_elapsed(u64 start, u64 end)
 {
 	u64 freq = neverc_krt_pmu_freq();
 	if (!freq) return 0;

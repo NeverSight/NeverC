@@ -33,64 +33,20 @@ int neverc_krt_kernel_ge(u32 maj, u32 min);
 
 int neverc_krt_kernel_lt(u32 maj, u32 min);
 
-static __always_inline void *neverc_krt_lookup_printk(void)
-{
-	void *sym = NEVERC_KRT_LOOKUP("_printk");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("printk");
-	return sym;
-}
+void *neverc_krt_lookup_printk(void);
+void *neverc_krt_lookup_copy_from_user(void);
+void *neverc_krt_lookup_copy_to_user(void);
+void *neverc_krt_lookup_probe_read(void);
+void *neverc_krt_lookup_probe_write(void);
+void *neverc_krt_lookup_module_alloc(void);
+void *neverc_krt_lookup_module_free(void);
 
-static __always_inline void *neverc_krt_lookup_copy_from_user(void)
-{
-	void *sym = NEVERC_KRT_LOOKUP("_copy_from_user");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("raw_copy_from_user");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("copy_from_user");
-	return sym;
-}
-
-static __always_inline void *neverc_krt_lookup_copy_to_user(void)
-{
-	void *sym = NEVERC_KRT_LOOKUP("_copy_to_user");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("raw_copy_to_user");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("copy_to_user");
-	return sym;
-}
-
-static __always_inline void *neverc_krt_lookup_probe_read(void)
-{
-	void *sym = NEVERC_KRT_LOOKUP("copy_from_kernel_nofault");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("probe_kernel_read");
-	return sym;
-}
-
-static __always_inline void *neverc_krt_lookup_probe_write(void)
-{
-	void *sym = NEVERC_KRT_LOOKUP("copy_to_kernel_nofault");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("probe_kernel_write");
-	return sym;
-}
-
-static __always_inline void *neverc_krt_lookup_module_alloc(void)
-{
-	void *sym = NEVERC_KRT_LOOKUP("module_alloc");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("execmem_alloc");
-	return sym;
-}
-
-static __always_inline void *neverc_krt_lookup_module_free(void)
-{
-	void *sym = NEVERC_KRT_LOOKUP("module_memfree");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("execmem_free");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("vfree");
-	return sym;
-}
-
-static __always_inline int neverc_krt_has_cfi(void)
+__always_inline int neverc_krt_has_cfi(void)
 {
 	return NEVERC_KRT_LOOKUP("__cfi_check") != (void *)0;
 }
 
-static __always_inline int neverc_krt_has_pac(void)
+__always_inline int neverc_krt_has_pac(void)
 {
 	unsigned long isar1;
 	__asm__ __volatile__("mrs %0, id_aa64isar1_el1" : "=r"(isar1));
@@ -99,21 +55,21 @@ static __always_inline int neverc_krt_has_pac(void)
 	return (apa | api) != 0;
 }
 
-static __always_inline int neverc_krt_has_bti(void)
+__always_inline int neverc_krt_has_bti(void)
 {
 	unsigned long pfr1;
 	__asm__ __volatile__("mrs %0, id_aa64pfr1_el1" : "=r"(pfr1));
 	return (pfr1 & 0xF) != 0;
 }
 
-static __always_inline int neverc_krt_has_mte(void)
+__always_inline int neverc_krt_has_mte(void)
 {
 	unsigned long pfr1;
 	__asm__ __volatile__("mrs %0, id_aa64pfr1_el1" : "=r"(pfr1));
 	return ((pfr1 >> 8) & 0xF) >= 2;
 }
 
-static __always_inline int neverc_krt_has_epac(void)
+__always_inline int neverc_krt_has_epac(void)
 {
 	unsigned long isar1;
 	__asm__ __volatile__("mrs %0, id_aa64isar1_el1" : "=r"(isar1));
@@ -122,7 +78,7 @@ static __always_inline int neverc_krt_has_epac(void)
 	return (apa >= 2) || (api >= 2);
 }
 
-static __always_inline int neverc_krt_has_fpac(void)
+__always_inline int neverc_krt_has_fpac(void)
 {
 	unsigned long isar1;
 	__asm__ __volatile__("mrs %0, id_aa64isar1_el1" : "=r"(isar1));
@@ -131,7 +87,7 @@ static __always_inline int neverc_krt_has_fpac(void)
 	return (apa >= 3) || (api >= 3);
 }
 
-static __always_inline int neverc_krt_has_sve(void)
+__always_inline int neverc_krt_has_sve(void)
 {
 	unsigned long pfr0;
 	__asm__ __volatile__("mrs %0, id_aa64pfr0_el1" : "=r"(pfr0));

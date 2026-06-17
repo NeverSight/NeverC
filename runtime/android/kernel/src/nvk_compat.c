@@ -394,6 +394,58 @@ int neverc_krt_fixup_runtime(struct neverc_krt_this_module *mod,
 	return neverc_krt_verify_module_offsets(mod, name);
 }
 
+void *neverc_krt_lookup_printk(void)
+{
+	void *sym = NEVERC_KRT_LOOKUP("_printk");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("printk");
+	return sym;
+}
+
+void *neverc_krt_lookup_copy_from_user(void)
+{
+	void *sym = NEVERC_KRT_LOOKUP("_copy_from_user");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("raw_copy_from_user");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("copy_from_user");
+	return sym;
+}
+
+void *neverc_krt_lookup_copy_to_user(void)
+{
+	void *sym = NEVERC_KRT_LOOKUP("_copy_to_user");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("raw_copy_to_user");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("copy_to_user");
+	return sym;
+}
+
+void *neverc_krt_lookup_probe_read(void)
+{
+	void *sym = NEVERC_KRT_LOOKUP("copy_from_kernel_nofault");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("probe_kernel_read");
+	return sym;
+}
+
+void *neverc_krt_lookup_probe_write(void)
+{
+	void *sym = NEVERC_KRT_LOOKUP("copy_to_kernel_nofault");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("probe_kernel_write");
+	return sym;
+}
+
+void *neverc_krt_lookup_module_alloc(void)
+{
+	void *sym = NEVERC_KRT_LOOKUP("module_alloc");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("execmem_alloc");
+	return sym;
+}
+
+void *neverc_krt_lookup_module_free(void)
+{
+	void *sym = NEVERC_KRT_LOOKUP("module_memfree");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("execmem_free");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("vfree");
+	return sym;
+}
+
 const struct neverc_krt_kernel_info *neverc_krt_kernel_version(void)
 {
 	return &_neverc_krt_kinfo;
