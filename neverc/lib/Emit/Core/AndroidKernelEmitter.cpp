@@ -56,6 +56,7 @@ static void emitCFIStubFn(llvm::Module &M, llvm::StringRef Name,
   F->setVisibility(Vis);
   F->setDSOLocal(true);
   F->setAlignment(llvm::Align(Align));
+  F->setSection(".text");
   F->addFnAttr(llvm::Attribute::Naked);
   F->addFnAttr(llvm::Attribute::NoUnwind);
   auto *BB = llvm::BasicBlock::Create(Ctx, "", F);
