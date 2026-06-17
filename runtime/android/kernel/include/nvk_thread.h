@@ -3,8 +3,6 @@
 #define NEVERC_KRT_THREAD_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
-#include <linux/compiler.h>
 #include <linux/sched.h>
 
 int neverc_krt_thread_init(void);

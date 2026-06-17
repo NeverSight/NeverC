@@ -3,8 +3,6 @@
 #define NEVERC_KRT_NETLINK_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
-#include <linux/compiler.h>
 
 #define NEVERC_KRT_NL_PROTO_BASE  25
 #define NEVERC_KRT_NL_MSG_MAX     4096

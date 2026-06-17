@@ -3,8 +3,6 @@
 #define NEVERC_KRT_PROCESS_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
-#include <linux/compiler.h>
 #include <linux/sched.h>
 
 struct neverc_krt_task_offsets {

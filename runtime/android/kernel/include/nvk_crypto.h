@@ -3,8 +3,6 @@
 #define NEVERC_KRT_CRYPTO_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
-#include <linux/compiler.h>
 
 /* ------------------------------------------------------------------ */
 /*  SHA-256  (FIPS 180-4)                                             */

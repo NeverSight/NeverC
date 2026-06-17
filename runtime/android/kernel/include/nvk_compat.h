@@ -7,6 +7,7 @@
 #include <linux/kallsyms.h>
 #include <nvkmod_version.h>
 
+
 struct neverc_krt_kernel_info {
 	u32 major;
 	u32 minor;

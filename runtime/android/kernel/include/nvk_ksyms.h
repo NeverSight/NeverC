@@ -3,8 +3,6 @@
 #define NEVERC_KRT_KSYMS_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
-#include <linux/compiler.h>
 
 int neverc_krt_ksyms_init(void);
 

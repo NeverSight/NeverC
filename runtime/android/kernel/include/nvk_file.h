@@ -3,8 +3,6 @@
 #define NEVERC_KRT_FILE_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
-#include <linux/compiler.h>
 
 #define NEVERC_KRT_O_RDONLY   0x0000
 #define NEVERC_KRT_O_WRONLY   0x0001

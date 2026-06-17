@@ -3,8 +3,6 @@
 #define NEVERC_KRT_SYSCALL_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
-#include <linux/compiler.h>
 #include <asm/ptrace.h>
 
 typedef long (*neverc_krt_syscall_fn_t)(const struct pt_regs *regs);

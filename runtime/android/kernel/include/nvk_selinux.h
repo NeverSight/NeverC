@@ -3,8 +3,6 @@
 #define NEVERC_KRT_SELINUX_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
-#include <linux/compiler.h>
 #include <nvk_hook.h>
 
 int neverc_krt_selinux_init(void);

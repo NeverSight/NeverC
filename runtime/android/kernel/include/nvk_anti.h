@@ -3,7 +3,6 @@
 #define NEVERC_KRT_ANTI_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
 #include <linux/compiler.h>
 #include <nvk_hook.h>
 

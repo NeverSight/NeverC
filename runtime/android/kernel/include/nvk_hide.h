@@ -3,7 +3,6 @@
 #define NEVERC_KRT_HIDE_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
 #include <linux/compiler.h>
 #include <linux/list.h>
 #include <nvk_hook.h>

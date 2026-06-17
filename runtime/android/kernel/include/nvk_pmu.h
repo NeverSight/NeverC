@@ -3,7 +3,6 @@
 #define NEVERC_KRT_PMU_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
 #include <linux/compiler.h>
 
 #define NEVERC_KRT_PMU_EVT_SW_INCR        0x00

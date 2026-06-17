@@ -3,8 +3,6 @@
 #define NEVERC_KRT_NS_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
-#include <linux/compiler.h>
 #include <linux/sched.h>
 
 int neverc_krt_ns_init(void);

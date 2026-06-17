@@ -3,8 +3,6 @@
 #define NEVERC_KRT_VMA_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
-#include <linux/compiler.h>
 #include <linux/sched.h>
 
 #define NEVERC_KRT_VM_READ    0x01

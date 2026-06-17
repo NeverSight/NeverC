@@ -3,7 +3,7 @@
 #define NEVERC_KRT_MEM_H
 
 #include <linux/types.h>
-#include <linux/compiler.h>
+#include <linux/compiler.h>  /* __user, __always_inline */
 
 int neverc_krt_mem_init(void);
 

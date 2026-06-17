@@ -3,7 +3,6 @@
 #define NEVERC_KRT_TIMER_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
 #include <linux/compiler.h>
 
 /* ------------------------------------------------------------------ */
