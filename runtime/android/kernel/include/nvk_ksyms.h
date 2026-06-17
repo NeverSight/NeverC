@@ -73,12 +73,12 @@ typedef int (*neverc_krt_raw_sym_callback_t)(const char *name, unsigned long add
 int neverc_krt_ksyms_raw_walk(neverc_krt_raw_sym_callback_t cb, void *data, int max);
 
 
-struct _neverc_krt_batch_entry {
+struct neverc_krt_batch_entry {
 	const char    *name;
 	unsigned long *out;
 };
 
-int neverc_krt_ksyms_raw_batch(struct _neverc_krt_batch_entry *entries, int count);
+int neverc_krt_ksyms_raw_batch(struct neverc_krt_batch_entry *entries, int count);
 
 
 #define NEVERC_KRT_BATCH_ENTRY(name_str, addr_var)  \

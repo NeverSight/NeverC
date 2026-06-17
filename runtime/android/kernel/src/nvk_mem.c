@@ -1,25 +1,19 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
+#include <nvk_internal.h>
 
-/* ---- internal typedefs ---- */
+/* ---- file-local typedefs ---- */
 
-typedef long (*neverc_krt_probe_read_fn)(void *dst, const void *src, size_t len);
-typedef long (*neverc_krt_probe_write_fn)(void *dst, const void *src, size_t len);
-typedef unsigned long (*neverc_krt_copy_from_user_fn)(void *to, const void __user *from,
-						      unsigned long n);
-typedef unsigned long (*neverc_krt_copy_to_user_fn)(void __user *to, const void *from,
-						    unsigned long n);
 typedef int (*neverc_krt_set_memory_fn)(unsigned long addr, int numpages);
 typedef void (*neverc_krt_update_mapping_prot_fn)(u64 phys, unsigned long virt,
 						  u64 size, u64 prot);
-typedef int (*_neverc_krt_pte_rw_fn)(unsigned long addr);
 
-/* ---- internal variables ---- */
+/* ---- variables ---- */
 
 static unsigned long              _neverc_krt_mem_page_sz;
 int                               _neverc_krt_mem_inited;
-_neverc_krt_pte_rw_fn             _neverc_krt_pte_make_rw;
-_neverc_krt_pte_rw_fn             _neverc_krt_pte_make_ro;
+neverc_krt_pte_rw_fn              _neverc_krt_pte_make_rw;
+neverc_krt_pte_rw_fn              _neverc_krt_pte_make_ro;
 neverc_krt_copy_from_user_fn      _neverc_krt_copy_from_user;
 neverc_krt_copy_to_user_fn        _neverc_krt_copy_to_user;
 

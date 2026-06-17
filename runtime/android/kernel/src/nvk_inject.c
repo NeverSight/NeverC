@@ -1,5 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
+#include <nvk_internal.h>
+
+/* ---- file-local typedefs ---- */
 
 typedef void *(*neverc_krt_do_mmap_fn)(void *file, unsigned long addr,
 				       unsigned long len, unsigned long prot,
@@ -15,8 +18,6 @@ typedef int (*neverc_krt_vm_mmap_fn)(void *file, unsigned long addr,
 				     unsigned long flags, unsigned long pgoff);
 typedef int (*neverc_krt_do_munmap_fn)(void *mm, unsigned long start,
 				       size_t len, void *uf);
-typedef void *(*neverc_krt_get_task_mm_fn)(struct task_struct *task);
-typedef void  (*neverc_krt_mmput_fn)(void *mm);
 typedef void  (*neverc_krt_mmap_write_lock_fn)(void *mm);
 typedef void  (*neverc_krt_mmap_write_unlock_fn)(void *mm);
 typedef void  (*neverc_krt_use_mm_fn)(void *mm);
@@ -26,8 +27,8 @@ static neverc_krt_do_mmap_fn          _neverc_krt_do_mmap;
 static neverc_krt_vm_mmap_fn          _neverc_krt_vm_mmap;
 static neverc_krt_do_munmap_fn        _neverc_krt_do_munmap;
 static int                            _neverc_krt_inject_inited;
-static neverc_krt_get_task_mm_fn      _neverc_krt_get_task_mm;
-static neverc_krt_mmput_fn            _neverc_krt_mmput;
+neverc_krt_get_task_mm_fn             _neverc_krt_get_task_mm;
+neverc_krt_mmput_fn                   _neverc_krt_mmput;
 static neverc_krt_mmap_write_lock_fn  _neverc_krt_mmap_wlock;
 static neverc_krt_mmap_write_unlock_fn _neverc_krt_mmap_wunlock;
 static neverc_krt_use_mm_fn           _neverc_krt_use_mm;

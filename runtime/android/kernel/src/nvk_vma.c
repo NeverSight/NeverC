@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* neverc_krt_vma.c — virtual memory area operations. */
 #include <nvk.h>
+#include <nvk_internal.h>
 
 /* ---- internal types ---- */
 
@@ -19,8 +20,6 @@ typedef void  (*neverc_krt_kunmap_fn)(void *page);
 typedef void *(*neverc_krt_kmap_fn)(void *page);
 typedef void  (*neverc_krt_mmap_read_lock_fn)(void *mm);
 typedef void  (*neverc_krt_mmap_read_unlock_fn)(void *mm);
-typedef void *(*neverc_krt_get_task_mm_fn)(struct task_struct *);
-typedef void  (*neverc_krt_mmput_fn)(void *);
 
 /* ---- internal variables (file-local) ---- */
 
@@ -37,11 +36,6 @@ static neverc_krt_mmap_read_unlock_fn  _neverc_krt_mmap_read_unlock;
 static int                             _neverc_krt_vma_inited;
 static unsigned long                   _neverc_krt_off_mm;
 static unsigned long                   _neverc_krt_off_vm_flags;
-
-/* ---- cross-file variables (defined in nvk_inject.c) ---- */
-
-extern neverc_krt_get_task_mm_fn _neverc_krt_get_task_mm;
-extern neverc_krt_mmput_fn       _neverc_krt_mmput;
 
 /* ---- internal types (continued) ---- */
 

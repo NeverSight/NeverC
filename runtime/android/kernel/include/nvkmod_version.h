@@ -217,12 +217,4 @@ static __always_inline void _neverc_krt_version_setup(void)
 	_neverc_krt_version_setup_impl(NEVERC_KRT_KERNEL);
 }
 
-unsigned long _neverc_krt_get_module_size(void);
-
-unsigned long _neverc_krt_cred_uid_base(void);
-
-int _neverc_krt_get_kernel_ver(void);
-
-unsigned long _neverc_krt_get_file_dentry_off(void);
-
 #endif /* NVKMOD_VERSION_H */

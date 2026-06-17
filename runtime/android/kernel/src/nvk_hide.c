@@ -1,16 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
+#include <nvk_internal.h>
 
 #define _NEVERC_KRT_SKC_DPORT_OFF NEVERC_KRT_SKC_DPORT_OFF
 #define _NEVERC_KRT_SKC_NUM_OFF   NEVERC_KRT_SKC_NUM_OFF
-
-/* Forward declarations for cross-file variables (defined in nvk_mem.c) */
-typedef unsigned long (*neverc_krt_copy_from_user_fn)(void *to, const void __user *from,
-						      unsigned long n);
-typedef unsigned long (*neverc_krt_copy_to_user_fn)(void __user *to, const void *from,
-						    unsigned long n);
-extern neverc_krt_copy_from_user_fn _neverc_krt_copy_from_user;
-extern neverc_krt_copy_to_user_fn   _neverc_krt_copy_to_user;
 
 /* Cross-file hook state, accessed by neverc_krt_cleanup_all() in nvk.c */
 struct neverc_krt_hook _neverc_krt_ks_hook;

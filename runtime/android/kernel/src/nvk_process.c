@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
+#include <nvk_internal.h>
 
-/* ---- internal typedefs ---- */
+/* ---- file-local typedefs ---- */
 
 typedef int  (*neverc_krt_task_pid_nr_fn)(struct task_struct *);
 typedef int  (*neverc_krt_task_tgid_nr_fn)(struct task_struct *);

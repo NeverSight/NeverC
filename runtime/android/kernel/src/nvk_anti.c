@@ -1,9 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
-
-/* Forward declarations for cross-file variables */
-extern unsigned long _neverc_krt_off_comm;
-extern int _neverc_krt_mem_inited;
+#include <nvk_internal.h>
 
 /* ---- internal variables ---- */
 
@@ -60,9 +57,6 @@ static __always_inline u32 _neverc_krt_wd_unseal(u32 val, int slot)
 {
 	return _neverc_krt_wd_seal(val, slot);
 }
-
-extern volatile int *_neverc_krt_se_probe_state(void *se_state);
-extern int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
 
 int neverc_krt_anti_is_root(void)
 {

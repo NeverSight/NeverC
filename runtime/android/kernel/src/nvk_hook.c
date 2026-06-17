@@ -2,7 +2,7 @@
 #include <nvk.h>
 #include <linux/string.h>
 
-extern unsigned long _neverc_krt_mem_get_page_size(void);
+#include <nvk_internal.h>
 
 /* ---- pool / cache state ---- */
 

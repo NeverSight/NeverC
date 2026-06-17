@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
-
-/* ---- version globals (shared across .c files in unity build) ---- */
+#include <nvk_internal.h>
 
 unsigned long _neverc_krt_module_size;
 int           _neverc_krt_kernel_ver;

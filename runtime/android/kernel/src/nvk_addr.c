@@ -1,9 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
-
-typedef int (*_neverc_krt_pte_rw_fn)(unsigned long addr);
-extern _neverc_krt_pte_rw_fn _neverc_krt_pte_make_rw;
-extern _neverc_krt_pte_rw_fn _neverc_krt_pte_make_ro;
+#include <nvk_internal.h>
 
 /* ---- internal variables ---- */
 

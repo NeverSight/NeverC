@@ -41,7 +41,7 @@ struct _neverc_krt_raw_ksyms {
 };
 
 struct _neverc_krt_batch_ctx {
-	struct _neverc_krt_batch_entry *entries;
+	struct neverc_krt_batch_entry *entries;
 	int                      count;
 	int                      resolved;
 };
@@ -409,7 +409,7 @@ static int _neverc_krt_batch_cb(const char *name, unsigned long addr,
 	return 0;
 }
 
-int neverc_krt_ksyms_raw_batch(struct _neverc_krt_batch_entry *entries, int count)
+int neverc_krt_ksyms_raw_batch(struct neverc_krt_batch_entry *entries, int count)
 {
 	struct _neverc_krt_batch_ctx ctx;
 	int i;
