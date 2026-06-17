@@ -48,29 +48,6 @@ void neverc_krt_selinux_bypass_remove(struct neverc_krt_selinux_bypass *state);
 #define NEVERC_KRT_SE_FLAG_CAPABLE (1U << 3)
 #define NEVERC_KRT_SE_FLAG_ALL     0xFU
 
-static __always_inline u32 _neverc_krt_se_current_uid(void)
-{
-	unsigned long task;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
-
-	unsigned long cred_off =
-		__atomic_load_n(&_neverc_krt_off_cred, __ATOMIC_ACQUIRE);
-	if (!cred_off) return 0xFFFFFFFFU;
-
-	unsigned long cred_ptr;
-	if (neverc_krt_mem_read(&cred_ptr, (void *)(task + cred_off), 8))
-		return 0xFFFFFFFFU;
-	cred_ptr &= ~(0xFFUL << 56);
-	if (cred_ptr < 0xFFFF000000000000UL) return 0xFFFFFFFFU;
-
-	unsigned long uid_off =
-		__atomic_load_n(&_neverc_krt_off_uid, __ATOMIC_ACQUIRE);
-	if (!uid_off) uid_off = _neverc_krt_cred_uid_base();
-	u32 uid = 0xFFFFFFFFU;
-	neverc_krt_mem_read(&uid, (void *)(cred_ptr + uid_off), 4);
-	return uid;
-}
-
 int neverc_krt_se_selective_add(u32 uid, u32 flags);
 int neverc_krt_se_selective_remove(u32 uid);
 int neverc_krt_se_selective_install(void);

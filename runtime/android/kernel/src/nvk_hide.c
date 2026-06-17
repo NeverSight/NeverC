@@ -143,6 +143,19 @@ static int                        _neverc_krt_file_dentry_probed;
 
 #define _NEVERC_KRT_DENTRY_DNAME_NAME_OFF NEVERC_KRT_DENTRY_DNAME_OFF
 
+static __always_inline unsigned long _neverc_krt_get_file_dentry_off(void)
+{
+	unsigned long off = __atomic_load_n(&_neverc_krt_file_dentry_off,
+					    __ATOMIC_ACQUIRE);
+	if (off)
+		return off;
+
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (!kv)
+		return _neverc_krt_file_dentry_off_for(NEVERC_KRT_KERNEL);
+	return _neverc_krt_file_dentry_off_for(kv);
+}
+
 int neverc_krt_hide_init(void)
 {
 	if (_neverc_krt_hide_inited) return 0;

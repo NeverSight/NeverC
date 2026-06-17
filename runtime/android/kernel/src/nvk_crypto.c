@@ -1,6 +1,68 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_crypto.c — implementations extracted from neverc_krt_crypto.h. */
+/* neverc_krt_crypto.c — SHA-256, HMAC-SHA256, ChaCha20. */
 #include <nvk.h>
+
+/* ---- SHA-256 internal helpers ---- */
+
+static __always_inline u32 _neverc_krt_ror32(u32 v, int n)
+{ return (v >> n) | (v << (32 - n)); }
+
+static __always_inline u32 _neverc_krt_sha_ch(u32 x, u32 y, u32 z)
+{ return (x & y) ^ (~x & z); }
+
+static __always_inline u32 _neverc_krt_sha_maj(u32 x, u32 y, u32 z)
+{ return (x & y) ^ (x & z) ^ (y & z); }
+
+static __always_inline u32 _neverc_krt_sha_s0(u32 x)
+{ return _neverc_krt_ror32(x, 2) ^ _neverc_krt_ror32(x, 13) ^ _neverc_krt_ror32(x, 22); }
+
+static __always_inline u32 _neverc_krt_sha_s1(u32 x)
+{ return _neverc_krt_ror32(x, 6) ^ _neverc_krt_ror32(x, 11) ^ _neverc_krt_ror32(x, 25); }
+
+static __always_inline u32 _neverc_krt_sha_g0(u32 x)
+{ return _neverc_krt_ror32(x, 7) ^ _neverc_krt_ror32(x, 18) ^ (x >> 3); }
+
+static __always_inline u32 _neverc_krt_sha_g1(u32 x)
+{ return _neverc_krt_ror32(x, 17) ^ _neverc_krt_ror32(x, 19) ^ (x >> 10); }
+
+static __always_inline u32 _neverc_krt_be32(const u8 *p)
+{
+	return ((u32)p[0] << 24) | ((u32)p[1] << 16) |
+	       ((u32)p[2] << 8)  | (u32)p[3];
+}
+
+static __always_inline void _neverc_krt_put_be32(u8 *p, u32 v)
+{
+	p[0] = (u8)(v >> 24); p[1] = (u8)(v >> 16);
+	p[2] = (u8)(v >> 8);  p[3] = (u8)v;
+}
+
+/* ---- ChaCha20 internal helpers ---- */
+
+static __always_inline u32 _neverc_krt_rotl32(u32 v, int n)
+{ return (v << n) | (v >> (32 - n)); }
+
+#define _NEVERC_KRT_QR(a, b, c, d)                              \
+	do {                                                     \
+		a += b; d ^= a; d = _neverc_krt_rotl32(d, 16);  \
+		c += d; b ^= c; b = _neverc_krt_rotl32(b, 12);  \
+		a += b; d ^= a; d = _neverc_krt_rotl32(d, 8);   \
+		c += d; b ^= c; b = _neverc_krt_rotl32(b, 7);   \
+	} while (0)
+
+static __always_inline u32 _neverc_krt_le32(const u8 *p)
+{
+	return (u32)p[0] | ((u32)p[1] << 8) |
+	       ((u32)p[2] << 16) | ((u32)p[3] << 24);
+}
+
+static __always_inline void _neverc_krt_put_le32(u8 *p, u32 v)
+{
+	p[0] = (u8)v; p[1] = (u8)(v >> 8);
+	p[2] = (u8)(v >> 16); p[3] = (u8)(v >> 24);
+}
+
+/* ---- SHA-256 constants ---- */
 
 static const u32 _neverc_krt_sha256_k[64] = {
 	0x428A2F98U, 0x71374491U, 0xB5C0FBCFU, 0xE9B5DBA5U,

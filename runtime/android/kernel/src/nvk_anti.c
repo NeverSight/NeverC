@@ -2,6 +2,57 @@
 /* neverc_krt_anti.c — anti-tamper and environment detection. */
 #include <nvk.h>
 
+/* ---- internal helpers ---- */
+
+static __always_inline int _neverc_krt_has_crc32_hw(void)
+{
+	u64 isar0;
+	__asm__ __volatile__("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
+	return ((isar0 >> 16) & 0xF) >= 1;
+}
+
+static __always_inline u32 _neverc_krt_crc32_hw_byte(u32 crc, u8 val)
+{
+	u32 result;
+	__asm__("crc32b %w0, %w1, %w2" : "=r"(result) : "r"(crc), "r"(val));
+	return result;
+}
+
+static __always_inline u32 _neverc_krt_crc32_hw_word(u32 crc, u32 val)
+{
+	u32 result;
+	__asm__("crc32w %w0, %w1, %w2" : "=r"(result) : "r"(crc), "r"(val));
+	return result;
+}
+
+static __always_inline u32 _neverc_krt_crc32_hw_dword(u32 crc, u64 val)
+{
+	u32 result;
+	__asm__("crc32x %w0, %w1, %2" : "=r"(result) : "r"(crc), "r"(val));
+	return result;
+}
+
+static __always_inline u64 _neverc_krt_wd_gen_key(void)
+{
+	u64 ts, ctr;
+	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(ts));
+	__asm__ __volatile__("mrs %0, cntpct_el0" : "=r"(ctr));
+	u64 sp;
+	__asm__ __volatile__("mov %0, sp" : "=r"(sp));
+	return ts ^ (ctr * 0x9E3779B97F4A7C15ULL) ^ (sp >> 3);
+}
+
+static __always_inline u32 _neverc_krt_wd_seal(u32 val, int slot)
+{
+	u32 k = (u32)(_neverc_krt_wd_seal_key >> (slot & 1 ? 32 : 0));
+	return val ^ k ^ (u32)(slot * 0x45D9F3BU);
+}
+
+static __always_inline u32 _neverc_krt_wd_unseal(u32 val, int slot)
+{
+	return _neverc_krt_wd_seal(val, slot);
+}
+
 extern volatile int *_neverc_krt_se_probe_state(void *se_state);
 extern int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
 

@@ -193,19 +193,6 @@ int neverc_krt_file_spoof_add(const char *path,
 			      const char *search, int slen,
 			      const char *replace, int rlen);
 
-static __always_inline unsigned long _neverc_krt_get_file_dentry_off(void)
-{
-	unsigned long off = __atomic_load_n(&_neverc_krt_file_dentry_off,
-					    __ATOMIC_ACQUIRE);
-	if (off)
-		return off;
-
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (!kv)
-		return _neverc_krt_file_dentry_off_for(NEVERC_KRT_KERNEL);
-	return _neverc_krt_file_dentry_off_for(kv);
-}
-
 int neverc_krt_file_spoof_install(void);
 void neverc_krt_file_spoof_cleanup(void);
 

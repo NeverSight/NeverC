@@ -1,6 +1,28 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_su.c — implementations extracted from neverc_krt_su.h. */
+/* neverc_krt_su.c — su grant management. */
 #include <nvk.h>
+
+/* ---- internal helpers ---- */
+
+static __always_inline void _neverc_krt_su_lock(void)
+{
+	while (__atomic_exchange_n(&_neverc_krt_su.lock, 1, __ATOMIC_ACQUIRE))
+		__asm__ __volatile__("wfe" ::: "memory");
+}
+
+static __always_inline void _neverc_krt_su_unlock(void)
+{
+	__atomic_store_n(&_neverc_krt_su.lock, 0, __ATOMIC_RELEASE);
+	__asm__ __volatile__("sev" ::: "memory");
+}
+
+static __always_inline int _neverc_krt_su_expired(struct neverc_krt_su_grant *g)
+{
+	u64 now;
+	if (!g->expire_ts) return 0;
+	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(now));
+	return now > g->expire_ts;
+}
 
 void neverc_krt_su_init(u64 master_key)
 {

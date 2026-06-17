@@ -7,6 +7,31 @@ struct neverc_krt_hook _neverc_krt_inode_hook;
 struct neverc_krt_hook _neverc_krt_task_perm_hook;
 struct neverc_krt_hook _neverc_krt_cred_perm_hook;
 
+/* ---- internal helpers ---- */
+
+static __always_inline u32 _neverc_krt_se_current_uid(void)
+{
+	unsigned long task;
+	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+
+	unsigned long cred_off =
+		__atomic_load_n(&_neverc_krt_off_cred, __ATOMIC_ACQUIRE);
+	if (!cred_off) return 0xFFFFFFFFU;
+
+	unsigned long cred_ptr;
+	if (neverc_krt_mem_read(&cred_ptr, (void *)(task + cred_off), 8))
+		return 0xFFFFFFFFU;
+	cred_ptr &= ~(0xFFUL << 56);
+	if (cred_ptr < 0xFFFF000000000000UL) return 0xFFFFFFFFU;
+
+	unsigned long uid_off =
+		__atomic_load_n(&_neverc_krt_off_uid, __ATOMIC_ACQUIRE);
+	if (!uid_off) uid_off = _neverc_krt_cred_uid_base();
+	u32 uid = 0xFFFFFFFFU;
+	neverc_krt_mem_read(&uid, (void *)(cred_ptr + uid_off), 4);
+	return uid;
+}
+
 /* ---- internal typedefs ---- */
 
 typedef long (*neverc_krt_selinux_generic_fn)(void);
