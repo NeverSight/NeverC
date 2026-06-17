@@ -5,11 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <linux/string.h>
-#include <nvk_mem.h>
-#include <nvk_process.h>
-#include <nvk_addr.h>
 #include <nvk_hook.h>
 
 int neverc_krt_anti_is_root(void);

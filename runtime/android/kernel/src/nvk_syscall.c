@@ -1,6 +1,23 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_syscall.c — implementations extracted from neverc_krt_syscall.h. */
 #include <nvk.h>
+
+/* ---- internal variables ---- */
+
+static neverc_krt_syscall_fn_t *_neverc_krt_sys_call_table;
+static int                      _neverc_krt_syscall_inited;
+
+/* ---- implementation ---- */
+
+neverc_krt_syscall_fn_t *neverc_krt_syscall_table(void)
+{
+	return _neverc_krt_sys_call_table;
+}
+
+neverc_krt_syscall_fn_t neverc_krt_syscall_get(int nr)
+{
+	if (!_neverc_krt_sys_call_table || nr < 0) return (void *)0;
+	return _neverc_krt_sys_call_table[nr];
+}
 
 int neverc_krt_syscall_init(void)
 {

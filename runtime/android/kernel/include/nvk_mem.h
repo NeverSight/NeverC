@@ -6,8 +6,6 @@
 #include <nvk_rt.h>
 #include <nvkmod_version.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <linux/string.h>
 
 typedef long (*neverc_krt_probe_read_fn)(void *dst, const void *src, size_t len);
 typedef long (*neverc_krt_probe_write_fn)(void *dst, const void *src, size_t len);

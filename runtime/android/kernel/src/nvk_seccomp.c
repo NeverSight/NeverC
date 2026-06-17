@@ -104,9 +104,7 @@ static int _neverc_krt_seccomp_is_allowed_pid(int pid)
 
 static int _neverc_krt_seccomp_hook_fn(int this_syscall, void *sd)
 {
-	int pid = -1;
-	if (_neverc_krt_task_pid_nr)
-		pid = _neverc_krt_task_pid_nr(current);
+	int pid = neverc_krt_current_pid();
 
 	if (pid > 0 && _neverc_krt_seccomp_is_allowed_pid(pid))
 		return 0;

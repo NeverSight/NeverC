@@ -5,10 +5,7 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
 #include <linux/sched.h>
-#include <nvk_mem.h>
-#include <nvk_process.h>
 
 struct neverc_krt_cred_ids {
 	u32 uid, gid, suid, sgid, euid, egid, fsuid, fsgid;

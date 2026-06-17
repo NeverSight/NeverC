@@ -5,22 +5,13 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <nvk_mem.h>
 #include <asm/ptrace.h>
 
 typedef long (*neverc_krt_syscall_fn_t)(const struct pt_regs *regs);
 
-NEVERC_KRT_RT_VAR neverc_krt_syscall_fn_t *_neverc_krt_sys_call_table;
-NEVERC_KRT_RT_VAR int _neverc_krt_syscall_inited;
-
 int neverc_krt_syscall_init(void);
 
-
-static __always_inline neverc_krt_syscall_fn_t *neverc_krt_syscall_table(void)
-{
-	return _neverc_krt_sys_call_table;
-}
+neverc_krt_syscall_fn_t *neverc_krt_syscall_table(void);
 
 int neverc_krt_syscall_replace(int nr, neverc_krt_syscall_fn_t new_fn,
 			       neverc_krt_syscall_fn_t *orig);
@@ -29,11 +20,7 @@ int neverc_krt_syscall_replace(int nr, neverc_krt_syscall_fn_t new_fn,
 int neverc_krt_syscall_restore(int nr, neverc_krt_syscall_fn_t orig);
 
 
-static __always_inline neverc_krt_syscall_fn_t neverc_krt_syscall_get(int nr)
-{
-	if (!_neverc_krt_sys_call_table || nr < 0) return (void *)0;
-	return _neverc_krt_sys_call_table[nr];
-}
+neverc_krt_syscall_fn_t neverc_krt_syscall_get(int nr);
 
 #define __NR_io_setup         0
 #define __NR_io_destroy       1

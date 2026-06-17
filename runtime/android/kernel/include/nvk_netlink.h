@@ -5,9 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <linux/string.h>
-#include <nvk_mem.h>
 
 #define NEVERC_KRT_NL_PROTO_BASE  25
 #define NEVERC_KRT_NL_MSG_MAX     4096

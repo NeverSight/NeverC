@@ -13,8 +13,13 @@ typedef void (*neverc_krt_set_current_state_fn)(long state);
 typedef void (*neverc_krt_msleep_fn)(unsigned int msecs);
 typedef void (*neverc_krt_usleep_range_fn)(unsigned long min, unsigned long max);
 
+typedef int  (*neverc_krt_kthread_should_stop_fn)(void);
+typedef void (*neverc_krt_schedule_fn)(void);
+
 /* ---- internal variables (file-local) ---- */
 
+static neverc_krt_kthread_should_stop_fn _neverc_krt_kthread_should_stop;
+static neverc_krt_schedule_fn            _neverc_krt_schedule;
 static neverc_krt_kthread_create_fn     _neverc_krt_kthread_create;
 static neverc_krt_wake_up_process_fn    _neverc_krt_wake_up_process;
 static neverc_krt_kthread_stop_fn       _neverc_krt_kthread_stop;
@@ -146,6 +151,19 @@ int neverc_krt_thread_stop(struct task_struct *task)
 	_neverc_krt_thr_unlock();
 
 	return ret;
+}
+
+int neverc_krt_thread_should_stop(void)
+{
+	if (_neverc_krt_kthread_should_stop)
+		return _neverc_krt_kthread_should_stop();
+	return 0;
+}
+
+void neverc_krt_thread_yield(void)
+{
+	if (_neverc_krt_schedule)
+		_neverc_krt_schedule();
 }
 
 void neverc_krt_thread_sleep_ms(unsigned int ms)

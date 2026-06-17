@@ -5,10 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <nvk_mem.h>
-#include <nvk_hook.h>
-#include <nvk_process.h>
 
 #define NEVERC_KRT_BINDER_WRITE_READ    0xC0306201U
 #define NEVERC_KRT_BINDER_SET_MAX_THREADS 0x40046205U

@@ -5,8 +5,6 @@
 
 #include <linux/types.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <linux/string.h>
 #include <nvk_rt.h>
 #include <nvk_mem.h>
 

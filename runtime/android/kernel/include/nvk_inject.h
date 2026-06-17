@@ -5,11 +5,7 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <nvk_mem.h>
-#include <nvk_process.h>
-#include <nvk_vma.h>
-#include <nvk_addr.h>
+#include <linux/sched.h>
 
 /*
  * do_mmap signature changed in 6.6: an extra vm_flags parameter was

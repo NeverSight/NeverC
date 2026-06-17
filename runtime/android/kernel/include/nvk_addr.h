@@ -5,7 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
 #include <nvk_mem.h>
 
 NEVERC_KRT_RT_VAR unsigned long *_neverc_krt_kimage_voffset_a;

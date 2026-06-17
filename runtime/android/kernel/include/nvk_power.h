@@ -5,8 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <nvk_mem.h>
 
 /*
  * Power management event notification.

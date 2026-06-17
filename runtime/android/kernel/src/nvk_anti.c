@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
+/* Forward declarations — defined in nvk_process.c */
+extern unsigned long _neverc_krt_off_comm;
+
 /* ---- internal variables ---- */
 
 u64 _neverc_krt_wd_seal_key;

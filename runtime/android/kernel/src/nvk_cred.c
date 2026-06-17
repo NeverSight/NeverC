@@ -1,6 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
+/* Forward declarations — defined in nvk_process.c */
+extern void *(*_neverc_krt_prepare_creds)(void);
+extern int   (*_neverc_krt_commit_creds)(void *);
+extern void *(*_neverc_krt_get_task_cred)(struct task_struct *);
+
 /* ---- internal variables ---- */
 
 unsigned long _neverc_krt_off_cred;
@@ -62,8 +67,7 @@ int neverc_krt_cred_init(void)
 {
 	if (_neverc_krt_cred_inited) return 0;
 
-	if (!_neverc_krt_proc_inited)
-		neverc_krt_process_init();
+	neverc_krt_process_init();
 
 	_neverc_krt_cred_get =
 		(neverc_krt_get_cred_fn)NEVERC_KRT_LOOKUP("get_cred");

@@ -18,8 +18,7 @@ int neverc_krt_ns_init(void)
 {
 	if (_neverc_krt_ns_inited) return 0;
 
-	if (!_neverc_krt_proc_inited)
-		neverc_krt_process_init();
+	neverc_krt_process_init();
 
 	_neverc_krt_task_pid_ns =
 		(neverc_krt_task_active_pid_ns_fn)NEVERC_KRT_LOOKUP("task_active_pid_ns");

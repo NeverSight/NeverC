@@ -1,14 +1,44 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
-/* ---- internal variables ---- */
+/* ---- internal typedefs ---- */
 
-neverc_krt_send_sig_info_fn _neverc_krt_send_sig_info;
-struct task_struct         *_neverc_krt_init_task;
+typedef int  (*neverc_krt_task_pid_nr_fn)(struct task_struct *);
+typedef int  (*neverc_krt_task_tgid_nr_fn)(struct task_struct *);
+typedef struct task_struct *(*neverc_krt_find_task_fn)(int pid);
+typedef void *(*neverc_krt_get_task_cred_fn)(struct task_struct *);
+typedef void *(*neverc_krt_prepare_creds_fn)(void);
+typedef int   (*neverc_krt_commit_creds_fn)(void *);
+typedef int   (*neverc_krt_send_sig_info_fn)(int sig, void *info,
+					     struct task_struct *p, int type);
+typedef void (*neverc_krt_rcu_lock_fn)(void);
+typedef void (*neverc_krt_rcu_unlock_fn)(void);
+
+/* ---- file-local state ---- */
+
+static neverc_krt_task_pid_nr_fn    _neverc_krt_task_pid_nr;
+static neverc_krt_task_tgid_nr_fn   _neverc_krt_task_tgid_nr;
+static neverc_krt_find_task_fn      _neverc_krt_find_task_by_vpid;
+static neverc_krt_send_sig_info_fn  _neverc_krt_send_sig_info;
+static struct task_struct          *_neverc_krt_init_task;
+static int                          _neverc_krt_proc_inited;
+static unsigned long                _neverc_krt_off_tasks;
+static struct neverc_krt_task_offsets _neverc_krt_toff;
+static neverc_krt_rcu_lock_fn       _neverc_krt_rcu_read_lock;
+static neverc_krt_rcu_unlock_fn     _neverc_krt_rcu_read_unlock;
+
+/*
+ * Cross-file variables — referenced by nvk_cred.c and nvk_anti.c.
+ * Non-static so they are visible across the unity TU.
+ */
+unsigned long               _neverc_krt_off_comm;
+neverc_krt_get_task_cred_fn _neverc_krt_get_task_cred;
+neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds;
+neverc_krt_commit_creds_fn  _neverc_krt_commit_creds;
 
 /* ---- implementation ---- */
 
-void _neverc_krt_resolve_task_offsets(void)
+static void _neverc_krt_resolve_task_offsets(void)
 {
 	if (__atomic_load_n(&_neverc_krt_toff.resolved, __ATOMIC_ACQUIRE))
 		return;
@@ -19,6 +49,13 @@ void _neverc_krt_resolve_task_offsets(void)
 		_neverc_krt_toff.tasks = _neverc_krt_off_tasks;
 
 	__atomic_store_n(&_neverc_krt_toff.resolved, 1, __ATOMIC_RELEASE);
+}
+
+const struct neverc_krt_task_offsets *neverc_krt_task_offsets(void)
+{
+	if (!__atomic_load_n(&_neverc_krt_toff.resolved, __ATOMIC_ACQUIRE))
+		_neverc_krt_resolve_task_offsets();
+	return &_neverc_krt_toff;
 }
 
 int neverc_krt_process_init(void)
@@ -57,6 +94,58 @@ int neverc_krt_process_init(void)
 
 	_neverc_krt_proc_inited = 1;
 	return 0;
+}
+
+int neverc_krt_current_pid(void)
+{
+	if (_neverc_krt_task_pid_nr)
+		return _neverc_krt_task_pid_nr(current);
+	return -1;
+}
+
+int neverc_krt_current_tgid(void)
+{
+	if (_neverc_krt_task_tgid_nr)
+		return _neverc_krt_task_tgid_nr(current);
+	return -1;
+}
+
+int neverc_krt_task_pid(struct task_struct *task)
+{
+	if (_neverc_krt_task_pid_nr && task)
+		return _neverc_krt_task_pid_nr(task);
+	return -1;
+}
+
+struct task_struct *neverc_krt_find_task(int pid)
+{
+	struct task_struct *t;
+	if (!_neverc_krt_find_task_by_vpid) return (void *)0;
+	if (_neverc_krt_rcu_read_lock) _neverc_krt_rcu_read_lock();
+	t = _neverc_krt_find_task_by_vpid(pid);
+	if (_neverc_krt_rcu_read_unlock) _neverc_krt_rcu_read_unlock();
+	return t;
+}
+
+void *neverc_krt_task_get_cred(struct task_struct *task)
+{
+	if (_neverc_krt_get_task_cred && task)
+		return _neverc_krt_get_task_cred(task);
+	return (void *)0;
+}
+
+void *neverc_krt_prepare_creds(void)
+{
+	if (_neverc_krt_prepare_creds)
+		return _neverc_krt_prepare_creds();
+	return (void *)0;
+}
+
+int neverc_krt_commit_creds(void *cred)
+{
+	if (_neverc_krt_commit_creds && cred)
+		return _neverc_krt_commit_creds(cred);
+	return -1;
 }
 
 int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
@@ -243,12 +332,6 @@ int neverc_krt_task_comm_safe(struct task_struct *task, char *buf, int bufsz)
 	return 0;
 }
 
-/*
- * Returns a pointer directly into task_struct->comm (embedded char[16]).
- * Caller must ensure task remains valid (e.g. hold rcu_read_lock, or
- * pass `current`).  The returned pointer is safe to dereference as long
- * as the task is not freed.
- */
 const char *neverc_krt_task_comm(struct task_struct *task)
 {
 	if (!task) return "";
@@ -277,4 +360,3 @@ const char *neverc_krt_task_comm(struct task_struct *task)
 		return (const char *)((unsigned long)task + _neverc_krt_off_comm);
 	return "";
 }
-

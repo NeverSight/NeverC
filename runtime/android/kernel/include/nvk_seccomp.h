@@ -5,11 +5,7 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
 #include <linux/sched.h>
-#include <nvk_mem.h>
-#include <nvk_process.h>
-#include <nvk_hook.h>
 
 #define NEVERC_KRT_SECCOMP_MODE_DISABLED  0
 #define NEVERC_KRT_SECCOMP_MODE_STRICT    1

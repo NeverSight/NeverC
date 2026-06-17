@@ -5,10 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <nvk_mem.h>
-#include <nvk_process.h>
-#include <nvk_cred.h>
 
 #define NEVERC_KRT_SU_MAX_GRANTS 64
 

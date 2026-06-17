@@ -6,8 +6,6 @@
 #include <nvk_rt.h>
 #include <linux/compiler.h>
 #include <linux/list.h>
-#include <linux/kallsyms.h>
-#include <nvkmod_version.h>
 #include <nvk_hook.h>
 
 typedef void *(*neverc_krt_find_module_fn)(const char *name);
@@ -70,20 +68,10 @@ struct neverc_krt_pid_hide_state {
 	int              active;
 };
 
-NEVERC_KRT_RT_VAR struct neverc_krt_pid_hide_state _neverc_krt_pid_state;
-
-int _neverc_krt_pid_is_hidden(int pid);
-
 int neverc_krt_pid_hide_add(int pid);
 int neverc_krt_pid_hide_remove(int pid);
 int neverc_krt_pid_hide_install(void);
-
-static __always_inline int neverc_krt_pid_should_hide(int pid)
-{
-	if (!_neverc_krt_pid_state.active) return 0;
-	return _neverc_krt_pid_is_hidden(pid);
-}
-
+int neverc_krt_pid_should_hide(int pid);
 void neverc_krt_pid_hide_cleanup(void);
 
 
@@ -106,22 +94,8 @@ struct neverc_krt_maps_filter_region {
 	unsigned long end;
 };
 
-NEVERC_KRT_RT_VAR struct neverc_krt_maps_filter_region _neverc_krt_maps_regions[NEVERC_KRT_MAPS_FILTER_MAX];
-NEVERC_KRT_RT_VAR int _neverc_krt_maps_region_count;
-
 int neverc_krt_maps_filter_add(unsigned long start, unsigned long end);
-
-static __always_inline int neverc_krt_maps_should_hide(unsigned long addr)
-{
-	int i;
-	for (i = 0; i < _neverc_krt_maps_region_count; i++) {
-		if (addr >= _neverc_krt_maps_regions[i].start &&
-		    addr < _neverc_krt_maps_regions[i].end)
-			return 1;
-	}
-	return 0;
-}
-
+int neverc_krt_maps_should_hide(unsigned long addr);
 void neverc_krt_maps_filter_clear(void);
 void neverc_krt_maps_filter_add_self(void);
 

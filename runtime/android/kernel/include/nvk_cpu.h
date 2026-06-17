@@ -5,8 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <nvk_mem.h>
 
 /* ------------------------------------------------------------------ */
 /*  CPU topology queries  (no kernel symbol needed — all from regs)   */
@@ -79,7 +77,10 @@ int neverc_krt_num_online_cpus(void);
 	type __neverc_krt_pcpu_##name[NEVERC_KRT_MAX_CPUS]                  \
 		__attribute__((aligned(64)))
 
-static __always_inline u32 _neverc_krt_cpu_idx_safe(u32 cpu);
+static __always_inline u32 _neverc_krt_cpu_idx_safe(u32 cpu)
+{
+	return (cpu < NEVERC_KRT_MAX_CPUS) ? cpu : (NEVERC_KRT_MAX_CPUS - 1);
+}
 
 
 #define neverc_krt_this_cpu(name)                                            \

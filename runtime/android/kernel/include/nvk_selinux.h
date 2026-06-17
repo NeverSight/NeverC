@@ -5,8 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <nvk_mem.h>
 #include <nvk_hook.h>
 
 NEVERC_KRT_RT_VAR volatile int *_neverc_krt_selinux_enforcing;

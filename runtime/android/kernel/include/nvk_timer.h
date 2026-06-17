@@ -5,8 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <nvk_mem.h>
 
 /* ------------------------------------------------------------------ */
 /*  Opaque timer/work structures sized to fit all GKI 5.10–6.12       */
