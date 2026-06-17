@@ -58,15 +58,6 @@ void neverc_krt_mod_full_hide(struct neverc_krt_hide_state *state,
 
 /* --- /proc/pid hiding --- */
 
-#define NEVERC_KRT_HIDE_PID_MAX 32
-
-struct neverc_krt_pid_hide_state {
-	int              pids[NEVERC_KRT_HIDE_PID_MAX];
-	int              count;
-	struct neverc_krt_hook_ctx ctx_hook;
-	int              active;
-};
-
 int neverc_krt_pid_hide_add(int pid);
 int neverc_krt_pid_hide_remove(int pid);
 int neverc_krt_pid_hide_install(void);
@@ -87,11 +78,6 @@ void neverc_krt_mount_filter_cleanup(void);
 /* --- /proc/pid/maps module region filter --- */
 
 #define NEVERC_KRT_MAPS_FILTER_MAX 4
-
-struct neverc_krt_maps_filter_region {
-	unsigned long start;
-	unsigned long end;
-};
 
 int neverc_krt_maps_filter_add(unsigned long start, unsigned long end);
 int neverc_krt_maps_should_hide(unsigned long addr);
