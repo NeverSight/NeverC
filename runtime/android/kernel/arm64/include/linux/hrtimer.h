@@ -27,8 +27,14 @@ enum hrtimer_restart {
 	HRTIMER_RESTART   = 1,
 };
 
+/*
+ * Opaque hrtimer storage — actual sizeof(struct hrtimer) across GKI:
+ *   5.10: ~96 bytes    5.15: ~96 bytes
+ *   6.1:  ~104 bytes   6.6:  ~104 bytes   6.12: ~104 bytes
+ * 128 bytes covers all versions with headroom.
+ */
 struct hrtimer {
-	unsigned char __opaque[128]; /* generous opaque blob */
+	unsigned char __opaque[128];
 };
 
 typedef enum hrtimer_restart (*hrtimer_func_t)(struct hrtimer *);

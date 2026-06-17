@@ -58,23 +58,29 @@ struct neverc_krt_state {
 };
 
 int neverc_krt_sub_ok(int sub);
-
 int neverc_krt_init_all(void);
-
+void neverc_krt_cleanup_all(void);
+int neverc_krt_init_ftrace(void);
 const struct neverc_krt_state *neverc_krt_get_state(void);
 
+/* ---- Symbol-name hook helpers (NC_XORSTR wrappers) ---- */
+
+/*
+ * These _neverc_krt_ implementations must be in the public header
+ * because the neverc_krt_hook_*_by_sym() macros expand to call them
+ * with NC_XORSTR()-encrypted string literals.  They are NOT part of
+ * the user-facing API — always use the macros below.
+ */
 int _neverc_krt_hook_by_sym(struct neverc_krt_hook *h, const char *sym_name,
 			    void *replace, void **orig);
-
-
-int _neverc_krt_hook_ctx_by_sym(struct neverc_krt_hook_ctx *h, const char *sym_name,
-				neverc_krt_ctx_handler_t handler, void **call_orig);
-
-
-int _neverc_krt_hook_auto_by_sym(struct neverc_krt_hook *h, const char *sym_name,
+int _neverc_krt_hook_ctx_by_sym(struct neverc_krt_hook_ctx *h,
+				const char *sym_name,
+				neverc_krt_ctx_handler_t handler,
+				void **call_orig);
+int _neverc_krt_hook_auto_by_sym(struct neverc_krt_hook *h,
+				 const char *sym_name,
 				 void *replace, void **orig,
 				 struct neverc_krt_ftrace_hook *ft);
-
 
 #define neverc_krt_hook_by_sym(h, sym, replace, orig) \
 	_neverc_krt_hook_by_sym((h), NC_XORSTR(sym), (replace), (orig))
@@ -84,11 +90,6 @@ int _neverc_krt_hook_auto_by_sym(struct neverc_krt_hook *h, const char *sym_name
 
 #define neverc_krt_hook_auto_by_sym(h, sym, replace, orig, ft) \
 	_neverc_krt_hook_auto_by_sym((h), NC_XORSTR(sym), (replace), (orig), (ft))
-
-void neverc_krt_cleanup_all(void);
-
-
-int neverc_krt_init_ftrace(void);
 
 
 #endif /* NEVERC_KRT_H */

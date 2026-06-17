@@ -5,9 +5,13 @@
 #include <linux/types.h>
 
 /*
- * GKI 5.10-6.12: owner(8) + spinlock(8) + osq(8) + wait_list(16)
- *                + ANDROID_OEM_DATA_ARRAY(1,2) = 16 → total ~56.
- * Round up to 64 for alignment safety.
+ * GKI 5.10–6.12 (arm64, ANDROID_VENDOR_OEM_DATA=y, no debug):
+ *   atomic_long_t owner                   8 bytes
+ *   raw_spinlock_t wait_lock              4 bytes (qspinlock)
+ *   struct optimistic_spin_queue osq      4 bytes (atomic_t)
+ *   struct list_head wait_list           16 bytes
+ *   ANDROID_OEM_DATA_ARRAY(1, 2)         16 bytes
+ *   Total = 48 bytes.  64 gives comfortable headroom.
  */
 struct mutex { unsigned char __opaque[64]; };
 
