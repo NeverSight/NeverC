@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <linux/compiler.h>
+#include <nvk_timer.h>
 
 #define NEVERC_KRT_PMU_EVT_SW_INCR        0x00
 #define NEVERC_KRT_PMU_EVT_L1I_REFILL     0x01
@@ -137,25 +138,13 @@ void neverc_krt_pmu_session_stop(struct neverc_krt_pmu_session *s,
 
 
 __always_inline u64 neverc_krt_pmu_rdtsc(void)
-{
-	u64 val;
-	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(val));
-	return val;
-}
+{ return neverc_krt_arch_counter(); }
 
 __always_inline u64 neverc_krt_pmu_freq(void)
-{
-	u64 val;
-	__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(val));
-	return val;
-}
+{ return (u64)neverc_krt_arch_counter_freq(); }
 
 __always_inline u64 neverc_krt_pmu_ns_elapsed(u64 start, u64 end)
-{
-	u64 freq = neverc_krt_pmu_freq();
-	if (!freq) return 0;
-	return (end - start) * 1000000000ULL / freq;
-}
+{ return neverc_krt_arch_counter_to_ns(end - start); }
 
 #define NEVERC_KRT_PMU_BENCH(name, code_block)                                  \
 	do {                                                             \

@@ -69,22 +69,6 @@ static int _neverc_krt_pid_actor_acquire(neverc_krt_filldir_fn orig)
 	return -1;
 }
 
-static void _neverc_krt_pid_actor_release(void)
-{
-	unsigned long self;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(self));
-	int i;
-	for (i = 0; i < _NEVERC_KRT_PID_ACTOR_SLOTS; i++) {
-		if (__atomic_load_n(&_neverc_krt_pid_actors[i].task,
-				    __ATOMIC_ACQUIRE) == self) {
-			_neverc_krt_pid_actors[i].orig = (neverc_krt_filldir_fn)0;
-			__atomic_store_n(&_neverc_krt_pid_actors[i].task, 0,
-					 __ATOMIC_RELEASE);
-			return;
-		}
-	}
-}
-
 static neverc_krt_filldir_fn _neverc_krt_pid_actor_get_orig(void)
 {
 	unsigned long self;

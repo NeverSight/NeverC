@@ -303,27 +303,6 @@ void neverc_krt_mod_full_hide(struct neverc_krt_hide_state *state,
 	neverc_krt_mod_kallsyms_filter(state, module_name);
 }
 
-static void _neverc_krt_hide_cleanup(struct neverc_krt_hide_state *state,
-				      struct neverc_krt_this_module *mod)
-{
-	if (state->kallsyms_filtered && _neverc_krt_ks_hooked) {
-		neverc_krt_hook_remove(&_neverc_krt_ks_hook);
-		_neverc_krt_ks_hooked = 0;
-		state->kallsyms_filtered = 0;
-	}
-
-	if (state->seq_show_hooked) {
-		neverc_krt_hook_remove(&state->seq_show_hook);
-		state->seq_show_hooked = 0;
-	}
-
-	if (state->find_module_hook.active)
-		neverc_krt_hook_remove(&state->find_module_hook);
-
-	if (state->hidden)
-		neverc_krt_mod_show(state, mod);
-}
-
 /* ==================================================================== */
 /*  /proc/pid/maps module region filter                                 */
 /* ==================================================================== */

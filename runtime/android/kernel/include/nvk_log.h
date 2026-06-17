@@ -6,6 +6,7 @@
 #include <nvk_rt.h>
 #include <linux/compiler.h>
 #include <linux/printk.h>
+#include <nvk_timer.h>
 
 enum neverc_krt_log_level {
 	NEVERC_KRT_LOG_SILENT = 0,
@@ -93,8 +94,7 @@ __always_inline int neverc_krt_log_get_level(void)
 #define neverc_krt_log_ratelimit(fmt, ...)                                 \
 	do {                                                         \
 		static u64 _NVK_LOG_CAT(__nvk_rl_, __LINE__);        \
-		u64 __now;                                           \
-		__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(__now));\
+		u64 __now = neverc_krt_arch_counter();               \
 		if (__now - _NVK_LOG_CAT(__nvk_rl_, __LINE__) > 100000000ULL) {\
 			_NVK_LOG_CAT(__nvk_rl_, __LINE__) = __now;   \
 			neverc_krt_log_info(fmt, ##__VA_ARGS__);            \
@@ -105,10 +105,8 @@ __always_inline int neverc_krt_log_get_level(void)
 	do {                                                         \
 		static u64 _NVK_LOG_CAT(__nvk_rlt_, __LINE__);       \
 		static int _NVK_LOG_CAT(__nvk_rlc_, __LINE__);       \
-		u64 __now;                                           \
-		__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(__now));\
-		u64 __freq;                                          \
-		__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(__freq));\
+		u64 __now = neverc_krt_arch_counter();               \
+		u64 __freq = (u64)neverc_krt_arch_counter_freq();    \
 		u64 __ticks = (u64)(interval_ns) * __freq / 1000000000ULL;\
 		if (__now - _NVK_LOG_CAT(__nvk_rlt_, __LINE__) > __ticks) {\
 			_NVK_LOG_CAT(__nvk_rlt_, __LINE__) = __now;  \

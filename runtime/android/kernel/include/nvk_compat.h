@@ -6,6 +6,7 @@
 #include <linux/compiler.h>
 #include <linux/kallsyms.h>
 #include <nvkmod_version.h>
+#include <nvk_cpu.h>
 
 
 struct neverc_krt_kernel_info {
@@ -86,11 +87,7 @@ __always_inline int neverc_krt_has_fpac(void)
 }
 
 __always_inline int neverc_krt_has_sve(void)
-{
-	unsigned long pfr0;
-	__asm__ __volatile__("mrs %0, id_aa64pfr0_el1" : "=r"(pfr0));
-	return ((pfr0 >> 32) & 0xF) != 0;
-}
+{ return neverc_krt_cpu_has_sve(); }
 
 struct neverc_krt_hw_caps {
 	int pac;

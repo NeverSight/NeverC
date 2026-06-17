@@ -5,6 +5,7 @@
 #include <linux/types.h>
 #include <linux/compiler.h>
 #include <nvk_hook.h>
+#include <nvk_timer.h>
 
 int neverc_krt_anti_is_root(void);
 
@@ -47,24 +48,13 @@ u32 neverc_krt_anti_compute_crc32(const void *addr, size_t len);
 
 
 __always_inline u64 neverc_krt_anti_timestamp(void)
-{
-	u64 v;
-	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(v));
-	return v;
-}
+{ return neverc_krt_arch_counter(); }
 
 __always_inline u64 neverc_krt_anti_timer_freq(void)
-{
-	u64 v;
-	__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(v));
-	return v;
-}
+{ return (u64)neverc_krt_arch_counter_freq(); }
 
 __always_inline int neverc_krt_anti_timing_check(u64 start, u64 max_cycles)
-{
-	u64 now = neverc_krt_anti_timestamp();
-	return (now - start) > max_cycles;
-}
+{ return (neverc_krt_arch_counter() - start) > max_cycles; }
 
 int neverc_krt_anti_detect_trace(void);
 
