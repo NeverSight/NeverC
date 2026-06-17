@@ -4,13 +4,13 @@
 
 /* ---- internal variables ---- */
 
-unsigned long *_neverc_krt_kimage_voffset_a;
-unsigned long  _neverc_krt_derived_voffset;
-int            _neverc_krt_voffset_derived;
-unsigned long  _neverc_krt_linmap_offset;
-int            _neverc_krt_linmap_detected;
+static unsigned long *_neverc_krt_kimage_voffset_a;
+static unsigned long  _neverc_krt_derived_voffset;
+static int            _neverc_krt_voffset_derived;
+static unsigned long  _neverc_krt_linmap_offset;
+static int            _neverc_krt_linmap_detected;
 
-unsigned long *_neverc_krt_phys_offset;
+static unsigned long *_neverc_krt_phys_offset;
 static int     _neverc_krt_addr_inited;
 
 /* ---- internal helpers ---- */

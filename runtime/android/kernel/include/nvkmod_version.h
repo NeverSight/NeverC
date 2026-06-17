@@ -194,7 +194,7 @@
  * Canonical version→struct-size / dentry-offset mapping.
  * Pure lookup tables, no state access.
  */
-__always_inline unsigned long _neverc_krt_module_size_for(int kv)
+static __always_inline unsigned long _neverc_krt_module_size_for(int kv)
 {
 	if (kv >= 612) return 1600;
 	if (kv >= 606) return 1536;
@@ -203,7 +203,7 @@ __always_inline unsigned long _neverc_krt_module_size_for(int kv)
 	return 1024;
 }
 
-__always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
+static __always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
 {
 	if (kv >= 612) return 0x48;
 	if (kv >= 606) return 0xA0;
@@ -212,7 +212,7 @@ __always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
 
 void _neverc_krt_version_setup_impl(int kv);
 
-__always_inline void _neverc_krt_version_setup(void)
+static __always_inline void _neverc_krt_version_setup(void)
 {
 	_neverc_krt_version_setup_impl(NEVERC_KRT_KERNEL);
 }

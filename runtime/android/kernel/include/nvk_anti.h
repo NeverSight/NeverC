@@ -47,21 +47,21 @@ int neverc_krt_anti_verify_text_integrity(const void *addr, size_t len,
 u32 neverc_krt_anti_compute_crc32(const void *addr, size_t len);
 
 
-__always_inline u64 neverc_krt_anti_timestamp(void)
+static __always_inline u64 neverc_krt_anti_timestamp(void)
 {
 	u64 v;
 	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(v));
 	return v;
 }
 
-__always_inline u64 neverc_krt_anti_timer_freq(void)
+static __always_inline u64 neverc_krt_anti_timer_freq(void)
 {
 	u64 v;
 	__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(v));
 	return v;
 }
 
-__always_inline int neverc_krt_anti_timing_check(u64 start, u64 max_cycles)
+static __always_inline int neverc_krt_anti_timing_check(u64 start, u64 max_cycles)
 {
 	u64 now = neverc_krt_anti_timestamp();
 	return (now - start) > max_cycles;
@@ -130,7 +130,7 @@ u64 neverc_krt_wd_tramp_violations(void);
 int neverc_krt_anti_scan_for_brk(const void *start, size_t len);
 
 
-__always_inline int neverc_krt_anti_check_stack_depth(void)
+static __always_inline int neverc_krt_anti_check_stack_depth(void)
 {
 	unsigned long sp, sp_el0;
 	__asm__ __volatile__("mov %0, sp" : "=r"(sp));
@@ -141,7 +141,7 @@ __always_inline int neverc_krt_anti_check_stack_depth(void)
 	return 0;
 }
 
-__always_inline u64 neverc_krt_anti_read_midr(void)
+static __always_inline u64 neverc_krt_anti_read_midr(void)
 {
 	u64 v;
 	__asm__ __volatile__("mrs %0, midr_el1" : "=r"(v));

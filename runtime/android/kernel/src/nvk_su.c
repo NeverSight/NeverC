@@ -4,7 +4,7 @@
 
 /* ---- internal variables ---- */
 
-struct neverc_krt_su_manager _neverc_krt_su;
+static struct neverc_krt_su_manager _neverc_krt_su;
 
 /* ---- internal helpers ---- */
 

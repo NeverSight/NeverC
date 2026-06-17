@@ -41,12 +41,12 @@ void *neverc_krt_lookup_probe_write(void);
 void *neverc_krt_lookup_module_alloc(void);
 void *neverc_krt_lookup_module_free(void);
 
-__always_inline int neverc_krt_has_cfi(void)
+static __always_inline int neverc_krt_has_cfi(void)
 {
 	return NEVERC_KRT_LOOKUP("__cfi_check") != (void *)0;
 }
 
-__always_inline int neverc_krt_has_pac(void)
+static __always_inline int neverc_krt_has_pac(void)
 {
 	unsigned long isar1;
 	__asm__ __volatile__("mrs %0, id_aa64isar1_el1" : "=r"(isar1));
@@ -55,21 +55,21 @@ __always_inline int neverc_krt_has_pac(void)
 	return (apa | api) != 0;
 }
 
-__always_inline int neverc_krt_has_bti(void)
+static __always_inline int neverc_krt_has_bti(void)
 {
 	unsigned long pfr1;
 	__asm__ __volatile__("mrs %0, id_aa64pfr1_el1" : "=r"(pfr1));
 	return (pfr1 & 0xF) != 0;
 }
 
-__always_inline int neverc_krt_has_mte(void)
+static __always_inline int neverc_krt_has_mte(void)
 {
 	unsigned long pfr1;
 	__asm__ __volatile__("mrs %0, id_aa64pfr1_el1" : "=r"(pfr1));
 	return ((pfr1 >> 8) & 0xF) >= 2;
 }
 
-__always_inline int neverc_krt_has_epac(void)
+static __always_inline int neverc_krt_has_epac(void)
 {
 	unsigned long isar1;
 	__asm__ __volatile__("mrs %0, id_aa64isar1_el1" : "=r"(isar1));
@@ -78,7 +78,7 @@ __always_inline int neverc_krt_has_epac(void)
 	return (apa >= 2) || (api >= 2);
 }
 
-__always_inline int neverc_krt_has_fpac(void)
+static __always_inline int neverc_krt_has_fpac(void)
 {
 	unsigned long isar1;
 	__asm__ __volatile__("mrs %0, id_aa64isar1_el1" : "=r"(isar1));
@@ -87,7 +87,7 @@ __always_inline int neverc_krt_has_fpac(void)
 	return (apa >= 3) || (api >= 3);
 }
 
-__always_inline int neverc_krt_has_sve(void)
+static __always_inline int neverc_krt_has_sve(void)
 {
 	unsigned long pfr0;
 	__asm__ __volatile__("mrs %0, id_aa64pfr0_el1" : "=r"(pfr0));

@@ -75,21 +75,21 @@ u64 neverc_krt_ktime_get_ns(void);
 u64 neverc_krt_ktime_get_boot_ns(void);
 
 
-__always_inline u64 neverc_krt_arch_counter(void)
+static __always_inline u64 neverc_krt_arch_counter(void)
 {
 	u64 cnt;
 	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(cnt));
 	return cnt;
 }
 
-__always_inline u32 neverc_krt_arch_counter_freq(void)
+static __always_inline u32 neverc_krt_arch_counter_freq(void)
 {
 	u32 freq;
 	__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(freq));
 	return freq;
 }
 
-__always_inline u64 neverc_krt_arch_counter_to_ns(u64 ticks)
+static __always_inline u64 neverc_krt_arch_counter_to_ns(u64 ticks)
 {
 	u32 freq = neverc_krt_arch_counter_freq();
 	if (!freq) return 0;

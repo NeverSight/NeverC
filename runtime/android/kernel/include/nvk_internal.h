@@ -36,6 +36,7 @@ extern neverc_krt_copy_from_user_fn _neverc_krt_copy_from_user;
 extern neverc_krt_copy_to_user_fn   _neverc_krt_copy_to_user;
 extern neverc_krt_pte_rw_fn         _neverc_krt_pte_make_rw;
 extern neverc_krt_pte_rw_fn         _neverc_krt_pte_make_ro;
+extern unsigned long               *_neverc_krt_kimage_voffset;
 
 unsigned long _neverc_krt_mem_get_page_size(void);
 
@@ -78,6 +79,8 @@ int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
 
 /* ---- nvk_compat.c ---- */
 
+extern unsigned long _neverc_krt_module_size;
+extern int           _neverc_krt_kernel_ver;
 extern unsigned long _neverc_krt_file_dentry_off;
 
 unsigned long _neverc_krt_get_module_size(void);

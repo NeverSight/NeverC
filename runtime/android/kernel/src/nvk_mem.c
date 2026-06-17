@@ -17,12 +17,12 @@ neverc_krt_pte_rw_fn              _neverc_krt_pte_make_ro;
 neverc_krt_copy_from_user_fn      _neverc_krt_copy_from_user;
 neverc_krt_copy_to_user_fn        _neverc_krt_copy_to_user;
 
-neverc_krt_probe_read_fn          _neverc_krt_probe_read;
-neverc_krt_probe_write_fn         _neverc_krt_probe_write;
-neverc_krt_set_memory_fn          _neverc_krt_set_memory_rw;
-neverc_krt_set_memory_fn          _neverc_krt_set_memory_ro;
-neverc_krt_update_mapping_prot_fn _neverc_krt_update_prot;
-unsigned long                    *_neverc_krt_kimage_voffset;
+static neverc_krt_probe_read_fn          _neverc_krt_probe_read;
+static neverc_krt_probe_write_fn         _neverc_krt_probe_write;
+static neverc_krt_set_memory_fn          _neverc_krt_set_memory_rw;
+static neverc_krt_set_memory_fn          _neverc_krt_set_memory_ro;
+static neverc_krt_update_mapping_prot_fn _neverc_krt_update_prot;
+unsigned long                           *_neverc_krt_kimage_voffset;
 
 /* ---- internal inline helpers ---- */
 

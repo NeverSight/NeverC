@@ -57,7 +57,7 @@ NEVERC_KRT_RT_VAR unsigned long _neverc_krt_cache_key;
  */
 
 #ifndef _neverc_krt_xor_opaque
-__always_inline unsigned long _neverc_krt_xor_opaque(unsigned long a,
+static __always_inline unsigned long _neverc_krt_xor_opaque(unsigned long a,
 						     unsigned long b)
 {
 	unsigned long sum  = a + b;
@@ -88,7 +88,7 @@ __always_inline unsigned long _neverc_krt_xor_opaque(unsigned long a,
 #  endif
 #endif
 
-__always_inline void _neverc_krt_cache_key_init(void)
+static __always_inline void _neverc_krt_cache_key_init(void)
 {
 	unsigned long k, expected;
 	if (__atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_ACQUIRE))
@@ -102,7 +102,7 @@ __always_inline void _neverc_krt_cache_key_init(void)
 }
 
 #ifndef _neverc_krt_ptr_enc
-__always_inline unsigned long _neverc_krt_ptr_enc(unsigned long addr)
+static __always_inline unsigned long _neverc_krt_ptr_enc(unsigned long addr)
 {
 	return _neverc_krt_xor_opaque(addr,
 		__atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_RELAXED));
@@ -110,14 +110,14 @@ __always_inline unsigned long _neverc_krt_ptr_enc(unsigned long addr)
 #endif
 
 #ifndef _neverc_krt_ptr_dec
-__always_inline unsigned long _neverc_krt_ptr_dec(unsigned long enc)
+static __always_inline unsigned long _neverc_krt_ptr_dec(unsigned long enc)
 {
 	return _neverc_krt_xor_opaque(enc,
 		__atomic_load_n(&_neverc_krt_cache_key, __ATOMIC_RELAXED));
 }
 #endif
 
-__always_inline u32 _neverc_krt_sym_hash(const char *s)
+static __always_inline u32 _neverc_krt_sym_hash(const char *s)
 {
 	u32 h = 0;
 	while (*s) {
@@ -127,7 +127,7 @@ __always_inline u32 _neverc_krt_sym_hash(const char *s)
 	return h;
 }
 
-__always_inline unsigned long _neverc_krt_sym_cached(const char *name)
+static __always_inline unsigned long _neverc_krt_sym_cached(const char *name)
 {
 	u32 h = _neverc_krt_sym_hash(name);
 	u32 idx = h & _NEVERC_KRT_SYM_CACHE_MASK;
@@ -174,7 +174,7 @@ __always_inline unsigned long _neverc_krt_sym_cached(const char *name)
 	   if (!__p) __p = NEVERC_KRT_LOOKUP(alt);                                   \
 	   __p; })
 
-__always_inline void neverc_krt_sym_cache_clear(void)
+static __always_inline void neverc_krt_sym_cache_clear(void)
 {
 	unsigned long i;
 	for (i = 0; i < _NEVERC_KRT_SYM_CACHE_SIZE; i++) {
