@@ -105,6 +105,7 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseMap<unsigned, unsigned> SecMap;
     DenseMap<unsigned, unsigned> SymMap;
     DenseMap<unsigned, uint64_t> OrigSecAddr;
+    DenseMap<unsigned, uint64_t> SecOff;
   };
   SmallVector<PerPartition, 8> Maps;
 
@@ -216,6 +217,7 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       MS.PartOffsets.push_back({p, PartOffset});
       PM.SecMap[PartSecOrdinal] = MIdx + 1;
       PM.OrigSecAddr[PartSecOrdinal] = S64.addr;
+      PM.SecOff[PartSecOrdinal] = PartOffset;
 
       for (const auto &R : Sec.relocations()) {
         MO::relocation_info RI;
@@ -250,22 +252,14 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           OutSym.n_sect = It->second;
           unsigned mIdx = It->second - 1;
           if (mIdx < MergedSections.size()) {
-            // Convert segment-relative n_value to section-relative offset
-            // within the merged section: subtract the original section's
-            // addr and add the partition's data offset within the merged
-            // section.  The merged section's addr is added later during
-            // layout.
             uint64_t origAddr = 0;
             auto AI = PM.OrigSecAddr.find(NL.n_sect);
             if (AI != PM.OrigSecAddr.end())
               origAddr = AI->second;
             OutSym.n_value -= origAddr;
-            for (auto &[pp, off] : MergedSections[mIdx].PartOffsets) {
-              if (pp == p) {
-                OutSym.n_value += off;
-                break;
-              }
-            }
+            auto OffIt = PM.SecOff.find(NL.n_sect);
+            if (OffIt != PM.SecOff.end())
+              OutSym.n_value += OffIt->second;
           }
         } else {
           OutSym.n_sect = 0;
@@ -479,11 +473,11 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
     uint64_t mergedAddr = Layouts[F.TargetMIdx].Offset - DataStart;
     uint64_t partOff = 0;
-    for (auto &[pp, off] : MergedSections[F.TargetMIdx].PartOffsets)
-      if (pp == F.PartIdx) {
-        partOff = off;
-        break;
-      }
+    if (F.PartIdx < Maps.size()) {
+      auto OffIt = Maps[F.PartIdx].SecOff.find(F.OrigSec);
+      if (OffIt != Maps[F.PartIdx].SecOff.end())
+        partOff = OffIt->second;
+    }
 
     int64_t delta = (int64_t)(mergedAddr + partOff) - (int64_t)origAddr;
     if (delta == 0)

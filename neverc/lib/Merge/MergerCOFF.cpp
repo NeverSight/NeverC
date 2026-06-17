@@ -111,6 +111,7 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   struct PerPartition {
     DenseMap<unsigned, unsigned> SecMap;
     DenseMap<unsigned, unsigned> SymMap;
+    DenseMap<unsigned, uint64_t> SecOff;
   };
   SmallVector<PerPartition, 8> Maps;
 
@@ -202,6 +203,7 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       MS.PartOffsets.push_back({p, PartOffset});
       PM.SecMap[PartSecOrdinal] = MIdx + 1;
+      PM.SecOff[PartSecOrdinal] = PartOffset;
 
       for (const auto &R : Sec.relocations()) {
         coff_relocation CR;
@@ -256,14 +258,9 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         auto It = PM.SecMap.find(SecNum);
         if (It != PM.SecMap.end() && It->second != 0) {
           OutSym.SectionNumber = It->second;
-          unsigned mIdx = It->second - 1;
-          if (mIdx < MergedSections.size()) {
-            for (auto &[pp, off] : MergedSections[mIdx].PartOffsets)
-              if (pp == p) {
-                OutSym.Value += off;
-                break;
-              }
-          }
+          auto OffIt = PM.SecOff.find(SecNum);
+          if (OffIt != PM.SecOff.end())
+            OutSym.Value += OffIt->second;
         } else {
           OutSym.SectionNumber = 0;
         }

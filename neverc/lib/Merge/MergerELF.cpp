@@ -173,6 +173,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   struct PerPartition {
     DenseMap<unsigned, unsigned> SecMap;
     DenseMap<unsigned, unsigned> SymMap;
+    DenseMap<unsigned, uint64_t> SecOff;
   };
   SmallVector<PerPartition, 8> Maps;
 
@@ -321,6 +322,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       MS.PartOffsets.push_back({p, PartOffset});
       PM.SecMap[i] = MIdx + 1;
+      PM.SecOff[i] = PartOffset;
     }
 
     // ----- Phase 2: Merge symbols -----
@@ -344,15 +346,12 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         if (OutS.st_shndx < SHN_LORESERVE) {
           auto It = PM.SecMap.find(OutS.st_shndx);
           if (It != PM.SecMap.end()) {
+            unsigned origShndx = OutS.st_shndx;
             OutS.st_shndx = It->second;
             if (It->second != 0) {
-              unsigned mIdx = It->second - 1;
-              for (auto &[pp, off] : MergedSections[mIdx].PartOffsets) {
-                if (pp == p) {
-                  OutS.st_value += off;
-                  break;
-                }
-              }
+              auto OffIt = PM.SecOff.find(origShndx);
+              if (OffIt != PM.SecOff.end())
+                OutS.st_value += OffIt->second;
             }
           } else {
             OutS.st_shndx = 0;
@@ -405,11 +404,9 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         continue;
       unsigned targetMIdx = TargetIt->second - 1;
       uint64_t dataOff = 0;
-      for (auto &[pp, off] : MergedSections[targetMIdx].PartOffsets)
-        if (pp == p) {
-          dataOff = off;
-          break;
-        }
+      auto OffIt = PM.SecOff.find(Secs[i].sh_info);
+      if (OffIt != PM.SecOff.end())
+        dataOff = OffIt->second;
 
       if (Secs[i].sh_type == SHT_RELA) {
         auto R = EF.relas(Secs[i]);
