@@ -70,4 +70,42 @@ unsigned long _neverc_krt_cred_uid_base(void);
 int           _neverc_krt_get_kernel_ver(void);
 unsigned long _neverc_krt_get_file_dentry_off(void);
 
+/* ---- Shared inline string helpers ---- */
+
+static __always_inline int _neverc_krt_str_starts_with(const char *str,
+						       const char *prefix)
+{
+	while (*prefix) {
+		if (*str != *prefix) return 0;
+		str++;
+		prefix++;
+	}
+	return 1;
+}
+
+static __always_inline int _neverc_krt_str_contains(const char *haystack,
+						    const char *needle)
+{
+	const char *h, *n;
+	if (!haystack || !needle || !*needle) return 0;
+	while (*haystack) {
+		h = haystack;
+		n = needle;
+		while (*h && *n && *h == *n) { h++; n++; }
+		if (!*n) return 1;
+		haystack++;
+	}
+	return 0;
+}
+
+static __always_inline int _neverc_krt_atoi(const char *s, int len)
+{
+	int val = 0, i;
+	for (i = 0; i < len; i++) {
+		if (s[i] < '0' || s[i] > '9') return -1;
+		val = val * 10 + (s[i] - '0');
+	}
+	return val;
+}
+
 #endif /* NEVERC_KRT_INTERNAL_H */

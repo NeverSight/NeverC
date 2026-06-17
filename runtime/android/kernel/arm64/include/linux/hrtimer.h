@@ -28,17 +28,18 @@ enum hrtimer_restart {
 };
 
 /*
- * Opaque hrtimer storage — actual sizeof(struct hrtimer) across GKI:
- *   5.10: ~96 bytes    5.15: ~96 bytes
- *   6.1:  ~104 bytes   6.6:  ~104 bytes   6.12: ~104 bytes
- * 128 bytes covers all versions with headroom.
+ * Opaque hrtimer storage — GKI arm64 (production, no debug):
+ *   timerqueue_node(32) + _softexpires(8) + function(8) + base(8) + 4×u8(4) + pad(4)
+ *   5.10/5.15: + ANDROID_KABI_RESERVE(8) = ~72 bytes
+ *   6.1/6.6/6.12: no KABI_RESERVE         = ~64 bytes
+ * 128 bytes covers all versions with generous headroom.
  */
 struct hrtimer {
 	unsigned char __opaque[128];
 };
 
-_Static_assert(sizeof(struct hrtimer) >= 104,
-	       "struct hrtimer too small for GKI 6.1+ arm64");
+_Static_assert(sizeof(struct hrtimer) >= 72,
+	       "struct hrtimer too small for GKI 5.10+ arm64");
 
 typedef enum hrtimer_restart (*hrtimer_func_t)(struct hrtimer *);
 
