@@ -137,7 +137,6 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     Shdr Template;
     SmallVector<char, 0> Data;
     SmallVector<RelocEntry, 0> Relocs;
-    SmallVector<std::pair<unsigned, uint64_t>, 4> PartOffsets;
     uint64_t VirtualSize = 0;
   };
   SmallVector<MergedSection, 32> MergedSections;
@@ -162,6 +161,17 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     MS.Template = S;
     MS.Template.sh_flags = Flags;
     MS.Template.sh_addralign = clampAlign(MS.Template.sh_addralign);
+    // sh_link/sh_info are regenerated for the metadata sections that use them
+    // (.symtab→.strtab, .rela.*→.symtab/target) during output, so a merged
+    // content section starts at 0.  SHF_LINK_ORDER sections (e.g.
+    // __patchable_function_entries, .ARM.exidx) carry an sh_link to their
+    // associated code section; after -r merge every such input collapses into
+    // one output section, so the per-input link is meaningless and sh_link=0
+    // (SHN_UNDEF) is the spec-legal "ordered, no required predecessor" value —
+    // harmless for a single merged section.  neverc's kernel modules don't emit
+    // these today (no default -fpatchable-function-entry; verified on the
+    // sample .ko), so link remapping is intentionally omitted until a real
+    // consumer exists to exercise it.
     MS.Template.sh_link = 0;
     MS.Template.sh_info = 0;
     unsigned NewIdx = MergedSections.size();
@@ -320,7 +330,6 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         }
       }
 
-      MS.PartOffsets.push_back({p, PartOffset});
       PM.SecMap[i] = MIdx + 1;
       PM.SecOff[i] = PartOffset;
     }
@@ -648,6 +657,24 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   for (unsigned i = 0; i < OutSections.size(); ++i)
     memcpy(OutBuf.data() + ShOff + i * sizeof(Shdr), &OutSections[i].Hdr,
            sizeof(Shdr));
+
+  // Self-verify before committing: an independent re-parse content-anchors
+  // every uniquely-named defined symbol back to its input bytes.  On any
+  // divergence we refuse to write the object and return false, so the caller
+  // falls back to the proven path (serial codegen) or errors loudly rather
+  // than emitting a valid-looking but semantically wrong .o.
+  if (Opts.verify) {
+    SmallVector<StringRef, 8> Views;
+    Views.reserve(Buffers.size());
+    for (const auto &B : Buffers)
+      Views.push_back(StringRef(B.data(), B.size()));
+    std::string VErr;
+    if (!verifyMerge(ArrayRef<StringRef>(Views), ArrayRef<char>(OutBuf),
+                     Format::ELF64LE, Opts, &VErr)) {
+      errs() << "neverc: relocatable merge self-check failed: " << VErr << "\n";
+      return false;
+    }
+  }
 
   OS.write(OutBuf.data(), OutBuf.size());
   return true;

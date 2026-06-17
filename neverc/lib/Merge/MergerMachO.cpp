@@ -47,7 +47,6 @@ namespace {
 template <typename BufT>
 bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
                       const Options &Opts) {
-  (void)Opts; // currently no MachO-specific flags consume Opts.
   using namespace llvm::object;
   namespace MO = llvm::MachO;
 
@@ -72,7 +71,10 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     SmallVector<char, 0> Data;
     SmallVector<RelocEntry, 0> Relocs;
     uint32_t Reserved1 = 0, Reserved2 = 0;
-    SmallVector<std::pair<unsigned, uint64_t>, 4> PartOffsets;
+    // Section attributes are taken from the first contributing partition and
+    // never clobbered by later ones (same-named sections from one LTO module
+    // share flags; for heterogeneous -r inputs the first wins, matching LLD).
+    bool Initialized = false;
     // For zerofill sections (S_ZEROFILL / S_GB_ZEROFILL /
     // S_THREAD_LOCAL_ZEROFILL): the section has no on-disk content but does
     // occupy memory. We track its memory size separately and never append
@@ -179,9 +181,12 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       const MO::section_64 &S64 = Obj.getSection64(Sec.getRawDataRefImpl());
 
-      MS.Flags = S64.flags;
-      MS.Reserved1 = S64.reserved1;
-      MS.Reserved2 = S64.reserved2;
+      if (!MS.Initialized) {
+        MS.Flags = S64.flags;
+        MS.Reserved1 = S64.reserved1;
+        MS.Reserved2 = S64.reserved2;
+        MS.Initialized = true;
+      }
       {
         constexpr uint32_t MaxAlignExp = 20;
         uint32_t SafeExp = std::min(S64.align, MaxAlignExp);
@@ -214,7 +219,6 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           MS.Data.append(ContentsOrErr->begin(), ContentsOrErr->end());
       }
 
-      MS.PartOffsets.push_back({p, PartOffset});
       PM.SecMap[PartSecOrdinal] = MIdx + 1;
       PM.OrigSecAddr[PartSecOrdinal] = S64.addr;
       PM.SecOff[PartSecOrdinal] = PartOffset;
@@ -493,6 +497,15 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       memcpy(&val, MS.Data.data() + addr, 4);
       val += (int32_t)delta;
       memcpy(MS.Data.data() + addr, &val, 4);
+    } else if (len == 2) {
+      uint16_t val;
+      memcpy(&val, MS.Data.data() + addr, 2);
+      val = (uint16_t)(val + (int16_t)delta);
+      memcpy(MS.Data.data() + addr, &val, 2);
+    } else if (len == 1) {
+      uint8_t val = (uint8_t)MS.Data[addr];
+      val = (uint8_t)(val + (int8_t)delta);
+      MS.Data[addr] = (char)val;
     }
   }
 
@@ -588,6 +601,21 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   memcpy(Out.data() + SymTabOff, FinalSyms.data(),
          FinalSyms.size() * sizeof(MO::nlist_64));
   memcpy(Out.data() + StrTabOff, StrTab.Data.data(), StrTabSz);
+
+  // Self-verify before committing (see MergerELF.cpp): the Mach-O check skips
+  // relocation sites, which the in-place fixups above legitimately rewrite.
+  if (Opts.verify) {
+    SmallVector<StringRef, 8> Views;
+    Views.reserve(Buffers.size());
+    for (const auto &B : Buffers)
+      Views.push_back(StringRef(B.data(), B.size()));
+    std::string VErr;
+    if (!verifyMerge(ArrayRef<StringRef>(Views), ArrayRef<char>(Out),
+                     Format::MachO64, Opts, &VErr)) {
+      errs() << "neverc: Mach-O merge self-check failed: " << VErr << "\n";
+      return false;
+    }
+  }
 
   OS.write(Out.data(), Out.size());
   return true;

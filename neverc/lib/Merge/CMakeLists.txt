@@ -9,6 +9,7 @@ add_neverc_library(nevercMerge
   MergerELF.cpp
   MergerMachO.cpp
   MergerCOFF.cpp
+  MergerVerify.cpp
 
   LINK_LIBS
   )

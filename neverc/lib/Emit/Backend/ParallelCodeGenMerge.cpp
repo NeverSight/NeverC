@@ -413,18 +413,40 @@ bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
       NonEmpty++;
       SingleIdx = i;
     }
-  if (NonEmpty <= 1) {
-    if (NonEmpty == 1)
-      OS.write(Results[SingleIdx].ObjBuffer.data(),
-               Results[SingleIdx].ObjBuffer.size());
+  if (NonEmpty == 1) {
+    // Exactly one partition produced an object — it is already a complete,
+    // self-contained .o (no cross-partition references to stitch), so emit it
+    // verbatim without invoking the merger.
+    OS.write(Results[SingleIdx].ObjBuffer.data(),
+             Results[SingleIdx].ObjBuffer.size());
     return true;
+  }
+  if (NonEmpty == 0) {
+    // Every partition reported success yet produced no bytes.  Codegen always
+    // emits at least a header, so this is never expected; rather than write an
+    // empty object, restore linkage and fail so lto::backend's serial fallback
+    // runs on a clean module.
+    restoreLinkage(Mod);
+    return false;
   }
 
   SmallVector<SmallVector<char, 0>, 8> Bufs;
   for (unsigned i = 0; i < NumPartitions; ++i)
     Bufs.push_back(std::move(Results[i].ObjBuffer));
 
-  return mergePartitionObjects(TT, Bufs, OS);
+  // A merge/verify failure must leave the module exactly as lto::backend's
+  // serial fallback expects: every symbol externalized for cross-partition
+  // references (the ".__pcg<hash>" rename to ExternalLinkage/HiddenVisibility)
+  // restored to its original local linkage, visibility, and name.  Without
+  // this, the deferred function-opt + serial codegen downstream would run on a
+  // polluted module and emit what should be local symbols as externalized
+  // ".__pcg" globals — the exact silent symbol-table corruption the merge
+  // verifier exists to refuse.  Mirrors the !AllOK restore above.
+  if (!mergePartitionObjects(TT, Bufs, OS)) {
+    restoreLinkage(Mod);
+    return false;
+  }
+  return true;
 }
 
 void ParallelCGContext::restoreLinkage(Module &Mod) {

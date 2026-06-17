@@ -44,7 +44,6 @@ namespace {
 template <typename BufT>
 bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
                    const Options &Opts) {
-  (void)Opts; // no COFF-specific tunables yet.
   using namespace llvm::object;
   using namespace llvm::COFF;
 
@@ -59,7 +58,6 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     uint32_t Alignment = 0;
     SmallVector<char, 0> Data;
     SmallVector<RelocEntry, 0> Relocs;
-    SmallVector<std::pair<unsigned, uint64_t>, 4> PartOffsets;
     uint64_t VirtualSize = 0;
     bool IsBSS = false;
   };
@@ -201,7 +199,6 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           MS.Data.append(ContentsOrErr->begin(), ContentsOrErr->end());
       }
 
-      MS.PartOffsets.push_back({p, PartOffset});
       PM.SecMap[PartSecOrdinal] = MIdx + 1;
       PM.SecOff[PartSecOrdinal] = PartOffset;
 
@@ -459,6 +456,21 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   Out.append(reinterpret_cast<const char *>(&StrTabSize),
              reinterpret_cast<const char *>(&StrTabSize) + 4);
   Out.append(StringTable.begin(), StringTable.end());
+
+  // Self-verify before committing (see MergerELF.cpp): refuse to write an
+  // object whose defined symbols do not byte-match the input they came from.
+  if (Opts.verify) {
+    SmallVector<StringRef, 8> Views;
+    Views.reserve(Buffers.size());
+    for (const auto &B : Buffers)
+      Views.push_back(StringRef(B.data(), B.size()));
+    std::string VErr;
+    if (!verifyMerge(ArrayRef<StringRef>(Views), ArrayRef<char>(Out),
+                     Format::COFF, Opts, &VErr)) {
+      errs() << "neverc: COFF merge self-check failed: " << VErr << "\n";
+      return false;
+    }
+  }
 
   OS.write(Out.data(), Out.size());
   return true;

@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <random>
@@ -603,6 +604,60 @@ ElfView parseELF(ArrayRef<char> Buf) {
   return V;
 }
 
+/// Overwrite a named symbol's st_value in a merged ELF, in place.  Used to
+/// *simulate* the historical "offset collapse" corruption so a test can prove
+/// the verifier rejects it (the merger no longer produces such output, so the
+/// only way to test the rejection path is to inject the bug after the fact).
+bool patchSymValue(SmallVectorImpl<char> &Buf, StringRef Name,
+                   uint64_t NewVal) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *H = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (H->e_shoff + (uint64_t)H->e_shnum * sizeof(Elf64_Shdr) > Buf.size())
+    return false;
+  auto *Secs = reinterpret_cast<Elf64_Shdr *>(Buf.data() + H->e_shoff);
+  for (unsigned i = 0; i < H->e_shnum; ++i) {
+    if (Secs[i].sh_type != SHT_SYMTAB)
+      continue;
+    if (Secs[i].sh_link >= H->e_shnum)
+      return false;
+    const char *StrD = Buf.data() + Secs[Secs[i].sh_link].sh_offset;
+    auto *Sy = reinterpret_cast<Elf64_Sym *>(Buf.data() + Secs[i].sh_offset);
+    unsigned Cnt = Secs[i].sh_size / sizeof(Elf64_Sym);
+    for (unsigned k = 0; k < Cnt; ++k)
+      if (Name == StrD + Sy[k].st_name) {
+        Sy[k].st_value = NewVal;
+        return true;
+      }
+  }
+  return false;
+}
+
+/// Force every relocation's r_offset to NewVal — simulates the reloc half of
+/// the offset-collapse bug without touching symbol values.
+bool patchAllRelaOffsets(SmallVectorImpl<char> &Buf, uint64_t NewVal) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *H = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (H->e_shoff + (uint64_t)H->e_shnum * sizeof(Elf64_Shdr) > Buf.size())
+    return false;
+  auto *Secs = reinterpret_cast<Elf64_Shdr *>(Buf.data() + H->e_shoff);
+  bool Any = false;
+  for (unsigned i = 0; i < H->e_shnum; ++i) {
+    if (Secs[i].sh_type != SHT_RELA)
+      continue;
+    auto *R = reinterpret_cast<Elf64_Rela *>(Buf.data() + Secs[i].sh_offset);
+    unsigned N = Secs[i].sh_size / sizeof(Elf64_Rela);
+    for (unsigned k = 0; k < N; ++k) {
+      R[k].r_offset = NewVal;
+      Any = true;
+    }
+  }
+  return Any;
+}
+
 // ---------------------------------------------------------------------------
 // COFF semantic helpers.  coff_symbol16 is an 18-byte on-disk record but the
 // C++ struct can be padded, so build/parse with explicit little-endian byte
@@ -630,6 +685,7 @@ struct CoffSecSpec {
   std::string Name; // <= 8 chars for these tests
   uint32_t Size;
   uint32_t Characteristics;
+  uint8_t Fill = 0; // non-zero => fill non-BSS content with this byte
 };
 struct CoffSymSpec {
   std::string Name; // <= 8 chars
@@ -712,7 +768,7 @@ SmallVector<char, 0> buildCOFF(uint16_t Machine, ArrayRef<CoffSecSpec> Secs,
     bool IsBSS =
         (Secs[i].Characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA) != 0;
     if (!IsBSS && Secs[i].Size > 0)
-      Buf.append(Secs[i].Size, '\0');
+      Buf.append(Secs[i].Size, (char)Secs[i].Fill);
   }
   for (unsigned i = 0; i < N; ++i)
     for (auto &R : RelTab[i]) {
@@ -845,6 +901,76 @@ CoffView parseCOFF(ArrayRef<char> Buf) {
   return V;
 }
 
+/// Overwrite a named COFF symbol's Value in place — the COFF analogue of
+/// patchSymValue, used to simulate offset-collapse corruption for the verifier.
+bool patchCoffSymValue(SmallVectorImpl<char> &Buf, StringRef Name,
+                       uint32_t NewVal) {
+  if (Buf.size() < 20)
+    return false;
+  uint32_t SymOff = getU32(Buf.data() + 8);
+  uint32_t NSym = getU32(Buf.data() + 12);
+  if (SymOff == 0 || SymOff + (uint64_t)NSym * 18 > Buf.size())
+    return false;
+  uint32_t StrOff = SymOff + NSym * 18;
+  const char *StrTab = (StrOff + 4 <= Buf.size()) ? Buf.data() + StrOff : nullptr;
+  uint32_t StrSize = StrTab ? getU32(StrTab) : 0;
+  unsigned k = 0;
+  while (k < NSym) {
+    char *S = Buf.data() + SymOff + k * 18;
+    std::string Nm;
+    if (getU32(S) == 0) {
+      uint32_t O = getU32(S + 4);
+      if (StrTab && O < StrSize)
+        Nm = std::string(StrTab + O);
+    } else {
+      char T[9] = {0};
+      memcpy(T, S, 8);
+      Nm = std::string(T);
+    }
+    uint8_t NAux = (uint8_t)S[17];
+    if (Name == Nm) {
+      S[8] = (char)(NewVal & 0xff);
+      S[9] = (char)((NewVal >> 8) & 0xff);
+      S[10] = (char)((NewVal >> 16) & 0xff);
+      S[11] = (char)((NewVal >> 24) & 0xff);
+      return true;
+    }
+    k += 1u + NAux;
+  }
+  return false;
+}
+
+/// Force every COFF relocation's VirtualAddress to NewVal — simulates the
+/// relocation half of the offset-collapse bug for the COFF verifier.
+bool patchAllCoffRelocVAs(SmallVectorImpl<char> &Buf, uint32_t NewVal) {
+  if (Buf.size() < 20)
+    return false;
+  unsigned N = getU16(Buf.data() + 2);
+  uint16_t OptSize = getU16(Buf.data() + 16);
+  uint64_t SecBase = 20ull + OptSize;
+  if (SecBase + (uint64_t)N * 40 > Buf.size())
+    return false;
+  bool Any = false;
+  for (unsigned i = 0; i < N; ++i) {
+    const char *H = Buf.data() + SecBase + i * 40;
+    uint32_t RelPtr = getU32(H + 24);
+    uint16_t NRel = getU16(H + 32);
+    if (RelPtr == 0 || NRel == 0)
+      continue;
+    if ((uint64_t)RelPtr + (uint64_t)NRel * 10 > Buf.size())
+      continue;
+    for (unsigned r = 0; r < NRel; ++r) {
+      char *R = Buf.data() + RelPtr + r * 10;
+      R[0] = (char)(NewVal & 0xff);
+      R[1] = (char)((NewVal >> 8) & 0xff);
+      R[2] = (char)((NewVal >> 16) & 0xff);
+      R[3] = (char)((NewVal >> 24) & 0xff);
+      Any = true;
+    }
+  }
+  return Any;
+}
+
 // ---------------------------------------------------------------------------
 // Mach-O semantic helpers.  The Mach-O structs in BinaryFormat/MachO.h match
 // the on-disk layout, and host + target are little-endian here, so the merger
@@ -857,6 +983,7 @@ struct MachoSecSpec {
   uint64_t Size;
   uint32_t AlignExp; // power-of-two exponent (4 => 16-byte)
   uint32_t Flags;
+  uint8_t Fill = 0; // non-zero => fill section content with this byte
 };
 struct MachoSymSpec {
   std::string Name;
@@ -865,10 +992,18 @@ struct MachoSymSpec {
   uint64_t Value; // section-relative offset for defined symbols
   uint16_t Desc;
 };
+struct MachoRelSpec {
+  int SecIdx;          // 0-based section the relocation applies to
+  uint32_t Address;    // section-relative offset of the relocation site
+  std::string SymName; // target symbol (extern relocation)
+  uint8_t Type;
+  uint8_t Length;      // log2 byte size (2 => 4 bytes, 3 => 8 bytes)
+};
 
 SmallVector<char, 0> buildMachO(uint32_t CpuType, uint32_t CpuSubType,
                                 ArrayRef<MachoSecSpec> Secs,
-                                ArrayRef<MachoSymSpec> Syms) {
+                                ArrayRef<MachoSymSpec> Syms,
+                                ArrayRef<MachoRelSpec> Rels = {}) {
   namespace MO = llvm::MachO;
   unsigned N = Secs.size();
   uint32_t SegCmdSize =
@@ -887,6 +1022,21 @@ SmallVector<char, 0> buildMachO(uint32_t CpuType, uint32_t CpuSubType,
     Off += Secs[i].Size;
   }
   uint64_t FileSizeSecs = Off - DataStart;
+
+  // Per-section relocation tables (8 bytes each), grouped by section and laid
+  // out after section content (link-edit data, outside the segment vmsize).
+  SmallVector<SmallVector<MachoRelSpec, 4>, 8> RelBySec(N);
+  for (auto &R : Rels)
+    if (R.SecIdx >= 0 && (unsigned)R.SecIdx < N)
+      RelBySec[R.SecIdx].push_back(R);
+  SmallVector<uint32_t, 8> RelOff(N, 0);
+  for (unsigned i = 0; i < N; ++i)
+    if (!RelBySec[i].empty()) {
+      Off = (Off + 3) & ~(uint64_t)3;
+      RelOff[i] = (uint32_t)Off;
+      Off += RelBySec[i].size() * 8;
+    }
+
   Off = (Off + 7) & ~(uint64_t)7;
   uint64_t SymOff = Off;
 
@@ -912,6 +1062,11 @@ SmallVector<char, 0> buildMachO(uint32_t CpuType, uint32_t CpuSubType,
 
   SmallVector<char, 0> Buf;
   Buf.resize(Off, 0);
+
+  // Section content (so the verifier's content anchor is meaningful).
+  for (unsigned i = 0; i < N; ++i)
+    if (Secs[i].Fill != 0)
+      memset(Buf.data() + SecOff[i], Secs[i].Fill, Secs[i].Size);
 
   auto *MH = reinterpret_cast<MO::mach_header_64 *>(Buf.data());
   MH->magic = MO::MH_MAGIC_64;
@@ -949,8 +1104,8 @@ SmallVector<char, 0> buildMachO(uint32_t CpuType, uint32_t CpuSubType,
     SH[i].size = Secs[i].Size;
     SH[i].offset = (uint32_t)SecOff[i];
     SH[i].align = Secs[i].AlignExp;
-    SH[i].reloff = 0;
-    SH[i].nreloc = 0;
+    SH[i].reloff = RelOff[i];
+    SH[i].nreloc = (uint32_t)RelBySec[i].size();
     SH[i].flags = Secs[i].Flags;
   }
 
@@ -963,6 +1118,28 @@ SmallVector<char, 0> buildMachO(uint32_t CpuType, uint32_t CpuSubType,
   SymCmd->nsyms = NList.size();
   SymCmd->stroff = (uint32_t)StrOff;
   SymCmd->strsize = (uint32_t)StrTab.size();
+
+  // Relocation entries (non-scattered: r_address i32, then packed word
+  // symbolnum:24, pcrel:1, length:2, extern:1, type:4 — always extern here).
+  {
+    StringMap<unsigned> SymIdx;
+    for (unsigned i = 0; i < Syms.size(); ++i)
+      SymIdx[Syms[i].Name] = i;
+    for (unsigned i = 0; i < N; ++i)
+      for (unsigned r = 0; r < RelBySec[i].size(); ++r) {
+        const MachoRelSpec &R = RelBySec[i][r];
+        unsigned Sym = 0;
+        auto It = SymIdx.find(R.SymName);
+        if (It != SymIdx.end())
+          Sym = It->second;
+        char *P = Buf.data() + RelOff[i] + r * 8;
+        uint32_t Addr = R.Address;
+        memcpy(P, &Addr, 4);
+        uint32_t W = (Sym & 0xFFFFFFu) | (((uint32_t)R.Length & 0x3u) << 25) |
+                     (1u << 27) | ((uint32_t)R.Type << 28);
+        memcpy(P + 4, &W, 4);
+      }
+  }
 
   if (!NList.empty())
     memcpy(Buf.data() + SymOff, NList.data(),
@@ -1059,6 +1236,73 @@ MachoView parseMachO(ArrayRef<char> Buf) {
   }
   V.Ok = true;
   return V;
+}
+
+/// Overwrite a named Mach-O symbol's n_value in place — the Mach-O analogue of
+/// patchSymValue, used to simulate offset-collapse corruption for the verifier.
+bool patchMachoSymValue(SmallVectorImpl<char> &Buf, StringRef Name,
+                        uint64_t NewVal) {
+  namespace MO = llvm::MachO;
+  if (Buf.size() < sizeof(MO::mach_header_64))
+    return false;
+  auto *MH = reinterpret_cast<MO::mach_header_64 *>(Buf.data());
+  uint64_t Cmd = sizeof(MO::mach_header_64);
+  for (unsigned c = 0; c < MH->ncmds; ++c) {
+    if (Cmd + sizeof(MO::load_command) > Buf.size())
+      return false;
+    auto *LC = reinterpret_cast<MO::load_command *>(Buf.data() + Cmd);
+    if (LC->cmd == MO::LC_SYMTAB) {
+      auto *SC = reinterpret_cast<MO::symtab_command *>(Buf.data() + Cmd);
+      const char *Str = Buf.data() + SC->stroff;
+      for (unsigned i = 0; i < SC->nsyms; ++i) {
+        auto *NL = reinterpret_cast<MO::nlist_64 *>(
+            Buf.data() + SC->symoff + i * sizeof(MO::nlist_64));
+        if (NL->n_strx < SC->strsize && Name == (Str + NL->n_strx)) {
+          NL->n_value = NewVal;
+          return true;
+        }
+      }
+    }
+    Cmd += LC->cmdsize;
+    if (LC->cmdsize == 0)
+      break;
+  }
+  return false;
+}
+
+/// Force every Mach-O relocation's r_address to NewVal — simulates the reloc
+/// half of the offset-collapse bug for the Mach-O verifier.
+bool patchAllMachoRelocAddrs(SmallVectorImpl<char> &Buf, uint32_t NewVal) {
+  namespace MO = llvm::MachO;
+  if (Buf.size() < sizeof(MO::mach_header_64))
+    return false;
+  auto *MH = reinterpret_cast<MO::mach_header_64 *>(Buf.data());
+  uint64_t Cmd = sizeof(MO::mach_header_64);
+  bool Any = false;
+  for (unsigned c = 0; c < MH->ncmds; ++c) {
+    if (Cmd + sizeof(MO::load_command) > Buf.size())
+      break;
+    auto *LC = reinterpret_cast<MO::load_command *>(Buf.data() + Cmd);
+    if (LC->cmd == MO::LC_SEGMENT_64) {
+      auto *Seg = reinterpret_cast<MO::segment_command_64 *>(Buf.data() + Cmd);
+      char *SP = Buf.data() + Cmd + sizeof(MO::segment_command_64);
+      for (unsigned i = 0; i < Seg->nsects; ++i) {
+        auto *S =
+            reinterpret_cast<MO::section_64 *>(SP + i * sizeof(MO::section_64));
+        if (S->reloff == 0 || S->nreloc == 0)
+          continue;
+        if ((uint64_t)S->reloff + (uint64_t)S->nreloc * 8 > Buf.size())
+          continue;
+        for (unsigned r = 0; r < S->nreloc; ++r)
+          memcpy(Buf.data() + S->reloff + r * 8, &NewVal, 4);
+        Any = true;
+      }
+    }
+    Cmd += LC->cmdsize;
+    if (LC->cmdsize == 0)
+      break;
+  }
+  return Any;
 }
 
 } // namespace
@@ -1485,11 +1729,13 @@ TEST(MergeELFSemantic, RandomizedLayoutOracle) {
     uint64_t CurSize[4] = {0, 0, 0, 0};
     uint32_t CurAlign[4] = {1, 1, 1, 1};
     std::vector<std::pair<std::string, uint64_t>> Expected;
+    std::vector<uint64_t> ExpectedRelOffs;
 
     SmallVector<SmallVector<char, 0>, 4> Bufs;
     for (unsigned p = 0; p < NP; ++p) {
       std::vector<SecSpec> Secs;
       std::vector<SymSpec> Syms;
+      std::vector<RelSpec> Rels;
       unsigned NS = 1 + (Rng() % 4);
       for (unsigned s = 0; s < NS; ++s) {
         unsigned g = Rng() % 4;
@@ -1498,8 +1744,14 @@ TEST(MergeELFSemantic, RandomizedLayoutOracle) {
         std::string Nm = std::string(Groups[g].Name) + "." +
                          std::to_string(p) + "_" + std::to_string(s);
         unsigned SecIdx = Secs.size();
-        Secs.push_back(
-            SecSpec{Nm, Size, Align, Groups[g].Type, Groups[g].Flags});
+        // Distinct non-zero fill per content section so the verifier's
+        // content anchor is meaningful (a mis-shifted symbol would read a
+        // different section's fill byte).
+        uint8_t Fill = Groups[g].Type == ELF::SHT_NOBITS
+                           ? 0
+                           : (uint8_t)(1 + ((p * 7 + s * 3 + g) & 0x7e));
+        Secs.push_back(SecSpec{Nm, Size, Align, Groups[g].Type,
+                               Groups[g].Flags, Fill});
 
         // Oracle: mirror the merger's running-max-align + pad + append.
         if (Align > CurAlign[g])
@@ -1516,8 +1768,18 @@ TEST(MergeELFSemantic, RandomizedLayoutOracle) {
           Syms.push_back(SymSpec{SN, (int)SecIdx, SOff, true});
           Expected.push_back({SN, Base + SOff});
         }
+
+        // Optionally drop a relocation into this content-bearing section and
+        // predict its merged offset, so reloc-offset collapse is caught too.
+        if (Groups[g].Type != ELF::SHT_NOBITS && (Rng() % 2)) {
+          uint64_t RO = Rng() % Size;
+          std::string Anchor =
+              "s_" + std::to_string(p) + "_" + std::to_string(s) + "_0";
+          Rels.push_back(RelSpec{(int)SecIdx, RO, Anchor, ELF::R_X86_64_64, 0});
+          ExpectedRelOffs.push_back(Base + RO);
+        }
       }
-      Bufs.push_back(buildSectionedELF(Secs, Syms, {}));
+      Bufs.push_back(buildSectionedELF(Secs, Syms, Rels));
     }
 
     Options Opts;
@@ -1532,7 +1794,112 @@ TEST(MergeELFSemantic, RandomizedLayoutOracle) {
       EXPECT_EQ(PS->Value, E.second)
           << "trial " << Trial << " sym " << E.first;
     }
+
+    // Every relocation's merged offset must equal its independently predicted
+    // base+offset; the historical bug collapsed these to (near) zero.
+    std::vector<uint64_t> ActualRelOffs;
+    for (auto &R : V.Relas)
+      ActualRelOffs.push_back(R.Offset);
+    std::sort(ExpectedRelOffs.begin(), ExpectedRelOffs.end());
+    std::sort(ActualRelOffs.begin(), ActualRelOffs.end());
+    ASSERT_EQ(ActualRelOffs.size(), ExpectedRelOffs.size()) << "trial " << Trial;
+    for (size_t i = 0; i < ExpectedRelOffs.size(); ++i)
+      EXPECT_EQ(ActualRelOffs[i], ExpectedRelOffs[i])
+          << "trial " << Trial << " reloc " << i;
+
+    // The independent verifier must accept every random valid layout (proves
+    // it has no false positives across hundreds of shapes).
+    std::string VErr;
+    EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                            ArrayRef<char>(Out), Format::ELF64LE, Opts, &VErr))
+        << "trial " << Trial << ": " << VErr;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Verifier tests — prove the independent post-merge self-check accepts a sound
+// merge and *rejects* the exact corruption class that shipped before (symbol
+// offset collapse), which the merger now refuses to emit.
+// ---------------------------------------------------------------------------
+
+TEST(MergeELFVerify, AcceptsGoodMergeRejectsCollapse) {
+  using namespace ELF;
+  // Distinct fill bytes so a mis-placed symbol reads the wrong section's code.
+  SecSpec S0{".text", 0x20, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xAA};
+  SecSpec S1{".text", 0x20, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xBB};
+  SymSpec FA{"fa", 0, 0, true};
+  SymSpec FB{"fb", 0, 0, true};
+  auto O0 = buildSectionedELF({S0}, {FA}, {});
+  auto O1 = buildSectionedELF({S1}, {FB}, {});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  auto [OK, Out] = mergeELF(Bufs); // internal verify must already pass
+  ASSERT_TRUE(OK);
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::ELF64LE, {}, &Err))
+      << Err;
+
+  // Sanity: fb really landed past partition 0's .text.
+  {
+    ElfView V = parseELF(Out);
+    const ParsedSym *PFB = V.findSym("fb");
+    ASSERT_NE(PFB, nullptr);
+    EXPECT_EQ(PFB->Value, 0x20u);
+  }
+
+  // Collapse fb to offset 0 (the historical bug): its content window now reads
+  // partition 0's 0xAA bytes instead of its own 0xBB → must be rejected.
+  auto Collapsed = Out;
+  ASSERT_TRUE(patchSymValue(Collapsed, "fb", 0x0));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Collapsed), Format::ELF64LE, {}, &Err))
+      << "verifier accepted a collapsed symbol offset";
+
+  // Out-of-bounds value → the other rejection path.
+  auto OOB = Out;
+  ASSERT_TRUE(patchSymValue(OOB, "fb", 0x9999));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(OOB), Format::ELF64LE, {}, &Err))
+      << "verifier accepted an out-of-bounds symbol value";
+}
+
+TEST(MergeELFVerify, CatchesCollapsedRelocOffset) {
+  using namespace ELF;
+  // Each partition defines a function spanning its .text and relocates against
+  // an undefined "ext" at offset 0x10.  After merge the relocations sit at
+  // 0x10 (p0) and 0x50 (p1); collapsing them to 0 must be caught even though
+  // the symbols themselves are still correct.
+  SecSpec S0{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xAA};
+  SecSpec S1{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xBB};
+  SymSpec F0{"f0", 0, 0, true};
+  SymSpec F1{"f1", 0, 0, true};
+  SymSpec Ext{"ext", -1, 0, true};
+  RelSpec R0{0, 0x10, "ext", R_X86_64_PLT32, 0};
+  RelSpec R1{0, 0x10, "ext", R_X86_64_PLT32, 0};
+  auto O0 = buildSectionedELF({S0}, {F0, Ext}, {R0});
+  auto O1 = buildSectionedELF({S1}, {F1, Ext}, {R1});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  auto [OK, Out] = mergeELF(Bufs);
+  ASSERT_TRUE(OK);
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::ELF64LE, {}, &Err))
+      << Err;
+
+  ASSERT_TRUE(patchAllRelaOffsets(Out, 0x0));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Out), Format::ELF64LE, {}, &Err))
+      << "verifier accepted collapsed relocation offsets";
 }
 
 // ---------------------------------------------------------------------------
@@ -1602,6 +1969,172 @@ TEST(MergeCOFFSemantic, BssSectionsMergeByVirtualSize) {
   EXPECT_EQ(PV1->Value, 0x30u); // shifted past partition 0's .bss
 }
 
+TEST(MergeCOFFSemantic, RandomizedLayoutOracle) {
+  // COFF analogue of MergeELFSemantic.RandomizedLayoutOracle: random
+  // multi-partition layouts with an independent concatenate-and-align oracle
+  // predicting every symbol's merged Value.  COFF folds sections by
+  // (name, content-class) and tracks a running max alignment, so the oracle
+  // mirrors exactly that.  Any divergence in the merger's offset math for any
+  // shape — not just the hand-picked ones above — fails here.
+  using namespace COFF;
+  struct Group {
+    const char *Name;
+    uint32_t Chars;
+    bool IsBSS;
+  };
+  const Group Groups[4] = {
+      {".text", IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ,
+       false},
+      {".data",
+       IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE,
+       false},
+      {".rdata", IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ, false},
+      {".bss",
+       IMAGE_SCN_CNT_UNINITIALIZED_DATA | IMAGE_SCN_MEM_READ |
+           IMAGE_SCN_MEM_WRITE,
+       true},
+  };
+
+  std::mt19937 Rng(0xB0BACAFEu);
+  for (int Trial = 0; Trial < 300; ++Trial) {
+    unsigned NP = 1 + (Rng() % 3);
+    uint64_t CurSize[4] = {0, 0, 0, 0};
+    uint32_t CurAlign[4] = {1, 1, 1, 1};
+    std::vector<std::pair<std::string, uint64_t>> Expected;
+
+    SmallVector<SmallVector<char, 0>, 4> Bufs;
+    for (unsigned p = 0; p < NP; ++p) {
+      std::vector<CoffSecSpec> Secs;
+      std::vector<CoffSymSpec> Syms;
+      for (unsigned g = 0; g < 4; ++g) {
+        if (Rng() % 3 == 0)
+          continue; // a partition may lack a group
+        unsigned AlignExp = Rng() % 7; // 1..64
+        uint32_t Align = 1u << AlignExp;
+        uint64_t Size = 1 + (Rng() % 0x200);
+        uint32_t Chars = Groups[g].Chars | ((AlignExp + 1) << 20);
+        unsigned SecIdx = Secs.size();
+        uint8_t Fill =
+            Groups[g].IsBSS ? 0 : (uint8_t)(1 + ((p * 7 + g * 3) & 0x7e));
+        Secs.push_back(CoffSecSpec{Groups[g].Name, (uint32_t)Size, Chars, Fill});
+
+        if (Align > CurAlign[g])
+          CurAlign[g] = Align;
+        uint64_t Pad = (CurAlign[g] - (CurSize[g] % CurAlign[g])) % CurAlign[g];
+        uint64_t Base = CurSize[g] + Pad;
+        CurSize[g] = Base + Size;
+
+        unsigned NSym = 1 + (Rng() % 3);
+        for (unsigned k = 0; k < NSym; ++k) {
+          uint64_t SOff = Rng() % Size;
+          std::string SN = "s_" + std::to_string(p) + "_" + std::to_string(g) +
+                           "_" + std::to_string(k);
+          Syms.push_back(CoffSymSpec{SN, (uint32_t)SOff, (int16_t)(1 + SecIdx),
+                                     IMAGE_SYM_CLASS_EXTERNAL});
+          Expected.push_back({SN, Base + SOff});
+        }
+      }
+      Bufs.push_back(buildCOFF(IMAGE_FILE_MACHINE_AMD64, Secs, Syms, {}));
+    }
+
+    SmallVector<char, 0> Out;
+    raw_svector_ostream OS(Out);
+    ASSERT_TRUE(mergeObjects(Bufs, OS, Format::COFF)) << "trial " << Trial;
+    CoffView V = parseCOFF(Out);
+    ASSERT_TRUE(V.Ok) << "trial " << Trial;
+    for (auto &E : Expected) {
+      const CoffParsedSym *PS = V.findSym(E.first);
+      ASSERT_NE(PS, nullptr) << "trial " << Trial << " sym " << E.first;
+      EXPECT_EQ(PS->Value, E.second) << "trial " << Trial << " sym " << E.first;
+    }
+    std::string VErr;
+    EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                            ArrayRef<char>(Out), Format::COFF, {}, &VErr))
+        << "trial " << Trial << ": " << VErr;
+  }
+}
+
+TEST(MergeCOFFVerify, AcceptsGoodMergeRejectsCollapse) {
+  using namespace COFF;
+  uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
+                       IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
+  CoffSecSpec S0{".text", 0x40, TextChars, 0xAA};
+  CoffSecSpec S1{".text", 0x20, TextChars, 0xBB};
+  CoffSymSpec FA{"fa", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec FB{"fb", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  auto O0 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {FA}, {});
+  auto O1 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S1}, {FB}, {});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  ASSERT_TRUE(mergeObjects(Bufs, OS, Format::COFF)); // internal verify passes
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::COFF, {}, &Err))
+      << Err;
+  {
+    CoffView V = parseCOFF(Out);
+    const CoffParsedSym *PFB = V.findSym("fb");
+    ASSERT_NE(PFB, nullptr);
+    EXPECT_EQ(PFB->Value, 0x40u);
+  }
+
+  // Collapse fb to 0: content at 0 is partition 0's 0xAA, not fb's 0xBB.
+  auto Collapsed = Out;
+  ASSERT_TRUE(patchCoffSymValue(Collapsed, "fb", 0x0));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Collapsed), Format::COFF, {}, &Err))
+      << "COFF verifier accepted a collapsed symbol offset";
+
+  auto OOB = Out;
+  ASSERT_TRUE(patchCoffSymValue(OOB, "fb", 0x9999));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(OOB), Format::COFF, {}, &Err))
+      << "COFF verifier accepted an out-of-bounds symbol value";
+}
+
+TEST(MergeCOFFVerify, CatchesCollapsedRelocOffset) {
+  using namespace COFF;
+  uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
+                       IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
+  // Each partition: a function spanning its .text and a relocation against the
+  // undefined "ext" at offset 0x10.  After merge the relocs sit at 0x10 (p0)
+  // and 0x50 (p1, shifted past p0's 0x40 .text); collapsing them to 0 must be
+  // caught even though the symbols themselves stay correct.
+  CoffSecSpec S0{".text", 0x40, TextChars, 0xAA};
+  CoffSecSpec S1{".text", 0x40, TextChars, 0xBB};
+  CoffSymSpec F0{"f0", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec F1{"f1", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec Ext{"ext", 0, 0, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffRelSpec R0{0, 0x10, "ext", (uint16_t)IMAGE_REL_AMD64_REL32};
+  CoffRelSpec R1{0, 0x10, "ext", (uint16_t)IMAGE_REL_AMD64_REL32};
+  auto O0 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {F0, Ext}, {R0});
+  auto O1 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S1}, {F1, Ext}, {R1});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  ASSERT_TRUE(mergeObjects(Bufs, OS, Format::COFF));
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::COFF, {}, &Err))
+      << Err;
+
+  ASSERT_TRUE(patchAllCoffRelocVAs(Out, 0x0));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Out), Format::COFF, {}, &Err))
+      << "COFF verifier accepted collapsed relocation offsets";
+}
+
 // ---------------------------------------------------------------------------
 // Mach-O semantic tests — same invariant on the Darwin object path, where the
 // symbol n_value fix-up (section-relative → segment-relative) lived.
@@ -1669,6 +2202,186 @@ TEST(MergeMachOSemantic, ZerofillSectionsMergeByVirtualSize) {
   const MachoParsedSym *PV1 = V.findSym("_v1");
   ASSERT_NE(PV1, nullptr);
   EXPECT_EQ(PV1->Value - Bss->Addr, 0x30u); // shifted past partition 0's zerofill
+}
+
+TEST(MergeMachOSemantic, RandomizedLayoutOracle) {
+  // Mach-O analogue of the ELF/COFF randomized oracle.  Mach-O folds by
+  // (segment, section) and tracks a running max align *exponent*; n_value in
+  // the merged object is segment-relative, so the check subtracts the merged
+  // section address to recover the predicted section-relative offset.
+  namespace MO = llvm::MachO;
+  struct Group {
+    const char *Seg;
+    const char *Sect;
+    uint32_t Flags;
+    bool IsZf;
+  };
+  const Group Groups[4] = {
+      {"__TEXT", "__text",
+       MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS, false},
+      {"__DATA", "__data", 0, false},
+      {"__TEXT", "__const", 0, false},
+      {"__DATA", "__bss", MO::S_ZEROFILL, true},
+  };
+  struct ExpSym {
+    std::string Name;
+    unsigned Group;
+    uint64_t Rel;
+  };
+
+  std::mt19937 Rng(0xD00DFEEDu);
+  for (int Trial = 0; Trial < 300; ++Trial) {
+    unsigned NP = 1 + (Rng() % 3);
+    uint64_t CurSize[4] = {0, 0, 0, 0};
+    uint32_t CurAlignExp[4] = {0, 0, 0, 0};
+    std::vector<ExpSym> Expected;
+
+    SmallVector<SmallVector<char, 0>, 4> Bufs;
+    for (unsigned p = 0; p < NP; ++p) {
+      std::vector<MachoSecSpec> Secs;
+      std::vector<MachoSymSpec> Syms;
+      for (unsigned g = 0; g < 4; ++g) {
+        if (Rng() % 3 == 0)
+          continue;
+        uint32_t AlignExp = Rng() % 7;
+        uint64_t Size = 1 + (Rng() % 0x200);
+        unsigned SecIdx = Secs.size();
+        uint8_t Fill =
+            Groups[g].IsZf ? 0 : (uint8_t)(1 + ((p * 7 + g * 3) & 0x7e));
+        Secs.push_back(MachoSecSpec{Groups[g].Seg, Groups[g].Sect, Size,
+                                    AlignExp, Groups[g].Flags, Fill});
+
+        if (AlignExp > CurAlignExp[g])
+          CurAlignExp[g] = AlignExp;
+        uint64_t A = 1ull << CurAlignExp[g];
+        uint64_t Pad = (A - (CurSize[g] % A)) % A;
+        uint64_t Base = CurSize[g] + Pad;
+        CurSize[g] = Base + Size;
+
+        unsigned NSym = 1 + (Rng() % 3);
+        for (unsigned k = 0; k < NSym; ++k) {
+          uint64_t SOff = Rng() % Size;
+          std::string SN = "_s_" + std::to_string(p) + "_" +
+                           std::to_string(g) + "_" + std::to_string(k);
+          Syms.push_back(MachoSymSpec{SN, (uint8_t)(MO::N_SECT | MO::N_EXT),
+                                      (uint8_t)(1 + SecIdx), SOff, 0});
+          Expected.push_back({SN, g, Base + SOff});
+        }
+      }
+      Bufs.push_back(buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL,
+                                Secs, Syms));
+    }
+
+    SmallVector<char, 0> Out;
+    raw_svector_ostream OS(Out);
+    ASSERT_TRUE(mergeObjects(Bufs, OS, Format::MachO64)) << "trial " << Trial;
+    MachoView V = parseMachO(Out);
+    ASSERT_TRUE(V.Ok) << "trial " << Trial;
+    for (auto &E : Expected) {
+      const MachoParsedSym *PS = V.findSym(E.Name);
+      ASSERT_NE(PS, nullptr) << "trial " << Trial << " sym " << E.Name;
+      const MachoParsedSec *Sec =
+          V.findSec(Groups[E.Group].Seg, Groups[E.Group].Sect);
+      ASSERT_NE(Sec, nullptr) << "trial " << Trial << " sec for " << E.Name;
+      EXPECT_EQ(PS->Value - Sec->Addr, E.Rel)
+          << "trial " << Trial << " sym " << E.Name;
+    }
+    std::string VErr;
+    EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                            ArrayRef<char>(Out), Format::MachO64, {}, &VErr))
+        << "trial " << Trial << ": " << VErr;
+  }
+}
+
+TEST(MergeMachOVerify, AcceptsGoodMergeRejectsCollapse) {
+  namespace MO = llvm::MachO;
+  uint32_t TextFlags =
+      MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
+  MachoSecSpec S0{"__TEXT", "__text", 0x40, 4, TextFlags, 0xAA};
+  MachoSecSpec S1{"__TEXT", "__text", 0x20, 4, TextFlags, 0xBB};
+  uint8_t DefExt = MO::N_SECT | MO::N_EXT;
+  MachoSymSpec FA{"_fa", DefExt, 1, 0, 0};
+  MachoSymSpec FB{"_fb", DefExt, 1, 0, 0};
+  auto O0 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0}, {FA});
+  auto O1 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1}, {FB});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  ASSERT_TRUE(mergeObjects(Bufs, OS, Format::MachO64)); // internal verify passes
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::MachO64, {}, &Err))
+      << Err;
+
+  MachoView V = parseMachO(Out);
+  const MachoParsedSym *PFA = V.findSym("_fa");
+  const MachoParsedSym *PFB = V.findSym("_fb");
+  ASSERT_NE(PFA, nullptr);
+  ASSERT_NE(PFB, nullptr);
+  EXPECT_EQ(PFB->Value - PFA->Value, 0x40u);
+
+  // Collapse _fb onto _fa's location: its content window now reads 0xAA, not
+  // its own 0xBB → must be rejected.
+  auto Collapsed = Out;
+  ASSERT_TRUE(patchMachoSymValue(Collapsed, "_fb", PFA->Value));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Collapsed), Format::MachO64, {}, &Err))
+      << "Mach-O verifier accepted a collapsed symbol offset";
+
+  // Past the end of the merged section.
+  auto OOB = Out;
+  ASSERT_TRUE(patchMachoSymValue(OOB, "_fb", PFA->Value + 0x9999));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(OOB), Format::MachO64, {}, &Err))
+      << "Mach-O verifier accepted an out-of-bounds symbol value";
+}
+
+TEST(MergeMachOVerify, CatchesCollapsedRelocOffset) {
+  namespace MO = llvm::MachO;
+  uint32_t TextFlags =
+      MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
+  // Each partition: a function spanning its __text and an extern relocation
+  // against undefined "_ext" at section offset 0x10.  After merge the relocs
+  // sit at 0x10 (p0) and 0x50 (p1, past p0's 0x40 __text); collapsing them to
+  // 0 must be caught even though the symbols stay correct.
+  MachoSecSpec S0{"__TEXT", "__text", 0x40, 4, TextFlags, 0xAA};
+  MachoSecSpec S1{"__TEXT", "__text", 0x40, 4, TextFlags, 0xBB};
+  uint8_t DefExt = MO::N_SECT | MO::N_EXT;
+  uint8_t UndefExt = MO::N_EXT; // N_UNDF (0) | N_EXT
+  MachoSymSpec F0{"_f0", DefExt, 1, 0, 0};
+  MachoSymSpec F1{"_f1", DefExt, 1, 0, 0};
+  MachoSymSpec Ext{"_ext", UndefExt, 0, 0, 0};
+  MachoRelSpec R0{0, 0x10, "_ext", (uint8_t)MO::ARM64_RELOC_BRANCH26, 2};
+  MachoRelSpec R1{0, 0x10, "_ext", (uint8_t)MO::ARM64_RELOC_BRANCH26, 2};
+  auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0},
+                       {F0, Ext}, {R0});
+  auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1},
+                       {F1, Ext}, {R1});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  ASSERT_TRUE(mergeObjects(Bufs, OS, Format::MachO64));
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::MachO64, {}, &Err))
+      << Err;
+
+  ASSERT_TRUE(patchAllMachoRelocAddrs(Out, 0x0));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Out), Format::MachO64, {}, &Err))
+      << "Mach-O verifier accepted collapsed relocation offsets";
 }
 
 // ---------------------------------------------------------------------------
