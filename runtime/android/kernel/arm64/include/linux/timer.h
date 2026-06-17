@@ -5,19 +5,18 @@
 #include <linux/types.h>
 #include <linux/jiffies.h>
 
+/*
+ * Minimal timer_list — core fields are stable across GKI 5.10–6.12.
+ * 5.10–6.6 append ANDROID_KABI_RESERVE(1)+(2) (16 bytes) but the kernel
+ * never accesses those reserves through external APIs, so the 40-byte
+ * minimal layout is safe on all versions.
+ */
 struct timer_list {
 	struct hlist_node entry;
 	unsigned long expires;
 	void (*function)(struct timer_list *);
 	u32 flags;
 	u32 _pad;
-	/*
-	 * GKI 5.10-6.6 add ANDROID_KABI_RESERVE(1) + (2) = 16 bytes
-	 * after flags.  6.12 drops them.  Reserve the space so user
-	 * code that allocates timer_list on the stack is safe on all
-	 * GKI versions (sizeof must be >= 56).
-	 */
-	u64 _kabi_reserved[2];
 };
 
 #define TIMER_IRQSAFE       0x00200000

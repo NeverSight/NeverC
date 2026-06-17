@@ -10,26 +10,28 @@ struct workqueue_struct; /* opaque */
 
 typedef void (*work_func_t)(struct work_struct *work);
 
+/*
+ * Minimal work_struct layout — the three core fields are stable across
+ * GKI 5.10–6.12.  5.10–6.6 append ANDROID_KABI_RESERVE(1)+(2) (16 bytes)
+ * but the kernel never reads those reserves, so a 32-byte struct is safe
+ * to pass to queue_work / cancel_work_sync on all versions.
+ */
 struct work_struct {
-	unsigned long data;         /* atomic_long_t in kernel; flags+pointer */
+	unsigned long data;
 	struct list_head entry;
 	work_func_t func;
-	/* GKI 5.10-6.6: ANDROID_KABI_RESERVE(1)+(2) adds 16 bytes */
-	u64 _kabi_reserved[2];
 };
 
+/*
+ * delayed_work layout varies across GKI versions because both
+ * work_struct KABI padding and timer_list size differ.
+ * Use opaque storage sized for the largest variant (5.10 with KABI).
+ *
+ * Prefer neverc_krt_timer / neverc_krt_delayed_work from nvk_timer.h
+ * for cross-version portable timer functionality.
+ */
 struct delayed_work {
-	struct work_struct work;
-	/*
-	 * struct timer_list: 40 bytes base + 16 bytes KABI reserve
-	 * on GKI 5.10-6.6.  Use 64 for safety across all versions.
-	 */
-	unsigned char __timer_opaque[64];
-	struct workqueue_struct *wq;
-	int cpu;
-	int _pad;
-	/* GKI 5.10-6.6: delayed_work's own ANDROID_KABI_RESERVE(1)+(2) */
-	u64 _kabi_reserved[2];
+	unsigned char __opaque[192];
 };
 
 /*

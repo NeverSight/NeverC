@@ -6,6 +6,22 @@ unsigned long _neverc_krt_module_size;
 int           _neverc_krt_kernel_ver;
 unsigned long _neverc_krt_file_dentry_off;
 
+static __always_inline unsigned long _neverc_krt_module_size_for(int kv)
+{
+	if (kv >= 612) return 1600;
+	if (kv >= 606) return 1536;
+	if (kv >= 601) return 1024;
+	if (kv >= 515) return 960;
+	return 1024;
+}
+
+static __always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
+{
+	if (kv >= 612) return 0x48;
+	if (kv >= 606) return 0xA0;
+	return 0x18;
+}
+
 void _neverc_krt_version_setup_impl(int kv)
 {
 	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
