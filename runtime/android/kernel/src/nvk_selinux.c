@@ -4,11 +4,10 @@
 
 static volatile int *_neverc_krt_selinux_enforcing;
 
-/* Cross-file hook state, accessed by neverc_krt_cleanup_all() in nvk.c */
-struct neverc_krt_hook _neverc_krt_avc_hook;
-struct neverc_krt_hook _neverc_krt_inode_hook;
-struct neverc_krt_hook _neverc_krt_task_perm_hook;
-struct neverc_krt_hook _neverc_krt_cred_perm_hook;
+static struct neverc_krt_hook _neverc_krt_avc_hook;
+static struct neverc_krt_hook _neverc_krt_inode_hook;
+static struct neverc_krt_hook _neverc_krt_task_perm_hook;
+static struct neverc_krt_hook _neverc_krt_cred_perm_hook;
 
 /* ---- internal helpers ---- */
 
@@ -444,5 +443,29 @@ void neverc_krt_se_selective_cleanup(void)
 
 	_neverc_krt_se_sel.active = 0;
 	_neverc_krt_se_sel.count = 0;
+}
+
+void neverc_krt_selinux_pause_hooks(void)
+{
+	if (_neverc_krt_avc_hook.active)
+		neverc_krt_hook_pause(&_neverc_krt_avc_hook);
+	if (_neverc_krt_inode_hook.active)
+		neverc_krt_hook_pause(&_neverc_krt_inode_hook);
+	if (_neverc_krt_task_perm_hook.active)
+		neverc_krt_hook_pause(&_neverc_krt_task_perm_hook);
+	if (_neverc_krt_cred_perm_hook.active)
+		neverc_krt_hook_pause(&_neverc_krt_cred_perm_hook);
+}
+
+void neverc_krt_selinux_remove_hooks(void)
+{
+	if (_neverc_krt_cred_perm_hook.active)
+		neverc_krt_hook_remove(&_neverc_krt_cred_perm_hook);
+	if (_neverc_krt_task_perm_hook.active)
+		neverc_krt_hook_remove(&_neverc_krt_task_perm_hook);
+	if (_neverc_krt_inode_hook.active)
+		neverc_krt_hook_remove(&_neverc_krt_inode_hook);
+	if (_neverc_krt_avc_hook.active)
+		neverc_krt_hook_remove(&_neverc_krt_avc_hook);
 }
 

@@ -22,7 +22,7 @@ static neverc_krt_probe_write_fn         _neverc_krt_probe_write;
 static neverc_krt_set_memory_fn          _neverc_krt_set_memory_rw;
 static neverc_krt_set_memory_fn          _neverc_krt_set_memory_ro;
 static neverc_krt_update_mapping_prot_fn _neverc_krt_update_prot;
-unsigned long                           *_neverc_krt_kimage_voffset;
+static unsigned long                    *_neverc_krt_kimage_voffset;
 
 /* ---- internal inline helpers ---- */
 

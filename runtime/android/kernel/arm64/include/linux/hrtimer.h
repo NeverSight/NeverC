@@ -37,6 +37,9 @@ struct hrtimer {
 	unsigned char __opaque[128];
 };
 
+_Static_assert(sizeof(struct hrtimer) >= 104,
+	       "struct hrtimer too small for GKI 6.1+ arm64");
+
 typedef enum hrtimer_restart (*hrtimer_func_t)(struct hrtimer *);
 
 void hrtimer_init(struct hrtimer *timer, int which_clock,

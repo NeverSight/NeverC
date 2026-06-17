@@ -10,9 +10,12 @@
 
 struct wait_queue_head {
 	unsigned int __lock;        /* arch_spinlock_t (arm64: 4 bytes) */
-	struct list_head head;      /* implicitly 8-byte aligned */
+	struct list_head head;      /* 8-byte aligned after 4-byte pad */
 };
 typedef struct wait_queue_head wait_queue_head_t;
+
+_Static_assert(sizeof(wait_queue_head_t) == 24,
+	       "wait_queue_head_t size mismatch for GKI arm64 (no debug)");
 
 #define DECLARE_WAIT_QUEUE_HEAD(name)                                         \
 	wait_queue_head_t name = {                                            \

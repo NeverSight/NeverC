@@ -36,7 +36,6 @@ extern neverc_krt_copy_from_user_fn _neverc_krt_copy_from_user;
 extern neverc_krt_copy_to_user_fn   _neverc_krt_copy_to_user;
 extern neverc_krt_pte_rw_fn         _neverc_krt_pte_make_rw;
 extern neverc_krt_pte_rw_fn         _neverc_krt_pte_make_ro;
-extern unsigned long               *_neverc_krt_kimage_voffset;
 
 unsigned long _neverc_krt_mem_get_page_size(void);
 
@@ -52,26 +51,9 @@ extern void *(*_neverc_krt_prepare_creds)(void);
 extern int   (*_neverc_krt_commit_creds)(void *);
 extern void *(*_neverc_krt_get_task_cred)(struct task_struct *);
 
-/* ---- nvk_hide.c ---- */
-
-extern struct neverc_krt_hook _neverc_krt_ks_hook;
-extern int                    _neverc_krt_ks_hooked;
-extern struct neverc_krt_hook _neverc_krt_vmalloc_hook;
-extern int                    _neverc_krt_vmalloc_hooked;
-
 /* ---- nvk_selinux.c ---- */
 
-extern struct neverc_krt_hook _neverc_krt_avc_hook;
-extern struct neverc_krt_hook _neverc_krt_inode_hook;
-extern struct neverc_krt_hook _neverc_krt_task_perm_hook;
-extern struct neverc_krt_hook _neverc_krt_cred_perm_hook;
-
 volatile int *_neverc_krt_se_probe_state(void *se_state);
-
-/* ---- nvk_inject.c ---- */
-
-extern neverc_krt_get_task_mm_fn _neverc_krt_get_task_mm;
-extern neverc_krt_mmput_fn       _neverc_krt_mmput;
 
 /* ---- nvk_hook.c ---- */
 

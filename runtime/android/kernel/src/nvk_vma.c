@@ -33,6 +33,8 @@ static neverc_krt_kmap_fn              _neverc_krt_kmap;
 static neverc_krt_kunmap_fn            _neverc_krt_kunmap;
 static neverc_krt_mmap_read_lock_fn    _neverc_krt_mmap_read_lock;
 static neverc_krt_mmap_read_unlock_fn  _neverc_krt_mmap_read_unlock;
+static neverc_krt_get_task_mm_fn       _neverc_krt_get_task_mm;
+static neverc_krt_mmput_fn             _neverc_krt_mmput;
 static int                             _neverc_krt_vma_inited;
 static unsigned long                   _neverc_krt_off_mm;
 static unsigned long                   _neverc_krt_off_vm_flags;
@@ -87,12 +89,10 @@ int neverc_krt_vma_init(void)
 		_neverc_krt_mmap_read_unlock =
 			(neverc_krt_mmap_read_unlock_fn)NEVERC_KRT_LOOKUP("up_read");
 
-	if (!_neverc_krt_get_task_mm)
-		_neverc_krt_get_task_mm =
-			(neverc_krt_get_task_mm_fn)NEVERC_KRT_LOOKUP("get_task_mm");
-	if (!_neverc_krt_mmput)
-		_neverc_krt_mmput =
-			(neverc_krt_mmput_fn)NEVERC_KRT_LOOKUP("mmput");
+	_neverc_krt_get_task_mm =
+		(neverc_krt_get_task_mm_fn)NEVERC_KRT_LOOKUP("get_task_mm");
+	_neverc_krt_mmput =
+		(neverc_krt_mmput_fn)NEVERC_KRT_LOOKUP("mmput");
 
 	_neverc_krt_vma_inited = 1;
 	return _neverc_krt_find_vma ? 0 :

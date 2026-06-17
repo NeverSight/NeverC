@@ -19,6 +19,11 @@ typedef struct { unsigned char __opaque[8]; } spinlock_t;
 typedef struct { unsigned char __opaque[8]; } raw_spinlock_t;
 typedef struct { unsigned char __opaque[8]; } rwlock_t;
 
+_Static_assert(sizeof(spinlock_t) >= 4,
+	       "spinlock_t too small for arm64 qspinlock");
+_Static_assert(sizeof(rwlock_t) >= 4,
+	       "rwlock_t too small for arm64 qrwlock");
+
 #define DEFINE_SPINLOCK(x) spinlock_t x = { { 0 } }
 #define __SPIN_LOCK_UNLOCKED(x) { { 0 } }
 

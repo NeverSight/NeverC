@@ -15,6 +15,9 @@
  */
 struct mutex { unsigned char __opaque[64]; };
 
+_Static_assert(sizeof(struct mutex) >= 48,
+	       "struct mutex too small for GKI with ANDROID_VENDOR_OEM_DATA");
+
 #define DEFINE_MUTEX(name) struct mutex name = { { 0 } }
 #define __MUTEX_INITIALIZER(name) { { 0 } }
 

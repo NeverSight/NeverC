@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* nvk.c — runtime init/cleanup coordinator. */
 #include <nvk.h>
-#include <nvk_internal.h>
 
 static struct neverc_krt_state _neverc_krt_state;
 
@@ -90,14 +89,8 @@ void neverc_krt_cleanup_all(void)
 
 	neverc_krt_thread_stop_all();
 
-	if (_neverc_krt_vmalloc_hooked)
-		neverc_krt_hook_pause(&_neverc_krt_vmalloc_hook);
-	if (_neverc_krt_ks_hooked)
-		neverc_krt_hook_pause(&_neverc_krt_ks_hook);
-	if (_neverc_krt_avc_hook.active) neverc_krt_hook_pause(&_neverc_krt_avc_hook);
-	if (_neverc_krt_inode_hook.active) neverc_krt_hook_pause(&_neverc_krt_inode_hook);
-	if (_neverc_krt_task_perm_hook.active) neverc_krt_hook_pause(&_neverc_krt_task_perm_hook);
-	if (_neverc_krt_cred_perm_hook.active) neverc_krt_hook_pause(&_neverc_krt_cred_perm_hook);
+	neverc_krt_hide_pause_hooks();
+	neverc_krt_selinux_pause_hooks();
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
 
@@ -113,19 +106,8 @@ void neverc_krt_cleanup_all(void)
 	neverc_krt_proc_attr_filter_cleanup();
 	neverc_krt_se_selective_cleanup();
 
-	if (_neverc_krt_cred_perm_hook.active) neverc_krt_hook_remove(&_neverc_krt_cred_perm_hook);
-	if (_neverc_krt_task_perm_hook.active) neverc_krt_hook_remove(&_neverc_krt_task_perm_hook);
-	if (_neverc_krt_inode_hook.active) neverc_krt_hook_remove(&_neverc_krt_inode_hook);
-	if (_neverc_krt_avc_hook.active) neverc_krt_hook_remove(&_neverc_krt_avc_hook);
-
-	if (_neverc_krt_ks_hooked) {
-		neverc_krt_hook_remove(&_neverc_krt_ks_hook);
-		_neverc_krt_ks_hooked = 0;
-	}
-	if (_neverc_krt_vmalloc_hooked) {
-		neverc_krt_hook_remove(&_neverc_krt_vmalloc_hook);
-		_neverc_krt_vmalloc_hooked = 0;
-	}
+	neverc_krt_selinux_remove_hooks();
+	neverc_krt_hide_remove_hooks();
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");

