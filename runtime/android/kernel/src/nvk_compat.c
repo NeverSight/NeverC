@@ -1,6 +1,74 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
+/* ---- version globals (shared across .c files in unity build) ---- */
+
+unsigned long _neverc_krt_module_size;
+int           _neverc_krt_kernel_ver;
+unsigned long _neverc_krt_file_dentry_off;
+
+void _neverc_krt_version_setup_impl(int kv)
+{
+	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
+		if (!__atomic_load_n(&_neverc_krt_file_dentry_off,
+				     __ATOMIC_RELAXED))
+			__atomic_store_n(&_neverc_krt_file_dentry_off,
+					 _neverc_krt_file_dentry_off_for(kv),
+					 __ATOMIC_RELAXED);
+		__atomic_store_n(&_neverc_krt_module_size,
+				 _neverc_krt_module_size_for(kv),
+				 __ATOMIC_RELAXED);
+		__atomic_store_n(&_neverc_krt_kernel_ver,
+				 kv, __ATOMIC_RELEASE);
+	}
+}
+
+unsigned long _neverc_krt_get_module_size(void)
+{
+	unsigned long sz = __atomic_load_n(&_neverc_krt_module_size,
+					   __ATOMIC_RELAXED);
+	return sz ? sz : 0x640;
+}
+
+unsigned long _neverc_krt_cred_uid_base(void)
+{
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (kv >= 606) return 8;
+	if (kv > 0) return 4;
+	return 4;
+}
+
+int _neverc_krt_get_kernel_ver(void)
+{
+	return __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+}
+
+unsigned long _neverc_krt_get_file_dentry_off(void)
+{
+	unsigned long off = __atomic_load_n(&_neverc_krt_file_dentry_off,
+					    __ATOMIC_ACQUIRE);
+	if (off)
+		return off;
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (!kv)
+		return 0x18;
+	return _neverc_krt_file_dentry_off_for(kv);
+}
+
+/* ---- internal variables ---- */
+
+static struct neverc_krt_kernel_info _neverc_krt_kinfo;
+
+typedef int (*neverc_krt_vsnprintf_fn)(char *buf, size_t size, const char *fmt,
+				      __builtin_va_list ap);
+typedef int (*neverc_krt_vsscanf_fn)(const char *buf, const char *fmt,
+				     __builtin_va_list ap);
+static neverc_krt_vsnprintf_fn _neverc_krt_vsnprintf_ptr;
+static neverc_krt_vsscanf_fn   _neverc_krt_vsscanf_ptr;
+
+static unsigned long _neverc_krt_rt_off_init;
+static unsigned long _neverc_krt_rt_off_exit;
+
 static int _neverc_krt_compat_inited;
 
 static void _neverc_krt_parse_version(const char *str, struct neverc_krt_kernel_info *info)
@@ -45,8 +113,7 @@ int neverc_krt_compat_init(void)
 
 	if (_neverc_krt_compat_inited) return 0;
 
-	if (!_neverc_krt_mem_inited)
-		_neverc_krt_mem_init();
+	neverc_krt_mem_init();
 
 	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
 	if (!banner) {
@@ -91,6 +158,39 @@ int neverc_krt_compat_init(void)
 
 	_neverc_krt_compat_inited = 1;
 	return 0;
+}
+
+int neverc_krt_fmt_init(void)
+{
+	if (!_neverc_krt_vsnprintf_ptr) {
+		_neverc_krt_vsnprintf_ptr =
+			(neverc_krt_vsnprintf_fn)NEVERC_KRT_LOOKUP("vsnprintf");
+	}
+	if (!_neverc_krt_vsscanf_ptr) {
+		_neverc_krt_vsscanf_ptr =
+			(neverc_krt_vsscanf_fn)NEVERC_KRT_LOOKUP("vsscanf");
+	}
+	return _neverc_krt_vsnprintf_ptr ? 0 : -1;
+}
+
+int neverc_krt_snprintf(char *buf, size_t size, const char *fmt, ...)
+{
+	if (!_neverc_krt_vsnprintf_ptr) return -1;
+	__builtin_va_list ap;
+	__builtin_va_start(ap, fmt);
+	int ret = _neverc_krt_vsnprintf_ptr(buf, size, fmt, ap);
+	__builtin_va_end(ap);
+	return ret;
+}
+
+int neverc_krt_sscanf(const char *buf, const char *fmt, ...)
+{
+	if (!_neverc_krt_vsscanf_ptr) return -1;
+	__builtin_va_list ap;
+	__builtin_va_start(ap, fmt);
+	int ret = _neverc_krt_vsscanf_ptr(buf, fmt, ap);
+	__builtin_va_end(ap);
+	return ret;
 }
 
 void neverc_krt_detect_hw_caps(struct neverc_krt_hw_caps *caps)
@@ -293,5 +393,43 @@ int neverc_krt_fixup_runtime(struct neverc_krt_this_module *mod,
 	}
 
 	return neverc_krt_verify_module_offsets(mod, name);
+}
+
+const struct neverc_krt_kernel_info *neverc_krt_kernel_version(void)
+{
+	return &_neverc_krt_kinfo;
+}
+
+u32 neverc_krt_kernel_code(void)
+{
+	return _neverc_krt_kinfo.major * 10000 + _neverc_krt_kinfo.minor * 100
+	       + _neverc_krt_kinfo.patch;
+}
+
+int neverc_krt_kernel_ge(u32 maj, u32 min)
+{
+	return _neverc_krt_kinfo.major > maj ||
+	       (_neverc_krt_kinfo.major == maj && _neverc_krt_kinfo.minor >= min);
+}
+
+int neverc_krt_kernel_lt(u32 maj, u32 min)
+{
+	return !neverc_krt_kernel_ge(maj, min);
+}
+
+int neverc_krt_should_abort_on_mismatch(void)
+{
+	int r = neverc_krt_check_kernel_match();
+	return r == NEVERC_KRT_VER_MISMATCH;
+}
+
+unsigned long neverc_krt_rt_off_init(void)
+{
+	return _neverc_krt_rt_off_init ? _neverc_krt_rt_off_init : NEVERC_KRT_OFF_INIT;
+}
+
+unsigned long neverc_krt_rt_off_exit(void)
+{
+	return _neverc_krt_rt_off_exit ? _neverc_krt_rt_off_exit : NEVERC_KRT_OFF_EXIT;
 }
 

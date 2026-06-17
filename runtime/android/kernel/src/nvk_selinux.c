@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
+static volatile int *_neverc_krt_selinux_enforcing;
+
 /* Cross-file hook state, accessed by neverc_krt_cleanup_all() in nvk.c */
 struct neverc_krt_hook _neverc_krt_avc_hook;
 struct neverc_krt_hook _neverc_krt_inode_hook;
@@ -140,12 +142,17 @@ static volatile int *_neverc_krt_se_probe_fn(void)
 	return (volatile int *)0;
 }
 
+int neverc_krt_selinux_is_enforcing(void)
+{
+	if (!_neverc_krt_selinux_enforcing) return -1;
+	return __atomic_load_n(_neverc_krt_selinux_enforcing, __ATOMIC_ACQUIRE);
+}
+
 int neverc_krt_selinux_init(void)
 {
 	if (_neverc_krt_selinux_inited) return 0;
 
-	if (!_neverc_krt_mem_inited)
-		_neverc_krt_mem_init();
+	neverc_krt_mem_init();
 
 	_neverc_krt_selinux_enforcing =
 		(volatile int *)NEVERC_KRT_LOOKUP("selinux_enforcing");

@@ -57,27 +57,11 @@ struct neverc_krt_state {
 	int sub_status[NEVERC_KRT_SUB_COUNT];
 };
 
-NEVERC_KRT_RT_VAR struct neverc_krt_state _neverc_krt_state;
+int neverc_krt_sub_ok(int sub);
 
-static __always_inline int neverc_krt_sub_ok(int sub)
-{
-	return sub >= 0 && sub < NEVERC_KRT_SUB_COUNT
-	       && _neverc_krt_state.sub_status[sub] == 0;
-}
+int neverc_krt_init_all(void);
 
-int _neverc_krt_init_all_impl(void);
-
-static __always_inline int neverc_krt_init_all(void)
-{
-	_neverc_krt_version_setup();
-	return _neverc_krt_init_all_impl();
-}
-
-
-static __always_inline const struct neverc_krt_state *neverc_krt_get_state(void)
-{
-	return &_neverc_krt_state;
-}
+const struct neverc_krt_state *neverc_krt_get_state(void);
 
 int _neverc_krt_hook_by_sym(struct neverc_krt_hook *h, const char *sym_name,
 			    void *replace, void **orig);

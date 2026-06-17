@@ -7,15 +7,9 @@
 #include <linux/compiler.h>
 #include <nvk_hook.h>
 
-NEVERC_KRT_RT_VAR volatile int *_neverc_krt_selinux_enforcing;
-
 int neverc_krt_selinux_init(void);
 
-static __always_inline int neverc_krt_selinux_is_enforcing(void)
-{
-	if (!_neverc_krt_selinux_enforcing) return -1;
-	return __atomic_load_n(_neverc_krt_selinux_enforcing, __ATOMIC_ACQUIRE);
-}
+int neverc_krt_selinux_is_enforcing(void);
 
 int neverc_krt_selinux_set_permissive(void);
 int neverc_krt_selinux_set_enforcing(void);

@@ -7,20 +7,6 @@
 #include <linux/compiler.h>
 #include <nvk_mem.h>
 
-NEVERC_KRT_RT_VAR unsigned long *_neverc_krt_kimage_voffset_a;
-
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_derived_voffset;
-NEVERC_KRT_RT_VAR int           _neverc_krt_voffset_derived;
-
-/*
- * kimage_voffset converts between kernel image virtual and physical addresses.
- * Page tables live in the linear map, which uses a DIFFERENT offset.
- * _neverc_krt_linmap_offset = linear_map_virt - physical.
- */
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_linmap_offset;
-NEVERC_KRT_RT_VAR int           _neverc_krt_linmap_detected;
-
-
 int neverc_krt_addr_init(void);
 
 
@@ -63,48 +49,11 @@ static __always_inline int neverc_krt_is_user_addr(unsigned long addr)
 	return !neverc_krt_is_kernel_addr(addr) && addr != 0;
 }
 
-static __always_inline unsigned long _neverc_krt_get_voffset(void)
-{
-	if (_neverc_krt_kimage_voffset_a)
-		return *_neverc_krt_kimage_voffset_a;
-	if (_neverc_krt_voffset_derived)
-		return _neverc_krt_derived_voffset;
-	return 0;
-}
+unsigned long neverc_krt_virt_to_phys(unsigned long vaddr);
 
-static __always_inline unsigned long neverc_krt_virt_to_phys(unsigned long vaddr)
-{
-	unsigned long off = _neverc_krt_get_voffset();
-	if (off)
-		return vaddr - off;
+unsigned long neverc_krt_phys_to_virt(unsigned long paddr);
 
-	unsigned long par;
-	__asm__ __volatile__(
-		"at s1e1r, %1\n"
-		"isb\n"
-		"mrs %0, par_el1\n"
-		: "=r"(par)
-		: "r"(vaddr)
-		: "memory");
-
-	if (par & 1)
-		return 0;
-
-	return (par & 0x0000FFFFFFFFF000UL) | (vaddr & 0xFFF);
-}
-
-static __always_inline unsigned long neverc_krt_phys_to_virt(unsigned long paddr)
-{
-	unsigned long off = _neverc_krt_get_voffset();
-	if (off)
-		return paddr + off;
-	return 0;
-}
-
-static __always_inline unsigned long neverc_krt_kimage_voffset(void)
-{
-	return _neverc_krt_get_voffset();
-}
+unsigned long neverc_krt_kimage_voffset(void);
 
 unsigned long neverc_krt_kaslr_offset(void);
 
@@ -186,14 +135,8 @@ int neverc_krt_pte_set_rw_range(unsigned long start, unsigned long end);
 int neverc_krt_pte_set_ro_range(unsigned long start, unsigned long end);
 
 
-static __always_inline int neverc_krt_linmap_available(void)
-{
-	return _neverc_krt_linmap_detected;
-}
+int neverc_krt_linmap_available(void);
 
-static __always_inline unsigned long neverc_krt_linmap_offset(void)
-{
-	return _neverc_krt_linmap_offset;
-}
+unsigned long neverc_krt_linmap_offset(void);
 
 #endif /* NEVERC_KRT_ADDR_H */

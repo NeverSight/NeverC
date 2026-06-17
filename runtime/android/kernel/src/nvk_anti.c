@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
-/* Forward declarations — defined in nvk_process.c */
+/* Forward declarations for cross-file variables */
 extern unsigned long _neverc_krt_off_comm;
+extern int _neverc_krt_mem_inited;
 
 /* ---- internal variables ---- */
 
-u64 _neverc_krt_wd_seal_key;
+static struct neverc_krt_watchdog _neverc_krt_wd;
+static u64 _neverc_krt_wd_seal_key;
 
 /* ---- internal helpers ---- */
 
@@ -624,5 +626,20 @@ void neverc_krt_anti_full_scan(struct neverc_krt_anti_full_env *env)
 	env->magisk_detected = neverc_krt_anti_detect_magisk();
 	env->selinux_permissive = neverc_krt_anti_detect_selinux_permissive();
 	env->kprobe_on_self = 0;
+}
+
+u64 neverc_krt_wd_checks(void)
+{
+	return __atomic_load_n(&_neverc_krt_wd.check_count, __ATOMIC_RELAXED);
+}
+
+u64 neverc_krt_wd_violations(void)
+{
+	return __atomic_load_n(&_neverc_krt_wd.violation_count, __ATOMIC_RELAXED);
+}
+
+u64 neverc_krt_wd_tramp_violations(void)
+{
+	return __atomic_load_n(&_neverc_krt_wd.tramp_violations, __ATOMIC_RELAXED);
 }
 

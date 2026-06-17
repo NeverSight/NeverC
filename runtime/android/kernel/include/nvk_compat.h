@@ -3,11 +3,9 @@
 #define NEVERC_KRT_COMPAT_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
 #include <linux/compiler.h>
 #include <linux/kallsyms.h>
-#include <linux/string.h>
-#include <nvk_mem.h>
+#include <nvkmod_version.h>
 
 struct neverc_krt_kernel_info {
 	u32 major;
@@ -18,52 +16,22 @@ struct neverc_krt_kernel_info {
 	int detected;
 };
 
-NEVERC_KRT_RT_VAR struct neverc_krt_kernel_info _neverc_krt_kinfo;
+int neverc_krt_fmt_init(void);
 
-typedef int (*neverc_krt_snprintf_fn)(char *buf, size_t size, const char *fmt, ...);
-typedef int (*neverc_krt_sscanf_fn)(const char *buf, const char *fmt, ...);
-
-NEVERC_KRT_RT_VAR neverc_krt_snprintf_fn _neverc_krt_snprintf;
-NEVERC_KRT_RT_VAR neverc_krt_sscanf_fn   _neverc_krt_sscanf;
-
-static __always_inline int neverc_krt_fmt_init(void)
-{
-	if (!_neverc_krt_snprintf) {
-		_neverc_krt_snprintf = (neverc_krt_snprintf_fn)NEVERC_KRT_LOOKUP("snprintf");
-		if (!_neverc_krt_snprintf)
-			_neverc_krt_snprintf = (neverc_krt_snprintf_fn)NEVERC_KRT_LOOKUP("scnprintf");
-	}
-	_neverc_krt_sscanf = (neverc_krt_sscanf_fn)NEVERC_KRT_LOOKUP("sscanf");
-	return _neverc_krt_snprintf ? 0 : -1;
-}
-
-#define neverc_krt_snprintf(buf, sz, fmt, ...)                                       \
-	(_neverc_krt_snprintf ? _neverc_krt_snprintf((buf), (sz), (fmt), ##__VA_ARGS__) : -1)
-
-#define neverc_krt_sscanf(buf, fmt, ...)                                             \
-	(_neverc_krt_sscanf ? _neverc_krt_sscanf((buf), (fmt), ##__VA_ARGS__) : -1)
-
+int neverc_krt_snprintf(char *buf, size_t size, const char *fmt, ...);
+int neverc_krt_sscanf(const char *buf, const char *fmt, ...);
 
 
 int neverc_krt_compat_init(void);
 
 
-static __always_inline const struct neverc_krt_kernel_info *neverc_krt_kernel_version(void)
-{
-	return &_neverc_krt_kinfo;
-}
+const struct neverc_krt_kernel_info *neverc_krt_kernel_version(void);
 
-static __always_inline u32 neverc_krt_kernel_code(void)
-{
-	return _neverc_krt_kinfo.major * 10000 + _neverc_krt_kinfo.minor * 100
-	       + _neverc_krt_kinfo.patch;
-}
+u32 neverc_krt_kernel_code(void);
 
-#define NEVERC_KRT_KERNEL_GE(maj, min) \
-	(_neverc_krt_kinfo.major > (maj) || \
-	 (_neverc_krt_kinfo.major == (maj) && _neverc_krt_kinfo.minor >= (min)))
+int neverc_krt_kernel_ge(u32 maj, u32 min);
 
-#define NEVERC_KRT_KERNEL_LT(maj, min) (!NEVERC_KRT_KERNEL_GE(maj, min))
+int neverc_krt_kernel_lt(u32 maj, u32 min);
 
 static __always_inline void *neverc_krt_lookup_printk(void)
 {
@@ -193,34 +161,20 @@ enum neverc_krt_version_match {
 int neverc_krt_check_kernel_match(void);
 
 
-static __always_inline int neverc_krt_should_abort_on_mismatch(void)
-{
-	int r = neverc_krt_check_kernel_match();
-	return r == NEVERC_KRT_VER_MISMATCH;
-}
+int neverc_krt_should_abort_on_mismatch(void);
 
 int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
 				     const char *expected_name);
 
-
-
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_rt_off_init;
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_rt_off_exit;
 
 int neverc_krt_probe_module_offsets(struct neverc_krt_this_module *mod,
 				    void *expected_init,
 				    void *expected_exit);
 
 
-static __always_inline unsigned long neverc_krt_rt_off_init(void)
-{
-	return _neverc_krt_rt_off_init ? _neverc_krt_rt_off_init : NEVERC_KRT_OFF_INIT;
-}
+unsigned long neverc_krt_rt_off_init(void);
 
-static __always_inline unsigned long neverc_krt_rt_off_exit(void)
-{
-	return _neverc_krt_rt_off_exit ? _neverc_krt_rt_off_exit : NEVERC_KRT_OFF_EXIT;
-}
+unsigned long neverc_krt_rt_off_exit(void);
 
 int neverc_krt_validate_runtime(struct neverc_krt_this_module *mod,
 				const char *name,

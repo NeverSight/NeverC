@@ -1,16 +1,79 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
+typedef int (*_neverc_krt_pte_rw_fn)(unsigned long addr);
+extern _neverc_krt_pte_rw_fn _neverc_krt_pte_make_rw;
+extern _neverc_krt_pte_rw_fn _neverc_krt_pte_make_ro;
+
 /* ---- internal variables ---- */
+
+unsigned long *_neverc_krt_kimage_voffset_a;
+unsigned long  _neverc_krt_derived_voffset;
+int            _neverc_krt_voffset_derived;
+unsigned long  _neverc_krt_linmap_offset;
+int            _neverc_krt_linmap_detected;
 
 unsigned long *_neverc_krt_phys_offset;
 static int     _neverc_krt_addr_inited;
 
-/* ---- internal inline helpers ---- */
+/* ---- internal helpers ---- */
+
+static __always_inline unsigned long _neverc_krt_get_voffset(void)
+{
+	if (_neverc_krt_kimage_voffset_a)
+		return *_neverc_krt_kimage_voffset_a;
+	if (_neverc_krt_voffset_derived)
+		return _neverc_krt_derived_voffset;
+	return 0;
+}
 
 static __always_inline unsigned long _neverc_krt_linmap_phys_to_virt(unsigned long pa)
 {
 	return pa + _neverc_krt_linmap_offset;
+}
+
+unsigned long neverc_krt_virt_to_phys(unsigned long vaddr)
+{
+	unsigned long off = _neverc_krt_get_voffset();
+	if (off)
+		return vaddr - off;
+
+	unsigned long par;
+	__asm__ __volatile__(
+		"at s1e1r, %1\n"
+		"isb\n"
+		"mrs %0, par_el1\n"
+		: "=r"(par)
+		: "r"(vaddr)
+		: "memory");
+
+	if (par & 1)
+		return 0;
+
+	return (par & 0x0000FFFFFFFFF000UL) | (vaddr & 0xFFF);
+}
+
+unsigned long neverc_krt_phys_to_virt(unsigned long paddr)
+{
+	unsigned long off = _neverc_krt_get_voffset();
+	if (off)
+		return paddr + off;
+	return 0;
+}
+
+unsigned long neverc_krt_kimage_voffset(void)
+{
+	return _neverc_krt_get_voffset();
+}
+
+int neverc_krt_linmap_available(void)
+{
+	return _neverc_krt_linmap_detected;
+}
+
+unsigned long neverc_krt_linmap_offset(void)
+{
+	return _neverc_krt_linmap_offset;
 }
 
 /* ---- implementation ---- */
@@ -71,8 +134,7 @@ int neverc_krt_addr_init(void)
 {
 	if (_neverc_krt_addr_inited) return 0;
 
-	if (!_neverc_krt_mem_inited)
-		_neverc_krt_mem_init();
+	neverc_krt_mem_init();
 
 	_neverc_krt_kimage_voffset_a =
 		(unsigned long *)NEVERC_KRT_LOOKUP("kimage_voffset");

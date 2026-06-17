@@ -23,8 +23,7 @@ int neverc_krt_syscall_init(void)
 {
 	if (_neverc_krt_syscall_inited) return 0;
 
-	if (!_neverc_krt_mem_inited)
-		_neverc_krt_mem_init();
+	neverc_krt_mem_init();
 
 	_neverc_krt_sys_call_table =
 		(neverc_krt_syscall_fn_t *)NEVERC_KRT_LOOKUP("sys_call_table");

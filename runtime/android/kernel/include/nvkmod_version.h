@@ -190,22 +190,9 @@
  * Safe default: if never set (0), callers fall back to the maximum
  * struct module size across 5.10-6.12 (0x640 = 1600).
  */
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_module_size;
-NEVERC_KRT_RT_VAR int           _neverc_krt_kernel_ver;
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_file_dentry_off;
-
-static __always_inline unsigned long _neverc_krt_get_module_size(void)
-{
-	unsigned long sz = __atomic_load_n(&_neverc_krt_module_size,
-					   __ATOMIC_RELAXED);
-	return sz ? sz : 0x640;
-}
-
 /*
  * Canonical version→struct-size / dentry-offset mapping.
- * Used by both _neverc_krt_version_setup() (compile-time path) and
- * the linux_banner fallback in _neverc_krt_mem_init() so the
- * mapping is defined in exactly one place.
+ * Pure lookup tables, no state access.
  */
 static __always_inline unsigned long _neverc_krt_module_size_for(int kv)
 {
@@ -223,41 +210,19 @@ static __always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
 	return 0x18;
 }
 
+void _neverc_krt_version_setup_impl(int kv);
+
 static __always_inline void _neverc_krt_version_setup(void)
 {
-	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
-		if (!__atomic_load_n(&_neverc_krt_file_dentry_off,
-				     __ATOMIC_RELAXED))
-			__atomic_store_n(&_neverc_krt_file_dentry_off,
-					 _neverc_krt_file_dentry_off_for(
-						 NEVERC_KRT_KERNEL),
-					 __ATOMIC_RELAXED);
-		__atomic_store_n(&_neverc_krt_module_size,
-				 _neverc_krt_module_size_for(NEVERC_KRT_KERNEL),
-				 __ATOMIC_RELAXED);
-		__atomic_store_n(&_neverc_krt_kernel_ver,
-				 NEVERC_KRT_KERNEL, __ATOMIC_RELEASE);
-	}
+	_neverc_krt_version_setup_impl(NEVERC_KRT_KERNEL);
 }
 
-/*
- * struct cred.usage changed from atomic_t (4 bytes) to
- * atomic_long_t (8 bytes) in 6.6, shifting uid from offset 4 to 8.
- * Use this helper instead of hardcoding 4 as the fallback UID offset.
- */
-static __always_inline unsigned long _neverc_krt_cred_uid_base(void)
-{
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (kv >= 606)
-		return 8;
-	if (kv > 0)
-		return 4;
-	/*
-	 * Version not yet detected — use compile-time default so callers
-	 * that run before _neverc_krt_version_setup() still get a
-	 * reasonable value for the target they were compiled against.
-	 */
-	return (NEVERC_KRT_KERNEL >= 606) ? 8 : 4;
-}
+unsigned long _neverc_krt_get_module_size(void);
+
+unsigned long _neverc_krt_cred_uid_base(void);
+
+int _neverc_krt_get_kernel_ver(void);
+
+unsigned long _neverc_krt_get_file_dentry_off(void);
 
 #endif /* NVKMOD_VERSION_H */

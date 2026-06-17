@@ -56,33 +56,10 @@ int neverc_krt_nl_reply(struct neverc_krt_nl_sock *ns, u32 pid,
 
 
 
-NEVERC_KRT_RT_VAR u64 _neverc_krt_nl_auth_key;
-NEVERC_KRT_RT_VAR u32 _neverc_krt_nl_auth_pid;
-NEVERC_KRT_RT_VAR int _neverc_krt_nl_auth_ok;
+void neverc_krt_nl_set_auth_key(u64 key);
 
-static __always_inline void neverc_krt_nl_set_auth_key(u64 key)
-{
-	_neverc_krt_nl_auth_key = key;
-}
+int neverc_krt_nl_check_auth(u32 pid, u64 token);
 
-static __always_inline int neverc_krt_nl_check_auth(u32 pid, u64 token)
-{
-	if (_neverc_krt_nl_auth_key == 0)
-		return 1;
-	if (token == _neverc_krt_nl_auth_key) {
-		_neverc_krt_nl_auth_pid = pid;
-		_neverc_krt_nl_auth_ok = 1;
-		return 1;
-	}
-	if (_neverc_krt_nl_auth_ok && pid == _neverc_krt_nl_auth_pid)
-		return 1;
-	return 0;
-}
-
-static __always_inline void neverc_krt_nl_revoke_auth(void)
-{
-	_neverc_krt_nl_auth_pid = 0;
-	_neverc_krt_nl_auth_ok = 0;
-}
+void neverc_krt_nl_revoke_auth(void);
 
 #endif /* NEVERC_KRT_NETLINK_H */

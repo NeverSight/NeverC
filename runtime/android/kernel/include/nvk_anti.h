@@ -112,34 +112,19 @@ struct neverc_krt_watchdog {
 	volatile int              running;
 };
 
-NEVERC_KRT_RT_VAR struct neverc_krt_watchdog _neverc_krt_wd;
-
 int neverc_krt_wd_register(struct neverc_krt_hook *h);
-
 
 int neverc_krt_wd_check(void);
 
-
 int neverc_krt_wd_repair(void);
-
 
 void neverc_krt_wd_unregister(struct neverc_krt_hook *h);
 
+u64 neverc_krt_wd_checks(void);
 
-static __always_inline u64 neverc_krt_wd_checks(void)
-{
-	return __atomic_load_n(&_neverc_krt_wd.check_count, __ATOMIC_RELAXED);
-}
+u64 neverc_krt_wd_violations(void);
 
-static __always_inline u64 neverc_krt_wd_violations(void)
-{
-	return __atomic_load_n(&_neverc_krt_wd.violation_count, __ATOMIC_RELAXED);
-}
-
-static __always_inline u64 neverc_krt_wd_tramp_violations(void)
-{
-	return __atomic_load_n(&_neverc_krt_wd.tramp_violations, __ATOMIC_RELAXED);
-}
+u64 neverc_krt_wd_tramp_violations(void);
 
 
 int neverc_krt_anti_scan_for_brk(const void *start, size_t len);

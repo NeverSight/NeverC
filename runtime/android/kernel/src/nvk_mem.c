@@ -1,7 +1,27 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
-/* ---- internal variables (file-local to bitcode module) ---- */
+/* ---- internal typedefs ---- */
+
+typedef long (*neverc_krt_probe_read_fn)(void *dst, const void *src, size_t len);
+typedef long (*neverc_krt_probe_write_fn)(void *dst, const void *src, size_t len);
+typedef unsigned long (*neverc_krt_copy_from_user_fn)(void *to, const void __user *from,
+						      unsigned long n);
+typedef unsigned long (*neverc_krt_copy_to_user_fn)(void __user *to, const void *from,
+						    unsigned long n);
+typedef int (*neverc_krt_set_memory_fn)(unsigned long addr, int numpages);
+typedef void (*neverc_krt_update_mapping_prot_fn)(u64 phys, unsigned long virt,
+						  u64 size, u64 prot);
+typedef int (*_neverc_krt_pte_rw_fn)(unsigned long addr);
+
+/* ---- internal variables ---- */
+
+static unsigned long              _neverc_krt_mem_page_sz;
+int                               _neverc_krt_mem_inited;
+_neverc_krt_pte_rw_fn             _neverc_krt_pte_make_rw;
+_neverc_krt_pte_rw_fn             _neverc_krt_pte_make_ro;
+neverc_krt_copy_from_user_fn      _neverc_krt_copy_from_user;
+neverc_krt_copy_to_user_fn        _neverc_krt_copy_to_user;
 
 neverc_krt_probe_read_fn          _neverc_krt_probe_read;
 neverc_krt_probe_write_fn         _neverc_krt_probe_write;
@@ -17,6 +37,20 @@ static __always_inline unsigned long _neverc_krt_strip_tags(unsigned long addr)
 	return addr & ~(0xFFUL << 56);
 }
 
+unsigned long _neverc_krt_mem_get_page_size(void)
+{
+	if (__builtin_expect(_neverc_krt_mem_page_sz != 0, 1))
+		return _neverc_krt_mem_page_sz;
+	unsigned long tcr;
+	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
+	u32 tg1 = (tcr >> 30) & 3;
+	unsigned long sz = 4096;
+	if (tg1 == 1) sz = 16384;
+	else if (tg1 == 2) sz = 65536;
+	_neverc_krt_mem_page_sz = sz;
+	return sz;
+}
+
 /* ---- internal defines ---- */
 
 #define _NEVERC_KRT_PTE_TYPE_PAGE  (3UL << 0)
@@ -30,8 +64,9 @@ static __always_inline unsigned long _neverc_krt_strip_tags(unsigned long addr)
 			      _NEVERC_KRT_PTE_UXN)
 #define _NEVERC_KRT_PAGE_KERNEL_RO  (_NEVERC_KRT_PAGE_KERNEL | _NEVERC_KRT_PTE_RDONLY)
 
-int _neverc_krt_mem_init(void)
+int neverc_krt_mem_init(void)
 {
+	_neverc_krt_version_setup();
 	if (_neverc_krt_mem_inited) return 0;
 
 	_neverc_krt_probe_read = (neverc_krt_probe_read_fn)NEVERC_KRT_LOOKUP("copy_from_kernel_nofault");

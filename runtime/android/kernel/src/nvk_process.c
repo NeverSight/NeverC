@@ -62,8 +62,7 @@ int neverc_krt_process_init(void)
 {
 	if (_neverc_krt_proc_inited) return 0;
 
-	if (!_neverc_krt_mem_inited)
-		_neverc_krt_mem_init();
+	neverc_krt_mem_init();
 
 	_neverc_krt_task_pid_nr =
 		(neverc_krt_task_pid_nr_fn)NEVERC_KRT_LOOKUP("task_pid_nr");

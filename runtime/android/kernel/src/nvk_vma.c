@@ -63,8 +63,7 @@ int neverc_krt_vma_init(void)
 {
 	if (_neverc_krt_vma_inited) return 0;
 
-	if (!_neverc_krt_mem_inited)
-		_neverc_krt_mem_init();
+	neverc_krt_mem_init();
 	neverc_krt_process_init();
 
 	_neverc_krt_find_vma =

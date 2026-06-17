@@ -2,6 +2,14 @@
 #include <nvk.h>
 #include <linux/string.h>
 
+extern unsigned long _neverc_krt_mem_get_page_size(void);
+
+/* ---- pool / cache state ---- */
+
+static int          _neverc_krt_pool_count;
+static volatile u64 _neverc_krt_pool_alloc_total;
+static volatile u64 _neverc_krt_pool_alloc_bytes;
+
 /* ---- internal pool / cache defines ---- */
 
 #define _NEVERC_KRT_POOL_MIN_PAGE 4096
@@ -1714,5 +1722,122 @@ void neverc_krt_chain_uninstall(struct neverc_krt_hook_chain *chain)
 	if (!chain) return;
 	if (chain->hook.active)
 		neverc_krt_hook_remove(&chain->hook);
+}
+
+int neverc_krt_hook_strerror(int err, char *buf, int sz)
+{
+	if (!buf || sz < 4) return -1;
+	char c0 = 'E', c1 = '0' + ((-err) / 10), c2 = '0' + ((-err) % 10);
+	if (err == 0) { buf[0] = '0'; buf[1] = '\0'; return 1; }
+	buf[0] = c0; buf[1] = c1; buf[2] = c2; buf[3] = '\0';
+	return 3;
+}
+
+int neverc_krt_scan_strerror(int r, char *buf, int sz)
+{
+	if (!buf || sz < 4) return -1;
+	char c0 = 'S', c1, c2;
+	if (r >= 0) { c1 = '+'; c2 = '0' + (r % 10); }
+	else        { c1 = '-'; c2 = '0' + ((-r) % 10); }
+	buf[0] = c0; buf[1] = c1; buf[2] = c2; buf[3] = '\0';
+	return 3;
+}
+
+enum neverc_krt_pcrel neverc_krt_a64_classify(u32 i)
+{
+	if ((i & 0x1F000000) == 0x10000000)
+		return (i & 0x80000000) ? NEVERC_KRT_PC_ADRP : NEVERC_KRT_PC_ADR;
+	if ((i & 0xFC000000) == 0x14000000) return NEVERC_KRT_PC_B;
+	if ((i & 0xFC000000) == 0x94000000) return NEVERC_KRT_PC_BL;
+	if ((i & 0xFF000010) == 0x54000000) return NEVERC_KRT_PC_BCOND;
+	if ((i & 0x7E000000) == 0x34000000) return NEVERC_KRT_PC_CBZ;
+	if ((i & 0x7E000000) == 0x36000000) return NEVERC_KRT_PC_TBZ;
+	if ((i & 0xFF000000) == 0x98000000) return NEVERC_KRT_PC_LDRSW_LIT;
+	if ((i & 0xFF000000) == 0xD8000000) return NEVERC_KRT_PC_PRFM_LIT;
+	if ((i & 0x3B000000) == 0x18000000) return NEVERC_KRT_PC_LDR_LIT;
+	return NEVERC_KRT_PC_NONE;
+}
+
+int neverc_krt_in_irq_context(void)
+{
+	unsigned long task;
+	u32 count;
+	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (!kv)
+		return 0;
+	unsigned long off = (kv <= 510) ? 24 : 16;
+	if (neverc_krt_mem_read(&count, (void *)(task + off), 4))
+		return 0;
+	return (count & 0x000FFF00U) != 0;
+}
+
+unsigned long neverc_krt_strip_pac(unsigned long addr)
+{
+	unsigned long tcr, va_bits, mask;
+	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
+	va_bits = 64 - ((tcr >> 16) & 0x3FUL);
+	mask = (1UL << va_bits) - 1;
+
+	int is_kernel = (addr >> 63) & 1;
+	addr &= mask;
+	if (is_kernel)
+		addr |= ~mask;
+	return addr;
+}
+
+int neverc_krt_a64_is_kcfi_tag(u32 *addr)
+{
+	u32 insn;
+	if (neverc_krt_mem_read(&insn, (void *)((unsigned long)addr - 4), 4))
+		return 0;
+	if (insn == 0 || insn == NEVERC_KRT_A64_NOP)
+		return 0;
+	if ((insn & 0xFFE0001FU) == 0xD4A00000U)
+		return 1;
+	return 0;
+}
+
+int neverc_krt_a64_is_ftrace_site(u32 *code)
+{
+	u32 insn;
+	if (neverc_krt_mem_read(&insn, code, 4))
+		return 0;
+	if (insn == NEVERC_KRT_A64_BRK_FTRACE) return 1;
+	if ((insn & 0xFC000000) == 0x94000000) {
+		long imm26 = neverc_krt_sext(insn & 0x3FFFFFF, 26);
+		long off = imm26 << 2;
+		if (off < -0x100000 || off > 0x100000) return 1;
+	}
+	return 0;
+}
+
+u32 neverc_krt_cfi_read_tag(void *func)
+{
+	u32 tag = 0;
+	unsigned long addr = neverc_krt_strip_pac((unsigned long)func);
+	neverc_krt_mem_read(&tag, (void *)(addr - 4), 4);
+	return tag;
+}
+
+int neverc_krt_cfi_has_tag(void *func)
+{
+	u32 tag = neverc_krt_cfi_read_tag(func);
+	return tag != 0 && tag != NEVERC_KRT_A64_NOP && tag != NEVERC_KRT_A64_BTI_C;
+}
+
+u64 neverc_krt_pool_alloc_count(void)
+{
+	return __atomic_load_n(&_neverc_krt_pool_alloc_total, __ATOMIC_RELAXED);
+}
+
+u64 neverc_krt_pool_alloc_bytes(void)
+{
+	return __atomic_load_n(&_neverc_krt_pool_alloc_bytes, __ATOMIC_RELAXED);
+}
+
+int neverc_krt_pool_page_count(void)
+{
+	return _neverc_krt_pool_count;
 }
 

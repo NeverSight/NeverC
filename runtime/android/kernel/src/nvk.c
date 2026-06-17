@@ -2,6 +2,9 @@
 /* nvk.c — runtime init/cleanup coordinator. */
 #include <nvk.h>
 
+/* ---- internal state ---- */
+static struct neverc_krt_state _neverc_krt_state;
+
 /* Cross-file hook variables defined in nvk_hide.c / nvk_selinux.c */
 extern struct neverc_krt_hook _neverc_krt_ks_hook;
 extern int _neverc_krt_ks_hooked;
@@ -12,12 +15,31 @@ extern struct neverc_krt_hook _neverc_krt_inode_hook;
 extern struct neverc_krt_hook _neverc_krt_task_perm_hook;
 extern struct neverc_krt_hook _neverc_krt_cred_perm_hook;
 
-int _neverc_krt_init_all_impl(void)
+int neverc_krt_sub_ok(int sub)
+{
+	return sub >= 0 && sub < NEVERC_KRT_SUB_COUNT
+	       && _neverc_krt_state.sub_status[sub] == 0;
+}
+
+const struct neverc_krt_state *neverc_krt_get_state(void)
+{
+	return &_neverc_krt_state;
+}
+
+static int _neverc_krt_init_all_impl(void);
+
+int neverc_krt_init_all(void)
+{
+	_neverc_krt_version_setup();
+	return _neverc_krt_init_all_impl();
+}
+
+static int _neverc_krt_init_all_impl(void)
 {
 	int ret = NEVERC_KRT_BOOTSTRAP();
 	if (ret) return ret;
 
-	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_MEM]     = _neverc_krt_mem_init();
+	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_MEM]     = neverc_krt_mem_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_PROCESS] = neverc_krt_process_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_CRED]    = neverc_krt_cred_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_HIDE]    = neverc_krt_hide_init();

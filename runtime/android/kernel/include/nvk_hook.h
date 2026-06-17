@@ -173,20 +173,7 @@ enum neverc_krt_pcrel {
 	NEVERC_KRT_PC_PRFM_LIT,
 };
 
-static __always_inline enum neverc_krt_pcrel neverc_krt_a64_classify(u32 i)
-{
-	if ((i & 0x1F000000) == 0x10000000)
-		return (i & 0x80000000) ? NEVERC_KRT_PC_ADRP : NEVERC_KRT_PC_ADR;
-	if ((i & 0xFC000000) == 0x14000000) return NEVERC_KRT_PC_B;
-	if ((i & 0xFC000000) == 0x94000000) return NEVERC_KRT_PC_BL;
-	if ((i & 0xFF000010) == 0x54000000) return NEVERC_KRT_PC_BCOND;
-	if ((i & 0x7E000000) == 0x34000000) return NEVERC_KRT_PC_CBZ;
-	if ((i & 0x7E000000) == 0x36000000) return NEVERC_KRT_PC_TBZ;
-	if ((i & 0xFF000000) == 0x98000000) return NEVERC_KRT_PC_LDRSW_LIT;
-	if ((i & 0xFF000000) == 0xD8000000) return NEVERC_KRT_PC_PRFM_LIT;
-	if ((i & 0x3B000000) == 0x18000000) return NEVERC_KRT_PC_LDR_LIT;
-	return NEVERC_KRT_PC_NONE;
-}
+enum neverc_krt_pcrel neverc_krt_a64_classify(u32 i);
 
 
 int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out);
@@ -203,14 +190,7 @@ enum neverc_krt_hook_err {
 	NEVERC_KRT_HOOK_E_CONFLICT = -6,
 };
 
-static __always_inline int neverc_krt_hook_strerror(int err, char *buf, int sz)
-{
-	if (!buf || sz < 4) return -1;
-	char c0 = 'E', c1 = '0' + ((-err) / 10), c2 = '0' + ((-err) % 10);
-	if (err == 0) { buf[0] = '0'; buf[1] = '\0'; return 1; }
-	buf[0] = c0; buf[1] = c1; buf[2] = c2; buf[3] = '\0';
-	return 3;
-}
+int neverc_krt_hook_strerror(int err, char *buf, int sz);
 
 #define NEVERC_KRT_HOOK_MAX_PATCH   6   /* BTI + PAC + LDR + BR + .quad(2) */
 #define NEVERC_KRT_HOOK_TRAMP_CAP  64
@@ -238,28 +218,7 @@ static __always_inline u64 neverc_krt_hook_hits(struct neverc_krt_hook *h)
 static __always_inline void neverc_krt_hook_reset_stats(struct neverc_krt_hook *h)
 { __atomic_store_n(&h->hit_count, 0, __ATOMIC_RELAXED); }
 
-static __always_inline int neverc_krt_in_irq_context(void)
-{
-	/*
-	 * ARM64 tracks interrupt context in preempt_count (per-task).
-	 * thread_info layout with CONFIG_ARM64_SW_TTBR0_PAN=y (all GKI):
-	 *   5.10:  flags(8) + addr_limit(8) + ttbr0(8) → preempt at 24
-	 *   5.15+: flags(8) + ttbr0(8) → preempt at 16 (addr_limit removed)
-	 * preempt.count (u32, little-endian) layout:
-	 *   [19:16]=HARDIRQ, [15:8]=SOFTIRQ, [7:0]=PREEMPT
-	 * in_interrupt() = (count & 0x000FFF00) != 0
-	 */
-	unsigned long task;
-	u32 count;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (!kv)
-		return 0;
-	unsigned long off = (kv <= 510) ? 24 : 16;
-	if (neverc_krt_mem_read(&count, (void *)(task + off), 4))
-		return 0;
-	return (count & 0x000FFF00U) != 0;
-}
+int neverc_krt_in_irq_context(void);
 
 static __always_inline int neverc_krt_irq_disabled(void)
 {
@@ -292,28 +251,13 @@ static __always_inline int neverc_krt_hook_enter_safe(struct neverc_krt_hook *h)
 	return neverc_krt_hook_enter(h);
 }
 
-NEVERC_KRT_RT_VAR int _neverc_krt_pool_count;
-NEVERC_KRT_RT_VAR volatile u64 _neverc_krt_pool_alloc_total;
-NEVERC_KRT_RT_VAR volatile u64 _neverc_krt_pool_alloc_bytes;
 
 int neverc_krt_hook_init(void);
 
 
 #define NEVERC_KRT_A64_BRK_KPROBE 0xD4200080U
 
-static __always_inline unsigned long neverc_krt_strip_pac(unsigned long addr)
-{
-	unsigned long tcr, va_bits, mask;
-	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
-	va_bits = 64 - ((tcr >> 16) & 0x3FUL);
-	mask = (1UL << va_bits) - 1;
-
-	int is_kernel = (addr >> 63) & 1;
-	addr &= mask;
-	if (is_kernel)
-		addr |= ~mask;
-	return addr;
-}
+unsigned long neverc_krt_strip_pac(unsigned long addr);
 
 static __always_inline int neverc_krt_a64_is_stp_fp_lr(u32 insn)
 {
@@ -345,34 +289,12 @@ static __always_inline int neverc_krt_a64_is_hook_patch(u32 insn)
 	return 0;
 }
 
-static __always_inline int neverc_krt_a64_is_kcfi_tag(u32 *addr)
-{
-	u32 insn;
-	if (neverc_krt_mem_read(&insn, (void *)((unsigned long)addr - 4), 4))
-		return 0;
-	if (insn == 0 || insn == NEVERC_KRT_A64_NOP)
-		return 0;
-	if ((insn & 0xFFE0001FU) == 0xD4A00000U)
-		return 1;
-	return 0;
-}
+int neverc_krt_a64_is_kcfi_tag(u32 *addr);
 
 #define NEVERC_KRT_A64_FTRACE_NOP  0xD503201FU
 #define NEVERC_KRT_A64_BRK_FTRACE  0xD4200000U  /* BRK #0 — ftrace entry */
 
-static __always_inline int neverc_krt_a64_is_ftrace_site(u32 *code)
-{
-	u32 insn;
-	if (neverc_krt_mem_read(&insn, code, 4))
-		return 0;
-	if (insn == NEVERC_KRT_A64_BRK_FTRACE) return 1;
-	if ((insn & 0xFC000000) == 0x94000000) {
-		long imm26 = neverc_krt_sext(insn & 0x3FFFFFF, 26);
-		long off = imm26 << 2;
-		if (off < -0x100000 || off > 0x100000) return 1;
-	}
-	return 0;
-}
+int neverc_krt_a64_is_ftrace_site(u32 *code);
 
 static __always_inline int neverc_krt_a64_is_kprobe_bp(u32 insn)
 {
@@ -411,15 +333,7 @@ enum neverc_krt_scan_result {
 	NEVERC_KRT_SCAN_KPROBE_ACTIVE   =  3,
 };
 
-static __always_inline int neverc_krt_scan_strerror(int r, char *buf, int sz)
-{
-	if (!buf || sz < 4) return -1;
-	char c0 = 'S', c1, c2;
-	if (r >= 0) { c1 = '+'; c2 = '0' + (r % 10); }
-	else        { c1 = '-'; c2 = '0' + ((-r) % 10); }
-	buf[0] = c0; buf[1] = c1; buf[2] = c2; buf[3] = '\0';
-	return 3;
-}
+int neverc_krt_scan_strerror(int r, char *buf, int sz);
 
 enum neverc_krt_scan_result neverc_krt_hook_scan(void *target);
 
@@ -530,19 +444,9 @@ void neverc_krt_hook_cleanup(void);
 
 /* --- kCFI-safe function pointer replacement --- */
 
-static __always_inline u32 neverc_krt_cfi_read_tag(void *func)
-{
-	u32 tag = 0;
-	unsigned long addr = neverc_krt_strip_pac((unsigned long)func);
-	neverc_krt_mem_read(&tag, (void *)(addr - 4), 4);
-	return tag;
-}
+u32 neverc_krt_cfi_read_tag(void *func);
 
-static __always_inline int neverc_krt_cfi_has_tag(void *func)
-{
-	u32 tag = neverc_krt_cfi_read_tag(func);
-	return tag != 0 && tag != NEVERC_KRT_A64_NOP && tag != NEVERC_KRT_A64_BTI_C;
-}
+int neverc_krt_cfi_has_tag(void *func);
 
 struct neverc_krt_cfi_thunk {
 	u32  tag;
@@ -626,14 +530,11 @@ void neverc_krt_hook_auto_remove(struct neverc_krt_hook *h,
 
 
 
-static __always_inline u64 neverc_krt_pool_alloc_count(void)
-{ return __atomic_load_n(&_neverc_krt_pool_alloc_total, __ATOMIC_RELAXED); }
+u64 neverc_krt_pool_alloc_count(void);
 
-static __always_inline u64 neverc_krt_pool_alloc_bytes(void)
-{ return __atomic_load_n(&_neverc_krt_pool_alloc_bytes, __ATOMIC_RELAXED); }
+u64 neverc_krt_pool_alloc_bytes(void);
 
-static __always_inline int neverc_krt_pool_page_count(void)
-{ return _neverc_krt_pool_count; }
+int neverc_krt_pool_page_count(void);
 
 int neverc_krt_pool_usage(int *total_used, int *total_cap);
 
