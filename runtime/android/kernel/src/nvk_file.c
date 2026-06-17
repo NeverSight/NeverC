@@ -1,6 +1,28 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_file.c — implementations extracted from neverc_krt_file.h. */
+/* neverc_krt_file.c — kernel file I/O operations. */
 #include <nvk.h>
+
+/* ---- internal types ---- */
+
+typedef void *(*neverc_krt_filp_open_fn)(const char *filename, int flags, u16 mode);
+typedef int   (*neverc_krt_filp_close_fn)(void *filp, void *id);
+typedef long  (*neverc_krt_kernel_read_fn)(void *filp, void *buf,
+					   size_t count, long long *pos);
+typedef long  (*neverc_krt_kernel_write_fn)(void *filp, const void *buf,
+					    size_t count, long long *pos);
+typedef long long (*neverc_krt_vfs_llseek_fn)(void *filp, long long offset,
+					      int whence);
+typedef int   (*neverc_krt_vfs_stat_fn)(const char *filename, void *stat);
+
+/* ---- internal variables (file-local) ---- */
+
+static neverc_krt_filp_open_fn    _neverc_krt_filp_open;
+static neverc_krt_filp_close_fn   _neverc_krt_filp_close;
+static neverc_krt_kernel_read_fn  _neverc_krt_kernel_read;
+static neverc_krt_kernel_write_fn _neverc_krt_kernel_write;
+static neverc_krt_vfs_llseek_fn   _neverc_krt_vfs_llseek;
+static neverc_krt_vfs_stat_fn     _neverc_krt_vfs_stat;
+static int                        _neverc_krt_file_inited;
 
 int neverc_krt_file_init(void)
 {

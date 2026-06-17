@@ -2,15 +2,48 @@
 /* neverc_krt_vma.c — virtual memory area operations. */
 #include <nvk.h>
 
-/* ---- cross-file variables (defined in nvk_inject.c) ---- */
+/* ---- internal types ---- */
 
+typedef void *(*neverc_krt_find_vma_fn)(void *mm, unsigned long addr);
+typedef int   (*neverc_krt_access_task_fn)(void *task, unsigned long addr,
+					   void *buf, int len, unsigned int gup);
+typedef int   (*neverc_krt_access_mm_fn)(void *mm, unsigned long addr,
+					 void *buf, int len, unsigned int gup);
+typedef long  (*neverc_krt_get_user_pages_fn)(unsigned long start,
+					      unsigned long nr_pages,
+					      unsigned int gup_flags,
+					      void **pages, void **vmas);
+typedef void *(*neverc_krt_page_address_fn)(void *page);
+typedef void  (*neverc_krt_put_page_fn)(void *page);
+typedef void  (*neverc_krt_kunmap_fn)(void *page);
+typedef void *(*neverc_krt_kmap_fn)(void *page);
+typedef void  (*neverc_krt_mmap_read_lock_fn)(void *mm);
+typedef void  (*neverc_krt_mmap_read_unlock_fn)(void *mm);
 typedef void *(*neverc_krt_get_task_mm_fn)(struct task_struct *);
 typedef void  (*neverc_krt_mmput_fn)(void *);
+
+/* ---- internal variables (file-local) ---- */
+
+static neverc_krt_find_vma_fn          _neverc_krt_find_vma;
+static neverc_krt_access_task_fn       _neverc_krt_access_task_vm;
+static neverc_krt_access_mm_fn         _neverc_krt_access_mm_vm;
+static neverc_krt_get_user_pages_fn    _neverc_krt_get_user_pages;
+static neverc_krt_page_address_fn      _neverc_krt_page_address;
+static neverc_krt_put_page_fn          _neverc_krt_put_page;
+static neverc_krt_kmap_fn              _neverc_krt_kmap;
+static neverc_krt_kunmap_fn            _neverc_krt_kunmap;
+static neverc_krt_mmap_read_lock_fn    _neverc_krt_mmap_read_lock;
+static neverc_krt_mmap_read_unlock_fn  _neverc_krt_mmap_read_unlock;
+static int                             _neverc_krt_vma_inited;
+static unsigned long                   _neverc_krt_off_mm;
+static unsigned long                   _neverc_krt_off_vm_flags;
+
+/* ---- cross-file variables (defined in nvk_inject.c) ---- */
 
 extern neverc_krt_get_task_mm_fn _neverc_krt_get_task_mm;
 extern neverc_krt_mmput_fn       _neverc_krt_mmput;
 
-/* ---- internal types ---- */
+/* ---- internal types (continued) ---- */
 
 struct _neverc_krt_find_map_ctx {
 	unsigned long prot;

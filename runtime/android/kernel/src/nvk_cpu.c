@@ -8,13 +8,13 @@ typedef void (*neverc_krt_on_each_cpu_fn)(neverc_krt_smp_call_fn func, void *inf
 typedef int  (*neverc_krt_smp_call_single_fn)(int cpu, neverc_krt_smp_call_fn func,
 					      void *info, int wait);
 
-neverc_krt_nr_cpu_ids_fn     _neverc_krt_nr_cpus;
-neverc_krt_cpu_online_fn     _neverc_krt_cpu_online_check;
-unsigned long               *_neverc_krt_cpu_online_mask;
-int                         *_neverc_krt_nr_cpu_ids_ptr;
-int                          _neverc_krt_cpu_inited;
-neverc_krt_on_each_cpu_fn    _neverc_krt_on_each_cpu;
-neverc_krt_smp_call_single_fn _neverc_krt_smp_call_single;
+static neverc_krt_nr_cpu_ids_fn     _neverc_krt_nr_cpus;
+static neverc_krt_cpu_online_fn     _neverc_krt_cpu_online_check;
+static unsigned long               *_neverc_krt_cpu_online_mask;
+static int                         *_neverc_krt_nr_cpu_ids_ptr;
+static int                          _neverc_krt_cpu_inited;
+static neverc_krt_on_each_cpu_fn    _neverc_krt_on_each_cpu;
+static neverc_krt_smp_call_single_fn _neverc_krt_smp_call_single;
 
 int neverc_krt_cpu_init(void)
 {

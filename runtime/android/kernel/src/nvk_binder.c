@@ -12,15 +12,15 @@ struct neverc_krt_binder_filter {
 	int                  active;
 };
 
-neverc_krt_binder_ioctl_fn     _neverc_krt_orig_binder_ioctl;
-struct neverc_krt_hook         _neverc_krt_binder_hook;
-int                            _neverc_krt_binder_inited;
+static neverc_krt_binder_ioctl_fn     _neverc_krt_orig_binder_ioctl;
+static struct neverc_krt_hook         _neverc_krt_binder_hook;
+static int                            _neverc_krt_binder_inited;
 
-struct neverc_krt_binder_filter _neverc_krt_binder_filters[NEVERC_KRT_BINDER_FILTER_MAX];
-volatile int                   _neverc_krt_binder_filter_cnt;
-volatile u64                   _neverc_krt_binder_txn_count;
-volatile u64                   _neverc_krt_binder_filtered_count;
-void                          *_neverc_krt_binder_target;
+static struct neverc_krt_binder_filter _neverc_krt_binder_filters[NEVERC_KRT_BINDER_FILTER_MAX];
+static volatile int                   _neverc_krt_binder_filter_cnt;
+static volatile u64                   _neverc_krt_binder_txn_count;
+static volatile u64                   _neverc_krt_binder_filtered_count;
+static void                          *_neverc_krt_binder_target;
 
 static int _neverc_krt_binder_hook_install(void);
 

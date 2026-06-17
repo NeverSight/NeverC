@@ -205,34 +205,34 @@ struct _neverc_krt_pool_page {
 	u32     magic;
 };
 
-/* ---- internal variables ---- */
+/* ---- internal variables (file-local) ---- */
 
-neverc_krt_modalloc_fn       _neverc_krt_modalloc;
-neverc_krt_execmem_alloc_fn  _neverc_krt_execmem_alloc;
-neverc_krt_modfree_fn        _neverc_krt_modfree;
-neverc_krt_flushic_fn        _neverc_krt_flushic;
-neverc_krt_patchtext_fn      _neverc_krt_patchtext;
-neverc_krt_patchtns_fn       _neverc_krt_patchtns;
-neverc_krt_syncrcu_fn        _neverc_krt_syncrcu;
-neverc_krt_msleep_fn         _neverc_krt_msleep;
-int                          _neverc_krt_inited;
-neverc_krt_ksize_fn          _neverc_krt_ksize;
+static neverc_krt_modalloc_fn       _neverc_krt_modalloc;
+static neverc_krt_execmem_alloc_fn  _neverc_krt_execmem_alloc;
+static neverc_krt_modfree_fn        _neverc_krt_modfree;
+static neverc_krt_flushic_fn        _neverc_krt_flushic;
+static neverc_krt_patchtext_fn      _neverc_krt_patchtext;
+static neverc_krt_patchtns_fn       _neverc_krt_patchtns;
+static neverc_krt_syncrcu_fn        _neverc_krt_syncrcu;
+static neverc_krt_msleep_fn         _neverc_krt_msleep;
+static int                          _neverc_krt_inited;
+static neverc_krt_ksize_fn          _neverc_krt_ksize;
 
-volatile int                 _neverc_krt_pool_lock;
-struct _neverc_krt_pool_page _neverc_krt_pool[_NEVERC_KRT_POOL_MAX];
-int                          _neverc_krt_pool_pgsz;
-volatile u64                 _neverc_krt_pool_alloc_fail;
-volatile u64                 _neverc_krt_hook_install_cnt;
-volatile u64                 _neverc_krt_hook_remove_cnt;
+static volatile int                 _neverc_krt_pool_lock;
+static struct _neverc_krt_pool_page _neverc_krt_pool[_NEVERC_KRT_POOL_MAX];
+static int                          _neverc_krt_pool_pgsz;
+static volatile u64                 _neverc_krt_pool_alloc_fail;
+static volatile u64                 _neverc_krt_hook_install_cnt;
+static volatile u64                 _neverc_krt_hook_remove_cnt;
 
-neverc_krt_register_ftrace_fn     _neverc_krt_register_ftrace;
-neverc_krt_unregister_ftrace_fn   _neverc_krt_unregister_ftrace;
-neverc_krt_ftrace_set_filter_ip_fn _neverc_krt_ftrace_set_filter;
-neverc_krt_ftrace_set_fn           _neverc_krt_ftrace_set_ip;
-int                                _neverc_krt_ftrace_avail;
+static neverc_krt_register_ftrace_fn     _neverc_krt_register_ftrace;
+static neverc_krt_unregister_ftrace_fn   _neverc_krt_unregister_ftrace;
+static neverc_krt_ftrace_set_filter_ip_fn _neverc_krt_ftrace_set_filter;
+static neverc_krt_ftrace_set_fn           _neverc_krt_ftrace_set_ip;
+static int                                _neverc_krt_ftrace_avail;
 
-neverc_krt_register_kprobe_fn   _neverc_krt_reg_kprobe;
-neverc_krt_unregister_kprobe_fn _neverc_krt_unreg_kprobe;
+static neverc_krt_register_kprobe_fn   _neverc_krt_reg_kprobe;
+static neverc_krt_unregister_kprobe_fn _neverc_krt_unreg_kprobe;
 
 /* ---- static forward declarations ---- */
 

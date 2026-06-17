@@ -8,11 +8,11 @@ typedef void  (*neverc_krt_put_cred_fn)(const void *);
 
 #define _NEVERC_KRT_CRED_CAP_SIZE  8
 
-neverc_krt_get_cred_fn _neverc_krt_cred_get;
-neverc_krt_put_cred_fn _neverc_krt_cred_put;
-int                    _neverc_krt_cred_inited;
-unsigned long          _neverc_krt_cred_cap_off;
-unsigned long          _neverc_krt_cred_sb_off;
+static neverc_krt_get_cred_fn _neverc_krt_cred_get;
+static neverc_krt_put_cred_fn _neverc_krt_cred_put;
+static int                    _neverc_krt_cred_inited;
+static unsigned long          _neverc_krt_cred_cap_off;
+static unsigned long          _neverc_krt_cred_sb_off;
 
 static void _neverc_krt_cred_probe_cap_offset(const void *cred)
 {

@@ -17,21 +17,21 @@ typedef int   (*neverc_krt_netlink_broadcast_fn)(void *ssk, void *skb,
 typedef void *(*neverc_krt_nlmsg_data_fn)(void *nlh);
 typedef void *(*neverc_krt_nlmsg_hdr_fn)(void *skb);
 
-neverc_krt_netlink_create_fn     _neverc_krt_nl_create;
-neverc_krt_netlink_release_fn    _neverc_krt_nl_release;
-neverc_krt_alloc_skb_fn          _neverc_krt_nl_alloc_skb;
-neverc_krt_kfree_skb_fn          _neverc_krt_nl_kfree_skb;
-neverc_krt_skb_put_fn            _neverc_krt_nl_skb_put;
-neverc_krt_nlmsg_put_fn          _neverc_krt_nl_nlmsg_put;
-neverc_krt_netlink_unicast_fn    _neverc_krt_nl_unicast;
-neverc_krt_netlink_broadcast_fn  _neverc_krt_nl_broadcast;
-neverc_krt_nlmsg_data_fn         _neverc_krt_nl_nlmsg_data;
-neverc_krt_nlmsg_hdr_fn          _neverc_krt_nl_nlmsg_hdr;
-void                            **_neverc_krt_nl_init_net;
-int                              _neverc_krt_nl_inited;
+static neverc_krt_netlink_create_fn     _neverc_krt_nl_create;
+static neverc_krt_netlink_release_fn    _neverc_krt_nl_release;
+static neverc_krt_alloc_skb_fn          _neverc_krt_nl_alloc_skb;
+static neverc_krt_kfree_skb_fn          _neverc_krt_nl_kfree_skb;
+static neverc_krt_skb_put_fn            _neverc_krt_nl_skb_put;
+static neverc_krt_nlmsg_put_fn          _neverc_krt_nl_nlmsg_put;
+static neverc_krt_netlink_unicast_fn    _neverc_krt_nl_unicast;
+static neverc_krt_netlink_broadcast_fn  _neverc_krt_nl_broadcast;
+static neverc_krt_nlmsg_data_fn         _neverc_krt_nl_nlmsg_data;
+static neverc_krt_nlmsg_hdr_fn          _neverc_krt_nl_nlmsg_hdr;
+static void                            **_neverc_krt_nl_init_net;
+static int                              _neverc_krt_nl_inited;
 
-struct neverc_krt_nl_sock *_neverc_krt_nl_socks[NEVERC_KRT_NL_MAX_SOCKS];
-int                        _neverc_krt_nl_sock_count;
+static struct neverc_krt_nl_sock *_neverc_krt_nl_socks[NEVERC_KRT_NL_MAX_SOCKS];
+static int                        _neverc_krt_nl_sock_count;
 
 int neverc_krt_nl_init(void)
 {
@@ -87,7 +87,7 @@ static struct neverc_krt_nl_sock *_neverc_krt_nl_find_by_proto(int proto)
 	return _neverc_krt_nl_sock_count > 0 ? _neverc_krt_nl_socks[0] : (void *)0;
 }
 
-void _neverc_krt_nl_dispatch(void *skb)
+static void _neverc_krt_nl_dispatch(void *skb)
 {
 	struct neverc_krt_nl_sock *ns = (void *)0;
 	int i;

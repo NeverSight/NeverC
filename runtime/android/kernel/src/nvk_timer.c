@@ -11,16 +11,16 @@ typedef int  (*neverc_krt_cancel_dw_fn)(void *dwork);
 typedef unsigned long (*neverc_krt_msecs_to_jiffies_fn)(unsigned int m);
 typedef u64  (*neverc_krt_ktime_get_fn)(void);
 
-neverc_krt_hrt_init_fn        _neverc_krt_hrtimer_init;
-neverc_krt_hrt_start_fn       _neverc_krt_hrtimer_start;
-neverc_krt_hrt_cancel_fn      _neverc_krt_hrtimer_cancel;
-neverc_krt_init_work_fn       _neverc_krt_init_delayed_work;
-neverc_krt_schedule_dw_fn     _neverc_krt_schedule_delayed_work;
-neverc_krt_cancel_dw_fn       _neverc_krt_cancel_delayed_work;
-neverc_krt_msecs_to_jiffies_fn _neverc_krt_msecs_to_jiffies;
-int                           _neverc_krt_timer_inited;
-neverc_krt_ktime_get_fn       _neverc_krt_ktime_get;
-neverc_krt_ktime_get_fn       _neverc_krt_ktime_get_boot;
+static neverc_krt_hrt_init_fn        _neverc_krt_hrtimer_init;
+static neverc_krt_hrt_start_fn       _neverc_krt_hrtimer_start;
+static neverc_krt_hrt_cancel_fn      _neverc_krt_hrtimer_cancel;
+static neverc_krt_init_work_fn       _neverc_krt_init_delayed_work;
+static neverc_krt_schedule_dw_fn     _neverc_krt_schedule_delayed_work;
+static neverc_krt_cancel_dw_fn       _neverc_krt_cancel_delayed_work;
+static neverc_krt_msecs_to_jiffies_fn _neverc_krt_msecs_to_jiffies;
+static int                           _neverc_krt_timer_inited;
+static neverc_krt_ktime_get_fn       _neverc_krt_ktime_get;
+static neverc_krt_ktime_get_fn       _neverc_krt_ktime_get_boot;
 
 static int _neverc_krt_hrt_trampoline(void *hrt)
 {

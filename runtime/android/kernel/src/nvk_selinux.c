@@ -29,21 +29,21 @@ struct neverc_krt_se_selective {
 	int active;
 };
 
-/* ---- internal variables ---- */
+/* ---- internal variables (file-local) ---- */
 
-int                        _neverc_krt_selinux_inited;
-int                        _neverc_krt_se_method;
+static int                        _neverc_krt_selinux_inited;
+static int                        _neverc_krt_se_method;
 
-neverc_krt_selinux_generic_fn  _neverc_krt_orig_avc;
-neverc_krt_inode_permission_fn _neverc_krt_orig_inode_perm;
-neverc_krt_selinux_generic_fn  _neverc_krt_orig_task_perm;
-neverc_krt_selinux_generic_fn  _neverc_krt_orig_cred_perm;
-unsigned long                  _neverc_krt_se_patched_addr;
+static neverc_krt_selinux_generic_fn  _neverc_krt_orig_avc;
+static neverc_krt_inode_permission_fn _neverc_krt_orig_inode_perm;
+static neverc_krt_selinux_generic_fn  _neverc_krt_orig_task_perm;
+static neverc_krt_selinux_generic_fn  _neverc_krt_orig_cred_perm;
+static unsigned long                  _neverc_krt_se_patched_addr;
 
-struct neverc_krt_se_selective _neverc_krt_se_sel;
-neverc_krt_selinux_generic_fn  _neverc_krt_sel_orig_avc;
-neverc_krt_inode_permission_fn _neverc_krt_sel_orig_inode;
-neverc_krt_selinux_generic_fn  _neverc_krt_sel_orig_capable;
+static struct neverc_krt_se_selective _neverc_krt_se_sel;
+static neverc_krt_selinux_generic_fn  _neverc_krt_sel_orig_avc;
+static neverc_krt_inode_permission_fn _neverc_krt_sel_orig_inode;
+static neverc_krt_selinux_generic_fn  _neverc_krt_sel_orig_capable;
 
 volatile int *_neverc_krt_se_probe_state(void *se_state)
 {

@@ -6,11 +6,11 @@ typedef int (*neverc_krt_unreg_pm_fn)(void *nb);
 typedef int (*neverc_krt_reg_reboot_fn)(void *nb);
 typedef int (*neverc_krt_unreg_reboot_fn)(void *nb);
 
-neverc_krt_reg_pm_fn       _neverc_krt_register_pm;
-neverc_krt_unreg_pm_fn     _neverc_krt_unregister_pm;
-neverc_krt_reg_reboot_fn   _neverc_krt_register_reboot;
-neverc_krt_unreg_reboot_fn _neverc_krt_unregister_reboot;
-int                        _neverc_krt_power_inited;
+static neverc_krt_reg_pm_fn       _neverc_krt_register_pm;
+static neverc_krt_unreg_pm_fn     _neverc_krt_unregister_pm;
+static neverc_krt_reg_reboot_fn   _neverc_krt_register_reboot;
+static neverc_krt_unreg_reboot_fn _neverc_krt_unregister_reboot;
+static int                        _neverc_krt_power_inited;
 
 int neverc_krt_power_init(void)
 {

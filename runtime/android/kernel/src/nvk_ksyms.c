@@ -2,6 +2,19 @@
 /* neverc_krt_ksyms.c — kernel symbol resolution engine. */
 #include <nvk.h>
 
+/* ---- internal types (file-local) ---- */
+
+typedef int (*neverc_krt_ksym_on_each_fn)(const char *name, void *module,
+					  unsigned long addr);
+typedef unsigned long (*neverc_krt_sprint_symbol_fn)(char *buf, unsigned long addr);
+
+/* ---- internal variables (file-local) ---- */
+
+static neverc_krt_ksym_on_each_fn    _neverc_krt_on_each_symbol;
+static neverc_krt_sprint_symbol_fn   _neverc_krt_sprint_symbol;
+static neverc_krt_sprint_symbol_fn   _neverc_krt_sprint_symbol_no_off;
+static int                           _neverc_krt_ksyms_inited;
+
 /* ---- internal types ---- */
 
 struct _neverc_krt_ksym_ctx {

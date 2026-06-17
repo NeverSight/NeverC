@@ -22,16 +22,16 @@ typedef void  (*neverc_krt_mmap_write_unlock_fn)(void *mm);
 typedef void  (*neverc_krt_use_mm_fn)(void *mm);
 typedef void  (*neverc_krt_unuse_mm_fn)(void *mm);
 
-neverc_krt_do_mmap_fn          _neverc_krt_do_mmap;
-neverc_krt_vm_mmap_fn          _neverc_krt_vm_mmap;
-neverc_krt_do_munmap_fn        _neverc_krt_do_munmap;
-int                            _neverc_krt_inject_inited;
-neverc_krt_get_task_mm_fn      _neverc_krt_get_task_mm;
-neverc_krt_mmput_fn            _neverc_krt_mmput;
-neverc_krt_mmap_write_lock_fn  _neverc_krt_mmap_wlock;
-neverc_krt_mmap_write_unlock_fn _neverc_krt_mmap_wunlock;
-neverc_krt_use_mm_fn           _neverc_krt_use_mm;
-neverc_krt_unuse_mm_fn         _neverc_krt_unuse_mm;
+static neverc_krt_do_mmap_fn          _neverc_krt_do_mmap;
+static neverc_krt_vm_mmap_fn          _neverc_krt_vm_mmap;
+static neverc_krt_do_munmap_fn        _neverc_krt_do_munmap;
+static int                            _neverc_krt_inject_inited;
+static neverc_krt_get_task_mm_fn      _neverc_krt_get_task_mm;
+static neverc_krt_mmput_fn            _neverc_krt_mmput;
+static neverc_krt_mmap_write_lock_fn  _neverc_krt_mmap_wlock;
+static neverc_krt_mmap_write_unlock_fn _neverc_krt_mmap_wunlock;
+static neverc_krt_use_mm_fn           _neverc_krt_use_mm;
+static neverc_krt_unuse_mm_fn         _neverc_krt_unuse_mm;
 
 int neverc_krt_inject_init(void)
 {

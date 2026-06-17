@@ -7,12 +7,12 @@ typedef void *(*neverc_krt_task_pid_fn)(struct task_struct *);
 typedef int   (*neverc_krt_pid_vnr_fn)(void *pid);
 typedef void *(*neverc_krt_get_nsproxy_fn)(struct task_struct *);
 
-neverc_krt_task_active_pid_ns_fn _neverc_krt_task_pid_ns;
-neverc_krt_pid_nr_ns_fn          _neverc_krt_pid_nr_ns;
-neverc_krt_task_pid_fn           _neverc_krt_task_pid_struct;
-neverc_krt_pid_vnr_fn            _neverc_krt_pid_vnr;
-int                              _neverc_krt_ns_inited;
-unsigned long                    _neverc_krt_off_nsproxy;
+static neverc_krt_task_active_pid_ns_fn _neverc_krt_task_pid_ns;
+static neverc_krt_pid_nr_ns_fn          _neverc_krt_pid_nr_ns;
+static neverc_krt_task_pid_fn           _neverc_krt_task_pid_struct;
+static neverc_krt_pid_vnr_fn            _neverc_krt_pid_vnr;
+static int                              _neverc_krt_ns_inited;
+static unsigned long                    _neverc_krt_off_nsproxy;
 
 int neverc_krt_ns_init(void)
 {

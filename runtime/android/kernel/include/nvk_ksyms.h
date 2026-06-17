@@ -5,17 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <nvk_mem.h>
-
-typedef int (*neverc_krt_ksym_on_each_fn)(const char *name, void *module,
-				   unsigned long addr);
-typedef unsigned long (*neverc_krt_sprint_symbol_fn)(char *buf, unsigned long addr);
-
-NEVERC_KRT_RT_VAR neverc_krt_ksym_on_each_fn    _neverc_krt_on_each_symbol;
-NEVERC_KRT_RT_VAR neverc_krt_sprint_symbol_fn   _neverc_krt_sprint_symbol;
-NEVERC_KRT_RT_VAR neverc_krt_sprint_symbol_fn   _neverc_krt_sprint_symbol_no_off;
-NEVERC_KRT_RT_VAR int                    _neverc_krt_ksyms_inited;
 
 int neverc_krt_ksyms_init(void);
 

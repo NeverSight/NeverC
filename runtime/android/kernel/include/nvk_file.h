@@ -5,31 +5,6 @@
 #include <linux/types.h>
 #include <nvk_rt.h>
 #include <linux/compiler.h>
-#include <linux/kallsyms.h>
-#include <nvk_mem.h>
-
-typedef void *(*neverc_krt_filp_open_fn)(const char *filename, int flags, u16 mode);
-typedef int   (*neverc_krt_filp_close_fn)(void *filp, void *id);
-typedef long  (*neverc_krt_kernel_read_fn)(void *filp, void *buf,
-				    size_t count, long long *pos);
-typedef long  (*neverc_krt_kernel_write_fn)(void *filp, const void *buf,
-				     size_t count, long long *pos);
-typedef long  (*neverc_krt_vfs_read_fn)(void *filp, char __user *buf,
-				 size_t count, long long *pos);
-typedef long  (*neverc_krt_vfs_write_fn)(void *filp, const char __user *buf,
-				  size_t count, long long *pos);
-typedef long long (*neverc_krt_vfs_llseek_fn)(void *filp, long long offset, int whence);
-typedef void  (*neverc_krt_set_fs_fn)(unsigned long);
-typedef unsigned long (*neverc_krt_get_fs_fn)(void);
-typedef int   (*neverc_krt_vfs_stat_fn)(const char *filename, void *stat);
-
-NEVERC_KRT_RT_VAR neverc_krt_filp_open_fn    _neverc_krt_filp_open;
-NEVERC_KRT_RT_VAR neverc_krt_filp_close_fn   _neverc_krt_filp_close;
-NEVERC_KRT_RT_VAR neverc_krt_kernel_read_fn  _neverc_krt_kernel_read;
-NEVERC_KRT_RT_VAR neverc_krt_kernel_write_fn _neverc_krt_kernel_write;
-NEVERC_KRT_RT_VAR neverc_krt_vfs_llseek_fn   _neverc_krt_vfs_llseek;
-NEVERC_KRT_RT_VAR neverc_krt_vfs_stat_fn     _neverc_krt_vfs_stat;
-NEVERC_KRT_RT_VAR int                 _neverc_krt_file_inited;
 
 #define NEVERC_KRT_O_RDONLY   0x0000
 #define NEVERC_KRT_O_WRONLY   0x0001

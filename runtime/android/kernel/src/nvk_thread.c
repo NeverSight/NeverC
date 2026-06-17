@@ -1,6 +1,55 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_thread.c — implementations extracted from neverc_krt_thread.h. */
+/* neverc_krt_thread.c — kernel thread management. */
 #include <nvk.h>
+
+/* ---- internal types ---- */
+
+typedef struct task_struct *(*neverc_krt_kthread_create_fn)(
+	int (*fn)(void *), void *data, const char *namefmt, ...);
+typedef int  (*neverc_krt_wake_up_process_fn)(struct task_struct *);
+typedef int  (*neverc_krt_kthread_stop_fn)(struct task_struct *);
+typedef long (*neverc_krt_schedule_timeout_fn)(long timeout);
+typedef void (*neverc_krt_set_current_state_fn)(long state);
+typedef void (*neverc_krt_msleep_fn)(unsigned int msecs);
+typedef void (*neverc_krt_usleep_range_fn)(unsigned long min, unsigned long max);
+
+/* ---- internal variables (file-local) ---- */
+
+static neverc_krt_kthread_create_fn     _neverc_krt_kthread_create;
+static neverc_krt_wake_up_process_fn    _neverc_krt_wake_up_process;
+static neverc_krt_kthread_stop_fn       _neverc_krt_kthread_stop;
+static neverc_krt_schedule_timeout_fn   _neverc_krt_schedule_timeout;
+static neverc_krt_set_current_state_fn  _neverc_krt_set_current_state;
+static neverc_krt_msleep_fn             _neverc_krt_msleep_thr;
+static neverc_krt_usleep_range_fn       _neverc_krt_usleep_range;
+static int                              _neverc_krt_thread_inited;
+
+#define NEVERC_KRT_THREAD_MAX 8
+#define NEVERC_KRT_THREAD_NAME_LEN 16
+
+struct neverc_krt_thread {
+	struct task_struct *task;
+	volatile int        running;
+	volatile int        stop_req;
+	volatile u64        iter_count;
+	char                name[NEVERC_KRT_THREAD_NAME_LEN];
+};
+
+static struct neverc_krt_thread _neverc_krt_threads[NEVERC_KRT_THREAD_MAX];
+static volatile int             _neverc_krt_thread_count;
+static volatile int             _neverc_krt_thread_lock;
+
+static __always_inline void _neverc_krt_thr_lock(void)
+{
+	while (__atomic_exchange_n(&_neverc_krt_thread_lock, 1, __ATOMIC_ACQUIRE))
+		__asm__ __volatile__("wfe" ::: "memory");
+}
+
+static __always_inline void _neverc_krt_thr_unlock(void)
+{
+	__atomic_store_n(&_neverc_krt_thread_lock, 0, __ATOMIC_RELEASE);
+	__asm__ __volatile__("sev" ::: "memory");
+}
 
 int neverc_krt_thread_init(void)
 {
