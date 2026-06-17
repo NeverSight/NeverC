@@ -2,7 +2,7 @@
 /* neverc_krt_cred.c — implementations extracted from neverc_krt_cred.h. */
 #include <nvk.h>
 
-void _neverc_krt_cred_probe_cap_offset(const void *cred)
+static void _neverc_krt_cred_probe_cap_offset(const void *cred)
 {
 	if (_neverc_krt_cred_cap_off) return;
 
@@ -60,7 +60,7 @@ int neverc_krt_cred_init(void)
 	return 0;
 }
 
-int _neverc_krt_cred_find_uid_offset(void)
+static int _neverc_krt_cred_find_uid_offset(void)
 {
 	if (_neverc_krt_off_uid) return 0;
 

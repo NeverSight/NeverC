@@ -77,7 +77,6 @@ struct neverc_krt_pm_notifier {
 	int                       registered;
 };
 
-int _neverc_krt_pm_trampoline(void *nb_ptr, unsigned long event, void *unused);
 
 
 int neverc_krt_pm_register(struct neverc_krt_pm_notifier *pm,
@@ -99,9 +98,6 @@ struct neverc_krt_reboot_notifier {
 	neverc_krt_reboot_callback_t     callback;
 	int                       registered;
 };
-
-int _neverc_krt_reboot_trampoline(void *nb_ptr, unsigned long event,
-				  void *unused);
 
 
 int neverc_krt_reboot_register(struct neverc_krt_reboot_notifier *rn,

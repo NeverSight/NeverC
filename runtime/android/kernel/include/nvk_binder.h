@@ -78,22 +78,8 @@ int neverc_krt_binder_filter_add(neverc_krt_binder_filter_fn fn, u32 code);
 int neverc_krt_binder_filter_add_any(neverc_krt_binder_filter_fn fn);
 
 
-int _neverc_krt_binder_run_filters(int pid,
-				   const struct neverc_krt_binder_txn_data *txn,
-				   int is_reply);
-
-
-int _neverc_krt_binder_scan_commands(unsigned long buf, long size,
-				     int pid, int incoming);
-
-
-int _neverc_krt_binder_ioctl_hook(void *filp, unsigned int cmd,
-				  unsigned long arg);
-
-
 NEVERC_KRT_RT_VAR void *_neverc_krt_binder_target;
 
-int _neverc_krt_binder_hook_install(void);
 
 
 int neverc_krt_binder_init(void);

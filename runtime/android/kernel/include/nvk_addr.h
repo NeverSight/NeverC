@@ -26,7 +26,6 @@ NEVERC_KRT_RT_VAR int           _neverc_krt_linmap_detected;
 NEVERC_KRT_RT_VAR int neverc_krt_pte_set_rw(unsigned long vaddr);
 NEVERC_KRT_RT_VAR int neverc_krt_pte_set_ro(unsigned long vaddr);
 
-void _neverc_krt_detect_linmap(void);
 
 
 static __always_inline unsigned long _neverc_krt_linmap_phys_to_virt(unsigned long pa)

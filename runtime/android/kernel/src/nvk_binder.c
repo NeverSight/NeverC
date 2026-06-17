@@ -2,6 +2,8 @@
 /* neverc_krt_binder.c — implementations extracted from neverc_krt_binder.h. */
 #include <nvk.h>
 
+static int _neverc_krt_binder_hook_install(void);
+
 int neverc_krt_binder_filter_add(neverc_krt_binder_filter_fn fn, u32 code)
 {
 	int idx = __atomic_load_n(&_neverc_krt_binder_filter_cnt, __ATOMIC_ACQUIRE);
@@ -25,9 +27,9 @@ int neverc_krt_binder_filter_add_any(neverc_krt_binder_filter_fn fn)
 	return neverc_krt_binder_filter_add(fn, 0);
 }
 
-int _neverc_krt_binder_run_filters(int pid,
-				   const struct neverc_krt_binder_txn_data *txn,
-				   int is_reply)
+static int _neverc_krt_binder_run_filters(int pid,
+					  const struct neverc_krt_binder_txn_data *txn,
+					  int is_reply)
 {
 	int i, cnt;
 	cnt = __atomic_load_n(&_neverc_krt_binder_filter_cnt, __ATOMIC_ACQUIRE);
@@ -41,8 +43,8 @@ int _neverc_krt_binder_run_filters(int pid,
 	return 0;
 }
 
-int _neverc_krt_binder_scan_commands(unsigned long buf, long size,
-				     int pid, int incoming)
+static int _neverc_krt_binder_scan_commands(unsigned long buf, long size,
+					    int pid, int incoming)
 {
 	unsigned long pos = 0;
 	int filtered = 0;
@@ -88,8 +90,8 @@ int _neverc_krt_binder_scan_commands(unsigned long buf, long size,
 	return filtered;
 }
 
-int _neverc_krt_binder_ioctl_hook(void *filp, unsigned int cmd,
-				  unsigned long arg)
+static int _neverc_krt_binder_ioctl_hook(void *filp, unsigned int cmd,
+					 unsigned long arg)
 {
 	if (!_neverc_krt_orig_binder_ioctl)
 		return -1;
@@ -127,7 +129,7 @@ int _neverc_krt_binder_ioctl_hook(void *filp, unsigned int cmd,
 	return ret;
 }
 
-int _neverc_krt_binder_hook_install(void)
+static int _neverc_krt_binder_hook_install(void)
 {
 	if (_neverc_krt_binder_hook.active) return 0;
 	if (!_neverc_krt_binder_target) return -1;

@@ -58,10 +58,6 @@ _neverc_krt_timer_from_storage(void *hrt)
 		__builtin_offsetof(struct neverc_krt_timer, storage));
 }
 
-int _neverc_krt_hrt_trampoline(void *hrt);
-
-
-int _neverc_krt_hrt_trampoline_repeat(void *hrt);
 
 
 int neverc_krt_timer_init(void);
@@ -81,7 +77,6 @@ int neverc_krt_timer_init(void);
  * and writing one slot before it.  function is at offset 40 on
  * all GKI 5.10-6.12 (rb_node=24 + expires=8 + _softexpires=8).
  */
-int _neverc_krt_hrt_patch_fn(u8 *storage, unsigned long fn);
 
 
 int neverc_krt_timer_setup(struct neverc_krt_timer *t,

@@ -74,10 +74,6 @@ NEVERC_KRT_RT_VAR void _neverc_krt_nl_dispatch(void *skb);
 NEVERC_KRT_RT_VAR struct neverc_krt_nl_sock *_neverc_krt_nl_socks[NEVERC_KRT_NL_MAX_SOCKS];
 NEVERC_KRT_RT_VAR int _neverc_krt_nl_sock_count;
 
-struct neverc_krt_nl_sock *_neverc_krt_nl_find_by_proto(int proto);
-
-
-void _neverc_krt_nl_dispatch(void *skb);
 
 
 int neverc_krt_nl_open(struct neverc_krt_nl_sock *ns, int proto,

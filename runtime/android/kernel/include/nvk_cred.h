@@ -25,7 +25,6 @@ NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_uid;
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_cred_cap_off;
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_cred_sb_off;
 
-void _neverc_krt_cred_probe_cap_offset(const void *cred);
 
 
 struct neverc_krt_cred_ids {
@@ -35,7 +34,6 @@ struct neverc_krt_cred_ids {
 int neverc_krt_cred_init(void);
 
 
-int _neverc_krt_cred_find_uid_offset(void);
 
 
 int neverc_krt_cred_get_ids(struct task_struct *task,

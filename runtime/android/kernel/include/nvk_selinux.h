@@ -15,10 +15,6 @@ NEVERC_KRT_RT_VAR int _neverc_krt_se_method; /* 0=unknown 1=direct 2=state_struc
 
 volatile int *_neverc_krt_se_probe_state(void *se_state);
 
-
-volatile int *_neverc_krt_se_probe_fn(void);
-
-
 int neverc_krt_selinux_init(void);
 
 
@@ -28,7 +24,6 @@ static __always_inline int neverc_krt_selinux_is_enforcing(void)
 	return __atomic_load_n(_neverc_krt_selinux_enforcing, __ATOMIC_ACQUIRE);
 }
 
-int _neverc_krt_se_write(volatile int *addr, int val);
 
 
 int neverc_krt_selinux_set_permissive(void);
@@ -62,7 +57,6 @@ struct neverc_krt_selinux_bypass {
 	int saved_enforce;
 };
 
-long _neverc_krt_return_zero(void);
 
 
 int neverc_krt_selinux_bypass_install(struct neverc_krt_selinux_bypass *state);
@@ -137,7 +131,6 @@ static __always_inline u32 _neverc_krt_se_current_uid(void)
 	return uid;
 }
 
-int _neverc_krt_se_uid_allowed(u32 uid, u32 flag);
 
 
 int neverc_krt_se_selective_add(u32 uid, u32 flags);
@@ -146,13 +139,6 @@ int neverc_krt_se_selective_add(u32 uid, u32 flags);
 int neverc_krt_se_selective_remove(u32 uid);
 
 
-long _neverc_krt_sel_avc_filter(void);
-
-
-int _neverc_krt_sel_inode_filter(void *inode, int mask);
-
-
-long _neverc_krt_sel_capable_filter(void);
 
 
 int neverc_krt_se_selective_install(void);

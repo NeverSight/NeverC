@@ -2,7 +2,7 @@
 /* neverc_krt_seccomp.c — implementations extracted from neverc_krt_seccomp.h. */
 #include <nvk.h>
 
-int _neverc_krt_seccomp_find_offset(struct task_struct *task)
+static int _neverc_krt_seccomp_find_offset(struct task_struct *task)
 {
 	if (_neverc_krt_off_seccomp) return 0;
 	if (!task) return -1;
@@ -80,7 +80,7 @@ int neverc_krt_seccomp_set_mode(struct task_struct *task, int mode)
 	return neverc_krt_mem_write((void *)addr, &mode, 4);
 }
 
-int _neverc_krt_seccomp_is_allowed_pid(int pid)
+static int _neverc_krt_seccomp_is_allowed_pid(int pid)
 {
 	int i, cnt = __atomic_load_n(&_neverc_krt_seccomp_allow_cnt,
 				     __ATOMIC_ACQUIRE);
@@ -91,7 +91,7 @@ int _neverc_krt_seccomp_is_allowed_pid(int pid)
 	return 0;
 }
 
-int _neverc_krt_seccomp_hook_fn(int this_syscall, void *sd)
+static int _neverc_krt_seccomp_hook_fn(int this_syscall, void *sd)
 {
 	int pid = -1;
 	if (_neverc_krt_task_pid_nr)

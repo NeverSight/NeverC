@@ -73,7 +73,6 @@ struct neverc_krt_shellcode {
  * when it next runs on any core (the scheduler's context-switch path
  * issues ISB / IC IALLU on ARM64 GKI kernels).
  */
-void _neverc_krt_inject_flush_code(unsigned long addr, size_t len);
 
 
 int neverc_krt_inject_shellcode(struct task_struct *task,
@@ -110,7 +109,6 @@ typedef void (*neverc_krt_unuse_mm_fn)(void *mm);
 NEVERC_KRT_RT_VAR neverc_krt_use_mm_fn   _neverc_krt_use_mm;
 NEVERC_KRT_RT_VAR neverc_krt_unuse_mm_fn _neverc_krt_unuse_mm;
 
-void _neverc_krt_inject_resolve_mm(void);
 
 
 unsigned long neverc_krt_inject_mmap(struct task_struct *task,

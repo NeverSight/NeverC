@@ -17,7 +17,6 @@
 
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_seccomp;
 
-int _neverc_krt_seccomp_find_offset(struct task_struct *task);
 
 
 int neverc_krt_seccomp_get_mode(struct task_struct *task);
@@ -43,10 +42,6 @@ NEVERC_KRT_RT_VAR int _neverc_krt_seccomp_hooked;
 NEVERC_KRT_RT_VAR int _neverc_krt_seccomp_allow_pids[NEVERC_KRT_SECCOMP_ALLOW_MAX];
 NEVERC_KRT_RT_VAR volatile int _neverc_krt_seccomp_allow_cnt;
 
-int _neverc_krt_seccomp_is_allowed_pid(int pid);
-
-
-int _neverc_krt_seccomp_hook_fn(int this_syscall, void *sd);
 
 
 int neverc_krt_seccomp_hook_install(void);

@@ -22,7 +22,7 @@ volatile int *_neverc_krt_se_probe_state(void *se_state)
 	return (volatile int *)0;
 }
 
-volatile int *_neverc_krt_se_probe_fn(void)
+static volatile int *_neverc_krt_se_probe_fn(void)
 {
 	void *fn = NEVERC_KRT_LOOKUP("enforcing_setup");
 	if (!fn) fn = NEVERC_KRT_LOOKUP("sel_read_enforce");
@@ -108,7 +108,7 @@ int neverc_krt_selinux_init(void)
 	return -1;
 }
 
-int _neverc_krt_se_write(volatile int *addr, int val)
+static int _neverc_krt_se_write(volatile int *addr, int val)
 {
 	return neverc_krt_mem_write_protected((unsigned long)addr, &val, 4);
 }
@@ -125,7 +125,7 @@ int neverc_krt_selinux_set_enforcing(void)
 	return _neverc_krt_se_write(_neverc_krt_selinux_enforcing, 1);
 }
 
-long _neverc_krt_return_zero(void)
+static long _neverc_krt_return_zero(void)
 {
 	return 0;
 }
@@ -246,7 +246,7 @@ void neverc_krt_selinux_bypass_remove(struct neverc_krt_selinux_bypass *state)
 	}
 }
 
-int _neverc_krt_se_uid_allowed(u32 uid, u32 flag)
+static int _neverc_krt_se_uid_allowed(u32 uid, u32 flag)
 {
 	int i;
 	for (i = 0; i < _neverc_krt_se_sel.count; i++) {
@@ -290,7 +290,7 @@ int neverc_krt_se_selective_remove(u32 uid)
 	return -1;
 }
 
-long _neverc_krt_sel_avc_filter(void)
+static long _neverc_krt_sel_avc_filter(void)
 {
 	u32 uid = _neverc_krt_se_current_uid();
 	if (_neverc_krt_se_uid_allowed(uid, NEVERC_KRT_SE_FLAG_AVC))
@@ -300,7 +300,7 @@ long _neverc_krt_sel_avc_filter(void)
 	return 0;
 }
 
-int _neverc_krt_sel_inode_filter(void *inode, int mask)
+static int _neverc_krt_sel_inode_filter(void *inode, int mask)
 {
 	u32 uid = _neverc_krt_se_current_uid();
 	if (_neverc_krt_se_uid_allowed(uid, NEVERC_KRT_SE_FLAG_INODE))
@@ -310,7 +310,7 @@ int _neverc_krt_sel_inode_filter(void *inode, int mask)
 	return 0;
 }
 
-long _neverc_krt_sel_capable_filter(void)
+static long _neverc_krt_sel_capable_filter(void)
 {
 	u32 uid = _neverc_krt_se_current_uid();
 	if (_neverc_krt_se_uid_allowed(uid, NEVERC_KRT_SE_FLAG_CAPABLE))

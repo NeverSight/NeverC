@@ -30,7 +30,7 @@ long neverc_krt_inject_read(struct task_struct *task,
 	return neverc_krt_vma_read_remote(task, addr, buf, len);
 }
 
-void _neverc_krt_inject_flush_code(unsigned long addr, size_t len)
+static void _neverc_krt_inject_flush_code(unsigned long addr, size_t len)
 {
 	unsigned long line;
 	unsigned long end = addr + len;
@@ -69,7 +69,7 @@ unsigned long neverc_krt_inject_find_cave(struct task_struct *task,
 	return info.end - min_size - 64;
 }
 
-void _neverc_krt_inject_resolve_mm(void)
+static void _neverc_krt_inject_resolve_mm(void)
 {
 	if (!_neverc_krt_get_task_mm) {
 		_neverc_krt_get_task_mm =

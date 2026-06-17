@@ -2,7 +2,7 @@
 /* neverc_krt_timer.c — implementations extracted from neverc_krt_timer.h. */
 #include <nvk.h>
 
-int _neverc_krt_hrt_trampoline(void *hrt)
+static int _neverc_krt_hrt_trampoline(void *hrt)
 {
 	struct neverc_krt_timer *t = _neverc_krt_timer_from_storage(hrt);
 	if (t->callback)
@@ -10,7 +10,7 @@ int _neverc_krt_hrt_trampoline(void *hrt)
 	return 0;  /* HRTIMER_NORESTART */
 }
 
-int _neverc_krt_hrt_trampoline_repeat(void *hrt)
+static int _neverc_krt_hrt_trampoline_repeat(void *hrt)
 {
 	struct neverc_krt_timer *t = _neverc_krt_timer_from_storage(hrt);
 	if (t->callback)
@@ -59,7 +59,7 @@ int neverc_krt_timer_init(void)
 	return 0;
 }
 
-int _neverc_krt_hrt_patch_fn(u8 *storage, unsigned long fn)
+static int _neverc_krt_hrt_patch_fn(u8 *storage, unsigned long fn)
 {
 	/*
 	 * After hrtimer_init (which does memset(0) + sets base pointer):

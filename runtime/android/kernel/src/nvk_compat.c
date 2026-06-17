@@ -2,7 +2,7 @@
 /* neverc_krt_compat.c — implementations extracted from neverc_krt_compat.h. */
 #include <nvk.h>
 
-void _neverc_krt_parse_version(const char *str, struct neverc_krt_kernel_info *info)
+static void _neverc_krt_parse_version(const char *str, struct neverc_krt_kernel_info *info)
 {
 	const char *p = str;
 	u32 parts[3] = {0, 0, 0};

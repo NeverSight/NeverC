@@ -44,7 +44,6 @@ static __always_inline int neverc_krt_fmt_init(void)
 #define neverc_krt_sscanf(buf, fmt, ...)                                             \
 	(_neverc_krt_sscanf ? _neverc_krt_sscanf((buf), (fmt), ##__VA_ARGS__) : -1)
 
-void _neverc_krt_parse_version(const char *str, struct neverc_krt_kernel_info *info);
 
 
 int neverc_krt_compat_init(void);

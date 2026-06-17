@@ -46,7 +46,7 @@ int neverc_krt_nl_init(void)
 	return 0;
 }
 
-struct neverc_krt_nl_sock *_neverc_krt_nl_find_by_proto(int proto)
+static struct neverc_krt_nl_sock *_neverc_krt_nl_find_by_proto(int proto)
 {
 	int i;
 	for (i = 0; i < _neverc_krt_nl_sock_count; i++) {

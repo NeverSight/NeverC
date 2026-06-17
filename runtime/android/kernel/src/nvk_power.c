@@ -19,7 +19,7 @@ int neverc_krt_power_init(void)
 	return 0;
 }
 
-int _neverc_krt_pm_trampoline(void *nb_ptr, unsigned long event, void *unused)
+static int _neverc_krt_pm_trampoline(void *nb_ptr, unsigned long event, void *unused)
 {
 	struct neverc_krt_pm_notifier *pm = (struct neverc_krt_pm_notifier *)(
 		(char *)nb_ptr -
@@ -54,8 +54,8 @@ void neverc_krt_pm_unregister(struct neverc_krt_pm_notifier *pm)
 	pm->registered = 0;
 }
 
-int _neverc_krt_reboot_trampoline(void *nb_ptr, unsigned long event,
-				  void *unused)
+static int _neverc_krt_reboot_trampoline(void *nb_ptr, unsigned long event,
+					 void *unused)
 {
 	struct neverc_krt_reboot_notifier *rn = (struct neverc_krt_reboot_notifier *)(
 		(char *)nb_ptr -

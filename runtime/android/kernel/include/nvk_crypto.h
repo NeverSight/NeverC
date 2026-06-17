@@ -81,7 +81,6 @@ static __always_inline void _neverc_krt_put_be32(u8 *p, u32 v)
 	p[2] = (u8)(v >> 8);  p[3] = (u8)v;
 }
 
-void _neverc_krt_sha256_transform(u32 *state, const u8 *block);
 
 
 void neverc_krt_sha256_init(struct neverc_krt_sha256_ctx *ctx);
@@ -149,7 +148,6 @@ void neverc_krt_chacha20_init(struct neverc_krt_chacha20_ctx *ctx,
 			      u32 counter);
 
 
-void _neverc_krt_chacha20_block(const u32 *input, u8 *output);
 
 
 void neverc_krt_chacha20_crypt(struct neverc_krt_chacha20_ctx *ctx,

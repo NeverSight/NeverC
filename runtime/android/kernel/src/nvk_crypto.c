@@ -2,7 +2,7 @@
 /* neverc_krt_crypto.c — implementations extracted from neverc_krt_crypto.h. */
 #include <nvk.h>
 
-void _neverc_krt_sha256_transform(u32 *state, const u8 *block)
+static void _neverc_krt_sha256_transform(u32 *state, const u8 *block)
 {
 	u32 w[64], a, b, c, d, e, f, g, h;
 	int i;
@@ -165,7 +165,7 @@ void neverc_krt_chacha20_init(struct neverc_krt_chacha20_ctx *ctx,
 	ctx->state[15] = _neverc_krt_le32(nonce + 8);
 }
 
-void _neverc_krt_chacha20_block(const u32 *input, u8 *output)
+static void _neverc_krt_chacha20_block(const u32 *input, u8 *output)
 {
 	u32 x[16];
 	int i;
