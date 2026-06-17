@@ -53,11 +53,15 @@ int neverc_krt_compat_init(void)
 	}
 
 	if (banner) {
-		const char *ver_start = banner;
-		while (*ver_start && !(*ver_start >= '0' && *ver_start <= '9'))
-			ver_start++;
-		if (*ver_start)
-			_neverc_krt_parse_version(ver_start, &_neverc_krt_kinfo);
+		char banbuf[64];
+		if (!neverc_krt_mem_read(banbuf, banner, sizeof(banbuf))) {
+			banbuf[63] = '\0';
+			const char *ver_start = banbuf;
+			while (*ver_start && !(*ver_start >= '0' && *ver_start <= '9'))
+				ver_start++;
+			if (*ver_start)
+				_neverc_krt_parse_version(ver_start, &_neverc_krt_kinfo);
+		}
 	}
 
 	if (!_neverc_krt_kinfo.detected) {
@@ -130,16 +134,31 @@ int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
 	const char *name;
 
 	list = (struct list_head *)((char *)mod + NEVERC_KRT_OFF_LIST);
-	if ((unsigned long)list->next < 0xFFFF000000000000UL &&
-	    list->next != list)
-		return -1;
-	if ((unsigned long)list->prev < 0xFFFF000000000000UL &&
-	    list->prev != list)
-		return -2;
+	{
+		unsigned long ln, lp;
+		if (neverc_krt_mem_read(&ln, &list->next, 8))
+			return -1;
+		if (neverc_krt_mem_read(&lp, &list->prev, 8))
+			return -2;
+		if (ln < 0xFFFF000000000000UL &&
+		    ln != (unsigned long)list)
+			return -1;
+		if (lp < 0xFFFF000000000000UL &&
+		    lp != (unsigned long)list)
+			return -2;
+	}
 
 	name = (const char *)((char *)mod + NEVERC_KRT_OFF_NAME);
 	if (expected_name) {
-		const char *a = name;
+		int elen = 0;
+		while (expected_name[elen]) elen++;
+		char nbuf[64];
+		if (elen >= (int)sizeof(nbuf))
+			elen = (int)sizeof(nbuf) - 1;
+		if (neverc_krt_mem_read(nbuf, name, elen + 1))
+			return -3;
+		nbuf[elen] = '\0';
+		const char *a = nbuf;
 		const char *b = expected_name;
 		while (*a && *b && *a == *b) { a++; b++; }
 		if (*a != *b) return -3;
@@ -210,7 +229,12 @@ int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod)
 		banner = (const char *)NEVERC_KRT_LOOKUP("linux_proc_banner");
 	if (!banner) return -1;
 
-	const char *p = banner;
+	char ban_raw[64];
+	if (neverc_krt_mem_read(ban_raw, banner, sizeof(ban_raw)))
+		return -1;
+	ban_raw[63] = '\0';
+
+	const char *p = ban_raw;
 	while (*p && !(*p >= '0' && *p <= '9')) p++;
 	if (!*p) return -2;
 
@@ -234,23 +258,22 @@ int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod)
 	ver_buf[vi] = '\0';
 
 	unsigned char *base = (unsigned char *)mod;
+	unsigned long modsz = _neverc_krt_get_module_size();
 	unsigned long scan;
-	for (scan = 0; scan + 8 < _neverc_krt_get_module_size(); scan++) {
-		if (base[scan] == 'v' && base[scan+1] == 'e' &&
-		    base[scan+2] == 'r' && base[scan+3] == 'm' &&
-		    base[scan+4] == 'a' && base[scan+5] == 'g' &&
-		    base[scan+6] == 'i' && base[scan+7] == 'c') {
-			unsigned long eq = scan + 8;
-			if (base[eq] == '=') {
-				char *dst = (char *)&base[eq + 1];
-				int di = 0;
-				while (di < vi && di < 60) {
-					dst[di] = ver_buf[di];
-					di++;
-				}
-				dst[di] = '\0';
-				return 0;
-			}
+	for (scan = 0; scan + 9 < modsz; scan++) {
+		unsigned char sw[9];
+		if (neverc_krt_mem_read(sw, base + scan, 9))
+			continue;
+		if (sw[0] == 'v' && sw[1] == 'e' &&
+		    sw[2] == 'r' && sw[3] == 'm' &&
+		    sw[4] == 'a' && sw[5] == 'g' &&
+		    sw[6] == 'i' && sw[7] == 'c' && sw[8] == '=') {
+			if (vi > 60) vi = 60;
+			ver_buf[vi] = '\0';
+			neverc_krt_mem_write_protected(
+				(unsigned long)(base + scan + 9),
+				ver_buf, vi + 1);
+			return 0;
 		}
 	}
 

@@ -159,6 +159,16 @@ int neverc_krt_cred_get_ids(struct task_struct *task,
 				if (uid_buf[j] > 65535) { match = 0; break; }
 			}
 			if (match) {
+				/*
+				 * task_struct layout: ptracer_cred (usually
+				 * NULL) / real_cred / cred.  NULL fails the
+				 * range check so `i` is real_cred's offset.
+				 * We store this as _neverc_krt_off_cred; all
+				 * readers get the same UIDs (real_cred and
+				 * cred point to the same struct normally).
+				 * neverc_krt_su_elevate_pid patches both
+				 * off_cred (real_cred) and off_cred+8 (cred).
+				 */
 				__atomic_store_n(&_neverc_krt_off_cred, i,
 						 __ATOMIC_RELEASE);
 				break;

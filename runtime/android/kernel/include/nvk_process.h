@@ -36,7 +36,6 @@ NEVERC_KRT_RT_VAR neverc_krt_rcu_unlock_fn _neverc_krt_rcu_read_unlock;
 
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_comm;
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_tasks;
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_real_cred;
 
 struct neverc_krt_task_offsets {
 	unsigned long comm;

