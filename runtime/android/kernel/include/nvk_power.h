@@ -51,17 +51,6 @@ struct neverc_krt_notifier_block {
 	int           _pad;
 };
 
-typedef int (*neverc_krt_reg_pm_fn)(void *nb);
-typedef int (*neverc_krt_unreg_pm_fn)(void *nb);
-typedef int (*neverc_krt_reg_reboot_fn)(void *nb);
-typedef int (*neverc_krt_unreg_reboot_fn)(void *nb);
-
-NEVERC_KRT_RT_VAR neverc_krt_reg_pm_fn      _neverc_krt_register_pm;
-NEVERC_KRT_RT_VAR neverc_krt_unreg_pm_fn    _neverc_krt_unregister_pm;
-NEVERC_KRT_RT_VAR neverc_krt_reg_reboot_fn  _neverc_krt_register_reboot;
-NEVERC_KRT_RT_VAR neverc_krt_unreg_reboot_fn _neverc_krt_unregister_reboot;
-NEVERC_KRT_RT_VAR int                _neverc_krt_power_inited;
-
 int neverc_krt_power_init(void);
 
 

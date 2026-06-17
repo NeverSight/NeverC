@@ -1,6 +1,30 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_vma.c — implementations extracted from neverc_krt_vma.h. */
+/* neverc_krt_vma.c — virtual memory area operations. */
 #include <nvk.h>
+
+/* ---- cross-file variables (defined in nvk_inject.c) ---- */
+
+typedef void *(*neverc_krt_get_task_mm_fn)(struct task_struct *);
+typedef void  (*neverc_krt_mmput_fn)(void *);
+
+extern neverc_krt_get_task_mm_fn _neverc_krt_get_task_mm;
+extern neverc_krt_mmput_fn       _neverc_krt_mmput;
+
+/* ---- internal types ---- */
+
+struct _neverc_krt_find_map_ctx {
+	unsigned long prot;
+	unsigned long min_size;
+	struct neverc_krt_vma_info result;
+	int found;
+};
+
+/* ---- internal helpers ---- */
+
+static void *_neverc_krt_task_mm(struct task_struct *task);
+static void _neverc_krt_detect_vm_flags_off(const void *vma);
+static void _neverc_krt_read_vma_info(const void *vma, struct neverc_krt_vma_info *info);
+static int _neverc_krt_find_map_cb(const struct neverc_krt_vma_info *vma, void *data);
 
 int neverc_krt_vma_init(void)
 {
@@ -50,7 +74,7 @@ int neverc_krt_vma_init(void)
 	       (_neverc_krt_access_task_vm || _neverc_krt_access_mm_vm) ? 0 : -1;
 }
 
-void *_neverc_krt_task_mm(struct task_struct *task)
+static void *_neverc_krt_task_mm(struct task_struct *task)
 {
 	if (!task) return (void *)0;
 
@@ -131,7 +155,7 @@ void *_neverc_krt_task_mm(struct task_struct *task)
 	return (void *)mm_val;
 }
 
-void _neverc_krt_detect_vm_flags_off(const void *vma)
+static void _neverc_krt_detect_vm_flags_off(const void *vma)
 {
 	if (__atomic_load_n(&_neverc_krt_off_vm_flags, __ATOMIC_ACQUIRE))
 		return;
@@ -163,7 +187,7 @@ void _neverc_krt_detect_vm_flags_off(const void *vma)
 		__atomic_store_n(&_neverc_krt_off_vm_flags, 80, __ATOMIC_RELEASE);
 }
 
-void _neverc_krt_read_vma_info(const void *vma, struct neverc_krt_vma_info *info)
+static void _neverc_krt_read_vma_info(const void *vma, struct neverc_krt_vma_info *info)
 {
 	if (neverc_krt_mem_read(&info->start, vma, 8)) {
 		info->start = 0; info->end = 0; info->flags = 0;
@@ -302,7 +326,7 @@ long neverc_krt_vma_write_remote(struct task_struct *task,
 	return neverc_krt_mem_write((void *)va, buf, len);
 }
 
-int _neverc_krt_find_map_cb(const struct neverc_krt_vma_info *vma, void *data)
+static int _neverc_krt_find_map_cb(const struct neverc_krt_vma_info *vma, void *data)
 {
 	struct _neverc_krt_find_map_ctx *ctx = (struct _neverc_krt_find_map_ctx *)data;
 	unsigned long sz = vma->end - vma->start;

@@ -1,6 +1,37 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_netlink.c — implementations extracted from neverc_krt_netlink.h. */
 #include <nvk.h>
+
+typedef void *(*neverc_krt_netlink_create_fn)(void *net, int unit,
+					      struct neverc_krt_nl_cfg *cfg);
+typedef void  (*neverc_krt_netlink_release_fn)(void *sock);
+typedef void *(*neverc_krt_alloc_skb_fn)(unsigned int size, u32 gfp);
+typedef void  (*neverc_krt_kfree_skb_fn)(void *skb);
+typedef unsigned char *(*neverc_krt_skb_put_fn)(void *skb, unsigned int len);
+typedef void *(*neverc_krt_nlmsg_put_fn)(void *skb, u32 portid, u32 seq,
+					 int type, int payload, int flags);
+typedef int   (*neverc_krt_netlink_unicast_fn)(void *ssk, void *skb,
+					       u32 portid, int nonblock);
+typedef int   (*neverc_krt_netlink_broadcast_fn)(void *ssk, void *skb,
+						 u32 portid, u32 group,
+						 u32 allocation);
+typedef void *(*neverc_krt_nlmsg_data_fn)(void *nlh);
+typedef void *(*neverc_krt_nlmsg_hdr_fn)(void *skb);
+
+neverc_krt_netlink_create_fn     _neverc_krt_nl_create;
+neverc_krt_netlink_release_fn    _neverc_krt_nl_release;
+neverc_krt_alloc_skb_fn          _neverc_krt_nl_alloc_skb;
+neverc_krt_kfree_skb_fn          _neverc_krt_nl_kfree_skb;
+neverc_krt_skb_put_fn            _neverc_krt_nl_skb_put;
+neverc_krt_nlmsg_put_fn          _neverc_krt_nl_nlmsg_put;
+neverc_krt_netlink_unicast_fn    _neverc_krt_nl_unicast;
+neverc_krt_netlink_broadcast_fn  _neverc_krt_nl_broadcast;
+neverc_krt_nlmsg_data_fn         _neverc_krt_nl_nlmsg_data;
+neverc_krt_nlmsg_hdr_fn          _neverc_krt_nl_nlmsg_hdr;
+void                            **_neverc_krt_nl_init_net;
+int                              _neverc_krt_nl_inited;
+
+struct neverc_krt_nl_sock *_neverc_krt_nl_socks[NEVERC_KRT_NL_MAX_SOCKS];
+int                        _neverc_krt_nl_sock_count;
 
 int neverc_krt_nl_init(void)
 {

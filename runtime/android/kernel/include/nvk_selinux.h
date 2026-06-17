@@ -10,13 +10,8 @@
 #include <nvk_hook.h>
 
 NEVERC_KRT_RT_VAR volatile int *_neverc_krt_selinux_enforcing;
-NEVERC_KRT_RT_VAR int _neverc_krt_selinux_inited;
-NEVERC_KRT_RT_VAR int _neverc_krt_se_method; /* 0=unknown 1=direct 2=state_struct 3=fn_scan */
-
-volatile int *_neverc_krt_se_probe_state(void *se_state);
 
 int neverc_krt_selinux_init(void);
-
 
 static __always_inline int neverc_krt_selinux_is_enforcing(void)
 {
@@ -24,29 +19,8 @@ static __always_inline int neverc_krt_selinux_is_enforcing(void)
 	return __atomic_load_n(_neverc_krt_selinux_enforcing, __ATOMIC_ACQUIRE);
 }
 
-
-
 int neverc_krt_selinux_set_permissive(void);
-
-
 int neverc_krt_selinux_set_enforcing(void);
-
-
-
-typedef long (*neverc_krt_selinux_generic_fn)(void);
-typedef int (*neverc_krt_inode_permission_fn)(void *inode, int mask);
-
-NEVERC_KRT_RT_VAR struct neverc_krt_hook _neverc_krt_avc_hook;
-NEVERC_KRT_RT_VAR neverc_krt_selinux_generic_fn _neverc_krt_orig_avc;
-
-NEVERC_KRT_RT_VAR struct neverc_krt_hook _neverc_krt_inode_hook;
-NEVERC_KRT_RT_VAR neverc_krt_inode_permission_fn _neverc_krt_orig_inode_perm;
-
-NEVERC_KRT_RT_VAR struct neverc_krt_hook _neverc_krt_task_perm_hook;
-NEVERC_KRT_RT_VAR neverc_krt_selinux_generic_fn _neverc_krt_orig_task_perm;
-
-NEVERC_KRT_RT_VAR struct neverc_krt_hook _neverc_krt_cred_perm_hook;
-NEVERC_KRT_RT_VAR neverc_krt_selinux_generic_fn _neverc_krt_orig_cred_perm;
 
 struct neverc_krt_selinux_bypass {
 	int avc_hooked;
@@ -57,56 +31,22 @@ struct neverc_krt_selinux_bypass {
 	int saved_enforce;
 };
 
-
-
 int neverc_krt_selinux_bypass_install(struct neverc_krt_selinux_bypass *state);
-
-
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_se_patched_addr;
-
 int neverc_krt_selinux_patch_state(struct neverc_krt_selinux_bypass *state);
-
-
 void neverc_krt_selinux_restore_state(struct neverc_krt_selinux_bypass *state);
-
-
 int neverc_krt_selinux_full_bypass(struct neverc_krt_selinux_bypass *state);
-
-
 void neverc_krt_selinux_bypass_remove(struct neverc_krt_selinux_bypass *state);
-
 
 
 /* --- Per-UID selective SELinux bypass --- */
 
 #define NEVERC_KRT_SE_UID_MAX 16
 
-struct neverc_krt_se_uid_entry {
-	u32  uid;
-	u32  flags;
-	volatile int active;
-};
-
 #define NEVERC_KRT_SE_FLAG_AVC     (1U << 0)
 #define NEVERC_KRT_SE_FLAG_INODE   (1U << 1)
 #define NEVERC_KRT_SE_FLAG_TASK    (1U << 2)
 #define NEVERC_KRT_SE_FLAG_CAPABLE (1U << 3)
 #define NEVERC_KRT_SE_FLAG_ALL     0xFU
-
-struct neverc_krt_se_selective {
-	struct neverc_krt_se_uid_entry uids[NEVERC_KRT_SE_UID_MAX];
-	int count;
-	struct neverc_krt_hook avc_hook;
-	struct neverc_krt_hook inode_hook;
-	struct neverc_krt_hook capable_hook;
-	int active;
-};
-
-NEVERC_KRT_RT_VAR struct neverc_krt_se_selective _neverc_krt_se_sel;
-
-NEVERC_KRT_RT_VAR neverc_krt_selinux_generic_fn _neverc_krt_sel_orig_avc;
-NEVERC_KRT_RT_VAR neverc_krt_inode_permission_fn _neverc_krt_sel_orig_inode;
-NEVERC_KRT_RT_VAR neverc_krt_selinux_generic_fn _neverc_krt_sel_orig_capable;
 
 static __always_inline u32 _neverc_krt_se_current_uid(void)
 {
@@ -131,20 +71,9 @@ static __always_inline u32 _neverc_krt_se_current_uid(void)
 	return uid;
 }
 
-
-
 int neverc_krt_se_selective_add(u32 uid, u32 flags);
-
-
 int neverc_krt_se_selective_remove(u32 uid);
-
-
-
-
 int neverc_krt_se_selective_install(void);
-
-
 void neverc_krt_se_selective_cleanup(void);
-
 
 #endif /* NEVERC_KRT_SELINUX_H */

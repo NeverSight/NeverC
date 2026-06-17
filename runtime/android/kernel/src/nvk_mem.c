@@ -124,7 +124,7 @@ long neverc_krt_mem_write_user(void __user *dst, const void *src, size_t len)
 	return _neverc_krt_copy_to_user(dst, src, len) ? -14 : 0;
 }
 
-int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
+static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 {
 	unsigned long tcr, t1sz, levels, pgsz;
 	unsigned long ttbr1, table, idx, desc;

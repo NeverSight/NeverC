@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_anti.c — implementations extracted from neverc_krt_anti.h. */
+/* neverc_krt_anti.c — anti-tamper and environment detection. */
 #include <nvk.h>
+
+extern volatile int *_neverc_krt_se_probe_state(void *se_state);
+extern int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
 
 int neverc_krt_anti_is_root(void)
 {
@@ -167,7 +170,7 @@ int neverc_krt_anti_detect_hook_ex(void *addr,
 	return 1;
 }
 
-u32 _neverc_krt_crc32_sw(u32 crc, const unsigned char *p, size_t len)
+static u32 _neverc_krt_crc32_sw(u32 crc, const unsigned char *p, size_t len)
 {
 	size_t i;
 	for (i = 0; i < len; i++) {
@@ -179,7 +182,7 @@ u32 _neverc_krt_crc32_sw(u32 crc, const unsigned char *p, size_t len)
 	return crc;
 }
 
-u32 _neverc_krt_crc32_hw(u32 crc, const unsigned char *p, size_t len)
+static u32 _neverc_krt_crc32_hw(u32 crc, const unsigned char *p, size_t len)
 {
 	while (len >= 8 && ((unsigned long)p & 7) == 0) {
 		crc = _neverc_krt_crc32_hw_dword(crc, *(const u64 *)p);
@@ -196,7 +199,7 @@ u32 _neverc_krt_crc32_hw(u32 crc, const unsigned char *p, size_t len)
 	return crc;
 }
 
-u32 _neverc_krt_crc32_auto(const void *addr, size_t len)
+static u32 _neverc_krt_crc32_auto(const void *addr, size_t len)
 {
 	const unsigned char *p = (const unsigned char *)addr;
 	u32 crc = 0xFFFFFFFF;
@@ -317,7 +320,7 @@ void neverc_krt_anti_full_check(struct neverc_krt_anti_env *env)
 	env->timer_freq  = neverc_krt_anti_timer_freq();
 }
 
-u32 _neverc_krt_wd_crc32(const void *data, int len)
+static u32 _neverc_krt_wd_crc32(const void *data, int len)
 {
 	unsigned char buf[128];
 	const unsigned char *p = (const unsigned char *)data;
@@ -481,7 +484,7 @@ int neverc_krt_anti_scan_for_brk(const void *start, size_t len)
 	return found;
 }
 
-int _neverc_krt_try_open_path(void *(*fopen)(const char *, int, u16),
+static int _neverc_krt_try_open_path(void *(*fopen)(const char *, int, u16),
 			      int (*fclose)(void *, void *),
 			      const char *path)
 {

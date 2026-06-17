@@ -52,15 +52,6 @@ static __always_inline int neverc_krt_cpu_is_big_core(void)
 /*  Online CPU enumeration                                            */
 /* ------------------------------------------------------------------ */
 
-typedef int (*neverc_krt_nr_cpu_ids_fn)(void);
-typedef int (*neverc_krt_cpu_online_fn)(unsigned int cpu);
-
-NEVERC_KRT_RT_VAR neverc_krt_nr_cpu_ids_fn    _neverc_krt_nr_cpus;
-NEVERC_KRT_RT_VAR neverc_krt_cpu_online_fn    _neverc_krt_cpu_online_check;
-NEVERC_KRT_RT_VAR unsigned long       *_neverc_krt_cpu_online_mask;
-NEVERC_KRT_RT_VAR int                 *_neverc_krt_nr_cpu_ids_ptr;
-NEVERC_KRT_RT_VAR int                  _neverc_krt_cpu_inited;
-
 int neverc_krt_cpu_init(void);
 
 
@@ -106,13 +97,6 @@ static __always_inline u32 _neverc_krt_cpu_idx_safe(u32 cpu);
 /* ------------------------------------------------------------------ */
 
 typedef void (*neverc_krt_smp_call_fn)(void *info);
-typedef void (*neverc_krt_on_each_cpu_fn)(neverc_krt_smp_call_fn func, void *info,
-				   int wait);
-typedef int  (*neverc_krt_smp_call_single_fn)(int cpu, neverc_krt_smp_call_fn func,
-				       void *info, int wait);
-
-NEVERC_KRT_RT_VAR neverc_krt_on_each_cpu_fn     _neverc_krt_on_each_cpu;
-NEVERC_KRT_RT_VAR neverc_krt_smp_call_single_fn _neverc_krt_smp_call_single;
 
 int neverc_krt_smp_init(void);
 

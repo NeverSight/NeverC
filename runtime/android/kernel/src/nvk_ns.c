@@ -1,6 +1,18 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_ns.c — implementations extracted from neverc_krt_ns.h. */
 #include <nvk.h>
+
+typedef void *(*neverc_krt_task_active_pid_ns_fn)(struct task_struct *);
+typedef int   (*neverc_krt_pid_nr_ns_fn)(void *pid, void *ns);
+typedef void *(*neverc_krt_task_pid_fn)(struct task_struct *);
+typedef int   (*neverc_krt_pid_vnr_fn)(void *pid);
+typedef void *(*neverc_krt_get_nsproxy_fn)(struct task_struct *);
+
+neverc_krt_task_active_pid_ns_fn _neverc_krt_task_pid_ns;
+neverc_krt_pid_nr_ns_fn          _neverc_krt_pid_nr_ns;
+neverc_krt_task_pid_fn           _neverc_krt_task_pid_struct;
+neverc_krt_pid_vnr_fn            _neverc_krt_pid_vnr;
+int                              _neverc_krt_ns_inited;
+unsigned long                    _neverc_krt_off_nsproxy;
 
 int neverc_krt_ns_init(void)
 {
@@ -63,7 +75,7 @@ int neverc_krt_ns_in_root_ns(void)
 	return neverc_krt_ns_is_init_pid_ns(current);
 }
 
-void *_neverc_krt_get_nsproxy(struct task_struct *task)
+static void *_neverc_krt_get_nsproxy(struct task_struct *task)
 {
 	if (!task) return (void *)0;
 

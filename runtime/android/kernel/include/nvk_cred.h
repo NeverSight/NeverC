@@ -10,44 +10,19 @@
 #include <nvk_mem.h>
 #include <nvk_process.h>
 
-typedef void *(*neverc_krt_get_cred_fn)(const void *);
-typedef void  (*neverc_krt_put_cred_fn)(const void *);
-
-NEVERC_KRT_RT_VAR neverc_krt_get_cred_fn      _neverc_krt_cred_get;
-NEVERC_KRT_RT_VAR neverc_krt_put_cred_fn      _neverc_krt_cred_put;
-NEVERC_KRT_RT_VAR int                  _neverc_krt_cred_inited;
-
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_cred;
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_uid;
-
-#define _NEVERC_KRT_CRED_CAP_SIZE  8
-
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_cred_cap_off;
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_cred_sb_off;
-
-
 
 struct neverc_krt_cred_ids {
 	u32 uid, gid, suid, sgid, euid, egid, fsuid, fsgid;
 };
 
 int neverc_krt_cred_init(void);
-
-
-
-
 int neverc_krt_cred_get_ids(struct task_struct *task,
 			    struct neverc_krt_cred_ids *ids);
-
-
 int neverc_krt_cred_set_root(void);
-
-
 int neverc_krt_cred_set_uid(u32 uid, u32 gid);
-
-
 int neverc_krt_cred_set_caps_full(void);
-
 
 #define NEVERC_KRT_CAP_CHOWN            0
 #define NEVERC_KRT_CAP_DAC_OVERRIDE     1
@@ -80,15 +55,8 @@ int neverc_krt_cred_set_caps_full(void);
 #define NEVERC_KRT_CAP_SET_AMBIENT     4
 
 int neverc_krt_cred_set_cap(int cap, int set_type);
-
-
 int neverc_krt_cred_clear_cap(int cap, int set_type);
-
-
 int neverc_krt_cred_has_cap(struct task_struct *task, int cap, int set_type);
-
-
 int neverc_krt_cred_clear_securebits(void);
-
 
 #endif /* NEVERC_KRT_CRED_H */

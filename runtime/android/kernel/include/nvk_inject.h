@@ -19,26 +19,6 @@
  *   5.10/5.15/6.1:  do_mmap(file,addr,len,prot,flags,pgoff,*pop,*uf)       8 params
  *   6.6/6.12:       do_mmap(file,addr,len,prot,flags,vm_flags,pgoff,*pop,*uf)  9 params
  */
-typedef void *(*neverc_krt_do_mmap_fn)(void *file, unsigned long addr,
-				unsigned long len, unsigned long prot,
-				unsigned long flags, unsigned long pgoff,
-				unsigned long *populate, void *uf);
-typedef unsigned long (*neverc_krt_do_mmap_v2_fn)(void *file, unsigned long addr,
-				unsigned long len, unsigned long prot,
-				unsigned long flags, unsigned long vm_flags,
-				unsigned long pgoff, unsigned long *populate,
-				void *uf);
-typedef int   (*neverc_krt_vm_mmap_fn)(void *file, unsigned long addr,
-				unsigned long len, unsigned long prot,
-				unsigned long flags, unsigned long pgoff);
-typedef int   (*neverc_krt_do_munmap_fn)(void *mm, unsigned long start,
-				  size_t len, void *uf);
-
-NEVERC_KRT_RT_VAR neverc_krt_do_mmap_fn   _neverc_krt_do_mmap;
-NEVERC_KRT_RT_VAR neverc_krt_vm_mmap_fn   _neverc_krt_vm_mmap;
-NEVERC_KRT_RT_VAR neverc_krt_do_munmap_fn _neverc_krt_do_munmap;
-NEVERC_KRT_RT_VAR int              _neverc_krt_inject_inited;
-
 #define NEVERC_KRT_INJECT_PROT_READ  0x1
 #define NEVERC_KRT_INJECT_PROT_WRITE 0x2
 #define NEVERC_KRT_INJECT_PROT_EXEC  0x4
@@ -88,28 +68,6 @@ unsigned long neverc_krt_inject_find_cave(struct task_struct *task,
 /* ------------------------------------------------------------------ */
 /*  Remote mmap — allocate memory in target process address space     */
 /* ------------------------------------------------------------------ */
-
-typedef void *(*neverc_krt_get_task_mm_fn)(struct task_struct *task);
-typedef void  (*neverc_krt_mmput_fn)(void *mm);
-typedef void  (*neverc_krt_mmap_write_lock_fn)(void *mm);
-typedef void  (*neverc_krt_mmap_write_unlock_fn)(void *mm);
-
-NEVERC_KRT_RT_VAR neverc_krt_get_task_mm_fn      _neverc_krt_get_task_mm;
-NEVERC_KRT_RT_VAR neverc_krt_mmput_fn            _neverc_krt_mmput;
-NEVERC_KRT_RT_VAR neverc_krt_mmap_write_lock_fn  _neverc_krt_mmap_wlock;
-NEVERC_KRT_RT_VAR neverc_krt_mmap_write_unlock_fn _neverc_krt_mmap_wunlock;
-
-/*
- * do_mmap operates on current->mm. To map into a remote process we must
- * temporarily adopt its mm via kthread_use_mm (5.10+) or use_mm (older).
- */
-typedef void (*neverc_krt_use_mm_fn)(void *mm);
-typedef void (*neverc_krt_unuse_mm_fn)(void *mm);
-
-NEVERC_KRT_RT_VAR neverc_krt_use_mm_fn   _neverc_krt_use_mm;
-NEVERC_KRT_RT_VAR neverc_krt_unuse_mm_fn _neverc_krt_unuse_mm;
-
-
 
 unsigned long neverc_krt_inject_mmap(struct task_struct *task,
 				     unsigned long len, unsigned long prot);

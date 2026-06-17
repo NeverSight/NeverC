@@ -110,14 +110,6 @@ typedef int (*neverc_krt_task_callback_t)(struct task_struct *task, void *data);
 int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data);
 
 
-struct _neverc_krt_find_ctx {
-	const char *target;
-	struct task_struct *result;
-};
-
-int _neverc_krt_find_by_name_cb(struct task_struct *task, void *data);
-
-
 struct task_struct *neverc_krt_find_task_by_name(const char *name);
 
 

@@ -59,16 +59,6 @@ struct neverc_krt_vma_info {
 
 int neverc_krt_vma_init(void);
 
-
-void *_neverc_krt_task_mm(struct task_struct *task);
-
-
-void _neverc_krt_detect_vm_flags_off(const void *vma);
-
-
-void _neverc_krt_read_vma_info(const void *vma, struct neverc_krt_vma_info *info);
-
-
 int neverc_krt_vma_find(struct task_struct *task, unsigned long addr,
 			struct neverc_krt_vma_info *info);
 
@@ -87,16 +77,6 @@ long neverc_krt_vma_read_remote(struct task_struct *task,
 long neverc_krt_vma_write_remote(struct task_struct *task,
 				 unsigned long addr,
 				 const void *buf, size_t len);
-
-
-struct _neverc_krt_find_map_ctx {
-	unsigned long prot;
-	unsigned long min_size;
-	struct neverc_krt_vma_info result;
-	int found;
-};
-
-int _neverc_krt_find_map_cb(const struct neverc_krt_vma_info *vma, void *data);
 
 
 int neverc_krt_vma_find_exec(struct task_struct *task,

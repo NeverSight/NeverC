@@ -31,25 +31,6 @@ struct neverc_krt_delayed_work {
 /*  Kernel function types                                             */
 /* ------------------------------------------------------------------ */
 
-typedef void (*neverc_krt_hrt_init_fn)(void *timer, int clock_id, int mode);
-typedef int  (*neverc_krt_hrt_start_fn)(void *timer, s64 tim, int mode);
-typedef int  (*neverc_krt_hrt_cancel_fn)(void *timer);
-typedef s64  (*neverc_krt_ktime_set_fn)(long secs, long nsecs);
-
-typedef void (*neverc_krt_init_work_fn)(void *work, void *func);
-typedef int  (*neverc_krt_schedule_dw_fn)(void *dwork, unsigned long delay);
-typedef int  (*neverc_krt_cancel_dw_fn)(void *dwork);
-typedef unsigned long (*neverc_krt_msecs_to_jiffies_fn)(unsigned int m);
-
-NEVERC_KRT_RT_VAR neverc_krt_hrt_init_fn      _neverc_krt_hrtimer_init;
-NEVERC_KRT_RT_VAR neverc_krt_hrt_start_fn     _neverc_krt_hrtimer_start;
-NEVERC_KRT_RT_VAR neverc_krt_hrt_cancel_fn    _neverc_krt_hrtimer_cancel;
-NEVERC_KRT_RT_VAR neverc_krt_init_work_fn     _neverc_krt_init_delayed_work;
-NEVERC_KRT_RT_VAR neverc_krt_schedule_dw_fn   _neverc_krt_schedule_delayed_work;
-NEVERC_KRT_RT_VAR neverc_krt_cancel_dw_fn     _neverc_krt_cancel_delayed_work;
-NEVERC_KRT_RT_VAR neverc_krt_msecs_to_jiffies_fn _neverc_krt_msecs_to_jiffies;
-NEVERC_KRT_RT_VAR int                  _neverc_krt_timer_inited;
-
 /* hrtimer callback wrapper: the kernel passes hrtimer*, we extract neverc_krt_timer* */
 static __always_inline struct neverc_krt_timer *
 _neverc_krt_timer_from_storage(void *hrt)
@@ -99,10 +80,6 @@ int neverc_krt_timer_cancel(struct neverc_krt_timer *t);
 /* ------------------------------------------------------------------ */
 /*  Timestamp utilities                                               */
 /* ------------------------------------------------------------------ */
-
-typedef u64 (*neverc_krt_ktime_get_fn)(void);
-NEVERC_KRT_RT_VAR neverc_krt_ktime_get_fn _neverc_krt_ktime_get;
-NEVERC_KRT_RT_VAR neverc_krt_ktime_get_fn _neverc_krt_ktime_get_boot;
 
 u64 neverc_krt_ktime_get_ns(void);
 

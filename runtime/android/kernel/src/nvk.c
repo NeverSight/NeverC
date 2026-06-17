@@ -1,6 +1,16 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* nvk.c — implementations extracted from nvk.h. */
+/* nvk.c — runtime init/cleanup coordinator. */
 #include <nvk.h>
+
+/* Cross-file hook variables defined in nvk_hide.c / nvk_selinux.c */
+extern struct neverc_krt_hook _neverc_krt_ks_hook;
+extern int _neverc_krt_ks_hooked;
+extern struct neverc_krt_hook _neverc_krt_vmalloc_hook;
+extern int _neverc_krt_vmalloc_hooked;
+extern struct neverc_krt_hook _neverc_krt_avc_hook;
+extern struct neverc_krt_hook _neverc_krt_inode_hook;
+extern struct neverc_krt_hook _neverc_krt_task_perm_hook;
+extern struct neverc_krt_hook _neverc_krt_cred_perm_hook;
 
 int _neverc_krt_init_all_impl(void)
 {

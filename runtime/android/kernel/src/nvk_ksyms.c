@@ -1,6 +1,50 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_ksyms.c — implementations extracted from neverc_krt_ksyms.h. */
+/* neverc_krt_ksyms.c — kernel symbol resolution engine. */
 #include <nvk.h>
+
+/* ---- internal types ---- */
+
+struct _neverc_krt_ksym_ctx {
+	neverc_krt_ksym_callback_t cb;
+	void               *data;
+};
+
+struct _neverc_krt_walk_ctx {
+	neverc_krt_ksym_callback_t cb;
+	void               *data;
+	int                 count;
+	int                 max;
+};
+
+struct _neverc_krt_raw_ksyms {
+	unsigned long *num_syms;
+	s32           *offsets;
+	unsigned long *relative_base;
+	unsigned long *addresses;
+	unsigned char *names;
+	unsigned char *token_table;
+	u16           *token_index;
+	int            valid;
+};
+
+struct _neverc_krt_batch_ctx {
+	struct _neverc_krt_batch_entry *entries;
+	int                      count;
+	int                      resolved;
+};
+
+static struct _neverc_krt_raw_ksyms _neverc_krt_rks;
+
+/* ---- internal helpers ---- */
+
+static int _neverc_krt_rks_streq(const char *a, const char *b)
+{
+	while (*a && *b) {
+		if (*a != *b) return 0;
+		a++; b++;
+	}
+	return *a == *b;
+}
 
 int neverc_krt_ksyms_init(void)
 {
@@ -17,8 +61,8 @@ int neverc_krt_ksyms_init(void)
 	return _neverc_krt_on_each_symbol ? 0 : -1;
 }
 
-int _neverc_krt_ksym_adapt(void *data, const char *name,
-			    unsigned long arg2, unsigned long arg3)
+static int _neverc_krt_ksym_adapt(void *data, const char *name,
+				   unsigned long arg2, unsigned long arg3)
 {
 	struct _neverc_krt_ksym_ctx *ctx = (struct _neverc_krt_ksym_ctx *)data;
 	if (!ctx || !ctx->cb) return 0;
@@ -28,8 +72,8 @@ int _neverc_krt_ksym_adapt(void *data, const char *name,
 	return ctx->cb(name, addr, ctx->data);
 }
 
-int _neverc_krt_walk_cb(void *data, const char *name,
-			unsigned long arg2, unsigned long arg3)
+static int _neverc_krt_walk_cb(void *data, const char *name,
+			       unsigned long arg2, unsigned long arg3)
 {
 	struct _neverc_krt_walk_ctx *ctx = (struct _neverc_krt_walk_ctx *)data;
 	if (!ctx || !ctx->cb) return 0;
@@ -177,7 +221,7 @@ unsigned long neverc_krt_ksyms_func_size(const char *name)
 	return info.size;
 }
 
-int _neverc_krt_rks_init(void)
+static int _neverc_krt_rks_init(void)
 {
 	if (_neverc_krt_rks.valid) return 0;
 
@@ -210,7 +254,7 @@ int _neverc_krt_rks_init(void)
 	return 0;
 }
 
-unsigned long _neverc_krt_rks_sym_addr(unsigned long idx)
+static unsigned long _neverc_krt_rks_sym_addr(unsigned long idx)
 {
 	if (_neverc_krt_rks.offsets && _neverc_krt_rks.relative_base) {
 		s32 off;
@@ -232,7 +276,7 @@ unsigned long _neverc_krt_rks_sym_addr(unsigned long idx)
 	return 0;
 }
 
-int _neverc_krt_rks_expand_sym(unsigned long name_off, char *buf, int bufsz)
+static int _neverc_krt_rks_expand_sym(unsigned long name_off, char *buf, int bufsz)
 {
 	unsigned char *src = _neverc_krt_rks.names + name_off;
 	unsigned char len_byte;
@@ -263,15 +307,6 @@ int _neverc_krt_rks_expand_sym(unsigned long name_off, char *buf, int bufsz)
 	}
 	buf[out] = '\0';
 	return out;
-}
-
-int _neverc_krt_rks_streq(const char *a, const char *b)
-{
-	while (*a && *b) {
-		if (*a != *b) return 0;
-		a++; b++;
-	}
-	return *a == *b;
 }
 
 unsigned long neverc_krt_ksyms_raw_lookup(const char *name)
@@ -341,8 +376,8 @@ int neverc_krt_ksyms_raw_walk(neverc_krt_raw_sym_callback_t cb, void *data, int 
 	return found;
 }
 
-int _neverc_krt_batch_cb(const char *name, unsigned long addr,
-			  char type, void *data)
+static int _neverc_krt_batch_cb(const char *name, unsigned long addr,
+				char type, void *data)
 {
 	struct _neverc_krt_batch_ctx *ctx = (struct _neverc_krt_batch_ctx *)data;
 	int i;

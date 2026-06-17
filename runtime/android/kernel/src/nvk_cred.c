@@ -1,6 +1,18 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_cred.c — implementations extracted from neverc_krt_cred.h. */
 #include <nvk.h>
+
+/* ---- internal typedefs & variables ---- */
+
+typedef void *(*neverc_krt_get_cred_fn)(const void *);
+typedef void  (*neverc_krt_put_cred_fn)(const void *);
+
+#define _NEVERC_KRT_CRED_CAP_SIZE  8
+
+neverc_krt_get_cred_fn _neverc_krt_cred_get;
+neverc_krt_put_cred_fn _neverc_krt_cred_put;
+int                    _neverc_krt_cred_inited;
+unsigned long          _neverc_krt_cred_cap_off;
+unsigned long          _neverc_krt_cred_sb_off;
 
 static void _neverc_krt_cred_probe_cap_offset(const void *cred)
 {

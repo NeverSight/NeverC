@@ -10,13 +10,6 @@
 #include <nvk_hook.h>
 #include <nvk_process.h>
 
-typedef int (*neverc_krt_binder_ioctl_fn)(void *filp, unsigned int cmd,
-				   unsigned long arg);
-
-NEVERC_KRT_RT_VAR neverc_krt_binder_ioctl_fn _neverc_krt_orig_binder_ioctl;
-NEVERC_KRT_RT_VAR struct neverc_krt_hook      _neverc_krt_binder_hook;
-NEVERC_KRT_RT_VAR int                  _neverc_krt_binder_inited;
-
 #define NEVERC_KRT_BINDER_WRITE_READ    0xC0306201U
 #define NEVERC_KRT_BINDER_SET_MAX_THREADS 0x40046205U
 #define NEVERC_KRT_BINDER_VERSION       0xC0046209U
@@ -61,32 +54,11 @@ typedef int (*neverc_krt_binder_filter_fn)(int pid, const struct neverc_krt_bind
 
 #define NEVERC_KRT_BINDER_FILTER_MAX 8
 
-struct neverc_krt_binder_filter {
-	neverc_krt_binder_filter_fn fn;
-	u32                  target_code;
-	int                  active;
-};
-
-NEVERC_KRT_RT_VAR struct neverc_krt_binder_filter _neverc_krt_binder_filters[NEVERC_KRT_BINDER_FILTER_MAX];
-NEVERC_KRT_RT_VAR volatile int             _neverc_krt_binder_filter_cnt;
-NEVERC_KRT_RT_VAR volatile u64             _neverc_krt_binder_txn_count;
-NEVERC_KRT_RT_VAR volatile u64             _neverc_krt_binder_filtered_count;
-
 int neverc_krt_binder_filter_add(neverc_krt_binder_filter_fn fn, u32 code);
-
-
 int neverc_krt_binder_filter_add_any(neverc_krt_binder_filter_fn fn);
 
-
-NEVERC_KRT_RT_VAR void *_neverc_krt_binder_target;
-
-
-
 int neverc_krt_binder_init(void);
-
-
 void neverc_krt_binder_cleanup(void);
-
 
 struct neverc_krt_binder_stats {
 	u64 total_txns;
@@ -95,6 +67,5 @@ struct neverc_krt_binder_stats {
 };
 
 void neverc_krt_binder_get_stats(struct neverc_krt_binder_stats *out);
-
 
 #endif /* NEVERC_KRT_BINDER_H */

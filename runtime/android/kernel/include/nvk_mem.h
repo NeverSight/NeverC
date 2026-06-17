@@ -94,9 +94,6 @@ long neverc_krt_mem_write_user(void __user *dst, const void *src, size_t len);
 
 
 
-int _neverc_krt_pte_walk_set(unsigned long addr, int writable);
-
-
 int neverc_krt_mem_make_rw(unsigned long addr);
 
 

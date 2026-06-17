@@ -77,15 +77,6 @@ static __always_inline u32 _neverc_krt_crc32_hw_dword(u32 crc, u64 val)
 	return result;
 }
 
-u32 _neverc_krt_crc32_sw(u32 crc, const unsigned char *p, size_t len);
-
-
-u32 _neverc_krt_crc32_hw(u32 crc, const unsigned char *p, size_t len);
-
-
-u32 _neverc_krt_crc32_auto(const void *addr, size_t len);
-
-
 int neverc_krt_anti_verify_text_integrity(const void *addr, size_t len,
 					  u32 expected_crc);
 
@@ -183,9 +174,6 @@ struct neverc_krt_watchdog {
 
 NEVERC_KRT_RT_VAR struct neverc_krt_watchdog _neverc_krt_wd;
 
-u32 _neverc_krt_wd_crc32(const void *data, int len);
-
-
 int neverc_krt_wd_register(struct neverc_krt_hook *h);
 
 
@@ -234,11 +222,6 @@ static __always_inline u64 neverc_krt_anti_read_midr(void)
 	__asm__ __volatile__("mrs %0, midr_el1" : "=r"(v));
 	return v;
 }
-
-
-int _neverc_krt_try_open_path(void *(*fopen)(const char *, int, u16),
-			      int (*fclose)(void *, void *),
-			      const char *path);
 
 
 int neverc_krt_anti_detect_su_binary(void);

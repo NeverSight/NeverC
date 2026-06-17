@@ -1,6 +1,49 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_selinux.c — implementations extracted from neverc_krt_selinux.h. */
 #include <nvk.h>
+
+/* Cross-file hook state, accessed by neverc_krt_cleanup_all() in nvk.c */
+struct neverc_krt_hook _neverc_krt_avc_hook;
+struct neverc_krt_hook _neverc_krt_inode_hook;
+struct neverc_krt_hook _neverc_krt_task_perm_hook;
+struct neverc_krt_hook _neverc_krt_cred_perm_hook;
+
+/* ---- internal typedefs ---- */
+
+typedef long (*neverc_krt_selinux_generic_fn)(void);
+typedef int  (*neverc_krt_inode_permission_fn)(void *inode, int mask);
+
+/* ---- internal structs ---- */
+
+struct neverc_krt_se_uid_entry {
+	u32  uid;
+	u32  flags;
+	volatile int active;
+};
+
+struct neverc_krt_se_selective {
+	struct neverc_krt_se_uid_entry uids[NEVERC_KRT_SE_UID_MAX];
+	int count;
+	struct neverc_krt_hook avc_hook;
+	struct neverc_krt_hook inode_hook;
+	struct neverc_krt_hook capable_hook;
+	int active;
+};
+
+/* ---- internal variables ---- */
+
+int                        _neverc_krt_selinux_inited;
+int                        _neverc_krt_se_method;
+
+neverc_krt_selinux_generic_fn  _neverc_krt_orig_avc;
+neverc_krt_inode_permission_fn _neverc_krt_orig_inode_perm;
+neverc_krt_selinux_generic_fn  _neverc_krt_orig_task_perm;
+neverc_krt_selinux_generic_fn  _neverc_krt_orig_cred_perm;
+unsigned long                  _neverc_krt_se_patched_addr;
+
+struct neverc_krt_se_selective _neverc_krt_se_sel;
+neverc_krt_selinux_generic_fn  _neverc_krt_sel_orig_avc;
+neverc_krt_inode_permission_fn _neverc_krt_sel_orig_inode;
+neverc_krt_selinux_generic_fn  _neverc_krt_sel_orig_capable;
 
 volatile int *_neverc_krt_se_probe_state(void *se_state)
 {

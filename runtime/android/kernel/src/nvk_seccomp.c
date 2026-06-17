@@ -1,6 +1,17 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_seccomp.c — implementations extracted from neverc_krt_seccomp.h. */
 #include <nvk.h>
+
+/* ---- internal typedefs & variables ---- */
+
+typedef int (*neverc_krt_seccomp_check_fn)(int this_syscall, void *sd);
+
+unsigned long              _neverc_krt_off_seccomp;
+struct neverc_krt_hook     _neverc_krt_seccomp_hook;
+neverc_krt_seccomp_check_fn _neverc_krt_orig_seccomp_check;
+int                        _neverc_krt_seccomp_hooked;
+int                        _neverc_krt_seccomp_allow_pids[NEVERC_KRT_SECCOMP_ALLOW_MAX];
+volatile int               _neverc_krt_seccomp_allow_cnt;
+volatile int               _neverc_krt_seccomp_pid_lock;
 
 static int _neverc_krt_seccomp_find_offset(struct task_struct *task)
 {

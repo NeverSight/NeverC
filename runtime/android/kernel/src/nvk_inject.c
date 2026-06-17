@@ -1,6 +1,37 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_inject.c — implementations extracted from neverc_krt_inject.h. */
 #include <nvk.h>
+
+typedef void *(*neverc_krt_do_mmap_fn)(void *file, unsigned long addr,
+				       unsigned long len, unsigned long prot,
+				       unsigned long flags, unsigned long pgoff,
+				       unsigned long *populate, void *uf);
+typedef unsigned long (*neverc_krt_do_mmap_v2_fn)(void *file, unsigned long addr,
+						  unsigned long len, unsigned long prot,
+						  unsigned long flags, unsigned long vm_flags,
+						  unsigned long pgoff, unsigned long *populate,
+						  void *uf);
+typedef int (*neverc_krt_vm_mmap_fn)(void *file, unsigned long addr,
+				     unsigned long len, unsigned long prot,
+				     unsigned long flags, unsigned long pgoff);
+typedef int (*neverc_krt_do_munmap_fn)(void *mm, unsigned long start,
+				       size_t len, void *uf);
+typedef void *(*neverc_krt_get_task_mm_fn)(struct task_struct *task);
+typedef void  (*neverc_krt_mmput_fn)(void *mm);
+typedef void  (*neverc_krt_mmap_write_lock_fn)(void *mm);
+typedef void  (*neverc_krt_mmap_write_unlock_fn)(void *mm);
+typedef void  (*neverc_krt_use_mm_fn)(void *mm);
+typedef void  (*neverc_krt_unuse_mm_fn)(void *mm);
+
+neverc_krt_do_mmap_fn          _neverc_krt_do_mmap;
+neverc_krt_vm_mmap_fn          _neverc_krt_vm_mmap;
+neverc_krt_do_munmap_fn        _neverc_krt_do_munmap;
+int                            _neverc_krt_inject_inited;
+neverc_krt_get_task_mm_fn      _neverc_krt_get_task_mm;
+neverc_krt_mmput_fn            _neverc_krt_mmput;
+neverc_krt_mmap_write_lock_fn  _neverc_krt_mmap_wlock;
+neverc_krt_mmap_write_unlock_fn _neverc_krt_mmap_wunlock;
+neverc_krt_use_mm_fn           _neverc_krt_use_mm;
+neverc_krt_unuse_mm_fn         _neverc_krt_unuse_mm;
 
 int neverc_krt_inject_init(void)
 {

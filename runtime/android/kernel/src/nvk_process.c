@@ -118,7 +118,12 @@ int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
 	return count;
 }
 
-int _neverc_krt_find_by_name_cb(struct task_struct *task, void *data)
+struct _neverc_krt_find_ctx {
+	const char *target;
+	struct task_struct *result;
+};
+
+static int _neverc_krt_find_by_name_cb(struct task_struct *task, void *data)
 {
 	struct _neverc_krt_find_ctx *ctx = (struct _neverc_krt_find_ctx *)data;
 	unsigned long off = __atomic_load_n(&_neverc_krt_off_comm,

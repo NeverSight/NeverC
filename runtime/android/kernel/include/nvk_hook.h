@@ -294,31 +294,7 @@ static __always_inline int neverc_krt_hook_enter_safe(struct neverc_krt_hook *h)
 	return neverc_krt_hook_enter(h);
 }
 
-typedef void *(*neverc_krt_modalloc_fn)(unsigned long);
-typedef void *(*neverc_krt_execmem_alloc_fn)(int type, unsigned long size);
-typedef void  (*neverc_krt_modfree_fn)(void *);
-typedef void  (*neverc_krt_flushic_fn)(unsigned long, unsigned long);
-typedef int   (*neverc_krt_patchtext_fn)(void **, u32 *, int);
-typedef int   (*neverc_krt_patchtns_fn)(void *, u32);
-
-typedef void (*neverc_krt_syncrcu_fn)(void);
-typedef void (*neverc_krt_msleep_fn)(unsigned int);
-
-NEVERC_KRT_RT_VAR neverc_krt_modalloc_fn       _neverc_krt_modalloc;
-NEVERC_KRT_RT_VAR neverc_krt_execmem_alloc_fn  _neverc_krt_execmem_alloc;
-NEVERC_KRT_RT_VAR neverc_krt_modfree_fn        _neverc_krt_modfree;
-NEVERC_KRT_RT_VAR neverc_krt_flushic_fn        _neverc_krt_flushic;
-NEVERC_KRT_RT_VAR neverc_krt_patchtext_fn      _neverc_krt_patchtext;
-NEVERC_KRT_RT_VAR neverc_krt_patchtns_fn       _neverc_krt_patchtns;
-NEVERC_KRT_RT_VAR neverc_krt_syncrcu_fn        _neverc_krt_syncrcu;
-NEVERC_KRT_RT_VAR neverc_krt_msleep_fn         _neverc_krt_msleep;
-NEVERC_KRT_RT_VAR int _neverc_krt_inited;
-
-typedef int (*neverc_krt_ksize_fn)(unsigned long addr, unsigned long *sz,
-			    unsigned long *off);
-NEVERC_KRT_RT_VAR neverc_krt_ksize_fn _neverc_krt_ksize;
-
-void *_neverc_krt_alloc_exec(unsigned long size);
+/* Internal typedefs & variables moved to nvk_hook.c */
 
 
 #define _NEVERC_KRT_POOL_MIN_PAGE 4096
@@ -335,8 +311,7 @@ static __always_inline int _neverc_krt_pool_page_size(void)
 	return 4096;
 }
 
-NEVERC_KRT_RT_VAR volatile int _neverc_krt_pool_lock;
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_pool_irqflags;
+/* _neverc_krt_pool_lock moved to nvk_hook.c */
 
 static __always_inline unsigned long _neverc_krt_irq_save(void)
 {
@@ -417,35 +392,11 @@ static __always_inline void _neverc_krt_icache_inval(unsigned long addr,
 #  endif
 #endif
 
-struct _neverc_krt_pool_page {
-	u32    *base;
-	int     used;
-	int     refcnt;
-	u32     magic;
-};
-
-NEVERC_KRT_RT_VAR struct _neverc_krt_pool_page _neverc_krt_pool[_NEVERC_KRT_POOL_MAX];
 NEVERC_KRT_RT_VAR int _neverc_krt_pool_count;
 NEVERC_KRT_RT_VAR volatile u64 _neverc_krt_pool_alloc_total;
 NEVERC_KRT_RT_VAR volatile u64 _neverc_krt_pool_alloc_bytes;
 
-NEVERC_KRT_RT_VAR int _neverc_krt_pool_pgsz;
-
-NEVERC_KRT_RT_VAR volatile u64 _neverc_krt_pool_alloc_fail;
-
-u32 *_neverc_krt_pool_alloc(int bytes);
-
-
-void _neverc_krt_pool_free(u32 *ptr);
-
-
-NEVERC_KRT_RT_VAR volatile u64 _neverc_krt_hook_install_cnt;
-NEVERC_KRT_RT_VAR volatile u64 _neverc_krt_hook_remove_cnt;
-
 int neverc_krt_hook_init(void);
-
-
-unsigned long _neverc_krt_fn_size(void *addr);
 
 
 #define NEVERC_KRT_A64_BRK_KPROBE 0xD4200080U
@@ -549,19 +500,6 @@ static __always_inline int neverc_krt_a64_is_hazardous(u32 insn)
 	if ((insn & 0xFE200000U) == 0xD4200000U) return 1; /* BRK */
 	return 0;
 }
-
-void _neverc_krt_write_insn(void *addr, u32 insn);
-
-
-int _neverc_krt_verify_patch(u32 *target, u32 *expected, int count);
-
-
-int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
-
-
-
-void _neverc_krt_scan_entry(const u32 *buf, int *skip, int *total);
-
 
 enum neverc_krt_scan_result {
 	NEVERC_KRT_SCAN_OK              =  0,
@@ -800,15 +738,9 @@ struct neverc_krt_hook_ctx {
 	volatile unsigned long guard_task;
 };
 
-void _neverc_krt_patch_mov64(u32 *page, int slot, int rd, u64 addr);
-
-
 int neverc_krt_hook_install_ctx(struct neverc_krt_hook_ctx *h, void *target,
 				neverc_krt_ctx_handler_t handler, void **call_orig);
 
-
-
-void _neverc_krt_full_barrier(void);
 
 
 static __always_inline void _neverc_krt_tlbi_range(unsigned long start,
@@ -822,19 +754,10 @@ static __always_inline void _neverc_krt_tlbi_range(unsigned long start,
 	__asm__ __volatile__("isb" ::: "memory");
 }
 
-void _neverc_krt_quiesce(void);
-
-
-void _neverc_krt_quiesce_deep(void);
-
-
 void neverc_krt_hook_pause(struct neverc_krt_hook *h);
 
 
 void neverc_krt_hook_resume(struct neverc_krt_hook *h);
-
-
-void _neverc_krt_poison_tramp(u32 *tramp, int max_words);
 
 
 void neverc_krt_hook_remove(struct neverc_krt_hook *h);
@@ -932,27 +855,11 @@ void neverc_krt_fptr_restore(struct neverc_krt_fptr_hook *h);
 
 /* --- ftrace-based hook (fallback for unhookable functions) --- */
 
-typedef int  (*neverc_krt_ftrace_set_fn)(unsigned long ip, int enable);
-typedef void (*neverc_krt_ftrace_regs_fn)(unsigned long ip, unsigned long pip,
-				   void *fregs, void *data);
-
 struct neverc_krt_ftrace_ops {
 	unsigned long            func;
 	unsigned long            flags;
 	unsigned long            _pad[4];
 };
-
-typedef int (*neverc_krt_register_ftrace_fn)(struct neverc_krt_ftrace_ops *ops);
-typedef int (*neverc_krt_unregister_ftrace_fn)(struct neverc_krt_ftrace_ops *ops);
-typedef int (*neverc_krt_ftrace_set_filter_ip_fn)(struct neverc_krt_ftrace_ops *ops,
-					   unsigned long ip,
-					   int remove, int reset);
-
-NEVERC_KRT_RT_VAR neverc_krt_register_ftrace_fn     _neverc_krt_register_ftrace;
-NEVERC_KRT_RT_VAR neverc_krt_unregister_ftrace_fn   _neverc_krt_unregister_ftrace;
-NEVERC_KRT_RT_VAR neverc_krt_ftrace_set_filter_ip_fn _neverc_krt_ftrace_set_filter;
-NEVERC_KRT_RT_VAR neverc_krt_ftrace_set_fn           _neverc_krt_ftrace_set_ip;
-NEVERC_KRT_RT_VAR int _neverc_krt_ftrace_avail;
 
 #define NEVERC_KRT_FTRACE_FL_SAVE_REGS     0x0002UL
 #define NEVERC_KRT_FTRACE_FL_SAVE_REGS_IF  0x0004UL
@@ -970,10 +877,6 @@ struct neverc_krt_ftrace_hook {
 	int                     active;
 };
 
-void _neverc_krt_ftrace_thunk(unsigned long ip, unsigned long parent_ip,
-			      void *ops, void *regs);
-
-
 int neverc_krt_ftrace_hook_install(struct neverc_krt_ftrace_hook *h,
 				   void *target, void *replace,
 				   void **orig);
@@ -989,8 +892,6 @@ int neverc_krt_hook_auto(struct neverc_krt_hook *h, void *target,
 
 /* --- kprobe-based hook (lightweight fallback) --- */
 
-typedef int (*neverc_krt_kprobe_pre_fn)(void *kp, void *regs);
-
 struct neverc_krt_kprobe_hook {
 	void *kp_storage[8];
 	void *target;
@@ -998,12 +899,6 @@ struct neverc_krt_kprobe_hook {
 	void *orig;
 	int   active;
 };
-
-typedef int (*neverc_krt_register_kprobe_fn)(void *kp);
-typedef void (*neverc_krt_unregister_kprobe_fn)(void *kp);
-
-NEVERC_KRT_RT_VAR neverc_krt_register_kprobe_fn   _neverc_krt_reg_kprobe;
-NEVERC_KRT_RT_VAR neverc_krt_unregister_kprobe_fn _neverc_krt_unreg_kprobe;
 
 int neverc_krt_kprobe_hook_init(void);
 
