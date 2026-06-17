@@ -39,8 +39,8 @@ static __always_inline u32 _neverc_krt_crc32_hw_dword(u32 crc, u64 val)
 
 static __always_inline u64 _neverc_krt_wd_gen_key(void)
 {
-	u64 ts, ctr;
-	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(ts));
+	u64 ts = neverc_krt_arch_counter();
+	u64 ctr;
 	__asm__ __volatile__("mrs %0, cntpct_el0" : "=r"(ctr));
 	u64 sp;
 	__asm__ __volatile__("mov %0, sp" : "=r"(sp));

@@ -476,10 +476,16 @@ void neverc_krt_fptr_restore(struct neverc_krt_fptr_hook *h);
 
 /* --- ftrace-based hook (fallback for unhookable functions) --- */
 
+/*
+ * Storage for kernel's struct ftrace_ops.  Layout across GKI 5.10-6.12:
+ *   func      at offset  0  (8 bytes)
+ *   next      at offset  8  (8 bytes, kernel-managed)
+ *   flags     at offset 16  (8 bytes)
+ *   ...remainder (hashes, mutexes, lists)
+ * Max sizeof(struct ftrace_ops) ≈ 220 bytes on 6.12; 256 covers all.
+ */
 struct neverc_krt_ftrace_ops {
-	unsigned long            func;
-	unsigned long            flags;
-	unsigned long            _pad[4];
+	unsigned long            _storage[32];
 };
 
 #define NEVERC_KRT_FTRACE_FL_SAVE_REGS     0x0002UL

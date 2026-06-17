@@ -22,10 +22,8 @@ static __always_inline void _neverc_krt_su_unlock(void)
 
 static __always_inline int _neverc_krt_su_expired(struct neverc_krt_su_grant *g)
 {
-	u64 now;
 	if (!g->expire_ts) return 0;
-	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(now));
-	return now > g->expire_ts;
+	return neverc_krt_arch_counter() > g->expire_ts;
 }
 
 void neverc_krt_su_init(u64 master_key)
@@ -72,9 +70,8 @@ int neverc_krt_su_grant(u32 uid, u32 flags, u64 token, u64 ttl_ns)
 	_neverc_krt_su.grants[slot].token = token;
 	_neverc_krt_su.grants[slot].expire_ts = 0;
 	if (ttl_ns > 0) {
-		u64 freq, now;
-		__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(freq));
-		__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(now));
+		u64 freq = (u64)neverc_krt_arch_counter_freq();
+		u64 now = neverc_krt_arch_counter();
 		_neverc_krt_su.grants[slot].expire_ts =
 			now + ttl_ns * freq / 1000000000ULL;
 	}

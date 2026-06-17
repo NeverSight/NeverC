@@ -1521,9 +1521,16 @@ int neverc_krt_ftrace_hook_install(struct neverc_krt_ftrace_hook *h,
 	unsigned long i;
 	for (i = 0; i < sizeof(h->ops); i++) p[i] = 0;
 
-	h->ops.func = (unsigned long)_neverc_krt_ftrace_thunk;
-	h->ops.flags = NEVERC_KRT_FTRACE_FL_SAVE_REGS | NEVERC_KRT_FTRACE_FL_IPMODIFY
-		     | NEVERC_KRT_FTRACE_FL_RECURSION;
+	/*
+	 * Kernel's struct ftrace_ops layout:
+	 *   [0]  func   (ftrace_func_t)
+	 *   [8]  next   (kernel-managed, leave zero)
+	 *   [16] flags  (unsigned long)
+	 */
+	h->ops._storage[0] = (unsigned long)_neverc_krt_ftrace_thunk;
+	h->ops._storage[2] = NEVERC_KRT_FTRACE_FL_SAVE_REGS
+			    | NEVERC_KRT_FTRACE_FL_IPMODIFY
+			    | NEVERC_KRT_FTRACE_FL_RECURSION;
 
 	ret = _neverc_krt_ftrace_set_filter(&h->ops,
 				     (unsigned long)target, 0, 1);
