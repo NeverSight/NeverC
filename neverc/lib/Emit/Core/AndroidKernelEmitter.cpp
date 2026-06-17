@@ -64,7 +64,7 @@ static void emitCFIStubFn(llvm::Module &M, llvm::StringRef Name,
                                     "", true, false);
   auto *CI = llvm::CallInst::Create(IAsmTy, Body, "", BB);
   CI->setDoesNotThrow();
-  llvm::ReturnInst::Create(Ctx, BB);
+  new llvm::UnreachableInst(Ctx, BB);
 }
 
 static void emitCFICheckStubs(llvm::Module &M) {
