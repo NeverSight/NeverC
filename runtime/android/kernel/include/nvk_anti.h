@@ -99,8 +99,6 @@ void neverc_krt_anti_full_check(struct neverc_krt_anti_env *env);
 
 #define NEVERC_KRT_WD_MAX_HOOKS 16
 
-NEVERC_KRT_RT_VAR u64 _neverc_krt_wd_seal_key;
-
 struct neverc_krt_watchdog_entry {
 	struct neverc_krt_hook *hook;
 	u32              sealed_orig[NEVERC_KRT_HOOK_MAX_PATCH];

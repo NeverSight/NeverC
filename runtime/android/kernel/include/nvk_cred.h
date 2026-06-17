@@ -10,9 +10,6 @@
 #include <nvk_mem.h>
 #include <nvk_process.h>
 
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_cred;
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_off_uid;
-
 struct neverc_krt_cred_ids {
 	u32 uid, gid, suid, sgid, euid, egid, fsuid, fsgid;
 };

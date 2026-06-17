@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_anti.c — anti-tamper and environment detection. */
 #include <nvk.h>
+
+/* ---- internal variables ---- */
+
+u64 _neverc_krt_wd_seal_key;
 
 /* ---- internal helpers ---- */
 

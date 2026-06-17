@@ -19,7 +19,6 @@ struct neverc_krt_kernel_info {
 };
 
 NEVERC_KRT_RT_VAR struct neverc_krt_kernel_info _neverc_krt_kinfo;
-NEVERC_KRT_RT_VAR int _neverc_krt_compat_inited;
 
 typedef int (*neverc_krt_snprintf_fn)(char *buf, size_t size, const char *fmt, ...);
 typedef int (*neverc_krt_sscanf_fn)(const char *buf, const char *fmt, ...);

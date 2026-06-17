@@ -19,25 +19,14 @@ typedef int (*neverc_krt_set_memory_fn)(unsigned long addr, int numpages);
 typedef void (*neverc_krt_update_mapping_prot_fn)(u64 phys, unsigned long virt,
 					   u64 size, u64 prot);
 
-NEVERC_KRT_RT_VAR neverc_krt_probe_read_fn          _neverc_krt_probe_read;
-NEVERC_KRT_RT_VAR neverc_krt_probe_write_fn         _neverc_krt_probe_write;
 NEVERC_KRT_RT_VAR neverc_krt_copy_from_user_fn      _neverc_krt_copy_from_user;
 NEVERC_KRT_RT_VAR neverc_krt_copy_to_user_fn        _neverc_krt_copy_to_user;
-NEVERC_KRT_RT_VAR neverc_krt_set_memory_fn          _neverc_krt_set_memory_rw;
-NEVERC_KRT_RT_VAR neverc_krt_set_memory_fn          _neverc_krt_set_memory_ro;
-NEVERC_KRT_RT_VAR neverc_krt_update_mapping_prot_fn _neverc_krt_update_prot;
-NEVERC_KRT_RT_VAR unsigned long             *_neverc_krt_kimage_voffset;
 NEVERC_KRT_RT_VAR int                        _neverc_krt_mem_inited;
 NEVERC_KRT_RT_VAR unsigned long              _neverc_krt_mem_page_sz;
 
 typedef int (*_neverc_krt_pte_rw_fn)(unsigned long addr);
 NEVERC_KRT_RT_VAR _neverc_krt_pte_rw_fn _neverc_krt_pte_make_rw;
 NEVERC_KRT_RT_VAR _neverc_krt_pte_rw_fn _neverc_krt_pte_make_ro;
-
-static __always_inline unsigned long _neverc_krt_strip_tags(unsigned long addr)
-{
-	return addr & ~(0xFFUL << 56);
-}
 
 static __always_inline unsigned long _neverc_krt_mem_get_page_size(void)
 {
@@ -51,12 +40,6 @@ static __always_inline unsigned long _neverc_krt_mem_get_page_size(void)
 	else if (tg1 == 2) sz = 65536;
 	_neverc_krt_mem_page_sz = sz;
 	return sz;
-}
-
-static __always_inline unsigned long _neverc_krt_mem_page_align_down(unsigned long addr)
-{
-	unsigned long sz = _neverc_krt_mem_get_page_size();
-	return addr & ~(sz - 1);
 }
 
 int _neverc_krt_mem_init(void);

@@ -6,14 +6,6 @@
 #include <nvk_rt.h>
 #include <linux/compiler.h>
 
-static __always_inline void _neverc_krt_secure_zero(void *p, size_t n)
-{
-	volatile unsigned char *vp = (volatile unsigned char *)p;
-	size_t i;
-	for (i = 0; i < n; i++)
-		vp[i] = 0;
-}
-
 /* ------------------------------------------------------------------ */
 /*  SHA-256  (FIPS 180-4)                                             */
 /* ------------------------------------------------------------------ */

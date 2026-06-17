@@ -35,8 +35,6 @@ struct neverc_krt_su_manager {
 	volatile u64        deny_count;
 };
 
-NEVERC_KRT_RT_VAR struct neverc_krt_su_manager _neverc_krt_su;
-
 void neverc_krt_su_init(u64 master_key);
 
 

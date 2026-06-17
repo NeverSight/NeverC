@@ -31,16 +31,6 @@ struct neverc_krt_delayed_work {
 /*  Kernel function types                                             */
 /* ------------------------------------------------------------------ */
 
-/* hrtimer callback wrapper: the kernel passes hrtimer*, we extract neverc_krt_timer* */
-static __always_inline struct neverc_krt_timer *
-_neverc_krt_timer_from_storage(void *hrt)
-{
-	return (struct neverc_krt_timer *)((char *)hrt -
-		__builtin_offsetof(struct neverc_krt_timer, storage));
-}
-
-
-
 int neverc_krt_timer_init(void);
 
 

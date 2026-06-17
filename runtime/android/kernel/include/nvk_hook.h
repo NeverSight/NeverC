@@ -294,104 +294,6 @@ static __always_inline int neverc_krt_hook_enter_safe(struct neverc_krt_hook *h)
 	return neverc_krt_hook_enter(h);
 }
 
-/* Internal typedefs & variables moved to nvk_hook.c */
-
-
-#define _NEVERC_KRT_POOL_MIN_PAGE 4096
-#define _NEVERC_KRT_POOL_ALIGN    16
-#define _NEVERC_KRT_POOL_MAX      32
-
-static __always_inline int _neverc_krt_pool_page_size(void)
-{
-	unsigned long tcr;
-	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
-	u32 tg1 = (tcr >> 30) & 3;
-	if (tg1 == 1) return 16384;
-	if (tg1 == 2) return 65536;
-	return 4096;
-}
-
-/* _neverc_krt_pool_lock moved to nvk_hook.c */
-
-static __always_inline unsigned long _neverc_krt_irq_save(void)
-{
-	unsigned long flags;
-	__asm__ __volatile__("mrs %0, daif\n"
-			     "msr daifset, #3\n"
-			     : "=r"(flags) :: "memory");
-	return flags;
-}
-
-static __always_inline void _neverc_krt_irq_restore(unsigned long flags)
-{
-	__asm__ __volatile__("msr daif, %0\n" :: "r"(flags) : "memory");
-}
-
-static __always_inline void _neverc_krt_spin_lock(volatile int *lock)
-{
-	while (__atomic_exchange_n(lock, 1, __ATOMIC_ACQUIRE))
-		__asm__ __volatile__("wfe" ::: "memory");
-}
-
-static __always_inline void _neverc_krt_spin_unlock(volatile int *lock)
-{
-	__atomic_store_n(lock, 0, __ATOMIC_RELEASE);
-	__asm__ __volatile__("sev" ::: "memory");
-}
-
-static __always_inline unsigned long _neverc_krt_spin_lock_irqsave(volatile int *lock)
-{
-	unsigned long flags = _neverc_krt_irq_save();
-	_neverc_krt_spin_lock(lock);
-	return flags;
-}
-
-static __always_inline void _neverc_krt_spin_unlock_irqrestore(volatile int *lock,
-							unsigned long flags)
-{
-	_neverc_krt_spin_unlock(lock);
-	_neverc_krt_irq_restore(flags);
-}
-
-static __always_inline unsigned long _neverc_krt_clear_tags(unsigned long addr)
-{
-	return addr & ~(0xFFUL << 56);
-}
-
-static __always_inline int _neverc_krt_is_kern_ptr(unsigned long addr)
-{
-	return _neverc_krt_clear_tags(addr) >= 0xFFFF000000000000UL;
-}
-
-static __always_inline void _neverc_krt_dcache_clean(unsigned long addr,
-					      unsigned long end)
-{
-	unsigned long line;
-	for (line = addr & ~63UL; line < end; line += 64)
-		__asm__ __volatile__("dc cvau, %0" :: "r"(line) : "memory");
-	__asm__ __volatile__("dsb ish" ::: "memory");
-}
-
-static __always_inline void _neverc_krt_icache_inval(unsigned long addr,
-					      unsigned long end)
-{
-	unsigned long line;
-	for (line = addr & ~63UL; line < end; line += 64)
-		__asm__ __volatile__("ic ivau, %0" :: "r"(line) : "memory");
-	__asm__ __volatile__("dsb ish" ::: "memory");
-	__asm__ __volatile__("isb" ::: "memory");
-}
-
-#ifndef _NEVERC_KRT_POOL_MAGIC
-#  if __has_builtin(__builtin_neverc_random_u64)
-#    define _NEVERC_KRT_POOL_MAGIC ((u32)__builtin_neverc_random_u64())
-#  elif defined(NEVERC_KRT_CACHE_SEED)
-#    define _NEVERC_KRT_POOL_MAGIC ((u32)(NEVERC_KRT_CACHE_SEED))
-#  else
-#    define _NEVERC_KRT_POOL_MAGIC 0x4E564B50U
-#  endif
-#endif
-
 NEVERC_KRT_RT_VAR int _neverc_krt_pool_count;
 NEVERC_KRT_RT_VAR volatile u64 _neverc_krt_pool_alloc_total;
 NEVERC_KRT_RT_VAR volatile u64 _neverc_krt_pool_alloc_bytes;
@@ -571,17 +473,6 @@ int neverc_krt_hook_install_ctx(struct neverc_krt_hook_ctx *h, void *target,
 				neverc_krt_ctx_handler_t handler, void **call_orig);
 
 
-
-static __always_inline void _neverc_krt_tlbi_range(unsigned long start,
-					    unsigned long end)
-{
-	unsigned long addr;
-	for (addr = start & ~0xFFFUL; addr < end; addr += 0x1000)
-		__asm__ __volatile__("tlbi vale1is, %0"
-				     :: "r"(addr >> 12) : "memory");
-	__asm__ __volatile__("dsb ish" ::: "memory");
-	__asm__ __volatile__("isb" ::: "memory");
-}
 
 void neverc_krt_hook_pause(struct neverc_krt_hook *h);
 

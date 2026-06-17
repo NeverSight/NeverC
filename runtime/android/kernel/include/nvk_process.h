@@ -25,8 +25,6 @@ NEVERC_KRT_RT_VAR neverc_krt_find_task_fn     _neverc_krt_find_task_by_vpid;
 NEVERC_KRT_RT_VAR neverc_krt_get_task_cred_fn _neverc_krt_get_task_cred;
 NEVERC_KRT_RT_VAR neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds;
 NEVERC_KRT_RT_VAR neverc_krt_commit_creds_fn  _neverc_krt_commit_creds;
-NEVERC_KRT_RT_VAR neverc_krt_send_sig_info_fn _neverc_krt_send_sig_info;
-NEVERC_KRT_RT_VAR struct task_struct   *_neverc_krt_init_task;
 NEVERC_KRT_RT_VAR int                   _neverc_krt_proc_inited;
 
 typedef void (*neverc_krt_rcu_lock_fn)(void);
@@ -57,10 +55,6 @@ static __always_inline const struct neverc_krt_task_offsets *neverc_krt_task_off
 		_neverc_krt_resolve_task_offsets();
 	return &_neverc_krt_toff;
 }
-
-typedef unsigned long (*neverc_krt_ksize_off_fn)(unsigned long addr,
-					  unsigned long *sz,
-					  unsigned long *off);
 
 int neverc_krt_process_init(void);
 

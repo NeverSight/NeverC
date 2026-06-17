@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_compat.c — implementations extracted from neverc_krt_compat.h. */
 #include <nvk.h>
+
+static int _neverc_krt_compat_inited;
 
 static void _neverc_krt_parse_version(const char *str, struct neverc_krt_kernel_info *info)
 {

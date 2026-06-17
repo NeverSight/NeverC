@@ -1,6 +1,19 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_addr.c — implementations extracted from neverc_krt_addr.h. */
 #include <nvk.h>
+
+/* ---- internal variables ---- */
+
+unsigned long *_neverc_krt_phys_offset;
+static int     _neverc_krt_addr_inited;
+
+/* ---- internal inline helpers ---- */
+
+static __always_inline unsigned long _neverc_krt_linmap_phys_to_virt(unsigned long pa)
+{
+	return pa + _neverc_krt_linmap_offset;
+}
+
+/* ---- implementation ---- */
 
 static void _neverc_krt_detect_linmap(void)
 {

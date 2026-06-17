@@ -35,12 +35,6 @@ struct neverc_krt_hide_state {
 
 int neverc_krt_hide_init(void);
 
-static __always_inline struct list_head *
-_neverc_krt_get_mod_list(struct neverc_krt_this_module *mod)
-{
-	return (struct list_head *)((char *)mod + NEVERC_KRT_OFF_LIST);
-}
-
 void neverc_krt_mod_hide(struct neverc_krt_hide_state *state,
 			 struct neverc_krt_this_module *mod);
 

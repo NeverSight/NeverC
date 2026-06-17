@@ -1,7 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
-/* ---- internal typedefs & variables ---- */
+/* ---- internal variables ---- */
+
+unsigned long _neverc_krt_off_cred;
+unsigned long _neverc_krt_off_uid;
+
+/* ---- internal typedefs ---- */
 
 typedef void *(*neverc_krt_get_cred_fn)(const void *);
 typedef void  (*neverc_krt_put_cred_fn)(const void *);

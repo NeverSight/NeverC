@@ -1,6 +1,17 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
+/* ---- internal inline helpers ---- */
+
+static __always_inline struct neverc_krt_timer *
+_neverc_krt_timer_from_storage(void *hrt)
+{
+	return (struct neverc_krt_timer *)((char *)hrt -
+		__builtin_offsetof(struct neverc_krt_timer, storage));
+}
+
+/* ---- internal typedefs ---- */
+
 typedef void (*neverc_krt_hrt_init_fn)(void *timer, int clock_id, int mode);
 typedef int  (*neverc_krt_hrt_start_fn)(void *timer, s64 tim, int mode);
 typedef int  (*neverc_krt_hrt_cancel_fn)(void *timer);

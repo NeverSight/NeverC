@@ -9,8 +9,6 @@
 #include <nvk_mem.h>
 
 NEVERC_KRT_RT_VAR unsigned long *_neverc_krt_kimage_voffset_a;
-NEVERC_KRT_RT_VAR unsigned long *_neverc_krt_phys_offset;
-NEVERC_KRT_RT_VAR int            _neverc_krt_addr_inited;
 
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_derived_voffset;
 NEVERC_KRT_RT_VAR int           _neverc_krt_voffset_derived;
@@ -23,11 +21,6 @@ NEVERC_KRT_RT_VAR int           _neverc_krt_voffset_derived;
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_linmap_offset;
 NEVERC_KRT_RT_VAR int           _neverc_krt_linmap_detected;
 
-
-static __always_inline unsigned long _neverc_krt_linmap_phys_to_virt(unsigned long pa)
-{
-	return pa + _neverc_krt_linmap_offset;
-}
 
 int neverc_krt_addr_init(void);
 

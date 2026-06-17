@@ -1,6 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_crypto.c — SHA-256, HMAC-SHA256, ChaCha20. */
 #include <nvk.h>
+
+/* ---- internal helpers ---- */
+
+static __always_inline void _neverc_krt_secure_zero(void *p, size_t n)
+{
+	volatile unsigned char *vp = (volatile unsigned char *)p;
+	size_t i;
+	for (i = 0; i < n; i++)
+		vp[i] = 0;
+}
 
 /* ---- SHA-256 internal helpers ---- */
 

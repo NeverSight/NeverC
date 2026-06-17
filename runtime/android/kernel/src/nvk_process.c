@@ -1,6 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_process.c — implementations extracted from neverc_krt_process.h. */
 #include <nvk.h>
+
+/* ---- internal variables ---- */
+
+neverc_krt_send_sig_info_fn _neverc_krt_send_sig_info;
+struct task_struct         *_neverc_krt_init_task;
+
+/* ---- implementation ---- */
 
 void _neverc_krt_resolve_task_offsets(void)
 {

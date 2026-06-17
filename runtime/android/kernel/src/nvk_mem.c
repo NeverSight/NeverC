@@ -1,6 +1,23 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_mem.c — implementations extracted from neverc_krt_mem.h. */
 #include <nvk.h>
+
+/* ---- internal variables (file-local to bitcode module) ---- */
+
+neverc_krt_probe_read_fn          _neverc_krt_probe_read;
+neverc_krt_probe_write_fn         _neverc_krt_probe_write;
+neverc_krt_set_memory_fn          _neverc_krt_set_memory_rw;
+neverc_krt_set_memory_fn          _neverc_krt_set_memory_ro;
+neverc_krt_update_mapping_prot_fn _neverc_krt_update_prot;
+unsigned long                    *_neverc_krt_kimage_voffset;
+
+/* ---- internal inline helpers ---- */
+
+static __always_inline unsigned long _neverc_krt_strip_tags(unsigned long addr)
+{
+	return addr & ~(0xFFUL << 56);
+}
+
+/* ---- internal defines ---- */
 
 #define _NEVERC_KRT_PTE_TYPE_PAGE  (3UL << 0)
 #define _NEVERC_KRT_PTE_AF         (1UL << 10)

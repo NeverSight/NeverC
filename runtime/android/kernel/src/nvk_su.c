@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_su.c — su grant management. */
 #include <nvk.h>
+
+/* ---- internal variables ---- */
+
+struct neverc_krt_su_manager _neverc_krt_su;
 
 /* ---- internal helpers ---- */
 
