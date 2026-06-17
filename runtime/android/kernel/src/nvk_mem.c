@@ -2,6 +2,17 @@
 /* neverc_krt_mem.c — implementations extracted from neverc_krt_mem.h. */
 #include <nvk.h>
 
+#define _NEVERC_KRT_PTE_TYPE_PAGE  (3UL << 0)
+#define _NEVERC_KRT_PTE_AF         (1UL << 10)
+#define _NEVERC_KRT_PTE_SH_IS      (3UL << 8)
+#define _NEVERC_KRT_PTE_RDONLY     (1UL << 7)
+#define _NEVERC_KRT_PTE_ATTRINDX(x) ((unsigned long)(x) << 2)
+#define _NEVERC_KRT_PTE_UXN        (1UL << 54)
+#define _NEVERC_KRT_PAGE_KERNEL     (_NEVERC_KRT_PTE_TYPE_PAGE | _NEVERC_KRT_PTE_AF | \
+			      _NEVERC_KRT_PTE_SH_IS | _NEVERC_KRT_PTE_ATTRINDX(0) | \
+			      _NEVERC_KRT_PTE_UXN)
+#define _NEVERC_KRT_PAGE_KERNEL_RO  (_NEVERC_KRT_PAGE_KERNEL | _NEVERC_KRT_PTE_RDONLY)
+
 int _neverc_krt_mem_init(void)
 {
 	if (_neverc_krt_mem_inited) return 0;

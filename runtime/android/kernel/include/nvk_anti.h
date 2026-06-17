@@ -37,10 +37,6 @@ int neverc_krt_anti_detect_debugger(void);
 int neverc_krt_anti_detect_kprobe_on(void *addr);
 
 
-NEVERC_KRT_RT_VAR int neverc_krt_anti_detect_hook_ex(void *addr,
-				   struct neverc_krt_hook *own_hooks,
-				   int own_count);
-
 int neverc_krt_anti_detect_hook_on(void *addr);
 
 

@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
+#define _NEVERC_KRT_SKC_DPORT_OFF NEVERC_KRT_SKC_DPORT_OFF
+#define _NEVERC_KRT_SKC_NUM_OFF   NEVERC_KRT_SKC_NUM_OFF
+
 /* Cross-file hook state, accessed by neverc_krt_cleanup_all() in nvk.c */
 struct neverc_krt_hook _neverc_krt_ks_hook;
 int _neverc_krt_ks_hooked;

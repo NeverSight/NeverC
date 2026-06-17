@@ -23,10 +23,6 @@ NEVERC_KRT_RT_VAR int           _neverc_krt_voffset_derived;
 NEVERC_KRT_RT_VAR unsigned long _neverc_krt_linmap_offset;
 NEVERC_KRT_RT_VAR int           _neverc_krt_linmap_detected;
 
-NEVERC_KRT_RT_VAR int neverc_krt_pte_set_rw(unsigned long vaddr);
-NEVERC_KRT_RT_VAR int neverc_krt_pte_set_ro(unsigned long vaddr);
-
-
 
 static __always_inline unsigned long _neverc_krt_linmap_phys_to_virt(unsigned long pa)
 {
@@ -147,9 +143,6 @@ struct neverc_krt_pte_walk_result {
 	unsigned long pte_phys;
 	unsigned long *pte_virt;
 };
-
-NEVERC_KRT_RT_VAR int neverc_krt_walk_pgtable_ex(unsigned long vaddr, struct neverc_krt_pte_info *info,
-			       struct neverc_krt_pte_walk_result *result);
 
 int neverc_krt_walk_pgtable(unsigned long vaddr, struct neverc_krt_pte_info *info);
 

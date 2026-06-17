@@ -189,9 +189,6 @@ void neverc_krt_cmdline_filter_cleanup(void);
 #define NEVERC_KRT_FILE_PATH_MAX  64
 #define NEVERC_KRT_FILE_SPOOF_MAX_LEN 128
 
-#define _NEVERC_KRT_SKC_DPORT_OFF NEVERC_KRT_SKC_DPORT_OFF
-#define _NEVERC_KRT_SKC_NUM_OFF   NEVERC_KRT_SKC_NUM_OFF
-
 int neverc_krt_file_spoof_add(const char *path,
 			      const char *search, int slen,
 			      const char *replace, int rlen);
