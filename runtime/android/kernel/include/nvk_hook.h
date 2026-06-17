@@ -477,12 +477,15 @@ void neverc_krt_fptr_restore(struct neverc_krt_fptr_hook *h);
 /* --- ftrace-based hook (fallback for unhookable functions) --- */
 
 /*
- * Storage for kernel's struct ftrace_ops.  Layout across GKI 5.10-6.12:
- *   func      at offset  0  (8 bytes)
- *   next      at offset  8  (8 bytes, kernel-managed)
- *   flags     at offset 16  (8 bytes)
- *   ...remainder (hashes, mutexes, lists)
- * Max sizeof(struct ftrace_ops) ≈ 220 bytes on 6.12; 256 covers all.
+ * Storage for kernel's struct ftrace_ops (CONFIG_DYNAMIC_FTRACE=y).
+ * Layout across GKI 5.10-6.12 arm64:
+ *   func(8) + next(8) + flags(8) + private(8) + saved_func(8) = 40
+ *   + 2 × ftrace_ops_hash(~64 each, contains struct mutex ~48)
+ *   + func_hash(8) + trampoline(8) + trampoline_size(8) + list(16)
+ *   6.6 adds:  ops_func(8)
+ *   6.12 adds: subop_list(16) + managed(8)
+ * Estimated max: ~208 (5.10) / ~216 (6.6) / ~240 (6.12).
+ * 256 bytes covers all versions with headroom.
  */
 struct neverc_krt_ftrace_ops {
 	unsigned long            _storage[32];
@@ -520,7 +523,7 @@ int neverc_krt_hook_auto(struct neverc_krt_hook *h, void *target,
 /* --- kprobe-based hook (lightweight fallback) --- */
 
 struct neverc_krt_kprobe_hook {
-	unsigned char kp_storage[160]; /* >= sizeof(struct kprobe) across GKI 5.10-6.12 */
+	unsigned char kp_storage[160]; /* >= sizeof(struct kprobe): 136 on 5.10, 128 on 5.15-6.12 */
 	void *target;
 	void *replace;
 	void *orig;

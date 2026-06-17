@@ -39,11 +39,15 @@ struct proc_ops {
 					       unsigned long);
 };
 
-/* Verified against GKI 5.10–6.12 (gki_defconfig, CONFIG_COMPAT=y). */
+/*
+ * Verified against GKI 5.10–6.12 (gki_defconfig, CONFIG_COMPAT=y).
+ * GKI arm64 always enables CONFIG_COMPAT, so proc_compat_ioctl is always
+ * present.  sizeof(struct proc_ops) = 96 with CONFIG_COMPAT=y, 88 without.
+ */
 _Static_assert(__builtin_offsetof(struct proc_ops, proc_lseek) == 40,
 	       "proc_ops.proc_lseek offset mismatch");
 _Static_assert(sizeof(struct proc_ops) == 96,
-	       "proc_ops size mismatch for GKI arm64");
+	       "proc_ops size mismatch (requires CONFIG_COMPAT=y, always on for GKI arm64)");
 
 struct proc_dir_entry *proc_create(const char *name, umode_t mode,
 				   struct proc_dir_entry *parent,

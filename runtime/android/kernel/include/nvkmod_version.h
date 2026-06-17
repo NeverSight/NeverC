@@ -182,10 +182,14 @@
  * inside .c files would always evaluate against 5.10 — wrong when the
  * user targets 6.6 or 6.12.
  *
- * These globals are set by _neverc_krt_version_setup() (an inline in
- * this header, compiled with the USER's -DNEVERC_KRT_KERNEL=xxx).
- * The bitcode .c files read them at runtime instead of using
- * NEVERC_KRT_MODULE_SIZE / NEVERC_KRT_KERNEL directly.
+ * Primary detection: neverc_krt_mem_init() auto-detects the running
+ * kernel version from linux_banner at runtime.  This works correctly
+ * for all paths (including neverc_krt_init_all()) without depending
+ * on compile-time constants.
+ *
+ * Optional override: if the user calls _neverc_krt_version_setup()
+ * from their own module code BEFORE neverc_krt_mem_init(), the
+ * user's compile-time NEVERC_KRT_KERNEL takes precedence.
  *
  * Safe default: if never set (0), callers fall back to the maximum
  * struct module size across 5.10-6.12 (0x640 = 1600).

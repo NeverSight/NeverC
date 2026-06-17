@@ -20,6 +20,12 @@
 
 #include <linux/types.h>
 
+/*
+ * Max sizeof(struct kprobe) across GKI arm64 5.10–6.12:
+ *   5.10  = 136 bytes (0x88) — has fault_handler field
+ *   5.15+ = 128 bytes (0x80) — fault_handler removed
+ * 0x90 (144) covers all versions with headroom.
+ */
 #ifndef NEVERC_KRT_KP_SIZE
 #define NEVERC_KRT_KP_SIZE 0x90
 #endif

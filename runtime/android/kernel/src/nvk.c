@@ -15,15 +15,7 @@ const struct neverc_krt_state *neverc_krt_get_state(void)
 	return &_neverc_krt_state;
 }
 
-static int _neverc_krt_init_all_impl(void);
-
 int neverc_krt_init_all(void)
-{
-	_neverc_krt_version_setup();
-	return _neverc_krt_init_all_impl();
-}
-
-static int _neverc_krt_init_all_impl(void)
 {
 	int ret = NEVERC_KRT_BOOTSTRAP();
 	if (ret) return ret;

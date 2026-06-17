@@ -60,7 +60,6 @@ unsigned long _neverc_krt_mem_get_page_size(void)
 
 int neverc_krt_mem_init(void)
 {
-	_neverc_krt_version_setup();
 	if (_neverc_krt_mem_inited) return 0;
 
 	_neverc_krt_probe_read = (neverc_krt_probe_read_fn)NEVERC_KRT_LOOKUP("copy_from_kernel_nofault");
@@ -89,10 +88,16 @@ int neverc_krt_mem_init(void)
 		(unsigned long *)NEVERC_KRT_LOOKUP("kimage_voffset");
 
 	/*
-	 * Auto-detect kernel version from linux_banner if the user's
-	 * inline _neverc_krt_version_setup() hasn't run yet (e.g. the
-	 * caller entered through neverc_krt_process_init() instead of
-	 * the public neverc_krt_mem_init() wrapper).
+	 * Auto-detect kernel version from linux_banner.  This is the
+	 * primary detection path: the bitcode is compiled once with
+	 * NEVERC_KRT_KERNEL=510, so any inline _neverc_krt_version_setup()
+	 * called from within the bitcode would always pass 510 regardless
+	 * of the actual running kernel.  Runtime detection from
+	 * linux_banner is the only reliable mechanism.
+	 *
+	 * If the user called _neverc_krt_version_setup() explicitly from
+	 * their module code (where NEVERC_KRT_KERNEL is correct), this
+	 * block is skipped (kernel_ver already set).
 	 */
 	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
 		const char *banner =

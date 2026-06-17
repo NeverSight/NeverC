@@ -490,13 +490,34 @@ int neverc_krt_should_abort_on_mismatch(void)
 	return r == NEVERC_KRT_VER_MISMATCH;
 }
 
+static __always_inline unsigned long _neverc_krt_default_off_init(int kv)
+{
+	if (kv >= 606) return 392;
+	if (kv >= 601) return 368;
+	if (kv >= 515) return 376;
+	return 400;
+}
+
+static __always_inline unsigned long _neverc_krt_default_off_exit(int kv)
+{
+	if (kv >= 612) return 1504;
+	if (kv >= 606) return 1448;
+	if (kv >= 601) return 968;
+	if (kv >= 515) return 872;
+	return 960;
+}
+
 unsigned long neverc_krt_rt_off_init(void)
 {
-	return _neverc_krt_rt_off_init ? _neverc_krt_rt_off_init : NEVERC_KRT_OFF_INIT;
+	if (_neverc_krt_rt_off_init) return _neverc_krt_rt_off_init;
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	return kv ? _neverc_krt_default_off_init(kv) : 400;
 }
 
 unsigned long neverc_krt_rt_off_exit(void)
 {
-	return _neverc_krt_rt_off_exit ? _neverc_krt_rt_off_exit : NEVERC_KRT_OFF_EXIT;
+	if (_neverc_krt_rt_off_exit) return _neverc_krt_rt_off_exit;
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	return kv ? _neverc_krt_default_off_exit(kv) : 960;
 }
 

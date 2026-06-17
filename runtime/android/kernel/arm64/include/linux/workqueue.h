@@ -12,9 +12,9 @@ typedef void (*work_func_t)(struct work_struct *work);
 
 /*
  * Minimal work_struct layout — the three core fields are stable across
- * GKI 5.10–6.12.  5.10–6.6 append ANDROID_KABI_RESERVE(1)+(2) (16 bytes)
- * but the kernel never reads those reserves, so a 32-byte struct is safe
- * to pass to queue_work / cancel_work_sync on all versions.
+ * GKI 5.10–6.12.  5.10–6.6 append ANDROID_KABI_RESERVE(1)+(2) (16 bytes,
+ * sizeof=48); 6.12 drops them (sizeof=32).  The kernel never reads the
+ * reserves, so a 32-byte struct is safe for queue_work/cancel_work_sync.
  */
 struct work_struct {
 	unsigned long data;

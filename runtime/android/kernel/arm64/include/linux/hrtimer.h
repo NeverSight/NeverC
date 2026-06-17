@@ -30,8 +30,8 @@ enum hrtimer_restart {
 /*
  * Opaque hrtimer storage — GKI arm64 (production, no debug):
  *   timerqueue_node(32) + _softexpires(8) + function(8) + base(8) + 4×u8(4) + pad(4)
- *   5.10/5.15: + ANDROID_KABI_RESERVE(8) = ~72 bytes
- *   6.1/6.6/6.12: no KABI_RESERVE         = ~64 bytes
+ *   5.10/5.15: + ANDROID_KABI_RESERVE(1) = u64(8)  → ~72 bytes
+ *   6.1+:      no KABI_RESERVE                      → ~64 bytes
  * 128 bytes covers all versions with generous headroom.
  */
 struct hrtimer {
