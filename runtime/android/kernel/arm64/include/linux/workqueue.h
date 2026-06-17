@@ -14,13 +14,22 @@ struct work_struct {
 	unsigned long data;         /* atomic_long_t in kernel; flags+pointer */
 	struct list_head entry;
 	work_func_t func;
+	/* GKI 5.10-6.6: ANDROID_KABI_RESERVE(1)+(2) adds 16 bytes */
+	u64 _kabi_reserved[2];
 };
 
 struct delayed_work {
 	struct work_struct work;
-	unsigned char __timer_opaque[40]; /* struct timer_list (arm64, no debug) */
+	/*
+	 * struct timer_list: 40 bytes base + 16 bytes KABI reserve
+	 * on GKI 5.10-6.6.  Use 64 for safety across all versions.
+	 */
+	unsigned char __timer_opaque[64];
 	struct workqueue_struct *wq;
 	int cpu;
+	int _pad;
+	/* GKI 5.10-6.6: delayed_work's own ANDROID_KABI_RESERVE(1)+(2) */
+	u64 _kabi_reserved[2];
 };
 
 /*

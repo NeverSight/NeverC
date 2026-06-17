@@ -59,6 +59,18 @@ static int _neverc_krt_rks_streq(const char *a, const char *b)
 	return *a == *b;
 }
 
+void neverc_krt_sym_cache_clear(void)
+{
+	unsigned long i;
+	for (i = 0; i < _NEVERC_KRT_SYM_CACHE_SIZE; i++) {
+		__atomic_store_n(&_neverc_krt_sym_cache[i].enc, 0,
+				 __ATOMIC_RELEASE);
+		__atomic_store_n(&_neverc_krt_sym_cache[i].hash, 0,
+				 __ATOMIC_RELEASE);
+	}
+	__atomic_store_n(&_neverc_krt_cache_key, 0, __ATOMIC_RELEASE);
+}
+
 int neverc_krt_ksyms_init(void)
 {
 	if (_neverc_krt_ksyms_inited) return 0;

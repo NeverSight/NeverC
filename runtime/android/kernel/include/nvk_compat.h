@@ -41,10 +41,7 @@ void *neverc_krt_lookup_probe_write(void);
 void *neverc_krt_lookup_module_alloc(void);
 void *neverc_krt_lookup_module_free(void);
 
-static __always_inline int neverc_krt_has_cfi(void)
-{
-	return NEVERC_KRT_LOOKUP("__cfi_check") != (void *)0;
-}
+int neverc_krt_has_cfi(void);
 
 static __always_inline int neverc_krt_has_pac(void)
 {

@@ -174,14 +174,6 @@ static __always_inline unsigned long _neverc_krt_sym_cached(const char *name)
 	   if (!__p) __p = NEVERC_KRT_LOOKUP(alt);                                   \
 	   __p; })
 
-static __always_inline void neverc_krt_sym_cache_clear(void)
-{
-	unsigned long i;
-	for (i = 0; i < _NEVERC_KRT_SYM_CACHE_SIZE; i++) {
-		__atomic_store_n(&_neverc_krt_sym_cache[i].enc, 0, __ATOMIC_RELEASE);
-		__atomic_store_n(&_neverc_krt_sym_cache[i].hash, 0, __ATOMIC_RELEASE);
-	}
-	__atomic_store_n(&_neverc_krt_cache_key, 0, __ATOMIC_RELEASE);
-}
+void neverc_krt_sym_cache_clear(void);
 
 #endif /* _NEVERC_KRT_LINUX_KALLSYMS_H */

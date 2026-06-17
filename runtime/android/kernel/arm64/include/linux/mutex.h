@@ -4,7 +4,12 @@
 
 #include <linux/types.h>
 
-struct mutex { unsigned char __opaque[32]; };
+/*
+ * GKI 5.10-6.12: owner(8) + spinlock(8) + osq(8) + wait_list(16)
+ *                + ANDROID_OEM_DATA_ARRAY(1,2) = 16 → total ~56.
+ * Round up to 64 for alignment safety.
+ */
+struct mutex { unsigned char __opaque[64]; };
 
 #define DEFINE_MUTEX(name) struct mutex name = { { 0 } }
 #define __MUTEX_INITIALIZER(name) { { 0 } }

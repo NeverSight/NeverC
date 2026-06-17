@@ -10,6 +10,14 @@ struct timer_list {
 	unsigned long expires;
 	void (*function)(struct timer_list *);
 	u32 flags;
+	u32 _pad;
+	/*
+	 * GKI 5.10-6.6 add ANDROID_KABI_RESERVE(1) + (2) = 16 bytes
+	 * after flags.  6.12 drops them.  Reserve the space so user
+	 * code that allocates timer_list on the stack is safe on all
+	 * GKI versions (sizeof must be >= 56).
+	 */
+	u64 _kabi_reserved[2];
 };
 
 #define TIMER_IRQSAFE       0x00200000

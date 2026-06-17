@@ -192,6 +192,11 @@ int neverc_krt_sscanf(const char *buf, const char *fmt, ...)
 	return ret;
 }
 
+int neverc_krt_has_cfi(void)
+{
+	return NEVERC_KRT_LOOKUP("__cfi_check") != (void *)0;
+}
+
 void neverc_krt_detect_hw_caps(struct neverc_krt_hw_caps *caps)
 {
 	if (!caps) return;

@@ -4,8 +4,13 @@
 
 #include <linux/types.h>
 
+/*
+ * GKI 5.10-6.12: count(8) + owner(8) + osq(4) + lock(4) + wait_list(16)
+ *                + ANDROID_VENDOR_DATA(8) + ANDROID_OEM_DATA_ARRAY(16)
+ *                → ~64 bytes.  Round up to 72 for safety.
+ */
 struct rw_semaphore {
-	unsigned char __opaque[40];
+	unsigned char __opaque[72];
 };
 
 void init_rwsem(struct rw_semaphore *sem);
