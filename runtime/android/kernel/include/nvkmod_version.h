@@ -248,7 +248,16 @@ static __always_inline void _neverc_krt_version_setup(void)
 static __always_inline unsigned long _neverc_krt_cred_uid_base(void)
 {
 	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	return (kv >= 606) ? 8 : 4;
+	if (kv >= 606)
+		return 8;
+	if (kv > 0)
+		return 4;
+	/*
+	 * Version not yet detected — use compile-time default so callers
+	 * that run before _neverc_krt_version_setup() still get a
+	 * reasonable value for the target they were compiled against.
+	 */
+	return (NEVERC_KRT_KERNEL >= 606) ? 8 : 4;
 }
 
 #endif /* NVKMOD_VERSION_H */

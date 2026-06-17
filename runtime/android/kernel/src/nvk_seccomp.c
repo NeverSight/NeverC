@@ -157,8 +157,8 @@ int neverc_krt_seccomp_allow_pid(int pid)
 	}
 
 	_neverc_krt_seccomp_allow_pids[cnt] = pid;
-	__asm__ __volatile__("dmb ish" ::: "memory");
-	_neverc_krt_seccomp_allow_cnt = cnt + 1;
+	__atomic_store_n(&_neverc_krt_seccomp_allow_cnt, cnt + 1,
+			 __ATOMIC_RELEASE);
 
 	__atomic_store_n(&_neverc_krt_seccomp_pid_lock, 0, __ATOMIC_RELEASE);
 	__asm__ __volatile__("sev" ::: "memory");
@@ -176,8 +176,8 @@ int neverc_krt_seccomp_disallow_pid(int pid)
 		if (_neverc_krt_seccomp_allow_pids[i] == pid) {
 			_neverc_krt_seccomp_allow_pids[i] =
 				_neverc_krt_seccomp_allow_pids[cnt - 1];
-			__asm__ __volatile__("dmb ish" ::: "memory");
-			_neverc_krt_seccomp_allow_cnt = cnt - 1;
+			__atomic_store_n(&_neverc_krt_seccomp_allow_cnt,
+					 cnt - 1, __ATOMIC_RELEASE);
 			__atomic_store_n(&_neverc_krt_seccomp_pid_lock, 0,
 					 __ATOMIC_RELEASE);
 			__asm__ __volatile__("sev" ::: "memory");
