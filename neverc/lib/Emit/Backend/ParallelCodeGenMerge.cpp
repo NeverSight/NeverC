@@ -28,6 +28,11 @@
 #include <cstdlib>
 #include <mutex>
 
+#ifdef __APPLE__
+// For the performance-core query in pcgWorkerThreads (hw.perflevel0); see there.
+#include <sys/sysctl.h>
+#endif
+
 using namespace llvm;
 
 namespace neverc {
@@ -145,20 +150,116 @@ struct ScevHugeThresholdGuard {
   ScevHugeThresholdGuard &operator=(const ScevHugeThresholdGuard &) = delete;
 };
 
+// Worker-pool work proportioning (execution parallelism only; see
+// pcgWorkerThreads / pcgWorkCapThreads).  A light parallel workload is
+// memory-bandwidth bound and saturates far fewer cores than the machine has:
+// measured on a 12P+4E Apple M4 Max, a 16-partition Lua 5.4 link peaks at ~4
+// worker threads and is ~15% SLOWER at 16 (bandwidth contention + the four
+// efficiency cores becoming barrier stragglers), while a loop-heavy
+// 1200-function link keeps scaling to the performance-core ceiling.  The two
+// workloads differ almost entirely in loop density -- the per-partition
+// ScalarEvolution / loop-optimization cost that is the parallelized work -- so
+// the worker count is derived from the module's loop and instruction totals and
+// clamped into [floor, performance-core ceiling].  Like every knob here this is
+// a pure compile-wall-time control: it feeds only the thread-pool size, never
+// the partition count or the function-to-partition assignment, so the emitted
+// object is byte-identical regardless of it (the MergeParallelCodegen
+// determinism oracle pins this).  Defaults err toward MORE threads (so a
+// workload that does need parallelism is never starved); NEVERC_PCG_THREADS
+// overrides everything.
+static llvm::cl::opt<unsigned> PcgLoopsPerThread(
+    "neverc-pcg-loops-per-thread", llvm::cl::init(96), llvm::cl::Hidden,
+    llvm::cl::desc("Auto-LTO parallel opt: target loop (back-edge) count per "
+                   "worker thread; the pool is sized to the module's loop work "
+                   "and clamped to the performance-core count "
+                   "(0 = disable work proportioning, use the full core count)"));
+static llvm::cl::opt<unsigned> PcgWeightPerThread(
+    "neverc-pcg-weight-per-thread", llvm::cl::init(10000), llvm::cl::Hidden,
+    llvm::cl::desc("Auto-LTO parallel opt: target instruction count per worker "
+                   "thread; taken as the max with the loop-based estimate so a "
+                   "loop-light but instruction-heavy module still gets enough "
+                   "threads for its codegen"));
+static llvm::cl::opt<unsigned> PcgWorkThreadFloor(
+    "neverc-pcg-work-thread-floor", llvm::cl::init(6), llvm::cl::Hidden,
+    llvm::cl::desc("Auto-LTO parallel opt: minimum worker threads work "
+                   "proportioning may choose (still clamped by the partition "
+                   "count) so a parallel-worthy workload is never starved"));
+
+// Number of high-performance cores, when the OS exposes it cheaply, else 0
+// ("unknown" -> caller falls back to the full hardware concurrency).  A
+// read-only query with a clean failure path on every branch, so a missing key
+// or a sandbox simply leaves the caller on the existing default.
+unsigned pcgPerformanceCoreCount() {
+#ifdef __APPLE__
+  // hw.perflevel0 is the highest-performance core class on an Apple-silicon
+  // hybrid CPU (the P-cores); on a homogeneous Mac it is simply every physical
+  // core, so reading it there returns the full count and changes nothing.
+  uint32_t N = 0;
+  size_t Sz = sizeof(N);
+  if (::sysctlbyname("hw.perflevel0.physicalcpu", &N, &Sz, nullptr, 0) == 0 &&
+      N > 0)
+    return N;
+#endif
+  return 0;
+}
+
 // Worker-thread count for the partition pools.  This is *execution* parallelism
 // only: it bounds how many partitions are optimized/codegen'd concurrently and
 // never feeds the partition count or the function-to-partition assignment, so it
 // cannot change a single emitted byte (the MergeParallelCodegen determinism
-// oracle pins this).  Defaults to the host core count; NEVERC_PCG_THREADS
-// overrides it (clamped to >= 1) for users who want to cap peak memory /
-// parallelism and for the cross-thread-count determinism regression test.
-unsigned pcgWorkerThreads(unsigned NumPartitions) {
-  unsigned N = llvm::thread::hardware_concurrency();
+// oracle pins this, so every choice below is a pure compile-wall-time knob).
+//
+// The per-partition phase is *barrier-synchronized*: the merge waits for every
+// partition, so the wall time is the slowest partition, not the average.  On a
+// heterogeneous CPU (Apple-silicon P+E cores, Intel hybrid) a partition that
+// lands on a slow efficiency core becomes the straggler that stalls the whole
+// merge, so sizing the pool to *every* logical core makes the typical link both
+// slower and less predictable than sizing it to the performance cores alone
+// (measured on a 12P+4E machine, real 33-TU Lua link: all 16 threads vs the 12
+// P-cores was ~3% worse median and far more high-tail runs -- 4/9 vs 1/9 slow
+// -- because the four E-core partitions are the recurring stragglers).  Prefer
+// the performance-core count where it is cheaply known and fall back to the full
+// hardware concurrency otherwise; on a homogeneous machine the two are equal, so
+// this never reduces parallelism there.  NEVERC_PCG_THREADS overrides everything
+// (clamped to >= 1) for users who want to cap peak memory / parallelism and for
+// the cross-thread-count determinism regression test.
+// Worker count a module's parallel work justifies, or 0 ("no proportioning")
+// when the loop signal is disabled.  Pure function of the module (loop +
+// instruction totals), so it cannot make the worker count -- and therefore the
+// output -- depend on the host or on scheduling.  Returns the larger of the
+// loop- and instruction-based estimates, floored so a parallel-worthy module is
+// never starved; the caller clamps it down to the performance-core ceiling.
+unsigned pcgWorkCapThreads(unsigned LoopCount, unsigned TotalWeight) {
+  if (PcgLoopsPerThread == 0)
+    return 0; // work proportioning disabled -> caller uses the full core count
+  unsigned ByLoops = LoopCount / PcgLoopsPerThread;
+  unsigned ByWeight = PcgWeightPerThread ? TotalWeight / PcgWeightPerThread : 0;
+  return std::max({ByLoops, ByWeight, (unsigned)PcgWorkThreadFloor});
+}
+
+unsigned pcgWorkerThreads(unsigned NumPartitions, unsigned WorkCap) {
+  unsigned HW = llvm::thread::hardware_concurrency();
+  if (HW < 1)
+    HW = 1;
+  unsigned N = pcgPerformanceCoreCount();
+  if (N < 1 || N > HW)
+    N = HW;
+  // Reduce the pool to what the module's parallel work justifies (WorkCap == 0
+  // means "no proportioning", e.g. the codegen-only path that does not estimate
+  // work).  This only ever lowers the count -- never above the P-core/HW
+  // ceiling -- and the env override below skips it entirely so the determinism
+  // regression test (which pins behavior across explicit thread counts) is
+  // unaffected.
+  bool Overridden = false;
   if (const char *E = ::getenv("NEVERC_PCG_THREADS")) {
     unsigned Override = 0;
-    if (!StringRef(E).getAsInteger(10, Override) && Override >= 1)
+    if (!StringRef(E).getAsInteger(10, Override) && Override >= 1) {
       N = Override;
+      Overridden = true;
+    }
   }
+  if (!Overridden && WorkCap >= 1 && WorkCap < N)
+    N = WorkCap;
   if (N < 1)
     N = 1;
   return std::min(N, NumPartitions);
@@ -243,6 +344,11 @@ struct ParallelCGContext {
   unsigned LoopCount = 0;
   unsigned FuncCount = 0;
   unsigned NumPartitions = 0;
+  // Worker-pool ceiling this module's parallel work justifies; 0 = no
+  // proportioning (the codegen-only path, which does not estimate work).  Set by
+  // the opt+codegen path after the work signals are known; consumed by every
+  // pcgWorkerThreads() call so prepare and opt/codegen size their pools alike.
+  unsigned WorkerThreadCap = 0;
 
   std::vector<PartitionResult> Results;
   CodeModel::Model SharedCM;
@@ -484,7 +590,7 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
 
 void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
   Parts.resize(NumPartitions);
-  unsigned PrepThreadCount = pcgWorkerThreads(NumPartitions);
+  unsigned PrepThreadCount = pcgWorkerThreads(NumPartitions, WorkerThreadCap);
   std::atomic<unsigned> PrepNextPart{0};
   // Use llvm::thread, not std::thread: these workers run lazy bitcode
   // materialization and (in the opt path) the full optimization + codegen
@@ -727,7 +833,12 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
   Ctx.preparePartitions(BCRef, TM);
 
   {
-    unsigned ThreadCount = pcgWorkerThreads(Ctx.NumPartitions);
+    // Codegen-only path: no per-partition optimization runs here, so leave
+    // WorkerThreadCap at 0 (no work proportioning) and use the full P-core/HW
+    // pool -- codegen is the cheap half and is not the over-threading risk the
+    // proportioning targets.
+    unsigned ThreadCount =
+        pcgWorkerThreads(Ctx.NumPartitions, Ctx.WorkerThreadCap);
     std::atomic<unsigned> NextPart{0};
     // llvm::thread (8 MiB default stack), not std::thread (512 KiB on macOS):
     // see the rationale in preparePartitions -- the codegen/opt pipeline
@@ -794,11 +905,19 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
                              /*LoopDiv=*/PcgOptLoopDiv,
                              /*MaxParts=*/PcgOptMaxParts))
     return false;
+  // Size the worker pool to the parallel work this module justifies (loop- and
+  // instruction-driven), clamped to the performance-core ceiling inside
+  // pcgWorkerThreads.  Set before prepare so prepare and opt/codegen agree.
+  // Pure compile-wall-time knob: the cap feeds only thread counts, never the
+  // partition count or assignment, so the merged object stays byte-identical.
+  Ctx.WorkerThreadCap = pcgWorkCapThreads(Ctx.LoopCount, Ctx.TotalWeight);
+
   if (::getenv("NEVERC_PCG_DEBUG"))
     errs() << "[pcg] p-opt engaged: FuncCount=" << Ctx.FuncCount
            << " TotalWeight=" << Ctx.TotalWeight
            << " LoopCount=" << Ctx.LoopCount
-           << " NumPartitions=" << Ctx.NumPartitions << "\n";
+           << " NumPartitions=" << Ctx.NumPartitions
+           << " WorkerThreadCap=" << Ctx.WorkerThreadCap << "\n";
 
   Ctx.externalizeAndSerialize(Mod);
   StringRef BCRef(Ctx.FullBC.data(), Ctx.FullBC.size());
@@ -832,7 +951,8 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
 
   // Phase 2: per-partition optimization + codegen.
   {
-    unsigned ThreadCount = pcgWorkerThreads(Ctx.NumPartitions);
+    unsigned ThreadCount =
+        pcgWorkerThreads(Ctx.NumPartitions, Ctx.WorkerThreadCap);
     std::atomic<unsigned> NextPart{0};
     // llvm::thread (8 MiB default stack), not std::thread (512 KiB on macOS):
     // see the rationale in preparePartitions -- the codegen/opt pipeline
