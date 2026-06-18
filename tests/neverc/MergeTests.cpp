@@ -1869,6 +1869,134 @@ TEST(MergeELFSemantic, BssSectionsMergeByVirtualSize) {
   EXPECT_EQ(PVB->Value, 0x30u); // shifted past .bss.a
 }
 
+TEST(MergeELFSemantic, KernelModuleAllFamiliesFoldOffsets) {
+  using namespace ELF;
+  // The full Android-kernel-module -r shape in one test: two partitions, each
+  // with per-symbol sections in *all four* foldable families
+  // (.text.* / .rodata.* / .data.* / .bss.*), plus a preserved .text.* section
+  // (.text.ftrace_trampoline, the real ftrace .ko keeps it un-folded even though
+  // it shares the .text. prefix) and a cross-partition relocation.  This locks
+  // three things at once that the per-family tests above check only in
+  // isolation:
+  //   1) every family folds with the *same* PartOffset math — in particular
+  //      .data.* folding, which had no direct offset assertion before;
+  //   2) a preserved .text.* section overrides the fold (stays its own section)
+  //      while its sibling .text.* still collapse into .text;
+  //   3) a cross-partition symbol reference re-lands at the shifted offset.
+  // Every offset below was 0 under the historical SecOff collapse.
+  SecSpec TInit{".text.init", 0x30, 16, SHT_PROGBITS,
+                SHF_ALLOC | SHF_EXECINSTR, 0xA0};
+  SecSpec Ftrace{".text.ftrace_trampoline", 0x10, 16, SHT_PROGBITS,
+                 SHF_ALLOC | SHF_EXECINSTR, 0xE0}; // preserved → must NOT fold
+  SecSpec Rk0{".rodata.k0", 0x20, 16, SHT_PROGBITS, SHF_ALLOC, 0xB0};
+  SecSpec Dg0{".data.g0", 0x10, 16, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xC0};
+  SecSpec Bb0{".bss.b0", 0x40, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
+  SymSpec Init{"init", 0, 0, true};
+  SymSpec Ftr{"ftrace_tramp", 1, 0, true};
+  SymSpec K0{"k0", 2, 0, true};
+  SymSpec G0{"g0", 3, 0, true};
+  SymSpec B0{"b0", 4, 0, true};
+  auto Obj0 = buildSectionedELF({TInit, Ftrace, Rk0, Dg0, Bb0},
+                                {Init, Ftr, K0, G0, B0}, {});
+
+  SecSpec TExit{".text.exit", 0x20, 16, SHT_PROGBITS,
+                SHF_ALLOC | SHF_EXECINSTR, 0xA1};
+  SecSpec Rk1{".rodata.k1", 0x18, 16, SHT_PROGBITS, SHF_ALLOC, 0xB1};
+  SecSpec Dg1{".data.g1", 0x8, 16, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xC1};
+  SecSpec Bb1{".bss.b1", 0x20, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
+  SymSpec Exit{"exit", 0, 0, true};
+  SymSpec K1{"k1", 1, 0, true};
+  SymSpec G1{"g1", 2, 0, true};
+  SymSpec B1{"b1", 3, 0, true};
+  SymSpec G0Undef{"g0", -1, 0, true}; // cross-partition ref to partition 0's g0
+  // exit() references g0 (defined in partition 0's .data) at its entry.
+  RelSpec R{0, 0, "g0", R_X86_64_64, 0};
+  auto Obj1 = buildSectionedELF({TExit, Rk1, Dg1, Bb1},
+                                {Exit, K1, G1, B1, G0Undef}, {R});
+
+  ASSERT_TRUE(isValidELF64LE(Obj0));
+  ASSERT_TRUE(isValidELF64LE(Obj1));
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(std::move(Obj0));
+  Bufs.push_back(std::move(Obj1));
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.preservedSections.push_back(".text.ftrace_trampoline");
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK); // internal independent verify (mergeSections) must accept
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::ELF64LE, Opts, &Err))
+      << Err;
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+
+  // Each family folded to its umbrella; the per-symbol inputs are gone.
+  EXPECT_GE(V.findSec(".text"), 0);
+  EXPECT_GE(V.findSec(".rodata"), 0);
+  EXPECT_GE(V.findSec(".data"), 0);
+  EXPECT_GE(V.findSec(".bss"), 0);
+  EXPECT_LT(V.findSec(".text.init"), 0);
+  EXPECT_LT(V.findSec(".text.exit"), 0);
+  EXPECT_LT(V.findSec(".rodata.k0"), 0);
+  EXPECT_LT(V.findSec(".data.g0"), 0);
+  EXPECT_LT(V.findSec(".bss.b0"), 0);
+  // The preserved .text.* section survives un-folded.
+  EXPECT_GE(V.findSec(".text.ftrace_trampoline"), 0);
+
+  auto value = [&](StringRef N) -> uint64_t {
+    const ParsedSym *S = V.findSym(N);
+    EXPECT_NE(S, nullptr) << N.str();
+    return S ? S->Value : ~0ull;
+  };
+  // .text: init [0,0x30), exit padded to 16 → 0x30.
+  EXPECT_EQ(value("init"), 0x0u);
+  EXPECT_EQ(value("exit"), 0x30u);
+  // .rodata: k0 [0,0x20), k1 → 0x20.
+  EXPECT_EQ(value("k0"), 0x0u);
+  EXPECT_EQ(value("k1"), 0x20u);
+  // .data: g0 [0,0x10), g1 → 0x10  (the family that lacked a direct assertion).
+  EXPECT_EQ(value("g0"), 0x0u);
+  EXPECT_EQ(value("g1"), 0x10u);
+  // .bss: b0 [0,0x40), b1 → 0x40.
+  EXPECT_EQ(value("b0"), 0x0u);
+  EXPECT_EQ(value("b1"), 0x40u);
+  // The preserved trampoline keeps its own offset 0 (own section, not .text).
+  EXPECT_EQ(value("ftrace_tramp"), 0x0u);
+
+  // g0/g1 share the merged .data; ftrace_tramp is NOT in .text.
+  const ParsedSym *PG0 = V.findSym("g0");
+  const ParsedSym *PG1 = V.findSym("g1");
+  const ParsedSym *PInit = V.findSym("init");
+  const ParsedSym *PFtr = V.findSym("ftrace_tramp");
+  ASSERT_NE(PG0, nullptr);
+  ASSERT_NE(PG1, nullptr);
+  ASSERT_NE(PInit, nullptr);
+  ASSERT_NE(PFtr, nullptr);
+  EXPECT_EQ(PG0->Shndx, PG1->Shndx);
+  EXPECT_NE(PInit->Shndx, PFtr->Shndx);
+
+  // Merged section sizes/types.
+  int DIdx = V.findSec(".data");
+  int BIdx = V.findSec(".bss");
+  ASSERT_GE(DIdx, 0);
+  ASSERT_GE(BIdx, 0);
+  EXPECT_EQ(V.Secs[DIdx].Type, (uint32_t)SHT_PROGBITS);
+  EXPECT_EQ(V.Secs[DIdx].Size, 0x18u); // 0x10 + 0x8
+  EXPECT_EQ(V.Secs[BIdx].Type, (uint32_t)SHT_NOBITS);
+  EXPECT_EQ(V.Secs[BIdx].Size, 0x60u); // 0x40 + 0x20
+
+  // The cross-partition relocation re-lands at exit's shifted .text offset and
+  // still names g0 (resolved onto partition 0's definition).
+  ASSERT_EQ(V.Relas.size(), 1u);
+  EXPECT_EQ(V.Relas[0].Offset, 0x30u); // the SecOff collapse made this 0
+  ASSERT_LT(V.Relas[0].Sym, V.Syms.size());
+  EXPECT_EQ(V.Syms[V.Relas[0].Sym].Name, std::string("g0"));
+}
+
 TEST(MergeELFSemantic, DistinctNotesConcatenatedIdenticalDeduped) {
   using namespace ELF;
   // This merger is also the linker's general `-r` path over arbitrary user
@@ -3807,6 +3935,34 @@ TEST(MergeCOFF, RefusesNonZeroVirtualAddressGracefully) {
       << "merger accepted a COFF section with a non-zero VirtualAddress";
 }
 
+// A section whose 8-byte name is a "/<offset>" long-name escape pointing past
+// the string table makes LLVM's COFFObjectFile::getSectionName return an
+// Expected error ("invalid section name").  The merger consulted the value but
+// never *consumed* that error, so in an assertions / ABI-breaking-checks build
+// the Expected's destructor aborted the whole process ("Expected<T> must be
+// checked before access or destruction") at the next scope exit — a crash on
+// hostile -r input the merge fuzzer found in seconds.  The merger now consumes
+// the error and refuses.  EXPECT_FALSE holds in both build modes: with the fix
+// the merge is refused; without it, an assertions build aborts (test fails) and
+// a release build silently mis-named the section "" (also wrong).
+TEST(MergeCOFF, RefusesInvalidSectionNameWithoutAbort) {
+  using namespace COFF;
+  uint32_t TextChars =
+      IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ;
+  // "/9999999": leading '/' marks a long-name escape; 9999999 is a string-table
+  // offset far beyond the 4-byte table buildCOFF emits, so getSectionName errors.
+  CoffSecSpec S0{"/9999999", 0x10, TextChars};
+  auto Obj = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {}, {});
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  EXPECT_FALSE(mergeObjects(Bufs, OS, Format::COFF))
+      << "a section with an out-of-range long-name escape must be refused, not "
+         "leak an unchecked Expected";
+}
+
 // A symbol whose NumberOfAuxSymbols runs past the end of the symbol table makes
 // the merger's manual aux-record indexing (getRawPtr() + 18*(a+1)) walk off the
 // input buffer — an out-of-bounds heap read that copies uninitialized bytes
@@ -3999,6 +4155,43 @@ TEST(MergeMachO, Accepts255SectionsRefuses256) {
         << "256 sections overflow the 8-bit n_sect; the merger must refuse "
            "rather than emit a truncated object";
   }
+}
+
+// A crafted mach_header whose ncmds dwarfs the file made LLVM's MachOObjectFile
+// constructor push one LoadCommandInfo into a SmallVector per *claimed* command
+// — a load command with cmdsize 0 never advances the parse cursor, so the loop
+// runs ncmds times — ballooning that vector to ~ncmds*16 bytes (a ~640 MB
+// allocation from a ~1 KB input) before a single byte was validated against the
+// buffer.  The merge fuzzer hit this as an out-of-memory.  The merger now bounds
+// ncmds against the object size before handing the bytes to the eager parser: a
+// conformant object's load commands each occupy >= sizeof(load_command) bytes
+// after the header, so it can hold at most (size - header)/8 of them.  A real
+// merge is unaffected (the bound holds for every valid Mach-O); a header
+// claiming far more is refused promptly instead of exhausting memory.
+TEST(MergeMachO, RefusesHugeNcmdsWithoutOOM) {
+  namespace MO = llvm::MachO;
+  uint32_t TextFlags =
+      MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
+  MachoSecSpec S0{"__TEXT", "__text", 0x10, 4, TextFlags, 0x90};
+  auto Obj =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0}, {});
+  ASSERT_GE(Obj.size(), (size_t)20);
+
+  // Overwrite mach_header_64.ncmds (little-endian, offset 16) with a value far
+  // larger than the file could ever hold.  Without the guard this OOMs; with it
+  // the merge is refused before the eager parser allocates ncmds entries.
+  Obj[16] = 0x00;
+  Obj[17] = 0x00;
+  Obj[18] = 0x00;
+  Obj[19] = 0x10; // 0x10000000 = 268M claimed load commands
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  EXPECT_FALSE(mergeObjects(Bufs, OS, Format::MachO64))
+      << "a header claiming more load commands than the object can hold must be "
+         "refused before the Mach-O parser allocates one entry per command";
 }
 
 // A symbol whose name runs to the end of a non-NUL-terminated string table made

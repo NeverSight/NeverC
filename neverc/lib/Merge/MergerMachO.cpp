@@ -130,6 +130,46 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     Maps.resize(p + 1);
     auto &PM = Maps[p];
 
+    // Resource-exhaustion guard (found by the merge fuzzer): LLVM's
+    // MachOObjectFile constructor walks `ncmds` load commands, pushing one
+    // LoadCommandInfo into a SmallVector per iteration.  A load command with
+    // cmdsize 0 does not advance the cursor, so a crafted header that pairs a
+    // huge ncmds with such a command makes that vector grow to ~ncmds*16 bytes
+    // (a ~640 MB allocation from a 1 KB input) before a single byte is checked
+    // against the buffer.  A conformant object's load commands each occupy at
+    // least sizeof(load_command) (8) bytes and all live in the region right
+    // after the header, so there can be no more than (size - header)/8 of them.
+    // Refuse anything claiming more — it cannot be a real object — before
+    // handing the bytes to the eager parser, mirroring the cputype / 255-section
+    // guards.  Never false-rejects (the bound holds for every valid Mach-O); the
+    // parallel-codegen path emits a truthful ncmds and never trips it, only the
+    // general -r path over hostile objects can.
+    {
+      const auto &B = Buffers[p];
+      if (B.size() >= 20) {
+        uint32_t Magic, NCmds;
+        memcpy(&Magic, B.data(), 4);
+        memcpy(&NCmds, B.data() + 16, 4); // ncmds at offset 16 in 32/64 headers
+        bool Is64 = Magic == MO::MH_MAGIC_64 || Magic == MO::MH_CIGAM_64;
+        bool Swap = Magic == MO::MH_CIGAM || Magic == MO::MH_CIGAM_64;
+        bool Thin = Is64 || Magic == MO::MH_MAGIC || Magic == MO::MH_CIGAM;
+        if (Thin) {
+          if (Swap)
+            NCmds = (NCmds << 24) | ((NCmds & 0xFF00u) << 8) |
+                    ((NCmds >> 8) & 0xFF00u) | (NCmds >> 24);
+          uint64_t HdrSize = Is64 ? 32 : 28;
+          if (B.size() < HdrSize ||
+              NCmds > (B.size() - HdrSize) / sizeof(MO::load_command)) {
+            errs() << "neverc: Mach-O relocatable merge: header declares "
+                   << NCmds
+                   << " load commands, more than the object's " << B.size()
+                   << " bytes can hold; refusing to merge\n";
+            return false;
+          }
+        }
+      }
+    }
+
     auto Buf = MemoryBufferRef(StringRef(Buffers[p].data(), Buffers[p].size()),
                                "part");
     auto ObjOrErr = ObjectFile::createMachOObjectFile(Buf);

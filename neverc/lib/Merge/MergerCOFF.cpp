@@ -196,8 +196,23 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     for (const auto &Sec : Obj.sections()) {
       const coff_section *CS = Obj.getCOFFSection(Sec);
 
+      // A section whose name is a malformed long-name escape (a "/<offset>"
+      // pointing outside the COFF string table) makes getSectionName return an
+      // Expected error.  The prior `SNameOrErr ? *SNameOrErr : ""` consulted the
+      // value but never *consumed* the error, so in an assertions /
+      // ABI-breaking-checks build the Expected's destructor aborted the whole
+      // process ("Expected<T> must be checked before access or destruction ...
+      // invalid section name") at the next scope exit — a crash on hostile -r
+      // input the merge fuzzer found in seconds.  Consume the error and refuse:
+      // a section that cannot even be named cannot be routed to the right merged
+      // section, mirroring the getSymbolName failure handling below.  A valid
+      // object never errors here, so this never false-rejects.
       auto SNameOrErr = Obj.getSectionName(CS);
-      StringRef SecName = SNameOrErr ? *SNameOrErr : "";
+      if (!SNameOrErr) {
+        consumeError(SNameOrErr.takeError());
+        return false;
+      }
+      StringRef SecName = *SNameOrErr;
 
       // A relocatable object's sections carry no load address; codegen always
       // emits VirtualAddress 0.  A non-zero VirtualAddress means a malformed or

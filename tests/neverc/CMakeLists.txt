@@ -122,9 +122,14 @@ if(NEVERC_ENABLE_MERGE_FUZZER)
   target_compile_features(neverc-merge-fuzzer PRIVATE cxx_std_17)
   target_compile_options(neverc-merge-fuzzer PRIVATE -fsanitize=fuzzer-no-link)
   target_link_options(neverc-merge-fuzzer PRIVATE -fsanitize=fuzzer)
-  if(TARGET neverc)
-    add_dependencies(neverc-merge-fuzzer neverc)
-  endif()
+  # Deliberately NO add_dependencies(... neverc): unlike neverc-merge-tests, the
+  # fuzzer calls neverc::merge::mergeObjects in-process and never spawns the
+  # NEVERC_BINARY, so it only needs libnevercMerge (+ its LLVM Object/Support
+  # deps).  Forcing a dependency on the full compiler would make every
+  # `ninja neverc-merge-fuzzer` (and the CI fuzz job) build all of clang/codegen/
+  # the linker for nothing, turning a ~minutes instrumented build into a ~hour
+  # one.  Keeping the fuzzer standalone is what lets the merge-fuzz CI workflow
+  # build just the code under test with ASan/UBSan/coverage.
 endif()
 
 # Standard library runtime tests — compile std/tests/*.c with neverc, run, verify

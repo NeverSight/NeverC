@@ -322,8 +322,22 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           S.sh_type == SHT_LLVM_CALL_GRAPH_PROFILE)
         continue;
 
+      // A malformed sh_name (offset outside the section-header string table)
+      // makes getSectionName return an Expected error.  The prior
+      // `NameOrErr ? *NameOrErr : ""` consulted the value but never *consumed*
+      // the error, so in an assertions / ABI-breaking-checks build the
+      // Expected's destructor aborted the process ("Expected<T> must be checked
+      // before access or destruction") at the next scope exit — the same
+      // unchecked-Expected crash class the merge fuzzer found in the COFF path.
+      // Consume the error and refuse: a processable section we cannot name
+      // cannot be routed to the right merged section.  A valid object never
+      // errors here, so this never false-rejects.
       auto NameOrErr = EF.getSectionName(S);
-      StringRef SecName = NameOrErr ? *NameOrErr : "";
+      if (!NameOrErr) {
+        consumeError(NameOrErr.takeError());
+        return false;
+      }
+      StringRef SecName = *NameOrErr;
 
       // SHF_LINK_ORDER sections (e.g. __patchable_function_entries emitted by
       // -fpatchable-function-entry for ftrace) carry an sh_link to an

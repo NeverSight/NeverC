@@ -1,0 +1,214 @@
+name: merge-fuzz
+
+# Coverage-guided fuzzing of the auto-LTO object merger + its independent
+# self-verifier (neverc::merge / MergerELF|COFF|MachO + MergerVerify).
+#
+# Why this exists: the historical "all symbol offsets collapse to 0" bug
+# produced a perfectly *parseable* but semantically *wrong* .o that loaded and
+# then crashed.  The gtest suite (MergeTests.cpp), the strict-mode auto-LTO
+# tripwire, and the committed regression corpus all guard against a *known*
+# shape; this job raises the ceiling to "no adversarial byte sequence can make
+# the merger or its verifier crash, alter the verify-gated output, or merge
+# non-deterministically" (the three invariants asserted in MergeFuzzer.cpp).
+#
+# It builds ONLY the standalone `neverc-merge-fuzzer` target (libnevercMerge +
+# its LLVM Object/Support deps) with ASan + UBSan + libFuzzer coverage — not the
+# whole compiler — so an instrumented build stays in the minutes, not the hour.
+#
+# Triggers:
+#   * pull_request / push touching the merger  -> short smoke fuzz (120s)
+#   * nightly schedule                         -> long soak (1800s)
+#   * manual workflow_dispatch                 -> caller-chosen duration
+# A crash, sanitizer report, or invariant violation writes an artifact and
+# fails the job (uploaded as `merge-fuzz-findings`).
+
+permissions:
+  contents: read
+
+on:
+  push:
+    paths:
+      - 'neverc/lib/Merge/**'
+      - 'neverc/include/neverc/Merge/**'
+      - 'neverc/lib/Emit/Backend/ParallelCodeGenMerge.cpp'
+      - 'tests/neverc/MergeFuzzer.cpp'
+      - 'tests/neverc/merge-corpus/**'
+      - '.github/workflows/merge-fuzz.yml'
+  pull_request:
+    paths:
+      - 'neverc/lib/Merge/**'
+      - 'neverc/include/neverc/Merge/**'
+      - 'neverc/lib/Emit/Backend/ParallelCodeGenMerge.cpp'
+      - 'tests/neverc/MergeFuzzer.cpp'
+      - 'tests/neverc/merge-corpus/**'
+      - '.github/workflows/merge-fuzz.yml'
+  schedule:
+    # 07:00 UTC nightly soak.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzz seconds (max_total_time)'
+        required: false
+        default: '600'
+
+concurrency:
+  group: merge-fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name != github.repository)
+    runs-on: ubuntu-22.04
+    env:
+      LLVM_APT_VER: '22'
+      # Coverage feedback (fuzzer-no-link) + memory-safety (ASan) + UB (UBSan)
+      # on every TU so the merger AND the LLVM Object readers it drives hostile
+      # bytes through are all instrumented.  -g keeps crash traces symbolized.
+      SAN_FLAGS: '-g -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,address,undefined'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake ccache p7zip-full
+
+      - name: Install Clang + compiler-rt (apt.llvm.org)
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          # The fuzzer/asan/ubsan static runtimes ship in libclang-rt-*-dev,
+          # which the base clang package does not always pull in.
+          sudo apt-get install -y "libclang-rt-${LLVM_APT_VER}-dev" "lld-${LLVM_APT_VER}"
+          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          clang-${LLVM_APT_VER} --version
+
+      - name: Compute fuzz duration
+        run: |
+          case "${{ github.event_name }}" in
+            schedule)         echo "FUZZ_SECONDS=1800" >> "$GITHUB_ENV" ;;
+            workflow_dispatch) echo "FUZZ_SECONDS=${{ github.event.inputs.duration }}" >> "$GITHUB_ENV" ;;
+            *)                echo "FUZZ_SECONDS=120" >> "$GITHUB_ENV" ;;
+          esac
+
+      # ccache makes the cold instrumented build (LLVM Support/Object/Core) a
+      # one-time cost; the NeverC cmake cache auto-enables LLVM_CCACHE_BUILD when
+      # ccache is on PATH.  Keyed by SHA, restored from any prior fuzz build.
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: merge-fuzz-ccache-${{ github.sha }}
+          restore-keys: |
+            merge-fuzz-ccache-
+
+      - name: Configure (instrumented, fuzzer target only)
+        run: |
+          cmake -GNinja -Bbuild \
+            -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$CXX" \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
+            -DNEVERC_ENABLE_LTO=OFF \
+            -DNEVERC_ENABLE_MIMALLOC=OFF \
+            -DNEVERC_NATIVE_ARCH=OFF \
+            -DNEVERC_STRIP_BINARY=OFF \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_ENABLE_MERGE_FUZZER=ON \
+            -DCMAKE_C_FLAGS="$SAN_FLAGS" \
+            -DCMAKE_CXX_FLAGS="$SAN_FLAGS" \
+            -C neverc/neverc/cmake/caches/NeverC.cmake \
+            neverc/llvm
+
+      - name: Build neverc-merge-fuzzer
+        run: |
+          # In-process fuzzer: only libnevercMerge (+ LLVM Object/Support/Core)
+          # is compiled — not clang/codegen/the linker (see tests/neverc/
+          # CMakeLists.txt for why no dependency on the neverc binary exists).
+          ASAN_OPTIONS=detect_leaks=0 cmake --build build --target neverc-merge-fuzzer
+          FUZZER="$(find build -type f -name neverc-merge-fuzzer | head -1)"
+          test -x "$FUZZER" || { echo "fuzzer binary not found"; exit 1; }
+          echo "FUZZER=$FUZZER" >> "$GITHUB_ENV"
+
+      # Carry the corpus forward between runs so coverage *accumulates* (the
+      # OSS-Fuzz model) instead of resetting to the committed seeds each time:
+      # a 120s PR smoke run only adds a few hundred units, but months of nightly
+      # soaks compound into a deep corpus that reaches states a single short run
+      # never would.  Keyed by run_id (always a fresh entry) with a prefix
+      # restore-key, so every run restores the most recent corpus and saves a new
+      # one; the save below runs `if: always()` so a crash-finding run still
+      # persists the input that reproduced it for the next run (and the artifact
+      # upload). The post-fuzz `-merge=1` keeps the cached set coverage-minimal so
+      # it cannot grow without bound.
+      - name: Restore fuzz corpus
+        uses: actions/cache/restore@v4
+        with:
+          path: fuzz-corpus
+          key: merge-fuzz-corpus-${{ github.run_id }}
+          restore-keys: |
+            merge-fuzz-corpus-
+
+      - name: Fuzz
+        env:
+          # Make UB fatal so libFuzzer captures it as a crash; ASan death is
+          # already routed through libFuzzer.  Leak detection is off to avoid
+          # false positives from LLVM's intentionally-leaked managed statics.
+          # detect_container_overflow is off because libFuzzer's own runtime and
+          # the C++ standard library are not ASan-instrumented in this build:
+          # the container-overflow check then fires inside libFuzzer's corpus
+          # directory scan (std::string in ListFilesInDirRecursive) — a textbook
+          # partial-instrumentation false positive, not a merger bug.  Every
+          # high-value check (heap/stack/global overflow, use-after-free/scope)
+          # stays on.
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1:abort_on_error=1
+          ASAN_OPTIONS: detect_leaks=0:detect_container_overflow=0:abort_on_error=1
+        run: |
+          mkdir -p fuzz-corpus fuzz-artifacts
+          # Seed from the committed regression corpus so the run starts from
+          # every input that ever reproduced a real bug, then explores onward
+          # (on top of whatever the cache restored from prior runs).
+          cp -a neverc/tests/neverc/merge-corpus/. fuzz-corpus/ 2>/dev/null || true
+          echo "Fuzzing for ${FUZZ_SECONDS}s (seeds: $(ls -1 fuzz-corpus | wc -l))"
+          "$FUZZER" \
+            -max_total_time="$FUZZ_SECONDS" \
+            -print_final_stats=1 \
+            -timeout=30 \
+            -rss_limit_mb=4096 \
+            -detect_leaks=0 \
+            -artifact_prefix=fuzz-artifacts/ \
+            fuzz-corpus
+          # Coverage-preserving minimization: collapse the (now grown) corpus to a
+          # minimal set that retains identical edge coverage, so the cached corpus
+          # stays small enough to restore quickly even after months of soaks.
+          # Skipped implicitly if the run above found a crash (the step has already
+          # failed by then), so a crashing input is never minimized away before the
+          # `if: always()` save persists it.
+          "$FUZZER" -merge=1 fuzz-corpus-min fuzz-corpus >/dev/null 2>&1 || true
+          if [ -d fuzz-corpus-min ] && [ -n "$(ls -A fuzz-corpus-min 2>/dev/null)" ]; then
+            rm -rf fuzz-corpus && mv fuzz-corpus-min fuzz-corpus
+          fi
+          echo "Corpus after minimization: $(ls -1 fuzz-corpus | wc -l) units"
+
+      # Persist the (minimized, or crash-augmented) corpus for the next run.  Runs
+      # even on failure so a crash-finding run still carries its reproducer
+      # forward; keyed by run_id so it is always a new entry.
+      - name: Save fuzz corpus
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: fuzz-corpus
+          key: merge-fuzz-corpus-${{ github.run_id }}
+
+      - name: Upload findings
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merge-fuzz-findings
+          path: fuzz-artifacts
+          if-no-files-found: ignore
