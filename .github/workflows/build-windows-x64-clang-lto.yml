@@ -64,7 +64,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
             -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
-            -DCMAKE_EXE_LINKER_FLAGS=""
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,/debug"
           cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
 
       - name: Show sccache stats
@@ -244,6 +244,66 @@ jobs:
           diagnose "minimal" \
             "$(cygpath -m "$BDIAG/diag_minimal.c")" \
             "-std=c11"
+
+      # The child neverc.exe link job fast-fails with 0xC0000409 (__fastfail),
+      # which bypasses LLVM's crash handler -- the test only sees the exit code,
+      # never a stack.  Capture a full user-mode dump via WER LocalDumps and pull
+      # out the __fastfail *reason code* (exception parameter[0]); that number
+      # alone classifies the failure even without neverc PDBs: 2 = /GS stack
+      # cookie / buffer overrun, 3 = corrupt LIST_ENTRY, 0x1a = heap metadata
+      # corruption, 5 = invalid argument, etc.  Microsoft's symbol server then
+      # names the system caller frame (__report_gsfailure vs RtlReportFatalFailure
+      # vs RtlpHeapHandleError) so we know stack-overrun vs heap corruption.
+      - name: Capture fast-fail crash dump (root-cause #135/#137)
+        if: steps.tests.outcome == 'failure'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $wer = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps'
+          New-Item -Path $wer -Force | Out-Null
+          New-ItemProperty -Path $wer -Name DumpFolder -Value 'C:\crashdumps' -PropertyType ExpandString -Force | Out-Null
+          New-ItemProperty -Path $wer -Name DumpCount  -Value 30 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $wer -Name DumpType   -Value 2  -PropertyType DWord -Force | Out-Null
+          New-Item -ItemType Directory -Force -Path 'C:\crashdumps' | Out-Null
+
+          Write-Host '=== re-running the two crashing tests to provoke a dump ==='
+          & ctest --test-dir build/neverc/tests -R 'AutoLtoLoopDenseNoCompileCliff|AutoLtoInlineCapSemanticsPreserved' --output-on-failure
+          Write-Host "ctest exit: $LASTEXITCODE"
+
+          $dumps = Get-ChildItem 'C:\crashdumps' -Filter *.dmp -ErrorAction SilentlyContinue
+          Write-Host "=== dumps captured: $($dumps.Count) ==="
+          $dumps | Format-Table Name,Length | Out-String | Write-Host
+
+          $cdb = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $cdb) {
+            $cdb = Get-ChildItem 'C:\Program Files (x86)\Windows Kits' -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\x64\\' } | Select-Object -First 1
+          }
+          Write-Host "cdb: $($cdb.FullName)"
+          # neverc.pdb (public symbols, emitted by the link-only /debug flag --
+          # no codegen change) sits next to build\bin\neverc.exe; add it plus the
+          # MS symbol server so cdb names both neverc and system caller frames.
+          $bin = (Resolve-Path 'build/bin').Path
+          $env:_NT_SYMBOL_PATH = "$bin;srv*C:\symcache*https://msdl.microsoft.com/download/symbols"
+          Write-Host "neverc.pdb present: $([bool](Test-Path "$bin\neverc.pdb"))"
+
+          if ($cdb -and $dumps) {
+            foreach ($d in $dumps) {
+              Write-Host "================= $($d.Name) ================="
+              & $cdb.FullName -z $d.FullName -y "$env:_NT_SYMBOL_PATH" `
+                -c '.reload /f; .exr -1; .ecxr; !analyze -v; kP 120; ~*kb 60; lmvm neverc; q'
+            }
+          } else {
+            Write-Host 'cdb or dumps unavailable; raw dumps uploaded as artifact below'
+          }
+
+      - name: Upload crash dumps
+        if: steps.tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: x64-clang-lto-crashdumps
+          path: C:\crashdumps
+          if-no-files-found: ignore
 
       - name: Fail if tests failed
         if: steps.tests.outcome == 'failure'
