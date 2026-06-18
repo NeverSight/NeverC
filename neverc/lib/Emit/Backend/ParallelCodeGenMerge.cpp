@@ -317,7 +317,16 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
   unsigned PrepThreadCount =
       std::min(llvm::thread::hardware_concurrency(), NumPartitions);
   std::atomic<unsigned> PrepNextPart{0};
-  std::vector<std::thread> PrepWorkers;
+  // Use llvm::thread, not std::thread: these workers run lazy bitcode
+  // materialization and (in the opt path) the full optimization + codegen
+  // pipeline, all of which recurse deeply (InstCombine, SCEV, value tracking,
+  // SelectionDAG ISel).  std::thread inherits the platform default stack, which
+  // on macOS is only 512 KiB and overflows -- crashing a worker with SIGILL --
+  // on pathologically deep IR (e.g. a long inlined call chain).  llvm::thread
+  // defaults to an 8 MiB stack for exactly this reason and is what LLVM's own
+  // parallel codegen (splitCodeGen) uses; this brings the workers to parity
+  // with the main thread.
+  std::vector<llvm::thread> PrepWorkers;
   PrepWorkers.reserve(PrepThreadCount);
 
   auto PrepWorker = [&]() {
@@ -551,7 +560,10 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
     unsigned ThreadCount =
         std::min(llvm::thread::hardware_concurrency(), Ctx.NumPartitions);
     std::atomic<unsigned> NextPart{0};
-    std::vector<std::thread> Workers;
+    // llvm::thread (8 MiB default stack), not std::thread (512 KiB on macOS):
+    // see the rationale in preparePartitions -- the codegen/opt pipeline
+    // recurses deeply and overflows the small default stack on adversarial IR.
+    std::vector<llvm::thread> Workers;
     Workers.reserve(ThreadCount);
     auto Worker = [&]() {
       while (true) {
@@ -645,7 +657,10 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
     unsigned ThreadCount =
         std::min(llvm::thread::hardware_concurrency(), Ctx.NumPartitions);
     std::atomic<unsigned> NextPart{0};
-    std::vector<std::thread> Workers;
+    // llvm::thread (8 MiB default stack), not std::thread (512 KiB on macOS):
+    // see the rationale in preparePartitions -- the codegen/opt pipeline
+    // recurses deeply and overflows the small default stack on adversarial IR.
+    std::vector<llvm::thread> Workers;
     Workers.reserve(ThreadCount);
     auto Worker = [&]() {
       while (true) {

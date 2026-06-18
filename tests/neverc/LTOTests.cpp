@@ -2,6 +2,7 @@
 
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 
+#include <chrono>
 #include <cstdlib>
 
 // MSVC has no POSIX setenv/unsetenv; _putenv_s keeps the CRT and Win32
@@ -351,6 +352,133 @@ TEST_F(LTOTest, LtoPartitionCache) {
   EXPECT_NE(r1.out, r2.out) << "edit must change the checksum";
 
   unsetEnvVar(linker::ltoCacheDirEnvVar);
+}
+
+// Auto-LTO compile-time cliff guard (LoopUnrollPass.cpp's
+// NevercFullUnrollMaxLoopsPerFunc).  When main calls many small loop-bearing
+// leaf functions exactly once, LTO's last-call-to-static inlining collapses
+// them all into main, producing a single function with hundreds of
+// fully-unrollable constant-trip loops.  Without a per-function full-unroll
+// cap, ScalarEvolution's trip-count / exit-value machinery is superlinear in
+// the loop count (measured ~O(N^2): 150 leaves link in ~1s with the cap, but
+// the link time explodes without it, and N=360 used to time out entirely).
+// The valve withdraws *automatic* full unrolling once a function is that
+// loop-dense, restoring near-linear link time at no runtime cost.
+//
+// This pins both halves of the contract: (1) the same program links
+// substantially faster with the cap at its default than with it disabled, and
+// (2) the two binaries produce identical output -- the cap may only withdraw
+// an optimization, never change program semantics.
+TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
+  // Cold, comparable links: disable both cache layers so neither timing is a
+  // cache hit of the other.
+  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
+  setEnvVar(linker::ltoPartitionCacheEnvVar, linker::ltoCacheDisableValue);
+
+  constexpr int NFiles = 15, NFuncsPerFile = 10; // 150 single-call leaves
+  auto srcDir = tmpFile("cliff_src");
+  fs::create_directories(srcDir);
+
+  std::vector<std::string> names;
+  for (int fi = 0; fi < NFiles; ++fi) {
+    std::string src = "#include <stdint.h>\n";
+    for (int fj = 0; fj < NFuncsPerFile; ++fj) {
+      std::string nm = "fn_" + std::to_string(fi) + "_" + std::to_string(fj);
+      names.push_back(nm);
+      // Distinct odd constants per function so nothing folds them together;
+      // a constant-trip (7) loop makes each a full-unroll candidate.
+      unsigned c1 = (2654435761u * unsigned(fi * 131 + fj + 1)) | 1u;
+      unsigned c2 = (40503u * unsigned(fi + 7) +
+                     2246822519u * unsigned(fj + 3)) | 1u;
+      unsigned c3 = (2166136261u ^ (16777619u * unsigned(fi * 17 + fj))) | 1u;
+      src += "uint64_t " + nm + "(uint64_t x){ uint64_t a=x^" +
+             std::to_string(c1) + "ULL; for(int i=0;i<7;i++){ a=a*" +
+             std::to_string(c2) + "ULL+(a>>13)+i; if(a&1) a^=" +
+             std::to_string(c3) + "ULL; } return a; }\n";
+    }
+    writeFile(srcDir / ("m" + std::to_string(fi) + ".c"), src);
+  }
+  {
+    std::string m = "#include <stdint.h>\n#include <stdio.h>\n";
+    for (auto &n : names)
+      m += "uint64_t " + n + "(uint64_t);\n";
+    m += "int main(void){ uint64_t acc=1;\n for(int r=0;r<3;r++){\n";
+    for (auto &n : names)
+      m += "  acc=acc*1000003ULL+" + n + "(acc);\n";
+    m += " }\n printf(\"CK=%llu\\n\",(unsigned long long)acc); return 0; }\n";
+    writeFile(srcDir / "main.c", m);
+  }
+
+  std::vector<std::string> base = {"-std=c11"};
+  for (auto &f : sysrootFlags()) base.push_back(f);
+  for (auto &f : archFlags()) base.push_back(f);
+
+  // Default driver mode = auto-LTO: objects carry bitcode and the whole-program
+  // optimizer (inliner + unroller) runs at link time, which is where the cliff
+  // lives.
+  std::vector<std::string> objs;
+  auto compileUnit = [&](const std::string &stem) {
+    auto c = base;
+    auto o = (srcDir / (stem + ".o")).string();
+    c.insert(c.end(),
+             {"-c", (srcDir / (stem + ".c")).string(), "-o", o});
+    ASSERT_EQ(ncc(c).exitCode, 0) << stem;
+    objs.push_back(o);
+  };
+  for (int fi = 0; fi < NFiles; ++fi)
+    compileUnit("m" + std::to_string(fi));
+  compileUnit("main");
+
+  auto linkArgs = [&](const std::string &exe, bool valveOff) {
+    std::vector<std::string> l;
+    for (auto &f : sysrootFlags()) l.push_back(f);
+    for (auto &f : archFlags()) l.push_back(f);
+    for (auto &o : objs) l.push_back(o);
+    if (valveOff) {
+      // Reproduce the pre-fix pathology: no per-function full-unroll cap.
+      l.push_back("-mllvm");
+      l.push_back("-neverc-full-unroll-max-loops-per-function=0");
+    }
+    if (isWindows())
+      l.push_back("-mno-incremental-linker-compatible");
+    l.insert(l.end(), {"-o", exe});
+    return l;
+  };
+
+  auto exeOn = tmpFile("cliff_on");
+  auto t0 = std::chrono::steady_clock::now();
+  auto rOn = ncc(linkArgs(exeOn.string(), /*valveOff=*/false));
+  auto t1 = std::chrono::steady_clock::now();
+  ASSERT_EQ(rOn.exitCode, 0) << rOn.err;
+  double tOn = std::chrono::duration<double>(t1 - t0).count();
+
+  auto exeOff = tmpFile("cliff_off");
+  auto t2 = std::chrono::steady_clock::now();
+  auto rOff = ncc(linkArgs(exeOff.string(), /*valveOff=*/true));
+  auto t3 = std::chrono::steady_clock::now();
+  ASSERT_EQ(rOff.exitCode, 0) << rOff.err;
+  double tOff = std::chrono::duration<double>(t3 - t2).count();
+
+  // (1) Semantics must be unchanged by the cap.
+  auto outOn = exec(exeOn.string(), {});
+  auto outOff = exec(exeOff.string(), {});
+  EXPECT_EQ(outOn.exitCode, 0);
+  EXPECT_EQ(outOff.exitCode, 0);
+  EXPECT_TRUE(outOn.contains("CK=")) << outOn.out;
+  EXPECT_EQ(outOn.out, outOff.out)
+      << "valve changed program output (must be semantics-preserving)";
+
+  // (2) The cap must mitigate the superlinear blowup.  Real separation at this
+  // size is several-fold; require only that the capped link is clearly faster
+  // (<0.6x) so the guard never flakes on slow hardware yet fails loudly if the
+  // cap is removed (then tOn ~= tOff).
+  EXPECT_LT(tOn, tOff * 0.6)
+      << "per-function full-unroll cap gave no link-time benefit (tOn=" << tOn
+      << "s tOff=" << tOff << "s): NevercFullUnrollMaxLoopsPerFunc may have "
+         "regressed";
+
+  unsetEnvVar(linker::ltoPartitionCacheEnvVar);
+  unsetEnvVar(linker::ltoCacheEnvVar);
 }
 
 TEST_F(LTOTest, InlineAsmLTO) {

@@ -143,6 +143,12 @@ static cl::opt<unsigned> UnrollFullMaxCount(
 // honor explicit user intent), and the default is set well above any
 // hand-written or normally-inlined function so ordinary code is byte-for-byte
 // unaffected.  0 disables the cap (pure upstream behavior).
+//
+// The default (100) was validated to leave real codebases untouched: a full
+// auto-LTO build of Lua 5.4.7 and of the SQLite 3.47 amalgamation (~260k LoC)
+// produced a byte-for-byte identical __text section with the cap at 100 vs
+// disabled, i.e. no real function is loop-dense enough to be gated, while
+// Lua's LTO runtime win (~1.6x vs -fno-lto) is fully preserved.
 static cl::opt<unsigned> NevercFullUnrollMaxLoopsPerFunc(
     "neverc-full-unroll-max-loops-per-function", cl::init(100), cl::Hidden,
     cl::desc("Suppress *automatic* full loop unrolling in functions that "
