@@ -25,6 +25,7 @@
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/BasicAliasAnalysis.h"
 #include "llvm/Analysis/BlockFrequencyInfo.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/Analysis/InlineAdvisor.h"
 #include "llvm/Analysis/InlineCost.h"
@@ -85,6 +86,55 @@ static cl::opt<int> IntraSCCCostMultiplier(
 /// as part of the default (e.g. -O3) pipeline.
 static cl::opt<bool> KeepAdvisorForPrinting("keep-inline-advisor-for-printing",
                                             cl::init(false), cl::Hidden);
+
+// NeverC: in the auto-LTO whole-program inlining phase (FullLTOPostLink), a
+// merged module's leaf functions are internalized to a single call site, which
+// hands the inliner the full last-call-to-static bonus (15000) for every one of
+// them.  When hundreds of small *loop-bearing* leaves are absorbed into one
+// caller (typically `main`), the result is a single giant function holding
+// hundreds of loops.  Two things then go wrong, both quadratic-ish:
+//   1. ScalarEvolution (computeSCEVAtScope/SCEVExpander, driven by
+//      IndVarSimplify/LoopVectorize) is superlinear in the loops a single
+//      function contains, so the post-link optimization of that one function
+//      dominates the whole link (measured: bench_b 720 leaves -> 1 function /
+//      721 loops / >127s; chain_240 likewise SCEV-bound).
+//   2. A program that was N partitionable functions becomes one indivisible
+//      function, so parallel codegen can no longer split it -- the 15 other
+//      cores idle while one thread grinds.
+// Withdrawing inlining once a caller is already this loop-dense fixes both: the
+// remaining leaves stay separate (cheap per-function SCEV + partitionable).
+// Crucially it does *not* cost runtime: only *loop-bearing* callees are held
+// back (loop-free helpers still inline freely), and a loop optimizes just as
+// well in its own function as inlined -- the kept call overhead is negligible
+// next to the loop body, and the smaller hot caller is gentler on the icache.
+// Measured (this build):
+//   bench_b  720 leaves: cap off 342.8s (1 function) -> cap=32 40.7s (690 fns)
+//   chain_240          : cap off 208.4s (80 fns)     -> cap=32  1.7s (221 fns)
+//   Lua bench.lua VM time: no-LTO 1.05s, LTO cap off 0.73s, LTO cap=32 0.68s
+// i.e. ScalarEvolution is superlinear in the loop chain a single function
+// holds, with a sharp knee between ~32 and ~64 loops; 32 sits just under it and
+// leaves real runtime equal-or-better.  This is a pure *withdrawal*: it never
+// forces an inline, never blocks an always-inline/mandatory inline, and is
+// gated to the FullLTOPostLink phase so ordinary -O2/-O3 (and ThinLTO) compiles
+// never enter this path.  0 disables the cap.
+static cl::opt<unsigned> NevercInlineMaxCallerLoops(
+    "neverc-inline-max-caller-loops", cl::init(32), cl::Hidden,
+    cl::desc("Auto-LTO (FullLTOPostLink) only: stop inlining loop-bearing "
+             "callees into a caller that already contains more than this many "
+             "loops (back-edges), bounding superlinear ScalarEvolution cost and "
+             "preserving partitionability of the giant functions that "
+             "last-call-to-static inlining would otherwise form "
+             "(0 = no limit)"));
+
+// Back-edge count is a cheap (DFS-only, no dominator tree) proxy for the loop
+// count; we only need to tell a loop-dense function from a sparse one.
+static unsigned nevercCountFunctionLoops(const Function &F) {
+  if (F.isDeclaration())
+    return 0;
+  SmallVector<std::pair<const BasicBlock *, const BasicBlock *>, 16> BackEdges;
+  FindFunctionBackedges(F, BackEdges);
+  return BackEdges.size();
+}
 
 /// Return true if the specified inline history ID
 /// indicates an inline history that includes the specified function.
@@ -227,6 +277,25 @@ PreservedAnalyses InlinerPass::run(LazyCallGraph::SCC &InitialC,
   // be deleted as a batch after inlining.
   SmallVector<Function *, 4> DeadFunctionsInComdats;
 
+  // NeverC loop-density inline cap (auto-LTO only).  Enabled only in the
+  // FullLTOPostLink phase so ordinary compiles never pay for it or change.
+  const bool NevercLoopCapActive =
+      NevercInlineMaxCallerLoops != 0 &&
+      LTOPhase == ThinOrFullLTOPhase::FullLTOPostLink;
+  // Memoize each callee's loop count.  A callee's body is cloned (not mutated)
+  // when it is inlined, so this is stable enough for a heuristic cap even if a
+  // function later grows as a caller; staleness only ever under-counts, which
+  // is harmless (it can only let the cap engage slightly late).
+  DenseMap<const Function *, unsigned> NevercCalleeLoops;
+  auto nevercGetCalleeLoops = [&](const Function &Callee) -> unsigned {
+    auto It = NevercCalleeLoops.find(&Callee);
+    if (It != NevercCalleeLoops.end())
+      return It->second;
+    unsigned N = nevercCountFunctionLoops(Callee);
+    NevercCalleeLoops[&Callee] = N;
+    return N;
+  };
+
   // Loop forward over all of the calls. Note that we cannot cache the size as
   // inlining can introduce new calls that need to be processed.
   for (int I = 0; I < (int)Calls.size(); ++I) {
@@ -246,6 +315,12 @@ PreservedAnalyses InlinerPass::run(LazyCallGraph::SCC &InitialC,
     auto GetAssumptionCache = [&](Function &F) -> AssumptionCache & {
       return FAM.getResult<AssumptionAnalysis>(F);
     };
+
+    // NeverC: current loop count of this caller, computed once per caller
+    // batch and then tracked incrementally as we inline loop-bearing callees
+    // into it.  Drives the loop-density cap below.
+    unsigned NevercCallerLoops =
+        NevercLoopCapActive ? nevercCountFunctionLoops(F) : 0;
 
     // Now process as many calls as we have within this caller in the sequence.
     // We bail out as soon as the caller has to change so we can update the
@@ -279,6 +354,21 @@ PreservedAnalyses InlinerPass::run(LazyCallGraph::SCC &InitialC,
                              "previously split out of this SCC by inlining: "
                           << F.getName() << " -> " << Callee.getName() << "\n");
         setInlineRemark(*CB, "recursive SCC split");
+        continue;
+      }
+
+      // NeverC loop-density cap: if this caller is already loop-dense, withdraw
+      // inlining of further loop-bearing callees into it (see
+      // NevercInlineMaxCallerLoops).  OnlyMandatory and always-inline callees
+      // are exempt -- those inlines are required, never cost-driven.  Mark the
+      // site noinline so the decision is not revisited in later CGSCC
+      // iterations, mirroring the recursive-skip handling above.
+      if (NevercLoopCapActive && !OnlyMandatory &&
+          NevercCallerLoops >= NevercInlineMaxCallerLoops &&
+          !Callee.hasFnAttribute(Attribute::AlwaysInline) &&
+          nevercGetCalleeLoops(Callee) != 0) {
+        setInlineRemark(*CB, "neverc loop-density cap");
+        CB->setIsNoInline();
         continue;
       }
 
@@ -317,6 +407,12 @@ PreservedAnalyses InlinerPass::run(LazyCallGraph::SCC &InitialC,
       DidInline = true;
       InlinedCallees.insert(&Callee);
       ++NumInlined;
+
+      // NeverC: account for the loops this inline just merged into the caller so
+      // the cap can engage once the caller becomes loop-dense.  Read before the
+      // callee may be deleted below; the body is still intact here.
+      if (NevercLoopCapActive)
+        NevercCallerLoops += nevercGetCalleeLoops(Callee);
 
       LLVM_DEBUG(dbgs() << "    Size after inlining: "
                         << F.getInstructionCount() << "\n");
@@ -520,9 +616,15 @@ ModuleInlinerWrapperPass::ModuleInlinerWrapperPass(InlineParams Params,
   // into the callers so that our optimizations can reflect that.
   // For PreLink LTO pass, we disable hot-caller heuristic for sample PGO
   // because it makes profile annotation in the backend inaccurate.
+  // Propagate the pipeline's LTO phase into the CGSCC inliner passes.  Upstream
+  // leaves this at the default (None), which only ever mislabels the phase in
+  // optimization remarks because InlineContext::LTOPhase feeds nothing but the
+  // remark pass-name (AnnotateInlinePassName); inlining decisions are
+  // unaffected.  NeverC's loop-density cap, however, is gated to
+  // FullLTOPostLink, so it needs the real phase here.
   if (MandatoryFirst)
-    PM.addPass(InlinerPass(/*OnlyMandatory*/ true));
-  PM.addPass(InlinerPass());
+    PM.addPass(InlinerPass(/*OnlyMandatory*/ true, IC.LTOPhase));
+  PM.addPass(InlinerPass(/*OnlyMandatory*/ false, IC.LTOPhase));
 }
 
 PreservedAnalyses ModuleInlinerWrapperPass::run(Module &M,

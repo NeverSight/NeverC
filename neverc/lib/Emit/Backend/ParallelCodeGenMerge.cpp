@@ -5,6 +5,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -17,6 +18,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Triple.h"
 
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/thread.h"
 #include "llvm/Support/xxhash.h"
@@ -31,6 +33,64 @@ using namespace llvm;
 namespace neverc {
 
 namespace {
+
+// ===----------------------------------------------------------------------===
+// Parallel-codegen engagement / partitioning tunables
+//
+// The decision of *whether* to split a merged LTO module for parallel codegen,
+// and into *how many* partitions, was originally driven purely by the post-IPO
+// instruction count (TotalWeight).  Instruction count is a poor predictor of
+// compile cost for loop-dense modules: ScalarEvolution (computeSCEVAtScope and
+// friends) is superlinear in the number/coupling of loops, so a module with
+// few instructions but many loops can take tens of seconds to optimize while
+// its TotalWeight stays under the "worth parallelizing" floor -- the expensive
+// optimization then runs serially on the main thread and the 15 other cores sit
+// idle.  We add a loop signal (back-edge count, a cheap DFS-only proxy for the
+// loop count that drives SCEV) so loop-dense modules both *engage* the parallel
+// optimization path and get *enough* partitions to actually spread the SCEV
+// work across cores.
+//
+// Every knob is exposed for -mllvm tuning and CI bisection.  Correctness is
+// independent of all of them: any partition count produces a byte-correct merge
+// (the independent verifier + serial-codegen fallback + NEVERC_PCG_STRICT
+// tripwire guarantee it), so these only trade compile wall-time, never output.
+static llvm::cl::opt<unsigned> PcgMinFuncs(
+    "neverc-pcg-min-funcs", llvm::cl::init(8), llvm::cl::Hidden,
+    llvm::cl::desc("Minimum number of defined functions in a merged LTO module "
+                   "before parallel codegen is considered"));
+static llvm::cl::opt<unsigned> PcgWeightFloor(
+    "neverc-pcg-weight-floor", llvm::cl::init(10000), llvm::cl::Hidden,
+    llvm::cl::desc("Engage parallel codegen when the post-IPO instruction "
+                   "count reaches this floor"));
+static llvm::cl::opt<unsigned> PcgLoopFloor(
+    "neverc-pcg-loop-floor", llvm::cl::init(56), llvm::cl::Hidden,
+    llvm::cl::desc("Engage parallel codegen when the module's loop (back-edge) "
+                   "count reaches this floor, even if the instruction count is "
+                   "below -neverc-pcg-weight-floor; loop-dense modules are "
+                   "SCEV-superlinear and benefit from parallelism despite a low "
+                   "instruction count (0 = disable the loop signal)"));
+static llvm::cl::opt<unsigned> PcgOptWeightDiv(
+    "neverc-pcg-opt-weight-div", llvm::cl::init(12000), llvm::cl::Hidden,
+    llvm::cl::desc("Parallel opt+codegen: one partition per this many "
+                   "instructions"));
+static llvm::cl::opt<unsigned> PcgOptLoopDiv(
+    "neverc-pcg-opt-loop-div", llvm::cl::init(16), llvm::cl::Hidden,
+    llvm::cl::desc("Parallel opt+codegen: one partition per this many loops "
+                   "(back-edges); takes the max with the instruction-based "
+                   "count so loop-dense modules get more partitions "
+                   "(0 = disable)"));
+static llvm::cl::opt<unsigned> PcgOptMaxParts(
+    "neverc-pcg-opt-max-parts", llvm::cl::init(16), llvm::cl::Hidden,
+    llvm::cl::desc("Parallel opt+codegen: maximum partition count"));
+static llvm::cl::opt<unsigned> PcgCgWeightDiv(
+    "neverc-pcg-cg-weight-div", llvm::cl::init(5000), llvm::cl::Hidden,
+    llvm::cl::desc("Parallel codegen-only: one partition per this many "
+                   "instructions"));
+static llvm::cl::opt<unsigned> PcgCgLoopDiv(
+    "neverc-pcg-cg-loop-div", llvm::cl::init(0), llvm::cl::Hidden,
+    llvm::cl::desc("Parallel codegen-only: one partition per this many loops "
+                   "(0 = disable; codegen is not SCEV-bound so the loop signal "
+                   "is off by default here)"));
 
 bool mergePartitionObjects(const Triple &TT,
                            ArrayRef<SmallVector<char, 0>> Bufs,
@@ -108,6 +168,7 @@ struct ParallelCGContext {
   Triple TT;
   SmallVector<FuncEntry, 0> FuncList;
   unsigned TotalWeight = 0;
+  unsigned LoopCount = 0;
   unsigned FuncCount = 0;
   unsigned NumPartitions = 0;
 
@@ -139,7 +200,7 @@ struct ParallelCGContext {
   StringRef PipeTag;
 
   bool init(Module &Mod, TargetMachine &TM);
-  bool resolvePartitions(unsigned WeightDiv, unsigned MaxParts);
+  bool resolvePartitions(unsigned WeightDiv, unsigned LoopDiv, unsigned MaxParts);
   void externalizeAndSerialize(Module &Mod);
   void preparePartitions(StringRef BCRef, TargetMachine &TM);
   bool finalizeResults(Module &Mod, raw_pwrite_stream &OS);
@@ -151,6 +212,11 @@ bool ParallelCGContext::init(Module &Mod, TargetMachine &TM) {
   TripleStr = Mod.getTargetTriple();
   TT = Triple(TripleStr);
 
+  // Back-edge count is a cheap (DFS-only, no dominator tree) proxy for the
+  // loop count.  We use it, not exact LoopInfo, because this runs before the
+  // per-partition pipeline and only needs to be good enough to tell a
+  // loop-dense module from a straight-line one.
+  SmallVector<std::pair<const BasicBlock *, const BasicBlock *>, 32> BackEdges;
   for (auto &F : Mod)
     if (!F.isDeclaration()) {
       unsigned W = 0;
@@ -158,10 +224,21 @@ bool ParallelCGContext::init(Module &Mod, TargetMachine &TM) {
         W += BB.size();
       TotalWeight += W;
       FuncList.push_back({&F, W});
+      BackEdges.clear();
+      FindFunctionBackedges(F, BackEdges);
+      LoopCount += BackEdges.size();
     }
   FuncCount = FuncList.size();
 
-  if (FuncCount < 8 || TotalWeight < 10000)
+  // Engage on either signal: enough instructions (TotalWeight) OR enough loops
+  // (LoopCount).  The loop floor catches SCEV-superlinear modules whose
+  // instruction count alone would (wrongly) decline parallelism and run the
+  // expensive optimization serially.
+  if (FuncCount < PcgMinFuncs)
+    return false;
+  bool WeightOK = TotalWeight >= PcgWeightFloor;
+  bool LoopsOK = PcgLoopFloor != 0 && LoopCount >= PcgLoopFloor;
+  if (!WeightOK && !LoopsOK)
     return false;
 
   SharedCM = TM.getCodeModel();
@@ -173,19 +250,26 @@ bool ParallelCGContext::init(Module &Mod, TargetMachine &TM) {
   return true;
 }
 
-bool ParallelCGContext::resolvePartitions(unsigned WeightDiv,
+bool ParallelCGContext::resolvePartitions(unsigned WeightDiv, unsigned LoopDiv,
                                           unsigned MaxParts) {
+  // Desired partition count from the work estimate: the larger of the
+  // instruction-based and loop-based counts.  Loops drive the superlinear SCEV
+  // cost, so a loop-dense module gets more partitions than its instruction
+  // count alone would suggest -- spreading that cost across cores instead of
+  // serializing it.  FuncCount is the hard ceiling (a partition needs at least
+  // one function) and HW/MaxParts bound it from above.
+  unsigned ByWeight = WeightDiv ? TotalWeight / WeightDiv : 0;
+  unsigned ByLoops = LoopDiv ? LoopCount / LoopDiv : 0;
+  unsigned WorkParts = std::max({ByWeight, ByLoops, 2u});
   if (NumPartitions == 0) {
     unsigned HW = llvm::thread::hardware_concurrency();
-    NumPartitions = std::min(
-        {HW, std::max(TotalWeight / WeightDiv, 2u), FuncCount, MaxParts});
+    NumPartitions = std::min({HW, WorkParts, FuncCount, MaxParts});
     if (NumPartitions < 2)
       return false;
   } else if (NumPartitions < 2) {
     return false;
   } else {
-    unsigned WeightCap = std::max(TotalWeight / WeightDiv, 2u);
-    NumPartitions = std::min({NumPartitions, WeightCap, MaxParts});
+    NumPartitions = std::min({NumPartitions, WorkParts, MaxParts});
   }
   if (FuncCount < NumPartitions)
     NumPartitions = std::max(1u, FuncCount);
@@ -548,7 +632,8 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
   Ctx.Cache = Cache;
   Ctx.PipeTag = "p-cg";
 
-  if (!Ctx.resolvePartitions(/*WeightDiv=*/5000,
+  if (!Ctx.resolvePartitions(/*WeightDiv=*/PcgCgWeightDiv,
+                             /*LoopDiv=*/PcgCgLoopDiv,
                              /*MaxParts=*/Ctx.FuncCount))
     return false;
 
@@ -614,17 +699,21 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
   if (!Ctx.init(Mod, TM)) {
     if (::getenv("NEVERC_PCG_DEBUG"))
       errs() << "[pcg] p-opt declined (FuncCount=" << Ctx.FuncCount
-             << " TotalWeight=" << Ctx.TotalWeight << ")\n";
+             << " TotalWeight=" << Ctx.TotalWeight
+             << " LoopCount=" << Ctx.LoopCount << ")\n";
     return false;
   }
   Ctx.Cache = Cache;
   Ctx.PipeTag = "p-opt";
 
-  if (!Ctx.resolvePartitions(/*WeightDiv=*/12000, /*MaxParts=*/16))
+  if (!Ctx.resolvePartitions(/*WeightDiv=*/PcgOptWeightDiv,
+                             /*LoopDiv=*/PcgOptLoopDiv,
+                             /*MaxParts=*/PcgOptMaxParts))
     return false;
   if (::getenv("NEVERC_PCG_DEBUG"))
     errs() << "[pcg] p-opt engaged: FuncCount=" << Ctx.FuncCount
            << " TotalWeight=" << Ctx.TotalWeight
+           << " LoopCount=" << Ctx.LoopCount
            << " NumPartitions=" << Ctx.NumPartitions << "\n";
 
   Ctx.externalizeAndSerialize(Mod);
