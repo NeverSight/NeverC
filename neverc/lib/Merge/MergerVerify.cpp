@@ -26,6 +26,7 @@
 //
 //===------------------------------------------------------------------===//
 
+#include "MergerCommon.h"
 #include "neverc/Merge/Merger.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -37,12 +38,14 @@
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/BinaryFormat/MachO.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 
 using namespace llvm;
 
@@ -80,6 +83,7 @@ struct RawRela {
   uint64_t Offset = 0;
   uint32_t Sym = 0;
   uint32_t Type = 0;
+  int64_t Addend = 0;
 };
 
 struct RawELF {
@@ -87,6 +91,11 @@ struct RawELF {
   SmallVector<RawSec, 0> Secs;
   SmallVector<RawSym, 0> Syms;
   SmallVector<RawRela, 0> Relas;
+  // sh_info of the first SYMTAB (= index of the first non-local symbol).  An
+  // independent record so the verifier can audit the locals-before-globals
+  // invariant without trusting the merger's own bookkeeping.
+  uint32_t SymtabInfo = 0;
+  bool HasSymtab = false;
 
   ArrayRef<uint8_t> secData(unsigned I) const {
     if (I >= Secs.size())
@@ -170,6 +179,8 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
       break;
     unsigned N = SymSize / sizeof(Sym);
     const auto *Sy = reinterpret_cast<const Sym *>(Buf.data() + SymOff);
+    Out.SymtabInfo = Secs[I].sh_info;
+    Out.HasSymtab = true;
     Out.Syms.reserve(N);
     for (unsigned k = 0; k < N; ++k) {
       RawSym PS;
@@ -198,30 +209,20 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
       RE.Offset = R[k].r_offset;
       RE.Sym = (uint32_t)(R[k].r_info >> 32);
       RE.Type = (uint32_t)(R[k].r_info & 0xffffffffu);
+      RE.Addend = (int64_t)R[k].r_addend;
       Out.Relas.push_back(RE);
     }
   }
   return true;
 }
 
-// Mirror of the merger's section-name canonicalization.  Kept in lock-step
-// with MergerELF.cpp's Phase-1 renaming so the verifier predicts the same
-// output section name a symbol's input section should land in.
+// The merger's section-name canonicalization, via the single shared helper in
+// MergerCommon.h that MergerELF.cpp's Phase-1 renaming also calls — so the
+// verifier predicts exactly the output section name the merger produced, with
+// no second copy to drift out of sync.
 StringRef mergedSectionName(StringRef SecName, const Options &Opts) {
-  if (!Opts.mergeSections || SecName.empty())
-    return SecName;
-  for (StringRef Ps : Opts.preservedSections)
-    if (SecName == Ps)
-      return SecName;
-  if (SecName.starts_with(".text."))
-    return ".text";
-  if (SecName.starts_with(".bss."))
-    return ".bss";
-  if (SecName.starts_with(".data."))
-    return ".data";
-  if (SecName.starts_with(".rodata."))
-    return ".rodata";
-  return SecName;
+  return detail::canonicalELFSectionName(SecName, Opts.mergeSections,
+                                         Opts.preservedSections);
 }
 
 // Sections the merger does not fold into the output as addressable content
@@ -259,6 +260,63 @@ bool fail(std::string *Err, const Twine &Msg) {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Relocation-site anchoring.  Every relocation sits inside some defined symbol;
+// the verifier finds "the defined symbol with the greatest value <= the reloc
+// offset" (the function/object the site lives in) and uses its already-verified
+// merged value to predict where the reloc must re-land.  Originally each
+// relocation linear-scanned every anchor in its section — and default codegen
+// puts every function in one .text/__text, so that was O(relocs x symbols)
+// = O(n^2) per partition, a real cost on large modules.  Sorting the anchors
+// by value once and binary-searching per relocation makes it O(n log n) with
+// identical results.
+// ---------------------------------------------------------------------------
+using Anchor = std::pair<uint64_t, StringRef>; // (symbol value, symbol name)
+using AnchorVec = SmallVector<Anchor, 0>;
+using AnchorMap = DenseMap<unsigned, AnchorVec>; // section index -> anchors
+
+void sortAnchors(AnchorMap &Anchors) {
+  for (auto &KV : Anchors)
+    // Stable so that, among anchors sharing one value, the last in symbol-table
+    // order stays last — exactly the tie-break the old linear scan used
+    // ("PR.first >= Best->first" lets a later equal-valued anchor win).
+    std::stable_sort(KV.second.begin(), KV.second.end(),
+                     [](const Anchor &A, const Anchor &B) {
+                       return A.first < B.first;
+                     });
+}
+
+// Greatest-value anchor whose value <= Off, or nullptr if none.  Requires
+// Sorted to be ascending by value (see sortAnchors).
+const Anchor *findAnchor(const AnchorVec &Sorted, uint64_t Off) {
+  auto It = std::upper_bound(
+      Sorted.begin(), Sorted.end(), Off,
+      [](uint64_t O, const Anchor &P) { return O < P.first; });
+  if (It == Sorted.begin())
+    return nullptr;
+  return &*(It - 1);
+}
+
+// ---------------------------------------------------------------------------
+// Same-input-section relative-distance invariant.  Every symbol defined in one
+// input section is shifted into the merged output by that section's single
+// PartOffset, so any two uniquely-named defined symbols sharing an input
+// section must keep an identical (merged offset - input offset) and land in the
+// same merged section.  This invariant is *content-free*, which is exactly why
+// it matters: the byte-content anchor must skip sections that carry no bytes
+// (SHT_NOBITS / IMAGE_SCN_CNT_UNINITIALIZED_DATA / S_ZEROFILL, i.e. .bss), so a
+// ".bss symbol values all collapse to 0" bug — the BSS twin of the historical
+// .text collapse — would otherwise sail through verification.  It holds for any
+// conformant -r merge (neverc's own and a real linker's), so it never
+// false-rejects.  Residual: a symbol alone in its input section has no sibling
+// to anchor against here; that narrow case is left to the content anchor (for
+// sections with bytes) and the differential/execution tests (for .bss).
+struct SecShift {
+  int64_t Delta;      // merged offset - input offset for the first witness
+  unsigned OutSec;    // merged section the first witness landed in
+  StringRef Witness;  // its name, for diagnostics
+};
+
 bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                         const Options &Opts, std::string *Err) {
   using namespace ELF;
@@ -267,9 +325,82 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
   if (!parseRawELF(Output, Out))
     return fail(Err, "verify: merged output is not a parseable ELF64LE object");
 
+  // ---- Structural integrity of the merged object itself ----
+  // These are input-independent invariants that catch corruption classes the
+  // per-symbol content anchor cannot see (it only looks at uniquely-named
+  // symbols).  They hold for any conformant -r object, so they never
+  // false-reject a real linker's output either.
+
+  // (1) Symbol-table ordering.  ELF requires every STB_LOCAL symbol to precede
+  // the first non-local one, with sh_info marking that boundary.  The merger's
+  // __pcg demotion rewrites this ordering, so a bug there would mis-set the
+  // boundary and silently corrupt how the loader/linker reads every binding.
+  if (Out.HasSymtab) {
+    uint32_t FirstGlobal = Out.SymtabInfo;
+    if (FirstGlobal > Out.Syms.size())
+      return fail(Err, "verify: symtab sh_info (" + Twine(FirstGlobal) +
+                           ") exceeds the symbol count " +
+                           Twine(Out.Syms.size()));
+    for (unsigned i = 0; i < Out.Syms.size(); ++i) {
+      bool IsLocal = Out.Syms[i].bind() == STB_LOCAL;
+      if (i < FirstGlobal && !IsLocal)
+        return fail(Err, "verify: non-local symbol '" + Out.Syms[i].Name +
+                             "' at index " + Twine(i) +
+                             " precedes the symtab sh_info boundary " +
+                             Twine(FirstGlobal) + " (binding order corrupted)");
+      if (i >= FirstGlobal && IsLocal)
+        return fail(Err, "verify: local symbol '" + Out.Syms[i].Name +
+                             "' at index " + Twine(i) +
+                             " follows the symtab sh_info boundary " +
+                             Twine(FirstGlobal) + " (binding order corrupted)");
+    }
+  }
+
+  // (2) SHF_LINK_ORDER sections must carry a valid sh_link.  The merger folds
+  // such inputs (e.g. ftrace's __patchable_function_entries) and remaps sh_link
+  // to the merged target section, so this independently re-checks the produced
+  // link is in range.  verifyMerge also audits objects produced elsewhere (e.g.
+  // the bundled LLD -r), whose SHF_LINK_ORDER output is likewise only correct
+  // with a real sh_link.  A zero or out-of-range link is exactly the
+  // ftrace-corruption shape this guards.
+  for (unsigned i = 0; i < Out.Secs.size(); ++i) {
+    const RawSec &S = Out.Secs[i];
+    if (!(S.Flags & SHF_LINK_ORDER))
+      continue;
+    if (S.Link == 0 || S.Link >= Out.Secs.size())
+      return fail(Err, "verify: SHF_LINK_ORDER section '" + S.Name +
+                           "' has an invalid sh_link " + Twine(S.Link) +
+                           " (ordering/dependency dropped)");
+  }
+
+  // (3) Relocation sections must link to a symbol table and target a real
+  // section, or their relocations would be applied against the wrong table or
+  // the wrong section.
+  for (unsigned i = 0; i < Out.Secs.size(); ++i) {
+    const RawSec &S = Out.Secs[i];
+    if (S.Type != SHT_RELA && S.Type != SHT_REL)
+      continue;
+    if (S.Link >= Out.Secs.size() || Out.Secs[S.Link].Type != SHT_SYMTAB)
+      return fail(Err, "verify: relocation section '" + S.Name +
+                           "' sh_link " + Twine(S.Link) +
+                           " does not reference a symbol table");
+    if (S.Info == 0 || S.Info >= Out.Secs.size())
+      return fail(Err, "verify: relocation section '" + S.Name +
+                           "' sh_info " + Twine(S.Info) +
+                           " does not reference a valid target section");
+  }
+
   // Index output symbols by name; only names that resolve to a *single*
   // output symbol can be anchored unambiguously.
   StringMap<int> OutByName; // name -> sym index, or -1 if duplicated
+  // Every output symbol index for a name (not just the unique case).  A name
+  // can repeat legitimately in -r output — two file-local statics keep their
+  // name — so the unique-anchor path skips duplicates.  This parallel index
+  // lets the duplicate case still be content-checked: a correct merge places
+  // such a symbol at *some* same-named output symbol whose bytes match, so the
+  // offset-collapse anchor extends to them via "at least one faithful
+  // representative" instead of being skipped wholesale.
+  StringMap<SmallVector<int, 2>> OutByNameMulti;
   for (unsigned i = 0; i < Out.Syms.size(); ++i) {
     StringRef N = Out.Syms[i].Name;
     if (N.empty())
@@ -279,21 +410,67 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       OutByName[N] = (int)i;
     else
       It->second = -1;
+    OutByNameMulti[N].push_back((int)i);
   }
 
   // Index output relocations by (merged target section, target symbol name,
-  // type) → the offsets they appear at, so each input relocation can be
-  // confirmed to re-land at its independently predicted merged offset.
-  std::map<std::string, std::set<uint64_t>> OutRelocs;
+  // type) → (offset → the addends seen there), so each input relocation can be
+  // confirmed to re-land at its independently predicted merged offset *and*
+  // carry the same addend (a wrong addend points at the wrong place even when
+  // the site offset is correct).
+  std::map<std::string, std::map<uint64_t, std::set<int64_t>>> OutRelocs;
+  // Section-target relocations carry no symbol name (their target is an
+  // STT_SECTION symbol), so they need a parallel index keyed by the *target
+  // section* instead.  Without this they were invisible to the verifier even
+  // though they ride the exact same SecOff offset math whose collapse was the
+  // historical bug.
+  std::map<std::string, std::set<uint64_t>> OutSecRelocs;
   for (const RawRela &R : Out.Relas) {
     if (R.TargetSec >= Out.Secs.size())
       continue;
     StringRef SecN = Out.Secs[R.TargetSec].Name;
+    if (R.Sym < Out.Syms.size() && Out.Syms[R.Sym].type() == STT_SECTION) {
+      const RawSym &TS = Out.Syms[R.Sym];
+      if (TS.Shndx != 0 && TS.Shndx < Out.Secs.size())
+        OutSecRelocs[(SecN + "\x01" + Out.Secs[TS.Shndx].Name + "\x01" +
+                      Twine(R.Type))
+                         .str()]
+            .insert(R.Offset);
+    }
     StringRef SymN =
         R.Sym < Out.Syms.size() ? Out.Syms[R.Sym].Name : StringRef();
-    OutRelocs[(SecN + "\x01" + SymN + "\x01" + Twine(R.Type)).str()].insert(
-        R.Offset);
+    OutRelocs[(SecN + "\x01" + SymN + "\x01" + Twine(R.Type)).str()][R.Offset]
+        .insert(R.Addend);
   }
+
+  // SHF_LINK_ORDER relocation accounting.  A section like ftrace's
+  // __patchable_function_entries carries no defined symbol, so the
+  // symbol-anchored reloc check below skips its relocations entirely — yet they
+  // ride the same per-section PartOffset whose collapse was the historical bug.
+  // Two content-free invariants close that gap: (a) every merged reloc in such
+  // a section sits at a *distinct* offset (a collapse aliases several onto one),
+  // checked here; and (b) the merged reloc count equals the sum of the inputs'
+  // (none dropped or duplicated), accumulated across inputs and checked after
+  // the input loop.  Both hold for any conformant -r merge, so neither
+  // false-rejects (a real linker's -r output included).
+  std::map<std::string, std::pair<uint64_t, std::set<uint64_t>>> OutLinkOrderRel;
+  for (const RawRela &R : Out.Relas) {
+    if (R.TargetSec >= Out.Secs.size())
+      continue;
+    const RawSec &TS = Out.Secs[R.TargetSec];
+    if (!(TS.Flags & SHF_LINK_ORDER))
+      continue;
+    auto &E = OutLinkOrderRel[TS.Name.str()];
+    E.first++;
+    E.second.insert(R.Offset);
+  }
+  for (auto &KV : OutLinkOrderRel)
+    if (KV.second.first != KV.second.second.size())
+      return fail(Err, "verify: SHF_LINK_ORDER section '" + KV.first + "' has " +
+                           Twine(KV.second.first) + " relocations at only " +
+                           Twine(KV.second.second.size()) +
+                           " distinct offsets (offset collapsed or mis-shifted)");
+  std::map<std::string, uint64_t> InLinkOrderRelCount;
 
   for (unsigned p = 0; p < Inputs.size(); ++p) {
     if (Inputs[p].empty())
@@ -302,6 +479,17 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     if (!parseRawELF(ArrayRef<char>(Inputs[p].data(), Inputs[p].size()), In))
       return fail(Err, "verify: input partition " + Twine(p) +
                            " is not a parseable ELF64LE object");
+
+    // Accumulate this input's SHF_LINK_ORDER relocation counts per merged
+    // section name (the count half of the conservation check above).
+    for (const RawRela &R : In.Relas) {
+      if (R.TargetSec >= In.Secs.size())
+        continue;
+      const RawSec &TS = In.Secs[R.TargetSec];
+      if (!(TS.Flags & SHF_LINK_ORDER) || isExcludedInputSection(TS, Opts))
+        continue;
+      InLinkOrderRelCount[mergedSectionName(TS.Name, Opts).str()]++;
+    }
 
     for (const RawSym &S : In.Syms) {
       if (S.Name.empty() || S.type() == STT_SECTION)
@@ -319,8 +507,54 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if (It == OutByName.end())
         return fail(Err, "verify: defined input symbol '" + S.Name +
                              "' missing from merged output");
-      if (It->second < 0)
-        continue; // ambiguous (name not unique in output) — conservatively skip
+      if (It->second < 0) {
+        // Name is not unique in the output (e.g. two file-local statics that
+        // share a name).  The unique-name anchor below can't be used, but a
+        // correct -r merge still copies this symbol's bytes verbatim into the
+        // expected merged section, so *some* same-named output symbol must land
+        // there with a byte-matching window.  Require such a faithful
+        // representative to exist; only when the input window is decidable
+        // (on disk, non-NOBITS) yet no same-named output symbol matches is it a
+        // real offset collapse/mis-shift.  All-ambiguous windows still skip.
+        if (InSec.Type == SHT_NOBITS || S.Value > InSec.Size)
+          continue;
+        ArrayRef<uint8_t> InData = In.secData(S.Shndx);
+        StringRef Expected = mergedSectionName(InSec.Name, Opts);
+        bool AnyDecidable = false, AnyMatch = false;
+        auto MIt = OutByNameMulti.find(S.Name);
+        if (MIt == OutByNameMulti.end())
+          return fail(Err, "verify: defined input symbol '" + S.Name +
+                               "' missing from merged output");
+        for (int Idx : MIt->second) {
+          const RawSym &Cand = Out.Syms[(unsigned)Idx];
+          if (Cand.Shndx == 0 || Cand.Shndx >= SHN_LORESERVE ||
+              Cand.Shndx >= Out.Secs.size())
+            continue;
+          const RawSec &CSec = Out.Secs[Cand.Shndx];
+          if (CSec.Name != Expected || CSec.Type == SHT_NOBITS ||
+              Cand.Value > CSec.Size)
+            continue; // wrong section / no content — not this representative
+          ArrayRef<uint8_t> OutData = Out.secData(Cand.Shndx);
+          uint64_t Avail =
+              std::min(InSec.Size - S.Value, CSec.Size - Cand.Value);
+          uint64_t W = std::min<uint64_t>(16, Avail);
+          if (W == 0 || S.Value + W > InData.size() ||
+              Cand.Value + W > OutData.size())
+            continue; // bytes not on disk — can't decide from this candidate
+          AnyDecidable = true;
+          if (memcmp(InData.data() + S.Value, OutData.data() + Cand.Value, W) ==
+              0) {
+            AnyMatch = true;
+            break;
+          }
+        }
+        if (AnyDecidable && !AnyMatch)
+          return fail(Err, "verify: duplicate-named symbol '" + S.Name +
+                               "' has no same-named merged symbol whose content "
+                               "matches the input (offset collapsed or "
+                               "mis-shifted)");
+        continue;
+      }
       const RawSym &OutSym = Out.Syms[(unsigned)It->second];
 
       // An input definition must remain a definition in the output.
@@ -365,12 +599,55 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                              "input (offset collapsed or mis-shifted)");
     }
 
+    // Same-input-section relative-distance invariant (NOBITS-safe; see SecShift
+    // above).  SHF_MERGE input sections are excluded: a real linker may
+    // de-duplicate their members non-uniformly (neverc's merger never does, but
+    // verifyMerge also audits external -r output).
+    {
+      DenseMap<unsigned, SecShift> Shift;
+      for (const RawSym &S : In.Syms) {
+        if (S.Name.empty() || S.type() == STT_SECTION)
+          continue;
+        if (S.Shndx == 0 || S.Shndx >= SHN_LORESERVE || S.Shndx >= In.Secs.size())
+          continue;
+        const RawSec &InSec = In.Secs[S.Shndx];
+        if (isExcludedInputSection(InSec, Opts) || (InSec.Flags & SHF_MERGE))
+          continue;
+        if (S.Value > InSec.Size)
+          continue;
+        auto It = OutByName.find(S.Name);
+        if (It == OutByName.end() || It->second < 0)
+          continue;
+        const RawSym &OutSym = Out.Syms[(unsigned)It->second];
+        if (OutSym.Shndx == 0 || OutSym.Shndx >= SHN_LORESERVE ||
+            OutSym.Shndx >= Out.Secs.size())
+          continue;
+        int64_t Delta = (int64_t)OutSym.Value - (int64_t)S.Value;
+        auto [DIt, Inserted] = Shift.try_emplace(
+            (unsigned)S.Shndx, SecShift{Delta, OutSym.Shndx, S.Name});
+        if (Inserted)
+          continue;
+        if (DIt->second.OutSec != OutSym.Shndx)
+          return fail(Err, "verify: symbols '" + DIt->second.Witness + "' and '" +
+                               S.Name +
+                               "' share one input section but landed in different "
+                               "merged sections (section split or mis-routed)");
+        if (DIt->second.Delta != Delta)
+          return fail(Err, "verify: symbols '" + DIt->second.Witness + "' and '" +
+                               S.Name +
+                               "' share one input section but their merged offsets "
+                               "shifted by different amounts (" +
+                               Twine(DIt->second.Delta) + " vs " + Twine(Delta) +
+                               ") — offset collapsed or mis-shifted");
+      }
+    }
+
     // Symbol-anchored relocation check: every relocation site sits inside some
     // defined symbol; using that symbol's already-verified merged value we
     // independently predict where the relocation must re-land and confirm an
     // output relocation for the same target/type exists there.  This is the
     // relocation half of the offset-collapse bug (symbols above are the other).
-    DenseMap<unsigned, SmallVector<std::pair<uint64_t, StringRef>, 0>> Anchors;
+    AnchorMap Anchors;
     for (const RawSym &S : In.Syms) {
       if (S.Name.empty() || S.type() == STT_SECTION)
         continue;
@@ -381,25 +658,31 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         continue;
       Anchors[S.Shndx].push_back({S.Value, S.Name});
     }
+    sortAnchors(Anchors);
     for (const RawRela &R : In.Relas) {
       if (R.TargetSec == 0 || R.TargetSec >= In.Secs.size())
         continue;
       const RawSec &T = In.Secs[R.TargetSec];
       if (isExcludedInputSection(T, Opts))
         continue;
-      StringRef SymN =
-          R.Sym < In.Syms.size() ? In.Syms[R.Sym].Name : StringRef();
-      if (SymN.empty())
-        continue; // section-relative / unnamed target — can't key it cleanly
+      if (R.Sym >= In.Syms.size())
+        continue;
+      const RawSym &Tgt = In.Syms[R.Sym];
+      StringRef SymN = Tgt.Name;
+      // A section-relative relocation (target is an STT_SECTION symbol, so it
+      // has no name) is "section base + addend".  It is keyed by the target
+      // section, defined-in-section only, so the merged section base is known.
+      bool IsSecTarget = SymN.empty() && Tgt.type() == STT_SECTION &&
+                         Tgt.Shndx != 0 && Tgt.Shndx < In.Secs.size() &&
+                         !isExcludedInputSection(In.Secs[Tgt.Shndx], Opts);
+      if (SymN.empty() && !IsSecTarget)
+        continue; // genuinely unnameable target — can't key it cleanly
       auto AIt = Anchors.find(R.TargetSec);
       if (AIt == Anchors.end())
         continue;
       // Anchor = the defined symbol with the greatest value <= reloc offset
       // (the function/object the relocation site lives in).
-      const std::pair<uint64_t, StringRef> *Best = nullptr;
-      for (const auto &PR : AIt->second)
-        if (PR.first <= R.Offset && (!Best || PR.first >= Best->first))
-          Best = &PR;
+      const Anchor *Best = findAnchor(AIt->second, R.Offset);
       if (!Best)
         continue;
       auto OIt = OutByName.find(Best->second);
@@ -408,6 +691,18 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       uint64_t Expected =
           Out.Syms[(unsigned)OIt->second].Value + (R.Offset - Best->first);
       StringRef MergedSec = mergedSectionName(T.Name, Opts);
+      if (IsSecTarget) {
+        StringRef TgtSec = mergedSectionName(In.Secs[Tgt.Shndx].Name, Opts);
+        auto MIt = OutSecRelocs.find(
+            (MergedSec + "\x01" + TgtSec + "\x01" + Twine(R.Type)).str());
+        if (MIt == OutSecRelocs.end() || !MIt->second.count(Expected))
+          return fail(Err, "verify: section-relative relocation into '" +
+                               TgtSec + "' applied in '" + MergedSec +
+                               "' expected at merged offset 0x" +
+                               Twine::utohexstr(Expected) +
+                               " is missing (offset collapsed or mis-routed)");
+        continue;
+      }
       auto MIt = OutRelocs.find(
           (MergedSec + "\x01" + SymN + "\x01" + Twine(R.Type)).str());
       if (MIt == OutRelocs.end() || !MIt->second.count(Expected))
@@ -416,8 +711,38 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                              "' expected at merged offset 0x" +
                              Twine::utohexstr(Expected) +
                              " is missing (offset collapsed or mis-routed)");
+      // The reloc re-landed at the right offset; its addend must survive the
+      // merge verbatim too.  In -r both neverc and a real linker copy r_addend
+      // unchanged for a *named*-symbol target (only section-relative targets,
+      // which take the OutSecRelocs path above and are skipped here, ever
+      // re-base the addend), so a divergence here is a corrupted addend — a
+      // "loads fine, then reads/jumps to the wrong place" miscompile that the
+      // offset check alone cannot see.
+      if (!MIt->second.at(Expected).count(R.Addend))
+        return fail(Err, "verify: relocation against '" + SymN +
+                             "' in section '" + MergedSec +
+                             "' at merged offset 0x" +
+                             Twine::utohexstr(Expected) + " has input addend " +
+                             Twine(R.Addend) +
+                             " with no matching merged addend (addend "
+                             "corrupted)");
     }
   }
+
+  // Count half of the SHF_LINK_ORDER conservation check: every input
+  // contribution must survive into the merged section (the distinct-offset half
+  // ran before the input loop).
+  for (auto &KV : InLinkOrderRelCount) {
+    auto It = OutLinkOrderRel.find(KV.first);
+    uint64_t OutCnt = It == OutLinkOrderRel.end() ? 0 : It->second.first;
+    if (OutCnt != KV.second)
+      return fail(Err, "verify: SHF_LINK_ORDER section '" + KV.first +
+                           "' merged " + Twine(OutCnt) +
+                           " relocations but inputs contributed " +
+                           Twine(KV.second) +
+                           " (relocations dropped or duplicated)");
+  }
+
   return true;
 }
 
@@ -462,14 +787,21 @@ struct RawCOFF {
   SmallVector<RawCoffSec, 0> Secs;
   SmallVector<RawCoffSym, 0> Syms; // aux records skipped (Raw keeps the slot)
   SmallVector<RawCoffRel, 0> Rels;
+  // Raw on-disk symbol-table slot (aux records included) -> index into Syms.
+  // Built once at parse time so symNameByRaw is O(1); a relocation's target is
+  // a raw slot, and looking it up by linear scan per relocation was O(n^2)
+  // (called for every relocation over every symbol).  uint32_t key 0 is a
+  // valid DenseMap key (the reserved keys are ~0u and ~0u-1, far beyond any
+  // real symbol count), so slot 0 needs no special-casing.
+  DenseMap<uint32_t, unsigned> RawToSym;
 
   // Relocations carry a *raw* symbol-table index (aux records included), but
   // Syms drops aux entries; map back via the recorded Raw slot.
   StringRef symNameByRaw(uint32_t RawIdx) const {
-    for (const RawCoffSym &S : Syms)
-      if (S.Raw == RawIdx)
-        return S.Name;
-    return {};
+    auto It = RawToSym.find(RawIdx);
+    if (It == RawToSym.end())
+      return {};
+    return Syms[It->second].Name;
   }
 
   bool isBSS(unsigned N1) const {
@@ -554,6 +886,7 @@ bool parseRawCOFF(ArrayRef<char> Buf, RawCOFF &Out) {
       PS.Storage = (uint8_t)S[16];
       PS.Raw = k;
       uint8_t NAux = (uint8_t)S[17];
+      Out.RawToSym[k] = Out.Syms.size();
       Out.Syms.push_back(PS);
       k += 1u + NAux; // aux records occupy index slots but are not symbols
     }
@@ -595,6 +928,10 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     return fail(Err, "verify: merged output is not a parseable COFF object");
 
   StringMap<int> OutByName;
+  // Every output symbol index per name, so a duplicate-named symbol (two
+  // file-local statics that share a name) is still content-checked rather than
+  // skipped — see the ELF path for the rationale.
+  StringMap<SmallVector<int, 2>> OutByNameMulti;
   for (unsigned i = 0; i < Out.Syms.size(); ++i) {
     StringRef N = Out.Syms[i].Name;
     if (N.empty())
@@ -604,6 +941,7 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       OutByName[N] = (int)i;
     else
       It->second = -1;
+    OutByNameMulti[N].push_back((int)i);
   }
 
   // Output relocations keyed by (section name, target symbol name, type) → the
@@ -641,8 +979,47 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if (It == OutByName.end())
         return fail(Err, "verify: defined input symbol '" + S.Name +
                              "' missing from merged output");
-      if (It->second < 0)
-        continue; // ambiguous (name not unique in output)
+      if (It->second < 0) {
+        // Ambiguous name: require at least one same-named output symbol that
+        // lands in the expected (same, COFF has no rename) section with a
+        // byte-matching window.  Skips when the input window is undecidable.
+        if (In.isBSS(S.SecNum) || S.Value > InSec.RawSize)
+          continue;
+        ArrayRef<uint8_t> InData = In.secData(S.SecNum);
+        bool AnyDecidable = false, AnyMatch = false;
+        auto MIt = OutByNameMulti.find(S.Name);
+        if (MIt == OutByNameMulti.end())
+          return fail(Err, "verify: defined input symbol '" + S.Name +
+                               "' missing from merged output");
+        for (int Idx : MIt->second) {
+          const RawCoffSym &Cand = Out.Syms[(unsigned)Idx];
+          if (Cand.SecNum <= 0 || (unsigned)Cand.SecNum > Out.Secs.size())
+            continue;
+          const RawCoffSec &CSec = Out.Secs[Cand.SecNum - 1];
+          if (CSec.Name != InSec.Name || Out.isBSS(Cand.SecNum) ||
+              Cand.Value > CSec.RawSize)
+            continue;
+          ArrayRef<uint8_t> OutData = Out.secData(Cand.SecNum);
+          uint64_t Avail = std::min<uint64_t>(InSec.RawSize - S.Value,
+                                              CSec.RawSize - Cand.Value);
+          uint64_t W = std::min<uint64_t>(16, Avail);
+          if (W == 0 || S.Value + W > InData.size() ||
+              Cand.Value + W > OutData.size())
+            continue;
+          AnyDecidable = true;
+          if (memcmp(InData.data() + S.Value, OutData.data() + Cand.Value, W) ==
+              0) {
+            AnyMatch = true;
+            break;
+          }
+        }
+        if (AnyDecidable && !AnyMatch)
+          return fail(Err, "verify: duplicate-named symbol '" + S.Name +
+                               "' has no same-named merged symbol whose content "
+                               "matches the input (offset collapsed or "
+                               "mis-shifted)");
+        continue;
+      }
       const RawCoffSym &OutSym = Out.Syms[(unsigned)It->second];
       if (OutSym.SecNum <= 0 || (unsigned)OutSym.SecNum > Out.Secs.size())
         return fail(Err, "verify: symbol '" + S.Name +
@@ -676,12 +1053,56 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                              "input (offset collapsed or mis-shifted)");
     }
 
+    // Same-input-section relative-distance invariant (BSS-safe; see SecShift).
+    // COFF symbol values are section-relative, so two EXTERNAL/STATIC symbols
+    // sharing one input section must keep an identical (merged value - input
+    // value) and land in the same merged section — covering
+    // IMAGE_SCN_CNT_UNINITIALIZED_DATA (.bss) symbols the content anchor skips.
+    // COFF has no SHF_MERGE; COMDAT sections each merge alone, so their members
+    // still shift uniformly.
+    {
+      DenseMap<unsigned, SecShift> Shift;
+      for (const RawCoffSym &S : In.Syms) {
+        if (S.Name.empty() || S.SecNum <= 0 ||
+            (unsigned)S.SecNum > In.Secs.size())
+          continue;
+        if (S.Storage != IMAGE_SYM_CLASS_EXTERNAL &&
+            S.Storage != IMAGE_SYM_CLASS_STATIC)
+          continue;
+        const RawCoffSec &InSec = In.Secs[S.SecNum - 1];
+        if (S.Value > InSec.RawSize)
+          continue;
+        auto It = OutByName.find(S.Name);
+        if (It == OutByName.end() || It->second < 0)
+          continue;
+        const RawCoffSym &OutSym = Out.Syms[(unsigned)It->second];
+        if (OutSym.SecNum <= 0 || (unsigned)OutSym.SecNum > Out.Secs.size())
+          continue;
+        int64_t Delta = (int64_t)OutSym.Value - (int64_t)S.Value;
+        auto [DIt, Inserted] = Shift.try_emplace(
+            (unsigned)S.SecNum, SecShift{Delta, (unsigned)OutSym.SecNum, S.Name});
+        if (Inserted)
+          continue;
+        if (DIt->second.OutSec != (unsigned)OutSym.SecNum)
+          return fail(Err, "verify: COFF symbols '" + DIt->second.Witness +
+                               "' and '" + S.Name +
+                               "' share one input section but landed in different "
+                               "merged sections");
+        if (DIt->second.Delta != Delta)
+          return fail(Err, "verify: COFF symbols '" + DIt->second.Witness +
+                               "' and '" + S.Name +
+                               "' share one input section but shifted by different "
+                               "amounts (" + Twine(DIt->second.Delta) + " vs " +
+                               Twine(Delta) + ") — offset collapsed or mis-shifted");
+      }
+    }
+
     // Symbol-anchored relocation check (mirrors the ELF path): every reloc site
     // sits inside some defined symbol; that symbol's already-verified merged
     // value predicts where the reloc must re-land, and an output reloc for the
     // same target/type must exist there.  Catches the relocation half of an
     // offset collapse on the Windows object path.
-    DenseMap<unsigned, SmallVector<std::pair<uint64_t, StringRef>, 0>> Anchors;
+    AnchorMap Anchors;
     for (const RawCoffSym &S : In.Syms) {
       if (S.Name.empty() || S.SecNum <= 0 ||
           (unsigned)S.SecNum > In.Secs.size())
@@ -694,6 +1115,7 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         continue;
       Anchors[(unsigned)(S.SecNum - 1)].push_back({S.Value, S.Name});
     }
+    sortAnchors(Anchors);
     for (const RawCoffRel &R : In.Rels) {
       if (R.SecIdx0 >= In.Secs.size())
         continue;
@@ -703,10 +1125,7 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       auto AIt = Anchors.find(R.SecIdx0);
       if (AIt == Anchors.end())
         continue;
-      const std::pair<uint64_t, StringRef> *Best = nullptr;
-      for (const auto &PR : AIt->second)
-        if (PR.first <= R.VA && (!Best || PR.first >= Best->first))
-          Best = &PR;
+      const Anchor *Best = findAnchor(AIt->second, R.VA);
       if (!Best)
         continue;
       auto OIt = OutByName.find(Best->second);
@@ -764,6 +1183,12 @@ struct RawMacho {
   SmallVector<RawMachoSec, 0> Secs;
   SmallVector<RawMachoSym, 0> Syms;
   SmallVector<RawMachoRel, 0> Rels;
+  // LC_DYSYMTAB symbol partition (local | external-defined | undefined).
+  // Captured independently so the verifier can audit that the ranges actually
+  // describe the symbol table the merger emitted.
+  uint32_t ILocal = 0, NLocal = 0, IExtdef = 0, NExtdef = 0, IUndef = 0,
+           NUndef = 0;
+  bool HasDysymtab = false;
 
   bool isZerofill(unsigned I0) const {
     namespace MO = llvm::MachO;
@@ -781,6 +1206,21 @@ struct RawMacho {
       return {};
     return ArrayRef<uint8_t>(
         reinterpret_cast<const uint8_t *>(Buf.data()) + S.Offset, S.Size);
+  }
+  // Map a segment-relative address to the (0-based) section containing it and
+  // the offset within that section.  Returns false if no section covers it
+  // (e.g. a one-past-end or out-of-segment pointer), so the caller skips
+  // rather than guessing.
+  bool addrToSec(uint64_t Addr, unsigned &SecOut, uint64_t &OffOut) const {
+    for (unsigned i = 0; i < Secs.size(); ++i) {
+      const RawMachoSec &S = Secs[i];
+      if (S.Size != 0 && Addr >= S.Addr && Addr < S.Addr + S.Size) {
+        SecOut = i;
+        OffOut = Addr - S.Addr;
+        return true;
+      }
+    }
+    return false;
   }
   // Section-relative byte ranges that may have been rewritten in place.
   void relocSites(unsigned I0, SmallVectorImpl<std::pair<uint64_t, uint64_t>> &R)
@@ -871,6 +1311,18 @@ bool parseRawMachO(ArrayRef<char> Buf, RawMacho &Out) {
         PS.Value = NL->n_value;
         Out.Syms.push_back(PS);
       }
+    } else if (LC->cmd == MO::LC_DYSYMTAB) {
+      if (Cmd + sizeof(MO::dysymtab_command) > Buf.size())
+        return false;
+      const auto *DC =
+          reinterpret_cast<const MO::dysymtab_command *>(Buf.data() + Cmd);
+      Out.ILocal = DC->ilocalsym;
+      Out.NLocal = DC->nlocalsym;
+      Out.IExtdef = DC->iextdefsym;
+      Out.NExtdef = DC->nextdefsym;
+      Out.IUndef = DC->iundefsym;
+      Out.NUndef = DC->nundefsym;
+      Out.HasDysymtab = true;
     }
     Cmd += LC->cmdsize;
   }
@@ -912,7 +1364,48 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
   if (!parseRawMachO(Output, Out))
     return fail(Err, "verify: merged output is not a parseable Mach-O object");
 
+  // ---- Structural integrity of the merged object itself ----
+  // LC_DYSYMTAB must partition the symbol table into contiguous local |
+  // external-defined | undefined ranges, and each symbol's actual class must
+  // match the range it is declared in.  The merger sorts symbols into exactly
+  // these three groups and writes the ranges; a bug there would silently
+  // mislead every consumer about which symbols are exported vs. undefined,
+  // without ever changing a byte the content anchor inspects.  Conformant
+  // output from any linker satisfies this, so it never false-rejects.
+  if (Out.HasDysymtab) {
+    unsigned N = Out.Syms.size();
+    if (Out.ILocal != 0 || (uint64_t)Out.ILocal + Out.NLocal != Out.IExtdef ||
+        (uint64_t)Out.IExtdef + Out.NExtdef != Out.IUndef ||
+        (uint64_t)Out.IUndef + Out.NUndef != N)
+      return fail(Err, "verify: Mach-O LC_DYSYMTAB ranges do not contiguously "
+                       "partition the symbol table (local/extdef/undef "
+                       "boundaries corrupted)");
+    for (unsigned i = 0; i < N; ++i) {
+      const RawMachoSym &S = Out.Syms[i];
+      bool IsExt = (S.Type & MO::N_EXT) != 0;
+      bool IsUndef = (S.Type & MO::N_TYPE) == MO::N_UNDF;
+      if (i < Out.NLocal) {
+        if (IsExt)
+          return fail(Err, "verify: Mach-O external symbol '" + S.Name +
+                               "' sits inside the LC_DYSYMTAB local range");
+      } else if (i < Out.IUndef) {
+        if (!IsExt || IsUndef)
+          return fail(Err, "verify: Mach-O symbol '" + S.Name +
+                               "' in the external-defined range is not an "
+                               "external definition");
+      } else {
+        if (!IsExt || !IsUndef)
+          return fail(Err, "verify: Mach-O symbol '" + S.Name +
+                               "' in the undefined range is not an undefined "
+                               "external");
+      }
+    }
+  }
+
   StringMap<int> OutByName;
+  // Every output symbol index per name, so a duplicate-named symbol is still
+  // content-checked rather than skipped (see the ELF path for the rationale).
+  StringMap<SmallVector<int, 2>> OutByNameMulti;
   for (unsigned i = 0; i < Out.Syms.size(); ++i) {
     StringRef N = Out.Syms[i].Name;
     if (N.empty())
@@ -922,6 +1415,7 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       OutByName[N] = (int)i;
     else
       It->second = -1;
+    OutByNameMulti[N].push_back((int)i);
   }
 
   // Mirror the merger's __DATA,__common -> __DATA,__bss rename.
@@ -934,16 +1428,37 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
   // Output relocations keyed by (segment, section, target symbol name, type) →
   // the section-relative addresses they appear at.  Only extern relocations
   // carry a nameable target (section-relative refs and the ARM64 ADDEND pseudo
-  // reloc do not), so non-extern entries are skipped.
+  // reloc do not), so non-extern entries are skipped here.
   std::map<std::string, std::set<uint64_t>> OutRelocs;
+  // Non-extern (section-relative) relocations go through a *separate* in-place
+  // byte-fixup path in the merger (the riskiest offset arithmetic), so index
+  // them too — keyed by (applied seg/sect, target seg/sect, type) — to anchor
+  // their sites independently.  r_symbolnum is a 1-based section number for
+  // these; ARM64_RELOC_ADDEND (type 10) instead stores an addend, never a real
+  // section target on any target (x86-64 has no type 10), so it is excluded.
+  std::map<std::string, std::set<uint64_t>> OutSecRelocs;
   for (const RawMachoRel &R : Out.Rels) {
-    if (!R.Extern || R.SecIdx0 >= Out.Secs.size() || R.SymNum >= Out.Syms.size())
+    if (R.SecIdx0 >= Out.Secs.size())
       continue;
-    const RawMachoSec &Sec = Out.Secs[R.SecIdx0];
-    StringRef SymN = Out.Syms[R.SymNum].Name;
-    OutRelocs[(Sec.Seg + "\x01" + Sec.Sect + "\x01" + SymN + "\x01" +
-               Twine(R.Type))
-                  .str()]
+    if (R.Extern) {
+      if (R.SymNum >= Out.Syms.size())
+        continue;
+      const RawMachoSec &Sec = Out.Secs[R.SecIdx0];
+      StringRef SymN = Out.Syms[R.SymNum].Name;
+      OutRelocs[(Sec.Seg + "\x01" + Sec.Sect + "\x01" + SymN + "\x01" +
+                 Twine(R.Type))
+                    .str()]
+          .insert(R.Address);
+      continue;
+    }
+    if (R.Type == MO::ARM64_RELOC_ADDEND || R.SymNum == 0 ||
+        R.SymNum > Out.Secs.size())
+      continue;
+    const RawMachoSec &App = Out.Secs[R.SecIdx0];
+    const RawMachoSec &Tgt = Out.Secs[R.SymNum - 1];
+    OutSecRelocs[(App.Seg + "\x01" + App.Sect + "\x01" + Tgt.Seg + "\x01" +
+                  Tgt.Sect + "\x01" + Twine(R.Type))
+                     .str()]
         .insert(R.Address);
   }
 
@@ -974,8 +1489,72 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if (It == OutByName.end())
         return fail(Err, "verify: defined input symbol '" + S.Name +
                              "' missing from merged output");
-      if (It->second < 0)
-        continue; // ambiguous
+      if (It->second < 0) {
+        // Ambiguous name: require at least one same-named output symbol that
+        // lands in the expected (segment,section) with a byte-matching window,
+        // skipping windows that overlap an output relocation site (rewritten in
+        // place) and any undecidable (zerofill / off-disk) candidate.
+        if (In.isZerofill(InIdx) || InRel > InSec.Size)
+          continue;
+        ArrayRef<uint8_t> InData = In.secData(InIdx);
+        StringRef WantSect = expectedSect(InSec.Seg, InSec.Sect);
+        bool AnyDecidable = false, AnyMatch = false, AnySkippedForReloc = false;
+        auto MIt = OutByNameMulti.find(S.Name);
+        if (MIt == OutByNameMulti.end())
+          return fail(Err, "verify: defined input symbol '" + S.Name +
+                               "' missing from merged output");
+        for (int Idx : MIt->second) {
+          const RawMachoSym &Cand = Out.Syms[(unsigned)Idx];
+          if ((Cand.Type & MO::N_TYPE) != MO::N_SECT || Cand.Sect == 0 ||
+              Cand.Sect > Out.Secs.size())
+            continue;
+          const RawMachoSec &CSec = Out.Secs[Cand.Sect - 1];
+          if (CSec.Seg != InSec.Seg || CSec.Sect != WantSect ||
+              Out.isZerofill(Cand.Sect - 1) || Cand.Value < CSec.Addr)
+            continue;
+          uint64_t COff = Cand.Value - CSec.Addr;
+          if (COff > CSec.Size)
+            continue;
+          ArrayRef<uint8_t> OutData = Out.secData(Cand.Sect - 1);
+          uint64_t Avail =
+              std::min<uint64_t>(InSec.Size - InRel, CSec.Size - COff);
+          uint64_t W = std::min<uint64_t>(16, Avail);
+          if (W == 0 || InRel + W > InData.size() || COff + W > OutData.size())
+            continue;
+          SmallVector<std::pair<uint64_t, uint64_t>, 8> Sites;
+          Out.relocSites(Cand.Sect - 1, Sites);
+          bool Overlaps = false;
+          for (auto &Site : Sites)
+            if (Site.first < COff + W && COff < Site.first + Site.second) {
+              Overlaps = true;
+              break;
+            }
+          if (Overlaps) {
+            // This positionally-plausible home was rewritten in place, so its
+            // bytes legitimately differ from the input — undecidable from this
+            // candidate.  Record it: when *no* candidate matched but a plausible
+            // one was reloc-skipped, the real home may be exactly that skipped
+            // copy, so the whole symbol is undecidable rather than a collapse.
+            // Without this, a duplicate local label (Mach-O 'ltmp0' at every
+            // __text start) whose true copy begins with a relocated instruction
+            // would false-reject a *correct* merge — the merger would then
+            // refuse it and spuriously fall back to serial codegen.
+            AnySkippedForReloc = true;
+            continue;
+          }
+          AnyDecidable = true;
+          if (memcmp(InData.data() + InRel, OutData.data() + COff, W) == 0) {
+            AnyMatch = true;
+            break;
+          }
+        }
+        if (AnyDecidable && !AnyMatch && !AnySkippedForReloc)
+          return fail(Err, "verify: duplicate-named symbol '" + S.Name +
+                               "' has no same-named merged symbol whose content "
+                               "matches the input (offset collapsed or "
+                               "mis-shifted)");
+        continue;
+      }
       const RawMachoSym &OutSym = Out.Syms[(unsigned)It->second];
       if ((OutSym.Type & MO::N_TYPE) != MO::N_SECT || OutSym.Sect == 0 ||
           OutSym.Sect > Out.Secs.size())
@@ -1028,10 +1607,66 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                              "input (offset collapsed or mis-shifted)");
     }
 
+    // Same-input-section relative-distance invariant (zerofill-safe; see
+    // SecShift).  n_value is segment-relative; subtract each section's base to
+    // get section-relative offsets.  Two symbols sharing one input section must
+    // keep an identical (merged offset - input offset) and land in the same
+    // merged section — covering S_ZEROFILL (__bss) symbols the content anchor
+    // skips.  Literal sections (cstring / N-byte / pointer literals) are
+    // excluded: a real -r linker may coalesce their members non-uniformly.
+    {
+      DenseMap<unsigned, SecShift> Shift;
+      for (const RawMachoSym &S : In.Syms) {
+        if (S.Name.empty() || (S.Type & MO::N_STAB))
+          continue;
+        if ((S.Type & MO::N_TYPE) != MO::N_SECT || S.Sect == 0 ||
+            S.Sect > In.Secs.size())
+          continue;
+        const RawMachoSec &InSec = In.Secs[S.Sect - 1];
+        uint32_t InT = InSec.Flags & MO::SECTION_TYPE;
+        if (InT == MO::S_CSTRING_LITERALS || InT == MO::S_4BYTE_LITERALS ||
+            InT == MO::S_8BYTE_LITERALS || InT == MO::S_16BYTE_LITERALS ||
+            InT == MO::S_LITERAL_POINTERS)
+          continue;
+        if (S.Value < InSec.Addr)
+          continue;
+        uint64_t InRel = S.Value - InSec.Addr;
+        if (InRel > InSec.Size)
+          continue;
+        auto It = OutByName.find(S.Name);
+        if (It == OutByName.end() || It->second < 0)
+          continue;
+        const RawMachoSym &OutSym = Out.Syms[(unsigned)It->second];
+        if ((OutSym.Type & MO::N_TYPE) != MO::N_SECT || OutSym.Sect == 0 ||
+            OutSym.Sect > Out.Secs.size())
+          continue;
+        const RawMachoSec &OutSec = Out.Secs[OutSym.Sect - 1];
+        if (OutSym.Value < OutSec.Addr)
+          continue;
+        uint64_t OutRel = OutSym.Value - OutSec.Addr;
+        int64_t Delta = (int64_t)OutRel - (int64_t)InRel;
+        auto [DIt, Inserted] = Shift.try_emplace(
+            (unsigned)S.Sect, SecShift{Delta, (unsigned)OutSym.Sect, S.Name});
+        if (Inserted)
+          continue;
+        if (DIt->second.OutSec != (unsigned)OutSym.Sect)
+          return fail(Err, "verify: Mach-O symbols '" + DIt->second.Witness +
+                               "' and '" + S.Name +
+                               "' share one input section but landed in different "
+                               "merged sections");
+        if (DIt->second.Delta != Delta)
+          return fail(Err, "verify: Mach-O symbols '" + DIt->second.Witness +
+                               "' and '" + S.Name +
+                               "' share one input section but shifted by different "
+                               "amounts (" + Twine(DIt->second.Delta) + " vs " +
+                               Twine(Delta) + ") — offset collapsed or mis-shifted");
+      }
+    }
+
     // Symbol-anchored relocation check (extern relocations only).  n_value is
     // segment-relative, so subtract the section base to work in section-
     // relative offsets, matching the merged reloc r_address.
-    DenseMap<unsigned, SmallVector<std::pair<uint64_t, StringRef>, 0>> Anchors;
+    AnchorMap Anchors;
     for (const RawMachoSym &S : In.Syms) {
       if (S.Name.empty() || (S.Type & MO::N_STAB))
         continue;
@@ -1046,6 +1681,7 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         continue;
       Anchors[(unsigned)(S.Sect - 1)].push_back({S.Value - Sec.Addr, S.Name});
     }
+    sortAnchors(Anchors);
     for (const RawMachoRel &R : In.Rels) {
       if (!R.Extern || R.SecIdx0 >= In.Secs.size() ||
           R.SymNum >= In.Syms.size())
@@ -1056,10 +1692,7 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       auto AIt = Anchors.find(R.SecIdx0);
       if (AIt == Anchors.end())
         continue;
-      const std::pair<uint64_t, StringRef> *Best = nullptr;
-      for (const auto &PR : AIt->second)
-        if (PR.first <= R.Address && (!Best || PR.first >= Best->first))
-          Best = &PR;
+      const Anchor *Best = findAnchor(AIt->second, R.Address);
       if (!Best)
         continue;
       auto OIt = OutByName.find(Best->second);
@@ -1084,6 +1717,113 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                              ") expected at merged offset 0x" +
                              Twine::utohexstr(Expected) +
                              " is missing (offset collapsed or mis-routed)");
+    }
+
+    // Section-relative (non-extern) relocation site check.  These targets are
+    // 1-based section numbers, not symbols, and are rewritten in place by the
+    // merger; anchor the site the same way and confirm an output non-extern
+    // reloc into the same merged target section re-lands at the predicted spot.
+    for (const RawMachoRel &R : In.Rels) {
+      if (R.Extern || R.SecIdx0 >= In.Secs.size())
+        continue;
+      if (R.Type == MO::ARM64_RELOC_ADDEND || R.SymNum == 0 ||
+          R.SymNum > In.Secs.size())
+        continue;
+      auto AIt = Anchors.find(R.SecIdx0);
+      if (AIt == Anchors.end())
+        continue;
+      const Anchor *Best = findAnchor(AIt->second, R.Address);
+      if (!Best)
+        continue;
+      auto OIt = OutByName.find(Best->second);
+      if (OIt == OutByName.end() || OIt->second < 0)
+        continue;
+      const RawMachoSym &OutAnchor = Out.Syms[(unsigned)OIt->second];
+      if (OutAnchor.Sect == 0 || OutAnchor.Sect > Out.Secs.size())
+        continue;
+      const RawMachoSec &OutAnchorSec = Out.Secs[OutAnchor.Sect - 1];
+      if (OutAnchor.Value < OutAnchorSec.Addr)
+        continue;
+      uint64_t Expected =
+          (OutAnchor.Value - OutAnchorSec.Addr) + (R.Address - Best->first);
+      const RawMachoSec &InApp = In.Secs[R.SecIdx0];
+      const RawMachoSec &InTgt = In.Secs[R.SymNum - 1];
+      StringRef AppSect = expectedSect(InApp.Seg, InApp.Sect);
+      StringRef TgtSect = expectedSect(InTgt.Seg, InTgt.Sect);
+      auto MIt = OutSecRelocs.find((InApp.Seg + "\x01" + AppSect + "\x01" +
+                                    InTgt.Seg + "\x01" + TgtSect + "\x01" +
+                                    Twine(R.Type))
+                                       .str());
+      if (MIt == OutSecRelocs.end() || !MIt->second.count(Expected))
+        return fail(Err, "verify: Mach-O section-relative relocation into (" +
+                             InTgt.Seg + "," + TgtSect +
+                             ") expected at merged offset 0x" +
+                             Twine::utohexstr(Expected) +
+                             " is missing (offset collapsed or mis-routed)");
+
+      // Value check for absolute 64-bit pointers (UNSIGNED == 0 on both ARM64
+      // and x86-64, length 8, non-pcrel): the merger rewrites these bytes *in
+      // place* via a delta — its riskiest arithmetic, and the only thing the
+      // site check above does NOT exercise.  Confirm the rewritten pointer
+      // still references the same logical bytes the input pointer did: read the
+      // raw pointer at the input and output sites, map both back to a section,
+      // and content-compare the target windows.  All ambiguity (zerofill,
+      // out-of-section pointer, reloc-overlapped window, bytes off disk) is
+      // skipped rather than guessed, so this only ever fails on a real
+      // divergence — and on the parallel-codegen path a false reject merely
+      // falls back to serial codegen, never a wrong object.
+      if (R.Type == 0 /* *_RELOC_UNSIGNED */ && !R.Pcrel && R.SecIdx0 < In.Secs.size()) {
+        ArrayRef<uint8_t> InApplData = In.secData(R.SecIdx0);
+        ArrayRef<uint8_t> OutApplData = Out.secData(OutAnchor.Sect - 1);
+        if (R.Address + 8 <= InApplData.size() &&
+            Expected + 8 <= OutApplData.size()) {
+          uint64_t Vin, Vout;
+          memcpy(&Vin, InApplData.data() + R.Address, 8);
+          memcpy(&Vout, OutApplData.data() + Expected, 8);
+          unsigned ISec, OSec;
+          uint64_t IOff, OOff;
+          if (In.addrToSec(Vin, ISec, IOff) && Out.addrToSec(Vout, OSec, OOff) &&
+              !In.isZerofill(ISec) && !Out.isZerofill(OSec)) {
+            // The rewritten pointer must land in the merged version of the
+            // section the input pointer pointed into.
+            StringRef WantSc = expectedSect(In.Secs[ISec].Seg, In.Secs[ISec].Sect);
+            if (Out.Secs[OSec].Seg != In.Secs[ISec].Seg ||
+                Out.Secs[OSec].Sect != WantSc)
+              return fail(Err,
+                          "verify: Mach-O in-place pointer in (" + InApp.Seg +
+                              "," + AppSect + ") at 0x" +
+                              Twine::utohexstr(Expected) +
+                              " was rewritten to point into (" +
+                              Out.Secs[OSec].Seg + "," + Out.Secs[OSec].Sect +
+                              ") instead of (" + In.Secs[ISec].Seg + "," +
+                              WantSc + ") (in-place fixup mis-targeted)");
+            ArrayRef<uint8_t> ITgt = In.secData(ISec);
+            ArrayRef<uint8_t> OTgt = Out.secData(OSec);
+            uint64_t Avail = std::min<uint64_t>(ITgt.size() - IOff,
+                                                OTgt.size() - OOff);
+            uint64_t W = std::min<uint64_t>(16, Avail);
+            // Skip if the compared window overlaps a relocation site in the
+            // output target (those bytes are themselves rewritten in place).
+            SmallVector<std::pair<uint64_t, uint64_t>, 8> TgtSites;
+            Out.relocSites(OSec, TgtSites);
+            bool Overlaps = false;
+            for (auto &S : TgtSites)
+              if (S.first < OOff + W && OOff < S.first + S.second) {
+                Overlaps = true;
+                break;
+              }
+            if (!Overlaps && W > 0 && IOff + W <= ITgt.size() &&
+                OOff + W <= OTgt.size() &&
+                memcmp(ITgt.data() + IOff, OTgt.data() + OOff, W) != 0)
+              return fail(Err,
+                          "verify: Mach-O in-place pointer at 0x" +
+                              Twine::utohexstr(Expected) + " in (" + InApp.Seg +
+                              "," + AppSect +
+                              ") references different content after merge "
+                              "(in-place fixup delta is wrong)");
+          }
+        }
+      }
     }
   }
   return true;

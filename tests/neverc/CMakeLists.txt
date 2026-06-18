@@ -77,6 +77,17 @@ target_include_directories(neverc-merge-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
 
+# NEVERC_BINARY lets the differential suite spawn the bundled compiler+linker
+# to produce real objects and an independent LLD `-r` merge to cross-check the
+# in-process merger against.  Tests that need it GTEST_SKIP when it is absent.
+target_compile_definitions(neverc-merge-tests PRIVATE
+  NEVERC_BINARY="$<TARGET_FILE:neverc>"
+)
+
+if(TARGET neverc)
+  add_dependencies(neverc-merge-tests neverc)
+endif()
+
 target_compile_features(neverc-merge-tests PRIVATE cxx_std_17)
 
 gtest_discover_tests(neverc-merge-tests

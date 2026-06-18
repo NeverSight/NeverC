@@ -195,8 +195,14 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           PartOffset = MS.Data.size();
         }
         auto ContentsOrErr = Sec.getContents();
-        if (ContentsOrErr)
-          MS.Data.append(ContentsOrErr->begin(), ContentsOrErr->end());
+        if (!ContentsOrErr) {
+          // PartOffset is already committed; skipping the bytes would shift
+          // every later section and mis-place this section's symbols.  Refuse
+          // rather than emit a corrupted object.
+          consumeError(ContentsOrErr.takeError());
+          return false;
+        }
+        MS.Data.append(ContentsOrErr->begin(), ContentsOrErr->end());
       }
 
       PM.SecMap[PartSecOrdinal] = MIdx + 1;
@@ -359,6 +365,16 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
   }
 
+  // coff_file_header::NumberOfSections is a 16-bit field; more sections than
+  // it can hold would silently truncate and produce a corrupt object.  Refuse
+  // instead so the caller falls back (mirrors the ELF e_shnum guard).  Only
+  // reachable on a single object of >65535 per-function/-data sections.
+  if (MergedSections.size() > 0xFFFF) {
+    errs() << "neverc: COFF merge produced " << MergedSections.size()
+           << " sections, exceeding the 16-bit NumberOfSections limit; "
+              "refusing to emit a truncated object\n";
+    return false;
+  }
   uint32_t NumSections = MergedSections.size();
   uint32_t HeaderSize = sizeof(coff_file_header);
   uint32_t SectionHeadersSize = NumSections * sizeof(coff_section);

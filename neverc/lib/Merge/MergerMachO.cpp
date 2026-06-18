@@ -215,8 +215,14 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         MS.Data.resize(MS.Data.size() + Padding, 0);
         PartOffset = MS.Data.size();
         auto ContentsOrErr = Sec.getContents();
-        if (ContentsOrErr)
-          MS.Data.append(ContentsOrErr->begin(), ContentsOrErr->end());
+        if (!ContentsOrErr) {
+          // PartOffset is already committed; skipping the bytes would shift
+          // every later section and mis-place this section's symbols.  Refuse
+          // rather than emit a corrupted object.
+          consumeError(ContentsOrErr.takeError());
+          return false;
+        }
+        MS.Data.append(ContentsOrErr->begin(), ContentsOrErr->end());
       }
 
       PM.SecMap[PartSecOrdinal] = MIdx + 1;

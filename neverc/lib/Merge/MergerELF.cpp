@@ -138,6 +138,18 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     SmallVector<char, 0> Data;
     SmallVector<RelocEntry, 0> Relocs;
     uint64_t VirtualSize = 0;
+    // SHF_LINK_ORDER bookkeeping.  Such a section (e.g. ftrace's
+    // __patchable_function_entries, sh_link → its code section) requires a
+    // valid sh_link in the output.  After -r merge every same-named input
+    // collapses into one output section, so we record the *canonical* name of
+    // each contributor's sh_link target and, after layout, remap sh_link to the
+    // merged target section.  A single sh_link cannot name two targets, so when
+    // contributors disagree (e.g. per-function .text.foo/.text.bar that are
+    // NOT folded because mergeSections is off) we refuse rather than emit a
+    // section whose ordering/dependency points at only one of them.
+    bool HasLinkOrder = false;
+    bool LinkTargetConsistent = true;
+    std::string LinkTargetName;
   };
   SmallVector<MergedSection, 32> MergedSections;
   StringMap<SmallVector<unsigned, 2>> SectionIndex;
@@ -250,30 +262,49 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     // metadata that don't survive -r.
     for (unsigned i = 1; i < Secs.size(); ++i) {
       const Shdr &S = Secs[i];
+      // A COMDAT/section group (SHT_GROUP) implies dedup semantics this pure-C
+      // -r merge does not implement.  Pure C post-LTO never emits one, so its
+      // presence means an upstream assumption is violated; refuse rather than
+      // silently drop the group and risk merging members that should have been
+      // deduplicated into a single copy.
+      if (S.sh_type == SHT_GROUP) {
+        errs() << "neverc: relocatable merge does not support SHT_GROUP "
+                  "(COMDAT) sections; refusing to merge\n";
+        return false;
+      }
       if (S.sh_type == SHT_SYMTAB || S.sh_type == SHT_STRTAB ||
           S.sh_type == SHT_RELA || S.sh_type == SHT_REL ||
-          S.sh_type == SHT_GROUP || S.sh_type == SHT_LLVM_ADDRSIG ||
+          S.sh_type == SHT_LLVM_ADDRSIG ||
           S.sh_type == SHT_LLVM_CALL_GRAPH_PROFILE)
         continue;
 
       auto NameOrErr = EF.getSectionName(S);
       StringRef SecName = NameOrErr ? *NameOrErr : "";
 
-      if (Opts.mergeSections && !SecName.empty()) {
-        bool preserved = false;
-        for (StringRef ps : Opts.preservedSections)
-          if (SecName == ps) { preserved = true; break; }
-        if (!preserved) {
-          if (SecName.starts_with(".text."))
-            SecName = ".text";
-          else if (SecName.starts_with(".bss."))
-            SecName = ".bss";
-          else if (SecName.starts_with(".data."))
-            SecName = ".data";
-          else if (SecName.starts_with(".rodata."))
-            SecName = ".rodata";
+      // SHF_LINK_ORDER sections (e.g. __patchable_function_entries emitted by
+      // -fpatchable-function-entry for ftrace) carry an sh_link to an
+      // associated code section.  The link target's *canonical* name is read
+      // here, before SecName itself is canonicalized, and remapped to the
+      // merged target section after layout (see the LinkTargetName handling
+      // below and the sh_link remap pass before output).  Folding several such
+      // inputs whose targets canonicalize to one section (the ftrace .ko case:
+      // every .text.foo → .text) is correct; contributors that disagree are
+      // refused at output time because one sh_link cannot name two targets.
+      StringRef LinkTargetName;
+      if (S.sh_flags & SHF_LINK_ORDER) {
+        if (S.sh_link != 0 && S.sh_link < Secs.size()) {
+          if (auto LN = EF.getSectionName(Secs[S.sh_link]))
+            LinkTargetName = detail::canonicalELFSectionName(
+                *LN, Opts.mergeSections, Opts.preservedSections);
+          else
+            consumeError(LN.takeError());
         }
       }
+
+      // Canonicalize per-symbol sections (.text.foo -> .text, ...) via the
+      // single shared helper the verifier also uses, so the two never drift.
+      SecName = detail::canonicalELFSectionName(SecName, Opts.mergeSections,
+                                                Opts.preservedSections);
 
       if (Opts.dropDebugInfo &&
           (SecName.starts_with(".debug_") || SecName == ".debug" ||
@@ -292,6 +323,18 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       unsigned MIdx = findOrCreateSection(SecName, SCopy);
       auto &MS = MergedSections[MIdx];
 
+      // Record each SHF_LINK_ORDER contributor's (canonical) link target.  All
+      // contributors to one merged section must agree, or a single output
+      // sh_link cannot represent them; the disagreement is caught at output.
+      if (S.sh_flags & SHF_LINK_ORDER) {
+        if (!MS.HasLinkOrder) {
+          MS.HasLinkOrder = true;
+          MS.LinkTargetName = LinkTargetName.str();
+        } else if (MS.LinkTargetName != LinkTargetName) {
+          MS.LinkTargetConsistent = false;
+        }
+      }
+
       // Track max alignment (LLD: OutputSection::commitSection).
       {
         uint64_t SafeAlign = clampAlign(S.sh_addralign);
@@ -308,26 +351,48 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       uint64_t Align = MS.Template.sh_addralign;
       uint64_t PartOffset;
-      if (S.sh_type == SHT_NOBITS) {
+      // Lay out by the *merged* section's type, not this input's.  Once any
+      // PROGBITS-compatible input joins a NOBITS group the whole output section
+      // is promoted to PROGBITS (above), and every NOBITS contribution must
+      // then be materialized as zero bytes so all partitions measure their
+      // offset against one continuous byte stream.  Keying off the input type
+      // instead let a NOBITS run and a PROGBITS run both restart at offset 0 —
+      // aliasing their symbols and dropping the NOBITS reserve from the output.
+      if (MS.Template.sh_type == SHT_NOBITS) {
+        // Pure NOBITS so far (this input is NOBITS too): no on-disk bytes.
         PartOffset = MS.VirtualSize;
-        if (Align > 1) {
-          uint64_t Padding = (Align - (PartOffset % Align)) % Align;
-          PartOffset += Padding;
-        }
+        if (Align > 1)
+          PartOffset += (Align - (PartOffset % Align)) % Align;
         MS.VirtualSize = PartOffset + S.sh_size;
       } else {
+        // Merged section is (or just became) PROGBITS.  Materialize any
+        // NOBITS-only space accumulated before the promotion as zero bytes so
+        // the running offset stays continuous across the type change.
+        if (MS.Data.size() < MS.VirtualSize)
+          MS.Data.resize(MS.VirtualSize, 0);
         PartOffset = MS.Data.size();
         if (Align > 1) {
           uint64_t Padding = (Align - (PartOffset % Align)) % Align;
           MS.Data.resize(MS.Data.size() + Padding, 0);
           PartOffset = MS.Data.size();
         }
-        auto D = EF.getSectionContents(S);
-        if (D) {
-          MS.Data.append(D->begin(), D->end());
+        if (S.sh_type == SHT_NOBITS) {
+          // A NOBITS input folded into a PROGBITS output occupies real zero
+          // bytes (it can no longer ride the pure-virtual-size path).
+          MS.Data.resize(MS.Data.size() + S.sh_size, 0);
         } else {
-          consumeError(D.takeError());
+          auto D = EF.getSectionContents(S);
+          if (!D) {
+            // We have already committed this input's PartOffset.  Silently
+            // skipping its bytes would shift every later section and alias this
+            // section's symbols onto the next one's data — the same class of
+            // wrong-address corruption as a collapsed offset.  Refuse instead.
+            consumeError(D.takeError());
+            return false;
+          }
+          MS.Data.append(D->begin(), D->end());
         }
+        MS.VirtualSize = MS.Data.size();
       }
 
       PM.SecMap[i] = MIdx + 1;
@@ -420,8 +485,11 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       if (Secs[i].sh_type == SHT_RELA) {
         auto R = EF.relas(Secs[i]);
         if (!R) {
+          // Silently dropping a relocation section would leave its
+          // cross-references unrelocated in the output — a miscompile that
+          // loads fine and then reads/jumps to the wrong place.  Refuse.
           consumeError(R.takeError());
-          continue;
+          return false;
         }
         for (const Rela &Re : *R) {
           Rela Adjusted = Re;
@@ -429,19 +497,16 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           MergedSections[targetMIdx].Relocs.push_back({Adjusted, p});
         }
       } else {
-        using Rel = typename ELFT::Rel;
-        auto R = EF.rels(Secs[i]);
-        if (!R) {
-          consumeError(R.takeError());
-          continue;
-        }
-        for (const Rel &Re : *R) {
-          Rela Adjusted;
-          Adjusted.r_offset = Re.r_offset + dataOff;
-          Adjusted.setSymbolAndType(Re.getSymbol(), Re.getType());
-          Adjusted.r_addend = 0;
-          MergedSections[targetMIdx].Relocs.push_back({Adjusted, p});
-        }
+        // SHT_REL (implicit-addend form).  A faithful REL->RELA conversion must
+        // recover each relocation's implicit addend from the bytes it applies
+        // to — architecture- and type-specific arithmetic.  The 64-bit ELF
+        // targets neverc emits all use RELA, so this branch is unreachable in
+        // practice; the prior code set r_addend=0, which silently dropped any
+        // non-zero implicit addend, and the verifier checks reloc *offsets*,
+        // not addend values, so it could not catch the resulting wrong value.
+        // Refuse the merge instead so a hypothetical REL input falls back to
+        // the proven path (serial codegen) or errors loudly, never miscompiles.
+        return false;
       }
     }
   }
@@ -546,6 +611,32 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     OutSections.push_back(std::move(Out));
   }
 
+  // Remap SHF_LINK_ORDER sh_link to the merged target section now that every
+  // content section exists.  Output section index == merged section index + 1
+  // (slot 0 is the null section).  A consistent, present target yields a valid
+  // sh_link (the very invariant verifyMerge audits); anything else is refused
+  // so the caller falls back rather than emitting a section whose ordering
+  // dependency is dropped or points at the wrong code.
+  for (unsigned m = 0; m < MergedSections.size(); ++m) {
+    const auto &MS = MergedSections[m];
+    if (!MS.HasLinkOrder)
+      continue;
+    if (!MS.LinkTargetConsistent) {
+      errs() << "neverc: relocatable merge: SHF_LINK_ORDER section '" << MS.Name
+             << "' has contributors with differing link targets; refusing\n";
+      return false;
+    }
+    auto It = SectionIndex.find(MS.LinkTargetName);
+    if (MS.LinkTargetName.empty() || It == SectionIndex.end() ||
+        It->second.empty()) {
+      errs() << "neverc: relocatable merge: SHF_LINK_ORDER section '" << MS.Name
+             << "' link target '" << MS.LinkTargetName
+             << "' is absent from the merged output; refusing\n";
+      return false;
+    }
+    OutSections[m + 1].Hdr.sh_link = It->second.front() + 1;
+  }
+
   unsigned SymTabIdx = OutSections.size();
   {
     OutSection S;
@@ -605,6 +696,22 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     S.Hdr.sh_name = nameOff;
     S.Data.assign(ShStrTab.Data.begin(), ShStrTab.Data.end());
     OutSections.push_back(std::move(S));
+  }
+
+  // e_shnum is a 16-bit field; a section count >= SHN_LORESERVE requires the
+  // SHN_XINDEX escape (e_shnum=0, real count in section[0].sh_size) which this
+  // -r merge does not emit.  Writing the count straight into the 16-bit field
+  // would silently truncate and produce a corrupt object — the same
+  // valid-looking-but-wrong failure class the verifier exists to stop, but at a
+  // layer the verifier (which trusts the parsed header) cannot see.  Refuse
+  // instead so the caller falls back to serial codegen / a real linker.  Only
+  // reachable on a single link of tens of thousands of per-function sections
+  // (FunctionSections); the kernel-module mergeSections path folds to a handful.
+  if (OutSections.size() >= ELF::SHN_LORESERVE) {
+    errs() << "neverc: relocatable merge produced " << OutSections.size()
+           << " sections, exceeding the ELF e_shnum limit ("
+           << ELF::SHN_LORESERVE << "); refusing to emit a truncated object\n";
+    return false;
   }
 
   // ----- Layout -----

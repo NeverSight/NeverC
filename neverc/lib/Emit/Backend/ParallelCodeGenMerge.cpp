@@ -21,6 +21,7 @@
 #include "llvm/Support/xxhash.h"
 
 #include <atomic>
+#include <cstdlib>
 #include <mutex>
 #include <thread>
 
@@ -220,6 +221,29 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
     if (auto *F = dyn_cast<Function>(IF.getResolver()->stripPointerCasts()))
       PinnedToP0.insert(F->getName());
 
+  // A `blockaddress(@F, %BB)` is only valid in the module that holds @F's
+  // body: if @F becomes a declaration, LLVM rewrites every blockaddress into
+  // it to the sentinel `inttoptr(i32 1)`.  Computed-goto interpreters (Lua's
+  // luaV_execute, CPython's ceval, QEMU TCG, ...) keep these block addresses in
+  // a `static const void *disptab[]` dispatch table.  Global initializers all
+  // live in partition 0, so if @F's body is binned into any other partition,
+  // partition 0's copy of the table collapses to all-`1` and the program jumps
+  // to address 1 at runtime (a silent miscompile the object merge/self-verify
+  // cannot catch — the partition object is already wrong before it is merged).
+  // Pin every function whose blocks have their address taken to partition 0 so
+  // its body stays co-located with the dispatch table that references it.  In
+  // valid C a label address never crosses a function boundary, so this is the
+  // only co-location the split must enforce for correctness.
+  for (Function &F : Mod) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F)
+      if (BB.hasAddressTaken()) {
+        PinnedToP0.insert(F.getName());
+        break;
+      }
+  }
+
   // Stable assignment: bin by function-name hash instead of greedy
   // weight balancing.  Greedy reshuffles every partition whenever one
   // function's weight changes, which would zero the per-partition object
@@ -395,14 +419,19 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
 }
 
 bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
+  bool Dbg = ::getenv("NEVERC_PCG_DEBUG") != nullptr;
   bool AllOK = true;
   for (unsigned i = 0; i < NumPartitions; ++i)
     if (!Results[i].Success) {
       AllOK = false;
-      break;
+      if (Dbg)
+        errs() << "[pcg] partition " << i << " did not succeed\n";
     }
 
   if (!AllOK) {
+    if (Dbg)
+      errs() << "[pcg] FALLBACK: not all " << NumPartitions
+             << " partitions succeeded\n";
     restoreLinkage(Mod);
     return false;
   }
@@ -413,6 +442,9 @@ bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
       NonEmpty++;
       SingleIdx = i;
     }
+  if (Dbg)
+    errs() << "[pcg] all " << NumPartitions << " partitions ok, NonEmpty="
+           << NonEmpty << "\n";
   if (NonEmpty == 1) {
     // Exactly one partition produced an object — it is already a complete,
     // self-contained .o (no cross-partition references to stitch), so emit it
@@ -443,9 +475,13 @@ bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
   // ".__pcg" globals — the exact silent symbol-table corruption the merge
   // verifier exists to refuse.  Mirrors the !AllOK restore above.
   if (!mergePartitionObjects(TT, Bufs, OS)) {
+    if (Dbg)
+      errs() << "[pcg] FALLBACK: mergePartitionObjects failed\n";
     restoreLinkage(Mod);
     return false;
   }
+  if (Dbg)
+    errs() << "[pcg] SUCCESS: merged " << NonEmpty << " partition objects\n";
   return true;
 }
 
@@ -542,13 +578,21 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
     return false;
 
   ParallelCGContext Ctx;
-  if (!Ctx.init(Mod, TM))
+  if (!Ctx.init(Mod, TM)) {
+    if (::getenv("NEVERC_PCG_DEBUG"))
+      errs() << "[pcg] p-opt declined (FuncCount=" << Ctx.FuncCount
+             << " TotalWeight=" << Ctx.TotalWeight << ")\n";
     return false;
+  }
   Ctx.Cache = Cache;
   Ctx.PipeTag = "p-opt";
 
   if (!Ctx.resolvePartitions(/*WeightDiv=*/12000, /*MaxParts=*/16))
     return false;
+  if (::getenv("NEVERC_PCG_DEBUG"))
+    errs() << "[pcg] p-opt engaged: FuncCount=" << Ctx.FuncCount
+           << " TotalWeight=" << Ctx.TotalWeight
+           << " NumPartitions=" << Ctx.NumPartitions << "\n";
 
   Ctx.externalizeAndSerialize(Mod);
   StringRef BCRef(Ctx.FullBC.data(), Ctx.FullBC.size());
