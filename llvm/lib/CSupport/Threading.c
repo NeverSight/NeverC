@@ -380,13 +380,135 @@ int csupport_get_physical_cores(void) {
   return num_cores;
 }
 
-#else /* no pthread */
+#elif defined(_WIN32)
+
+/* Real Win32 threads.
+ *
+ * Windows has no <pthread.h> (config-ix.cmake forces HAVE_PTHREAD_H to 0 for
+ * every non-Apple/Linux target), yet LLVM_ENABLE_THREADS stays 1 on Windows, so
+ * llvm::thread (Support/thread.h) instantiates its *real* native-handle class
+ * and routes every spawn through csupport_thread_execute.  The old no-pthread
+ * fallback ran the routine synchronously and returned 0; thread.h reads a 0
+ * handle as "the thread never started" and therefore SKIPS Callee.release(),
+ * while the routine had already taken ownership of (and deleted) the
+ * heap-allocated callee tuple -- a guaranteed double free on every llvm::thread
+ * construction.  It corrupts the allocator's free list and resurfaces later as
+ * an access violation in the next allocation-heavy pass (e.g. MemorySSA inside a
+ * parallel LTO codegen worker: the symptom the user hit on Windows CI).
+ *
+ * Backing the layer with a genuine OS thread that returns a real, non-zero
+ * HANDLE both eliminates the double free and restores actual parallelism on
+ * Windows for every llvm::thread user -- bringing Windows to parity with the
+ * Linux/macOS pthread path, which runs this identical code green.
+ *
+ * Use _beginthreadex (not CreateThread): it initializes the per-thread CRT
+ * state the C/C++ runtime and the optimization pipeline rely on, exactly like
+ * the std::thread these pools used before this layer was introduced. */
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <process.h>
+#include <windows.h>
+
+static void report_win_fatal(const char *msg) {
+  fprintf(stderr, "LLVM ERROR: %s (GetLastError=%lu)\n", msg,
+          (unsigned long)GetLastError());
+  abort();
+}
+
+/* Heap-allocated trampoline payload: llvm::thread hands us an __stdcall
+ * ThreadProxy reinterpret-cast to void*(*)(void*); _beginthreadex needs an
+ * unsigned __stdcall(void*) entry point, so bounce through one. */
+struct csupport_win_thread_start {
+  csupport_thread_func_t func;
+  void *arg;
+};
+
+static unsigned __stdcall csupport_win_thread_trampoline(void *raw) {
+  struct csupport_win_thread_start start =
+      *(struct csupport_win_thread_start *)raw;
+  free(raw);
+  /* On 64-bit Windows there is a single calling convention, so invoking the
+   * __stdcall routine through the void*(*)(void*) type is well-defined; its
+   * (unused) return value is discarded. */
+  start.func(start.arg);
+  return 0;
+}
+
+uint64_t csupport_thread_execute(csupport_thread_func_t func, void *arg,
+                                 unsigned stack_size) {
+  struct csupport_win_thread_start *start =
+      (struct csupport_win_thread_start *)malloc(sizeof(*start));
+  uintptr_t handle;
+  if (!start)
+    report_win_fatal("csupport_thread_execute: out of memory");
+  start->func = func;
+  start->arg = arg;
+  /* stack_size == 0 -> the image's default stack, matching std::thread. */
+  handle = _beginthreadex(NULL, stack_size, csupport_win_thread_trampoline,
+                          start, 0, NULL);
+  if (handle == 0) {
+    free(start);
+    report_win_fatal("_beginthreadex failed");
+  }
+  return (uint64_t)handle;
+}
+
+void csupport_thread_detach(uint64_t thread) {
+  CloseHandle((HANDLE)(uintptr_t)thread);
+}
+
+void csupport_thread_join(uint64_t thread) {
+  HANDLE h = (HANDLE)(uintptr_t)thread;
+  if (WaitForSingleObject(h, INFINITE) == WAIT_FAILED)
+    report_win_fatal("WaitForSingleObject failed");
+  CloseHandle(h);
+}
+
+uint64_t csupport_thread_get_id(uint64_t thread) {
+  return (uint64_t)GetThreadId((HANDLE)(uintptr_t)thread);
+}
+
+uint64_t csupport_thread_get_current_id(void) {
+  return (uint64_t)GetCurrentThreadId();
+}
+
+uint64_t csupport_get_thread_id(void) { return (uint64_t)GetCurrentThreadId(); }
+
+uint32_t csupport_get_max_thread_name_length(void) { return 0; }
+int csupport_set_thread_name_cstr(const char *n) {
+  (void)n;
+  return -1;
+}
+int csupport_get_thread_name_buf(char *b, size_t l) {
+  if (b && l > 0)
+    b[0] = '\0';
+  return 0;
+}
+int csupport_set_thread_priority_val(int p) {
+  (void)p;
+  return -1;
+}
+int csupport_compute_host_num_hardware_threads(void) { return 1; }
+void csupport_apply_thread_strategy_noop(unsigned n) { (void)n; }
+unsigned csupport_get_cpus(void) { return 1; }
+int csupport_get_physical_cores(void) { return -1; }
+
+#else /* no pthread, non-Windows: degrade to synchronous execution */
 
 uint64_t csupport_thread_execute(csupport_thread_func_t func, void *arg,
                                  unsigned stack_size) {
   (void)stack_size;
   func(arg);
-  return 0;
+  /* Return a non-zero sentinel so llvm::thread::thread() takes the
+   * Callee.release() path: the routine above already consumed (and freed) the
+   * callee tuple, so a 0 return would make the constructor free it a second
+   * time.  join()/detach() below are no-ops on this handle. */
+  return 1;
 }
 void csupport_thread_detach(uint64_t t) { (void)t; }
 void csupport_thread_join(uint64_t t) { (void)t; }
