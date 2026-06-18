@@ -364,7 +364,7 @@ TEST_F(LTOTest, LtoPartitionCache) {
 // count (measured ~O(N^2); N=360 used to time out entirely).
 //
 // The two caps are complementary, which is *why this test must disable both* to
-// see the cliff: the inline cap alone already stops main growing past ~32 loops,
+// see the cliff: the inline cap alone already stops main growing past ~12 loops,
 // so toggling only the unroll cap barely moves the needle (measured 0.6s vs
 // 0.6s -- a coin-flip timing assertion, the historical flake here).  With both
 // caps off the collapse and the unroll blowup both fire and the link detonates
@@ -443,7 +443,7 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
     if (capsOff) {
       // Reproduce the pre-fix pathology *in full*.  Both caps must be off:
       // disabling only the unroll cap leaves the inline cap holding main at
-      // ~32 loops, so the superlinear blowup never forms and the timing arms
+      // ~12 loops, so the superlinear blowup never forms and the timing arms
       // become indistinguishable (the historical flake).  Off together, main
       // collapses to one giant function and the unroller detonates SCEV.
       l.push_back("-mllvm");
@@ -686,6 +686,103 @@ TEST_F(LTOTest, AutoLtoInlineCapSemanticsPreserved) {
   EXPECT_EQ(outCap.out, outNoCap.out)
       << "the loop-density inline cap changed program output -- it must be "
          "purely an optimization withdrawal, never a semantic change";
+
+  unsetEnvVar(linker::ltoPartitionCacheEnvVar);
+  unsetEnvVar(linker::ltoCacheEnvVar);
+}
+
+// The auto-LTO SCEV huge-expression bound (ParallelCodeGenMerge's
+// PcgScevHugeExprThreshold, which lowers ScalarEvolution's HugeExprThreshold for
+// the per-partition optimization) must be a pure compile-cost knob: making SCEV
+// fall back to its conservative *unsimplified* form on oversized expressions --
+// exactly what the MaxArithDepth check beside it already does -- can change code
+// shape and compile time, never the computed result.  Build the same program
+// with the bound set deliberately tiny (so it fires on essentially every
+// expression the whole-program functions produce) and with it disabled (stock
+// ScalarEvolution), and require byte-identical program output.  This is a timing
+// -free invariant, so it can never flake.
+TEST_F(LTOTest, AutoLtoScevHugeThresholdSemanticsPreserved) {
+  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
+  setEnvVar(linker::ltoPartitionCacheEnvVar, linker::ltoCacheDisableValue);
+
+  constexpr int NFiles = 10, NFuncsPerFile = 8; // 80 loop+select leaves
+  auto srcDir = tmpFile("scevsem_src");
+  fs::create_directories(srcDir);
+
+  std::vector<std::string> names;
+  for (int fi = 0; fi < NFiles; ++fi) {
+    std::string src = "#include <stdint.h>\n";
+    for (int fj = 0; fj < NFuncsPerFile; ++fj) {
+      std::string nm = "sf_" + std::to_string(fi) + "_" + std::to_string(fj);
+      names.push_back(nm);
+      unsigned c1 = (2246822519u * unsigned(fi * 71 + fj + 1)) | 1u;
+      unsigned c2 = (3266489917u * unsigned(fi + 5) +
+                     668265263u * unsigned(fj + 2)) | 1u;
+      // A constant-trip loop with a data-dependent branch: inlined into main it
+      // helps build the large SCEV expressions the bound targets.
+      src += "uint64_t " + nm + "(uint64_t x){ uint64_t a=x^" +
+             std::to_string(c1) + "ULL; for(int i=0;i<9;i++){ a=a*" +
+             std::to_string(c2) + "ULL+(a>>11)+i; if(a&2) a+=" +
+             std::to_string(c1) + "ULL; } return a; }\n";
+    }
+    writeFile(srcDir / ("m" + std::to_string(fi) + ".c"), src);
+  }
+  {
+    std::string m = "#include <stdint.h>\n#include <stdio.h>\n";
+    for (auto &n : names)
+      m += "uint64_t " + n + "(uint64_t);\n";
+    m += "int main(void){ uint64_t acc=1;\n for(int r=0;r<2;r++){\n";
+    for (auto &n : names)
+      m += "  acc=acc*1000003ULL+" + n + "(acc);\n";
+    m += " }\n printf(\"CK=%llu\\n\",(unsigned long long)acc); return 0; }\n";
+    writeFile(srcDir / "main.c", m);
+  }
+
+  std::vector<std::string> base = {"-std=c11"};
+  for (auto &f : sysrootFlags()) base.push_back(f);
+  for (auto &f : archFlags()) base.push_back(f);
+
+  std::vector<std::string> objs;
+  auto compileUnit = [&](const std::string &stem) {
+    auto c = base;
+    auto o = (srcDir / (stem + ".o")).string();
+    c.insert(c.end(), {"-c", (srcDir / (stem + ".c")).string(), "-o", o});
+    ASSERT_EQ(ncc(c).exitCode, 0) << stem;
+    objs.push_back(o);
+  };
+  for (int fi = 0; fi < NFiles; ++fi)
+    compileUnit("m" + std::to_string(fi));
+  compileUnit("main");
+
+  auto linkExe = [&](const std::string &exe, unsigned scevThreshold) {
+    std::vector<std::string> l;
+    for (auto &f : sysrootFlags()) l.push_back(f);
+    for (auto &f : archFlags()) l.push_back(f);
+    for (auto &o : objs) l.push_back(o);
+    l.push_back("-mllvm");
+    l.push_back("-neverc-auto-lto-scev-huge-expr-threshold=" +
+                std::to_string(scevThreshold));
+    if (isWindows())
+      l.push_back("-mno-incremental-linker-compatible");
+    l.insert(l.end(), {"-o", exe});
+    return ncc(l);
+  };
+
+  // Tiny bound (4): SCEV gives up simplifying almost immediately.
+  auto exeTiny = tmpFile("scevsem_tiny");
+  ASSERT_EQ(linkExe(exeTiny.string(), /*scevThreshold=*/4).exitCode, 0);
+  // Disabled (0): ScalarEvolution's stock threshold.
+  auto exeOff = tmpFile("scevsem_off");
+  ASSERT_EQ(linkExe(exeOff.string(), /*scevThreshold=*/0).exitCode, 0);
+
+  auto outTiny = exec(exeTiny.string(), {});
+  auto outOff = exec(exeOff.string(), {});
+  EXPECT_EQ(outTiny.exitCode, 0) << outTiny.err;
+  EXPECT_EQ(outOff.exitCode, 0) << outOff.err;
+  EXPECT_TRUE(outTiny.contains("CK=")) << outTiny.out;
+  EXPECT_EQ(outTiny.out, outOff.out)
+      << "the auto-LTO SCEV huge-expression bound changed program output -- it "
+         "must only withdraw simplification, never change a result";
 
   unsetEnvVar(linker::ltoPartitionCacheEnvVar);
   unsetEnvVar(linker::ltoCacheEnvVar);

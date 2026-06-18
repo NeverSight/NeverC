@@ -859,6 +859,23 @@ static bool hasHugeExpression(ArrayRef<const SCEV *> Ops) {
   });
 }
 
+// NeverC: programmatic get/set for HugeExprThreshold (declared in
+// ScalarEvolution.h).  Cross-module ("last call to static") inlining at full
+// LTO folds many loop-bearing leaves into one body, so post-IPO functions are
+// far larger than any single TU's; their SCEV expressions blow past the default
+// threshold and trigger getAddExpr/getMulExpr's superlinear simplification --
+// measured as the dominant auto-LTO link cost (IndVarSimplify -> getRangeRef).
+// Lowering the threshold makes those huge expressions fall back to the
+// conservative, already-correct *unsimplified* form sooner -- the exact same
+// withdrawal the MaxArithDepth check one line up performs -- so it only bounds
+// compile cost and can never change a computed result.  The auto-LTO driver
+// sets it before the partition workers start and restores it after they join,
+// so the concurrent hasHugeExpression readers only ever observe a stable value.
+unsigned llvm::getScevHugeExprThreshold() { return HugeExprThreshold; }
+void llvm::setScevHugeExprThreshold(unsigned Threshold) {
+  HugeExprThreshold = Threshold;
+}
+
 //===----------------------------------------------------------------------===//
 //                      Simple SCEV method implementations
 //===----------------------------------------------------------------------===//

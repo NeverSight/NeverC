@@ -2386,6 +2386,18 @@ template <> struct DenseMapInfo<ScalarEvolution::FoldID> {
   }
 };
 
+/// NeverC: get/set the SCEV "huge expression" size threshold -- the point past
+/// which getAddExpr/getMulExpr stop folding and return the conservative,
+/// already-correct unsimplified expression (see HugeExprThreshold in
+/// ScalarEvolution.cpp).  The auto-LTO backend lowers it around its
+/// whole-program optimization to bound SCEV's superlinear simplification cost
+/// on the giant functions cross-module inlining forms; ordinary -c/-O2 compiles
+/// never call these.  This is a pure compile-cost knob (a smaller threshold can
+/// only withdraw simplification, never change a result), but it must not be
+/// changed concurrently with in-flight SCEV queries.
+unsigned getScevHugeExprThreshold();
+void setScevHugeExprThreshold(unsigned Threshold);
+
 } // end namespace llvm
 
 #endif // LLVM_ANALYSIS_SCALAREVOLUTION_H

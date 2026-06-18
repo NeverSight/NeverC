@@ -6,6 +6,7 @@
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -97,6 +98,52 @@ static llvm::cl::opt<unsigned> PcgCgMaxParts(
                    "and therefore the emitted object's layout -- is reproducible "
                    "across machines; execution parallelism is bounded "
                    "separately by the worker pool"));
+
+// Auto-LTO SCEV cost bound.  Full-LTO post-link inlining folds many loop-bearing
+// leaves into one body, so post-IPO functions are far larger than any single
+// TU's; their SCEV expressions blow past ScalarEvolution's default
+// HugeExprThreshold and trigger getAddExpr/getMulExpr's superlinear
+// simplification (reached from IndVarSimplify), profiled as ~99% of a loop-dense
+// auto-LTO link.  Tightening the threshold for the duration of per-partition
+// optimization makes those huge expressions fall back to their conservative,
+// already-correct unsimplified form sooner -- the same withdrawal MaxArithDepth
+// performs -- cutting worst-case link time ~10x (bench_b 11.5s -> 1.1s) with no
+// measured runtime regression (Lua 5.4 / bench_a equal-or-better, output
+// byte-identical).  It is a pure compile-cost knob: SCEV stays correct, the
+// merge verifier + serial fallback are untouched, and the value never feeds the
+// partition count or assignment, so the emitted object is byte-identical
+// regardless of it (the determinism oracle still holds).  0 = leave
+// ScalarEvolution's own default.
+static llvm::cl::opt<unsigned> PcgScevHugeExprThreshold(
+    "neverc-auto-lto-scev-huge-expr-threshold", llvm::cl::init(512),
+    llvm::cl::Hidden,
+    llvm::cl::desc("Auto-LTO only: SCEV huge-expression node threshold applied "
+                   "during per-partition optimization to bound superlinear "
+                   "ScalarEvolution simplification on whole-program functions "
+                   "(0 = leave ScalarEvolution's default)"));
+
+// RAII: tighten ScalarEvolution's huge-expression threshold for the lifetime of
+// the per-partition optimization phase, then restore it.  Set on the driver
+// thread before the workers start and restored after they join, so the workers
+// (which only ever read the threshold) never observe it changing -- no race.
+// Because the value is established before any worker runs and is identical for
+// all of them, it cannot make the output depend on thread scheduling.
+struct ScevHugeThresholdGuard {
+  unsigned Saved = 0;
+  bool Active;
+  explicit ScevHugeThresholdGuard(unsigned NewVal) : Active(NewVal != 0) {
+    if (Active) {
+      Saved = llvm::getScevHugeExprThreshold();
+      llvm::setScevHugeExprThreshold(NewVal);
+    }
+  }
+  ~ScevHugeThresholdGuard() {
+    if (Active)
+      llvm::setScevHugeExprThreshold(Saved);
+  }
+  ScevHugeThresholdGuard(const ScevHugeThresholdGuard &) = delete;
+  ScevHugeThresholdGuard &operator=(const ScevHugeThresholdGuard &) = delete;
+};
 
 // Worker-thread count for the partition pools.  This is *execution* parallelism
 // only: it bounds how many partitions are optimized/codegen'd concurrently and
@@ -777,6 +824,11 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
   SharedPTO.SLPVectorization = OptLevel >= 2;
   SharedPTO.CallGraphProfile = false;
   SharedPTO.NevercFastIPO = true;
+
+  // Bound SCEV's huge-expression cost for every partition's optimization (see
+  // PcgScevHugeExprThreshold).  Established here, before any worker starts, and
+  // restored when this guard leaves scope after the workers below have joined.
+  ScevHugeThresholdGuard ScevGuard(PcgScevHugeExprThreshold);
 
   // Phase 2: per-partition optimization + codegen.
   {
