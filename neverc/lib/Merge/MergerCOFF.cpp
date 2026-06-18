@@ -116,6 +116,7 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   SmallVector<char, 0> SymbolTable;
   unsigned TotalSymbols = 0;
   uint16_t Machine = 0;
+  bool HaveArch = false;
 
   // Parallel codegen externalizes module-local symbols with a ".__pcg<hash>"
   // suffix so cross-partition references resolve.  The owning partition's
@@ -135,6 +136,22 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   };
   SmallVector<DeferredRef, 0> DeferredPcgUndef;
 
+  // coff_aux_weak_external::TagIndex is a *symbol-table index* into the input
+  // partition that names the weak symbol's default definition.  Merging appends
+  // every partition's symbols, shifting all indices, so each TagIndex must be
+  // remapped through its partition's SymMap once every SymMap is final — exactly
+  // like a relocation's SymbolTableIndex.  Copying it verbatim (the historical
+  // behavior) aliased the weak symbol onto an unrelated merged definition: a
+  // miscompile no content/offset anchor can catch, because aux records carry no
+  // section bytes.  Record each aux's TagIndex byte offset in SymbolTable plus
+  // its source partition and original index; fix them up after the symbol loop.
+  struct WeakAuxFixup {
+    size_t TagByteOff;
+    unsigned Part;
+    unsigned OrigTag;
+  };
+  SmallVector<WeakAuxFixup, 0> WeakAuxFixups;
+
   for (unsigned p = 0; p < (unsigned)Buffers.size(); ++p) {
     if (Buffers[p].empty())
       continue;
@@ -149,8 +166,25 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       return false;
     }
     auto &Obj = **ObjOrErr;
-    if (Machine == 0)
-      Machine = Obj.getMachine();
+    uint16_t ThisMachine = Obj.getMachine();
+    if (ThisMachine != IMAGE_FILE_MACHINE_UNKNOWN) {
+      if (!HaveArch) {
+        HaveArch = true;
+        Machine = ThisMachine;
+      } else if (ThisMachine != Machine) {
+        // All inputs must target one machine.  A directives-only object can be
+        // IMAGE_FILE_MACHINE_UNKNOWN (a wildcard, accepted above); two *real*
+        // but differing machines (e.g. AMD64 + ARM64) would emit a header
+        // claiming the first machine over later sections of the wrong ISA.
+        // COFF's only caller today is the parallel-codegen path, which shares
+        // one TargetMachine so this never trips; guard anyway so a future
+        // general path cannot silently produce a cross-ISA object.
+        errs() << "neverc: COFF relocatable merge: input machine " << ThisMachine
+               << " differs from an earlier input machine " << Machine
+               << " (mixed architectures); refusing to merge\n";
+        return false;
+      }
+    }
 
     unsigned PartSecOrdinal = 1;
     for (const auto &Sec : Obj.sections()) {
@@ -307,6 +341,18 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           }
           SymbolTable.append(reinterpret_cast<const char *>(&AuxSD),
                              reinterpret_cast<const char *>(&AuxSD) + 18);
+        } else if (a == 0 && CSym.getStorageClass() ==
+                                 COFF::IMAGE_SYM_CLASS_WEAK_EXTERNAL) {
+          // Weak external aux: TagIndex (the first 4 bytes) is a symbol index
+          // that must be remapped after every partition's SymMap is built.  The
+          // aux record lands at SymbolTable's current end, so its TagIndex byte
+          // offset is exactly SymbolTable.size() before the append.
+          coff_aux_weak_external AuxWE;
+          memcpy(&AuxWE, AuxData, sizeof(AuxWE));
+          WeakAuxFixups.push_back(
+              {SymbolTable.size(), p, (unsigned)AuxWE.TagIndex});
+          SymbolTable.append(reinterpret_cast<const char *>(&AuxWE),
+                             reinterpret_cast<const char *>(&AuxWE) + 18);
         } else {
           SymbolTable.append(reinterpret_cast<const char *>(AuxData),
                              reinterpret_cast<const char *>(AuxData) + 18);
@@ -363,6 +409,28 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       if (It != Maps[RE.PartIdx].SymMap.end())
         RE.Reloc.SymbolTableIndex = It->second;
     }
+  }
+
+  // Remap weak external aux TagIndex fields now that every SymMap is final.  A
+  // TagIndex with no merged counterpart means the default definition dropped out
+  // of the merge; refuse rather than leave the weak symbol aliased to whatever
+  // sits at the stale index (mirrors the relocation remap above and the merger's
+  // "refuse rather than miscompile" stance).  TagIndex is written little-endian
+  // and the aux record is 18 bytes, so [TagByteOff, TagByteOff+4) is in range.
+  for (auto &WF : WeakAuxFixups) {
+    if (WF.Part >= Maps.size())
+      return false;
+    auto It = Maps[WF.Part].SymMap.find(WF.OrigTag);
+    if (It == Maps[WF.Part].SymMap.end()) {
+      errs() << "neverc: COFF merge: weak external aux TagIndex " << WF.OrigTag
+             << " has no merged symbol; refusing\n";
+      return false;
+    }
+    uint32_t NewIdx = It->second;
+    SymbolTable[WF.TagByteOff + 0] = (char)(NewIdx & 0xFF);
+    SymbolTable[WF.TagByteOff + 1] = (char)((NewIdx >> 8) & 0xFF);
+    SymbolTable[WF.TagByteOff + 2] = (char)((NewIdx >> 16) & 0xFF);
+    SymbolTable[WF.TagByteOff + 3] = (char)((NewIdx >> 24) & 0xFF);
   }
 
   // coff_file_header::NumberOfSections is a 16-bit field; more sections than

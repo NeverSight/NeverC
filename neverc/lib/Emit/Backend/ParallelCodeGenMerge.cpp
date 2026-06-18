@@ -17,6 +17,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Triple.h"
 
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/thread.h"
 #include "llvm/Support/xxhash.h"
 
@@ -420,6 +421,31 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
 
 bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
   bool Dbg = ::getenv("NEVERC_PCG_DEBUG") != nullptr;
+
+  // Bail out of the parallel path *after* we have committed to it (the module
+  // is already externalized and the partitions are codegen'd).  Restoring
+  // linkage and returning false lets the caller silently fall back to serial
+  // codegen, which guarantees a correct object — but that very silence is a
+  // blind spot: a build that should exercise the merger keeps passing, just
+  // slower, so a reintroduced offset-collapse bug (the historical one) turns no
+  // test red.  NEVERC_PCG_STRICT closes the gap: set it in CI / differential
+  // runs and any post-commit failure aborts loudly with the precise reason,
+  // instead of degrading into a fallback that hides the regression.  Unset (the
+  // default) the behavior is byte-for-byte the old fallback.
+  auto bail = [&](const Twine &Reason) -> bool {
+    if (Dbg)
+      errs() << "[pcg] FALLBACK: " << Reason << "\n";
+    if (::getenv("NEVERC_PCG_STRICT") != nullptr)
+      report_fatal_error(
+          "neverc: NEVERC_PCG_STRICT is set but parallel codegen could not "
+          "emit a merged object (" +
+              Reason +
+              "); refusing the serial fallback that would mask the regression",
+          /*gen_crash_diag=*/false);
+    restoreLinkage(Mod);
+    return false;
+  };
+
   bool AllOK = true;
   for (unsigned i = 0; i < NumPartitions; ++i)
     if (!Results[i].Success) {
@@ -427,14 +453,8 @@ bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
       if (Dbg)
         errs() << "[pcg] partition " << i << " did not succeed\n";
     }
-
-  if (!AllOK) {
-    if (Dbg)
-      errs() << "[pcg] FALLBACK: not all " << NumPartitions
-             << " partitions succeeded\n";
-    restoreLinkage(Mod);
-    return false;
-  }
+  if (!AllOK)
+    return bail("not all " + Twine(NumPartitions) + " partitions succeeded");
 
   unsigned NonEmpty = 0, SingleIdx = 0;
   for (unsigned i = 0; i < NumPartitions; ++i)
@@ -453,14 +473,11 @@ bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
              Results[SingleIdx].ObjBuffer.size());
     return true;
   }
-  if (NonEmpty == 0) {
+  if (NonEmpty == 0)
     // Every partition reported success yet produced no bytes.  Codegen always
     // emits at least a header, so this is never expected; rather than write an
-    // empty object, restore linkage and fail so lto::backend's serial fallback
-    // runs on a clean module.
-    restoreLinkage(Mod);
-    return false;
-  }
+    // empty object, fall back (or, under strict mode, surface the anomaly).
+    return bail("every partition succeeded but produced no object bytes");
 
   SmallVector<SmallVector<char, 0>, 8> Bufs;
   for (unsigned i = 0; i < NumPartitions; ++i)
@@ -469,17 +486,13 @@ bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
   // A merge/verify failure must leave the module exactly as lto::backend's
   // serial fallback expects: every symbol externalized for cross-partition
   // references (the ".__pcg<hash>" rename to ExternalLinkage/HiddenVisibility)
-  // restored to its original local linkage, visibility, and name.  Without
-  // this, the deferred function-opt + serial codegen downstream would run on a
-  // polluted module and emit what should be local symbols as externalized
-  // ".__pcg" globals — the exact silent symbol-table corruption the merge
-  // verifier exists to refuse.  Mirrors the !AllOK restore above.
-  if (!mergePartitionObjects(TT, Bufs, OS)) {
-    if (Dbg)
-      errs() << "[pcg] FALLBACK: mergePartitionObjects failed\n";
-    restoreLinkage(Mod);
-    return false;
-  }
+  // restored to its original local linkage, visibility, and name (bail() does
+  // this).  Without it, the deferred function-opt + serial codegen downstream
+  // would run on a polluted module and emit what should be local symbols as
+  // externalized ".__pcg" globals — the exact silent symbol-table corruption
+  // the merge verifier exists to refuse.
+  if (!mergePartitionObjects(TT, Bufs, OS))
+    return bail("partition object merge/self-verify failed");
   if (Dbg)
     errs() << "[pcg] SUCCESS: merged " << NonEmpty << " partition objects\n";
   return true;

@@ -22,6 +22,13 @@ jobs:
       # RelWithDebInfo so CI artifacts ship with DWARF symbols for crash
       # triage; release-macos-pgo.yml is the symbol-stripped Release path.
       BUILD_TYPE: RelWithDebInfo
+      # Turn any parallel-codegen merge/self-verify fallback into a hard CI
+      # failure instead of a silent fallback to serial codegen.  A correct merge
+      # is unaffected (byte-identical output); only a real merger regression —
+      # the historical offset-collapse class, which stayed hidden precisely
+      # because the fallback kept builds green — trips this.  Covers both the
+      # example builds and the test suite below.
+      NEVERC_PCG_STRICT: "1"
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4

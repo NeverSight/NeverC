@@ -102,6 +102,7 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   };
 
   uint32_t CPUType = 0, CPUSubType = 0;
+  bool HaveArch = false;
 
   struct PerPartition {
     DenseMap<unsigned, unsigned> SecMap;
@@ -138,9 +139,22 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
     auto &Obj = **ObjOrErr;
 
-    if (CPUType == 0) {
+    if (!HaveArch) {
+      HaveArch = true;
       CPUType = Obj.getHeader().cputype;
       CPUSubType = Obj.getHeader().cpusubtype;
+    } else if (Obj.getHeader().cputype != CPUType) {
+      // All inputs must share one CPU type.  Mixing (e.g. arm64 + x86_64) would
+      // emit one valid mach_header (the first input's cputype) over a body whose
+      // later partitions are the wrong ISA, and would also corrupt the
+      // IsARM64-gated ARM64_RELOC_ADDEND / in-place fixup logic below.  The
+      // parallel-codegen path shares one TargetMachine so it never trips; the
+      // general `-r` path over arbitrary objects can, and `ld -r` refuses it
+      // too.  Refuse rather than emit a cross-ISA object.
+      errs() << "neverc: Mach-O relocatable merge: input has cputype "
+             << Obj.getHeader().cputype << " but an earlier input had "
+             << CPUType << " (mixed architectures); refusing to merge\n";
+      return false;
     }
 
     unsigned PartSecOrdinal = 1;
@@ -148,14 +162,24 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       SectionKey Key;
       auto NameOrErr = Sec.getName();
       if (!NameOrErr) {
+        // Skipping the section while still bumping PartSecOrdinal would drop its
+        // bytes and re-home every symbol that names it to NO_SECT — a silent,
+        // incomplete merge.  Refuse instead so the caller falls back to serial
+        // codegen / a real linker (mirrors the getContents() handling below and
+        // the ELF/COFF "refuse rather than miscompile" stance).
         consumeError(NameOrErr.takeError());
-        PartSecOrdinal++;
-        continue;
+        return false;
       }
 
       Expected<StringRef> SegNameOrErr =
           Obj.getSectionFinalSegmentName(Sec.getRawDataRefImpl());
-      StringRef SegName = SegNameOrErr ? *SegNameOrErr : "__TEXT";
+      if (!SegNameOrErr) {
+        // Defaulting to "__TEXT" on failure could fold a __DATA/__bss section
+        // into the wrong segment, mis-placing its symbols; refuse instead.
+        consumeError(SegNameOrErr.takeError());
+        return false;
+      }
+      StringRef SegName = *SegNameOrErr;
 
       memset(&Key, 0, sizeof(Key));
       memcpy(Key.SegName, SegName.data(), std::min(SegName.size(), size_t(16)));
@@ -305,6 +329,19 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           PM.SymMap[SymIdx] = AllSyms.size();
           AllSyms.push_back(OutSym);
         } else {
+          if (Pri == MP_DEF && It->second.Pri == MP_DEF) {
+            // Two strong (defined, non-weak, external) definitions of one name
+            // is an ODR violation that this priority dedup would silently
+            // resolve by keeping the first and dropping the second.  The
+            // parallel-codegen path never produces it (each external is defined
+            // in one partition; .__pcg locals are demoted to N_PEXT and carry
+            // unique names), so only a malformed -r input reaches here; refuse
+            // rather than silently pick one.
+            errs() << "neverc: Mach-O relocatable merge: multiple strong "
+                      "definitions of '"
+                   << Name << "'; refusing to merge\n";
+            return false;
+          }
           if (Pri > It->second.Pri) {
             AllSyms[It->second.SlotIdx] = OutSym;
             It->second.Pri = Pri;
@@ -401,6 +438,24 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       }
 
   unsigned NSects = MergedSections.size();
+  // nlist_64::n_sect is a uint8_t: a defined symbol can name at most section
+  // 255 (0 == NO_SECT).  More merged sections than that silently truncate every
+  // n_sect past 255 to a wrong section number — the same valid-looking-but-wrong
+  // corruption class the ELF e_shnum guard and the COFF NumberOfSections guard
+  // refuse, and the one format whose count field this merger had left
+  // unchecked.  Mach-O -r keys sections by (segment, section) so the
+  // parallel-codegen path never approaches the limit, but the general -r path
+  // over arbitrary user objects can; refuse rather than miscompile so the caller
+  // falls back to serial codegen / a real linker.  Checked before any n_sect is
+  // committed to the output (the symbol loop above stored untruncated unsigned
+  // values; the truncation would only happen on the write below, which we now
+  // never reach).
+  if (NSects > 255) {
+    errs() << "neverc: Mach-O merge produced " << NSects
+           << " sections, exceeding the 8-bit nlist n_sect limit (255); "
+              "refusing to emit a truncated object\n";
+    return false;
+  }
   uint32_t HeaderSize = sizeof(MO::mach_header_64);
   uint32_t SegCmdSize =
       sizeof(MO::segment_command_64) + NSects * sizeof(MO::section_64);

@@ -88,6 +88,7 @@ struct RawRela {
 
 struct RawELF {
   ArrayRef<char> Buf;
+  uint16_t Machine = 0; // e_machine, for the independent arch-consistency check
   SmallVector<RawSec, 0> Secs;
   SmallVector<RawSym, 0> Syms;
   SmallVector<RawRela, 0> Relas;
@@ -136,6 +137,7 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
     return false;
   if (H->e_ident[EI_CLASS] != ELFCLASS64 || H->e_ident[EI_DATA] != ELFDATA2LSB)
     return false;
+  Out.Machine = H->e_machine;
 
   uint64_t ShOff = H->e_shoff;
   unsigned ShNum = H->e_shnum;
@@ -317,6 +319,58 @@ struct SecShift {
   StringRef Witness;  // its name, for diagnostics
 };
 
+// One input section's reconstructed placement inside a merged output section: it
+// occupies the half-open byte range [Base, Base + Size).  Distinct input
+// sections folded into one output section must keep these ranges pairwise
+// disjoint and wholly inside the merged section — an invariant that holds for
+// any conformant -r merge (neverc's and a real linker's), so it never
+// false-rejects.  It is the missing third leg of the offset-collapse defense:
+//   * the byte-content anchor needs on-disk bytes, so it skips NOBITS/zerofill;
+//   * the same-input-section relative-distance invariant needs *two* symbols
+//     sharing one input section, so it skips singletons;
+//   * this needs only *one* anchorable symbol per input section and no bytes,
+//     so it covers a lone .bss/.data global in its own -fdata-sections section
+//     — the exact shape the kernel-module mergeSections path and ordinary
+//     multi-file .bss both produce, where a collapsed offset previously slipped
+//     through every other check.
+struct OutSecRange {
+  uint64_t Base;
+  uint64_t Size;
+  StringRef Witness;
+};
+
+// Sort one merged section's contributing ranges by base and reject any that run
+// past the section end or overlap their neighbor.  Shared by all three format
+// verifiers (their raw structs differ but the range arithmetic is identical).
+template <typename SizeFn, typename NameFn>
+bool checkDisjointRanges(DenseMap<unsigned, SmallVector<OutSecRange, 0>> &Ranges,
+                         SizeFn SecSize, NameFn SecName, std::string *Err) {
+  for (auto &KV : Ranges) {
+    uint64_t Size = SecSize(KV.first);
+    StringRef Name = SecName(KV.first);
+    auto &R = KV.second;
+    std::stable_sort(R.begin(), R.end(),
+                     [](const OutSecRange &A, const OutSecRange &B) {
+                       return A.Base < B.Base;
+                     });
+    for (unsigned i = 0; i < R.size(); ++i) {
+      if (R[i].Base + R[i].Size > Size)
+        return fail(Err, "verify: input section of symbol '" + R[i].Witness +
+                             "' spans [0x" + Twine::utohexstr(R[i].Base) +
+                             ",0x" + Twine::utohexstr(R[i].Base + R[i].Size) +
+                             ") past the end (0x" + Twine::utohexstr(Size) +
+                             ") of merged section '" + Name +
+                             "' (offset collapsed or mis-shifted)");
+      if (i + 1 < R.size() && R[i].Base + R[i].Size > R[i + 1].Base)
+        return fail(Err, "verify: input sections of symbols '" + R[i].Witness +
+                             "' and '" + R[i + 1].Witness +
+                             "' overlap in merged section '" + Name +
+                             "' (offset collapsed or mis-shifted)");
+    }
+  }
+  return true;
+}
+
 bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                         const Options &Opts, std::string *Err) {
   using namespace ELF;
@@ -472,6 +526,11 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                            " distinct offsets (offset collapsed or mis-shifted)");
   std::map<std::string, uint64_t> InLinkOrderRelCount;
 
+  // Disjoint-range accumulator (see OutSecRange): one reconstructed range per
+  // input section, grouped by the merged output section it folded into, checked
+  // for overlap/overflow after every input is processed.
+  DenseMap<unsigned, SmallVector<OutSecRange, 0>> SecRanges;
+
   for (unsigned p = 0; p < Inputs.size(); ++p) {
     if (Inputs[p].empty())
       continue;
@@ -479,6 +538,18 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     if (!parseRawELF(ArrayRef<char>(Inputs[p].data(), Inputs[p].size()), In))
       return fail(Err, "verify: input partition " + Twine(p) +
                            " is not a parseable ELF64LE object");
+
+    // Independent architecture-consistency leg (mirrors the merger's e_machine
+    // refuse).  A conformant -r output carries the inputs' e_machine, so this
+    // never false-rejects; a cross-ISA merge — the output header claims one
+    // arch but an input is another — is exactly the silent miscompile this
+    // catches, and the content/offset anchors cannot (each partition's bytes
+    // still match its own input; only the ISA is wrong).
+    if (In.Machine != 0 && Out.Machine != In.Machine)
+      return fail(Err, "verify: merged output e_machine " + Twine(Out.Machine) +
+                           " does not match input partition " + Twine(p) +
+                           " e_machine " + Twine(In.Machine) +
+                           " (mixed architectures or wrong output header)");
 
     // Accumulate this input's SHF_LINK_ORDER relocation counts per merged
     // section name (the count half of the conservation check above).
@@ -642,6 +713,47 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       }
     }
 
+    // Disjoint-range invariant (singleton- and NOBITS-safe; see OutSecRange).
+    // Reconstruct each input section's merged base from one anchorable defined
+    // symbol (base = merged value - input value) and remember its [base, size).
+    // SHF_MERGE inputs are excluded: a real linker may coalesce their members.
+    {
+      DenseMap<unsigned, char> SeenInputSec; // input shndx -> recorded
+      for (const RawSym &S : In.Syms) {
+        if (S.Name.empty() || S.type() == STT_SECTION)
+          continue;
+        if (S.Shndx == 0 || S.Shndx >= SHN_LORESERVE ||
+            S.Shndx >= In.Secs.size())
+          continue;
+        const RawSec &InSec = In.Secs[S.Shndx];
+        if (isExcludedInputSection(InSec, Opts) || (InSec.Flags & SHF_MERGE))
+          continue;
+        if (InSec.Size == 0 || S.Value > InSec.Size)
+          continue;
+        if (SeenInputSec.count((unsigned)S.Shndx))
+          continue;
+        auto It = OutByName.find(S.Name);
+        if (It == OutByName.end() || It->second < 0)
+          continue; // not anchorable from this symbol; another may serve
+        const RawSym &OutSym = Out.Syms[(unsigned)It->second];
+        if (OutSym.Shndx == 0 || OutSym.Shndx >= SHN_LORESERVE ||
+            OutSym.Shndx >= Out.Secs.size())
+          continue;
+        // A defined symbol can never move *before* its own section offset in a
+        // concatenating -r merge (the section base is >= 0), so this alone is a
+        // collapse on a section whose bytes the content anchor could not see.
+        if (OutSym.Value < S.Value)
+          return fail(Err, "verify: symbol '" + S.Name + "' merged value 0x" +
+                               Twine::utohexstr(OutSym.Value) +
+                               " is below its input section offset 0x" +
+                               Twine::utohexstr(S.Value) +
+                               " (offset collapsed or mis-shifted)");
+        SeenInputSec[(unsigned)S.Shndx] = 1;
+        SecRanges[OutSym.Shndx].push_back(
+            {OutSym.Value - S.Value, InSec.Size, S.Name});
+      }
+    }
+
     // Symbol-anchored relocation check: every relocation site sits inside some
     // defined symbol; using that symbol's already-verified merged value we
     // independently predict where the relocation must re-land and confirm an
@@ -743,6 +855,17 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                            " (relocations dropped or duplicated)");
   }
 
+  // Disjoint-range check: distinct input sections folded into one merged
+  // section must occupy non-overlapping ranges that fit inside it.
+  if (!checkDisjointRanges(
+          SecRanges,
+          [&](unsigned I) { return I < Out.Secs.size() ? Out.Secs[I].Size : 0; },
+          [&](unsigned I) {
+            return I < Out.Secs.size() ? Out.Secs[I].Name : StringRef();
+          },
+          Err))
+    return false;
+
   return true;
 }
 
@@ -775,6 +898,11 @@ struct RawCoffSym {
   int16_t SecNum = 0;
   uint8_t Storage = 0;
   uint32_t Raw = 0; // index in the on-disk symbol table (aux slots included)
+  // For a WeakExternal symbol, the coff_aux_weak_external::TagIndex — a raw
+  // symbol-table slot naming the default definition — else -1.  Aux records
+  // carry no section bytes, so a wrong TagIndex is invisible to the content and
+  // offset anchors; capturing it here lets the verifier re-derive it by name.
+  int64_t WeakTag = -1;
 };
 struct RawCoffRel {
   unsigned SecIdx0 = 0; // 0-based section the relocation applies to
@@ -784,6 +912,7 @@ struct RawCoffRel {
 };
 struct RawCOFF {
   ArrayRef<char> Buf;
+  uint16_t Machine = 0; // IMAGE_FILE_HEADER.Machine, for the arch check
   SmallVector<RawCoffSec, 0> Secs;
   SmallVector<RawCoffSym, 0> Syms; // aux records skipped (Raw keeps the slot)
   SmallVector<RawCoffRel, 0> Rels;
@@ -828,6 +957,7 @@ bool parseRawCOFF(ArrayRef<char> Buf, RawCOFF &Out) {
   if (Buf.size() < 20)
     return false;
   const char *P = Buf.data();
+  Out.Machine = rd16(P); // IMAGE_FILE_HEADER.Machine (offset 0)
   unsigned NSec = rd16(P + 2);
   uint32_t SymOff = rd32(P + 8);
   uint32_t NSym = rd32(P + 12);
@@ -886,6 +1016,11 @@ bool parseRawCOFF(ArrayRef<char> Buf, RawCOFF &Out) {
       PS.Storage = (uint8_t)S[16];
       PS.Raw = k;
       uint8_t NAux = (uint8_t)S[17];
+      if (PS.Storage == llvm::COFF::IMAGE_SYM_CLASS_WEAK_EXTERNAL &&
+          NAux >= 1 && (uint64_t)k + 1 < NSym) {
+        const char *Aux = Buf.data() + SymOff + (uint64_t)(k + 1) * 18;
+        PS.WeakTag = (int64_t)rd32(Aux); // TagIndex is the aux's first 4 bytes
+      }
       Out.RawToSym[k] = Out.Syms.size();
       Out.Syms.push_back(PS);
       k += 1u + NAux; // aux records occupy index slots but are not symbols
@@ -957,6 +1092,12 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         R.VA);
   }
 
+  // Disjoint-range accumulator (see OutSecRange): one reconstructed range per
+  // input section, grouped by the merged section it folded into.  COFF symbol
+  // values are already section-relative and BSS RawSize carries the virtual
+  // size, so the same arithmetic as ELF applies.
+  DenseMap<unsigned, SmallVector<OutSecRange, 0>> SecRanges;
+
   for (unsigned p = 0; p < Inputs.size(); ++p) {
     if (Inputs[p].empty())
       continue;
@@ -964,6 +1105,18 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     if (!parseRawCOFF(ArrayRef<char>(Inputs[p].data(), Inputs[p].size()), In))
       return fail(Err, "verify: input partition " + Twine(p) +
                            " is not a parseable COFF object");
+
+    // Independent architecture-consistency leg (mirrors the merger's machine
+    // refuse).  IMAGE_FILE_MACHINE_UNKNOWN (0) is a wildcard (directives-only
+    // objects), so it is skipped; two real but differing machines are the
+    // cross-ISA miscompile this catches.
+    if (In.Machine != IMAGE_FILE_MACHINE_UNKNOWN &&
+        Out.Machine != IMAGE_FILE_MACHINE_UNKNOWN && Out.Machine != In.Machine)
+      return fail(Err, "verify: merged output COFF machine " +
+                           Twine(Out.Machine) +
+                           " does not match input partition " + Twine(p) +
+                           " machine " + Twine(In.Machine) +
+                           " (mixed architectures or wrong output header)");
 
     for (const RawCoffSym &S : In.Syms) {
       if (S.Name.empty() || S.SecNum <= 0)
@@ -1053,6 +1206,35 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                              "input (offset collapsed or mis-shifted)");
     }
 
+    // Weak external aux TagIndex consistency.  A COFF weak external names its
+    // default definition by a symbol index stored in an aux record; the merge
+    // concatenates symbol tables, so that index must be remapped.  A stale index
+    // aliases the weak symbol onto an unrelated definition — invisible to the
+    // content/offset anchors because aux records hold no section bytes.  Re-
+    // derive it by name: the merged weak external must name the same default
+    // symbol the input did.  Duplicate-named weak externals are skipped as
+    // ambiguous (their absence, if any, is caught by the symbol checks above).
+    for (const RawCoffSym &S : In.Syms) {
+      if (S.Storage != IMAGE_SYM_CLASS_WEAK_EXTERNAL || S.WeakTag < 0)
+        continue;
+      StringRef InDef = In.symNameByRaw((uint32_t)S.WeakTag);
+      if (InDef.empty() || S.Name.empty())
+        continue;
+      auto It = OutByName.find(S.Name);
+      if (It == OutByName.end() || It->second < 0)
+        continue;
+      const RawCoffSym &OutW = Out.Syms[(unsigned)It->second];
+      if (OutW.WeakTag < 0)
+        return fail(Err, "verify: COFF weak external '" + S.Name +
+                             "' lost its aux record in the merged output");
+      StringRef OutDef = Out.symNameByRaw((uint32_t)OutW.WeakTag);
+      if (OutDef != InDef)
+        return fail(Err, "verify: COFF weak external '" + S.Name +
+                             "' aux TagIndex names '" + OutDef +
+                             "' but the input default was '" + InDef +
+                             "' (weak alias TagIndex not remapped)");
+    }
+
     // Same-input-section relative-distance invariant (BSS-safe; see SecShift).
     // COFF symbol values are section-relative, so two EXTERNAL/STATIC symbols
     // sharing one input section must keep an identical (merged value - input
@@ -1094,6 +1276,40 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                                "' share one input section but shifted by different "
                                "amounts (" + Twine(DIt->second.Delta) + " vs " +
                                Twine(Delta) + ") — offset collapsed or mis-shifted");
+      }
+    }
+
+    // Disjoint-range invariant (singleton- and BSS-safe; see OutSecRange).
+    {
+      DenseMap<unsigned, char> SeenInputSec; // input section number -> recorded
+      for (const RawCoffSym &S : In.Syms) {
+        if (S.Name.empty() || S.SecNum <= 0 ||
+            (unsigned)S.SecNum > In.Secs.size())
+          continue;
+        if (S.Storage != IMAGE_SYM_CLASS_EXTERNAL &&
+            S.Storage != IMAGE_SYM_CLASS_STATIC)
+          continue;
+        const RawCoffSec &InSec = In.Secs[S.SecNum - 1];
+        if (InSec.RawSize == 0 || S.Value > InSec.RawSize)
+          continue;
+        if (SeenInputSec.count((unsigned)S.SecNum))
+          continue;
+        auto It = OutByName.find(S.Name);
+        if (It == OutByName.end() || It->second < 0)
+          continue;
+        const RawCoffSym &OutSym = Out.Syms[(unsigned)It->second];
+        if (OutSym.SecNum <= 0 || (unsigned)OutSym.SecNum > Out.Secs.size())
+          continue;
+        if (OutSym.Value < S.Value)
+          return fail(Err, "verify: COFF symbol '" + S.Name +
+                               "' merged value 0x" +
+                               Twine::utohexstr(OutSym.Value) +
+                               " is below its input section offset 0x" +
+                               Twine::utohexstr(S.Value) +
+                               " (offset collapsed or mis-shifted)");
+        SeenInputSec[(unsigned)S.SecNum] = 1;
+        SecRanges[(unsigned)OutSym.SecNum].push_back(
+            {OutSym.Value - S.Value, InSec.RawSize, S.Name});
       }
     }
 
@@ -1144,6 +1360,20 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                              " is missing (offset collapsed or mis-routed)");
     }
   }
+
+  // Disjoint-range check (keys are 1-based COFF section numbers).
+  if (!checkDisjointRanges(
+          SecRanges,
+          [&](unsigned I) {
+            return (I >= 1 && I <= Out.Secs.size()) ? Out.Secs[I - 1].RawSize : 0;
+          },
+          [&](unsigned I) {
+            return (I >= 1 && I <= Out.Secs.size()) ? Out.Secs[I - 1].Name
+                                                    : StringRef();
+          },
+          Err))
+    return false;
+
   return true;
 }
 
@@ -1180,6 +1410,7 @@ struct RawMachoRel {
 };
 struct RawMacho {
   ArrayRef<char> Buf;
+  uint32_t CPUType = 0; // mach_header cputype, for the arch-consistency check
   SmallVector<RawMachoSec, 0> Secs;
   SmallVector<RawMachoSym, 0> Syms;
   SmallVector<RawMachoRel, 0> Rels;
@@ -1256,6 +1487,7 @@ bool parseRawMachO(ArrayRef<char> Buf, RawMacho &Out) {
   const auto *MH = reinterpret_cast<const MO::mach_header_64 *>(Buf.data());
   if (MH->magic != MO::MH_MAGIC_64)
     return false;
+  Out.CPUType = MH->cputype;
 
   auto cstr16 = [](const char *P) -> StringRef {
     return StringRef(P, strnlen(P, 16));
@@ -1462,6 +1694,11 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         .insert(R.Address);
   }
 
+  // Disjoint-range accumulator (see OutSecRange).  n_value is segment-relative,
+  // so each section-relative offset is n_value - section addr; the input
+  // section's [base, size) within its merged section follows as in ELF/COFF.
+  DenseMap<unsigned, SmallVector<OutSecRange, 0>> SecRanges;
+
   for (unsigned p = 0; p < Inputs.size(); ++p) {
     if (Inputs[p].empty())
       continue;
@@ -1469,6 +1706,15 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     if (!parseRawMachO(ArrayRef<char>(Inputs[p].data(), Inputs[p].size()), In))
       return fail(Err, "verify: input partition " + Twine(p) +
                            " is not a parseable Mach-O object");
+
+    // Independent architecture-consistency leg (mirrors the merger's cputype
+    // refuse); a conformant -r output carries the inputs' cputype, so this
+    // never false-rejects.
+    if (In.CPUType != 0 && Out.CPUType != In.CPUType)
+      return fail(Err, "verify: merged output cputype " + Twine(Out.CPUType) +
+                           " does not match input partition " + Twine(p) +
+                           " cputype " + Twine(In.CPUType) +
+                           " (mixed architectures or wrong output header)");
 
     for (const RawMachoSym &S : In.Syms) {
       if (S.Name.empty())
@@ -1663,6 +1909,54 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       }
     }
 
+    // Disjoint-range invariant (singleton- and zerofill-safe; see OutSecRange).
+    // Literal sections are excluded for the same reason as the relative-distance
+    // invariant above: a real -r linker may coalesce their members.
+    {
+      DenseMap<unsigned, char> SeenInputSec; // input section number -> recorded
+      for (const RawMachoSym &S : In.Syms) {
+        if (S.Name.empty() || (S.Type & MO::N_STAB))
+          continue;
+        if ((S.Type & MO::N_TYPE) != MO::N_SECT || S.Sect == 0 ||
+            S.Sect > In.Secs.size())
+          continue;
+        const RawMachoSec &InSec = In.Secs[S.Sect - 1];
+        uint32_t InT = InSec.Flags & MO::SECTION_TYPE;
+        if (InT == MO::S_CSTRING_LITERALS || InT == MO::S_4BYTE_LITERALS ||
+            InT == MO::S_8BYTE_LITERALS || InT == MO::S_16BYTE_LITERALS ||
+            InT == MO::S_LITERAL_POINTERS)
+          continue;
+        if (InSec.Size == 0 || S.Value < InSec.Addr)
+          continue;
+        uint64_t InRel = S.Value - InSec.Addr;
+        if (InRel > InSec.Size)
+          continue;
+        if (SeenInputSec.count((unsigned)S.Sect))
+          continue;
+        auto It = OutByName.find(S.Name);
+        if (It == OutByName.end() || It->second < 0)
+          continue;
+        const RawMachoSym &OutSym = Out.Syms[(unsigned)It->second];
+        if ((OutSym.Type & MO::N_TYPE) != MO::N_SECT || OutSym.Sect == 0 ||
+            OutSym.Sect > Out.Secs.size())
+          continue;
+        const RawMachoSec &OutSec = Out.Secs[OutSym.Sect - 1];
+        if (OutSym.Value < OutSec.Addr)
+          continue;
+        uint64_t OutRel = OutSym.Value - OutSec.Addr;
+        if (OutRel < InRel)
+          return fail(Err, "verify: Mach-O symbol '" + S.Name +
+                               "' merged section-relative offset 0x" +
+                               Twine::utohexstr(OutRel) +
+                               " is below its input offset 0x" +
+                               Twine::utohexstr(InRel) +
+                               " (offset collapsed or mis-shifted)");
+        SeenInputSec[(unsigned)S.Sect] = 1;
+        SecRanges[(unsigned)OutSym.Sect].push_back(
+            {OutRel - InRel, InSec.Size, S.Name});
+      }
+    }
+
     // Symbol-anchored relocation check (extern relocations only).  n_value is
     // segment-relative, so subtract the section base to work in section-
     // relative offsets, matching the merged reloc r_address.
@@ -1826,6 +2120,20 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       }
     }
   }
+
+  // Disjoint-range check (keys are 1-based Mach-O section numbers).
+  if (!checkDisjointRanges(
+          SecRanges,
+          [&](unsigned I) {
+            return (I >= 1 && I <= Out.Secs.size()) ? Out.Secs[I - 1].Size : 0;
+          },
+          [&](unsigned I) {
+            return (I >= 1 && I <= Out.Secs.size()) ? Out.Secs[I - 1].Sect
+                                                    : StringRef();
+          },
+          Err))
+    return false;
+
   return true;
 }
 

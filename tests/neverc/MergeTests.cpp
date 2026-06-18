@@ -813,6 +813,11 @@ struct CoffSymSpec {
   uint32_t Value;
   int16_t SectionNumber; // 0 = undefined, 1-based otherwise
   uint8_t StorageClass;
+  // >=0 marks a WeakExternal symbol that carries one coff_aux_weak_external
+  // record whose TagIndex names Syms[WeakDefTag]'s on-disk slot.  -1 (the
+  // default) is an ordinary symbol with no aux, so existing call sites keep
+  // emitting exactly one slot per symbol and stay byte-identical.
+  int WeakDefTag = -1;
 };
 struct CoffRelSpec {
   int SecIdx;
@@ -828,9 +833,21 @@ SmallVector<char, 0> buildCOFF(uint16_t Machine, ArrayRef<CoffSecSpec> Secs,
   unsigned N = Secs.size();
   unsigned M = Syms.size();
 
+  // On-disk symbol slots: a weak external occupies two (itself + one aux
+  // record), every other symbol occupies one.  Relocations and weak-aux
+  // TagIndex fields reference these slots, not the CoffSymSpec array index, so
+  // map names to slots.  With no weak externals SlotOf[i]==i, so ordinary
+  // call sites are unchanged.
+  SmallVector<unsigned, 16> SlotOf(M);
+  unsigned TotalSlots = 0;
+  for (unsigned i = 0; i < M; ++i) {
+    SlotOf[i] = TotalSlots;
+    TotalSlots += (Syms[i].WeakDefTag >= 0) ? 2 : 1;
+  }
+
   StringMap<unsigned> SymIndex;
   for (unsigned i = 0; i < M; ++i)
-    SymIndex[Syms[i].Name] = i;
+    SymIndex[Syms[i].Name] = SlotOf[i];
 
   SmallVector<SmallVector<CoffRelSpec, 4>, 8> RelTab(N);
   for (auto &R : Rels)
@@ -856,15 +873,15 @@ SmallVector<char, 0> buildCOFF(uint16_t Machine, ArrayRef<CoffSecSpec> Secs,
       Off += RelTab[i].size() * 10; // coff_relocation is 10 bytes on disk
     }
   uint32_t SymPtr = Off;
-  Off += M * 18;
+  Off += TotalSlots * 18;
   // String table (just the mandatory 4-byte length).
 
   SmallVector<char, 0> Buf;
   putU16(Buf, Machine);
   putU16(Buf, (uint16_t)N);
   putU32(Buf, 0);      // TimeDateStamp
-  putU32(Buf, SymPtr); // PointerToSymbolTable
-  putU32(Buf, M);      // NumberOfSymbols
+  putU32(Buf, SymPtr);     // PointerToSymbolTable
+  putU32(Buf, TotalSlots); // NumberOfSymbols (includes aux records)
   putU16(Buf, 0);      // SizeOfOptionalHeader
   putU16(Buf, 0);      // Characteristics
 
@@ -900,7 +917,8 @@ SmallVector<char, 0> buildCOFF(uint16_t Machine, ArrayRef<CoffSecSpec> Secs,
       putU16(Buf, R.Type);
     }
 
-  for (auto &S : Syms) {
+  for (unsigned i = 0; i < M; ++i) {
+    const auto &S = Syms[i];
     char Name[8] = {0};
     memcpy(Name, S.Name.data(), std::min<size_t>(S.Name.size(), 8));
     Buf.append(Name, Name + 8);
@@ -908,7 +926,17 @@ SmallVector<char, 0> buildCOFF(uint16_t Machine, ArrayRef<CoffSecSpec> Secs,
     putU16(Buf, (uint16_t)S.SectionNumber);
     putU16(Buf, 0);               // Type
     Buf.push_back((char)S.StorageClass);
-    Buf.push_back(0);             // NumberOfAuxSymbols
+    bool IsWeak = S.WeakDefTag >= 0;
+    Buf.push_back(IsWeak ? 1 : 0); // NumberOfAuxSymbols
+    if (IsWeak) {
+      // coff_aux_weak_external (18 bytes): TagIndex(4), Characteristics(4),
+      // Unused(10).  TagIndex is the default definition's on-disk slot.
+      uint32_t Tag =
+          (unsigned)S.WeakDefTag < M ? SlotOf[(unsigned)S.WeakDefTag] : 0u;
+      putU32(Buf, Tag);
+      putU32(Buf, (uint32_t)IMAGE_WEAK_EXTERN_SEARCH_ALIAS);
+      Buf.append(10, (char)0);
+    }
   }
 
   putU32(Buf, 4); // empty string table (length field counts itself)
@@ -1841,6 +1869,67 @@ TEST(MergeELFSemantic, BssSectionsMergeByVirtualSize) {
   EXPECT_EQ(PVB->Value, 0x30u); // shifted past .bss.a
 }
 
+TEST(MergeELFSemantic, DistinctNotesConcatenatedIdenticalDeduped) {
+  using namespace ELF;
+  // This merger is also the linker's general `-r` path over arbitrary user
+  // objects, where two same-named SHT_NOTE sections can carry *different* bytes
+  // (distinct .note.gnu.property feature sets, build-ids, ...).  The historical
+  // "keep the first copy unconditionally" dedup silently dropped the later
+  // note — invisible to verifyMerge, which excludes NOTE sections.  The merger
+  // must now dedup only byte-identical notes and concatenate distinct ones, so
+  // no data is lost on a heterogeneous -r while same-source partitions (which
+  // re-emit byte-identical notes) still collapse to one copy.
+
+  // Distinct content across the two partitions → both must survive.
+  {
+    SecSpec N0{".note.x", 0x10, 4, SHT_NOTE, SHF_ALLOC, /*Fill=*/0xAA};
+    SecSpec N1{".note.x", 0x10, 4, SHT_NOTE, SHF_ALLOC, /*Fill=*/0xBB};
+    auto O0 = buildSectionedELF({N0}, {}, {});
+    auto O1 = buildSectionedELF({N1}, {}, {});
+    SmallVector<SmallVector<char, 0>, 2> Bufs;
+    Bufs.push_back(std::move(O0));
+    Bufs.push_back(std::move(O1));
+    auto [OK, Out] = mergeELF(Bufs);
+    ASSERT_TRUE(OK);
+    ElfView V = parseELF(Out);
+    ASSERT_TRUE(V.Ok);
+    int Idx = V.findSec(".note.x");
+    ASSERT_GE(Idx, 0);
+    EXPECT_EQ(V.Secs[Idx].Size, 0x20u)
+        << "distinct .note.x from two inputs must concatenate, not drop one";
+    // Both fill patterns must be present in the merged note bytes.
+    const auto &D = V.Secs[Idx].Data;
+    ASSERT_EQ(D.size(), 0x20u);
+    bool SawAA = false, SawBB = false;
+    for (uint8_t B : D) {
+      SawAA |= (B == 0xAA);
+      SawBB |= (B == 0xBB);
+    }
+    EXPECT_TRUE(SawAA) << "first input's note bytes were dropped";
+    EXPECT_TRUE(SawBB) << "second input's note bytes were dropped";
+  }
+
+  // Byte-identical content across partitions (the same-source case) → dedup to
+  // a single copy, exactly as before.
+  {
+    SecSpec N0{".note.x", 0x10, 4, SHT_NOTE, SHF_ALLOC, /*Fill=*/0xAA};
+    SecSpec N1{".note.x", 0x10, 4, SHT_NOTE, SHF_ALLOC, /*Fill=*/0xAA};
+    auto O0 = buildSectionedELF({N0}, {}, {});
+    auto O1 = buildSectionedELF({N1}, {}, {});
+    SmallVector<SmallVector<char, 0>, 2> Bufs;
+    Bufs.push_back(std::move(O0));
+    Bufs.push_back(std::move(O1));
+    auto [OK, Out] = mergeELF(Bufs);
+    ASSERT_TRUE(OK);
+    ElfView V = parseELF(Out);
+    ASSERT_TRUE(V.Ok);
+    int Idx = V.findSec(".note.x");
+    ASSERT_GE(Idx, 0);
+    EXPECT_EQ(V.Secs[Idx].Size, 0x10u)
+        << "byte-identical .note.x must dedup to one copy";
+  }
+}
+
 TEST(MergeELFSemantic, NobitsAndProgbitsSameNameFoldWithoutOverlap) {
   // A NOBITS section and a PROGBITS section that share a name + flag set are
   // merge-compatible (canMergeToProgbits), so they collapse into one PROGBITS
@@ -2430,6 +2519,109 @@ TEST(MergeELFVerify, CatchesCollapsedBssSymbolOffset) {
       << "verifier accepted a collapsed .bss symbol offset (NOBITS blind spot)";
 }
 
+TEST(MergeELFVerify, CatchesCollapsedSingletonBssDistinctSections) {
+  using namespace ELF;
+  // The ordinary multi-file .bss blind spot: two translation units each define
+  // exactly *one* uninitialized global, each in its own input .bss.  A lone
+  // symbol per input section gives the same-input-section relative-distance
+  // invariant no sibling to compare, and NOBITS denies the byte-content anchor —
+  // so before the disjoint-range invariant existed, collapsing g1 onto g0's slot
+  // (the historical bug's shape) passed verification on perfectly ordinary code,
+  // not just kernel modules.  The disjoint-range invariant reconstructs each
+  // input .bss's merged base from its single symbol and forbids the overlap.
+  SecSpec B0{".bss", 0x40, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
+  SecSpec B1{".bss", 0x40, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
+  SymSpec V0{"g0", 0, 0x0, /*Global=*/true};
+  SymSpec V1{"g1", 0, 0x0, /*Global=*/true};
+  auto O0 = buildSectionedELF({B0}, {V0}, {});
+  auto O1 = buildSectionedELF({B1}, {V1}, {});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  auto [OK, Out] = mergeELF(Bufs); // internal verify must accept the good merge
+  ASSERT_TRUE(OK);
+
+  // p0's .bss lands at 0, p1's after it at 0x40 — distinct, disjoint ranges.
+  {
+    ElfView V = parseELF(Out);
+    const ParsedSym *P0 = V.findSym("g0");
+    const ParsedSym *P1 = V.findSym("g1");
+    ASSERT_NE(P0, nullptr);
+    ASSERT_NE(P1, nullptr);
+    EXPECT_EQ(P0->Value, 0x0u);
+    EXPECT_EQ(P1->Value, 0x40u);
+  }
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::ELF64LE, {}, &Err))
+      << Err;
+
+  // Collapse p1's g1 onto p0's slot: its input .bss range [0,0x40) now overlaps
+  // p0's [0,0x40) → must be rejected even though no bytes exist to compare.
+  auto Collapsed = Out;
+  ASSERT_TRUE(patchSymValue(Collapsed, "g1", 0x0));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Collapsed), Format::ELF64LE, {}, &Err))
+      << "verifier accepted a collapsed singleton .bss symbol across partitions "
+         "(the ordinary multi-file NOBITS blind spot)";
+}
+
+TEST(MergeELFVerify, CatchesCollapsedSingletonBssMergeSections) {
+  using namespace ELF;
+  // The kernel-module (.ko) shape that scared us: -fdata-sections puts each
+  // global in its own .bss.<name>, and mergeSections folds them all into one
+  // .bss.  Each input .bss.<name> holds exactly one symbol, so this is the
+  // singleton case the relative-distance invariant cannot see; NOBITS denies the
+  // content anchor.  The disjoint-range invariant is the only line of defense —
+  // exactly the gap the historical offset-collapse bug would have hidden in on a
+  // real .ko, where there is no execution fallback to catch it later.
+  SecSpec BA{".bss.a", 0x40, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
+  SecSpec BB{".bss.b", 0x40, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
+  SymSpec VA{"var_a", 0, 0x0, /*Global=*/true};
+  SymSpec VB{"var_b", 1, 0x0, /*Global=*/true};
+  auto Obj = buildSectionedELF({BA, BB}, {VA, VB}, {});
+
+  Options Opts;
+  Opts.mergeSections = true;
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(Obj);
+  auto [OK, Out] = mergeELF(Bufs, Opts); // internal verify (mergeSections) accepts
+  ASSERT_TRUE(OK);
+
+  // Both .bss.* folded into one .bss; var_a at 0, var_b after it.
+  {
+    ElfView V = parseELF(Out);
+    EXPECT_GE(V.findSec(".bss"), 0);
+    EXPECT_LT(V.findSec(".bss.a"), 0);
+    const ParsedSym *PA = V.findSym("var_a");
+    const ParsedSym *PB = V.findSym("var_b");
+    ASSERT_NE(PA, nullptr);
+    ASSERT_NE(PB, nullptr);
+    EXPECT_EQ(PA->Value, 0x0u);
+    EXPECT_EQ(PB->Value, 0x40u);
+  }
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::ELF64LE, Opts, &Err))
+      << Err;
+
+  // Collapse var_b onto var_a's slot.  .bss.b's reconstructed range now overlaps
+  // .bss.a's → rejected, closing the NOBITS singleton blind spot on the .ko path.
+  auto Collapsed = Out;
+  ASSERT_TRUE(patchSymValue(Collapsed, "var_b", 0x0));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Collapsed), Format::ELF64LE, Opts,
+                           &Err))
+      << "verifier accepted a collapsed singleton .bss under mergeSections "
+         "(the kernel-module NOBITS blind spot)";
+}
+
 TEST(MergeELFVerify, CatchesCollapsedRelocOffset) {
   using namespace ELF;
   // Each partition defines a function spanning its .text and relocates against
@@ -2883,6 +3075,90 @@ TEST(MergeELFVerify, CatchesLinkOrderSectionWithZeroShLink) {
 // COFF semantic tests — same invariant on the Windows object path.
 // ---------------------------------------------------------------------------
 
+// P0 arch-consistency guard: two ELF64LE objects of different e_machine both
+// parse cleanly as ELF64LE but describe incompatible code.  The merger must
+// refuse rather than emit one header (the first input's e_machine) over a
+// cross-ISA body — a silent miscompile no content/offset anchor can see.  A
+// real `ld -r` refuses this too, so refusing never regresses a legitimate link.
+TEST(MergeELF, RefusesMixedEMachine) {
+  using namespace ELF;
+  auto A = buildMinimalELF({"a"}, {});
+  auto B = buildMinimalELF({"b"}, {});
+
+  // Positive control: same machine still merges (guards against a false-reject
+  // regression that would silently disable parallel codegen).
+  {
+    SmallVector<SmallVector<char, 0>, 2> Bufs;
+    Bufs.push_back(A);
+    Bufs.push_back(B);
+    EXPECT_TRUE(mergeELF(Bufs).first);
+  }
+
+  // Flip the second object's e_machine to AArch64 -> mixed arch -> must refuse.
+  ASSERT_GE(B.size(), sizeof(Elf64_Ehdr));
+  reinterpret_cast<Elf64_Ehdr *>(B.data())->e_machine = EM_AARCH64;
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(std::move(A));
+  Bufs.push_back(std::move(B));
+  EXPECT_FALSE(mergeELF(Bufs).first)
+      << "merger accepted mixed e_machine inputs";
+}
+
+// P0 arch-consistency guard, verifier leg: even if a future merger bug wrote a
+// wrong output header, the independent verifier must catch an output e_machine
+// that disagrees with the inputs (every section byte still anchors to its
+// input; only the architecture lies).
+TEST(MergeELFVerify, CatchesMismatchedOutputMachine) {
+  using namespace ELF;
+  SecSpec S0{".text", 0x20, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xAA};
+  SecSpec S1{".text", 0x20, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xBB};
+  SymSpec FA{"fa", 0, 0, true};
+  SymSpec FB{"fb", 0, 0, true};
+  auto O0 = buildSectionedELF({S0}, {FA}, {});
+  auto O1 = buildSectionedELF({S1}, {FB}, {});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  auto [OK, Out] = mergeELF(Bufs);
+  ASSERT_TRUE(OK);
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::ELF64LE, {}, &Err))
+      << Err;
+
+  auto Bad = Out;
+  ASSERT_GE(Bad.size(), sizeof(Elf64_Ehdr));
+  reinterpret_cast<Elf64_Ehdr *>(Bad.data())->e_machine = EM_AARCH64;
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Bad), Format::ELF64LE, {}, &Err))
+      << "verifier accepted an output with a mismatched e_machine";
+}
+
+// P1: two strong (STB_GLOBAL, defined) definitions of one symbol is an ODR
+// violation the ELF dedup would silently resolve by dropping one.  Refuse it
+// (a real `ld -r` also rejects/defers; the parallel-codegen path never makes
+// dup strong defs, so this never false-rejects that path).
+TEST(MergeELF, RefusesMultipleStrongDefinitions) {
+  auto A = buildMinimalELF({"dup"}, {}, {0xcc}, /*DefinedAsGlobal=*/true);
+  auto B = buildMinimalELF({"dup"}, {}, {0xdd}, /*DefinedAsGlobal=*/true);
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(std::move(A));
+  Bufs.push_back(std::move(B));
+  EXPECT_FALSE(mergeELF(Bufs).first)
+      << "merger accepted two strong definitions of the same symbol";
+
+  // Control: distinct strong globals merge fine (no false-reject regression).
+  auto C = buildMinimalELF({"g0"}, {}, {0xcc}, /*DefinedAsGlobal=*/true);
+  auto D = buildMinimalELF({"g1"}, {}, {0xdd}, /*DefinedAsGlobal=*/true);
+  SmallVector<SmallVector<char, 0>, 2> Bufs2;
+  Bufs2.push_back(std::move(C));
+  Bufs2.push_back(std::move(D));
+  EXPECT_TRUE(mergeELF(Bufs2).first);
+}
+
 TEST(MergeCOFFSemantic, CrossPartitionSymbolAndRelocOffsets) {
   using namespace COFF;
   uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
@@ -3068,6 +3344,140 @@ TEST(MergeCOFFSemantic, MergeIsDeterministic) {
       << "COFF merge is not deterministic";
 }
 
+TEST(MergeCOFFSemantic, WeakExternalAuxTagIndexRemapped) {
+  using namespace COFF;
+  // A COFF weak external symbol carries a coff_aux_weak_external whose TagIndex
+  // is a *symbol-table index* naming the default definition.  The merge appends
+  // every partition's symbols, shifting all indices, so a copied-verbatim
+  // TagIndex aliases the weak symbol onto an unrelated definition — a silent
+  // miscompile the content/offset anchors cannot see (aux records carry no
+  // section bytes).  Each partition defines its own default and a weak external
+  // pointing at it; after merge each weak aux must still name *its* default.
+  uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
+                       IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
+  CoffSecSpec S0{".text", 0x20, TextChars, 0xAA};
+  CoffSymSpec Def0{"wdef0", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec Weak0{"wfn0", 0, 0, IMAGE_SYM_CLASS_WEAK_EXTERNAL};
+  Weak0.WeakDefTag = 0; // -> Def0 (index 0 within partition 0's specs)
+  auto O0 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {Def0, Weak0}, {});
+
+  CoffSecSpec S1{".text", 0x20, TextChars, 0xBB};
+  CoffSymSpec Def1{"wdef1", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec Weak1{"wfn1", 0, 0, IMAGE_SYM_CLASS_WEAK_EXTERNAL};
+  Weak1.WeakDefTag = 0; // -> Def1 (index 0 within partition 1's specs)
+  auto O1 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S1}, {Def1, Weak1}, {});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  SmallVector<char, 0> Out;
+  {
+    raw_svector_ostream OS(Out);
+    ASSERT_TRUE(mergeObjects(Bufs, OS, Format::COFF));
+  }
+
+  // Walk the merged symbol table; each weak external's aux TagIndex must name
+  // the matching default definition by content, not a stale partition-local
+  // index.
+  ASSERT_GE(Out.size(), 20u);
+  uint32_t SymPtr = getU32(Out.data() + 8);
+  uint32_t NSym = getU32(Out.data() + 12);
+  ASSERT_LE(SymPtr + (uint64_t)NSym * 18, Out.size());
+  uint64_t StrBase = (uint64_t)SymPtr + (uint64_t)NSym * 18;
+  auto slotName = [&](uint32_t Slot) -> std::string {
+    const char *P = Out.data() + SymPtr + (uint64_t)Slot * 18;
+    if (getU32(P) == 0) { // long-name escape: 4 zero bytes, then strtab offset
+      uint32_t O = getU32(P + 4);
+      if (StrBase + O >= Out.size())
+        return {};
+      const char *S = Out.data() + StrBase + O;
+      return std::string(S, strnlen(S, Out.size() - (StrBase + O)));
+    }
+    return std::string(P, strnlen(P, 8));
+  };
+  bool SawW0 = false, SawW1 = false;
+  for (uint32_t k = 0; k < NSym;) {
+    const char *P = Out.data() + SymPtr + (uint64_t)k * 18;
+    std::string Nm = slotName(k);
+    uint8_t Storage = (uint8_t)P[16];
+    uint8_t NAux = (uint8_t)P[17];
+    if (Storage == IMAGE_SYM_CLASS_WEAK_EXTERNAL && NAux >= 1 && k + 1 < NSym) {
+      uint32_t Tag = getU32(Out.data() + SymPtr + (uint64_t)(k + 1) * 18);
+      ASSERT_LT(Tag, NSym) << "weak '" << Nm << "' aux TagIndex out of range";
+      std::string TagName = slotName(Tag);
+      if (Nm == "wfn0") {
+        EXPECT_EQ(TagName, "wdef0")
+            << "weak external wfn0 aux TagIndex not remapped to its default";
+        SawW0 = true;
+      } else if (Nm == "wfn1") {
+        EXPECT_EQ(TagName, "wdef1")
+            << "weak external wfn1 aux TagIndex not remapped to its default";
+        SawW1 = true;
+      }
+    }
+    k += 1u + NAux;
+  }
+  EXPECT_TRUE(SawW0) << "wfn0 missing from merged output";
+  EXPECT_TRUE(SawW1) << "wfn1 missing from merged output";
+}
+
+TEST(MergeCOFFVerify, CatchesWeakExternalTagIndexNotRemapped) {
+  using namespace COFF;
+  // Independent proof that the verifier closes the aux blind spot: build a good
+  // merge, then corrupt wfn1's aux TagIndex back to the historical "copied
+  // verbatim" value (0, which names wdef0 instead of wdef1) and confirm
+  // verifyMerge rejects it even though every section byte still matches.
+  uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
+                       IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
+  CoffSecSpec S0{".text", 0x20, TextChars, 0xAA};
+  CoffSymSpec Def0{"wdef0", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec Weak0{"wfn0", 0, 0, IMAGE_SYM_CLASS_WEAK_EXTERNAL};
+  Weak0.WeakDefTag = 0;
+  auto O0 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {Def0, Weak0}, {});
+  CoffSecSpec S1{".text", 0x20, TextChars, 0xBB};
+  CoffSymSpec Def1{"wdef1", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec Weak1{"wfn1", 0, 0, IMAGE_SYM_CLASS_WEAK_EXTERNAL};
+  Weak1.WeakDefTag = 0;
+  auto O1 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S1}, {Def1, Weak1}, {});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  SmallVector<char, 0> Out;
+  {
+    raw_svector_ostream OS(Out);
+    ASSERT_TRUE(mergeObjects(Bufs, OS, Format::COFF));
+  }
+  std::string Err;
+  ASSERT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::COFF, {}, &Err))
+      << Err;
+
+  uint32_t SymPtr = getU32(Out.data() + 8);
+  uint32_t NSym = getU32(Out.data() + 12);
+  bool Patched = false;
+  for (uint32_t k = 0; k + 1 < NSym;) {
+    char *P = Out.data() + SymPtr + (uint64_t)k * 18;
+    std::string Nm(P, strnlen(P, 8));
+    uint8_t Storage = (uint8_t)P[16];
+    uint8_t NAux = (uint8_t)P[17];
+    if (Nm == "wfn1" && Storage == IMAGE_SYM_CLASS_WEAK_EXTERNAL && NAux >= 1) {
+      char *Aux = Out.data() + SymPtr + (uint64_t)(k + 1) * 18;
+      Aux[0] = Aux[1] = Aux[2] = Aux[3] = 0; // TagIndex = 0 -> wrong default
+      Patched = true;
+      break;
+    }
+    k += 1u + NAux;
+  }
+  ASSERT_TRUE(Patched) << "could not locate wfn1 weak external to corrupt";
+
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Out), Format::COFF, {}, &Err))
+      << "verifier accepted a weak external whose aux TagIndex points at the "
+         "wrong default (the aux blind spot)";
+}
+
 TEST(MergeCOFFVerify, AcceptsGoodMergeRejectsCollapse) {
   using namespace COFF;
   uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
@@ -3190,6 +3600,53 @@ TEST(MergeCOFFVerify, CatchesCollapsedBssSymbolOffset) {
       << "verifier accepted a collapsed COFF .bss symbol offset";
 }
 
+TEST(MergeCOFFVerify, CatchesCollapsedSingletonBssDistinctSections) {
+  using namespace COFF;
+  // COFF parity for the singleton .bss blind spot: two objects each with a
+  // single uninitialized external in their own .bss.  One symbol per input
+  // section starves the relative-distance invariant, and BSS has no on-disk
+  // bytes for the content anchor — only the disjoint-range invariant can reject
+  // collapsing g1 onto g0's slot.
+  uint32_t BssChars = IMAGE_SCN_CNT_UNINITIALIZED_DATA | IMAGE_SCN_MEM_READ |
+                      IMAGE_SCN_MEM_WRITE | IMAGE_SCN_ALIGN_16BYTES;
+  CoffSecSpec B0{".bss", 0x40, BssChars};
+  CoffSecSpec B1{".bss", 0x40, BssChars};
+  CoffSymSpec V0{"g0", 0x0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec V1{"g1", 0x0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  auto O0 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {B0}, {V0}, {});
+  auto O1 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {B1}, {V1}, {});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  ASSERT_TRUE(mergeObjects(Bufs, OS, Format::COFF)); // internal verify accepts
+
+  {
+    CoffView V = parseCOFF(Out);
+    const CoffParsedSym *P0 = V.findSym("g0");
+    const CoffParsedSym *P1 = V.findSym("g1");
+    ASSERT_NE(P0, nullptr);
+    ASSERT_NE(P1, nullptr);
+    EXPECT_EQ(P0->Value, 0x0u);
+    EXPECT_EQ(P1->Value, 0x40u);
+  }
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::COFF, {}, &Err))
+      << Err;
+
+  auto Collapsed = Out;
+  ASSERT_TRUE(patchCoffSymValue(Collapsed, "g1", 0x0));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Collapsed), Format::COFF, {}, &Err))
+      << "verifier accepted a collapsed singleton COFF .bss symbol across "
+         "partitions";
+}
+
 TEST(MergeCOFFVerify, CatchesCollapsedRelocOffset) {
   using namespace COFF;
   uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
@@ -3279,6 +3736,40 @@ TEST(MergeCOFFVerify, CatchesCollapsedSectionRelativeReloc) {
 // symbol n_value fix-up (section-relative → segment-relative) lived.
 // ---------------------------------------------------------------------------
 
+// P0 arch-consistency guard (COFF): mixing IMAGE_FILE_MACHINE values must be
+// refused.  COFF's only caller today is parallel codegen (always one machine),
+// so this guards a future general path against a cross-ISA object.
+TEST(MergeCOFF, RefusesMixedMachine) {
+  using namespace COFF;
+  uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
+                       IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
+  CoffSecSpec S0{".text", 0x20, TextChars};
+  CoffSecSpec S1{".text", 0x20, TextChars};
+  CoffSymSpec P0{"p0", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec P1{"p1", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  auto Obj0 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {P0}, {});
+
+  // Positive control: same machine merges.
+  {
+    auto C1 = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S1}, {P1}, {});
+    SmallVector<SmallVector<char, 0>, 2> Bufs;
+    Bufs.push_back(Obj0);
+    Bufs.push_back(std::move(C1));
+    SmallVector<char, 0> Out;
+    raw_svector_ostream OS(Out);
+    EXPECT_TRUE(mergeObjects(Bufs, OS, Format::COFF));
+  }
+
+  auto Obj1 = buildCOFF(IMAGE_FILE_MACHINE_ARM64, {S1}, {P1}, {});
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(std::move(Obj0));
+  Bufs.push_back(std::move(Obj1));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  EXPECT_FALSE(mergeObjects(Bufs, OS, Format::COFF))
+      << "merger accepted mixed COFF machine inputs";
+}
+
 TEST(MergeMachOSemantic, CrossPartitionSymbolOffsets) {
   namespace MO = llvm::MachO;
   uint32_t TextFlags = MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
@@ -3341,6 +3832,104 @@ TEST(MergeMachOSemantic, ZerofillSectionsMergeByVirtualSize) {
   const MachoParsedSym *PV1 = V.findSym("_v1");
   ASSERT_NE(PV1, nullptr);
   EXPECT_EQ(PV1->Value - Bss->Addr, 0x30u); // shifted past partition 0's zerofill
+}
+
+// nlist_64::n_sect is a uint8_t, so a Mach-O object can address at most 255
+// sections (0 == NO_SECT).  The merger must refuse to emit more rather than
+// silently truncate every section number past 255 — the Mach-O twin of the ELF
+// e_shnum guard and the COFF NumberOfSections guard.  255 distinct
+// (segment, section) sections is the boundary that must still merge; 256 must be
+// refused (and that refusal lets the parallel-codegen caller fall back to serial
+// codegen instead of emitting a wrong object).
+// P0 arch-consistency guard (Mach-O): mixing cputype must be refused — besides
+// the cross-ISA body, it would corrupt the IsARM64-gated ARM64_RELOC_ADDEND /
+// in-place fixup logic.
+TEST(MergeMachO, RefusesMixedCpuType) {
+  namespace MO = llvm::MachO;
+  uint32_t TextFlags =
+      MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
+  MachoSecSpec S0{"__TEXT", "__text", 0x20, 4, TextFlags};
+  MachoSecSpec S1{"__TEXT", "__text", 0x20, 4, TextFlags};
+  uint8_t DefExt = MO::N_SECT | MO::N_EXT;
+  MachoSymSpec P0{"_p0", DefExt, 1, 0, 0};
+  MachoSymSpec P1{"_p1", DefExt, 1, 0, 0};
+  auto Obj0 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0}, {P0});
+
+  // Positive control: same cputype merges.
+  {
+    auto C1 =
+        buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1}, {P1});
+    SmallVector<SmallVector<char, 0>, 2> Bufs;
+    Bufs.push_back(Obj0);
+    Bufs.push_back(std::move(C1));
+    SmallVector<char, 0> Out;
+    raw_svector_ostream OS(Out);
+    EXPECT_TRUE(mergeObjects(Bufs, OS, Format::MachO64));
+  }
+
+  auto Obj1 = buildMachO(MO::CPU_TYPE_X86_64, MO::CPU_SUBTYPE_X86_64_ALL, {S1},
+                         {P1});
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(std::move(Obj0));
+  Bufs.push_back(std::move(Obj1));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  EXPECT_FALSE(mergeObjects(Bufs, OS, Format::MachO64))
+      << "merger accepted mixed Mach-O cputype inputs";
+}
+
+// P1 (Mach-O): same ODR-violation refuse as ELF — two strong external defs of
+// one name would be silently resolved to one by the priority dedup.
+TEST(MergeMachO, RefusesMultipleStrongDefinitions) {
+  namespace MO = llvm::MachO;
+  uint32_t TextFlags =
+      MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
+  MachoSecSpec S0{"__TEXT", "__text", 0x20, 4, TextFlags};
+  MachoSecSpec S1{"__TEXT", "__text", 0x20, 4, TextFlags};
+  uint8_t DefExt = MO::N_SECT | MO::N_EXT;
+  MachoSymSpec D0{"_dup", DefExt, 1, 0, 0};
+  MachoSymSpec D1{"_dup", DefExt, 1, 0, 0};
+  auto O0 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0}, {D0});
+  auto O1 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1}, {D1});
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(std::move(O0));
+  Bufs.push_back(std::move(O1));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  EXPECT_FALSE(mergeObjects(Bufs, OS, Format::MachO64))
+      << "merger accepted two strong Mach-O definitions of the same symbol";
+}
+
+TEST(MergeMachO, Accepts255SectionsRefuses256) {
+  namespace MO = llvm::MachO;
+  auto buildN = [](unsigned NSec) {
+    std::vector<MachoSecSpec> Secs;
+    for (unsigned i = 0; i < NSec; ++i)
+      Secs.push_back({"__TEXT", "__s" + std::to_string(i), 4, 0,
+                      (uint32_t)MO::S_REGULAR, (uint8_t)0});
+    return buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, Secs, {});
+  };
+
+  {
+    SmallVector<SmallVector<char, 0>, 1> Bufs;
+    Bufs.push_back(buildN(255));
+    SmallVector<char, 0> Out;
+    raw_svector_ostream OS(Out);
+    EXPECT_TRUE(mergeObjects(Bufs, OS, Format::MachO64))
+        << "255 distinct sections is within the n_sect limit and must merge";
+  }
+  {
+    SmallVector<SmallVector<char, 0>, 1> Bufs;
+    Bufs.push_back(buildN(256));
+    SmallVector<char, 0> Out;
+    raw_svector_ostream OS(Out);
+    EXPECT_FALSE(mergeObjects(Bufs, OS, Format::MachO64))
+        << "256 sections overflow the 8-bit n_sect; the merger must refuse "
+           "rather than emit a truncated object";
+  }
 }
 
 TEST(MergeMachOSemantic, RandomizedLayoutOracle) {
@@ -3654,6 +4243,53 @@ TEST(MergeMachOVerify, CatchesCollapsedZerofillSymbolOffset) {
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
                            ArrayRef<char>(Collapsed), Format::MachO64, {}, &Err))
       << "verifier accepted a collapsed Mach-O zerofill symbol offset";
+}
+
+TEST(MergeMachOVerify, CatchesCollapsedSingletonZerofillDistinctSections) {
+  namespace MO = llvm::MachO;
+  // Mach-O parity for the singleton blind spot: two objects each with a single
+  // S_ZEROFILL global in their own __bss.  One symbol per input section starves
+  // the relative-distance invariant, and zerofill has no on-disk bytes — only
+  // the disjoint-range invariant catches collapsing _g1 back onto the shared
+  // section base (the segment-relative form of an offset collapse).
+  MachoSecSpec B0{"__DATA", "__bss", 0x40, 4, MO::S_ZEROFILL};
+  MachoSecSpec B1{"__DATA", "__bss", 0x40, 4, MO::S_ZEROFILL};
+  uint8_t DefExt = MO::N_SECT | MO::N_EXT;
+  MachoSymSpec V0{"_g0", DefExt, 1, 0x0, 0};
+  MachoSymSpec V1{"_g1", DefExt, 1, 0x0, 0};
+  auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {B0}, {V0});
+  auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {B1}, {V1});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  ASSERT_TRUE(mergeObjects(Bufs, OS, Format::MachO64)); // internal verify accepts
+
+  uint64_t BaseVal = 0;
+  {
+    MachoView V = parseMachO(Out);
+    const MachoParsedSym *P0 = V.findSym("_g0");
+    const MachoParsedSym *P1 = V.findSym("_g1");
+    ASSERT_NE(P0, nullptr);
+    ASSERT_NE(P1, nullptr);
+    EXPECT_EQ(P1->Value - P0->Value, 0x40u); // p1's __bss shifted past p0's
+    BaseVal = P0->Value;
+  }
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::MachO64, {}, &Err))
+      << Err;
+
+  auto Collapsed = Out;
+  ASSERT_TRUE(patchMachoSymValue(Collapsed, "_g1", BaseVal));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Collapsed), Format::MachO64, {}, &Err))
+      << "verifier accepted a collapsed singleton Mach-O zerofill symbol across "
+         "partitions";
 }
 
 TEST(MergeMachOVerify, AcceptsDuplicateLocalLabelWithRelocInFirstWindow) {
@@ -4477,6 +5113,256 @@ void runMergeFuzzExecution(Format Fmt, unsigned Seed) {
          "mis-placed a symbol or relocation";
 }
 
+// ===========================================================================
+// End-to-end guard for the parallel-codegen -> merger path under STRICT mode.
+//
+// Every suite above calls the merger in-process on -fno-lto objects.  This one
+// drives the *default auto-LTO link*, which is the production path that
+// partitions the post-IPO module, codegen's the partitions in parallel, and
+// stitches them back with the in-process merger.  NEVERC_PCG_STRICT makes that
+// path abort (non-zero exit) on any merge/self-verify failure instead of
+// silently falling back to serial codegen — so a reintroduced offset-collapse
+// bug becomes a hard CI failure here, rather than a build that merely compiles
+// slower while quietly never exercising the merger.  Output is checked against
+// a -fno-lto build of the identical sources, so a merge that loads but is wrong
+// is also caught.  Native host only; POSIX only (injects the env knob via
+// setenv, which MSVC lacks — Windows would GTEST_SKIP at runtime regardless).
+// ===========================================================================
+#ifndef _WIN32
+// Restore an environment variable to its prior value on scope exit, so the
+// strict-mode knob never leaks into other tests when the whole gtest binary is
+// run in one process.
+struct ScopedEnv {
+  std::string Name;
+  std::string Old;
+  bool HadOld;
+  ScopedEnv(const char *N, const char *V) : Name(N) {
+    const char *Prev = ::getenv(N);
+    HadOld = Prev != nullptr;
+    if (HadOld)
+      Old = Prev;
+    ::setenv(N, V, 1);
+  }
+  ~ScopedEnv() {
+    if (HadOld)
+      ::setenv(Name.c_str(), Old.c_str(), 1);
+    else
+      ::unsetenv(Name.c_str());
+  }
+};
+
+// One module of `NumFns` noinline, deliberately heavy functions.  noinline
+// keeps them distinct after whole-program inlining, so the post-IPO module
+// still clears the parallel thresholds (FuncCount>=8, TotalWeight>=10000) and
+// the partitioner actually engages.
+std::string genHeavyModule(unsigned Idx, unsigned NumFns) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "#include <stdint.h>\n";
+  for (unsigned f = 0; f < NumFns; ++f) {
+    OS << "__attribute__((noinline)) uint64_t heavy_" << Idx << "_" << f
+       << "(uint64_t x){\n"
+       << "  uint64_t a=x, b=x^0x9e3779b97f4a7c15ULL, c=" << (Idx * 131u + f)
+       << "ULL;\n"
+       << "  for (uint64_t i=0;i<61;i++){\n"
+       << "    a = a*6364136223846793005ULL + 1442695040888963407ULL;\n"
+       << "    b ^= (a>>13); b += (a<<7);\n"
+       << "    c += (a^b) + (a&b) - (a|b);\n"
+       << "    c = (c<<5) | (c>>59);\n"
+       << "    a ^= c*0xff51afd7ed558ccdULL;\n"
+       << "    b = b*0x100000001b3ULL ^ (c>>17);\n"
+       << "  }\n"
+       << "  return a^b^c;\n}\n";
+  }
+  return S;
+}
+
+std::string genHeavyMain(unsigned NumMods, unsigned NumFns) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "#include <stdint.h>\n#include <stdio.h>\n";
+  for (unsigned m = 0; m < NumMods; ++m)
+    for (unsigned f = 0; f < NumFns; ++f)
+      OS << "uint64_t heavy_" << m << "_" << f << "(uint64_t);\n";
+  OS << "int main(int argc, char **argv){\n"
+     << "  (void)argv; uint64_t s=0, k=(uint64_t)argc;\n";
+  unsigned i = 0;
+  for (unsigned m = 0; m < NumMods; ++m)
+    for (unsigned f = 0; f < NumFns; ++f) {
+      OS << "  s += heavy_" << m << "_" << f << "(" << i << "ULL+k) ^ heavy_"
+         << m << "_" << f << "(" << (i * 7u + 1u) << "ULL+k);\n";
+      i++;
+    }
+  OS << "  printf(\"%llu\\n\",(unsigned long long)s);\n  return 0;\n}\n";
+  return S;
+}
+
+// Compile+link several sources in ONE neverc invocation; the auto-LTO link
+// happens here when -fno-lto is absent.  ExtraArgs (e.g. -fno-lto -O2) precede
+// the sources.  Returns true only on a clean (exit 0) compile+link.
+bool compileLinkMulti(const ScratchDir &Dir, ArrayRef<std::string> Srcs,
+                      ArrayRef<StringRef> ExtraArgs, StringRef OutExe) {
+  SmallVector<StringRef, 40> Args;
+  Args.append(ExtraArgs.begin(), ExtraArgs.end());
+  for (const std::string &S : Srcs)
+    Args.push_back(S);
+  Args.push_back("-o");
+  Args.push_back(OutExe);
+  return runNeverc(Dir, Args) == 0;
+}
+
+// A module that, beyond heavy .text, defines a cross-module-referenced
+// initialized global array (.data) and an uninitialized one (.bss), and whose
+// functions both read and write them.  This is deliberately the shape the
+// historical offset-collapse bug corrupted: in auto-LTO the partitioner pins
+// every global *initializer* to partition 0 and references it as external from
+// the others, so the merge must shift each global's symbol value and every
+// cross-partition relocation into .data/.bss by exactly its merged section
+// offset — the arithmetic that once collapsed to 0 and produced a loadable but
+// wrong .ko.  noinline keeps the functions distinct post-IPO so the partitioner
+// engages.
+std::string genGlobalsModule(unsigned Idx, unsigned NumFns) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "#include <stdint.h>\n";
+  OS << "uint64_t gdata_" << Idx << "[8] = {";
+  for (unsigned j = 0; j < 8; ++j) {
+    uint64_t V = (uint64_t)(Idx * 8u + j) * 0x9e3779b97f4a7c15ULL + 1u;
+    OS << (j ? "," : "") << V << "ULL";
+  }
+  OS << "};\n";
+  OS << "uint64_t gbss_" << Idx << "[8];\n";
+  for (unsigned f = 0; f < NumFns; ++f) {
+    OS << "__attribute__((noinline)) uint64_t gfn_" << Idx << "_" << f
+       << "(uint64_t x){\n"
+       << "  uint64_t a = x ^ gdata_" << Idx << "[" << (f % 8) << "];\n"
+       << "  for (uint64_t i=0;i<53;i++){\n"
+       << "    a = a*6364136223846793005ULL + 1442695040888963407ULL;\n"
+       << "    a ^= gbss_" << Idx << "[i & 7] + (a>>11);\n"
+       << "    a = (a<<7) | (a>>57);\n"
+       << "  }\n"
+       << "  gbss_" << Idx << "[" << (f % 8) << "] += a;\n"
+       << "  return a ^ gbss_" << Idx << "[" << ((f + 1) % 8) << "];\n}\n";
+  }
+  return S;
+}
+
+std::string genGlobalsMain(unsigned NumMods, unsigned NumFns) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "#include <stdint.h>\n#include <stdio.h>\n";
+  for (unsigned m = 0; m < NumMods; ++m) {
+    OS << "extern uint64_t gdata_" << m << "[8];\n";
+    OS << "extern uint64_t gbss_" << m << "[8];\n";
+    for (unsigned f = 0; f < NumFns; ++f)
+      OS << "uint64_t gfn_" << m << "_" << f << "(uint64_t);\n";
+  }
+  OS << "int main(int argc, char **argv){\n"
+     << "  (void)argv; uint64_t s=0, k=(uint64_t)argc;\n";
+  // Write .bss at runtime so it is genuinely uninitialized storage (not
+  // constant-foldable) and cross-module addressed.
+  for (unsigned m = 0; m < NumMods; ++m)
+    OS << "  gbss_" << m << "[k & 7] ^= (uint64_t)(" << (m * 7u + 1u)
+       << "ULL + k);\n";
+  unsigned i = 0;
+  for (unsigned m = 0; m < NumMods; ++m)
+    for (unsigned f = 0; f < NumFns; ++f) {
+      OS << "  s += gfn_" << m << "_" << f << "(" << i << "ULL+k) ^ gdata_" << m
+         << "[" << (f % 8) << "];\n";
+      i++;
+    }
+  // Read .bss across every module after the calls mutated it.
+  for (unsigned m = 0; m < NumMods; ++m)
+    OS << "  s += gbss_" << m << "[(k+1) & 7];\n";
+  OS << "  printf(\"%llu\\n\",(unsigned long long)s);\n  return 0;\n}\n";
+  return S;
+}
+
+// A module mixing plain heavy functions (weight + multi-partition spread, so the
+// merger actually runs) with computed-goto "interpreters".  Each interpreter
+// holds a function-local `static const void *tab[]` of label addresses — the
+// exact blockaddress-in-a-global-initializer shape Lua's luaV_execute / CPython's
+// ceval use.  Global initializers all live in partition 0, so if parallel codegen
+// bins such a function into a partition != 0 its blockaddress constants in p0
+// collapse to inttoptr(1) and the program jumps to address 1 (the real lua_lto
+// SIGTRAP).  The fix pins every address-taken-block function to partition 0; this
+// generator exists so a regression of that pinning turns this test red, because
+// the object self-verifier *cannot* catch it (the partition object is already
+// wrong before the merge).
+std::string genComputedGotoModule(unsigned Idx, unsigned NumHeavy,
+                                  unsigned NumCG) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "#include <stdint.h>\n";
+  // Heavy body matches genHeavyModule's static instruction count (weight is the
+  // sum of BB sizes, independent of the loop trip count), so a handful of these
+  // per module clears the parallel threshold (TotalWeight>=10000) and the
+  // partitioner actually engages — without that the whole thing compiles serially
+  // and never exercises the merger or the pin.
+  for (unsigned f = 0; f < NumHeavy; ++f)
+    OS << "__attribute__((noinline)) uint64_t cgheavy_" << Idx << "_" << f
+       << "(uint64_t x){\n"
+       << "  uint64_t a=x, b=x^0x9e3779b97f4a7c15ULL, c=" << (Idx * 131u + f)
+       << "ULL;\n"
+       << "  for (uint64_t i=0;i<61;i++){\n"
+       << "    a = a*6364136223846793005ULL + 1442695040888963407ULL;\n"
+       << "    b ^= (a>>13); b += (a<<7);\n"
+       << "    c += (a^b) + (a&b) - (a|b);\n"
+       << "    c = (c<<5) | (c>>59);\n"
+       << "    a ^= c*0xff51afd7ed558ccdULL;\n"
+       << "    b = b*0x100000001b3ULL ^ (c>>17);\n"
+       << "  }\n"
+       << "  return a^b^c;\n}\n";
+  // The dispatch index (st & 3) is driven by a runtime-evolving PRNG state, not
+  // a compile-time-constant program — otherwise -O2 would devirtualize the
+  // indirectbr into direct branches and delete the blockaddress table, hiding
+  // the bug.  Lua's real luaV_execute is exactly this shape: the next opcode is
+  // runtime bytecode, so the table must survive to runtime.
+  for (unsigned f = 0; f < NumCG; ++f)
+    OS << "__attribute__((noinline)) uint64_t cgvm_" << Idx << "_" << f
+       << "(uint64_t x){\n"
+       << "  static const void *const tab[] = {&&A,&&B,&&C,&&D,&&E};\n"
+       << "  uint64_t acc=x, st=x^" << (Idx * 2654435761u + f + 1u)
+       << "ULL; int steps=0;\n"
+       << "  goto *tab[st & 3];\n"
+       << "A: acc+=st; st=st*6364136223846793005ULL+1442695040888963407ULL;"
+          " if(++steps<96) goto *tab[st & 3]; goto E;\n"
+       << "B: acc^=(acc>>13); st=st*6364136223846793005ULL+1442695040888963407ULL;"
+          " if(++steps<96) goto *tab[st & 3]; goto E;\n"
+       << "C: acc+=(acc<<7); st=st*6364136223846793005ULL+1442695040888963407ULL;"
+          " if(++steps<96) goto *tab[st & 3]; goto E;\n"
+       << "D: acc=(acc<<5)|(acc>>59);"
+          " st=st*6364136223846793005ULL+1442695040888963407ULL;"
+          " if(++steps<96) goto *tab[st & 3]; goto E;\n"
+       << "E: return acc;\n}\n";
+  return S;
+}
+
+std::string genComputedGotoMain(unsigned NumMods, unsigned NumHeavy,
+                                unsigned NumCG) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "#include <stdint.h>\n#include <stdio.h>\n";
+  for (unsigned m = 0; m < NumMods; ++m) {
+    for (unsigned f = 0; f < NumHeavy; ++f)
+      OS << "uint64_t cgheavy_" << m << "_" << f << "(uint64_t);\n";
+    for (unsigned f = 0; f < NumCG; ++f)
+      OS << "uint64_t cgvm_" << m << "_" << f << "(uint64_t);\n";
+  }
+  OS << "int main(int argc, char **argv){\n"
+     << "  (void)argv; uint64_t s=0, k=(uint64_t)argc;\n";
+  unsigned i = 0;
+  for (unsigned m = 0; m < NumMods; ++m) {
+    for (unsigned f = 0; f < NumHeavy; ++f)
+      OS << "  s += cgheavy_" << m << "_" << f << "(" << i++ << "ULL+k);\n";
+    for (unsigned f = 0; f < NumCG; ++f)
+      OS << "  s += cgvm_" << m << "_" << f << "(" << i++ << "ULL+k);\n";
+  }
+  OS << "  printf(\"%llu\\n\",(unsigned long long)s);\n  return 0;\n}\n";
+  return S;
+}
+#endif // _WIN32
+
 } // namespace
 
 TEST(MergeDifferentialLLD, ElfArm64FaithfulVsBundledLinker) {
@@ -4531,4 +5417,207 @@ TEST(MergeFuzzExecution, RandomCrossModuleNativeMatchesPlainLink) {
       return;
   }
 }
+
+// The strict-mode tripwire (see ScopedEnv/genHeavyModule above).  A merger
+// regression makes the auto-LTO link abort under NEVERC_PCG_STRICT; a merge
+// that loads but is wrong makes the output diverge from the -fno-lto build.
+#ifndef _WIN32
+TEST(MergeParallelCodegenStrict, MultiFileAutoLtoLinkUnderStrictMode) {
+  Triple Host(sys::getProcessTriple());
+  if (!Host.isOSBinFormatMachO() && !Host.isOSBinFormatELF())
+    GTEST_SKIP() << "host object format not exercised by this test";
+  ScratchDir Dir;
+  if (!Dir.Ok)
+    GTEST_SKIP() << "could not create scratch directory";
+
+  // 24 modules x 16 functions = 384 noinline heavy functions + main, sized to
+  // clear the parallel thresholds with margin even after IPO.
+  const unsigned NumMods = 24, NumFns = 16;
+  SmallVector<std::string, 32> Srcs;
+  for (unsigned m = 0; m < NumMods; ++m) {
+    std::string CPath = Dir.file(("hm" + Twine(m) + ".c").str());
+    std::string Src = genHeavyModule(m, NumFns);
+    if (!writeBytes(CPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write source";
+    Srcs.push_back(CPath);
+  }
+  {
+    std::string MainPath = Dir.file("hmain.c");
+    std::string Src = genHeavyMain(NumMods, NumFns);
+    if (!writeBytes(MainPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write source";
+    Srcs.push_back(MainPath);
+  }
+
+  // Reference: -fno-lto build (serial per-TU codegen, no parallel merger).  Its
+  // failure means the host frontend/linker is unavailable -> skip, not fail.
+  std::string ExeRef = Dir.file("exe_ref");
+  StringRef RefArgs[] = {"-fno-lto", "-O2"};
+  if (!compileLinkMulti(Dir, Srcs, RefArgs, ExeRef))
+    GTEST_SKIP() << "native frontend/link unavailable in this environment";
+  std::string OutRef;
+  ASSERT_EQ(runExeCapture(Dir, ExeRef, OutRef), 0)
+      << "-fno-lto reference executable did not exit cleanly";
+  ASSERT_FALSE(OutRef.empty());
+
+  // Auto-LTO build with STRICT on (caches off so the partitions are really
+  // codegen'd + merged on this run).  A merge/self-verify failure now aborts
+  // the compiler -> non-zero exit -> this ASSERT fails loudly, instead of the
+  // silent serial fallback that would mask the regression.
+  std::string ExeLto = Dir.file("exe_lto");
+  {
+    ScopedEnv Strict("NEVERC_PCG_STRICT", "1");
+    ScopedEnv NoCache("NEVERC_LTO_CACHE", "0");
+    ScopedEnv NoPCache("NEVERC_LTO_PCACHE", "0");
+    StringRef LtoArgs[] = {"-O2"};
+    ASSERT_TRUE(compileLinkMulti(Dir, Srcs, LtoArgs, ExeLto))
+        << "auto-LTO link failed under NEVERC_PCG_STRICT — the parallel-codegen "
+           "merger failed self-verify or could not emit a merged object (a "
+           "merger regression); see the scratch spawn.log";
+  }
+  std::string OutLto;
+  ASSERT_EQ(runExeCapture(Dir, ExeLto, OutLto), 0)
+      << "auto-LTO executable did not exit cleanly (the merge produced a "
+         "loadable but wrong object)";
+  EXPECT_EQ(OutLto, OutRef)
+      << "auto-LTO program output diverged from the -fno-lto build — the "
+         "parallel-codegen merge mis-placed a symbol or relocation";
+}
+
+// Same strict-mode tripwire, but the modules carry cross-module-referenced
+// .data (initialized) and .bss (uninitialized) globals.  This is the precise
+// shape of the historical offset-collapse bug, which mis-shifted .bss/.data
+// symbol values and cross-partition relocations to produce a loadable but wrong
+// object (the .ko that crashed).  Driving it through the *real* auto-LTO merge
+// under STRICT means a reintroduced collapse either aborts the link or makes
+// the program diverge from the -fno-lto reference — never a silent pass.
+TEST(MergeParallelCodegenStrict, MultiFileAutoLtoGlobalsUnderStrictMode) {
+  Triple Host(sys::getProcessTriple());
+  if (!Host.isOSBinFormatMachO() && !Host.isOSBinFormatELF())
+    GTEST_SKIP() << "host object format not exercised by this test";
+  ScratchDir Dir;
+  if (!Dir.Ok)
+    GTEST_SKIP() << "could not create scratch directory";
+
+  // 20 modules x 12 functions, each touching its own .data + .bss globals,
+  // sized to clear the parallel thresholds with margin even after IPO.
+  const unsigned NumMods = 20, NumFns = 12;
+  SmallVector<std::string, 32> Srcs;
+  for (unsigned m = 0; m < NumMods; ++m) {
+    std::string CPath = Dir.file(("gm" + Twine(m) + ".c").str());
+    std::string Src = genGlobalsModule(m, NumFns);
+    if (!writeBytes(CPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write source";
+    Srcs.push_back(CPath);
+  }
+  {
+    std::string MainPath = Dir.file("gmain.c");
+    std::string Src = genGlobalsMain(NumMods, NumFns);
+    if (!writeBytes(MainPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write source";
+    Srcs.push_back(MainPath);
+  }
+
+  std::string ExeRef = Dir.file("exe_ref");
+  StringRef RefArgs[] = {"-fno-lto", "-O2"};
+  if (!compileLinkMulti(Dir, Srcs, RefArgs, ExeRef))
+    GTEST_SKIP() << "native frontend/link unavailable in this environment";
+  std::string OutRef;
+  ASSERT_EQ(runExeCapture(Dir, ExeRef, OutRef), 0)
+      << "-fno-lto reference executable did not exit cleanly";
+  ASSERT_FALSE(OutRef.empty());
+
+  std::string ExeLto = Dir.file("exe_lto");
+  {
+    ScopedEnv Strict("NEVERC_PCG_STRICT", "1");
+    ScopedEnv NoCache("NEVERC_LTO_CACHE", "0");
+    ScopedEnv NoPCache("NEVERC_LTO_PCACHE", "0");
+    StringRef LtoArgs[] = {"-O2"};
+    ASSERT_TRUE(compileLinkMulti(Dir, Srcs, LtoArgs, ExeLto))
+        << "auto-LTO link of cross-module .data/.bss globals failed under "
+           "NEVERC_PCG_STRICT — the parallel-codegen merger failed self-verify "
+           "or could not emit a merged object (a merger regression); see the "
+           "scratch spawn.log";
+  }
+  std::string OutLto;
+  ASSERT_EQ(runExeCapture(Dir, ExeLto, OutLto), 0)
+      << "auto-LTO executable did not exit cleanly (the merge produced a "
+         "loadable but wrong object)";
+  EXPECT_EQ(OutLto, OutRef)
+      << "auto-LTO program output diverged from the -fno-lto build — the "
+         "parallel-codegen merge mis-placed a .data/.bss symbol or a "
+         "cross-partition relocation (the historical offset-collapse shape)";
+}
+
+// Same strict-mode tripwire for the computed-goto / blockaddress shape — the
+// real lua_lto SIGTRAP.  Lua's luaV_execute keeps a `static const void *[]`
+// dispatch table of `&&label` addresses; that table's initializer lives in
+// partition 0, so binning luaV_execute into any other partition rewrites its
+// blockaddress constants to inttoptr(1) and the interpreter jumps to address 1.
+// The merger's self-verifier *cannot* see this (the partition object is wrong
+// before it is merged), so the only guard is pinning address-taken-block
+// functions to partition 0 — and the only regression alarm is an end-to-end run.
+// Without the pin, the cgvm_* interpreters binned outside partition 0 jump to 1
+// and this program crashes (non-zero exit) or diverges from the -fno-lto build.
+TEST(MergeParallelCodegenStrict, MultiFileAutoLtoComputedGotoUnderStrictMode) {
+  Triple Host(sys::getProcessTriple());
+  if (!Host.isOSBinFormatMachO() && !Host.isOSBinFormatELF())
+    GTEST_SKIP() << "host object format not exercised by this test";
+  ScratchDir Dir;
+  if (!Dir.Ok)
+    GTEST_SKIP() << "could not create scratch directory";
+
+  // 24 modules x (16 heavy + 4 computed-goto): 384 plain heavy functions (the
+  // proven scale that clears TotalWeight>=10000 so the partitioner engages and
+  // the merger runs) plus 96 computed-goto interpreters.  With 96 address-taken-
+  // block functions across several partitions, a dropped pin lands at least one
+  // outside partition 0 with overwhelming probability, so the regression is
+  // caught essentially deterministically.
+  const unsigned NumMods = 24, NumHeavy = 16, NumCG = 4;
+  SmallVector<std::string, 32> Srcs;
+  for (unsigned m = 0; m < NumMods; ++m) {
+    std::string CPath = Dir.file(("cg" + Twine(m) + ".c").str());
+    std::string Src = genComputedGotoModule(m, NumHeavy, NumCG);
+    if (!writeBytes(CPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write source";
+    Srcs.push_back(CPath);
+  }
+  {
+    std::string MainPath = Dir.file("cgmain.c");
+    std::string Src = genComputedGotoMain(NumMods, NumHeavy, NumCG);
+    if (!writeBytes(MainPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write source";
+    Srcs.push_back(MainPath);
+  }
+
+  std::string ExeRef = Dir.file("exe_ref");
+  StringRef RefArgs[] = {"-fno-lto", "-O2"};
+  if (!compileLinkMulti(Dir, Srcs, RefArgs, ExeRef))
+    GTEST_SKIP() << "native frontend/link unavailable in this environment";
+  std::string OutRef;
+  ASSERT_EQ(runExeCapture(Dir, ExeRef, OutRef), 0)
+      << "-fno-lto reference executable did not exit cleanly";
+  ASSERT_FALSE(OutRef.empty());
+
+  std::string ExeLto = Dir.file("exe_lto");
+  {
+    ScopedEnv Strict("NEVERC_PCG_STRICT", "1");
+    ScopedEnv NoCache("NEVERC_LTO_CACHE", "0");
+    ScopedEnv NoPCache("NEVERC_LTO_PCACHE", "0");
+    StringRef LtoArgs[] = {"-O2"};
+    ASSERT_TRUE(compileLinkMulti(Dir, Srcs, LtoArgs, ExeLto))
+        << "auto-LTO link of computed-goto interpreters failed under "
+           "NEVERC_PCG_STRICT (a merger/pinning regression); see scratch "
+           "spawn.log";
+  }
+  std::string OutLto;
+  ASSERT_EQ(runExeCapture(Dir, ExeLto, OutLto), 0)
+      << "auto-LTO computed-goto executable crashed — a blockaddress dispatch "
+         "table collapsed to inttoptr(1) because an address-taken-block "
+         "function was not pinned to partition 0 (the lua_lto SIGTRAP shape)";
+  EXPECT_EQ(OutLto, OutRef)
+      << "auto-LTO program output diverged from the -fno-lto build — a "
+         "computed-goto dispatch table was corrupted by the partition split";
+}
+#endif // _WIN32
 #endif // NEVERC_BINARY

@@ -17,6 +17,11 @@ jobs:
     runs-on: ubuntu-22.04-arm
     env:
       BUILD_TYPE: RelWithDebInfo
+      # Make any parallel-codegen merge/self-verify fallback a hard CI failure
+      # rather than a silent fallback to serial codegen that would mask a merger
+      # regression (the historical offset-collapse bug only stayed hidden
+      # because the fallback kept builds green).  A correct merge is unaffected.
+      NEVERC_PCG_STRICT: "1"
       LLVM_APT_VER: '22'
     steps:
     - name: Checkout Repo

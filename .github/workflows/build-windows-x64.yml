@@ -15,6 +15,12 @@ jobs:
     runs-on: windows-latest
     env:
       BUILD_TYPE: RelWithDebInfo
+      # Make any parallel-codegen merge/self-verify fallback a hard CI failure
+      # rather than a silent fallback to serial codegen that would mask a merger
+      # regression.  Exercises the COFF merge path (the gtest strict end-to-end
+      # tests are POSIX-only, so the example builds here are Windows' enforcement
+      # of the same invariant).  A correct merge is byte-identical / unaffected.
+      NEVERC_PCG_STRICT: "1"
     steps:
     - name: Checkout Repo
       uses: actions/checkout@v4

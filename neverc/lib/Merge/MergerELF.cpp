@@ -157,6 +157,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   uint16_t Machine = 0;
   uint32_t EFlags = 0;
   unsigned char OSABI = 0, ABIVer = 0;
+  bool HaveArch = false;
 
   // Section merge: group by (name, compatible_type, flags).
   // Ported from LLD LinkerScript::addSection + OutputSections.cpp.
@@ -211,6 +212,10 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   struct GlobalDedup {
     unsigned SlotIdx; // index into GlobalSyms
     SymPriority Pri;
+    // A "strong" definition is a defined STB_GLOBAL (not WEAK, not COMMON, not
+    // STB_GNU_UNIQUE).  Two of them for one name is an ODR violation; tracked
+    // here so the second can be refused rather than silently dropped.
+    bool Strong;
   };
   StringMap<GlobalDedup> GlobalMap;
 
@@ -230,11 +235,28 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
     const auto &EF = ObjOrErr->getELFFile();
     const Ehdr &Hdr = EF.getHeader();
-    if (Machine == 0) {
+    if (!HaveArch) {
+      HaveArch = true;
       Machine = Hdr.e_machine;
       EFlags = Hdr.e_flags;
       OSABI = Hdr.e_ident[EI_OSABI];
       ABIVer = Hdr.e_ident[EI_ABIVERSION];
+    } else if (Hdr.e_machine != Machine) {
+      // Every input must target the same architecture.  Two ELF64LE objects of
+      // different e_machine (e.g. x86-64 and AArch64) both parse cleanly as
+      // ELF64LE here yet describe incompatible code; concatenating them would
+      // emit one valid ELF header (the first input's e_machine) over a body
+      // whose later partitions are the wrong ISA — a "loads then executes
+      // garbage" miscompile no symbol/offset/content anchor can see, because
+      // each partition's bytes still match its own input; only the architecture
+      // is wrong.  The parallel-codegen path can never hit this (all partitions
+      // share one TargetMachine); the general `-r` driver path over arbitrary
+      // user objects can, and a real linker (`ld -r`) refuses it too.  Refuse
+      // rather than emit a cross-ISA object.
+      errs() << "neverc: relocatable merge: input has e_machine "
+             << Hdr.e_machine << " but an earlier input had " << Machine
+             << " (mixed architectures); refusing to merge\n";
+      return false;
     }
 
     auto SecsOrErr = EF.sections();
@@ -311,11 +333,39 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
            SecName.starts_with(".zdebug_")))
         continue;
 
-      // SHT_NOTE: identical across partitions from the same source
-      // module (LTO splits one module).  Dedup by keeping first copy.
-      if (S.sh_type == SHT_NOTE && p > 0 && SectionIndex.count(SecName)) {
-        PM.SecMap[i] = SectionIndex[SecName].front() + 1;
-        continue;
+      // SHT_NOTE dedup.  When parallel codegen splits one module every
+      // partition re-emits byte-identical notes (e.g. .note.gnu.property for
+      // BTI/PAC/CET), so collapsing them to a single copy is both correct and
+      // tidy.  But this merger is *also* the linker's general `-r` path
+      // (ElfDriver/MachODriver) over arbitrary, possibly heterogeneous user
+      // objects, where two same-named notes can legitimately carry *different*
+      // bytes (distinct GNU-property feature sets, build-ids, ...).  Dropping
+      // the later one there silently loses data the verifier cannot catch (it
+      // excludes NOTE sections from its content anchor).  So dedup only when
+      // the incoming note is byte-identical to the copy already merged;
+      // otherwise fall through to the normal concatenating path.  A
+      // byte-identical note starts at the first copy's offset 0, so deduped
+      // symbols/relocations into it need no offset shift.
+      if (S.sh_type == SHT_NOTE && p > 0) {
+        auto CIt = SectionIndex.find(SecName);
+        if (CIt != SectionIndex.end() && !CIt->second.empty()) {
+          unsigned FrontIdx = CIt->second.front();
+          const MergedSection &Front = MergedSections[FrontIdx];
+          if (Front.Template.sh_type == SHT_NOTE) {
+            auto D = EF.getSectionContents(S);
+            if (!D) {
+              consumeError(D.takeError());
+              return false;
+            }
+            ArrayRef<uint8_t> NB = *D;
+            if (NB.size() == Front.Data.size() &&
+                (NB.empty() ||
+                 memcmp(NB.data(), Front.Data.data(), NB.size()) == 0)) {
+              PM.SecMap[i] = FrontIdx + 1;
+              continue;
+            }
+          }
+        }
       }
 
       Shdr SCopy = S;
@@ -446,8 +496,14 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           // priority (defined GLOBAL > WEAK > COMMON > UNDEF).
           // Ported from LLD SymbolTable::insert / Symbol::resolve.
           SymPriority Pri = getSymPriority(Syms[i]);
+          // A strong definition is specifically a defined STB_GLOBAL: WEAK and
+          // COMMON resolve by priority (legal), and STB_GNU_UNIQUE (a C++
+          // vague-linkage symbol this pure-C merger never emits) is excluded so
+          // it is never mistaken for an ODR clash.
+          bool Strong =
+              Pri == PRI_GLOBAL_DEF && Syms[i].getBinding() == STB_GLOBAL;
           auto [It, Inserted] = GlobalMap.try_emplace(
-              Name, GlobalDedup{(unsigned)GlobalSyms.size(), Pri});
+              Name, GlobalDedup{(unsigned)GlobalSyms.size(), Pri, Strong});
 
           if (Inserted) {
             unsigned Slot = GlobalSyms.size();
@@ -455,10 +511,26 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
             // Record slot; will add FirstGlobal offset after the loop.
             PM.SymMap[i] = Slot | 0x80000000u;
           } else {
+            if (Strong && It->second.Strong) {
+              // Two strong (STB_GLOBAL, defined-in-section) definitions of one
+              // name is an ODR violation.  A real link errors ("multiple
+              // definition"); LLD -r keeps both and defers the error.  This
+              // priority dedup would instead silently keep the first and drop
+              // the second — the "loads fine, wrong symbol wins" divergence the
+              // merger refuses elsewhere.  The parallel-codegen path can never
+              // produce it (each global is defined in exactly one partition;
+              // .__pcg locals carry unique names), so only a malformed -r input
+              // reaches here; refuse rather than silently pick one.
+              errs() << "neverc: relocatable merge: multiple strong definitions "
+                        "of symbol '"
+                     << Name << "'; refusing to merge\n";
+              return false;
+            }
             unsigned Slot = It->second.SlotIdx;
             if (Pri > It->second.Pri) {
               GlobalSyms[Slot] = OutS;
               It->second.Pri = Pri;
+              It->second.Strong = Strong;
             }
             PM.SymMap[i] = Slot | 0x80000000u;
           }
