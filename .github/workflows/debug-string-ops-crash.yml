@@ -75,7 +75,10 @@ jobs:
       - name: Reproduce + isolate (causation / concurrency / determinism)
         shell: bash
         run: |
-          set -uo pipefail
+          # NOTE: GitHub runs `shell: bash` as `bash -eo pipefail`; the FIRST
+          # neverc crash (non-zero exit) would otherwise abort the whole step
+          # before any RESULT line prints. Disable -e: crashes are expected here.
+          set +e +o pipefail
           NCC_RUN="$GITHUB_WORKSPACE/install/bin/neverc.exe"
           SRC_ARG=$(cygpath -m "$GITHUB_WORKSPACE/src/${{ github.event.inputs.test_src }}")
           OUT_ARG=$(cygpath -m "$GITHUB_WORKSPACE/diag/out.exe")
@@ -88,6 +91,7 @@ jobs:
 
           run_loop() {
             local label="$1"; shift
+            local tag="${label%%:*}"
             local crashes=0 hangs=0 ok=0 other=0 i rc
             for i in $(seq 1 "$N"); do
               rm -f diag/out.exe diag/err.txt diag/std.txt
@@ -95,7 +99,10 @@ jobs:
                 >diag/std.txt 2>diag/err.txt
               rc=$?
               if [ "$rc" = "124" ]; then hangs=$((hangs+1));
-              elif crash_sig diag/err.txt; then crashes=$((crashes+1));
+              elif crash_sig diag/err.txt; then
+                crashes=$((crashes+1))
+                # Keep the first crash's LLVM-symbolized stack (file:line) per config.
+                [ -f "diag/firstcrash_${tag}.txt" ] || cp diag/err.txt "diag/firstcrash_${tag}.txt"
               elif [ "$rc" = "0" ]; then ok=$((ok+1));
               else other=$((other+1)); fi
             done
@@ -124,17 +131,20 @@ jobs:
           echo "===== E: cap on, parallel pcg fully bypassed (serial LTO codegen) ====="
           run_loop "E:serial-no-pcg" -mllvm -neverc-pcg-min-funcs=2000000000
 
+          echo "===== LLVM self-printed crash stack (config A, first crash) ====="
+          sed -n '1,90p' diag/firstcrash_A.txt 2>/dev/null || echo "(no config-A crash captured)"
+
           echo "===== INTERPRETATION ====="
-          echo "A crashes, B clean        => commit 5df30b8 (unroll cap) is the trigger."
+          echo "A crashes, B same         => unroll cap does NOT fire here (37<100 loops); 5df30b8 is a red herring."
           echo "A crashes, E clean        => crash requires the parallel opt path (pcg)."
-          echo "C/D still crash           => deterministic given the IR/partitioning (not a thread race)."
-          echo "C/D become clean          => concurrency/race inside runParallelOptAndCodeGen."
+          echo "A crashes, C clean        => multi-thread race inside runParallelOptAndCodeGen (Windows scheduling)."
+          echo "C/D/E still crash         => deterministic in the per-partition pipeline (Windows-specific, not a race)."
 
       - name: Capture symbolized crash under cdb (best effort)
         if: always()
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
           mkdir -p diag
           CDB=$(ls "/c/Program Files (x86)/Windows Kits/"*/Debuggers/x64/cdb.exe 2>/dev/null | head -1 || true)
           if [ -z "$CDB" ]; then
