@@ -573,6 +573,14 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
     std::vector<std::string> l;
     for (auto &f : sysrootFlags()) l.push_back(f);
     for (auto &f : archFlags()) l.push_back(f);
+    // COFF stamps the PE header with the wall-clock second by default
+    // (incremental-linker compatibility); the 1-, 4- and 16-thread merges run
+    // seconds apart, so that timestamp byte alone differs and masquerades as a
+    // parallelism leak.  Request reproducible output (timestamp = content hash)
+    // so this comparison only measures codegen determinism, matching the
+    // LtoLinkCache test above.
+    if (isWindows())
+      l.push_back("-mno-incremental-linker-compatible");
     l.push_back("-r");
     for (auto &o : objs) l.push_back(o);
     auto out = tmpFile(std::string("det_merge_") + threads + ".o");
