@@ -1,0 +1,165 @@
+# Throwaway, on-demand debug workflow for the Windows auto-LTO crash:
+#   Exception Code: 0xC0000005 in DSEState::getDomMemoryDef
+#   (DeadStoreElimination.cpp) inside a runParallelOptAndCodeGen worker thread,
+# bisected by the user to commit 5df30b8
+#   "feat(loop-unroll): introduce cap for automatic full unrolling in
+#    loop-dense functions".
+#
+# Strategy (see skill github-ci-runtime-debugging):
+#   * Do NOT rebuild the toolchain. The windows-x64-neverc-build job uploads the
+#     neverc + PDB artifacts BEFORE the test step, so they exist even on a run
+#     whose tests failed. We download those and reproduce the exact failing link.
+#   * Reproduce the failing `neverc ... -o exe` link many times under several
+#     configurations to separate causation / concurrency / determinism, then
+#     capture a symbolized crash (cdb) for the faulting frame and all threads.
+#
+# This is workflow_dispatch-only. Commit the file with "[skip ci]" so pushing it
+# does not kick off the heavy build matrix, then trigger it with `gh workflow
+# run`. DELETE this file once the investigation is finished.
+name: debug-string-ops-crash
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'windows-x64-neverc-build run id to pull artifacts from (blank = newest failed, else newest completed)'
+        required: false
+        default: ''
+      iterations:
+        description: 'repeat count per configuration'
+        required: false
+        default: '12'
+      test_src:
+        description: 'repo-relative test source that triggers the crash'
+        required: false
+        default: 'tests/neverc/string/test_neverc_string_ops.c'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  repro:
+    runs-on: windows-latest          # match the failing runner
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout (test sources only)
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Install 7zip
+        run: choco install 7zip -y
+
+      - name: Download neverc + PDB artifacts (no rebuild)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          RID="${{ github.event.inputs.run_id }}"
+          if [ -z "$RID" ]; then
+            RID=$(gh run list --workflow build-windows-x64.yml -L 40 \
+                  --json databaseId,status,conclusion -R "${{ github.repository }}" \
+                  -q '([.[]|select(.conclusion=="failure")]|.[0].databaseId) // ([.[]|select(.status=="completed")]|.[0].databaseId)')
+          fi
+          echo "Using build run id: $RID"
+          gh run download "$RID" -n windows-x64-neverc     -D dl/nc  -R "${{ github.repository }}"
+          gh run download "$RID" -n windows-x64-neverc-pdb -D dl/pdb -R "${{ github.repository }}"
+          7z x dl/nc/windows-x64-neverc.zip -o. >/dev/null
+          7z x dl/pdb/windows-x64-neverc-pdb.zip -opdb >/dev/null
+          # Put neverc.pdb next to neverc.exe so both the LLVM crash handler and
+          # cdb resolve our symbols (file:line) for the printed stack traces.
+          find pdb -name '*.pdb' -exec cp {} install/bin/ \;
+          ls -la install/bin/
+
+      - name: Reproduce + isolate (causation / concurrency / determinism)
+        shell: bash
+        run: |
+          set -uo pipefail
+          NCC_RUN="$GITHUB_WORKSPACE/install/bin/neverc.exe"
+          SRC_ARG=$(cygpath -m "$GITHUB_WORKSPACE/src/${{ github.event.inputs.test_src }}")
+          OUT_ARG=$(cygpath -m "$GITHUB_WORKSPACE/diag/out.exe")
+          N="${{ github.event.inputs.iterations }}"
+          mkdir -p diag
+          "$NCC_RUN" --version || true
+          echo "test source: $SRC_ARG"
+
+          crash_sig() { grep -qE "Exception Code:|Stack dump:|PLEASE submit a bug report|0xC0000005" "$1"; }
+
+          run_loop() {
+            local label="$1"; shift
+            local crashes=0 hangs=0 ok=0 other=0 i rc
+            for i in $(seq 1 "$N"); do
+              rm -f diag/out.exe diag/err.txt diag/std.txt
+              timeout 200 "$NCC_RUN" -std=c23 -fbuiltin-string "$@" "$SRC_ARG" -o "$OUT_ARG" \
+                >diag/std.txt 2>diag/err.txt
+              rc=$?
+              if [ "$rc" = "124" ]; then hangs=$((hangs+1));
+              elif crash_sig diag/err.txt; then crashes=$((crashes+1));
+              elif [ "$rc" = "0" ]; then ok=$((ok+1));
+              else other=$((other+1)); fi
+            done
+            echo "RESULT [$label] n=$N ok=$ok crashes=$crashes hangs=$hangs other=$other"
+          }
+
+          echo "===== context: merged-module shape (FuncCount / LoopCount / partitions) ====="
+          NEVERC_PCG_DEBUG=1 timeout 200 "$NCC_RUN" -std=c23 -fbuiltin-string "$SRC_ARG" -o "$OUT_ARG" \
+            2>diag/ctx_err.txt || true
+          grep -E "\[pcg\]" diag/ctx_err.txt || echo "(no [pcg] debug lines printed)"
+
+          echo "===== A: default (cap=100, parallel opt+codegen) -- baseline ====="
+          run_loop "A:default"
+
+          echo "===== B: cap DISABLED (= pre-commit behavior) ====="
+          run_loop "B:cap-off" -mllvm -neverc-full-unroll-max-loops-per-function=0
+
+          echo "===== C: cap on, single worker thread (NEVERC_PCG_THREADS=1) ====="
+          export NEVERC_PCG_THREADS=1
+          run_loop "C:threads=1"
+          unset NEVERC_PCG_THREADS
+
+          echo "===== D: cap on, single opt partition ====="
+          run_loop "D:opt-max-parts=1" -mllvm -neverc-pcg-opt-max-parts=1
+
+          echo "===== E: cap on, parallel pcg fully bypassed (serial LTO codegen) ====="
+          run_loop "E:serial-no-pcg" -mllvm -neverc-pcg-min-funcs=2000000000
+
+          echo "===== INTERPRETATION ====="
+          echo "A crashes, B clean        => commit 5df30b8 (unroll cap) is the trigger."
+          echo "A crashes, E clean        => crash requires the parallel opt path (pcg)."
+          echo "C/D still crash           => deterministic given the IR/partitioning (not a thread race)."
+          echo "C/D become clean          => concurrency/race inside runParallelOptAndCodeGen."
+
+      - name: Capture symbolized crash under cdb (best effort)
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p diag
+          CDB=$(ls "/c/Program Files (x86)/Windows Kits/"*/Debuggers/x64/cdb.exe 2>/dev/null | head -1 || true)
+          if [ -z "$CDB" ]; then
+            echo "cdb not found on this runner; the matrix step's stderr already contains the"
+            echo "LLVM self-printed, symbolized stack trace. Skipping live debugger capture."
+            exit 0
+          fi
+          echo "cdb: $CDB"
+          NCC_ARG=$(cygpath -m "$GITHUB_WORKSPACE/install/bin/neverc.exe")
+          SRC_ARG=$(cygpath -m "$GITHUB_WORKSPACE/src/${{ github.event.inputs.test_src }}")
+          OUT_ARG=$(cygpath -m "$GITHUB_WORKSPACE/diag/out_cdb.exe")
+          SYMS=$(cygpath -m "$GITHUB_WORKSPACE/install/bin")
+          DMP=$(cygpath -m "$GITHUB_WORKSPACE/diag/neverc.dmp")
+          export _NT_SYMBOL_PATH="$SYMS"
+          # sxe av: break on the first-chance access violation (before LLVM's own
+          # SEH handler swallows it); then dump exception context, analysis, every
+          # thread's stack (to see if >1 worker is in DSE => race), and a full dump.
+          "$CDB" -y "$SYMS" \
+            -c "sxe av; g; .ecxr; !analyze -v; ~*kP 80; .dump /ma $DMP; q" \
+            "$NCC_ARG" -std=c23 -fbuiltin-string "$SRC_ARG" -o "$OUT_ARG" 2>&1 \
+            | tee diag/cdb.txt | sed -n '1,500p'
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-string-ops-crash-diag
+          path: diag
