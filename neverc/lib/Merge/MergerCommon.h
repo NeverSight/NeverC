@@ -46,6 +46,19 @@ canonicalELFSectionName(llvm::StringRef Name, bool MergeSections,
   return Name;
 }
 
+/// True if \p Key is one of the two values an \c llvm::DenseMap with an integer
+/// key reserves for its empty / tombstone sentinels (~0 and ~0 - 1).  Section
+/// indices, symbol indices and relocation targets read from a hostile or
+/// malformed object can be exactly these, and calling \c DenseMap::find() /
+/// \c lookup() with a reserved key is undefined behavior: it can alias an empty
+/// bucket and hand back an uninitialized "value", which the caller then uses as
+/// an array index — an out-of-bounds read (the merge fuzzer hit this as a BUS in
+/// the COFF verifier's symbol-by-index lookup).  Every lookup whose key
+/// originates in untrusted file bytes must treat a reserved key as "absent".
+template <typename T> inline bool isReservedDenseKey(T Key) {
+  return Key == ~T(0) || Key == T(~T(0) - 1);
+}
+
 /// Deduplicating string table: each unique payload is appended once and
 /// callers receive a 4-byte offset that they can splat into ELF/MachO/COFF
 /// `*_strx` fields.  Index 0 is reserved as the empty string per the ELF

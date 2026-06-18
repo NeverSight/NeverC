@@ -39,6 +39,7 @@
 #include "llvm/BinaryFormat/MachO.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -123,6 +124,23 @@ StringRef cstrAt(ArrayRef<char> Buf, uint64_t Base, uint64_t Size,
   return StringRef(P, Len);
 }
 
+// Read a trivially-copyable POD of type T from Buf at byte offset Off into a
+// properly aligned local.  Callers must bounds-check [Off, Off+sizeof(T)) first.
+//
+// The verifier also audits hostile / externally-produced objects whose headers
+// can sit at file offsets that are not aligned to the struct's required
+// alignment (e.g. an nlist_64 at an odd LC_SYMTAB symoff).  Reading those with
+// `reinterpret_cast<const T*>(Buf.data() + Off)` followed by member access is a
+// misaligned load — undefined behavior the merge fuzzer trips under UBSan, and a
+// real fault on stricter ISAs.  Going through memcpy is the same byte-wise
+// discipline parseRawCOFF and the relocation readers already use; for the
+// merger's own (always aligned) output it is identical to a direct read.
+template <typename T> T readPOD(ArrayRef<char> Buf, uint64_t Off) {
+  T V;
+  memcpy(&V, Buf.data() + Off, sizeof(T));
+  return V;
+}
+
 bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
   using namespace ELF;
   using Ehdr = Elf64_Ehdr;
@@ -132,64 +150,71 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
   Out.Buf = Buf;
   if (Buf.size() < sizeof(Ehdr))
     return false;
-  const auto *H = reinterpret_cast<const Ehdr *>(Buf.data());
-  if (memcmp(H->e_ident, ElfMagic, 4) != 0)
+  Ehdr H = readPOD<Ehdr>(Buf, 0);
+  if (memcmp(H.e_ident, ElfMagic, 4) != 0)
     return false;
-  if (H->e_ident[EI_CLASS] != ELFCLASS64 || H->e_ident[EI_DATA] != ELFDATA2LSB)
+  if (H.e_ident[EI_CLASS] != ELFCLASS64 || H.e_ident[EI_DATA] != ELFDATA2LSB)
     return false;
-  Out.Machine = H->e_machine;
+  Out.Machine = H.e_machine;
 
-  uint64_t ShOff = H->e_shoff;
-  unsigned ShNum = H->e_shnum;
+  uint64_t ShOff = H.e_shoff;
+  unsigned ShNum = H.e_shnum;
   if (ShOff == 0 || ShNum == 0)
     return false;
   if (ShOff > Buf.size() ||
       (uint64_t)ShNum * sizeof(Shdr) > Buf.size() - ShOff)
     return false;
-  const auto *Secs = reinterpret_cast<const Shdr *>(Buf.data() + ShOff);
 
-  if (H->e_shstrndx >= ShNum)
+  // Copy every section header out through memcpy: they sit at an
+  // attacker-controlled e_shoff that need not be 8-aligned, so a typed-pointer
+  // dereference would be a misaligned load.
+  SmallVector<Shdr, 0> SH;
+  SH.reserve(ShNum);
+  for (unsigned I = 0; I < ShNum; ++I)
+    SH.push_back(readPOD<Shdr>(Buf, ShOff + (uint64_t)I * sizeof(Shdr)));
+
+  if (H.e_shstrndx >= ShNum)
     return false;
-  uint64_t ShStrBase = Secs[H->e_shstrndx].sh_offset;
-  uint64_t ShStrSize = Secs[H->e_shstrndx].sh_size;
+  uint64_t ShStrBase = SH[H.e_shstrndx].sh_offset;
+  uint64_t ShStrSize = SH[H.e_shstrndx].sh_size;
 
   Out.Secs.reserve(ShNum);
   for (unsigned I = 0; I < ShNum; ++I) {
     RawSec RS;
-    RS.Name = cstrAt(Buf, ShStrBase, ShStrSize, Secs[I].sh_name);
-    RS.Type = Secs[I].sh_type;
-    RS.Flags = Secs[I].sh_flags;
-    RS.Size = Secs[I].sh_size;
-    RS.Offset = Secs[I].sh_offset;
-    RS.Link = Secs[I].sh_link;
-    RS.Info = Secs[I].sh_info;
+    RS.Name = cstrAt(Buf, ShStrBase, ShStrSize, SH[I].sh_name);
+    RS.Type = SH[I].sh_type;
+    RS.Flags = SH[I].sh_flags;
+    RS.Size = SH[I].sh_size;
+    RS.Offset = SH[I].sh_offset;
+    RS.Link = SH[I].sh_link;
+    RS.Info = SH[I].sh_info;
     Out.Secs.push_back(RS);
   }
 
   // First SYMTAB + its linked STRTAB.
   for (unsigned I = 0; I < ShNum; ++I) {
-    if (Secs[I].sh_type != SHT_SYMTAB)
+    if (SH[I].sh_type != SHT_SYMTAB)
       continue;
-    unsigned StrIdx = Secs[I].sh_link;
+    unsigned StrIdx = SH[I].sh_link;
     if (StrIdx >= ShNum)
       break;
-    uint64_t StrBase = Secs[StrIdx].sh_offset;
-    uint64_t StrSize = Secs[StrIdx].sh_size;
-    uint64_t SymOff = Secs[I].sh_offset;
-    uint64_t SymSize = Secs[I].sh_size;
+    uint64_t StrBase = SH[StrIdx].sh_offset;
+    uint64_t StrSize = SH[StrIdx].sh_size;
+    uint64_t SymOff = SH[I].sh_offset;
+    uint64_t SymSize = SH[I].sh_size;
     if (SymOff > Buf.size() || SymSize > Buf.size() - SymOff)
       break;
     unsigned N = SymSize / sizeof(Sym);
-    const auto *Sy = reinterpret_cast<const Sym *>(Buf.data() + SymOff);
-    Out.SymtabInfo = Secs[I].sh_info;
+    Out.SymtabInfo = SH[I].sh_info;
     Out.HasSymtab = true;
     Out.Syms.reserve(N);
     for (unsigned k = 0; k < N; ++k) {
+      Sym Sy = readPOD<Sym>(Buf, SymOff + (uint64_t)k * sizeof(Sym));
       RawSym PS;
-      PS.Name = cstrAt(Buf, StrBase, StrSize, Sy[k].st_name);
-      PS.Value = Sy[k].st_value;
-      PS.Shndx = Sy[k].st_shndx;
-      PS.Info = Sy[k].st_info;
+      PS.Name = cstrAt(Buf, StrBase, StrSize, Sy.st_name);
+      PS.Value = Sy.st_value;
+      PS.Shndx = Sy.st_shndx;
+      PS.Info = Sy.st_info;
       Out.Syms.push_back(PS);
     }
     break;
@@ -204,14 +229,15 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
     if (Off > Buf.size() || Sz > Buf.size() - Off)
       continue;
     unsigned N = Sz / sizeof(Elf64_Rela);
-    const auto *R = reinterpret_cast<const Elf64_Rela *>(Buf.data() + Off);
     for (unsigned k = 0; k < N; ++k) {
+      Elf64_Rela Re =
+          readPOD<Elf64_Rela>(Buf, Off + (uint64_t)k * sizeof(Elf64_Rela));
       RawRela RE;
       RE.TargetSec = Out.Secs[I].Info;
-      RE.Offset = R[k].r_offset;
-      RE.Sym = (uint32_t)(R[k].r_info >> 32);
-      RE.Type = (uint32_t)(R[k].r_info & 0xffffffffu);
-      RE.Addend = (int64_t)R[k].r_addend;
+      RE.Offset = Re.r_offset;
+      RE.Sym = (uint32_t)(Re.r_info >> 32);
+      RE.Type = (uint32_t)(Re.r_info & 0xffffffffu);
+      RE.Addend = (int64_t)Re.r_addend;
       Out.Relas.push_back(RE);
     }
   }
@@ -927,6 +953,12 @@ struct RawCOFF {
   // Relocations carry a *raw* symbol-table index (aux records included), but
   // Syms drops aux entries; map back via the recorded Raw slot.
   StringRef symNameByRaw(uint32_t RawIdx) const {
+    // A relocation's SymbolTableIndex is attacker-controlled and can equal
+    // DenseMap's reserved empty/tombstone keys, on which find() is undefined and
+    // can return an uninitialized slot index -> out-of-bounds Syms[] read (the
+    // merge fuzzer hit this as a BUS).  Treat reserved keys as absent.
+    if (detail::isReservedDenseKey(RawIdx))
+      return {};
     auto It = RawToSym.find(RawIdx);
     if (It == RawToSym.end())
       return {};
@@ -1466,13 +1498,12 @@ struct RawMacho {
         Buf.size())
       return;
     for (unsigned i = 0; i < S.NReloc; ++i) {
-      const auto *RI = reinterpret_cast<const MO::relocation_info *>(
-          Buf.data() + S.RelOff + i * sizeof(MO::relocation_info));
-      uint32_t Addr = (uint32_t)RI->r_address;
+      const char *RI = Buf.data() + S.RelOff + i * sizeof(MO::relocation_info);
+      uint32_t Addr, W;
+      memcpy(&Addr, RI, 4);
+      memcpy(&W, RI + 4, 4);
       if (Addr & MO::R_SCATTERED)
         continue; // not used on 64-bit targets
-      uint32_t W;
-      memcpy(&W, reinterpret_cast<const char *>(RI) + 4, 4);
       uint64_t Len = 1ull << ((W >> 25) & 0x3);
       R.push_back({Addr, Len});
     }
@@ -1484,79 +1515,86 @@ bool parseRawMachO(ArrayRef<char> Buf, RawMacho &Out) {
   Out.Buf = Buf;
   if (Buf.size() < sizeof(MO::mach_header_64))
     return false;
-  const auto *MH = reinterpret_cast<const MO::mach_header_64 *>(Buf.data());
-  if (MH->magic != MO::MH_MAGIC_64)
+  MO::mach_header_64 MH = readPOD<MO::mach_header_64>(Buf, 0);
+  if (MH.magic != MO::MH_MAGIC_64)
     return false;
-  Out.CPUType = MH->cputype;
+  Out.CPUType = MH.cputype;
 
   auto cstr16 = [](const char *P) -> StringRef {
     return StringRef(P, strnlen(P, 16));
   };
 
   uint64_t Cmd = sizeof(MO::mach_header_64);
-  for (unsigned c = 0; c < MH->ncmds; ++c) {
+  for (unsigned c = 0; c < MH.ncmds; ++c) {
     if (Cmd + sizeof(MO::load_command) > Buf.size())
       return false;
-    const auto *LC = reinterpret_cast<const MO::load_command *>(Buf.data() + Cmd);
-    if (LC->cmdsize == 0 || Cmd + LC->cmdsize > Buf.size())
+    MO::load_command LC = readPOD<MO::load_command>(Buf, Cmd);
+    if (LC.cmdsize == 0 || Cmd + LC.cmdsize > Buf.size())
       return false;
-    if (LC->cmd == MO::LC_SEGMENT_64) {
+    if (LC.cmd == MO::LC_SEGMENT_64) {
       if (Cmd + sizeof(MO::segment_command_64) > Buf.size())
         return false;
-      const auto *Seg =
-          reinterpret_cast<const MO::segment_command_64 *>(Buf.data() + Cmd);
+      MO::segment_command_64 Seg = readPOD<MO::segment_command_64>(Buf, Cmd);
       uint64_t SP = Cmd + sizeof(MO::segment_command_64);
-      for (unsigned i = 0; i < Seg->nsects; ++i) {
-        if (SP + (uint64_t)(i + 1) * sizeof(MO::section_64) > Buf.size())
+      for (unsigned i = 0; i < Seg.nsects; ++i) {
+        uint64_t SO = SP + (uint64_t)i * sizeof(MO::section_64);
+        if (SO + sizeof(MO::section_64) > Buf.size())
           return false;
-        const auto *S = reinterpret_cast<const MO::section_64 *>(
-            Buf.data() + SP + i * sizeof(MO::section_64));
+        MO::section_64 S = readPOD<MO::section_64>(Buf, SO);
         RawMachoSec RS;
-        RS.Seg = cstr16(S->segname);
-        RS.Sect = cstr16(S->sectname);
-        RS.Addr = S->addr;
-        RS.Size = S->size;
-        RS.Offset = S->offset;
-        RS.Flags = S->flags;
-        RS.RelOff = S->reloff;
-        RS.NReloc = S->nreloc;
+        // segname/sectname are char[16] (no alignment requirement): read them
+        // straight from Buf so the StringRefs stay valid for Buf's lifetime.
+        // S is a local copy that dies at the end of this iteration, so
+        // cstr16(S.segname) would dangle (a use-after-scope the merge fuzzer
+        // caught immediately under ASan).
+        RS.Seg = cstr16(Buf.data() + SO + offsetof(MO::section_64, segname));
+        RS.Sect = cstr16(Buf.data() + SO + offsetof(MO::section_64, sectname));
+        RS.Addr = S.addr;
+        RS.Size = S.size;
+        RS.Offset = S.offset;
+        RS.Flags = S.flags;
+        RS.RelOff = S.reloff;
+        RS.NReloc = S.nreloc;
         Out.Secs.push_back(RS);
       }
-    } else if (LC->cmd == MO::LC_SYMTAB) {
-      const auto *SC =
-          reinterpret_cast<const MO::symtab_command *>(Buf.data() + Cmd);
-      if ((uint64_t)SC->stroff + SC->strsize > Buf.size())
+    } else if (LC.cmd == MO::LC_SYMTAB) {
+      // Bounds-check the command before reading its fields: a malformed cmdsize
+      // smaller than symtab_command could otherwise let the field reads run past
+      // the buffer when this is the last load command.
+      if (Cmd + sizeof(MO::symtab_command) > Buf.size())
         return false;
-      if ((uint64_t)SC->symoff + (uint64_t)SC->nsyms * sizeof(MO::nlist_64) >
+      MO::symtab_command SC = readPOD<MO::symtab_command>(Buf, Cmd);
+      if ((uint64_t)SC.stroff + SC.strsize > Buf.size())
+        return false;
+      if ((uint64_t)SC.symoff + (uint64_t)SC.nsyms * sizeof(MO::nlist_64) >
           Buf.size())
         return false;
-      const char *Str = Buf.data() + SC->stroff;
-      for (unsigned i = 0; i < SC->nsyms; ++i) {
-        const auto *NL = reinterpret_cast<const MO::nlist_64 *>(
-            Buf.data() + SC->symoff + i * sizeof(MO::nlist_64));
+      const char *Str = Buf.data() + SC.stroff;
+      for (unsigned i = 0; i < SC.nsyms; ++i) {
+        MO::nlist_64 NL = readPOD<MO::nlist_64>(
+            Buf, SC.symoff + (uint64_t)i * sizeof(MO::nlist_64));
         RawMachoSym PS;
-        if (NL->n_strx < SC->strsize)
-          PS.Name = StringRef(Str + NL->n_strx,
-                              strnlen(Str + NL->n_strx, SC->strsize - NL->n_strx));
-        PS.Type = NL->n_type;
-        PS.Sect = NL->n_sect;
-        PS.Value = NL->n_value;
+        if (NL.n_strx < SC.strsize)
+          PS.Name = StringRef(Str + NL.n_strx,
+                              strnlen(Str + NL.n_strx, SC.strsize - NL.n_strx));
+        PS.Type = NL.n_type;
+        PS.Sect = NL.n_sect;
+        PS.Value = NL.n_value;
         Out.Syms.push_back(PS);
       }
-    } else if (LC->cmd == MO::LC_DYSYMTAB) {
+    } else if (LC.cmd == MO::LC_DYSYMTAB) {
       if (Cmd + sizeof(MO::dysymtab_command) > Buf.size())
         return false;
-      const auto *DC =
-          reinterpret_cast<const MO::dysymtab_command *>(Buf.data() + Cmd);
-      Out.ILocal = DC->ilocalsym;
-      Out.NLocal = DC->nlocalsym;
-      Out.IExtdef = DC->iextdefsym;
-      Out.NExtdef = DC->nextdefsym;
-      Out.IUndef = DC->iundefsym;
-      Out.NUndef = DC->nundefsym;
+      MO::dysymtab_command DC = readPOD<MO::dysymtab_command>(Buf, Cmd);
+      Out.ILocal = DC.ilocalsym;
+      Out.NLocal = DC.nlocalsym;
+      Out.IExtdef = DC.iextdefsym;
+      Out.NExtdef = DC.nextdefsym;
+      Out.IUndef = DC.iundefsym;
+      Out.NUndef = DC.nundefsym;
       Out.HasDysymtab = true;
     }
-    Cmd += LC->cmdsize;
+    Cmd += LC.cmdsize;
   }
 
   // Relocations per section.  Non-scattered relocation_info is 8 bytes:

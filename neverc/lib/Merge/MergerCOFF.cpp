@@ -21,6 +21,7 @@
 //
 //===------------------------------------------------------------------===//
 
+#include "MergerCommon.h"
 #include "neverc/Merge/Merger.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -160,6 +161,11 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
     auto BufRef = MemoryBufferRef(
         StringRef(Buffers[p].data(), Buffers[p].size()), "partition");
+    // Bounds of this input, used to validate the manual auxiliary-symbol-record
+    // arithmetic below (LLVM's symbol iterator validates the 18-byte primary
+    // record but not the aux slots a malformed NumberOfAuxSymbols points at).
+    const char *BufBegin = Buffers[p].data();
+    const char *BufEnd = BufBegin + Buffers[p].size();
     auto ObjOrErr = COFFObjectFile::create(BufRef);
     if (!ObjOrErr) {
       consumeError(ObjOrErr.takeError());
@@ -192,6 +198,24 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       auto SNameOrErr = Obj.getSectionName(CS);
       StringRef SecName = SNameOrErr ? *SNameOrErr : "";
+
+      // A relocatable object's sections carry no load address; codegen always
+      // emits VirtualAddress 0.  A non-zero VirtualAddress means a malformed or
+      // hostile object, or a linked image mis-fed as a relocatable input.  This
+      // merger treats every symbol/relocation offset as section-relative from
+      // 0, so a non-zero base would mis-place the section's symbols — and, worse,
+      // the instant we iterate such a section's relocations below, LLVM's
+      // COFFObjectFile::section_rel_begin hard-aborts the whole process via
+      // report_fatal_error("Sections with relocations should have an address of
+      // 0") rather than returning an error we can catch.  Refuse gracefully so
+      // the caller falls back to serial codegen / a real linker instead of the
+      // process dying (found by the merge fuzzer on a crafted .obj).
+      if (CS->VirtualAddress != 0) {
+        errs() << "neverc: COFF relocatable merge: section '" << SecName
+               << "' has non-zero VirtualAddress " << CS->VirtualAddress
+               << " (not a relocatable object); refusing to merge\n";
+        return false;
+      }
 
       unsigned MIdx = findOrCreateSection(SecName, CS->Characteristics);
       auto &MS = MergedSections[MIdx];
@@ -326,6 +350,21 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         const uint8_t *AuxData =
             reinterpret_cast<const uint8_t *>(CSym.getRawPtr()) + 18 * (a + 1);
 
+        // A symbol whose NumberOfAuxSymbols runs past the end of the symbol
+        // table makes this 18-byte read (and the memcpy of aux structs below)
+        // walk off the input buffer into unrelated heap memory, copying
+        // uninitialized bytes into the output (a non-deterministic, info-leaking
+        // merge) and potentially faulting.  LLVM's symbol iterator validates
+        // the primary record but not these manually-indexed aux slots, so guard
+        // them here.  Found by the merge fuzzer on a crafted symbol table.
+        if (reinterpret_cast<const char *>(AuxData) < BufBegin ||
+            reinterpret_cast<const char *>(AuxData) + 18 > BufEnd) {
+          errs() << "neverc: COFF relocatable merge: symbol '" << Name
+                 << "' declares an auxiliary record past the end of the object "
+                    "(malformed symbol table); refusing to merge\n";
+          return false;
+        }
+
         if (a == 0 && CSym.getStorageClass() == COFF::IMAGE_SYM_CLASS_STATIC &&
             CSym.getSectionNumber() > 0) {
           coff_aux_section_definition AuxSD;
@@ -405,6 +444,10 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     for (auto &RE : MS.Relocs) {
       if (RE.PartIdx >= Maps.size())
         continue;
+      // SymbolTableIndex is attacker-controlled; a reserved DenseMap key makes
+      // find() undefined.  Leave such a relocation's index unremapped.
+      if (detail::isReservedDenseKey(RE.Reloc.SymbolTableIndex))
+        continue;
       auto It = Maps[RE.PartIdx].SymMap.find(RE.Reloc.SymbolTableIndex);
       if (It != Maps[RE.PartIdx].SymMap.end())
         RE.Reloc.SymbolTableIndex = It->second;
@@ -420,6 +463,14 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   for (auto &WF : WeakAuxFixups) {
     if (WF.Part >= Maps.size())
       return false;
+    // OrigTag is an attacker-controlled aux TagIndex; a reserved DenseMap key
+    // makes find() undefined.  No real symbol occupies it, so refuse (as for an
+    // absent TagIndex) rather than risk an undefined lookup.
+    if (detail::isReservedDenseKey(WF.OrigTag)) {
+      errs() << "neverc: COFF merge: weak external aux TagIndex " << WF.OrigTag
+             << " is invalid; refusing\n";
+      return false;
+    }
     auto It = Maps[WF.Part].SymMap.find(WF.OrigTag);
     if (It == Maps[WF.Part].SymMap.end()) {
       errs() << "neverc: COFF merge: weak external aux TagIndex " << WF.OrigTag

@@ -80,8 +80,11 @@ target_include_directories(neverc-merge-tests PRIVATE
 # NEVERC_BINARY lets the differential suite spawn the bundled compiler+linker
 # to produce real objects and an independent LLD `-r` merge to cross-check the
 # in-process merger against.  Tests that need it GTEST_SKIP when it is absent.
+# TEST_SOURCE_DIR locates the committed merge-fuzzer regression corpus
+# (merge-corpus/) that the replay test feeds back through the merger.
 target_compile_definitions(neverc-merge-tests PRIVATE
   NEVERC_BINARY="$<TARGET_FILE:neverc>"
+  TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 if(TARGET neverc)
@@ -95,6 +98,34 @@ gtest_discover_tests(neverc-merge-tests
     TIMEOUT 120
   DISCOVERY_TIMEOUT 30
 )
+
+# Optional libFuzzer target for continuous coverage-guided fuzzing of the
+# object merger + independent self-verifier.  OFF by default (it needs a
+# fuzzer-capable compiler and its own run loop, so it must not join the normal
+# gtest build).  Enable with:
+#   cmake -DNEVERC_ENABLE_MERGE_FUZZER=ON ...
+#   ninja neverc-merge-fuzzer
+#   ./bin/neverc-merge-fuzzer -max_len=16384 corpus/
+# For full coverage feedback into the merger itself, configure the whole build
+# with -fsanitize=fuzzer-no-link so libnevercMerge is instrumented too.
+option(NEVERC_ENABLE_MERGE_FUZZER
+  "Build the libFuzzer target for the object merger" OFF)
+if(NEVERC_ENABLE_MERGE_FUZZER)
+  add_executable(neverc-merge-fuzzer MergeFuzzer.cpp)
+  target_link_libraries(neverc-merge-fuzzer PRIVATE
+    nevercMerge
+    ${NEVERC_COMPILER_RT_BUILTINS}
+  )
+  target_include_directories(neverc-merge-fuzzer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  )
+  target_compile_features(neverc-merge-fuzzer PRIVATE cxx_std_17)
+  target_compile_options(neverc-merge-fuzzer PRIVATE -fsanitize=fuzzer-no-link)
+  target_link_options(neverc-merge-fuzzer PRIVATE -fsanitize=fuzzer)
+  if(TARGET neverc)
+    add_dependencies(neverc-merge-fuzzer neverc)
+  endif()
+endif()
 
 # Standard library runtime tests — compile std/tests/*.c with neverc, run, verify
 add_executable(neverc-std-tests

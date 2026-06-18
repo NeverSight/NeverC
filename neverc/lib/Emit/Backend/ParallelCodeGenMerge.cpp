@@ -36,6 +36,14 @@ bool mergePartitionObjects(const Triple &TT,
                            ArrayRef<SmallVector<char, 0>> Bufs,
                            raw_pwrite_stream &OS) {
   using namespace neverc::merge;
+  // Test-only fault injection: pretend the merge failed so the serial-codegen
+  // safety net (finalizeResults' bail -> restoreLinkage -> the LTO backend's
+  // serial codegen fallback) can be exercised end to end and proven to still
+  // produce a correct binary.  Production never sets this; under
+  // NEVERC_PCG_STRICT a forced failure still aborts, exactly as any real merge
+  // failure would, so the variable cannot mask a regression when strict is on.
+  if (::getenv("NEVERC_PCG_FORCE_MERGE_FAIL") != nullptr)
+    return false;
   if (TT.isOSBinFormatCOFF())
     return mergeObjects(Bufs, OS, Format::COFF);
   if (TT.isOSBinFormatELF())

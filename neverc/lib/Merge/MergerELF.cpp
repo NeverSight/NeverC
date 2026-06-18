@@ -273,9 +273,31 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         SymTabHdr = &S;
         if (auto R = EF.getStringTableForSymtab(S))
           SymStr = *R;
+        else
+          // Leave SymStr empty (every symbol name becomes "") rather than
+          // letting the Expected's error go unchecked — an unconsumed llvm
+          // Error aborts the process in assertions builds.  A malformed symbol
+          // string table only reaches here on a hostile/garbage -r input; the
+          // parallel-codegen path always produces a well-formed one.
+          consumeError(R.takeError());
         break;
       }
     }
+
+    // Section indices that some SHT_RELA/SHT_REL targets via sh_info.  Used
+    // only to make the SHT_NOTE dedup below reloc-safe: a relocated note must
+    // never be folded onto an earlier byte-identical copy, because Phase 3
+    // would then append this note's relocations onto the front copy as well,
+    // double-applying them (or, if the two notes carry relocations to different
+    // symbols, silently keeping only the front's).  A note with relocations
+    // therefore takes the normal concatenating path, where Phase 3 places its
+    // relocations against its own SecOff like any other section.  Real notes
+    // (.note.gnu.property, build-id, .note.GNU-stack) carry no relocations, so
+    // this only ever changes the exotic relocated-note case.
+    DenseSet<unsigned> SectionHasRelocTarget;
+    for (const Shdr &RS : Secs)
+      if (RS.sh_type == SHT_RELA || RS.sh_type == SHT_REL)
+        SectionHasRelocTarget.insert(RS.sh_info);
 
     // ----- Phase 1: Merge sections -----
     // Skip metadata sections that are regenerated in the output.
@@ -345,8 +367,10 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // the incoming note is byte-identical to the copy already merged;
       // otherwise fall through to the normal concatenating path.  A
       // byte-identical note starts at the first copy's offset 0, so deduped
-      // symbols/relocations into it need no offset shift.
-      if (S.sh_type == SHT_NOTE && p > 0) {
+      // symbols into it need no offset shift.  A note that is itself a
+      // relocation target is never deduped (SectionHasRelocTarget guard): see
+      // its definition above for why double-applied relocations would result.
+      if (S.sh_type == SHT_NOTE && p > 0 && !SectionHasRelocTarget.count(i)) {
         auto CIt = SectionIndex.find(SecName);
         if (CIt != SectionIndex.end() && !CIt->second.empty()) {
           unsigned FrontIdx = CIt->second.front();
@@ -483,9 +507,17 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         }
         // SHN_COMMON: preserved as-is in -r mode (LLD behavior).
 
+        // strnlen-bound the name to the string table extent.  llvm's
+        // getStringTableForSymtab guarantees a trailing NUL (it errors
+        // otherwise), so for well-formed input this is identical to the implicit
+        // strlen; the explicit bound keeps every merger's symbol-name read
+        // uniformly safe (matching the MachO merger and the verifier) and immune
+        // to any future reader that stops validating the terminator.
         StringRef Name;
         if (OutS.st_name < SymStr.size())
-          Name = SymStr.data() + OutS.st_name;
+          Name = StringRef(SymStr.data() + OutS.st_name,
+                           strnlen(SymStr.data() + OutS.st_name,
+                                   SymStr.size() - OutS.st_name));
         OutS.st_name = SymStrTab.add(Name);
 
         if (Syms[i].getBinding() == STB_LOCAL) {
@@ -545,6 +577,11 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     for (unsigned i = 1; i < Secs.size(); ++i) {
       if (Secs[i].sh_type != SHT_RELA && Secs[i].sh_type != SHT_REL)
         continue;
+      // sh_info names the relocated section and is attacker-controlled; a value
+      // equal to a DenseMap reserved key makes find() undefined, so skip it (it
+      // cannot name a real section anyway).
+      if (detail::isReservedDenseKey((unsigned)Secs[i].sh_info))
+        continue;
       auto TargetIt = PM.SecMap.find(Secs[i].sh_info);
       if (TargetIt == PM.SecMap.end() || TargetIt->second == 0)
         continue;
@@ -599,9 +636,14 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         continue;
       unsigned origSym = RE.Entry.getSymbol();
       unsigned newSym = 0;
-      auto It = Maps[RE.PartIdx].SymMap.find(origSym);
-      if (It != Maps[RE.PartIdx].SymMap.end())
-        newSym = It->second;
+      // origSym comes from r_info and is attacker-controlled; a reserved
+      // DenseMap key would make find() undefined.  Leave newSym = 0 (the
+      // undefined-symbol slot) for such a relocation.
+      if (!detail::isReservedDenseKey(origSym)) {
+        auto It = Maps[RE.PartIdx].SymMap.find(origSym);
+        if (It != Maps[RE.PartIdx].SymMap.end())
+          newSym = It->second;
+      }
       RE.Entry.setSymbolAndType(newSym, RE.Entry.getType());
     }
   }

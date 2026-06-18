@@ -3770,6 +3770,75 @@ TEST(MergeCOFF, RefusesMixedMachine) {
       << "merger accepted mixed COFF machine inputs";
 }
 
+// Robustness regressions found by neverc-merge-fuzzer: a malformed COFF input
+// must be refused gracefully (mergeObjects returns false), never crash the
+// process.  Production only feeds well-formed codegen output, but the merger is
+// also the linker's general relocatable path, and the fuzzer reached both of
+// these in seconds.
+
+// A section that has relocations AND a non-zero VirtualAddress makes LLVM's
+// COFFObjectFile::section_rel_begin() call report_fatal_error (a hard process
+// abort) the moment the merger iterates that section's relocations.  The merger
+// now refuses such an input up front; without the guard this test aborts the
+// whole test binary.
+TEST(MergeCOFF, RefusesNonZeroVirtualAddressGracefully) {
+  using namespace COFF;
+  uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
+                       IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
+  CoffSecSpec S0{".text", 0x20, TextChars, 0x90};
+  CoffSymSpec P0{"p0", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec U0{"ext", 0, 0, IMAGE_SYM_CLASS_EXTERNAL}; // undefined reloc target
+  CoffRelSpec R0{0, 0x8, "ext", (uint16_t)IMAGE_REL_AMD64_ADDR64};
+  auto Obj = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {P0, U0}, {R0});
+
+  // Patch section 0's VirtualAddress: file header (20) + sec*40 + name(8) +
+  // VirtualSize(4) = offset 32.
+  ASSERT_GT(Obj.size(), (size_t)36);
+  Obj[32] = 0x00;
+  Obj[33] = 0x10;
+  Obj[34] = 0x00;
+  Obj[35] = 0x00; // VirtualAddress = 0x1000
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  EXPECT_FALSE(mergeObjects(Bufs, OS, Format::COFF))
+      << "merger accepted a COFF section with a non-zero VirtualAddress";
+}
+
+// A symbol whose NumberOfAuxSymbols runs past the end of the symbol table makes
+// the merger's manual aux-record indexing (getRawPtr() + 18*(a+1)) walk off the
+// input buffer — an out-of-bounds heap read that copies uninitialized bytes
+// into the output (non-deterministic, info-leaking) and can fault.  The merger
+// now bounds-checks each aux record against the input.
+TEST(MergeCOFF, RefusesOutOfBoundsAuxRecordGracefully) {
+  using namespace COFF;
+  uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
+                       IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
+  CoffSecSpec S0{".text", 0x20, TextChars, 0x90};
+  CoffSymSpec P0{"p0", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec P1{"p1", 0x4, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  auto Obj = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {P0, P1}, {});
+
+  // The symbol table is the last real structure (only a 4-byte string-table
+  // length follows it).  Bump the LAST symbol's NumberOfAuxSymbols (byte 17 of
+  // its 18-byte record) so its claimed aux slots extend past the buffer.
+  uint32_t SymPtr = getU32(Obj.data() + 8);
+  uint32_t NumSyms = getU32(Obj.data() + 12);
+  ASSERT_GE(NumSyms, 2u);
+  size_t LastAuxCountOff = (size_t)SymPtr + (size_t)(NumSyms - 1) * 18 + 17;
+  ASSERT_LT(LastAuxCountOff, Obj.size());
+  Obj[LastAuxCountOff] = (char)100; // 100 aux records that do not exist
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  EXPECT_FALSE(mergeObjects(Bufs, OS, Format::COFF))
+      << "merger accepted a COFF symbol whose aux records run past the object";
+}
+
 TEST(MergeMachOSemantic, CrossPartitionSymbolOffsets) {
   namespace MO = llvm::MachO;
   uint32_t TextFlags = MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
@@ -3930,6 +3999,64 @@ TEST(MergeMachO, Accepts255SectionsRefuses256) {
         << "256 sections overflow the 8-bit n_sect; the merger must refuse "
            "rather than emit a truncated object";
   }
+}
+
+// A symbol whose name runs to the end of a non-NUL-terminated string table made
+// the merger build StringRef(const char *) -> strlen() off the end of the input
+// buffer (an out-of-bounds heap read; MachOObjectFile::getStringTableData does
+// not validate a trailing NUL the way the ELF reader does).  The merger now
+// strnlen-bounds the read to strsize, like the independent verifier.  The
+// over-read is only a fault under a sanitizer, so this is most meaningful in the
+// ASan build; everywhere it must simply not crash.
+TEST(MergeMachO, HandlesNonNulTerminatedStringTableGracefully) {
+  namespace MO = llvm::MachO;
+  uint32_t TextFlags =
+      MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
+  MachoSecSpec S0{"__TEXT", "__text", 0x40, 4, TextFlags, 0x90};
+  uint8_t DefExt = MO::N_SECT | MO::N_EXT;
+  MachoSymSpec P0{"_p0", DefExt, 1, 0, 0};
+  auto Obj =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0}, {P0});
+
+  // The string table is the last structure in the file; its final byte is the
+  // NUL terminating "_p0".  Overwrite it so the table is non-NUL-terminated and
+  // "_p0" runs to the buffer end with no terminator in between.
+  ASSERT_FALSE(Obj.empty());
+  Obj.back() = (char)0x41; // 'A'
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  // Either outcome is acceptable; the invariant under test is "no OOB read".
+  mergeMachO64Objects(Bufs, OS); // must not read out of bounds
+}
+
+// A non-external relocation whose r_address is within `len` bytes of UINT32_MAX
+// overflowed the merger's 32-bit `addr + len > Data.size()` bounds check, wrapped
+// to a small value that passed the guard, and then indexed the section data ~4
+// GiB out of bounds in the in-place fixup.  The merger now computes the bound in
+// 64-bit.  Meaningful under ASan; everywhere it must not crash.
+TEST(MergeMachO, HandlesHugeRelocAddressGracefully) {
+  namespace MO = llvm::MachO;
+  uint32_t TextFlags =
+      MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
+  MachoSecSpec S0{"__TEXT", "__text", 0x40, 4, TextFlags, 0x90};
+  uint8_t DefExt = MO::N_SECT | MO::N_EXT;
+  MachoSymSpec P0{"_p0", DefExt, 1, 0, 0};
+  // Non-extern reloc (x86_64 so the ARM64_RELOC_ADDEND pseudo-reloc path is not
+  // taken), targeting section 0, length 3 (8 bytes), r_address near UINT32_MAX.
+  MachoRelSpec R{0, 0xFFFFFFF8u, "", (uint8_t)MO::X86_64_RELOC_UNSIGNED, 3,
+                 /*Extern=*/false, /*TargetSec=*/0};
+  auto Obj = buildMachO(MO::CPU_TYPE_X86_64, MO::CPU_SUBTYPE_X86_64_ALL, {S0},
+                        {P0}, {R});
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  // Either outcome is acceptable; the invariant under test is "no OOB access".
+  mergeMachO64Objects(Bufs, OS); // must not access out of bounds
 }
 
 TEST(MergeMachOSemantic, RandomizedLayoutOracle) {
@@ -4623,6 +4750,74 @@ TEST(MergeFuzz, AllFormatsMultipleRandomGarbage) {
   }
 }
 
+#ifdef TEST_SOURCE_DIR
+// Split a corpus blob into 1..8 sub-buffers exactly the way the libFuzzer entry
+// (MergeFuzzer.cpp) does, so a saved crash artifact reproduces byte-for-byte.
+static std::vector<SmallVector<char, 0>> carveCorpus(ArrayRef<uint8_t> Data) {
+  std::vector<SmallVector<char, 0>> Bufs;
+  size_t Pos = 0, Size = Data.size();
+  while (Pos + 2 <= Size && Bufs.size() < 8) {
+    size_t Len = (size_t)Data[Pos] | ((size_t)Data[Pos + 1] << 8);
+    Pos += 2;
+    Len = std::min(Len, Size - Pos);
+    SmallVector<char, 0> B;
+    B.append(reinterpret_cast<const char *>(Data.data() + Pos),
+             reinterpret_cast<const char *>(Data.data() + Pos + Len));
+    Bufs.push_back(std::move(B));
+    Pos += Len;
+  }
+  if (Bufs.empty()) {
+    SmallVector<char, 0> B;
+    B.append(reinterpret_cast<const char *>(Data.data()),
+             reinterpret_cast<const char *>(Data.data() + Size));
+    Bufs.push_back(std::move(B));
+  }
+  return Bufs;
+}
+
+// Replays the merge-fuzzer crash artifacts that exposed (and now guard against)
+// real memory-safety bugs in the merger/verifier:
+//   * macho-nlist-misaligned      — misaligned typed read in parseRawMachO
+//   * macho-section-name-uaf       — dangling section-name StringRef into a
+//                                    temporary local copy
+//   * coff-reloc-reserved-densekey — DenseMap reserved-key lookup (BUS) in the
+//                                    COFF verifier's symbol-by-index helper
+// Each is carved exactly as the fuzzer does and pushed through every format with
+// verify on and off, plus the ELF kernel-module section-folding path.  The
+// invariant is simply "the merger never crashes on these inputs" — most
+// meaningful in the sanitizer (ASan/UBSan) build, a fast smoke test otherwise.
+// Keeping the artifacts in-tree turns one-off fuzzer finds into permanent CI
+// regression coverage without needing the fuzzer harness itself.
+TEST(MergeFuzzCorpus, NoCrashOnSavedRegressions) {
+  const char *Names[] = {"macho-nlist-misaligned", "macho-section-name-uaf",
+                         "coff-reloc-reserved-densekey"};
+  for (const char *N : Names) {
+    SmallString<256> Path(TEST_SOURCE_DIR);
+    sys::path::append(Path, "merge-corpus", N);
+    auto BufOrErr = MemoryBuffer::getFile(Path);
+    ASSERT_TRUE((bool)BufOrErr)
+        << "missing merge regression corpus file: " << Path.c_str();
+    StringRef Data = (*BufOrErr)->getBuffer();
+    auto Bufs = carveCorpus(ArrayRef<uint8_t>(
+        reinterpret_cast<const uint8_t *>(Data.data()), Data.size()));
+    for (Format Fmt : {Format::ELF64LE, Format::MachO64, Format::COFF})
+      for (bool Verify : {true, false}) {
+        Options Opts;
+        Opts.verify = Verify;
+        SmallVector<char, 0> Out;
+        raw_svector_ostream OS(Out);
+        mergeObjects(Bufs, OS, Fmt, Opts); // must not crash
+      }
+    Options Folded;
+    Folded.mergeSections = true;
+    Folded.preservedSections = {".modinfo", "__versions"};
+    SmallVector<char, 0> Out;
+    raw_svector_ostream OS(Out);
+    mergeObjects(Bufs, OS, Format::ELF64LE, Folded); // must not crash
+  }
+}
+#endif // TEST_SOURCE_DIR
+
 // ===========================================================================
 // Differential tests against the bundled LLD relocatable linker (`-r`).
 //
@@ -5151,6 +5346,27 @@ struct ScopedEnv {
   }
 };
 
+// Temporarily remove an environment variable, restoring it on scope exit.
+// Needed because CI sets NEVERC_PCG_STRICT=1 globally (presence, not value,
+// enables strict mode), yet the serial-fallback test must run with strict off
+// so the forced merge failure is allowed to fall back instead of aborting.
+struct ScopedUnsetEnv {
+  std::string Name;
+  std::string Old;
+  bool HadOld;
+  explicit ScopedUnsetEnv(const char *N) : Name(N) {
+    const char *Prev = ::getenv(N);
+    HadOld = Prev != nullptr;
+    if (HadOld)
+      Old = Prev;
+    ::unsetenv(N);
+  }
+  ~ScopedUnsetEnv() {
+    if (HadOld)
+      ::setenv(Name.c_str(), Old.c_str(), 1);
+  }
+};
+
 // One module of `NumFns` noinline, deliberately heavy functions.  noinline
 // keeps them distinct after whole-program inlining, so the post-IPO module
 // still clears the parallel thresholds (FuncCount>=8, TotalWeight>=10000) and
@@ -5618,6 +5834,76 @@ TEST(MergeParallelCodegenStrict, MultiFileAutoLtoComputedGotoUnderStrictMode) {
   EXPECT_EQ(OutLto, OutRef)
       << "auto-LTO program output diverged from the -fno-lto build — a "
          "computed-goto dispatch table was corrupted by the partition split";
+}
+
+// The other half of the merger's safety contract.  Every test above proves the
+// merge is correct (or that strict mode catches a regression).  This proves
+// that when the merge genuinely cannot be produced, the pipeline falls back to
+// serial codegen and STILL emits a correct binary — i.e. a merger bug degrades
+// to "slower", never "wrong".  NEVERC_PCG_FORCE_MERGE_FAIL makes
+// mergePartitionObjects() return false on every partitioned link, simulating an
+// arbitrary merge/self-verify failure; with strict mode off the link must
+// succeed via the fallback and match the -fno-lto reference.  This also
+// exercises restoreLinkage(), whose job is to scrub the externalized ".__pcg"
+// linkage/visibility/name rewrites back to the originals before the serial
+// codegen runs — a bug there would emit what should be local symbols as
+// leaked globals or diverge at runtime.
+TEST(MergeParallelCodegenStrict,
+     MultiFileAutoLtoSerialFallbackProducesCorrectBinary) {
+  Triple Host(sys::getProcessTriple());
+  if (!Host.isOSBinFormatMachO() && !Host.isOSBinFormatELF())
+    GTEST_SKIP() << "host object format not exercised by this test";
+  ScratchDir Dir;
+  if (!Dir.Ok)
+    GTEST_SKIP() << "could not create scratch directory";
+
+  const unsigned NumMods = 24, NumFns = 16;
+  SmallVector<std::string, 32> Srcs;
+  for (unsigned m = 0; m < NumMods; ++m) {
+    std::string CPath = Dir.file(("fb" + Twine(m) + ".c").str());
+    std::string Src = genHeavyModule(m, NumFns);
+    if (!writeBytes(CPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write source";
+    Srcs.push_back(CPath);
+  }
+  {
+    std::string MainPath = Dir.file("fbmain.c");
+    std::string Src = genHeavyMain(NumMods, NumFns);
+    if (!writeBytes(MainPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write source";
+    Srcs.push_back(MainPath);
+  }
+
+  std::string ExeRef = Dir.file("exe_ref");
+  StringRef RefArgs[] = {"-fno-lto", "-O2"};
+  if (!compileLinkMulti(Dir, Srcs, RefArgs, ExeRef))
+    GTEST_SKIP() << "native frontend/link unavailable in this environment";
+  std::string OutRef;
+  ASSERT_EQ(runExeCapture(Dir, ExeRef, OutRef), 0)
+      << "-fno-lto reference executable did not exit cleanly";
+  ASSERT_FALSE(OutRef.empty());
+
+  std::string ExeLto = Dir.file("exe_lto");
+  {
+    // Strict OFF (CI sets it globally, so explicitly unset for the duration)
+    // so the forced failure is allowed to fall back; caches OFF so the
+    // partitioned merge path is really entered and then forced to fail.
+    ScopedUnsetEnv NoStrict("NEVERC_PCG_STRICT");
+    ScopedEnv ForceFail("NEVERC_PCG_FORCE_MERGE_FAIL", "1");
+    ScopedEnv NoCache("NEVERC_LTO_CACHE", "0");
+    ScopedEnv NoPCache("NEVERC_LTO_PCACHE", "0");
+    StringRef LtoArgs[] = {"-O2"};
+    ASSERT_TRUE(compileLinkMulti(Dir, Srcs, LtoArgs, ExeLto))
+        << "auto-LTO link did not recover via serial codegen when the merge "
+           "was forced to fail — the safety net is broken";
+  }
+  std::string OutLto;
+  ASSERT_EQ(runExeCapture(Dir, ExeLto, OutLto), 0)
+      << "serial-fallback executable did not exit cleanly";
+  EXPECT_EQ(OutLto, OutRef)
+      << "serial-fallback program output diverged from the -fno-lto build — "
+         "restoreLinkage() left the module polluted after the forced merge "
+         "failure";
 }
 #endif // _WIN32
 #endif // NEVERC_BINARY

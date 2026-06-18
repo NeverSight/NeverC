@@ -272,9 +272,20 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       MO::nlist_64 OutSym;
       memset(&OutSym, 0, sizeof(OutSym));
 
+      // Bound the name to the string table extent.  NL.n_strx only guarantees
+      // the *start* is in range; unlike ELF (llvm's getStringTableForSymtab
+      // errors on a non-NUL-terminated strtab), MachOObjectFile::
+      // getStringTableData() returns the raw [stroff, stroff+strsize) slice with
+      // no trailing-NUL guarantee.  A plain StringRef(const char *) here would
+      // strlen() past the end of the input buffer on a malformed/hostile object
+      // (an out-of-bounds read).  strnlen-bound it exactly as the independent
+      // verifier already does (MergerVerify.cpp) so the merger and its checker
+      // share one safe convention.  Found by the merge fuzzer.
       StringRef Name;
       if (NL.n_strx < PartStrTab.size())
-        Name = PartStrTab.data() + NL.n_strx;
+        Name = StringRef(PartStrTab.data() + NL.n_strx,
+                         strnlen(PartStrTab.data() + NL.n_strx,
+                                 PartStrTab.size() - NL.n_strx));
       OutSym.n_strx = StrTab.add(Name);
       OutSym.n_type = NL.n_type;
       OutSym.n_desc = NL.n_desc;
@@ -524,8 +535,16 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   for (auto &F : DeferredFixups) {
     auto &MS = MergedSections[F.MergedSecIdx];
     auto &RE = MS.Relocs[F.RelocIdx];
-    unsigned addr = RE.Info.r_address;
-    unsigned len = 1u << RE.Info.r_length;
+    // Bound the in-place fixup site in 64-bit.  r_address is a 32-bit field, so
+    // a value within `len` of UINT32_MAX would overflow a 32-bit `addr + len`,
+    // wrap to a small number that passes the guard, and then index MS.Data ~4
+    // GiB out of bounds in the memcpy/byte writes below.  Reinterpreting the
+    // 32-bit field as unsigned and computing the bound in uint64_t makes a
+    // malformed/hostile r_address (including one with the high bit set, which a
+    // valid relocatable section offset never has) skip the fixup instead of
+    // corrupting memory.
+    uint64_t addr = (uint32_t)RE.Info.r_address;
+    uint64_t len = 1ull << RE.Info.r_length;
     if (addr + len > MS.Data.size())
       continue;
 
