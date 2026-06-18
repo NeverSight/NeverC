@@ -18,6 +18,23 @@ set(NEVERC_TEST_SOURCES
   X86PrivilegedIntrinTests.cpp
 )
 
+# NEVERC_EXTERNAL_BINARY: spawn a prebuilt neverc (e.g. downloaded from CI) instead
+# of $<TARGET_FILE:neverc>. Debug workflows use this to build only the gtest
+# harness and skip the multi-hour LTO compiler rebuild.
+if(DEFINED NEVERC_EXTERNAL_BINARY AND NOT NEVERC_EXTERNAL_BINARY STREQUAL "")
+  set(_NEVERC_BINARY "${NEVERC_EXTERNAL_BINARY}")
+  set(_NEVERC_TESTS_DEPENDS_NEVERC FALSE)
+else()
+  set(_NEVERC_BINARY "$<TARGET_FILE:neverc>")
+  set(_NEVERC_TESTS_DEPENDS_NEVERC TRUE)
+endif()
+
+macro(neverc_tests_link_neverc target)
+  if(_NEVERC_TESTS_DEPENDS_NEVERC AND TARGET neverc)
+    add_dependencies(${target} neverc)
+  endif()
+endmacro()
+
 add_executable(neverc-tests ${NEVERC_TEST_SOURCES})
 
 target_link_libraries(neverc-tests PRIVATE GTest::gtest GTest::gtest_main)
@@ -31,16 +48,14 @@ target_include_directories(neverc-tests PRIVATE
 target_compile_features(neverc-tests PRIVATE cxx_std_17)
 
 target_compile_definitions(neverc-tests PRIVATE
-  NEVERC_BINARY="$<TARGET_FILE:neverc>"
+  NEVERC_BINARY="${_NEVERC_BINARY}"
   TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
   TEST_C_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../C"
   NEVERC_PLUGINSDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk"
   NEVERC_NEVERC_INCLUDE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include"
 )
 
-if(TARGET neverc)
-  add_dependencies(neverc-tests neverc)
-endif()
+neverc_tests_link_neverc(neverc-tests)
 
 gtest_discover_tests(neverc-tests
   PROPERTIES
@@ -83,13 +98,11 @@ target_include_directories(neverc-merge-tests PRIVATE
 # TEST_SOURCE_DIR locates the committed merge-fuzzer regression corpus
 # (merge-corpus/) that the replay test feeds back through the merger.
 target_compile_definitions(neverc-merge-tests PRIVATE
-  NEVERC_BINARY="$<TARGET_FILE:neverc>"
+  NEVERC_BINARY="${_NEVERC_BINARY}"
   TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
-if(TARGET neverc)
-  add_dependencies(neverc-merge-tests neverc)
-endif()
+neverc_tests_link_neverc(neverc-merge-tests)
 
 target_compile_features(neverc-merge-tests PRIVATE cxx_std_17)
 
@@ -143,16 +156,14 @@ target_link_libraries(neverc-std-tests PRIVATE GTest::gtest GTest::gtest_main)
 target_compile_features(neverc-std-tests PRIVATE cxx_std_17)
 
 target_compile_definitions(neverc-std-tests PRIVATE
-  NEVERC_BINARY="$<TARGET_FILE:neverc>"
+  NEVERC_BINARY="${_NEVERC_BINARY}"
   TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
   TEST_C_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../C"
   NEVERC_PLUGINSDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk"
   NEVERC_NEVERC_INCLUDE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include"
 )
 
-if(TARGET neverc)
-  add_dependencies(neverc-std-tests neverc)
-endif()
+neverc_tests_link_neverc(neverc-std-tests)
 if(TARGET neverc-std-headers)
   add_dependencies(neverc-std-tests neverc-std-headers)
 endif()
