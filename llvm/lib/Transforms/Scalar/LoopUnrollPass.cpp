@@ -120,6 +120,36 @@ static cl::opt<unsigned> UnrollFullMaxCount(
     cl::desc(
         "Set the max unroll count for full unrolling, for testing purposes"));
 
+// NeverC: full unrolling is decided one loop at a time with no per-function
+// budget.  A single function that holds very many fully-unrollable
+// constant-trip loops makes ScalarEvolution superlinear: each full unroll
+// grows the function body and forces SCEV to re-derive trip counts / exit
+// values (computeSCEVAtScope and friends) over an ever-larger scope, so the
+// total work scales ~O(loops^2).  This is exactly the shape produced by
+// auto-LTO when a "unity"/main absorbs hundreds of small loop-bearing leaf
+// functions via the last-call-to-static inline bonus: the merged module
+// collapses to one giant function whose loops then explode the unroller.
+//
+// Measured on a synthetic merged module (main inlining N trip-7 leaf loops,
+// caches off, this build):
+//   N=120: 3.2s   N=180: 12.4s   N=240: 20.7s   N=360: timeout (>90s)
+// Suppressing automatic full unrolling once a function is this loop-dense
+// removes the superlinearity (N=240: 20.7s -> ~2.7s) with no measured runtime
+// change: full-unrolling the hundredth constant-trip loop in one function buys
+// essentially nothing but instruction-cache churn.  The cap only *withdraws*
+// an optimization (it never affects correctness or program semantics), it
+// never touches partial unrolling, peeling, runtime unrolling, or
+// pragma/metadata-forced unrolling (those are evaluated before this gate and
+// honor explicit user intent), and the default is set well above any
+// hand-written or normally-inlined function so ordinary code is byte-for-byte
+// unaffected.  0 disables the cap (pure upstream behavior).
+static cl::opt<unsigned> NevercFullUnrollMaxLoopsPerFunc(
+    "neverc-full-unroll-max-loops-per-function", cl::init(100), cl::Hidden,
+    cl::desc("Suppress *automatic* full loop unrolling in functions that "
+             "contain more than this many loops, bounding superlinear "
+             "ScalarEvolution cost on loop-dense (e.g. auto-LTO collapsed) "
+             "functions (0 = no limit)"));
+
 static cl::opt<bool>
     UnrollAllowPartial("unroll-allow-partial", cl::Hidden,
                        cl::desc("Allows loops to be partially unrolled until "
@@ -1107,6 +1137,22 @@ bool llvm::computeUnrollCount(
   return ExplicitUnroll;
 }
 
+// Counts the loops in a function (including nested loops) via LI, stopping as
+// soon as the running count reaches Cap.  Early-exit keeps this O(Cap) per
+// call, so using it as a per-loop gate stays negligible even on functions with
+// thousands of loops.
+static unsigned countLoopsAtMost(const LoopInfo &LI, unsigned Cap) {
+  unsigned N = 0;
+  SmallVector<const Loop *, 32> Worklist(LI.begin(), LI.end());
+  while (!Worklist.empty()) {
+    const Loop *L = Worklist.pop_back_val();
+    if (++N >= Cap)
+      return N;
+    Worklist.append(L->begin(), L->end());
+  }
+  return N;
+}
+
 static LoopUnrollResult
 tryToUnrollLoop(Loop *L, DominatorTree &DT, LoopInfo *LI, ScalarEvolution &SE,
                 const TargetTransformInfo &TTI, AssumptionCache &AC,
@@ -1171,6 +1217,18 @@ tryToUnrollLoop(Loop *L, DominatorTree &DT, LoopInfo *LI, ScalarEvolution &SE,
       ProvidedFullUnrollMaxCount);
   TargetTransformInfo::PeelingPreferences PP = gatherPeelingPreferences(
       L, SE, TTI, ProvidedAllowPeeling, ProvidedAllowProfileBasedPeeling, true);
+
+  // NeverC: in loop-dense functions, withdraw *automatic* full unrolling to
+  // bound superlinear ScalarEvolution cost (see
+  // NevercFullUnrollMaxLoopsPerFunc).  FullUnrollMaxCount == 0 makes
+  // shouldFullUnroll reject every trip count (a trip count is always >= 1),
+  // which disables exact and bounded full unrolling only; partial/runtime
+  // unrolling and peeling are unaffected, and pragma/metadata-forced unrolling
+  // is decided earlier in computeUnrollCount and therefore still honored.
+  if (NevercFullUnrollMaxLoopsPerFunc != 0 && LI &&
+      countLoopsAtMost(*LI, NevercFullUnrollMaxLoopsPerFunc + 1) >
+          NevercFullUnrollMaxLoopsPerFunc)
+    UP.FullUnrollMaxCount = 0;
 
   // Exit early if unrolling is disabled. For OptForSize, we pick the loop size
   // as threshold later on.
