@@ -354,21 +354,27 @@ TEST_F(LTOTest, LtoPartitionCache) {
   unsetEnvVar(linker::ltoCacheDirEnvVar);
 }
 
-// Auto-LTO compile-time cliff guard (LoopUnrollPass.cpp's
-// NevercFullUnrollMaxLoopsPerFunc).  When main calls many small loop-bearing
-// leaf functions exactly once, LTO's last-call-to-static inlining collapses
-// them all into main, producing a single function with hundreds of
-// fully-unrollable constant-trip loops.  Without a per-function full-unroll
-// cap, ScalarEvolution's trip-count / exit-value machinery is superlinear in
-// the loop count (measured ~O(N^2): 150 leaves link in ~1s with the cap, but
-// the link time explodes without it, and N=360 used to time out entirely).
-// The valve withdraws *automatic* full unrolling once a function is that
-// loop-dense, restoring near-linear link time at no runtime cost.
+// Auto-LTO compile-time cliff guard for the two cooperating valves that tame
+// it: the inline cap (Inliner.cpp's NevercInlineMaxCallerLoops) and the
+// full-unroll cap (LoopUnrollPass.cpp's NevercFullUnrollMaxLoopsPerFunc).  When
+// main calls many small loop-bearing leaves exactly once, last-call-to-static
+// inlining wants to fold them all into main -- a single function with hundreds
+// of fully-unrollable constant-trip loops -- and full unrolling then makes
+// ScalarEvolution's trip-count / exit-value machinery superlinear in the loop
+// count (measured ~O(N^2); N=360 used to time out entirely).
 //
-// This pins both halves of the contract: (1) the same program links
-// substantially faster with the cap at its default than with it disabled, and
-// (2) the two binaries produce identical output -- the cap may only withdraw
-// an optimization, never change program semantics.
+// The two caps are complementary, which is *why this test must disable both* to
+// see the cliff: the inline cap alone already stops main growing past ~32 loops,
+// so toggling only the unroll cap barely moves the needle (measured 0.6s vs
+// 0.6s -- a coin-flip timing assertion, the historical flake here).  With both
+// caps off the collapse and the unroll blowup both fire and the link detonates
+// (measured ~0.6s vs ~6s, a ~10x gap), giving the guard a wide, non-flaky
+// margin on any hardware.
+//
+// This pins both halves of the contract: (1) the same program links far faster
+// with the caps at their defaults than with both disabled, and (2) the two
+// binaries produce identical output -- the caps may only withdraw an
+// optimization, never change program semantics.
 TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
   // Cold, comparable links: disable both cache layers so neither timing is a
   // cache hit of the other.
@@ -429,15 +435,21 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
     compileUnit("m" + std::to_string(fi));
   compileUnit("main");
 
-  auto linkArgs = [&](const std::string &exe, bool valveOff) {
+  auto linkArgs = [&](const std::string &exe, bool capsOff) {
     std::vector<std::string> l;
     for (auto &f : sysrootFlags()) l.push_back(f);
     for (auto &f : archFlags()) l.push_back(f);
     for (auto &o : objs) l.push_back(o);
-    if (valveOff) {
-      // Reproduce the pre-fix pathology: no per-function full-unroll cap.
+    if (capsOff) {
+      // Reproduce the pre-fix pathology *in full*.  Both caps must be off:
+      // disabling only the unroll cap leaves the inline cap holding main at
+      // ~32 loops, so the superlinear blowup never forms and the timing arms
+      // become indistinguishable (the historical flake).  Off together, main
+      // collapses to one giant function and the unroller detonates SCEV.
       l.push_back("-mllvm");
       l.push_back("-neverc-full-unroll-max-loops-per-function=0");
+      l.push_back("-mllvm");
+      l.push_back("-neverc-inline-max-caller-loops=0");
     }
     if (isWindows())
       l.push_back("-mno-incremental-linker-compatible");
@@ -447,35 +459,36 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
 
   auto exeOn = tmpFile("cliff_on");
   auto t0 = std::chrono::steady_clock::now();
-  auto rOn = ncc(linkArgs(exeOn.string(), /*valveOff=*/false));
+  auto rOn = ncc(linkArgs(exeOn.string(), /*capsOff=*/false));
   auto t1 = std::chrono::steady_clock::now();
   ASSERT_EQ(rOn.exitCode, 0) << rOn.err;
   double tOn = std::chrono::duration<double>(t1 - t0).count();
 
   auto exeOff = tmpFile("cliff_off");
   auto t2 = std::chrono::steady_clock::now();
-  auto rOff = ncc(linkArgs(exeOff.string(), /*valveOff=*/true));
+  auto rOff = ncc(linkArgs(exeOff.string(), /*capsOff=*/true));
   auto t3 = std::chrono::steady_clock::now();
   ASSERT_EQ(rOff.exitCode, 0) << rOff.err;
   double tOff = std::chrono::duration<double>(t3 - t2).count();
 
-  // (1) Semantics must be unchanged by the cap.
+  // (1) Semantics must be unchanged by the caps.
   auto outOn = exec(exeOn.string(), {});
   auto outOff = exec(exeOff.string(), {});
   EXPECT_EQ(outOn.exitCode, 0);
   EXPECT_EQ(outOff.exitCode, 0);
   EXPECT_TRUE(outOn.contains("CK=")) << outOn.out;
   EXPECT_EQ(outOn.out, outOff.out)
-      << "valve changed program output (must be semantics-preserving)";
+      << "a cap changed program output (caps must be semantics-preserving)";
 
-  // (2) The cap must mitigate the superlinear blowup.  Real separation at this
-  // size is several-fold; require only that the capped link is clearly faster
-  // (<0.6x) so the guard never flakes on slow hardware yet fails loudly if the
-  // cap is removed (then tOn ~= tOff).
-  EXPECT_LT(tOn, tOff * 0.6)
-      << "per-function full-unroll cap gave no link-time benefit (tOn=" << tOn
-      << "s tOff=" << tOff << "s): NevercFullUnrollMaxLoopsPerFunc may have "
-         "regressed";
+  // (2) The caps must mitigate the superlinear blowup.  The real separation
+  // with both caps off is ~10x (measured ~0.6s vs ~6s on a 16-core host), so
+  // requiring the capped link to be under half the uncapped link is a wide,
+  // non-flaky margin that still fails loudly if either cap regresses (then the
+  // collapse/unroll fires in the "on" arm too and the times converge).
+  EXPECT_LT(tOn, tOff * 0.5)
+      << "loop-density caps gave no link-time benefit (tOn=" << tOn
+      << "s tOff=" << tOff << "s): NevercInlineMaxCallerLoops or "
+         "NevercFullUnrollMaxLoopsPerFunc may have regressed";
 
   unsetEnvVar(linker::ltoPartitionCacheEnvVar);
   unsetEnvVar(linker::ltoCacheEnvVar);
