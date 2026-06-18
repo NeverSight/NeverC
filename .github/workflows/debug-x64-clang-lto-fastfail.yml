@@ -94,22 +94,45 @@ jobs:
           New-ItemProperty -Path $wer -Name DumpType   -Value 2  -PropertyType DWord -Force | Out-Null
           New-Item -ItemType Directory -Force -Path 'C:\crashdumps' | Out-Null
 
-      - name: Run failing LTO tests (#135 / #137)
+      # The fast-fail (0xC0000409) happens in the CHILD neverc.exe that the gtest
+      # harness spawns via CreateProcess for the caps-off LTO link.  __fastfail is
+      # only delivered to an ALREADY-attached debugger, so post-mortem WER caught
+      # 0 dumps.  Attach cdb live to the harness AND every child it spawns (-o),
+      # break first-chance on 0xC0000409, print the fast-fail *reason code*
+      # (.exr param[0]) + symbolized frames, then 'gn' so the child still dies and
+      # the harness proceeds to the next test.  Works without neverc PDBs: the
+      # reason code alone classifies the failure (2 = /GS stack cookie, 3 = corrupt
+      # LIST_ENTRY, 0x1a = heap metadata, 7 = fatal app exit / terminate, ...).
+      - name: Reproduce + capture fast-fail under cdb (live child debugging)
         id: tests
         shell: bash
         continue-on-error: true
+        timeout-minutes: 25
         run: |
           set -x
-          ./build/bin/neverc-tests.exe \
-            --gtest_filter='LTOTest.AutoLtoLoopDenseNoCompileCliff:LTOTest.AutoLtoInlineCapSemanticsPreserved'
+          CDB="/c/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe"
+          [ -f "$CDB" ] || CDB="$(find '/c/Program Files (x86)/Windows Kits' -name cdb.exe -path '*x64*' 2>/dev/null | head -1)"
+          echo "cdb=$CDB"
+          BIN="$(cygpath -m "$PWD/install/bin")"
+          export _NT_SYMBOL_PATH="${BIN};srv*C:\\symcache*https://msdl.microsoft.com/download/symbols"
+          echo "neverc.pdb present: $([ -f "$PWD/install/bin/neverc.pdb" ] && echo yes || echo NO)"
 
-      - name: Analyze fast-fail dumps (cdb)
-        if: steps.tests.outcome == 'failure'
+          ANALYZE='.echo ====FASTFAIL_CAUGHT====; .lastevent; .exr -1; .ecxr; !analyze -v; .echo ====STACK_kP====; kP 200; .echo ====STACK_kb====; kb 200; .echo ====REGS====; r; .echo ====NEVERC_MOD====; lmv m neverc; .echo ====END_FASTFAIL====; gn'
+          "$CDB" -G -o \
+            -c "sxn ibp; sxn cpr; sxn epr; sxe -c \"$ANALYZE\" 0xc0000409; g" \
+            ./build/bin/neverc-tests.exe \
+            --gtest_filter='LTOTest.AutoLtoLoopDenseNoCompileCliff:LTOTest.AutoLtoInlineCapSemanticsPreserved' \
+            2>&1 | tee cdb_out.log || true
+
+          echo "==== fast-fails captured: $(grep -c FASTFAIL_CAUGHT cdb_out.log 2>/dev/null || echo 0) ===="
+
+      - name: Backup - analyze any WER dumps (cdb)
+        if: always()
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
           $dumps = Get-ChildItem 'C:\crashdumps' -Filter *.dmp -ErrorAction SilentlyContinue
-          Write-Host "=== dumps captured: $($dumps.Count) ==="
+          Write-Host "=== WER dumps captured: $($dumps.Count) (live cdb capture above is primary) ==="
           $dumps | Format-Table Name,Length | Out-String | Write-Host
 
           $cdb = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -139,9 +162,18 @@ jobs:
           name: debug-x64-clang-lto-fastfail-diag
           path: |
             C:\crashdumps
+            cdb_out.log
           if-no-files-found: ignore
 
-      - name: Fail if tests failed
-        if: steps.tests.outcome == 'failure'
+      - name: Summarize capture
+        if: always()
         shell: bash
-        run: exit 1
+        run: |
+          if grep -q FASTFAIL_CAUGHT cdb_out.log 2>/dev/null; then
+            echo "OK: captured $(grep -c FASTFAIL_CAUGHT cdb_out.log) fast-fail(s)."
+            echo "--- reason code / exception record ---"
+            grep -A3 -iE 'ExceptionCode|Subcode|FAILURE_BUCKET|FAST_FAIL' cdb_out.log | head -40 || true
+          else
+            echo "NO fast-fail captured under cdb -- capture mechanism still needs work."
+            exit 1
+          fi
