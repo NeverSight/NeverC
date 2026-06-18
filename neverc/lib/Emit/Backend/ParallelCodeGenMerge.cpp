@@ -26,7 +26,6 @@
 #include <atomic>
 #include <cstdlib>
 #include <mutex>
-#include <thread>
 
 using namespace llvm;
 
@@ -91,6 +90,32 @@ static llvm::cl::opt<unsigned> PcgCgLoopDiv(
     llvm::cl::desc("Parallel codegen-only: one partition per this many loops "
                    "(0 = disable; codegen is not SCEV-bound so the loop signal "
                    "is off by default here)"));
+static llvm::cl::opt<unsigned> PcgCgMaxParts(
+    "neverc-pcg-cg-max-parts", llvm::cl::init(16), llvm::cl::Hidden,
+    llvm::cl::desc("Parallel codegen-only: maximum partition count.  A fixed "
+                   "ceiling (not the host core count) so the partition count -- "
+                   "and therefore the emitted object's layout -- is reproducible "
+                   "across machines; execution parallelism is bounded "
+                   "separately by the worker pool"));
+
+// Worker-thread count for the partition pools.  This is *execution* parallelism
+// only: it bounds how many partitions are optimized/codegen'd concurrently and
+// never feeds the partition count or the function-to-partition assignment, so it
+// cannot change a single emitted byte (the MergeParallelCodegen determinism
+// oracle pins this).  Defaults to the host core count; NEVERC_PCG_THREADS
+// overrides it (clamped to >= 1) for users who want to cap peak memory /
+// parallelism and for the cross-thread-count determinism regression test.
+unsigned pcgWorkerThreads(unsigned NumPartitions) {
+  unsigned N = llvm::thread::hardware_concurrency();
+  if (const char *E = ::getenv("NEVERC_PCG_THREADS")) {
+    unsigned Override = 0;
+    if (!StringRef(E).getAsInteger(10, Override) && Override >= 1)
+      N = Override;
+  }
+  if (N < 1)
+    N = 1;
+  return std::min(N, NumPartitions);
+}
 
 bool mergePartitionObjects(const Triple &TT,
                            ArrayRef<SmallVector<char, 0>> Bufs,
@@ -257,13 +282,27 @@ bool ParallelCGContext::resolvePartitions(unsigned WeightDiv, unsigned LoopDiv,
   // cost, so a loop-dense module gets more partitions than its instruction
   // count alone would suggest -- spreading that cost across cores instead of
   // serializing it.  FuncCount is the hard ceiling (a partition needs at least
-  // one function) and HW/MaxParts bound it from above.
+  // one function) and MaxParts bounds it from above.
+  //
+  // The host core count is deliberately NOT an input here.  Partitioning
+  // decides how the program is *decomposed* (which function lands in which
+  // partition, hence the output object's symbol/section layout and each
+  // partition's cache key); decomposing by hardware_concurrency() would make
+  // the very bytes of the emitted object depend on the machine it was built on,
+  // breaking reproducible builds and zeroing the per-partition object cache hit
+  // rate across heterogeneous machines.  Every term below (TotalWeight,
+  // LoopCount, FuncCount, MaxParts) is a pure function of the input module, so
+  // the partition count is identical on a 4-core CI box and a 64-core
+  // workstation.  Execution parallelism is bounded separately, where it belongs
+  // -- in the worker pools (pcgWorkerThreads) -- so a small machine still only
+  // runs as many partitions at once as it has cores; it just processes the same
+  // deterministic set of partitions in more waves.  This is the ThinLTO
+  // discipline: decompose by work, schedule by cores.
   unsigned ByWeight = WeightDiv ? TotalWeight / WeightDiv : 0;
   unsigned ByLoops = LoopDiv ? LoopCount / LoopDiv : 0;
   unsigned WorkParts = std::max({ByWeight, ByLoops, 2u});
   if (NumPartitions == 0) {
-    unsigned HW = llvm::thread::hardware_concurrency();
-    NumPartitions = std::min({HW, WorkParts, FuncCount, MaxParts});
+    NumPartitions = std::min({WorkParts, FuncCount, MaxParts});
     if (NumPartitions < 2)
       return false;
   } else if (NumPartitions < 2) {
@@ -398,8 +437,7 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
 
 void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
   Parts.resize(NumPartitions);
-  unsigned PrepThreadCount =
-      std::min(llvm::thread::hardware_concurrency(), NumPartitions);
+  unsigned PrepThreadCount = pcgWorkerThreads(NumPartitions);
   std::atomic<unsigned> PrepNextPart{0};
   // Use llvm::thread, not std::thread: these workers run lazy bitcode
   // materialization and (in the opt path) the full optimization + codegen
@@ -634,7 +672,7 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
 
   if (!Ctx.resolvePartitions(/*WeightDiv=*/PcgCgWeightDiv,
                              /*LoopDiv=*/PcgCgLoopDiv,
-                             /*MaxParts=*/Ctx.FuncCount))
+                             /*MaxParts=*/PcgCgMaxParts))
     return false;
 
   Ctx.externalizeAndSerialize(Mod);
@@ -642,8 +680,7 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
   Ctx.preparePartitions(BCRef, TM);
 
   {
-    unsigned ThreadCount =
-        std::min(llvm::thread::hardware_concurrency(), Ctx.NumPartitions);
+    unsigned ThreadCount = pcgWorkerThreads(Ctx.NumPartitions);
     std::atomic<unsigned> NextPart{0};
     // llvm::thread (8 MiB default stack), not std::thread (512 KiB on macOS):
     // see the rationale in preparePartitions -- the codegen/opt pipeline
@@ -743,8 +780,7 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
 
   // Phase 2: per-partition optimization + codegen.
   {
-    unsigned ThreadCount =
-        std::min(llvm::thread::hardware_concurrency(), Ctx.NumPartitions);
+    unsigned ThreadCount = pcgWorkerThreads(Ctx.NumPartitions);
     std::atomic<unsigned> NextPart{0};
     // llvm::thread (8 MiB default stack), not std::thread (512 KiB on macOS):
     // see the rationale in preparePartitions -- the codegen/opt pipeline

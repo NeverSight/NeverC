@@ -481,6 +481,203 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
   unsetEnvVar(linker::ltoCacheEnvVar);
 }
 
+// Auto-LTO determinism contract: the parallel-codegen + merge pipeline must be a
+// pure function of its inputs, independent of how many worker threads happen to
+// run it.  The partition count is derived only from the module (instruction /
+// loop / function counts), never from hardware_concurrency(), and partition
+// results are collected by index, not completion order -- so a 1-thread build, a
+// 4-thread build and a 16-thread build of the same sources must emit a
+// byte-identical object.  Pinning this guards two things at once: that execution
+// parallelism never leaks into the output (e.g. a future change collecting
+// results in finish order), and that the object is reproducible across machines
+// with different core counts (the same property, since NEVERC_PCG_THREADS here
+// stands in for a different host's core count).
+//
+// The artifact compared is the relocatable (`-r`) merge -- the merger's direct
+// output and exactly the shape a kernel module (.ko) ships -- not a final
+// executable, whose linker-generated UUID / ad-hoc code signature legitimately
+// vary run to run and would mask the property under test.
+TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
+  // Disable both cache layers so every link genuinely re-runs parallel codegen
+  // rather than restoring a previous link's stored object (which would make the
+  // comparison trivially pass without exercising codegen at all).
+  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
+  setEnvVar(linker::ltoPartitionCacheEnvVar, linker::ltoCacheDisableValue);
+
+  // 128 loop-bearing leaves: well above the parallel-codegen engagement floors
+  // (>= 8 functions, >= 56 loops) so the path is exercised, and enough loops
+  // that the work estimate asks for several partitions (a multi-partition merge
+  // is what could expose a thread-order dependency).
+  constexpr int NFiles = 16, NFuncsPerFile = 8;
+  auto srcDir = tmpFile("det_src");
+  fs::create_directories(srcDir);
+
+  std::vector<std::string> names;
+  for (int fi = 0; fi < NFiles; ++fi) {
+    std::string src = "#include <stdint.h>\n";
+    for (int fj = 0; fj < NFuncsPerFile; ++fj) {
+      std::string nm = "fn_" + std::to_string(fi) + "_" + std::to_string(fj);
+      names.push_back(nm);
+      unsigned c1 = (2654435761u * unsigned(fi * 131 + fj + 1)) | 1u;
+      unsigned c2 = (40503u * unsigned(fi + 7) +
+                     2246822519u * unsigned(fj + 3)) | 1u;
+      src += "uint64_t " + nm + "(uint64_t x){ uint64_t a=x^" +
+             std::to_string(c1) + "ULL; for(int i=0;i<7;i++){ a=a*" +
+             std::to_string(c2) + "ULL+(a>>13)+i; } return a; }\n";
+    }
+    writeFile(srcDir / ("m" + std::to_string(fi) + ".c"), src);
+  }
+  {
+    std::string m = "#include <stdint.h>\n#include <stdio.h>\n";
+    for (auto &n : names)
+      m += "uint64_t " + n + "(uint64_t);\n";
+    m += "int main(void){ uint64_t acc=1;\n";
+    for (auto &n : names)
+      m += "  acc=acc*1000003ULL+" + n + "(acc);\n";
+    m += " printf(\"CK=%llu\\n\",(unsigned long long)acc); return 0; }\n";
+    writeFile(srcDir / "main.c", m);
+  }
+
+  std::vector<std::string> base = {"-std=c11"};
+  for (auto &f : sysrootFlags()) base.push_back(f);
+  for (auto &f : archFlags()) base.push_back(f);
+
+  std::vector<std::string> objs;
+  auto compileUnit = [&](const std::string &stem) {
+    auto c = base;
+    auto o = (srcDir / (stem + ".o")).string();
+    c.insert(c.end(), {"-c", (srcDir / (stem + ".c")).string(), "-o", o});
+    ASSERT_EQ(ncc(c).exitCode, 0) << stem;
+    objs.push_back(o);
+  };
+  for (int fi = 0; fi < NFiles; ++fi)
+    compileUnit("m" + std::to_string(fi));
+  compileUnit("main");
+
+  // Relocatable (`-r`) merge under a given worker-thread count.
+  auto mergeWithThreads = [&](const char *threads) -> std::string {
+    setEnvVar("NEVERC_PCG_THREADS", threads);
+    std::vector<std::string> l;
+    for (auto &f : sysrootFlags()) l.push_back(f);
+    for (auto &f : archFlags()) l.push_back(f);
+    l.push_back("-r");
+    for (auto &o : objs) l.push_back(o);
+    auto out = tmpFile(std::string("det_merge_") + threads + ".o");
+    l.insert(l.end(), {"-o", out.string()});
+    auto r = ncc(l);
+    EXPECT_EQ(r.exitCode, 0) << "threads=" << threads << ": " << r.err;
+    return readFile(out);
+  };
+
+  std::string o1 = mergeWithThreads("1");
+  std::string o4 = mergeWithThreads("4");
+  std::string o16 = mergeWithThreads("16");
+  unsetEnvVar("NEVERC_PCG_THREADS");
+
+  ASSERT_FALSE(o1.empty()) << "relocatable merge produced no object";
+  EXPECT_EQ(o1, o4) << "auto-LTO object differs between 1 and 4 worker threads "
+                       "-- execution parallelism leaked into the emitted bytes "
+                       "(non-reproducible build)";
+  EXPECT_EQ(o1, o16) << "auto-LTO object differs between 1 and 16 worker threads "
+                        "-- execution parallelism leaked into the emitted bytes";
+
+  unsetEnvVar(linker::ltoPartitionCacheEnvVar);
+  unsetEnvVar(linker::ltoCacheEnvVar);
+}
+
+// The auto-LTO loop-density inline cap (Inliner.cpp's
+// NevercInlineMaxCallerLoops) withdraws *cost-driven* inlining of loop-bearing
+// callees into an already-loop-dense caller; it must never change program
+// semantics.  main() calls every leaf exactly once, so last-call-to-static
+// inlining would otherwise fold them all into main -- the very shape the cap
+// targets.  Build the same program twice, once with the cap at a deliberately
+// low value (so it engages hard) and once disabled, and require byte-identical
+// program *output*: the cap may only trade code shape / compile time, never
+// results.
+TEST_F(LTOTest, AutoLtoInlineCapSemanticsPreserved) {
+  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
+  setEnvVar(linker::ltoPartitionCacheEnvVar, linker::ltoCacheDisableValue);
+
+  constexpr int NFiles = 10, NFuncsPerFile = 8; // 80 single-call leaves
+  auto srcDir = tmpFile("inlinecap_src");
+  fs::create_directories(srcDir);
+
+  std::vector<std::string> names;
+  for (int fi = 0; fi < NFiles; ++fi) {
+    std::string src = "#include <stdint.h>\n";
+    for (int fj = 0; fj < NFuncsPerFile; ++fj) {
+      std::string nm = "lf_" + std::to_string(fi) + "_" + std::to_string(fj);
+      names.push_back(nm);
+      unsigned c1 = (2246822519u * unsigned(fi * 71 + fj + 1)) | 1u;
+      unsigned c2 = (3266489917u * unsigned(fi + 5) +
+                     668265263u * unsigned(fj + 2)) | 1u;
+      // A constant-trip loop with a data-dependent branch: a loop-bearing leaf
+      // the cap can choose to hold back from main.
+      src += "uint64_t " + nm + "(uint64_t x){ uint64_t a=x^" +
+             std::to_string(c1) + "ULL; for(int i=0;i<9;i++){ a=a*" +
+             std::to_string(c2) + "ULL+(a>>11)+i; if(a&2) a+=" +
+             std::to_string(c1) + "ULL; } return a; }\n";
+    }
+    writeFile(srcDir / ("m" + std::to_string(fi) + ".c"), src);
+  }
+  {
+    std::string m = "#include <stdint.h>\n#include <stdio.h>\n";
+    for (auto &n : names)
+      m += "uint64_t " + n + "(uint64_t);\n";
+    m += "int main(void){ uint64_t acc=1;\n for(int r=0;r<2;r++){\n";
+    for (auto &n : names)
+      m += "  acc=acc*1000003ULL+" + n + "(acc);\n";
+    m += " }\n printf(\"CK=%llu\\n\",(unsigned long long)acc); return 0; }\n";
+    writeFile(srcDir / "main.c", m);
+  }
+
+  std::vector<std::string> base = {"-std=c11"};
+  for (auto &f : sysrootFlags()) base.push_back(f);
+  for (auto &f : archFlags()) base.push_back(f);
+
+  std::vector<std::string> objs;
+  auto compileUnit = [&](const std::string &stem) {
+    auto c = base;
+    auto o = (srcDir / (stem + ".o")).string();
+    c.insert(c.end(), {"-c", (srcDir / (stem + ".c")).string(), "-o", o});
+    ASSERT_EQ(ncc(c).exitCode, 0) << stem;
+    objs.push_back(o);
+  };
+  for (int fi = 0; fi < NFiles; ++fi)
+    compileUnit("m" + std::to_string(fi));
+  compileUnit("main");
+
+  auto linkExe = [&](const std::string &exe, int capValue) {
+    std::vector<std::string> l;
+    for (auto &f : sysrootFlags()) l.push_back(f);
+    for (auto &f : archFlags()) l.push_back(f);
+    for (auto &o : objs) l.push_back(o);
+    l.push_back("-mllvm");
+    l.push_back("-neverc-inline-max-caller-loops=" + std::to_string(capValue));
+    if (isWindows())
+      l.push_back("-mno-incremental-linker-compatible");
+    l.insert(l.end(), {"-o", exe});
+    return ncc(l);
+  };
+
+  auto exeCap = tmpFile("inlinecap_on");
+  ASSERT_EQ(linkExe(exeCap.string(), /*capValue=*/4).exitCode, 0);
+  auto exeNoCap = tmpFile("inlinecap_off");
+  ASSERT_EQ(linkExe(exeNoCap.string(), /*capValue=*/0).exitCode, 0);
+
+  auto outCap = exec(exeCap.string(), {});
+  auto outNoCap = exec(exeNoCap.string(), {});
+  EXPECT_EQ(outCap.exitCode, 0) << outCap.err;
+  EXPECT_EQ(outNoCap.exitCode, 0) << outNoCap.err;
+  EXPECT_TRUE(outCap.contains("CK=")) << outCap.out;
+  EXPECT_EQ(outCap.out, outNoCap.out)
+      << "the loop-density inline cap changed program output -- it must be "
+         "purely an optimization withdrawal, never a semantic change";
+
+  unsetEnvVar(linker::ltoPartitionCacheEnvVar);
+  unsetEnvVar(linker::ltoCacheEnvVar);
+}
+
 TEST_F(LTOTest, InlineAsmLTO) {
   auto asmDir = testDir() / "asm";
   auto objMain = tmpFile("asm_lto_main.o");
