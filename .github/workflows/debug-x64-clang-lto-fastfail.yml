@@ -82,7 +82,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DNEVERC_EXTERNAL_BINARY="$NEVERC_EXTERNAL_BINARY"
           cmake --build build --target neverc-tests --parallel "$NUMBER_OF_PROCESSORS"
-          ls -la build/neverc/tests/neverc-tests.exe
+          ls -la build/bin/neverc-tests.exe
 
       - name: Enable WER local dumps
         shell: pwsh
@@ -100,10 +100,8 @@ jobs:
         continue-on-error: true
         run: |
           set -x
-          ctest --test-dir build/neverc/tests \
-            -R 'AutoLtoLoopDenseNoCompileCliff|AutoLtoInlineCapSemanticsPreserved' \
-            --output-on-failure
-          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          ./build/bin/neverc-tests.exe \
+            --gtest_filter='LTOTest.AutoLtoLoopDenseNoCompileCliff:LTOTest.AutoLtoInlineCapSemanticsPreserved'
 
       - name: Analyze fast-fail dumps (cdb)
         if: steps.tests.outcome == 'failure'
