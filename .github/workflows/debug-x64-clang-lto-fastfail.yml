@@ -49,9 +49,12 @@ jobs:
           set -euxo pipefail
           RID="${{ github.event.inputs.run_id }}"
           if [ -z "$RID" ]; then
-            RID=$(gh run list --workflow build-windows-x64-clang-lto.yml -L 40 \
-                  --json databaseId,status,conclusion -R "${{ github.repository }}" \
-                  -q '([.[]|select(.conclusion=="failure")]|.[0].databaseId) // ([.[]|select(.status=="completed")]|.[0].databaseId)')
+            # Pick the newest NON-EXPIRED run that actually produced the neverc
+            # artifact.  (A clang-lto run that failed early -- e.g. at CMake --
+            # has no artifact, so selecting by conclusion=="failure" grabs a run
+            # with "no valid artifacts found to download".)
+            RID=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=windows-x64-neverc-clang-lto&per_page=60" \
+                  -q '[.artifacts[]|select(.expired==false)]|sort_by(.created_at)|reverse|.[0].workflow_run.id')
           fi
           echo "Using clang-lto run id: $RID"
           echo "RUN_ID=$RID" >> "$GITHUB_ENV"
