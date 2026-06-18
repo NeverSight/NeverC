@@ -444,13 +444,25 @@ uint64_t csupport_thread_execute(csupport_thread_func_t func, void *arg,
   struct csupport_win_thread_start *start =
       (struct csupport_win_thread_start *)malloc(sizeof(*start));
   uintptr_t handle;
+  /* stack_size == 0 -> the image's default stack, matching std::thread.
+   *
+   * For a non-zero size, pass STACK_SIZE_PARAM_IS_A_RESERVATION so stack_size is
+   * the RESERVED stack (address space only, pages committed on demand), exactly
+   * like pthread_attr_setstacksize on Linux/macOS.  Without the flag Windows
+   * treats stack_size as the up-front COMMIT: it both wastes physical memory
+   * (the whole stack is committed per worker) and made large stacks impractical.
+   * The deeply recursive opt/codegen pipeline (SelectionDAG ISel, ScalarEvolution)
+   * overflowed the old 8 MiB on Windows x64 -- whose frames are fatter (callee
+   * shadow space + ABI) than the SysV/AArch64 layouts that link the identical IR
+   * within 8 MiB -- so reserving (cheaply) a much larger stack is the fix. */
+  unsigned init_flags =
+      (stack_size != 0) ? STACK_SIZE_PARAM_IS_A_RESERVATION : 0u;
   if (!start)
     report_win_fatal("csupport_thread_execute: out of memory");
   start->func = func;
   start->arg = arg;
-  /* stack_size == 0 -> the image's default stack, matching std::thread. */
   handle = _beginthreadex(NULL, stack_size, csupport_win_thread_trampoline,
-                          start, 0, NULL);
+                          start, init_flags, NULL);
   if (handle == 0) {
     free(start);
     report_win_fatal("_beginthreadex failed");

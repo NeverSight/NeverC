@@ -173,13 +173,17 @@ inline const unsigned thread::DefaultStackSize = 8 * 1024 * 1024;
 #elif defined(_AIX)
 inline const unsigned thread::DefaultStackSize = 4 * 1024 * 1024;
 #elif defined(_WIN32)
-// Windows' image-default thread stack is only ~1 MiB, but the deeply recursive
-// opt/codegen pipeline (ScalarEvolution, instruction selection, loop unroll)
-// overflows it on adversarial IR -- surfacing as STATUS_STACK_BUFFER_OVERRUN
-// (0xC0000409) crashes in the parallel LTO codegen workers.  Reserve the same
-// 8 MiB the macOS path uses (Linux's pthread default is already 8 MiB) so every
-// llvm::thread user gets the stack the pipeline is tuned for, on every host.
-inline const unsigned thread::DefaultStackSize = 8 * 1024 * 1024;
+// The deeply recursive opt/codegen pipeline (SelectionDAG ISel, ScalarEvolution,
+// loop unroll) needs a large worker stack on adversarial IR (e.g. an auto-LTO
+// "collapsed" giant function with caps disabled).  8 MiB -- enough on Linux
+// (pthread default) and macOS (explicit) -- still overflowed here: a confirmed
+// STATUS_STACK_OVERFLOW (0xC00000FD, escalating to the 0xC0000409 fast-fail the
+// caller observes) in a parallel LTO codegen worker.  The recursion is *bounded*
+// (the identical IR links fine at 8 MiB on the other hosts), so Windows simply
+// needs more headroom: its x64 frames are fatter (callee shadow space + ABI)
+// than the SysV/AArch64 layouts.  csupport_thread_execute now reserves (not
+// commits) this size, so a generous 64 MiB costs only address space.
+inline const unsigned thread::DefaultStackSize = 64 * 1024 * 1024;
 #else
 inline const unsigned thread::DefaultStackSize = 0;
 #endif

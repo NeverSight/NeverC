@@ -598,9 +598,10 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
   // SelectionDAG ISel).  std::thread inherits the platform default stack, which
   // on macOS is only 512 KiB and overflows -- crashing a worker with SIGILL --
   // on pathologically deep IR (e.g. a long inlined call chain).  llvm::thread
-  // defaults to an 8 MiB stack for exactly this reason and is what LLVM's own
-  // parallel codegen (splitCodeGen) uses; this brings the workers to parity
-  // with the main thread.
+  // sizes its worker stacks for exactly this reason (DefaultStackSize: 8 MiB on
+  // Linux/macOS, 64 MiB on Windows, whose fatter x64 frames overflowed 8 MiB on
+  // adversarial caps-off IR) and is what LLVM's own parallel codegen
+  // (splitCodeGen) uses; this brings the workers to parity with the main thread.
   std::vector<llvm::thread> PrepWorkers;
   PrepWorkers.reserve(PrepThreadCount);
 
@@ -840,9 +841,10 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
     unsigned ThreadCount =
         pcgWorkerThreads(Ctx.NumPartitions, Ctx.WorkerThreadCap);
     std::atomic<unsigned> NextPart{0};
-    // llvm::thread (8 MiB default stack), not std::thread (512 KiB on macOS):
-    // see the rationale in preparePartitions -- the codegen/opt pipeline
-    // recurses deeply and overflows the small default stack on adversarial IR.
+    // llvm::thread (DefaultStackSize: 8 MiB Linux/macOS, 64 MiB Windows), not
+    // std::thread (512 KiB on macOS): see the rationale in preparePartitions --
+    // the codegen/opt pipeline recurses deeply and overflows a small stack on
+    // adversarial IR.
     std::vector<llvm::thread> Workers;
     Workers.reserve(ThreadCount);
     auto Worker = [&]() {
@@ -954,9 +956,10 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
     unsigned ThreadCount =
         pcgWorkerThreads(Ctx.NumPartitions, Ctx.WorkerThreadCap);
     std::atomic<unsigned> NextPart{0};
-    // llvm::thread (8 MiB default stack), not std::thread (512 KiB on macOS):
-    // see the rationale in preparePartitions -- the codegen/opt pipeline
-    // recurses deeply and overflows the small default stack on adversarial IR.
+    // llvm::thread (DefaultStackSize: 8 MiB Linux/macOS, 64 MiB Windows), not
+    // std::thread (512 KiB on macOS): see the rationale in preparePartitions --
+    // the codegen/opt pipeline recurses deeply and overflows a small stack on
+    // adversarial IR.
     std::vector<llvm::thread> Workers;
     Workers.reserve(ThreadCount);
     auto Worker = [&]() {
