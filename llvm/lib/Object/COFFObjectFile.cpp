@@ -1050,7 +1050,15 @@ Expected<StringRef> COFFObjectFile::getString(uint32_t Offset) const {
     return createStringError(object_error::parse_failed, "string table empty");
   if (Offset >= StringTableSize)
     return errorCodeToError(object_error::unexpected_eof);
-  return StringRef(StringTable + Offset);
+  // The COFF string table is expected to be NUL-terminated, but a malformed
+  // object may omit the terminator on its last entry.  The unbounded StringRef
+  // constructor (an implicit strlen) would then scan past StringTableSize and
+  // off the end of the mapped object -- a heap-buffer-overflow on hostile input
+  // (e.g. a long symbol/section name fed through getSymbolName/getSectionName).
+  // Bound the scan to the validated string-table extent; for a well-formed,
+  // NUL-terminated table this returns exactly the same string.
+  StringRef Table(StringTable + Offset, StringTableSize - Offset);
+  return Table.substr(0, Table.find('\0'));
 }
 
 Expected<StringRef> COFFObjectFile::getSymbolName(COFFSymbolRef Symbol) const {

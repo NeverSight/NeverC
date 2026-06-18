@@ -286,6 +286,20 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         CR.VirtualAddress = R.getOffset() + PartOffset;
         auto SymOrErr = R.getSymbol();
         if (SymOrErr != Obj.symbol_end()) {
+          // getRelocationSymbol only checks the relocation's symbol index
+          // against getNumberOfSymbols(), which keeps returning the untrusted
+          // header count even after a failed/recovered symbol-table load, so the
+          // returned SymbolRef can still point off the symbol table.  Validate
+          // the record lies inside this input before getCOFFSymbol's toSymb
+          // dereferences it (a fuzzer-reproduced OOB read / assert otherwise).
+          const char *SymPtr =
+              reinterpret_cast<const char *>(SymOrErr->getRawDataRefImpl().p);
+          if (SymPtr < BufBegin || SymPtr + sizeof(coff_symbol16) > BufEnd) {
+            errs() << "neverc: COFF relocatable merge: relocation references a "
+                      "symbol outside the object's symbol table (malformed); "
+                      "refusing to merge\n";
+            return false;
+          }
           unsigned SymIdx = Obj.getSymbolIndex(Obj.getCOFFSymbol(*SymOrErr));
           CR.SymbolTableIndex = SymIdx;
         } else {
@@ -297,9 +311,45 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       PartSecOrdinal++;
     }
 
-    for (const auto &Sym : Obj.symbols()) {
-      COFFSymbolRef CSym = Obj.getCOFFSymbol(Sym);
-      unsigned OrigIdx = Obj.getSymbolIndex(CSym);
+    // Walk the symbol table by *index*, not via Obj.symbols().  The iterator's
+    // moveSymbolNext advances by 1 + NumberOfAuxSymbols records, so a malformed
+    // aux count makes it jump *over* symbol_end; the range-for's pointer "!="
+    // end test cannot catch an iterator that skipped past the end, and the next
+    // getCOFFSymbol then dereferences a record off the symbol table (into the
+    // string table or clean off the buffer) -- an out-of-bounds read the merge
+    // fuzzer reproduces as an assert/SIGSEGV in COFFObjectFile::toSymb.
+    // getSymbol(i) bounds-checks i against getNumberOfSymbols() (whose table
+    // extent create() already validated), so the walk can never leave the
+    // table.  For a well-formed object this visits exactly the same primary
+    // symbols in the same order, so the merged output is byte-identical; only
+    // hostile input now refuses gracefully instead of faulting.
+    uint32_t NumSyms = Obj.getNumberOfSymbols();
+    for (uint32_t SymIndex = 0; SymIndex < NumSyms;) {
+      Expected<COFFSymbolRef> CSymOrErr = Obj.getSymbol(SymIndex);
+      if (!CSymOrErr) {
+        consumeError(CSymOrErr.takeError());
+        return false;
+      }
+      COFFSymbolRef CSym = *CSymOrErr;
+      // getSymbol() only range-checks the index against getNumberOfSymbols()
+      // (the untrusted header count); when the symbol table failed to load it
+      // can still hand back a COFFSymbolRef whose 18-byte record straddles the
+      // end of the object, so reading any field of it (starting with
+      // NumberOfAuxSymbols just below) is an out-of-bounds read the merge fuzzer
+      // reproduces.  Validate the whole primary record lies inside this input
+      // before touching it.
+      const char *SymRec = reinterpret_cast<const char *>(CSym.getRawPtr());
+      if (SymRec < BufBegin || SymRec + sizeof(coff_symbol16) > BufEnd) {
+        errs() << "neverc: COFF relocatable merge: symbol record runs past the "
+                  "end of the object (malformed symbol table); refusing to "
+                  "merge\n";
+        return false;
+      }
+      unsigned OrigIdx = SymIndex;
+      // Advance past this primary record and its declared aux records up front,
+      // so every loop exit (including the `continue` below) keeps the walk
+      // moving; the aux *contents* are still bounds-checked before any read.
+      SymIndex += 1 + CSym.getNumberOfAuxSymbols();
       coff_symbol16 OutSym;
       memset(&OutSym, 0, sizeof(OutSym));
 
