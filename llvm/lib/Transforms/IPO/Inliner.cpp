@@ -107,18 +107,22 @@ static cl::opt<bool> KeepAdvisorForPrinting("keep-inline-advisor-for-printing",
 // back (loop-free helpers still inline freely), and a loop optimizes just as
 // well in its own function as inlined -- the kept call overhead is negligible
 // next to the loop body, and the smaller hot caller is gentler on the icache.
-// Measured (this build):
-//   bench_b  720 leaves: cap off 342.8s (1 function) -> cap=32 40.7s (690 fns)
+// Measured (this build, caches off):
+//   bench_b 720 leaves (link only): cap off 342.8s (1 fn) -> cap=32 42.6s (690
+//     fns) -> cap=12 13.0s -> cap=8 7.5s
 //   chain_240          : cap off 208.4s (80 fns)     -> cap=32  1.7s (221 fns)
-//   Lua bench.lua VM time: no-LTO 1.05s, LTO cap off 0.73s, LTO cap=32 0.68s
+//   Lua 5.4 bench.lua: no-LTO 0.70s, LTO cap=32 1.29s (worse!), cap=12 0.69s
+//     (equal to no-LTO), cap=8 0.81s
 // i.e. ScalarEvolution is superlinear in the loop chain a single function
-// holds, with a sharp knee between ~32 and ~64 loops; 32 sits just under it and
-// leaves real runtime equal-or-better.  This is a pure *withdrawal*: it never
+// holds; the old default (32) sat under the SCEV knee but still let main absorb
+// too many loop-bearing leaves, hurting both link time and (for Lua) runtime.
+// 12 keeps real-world runtime equal-or-better while cutting synthetic cliffs.
+// This is a pure *withdrawal*: it never
 // forces an inline, never blocks an always-inline/mandatory inline, and is
 // gated to the FullLTOPostLink phase so ordinary -O2/-O3 (and ThinLTO) compiles
 // never enter this path.  0 disables the cap.
 static cl::opt<unsigned> NevercInlineMaxCallerLoops(
-    "neverc-inline-max-caller-loops", cl::init(32), cl::Hidden,
+    "neverc-inline-max-caller-loops", cl::init(12), cl::Hidden,
     cl::desc("Auto-LTO (FullLTOPostLink) only: stop inlining loop-bearing "
              "callees into a caller that already contains more than this many "
              "loops (back-edges), bounding superlinear ScalarEvolution cost and "
