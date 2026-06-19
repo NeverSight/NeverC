@@ -364,12 +364,12 @@ TEST_F(LTOTest, LtoPartitionCache) {
 // count (measured ~O(N^2); N=360 used to time out entirely).
 //
 // The two caps are complementary, which is *why this test must disable both* to
-// see the cliff: the inline cap alone already stops main growing past ~12 loops,
-// so toggling only the unroll cap barely moves the needle (measured 0.6s vs
-// 0.6s -- a coin-flip timing assertion, the historical flake here).  With both
-// caps off the collapse and the unroll blowup both fire and the link detonates
-// (measured ~0.6s vs ~6s, a ~10x gap), giving the guard a wide, non-flaky
-// margin on any hardware.
+// see the cliff: the inline cap alone already stops main growing past its loop
+// limit (NevercInlineMaxCallerLoops, default 32), so toggling only the unroll
+// cap barely moves the needle (measured 0.6s vs 0.6s -- a coin-flip timing
+// assertion, the historical flake here).  With both caps off the collapse and
+// the unroll blowup both fire and the link detonates (measured ~0.7s vs ~6s+, a
+// ~10x gap), giving the guard a wide, non-flaky margin on any hardware.
 //
 // This pins both halves of the contract: (1) the same program links far faster
 // with the caps at their defaults than with both disabled, and (2) the two

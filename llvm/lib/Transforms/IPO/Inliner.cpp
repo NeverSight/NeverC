@@ -107,22 +107,43 @@ static cl::opt<bool> KeepAdvisorForPrinting("keep-inline-advisor-for-printing",
 // back (loop-free helpers still inline freely), and a loop optimizes just as
 // well in its own function as inlined -- the kept call overhead is negligible
 // next to the loop body, and the smaller hot caller is gentler on the icache.
-// Measured (this build, caches off):
-//   bench_b 720 leaves (link only): cap off 342.8s (1 fn) -> cap=32 42.6s (690
-//     fns) -> cap=12 13.0s -> cap=8 7.5s
-//   chain_240          : cap off 208.4s (80 fns)     -> cap=32  1.7s (221 fns)
-//   Lua 5.4 bench.lua: no-LTO 0.70s, LTO cap=32 1.29s (worse!), cap=12 0.69s
-//     (equal to no-LTO), cap=8 0.81s
-// i.e. ScalarEvolution is superlinear in the loop chain a single function
-// holds; the old default (32) sat under the SCEV knee but still let main absorb
-// too many loop-bearing leaves, hurting both link time and (for Lua) runtime.
-// 12 keeps real-world runtime equal-or-better while cutting synthetic cliffs.
-// This is a pure *withdrawal*: it never
-// forces an inline, never blocks an always-inline/mandatory inline, and is
-// gated to the FullLTOPostLink phase so ordinary -O2/-O3 (and ThinLTO) compiles
-// never enter this path.  0 disables the cap.
+//
+// Why 32 and not lower:  this cap is the *partitionability* valve, and that is
+// now its primary job.  The compile-cost cliff is defended in depth by two more
+// targeted valves that withdraw the same way (LoopUnrollPass's
+// NevercFullUnrollMaxLoopsPerFunc=100 bounds full-unroll trip-count machinery;
+// ParallelCodeGenMerge's PcgScevHugeExprThreshold=512 bounds SCEV
+// huge-expression simplification).  But both of those only help once the module
+// is *partitioned*: PcgScevHugeExprThreshold is applied solely on the parallel
+// per-partition path, and a module that has collapsed to one giant function
+// declines parallel codegen (FuncCount < min) and falls back to *serial*
+// optimization, which never sets the SCEV bound.  So the inline cap is what
+// keeps the module splittable enough for the other two valves to engage at all.
+// Measured (this build, caches off), variable-trip "bench_b" SCEV cliff,
+// N=480 single-call loop leaves:
+//   cap=0  + scev=512 -> TIMEOUT(>120s)   (collapsed -> serial -> no SCEV bound)
+//   cap=12 + scev=512 -> 0.43s            cap=32 + scev=512 -> 0.47s
+// and the constant-trip full-unroll cliff, N=240:
+//   cap=0 -> 3.7s   cap=32 -> 0.72s   cap=12 -> 0.33s   (full cliff, all off: 26s)
+// i.e. once the cap holds the module partitionable, 12 vs 32 is a sub-second
+// wash on even an adversarial cliff -- so the cap is chosen for *runtime*, not
+// compile time, and a more permissive cap recovers real cross-function inlining:
+//   zstd -16 (clean, min CPU s): cap=12 3.005 -> cap=32 2.913 (== cap fully off)
+//     i.e. zstd's hot match-finders carry 12..32 loops; 12 wrongly blocks them,
+//     32 unblocks them and matches no-cap (so nothing above 32 is left to gain).
+//   Lua 5.4 bench.lua (light): cap=12 0.623 -> cap=32 0.606 (both beat clang
+//     0.634); lua_bench.lua (heavy): cap=32 neutral-to-better vs cap=12.
+//   Code size is unchanged (cap=12 vs 32: Lua 303008 vs 302992 B, zstd 397728
+//     vs 397696 B) -- 32 redistributes which function holds a loop, not how much
+//     total code there is.
+// (An earlier note here recorded cap=32 *regressing* light bench.lua to 1.29s;
+// that predated the unroll/SCEV valves and the FastIPO pipeline split and no
+// longer reproduces -- cap=32 is now equal-or-better on every workload measured.)
+// This is a pure *withdrawal*: it never forces an inline, never blocks an
+// always-inline/mandatory inline, and is gated to the FullLTOPostLink phase so
+// ordinary -O2/-O3 (and ThinLTO) compiles never enter this path.  0 disables it.
 static cl::opt<unsigned> NevercInlineMaxCallerLoops(
-    "neverc-inline-max-caller-loops", cl::init(12), cl::Hidden,
+    "neverc-inline-max-caller-loops", cl::init(32), cl::Hidden,
     cl::desc("Auto-LTO (FullLTOPostLink) only: stop inlining loop-bearing "
              "callees into a caller that already contains more than this many "
              "loops (back-edges), bounding superlinear ScalarEvolution cost and "
