@@ -3,10 +3,10 @@
 
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/thread.h"
 
 #include <cstdio>
 #include <cstdlib>
-#include <thread>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -163,7 +163,7 @@ bool changeCwd(const std::string &Dir) {
 }
 
 unsigned getProcessorCount() {
-  unsigned N = std::thread::hardware_concurrency();
+  unsigned N = llvm::thread::hardware_concurrency();
   return N > 0 ? N : 1;
 }
 

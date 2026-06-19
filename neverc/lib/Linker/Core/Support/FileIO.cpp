@@ -24,13 +24,13 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Parallel.h"
 #include "llvm/Support/TimeProfiler.h"
+#include "llvm/Support/thread.h"
 
 #if LLVM_ON_UNIX
 #include <unistd.h>
 #endif
 #include <condition_variable>
 #include <mutex>
-#include <thread>
 
 using namespace llvm;
 using namespace linker;
@@ -161,7 +161,7 @@ void linker::unlinkAsync(StringRef path) {
   std::mutex m;
   std::condition_variable cv;
   bool started = false;
-  std::thread([&, fd] {
+  llvm::thread([&, fd] {
     {
       std::lock_guard<std::mutex> l(m);
       started = true;

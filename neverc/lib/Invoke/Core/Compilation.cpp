@@ -19,7 +19,6 @@
 #include <cassert>
 #include <string>
 #include <system_error>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -299,10 +298,11 @@ void Compilation::ExecuteJobs(const JobList &Jobs,
       }
     };
 
-    // std::thread is fine here: each worker only spawns a child neverc -cc1 and
-    // blocks on it (ExecuteAndWait), so no deep in-process recursion runs on
-    // this stack -- unlike the in-memory workers above.
-    std::vector<std::thread> Workers;
+    // llvm::thread for a single, uniform thread type across neverc. Unlike the
+    // in-memory pool above, these workers only spawn a child neverc -cc1 and
+    // block on it (ExecuteAndWait), so the larger stack is not strictly needed
+    // here.
+    std::vector<llvm::thread> Workers;
     Workers.reserve(NumThreads);
     for (unsigned i = 0; i < NumThreads; ++i)
       Workers.emplace_back(SubprocWorker);
