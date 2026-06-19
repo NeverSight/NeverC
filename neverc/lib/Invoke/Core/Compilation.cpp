@@ -260,7 +260,14 @@ void Compilation::ExecuteJobs(const JobList &Jobs,
       }
     };
 
-    std::vector<std::thread> Workers;
+    // llvm::thread, not std::thread: these workers run cc1 in-process, whose
+    // IRgen/codegen can recurse deeply on adversarial input. std::thread takes
+    // the platform default stack (only 512 KiB on macOS) and overflows on such
+    // recursion; llvm::thread sizes its stack for exactly this (DefaultStackSize:
+    // 8 MiB Linux/macOS, 64 MiB Windows), matching the codegen workers in
+    // ParallelCodeGenMerge. On Windows the neverc /STACK reserve also covers it
+    // (default-stack threads inherit it), but macOS relies on this.
+    std::vector<llvm::thread> Workers;
     Workers.reserve(NumThreads);
     for (unsigned i = 0; i < NumThreads; ++i)
       Workers.emplace_back(InProcWorker);
@@ -292,6 +299,9 @@ void Compilation::ExecuteJobs(const JobList &Jobs,
       }
     };
 
+    // std::thread is fine here: each worker only spawns a child neverc -cc1 and
+    // blocks on it (ExecuteAndWait), so no deep in-process recursion runs on
+    // this stack -- unlike the in-memory workers above.
     std::vector<std::thread> Workers;
     Workers.reserve(NumThreads);
     for (unsigned i = 0; i < NumThreads; ++i)
