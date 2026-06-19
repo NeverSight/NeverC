@@ -3,7 +3,9 @@
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
+#include <sstream>
 
 // MSVC has no POSIX setenv/unsetenv; _putenv_s keeps the CRT and Win32
 // environment blocks in sync so spawned neverc children inherit the value.
@@ -791,6 +793,225 @@ TEST_F(LTOTest, AutoLtoScevHugeThresholdSemanticsPreserved) {
   EXPECT_EQ(outTiny.out, outOff.out)
       << "the auto-LTO SCEV huge-expression bound changed program output -- it "
          "must only withdraw simplification, never change a result";
+
+  unsetEnvVar(linker::ltoPartitionCacheEnvVar);
+  unsetEnvVar(linker::ltoCacheEnvVar);
+}
+
+// Real auto-LTO + mergeSections E2E: compile the in-tree Android kernel multifile
+// example (per-function .text.* sections folded into .text) and assert every
+// exported function lands at a distinct, non-zero offset.  This is the exact
+// shape that bit us when PartOffsets lookup collapsed every symbol to 0 —
+// syntactic mergeTests cover the math, but only a neverc-emitted .ko exercises
+// the full IPO → parallel-codegen → mergeSections → verify chain on real codegen.
+TEST_F(LTOTest, AndroidKernelMultifileMergeSectionOffsets) {
+  auto exDir = fs::canonical(testDir() / "../../examples/android-kernel-multifile");
+  if (!fs::exists(exDir / "main.c"))
+    GTEST_SKIP() << "android-kernel-multifile example not found";
+
+  std::string llvmNm = "llvm-nm";
+  if (exec("which", {"llvm-nm"}).exitCode != 0) {
+    if (exec("/opt/homebrew/opt/llvm/bin/llvm-nm", {"--version"}).exitCode == 0)
+      llvmNm = "/opt/homebrew/opt/llvm/bin/llvm-nm";
+    else if (exec("/opt/homebrew/opt/llvm@22/bin/llvm-nm", {"--version"})
+                 .exitCode == 0)
+      llvmNm = "/opt/homebrew/opt/llvm@22/bin/llvm-nm";
+    else
+      GTEST_SKIP() << "llvm-nm not available";
+  }
+
+  auto ko = tmpFile("nvk_multi.ko");
+  std::vector<std::string> args = {
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-r",
+      "-nostdlib",
+      "-o",
+      ko.string(),
+      (exDir / "main.c").string(),
+      (exDir / "hooks.c").string(),
+      (exDir / "utils.c").string(),
+  };
+  auto link = ncc(args);
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  auto symtab = exec(llvmNm, {ko.string()});
+  ASSERT_EQ(symtab.exitCode, 0) << symtab.err;
+
+  auto parseOffset = [&](const char *Name) -> uint64_t {
+    std::string needle = std::string(" ") + Name;
+    std::istringstream in(symtab.out);
+    std::string line;
+    while (std::getline(in, line)) {
+      if (line.find(needle) == std::string::npos)
+        continue;
+      uint64_t off = std::strtoull(line.c_str(), nullptr, 16);
+      if (off != 0 || line[0] == '0')
+        return off;
+    }
+    ADD_FAILURE() << "symbol not found: " << Name;
+    return 0;
+  };
+
+  uint64_t hooksInit = parseOffset("hooks_init");
+  uint64_t hooksCleanup = parseOffset("hooks_cleanup");
+  uint64_t initMod = parseOffset("init_module");
+  uint64_t cleanupMod = parseOffset("cleanup_module");
+  ASSERT_NE(hooksInit, 0u) << "hooks_init collapsed to .text+0 (SecOff regression)";
+  ASSERT_NE(hooksCleanup, 0u);
+  ASSERT_NE(initMod, 0u);
+  ASSERT_NE(cleanupMod, 0u);
+  EXPECT_NE(hooksInit, hooksCleanup);
+  EXPECT_NE(hooksInit, initMod);
+  EXPECT_NE(initMod, cleanupMod);
+}
+
+// Auto-LTO vs clang full-LTO cold-link regression gate.  neverc's auto-LTO link
+// (whole-program IPO with the loop-density inline cap + SCEV bound, then
+// PARTITIONED PARALLEL codegen, then in-process merge) must stay at least as
+// fast as clang's monolithic full-LTO link (serial codegen) on the multi-file
+// loop-dense C that is auto-LTO's whole reason to exist -- and must produce a
+// program with byte-identical observable output.  This welds the headline
+// compile-speed balance shut against silent regression: if a future change makes
+// neverc's link slower than a stock full-LTO link, or diverges its result, this
+// goes red.
+//
+// Only the LINK (LTO codegen) step is timed -- both toolchains compile the same
+// sources to bitcode first -- so the comparison is purely parallel-vs-serial LTO
+// codegen on identical input, with no parallel-frontend fairness caveat.
+//
+// Robust by construction: if no comparison clang is found, or it cannot
+// compile/link the workload in this environment (different sysroot, no LTO
+// plugin, ...), the test SKIPS rather than failing -- it can only go red on a
+// genuine neverc regression.  Set NEVERC_BENCH_CLANG to pin the comparator
+// (e.g. a real clang-22); otherwise PATH `clang` is used.
+TEST_F(LTOTest, AutoLtoLinkBeatsClangFullLTO) {
+  std::string clang = "clang";
+  if (const char *e = getenv("NEVERC_BENCH_CLANG"); e && *e)
+    clang = e;
+  if (exec(clang, {"--version"}).exitCode != 0)
+    GTEST_SKIP() << "no usable comparison clang (set NEVERC_BENCH_CLANG)";
+
+  // Many small single-call loop leaves: last-call-to-static inlining folds them
+  // into main, the shape that makes a naive full-LTO link go SCEV-superlinear.
+  // Integer-only (uint64 xorshift) so the checksum is bit-identical across
+  // compilers -- no FP contraction/reassociation to legitimately diverge.
+  constexpr int NFiles = 12, NFuncsPerFile = 12; // 144 leaves
+  auto srcDir = tmpFile("clangcmp_src");
+  fs::create_directories(srcDir);
+  std::vector<std::string> names;
+  for (int fi = 0; fi < NFiles; ++fi) {
+    std::string src = "#include <stdint.h>\n";
+    for (int fj = 0; fj < NFuncsPerFile; ++fj) {
+      std::string nm = "fn_" + std::to_string(fi) + "_" + std::to_string(fj);
+      names.push_back(nm);
+      unsigned c1 = (2654435761u * unsigned(fi * 131 + fj + 1)) | 1u;
+      unsigned c2 =
+          (40503u * unsigned(fi + 7) + 2246822519u * unsigned(fj + 3)) | 1u;
+      unsigned c3 = (2166136261u ^ (16777619u * unsigned(fi * 17 + fj))) | 1u;
+      src += "uint64_t " + nm + "(uint64_t x){ uint64_t a=x^" +
+             std::to_string(c1) + "ULL; for(int i=0;i<7;i++){ a=a*" +
+             std::to_string(c2) + "ULL+(a>>13)+i; if(a&1) a^=" +
+             std::to_string(c3) + "ULL; } return a; }\n";
+    }
+    writeFile(srcDir / ("m" + std::to_string(fi) + ".c"), src);
+  }
+  {
+    std::string m = "#include <stdint.h>\n#include <stdio.h>\n";
+    for (auto &n : names)
+      m += "uint64_t " + n + "(uint64_t);\n";
+    m += "int main(void){ uint64_t acc=1;\n for(int r=0;r<3;r++){\n";
+    for (auto &n : names)
+      m += "  acc=acc*1000003ULL+" + n + "(acc);\n";
+    m += " }\n printf(\"CK=%llu\\n\",(unsigned long long)acc); return 0; }\n";
+    writeFile(srcDir / "main.c", m);
+  }
+
+  std::vector<std::string> units;
+  for (int fi = 0; fi < NFiles; ++fi)
+    units.push_back("m" + std::to_string(fi));
+  units.push_back("main");
+
+  std::vector<std::string> base = {"-std=c11"};
+  for (auto &f : sysrootFlags()) base.push_back(f);
+  for (auto &f : archFlags()) base.push_back(f);
+
+  // Compile each unit to bitcode with both toolchains (not timed).  A clang
+  // compile failure means a toolchain/sysroot mismatch on this host, not a
+  // neverc bug -> skip.
+  std::vector<std::string> nvObjs, clObjs;
+  for (auto &u : units) {
+    auto srcp = (srcDir / (u + ".c")).string();
+    auto nvo = (srcDir / (u + ".nv.o")).string();
+    auto c = base;
+    c.insert(c.end(), {"-c", srcp, "-o", nvo});
+    ASSERT_EQ(ncc(c).exitCode, 0) << "neverc compile " << u;
+    nvObjs.push_back(nvo);
+
+    auto clo = (srcDir / (u + ".cl.o")).string();
+    auto cr = exec(clang, {"-O2", "-flto", "-c", srcp, "-o", clo});
+    if (cr.exitCode != 0)
+      GTEST_SKIP() << "comparison clang cannot compile workload: " << cr.err;
+    clObjs.push_back(clo);
+  }
+
+  // Cold neverc link: disable both cache layers so the timing is real codegen,
+  // not a restored prior object.  Set late (after the clang work above that can
+  // skip) and restored on every exit path below.
+  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
+  setEnvVar(linker::ltoPartitionCacheEnvVar, linker::ltoCacheDisableValue);
+
+  // Time neverc auto-LTO link (IPO + partitioned parallel codegen + merge).
+  auto nvExe = tmpFile("clangcmp_nv");
+  std::vector<std::string> nvLink;
+  for (auto &f : sysrootFlags()) nvLink.push_back(f);
+  for (auto &f : archFlags()) nvLink.push_back(f);
+  for (auto &o : nvObjs) nvLink.push_back(o);
+  if (isWindows())
+    nvLink.push_back("-mno-incremental-linker-compatible");
+  nvLink.insert(nvLink.end(), {"-o", nvExe.string()});
+  auto a0 = std::chrono::steady_clock::now();
+  auto rNv = ncc(nvLink);
+  auto a1 = std::chrono::steady_clock::now();
+  double tNv = std::chrono::duration<double>(a1 - a0).count();
+  ASSERT_EQ(rNv.exitCode, 0) << rNv.err;
+
+  // Time clang monolithic full-LTO link (serial codegen).
+  auto clExe = tmpFile("clangcmp_cl");
+  std::vector<std::string> clLink = {"-O2", "-flto"};
+  for (auto &o : clObjs) clLink.push_back(o);
+  clLink.insert(clLink.end(), {"-o", clExe.string()});
+  auto b0 = std::chrono::steady_clock::now();
+  auto rCl = exec(clang, clLink);
+  auto b1 = std::chrono::steady_clock::now();
+  double tCl = std::chrono::duration<double>(b1 - b0).count();
+  if (rCl.exitCode != 0) {
+    unsetEnvVar(linker::ltoPartitionCacheEnvVar);
+    unsetEnvVar(linker::ltoCacheEnvVar);
+    GTEST_SKIP() << "comparison clang cannot link workload: " << rCl.err;
+  }
+
+  // (1) Identical observable result: neverc's parallel/merged LTO must agree
+  // with a monolithic full-LTO compile of the same C, bit-for-bit on stdout.
+  auto outNv = exec(nvExe.string(), {});
+  auto outCl = exec(clExe.string(), {});
+  EXPECT_EQ(outNv.exitCode, 0) << outNv.err;
+  EXPECT_EQ(outCl.exitCode, 0) << outCl.err;
+  EXPECT_TRUE(outNv.contains("CK=")) << outNv.out;
+  EXPECT_EQ(outNv.out, outCl.out)
+      << "neverc auto-LTO output diverged from clang full-LTO on identical C";
+
+  // (2) Balance: neverc's auto-LTO link must not be slower than clang's
+  // monolithic full-LTO link.  Asserted only once clang's link is clearly above
+  // the per-invocation noise floor (a host that links this trivially fast on
+  // both sides checks correctness only and never flakes); where it does engage,
+  // neverc's measured margin is large (~5-25x), so the bare `<` is wide.
+  if (tCl > 0.8)
+    EXPECT_LT(tNv, tCl)
+        << "neverc auto-LTO link (" << tNv
+        << "s) is slower than clang full-LTO (" << tCl
+        << "s) on loop-dense multi-file C -- the compile-speed balance regressed";
 
   unsetEnvVar(linker::ltoPartitionCacheEnvVar);
   unsetEnvVar(linker::ltoCacheEnvVar);
