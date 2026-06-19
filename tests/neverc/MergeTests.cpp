@@ -5356,6 +5356,137 @@ void runMergedExecutionEquivalence(Format Fmt) {
 }
 
 // ===========================================================================
+// Duplicate-named-static `-r` execution differential.
+//
+// Every generator above gives each module globally-unique symbol names, so the
+// merged object's symbol table has no name collisions and the verifier can
+// content-anchor every defined symbol.  Real translation units are not like
+// that: each file has its own file-local `static int cmp`, `static char buf[]`,
+// `static const ... tab[]`, etc., so merging real .o files (the linker's `-r`
+// path) produces MANY local symbols that share a base name.  Those are the
+// merger's least-anchored symbols — the self-verifier skips content-anchoring a
+// name that is not unique and falls back to the weaker disjoint-interval /
+// relative-displacement invariants — and they are produced only on the `-r`
+// path (the auto-LTO path IR-merges first, so IRMover uniquifies the names
+// before codegen).  This test compiles several modules that each define the
+// SAME-named statics (.text helper, .data table, .bss scratch, .rodata
+// constants) with module-specific values, links them two ways, and proves the
+// merged-object run matches the plain link.  Because each module's exported
+// entry reads/writes only its OWN statics, a merge that mis-remaps one
+// duplicate-named local's symbol index or mis-shifts its offset makes an entry
+// touch the wrong copy and the printed checksum diverges — catching exactly the
+// class the unique-name content anchor cannot see.
+std::string genDupStaticObj(unsigned Idx, unsigned NumFns) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "#include <stdint.h>\n";
+  // Statics with IDENTICAL names across every module, module-specific values.
+  OS << "static uint64_t s_tab[4] = {";
+  for (unsigned j = 0; j < 4; ++j)
+    OS << (j ? "," : "")
+       << ((uint64_t)(Idx * 4u + j) * 0x9e3779b97f4a7c15ULL + 1u) << "ULL";
+  OS << "};\n";
+  OS << "static uint64_t s_bss[4];\n";
+  OS << "static const uint64_t s_ro[4] = {";
+  for (unsigned j = 0; j < 4; ++j)
+    OS << (j ? "," : "") << ((uint64_t)(Idx * 4u + j) * 0x100000001b3ULL + 7u)
+       << "ULL";
+  OS << "};\n";
+  OS << "__attribute__((noinline)) static uint64_t s_mix(uint64_t x){\n"
+     << "  uint64_t a = x ^ s_ro[x & 3] ^ " << (Idx * 131u + 1u) << "ULL;\n"
+     << "  for (int i=0;i<9;i++){\n"
+     << "    a = a*6364136223846793005ULL + 1442695040888963407ULL;\n"
+     << "    a ^= s_tab[i & 3];\n"
+     << "  }\n"
+     << "  s_bss[x & 3] += a;\n"
+     << "  return a ^ s_bss[(x + 1) & 3];\n}\n";
+  // Unique exported entries; each touches only its own module's statics.
+  for (unsigned f = 0; f < NumFns; ++f)
+    OS << "uint64_t dent_" << Idx << "_" << f << "(uint64_t x){\n"
+       << "  return s_mix(x + " << f << ") ^ s_tab[x & 3] ^ s_bss[(x >> 2) & 3];"
+       << "\n}\n";
+  return S;
+}
+
+std::string genDupStaticMain(unsigned NumMods, unsigned NumFns) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "#include <stdint.h>\n#include <stdio.h>\n";
+  for (unsigned m = 0; m < NumMods; ++m)
+    for (unsigned f = 0; f < NumFns; ++f)
+      OS << "uint64_t dent_" << m << "_" << f << "(uint64_t);\n";
+  OS << "int main(void){\n  uint64_t s = 0;\n";
+  unsigned i = 0;
+  for (unsigned m = 0; m < NumMods; ++m)
+    for (unsigned f = 0; f < NumFns; ++f)
+      OS << "  s += dent_" << m << "_" << f << "(" << (i++) << "ULL);\n";
+  OS << "  printf(\"%llu\\n\", (unsigned long long)s);\n  return 0;\n}\n";
+  return S;
+}
+
+void runDupStaticRMergeEquivalence(Format Fmt) {
+  ScratchDir Dir;
+  if (!Dir.Ok)
+    GTEST_SKIP() << "could not create scratch directory";
+
+  const unsigned NumMods = 6, NumFns = 3;
+  SmallVector<std::string, 8> ObjPaths;
+  SmallVector<SmallVector<char, 0>, 8> Inputs;
+  for (unsigned m = 0; m < NumMods; ++m) {
+    std::string P;
+    SmallVector<char, 0> O;
+    if (!compileRealObj(Dir, ("ds" + Twine(m)).str(), genDupStaticObj(m, NumFns),
+                        /*Target=*/"", P, O))
+      GTEST_SKIP() << "native frontend unavailable in this environment";
+    ObjPaths.push_back(P);
+    Inputs.push_back(std::move(O));
+  }
+  std::string PMain;
+  SmallVector<char, 0> OMain;
+  if (!compileRealObj(Dir, "dsmain", genDupStaticMain(NumMods, NumFns),
+                      /*Target=*/"", PMain, OMain))
+    GTEST_SKIP() << "native frontend unavailable in this environment";
+
+  // `-r`-style merge of the module objects (NOT main, which stays a separate
+  // input to the final link, exactly like a real partial-link build).
+  SmallVector<char, 0> Merged;
+  {
+    raw_svector_ostream OS(Merged);
+    ASSERT_TRUE(mergeObjects(Inputs, OS, Fmt))
+        << "merger failed on duplicate-named-static objects";
+  }
+  std::string VErr;
+  ASSERT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs),
+                          ArrayRef<char>(Merged), Fmt, {}, &VErr))
+      << "verifier rejected the merge of duplicate-named statics: " << VErr;
+
+  std::string MergedPath = Dir.file("ds_merged.o");
+  ASSERT_TRUE(writeBytes(MergedPath, Merged));
+
+  std::string ExeMerged = Dir.file("ds_exe_merged");
+  std::string ExePlain = Dir.file("ds_exe_plain");
+  if (!linkExe(Dir, {MergedPath, PMain}, ExeMerged))
+    GTEST_SKIP() << "native link of the merged object unavailable";
+  SmallVector<std::string, 8> PlainObjs(ObjPaths.begin(), ObjPaths.end());
+  PlainObjs.push_back(PMain);
+  ASSERT_TRUE(linkExe(Dir, PlainObjs, ExePlain))
+      << "plain link of the same inputs failed";
+
+  std::string OutMerged, OutPlain;
+  int RCm = runExeCapture(Dir, ExeMerged, OutMerged);
+  int RCp = runExeCapture(Dir, ExePlain, OutPlain);
+  ASSERT_EQ(RCp, 0) << "plain-link executable did not exit cleanly";
+  ASSERT_EQ(RCm, 0) << "merged-object executable did not exit cleanly (the merge "
+                       "produced a loadable but wrong object)";
+  EXPECT_FALSE(OutMerged.empty());
+  EXPECT_EQ(OutMerged, OutPlain)
+      << "merged-object program output diverged from the plain link — the merge "
+         "mis-remapped a duplicate-named local static's symbol index or "
+         "mis-shifted its offset (the case the unique-name content anchor in "
+         "verifyMerge cannot see)";
+}
+
+// ===========================================================================
 // Randomized cross-module execution differential ("the fuzzer").
 //
 // The fixed DiffSrc* suite above proves one hand-tuned shape; this generates
@@ -5770,6 +5901,111 @@ std::string genComputedGotoMain(unsigned NumMods, unsigned NumHeavy,
   OS << "  printf(\"%llu\\n\",(unsigned long long)s);\n  return 0;\n}\n";
   return S;
 }
+
+// A module shaped like a real-world translation unit: it carries file-local
+// `static` symbols whose names are IDENTICAL across every module (the way every
+// real C file has its own `static int cmp`, `static char buf[]`, `static const
+// char *names[]`, ...), but whose values are module-specific.  After the
+// auto-LTO IR merge these collide and get uniquified (s_tab, s_tab.1, ...), then
+// the partition split externalizes them with the `.__pcg` suffix and the merger
+// demotes them back to many same-base-named *local* symbols in the final object.
+// That is the merger's least-anchored path: the self-verifier content-anchors
+// only *uniquely* named defined symbols, so these duplicate-named statics fall
+// back to the weaker disjoint-interval / relative-displacement invariants — the
+// exact blind spot where a reintroduced offset-collapse could hide longest.  To
+// turn any such collapse into a visible divergence, every static's value is
+// derived from the module index and the functions both read and write them, so
+// aliasing two modules' copies (a mis-shifted offset) changes the printed sum.
+// Each module also folds in the other adversarial shapes a real interpreter has
+// — a function-local computed-goto dispatch table (blockaddress in a global
+// initializer) and a cross-module .data global — and every exported entry owns a
+// loop so the post-IPO weight clears the parallel threshold and the partitioner
+// actually engages.  noinline keeps the statics distinct post-IPO.
+std::string genRealisticModule(unsigned Idx, unsigned NumFns) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "#include <stdint.h>\n";
+  // Duplicate-named statics (same name every module, module-specific values).
+  OS << "static uint64_t s_tab[6] = {";
+  for (unsigned j = 0; j < 6; ++j)
+    OS << (j ? "," : "")
+       << ((uint64_t)(Idx * 6u + j) * 0x9e3779b97f4a7c15ULL + 1u) << "ULL";
+  OS << "};\n";
+  OS << "static uint64_t s_bss[6];\n";
+  OS << "static const uint64_t s_ro[4] = {";
+  for (unsigned j = 0; j < 4; ++j)
+    OS << (j ? "," : "") << ((uint64_t)(Idx * 4u + j) * 0x100000001b3ULL + 7u)
+       << "ULL";
+  OS << "};\n";
+  // Duplicate-named static helper (.text); module-specific constant inside.
+  OS << "__attribute__((noinline)) static uint64_t s_mix(uint64_t x){\n"
+     << "  uint64_t a = x ^ s_ro[x & 3] ^ " << (Idx * 131u + 1u) << "ULL;\n"
+     << "  for (int i=0;i<31;i++){\n"
+     << "    a = a*6364136223846793005ULL + 1442695040888963407ULL;\n"
+     << "    a ^= s_tab[i % 6];\n"
+     << "  }\n"
+     << "  s_bss[x % 6] += a;\n"
+     << "  return a ^ s_bss[(x + 1) % 6];\n}\n";
+  // Duplicate-named static computed-goto VM (blockaddress dispatch table).  The
+  // dispatch index is runtime-evolving so -O2 cannot devirtualize the table away.
+  OS << "__attribute__((noinline)) static uint64_t s_vm(uint64_t x){\n"
+     << "  static const void *const tab[] = {&&A,&&B,&&C,&&D,&&E};\n"
+     << "  uint64_t acc=x, st=x ^ " << (Idx * 2654435761u + 3u)
+     << "ULL; int steps=0;\n"
+     << "  goto *tab[st & 3];\n"
+     << "A: acc += s_mix(st); st=st*6364136223846793005ULL+1442695040888963407ULL;"
+        " if(++steps<48) goto *tab[st & 3]; goto E;\n"
+     << "B: acc ^= (acc>>13); st=st*6364136223846793005ULL+1442695040888963407ULL;"
+        " if(++steps<48) goto *tab[st & 3]; goto E;\n"
+     << "C: acc += (acc<<7); st=st*6364136223846793005ULL+1442695040888963407ULL;"
+        " if(++steps<48) goto *tab[st & 3]; goto E;\n"
+     << "D: acc = (acc<<5)|(acc>>59);"
+        " st=st*6364136223846793005ULL+1442695040888963407ULL;"
+        " if(++steps<48) goto *tab[st & 3]; goto E;\n"
+     << "E: return acc;\n}\n";
+  // Cross-module .data global (unique name) so the merge also shifts a normal
+  // cross-partition reference, alongside the duplicate-named statics above.
+  OS << "uint64_t gx_" << Idx << "[4] = {";
+  for (unsigned j = 0; j < 4; ++j)
+    OS << (j ? "," : "") << ((uint64_t)(Idx * 4u + j) * 0xff51afd7ed558ccdULL + 5u)
+       << "ULL";
+  OS << "};\n";
+  // Exported entries: each owns a loop (weight to engage the partitioner) and
+  // exercises the duplicate-named statics + VM + cross-module global.
+  for (unsigned f = 0; f < NumFns; ++f)
+    OS << "__attribute__((noinline)) uint64_t rentry_" << Idx << "_" << f
+       << "(uint64_t x){\n"
+       << "  uint64_t a = x ^ s_tab[" << (f % 6) << "];\n"
+       << "  for (uint64_t i=0;i<53;i++){\n"
+       << "    a = a*6364136223846793005ULL + 1442695040888963407ULL;\n"
+       << "    a ^= s_bss[i % 6] + (a>>11);\n"
+       << "    a = (a<<7) | (a>>57);\n"
+       << "  }\n"
+       << "  return a ^ s_mix(x) ^ s_vm(x) ^ gx_" << Idx << "[x & 3];\n}\n";
+  return S;
+}
+
+std::string genRealisticMain(unsigned NumMods, unsigned NumFns) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "#include <stdint.h>\n#include <stdio.h>\n";
+  for (unsigned m = 0; m < NumMods; ++m) {
+    OS << "extern uint64_t gx_" << m << "[4];\n";
+    for (unsigned f = 0; f < NumFns; ++f)
+      OS << "uint64_t rentry_" << m << "_" << f << "(uint64_t);\n";
+  }
+  OS << "int main(int argc, char **argv){\n"
+     << "  (void)argv; uint64_t s=0, k=(uint64_t)argc;\n";
+  unsigned i = 0;
+  for (unsigned m = 0; m < NumMods; ++m)
+    for (unsigned f = 0; f < NumFns; ++f) {
+      OS << "  s += rentry_" << m << "_" << f << "(" << i << "ULL+k) ^ gx_" << m
+         << "[" << (f % 4) << "];\n";
+      i++;
+    }
+  OS << "  printf(\"%llu\\n\",(unsigned long long)s);\n  return 0;\n}\n";
+  return S;
+}
 #endif // _WIN32
 
 } // namespace
@@ -5796,6 +6032,21 @@ TEST(MergeDifferentialLLD, NativeMergedExecutionMatchesPlainLink) {
     runMergedExecutionEquivalence(Format::MachO64);
   else if (Host.isOSBinFormatELF())
     runMergedExecutionEquivalence(Format::ELF64LE);
+  else
+    GTEST_SKIP() << "host object format not exercised by this test";
+}
+
+// Object-level `-r` merge of modules that share file-local `static` names (the
+// real-repository shape) must run identically to a plain link.  This is the one
+// path that produces genuinely duplicate-named local symbols in the merged
+// object — the auto-LTO path IR-merges first and uniquifies them — so it is the
+// only place verifyMerge's non-unique-name fallback is exercised end to end.
+TEST(MergeDifferentialLLD, DuplicateNamedStaticsRMergeMatchesPlainLink) {
+  Triple Host(sys::getProcessTriple());
+  if (Host.isOSBinFormatMachO())
+    runDupStaticRMergeEquivalence(Format::MachO64);
+  else if (Host.isOSBinFormatELF())
+    runDupStaticRMergeEquivalence(Format::ELF64LE);
   else
     GTEST_SKIP() << "host object format not exercised by this test";
 }
@@ -6027,6 +6278,79 @@ TEST(MergeParallelCodegenStrict, MultiFileAutoLtoComputedGotoUnderStrictMode) {
   EXPECT_EQ(OutLto, OutRef)
       << "auto-LTO program output diverged from the -fno-lto build — a "
          "computed-goto dispatch table was corrupted by the partition split";
+}
+
+// Strict-mode tripwire over a *real-world-shaped* program: every module carries
+// file-local `static` symbols whose names are identical across all modules
+// (.text helper, .data table, .bss scratch, .rodata constants) plus a
+// computed-goto VM and a cross-module .data global.  Duplicate-named statics are
+// the merger's least-anchored case — the self-verifier content-anchors only
+// uniquely-named defined symbols, so these many same-base-named locals exercise
+// the weaker disjoint-interval / relative-displacement invariants that are the
+// last line of defense against the historical offset-collapse.  The prior strict
+// tests each isolate one shape with globally-unique names; this one combines
+// them with the duplicate-static naming real repositories (Lua, sqlite, ...)
+// actually have, so a regression that mishandles a duplicate-named local's
+// offset — invisible to the unique-name content anchor — still diverges from the
+// -fno-lto reference here.
+TEST(MergeParallelCodegenStrict, MultiFileAutoLtoRealisticMixedUnderStrictMode) {
+  Triple Host(sys::getProcessTriple());
+  if (!Host.isOSBinFormatMachO() && !Host.isOSBinFormatELF())
+    GTEST_SKIP() << "host object format not exercised by this test";
+  ScratchDir Dir;
+  if (!Dir.Ok)
+    GTEST_SKIP() << "could not create scratch directory";
+
+  // 20 modules x 12 loop-bearing exported entries (240 heavy functions) plus
+  // per-module duplicate-named static helper + VM, sized to clear the parallel
+  // thresholds with margin even after IPO so the partitioner + merger engage.
+  const unsigned NumMods = 20, NumFns = 12;
+  SmallVector<std::string, 32> Srcs;
+  for (unsigned m = 0; m < NumMods; ++m) {
+    std::string CPath = Dir.file(("rm" + Twine(m) + ".c").str());
+    std::string Src = genRealisticModule(m, NumFns);
+    if (!writeBytes(CPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write source";
+    Srcs.push_back(CPath);
+  }
+  {
+    std::string MainPath = Dir.file("rmain.c");
+    std::string Src = genRealisticMain(NumMods, NumFns);
+    if (!writeBytes(MainPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write source";
+    Srcs.push_back(MainPath);
+  }
+
+  std::string ExeRef = Dir.file("exe_ref");
+  StringRef RefArgs[] = {"-fno-lto", "-O2"};
+  if (!compileLinkMulti(Dir, Srcs, RefArgs, ExeRef))
+    GTEST_SKIP() << "native frontend/link unavailable in this environment";
+  std::string OutRef;
+  ASSERT_EQ(runExeCapture(Dir, ExeRef, OutRef), 0)
+      << "-fno-lto reference executable did not exit cleanly";
+  ASSERT_FALSE(OutRef.empty());
+
+  std::string ExeLto = Dir.file("exe_lto");
+  {
+    ScopedEnv Strict("NEVERC_PCG_STRICT", "1");
+    ScopedEnv NoCache("NEVERC_LTO_CACHE", "0");
+    ScopedEnv NoPCache("NEVERC_LTO_PCACHE", "0");
+    StringRef LtoArgs[] = {"-O2"};
+    ASSERT_TRUE(compileLinkMulti(Dir, Srcs, LtoArgs, ExeLto))
+        << "auto-LTO link of a duplicate-named-statics program failed under "
+           "NEVERC_PCG_STRICT — the parallel-codegen merger failed self-verify "
+           "or could not emit a merged object (a merger regression); see the "
+           "scratch spawn.log";
+  }
+  std::string OutLto;
+  ASSERT_EQ(runExeCapture(Dir, ExeLto, OutLto), 0)
+      << "auto-LTO executable did not exit cleanly (the merge produced a "
+         "loadable but wrong object)";
+  EXPECT_EQ(OutLto, OutRef)
+      << "auto-LTO program output diverged from the -fno-lto build — the merge "
+         "mis-placed a duplicate-named local static's symbol value or a "
+         "cross-partition relocation (the offset-collapse shape the unique-name "
+         "content anchor cannot see)";
 }
 
 // The other half of the merger's safety contract.  Every test above proves the
