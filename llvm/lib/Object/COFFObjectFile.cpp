@@ -773,6 +773,12 @@ Error COFFObjectFile::initialize() {
     const auto *DH = reinterpret_cast<const dos_header *>(base());
     if (DH->Magic[0] == 'M' && DH->Magic[1] == 'Z') {
       CurPtr = DH->AddressOfNewExeHeader;
+      // AddressOfNewExeHeader (e_lfanew) is an arbitrary, attacker-controlled
+      // 32-bit offset; bounds-check it before dereferencing so a malformed DOS
+      // stub cannot drive an out-of-bounds read in the memcmp below.
+      if (Error E = checkOffset(Data, reinterpret_cast<uintptr_t>(base()) + CurPtr,
+                                sizeof(COFF::PEMagic)))
+        return E;
       // Check the PE magic bytes. ("PE\0\0")
       if (memcmp(base() + CurPtr, COFF::PEMagic, sizeof(COFF::PEMagic)) != 0) {
         return createStringError(object_error::parse_failed,
