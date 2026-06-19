@@ -173,16 +173,17 @@ inline const unsigned thread::DefaultStackSize = 8 * 1024 * 1024;
 #elif defined(_AIX)
 inline const unsigned thread::DefaultStackSize = 4 * 1024 * 1024;
 #elif defined(_WIN32)
-// The deeply recursive opt/codegen pipeline (SelectionDAG ISel, ScalarEvolution,
-// loop unroll) needs a large worker stack on adversarial IR (e.g. an auto-LTO
-// "collapsed" giant function with caps disabled).  8 MiB -- enough on Linux
-// (pthread default) and macOS (explicit) -- still overflowed here: a confirmed
-// STATUS_STACK_OVERFLOW (0xC00000FD, escalating to the 0xC0000409 fast-fail the
-// caller observes) in a parallel LTO codegen worker.  The recursion is *bounded*
-// (the identical IR links fine at 8 MiB on the other hosts), so Windows simply
-// needs more headroom: its x64 frames are fatter (callee shadow space + ABI)
-// than the SysV/AArch64 layouts.  csupport_thread_execute now reserves (not
-// commits) this size, so a generous 64 MiB costs only address space.
+// Codegen-worker stack reserve.  The per-partition opt/codegen pipeline
+// (SelectionDAG ISel, ScalarEvolution, loop unroll) recurses deeply on
+// adversarial auto-LTO IR (e.g. a caps-off "collapsed" giant function).  Linux
+// (pthread default) and macOS (explicit) give workers 8 MiB; match that with
+// headroom on Windows, whose x64 frames are fatter (callee shadow space + ABI)
+// than the SysV/AArch64 layouts.  csupport_thread_execute reserves (does not
+// commit) this, so 64 MiB costs only address space.
+// NOTE: the serial whole-program LTO phase runs on the process MAIN thread, not
+// these workers; its much smaller Windows default (1 MiB) is what actually
+// overflowed in the LTOTest caps-off links and is sized separately via /STACK
+// (neverc/CMakeLists.txt).  This worker size is the parallel-phase counterpart.
 inline const unsigned thread::DefaultStackSize = 64 * 1024 * 1024;
 #else
 inline const unsigned thread::DefaultStackSize = 0;

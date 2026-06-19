@@ -454,6 +454,28 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   endif()
 endif()
 
+# Windows main-thread stack reserve.
+#
+# The whole-program LTO optimizer recurses deeply on adversarial auto-LTO input:
+# a caps-off "collapsed" giant function (inline/unroll caps disabled) drives
+# ScalarEvolution::getSCEVAtScope into a deep self-recursion over the nested SCEV
+# expression.  That serial IPO/optimization phase runs on neverc's MAIN thread,
+# whose default reserved stack on Windows is only 1 MiB -- versus 8 MiB on Linux
+# (pthread/main) and macOS, where the *identical* IR optimizes fine.  That lone
+# platform gap is why LTOTest.AutoLtoLoopDenseNoCompileCliff / .Auto-
+# LtoInlineCapSemanticsPreserved overflowed the stack (STATUS_STACK_OVERFLOW
+# 0xC00000FD, surfacing as the 0xC0000409 fast-fail exit code) only on Windows.
+# The recursion is bounded (it completes within 8 MiB elsewhere), so reserving a
+# generous 64 MiB main-thread stack -- address space only; pages commit on demand
+# -- gives Windows ample headroom.  This is the main-thread counterpart to the
+# 64 MiB llvm::thread codegen-worker stack (llvm/include/llvm/Support/thread.h):
+# the worker pool covers per-partition opt, this covers the serial whole-program
+# phase.  Set on the target (not CMAKE_EXE_LINKER_FLAGS) so a CI flag override
+# cannot drop it; /STACK is understood by both lld-link and MSVC link.
+if(WIN32)
+  target_link_options(neverc PRIVATE "LINKER:/STACK:0x4000000")
+endif()
+
 option(NEVERC_STRIP_BINARY "Strip local symbols from the neverc binary after linking" OFF)
 if(NEVERC_STRIP_BINARY AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   if(WIN32)

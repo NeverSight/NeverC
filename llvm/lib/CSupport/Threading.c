@@ -451,10 +451,9 @@ uint64_t csupport_thread_execute(csupport_thread_func_t func, void *arg,
    * like pthread_attr_setstacksize on Linux/macOS.  Without the flag Windows
    * treats stack_size as the up-front COMMIT: it both wastes physical memory
    * (the whole stack is committed per worker) and made large stacks impractical.
-   * The deeply recursive opt/codegen pipeline (SelectionDAG ISel, ScalarEvolution)
-   * overflowed the old 8 MiB on Windows x64 -- whose frames are fatter (callee
-   * shadow space + ABI) than the SysV/AArch64 layouts that link the identical IR
-   * within 8 MiB -- so reserving (cheaply) a much larger stack is the fix. */
+   * Reserving lets each llvm::thread worker cheaply get a big stack (thread.h's
+   * DefaultStackSize) for the deeply recursive opt/codegen pipeline, matching
+   * pthread semantics on the other hosts. */
   unsigned init_flags =
       (stack_size != 0) ? STACK_SIZE_PARAM_IS_A_RESERVATION : 0u;
   if (!start)
