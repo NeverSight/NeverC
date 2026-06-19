@@ -123,7 +123,12 @@ jobs:
           # On the crash: identify it, dump a deep faulting-thread stack (reveals
           # the repeating recursion frames + total depth), list all thread stacks,
           # then quit (a stack overflow can't be resumed meaningfully).
-          ANALYZE='.echo ====CRASH_CAUGHT====; .lastevent; .exr -1; .ecxr; .echo ==FAULT_STACK_kb==; kb 2000; .echo ==FAULT_STACK_kn==; kn 80; .echo ==ALL_THREADS==; ~*kb 25; .echo ==ANALYZE==; !analyze -v; .echo ==NEVERC_MOD==; lmv m neverc; .echo ====END_CRASH====; q'
+          # !teb + DeallocationStack reveals the faulting thread's RESERVED stack
+          # size: ~1 MiB => it is neverc's MAIN thread (Windows default), 64 MiB =>
+          # an llvm::thread codegen worker.  dps @rsp walks the raw stack and
+          # symbolizes return addresses even when a blown stack defeats the formal
+          # unwinder (kb/kn) -- this is what exposes the recursion cycle.
+          ANALYZE='.echo ====CRASH_CAUGHT====; .lastevent; .exr -1; .ecxr; .echo ==CUR_THREAD==; ~.; .echo ==TEB==; !teb; .echo ==STACK_BOUNDS==; dt ntdll!_TEB @$teb NtTib.StackBase NtTib.StackLimit DeallocationStack; .echo ==FAULT_STACK_kb==; kb 2000; .echo ==FAULT_STACK_kn==; kn 80; .echo ==RAW_STACK_dps==; dps @rsp L2000; .echo ==ALL_THREADS==; ~*kb 25; .echo ==ANALYZE==; !analyze -v; .echo ==NEVERC_MOD==; lmv m neverc; .echo ====END_CRASH====; q'
           # sxi ld/ud: silence per-child ModLoad spam.  sxn ibp/cpr/epr: do not
           # break on child create/initial-bp/exit.  Break first-chance on stack
           # overflow (root) and on the fast-fail (fallback).
