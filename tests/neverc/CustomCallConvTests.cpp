@@ -318,6 +318,25 @@ TEST_F(CustomCallConvTest, VarArgRejected) {
   EXPECT_TRUE(r.stderrContains("does not support variadic"));
 }
 
+// Same rejection on the AArch64 backend: the custom convention has no vararg
+// ABI on either target, so a variadic function must fail with the same clear
+// diagnostic (a clean error, not a fatal abort).
+TEST_F(CustomCallConvTest, VarArgRejectedAArch64) {
+  writeFile(casesSrc_,
+            "#include <stdarg.h>\n"
+            "int sum(int n,...){va_list ap;va_start(ap,n);int s=0;"
+            "for(int i=0;i<n;i++)s+=va_arg(ap,int);va_end(ap);return s;}\n");
+  fs::path out = tmpFile("va_a64.s");
+  CmdResult r = ncc({"-fplugin-pass=" + plugin_.string(),
+                     "-fplugin-pass-arg=cc-all=1",
+                     "-fplugin-pass-arg=ccspec=gpr:x9,x10;ret:x0",
+                     "-fplugin-pass-arg=ccprefix=sum", "-S", "-O2",
+                     "--target=aarch64-unknown-linux-gnu", casesSrc_.string(),
+                     "-o", out.string()});
+  EXPECT_FALSE(r.ok()); // compilation must fail
+  EXPECT_TRUE(r.stderrContains("does not support variadic"));
+}
+
 // An address-taken custom-CC function can't carry its convention to indirect
 // call sites; the plugin warns and compilation still succeeds (indirect calls
 // fall back to the standard CC, no crash).

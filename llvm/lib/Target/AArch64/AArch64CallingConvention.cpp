@@ -21,7 +21,9 @@
 #include "llvm/CodeGen/NeverCCallConv.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/IR/CallingConv.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/LLVMContext.h"
 #include <algorithm>
 using namespace llvm;
 
@@ -341,12 +343,18 @@ bool llvm::CC_AArch64_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
     neverc::parseCustomCCSpec(SpecStr, Spec);
     if (Spec.hasAnyArgs()) {
       // NeverC custom CC has no defined vararg ABI: reject variadic functions
-      // explicitly instead of silently mis-passing the variadic part.
-      if (State.isVarArg())
-        report_fatal_error(
+      // with a clean backend diagnostic (routed through clang as a normal
+      // error) instead of a fatal abort. Emit it once, on the first value,
+      // then fall through and assign normally so CCState stays well-formed --
+      // the resulting code is discarded because an error was recorded.
+      if (State.isVarArg() && ValNo == 0) {
+        const Function &F = State.getMachineFunction().getFunction();
+        F.getContext().diagnose(DiagnosticInfoUnsupported(
+            F,
             "NeverC custom calling convention does not support variadic "
             "functions: '" +
-            State.getMachineFunction().getName() + "'");
+                F.getName() + "'"));
+      }
       MVT UseVT = LocVT;
       CCValAssign::LocInfo UseLI = LocInfo;
       neverCA64PromoteSmallInt(UseVT, UseLI, ArgFlags);
