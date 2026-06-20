@@ -626,6 +626,9 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
   if(TARGET neverc-runtime-android-arm64)
     list(APPEND _neverc_check_runtime_deps neverc-runtime-android-arm64)
   endif()
+  if(TARGET neverc-runtime-android-kernel)
+    list(APPEND _neverc_check_runtime_deps neverc-runtime-android-kernel)
+  endif()
   add_custom_target(check-neverc
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG>
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests

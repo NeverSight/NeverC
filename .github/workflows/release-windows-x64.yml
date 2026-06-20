@@ -40,6 +40,7 @@ jobs:
             -C neverc/cmake/caches/NeverC.cmake \
             -DNEVERC_INCLUDE_TESTS=OFF \
             -DNEVERC_ENABLE_LTO=ON \
+            -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
 
@@ -74,7 +75,8 @@ jobs:
           done
 
       - name: Install neverc
-        run: cmake --install build --prefix "$env:GITHUB_WORKSPACE\install"
+        shell: bash
+        run: cmake --build build --target install
 
       - name: Package
         run: 7z a windows-x64-neverc-release.zip install
