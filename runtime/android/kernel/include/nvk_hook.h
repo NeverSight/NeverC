@@ -119,63 +119,7 @@ typedef struct {
 #define NEVERC_KRT_A64_PACIASP   0xD503233FU
 #define NEVERC_KRT_A64_PACIBSP   0xD503237FU
 
-#define NEVERC_KRT_A64_RET_X16   0xD65F0200U   /* RET X16 */
-#define NEVERC_KRT_A64_RET_X17   0xD65F0220U   /* RET X17 */
-
-static __always_inline int neverc_krt_a64_is_bti(u32 i)
-{ return i == 0xD503245FU || i == 0xD503249FU || i == 0xD50324DFU; }
-
-static __always_inline int neverc_krt_a64_is_pac(u32 i)
-{
-	return i == NEVERC_KRT_A64_PACIASP || i == NEVERC_KRT_A64_PACIBSP
-	    || i == 0xD50323BFU  /* AUTIASP */
-	    || i == 0xD50323FFU; /* AUTIBSP */
-}
-
-static __always_inline int neverc_krt_a64_is_pac_sign(u32 i)
-{
-	return i == NEVERC_KRT_A64_PACIASP || i == NEVERC_KRT_A64_PACIBSP;
-}
-
-static __always_inline int neverc_krt_a64_is_pac_auth(u32 i)
-{
-	return i == 0xD50323BFU || i == 0xD50323FFU;
-}
-
-
-static __always_inline u32 neverc_krt_a64_movz(int rd, u16 imm, int hw)
-{ return 0xD2800000U | ((u32)hw << 21) | ((u32)imm << 5) | rd; }
-
-static __always_inline u32 neverc_krt_a64_movk(int rd, u16 imm, int hw)
-{ return 0xF2800000U | ((u32)hw << 21) | ((u32)imm << 5) | rd; }
-
-int neverc_krt_a64_gen_mov64(u32 *out, int rd, u64 addr);
-
-
-static __always_inline u32 neverc_krt_a64_gen_b(long off)
-{ return 0x14000000U | (((u32)(off >> 2)) & 0x03FFFFFFU); }
-
-static __always_inline int neverc_krt_a64_b_in_range(long off)
-{ return off >= -0x8000000L && off < 0x8000000L; }
-
-static __always_inline long neverc_krt_sext(long v, int bits)
-{ long m = 1L << (bits - 1); return (v ^ m) - m; }
-
-
-enum neverc_krt_pcrel {
-	NEVERC_KRT_PC_NONE = 0,
-	NEVERC_KRT_PC_ADRP, NEVERC_KRT_PC_ADR,
-	NEVERC_KRT_PC_B, NEVERC_KRT_PC_BL,
-	NEVERC_KRT_PC_BCOND, NEVERC_KRT_PC_CBZ, NEVERC_KRT_PC_TBZ,
-	NEVERC_KRT_PC_LDR_LIT,
-	NEVERC_KRT_PC_LDRSW_LIT,
-	NEVERC_KRT_PC_PRFM_LIT,
-};
-
-enum neverc_krt_pcrel neverc_krt_a64_classify(u32 i);
-
-
-int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out);
+/* ARM64 instruction constants retained for user shellcode / custom hooks. */
 
 
 
@@ -254,73 +198,7 @@ static __always_inline int neverc_krt_hook_enter_safe(struct neverc_krt_hook *h)
 int neverc_krt_hook_init(void);
 
 
-#define NEVERC_KRT_A64_BRK_KPROBE 0xD4200080U
-
 unsigned long neverc_krt_strip_pac(unsigned long addr);
-
-static __always_inline int neverc_krt_a64_is_stp_fp_lr(u32 insn)
-{
-	return (insn & 0xFFC07FFF) == 0xA9807BFD;
-}
-
-static __always_inline int neverc_krt_a64_is_frame_setup(u32 insn)
-{
-	if ((insn & 0x7FE0FFE0) == 0x2A0003E0) return 1; /* MOV Wd, Wn */
-	if ((insn & 0xFFE0FFE0) == 0xAA0003E0) return 1; /* MOV Xd, Xn */
-	return 0;
-}
-
-static __always_inline int neverc_krt_a64_is_scs_push(u32 insn)
-{
-	/* str x30, [x18], #8 */
-	if (insn == 0xF800841EU) return 1;
-	/* str x30, [x18, #0]! (alternative) */
-	if (insn == 0xF81F0A5EU) return 1;
-	/* stur x30, [x18] (unsigned offset) */
-	if (insn == 0xF900025EU) return 1;
-	return 0;
-}
-
-static __always_inline int neverc_krt_a64_is_hook_patch(u32 insn)
-{
-	if (insn == NEVERC_KRT_A64_BRK_KPROBE) return 1;
-	if (insn == 0x58000050U) return 1;  /* LDR X16, [PC+8] */
-	return 0;
-}
-
-int neverc_krt_a64_is_kcfi_tag(u32 *addr);
-
-#define NEVERC_KRT_A64_FTRACE_NOP  0xD503201FU
-#define NEVERC_KRT_A64_BRK_FTRACE  0xD4200000U  /* BRK #0 — ftrace entry */
-
-int neverc_krt_a64_is_ftrace_site(u32 *code);
-
-static __always_inline int neverc_krt_a64_is_kprobe_bp(u32 insn)
-{
-	return insn == NEVERC_KRT_A64_BRK_KPROBE
-	    || (insn & 0xFFE0001FU) == 0xD4200000U;
-}
-
-static __always_inline int neverc_krt_a64_is_exclusive(u32 insn)
-{
-	return (insn & 0x3F000000) == 0x08000000;
-}
-
-static __always_inline int neverc_krt_a64_is_svc_hvc(u32 insn)
-{
-	u32 masked = insn & 0xFFE0001FU;
-	return masked == 0xD4000001U  /* SVC */
-	    || masked == 0xD4000002U  /* HVC */
-	    || masked == 0xD4000003U; /* SMC */
-}
-
-static __always_inline int neverc_krt_a64_is_hazardous(u32 insn)
-{
-	if (neverc_krt_a64_is_exclusive(insn)) return 1;
-	if (neverc_krt_a64_is_svc_hvc(insn))   return 1;
-	if ((insn & 0xFE200000U) == 0xD4200000U) return 1; /* BRK */
-	return 0;
-}
 
 enum neverc_krt_scan_result {
 	NEVERC_KRT_SCAN_OK              =  0,
@@ -347,12 +225,17 @@ typedef void (*neverc_krt_ctx_handler_t)(neverc_krt_reg_ctx *ctx);
 typedef void (*neverc_krt_ctx_fp_handler_t)(neverc_krt_reg_ctx *ctx, neverc_krt_fp_state *fp);
 
 /*
- * Declare a wrapper that saves/restores Q0-Q31 around a user handler.
+ * Define a wrapper that saves/restores Q0-Q31 around a user handler.
  * user_fn must have signature: void fn(neverc_krt_reg_ctx *ctx, neverc_krt_fp_state *fp).
- * Install the wrapper_name (not user_fn) with neverc_krt_hook_install_ctx().
+ * Install wrapper_name (not user_fn) with neverc_krt_hook_install_ctx().
  */
 #define NEVERC_KRT_CTX_HANDLER_FP(wrapper_name, user_fn)                        \
-	void wrapper_name(neverc_krt_reg_ctx *ctx);
+	static void wrapper_name(neverc_krt_reg_ctx *ctx) {                      \
+		neverc_krt_fp_state __fp_state;                                  \
+		NEVERC_KRT_SAVE_FP(&__fp_state);                                 \
+		user_fn(ctx, &__fp_state);                                       \
+		NEVERC_KRT_RESTORE_FP(&__fp_state);                              \
+	}
 
 
 /*

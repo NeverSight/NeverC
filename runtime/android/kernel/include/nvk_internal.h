@@ -62,6 +62,12 @@ volatile int *_neverc_krt_se_probe_state(void *se_state);
 
 int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
 
+static __always_inline long neverc_krt_sext(long v, int bits)
+{ long m = 1L << (bits - 1); return (v ^ m) - m; }
+
+#define NEVERC_KRT_A64_RET_X16  0xD65F0200U
+#define NEVERC_KRT_A64_RET_X17  0xD65F0220U
+
 /* ---- nvk_compat.c ---- */
 
 extern unsigned long _neverc_krt_module_size;
