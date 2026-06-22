@@ -3,7 +3,6 @@
 #define NEVERC_KRT_H
 
 #include <nvkmod.h>
-#include <nvk_rt.h>
 #include <nvk_hook.h>
 #include <nvk_mem.h>
 #include <nvk_syscall.h>

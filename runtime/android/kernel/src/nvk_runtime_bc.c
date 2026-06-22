@@ -4,8 +4,8 @@
  *
  * Compiled to LLVM bitcode at NeverC build time and embedded into the
  * compiler binary.  NvkKernelRuntimeLinkerPass links this bitcode into
- * each user TU, providing the definitions for all NEVERC_KRT_RT_FN functions
- * and NEVERC_KRT_RT_VAR variables declared as `extern` in the public headers.
+ * each user TU, providing the definitions for all public API functions
+ * and shared variables declared as `extern` in the public headers.
  *
  * Build command (run by CMake bootstrap target):
  *   neverc -c -emit-llvm -O0 -fno-lto --target=aarch64-linux-gnu
@@ -15,5 +15,7 @@
  *          neverc_krt_runtime_bc.c -o neverc_krt_runtime.bc
  */
 
+#ifndef _NEVERC_KRT_IMPL
 #define _NEVERC_KRT_IMPL
+#endif
 #include <nvk.h>

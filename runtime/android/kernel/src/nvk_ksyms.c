@@ -8,6 +8,12 @@ typedef int (*neverc_krt_ksym_on_each_fn)(const char *name, void *module,
 					  unsigned long addr);
 typedef unsigned long (*neverc_krt_sprint_symbol_fn)(char *buf, unsigned long addr);
 
+/* ---- shared variables (declared extern in linux/kallsyms.h) ---- */
+
+_neverc_krt_sym_resolver_fn _neverc_krt_sym_resolver;
+struct _neverc_krt_sym_entry _neverc_krt_sym_cache[_NEVERC_KRT_SYM_CACHE_SIZE];
+unsigned long _neverc_krt_cache_key;
+
 /* ---- internal variables (file-local) ---- */
 
 static neverc_krt_ksym_on_each_fn    _neverc_krt_on_each_symbol;
@@ -215,7 +221,7 @@ int neverc_krt_ksyms_info(unsigned long addr, struct neverc_krt_ksym_info *info)
 {
 	typedef int (*ksize_fn)(unsigned long addr, unsigned long *sz,
 				unsigned long *off);
-	NEVERC_KRT_RT_VAR ksize_fn _ksize;
+	static ksize_fn _ksize;
 
 	if (!info) return -1;
 

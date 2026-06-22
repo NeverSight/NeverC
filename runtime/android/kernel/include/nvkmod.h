@@ -10,7 +10,6 @@
 #endif
 
 #include <linux/types.h>
-#include <nvk_rt.h>
 #include <linux/compiler.h>
 #include <linux/module.h>
 #include <linux/printk.h>

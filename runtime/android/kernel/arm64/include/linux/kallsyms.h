@@ -11,7 +11,6 @@
 #define _NEVERC_KRT_LINUX_KALLSYMS_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
 #include <neverc/xorstr/xorstr.h>
 
 /* ==================================================================
@@ -22,7 +21,7 @@ typedef unsigned long (*neverc_krt_kallsyms_lookup_name_fn)(const char *name);
 extern neverc_krt_kallsyms_lookup_name_fn neverc_krt_kallsyms_lookup_name;
 
 typedef unsigned long (*_neverc_krt_sym_resolver_fn)(const char *name);
-NEVERC_KRT_RT_VAR _neverc_krt_sym_resolver_fn _neverc_krt_sym_resolver;
+extern _neverc_krt_sym_resolver_fn _neverc_krt_sym_resolver;
 
 #define _NEVERC_KRT_SYM_CACHE_BITS  7
 #define _NEVERC_KRT_SYM_CACHE_SIZE  (1 << _NEVERC_KRT_SYM_CACHE_BITS)
@@ -33,8 +32,8 @@ struct _neverc_krt_sym_entry {
 	unsigned long enc;
 };
 
-NEVERC_KRT_RT_VAR struct _neverc_krt_sym_entry _neverc_krt_sym_cache[_NEVERC_KRT_SYM_CACHE_SIZE];
-NEVERC_KRT_RT_VAR unsigned long _neverc_krt_cache_key;
+extern struct _neverc_krt_sym_entry _neverc_krt_sym_cache[_NEVERC_KRT_SYM_CACHE_SIZE];
+extern unsigned long _neverc_krt_cache_key;
 
 /* ==================================================================
  *  Section 2: Pluggable XOR primitive (override before #include)

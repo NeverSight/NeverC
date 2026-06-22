@@ -402,7 +402,6 @@ typedef int   (*neverc_krt_unregister_ftrace_fn)(struct neverc_krt_ftrace_ops *o
 typedef int   (*neverc_krt_ftrace_set_filter_ip_fn)(struct neverc_krt_ftrace_ops *ops,
 						    unsigned long ip,
 						    int remove, int reset);
-typedef int   (*neverc_krt_ftrace_set_fn)(unsigned long ip, int enable);
 typedef int   (*neverc_krt_register_kprobe_fn)(void *kp);
 typedef void  (*neverc_krt_unregister_kprobe_fn)(void *kp);
 
@@ -438,7 +437,6 @@ static volatile u64                 _neverc_krt_hook_remove_cnt;
 static neverc_krt_register_ftrace_fn     _neverc_krt_register_ftrace;
 static neverc_krt_unregister_ftrace_fn   _neverc_krt_unregister_ftrace;
 static neverc_krt_ftrace_set_filter_ip_fn _neverc_krt_ftrace_set_filter;
-static neverc_krt_ftrace_set_fn           _neverc_krt_ftrace_set_ip;
 static int                                _neverc_krt_ftrace_avail;
 
 static neverc_krt_register_kprobe_fn   _neverc_krt_reg_kprobe;
@@ -463,7 +461,6 @@ static void _neverc_krt_ftrace_thunk(unsigned long ip, unsigned long parent_ip,
 static int neverc_krt_a64_gen_mov64(u32 *out, int rd, u64 addr);
 static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out);
 static enum neverc_krt_pcrel neverc_krt_a64_classify(u32 i);
-static int neverc_krt_a64_is_kcfi_tag(u32 *addr);
 static int neverc_krt_a64_is_ftrace_site(u32 *code);
 
 static int neverc_krt_a64_gen_mov64(u32 *out, int rd, u64 addr)
@@ -937,8 +934,8 @@ int neverc_krt_hook_install(struct neverc_krt_hook *h, void *target,
 	h->trampoline = (void *)0;
 	h->active = 0;
 	h->short_b = 0;
-	h->hit_count = 0;
-	h->guard = 0;
+	__atomic_store_n(&h->hit_count, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&h->guard, 0, __ATOMIC_RELAXED);
 
 	{
 		int chained = neverc_krt_a64_is_hook_patch(ibuf[0]);
@@ -1048,7 +1045,7 @@ int neverc_krt_hook_install(struct neverc_krt_hook *h, void *target,
 	}
 
 	h->active = 1;
-	h->enabled = 1;
+	WRITE_ONCE(h->enabled, 1);
 	__atomic_fetch_add(&_neverc_krt_hook_install_cnt, 1, __ATOMIC_RELAXED);
 	return NEVERC_KRT_HOOK_OK;
 }
@@ -1204,7 +1201,7 @@ int neverc_krt_hook_install_ctx(struct neverc_krt_hook_ctx *h, void *target,
 	}
 
 	h->base.active = 1;
-	h->base.enabled = 1;
+	WRITE_ONCE(h->base.enabled, 1);
 	__atomic_fetch_add(&_neverc_krt_hook_install_cnt, 1, __ATOMIC_RELAXED);
 	return NEVERC_KRT_HOOK_OK;
 }
@@ -1473,8 +1470,8 @@ void neverc_krt_hook_cleanup(void)
 		_neverc_krt_pool[i].magic = 0;
 	}
 	_neverc_krt_pool_count = 0;
-	_neverc_krt_pool_alloc_total = 0;
-	_neverc_krt_pool_alloc_bytes = 0;
+	__atomic_store_n(&_neverc_krt_pool_alloc_total, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&_neverc_krt_pool_alloc_bytes, 0, __ATOMIC_RELAXED);
 	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_pool_lock, flags);
 	_neverc_krt_inited = 0;
 }
@@ -1882,18 +1879,6 @@ unsigned long neverc_krt_strip_pac(unsigned long addr)
 	if (is_kernel)
 		addr |= ~mask;
 	return addr;
-}
-
-static int neverc_krt_a64_is_kcfi_tag(u32 *addr)
-{
-	u32 insn;
-	if (neverc_krt_mem_read(&insn, (void *)((unsigned long)addr - 4), 4))
-		return 0;
-	if (insn == 0 || insn == NEVERC_KRT_A64_NOP)
-		return 0;
-	if ((insn & 0xFFE0001FU) == 0xD4A00000U)
-		return 1;
-	return 0;
 }
 
 static int neverc_krt_a64_is_ftrace_site(u32 *code)

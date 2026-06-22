@@ -3,7 +3,6 @@
 #define NEVERC_KRT_LOG_H
 
 #include <linux/types.h>
-#include <nvk_rt.h>
 #include <linux/compiler.h>
 #include <linux/printk.h>
 #include <nvk_timer.h>
@@ -25,7 +24,7 @@ enum neverc_krt_log_level {
 #define NEVERC_KRT_LOG_DEFAULT_LEVEL NEVERC_KRT_LOG_INFO
 #endif
 
-NEVERC_KRT_RT_VAR volatile int _neverc_krt_log_level;
+extern volatile int _neverc_krt_log_level;
 
 static __always_inline void neverc_krt_log_set_level(int level)
 {

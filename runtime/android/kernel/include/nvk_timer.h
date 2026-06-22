@@ -83,9 +83,9 @@ static __always_inline u64 neverc_krt_arch_counter(void)
 
 static __always_inline u32 neverc_krt_arch_counter_freq(void)
 {
-	u32 freq;
+	u64 freq;
 	__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(freq));
-	return freq;
+	return (u32)freq;
 }
 
 static __always_inline u64 neverc_krt_arch_counter_to_ns(u64 ticks)
