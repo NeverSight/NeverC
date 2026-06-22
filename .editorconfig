@@ -1,0 +1,23 @@
+root = true
+
+[*]
+end_of_line = lf
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Third-party / vendored trees: leave formatting untouched.
+# Only the vendored arch sysroots under runtime/{linux,android} are excluded;
+# runtime/android/kernel (our code) stays forced-LF.
+[{llvm,runtime/windows,runtime/macos,runtime/linux/arm64,runtime/linux/x64,runtime/android/arm64,runtime/android/x64}/**]
+end_of_line = unset
+charset = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+
+# Binary file types
+[*.{ko,o,obj,a,lib,so,dylib,dll,exe,bin,png,jpg,jpeg,gif,ico,pdf,zip,gz,xz}]
+end_of_line = unset
+charset = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset

@@ -1,0 +1,41 @@
+# Force LF line endings on all platforms.
+# Prevents CRLF (from Windows / shared folders) from breaking builds,
+# assemblers and exact-match tests.
+* text=auto eol=lf
+
+# --- Third-party / vendored trees: keep bytes exactly as committed ---
+# These contain upstream code or SDK / sysroot headers that may be CRLF
+# (Windows SDK/WDK, Apple/Linux/Android sysroots, upstream LLVM). Do not
+# renormalize them; llvm/ keeps its own llvm/.gitattributes rules on top.
+# NOTE: only the vendored arch sysroots under runtime/{linux,android} are
+# excluded. runtime/android/kernel (our own NeverC kernel runtime) and loose
+# scripts like runtime/linux/extract-sysroot.sh are intentionally NOT excluded
+# so they get forced LF.
+llvm/**                  -text
+runtime/windows/**       -text
+runtime/macos/**         -text
+runtime/linux/arm64/**   -text
+runtime/linux/x64/**     -text
+runtime/android/arm64/** -text
+runtime/android/x64/**   -text
+
+# --- Binary file types: never apply text conversion ---
+*.ko     binary
+*.o      binary
+*.obj    binary
+*.a      binary
+*.lib    binary
+*.so     binary
+*.dylib  binary
+*.dll    binary
+*.exe    binary
+*.bin    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.zip    binary
+*.gz     binary
+*.xz     binary
