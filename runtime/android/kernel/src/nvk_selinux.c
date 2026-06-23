@@ -107,7 +107,7 @@ static volatile int *_neverc_krt_se_probe_fn(void)
 		if ((insn & 0x9F000000) == 0x90000000) {
 			int rd = insn & 0x1F;
 			int immlo = (insn >> 29) & 3;
-			long immhi = neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
+			long immhi = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
 			unsigned long page = ((unsigned long)&code[i] & ~0xFFFUL)
 					     + (((immhi << 2) | immlo) << 12);
 			if (i + 1 < 32) {

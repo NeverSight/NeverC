@@ -488,7 +488,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 
 	case NEVERC_KRT_PC_ADRP: {
 		int immlo = (insn >> 29) & 3;
-		long immhi = neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
+		long immhi = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
 		target = (old_pc & ~0xFFFUL) + (((immhi << 2) | immlo) << 12);
 		int rd = insn & 0x1F;
 		n = neverc_krt_a64_gen_mov64(out, rd, target);
@@ -497,14 +497,14 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 
 	case NEVERC_KRT_PC_ADR: {
 		int immlo = (insn >> 29) & 3;
-		long immhi = neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
+		long immhi = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
 		target = old_pc + ((immhi << 2) | immlo);
 		int rd = insn & 0x1F;
 		return neverc_krt_a64_gen_mov64(out, rd, target);
 	}
 
 	case NEVERC_KRT_PC_B: {
-		long imm26 = neverc_krt_sext(insn & 0x3FFFFFF, 26);
+		long imm26 = _neverc_krt_sext(insn & 0x3FFFFFF, 26);
 		target = old_pc + (imm26 << 2);
 		n = neverc_krt_a64_gen_mov64(out, 17, target);
 		out[n++] = NEVERC_KRT_A64_RET_X17;
@@ -512,7 +512,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 	}
 
 	case NEVERC_KRT_PC_BL: {
-		long imm26 = neverc_krt_sext(insn & 0x3FFFFFF, 26);
+		long imm26 = _neverc_krt_sext(insn & 0x3FFFFFF, 26);
 		target = old_pc + (imm26 << 2);
 		n = neverc_krt_a64_gen_mov64(out, 17, target);
 		out[n++] = 0xD63F0220U;  /* BLR X17 */
@@ -520,7 +520,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 	}
 
 	case NEVERC_KRT_PC_BCOND: {
-		long imm19 = neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
+		long imm19 = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
 		target = old_pc + (imm19 << 2);
 		u32 inv = (insn & 0xFF00000FU) ^ 1U;  /* invert LSB of cond */
 		int skip_n = 1 + 3 + 1;  /* worst case: MOVZ+2MOVK+RET = 4/5 */
@@ -537,7 +537,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 	}
 
 	case NEVERC_KRT_PC_CBZ: {
-		long imm19 = neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
+		long imm19 = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
 		target = old_pc + (imm19 << 2);
 		/* Invert CBZ<->CBNZ: toggle bit 24 */
 		u32 inv = insn ^ 0x01000000U;
@@ -553,7 +553,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 	}
 
 	case NEVERC_KRT_PC_TBZ: {
-		long imm14 = neverc_krt_sext((insn >> 5) & 0x3FFF, 14);
+		long imm14 = _neverc_krt_sext((insn >> 5) & 0x3FFF, 14);
 		target = old_pc + (imm14 << 2);
 		/* Invert TBZ<->TBNZ: toggle bit 24 */
 		u32 inv = insn ^ 0x01000000U;
@@ -569,7 +569,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 	}
 
 	case NEVERC_KRT_PC_LDR_LIT: {
-		long imm19 = neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
+		long imm19 = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
 		target = old_pc + (imm19 << 2);
 		int rt = insn & 0x1F;
 		int opc = (insn >> 30) & 3;
@@ -594,7 +594,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 	}
 
 	case NEVERC_KRT_PC_LDRSW_LIT: {
-		long imm19 = neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
+		long imm19 = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
 		target = old_pc + (imm19 << 2);
 		int rt = insn & 0x1F;
 		n = neverc_krt_a64_gen_mov64(out, 17, target);
@@ -603,7 +603,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 	}
 
 	case NEVERC_KRT_PC_PRFM_LIT: {
-		long imm19 = neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
+		long imm19 = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
 		target = old_pc + (imm19 << 2);
 		int rt = insn & 0x1F;
 		n = neverc_krt_a64_gen_mov64(out, 17, target);
@@ -1888,7 +1888,7 @@ static int neverc_krt_a64_is_ftrace_site(u32 *code)
 		return 0;
 	if (insn == NEVERC_KRT_A64_BRK_FTRACE) return 1;
 	if ((insn & 0xFC000000) == 0x94000000) {
-		long imm26 = neverc_krt_sext(insn & 0x3FFFFFF, 26);
+		long imm26 = _neverc_krt_sext(insn & 0x3FFFFFF, 26);
 		long off = imm26 << 2;
 		if (off < -0x100000 || off > 0x100000) return 1;
 	}

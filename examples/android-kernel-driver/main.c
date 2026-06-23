@@ -21,11 +21,11 @@
  * pointer encryption scheme.  The default _neverc_krt_xor_opaque is NOT used
  * (enc/dec are the consumers of xor_opaque; overriding them bypasses it).
  *
- * Forward-declare _neverc_krt_cache_key here — C allows multiple tentative
- * definitions of the same static variable in one translation unit;
- * kallsyms.h's declaration merges with this one at link time.
+ * Forward-declare _neverc_krt_cache_key so the custom enc/dec functions
+ * below can reference it before kallsyms.h is included.  Must match
+ * the extern declaration in kallsyms.h (not static).
  */
-static unsigned long _neverc_krt_cache_key;
+extern unsigned long _neverc_krt_cache_key;
 
 static inline __attribute__((always_inline))
 unsigned long neverc_krt_rot_enc(unsigned long addr)

@@ -75,7 +75,7 @@ unsigned long _neverc_krt_get_file_dentry_off(void);
 
 void _neverc_krt_version_try_detect_from_banner(void);
 
-__always_inline long neverc_krt_sext(long v, int bits)
+__always_inline long _neverc_krt_sext(long v, int bits)
 {
 	long m = 1L << (bits - 1);
 	return (v ^ m) - m;
