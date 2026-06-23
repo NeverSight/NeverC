@@ -15,7 +15,14 @@ typedef struct {
 	gid_t val;
 } kgid_t;
 
-/* Capability set (64-bit on all GKI 5.10+). */
+/*
+ * Capability set — always 8 bytes on arm64.
+ *   5.10–6.1: struct { u32 cap[2]; }
+ *   6.6+:     struct { u64 val; }
+ * Both representations are 8 bytes, and the runtime reads capability
+ * bits as raw u32 words at probed offsets (_neverc_krt_cred_cap_off),
+ * so this compile-time type is used only for stack declarations.
+ */
 typedef struct {
 	u32 cap[2];
 } kernel_cap_t;

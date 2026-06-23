@@ -8,15 +8,18 @@
 struct platform_device; /* opaque */
 struct module;
 
-struct platform_driver {
-	int (*probe)(struct platform_device *);
-	int (*remove)(struct platform_device *);
-	void (*shutdown)(struct platform_device *);
-	int (*suspend)(struct platform_device *, u32 state);
-	int (*resume)(struct platform_device *);
-	struct device_driver driver;
-	void *id_table;
-};
+/*
+ * platform_driver layout varies across GKI 5.10–6.12:
+ *   - remove() return type: int (5.10–6.6) → void (6.12)
+ *   - struct device_driver grows with KABI and new fields
+ *   - 6.12 wraps remove/remove_new in a union
+ *
+ * Embedded struct device_driver requires a full definition that varies
+ * across kernel versions.  Declare opaque; users needing platform
+ * drivers should resolve platform_driver_register via NEVERC_KRT_LOOKUP
+ * and build the struct at the correct offsets for their target kernel.
+ */
+struct platform_driver;
 
 int platform_driver_register(struct platform_driver *drv);
 void platform_driver_unregister(struct platform_driver *drv);

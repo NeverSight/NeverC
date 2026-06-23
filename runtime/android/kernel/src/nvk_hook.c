@@ -725,7 +725,7 @@ static void _neverc_krt_pool_free(u32 *ptr)
 				_neverc_krt_pool[i] = _neverc_krt_pool[--_neverc_krt_pool_count];
 				_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_pool_lock, flags);
 				int w;
-				for (w = 0; w < sz / 4; w++)
+				for (w = 0; w < (sz >> 2); w++)
 					to_free[w] = 0xD4200000U | (0xDEADU << 5);
 				_neverc_krt_dcache_clean((unsigned long)to_free,
 						  (unsigned long)to_free + sz);
@@ -1706,17 +1706,17 @@ long _neverc_krt_chain_run(struct neverc_krt_hook_chain *chain,
 	int i, cnt;
 	long ret = 0;
 	struct neverc_krt_hook_chain_entry snap[NEVERC_KRT_CHAIN_MAX];
-	if (!chain) return 0;
-	__asm__ __volatile__("dmb ish" ::: "memory");
-	cnt = READ_ONCE(chain->count);
-	if (cnt > NEVERC_KRT_CHAIN_MAX) cnt = NEVERC_KRT_CHAIN_MAX;
+	if (unlikely(!chain)) return 0;
+	cnt = __atomic_load_n(&chain->count, __ATOMIC_ACQUIRE);
+	if (unlikely(cnt > NEVERC_KRT_CHAIN_MAX)) cnt = NEVERC_KRT_CHAIN_MAX;
 	for (i = 0; i < cnt; i++) {
-		snap[i].handler  = READ_ONCE(chain->entries[i].handler);
-		snap[i].active   = READ_ONCE(chain->entries[i].active);
+		snap[i].handler  = (void *)__atomic_load_n(
+			(unsigned long *)&chain->entries[i].handler, __ATOMIC_ACQUIRE);
+		snap[i].active   = __atomic_load_n(&chain->entries[i].active,
+						    __ATOMIC_RELAXED);
 	}
-	__asm__ __volatile__("dmb ish" ::: "memory");
 	for (i = 0; i < cnt; i++) {
-		if (!snap[i].active || !snap[i].handler) continue;
+		if (unlikely(!snap[i].active || !snap[i].handler)) continue;
 		neverc_krt_chain_handler_t h = (neverc_krt_chain_handler_t)snap[i].handler;
 		ret = h(chain->orig_fn, a0, a1, a2, a3, a4, a5);
 		if (ret != 0) return ret;
@@ -1858,8 +1858,8 @@ int neverc_krt_in_irq_context(void)
 	unsigned long task;
 	u32 count;
 	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (!kv)
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_RELAXED);
+	if (unlikely(!kv))
 		return 0;
 	unsigned long off = (kv <= 510) ? 24 : 16;
 	if (neverc_krt_mem_read(&count, (void *)(task + off), 4))

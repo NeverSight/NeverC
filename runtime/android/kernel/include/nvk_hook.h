@@ -189,7 +189,7 @@ static __always_inline void neverc_krt_hook_leave(struct neverc_krt_hook *h)
 
 static __always_inline int neverc_krt_hook_enter_safe(struct neverc_krt_hook *h)
 {
-	if (!READ_ONCE(h->enabled))
+	if (unlikely(!READ_ONCE(h->enabled)))
 		return 0;
 	return neverc_krt_hook_enter(h);
 }

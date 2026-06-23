@@ -6,7 +6,7 @@
 
 struct sk_buff;
 struct nf_hook_state;
-struct net;
+struct net_device;
 
 #define NF_DROP   0
 #define NF_ACCEPT 1
@@ -28,13 +28,25 @@ enum nf_inet_hooks {
 typedef unsigned int (*nf_hookfn)(void *priv, struct sk_buff *skb,
 				  const struct nf_hook_state *state);
 
+/*
+ * Layout verified against GKI 5.10–6.12.
+ *
+ * 5.10:     pf is u_int8_t, no hook_ops_type field (1 byte + 3 pad).
+ * 5.15–6.12: pf is u8, hook_ops_type:8 bitfield follows (2 bytes + 2 pad).
+ *
+ * Zero-initializing _reserved makes this layout work on both:
+ *   5.10: _reserved occupies what the kernel treats as padding.
+ *   5.15+: _reserved maps to hook_ops_type = NF_HOOK_OP_UNDEFINED (0).
+ */
 struct nf_hook_ops {
-	nf_hookfn *hook;
-	struct net *dev;
-	void *priv;
-	int pf;
-	unsigned int hooknum;
-	int priority;
+	nf_hookfn          *hook;
+	struct net_device  *dev;
+	void               *priv;
+	u8                  pf;
+	u8                  _reserved;
+	u16                 _pad;
+	unsigned int        hooknum;
+	int                 priority;
 };
 
 int nf_register_net_hook(struct net *net, const struct nf_hook_ops *ops);

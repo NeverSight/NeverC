@@ -9,10 +9,14 @@
  *
  * Only regs[0..30] are accessed by the runtime (via X0–X8 for syscall
  * arguments).  Fields after pstate vary slightly across versions:
- *   5.10–5.15: orig_x0 + {syscallno(s32),unused2(u32)} + orig_addr_limit + pmr_save + stackframe[2]
- *   6.1+:      orig_x0 + {syscallno(s32),unused2(u32)} + sdei_ttbr1    + pmr_save + stackframe[2]
- * The name/semantics of the field at offset 288 changed but the size
- * and alignment did not.  sizeof(struct pt_regs) >= 320 on all versions.
+ *   5.10:      orig_x0 + {syscallno,_pad} + orig_addr_limit + pmr_save + stackframe[2]
+ *   5.15–6.12: orig_x0 + {syscallno,_pad} + sdei_ttbr1     + pmr_save + stackframe[2]
+ * The name/semantics of the field at offset 288 changed (5.15+) but
+ * the size and alignment did not.
+ *
+ * Kernel's full pt_regs also has lockdep_hardirqs(u64) + exit_rcu(u64)
+ * after stackframe[], making sizeof(pt_regs) = 336.  We only define
+ * the first 320 bytes; code must use pointer access, never sizeof.
  */
 struct pt_regs {
 	u64 regs[31];   /* x0 – x30, offsets 0–240 */

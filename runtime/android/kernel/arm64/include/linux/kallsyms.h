@@ -134,9 +134,11 @@ static __always_inline unsigned long _neverc_krt_sym_cached(const char *name)
 	unsigned long addr = _neverc_krt_sym_resolver(name);
 	if (addr) {
 		__atomic_store_n(&_neverc_krt_sym_cache[idx].enc,
-				 _neverc_krt_ptr_enc(addr), __ATOMIC_RELEASE);
+				 0, __ATOMIC_RELAXED);
 		__atomic_store_n(&_neverc_krt_sym_cache[idx].hash,
 				 h, __ATOMIC_RELEASE);
+		__atomic_store_n(&_neverc_krt_sym_cache[idx].enc,
+				 _neverc_krt_ptr_enc(addr), __ATOMIC_RELEASE);
 	}
 	return addr;
 }

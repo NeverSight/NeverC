@@ -148,7 +148,7 @@ int neverc_krt_mem_init(void)
 
 long neverc_krt_mem_read(void *dst, const void *src, size_t len)
 {
-	if (_neverc_krt_probe_read)
+	if (likely(_neverc_krt_probe_read))
 		return _neverc_krt_probe_read(dst, src, len);
 
 	unsigned char *d = (unsigned char *)dst;
@@ -162,7 +162,7 @@ long neverc_krt_mem_read(void *dst, const void *src, size_t len)
 
 long neverc_krt_mem_write(void *dst, const void *src, size_t len)
 {
-	if (_neverc_krt_probe_write)
+	if (likely(_neverc_krt_probe_write))
 		return _neverc_krt_probe_write(dst, src, len);
 
 	volatile unsigned char *d =
