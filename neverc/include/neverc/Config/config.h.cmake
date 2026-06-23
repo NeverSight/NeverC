@@ -19,6 +19,9 @@
 /* Default object copy tool to use. */
 #define NEVERC_DEFAULT_OBJECT_COPY_TOOL "${NEVERC_DEFAULT_OBJECT_COPY_TOOL}"
 
+/* Default macOS deployment target used when no version is specified. */
+#define NEVERC_DARWIN_DEFAULT_DEPLOYMENT_TARGET "${NEVERC_DARWIN_DEFAULT_DEPLOYMENT_TARGET}"
+
 /* Multilib basename for libdir. */
 #define NEVERC_INSTALL_LIBDIR_BASENAME "${NEVERC_INSTALL_LIBDIR_BASENAME}"
 

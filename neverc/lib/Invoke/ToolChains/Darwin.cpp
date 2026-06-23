@@ -1005,16 +1005,19 @@ inferDeploymentTargetFromSDK(DerivedArgList &Args,
 std::string getOSVersion(llvm::Triple::OSType OS, const llvm::Triple &Triple,
                          const Driver &TheDriver) {
   llvm::VersionTuple OsVersion;
-  llvm::Triple SystemTriple{llvm::sys::getDefaultTargetTriple()};
   switch (OS) {
   case llvm::Triple::Darwin:
   case llvm::Triple::MacOSX:
-    // If there is no version specified on triple, and both host and target are
-    // macos, use the host triple to infer OS version.
-    if (Triple.isMacOSX() && SystemTriple.isMacOSX() &&
-        !Triple.getOSMajorVersion())
-      SystemTriple.getMacOSXVersion(OsVersion);
-    else if (!Triple.getMacOSXVersion(OsVersion))
+    // If the triple carries no explicit macOS version, do NOT inherit the build
+    // host's macOS version: that would make default output run only on "the
+    // build machine's macOS and newer".  Use a fixed, upward-compatible default
+    // deployment target instead, so binaries run on that version and every
+    // newer macOS.  Explicit -mmacosx-version-min, MACOSX_DEPLOYMENT_TARGET, or
+    // a versioned -target still take precedence (handled before this fallback).
+    if (Triple.isMacOSX() && !Triple.getOSMajorVersion()) {
+      if (OsVersion.tryParse(NEVERC_DARWIN_DEFAULT_DEPLOYMENT_TARGET))
+        OsVersion = llvm::VersionTuple(13, 0);
+    } else if (!Triple.getMacOSXVersion(OsVersion))
       TheDriver.Diag(diag::err_drv_invalid_darwin_version)
           << Triple.getOSName();
     break;
@@ -1034,20 +1037,24 @@ std::string getOSVersion(llvm::Triple::OSType OS, const llvm::Triple &Triple,
 }
 
 std::optional<DarwinPlatform>
-inferDeploymentTargetFromArch(DerivedArgList &Args, const Darwin &Toolchain,
-                              const llvm::Triple &Triple,
+inferDeploymentTargetFromArch(const llvm::Triple &Triple,
                               const Driver &TheDriver) {
-  llvm::Triple::OSType OSTy = llvm::Triple::UnknownOS;
+  // This fork only targets macOS (arm64 and x86_64), so arch-based platform
+  // inference always resolves to macOS.
+  const llvm::Triple::OSType OSTy = llvm::Triple::MacOSX;
 
-  llvm::StringRef MachOArchName = Toolchain.getMachOArchName(Args);
-  if (MachOArchName == "arm64")
-    OSTy = llvm::Triple::MacOSX;
-  else
-    OSTy = llvm::Triple::MacOSX; // x86, x86_64
-  if (OSTy == llvm::Triple::UnknownOS)
-    return std::nullopt;
-  return DarwinPlatform::createFromArch(OSTy,
-                                        getOSVersion(OSTy, Triple, TheDriver));
+  // This is the final fallback, reached only when no deployment target was
+  // specified via -target, -mtargetos=, -m<os>-version-min, the
+  // MACOSX_DEPLOYMENT_TARGET environment variable, or SDKSettings.json.  The
+  // toolchain triple (getTriple()) carries the build host's macOS version, so
+  // strip the OS version here: getOSVersion() then applies the fixed,
+  // upward-compatible default deployment target instead of inheriting the host
+  // version (which would make default output run only on the build machine's
+  // macOS and newer).
+  llvm::Triple VersionlessTriple(Triple);
+  VersionlessTriple.setOSName(llvm::Triple::getOSTypeName(OSTy));
+  return DarwinPlatform::createFromArch(
+      OSTy, getOSVersion(OSTy, VersionlessTriple, TheDriver));
 }
 
 std::optional<DarwinPlatform> getDeploymentTargetFromTargetArg(
@@ -1301,11 +1308,11 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
       if (OSTarget && !SDKInfo)
         SDKInfo = OSTarget->inferSDKInfo();
     }
-    // If no OS targets have been specified, try to guess platform from -target
-    // or arch name and compute the version from the triple.
+    // Last-resort fallback: nothing above specified a deployment target, so
+    // default the platform to macOS and apply the default deployment target
+    // (version derived from the version-stripped toolchain triple).
     if (!OSTarget)
-      OSTarget =
-          inferDeploymentTargetFromArch(Args, *this, getTriple(), getDriver());
+      OSTarget = inferDeploymentTargetFromArch(getTriple(), getDriver());
   }
 
   assert(OSTarget && "Unable to infer Darwin variant");

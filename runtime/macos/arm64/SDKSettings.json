@@ -1,0 +1,9 @@
+{
+    "Version": "14.5",
+    "CanonicalName": "macosx14.5",
+    "DisplayName": "macOS 14.5",
+    "MaximumDeploymentTarget": "14.5",
+    "DefaultProperties": {
+        "PLATFORM_NAME": "macosx"
+    }
+}

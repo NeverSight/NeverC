@@ -178,6 +178,13 @@ endif()
 set(NEVERC_DEFAULT_OBJECT_COPY_TOOL "objcopy" CACHE STRING
   "Default object copy executable to use.")
 
+# Default macOS deployment target used when the user specifies no version
+# (no -mmacosx-version-min, no MACOSX_DEPLOYMENT_TARGET, no versioned -target).
+# Pinning a fixed value (instead of inheriting the build host's macOS version)
+# makes default output upward-compatible: it runs on this version and every
+# newer macOS.  Any explicit version still overrides it (even a lower one).
+set(NEVERC_DARWIN_DEFAULT_DEPLOYMENT_TARGET "13.0" CACHE STRING
+  "Default macOS deployment target when none is specified (e.g. \"13.0\").")
 
 set(NEVERC_VENDOR ${PACKAGE_VENDOR} CACHE STRING
   "Vendor-specific text for showing with version information.")
