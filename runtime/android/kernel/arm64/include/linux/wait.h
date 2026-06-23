@@ -23,7 +23,7 @@ _Static_assert(sizeof(wait_queue_head_t) == 24,
 		.head = LIST_HEAD_INIT(name.head),                            \
 	}
 
-static __always_inline void init_waitqueue_head(wait_queue_head_t *wq)
+__always_inline void init_waitqueue_head(wait_queue_head_t *wq)
 {
 	wq->__lock = 0;
 	INIT_LIST_HEAD(&wq->head);
@@ -62,7 +62,7 @@ void wake_up_interruptible_all(wait_queue_head_t *wq_head);
 
 void schedule(void);
 
-static __always_inline void
+__always_inline void
 init_wait_entry(wait_queue_entry_t *wq_entry, int flags)
 {
 	wq_entry->flags = flags;
@@ -122,13 +122,13 @@ struct completion {
 			  .head = LIST_HEAD_INIT((work).wait.head) },         \
 	}
 
-static __always_inline void init_completion(struct completion *x)
+__always_inline void init_completion(struct completion *x)
 {
 	x->done = 0;
 	init_waitqueue_head(&x->wait);
 }
 
-static __always_inline void reinit_completion(struct completion *x)
+__always_inline void reinit_completion(struct completion *x)
 {
 	x->done = 0;
 }

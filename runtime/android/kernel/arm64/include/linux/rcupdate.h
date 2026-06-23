@@ -10,8 +10,8 @@
  * that matches non-preemptible kernels; if your target uses PREEMPT_RT,
  * resolve __rcu_read_lock / __rcu_read_unlock via kallsyms instead.
  */
-static __always_inline void rcu_read_lock(void) { barrier(); }
-static __always_inline void rcu_read_unlock(void) { barrier(); }
+__always_inline void rcu_read_lock(void) { barrier(); }
+__always_inline void rcu_read_unlock(void) { barrier(); }
 
 void synchronize_rcu(void);
 void call_rcu(struct callback_head *head, void (*func)(struct callback_head *));

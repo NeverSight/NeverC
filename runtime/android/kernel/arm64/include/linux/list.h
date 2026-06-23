@@ -8,13 +8,13 @@
 #define LIST_HEAD_INIT(name) { &(name), &(name) }
 #define LIST_HEAD(name) struct list_head name = LIST_HEAD_INIT(name)
 
-static __always_inline void INIT_LIST_HEAD(struct list_head *list)
+__always_inline void INIT_LIST_HEAD(struct list_head *list)
 {
 	list->next = list;
 	list->prev = list;
 }
 
-static __always_inline void __list_add(struct list_head *n,
+__always_inline void __list_add(struct list_head *n,
 				       struct list_head *prev,
 				       struct list_head *next)
 {
@@ -24,25 +24,25 @@ static __always_inline void __list_add(struct list_head *n,
 	prev->next = n;
 }
 
-static __always_inline void list_add(struct list_head *n, struct list_head *head)
+__always_inline void list_add(struct list_head *n, struct list_head *head)
 {
 	__list_add(n, head, head->next);
 }
 
-static __always_inline void list_add_tail(struct list_head *n,
+__always_inline void list_add_tail(struct list_head *n,
 					  struct list_head *head)
 {
 	__list_add(n, head->prev, head);
 }
 
-static __always_inline void list_del(struct list_head *entry)
+__always_inline void list_del(struct list_head *entry)
 {
 	entry->prev->next = entry->next;
 	entry->next->prev = entry->prev;
 	entry->next = entry->prev = entry;
 }
 
-static __always_inline int list_empty(const struct list_head *head)
+__always_inline int list_empty(const struct list_head *head)
 {
 	return head->next == head;
 }
@@ -69,33 +69,33 @@ static __always_inline int list_empty(const struct list_head *head)
 	     &pos->member != (head);                                           \
 	     pos = n, n = list_entry(n->member.next, __typeof__(*pos), member))
 
-static __always_inline void list_del_init(struct list_head *entry)
+__always_inline void list_del_init(struct list_head *entry)
 {
 	list_del(entry);
 	INIT_LIST_HEAD(entry);
 }
 
-static __always_inline int list_is_last(const struct list_head *list,
+__always_inline int list_is_last(const struct list_head *list,
 					const struct list_head *head)
 {
 	return list->next == head;
 }
 
-static __always_inline void list_move(struct list_head *list,
+__always_inline void list_move(struct list_head *list,
 				      struct list_head *head)
 {
 	list_del(list);
 	list_add(list, head);
 }
 
-static __always_inline void list_move_tail(struct list_head *list,
+__always_inline void list_move_tail(struct list_head *list,
 					   struct list_head *head)
 {
 	list_del(list);
 	list_add_tail(list, head);
 }
 
-static __always_inline void list_splice(struct list_head *list,
+__always_inline void list_splice(struct list_head *list,
 					struct list_head *head)
 {
 	if (!list_empty(list)) {

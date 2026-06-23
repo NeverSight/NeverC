@@ -22,6 +22,57 @@ static __always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
 	return 0x18;
 }
 
+void _neverc_krt_version_try_detect_from_banner(void)
+{
+	const char *banner;
+	char buf[64];
+	const char *p;
+	u32 major, minor;
+	int kv;
+
+	if (__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE))
+		return;
+
+	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
+	if (!banner)
+		banner = (const char *)NEVERC_KRT_LOOKUP("linux_proc_banner");
+	if (!banner)
+		return;
+
+	if (neverc_krt_mem_read(buf, banner, sizeof(buf)) != 0)
+		return;
+	buf[63] = '\0';
+
+	p = buf;
+	while (*p && !(*p >= '0' && *p <= '9'))
+		p++;
+	major = 0;
+	minor = 0;
+	while (*p >= '0' && *p <= '9') {
+		major = major * 10 + (*p - '0');
+		p++;
+	}
+	if (*p == '.') {
+		p++;
+		while (*p >= '0' && *p <= '9') {
+			minor = minor * 10 + (*p - '0');
+			p++;
+		}
+	}
+	kv = (int)(major * 100 + minor);
+	if (kv < 510)
+		kv = 510;
+
+	if (!__atomic_load_n(&_neverc_krt_file_dentry_off, __ATOMIC_RELAXED))
+		__atomic_store_n(&_neverc_krt_file_dentry_off,
+				 _neverc_krt_file_dentry_off_for(kv),
+				 __ATOMIC_RELAXED);
+	__atomic_store_n(&_neverc_krt_module_size,
+			 _neverc_krt_module_size_for(kv),
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&_neverc_krt_kernel_ver, kv, __ATOMIC_RELEASE);
+}
+
 void _neverc_krt_version_setup_impl(int kv)
 {
 	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {

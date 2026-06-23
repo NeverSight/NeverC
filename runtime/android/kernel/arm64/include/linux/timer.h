@@ -32,7 +32,7 @@ struct timer_list {
 #define DEFINE_TIMER(_name, _function)                                        \
 	struct timer_list _name = __TIMER_INITIALIZER(_function, 0)
 
-static __always_inline void
+__always_inline void
 timer_setup(struct timer_list *timer,
 	    void (*callback)(struct timer_list *), unsigned int flags)
 {

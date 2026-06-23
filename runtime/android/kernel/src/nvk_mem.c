@@ -4,6 +4,10 @@
 
 /* ---- file-local typedefs ---- */
 
+typedef long (*neverc_krt_probe_read_fn)(void *dst, const void *src,
+					 size_t len);
+typedef long (*neverc_krt_probe_write_fn)(void *dst, const void *src,
+					  size_t len);
 typedef int (*neverc_krt_set_memory_fn)(unsigned long addr, int numpages);
 typedef void (*neverc_krt_update_mapping_prot_fn)(u64 phys, unsigned long virt,
 						  u64 size, u64 prot);
@@ -99,48 +103,8 @@ int neverc_krt_mem_init(void)
 	 * their module code (where NEVERC_KRT_KERNEL is correct), this
 	 * block is skipped (kernel_ver already set).
 	 */
-	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
-		const char *banner =
-			(const char *)NEVERC_KRT_LOOKUP("linux_banner");
-		if (!banner)
-			banner = (const char *)NEVERC_KRT_LOOKUP(
-				"linux_proc_banner");
-		if (banner) {
-			char buf[64];
-			if (neverc_krt_mem_read(buf, banner, sizeof(buf)) == 0) {
-				buf[63] = '\0';
-				const char *p = buf;
-				while (*p && !(*p >= '0' && *p <= '9')) p++;
-				u32 major = 0, minor = 0;
-				while (*p >= '0' && *p <= '9') {
-					major = major * 10 + (*p - '0');
-					p++;
-				}
-				if (*p == '.') {
-					p++;
-					while (*p >= '0' && *p <= '9') {
-						minor = minor * 10 + (*p - '0');
-						p++;
-					}
-				}
-				int kv = (int)(major * 100 + minor);
-				if (kv < 510) kv = 510;
-
-				if (!__atomic_load_n(
-					    &_neverc_krt_file_dentry_off,
-					    __ATOMIC_RELAXED))
-					__atomic_store_n(
-						&_neverc_krt_file_dentry_off,
-						_neverc_krt_file_dentry_off_for(kv),
-						__ATOMIC_RELAXED);
-				__atomic_store_n(&_neverc_krt_module_size,
-						 _neverc_krt_module_size_for(kv),
-						 __ATOMIC_RELAXED);
-				__atomic_store_n(&_neverc_krt_kernel_ver, kv,
-						 __ATOMIC_RELEASE);
-			}
-		}
-	}
+	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE))
+		_neverc_krt_version_try_detect_from_banner();
 
 	_neverc_krt_mem_inited = 1;
 	return 0;

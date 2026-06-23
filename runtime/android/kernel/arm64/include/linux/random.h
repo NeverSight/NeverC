@@ -11,7 +11,7 @@ u64 get_random_u64(void);
 #define get_random_int()  get_random_u32()
 #define get_random_long() get_random_u64()
 
-static __always_inline u32 prandom_u32_max(u32 ep_ro)
+__always_inline u32 prandom_u32_max(u32 ep_ro)
 {
 	return (u32)(((u64)get_random_u32() * ep_ro) >> 32);
 }

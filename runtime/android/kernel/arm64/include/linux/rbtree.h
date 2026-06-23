@@ -27,7 +27,7 @@ struct rb_node *rb_prev(const struct rb_node *node);
 void rb_replace_node(struct rb_node *victim, struct rb_node *new_node,
 		     struct rb_root *root);
 
-static __always_inline void rb_link_node(struct rb_node *node,
+__always_inline void rb_link_node(struct rb_node *node,
 					 struct rb_node *parent,
 					 struct rb_node **rb_link)
 {

@@ -26,7 +26,7 @@ struct pt_regs {
 	u64 orig_x0;    /* offset 272 */
 	s32 syscallno;  /* offset 280 */
 	u32 _pad0;      /* offset 284 */
-	u64 _reserved;  /* offset 288: orig_addr_limit (5.10/5.15) or sdei_ttbr1 (6.1+) */
+	u64 _reserved;  /* offset 288: orig_addr_limit (5.10) or sdei_ttbr1 (5.15+) */
 	u64 pmr_save;   /* offset 296 */
 	u64 stackframe[2]; /* offset 304 */
 };

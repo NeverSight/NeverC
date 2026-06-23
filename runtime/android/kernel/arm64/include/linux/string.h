@@ -31,7 +31,7 @@ int scnprintf(char *buf, size_t size, const char *fmt, ...) __printf(3, 4);
 #define __neverc_krt_strncmp __builtin_strncmp
 #define __neverc_krt_strcpy  __builtin_strcpy
 
-static __always_inline void neverc_krt_memzero(void *s, size_t n)
+__always_inline void neverc_krt_memzero(void *s, size_t n)
 {
 	unsigned char *p = (unsigned char *)s;
 	while (n--) *p++ = 0;

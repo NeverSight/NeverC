@@ -26,12 +26,12 @@ enum neverc_krt_log_level {
 
 extern volatile int _neverc_krt_log_level;
 
-static __always_inline void neverc_krt_log_set_level(int level)
+__always_inline void neverc_krt_log_set_level(int level)
 {
 	__atomic_store_n(&_neverc_krt_log_level, level, __ATOMIC_RELEASE);
 }
 
-static __always_inline int neverc_krt_log_get_level(void)
+__always_inline int neverc_krt_log_get_level(void)
 {
 	return __atomic_load_n(&_neverc_krt_log_level, __ATOMIC_ACQUIRE);
 }

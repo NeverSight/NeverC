@@ -5,7 +5,7 @@
 #include <linux/list.h>
 #include <linux/rcupdate.h>
 
-static __always_inline void list_add_rcu(struct list_head *n,
+__always_inline void list_add_rcu(struct list_head *n,
 					 struct list_head *head)
 {
 	n->next = head->next;
@@ -14,7 +14,7 @@ static __always_inline void list_add_rcu(struct list_head *n,
 	rcu_assign_pointer(head->next, n);
 }
 
-static __always_inline void list_add_tail_rcu(struct list_head *n,
+__always_inline void list_add_tail_rcu(struct list_head *n,
 					      struct list_head *head)
 {
 	n->next = head;
@@ -23,7 +23,7 @@ static __always_inline void list_add_tail_rcu(struct list_head *n,
 	rcu_assign_pointer(head->prev, n);
 }
 
-static __always_inline void list_del_rcu(struct list_head *entry)
+__always_inline void list_del_rcu(struct list_head *entry)
 {
 	entry->prev->next = entry->next;
 	entry->next->prev = entry->prev;

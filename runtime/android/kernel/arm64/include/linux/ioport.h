@@ -26,7 +26,7 @@ struct resource *request_region(unsigned long start, unsigned long n,
 				const char *name);
 void release_region(unsigned long start, unsigned long n);
 
-static __always_inline unsigned long resource_size(const struct resource *res)
+__always_inline unsigned long resource_size(const struct resource *res)
 { return res->end - res->start + 1; }
 
 #endif /* _NEVERC_KRT_LINUX_IOPORT_H */

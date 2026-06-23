@@ -57,7 +57,7 @@ int hrtimer_try_to_cancel(struct hrtimer *timer);
 u64 hrtimer_forward_now(struct hrtimer *timer, ktime_t interval);
 
 /* ktime helpers. */
-static __always_inline ktime_t ktime_set(const s64 secs, const unsigned long nsecs)
+__always_inline ktime_t ktime_set(const s64 secs, const unsigned long nsecs)
 {
 	return secs * 1000000000LL + (s64)nsecs;
 }

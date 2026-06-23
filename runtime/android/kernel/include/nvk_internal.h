@@ -15,10 +15,6 @@
 
 /* ---- Shared typedefs (used across multiple .c files) ---- */
 
-typedef long (*neverc_krt_probe_read_fn)(void *dst, const void *src,
-					 size_t len);
-typedef long (*neverc_krt_probe_write_fn)(void *dst, const void *src,
-					  size_t len);
 typedef unsigned long (*neverc_krt_copy_from_user_fn)(void *to,
 						      const void __user *from,
 						      unsigned long n);
@@ -39,6 +35,11 @@ extern neverc_krt_copy_from_user_fn _neverc_krt_copy_from_user;
 extern neverc_krt_copy_to_user_fn   _neverc_krt_copy_to_user;
 extern neverc_krt_pte_rw_fn         _neverc_krt_pte_make_rw;
 extern neverc_krt_pte_rw_fn         _neverc_krt_pte_make_ro;
+
+/* ---- nvk_vma.c (shared with nvk_inject.c) ---- */
+
+extern neverc_krt_get_task_mm_fn    _neverc_krt_get_task_mm;
+extern neverc_krt_mmput_fn          _neverc_krt_mmput;
 
 unsigned long _neverc_krt_mem_get_page_size(void);
 
@@ -62,12 +63,6 @@ volatile int *_neverc_krt_se_probe_state(void *se_state);
 
 int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
 
-static __always_inline long neverc_krt_sext(long v, int bits)
-{ long m = 1L << (bits - 1); return (v ^ m) - m; }
-
-#define NEVERC_KRT_A64_RET_X16  0xD65F0200U
-#define NEVERC_KRT_A64_RET_X17  0xD65F0220U
-
 /* ---- nvk_compat.c ---- */
 
 extern unsigned long _neverc_krt_module_size;
@@ -77,5 +72,13 @@ extern unsigned long _neverc_krt_file_dentry_off;
 unsigned long _neverc_krt_get_module_size(void);
 unsigned long _neverc_krt_cred_uid_base(void);
 unsigned long _neverc_krt_get_file_dentry_off(void);
+
+void _neverc_krt_version_try_detect_from_banner(void);
+
+__always_inline long neverc_krt_sext(long v, int bits)
+{
+	long m = 1L << (bits - 1);
+	return (v ^ m) - m;
+}
 
 #endif /* NEVERC_KRT_INTERNAL_H */

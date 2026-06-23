@@ -11,22 +11,22 @@ void __iomem *ioremap(phys_addr_t phys_addr, size_t size);
 void iounmap(volatile void __iomem *addr);
 
 /* Raw MMIO accessors (no barrier). */
-static __always_inline u8  __raw_readb(const volatile void __iomem *addr)
+__always_inline u8  __raw_readb(const volatile void __iomem *addr)
 { return *(const volatile u8 *)addr; }
-static __always_inline u16 __raw_readw(const volatile void __iomem *addr)
+__always_inline u16 __raw_readw(const volatile void __iomem *addr)
 { return *(const volatile u16 *)addr; }
-static __always_inline u32 __raw_readl(const volatile void __iomem *addr)
+__always_inline u32 __raw_readl(const volatile void __iomem *addr)
 { return *(const volatile u32 *)addr; }
-static __always_inline u64 __raw_readq(const volatile void __iomem *addr)
+__always_inline u64 __raw_readq(const volatile void __iomem *addr)
 { return *(const volatile u64 *)addr; }
 
-static __always_inline void __raw_writeb(u8 val, volatile void __iomem *addr)
+__always_inline void __raw_writeb(u8 val, volatile void __iomem *addr)
 { *(volatile u8 *)addr = val; }
-static __always_inline void __raw_writew(u16 val, volatile void __iomem *addr)
+__always_inline void __raw_writew(u16 val, volatile void __iomem *addr)
 { *(volatile u16 *)addr = val; }
-static __always_inline void __raw_writel(u32 val, volatile void __iomem *addr)
+__always_inline void __raw_writel(u32 val, volatile void __iomem *addr)
 { *(volatile u32 *)addr = val; }
-static __always_inline void __raw_writeq(u64 val, volatile void __iomem *addr)
+__always_inline void __raw_writeq(u64 val, volatile void __iomem *addr)
 { *(volatile u64 *)addr = val; }
 
 /* Ordered MMIO accessors (with barriers). */

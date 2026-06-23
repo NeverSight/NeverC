@@ -49,13 +49,13 @@ void tasklet_hi_schedule(struct tasklet_struct *t);
 void tasklet_kill(struct tasklet_struct *t);
 
 /* Local IRQ control. */
-static __always_inline void local_irq_disable(void)
+__always_inline void local_irq_disable(void)
 { __asm__ volatile("msr daifset, #3" ::: "memory"); }
 
-static __always_inline void local_irq_enable(void)
+__always_inline void local_irq_enable(void)
 { __asm__ volatile("msr daifclr, #3" ::: "memory"); }
 
-static __always_inline unsigned long local_irq_save(void)
+__always_inline unsigned long local_irq_save(void)
 {
 	unsigned long flags;
 	__asm__ volatile("mrs %0, daif\n\tmsr daifset, #3"
@@ -63,7 +63,7 @@ static __always_inline unsigned long local_irq_save(void)
 	return flags;
 }
 
-static __always_inline void local_irq_restore(unsigned long flags)
+__always_inline void local_irq_restore(unsigned long flags)
 { __asm__ volatile("msr daif, %0" :: "r"(flags) : "memory"); }
 
 #endif /* _NEVERC_KRT_LINUX_INTERRUPT_H */

@@ -27,8 +27,6 @@ static neverc_krt_do_mmap_fn          _neverc_krt_do_mmap;
 static neverc_krt_vm_mmap_fn          _neverc_krt_vm_mmap;
 static neverc_krt_do_munmap_fn        _neverc_krt_do_munmap;
 static int                            _neverc_krt_inject_inited;
-static neverc_krt_get_task_mm_fn      _neverc_krt_get_task_mm;
-static neverc_krt_mmput_fn            _neverc_krt_mmput;
 static neverc_krt_mmap_write_lock_fn  _neverc_krt_mmap_wlock;
 static neverc_krt_mmap_write_unlock_fn _neverc_krt_mmap_wunlock;
 static neverc_krt_use_mm_fn           _neverc_krt_use_mm;
@@ -106,7 +104,10 @@ static void _neverc_krt_inject_resolve_mm(void)
 	if (!_neverc_krt_get_task_mm) {
 		_neverc_krt_get_task_mm =
 			(neverc_krt_get_task_mm_fn)NEVERC_KRT_LOOKUP("get_task_mm");
-		_neverc_krt_mmput = (neverc_krt_mmput_fn)NEVERC_KRT_LOOKUP("mmput");
+		_neverc_krt_mmput =
+			(neverc_krt_mmput_fn)NEVERC_KRT_LOOKUP("mmput");
+	}
+	if (!_neverc_krt_mmap_wlock) {
 		_neverc_krt_mmap_wlock =
 			(neverc_krt_mmap_write_lock_fn)NEVERC_KRT_LOOKUP("mmap_write_lock");
 		if (!_neverc_krt_mmap_wlock)

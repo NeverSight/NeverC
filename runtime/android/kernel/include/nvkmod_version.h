@@ -196,7 +196,7 @@
  */
 void _neverc_krt_version_setup_impl(int kv);
 
-static __always_inline void _neverc_krt_version_setup(void)
+__always_inline void _neverc_krt_version_setup(void)
 {
 	_neverc_krt_version_setup_impl(NEVERC_KRT_KERNEL);
 }

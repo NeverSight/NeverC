@@ -119,9 +119,8 @@ typedef struct {
 #define NEVERC_KRT_A64_PACIASP   0xD503233FU
 #define NEVERC_KRT_A64_PACIBSP   0xD503237FU
 
-/* ARM64 instruction constants retained for user shellcode / custom hooks. */
-
-
+#define NEVERC_KRT_A64_RET_X16   0xD65F0200U
+#define NEVERC_KRT_A64_RET_X17   0xD65F0220U
 
 enum neverc_krt_hook_err {
 	NEVERC_KRT_HOOK_OK         =  0,
@@ -155,22 +154,22 @@ struct neverc_krt_hook {
 #define NEVERC_KRT_HOOK_COUNT(h) \
 	__atomic_fetch_add(&(h)->hit_count, 1, __ATOMIC_RELAXED)
 
-static __always_inline u64 neverc_krt_hook_hits(struct neverc_krt_hook *h)
+__always_inline u64 neverc_krt_hook_hits(struct neverc_krt_hook *h)
 { return __atomic_load_n(&h->hit_count, __ATOMIC_RELAXED); }
 
-static __always_inline void neverc_krt_hook_reset_stats(struct neverc_krt_hook *h)
+__always_inline void neverc_krt_hook_reset_stats(struct neverc_krt_hook *h)
 { __atomic_store_n(&h->hit_count, 0, __ATOMIC_RELAXED); }
 
 int neverc_krt_in_irq_context(void);
 
-static __always_inline int neverc_krt_irq_disabled(void)
+__always_inline int neverc_krt_irq_disabled(void)
 {
 	unsigned long daif;
 	__asm__ __volatile__("mrs %0, daif" : "=r"(daif));
 	return (daif & (1UL << 7)) != 0;
 }
 
-static __always_inline int neverc_krt_hook_enter(struct neverc_krt_hook *h)
+__always_inline int neverc_krt_hook_enter(struct neverc_krt_hook *h)
 {
 	unsigned long task;
 	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
@@ -182,12 +181,12 @@ static __always_inline int neverc_krt_hook_enter(struct neverc_krt_hook *h)
 	return 1;
 }
 
-static __always_inline void neverc_krt_hook_leave(struct neverc_krt_hook *h)
+__always_inline void neverc_krt_hook_leave(struct neverc_krt_hook *h)
 {
 	__atomic_store_n(&h->guard, 0, __ATOMIC_RELEASE);
 }
 
-static __always_inline int neverc_krt_hook_enter_safe(struct neverc_krt_hook *h)
+__always_inline int neverc_krt_hook_enter_safe(struct neverc_krt_hook *h)
 {
 	if (unlikely(!READ_ONCE(h->enabled)))
 		return 0;
@@ -288,13 +287,13 @@ int neverc_krt_hook_replace_ctx(struct neverc_krt_hook_ctx *h,
 				neverc_krt_ctx_handler_t new_handler);
 
 
-static __always_inline int neverc_krt_hook_is_enabled(struct neverc_krt_hook *h)
+__always_inline int neverc_krt_hook_is_enabled(struct neverc_krt_hook *h)
 { return READ_ONCE(h->enabled); }
 
-static __always_inline void neverc_krt_hook_enable(struct neverc_krt_hook *h)
+__always_inline void neverc_krt_hook_enable(struct neverc_krt_hook *h)
 { WRITE_ONCE(h->enabled, 1); }
 
-static __always_inline void neverc_krt_hook_disable(struct neverc_krt_hook *h)
+__always_inline void neverc_krt_hook_disable(struct neverc_krt_hook *h)
 { WRITE_ONCE(h->enabled, 0); }
 
 struct neverc_krt_hook_batch {
