@@ -130,7 +130,8 @@ static void neverc_krt_stealth_exit(void)
 #ifdef NEVERC_KRT_CONTEXT_HOOK
 	neverc_krt_hook_remove_ctx(&find_module_ctx);
 #endif
-	_neverc_krt_hide_cleanup(&hide_state, &__this_module);
+	neverc_krt_hide_remove_hooks();
+	neverc_krt_mod_show(&hide_state, &__this_module);
 	neverc_krt_log_info("unloaded\n");
 }
 

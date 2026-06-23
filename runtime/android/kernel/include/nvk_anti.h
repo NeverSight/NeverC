@@ -130,14 +130,6 @@ static __always_inline int neverc_krt_anti_check_stack_depth(void)
 	return 0;
 }
 
-static __always_inline u64 neverc_krt_anti_read_midr(void)
-{
-	u64 v;
-	__asm__ __volatile__("mrs %0, midr_el1" : "=r"(v));
-	return v;
-}
-
-
 int neverc_krt_anti_detect_su_binary(void);
 
 

@@ -360,15 +360,30 @@ void neverc_krt_fptr_restore(struct neverc_krt_fptr_hook *h);
 /* --- ftrace-based hook (fallback for unhookable functions) --- */
 
 /*
- * Storage for kernel's struct ftrace_ops (CONFIG_DYNAMIC_FTRACE=y).
- * Layout across GKI 5.10-6.12 arm64:
- *   func(8) + next(8) + flags(8) + private(8) + saved_func(8) = 40
- *   + 2 × ftrace_ops_hash(~64 each, contains struct mutex ~48)
- *   + func_hash(8) + trampoline(8) + trampoline_size(8) + list(16)
- *   6.6 adds:  ops_func(8)
- *   6.12 adds: subop_list(16) + managed(8)
- * Estimated max: ~208 (5.10) / ~216 (6.6) / ~240 (6.12).
- * 256 bytes covers all versions with headroom.
+ * Opaque storage for kernel's struct ftrace_ops (CONFIG_DYNAMIC_FTRACE=y).
+ *
+ * GKI struct ftrace_ops layout (arm64, verified from source):
+ *
+ *   Field                      5.10    5.15    6.1     6.6     6.12
+ *   ──────────────────────────────────────────────────────────────
+ *   func                        8       8       8       8       8
+ *   next                        8       8       8       8       8
+ *   flags                       8       8       8       8       8
+ *   private                     8       8       8       8       8
+ *   saved_func                  8       8       8       8       8
+ *   local_hash (ftrace_ops_hash)  ~64    ~64    ~64    ~64    ~64
+ *   func_hash                   8       8       8       8       8
+ *   old_hash (ftrace_ops_hash)  ~64    ~64    ~64    ~64    ~64
+ *   trampoline                  8       8       8       8       8
+ *   trampoline_size             8       8       8       8       8
+ *   list                       16      16      16      16      16
+ *   subop_list                  —       —       —       —      16
+ *   ops_func                    —       —       —       8       8
+ *   managed                     —       —       —       —       8
+ *   ──────────────────────────────────────────────────────────────
+ *   Estimated sizeof:         ~208    ~208    ~208    ~216    ~240
+ *
+ * 256 bytes (32 × 8) covers all versions with headroom.
  */
 struct neverc_krt_ftrace_ops {
 	unsigned long            _storage[32];
@@ -406,7 +421,13 @@ int neverc_krt_hook_auto(struct neverc_krt_hook *h, void *target,
 /* --- kprobe-based hook (lightweight fallback) --- */
 
 struct neverc_krt_kprobe_hook {
-	unsigned char kp_storage[160]; /* >= sizeof(struct kprobe): 136 on 5.10, 128 on 5.15-6.12 */
+	/*
+	 * sizeof(struct kprobe) across GKI arm64:
+	 *   5.10:      136 bytes (has fault_handler field)
+	 *   5.15–6.12: 128 bytes (fault_handler removed in 5.15)
+	 * 160 bytes covers the largest (5.10) with headroom.
+	 */
+	unsigned char kp_storage[160];
 	void *target;
 	void *replace;
 	void *orig;

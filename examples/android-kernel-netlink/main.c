@@ -2,6 +2,7 @@
 #include <nvkmod.h>
 #include <nvk_netlink.h>
 #include <nvk_process.h>
+#include <nvk_mem.h>
 #include <nvk_compat.h>
 
 #define NEVERC_KRT_LOG_TAG "neverc_krt_netlink"

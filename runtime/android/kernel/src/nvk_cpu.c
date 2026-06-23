@@ -89,3 +89,15 @@ int neverc_krt_smp_call_on(int cpu, neverc_krt_smp_call_fn func,
 	return _neverc_krt_smp_call_single(cpu, func, info, wait);
 }
 
+void neverc_krt_detect_hw_caps(struct neverc_krt_hw_caps *caps)
+{
+	if (!caps) return;
+	caps->pac  = neverc_krt_has_pac();
+	caps->epac = neverc_krt_has_epac();
+	caps->fpac = neverc_krt_has_fpac();
+	caps->bti  = neverc_krt_has_bti();
+	caps->mte  = neverc_krt_has_mte();
+	caps->sve  = neverc_krt_has_sve();
+	caps->cfi  = neverc_krt_has_cfi();
+}
+

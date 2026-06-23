@@ -11,10 +11,17 @@ struct workqueue_struct; /* opaque */
 typedef void (*work_func_t)(struct work_struct *work);
 
 /*
- * Minimal work_struct layout — the three core fields are stable across
- * GKI 5.10–6.12.  5.10–6.6 append ANDROID_KABI_RESERVE(1)+(2) (16 bytes,
- * sizeof=48); 6.12 drops them (sizeof=32).  The kernel never reads the
- * reserves, so a 32-byte struct is safe for queue_work/cancel_work_sync.
+ * Minimal work_struct layout — stable core fields across GKI 5.10–6.12.
+ *
+ *   GKI version    sizeof(struct work_struct)
+ *   ──────────────────────────────────────────
+ *   5.10–6.6       48 bytes (core 32 + ANDROID_KABI_RESERVE(1)+(2) = 16)
+ *   6.12           32 bytes (KABI reserves removed)
+ *
+ * CONFIG_LOCKDEP is disabled in GKI production builds, so lockdep_map
+ * is never present.  The kernel only accesses data/entry/func through
+ * pointer — never copies work_struct by value — so 32 bytes is safe
+ * for queue_work / cancel_work_sync on all GKI versions.
  */
 struct work_struct {
 	unsigned long data;

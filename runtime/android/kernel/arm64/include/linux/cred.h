@@ -4,6 +4,25 @@
 
 #include <linux/types.h>
 
+/*
+ * Opaque struct cred — layout varies across GKI versions.
+ *
+ *   Field          5.10    5.15    6.1     6.6     6.12
+ *   ──────────────────────────────────────────────────────
+ *   usage          4 (at)  4 (at)  4 (at)  8 (al)  8 (al)
+ *   uid..fsgid     32      32      32      32      32
+ *   securebits     4       4       4       4       4
+ *   cap_* (×5)     40      40      40      40      40
+ *   ──────────────────────────────────────────────────────
+ *   at = atomic_t (4 bytes), al = atomic_long_t (8 bytes)
+ *
+ * The runtime probes uid offset via _neverc_krt_cred_uid_base()
+ * which returns 4 (5.10–6.1) or 8 (6.6+).  All further field
+ * offsets are computed relative to uid.
+ *
+ * CONFIG_DEBUG_CREDENTIALS is disabled in GKI builds, so the
+ * subscribers/put_addr/magic debug fields are never present.
+ */
 struct cred;        /* opaque */
 struct task_struct; /* opaque */
 
@@ -17,11 +36,11 @@ typedef struct {
 
 /*
  * Capability set — always 8 bytes on arm64.
- *   5.10–6.1: struct { u32 cap[2]; }
+ *   5.10–6.1: struct kernel_cap_struct { u32 cap[_KERNEL_CAPABILITY_U32S]; }
  *   6.6+:     struct { u64 val; }
- * Both representations are 8 bytes, and the runtime reads capability
- * bits as raw u32 words at probed offsets (_neverc_krt_cred_cap_off),
- * so this compile-time type is used only for stack declarations.
+ * Both are 8 bytes.  The runtime reads capability bits as raw u32
+ * words at probed offsets (_neverc_krt_cred_cap_off), so this
+ * compile-time type is only used for stack-local declarations.
  */
 typedef struct {
 	u32 cap[2];

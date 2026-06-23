@@ -208,18 +208,6 @@ int neverc_krt_has_cfi(void)
 	return NEVERC_KRT_LOOKUP("__cfi_check") != (void *)0;
 }
 
-void neverc_krt_detect_hw_caps(struct neverc_krt_hw_caps *caps)
-{
-	if (!caps) return;
-	caps->pac  = neverc_krt_has_pac();
-	caps->epac = neverc_krt_has_epac();
-	caps->fpac = neverc_krt_has_fpac();
-	caps->bti  = neverc_krt_has_bti();
-	caps->mte  = neverc_krt_has_mte();
-	caps->sve  = neverc_krt_has_sve();
-	caps->cfi  = neverc_krt_has_cfi();
-}
-
 int neverc_krt_check_kernel_match(void)
 {
 	if (!_neverc_krt_kinfo.detected)

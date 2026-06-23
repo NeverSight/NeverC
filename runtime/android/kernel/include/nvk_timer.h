@@ -9,6 +9,14 @@
 /*  Opaque timer/work structures sized to fit all GKI 5.10–6.12       */
 /* ------------------------------------------------------------------ */
 
+/*
+ * sizeof(struct hrtimer) across GKI arm64:
+ *   5.10-6.6:  72 bytes (timerqueue_node=32 + _softexpires=8 + function=8
+ *                         + base=8 + state/flags=4 + pad=4
+ *                         + ANDROID_KABI_RESERVE(1)=8)
+ *   6.12:      64 bytes (ANDROID_KABI_RESERVE removed)
+ * 128 bytes covers all with generous headroom.
+ */
 #define NEVERC_KRT_HRTIMER_STORAGE  128
 #define NEVERC_KRT_DELAYED_WORK_STORAGE 256
 

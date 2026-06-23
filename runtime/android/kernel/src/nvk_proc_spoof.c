@@ -3,10 +3,6 @@
 #include <nvk.h>
 #include <nvk_internal.h>
 
-#define _NEVERC_KRT_SKC_DPORT_OFF NEVERC_KRT_SKC_DPORT_OFF
-#define _NEVERC_KRT_SKC_NUM_OFF   NEVERC_KRT_SKC_NUM_OFF
-#define _NEVERC_KRT_DENTRY_DNAME_NAME_OFF NEVERC_KRT_DENTRY_DNAME_OFF
-
 static __always_inline int _neverc_krt_str_contains(const char *haystack,
 						    const char *needle)
 {
@@ -485,9 +481,9 @@ static int _neverc_krt_extract_ports(void *sk, u16 *sport, u16 *dport)
 	const unsigned char *p = (const unsigned char *)sk;
 	u16 dp_be, sp_host;
 
-	if (neverc_krt_mem_read(&dp_be, p + _NEVERC_KRT_SKC_DPORT_OFF, 2))
+	if (neverc_krt_mem_read(&dp_be, p + NEVERC_KRT_SKC_DPORT_OFF, 2))
 		return -1;
-	if (neverc_krt_mem_read(&sp_host, p + _NEVERC_KRT_SKC_NUM_OFF, 2))
+	if (neverc_krt_mem_read(&sp_host, p + NEVERC_KRT_SKC_NUM_OFF, 2))
 		return -1;
 
 	*dport = ((dp_be >> 8) & 0xFF) | ((dp_be & 0xFF) << 8);
@@ -661,7 +657,7 @@ static int _neverc_krt_try_dentry_at(unsigned long file_addr, unsigned long off,
 	    dentry >= 0xFFFFFFFFFFFFF000UL)
 		return 0;
 	if (neverc_krt_mem_read(&name_ptr,
-			 (void *)(dentry + _NEVERC_KRT_DENTRY_DNAME_NAME_OFF),
+			 (void *)(dentry + NEVERC_KRT_DENTRY_DNAME_OFF),
 			 8))
 		return 0;
 	name_ptr &= ~(0xFFUL << 56);
@@ -732,7 +728,7 @@ static int _neverc_krt_file_match_path(void *file, const char *target)
 		return 0;
 
 	if (neverc_krt_mem_read(&name_ptr,
-			 (void *)(dentry + _NEVERC_KRT_DENTRY_DNAME_NAME_OFF), 8))
+			 (void *)(dentry + NEVERC_KRT_DENTRY_DNAME_OFF), 8))
 		return 0;
 	name_ptr &= ~(0xFFUL << 56);
 	if (name_ptr < 0xFFFF000000000000UL) return 0;
