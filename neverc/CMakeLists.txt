@@ -629,6 +629,16 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
   if(TARGET neverc-runtime-android-kernel)
     list(APPEND _neverc_check_runtime_deps neverc-runtime-android-kernel)
   endif()
+  # On macOS the *native* compile/link tests need the bundled macOS sysroot
+  # staged too: getBundledMacOSSysroot() looks for <build>/runtime/macos/<arch>
+  # and only falls back to the host Xcode SDK when it is missing.  That fallback
+  # used to work, but the macos-latest runner now ships macOS 26 (SDK reports
+  # itself as macOS 16.0), whose libSystem.tbd the embedded MachO linker rejects
+  # as "incompatible with arm64 (macOS16.0.0)".  Staging the hermetic bundled
+  # sysroot keeps the suite self-contained and independent of the host SDK.
+  if(TARGET neverc-runtime-macos-arm64)
+    list(APPEND _neverc_check_runtime_deps neverc-runtime-macos-arm64)
+  endif()
   add_custom_target(check-neverc
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG>
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
