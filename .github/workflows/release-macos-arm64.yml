@@ -16,9 +16,14 @@ jobs:
   release:
     name: Build + test + sign + release
     if: github.repository == 'NeverSight/NeverC'
-    runs-on: macos-latest
+    runs-on: macos-15
     env:
       BUILD_TYPE: Release
+      # Runner is pinned to macos-15 (above) for a stable Apple toolchain; this
+      # low deployment target makes the shipped binary run on macOS 13+ instead
+      # of defaulting to the runner OS (minos 15.0).
+      # CMake initializes CMAKE_OSX_DEPLOYMENT_TARGET from this env var.
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

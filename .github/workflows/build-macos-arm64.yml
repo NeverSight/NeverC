@@ -13,11 +13,11 @@ jobs:
       (github.event_name == 'push' ||
        (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name != github.repository))
-    runs-on: macos-latest
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
+        os: [macos-15]
     env:
       # RelWithDebInfo so CI artifacts ship with DWARF symbols for crash
       # triage; release-macos-pgo.yml is the symbol-stripped Release path.
@@ -29,6 +29,12 @@ jobs:
       # because the fallback kept builds green — trips this.  Covers both the
       # example builds and the test suite below.
       NEVERC_PCG_STRICT: "1"
+      # Runner is pinned to macos-15 (above) for a stable Apple toolchain; this
+      # low deployment target makes the produced binary run on macOS 13+ instead
+      # of defaulting to minos 15.0.  CMake initializes CMAKE_OSX_DEPLOYMENT_TARGET
+      # from this env var; it also keeps neverc's own test-program links on a
+      # consistent target.
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
