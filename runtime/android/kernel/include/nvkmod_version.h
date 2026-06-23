@@ -2,6 +2,8 @@
 #ifndef NVKMOD_VERSION_H
 #define NVKMOD_VERSION_H
 
+#include <linux/compiler.h>
+
 #define NEVERC_KRT_SDK_VERSION_MAJOR 3
 #define NEVERC_KRT_SDK_VERSION_MINOR 0
 #define NEVERC_KRT_SDK_VERSION_PATCH 0
@@ -46,6 +48,9 @@
 #  ifndef NEVERC_KRT_FILE_DENTRY_OFF
 #    define NEVERC_KRT_FILE_DENTRY_OFF 0x18
 #  endif
+#  ifndef NEVERC_KRT_FOPS_SIZE
+#    define NEVERC_KRT_FOPS_SIZE 288
+#  endif
 
 #elif NEVERC_KRT_KERNEL == 515
 /* Android 13, Linux 5.15 (GKI android13-5.15, KMI gen 8) */
@@ -69,6 +74,9 @@
 #  endif
 #  ifndef NEVERC_KRT_FILE_DENTRY_OFF
 #    define NEVERC_KRT_FILE_DENTRY_OFF 0x18
+#  endif
+#  ifndef NEVERC_KRT_FOPS_SIZE
+#    define NEVERC_KRT_FOPS_SIZE 288
 #  endif
 
 #elif NEVERC_KRT_KERNEL == 601
@@ -94,6 +102,9 @@
 #  ifndef NEVERC_KRT_FILE_DENTRY_OFF
 #    define NEVERC_KRT_FILE_DENTRY_OFF 0x18
 #  endif
+#  ifndef NEVERC_KRT_FOPS_SIZE
+#    define NEVERC_KRT_FOPS_SIZE 272
+#  endif
 
 #elif NEVERC_KRT_KERNEL == 606
 /* Android 15, Linux 6.6 (GKI android15-6.6, KMI gen 8) */
@@ -118,6 +129,9 @@
 #  ifndef NEVERC_KRT_FILE_DENTRY_OFF
 #    define NEVERC_KRT_FILE_DENTRY_OFF 0xA0
 #  endif
+#  ifndef NEVERC_KRT_FOPS_SIZE
+#    define NEVERC_KRT_FOPS_SIZE 264
+#  endif
 
 #elif NEVERC_KRT_KERNEL == 612
 /* Android 16, Linux 6.12 (GKI android16-6.12, KMI gen 6) */
@@ -141,6 +155,9 @@
 #  endif
 #  ifndef NEVERC_KRT_FILE_DENTRY_OFF
 #    define NEVERC_KRT_FILE_DENTRY_OFF 0x48
+#  endif
+#  ifndef NEVERC_KRT_FOPS_SIZE
+#    define NEVERC_KRT_FOPS_SIZE 264
 #  endif
 
 #else
