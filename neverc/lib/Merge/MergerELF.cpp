@@ -297,7 +297,17 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseSet<unsigned> SectionHasRelocTarget;
     for (const Shdr &RS : Secs)
       if (RS.sh_type == SHT_RELA || RS.sh_type == SHT_REL)
-        SectionHasRelocTarget.insert(RS.sh_info);
+        // sh_info (the relocated target section index) is read straight from the
+        // input, so a hostile/fuzzed object can set it to DenseMap's reserved
+        // empty (~0u) or tombstone (~0u-1) key — inserting which asserts under
+        // LLVM_ENABLE_ASSERTIONS (the merge fuzzer's recurring "Empty/Tombstone
+        // value shouldn't be inserted" abort) and is UB otherwise.  A real reloc
+        // target is always a valid section index, and the sole consumer
+        // (count(i) with i in [1, Secs.size())) can never match an out-of-range
+        // value, so bounding it here is behavior-preserving and also excludes
+        // both reserved keys.
+        if (RS.sh_info < Secs.size())
+          SectionHasRelocTarget.insert(RS.sh_info);
 
     // ----- Phase 1: Merge sections -----
     // Skip metadata sections that are regenerated in the output.
