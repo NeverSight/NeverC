@@ -4865,6 +4865,51 @@ TEST(MergeELF, FuzzTwoCorruptedPartitions) {
   }
 }
 
+// Regression for the recurring nightly merge-fuzz crash: a relocation section
+// (SHT_RELA/SHT_REL) whose sh_info — the target section index, read straight
+// from the input — is one of llvm::DenseMap's reserved sentinels (~0u empty key
+// or ~0u-1 tombstone).  The merger fed sh_info directly into a DenseSet<unsigned>
+// (SectionHasRelocTarget), and inserting a reserved key trips DenseMap's
+// "Empty/Tombstone value shouldn't be inserted" assertion (abort under
+// LLVM_ENABLE_ASSERTIONS, undefined behavior otherwise).  buildMinimalELF emits
+// a .rela.text section for its undefined symbol; we repoint that section's
+// sh_info at each reserved key and require the merge to refuse-or-succeed
+// without crashing.  ELFObjectFile::create does not re-validate the magic, so
+// this is reached on exactly the kind of object the fuzzer synthesized.
+TEST(MergeELF, FuzzRelocSectionReservedShInfo) {
+  using namespace ELF;
+  auto patchFirstRelocShInfo = [](SmallVectorImpl<char> &Buf,
+                                  uint32_t NewInfo) -> bool {
+    if (Buf.size() < sizeof(Elf64_Ehdr))
+      return false;
+    auto *H = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+    if (H->e_shoff + (uint64_t)H->e_shnum * sizeof(Elf64_Shdr) > Buf.size())
+      return false;
+    auto *Secs = reinterpret_cast<Elf64_Shdr *>(Buf.data() + H->e_shoff);
+    for (unsigned i = 0; i < H->e_shnum; ++i)
+      if (Secs[i].sh_type == SHT_RELA || Secs[i].sh_type == SHT_REL) {
+        Secs[i].sh_info = NewInfo;
+        return true;
+      }
+    return false;
+  };
+
+  for (uint32_t Reserved : {~0u, ~0u - 1u}) {
+    auto Obj = buildMinimalELF({"func"}, {"ext"});
+    ASSERT_TRUE(patchFirstRelocShInfo(Obj, Reserved))
+        << "test object has no relocation section to patch";
+    SmallVector<SmallVector<char, 0>, 2> Bufs;
+    Bufs.push_back(std::move(Obj));
+    for (bool Verify : {true, false}) {
+      Options Opts;
+      Opts.verify = Verify;
+      SmallVector<char, 0> Out;
+      raw_svector_ostream OS(Out);
+      (void)mergeELF64LEObjects(Bufs, OS, Opts); // must not crash (was an abort)
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Edge-case tests: dispatch layer
 // ---------------------------------------------------------------------------
@@ -4975,6 +5020,13 @@ static std::vector<SmallVector<char, 0>> carveCorpus(ArrayRef<uint8_t> Data) {
 //                                    temporary local copy
 //   * coff-reloc-reserved-densekey — DenseMap reserved-key lookup (BUS) in the
 //                                    COFF verifier's symbol-by-index helper
+//   * elf-reloc-shinfo-reserved-densekey — a non-ELF buffer that ELFObjectFile::
+//                                    create still parses as ELF64LE, with a
+//                                    SHT_REL section whose sh_info is the DenseMap
+//                                    reserved empty key (~0u): inserting it into
+//                                    the merger's SectionHasRelocTarget DenseSet
+//                                    asserted/aborted (the recurring nightly
+//                                    merge-fuzz failure)
 // Each is carved exactly as the fuzzer does and pushed through every format with
 // verify on and off, plus the ELF kernel-module section-folding path.  The
 // invariant is simply "the merger never crashes on these inputs" — most
@@ -4983,7 +5035,8 @@ static std::vector<SmallVector<char, 0>> carveCorpus(ArrayRef<uint8_t> Data) {
 // regression coverage without needing the fuzzer harness itself.
 TEST(MergeFuzzCorpus, NoCrashOnSavedRegressions) {
   const char *Names[] = {"macho-nlist-misaligned", "macho-section-name-uaf",
-                         "coff-reloc-reserved-densekey"};
+                         "coff-reloc-reserved-densekey",
+                         "elf-reloc-shinfo-reserved-densekey"};
   for (const char *N : Names) {
     SmallString<256> Path(TEST_SOURCE_DIR);
     sys::path::append(Path, "merge-corpus", N);
