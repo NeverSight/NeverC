@@ -86,6 +86,8 @@ static void applyKernelFunctionAttrs(llvm::Module &M) {
       continue;
     F.addFnAttr(llvm::Attribute::ShadowCallStack);
     F.addFnAttr("branch-target-enforcement", "true");
+    F.addFnAttr("sign-return-address", "all");
+    F.addFnAttr("sign-return-address-key", "a_key");
     F.removeFnAttr(llvm::Attribute::UWTable);
     F.setUWTableKind(llvm::UWTableKind::None);
   }
