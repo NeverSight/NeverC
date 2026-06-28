@@ -62,12 +62,14 @@
 #    define NEVERC_KRT_KERNEL_STR "android13-5.15"
 #  endif
 /* Verified from GKI android13-5.15 (release 5.15.206) via gki_defconfig +
- * modules_prepare + tools/gen_struct_module_offsets.c (clang-18). */
+ * modules_prepare + tools/gen_struct_module_offsets.c.
+ * CONFIG_DEBUG_INFO_BTF_MODULES=y adds btf_data_size+btf_data (+16 bytes)
+ * between init and exit. */
 #  ifndef NEVERC_KRT_OFF_INIT
 #    define NEVERC_KRT_OFF_INIT 376 /* 0x178 */
 #  endif
 #  ifndef NEVERC_KRT_OFF_EXIT
-#    define NEVERC_KRT_OFF_EXIT 872 /* 0x368 */
+#    define NEVERC_KRT_OFF_EXIT 888 /* 0x378 */
 #  endif
 #  ifndef NEVERC_KRT_MODULE_SIZE
 #    define NEVERC_KRT_MODULE_SIZE 960 /* 0x3C0, sizeof(struct module) */
@@ -89,15 +91,16 @@
 #    define NEVERC_KRT_KERNEL_STR "android14-6.1"
 #  endif
 /* Verified from GKI android14-6.1 (release 6.1.172) via gki_defconfig +
- * modules_prepare + tools/gen_struct_module_offsets.c (clang-18). */
+ * modules_prepare + tools/gen_struct_module_offsets.c.
+ * CONFIG_DEBUG_INFO_BTF_MODULES=y adds btf_data_size+btf_data (+16 bytes). */
 #  ifndef NEVERC_KRT_OFF_INIT
 #    define NEVERC_KRT_OFF_INIT 368 /* 0x170 */
 #  endif
 #  ifndef NEVERC_KRT_OFF_EXIT
-#    define NEVERC_KRT_OFF_EXIT 968 /* 0x3C8 */
+#    define NEVERC_KRT_OFF_EXIT 984 /* 0x3D8 */
 #  endif
 #  ifndef NEVERC_KRT_MODULE_SIZE
-#    define NEVERC_KRT_MODULE_SIZE 1024 /* 0x400, sizeof(struct module) */
+#    define NEVERC_KRT_MODULE_SIZE 1088 /* 0x440, sizeof(struct module) */
 #  endif
 #  ifndef NEVERC_KRT_FILE_DENTRY_OFF
 #    define NEVERC_KRT_FILE_DENTRY_OFF 0x18
@@ -116,18 +119,19 @@
 #    define NEVERC_KRT_KERNEL_STR "android15-6.6"
 #  endif
 /* Verified from GKI android15-6.6 (release 6.6.138) via gki_defconfig +
- * modules_prepare + tools/gen_struct_module_offsets.c (clang-18). */
+ * modules_prepare + tools/gen_struct_module_offsets.c.
+ * CONFIG_DEBUG_INFO_BTF_MODULES=y adds btf_data_size+btf_data (+16 bytes). */
 #  ifndef NEVERC_KRT_OFF_INIT
 #    define NEVERC_KRT_OFF_INIT 392 /* 0x188 */
 #  endif
 #  ifndef NEVERC_KRT_OFF_EXIT
-#    define NEVERC_KRT_OFF_EXIT 1448 /* 0x5A8 */
+#    define NEVERC_KRT_OFF_EXIT 1464 /* 0x5B8 */
 #  endif
 #  ifndef NEVERC_KRT_MODULE_SIZE
 #    define NEVERC_KRT_MODULE_SIZE 1536 /* 0x600, sizeof(struct module) */
 #  endif
 #  ifndef NEVERC_KRT_FILE_DENTRY_OFF
-#    define NEVERC_KRT_FILE_DENTRY_OFF 0xA0
+#    define NEVERC_KRT_FILE_DENTRY_OFF 0xB0
 #  endif
 #  ifndef NEVERC_KRT_FOPS_SIZE
 #    define NEVERC_KRT_FOPS_SIZE 264
@@ -143,12 +147,14 @@
 #    define NEVERC_KRT_KERNEL_STR "android16-6.12"
 #  endif
 /* Verified from GKI android16-6.12 (release 6.12.81) via gki_defconfig +
- * modules_prepare + tools/gen_struct_module_offsets.c (clang-18). */
+ * modules_prepare + tools/gen_struct_module_offsets.c.
+ * CONFIG_DEBUG_INFO_BTF_MODULES=y adds btf_data_size+btf_base_data_size+
+ * btf_data+btf_base_data (+24 bytes, 4 fields vs 2 in older kernels). */
 #  ifndef NEVERC_KRT_OFF_INIT
 #    define NEVERC_KRT_OFF_INIT 392 /* 0x188 */
 #  endif
 #  ifndef NEVERC_KRT_OFF_EXIT
-#    define NEVERC_KRT_OFF_EXIT 1504 /* 0x5E0 */
+#    define NEVERC_KRT_OFF_EXIT 1528 /* 0x5F8 */
 #  endif
 #  ifndef NEVERC_KRT_MODULE_SIZE
 #    define NEVERC_KRT_MODULE_SIZE 1600 /* 0x640, sizeof(struct module) */

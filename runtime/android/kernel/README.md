@@ -144,19 +144,21 @@ All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xor
 `include/nvkmod_version.h` holds the `name`/`init`/`exit` offsets and total size
 of `struct module` per kernel. All five presets are **verified** against the
 stock GKI `gki_defconfig` (computed from each kernel's own `make modules_prepare`
-headers with clang-18):
+headers via `tools/gen_struct_module_offsets.c`):
 
 | preset | release | NAME | INIT | EXIT | sizeof |
 |--------|---------|------|------|------|--------|
 | `510` (android12-5.10) | 5.10    | 24 | 400 (0x190) | 960 (0x3C0)  | 1024 (0x400) |
-| `515` (android13-5.15) | 5.15.206| 24 | 376 (0x178) | 872 (0x368)  | 960 (0x3C0)  |
-| `601` (android14-6.1)  | 6.1.172 | 24 | 368 (0x170) | 968 (0x3C8)  | 1024 (0x400) |
-| `606` (android15-6.6)  | 6.6.138 | 24 | 392 (0x188) | 1448 (0x5A8) | 1536 (0x600) |
-| `612` (android16-6.12) | 6.12.81 | 24 | 392 (0x188) | 1504 (0x5E0) | 1600 (0x640) |
+| `515` (android13-5.15) | 5.15.206| 24 | 376 (0x178) | 888 (0x378)  | 960 (0x3C0)  |
+| `601` (android14-6.1)  | 6.1.172 | 24 | 368 (0x170) | 984 (0x3D8)  | 1088 (0x440) |
+| `606` (android15-6.6)  | 6.6.138 | 24 | 392 (0x188) | 1464 (0x5B8) | 1536 (0x600) |
+| `612` (android16-6.12) | 6.12.81 | 24 | 392 (0x188) | 1528 (0x5F8) | 1600 (0x640) |
 
 `name` (offset 24) is stable across current GKI builds; `init`/`exit`/sizeof
 depend on the target kernel's `CONFIG_*` (CFI_CLANG, MODULE_UNLOAD, TRACEPOINTS,
-...). The values above match a stock GKI kernel built with `gki_defconfig`. If an
+DEBUG_INFO_BTF_MODULES, ...). The values above match a stock GKI kernel built
+with `gki_defconfig` (BTF module debug info shifts `exit` and may grow
+`sizeof(struct module)`). If an
 OEM ships a different config, regenerate them for that kernel before loading:
 
 ```
