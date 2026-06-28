@@ -1,0 +1,245 @@
+# Build every supported GKI kernel (5.10/5.15/6.1/6.6/6.12/6.18), verify that the
+# struct module offsets baked into runtime/android/kernel/include/nvkmod_version.h
+# still match the freshly built kernels, then publish the artifacts.
+# (android17-6.18 runs in discover mode: it prints offsets instead of comparing,
+# until verified values land in nvkmod_version.h.)
+#
+# Manual only: heavy (repo sync ~10-20GB + build ~10-20GB per version), so it
+# never runs automatically.
+name: build-gki-kernels
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_version:
+        description: "build gki kernels"
+        type: choice
+        options:
+          - all
+          - "510"
+          - "515"
+          - "601"
+          - "606"
+          - "612"
+          - "618"
+        default: all
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gki-${{ github.ref }}-${{ github.event.inputs.kernel_version }}
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    name: Select versions
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - name: Build matrix from input
+        id: gen
+        run: |
+          set -euo pipefail
+          all='[
+            {"key":"510","android":"android12","kernel":"5.10","branch":"common-android12-5.10","build_system":"make","verify_mode":"compare"},
+            {"key":"515","android":"android13","kernel":"5.15","branch":"common-android13-5.15","build_system":"make","verify_mode":"compare"},
+            {"key":"601","android":"android14","kernel":"6.1","branch":"common-android14-6.1","build_system":"bazel","verify_mode":"compare"},
+            {"key":"606","android":"android15","kernel":"6.6","branch":"common-android15-6.6","build_system":"bazel","verify_mode":"compare"},
+            {"key":"612","android":"android16","kernel":"6.12","branch":"common-android16-6.12","build_system":"bazel","verify_mode":"compare"},
+            {"key":"618","android":"android17","kernel":"6.18","branch":"common-android17-6.18","build_system":"bazel","verify_mode":"print"}
+          ]'
+          sel='${{ inputs.kernel_version }}'
+          if [ -z "$sel" ] || [ "$sel" = all ]; then
+            inc=$(printf '%s' "$all" | jq -c .)
+          else
+            inc=$(printf '%s' "$all" | jq -c --arg k "$sel" '[.[] | select(.key==$k)]')
+          fi
+          echo "Selected matrix: $inc"
+          echo "matrix={\"include\":$inc}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: GKI ${{ matrix.android }}-${{ matrix.kernel }}
+    needs: setup
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    env:
+      KEY: ${{ matrix.key }}
+      BRANCH: ${{ matrix.branch }}
+      BUILD_SYSTEM: ${{ matrix.build_system }}
+      VERIFY_MODE: ${{ matrix.verify_mode }}
+      TAG: gki-${{ matrix.android }}-${{ matrix.kernel }}
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf \
+            /usr/local/.ghcup \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /opt/hostedtoolcache \
+            /opt/ghc \
+            /usr/local/share/boost \
+            /usr/lib/jvm || true
+          sudo docker image prune --all --force || true
+          sudo apt-get clean || true
+          df -h /
+
+      - name: Checkout neverc repo
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git curl ca-certificates python3 python-is-python3 \
+            bc bison flex cpio libelf-dev libssl-dev \
+            binutils llvm jq rsync zip xz-utils
+          mkdir -p "$HOME/.bin"
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo \
+            -o "$HOME/.bin/repo"
+          chmod a+x "$HOME/.bin/repo"
+          echo "$HOME/.bin" >> "$GITHUB_PATH"
+          git config --global user.email "ci@neverc.local"
+          git config --global user.name "neverc-ci"
+          git config --global color.ui false
+
+      - name: Repo init + sync
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          mkdir -p kernel
+          cd kernel
+          repo init --depth=1 \
+            -u https://android.googlesource.com/kernel/manifest -b "$BRANCH"
+          repo sync -c --no-tags --optimized-fetch --prune -j"$(nproc)"
+          df -h /
+
+      - name: Build kernel
+        working-directory: ${{ github.workspace }}/kernel
+        run: |
+          set -euo pipefail
+          if [ "$BUILD_SYSTEM" = make ]; then
+            # Legacy build.sh (ThinLTO + CFI, matching nvkmod_version.h assumptions).
+            # build.sh manages parallelism itself (uses all cores).
+            BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+          else
+            # Bazel/KLEAF picks up its own toolchain from prebuilts/ and defaults
+            # to host-core parallelism.
+            tools/bazel run //common:kernel_aarch64_dist -- --dist_dir="$PWD/dist"
+          fi
+          df -h /
+
+      - name: Verify struct module offsets
+        working-directory: ${{ github.workspace }}/kernel
+        run: |
+          set -euo pipefail
+          # Prefer the kernel's own prebuilt llvm-readelf (exact toolchain match).
+          re=$(find prebuilts -path '*/bin/llvm-readelf' -type f -print -quit 2>/dev/null || true)
+          # Likely artifact roots; .repo is intentionally excluded from the scan.
+          dirs=()
+          for d in out dist common bazel-bin; do [ -e "$d" ] && dirs+=("$d"); done
+          args=()
+          [ -n "$re" ] && args+=(--readelf "$re")
+          if [ "$VERIFY_MODE" = print ]; then
+            # Offsets for this kernel are not pinned in nvkmod_version.h yet:
+            # discover + print them (to be pasted in), do NOT hard-fail the build.
+            args+=(--print "${dirs[@]}")
+          else
+            args+=("$KEY" "${dirs[@]}")
+          fi
+          echo "verify args: ${args[*]}"
+          bash "$GITHUB_WORKSPACE/neverc/tools/verify_gki_offsets.sh" "${args[@]}" \
+            | tee "$GITHUB_WORKSPACE/verify-$KEY.txt"
+
+      - name: Cross-check via gen_struct_module_offsets.c
+        working-directory: ${{ github.workspace }}/kernel
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          clang=$(find prebuilts -path '*/bin/clang' -type f -print -quit 2>/dev/null || true)
+          autoconf=$(find . -path '*/include/generated/autoconf.h' -type f -print -quit 2>/dev/null || true)
+          if [ -z "$clang" ] || [ -z "$autoconf" ]; then
+            echo "skip (clang='$clang' autoconf='$autoconf')"
+            exit 0
+          fi
+          gendir=${autoconf%/include/generated/autoconf.h}
+          echo "clang=$clang gendir=$gendir"
+          NEVERC="$clang" python3 \
+            "$GITHUB_WORKSPACE/neverc/runtime/android/kernel/tools/gen-offsets.py" \
+            common "$gendir" || echo "cross-check probe failed (informational only)"
+
+      - name: Collect artifacts
+        if: ${{ always() }}
+        working-directory: ${{ github.workspace }}/kernel
+        run: |
+          set -euo pipefail
+          stage="$GITHUB_WORKSPACE/stage-$KEY"
+          mkdir -p "$stage"
+          cfg=$(find . -name .config -path '*common*' -type f -print -quit 2>/dev/null || true)
+          [ -n "$cfg" ] && cp "$cfg" "$stage/config-$KEY" || true
+          for f in dist/Image dist/Image.lz4 dist/Image.gz dist/System.map \
+                   dist/vmlinux dist/Module.symvers; do
+            [ -f "$f" ] && cp "$f" "$stage/" || true
+          done
+          # Up to 3 .ko samples (always ELF, useful for offline offset checks).
+          n=0
+          while IFS= read -r ko; do
+            cp "$ko" "$stage/" || true
+            n=$((n + 1))
+            [ "$n" -ge 3 ] && break
+          done < <(find . -name '*.ko' -type f 2>/dev/null)
+          cp "$GITHUB_WORKSPACE/verify-$KEY.txt" "$stage/" 2>/dev/null || true
+          if [ -z "$(ls -A "$stage" 2>/dev/null)" ]; then
+            echo "(build failed before producing artifacts)" > "$stage/EMPTY.txt"
+          fi
+          tar -czf "$GITHUB_WORKSPACE/$TAG-build.tar.gz" -C "$stage" .
+          ls -lh "$GITHUB_WORKSPACE/$TAG-build.tar.gz"
+
+      - name: Upload artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TAG }}
+          path: ${{ github.workspace }}/${{ env.TAG }}-build.tar.gz
+          if-no-files-found: warn
+
+  release:
+    name: Release
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create or update Release
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(artifacts/*/*.tar.gz)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No artifacts to publish."
+            exit 0
+          fi
+          tag="gki-build-$(date -u +%Y%m%d)"
+          title="GKI prebuilt kernels $(date -u +%Y-%m-%d)"
+          notes="Automated GKI builds (5.10/5.15/6.1/6.6/6.12/6.18) with struct module offset verification against nvkmod_version.h (6.18 offsets are discovered/unverified)."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${files[@]}" --clobber
+          else
+            gh release create "$tag" "${files[@]}" --title "$title" --notes "$notes"
+          fi
+          echo "Published ${#files[@]} asset(s) to release $tag"

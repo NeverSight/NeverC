@@ -166,9 +166,49 @@
 #    define NEVERC_KRT_FOPS_SIZE 264
 #  endif
 
+#elif NEVERC_KRT_KERNEL == 618
+/* Android 17, Linux 6.18 (GKI android17-6.18, launched 2025-11-30).
+ *
+ * !!! UNVERIFIED OFFSETS — placeholders copied from android16-6.12 !!!
+ * struct module very likely shifted again on 6.18 (just as 6.12 added
+ * btf_base_data_size/btf_base_data over 6.6), so these MUST be regenerated from
+ * a real android17-6.18 build before they can be trusted:
+ *
+ *   tools/verify_gki_offsets.sh --print <build-out-dir>
+ *   # then paste the printed NEVERC_KRT_OFF_* values below and drop the guard.
+ *
+ * Until then, building with NEVERC_KRT_KERNEL=618 is blocked. Define
+ * NEVERC_KRT_ALLOW_UNVERIFIED_618 to knowingly use the 6.12-based estimates. */
+#  if !defined(NEVERC_KRT_ALLOW_UNVERIFIED_618)
+#    error                                                                        \
+      "android17-6.18 struct module offsets are UNVERIFIED; build it (CI), run tools/verify_gki_offsets.sh --print, fill the real values in nvkmod_version.h and remove this guard (or define NEVERC_KRT_ALLOW_UNVERIFIED_618 to accept the 6.12-based estimates)"
+#  endif
+#  ifndef NEVERC_KRT_VERMAGIC
+#    define NEVERC_KRT_VERMAGIC                                                        \
+       "6.18.0-android17-0 SMP preempt mod_unload modversions aarch64" /* UNVERIFIED */
+#  endif
+#  ifndef NEVERC_KRT_KERNEL_STR
+#    define NEVERC_KRT_KERNEL_STR "android17-6.18"
+#  endif
+#  ifndef NEVERC_KRT_OFF_INIT
+#    define NEVERC_KRT_OFF_INIT 392 /* 0x188 — UNVERIFIED (copied from 6.12) */
+#  endif
+#  ifndef NEVERC_KRT_OFF_EXIT
+#    define NEVERC_KRT_OFF_EXIT 1528 /* 0x5F8 — UNVERIFIED (copied from 6.12) */
+#  endif
+#  ifndef NEVERC_KRT_MODULE_SIZE
+#    define NEVERC_KRT_MODULE_SIZE 1600 /* 0x640 — UNVERIFIED (copied from 6.12) */
+#  endif
+#  ifndef NEVERC_KRT_FILE_DENTRY_OFF
+#    define NEVERC_KRT_FILE_DENTRY_OFF 0x48 /* UNVERIFIED (copied from 6.12) */
+#  endif
+#  ifndef NEVERC_KRT_FOPS_SIZE
+#    define NEVERC_KRT_FOPS_SIZE 264 /* UNVERIFIED (copied from 6.12) */
+#  endif
+
 #else
 #  error                                                                        \
-      "Unknown NEVERC_KRT_KERNEL; use 510 / 515 / 601 / 606 / 612 or define presets manually"
+      "Unknown NEVERC_KRT_KERNEL; use 510 / 515 / 601 / 606 / 612 / 618 or define presets manually"
 #endif
 
 /*
