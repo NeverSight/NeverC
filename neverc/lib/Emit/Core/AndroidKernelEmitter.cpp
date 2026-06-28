@@ -85,6 +85,7 @@ static void applyKernelFunctionAttrs(llvm::Module &M) {
     if (F.isDeclaration())
       continue;
     F.addFnAttr(llvm::Attribute::ShadowCallStack);
+    F.addFnAttr("branch-target-enforcement", "true");
     F.removeFnAttr(llvm::Attribute::UWTable);
     F.setUWTableKind(llvm::UWTableKind::None);
   }
