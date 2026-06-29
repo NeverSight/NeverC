@@ -10,21 +10,14 @@
 #include <nvkmod.h>
 #include <nvk_hook.h>
 
-typedef long (*faccessat_fn)(int dfd, const char __user *filename,
-			     int mode, int flags);
+static struct neverc_krt_hook_ref faccessat_ref;
+static void *orig_do_faccessat;
 
-static struct neverc_krt_hook faccessat_hook;
-static faccessat_fn orig_do_faccessat;
-
-static long hook_do_faccessat(int dfd, const char __user *filename,
-			      int mode, int flags)
+static long hook_do_faccessat(void *orig, void *a0, void *a1,
+			      void *a2, void *a3, void *a4, void *a5)
 {
-	if (!neverc_krt_hook_enter(&faccessat_hook))
-		return orig_do_faccessat(dfd, filename, mode, flags);
-
-	long ret = orig_do_faccessat(dfd, filename, mode, flags);
-	neverc_krt_hook_leave(&faccessat_hook);
-	return ret;
+	typedef long (*fn_t)(void *, void *, void *, void *, void *, void *);
+	return ((fn_t)orig)(a0, a1, a2, a3, a4, a5);
 }
 
 int hooks_init(void)
@@ -33,13 +26,11 @@ int hooks_init(void)
 	if (!target)
 		return -1;
 
-	return neverc_krt_hook_install(&faccessat_hook, target,
-				(void *)hook_do_faccessat,
-				(void **)&orig_do_faccessat);
+	return neverc_krt_hook_register(target, (void *)hook_do_faccessat,
+					0, &orig_do_faccessat, &faccessat_ref);
 }
 
 void hooks_cleanup(void)
 {
-	if (faccessat_hook.active)
-		neverc_krt_hook_remove(&faccessat_hook);
+	neverc_krt_hook_unregister(&faccessat_ref);
 }
