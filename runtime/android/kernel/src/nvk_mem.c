@@ -11,6 +11,8 @@ typedef long (*neverc_krt_probe_write_fn)(void *dst, const void *src,
 typedef int (*neverc_krt_set_memory_fn)(unsigned long addr, int numpages);
 typedef void (*neverc_krt_update_mapping_prot_fn)(u64 phys, unsigned long virt,
 						  u64 size, u64 prot);
+typedef int  (*neverc_krt_insn_write_fn)(void *addr, u32 insn);
+typedef int  (*neverc_krt_insn_patch_text_fn)(void *addrs[], u32 insns[], int cnt);
 
 /* ---- variables ---- */
 
@@ -27,6 +29,9 @@ static neverc_krt_set_memory_fn          _neverc_krt_set_memory_rw;
 static neverc_krt_set_memory_fn          _neverc_krt_set_memory_ro;
 static neverc_krt_update_mapping_prot_fn _neverc_krt_update_prot;
 static unsigned long                    *_neverc_krt_kimage_voffset;
+static unsigned long                    *_neverc_krt_memstart_addr;
+static neverc_krt_insn_write_fn          _neverc_krt_insn_write;
+static neverc_krt_insn_patch_text_fn     _neverc_krt_insn_patch_text;
 
 /* ---- internal inline helpers ---- */
 
@@ -42,9 +47,10 @@ unsigned long _neverc_krt_mem_get_page_size(void)
 	unsigned long tcr;
 	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
 	u32 tg1 = (tcr >> 30) & 3;
-	unsigned long sz = 4096;
+	unsigned long sz;
 	if (tg1 == 1) sz = 16384;
-	else if (tg1 == 2) sz = 65536;
+	else if (tg1 == 3) sz = 65536;
+	else sz = 4096;
 	_neverc_krt_mem_page_sz = sz;
 	return sz;
 }
@@ -90,6 +96,15 @@ int neverc_krt_mem_init(void)
 		(neverc_krt_update_mapping_prot_fn)NEVERC_KRT_LOOKUP("update_mapping_prot");
 	_neverc_krt_kimage_voffset =
 		(unsigned long *)NEVERC_KRT_LOOKUP("kimage_voffset");
+	_neverc_krt_memstart_addr =
+		(unsigned long *)NEVERC_KRT_LOOKUP("memstart_addr");
+	_neverc_krt_insn_write =
+		(neverc_krt_insn_write_fn)NEVERC_KRT_LOOKUP("aarch64_insn_write");
+	if (!_neverc_krt_insn_write)
+		_neverc_krt_insn_write =
+			(neverc_krt_insn_write_fn)NEVERC_KRT_LOOKUP("aarch64_insn_patch_text_nosync");
+	_neverc_krt_insn_patch_text =
+		(neverc_krt_insn_patch_text_fn)NEVERC_KRT_LOOKUP("aarch64_insn_patch_text");
 
 	/*
 	 * Auto-detect kernel version from linux_banner.  This is the
@@ -159,10 +174,33 @@ long neverc_krt_mem_write_user(void __user *dst, const void *src, size_t len)
 	return _neverc_krt_copy_to_user(dst, src, len) ? -14 : 0;
 }
 
+/*
+ * Convert a physical address from a page table entry to a linear-map
+ * kernel virtual address.  On ARM64:
+ *   PAGE_OFFSET = -(1UL << VA_BITS)
+ *   virt = phys - memstart_addr + PAGE_OFFSET
+ * Returns 0 on failure (memstart_addr not resolved).
+ */
+static __always_inline unsigned long
+_neverc_krt_pa_to_lm(unsigned long pa, int va_bits)
+{
+	if (!_neverc_krt_memstart_addr) return 0;
+	unsigned long page_offset = ~0UL << va_bits;
+	return pa - *_neverc_krt_memstart_addr + page_offset;
+}
+
+static __always_inline void _neverc_krt_flush_tlb_all(void)
+{
+	__asm__ __volatile__("dsb ishst" ::: "memory");
+	__asm__ __volatile__("tlbi vmalle1is" ::: "memory");
+	__asm__ __volatile__("dsb ish" ::: "memory");
+	__asm__ __volatile__("isb" ::: "memory");
+}
+
 static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 {
 	unsigned long tcr, t1sz, levels, pgsz;
-	unsigned long ttbr1, table, idx, desc;
+	unsigned long ttbr1, table_pa, table, idx, desc;
 	int va_bits, bits_per_level;
 
 	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
@@ -170,20 +208,22 @@ static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 	va_bits = 64 - (int)t1sz;
 
 	pgsz = _neverc_krt_mem_get_page_size();
-	if (pgsz == 4096) {
+	if (pgsz == 4096)
 		bits_per_level = 9;
-	} else if (pgsz == 16384) {
+	else if (pgsz == 16384)
 		bits_per_level = 11;
-	} else {
+	else
 		bits_per_level = 13;
-	}
 
 	levels = (va_bits - 12 + bits_per_level - 1) / bits_per_level;
 	if (levels < 2) levels = 2;
 	if (levels > 4) levels = 4;
 
 	__asm__ __volatile__("mrs %0, ttbr1_el1" : "=r"(ttbr1));
-	table = ttbr1 & ~0xFFFFUL & ~1UL;
+	table_pa = ttbr1 & 0x0000FFFFFFFFFFFF & ~(pgsz - 1);
+	if (!table_pa) return -1;
+
+	table = _neverc_krt_pa_to_lm(table_pa, va_bits);
 	if (!table) return -1;
 
 	unsigned long level;
@@ -196,8 +236,19 @@ static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 		if (neverc_krt_mem_read(&desc, (void *)entry_addr, 8))
 			return -2;
 
+		/*
+		 * Block entries (type 1) map large regions (e.g. 2MB).
+		 * Modifying a live block descriptor violates the ARM64
+		 * break-before-make requirement.  Return -6 so callers
+		 * can fall back to aarch64_insn_write (fixmap bypass).
+		 */
+		if ((desc & 3) == 1)
+			return -6;
+
 		if ((desc & 3) != 3) return -3;
-		table = desc & ~0xFFFUL & ~(0xFFFFUL << 48);
+		unsigned long next_pa = desc & ~0xFFFUL & ~(0xFFFFUL << 48);
+		table = _neverc_krt_pa_to_lm(next_pa, va_bits);
+		if (!table) return -2;
 	}
 
 	{
@@ -220,10 +271,7 @@ static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 		if (new_desc == desc) return 0;
 
 		*(volatile unsigned long *)pte_addr = new_desc;
-		__asm__ __volatile__("dsb ishst" ::: "memory");
-		__asm__ __volatile__("tlbi vale1is, %0" :: "r"(addr >> 12) : "memory");
-		__asm__ __volatile__("dsb ish" ::: "memory");
-		__asm__ __volatile__("isb" ::: "memory");
+		_neverc_krt_flush_tlb_all();
 	}
 	return 0;
 }
@@ -238,10 +286,12 @@ int neverc_krt_mem_make_rw(unsigned long addr)
 		_neverc_krt_update_prot(phys, page, pgsz, _NEVERC_KRT_PAGE_KERNEL);
 		return 0;
 	}
-	if (_neverc_krt_set_memory_rw)
-		return _neverc_krt_set_memory_rw(page, 1);
-	if (_neverc_krt_pte_make_rw)
-		return _neverc_krt_pte_make_rw(page);
+	if (_neverc_krt_set_memory_rw &&
+	    _neverc_krt_set_memory_rw(page, 1) == 0)
+		return 0;
+	if (_neverc_krt_pte_make_rw &&
+	    _neverc_krt_pte_make_rw(page) == 0)
+		return 0;
 	return _neverc_krt_pte_walk_set(page, 1);
 }
 
@@ -255,11 +305,67 @@ int neverc_krt_mem_make_ro(unsigned long addr)
 		_neverc_krt_update_prot(phys, page, pgsz, _NEVERC_KRT_PAGE_KERNEL_RO);
 		return 0;
 	}
-	if (_neverc_krt_set_memory_ro)
-		return _neverc_krt_set_memory_ro(page, 1);
-	if (_neverc_krt_pte_make_ro)
-		return _neverc_krt_pte_make_ro(page);
+	if (_neverc_krt_set_memory_ro &&
+	    _neverc_krt_set_memory_ro(page, 1) == 0)
+		return 0;
+	if (_neverc_krt_pte_make_ro &&
+	    _neverc_krt_pte_make_ro(page) == 0)
+		return 0;
 	return _neverc_krt_pte_walk_set(page, 0);
+}
+
+/*
+ * Write to read-only kernel memory using the kernel's instruction
+ * patching mechanism.  Prefers aarch64_insn_patch_text (stop_machine,
+ * atomic across all CPUs) and falls back to per-word aarch64_insn_write.
+ * Both use fixmap to create a temporary writable mapping of the target
+ * page, so this works even for kernel image .rodata pages.
+ */
+static int _neverc_krt_mem_write_via_insn_write(unsigned long addr,
+					       const void *src, size_t len)
+{
+	const unsigned char *s = (const unsigned char *)src;
+	size_t count = len / 4;
+	size_t tail_len = len & 3;
+	size_t total = count + (tail_len ? 1 : 0);
+	unsigned int i;
+
+	if (total == 0) return 0;
+	if (!_neverc_krt_insn_write && !_neverc_krt_insn_patch_text) return -1;
+
+	void *addrs[16];
+	u32 insns[16];
+	if (total > 16) return -1;
+
+	for (i = 0; i < count; i++) {
+		addrs[i] = (void *)(addr + i * 4);
+		u32 val;
+		unsigned int j;
+		for (j = 0; j < 4; j++)
+			((unsigned char *)&val)[j] = s[i * 4 + j];
+		insns[i] = val;
+	}
+	if (tail_len) {
+		addrs[count] = (void *)(addr + count * 4);
+		u32 tail = 0;
+		neverc_krt_mem_read(&tail, addrs[count], 4);
+		for (i = 0; i < tail_len; i++)
+			((unsigned char *)&tail)[i] = s[count * 4 + i];
+		insns[count] = tail;
+	}
+
+	int ret;
+	if (_neverc_krt_insn_patch_text) {
+		ret = _neverc_krt_insn_patch_text(addrs, insns, (int)total);
+	} else {
+		ret = 0;
+		for (i = 0; i < total && ret == 0; i++)
+			ret = _neverc_krt_insn_write(addrs[i], insns[i]);
+	}
+
+	__asm__ __volatile__("dsb ish" ::: "memory");
+	__asm__ __volatile__("isb" ::: "memory");
+	return ret;
 }
 
 int neverc_krt_mem_write_protected(unsigned long addr, const void *src,
@@ -271,16 +377,20 @@ int neverc_krt_mem_write_protected(unsigned long addr, const void *src,
 	unsigned long page_end = (addr + len - 1) & ~mask;
 	unsigned long p;
 	int ret;
+	int rw_ok = 1;
 
 	for (p = page_start; p <= page_end; p += pgsz) {
 		ret = neverc_krt_mem_make_rw(p);
-		if (ret < 0) return ret;
+		if (ret < 0) { rw_ok = 0; break; }
 	}
 
-	ret = neverc_krt_mem_write((void *)addr, src, len);
-
-	for (p = page_start; p <= page_end; p += pgsz)
-		neverc_krt_mem_make_ro(p);
+	if (rw_ok) {
+		ret = neverc_krt_mem_write((void *)addr, src, len);
+		for (p = page_start; p <= page_end; p += pgsz)
+			neverc_krt_mem_make_ro(p);
+	} else {
+		ret = _neverc_krt_mem_write_via_insn_write(addr, src, len);
+	}
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");
