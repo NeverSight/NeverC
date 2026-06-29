@@ -10,9 +10,9 @@ typedef unsigned long (*neverc_krt_sprint_symbol_fn)(char *buf, unsigned long ad
 
 /* ---- shared variables (declared extern in linux/kallsyms.h) ---- */
 
-_neverc_krt_sym_resolver_fn _neverc_krt_sym_resolver;
+_neverc_krt_sym_resolver_fn _neverc_krt_sym_resolver = (void *)0;
 struct _neverc_krt_sym_entry _neverc_krt_sym_cache[_NEVERC_KRT_SYM_CACHE_SIZE];
-unsigned long _neverc_krt_cache_key;
+unsigned long _neverc_krt_cache_key = 0;
 
 /* ---- internal variables (file-local) ---- */
 

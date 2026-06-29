@@ -2,9 +2,9 @@
 #include <nvk.h>
 #include <nvk_internal.h>
 
-unsigned long _neverc_krt_module_size;
-int           _neverc_krt_kernel_ver;
-unsigned long _neverc_krt_file_dentry_off;
+unsigned long _neverc_krt_module_size = 0;
+int           _neverc_krt_kernel_ver = 0;
+unsigned long _neverc_krt_file_dentry_off = 0;
 
 static __always_inline unsigned long _neverc_krt_module_size_for(int kv)
 {

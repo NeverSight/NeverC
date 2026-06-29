@@ -15,11 +15,11 @@ typedef void (*neverc_krt_update_mapping_prot_fn)(u64 phys, unsigned long virt,
 /* ---- variables ---- */
 
 static unsigned long              _neverc_krt_mem_page_sz;
-int                               _neverc_krt_mem_inited;
-neverc_krt_pte_rw_fn              _neverc_krt_pte_make_rw;
-neverc_krt_pte_rw_fn              _neverc_krt_pte_make_ro;
-neverc_krt_copy_from_user_fn      _neverc_krt_copy_from_user;
-neverc_krt_copy_to_user_fn        _neverc_krt_copy_to_user;
+int                               _neverc_krt_mem_inited = 0;
+neverc_krt_pte_rw_fn              _neverc_krt_pte_make_rw = (void *)0;
+neverc_krt_pte_rw_fn              _neverc_krt_pte_make_ro = (void *)0;
+neverc_krt_copy_from_user_fn      _neverc_krt_copy_from_user = (void *)0;
+neverc_krt_copy_to_user_fn        _neverc_krt_copy_to_user = (void *)0;
 
 static neverc_krt_probe_read_fn          _neverc_krt_probe_read;
 static neverc_krt_probe_write_fn         _neverc_krt_probe_write;
@@ -140,8 +140,17 @@ long neverc_krt_mem_write(void *dst, const void *src, size_t len)
 
 long neverc_krt_mem_read_user(void *dst, const void __user *src, size_t len)
 {
+	unsigned long not_copied;
 	if (!_neverc_krt_copy_from_user) return -1;
-	return _neverc_krt_copy_from_user(dst, src, len) ? -14 : 0;
+	not_copied = _neverc_krt_copy_from_user(dst, src, len);
+	if (not_copied) {
+		unsigned char *p = (unsigned char *)dst + (len - not_copied);
+		unsigned long i;
+		for (i = 0; i < not_copied; i++)
+			p[i] = 0;
+		return -14;
+	}
+	return 0;
 }
 
 long neverc_krt_mem_write_user(void __user *dst, const void *src, size_t len)

@@ -29,10 +29,10 @@ static neverc_krt_rcu_unlock_fn     _neverc_krt_rcu_read_unlock;
  * Cross-file variables — referenced by nvk_cred.c and nvk_anti.c.
  * Non-static so they are visible across the unity TU.
  */
-unsigned long               _neverc_krt_off_comm;
-neverc_krt_get_task_cred_fn _neverc_krt_get_task_cred;
-neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds;
-neverc_krt_commit_creds_fn  _neverc_krt_commit_creds;
+unsigned long               _neverc_krt_off_comm = 0;
+neverc_krt_get_task_cred_fn _neverc_krt_get_task_cred = (void *)0;
+neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds = (void *)0;
+neverc_krt_commit_creds_fn  _neverc_krt_commit_creds = (void *)0;
 
 /* ---- implementation ---- */
 

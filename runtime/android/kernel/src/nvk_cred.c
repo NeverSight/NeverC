@@ -2,8 +2,8 @@
 #include <nvk.h>
 #include <nvk_internal.h>
 
-unsigned long _neverc_krt_off_cred;
-unsigned long _neverc_krt_off_uid;
+unsigned long _neverc_krt_off_cred = 0;
+unsigned long _neverc_krt_off_uid = 0;
 
 /* ---- internal typedefs ---- */
 
