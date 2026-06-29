@@ -67,7 +67,7 @@ inline void printBumpPtrAllocatorStats(unsigned NumSlabs,
 /// size up. For the common case (alignof(T) <= MinAlignV), no realignment is
 /// needed on the fast path. SpecificBumpPtrAllocator uses MinAlignV=1 for
 /// tight packing (DestroyAll strides at sizeof(T)).
-template <typename AllocatorT = MallocAllocator, size_t SlabSize = 4096,
+template <typename AllocatorT = MallocAllocator, size_t SlabSize = 16384,
           size_t SizeThreshold = SlabSize, size_t GrowthDelay = 128,
           size_t MinAlignV = 8>
 class BumpPtrAllocatorImpl
@@ -471,8 +471,7 @@ inline void *
 operator new(size_t Size,
              llvm::BumpPtrAllocatorImpl<AllocatorT, SlabSize, SizeThreshold,
                                         GrowthDelay, MinAlignV> &Alloc) {
-  return Alloc.Allocate(Size, std::min((size_t)::llvm::NextPowerOf2(Size),
-                                       alignof(std::max_align_t)));
+  return Alloc.Allocate(Size, alignof(std::max_align_t));
 }
 template <typename AllocatorT, size_t SlabSize, size_t SizeThreshold,
           size_t GrowthDelay, size_t MinAlignV>
