@@ -1,10 +1,10 @@
 # Android GKI kernel syscall-hook demo (.ko)
 #
+# Demonstrates sys_call_table pointer replacement for syscall interception.
+#
 # Usage:
-#   neverc make                                       (method A: sys_call_table swap)
-#   neverc make EXTRA=-DNEVERC_KRT_SYSCALL_INLINE_HOOK   (method B: inline hook)
-#   neverc make EXTRA=-DNEVERC_KRT_SYSCALL_CONTEXT_HOOK (method C: context hook)
-#   neverc make KERNEL=601                            (target 6.1)
+#   neverc make                   (default KERNEL=510)
+#   neverc make KERNEL=606        (target 6.6)
 
 NEVERC ?= ../../build-neverc/bin/neverc
 
@@ -12,7 +12,6 @@ TARGET  = aarch64-linux-android
 MODULE  = nvk_syscall_hook.ko
 SRCS    = main.c
 
-# -DNVK_KERNEL=510|515|601|606|612 selects the target kernel preset.
 KERNEL ?= 510
 EXTRA  ?=
 
@@ -37,10 +36,14 @@ insmod: push
 rmmod:
 	adb shell su -c 'rmmod $(MODULE:.ko=)'
 
+log:
+	adb shell su -c 'dmesg | grep neverc_krt_syscall | tail -20'
+
 run: insmod
-	adb shell su -c 'dmesg | tail -10'
+	@sleep 1
+	@$(MAKE) log
 
 clean:
 	rm -f $(MODULE) *.o
 
-.PHONY: all push insmod rmmod run clean
+.PHONY: all push insmod rmmod log run clean
