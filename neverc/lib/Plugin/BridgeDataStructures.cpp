@@ -943,7 +943,7 @@ static void bridgeArenaReset(NevercArenaRef Arena) {
 static uint64_t bridgeArenaGetBytesUsed(NevercArenaRef Arena) {
   if (LLVM_UNLIKELY(!Arena))
     return 0;
-  return unwrapArena(Arena)->Alloc.getBytesAllocated();
+  return unwrapArena(Arena)->Alloc.getTotalMemory();
 }
 
 // ===----------------------------------------------------------------------===
