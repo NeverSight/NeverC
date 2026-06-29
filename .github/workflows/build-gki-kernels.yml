@@ -95,6 +95,22 @@ jobs:
           sudo swapoff -a && sudo rm -f /mnt/swapfile || true
           df -h /
 
+      - name: Create swap for LTO link
+        run: |
+          avail=$(df --output=avail /mnt | tail -1)
+          swap_kb=$(( avail - 4*1024*1024 ))
+          if [ "$swap_kb" -gt $((2*1024*1024)) ]; then
+            swap_mb=$(( swap_kb / 1024 ))
+          else
+            swap_mb=2048
+          fi
+          echo "Creating ${swap_mb}M swap on /mnt"
+          sudo fallocate -l "${swap_mb}M" /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
+
       - name: Checkout neverc repo
         uses: actions/checkout@v4
         with:
