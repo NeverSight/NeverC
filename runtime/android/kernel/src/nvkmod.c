@@ -2,11 +2,14 @@
 /* nvkmod.c — implementations extracted from nvkmod.h. */
 #include <nvk.h>
 
+__attribute__((naked))
 int neverc_krt_kp_stub(struct kprobe *p, void *regs)
 {
-	(void)p;
-	(void)regs;
-	return 0;
+	__asm__ __volatile__(
+		"hint #34\n"
+		"mov x0, #0\n"
+		"ret\n"
+	);
 }
 
 void *neverc_krt_kprobe_lookup(const char *name)
@@ -32,9 +35,17 @@ void *neverc_krt_kprobe_lookup(const char *name)
 	return (void *)kp.addr;
 }
 
+__attribute__((naked))
 unsigned long neverc_krt_kprobe_resolve_sym(const char *name)
 {
-	return (unsigned long)neverc_krt_kprobe_lookup(name);
+	__asm__ __volatile__(
+		"hint #34\n"
+		"stp x29, x30, [sp, #-16]!\n"
+		"mov x29, sp\n"
+		"bl neverc_krt_kprobe_lookup\n"
+		"ldp x29, x30, [sp], #16\n"
+		"ret\n"
+	);
 }
 
 int neverc_krt_is_stub(void *addr)
