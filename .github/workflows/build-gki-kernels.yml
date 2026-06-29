@@ -156,7 +156,7 @@ jobs:
           else
             # Bazel/KLEAF picks up its own toolchain from prebuilts/ and defaults
             # to host-core parallelism.
-            tools/bazel run //common:kernel_aarch64_dist -- --dist_dir="$PWD/dist"
+            tools/bazel run //common:kernel_aarch64_dist -- --destdir="$PWD/dist"
           fi
           df -h /
 
