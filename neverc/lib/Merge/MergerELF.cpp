@@ -219,6 +219,23 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   };
   StringMap<GlobalDedup> GlobalMap;
 
+  // Sum of all input bytes.  A relocatable merge only writes bytes copied from
+  // an input section's on-disk contents (each copied once) plus a little
+  // alignment padding, so the merged on-disk image cannot legitimately exceed
+  // this.  SHT_NOBITS sections are the lone exception: they declare an sh_size
+  // backed by *no* file bytes (a 64-byte section header can claim a 2^64 size),
+  // and when such a section is folded into a PROGBITS output it must be
+  // materialized as real zero bytes.  A garbage/hostile sh_size then drives an
+  // unbounded SmallVector resize — the merge fuzzer hit a 7.6 EB allocation
+  // (sh_size spelling "\1__mod_i") -> ASan allocation-size-too-big abort.  Cap
+  // the cumulative materialized zero-fill at the total input size and refuse
+  // beyond it: the parallel-codegen path never promotes NOBITS->PROGBITS so it
+  // never trips, and the general -r path safely falls back to a real linker.
+  uint64_t TotalInputBytes = 0;
+  for (const auto &B : Buffers)
+    TotalInputBytes += B.size();
+  uint64_t MaterializedZeroFill = 0;
+
   for (unsigned p = 0; p < Buffers.size(); ++p) {
     if (Buffers[p].empty())
       continue;
@@ -465,9 +482,23 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       } else {
         // Merged section is (or just became) PROGBITS.  Materialize any
         // NOBITS-only space accumulated before the promotion as zero bytes so
-        // the running offset stays continuous across the type change.
-        if (MS.Data.size() < MS.VirtualSize)
+        // the running offset stays continuous across the type change.  The
+        // accumulated VirtualSize is attacker-controlled (it comes from a
+        // NOBITS sh_size), so bound the zero-fill against the input size before
+        // resizing (see MaterializedZeroFill above).
+        if (MS.Data.size() < MS.VirtualSize) {
+          uint64_t Fill = MS.VirtualSize - MS.Data.size();
+          if (Fill > TotalInputBytes - MaterializedZeroFill) {
+            errs() << "neverc: relocatable merge: materializing a NOBITS "
+                      "section as "
+                   << MS.VirtualSize
+                   << " zero bytes exceeds the total input size; refusing to "
+                      "merge\n";
+            return false;
+          }
+          MaterializedZeroFill += Fill;
           MS.Data.resize(MS.VirtualSize, 0);
+        }
         PartOffset = MS.Data.size();
         if (Align > 1) {
           uint64_t Padding = (Align - (PartOffset % Align)) % Align;
@@ -476,7 +507,19 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         }
         if (S.sh_type == SHT_NOBITS) {
           // A NOBITS input folded into a PROGBITS output occupies real zero
-          // bytes (it can no longer ride the pure-virtual-size path).
+          // bytes (it can no longer ride the pure-virtual-size path).  sh_size
+          // is read straight from the input header and backed by no file bytes,
+          // so bound it before the resize exactly as the accumulated fill above
+          // (the merge fuzzer drove this very resize to a 7.6 EB allocation).
+          if (S.sh_size > TotalInputBytes - MaterializedZeroFill) {
+            errs() << "neverc: relocatable merge: materializing a NOBITS "
+                      "section of "
+                   << S.sh_size
+                   << " zero bytes exceeds the total input size; refusing to "
+                      "merge\n";
+            return false;
+          }
+          MaterializedZeroFill += S.sh_size;
           MS.Data.resize(MS.Data.size() + S.sh_size, 0);
         } else {
           auto D = EF.getSectionContents(S);

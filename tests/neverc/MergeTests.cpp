@@ -2161,6 +2161,47 @@ TEST(MergeELFSemantic, RandomizedNobitsProgbitsMixNoCollapse) {
   }
 }
 
+TEST(MergeELFSemantic, HugeNobitsSizeRefusedNotMaterialized) {
+  // Regression for the merge fuzzer's allocation-size-too-big abort at
+  // MergerELF.cpp's NOBITS materialization: a SHT_NOBITS section declares an
+  // sh_size backed by *no* file bytes, so a 64-byte section header can claim a
+  // ~7.6 EB size.  When that section folds into a same-named PROGBITS output the
+  // NOBITS contribution must be materialized as real zero bytes, and an
+  // unbounded resize then aborts under ASan (or OOMs in production).  The merger
+  // must refuse such an input instead of attempting the allocation.  Both
+  // partition orderings are exercised because the materialization happens at a
+  // different site for each (the accumulated-fill resize when the NOBITS input
+  // comes first, the this-input resize when the PROGBITS input comes first), and
+  // both verify on/off so the guard is proven to live in the raw merge path, not
+  // the verifier.  The size is the exact value the fuzzer found (bytes spelling
+  // "\1__mod_i").
+  const uint64_t Huge = 0x695f646f6d5f5f01ull;
+  for (bool NobitsFirst : {true, false}) {
+    for (bool Verify : {true, false}) {
+      SecSpec Nb{"X", Huge, 16, ELF::SHT_NOBITS,
+                 ELF::SHF_ALLOC | ELF::SHF_WRITE};
+      SecSpec Pb{"X", 0x40, 16, ELF::SHT_PROGBITS,
+                 ELF::SHF_ALLOC | ELF::SHF_WRITE, 0xBB};
+      auto ObjNb = buildSectionedELF({Nb}, {SymSpec{"a", 0, 0}}, {});
+      auto ObjPb = buildSectionedELF({Pb}, {SymSpec{"b", 0, 0}}, {});
+      SmallVector<SmallVector<char, 0>, 2> Bufs;
+      if (NobitsFirst) {
+        Bufs.push_back(std::move(ObjNb));
+        Bufs.push_back(std::move(ObjPb));
+      } else {
+        Bufs.push_back(std::move(ObjPb));
+        Bufs.push_back(std::move(ObjNb));
+      }
+      Options Opts;
+      Opts.verify = Verify;
+      auto [OK, Out] = mergeELF(Bufs, Opts);
+      EXPECT_FALSE(OK) << "NobitsFirst=" << NobitsFirst << " Verify=" << Verify
+                       << ": a NOBITS section larger than all inputs must be "
+                          "refused, never materialized";
+    }
+  }
+}
+
 TEST(MergeELFSemantic, PreservedSectionsNotMerged) {
   // Kernel-module mode: .text.* collapses to .text, but a preserved section
   // (e.g. .modinfo) keeps its name and is never folded away.
