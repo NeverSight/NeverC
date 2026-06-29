@@ -1,6 +1,8 @@
 #ifndef NEVERC_LIB_EMIT_CORE_ANDROIDKERNELEMITTER_H
 #define NEVERC_LIB_EMIT_CORE_ANDROIDKERNELEMITTER_H
 
+#include "llvm/IR/PassManager.h"
+
 namespace llvm {
 class Module;
 } // namespace llvm
@@ -9,12 +11,18 @@ namespace neverc::Emit::AndroidKernel {
 
 /// Emit sections, symbols, and linkage fixups required for loading an
 /// out-of-tree module on GKI (Generic Kernel Image) kernels.  arm64-only.
-///
-/// NVK runtime global variables are now declared as `extern` in the headers
-/// (via NVK_RT_VAR) and defined in precompiled bitcode, so all TUs share
-/// a single copy automatically.  NvkKernelRuntimeLinkerPass links the
-/// bitcode at compile time.
 void emitFixups(llvm::Module &M, unsigned Arch);
+
+/// Apply ShadowCallStack, BTI, PAC-RET attributes and strip UWTable from
+/// every non-declaration function.  Runs at pipeline start, right after
+/// the runtime linker passes, so that functions merged from the NVK /
+/// std / string / mimalloc bitcode libraries are covered.  User code
+/// already has these attributes from the frontend flags.
+class KernelFunctionAttrsPass
+    : public llvm::PassInfoMixin<KernelFunctionAttrsPass> {
+public:
+  llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &);
+};
 
 } // namespace neverc::Emit::AndroidKernel
 

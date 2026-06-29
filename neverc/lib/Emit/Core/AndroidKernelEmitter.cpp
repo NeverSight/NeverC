@@ -93,11 +93,17 @@ static void applyKernelFunctionAttrs(llvm::Module &M) {
   }
 }
 
+llvm::PreservedAnalyses
+AndroidKernel::KernelFunctionAttrsPass::run(llvm::Module &M,
+                                            llvm::ModuleAnalysisManager &) {
+  applyKernelFunctionAttrs(M);
+  return llvm::PreservedAnalyses::none();
+}
+
 void AndroidKernel::emitFixups(llvm::Module &M, unsigned Arch) {
   if (Arch != llvm::Triple::aarch64)
     return;
 
-  applyKernelFunctionAttrs(M);
   emitPLTSections(M);
   emitEmptyVersionsSection(M);
   emitCFICheckStubs(M);

@@ -5,6 +5,7 @@
 #include "Backend/NvkKernelRuntimeLinker.h"
 #include "Backend/StdRuntimeLinker.h"
 #include "Backend/StringRuntimeLinker.h"
+#include "Core/AndroidKernelEmitter.h"
 #include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
 #include "neverc/Transforms/XorStr/XorStrCleanupPass.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
@@ -488,6 +489,8 @@ void GenAssemblyHelper::runOptimizationPipeline(
     PB.registerPipelineStartEPCallback(
         [IsPreLink](ModulePassManager &MPM, OptimizationLevel) {
           MPM.addPass(NvkKernelRuntimeLinkerPass(IsPreLink));
+          MPM.addPass(
+              neverc::Emit::AndroidKernel::KernelFunctionAttrsPass());
         });
   }
 
