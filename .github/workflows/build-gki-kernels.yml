@@ -82,9 +82,17 @@ jobs:
             /opt/hostedtoolcache \
             /opt/ghc \
             /usr/local/share/boost \
-            /usr/lib/jvm || true
+            /usr/lib/jvm \
+            /usr/share/swift \
+            /usr/share/miniconda \
+            /usr/share/az_* \
+            /usr/share/gradle-* \
+            /usr/share/sbt \
+            /usr/local/graalvm \
+            /usr/local/julia* || true
           sudo docker image prune --all --force || true
           sudo apt-get clean || true
+          sudo swapoff -a && sudo rm -f /mnt/swapfile || true
           df -h /
 
       - name: Checkout neverc repo
@@ -117,7 +125,24 @@ jobs:
           cd kernel
           repo init --depth=1 \
             -u https://android.googlesource.com/kernel/manifest -b "$BRANCH"
-          repo sync -c --no-tags --optimized-fetch --prune -j"$(nproc)"
+          for attempt in 1 2 3; do
+            echo "::group::repo sync attempt $attempt"
+            if repo sync -c --no-tags --optimized-fetch --prune -j4; then
+              echo "::endgroup::"
+              break
+            fi
+            echo "::endgroup::"
+            if [ "$attempt" -lt 3 ]; then
+              echo "repo sync failed (attempt $attempt), retrying with --force-sync..."
+              sleep 5
+              repo sync -c --no-tags --optimized-fetch --prune --force-sync -j2 || true
+            else
+              echo "repo sync failed after $attempt attempts"
+              df -h /
+              du -sh .repo/projects/* 2>/dev/null | sort -rh | head -20 || true
+              exit 1
+            fi
+          done
           df -h /
 
       - name: Build kernel
