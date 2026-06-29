@@ -237,13 +237,23 @@ static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 			return -2;
 
 		/*
-		 * Block entries (type 1) map large regions (e.g. 2MB).
-		 * Modifying a live block descriptor violates the ARM64
-		 * break-before-make requirement.  Return -6 so callers
-		 * can fall back to aarch64_insn_write (fixmap bypass).
+		 * Block entries (type 1) map large regions (2MB on 4KB
+		 * granule).  Toggling only the permission bits (RDONLY)
+		 * is safe without a full break-before-make sequence
+		 * because the physical address and block size stay the
+		 * same.  A full TLB flush ensures coherence.
 		 */
-		if ((desc & 3) == 1)
-			return -6;
+		if ((desc & 3) == 1) {
+			unsigned long new_desc;
+			if (writable)
+				new_desc = desc & ~_NEVERC_KRT_PTE_RDONLY;
+			else
+				new_desc = desc | _NEVERC_KRT_PTE_RDONLY;
+			if (new_desc == desc) return 0;
+			*(volatile unsigned long *)entry_addr = new_desc;
+			_neverc_krt_flush_tlb_all();
+			return 0;
+		}
 
 		if ((desc & 3) != 3) return -3;
 		unsigned long next_pa = desc & ~0xFFFUL & ~(0xFFFFUL << 48);
@@ -286,9 +296,6 @@ int neverc_krt_mem_make_rw(unsigned long addr)
 		_neverc_krt_update_prot(phys, page, pgsz, _NEVERC_KRT_PAGE_KERNEL);
 		return 0;
 	}
-	if (_neverc_krt_set_memory_rw &&
-	    _neverc_krt_set_memory_rw(page, 1) == 0)
-		return 0;
 	if (_neverc_krt_pte_make_rw &&
 	    _neverc_krt_pte_make_rw(page) == 0)
 		return 0;
@@ -305,9 +312,6 @@ int neverc_krt_mem_make_ro(unsigned long addr)
 		_neverc_krt_update_prot(phys, page, pgsz, _NEVERC_KRT_PAGE_KERNEL_RO);
 		return 0;
 	}
-	if (_neverc_krt_set_memory_ro &&
-	    _neverc_krt_set_memory_ro(page, 1) == 0)
-		return 0;
 	if (_neverc_krt_pte_make_ro &&
 	    _neverc_krt_pte_make_ro(page) == 0)
 		return 0;
@@ -332,10 +336,10 @@ static int _neverc_krt_mem_write_via_insn_write(unsigned long addr,
 
 	if (total == 0) return 0;
 	if (!_neverc_krt_insn_write && !_neverc_krt_insn_patch_text) return -1;
+	if (total > 4) return -1;
 
-	void *addrs[16];
-	u32 insns[16];
-	if (total > 16) return -1;
+	void *addrs[4];
+	u32 insns[4];
 
 	for (i = 0; i < count; i++) {
 		addrs[i] = (void *)(addr + i * 4);
@@ -357,10 +361,12 @@ static int _neverc_krt_mem_write_via_insn_write(unsigned long addr,
 	int ret;
 	if (_neverc_krt_insn_patch_text) {
 		ret = _neverc_krt_insn_patch_text(addrs, insns, (int)total);
-	} else {
+	} else if (_neverc_krt_insn_write) {
 		ret = 0;
 		for (i = 0; i < total && ret == 0; i++)
 			ret = _neverc_krt_insn_write(addrs[i], insns[i]);
+	} else {
+		ret = -1;
 	}
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
@@ -378,7 +384,6 @@ int neverc_krt_mem_write_protected(unsigned long addr, const void *src,
 	unsigned long p;
 	int ret;
 	int rw_ok = 1;
-
 	for (p = page_start; p <= page_end; p += pgsz) {
 		ret = neverc_krt_mem_make_rw(p);
 		if (ret < 0) { rw_ok = 0; break; }
