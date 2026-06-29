@@ -11,7 +11,7 @@
 #include <linux/types.h>
 #include <linux/compiler.h>
 #include <linux/sched.h>
-#include <nvk_hook.h>
+#include <nvk_hook_internal.h>
 
 /* ---- Shared typedefs (used across multiple .c files) ---- */
 

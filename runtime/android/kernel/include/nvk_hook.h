@@ -1,26 +1,36 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* neverc_krt_hook.h - NeverC arm64 inline-hook engine. */
+/*
+ * nvk_hook.h — NeverC kernel hook public API.
+ *
+ * Two entry points:
+ *   neverc_krt_hook_register  — hook a function at its entry point
+ *   neverc_krt_probe_register — hook any instruction at an arbitrary address
+ *
+ * Both support:
+ *   - Multiple handlers on the same target (auto-chained)
+ *   - Coexistence with existing hooks (ftrace, kprobe, other inline hooks)
+ *   - Priority-based ordering (lower value = runs first)
+ */
 #ifndef NEVERC_KRT_HOOK_H
 #define NEVERC_KRT_HOOK_H
 
 #include <linux/types.h>
 #include <linux/compiler.h>
-#include <nvk_mem.h>
 
+/* ====================================================================
+ * Register context (used by probe handlers)
+ * ==================================================================== */
 
 typedef struct {
 	u64 regs[31];       /* X0 - X30                          */
-	u64 fpcr;           /* saved FPCR                         */
-	u64 nzcv;           /* saved NZCV flags                   */
-	u64 force_jump;     /* if nonzero, redirect execution     */
-	u64 fpsr;           /* saved FPSR                         */
-	u64 _pad;           /* align to 16                        */
+	u64 fpcr;           /* saved FPCR                        */
+	u64 nzcv;           /* saved NZCV flags                  */
+	u64 force_jump;     /* if nonzero, redirect execution    */
+	u64 fpsr;           /* saved FPSR                        */
+	u64 _pad;           /* align to 16                       */
 } neverc_krt_reg_ctx;
 
-typedef struct {
-	u64 lo, hi;
-} neverc_krt_fp128;
-
+/* Register access macros */
 #define NEVERC_KRT_CTX_X(ctx, n) ((ctx)->regs[n])
 #define NEVERC_KRT_CTX_X0(ctx)   ((ctx)->regs[0])
 #define NEVERC_KRT_CTX_X1(ctx)   ((ctx)->regs[1])
@@ -35,92 +45,126 @@ typedef struct {
 #define NEVERC_KRT_CTX_NZCV(ctx) ((ctx)->nzcv)
 #define NEVERC_KRT_CTX_RET(ctx)  NEVERC_KRT_CTX_X0(ctx)
 
-#define NEVERC_KRT_CTX_ARG(ctx, n) ((ctx)->regs[n])
-#define NEVERC_KRT_CTX_SYSCALL_NR(ctx) NEVERC_KRT_CTX_X8(ctx)
+#define NEVERC_KRT_CTX_ARG(ctx, n)         ((ctx)->regs[n])
+#define NEVERC_KRT_CTX_SYSCALL_NR(ctx)     NEVERC_KRT_CTX_X8(ctx)
 
-#define NEVERC_KRT_CTX_FORCE_JUMP(ctx, addr)                   \
+/*
+ * Redirect execution to an arbitrary address after the handler returns.
+ */
+#define NEVERC_KRT_CTX_FORCE_JUMP(ctx, addr) \
 	do { (ctx)->force_jump = (u64)(unsigned long)(addr); } while (0)
 
 /*
  * Skip the original function entirely; return ret_val to the caller.
- * Works by redirecting execution to the saved LR (X30).
  */
-#define NEVERC_KRT_CTX_SKIP(ctx, ret_val) do {                              \
-	(ctx)->regs[0] = (u64)(unsigned long)(ret_val);              \
-	(ctx)->force_jump = (ctx)->regs[30];                         \
+#define NEVERC_KRT_CTX_SKIP(ctx, ret_val) do {           \
+	(ctx)->regs[0] = (u64)(unsigned long)(ret_val);  \
+	(ctx)->force_jump = (ctx)->regs[30];             \
 } while (0)
 
 /* Skip the original function (void return). */
-#define NEVERC_KRT_CTX_SKIP_VOID(ctx)                                       \
+#define NEVERC_KRT_CTX_SKIP_VOID(ctx) \
 	do { (ctx)->force_jump = (ctx)->regs[30]; } while (0)
 
-/* Redirect execution to a different function instead of the original. */
-#define NEVERC_KRT_CTX_REDIRECT(ctx, fn_addr)                               \
+/* Redirect execution to a different function. */
+#define NEVERC_KRT_CTX_REDIRECT(ctx, fn_addr) \
 	NEVERC_KRT_CTX_FORCE_JUMP(ctx, fn_addr)
 
-/* Set argument N (X0..X7 for standard AAPCS64 call convention). */
-#define NEVERC_KRT_CTX_SET_ARG(ctx, n, val)                                 \
+/* Set argument N (X0..X7 for AAPCS64). */
+#define NEVERC_KRT_CTX_SET_ARG(ctx, n, val) \
 	do { (ctx)->regs[n] = (u64)(unsigned long)(val); } while (0)
 
-/*
- * Cast a neverc_krt_hook_ctx's trampoline to a callable original-function pointer.
- * Usage:  faccessat_fn orig = NEVERC_KRT_CTX_ORIG_FN(&my_ctx, faccessat_fn);
- */
-#define NEVERC_KRT_CTX_ORIG_FN(h, fn_type) ((fn_type)(h)->tramp_code)
+/* ====================================================================
+ * FP/SIMD state save/restore (for handlers that touch NEON/FP regs)
+ * ==================================================================== */
 
 typedef struct {
-	neverc_krt_fp128 q[32];    /* Q0 - Q31 (128-bit each)            */
+	u64 lo, hi;
+} neverc_krt_fp128;
+
+typedef struct {
+	neverc_krt_fp128 q[32];
 } neverc_krt_fp_state;
 
-#define NEVERC_KRT_SAVE_FP(st)                                                  \
-	__asm__ __volatile__(                                            \
-	    "stp q0,  q1,  [%0, #0]   \n"                               \
-	    "stp q2,  q3,  [%0, #32]  \n"                               \
-	    "stp q4,  q5,  [%0, #64]  \n"                               \
-	    "stp q6,  q7,  [%0, #96]  \n"                               \
-	    "stp q8,  q9,  [%0, #128] \n"                               \
-	    "stp q10, q11, [%0, #160] \n"                               \
-	    "stp q12, q13, [%0, #192] \n"                               \
-	    "stp q14, q15, [%0, #224] \n"                               \
-	    "stp q16, q17, [%0, #256] \n"                               \
-	    "stp q18, q19, [%0, #288] \n"                               \
-	    "stp q20, q21, [%0, #320] \n"                               \
-	    "stp q22, q23, [%0, #352] \n"                               \
-	    "stp q24, q25, [%0, #384] \n"                               \
-	    "stp q26, q27, [%0, #416] \n"                               \
-	    "stp q28, q29, [%0, #448] \n"                               \
-	    "stp q30, q31, [%0, #480] \n"                               \
+#define NEVERC_KRT_SAVE_FP(st)                                       \
+	__asm__ __volatile__(                                        \
+	    "stp q0,  q1,  [%0, #0]   \n"                           \
+	    "stp q2,  q3,  [%0, #32]  \n"                           \
+	    "stp q4,  q5,  [%0, #64]  \n"                           \
+	    "stp q6,  q7,  [%0, #96]  \n"                           \
+	    "stp q8,  q9,  [%0, #128] \n"                           \
+	    "stp q10, q11, [%0, #160] \n"                           \
+	    "stp q12, q13, [%0, #192] \n"                           \
+	    "stp q14, q15, [%0, #224] \n"                           \
+	    "stp q16, q17, [%0, #256] \n"                           \
+	    "stp q18, q19, [%0, #288] \n"                           \
+	    "stp q20, q21, [%0, #320] \n"                           \
+	    "stp q22, q23, [%0, #352] \n"                           \
+	    "stp q24, q25, [%0, #384] \n"                           \
+	    "stp q26, q27, [%0, #416] \n"                           \
+	    "stp q28, q29, [%0, #448] \n"                           \
+	    "stp q30, q31, [%0, #480] \n"                           \
 	    : : "r"(st) : "memory")
 
-#define NEVERC_KRT_RESTORE_FP(st)                                               \
-	__asm__ __volatile__(                                            \
-	    "ldp q0,  q1,  [%0, #0]   \n"                               \
-	    "ldp q2,  q3,  [%0, #32]  \n"                               \
-	    "ldp q4,  q5,  [%0, #64]  \n"                               \
-	    "ldp q6,  q7,  [%0, #96]  \n"                               \
-	    "ldp q8,  q9,  [%0, #128] \n"                               \
-	    "ldp q10, q11, [%0, #160] \n"                               \
-	    "ldp q12, q13, [%0, #192] \n"                               \
-	    "ldp q14, q15, [%0, #224] \n"                               \
-	    "ldp q16, q17, [%0, #256] \n"                               \
-	    "ldp q18, q19, [%0, #288] \n"                               \
-	    "ldp q20, q21, [%0, #320] \n"                               \
-	    "ldp q22, q23, [%0, #352] \n"                               \
-	    "ldp q24, q25, [%0, #384] \n"                               \
-	    "ldp q26, q27, [%0, #416] \n"                               \
-	    "ldp q28, q29, [%0, #448] \n"                               \
-	    "ldp q30, q31, [%0, #480] \n"                               \
+#define NEVERC_KRT_RESTORE_FP(st)                                    \
+	__asm__ __volatile__(                                        \
+	    "ldp q0,  q1,  [%0, #0]   \n"                           \
+	    "ldp q2,  q3,  [%0, #32]  \n"                           \
+	    "ldp q4,  q5,  [%0, #64]  \n"                           \
+	    "ldp q6,  q7,  [%0, #96]  \n"                           \
+	    "ldp q8,  q9,  [%0, #128] \n"                           \
+	    "ldp q10, q11, [%0, #160] \n"                           \
+	    "ldp q12, q13, [%0, #192] \n"                           \
+	    "ldp q14, q15, [%0, #224] \n"                           \
+	    "ldp q16, q17, [%0, #256] \n"                           \
+	    "ldp q18, q19, [%0, #288] \n"                           \
+	    "ldp q20, q21, [%0, #320] \n"                           \
+	    "ldp q22, q23, [%0, #352] \n"                           \
+	    "ldp q24, q25, [%0, #384] \n"                           \
+	    "ldp q26, q27, [%0, #416] \n"                           \
+	    "ldp q28, q29, [%0, #448] \n"                           \
+	    "ldp q30, q31, [%0, #480] \n"                           \
 	    : : "r"(st) : "memory")
 
+/*
+ * FP guard pair — use inside a ctx/probe handler when it might touch
+ * SIMD/FP registers (e.g. calling printk or format functions).
+ *
+ *   static void my_handler(neverc_krt_reg_ctx *ctx) {
+ *       NEVERC_KRT_CTX_FP_GUARD_BEGIN;
+ *       // ... safe to call FP-using functions here ...
+ *       NEVERC_KRT_CTX_FP_GUARD_END;
+ *   }
+ */
+#define NEVERC_KRT_CTX_FP_GUARD_BEGIN \
+	neverc_krt_fp_state _neverc_krt_fps_guard; \
+	NEVERC_KRT_SAVE_FP(&_neverc_krt_fps_guard)
 
-#define NEVERC_KRT_A64_NOP       0xD503201FU
-#define NEVERC_KRT_A64_BTI_C     0xD503245FU
-#define NEVERC_KRT_A64_BTI_JC    0xD50324DFU
-#define NEVERC_KRT_A64_PACIASP   0xD503233FU
-#define NEVERC_KRT_A64_PACIBSP   0xD503237FU
+#define NEVERC_KRT_CTX_FP_GUARD_END \
+	NEVERC_KRT_RESTORE_FP(&_neverc_krt_fps_guard)
 
-#define NEVERC_KRT_A64_RET_X16   0xD65F0200U
-#define NEVERC_KRT_A64_RET_X17   0xD65F0220U
+/* ====================================================================
+ * Handler typedefs
+ * ==================================================================== */
+
+/* Probe handler: gets full register context at the hooked instruction. */
+typedef void (*neverc_krt_ctx_handler_t)(neverc_krt_reg_ctx *ctx);
+
+/*
+ * Function-entry hook handler:
+ *   long fn(void *orig, void *a0, void *a1, void *a2,
+ *           void *a3, void *a4, void *a5)
+ *
+ *   - Call orig(a0..a5) to invoke the original function.
+ *   - Return value propagates to the caller.
+ */
+typedef long (*neverc_krt_hook_handler_t)(void *orig, void *a0, void *a1,
+					  void *a2, void *a3, void *a4,
+					  void *a5);
+
+/* ====================================================================
+ * Error codes
+ * ==================================================================== */
 
 enum neverc_krt_hook_err {
 	NEVERC_KRT_HOOK_OK         =  0,
@@ -132,385 +176,127 @@ enum neverc_krt_hook_err {
 	NEVERC_KRT_HOOK_E_CONFLICT = -6,
 };
 
-int neverc_krt_hook_strerror(int err, char *buf, int sz);
+/* ====================================================================
+ * Initialization
+ * ==================================================================== */
 
-#define NEVERC_KRT_HOOK_MAX_PATCH   6   /* BTI + PAC + LDR + BR + .quad(2) */
-#define NEVERC_KRT_HOOK_TRAMP_CAP  64
-#define NEVERC_KRT_HOOK_STUB_CAP  128
-
-struct neverc_krt_hook {
-	void       *target;
-	void       *replace;
-	u32        *trampoline;
-	u32         orig_insns[NEVERC_KRT_HOOK_MAX_PATCH];
-	int         patch_count;
-	int         active;
-	volatile int enabled;
-	int         short_b;
-	volatile u64 hit_count;
-	volatile unsigned long guard;
-};
-
-#define NEVERC_KRT_HOOK_COUNT(h) \
-	__atomic_fetch_add(&(h)->hit_count, 1, __ATOMIC_RELAXED)
-
-__always_inline u64 neverc_krt_hook_hits(struct neverc_krt_hook *h)
-{ return __atomic_load_n(&h->hit_count, __ATOMIC_RELAXED); }
-
-__always_inline void neverc_krt_hook_reset_stats(struct neverc_krt_hook *h)
-{ __atomic_store_n(&h->hit_count, 0, __ATOMIC_RELAXED); }
-
-int neverc_krt_in_irq_context(void);
-
-__always_inline int neverc_krt_irq_disabled(void)
-{
-	unsigned long daif;
-	__asm__ __volatile__("mrs %0, daif" : "=r"(daif));
-	return (daif & (1UL << 7)) != 0;
-}
-
-__always_inline int neverc_krt_hook_enter(struct neverc_krt_hook *h)
-{
-	unsigned long task;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
-	unsigned long prev = __atomic_exchange_n(&h->guard, task,
-						 __ATOMIC_ACQUIRE);
-	if (prev == task)
-		return 0;
-	NEVERC_KRT_HOOK_COUNT(h);
-	return 1;
-}
-
-__always_inline void neverc_krt_hook_leave(struct neverc_krt_hook *h)
-{
-	__atomic_store_n(&h->guard, 0, __ATOMIC_RELEASE);
-}
-
-__always_inline int neverc_krt_hook_enter_safe(struct neverc_krt_hook *h)
-{
-	if (unlikely(!READ_ONCE(h->enabled)))
-		return 0;
-	return neverc_krt_hook_enter(h);
-}
-
-
+/*
+ * Initialize the hook engine. Must be called once before any
+ * hook_register / probe_register calls.
+ */
 int neverc_krt_hook_init(void);
 
-
-unsigned long neverc_krt_strip_pac(unsigned long addr);
-
-enum neverc_krt_scan_result {
-	NEVERC_KRT_SCAN_OK              =  0,
-	NEVERC_KRT_SCAN_TOO_SHORT       = -1,
-	NEVERC_KRT_SCAN_HAZARDOUS       = -2,
-	NEVERC_KRT_SCAN_UNRELOCATABLE   = -3,
-	NEVERC_KRT_SCAN_ALREADY_HOOKED  =  1,
-	NEVERC_KRT_SCAN_FTRACE_ACTIVE   =  2,
-	NEVERC_KRT_SCAN_KPROBE_ACTIVE   =  3,
-};
-
-int neverc_krt_scan_strerror(int r, char *buf, int sz);
-
-enum neverc_krt_scan_result neverc_krt_hook_scan(void *target);
-
-
-
-int neverc_krt_hook_install(struct neverc_krt_hook *h, void *target,
-			    void *replace, void **orig);
-
-
-
-typedef void (*neverc_krt_ctx_handler_t)(neverc_krt_reg_ctx *ctx);
-typedef void (*neverc_krt_ctx_fp_handler_t)(neverc_krt_reg_ctx *ctx, neverc_krt_fp_state *fp);
-
 /*
- * Define a wrapper that saves/restores Q0-Q31 around a user handler.
- * user_fn must have signature: void fn(neverc_krt_reg_ctx *ctx, neverc_krt_fp_state *fp).
- * Install wrapper_name (not user_fn) with neverc_krt_hook_install_ctx().
+ * Release all resources. Called on module unload.
  */
-#define NEVERC_KRT_CTX_HANDLER_FP(wrapper_name, user_fn)                        \
-	static void wrapper_name(neverc_krt_reg_ctx *ctx) {                      \
-		neverc_krt_fp_state __fp_state;                                  \
-		NEVERC_KRT_SAVE_FP(&__fp_state);                                 \
-		user_fn(ctx, &__fp_state);                                       \
-		NEVERC_KRT_RESTORE_FP(&__fp_state);                              \
-	}
-
-
-/*
- * Inline FP guard pair — use directly inside a ctx handler when the
- * handler might touch SIMD/FP registers (e.g. calling functions that
- * use floating-point arithmetic).  512 bytes of kernel stack.
- *
- *   static void my_handler(neverc_krt_reg_ctx *ctx) {
- *       NEVERC_KRT_CTX_FP_GUARD_BEGIN;
- *       // ... safe to touch FP here ...
- *       NEVERC_KRT_CTX_FP_GUARD_END;
- *   }
- */
-#define NEVERC_KRT_CTX_FP_GUARD_BEGIN                                           \
-	neverc_krt_fp_state _neverc_krt_fps_guard;                                    \
-	NEVERC_KRT_SAVE_FP(&_neverc_krt_fps_guard)
-
-#define NEVERC_KRT_CTX_FP_GUARD_END                                            \
-	NEVERC_KRT_RESTORE_FP(&_neverc_krt_fps_guard)
-
-struct neverc_krt_hook_ctx {
-	struct neverc_krt_hook     base;
-	u32                *stub;
-	u32                *tramp_code;
-	volatile unsigned long guard_task;
-};
-
-int neverc_krt_hook_install_ctx(struct neverc_krt_hook_ctx *h, void *target,
-				neverc_krt_ctx_handler_t handler, void **call_orig);
-
-
-
-void neverc_krt_hook_pause(struct neverc_krt_hook *h);
-
-
-void neverc_krt_hook_resume(struct neverc_krt_hook *h);
-
-
-void neverc_krt_hook_remove(struct neverc_krt_hook *h);
-
-
-int neverc_krt_hook_replace(struct neverc_krt_hook *h, void *new_replace,
-			    void **new_orig);
-
-
-void neverc_krt_hook_remove_ctx(struct neverc_krt_hook_ctx *h);
-
-
-int neverc_krt_hook_replace_ctx(struct neverc_krt_hook_ctx *h,
-				neverc_krt_ctx_handler_t new_handler);
-
-
-__always_inline int neverc_krt_hook_is_enabled(struct neverc_krt_hook *h)
-{ return READ_ONCE(h->enabled); }
-
-__always_inline void neverc_krt_hook_enable(struct neverc_krt_hook *h)
-{ WRITE_ONCE(h->enabled, 1); }
-
-__always_inline void neverc_krt_hook_disable(struct neverc_krt_hook *h)
-{ WRITE_ONCE(h->enabled, 0); }
-
-struct neverc_krt_hook_batch {
-	struct neverc_krt_hook *hook;
-	void            *target;
-	void            *replace;
-	void           **orig;
-	int              result;
-};
-
-struct neverc_krt_hook_ctx_batch {
-	struct neverc_krt_hook_ctx *hook;
-	void               *target;
-	neverc_krt_ctx_handler_t   handler;
-	void              **call_orig;
-	int                 result;
-};
-
-int neverc_krt_hook_install_ctx_batch(struct neverc_krt_hook_ctx_batch *batch,
-				      int count);
-
-
-int neverc_krt_hook_install_batch(struct neverc_krt_hook_batch *batch, int count);
-
-
 void neverc_krt_hook_cleanup(void);
 
+/* ====================================================================
+ * API 1: Function-entry hook (neverc_krt_hook_register)
+ *
+ * Hooks a function at its prologue. Multiple handlers on the same
+ * target are automatically chained by priority (lower = runs first).
+ * Coexists with ftrace/kprobe hooks already on the target.
+ *
+ * Handler signature:
+ *   long my_hook(void *orig, void *a0, ..., void *a5)
+ *   - Call ((orig_fn_type)orig)(a0, ...) to invoke the original.
+ *   - Return value propagates to the caller.
+ *
+ * Priority:
+ *   Lower values execute first.
+ *   Use negative priorities to run before other hooks (e.g. -100).
+ *   Use positive priorities to run after other hooks (e.g. 100).
+ *   Default: 0.
+ * ==================================================================== */
 
-
-/* --- kCFI-safe function pointer replacement --- */
-
-u32 neverc_krt_cfi_read_tag(void *func);
-
-int neverc_krt_cfi_has_tag(void *func);
-
-struct neverc_krt_cfi_thunk {
-	u32  tag;
-	u32  code[8];
+struct neverc_krt_hook_ref {
+	int   slot;
+	void *handler;
 };
-
-int neverc_krt_cfi_make_thunk(struct neverc_krt_cfi_thunk *thunk,
-			      void *orig_func, void *new_func);
-
-
-struct neverc_krt_fptr_hook {
-	void                *struct_addr;
-	unsigned long        field_off;
-	void                *orig_fn;
-	struct neverc_krt_cfi_thunk thunk;
-	u32                 *thunk_page;
-	int                  active;
-};
-
-int neverc_krt_fptr_replace(struct neverc_krt_fptr_hook *h,
-			    void *struct_addr, unsigned long field_off,
-			    void *new_fn);
-
-
-void neverc_krt_fptr_restore(struct neverc_krt_fptr_hook *h);
-
-
-
-/* --- ftrace-based hook (fallback for unhookable functions) --- */
 
 /*
- * Opaque storage for kernel's struct ftrace_ops (CONFIG_DYNAMIC_FTRACE=y).
+ * Register a function-entry hook.
  *
- * GKI struct ftrace_ops layout (arm64, verified from source):
+ * @target   Kernel function to hook (use NEVERC_KRT_LOOKUP).
+ * @handler  Hook handler function.
+ * @priority Execution order (lower = earlier). Use negative to run first.
+ * @orig     Receives callable pointer to the original function.
+ * @ref      Filled with opaque handle for unregister.
  *
- *   Field                      5.10    5.15    6.1     6.6     6.12
- *   ──────────────────────────────────────────────────────────────
- *   func                        8       8       8       8       8
- *   next                        8       8       8       8       8
- *   flags                       8       8       8       8       8
- *   private                     8       8       8       8       8
- *   saved_func                  8       8       8       8       8
- *   local_hash (ftrace_ops_hash)  ~64    ~64    ~64    ~64    ~64
- *   func_hash                   8       8       8       8       8
- *   old_hash (ftrace_ops_hash)  ~64    ~64    ~64    ~64    ~64
- *   trampoline                  8       8       8       8       8
- *   trampoline_size             8       8       8       8       8
- *   list                       16      16      16      16      16
- *   subop_list                  —       —       —       —      16
- *   ops_func                    —       —       —       8       8
- *   managed                     —       —       —       —       8
- *   ──────────────────────────────────────────────────────────────
- *   Estimated sizeof:         ~208    ~208    ~208    ~216    ~240
- *
- * 256 bytes (32 × 8) covers all versions with headroom.
+ * Returns 0 on success, negative error code on failure.
  */
-struct neverc_krt_ftrace_ops {
-	unsigned long            _storage[32];
-};
+int neverc_krt_hook_register(void *target, void *handler, int priority,
+			     void **orig, struct neverc_krt_hook_ref *ref);
 
-#define NEVERC_KRT_FTRACE_FL_SAVE_REGS     0x0002UL
-#define NEVERC_KRT_FTRACE_FL_SAVE_REGS_IF  0x0004UL
-#define NEVERC_KRT_FTRACE_FL_RECURSION     0x0008UL
-#define NEVERC_KRT_FTRACE_FL_IPMODIFY      0x0040UL
+/*
+ * Remove a previously registered hook.
+ * If it was the last handler on that target, the hook is fully removed.
+ */
+int neverc_krt_hook_unregister(struct neverc_krt_hook_ref *ref);
 
-int neverc_krt_ftrace_init(void);
+/*
+ * Query how many handlers are registered on a given target.
+ */
+int neverc_krt_hook_registry_count(void *target);
 
+/* ====================================================================
+ * API 2: Arbitrary-instruction probe (neverc_krt_probe_register)
+ *
+ * Hooks any instruction at any address — does NOT need to be a function
+ * entry. Multiple handlers on the same address are automatically chained
+ * by priority.
+ *
+ * Handler signature:
+ *   void my_probe(neverc_krt_reg_ctx *ctx)
+ *   - Read/write registers via ctx->regs[N].
+ *   - Set ctx->force_jump to redirect execution.
+ *   - Use NEVERC_KRT_CTX_SKIP(ctx, val) to skip the function.
+ *
+ * Priority:
+ *   Same semantics as hook_register — lower = runs first.
+ *
+ * Limitations:
+ *   - X17 is clobbered (trampoline back-jump).
+ *   - X16 additionally clobbered if target > +/-128MB from stub.
+ *   - Patched instruction must not be exclusive/svc and must be relocatable.
+ * ==================================================================== */
 
-struct neverc_krt_ftrace_hook {
-	void                   *target;
-	void                   *replace;
-	void                   *orig;
-	struct neverc_krt_ftrace_ops   ops;
-	int                     active;
-};
-
-int neverc_krt_ftrace_hook_install(struct neverc_krt_ftrace_hook *h,
-				   void *target, void *replace,
-				   void **orig);
-
-
-void neverc_krt_ftrace_hook_remove(struct neverc_krt_ftrace_hook *h);
-
-
-int neverc_krt_hook_auto(struct neverc_krt_hook *h, void *target,
-			 void *replace, void **orig,
-			 struct neverc_krt_ftrace_hook *ft_fallback);
-
-
-/* --- kprobe-based hook (lightweight fallback) --- */
-
-struct neverc_krt_kprobe_hook {
-	/*
-	 * sizeof(struct kprobe) across GKI arm64:
-	 *   5.10:      136 bytes (has fault_handler field)
-	 *   5.15–6.12: 128 bytes (fault_handler removed in 5.15)
-	 * 160 bytes covers the largest (5.10) with headroom.
-	 */
-	unsigned char kp_storage[160];
-	void *target;
-	void *replace;
-	void *orig;
-	int   active;
-};
-
-int neverc_krt_kprobe_hook_init(void);
-
-
-void neverc_krt_hook_auto_remove(struct neverc_krt_hook *h,
-				 struct neverc_krt_ftrace_hook *ft_fallback);
-
-
-
-u64 neverc_krt_pool_alloc_count(void);
-
-u64 neverc_krt_pool_alloc_bytes(void);
-
-int neverc_krt_pool_page_count(void);
-
-int neverc_krt_pool_usage(int *total_used, int *total_cap);
-
-
-
-/* --- Hook chain: multiple handlers on the same target --- */
-
-#define NEVERC_KRT_CHAIN_MAX 4
-
-struct neverc_krt_hook_chain_entry {
+struct neverc_krt_probe_ref {
+	int   slot;
 	void *handler;
-	int   priority;
-	int   active;
 };
 
-struct neverc_krt_hook_chain {
-	struct neverc_krt_hook              hook;
-	struct neverc_krt_hook_chain_entry  entries[NEVERC_KRT_CHAIN_MAX];
-	int                          count;
-	void                        *orig_fn;
-	void                        *dispatch_fn;
-};
+/*
+ * Register a probe at an arbitrary instruction address.
+ *
+ * @addr     Address of the instruction to hook.
+ * @handler  Probe handler function.
+ * @priority Execution order (lower = earlier).
+ * @ref      Filled with opaque handle for unregister.
+ *
+ * Returns 0 on success, negative error code on failure.
+ */
+int neverc_krt_probe_register(void *addr,
+			      neverc_krt_ctx_handler_t handler,
+			      int priority,
+			      struct neverc_krt_probe_ref *ref);
 
-typedef long (*neverc_krt_chain_handler_t)(void *orig, void *a0, void *a1,
-				    void *a2, void *a3, void *a4, void *a5);
+/*
+ * Remove a previously registered probe.
+ * If it was the last handler at that address, the patch is fully restored.
+ */
+int neverc_krt_probe_unregister(struct neverc_krt_probe_ref *ref);
 
-/* Internal: called by NEVERC_KRT_CHAIN_DISPATCH macro. Do NOT call directly. */
-long _neverc_krt_chain_run(struct neverc_krt_hook_chain *chain,
-			   void *a0, void *a1, void *a2,
-			   void *a3, void *a4, void *a5);
+/*
+ * Query how many handlers are registered at a given address.
+ */
+int neverc_krt_probe_count(void *addr);
 
-#define NEVERC_KRT_CHAIN_DISPATCH(name, chain_ptr)                                   \
-	static long name(void *a0, void *a1, void *a2,                       \
-			 void *a3, void *a4, void *a5)                       \
-	{ return _neverc_krt_chain_run(&(chain_ptr), a0, a1, a2, a3, a4, a5); }
+/* ====================================================================
+ * Utility: PAC stripping
+ * ==================================================================== */
 
-int neverc_krt_chain_init(struct neverc_krt_hook_chain *chain);
-
-
-int neverc_krt_chain_add(struct neverc_krt_hook_chain *chain,
-			 void *handler, int priority);
-
-
-struct neverc_krt_hook_stats {
-	u64 total_installs;
-	u64 total_removes;
-	u64 pool_allocs;
-	u64 pool_alloc_fails;
-	int pool_pages;
-	int pool_used_bytes;
-	int pool_total_bytes;
-	int active_hooks;
-};
-
-void neverc_krt_hook_get_stats(struct neverc_krt_hook_stats *out);
-
-
-int neverc_krt_chain_remove(struct neverc_krt_hook_chain *chain, void *handler);
-
-
-int neverc_krt_chain_install(struct neverc_krt_hook_chain *chain, void *target,
-			     void *dispatch_fn);
-
-
-void neverc_krt_chain_uninstall(struct neverc_krt_hook_chain *chain);
-
+unsigned long neverc_krt_strip_pac(unsigned long addr);
 
 #endif /* NEVERC_KRT_HOOK_H */

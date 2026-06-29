@@ -1,14 +1,15 @@
-# Android GKI kernel inline-hook demo (.ko)
+# Android GKI kernel function-hook demo (.ko)
+#
+# Demonstrates neverc_krt_hook_register — function-entry hook with auto-chain.
 #
 # Usage:
-#   neverc make                                       (simple hook mode)
-#   neverc make EXTRA=-DNVK_CONTEXT_HOOK              (context hook mode)
-#   neverc make KERNEL=601                            (target 6.1)
+#   neverc make                   (default KERNEL=510)
+#   neverc make KERNEL=606        (target 6.6)
 
 NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = aarch64-linux-android
-MODULE  = nvk_inline_hook.ko
+MODULE  = nvk_hook_demo.ko
 SRCS    = main.c
 
 KERNEL ?= 510
@@ -35,10 +36,14 @@ insmod: push
 rmmod:
 	adb shell su -c 'rmmod $(MODULE:.ko=)'
 
+log:
+	adb shell su -c 'dmesg | grep neverc_krt_hook_demo | tail -20'
+
 run: insmod
-	adb shell su -c 'dmesg | tail -10'
+	@sleep 1
+	@$(MAKE) log
 
 clean:
 	rm -f $(MODULE) *.o
 
-.PHONY: all push insmod rmmod run clean
+.PHONY: all push insmod rmmod log run clean

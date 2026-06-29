@@ -1,147 +1,65 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * NeverC function-hook demo.
+ *
+ * Demonstrates neverc_krt_hook_register:
+ *  - Hook do_faccessat at function entry
+ *  - Call the original, log the result
+ *  - Multiple handlers auto-chained by priority
+ */
 #include <nvkmod.h>
 #include <nvk_hook.h>
 #include <nvk_mem.h>
 #include <linux/string.h>
 #include <linux/sched.h>
 
-#define NEVERC_KRT_LOG_TAG "neverc_krt_inline"
+#define NEVERC_KRT_LOG_TAG "neverc_krt_hook_demo"
 #include <nvk_log.h>
 
-typedef int (*task_pid_nr_fn)(struct task_struct *);
-static task_pid_nr_fn fn_task_pid_nr;
+typedef int (*task_pid_nr_ns_fn)(struct task_struct *, int, void *);
+static task_pid_nr_ns_fn fn_task_pid_nr_ns;
 
-static void resolve_helpers(void)
+static int get_pid(void)
 {
-	fn_task_pid_nr = (task_pid_nr_fn)NEVERC_KRT_LOOKUP("task_pid_nr");
+	if (fn_task_pid_nr_ns)
+		return fn_task_pid_nr_ns(current, 0, (void *)0);
+	return -1;
 }
 
-#ifdef NEVERC_KRT_CONTEXT_HOOK
+/* ----------------------------------------------------------------
+ * Hook handler: logs faccessat calls and forwards to original.
+ * ---------------------------------------------------------------- */
 
-static struct neverc_krt_hook_ctx faccessat_hook_ctx;
+static struct neverc_krt_hook_ref faccessat_ref;
+static void *orig_faccessat;
 
-static int neverc_krt_path_contains(const char *haystack, const char *needle)
+static long hook_faccessat(void *orig, void *a0, void *a1,
+			   void *a2, void *a3, void *a4, void *a5)
 {
-	int i, j;
-	for (i = 0; haystack[i]; i++) {
-		for (j = 0; needle[j] && haystack[i + j] == needle[j]; j++)
-			;
-		if (!needle[j]) return 1;
-	}
-	return 0;
-}
-
-static void hook_faccessat_ctx(neverc_krt_reg_ctx *ctx)
-{
-	char buf[128];
-	int pid = -1;
-
-	const char __user *filename = (const char __user *)NEVERC_KRT_CTX_ARG(ctx, 1);
-	int mode = (int)NEVERC_KRT_CTX_ARG(ctx, 2);
-
-	buf[0] = '\0';
-	if (filename)
-		neverc_krt_mem_read_user(buf, filename, sizeof(buf) - 1);
-	buf[sizeof(buf) - 1] = '\0';
-
-	if (fn_task_pid_nr)
-		pid = fn_task_pid_nr(current);
-
-	/* Hide /proc/modules from non-root processes. */
-	if (pid > 1000 && neverc_krt_path_contains(buf, "/proc/modules")) {
-		NEVERC_KRT_CTX_SKIP(ctx, -2 /* -ENOENT */);
-		return;
-	}
-
-	neverc_krt_log_ratelimit("[ctx] pid=%d faccessat(%s, mode=%d) "
-			  "x0=%lx x1=%lx x2=%lx x3=%lx\n",
-			  pid, buf, mode,
-			  (unsigned long)NEVERC_KRT_CTX_ARG(ctx, 0),
-			  (unsigned long)NEVERC_KRT_CTX_ARG(ctx, 1),
-			  (unsigned long)NEVERC_KRT_CTX_ARG(ctx, 2),
-			  (unsigned long)NEVERC_KRT_CTX_ARG(ctx, 3));
-}
-
-static int hook_init(void *target)
-{
-	int ret = neverc_krt_hook_install_ctx(&faccessat_hook_ctx, target,
-				       hook_faccessat_ctx, (void *)0);
-	if (ret) {
-		neverc_krt_log_err("ctx hook failed: %d\n", ret);
-		return ret;
-	}
-	neverc_krt_log_info("[ctx] hooked (patched %d insns)\n",
-		     faccessat_hook_ctx.base.patch_count);
-	return 0;
-}
-
-static void hook_exit(void)
-{
-	neverc_krt_hook_remove_ctx(&faccessat_hook_ctx);
-}
-
-#else
-
-typedef long (*faccessat_fn)(int dfd, const char __user *filename,
-			     int mode, int flags);
-
-static struct neverc_krt_hook faccessat_hook;
-static faccessat_fn orig_do_faccessat;
-
-static long hook_do_faccessat(int dfd, const char __user *filename,
-			      int mode, int flags)
-{
+	typedef long (*fn_t)(void *, void *, void *, void *, void *, void *);
 	char buf[128];
 	long ret;
-	int pid = -1;
+	int pid;
+	const char __user *filename = (const char __user *)a1;
 
-	buf[0] = '\0';
+	{
+		int i;
+		for (i = 0; i < (int)sizeof(buf); i++) buf[i] = 0;
+	}
 	if (filename)
 		neverc_krt_mem_read_user(buf, filename, sizeof(buf) - 1);
 	buf[sizeof(buf) - 1] = '\0';
 
-	if (fn_task_pid_nr)
-		pid = fn_task_pid_nr(current);
+	pid = get_pid();
+	ret = ((fn_t)orig)(a0, a1, a2, a3, a4, a5);
 
-	ret = orig_do_faccessat(dfd, filename, mode, flags);
-
-	neverc_krt_log_ratelimit("pid=%d faccessat(%s, %d) = %ld\n",
-			  pid, buf, mode, ret);
+	neverc_krt_log_ratelimit("pid=%d faccessat(%s) = %ld\n", pid, buf, ret);
 	return ret;
 }
 
-static int hook_init(void *target)
-{
-	int ret;
+/* ---------------------------------------------------------------- */
 
-	neverc_krt_log_dbg("do_faccessat @ %lx, entry[0..3] = "
-		     "%08x %08x %08x %08x\n",
-		     (unsigned long)target,
-		     ((u32 *)target)[0], ((u32 *)target)[1],
-		     ((u32 *)target)[2], ((u32 *)target)[3]);
-
-	ret = neverc_krt_hook_install(&faccessat_hook, target,
-			       (void *)hook_do_faccessat,
-			       (void **)&orig_do_faccessat);
-	if (ret) {
-		neverc_krt_log_err("hook install failed: %d\n", ret);
-		return ret;
-	}
-
-	neverc_krt_log_info("hooked (patched %d insns, trampoline @ %lx)\n",
-		     faccessat_hook.patch_count,
-		     (unsigned long)faccessat_hook.trampoline);
-	return 0;
-}
-
-static void hook_exit(void)
-{
-	neverc_krt_hook_remove(&faccessat_hook);
-}
-
-#endif /* NEVERC_KRT_CONTEXT_HOOK */
-
-static int neverc_krt_inline_hook_init(void)
+static int neverc_krt_hook_demo_init(void)
 {
 	void *target;
 	int ret;
@@ -151,16 +69,15 @@ static int neverc_krt_inline_hook_init(void)
 		return ret;
 
 	neverc_krt_log_info("init on %s\n", NEVERC_KRT_KERNEL_STR);
-
 	neverc_krt_mem_init();
 
 	ret = neverc_krt_hook_init();
 	if (ret) {
-		neverc_krt_log_err("neverc_krt_hook_init failed\n");
+		neverc_krt_log_err("hook_init failed: %d\n", ret);
 		return ret;
 	}
 
-	resolve_helpers();
+	fn_task_pid_nr_ns = (task_pid_nr_ns_fn)NEVERC_KRT_LOOKUP("__task_pid_nr_ns");
 
 	target = NEVERC_KRT_LOOKUP("do_faccessat");
 	if (!target) {
@@ -168,20 +85,28 @@ static int neverc_krt_inline_hook_init(void)
 		return -1;
 	}
 
-	return hook_init(target);
+	ret = neverc_krt_hook_register(target, (void *)hook_faccessat,
+				       0, &orig_faccessat, &faccessat_ref);
+	if (ret) {
+		neverc_krt_log_err("hook_register failed: %d\n", ret);
+		return ret;
+	}
+
+	neverc_krt_log_info("hooked do_faccessat (priority=0)\n");
+	return 0;
 }
 
-static void neverc_krt_inline_hook_exit(void)
+static void neverc_krt_hook_demo_exit(void)
 {
-	hook_exit();
+	neverc_krt_hook_unregister(&faccessat_ref);
 	neverc_krt_log_info("unloaded\n");
 }
 
-module_init(neverc_krt_inline_hook_init);
-module_exit(neverc_krt_inline_hook_exit);
+module_init(neverc_krt_hook_demo_init);
+module_exit(neverc_krt_hook_demo_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("NeverC");
-MODULE_DESCRIPTION("NeverC inline-hook demo (do_faccessat)");
+MODULE_DESCRIPTION("NeverC function-hook demo");
 
-NEVERC_KRT_DEFINE_MODULE("neverc_krt_inline_hook");
+NEVERC_KRT_DEFINE_MODULE("neverc_krt_hook_demo");

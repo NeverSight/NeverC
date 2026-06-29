@@ -85,7 +85,7 @@ static __always_inline unsigned long _neverc_krt_clear_tags(unsigned long addr)
 
 static __always_inline int _neverc_krt_is_kern_ptr(unsigned long addr)
 {
-	return _neverc_krt_clear_tags(addr) >= 0xFFFF000000000000UL;
+	return (addr >> 63) != 0;
 }
 
 static __always_inline void _neverc_krt_dcache_clean(unsigned long addr,
@@ -424,6 +424,7 @@ static neverc_krt_patchtext_fn      _neverc_krt_patchtext;
 static neverc_krt_patchtns_fn       _neverc_krt_patchtns;
 static neverc_krt_syncrcu_fn        _neverc_krt_syncrcu;
 static neverc_krt_msleep_fn         _neverc_krt_msleep;
+static int (*_neverc_krt_set_memory_x)(unsigned long addr, int numpages);
 static int                          _neverc_krt_inited;
 static neverc_krt_ksize_fn          _neverc_krt_ksize;
 
@@ -762,6 +763,7 @@ int neverc_krt_hook_init(void)
 	_neverc_krt_ksize = (neverc_krt_ksize_fn)NEVERC_KRT_LOOKUP("kallsyms_lookup_size_offset");
 	_neverc_krt_syncrcu = (neverc_krt_syncrcu_fn)NEVERC_KRT_LOOKUP("synchronize_rcu");
 	_neverc_krt_msleep  = (neverc_krt_msleep_fn)NEVERC_KRT_LOOKUP("msleep");
+	_neverc_krt_set_memory_x = (int (*)(unsigned long, int))NEVERC_KRT_LOOKUP("set_memory_x");
 	if ((!_neverc_krt_modalloc && !_neverc_krt_execmem_alloc) ||
 	    !_neverc_krt_modfree || !_neverc_krt_flushic)
 		return -1;
@@ -1090,13 +1092,16 @@ int neverc_krt_hook_install_ctx(struct neverc_krt_hook_ctx *h, void *target,
 
 	{
 		int chained = neverc_krt_a64_is_hook_patch(ibuf[0]);
+
+		_neverc_krt_scan_entry(ibuf, &skip, &patch_count);
+
 		if (!chained) {
 			unsigned long fn_sz = _neverc_krt_fn_size(target);
-			if (fn_sz > 0 && fn_sz < NEVERC_KRT_HOOK_MAX_PATCH * 4)
+			if (fn_sz > 0 &&
+			    fn_sz < (unsigned long)patch_count * 4)
 				return NEVERC_KRT_HOOK_E_SHORT;
 		}
 
-		_neverc_krt_scan_entry(ibuf, &skip, &patch_count);
 		h->base.patch_count = patch_count;
 		for (i = 0; i < patch_count; i++)
 			h->base.orig_insns[i] = ibuf[i];
@@ -1177,6 +1182,9 @@ int neverc_krt_hook_install_ctx(struct neverc_krt_hook_ctx *h, void *target,
 		else
 			_neverc_krt_icache_inval((unsigned long)page, flush_end);
 	}
+
+	if (_neverc_krt_set_memory_x)
+		_neverc_krt_set_memory_x((unsigned long)page, 1);
 
 	if (call_orig)
 		*call_orig = (void *)h->tramp_code;
@@ -1818,6 +1826,631 @@ void neverc_krt_chain_uninstall(struct neverc_krt_hook_chain *chain)
 	if (chain->hook.active)
 		neverc_krt_hook_remove(&chain->hook);
 }
+
+/* ================================================================
+ * High-level hook registry — auto-chain, transparent to callers.
+ * Uses neverc_krt_hook_install_ctx internally (safe on BTI/GP pages).
+ * ================================================================ */
+
+static struct {
+	void                        *target;
+	struct neverc_krt_hook_chain chain;
+	int                          used;
+} _neverc_krt_registry[NEVERC_KRT_REGISTRY_MAX];
+
+static struct neverc_krt_hook_ctx _neverc_krt_reg_ctxs[NEVERC_KRT_REGISTRY_MAX]
+	__attribute__((aligned(64)));
+
+static volatile int _neverc_krt_registry_lock;
+
+#define _NKR_CTX_DISPATCH(n)                                                   \
+	static void _neverc_krt_reg_ctx_dispatch_##n(neverc_krt_reg_ctx *ctx)  \
+	{                                                                      \
+		long ret = _neverc_krt_chain_run(                              \
+			&_neverc_krt_registry[n].chain,                        \
+			(void *)ctx->regs[0], (void *)ctx->regs[1],           \
+			(void *)ctx->regs[2], (void *)ctx->regs[3],           \
+			(void *)ctx->regs[4], (void *)ctx->regs[5]);          \
+		ctx->regs[0] = (u64)ret;                                       \
+		NEVERC_KRT_CTX_SKIP_VOID(ctx);                                 \
+	}
+
+_NKR_CTX_DISPATCH(0)  _NKR_CTX_DISPATCH(1)  _NKR_CTX_DISPATCH(2)  _NKR_CTX_DISPATCH(3)
+_NKR_CTX_DISPATCH(4)  _NKR_CTX_DISPATCH(5)  _NKR_CTX_DISPATCH(6)  _NKR_CTX_DISPATCH(7)
+_NKR_CTX_DISPATCH(8)  _NKR_CTX_DISPATCH(9)  _NKR_CTX_DISPATCH(10) _NKR_CTX_DISPATCH(11)
+_NKR_CTX_DISPATCH(12) _NKR_CTX_DISPATCH(13) _NKR_CTX_DISPATCH(14) _NKR_CTX_DISPATCH(15)
+
+static neverc_krt_ctx_handler_t _neverc_krt_reg_ctx_dispatchers[NEVERC_KRT_REGISTRY_MAX] = {
+	_neverc_krt_reg_ctx_dispatch_0,  _neverc_krt_reg_ctx_dispatch_1,
+	_neverc_krt_reg_ctx_dispatch_2,  _neverc_krt_reg_ctx_dispatch_3,
+	_neverc_krt_reg_ctx_dispatch_4,  _neverc_krt_reg_ctx_dispatch_5,
+	_neverc_krt_reg_ctx_dispatch_6,  _neverc_krt_reg_ctx_dispatch_7,
+	_neverc_krt_reg_ctx_dispatch_8,  _neverc_krt_reg_ctx_dispatch_9,
+	_neverc_krt_reg_ctx_dispatch_10, _neverc_krt_reg_ctx_dispatch_11,
+	_neverc_krt_reg_ctx_dispatch_12, _neverc_krt_reg_ctx_dispatch_13,
+	_neverc_krt_reg_ctx_dispatch_14, _neverc_krt_reg_ctx_dispatch_15,
+};
+
+static int _neverc_krt_reg_find_target(void *target)
+{
+	int i;
+	for (i = 0; i < NEVERC_KRT_REGISTRY_MAX; i++) {
+		if (_neverc_krt_registry[i].used &&
+		    _neverc_krt_registry[i].target == target)
+			return i;
+	}
+	return -1;
+}
+
+static int _neverc_krt_reg_alloc_slot(void)
+{
+	int i;
+	for (i = 0; i < NEVERC_KRT_REGISTRY_MAX; i++) {
+		if (!_neverc_krt_registry[i].used)
+			return i;
+	}
+	return -1;
+}
+
+int neverc_krt_hook_register(void *target, void *handler, int priority,
+			     void **orig, struct neverc_krt_hook_ref *ref)
+{
+	unsigned long flags;
+	int slot, ret;
+
+	if (!target || !handler || !ref)
+		return -1;
+
+	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_registry_lock);
+
+	slot = _neverc_krt_reg_find_target(target);
+	if (slot >= 0) {
+		ret = neverc_krt_chain_add(&_neverc_krt_registry[slot].chain,
+					   handler, priority);
+		if (ret == 0) {
+			if (orig)
+				*orig = _neverc_krt_registry[slot].chain.orig_fn;
+			ref->slot = slot;
+			ref->handler = handler;
+		}
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
+						   flags);
+		return ret;
+	}
+
+	slot = _neverc_krt_reg_alloc_slot();
+	if (slot < 0) {
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
+						   flags);
+		return -4;
+	}
+
+	_neverc_krt_registry[slot].target = target;
+	_neverc_krt_registry[slot].used = 1;
+	neverc_krt_chain_init(&_neverc_krt_registry[slot].chain);
+	neverc_krt_chain_add(&_neverc_krt_registry[slot].chain,
+			     handler, priority);
+
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock, flags);
+
+	ret = neverc_krt_hook_install_ctx(&_neverc_krt_reg_ctxs[slot],
+					   target,
+					   _neverc_krt_reg_ctx_dispatchers[slot],
+					   (void **)&_neverc_krt_registry[slot].chain.orig_fn);
+	if (ret != 0) {
+		flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_registry_lock);
+		_neverc_krt_registry[slot].chain.count = 0;
+		_neverc_krt_registry[slot].used = 0;
+		_neverc_krt_registry[slot].target = (void *)0;
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
+						   flags);
+		return ret;
+	}
+
+	if (orig)
+		*orig = _neverc_krt_registry[slot].chain.orig_fn;
+	ref->slot = slot;
+	ref->handler = handler;
+
+	return 0;
+}
+
+int neverc_krt_hook_unregister(struct neverc_krt_hook_ref *ref)
+{
+	unsigned long flags;
+	int slot, ret;
+
+	if (!ref)
+		return -1;
+
+	slot = ref->slot;
+	if (slot < 0 || slot >= NEVERC_KRT_REGISTRY_MAX)
+		return -1;
+
+	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_registry_lock);
+
+	if (!_neverc_krt_registry[slot].used) {
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
+						   flags);
+		return -2;
+	}
+
+	ret = neverc_krt_chain_remove(&_neverc_krt_registry[slot].chain,
+				      ref->handler);
+	if (ret != 0) {
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
+						   flags);
+		return ret;
+	}
+
+	{
+		int need_uninstall = (_neverc_krt_registry[slot].chain.count == 0);
+		ref->slot = -1;
+		ref->handler = (void *)0;
+
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
+						   flags);
+
+		if (need_uninstall) {
+			neverc_krt_hook_remove_ctx(&_neverc_krt_reg_ctxs[slot]);
+			flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_registry_lock);
+			_neverc_krt_registry[slot].used = 0;
+			_neverc_krt_registry[slot].target = (void *)0;
+			_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
+							   flags);
+		}
+	}
+
+	return 0;
+}
+
+int neverc_krt_hook_registry_count(void *target)
+{
+	unsigned long flags;
+	int slot, cnt = 0;
+
+	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_registry_lock);
+	slot = _neverc_krt_reg_find_target(target);
+	if (slot >= 0)
+		cnt = _neverc_krt_registry[slot].chain.count;
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock, flags);
+	return cnt;
+}
+
+/* ================================================================
+ * Arbitrary-point probe — hook any instruction (ctx mode, auto-chain).
+ * Uses the proven ctx-hook mechanism (neverc_krt_hook_install_ctx)
+ * for the underlying patching/stub. The probe chain layer adds
+ * multi-handler support on top.
+ * ================================================================ */
+
+/* probe stub template is no longer used; we reuse the ctx stub */
+static const u32 _neverc_krt_probe_stub_unused[] = {
+	/* --- re-entrance guard (uses X16/X17 before full save) --- */
+	/*  0 */ NEVERC_KRT_A64_BTI_JC,
+	/*  1 */ _A64E_STP_PRE16(16, 17),
+	/*  2 */ _A64E_MRS_SP_EL0(16),
+	/*  3 */ _A64E_MOVZ(17, 0),
+	/*  4 */ _A64E_MOVK16(17),
+	/*  5 */ _A64E_MOVK32(17),
+	/*  6 */ _A64E_MOVK48(17),
+	/*  7 */ _A64E_LDR_XREG(17, 17),
+	/*  8 */ _A64E_CMP_REG(16, 17),
+	/*  9 */ _A64E_BEQ_FWD(99-9),
+	/* 10 */ _A64E_LDP_POST16(16, 17),
+	/* --- full register save --- */
+	/* 11 */ _A64E_SUB_SP_I(_CTX_SIZE),
+	/* 12 */ _A64E_STP_SP( 0,  1,   0),
+	/* 13 */ _A64E_STP_SP( 2,  3,  16),
+	/* 14 */ _A64E_STP_SP( 4,  5,  32),
+	/* 15 */ _A64E_STP_SP( 6,  7,  48),
+	/* 16 */ _A64E_STP_SP( 8,  9,  64),
+	/* 17 */ _A64E_STP_SP(10, 11,  80),
+	/* 18 */ _A64E_STP_SP(12, 13,  96),
+	/* 19 */ _A64E_STP_SP(14, 15, 112),
+	/* 20 */ _A64E_STP_SP(16, 17, 128),
+	/* 21 */ _A64E_STP_SP(18, 19, 144),
+	/* 22 */ _A64E_STP_SP(20, 21, 160),
+	/* 23 */ _A64E_STP_SP(22, 23, 176),
+	/* 24 */ _A64E_STP_SP(24, 25, 192),
+	/* 25 */ _A64E_STP_SP(26, 27, 208),
+	/* 26 */ _A64E_STP_SP(28, 29, 224),
+	/* 27 */ _A64E_STP_SP(30, 31, 240),
+	/* 28 */ _A64E_MRS_NZCV(1),
+	/* 29 */ _A64E_STR_SP(1,  _CTX_NZCV),
+	/* 30 */ _A64E_MRS_FPCR(1),
+	/* 31 */ _A64E_STR_SP(1,  _CTX_FPCR),
+	/* 32 */ _A64E_MRS_FPSR(1),
+	/* 33 */ _A64E_STR_SP(1,  _CTX_FPSR),
+	/* 34 */ _A64E_STR_SP(31, _CTX_FORCE),
+	/* --- set guard (store current task into guard_task) --- */
+	/* 35 */ _A64E_MRS_SP_EL0(0),
+	/* 36 */ _A64E_MOVZ(19, 0),
+	/* 37 */ _A64E_MOVK16(19),
+	/* 38 */ _A64E_MOVK32(19),
+	/* 39 */ _A64E_MOVK48(19),
+	/* 40 */ _A64E_STR_XREG(0, 19),
+	/* --- call dispatcher --- */
+	/* 41 */ _A64E_MOV_FROM_SP(0),
+	/* 42 */ _A64E_MOVZ(3, 0),
+	/* 43 */ _A64E_MOVK16(3),
+	/* 44 */ _A64E_MOVK32(3),
+	/* 45 */ _A64E_MOVK48(3),
+	/* 46 */ 0xD63F0060U,                    /* BLR X3 */
+	/* --- clear guard --- */
+	/* 47 */ _A64E_STR_XREG(31, 19),
+	/* 48 */ _A64E_LDR_SP(1, _CTX_FORCE),
+	/* 49 */ _A64E_CBNZ_FWD(1, 74-49),      /* -> force_jump path */
+	/* --- normal path: restore all, B to trampoline --- */
+	/* 50 */ _A64E_LDR_SP(2, _CTX_FPCR),
+	/* 51 */ _A64E_MSR_FPCR(2),
+	/* 52 */ _A64E_LDR_SP(2, _CTX_FPSR),
+	/* 53 */ _A64E_MSR_FPSR(2),
+	/* 54 */ _A64E_LDR_SP(2, _CTX_NZCV),
+	/* 55 */ _A64E_MSR_NZCV(2),
+	/* 56 */ _A64E_LDP_SP( 2,  3,  16),
+	/* 57 */ _A64E_LDP_SP( 4,  5,  32),
+	/* 58 */ _A64E_LDP_SP( 6,  7,  48),
+	/* 59 */ _A64E_LDP_SP( 8,  9,  64),
+	/* 60 */ _A64E_LDP_SP(10, 11,  80),
+	/* 61 */ _A64E_LDP_SP(12, 13,  96),
+	/* 62 */ _A64E_LDP_SP(14, 15, 112),
+	/* 63 */ _A64E_LDP_SP(16, 17, 128),
+	/* 64 */ _A64E_LDP_SP(18, 19, 144),
+	/* 65 */ _A64E_LDP_SP(20, 21, 160),
+	/* 66 */ _A64E_LDP_SP(22, 23, 176),
+	/* 67 */ _A64E_LDP_SP(24, 25, 192),
+	/* 68 */ _A64E_LDP_SP(26, 27, 208),
+	/* 69 */ _A64E_LDP_SP(28, 29, 224),
+	/* 70 */ _A64E_LDP_SP(30, 31, 240),
+	/* 71 */ _A64E_LDP_SP( 0,  1,   0),
+	/* 72 */ _A64E_ADD_SP_I(_CTX_SIZE),
+	/* 73 */ NEVERC_KRT_A64_NOP,             /* patched: B to trampoline */
+	/* --- force_jump path --- */
+	/* 74 */ _A64E_LDR_SP(16, 128),
+	/* 75 */ _A64E_MOV_REG(17, 1),
+	/* 76 */ _A64E_LDR_SP(2, _CTX_FPCR),
+	/* 77 */ _A64E_MSR_FPCR(2),
+	/* 78 */ _A64E_LDR_SP(2, _CTX_FPSR),
+	/* 79 */ _A64E_MSR_FPSR(2),
+	/* 80 */ _A64E_LDR_SP(2, _CTX_NZCV),
+	/* 81 */ _A64E_MSR_NZCV(2),
+	/* 82 */ _A64E_LDP_SP( 2,  3,  16),
+	/* 83 */ _A64E_LDP_SP( 4,  5,  32),
+	/* 84 */ _A64E_LDP_SP( 6,  7,  48),
+	/* 85 */ _A64E_LDP_SP( 8,  9,  64),
+	/* 86 */ _A64E_LDP_SP(10, 11,  80),
+	/* 87 */ _A64E_LDP_SP(12, 13,  96),
+	/* 88 */ _A64E_LDP_SP(14, 15, 112),
+	/* 89 */ _A64E_LDP_SP(18, 19, 144),
+	/* 90 */ _A64E_LDP_SP(20, 21, 160),
+	/* 91 */ _A64E_LDP_SP(22, 23, 176),
+	/* 92 */ _A64E_LDP_SP(24, 25, 192),
+	/* 93 */ _A64E_LDP_SP(26, 27, 208),
+	/* 94 */ _A64E_LDP_SP(28, 29, 224),
+	/* 95 */ _A64E_LDR_SP(30, 240),
+	/* 96 */ _A64E_LDP_SP( 0,  1,   0),
+	/* 97a*/ _A64E_ADD_SP_I(_CTX_SIZE),
+	/* 98 */ NEVERC_KRT_A64_RET_X17,
+	/* --- re-entrance skip: pop X16/X17, go to trampoline --- */
+	/* 99 */ _A64E_LDP_POST16(16, 17),
+	/*100 */ NEVERC_KRT_A64_NOP,             /* patched: B to trampoline */
+};
+
+/* probe stub template is unused; all defines below are vestigial */
+
+/* --- probe ctx chain (handlers receive neverc_krt_reg_ctx *) --- */
+
+#define _PROBE_CHAIN_MAX NEVERC_KRT_CHAIN_MAX
+
+struct _neverc_krt_probe_chain {
+	struct neverc_krt_hook_chain_entry entries[_PROBE_CHAIN_MAX];
+	int count;
+};
+
+static void _neverc_krt_probe_ctx_chain_run(neverc_krt_reg_ctx *ctx,
+					    struct _neverc_krt_probe_chain *chain)
+{
+	int i, cnt;
+	struct neverc_krt_hook_chain_entry snap[_PROBE_CHAIN_MAX];
+
+	if (unlikely(!chain)) return;
+	cnt = __atomic_load_n(&chain->count, __ATOMIC_ACQUIRE);
+	if (unlikely(cnt > _PROBE_CHAIN_MAX)) cnt = _PROBE_CHAIN_MAX;
+
+	for (i = 0; i < cnt; i++) {
+		snap[i].handler = (void *)__atomic_load_n(
+			(unsigned long *)&chain->entries[i].handler,
+			__ATOMIC_ACQUIRE);
+		snap[i].active = __atomic_load_n(&chain->entries[i].active,
+						  __ATOMIC_RELAXED);
+	}
+	for (i = 0; i < cnt; i++) {
+		if (unlikely(!snap[i].active || !snap[i].handler)) continue;
+		neverc_krt_ctx_handler_t h =
+			(neverc_krt_ctx_handler_t)snap[i].handler;
+		h(ctx);
+		if (ctx->force_jump) return;
+	}
+}
+
+/* --- probe registry (backed by ctx-hook) --- */
+
+struct _neverc_krt_probe_slot {
+	void                            *addr;
+	int                              used;
+	int                              _pad;
+	struct _neverc_krt_probe_chain   chain;
+};
+
+static struct _neverc_krt_probe_slot _neverc_krt_probes[NEVERC_KRT_PROBE_MAX];
+static struct neverc_krt_hook_ctx    _neverc_krt_probe_ctxs[NEVERC_KRT_PROBE_MAX]
+	__attribute__((aligned(64)));
+static volatile int _neverc_krt_probe_lock;
+
+#define _NKP_DISPATCH(n)                                                       \
+	static void _neverc_krt_probe_dispatch_##n(neverc_krt_reg_ctx *ctx)    \
+	{                                                                      \
+		_neverc_krt_probe_ctx_chain_run(ctx,                           \
+			&_neverc_krt_probes[n].chain);                        \
+	}
+
+_NKP_DISPATCH(0)  _NKP_DISPATCH(1)  _NKP_DISPATCH(2)  _NKP_DISPATCH(3)
+_NKP_DISPATCH(4)  _NKP_DISPATCH(5)  _NKP_DISPATCH(6)  _NKP_DISPATCH(7)
+_NKP_DISPATCH(8)  _NKP_DISPATCH(9)  _NKP_DISPATCH(10) _NKP_DISPATCH(11)
+_NKP_DISPATCH(12) _NKP_DISPATCH(13) _NKP_DISPATCH(14) _NKP_DISPATCH(15)
+
+static neverc_krt_ctx_handler_t _neverc_krt_probe_dispatchers[NEVERC_KRT_PROBE_MAX] = {
+	_neverc_krt_probe_dispatch_0,  _neverc_krt_probe_dispatch_1,
+	_neverc_krt_probe_dispatch_2,  _neverc_krt_probe_dispatch_3,
+	_neverc_krt_probe_dispatch_4,  _neverc_krt_probe_dispatch_5,
+	_neverc_krt_probe_dispatch_6,  _neverc_krt_probe_dispatch_7,
+	_neverc_krt_probe_dispatch_8,  _neverc_krt_probe_dispatch_9,
+	_neverc_krt_probe_dispatch_10, _neverc_krt_probe_dispatch_11,
+	_neverc_krt_probe_dispatch_12, _neverc_krt_probe_dispatch_13,
+	_neverc_krt_probe_dispatch_14, _neverc_krt_probe_dispatch_15,
+};
+
+/* --- internal probe install/remove using ctx-hook --- */
+
+static int _neverc_krt_probe_install_slot(int slot)
+{
+	struct _neverc_krt_probe_slot *ps = &_neverc_krt_probes[slot];
+
+	return neverc_krt_hook_install_ctx(&_neverc_krt_probe_ctxs[slot],
+					   ps->addr,
+					   _neverc_krt_probe_dispatchers[slot],
+					   (void *)0);
+}
+
+static void _neverc_krt_probe_remove_slot(int slot)
+{
+	neverc_krt_hook_remove_ctx(&_neverc_krt_probe_ctxs[slot]);
+}
+
+/* --- chain helpers for probe --- */
+
+static int _neverc_krt_probe_chain_add(struct _neverc_krt_probe_chain *chain,
+				       void *handler, int priority)
+{
+	int i, slot;
+
+	if (!chain || !handler) return -1;
+	if (chain->count >= _PROBE_CHAIN_MAX) return -2;
+
+	for (i = 0; i < chain->count; i++) {
+		if (chain->entries[i].handler == handler)
+			return -3;
+	}
+
+	slot = chain->count;
+	for (i = chain->count - 1; i >= 0; i--) {
+		if (chain->entries[i].priority > priority) {
+			chain->entries[i + 1] = chain->entries[i];
+			slot = i;
+		} else {
+			break;
+		}
+	}
+
+	chain->entries[slot].handler = handler;
+	chain->entries[slot].priority = priority;
+	__asm__ __volatile__("dmb ish" ::: "memory");
+	WRITE_ONCE(chain->entries[slot].active, 1);
+	__asm__ __volatile__("dmb ish" ::: "memory");
+	WRITE_ONCE(chain->count, chain->count + 1);
+	return 0;
+}
+
+static int _neverc_krt_probe_chain_remove(struct _neverc_krt_probe_chain *chain,
+					  void *handler)
+{
+	int i;
+	if (!chain || !handler) return -1;
+
+	for (i = 0; i < chain->count; i++) {
+		if (chain->entries[i].handler == handler) {
+			WRITE_ONCE(chain->entries[i].active, 0);
+			__asm__ __volatile__("dmb ish" ::: "memory");
+			for (; i < chain->count - 1; i++)
+				chain->entries[i] = chain->entries[i + 1];
+			__asm__ __volatile__("dmb ish" ::: "memory");
+			WRITE_ONCE(chain->count, chain->count - 1);
+			return 0;
+		}
+	}
+	return -2;
+}
+
+/* --- public API --- */
+
+static int _neverc_krt_probe_find_addr(void *addr)
+{
+	int i;
+	for (i = 0; i < NEVERC_KRT_PROBE_MAX; i++) {
+		if (_neverc_krt_probes[i].used &&
+		    _neverc_krt_probes[i].addr == addr)
+			return i;
+	}
+	return -1;
+}
+
+static int _neverc_krt_probe_alloc_slot(void)
+{
+	int i;
+	for (i = 0; i < NEVERC_KRT_PROBE_MAX; i++) {
+		if (!_neverc_krt_probes[i].used)
+			return i;
+	}
+	return -1;
+}
+
+int neverc_krt_probe_register(void *addr,
+			      neverc_krt_ctx_handler_t handler,
+			      int priority,
+			      struct neverc_krt_probe_ref *ref)
+{
+	unsigned long flags;
+	int slot, ret;
+
+	if (!addr || !handler || !ref)
+		return -1;
+	if (!_neverc_krt_inited)
+		return NEVERC_KRT_HOOK_E_NOINIT;
+	if (((unsigned long)addr & 3) != 0)
+		return NEVERC_KRT_HOOK_E_SHORT;
+
+	addr = (void *)neverc_krt_strip_pac((unsigned long)addr);
+
+	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_probe_lock);
+
+	slot = _neverc_krt_probe_find_addr(addr);
+	if (slot >= 0) {
+		ret = _neverc_krt_probe_chain_add(
+			&_neverc_krt_probes[slot].chain,
+			(void *)handler, priority);
+		if (ret == 0) {
+			ref->slot = slot;
+			ref->handler = (void *)handler;
+		}
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
+						   flags);
+		return ret;
+	}
+
+	slot = _neverc_krt_probe_alloc_slot();
+	if (slot < 0) {
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
+						   flags);
+		return -4;
+	}
+
+	/* Initialize slot */
+	{
+		unsigned char *p = (unsigned char *)&_neverc_krt_probes[slot];
+		unsigned long sz = sizeof(_neverc_krt_probes[slot]);
+		unsigned long i;
+		for (i = 0; i < sz; i++) p[i] = 0;
+	}
+
+	_neverc_krt_probes[slot].addr = addr;
+	_neverc_krt_probes[slot].used = 1;
+
+	_neverc_krt_probe_chain_add(&_neverc_krt_probes[slot].chain,
+				    (void *)handler, priority);
+
+	/*
+	 * Release spinlock before install: _neverc_krt_patch_multi may call
+	 * aarch64_insn_patch_text which uses stop_machine (needs sleepable
+	 * context, cannot hold spinlock or have IRQs disabled).
+	 */
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock, flags);
+
+	/* Install the probe (allocate stub, patch code) */
+	ret = _neverc_krt_probe_install_slot(slot);
+	if (ret != 0) {
+		flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_probe_lock);
+		_neverc_krt_probes[slot].chain.count = 0;
+		_neverc_krt_probes[slot].used = 0;
+		_neverc_krt_probes[slot].addr = (void *)0;
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
+						   flags);
+		return ret;
+	}
+
+	ref->slot = slot;
+	ref->handler = (void *)handler;
+
+	return 0;
+}
+
+int neverc_krt_probe_unregister(struct neverc_krt_probe_ref *ref)
+{
+	unsigned long flags;
+	int slot, ret, need_remove = 0;
+
+	if (!ref)
+		return -1;
+
+	slot = ref->slot;
+	if (slot < 0 || slot >= NEVERC_KRT_PROBE_MAX)
+		return -1;
+
+	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_probe_lock);
+
+	if (!_neverc_krt_probes[slot].used) {
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
+						   flags);
+		return -2;
+	}
+
+	ret = _neverc_krt_probe_chain_remove(&_neverc_krt_probes[slot].chain,
+					     ref->handler);
+	if (ret != 0) {
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
+						   flags);
+		return ret;
+	}
+
+	if (_neverc_krt_probes[slot].chain.count == 0)
+		need_remove = 1;
+
+	ref->slot = -1;
+	ref->handler = (void *)0;
+
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock, flags);
+
+	/*
+	 * Remove slot outside the spinlock: _neverc_krt_probe_remove_slot
+	 * calls _neverc_krt_patch_multi which may use stop_machine.
+	 */
+	if (need_remove) {
+		_neverc_krt_probe_remove_slot(slot);
+		flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_probe_lock);
+		_neverc_krt_probes[slot].used = 0;
+		_neverc_krt_probes[slot].addr = (void *)0;
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
+						   flags);
+	}
+
+	return 0;
+}
+
+int neverc_krt_probe_count(void *addr)
+{
+	unsigned long flags;
+	int slot, cnt = 0;
+
+	addr = (void *)neverc_krt_strip_pac((unsigned long)addr);
+	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_probe_lock);
+	slot = _neverc_krt_probe_find_addr(addr);
+	if (slot >= 0)
+		cnt = _neverc_krt_probes[slot].chain.count;
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock, flags);
+	return cnt;
+}
+
+/* ================================================================ */
 
 int neverc_krt_hook_strerror(int err, char *buf, int sz)
 {
