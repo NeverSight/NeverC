@@ -2,18 +2,26 @@
 
 # Android Kernel Syscall Hook
 
-Syscall-Tabellen-Ersetzung auf `openat`. Standard: Tabelleneintrag-Tausch. Mit `-DNVK_SYSCALL_INLINE_HOOK`: patcht den Handler-Funktionsprolog. Demonstriert `nvk_syscall_replace`/`nvk_syscall_restore` und arm64 Syscall-Nummern.
+Hook von `openat` durch Ersetzen des Zeigers in `sys_call_table`. Demonstriert klassische Syscall-Interception auf ARM64 GKI Kerneln mit `neverc_krt_syscall_replace` / `neverc_krt_syscall_restore`.
 
-## Kompilierung
+## API
+
+```c
+int neverc_krt_syscall_replace(int nr, neverc_krt_syscall_fn_t new_fn,
+                               neverc_krt_syscall_fn_t *orig);
+int neverc_krt_syscall_restore(int nr, neverc_krt_syscall_fn_t orig);
+```
+
+## Kompilieren
 
 ```bash
 cd examples/android-kernel-syscall-hook
 neverc make
 ```
 
-Ändern Sie `KERNEL` auf `515`, `601`, `606` oder `612` für andere Versionen.
+`KERNEL` auf `515`, `601`, `606` oder `612` ändern für andere Kernelversionen.
 
-## Bereitstellung und Ausführung
+## Deployment und Ausführung
 
 ```bash
 neverc make run
@@ -24,17 +32,11 @@ Oder manuell:
 ```bash
 adb push nvk_syscall_hook.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_syscall_hook.ko'
-adb shell su -c 'dmesg | grep nvk_syscall_hook'
+adb shell su -c 'dmesg | grep neverc_krt_syscall'
 ```
 
 ## Entladen
 
 ```bash
 neverc make rmmod
-```
-
-Oder manuell:
-
-```bash
-adb shell su -c 'rmmod nvk_syscall_hook'
 ```

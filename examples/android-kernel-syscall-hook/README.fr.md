@@ -1,17 +1,25 @@
-**Langues**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+**Langues** : [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# Hook syscall noyau Android
+# Android Kernel Syscall Hook
 
-Remplacement de table syscall sur `openat`. Par défaut : échange d'entrée. Avec `-DNVK_SYSCALL_INLINE_HOOK` : patche le prologue du handler. Démontre `nvk_syscall_replace`/`nvk_syscall_restore` et les numéros syscall arm64.
+Hook de `openat` par remplacement de son pointeur dans `sys_call_table`. Démontre l'interception classique de syscall sur les noyaux ARM64 GKI avec `neverc_krt_syscall_replace` / `neverc_krt_syscall_restore`.
 
-## Construction
+## API
+
+```c
+int neverc_krt_syscall_replace(int nr, neverc_krt_syscall_fn_t new_fn,
+                               neverc_krt_syscall_fn_t *orig);
+int neverc_krt_syscall_restore(int nr, neverc_krt_syscall_fn_t orig);
+```
+
+## Compilation
 
 ```bash
 cd examples/android-kernel-syscall-hook
 neverc make
 ```
 
-Changez `KERNEL` en `515`, `601`, `606` ou `612` pour d'autres versions.
+Changer `KERNEL` en `515`, `601`, `606` ou `612` pour d'autres versions du noyau.
 
 ## Déploiement et exécution
 
@@ -24,17 +32,11 @@ Ou manuellement :
 ```bash
 adb push nvk_syscall_hook.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_syscall_hook.ko'
-adb shell su -c 'dmesg | grep nvk_syscall_hook'
+adb shell su -c 'dmesg | grep neverc_krt_syscall'
 ```
 
 ## Déchargement
 
 ```bash
 neverc make rmmod
-```
-
-Ou manuellement :
-
-```bash
-adb shell su -c 'rmmod nvk_syscall_hook'
 ```

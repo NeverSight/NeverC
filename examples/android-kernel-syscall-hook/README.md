@@ -2,7 +2,15 @@
 
 # Android Kernel Syscall Hook
 
-Syscall table replacement on `openat`. Default: table entry swap. With `-DNVK_SYSCALL_INLINE_HOOK`: patches the handler function prologue instead. Demonstrates `nvk_syscall_replace`/`nvk_syscall_restore` and arm64 syscall number definitions.
+Hooks `openat` by replacing its pointer in `sys_call_table`. Demonstrates `neverc_krt_syscall_replace` / `neverc_krt_syscall_restore` for classic syscall interception on ARM64 GKI kernels.
+
+## API
+
+```c
+int neverc_krt_syscall_replace(int nr, neverc_krt_syscall_fn_t new_fn,
+                               neverc_krt_syscall_fn_t *orig);
+int neverc_krt_syscall_restore(int nr, neverc_krt_syscall_fn_t orig);
+```
 
 ## Build
 
@@ -24,17 +32,11 @@ Or manually:
 ```bash
 adb push nvk_syscall_hook.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_syscall_hook.ko'
-adb shell su -c 'dmesg | grep nvk_syscall_hook'
+adb shell su -c 'dmesg | grep neverc_krt_syscall'
 ```
 
 ## Unload
 
 ```bash
 neverc make rmmod
-```
-
-Or manually:
-
-```bash
-adb shell su -c 'rmmod nvk_syscall_hook'
 ```

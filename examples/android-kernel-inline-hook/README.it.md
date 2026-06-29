@@ -1,25 +1,27 @@
 **Lingue**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# Hook inline kernel Android
+# Android Kernel Function Hook
 
-Hook inline su `do_faccessat`. Default: sostituzione semplice con trampoline. Con `-DNVK_CONTEXT_HOOK`: hook contestuale che riceve lo stato completo dei registri `nvk_reg_ctx`. Dimostra patching sicuro BTI/PAC, rilocazione relativa al PC e trampoline coerente D-cache→I-cache.
+Hook di `do_faccessat` al punto di ingresso con `neverc_krt_hook_register`. Dimostra:
 
-## Modalità di hook
+- **Concatenamento automatico**: più handler sullo stesso target, eseguiti per priorità
+- **Pattern di chiamata all'originale**: l'handler riceve un puntatore `orig` per invocare la funzione originale
+- **Controllo priorità**: valore inferiore = esecuzione prima; usare valori negativi per eseguire prima di altri hook
+- **Coesistenza**: funziona anche se il target è già hookato da un altro modulo
 
-| | Simple Hook (predefinito) | Context Hook (`-DNVK_CONTEXT_HOOK`) |
-|---|---|---|
-| **Firma** | Typedef esatto richiesto | Non necessario — tramite `ctx->regs[0..7]` |
-| **Guardia rientro** | Manuale (`nvk_hook_enter`/`leave`) | Integrata (`guard_task`) |
-| **Abilitare/disabilitare** | Manuale (`WRITE_ONCE`) | Controllo rapido integrato nello stub |
-| **Chiamata originale** | Tramite puntatore `orig` | Automatica (dopo l'handler) |
-| **Saltare l'originale** | Non chiamare `orig` | `NVK_CTX_SKIP(ctx, ret)` |
-| **Reindirizzamento** | N/A | `NVK_CTX_REDIRECT(ctx, addr)` |
-| **Modificare args** | Cambiare parametri prima di `orig` | `NVK_CTX_SET_ARG(ctx, n, val)` |
-| **Sicurezza FP** | Convenzione caller-save | `NVK_CTX_FP_GUARD_BEGIN`/`END` |
-| **Costo** | Basso (4 insns patch + trampoline) | Maggiore (116 insns stub + salvataggio completo) |
-| **Ideale per** | Firme note, prestazioni critiche | Monitoraggio, ABI instabile, prototipazione rapida |
+## API
 
-**Raccomandazione**: preferire context hook a meno che non sia necessario intercettare il valore di ritorno o si abbiano vincoli di prestazione stringenti.
+```c
+int neverc_krt_hook_register(void *target, void *handler, int priority,
+                             void **orig, struct neverc_krt_hook_ref *ref);
+int neverc_krt_hook_unregister(struct neverc_krt_hook_ref *ref);
+```
+
+Firma dell'handler:
+
+```c
+long my_hook(void *orig, void *a0, void *a1, void *a2, void *a3, void *a4, void *a5);
+```
 
 ## Compilazione
 
@@ -28,30 +30,24 @@ cd examples/android-kernel-inline-hook
 neverc make
 ```
 
-Cambiare `KERNEL` in `515`, `601`, `606` o `612` per altre versioni.
+Cambiare `KERNEL` in `515`, `601`, `606` o `612` per altre versioni del kernel.
 
-## Distribuzione ed esecuzione
+## Deploy ed esecuzione
 
 ```bash
 neverc make run
 ```
 
-Oppure manualmente:
+O manualmente:
 
 ```bash
-adb push nvk_inline_hook.ko /data/local/tests/
-adb shell su -c 'insmod /data/local/tests/nvk_inline_hook.ko'
-adb shell su -c 'dmesg | grep nvk_inline_hook'
+adb push nvk_hook_demo.ko /data/local/tests/
+adb shell su -c 'insmod /data/local/tests/nvk_hook_demo.ko'
+adb shell su -c 'dmesg | grep neverc_krt_hook_demo'
 ```
 
 ## Scaricamento
 
 ```bash
 neverc make rmmod
-```
-
-Oppure manualmente:
-
-```bash
-adb shell su -c 'rmmod nvk_inline_hook'
 ```

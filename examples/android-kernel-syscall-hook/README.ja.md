@@ -1,8 +1,16 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# Android カーネル Syscall フック
+# Android カーネル Syscall Hook
 
-`openat` のシステムコールテーブル置換。デフォルト：テーブルエントリ交換。`-DNVK_SYSCALL_INLINE_HOOK` 付き：ハンドラ関数プロローグをパッチ。`nvk_syscall_replace`/`nvk_syscall_restore` と arm64 システムコール番号定義を実演。
+`sys_call_table` のポインタを置き換えて `openat` をフックします。ARM64 GKI カーネルでの `neverc_krt_syscall_replace` / `neverc_krt_syscall_restore` による従来型 syscall インターセプションを実演します。
+
+## API
+
+```c
+int neverc_krt_syscall_replace(int nr, neverc_krt_syscall_fn_t new_fn,
+                               neverc_krt_syscall_fn_t *orig);
+int neverc_krt_syscall_restore(int nr, neverc_krt_syscall_fn_t orig);
+```
 
 ## ビルド
 
@@ -11,7 +19,7 @@ cd examples/android-kernel-syscall-hook
 neverc make
 ```
 
-他のカーネルバージョンには `KERNEL` を `515`、`601`、`606`、`612` に変更してください。
+`KERNEL` を `515`、`601`、`606`、`612` に変更して他のカーネルバージョンに対応。
 
 ## デプロイと実行
 
@@ -19,22 +27,16 @@ neverc make
 neverc make run
 ```
 
-または手動で：
+または手動：
 
 ```bash
 adb push nvk_syscall_hook.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_syscall_hook.ko'
-adb shell su -c 'dmesg | grep nvk_syscall_hook'
+adb shell su -c 'dmesg | grep neverc_krt_syscall'
 ```
 
 ## アンロード
 
 ```bash
 neverc make rmmod
-```
-
-または手動で：
-
-```bash
-adb shell su -c 'rmmod nvk_syscall_hook'
 ```
