@@ -4235,6 +4235,74 @@ TEST(MergeMachO, RefusesHugeNcmdsWithoutOOM) {
          "refused before the Mach-O parser allocates one entry per command";
 }
 
+// An S_ZEROFILL section declares a size backed by *no* file bytes, so an 80-byte
+// section header can claim a ~7 EB size.  The merger laid zerofill out on the
+// same cursor as on-disk sections, so the symbol/string tables and the output
+// buffer itself (SmallVector Out(CurOff)) were pushed out by that size — a
+// crafted __bss drove the allocation to an allocation-size-too-big abort / OOM
+// (the merge fuzzer found this; sibling of the ELF NOBITS crash).  Zerofill now
+// advances a separate vm cursor and occupies no file space, so a huge __bss is
+// emitted as a huge-sized, file-less section (legal, like ELF .bss) and the
+// merge succeeds with a tiny output instead of crashing.  Built by hand because
+// buildMachO would itself allocate `size` file bytes for the section.
+TEST(MergeMachO, HandlesHugeZerofillSectionWithoutOOM) {
+  namespace MO = llvm::MachO;
+  const uint64_t Huge = 0x6000000000000000ull;
+
+  uint32_t HdrSize = sizeof(MO::mach_header_64);
+  uint32_t SegCmdSize = sizeof(MO::segment_command_64) + sizeof(MO::section_64);
+  uint32_t SymCmdSize = sizeof(MO::symtab_command);
+  uint32_t SizeOfCmds = SegCmdSize + SymCmdSize;
+  uint32_t DataStart = HdrSize + SizeOfCmds;
+
+  SmallVector<char, 0> Obj;
+  Obj.resize(DataStart, 0);
+
+  auto *MH = reinterpret_cast<MO::mach_header_64 *>(Obj.data());
+  MH->magic = MO::MH_MAGIC_64;
+  MH->cputype = MO::CPU_TYPE_X86_64;
+  MH->cpusubtype = MO::CPU_SUBTYPE_X86_64_ALL;
+  MH->filetype = MO::MH_OBJECT;
+  MH->ncmds = 2;
+  MH->sizeofcmds = SizeOfCmds;
+  MH->flags = MO::MH_SUBSECTIONS_VIA_SYMBOLS;
+
+  char *Cmd = Obj.data() + HdrSize;
+  auto *Seg = reinterpret_cast<MO::segment_command_64 *>(Cmd);
+  Seg->cmd = MO::LC_SEGMENT_64;
+  Seg->cmdsize = SegCmdSize;
+  Seg->maxprot = 7;
+  Seg->initprot = 7;
+  Seg->nsects = 1;
+
+  auto *SH = reinterpret_cast<MO::section_64 *>(Cmd +
+                                               sizeof(MO::segment_command_64));
+  memcpy(SH->sectname, "__bss", 5);
+  memcpy(SH->segname, "__DATA", 6);
+  SH->addr = 0;
+  SH->size = Huge;  // attacker-controlled, backed by no file bytes
+  SH->offset = 0;   // zerofill: no file offset
+  SH->align = 4;
+  SH->flags = MO::S_ZEROFILL;
+
+  Cmd += SegCmdSize;
+  auto *SymCmd = reinterpret_cast<MO::symtab_command *>(Cmd);
+  SymCmd->cmd = MO::LC_SYMTAB;
+  SymCmd->cmdsize = SymCmdSize;
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  // Reaching the assertion at all proves no OOM/abort.  With zerofill kept
+  // off-disk the merge succeeds and the output stays tiny (no ~7 EB of zeros).
+  bool OK = mergeMachO64Objects(Bufs, OS);
+  EXPECT_LT(Out.size(), (size_t)0x10000)
+      << "zerofill must not be materialized on disk (output ballooned to "
+      << Out.size() << " bytes)";
+  EXPECT_TRUE(OK) << "a valid Mach-O with a huge __bss must merge, not crash";
+}
+
 // A symbol whose name runs to the end of a non-NUL-terminated string table made
 // the merger build StringRef(const char *) -> strlen() off the end of the input
 // buffer (an out-of-bounds heap read; MachOObjectFile::getStringTableData does

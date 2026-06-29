@@ -536,16 +536,26 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     Layouts[i].Size = MergedSections[i].Data.size();
     CurOff += Layouts[i].Size;
   }
-  // Second pass: layout zerofill sections (must come after on-disk sections;
-  // they get a virtual address but no file offset).
+  // Second pass: lay out zerofill sections.  They get a virtual address that
+  // continues past the on-disk sections (used for the section header's addr
+  // field and for symbol n_value), but occupy NO file space — so their
+  // attacker-controlled, file-unbacked VirtualSize must advance a *separate* vm
+  // cursor, never the file cursor.  Folding it into CurOff (as the on-disk
+  // sections do) placed the relocation tables, symbol table, string table and
+  // the output buffer itself that many bytes later, so a crafted __bss size
+  // drove SmallVector Out(CurOff) to an allocation-size-too-big abort / OOM —
+  // the merge fuzzer found this in mergeMachO64Impl, the exact sibling of the
+  // ELF NOBITS materialization crash.  Mach-O requires zerofill sections to come
+  // last with file offset 0, which is precisely what this produces.
+  uint64_t VmCur = CurOff;
   for (unsigned i = 0; i < NSects; ++i) {
     if (!Layouts[i].IsZerofill)
       continue;
     uint64_t Align = 1ULL << std::min(MergedSections[i].Align, 20u);
-    CurOff = (CurOff + Align - 1) & ~(Align - 1);
-    Layouts[i].Offset = CurOff;
+    VmCur = (VmCur + Align - 1) & ~(Align - 1);
+    Layouts[i].Offset = VmCur;
     Layouts[i].Size = MergedSections[i].VirtualSize;
-    CurOff += Layouts[i].Size;
+    VmCur += Layouts[i].Size;
   }
 
   for (unsigned i = 0; i < NSects; ++i) {
@@ -653,7 +663,11 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   memset(Seg, 0, sizeof(MO::segment_command_64));
   Seg->cmd = MO::LC_SEGMENT_64;
   Seg->cmdsize = SegCmdSize;
-  Seg->vmsize = CurOff - DataStart;
+  // vmsize spans every section's memory image, including the zerofill sections
+  // laid out past the on-disk data (VmCur); the relocation/symbol/string tables
+  // that follow in the file are not part of the segment's memory, so they are
+  // excluded.  filesize below counts only the on-disk (non-zerofill) sections.
+  Seg->vmsize = VmCur - DataStart;
   Seg->fileoff = DataStart;
   // Filesize must not count zerofill sections (they live only in memory).
   uint64_t TotalFileSize = 0;
