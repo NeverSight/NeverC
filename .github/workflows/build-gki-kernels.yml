@@ -188,7 +188,7 @@ jobs:
             exit 0
           fi
           echo "Kernel build dir: $kdir"
-          clang=$(find prebuilts -path '*/bin/clang' -type f -print -quit 2>/dev/null || true)
+          clang=$(find prebuilts prebuilts-master -maxdepth 8 -path '*/bin/clang' -type f -print -quit 2>/dev/null || true)
           if [ -z "$clang" ]; then
             echo "No prebuilt clang found, skipping probe"
             exit 0
@@ -216,7 +216,7 @@ jobs:
         run: |
           set -euo pipefail
           # Prefer the kernel's own prebuilt llvm-readelf (exact toolchain match).
-          re=$(find prebuilts -path '*/bin/llvm-readelf' -type f -print -quit 2>/dev/null || true)
+          re=$(find prebuilts prebuilts-master -maxdepth 8 -path '*/bin/llvm-readelf' -type f -print -quit 2>/dev/null || true)
           # Likely artifact roots; .repo is intentionally excluded from the scan.
           # Also include the probe directory for GKI configs with no built-in modules.
           dirs=()
@@ -241,7 +241,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          clang=$(find prebuilts -path '*/bin/clang' -type f -print -quit 2>/dev/null || true)
+          clang=$(find prebuilts prebuilts-master -maxdepth 8 -path '*/bin/clang' -type f -print -quit 2>/dev/null || true)
           autoconf=$(find . -path '*/include/generated/autoconf.h' -type f -print -quit 2>/dev/null || true)
           if [ -z "$clang" ] || [ -z "$autoconf" ]; then
             echo "skip (clang='$clang' autoconf='$autoconf')"
