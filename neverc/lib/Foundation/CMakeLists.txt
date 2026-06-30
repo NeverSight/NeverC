@@ -242,6 +242,8 @@ set(BUILTIN_STD_INC_DIR    "${NEVERC_SOURCE_DIR}/../std/include")
 
 set(BUILTIN_STD_BITCODE_H
     "${CMAKE_CURRENT_BINARY_DIR}/BuiltinStdBitcode.h")
+file(GLOB_RECURSE BUILTIN_STD_SOURCES CONFIGURE_DEPENDS
+     "${BUILTIN_STD_SRC_DIR}/*.c")
 if(NOT EXISTS "${BUILTIN_STD_BITCODE_H}")
   file(WRITE "${BUILTIN_STD_BITCODE_H}"
     "/* Empty placeholder — run 'ninja neverc-bootstrap-std-bc' to populate. */\n"
@@ -259,7 +261,7 @@ add_custom_target(neverc-bootstrap-std-bc
           -o "${BUILTIN_STD_BITCODE_H}"
   COMMAND ${CMAKE_COMMAND} -E touch
           "${CMAKE_CURRENT_SOURCE_DIR}/Std/BuiltinStd.cpp"
-  DEPENDS neverc
+  DEPENDS neverc ${BUILTIN_STD_SOURCES}
   COMMENT "[NeverC] Bootstrap: compiling std library to embedded bitcode"
 )
 

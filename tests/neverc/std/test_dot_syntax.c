@@ -47,6 +47,7 @@
 #include "neverc/std/arena.h"
 #include "neverc/std/unique.h"
 #include "neverc/std/weak.h"
+#include "neverc/std/net.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1003,6 +1004,29 @@ static void test_weak_dot_syntax(void) {
     weak.ref_release(w);
 }
 
+static void test_net_dot_syntax(void) {
+    CHECK("net.http.status_text_200",
+          strcmp(net.http.status_text(200), "OK") == 0);
+    CHECK("net.http.status_text_404",
+          strcmp(net.http.status_text(404), "Not Found") == 0);
+
+    char qbuf[64];
+    const char *qv = net.http.query_get("name=John&age=30", "name",
+                                         qbuf, sizeof(qbuf));
+    CHECK("net.http.query_get", qv != NULL && strcmp(qv, "John") == 0);
+
+    neverc_url_t u;
+    CHECK("net.url.parse",
+          net.url.parse(&u, "https://example.com/path?q=1") == 0);
+    CHECK("net.url.is_abs", net.url.is_abs(&u) == 1);
+
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = net.tcp.listen("127.0.0.1:0", &err);
+    CHECK("net.tcp.listen", ln != NULL);
+    if (ln)
+        net.tcp.listener_close(ln);
+}
+
 #else
 static void test_math_dot_syntax(void) { CHECK("dot_syntax_unavailable_math", 1); }
 static void test_strconv_dot_syntax(void) { CHECK("dot_syntax_unavailable_strconv", 1); }
@@ -1049,6 +1073,7 @@ static void test_flag_dot_syntax(void) { CHECK("dot_syntax_unavailable_flag", 1)
 static void test_arena_dot_syntax(void) { CHECK("dot_syntax_unavailable_arena", 1); }
 static void test_unique_dot_syntax(void) { CHECK("dot_syntax_unavailable_unique", 1); }
 static void test_weak_dot_syntax(void) { CHECK("dot_syntax_unavailable_weak", 1); }
+static void test_net_dot_syntax(void) { CHECK("dot_syntax_unavailable_net", 1); }
 #endif /* __neverc__ */
 
 int main(void) {
@@ -1097,6 +1122,7 @@ int main(void) {
     test_arena_dot_syntax();
     test_unique_dot_syntax();
     test_weak_dot_syntax();
+    test_net_dot_syntax();
 
     printf("%d/%d tests passed\n", tests_passed, tests_run);
     if (tests_failed > 0)

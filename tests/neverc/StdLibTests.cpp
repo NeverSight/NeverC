@@ -383,4 +383,8 @@ STD_TEST(dot_syntax,
     "src/flag/flag.c",
     "src/arena/arena.c",
     "src/unique/unique.c",
-    "src/weak/weak.c")
+    "src/weak/weak.c",
+    "src/net/tcp/tcp.c",
+    "src/net/http/http.c",
+    "src/net/url/url.c",
+    HTTP_TLS_DEPS)
