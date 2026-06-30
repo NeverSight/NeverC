@@ -19,6 +19,11 @@
 #include "net/interface.h"
 
 #ifdef __neverc__
+/* Windows SDK (combaseapi.h) defines `#define interface struct` for COM.
+   Undefine it so we can use `interface` as a struct field name. */
+#ifdef interface
+#undef interface
+#endif
 struct __neverc_std_tcp_t { char __tag; };
 struct __neverc_std_udp_t { char __tag; };
 struct __neverc_std_http_t { char __tag; };
