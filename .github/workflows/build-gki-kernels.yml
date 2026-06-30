@@ -163,7 +163,7 @@ jobs:
             # Limit ThinLTO backend threads to keep peak memory under ~10GB
             # (standard runner: 7GB RAM + 4GB swap).
             export KCFLAGS="-Wl,--thinlto-jobs=1"
-            BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+            LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
           else
             # Bazel/KLEAF picks up its own toolchain from prebuilts/ and defaults
             # to host-core parallelism.
