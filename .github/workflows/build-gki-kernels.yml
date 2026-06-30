@@ -97,19 +97,12 @@ jobs:
 
       - name: Create swap for LTO link
         run: |
-          avail=$(df --output=avail /mnt | tail -1)
-          swap_kb=$(( avail - 4*1024*1024 ))
-          if [ "$swap_kb" -gt $((2*1024*1024)) ]; then
-            swap_mb=$(( swap_kb / 1024 ))
-          else
-            swap_mb=2048
-          fi
-          echo "Creating ${swap_mb}M swap on /mnt"
-          sudo fallocate -l "${swap_mb}M" /mnt/swapfile
+          sudo fallocate -l 4G /mnt/swapfile
           sudo chmod 600 /mnt/swapfile
           sudo mkswap /mnt/swapfile
           sudo swapon /mnt/swapfile
           free -h
+          df -h /
 
       - name: Checkout neverc repo
         uses: actions/checkout@v4
@@ -167,7 +160,9 @@ jobs:
           set -euo pipefail
           if [ "$BUILD_SYSTEM" = make ]; then
             # Legacy build.sh (ThinLTO + CFI, matching nvkmod_version.h assumptions).
-            # build.sh manages parallelism itself (uses all cores).
+            # Limit ThinLTO backend threads to keep peak memory under ~10GB
+            # (standard runner: 7GB RAM + 4GB swap).
+            export KCFLAGS="-Wl,--thinlto-jobs=1"
             BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
           else
             # Bazel/KLEAF picks up its own toolchain from prebuilts/ and defaults
