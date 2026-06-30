@@ -116,7 +116,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             git curl ca-certificates python3 python-is-python3 \
             bc bison flex cpio libelf-dev libssl-dev \
-            binutils llvm jq rsync zip xz-utils
+            binutils llvm jq rsync zip xz-utils dwarves
           mkdir -p "$HOME/.bin"
           curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo \
             -o "$HOME/.bin/repo"
@@ -172,17 +172,22 @@ jobs:
           df -h /
 
       - name: Build offset probe module
+        if: matrix.build_system == 'make'
         working-directory: ${{ github.workspace }}/kernel
         run: |
           set -euo pipefail
           # Some GKI configs (notably 5.10) have zero loadable modules, so the
           # verify script finds no .ko/.mod.o to extract struct module offsets
           # from.  Build a trivial out-of-tree module against the kernel tree.
-          kdir=$(find out -name '.config' -path '*/common/.config' -printf '%h\n' -quit 2>/dev/null || true)
+          # Find the kernel build output dir via Module.symvers (always present
+          # after a successful build, regardless of output directory layout).
+          kdir=$(find out -maxdepth 5 -name 'Module.symvers' -type f \
+                   -printf '%h\n' -quit 2>/dev/null || true)
           if [ -z "$kdir" ]; then
             echo "No kernel build directory found, skipping probe"
             exit 0
           fi
+          echo "Kernel build dir: $kdir"
           clang=$(find prebuilts -path '*/bin/clang' -type f -print -quit 2>/dev/null || true)
           if [ -z "$clang" ]; then
             echo "No prebuilt clang found, skipping probe"
