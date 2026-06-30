@@ -260,25 +260,58 @@ jobs:
           set -euo pipefail
           stage="$GITHUB_WORKSPACE/stage-$KEY"
           mkdir -p "$stage"
-          cfg=$(find . -name .config -path '*common*' -type f -print -quit 2>/dev/null || true)
-          [ -n "$cfg" ] && cp "$cfg" "$stage/config-$KEY" || true
-          for f in dist/Image dist/Image.lz4 dist/Image.gz dist/System.map \
-                   dist/vmlinux dist/Module.symvers; do
-            [ -f "$f" ] && cp "$f" "$stage/" || true
-          done
-          # Up to 3 .ko samples (always ELF, useful for offline offset checks).
-          n=0
-          while IFS= read -r ko; do
-            cp "$ko" "$stage/" || true
-            n=$((n + 1))
-            [ "$n" -ge 3 ] && break
-          done < <(find . -name '*.ko' -type f 2>/dev/null)
+
+          # Locate the dist directory (make: out/<branch>/dist, bazel: dist/).
+          dist_dir=$(find out dist -maxdepth 4 -name 'Image' -type f \
+                       -printf '%h\n' -quit 2>/dev/null || true)
+          if [ -n "$dist_dir" ]; then
+            echo "dist dir: $dist_dir"
+            mkdir -p "$stage/dist"
+            for f in Image Image.lz4 Image.gz System.map vmlinux \
+                     Module.symvers modules.builtin modules.builtin.modinfo; do
+              [ -f "$dist_dir/$f" ] && cp "$dist_dir/$f" "$stage/dist/" || true
+            done
+            # All .ko modules from dist.
+            find "$dist_dir" -name '*.ko' -type f -exec cp {} "$stage/dist/" \; 2>/dev/null || true
+          fi
+
+          # Locate the kernel build tree (where .config lives).
+          kbuild=$(find out -maxdepth 5 -name 'Module.symvers' -type f \
+                     -printf '%h\n' -quit 2>/dev/null || true)
+          if [ -n "$kbuild" ]; then
+            echo "kbuild dir: $kbuild"
+            # .config
+            [ -f "$kbuild/.config" ] && cp "$kbuild/.config" "$stage/config-$KEY" || true
+            # SDK: generated headers needed for out-of-tree module builds.
+            sdk="$stage/sdk"
+            mkdir -p "$sdk"
+            for d in include/generated include/config \
+                     arch/arm64/include/generated; do
+              [ -d "$kbuild/$d" ] && mkdir -p "$sdk/$d" && \
+                cp -r "$kbuild/$d/." "$sdk/$d/" || true
+            done
+            # SDK: build scripts needed for module compilation.
+            for f in scripts/basic/fixdep scripts/mod/modpost scripts/module.lds; do
+              if [ -f "$kbuild/$f" ]; then
+                mkdir -p "$sdk/$(dirname "$f")"
+                cp "$kbuild/$f" "$sdk/$f" || true
+              fi
+            done
+            [ -f "$kbuild/Module.symvers" ] && cp "$kbuild/Module.symvers" "$sdk/" || true
+          fi
+
+          # Probe module .ko for offline offset checks.
+          probe_ko="$GITHUB_WORKSPACE/probe/neverc_probe.ko"
+          [ -f "$probe_ko" ] && cp "$probe_ko" "$stage/" || true
           cp "$GITHUB_WORKSPACE/verify-$KEY.txt" "$stage/" 2>/dev/null || true
+
           if [ -z "$(ls -A "$stage" 2>/dev/null)" ]; then
             echo "(build failed before producing artifacts)" > "$stage/EMPTY.txt"
           fi
           tar -czf "$GITHUB_WORKSPACE/$TAG-build.tar.gz" -C "$stage" .
           ls -lh "$GITHUB_WORKSPACE/$TAG-build.tar.gz"
+          echo "Contents:"
+          tar -tzf "$GITHUB_WORKSPACE/$TAG-build.tar.gz" | head -50
 
       - name: Upload artifact
         if: ${{ always() }}
