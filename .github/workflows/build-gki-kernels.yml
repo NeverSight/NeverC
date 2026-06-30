@@ -171,6 +171,41 @@ jobs:
           fi
           df -h /
 
+      - name: Build offset probe module
+        working-directory: ${{ github.workspace }}/kernel
+        run: |
+          set -euo pipefail
+          # Some GKI configs (notably 5.10) have zero loadable modules, so the
+          # verify script finds no .ko/.mod.o to extract struct module offsets
+          # from.  Build a trivial out-of-tree module against the kernel tree.
+          kdir=$(find out -name '.config' -path '*/common/.config' -printf '%h\n' -quit 2>/dev/null || true)
+          if [ -z "$kdir" ]; then
+            echo "No kernel build directory found, skipping probe"
+            exit 0
+          fi
+          clang=$(find prebuilts -path '*/bin/clang' -type f -print -quit 2>/dev/null || true)
+          if [ -z "$clang" ]; then
+            echo "No prebuilt clang found, skipping probe"
+            exit 0
+          fi
+          clang_bin=$(cd "$(dirname "$clang")" && pwd)
+          probe="$GITHUB_WORKSPACE/probe"
+          mkdir -p "$probe"
+          cat > "$probe/neverc_probe.c" <<'PROBE'
+          #include <linux/module.h>
+          MODULE_LICENSE("GPL");
+          static int __init p_init(void) { return 0; }
+          static void __exit p_exit(void) {}
+          module_init(p_init);
+          module_exit(p_exit);
+          PROBE
+          echo 'obj-m := neverc_probe.o' > "$probe/Kbuild"
+          PATH="$clang_bin:$PATH" \
+            make -C "$kdir" M="$probe" LLVM=1 LLVM_IAS=1 \
+              ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules
+          ls -l "$probe"/*.ko 2>/dev/null && echo "Probe module built" \
+            || echo "Probe build produced no .ko (non-fatal)"
+
       - name: Verify struct module offsets
         working-directory: ${{ github.workspace }}/kernel
         run: |
@@ -178,8 +213,11 @@ jobs:
           # Prefer the kernel's own prebuilt llvm-readelf (exact toolchain match).
           re=$(find prebuilts -path '*/bin/llvm-readelf' -type f -print -quit 2>/dev/null || true)
           # Likely artifact roots; .repo is intentionally excluded from the scan.
+          # Also include the probe directory for GKI configs with no built-in modules.
           dirs=()
-          for d in out dist common bazel-bin; do [ -e "$d" ] && dirs+=("$d"); done
+          for d in out dist common bazel-bin "$GITHUB_WORKSPACE/probe"; do
+            [ -e "$d" ] && dirs+=("$d")
+          done
           args=()
           [ -n "$re" ] && args+=(--readelf "$re")
           if [ "$VERIFY_MODE" = print ]; then
