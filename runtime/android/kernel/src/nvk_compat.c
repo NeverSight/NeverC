@@ -1,25 +1,33 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 #include <nvk_internal.h>
+#include <nvk_compat_table.inc>
 
 unsigned long _neverc_krt_module_size = 0;
 int           _neverc_krt_kernel_ver = 0;
 unsigned long _neverc_krt_file_dentry_off = 0;
 
+static __always_inline const struct neverc_krt_version_entry *
+_neverc_krt_lookup_version(int kv)
+{
+	int i;
+	const struct neverc_krt_version_entry *best =
+		&_neverc_krt_version_table[0];
+	for (i = 0; i < NEVERC_KRT_VERSION_TABLE_LEN; i++) {
+		if (_neverc_krt_version_table[i].kv <= kv)
+			best = &_neverc_krt_version_table[i];
+	}
+	return best;
+}
+
 static __always_inline unsigned long _neverc_krt_module_size_for(int kv)
 {
-	if (kv >= 612) return 1600;
-	if (kv >= 606) return 1536;
-	if (kv >= 601) return 1088;
-	if (kv >= 515) return 960;
-	return 1024;
+	return _neverc_krt_lookup_version(kv)->module_size;
 }
 
 static __always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
 {
-	if (kv >= 612) return 0x48;
-	if (kv >= 606) return 0xB0;
-	return 0x18;
+	return _neverc_krt_lookup_version(kv)->file_dentry_off;
 }
 
 void _neverc_krt_version_try_detect_from_banner(void)
@@ -93,15 +101,16 @@ unsigned long _neverc_krt_get_module_size(void)
 {
 	unsigned long sz = __atomic_load_n(&_neverc_krt_module_size,
 					   __ATOMIC_RELAXED);
-	return sz ? sz : 0x640;
+	return sz ? sz : _neverc_krt_version_table[
+		NEVERC_KRT_VERSION_TABLE_LEN - 1].module_size;
 }
 
 unsigned long _neverc_krt_cred_uid_base(void)
 {
 	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (kv >= 606) return 8;
-	if (kv > 0) return 4;
-	return 4;
+	if (kv > 0)
+		return _neverc_krt_lookup_version(kv)->cred_uid_base;
+	return _neverc_krt_version_table[0].cred_uid_base;
 }
 
 unsigned long _neverc_krt_get_file_dentry_off(void)
@@ -111,9 +120,7 @@ unsigned long _neverc_krt_get_file_dentry_off(void)
 	if (off)
 		return off;
 	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (!kv)
-		return 0x18;
-	return _neverc_krt_file_dentry_off_for(kv);
+	return _neverc_krt_lookup_version(kv ? kv : 510)->file_dentry_off;
 }
 
 /* ---- internal variables ---- */
@@ -196,22 +203,11 @@ int neverc_krt_compat_init(void)
 	if (!_neverc_krt_kinfo.detected) {
 		int kv = __atomic_load_n(&_neverc_krt_kernel_ver,
 					__ATOMIC_ACQUIRE);
-		if (kv == 515) {
-			_neverc_krt_kinfo.major = 5; _neverc_krt_kinfo.minor = 15;
-			_neverc_krt_kinfo.android_version = 13;
-		} else if (kv == 601) {
-			_neverc_krt_kinfo.major = 6; _neverc_krt_kinfo.minor = 1;
-			_neverc_krt_kinfo.android_version = 14;
-		} else if (kv == 606) {
-			_neverc_krt_kinfo.major = 6; _neverc_krt_kinfo.minor = 6;
-			_neverc_krt_kinfo.android_version = 15;
-		} else if (kv == 612) {
-			_neverc_krt_kinfo.major = 6; _neverc_krt_kinfo.minor = 12;
-			_neverc_krt_kinfo.android_version = 16;
-		} else {
-			_neverc_krt_kinfo.major = 5; _neverc_krt_kinfo.minor = 10;
-			_neverc_krt_kinfo.android_version = 12;
-		}
+		const struct neverc_krt_version_entry *ent =
+			_neverc_krt_lookup_version(kv ? kv : 510);
+		_neverc_krt_kinfo.major = ent->major;
+		_neverc_krt_kinfo.minor = ent->minor;
+		_neverc_krt_kinfo.android_version = ent->android_version;
 		_neverc_krt_kinfo.detected = 1;
 	}
 
@@ -264,19 +260,15 @@ int neverc_krt_check_kernel_match(void)
 	if (!_neverc_krt_kinfo.detected)
 		return NEVERC_KRT_VER_UNKNOWN;
 
-	u32 expected_major = 0, expected_minor = 0;
 	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (kv == 515)      { expected_major = 5; expected_minor = 15; }
-	else if (kv == 601) { expected_major = 6; expected_minor = 1; }
-	else if (kv == 606) { expected_major = 6; expected_minor = 6; }
-	else if (kv == 612) { expected_major = 6; expected_minor = 12; }
-	else                { expected_major = 5; expected_minor = 10; }
+	const struct neverc_krt_version_entry *ent =
+		_neverc_krt_lookup_version(kv ? kv : 510);
 
-	if (_neverc_krt_kinfo.major == expected_major &&
-	    _neverc_krt_kinfo.minor == expected_minor)
+	if (_neverc_krt_kinfo.major == ent->major &&
+	    _neverc_krt_kinfo.minor == ent->minor)
 		return NEVERC_KRT_VER_EXACT;
 
-	if (_neverc_krt_kinfo.major == expected_major)
+	if (_neverc_krt_kinfo.major == ent->major)
 		return NEVERC_KRT_VER_COMPAT;
 
 	return NEVERC_KRT_VER_MISMATCH;
@@ -488,15 +480,15 @@ void *neverc_krt_lookup_probe_write(void)
 
 void *neverc_krt_lookup_module_alloc(void)
 {
-	void *sym = NEVERC_KRT_LOOKUP("module_alloc");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("execmem_alloc");
+	void *sym = NEVERC_KRT_LOOKUP("execmem_alloc");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("module_alloc");
 	return sym;
 }
 
 void *neverc_krt_lookup_module_free(void)
 {
-	void *sym = NEVERC_KRT_LOOKUP("module_memfree");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("execmem_free");
+	void *sym = NEVERC_KRT_LOOKUP("execmem_free");
+	if (!sym) sym = NEVERC_KRT_LOOKUP("module_memfree");
 	if (!sym) sym = NEVERC_KRT_LOOKUP("vfree");
 	return sym;
 }
@@ -529,34 +521,17 @@ int neverc_krt_should_abort_on_mismatch(void)
 	return r == NEVERC_KRT_VER_MISMATCH;
 }
 
-static __always_inline unsigned long _neverc_krt_default_off_init(int kv)
-{
-	if (kv >= 606) return 392;
-	if (kv >= 601) return 368;
-	if (kv >= 515) return 376;
-	return 400;
-}
-
-static __always_inline unsigned long _neverc_krt_default_off_exit(int kv)
-{
-	if (kv >= 612) return 1528;
-	if (kv >= 606) return 1464;
-	if (kv >= 601) return 984;
-	if (kv >= 515) return 888;
-	return 960;
-}
-
 unsigned long neverc_krt_rt_off_init(void)
 {
 	if (_neverc_krt_rt_off_init) return _neverc_krt_rt_off_init;
 	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	return kv ? _neverc_krt_default_off_init(kv) : 400;
+	return _neverc_krt_lookup_version(kv ? kv : 510)->off_init;
 }
 
 unsigned long neverc_krt_rt_off_exit(void)
 {
 	if (_neverc_krt_rt_off_exit) return _neverc_krt_rt_off_exit;
 	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	return kv ? _neverc_krt_default_off_exit(kv) : 960;
+	return _neverc_krt_lookup_version(kv ? kv : 510)->off_exit;
 }
 

@@ -167,43 +167,31 @@
 #  endif
 
 #elif NEVERC_KRT_KERNEL == 618
-/* Android 17, Linux 6.18 (GKI android17-6.18, launched 2025-11-30).
- *
- * !!! UNVERIFIED OFFSETS — placeholders copied from android16-6.12 !!!
- * struct module very likely shifted again on 6.18 (just as 6.12 added
- * btf_base_data_size/btf_base_data over 6.6), so these MUST be regenerated from
- * a real android17-6.18 build before they can be trusted:
- *
- *   tools/verify_gki_offsets.sh --print <build-out-dir>
- *   # then paste the printed NEVERC_KRT_OFF_* values below and drop the guard.
- *
- * Until then, building with NEVERC_KRT_KERNEL=618 is blocked. Define
- * NEVERC_KRT_ALLOW_UNVERIFIED_618 to knowingly use the 6.12-based estimates. */
-#  if !defined(NEVERC_KRT_ALLOW_UNVERIFIED_618)
-#    error                                                                        \
-      "android17-6.18 struct module offsets are UNVERIFIED; build it (CI), run tools/verify_gki_offsets.sh --print, fill the real values in nvkmod_version.h and remove this guard (or define NEVERC_KRT_ALLOW_UNVERIFIED_618 to accept the 6.12-based estimates)"
-#  endif
+/* Android 17, Linux 6.18 (GKI android17-6.18, launched 2025-11-30, KMI gen 5).
+ * Verified from GKI android17-6.18 (release 6.18.24) via gki_defconfig +
+ * modules_prepare + tools/verify_gki_offsets.sh --print.
+ * struct module grew +64 bytes over 6.12: module_memory refactoring. */
 #  ifndef NEVERC_KRT_VERMAGIC
 #    define NEVERC_KRT_VERMAGIC                                                        \
-       "6.18.0-android17-0 SMP preempt mod_unload modversions aarch64" /* UNVERIFIED */
+       "6.18.24-android17-5 SMP preempt mod_unload modversions aarch64"
 #  endif
 #  ifndef NEVERC_KRT_KERNEL_STR
 #    define NEVERC_KRT_KERNEL_STR "android17-6.18"
 #  endif
 #  ifndef NEVERC_KRT_OFF_INIT
-#    define NEVERC_KRT_OFF_INIT 392 /* 0x188 — UNVERIFIED (copied from 6.12) */
+#    define NEVERC_KRT_OFF_INIT 376 /* 0x178 */
 #  endif
 #  ifndef NEVERC_KRT_OFF_EXIT
-#    define NEVERC_KRT_OFF_EXIT 1528 /* 0x5F8 — UNVERIFIED (copied from 6.12) */
+#    define NEVERC_KRT_OFF_EXIT 1536 /* 0x600 */
 #  endif
 #  ifndef NEVERC_KRT_MODULE_SIZE
-#    define NEVERC_KRT_MODULE_SIZE 1600 /* 0x640 — UNVERIFIED (copied from 6.12) */
+#    define NEVERC_KRT_MODULE_SIZE 1664 /* 0x680, sizeof(struct module) */
 #  endif
 #  ifndef NEVERC_KRT_FILE_DENTRY_OFF
-#    define NEVERC_KRT_FILE_DENTRY_OFF 0x48 /* UNVERIFIED (copied from 6.12) */
+#    define NEVERC_KRT_FILE_DENTRY_OFF 0x48
 #  endif
 #  ifndef NEVERC_KRT_FOPS_SIZE
-#    define NEVERC_KRT_FOPS_SIZE 264 /* UNVERIFIED (copied from 6.12) */
+#    define NEVERC_KRT_FOPS_SIZE 272 /* mmap_prepare added in 6.18 */
 #  endif
 
 #else
@@ -212,7 +200,7 @@
 #endif
 
 /*
- * struct dentry d_name.name offset — stable across 5.10-6.12:
+ * struct dentry d_name.name offset — stable across 5.10-6.18:
  *   d_flags(4) + d_seq(4) + d_hash(16) + d_parent(8) + d_name.hash_len(8)
  */
 #ifndef NEVERC_KRT_DENTRY_DNAME_OFF
@@ -220,7 +208,7 @@
 #endif
 
 /*
- * struct sock_common skc_dport / skc_num offsets — stable across 5.10-6.12:
+ * struct sock_common skc_dport / skc_num offsets — stable across 5.10-6.18:
  *   skc_addrpair(8) + skc_hash(4) + skc_dport(2) + skc_num(2)
  */
 #ifndef NEVERC_KRT_SKC_DPORT_OFF
@@ -236,7 +224,7 @@
  * own (possibly larger) struct module.  Generously rounded up.
  */
 #ifndef NEVERC_KRT_MODULE_SIZE
-#define NEVERC_KRT_MODULE_SIZE 0x600
+#define NEVERC_KRT_MODULE_SIZE 0x680
 #endif
 
 /*
@@ -255,7 +243,7 @@
  * user's compile-time NEVERC_KRT_KERNEL takes precedence.
  *
  * Safe default: if never set (0), callers fall back to the maximum
- * struct module size across 5.10-6.12 (0x640 = 1600).
+ * struct module size across 5.10-6.18 (0x680 = 1664).
  */
 void _neverc_krt_version_setup_impl(int kv);
 

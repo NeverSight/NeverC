@@ -87,8 +87,7 @@ static int _neverc_krt_cred_find_uid_offset(void)
 	 * match when the upper half of an 8-byte refcount is zero and
 	 * the current process is root (all UIDs/GIDs are 0).
 	 */
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	unsigned long scan_start = (kv >= 606) ? 8 : 4;
+	unsigned long scan_start = _neverc_krt_cred_uid_base();
 
 	const void *cred = (void *)0;
 	unsigned long task;
