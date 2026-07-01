@@ -89,6 +89,8 @@ tests/neverc/std/test_quic_frame
 tests/neverc/std/test_quic_conn
 tests/neverc/std/test_quic_loss
 tests/neverc/std/test_http3
+tests/neverc/std/test_http3_frame
+tests/neverc/std/test_http3_server
 neverc/build/
 
 
