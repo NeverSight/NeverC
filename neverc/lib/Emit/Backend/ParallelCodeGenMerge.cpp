@@ -491,8 +491,16 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
   };
   for (Function &F : Mod)
     ExternalizeGV(F);
-  for (GlobalVariable &GV : Mod.globals())
+  for (GlobalVariable &GV : Mod.globals()) {
+    // unnamed_addr constants (string literals, constant arrays) are safe to
+    // duplicate across partitions — their identity is defined by content, not
+    // address.  Keeping them as local definitions in every partition avoids
+    // cross-partition symbol resolution in the merger, which has known issues
+    // with large constant pools.  This matches LLVM's SplitModule behavior.
+    if (GV.hasGlobalUnnamedAddr() && GV.isConstant())
+      continue;
     ExternalizeGV(GV);
+  }
   for (GlobalAlias &GA : Mod.aliases())
     ExternalizeGV(GA);
   for (GlobalIFunc &IF : Mod.ifuncs())
@@ -650,6 +658,10 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
             GV.eraseFromParent();
             continue;
           }
+          // unnamed_addr constants (string literals) are kept as local
+          // definitions in every partition — skip the initializer drop.
+          if (GV.hasGlobalUnnamedAddr() && GV.isConstant())
+            continue;
           GV.setInitializer(nullptr);
           GV.setLinkage(GlobalValue::ExternalLinkage);
         }
