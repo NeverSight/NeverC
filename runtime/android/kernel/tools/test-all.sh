@@ -9,7 +9,7 @@ NEVERC="${1:-$REPO_ROOT/build-neverc/bin/neverc}"
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 
-KERNELS=(510 515 601 606 612)
+KERNELS=(510 515 601 606 612 618)
 DEMOS=(
   "android-kernel-hello"
   "android-kernel-driver"

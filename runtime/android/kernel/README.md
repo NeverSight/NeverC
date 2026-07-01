@@ -29,7 +29,7 @@ loader skip CRC checks, so those few imports load on any matching-vermagic
 kernel.
 
 The only per-kernel data therefore lives in `include/nvkmod_version.h`, selected
-with `-DNVK_KERNEL=510|515|601|606|612` (default `510` = android12-5.10).
+with `-DNVK_KERNEL=510|515|601|606|612|618` (default `510` = android12-5.10).
 
 ## Layout
 

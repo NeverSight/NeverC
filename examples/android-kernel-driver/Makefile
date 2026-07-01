@@ -7,7 +7,7 @@ TARGET  = aarch64-linux-android
 MODULE  = nvk_driver.ko
 SRCS    = main.c
 
-# -DNVK_KERNEL=510|515|601|606|612 selects the target kernel preset (default 510).
+# -DNVK_KERNEL=510|515|601|606|612|618 selects the target kernel preset (default 510).
 KERNEL ?= 510
 
 FLAGS = \
