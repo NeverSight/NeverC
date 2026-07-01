@@ -323,12 +323,14 @@ jobs:
           # offset analysis with verify_gki_offsets.sh).
           obj_dir="$stage/obj"
           mkdir -p "$obj_dir"
+          obj_count=0
           for search_root in out dist bazel-bin "$GITHUB_WORKSPACE/probe"; do
             [ -d "$search_root" ] || continue
-            find "$search_root" -name '*.mod.o' -type f 2>/dev/null \
-              | head -20 | while IFS= read -r f; do
+            while IFS= read -r f; do
+              [ "$obj_count" -ge 20 ] && break
               cp "$f" "$obj_dir/" 2>/dev/null || true
-            done
+              obj_count=$((obj_count + 1))
+            done < <(find "$search_root" -name '*.mod.o' -type f 2>/dev/null)
           done
           [ -z "$(ls -A "$obj_dir" 2>/dev/null)" ] && rmdir "$obj_dir" || true
 
@@ -343,7 +345,7 @@ jobs:
           tar -czf "$GITHUB_WORKSPACE/$TAG-build.tar.gz" -C "$stage" .
           ls -lh "$GITHUB_WORKSPACE/$TAG-build.tar.gz"
           echo "Contents:"
-          tar -tzf "$GITHUB_WORKSPACE/$TAG-build.tar.gz" | head -50
+          tar -tzf "$GITHUB_WORKSPACE/$TAG-build.tar.gz" | head -50 || true
 
       - name: Upload artifact
         if: ${{ always() }}
