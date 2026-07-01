@@ -399,6 +399,7 @@ static int qpack_find_static_name(const char *name) {
 
 static int qpack_encode_integer(uint8_t *buf, size_t cap, size_t *pos,
                                   uint64_t value, uint8_t prefix_bits) {
+    if (*pos >= cap) return -1;
     uint8_t max_first = (uint8_t)((1 << prefix_bits) - 1);
     if (value < max_first) {
         buf[*pos] |= (uint8_t)value;

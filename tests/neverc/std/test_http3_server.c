@@ -83,7 +83,8 @@ static void test_server_stop(void) {
 
 static void test_conn_init(void) {
     h3_conn_t conn;
-    h3_conn_init(&conn, NULL);
+    int rc = h3_conn_init(&conn, NULL);
+    ASSERT_EQ(rc, 0);
     ASSERT_NOT_NULL(conn.encoder);
     ASSERT_NOT_NULL(conn.decoder);
     ASSERT_EQ(conn.local_settings.qpack_max_table_capacity, 4096);

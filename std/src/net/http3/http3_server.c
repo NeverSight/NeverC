@@ -19,7 +19,10 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifndef _WIN32
+#include <stdatomic.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <pthread.h>
 #include <unistd.h>
 #endif
@@ -89,12 +92,18 @@ typedef struct {
     neverc_http_mux_t *mux;
 } h3_conn_t;
 
-static void h3_conn_init(h3_conn_t *conn, neverc_http_mux_t *mux) {
+static int h3_conn_init(h3_conn_t *conn, neverc_http_mux_t *mux) {
     memset(conn, 0, sizeof(*conn));
     conn->mux = mux;
     conn->encoder = neverc_qpack_encoder_create(4096);
     conn->decoder = neverc_qpack_decoder_create(4096);
+    if (!conn->encoder || !conn->decoder) {
+        neverc_qpack_encoder_destroy(conn->encoder);
+        neverc_qpack_decoder_destroy(conn->decoder);
+        return -1;
+    }
     neverc_h3_settings_default(&conn->local_settings);
+    return 0;
 }
 
 static void h3_conn_cleanup(h3_conn_t *conn) {
@@ -109,7 +118,7 @@ static void h3_conn_cleanup(h3_conn_t *conn) {
 struct neverc_http3_server {
     neverc_http_mux_t *mux;
     uint32_t           max_concurrent_streams;
-    volatile int       running;
+    _Atomic int        running;
 };
 
 neverc_http3_server_t *neverc_http3_server_create(neverc_http_mux_t *mux) {
@@ -123,6 +132,8 @@ neverc_http3_server_t *neverc_http3_server_create(neverc_http_mux_t *mux) {
 }
 
 void neverc_http3_server_destroy(neverc_http3_server_t *srv) {
+    if (!srv) return;
+    neverc_http3_server_stop(srv);
     free(srv);
 }
 
@@ -447,7 +458,9 @@ int neverc_http3_listen_and_serve(const char *addr,
 
     /* Placeholder: block until stopped (real impl will run QUIC accept loop) */
     while (srv->running) {
-#ifndef _WIN32
+#ifdef _WIN32
+        Sleep(100);
+#else
         usleep(100000);
 #endif
     }
