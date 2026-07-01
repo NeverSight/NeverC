@@ -46,6 +46,8 @@ typedef neverc_qpack_header_t qpack_header_t;
  * Frame Header Parsing
  * ====================================================================== */
 
+#ifndef H3_FRAME_TYPES_DEFINED
+#define H3_FRAME_TYPES_DEFINED
 typedef struct {
     uint64_t type;
     uint64_t length;
@@ -86,6 +88,7 @@ typedef struct {
     uint64_t max_field_section_size;      /* default unlimited (UINT64_MAX) */
     uint64_t qpack_blocked_streams;       /* default 0 */
 } h3_settings_t;
+#endif /* H3_FRAME_TYPES_DEFINED */
 
 void neverc_h3_settings_default(h3_settings_t *s) {
     s->qpack_max_table_capacity = 4096;
@@ -100,22 +103,22 @@ int neverc_h3_settings_encode(const h3_settings_t *s,
     size_t plen = 0, w;
 
     if (s->qpack_max_table_capacity > 0) {
-        neverc_quic_varint_encode(H3_SETTINGS_QPACK_MAX_TABLE_CAPACITY, payload + plen, sizeof(payload) - plen, &w); plen += w;
-        neverc_quic_varint_encode(s->qpack_max_table_capacity, payload + plen, sizeof(payload) - plen, &w); plen += w;
+        if (neverc_quic_varint_encode(H3_SETTINGS_QPACK_MAX_TABLE_CAPACITY, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
+        if (neverc_quic_varint_encode(s->qpack_max_table_capacity, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
     }
     if (s->max_field_section_size < UINT64_MAX) {
-        neverc_quic_varint_encode(H3_SETTINGS_MAX_FIELD_SECTION_SIZE, payload + plen, sizeof(payload) - plen, &w); plen += w;
-        neverc_quic_varint_encode(s->max_field_section_size, payload + plen, sizeof(payload) - plen, &w); plen += w;
+        if (neverc_quic_varint_encode(H3_SETTINGS_MAX_FIELD_SECTION_SIZE, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
+        if (neverc_quic_varint_encode(s->max_field_section_size, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
     }
     if (s->qpack_blocked_streams > 0) {
-        neverc_quic_varint_encode(H3_SETTINGS_QPACK_BLOCKED_STREAMS, payload + plen, sizeof(payload) - plen, &w); plen += w;
-        neverc_quic_varint_encode(s->qpack_blocked_streams, payload + plen, sizeof(payload) - plen, &w); plen += w;
+        if (neverc_quic_varint_encode(H3_SETTINGS_QPACK_BLOCKED_STREAMS, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
+        if (neverc_quic_varint_encode(s->qpack_blocked_streams, payload + plen, sizeof(payload) - plen, &w) != 0) return -1; plen += w;
     }
 
     /* Frame header: Type + Length */
     size_t pos = 0;
-    neverc_quic_varint_encode(H3_FRAME_SETTINGS, buf + pos, cap - pos, &w); pos += w;
-    neverc_quic_varint_encode(plen, buf + pos, cap - pos, &w); pos += w;
+    if (neverc_quic_varint_encode(H3_FRAME_SETTINGS, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
+    if (neverc_quic_varint_encode(plen, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
 
     if (pos + plen > cap) return -1;
     memcpy(buf + pos, payload, plen);
@@ -171,8 +174,8 @@ int neverc_h3_write_data_frame(uint8_t *buf, size_t cap,
                                  const uint8_t *data, size_t data_len,
                                  size_t *written) {
     size_t pos = 0, w;
-    neverc_quic_varint_encode(H3_FRAME_DATA, buf + pos, cap - pos, &w); pos += w;
-    neverc_quic_varint_encode(data_len, buf + pos, cap - pos, &w); pos += w;
+    if (neverc_quic_varint_encode(H3_FRAME_DATA, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
+    if (neverc_quic_varint_encode(data_len, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
     if (pos + data_len > cap) return -1;
     memcpy(buf + pos, data, data_len);
     pos += data_len;
@@ -190,8 +193,8 @@ int neverc_h3_write_headers_frame(uint8_t *buf, size_t cap,
                                     size_t headers_len,
                                     size_t *written) {
     size_t pos = 0, w;
-    neverc_quic_varint_encode(H3_FRAME_HEADERS, buf + pos, cap - pos, &w); pos += w;
-    neverc_quic_varint_encode(headers_len, buf + pos, cap - pos, &w); pos += w;
+    if (neverc_quic_varint_encode(H3_FRAME_HEADERS, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
+    if (neverc_quic_varint_encode(headers_len, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
     if (pos + headers_len > cap) return -1;
     memcpy(buf + pos, encoded_headers, headers_len);
     pos += headers_len;
@@ -208,9 +211,9 @@ int neverc_h3_write_goaway_frame(uint8_t *buf, size_t cap,
                                    size_t *written) {
     size_t pos = 0, w;
     size_t payload_len = neverc_quic_varint_len(stream_id);
-    neverc_quic_varint_encode(H3_FRAME_GOAWAY, buf + pos, cap - pos, &w); pos += w;
-    neverc_quic_varint_encode(payload_len, buf + pos, cap - pos, &w); pos += w;
-    neverc_quic_varint_encode(stream_id, buf + pos, cap - pos, &w); pos += w;
+    if (neverc_quic_varint_encode(H3_FRAME_GOAWAY, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
+    if (neverc_quic_varint_encode(payload_len, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
+    if (neverc_quic_varint_encode(stream_id, buf + pos, cap - pos, &w) != 0) return -1; pos += w;
     *written = pos;
     return 0;
 }
@@ -434,39 +437,34 @@ int neverc_qpack_encode(neverc_qpack_encoder_t *enc,
 
         int idx = qpack_find_static(name, value);
         if (idx >= 0) {
-            /* Indexed field line (static): 11 + index(6) */
             if (pos >= out_cap) return -1;
-            out[pos] = 0xC0;  /* 11xxxxxx */
-            qpack_encode_integer(out, out_cap, &pos, (uint64_t)idx, 6);
+            out[pos] = 0xC0;
+            if (qpack_encode_integer(out, out_cap, &pos, (uint64_t)idx, 6) != 0) return -1;
         } else {
             int name_idx = qpack_find_static_name(name);
             if (name_idx >= 0) {
-                /* Literal with name reference (static): 0100 + index(4) + value */
                 if (pos >= out_cap) return -1;
-                out[pos] = 0x50;  /* 0101xxxx (N=0, T=1 static) */
-                qpack_encode_integer(out, out_cap, &pos, (uint64_t)name_idx, 4);
-                /* Value: H=0 (no huffman) + length(7) + value */
+                out[pos] = 0x50;
+                if (qpack_encode_integer(out, out_cap, &pos, (uint64_t)name_idx, 4) != 0) return -1;
                 size_t vlen = strlen(value);
                 if (pos >= out_cap) return -1;
                 out[pos] = 0x00;
-                qpack_encode_integer(out, out_cap, &pos, vlen, 7);
+                if (qpack_encode_integer(out, out_cap, &pos, vlen, 7) != 0) return -1;
                 if (pos + vlen > out_cap) return -1;
                 memcpy(out + pos, value, vlen);
                 pos += vlen;
             } else {
-                /* Literal: 0010 + name + value */
                 if (pos >= out_cap) return -1;
-                out[pos] = 0x20;  /* 001xxxxx */
+                out[pos] = 0x20;
                 size_t nlen = strlen(name);
-                qpack_encode_integer(out, out_cap, &pos, nlen, 3);
+                if (qpack_encode_integer(out, out_cap, &pos, nlen, 3) != 0) return -1;
                 if (pos + nlen > out_cap) return -1;
                 memcpy(out + pos, name, nlen);
                 pos += nlen;
-                /* Value */
                 size_t vlen = strlen(value);
                 if (pos >= out_cap) return -1;
                 out[pos] = 0x00;
-                qpack_encode_integer(out, out_cap, &pos, vlen, 7);
+                if (qpack_encode_integer(out, out_cap, &pos, vlen, 7) != 0) return -1;
                 if (pos + vlen > out_cap) return -1;
                 memcpy(out + pos, value, vlen);
                 pos += vlen;

@@ -119,6 +119,12 @@ int neverc_http3_listen_and_serve(const char *addr,
 /* Stop a running HTTP/3 server. */
 void neverc_http3_server_stop(neverc_http3_server_t *srv);
 
+/* Check if the HTTP/3 server is currently running. */
+int neverc_http3_server_is_running(const neverc_http3_server_t *srv);
+
+/* Get the max concurrent streams setting. */
+uint32_t neverc_http3_server_max_streams(const neverc_http3_server_t *srv);
+
 /* ======================================================================
  * Unified Server — HTTP/1.1 + HTTP/2 + HTTP/3 on same port
  *
