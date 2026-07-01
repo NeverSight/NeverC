@@ -275,22 +275,25 @@ jobs:
             find "$dist_dir" -name '*.ko' -type f -exec cp {} "$stage/dist/" \; 2>/dev/null || true
           fi
 
-          # Locate the kernel build tree (where .config lives).
-          kbuild=$(find out -maxdepth 5 -name 'Module.symvers' -type f \
-                     -printf '%h\n' -quit 2>/dev/null || true)
+          # Locate the kernel build tree (where Module.symvers lives).
+          # Make builds put it under out/; bazel/KLEAF puts it in dist/.
+          kbuild=""
+          for search_root in out dist bazel-bin; do
+            [ -d "$search_root" ] || continue
+            kbuild=$(find "$search_root" -maxdepth 5 -name 'Module.symvers' -type f \
+                       -printf '%h\n' -quit 2>/dev/null || true)
+            [ -n "$kbuild" ] && break
+          done
+          sdk="$stage/sdk"
+          mkdir -p "$sdk"
           if [ -n "$kbuild" ]; then
             echo "kbuild dir: $kbuild"
-            # .config
             [ -f "$kbuild/.config" ] && cp "$kbuild/.config" "$stage/config-$KEY" || true
-            # SDK: generated headers needed for out-of-tree module builds.
-            sdk="$stage/sdk"
-            mkdir -p "$sdk"
             for d in include/generated include/config \
                      arch/arm64/include/generated; do
               [ -d "$kbuild/$d" ] && mkdir -p "$sdk/$d" && \
                 cp -r "$kbuild/$d/." "$sdk/$d/" || true
             done
-            # SDK: build scripts needed for module compilation.
             for f in scripts/basic/fixdep scripts/mod/modpost scripts/module.lds; do
               if [ -f "$kbuild/$f" ]; then
                 mkdir -p "$sdk/$(dirname "$f")"
@@ -299,6 +302,35 @@ jobs:
             done
             [ -f "$kbuild/Module.symvers" ] && cp "$kbuild/Module.symvers" "$sdk/" || true
           fi
+
+          # Bazel builds may store generated headers outside the Module.symvers
+          # directory. Fall back to a workspace-wide search when needed.
+          if [ ! -f "$sdk/include/generated/autoconf.h" ]; then
+            autoconf=$(find . -path '*/include/generated/autoconf.h' \
+                         -not -path './.repo/*' -type f -print -quit 2>/dev/null || true)
+            if [ -n "$autoconf" ]; then
+              gen_root="${autoconf%/include/generated/autoconf.h}"
+              echo "generated headers root: $gen_root"
+              for d in include/generated include/config \
+                       arch/arm64/include/generated; do
+                [ -d "$gen_root/$d" ] && mkdir -p "$sdk/$d" && \
+                  cp -r "$gen_root/$d/." "$sdk/$d/" || true
+              done
+            fi
+          fi
+
+          # Collect .mod.o intermediate objects (for offline struct module
+          # offset analysis with verify_gki_offsets.sh).
+          obj_dir="$stage/obj"
+          mkdir -p "$obj_dir"
+          for search_root in out dist bazel-bin "$GITHUB_WORKSPACE/probe"; do
+            [ -d "$search_root" ] || continue
+            find "$search_root" -name '*.mod.o' -type f 2>/dev/null \
+              | head -20 | while IFS= read -r f; do
+              cp "$f" "$obj_dir/" 2>/dev/null || true
+            done
+          done
+          [ -z "$(ls -A "$obj_dir" 2>/dev/null)" ] && rmdir "$obj_dir" || true
 
           # Probe module .ko for offline offset checks.
           probe_ko="$GITHUB_WORKSPACE/probe/neverc_probe.ko"
