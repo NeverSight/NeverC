@@ -1,8 +1,6 @@
 # Build every supported GKI kernel (5.10/5.15/6.1/6.6/6.12/6.18), verify that the
 # struct module offsets baked into runtime/android/kernel/include/nvkmod_version.h
 # still match the freshly built kernels, then publish the artifacts.
-# (android17-6.18 runs in discover mode: it prints offsets instead of comparing,
-# until verified values land in nvkmod_version.h.)
 #
 # Manual only: heavy (repo sync ~10-20GB + build ~10-20GB per version), so it
 # never runs automatically.
@@ -48,7 +46,7 @@ jobs:
             {"key":"601","android":"android14","kernel":"6.1","branch":"common-android14-6.1","build_system":"bazel","verify_mode":"compare"},
             {"key":"606","android":"android15","kernel":"6.6","branch":"common-android15-6.6","build_system":"bazel","verify_mode":"compare"},
             {"key":"612","android":"android16","kernel":"6.12","branch":"common-android16-6.12","build_system":"bazel","verify_mode":"compare"},
-            {"key":"618","android":"android17","kernel":"6.18","branch":"common-android17-6.18","build_system":"bazel","verify_mode":"print"}
+            {"key":"618","android":"android17","kernel":"6.18","branch":"common-android17-6.18","build_system":"bazel","verify_mode":"compare"}
           ]'
           sel='${{ inputs.kernel_version }}'
           if [ -z "$sel" ] || [ "$sel" = all ]; then
