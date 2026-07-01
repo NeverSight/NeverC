@@ -535,6 +535,45 @@ void neverc_http_set_handler_timeout(int ms);
 /* Get the port the server bound to (useful when addr is ":0"). */
 int neverc_http_server_port(void);
 
+/* ======================================================================
+ * Server-Sent Events (SSE) — like Go's flusher-based streaming
+ *
+ * SSE enables real-time server-to-client push over HTTP. The client opens
+ * a long-lived connection and receives events as they are sent.
+ *
+ * Usage:
+ *   void my_handler(neverc_http_request_t *req, neverc_http_response_writer_t *w) {
+ *       neverc_sse_t *sse = neverc_sse_start(w);
+ *       neverc_sse_send(sse, "message", "Hello, World!", NULL);
+ *       neverc_sse_send_id(sse, "update", "data here", "evt-1");
+ *       neverc_sse_close(sse);
+ *   }
+ * ====================================================================== */
+
+typedef struct neverc_sse neverc_sse_t;
+
+/* Start an SSE stream. Sets Content-Type: text/event-stream, disables buffering,
+ * and sends initial headers. The response writer is consumed by the SSE stream. */
+neverc_sse_t *neverc_sse_start(neverc_http_response_writer_t *w);
+
+/* Send an event. event_type can be NULL (defaults to "message").
+ * id can be NULL (no id field). Returns 0 on success, -1 if client disconnected. */
+int neverc_sse_send(neverc_sse_t *sse, const char *event_type,
+                     const char *data, const char *id);
+
+/* Send an event with explicit id. */
+int neverc_sse_send_id(neverc_sse_t *sse, const char *event_type,
+                        const char *data, const char *id);
+
+/* Send a retry directive (tells client reconnect interval in ms). */
+int neverc_sse_retry(neverc_sse_t *sse, int retry_ms);
+
+/* Send a comment (line starting with ':'). Useful as keep-alive ping. */
+int neverc_sse_comment(neverc_sse_t *sse, const char *text);
+
+/* Close the SSE stream. Frees resources. */
+void neverc_sse_close(neverc_sse_t *sse);
+
 #ifdef __cplusplus
 }
 #endif

@@ -24,6 +24,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "neverc/std/net/http.h"
+#include "neverc/std/crypto/tls.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -166,8 +167,13 @@ void neverc_h2_server_set_max_frame_size(neverc_h2_server_t *srv, uint32_t max);
 void neverc_h2_server_set_initial_window_size(neverc_h2_server_t *srv, uint32_t win);
 void neverc_h2_server_set_max_header_list_size(neverc_h2_server_t *srv, uint32_t max);
 
-/* Serve a single HTTP/2 connection (after ALPN or upgrade) */
+/* Serve a single HTTP/2 connection on a raw socket (after ALPN or upgrade) */
 int neverc_h2_serve_conn(neverc_h2_server_t *srv, int fd);
+
+/* Serve a single HTTP/2 connection over an existing TLS connection.
+ * Used by the HTTPS server after ALPN negotiates "h2". */
+int neverc_h2_serve_tls_conn(neverc_h2_server_t *srv,
+                              neverc_tls_conn_t *tls);
 
 /* Listen and serve with ALPN h2 + TLS */
 int neverc_h2_listen_and_serve(const char *addr,
@@ -178,6 +184,13 @@ int neverc_h2_listen_and_serve(const char *addr,
 /* Listen and serve h2c (HTTP/2 cleartext, for development) */
 int neverc_h2_listen_and_serve_h2c(const char *addr,
                                      neverc_h2_server_t *srv);
+
+/* Stop a running h2 listen loop (listen_and_serve / listen_and_serve_h2c). */
+void neverc_h2_server_stop(void);
+
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
 
 #ifdef __cplusplus
 }

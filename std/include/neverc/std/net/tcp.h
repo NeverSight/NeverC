@@ -65,6 +65,9 @@ int neverc_tcp_write(neverc_tcp_conn_t *conn, const void *data, size_t len);
 /* Read data. Returns bytes read, 0 on EOF, -1 on error. */
 int neverc_tcp_read(neverc_tcp_conn_t *conn, void *buf, size_t buflen);
 
+/* Return the underlying socket fd (-1 on error). For advanced integrations. */
+int neverc_tcp_conn_fd(neverc_tcp_conn_t *conn);
+
 /* Close connection. */
 void neverc_tcp_close(neverc_tcp_conn_t *conn);
 

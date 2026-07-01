@@ -17,6 +17,7 @@
 #include "net/textproto.h"
 #include "net/resolve.h"
 #include "net/interface.h"
+#include "net/http/http2.h"
 
 #ifdef __neverc__
 /* Windows SDK (combaseapi.h) defines `#define interface struct` for COM.
@@ -34,11 +35,13 @@ struct __neverc_std_mail_t { char __tag; };
 struct __neverc_std_textproto_t { char __tag; };
 struct __neverc_std_resolve_t { char __tag; };
 struct __neverc_std_interface_t { char __tag; };
+struct __neverc_std_http2_t { char __tag; };
 
 struct __neverc_std_net_t {
     struct __neverc_std_tcp_t tcp;
     struct __neverc_std_udp_t udp;
     struct __neverc_std_http_t http;
+    struct __neverc_std_http2_t http2;
     struct __neverc_std_websocket_t websocket;
     struct __neverc_std_url_t url;
     struct __neverc_std_netip_t netip;

@@ -9,6 +9,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include "neverc/std/net/http/http2.h"
+#include "neverc/std/net/tcp.h"
+
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#endif
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -375,6 +382,222 @@ TEST(frame_types_and_flags) {
     }
 }
 
+static const char *buf_contains(const char *buf, size_t len, const char *needle) {
+    size_t nlen = strlen(needle);
+    if (!buf || nlen == 0 || len < nlen)
+        return NULL;
+    for (size_t i = 0; i + nlen <= len; i++) {
+        if (memcmp(buf + i, needle, nlen) == 0)
+            return buf + i;
+    }
+    return NULL;
+}
+
+#ifndef _WIN32
+static int sock_write_all(int fd, const void *buf, size_t len) {
+    const char *p = (const char *)buf;
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = write(fd, p + sent, len - sent);
+        if (n <= 0)
+            return -1;
+        sent += (size_t)n;
+    }
+    return 0;
+}
+
+static int sock_read_all(int fd, void *buf, size_t len) {
+    char *p = (char *)buf;
+    size_t got = 0;
+    while (got < len) {
+        ssize_t n = read(fd, p + got, len - got);
+        if (n <= 0)
+            return -1;
+        got += (size_t)n;
+    }
+    return 0;
+}
+
+static int h2_drain_frame_payload(int fd, uint32_t len) {
+    uint8_t buf[512];
+    while (len > 0) {
+        size_t chunk = len > sizeof(buf) ? sizeof(buf) : len;
+        if (sock_read_all(fd, buf, chunk) != 0)
+            return -1;
+        len -= (uint32_t)chunk;
+    }
+    return 0;
+}
+
+static int h2_client_handshake(int fd) {
+    int sent_ack = 0;
+    int got_ack = 0;
+
+    while (!got_ack) {
+        uint8_t hdr[9];
+        if (sock_read_all(fd, hdr, 9) != 0)
+            return -1;
+        uint32_t len = ((uint32_t)hdr[0] << 16) |
+                       ((uint32_t)hdr[1] << 8) |
+                       (uint32_t)hdr[2];
+        if (h2_drain_frame_payload(fd, len) != 0)
+            return -1;
+
+        if (hdr[3] == NC_H2_FRAME_SETTINGS) {
+            if (hdr[4] & NC_H2_FLAG_ACK) {
+                got_ack = 1;
+            } else if (!sent_ack) {
+                uint8_t ack[9] = { 0, 0, 0, NC_H2_FRAME_SETTINGS,
+                                   NC_H2_FLAG_ACK, 0, 0, 0, 0 };
+                if (sock_write_all(fd, ack, sizeof(ack)) != 0)
+                    return -1;
+                sent_ack = 1;
+            }
+        }
+    }
+    return 0;
+}
+
+typedef struct {
+    neverc_h2_server_t *srv;
+    int fd;
+} h2_serve_ctx_t;
+
+static void h2_run_server_child(h2_serve_ctx_t *ctx) {
+    int rc = neverc_h2_serve_conn(ctx->srv, ctx->fd);
+    _exit(rc == 0 ? 0 : 1);
+}
+
+/* End-to-end: client sends minimal h2c request, server responds. */
+TEST(h2c_serve_conn_roundtrip) {
+    neverc_tcp_conn_t *client = NULL;
+    neverc_tcp_conn_t *server = NULL;
+    ASSERT_EQ(neverc_tcp_pipe(&client, &server), 0);
+
+    neverc_h2_server_t *srv = neverc_h2_server_create(NULL);
+    ASSERT_TRUE(srv != NULL);
+
+    int server_fd = neverc_tcp_conn_fd(server);
+    ASSERT_TRUE(server_fd >= 0);
+
+    h2_serve_ctx_t ctx = { .srv = srv, .fd = server_fd };
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) {
+        neverc_tcp_close(client);
+        h2_run_server_child(&ctx);
+    }
+    neverc_tcp_close(server);
+
+    int client_fd = neverc_tcp_conn_fd(client);
+    ASSERT_TRUE(client_fd >= 0);
+
+    ASSERT_EQ(sock_write_all(client_fd, NC_H2_CLIENT_PREFACE,
+                              NC_H2_CLIENT_PREFACE_LEN), 0);
+
+    uint8_t settings_frame[9] = { 0, 0, 0, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0 };
+    ASSERT_EQ(sock_write_all(client_fd, settings_frame, sizeof(settings_frame)), 0);
+    ASSERT_EQ(h2_client_handshake(client_fd), 0);
+
+    uint8_t req_hdr_frame[9] = {
+        0, 0, 2, NC_H2_FRAME_HEADERS,
+        (uint8_t)(NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM),
+        0, 0, 0, 1
+    };
+    uint8_t req_hpack[] = { 0x82, 0x84 };
+    ASSERT_EQ(sock_write_all(client_fd, req_hdr_frame, sizeof(req_hdr_frame)), 0);
+    ASSERT_EQ(sock_write_all(client_fd, req_hpack, sizeof(req_hpack)), 0);
+    shutdown(client_fd, SHUT_WR);
+
+    char resp[2048];
+    size_t resp_len = 0;
+    while (resp_len < sizeof(resp) - 1) {
+        ssize_t n = read(client_fd, resp + resp_len, sizeof(resp) - 1 - resp_len);
+        if (n <= 0)
+            break;
+        resp_len += (size_t)n;
+        if (buf_contains(resp, resp_len, "Hello from NeverC HTTP/2!") != NULL)
+            break;
+    }
+    resp[resp_len] = '\0';
+    ASSERT_TRUE(buf_contains(resp, resp_len, "Hello from NeverC HTTP/2!") != NULL);
+    ASSERT_TRUE(buf_contains(resp, resp_len, "Method: GET") != NULL);
+    ASSERT_TRUE(buf_contains(resp, resp_len, "Path: /") != NULL);
+
+    neverc_tcp_close(client);
+
+    int status = 0;
+    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+    neverc_h2_server_destroy(srv);
+}
+
+/* CONTINUATION: HEADERS without END_HEADERS + CONTINUATION with END_HEADERS */
+TEST(h2c_continuation_headers) {
+    neverc_tcp_conn_t *client = NULL;
+    neverc_tcp_conn_t *server = NULL;
+    ASSERT_EQ(neverc_tcp_pipe(&client, &server), 0);
+
+    neverc_h2_server_t *srv = neverc_h2_server_create(NULL);
+    ASSERT_TRUE(srv != NULL);
+
+    h2_serve_ctx_t ctx = {
+        .srv = srv,
+        .fd = neverc_tcp_conn_fd(server)
+    };
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) {
+        neverc_tcp_close(client);
+        h2_run_server_child(&ctx);
+    }
+    neverc_tcp_close(server);
+
+    int client_fd = neverc_tcp_conn_fd(client);
+    ASSERT_EQ(sock_write_all(client_fd, NC_H2_CLIENT_PREFACE,
+                              NC_H2_CLIENT_PREFACE_LEN), 0);
+
+    uint8_t settings_frame[9] = { 0, 0, 0, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0 };
+    ASSERT_EQ(sock_write_all(client_fd, settings_frame, sizeof(settings_frame)), 0);
+    ASSERT_EQ(h2_client_handshake(client_fd), 0);
+
+    uint8_t hdr1[9] = { 0, 0, 1, NC_H2_FRAME_HEADERS, NC_H2_FLAG_END_STREAM,
+                        0, 0, 0, 1 };
+    uint8_t hpack1[] = { 0x82 };
+    uint8_t cont[9] = { 0, 0, 1, NC_H2_FRAME_CONTINUATION,
+                        (uint8_t)NC_H2_FLAG_END_HEADERS, 0, 0, 0, 1 };
+    uint8_t hpack2[] = { 0x84 };
+
+    ASSERT_EQ(sock_write_all(client_fd, hdr1, sizeof(hdr1)), 0);
+    ASSERT_EQ(sock_write_all(client_fd, hpack1, sizeof(hpack1)), 0);
+    ASSERT_EQ(sock_write_all(client_fd, cont, sizeof(cont)), 0);
+    ASSERT_EQ(sock_write_all(client_fd, hpack2, sizeof(hpack2)), 0);
+    shutdown(client_fd, SHUT_WR);
+
+    char resp[2048];
+    size_t resp_len = 0;
+    while (resp_len < sizeof(resp) - 1) {
+        ssize_t n = read(client_fd, resp + resp_len, sizeof(resp) - 1 - resp_len);
+        if (n <= 0)
+            break;
+        resp_len += (size_t)n;
+        if (buf_contains(resp, resp_len, "Path: /") != NULL)
+            break;
+    }
+    resp[resp_len] = '\0';
+    ASSERT_TRUE(buf_contains(resp, resp_len, "Path: /") != NULL);
+
+    neverc_tcp_close(client);
+
+    int status = 0;
+    ASSERT_EQ(waitpid(child, &status, 0), child);
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+    neverc_h2_server_destroy(srv);
+}
+#endif /* !_WIN32 */
+
 int main(void) {
     printf("HTTP/2 test suite:\n");
 
@@ -392,6 +615,10 @@ int main(void) {
     run_test_client_preface();
     run_test_hpack_dynamic_table_eviction();
     run_test_frame_types_and_flags();
+#ifndef _WIN32
+    run_test_h2c_serve_conn_roundtrip();
+    run_test_h2c_continuation_headers();
+#endif
 
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed > 0 ? 1 : 0;

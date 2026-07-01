@@ -1,6 +1,7 @@
 #include "neverc/std/net/tcp.h"
 #include "../_net_internal.h"
 #include <stdarg.h>
+#include <stdint.h>
 
 /* ======================================================================
  * Internal structures
@@ -330,6 +331,18 @@ int neverc_tcp_read(neverc_tcp_conn_t *conn, void *buf, size_t buflen) {
         return -1;
 #endif
     }
+}
+
+int neverc_tcp_conn_fd(neverc_tcp_conn_t *conn) {
+    if (!conn)
+        return -1;
+#ifdef _WIN32
+    if (conn->fd == INVALID_SOCKET)
+        return -1;
+    return (int)(uintptr_t)conn->fd;
+#else
+    return (int)conn->fd;
+#endif
 }
 
 void neverc_tcp_close(neverc_tcp_conn_t *conn) {
