@@ -5,7 +5,7 @@
 #include <linux/types.h>
 
 /*
- * Lock opaque blob sizes — GKI 5.10–6.12 (arm64, production):
+ * Lock opaque blob sizes — GKI 5.10–6.18 (arm64, production):
  *   arch_spinlock_t = qspinlock { atomic_t val; } = 4 bytes
  *   raw_spinlock_t  = arch_spinlock_t             = 4 bytes
  *   spinlock_t      = raw_spinlock_t              = 4 bytes

@@ -7,12 +7,12 @@
 /*
  * Opaque struct cred — layout varies across GKI versions.
  *
- *   Field          5.10    5.15    6.1     6.6     6.12
- *   ──────────────────────────────────────────────────────
- *   usage          4 (at)  4 (at)  4 (at)  8 (al)  8 (al)
- *   uid..fsgid     32      32      32      32      32
- *   securebits     4       4       4       4       4
- *   cap_* (×5)     40      40      40      40      40
+ *   Field          5.10    5.15    6.1     6.6     6.12    6.18
+ *   ────────────────────────────────────────────────────────────
+ *   usage          4 (at)  4 (at)  4 (at)  8 (al)  8 (al) 8 (al)
+ *   uid..fsgid     32      32      32      32      32      32
+ *   securebits     4       4       4       4       4       4
+ *   cap_* (×5)     40      40      40      40      40      40
  *   ──────────────────────────────────────────────────────
  *   at = atomic_t (4 bytes), al = atomic_long_t (8 bytes)
  *

@@ -867,6 +867,33 @@ TEST_F(LTOTest, AndroidKernelMultifileMergeSectionOffsets) {
   EXPECT_NE(initMod, cleanupMod);
 }
 
+// NVK_KERNEL=618 must select the 6.18 preset (vermagic + file_operations layout).
+TEST_F(LTOTest, AndroidKernel618PresetFromNvkKernel) {
+  auto exDir = fs::canonical(testDir() / "../../examples/android-kernel-chardev");
+  if (!fs::exists(exDir / "main.c"))
+    GTEST_SKIP() << "android-kernel-chardev example not found";
+
+  auto ko = tmpFile("nvk_chardev_618.ko");
+  std::vector<std::string> args = {
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=618",
+      "-r",
+      "-nostdlib",
+      "-o",
+      ko.string(),
+      (exDir / "main.c").string(),
+  };
+  auto link = ncc(args);
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  auto stringsOut = exec("strings", {ko.string()});
+  ASSERT_EQ(stringsOut.exitCode, 0) << stringsOut.err;
+  EXPECT_NE(stringsOut.out.find("vermagic=6.18.24-android17-5"),
+            std::string::npos)
+      << "618 preset vermagic missing; NVK_KERNEL may not map to NEVERC_KRT_KERNEL";
+}
+
 // Auto-LTO vs clang full-LTO cold-link regression gate.  neverc's auto-LTO link
 // (whole-program IPO with the loop-density inline cap + SCEV bound, then
 // PARTITIONED PARALLEL codegen, then in-process merge) must stay at least as

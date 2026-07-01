@@ -15,7 +15,7 @@ cd examples/android-kernel-multifile
 neverc make
 ```
 
-`KERNEL` auf `515`, `601`, `606` oder `612` aendern fuer andere Kernelversionen.
+`KERNEL` auf `515`, `601`, `606`, `612` oder `618` aendern fuer andere Kernelversionen.
 
 ## Deployment und Ausfuehrung
 

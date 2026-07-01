@@ -29,10 +29,10 @@ typedef unsigned int (*nf_hookfn)(void *priv, struct sk_buff *skb,
 				  const struct nf_hook_state *state);
 
 /*
- * Layout verified against GKI 5.10–6.12.
+ * Layout verified against GKI 5.10–6.18.
  *
  * 5.10:     pf is u_int8_t, no hook_ops_type field (1 byte + 3 pad).
- * 5.15–6.12: pf is u8, hook_ops_type:8 bitfield follows (2 bytes + 2 pad).
+ * 5.15–6.18: pf is u8, hook_ops_type:8 bitfield follows (2 bytes + 2 pad).
  *
  * Zero-initializing _reserved makes this layout work on both:
  *   5.10: _reserved occupies what the kernel treats as padding.

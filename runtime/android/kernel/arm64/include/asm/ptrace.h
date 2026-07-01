@@ -5,7 +5,7 @@
 #include <linux/types.h>
 
 /*
- * ARM64 pt_regs layout — stable core fields across GKI 5.10–6.12.
+ * ARM64 pt_regs layout — stable core fields across GKI 5.10–6.18.
  *
  * Only regs[0..30] are accessed by the runtime (via X0–X8 for syscall
  * arguments).  Fields after pstate vary slightly across versions:

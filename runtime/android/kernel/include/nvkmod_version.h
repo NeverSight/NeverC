@@ -12,7 +12,11 @@
 	 NEVERC_KRT_SDK_VERSION_PATCH)
 
 #ifndef NEVERC_KRT_KERNEL
-#define NEVERC_KRT_KERNEL 510
+#  ifdef NVK_KERNEL
+#    define NEVERC_KRT_KERNEL NVK_KERNEL
+#  else
+#    define NEVERC_KRT_KERNEL 510
+#  endif
 #endif
 
 /* offsetof(struct module, list): enum state(4) + pad(4) */

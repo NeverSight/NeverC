@@ -13,7 +13,11 @@ _neverc_krt_timer_from_storage(void *hrt)
 /* ---- internal typedefs ---- */
 
 typedef void (*neverc_krt_hrt_init_fn)(void *timer, int clock_id, int mode);
+typedef void (*neverc_krt_hrt_setup_fn)(void *timer, void *function,
+					int clock_id, int mode);
 typedef int  (*neverc_krt_hrt_start_fn)(void *timer, s64 tim, int mode);
+typedef int  (*neverc_krt_hrt_start_range_fn)(void *timer, s64 tim,
+					      u64 delta_ns, int mode);
 typedef int  (*neverc_krt_hrt_cancel_fn)(void *timer);
 typedef s64  (*neverc_krt_ktime_set_fn)(long secs, long nsecs);
 typedef void (*neverc_krt_init_work_fn)(void *work, void *func);
@@ -23,7 +27,9 @@ typedef unsigned long (*neverc_krt_msecs_to_jiffies_fn)(unsigned int m);
 typedef u64  (*neverc_krt_ktime_get_fn)(void);
 
 static neverc_krt_hrt_init_fn        _neverc_krt_hrtimer_init;
+static neverc_krt_hrt_setup_fn       _neverc_krt_hrtimer_setup;
 static neverc_krt_hrt_start_fn       _neverc_krt_hrtimer_start;
+static neverc_krt_hrt_start_range_fn _neverc_krt_hrtimer_start_range;
 static neverc_krt_hrt_cancel_fn      _neverc_krt_hrtimer_cancel;
 static neverc_krt_init_work_fn       _neverc_krt_init_delayed_work;
 static neverc_krt_schedule_dw_fn     _neverc_krt_schedule_delayed_work;
@@ -53,11 +59,18 @@ int neverc_krt_timer_init(void)
 {
 	if (_neverc_krt_timer_inited) return 0;
 
-	_neverc_krt_hrtimer_init   = (neverc_krt_hrt_init_fn)NEVERC_KRT_LOOKUP("hrtimer_init");
+	/*
+	 * 6.18+ replaced hrtimer_init with hrtimer_setup(timer, fn, clk, mode)
+	 * and hrtimer_start with hrtimer_start_range_ns(timer, tim, delta, mode).
+	 * Try the new symbols first, fall back to the old ones.
+	 */
+	_neverc_krt_hrtimer_setup  = (neverc_krt_hrt_setup_fn)NEVERC_KRT_LOOKUP("hrtimer_setup");
+	if (!_neverc_krt_hrtimer_setup)
+		_neverc_krt_hrtimer_init = (neverc_krt_hrt_init_fn)NEVERC_KRT_LOOKUP("hrtimer_init");
 	_neverc_krt_hrtimer_start  = (neverc_krt_hrt_start_fn)NEVERC_KRT_LOOKUP("hrtimer_start");
 	if (!_neverc_krt_hrtimer_start)
-		_neverc_krt_hrtimer_start =
-			(neverc_krt_hrt_start_fn)NEVERC_KRT_LOOKUP("hrtimer_start_range_ns");
+		_neverc_krt_hrtimer_start_range =
+			(neverc_krt_hrt_start_range_fn)NEVERC_KRT_LOOKUP("hrtimer_start_range_ns");
 	_neverc_krt_hrtimer_cancel = (neverc_krt_hrt_cancel_fn)NEVERC_KRT_LOOKUP("hrtimer_cancel");
 
 	_neverc_krt_init_delayed_work =
@@ -103,7 +116,9 @@ static int _neverc_krt_hrt_patch_fn(u8 *storage, unsigned long fn)
 	 *   [48] base               (kernel ptr, non-zero) ← landmark
 	 *
 	 * Find `base` (first kernel pointer after offset 16), then write
-	 * fn one slot before it.  Stable across GKI 5.10-6.12.
+	 * fn one slot before it.  Stable across GKI 5.10–6.18.
+	 * On 6.18+ (hrtimer_setup), the function is set by the kernel —
+	 * this helper is only called as a fallback for pre-6.18 kernels.
 	 */
 	int off;
 	for (off = 24; off <= 96; off += 8) {
@@ -121,20 +136,37 @@ int neverc_krt_timer_setup(struct neverc_krt_timer *t,
 			   void (*cb)(struct neverc_krt_timer *))
 {
 	if (!t || !cb) return -1;
-	if (!_neverc_krt_hrtimer_init) return -2;
+	if (!_neverc_krt_hrtimer_init && !_neverc_krt_hrtimer_setup)
+		return -2;
 	__builtin_memset(t, 0, sizeof(*t));
 	t->callback = cb;
-	_neverc_krt_hrtimer_init(t->storage, NEVERC_KRT_CLOCK_MONOTONIC, NEVERC_KRT_HRTIMER_REL);
-	_neverc_krt_hrt_patch_fn(t->storage, (unsigned long)_neverc_krt_hrt_trampoline);
+	if (_neverc_krt_hrtimer_setup) {
+		_neverc_krt_hrtimer_setup(t->storage,
+					  (void *)_neverc_krt_hrt_trampoline,
+					  NEVERC_KRT_CLOCK_MONOTONIC,
+					  NEVERC_KRT_HRTIMER_REL);
+	} else {
+		_neverc_krt_hrtimer_init(t->storage,
+					 NEVERC_KRT_CLOCK_MONOTONIC,
+					 NEVERC_KRT_HRTIMER_REL);
+		_neverc_krt_hrt_patch_fn(t->storage,
+					 (unsigned long)_neverc_krt_hrt_trampoline);
+	}
 	t->armed = 0;
 	return 0;
 }
 
 int neverc_krt_timer_start_ns(struct neverc_krt_timer *t, s64 nsecs)
 {
-	if (!t || !_neverc_krt_hrtimer_start) return -1;
+	if (!t) return -1;
 	t->armed = 1;
-	return _neverc_krt_hrtimer_start(t->storage, nsecs, NEVERC_KRT_HRTIMER_REL);
+	if (_neverc_krt_hrtimer_start)
+		return _neverc_krt_hrtimer_start(t->storage, nsecs,
+						 NEVERC_KRT_HRTIMER_REL);
+	if (_neverc_krt_hrtimer_start_range)
+		return _neverc_krt_hrtimer_start_range(t->storage, nsecs,
+						       0, NEVERC_KRT_HRTIMER_REL);
+	return -1;
 }
 
 int neverc_krt_timer_start_ms(struct neverc_krt_timer *t, unsigned int ms)

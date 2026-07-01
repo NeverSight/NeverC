@@ -11,7 +11,7 @@ cd examples/android-kernel-hello
 neverc make
 ```
 
-将 `KERNEL` 改为 `515`、`601`、`606` 或 `612` 以适配其他内核版本。
+将 `KERNEL` 改为 `515`、`601`、`606`、`612` 或 `618` 以适配其他内核版本。
 
 ## 部署和运行
 

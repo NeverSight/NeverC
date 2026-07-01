@@ -11,7 +11,7 @@ cd examples/android-kernel-driver
 neverc make
 ```
 
-Changez `KERNEL` en `515`, `601`, `606` ou `612` pour d'autres versions.
+Changez `KERNEL` en `515`, `601`, `606`, `612` ou `618` pour d'autres versions.
 
 ## Déploiement et exécution
 

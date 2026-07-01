@@ -11,7 +11,7 @@ cd examples/android-kernel-netlink
 neverc make
 ```
 
-Cambie `KERNEL` a `515`, `601`, `606` o `612` para otras versiones.
+Cambie `KERNEL` a `515`, `601`, `606`, `612` o `618` para otras versiones.
 
 ## Despliegue y ejecución
 

@@ -5,7 +5,7 @@
 #include <linux/types.h>
 
 /*
- * GKI 5.10–6.12 (arm64, ANDROID_VENDOR_OEM_DATA=y, no debug):
+ * GKI 5.10–6.18 (arm64, ANDROID_VENDOR_OEM_DATA=y, no debug):
  *   atomic_long_t owner                   8 bytes
  *   raw_spinlock_t wait_lock              4 bytes (qspinlock)
  *   struct optimistic_spin_queue osq      4 bytes (atomic_t)

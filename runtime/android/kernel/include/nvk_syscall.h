@@ -22,7 +22,7 @@ neverc_krt_syscall_fn_t neverc_krt_syscall_get(int nr);
 
 /*
  * Syscall numbers not covered by asm/syscall.h.
- * The arm64 syscall table is stable across GKI 5.10–6.12.
+ * The arm64 syscall table is stable across GKI 5.10–6.18.
  */
 #ifndef __NR_lsetxattr
 #define __NR_lsetxattr        6

@@ -30,7 +30,7 @@ cd examples/android-kernel-inline-hook
 neverc make
 ```
 
-Changer `KERNEL` en `515`, `601`, `606` ou `612` pour d'autres versions du noyau.
+Changer `KERNEL` en `515`, `601`, `606`, `612` ou `618` pour d'autres versions du noyau.
 
 ## Déploiement et exécution
 

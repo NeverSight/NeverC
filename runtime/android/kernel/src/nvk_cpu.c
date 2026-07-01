@@ -5,6 +5,8 @@ typedef int  (*neverc_krt_nr_cpu_ids_fn)(void);
 typedef int  (*neverc_krt_cpu_online_fn)(unsigned int cpu);
 typedef void (*neverc_krt_on_each_cpu_fn)(neverc_krt_smp_call_fn func, void *info,
 					  int wait);
+typedef int  (*neverc_krt_smp_call_function_fn)(neverc_krt_smp_call_fn func,
+						void *info, int wait);
 typedef int  (*neverc_krt_smp_call_single_fn)(int cpu, neverc_krt_smp_call_fn func,
 					      void *info, int wait);
 
@@ -14,6 +16,7 @@ static unsigned long               *_neverc_krt_cpu_online_mask;
 static int                         *_neverc_krt_nr_cpu_ids_ptr;
 static int                          _neverc_krt_cpu_inited;
 static neverc_krt_on_each_cpu_fn    _neverc_krt_on_each_cpu;
+static neverc_krt_smp_call_function_fn _neverc_krt_smp_call_function;
 static neverc_krt_smp_call_single_fn _neverc_krt_smp_call_single;
 
 int neverc_krt_cpu_init(void)
@@ -70,16 +73,28 @@ int neverc_krt_smp_init(void)
 {
 	_neverc_krt_on_each_cpu =
 		(neverc_krt_on_each_cpu_fn)NEVERC_KRT_LOOKUP("on_each_cpu");
+	if (!_neverc_krt_on_each_cpu)
+		_neverc_krt_smp_call_function =
+			(neverc_krt_smp_call_function_fn)NEVERC_KRT_LOOKUP(
+				"smp_call_function");
 	_neverc_krt_smp_call_single =
 		(neverc_krt_smp_call_single_fn)NEVERC_KRT_LOOKUP("smp_call_function_single");
-	return (_neverc_krt_on_each_cpu || _neverc_krt_smp_call_single) ? 0 : -1;
+	return (_neverc_krt_on_each_cpu || _neverc_krt_smp_call_function ||
+		_neverc_krt_smp_call_single) ? 0 : -1;
 }
 
 int neverc_krt_smp_on_each(neverc_krt_smp_call_fn func, void *info, int wait)
 {
-	if (!_neverc_krt_on_each_cpu) return -1;
-	_neverc_krt_on_each_cpu(func, info, wait);
-	return 0;
+	if (_neverc_krt_on_each_cpu) {
+		_neverc_krt_on_each_cpu(func, info, wait);
+		return 0;
+	}
+	if (_neverc_krt_smp_call_function) {
+		_neverc_krt_smp_call_function(func, info, wait);
+		func(info);
+		return 0;
+	}
+	return -1;
 }
 
 int neverc_krt_smp_call_on(int cpu, neverc_krt_smp_call_fn func,

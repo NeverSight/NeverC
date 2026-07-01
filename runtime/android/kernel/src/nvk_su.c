@@ -242,7 +242,7 @@ int neverc_krt_su_elevate_pid(int pid, u32 target_uid, u32 target_gid)
 	 * Also patch the effective cred pointer.  The probe stores
 	 * _neverc_krt_off_cred at the first matching pair (real_cred).
 	 * The actual cred field is at the NEXT slot (off_cred + 8).
-	 * Layout (stable across GKI 5.10-6.12):
+	 * Layout (stable across GKI 5.10-6.18):
 	 *   ptracer_cred  (off_cred - 8)  — usually NULL
 	 *   real_cred     (off_cred)      — what we already patched
 	 *   cred          (off_cred + 8)  — patch this too

@@ -9,10 +9,10 @@ struct platform_device; /* opaque */
 struct module;
 
 /*
- * platform_driver layout varies across GKI 5.10–6.12:
- *   - remove() return type: int (5.10–6.6) → void (6.12)
+ * platform_driver layout varies across GKI 5.10–6.18:
+ *   - remove() return type: int (5.10–6.6) → void (6.12+)
  *   - struct device_driver grows with KABI and new fields
- *   - 6.12 wraps remove/remove_new in a union
+ *   - 6.12+ wraps remove/remove_new in a union
  *
  * Embedded struct device_driver requires a full definition that varies
  * across kernel versions.  Declare opaque; users needing platform

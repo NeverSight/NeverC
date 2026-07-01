@@ -11,7 +11,7 @@
  * re-initialize after resume, and to perform last-chance cleanup
  * before reboot / shutdown.
  *
- * GKI kernels 5.10–6.12 all export register_pm_notifier and
+ * GKI kernels 5.10–6.18 all export register_pm_notifier and
  * register_reboot_notifier with stable ABIs.
  */
 
@@ -34,7 +34,7 @@
 #define NEVERC_KRT_NOTIFY_STOP  0x8000
 
 /*
- * Opaque notifier_block layout — stable across 5.10–6.12:
+ * Opaque notifier_block layout — stable across 5.10–6.18:
  *   struct notifier_block {
  *       int (*notifier_call)(struct notifier_block *, unsigned long, void *);
  *       struct notifier_block *next;

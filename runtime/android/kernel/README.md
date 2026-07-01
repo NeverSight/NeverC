@@ -37,7 +37,7 @@ with `-DNVK_KERNEL=510|515|601|606|612|618` (default `510` = android12-5.10).
 runtime/android/kernel/
   include/                     # NeverC kernel SDK (28 headers)
     nvkmod.h                   #   module entry point, kprobe bootstrap, NVK_BOOTSTRAP()
-    nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.12)
+    nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.18)
     nvk.h                      #   all-in-one include (initializes all subsystems, auto vermagic fix)
     nvk_hook.h                 #   arm64 inline-hook engine v2 (simple + context + batch + chain + ftrace + kCFI)
     nvk_mem.h                  #   safe memory read/write, pattern scan (BMH), write-protection bypass
@@ -72,7 +72,9 @@ runtime/android/kernel/
     lib/                       # optional libclang_rt.builtins-aarch64.a
   tools/
     gen_struct_module_offsets.c # regenerate exact struct module offsets per kernel
-    test-all.sh                # full verification: 8 demos × 5 kernels × extra modes = 70 configs
+    gen_fops_offsets.c           # file_operations offsetof/size probe
+    gen_layout_offsets.c       # proc_ops / sk_buff / nf_hook_ops layout probe
+    test-all.sh                # full verification: 8 demos × 6 kernels × extra modes = 84 configs
 ```
 
 `neverc -fandroid-kernel-driver-mode` automatically:
@@ -97,7 +99,7 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | Header | Purpose |
 |--------|---------|
 | `nvkmod.h` | Module entry point, kprobe bootstrap, `NVK_BOOTSTRAP()`, `NVK_DEFINE_MODULE()` |
-| `nvk_hook.h` | arm64 inline-hook engine v2 — simple/context/batch modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + SMP-safe DMB barriers + atomic stop_machine patch + D-cache→I-cache coherent + deep quiescence unhook + poison-on-free pool (32 pages) + ftrace fallback + hook chain + pause/resume + 6.12 execmem support |
+| `nvk_hook.h` | arm64 inline-hook engine v2 — simple/context/batch modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + SMP-safe DMB barriers + atomic stop_machine patch + D-cache→I-cache coherent + deep quiescence unhook + poison-on-free pool (32 pages) + ftrace fallback + hook chain + pause/resume + 6.12+ execmem support |
 | `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` — MTE-tag-aware, dynamic page size (4K/16K/64K) |
 | `nvk_syscall.h` | `nvk_syscall_replace/restore`, `nvk_syscall_get`, arm64 syscall number definitions |
 | `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
@@ -142,7 +144,7 @@ All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xor
 ## struct module offsets (important before loading on a device)
 
 `include/nvkmod_version.h` holds the `name`/`init`/`exit` offsets and total size
-of `struct module` per kernel. All five presets are **verified** against the
+of `struct module` per kernel. All six presets are **verified** against the
 stock GKI `gki_defconfig` (computed from each kernel's own `make modules_prepare`
 headers via `tools/gen_struct_module_offsets.c`):
 
@@ -153,6 +155,7 @@ headers via `tools/gen_struct_module_offsets.c`):
 | `601` (android14-6.1)  | 6.1.172 | 24 | 368 (0x170) | 984 (0x3D8)  | 1088 (0x440) |
 | `606` (android15-6.6)  | 6.6.138 | 24 | 392 (0x188) | 1464 (0x5B8) | 1536 (0x600) |
 | `612` (android16-6.12) | 6.12.81 | 24 | 392 (0x188) | 1528 (0x5F8) | 1600 (0x640) |
+| `618` (android17-6.18) | 6.18.24 | 24 | 376 (0x178) | 1536 (0x600) | 1664 (0x680) |
 
 `name` (offset 24) is stable across current GKI builds; `init`/`exit`/sizeof
 depend on the target kernel's `CONFIG_*` (CFI_CLANG, MODULE_UNLOAD, TRACEPOINTS,
@@ -178,7 +181,7 @@ docker run --rm -v <repo>/local_docs:/work -v <repo>/runtime/android/kernel/tool
   ubuntu:24.04 bash -lc '
     apt-get update -qq && apt-get install -y -qq build-essential clang lld llvm \
       bc bison flex libssl-dev libelf-dev libdw-dev cpio kmod rsync >/dev/null
-    for kit in GKI-android13-5.15-kit GKI-android14-6.1-kit GKI-android15-6.6-kit GKI-android16-6.12-kit; do
+    for kit in GKI-android13-5.15-kit GKI-android14-6.1-kit GKI-android15-6.6-kit GKI-android16-6.12-kit GKI-android17-6.18-kit; do
       KT=/work/$kit/common; O=/build/$kit
       make -C $KT O=$O ARCH=arm64 LLVM=1 -j"$(nproc)" gki_defconfig modules_prepare
       clang --target=aarch64-linux-gnu -fno-lto -nostdlibinc -std=gnu11 -D__KERNEL__ -DNVK_GEN_KSRC=1 \

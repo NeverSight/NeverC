@@ -30,7 +30,7 @@ cd examples/android-kernel-probe
 neverc make
 ```
 
-Change `KERNEL` to `515`, `601`, `606`, or `612` for other kernel versions.
+Change `KERNEL` to `515`, `601`, `606`, `612`, or `618` for other kernel versions.
 
 ## Deploy & Run
 

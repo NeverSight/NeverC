@@ -27,27 +27,70 @@ typedef void *fl_owner_t;
  * struct file_operations — version-specific layouts verified against GKI
  * gki_defconfig builds (CONFIG_COMPAT=y, CONFIG_MMU=y on arm64):
  *
- *   Field            5.10/5.15  6.1   6.6   6.12
- *   ────────────────────────────────────────────────
- *   owner            0          0     0     0
- *   fop_flags        —          —     —     8
- *   read             16         16    16    24
- *   write            24         24    24    32
- *   unlocked_ioctl   80         80    72    80
- *   open             112        112   104   104
- *   release          128        128   120   120
- *   sizeof           288        272   264   264
+ *   Field            5.10/5.15  6.1   6.6   6.12  6.18
+ *   ──────────────────────────────────────────────────────
+ *   owner            0          0     0     0     0
+ *   fop_flags        —          —     —     8     8
+ *   read             16         16    16    24    24
+ *   write            24         24    24    32    32
+ *   unlocked_ioctl   80         80    72    80    80
+ *   mmap             —          —     —     96    96
+ *   mmap_prepare     —          —     —     —     104
+ *   open             112        112   104   104   112
+ *   release          128        128   120   120   128
+ *   sizeof           288        272   264   264   272
  *
  * 5.10/5.15 have 4×ANDROID_KABI_RESERVE (u64) = +32 bytes.
  * 6.1+ dropped KABI reserves from file_operations.
  * 6.6+ dropped iterate/sendpage, added splice_eof/uring_cmd*.
  * 6.12+ replaced mmap_supported_flags with fop_flags (u32+pad).
+ * 6.18+ added mmap_prepare between mmap and open.
  *
  * User modules MUST compile with the correct -DNVK_KERNEL= value so
  * designated initializers land at the offsets the running kernel expects.
  */
 
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_KERNEL >= 618
+
+typedef unsigned int __bitwise fop_flags_t;
+struct vm_area_desc; /* opaque, new in 6.18 */
+
+struct file_operations {
+	struct module *owner;
+	fop_flags_t fop_flags;
+	u32 _fop_pad;
+	loff_t (*llseek)(struct file *, loff_t, int);
+	ssize_t (*read)(struct file *, char __user *, size_t, loff_t *);
+	ssize_t (*write)(struct file *, const char __user *, size_t, loff_t *);
+	ssize_t (*read_iter)(struct kiocb *, struct iov_iter *);
+	ssize_t (*write_iter)(struct kiocb *, struct iov_iter *);
+	int (*iopoll)(struct kiocb *, struct io_comp_batch *, unsigned int);
+	int (*iterate_shared)(struct file *, struct dir_context *);
+	__poll_t (*poll)(struct file *, struct poll_table_struct *);
+	long (*unlocked_ioctl)(struct file *, unsigned int, unsigned long);
+	long (*compat_ioctl)(struct file *, unsigned int, unsigned long);
+	int (*mmap)(struct file *, struct vm_area_struct *);
+	int (*mmap_prepare)(struct vm_area_desc *);
+	int (*open)(struct inode *, struct file *);
+	int (*flush)(struct file *, fl_owner_t);
+	int (*release)(struct inode *, struct file *);
+	unsigned char _tail[NEVERC_KRT_FOPS_SIZE - 136];
+};
+
+_Static_assert(__builtin_offsetof(struct file_operations, read) == 24,
+	       "file_operations.read offset mismatch (6.18)");
+_Static_assert(__builtin_offsetof(struct file_operations, unlocked_ioctl) == 80,
+	       "file_operations.unlocked_ioctl offset mismatch (6.18)");
+_Static_assert(__builtin_offsetof(struct file_operations, mmap_prepare) == 104,
+	       "file_operations.mmap_prepare offset mismatch (6.18)");
+_Static_assert(__builtin_offsetof(struct file_operations, open) == 112,
+	       "file_operations.open offset mismatch (6.18)");
+_Static_assert(__builtin_offsetof(struct file_operations, release) == 128,
+	       "file_operations.release offset mismatch (6.18)");
+_Static_assert(sizeof(struct file_operations) == NEVERC_KRT_FOPS_SIZE,
+	       "file_operations size mismatch (6.18)");
+
+#elif NEVERC_KRT_KERNEL >= 612
 
 typedef unsigned int __bitwise fop_flags_t;
 

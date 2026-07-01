@@ -758,6 +758,8 @@ int neverc_krt_hook_init(void)
 	_neverc_krt_flushic = (neverc_krt_flushic_fn)NEVERC_KRT_LOOKUP("flush_icache_range");
 	if (!_neverc_krt_flushic)
 		_neverc_krt_flushic = (neverc_krt_flushic_fn)NEVERC_KRT_LOOKUP("__flush_icache_range");
+	if (!_neverc_krt_flushic)
+		_neverc_krt_flushic = (neverc_krt_flushic_fn)NEVERC_KRT_LOOKUP("caches_clean_inval_pou");
 	_neverc_krt_patchtext = (neverc_krt_patchtext_fn)NEVERC_KRT_LOOKUP("aarch64_insn_patch_text");
 	_neverc_krt_patchtns  = (neverc_krt_patchtns_fn)NEVERC_KRT_LOOKUP("aarch64_insn_patch_text_nosync");
 	_neverc_krt_ksize = (neverc_krt_ksize_fn)NEVERC_KRT_LOOKUP("kallsyms_lookup_size_offset");

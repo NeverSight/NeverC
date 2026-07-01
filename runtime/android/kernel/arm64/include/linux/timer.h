@@ -6,7 +6,7 @@
 #include <linux/jiffies.h>
 
 /*
- * Minimal timer_list — core fields are stable across GKI 5.10–6.12.
+ * Minimal timer_list — core fields are stable across GKI 5.10–6.18.
  * 5.10–6.6 append ANDROID_KABI_RESERVE(1)+(2) (16 bytes) but the kernel
  * never accesses those reserves through external APIs, so the 40-byte
  * minimal layout is safe on all versions.

@@ -6,6 +6,8 @@
 
 typedef int  (*neverc_krt_task_pid_nr_fn)(struct task_struct *);
 typedef int  (*neverc_krt_task_tgid_nr_fn)(struct task_struct *);
+typedef int  (*neverc_krt_task_pid_nr_ns_fn)(struct task_struct *, int type,
+					     void *ns);
 typedef struct task_struct *(*neverc_krt_find_task_fn)(int pid);
 typedef int   (*neverc_krt_send_sig_info_fn)(int sig, void *info,
 					     struct task_struct *p, int type);
@@ -16,6 +18,7 @@ typedef void (*neverc_krt_rcu_unlock_fn)(void);
 
 static neverc_krt_task_pid_nr_fn    _neverc_krt_task_pid_nr;
 static neverc_krt_task_tgid_nr_fn   _neverc_krt_task_tgid_nr;
+static neverc_krt_task_pid_nr_ns_fn _neverc_krt_task_pid_nr_ns;
 static neverc_krt_find_task_fn      _neverc_krt_find_task_by_vpid;
 static neverc_krt_send_sig_info_fn  _neverc_krt_send_sig_info;
 static struct task_struct          *_neverc_krt_init_task;
@@ -66,6 +69,10 @@ int neverc_krt_process_init(void)
 		(neverc_krt_task_pid_nr_fn)NEVERC_KRT_LOOKUP("task_pid_nr");
 	_neverc_krt_task_tgid_nr =
 		(neverc_krt_task_tgid_nr_fn)NEVERC_KRT_LOOKUP("task_tgid_nr");
+	if (!_neverc_krt_task_pid_nr || !_neverc_krt_task_tgid_nr)
+		_neverc_krt_task_pid_nr_ns =
+			(neverc_krt_task_pid_nr_ns_fn)NEVERC_KRT_LOOKUP(
+				"__task_pid_nr_ns");
 	_neverc_krt_find_task_by_vpid =
 		(neverc_krt_find_task_fn)NEVERC_KRT_LOOKUP("find_task_by_vpid");
 	_neverc_krt_get_task_cred =
@@ -97,6 +104,9 @@ int neverc_krt_current_pid(void)
 {
 	if (_neverc_krt_task_pid_nr)
 		return _neverc_krt_task_pid_nr(current);
+	if (_neverc_krt_task_pid_nr_ns)
+		return _neverc_krt_task_pid_nr_ns(current, 0 /* PIDTYPE_PID */,
+						  (void *)0);
 	return -1;
 }
 
@@ -104,6 +114,9 @@ int neverc_krt_current_tgid(void)
 {
 	if (_neverc_krt_task_tgid_nr)
 		return _neverc_krt_task_tgid_nr(current);
+	if (_neverc_krt_task_pid_nr_ns)
+		return _neverc_krt_task_pid_nr_ns(current, 1 /* PIDTYPE_TGID */,
+						  (void *)0);
 	return -1;
 }
 
@@ -111,6 +124,9 @@ int neverc_krt_task_pid(struct task_struct *task)
 {
 	if (_neverc_krt_task_pid_nr && task)
 		return _neverc_krt_task_pid_nr(task);
+	if (_neverc_krt_task_pid_nr_ns && task)
+		return _neverc_krt_task_pid_nr_ns(task, 0 /* PIDTYPE_PID */,
+						  (void *)0);
 	return -1;
 }
 

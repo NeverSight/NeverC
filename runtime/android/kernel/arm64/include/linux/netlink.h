@@ -42,10 +42,10 @@ struct nlmsghdr {
  * Netlink kernel config (input to netlink_kernel_create).
  *
  * Only the first three fields (groups, flags, input) are portable
- * across GKI 5.10–6.12.  Fields after input differ:
+ * across GKI 5.10–6.18.  Fields after input differ:
  *   5.10–6.1:  cb_mutex, bind, unbind, compare
  *   6.6:       cb_mutex, bind, unbind, release  (compare→release)
- *   6.12:      bind, unbind, release            (cb_mutex removed)
+ *   6.12+:     bind, unbind, release            (cb_mutex removed)
  * Zero-fill the entire struct and set only groups/flags/input.
  */
 struct netlink_kernel_cfg {

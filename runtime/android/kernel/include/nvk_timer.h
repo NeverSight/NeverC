@@ -6,7 +6,7 @@
 #include <linux/compiler.h>
 
 /* ------------------------------------------------------------------ */
-/*  Opaque timer/work structures sized to fit all GKI 5.10–6.12       */
+/*  Opaque timer/work structures sized to fit all GKI 5.10–6.18       */
 /* ------------------------------------------------------------------ */
 
 /*
@@ -14,7 +14,7 @@
  *   5.10-6.6:  72 bytes (timerqueue_node=32 + _softexpires=8 + function=8
  *                         + base=8 + state/flags=4 + pad=4
  *                         + ANDROID_KABI_RESERVE(1)=8)
- *   6.12:      64 bytes (ANDROID_KABI_RESERVE removed)
+ *   6.12-6.18: 64 bytes (ANDROID_KABI_RESERVE removed)
  * 128 bytes covers all with generous headroom.
  */
 #define NEVERC_KRT_HRTIMER_STORAGE  128
@@ -51,7 +51,7 @@ int neverc_krt_timer_init(void);
  * After hrtimer_init, locate the .function field by finding the
  * .base kernel pointer (first non-zero pointer after offset 16)
  * and writing one slot before it.  function is at offset 40 on
- * all GKI 5.10-6.12 (rb_node=24 + expires=8 + _softexpires=8).
+ * all GKI 5.10-6.18 (rb_node=24 + expires=8 + _softexpires=8).
  */
 
 

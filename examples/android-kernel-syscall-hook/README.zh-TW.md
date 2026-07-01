@@ -19,7 +19,7 @@ cd examples/android-kernel-syscall-hook
 neverc make
 ```
 
-將 `KERNEL` 改為 `515`、`601`、`606` 或 `612` 以適配其他核心版本。
+將 `KERNEL` 改為 `515`、`601`、`606`、`612` 或 `618` 以適配其他核心版本。
 
 ## 部署和執行
 

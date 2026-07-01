@@ -19,8 +19,9 @@ typedef unsigned int __poll_t;
  * proc_create() is available on 5.10+.  On 5.6+ kernels the preferred
  * interface is proc_create() with struct proc_ops (not file_operations).
  *
- * Field order verified against GKI 5.10 / 5.15 / 6.1 / 6.6 / 6.12
- * (gki_defconfig, CONFIG_COMPAT=y on arm64).
+ * Field order verified against GKI 5.10 / 5.15 / 6.1 / 6.6 / 6.12 / 6.18
+ * (gki_defconfig, CONFIG_COMPAT=y on arm64).  6.18 added PROC_ENTRY_FORCE_LOOKUP
+ * to the proc_flags enum only; struct proc_ops layout is unchanged.
  */
 struct proc_ops {
 	unsigned int proc_flags;
@@ -40,7 +41,7 @@ struct proc_ops {
 };
 
 /*
- * Verified against GKI 5.10–6.12 (gki_defconfig, CONFIG_COMPAT=y).
+ * Verified against GKI 5.10–6.18 (gki_defconfig, CONFIG_COMPAT=y).
  * GKI arm64 always enables CONFIG_COMPAT, so proc_compat_ioctl is always
  * present.  sizeof(struct proc_ops) = 96 with CONFIG_COMPAT=y, 88 without.
  */

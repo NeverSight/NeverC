@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Minimal struct kprobe shim — compatible across GKI 5.10–6.12.
+ * Minimal struct kprobe shim — compatible across GKI 5.10–6.18.
  *
  * Only the fields needed by neverc_krt_kprobe_lookup() are laid out
  * explicitly; the rest is an opaque tail blob.  The field offsets
@@ -21,7 +21,7 @@
 #include <linux/types.h>
 
 /*
- * Max sizeof(struct kprobe) across GKI arm64 5.10–6.12:
+ * Max sizeof(struct kprobe) across GKI arm64 5.10–6.18:
  *   5.10  = 136 bytes (0x88) — has fault_handler field
  *   5.15+ = 128 bytes (0x80) — fault_handler removed
  * 0x90 (144) covers all versions with headroom.

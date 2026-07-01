@@ -6,7 +6,7 @@
 
 typedef s64 ktime_t;
 
-/* Clock IDs for hrtimer_init. */
+/* Clock IDs for hrtimer_init / hrtimer_setup. */
 #define CLOCK_REALTIME    0
 #define CLOCK_MONOTONIC   1
 #define CLOCK_BOOTTIME    7
@@ -36,7 +36,7 @@ enum hrtimer_restart {
  * Opaque hrtimer storage — GKI arm64 (production, no debug):
  *   timerqueue_node(32) + _softexpires(8) + function(8) + base(8) + 4×u8(4) + pad(4)
  *   5.10–6.6: + ANDROID_KABI_RESERVE(1) = u64(8)  → 72 bytes
- *   6.12:     KABI_RESERVE removed                 → 64 bytes
+ *   6.12–6.18: KABI_RESERVE removed                → 64 bytes
  * 128 bytes covers all versions with generous headroom.
  */
 struct hrtimer {
@@ -50,8 +50,17 @@ typedef enum hrtimer_restart (*hrtimer_func_t)(struct hrtimer *);
 
 void hrtimer_init(struct hrtimer *timer, int which_clock,
 		  enum hrtimer_mode mode);
+/*
+ * 6.18+: hrtimer_setup(timer, function, clock_id, mode) replaces
+ * hrtimer_init + manual function assignment.
+ */
+void hrtimer_setup(struct hrtimer *timer, hrtimer_func_t function,
+		   int which_clock, enum hrtimer_mode mode);
 void hrtimer_start(struct hrtimer *timer, ktime_t time,
 		   const enum hrtimer_mode mode);
+/* 6.18+: hrtimer_start_range_ns replaces hrtimer_start. */
+void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t time,
+			    u64 delta_ns, const enum hrtimer_mode mode);
 int hrtimer_cancel(struct hrtimer *timer);
 int hrtimer_try_to_cancel(struct hrtimer *timer);
 u64 hrtimer_forward_now(struct hrtimer *timer, ktime_t interval);

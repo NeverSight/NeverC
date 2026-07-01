@@ -5,7 +5,7 @@
 #include <linux/types.h>
 
 /*
- * GKI 5.10-6.12: count(8) + owner(8) + osq(4) + lock(4) + wait_list(16)
+ * GKI 5.10-6.18: count(8) + owner(8) + osq(4) + lock(4) + wait_list(16)
  *                + ANDROID_VENDOR_DATA(8) + ANDROID_OEM_DATA_ARRAY(16)
  *                → ~64 bytes.  Round up to 72 for safety.
  */

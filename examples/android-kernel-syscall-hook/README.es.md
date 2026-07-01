@@ -19,7 +19,7 @@ cd examples/android-kernel-syscall-hook
 neverc make
 ```
 
-Cambiar `KERNEL` a `515`, `601`, `606` o `612` para otras versiones del kernel.
+Cambiar `KERNEL` a `515`, `601`, `606`, `612` o `618` para otras versiones del kernel.
 
 ## Despliegue y ejecución
 

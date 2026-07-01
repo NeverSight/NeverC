@@ -15,6 +15,10 @@ void nvk_gen_fops_offsets(void)
 	NVK_EMIT(FOPS_WRITE, offsetof(struct file_operations, write));
 	NVK_EMIT(FOPS_UNLOCKED_IOCTL,
 		 offsetof(struct file_operations, unlocked_ioctl));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	NVK_EMIT(FOPS_MMAP_PREPARE,
+		 offsetof(struct file_operations, mmap_prepare));
+#endif
 	NVK_EMIT(FOPS_OPEN, offsetof(struct file_operations, open));
 	NVK_EMIT(FOPS_RELEASE, offsetof(struct file_operations, release));
 	NVK_EMIT(FOPS_SIZE, sizeof(struct file_operations));

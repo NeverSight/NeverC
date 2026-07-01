@@ -11,7 +11,7 @@ struct workqueue_struct; /* opaque */
 typedef void (*work_func_t)(struct work_struct *work);
 
 /*
- * Minimal work_struct layout — stable core fields across GKI 5.10–6.12.
+ * Minimal work_struct layout — stable core fields across GKI 5.10–6.18.
  *
  *   GKI version    sizeof(struct work_struct)
  *   ──────────────────────────────────────────

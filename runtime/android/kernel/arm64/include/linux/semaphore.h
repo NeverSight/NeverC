@@ -5,7 +5,7 @@
 #include <linux/types.h>
 
 /*
- * GKI 5.10–6.12 (arm64, no debug):
+ * GKI 5.10–6.18 (arm64, no debug):
  *   raw_spinlock_t lock      4 bytes
  *   unsigned int count       4 bytes
  *   struct list_head wait    16 bytes

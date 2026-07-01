@@ -11,7 +11,7 @@ cd examples/android-kernel-chardev
 neverc make
 ```
 
-Ändern Sie `KERNEL` auf `515`, `601`, `606` oder `612` für andere Versionen.
+Ändern Sie `KERNEL` auf `515`, `601`, `606`, `612` oder `618` für andere Versionen.
 
 ## Bereitstellung und Ausführung
 

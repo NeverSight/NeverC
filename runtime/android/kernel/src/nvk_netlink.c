@@ -5,6 +5,8 @@ typedef void *(*neverc_krt_netlink_create_fn)(void *net, int unit,
 					      struct neverc_krt_nl_cfg *cfg);
 typedef void  (*neverc_krt_netlink_release_fn)(void *sock);
 typedef void *(*neverc_krt_alloc_skb_fn)(unsigned int size, u32 gfp);
+typedef void *(*neverc_krt___alloc_skb_fn)(unsigned int size, u32 gfp,
+					   int flags, int node);
 typedef void  (*neverc_krt_kfree_skb_fn)(void *skb);
 typedef unsigned char *(*neverc_krt_skb_put_fn)(void *skb, unsigned int len);
 typedef void *(*neverc_krt_nlmsg_put_fn)(void *skb, u32 portid, u32 seq,
@@ -20,6 +22,7 @@ typedef void *(*neverc_krt_nlmsg_hdr_fn)(void *skb);
 static neverc_krt_netlink_create_fn     _neverc_krt_nl_create;
 static neverc_krt_netlink_release_fn    _neverc_krt_nl_release;
 static neverc_krt_alloc_skb_fn          _neverc_krt_nl_alloc_skb;
+static neverc_krt___alloc_skb_fn        _neverc_krt_nl___alloc_skb;
 static neverc_krt_kfree_skb_fn          _neverc_krt_nl_kfree_skb;
 static neverc_krt_skb_put_fn            _neverc_krt_nl_skb_put;
 static neverc_krt_nlmsg_put_fn          _neverc_krt_nl_nlmsg_put;
@@ -29,6 +32,39 @@ static neverc_krt_nlmsg_data_fn         _neverc_krt_nl_nlmsg_data;
 static neverc_krt_nlmsg_hdr_fn          _neverc_krt_nl_nlmsg_hdr;
 static void                            **_neverc_krt_nl_init_net;
 static int                              _neverc_krt_nl_inited;
+
+static void *_neverc_krt_nl_alloc_skb_compat(unsigned int size, u32 gfp)
+{
+	if (_neverc_krt_nl_alloc_skb)
+		return _neverc_krt_nl_alloc_skb(size, gfp);
+	if (_neverc_krt_nl___alloc_skb)
+		return _neverc_krt_nl___alloc_skb(size, gfp, 0, -1);
+	return (void *)0;
+}
+
+static void *_neverc_krt_nl_nlmsg_put_compat(void *skb, u32 portid, u32 seq,
+					     int type, int payload, int flags)
+{
+	if (_neverc_krt_nl_nlmsg_put)
+		return _neverc_krt_nl_nlmsg_put(skb, portid, seq, type,
+						payload, flags);
+	if (!_neverc_krt_nl_skb_put) return (void *)0;
+	unsigned int aligned = (16 + payload + 3) & ~3U;
+	unsigned char *p = _neverc_krt_nl_skb_put(skb, aligned);
+	if (!p) return (void *)0;
+	u32 *hdr = (u32 *)p;
+	hdr[0] = 16 + payload;
+	hdr[1] = (u32)((u16)type | ((u16)flags << 16));
+	hdr[2] = seq;
+	hdr[3] = portid;
+	if (aligned > 16U + (unsigned)payload) {
+		unsigned char *pad = p + 16 + payload;
+		unsigned int n = aligned - 16 - payload;
+		unsigned int j;
+		for (j = 0; j < n; j++) pad[j] = 0;
+	}
+	return (void *)p;
+}
 
 static u64 _neverc_krt_nl_auth_key;
 static u32 _neverc_krt_nl_auth_pid;
@@ -54,11 +90,18 @@ int neverc_krt_nl_init(void)
 	if (!_neverc_krt_nl_alloc_skb)
 		_neverc_krt_nl_alloc_skb =
 			(neverc_krt_alloc_skb_fn)NEVERC_KRT_LOOKUP("alloc_skb");
+	if (!_neverc_krt_nl_alloc_skb)
+		_neverc_krt_nl___alloc_skb =
+			(neverc_krt___alloc_skb_fn)NEVERC_KRT_LOOKUP(
+				"__alloc_skb");
 	_neverc_krt_nl_kfree_skb =
 		(neverc_krt_kfree_skb_fn)NEVERC_KRT_LOOKUP("kfree_skb");
 	if (!_neverc_krt_nl_kfree_skb)
 		_neverc_krt_nl_kfree_skb =
 			(neverc_krt_kfree_skb_fn)NEVERC_KRT_LOOKUP("consume_skb");
+	if (!_neverc_krt_nl_kfree_skb)
+		_neverc_krt_nl_kfree_skb =
+			(neverc_krt_kfree_skb_fn)NEVERC_KRT_LOOKUP("__kfree_skb");
 	_neverc_krt_nl_skb_put =
 		(neverc_krt_skb_put_fn)NEVERC_KRT_LOOKUP("skb_put");
 	_neverc_krt_nl_nlmsg_put =
@@ -101,7 +144,7 @@ static void _neverc_krt_nl_dispatch(void *skb)
 			break;
 		}
 	}
-	void *nlh;
+	void *nlh = (void *)0;
 	unsigned char *data;
 	u32 pid, type, seq, payload_len;
 	u32 *hdr;
@@ -109,10 +152,32 @@ static void _neverc_krt_nl_dispatch(void *skb)
 	if (!ns || !ns->handler || !skb)
 		return;
 
-	if (_neverc_krt_nl_nlmsg_hdr)
+	if (_neverc_krt_nl_nlmsg_hdr) {
 		nlh = _neverc_krt_nl_nlmsg_hdr(skb);
-	else
-		return;
+	} else {
+		/*
+		 * nlmsg_hdr() was inlined in 6.18+; it returns skb->data.
+		 * sk_buff->data offset varies with CONFIG_* and whether
+		 * ANDROID_KABI_RESERVE fields are present (6.12 GKI had +16
+		 * bytes in the headers group; upstream 6.18 dropped them).
+		 * Scan pointer slots in the tail region for a kernel address
+		 * whose first u32 looks like a plausible nlmsg_len.
+		 */
+		unsigned long off;
+		for (off = 96; off < 336; off += 8) {
+			unsigned long v;
+			if (neverc_krt_mem_read(&v, (char *)skb + off, 8))
+				continue;
+			if (v < 0xFFFF000000000000UL) continue;
+			u32 maybe_len;
+			if (neverc_krt_mem_read(&maybe_len, (void *)v, 4))
+				continue;
+			if (maybe_len >= 16 && maybe_len <= NEVERC_KRT_NL_MSG_MAX) {
+				nlh = (void *)v;
+				break;
+			}
+		}
+	}
 
 	if (!nlh) return;
 
@@ -189,16 +254,18 @@ int neverc_krt_nl_send(struct neverc_krt_nl_sock *ns, u32 pid,
 	u32 total;
 
 	if (!ns || !ns->sock) return -1;
-	if (!_neverc_krt_nl_alloc_skb || !_neverc_krt_nl_nlmsg_put || !_neverc_krt_nl_unicast)
+	if ((!_neverc_krt_nl_alloc_skb && !_neverc_krt_nl___alloc_skb) ||
+	    (!_neverc_krt_nl_nlmsg_put && !_neverc_krt_nl_skb_put) ||
+	    !_neverc_krt_nl_unicast)
 		return -2;
 
 	total = 16 + ((len + 3) & ~3U);
-	skb = _neverc_krt_nl_alloc_skb(total, 0x14000C0U /* GFP_KERNEL */);
+	skb = _neverc_krt_nl_alloc_skb_compat(total, 0x14000C0U /* GFP_KERNEL */);
 	if (!skb) return -3;
 
-	nlh = _neverc_krt_nl_nlmsg_put(skb, 0, seq, type, len, 0);
+	nlh = _neverc_krt_nl_nlmsg_put_compat(skb, 0, seq, type, len, 0);
 	if (!nlh) {
-		_neverc_krt_nl_kfree_skb(skb);
+		if (_neverc_krt_nl_kfree_skb) _neverc_krt_nl_kfree_skb(skb);
 		return -4;
 	}
 
