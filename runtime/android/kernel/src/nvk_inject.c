@@ -110,14 +110,8 @@ static void _neverc_krt_inject_resolve_mm(void)
 	if (!_neverc_krt_mmap_wlock) {
 		_neverc_krt_mmap_wlock =
 			(neverc_krt_mmap_write_lock_fn)NEVERC_KRT_LOOKUP("mmap_write_lock");
-		if (!_neverc_krt_mmap_wlock)
-			_neverc_krt_mmap_wlock =
-				(neverc_krt_mmap_write_lock_fn)NEVERC_KRT_LOOKUP("down_write");
 		_neverc_krt_mmap_wunlock =
 			(neverc_krt_mmap_write_unlock_fn)NEVERC_KRT_LOOKUP("mmap_write_unlock");
-		if (!_neverc_krt_mmap_wunlock)
-			_neverc_krt_mmap_wunlock =
-				(neverc_krt_mmap_write_unlock_fn)NEVERC_KRT_LOOKUP("up_write");
 		_neverc_krt_use_mm =
 			(neverc_krt_use_mm_fn)NEVERC_KRT_LOOKUP("kthread_use_mm");
 		if (!_neverc_krt_use_mm)

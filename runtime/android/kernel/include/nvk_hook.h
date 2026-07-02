@@ -177,6 +177,30 @@ enum neverc_krt_hook_err {
 };
 
 /* ====================================================================
+ * Low-level hook structure
+ *
+ * Users who need fine-grained control (manual install/remove without
+ * auto-chaining) allocate this struct directly and pass it to
+ * neverc_krt_hook_install().  The high-level API (hook_register) manages
+ * these internally.
+ * ==================================================================== */
+
+#define NEVERC_KRT_HOOK_MAX_PATCH   6
+
+struct neverc_krt_hook {
+	void       *target;
+	void       *replace;
+	u32        *trampoline;
+	u32         orig_insns[NEVERC_KRT_HOOK_MAX_PATCH];
+	int         patch_count;
+	int         active;
+	volatile int enabled;
+	int         short_b;
+	volatile u64 hit_count;
+	volatile unsigned long guard;
+};
+
+/* ====================================================================
  * Initialization
  * ==================================================================== */
 
@@ -298,5 +322,72 @@ int neverc_krt_probe_count(void *addr);
  * ==================================================================== */
 
 unsigned long neverc_krt_strip_pac(unsigned long addr);
+
+/* ====================================================================
+ * Low-level install / remove API
+ *
+ * For users who allocate struct neverc_krt_hook directly and manage
+ * lifetime manually (no auto-chaining).
+ * ==================================================================== */
+
+int neverc_krt_hook_install(struct neverc_krt_hook *h, void *target,
+			    void *replace, void **orig);
+void neverc_krt_hook_pause(struct neverc_krt_hook *h);
+void neverc_krt_hook_resume(struct neverc_krt_hook *h);
+void neverc_krt_hook_remove(struct neverc_krt_hook *h);
+int neverc_krt_hook_replace(struct neverc_krt_hook *h, void *new_replace,
+			    void **new_orig);
+
+/* ====================================================================
+ * Re-entry guard (inline — must be in header for user code)
+ *
+ * Prevents recursive hook invocations on the same task.
+ * Usage:
+ *   if (!neverc_krt_hook_enter(&hook)) return orig(...);
+ *   // ... hook logic ...
+ *   neverc_krt_hook_leave(&hook);
+ * ==================================================================== */
+
+#define NEVERC_KRT_HOOK_COUNT(h) \
+	__atomic_fetch_add(&(h)->hit_count, 1, __ATOMIC_RELAXED)
+
+__always_inline int neverc_krt_hook_enter(struct neverc_krt_hook *h)
+{
+	unsigned long task;
+	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+	unsigned long prev = __atomic_exchange_n(&h->guard, task,
+						 __ATOMIC_ACQUIRE);
+	if (prev == task)
+		return 0;
+	NEVERC_KRT_HOOK_COUNT(h);
+	return 1;
+}
+
+__always_inline void neverc_krt_hook_leave(struct neverc_krt_hook *h)
+{
+	__atomic_store_n(&h->guard, 0, __ATOMIC_RELEASE);
+}
+
+__always_inline int neverc_krt_hook_enter_safe(struct neverc_krt_hook *h)
+{
+	if (unlikely(!READ_ONCE(h->enabled)))
+		return 0;
+	return neverc_krt_hook_enter(h);
+}
+
+__always_inline u64 neverc_krt_hook_hits(struct neverc_krt_hook *h)
+{ return __atomic_load_n(&h->hit_count, __ATOMIC_RELAXED); }
+
+__always_inline void neverc_krt_hook_reset_stats(struct neverc_krt_hook *h)
+{ __atomic_store_n(&h->hit_count, 0, __ATOMIC_RELAXED); }
+
+__always_inline int neverc_krt_hook_is_enabled(struct neverc_krt_hook *h)
+{ return READ_ONCE(h->enabled); }
+
+__always_inline void neverc_krt_hook_enable(struct neverc_krt_hook *h)
+{ WRITE_ONCE(h->enabled, 1); }
+
+__always_inline void neverc_krt_hook_disable(struct neverc_krt_hook *h)
+{ WRITE_ONCE(h->enabled, 0); }
 
 #endif /* NEVERC_KRT_HOOK_H */

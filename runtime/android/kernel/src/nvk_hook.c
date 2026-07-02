@@ -4,6 +4,72 @@
 
 #include <nvk_internal.h>
 
+/* ---- internal ftrace constants (only used in this file) ---- */
+
+#define NEVERC_KRT_FTRACE_FL_SAVE_REGS     0x0002UL
+#define NEVERC_KRT_FTRACE_FL_SAVE_REGS_IF  0x0004UL
+#define NEVERC_KRT_FTRACE_FL_RECURSION     0x0008UL
+#define NEVERC_KRT_FTRACE_FL_IPMODIFY      0x0040UL
+
+/* ---- internal kprobe hook type (only used in this file) ---- */
+
+struct neverc_krt_kprobe_hook {
+	unsigned char kp_storage[160];
+	void *target;
+	void *replace;
+	void *orig;
+	int   active;
+};
+
+/* ---- internal hook chain (only used in this file) ---- */
+
+#define NEVERC_KRT_CHAIN_MAX 4
+
+struct neverc_krt_hook_chain_entry {
+	void *handler;
+	int   priority;
+	int   active;
+};
+
+struct neverc_krt_hook_chain {
+	struct neverc_krt_hook              hook;
+	struct neverc_krt_hook_chain_entry  entries[NEVERC_KRT_CHAIN_MAX];
+	int                          count;
+	void                        *orig_fn;
+	void                        *dispatch_fn;
+};
+
+typedef long (*neverc_krt_chain_handler_t)(void *orig, void *a0, void *a1,
+					   void *a2, void *a3, void *a4, void *a5);
+
+/* ---- internal hook stats (only used in this file) ---- */
+
+struct neverc_krt_hook_stats {
+	u64 total_installs;
+	u64 total_removes;
+	u64 pool_allocs;
+	u64 pool_alloc_fails;
+	int pool_pages;
+	int pool_used_bytes;
+	int pool_total_bytes;
+	int active_hooks;
+};
+
+/* ---- internal registry limits ---- */
+
+#define NEVERC_KRT_REGISTRY_MAX 16
+#define NEVERC_KRT_PROBE_MAX 16
+
+/* ---- forward declarations ---- */
+
+static long _neverc_krt_chain_run(struct neverc_krt_hook_chain *chain,
+				  void *a0, void *a1, void *a2,
+				  void *a3, void *a4, void *a5);
+static u64 neverc_krt_pool_alloc_count(void);
+static u64 neverc_krt_pool_alloc_bytes(void);
+static int neverc_krt_pool_page_count(void);
+static int neverc_krt_pool_usage(int *total_used, int *total_cap);
+
 /* ---- pool / cache state ---- */
 
 static int          _neverc_krt_pool_count;
@@ -397,9 +463,9 @@ typedef void  (*neverc_krt_syncrcu_fn)(void);
 typedef void  (*neverc_krt_msleep_fn)(unsigned int);
 typedef int   (*neverc_krt_ksize_fn)(unsigned long addr, unsigned long *sz,
 				     unsigned long *off);
-typedef int   (*neverc_krt_register_ftrace_fn)(struct neverc_krt_ftrace_ops *ops);
-typedef int   (*neverc_krt_unregister_ftrace_fn)(struct neverc_krt_ftrace_ops *ops);
-typedef int   (*neverc_krt_ftrace_set_filter_ip_fn)(struct neverc_krt_ftrace_ops *ops,
+typedef int   (*neverc_krt_register_ftrace_fn)(void *ops);
+typedef int   (*neverc_krt_unregister_ftrace_fn)(void *ops);
+typedef int   (*neverc_krt_ftrace_set_filter_ip_fn)(void *ops,
 						    unsigned long ip,
 						    int remove, int reset);
 typedef int   (*neverc_krt_register_kprobe_fn)(void *kp);
@@ -1570,6 +1636,12 @@ void neverc_krt_fptr_restore(struct neverc_krt_fptr_hook *h)
 	h->active = 0;
 }
 
+/*
+ * 6.18+: register_ftrace_function / unregister_ftrace_function /
+ * ftrace_set_filter_ip were removed from the kernel symbol table.
+ * Returns -1 on 6.18 (graceful degradation; use inline patching
+ * or kprobes instead).
+ */
 int neverc_krt_ftrace_init(void)
 {
 	if (_neverc_krt_ftrace_avail) return 0;
@@ -1594,7 +1666,7 @@ static void _neverc_krt_ftrace_thunk(unsigned long ip, unsigned long parent_ip,
 {
 	if (!ops || !regs) return;
 	struct neverc_krt_ftrace_hook *h = (struct neverc_krt_ftrace_hook *)(
-		(char *)ops - __builtin_offsetof(struct neverc_krt_ftrace_hook, ops));
+		(char *)ops - __builtin_offsetof(struct neverc_krt_ftrace_hook, _ops_storage));
 	if (!h->replace) return;
 
 	unsigned long *r = (unsigned long *)regs;
@@ -1615,9 +1687,9 @@ int neverc_krt_ftrace_hook_install(struct neverc_krt_ftrace_hook *h,
 	h->orig = target;
 	h->active = 0;
 
-	unsigned char *p = (unsigned char *)&h->ops;
+	unsigned char *p = (unsigned char *)h->_ops_storage;
 	unsigned long i;
-	for (i = 0; i < sizeof(h->ops); i++) p[i] = 0;
+	for (i = 0; i < sizeof(h->_ops_storage); i++) p[i] = 0;
 
 	/*
 	 * Kernel's struct ftrace_ops layout:
@@ -1625,16 +1697,16 @@ int neverc_krt_ftrace_hook_install(struct neverc_krt_ftrace_hook *h,
 	 *   [8]  next   (kernel-managed, leave zero)
 	 *   [16] flags  (unsigned long)
 	 */
-	h->ops._storage[0] = (unsigned long)_neverc_krt_ftrace_thunk;
-	h->ops._storage[2] = NEVERC_KRT_FTRACE_FL_SAVE_REGS
+	h->_ops_storage[0] = (unsigned long)_neverc_krt_ftrace_thunk;
+	h->_ops_storage[2] = NEVERC_KRT_FTRACE_FL_SAVE_REGS
 			    | NEVERC_KRT_FTRACE_FL_IPMODIFY
 			    | NEVERC_KRT_FTRACE_FL_RECURSION;
 
-	ret = _neverc_krt_ftrace_set_filter(&h->ops,
+	ret = _neverc_krt_ftrace_set_filter(h->_ops_storage,
 				     (unsigned long)target, 0, 1);
 	if (ret) return ret;
 
-	ret = _neverc_krt_register_ftrace(&h->ops);
+	ret = _neverc_krt_register_ftrace(h->_ops_storage);
 	if (ret) return ret;
 
 	if (orig) *orig = h->orig;
@@ -1646,7 +1718,7 @@ void neverc_krt_ftrace_hook_remove(struct neverc_krt_ftrace_hook *h)
 {
 	if (!h || !h->active) return;
 	if (_neverc_krt_unregister_ftrace)
-		_neverc_krt_unregister_ftrace(&h->ops);
+		_neverc_krt_unregister_ftrace(h->_ops_storage);
 	h->active = 0;
 }
 
@@ -1693,7 +1765,7 @@ void neverc_krt_hook_auto_remove(struct neverc_krt_hook *h,
 		neverc_krt_ftrace_hook_remove(ft_fallback);
 }
 
-int neverc_krt_pool_usage(int *total_used, int *total_cap)
+static int neverc_krt_pool_usage(int *total_used, int *total_cap)
 {
 	int i, used = 0, cap = 0;
 	int pgsz = _neverc_krt_pool_pgsz ? _neverc_krt_pool_pgsz : 4096;
@@ -1709,9 +1781,9 @@ int neverc_krt_pool_usage(int *total_used, int *total_cap)
 	return _neverc_krt_pool_count;
 }
 
-long _neverc_krt_chain_run(struct neverc_krt_hook_chain *chain,
-			   void *a0, void *a1, void *a2,
-			   void *a3, void *a4, void *a5)
+static long _neverc_krt_chain_run(struct neverc_krt_hook_chain *chain,
+				    void *a0, void *a1, void *a2,
+				    void *a3, void *a4, void *a5)
 {
 	int i, cnt;
 	long ret = 0;
@@ -1734,7 +1806,7 @@ long _neverc_krt_chain_run(struct neverc_krt_hook_chain *chain,
 	return ret;
 }
 
-int neverc_krt_chain_init(struct neverc_krt_hook_chain *chain)
+static int neverc_krt_chain_init(struct neverc_krt_hook_chain *chain)
 {
 	if (!chain) return -1;
 	unsigned char *p = (unsigned char *)chain;
@@ -1744,7 +1816,7 @@ int neverc_krt_chain_init(struct neverc_krt_hook_chain *chain)
 	return 0;
 }
 
-int neverc_krt_chain_add(struct neverc_krt_hook_chain *chain,
+static int neverc_krt_chain_add(struct neverc_krt_hook_chain *chain,
 			 void *handler, int priority)
 {
 	int i, slot = -1;
@@ -1776,7 +1848,7 @@ int neverc_krt_chain_add(struct neverc_krt_hook_chain *chain,
 	return 0;
 }
 
-void neverc_krt_hook_get_stats(struct neverc_krt_hook_stats *out)
+static void neverc_krt_hook_get_stats(struct neverc_krt_hook_stats *out)
 {
 	if (!out) return;
 	out->total_installs = __atomic_load_n(&_neverc_krt_hook_install_cnt,
@@ -1791,7 +1863,7 @@ void neverc_krt_hook_get_stats(struct neverc_krt_hook_stats *out)
 	out->active_hooks = (int)(out->total_installs - out->total_removes);
 }
 
-int neverc_krt_chain_remove(struct neverc_krt_hook_chain *chain, void *handler)
+static int neverc_krt_chain_remove(struct neverc_krt_hook_chain *chain, void *handler)
 {
 	int i;
 	if (!chain || !handler) return -1;
@@ -1810,7 +1882,7 @@ int neverc_krt_chain_remove(struct neverc_krt_hook_chain *chain, void *handler)
 	return -2;
 }
 
-int neverc_krt_chain_install(struct neverc_krt_hook_chain *chain, void *target,
+static int neverc_krt_chain_install(struct neverc_krt_hook_chain *chain, void *target,
 			     void *dispatch_fn)
 {
 	if (!chain || !target || !dispatch_fn) return -1;
@@ -1822,7 +1894,7 @@ int neverc_krt_chain_install(struct neverc_krt_hook_chain *chain, void *target,
 				dispatch_fn, &chain->orig_fn);
 }
 
-void neverc_krt_chain_uninstall(struct neverc_krt_hook_chain *chain)
+static void neverc_krt_chain_uninstall(struct neverc_krt_hook_chain *chain)
 {
 	if (!chain) return;
 	if (chain->hook.active)
@@ -2488,20 +2560,6 @@ static enum neverc_krt_pcrel neverc_krt_a64_classify(u32 i)
 	return NEVERC_KRT_PC_NONE;
 }
 
-int neverc_krt_in_irq_context(void)
-{
-	unsigned long task;
-	u32 count;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_RELAXED);
-	if (unlikely(!kv))
-		return 0;
-	unsigned long off = (kv <= 510) ? 24 : 16;
-	if (neverc_krt_mem_read(&count, (void *)(task + off), 4))
-		return 0;
-	return (count & 0x000FFF00U) != 0;
-}
-
 unsigned long neverc_krt_strip_pac(unsigned long addr)
 {
 	unsigned long tcr, va_bits, mask;
@@ -2544,17 +2602,17 @@ int neverc_krt_cfi_has_tag(void *func)
 	return tag != 0 && tag != NEVERC_KRT_A64_NOP && tag != NEVERC_KRT_A64_BTI_C;
 }
 
-u64 neverc_krt_pool_alloc_count(void)
+static u64 neverc_krt_pool_alloc_count(void)
 {
 	return __atomic_load_n(&_neverc_krt_pool_alloc_total, __ATOMIC_RELAXED);
 }
 
-u64 neverc_krt_pool_alloc_bytes(void)
+static u64 neverc_krt_pool_alloc_bytes(void)
 {
 	return __atomic_load_n(&_neverc_krt_pool_alloc_bytes, __ATOMIC_RELAXED);
 }
 
-int neverc_krt_pool_page_count(void)
+static int neverc_krt_pool_page_count(void)
 {
 	return _neverc_krt_pool_count;
 }

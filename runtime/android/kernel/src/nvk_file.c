@@ -12,17 +12,25 @@ typedef long  (*neverc_krt_kernel_write_fn)(void *filp, const void *buf,
 					    size_t count, long long *pos);
 typedef long long (*neverc_krt_vfs_llseek_fn)(void *filp, long long offset,
 					      int whence);
+/*
+ * vfs_stat (5.10-6.12): int vfs_stat(const char *, struct kstat *)
+ * vfs_fstatat (6.12+):  int vfs_fstatat(int dfd, const char *, struct kstat *, int)
+ * vfs_stat was removed in 6.18.
+ */
+typedef int   (*neverc_krt_vfs_fstatat_fn)(int dfd, const char *filename,
+					   void *stat, int flag);
 typedef int   (*neverc_krt_vfs_stat_fn)(const char *filename, void *stat);
 
 /* ---- internal variables (file-local) ---- */
 
-static neverc_krt_filp_open_fn    _neverc_krt_filp_open;
-static neverc_krt_filp_close_fn   _neverc_krt_filp_close;
-static neverc_krt_kernel_read_fn  _neverc_krt_kernel_read;
-static neverc_krt_kernel_write_fn _neverc_krt_kernel_write;
-static neverc_krt_vfs_llseek_fn   _neverc_krt_vfs_llseek;
-static neverc_krt_vfs_stat_fn     _neverc_krt_vfs_stat;
-static int                        _neverc_krt_file_inited;
+static neverc_krt_filp_open_fn      _neverc_krt_filp_open;
+static neverc_krt_filp_close_fn     _neverc_krt_filp_close;
+static neverc_krt_kernel_read_fn    _neverc_krt_kernel_read;
+static neverc_krt_kernel_write_fn   _neverc_krt_kernel_write;
+static neverc_krt_vfs_llseek_fn     _neverc_krt_vfs_llseek;
+static neverc_krt_vfs_fstatat_fn    _neverc_krt_vfs_fstatat;
+static neverc_krt_vfs_stat_fn       _neverc_krt_vfs_stat;
+static int                          _neverc_krt_file_inited;
 
 int neverc_krt_file_init(void)
 {
@@ -34,7 +42,11 @@ int neverc_krt_file_init(void)
 	_neverc_krt_kernel_read = (neverc_krt_kernel_read_fn)NEVERC_KRT_LOOKUP("kernel_read");
 	_neverc_krt_kernel_write = (neverc_krt_kernel_write_fn)NEVERC_KRT_LOOKUP("kernel_write");
 	_neverc_krt_vfs_llseek = (neverc_krt_vfs_llseek_fn)NEVERC_KRT_LOOKUP("vfs_llseek");
-	_neverc_krt_vfs_stat = (neverc_krt_vfs_stat_fn)NEVERC_KRT_LOOKUP("vfs_stat");
+	_neverc_krt_vfs_fstatat =
+		(neverc_krt_vfs_fstatat_fn)NEVERC_KRT_LOOKUP("vfs_fstatat");
+	if (!_neverc_krt_vfs_fstatat)
+		_neverc_krt_vfs_stat =
+			(neverc_krt_vfs_stat_fn)NEVERC_KRT_LOOKUP("vfs_stat");
 
 	if (!_neverc_krt_filp_open)
 		return -1;
@@ -139,5 +151,59 @@ int neverc_krt_file_exists(const char *path)
 	if (ret) return 0;
 	neverc_krt_file_close(&f);
 	return 1;
+}
+
+#define _NEVERC_KRT_AT_FDCWD (-100)
+
+/*
+ * Minimal kstat field offsets (GKI arm64 5.10-6.18):
+ *   [4]  mode   (u16)
+ *   [48] uid    (u32, inside kuid_t)
+ *   [52] gid    (u32, inside kgid_t)
+ *   [56] size   (s64)
+ */
+#define _NEVERC_KRT_KSTAT_MODE_OFF   4
+#define _NEVERC_KRT_KSTAT_UID_OFF   48
+#define _NEVERC_KRT_KSTAT_GID_OFF   52
+#define _NEVERC_KRT_KSTAT_SIZE_OFF  56
+
+static int _neverc_krt_do_stat(const char *path, unsigned char *buf, int bufsz)
+{
+	__builtin_memset(buf, 0, bufsz);
+	if (_neverc_krt_vfs_fstatat)
+		return _neverc_krt_vfs_fstatat(_NEVERC_KRT_AT_FDCWD, path, buf, 0);
+	if (_neverc_krt_vfs_stat)
+		return _neverc_krt_vfs_stat(path, buf);
+	return -1;
+}
+
+int neverc_krt_file_stat(const char *path, struct neverc_krt_file_stat *out)
+{
+	unsigned char kstat_buf[256];
+
+	if (!out || !path) return -1;
+
+	out->size = 0;
+	out->mode = 0;
+	out->uid = 0;
+	out->gid = 0;
+
+	if (_neverc_krt_vfs_fstatat || _neverc_krt_vfs_stat) {
+		int ret = _neverc_krt_do_stat(path, kstat_buf, sizeof(kstat_buf));
+		if (ret) return ret;
+
+		out->mode = *(u16 *)(kstat_buf + _NEVERC_KRT_KSTAT_MODE_OFF);
+		out->uid  = *(u32 *)(kstat_buf + _NEVERC_KRT_KSTAT_UID_OFF);
+		out->gid  = *(u32 *)(kstat_buf + _NEVERC_KRT_KSTAT_GID_OFF);
+		out->size = *(long long *)(kstat_buf + _NEVERC_KRT_KSTAT_SIZE_OFF);
+		return 0;
+	}
+
+	struct neverc_krt_file f;
+	int ret = neverc_krt_file_open(&f, path, NEVERC_KRT_O_RDONLY);
+	if (ret) return ret;
+	out->size = neverc_krt_file_size(&f);
+	neverc_krt_file_close(&f);
+	return 0;
 }
 

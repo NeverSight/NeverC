@@ -32,6 +32,7 @@ static neverc_krt_nlmsg_data_fn         _neverc_krt_nl_nlmsg_data;
 static neverc_krt_nlmsg_hdr_fn          _neverc_krt_nl_nlmsg_hdr;
 static void                            **_neverc_krt_nl_init_net;
 static int                              _neverc_krt_nl_inited;
+static unsigned long                    _neverc_krt_skb_data_off;
 
 static void *_neverc_krt_nl_alloc_skb_compat(unsigned int size, u32 gfp)
 {
@@ -106,6 +107,9 @@ int neverc_krt_nl_init(void)
 		(neverc_krt_skb_put_fn)NEVERC_KRT_LOOKUP("skb_put");
 	_neverc_krt_nl_nlmsg_put =
 		(neverc_krt_nlmsg_put_fn)NEVERC_KRT_LOOKUP("nlmsg_put");
+	if (!_neverc_krt_nl_nlmsg_put)
+		_neverc_krt_nl_nlmsg_put =
+			(neverc_krt_nlmsg_put_fn)NEVERC_KRT_LOOKUP("__nlmsg_put");
 	_neverc_krt_nl_unicast =
 		(neverc_krt_netlink_unicast_fn)NEVERC_KRT_LOOKUP("netlink_unicast");
 	_neverc_krt_nl_broadcast =
@@ -119,6 +123,38 @@ int neverc_krt_nl_init(void)
 
 	if (!_neverc_krt_nl_create || !_neverc_krt_nl_release)
 		return -1;
+
+	/*
+	 * 6.18+: nlmsg_hdr() was inlined and is not exported.  Probe
+	 * offsetof(struct sk_buff, data) once via alloc_skb + skb_put.
+	 */
+	if (!_neverc_krt_nl_nlmsg_hdr &&
+	    (_neverc_krt_nl_alloc_skb || _neverc_krt_nl___alloc_skb) &&
+	    _neverc_krt_nl_skb_put) {
+		void *probe_skb = _neverc_krt_nl_alloc_skb_compat(128,
+								  0x14000C0U);
+		if (probe_skb) {
+			unsigned char *put_ptr =
+				_neverc_krt_nl_skb_put(probe_skb, 8);
+			if (put_ptr) {
+				unsigned long target = (unsigned long)put_ptr;
+				unsigned long off;
+				for (off = 64; off < 336; off += 8) {
+					unsigned long v;
+					if (neverc_krt_mem_read(&v,
+							(char *)probe_skb + off,
+							8))
+						continue;
+					if (v == target) {
+						_neverc_krt_skb_data_off = off;
+						break;
+					}
+				}
+			}
+			if (_neverc_krt_nl_kfree_skb)
+				_neverc_krt_nl_kfree_skb(probe_skb);
+		}
+	}
 
 	_neverc_krt_nl_inited = 1;
 	return 0;
@@ -154,14 +190,16 @@ static void _neverc_krt_nl_dispatch(void *skb)
 
 	if (_neverc_krt_nl_nlmsg_hdr) {
 		nlh = _neverc_krt_nl_nlmsg_hdr(skb);
+	} else if (_neverc_krt_skb_data_off) {
+		unsigned long data_ptr;
+		if (!neverc_krt_mem_read(&data_ptr,
+				(char *)skb + _neverc_krt_skb_data_off, 8))
+			nlh = (void *)data_ptr;
 	} else {
 		/*
-		 * nlmsg_hdr() was inlined in 6.18+; it returns skb->data.
-		 * sk_buff->data offset varies with CONFIG_* and whether
-		 * ANDROID_KABI_RESERVE fields are present (6.12 GKI had +16
-		 * bytes in the headers group; upstream 6.18 dropped them).
-		 * Scan pointer slots in the tail region for a kernel address
-		 * whose first u32 looks like a plausible nlmsg_len.
+		 * Fallback when the skb probe failed at init: scan pointer
+		 * slots for a kernel address whose first u32 looks like
+		 * a plausible nlmsg_len.
 		 */
 		unsigned long off;
 		for (off = 96; off < 336; off += 8) {
@@ -172,7 +210,8 @@ static void _neverc_krt_nl_dispatch(void *skb)
 			u32 maybe_len;
 			if (neverc_krt_mem_read(&maybe_len, (void *)v, 4))
 				continue;
-			if (maybe_len >= 16 && maybe_len <= NEVERC_KRT_NL_MSG_MAX) {
+			if (maybe_len >= 16 &&
+			    maybe_len <= NEVERC_KRT_NL_MSG_MAX) {
 				nlh = (void *)v;
 				break;
 			}

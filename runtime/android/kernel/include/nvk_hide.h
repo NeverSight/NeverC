@@ -5,6 +5,9 @@
 #include <linux/types.h>
 #include <linux/compiler.h>
 #include <linux/list.h>
+
+struct neverc_krt_this_module;
+
 #include <nvk_hook.h>
 
 typedef void *(*neverc_krt_find_module_fn)(const char *name);

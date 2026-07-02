@@ -80,14 +80,8 @@ int neverc_krt_vma_init(void)
 		(neverc_krt_kunmap_fn)NEVERC_KRT_LOOKUP("kunmap");
 	_neverc_krt_mmap_read_lock =
 		(neverc_krt_mmap_read_lock_fn)NEVERC_KRT_LOOKUP("mmap_read_lock");
-	if (!_neverc_krt_mmap_read_lock)
-		_neverc_krt_mmap_read_lock =
-			(neverc_krt_mmap_read_lock_fn)NEVERC_KRT_LOOKUP("down_read");
 	_neverc_krt_mmap_read_unlock =
 		(neverc_krt_mmap_read_unlock_fn)NEVERC_KRT_LOOKUP("mmap_read_unlock");
-	if (!_neverc_krt_mmap_read_unlock)
-		_neverc_krt_mmap_read_unlock =
-			(neverc_krt_mmap_read_unlock_fn)NEVERC_KRT_LOOKUP("up_read");
 
 	_neverc_krt_get_task_mm =
 		(neverc_krt_get_task_mm_fn)NEVERC_KRT_LOOKUP("get_task_mm");

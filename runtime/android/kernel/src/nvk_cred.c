@@ -7,12 +7,10 @@ unsigned long _neverc_krt_off_uid = 0;
 
 /* ---- internal typedefs ---- */
 
-typedef void *(*neverc_krt_get_cred_fn)(const void *);
 typedef void  (*neverc_krt_put_cred_fn)(const void *);
 
 #define _NEVERC_KRT_CRED_CAP_SIZE  8
 
-static neverc_krt_get_cred_fn _neverc_krt_cred_get;
 static neverc_krt_put_cred_fn _neverc_krt_cred_put;
 static int                    _neverc_krt_cred_inited;
 static unsigned long          _neverc_krt_cred_cap_off;
@@ -63,10 +61,11 @@ int neverc_krt_cred_init(void)
 
 	neverc_krt_process_init();
 
-	_neverc_krt_cred_get =
-		(neverc_krt_get_cred_fn)NEVERC_KRT_LOOKUP("get_cred");
 	_neverc_krt_cred_put =
 		(neverc_krt_put_cred_fn)NEVERC_KRT_LOOKUP("put_cred");
+	if (!_neverc_krt_cred_put)
+		_neverc_krt_cred_put =
+			(neverc_krt_put_cred_fn)NEVERC_KRT_LOOKUP("__put_cred");
 
 	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds)
 		return -1;
@@ -90,6 +89,7 @@ static int _neverc_krt_cred_find_uid_offset(void)
 	unsigned long scan_start = _neverc_krt_cred_uid_base();
 
 	const void *cred = (void *)0;
+	int cred_ref = 0;
 	unsigned long task;
 	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
 
@@ -100,8 +100,9 @@ static int _neverc_krt_cred_find_uid_offset(void)
 					 _neverc_krt_off_cred), 8))
 			cv = 0;
 		cred = (const void *)cv;
-	} else if (_neverc_krt_get_task_cred) {
+	} else if (_neverc_krt_get_task_cred && _neverc_krt_cred_put) {
 		cred = _neverc_krt_get_task_cred((struct task_struct *)task);
+		if (cred) cred_ref = 1;
 	}
 
 	if (!cred) {
@@ -126,7 +127,7 @@ static int _neverc_krt_cred_find_uid_offset(void)
 		}
 	}
 
-	if (_neverc_krt_cred_put && _neverc_krt_get_task_cred)
+	if (cred_ref)
 		_neverc_krt_cred_put(cred);
 
 	if (!_neverc_krt_off_uid)

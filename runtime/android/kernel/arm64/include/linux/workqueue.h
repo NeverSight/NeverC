@@ -16,7 +16,7 @@ typedef void (*work_func_t)(struct work_struct *work);
  *   GKI version    sizeof(struct work_struct)
  *   ──────────────────────────────────────────
  *   5.10–6.6       48 bytes (core 32 + ANDROID_KABI_RESERVE(1)+(2) = 16)
- *   6.12           32 bytes (KABI reserves removed)
+ *   6.12–6.18      32 bytes (KABI reserves removed from work_struct)
  *
  * CONFIG_LOCKDEP is disabled in GKI production builds, so lockdep_map
  * is never present.  The kernel only accesses data/entry/func through

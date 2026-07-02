@@ -3,6 +3,7 @@
 #define _NEVERC_KRT_LINUX_CRED_H
 
 #include <linux/types.h>
+#include <nvkmod_version.h>
 
 /*
  * Opaque struct cred — layout varies across GKI versions.
@@ -56,11 +57,20 @@ typedef struct {
 
 struct cred *prepare_creds(void);
 int commit_creds(struct cred *new_cred);
+
+/*
+ * 6.18+: override_creds / revert_creds were removed from the exported
+ * kernel symbol table.  There is no exported drop-in replacement with the
+ * same temporary-override semantics; runtime helpers use prepare_creds +
+ * commit_creds for explicit credential changes instead.
+ */
+#if NEVERC_KRT_KERNEL < 618
 void abort_creds(struct cred *new_cred);
 const struct cred *get_current_cred(void);
 void put_cred(const struct cred *cred);
 const struct cred *override_creds(const struct cred *new_cred);
 void revert_creds(const struct cred *old);
+#endif
 
 #define KUIDT_INIT(v) (kuid_t){ .val = (v) }
 #define KGIDT_INIT(v) (kgid_t){ .val = (v) }

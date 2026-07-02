@@ -52,4 +52,14 @@ long neverc_krt_file_write_all(const char *path, const void *buf, size_t len);
 int neverc_krt_file_exists(const char *path);
 
 
+struct neverc_krt_file_stat {
+	long long size;
+	u32       mode;
+	u32       uid;
+	u32       gid;
+};
+
+int neverc_krt_file_stat(const char *path, struct neverc_krt_file_stat *out);
+
+
 #endif /* NEVERC_KRT_FILE_H */

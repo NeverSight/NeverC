@@ -81,26 +81,6 @@ void neverc_krt_anti_full_check(struct neverc_krt_anti_env *env);
 
 /* --- Watchdog: periodic hook integrity check with sealed storage --- */
 
-#define NEVERC_KRT_WD_MAX_HOOKS 16
-
-struct neverc_krt_watchdog_entry {
-	struct neverc_krt_hook *hook;
-	u32              sealed_orig[NEVERC_KRT_HOOK_MAX_PATCH];
-	u32              sealed_expect[NEVERC_KRT_HOOK_MAX_PATCH];
-	u32              tramp_crc;
-	int              tramp_len;
-	int              patch_count;
-};
-
-struct neverc_krt_watchdog {
-	struct neverc_krt_watchdog_entry entries[NEVERC_KRT_WD_MAX_HOOKS];
-	int                       count;
-	volatile u64              check_count;
-	volatile u64              violation_count;
-	volatile u64              tramp_violations;
-	volatile int              running;
-};
-
 int neverc_krt_wd_register(struct neverc_krt_hook *h);
 
 int neverc_krt_wd_check(void);

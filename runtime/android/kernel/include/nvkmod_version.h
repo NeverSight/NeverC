@@ -174,7 +174,11 @@
 /* Android 17, Linux 6.18 (GKI android17-6.18, launched 2025-11-30, KMI gen 5).
  * Verified from GKI android17-6.18 (release 6.18.24) via gki_defconfig +
  * modules_prepare + tools/verify_gki_offsets.sh --print.
- * struct module grew +64 bytes over 6.12: module_memory refactoring. */
+ * struct module grew +64 bytes over 6.12: module_memory refactoring.
+ *
+ * vermagic is device-specific: stock GKI uses "6.18.24-android17-5 …".
+ * OEM kernels may set CONFIG_LOCALVERSION (e.g. "-4k") — use
+ * neverc_krt_patch_vermagic() at runtime or -DNVK_VERMAGIC='"…"' at build. */
 #  ifndef NEVERC_KRT_VERMAGIC
 #    define NEVERC_KRT_VERMAGIC                                                        \
        "6.18.24-android17-5 SMP preempt mod_unload modversions aarch64"

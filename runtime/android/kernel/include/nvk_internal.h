@@ -13,6 +13,22 @@
 #include <linux/sched.h>
 #include <nvk_hook_internal.h>
 
+/* ---- ARM64 instruction constants (used by nvk_hook.c, nvk_anti.c) ---- */
+
+#define NEVERC_KRT_A64_NOP       0xD503201FU
+#define NEVERC_KRT_A64_BTI_C     0xD503245FU
+#define NEVERC_KRT_A64_BTI_JC    0xD50324DFU
+#define NEVERC_KRT_A64_PACIASP   0xD503233FU
+#define NEVERC_KRT_A64_PACIBSP   0xD503237FU
+
+#define NEVERC_KRT_A64_RET_X16   0xD65F0200U
+#define NEVERC_KRT_A64_RET_X17   0xD65F0220U
+
+/* ---- Hook engine constants (used by nvk_hook.c, nvk_anti.c) ---- */
+
+#define NEVERC_KRT_HOOK_TRAMP_CAP  64
+#define NEVERC_KRT_HOOK_STUB_CAP  128
+
 /* ---- Shared typedefs (used across multiple .c files) ---- */
 
 typedef unsigned long (*neverc_krt_copy_from_user_fn)(void *to,

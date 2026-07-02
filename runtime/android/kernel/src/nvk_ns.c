@@ -13,6 +13,7 @@ static neverc_krt_task_pid_fn           _neverc_krt_task_pid_struct;
 static neverc_krt_pid_vnr_fn            _neverc_krt_pid_vnr;
 static int                              _neverc_krt_ns_inited;
 static unsigned long                    _neverc_krt_off_nsproxy;
+static unsigned long                    _neverc_krt_off_thread_pid;
 
 int neverc_krt_ns_init(void)
 {
@@ -49,11 +50,50 @@ int neverc_krt_ns_same_pidns(struct task_struct *a, struct task_struct *b)
 	return ns_a == ns_b ? 1 : 0;
 }
 
+/*
+ * 6.18+: task_pid() was inlined.  Probe for the thread_pid field
+ * by scanning task_struct for a kernel pointer where pid_vnr()
+ * returns the expected PID of the current task.
+ */
+static void *_neverc_krt_task_pid_probe(struct task_struct *task)
+{
+	if (_neverc_krt_task_pid_struct)
+		return _neverc_krt_task_pid_struct(task);
+
+	if (!_neverc_krt_pid_vnr) return (void *)0;
+
+	if (!_neverc_krt_off_thread_pid) {
+		int cur_pid = neverc_krt_current_pid();
+		if (cur_pid <= 0) return (void *)0;
+		const unsigned char *p = (const unsigned char *)current;
+		unsigned long i;
+		for (i = 0x300; i < 0xC00; i += 8) {
+			unsigned long v;
+			if (neverc_krt_mem_read(&v, p + i, 8)) continue;
+			if (v < 0xFFFF000000000000UL ||
+			    v >= 0xFFFFFFFFFFFFF000UL)
+				continue;
+			int nr = _neverc_krt_pid_vnr((void *)v);
+			if (nr == cur_pid) {
+				_neverc_krt_off_thread_pid = i;
+				break;
+			}
+		}
+	}
+
+	if (!_neverc_krt_off_thread_pid) return (void *)0;
+
+	unsigned long v;
+	if (neverc_krt_mem_read(&v,
+			(const char *)task + _neverc_krt_off_thread_pid, 8))
+		return (void *)0;
+	return (void *)v;
+}
+
 int neverc_krt_ns_pid_in_ns(struct task_struct *task, void *target_ns)
 {
-	if (!_neverc_krt_pid_nr_ns || !_neverc_krt_task_pid_struct)
-		return -1;
-	void *pid = _neverc_krt_task_pid_struct(task);
+	if (!_neverc_krt_pid_nr_ns) return -1;
+	void *pid = _neverc_krt_task_pid_probe(task);
 	if (!pid) return -1;
 	return _neverc_krt_pid_nr_ns(pid, target_ns);
 }

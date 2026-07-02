@@ -200,6 +200,39 @@ You can also override per build with
 `vermagic` is likewise device-specific; override with `-DNVK_VERMAGIC='"…"'` to
 match your target (`cat /proc/version` / `modinfo` of an existing module).
 
+## Linux 6.18 (android17-6.18) notes
+
+Verified against GKI `6.18.24` (`gki_defconfig`, `CONFIG_COMPAT=y`):
+
+| Item | Status |
+|------|--------|
+| `struct module` offsets (`init`/`exit`/sizeof) | Verified — `376` / `1536` / `1664` |
+| `file_operations` (`mmap_prepare`, size 272) | Compile-time layout in `arm64/include/linux/fs.h` |
+| `hrtimer_setup` / `hrtimer_start_range_ns` | Runtime lookup with legacy fallbacks |
+| `vfs_fstatat` (replaces removed `vfs_stat`) | Runtime lookup |
+| `queue_delayed_work_on` + `system_wq` (inlined `schedule_delayed_work`) | Runtime fallback in `nvk_timer.c` |
+| `task_pid` inlined | `nvk_ns.c` probes `thread_pid` via `pid_vnr` |
+| `nlmsg_hdr` inlined | `nvk_netlink.c` probes `sk_buff->data` at init |
+| `execmem_alloc` / `execmem_free` | Hook pool allocator (`nvk_hook.c`) |
+| `prepare_creds` + `commit_creds` | Credential API (`override_creds`/`revert_creds` not exported) |
+
+**Not available on 6.18** (kernel removed the symbols from the export table):
+
+- **ftrace hook fallback** — `register_ftrace_function`, `unregister_ftrace_function`,
+  `ftrace_set_filter_ip` are gone. `neverc_krt_ftrace_init()` returns `-1`;
+  use inline patching or kprobes via `neverc_krt_hook_auto()`.
+- **`override_creds` / `revert_creds`** — there is no exported drop-in
+  replacement with the same temporary-override semantics. Use
+  `neverc_krt_cred_set_*` helpers for explicit credential changes; they are
+  implemented on top of exported `prepare_creds` + `commit_creds`.
+- **`abort_creds` / `get_current_cred` / `put_cred`** — present as internal
+  kernel symbols on 6.18 but not exported to modules. The runtime avoids
+  `get_task_cred` paths unless a matching release helper is available.
+
+OEM kernels with `CONFIG_LOCALVERSION` (e.g. `"-4k"`) share the same
+`struct module` layout as stock GKI but need a matching `vermagic` string —
+`neverc_krt_patch_vermagic()` patches it from `linux_banner` at load time.
+
 ## Source-level debugging
 
 NeverC embeds debug-prefix-mapped paths in the DWARF info of the kernel runtime
