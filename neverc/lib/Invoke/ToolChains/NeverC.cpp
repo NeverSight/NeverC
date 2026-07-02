@@ -3199,7 +3199,8 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(Args.MakeArgString("-crash-diagnostics-dir=" + Dir));
   }
 
-  bool UseSeparateSections = false;
+  bool UseSeparateSections = Triple.isOSBinFormatCOFF() &&
+                             areOptimizationsEnabled(Args);
 
   if (Args.hasFlag(options::OPT_ffunction_sections,
                    options::OPT_fno_function_sections, UseSeparateSections)) {

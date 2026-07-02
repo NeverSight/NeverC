@@ -1,0 +1,34 @@
+name: lint-test-deps
+
+on:
+  push:
+    paths:
+      - 'std/manifest.json'
+      - 'tests/neverc/StdLibTests.cpp'
+      - 'scripts/check-test-deps.py'
+      - '.github/workflows/lint-test-deps.yml'
+  pull_request:
+    paths:
+      - 'std/manifest.json'
+      - 'tests/neverc/StdLibTests.cpp'
+      - 'scripts/check-test-deps.py'
+      - '.github/workflows/lint-test-deps.yml'
+
+jobs:
+  check-test-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Verify StdLibTests.cpp covers manifest.json deps
+        run: |
+          python3 scripts/check-test-deps.py
+          echo ""
+          echo "If this step fails, add the missing source files to the"
+          echo "relevant STD_TEST() call in tests/neverc/StdLibTests.cpp."

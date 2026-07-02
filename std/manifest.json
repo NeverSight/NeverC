@@ -3430,6 +3430,7 @@
     "http": {
       "header": "include/neverc/std/net/http.h",
       "description": "HTTP server and client \u2014 production-grade with thread pool, event loop, keep-alive, chunked transfer, SSE, multipart (mirrors Go net/http)",
+      "deps": ["net/http2", "net/tcp", "crypto/tls"],
       "symbols": {
         "neverc_http_set_status": "src/net/http/http.c",
         "neverc_http_set_header": "src/net/http/http.c",
@@ -3576,6 +3577,7 @@
     "httputil": {
       "header": "include/neverc/std/net/http/httputil.h",
       "description": "HTTP utilities \u2014 reverse proxy and request dumping (mirrors Go net/http/httputil)",
+      "deps": ["http", "net/tcp"],
       "symbols": {
         "neverc_httputil_new_single_host_reverse_proxy": "src/net/http/httputil/httputil.c",
         "neverc_httputil_proxy_set_rewrite": "src/net/http/httputil/httputil.c",
@@ -3600,6 +3602,7 @@
     "smtp": {
       "header": "include/neverc/std/net/smtp.h",
       "description": "SMTP client \u2014 send email (mirrors Go net/smtp, RFC 5321)",
+      "deps": ["net/tcp"],
       "symbols": {
         "neverc_smtp_dial": "src/net/smtp/smtp.c",
         "neverc_smtp_close": "src/net/smtp/smtp.c",
@@ -3866,6 +3869,7 @@
     "net/websocket": {
       "header": "include/neverc/std/net/websocket.h",
       "description": "net/websocket module",
+      "deps": ["http", "net/tcp"],
       "symbols": {
         "neverc_ws_compute_accept": "src/net/websocket/websocket.c",
         "neverc_ws_conn_free": "src/net/websocket/websocket.c",
@@ -3960,6 +3964,7 @@
     "net/http2": {
       "header": "include/neverc/std/net/http2.h",
       "description": "net/http2 module",
+      "deps": ["http", "net/tcp", "crypto/tls"],
       "symbols": {
         "neverc_h2_frame_header_read": "src/net/http/http2/http2_server.c",
         "neverc_h2_frame_header_write": "src/net/http/http2/http2_server.c",
@@ -4015,6 +4020,7 @@
     "net/httptest": {
       "header": "include/neverc/std/net/httptest.h",
       "description": "net/httptest module",
+      "deps": ["http", "net/tcp"],
       "symbols": {
         "neverc_httptest_addr": "src/net/http/httptest/httptest.c",
         "neverc_httptest_close": "src/net/http/httptest/httptest.c",
