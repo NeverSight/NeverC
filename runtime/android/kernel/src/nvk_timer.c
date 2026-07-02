@@ -19,8 +19,6 @@ typedef int  (*neverc_krt_hrt_start_fn)(void *timer, s64 tim, int mode);
 typedef int  (*neverc_krt_hrt_start_range_fn)(void *timer, s64 tim,
 					      u64 delta_ns, int mode);
 typedef int  (*neverc_krt_hrt_cancel_fn)(void *timer);
-typedef s64  (*neverc_krt_ktime_set_fn)(long secs, long nsecs);
-typedef void (*neverc_krt_init_work_fn)(void *work, void *func);
 typedef int  (*neverc_krt_schedule_dw_fn)(void *dwork, unsigned long delay);
 typedef int  (*neverc_krt_qdw_on_fn)(int cpu, void *wq, void *dwork,
 				     unsigned long delay);
@@ -33,7 +31,6 @@ static neverc_krt_hrt_setup_fn       _neverc_krt_hrtimer_setup;
 static neverc_krt_hrt_start_fn       _neverc_krt_hrtimer_start;
 static neverc_krt_hrt_start_range_fn _neverc_krt_hrtimer_start_range;
 static neverc_krt_hrt_cancel_fn      _neverc_krt_hrtimer_cancel;
-static neverc_krt_init_work_fn       _neverc_krt_init_delayed_work;
 static neverc_krt_schedule_dw_fn     _neverc_krt_schedule_delayed_work;
 static neverc_krt_qdw_on_fn          _neverc_krt_qdw_on;
 static void                        **_neverc_krt_system_wq;
@@ -49,30 +46,12 @@ static neverc_krt_ktime_get_fn       _neverc_krt_ktime_get_boot;
  */
 #define _NEVERC_KRT_WORK_CPU_UNBOUND 8192
 
-static int _neverc_krt_schedule_dw_compat(void *dwork, unsigned long delay)
-{
-	if (_neverc_krt_schedule_delayed_work)
-		return _neverc_krt_schedule_delayed_work(dwork, delay);
-	if (_neverc_krt_qdw_on && _neverc_krt_system_wq && *_neverc_krt_system_wq)
-		return _neverc_krt_qdw_on(_NEVERC_KRT_WORK_CPU_UNBOUND,
-					  *_neverc_krt_system_wq, dwork, delay);
-	return -1;
-}
-
 static int _neverc_krt_hrt_trampoline(void *hrt)
 {
 	struct neverc_krt_timer *t = _neverc_krt_timer_from_storage(hrt);
 	if (t->callback)
 		t->callback(t);
 	return 0;  /* HRTIMER_NORESTART */
-}
-
-static int _neverc_krt_hrt_trampoline_repeat(void *hrt)
-{
-	struct neverc_krt_timer *t = _neverc_krt_timer_from_storage(hrt);
-	if (t->callback)
-		t->callback(t);
-	return 1;  /* HRTIMER_RESTART */
 }
 
 int neverc_krt_timer_init(void)
@@ -93,8 +72,6 @@ int neverc_krt_timer_init(void)
 			(neverc_krt_hrt_start_range_fn)NEVERC_KRT_LOOKUP("hrtimer_start_range_ns");
 	_neverc_krt_hrtimer_cancel = (neverc_krt_hrt_cancel_fn)NEVERC_KRT_LOOKUP("hrtimer_cancel");
 
-	_neverc_krt_init_delayed_work =
-		(neverc_krt_init_work_fn)NEVERC_KRT_LOOKUP("__init_work");
 	_neverc_krt_schedule_delayed_work =
 		(neverc_krt_schedule_dw_fn)NEVERC_KRT_LOOKUP("schedule_delayed_work");
 	if (!_neverc_krt_schedule_delayed_work) {
