@@ -220,29 +220,29 @@ STD_TEST(udp, "src/net/udp/udp.c")
     "src/crypto/x509/x509.c", "src/crypto/elliptic/elliptic.c", \
     "src/math/big/big.c", "src/encoding/base64/base64.c"
 
-STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
+STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
 STD_TEST(websocket, "src/net/websocket/websocket.c", "src/net/tcp/tcp.c",
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", HTTP_TLS_DEPS)
 STD_TEST(url, "src/net/url/url.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c")
 STD_TEST(textproto, "src/net/textproto/textproto.c")
 STD_TEST(httptest, "src/net/http/httptest/httptest.c",
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
 
 // ===== io_uring =====
-STD_TEST(io_uring, "src/net/tcp/tcp.c", "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", HTTP_TLS_DEPS)
+STD_TEST(io_uring, "src/net/tcp/tcp.c", "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", HTTP_TLS_DEPS)
 
 // ===== HTTP/2 =====
 STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http.c", "src/net/http/http_client.c", "src/net/tcp/tcp.c",
     HTTP_TLS_DEPS)
 
 // ===== HTTP Benchmark =====
-STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
+STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
 
 // ===== HTTP Util =====
 STD_TEST(httputil, "src/net/http/httputil/httputil.c",
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
 
 // ===== Cookie Jar =====
 STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c")
@@ -385,5 +385,6 @@ STD_TEST(dot_syntax,
     "src/net/http/http.c",
     "src/net/http/http_client.c",
     "src/net/http/http2/http2.c",
+    "src/net/http/http2/http2_server.c",
     "src/net/url/url.c",
     HTTP_TLS_DEPS)
