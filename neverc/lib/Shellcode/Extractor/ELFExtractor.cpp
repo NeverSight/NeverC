@@ -102,10 +102,12 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
     return 1;
   }
 
-  bool FoundText = false;
-  SectionRef TextSec;
-  ArrayRef<uint8_t> TextData;
-  uint64_t TextAddr = 0;
+  struct TextFragment {
+    SectionRef Section;
+    ArrayRef<uint8_t> Data;
+    uint64_t MergedOffset = 0;
+  };
+  SmallVector<TextFragment, 8> Fragments;
   for (const SectionRef &Sec : Obj.sections()) {
     auto NameOrErr = Sec.getName();
     if (!NameOrErr) {
@@ -120,17 +122,104 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
              << "': " << toString(DataOrErr.takeError()) << "\n";
       return 1;
     }
-    TextData = arrayRefFromStringRef(*DataOrErr);
-    TextAddr = Sec.getAddress();
-    TextSec = Sec;
-    FoundText = true;
-    break;
+    if (DataOrErr->empty())
+      continue;
+    Fragments.push_back({Sec, arrayRefFromStringRef(*DataOrErr), 0});
   }
-  if (!FoundText || TextData.empty()) {
+  if (Fragments.empty()) {
     errs() << "shellcode-extractor: no .text section found in '" << InputObj
            << "'\n";
     return 1;
   }
+
+  DenseMap<unsigned, unsigned> SecIdxToFrag;
+  for (unsigned I = 0; I < Fragments.size(); ++I)
+    SecIdxToFrag[Fragments[I].Section.getIndex()] = I;
+
+  bool FoundEntry = false;
+  std::string ChosenEntry;
+  for (const auto &Sym : Obj.symbols()) {
+    auto NameOrErr = Sym.getName();
+    if (!NameOrErr) {
+      consumeError(NameOrErr.takeError());
+      continue;
+    }
+    if (!isShellcodeEntryCandidate(*NameOrErr, EntrySymbol))
+      continue;
+    auto SecOrErr = Sym.getSection();
+    if (!SecOrErr) {
+      consumeError(SecOrErr.takeError());
+      continue;
+    }
+    if (*SecOrErr == Obj.section_end())
+      continue;
+    unsigned SecIdx = (*SecOrErr)->getIndex();
+    auto FIt = SecIdxToFrag.find(SecIdx);
+    if (FIt == SecIdxToFrag.end())
+      continue;
+    auto AddrOrErr = Sym.getAddress();
+    if (!AddrOrErr) {
+      consumeError(AddrOrErr.takeError());
+      continue;
+    }
+    uint64_t SecRel = *AddrOrErr - (*SecOrErr)->getAddress();
+    if (SecRel != 0) {
+      errs() << "shellcode-extractor: entry symbol '" << *NameOrErr
+             << "' is at offset " << SecRel
+             << " within its section but must be at offset 0\n";
+      return 1;
+    }
+    if (FIt->second != 0) {
+      std::swap(Fragments[0], Fragments[FIt->second]);
+      SecIdxToFrag.clear();
+      for (unsigned I = 0; I < Fragments.size(); ++I)
+        SecIdxToFrag[Fragments[I].Section.getIndex()] = I;
+    }
+    FoundEntry = true;
+    ChosenEntry = NameOrErr->str();
+    break;
+  }
+  if (!FoundEntry) {
+    errs() << "shellcode-extractor: no entry symbol (";
+    if (!EntrySymbol.empty())
+      errs() << "'" << EntrySymbol << "'";
+    else
+      errs() << defaultEntryNameList();
+    errs() << ") found in '" << InputObj << "'\n";
+    SmallVector<StringRef, 8> Candidates;
+    for (const auto &Sym : Obj.symbols()) {
+      auto NOrErr = Sym.getName();
+      if (!NOrErr)
+        continue;
+      StringRef N = *NOrErr;
+      if (N.empty() || N.starts_with(".L") ||
+          isShellcodeInternalRuntimeName(N))
+        continue;
+      Candidates.push_back(N);
+    }
+    if (!Candidates.empty()) {
+      errs() << "shellcode-extractor: defined symbols in this object:";
+      for (StringRef N : Candidates)
+        errs() << " " << N;
+      errs() << "\n";
+      errs() << "shellcode-extractor: hint: pass -fshellcode-entry=<name> "
+                "to pick one\n";
+    }
+    return 1;
+  }
+
+  uint64_t TotalSize = 0;
+  for (unsigned I = 0; I < Fragments.size(); ++I) {
+    if (I > 0)
+      TotalSize = (TotalSize + 15) & ~15ULL;
+    Fragments[I].MergedOffset = TotalSize;
+    TotalSize += Fragments[I].Data.size();
+  }
+  uint8_t PadByte = (Target.Arch == ShellcodeArch::X86_64) ? 0xCC : 0x00;
+  SmallVector<uint8_t, 256> TextBytes(TotalSize, PadByte);
+  for (auto &F : Fragments)
+    std::copy(F.Data.begin(), F.Data.end(),
+              TextBytes.begin() + F.MergedOffset);
 
   DenseMap<StringRef, uint64_t> DefinedSyms;
   for (const auto &Sym : Obj.symbols()) {
@@ -141,17 +230,32 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
     }
     if (*FlagsOrErr & BasicSymbolRef::SF_Undefined)
       continue;
+    auto NameOrErr = Sym.getName();
+    if (!NameOrErr) {
+      consumeError(NameOrErr.takeError());
+      continue;
+    }
+    auto SecOrErr = Sym.getSection();
+    if (!SecOrErr) {
+      consumeError(SecOrErr.takeError());
+      continue;
+    }
+    if (*SecOrErr == Obj.section_end())
+      continue;
+    unsigned SecIdx = (*SecOrErr)->getIndex();
+    auto FIt = SecIdxToFrag.find(SecIdx);
+    if (FIt == SecIdxToFrag.end())
+      continue;
     auto AddrOrErr = Sym.getAddress();
     if (!AddrOrErr) {
       consumeError(AddrOrErr.takeError());
       continue;
     }
-    auto NameOrErr = Sym.getName();
-    if (NameOrErr)
-      DefinedSyms[*NameOrErr] = *AddrOrErr;
+    uint64_t SecRel = *AddrOrErr - (*SecOrErr)->getAddress();
+    DefinedSyms[*NameOrErr] =
+        Fragments[FIt->second].MergedOffset + SecRel;
   }
 
-  SmallVector<uint8_t, 256> TextBytes(TextData.begin(), TextData.end());
   MutableArrayRef<uint8_t> TextView(TextBytes);
 
   unsigned External = 0;
@@ -160,8 +264,11 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
   unsigned PatchedLo12 = 0;
   unsigned PatchedX86Rel32 = 0;
 
-  SmallVector<SectionRef, 2> RelocSectionsForText;
-  unsigned TextIdx = TextSec.getIndex();
+  struct RelocSecInfo {
+    SectionRef RelocSec;
+    unsigned FragIdx;
+  };
+  SmallVector<RelocSecInfo, 4> RelocSections;
   for (const SectionRef &Sec : Obj.sections()) {
     auto RelocatedOrErr = Sec.getRelocatedSection();
     if (!RelocatedOrErr) {
@@ -170,15 +277,20 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
     }
     if (*RelocatedOrErr == Obj.section_end())
       continue;
-    if ((*RelocatedOrErr)->getIndex() == TextIdx)
-      RelocSectionsForText.push_back(Sec);
+    unsigned RelocatedIdx = (*RelocatedOrErr)->getIndex();
+    auto FIt = SecIdxToFrag.find(RelocatedIdx);
+    if (FIt != SecIdxToFrag.end())
+      RelocSections.push_back({Sec, FIt->second});
   }
-  if (RelocSectionsForText.empty())
-    RelocSectionsForText.push_back(TextSec);
+  if (RelocSections.empty()) {
+    for (unsigned I = 0; I < Fragments.size(); ++I)
+      RelocSections.push_back({Fragments[I].Section, I});
+  }
 
-  for (const SectionRef &RelocSec : RelocSectionsForText)
-    for (const RelocationRef &Reloc : RelocSec.relocations()) {
-      uint64_t RelocOff = Reloc.getOffset();
+  for (const auto &RS : RelocSections) {
+    uint64_t FragOff = Fragments[RS.FragIdx].MergedOffset;
+    for (const RelocationRef &Reloc : RS.RelocSec.relocations()) {
+      uint64_t RelocOff = Reloc.getOffset() + FragOff;
       uint64_t RelocType = Reloc.getType();
       auto SymIt = Reloc.getSymbol();
       int64_t Addend = 0;
@@ -210,20 +322,18 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
         continue;
       }
 
-      uint64_t TextEnd = TextAddr + TextBytes.size();
       int64_t FinalAddr = static_cast<int64_t>(SymAddr) + Addend;
-      if (static_cast<uint64_t>(FinalAddr) < TextAddr ||
-          static_cast<uint64_t>(FinalAddr) >= TextEnd) {
+      if (FinalAddr < 0 ||
+          static_cast<uint64_t>(FinalAddr) >= TotalSize) {
         ++External;
         errs() << "shellcode-extractor: relocation target '" << Name
                << "' at 0x";
         errs().write_hex(FinalAddr);
-        errs() << " is outside .text\n";
+        errs() << " is outside merged .text\n";
         continue;
       }
 
-      uint64_t SiteAddr = TextAddr + RelocOff;
-      int64_t PCDisp = FinalAddr - static_cast<int64_t>(SiteAddr);
+      int64_t PCDisp = FinalAddr - static_cast<int64_t>(RelocOff);
 
       if (Target.Arch == ShellcodeArch::AArch64) {
         switch (RelocType) {
@@ -240,7 +350,7 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
           break;
         case ELF::R_AARCH64_ADR_PREL_PG_HI21:
         case ELF::R_AARCH64_ADR_PREL_PG_HI21_NC:
-          if (!patchArm64Page21(TextView, RelocOff, FinalAddr, SiteAddr)) {
+          if (!patchArm64Page21(TextView, RelocOff, FinalAddr, RelocOff)) {
             ++External;
             errs() << "shellcode-extractor: cannot patch adrp at 0x";
             errs().write_hex(RelocOff);
@@ -342,6 +452,7 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
                << archName(Target.Arch) << "\n";
       }
     }
+  }
 
   if (External > 0) {
     errs() << "shellcode-extractor: " << External
@@ -372,50 +483,6 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
     }
   }
 
-  bool FoundEntry = false;
-  std::string ChosenEntry;
-  for (const auto &Sym : Obj.symbols()) {
-    auto NameOrErr = Sym.getName();
-    if (!NameOrErr) {
-      consumeError(NameOrErr.takeError());
-      continue;
-    }
-    StringRef Name = *NameOrErr;
-    StringRef Bare = stripLeadingUnderscore(Name);
-    bool IsCandidate = false;
-    if (!EntrySymbol.empty()) {
-      StringRef WantBare = stripLeadingUnderscore(EntrySymbol);
-      IsCandidate = (Bare == WantBare || Name == EntrySymbol);
-    } else {
-      IsCandidate = isDefaultEntryName(Bare);
-    }
-    if (!IsCandidate)
-      continue;
-    auto AddrOrErr = Sym.getAddress();
-    if (!AddrOrErr) {
-      consumeError(AddrOrErr.takeError());
-      continue;
-    }
-    uint64_t Offset = *AddrOrErr - TextAddr;
-    if (Offset != 0) {
-      errs() << "shellcode-extractor: entry symbol '" << Name
-             << "' is at offset " << Offset << " but must be at offset 0\n";
-      return 1;
-    }
-    FoundEntry = true;
-    ChosenEntry = Name.str();
-    break;
-  }
-  if (!FoundEntry) {
-    errs() << "shellcode-extractor: no entry symbol (";
-    if (!EntrySymbol.empty())
-      errs() << "'" << EntrySymbol << "'";
-    else
-      errs() << defaultEntryNameList();
-    errs() << ") found in '" << InputObj << "'\n";
-    return 1;
-  }
-
   if (int Rc = finalizeShellcodeBytes(TextBytes, Opts))
     return Rc;
 
@@ -438,6 +505,9 @@ int extractELF(StringRef InputObj, StringRef OutputBin,
            << OutputBin << "'\n";
     errs() << "shellcode-extractor: target   = " << triplePrettyName(Target)
            << " (ELF)\n";
+    if (Fragments.size() > 1)
+      errs() << "shellcode-extractor: merged " << Fragments.size()
+             << " .text sections\n";
     errs() << "shellcode-extractor: entry symbol = " << ChosenEntry << "\n";
     if (Target.Arch == ShellcodeArch::AArch64) {
       errs() << "shellcode-extractor: patched " << PatchedBranch

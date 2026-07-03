@@ -3200,7 +3200,8 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   bool UseSeparateSections = Triple.isOSBinFormatCOFF() &&
-                             areOptimizationsEnabled(Args);
+                             areOptimizationsEnabled(Args) &&
+                             !Args.hasArg(options::OPT_fshellcode_mode);
 
   if (Args.hasFlag(options::OPT_ffunction_sections,
                    options::OPT_fno_function_sections, UseSeparateSections)) {

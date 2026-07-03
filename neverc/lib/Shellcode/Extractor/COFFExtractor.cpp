@@ -115,38 +115,124 @@ int extractCOFF(StringRef InputObj, StringRef OutputBin,
     return 1;
   }
 
-  bool FoundText = false;
-  SectionRef TextSec;
-  ArrayRef<uint8_t> TextData;
-  uint64_t TextAddr = 0;
+  struct TextFragment {
+    SectionRef Section;
+    ArrayRef<uint8_t> Data;
+    uint64_t MergedOffset = 0;
+  };
+  SmallVector<TextFragment, 8> Fragments;
   for (const SectionRef &Sec : Obj->sections()) {
     auto NameOrErr = Sec.getName();
     if (!NameOrErr) {
       consumeError(NameOrErr.takeError());
       continue;
     }
-    StringRef N = *NameOrErr;
-    if (!isTextSection(Target, N))
+    if (!isTextSection(Target, *NameOrErr))
       continue;
     auto DataOrErr = Sec.getContents();
     if (!DataOrErr) {
-      errs() << "shellcode-extractor: cannot read text section '" << N
+      errs() << "shellcode-extractor: cannot read text section '" << *NameOrErr
              << "': " << toString(DataOrErr.takeError()) << "\n";
       return 1;
     }
     if (DataOrErr->empty())
       continue;
-    TextData = arrayRefFromStringRef(*DataOrErr);
-    TextAddr = Sec.getAddress();
-    TextSec = Sec;
-    FoundText = true;
-    break;
+    Fragments.push_back({Sec, arrayRefFromStringRef(*DataOrErr), 0});
   }
-  if (!FoundText || TextData.empty()) {
+  if (Fragments.empty()) {
     errs() << "shellcode-extractor: no .text section found in '" << InputObj
            << "'\n";
     return 1;
   }
+
+  DenseMap<unsigned, unsigned> SecIdxToFrag;
+  for (unsigned I = 0; I < Fragments.size(); ++I)
+    SecIdxToFrag[Fragments[I].Section.getIndex()] = I;
+
+  bool FoundEntry = false;
+  std::string ChosenEntry;
+  for (const auto &Sym : Obj->symbols()) {
+    auto NameOrErr = Sym.getName();
+    if (!NameOrErr) {
+      consumeError(NameOrErr.takeError());
+      continue;
+    }
+    if (!isShellcodeEntryCandidate(*NameOrErr, EntrySymbol))
+      continue;
+    auto SecOrErr = Sym.getSection();
+    if (!SecOrErr) {
+      consumeError(SecOrErr.takeError());
+      continue;
+    }
+    if (*SecOrErr == Obj->section_end())
+      continue;
+    unsigned SecIdx = (*SecOrErr)->getIndex();
+    auto FIt = SecIdxToFrag.find(SecIdx);
+    if (FIt == SecIdxToFrag.end())
+      continue;
+    auto AddrOrErr = Sym.getAddress();
+    if (!AddrOrErr) {
+      consumeError(AddrOrErr.takeError());
+      continue;
+    }
+    uint64_t SecRel = *AddrOrErr - (*SecOrErr)->getAddress();
+    if (SecRel != 0) {
+      errs() << "shellcode-extractor: entry symbol '" << *NameOrErr
+             << "' is at offset " << SecRel
+             << " within its section but must be at offset 0\n";
+      return 1;
+    }
+    if (FIt->second != 0) {
+      std::swap(Fragments[0], Fragments[FIt->second]);
+      SecIdxToFrag.clear();
+      for (unsigned I = 0; I < Fragments.size(); ++I)
+        SecIdxToFrag[Fragments[I].Section.getIndex()] = I;
+    }
+    FoundEntry = true;
+    ChosenEntry = NameOrErr->str();
+    break;
+  }
+  if (!FoundEntry) {
+    errs() << "shellcode-extractor: no entry symbol (";
+    if (!EntrySymbol.empty())
+      errs() << "'" << EntrySymbol << "'";
+    else
+      errs() << defaultEntryNameList();
+    errs() << ") found in '" << InputObj << "'\n";
+    SmallVector<StringRef, 8> Candidates;
+    for (const auto &Sym : Obj->symbols()) {
+      auto NOrErr = Sym.getName();
+      if (!NOrErr)
+        continue;
+      StringRef N = *NOrErr;
+      if (N.empty() || N.starts_with(".") ||
+          isShellcodeInternalRuntimeName(N))
+        continue;
+      Candidates.push_back(N);
+    }
+    if (!Candidates.empty()) {
+      errs() << "shellcode-extractor: defined symbols in this object:";
+      for (StringRef N : Candidates)
+        errs() << " " << N;
+      errs() << "\n";
+      errs() << "shellcode-extractor: hint: pass -fshellcode-entry=<name> "
+                "to pick one\n";
+    }
+    return 1;
+  }
+
+  uint64_t TotalSize = 0;
+  for (unsigned I = 0; I < Fragments.size(); ++I) {
+    if (I > 0)
+      TotalSize = (TotalSize + 15) & ~15ULL;
+    Fragments[I].MergedOffset = TotalSize;
+    TotalSize += Fragments[I].Data.size();
+  }
+  uint8_t PadByte = (Target.Arch == ShellcodeArch::X86_64) ? 0xCC : 0x00;
+  SmallVector<uint8_t, 256> TextBytes(TotalSize, PadByte);
+  for (auto &F : Fragments)
+    std::copy(F.Data.begin(), F.Data.end(),
+              TextBytes.begin() + F.MergedOffset);
 
   DenseMap<StringRef, uint64_t> DefinedSyms;
   for (const auto &Sym : Obj->symbols()) {
@@ -157,17 +243,32 @@ int extractCOFF(StringRef InputObj, StringRef OutputBin,
     }
     if (*FlagsOrErr & BasicSymbolRef::SF_Undefined)
       continue;
+    auto NameOrErr = Sym.getName();
+    if (!NameOrErr) {
+      consumeError(NameOrErr.takeError());
+      continue;
+    }
+    auto SecOrErr = Sym.getSection();
+    if (!SecOrErr) {
+      consumeError(SecOrErr.takeError());
+      continue;
+    }
+    if (*SecOrErr == Obj->section_end())
+      continue;
+    unsigned SecIdx = (*SecOrErr)->getIndex();
+    auto FIt = SecIdxToFrag.find(SecIdx);
+    if (FIt == SecIdxToFrag.end())
+      continue;
     auto AddrOrErr = Sym.getAddress();
     if (!AddrOrErr) {
       consumeError(AddrOrErr.takeError());
       continue;
     }
-    auto NameOrErr = Sym.getName();
-    if (NameOrErr)
-      DefinedSyms[*NameOrErr] = *AddrOrErr;
+    uint64_t SecRel = *AddrOrErr - (*SecOrErr)->getAddress();
+    DefinedSyms[*NameOrErr] =
+        Fragments[FIt->second].MergedOffset + SecRel;
   }
 
-  SmallVector<uint8_t, 256> TextBytes(TextData.begin(), TextData.end());
   MutableArrayRef<uint8_t> TextView(TextBytes);
 
   unsigned External = 0;
@@ -176,128 +277,129 @@ int extractCOFF(StringRef InputObj, StringRef OutputBin,
   unsigned PatchedLo12 = 0;
   unsigned PatchedRel32 = 0;
 
-  for (const RelocationRef &Reloc : TextSec.relocations()) {
-    uint16_t Type = static_cast<uint16_t>(Reloc.getType());
-    uint64_t RelocOff = Reloc.getOffset();
-    auto SymIt = Reloc.getSymbol();
+  for (auto &Frag : Fragments) {
+    for (const RelocationRef &Reloc : Frag.Section.relocations()) {
+      uint16_t Type = static_cast<uint16_t>(Reloc.getType());
+      uint64_t RelocOff = Reloc.getOffset() + Frag.MergedOffset;
+      auto SymIt = Reloc.getSymbol();
 
-    StringRef Name = "<unknown>";
-    bool IsDefined = false;
-    uint64_t SymAddr = 0;
-    if (SymIt != Obj->symbol_end()) {
-      if (auto N = SymIt->getName()) {
-        Name = *N;
-        auto It = DefinedSyms.find(Name);
-        if (It != DefinedSyms.end()) {
-          IsDefined = true;
-          SymAddr = It->second;
+      StringRef Name = "<unknown>";
+      bool IsDefined = false;
+      uint64_t SymAddr = 0;
+      if (SymIt != Obj->symbol_end()) {
+        if (auto N = SymIt->getName()) {
+          Name = *N;
+          auto It = DefinedSyms.find(Name);
+          if (It != DefinedSyms.end()) {
+            IsDefined = true;
+            SymAddr = It->second;
+          }
         }
       }
-    }
 
-    if (!IsDefined) {
-      ++External;
-      const char *RelName = Target.Arch == ShellcodeArch::AArch64
-                                ? coffArm64RelName(Type)
-                                : coffAmd64RelName(Type);
-      errs() << "shellcode-extractor: unresolved relocation referencing '"
-             << Name << "' (" << RelName << ")\n";
-      printExternHint(errs(), Target, Name);
-      continue;
-    }
-
-    uint64_t TextEnd = TextAddr + TextBytes.size();
-    if (SymAddr < TextAddr || SymAddr >= TextEnd) {
-      ++External;
-      errs() << "shellcode-extractor: relocation target '" << Name << "' at 0x";
-      errs().write_hex(SymAddr);
-      errs() << " is outside .text\n";
-      continue;
-    }
-    uint64_t SiteAddr = TextAddr + RelocOff;
-    int64_t PCDisp =
-        static_cast<int64_t>(SymAddr) - static_cast<int64_t>(SiteAddr);
-
-    if (Target.Arch == ShellcodeArch::X86_64) {
-      switch (Type) {
-      case COFF::IMAGE_REL_AMD64_REL32:
-      case COFF::IMAGE_REL_AMD64_REL32_1:
-      case COFF::IMAGE_REL_AMD64_REL32_2:
-      case COFF::IMAGE_REL_AMD64_REL32_3:
-      case COFF::IMAGE_REL_AMD64_REL32_4:
-      case COFF::IMAGE_REL_AMD64_REL32_5: {
-        int Extra = static_cast<int>(Type - COFF::IMAGE_REL_AMD64_REL32);
-        int64_t Disp = PCDisp - 4 - Extra;
-        if (!patchRel32(TextView, RelocOff, Disp)) {
-          ++External;
-          continue;
-        }
-        ++PatchedRel32;
-        break;
-      }
-      default: {
+      if (!IsDefined) {
         ++External;
-        errs() << "shellcode-extractor: unsupported intra-.text relocation "
-               << coffAmd64RelName(Type) << " at 0x";
-        errs().write_hex(RelocOff);
-        errs() << " referencing '" << Name << "'\n";
-        break;
+        const char *RelName = Target.Arch == ShellcodeArch::AArch64
+                                  ? coffArm64RelName(Type)
+                                  : coffAmd64RelName(Type);
+        errs() << "shellcode-extractor: unresolved relocation referencing '"
+               << Name << "' (" << RelName << ")\n";
+        printExternHint(errs(), Target, Name);
+        continue;
       }
-      }
-    } else if (Target.Arch == ShellcodeArch::AArch64) {
-      switch (Type) {
-      case COFF::IMAGE_REL_ARM64_BRANCH26:
-        if (!patchArm64Branch26(TextView, RelocOff, PCDisp)) {
-          ++External;
-          continue;
-        }
-        ++PatchedBranch;
-        break;
-      case COFF::IMAGE_REL_ARM64_PAGEBASE_REL21:
-        if (!patchArm64Page21(TextView, RelocOff, static_cast<int64_t>(SymAddr),
-                              SiteAddr)) {
-          ++External;
-          continue;
-        }
-        ++PatchedPage21;
-        break;
-      case COFF::IMAGE_REL_ARM64_PAGEOFFSET_12A:
-        if (!patchArm64Lo12AutoShift(TextView, RelocOff, SymAddr,
-                                     /*IsLdSt=*/false)) {
-          ++External;
-          continue;
-        }
-        ++PatchedLo12;
-        break;
-      case COFF::IMAGE_REL_ARM64_PAGEOFFSET_12L:
-        if (!patchArm64Lo12AutoShift(TextView, RelocOff, SymAddr,
-                                     /*IsLdSt=*/true)) {
-          ++External;
-          continue;
-        }
-        ++PatchedLo12;
-        break;
-      case COFF::IMAGE_REL_ARM64_REL32: {
-        if (!patchRel32(TextView, RelocOff, PCDisp - 4)) {
-          ++External;
-          continue;
-        }
-        ++PatchedRel32;
-        break;
-      }
-      default: {
+
+      if (SymAddr >= TotalSize) {
         ++External;
-        errs() << "shellcode-extractor: unsupported intra-.text relocation "
-               << coffArm64RelName(Type) << " at 0x";
-        errs().write_hex(RelocOff);
-        errs() << " referencing '" << Name << "'\n";
-        break;
+        errs() << "shellcode-extractor: relocation target '" << Name
+               << "' at 0x";
+        errs().write_hex(SymAddr);
+        errs() << " is outside merged .text\n";
+        continue;
       }
+      int64_t PCDisp =
+          static_cast<int64_t>(SymAddr) - static_cast<int64_t>(RelocOff);
+
+      if (Target.Arch == ShellcodeArch::X86_64) {
+        switch (Type) {
+        case COFF::IMAGE_REL_AMD64_REL32:
+        case COFF::IMAGE_REL_AMD64_REL32_1:
+        case COFF::IMAGE_REL_AMD64_REL32_2:
+        case COFF::IMAGE_REL_AMD64_REL32_3:
+        case COFF::IMAGE_REL_AMD64_REL32_4:
+        case COFF::IMAGE_REL_AMD64_REL32_5: {
+          int Extra = static_cast<int>(Type - COFF::IMAGE_REL_AMD64_REL32);
+          int64_t Disp = PCDisp - 4 - Extra;
+          if (!patchRel32(TextView, RelocOff, Disp)) {
+            ++External;
+            continue;
+          }
+          ++PatchedRel32;
+          break;
+        }
+        default: {
+          ++External;
+          errs() << "shellcode-extractor: unsupported intra-.text relocation "
+                 << coffAmd64RelName(Type) << " at 0x";
+          errs().write_hex(RelocOff);
+          errs() << " referencing '" << Name << "'\n";
+          break;
+        }
+        }
+      } else if (Target.Arch == ShellcodeArch::AArch64) {
+        switch (Type) {
+        case COFF::IMAGE_REL_ARM64_BRANCH26:
+          if (!patchArm64Branch26(TextView, RelocOff, PCDisp)) {
+            ++External;
+            continue;
+          }
+          ++PatchedBranch;
+          break;
+        case COFF::IMAGE_REL_ARM64_PAGEBASE_REL21:
+          if (!patchArm64Page21(TextView, RelocOff,
+                                static_cast<int64_t>(SymAddr), RelocOff)) {
+            ++External;
+            continue;
+          }
+          ++PatchedPage21;
+          break;
+        case COFF::IMAGE_REL_ARM64_PAGEOFFSET_12A:
+          if (!patchArm64Lo12AutoShift(TextView, RelocOff, SymAddr,
+                                       /*IsLdSt=*/false)) {
+            ++External;
+            continue;
+          }
+          ++PatchedLo12;
+          break;
+        case COFF::IMAGE_REL_ARM64_PAGEOFFSET_12L:
+          if (!patchArm64Lo12AutoShift(TextView, RelocOff, SymAddr,
+                                       /*IsLdSt=*/true)) {
+            ++External;
+            continue;
+          }
+          ++PatchedLo12;
+          break;
+        case COFF::IMAGE_REL_ARM64_REL32: {
+          if (!patchRel32(TextView, RelocOff, PCDisp - 4)) {
+            ++External;
+            continue;
+          }
+          ++PatchedRel32;
+          break;
+        }
+        default: {
+          ++External;
+          errs() << "shellcode-extractor: unsupported intra-.text relocation "
+                 << coffArm64RelName(Type) << " at 0x";
+          errs().write_hex(RelocOff);
+          errs() << " referencing '" << Name << "'\n";
+          break;
+        }
+        }
+      } else {
+        ++External;
+        errs() << "shellcode-extractor: COFF extraction not implemented for "
+               << archName(Target.Arch) << "\n";
       }
-    } else {
-      ++External;
-      errs() << "shellcode-extractor: COFF extraction not implemented for "
-             << archName(Target.Arch) << "\n";
     }
   }
 
@@ -330,50 +432,6 @@ int extractCOFF(StringRef InputObj, StringRef OutputBin,
     }
   }
 
-  bool FoundEntry = false;
-  std::string ChosenEntry;
-  for (const auto &Sym : Obj->symbols()) {
-    auto NameOrErr = Sym.getName();
-    if (!NameOrErr) {
-      consumeError(NameOrErr.takeError());
-      continue;
-    }
-    StringRef Name = *NameOrErr;
-    StringRef Bare = stripLeadingUnderscore(Name);
-    bool IsCandidate = false;
-    if (!EntrySymbol.empty()) {
-      StringRef WantBare = stripLeadingUnderscore(EntrySymbol);
-      IsCandidate = (Bare == WantBare || Name == EntrySymbol);
-    } else {
-      IsCandidate = isDefaultEntryName(Bare);
-    }
-    if (!IsCandidate)
-      continue;
-    auto AddrOrErr = Sym.getAddress();
-    if (!AddrOrErr) {
-      consumeError(AddrOrErr.takeError());
-      continue;
-    }
-    uint64_t Offset = *AddrOrErr - TextAddr;
-    if (Offset != 0) {
-      errs() << "shellcode-extractor: entry symbol '" << Name
-             << "' is at offset " << Offset << " but must be at offset 0\n";
-      return 1;
-    }
-    FoundEntry = true;
-    ChosenEntry = Name.str();
-    break;
-  }
-  if (!FoundEntry) {
-    errs() << "shellcode-extractor: no entry symbol (";
-    if (!EntrySymbol.empty())
-      errs() << "'" << EntrySymbol << "'";
-    else
-      errs() << defaultEntryNameList();
-    errs() << ") found in '" << InputObj << "'\n";
-    return 1;
-  }
-
   if (int Rc = finalizeShellcodeBytes(TextBytes, Opts))
     return Rc;
 
@@ -396,6 +454,9 @@ int extractCOFF(StringRef InputObj, StringRef OutputBin,
            << OutputBin << "'\n";
     errs() << "shellcode-extractor: target   = " << triplePrettyName(Target)
            << " (COFF)\n";
+    if (Fragments.size() > 1)
+      errs() << "shellcode-extractor: merged " << Fragments.size()
+             << " .text sections\n";
     errs() << "shellcode-extractor: entry symbol = " << ChosenEntry << "\n";
     if (Target.Arch == ShellcodeArch::AArch64) {
       errs() << "shellcode-extractor: patched " << PatchedBranch
