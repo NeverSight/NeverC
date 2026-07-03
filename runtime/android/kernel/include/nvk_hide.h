@@ -67,7 +67,6 @@ int neverc_krt_pid_hide_install(void);
 int neverc_krt_pid_should_hide(int pid);
 void neverc_krt_pid_hide_cleanup(void);
 
-
 /* --- /proc/mounts path filter --- */
 
 #define NEVERC_KRT_MOUNT_FILTER_MAX 8
@@ -76,7 +75,6 @@ void neverc_krt_pid_hide_cleanup(void);
 int neverc_krt_mount_filter_add(const char *path);
 int neverc_krt_mount_filter_install(void);
 void neverc_krt_mount_filter_cleanup(void);
-
 
 /* --- /proc/pid/maps module region filter --- */
 
@@ -92,11 +90,9 @@ void neverc_krt_mod_wipe_modinfo(struct neverc_krt_this_module *mod);
 void neverc_krt_hide_pause_hooks(void);
 void neverc_krt_hide_remove_hooks(void);
 
-
 /* --- /proc/vmallocinfo filter --- */
 
 int neverc_krt_mod_vmalloc_filter(void);
-
 
 /* --- dmesg / kmsg log suppression --- */
 
@@ -110,18 +106,15 @@ void neverc_krt_dmesg_suppress_cleanup(void);
 int neverc_krt_kmsg_read_filter_install(void);
 void neverc_krt_kmsg_read_filter_cleanup(void);
 
-
 /* --- /proc/pid/status UID spoofing --- */
 
 int neverc_krt_proc_status_filter_install(u32 fake_uid, u32 fake_gid);
 void neverc_krt_proc_status_filter_cleanup(void);
 
-
 /* --- /proc/pid/attr SELinux context filter --- */
 
 int neverc_krt_proc_attr_filter_install(const char *fake_context);
 void neverc_krt_proc_attr_filter_cleanup(void);
-
 
 /* --- /proc/net/tcp{,6} port hiding --- */
 
@@ -131,7 +124,6 @@ int neverc_krt_net_hide_add_port(u16 port);
 int neverc_krt_net_hide_install(void);
 void neverc_krt_net_hide_cleanup(void);
 
-
 /* --- /proc/pid/cmdline content filter --- */
 
 #define NEVERC_KRT_CMDLINE_FILTER_MAX 4
@@ -140,7 +132,6 @@ void neverc_krt_net_hide_cleanup(void);
 int neverc_krt_cmdline_filter_add(const char *keyword);
 int neverc_krt_cmdline_filter_install(void);
 void neverc_krt_cmdline_filter_cleanup(void);
-
 
 /* --- File read interception (build.prop, /proc/version spoofing) --- */
 
@@ -154,6 +145,5 @@ int neverc_krt_file_spoof_add(const char *path,
 
 int neverc_krt_file_spoof_install(void);
 void neverc_krt_file_spoof_cleanup(void);
-
 
 #endif /* NEVERC_KRT_HIDE_H */

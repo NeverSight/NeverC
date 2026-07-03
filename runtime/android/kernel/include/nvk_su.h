@@ -30,31 +30,14 @@ struct neverc_krt_su_manager {
 };
 
 void neverc_krt_su_init(u64 master_key);
-
-
 int neverc_krt_su_grant(u32 uid, u32 flags, u64 token, u64 ttl_ns);
-
-
 int neverc_krt_su_revoke(u32 uid);
-
-
 void neverc_krt_su_revoke_all(void);
-
-
 u32 neverc_krt_su_check(u32 uid);
-
-
 int neverc_krt_su_check_token(u32 uid, u64 token);
-
-
 int neverc_krt_su_elevate(u32 uid, u64 token);
-
-
 int neverc_krt_su_drop(void);
-
-
 int neverc_krt_su_active_count(void);
-
 
 struct neverc_krt_su_stats {
 	u64 total_grants;
@@ -63,9 +46,6 @@ struct neverc_krt_su_stats {
 };
 
 void neverc_krt_su_get_stats(struct neverc_krt_su_stats *out);
-
-
 int neverc_krt_su_elevate_pid(int pid, u32 target_uid, u32 target_gid);
-
 
 #endif /* NEVERC_KRT_SU_H */

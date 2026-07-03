@@ -16,7 +16,8 @@ struct rw_semaphore {
 _Static_assert(sizeof(struct rw_semaphore) >= 64,
 	       "struct rw_semaphore too small for GKI with ANDROID_VENDOR_OEM_DATA");
 
-void init_rwsem(struct rw_semaphore *sem);
+void __init_rwsem(struct rw_semaphore *sem, const char *name, void *key);
+#define init_rwsem(sem) __init_rwsem(sem, "?", (void *)0)
 void down_read(struct rw_semaphore *sem);
 int down_read_trylock(struct rw_semaphore *sem);
 void up_read(struct rw_semaphore *sem);

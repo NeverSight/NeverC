@@ -5,6 +5,7 @@
 #include <linux/types.h>
 #include <linux/list.h>
 #include <linux/compiler.h>
+#include <nvkmod_version.h>
 
 struct workqueue_struct; /* opaque */
 
@@ -34,8 +35,8 @@ struct work_struct {
  * work_struct KABI padding and timer_list size differ.
  * Use opaque storage sized for the largest variant (5.10 with KABI).
  *
- * Prefer neverc_krt_timer / neverc_krt_delayed_work from nvk_timer.h
- * for cross-version portable timer functionality.
+ * Prefer neverc_krt_timer from nvk_timer.h for cross-version portable
+ * timer functionality.
  */
 struct delayed_work {
 	unsigned char __opaque[192];
@@ -71,8 +72,20 @@ struct delayed_work {
 #define WQ_HIGHPRI       (1 << 4)
 #define WQ_CPU_INTENSIVE (1 << 5)
 
+/*
+ * 6.18+ renamed alloc_workqueue to alloc_workqueue_noprof.
+ * The macro below provides source-level compat for both.
+ */
+#if NEVERC_KRT_KERNEL >= 618
+struct workqueue_struct *alloc_workqueue_noprof(const char *fmt,
+					       unsigned int flags,
+					       int max_active, ...);
+#define alloc_workqueue(...) alloc_workqueue_noprof(__VA_ARGS__)
+#else
 struct workqueue_struct *alloc_workqueue(const char *fmt, unsigned int flags,
 					int max_active, ...);
+#endif
+
 void destroy_workqueue(struct workqueue_struct *wq);
 
 #define create_singlethread_workqueue(name)                                   \
@@ -81,20 +94,74 @@ void destroy_workqueue(struct workqueue_struct *wq);
 #define create_workqueue(name)                                                \
 	alloc_workqueue("%s", WQ_MEM_RECLAIM, 1, (name))
 
-bool queue_work(struct workqueue_struct *wq, struct work_struct *work);
-bool queue_delayed_work(struct workqueue_struct *wq,
-			struct delayed_work *dwork, unsigned long delay);
+/*
+ * queue_work, schedule_work, queue_delayed_work, schedule_delayed_work,
+ * mod_delayed_work are inline wrappers in ALL GKI kernels (5.10–6.18).
+ * Only the *_on variants are real exports.
+ *
+ * WORK_CPU_UNBOUND = NR_CPUS in the kernel.  Any value >= nr_cpu_ids
+ * triggers the unbound path in __queue_work.  8192 is safe for all
+ * GKI configs (NR_CPUS ≤ 256 on 5.10–6.12, ≤ 32 on 6.18).
+ */
+#define _NEVERC_KRT_WORK_CPU_UNBOUND 8192
 
-bool schedule_work(struct work_struct *work);
-bool schedule_delayed_work(struct delayed_work *dwork, unsigned long delay);
+extern struct workqueue_struct *system_wq;
+
+bool queue_work_on(int cpu, struct workqueue_struct *wq,
+		   struct work_struct *work);
+bool queue_delayed_work_on(int cpu, struct workqueue_struct *wq,
+			   struct delayed_work *dwork, unsigned long delay);
+bool mod_delayed_work_on(int cpu, struct workqueue_struct *wq,
+			 struct delayed_work *dwork, unsigned long delay);
+
+__always_inline bool
+queue_work(struct workqueue_struct *wq, struct work_struct *work)
+{
+	return queue_work_on(_NEVERC_KRT_WORK_CPU_UNBOUND, wq, work);
+}
+
+__always_inline bool schedule_work(struct work_struct *work)
+{
+	return queue_work_on(_NEVERC_KRT_WORK_CPU_UNBOUND, system_wq, work);
+}
+
+__always_inline bool
+queue_delayed_work(struct workqueue_struct *wq,
+		   struct delayed_work *dwork, unsigned long delay)
+{
+	return queue_delayed_work_on(_NEVERC_KRT_WORK_CPU_UNBOUND,
+				     wq, dwork, delay);
+}
+
+__always_inline bool
+schedule_delayed_work(struct delayed_work *dwork, unsigned long delay)
+{
+	return queue_delayed_work_on(_NEVERC_KRT_WORK_CPU_UNBOUND,
+				     system_wq, dwork, delay);
+}
+
+__always_inline bool
+mod_delayed_work(struct workqueue_struct *wq,
+		 struct delayed_work *dwork, unsigned long delay)
+{
+	return mod_delayed_work_on(_NEVERC_KRT_WORK_CPU_UNBOUND,
+				   wq, dwork, delay);
+}
 
 bool cancel_work_sync(struct work_struct *work);
 bool cancel_delayed_work(struct delayed_work *dwork);
 bool cancel_delayed_work_sync(struct delayed_work *dwork);
 void flush_work(struct work_struct *work);
-void flush_workqueue(struct workqueue_struct *wq);
 
-bool mod_delayed_work(struct workqueue_struct *wq,
-		      struct delayed_work *dwork, unsigned long delay);
+/*
+ * 5.10–5.15: flush_workqueue exported directly.
+ * 6.1+:      renamed to __flush_workqueue.
+ */
+#if NEVERC_KRT_KERNEL >= 601
+void __flush_workqueue(struct workqueue_struct *wq);
+#define flush_workqueue(wq) __flush_workqueue(wq)
+#else
+void flush_workqueue(struct workqueue_struct *wq);
+#endif
 
 #endif /* _NEVERC_KRT_LINUX_WORKQUEUE_H */

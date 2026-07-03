@@ -22,7 +22,6 @@
 
 int neverc_krt_kp_stub(struct kprobe *p, void *regs);
 
-
 /*
  * Resolve a kernel symbol via kprobe — register, grab kp.addr, unregister.
  * Works for both code and data symbols: register_kprobe sets kp.addr via the
@@ -32,7 +31,6 @@ int neverc_krt_kp_stub(struct kprobe *p, void *regs);
  */
 void *neverc_krt_kprobe_lookup(const char *name);
 
-
 #define NEVERC_KRT_KPROBE_LOOKUP(sym) neverc_krt_kprobe_lookup(NC_XORSTR(sym))
 
 /*
@@ -41,7 +39,6 @@ void *neverc_krt_kprobe_lookup(const char *name);
  * kallsyms_lookup_name is stubbed (CFI/GKI).
  */
 unsigned long neverc_krt_kprobe_resolve_sym(const char *name);
-
 
 /*
  * Detect a CFI/GKI no-op stub or a trivial return-0 function.
@@ -63,10 +60,7 @@ int neverc_krt_is_stub(void *addr);
  *               only if it is a stub.
  */
 int neverc_krt_ksym_bootstrap(int cfi);
-
-
 int neverc_krt_log_bootstrap(void);
-
 
 #define NEVERC_KRT_BOOTSTRAP()       _neverc_krt_do_bootstrap(1)
 #define NEVERC_KRT_BOOTSTRAP_EX(cfi) _neverc_krt_do_bootstrap(cfi)

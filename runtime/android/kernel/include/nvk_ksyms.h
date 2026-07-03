@@ -12,24 +12,13 @@ typedef int (*neverc_krt_ksym_callback_t)(const char *name, unsigned long addr,
 				   void *data);
 
 int neverc_krt_ksyms_walk(neverc_krt_ksym_callback_t cb, void *data, int max);
-
-
 int neverc_krt_ksyms_for_each(neverc_krt_ksym_callback_t cb, void *data);
-
-
 int neverc_krt_ksyms_resolve(const char *name, unsigned long *out_addr);
-
-
 int neverc_krt_ksyms_name(unsigned long addr, char *buf, int buflen);
-
-
 int neverc_krt_ksyms_find_prefix(const char *prefix,
 				 unsigned long *out, int max_results);
-
-
 int neverc_krt_ksyms_find_in_range(unsigned long start, unsigned long end,
 				   const char *name);
-
 
 struct neverc_krt_ksym_info {
 	unsigned long addr;
@@ -39,11 +28,7 @@ struct neverc_krt_ksym_info {
 };
 
 int neverc_krt_ksyms_info(unsigned long addr, struct neverc_krt_ksym_info *info);
-
-
 unsigned long neverc_krt_ksyms_func_size(const char *name);
-
-
 
 /*
  * Direct kallsyms binary data parser.
@@ -65,12 +50,10 @@ unsigned long neverc_krt_ksyms_func_size(const char *name);
 
 unsigned long neverc_krt_ksyms_raw_lookup(const char *name);
 
-
 typedef int (*neverc_krt_raw_sym_callback_t)(const char *name, unsigned long addr,
 				      char type, void *data);
 
 int neverc_krt_ksyms_raw_walk(neverc_krt_raw_sym_callback_t cb, void *data, int max);
-
 
 struct neverc_krt_batch_entry {
 	const char    *name;
@@ -78,7 +61,6 @@ struct neverc_krt_batch_entry {
 };
 
 int neverc_krt_ksyms_raw_batch(struct neverc_krt_batch_entry *entries, int count);
-
 
 #define NEVERC_KRT_BATCH_ENTRY(name_str, addr_var)  \
 	{ .name = (name_str), .out = (unsigned long *)&(addr_var) }

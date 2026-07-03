@@ -30,7 +30,6 @@ void neverc_krt_selinux_bypass_remove(struct neverc_krt_selinux_bypass *state);
 void neverc_krt_selinux_pause_hooks(void);
 void neverc_krt_selinux_remove_hooks(void);
 
-
 /* --- Per-UID selective SELinux bypass --- */
 
 #define NEVERC_KRT_SE_UID_MAX 16

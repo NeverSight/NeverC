@@ -21,8 +21,14 @@ _Static_assert(sizeof(struct mutex) >= 48,
 #define DEFINE_MUTEX(name) struct mutex name = { { 0 } }
 #define __MUTEX_INITIALIZER(name) { { 0 } }
 
-void mutex_init(struct mutex *lock);
-void mutex_destroy(struct mutex *lock);
+/*
+ * mutex_init / mutex_destroy are never exported.
+ *   mutex_init is always a macro → __mutex_init (real export).
+ *   mutex_destroy is a no-op in GKI (CONFIG_DEBUG_LOCK_ALLOC=n).
+ */
+void __mutex_init(struct mutex *lock, const char *name, void *key);
+#define mutex_init(lock) __mutex_init(lock, "?", (void *)0)
+#define mutex_destroy(lock) do { (void)(lock); } while (0)
 void mutex_lock(struct mutex *lock);
 void mutex_unlock(struct mutex *lock);
 int mutex_trylock(struct mutex *lock);

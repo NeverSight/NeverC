@@ -65,10 +65,27 @@ struct proc_dir_entry *proc_mkdir(const char *name,
 void remove_proc_entry(const char *name, struct proc_dir_entry *parent);
 void proc_remove(struct proc_dir_entry *de);
 
-void *PDE_DATA(const struct inode *inode);
+/*
+ * PDE_DATA was exported in 5.10, renamed to pde_data in 5.17,
+ * and became inline in 6.4+.  Resolve at runtime via NEVERC_KRT_LOOKUP
+ * if needed; not safe to declare as a direct extern.
+ */
 
-struct proc_dir_entry *proc_create_seq(const char *name, umode_t mode,
-				       struct proc_dir_entry *parent,
-				       const struct seq_operations *ops);
+/*
+ * proc_create_seq is always inline (wraps proc_create_seq_private).
+ */
+struct proc_dir_entry *proc_create_seq_private(const char *name, umode_t mode,
+					       struct proc_dir_entry *parent,
+					       const struct seq_operations *ops,
+					       unsigned int state_size,
+					       void *data);
+
+__always_inline struct proc_dir_entry *
+proc_create_seq(const char *name, umode_t mode,
+		struct proc_dir_entry *parent,
+		const struct seq_operations *ops)
+{
+	return proc_create_seq_private(name, mode, parent, ops, 0, (void *)0);
+}
 
 #endif /* _NEVERC_KRT_LINUX_PROC_FS_H */

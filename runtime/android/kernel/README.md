@@ -210,7 +210,7 @@ Verified against GKI `6.18.24` (`gki_defconfig`, `CONFIG_COMPAT=y`):
 | `file_operations` (`mmap_prepare`, size 272) | Compile-time layout in `arm64/include/linux/fs.h` |
 | `hrtimer_setup` / `hrtimer_start_range_ns` | Runtime lookup with legacy fallbacks |
 | `vfs_fstatat` (replaces removed `vfs_stat`) | Runtime lookup |
-| `queue_delayed_work_on` + `system_wq` (inlined `schedule_delayed_work`) | Runtime fallback in `nvk_timer.c` |
+| `queue_delayed_work` / `mod_delayed_work` | 6.18+: only `*_on` variants exported; see `workqueue.h` |
 | `task_pid` inlined | `nvk_ns.c` probes `thread_pid` via `pid_vnr` |
 | `nlmsg_hdr` inlined | `nvk_netlink.c` probes `sk_buff->data` at init |
 | `execmem_alloc` / `execmem_free` | Hook pool allocator (`nvk_hook.c`) |

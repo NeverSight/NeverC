@@ -50,14 +50,8 @@ __always_inline int neverc_krt_cpu_is_big_core(void)
 /* ------------------------------------------------------------------ */
 
 int neverc_krt_cpu_init(void);
-
-
 int neverc_krt_num_possible_cpus(void);
-
-
 int neverc_krt_cpu_is_online(int cpu);
-
-
 int neverc_krt_num_online_cpus(void);
 
 
@@ -70,7 +64,7 @@ int neverc_krt_num_online_cpus(void);
 /*  Per-CPU data (lightweight, module-local)                          */
 /* ------------------------------------------------------------------ */
 
-#define NEVERC_KRT_MAX_CPUS 16
+#define NEVERC_KRT_MAX_CPUS 32
 
 #define NEVERC_KRT_DEFINE_PER_CPU(type, name)                                \
 	type __neverc_krt_pcpu_##name[NEVERC_KRT_MAX_CPUS]                  \
@@ -99,15 +93,9 @@ __always_inline u32 _neverc_krt_cpu_idx_safe(u32 cpu)
 typedef void (*neverc_krt_smp_call_fn)(void *info);
 
 int neverc_krt_smp_init(void);
-
-
 int neverc_krt_smp_on_each(neverc_krt_smp_call_fn func, void *info, int wait);
-
-
 int neverc_krt_smp_call_on(int cpu, neverc_krt_smp_call_fn func,
 			   void *info, int wait);
-
-
 
 /* ------------------------------------------------------------------ */
 /*  CPU feature detection  (ID_AA64* register reads)                  */
@@ -194,10 +182,6 @@ __always_inline int neverc_krt_has_fpac(void)
 	return (apa >= 3) || (api >= 3);
 }
 
-__always_inline int neverc_krt_has_sve(void)
-{ return neverc_krt_cpu_has_sve(); }
-
-
 /* ------------------------------------------------------------------ */
 /*  Aggregate HW capability snapshot                                  */
 /* ------------------------------------------------------------------ */
@@ -213,6 +197,5 @@ struct neverc_krt_hw_caps {
 };
 
 void neverc_krt_detect_hw_caps(struct neverc_krt_hw_caps *caps);
-
 
 #endif /* NEVERC_KRT_CPU_H */

@@ -7,7 +7,6 @@
 #include <linux/kallsyms.h>
 #include <nvkmod_version.h>
 
-
 struct neverc_krt_kernel_info {
 	u32 major;
 	u32 minor;
@@ -22,10 +21,7 @@ int neverc_krt_fmt_init(void);
 int neverc_krt_snprintf(char *buf, size_t size, const char *fmt, ...);
 int neverc_krt_sscanf(const char *buf, const char *fmt, ...);
 
-
 int neverc_krt_compat_init(void);
-
-
 const struct neverc_krt_kernel_info *neverc_krt_kernel_version(void);
 
 u32 neverc_krt_kernel_code(void);
@@ -44,7 +40,6 @@ void *neverc_krt_lookup_module_free(void);
 
 int neverc_krt_has_cfi(void);
 
-
 enum neverc_krt_version_match {
 	NEVERC_KRT_VER_EXACT   =  0,
 	NEVERC_KRT_VER_COMPAT  =  1,
@@ -53,34 +48,20 @@ enum neverc_krt_version_match {
 };
 
 int neverc_krt_check_kernel_match(void);
-
-
 int neverc_krt_should_abort_on_mismatch(void);
-
 int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
 				     const char *expected_name);
-
-
 int neverc_krt_probe_module_offsets(struct neverc_krt_this_module *mod,
 				    void *expected_init,
 				    void *expected_exit);
-
-
 unsigned long neverc_krt_rt_off_init(void);
-
 unsigned long neverc_krt_rt_off_exit(void);
-
 int neverc_krt_validate_runtime(struct neverc_krt_this_module *mod,
 				const char *name,
 				void *init_fn, void *exit_fn);
-
-
 int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod);
-
-
 int neverc_krt_fixup_runtime(struct neverc_krt_this_module *mod,
 			     const char *name,
 			     void *init_fn, void *exit_fn);
-
 
 #endif /* NEVERC_KRT_COMPAT_H */

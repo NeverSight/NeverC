@@ -112,7 +112,7 @@ void neverc_krt_detect_hw_caps(struct neverc_krt_hw_caps *caps)
 	caps->fpac = neverc_krt_has_fpac();
 	caps->bti  = neverc_krt_has_bti();
 	caps->mte  = neverc_krt_has_mte();
-	caps->sve  = neverc_krt_has_sve();
+	caps->sve  = neverc_krt_cpu_has_sve();
 	caps->cfi  = neverc_krt_has_cfi();
 }
 

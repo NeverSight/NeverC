@@ -45,3 +45,18 @@ void neverc_krt_pmu_session_stop(struct neverc_krt_pmu_session *s,
 	neverc_krt_pmu_disable();
 }
 
+u64 neverc_krt_pmu_rdtsc(void)
+{
+	return neverc_krt_arch_counter();
+}
+
+u64 neverc_krt_pmu_freq(void)
+{
+	return (u64)neverc_krt_arch_counter_freq();
+}
+
+u64 neverc_krt_pmu_ns_elapsed(u64 start, u64 end)
+{
+	return neverc_krt_arch_counter_to_ns(end - start);
+}
+

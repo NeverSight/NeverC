@@ -89,5 +89,4 @@ int _neverc_krt_hook_auto_by_sym(struct neverc_krt_hook *h,
 #define neverc_krt_hook_auto_by_sym(h, sym, replace, orig, ft) \
 	_neverc_krt_hook_auto_by_sym((h), NC_XORSTR(sym), (replace), (orig), (ft))
 
-
 #endif /* NEVERC_KRT_H */

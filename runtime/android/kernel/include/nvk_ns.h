@@ -6,20 +6,10 @@
 #include <linux/sched.h>
 
 int neverc_krt_ns_init(void);
-
-
 void *neverc_krt_ns_get_pid_ns(struct task_struct *task);
-
-
 int neverc_krt_ns_same_pidns(struct task_struct *a, struct task_struct *b);
-
-
 int neverc_krt_ns_pid_in_ns(struct task_struct *task, void *target_ns);
-
-
 int neverc_krt_ns_is_init_pid_ns(struct task_struct *task);
-
-
 int neverc_krt_ns_in_root_ns(void);
 
 struct neverc_krt_ns_info {
@@ -31,6 +21,5 @@ struct neverc_krt_ns_info {
 };
 
 int neverc_krt_ns_get_info(struct task_struct *task, struct neverc_krt_ns_info *info);
-
 
 #endif /* NEVERC_KRT_NS_H */

@@ -659,3 +659,27 @@ u64 neverc_krt_wd_tramp_violations(void)
 	return __atomic_load_n(&_neverc_krt_wd.tramp_violations, __ATOMIC_RELAXED);
 }
 
+u64 neverc_krt_anti_timestamp(void)
+{
+	return neverc_krt_arch_counter();
+}
+
+u64 neverc_krt_anti_timer_freq(void)
+{
+	return (u64)neverc_krt_arch_counter_freq();
+}
+
+int neverc_krt_anti_timing_check(u64 start, u64 max_cycles)
+{
+	return (neverc_krt_arch_counter() - start) > max_cycles;
+}
+
+int neverc_krt_anti_check_stack_depth(void)
+{
+	unsigned long sp, sp_el0;
+	__asm__ __volatile__("mov %0, sp" : "=r"(sp));
+	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(sp_el0));
+	if ((sp_el0 - sp) > 0x4000)
+		return 1;
+	return 0;
+}

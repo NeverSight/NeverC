@@ -6,11 +6,6 @@
 #include <linux/compiler.h>
 
 /*
- * Power management event notification.
- * Allows modules to clean up / persist state before suspend and
- * re-initialize after resume, and to perform last-chance cleanup
- * before reboot / shutdown.
- *
  * GKI kernels 5.10–6.18 all export register_pm_notifier and
  * register_reboot_notifier with stable ABIs.
  */
@@ -50,7 +45,6 @@ struct neverc_krt_notifier_block {
 
 int neverc_krt_power_init(void);
 
-
 /* ------------------------------------------------------------------ */
 /*  PM (suspend / resume) notifier                                    */
 /* ------------------------------------------------------------------ */
@@ -63,15 +57,9 @@ struct neverc_krt_pm_notifier {
 	int                       registered;
 };
 
-
-
 int neverc_krt_pm_register(struct neverc_krt_pm_notifier *pm,
 			   neverc_krt_pm_callback_t cb, int priority);
-
-
 void neverc_krt_pm_unregister(struct neverc_krt_pm_notifier *pm);
-
-
 
 /* ------------------------------------------------------------------ */
 /*  Reboot / shutdown notifier                                        */
@@ -85,31 +73,13 @@ struct neverc_krt_reboot_notifier {
 	int                       registered;
 };
 
-
 int neverc_krt_reboot_register(struct neverc_krt_reboot_notifier *rn,
 			       neverc_krt_reboot_callback_t cb, int priority);
-
-
 void neverc_krt_reboot_unregister(struct neverc_krt_reboot_notifier *rn);
 
-
-/* Convenience: is the system going down? (check from PM or reboot cb) */
-__always_inline int neverc_krt_is_shutdown_event(unsigned long event)
-{
-	return event == NEVERC_KRT_SYS_HALT || event == NEVERC_KRT_SYS_POWER_OFF;
-}
-
-__always_inline int neverc_krt_is_suspend_event(unsigned long event)
-{
-	return event == NEVERC_KRT_PM_SUSPEND_PREPARE ||
-	       event == NEVERC_KRT_PM_HIBERNATION_PREPARE;
-}
-
-__always_inline int neverc_krt_is_resume_event(unsigned long event)
-{
-	return event == NEVERC_KRT_PM_POST_SUSPEND ||
-	       event == NEVERC_KRT_PM_POST_HIBERNATION ||
-	       event == NEVERC_KRT_PM_POST_RESTORE;
-}
+/* Event classification helpers */
+int neverc_krt_is_shutdown_event(unsigned long event);
+int neverc_krt_is_suspend_event(unsigned long event);
+int neverc_krt_is_resume_event(unsigned long event);
 
 #endif /* NEVERC_KRT_POWER_H */

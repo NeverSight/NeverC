@@ -8,7 +8,6 @@
 
 int neverc_krt_addr_init(void);
 
-
 __always_inline unsigned long neverc_krt_va_bits(void)
 {
 	unsigned long tcr;
@@ -59,7 +58,6 @@ unsigned long neverc_krt_kaslr_offset(void);
 
 unsigned long neverc_krt_translate_user(unsigned long uaddr);
 
-
 #define NEVERC_KRT_PTE_VALID     (1UL << 0)
 #define NEVERC_KRT_PTE_TABLE     (1UL << 1)
 #define NEVERC_KRT_PTE_PAGE      (3UL << 0)
@@ -85,7 +83,6 @@ struct neverc_krt_pte_walk_result {
 };
 
 int neverc_krt_walk_pgtable(unsigned long vaddr, struct neverc_krt_pte_info *info);
-
 
 int neverc_krt_walk_pgtable_ex(unsigned long vaddr, struct neverc_krt_pte_info *info,
 			       struct neverc_krt_pte_walk_result *result);
@@ -113,29 +110,15 @@ __always_inline unsigned long neverc_krt_clean_ptr(unsigned long addr)
 }
 
 unsigned long neverc_krt_read_ttbr0(void);
-
-
 unsigned long neverc_krt_read_ttbr1(void);
 
-
-
 int neverc_krt_pte_set_rw(unsigned long vaddr);
-
-
 int neverc_krt_pte_set_ro(unsigned long vaddr);
-
-
 int neverc_krt_pte_set_exec(unsigned long vaddr);
-
-
 int neverc_krt_pte_set_rw_range(unsigned long start, unsigned long end);
-
-
 int neverc_krt_pte_set_ro_range(unsigned long start, unsigned long end);
 
-
 int neverc_krt_linmap_available(void);
-
 unsigned long neverc_krt_linmap_offset(void);
 
 #endif /* NEVERC_KRT_ADDR_H */

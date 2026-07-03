@@ -13,11 +13,7 @@ neverc_krt_syscall_fn_t *neverc_krt_syscall_table(void);
 
 int neverc_krt_syscall_replace(int nr, neverc_krt_syscall_fn_t new_fn,
 			       neverc_krt_syscall_fn_t *orig);
-
-
 int neverc_krt_syscall_restore(int nr, neverc_krt_syscall_fn_t orig);
-
-
 neverc_krt_syscall_fn_t neverc_krt_syscall_get(int nr);
 
 /*

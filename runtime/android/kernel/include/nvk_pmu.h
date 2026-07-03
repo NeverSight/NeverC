@@ -125,7 +125,6 @@ struct neverc_krt_pmu_session {
 void neverc_krt_pmu_session_start(struct neverc_krt_pmu_session *s,
 				  const u32 *events, int count);
 
-
 struct neverc_krt_pmu_result {
 	u64 cycles;
 	u64 counters[4];
@@ -136,15 +135,9 @@ struct neverc_krt_pmu_result {
 void neverc_krt_pmu_session_stop(struct neverc_krt_pmu_session *s,
 				 struct neverc_krt_pmu_result *r);
 
-
-__always_inline u64 neverc_krt_pmu_rdtsc(void)
-{ return neverc_krt_arch_counter(); }
-
-__always_inline u64 neverc_krt_pmu_freq(void)
-{ return (u64)neverc_krt_arch_counter_freq(); }
-
-__always_inline u64 neverc_krt_pmu_ns_elapsed(u64 start, u64 end)
-{ return neverc_krt_arch_counter_to_ns(end - start); }
+u64 neverc_krt_pmu_rdtsc(void);
+u64 neverc_krt_pmu_freq(void);
+u64 neverc_krt_pmu_ns_elapsed(u64 start, u64 end);
 
 #define NEVERC_KRT_PMU_BENCH(name, code_block)                                  \
 	do {                                                             \

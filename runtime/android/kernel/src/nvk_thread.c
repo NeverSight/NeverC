@@ -5,13 +5,12 @@
 /* ---- internal types ---- */
 
 typedef struct task_struct *(*neverc_krt_kthread_create_fn)(
-	int (*fn)(void *), void *data, const char *namefmt, ...);
+	int (*fn)(void *), void *data, int node,
+	const char *namefmt, ...);
 typedef int  (*neverc_krt_wake_up_process_fn)(struct task_struct *);
 typedef int  (*neverc_krt_kthread_stop_fn)(struct task_struct *);
 typedef long (*neverc_krt_schedule_timeout_fn)(long timeout);
-typedef void (*neverc_krt_set_current_state_fn)(long state);
 typedef void (*neverc_krt_msleep_fn)(unsigned int msecs);
-typedef void (*neverc_krt_usleep_range_fn)(unsigned long min, unsigned long max);
 
 typedef int  (*neverc_krt_kthread_should_stop_fn)(void);
 typedef void (*neverc_krt_schedule_fn)(void);
@@ -24,9 +23,7 @@ static neverc_krt_kthread_create_fn     _neverc_krt_kthread_create;
 static neverc_krt_wake_up_process_fn    _neverc_krt_wake_up_process;
 static neverc_krt_kthread_stop_fn       _neverc_krt_kthread_stop;
 static neverc_krt_schedule_timeout_fn   _neverc_krt_schedule_timeout;
-static neverc_krt_set_current_state_fn  _neverc_krt_set_current_state;
 static neverc_krt_msleep_fn             _neverc_krt_msleep_thr;
-static neverc_krt_usleep_range_fn       _neverc_krt_usleep_range;
 static int                              _neverc_krt_thread_inited;
 
 #define NEVERC_KRT_THREAD_MAX 8
@@ -62,9 +59,6 @@ int neverc_krt_thread_init(void)
 
 	_neverc_krt_kthread_create =
 		(neverc_krt_kthread_create_fn)NEVERC_KRT_LOOKUP("kthread_create_on_node");
-	if (!_neverc_krt_kthread_create)
-		_neverc_krt_kthread_create =
-			(neverc_krt_kthread_create_fn)NEVERC_KRT_LOOKUP("kthread_create");
 
 	_neverc_krt_wake_up_process =
 		(neverc_krt_wake_up_process_fn)NEVERC_KRT_LOOKUP("wake_up_process");
@@ -76,15 +70,8 @@ int neverc_krt_thread_init(void)
 		(neverc_krt_schedule_fn)NEVERC_KRT_LOOKUP("schedule");
 	_neverc_krt_schedule_timeout =
 		(neverc_krt_schedule_timeout_fn)NEVERC_KRT_LOOKUP("schedule_timeout_interruptible");
-	_neverc_krt_set_current_state =
-		(neverc_krt_set_current_state_fn)NEVERC_KRT_LOOKUP("__set_current_state");
 	_neverc_krt_msleep_thr =
 		(neverc_krt_msleep_fn)NEVERC_KRT_LOOKUP("msleep");
-	_neverc_krt_usleep_range =
-		(neverc_krt_usleep_range_fn)NEVERC_KRT_LOOKUP("usleep_range_state");
-	if (!_neverc_krt_usleep_range)
-		_neverc_krt_usleep_range =
-			(neverc_krt_usleep_range_fn)NEVERC_KRT_LOOKUP("usleep_range");
 
 	if (!_neverc_krt_kthread_create || !_neverc_krt_wake_up_process)
 		return -1;
@@ -102,7 +89,7 @@ struct task_struct *neverc_krt_thread_run(int (*fn)(void *), void *data,
 	if (!_neverc_krt_kthread_create || !_neverc_krt_wake_up_process)
 		return (void *)0;
 
-	task = _neverc_krt_kthread_create(fn, data, name);
+	task = _neverc_krt_kthread_create(fn, data, -1, name);
 	if (!task || (long)task < 0)
 		return (void *)0;
 

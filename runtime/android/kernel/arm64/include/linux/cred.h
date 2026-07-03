@@ -10,11 +10,11 @@
  *
  *   Field          5.10    5.15    6.1     6.6     6.12    6.18
  *   ────────────────────────────────────────────────────────────
- *   usage          4 (at)  4 (at)  4 (at)  8 (al)  8 (al) 8 (al)
+ *   usage          4 (at)  4 (at)  4 (at)  8 (al)  8 (al)  8 (al)
  *   uid..fsgid     32      32      32      32      32      32
  *   securebits     4       4       4       4       4       4
  *   cap_* (×5)     40      40      40      40      40      40
- *   ──────────────────────────────────────────────────────
+ *   ────────────────────────────────────────────────────────────
  *   at = atomic_t (4 bytes), al = atomic_long_t (8 bytes)
  *
  * The runtime probes uid offset via _neverc_krt_cred_uid_base()
@@ -59,15 +59,26 @@ struct cred *prepare_creds(void);
 int commit_creds(struct cred *new_cred);
 
 /*
- * 6.18+: override_creds / revert_creds were removed from the exported
- * kernel symbol table.  There is no exported drop-in replacement with the
- * same temporary-override semantics; runtime helpers use prepare_creds +
- * commit_creds for explicit credential changes instead.
+ * Cred helper export status (verified from System.map __ksymtab):
+ *   prepare_creds  — exported 5.10–6.18
+ *   commit_creds   — exported 5.10–6.18
+ *   __put_cred     — exported 5.15–6.18
+ *   override_creds — exported 5.15–6.12 (removed in 6.18)
+ *   revert_creds   — exported 5.15–6.12 (removed in 6.18)
+ *   abort_creds    — NEVER exported (5.10–6.18)
+ *   put_cred       — NEVER exported (always inline)
+ *
+ * For cross-version portable credential work, use only
+ * prepare_creds + commit_creds.  The runtime's neverc_krt_su_*
+ * and neverc_krt_cred_* APIs handle all version differences internally
+ * via NEVERC_KRT_LOOKUP.
  */
-#if NEVERC_KRT_KERNEL < 618
-void abort_creds(struct cred *new_cred);
-const struct cred *get_current_cred(void);
-void put_cred(const struct cred *cred);
+#if NEVERC_KRT_KERNEL >= 515
+void __put_cred(struct cred *cred);
+#define abort_creds(cred) __put_cred(cred)
+#endif
+
+#if NEVERC_KRT_KERNEL >= 515 && NEVERC_KRT_KERNEL < 618
 const struct cred *override_creds(const struct cred *new_cred);
 void revert_creds(const struct cred *old);
 #endif

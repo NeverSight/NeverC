@@ -21,11 +21,20 @@ typedef irqreturn_t (*irq_handler_t)(int irq, void *dev_id);
 #define IRQF_TRIGGER_LOW   0x00000008
 #define IRQF_ONESHOT       0x00002000
 
-int request_irq(unsigned int irq, irq_handler_t handler,
-		unsigned long flags, const char *name, void *dev);
+/*
+ * request_irq is always an inline wrapper around request_threaded_irq.
+ */
 int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 			 irq_handler_t thread_fn, unsigned long flags,
 			 const char *name, void *dev);
+
+__always_inline int
+request_irq(unsigned int irq, irq_handler_t handler,
+	    unsigned long flags, const char *name, void *dev)
+{
+	return request_threaded_irq(irq, handler, (irq_handler_t)0,
+				    flags, name, dev);
+}
 void free_irq(unsigned int irq, void *dev_id);
 
 void disable_irq(unsigned int irq);
@@ -44,8 +53,14 @@ struct tasklet_struct {
 
 void tasklet_init(struct tasklet_struct *t, void (*func)(unsigned long),
 		  unsigned long data);
-void tasklet_schedule(struct tasklet_struct *t);
-void tasklet_hi_schedule(struct tasklet_struct *t);
+/*
+ * tasklet_schedule / tasklet_hi_schedule are inline wrappers
+ * around __tasklet_schedule / __tasklet_hi_schedule.
+ */
+void __tasklet_schedule(struct tasklet_struct *t);
+void __tasklet_hi_schedule(struct tasklet_struct *t);
+#define tasklet_schedule(t)    __tasklet_schedule(t)
+#define tasklet_hi_schedule(t) __tasklet_hi_schedule(t)
 void tasklet_kill(struct tasklet_struct *t);
 
 /* Local IRQ control. */

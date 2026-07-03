@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
+#include <linux/module.h>
 
 typedef void *(*neverc_krt_netlink_create_fn)(void *net, int unit,
+					      void *module,
 					      struct neverc_krt_nl_cfg *cfg);
 typedef void  (*neverc_krt_netlink_release_fn)(void *sock);
-typedef void *(*neverc_krt_alloc_skb_fn)(unsigned int size, u32 gfp);
 typedef void *(*neverc_krt___alloc_skb_fn)(unsigned int size, u32 gfp,
 					   int flags, int node);
 typedef void  (*neverc_krt_kfree_skb_fn)(void *skb);
@@ -16,28 +17,20 @@ typedef int   (*neverc_krt_netlink_unicast_fn)(void *ssk, void *skb,
 typedef int   (*neverc_krt_netlink_broadcast_fn)(void *ssk, void *skb,
 						 u32 portid, u32 group,
 						 u32 allocation);
-typedef void *(*neverc_krt_nlmsg_data_fn)(void *nlh);
-typedef void *(*neverc_krt_nlmsg_hdr_fn)(void *skb);
-
 static neverc_krt_netlink_create_fn     _neverc_krt_nl_create;
 static neverc_krt_netlink_release_fn    _neverc_krt_nl_release;
-static neverc_krt_alloc_skb_fn          _neverc_krt_nl_alloc_skb;
 static neverc_krt___alloc_skb_fn        _neverc_krt_nl___alloc_skb;
 static neverc_krt_kfree_skb_fn          _neverc_krt_nl_kfree_skb;
 static neverc_krt_skb_put_fn            _neverc_krt_nl_skb_put;
 static neverc_krt_nlmsg_put_fn          _neverc_krt_nl_nlmsg_put;
 static neverc_krt_netlink_unicast_fn    _neverc_krt_nl_unicast;
 static neverc_krt_netlink_broadcast_fn  _neverc_krt_nl_broadcast;
-static neverc_krt_nlmsg_data_fn         _neverc_krt_nl_nlmsg_data;
-static neverc_krt_nlmsg_hdr_fn          _neverc_krt_nl_nlmsg_hdr;
 static void                            **_neverc_krt_nl_init_net;
 static int                              _neverc_krt_nl_inited;
 static unsigned long                    _neverc_krt_skb_data_off;
 
 static void *_neverc_krt_nl_alloc_skb_compat(unsigned int size, u32 gfp)
 {
-	if (_neverc_krt_nl_alloc_skb)
-		return _neverc_krt_nl_alloc_skb(size, gfp);
 	if (_neverc_krt_nl___alloc_skb)
 		return _neverc_krt_nl___alloc_skb(size, gfp, 0, -1);
 	return (void *)0;
@@ -80,44 +73,41 @@ int neverc_krt_nl_init(void)
 
 	_neverc_krt_nl_create =
 		(neverc_krt_netlink_create_fn)NEVERC_KRT_LOOKUP("__netlink_kernel_create");
-	if (!_neverc_krt_nl_create)
-		_neverc_krt_nl_create =
-			(neverc_krt_netlink_create_fn)NEVERC_KRT_LOOKUP("netlink_kernel_create");
 
 	_neverc_krt_nl_release =
 		(neverc_krt_netlink_release_fn)NEVERC_KRT_LOOKUP("netlink_kernel_release");
-	_neverc_krt_nl_alloc_skb =
-		(neverc_krt_alloc_skb_fn)NEVERC_KRT_LOOKUP("nlmsg_new");
-	if (!_neverc_krt_nl_alloc_skb)
-		_neverc_krt_nl_alloc_skb =
-			(neverc_krt_alloc_skb_fn)NEVERC_KRT_LOOKUP("alloc_skb");
-	if (!_neverc_krt_nl_alloc_skb)
-		_neverc_krt_nl___alloc_skb =
-			(neverc_krt___alloc_skb_fn)NEVERC_KRT_LOOKUP(
-				"__alloc_skb");
+	/*
+	 * alloc_skb / nlmsg_new are always inline in GKI 5.10–6.18.
+	 * __alloc_skb is the only real export.
+	 */
+	_neverc_krt_nl___alloc_skb =
+		(neverc_krt___alloc_skb_fn)NEVERC_KRT_LOOKUP("__alloc_skb");
+	/*
+	 * kfree_skb was removed from ksymtab in 6.12+.
+	 * consume_skb is exported across all GKI 5.10–6.18.
+	 */
 	_neverc_krt_nl_kfree_skb =
-		(neverc_krt_kfree_skb_fn)NEVERC_KRT_LOOKUP("kfree_skb");
+		(neverc_krt_kfree_skb_fn)NEVERC_KRT_LOOKUP("consume_skb");
 	if (!_neverc_krt_nl_kfree_skb)
 		_neverc_krt_nl_kfree_skb =
-			(neverc_krt_kfree_skb_fn)NEVERC_KRT_LOOKUP("consume_skb");
-	if (!_neverc_krt_nl_kfree_skb)
-		_neverc_krt_nl_kfree_skb =
-			(neverc_krt_kfree_skb_fn)NEVERC_KRT_LOOKUP("__kfree_skb");
+			(neverc_krt_kfree_skb_fn)NEVERC_KRT_LOOKUP("kfree_skb");
 	_neverc_krt_nl_skb_put =
 		(neverc_krt_skb_put_fn)NEVERC_KRT_LOOKUP("skb_put");
+	/*
+	 * __nlmsg_put is the real export in all GKI 5.10–6.18.
+	 * nlmsg_put is always an inline wrapper.
+	 */
 	_neverc_krt_nl_nlmsg_put =
-		(neverc_krt_nlmsg_put_fn)NEVERC_KRT_LOOKUP("nlmsg_put");
-	if (!_neverc_krt_nl_nlmsg_put)
-		_neverc_krt_nl_nlmsg_put =
-			(neverc_krt_nlmsg_put_fn)NEVERC_KRT_LOOKUP("__nlmsg_put");
+		(neverc_krt_nlmsg_put_fn)NEVERC_KRT_LOOKUP("__nlmsg_put");
 	_neverc_krt_nl_unicast =
 		(neverc_krt_netlink_unicast_fn)NEVERC_KRT_LOOKUP("netlink_unicast");
 	_neverc_krt_nl_broadcast =
 		(neverc_krt_netlink_broadcast_fn)NEVERC_KRT_LOOKUP("netlink_broadcast");
-	_neverc_krt_nl_nlmsg_data =
-		(neverc_krt_nlmsg_data_fn)NEVERC_KRT_LOOKUP("nlmsg_data");
-	_neverc_krt_nl_nlmsg_hdr =
-		(neverc_krt_nlmsg_hdr_fn)NEVERC_KRT_LOOKUP("nlmsg_hdr");
+	/*
+	 * nlmsg_data / nlmsg_hdr are always inline in GKI 5.10–6.18.
+	 * We handle them with direct pointer arithmetic in the dispatch
+	 * and send paths, so no lookup is needed.
+	 */
 	_neverc_krt_nl_init_net =
 		(void **)NEVERC_KRT_LOOKUP("init_net");
 
@@ -125,12 +115,10 @@ int neverc_krt_nl_init(void)
 		return -1;
 
 	/*
-	 * 6.18+: nlmsg_hdr() was inlined and is not exported.  Probe
-	 * offsetof(struct sk_buff, data) once via alloc_skb + skb_put.
+	 * nlmsg_hdr() is always inline (returns skb->data).
+	 * Probe offsetof(struct sk_buff, data) once via alloc + skb_put.
 	 */
-	if (!_neverc_krt_nl_nlmsg_hdr &&
-	    (_neverc_krt_nl_alloc_skb || _neverc_krt_nl___alloc_skb) &&
-	    _neverc_krt_nl_skb_put) {
+	if (_neverc_krt_nl___alloc_skb && _neverc_krt_nl_skb_put) {
 		void *probe_skb = _neverc_krt_nl_alloc_skb_compat(128,
 								  0x14000C0U);
 		if (probe_skb) {
@@ -188,9 +176,7 @@ static void _neverc_krt_nl_dispatch(void *skb)
 	if (!ns || !ns->handler || !skb)
 		return;
 
-	if (_neverc_krt_nl_nlmsg_hdr) {
-		nlh = _neverc_krt_nl_nlmsg_hdr(skb);
-	} else if (_neverc_krt_skb_data_off) {
+	if (_neverc_krt_skb_data_off) {
 		unsigned long data_ptr;
 		if (!neverc_krt_mem_read(&data_ptr,
 				(char *)skb + _neverc_krt_skb_data_off, 8))
@@ -230,10 +216,7 @@ static void _neverc_krt_nl_dispatch(void *skb)
 
 	payload_len = nlmsg_len - 16;
 
-	if (_neverc_krt_nl_nlmsg_data)
-		data = (unsigned char *)_neverc_krt_nl_nlmsg_data(nlh);
-	else
-		data = (unsigned char *)nlh + 16;
+	data = (unsigned char *)nlh + 16;
 
 	ns->handler(ns, nlmsg_pid, nlmsg_type, nlmsg_seq,
 		    data, payload_len);
@@ -258,7 +241,8 @@ int neverc_krt_nl_open(struct neverc_krt_nl_sock *ns, int proto,
 	ns->proto = proto;
 	ns->handler = handler;
 
-	ns->sock = _neverc_krt_nl_create(*_neverc_krt_nl_init_net, proto, &cfg);
+	ns->sock = _neverc_krt_nl_create(*_neverc_krt_nl_init_net, proto,
+				       THIS_MODULE, &cfg);
 	if (!ns->sock)
 		return -3;
 
@@ -293,7 +277,7 @@ int neverc_krt_nl_send(struct neverc_krt_nl_sock *ns, u32 pid,
 	u32 total;
 
 	if (!ns || !ns->sock) return -1;
-	if ((!_neverc_krt_nl_alloc_skb && !_neverc_krt_nl___alloc_skb) ||
+	if (!_neverc_krt_nl___alloc_skb ||
 	    (!_neverc_krt_nl_nlmsg_put && !_neverc_krt_nl_skb_put) ||
 	    !_neverc_krt_nl_unicast)
 		return -2;
@@ -309,13 +293,8 @@ int neverc_krt_nl_send(struct neverc_krt_nl_sock *ns, u32 pid,
 	}
 
 	if (data && len > 0) {
-		void *payload;
-		if (_neverc_krt_nl_nlmsg_data)
-			payload = _neverc_krt_nl_nlmsg_data(nlh);
-		else
-			payload = (void *)((unsigned long)nlh + 16);
+		unsigned char *dst = (unsigned char *)nlh + 16;
 		const unsigned char *src = (const unsigned char *)data;
-		unsigned char *dst = (unsigned char *)payload;
 		u32 i;
 		for (i = 0; i < len; i++)
 			dst[i] = src[i];

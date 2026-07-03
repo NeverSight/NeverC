@@ -100,3 +100,21 @@ void neverc_krt_reboot_unregister(struct neverc_krt_reboot_notifier *rn)
 	rn->registered = 0;
 }
 
+int neverc_krt_is_shutdown_event(unsigned long event)
+{
+	return event == NEVERC_KRT_SYS_HALT || event == NEVERC_KRT_SYS_POWER_OFF;
+}
+
+int neverc_krt_is_suspend_event(unsigned long event)
+{
+	return event == NEVERC_KRT_PM_SUSPEND_PREPARE ||
+	       event == NEVERC_KRT_PM_HIBERNATION_PREPARE;
+}
+
+int neverc_krt_is_resume_event(unsigned long event)
+{
+	return event == NEVERC_KRT_PM_POST_SUSPEND ||
+	       event == NEVERC_KRT_PM_POST_HIBERNATION ||
+	       event == NEVERC_KRT_PM_POST_RESTORE;
+}
+

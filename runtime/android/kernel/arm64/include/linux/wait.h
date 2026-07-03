@@ -50,15 +50,23 @@ void finish_wait(wait_queue_head_t *wq_head, wait_queue_entry_t *wq_entry);
 int autoremove_wake_function(void *wq_entry, unsigned mode,
 			     int sync, void *key);
 
-void wake_up(wait_queue_head_t *wq_head);
-void wake_up_interruptible(wait_queue_head_t *wq_head);
-void wake_up_all(wait_queue_head_t *wq_head);
-void wake_up_interruptible_all(wait_queue_head_t *wq_head);
-
-/* Task states for prepare_to_wait. */
+/* Task states for prepare_to_wait and wake_up macros. */
 #define TASK_RUNNING         0x00000000
 #define TASK_INTERRUPTIBLE   0x00000001
 #define TASK_UNINTERRUPTIBLE 0x00000002
+#define TASK_NORMAL          (TASK_INTERRUPTIBLE | TASK_UNINTERRUPTIBLE)
+
+/*
+ * wake_up* are always macros wrapping __wake_up (the real export).
+ * __wake_up(wq_head, mode, nr_exclusive, key)
+ */
+void __wake_up(wait_queue_head_t *wq_head, unsigned int mode,
+	       int nr_exclusive, void *key);
+
+#define wake_up(wq)                   __wake_up(wq, TASK_NORMAL, 1, (void *)0)
+#define wake_up_all(wq)               __wake_up(wq, TASK_NORMAL, 0, (void *)0)
+#define wake_up_interruptible(wq)     __wake_up(wq, TASK_INTERRUPTIBLE, 1, (void *)0)
+#define wake_up_interruptible_all(wq) __wake_up(wq, TASK_INTERRUPTIBLE, 0, (void *)0)
 
 void schedule(void);
 

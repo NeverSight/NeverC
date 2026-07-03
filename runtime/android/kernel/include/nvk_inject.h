@@ -20,17 +20,12 @@
 #define NEVERC_KRT_INJECT_MAP_PRIVATE 0x02
 
 int neverc_krt_inject_init(void);
-
-
 long neverc_krt_inject_write(struct task_struct *task,
 			     unsigned long addr,
 			     const void *data, size_t len);
-
-
 long neverc_krt_inject_read(struct task_struct *task,
 			    unsigned long addr,
 			    void *buf, size_t len);
-
 
 struct neverc_krt_shellcode {
 	const u32   *code;
@@ -48,16 +43,11 @@ struct neverc_krt_shellcode {
  * issues ISB / IC IALLU on ARM64 GKI kernels).
  */
 
-
 int neverc_krt_inject_shellcode(struct task_struct *task,
 				const struct neverc_krt_shellcode *sc,
 				unsigned long target_addr);
-
-
 unsigned long neverc_krt_inject_find_cave(struct task_struct *task,
 					  unsigned long min_size);
-
-
 
 /* ------------------------------------------------------------------ */
 /*  Remote mmap — allocate memory in target process address space     */
@@ -65,12 +55,8 @@ unsigned long neverc_krt_inject_find_cave(struct task_struct *task,
 
 unsigned long neverc_krt_inject_mmap(struct task_struct *task,
 				     unsigned long len, unsigned long prot);
-
-
 int neverc_krt_inject_munmap(struct task_struct *task,
 			     unsigned long addr, size_t len);
-
-
 
 /* ------------------------------------------------------------------ */
 /*  Remote code execution via user thread hijack                      */
@@ -100,8 +86,6 @@ struct neverc_krt_thread_hijack {
 int neverc_krt_inject_hijack_setup(struct neverc_krt_thread_hijack *hj,
 				   struct task_struct *task,
 				   const struct neverc_krt_shellcode *sc);
-
-
 
 /* ------------------------------------------------------------------ */
 /*  Simple ELF segment loading for shared library injection           */
@@ -146,6 +130,5 @@ struct neverc_krt_elf_load_info {
 int neverc_krt_inject_elf(struct task_struct *task,
 			  const void *elf_data, size_t elf_len,
 			  struct neverc_krt_elf_load_info *info);
-
 
 #endif /* NEVERC_KRT_INJECT_H */

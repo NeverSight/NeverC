@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <linux/jiffies.h>
+#include <nvkmod_version.h>
 
 /*
  * Minimal timer_list — core fields are stable across GKI 5.10–6.18.
@@ -44,9 +45,27 @@ timer_setup(struct timer_list *timer,
 }
 
 int mod_timer(struct timer_list *timer, unsigned long expires);
+void add_timer(struct timer_list *timer);
+
+/*
+ * del_timer / del_timer_sync export evolution:
+ *   5.10–6.1:  del_timer ✓   del_timer_sync ✓
+ *   6.6–6.18:  timer_delete ✓  timer_delete_sync ✓
+ *   (verified from GKI android17-6.18 System.map __ksymtab)
+ */
+#if NEVERC_KRT_KERNEL >= 606
+int timer_delete(struct timer_list *timer);
+int timer_delete_sync(struct timer_list *timer);
+#define del_timer(t) timer_delete(t)
+#define del_timer_sync(t) timer_delete_sync(t)
+#else
 int del_timer(struct timer_list *timer);
 int del_timer_sync(struct timer_list *timer);
-void add_timer(struct timer_list *timer);
-int timer_pending(const struct timer_list *timer);
+#endif
+
+__always_inline int timer_pending(const struct timer_list *timer)
+{
+	return timer->entry.pprev != (void *)0;
+}
 
 #endif /* _NEVERC_KRT_LINUX_TIMER_H */
