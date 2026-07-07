@@ -972,12 +972,14 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
 bool mergeELF64LEObjects(ArrayRef<SmallVector<char, 0>> Buffers,
                          raw_pwrite_stream &OS, const Options &Opts) {
-  return mergeELF64LEImpl(Buffers, OS, Opts);
+  return detail::runMergeSafely(
+      [&]() { return mergeELF64LEImpl(Buffers, OS, Opts); });
 }
 
 bool mergeELF64LEObjects(ArrayRef<StringRef> Buffers, raw_pwrite_stream &OS,
                          const Options &Opts) {
-  return mergeELF64LEImpl(Buffers, OS, Opts);
+  return detail::runMergeSafely(
+      [&]() { return mergeELF64LEImpl(Buffers, OS, Opts); });
 }
 
 } // namespace neverc::merge

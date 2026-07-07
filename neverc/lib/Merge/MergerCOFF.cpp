@@ -680,12 +680,14 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
 bool mergeCOFFObjects(ArrayRef<SmallVector<char, 0>> Buffers,
                       raw_pwrite_stream &OS, const Options &Opts) {
-  return mergeCOFFImpl(Buffers, OS, Opts);
+  return detail::runMergeSafely(
+      [&]() { return mergeCOFFImpl(Buffers, OS, Opts); });
 }
 
 bool mergeCOFFObjects(ArrayRef<StringRef> Buffers, raw_pwrite_stream &OS,
                       const Options &Opts) {
-  return mergeCOFFImpl(Buffers, OS, Opts);
+  return detail::runMergeSafely(
+      [&]() { return mergeCOFFImpl(Buffers, OS, Opts); });
 }
 
 } // namespace neverc::merge

@@ -33,11 +33,9 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
-#include <csetjmp>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -46,28 +44,6 @@
 
 using namespace llvm;
 using namespace neverc::merge;
-
-// LLVM's MachO (and to a lesser extent COFF) object parser calls
-// report_fatal_error() → abort() on some malformed-input paths instead of
-// returning Error through the Expected<> API.  The canonical example is
-// getStruct() in MachOObjectFile.cpp whose FIXME reads "Replace all uses of
-// this function with getStructOrErr".  Until that LLVM-wide migration lands,
-// a fuzz-generated input that passes createMachOObjectFile() construction but
-// hits a bounds check in a later accessor (getSection64, getSymbol64TableEntry,
-// getRelocation, ...) would kill the fuzzer process.
-//
-// We install a temporary fatal-error handler that longjmp's back to
-// LLVMFuzzerTestOneInput so the fuzzer treats the input as uninteresting and
-// moves on.  The handler is scoped to each fuzzer iteration and does NOT
-// suppress real bugs:
-//   * ASan / UBSan findings fire through their own signal handlers, not
-//     through report_fatal_error, so they still crash as intended.
-//   * The exercise() invariant violations (abort()) also bypass this handler.
-static thread_local jmp_buf g_LLVMFatalBuf;
-
-static void fuzzFatalErrorHandler(void *, const char *, bool) {
-  longjmp(g_LLVMFatalBuf, 1);
-}
 
 namespace {
 
@@ -157,18 +133,10 @@ void exercise(Format Fmt, ArrayRef<SmallVector<char, 0>> Bufs,
 } // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
-  llvm::install_fatal_error_handler(fuzzFatalErrorHandler, nullptr);
-  if (setjmp(g_LLVMFatalBuf) != 0) {
-    llvm::remove_fatal_error_handler();
-    return 0;
-  }
-
   auto Bufs = carve(Data, Size);
   for (Format Fmt : {Format::ELF64LE, Format::MachO64, Format::COFF})
     exercise(Fmt, Bufs, /*MergeSections=*/false);
   // The ELF kernel-module section-folding path gets its own pass.
   exercise(Format::ELF64LE, Bufs, /*MergeSections=*/true);
-
-  llvm::remove_fatal_error_handler();
   return 0;
 }

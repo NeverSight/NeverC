@@ -759,12 +759,14 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
 bool mergeMachO64Objects(ArrayRef<SmallVector<char, 0>> Buffers,
                          raw_pwrite_stream &OS, const Options &Opts) {
-  return mergeMachO64Impl(Buffers, OS, Opts);
+  return detail::runMergeSafely(
+      [&]() { return mergeMachO64Impl(Buffers, OS, Opts); });
 }
 
 bool mergeMachO64Objects(ArrayRef<StringRef> Buffers, raw_pwrite_stream &OS,
                          const Options &Opts) {
-  return mergeMachO64Impl(Buffers, OS, Opts);
+  return detail::runMergeSafely(
+      [&]() { return mergeMachO64Impl(Buffers, OS, Opts); });
 }
 
 } // namespace neverc::merge
