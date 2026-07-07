@@ -263,7 +263,7 @@ Anti-cheat drivers (EAC, BattlEye, FACEIT AC, Vanguard) ship with
 Cheat drivers — typically packed, patched, or trampoline-injected via
 bin2bin tooling — struggle to remain CET-compliant. KCET + HVCI form a
 **"compiler-friendly, bin2bin-hostile" hardware wall** that asymmetrically
-benefits well-engineered security software over malware-style code.
+benefits well-engineered security software over adversarial code.
 
 This is the deeper reason Microsoft pushes KCET so hard for kernel
 software: it makes legitimate kernel code easier to harden while making

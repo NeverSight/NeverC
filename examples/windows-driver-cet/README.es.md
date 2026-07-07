@@ -223,7 +223,7 @@ KCET activado. Los controladores de trampa — típicamente empaquetados,
 parcheados o inyectados con trampolín vía herramientas bin2bin — luchan por
 mantenerse conformes con CET. KCET + HVCI forman una **muralla de hardware
 "amigable con compiladores, hostil a bin2bin"** que beneficia asimétricamente
-al software de seguridad bien diseñado frente al código de estilo malware.
+al software de seguridad bien diseñado frente al código adversario.
 
 Esta es la razón más profunda por la que Microsoft impulsa KCET tan
 fuertemente para software de kernel: hace que el código de kernel legítimo

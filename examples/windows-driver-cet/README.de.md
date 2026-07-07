@@ -222,7 +222,7 @@ Maschinen. Cheat-Treiber — typischerweise gepackt, gehookt oder via
 Trampolin-Injection durch bin2bin-Tooling — kämpfen damit, CET-konform zu
 bleiben. KCET + HVCI bilden eine **„compiler-freundliche, bin2bin-feindliche"
 Hardware-Mauer**, die asymmetrisch gut konstruierte Sicherheitssoftware
-gegenüber Malware-Stil-Code begünstigt.
+gegenüber feindlichem Code begünstigt.
 
 Dies ist der tiefere Grund, warum Microsoft KCET für Kernel-Software so stark
 vorantreibt: Es macht legitimen Kernel-Code einfacher zu härten, während es

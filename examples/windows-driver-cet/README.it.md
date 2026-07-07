@@ -223,7 +223,7 @@ abilitato. I driver di cheat — tipicamente impacchettati, patchati o iniettati
 con trampolino tramite tooling bin2bin — faticano a rimanere conformi a CET.
 KCET + HVCI formano un **muro hardware "amico del compilatore, ostile al
 bin2bin"** che favorisce asimmetricamente il software di sicurezza ben
-ingegnerizzato rispetto al codice in stile malware.
+ingegnerizzato rispetto al codice avversario.
 
 Questa è la ragione più profonda per cui Microsoft spinge così tanto KCET
 per il software kernel: rende il codice kernel legittimo più facile da

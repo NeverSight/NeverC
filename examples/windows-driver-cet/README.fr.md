@@ -221,7 +221,7 @@ activé. Les pilotes de triche — typiquement packés, patchés ou injectés pa
 trampoline via outillage bin2bin — peinent à rester CET-conformes. KCET + HVCI
 forment un **mur matériel « ami du compilateur, hostile au bin2bin »** qui
 favorise asymétriquement les logiciels de sécurité bien conçus par rapport
-au code de style malware.
+au code adversaire.
 
 C'est la raison plus profonde pour laquelle Microsoft pousse fortement KCET
 pour les logiciels noyau : il rend le code noyau légitime plus facile à durcir
