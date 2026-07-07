@@ -886,7 +886,7 @@ void OutputWriter::run() {
   const bool runLinkerHooks = pluginLoader.hasLinkerPasses();
   CoffLinkerBackendScope backendScope(ctx, runLinkerHooks);
   if (runLinkerHooks)
-    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_PRE_LAYOUT, pluginLoader);
+    neverc::plugin::runLinkerPasses(NEVERC_INTERPOSE_LINK_PRE_LAYOUT, pluginLoader);
 
   {
     llvm::TimeTraceScope timeScope("Write PE");
@@ -910,7 +910,7 @@ void OutputWriter::run() {
     // RVAs, sizes and the symbol table are now final: let plugins inspect the
     // laid-out symbols/sections before the image is written.
     if (runLinkerHooks)
-      neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_LAYOUT,
+      neverc::plugin::runLinkerPasses(NEVERC_INTERPOSE_LINK_POST_LAYOUT,
                                       pluginLoader);
 
     if (fileSize > UINT32_MAX)
@@ -946,7 +946,7 @@ void OutputWriter::run() {
 
   // The output image is on disk: run post-emit plugin passes.
   if (runLinkerHooks)
-    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_EMIT, pluginLoader);
+    neverc::plugin::runLinkerPasses(NEVERC_INTERPOSE_LINK_POST_EMIT, pluginLoader);
 }
 
 namespace {

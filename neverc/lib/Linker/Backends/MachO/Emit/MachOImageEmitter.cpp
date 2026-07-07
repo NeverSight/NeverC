@@ -1504,7 +1504,7 @@ template <class LP> void OutputWriter::run() {
   const bool runLinkerHooks = pluginLoader.hasLinkerPasses();
   MachOLinkerBackendScope backendScope(runLinkerHooks);
   if (runLinkerHooks)
-    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_PRE_LAYOUT, pluginLoader);
+    neverc::plugin::runLinkerPasses(NEVERC_INTERPOSE_LINK_PRE_LAYOUT, pluginLoader);
 
   // Phase 2: layout computation.
   buildOutputLayout<LP>();
@@ -1513,7 +1513,7 @@ template <class LP> void OutputWriter::run() {
   assignSegmentAddresses();
 
   if (runLinkerHooks)
-    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_LAYOUT, pluginLoader);
+    neverc::plugin::runLinkerPasses(NEVERC_INTERPOSE_LINK_POST_LAYOUT, pluginLoader);
 
   // Phase 3: finalize and emit. Map file runs concurrently with LINKEDIT.
   if (!config->mapFile.empty()) {
@@ -1530,7 +1530,7 @@ template <class LP> void OutputWriter::run() {
   writeImage();
 
   if (runLinkerHooks)
-    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_EMIT, pluginLoader);
+    neverc::plugin::runLinkerPasses(NEVERC_INTERPOSE_LINK_POST_EMIT, pluginLoader);
 }
 
 template <class LP> void macho::writeOutput() { OutputWriter().run<LP>(); }

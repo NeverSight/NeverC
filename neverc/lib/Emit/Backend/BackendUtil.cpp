@@ -550,30 +550,30 @@ void GenAssemblyHelper::runOptimizationPipeline(
         [](ModulePassManager &MPM, OptimizationLevel) {
           auto &PL = neverc::plugin::getGlobalPluginLoader();
           neverc::plugin::addPluginModulePasses(
-              MPM, NEVERC_HOOK_PIPELINE_START, PL);
+              MPM, NEVERC_INTERPOSE_PIPELINE_START, PL);
         });
     PB.registerOptimizerLastEPCallback(
         [](ModulePassManager &MPM, OptimizationLevel) {
           auto &PL = neverc::plugin::getGlobalPluginLoader();
           neverc::plugin::addPluginModulePasses(
-              MPM, NEVERC_HOOK_PIPELINE_LAST, PL);
+              MPM, NEVERC_INTERPOSE_PIPELINE_LAST, PL);
         });
 
     auto &PL = neverc::plugin::getGlobalPluginLoader();
-    if (PL.hasPassesForHook(NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT)) {
+    if (PL.hasPassesForInterpose(NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT)) {
       ListRegisterTargetPassConfigCallbacks.push_back(
           [](TargetPassConfig &TPC) {
             auto &PL = neverc::plugin::getGlobalPluginLoader();
             neverc::plugin::addPluginMachinePasses(
-                TPC, NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT, PL);
+                TPC, NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT, PL);
           });
     }
-    if (PL.hasPassesForHook(NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR)) {
+    if (PL.hasPassesForInterpose(NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR)) {
       ListRegisterTargetPassConfigPostPreEmitCallbacks.push_back(
           [](TargetPassConfig &TPC) {
             auto &PL = neverc::plugin::getGlobalPluginLoader();
             neverc::plugin::addPluginMachinePasses(
-                TPC, NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR, PL);
+                TPC, NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR, PL);
           });
     }
   }
@@ -613,7 +613,7 @@ void GenAssemblyHelper::runOptimizationPipeline(
       MPM.addPassToFront(IRAutoGeneratorPrePass(true, "IRAutoGeneratorPre"));
 
     neverc::plugin::addPluginModulePasses(
-        MPM, NEVERC_HOOK_PRE_OPT,
+        MPM, NEVERC_INTERPOSE_PRE_OPT,
         neverc::plugin::getGlobalPluginLoader());
   }
 
@@ -663,7 +663,7 @@ void GenAssemblyHelper::runOptimizationPipeline(
     }
 
     neverc::plugin::addPluginModulePasses(
-        MPM, NEVERC_HOOK_POST_OPT,
+        MPM, NEVERC_INTERPOSE_POST_OPT,
         neverc::plugin::getGlobalPluginLoader());
 
     if (CodeGenOpts.AutoGenerateIR)

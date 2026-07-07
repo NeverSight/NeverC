@@ -655,7 +655,7 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
   const bool runLinkerHooks = pluginLoader.hasLinkerPasses();
   ElfLinkerBackendScope backendScope(runLinkerHooks);
   if (runLinkerHooks)
-    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_PRE_LAYOUT, pluginLoader);
+    neverc::plugin::runLinkerPasses(NEVERC_INTERPOSE_LINK_PRE_LAYOUT, pluginLoader);
 
   prepareLayout();
   checkExecuteOnly();
@@ -680,7 +680,7 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
   // Addresses, sizes and file offsets are now final: let plugins inspect the
   // laid-out symbols/sections before the image is written.
   if (runLinkerHooks)
-    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_LAYOUT, pluginLoader);
+    neverc::plugin::runLinkerPasses(NEVERC_INTERPOSE_LINK_POST_LAYOUT, pluginLoader);
 
   writeMapAndCref();
 
@@ -731,7 +731,7 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
   // The output file is on disk: run post-emit plugin passes (e.g. signing,
   // checksum recording, link-map post-processing).
   if (runLinkerHooks)
-    neverc::plugin::runLinkerPasses(NEVERC_HOOK_LINK_POST_EMIT, pluginLoader);
+    neverc::plugin::runLinkerPasses(NEVERC_INTERPOSE_LINK_POST_EMIT, pluginLoader);
 }
 
 template <class ELFT, class RelTy>

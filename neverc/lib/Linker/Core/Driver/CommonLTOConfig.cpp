@@ -142,12 +142,12 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     if (PL.hasPlugins()) {
       c.PreOptPassHook = [](ModulePassManager &MPM) {
         neverc::plugin::addPluginModulePasses(
-            MPM, NEVERC_HOOK_LTO_PRE_OPT,
+            MPM, NEVERC_INTERPOSE_LTO_PRE_OPT,
             neverc::plugin::getGlobalPluginLoader());
       };
       c.PostOptPassHook = [](ModulePassManager &MPM) {
         neverc::plugin::addPluginModulePasses(
-            MPM, NEVERC_HOOK_LTO_POST_OPT,
+            MPM, NEVERC_INTERPOSE_LTO_POST_OPT,
             neverc::plugin::getGlobalPluginLoader());
       };
     }
