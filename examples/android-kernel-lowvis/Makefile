@@ -1,4 +1,4 @@
-# Android GKI kernel stealth demo (.ko)
+# Android GKI kernel lowvis demo (.ko)
 #
 # Usage:
 #   neverc make                       (default kernel 510)
@@ -7,7 +7,7 @@
 NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = aarch64-linux-android
-MODULE  = nvk_stealth.ko
+MODULE  = nvk_lowvis.ko
 SRCS    = main.c
 
 KERNEL ?= 510

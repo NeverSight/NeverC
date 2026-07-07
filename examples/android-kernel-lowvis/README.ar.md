@@ -2,12 +2,12 @@
 
 # وحدة التخفي لنواة Android
 
-عرض إخفاء الوحدة. الأعلام: بدون=إخفاء قائمة أساسي، `-DNVK_STEALTH_HIDE`=إخفاء كامل (قائمة+sysfs+proc)، `-DNVK_STEALTH_FULL_HIDE`=موسّع (dmesg+PID+تركيب+maps)، `-DNVK_STEALTH_ROOT`=منح root، `-DNVK_STEALTH_SELINUX`=وضع متساهل.
+عرض إخفاء الوحدة. الأعلام: بدون=إخفاء قائمة أساسي، `-DNVK_LOWVIS_HIDE`=إخفاء كامل (قائمة+sysfs+proc)، `-DNVK_LOWVIS_FULL_HIDE`=موسّع (dmesg+PID+تركيب+maps)، `-DNVK_LOWVIS_ROOT`=منح root، `-DNVK_LOWVIS_SELINUX`=وضع متساهل.
 
 ## البناء
 
 ```bash
-cd examples/android-kernel-stealth
+cd examples/android-kernel-lowvis
 neverc make
 ```
 
@@ -22,9 +22,9 @@ neverc make run
 أو يدويًا:
 
 ```bash
-adb push nvk_stealth.ko /data/local/tests/
-adb shell su -c 'insmod /data/local/tests/nvk_stealth.ko'
-adb shell su -c 'dmesg | grep nvk_stealth'
+adb push nvk_lowvis.ko /data/local/tests/
+adb shell su -c 'insmod /data/local/tests/nvk_lowvis.ko'
+adb shell su -c 'dmesg | grep nvk_lowvis'
 ```
 
 ## إلغاء التحميل
@@ -36,5 +36,5 @@ neverc make rmmod
 أو يدويًا:
 
 ```bash
-adb shell su -c 'rmmod nvk_stealth'
+adb shell su -c 'rmmod nvk_lowvis'
 ```

@@ -2,12 +2,12 @@
 
 # Стелс-модуль ядра Android
 
-Демо сокрытия модуля. Флаги: нет=базовое скрытие из списка, `-DNVK_STEALTH_HIDE`=полное (список+sysfs+proc), `-DNVK_STEALTH_FULL_HIDE`=расширенное (dmesg+PID+mount+maps), `-DNVK_STEALTH_ROOT`=дать root, `-DNVK_STEALTH_SELINUX`=permissive режим.
+Демо сокрытия модуля. Флаги: нет=базовое скрытие из списка, `-DNVK_LOWVIS_HIDE`=полное (список+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=расширенное (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=дать root, `-DNVK_LOWVIS_SELINUX`=permissive режим.
 
 ## Сборка
 
 ```bash
-cd examples/android-kernel-stealth
+cd examples/android-kernel-lowvis
 neverc make
 ```
 
@@ -22,9 +22,9 @@ neverc make run
 Или вручную:
 
 ```bash
-adb push nvk_stealth.ko /data/local/tests/
-adb shell su -c 'insmod /data/local/tests/nvk_stealth.ko'
-adb shell su -c 'dmesg | grep nvk_stealth'
+adb push nvk_lowvis.ko /data/local/tests/
+adb shell su -c 'insmod /data/local/tests/nvk_lowvis.ko'
+adb shell su -c 'dmesg | grep nvk_lowvis'
 ```
 
 ## Выгрузка
@@ -36,5 +36,5 @@ neverc make rmmod
 Или вручную:
 
 ```bash
-adb shell su -c 'rmmod nvk_stealth'
+adb shell su -c 'rmmod nvk_lowvis'
 ```

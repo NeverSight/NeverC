@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef NEVERC_KRT_INJECT_H
-#define NEVERC_KRT_INJECT_H
+#ifndef NEVERC_KRT_XMEM_H
+#define NEVERC_KRT_XMEM_H
 
 #include <linux/types.h>
 #include <linux/sched.h>
@@ -13,17 +13,17 @@
  *   5.10/5.15/6.1:      do_mmap(file,addr,len,prot,flags,pgoff,*pop,*uf)       8 params
  *   6.6/6.12/6.18:      do_mmap(file,addr,len,prot,flags,vm_flags,pgoff,*pop,*uf)  9 params
  */
-#define NEVERC_KRT_INJECT_PROT_READ  0x1
-#define NEVERC_KRT_INJECT_PROT_WRITE 0x2
-#define NEVERC_KRT_INJECT_PROT_EXEC  0x4
-#define NEVERC_KRT_INJECT_MAP_ANON   0x20
-#define NEVERC_KRT_INJECT_MAP_PRIVATE 0x02
+#define NEVERC_KRT_XMEM_PROT_READ  0x1
+#define NEVERC_KRT_XMEM_PROT_WRITE 0x2
+#define NEVERC_KRT_XMEM_PROT_EXEC  0x4
+#define NEVERC_KRT_XMEM_MAP_ANON   0x20
+#define NEVERC_KRT_XMEM_MAP_PRIVATE 0x02
 
-int neverc_krt_inject_init(void);
-long neverc_krt_inject_write(struct task_struct *task,
+int neverc_krt_xmem_init(void);
+long neverc_krt_xmem_write(struct task_struct *task,
 			     unsigned long addr,
 			     const void *data, size_t len);
-long neverc_krt_inject_read(struct task_struct *task,
+long neverc_krt_xmem_read(struct task_struct *task,
 			    unsigned long addr,
 			    void *buf, size_t len);
 
@@ -34,7 +34,7 @@ struct neverc_krt_dyncode {
 };
 
 /*
- * ARM64 cache coherence for cross-process code injection:
+ * ARM64 cache coherence for cross-process code deployment:
  * DC CIVAC (clean+invalidate by VA to PoC) broadcasts across the
  * inner-shareable domain so the physical memory is updated for ALL cores.
  * IC IALLU invalidates the entire I-cache on the executing core; combined
@@ -43,19 +43,19 @@ struct neverc_krt_dyncode {
  * issues ISB / IC IALLU on ARM64 GKI kernels).
  */
 
-int neverc_krt_inject_dyncode(struct task_struct *task,
+int neverc_krt_xmem_deploy_dyncode(struct task_struct *task,
 				const struct neverc_krt_dyncode *sc,
 				unsigned long target_addr);
-unsigned long neverc_krt_inject_find_cave(struct task_struct *task,
+unsigned long neverc_krt_xmem_find_cave(struct task_struct *task,
 					  unsigned long min_size);
 
 /* ------------------------------------------------------------------ */
 /*  Remote mmap — allocate memory in target process address space     */
 /* ------------------------------------------------------------------ */
 
-unsigned long neverc_krt_inject_mmap(struct task_struct *task,
+unsigned long neverc_krt_xmem_mmap(struct task_struct *task,
 				     unsigned long len, unsigned long prot);
-int neverc_krt_inject_munmap(struct task_struct *task,
+int neverc_krt_xmem_munmap(struct task_struct *task,
 			     unsigned long addr, size_t len);
 
 /* ------------------------------------------------------------------ */
@@ -83,12 +83,12 @@ struct neverc_krt_thread_hijack {
 	int           active;
 };
 
-int neverc_krt_inject_hijack_setup(struct neverc_krt_thread_hijack *hj,
+int neverc_krt_xmem_hijack_setup(struct neverc_krt_thread_hijack *hj,
 				   struct task_struct *task,
 				   const struct neverc_krt_dyncode *sc);
 
 /* ------------------------------------------------------------------ */
-/*  Simple ELF segment loading for shared library injection           */
+/*  Simple ELF segment loading for shared library deployment          */
 /* ------------------------------------------------------------------ */
 
 #define NEVERC_KRT_ELF_MAGIC  0x464C457FU  /* "\x7fELF" */
@@ -127,8 +127,8 @@ struct neverc_krt_elf_load_info {
 	unsigned long total_size;
 };
 
-int neverc_krt_inject_elf(struct task_struct *task,
+int neverc_krt_xmem_load_elf(struct task_struct *task,
 			  const void *elf_data, size_t elf_len,
 			  struct neverc_krt_elf_load_info *info);
 
-#endif /* NEVERC_KRT_INJECT_H */
+#endif /* NEVERC_KRT_XMEM_H */

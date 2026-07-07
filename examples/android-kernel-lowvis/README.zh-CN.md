@@ -2,12 +2,12 @@
 
 # Android 内核隐身模块
 
-模块隐藏演示。编译时标志：无=基本列表隐藏，`-DNVK_STEALTH_HIDE`=完整隐藏（列表+sysfs+proc），`-DNVK_STEALTH_FULL_HIDE`=扩展隐藏（dmesg+PID+挂载+maps），`-DNVK_STEALTH_ROOT`=授予 root，`-DNVK_STEALTH_SELINUX`=设置宽容模式。
+模块隐藏演示。编译时标志：无=基本列表隐藏，`-DNVK_LOWVIS_HIDE`=完整隐藏（列表+sysfs+proc），`-DNVK_LOWVIS_FULL_HIDE`=扩展隐藏（dmesg+PID+挂载+maps），`-DNVK_LOWVIS_ROOT`=授予 root，`-DNVK_LOWVIS_SELINUX`=设置宽容模式。
 
 ## 构建
 
 ```bash
-cd examples/android-kernel-stealth
+cd examples/android-kernel-lowvis
 neverc make
 ```
 
@@ -22,9 +22,9 @@ neverc make run
 或手动操作：
 
 ```bash
-adb push nvk_stealth.ko /data/local/tests/
-adb shell su -c 'insmod /data/local/tests/nvk_stealth.ko'
-adb shell su -c 'dmesg | grep nvk_stealth'
+adb push nvk_lowvis.ko /data/local/tests/
+adb shell su -c 'insmod /data/local/tests/nvk_lowvis.ko'
+adb shell su -c 'dmesg | grep nvk_lowvis'
 ```
 
 ## 卸载模块
@@ -36,5 +36,5 @@ neverc make rmmod
 或手动操作：
 
 ```bash
-adb shell su -c 'rmmod nvk_stealth'
+adb shell su -c 'rmmod nvk_lowvis'
 ```

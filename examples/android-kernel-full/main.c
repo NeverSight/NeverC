@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvkmod.h>
 #include <nvk_interpose.h>
-#include <nvk_hide.h>
+#include <nvk_vis.h>
 #include <nvk_process.h>
 #include <nvk_cred.h>
 #include <nvk_mem.h>
@@ -47,7 +47,7 @@ struct status_reply {
 	u32 has_mte;
 };
 
-static struct neverc_krt_hide_state hide_state = NEVERC_KRT_HIDE_INIT_STATE;
+static struct neverc_krt_vis_state vis_state = NEVERC_KRT_VIS_INIT_STATE;
 static struct neverc_krt_nl_sock nl_sock;
 static struct task_struct *worker_thread;
 static volatile int worker_running;
@@ -136,14 +136,14 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 		break;
 
 	case CMD_HIDE:
-		neverc_krt_mod_full_hide(&hide_state, &__this_module, "neverc_krt_full");
+		neverc_krt_vis_full_conceal(&vis_state, &__this_module, "neverc_krt_full");
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
 		neverc_krt_log_info("hidden\n");
 		break;
 
 	case CMD_UNHIDE:
-		neverc_krt_hide_remove_interposes();
-		neverc_krt_mod_show(&hide_state, &__this_module);
+		neverc_krt_vis_remove_interposes();
+		neverc_krt_vis_reveal(&vis_state, &__this_module);
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
 		neverc_krt_log_info("visible\n");
 		break;
@@ -249,7 +249,7 @@ static int neverc_krt_full_init(void)
 	neverc_krt_mem_init();
 	neverc_krt_process_init();
 	neverc_krt_cred_init();
-	neverc_krt_hide_init();
+	neverc_krt_vis_init();
 	neverc_krt_addr_init();
 	neverc_krt_compat_init();
 	neverc_krt_file_init();
@@ -318,8 +318,8 @@ static void neverc_krt_full_exit(void)
 		neverc_krt_interpose_remove(&faccessat_interpose);
 #endif
 
-	neverc_krt_hide_remove_interposes();
-	neverc_krt_mod_show(&hide_state, &__this_module);
+	neverc_krt_vis_remove_interposes();
+	neverc_krt_vis_reveal(&vis_state, &__this_module);
 
 	neverc_krt_log_info("unloaded\n");
 }

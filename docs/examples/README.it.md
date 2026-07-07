@@ -52,7 +52,7 @@ Nessun albero sorgente kernel richiesto — NeverC compila contro il runtime min
 | [Template driver kernel](../../examples/android-kernel-driver/README.it.md) | Template risoluzione dinamica simboli | `kallsyms_lookup_name`, ABI stabile GKI, 5.10–6.12 |
 | [Kernel Inline Interpose](../../examples/android-kernel-inline-interpose/README.it.md) | Interpose inline su `do_faccessat` | Patch sicuro BTI/PAC, modalità context interpose, rilocazione PC-relativa |
 | [Kernel Syscall Interpose](../../examples/android-kernel-syscall-interpose/README.it.md) | Tabella syscall / inline / context interpose | Sostituzione `sys_call_table`, interpose inline, context interpose |
-| [Kernel Stealth](../../examples/android-kernel-stealth/README.it.md) | Occultamento modulo | Occultamento list/sysfs/proc, concessione root, SELinux permissive |
+| [Kernel Lowvis](../../examples/android-kernel-lowvis/README.it.md) | Gestione visibilità modulo | Visibilità list/sysfs/proc, concessione root, SELinux permissive |
 | [Kernel Full SDK](../../examples/android-kernel-full/README.it.md) | Integrazione SDK completa | Netlink IPC, interpose, credenziali, occultamento, SELinux, VMA, file I/O |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.it.md) | Dispositivo carattere + ioctl | `misc_register`, dispatch ioctl, `/proc` seq_file |
 | [Kernel Netlink](../../examples/android-kernel-netlink/README.it.md) | IPC netlink bidirezionale | Comandi PING/VERSION/ECHO, `nvk_nl_open`/`nvk_nl_reply` |

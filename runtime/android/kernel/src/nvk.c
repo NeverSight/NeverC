@@ -23,7 +23,7 @@ int neverc_krt_init_all(void)
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_MEM]     = neverc_krt_mem_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_PROCESS] = neverc_krt_process_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_CRED]    = neverc_krt_cred_init();
-	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_HIDE]    = neverc_krt_hide_init();
+	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_VIS]     = neverc_krt_vis_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_ADDR]    = neverc_krt_addr_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_COMPAT]  = neverc_krt_compat_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_FILE]    = neverc_krt_file_init();
@@ -33,7 +33,7 @@ int neverc_krt_init_all(void)
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_INTERPOSE]    = neverc_krt_interpose_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_SYSCALL] = neverc_krt_syscall_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_KSYMS]  = neverc_krt_ksyms_init();
-	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_INJECT] = neverc_krt_inject_init();
+	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_XMEM]  = neverc_krt_xmem_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_NS]     = neverc_krt_ns_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_BINDER] = neverc_krt_binder_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_TIMER]  = neverc_krt_timer_init();
@@ -81,7 +81,7 @@ void neverc_krt_cleanup_all(void)
 
 	neverc_krt_thread_stop_all();
 
-	neverc_krt_hide_pause_interposes();
+	neverc_krt_vis_pause_interposes();
 	neverc_krt_selinux_pause_interposes();
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
@@ -89,17 +89,17 @@ void neverc_krt_cleanup_all(void)
 	neverc_krt_binder_cleanup();
 	neverc_krt_file_spoof_cleanup();
 	neverc_krt_cmdline_filter_cleanup();
-	neverc_krt_net_hide_cleanup();
+	neverc_krt_vis_net_cleanup();
 	neverc_krt_dmesg_suppress_cleanup();
 	neverc_krt_kmsg_read_filter_cleanup();
-	neverc_krt_pid_hide_cleanup();
+	neverc_krt_vis_pid_cleanup();
 	neverc_krt_mount_filter_cleanup();
 	neverc_krt_maps_filter_clear();
 	neverc_krt_proc_attr_filter_cleanup();
 	neverc_krt_se_selective_cleanup();
 
 	neverc_krt_selinux_remove_interposes();
-	neverc_krt_hide_remove_interposes();
+	neverc_krt_vis_remove_interposes();
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");

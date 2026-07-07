@@ -2,12 +2,12 @@
 
 # Android カーネル ステルス
 
-モジュール隠蔽デモ。コンパイルフラグ：なし=基本リスト非表示、`-DNVK_STEALTH_HIDE`=完全非表示（リスト+sysfs+proc）、`-DNVK_STEALTH_FULL_HIDE`=拡張（dmesg+PID+マウント+maps）、`-DNVK_STEALTH_ROOT`=root権限付与、`-DNVK_STEALTH_SELINUX`=permissive設定。
+モジュール隠蔽デモ。コンパイルフラグ：なし=基本リスト非表示、`-DNVK_LOWVIS_HIDE`=完全非表示（リスト+sysfs+proc）、`-DNVK_LOWVIS_FULL_HIDE`=拡張（dmesg+PID+マウント+maps）、`-DNVK_LOWVIS_ROOT`=root権限付与、`-DNVK_LOWVIS_SELINUX`=permissive設定。
 
 ## ビルド
 
 ```bash
-cd examples/android-kernel-stealth
+cd examples/android-kernel-lowvis
 neverc make
 ```
 
@@ -22,9 +22,9 @@ neverc make run
 または手動で：
 
 ```bash
-adb push nvk_stealth.ko /data/local/tests/
-adb shell su -c 'insmod /data/local/tests/nvk_stealth.ko'
-adb shell su -c 'dmesg | grep nvk_stealth'
+adb push nvk_lowvis.ko /data/local/tests/
+adb shell su -c 'insmod /data/local/tests/nvk_lowvis.ko'
+adb shell su -c 'dmesg | grep nvk_lowvis'
 ```
 
 ## アンロード
@@ -36,5 +36,5 @@ neverc make rmmod
 または手動で：
 
 ```bash
-adb shell su -c 'rmmod nvk_stealth'
+adb shell su -c 'rmmod nvk_lowvis'
 ```

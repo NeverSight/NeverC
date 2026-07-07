@@ -26,15 +26,15 @@ typedef void  (*neverc_krt_unuse_mm_fn)(void *mm);
 static neverc_krt_do_mmap_fn          _neverc_krt_do_mmap;
 static neverc_krt_vm_mmap_fn          _neverc_krt_vm_mmap;
 static neverc_krt_do_munmap_fn        _neverc_krt_do_munmap;
-static int                            _neverc_krt_inject_inited;
+static int                            _neverc_krt_xmem_inited;
 static neverc_krt_mmap_write_lock_fn  _neverc_krt_mmap_wlock;
 static neverc_krt_mmap_write_unlock_fn _neverc_krt_mmap_wunlock;
 static neverc_krt_use_mm_fn           _neverc_krt_use_mm;
 static neverc_krt_unuse_mm_fn         _neverc_krt_unuse_mm;
 
-int neverc_krt_inject_init(void)
+int neverc_krt_xmem_init(void)
 {
-	if (_neverc_krt_inject_inited) return 0;
+	if (_neverc_krt_xmem_inited) return 0;
 
 	_neverc_krt_do_mmap = (neverc_krt_do_mmap_fn)NEVERC_KRT_LOOKUP("do_mmap");
 	_neverc_krt_vm_mmap = (neverc_krt_vm_mmap_fn)NEVERC_KRT_LOOKUP("vm_mmap");
@@ -42,25 +42,25 @@ int neverc_krt_inject_init(void)
 	if (!_neverc_krt_do_munmap)
 		_neverc_krt_do_munmap = (neverc_krt_do_munmap_fn)NEVERC_KRT_LOOKUP("__do_munmap");
 
-	_neverc_krt_inject_inited = 1;
+	_neverc_krt_xmem_inited = 1;
 	return (_neverc_krt_do_mmap || _neverc_krt_vm_mmap) ? 0 : -1;
 }
 
-long neverc_krt_inject_write(struct task_struct *task,
+long neverc_krt_xmem_write(struct task_struct *task,
 			     unsigned long addr,
 			     const void *data, size_t len)
 {
 	return neverc_krt_vma_write_remote(task, addr, data, len);
 }
 
-long neverc_krt_inject_read(struct task_struct *task,
+long neverc_krt_xmem_read(struct task_struct *task,
 			    unsigned long addr,
 			    void *buf, size_t len)
 {
 	return neverc_krt_vma_read_remote(task, addr, buf, len);
 }
 
-static void _neverc_krt_inject_flush_code(unsigned long addr, size_t len)
+static void _neverc_krt_xmem_flush_code(unsigned long addr, size_t len)
 {
 	unsigned long line;
 	unsigned long end = addr + len;
@@ -73,7 +73,7 @@ static void _neverc_krt_inject_flush_code(unsigned long addr, size_t len)
 	__asm__ __volatile__("isb" ::: "memory");
 }
 
-int neverc_krt_inject_dyncode(struct task_struct *task,
+int neverc_krt_xmem_deploy_dyncode(struct task_struct *task,
 				const struct neverc_krt_dyncode *sc,
 				unsigned long target_addr)
 {
@@ -82,15 +82,15 @@ int neverc_krt_inject_dyncode(struct task_struct *task,
 		return -2;
 
 	size_t code_sz = (size_t)sc->insn_count * 4;
-	long ret = neverc_krt_inject_write(task, target_addr,
+	long ret = neverc_krt_xmem_write(task, target_addr,
 				     sc->code, code_sz);
 	if (ret) return (int)ret;
 
-	_neverc_krt_inject_flush_code(target_addr, code_sz);
+	_neverc_krt_xmem_flush_code(target_addr, code_sz);
 	return 0;
 }
 
-unsigned long neverc_krt_inject_find_cave(struct task_struct *task,
+unsigned long neverc_krt_xmem_find_cave(struct task_struct *task,
 					  unsigned long min_size)
 {
 	struct neverc_krt_vma_info info;
@@ -99,7 +99,7 @@ unsigned long neverc_krt_inject_find_cave(struct task_struct *task,
 	return info.end - min_size - 64;
 }
 
-static void _neverc_krt_inject_resolve_mm(void)
+static void _neverc_krt_xmem_resolve_mm(void)
 {
 	if (!_neverc_krt_get_task_mm) {
 		_neverc_krt_get_task_mm =
@@ -125,7 +125,7 @@ static void _neverc_krt_inject_resolve_mm(void)
 	}
 }
 
-unsigned long neverc_krt_inject_mmap(struct task_struct *task,
+unsigned long neverc_krt_xmem_mmap(struct task_struct *task,
 				     unsigned long len, unsigned long prot)
 {
 	unsigned long addr = 0;
@@ -134,14 +134,14 @@ unsigned long neverc_krt_inject_mmap(struct task_struct *task,
 	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE))
 		return 0;
 
-	_neverc_krt_inject_resolve_mm();
+	_neverc_krt_xmem_resolve_mm();
 	if (!_neverc_krt_get_task_mm || !_neverc_krt_do_mmap) return 0;
 	if (!_neverc_krt_use_mm || !_neverc_krt_unuse_mm) return 0;
 
 	mm = _neverc_krt_get_task_mm(task);
 	if (!mm) return 0;
 
-	unsigned long flags = NEVERC_KRT_INJECT_MAP_PRIVATE | NEVERC_KRT_INJECT_MAP_ANON;
+	unsigned long flags = NEVERC_KRT_XMEM_MAP_PRIVATE | NEVERC_KRT_XMEM_MAP_ANON;
 	unsigned long populate = 0;
 	unsigned long result;
 
@@ -171,13 +171,13 @@ unsigned long neverc_krt_inject_mmap(struct task_struct *task,
 	return addr;
 }
 
-int neverc_krt_inject_munmap(struct task_struct *task,
+int neverc_krt_xmem_munmap(struct task_struct *task,
 			     unsigned long addr, size_t len)
 {
 	void *mm;
 	int ret = -1;
 
-	_neverc_krt_inject_resolve_mm();
+	_neverc_krt_xmem_resolve_mm();
 	if (!_neverc_krt_get_task_mm || !_neverc_krt_do_munmap) return -1;
 	if (!_neverc_krt_use_mm || !_neverc_krt_unuse_mm) return -1;
 
@@ -194,7 +194,7 @@ int neverc_krt_inject_munmap(struct task_struct *task,
 	return ret;
 }
 
-int neverc_krt_inject_hijack_setup(struct neverc_krt_thread_hijack *hj,
+int neverc_krt_xmem_hijack_setup(struct neverc_krt_thread_hijack *hj,
 				   struct task_struct *task,
 				   const struct neverc_krt_dyncode *sc)
 {
@@ -202,19 +202,19 @@ int neverc_krt_inject_hijack_setup(struct neverc_krt_thread_hijack *hj,
 	__builtin_memset(hj, 0, sizeof(*hj));
 
 	size_t code_sz = (size_t)sc->insn_count * 4;
-	unsigned long prot = NEVERC_KRT_INJECT_PROT_READ | NEVERC_KRT_INJECT_PROT_EXEC;
+	unsigned long prot = NEVERC_KRT_XMEM_PROT_READ | NEVERC_KRT_XMEM_PROT_EXEC;
 	unsigned long alloc_sz = (code_sz + 0xFFF) & ~0xFFFUL;
 
-	unsigned long code_addr = neverc_krt_inject_mmap(task, alloc_sz, prot);
+	unsigned long code_addr = neverc_krt_xmem_mmap(task, alloc_sz, prot);
 	if (!code_addr) return -2;
 
-	long ret = neverc_krt_inject_write(task, code_addr, sc->code, code_sz);
+	long ret = neverc_krt_xmem_write(task, code_addr, sc->code, code_sz);
 	if (ret) {
-		neverc_krt_inject_munmap(task, code_addr, alloc_sz);
+		neverc_krt_xmem_munmap(task, code_addr, alloc_sz);
 		return -3;
 	}
 
-	_neverc_krt_inject_flush_code(code_addr, code_sz);
+	_neverc_krt_xmem_flush_code(code_addr, code_sz);
 
 	hj->code_addr = code_addr + sc->entry_offset;
 	hj->code_size = alloc_sz;
@@ -222,7 +222,7 @@ int neverc_krt_inject_hijack_setup(struct neverc_krt_thread_hijack *hj,
 	return 0;
 }
 
-int neverc_krt_inject_elf(struct task_struct *task,
+int neverc_krt_xmem_load_elf(struct task_struct *task,
 			  const void *elf_data, size_t elf_len,
 			  struct neverc_krt_elf_load_info *info)
 {
@@ -256,29 +256,29 @@ int neverc_krt_inject_elf(struct task_struct *task,
 	if (load_count == 0) return -6;
 
 	unsigned long total = ((hi - lo) + 0xFFF) & ~0xFFFUL;
-	unsigned long prot = NEVERC_KRT_INJECT_PROT_READ | NEVERC_KRT_INJECT_PROT_WRITE |
-			     NEVERC_KRT_INJECT_PROT_EXEC;
-	unsigned long base = neverc_krt_inject_mmap(task, total, prot);
+	unsigned long prot = NEVERC_KRT_XMEM_PROT_READ | NEVERC_KRT_XMEM_PROT_WRITE |
+			     NEVERC_KRT_XMEM_PROT_EXEC;
+	unsigned long base = neverc_krt_xmem_mmap(task, total, prot);
 	if (!base) return -7;
 
 	for (i = 0; i < ehdr->e_phnum; i++) {
 		if (phdr[i].p_type != NEVERC_KRT_PT_LOAD) continue;
 		if (phdr[i].p_offset + phdr[i].p_filesz > elf_len) {
-			neverc_krt_inject_munmap(task, base, total);
+			neverc_krt_xmem_munmap(task, base, total);
 			return -8;
 		}
 
 		unsigned long dst = base + (phdr[i].p_vaddr - lo);
 		const void *src = (const u8 *)elf_data + phdr[i].p_offset;
-		long ret = neverc_krt_inject_write(task, dst, src,
+		long ret = neverc_krt_xmem_write(task, dst, src,
 					     (size_t)phdr[i].p_filesz);
 		if (ret) {
-			neverc_krt_inject_munmap(task, base, total);
+			neverc_krt_xmem_munmap(task, base, total);
 			return -9;
 		}
 
 		if (phdr[i].p_flags & 1)
-			_neverc_krt_inject_flush_code(dst, (size_t)phdr[i].p_filesz);
+			_neverc_krt_xmem_flush_code(dst, (size_t)phdr[i].p_filesz);
 	}
 
 	info->base = base;

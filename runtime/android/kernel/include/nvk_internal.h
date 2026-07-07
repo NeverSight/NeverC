@@ -52,7 +52,7 @@ extern neverc_krt_copy_to_user_fn   _neverc_krt_copy_to_user;
 extern neverc_krt_pte_rw_fn         _neverc_krt_pte_make_rw;
 extern neverc_krt_pte_rw_fn         _neverc_krt_pte_make_ro;
 
-/* ---- nvk_vma.c (shared with nvk_inject.c) ---- */
+/* ---- nvk_vma.c (shared with nvk_xmem.c) ---- */
 
 extern neverc_krt_get_task_mm_fn    _neverc_krt_get_task_mm;
 extern neverc_krt_mmput_fn          _neverc_krt_mmput;

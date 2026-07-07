@@ -2,12 +2,12 @@
 
 # Module furtif noyau Android
 
-Démo de dissimulation de module. Drapeaux : aucun=masquage liste basique, `-DNVK_STEALTH_HIDE`=masquage complet (liste+sysfs+proc), `-DNVK_STEALTH_FULL_HIDE`=étendu (dmesg+PID+mount+maps), `-DNVK_STEALTH_ROOT`=accorder root, `-DNVK_STEALTH_SELINUX`=mode permissif.
+Démo de dissimulation de module. Drapeaux : aucun=masquage liste basique, `-DNVK_LOWVIS_HIDE`=masquage complet (liste+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=étendu (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=accorder root, `-DNVK_LOWVIS_SELINUX`=mode permissif.
 
 ## Construction
 
 ```bash
-cd examples/android-kernel-stealth
+cd examples/android-kernel-lowvis
 neverc make
 ```
 
@@ -22,9 +22,9 @@ neverc make run
 Ou manuellement :
 
 ```bash
-adb push nvk_stealth.ko /data/local/tests/
-adb shell su -c 'insmod /data/local/tests/nvk_stealth.ko'
-adb shell su -c 'dmesg | grep nvk_stealth'
+adb push nvk_lowvis.ko /data/local/tests/
+adb shell su -c 'insmod /data/local/tests/nvk_lowvis.ko'
+adb shell su -c 'dmesg | grep nvk_lowvis'
 ```
 
 ## Déchargement
@@ -36,5 +36,5 @@ neverc make rmmod
 Ou manuellement :
 
 ```bash
-adb shell su -c 'rmmod nvk_stealth'
+adb shell su -c 'rmmod nvk_lowvis'
 ```

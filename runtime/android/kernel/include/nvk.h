@@ -9,7 +9,7 @@
 #include <nvk_process.h>
 #include <nvk_cred.h>
 #include <nvk_selinux.h>
-#include <nvk_hide.h>
+#include <nvk_vis.h>
 #include <nvk_log.h>
 #include <nvk_thread.h>
 #include <nvk_netlink.h>
@@ -22,7 +22,7 @@
 #include <nvk_ksyms.h>
 #include <nvk_seccomp.h>
 #include <nvk_pmu.h>
-#include <nvk_inject.h>
+#include <nvk_xmem.h>
 #include <nvk_ns.h>
 #include <nvk_binder.h>
 #include <nvk_crypto.h>
@@ -33,7 +33,7 @@
 #define NEVERC_KRT_SUB_MEM       0
 #define NEVERC_KRT_SUB_PROCESS   1
 #define NEVERC_KRT_SUB_CRED      2
-#define NEVERC_KRT_SUB_HIDE      3
+#define NEVERC_KRT_SUB_VIS       3
 #define NEVERC_KRT_SUB_ADDR      4
 #define NEVERC_KRT_SUB_COMPAT    5
 #define NEVERC_KRT_SUB_FILE      6
@@ -43,7 +43,7 @@
 #define NEVERC_KRT_SUB_INTERPOSE     10
 #define NEVERC_KRT_SUB_SYSCALL  11
 #define NEVERC_KRT_SUB_KSYMS    12
-#define NEVERC_KRT_SUB_INJECT   13
+#define NEVERC_KRT_SUB_XMEM    13
 #define NEVERC_KRT_SUB_NS       14
 #define NEVERC_KRT_SUB_BINDER   15
 #define NEVERC_KRT_SUB_TIMER    16

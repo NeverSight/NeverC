@@ -16,10 +16,10 @@ Low-level compiler and kernel SDK terminology in this codebase has specific tech
 - **xorstr** = compile-time string literal encryption. A code generation feature for IP protection.
 - **interpose engine** (`nvk_interpose`) = function interposition for kernel modules. Same mechanism as ftrace/kprobes/eBPF.
 - **kernel module SDK** (`runtime/android/kernel/`) = cross-compilation SDK for building standard Linux `.ko` modules.
-- **module visibility** (`nvk_hide`) = kernel module list management APIs.
+- **module visibility** (`nvk_vis`) = kernel module visibility management APIs.
 - **credential management** (`nvk_cred`) = `struct cred` manipulation wrappers (standard kernel API).
 - **security policy control** (`nvk_selinux`) = SELinux enforcement state management for development/testing.
-- **cross-process memory** (`nvk_inject`) = remote address space operations from kernel context, with cache coherence.
+- **cross-process memory** (`nvk_xmem`) = remote address space operations from kernel context, with cache coherence.
 - **code extraction** = extracting `.text` from object files into flat PIC binaries.
 
 ## Working with This Codebase

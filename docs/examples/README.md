@@ -54,7 +54,7 @@ No kernel source tree required — NeverC compiles against the bundled minimal r
 | [Kernel Driver Template](../../examples/android-kernel-driver/README.md) | Dynamic symbol resolution template | `kallsyms_lookup_name`, GKI-stable ABI, 5.10–6.12 |
 | [Kernel Inline Interpose](../../examples/android-kernel-inline-interpose/README.md) | Inline interpose on `do_faccessat` | BTI/PAC-safe patch, context interpose mode, PC-relative relocation |
 | [Kernel Syscall Interpose](../../examples/android-kernel-syscall-interpose/README.md) | Syscall table / inline / context interpose | `sys_call_table` swap, inline interpose, context interpose modes |
-| [Kernel Stealth](../../examples/android-kernel-stealth/README.md) | Module concealment | List/sysfs/proc hiding, root grant, SELinux permissive |
+| [Kernel Lowvis](../../examples/android-kernel-lowvis/README.md) | Module visibility management | List/sysfs/proc visibility, root grant, SELinux permissive |
 | [Kernel Full SDK](../../examples/android-kernel-full/README.md) | Complete SDK integration | Netlink IPC, interposes, creds, hiding, SELinux, VMA, file I/O |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.md) | Character device + ioctl | `misc_register`, ioctl dispatch, `/proc` seq_file |
 | [Kernel Netlink](../../examples/android-kernel-netlink/README.md) | Bidirectional netlink IPC | PING/VERSION/ECHO commands, `nvk_nl_open`/`nvk_nl_reply` |

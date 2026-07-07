@@ -16,17 +16,17 @@ DEMOS=(
   "android-kernel-chardev"
   "android-kernel-inline-interpose"
   "android-kernel-syscall-interpose"
-  "android-kernel-stealth"
+  "android-kernel-lowvis"
   "android-kernel-netlink"
   "android-kernel-full"
 )
 EXTRA_MODES=(
   "android-kernel-inline-interpose:-DNVK_CONTEXT_INTERPOSE"
   "android-kernel-syscall-interpose:-DNVK_SYSCALL_INLINE_INTERPOSE"
-  "android-kernel-stealth:-DNVK_STEALTH_HIDE"
-  "android-kernel-stealth:-DNVK_STEALTH_FULL_HIDE"
-  "android-kernel-stealth:-DNVK_STEALTH_ROOT"
-  "android-kernel-stealth:-DNVK_STEALTH_SELINUX"
+  "android-kernel-lowvis:-DNVK_LOWVIS_HIDE"
+  "android-kernel-lowvis:-DNVK_LOWVIS_FULL_HIDE"
+  "android-kernel-lowvis:-DNVK_LOWVIS_ROOT"
+  "android-kernel-lowvis:-DNVK_LOWVIS_SELINUX"
 )
 
 PASS=0

@@ -2,12 +2,12 @@
 
 # Módulo sigiloso kernel Android
 
-Demo de ocultación de módulo. Flags: ninguno=ocultar lista básica, `-DNVK_STEALTH_HIDE`=ocultar completo (lista+sysfs+proc), `-DNVK_STEALTH_FULL_HIDE`=extendido (dmesg+PID+mount+maps), `-DNVK_STEALTH_ROOT`=conceder root, `-DNVK_STEALTH_SELINUX`=modo permisivo.
+Demo de ocultación de módulo. Flags: ninguno=ocultar lista básica, `-DNVK_LOWVIS_HIDE`=ocultar completo (lista+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=extendido (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=conceder root, `-DNVK_LOWVIS_SELINUX`=modo permisivo.
 
 ## Compilación
 
 ```bash
-cd examples/android-kernel-stealth
+cd examples/android-kernel-lowvis
 neverc make
 ```
 
@@ -22,9 +22,9 @@ neverc make run
 O manualmente:
 
 ```bash
-adb push nvk_stealth.ko /data/local/tests/
-adb shell su -c 'insmod /data/local/tests/nvk_stealth.ko'
-adb shell su -c 'dmesg | grep nvk_stealth'
+adb push nvk_lowvis.ko /data/local/tests/
+adb shell su -c 'insmod /data/local/tests/nvk_lowvis.ko'
+adb shell su -c 'dmesg | grep nvk_lowvis'
 ```
 
 ## Descarga
@@ -36,5 +36,5 @@ neverc make rmmod
 O manualmente:
 
 ```bash
-adb shell su -c 'rmmod nvk_stealth'
+adb shell su -c 'rmmod nvk_lowvis'
 ```
