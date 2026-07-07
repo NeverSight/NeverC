@@ -719,6 +719,103 @@ OPTION(prefix_1, "-fdriver-only", fdriver_only, Flag, Action_Group, INVALID,
        nullptr)
 OPTION(prefix_1, "-fdwarf-directory-asm", fdwarf_directory_asm, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0, "", nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-align=", fdyncode_align_EQ, Joined, f_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Pad the final dyncode .bin to the next multiple of <bytes> using the "
+       "byte selected by -fdyncode-pad= (defaults to 0x00). Must be a power "
+       "of two; defaults to 1 (no alignment).",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-all-blr", fdyncode_all_blr, Flag, f_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Aggressive dyncode mode: rewrite every direct call into an indirect "
+       "branch so no pc-relative external branch (ARM64_RELOC_BRANCH26 / "
+       "IMAGE_REL_AMD64_REL32) can ever survive",
+       nullptr, nullptr)
+OPTION(prefix_1,
+       "-fdyncode-bad-byte-profile=", fdyncode_bad_byte_profile_EQ, Joined,
+       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Reject the final dyncode .bin using a built-in bad-byte profile: "
+       "null, c-string, http-newline, line, whitespace, or ascii-control",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-bad-byte-rewrite", fdyncode_bad_byte_rewrite,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Before the bad-byte audit fires, walk every strategy registered "
+       "through the dyncode plugin SDK "
+       "(Plugin.h::registerBadByteRewriteStrategy) and let them rewrite raw "
+       ".text bytes into bad-byte-free equivalents (default).",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-bad-bytes=", fdyncode_bad_bytes_EQ, Joined,
+       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Reject the final dyncode .bin if it contains any byte in the "
+       "comma-separated hex list (example: -fdyncode-bad-bytes=00,0a,0d)",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-charset=", fdyncode_charset_EQ, Joined, f_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Run the dyncode .text through the charset encoder registered under "
+       "<name> via Plugin.h::registerCharsetEncoder, then prepend its "
+       "target-specific decoder stub before the bad-byte audit fires. The "
+       "compiler ships no built-in charsets; downstream libraries are expected "
+       "to register printable / alphanumeric / custom alphabets through the "
+       "plugin SDK. Unknown names are a hard error.",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-entry=", fdyncode_entry_EQ, Joined, f_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Override the dyncode entry symbol name (default: main / _main / "
+       "dyncode_entry)",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-heap-arena", fdyncode_heap_arena,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Rewrite malloc/free/calloc/realloc calls into a stack-resident "
+       "arena allocator for small allocations (<= 64 KB). Large allocations "
+       "fall back to the OS allocator (msvcrt.dll via PEB walk on Windows, "
+       "mmap via syscall on Linux/macOS). Enabled by default in dyncode "
+       "mode.",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-inline-all", fdyncode_inline_all,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Force-inline all non-entry functions into the dyncode entry "
+       "point, producing a single monolithic function (legacy behaviour).",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-keep-obj=", fdyncode_keep_obj_EQ, Joined,
+       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Copy the intermediate object file (Mach-O / ELF / COFF) to <path> so "
+       "otool -rv / llvm-objdump -dr / dumpbin can inspect relocations",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-max-length=", fdyncode_max_length_EQ, Joined,
+       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Reject the final dyncode .bin if its length (after every other "
+       "finalize step) exceeds the given byte count. Accepts plain decimal or "
+       "0x-prefixed hex.",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-mir-obfuscate=", fdyncode_mir_obfuscate_EQ,
+       Joined, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Forwarded verbatim to the registered MIR-level dyncode obfuscation "
+       "hooks (RunBeforePreEmit / RunAfterPreEmit). Useful when the IR-level "
+       "and MIR-level obfuscators want to take different spec strings. "
+       "Defaults to the -fdyncode-obfuscate= value when unset.",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-mode", fdyncode_mode, Flag, INVALID, INVALID,
+       nullptr, HelpHidden, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-obfuscate=", fdyncode_obfuscate_EQ, Joined,
+       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Forwarded verbatim to the registered dyncode IR-level obfuscation "
+       "hooks (see the dyncode pipeline design doc shipped in the source "
+       "tree). Meaningless unless an obfuscator library has linked in; the "
+       "dyncode pipeline itself never interprets the value.",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-pad=", fdyncode_pad_EQ, Joined, f_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Hex byte used for alignment / max-length padding (example: "
+       "-fdyncode-pad=cc). Rejected when the byte also appears in the "
+       "bad-byte set, or when neither -fdyncode-align= nor "
+       "-fdyncode-max-length= is set.",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode", fdyncode, Flag, f_Group, INVALID, nullptr,
+       NoXarchOption | NoArgumentUnused, DefaultVis, 0,
+       "Enable dyncode compilation: produce a flat .bin whose .text has zero "
+       "relocations and no data section (supported on arm64/x86_64 across "
+       "macOS/Linux/Android/Windows)",
+       nullptr, nullptr)
 OPTION(prefix_1, "-feliminate-unused-debug-symbols",
        feliminate_unused_debug_symbols, Flag, f_Group, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
@@ -1352,6 +1449,27 @@ OPTION(prefix_1, "-fno-dollars-in-identifiers", fno_dollars_in_identifiers,
 OPTION(prefix_1, "-fno-dwarf-directory-asm", fno_dwarf_directory_asm, Flag,
        f_Group, INVALID, nullptr, 0, DefaultVis | DefaultVis, 0, "", nullptr,
        nullptr)
+OPTION(prefix_1, "-fno-dyncode-bad-byte-rewrite",
+       fno_dyncode_bad_byte_rewrite, Flag, f_Group, INVALID, nullptr,
+       NoXarchOption, DefaultVis, 0,
+       "Skip the bad-byte rewriter and fall back to audit-only behaviour: any "
+       "byte present in -fdyncode-bad-bytes= / -fdyncode-bad-byte-profile= "
+       "triggers a hard finalize-time error.",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fno-dyncode-heap-arena", fno_dyncode_heap_arena,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Disable the dyncode heap arena pass; malloc/free calls will be "
+       "left as unresolved externals (original behaviour).",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fno-dyncode-inline-all", fno_dyncode_inline_all,
+       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Allow dyncode helper functions to remain as separate functions "
+       "instead of forcing everything into the entry (default).",
+       nullptr, nullptr)
+OPTION(prefix_1, "-fno-dyncode", fno_dyncode, Flag, f_Group, INVALID,
+       nullptr, NoXarchOption, DefaultVis, 0,
+       "Disable dyncode compilation (undoes a preceding -fdyncode)",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fno-eliminate-unused-debug-symbols",
        fno_eliminate_unused_debug_symbols, Flag, f_Group, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
@@ -1545,27 +1663,6 @@ OPTION(prefix_1, "-fno-save-optimization-record", fno_save_optimization_record,
        nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-fno-semantic-interposition", fno_semantic_interposition,
        Flag, f_Group, INVALID, nullptr, 0, DefaultVis, 0, "", nullptr, nullptr)
-OPTION(prefix_1, "-fno-dyncode-bad-byte-rewrite",
-       fno_dyncode_bad_byte_rewrite, Flag, f_Group, INVALID, nullptr,
-       NoXarchOption, DefaultVis, 0,
-       "Skip the bad-byte rewriter and fall back to audit-only behaviour: any "
-       "byte present in -fdyncode-bad-bytes= / -fdyncode-bad-byte-profile= "
-       "triggers a hard finalize-time error.",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fno-dyncode-heap-arena", fno_dyncode_heap_arena,
-       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Disable the dyncode heap arena pass; malloc/free calls will be "
-       "left as unresolved externals (original behaviour).",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fno-dyncode-inline-all", fno_dyncode_inline_all,
-       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Allow dyncode helper functions to remain as separate functions "
-       "instead of forcing everything into the entry (default).",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fno-dyncode", fno_dyncode, Flag, f_Group, INVALID,
-       nullptr, NoXarchOption, DefaultVis, 0,
-       "Disable dyncode compilation (undoes a preceding -fdyncode)",
-       nullptr, nullptr)
 OPTION(prefix_1, "-fno-short-enums", fno_short_enums, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0, "", nullptr, nullptr)
 OPTION(prefix_1, "-fno-short-wchar", fno_short_wchar, Flag, f_Group, INVALID,
@@ -1835,103 +1932,6 @@ OPTION(prefix_1, "-fseh-exceptions", fseh_exceptions, Flag, f_Group, INVALID,
 OPTION(prefix_1, "-fsemantic-interposition", fsemantic_interposition, Flag,
        f_Group, INVALID, nullptr, 0, DefaultVis | DefaultVis, 0, "", nullptr,
        nullptr)
-OPTION(prefix_1, "-fdyncode-align=", fdyncode_align_EQ, Joined, f_Group,
-       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Pad the final dyncode .bin to the next multiple of <bytes> using the "
-       "byte selected by -fdyncode-pad= (defaults to 0x00). Must be a power "
-       "of two; defaults to 1 (no alignment).",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-all-blr", fdyncode_all_blr, Flag, f_Group,
-       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Aggressive dyncode mode: rewrite every direct call into an indirect "
-       "branch so no pc-relative external branch (ARM64_RELOC_BRANCH26 / "
-       "IMAGE_REL_AMD64_REL32) can ever survive",
-       nullptr, nullptr)
-OPTION(prefix_1,
-       "-fdyncode-bad-byte-profile=", fdyncode_bad_byte_profile_EQ, Joined,
-       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Reject the final dyncode .bin using a built-in bad-byte profile: "
-       "null, c-string, http-newline, line, whitespace, or ascii-control",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-bad-byte-rewrite", fdyncode_bad_byte_rewrite,
-       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Before the bad-byte audit fires, walk every strategy registered "
-       "through the dyncode plugin SDK "
-       "(Plugin.h::registerBadByteRewriteStrategy) and let them rewrite raw "
-       ".text bytes into bad-byte-free equivalents (default).",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-bad-bytes=", fdyncode_bad_bytes_EQ, Joined,
-       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Reject the final dyncode .bin if it contains any byte in the "
-       "comma-separated hex list (example: -fdyncode-bad-bytes=00,0a,0d)",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-charset=", fdyncode_charset_EQ, Joined, f_Group,
-       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Run the dyncode .text through the charset encoder registered under "
-       "<name> via Plugin.h::registerCharsetEncoder, then prepend its "
-       "target-specific decoder stub before the bad-byte audit fires. The "
-       "compiler ships no built-in charsets; downstream libraries are expected "
-       "to register printable / alphanumeric / custom alphabets through the "
-       "plugin SDK. Unknown names are a hard error.",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-entry=", fdyncode_entry_EQ, Joined, f_Group,
-       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Override the dyncode entry symbol name (default: main / _main / "
-       "dyncode_entry)",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-heap-arena", fdyncode_heap_arena,
-       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Rewrite malloc/free/calloc/realloc calls into a stack-resident "
-       "arena allocator for small allocations (<= 64 KB). Large allocations "
-       "fall back to the OS allocator (msvcrt.dll via PEB walk on Windows, "
-       "mmap via syscall on Linux/macOS). Enabled by default in dyncode "
-       "mode.",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-inline-all", fdyncode_inline_all,
-       Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Force-inline all non-entry functions into the dyncode entry "
-       "point, producing a single monolithic function (legacy behaviour).",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-keep-obj=", fdyncode_keep_obj_EQ, Joined,
-       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Copy the intermediate object file (Mach-O / ELF / COFF) to <path> so "
-       "otool -rv / llvm-objdump -dr / dumpbin can inspect relocations",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-max-length=", fdyncode_max_length_EQ, Joined,
-       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Reject the final dyncode .bin if its length (after every other "
-       "finalize step) exceeds the given byte count. Accepts plain decimal or "
-       "0x-prefixed hex.",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-mir-obfuscate=", fdyncode_mir_obfuscate_EQ,
-       Joined, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Forwarded verbatim to the registered MIR-level dyncode obfuscation "
-       "hooks (RunBeforePreEmit / RunAfterPreEmit). Useful when the IR-level "
-       "and MIR-level obfuscators want to take different spec strings. "
-       "Defaults to the -fdyncode-obfuscate= value when unset.",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-mode", fdyncode_mode, Flag, INVALID, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0, nullptr, nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-obfuscate=", fdyncode_obfuscate_EQ, Joined,
-       f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Forwarded verbatim to the registered dyncode IR-level obfuscation "
-       "hooks (see the dyncode pipeline design doc shipped in the source "
-       "tree). Meaningless unless an obfuscator library has linked in; the "
-       "dyncode pipeline itself never interprets the value.",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode-pad=", fdyncode_pad_EQ, Joined, f_Group,
-       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Hex byte used for alignment / max-length padding (example: "
-       "-fdyncode-pad=cc). Rejected when the byte also appears in the "
-       "bad-byte set, or when neither -fdyncode-align= nor "
-       "-fdyncode-max-length= is set.",
-       nullptr, nullptr)
-OPTION(prefix_1, "-fdyncode", fdyncode, Flag, f_Group, INVALID, nullptr,
-       NoXarchOption | NoArgumentUnused, DefaultVis, 0,
-       "Enable dyncode compilation: produce a flat .bin whose .text has zero "
-       "relocations and no data section (supported on arm64/x86_64 across "
-       "macOS/Linux/Android/Windows)",
-       nullptr, nullptr)
 OPTION(prefix_1, "-fshort-enums", fshort_enums, Flag, f_Group, INVALID, nullptr,
        0, DefaultVis | DefaultVis, 0,
        "Allocate to an enum type only as many bytes as it needs for the "
@@ -2709,6 +2709,33 @@ OPTION(prefix_1, "-mdefault-visibility-export-mapping=",
        "none,explicit,all")
 OPTION(prefix_1, "-mdouble=", mdouble_EQ, Joined, m_Group, INVALID, nullptr, 0,
        DefaultVis | DefaultVis, 0, "Force double to be <n> bits", "<n", "32,64")
+OPTION(prefix_1, "-mdyncode-context=", mdyncode_context_EQ, Joined, m_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
+       "Privilege level the emitted dyncode will run at: 'user' (default, "
+       "ring-3 payload) or 'kernel' (ring-0 driver / kext / kernel module). "
+       "Kernel mode disables PEB walk / syscall stub lowering, injects "
+       "target-specific driver flags (e.g. -mno-red-zone / -mcmodel=kernel on "
+       "Unix x86_64, /kernel on Windows, -mgeneral-regs-only on AArch64), and "
+       "routes OS helper resolution through a loader-provided "
+       "__neverc_kern_resolve shim.",
+       nullptr, nullptr)
+OPTION(prefix_1, "-mdyncode-libsystem", mdyncode_libsystem, Flag, m_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
+       "Legacy Darwin-centric alias of -mdyncode-syscall; kept for backwards "
+       "compatibility",
+       nullptr, nullptr)
+OPTION(prefix_1, "-mdyncode-syscall", mdyncode_syscall, Flag, m_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
+       "Replace libc/libSystem externs (write, exit, read, ...) with inline "
+       "syscall wrappers native to the target OS (svc #0x80 on Darwin, svc #0 "
+       "on Linux/Android arm64, syscall on Linux x86_64)",
+       nullptr, nullptr)
+OPTION(prefix_1, "-mdyncode-win-peb-import", mdyncode_win_peb_import, Flag,
+       m_Group, INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
+       "Windows dyncode only: resolve extern Win32 imports at runtime via a "
+       "PEB walk + GetProcAddress thunk instead of relying on the loader's "
+       "import table",
+       nullptr, nullptr)
 OPTION(prefix_1, "-MD", MD, Flag, M_Group, INVALID, nullptr, 0, DefaultVis, 0,
        "Write a depfile containing user and system headers", nullptr, nullptr)
 OPTION(prefix_1, "-menable-no-infs", menable_no_infinities, Flag, INVALID,
@@ -3456,33 +3483,6 @@ OPTION(prefix_1, "-msha512", msha512, Flag, m_x86_Features_Group, INVALID,
        nullptr)
 OPTION(prefix_1, "-msha", msha, Flag, m_x86_Features_Group, INVALID, nullptr,
        TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr, nullptr)
-OPTION(prefix_1, "-mdyncode-context=", mdyncode_context_EQ, Joined, m_Group,
-       INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
-       "Privilege level the emitted dyncode will run at: 'user' (default, "
-       "ring-3 payload) or 'kernel' (ring-0 driver / kext / kernel module). "
-       "Kernel mode disables PEB walk / syscall stub lowering, injects "
-       "target-specific driver flags (e.g. -mno-red-zone / -mcmodel=kernel on "
-       "Unix x86_64, /kernel on Windows, -mgeneral-regs-only on AArch64), and "
-       "routes OS helper resolution through a loader-provided "
-       "__neverc_kern_resolve shim.",
-       nullptr, nullptr)
-OPTION(prefix_1, "-mdyncode-libsystem", mdyncode_libsystem, Flag, m_Group,
-       INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
-       "Legacy Darwin-centric alias of -mdyncode-syscall; kept for backwards "
-       "compatibility",
-       nullptr, nullptr)
-OPTION(prefix_1, "-mdyncode-syscall", mdyncode_syscall, Flag, m_Group,
-       INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
-       "Replace libc/libSystem externs (write, exit, read, ...) with inline "
-       "syscall wrappers native to the target OS (svc #0x80 on Darwin, svc #0 "
-       "on Linux/Android arm64, syscall on Linux x86_64)",
-       nullptr, nullptr)
-OPTION(prefix_1, "-mdyncode-win-peb-import", mdyncode_win_peb_import, Flag,
-       m_Group, INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
-       "Windows dyncode only: resolve extern Win32 imports at runtime via a "
-       "PEB walk + GetProcAddress thunk instead of relying on the loader's "
-       "import table",
-       nullptr, nullptr)
 OPTION(prefix_1, "-mshstk", mshstk, Flag, m_x86_Features_Group, INVALID,
        nullptr, TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr,
        nullptr)
