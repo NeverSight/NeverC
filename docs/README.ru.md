@@ -2,7 +2,7 @@
 
 [← Проект NeverC](i18n/README.ru.md)
 
-> **Tip:** Use the language bar above; links on this page point to the same locale (shellcode README and breadcrumbs).
+> **Tip:** Use the language bar above; links on this page point to the same locale (dyncode README and breadcrumbs).
 
 # Документация NeverC
 
@@ -10,24 +10,24 @@
 
 ---
 
-## Компилятор shellcode
+## Компилятор dyncode
 
-Конвейер компиляции shellcode — основной исследовательский фокус NeverC. Архитектура, опции CLI, матрица платформ и примеры:
+Конвейер компиляции dyncode — основной исследовательский фокус NeverC. Архитектура, опции CLI, матрица платформ и примеры:
 
-**[Компилятор shellcode →](shellcode-compiler/README.ru.md)**
+**[Компилятор dyncode →](dyncode-compiler/README.ru.md)**
 
 | Документ | Описание |
 |----------|----------|
-| [README](shellcode-compiler/README.ru.md) | Обзор, быстрый старт, поддерживаемые цели |
-| [Pipeline & PIC](shellcode-compiler/pipeline-and-pic/README.ru.md) | Дизайн IR → объект → извлечение |
-| [IR Pass Design](shellcode-compiler/ir-pass-design/README.ru.md) | Обоснование каждого IR-прохода |
-| [MIR Pass Design](shellcode-compiler/mir-pass-design/README.ru.md) | MIR-проходы бэкенда |
-| [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.ru.md) | Компиляция Ring-0 |
-| [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.ru.md) | `TargetDesc` и экстракторы |
-| [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.ru.md) | Добавление платформы |
-| [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.ru.md) | Инструкции ARM64 с точки зрения shellcode |
-| [Roadmap](shellcode-compiler/roadmap/README.ru.md) | Запланированная работа |
-| [Progress](shellcode-compiler/progress/README.ru.md) | Статус реализации |
+| [README](dyncode-compiler/README.ru.md) | Обзор, быстрый старт, поддерживаемые цели |
+| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic/README.ru.md) | Дизайн IR → объект → извлечение |
+| [IR Pass Design](dyncode-compiler/ir-pass-design/README.ru.md) | Обоснование каждого IR-прохода |
+| [MIR Pass Design](dyncode-compiler/mir-pass-design/README.ru.md) | MIR-проходы бэкенда |
+| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode/README.ru.md) | Компиляция Ring-0 |
+| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture/README.ru.md) | `TargetDesc` и экстракторы |
+| [Platform Extension Guide](dyncode-compiler/platform-extension-guide/README.ru.md) | Добавление платформы |
+| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial/README.ru.md) | Инструкции ARM64 с точки зрения dyncode |
+| [Roadmap](dyncode-compiler/roadmap/README.ru.md) | Запланированная работа |
+| [Progress](dyncode-compiler/progress/README.ru.md) | Статус реализации |
 
 ---
 
@@ -72,7 +72,7 @@ NeverC предоставляет чистый C ABI для внедеревны
 | Стандартная библиотека (`std`) | Пакеты в стиле Go: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync` и другие |
 | Пакет плагинов обфускации (`neverc-obfuscation`) | VM, MBA, выравнивание потока управления, полиморфный движок, защита от модификации — плагины первой стороны |
 | Библиотека UI-компонентов (`neverc-ui`) | Кроссплатформенный UI в духе Qt, HTML/JS/CSS-рендерер, визуальный конструктор drag-and-drop, ИИ-нативный рабочий процесс |
-| IDE и языковые инструменты (`neverc-ide`) | Расширение VSCode + автономная IDE для файлов `.nc`, IntelliSense, отладка, визуализация shellcode-конвейера |
+| IDE и языковые инструменты (`neverc-ide`) | Расширение VSCode + автономная IDE для файлов `.nc`, IntelliSense, отладка, визуализация dyncode-конвейера |
 | Смарт-контракты EVM | Компиляция C в байткод EVM — смарт-контракты на C вместо Solidity |
 | Solana eBPF | Компиляция C в байткод eBPF Solana — разработка ончейн-программ на C |
 

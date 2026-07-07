@@ -30,115 +30,115 @@ struct RegistrarContext {
   std::string PluginPath;
 };
 
-bool isIRHookPoint(NevercHookPoint Hook) {
-  switch (Hook) {
-  case NEVERC_HOOK_PRE_OPT:
-  case NEVERC_HOOK_POST_OPT:
-  case NEVERC_HOOK_PIPELINE_START:
-  case NEVERC_HOOK_PIPELINE_LAST:
-  case NEVERC_HOOK_SC_BEFORE_PREP:
-  case NEVERC_HOOK_SC_AFTER_PREP:
-  case NEVERC_HOOK_SC_BEFORE_INLINING:
-  case NEVERC_HOOK_SC_AFTER_INLINING:
-  case NEVERC_HOOK_SC_AFTER_STACKIFY:
-  case NEVERC_HOOK_SC_AFTER_FINAL_IR:
-  case NEVERC_HOOK_LTO_PRE_OPT:
-  case NEVERC_HOOK_LTO_POST_OPT:
+bool isIRInterposePoint(NevercInterposePoint Interpose) {
+  switch (Interpose) {
+  case NEVERC_INTERPOSE_PRE_OPT:
+  case NEVERC_INTERPOSE_POST_OPT:
+  case NEVERC_INTERPOSE_PIPELINE_START:
+  case NEVERC_INTERPOSE_PIPELINE_LAST:
+  case NEVERC_INTERPOSE_SC_BEFORE_PREP:
+  case NEVERC_INTERPOSE_SC_AFTER_PREP:
+  case NEVERC_INTERPOSE_SC_BEFORE_INLINING:
+  case NEVERC_INTERPOSE_SC_AFTER_INLINING:
+  case NEVERC_INTERPOSE_SC_AFTER_STACKIFY:
+  case NEVERC_INTERPOSE_SC_AFTER_FINAL_IR:
+  case NEVERC_INTERPOSE_LTO_PRE_OPT:
+  case NEVERC_INTERPOSE_LTO_POST_OPT:
     return true;
   default:
     return false;
   }
 }
 
-bool isMIRHookPoint(NevercHookPoint Hook) {
-  switch (Hook) {
-  case NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT:
-  case NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR:
-  case NEVERC_HOOK_SC_BEFORE_PREEMIT:
-  case NEVERC_HOOK_SC_AFTER_PREEMIT:
-  case NEVERC_HOOK_SC_AFTER_FINAL_MIR:
+bool isMIRInterposePoint(NevercInterposePoint Interpose) {
+  switch (Interpose) {
+  case NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT:
+  case NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR:
+  case NEVERC_INTERPOSE_SC_BEFORE_PREEMIT:
+  case NEVERC_INTERPOSE_SC_AFTER_PREEMIT:
+  case NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR:
     return true;
   default:
     return false;
   }
 }
 
-bool isBinaryHookPoint(NevercHookPoint Hook) {
-  switch (Hook) {
-  case NEVERC_HOOK_SC_POST_EXTRACT:
-  case NEVERC_HOOK_SC_POST_FINALIZE:
+bool isBinaryInterposePoint(NevercInterposePoint Interpose) {
+  switch (Interpose) {
+  case NEVERC_INTERPOSE_SC_POST_EXTRACT:
+  case NEVERC_INTERPOSE_SC_POST_FINALIZE:
     return true;
   default:
     return false;
   }
 }
 
-bool isLinkerHookPoint(NevercHookPoint Hook) {
-  switch (Hook) {
-  case NEVERC_HOOK_LINK_PRE_LAYOUT:
-  case NEVERC_HOOK_LINK_POST_LAYOUT:
-  case NEVERC_HOOK_LINK_POST_EMIT:
+bool isLinkerInterposePoint(NevercInterposePoint Interpose) {
+  switch (Interpose) {
+  case NEVERC_INTERPOSE_LINK_PRE_LAYOUT:
+  case NEVERC_INTERPOSE_LINK_POST_LAYOUT:
+  case NEVERC_INTERPOSE_LINK_POST_EMIT:
     return true;
   default:
     return false;
   }
 }
 
-void warnHookMismatch(const char *PassKind, NevercHookPoint Hook,
+void warnInterposeMismatch(const char *PassKind, NevercInterposePoint Interpose,
                       const char *PassName) {
-  unsigned HookVal = static_cast<unsigned>(Hook);
+  unsigned InterposeVal = static_cast<unsigned>(Interpose);
   WithColor::warning(errs(), "neverc-plugin")
       << "pass '" << (PassName ? PassName : "<unnamed>") << "' registered "
-      << PassKind << " pass at incompatible hook point 0x"
-      << Twine::utohexstr(HookVal) << "; it will never run\n";
+      << PassKind << " pass at incompatible interpose point 0x"
+      << Twine::utohexstr(InterposeVal) << "; it will never run\n";
 }
 
-void registrarRegisterModulePass(void *Reg, NevercHookPoint Hook,
+void registrarRegisterModulePass(void *Reg, NevercInterposePoint Interpose,
                                  NevercModulePassFn Fn, void *UserData,
                                  const char *PassName) {
   auto *Ctx = static_cast<RegistrarContext *>(Reg);
-  if (!isIRHookPoint(Hook)) {
-    warnHookMismatch("IR module", Hook, PassName);
+  if (!isIRInterposePoint(Interpose)) {
+    warnInterposeMismatch("IR module", Interpose, PassName);
     return;
   }
-  (*Ctx->ModulePasses)[static_cast<unsigned>(Hook)].push_back(
-      {Hook, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
+  (*Ctx->ModulePasses)[static_cast<unsigned>(Interpose)].push_back(
+      {Interpose, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
 }
 
-void registrarRegisterMachinePass(void *Reg, NevercHookPoint Hook,
+void registrarRegisterMachinePass(void *Reg, NevercInterposePoint Interpose,
                                   NevercMachinePassFn Fn, void *UserData,
                                   const char *PassName) {
   auto *Ctx = static_cast<RegistrarContext *>(Reg);
-  if (!isMIRHookPoint(Hook)) {
-    warnHookMismatch("MIR machine", Hook, PassName);
+  if (!isMIRInterposePoint(Interpose)) {
+    warnInterposeMismatch("MIR machine", Interpose, PassName);
     return;
   }
-  (*Ctx->MachinePasses)[static_cast<unsigned>(Hook)].push_back(
-      {Hook, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
+  (*Ctx->MachinePasses)[static_cast<unsigned>(Interpose)].push_back(
+      {Interpose, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
 }
 
-void registrarRegisterBinaryPass(void *Reg, NevercHookPoint Hook,
+void registrarRegisterBinaryPass(void *Reg, NevercInterposePoint Interpose,
                                  NevercBinaryPassFn Fn, void *UserData,
                                  const char *PassName) {
   auto *Ctx = static_cast<RegistrarContext *>(Reg);
-  if (!isBinaryHookPoint(Hook)) {
-    warnHookMismatch("binary", Hook, PassName);
+  if (!isBinaryInterposePoint(Interpose)) {
+    warnInterposeMismatch("binary", Interpose, PassName);
     return;
   }
-  (*Ctx->BinaryPasses)[static_cast<unsigned>(Hook)].push_back(
-      {Hook, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
+  (*Ctx->BinaryPasses)[static_cast<unsigned>(Interpose)].push_back(
+      {Interpose, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
 }
 
-void registrarRegisterLinkerPass(void *Reg, NevercHookPoint Hook,
+void registrarRegisterLinkerPass(void *Reg, NevercInterposePoint Interpose,
                                  NevercLinkerPassFn Fn, void *UserData,
                                  const char *PassName) {
   auto *Ctx = static_cast<RegistrarContext *>(Reg);
-  if (!isLinkerHookPoint(Hook)) {
-    warnHookMismatch("linker", Hook, PassName);
+  if (!isLinkerInterposePoint(Interpose)) {
+    warnInterposeMismatch("linker", Interpose, PassName);
     return;
   }
-  (*Ctx->LinkerPasses)[static_cast<unsigned>(Hook)].push_back(
-      {Hook, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
+  (*Ctx->LinkerPasses)[static_cast<unsigned>(Interpose)].push_back(
+      {Interpose, Fn, UserData, nameStr(PassName), Ctx->PluginPath});
 }
 
 } // namespace
@@ -267,9 +267,9 @@ bool PluginLoader::loadPlugin(StringRef Path, std::string &ErrMsg) {
 }
 
 SmallVector<const RegisteredModulePass *, 4>
-PluginLoader::getModulePasses(NevercHookPoint Hook) const {
+PluginLoader::getModulePasses(NevercInterposePoint Interpose) const {
   SmallVector<const RegisteredModulePass *, 4> Result;
-  auto It = ModulePasses.find(static_cast<unsigned>(Hook));
+  auto It = ModulePasses.find(static_cast<unsigned>(Interpose));
   if (It != ModulePasses.end())
     for (const auto &P : It->second)
       Result.push_back(&P);
@@ -277,9 +277,9 @@ PluginLoader::getModulePasses(NevercHookPoint Hook) const {
 }
 
 SmallVector<const RegisteredMachinePass *, 4>
-PluginLoader::getMachinePasses(NevercHookPoint Hook) const {
+PluginLoader::getMachinePasses(NevercInterposePoint Interpose) const {
   SmallVector<const RegisteredMachinePass *, 4> Result;
-  auto It = MachinePasses.find(static_cast<unsigned>(Hook));
+  auto It = MachinePasses.find(static_cast<unsigned>(Interpose));
   if (It != MachinePasses.end())
     for (const auto &P : It->second)
       Result.push_back(&P);
@@ -287,9 +287,9 @@ PluginLoader::getMachinePasses(NevercHookPoint Hook) const {
 }
 
 SmallVector<const RegisteredBinaryPass *, 4>
-PluginLoader::getBinaryPasses(NevercHookPoint Hook) const {
+PluginLoader::getBinaryPasses(NevercInterposePoint Interpose) const {
   SmallVector<const RegisteredBinaryPass *, 4> Result;
-  auto It = BinaryPasses.find(static_cast<unsigned>(Hook));
+  auto It = BinaryPasses.find(static_cast<unsigned>(Interpose));
   if (It != BinaryPasses.end())
     for (const auto &P : It->second)
       Result.push_back(&P);
@@ -297,9 +297,9 @@ PluginLoader::getBinaryPasses(NevercHookPoint Hook) const {
 }
 
 SmallVector<const RegisteredLinkerPass *, 4>
-PluginLoader::getLinkerPasses(NevercHookPoint Hook) const {
+PluginLoader::getLinkerPasses(NevercInterposePoint Interpose) const {
   SmallVector<const RegisteredLinkerPass *, 4> Result;
-  auto It = LinkerPasses.find(static_cast<unsigned>(Hook));
+  auto It = LinkerPasses.find(static_cast<unsigned>(Interpose));
   if (It != LinkerPasses.end())
     for (const auto &P : It->second)
       Result.push_back(&P);
@@ -317,7 +317,7 @@ PluginLoader &getGlobalPluginLoader() {
 
 // Installed by a linker backend (ELF/COFF/MachO) for the duration of its
 // link-pass invocation.  Single-threaded by construction: links run
-// sequentially and the writer phase that fires linker hooks is not reentrant,
+// sequentially and the writer phase that fires linker interposes is not reentrant,
 // so a plain pointer is sufficient (and avoids any TLS overhead).
 static const NevercLinkerBackend *CurrentLinkerBackend = nullptr;
 
@@ -329,12 +329,12 @@ const NevercLinkerBackend *getLinkerBackend() { return CurrentLinkerBackend; }
 
 void clearLinkerBackend() { CurrentLinkerBackend = nullptr; }
 
-void runLinkerPasses(NevercHookPoint Hook, PluginLoader &Loader) {
+void runLinkerPasses(NevercInterposePoint Interpose, PluginLoader &Loader) {
   if (!Loader.hasPlugins())
     return;
 
   const NevercHostAPI &API = Loader.getHostAPI();
-  for (const RegisteredLinkerPass *P : Loader.getLinkerPasses(Hook)) {
+  for (const RegisteredLinkerPass *P : Loader.getLinkerPasses(Interpose)) {
     if (!P->Fn)
       continue;
     SmallString<128> StackMsg("Plugin linker pass '");

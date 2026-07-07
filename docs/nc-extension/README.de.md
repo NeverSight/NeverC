@@ -62,7 +62,7 @@ Als Sicherheitsnetz überprüft das Frontend auch die Dateierweiterungen der Ein
 
 - `.nc`-Dateien werden als C-Quellcode behandelt — die Sprache ist immer noch C (standardmäßig C23), keine neue Sprache
 - Alle Standard-C-Flags (`-std=c11`, `-O2`, `-g`, `-Wall`, etc.) funktionieren identisch
-- `-fshellcode` kombiniert sich natürlich mit `.nc`: Der Shellcode-Modus aktiviert `string` bereits, und `.nc` stellt sicher, dass auch `neverc-types` aktiv ist
+- `-fdyncode` kombiniert sich natürlich mit `.nc`: Der DynCode-Modus aktiviert `string` bereits, und `.nc` stellt sicher, dass auch `neverc-types` aktiv ist
 - Cross-Compilation (`-target aarch64-linux-gnu`, etc.) funktioniert auf die gleiche Weise
 - `.c`-Dateien sind nicht betroffen — sie verhalten sich genau wie zuvor, sofern Sie die Flags nicht explizit übergeben
 
@@ -72,5 +72,5 @@ Als Sicherheitsnetz überprüft das Frontend auch die Dateierweiterungen der Ein
 |----------|-----------|
 | Neues NeverC-Projekt mit `string` und Rust-Stil-Typen | `.nc` verwenden |
 | Bestehende C-Codebasis, die mit anderen Compilern kompatibel bleiben soll | `.c` + explizite Flags verwenden |
-| Shellcode-Projekt | Beides möglich — `-fshellcode` aktiviert `string` in jedem Fall |
+| DynCode-Projekt | Beides möglich — `-fdyncode` aktiviert `string` in jedem Fall |
 | Gemischte Codebasis | `.nc` für NeverC-spezifische Dateien, `.c` für portablen Code |

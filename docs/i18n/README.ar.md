@@ -8,24 +8,24 @@
 
 **مُجمِّع C23 صديق للذكاء الاصطناعي لأبحاث الأمن — مبني على LLVM**
 
-مُرابط مدمج · مسار shellcode · أوقات تشغيل مدمجة (`string` · `mimalloc` · `xorstr`)
+مُرابط مدمج · مسار dyncode · أوقات تشغيل مدمجة (`string` · `mimalloc` · `xorstr`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#الميزات)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#التجميع-المتقاطع-إلى-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#الميزات)
 
-[التوثيق](../README.ar.md) · [دليل shellcode](../shellcode-compiler/README.ar.md) · [أوقات التشغيل المدمجة](../builtins/README.ar.md) · [واجهة الإضافات API](../plugin-api/README.ar.md) · [خارطة الطريق](../roadmap/README.ar.md)
+[التوثيق](../README.ar.md) · [دليل dyncode](../dyncode-compiler/README.ar.md) · [أوقات التشغيل المدمجة](../builtins/README.ar.md) · [واجهة الإضافات API](../plugin-api/README.ar.md) · [خارطة الطريق](../roadmap/README.ar.md)
 
 </div>
 
 ---
 
-> **ملاحظة:** يعرض GitHub دائمًا `README.md` (الإنجليزية) كصفحة رئيسية للمستودع (دون كشف تلقائي للغة). استخدم روابط اللغة أعلاه؛ في [التوثيق](../README.ar.md) و[دليل shellcode](../shellcode-compiler/README.ar.md) حافظ على نفس اللغة عبر شريط اللغة ومسار التنقل.
+> **ملاحظة:** يعرض GitHub دائمًا `README.md` (الإنجليزية) كصفحة رئيسية للمستودع (دون كشف تلقائي للغة). استخدم روابط اللغة أعلاه؛ في [التوثيق](../README.ar.md) و[دليل dyncode](../dyncode-compiler/README.ar.md) حافظ على نفس اللغة عبر شريط اللغة ومسار التنقل.
 
 ## نظرة عامة
 
-يُحوِّل NeverC مصدر C القياسي إلى ثنائيات مُستضافة وملفات تنفيذية مستقلة وshellcode مستقل عن الموضع — كل ذلك من سلسلة أدوات واحدة. يستهدف **x86_64** و**AArch64** (little-endian فقط). ستضيف الإصدارات المستقبلية **EVM** (عقود إيثريوم الذكية) و**Solana eBPF** (برامج على السلسلة) كأهداف تجميع.
+يُحوِّل NeverC مصدر C القياسي إلى ثنائيات مُستضافة وملفات تنفيذية مستقلة وdyncode مستقل عن الموضع — كل ذلك من سلسلة أدوات واحدة. يستهدف **x86_64** و**AArch64** (little-endian فقط). ستضيف الإصدارات المستقبلية **EVM** (عقود إيثريوم الذكية) و**Solana eBPF** (برامج على السلسلة) كأهداف تجميع.
 
 ## لماذا NeverC؟
 
@@ -36,13 +36,13 @@
 - **لا استثناءات** — معالجة الأخطاء تبقى صريحة. لا فك للمكدس، لا مفاجآت في الأداء.
 - **ثنائي واحد** — المُجمِّع + المُرابط + أوقات التشغيل في ملف تنفيذي واحد. صفر تبعيات خارجية.
 - **صديق لنماذج LLM** — القواعد النحوية البسيطة والدلالات الحتمية تجعل كود NeverC المُولَّد بالذكاء الاصطناعي يُترجم بشكل صحيح أكثر من بدائل C++.
-- **تجميع متقاطع حقيقي** — أنشئ Windows PE و Linux ELF و macOS Mach-O و Android ELF و shellcode من macOS أو Linux — بدون VM، بدون إقلاع مزدوج، بدون البحث عن SDK. حزم SDK للمنصات مدمجة في المُجمِّع.
+- **تجميع متقاطع حقيقي** — أنشئ Windows PE و Linux ELF و macOS Mach-O و Android ELF و dyncode من macOS أو Linux — بدون VM، بدون إقلاع مزدوج، بدون البحث عن SDK. حزم SDK للمنصات مدمجة في المُجمِّع.
 - **قابل للتوسيع بلا عوائق** — ملف رأس C وحيد و20+ نقطة ربط، وتحصل على [إضافة مُجمِّع](../plugin-api/README.ar.md) قادرة على التدخل في أي مرحلة — من تحسين IR إلى الإخراج الثنائي النهائي — دون معرفة LLVM.
-- **أبحاث الأمن مدمجة** — تجميع shellcode وتشفير السلاسل وقت الترجمة وتوليد PE متعدد المنصات مدمجة أصلاً في المُجمِّع — وليست رقعًا مضافة بنصوص خارجية.
+- **أبحاث الأمن مدمجة** — تجميع dyncode وتشفير السلاسل وقت الترجمة وتوليد PE متعدد المنصات مدمجة أصلاً في المُجمِّع — وليست رقعًا مضافة بنصوص خارجية.
 
 ## الميزات
 
-- **[مُجمِّع shellcode](../shellcode-compiler/README.ar.md)** — مسار IR/MIR متعدد المراحل، استخراج متعدد المنصات، حل الاستيراد/استدعاءات النظام، وضع النواة، تدقيق البايتات المحظورة، بنية إضافات
+- **[مُجمِّع dyncode](../dyncode-compiler/README.ar.md)** — مسار IR/MIR متعدد المراحل، استخراج متعدد المنصات، حل الاستيراد/استدعاءات النظام، وضع النواة، تدقيق البايتات المحظورة، بنية إضافات
 - **مُرابط مدمج** — COFF وELF وMach-O في ثنائي واحد؛ دون `ld` أو `link.exe` خارجي
 - **تجميع متقاطع** — Windows PE و Linux ELF و macOS Mach-O و Android ELF من أي مضيف مع SDK مدمجة لكل منصة
 - **[أوقات التشغيل المدمجة](../builtins/README.ar.md)** — أوقات تشغيل LLVM bitcode مدمجة في المترجم: [`string`](../builtins/string/README.ar.md) (سلسلة بدلالة القيمة، إدارة ذاكرة تلقائية) و[`mimalloc`](../builtins/mimalloc/README.ar.md) (تجاوز مخصص ذاكرة عالي الأداء شفاف) و[`xorstr`](../builtins/xorstr/README.ar.md) (تشفير السلاسل وقت الترجمة مع فك تشفير مضاد للبصمات)
@@ -75,27 +75,27 @@ int main(void) {
 }
 ```
 
-> **ملاحظة:** يتطلب نوع **`string`** المدمج **`-fbuiltin-string`** لملفات `.c`. يُفعَّل تلقائيًا لـ [**ملفات `.nc`**](../nc-extension/README.ar.md) وفي وضع **`-fshellcode`**.
+> **ملاحظة:** يتطلب نوع **`string`** المدمج **`-fbuiltin-string`** لملفات `.c`. يُفعَّل تلقائيًا لـ [**ملفات `.nc`**](../nc-extension/README.ar.md) وفي وضع **`-fdyncode`**.
 
 ```bash
 # macOS arm64 / x86_64
-neverc -fshellcode -target arm64-apple-macos hello.c -o hello.bin
-neverc -fshellcode -target x86_64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target x86_64-apple-macos hello.c -o hello.bin
 
 # iOS arm64
-neverc -fshellcode -target arm64-apple-ios hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-ios hello.c -o hello.bin
 
 # Linux x86_64 / arm64
-neverc -fshellcode -target x86_64-linux-gnu hello.c -o hello.bin
-neverc -fshellcode -target aarch64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-gnu hello.c -o hello.bin
 
 # Android arm64 / x86_64
-neverc -fshellcode -target aarch64-linux-android hello.c -o hello.bin
-neverc -fshellcode -target x86_64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-android hello.c -o hello.bin
 
 # Windows x86_64 / arm64
-neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
-neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
 للتفاصيل راجع **[فهرس التوثيق](../README.ar.md)** — التصميم، مصفوفة المنصات، مرجع CLI، الأمثلة. لأمثلة قابلة للبناء راجع **[examples](../examples/README.ar.md)**.

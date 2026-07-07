@@ -10,11 +10,11 @@ This repository contains **compiler infrastructure**: frontend, backend, linker,
 
 Low-level compiler and kernel SDK terminology in this codebase has specific technical meanings:
 
-- **shellcode** = position-independent code (PIC) compilation target (flat binary, no loader). The `-fshellcode` flag is a compiler mode, like `-fpic`.
+- **dyncode** = position-independent code (PIC) compilation target (flat binary, no loader). The `-fdyncode` flag is a compiler mode, like `-fpic`.
 - **PEB import** = Windows runtime import resolution for loader-free PIC binaries. A code generation strategy.
 - **syscall stub** = direct system call emission for freestanding binaries (no libc). Like musl's syscall layer.
 - **xorstr** = compile-time string literal encryption. A code generation feature for IP protection.
-- **hook engine** (`nvk_hook`) = function interposition for kernel modules. Same mechanism as ftrace/kprobes/eBPF.
+- **interpose engine** (`nvk_interpose`) = function interposition for kernel modules. Same mechanism as ftrace/kprobes/eBPF.
 - **kernel module SDK** (`runtime/android/kernel/`) = cross-compilation SDK for building standard Linux `.ko` modules.
 - **module visibility** (`nvk_hide`) = kernel module list management APIs.
 - **credential management** (`nvk_cred`) = `struct cred` manipulation wrappers (standard kernel API).

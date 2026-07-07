@@ -18,7 +18,7 @@ using namespace llvm;
 namespace neverc {
 namespace plugin {
 
-bool gShellcodeModeEnabled = false;
+bool gDynCodeModeEnabled = false;
 
 // ===----------------------------------------------------------------------===
 //  Memory -- route through host process allocator
@@ -62,16 +62,16 @@ void bridgeDiagError(const char *Msg) {
 //  restores NoOps afterward.
 // ===----------------------------------------------------------------------===
 
-static void bridgeNoOpRegisterModulePass(void *, NevercHookPoint,
+static void bridgeNoOpRegisterModulePass(void *, NevercInterposePoint,
                                          NevercModulePassFn, void *,
                                          const char *) {}
-static void bridgeNoOpRegisterMachinePass(void *, NevercHookPoint,
+static void bridgeNoOpRegisterMachinePass(void *, NevercInterposePoint,
                                           NevercMachinePassFn, void *,
                                           const char *) {}
-static void bridgeNoOpRegisterBinaryPass(void *, NevercHookPoint,
+static void bridgeNoOpRegisterBinaryPass(void *, NevercInterposePoint,
                                          NevercBinaryPassFn, void *,
                                          const char *) {}
-static void bridgeNoOpRegisterLinkerPass(void *, NevercHookPoint,
+static void bridgeNoOpRegisterLinkerPass(void *, NevercInterposePoint,
                                          NevercLinkerPassFn, void *,
                                          const char *) {}
 
@@ -105,35 +105,35 @@ static int bridgeBinaryResize(uint8_t **Data, uint64_t *Len,
 
 // ===----------------------------------------------------------------------===
 //  Compilation mode queries
-//  The shellcode library publishes its current state via
-//  setShellcodeModeState() so that the Plugin lib does not need to depend
-//  on Shellcode (which itself depends on Plugin).
+//  The dyncode library publishes its current state via
+//  setDynCodeModeState() so that the Plugin lib does not need to depend
+//  on DynCode (which itself depends on Plugin).
 // ===----------------------------------------------------------------------===
 
 namespace {
-struct ShellcodeModeState {
+struct DynCodeModeState {
   bool Enabled = false;
   SmallString<64> EntrySymbol;
 };
-ShellcodeModeState &shellcodeModeStorage() {
-  static ShellcodeModeState S;
+DynCodeModeState &dyncodeModeStorage() {
+  static DynCodeModeState S;
   return S;
 }
 } // namespace
 
-void setShellcodeModeState(bool Enabled, llvm::StringRef EntrySymbol) {
-  auto &S = shellcodeModeStorage();
+void setDynCodeModeState(bool Enabled, llvm::StringRef EntrySymbol) {
+  auto &S = dyncodeModeStorage();
   S.Enabled = Enabled;
   S.EntrySymbol = EntrySymbol;
-  gShellcodeModeEnabled = Enabled;
+  gDynCodeModeEnabled = Enabled;
 }
 
-static int bridgeHostIsShellcodeMode(void) {
-  return gShellcodeModeEnabled;
+static int bridgeHostIsDynCodeMode(void) {
+  return gDynCodeModeEnabled;
 }
 
-static const char *bridgeHostGetShellcodeEntrySymbol(void) {
-  auto &S = shellcodeModeStorage();
+static const char *bridgeHostGetDynCodeEntrySymbol(void) {
+  auto &S = dyncodeModeStorage();
   if (!S.Enabled)
     return "";
   return S.EntrySymbol.c_str();
@@ -887,8 +887,8 @@ NevercHostAPI buildHostAPI() {
 
   API.BinaryResize = bridgeBinaryResize;
 
-  API.HostIsShellcodeMode = bridgeHostIsShellcodeMode;
-  API.HostGetShellcodeEntrySymbol = bridgeHostGetShellcodeEntrySymbol;
+  API.HostIsDynCodeMode = bridgeHostIsDynCodeMode;
+  API.HostGetDynCodeEntrySymbol = bridgeHostGetDynCodeEntrySymbol;
 
   API.PluginGetArg = bridgePluginGetArg;
   API.PluginHasArg = bridgePluginHasArg;

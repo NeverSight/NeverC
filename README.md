@@ -6,24 +6,24 @@
 
 **The AI-friendly C23 compiler for security research, built on LLVM**
 
-Integrated linker · Shellcode pipeline · Built-in runtimes (`string` · `mimalloc` · `xorstr`)
+Integrated linker · DynCode pipeline · Built-in runtimes (`string` · `mimalloc` · `xorstr`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#features)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#cross-compiling-to-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#features)
 
-[Documentation](docs/README.md) · [Shellcode Guide](docs/shellcode-compiler/README.md) · [Built-in Runtimes](docs/builtins/README.md) · [Plugin API](docs/plugin-api/README.md) · [Roadmap](docs/roadmap/README.md)
+[Documentation](docs/README.md) · [DynCode Guide](docs/dyncode-compiler/README.md) · [Built-in Runtimes](docs/builtins/README.md) · [Plugin API](docs/plugin-api/README.md) · [Roadmap](docs/roadmap/README.md)
 
 </div>
 
 ---
 
-> **Note:** GitHub always shows `README.md` as the repository homepage (no automatic locale detection). Use the language links above; follow in-page links and breadcrumbs to keep the same locale in [docs](docs/README.md) and the [shellcode guide](docs/shellcode-compiler/README.md).
+> **Note:** GitHub always shows `README.md` as the repository homepage (no automatic locale detection). Use the language links above; follow in-page links and breadcrumbs to keep the same locale in [docs](docs/README.md) and the [dyncode guide](docs/dyncode-compiler/README.md).
 
 ## Overview
 
-NeverC compiles standard C into hosted binaries, freestanding executables, and position-independent shellcode — all from a single toolchain. It targets **x86_64** and **AArch64** (little-endian only). Future releases will add **EVM** (Ethereum smart contracts) and **Solana eBPF** (on-chain programs) as compilation targets.
+NeverC compiles standard C into hosted binaries, freestanding executables, and position-independent dyncode — all from a single toolchain. It targets **x86_64** and **AArch64** (little-endian only). Future releases will add **EVM** (Ethereum smart contracts) and **Solana eBPF** (on-chain programs) as compilation targets.
 
 ## Why NeverC?
 
@@ -34,17 +34,17 @@ C is already the simplest systems language. NeverC makes it even simpler:
 - **No exceptions** — Error handling stays explicit. No stack unwinding, no performance surprises.
 - **Single binary** — Compiler + linker + runtimes ship as one executable. Zero external dependencies to set up.
 - **LLM-friendly** — Minimal grammar and deterministic semantics mean AI-generated NeverC code compiles correctly more often than C++ alternatives.
-- **True cross-compilation** — Build Windows PE, Linux ELF, macOS Mach-O, Android ELF, and shellcode from macOS or Linux — no VM, no dual boot, no SDK hunting. Platform SDKs ship inside the compiler.
-- **Extensible with zero friction** — A single C header, 20+ hook points, and you have a [compiler plugin](docs/plugin-api/README.md) that can intercept any stage from IR optimization to final binary output — no LLVM knowledge needed.
-- **Security research built in** — Shellcode compilation, compile-time string encryption, and cross-platform PE generation are native to the toolchain — not afterthoughts bolted on with external scripts.
+- **True cross-compilation** — Build Windows PE, Linux ELF, macOS Mach-O, Android ELF, and dyncode from macOS or Linux — no VM, no dual boot, no SDK hunting. Platform SDKs ship inside the compiler.
+- **Extensible with zero friction** — A single C header, 20+ interpose points, and you have a [compiler plugin](docs/plugin-api/README.md) that can intercept any stage from IR optimization to final binary output — no LLVM knowledge needed.
+- **Security research built in** — DynCode compilation, compile-time string encryption, and cross-platform PE generation are native to the toolchain — not afterthoughts bolted on with external scripts.
 
 ## Features
 
-- **[Shellcode compiler](docs/shellcode-compiler/README.md)** — multi-stage IR/MIR pipeline, cross-platform extraction, import/syscall lowering, kernel-mode support, bad-byte auditing, and a plugin architecture
+- **[DynCode compiler](docs/dyncode-compiler/README.md)** — multi-stage IR/MIR pipeline, cross-platform extraction, import/syscall lowering, kernel-mode support, bad-byte auditing, and a plugin architecture
 - **Integrated linker** — COFF, ELF, and Mach-O in one binary; no external `ld` or `link.exe`
 - **Cross-compilation** — build Windows PE, Linux ELF, macOS Mach-O, and Android ELF from any host with bundled platform SDKs
 - **[Built-in runtimes](docs/builtins/README.md)** — opt-in LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string/README.md) (value-semantic string with dot-call methods and automatic memory management), [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override), and [`xorstr`](docs/builtins/xorstr/README.md) (compile-time string encryption with anti-signature decryption)
-- **[Plugin API](docs/plugin-api/README.md)** — pure C ABI for out-of-tree pass plugins; single-header SDK with zero LLVM/CRT dependencies, supporting IR, MIR, binary, and linker hook points
+- **[Plugin API](docs/plugin-api/README.md)** — pure C ABI for out-of-tree pass plugins; single-header SDK with zero LLVM/CRT dependencies, supporting IR, MIR, binary, and linker interpose points
 - **[`.nc` extension](docs/nc-extension/README.md)** — use `.nc` as file extension to auto-enable all NeverC features (`string`, Rust-style integer types) without extra flags
 - **Lean LLVM build** — only x86_64 and AArch64 backends; C++/ObjC/OpenMP paths stripped
 
@@ -73,27 +73,27 @@ int main(void) {
 }
 ```
 
-> **Note:** The built-in **`string`** type requires **`-fbuiltin-string`** for `.c` files. It is enabled automatically for [**`.nc` files**](docs/nc-extension/README.md) and in **`-fshellcode`** mode.
+> **Note:** The built-in **`string`** type requires **`-fbuiltin-string`** for `.c` files. It is enabled automatically for [**`.nc` files**](docs/nc-extension/README.md) and in **`-fdyncode`** mode.
 
 ```bash
 # macOS arm64 / x86_64
-neverc -fshellcode -target arm64-apple-macos hello.c -o hello.bin
-neverc -fshellcode -target x86_64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target x86_64-apple-macos hello.c -o hello.bin
 
 # iOS arm64
-neverc -fshellcode -target arm64-apple-ios hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-ios hello.c -o hello.bin
 
 # Linux x86_64 / arm64
-neverc -fshellcode -target x86_64-linux-gnu hello.c -o hello.bin
-neverc -fshellcode -target aarch64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-gnu hello.c -o hello.bin
 
 # Android arm64 / x86_64
-neverc -fshellcode -target aarch64-linux-android hello.c -o hello.bin
-neverc -fshellcode -target x86_64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-android hello.c -o hello.bin
 
 # Windows x86_64 / arm64
-neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
-neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
 See the **[documentation index](docs/README.md)** for detailed design notes, platform matrix, CLI reference, and examples. For complete buildable samples, see the **[examples](docs/examples/README.md)** directory.

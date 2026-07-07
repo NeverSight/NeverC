@@ -50,8 +50,8 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 |---------|------|---------|
 | [カーネル Hello](../../examples/android-kernel-hello/README.ja.md) | 最小 `.ko` モジュール | kprobe 経由の kallsyms ブートストラップ、最小限の insmod 検証 |
 | [カーネルドライバテンプレート](../../examples/android-kernel-driver/README.ja.md) | 動的シンボル解決テンプレート | `kallsyms_lookup_name`、GKI 安定 ABI、5.10–6.12 |
-| [カーネルインラインフック](../../examples/android-kernel-inline-hook/README.ja.md) | `do_faccessat` のインラインフック | BTI/PAC セーフパッチ、コンテキストフックモード、PC 相対リロケーション |
-| [カーネル Syscall フック](../../examples/android-kernel-syscall-hook/README.ja.md) | syscall テーブル / inline / context hook | `sys_call_table` 置換、インラインフック、コンテキストフック |
+| [カーネルインラインフック](../../examples/android-kernel-inline-interpose/README.ja.md) | `do_faccessat` のインラインフック | BTI/PAC セーフパッチ、コンテキストフックモード、PC 相対リロケーション |
+| [カーネル Syscall フック](../../examples/android-kernel-syscall-interpose/README.ja.md) | syscall テーブル / inline / context interpose | `sys_call_table` 置換、インラインフック、コンテキストフック |
 | [カーネルステルス](../../examples/android-kernel-stealth/README.ja.md) | モジュール隠蔽 | list/sysfs/proc 隠蔽、root 付与、SELinux permissive |
 | [カーネル Full SDK](../../examples/android-kernel-full/README.ja.md) | 完全 SDK 統合 | Netlink IPC、フック、資格情報、隠蔽、SELinux、VMA、ファイル I/O |
 | [カーネル Chardev](../../examples/android-kernel-chardev/README.ja.md) | キャラクタデバイス + ioctl | `misc_register`、ioctl ディスパッチ、`/proc` seq_file |

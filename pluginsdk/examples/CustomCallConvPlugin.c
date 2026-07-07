@@ -156,7 +156,7 @@ static int ltoPostOptPass(NevercModuleRef M, const NevercHostAPI *API,
                           void *UserData) {
   (void)M;
   (void)UserData;
-  API->DiagNoteF(PLUGIN_TAG "LTO_POST_OPT hook fired (after LTO pipeline)");
+  API->DiagNoteF(PLUGIN_TAG "LTO_POST_OPT interpose fired (after LTO pipeline)");
   return 0;
 }
 
@@ -165,10 +165,10 @@ static void registerPasses(const NevercHostAPI *API, void *Registrar) {
    * convention isn't perturbed by later IR transforms. A single pass handles
    * both argument-driven (ccspec/ccprefix/ccshuffle) and source-driven
    * (custom_attr) conventions, so each function is touched at most once. */
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_POST_OPT, customCallConvPass,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_POST_OPT, customCallConvPass,
                           NULL, "customcc-apply");
 
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_LTO_POST_OPT, ltoPostOptPass,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_LTO_POST_OPT, ltoPostOptPass,
                           NULL, "customcc-lto-probe");
 }
 

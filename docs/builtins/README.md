@@ -15,7 +15,7 @@ NeverC extends standard C with opt-in built-in runtimes that are embedded direct
 | [**`mimalloc`**](mimalloc/README.md) | `-fbuiltin-mimalloc` | **On**  | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
 | [**`xorstr`**](xorstr/README.md) | `-fencrypt-call-strings` | Off  | Compile-time string encryption with stack-allocated XOR decryption and anti-signature algorithm   |
 
-The `string` built-in requires explicit opt-in; `mimalloc` is enabled by default for all hosted builds (automatically suppressed in kernel, shellcode, and freestanding modes). They can be combined:
+The `string` built-in requires explicit opt-in; `mimalloc` is enabled by default for all hosted builds (automatically suppressed in kernel, dyncode, and freestanding modes). They can be combined:
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -139,7 +139,7 @@ if (LangOpts.EncryptCallStrings) {
 | **Platform bitcode**   | Single (arch-neutral)                       | Per-OS (Linux / Darwin / Windows)      |
 | **Symbol handling**    | All internalized                            | Override entries keep external linkage |
 | **Preprocessor macro** | *(none)*                                    | `__NEVERC_MIMALLOC__`                  |
-| **Shellcode mode**     | Auto-enabled, arena rewrite                 | Suppressed (HeapArenaPass handles heap)|
+| **DynCode mode**     | Auto-enabled, arena rewrite                 | Suppressed (HeapArenaPass handles heap)|
 | **Optimization level** | `-O0` (bitcode compile)                     | `-O2` (performance-critical allocator) |
 | **DCE**                | Pre-merge prune + post-merge mark-and-sweep | No DCE (whole-archive semantics)       |
 
@@ -155,27 +155,27 @@ Certain compilation modes are incompatible with built-in runtimes. The driver au
 | ------------------ | ------------------- | -------------------------------------- |
 | `-fno-builtin`     | Suppresses `mimalloc` | No CRT override scenario               |
 | `-mkernel`         | Suppresses `mimalloc` | Kernel has no userspace heap           |
-| `-fshellcode-mode` | Suppresses `mimalloc` | Replaced by HeapArenaPass (arena-based)|
+| `-fdyncode-mode` | Suppresses `mimalloc` | Replaced by HeapArenaPass (arena-based)|
 | `-ffreestanding`   | Suppresses `mimalloc` | No libc to override                    |
 
 
-The `string` built-in has its own suppression logic within the shellcode pipeline (arena rewrite replaces heap allocation).
+The `string` built-in has its own suppression logic within the dyncode pipeline (arena rewrite replaces heap allocation).
 
-### HeapArenaPass (Shellcode Heap Allocation)
+### HeapArenaPass (DynCode Heap Allocation)
 
-When `-fshellcode-mode` is active, `mimalloc` is suppressed but `malloc`/`free`/`calloc`/`realloc` calls are automatically rewritten by `HeapArenaPass` (enabled by default). The pass uses a hybrid strategy:
+When `-fdyncode-mode` is active, `mimalloc` is suppressed but `malloc`/`free`/`calloc`/`realloc` calls are automatically rewritten by `HeapArenaPass` (enabled by default). The pass uses a hybrid strategy:
 
 - **Small allocations (≤ 64 KB)**: Served from a stack-resident arena shared with the `string` built-in runtime (bump allocator + free list reuse).
 - **Large allocations (> 64 KB) or arena OOM**: Fall back to the OS allocator:
-  - **Windows**: `malloc`/`free` resolved from `msvcrt.dll` via PEB walk (`-mshellcode-win-peb-import`).
-  - **Linux / macOS / Android**: `mmap`/`munmap` inlined as native syscalls (`-mshellcode-syscall`).
+  - **Windows**: `malloc`/`free` resolved from `msvcrt.dll` via PEB walk (`-mdyncode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap` inlined as native syscalls (`-mdyncode-syscall`).
   - **No import pass enabled**: Arena-only; OOM returns `NULL`.
 
 Control via driver flags:
 
 ```bash
-neverc -fshellcode test.c -o test.bin                     # HeapArenaPass ON (default)
-neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass OFF (original behaviour)
+neverc -fdyncode test.c -o test.bin                     # HeapArenaPass ON (default)
+neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass OFF (original behaviour)
 ```
 
 ---

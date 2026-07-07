@@ -1,0 +1,8 @@
+#ifndef NEVERC_KERN_IMPORT_RESERVED_PREFIX
+#error "define NEVERC_KERN_IMPORT_RESERVED_PREFIX(prefix) before including this file"
+#endif
+#define NEVERC_DYNCODE_INTERNAL_RUNTIME_PREFIX(prefix)                       \
+  NEVERC_KERN_IMPORT_RESERVED_PREFIX(prefix)
+#include "neverc/DynCode/Tables/DynCodeInternalRuntimePrefixes.def"
+#include "neverc/DynCode/Tables/UserExtra_DynCodeInternalRuntimePrefixes.def"
+#undef NEVERC_DYNCODE_INTERNAL_RUNTIME_PREFIX

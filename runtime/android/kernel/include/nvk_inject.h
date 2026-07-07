@@ -27,7 +27,7 @@ long neverc_krt_inject_read(struct task_struct *task,
 			    unsigned long addr,
 			    void *buf, size_t len);
 
-struct neverc_krt_shellcode {
+struct neverc_krt_dyncode {
 	const u32   *code;
 	int          insn_count;
 	unsigned long entry_offset;
@@ -43,8 +43,8 @@ struct neverc_krt_shellcode {
  * issues ISB / IC IALLU on ARM64 GKI kernels).
  */
 
-int neverc_krt_inject_shellcode(struct task_struct *task,
-				const struct neverc_krt_shellcode *sc,
+int neverc_krt_inject_dyncode(struct task_struct *task,
+				const struct neverc_krt_dyncode *sc,
 				unsigned long target_addr);
 unsigned long neverc_krt_inject_find_cave(struct task_struct *task,
 					  unsigned long min_size);
@@ -85,7 +85,7 @@ struct neverc_krt_thread_hijack {
 
 int neverc_krt_inject_hijack_setup(struct neverc_krt_thread_hijack *hj,
 				   struct task_struct *task,
-				   const struct neverc_krt_shellcode *sc);
+				   const struct neverc_krt_dyncode *sc);
 
 /* ------------------------------------------------------------------ */
 /*  Simple ELF segment loading for shared library injection           */

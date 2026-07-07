@@ -50,8 +50,8 @@
 |--------|---------|---------------------|
 | [Kernel Hello](../../examples/android-kernel-hello/README.ru.md) | Минимальный `.ko` модуль | Бутстрап kallsyms через kprobe, простейшая проверка insmod |
 | [Шаблон драйвера](../../examples/android-kernel-driver/README.ru.md) | Шаблон динамического разрешения символов | `kallsyms_lookup_name`, стабильный ABI GKI, 5.10–6.12 |
-| [Kernel Inline Hook](../../examples/android-kernel-inline-hook/README.ru.md) | Инлайн-хук на `do_faccessat` | BTI/PAC-безопасный патч, контекстный хук, PC-относительная релокация |
-| [Kernel Syscall Hook](../../examples/android-kernel-syscall-hook/README.ru.md) | Таблица syscall / inline / context hook | Замена `sys_call_table`, инлайн-хук, контекстный хук |
+| [Kernel Inline Interpose](../../examples/android-kernel-inline-interpose/README.ru.md) | Инлайн-хук на `do_faccessat` | BTI/PAC-безопасный патч, контекстный хук, PC-относительная релокация |
+| [Kernel Syscall Interpose](../../examples/android-kernel-syscall-interpose/README.ru.md) | Таблица syscall / inline / context interpose | Замена `sys_call_table`, инлайн-хук, контекстный хук |
 | [Kernel Stealth](../../examples/android-kernel-stealth/README.ru.md) | Сокрытие модуля | Скрытие list/sysfs/proc, предоставление root, SELinux permissive |
 | [Kernel Full SDK](../../examples/android-kernel-full/README.ru.md) | Полная интеграция SDK | Netlink IPC, хуки, учётные данные, сокрытие, SELinux, VMA, файловый I/O |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.ru.md) | Символьное устройство + ioctl | `misc_register`, диспетчеризация ioctl, `/proc` seq_file |

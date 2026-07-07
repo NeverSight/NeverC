@@ -2,9 +2,9 @@
 
 # Android Kernel Probe
 
-Hook einer beliebigen Instruktion innerhalb von `do_faccessat` (nicht der Einstiegspunkt) mit `neverc_krt_probe_register`. Demonstriert:
+Interpose einer beliebigen Instruktion innerhalb von `do_faccessat` (nicht der Einstiegspunkt) mit `neverc_krt_probe_register`. Demonstriert:
 
-- **Hook an beliebiger Adresse**: jede Instruktion hookbar, nicht nur Funktionseinstiege
+- **Interpose an beliebiger Adresse**: jede Instruktion interposebar, nicht nur Funktionseinstiege
 - **Vollstaendiger Registerkontext**: alle GPR lesen/schreiben via `neverc_krt_reg_ctx`
 - **Automatische Verkettung**: mehrere Handler auf derselben Adresse, nach Prioritaet ausgefuehrt
 - **Kontrollfluss**: `NEVERC_KRT_CTX_SKIP` zum Abbrechen, `NEVERC_KRT_CTX_REDIRECT` zum Umleiten

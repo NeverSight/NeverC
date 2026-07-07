@@ -23,7 +23,7 @@ static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
 }
 
 static void registerPasses(const NevercHostAPI *API, void *Reg) {
-    API->RegisterModulePass(Reg, NEVERC_HOOK_PRE_OPT, myPass, NULL, "my-pass");
+    API->RegisterModulePass(Reg, NEVERC_INTERPOSE_PRE_OPT, myPass, NULL, "my-pass");
 }
 
 NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
@@ -86,15 +86,15 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 
 ## 5. Точки подключения
 
-| Hook | Уровень | Описание |
+| Interpose | Уровень | Описание |
 |------|---------|----------|
-| `NEVERC_HOOK_PRE_OPT` | IR | Перед оптимизацией LLVM |
-| `NEVERC_HOOK_POST_OPT` | IR | После оптимизации LLVM |
-| `NEVERC_HOOK_PIPELINE_START` | IR | Начало конвейера |
-| `NEVERC_HOOK_PIPELINE_LAST` | IR | Конец IR-конвейера |
-| `NEVERC_HOOK_SC_*` | IR/MIR/Бинарный | Поток shellcode |
-| `NEVERC_HOOK_LTO_*` | IR | Поток LTO |
-| `NEVERC_HOOK_LINK_*` | Линковщик | Поток линковщика |
+| `NEVERC_INTERPOSE_PRE_OPT` | IR | Перед оптимизацией LLVM |
+| `NEVERC_INTERPOSE_POST_OPT` | IR | После оптимизации LLVM |
+| `NEVERC_INTERPOSE_PIPELINE_START` | IR | Начало конвейера |
+| `NEVERC_INTERPOSE_PIPELINE_LAST` | IR | Конец IR-конвейера |
+| `NEVERC_INTERPOSE_SC_*` | IR/MIR/Бинарный | Поток dyncode |
+| `NEVERC_INTERPOSE_LTO_*` | IR | Поток LTO |
+| `NEVERC_INTERPOSE_LINK_*` | Линковщик | Поток линковщика |
 
 ## 6. Непрозрачные типы дескрипторов
 

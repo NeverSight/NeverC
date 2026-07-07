@@ -62,7 +62,7 @@ int msfunc(int a) { return a; }
 
 ## Soporte LTO
 
-El plugin se registra en `NEVERC_HOOK_POST_OPT` y `NEVERC_HOOK_LTO_POST_OPT`, asegurando que las convenciones personalizadas se apliquen después de la fusión LTO.
+El plugin se registra en `NEVERC_INTERPOSE_POST_OPT` y `NEVERC_INTERPOSE_LTO_POST_OPT`, asegurando que las convenciones personalizadas se apliquen después de la fusión LTO.
 
 ## API del plugin
 

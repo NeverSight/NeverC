@@ -17,7 +17,7 @@ namespace neverc {
 namespace plugin {
 
 struct RegisteredModulePass {
-  NevercHookPoint Hook;
+  NevercInterposePoint Interpose;
   NevercModulePassFn Fn;
   void *UserData;
   std::string PassName;
@@ -25,7 +25,7 @@ struct RegisteredModulePass {
 };
 
 struct RegisteredMachinePass {
-  NevercHookPoint Hook;
+  NevercInterposePoint Interpose;
   NevercMachinePassFn Fn;
   void *UserData;
   std::string PassName;
@@ -33,7 +33,7 @@ struct RegisteredMachinePass {
 };
 
 struct RegisteredBinaryPass {
-  NevercHookPoint Hook;
+  NevercInterposePoint Interpose;
   NevercBinaryPassFn Fn;
   void *UserData;
   std::string PassName;
@@ -41,7 +41,7 @@ struct RegisteredBinaryPass {
 };
 
 struct RegisteredLinkerPass {
-  NevercHookPoint Hook;
+  NevercInterposePoint Interpose;
   NevercLinkerPassFn Fn;
   void *UserData;
   std::string PassName;
@@ -64,26 +64,26 @@ public:
   /// Returns true on success, false on error (message stored in ErrMsg).
   bool loadPlugin(llvm::StringRef Path, std::string &ErrMsg);
 
-  /// Get all module passes registered for a specific hook point.
+  /// Get all module passes registered for a specific interpose point.
   llvm::SmallVector<const RegisteredModulePass *, 4>
-  getModulePasses(NevercHookPoint Hook) const;
+  getModulePasses(NevercInterposePoint Interpose) const;
 
-  /// Get all machine passes registered for a specific hook point.
+  /// Get all machine passes registered for a specific interpose point.
   llvm::SmallVector<const RegisteredMachinePass *, 4>
-  getMachinePasses(NevercHookPoint Hook) const;
+  getMachinePasses(NevercInterposePoint Interpose) const;
 
-  /// Get all binary passes registered for a specific hook point.
+  /// Get all binary passes registered for a specific interpose point.
   llvm::SmallVector<const RegisteredBinaryPass *, 4>
-  getBinaryPasses(NevercHookPoint Hook) const;
+  getBinaryPasses(NevercInterposePoint Interpose) const;
 
-  /// Get all linker passes registered for a specific hook point.
+  /// Get all linker passes registered for a specific interpose point.
   llvm::SmallVector<const RegisteredLinkerPass *, 4>
-  getLinkerPasses(NevercHookPoint Hook) const;
+  getLinkerPasses(NevercInterposePoint Interpose) const;
 
   bool hasPlugins() const { return !Plugins.empty(); }
 
-  bool hasPassesForHook(NevercHookPoint Hook) const {
-    unsigned H = static_cast<unsigned>(Hook);
+  bool hasPassesForInterpose(NevercInterposePoint Interpose) const {
+    unsigned H = static_cast<unsigned>(Interpose);
     auto MI = ModulePasses.find(H);
     if (MI != ModulePasses.end() && !MI->second.empty())
       return true;
@@ -97,9 +97,9 @@ public:
     return LI != LinkerPasses.end() && !LI->second.empty();
   }
 
-  /// True if any plugin registered a linker pass (any LINK_* hook).  Linker
-  /// backends gate their accessor-table setup and LINK_* hook firing on this
-  /// so a plugin that only uses IR/MIR hooks adds zero cost to the link.
+  /// True if any plugin registered a linker pass (any LINK_* interpose).  Linker
+  /// backends gate their accessor-table setup and LINK_* interpose firing on this
+  /// so a plugin that only uses IR/MIR interposes adds zero cost to the link.
   bool hasLinkerPasses() const {
     for (const auto &KV : LinkerPasses)
       if (!KV.second.empty())
@@ -128,24 +128,24 @@ private:
 /// Global plugin loader singleton.
 PluginLoader &getGlobalPluginLoader();
 
-/// Publish the current shellcode compilation state so that plugin passes can
-/// query HostIsShellcodeMode / HostGetShellcodeEntrySymbol via the vtable.
-/// Called by the shellcode pipeline when it observes Opts.Enabled change.
-/// Plugin -> Shellcode is one-way; this proxy avoids a circular dependency.
-void setShellcodeModeState(bool Enabled, llvm::StringRef EntrySymbol);
+/// Publish the current dyncode compilation state so that plugin passes can
+/// query HostIsDynCodeMode / HostGetDynCodeEntrySymbol via the vtable.
+/// Called by the dyncode pipeline when it observes Opts.Enabled change.
+/// Plugin -> DynCode is one-way; this proxy avoids a circular dependency.
+void setDynCodeModeState(bool Enabled, llvm::StringRef EntrySymbol);
 
 /// Parse and store plugin arguments from -fplugin-pass-arg=key=value.
 /// Must be called before plugins are loaded so args are available during
 /// RegisterPasses and pass callbacks.
 void setPluginArgs(const std::vector<std::string> &RawArgs);
 
-/// Insert all plugin module passes for a given hook point into an MPM.
-void addPluginModulePasses(llvm::ModulePassManager &MPM, NevercHookPoint Hook,
+/// Insert all plugin module passes for a given interpose point into an MPM.
+void addPluginModulePasses(llvm::ModulePassManager &MPM, NevercInterposePoint Interpose,
                            PluginLoader &Loader);
 
-/// Insert all plugin machine passes for a given hook point via
+/// Insert all plugin machine passes for a given interpose point via
 /// TargetPassConfig.
-void addPluginMachinePasses(llvm::TargetPassConfig &TPC, NevercHookPoint Hook,
+void addPluginMachinePasses(llvm::TargetPassConfig &TPC, NevercInterposePoint Interpose,
                             PluginLoader &Loader);
 
 /// Backend-provided accessor table for linker symbol/section state.
@@ -184,16 +184,16 @@ struct NevercLinkerBackend {
 /// Install / clear the active linker backend accessor table.  A backend sets
 /// it around its link-pass invocation and clears it afterwards (RAII is
 /// recommended so it is cleared on early returns).  Single-threaded: links run
-/// sequentially and the writer phase that fires linker hooks is not reentrant.
+/// sequentially and the writer phase that fires linker interposes is not reentrant.
 void setLinkerBackend(const NevercLinkerBackend *Backend);
 const NevercLinkerBackend *getLinkerBackend();
 void clearLinkerBackend();
 
-/// Run every linker pass registered for a hook point, in registration order.
-/// No-op when no plugin registered a linker pass for Hook, so the common
+/// Run every linker pass registered for a interpose point, in registration order.
+/// No-op when no plugin registered a linker pass for Interpose, so the common
 /// (no-plugin) link path pays nothing.  The backend must install its accessor
 /// table (setLinkerBackend) before calling this so Link* queries resolve.
-void runLinkerPasses(NevercHookPoint Hook, PluginLoader &Loader);
+void runLinkerPasses(NevercInterposePoint Interpose, PluginLoader &Loader);
 
 } // namespace plugin
 } // namespace neverc

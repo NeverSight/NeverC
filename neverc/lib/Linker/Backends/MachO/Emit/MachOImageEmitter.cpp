@@ -1258,7 +1258,7 @@ void OutputWriter::writeImage() {
 }
 
 // ===----------------------------------------------------------------------===
-//  neverc out-of-tree plugin: linker hook integration (MachO)
+//  neverc out-of-tree plugin: linker callback integration (MachO)
 //
 //  Mirrors the ELF/COFF backends.  MachO uses global symtab / outputSegments,
 //  so the bridge functions access them directly.  Sections are nested inside
@@ -1269,7 +1269,7 @@ namespace {
 
 // Flatten outputSegments → OutputSection* on demand.  Not cached because the
 // list may grow between PRE_LAYOUT (segments not yet populated) and
-// POST_LAYOUT (final).  Linker hook callbacks are rare, so the O(segments)
+// POST_LAYOUT (final).  Linker callbacks are rare, so the O(segments)
 // rebuild cost is negligible.
 void collectMachOSections(std::vector<OutputSection *> &Out) {
   Out.clear();
@@ -1375,7 +1375,7 @@ NevercLinkerSectionRef machoEncodeSecRef(size_t OneBased) {
 }
 
 // Section queries rebuild the flat list on every call.  The list is tiny
-// (typically < 30 sections) and these run only during plugin hook callbacks.
+// (typically < 30 sections) and these run only during plugin callbacks.
 OutputSection *machoSectionFromRef(NevercLinkerSectionRef S) {
   std::vector<OutputSection *> Secs;
   collectMachOSections(Secs);

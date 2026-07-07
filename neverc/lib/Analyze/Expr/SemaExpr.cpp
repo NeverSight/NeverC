@@ -3151,7 +3151,7 @@ bool Sema::GatherArgumentsForCall(SourceLocation CallLoc, FunctionDecl *FDecl,
     // `__neverc_string_retain` wrapper for every lvalue NeverC `string`
     // argument the caller hands to a runtime helper through the `...`
     // tail.  C's `DefaultVariadicArgumentPromotion` cannot do this on
-    // its own (the standard exposes no per-arg conversion hook for
+    // its own (the standard exposes no per-arg conversion callback for
     // variadic), so without the wrapper the helper's by-value consume
     // contract would double-free with the caller's scope cleanup.
     // Mirrors the non-variadic copy-init path's PerformCopyInitialization

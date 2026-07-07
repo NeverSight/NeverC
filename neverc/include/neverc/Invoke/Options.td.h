@@ -1545,26 +1545,26 @@ OPTION(prefix_1, "-fno-save-optimization-record", fno_save_optimization_record,
        nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-fno-semantic-interposition", fno_semantic_interposition,
        Flag, f_Group, INVALID, nullptr, 0, DefaultVis, 0, "", nullptr, nullptr)
-OPTION(prefix_1, "-fno-shellcode-bad-byte-rewrite",
-       fno_shellcode_bad_byte_rewrite, Flag, f_Group, INVALID, nullptr,
+OPTION(prefix_1, "-fno-dyncode-bad-byte-rewrite",
+       fno_dyncode_bad_byte_rewrite, Flag, f_Group, INVALID, nullptr,
        NoXarchOption, DefaultVis, 0,
        "Skip the bad-byte rewriter and fall back to audit-only behaviour: any "
-       "byte present in -fshellcode-bad-bytes= / -fshellcode-bad-byte-profile= "
+       "byte present in -fdyncode-bad-bytes= / -fdyncode-bad-byte-profile= "
        "triggers a hard finalize-time error.",
        nullptr, nullptr)
-OPTION(prefix_1, "-fno-shellcode-heap-arena", fno_shellcode_heap_arena,
+OPTION(prefix_1, "-fno-dyncode-heap-arena", fno_dyncode_heap_arena,
        Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Disable the shellcode heap arena pass; malloc/free calls will be "
+       "Disable the dyncode heap arena pass; malloc/free calls will be "
        "left as unresolved externals (original behaviour).",
        nullptr, nullptr)
-OPTION(prefix_1, "-fno-shellcode-inline-all", fno_shellcode_inline_all,
+OPTION(prefix_1, "-fno-dyncode-inline-all", fno_dyncode_inline_all,
        Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Allow shellcode helper functions to remain as separate functions "
+       "Allow dyncode helper functions to remain as separate functions "
        "instead of forcing everything into the entry (default).",
        nullptr, nullptr)
-OPTION(prefix_1, "-fno-shellcode", fno_shellcode, Flag, f_Group, INVALID,
+OPTION(prefix_1, "-fno-dyncode", fno_dyncode, Flag, f_Group, INVALID,
        nullptr, NoXarchOption, DefaultVis, 0,
-       "Disable shellcode compilation (undoes a preceding -fshellcode)",
+       "Disable dyncode compilation (undoes a preceding -fdyncode)",
        nullptr, nullptr)
 OPTION(prefix_1, "-fno-short-enums", fno_short_enums, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0, "", nullptr, nullptr)
@@ -1835,100 +1835,100 @@ OPTION(prefix_1, "-fseh-exceptions", fseh_exceptions, Flag, f_Group, INVALID,
 OPTION(prefix_1, "-fsemantic-interposition", fsemantic_interposition, Flag,
        f_Group, INVALID, nullptr, 0, DefaultVis | DefaultVis, 0, "", nullptr,
        nullptr)
-OPTION(prefix_1, "-fshellcode-align=", fshellcode_align_EQ, Joined, f_Group,
+OPTION(prefix_1, "-fdyncode-align=", fdyncode_align_EQ, Joined, f_Group,
        INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Pad the final shellcode .bin to the next multiple of <bytes> using the "
-       "byte selected by -fshellcode-pad= (defaults to 0x00). Must be a power "
+       "Pad the final dyncode .bin to the next multiple of <bytes> using the "
+       "byte selected by -fdyncode-pad= (defaults to 0x00). Must be a power "
        "of two; defaults to 1 (no alignment).",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-all-blr", fshellcode_all_blr, Flag, f_Group,
+OPTION(prefix_1, "-fdyncode-all-blr", fdyncode_all_blr, Flag, f_Group,
        INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Aggressive shellcode mode: rewrite every direct call into an indirect "
+       "Aggressive dyncode mode: rewrite every direct call into an indirect "
        "branch so no pc-relative external branch (ARM64_RELOC_BRANCH26 / "
        "IMAGE_REL_AMD64_REL32) can ever survive",
        nullptr, nullptr)
 OPTION(prefix_1,
-       "-fshellcode-bad-byte-profile=", fshellcode_bad_byte_profile_EQ, Joined,
+       "-fdyncode-bad-byte-profile=", fdyncode_bad_byte_profile_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Reject the final shellcode .bin using a built-in bad-byte profile: "
+       "Reject the final dyncode .bin using a built-in bad-byte profile: "
        "null, c-string, http-newline, line, whitespace, or ascii-control",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-bad-byte-rewrite", fshellcode_bad_byte_rewrite,
+OPTION(prefix_1, "-fdyncode-bad-byte-rewrite", fdyncode_bad_byte_rewrite,
        Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
        "Before the bad-byte audit fires, walk every strategy registered "
-       "through the shellcode plugin SDK "
+       "through the dyncode plugin SDK "
        "(Plugin.h::registerBadByteRewriteStrategy) and let them rewrite raw "
        ".text bytes into bad-byte-free equivalents (default).",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-bad-bytes=", fshellcode_bad_bytes_EQ, Joined,
+OPTION(prefix_1, "-fdyncode-bad-bytes=", fdyncode_bad_bytes_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Reject the final shellcode .bin if it contains any byte in the "
-       "comma-separated hex list (example: -fshellcode-bad-bytes=00,0a,0d)",
+       "Reject the final dyncode .bin if it contains any byte in the "
+       "comma-separated hex list (example: -fdyncode-bad-bytes=00,0a,0d)",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-charset=", fshellcode_charset_EQ, Joined, f_Group,
+OPTION(prefix_1, "-fdyncode-charset=", fdyncode_charset_EQ, Joined, f_Group,
        INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Run the shellcode .text through the charset encoder registered under "
+       "Run the dyncode .text through the charset encoder registered under "
        "<name> via Plugin.h::registerCharsetEncoder, then prepend its "
        "target-specific decoder stub before the bad-byte audit fires. The "
        "compiler ships no built-in charsets; downstream libraries are expected "
        "to register printable / alphanumeric / custom alphabets through the "
        "plugin SDK. Unknown names are a hard error.",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-entry=", fshellcode_entry_EQ, Joined, f_Group,
+OPTION(prefix_1, "-fdyncode-entry=", fdyncode_entry_EQ, Joined, f_Group,
        INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Override the shellcode entry symbol name (default: main / _main / "
-       "shellcode_entry)",
+       "Override the dyncode entry symbol name (default: main / _main / "
+       "dyncode_entry)",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-heap-arena", fshellcode_heap_arena,
+OPTION(prefix_1, "-fdyncode-heap-arena", fdyncode_heap_arena,
        Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
        "Rewrite malloc/free/calloc/realloc calls into a stack-resident "
        "arena allocator for small allocations (<= 64 KB). Large allocations "
        "fall back to the OS allocator (msvcrt.dll via PEB walk on Windows, "
-       "mmap via syscall on Linux/macOS). Enabled by default in shellcode "
+       "mmap via syscall on Linux/macOS). Enabled by default in dyncode "
        "mode.",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-inline-all", fshellcode_inline_all,
+OPTION(prefix_1, "-fdyncode-inline-all", fdyncode_inline_all,
        Flag, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Force-inline all non-entry functions into the shellcode entry "
+       "Force-inline all non-entry functions into the dyncode entry "
        "point, producing a single monolithic function (legacy behaviour).",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-keep-obj=", fshellcode_keep_obj_EQ, Joined,
+OPTION(prefix_1, "-fdyncode-keep-obj=", fdyncode_keep_obj_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
        "Copy the intermediate object file (Mach-O / ELF / COFF) to <path> so "
        "otool -rv / llvm-objdump -dr / dumpbin can inspect relocations",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-max-length=", fshellcode_max_length_EQ, Joined,
+OPTION(prefix_1, "-fdyncode-max-length=", fdyncode_max_length_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Reject the final shellcode .bin if its length (after every other "
+       "Reject the final dyncode .bin if its length (after every other "
        "finalize step) exceeds the given byte count. Accepts plain decimal or "
        "0x-prefixed hex.",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-mir-obfuscate=", fshellcode_mir_obfuscate_EQ,
+OPTION(prefix_1, "-fdyncode-mir-obfuscate=", fdyncode_mir_obfuscate_EQ,
        Joined, f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Forwarded verbatim to the registered MIR-level shellcode obfuscation "
+       "Forwarded verbatim to the registered MIR-level dyncode obfuscation "
        "hooks (RunBeforePreEmit / RunAfterPreEmit). Useful when the IR-level "
        "and MIR-level obfuscators want to take different spec strings. "
-       "Defaults to the -fshellcode-obfuscate= value when unset.",
+       "Defaults to the -fdyncode-obfuscate= value when unset.",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-mode", fshellcode_mode, Flag, INVALID, INVALID,
+OPTION(prefix_1, "-fdyncode-mode", fdyncode_mode, Flag, INVALID, INVALID,
        nullptr, HelpHidden, DefaultVis, 0, nullptr, nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-obfuscate=", fshellcode_obfuscate_EQ, Joined,
+OPTION(prefix_1, "-fdyncode-obfuscate=", fdyncode_obfuscate_EQ, Joined,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
-       "Forwarded verbatim to the registered shellcode IR-level obfuscation "
-       "hooks (see the shellcode pipeline design doc shipped in the source "
+       "Forwarded verbatim to the registered dyncode IR-level obfuscation "
+       "hooks (see the dyncode pipeline design doc shipped in the source "
        "tree). Meaningless unless an obfuscator library has linked in; the "
-       "shellcode pipeline itself never interprets the value.",
+       "dyncode pipeline itself never interprets the value.",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode-pad=", fshellcode_pad_EQ, Joined, f_Group,
+OPTION(prefix_1, "-fdyncode-pad=", fdyncode_pad_EQ, Joined, f_Group,
        INVALID, nullptr, NoXarchOption, DefaultVis, 0,
        "Hex byte used for alignment / max-length padding (example: "
-       "-fshellcode-pad=cc). Rejected when the byte also appears in the "
-       "bad-byte set, or when neither -fshellcode-align= nor "
-       "-fshellcode-max-length= is set.",
+       "-fdyncode-pad=cc). Rejected when the byte also appears in the "
+       "bad-byte set, or when neither -fdyncode-align= nor "
+       "-fdyncode-max-length= is set.",
        nullptr, nullptr)
-OPTION(prefix_1, "-fshellcode", fshellcode, Flag, f_Group, INVALID, nullptr,
+OPTION(prefix_1, "-fdyncode", fdyncode, Flag, f_Group, INVALID, nullptr,
        NoXarchOption | NoArgumentUnused, DefaultVis, 0,
-       "Enable shellcode compilation: produce a flat .bin whose .text has zero "
+       "Enable dyncode compilation: produce a flat .bin whose .text has zero "
        "relocations and no data section (supported on arm64/x86_64 across "
        "macOS/Linux/Android/Windows)",
        nullptr, nullptr)
@@ -3456,9 +3456,9 @@ OPTION(prefix_1, "-msha512", msha512, Flag, m_x86_Features_Group, INVALID,
        nullptr)
 OPTION(prefix_1, "-msha", msha, Flag, m_x86_Features_Group, INVALID, nullptr,
        TargetSpecific, DefaultVis | DefaultVis, 0, nullptr, nullptr, nullptr)
-OPTION(prefix_1, "-mshellcode-context=", mshellcode_context_EQ, Joined, m_Group,
+OPTION(prefix_1, "-mdyncode-context=", mdyncode_context_EQ, Joined, m_Group,
        INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
-       "Privilege level the emitted shellcode will run at: 'user' (default, "
+       "Privilege level the emitted dyncode will run at: 'user' (default, "
        "ring-3 payload) or 'kernel' (ring-0 driver / kext / kernel module). "
        "Kernel mode disables PEB walk / syscall stub lowering, injects "
        "target-specific driver flags (e.g. -mno-red-zone / -mcmodel=kernel on "
@@ -3466,20 +3466,20 @@ OPTION(prefix_1, "-mshellcode-context=", mshellcode_context_EQ, Joined, m_Group,
        "routes OS helper resolution through a loader-provided "
        "__neverc_kern_resolve shim.",
        nullptr, nullptr)
-OPTION(prefix_1, "-mshellcode-libsystem", mshellcode_libsystem, Flag, m_Group,
+OPTION(prefix_1, "-mdyncode-libsystem", mdyncode_libsystem, Flag, m_Group,
        INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
-       "Legacy Darwin-centric alias of -mshellcode-syscall; kept for backwards "
+       "Legacy Darwin-centric alias of -mdyncode-syscall; kept for backwards "
        "compatibility",
        nullptr, nullptr)
-OPTION(prefix_1, "-mshellcode-syscall", mshellcode_syscall, Flag, m_Group,
+OPTION(prefix_1, "-mdyncode-syscall", mdyncode_syscall, Flag, m_Group,
        INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
        "Replace libc/libSystem externs (write, exit, read, ...) with inline "
        "syscall wrappers native to the target OS (svc #0x80 on Darwin, svc #0 "
        "on Linux/Android arm64, syscall on Linux x86_64)",
        nullptr, nullptr)
-OPTION(prefix_1, "-mshellcode-win-peb-import", mshellcode_win_peb_import, Flag,
+OPTION(prefix_1, "-mdyncode-win-peb-import", mdyncode_win_peb_import, Flag,
        m_Group, INVALID, nullptr, NoXarchOption, DefaultVis | DefaultVis, 0,
-       "Windows shellcode only: resolve extern Win32 imports at runtime via a "
+       "Windows dyncode only: resolve extern Win32 imports at runtime via a "
        "PEB walk + GetProcAddress thunk instead of relying on the loader's "
        "import table",
        nullptr, nullptr)
@@ -5739,10 +5739,10 @@ LANG_OPTION_WITH_MARSHALLING(
     mergeForwardValue, extractForwardValue, -1)
 #endif // LANG_OPTION_WITH_MARSHALLING
 #ifdef LANG_OPTION_WITH_MARSHALLING
-LANG_OPTION_WITH_MARSHALLING(prefix_1, "-fshellcode-mode", fshellcode_mode,
+LANG_OPTION_WITH_MARSHALLING(prefix_1, "-fdyncode-mode", fdyncode_mode,
                              Flag, INVALID, INVALID, nullptr, HelpHidden,
                              DefaultVis, 0, nullptr, nullptr, nullptr, true, 0,
-                             LangOpts->ShellcodeMode, false, false, false,
+                             LangOpts->DynCodeMode, false, false, false,
                              normalizeSimpleFlag, denormalizeSimpleFlag,
                              mergeForwardValue, extractForwardValue, -1)
 #endif // LANG_OPTION_WITH_MARSHALLING

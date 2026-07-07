@@ -7,7 +7,7 @@ NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = aarch64-linux-android
 MODULE  = nvk_multi.ko
-SRCS    = main.c hooks.c utils.c
+SRCS    = main.c interposes.c utils.c
 
 KERNEL ?= 510
 

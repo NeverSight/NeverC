@@ -100,7 +100,7 @@ This skill covers reverse engineering workflows for game security research, incl
 - **QBDI**: QuarkslaB DBI
 
 ### Use Cases
-1. API hooking and tracing
+1. API interception and tracing
 2. Code coverage analysis
 3. Fuzzing harness creation
 4. Behavioral analysis
@@ -120,7 +120,7 @@ Sentinel Selection:
 - Different sentinels can multiplex branch types
 
 Exception Capture:
-- Hook KiUserExceptionDispatcher (not VEH/SEH) for lowest-latency interception
+- Intercept KiUserExceptionDispatcher (not VEH/SEH) for lowest-latency interception
 - Assembly stub tail-calls into RtlDispatchException
 - Handler dispatches by exception code to custom emulation logic
 
@@ -215,13 +215,13 @@ Limitations:
 1. Locate `GameAssembly.dll` (IL2CPP) or managed DLLs
 2. Use IL2CPP Dumper for structure recovery
 3. Apply dnSpy for Mono games
-4. Hook via Unity-specific frameworks
+4. Intercept via Unity-specific frameworks
 
 ### Unreal Engine Games
 1. Identify UE version from signatures
 2. Use SDK generators (Dumper-7)
 3. Analyze Blueprint bytecode
-4. Hook UObject/UFunction systems
+4. Intercept UObject/UFunction systems
 
 ### Native Games
 1. Standard PE analysis

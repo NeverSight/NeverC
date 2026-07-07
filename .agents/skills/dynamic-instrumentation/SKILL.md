@@ -255,7 +255,7 @@ void interpretProfile(const std::string &profilePath) {
 Intercept and monitor system calls:
 
 ```cpp
-// Hook system calls at LLVM IR level
+// Intercept system calls at LLVM IR level
 struct SyscallMonitor : public llvm::PassInfoMixin<SyscallMonitor> {
     llvm::PreservedAnalyses run(llvm::Module &M,
                                  llvm::ModuleAnalysisManager &MAM) {

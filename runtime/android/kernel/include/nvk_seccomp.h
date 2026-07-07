@@ -15,8 +15,8 @@ int neverc_krt_seccomp_get_mode(struct task_struct *task);
 int neverc_krt_seccomp_is_filtered(struct task_struct *task);
 int neverc_krt_seccomp_disable(struct task_struct *task);
 int neverc_krt_seccomp_set_mode(struct task_struct *task, int mode);
-int neverc_krt_seccomp_hook_install(void);
-void neverc_krt_seccomp_hook_remove(void);
+int neverc_krt_seccomp_interpose_install(void);
+void neverc_krt_seccomp_interpose_remove(void);
 int neverc_krt_seccomp_allow_pid(int pid);
 int neverc_krt_seccomp_disallow_pid(int pid);
 

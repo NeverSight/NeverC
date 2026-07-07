@@ -51,7 +51,7 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 | **Bitcode por plataforma** | Único (independiente de arquitectura) | Por SO (Linux / Darwin / Windows) |
 | **Manejo de símbolos** | Todos internalizados | Puntos de entrada de override mantienen enlace externo |
 | **Macro de preprocesador** | *(ninguna)* | `__NEVERC_MIMALLOC__` |
-| **Modo shellcode** | Auto-activado, reescritura de arena | Suprimido (HeapArenaPass gestiona heap) |
+| **Modo dyncode** | Auto-activado, reescritura de arena | Suprimido (HeapArenaPass gestiona heap) |
 | **Nivel de optimización** | `-O0` (compilación bitcode) | `-O2` (asignador crítico en rendimiento) |
 | **DCE** | Poda pre-fusión + mark-and-sweep post-fusión | Sin DCE (semántica de archivo completo) |
 
@@ -63,26 +63,26 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 |-----------|--------|-------|
 | `-fno-builtin` | Suprime mimalloc | Sin escenario de override de CRT |
 | `-mkernel` | Suprime mimalloc | Sin heap de espacio de usuario en el kernel |
-| `-fshellcode-mode` | Suprime mimalloc | Reemplazado por HeapArenaPass (basado en arena) |
+| `-fdyncode-mode` | Suprime mimalloc | Reemplazado por HeapArenaPass (basado en arena) |
 | `-ffreestanding` | Suprime mimalloc | Sin libc para reemplazar |
 
-El built-in `string` tiene su propia lógica de supresión (la reescritura de arena en el pipeline de shellcode reemplaza la asignación de heap).
+El built-in `string` tiene su propia lógica de supresión (la reescritura de arena en el pipeline de dyncode reemplaza la asignación de heap).
 
-### HeapArenaPass (Asignación de Heap en Shellcode)
+### HeapArenaPass (Asignación de Heap en DynCode)
 
-Cuando `-fshellcode-mode` está activo, `mimalloc` se suprime pero las llamadas `malloc`/`free`/`calloc`/`realloc` se reescriben automáticamente por `HeapArenaPass` (habilitado por defecto). El pass usa una estrategia híbrida:
+Cuando `-fdyncode-mode` está activo, `mimalloc` se suprime pero las llamadas `malloc`/`free`/`calloc`/`realloc` se reescriben automáticamente por `HeapArenaPass` (habilitado por defecto). El pass usa una estrategia híbrida:
 
 - **Asignaciones pequeñas (≤ 64 KB)**: Servidas desde una arena residente en la pila compartida con el runtime built-in `string` (asignador bump + reutilización de lista libre).
 - **Asignaciones grandes (> 64 KB) o arena OOM**: Fallback al asignador del SO:
-  - **Windows**: `malloc`/`free` resueltos desde `msvcrt.dll` vía PEB walk (`-mshellcode-win-peb-import`).
-  - **Linux / macOS / Android**: `mmap`/`munmap` inlineados como llamadas al sistema nativas (`-mshellcode-syscall`).
+  - **Windows**: `malloc`/`free` resueltos desde `msvcrt.dll` vía PEB walk (`-mdyncode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap` inlineados como llamadas al sistema nativas (`-mdyncode-syscall`).
   - **Sin pass de importación habilitado**: Solo arena; OOM devuelve `NULL`.
 
 Control mediante flags del driver:
 
 ```bash
-neverc -fshellcode test.c -o test.bin                     # HeapArenaPass activado (por defecto)
-neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass desactivado (comportamiento original)
+neverc -fdyncode test.c -o test.bin                     # HeapArenaPass activado (por defecto)
+neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass desactivado (comportamiento original)
 ```
 
 ---

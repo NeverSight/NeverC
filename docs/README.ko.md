@@ -2,7 +2,7 @@
 
 [← NeverC 프로젝트](i18n/README.ko.md)
 
-> **Tip:** Use the language bar above; links on this page point to the same locale (shellcode README and breadcrumbs).
+> **Tip:** Use the language bar above; links on this page point to the same locale (dyncode README and breadcrumbs).
 
 # NeverC 문서
 
@@ -10,24 +10,24 @@
 
 ---
 
-## Shellcode 컴파일러
+## DynCode 컴파일러
 
-Shellcode 컴파일 파이프라인은 NeverC의 핵심 연구 영역입니다. 아키텍처, CLI 옵션, 플랫폼 매트릭스, 예제:
+DynCode 컴파일 파이프라인은 NeverC의 핵심 연구 영역입니다. 아키텍처, CLI 옵션, 플랫폼 매트릭스, 예제:
 
-**[Shellcode 컴파일러 →](shellcode-compiler/README.ko.md)**
+**[DynCode 컴파일러 →](dyncode-compiler/README.ko.md)**
 
 | 문서 | 설명 |
 |------|------|
-| [README](shellcode-compiler/README.ko.md) | 개요, 빠른 시작, 지원 대상 |
-| [Pipeline & PIC](shellcode-compiler/pipeline-and-pic/README.ko.md) | IR → 객체 → 추출 설계 |
-| [IR Pass Design](shellcode-compiler/ir-pass-design/README.ko.md) | 각 IR 패스 설계 근거 |
-| [MIR Pass Design](shellcode-compiler/mir-pass-design/README.ko.md) | 백엔드 MIR 패스 |
-| [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.ko.md) | Ring-0 컴파일 |
-| [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.ko.md) | `TargetDesc` 및 추출기 |
-| [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.ko.md) | 새 플랫폼 추가 |
-| [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.ko.md) | shellcode 관점의 ARM64 명령어 |
-| [Roadmap](shellcode-compiler/roadmap/README.ko.md) | 예정 작업 |
-| [Progress](shellcode-compiler/progress/README.ko.md) | 구현 현황 |
+| [README](dyncode-compiler/README.ko.md) | 개요, 빠른 시작, 지원 대상 |
+| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic/README.ko.md) | IR → 객체 → 추출 설계 |
+| [IR Pass Design](dyncode-compiler/ir-pass-design/README.ko.md) | 각 IR 패스 설계 근거 |
+| [MIR Pass Design](dyncode-compiler/mir-pass-design/README.ko.md) | 백엔드 MIR 패스 |
+| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode/README.ko.md) | Ring-0 컴파일 |
+| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture/README.ko.md) | `TargetDesc` 및 추출기 |
+| [Platform Extension Guide](dyncode-compiler/platform-extension-guide/README.ko.md) | 새 플랫폼 추가 |
+| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial/README.ko.md) | dyncode 관점의 ARM64 명령어 |
+| [Roadmap](dyncode-compiler/roadmap/README.ko.md) | 예정 작업 |
+| [Progress](dyncode-compiler/progress/README.ko.md) | 구현 현황 |
 
 ---
 
@@ -72,7 +72,7 @@ NeverC 프로젝트의 주요 계획 방향: 표준 라이브러리, EVM 스마�
 | 표준 라이브러리 (`std`) | Go 스타일 배터리 포함 패키지: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync` 등 |
 | 난독화 플러그인 스위트 (`neverc-obfuscation`) | 퍼스트파티 VM, MBA, 제어 흐름 평탄화, 다형성 엔진, 안티 탬퍼 플러그인 |
 | UI 컴포넌트 라이브러리 (`neverc-ui`) | Qt 스타일 크로스 플랫폼 UI, HTML/JS/CSS 렌더러, 드래그 앤 드롭 디자이너, AI 네이티브 워크플로 |
-| IDE & 언어 도구 (`neverc-ide`) | `.nc` 파일용 VSCode 확장 + 스탠드얼론 IDE, IntelliSense, 디버깅, shellcode 파이프라인 시각화 |
+| IDE & 언어 도구 (`neverc-ide`) | `.nc` 파일용 VSCode 확장 + 스탠드얼론 IDE, IntelliSense, 디버깅, dyncode 파이프라인 시각화 |
 | EVM 스마트 컨트랙트 | C를 EVM 바이트코드로 컴파일 — Solidity 대신 C로 스마트 컨트랙트 작성 |
 | Solana eBPF | C를 Solana eBPF 바이트코드로 컴파일 — C로 온체인 프로그램 개발 |
 

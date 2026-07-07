@@ -65,26 +65,26 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 |------|------|------|
 | `-fno-builtin` | mimalloc を抑制 | CRT オーバーライドのシナリオなし |
 | `-mkernel` | mimalloc を抑制 | カーネルにユーザー空間ヒープなし |
-| `-fshellcode-mode` | mimalloc を抑制 | HeapArenaPass で代替（アリーナベース） |
+| `-fdyncode-mode` | mimalloc を抑制 | HeapArenaPass で代替（アリーナベース） |
 | `-ffreestanding` | mimalloc を抑制 | オーバーライドする libc なし |
 
 `string` 組み込みには独自の抑制ロジックがあります（シェルコードパイプライン内でアリーナ書き換えがヒープ割り当てを置換）。
 
 ### HeapArenaPass（シェルコードヒープ割り当て）
 
-`-fshellcode-mode` がアクティブな場合、`mimalloc` は抑制されますが、`malloc`/`free`/`calloc`/`realloc` 呼び出しは `HeapArenaPass` によって自動的に書き換えられます（デフォルト有効）。このパスはハイブリッド戦略を使用します：
+`-fdyncode-mode` がアクティブな場合、`mimalloc` は抑制されますが、`malloc`/`free`/`calloc`/`realloc` 呼び出しは `HeapArenaPass` によって自動的に書き換えられます（デフォルト有効）。このパスはハイブリッド戦略を使用します：
 
 - **小さな割り当て（≤ 64 KB）**：`string` 組み込みランタイムと共有するスタック上アリーナから割り当て（バンプアロケータ + フリーリスト再利用）。
 - **大きな割り当て（> 64 KB）またはアリーナ OOM**：OS アロケータにフォールバック：
-  - **Windows**：`malloc`/`free` を PEB walk 経由で `msvcrt.dll` から解決（`-mshellcode-win-peb-import`）。
-  - **Linux / macOS / Android**：`mmap`/`munmap` をネイティブシステムコールとしてインライン化（`-mshellcode-syscall`）。
+  - **Windows**：`malloc`/`free` を PEB walk 経由で `msvcrt.dll` から解決（`-mdyncode-win-peb-import`）。
+  - **Linux / macOS / Android**：`mmap`/`munmap` をネイティブシステムコールとしてインライン化（`-mdyncode-syscall`）。
   - **インポートパス未有効**：アリーナのみ；OOM は `NULL` を返す。
 
 ドライバフラグで制御：
 
 ```bash
-neverc -fshellcode test.c -o test.bin                     # HeapArenaPass オン（デフォルト）
-neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass オフ（従来の動作）
+neverc -fdyncode test.c -o test.bin                     # HeapArenaPass オン（デフォルト）
+neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass オフ（従来の動作）
 ```
 
 ---

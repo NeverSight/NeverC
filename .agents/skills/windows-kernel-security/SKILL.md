@@ -244,7 +244,7 @@ NTSTATUS DriverEntry(
 - Memory virtualization
 - Intercept PG checks
 
-## Kernel Hooking
+## Kernel Interception
 
 ### ETW (Event Tracing for Windows)
 ```
@@ -705,7 +705,7 @@ Anti-cheat scanning targets:
 - Suspicious PoolTags: cheat drivers use custom/rare tags; maintain blacklist
 - Executable permission pages: NonPagedPool chunks with X permission
   from suspicious sources (no corresponding loaded module)
-- Shellcode patterns: scan decoded chunk contents for known cheat signatures,
+- DynCode patterns: scan decoded chunk contents for known cheat signatures,
   ROP gadgets, specific syscall sequences
 - kLFH allocation pattern anomalies: unusual allocation patterns in
   specific size buckets can indicate pool grooming
@@ -736,16 +736,16 @@ VS chunk header decode (manual):
 □ Critical read-only data       → ExAllocatePool3 + Secure Pool
 ```
 
-### SSDT Hooking (Legacy)
+### SSDT Interception (Legacy)
 ```
 - Modify service table entries
 - Requires PG bypass
 - High detection risk
 ```
 
-### IRP Hooking
+### IRP Interception
 ```
-- Hook driver dispatch routines
+- Intercept driver dispatch routines
 - Less monitored than SSDT
 - Per-driver targeting
 ```
@@ -799,7 +799,7 @@ MmMapLockedPagesSpecifyCache
 The README's > EFI Driver subcategory (under Cheat) contains 30+ projects:
 - EFI bootkit frameworks: UEFI DXE drivers that persist across boots
 - Boot-time memory mappers: inject code before Windows kernel initializes
-- ExitBootServices hooks: intercept Windows boot handoff
+- ExitBootServices intercepts: intercept Windows boot handoff
 - EFI runtime service abuse: GetVariable/SetVariable for kernel ↔ EFI comm
 
 See also: game-hacking skill for EFI cheat workflows
@@ -982,7 +982,7 @@ for analysis workflows built on WHP
   - Apple: Secure execution environments, hardware-backed isolation
 ```
 
-### EPT Hooks as Defensive Primitives
+### EPT Intercepts as Defensive Primitives
 ```
 Mechanism:
 - Instead of patching the guest kernel, modify EPT permissions
@@ -999,7 +999,7 @@ Example: Watching writes to a sensitive region
    - Whether the access is authorized
 5. Decision: allow write, deny and return, or log and continue
 
-Advantages over traditional kernel hooks:
+Advantages over traditional kernel intercepts:
 - Operate outside the guest OS
 - Remain effective even if guest kernel is compromised
 - Transparent to guest-level detection

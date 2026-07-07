@@ -14,7 +14,7 @@
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Build/BuildDriver.h"
 #include "neverc/Runtime/RuntimeManager.h"
-#include "neverc/Shellcode/Pipeline/DriverIntegration.h"
+#include "neverc/DynCode/Pipeline/DriverIntegration.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallString.h"
@@ -353,9 +353,9 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   configureDriverCallbacks(TheDriver);
   llvm::CrashRecoveryContext::Enable();
 
-  // --- Shellcode pipeline ---
-  neverc::shellcode::CompilationState Shellcode;
-  if (int Rc = neverc::shellcode::configureCompilation(Args, Shellcode))
+  // --- DynCode pipeline ---
+  neverc::dyncode::CompilationState DynCode;
+  if (int Rc = neverc::dyncode::configureCompilation(Args, DynCode))
     return Rc;
 
   // --- Build & execute ---
@@ -368,9 +368,9 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
 
   CompilationResult CR = runCompilation(TheDriver, *C);
 
-  if (Shellcode.enabled()) {
+  if (DynCode.enabled()) {
     CR.ExitCode =
-        neverc::shellcode::finalizeCompilation(Shellcode, CR.ExitCode);
+        neverc::dyncode::finalizeCompilation(DynCode, CR.ExitCode);
     if (CR.ExitCode == 0)
       return 0;
   }

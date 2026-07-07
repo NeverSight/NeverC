@@ -6,7 +6,7 @@ Module noyau NeverC multi-fichiers. Points cles :
 
 - **Bootstrap unique** : `NEVERC_KRT_BOOTSTRAP()` n'est appele qu'une fois dans `module_init`
 - **Etat partage** : le compilateur promeut tout l'etat `neverc_krt_*` en linkage `weak_odr`, tous les `.c` partagent le meme resolveur, cache et etat
-- **Architecture divisee** : `main.c` (init/exit), `hooks.c` (logique hook), `utils.c` (helpers)
+- **Architecture divisee** : `main.c` (init/exit), `interposes.c` (logique interpose), `utils.c` (helpers)
 
 ## Compilation
 

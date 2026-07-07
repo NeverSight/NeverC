@@ -14,7 +14,7 @@ NeverC 透過可選的內建執行時擴展標準 C，這些執行時以 LLVM bi
 | [**`mimalloc`**](mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | **開啟** | 高效能記憶體配置器，透明替換 `malloc`/`free`/`calloc`/`realloc` |
 | [**`xorstr`**](xorstr/README.zh-TW.md) | `-fencrypt-call-strings` | 關閉 | 編譯期字串加密，堆疊分配 XOR 解密，反簽名偵測演算法 |
 
-`string` 內建需要明確啟用；`mimalloc` 對所有 hosted 建置預設開啟（核心、shellcode 和 freestanding 模式下自動抑制）。可以組合使用：
+`string` 內建需要明確啟用；`mimalloc` 對所有 hosted 建置預設開啟（核心、dyncode 和 freestanding 模式下自動抑制）。可以組合使用：
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -108,7 +108,7 @@ if (LangOpts.EncryptCallStrings) {
 | **平台 bitcode** | 單一（架構中性） | 按 OS 分（Linux / Darwin / Windows） |
 | **符號處理** | 全部內部化 | 覆蓋入口保持外部連結 |
 | **預處理器巨集** | *（無）* | `__NEVERC_MIMALLOC__` |
-| **Shellcode 模式** | 自動啟用，arena 重寫 | 被抑制（HeapArenaPass 處理堆積分配） |
+| **DynCode 模式** | 自動啟用，arena 重寫 | 被抑制（HeapArenaPass 處理堆積分配） |
 | **最佳化層級** | `-O0`（bitcode 編譯） | `-O2`（效能關鍵的配置器） |
 | **DCE** | 預合併裁剪 + 後合併標記清掃 | 無 DCE（whole-archive 語義） |
 
@@ -120,26 +120,26 @@ if (LangOpts.EncryptCallStrings) {
 |------|------|------|
 | `-fno-builtin` | 抑制 `mimalloc` | 無 CRT 覆蓋場景 |
 | `-mkernel` | 抑制 `mimalloc` | 核心無使用者空間堆積 |
-| `-fshellcode-mode` | 抑制 `mimalloc` | 由 HeapArenaPass 替代（基於 arena） |
+| `-fdyncode-mode` | 抑制 `mimalloc` | 由 HeapArenaPass 替代（基於 arena） |
 | `-ffreestanding` | 抑制 `mimalloc` | 無 libc 可覆蓋 |
 
-`string` 內建有自己的抑制邏輯（shellcode 流水線中 arena 重寫替換堆積分配）。
+`string` 內建有自己的抑制邏輯（dyncode 流水線中 arena 重寫替換堆積分配）。
 
-### HeapArenaPass（Shellcode 堆積分配）
+### HeapArenaPass（DynCode 堆積分配）
 
-當 `-fshellcode-mode` 啟用時，`mimalloc` 被抑制，但 `malloc`/`free`/`calloc`/`realloc` 呼叫會被 `HeapArenaPass` 自動改寫（預設開啟）。該 Pass 使用混合策略：
+當 `-fdyncode-mode` 啟用時，`mimalloc` 被抑制，但 `malloc`/`free`/`calloc`/`realloc` 呼叫會被 `HeapArenaPass` 自動改寫（預設開啟）。該 Pass 使用混合策略：
 
 - **小分配（≤ 64 KB）**：從與 `string` 內建執行時共享的堆疊上 arena 分配（bump allocator + free list 重用）。
 - **大分配（> 64 KB）或 arena OOM**：回退到 OS 分配器：
-  - **Windows**：`malloc`/`free` 透過 PEB walk 從 `msvcrt.dll` 解析（`-mshellcode-win-peb-import`）。
-  - **Linux / macOS / Android**：`mmap`/`munmap` 內聯為原生系統呼叫（`-mshellcode-syscall`）。
+  - **Windows**：`malloc`/`free` 透過 PEB walk 從 `msvcrt.dll` 解析（`-mdyncode-win-peb-import`）。
+  - **Linux / macOS / Android**：`mmap`/`munmap` 內聯為原生系統呼叫（`-mdyncode-syscall`）。
   - **未啟用匯入 Pass**：僅使用 arena；OOM 傳回 `NULL`。
 
 透過驅動標誌控制：
 
 ```bash
-neverc -fshellcode test.c -o test.bin                     # HeapArenaPass 開啟（預設）
-neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass 關閉（原始行為）
+neverc -fdyncode test.c -o test.bin                     # HeapArenaPass 開啟（預設）
+neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass 關閉（原始行為）
 ```
 
 ---

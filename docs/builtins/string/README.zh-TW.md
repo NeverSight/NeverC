@@ -10,7 +10,7 @@ NeverC 提供了一個面向 C 語言的內建 `string` 值型別。它融合了
 
 **啟用方式：** 編譯時傳遞 `-fbuiltin-string`（預設關閉）。以下情況自動啟用：
 - 輸入檔案為 `.nc` 副檔名（參見 [`.nc` 副檔名文件](../../nc-extension/README.zh-TW.md)）
-- `-fshellcode` 模式啟動時
+- `-fdyncode` 模式啟動時
 
 ```bash
 neverc hello.nc -o hello                # 自動 — .nc 副檔名啟用
@@ -608,9 +608,9 @@ string e = "hello".encrypt().encrypt();  // 錯誤：.encrypt() can only be appl
 
 `.encrypt()` 可用於聚合初始化；擁有的 `string` 成員在作用域結束時自動釋放（見 [複合類型清理](#複合類型清理)）。`string[]`、`struct { string; }`、二維陣列與巢狀組合均支援，且零分配比較路徑同樣有效。
 
-### Shellcode 模式相容
+### DynCode 模式相容
 
-字串加密在所有編譯模式下均可使用，包括 shellcode（`-fshellcode`）。在 shellcode 模式下，加密字串的解密使用 shellcode 本地 arena 分配器。用戶態和核心態 shellcode 上下文（`-mshellcode-context=kernel`）均受支援。
+字串加密在所有編譯模式下均可使用，包括 dyncode（`-fdyncode`）。在 dyncode 模式下，加密字串的解密使用 dyncode 本地 arena 分配器。用戶態和核心態 dyncode 上下文（`-mdyncode-context=kernel`）均受支援。
 
 ---
 
@@ -633,7 +633,7 @@ string cleaned = raw.url_decode().from_base64().trim();
 | 模式 | 描述 | string 函式體來源 | 符號可見性 |
 |------|------|------------------|-----------|
 | **Hosted（預設）** | 普通可執行檔案 | 預編譯 LLVM bitcode 合併 | LTO 下 0 個符號 |
-| **Shellcode** | 位置無關的平坦二進位制 | 完整原始碼 prelude 注入 + arena 改寫 | 0 個符號（AlwaysInliner） |
+| **DynCode** | 位置無關的平坦二進位制 | 完整原始碼 prelude 注入 + arena 改寫 | 0 個符號（AlwaysInliner） |
 | **LTO** | 連結時最佳化 | 同 Hosted，LTO DCE 進一步精簡 | 0 個符號 |
 
 最終輸出的二進位制檔案中**不會暴露任何 `neverc_string_*` 符號**。
@@ -643,7 +643,7 @@ string cleaned = raw.url_decode().from_base64().trim();
 | 標誌 | 說明 |
 |------|------|
 | `-fbuiltin-string` | 啟用 builtin string 型別（預設關閉） |
-| `-fshellcode` | 啟用 shellcode 模式（自動啟用 builtin string） |
+| `-fdyncode` | 啟用 dyncode 模式（自動啟用 builtin string） |
 | `-DNEVERC_STRING_ALLOC=xxx` | 自定義 allocator（觸發完整原始碼 prelude） |
 | `-DNEVERC_STRING_FREE=xxx` | 自定義 free 函式 |
 
@@ -656,8 +656,8 @@ string cleaned = raw.url_decode().from_base64().trim();
 | `NEVERC_STRING_NPOS` | `(size_t)-1` | "未找到"哨兵值 |
 | `NEVERC_STRING_MAX_LEN` | `(size_t)-2` | 負載長度上限 |
 | `NEVERC_STRING_INT_BUF` | `24` | `from_int` / `from_uint` 的棧緩衝區大小 |
-| `NEVERC_STRING_USER_ARENA_SIZE` | `64 KB` | Shellcode 使用者態 arena 大小 |
-| `NEVERC_STRING_KERNEL_ARENA_SIZE` | `4 KB` | Shellcode 核心態 arena 大小 |
+| `NEVERC_STRING_USER_ARENA_SIZE` | `64 KB` | DynCode 使用者態 arena 大小 |
+| `NEVERC_STRING_KERNEL_ARENA_SIZE` | `4 KB` | DynCode 核心態 arena 大小 |
 
 ---
 
@@ -731,13 +731,13 @@ ninja neverc                        # stage 2（嵌入真正的 bitcode）
 
 | 條件 | 原因 |
 |------|------|
-| `-fshellcode` | StringRuntimePass 需要原始碼級別的函式體 |
+| `-fdyncode` | StringRuntimePass 需要原始碼級別的函式體 |
 | `-DNEVERC_STRING_ALLOC=xxx` | 自定義 allocator 被烘焙在 bitcode 中，必須重新編譯 |
 | 空的嵌入 bitcode | 首次構建（bootstrap stage 1）沒有 bitcode |
 
 ---
 
-## Shellcode 模式
+## DynCode 模式
 
 不使用 bitcode 合併，而是注入完整原始碼 prelude：
 
@@ -754,14 +754,14 @@ FrontendAction: 注入完整 prelude
     ▼ AlwaysInliner ← 內聯所有函式
     ▼ Data2TextPass
     │
-    ▼ shellcode.bin
+    ▼ dyncode.bin
 ```
 
 `StringRuntimePass` 將 `__builtin_malloc`/`__builtin_free` 改寫為 stack arena allocator：
 - 所有記憶體分配在棧上完成，不連結任何外部庫
 - arena 使用 `{size, next, self, tag}` per-allocation header 進行驗證
 - 使用者態 arena 預設 64 KB，核心態預設 4 KB
-- `AlwaysInliner` 最終將所有函式內聯，shellcode 中零獨立符號
+- `AlwaysInliner` 最終將所有函式內聯，dyncode 中零獨立符號
 
 ---
 
@@ -805,7 +805,7 @@ string result = neverc_string_find(s, __neverc_string_make_view("hello", 5));
 | LTO (預設) | **0 個** — internalize + LTO DCE 完全消除 |
 | 非 LTO -O2 | 少量 `t`（internal）— GlobalDCE 消除未使用函式 |
 | 非 LTO -O0 | 全部 `t`（internal）— DCE 未執行但符號仍 internal |
-| Shellcode | **0 個** — AlwaysInliner 內聯所有函式 |
+| DynCode | **0 個** — AlwaysInliner 內聯所有函式 |
 
 ---
 
@@ -843,9 +843,9 @@ neverc/
 │       ├── EncryptDecrypt.inc                  # NC_XORSTR encrypt/decrypt 輔助函式
 │       └── Format.inc                          # printf 風格 format
 │
-├── include/neverc/Shellcode/IR/
+├── include/neverc/DynCode/IR/
 │   ├── StringRuntimeABI.h                      # 跨層 ABI：kRuntimeFnAttr、arena 常量
-│   └── StringRuntimePass.h                     # Shellcode arena 改寫 pass 宣告
+│   └── StringRuntimePass.h                     # DynCode arena 改寫 pass 宣告
 │
 ├── lib/Foundation/Builtin/
 │   ├── BuiltinString.cpp                       # 核心實現（方法分發表 + 薄 header + bitcode API）
@@ -862,8 +862,8 @@ neverc/
 │   ├── StringRuntimeLinker.cpp                 # bitcode 合併 + kRuntimeFnAttr stamp
 │   └── BackendUtil.cpp                         # 在所有模式註冊 linker pass
 │
-└── lib/Shellcode/IR/
-    └── StringRuntimePass.cpp                   # Shellcode arena 改寫 pass
+└── lib/DynCode/IR/
+    └── StringRuntimePass.cpp                   # DynCode arena 改寫 pass
 ```
 
 ### 新增新 runtime 函式的步驟

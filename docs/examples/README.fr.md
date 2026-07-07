@@ -50,10 +50,10 @@ Aucun arbre source noyau requis — NeverC compile contre le runtime minimal int
 |---------|-------------|-----------------|
 | [Kernel Hello](../../examples/android-kernel-hello/README.fr.md) | Module `.ko` minimal | Bootstrap kallsyms via kprobe, validation insmod minimale |
 | [Template pilote noyau](../../examples/android-kernel-driver/README.fr.md) | Template de résolution dynamique de symboles | `kallsyms_lookup_name`, ABI stable GKI, 5.10–6.12 |
-| [Kernel Inline Hook](../../examples/android-kernel-inline-hook/README.fr.md) | Hook inline sur `do_faccessat` | Patch BTI/PAC sûr, mode context hook, relocation PC-relative |
-| [Kernel Syscall Hook](../../examples/android-kernel-syscall-hook/README.fr.md) | Table syscall / inline / context hook | Remplacement `sys_call_table`, hook inline, context hook |
+| [Kernel Inline Interpose](../../examples/android-kernel-inline-interpose/README.fr.md) | Interpose inline sur `do_faccessat` | Patch BTI/PAC sûr, mode context interpose, relocation PC-relative |
+| [Kernel Syscall Interpose](../../examples/android-kernel-syscall-interpose/README.fr.md) | Table syscall / inline / context interpose | Remplacement `sys_call_table`, interpose inline, context interpose |
 | [Kernel Stealth](../../examples/android-kernel-stealth/README.fr.md) | Dissimulation de module | Masquage list/sysfs/proc, octroi root, SELinux permissive |
-| [Kernel Full SDK](../../examples/android-kernel-full/README.fr.md) | Intégration SDK complète | Netlink IPC, hooks, credentials, masquage, SELinux, VMA, fichiers |
+| [Kernel Full SDK](../../examples/android-kernel-full/README.fr.md) | Intégration SDK complète | Netlink IPC, interposes, credentials, masquage, SELinux, VMA, fichiers |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.fr.md) | Périphérique caractère + ioctl | `misc_register`, dispatch ioctl, `/proc` seq_file |
 | [Kernel Netlink](../../examples/android-kernel-netlink/README.fr.md) | IPC netlink bidirectionnel | Commandes PING/VERSION/ECHO, `nvk_nl_open`/`nvk_nl_reply` |
 

@@ -413,7 +413,7 @@ neverc_target_link_libraries(neverc
   nevercBuild
   nevercRuntime
   nevercEmit
-  nevercShellcode
+  nevercDynCode
   nevercXorStr
   )
 

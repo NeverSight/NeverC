@@ -39,7 +39,7 @@ runtime/android/kernel/
     nvkmod.h                   #   module entry point, kprobe bootstrap, NVK_BOOTSTRAP()
     nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.18)
     nvk.h                      #   all-in-one include (initializes all subsystems, auto vermagic fix)
-    nvk_hook.h                 #   arm64 inline-hook engine v2 (simple + context + batch + chain + ftrace + kCFI)
+    nvk_interpose.h                 #   arm64 inline-interpose engine v2 (simple + context + batch + chain + ftrace + kCFI)
     nvk_mem.h                  #   safe memory read/write, pattern scan (BMH), write-protection bypass
     nvk_syscall.h              #   sys_call_table operations + arm64 syscall number table
     nvk_process.h              #   process enumeration, PID lookup, task walking (6.12-safe ranges)
@@ -60,7 +60,7 @@ runtime/android/kernel/
     nvk_pmu.h                  #   ARM64 PMU counter access
     nvk_inject.h               #   remote process injection (mmap + ELF loader + I-cache coherent)
     nvk_ns.h                   #   PID namespace operations
-    nvk_binder.h               #   Binder transaction interception + filtering (lazy hook)
+    nvk_binder.h               #   Binder transaction interception + filtering (lazy interpose)
     nvk_crypto.h               #   SHA-256, HMAC-SHA256, ChaCha20, integrity verification
     nvk_timer.h                #   hrtimer, timestamps (ktime/arch counter), busy-wait
     nvk_power.h                #   PM notifier (suspend/resume) + reboot notifier
@@ -73,7 +73,7 @@ runtime/android/kernel/
   tools/
     gen_struct_module_offsets.c # regenerate exact struct module offsets per kernel
     gen_fops_offsets.c           # file_operations offsetof/size probe
-    gen_layout_offsets.c       # proc_ops / sk_buff / nf_hook_ops layout probe
+    gen_layout_offsets.c       # proc_ops / sk_buff / nf_interpose_ops layout probe
     test-all.sh                # full verification: 8 demos × 6 kernels × extra modes = 84 configs
 ```
 
@@ -99,12 +99,12 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | Header | Purpose |
 |--------|---------|
 | `nvkmod.h` | Module entry point, kprobe bootstrap, `NVK_BOOTSTRAP()`, `NVK_DEFINE_MODULE()` |
-| `nvk_hook.h` | arm64 inline-hook engine v2 — simple/context/batch modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + SMP-safe DMB barriers + atomic stop_machine patch + D-cache→I-cache coherent + deep quiescence unhook + poison-on-free pool (32 pages) + ftrace fallback + hook chain + pause/resume + 6.12+ execmem support |
+| `nvk_interpose.h` | arm64 inline-interpose engine v2 — simple/context/batch modes + absolute relocation (10 insn types) + BTI/PAC/kCFI-safe + SMP-safe DMB barriers + atomic stop_machine patch + D-cache→I-cache coherent + deep quiescence uninterpose + poison-on-free pool (32 pages) + ftrace fallback + interpose chain + pause/resume + 6.12+ execmem support |
 | `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` — MTE-tag-aware, dynamic page size (4K/16K/64K) |
 | `nvk_syscall.h` | `nvk_syscall_replace/restore`, `nvk_syscall_get`, arm64 syscall number definitions |
 | `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
 | `nvk_cred.h` | `nvk_cred_set_root`, `nvk_cred_set_uid`, `nvk_cred_set_caps_full`, `nvk_cred_get_ids` |
-| `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_bypass_install/remove` (AVC + inode hook) |
+| `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_bypass_install/remove` (AVC + inode interpose) |
 | `nvk_hide.h` | `nvk_mod_hide/show`, `nvk_mod_full_hide` (list + sysfs + /proc/modules + /proc/vmallocinfo + dmesg + PID + mount + maps filter) |
 | `nvk_log.h` | `nvk_log_err/warn/info/dbg/trace`, `nvk_log_once`, `nvk_log_ratelimit`, `nvk_log_hexdump` |
 | `nvk_thread.h` | `nvk_thread_run`, `nvk_thread_stop`, `nvk_thread_sleep_ms`, `nvk_thread_stop_all` |
@@ -112,15 +112,15 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_addr.h` | `nvk_virt_to_phys`, `nvk_translate_user`, `nvk_walk_pgtable`, VA bits / page size detection |
 | `nvk_compat.h` | `nvk_kernel_version()`, `NVK_KERNEL_GE(maj,min)`, `nvk_has_pac/bti/mte`, versioned symbol lookup helpers |
 | `nvk_file.h` | `nvk_file_open/read/write/close`, `nvk_file_exists`, `nvk_file_read_all/write_all` |
-| `nvk_anti.h` | Environment detection (emulator, debugger, root, su binary, Magisk/KSU/APatch, SELinux permissive, hook/kprobe tampering), integrity verification, sealed watchdog, ARM64 HW CRC32 — all detection paths xorstr-encrypted |
+| `nvk_anti.h` | Environment detection (emulator, debugger, root, su binary, Magisk/KSU/APatch, SELinux permissive, interpose/kprobe tampering), integrity verification, sealed watchdog, ARM64 HW CRC32 — all detection paths xorstr-encrypted |
 | `nvk_vma.h` | VMA operations (find_vma, walk, read/write remote), process memory map inspection |
 | `nvk_su.h` | Root shell provisioning, su daemon lifecycle |
 | `nvk_ksyms.h` | Extended symbol operations (`nvk_ksyms_walk`, `nvk_ksyms_for_each`, prefix search, function size) |
 | `nvk_seccomp.h` | Seccomp filter inspection and bypass (per-process mode read/clear/set) |
 | `nvk_pmu.h` | ARM64 PMU counter access (cycle/instruction/cache/branch counters) |
-| `nvk_inject.h` | Remote process injection — `nvk_inject_mmap/munmap`, `nvk_inject_shellcode` (cross-process I-cache coherent via DC CIVAC + IC IALLU), `nvk_inject_elf` (ELF PT_LOAD segment loader), thread hijack setup |
+| `nvk_inject.h` | Remote process injection — `nvk_inject_mmap/munmap`, `nvk_inject_dyncode` (cross-process I-cache coherent via DC CIVAC + IC IALLU), `nvk_inject_elf` (ELF PT_LOAD segment loader), thread hijack setup |
 | `nvk_ns.h` | PID namespace operations (cross-namespace PID translation, nsproxy) |
-| `nvk_binder.h` | Binder transaction interception + filtering (lazy hook — only installed on first filter add) |
+| `nvk_binder.h` | Binder transaction interception + filtering (lazy interpose — only installed on first filter add) |
 | `nvk_crypto.h` | `nvk_sha256`, `nvk_hmac_sha256`, `nvk_chacha20_encrypt`, `nvk_crypto_verify_region` — constant-time, pure C, zero kernel dependencies |
 | `nvk_timer.h` | `nvk_timer_start_ms/us/ns`, `nvk_ktime_get_ns`, `nvk_arch_counter`, `nvk_udelay` — hrtimer wrapper + ARM64 generic timer |
 | `nvk_power.h` | `nvk_pm_register/unregister`, `nvk_reboot_register/unregister` — suspend/resume/shutdown awareness |
@@ -135,11 +135,11 @@ All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xor
 | `android-kernel-hello` | Zero-import minimal module (load test) |
 | `android-kernel-driver` | Dynamic kallsyms template |
 | `android-kernel-chardev` | misc device + ioctl + /proc status page |
-| `android-kernel-inline-hook` | Inline hook on `do_faccessat` (simple + context modes) |
-| `android-kernel-syscall-hook` | sys_call_table replacement + inline hook (dual mode) |
+| `android-kernel-inline-interpose` | Inline interpose on `do_faccessat` (simple + context modes) |
+| `android-kernel-syscall-interpose` | sys_call_table replacement + inline interpose (dual mode) |
 | `android-kernel-stealth` | Module concealment (list / sysfs / proc + SELinux + root) |
 | `android-kernel-netlink` | User↔kernel netlink IPC channel (ping/version/echo) |
-| `android-kernel-full` | Full SDK demo — initializes all subsystems, exercises hook/cred/hide/netlink |
+| `android-kernel-full` | Full SDK demo — initializes all subsystems, exercises interpose/cred/hide/netlink |
 
 ## struct module offsets (important before loading on a device)
 
@@ -213,14 +213,14 @@ Verified against GKI `6.18.24` (`gki_defconfig`, `CONFIG_COMPAT=y`):
 | `queue_delayed_work` / `mod_delayed_work` | 6.18+: only `*_on` variants exported; see `workqueue.h` |
 | `task_pid` inlined | `nvk_ns.c` probes `thread_pid` via `pid_vnr` |
 | `nlmsg_hdr` inlined | `nvk_netlink.c` probes `sk_buff->data` at init |
-| `execmem_alloc` / `execmem_free` | Hook pool allocator (`nvk_hook.c`) |
+| `execmem_alloc` / `execmem_free` | Interpose pool allocator (`nvk_interpose.c`) |
 | `prepare_creds` + `commit_creds` | Credential API (`override_creds`/`revert_creds` not exported) |
 
 **Not available on 6.18** (kernel removed the symbols from the export table):
 
-- **ftrace hook fallback** — `register_ftrace_function`, `unregister_ftrace_function`,
+- **ftrace interpose fallback** — `register_ftrace_function`, `unregister_ftrace_function`,
   `ftrace_set_filter_ip` are gone. `neverc_krt_ftrace_init()` returns `-1`;
-  use inline patching or kprobes via `neverc_krt_hook_auto()`.
+  use inline patching or kprobes via `neverc_krt_interpose_auto()`.
 - **`override_creds` / `revert_creds`** — there is no exported drop-in
   replacement with the same temporary-override semantics. Use
   `neverc_krt_cred_set_*` helpers for explicit credential changes; they are
@@ -239,8 +239,8 @@ NeverC embeds debug-prefix-mapped paths in the DWARF info of the kernel runtime
 bitcode so that debuggers can locate the original `.c` sources in your install
 tree. The DWARF paths are relative to the NeverC install root:
 
-- Kernel sources: `runtime/android/kernel/src/nvk_hook.c`, etc.
-- Kernel headers: `runtime/android/kernel/include/nvk_hook.h`, etc.
+- Kernel sources: `runtime/android/kernel/src/nvk_interpose.c`, etc.
+- Kernel headers: `runtime/android/kernel/include/nvk_interpose.h`, etc.
 
 These source files are already included in the `android-kernel-arm64` runtime
 package. Configure your debugger to map the relative prefix to your NeverC root:

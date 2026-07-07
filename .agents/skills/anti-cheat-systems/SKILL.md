@@ -25,7 +25,7 @@ This skill covers layered anti-cheat design across kernel drivers, privileged se
 - `Anti Cheat > Lazy Importer`
 - `Anti Cheat > Anti-Cheat Programming`
 - `Anti Cheat > Compile Time`
-- `Anti Cheat > Shellcode Engine & Tricks`
+- `Anti Cheat > DynCode Engine & Tricks`
 - `Anti Cheat > Obfuscation Engine`
 - `Anti Cheat > Screenshot`
 - `Anti Cheat > Game Engine Protection:*`
@@ -106,15 +106,15 @@ This skill covers layered anti-cheat design across kernel drivers, privileged se
 ```
 - Driver verification, signature policy, and blocklist checks
 - Callback registration and object access monitoring
-- System call, dispatch table, and hook integrity checks
+- System call, dispatch table, and interpose integrity checks
 - PatchGuard, test-signing, and kernel trust state checks
-- Kernel pool scanning (Segment Heap aware) for hidden drivers and shellcode
+- Kernel pool scanning (Segment Heap aware) for hidden drivers and dyncode
 ```
 
 ### Kernel Pool Scanning (Segment Heap Era)
 ```
 Why Segment Heap matters for anti-cheat:
-Cheat drivers allocate memory in NonPagedPool for shellcode, hook tables,
+Cheat drivers allocate memory in NonPagedPool for dyncode, intercept tables,
 hidden modules. The Segment Heap (19H1+) changed pool internals:
 headers are HeapKey XOR encoded, allocation paths are split (kLFH, VS,
 Segment, Large), metadata is isolated. Anti-cheat pool scanners must
@@ -216,7 +216,7 @@ Gameplay Behavioral Signals:
   than human players who miss, ignore, or react slowly to some targets
 
 Environmental Detection:
-- OBS process detection: Game Capture mode injects a graphics hook DLL
+- OBS process detection: Game Capture mode injects a graphics intercept DLL
   (obs-graphics-hook64.dll) into the game process; detectable via
   loaded module enumeration, though banning it risks false-positive
   on legitimate streamers
@@ -452,7 +452,7 @@ Limitations:
 ### Hypervisor-Level Components
 ```
 - EPT-based memory access monitoring
-- Callback list write protection via EPT hooks
+- Callback list write protection via EPT intercepts
 - ETW structure integrity enforcement
 - AC driver code page protection (prevent patching)
 - VMCALL interface for policy configuration from kernel driver
@@ -718,10 +718,10 @@ Concept:
   from a privilege level above the kernel
 - Even if attacker achieves kernel R/W (BYOVD, exploit),
   hypervisor-level enforcement remains intact
-- EPT hooks replace traditional kernel hooks:
+- EPT intercepts replace traditional kernel intercepts:
   operate outside the guest OS, invisible to kernel-level rootkits
 
-EPT Hook Protection Targets:
+EPT Intercept Protection Targets:
 - Anti-cheat driver executable pages
   → Prevents attackers from patching AC driver code in memory
 - Kernel callback lists (PsSetCreateProcessNotifyRoutine, ObRegisterCallbacks)
@@ -775,9 +775,9 @@ Limitations:
 - Compile-time techniques: string encryption, constexpr obfuscation, COFF obfuscation
 ```
 
-### Shellcode & Obfuscation
+### DynCode & Obfuscation
 ```
-- Shellcode engines: position-independent code generation, syscall stubs
+- DynCode engines: position-independent code generation, syscall stubs
 - Obfuscation engines: OLLVM-based, custom LLVM passes, MBA (Mixed Boolean-Arithmetic)
 - Anti-disassembly: opaque predicates, junk code insertion, control flow flattening
 ```

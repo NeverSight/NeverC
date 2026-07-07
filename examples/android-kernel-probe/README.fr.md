@@ -2,9 +2,9 @@
 
 # Android Kernel Probe
 
-Hook d'une instruction arbitraire à l'intérieur de `do_faccessat` (pas le point d'entrée) avec `neverc_krt_probe_register`. Démontre :
+Interpose d'une instruction arbitraire à l'intérieur de `do_faccessat` (pas le point d'entrée) avec `neverc_krt_probe_register`. Démontre :
 
-- **Hook à adresse arbitraire** : sonde n'importe quelle instruction, pas seulement les entrées de fonctions
+- **Interpose à adresse arbitraire** : sonde n'importe quelle instruction, pas seulement les entrées de fonctions
 - **Contexte registre complet** : lecture/écriture de tous les GPR via `neverc_krt_reg_ctx`
 - **Chaînage automatique** : plusieurs handlers sur la même adresse, exécutés par priorité
 - **Contrôle de flux** : `NEVERC_KRT_CTX_SKIP` pour annuler, `NEVERC_KRT_CTX_REDIRECT` pour rediriger

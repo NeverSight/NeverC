@@ -472,24 +472,24 @@ bool NeverCTest::compileOnly(const std::string &name, const std::string &src,
   return r.exitCode == 0;
 }
 
-// ---- Shellcode patterns ----
+// ---- DynCode patterns ----
 
-fs::path NeverCTest::buildShellcodeLoader() {
+fs::path NeverCTest::buildDynCodeLoader() {
   if (loaderBuilt_)
     return loaderPath_;
 
   loaderBuilt_ = true;
 
   if (isDarwin() && isArm64()) {
-    auto loaderSrc = testDir() / "shellcode" / "loader_arm64_macos.c";
-    loaderPath_ = tmpFile("shellcode_loader");
+    auto loaderSrc = testDir() / "dyncode" / "loader_arm64_macos.c";
+    loaderPath_ = tmpFile("dyncode_loader");
 
     auto r =
         exec("cc", {"-O2", "-o", loaderPath_.string(), loaderSrc.string()});
-    EXPECT_EQ(r.exitCode, 0) << "shellcode loader build failed\n" << r.err;
+    EXPECT_EQ(r.exitCode, 0) << "dyncode loader build failed\n" << r.err;
 
     if (r.exitCode == 0) {
-      auto entitlements = testDir() / "shellcode" / "jit.entitlements";
+      auto entitlements = testDir() / "dyncode" / "jit.entitlements";
       if (fs::exists(entitlements)) {
         exec("codesign",
              {"-s", "-", "--entitlements", entitlements.string(), "-f",
@@ -497,31 +497,31 @@ fs::path NeverCTest::buildShellcodeLoader() {
       }
     }
   } else if (isWindows() && isX86_64()) {
-    auto loaderSrc = testDir() / "shellcode" / "loader_windows.c";
-    loaderPath_ = tmpFile("shellcode_loader.exe");
+    auto loaderSrc = testDir() / "dyncode" / "loader_windows.c";
+    loaderPath_ = tmpFile("dyncode_loader.exe");
 
     auto r = ncc({"-O2", loaderSrc.string(), "-o", loaderPath_.string()});
     EXPECT_EQ(r.exitCode, 0)
-        << "Windows shellcode loader build failed\n"
+        << "Windows dyncode loader build failed\n"
         << r.err;
   }
 
   return loaderPath_;
 }
 
-void NeverCTest::shellcodeTest(const std::string &name, const std::string &src,
+void NeverCTest::dyncodeTest(const std::string &name, const std::string &src,
                                 int arg0, int arg1, int expectedExit) {
-  SCOPED_TRACE("shellcodeTest: " + name);
+  SCOPED_TRACE("dyncodeTest: " + name);
 
-  auto loader = buildShellcodeLoader();
+  auto loader = buildDynCodeLoader();
   if (loader.empty()) {
-    GTEST_SKIP() << "shellcode loader not available on this platform";
+    GTEST_SKIP() << "dyncode loader not available on this platform";
     return;
   }
 
   auto bin = tmpFile(name + ".bin");
-  auto r = ncc({"-fshellcode", src, "-o", bin.string()});
-  ASSERT_EQ(r.exitCode, 0) << "shellcode " << name << ": compile\n" << r.err;
+  auto r = ncc({"-fdyncode", src, "-o", bin.string()});
+  ASSERT_EQ(r.exitCode, 0) << "dyncode " << name << ": compile\n" << r.err;
 
   auto runR = exec(loader.string(),
                    {bin.string(), std::to_string(arg0), std::to_string(arg1)});
@@ -532,59 +532,59 @@ void NeverCTest::shellcodeTest(const std::string &name, const std::string &src,
   actual &= 0xFF;
 #endif
   EXPECT_EQ(actual, expectedExit)
-      << "shellcode " << name << ": run exit " << runR.exitCode << ", expected "
+      << "dyncode " << name << ": run exit " << runR.exitCode << ", expected "
       << expectedExit << "\n" << runR.out;
 }
 
-bool NeverCTest::shellcodeCompileOnly(
+bool NeverCTest::dyncodeCompileOnly(
     const std::string &name, const std::string &src,
     const std::vector<std::string> &extraFlags) {
   auto bin = tmpFile(name + ".bin");
-  std::vector<std::string> args = {"-fshellcode"};
+  std::vector<std::string> args = {"-fdyncode"};
   for (auto &f : extraFlags) args.push_back(f);
   args.push_back(src);
   args.push_back("-o");
   args.push_back(bin.string());
   auto r = ncc(args);
-  EXPECT_EQ(r.exitCode, 0) << "shellcode " << name << ": compile\n" << r.err;
+  EXPECT_EQ(r.exitCode, 0) << "dyncode " << name << ": compile\n" << r.err;
   return r.exitCode == 0;
 }
 
-void NeverCTest::shellcodeExpectFail(
+void NeverCTest::dyncodeExpectFail(
     const std::string &name, const std::string &src,
     const std::string &expectedError,
     const std::vector<std::string> &extraFlags) {
-  SCOPED_TRACE("shellcodeExpectFail: " + name);
+  SCOPED_TRACE("dyncodeExpectFail: " + name);
 
   auto bin = tmpFile(name + ".bin");
-  std::vector<std::string> args = {"-fshellcode"};
+  std::vector<std::string> args = {"-fdyncode"};
   for (auto &f : extraFlags) args.push_back(f);
   args.push_back(src);
   args.push_back("-o");
   args.push_back(bin.string());
   auto r = ncc(args);
-  EXPECT_NE(r.exitCode, 0) << "shellcode " << name << ": expected failure";
+  EXPECT_NE(r.exitCode, 0) << "dyncode " << name << ": expected failure";
 
   if (!expectedError.empty()) {
     EXPECT_TRUE(r.stderrContains(expectedError) || r.contains(expectedError))
-        << "shellcode " << name << ": missing '" << expectedError << "'\n"
+        << "dyncode " << name << ": missing '" << expectedError << "'\n"
         << r.err << r.out;
   }
 }
 
-void NeverCTest::shellcodeStringPair(const std::string &tag) {
-  SCOPED_TRACE("shellcodeStringPair: " + (tag.empty() ? "<base>" : tag));
+void NeverCTest::dyncodeStringPair(const std::string &tag) {
+  SCOPED_TRACE("dyncodeStringPair: " + (tag.empty() ? "<base>" : tag));
 
-  auto shellDir = testDir() / "shellcode";
+  auto shellDir = testDir() / "dyncode";
   std::string userSrc, kernSrc;
   if (tag.empty()) {
-    userSrc = (shellDir / "test_shellcode_neverc_string.c").string();
-    kernSrc = (shellDir / "test_shellcode_neverc_string_kernel.c").string();
+    userSrc = (shellDir / "test_dyncode_neverc_string.c").string();
+    kernSrc = (shellDir / "test_dyncode_neverc_string_kernel.c").string();
   } else {
     userSrc =
-        (shellDir / ("test_shellcode_neverc_string_" + tag + ".c")).string();
+        (shellDir / ("test_dyncode_neverc_string_" + tag + ".c")).string();
     kernSrc =
-        (shellDir / ("test_shellcode_neverc_string_kernel_" + tag + ".c"))
+        (shellDir / ("test_dyncode_neverc_string_kernel_" + tag + ".c"))
             .string();
   }
 
@@ -592,11 +592,11 @@ void NeverCTest::shellcodeStringPair(const std::string &tag) {
   std::string kernName =
       tag.empty() ? "neverc_string_kernel" : "neverc_string_kernel_" + tag;
 
-  shellcodeTest(userName, userSrc, 0, 0, 0);
-  shellcodeCompileOnly(kernName, kernSrc, {"-mshellcode-context=kernel"});
+  dyncodeTest(userName, userSrc, 0, 0, 0);
+  dyncodeCompileOnly(kernName, kernSrc, {"-mdyncode-context=kernel"});
 }
 
-void NeverCTest::shellcodeCrossCompile(const std::string &label,
+void NeverCTest::dyncodeCrossCompile(const std::string &label,
                                         const std::string &src,
                                         const std::vector<std::string> &extra) {
   static const char *triples[] = {
@@ -608,7 +608,7 @@ void NeverCTest::shellcodeCrossCompile(const std::string &label,
   for (auto *triple : triples) {
     SCOPED_TRACE(std::string(triple));
     auto bin = tmpFile(label + "_" + triple + ".bin");
-    std::vector<std::string> args = {"-fshellcode", "-target", triple};
+    std::vector<std::string> args = {"-fdyncode", "-target", triple};
     for (auto &f : extra) args.push_back(f);
     args.push_back(src);
     args.push_back("-o");
@@ -619,7 +619,7 @@ void NeverCTest::shellcodeCrossCompile(const std::string &label,
   }
 }
 
-void NeverCTest::shellcodeCrossCompileKernel(
+void NeverCTest::dyncodeCrossCompileKernel(
     const std::string &label, const std::string &src,
     const std::vector<std::string> &extra) {
   static const char *triples[] = {
@@ -631,7 +631,7 @@ void NeverCTest::shellcodeCrossCompileKernel(
   for (auto *triple : triples) {
     SCOPED_TRACE(std::string(triple));
     auto bin = tmpFile(label + "_kern_" + triple + ".bin");
-    std::vector<std::string> args = {"-fshellcode", "-mshellcode-context=kernel",
+    std::vector<std::string> args = {"-fdyncode", "-mdyncode-context=kernel",
                                      "-target", triple};
     for (auto &f : extra) args.push_back(f);
     args.push_back(src);

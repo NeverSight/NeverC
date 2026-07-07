@@ -1,0 +1,82 @@
+**Idiomas**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+[← Compilador de dyncode](../README.es.md)
+
+# Hoja de ruta
+
+Este documento rastrea funcionalidades planificadas, en progreso o diferidas por diseño.
+
+## Estado actual
+
+El pipeline de dyncode de NeverC cubre:
+
+- Pipeline completo de LLVM IR con 11+ pasadas dedicadas
+- Extractores COFF / ELF / Mach-O
+- Resolución de importaciones Win32 PEB-walk (hash ROR-13, 6 buckets de DLL)
+- Reducción directa de syscalls (Darwin `svc #0x80`, Linux `svc #0` / `syscall`)
+- Soporte de modo kernel (Windows, Linux)
+- Auditoría de bytes prohibidos con perfiles configurables
+- SDK de plugins para reescritores de bytes prohibidos y codificadores de conjunto de caracteres
+- Restricciones de tamaño / alineación / relleno (`-fdyncode-max-length=`, `-fdyncode-align=`, `-fdyncode-pad=`)
+- 11 interposes de ofuscación en las capas IR, MIR y flujo de bytes
+
+## Completado (2026-04)
+
+1. **Restricciones de tamaño / alineación / relleno** — Integrado. `-fdyncode-max-length=`, `-fdyncode-align=`, `-fdyncode-pad=` se ejecutan al final de `finalizeDynCodeBytes`. El driver rechaza configuraciones contradictorias (ej. byte de relleno en el conjunto de bytes prohibidos, o relleno sin align/max-length).
+
+2. **API de Plugins C fuera del árbol** — Interfaz de plugin C ABI pura (`NevercPluginAPI.h`) para pases IR, MIR, Binary y Linker personalizados. Los plugins se registran en 11 puntos de enganche dyncode (`NEVERC_INTERPOSE_SC_*`). SDK de un solo encabezado, cero dependencias LLVM/CRT. Ver [documentación del API de Plugins](../../plugin-api/README.es.md).
+
+## Planificado — Capa de plugins (vía interposes)
+
+Estas capacidades **no están integradas intencionalmente**. Pertenecen a la capa de estrategia/ofuscación y están diseñadas para ser proporcionadas por plugins de terceros a través de las interfaces de interposes y plugins.
+
+| Funcionalidad | Punto de interpose | Notas |
+|---------------|-------------|-------|
+| Anti-desensamblaje | `RunBeforePreEmit` / `RunAfterPreEmit` / `RunAfterFinalMIR` | Interferencia de prefijo de instrucción, reordenamiento de saltos, inserción de basura |
+| Polimorfismo | `RunAfterFinalMIR` / `RunPostExtract` | Variación de salida basada en semilla por compilación |
+| Codificador por etapas (XOR / RC4 / autodescifrado) | `RunPostExtract` / `RunPostFinalize` | Generación de stub en tiempo de compilación + cifrado de payload |
+| Syscalls indirectos (Halos / Tartarus / Recycled Gate) | Plugin de nivel IR o `RunPostExtract` | Escaneo de gadgets ntdll en tiempo de ejecución |
+| Máscara de sleep / suplantación de pila de llamadas | Plugin de pasada IR | Patrones Ekko / FOLIAGE / Cronos |
+| Parcheo ETW / AMSI | Plugin de pasada IR | Secuencias de parche en tiempo de ejecución |
+| Module stomping / uninterposing | Plugin de pasada IR | Patrones de manipulación de memoria |
+
+## Resumen de interposes de plugins
+
+11 interposes en tres capas:
+
+**Capa IR (6 interposes, reciben `ModulePassManager &`)**:
+- `RunBeforePrep` — Antes de cualquier pasada de dyncode
+- `RunAfterPrep` — Después de la unificación de linkage
+- `RunBeforeInlining` — Última oportunidad antes de AlwaysInliner
+- `RunAfterInlining` — IR completamente aplanado en una función
+- `RunAfterStackify` — Forma final de IR antes de codegen
+- `RunAfterFinalIR` — Después de `AllBlrPass`, el último interpose de IR absoluto
+
+**Capa MIR (3 interposes, reciben `TargetPassConfig &`)**:
+- `RunBeforePreEmit` — Registros asignados, pseudos CFI/EH aún presentes
+- `RunAfterPreEmit` — Después de la limpieza de `MIRPrepPass`, más cercano a los bytes finales
+- `RunAfterFinalMIR` — Después de LLVM `addPreEmitPass2()`, justo antes de AsmPrinter
+
+**Capa de flujo de bytes (2 interposes, reciben `SmallVectorImpl<uint8_t> &`)**:
+- `RunPostExtract` — Pre-finalización, aún procesado por reescritor/codificador/auditoría/dimensionamiento
+- `RunPostFinalize` — Post-finalización, último momento antes de escribir en disco; NeverC no realiza más auditorías
+
+## Pipeline de finalización
+
+Cada extractor llama a `finalizeDynCodeBytes` antes de escribir el `.bin`:
+
+```
+applyPostExtractObfuscationInterpose       (C Plugin API: NEVERC_INTERPOSE_SC_POST_EXTRACT)
+        |
+auditFinalBadBytes                    (auditoría dura integrada)
+        |
+applyDynCodeSizing                  (-fdyncode-align/-max-length/-pad)
+        |
+applyPostFinalizeObfuscationInterpose      (C Plugin API: NEVERC_INTERPOSE_SC_POST_FINALIZE)
+```
+
+Uso y ejemplos de código en la [documentación del Plugin API](../../plugin-api/README.es.md).
+
+## No planificado
+
+- **Frontend multi-lenguaje** — NeverC solo acepta su propio frontend C23. El pipeline IR está desacoplado del frontend, pero aceptar bitcode externo (ej. de `rustc` o `zig`) no es un objetivo del proyecto.

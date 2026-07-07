@@ -423,7 +423,7 @@ public:
     // GNU ifunc is a mechanism to allow user-supplied functions to
     // resolve PLT slot values at load-time. This is contrary to the
     // regular symbol resolution scheme in which symbols are resolved just
-    // by name. Using this hook, you can program how symbols are solved
+    // by name. Using this callback, you can program how symbols are solved
     // for you program. For example, you can make "memcpy" to be resolved
     // to a SSE-enabled version of memcpy only when a machine running the
     // program supports the SSE instruction set.

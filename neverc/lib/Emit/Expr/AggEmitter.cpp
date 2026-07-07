@@ -1183,7 +1183,7 @@ void FunctionEmitter::genAggregateCopy(LValue Dest, LValue Src, QualType Ty,
   // memcpy is not defined if the source and destination pointers are exactly
   // equal, but other compilers do this optimization, and almost every memcpy
   // implementation handles this case safely.  If there is a libc that does not
-  // safely handle this, we can add a target hook.
+  // safely handle this, we can add a target callback.
 
   // Skip tail padding for potentially-overlapping subobjects — it may be
   // occupied by a different object.

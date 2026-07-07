@@ -332,28 +332,28 @@ TEST_F(BasicTest, CExtStringRequiresFlag) {
   expectCommandFail("c_needs_flag", "undeclared identifier 'string'", args);
 }
 
-TEST_F(BasicTest, NcExtShellcodeString) {
-  auto ncSrc = tmpFile("nc_shellcode_str.nc");
-  writeFile(ncSrc, R"(int shellcode_entry(void) {
-    string s = "shellcode";
+TEST_F(BasicTest, NcExtDynCodeString) {
+  auto ncSrc = tmpFile("nc_dyncode_str.nc");
+  writeFile(ncSrc, R"(int dyncode_entry(void) {
+    string s = "dyncode";
     if (s.len != 9) return 1;
-    if (s != "shellcode") return 1;
+    if (s != "dyncode") return 1;
     string upper = s.to_upper();
-    if (upper != "SHELLCODE") return 1;
+    if (upper != "DYNCODE") return 1;
     return 0;
 })");
-  auto bin = tmpFile("nc_shellcode_str.bin");
-  std::vector<std::string> args = {"-fshellcode", "-std=c23",
+  auto bin = tmpFile("nc_dyncode_str.bin");
+  std::vector<std::string> args = {"-fdyncode", "-std=c23",
                                    ncSrc.string(), "-o", bin.string()};
   auto r = ncc(args);
-  EXPECT_EQ(r.exitCode, 0) << "nc+shellcode compile failed\n" << r.err;
+  EXPECT_EQ(r.exitCode, 0) << "nc+dyncode compile failed\n" << r.err;
   EXPECT_TRUE(fs::exists(bin) && fileSize(bin) > 0)
-      << "nc+shellcode binary missing or empty";
+      << "nc+dyncode binary missing or empty";
 }
 
-TEST_F(BasicTest, NcExtShellcodeCrossCompile) {
+TEST_F(BasicTest, NcExtDynCodeCrossCompile) {
   auto ncSrc = tmpFile("nc_sc_cross.nc");
-  writeFile(ncSrc, R"(int shellcode_entry(void) {
+  writeFile(ncSrc, R"(int dyncode_entry(void) {
     string s = "cross";
     return s.len != 5;
 })");
@@ -366,10 +366,10 @@ TEST_F(BasicTest, NcExtShellcodeCrossCompile) {
   for (auto *triple : triples) {
     SCOPED_TRACE(triple);
     auto bin = tmpFile(std::string("nc_sc_") + triple + ".bin");
-    auto r = ncc({"-fshellcode", "-target", triple, ncSrc.string(), "-o",
+    auto r = ncc({"-fdyncode", "-target", triple, ncSrc.string(), "-o",
                   bin.string()});
     EXPECT_TRUE(r.exitCode == 0 && fs::exists(bin) && fileSize(bin) > 0)
-        << ".nc shellcode cross-compile " << triple << " failed\n" << r.err;
+        << ".nc dyncode cross-compile " << triple << " failed\n" << r.err;
   }
 }
 

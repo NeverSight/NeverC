@@ -88,7 +88,7 @@ int msfunc(int a) { return a; }
 
 ## LTO サポート
 
-プラグインは `NEVERC_HOOK_POST_OPT` と `NEVERC_HOOK_LTO_POST_OPT` の両方に登録されます。LTO で翻訳単位が統合された後もカスタム規約を適用できます。
+プラグインは `NEVERC_INTERPOSE_POST_OPT` と `NEVERC_INTERPOSE_LTO_POST_OPT` の両方に登録されます。LTO で翻訳単位が統合された後もカスタム規約を適用できます。
 
 ## プラグイン API
 

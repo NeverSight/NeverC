@@ -6,9 +6,9 @@
 typedef int (*neverc_krt_seccomp_check_fn)(int this_syscall, void *sd);
 
 static unsigned long              _neverc_krt_off_seccomp;
-static struct neverc_krt_hook     _neverc_krt_seccomp_hook;
+static struct neverc_krt_interpose     _neverc_krt_seccomp_interpose;
 static neverc_krt_seccomp_check_fn _neverc_krt_orig_seccomp_check;
-static int                        _neverc_krt_seccomp_hooked;
+static int                        _neverc_krt_seccomp_interposed;
 static int                        _neverc_krt_seccomp_allow_pids[NEVERC_KRT_SECCOMP_ALLOW_MAX];
 static volatile int               _neverc_krt_seccomp_allow_cnt;
 static volatile int               _neverc_krt_seccomp_pid_lock;
@@ -102,7 +102,7 @@ static int _neverc_krt_seccomp_is_allowed_pid(int pid)
 	return 0;
 }
 
-static int _neverc_krt_seccomp_hook_fn(int this_syscall, void *sd)
+static int _neverc_krt_seccomp_interpose_fn(int this_syscall, void *sd)
 {
 	int pid = neverc_krt_current_pid();
 
@@ -114,11 +114,11 @@ static int _neverc_krt_seccomp_hook_fn(int this_syscall, void *sd)
 	return 0;
 }
 
-int neverc_krt_seccomp_hook_install(void)
+int neverc_krt_seccomp_interpose_install(void)
 {
 	void *target;
 
-	if (_neverc_krt_seccomp_hooked) return 0;
+	if (_neverc_krt_seccomp_interposed) return 0;
 
 	target = NEVERC_KRT_LOOKUP("__secure_computing");
 	if (!target)
@@ -127,20 +127,20 @@ int neverc_krt_seccomp_hook_install(void)
 		target = NEVERC_KRT_LOOKUP("seccomp_run_filters");
 	if (!target) return -1;
 
-	int ret = neverc_krt_hook_install(&_neverc_krt_seccomp_hook, target,
-				    (void *)_neverc_krt_seccomp_hook_fn,
+	int ret = neverc_krt_interpose_install(&_neverc_krt_seccomp_interpose, target,
+				    (void *)_neverc_krt_seccomp_interpose_fn,
 				    (void **)&_neverc_krt_orig_seccomp_check);
 	if (ret) return ret;
 
-	_neverc_krt_seccomp_hooked = 1;
+	_neverc_krt_seccomp_interposed = 1;
 	return 0;
 }
 
-void neverc_krt_seccomp_hook_remove(void)
+void neverc_krt_seccomp_interpose_remove(void)
 {
-	if (!_neverc_krt_seccomp_hooked) return;
-	neverc_krt_hook_remove(&_neverc_krt_seccomp_hook);
-	_neverc_krt_seccomp_hooked = 0;
+	if (!_neverc_krt_seccomp_interposed) return;
+	neverc_krt_interpose_remove(&_neverc_krt_seccomp_interpose);
+	_neverc_krt_seccomp_interposed = 0;
 }
 
 int neverc_krt_seccomp_allow_pid(int pid)

@@ -73,8 +73,8 @@ static void _neverc_krt_inject_flush_code(unsigned long addr, size_t len)
 	__asm__ __volatile__("isb" ::: "memory");
 }
 
-int neverc_krt_inject_shellcode(struct task_struct *task,
-				const struct neverc_krt_shellcode *sc,
+int neverc_krt_inject_dyncode(struct task_struct *task,
+				const struct neverc_krt_dyncode *sc,
 				unsigned long target_addr)
 {
 	if (!task || !sc || !sc->code) return -1;
@@ -196,7 +196,7 @@ int neverc_krt_inject_munmap(struct task_struct *task,
 
 int neverc_krt_inject_hijack_setup(struct neverc_krt_thread_hijack *hj,
 				   struct task_struct *task,
-				   const struct neverc_krt_shellcode *sc)
+				   const struct neverc_krt_dyncode *sc)
 {
 	if (!hj || !task || !sc || !sc->code) return -1;
 	__builtin_memset(hj, 0, sizeof(*hj));

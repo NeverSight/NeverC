@@ -476,7 +476,7 @@ bool OutputWriter::createThunks(OutputSection *os, int margin) {
       if (isInRange(rel.Type, s, p, margin))
         continue;
 
-      // If the target isn't in range, hook it up to an existing or new thunk.
+      // If the target isn't in range, connect it to an existing or new thunk.
       auto [thunk, wasNew] = getThunk(lastThunks, sym, p, rel.Type, margin);
       if (wasNew) {
         Chunk *thunkChunk = thunk->getChunk();
@@ -689,7 +689,7 @@ void OutputWriter::commitPostFixes() {}
 // ===----------------------------------------------------------------------===
 
 // ===----------------------------------------------------------------------===
-//  neverc out-of-tree plugin: linker hook integration (COFF)
+//  neverc out-of-tree plugin: linker callback integration (COFF)
 //
 //  Mirrors the ELF backend.  COFF has no global linker context, so the active
 //  COFFLinkerContext is published in a TU-local pointer for the duration of

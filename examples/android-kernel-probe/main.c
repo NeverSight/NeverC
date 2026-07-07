@@ -1,15 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * NeverC probe demo — hook any instruction at any address.
+ * NeverC probe demo — interpose any instruction at any address.
  *
  * Demonstrates neverc_krt_probe_register:
- *  - Hook an instruction inside do_faccessat (not the entry)
+ *  - Interpose an instruction inside do_faccessat (not the entry)
  *  - Read/modify registers via neverc_krt_reg_ctx
  *  - Multiple handlers auto-chained on the same address
  *  - force_jump to skip execution
  */
 #include <nvkmod.h>
-#include <nvk_hook.h>
+#include <nvk_interpose.h>
 #include <nvk_mem.h>
 #include <linux/string.h>
 #include <linux/sched.h>
@@ -92,9 +92,9 @@ static int neverc_krt_probe_demo_init(void)
 	neverc_krt_log_info("init on %s\n", NEVERC_KRT_KERNEL_STR);
 	neverc_krt_mem_init();
 
-	ret = neverc_krt_hook_init();
+	ret = neverc_krt_interpose_init();
 	if (ret) {
-		neverc_krt_log_err("hook_init failed: %d\n", ret);
+		neverc_krt_log_err("interpose_init failed: %d\n", ret);
 		return ret;
 	}
 
@@ -147,6 +147,6 @@ module_exit(neverc_krt_probe_demo_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("NeverC");
-MODULE_DESCRIPTION("NeverC probe demo — arbitrary-instruction hook");
+MODULE_DESCRIPTION("NeverC probe demo — arbitrary-instruction interpose");
 
 NEVERC_KRT_DEFINE_MODULE("neverc_krt_probe_demo");

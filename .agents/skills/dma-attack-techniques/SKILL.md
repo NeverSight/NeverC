@@ -1429,7 +1429,7 @@ ACPI indicators:
 
 Windows PCR[7] event: firmware extends EV_EFI_ACTION with
 "DMA Protection Disabled" when IOMMU/Kernel DMA Protection
-is disabled, providing attestation hook.
+is disabled, providing attestation callback.
 
 Combined picture:
 PCR[0]/PCR[7] anchor firmware and DMA-protection policy,

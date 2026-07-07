@@ -1,0 +1,31 @@
+**Lingue**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+[← Compilatore dyncode](../README.it.md)
+
+# Progettazione dei pass IR — Principi, pipeline ed esempi prima/dopo
+
+> Questo documento spiega il **perché** di ogni pass nella pipeline di compilazione dyncode.
+
+## 0. Idea centrale
+
+Obiettivo in una frase: **Eliminare tutto nel `.o` che diventerebbe una rilocazione, lasciando solo un flusso di istruzioni puro direttamente `mmap(RWX)` + `memcpy` + `blr`.**
+
+## 1–13. Pass
+
+| Pass | Funzione |
+|------|----------|
+| ZeroRelocPass | Prep: unificazione linkage + alwaysinline. Stackify: globali mutabili → alloca |
+| IndirectBrPass | computed-goto → switch |
+| SyscallStubPass | libc extern → trap inline guidate da TargetDesc + compat POSIX + autofix K&R |
+| WinPEBImportPass | Win32 extern → resolver PEB walk (~190 API) + cache indirizzi cifrata + compat Windows POSIX |
+| MemIntrinPass | mem*/str*/abs → helper loop-byte inline |
+| CompilerRtPass | `__int128` div/mod → divisione lunga inline |
+| Data2TextPass | Fase 1+2: GV costanti → immediati/stack + split residuo SROA |
+| AllBlrPass | (opzionale) chiamate dirette → indirette |
+| KernelImportPass | (ring-0) extern → chiamate indirette via resolver |
+| StringRuntimePass | metodi `string` integrati → varianti arena stack |
+| HeapArenaPass | `malloc`/`free`/`calloc`/`realloc` → alloc arena + fallback OS per allocazioni grandi |
+
+**Crittografia della cache indirizzi** (§4.1, condivisa da WinPEBImportPass e KernelImportPass): gli indirizzi risolti vengono cifrati prima della memorizzazione tramite decomposizione aritmetica senza XOR `(a + b) - 2*(a & b)` + intermediari `volatile`. Tre funzioni intercambiabili (`__sc_derive_key`, `__sc_ptr_encrypt`, `__sc_ptr_decrypt`). Slot cache per (DLL, API) nella sezione `.text`. Percorso rapido/lento con `cmpxchg weak` thread-safe. L'utente può fornire le proprie implementazioni (`always_inline`, inverse reciproche, nessuna chiamata esterna). Vedere [README.md §4.1–4.5](README.md#41-address-cache-encryption) per i dettagli completi.
+
+11 interpose di offuscamento (`NEVERC_INTERPOSE_SC_*`). Filosofia diagnostica: 1 errore = 1 diagnostica azionabile. Vedere [Plugin API — Punti di aggancio](../../plugin-api/README.it.md#5-punti-di-aggancio) e [kernel-mode-dyncode.md](../kernel-mode-dyncode/README.it.md).

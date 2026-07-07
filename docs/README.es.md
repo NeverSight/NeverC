@@ -2,7 +2,7 @@
 
 [← Proyecto NeverC](i18n/README.es.md)
 
-> **Tip:** Use the language bar above; links on this page point to the same locale (shellcode README and breadcrumbs).
+> **Tip:** Use the language bar above; links on this page point to the same locale (dyncode README and breadcrumbs).
 
 # Documentación de NeverC
 
@@ -10,24 +10,24 @@ Notas de diseño, referencia API y guías para cada subsistema de NeverC.
 
 ---
 
-## Compilador de shellcode
+## Compilador de dyncode
 
-El pipeline de compilación de shellcode es el foco principal de investigación de NeverC. Arquitectura, opciones CLI, matriz de plataformas y ejemplos:
+El pipeline de compilación de dyncode es el foco principal de investigación de NeverC. Arquitectura, opciones CLI, matriz de plataformas y ejemplos:
 
-**[Compilador de shellcode →](shellcode-compiler/README.es.md)**
+**[Compilador de dyncode →](dyncode-compiler/README.es.md)**
 
 | Documento | Descripción |
 |-----------|-------------|
-| [README](shellcode-compiler/README.es.md) | Resumen, inicio rápido, objetivos soportados |
-| [Pipeline & PIC](shellcode-compiler/pipeline-and-pic/README.es.md) | Diseño IR → objeto → extracción |
-| [IR Pass Design](shellcode-compiler/ir-pass-design/README.es.md) | Razón de cada pasada IR |
-| [MIR Pass Design](shellcode-compiler/mir-pass-design/README.es.md) | Pasadas MIR del backend |
-| [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.es.md) | Compilación Ring-0 |
-| [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.es.md) | `TargetDesc` y extractores |
-| [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.es.md) | Añadir plataforma |
-| [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.es.md) | Instrucciones ARM64 desde la perspectiva de shellcode |
-| [Roadmap](shellcode-compiler/roadmap/README.es.md) | Trabajo planificado |
-| [Progress](shellcode-compiler/progress/README.es.md) | Estado de implementación |
+| [README](dyncode-compiler/README.es.md) | Resumen, inicio rápido, objetivos soportados |
+| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic/README.es.md) | Diseño IR → objeto → extracción |
+| [IR Pass Design](dyncode-compiler/ir-pass-design/README.es.md) | Razón de cada pasada IR |
+| [MIR Pass Design](dyncode-compiler/mir-pass-design/README.es.md) | Pasadas MIR del backend |
+| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode/README.es.md) | Compilación Ring-0 |
+| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture/README.es.md) | `TargetDesc` y extractores |
+| [Platform Extension Guide](dyncode-compiler/platform-extension-guide/README.es.md) | Añadir plataforma |
+| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial/README.es.md) | Instrucciones ARM64 desde la perspectiva de dyncode |
+| [Roadmap](dyncode-compiler/roadmap/README.es.md) | Trabajo planificado |
+| [Progress](dyncode-compiler/progress/README.es.md) | Estado de implementación |
 
 ---
 
@@ -72,7 +72,7 @@ Principales direcciones planificadas del proyecto NeverC: biblioteca estándar, 
 | Biblioteca estándar (`std`) | Paquetes al estilo Go: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync` y más |
 | Suite de plugins de ofuscación (`neverc-obfuscation`) | VM, MBA, aplanamiento de flujo de control, motor polimórfico, anti-manipulación — plugins de primera parte |
 | Biblioteca de componentes UI (`neverc-ui`) | UI multiplataforma tipo Qt, renderizador HTML/JS/CSS, diseñador drag-and-drop, flujo nativo IA |
-| IDE y herramientas de lenguaje (`neverc-ide`) | Extensión VSCode + IDE independiente para archivos `.nc`, IntelliSense, depuración, visualización de pipeline shellcode |
+| IDE y herramientas de lenguaje (`neverc-ide`) | Extensión VSCode + IDE independiente para archivos `.nc`, IntelliSense, depuración, visualización de pipeline dyncode |
 | Contratos inteligentes EVM | Compilar C a bytecode EVM — escribir contratos en C en lugar de Solidity |
 | Solana eBPF | Compilar C a bytecode eBPF de Solana — desarrollo de programas on-chain en C |
 

@@ -63,26 +63,26 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 |---------|--------|---------|
 | `-fno-builtin` | Подавляет mimalloc | Нет сценария переопределения CRT |
 | `-mkernel` | Подавляет mimalloc | Нет кучи пользовательского пространства в ядре |
-| `-fshellcode-mode` | Подавляет mimalloc | Заменён HeapArenaPass (на основе арены) |
+| `-fdyncode-mode` | Подавляет mimalloc | Заменён HeapArenaPass (на основе арены) |
 | `-ffreestanding` | Подавляет mimalloc | Нет libc для переопределения |
 
 Встроенная функция `string` имеет собственную логику подавления (перезапись арены в конвейере шеллкода заменяет выделение кучи).
 
 ### HeapArenaPass (Выделение кучи в шеллкоде)
 
-При активном `-fshellcode-mode` `mimalloc` подавляется, но вызовы `malloc`/`free`/`calloc`/`realloc` автоматически переписываются `HeapArenaPass` (включён по умолчанию). Проход использует гибридную стратегию:
+При активном `-fdyncode-mode` `mimalloc` подавляется, но вызовы `malloc`/`free`/`calloc`/`realloc` автоматически переписываются `HeapArenaPass` (включён по умолчанию). Проход использует гибридную стратегию:
 
 - **Малые выделения (≤ 64 КБ)**: обслуживаются из арены на стеке, разделяемой со встроенным рантаймом `string` (бамп-аллокатор + повторное использование свободного списка).
 - **Большие выделения (> 64 КБ) или переполнение арены**: откат к аллокатору ОС:
-  - **Windows**: `malloc`/`free` разрешаются из `msvcrt.dll` через PEB walk (`-mshellcode-win-peb-import`).
-  - **Linux / macOS / Android**: `mmap`/`munmap` инлайнятся как нативные системные вызовы (`-mshellcode-syscall`).
+  - **Windows**: `malloc`/`free` разрешаются из `msvcrt.dll` через PEB walk (`-mdyncode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap` инлайнятся как нативные системные вызовы (`-mdyncode-syscall`).
   - **Импортный проход не включён**: только арена; переполнение возвращает `NULL`.
 
 Управление через флаги драйвера:
 
 ```bash
-neverc -fshellcode test.c -o test.bin                     # HeapArenaPass ВКЛ (по умолчанию)
-neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass ВЫКЛ (исходное поведение)
+neverc -fdyncode test.c -o test.bin                     # HeapArenaPass ВКЛ (по умолчанию)
+neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass ВЫКЛ (исходное поведение)
 ```
 
 ---

@@ -113,9 +113,9 @@ static int symbolScanPass(NevercModuleRef M, const NevercHostAPI *API,
 |* Registration                                                               *|
 \*===----------------------------------------------------------------------===*/
 static void registerPasses(const NevercHostAPI *API, void *Registrar) {
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT, censusPass, NULL,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT, censusPass, NULL,
                           "crt-shim-census");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT, symbolScanPass, NULL,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT, symbolScanPass, NULL,
                           "crt-shim-symbol-scan");
 }
 

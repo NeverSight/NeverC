@@ -6,24 +6,24 @@
 
 **AI 友好的安全研究 C23 编译器，基于 LLVM 构建**
 
-集成链接器 · Shellcode 流水线 · 内置运行时（`string` · `mimalloc` · `xorstr`）
+集成链接器 · DynCode 流水线 · 内置运行时（`string` · `mimalloc` · `xorstr`）
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#特性)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#交叉编译到-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#特性)
 
-[文档索引](../README.zh-CN.md) · [Shellcode 指南](../shellcode-compiler/README.zh-CN.md) · [内置运行时](../builtins/README.zh-CN.md) · [插件 API](../plugin-api/README.zh-CN.md) · [路线图](../roadmap/README.zh-CN.md)
+[文档索引](../README.zh-CN.md) · [DynCode 指南](../dyncode-compiler/README.zh-CN.md) · [内置运行时](../builtins/README.zh-CN.md) · [插件 API](../plugin-api/README.zh-CN.md) · [路线图](../roadmap/README.zh-CN.md)
 
 </div>
 
 ---
 
-> **说明：** GitHub 仓库首页固定展示英文 `README.md`，不会根据浏览器语言自动切换。请用上方语言链接进入对应版本；进入 [文档](../README.zh-CN.md) 或 [shellcode 指南](../shellcode-compiler/README.zh-CN.md) 后，请继续通过页内语言栏与面包屑保持同一语言。
+> **说明：** GitHub 仓库首页固定展示英文 `README.md`，不会根据浏览器语言自动切换。请用上方语言链接进入对应版本；进入 [文档](../README.zh-CN.md) 或 [dyncode 指南](../dyncode-compiler/README.zh-CN.md) 后，请继续通过页内语言栏与面包屑保持同一语言。
 
 ## 概述
 
-NeverC 将标准 C 编译为宿主二进制、独立可执行文件以及位置无关 shellcode——全部来自同一工具链。目标架构为 **x86_64** 与 **AArch64**（仅小端）。未来版本将新增 **EVM**（以太坊智能合约）和 **Solana eBPF**（链上程序）编译目标。
+NeverC 将标准 C 编译为宿主二进制、独立可执行文件以及位置无关 dyncode——全部来自同一工具链。目标架构为 **x86_64** 与 **AArch64**（仅小端）。未来版本将新增 **EVM**（以太坊智能合约）和 **Solana eBPF**（链上程序）编译目标。
 
 ## 为什么选择 NeverC？
 
@@ -34,13 +34,13 @@ C 已经是最简单的系统编程语言。NeverC 让它更简单：
 - **无异常处理** — 错误处理始终显式。没有栈展开、没有性能意外。
 - **单一二进制** — 编译器 + 链接器 + 运行时打包成一个可执行文件，零外部依赖。
 - **LLM 友好** — 极简语法与确定性语义，让 AI 生成的 NeverC 代码比 C++ 更容易编译正确。
-- **真正的跨平台编译** — 在 macOS 或 Linux 上直接编译 Windows PE、Linux ELF、macOS Mach-O、Android ELF 和 shellcode——不需要虚拟机、不需要双系统、不需要找 SDK。各平台 SDK 已内置在编译器里。
+- **真正的跨平台编译** — 在 macOS 或 Linux 上直接编译 Windows PE、Linux ELF、macOS Mach-O、Android ELF 和 dyncode——不需要虚拟机、不需要双系统、不需要找 SDK。各平台 SDK 已内置在编译器里。
 - **零门槛可扩展** — 单个 C 头文件、20+ 钩子点，就能写出[编译器插件](../plugin-api/README.zh-CN.md)，介入从 IR 优化到最终产物输出的任何阶段——不需要懂 LLVM。
-- **安全研究开箱即用** — Shellcode 编译、编译期字符串加密、跨平台 PE 生成全部原生集成在编译器中——不需要靠外部脚本拼凑。
+- **安全研究开箱即用** — DynCode 编译、编译期字符串加密、跨平台 PE 生成全部原生集成在编译器中——不需要靠外部脚本拼凑。
 
 ## 特性
 
-- **[Shellcode 编译器](../shellcode-compiler/README.zh-CN.md)** — 多阶段 IR/MIR 流水线、跨平台提取、导入/系统调用降级、内核模式、坏字节审计与插件架构
+- **[DynCode 编译器](../dyncode-compiler/README.zh-CN.md)** — 多阶段 IR/MIR 流水线、跨平台提取、导入/系统调用降级、内核模式、坏字节审计与插件架构
 - **集成链接器** — 单一二进制内完成 COFF、ELF、Mach-O 链接，无需外部 `ld` 或 `link.exe`
 - **交叉编译** — 从任意宿主构建 Windows PE、Linux ELF、macOS Mach-O 和 Android ELF，内置各平台 SDK
 - **[内置运行时](../builtins/README.zh-CN.md)** — 嵌入编译器的 LLVM bitcode 运行时：[`string`](../builtins/string/README.zh-CN.md)（值语义字符串，自动内存管理）、[`mimalloc`](../builtins/mimalloc/README.zh-CN.md)（透明高性能分配器覆盖）和 [`xorstr`](../builtins/xorstr/README.zh-CN.md)（编译期字符串加密，反特征码解密）
@@ -73,27 +73,27 @@ int main(void) {
 }
 ```
 
-> **说明：** 内置 **`string`** 在 `.c` 文件中需要显式加 **`-fbuiltin-string`**。使用 [**`.nc` 文件**](../nc-extension/README.zh-CN.md) 或 **`-fshellcode`** 模式时自动启用。
+> **说明：** 内置 **`string`** 在 `.c` 文件中需要显式加 **`-fbuiltin-string`**。使用 [**`.nc` 文件**](../nc-extension/README.zh-CN.md) 或 **`-fdyncode`** 模式时自动启用。
 
 ```bash
 # macOS arm64 / x86_64
-neverc -fshellcode -target arm64-apple-macos hello.c -o hello.bin
-neverc -fshellcode -target x86_64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target x86_64-apple-macos hello.c -o hello.bin
 
 # iOS arm64
-neverc -fshellcode -target arm64-apple-ios hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-ios hello.c -o hello.bin
 
 # Linux x86_64 / arm64
-neverc -fshellcode -target x86_64-linux-gnu hello.c -o hello.bin
-neverc -fshellcode -target aarch64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-gnu hello.c -o hello.bin
 
 # Android arm64 / x86_64
-neverc -fshellcode -target aarch64-linux-android hello.c -o hello.bin
-neverc -fshellcode -target x86_64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-android hello.c -o hello.bin
 
 # Windows x86_64 / arm64
-neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
-neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
 详细设计说明、平台矩阵、CLI 参考与示例见 **[文档索引](../README.zh-CN.md)**。更多完整可构建示例见 **[examples](../examples/README.zh-CN.md)**。

@@ -4,7 +4,7 @@
 
 # Roadmap di NeverC
 
-Questo documento delinea le principali direzioni pianificate per il progetto NeverC oltre l'attuale compilatore shellcode e i runtime integrati.
+Questo documento delinea le principali direzioni pianificate per il progetto NeverC oltre l'attuale compilatore dyncode e i runtime integrati.
 
 ---
 
@@ -43,7 +43,7 @@ NeverC fornirà una libreria standard completa ispirata a quella di Go — pacch
 - **C23 puro** — ogni pacchetto compila come NeverC/C23 standard; nessun C++ nascosto né assembler specifico per piattaforma
 - **Zero dipendenze esterne** — la libreria standard è incorporata come bitcode LLVM nel compilatore, come i built-in `string` e `mimalloc` esistenti
 - **Multipiattaforma** — tutti i pacchetti funzionano su macOS, Linux e Windows (x86_64 / AArch64)
-- **Compatibile con shellcode** — i pacchetti utili in modalità freestanding (es.: `crypto`, `encoding`, `bytes`) funzionano con `-fshellcode`
+- **Compatibile con dyncode** — i pacchetti utili in modalità freestanding (es.: `crypto`, `encoding`, `bytes`) funzionano con `-fdyncode`
 
 ---
 
@@ -53,7 +53,7 @@ NeverC will ship a first-party suite of code obfuscation plugins — reference i
 
 ### Planned Plugins
 
-| Plugin | Hook Point | Description |
+| Plugin | Interpose Point | Description |
 |--------|-----------|-------------|
 | Junk Code Insertion | `RunAfterFinalMIR` | Insert semantically dead but syntactically valid instruction sequences between real basic blocks |
 | Opaque Predicates | `RunBeforePreEmit` | Insert always-true/always-false branches guarded by number-theoretic invariants; adds dead paths that confuse analysis |
@@ -68,8 +68,8 @@ NeverC will ship a first-party suite of code obfuscation plugins — reference i
 - **Pure Plugin API** — every obfuscation ships as a `.dll` / `.so` / `.dylib` plugin; no compiler fork required
 - **Composable** — plugins stack: apply MBA first, then flatten, then virtualize — each pass is independent
 - **Configurable** — per-function annotations (`__attribute__((obfuscate("vm")))`) to selectively protect hot paths without whole-program overhead
-- **Auditable** — each plugin logs its transformations for security review; before/after IR diff output available via `-fshellcode-dump-ir`
-- **Shellcode-compatible** — all plugins work in `-fshellcode` mode; generated code remains position-independent
+- **Auditable** — each plugin logs its transformations for security review; before/after IR diff output available via `-fdyncode-dump-ir`
+- **DynCode-compatible** — all plugins work in `-fdyncode` mode; generated code remains position-independent
 
 ---
 
@@ -111,22 +111,22 @@ NeverC will provide first-class IDE support for the `.nc` language extension —
 - **Hover documentation** — inline docs for built-in functions, compiler intrinsics, and standard library packages
 - **Code actions** — quick-fix suggestions for common errors, auto-import for `std` packages
 - **Debugging** — integrated LLDB/GDB debug adapter with breakpoint, step, and variable inspection support
-- **Shellcode mode** — syntax-aware features for `-fshellcode` pipelines: bad-byte highlighting, shellcode size display, target-specific completions
-- **Plugin API integration** — plugin hook point visualization and scaffolding
+- **DynCode mode** — syntax-aware features for `-fdyncode` pipelines: bad-byte highlighting, dyncode size display, target-specific completions
+- **Plugin API integration** — plugin interpose point visualization and scaffolding
 
 ### Standalone IDE
 
 - **Built on NeverC UI (`neverc-ui`)** — the IDE is itself a showcase of the HTML/JS/CSS component library, dogfooding the UI framework
 - **Integrated terminal** — build, run, and debug without leaving the IDE
-- **Visual shellcode pipeline** — graphical view of the IR → MIR → extraction pipeline with pass-by-pass output inspection
-- **Project templates** — one-click scaffolding for hosted binaries, shellcode, EVM contracts, and Solana programs
+- **Visual dyncode pipeline** — graphical view of the IR → MIR → extraction pipeline with pass-by-pass output inspection
+- **Project templates** — one-click scaffolding for hosted binaries, dyncode, EVM contracts, and Solana programs
 - **AI-assisted coding** — built-in LLM integration that understands NeverC semantics, generates `.nc` code, and explains compiler diagnostics
 - **Cross-compilation dashboard** — visual target selector with platform matrix and build status
 
 ### Why Both VSCode and Standalone?
 
 - VSCode captures the majority of developers who already live in that ecosystem
-- The standalone IDE provides a deeper, purpose-built experience for security researchers who want shellcode pipeline visualization and integrated binary analysis
+- The standalone IDE provides a deeper, purpose-built experience for security researchers who want dyncode pipeline visualization and integrated binary analysis
 - Both share the same language server backend — improvements benefit both simultaneously
 
 ---
@@ -175,7 +175,7 @@ NeverC supporterà la compilazione di codice sorgente C in bytecode eBPF di Sola
 - Il runtime di Solana esegue già eBPF — C è il linguaggio sorgente più naturale per target BPF
 - Le toolchain C-BPF esistenti (clang + solana-bpf) richiedono configurazione complessa; NeverC raggruppa tutto in un singolo binario
 - I programmi critici per le prestazioni beneficiano dell'astrazione a zero overhead di C e dei pass di ottimizzazione di NeverC
-- L'esperienza di compilazione shellcode (indipendente dalla posizione, runtime minimo) si applica direttamente ai vincoli dei programmi on-chain
+- L'esperienza di compilazione dyncode (indipendente dalla posizione, runtime minimo) si applica direttamente ai vincoli dei programmi on-chain
 
 ---
 

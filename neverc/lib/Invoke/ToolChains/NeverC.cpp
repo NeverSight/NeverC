@@ -2554,12 +2554,12 @@ void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
   // -fbuiltin-mimalloc is suppressed when:
   //   - -fno-builtin is active (no CRT override makes sense)
   //   - -mkernel is active (implies -fno-builtin; no userspace heap)
-  //   - -fshellcode-mode is active (HeapArenaPass handles heap)
+  //   - -fdyncode-mode is active (HeapArenaPass handles heap)
   //   - -ffreestanding is active (no libc to override)
   bool SuppressMimalloc =
       Args.hasArg(options::OPT_fno_builtin) ||
       Args.hasArg(options::OPT_mkernel) ||
-      Args.hasArg(options::OPT_fshellcode_mode) ||
+      Args.hasArg(options::OPT_fdyncode_mode) ||
       Args.hasArg(options::OPT_ffreestanding);
   if (!SuppressMimalloc)
     Args.addOptInFlag(CmdArgs, options::OPT_fbuiltin_mimalloc,
@@ -3201,7 +3201,7 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
 
   bool UseSeparateSections = Triple.isOSBinFormatCOFF() &&
                              areOptimizationsEnabled(Args) &&
-                             !Args.hasArg(options::OPT_fshellcode_mode);
+                             !Args.hasArg(options::OPT_fdyncode_mode);
 
   if (Args.hasFlag(options::OPT_ffunction_sections,
                    options::OPT_fno_function_sections, UseSeparateSections)) {
@@ -3880,8 +3880,8 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
         Args.MakeArgString(llvm::Twine("-stats-file=") + StatsFile));
   }
 
-  // Forward internal -fshellcode-mode marker to the frontend when set.
-  Args.AddLastArg(CmdArgs, options::OPT_fshellcode_mode);
+  // Forward internal -fdyncode-mode marker to the frontend when set.
+  Args.AddLastArg(CmdArgs, options::OPT_fdyncode_mode);
 
   // Forward -mllvm arguments to the LLVM option parser.
   for (const Arg *A : Args.filtered(options::OPT_mllvm)) {

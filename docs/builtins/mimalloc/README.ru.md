@@ -53,7 +53,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # отключи�
 |-------------|---------|
 | `-fno-builtin` | Нет сценария переопределения CRT |
 | `-mkernel` | Нет кучи пользовательского пространства в ядре |
-| `-fshellcode-mode` | Заменён HeapArenaPass (арена + OS-фоллбэк) |
+| `-fdyncode-mode` | Заменён HeapArenaPass (арена + OS-фоллбэк) |
 | `-ffreestanding` | Нет libc для переопределения |
 
 ---

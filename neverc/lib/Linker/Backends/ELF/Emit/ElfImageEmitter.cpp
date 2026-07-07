@@ -461,7 +461,7 @@ template <class ELFT> void elf::createSyntheticSections() {
 }
 
 // ===----------------------------------------------------------------------===
-//  neverc out-of-tree plugin: linker hook integration
+//  neverc out-of-tree plugin: linker callback integration
 //
 //  Exposes the ELF symbol table and output-section list to plugin linker
 //  passes through a backend-agnostic accessor table (neverc::plugin::

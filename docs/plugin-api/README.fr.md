@@ -23,7 +23,7 @@ static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
 }
 
 static void registerPasses(const NevercHostAPI *API, void *Reg) {
-    API->RegisterModulePass(Reg, NEVERC_HOOK_PRE_OPT, myPass, NULL, "my-pass");
+    API->RegisterModulePass(Reg, NEVERC_INTERPOSE_PRE_OPT, myPass, NULL, "my-pass");
 }
 
 NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
@@ -85,25 +85,25 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 
 - **Module Pass (IR)** : Opère sur le module LLVM IR. Peut lire et modifier l'IR.
 - **Machine Pass (MIR)** : Opère sur l'IR au niveau machine (après la sélection d'instructions).
-- **Binary Pass** : Opère sur des octets bruts (extraction de shellcode, correctifs binaires).
+- **Binary Pass** : Opère sur des octets bruts (extraction de dyncode, correctifs binaires).
 - **Linker Pass** : Opère au moment de l'édition des liens avec accès aux symboles et sections.
 
 ## 5. Points d'accrochage
 
 ### Flux normal
 
-| Hook | Niveau | Description |
+| Interpose | Niveau | Description |
 |------|--------|-------------|
-| `NEVERC_HOOK_PRE_OPT` | IR | Avant les passes d'optimisation LLVM |
-| `NEVERC_HOOK_POST_OPT` | IR | Après les passes d'optimisation LLVM |
-| `NEVERC_HOOK_PIPELINE_START` | IR | Tout début du pipeline |
-| `NEVERC_HOOK_PIPELINE_LAST` | IR | Fin du pipeline IR |
-| `NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT` | MIR | Avant les passes machine pre-emit |
-| `NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR` | MIR | Après toutes les passes machine |
+| `NEVERC_INTERPOSE_PRE_OPT` | IR | Avant les passes d'optimisation LLVM |
+| `NEVERC_INTERPOSE_POST_OPT` | IR | Après les passes d'optimisation LLVM |
+| `NEVERC_INTERPOSE_PIPELINE_START` | IR | Tout début du pipeline |
+| `NEVERC_INTERPOSE_PIPELINE_LAST` | IR | Fin du pipeline IR |
+| `NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT` | MIR | Avant les passes machine pre-emit |
+| `NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR` | MIR | Après toutes les passes machine |
 
-### Flux shellcode / LTO / éditeur de liens
+### Flux dyncode / LTO / éditeur de liens
 
-Les hooks shellcode utilisent le préfixe `NEVERC_HOOK_SC_*`, LTO utilise `NEVERC_HOOK_LTO_*`, et l'éditeur de liens utilise `NEVERC_HOOK_LINK_*`.
+Les interposes dyncode utilisent le préfixe `NEVERC_INTERPOSE_SC_*`, LTO utilise `NEVERC_INTERPOSE_LTO_*`, et l'éditeur de liens utilise `NEVERC_INTERPOSE_LINK_*`.
 
 ## 6. Types de handles opaques
 

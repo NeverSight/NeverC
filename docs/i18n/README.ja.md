@@ -6,24 +6,24 @@
 
 **AI フレンドリーなセキュリティ研究向け C23 コンパイラ — LLVM 上に構築**
 
-統合リンカ · Shellcode パイプライン · 組み込みランタイム（`string` · `mimalloc` · `xorstr`）
+統合リンカ · DynCode パイプライン · 組み込みランタイム（`string` · `mimalloc` · `xorstr`）
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#機能)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#windows-へのクロスコンパイル)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#機能)
 
-[ドキュメント索引](../README.ja.md) · [Shellcode ガイド](../shellcode-compiler/README.ja.md) · [組み込みランタイム](../builtins/README.ja.md) · [プラグイン API](../plugin-api/README.ja.md) · [ロードマップ](../roadmap/README.ja.md)
+[ドキュメント索引](../README.ja.md) · [DynCode ガイド](../dyncode-compiler/README.ja.md) · [組み込みランタイム](../builtins/README.ja.md) · [プラグイン API](../plugin-api/README.ja.md) · [ロードマップ](../roadmap/README.ja.md)
 
 </div>
 
 ---
 
-> **注：** GitHub はリポジトリトップに常に英語の `README.md` を表示します（ブラウザ言語の自動切替なし）。上の言語リンクを使用し、[ドキュメント](../README.ja.md)・[shellcode ガイド](../shellcode-compiler/README.ja.md) ではページ内の言語欄とパンくずで同じ言語を維持してください。
+> **注：** GitHub はリポジトリトップに常に英語の `README.md` を表示します（ブラウザ言語の自動切替なし）。上の言語リンクを使用し、[ドキュメント](../README.ja.md)・[dyncode ガイド](../dyncode-compiler/README.ja.md) ではページ内の言語欄とパンくずで同じ言語を維持してください。
 
 ## 概要
 
-NeverC は標準 C をホスト型バイナリ、フリースタンディング実行ファイル、位置独立 shellcode にコンパイルします——すべて単一ツールチェーンから。**x86_64** と **AArch64**（リトルエンディアンのみ）をターゲットとします。将来のリリースでは **EVM**（Ethereum スマートコントラクト）と **Solana eBPF**（オンチェーンプログラム）をコンパイルターゲットとして追加予定です。
+NeverC は標準 C をホスト型バイナリ、フリースタンディング実行ファイル、位置独立 dyncode にコンパイルします——すべて単一ツールチェーンから。**x86_64** と **AArch64**（リトルエンディアンのみ）をターゲットとします。将来のリリースでは **EVM**（Ethereum スマートコントラクト）と **Solana eBPF**（オンチェーンプログラム）をコンパイルターゲットとして追加予定です。
 
 ## なぜ NeverC？
 
@@ -34,13 +34,13 @@ C は既に最もシンプルなシステムプログラミング言語です。
 - **例外なし** — エラー処理は常に明示的。スタック巻き戻しなし、パフォーマンスの予測不能な低下なし。
 - **単一バイナリ** — コンパイラ + リンカ + ランタイムが一つの実行ファイルに。外部依存ゼロ。
 - **LLM フレンドリー** — 最小限の文法と決定的なセマンティクスにより、AI が生成する NeverC コードは C++ より正しくコンパイルされやすい。
-- **真のクロスコンパイル** — macOS や Linux から Windows PE、Linux ELF、macOS Mach-O、Android ELF、shellcode をビルド——VM 不要、デュアルブート不要、SDK 探し不要。各プラットフォーム SDK はコンパイラに内蔵。
+- **真のクロスコンパイル** — macOS や Linux から Windows PE、Linux ELF、macOS Mach-O、Android ELF、dyncode をビルド——VM 不要、デュアルブート不要、SDK 探し不要。各プラットフォーム SDK はコンパイラに内蔵。
 - **ゼロフリクションで拡張可能** — たった1つの C ヘッダーと 20+ のフックポイントで、IR 最適化から最終バイナリ出力まであらゆる段階に介入する[コンパイラプラグイン](../plugin-api/README.ja.md)が書ける——LLVM の知識不要。
-- **セキュリティ研究を組み込み済み** — Shellcode コンパイル、コンパイル時文字列暗号化、クロスプラットフォーム PE 生成がコンパイラにネイティブ統合——外部スクリプトによる後付けではありません。
+- **セキュリティ研究を組み込み済み** — DynCode コンパイル、コンパイル時文字列暗号化、クロスプラットフォーム PE 生成がコンパイラにネイティブ統合——外部スクリプトによる後付けではありません。
 
 ## 機能
 
-- **[Shellcode コンパイラ](../shellcode-compiler/README.ja.md)** — 多段 IR/MIR パイプライン、クロスプラットフォーム抽出、インポート/システムコール低減、カーネルモード、バッドバイト監査、プラグインアーキテクチャ
+- **[DynCode コンパイラ](../dyncode-compiler/README.ja.md)** — 多段 IR/MIR パイプライン、クロスプラットフォーム抽出、インポート/システムコール低減、カーネルモード、バッドバイト監査、プラグインアーキテクチャ
 - **統合リンカ** — 単一バイナリで COFF・ELF・Mach-O；外部 `ld` / `link.exe` 不要
 - **クロスコンパイル** — 任意のホストから Windows PE、Linux ELF、macOS Mach-O、Android ELF をビルド（各プラットフォーム SDK 内蔵）
 - **[組み込みランタイム](../builtins/README.ja.md)** — コンパイラ埋め込みの LLVM bitcode ランタイム：[`string`](../builtins/string/README.ja.md)（値セマンティクス文字列、自動メモリ管理）、[`mimalloc`](../builtins/mimalloc/README.ja.md)（透過的高性能アロケータオーバーライド）、[`xorstr`](../builtins/xorstr/README.ja.md)（コンパイル時文字列暗号化、シグネチャ対策の復号）
@@ -73,27 +73,27 @@ int main(void) {
 }
 ```
 
-> **注：** 組み込み **`string`** 型は `.c` ファイルでは **`-fbuiltin-string`** が必要です。[**`.nc` ファイル**](../nc-extension/README.ja.md) または **`-fshellcode`** モードでは自動的に有効になります。
+> **注：** 組み込み **`string`** 型は `.c` ファイルでは **`-fbuiltin-string`** が必要です。[**`.nc` ファイル**](../nc-extension/README.ja.md) または **`-fdyncode`** モードでは自動的に有効になります。
 
 ```bash
 # macOS arm64 / x86_64
-neverc -fshellcode -target arm64-apple-macos hello.c -o hello.bin
-neverc -fshellcode -target x86_64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target x86_64-apple-macos hello.c -o hello.bin
 
 # iOS arm64
-neverc -fshellcode -target arm64-apple-ios hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-ios hello.c -o hello.bin
 
 # Linux x86_64 / arm64
-neverc -fshellcode -target x86_64-linux-gnu hello.c -o hello.bin
-neverc -fshellcode -target aarch64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-gnu hello.c -o hello.bin
 
 # Android arm64 / x86_64
-neverc -fshellcode -target aarch64-linux-android hello.c -o hello.bin
-neverc -fshellcode -target x86_64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-android hello.c -o hello.bin
 
 # Windows x86_64 / arm64
-neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
-neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
 詳細な設計、プラットフォームマトリクス、CLI リファレンス、例は **[ドキュメント索引](../README.ja.md)** を参照。ビルド可能なサンプルは **[examples](../examples/README.ja.md)** を参照。

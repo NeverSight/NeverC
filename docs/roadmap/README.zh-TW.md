@@ -4,7 +4,7 @@
 
 # NeverC 路線圖
 
-本文件概述 NeverC 專案在現有 shellcode 編譯器和內建執行時之外的主要規劃方向。
+本文件概述 NeverC 專案在現有 dyncode 編譯器和內建執行時之外的主要規劃方向。
 
 ---
 
@@ -43,7 +43,7 @@ NeverC 將提供一套完整的標準函式庫，參照 Go 標準函式庫設計
 - **純 C23** — 每個套件都以標準 NeverC/C23 編譯；無隱藏 C++ 或平台特定組合語言
 - **零外部相依性** — 標準函式庫以 LLVM bitcode 嵌入編譯器，與現有的 `string` 和 `mimalloc` 內建功能一致
 - **跨平台** — 所有套件在 macOS、Linux、Windows（x86_64 / AArch64）上運作
-- **Shellcode 相容** — 在獨立模式下有意義的套件（如 `crypto`、`encoding`、`bytes`）支援 `-fshellcode`
+- **DynCode 相容** — 在獨立模式下有意義的套件（如 `crypto`、`encoding`、`bytes`）支援 `-fdyncode`
 
 ---
 
@@ -68,8 +68,8 @@ NeverC 將提供第一方程式碼混淆外掛套件——既是 Plugin API 完�
 - **純 Plugin API** — 每個混淆功能以 `.dll` / `.so` / `.dylib` 外掛形式提供；無需分叉編譯器
 - **可組合** — 外掛可疊加：先 MBA，再平坦化，再虛擬化——每個 pass 相互獨立
 - **可設定** — 逐函式標註（`__attribute__((obfuscate("vm")))`）選擇性保護熱點路徑，避免全程式負擔
-- **可稽核** — 每個外掛記錄其變換以供安全審查；透過 `-fshellcode-dump-ir` 可查看變換前後 IR 差異
-- **Shellcode 相容** — 所有外掛在 `-fshellcode` 模式下運作；產生的程式碼保持位置無關
+- **可稽核** — 每個外掛記錄其變換以供安全審查；透過 `-fdyncode-dump-ir` 可查看變換前後 IR 差異
+- **DynCode 相容** — 所有外掛在 `-fdyncode` 模式下運作；產生的程式碼保持位置無關
 
 ---
 
@@ -111,22 +111,22 @@ NeverC 將為 `.nc` 語言擴充提供一流的 IDE 支援——VSCode 擴充實
 - **懸停文件** — 內建函式、編譯器內建和標準函式庫套件的內嵌文件
 - **程式碼動作** — 常見錯誤的快速修復建議，`std` 套件的自動匯入
 - **偵錯** — 整合 LLDB/GDB 偵錯配接器，支援中斷點、逐步和變數檢查
-- **Shellcode 模式** — 針對 `-fshellcode` 管線的語法感知功能：壞位元組醒目提示、shellcode 大小顯示、目標特定補全
+- **DynCode 模式** — 針對 `-fdyncode` 管線的語法感知功能：壞位元組醒目提示、dyncode 大小顯示、目標特定補全
 - **外掛 API 整合** — 外掛掛鈎點視覺化和鷹架
 
 ### 獨立 IDE
 
 - **基於 NeverC UI (`neverc-ui`)** — IDE 本身是 HTML/JS/CSS 元件庫的展示，用自己的 UI 框架建構
 - **整合終端** — 無需離開 IDE 即可建置、執行和偵錯
-- **視覺化 shellcode 管線** — IR → MIR → 擷取管線的圖形視圖，逐 pass 輸出檢查
-- **專案範本** — 一鍵鷹架：宿主二進位、shellcode、EVM 合約、Solana 程式
+- **視覺化 dyncode 管線** — IR → MIR → 擷取管線的圖形視圖，逐 pass 輸出檢查
+- **專案範本** — 一鍵鷹架：宿主二進位、dyncode、EVM 合約、Solana 程式
 - **AI 輔助編碼** — 內建 LLM 整合，理解 NeverC 語義，產生 `.nc` 程式碼，解釋編譯器診斷
 - **跨編譯儀表板** — 視覺化目標選擇器，平台矩陣和建置狀態
 
 ### 為什麼同時做 VSCode 和獨立 IDE？
 
 - VSCode 涵蓋了大多數已在該生態中的開發者
-- 獨立 IDE 為安全研究員提供更深入的、專門建構的體驗，包含 shellcode 管線視覺化和整合二進位分析
+- 獨立 IDE 為安全研究員提供更深入的、專門建構的體驗，包含 dyncode 管線視覺化和整合二進位分析
 - 兩者共享同一個語言伺服器後端——改進同時惠及兩者
 
 ---
@@ -174,7 +174,7 @@ NeverC 將支援把 C 原始碼編譯為 Solana 的 eBPF 位元組碼——實�
 - Solana 執行時本身執行 eBPF——C 是 BPF 目標最自然的原始語言
 - 現有基於 C 的 BPF 工具鏈（clang + solana-bpf）設定複雜；NeverC 將一切打包到單一二進位
 - 效能關鍵的程式受益於 C 的零開銷抽象和 NeverC 的最佳化 pass
-- shellcode 編譯經驗（位置無關、最小執行時程式碼）直接對映到鏈上程式約束
+- dyncode 編譯經驗（位置無關、最小執行時程式碼）直接對映到鏈上程式約束
 
 ---
 

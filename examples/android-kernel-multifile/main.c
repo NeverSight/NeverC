@@ -4,11 +4,11 @@
  * only needs to be called once in module_init.
  *
  * The NeverC compiler automatically promotes all neverc_krt_* / _neverc_krt_* static
- * state to weak_odr linkage, so hooks.c and utils.c share the same
+ * state to weak_odr linkage, so interposes.c and utils.c share the same
  * resolver, cache, and subsystem state as main.c.
  */
 #include <nvkmod.h>
-#include <nvk_hook.h>
+#include <nvk_interpose.h>
 #include <nvk_mem.h>
 #include <nvk_process.h>
 #include <nvk_cred.h>
@@ -16,9 +16,9 @@
 #define NEVERC_KRT_LOG_TAG "neverc_krt_multi"
 #include <nvk_log.h>
 
-/* Defined in hooks.c */
-int hooks_init(void);
-void hooks_cleanup(void);
+/* Defined in interposes.c */
+int interposes_init(void);
+void interposes_cleanup(void);
 
 /* Defined in utils.c */
 void utils_log_kernel_info(void);
@@ -36,15 +36,15 @@ static int neverc_krt_multi_init(void)
 	neverc_krt_process_init();
 	neverc_krt_cred_init();
 
-	ret = neverc_krt_hook_init();
+	ret = neverc_krt_interpose_init();
 	if (ret) {
-		neverc_krt_log_err("hook init failed: %d\n", ret);
+		neverc_krt_log_err("interpose init failed: %d\n", ret);
 		return ret;
 	}
 
-	ret = hooks_init();
+	ret = interposes_init();
 	if (ret) {
-		neverc_krt_log_err("hooks_init failed: %d\n", ret);
+		neverc_krt_log_err("interposes_init failed: %d\n", ret);
 		return ret;
 	}
 
@@ -56,7 +56,7 @@ static int neverc_krt_multi_init(void)
 
 static void neverc_krt_multi_exit(void)
 {
-	hooks_cleanup();
+	interposes_cleanup();
 	neverc_krt_log_info("unloaded\n");
 }
 

@@ -9,7 +9,7 @@ namespace neverc {
 /// bitcode into the user module and internalises the symbols.
 ///
 /// Registered at PipelineStartEP (before StringRuntimePass and the
-/// shellcode pipeline) so that all downstream passes see the full
+/// dyncode pipeline) so that all downstream passes see the full
 /// function bodies.
 struct StringRuntimeLinkerPass
     : public llvm::PassInfoMixin<StringRuntimeLinkerPass> {

@@ -74,15 +74,15 @@ TEST_F(DriverTest, SEHTryC) {
               "x86_64-windows-msvc", "-fms-extensions");
 }
 
-TEST_F(DriverTest, RejectShellcodeSEH) {
+TEST_F(DriverTest, RejectDynCodeSEH) {
   auto src = (testDir() / "platform/seh_try_c.c").string();
   auto grep =
-      "SEH '__try'/'__except'/'__finally' is not supported under -fshellcode";
-  expectCommandFail("reject_shellcode_seh_x64", grep,
-                    {"-fshellcode", "--target=x86_64-pc-windows-msvc",
+      "SEH '__try'/'__except'/'__finally' is not supported under -fdyncode";
+  expectCommandFail("reject_dyncode_seh_x64", grep,
+                    {"-fdyncode", "--target=x86_64-pc-windows-msvc",
                      "-fms-extensions", src, "-o", tmpFile("seh.bin").string()});
-  expectCommandFail("reject_shellcode_seh_arm64", grep,
-                    {"-fshellcode", "--target=aarch64-pc-windows-msvc",
+  expectCommandFail("reject_dyncode_seh_arm64", grep,
+                    {"-fdyncode", "--target=aarch64-pc-windows-msvc",
                      "-fms-extensions", src, "-o", tmpFile("seh.bin").string()});
 }
 
@@ -278,17 +278,17 @@ TEST_F(DriverTest, NcExtCrossTarget) {
   }
 }
 
-TEST_F(DriverTest, NcExtWithShellcode) {
-  auto ncSrc = tmpFile("nc_shellcode.nc");
+TEST_F(DriverTest, NcExtWithDynCode) {
+  auto ncSrc = tmpFile("nc_dyncode.nc");
   writeFile(ncSrc, "int entry(void) { return 0; }");
-  auto r = ncc({"-###", "-fshellcode", "--target=x86_64-linux-gnu",
-                ncSrc.string(), "-o", tmpFile("nc_shellcode.bin").string()});
+  auto r = ncc({"-###", "-fdyncode", "--target=x86_64-linux-gnu",
+                ncSrc.string(), "-o", tmpFile("nc_dyncode.bin").string()});
   EXPECT_EQ(r.exitCode, 0) << r.err;
   auto all = r.err + r.out;
   EXPECT_NE(all.find("-fneverc-types"), std::string::npos)
-      << ".nc + shellcode should inject -fneverc-types\n" << all;
+      << ".nc + dyncode should inject -fneverc-types\n" << all;
   EXPECT_NE(all.find("-fbuiltin-string"), std::string::npos)
-      << ".nc + shellcode should inject -fbuiltin-string\n" << all;
+      << ".nc + dyncode should inject -fbuiltin-string\n" << all;
 }
 
 TEST_F(DriverTest, CExtExplicitFlagsStillWork) {

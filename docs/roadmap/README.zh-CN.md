@@ -4,7 +4,7 @@
 
 # NeverC 路线图
 
-本文档概述 NeverC 项目在现有 shellcode 编译器和内置运行时之外的主要规划方向。
+本文档概述 NeverC 项目在现有 dyncode 编译器和内置运行时之外的主要规划方向。
 
 ---
 
@@ -45,7 +45,7 @@ NeverC 将提供一套全面的标准库，参照 Go 标准库设计——提供
 - **纯 C23** — 每个包都以标准 NeverC/C23 编译；无隐藏 C++ 或平台特定汇编
 - **零外部依赖** — 标准库以 LLVM bitcode 嵌入编译器，与现有的 `string` 和 `mimalloc` 内置功能一致
 - **跨平台** — 所有包在 macOS、Linux、Windows（x86_64 / AArch64）上工作
-- **Shellcode 兼容** — 在独立模式下有意义的包（如 `crypto`、`encoding`、`bytes`）支持 `-fshellcode`
+- **DynCode 兼容** — 在独立模式下有意义的包（如 `crypto`、`encoding`、`bytes`）支持 `-fdyncode`
 
 ---
 
@@ -70,8 +70,8 @@ NeverC 将提供第一方代码混淆插件套件——既是 Plugin API 完整�
 - **纯 Plugin API** — 每个混淆功能以 `.dll` / `.so` / `.dylib` 插件形式提供；无需分叉编译器
 - **可组合** — 插件可叠加：先 MBA，再平坦化，再虚拟化——每个 pass 相互独立
 - **可配置** — 逐函数注解（`__attribute__((obfuscate("vm")))`）选择性保护热点路径，避免全程序开销
-- **可审计** — 每个插件记录其变换以供安全审查；通过 `-fshellcode-dump-ir` 可查看变换前后 IR 差异
-- **Shellcode 兼容** — 所有插件在 `-fshellcode` 模式下工作；生成的代码保持位置无关
+- **可审计** — 每个插件记录其变换以供安全审查；通过 `-fdyncode-dump-ir` 可查看变换前后 IR 差异
+- **DynCode 兼容** — 所有插件在 `-fdyncode` 模式下工作；生成的代码保持位置无关
 
 ---
 
@@ -113,22 +113,22 @@ NeverC 将为 `.nc` 语言扩展提供一流的 IDE 支持——VSCode 扩展实
 - **悬停文档** — 内置函数、编译器内建和标准库包的内联文档
 - **代码操作** — 常见错误的快速修复建议，`std` 包的自动导入
 - **调试** — 集成 LLDB/GDB 调试适配器，支持断点、单步和变量检查
-- **Shellcode 模式** — 针对 `-fshellcode` 管线的语法感知功能：坏字节高亮、shellcode 大小显示、目标特定补全
+- **DynCode 模式** — 针对 `-fdyncode` 管线的语法感知功能：坏字节高亮、dyncode 大小显示、目标特定补全
 - **插件 API 集成** — 插件钩子点可视化和脚手架
 
 ### 独立 IDE
 
 - **基于 NeverC UI (`neverc-ui`)** — IDE 本身是 HTML/JS/CSS 组件库的展示，用自己的 UI 框架构建
 - **集成终端** — 无需离开 IDE 即可构建、运行和调试
-- **可视化 shellcode 管线** — IR → MIR → 提取管线的图形视图，逐 pass 输出检查
-- **项目模板** — 一键脚手架：宿主二进制、shellcode、EVM 合约、Solana 程序
+- **可视化 dyncode 管线** — IR → MIR → 提取管线的图形视图，逐 pass 输出检查
+- **项目模板** — 一键脚手架：宿主二进制、dyncode、EVM 合约、Solana 程序
 - **AI 辅助编码** — 内置 LLM 集成，理解 NeverC 语义，生成 `.nc` 代码，解释编译器诊断
 - **跨编译仪表板** — 可视化目标选择器，平台矩阵和构建状态
 
 ### 为什么同时做 VSCode 和独立 IDE？
 
 - VSCode 覆盖了大多数已经在该生态中的开发者
-- 独立 IDE 为安全研究员提供更深入的、专门构建的体验，包含 shellcode 管线可视化和集成二进制分析
+- 独立 IDE 为安全研究员提供更深入的、专门构建的体验，包含 dyncode 管线可视化和集成二进制分析
 - 两者共享同一个语言服务器后端——改进同时惠及两者
 
 ---
@@ -176,7 +176,7 @@ NeverC 将支持把 C 源代码编译为 Solana 的 eBPF 字节码——实现�
 - Solana 运行时本身执行 eBPF——C 是 BPF 目标最自然的源语言
 - 现有基于 C 的 BPF 工具链（clang + solana-bpf）配置复杂；NeverC 将一切打包到单一二进制
 - 性能关键的程序受益于 C 的零开销抽象和 NeverC 的优化 pass
-- shellcode 编译经验（位置无关、最小运行时代码）直接映射到链上程序约束
+- dyncode 编译经验（位置无关、最小运行时代码）直接映射到链上程序约束
 
 ---
 

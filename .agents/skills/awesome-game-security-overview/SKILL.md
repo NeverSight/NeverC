@@ -75,7 +75,7 @@ When an AI agent receives a query, use this table to select the best skill:
 | pcileech, FPGA, DMA, IOMMU, Thunderbolt | dma-attack | anti-cheat |
 | Unreal SDK, Unity IL2CPP, engine structs, Godot, Lumix | game-engine | game-hacking |
 | Memory hacking, injection, overlays, driver comm, HWID spoof | game-hacking | graphics-api |
-| D3D/Vulkan/OpenGL hooks, Present hook, shader interception | graphics-api | game-hacking |
+| D3D/Vulkan/OpenGL intercepts, Present intercept, shader interception | graphics-api | game-hacking |
 | Android root, Frida, iOS jailbreak, KernelSU, APatch | mobile-security | game-hacking |
 | IDA, Ghidra, DBI, deobfuscation, binary diffing, MCP RE tools, trap-and-emulate CFT, WHP tracing | reverse-engineering | anti-cheat, windows-kernel |
 | Drivers, callbacks, PatchGuard, HVCI, ETW, pool forensics, WHP API | windows-kernel | anti-cheat, reverse-engineering |
@@ -97,10 +97,10 @@ All 27 top-level `##` sections in README.md:
 10. **PhysX SDK**: NVIDIA PhysX resources
 11. **Game Develop**: Development guides, source code, MCP servers, AI agents
 12. **Game Assets / Hot Patch / Testing / Tools / Manager / CI**: Supporting infrastructure
-13. **DirectX**: Guides, hooks, tools, emulation, overlays
-14. **OpenGL**: Guides, source, hooks
-15. **Vulkan**: API, guides, hooks
-16. **Cheat**: Offensive research (debugging, injection, hooking, DMA, overlays, driver comm, EFI, anti-forensics, game-specific)
+13. **DirectX**: Guides, intercepts, tools, emulation, overlays
+14. **OpenGL**: Guides, source, intercepts
+15. **Vulkan**: API, guides, intercepts
+16. **Cheat**: Offensive research (debugging, injection, interception, DMA, overlays, driver comm, EFI, anti-forensics, game-specific)
 17. **Anti Cheat**: Defensive research (protection, detection, callbacks, forensics, signature scanning)
 18. **Some Tricks**: Ring0/Ring3/Linux/Android tricks and techniques
 19. **Windows Security Features**: DSE, PatchGuard, VBS, HVCI, Secure Boot

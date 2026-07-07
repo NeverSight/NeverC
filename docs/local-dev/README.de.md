@@ -103,7 +103,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-Für Windows-Shellcode (`-fshellcode`, PEB-Import-Auflösung usw.) siehe die [Shellcode-Compiler-Dokumentation](../shellcode-compiler/README.de.md).
+Für Windows-DynCode (`-fdyncode`, PEB-Import-Auflösung usw.) siehe die [DynCode-Compiler-Dokumentation](../dyncode-compiler/README.de.md).
 
 ---
 

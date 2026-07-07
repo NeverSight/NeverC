@@ -173,7 +173,7 @@ rotate13:
 
 ## 编译器 vs bin2bin：谁对 CET 友好？
 
-CET 在**源码级编译器**和 **bin2bin 工具**（加壳、混淆、hook、dump+rebuild）
+CET 在**源码级编译器**和 **bin2bin 工具**（加壳、混淆、interpose、dump+rebuild）
 之间画了一道清晰的红线。硬件 Shadow Stack 强制三条规则，重塑整个防护 /
 混淆产业：
 
@@ -223,7 +223,7 @@ void my_func() {
 | **Stack pivoting**（ROP gadget chain） | 影子栈无法跟随 pivot |
 | **自修改代码** | HVCI 阻止对可执行页的写 |
 | **运行时代码生成** | 同上 —— HVCI W^X 违规 |
-| **基于 trampoline 的 inline hook** | 修改函数 prologue 触发 HVCI；即使绕过 HVCI，trampoline RET 处的影子栈也会出问题 |
+| **基于 trampoline 的 inline patch** | 修改函数 prologue 触发 HVCI；即使绕过 HVCI，trampoline RET 处的影子栈也会出问题 |
 
 ### 为什么 bin2bin 工具有结构性劣势
 
@@ -250,7 +250,7 @@ void my_func() {
 
 反作弊驱动（EAC、BattlEye、FACEIT AC、Vanguard）出厂时设置了 `--cetcompat`，
 因此可以在启用 KCET 的机器上正常运行。
-作弊驱动——通常通过 bin2bin 工具加壳、hook 或 trampoline 注入——很难保持
+作弊驱动——通常通过 bin2bin 工具加壳、interpose 或 trampoline 注入——很难保持
 CET 合规。KCET + HVCI 形成一道**"编译器友好、bin2bin 敌对"的硬件壁垒**，
 不对称地有利于工程化良好的安全软件，而非恶意代码风格的程序。
 

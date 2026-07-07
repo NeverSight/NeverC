@@ -23,7 +23,7 @@ static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
 }
 
 static void registerPasses(const NevercHostAPI *API, void *Reg) {
-    API->RegisterModulePass(Reg, NEVERC_HOOK_PRE_OPT, myPass, NULL, "my-pass");
+    API->RegisterModulePass(Reg, NEVERC_INTERPOSE_PRE_OPT, myPass, NULL, "my-pass");
 }
 
 NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
@@ -93,7 +93,7 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 
 ### 4.3 Binary Pass
 
-操作原始位元組（shellcode 提取、二進位修補）。可透過 `API->BinaryResize()` 調整緩衝區大小。
+操作原始位元組（dyncode 提取、二進位修補）。可透過 `API->BinaryResize()` 調整緩衝區大小。
 
 ### 4.4 Linker Pass
 
@@ -107,27 +107,27 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 
 | 勾點 | 層級 | 說明 |
 |------|------|------|
-| `NEVERC_HOOK_PRE_OPT` | IR | LLVM 最佳化 pass 之前 |
-| `NEVERC_HOOK_POST_OPT` | IR | LLVM 最佳化 pass 之後 |
-| `NEVERC_HOOK_PIPELINE_START` | IR | 管線最開始 |
-| `NEVERC_HOOK_PIPELINE_LAST` | IR | IR 管線最後 |
-| `NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT` | MIR | pre-emit 機器 pass 之前 |
-| `NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR` | MIR | 所有機器 pass 之後 |
+| `NEVERC_INTERPOSE_PRE_OPT` | IR | LLVM 最佳化 pass 之前 |
+| `NEVERC_INTERPOSE_POST_OPT` | IR | LLVM 最佳化 pass 之後 |
+| `NEVERC_INTERPOSE_PIPELINE_START` | IR | 管線最開始 |
+| `NEVERC_INTERPOSE_PIPELINE_LAST` | IR | IR 管線最後 |
+| `NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT` | MIR | pre-emit 機器 pass 之前 |
+| `NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR` | MIR | 所有機器 pass 之後 |
 
-### Shellcode 流程
+### DynCode 流程
 
 | 勾點 | 層級 | 說明 |
 |------|------|------|
-| `NEVERC_HOOK_SC_BEFORE_PREP` ~ `SC_AFTER_FINAL_IR` | IR | shellcode IR 階段勾點 |
-| `NEVERC_HOOK_SC_BEFORE_PREEMIT` ~ `SC_AFTER_FINAL_MIR` | MIR | shellcode MIR 階段勾點 |
-| `NEVERC_HOOK_SC_POST_EXTRACT` / `SC_POST_FINALIZE` | 二進位 | 位元組提取後/後處理完成後 |
+| `NEVERC_INTERPOSE_SC_BEFORE_PREP` ~ `SC_AFTER_FINAL_IR` | IR | dyncode IR 階段勾點 |
+| `NEVERC_INTERPOSE_SC_BEFORE_PREEMIT` ~ `SC_AFTER_FINAL_MIR` | MIR | dyncode MIR 階段勾點 |
+| `NEVERC_INTERPOSE_SC_POST_EXTRACT` / `SC_POST_FINALIZE` | 二進位 | 位元組提取後/後處理完成後 |
 
 ### LTO / 連結器流程
 
 | 勾點 | 層級 | 說明 |
 |------|------|------|
-| `NEVERC_HOOK_LTO_PRE_OPT` / `LTO_POST_OPT` | IR | LTO 最佳化前後 |
-| `NEVERC_HOOK_LINK_PRE_LAYOUT` / `POST_LAYOUT` / `POST_EMIT` | 連結器 | 區段佈局前後 / 發射後 |
+| `NEVERC_INTERPOSE_LTO_PRE_OPT` / `LTO_POST_OPT` | IR | LTO 最佳化前後 |
+| `NEVERC_INTERPOSE_LINK_PRE_LAYOUT` / `POST_LAYOUT` / `POST_EMIT` | 連結器 | 區段佈局前後 / 發射後 |
 
 ## 6. 不透明控制代碼類型
 

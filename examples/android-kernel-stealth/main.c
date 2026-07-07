@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvkmod.h>
-#include <nvk_hook.h>
+#include <nvk_interpose.h>
 #include <nvk_hide.h>
 #include <nvk_process.h>
 #include <nvk_cred.h>
@@ -24,11 +24,11 @@ static int neverc_krt_str_eq(const char *a, const char *b)
 	return *a == *b;
 }
 
-#ifdef NEVERC_KRT_CONTEXT_HOOK
+#ifdef NEVERC_KRT_CONTEXT_INTERPOSE
 
-static struct neverc_krt_hook_ctx find_module_ctx;
+static struct neverc_krt_interpose_ctx find_module_ctx;
 
-static void hook_find_module_ctx(neverc_krt_reg_ctx *ctx)
+static void interpose_find_module_ctx(neverc_krt_reg_ctx *ctx)
 {
 	const char *name = (const char *)NEVERC_KRT_CTX_ARG(ctx, 0);
 
@@ -41,7 +41,7 @@ static void hook_find_module_ctx(neverc_krt_reg_ctx *ctx)
 typedef void *(*find_module_fn)(const char *name);
 static find_module_fn orig_find_module;
 
-static void *hook_find_module(const char *name)
+static void *interpose_find_module(const char *name)
 {
 	if (name && neverc_krt_str_eq(name, "neverc_krt_stealth"))
 		return (void *)0;
@@ -66,26 +66,26 @@ static int neverc_krt_stealth_init(void)
 	neverc_krt_hide_init();
 	neverc_krt_cred_init();
 
-	ret = neverc_krt_hook_init();
+	ret = neverc_krt_interpose_init();
 	if (ret) {
-		neverc_krt_log_err("hook init: %d\n", ret);
+		neverc_krt_log_err("interpose init: %d\n", ret);
 		return ret;
 	}
 
 	target = NEVERC_KRT_LOOKUP("find_module");
 	if (target) {
-#ifdef NEVERC_KRT_CONTEXT_HOOK
-		ret = neverc_krt_hook_install_ctx(&find_module_ctx, target,
-					    hook_find_module_ctx, (void *)0);
+#ifdef NEVERC_KRT_CONTEXT_INTERPOSE
+		ret = neverc_krt_interpose_install_ctx(&find_module_ctx, target,
+					    interpose_find_module_ctx, (void *)0);
 #else
-		ret = neverc_krt_hook_install(&hide_state.find_module_hook,
-				       target, (void *)hook_find_module,
+		ret = neverc_krt_interpose_install(&hide_state.find_module_interpose,
+				       target, (void *)interpose_find_module,
 				       (void **)&orig_find_module);
 #endif
 		if (ret)
-			neverc_krt_log_warn("find_module hook: %d\n", ret);
+			neverc_krt_log_warn("find_module interpose: %d\n", ret);
 		else
-			neverc_krt_log_info("find_module hooked\n");
+			neverc_krt_log_info("find_module interposed\n");
 	}
 
 #ifdef NEVERC_KRT_STEALTH_FULL_HIDE
@@ -127,10 +127,10 @@ static void neverc_krt_stealth_exit(void)
 #ifdef NEVERC_KRT_STEALTH_SELINUX
 	neverc_krt_selinux_set_enforcing();
 #endif
-#ifdef NEVERC_KRT_CONTEXT_HOOK
-	neverc_krt_hook_remove_ctx(&find_module_ctx);
+#ifdef NEVERC_KRT_CONTEXT_INTERPOSE
+	neverc_krt_interpose_remove_ctx(&find_module_ctx);
 #endif
-	neverc_krt_hide_remove_hooks();
+	neverc_krt_hide_remove_interposes();
 	neverc_krt_mod_show(&hide_state, &__this_module);
 	neverc_krt_log_info("unloaded\n");
 }

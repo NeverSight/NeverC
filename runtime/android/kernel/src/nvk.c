@@ -30,7 +30,7 @@ int neverc_krt_init_all(void)
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_SELINUX] = neverc_krt_selinux_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_THREAD]  = neverc_krt_thread_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_NETLINK] = neverc_krt_nl_init();
-	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_HOOK]    = neverc_krt_hook_init();
+	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_INTERPOSE]    = neverc_krt_interpose_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_SYSCALL] = neverc_krt_syscall_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_KSYMS]  = neverc_krt_ksyms_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_INJECT] = neverc_krt_inject_init();
@@ -46,32 +46,32 @@ int neverc_krt_init_all(void)
 
 	_neverc_krt_state.ready = 1;
 
-	return _neverc_krt_state.sub_status[NEVERC_KRT_SUB_HOOK];
+	return _neverc_krt_state.sub_status[NEVERC_KRT_SUB_INTERPOSE];
 }
 
-int _neverc_krt_hook_by_sym(struct neverc_krt_hook *h, const char *sym_name,
+int _neverc_krt_interpose_by_sym(struct neverc_krt_interpose *h, const char *sym_name,
 			    void *replace, void **orig)
 {
 	void *target = (void *)kallsyms_lookup_name(sym_name);
 	if (!target) return -1;
-	return neverc_krt_hook_install(h, target, replace, orig);
+	return neverc_krt_interpose_install(h, target, replace, orig);
 }
 
-int _neverc_krt_hook_ctx_by_sym(struct neverc_krt_hook_ctx *h, const char *sym_name,
+int _neverc_krt_interpose_ctx_by_sym(struct neverc_krt_interpose_ctx *h, const char *sym_name,
 				neverc_krt_ctx_handler_t handler, void **call_orig)
 {
 	void *target = (void *)kallsyms_lookup_name(sym_name);
 	if (!target) return -1;
-	return neverc_krt_hook_install_ctx(h, target, handler, call_orig);
+	return neverc_krt_interpose_install_ctx(h, target, handler, call_orig);
 }
 
-int _neverc_krt_hook_auto_by_sym(struct neverc_krt_hook *h, const char *sym_name,
+int _neverc_krt_interpose_auto_by_sym(struct neverc_krt_interpose *h, const char *sym_name,
 				 void *replace, void **orig,
-				 struct neverc_krt_ftrace_hook *ft)
+				 struct neverc_krt_ftrace_interpose *ft)
 {
 	void *target = (void *)kallsyms_lookup_name(sym_name);
 	if (!target) return -1;
-	return neverc_krt_hook_auto(h, target, replace, orig, ft);
+	return neverc_krt_interpose_auto(h, target, replace, orig, ft);
 }
 
 void neverc_krt_cleanup_all(void)
@@ -81,8 +81,8 @@ void neverc_krt_cleanup_all(void)
 
 	neverc_krt_thread_stop_all();
 
-	neverc_krt_hide_pause_hooks();
-	neverc_krt_selinux_pause_hooks();
+	neverc_krt_hide_pause_interposes();
+	neverc_krt_selinux_pause_interposes();
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
 
@@ -98,13 +98,13 @@ void neverc_krt_cleanup_all(void)
 	neverc_krt_proc_attr_filter_cleanup();
 	neverc_krt_se_selective_cleanup();
 
-	neverc_krt_selinux_remove_hooks();
-	neverc_krt_hide_remove_hooks();
+	neverc_krt_selinux_remove_interposes();
+	neverc_krt_hide_remove_interposes();
 
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");
 
-	neverc_krt_hook_cleanup();
+	neverc_krt_interpose_cleanup();
 }
 
 int neverc_krt_init_ftrace(void)

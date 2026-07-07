@@ -62,7 +62,7 @@ int msfunc(int a) { return a; }
 
 ## Поддержка LTO
 
-Плагин регистрируется в `NEVERC_HOOK_POST_OPT` и `NEVERC_HOOK_LTO_POST_OPT`, обеспечивая применение пользовательских соглашений после объединения LTO.
+Плагин регистрируется в `NEVERC_INTERPOSE_POST_OPT` и `NEVERC_INTERPOSE_LTO_POST_OPT`, обеспечивая применение пользовательских соглашений после объединения LTO.
 
 ## API плагина
 

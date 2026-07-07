@@ -225,9 +225,9 @@ LANGOPT(EncryptCallStrings, 1, 0, "auto-encrypt string literals in call argument
 VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
               "maximum string length for auto-encryption (0 = no limit)")
 
-LANGOPT(ShellcodeMode, 1, 0, "shellcode pipeline marker injected by the "
-        "-fshellcode driver; used by Sema to reject features whose runtime "
-        "the shellcode pipeline cannot link (e.g. SEH __try/__except/__finally)")
+LANGOPT(DynCodeMode, 1, 0, "dyncode pipeline marker injected by the "
+        "-fdyncode driver; used by Sema to reject features whose runtime "
+        "the dyncode pipeline cannot link (e.g. SEH __try/__except/__finally)")
 
 
 #undef LANGOPT

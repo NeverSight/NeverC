@@ -177,23 +177,23 @@ function(copy_header_to_output_dir src_dir file)
   set(out_files ${out_files} PARENT_SCOPE)
 endfunction(copy_header_to_output_dir)
 
-function(copy_shellcode_header_to_output_dir src_dir src_file dest_file)
+function(copy_dyncode_header_to_output_dir src_dir src_file dest_file)
   set(src ${src_dir}/${src_file})
   set(dst ${output_dir}/${dest_file})
   add_custom_command(OUTPUT ${dst}
     DEPENDS ${src}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${src} ${dst}
-    COMMENT "Copying NeverC shellcode shim ${dest_file}...")
+    COMMENT "Copying NeverC dyncode shim ${dest_file}...")
   list(APPEND out_files ${dst})
   set(out_files ${out_files} PARENT_SCOPE)
 endfunction()
 
 
 
-# Shellcode shim headers: source lives under neverc/shellcode/ for organization.
+# DynCode shim headers: source lives under neverc/dyncode/ for organization.
 # System-header overrides are installed at the TOP LEVEL so #include <fcntl.h>
 # finds them (they use #include_next to forward in normal mode).
-# NeverC-specific headers (kernel.h) keep the neverc/shellcode/ path.
+# NeverC-specific headers (kernel.h) keep the neverc/dyncode/ path.
 
 # Copy header files from the source directory to the build directory
 foreach( f ${files} ${llvm_libc_wrapper_files})
@@ -201,13 +201,13 @@ foreach( f ${files} ${llvm_libc_wrapper_files})
 endforeach( f )
 
 # System-header overrides → install at top level for interception
-copy_shellcode_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} neverc/shellcode/fcntl.h fcntl.h)
-copy_shellcode_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} neverc/shellcode/unistd.h unistd.h)
-copy_shellcode_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} neverc/shellcode/sys/mman.h sys/mman.h)
-copy_shellcode_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} neverc/shellcode/sys/stat.h sys/stat.h)
+copy_dyncode_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} neverc/dyncode/fcntl.h fcntl.h)
+copy_dyncode_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} neverc/dyncode/unistd.h unistd.h)
+copy_dyncode_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} neverc/dyncode/sys/mman.h sys/mman.h)
+copy_dyncode_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} neverc/dyncode/sys/stat.h sys/stat.h)
 
-# NeverC-specific kernel header → keep under neverc/shellcode/ (explicit path)
-copy_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} neverc/shellcode/kernel.h)
+# NeverC-specific kernel header → keep under neverc/dyncode/ (explicit path)
+copy_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} neverc/dyncode/kernel.h)
 
 # Copy pre-built ARM header files to the build directory
 if(AArch64 IN_LIST LLVM_TARGETS_TO_BUILD)
@@ -269,14 +269,14 @@ install(
   DESTINATION ${header_install_dir}
   COMPONENT neverc-resource-headers)
 
-# Install shellcode system-header overrides at top level
-install(FILES neverc/shellcode/fcntl.h neverc/shellcode/unistd.h
+# Install dyncode system-header overrides at top level
+install(FILES neverc/dyncode/fcntl.h neverc/dyncode/unistd.h
   DESTINATION ${header_install_dir} COMPONENT neverc-resource-headers)
-install(FILES neverc/shellcode/sys/mman.h neverc/shellcode/sys/stat.h
+install(FILES neverc/dyncode/sys/mman.h neverc/dyncode/sys/stat.h
   DESTINATION ${header_install_dir}/sys COMPONENT neverc-resource-headers)
-# Install NeverC-specific kernel header at neverc/shellcode/
-install(FILES neverc/shellcode/kernel.h
-  DESTINATION ${header_install_dir}/neverc/shellcode COMPONENT neverc-resource-headers)
+# Install NeverC-specific kernel header at neverc/dyncode/
+install(FILES neverc/dyncode/kernel.h
+  DESTINATION ${header_install_dir}/neverc/dyncode COMPONENT neverc-resource-headers)
 
 #############################################################
 # Install rules for separate header lists

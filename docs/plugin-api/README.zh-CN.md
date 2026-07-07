@@ -23,7 +23,7 @@ static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
 }
 
 static void registerPasses(const NevercHostAPI *API, void *Reg) {
-    API->RegisterModulePass(Reg, NEVERC_HOOK_PRE_OPT, myPass, NULL, "my-pass");
+    API->RegisterModulePass(Reg, NEVERC_INTERPOSE_PRE_OPT, myPass, NULL, "my-pass");
 }
 
 NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
@@ -124,7 +124,7 @@ typedef int (*NevercModulePassFn)(NevercModuleRef M,
 
 注册方式：
 ```c
-API->RegisterModulePass(Registrar, hook, callback, userData, "pass-name");
+API->RegisterModulePass(Registrar, interpose, callback, userData, "pass-name");
 ```
 
 ### 4.2 Machine Pass（MIR）
@@ -139,7 +139,7 @@ typedef int (*NevercMachinePassFn)(NevercMachineFuncRef MF,
 
 ### 4.3 Binary Pass
 
-操作原始字节（shellcode 提取、二进制补丁）。
+操作原始字节（dyncode 提取、二进制补丁）。
 
 ```c
 typedef int (*NevercBinaryPassFn)(uint8_t **Data, uint64_t *Len,
@@ -166,43 +166,43 @@ typedef int (*NevercLinkerPassFn)(const NevercHostAPI *API, void *UserData);
 
 | 钩子 | 层级 | 说明 |
 |------|------|------|
-| `NEVERC_HOOK_PRE_OPT` | IR | LLVM 优化 pass 之前 |
-| `NEVERC_HOOK_POST_OPT` | IR | LLVM 优化 pass 之后 |
-| `NEVERC_HOOK_PIPELINE_START` | IR | 流水线最开始 |
-| `NEVERC_HOOK_PIPELINE_LAST` | IR | IR 流水线最后 |
-| `NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT` | MIR | pre-emit 机器 pass 之前 |
-| `NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR` | MIR | 所有机器 pass 之后 |
+| `NEVERC_INTERPOSE_PRE_OPT` | IR | LLVM 优化 pass 之前 |
+| `NEVERC_INTERPOSE_POST_OPT` | IR | LLVM 优化 pass 之后 |
+| `NEVERC_INTERPOSE_PIPELINE_START` | IR | 流水线最开始 |
+| `NEVERC_INTERPOSE_PIPELINE_LAST` | IR | IR 流水线最后 |
+| `NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT` | MIR | pre-emit 机器 pass 之前 |
+| `NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR` | MIR | 所有机器 pass 之后 |
 
-### Shellcode 流程
+### DynCode 流程
 
 | 钩子 | 层级 | 说明 |
 |------|------|------|
-| `NEVERC_HOOK_SC_BEFORE_PREP` | IR | shellcode IR 准备之前 |
-| `NEVERC_HOOK_SC_AFTER_PREP` | IR | PIC 准备之后 |
-| `NEVERC_HOOK_SC_BEFORE_INLINING` | IR | always-inliner 之前 |
-| `NEVERC_HOOK_SC_AFTER_INLINING` | IR | 内联 + stackify 之后 |
-| `NEVERC_HOOK_SC_AFTER_STACKIFY` | IR | 栈变换之后 |
-| `NEVERC_HOOK_SC_AFTER_FINAL_IR` | IR | 代码生成前的最终 IR |
-| `NEVERC_HOOK_SC_BEFORE_PREEMIT` | MIR | MIR 准备之前 |
-| `NEVERC_HOOK_SC_AFTER_PREEMIT` | MIR | MIR 准备之后 |
-| `NEVERC_HOOK_SC_AFTER_FINAL_MIR` | MIR | 发射前的最终 MIR |
-| `NEVERC_HOOK_SC_POST_EXTRACT` | 二进制 | 字节提取之后 |
-| `NEVERC_HOOK_SC_POST_FINALIZE` | 二进制 | 所有后处理之后 |
+| `NEVERC_INTERPOSE_SC_BEFORE_PREP` | IR | dyncode IR 准备之前 |
+| `NEVERC_INTERPOSE_SC_AFTER_PREP` | IR | PIC 准备之后 |
+| `NEVERC_INTERPOSE_SC_BEFORE_INLINING` | IR | always-inliner 之前 |
+| `NEVERC_INTERPOSE_SC_AFTER_INLINING` | IR | 内联 + stackify 之后 |
+| `NEVERC_INTERPOSE_SC_AFTER_STACKIFY` | IR | 栈变换之后 |
+| `NEVERC_INTERPOSE_SC_AFTER_FINAL_IR` | IR | 代码生成前的最终 IR |
+| `NEVERC_INTERPOSE_SC_BEFORE_PREEMIT` | MIR | MIR 准备之前 |
+| `NEVERC_INTERPOSE_SC_AFTER_PREEMIT` | MIR | MIR 准备之后 |
+| `NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR` | MIR | 发射前的最终 MIR |
+| `NEVERC_INTERPOSE_SC_POST_EXTRACT` | 二进制 | 字节提取之后 |
+| `NEVERC_INTERPOSE_SC_POST_FINALIZE` | 二进制 | 所有后处理之后 |
 
 ### LTO 流程
 
 | 钩子 | 层级 | 说明 |
 |------|------|------|
-| `NEVERC_HOOK_LTO_PRE_OPT` | IR | LTO 优化之前 |
-| `NEVERC_HOOK_LTO_POST_OPT` | IR | LTO 优化之后 |
+| `NEVERC_INTERPOSE_LTO_PRE_OPT` | IR | LTO 优化之前 |
+| `NEVERC_INTERPOSE_LTO_POST_OPT` | IR | LTO 优化之后 |
 
 ### 链接器流程
 
 | 钩子 | 层级 | 说明 |
 |------|------|------|
-| `NEVERC_HOOK_LINK_PRE_LAYOUT` | 链接器 | 节区布局之前 |
-| `NEVERC_HOOK_LINK_POST_LAYOUT` | 链接器 | 节区布局之后 |
-| `NEVERC_HOOK_LINK_POST_EMIT` | 链接器 | 二进制发射之后 |
+| `NEVERC_INTERPOSE_LINK_PRE_LAYOUT` | 链接器 | 节区布局之前 |
+| `NEVERC_INTERPOSE_LINK_POST_LAYOUT` | 链接器 | 节区布局之后 |
+| `NEVERC_INTERPOSE_LINK_POST_EMIT` | 链接器 | 二进制发射之后 |
 
 ## 6. 不透明句柄类型
 
@@ -361,8 +361,8 @@ int64_t limit = API->PluginGetArgInt64("max-fns", -1);   // 默认 -1
 | `NEVERC_VALUESET_NEW(api, cap)` | 创建指定容量的 ValueSet |
 | `NEVERC_API_HAS(api, field)` | 检查 vtable 字段存在性（仅布局） |
 | `NEVERC_API_FN(api, field)` | 检查 vtable 条目存在性 + 非 NULL |
-| `NEVERC_HOOK_UD(hook)` | 将钩子枚举转换为 `void*` UserData |
-| `NEVERC_HOOK_NAME(api, ud)` | 从 UserData 解析钩子名称 |
+| `NEVERC_INTERPOSE_UD(interpose)` | 将钩子枚举转换为 `void*` UserData |
+| `NEVERC_INTERPOSE_NAME(api, ud)` | 从 UserData 解析钩子名称 |
 | `NEVERC_STR_OR(s, def)` | 非 NULL 且非空返回 `s`，否则 `def` |
 | `NEVERC_NPOS` | "未找到"哨兵值（`(uint64_t)-1`） |
 | `NEVERC_MIN(a, b)` / `NEVERC_MAX(a, b)` | 编译时最小/最大值 |

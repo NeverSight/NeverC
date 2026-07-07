@@ -62,7 +62,7 @@ int msfunc(int a) { return a; }
 
 ## دعم LTO
 
-تسجل الإضافة في `NEVERC_HOOK_POST_OPT` و `NEVERC_HOOK_LTO_POST_OPT`، مما يضمن تطبيق الاتفاقيات المخصصة بعد دمج LTO.
+تسجل الإضافة في `NEVERC_INTERPOSE_POST_OPT` و `NEVERC_INTERPOSE_LTO_POST_OPT`، مما يضمن تطبيق الاتفاقيات المخصصة بعد دمج LTO.
 
 ## واجهة برمجة الإضافات
 

@@ -10,7 +10,7 @@ NeverC는 C 언어를 위한 내장 `string` 값 타입을 제공합니다. C++ 
 
 **활성화:** 컴파일 시 `-fbuiltin-string` 전달 (기본 비활성화). 다음 경우 자동 활성화됩니다:
 - 입력 파일이 `.nc` 확장자인 경우 ([`.nc` 확장자 문서](../../nc-extension/README.ko.md) 참조)
-- `-fshellcode` 모드가 활성화된 경우
+- `-fdyncode` 모드가 활성화된 경우
 
 ```bash
 neverc hello.nc -o hello                # 자동 — .nc 확장자가 활성화
@@ -607,9 +607,9 @@ string e = "hello".encrypt().encrypt();  // 오류: .encrypt() can only be appli
 
 `.encrypt()`는 집계 초기화자(`string[]`, `struct { string; }`, 2D 배열, 중첩 조합)에서 동작합니다. owned 멤버는 스코프 종료 시 자동 해제되며, 무할당 비교 경로도 동일하게 적용됩니다.
 
-### Shellcode 모드 호환성
+### DynCode 모드 호환성
 
-문자열 암호화는 shellcode(`-fshellcode`)를 포함한 모든 컴파일 모드에서 작동합니다. Shellcode 모드에서는 암호화 문자열의 복호화에 로컬 arena 할당기를 사용합니다. 사용자 모드와 커널 모드(`-mshellcode-context=kernel`) 모두 지원됩니다.
+문자열 암호화는 dyncode(`-fdyncode`)를 포함한 모든 컴파일 모드에서 작동합니다. DynCode 모드에서는 암호화 문자열의 복호화에 로컬 arena 할당기를 사용합니다. 사용자 모드와 커널 모드(`-mdyncode-context=kernel`) 모두 지원됩니다.
 
 ---
 
@@ -632,7 +632,7 @@ string cleaned = raw.url_decode().from_base64().trim();
 | Mode | Description | String Function Body Source | Symbol Visibility |
 |------|-------------|---------------------------|-------------------|
 | **Hosted (default)** | Normal executables | Precompiled LLVM bitcode merge | 0 symbols under LTO |
-| **Shellcode** | Position-independent flat binary | Full source prelude injection + arena rewrite | 0 symbols (AlwaysInliner) |
+| **DynCode** | Position-independent flat binary | Full source prelude injection + arena rewrite | 0 symbols (AlwaysInliner) |
 | **LTO** | Link-time optimization | Same as Hosted, LTO DCE further prunes | 0 symbols |
 
 The final output binary **exposes no `neverc_string_*` symbols**.
@@ -642,7 +642,7 @@ The final output binary **exposes no `neverc_string_*` symbols**.
 | Flag | Description |
 |------|-------------|
 | `-fbuiltin-string` | Enable builtin string type (off by default) |
-| `-fshellcode` | Enable shellcode mode (auto-enables builtin string) |
+| `-fdyncode` | Enable dyncode mode (auto-enables builtin string) |
 | `-DNEVERC_STRING_ALLOC=xxx` | Custom allocator (triggers full source prelude) |
 | `-DNEVERC_STRING_FREE=xxx` | Custom free function |
 
@@ -655,8 +655,8 @@ The final output binary **exposes no `neverc_string_*` symbols**.
 | `NEVERC_STRING_NPOS` | `(size_t)-1` | "Not found" sentinel value |
 | `NEVERC_STRING_MAX_LEN` | `(size_t)-2` | Payload length ceiling |
 | `NEVERC_STRING_INT_BUF` | `24` | Stack buffer size for `from_int` / `from_uint` |
-| `NEVERC_STRING_USER_ARENA_SIZE` | `64 KB` | Shellcode user-mode arena size |
-| `NEVERC_STRING_KERNEL_ARENA_SIZE` | `4 KB` | Shellcode kernel-mode arena size |
+| `NEVERC_STRING_USER_ARENA_SIZE` | `64 KB` | DynCode user-mode arena size |
+| `NEVERC_STRING_KERNEL_ARENA_SIZE` | `4 KB` | DynCode kernel-mode arena size |
 
 ---
 
@@ -730,13 +730,13 @@ ninja neverc                        # stage 2 (embed real bitcode)
 
 | Condition | Reason |
 |-----------|--------|
-| `-fshellcode` | StringRuntimePass needs source-level function bodies |
+| `-fdyncode` | StringRuntimePass needs source-level function bodies |
 | `-DNEVERC_STRING_ALLOC=xxx` | Custom allocator is baked into bitcode; must recompile |
 | Empty embedded bitcode | First build (bootstrap stage 1) has no bitcode |
 
 ---
 
-## Shellcode 모드
+## DynCode 모드
 
 Does not use bitcode merge; instead injects the full source prelude:
 
@@ -753,14 +753,14 @@ FrontendAction: inject full prelude
     ▼ AlwaysInliner ← inline all functions
     ▼ Data2TextPass
     │
-    ▼ shellcode.bin
+    ▼ dyncode.bin
 ```
 
 `StringRuntimePass` rewrites `__builtin_malloc`/`__builtin_free` into a stack arena allocator:
 - All memory allocation happens on the stack, no external library linkage
 - Arena uses `{size, next, self, tag}` per-allocation headers for validation
 - User-mode arena defaults to 64 KB, kernel-mode to 4 KB
-- `AlwaysInliner` ultimately inlines all functions — zero standalone symbols in the shellcode
+- `AlwaysInliner` ultimately inlines all functions — zero standalone symbols in the dyncode
 
 ---
 
@@ -804,7 +804,7 @@ Most methods pass the receiver by `string` value. A few require pointer semantic
 | LTO (default) | **0** — internalize + LTO DCE fully eliminates |
 | Non-LTO -O2 | Few `t` (internal) — GlobalDCE removes unused |
 | Non-LTO -O0 | All `t` (internal) — DCE not run but symbols remain internal |
-| Shellcode | **0** — AlwaysInliner inlines everything |
+| DynCode | **0** — AlwaysInliner inlines everything |
 
 ---
 
@@ -842,9 +842,9 @@ neverc/
 │       ├── EncryptDecrypt.inc                  # NC_XORSTR encrypt/decrypt helpers
 │       └── Format.inc                          # printf-style format
 │
-├── include/neverc/Shellcode/IR/
+├── include/neverc/DynCode/IR/
 │   ├── StringRuntimeABI.h                      # Cross-layer ABI: kRuntimeFnAttr, arena constants
-│   └── StringRuntimePass.h                     # Shellcode arena rewrite pass declaration
+│   └── StringRuntimePass.h                     # DynCode arena rewrite pass declaration
 │
 ├── lib/Foundation/Builtin/
 │   ├── BuiltinString.cpp                       # Core implementation (method dispatch table + thin header + bitcode API)
@@ -861,8 +861,8 @@ neverc/
 │   ├── StringRuntimeLinker.cpp                 # Bitcode merge + kRuntimeFnAttr stamp
 │   └── BackendUtil.cpp                         # Register linker pass in all modes
 │
-└── lib/Shellcode/IR/
-    └── StringRuntimePass.cpp                   # Shellcode arena rewrite pass
+└── lib/DynCode/IR/
+    └── StringRuntimePass.cpp                   # DynCode arena rewrite pass
 ```
 
 ### 새 런타임 함수 추가 단계

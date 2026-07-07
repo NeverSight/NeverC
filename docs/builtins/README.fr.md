@@ -51,7 +51,7 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 | **Bitcode plateforme** | Unique (indépendant de l'architecture) | Par OS (Linux / Darwin / Windows) |
 | **Traitement des symboles** | Tous internalisés | Points d'entrée d'override restent externes |
 | **Macro préprocesseur** | *(aucune)* | `__NEVERC_MIMALLOC__` |
-| **Mode shellcode** | Auto-activé, réécriture arena | Supprimé (HeapArenaPass gère le tas) |
+| **Mode dyncode** | Auto-activé, réécriture arena | Supprimé (HeapArenaPass gère le tas) |
 | **Niveau d'optimisation** | `-O0` (compilation bitcode) | `-O2` (allocateur critique en performance) |
 | **DCE** | Élagage pré-fusion + mark-and-sweep post-fusion | Pas de DCE (sémantique archive complète) |
 
@@ -63,26 +63,26 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 |-----------|-------|--------|
 | `-fno-builtin` | Supprime mimalloc | Pas de scénario d'override CRT |
 | `-mkernel` | Supprime mimalloc | Pas de tas en espace utilisateur dans le noyau |
-| `-fshellcode-mode` | Supprime mimalloc | Remplacé par HeapArenaPass (basé sur l'arène) |
+| `-fdyncode-mode` | Supprime mimalloc | Remplacé par HeapArenaPass (basé sur l'arène) |
 | `-ffreestanding` | Supprime mimalloc | Pas de libc à remplacer |
 
-Le built-in `string` a sa propre logique de suppression (la réécriture d'arène dans le pipeline shellcode remplace l'allocation de tas).
+Le built-in `string` a sa propre logique de suppression (la réécriture d'arène dans le pipeline dyncode remplace l'allocation de tas).
 
-### HeapArenaPass (Allocation de tas Shellcode)
+### HeapArenaPass (Allocation de tas DynCode)
 
-Lorsque `-fshellcode-mode` est actif, `mimalloc` est supprimé mais les appels `malloc`/`free`/`calloc`/`realloc` sont automatiquement réécrits par `HeapArenaPass` (activé par défaut). La passe utilise une stratégie hybride :
+Lorsque `-fdyncode-mode` est actif, `mimalloc` est supprimé mais les appels `malloc`/`free`/`calloc`/`realloc` sont automatiquement réécrits par `HeapArenaPass` (activé par défaut). La passe utilise une stratégie hybride :
 
 - **Petites allocations (≤ 64 Ko)** : servies depuis une arène résidente sur la pile partagée avec le runtime built-in `string` (allocateur bump + réutilisation de liste libre).
 - **Grandes allocations (> 64 Ko) ou arène OOM** : repli vers l'allocateur OS :
-  - **Windows** : `malloc`/`free` résolus depuis `msvcrt.dll` via PEB walk (`-mshellcode-win-peb-import`).
-  - **Linux / macOS / Android** : `mmap`/`munmap` inlinés en appels système natifs (`-mshellcode-syscall`).
+  - **Windows** : `malloc`/`free` résolus depuis `msvcrt.dll` via PEB walk (`-mdyncode-win-peb-import`).
+  - **Linux / macOS / Android** : `mmap`/`munmap` inlinés en appels système natifs (`-mdyncode-syscall`).
   - **Aucune passe d'import activée** : arène uniquement ; OOM retourne `NULL`.
 
 Contrôle via les flags du driver :
 
 ```bash
-neverc -fshellcode test.c -o test.bin                     # HeapArenaPass activé (défaut)
-neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass désactivé (comportement original)
+neverc -fdyncode test.c -o test.bin                     # HeapArenaPass activé (défaut)
+neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass désactivé (comportement original)
 ```
 
 ---

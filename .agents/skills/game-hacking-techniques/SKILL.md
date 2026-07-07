@@ -21,7 +21,7 @@ This skill covers game-hacking techniques documented in the awesome-game-securit
 - `Cheat > Injection:IOS`
 - `Cheat > Injection:PlayStation`
 - `Cheat > DLL Hijack`
-- `Cheat > Hook`
+- `Cheat > Intercept`
 - `Cheat > Anti Signature Scanning`
 - `Cheat > RPM`
 - `Cheat > DMA`
@@ -59,8 +59,8 @@ This skill covers game-hacking techniques documented in the awesome-game-securit
 
 ### User-Mode
 - Read and write process memory
-- Inject DLLs or shellcode
-- Hook graphics or input APIs
+- Inject DLLs or dyncode
+- Intercept graphics or input APIs
 
 ### Kernel-Mode
 - Use signed or vulnerable drivers for direct memory access
@@ -84,16 +84,16 @@ This skill covers game-hacking techniques documented in the awesome-game-securit
 ### Process Injection
 - DLL injection methods
 - Manual mapping
-- Shellcode injection
+- DynCode injection
 - Thread hijacking
 - APC injection
 
-### Hooking Techniques
-- Inline hooking (detours)
-- IAT/EAT hooking
-- VTable hooking
-- Hardware breakpoint hooks
-- Syscall hooking
+### Interception Techniques
+- Inline patching (detours)
+- IAT/EAT interception
+- VTable interception
+- Hardware breakpoint intercepts
+- Syscall interception
 
 ## Cheat Categories
 
@@ -146,7 +146,7 @@ Single-machine variant:
 Pipeline stages:
 
 1. Frame Capture:
-   - OBS Game Capture (injects graphics hook DLL into game process)
+   - OBS Game Capture (injects graphics intercept DLL into game process)
    - OBS Window Capture (no injection, uses DXGI Desktop Duplication)
    - OBS plugin filter form (AI as OBS filter, minimal footprint)
    - Direct framebuffer copy from GPU output layer (60+ FPS)
@@ -301,9 +301,9 @@ Alternative acceleration backends:
 ## Overlay & Rendering
 
 ### Overlay Methods
-- **DirectX Hook**: D3D9/11/12 Present hook
-- **Vulkan Hook**: vkQueuePresentKHR hook
-- **OpenGL Hook**: wglSwapBuffers hook
+- **DirectX Intercept**: D3D9/11/12 Present intercept
+- **Vulkan Intercept**: vkQueuePresentKHR intercept
+- **OpenGL Intercept**: wglSwapBuffers intercept
 - **DWM Overlay**: Desktop Window Manager
 - **External Window**: Transparent overlay window
 - **Steam Overlay**: Hijacking Steam's overlay
@@ -345,7 +345,7 @@ Alternative acceleration backends:
 ### Boot-Time Loading
 ```
 - EFI manual map: load unsigned driver payload during UEFI boot phase
-- ExitBootServices hook: intercept Windows boot to inject kernel code
+- ExitBootServices patch: intercept Windows boot to inject kernel code
 - Runtime DXE drivers: persist across OS boot via EFI runtime services
 - GetVariable/SetVariable: communicate between EFI and OS runtime
 ```
@@ -384,7 +384,7 @@ Alternative acceleration backends:
 - Disk filter driver: intercept IOCTL and replace serial in response
 - Registry value spoofing: modify cached hardware IDs
 - SMBIOS table patching: modify raw SMBIOS memory region
-- NIC driver hook: replace MAC in NDIS miniport response
+- NIC driver patch: replace MAC in NDIS miniport response
 - Full HWID spoofer: coordinated spoofing across all identifiers
 ```
 
@@ -430,7 +430,7 @@ Data pointer swaps (abusing legitimate syscalls):
 - NtUserGetPointerInfoList
 - NtUserSetInformationThread
 - NtDCompositionSetChildRootVisual
-- Win32k syscall hooks
+- Win32k syscall intercepts
 
 Shared memory:
 - Named shared sections (ZwCreateSection + ZwMapViewOfSection)
@@ -482,7 +482,7 @@ Vector2 WorldToScreen(Vector3 worldPos, Matrix viewMatrix) {
 
 ### Unity (Mono)
 - Assembly-CSharp.dll analysis
-- Mono JIT hooking
+- Mono JIT interception
 - Il2CppDumper for IL2CPP builds
 - Method address resolution
 
@@ -490,13 +490,13 @@ Vector2 WorldToScreen(Vector3 worldPos, Matrix viewMatrix) {
 - GameAssembly.dll analysis
 - Metadata recovery
 - Type reconstruction
-- Native hooking
+- Native interception
 
 ### Unreal Engine
 - GObjects/GNames enumeration
 - UWorld traversal
 - SDK generation (Dumper-7)
-- Blueprint hooking
+- Blueprint interception
 
 ### Source Engine
 - Entity list enumeration
@@ -509,7 +509,7 @@ Vector2 WorldToScreen(Vector3 worldPos, Matrix viewMatrix) {
 ### Software Methods
 - SendInput API
 - mouse_event/keybd_event
-- DirectInput hooking
+- DirectInput interception
 - Raw input injection
 - Driver-based input (mouclass)
 
@@ -668,7 +668,7 @@ Logitech driver API (exploitable versions):
 ### Internal Cheat
 ```
 1. Inject into game process
-2. Hook rendering functions
+2. Intercept rendering functions
 3. Access game objects directly
 4. Render through game's graphics context
 ```

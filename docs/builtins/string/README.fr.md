@@ -10,7 +10,7 @@ NeverC fournit un type valeur `string` intégré pour le C. Il combine le design
 
 **Activation :** Passez `-fbuiltin-string` à la compilation (désactivé par défaut). Activation automatique dans les cas suivants :
 - Le fichier d'entrée a l'extension `.nc` (voir [documentation de l'extension `.nc`](../../nc-extension/README.fr.md))
-- Le mode `-fshellcode` est actif
+- Le mode `-fdyncode` est actif
 
 ```bash
 neverc hello.nc -o hello                # automatique — .nc l'active
@@ -607,9 +607,9 @@ Pour un algorithme non-XOR, définissez **les deux** macros (elles doivent être
 
 `.encrypt()` fonctionne dans les initialiseurs agrégés (`string[]`, `struct { string; }`, tableaux 2D, combinaisons imbriquées). Les membres possédés sont libérés automatiquement à la sortie de portée ; les comparaisons sans allocation restent valides.
 
-### Compatibilité mode Shellcode
+### Compatibilité mode DynCode
 
-Le chiffrement de chaînes fonctionne dans tous les modes de compilation, y compris shellcode (`-fshellcode`). En mode shellcode, le déchiffrement utilise l'allocateur arena local. Les contextes utilisateur et noyau (`-mshellcode-context=kernel`) sont pris en charge.
+Le chiffrement de chaînes fonctionne dans tous les modes de compilation, y compris dyncode (`-fdyncode`). En mode dyncode, le déchiffrement utilise l'allocateur arena local. Les contextes utilisateur et noyau (`-mdyncode-context=kernel`) sont pris en charge.
 
 ---
 
@@ -632,7 +632,7 @@ string cleaned = raw.url_decode().from_base64().trim();
 | Mode | Description | String Function Body Source | Symbol Visibility |
 |------|-------------|---------------------------|-------------------|
 | **Hosted (default)** | Normal executables | Precompiled LLVM bitcode merge | 0 symbols under LTO |
-| **Shellcode** | Position-independent flat binary | Full source prelude injection + arena rewrite | 0 symbols (AlwaysInliner) |
+| **DynCode** | Position-independent flat binary | Full source prelude injection + arena rewrite | 0 symbols (AlwaysInliner) |
 | **LTO** | Link-time optimization | Same as Hosted, LTO DCE further prunes | 0 symbols |
 
 The final output binary **exposes no `neverc_string_*` symbols**.
@@ -642,7 +642,7 @@ The final output binary **exposes no `neverc_string_*` symbols**.
 | Flag | Description |
 |------|-------------|
 | `-fbuiltin-string` | Enable builtin string type (off by default) |
-| `-fshellcode` | Enable shellcode mode (auto-enables builtin string) |
+| `-fdyncode` | Enable dyncode mode (auto-enables builtin string) |
 | `-DNEVERC_STRING_ALLOC=xxx` | Custom allocator (triggers full source prelude) |
 | `-DNEVERC_STRING_FREE=xxx` | Custom free function |
 
@@ -655,8 +655,8 @@ The final output binary **exposes no `neverc_string_*` symbols**.
 | `NEVERC_STRING_NPOS` | `(size_t)-1` | "Not found" sentinel value |
 | `NEVERC_STRING_MAX_LEN` | `(size_t)-2` | Payload length ceiling |
 | `NEVERC_STRING_INT_BUF` | `24` | Stack buffer size for `from_int` / `from_uint` |
-| `NEVERC_STRING_USER_ARENA_SIZE` | `64 KB` | Shellcode user-mode arena size |
-| `NEVERC_STRING_KERNEL_ARENA_SIZE` | `4 KB` | Shellcode kernel-mode arena size |
+| `NEVERC_STRING_USER_ARENA_SIZE` | `64 KB` | DynCode user-mode arena size |
+| `NEVERC_STRING_KERNEL_ARENA_SIZE` | `4 KB` | DynCode kernel-mode arena size |
 
 ---
 
@@ -730,13 +730,13 @@ ninja neverc                        # stage 2 (embed real bitcode)
 
 | Condition | Reason |
 |-----------|--------|
-| `-fshellcode` | StringRuntimePass needs source-level function bodies |
+| `-fdyncode` | StringRuntimePass needs source-level function bodies |
 | `-DNEVERC_STRING_ALLOC=xxx` | Custom allocator is baked into bitcode; must recompile |
 | Empty embedded bitcode | First build (bootstrap stage 1) has no bitcode |
 
 ---
 
-## Mode Shellcode
+## Mode DynCode
 
 Does not use bitcode merge; instead injects the full source prelude:
 
@@ -753,14 +753,14 @@ FrontendAction: inject full prelude
     ▼ AlwaysInliner ← inline all functions
     ▼ Data2TextPass
     │
-    ▼ shellcode.bin
+    ▼ dyncode.bin
 ```
 
 `StringRuntimePass` rewrites `__builtin_malloc`/`__builtin_free` into a stack arena allocator:
 - All memory allocation happens on the stack, no external library linkage
 - Arena uses `{size, next, self, tag}` per-allocation headers for validation
 - User-mode arena defaults to 64 KB, kernel-mode to 4 KB
-- `AlwaysInliner` ultimately inlines all functions — zero standalone symbols in the shellcode
+- `AlwaysInliner` ultimately inlines all functions — zero standalone symbols in the dyncode
 
 ---
 
@@ -804,7 +804,7 @@ Most methods pass the receiver by `string` value. A few require pointer semantic
 | LTO (default) | **0** — internalize + LTO DCE fully eliminates |
 | Non-LTO -O2 | Few `t` (internal) — GlobalDCE removes unused |
 | Non-LTO -O0 | All `t` (internal) — DCE not run but symbols remain internal |
-| Shellcode | **0** — AlwaysInliner inlines everything |
+| DynCode | **0** — AlwaysInliner inlines everything |
 
 ---
 
@@ -842,9 +842,9 @@ neverc/
 │       ├── EncryptDecrypt.inc                  # NC_XORSTR encrypt/decrypt helpers
 │       └── Format.inc                          # printf-style format
 │
-├── include/neverc/Shellcode/IR/
+├── include/neverc/DynCode/IR/
 │   ├── StringRuntimeABI.h                      # Cross-layer ABI: kRuntimeFnAttr, arena constants
-│   └── StringRuntimePass.h                     # Shellcode arena rewrite pass declaration
+│   └── StringRuntimePass.h                     # DynCode arena rewrite pass declaration
 │
 ├── lib/Foundation/Builtin/
 │   ├── BuiltinString.cpp                       # Core implementation (method dispatch table + thin header + bitcode API)
@@ -861,8 +861,8 @@ neverc/
 │   ├── StringRuntimeLinker.cpp                 # Bitcode merge + kRuntimeFnAttr stamp
 │   └── BackendUtil.cpp                         # Register linker pass in all modes
 │
-└── lib/Shellcode/IR/
-    └── StringRuntimePass.cpp                   # Shellcode arena rewrite pass
+└── lib/DynCode/IR/
+    └── StringRuntimePass.cpp                   # DynCode arena rewrite pass
 ```
 
 ### Étapes pour ajouter une nouvelle fonction runtime

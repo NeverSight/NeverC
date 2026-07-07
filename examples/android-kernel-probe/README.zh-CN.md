@@ -2,9 +2,9 @@
 
 # Android 内核 Probe
 
-使用 `neverc_krt_probe_register` 在 `do_faccessat` 内部的任意指令处（非函数入口）进行 hook。演示：
+使用 `neverc_krt_probe_register` 在 `do_faccessat` 内部的任意指令处（非函数入口）进行 interpose。演示：
 
-- **任意地址 hook**：可以 hook 任何指令，不限于函数入口
+- **任意地址 interpose**：可以 interpose 任何指令，不限于函数入口
 - **完整寄存器上下文**：通过 `neverc_krt_reg_ctx` 读写所有通用寄存器
 - **自动链式调度**：同一地址上的多个 handler，按优先级依次执行
 - **控制流操作**：`NEVERC_KRT_CTX_SKIP` 中止执行，`NEVERC_KRT_CTX_REDIRECT` 重定向

@@ -129,7 +129,7 @@ int msfunc(int a) { return a; }
 
 ## LTO 支持
 
-插件同时注册 `NEVERC_HOOK_POST_OPT`（普通编译）和 `NEVERC_HOOK_LTO_POST_OPT`（LTO 优化管线之后）。这确保在链接时优化合并翻译单元后仍能应用自定义约定 —— 实现跨翻译单元的调用点同步，拥有完整的模块可见性。
+插件同时注册 `NEVERC_INTERPOSE_POST_OPT`（普通编译）和 `NEVERC_INTERPOSE_LTO_POST_OPT`（LTO 优化管线之后）。这确保在链接时优化合并翻译单元后仍能应用自定义约定 —— 实现跨翻译单元的调用点同步，拥有完整的模块可见性。
 
 ## 插件 API
 

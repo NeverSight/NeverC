@@ -65,26 +65,26 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 |------|------|------|
 | `-fno-builtin` | mimalloc 억제 | CRT 오버라이드 시나리오 없음 |
 | `-mkernel` | mimalloc 억제 | 커널에 유저스페이스 힙 없음 |
-| `-fshellcode-mode` | mimalloc 억제 | HeapArenaPass로 대체 (아레나 기반) |
+| `-fdyncode-mode` | mimalloc 억제 | HeapArenaPass로 대체 (아레나 기반) |
 | `-ffreestanding` | mimalloc 억제 | 오버라이드할 libc 없음 |
 
 `string` 내장에는 자체 억제 로직이 있습니다 (셸코드 파이프라인에서 아레나 재작성이 힙 할당을 대체).
 
 ### HeapArenaPass (셸코드 힙 할당)
 
-`-fshellcode-mode`가 활성화되면, `mimalloc`은 억제되지만 `malloc`/`free`/`calloc`/`realloc` 호출은 `HeapArenaPass`에 의해 자동으로 재작성됩니다 (기본 활성화). 이 패스는 하이브리드 전략을 사용합니다:
+`-fdyncode-mode`가 활성화되면, `mimalloc`은 억제되지만 `malloc`/`free`/`calloc`/`realloc` 호출은 `HeapArenaPass`에 의해 자동으로 재작성됩니다 (기본 활성화). 이 패스는 하이브리드 전략을 사용합니다:
 
 - **소규모 할당 (≤ 64 KB)**: `string` 내장 런타임과 공유하는 스택 상주 아레나에서 할당 (범프 할당자 + 프리 리스트 재사용).
 - **대규모 할당 (> 64 KB) 또는 아레나 OOM**: OS 할당자로 폴백:
-  - **Windows**: `malloc`/`free`를 PEB walk를 통해 `msvcrt.dll`에서 해결 (`-mshellcode-win-peb-import`).
-  - **Linux / macOS / Android**: `mmap`/`munmap`을 네이티브 시스콜로 인라인 (`-mshellcode-syscall`).
+  - **Windows**: `malloc`/`free`를 PEB walk를 통해 `msvcrt.dll`에서 해결 (`-mdyncode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap`을 네이티브 시스콜로 인라인 (`-mdyncode-syscall`).
   - **임포트 패스 미활성화**: 아레나 전용; OOM 시 `NULL` 반환.
 
 드라이버 플래그로 제어:
 
 ```bash
-neverc -fshellcode test.c -o test.bin                     # HeapArenaPass 켜짐 (기본값)
-neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass 꺼짐 (기존 동작)
+neverc -fdyncode test.c -o test.bin                     # HeapArenaPass 켜짐 (기본값)
+neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass 꺼짐 (기존 동작)
 ```
 
 ---

@@ -60,7 +60,7 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
                                  " (use -ferror-limit=0 to see all errors)";
 
   // Load neverc out-of-tree C-ABI plugins so their linker passes can fire at
-  // the LINK_* hook points during image emission.  Idempotent with the LTO
+  // the LINK_* callback points during image emission.  Idempotent with the LTO
   // path (loadPlugin dedups by path); also covers pure object-file links.
   for (const std::string &Path : driverCfg.nevercPluginPaths) {
     std::string Err;

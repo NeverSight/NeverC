@@ -3,7 +3,7 @@
 #define NEVERC_KRT_SELINUX_H
 
 #include <linux/types.h>
-#include <nvk_hook.h>
+#include <nvk_interpose.h>
 
 int neverc_krt_selinux_init(void);
 
@@ -13,10 +13,10 @@ int neverc_krt_selinux_set_permissive(void);
 int neverc_krt_selinux_set_enforcing(void);
 
 struct neverc_krt_selinux_bypass {
-	int avc_hooked;
-	int inode_hooked;
-	int task_perm_hooked;
-	int cred_perm_hooked;
+	int avc_interposed;
+	int inode_interposed;
+	int task_perm_interposed;
+	int cred_perm_interposed;
 	int state_patched;
 	int saved_enforce;
 };
@@ -27,8 +27,8 @@ void neverc_krt_selinux_restore_state(struct neverc_krt_selinux_bypass *state);
 int neverc_krt_selinux_full_bypass(struct neverc_krt_selinux_bypass *state);
 void neverc_krt_selinux_bypass_remove(struct neverc_krt_selinux_bypass *state);
 
-void neverc_krt_selinux_pause_hooks(void);
-void neverc_krt_selinux_remove_hooks(void);
+void neverc_krt_selinux_pause_interposes(void);
+void neverc_krt_selinux_remove_interposes(void);
 
 /* --- Per-UID selective SELinux bypass --- */
 

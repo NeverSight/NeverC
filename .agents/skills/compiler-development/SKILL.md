@@ -48,9 +48,9 @@ All platform differences are encoded in `TargetDesc` (returned by `describeTripl
 - [ ] **Codegen**: `createWinX86_64TargetCodeGenInfo()` in `ModuleEmitter.cpp`; AVX level selection via `Target.getABI()`
 - [ ] **Object format**: COFF — section names use `.text`, `.data`, `.rdata`; no segment prefixes
 - [ ] **Triple dispatch**: `Triple.getOS() == llvm::Triple::Win32` + `Triple.getArch() == llvm::Triple::x86_64`
-- [ ] **Stack probe**: Windows requires `__chkstk` for stack allocations > 4KB; shellcode mode uses inline probe-stack shellcode to avoid CRT dependency
+- [ ] **Stack probe**: Windows requires `__chkstk` for stack allocations > 4KB; dyncode mode uses inline probe-stack dyncode to avoid CRT dependency
 - [ ] **TLS/PEB access**: `movq %gs:0x60, $0` for PEB pointer (user mode)
-- [ ] **Shellcode imports**: PEB walk (`WinPEBImportPass`) resolves `kernel32.dll` / `ntdll.dll` exports at runtime
+- [ ] **DynCode imports**: PEB walk (`WinPEBImportPass`) resolves `kernel32.dll` / `ntdll.dll` exports at runtime
 - [ ] **Kernel mode**: `KernelImportABI::WindowsKernelResolverShim`; no PEB, no syscall stubs
 - [ ] **Build host**: `_popen` / `_pclose` / `_chdir` / `FindFirstFileA` instead of POSIX equivalents
 - [ ] **CMake**: detect MSVC via `_NEVERC_HOST_MSVC`; static CRT (`/MT`) via `CMAKE_MSVC_RUNTIME_LIBRARY`
@@ -69,7 +69,7 @@ All platform differences are encoded in `TargetDesc` (returned by `describeTripl
 - [ ] **TLS/TEB access**: `ldr $0, [x18, #0x60]` for PEB pointer (X18 = TEB on Windows ARM64)
 - [ ] **Stack probe**: custom AArch64 probe-stack; different from x64 `__chkstk`
 - [ ] **BTI/PAC**: Windows ARM64 supports branch target identification; check `LangOpts.BranchTargetEnforcement` module flags
-- [ ] **Shellcode inject flags**: `TargetInjectFlags_Windows_AArch64.def` — distinct from Unix AArch64 flags
+- [ ] **DynCode inject flags**: `TargetInjectFlags_Windows_AArch64.def` — distinct from Unix AArch64 flags
 - [ ] **Kernel inject flags**: `TargetKernelFlags_Windows_AArch64.def`
 - [ ] **Object format**: COFF (same as Windows x64)
 - [ ] **Syscall ABI**: `SyscallABI::WindowsPEB` — no direct syscall instruction; all imports via PEB walk
@@ -81,9 +81,9 @@ All platform differences are encoded in `TargetDesc` (returned by `describeTripl
 - [ ] **Codegen**: `createX86_64TargetCodeGenInfo()` (non-Win32 default path)
 - [ ] **Object format**: ELF — section `.text`; `isOSBinFormatELF()` gates ELF-specific module flags
 - [ ] **Syscall**: `syscall` instruction; RAX = syscall number, RAX = return value
-- [ ] **Shellcode imports**: `SyscallStubPass` generates inline syscall stubs
+- [ ] **DynCode imports**: `SyscallStubPass` generates inline syscall stubs
 - [ ] **Kernel mode**: `KernelImportABI::LinuxKallsymsShim`; resolve kernel symbols via kallsyms
-- [ ] **Stack probe**: no `__chkstk`; Linux typically has guard pages; but shellcode mode may still need inline probing for large allocations
+- [ ] **Stack probe**: no `__chkstk`; Linux typically has guard pages; but dyncode mode may still need inline probing for large allocations
 - [ ] **Linker GC**: `--gc-sections` for dead code elimination
 - [ ] **Build host**: standard POSIX — `popen`, `pclose`, `chdir`, `glob`
 - [ ] **Exit code**: `WIFEXITED(Status) ? WEXITSTATUS(Status) : 1`
@@ -95,10 +95,10 @@ All platform differences are encoded in `TargetDesc` (returned by `describeTripl
 - [ ] **Codegen**: `createAArch64TargetCodeGenInfo()` with `AArch64ABIKind::AAPCS`
 - [ ] **Syscall**: `svc #0`; X8 = syscall number, X0 = return value
 - [ ] **PAC/BTI**: module flags for `sign-return-address`, `branch-target-enforcement` emitted when `Arch == llvm::Triple::aarch64`
-- [ ] **Shellcode inject flags**: `TargetInjectFlags_Unix_AArch64.def`
+- [ ] **DynCode inject flags**: `TargetInjectFlags_Unix_AArch64.def`
 - [ ] **Kernel inject flags**: `TargetKernelFlags_Unix_AArch64.def`
 - [ ] **Object format**: ELF
-- [ ] **Indirect branches**: `AllBlrPass` (optional `-fshellcode-all-blr`) rewrites indirect branches to BLR for arm64
+- [ ] **Indirect branches**: `AllBlrPass` (optional `-fdyncode-all-blr`) rewrites indirect branches to BLR for arm64
 
 ### macOS arm64 Checklist
 
@@ -173,14 +173,14 @@ Use `llvm::sys::fs::*` and `llvm::sys::path::*` whenever possible — they are a
 
 ---
 
-## Shellcode Pipeline Cross-Platform Checklist
+## DynCode Pipeline Cross-Platform Checklist
 
 ### TargetDesc Table Fields
 
 Every platform must populate:
 
-- [ ] `OS` — `ShellcodeOS` enum
-- [ ] `Arch` — `ShellcodeArch` enum
+- [ ] `OS` — `DynCodeOS` enum
+- [ ] `Arch` — `DynCodeArch` enum
 - [ ] `Format` — `ObjectFormat` enum (MachO/ELF/COFF)
 - [ ] `Syscall` — `SyscallABI` (which syscall mechanism)
 - [ ] `TextSectionName` — `.text` (ELF/COFF) or `__text` (Mach-O)
@@ -232,11 +232,11 @@ LLVM optimizer (AlwaysInliner, SROA, SLPVectorize, InstCombine)
 OptimizerLastEP:
   ⑩ Data2TextPass phase 2       — all platforms
   ⑪ ZeroRelocPass (Stackify)    — all platforms
-  ⑫ AllBlrPass                  — optional (-fshellcode-all-blr), arm64 only
+  ⑫ AllBlrPass                  — optional (-fdyncode-all-blr), arm64 only
      (extensible hooks: RunAfterInlining, RunAfterStackify)
   ↓
 MIR (TargetPassConfig.addMachinePasses):
-  ⑬ ShellcodeMIRPrepPass        — per-target rewrite patterns/opcodes
+  ⑬ DynCodeMIRPrepPass        — per-target rewrite patterns/opcodes
      (extensible hooks: RunBeforePreEmit, RunAfterPreEmit)
   ↓
 Extractor: MachO / ELF / COFF dispatcher
@@ -295,9 +295,9 @@ const bool isMachO = getTriple().isOSBinFormatMachO();
 
 ### Test Organization
 
-- `ShellcodeTests.cpp` — core shellcode pipeline tests
-- `ShellcodeCrossTargetTests.cpp` — cross-target compilation tests
-- `ShellcodeStressTests.cpp` — stress / edge-case tests
+- `DynCodeTests.cpp` — core dyncode pipeline tests
+- `DynCodeCrossTargetTests.cpp` — cross-target compilation tests
+- `DynCodeStressTests.cpp` — stress / edge-case tests
 - `BasicTests.cpp` — basic compiler functionality
 - `DriverTests.cpp` — driver / CLI tests
 - `BuildTests.cpp` — build system (make) tests
@@ -307,9 +307,9 @@ const bool isMachO = getTriple().isOSBinFormatMachO();
 
 - [ ] Test all 5 target triples: macOS arm64, Linux x64, Linux arm64, Windows x64, Windows arm64
 - [ ] Test both User and Kernel execution levels
-- [ ] Verify shellcode extraction for each object format (MachO/ELF/COFF)
+- [ ] Verify dyncode extraction for each object format (MachO/ELF/COFF)
 - [ ] Verify import resolution: PEB walk (Windows), syscall stubs (Linux/macOS), kernel shims
-- [ ] Test string runtime in shellcode mode across all targets
+- [ ] Test string runtime in dyncode mode across all targets
 - [ ] Verify stack probe behavior on Windows targets (both x64 and arm64)
 - [ ] Test bad-byte auditing across different target encodings
 - [ ] Cross-compile from macOS host to all other targets
@@ -329,7 +329,7 @@ Source Code → Frontend → Middle-End (Optimizer) → Backend → Machine Code
 ### NeverC-Specific Extensions
 
 ```
-Source (.c/.nc) → Frontend → Shellcode IR Passes → MIR Passes → Backend → Extractor → .bin
+Source (.c/.nc) → Frontend → DynCode IR Passes → MIR Passes → Backend → Extractor → .bin
                                     ↓                   ↓                      ↓
                              ZeroReloc, Import    MIRPrepPass         MachO/ELF/COFF extract
                              Syscall, String      Rewrite patterns
@@ -513,7 +513,7 @@ int result = MainFn();
 4. **Test Windows ARM64 separately** — its ABI is a unique hybrid (AAPCS regs + Win64 semantics)
 5. **Remember SyscallNumberMask** — macOS x86_64 uses `0x2000000` offset, everything else is `0`
 6. **Mach-O section names have `__` prefix** — `__text` not `.text`
-7. **Windows has no direct syscall in shellcode** — always PEB walk, even on ARM64
+7. **Windows has no direct syscall in dyncode** — always PEB walk, even on ARM64
 8. **LTO is not safe on Windows hosts** — known UB surfaces under LTO; build non-LTO on Windows CI
 
 ## Resources

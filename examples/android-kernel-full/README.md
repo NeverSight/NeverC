@@ -2,7 +2,7 @@
 
 # Android Kernel Full SDK Demo
 
-Full SDK integration — initializes all NVK subsystems and exposes them through a netlink command interface. Reference implementation for production modules. Exercises: hook engine, credentials, module hiding, SELinux, process enumeration, VMA inspection, file I/O, environment detection, and statistics.
+Full SDK integration — initializes all NVK subsystems and exposes them through a netlink command interface. Reference implementation for production modules. Exercises: interpose engine, credentials, module hiding, SELinux, process enumeration, VMA inspection, file I/O, environment detection, and statistics.
 
 ## Build
 

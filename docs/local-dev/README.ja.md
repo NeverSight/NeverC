@@ -103,7 +103,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-Windows shellcode（`-fshellcode`、PEB インポート解決など）については [shellcode コンパイラドキュメント](../shellcode-compiler/README.ja.md)を参照してください。
+Windows dyncode（`-fdyncode`、PEB インポート解決など）については [dyncode コンパイラドキュメント](../dyncode-compiler/README.ja.md)を参照してください。
 
 ---
 

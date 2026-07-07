@@ -8,7 +8,7 @@ namespace neverc {
 /// Module pass that links the precompiled NVK kernel runtime bitcode
 /// into the user module.
 ///
-/// NVK runtime headers (nvk_hook.h, kallsyms.h, etc.) expose non-inline
+/// NVK runtime headers (nvk_interpose.h, kallsyms.h, etc.) expose non-inline
 /// functions and shared global variables as extern declarations via the
 /// NVK_RT_FN / NVK_RT_VAR macros.  This pass resolves those declarations
 /// by linking in the bitcode compiled from nvk_runtime_bc.c (which defines

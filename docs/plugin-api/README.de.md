@@ -23,7 +23,7 @@ static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
 }
 
 static void registerPasses(const NevercHostAPI *API, void *Reg) {
-    API->RegisterModulePass(Reg, NEVERC_HOOK_PRE_OPT, myPass, NULL, "my-pass");
+    API->RegisterModulePass(Reg, NEVERC_INTERPOSE_PRE_OPT, myPass, NULL, "my-pass");
 }
 
 NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
@@ -85,25 +85,25 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 
 - **Module Pass (IR)**: Arbeitet auf dem LLVM-IR-Modul. Kann IR lesen und modifizieren.
 - **Machine Pass (MIR)**: Arbeitet auf maschinennahem IR (nach Instruktionsauswahl).
-- **Binary Pass**: Arbeitet auf Roh-Bytes (Shellcode-Extraktion, Binär-Patches).
+- **Binary Pass**: Arbeitet auf Roh-Bytes (DynCode-Extraktion, Binär-Patches).
 - **Linker Pass**: Arbeitet zur Link-Zeit mit Zugang zu Symbolen und Sektionen.
 
-## 5. Hook-Punkte
+## 5. Interpose-Punkte
 
 ### Normaler Ablauf
 
-| Hook | Ebene | Beschreibung |
+| Interpose | Ebene | Beschreibung |
 |------|-------|-------------|
-| `NEVERC_HOOK_PRE_OPT` | IR | Vor LLVM-Optimierungspasses |
-| `NEVERC_HOOK_POST_OPT` | IR | Nach LLVM-Optimierungspasses |
-| `NEVERC_HOOK_PIPELINE_START` | IR | Anfang der Pipeline |
-| `NEVERC_HOOK_PIPELINE_LAST` | IR | Ende der IR-Pipeline |
-| `NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT` | MIR | Vor Pre-Emit-Maschinenpasses |
-| `NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR` | MIR | Nach allen Maschinenpasses |
+| `NEVERC_INTERPOSE_PRE_OPT` | IR | Vor LLVM-Optimierungspasses |
+| `NEVERC_INTERPOSE_POST_OPT` | IR | Nach LLVM-Optimierungspasses |
+| `NEVERC_INTERPOSE_PIPELINE_START` | IR | Anfang der Pipeline |
+| `NEVERC_INTERPOSE_PIPELINE_LAST` | IR | Ende der IR-Pipeline |
+| `NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT` | MIR | Vor Pre-Emit-Maschinenpasses |
+| `NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR` | MIR | Nach allen Maschinenpasses |
 
-### Shellcode / LTO / Linker-Ablauf
+### DynCode / LTO / Linker-Ablauf
 
-Shellcode-Hooks verwenden das Präfix `NEVERC_HOOK_SC_*`, LTO verwendet `NEVERC_HOOK_LTO_*`, Linker verwendet `NEVERC_HOOK_LINK_*`.
+DynCode-Interposes verwenden das Präfix `NEVERC_INTERPOSE_SC_*`, LTO verwendet `NEVERC_INTERPOSE_LTO_*`, Linker verwendet `NEVERC_INTERPOSE_LINK_*`.
 
 ## 6. Opake Handle-Typen
 

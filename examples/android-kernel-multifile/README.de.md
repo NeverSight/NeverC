@@ -6,7 +6,7 @@ Multi-Datei NeverC Kernelmodul Demo. Kernpunkte:
 
 - **Einmaliger Bootstrap**: `NEVERC_KRT_BOOTSTRAP()` wird nur einmal in `module_init` aufgerufen
 - **Geteilter Zustand**: Der Compiler hebt allen `neverc_krt_*` Zustand auf `weak_odr` Linkage, alle `.c` Dateien teilen denselben Resolver, Cache und Subsystem-Zustand
-- **Aufgeteilte Architektur**: `main.c` (Init/Exit), `hooks.c` (Hook-Logik), `utils.c` (Hilfsfunktionen)
+- **Aufgeteilte Architektur**: `main.c` (Init/Exit), `interposes.c` (Interpose-Logik), `utils.c` (Hilfsfunktionen)
 
 ## Kompilieren
 

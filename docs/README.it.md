@@ -2,7 +2,7 @@
 
 [← Progetto NeverC](i18n/README.it.md)
 
-> **Tip:** Use the language bar above; links on this page point to the same locale (shellcode README and breadcrumbs).
+> **Tip:** Use the language bar above; links on this page point to the same locale (dyncode README and breadcrumbs).
 
 # Documentazione NeverC
 
@@ -10,24 +10,24 @@ Note di progettazione, riferimento API e guide per ogni sottosistema NeverC.
 
 ---
 
-## Compilatore shellcode
+## Compilatore dyncode
 
-La pipeline di compilazione shellcode è il focus principale di ricerca di NeverC. Architettura, opzioni CLI, matrice piattaforme ed esempi:
+La pipeline di compilazione dyncode è il focus principale di ricerca di NeverC. Architettura, opzioni CLI, matrice piattaforme ed esempi:
 
-**[Compilatore shellcode →](shellcode-compiler/README.it.md)**
+**[Compilatore dyncode →](dyncode-compiler/README.it.md)**
 
 | Documento | Descrizione |
 |-----------|-------------|
-| [README](shellcode-compiler/README.it.md) | Panoramica, avvio rapido, target supportati |
-| [Pipeline & PIC](shellcode-compiler/pipeline-and-pic/README.it.md) | Design IR → oggetto → estrazione |
-| [IR Pass Design](shellcode-compiler/ir-pass-design/README.it.md) | Motivazione di ogni pass IR |
-| [MIR Pass Design](shellcode-compiler/mir-pass-design/README.it.md) | Pass MIR backend |
-| [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.it.md) | Compilazione Ring-0 |
-| [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.it.md) | `TargetDesc` ed estrattori |
-| [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.it.md) | Aggiungere piattaforma |
-| [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.it.md) | Istruzioni ARM64 dalla prospettiva shellcode |
-| [Roadmap](shellcode-compiler/roadmap/README.it.md) | Lavoro pianificato |
-| [Progress](shellcode-compiler/progress/README.it.md) | Stato implementazione |
+| [README](dyncode-compiler/README.it.md) | Panoramica, avvio rapido, target supportati |
+| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic/README.it.md) | Design IR → oggetto → estrazione |
+| [IR Pass Design](dyncode-compiler/ir-pass-design/README.it.md) | Motivazione di ogni pass IR |
+| [MIR Pass Design](dyncode-compiler/mir-pass-design/README.it.md) | Pass MIR backend |
+| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode/README.it.md) | Compilazione Ring-0 |
+| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture/README.it.md) | `TargetDesc` ed estrattori |
+| [Platform Extension Guide](dyncode-compiler/platform-extension-guide/README.it.md) | Aggiungere piattaforma |
+| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial/README.it.md) | Istruzioni ARM64 dalla prospettiva dyncode |
+| [Roadmap](dyncode-compiler/roadmap/README.it.md) | Lavoro pianificato |
+| [Progress](dyncode-compiler/progress/README.it.md) | Stato implementazione |
 
 ---
 
@@ -72,7 +72,7 @@ Principali direzioni pianificate del progetto NeverC: libreria standard, backend
 | Libreria standard (`std`) | Pacchetti in stile Go: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync` e altro |
 | Suite di plugin di offuscamento (`neverc-obfuscation`) | VM, MBA, appiattimento flusso di controllo, motore polimorfico, anti-manomissione — plugin di prima parte |
 | Libreria di componenti UI (`neverc-ui`) | UI multipiattaforma tipo Qt, renderer HTML/JS/CSS, designer drag-and-drop, workflow nativo IA |
-| IDE e strumenti linguistici (`neverc-ide`) | Estensione VSCode + IDE autonomo per file `.nc`, IntelliSense, debug, visualizzazione pipeline shellcode |
+| IDE e strumenti linguistici (`neverc-ide`) | Estensione VSCode + IDE autonomo per file `.nc`, IntelliSense, debug, visualizzazione pipeline dyncode |
 | Smart contract EVM | Compilare C in bytecode EVM — scrivere contratti in C invece di Solidity |
 | Solana eBPF | Compilare C in bytecode eBPF di Solana — sviluppo di programmi on-chain in C |
 

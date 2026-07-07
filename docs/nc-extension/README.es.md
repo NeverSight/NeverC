@@ -62,7 +62,7 @@ Como red de seguridad, el frontend también verifica las extensiones de los arch
 
 - Los archivos `.nc` se tratan como código fuente C — el lenguaje sigue siendo C (C23 por defecto), no un lenguaje nuevo
 - Todos los flags estándar de C (`-std=c11`, `-O2`, `-g`, `-Wall`, etc.) funcionan de manera idéntica
-- `-fshellcode` se combina naturalmente con `.nc`: el modo shellcode ya habilita `string`, y `.nc` asegura que `neverc-types` también esté activo
+- `-fdyncode` se combina naturalmente con `.nc`: el modo dyncode ya habilita `string`, y `.nc` asegura que `neverc-types` también esté activo
 - La compilación cruzada (`-target aarch64-linux-gnu`, etc.) funciona de la misma manera
 - Los archivos `.c` no se ven afectados — se comportan exactamente como antes a menos que pase los flags explícitamente
 
@@ -72,5 +72,5 @@ Como red de seguridad, el frontend también verifica las extensiones de los arch
 |-----------|--------------|
 | Nuevo proyecto NeverC usando `string` y tipos estilo Rust | Usar `.nc` |
 | Base de código C existente que debe seguir siendo compatible con otros compiladores | Usar `.c` + flags explícitos |
-| Proyecto shellcode | Ambos sirven — `-fshellcode` habilita `string` de todas formas |
+| Proyecto dyncode | Ambos sirven — `-fdyncode` habilita `string` de todas formas |
 | Base de código mixta | `.nc` para archivos específicos de NeverC, `.c` para código portable |

@@ -23,7 +23,7 @@ static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
 }
 
 static void registerPasses(const NevercHostAPI *API, void *Reg) {
-    API->RegisterModulePass(Reg, NEVERC_HOOK_PRE_OPT, myPass, NULL, "my-pass");
+    API->RegisterModulePass(Reg, NEVERC_INTERPOSE_PRE_OPT, myPass, NULL, "my-pass");
 }
 
 NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
@@ -88,13 +88,13 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 
 | الخطاف | المستوى | الوصف |
 |--------|---------|-------|
-| `NEVERC_HOOK_PRE_OPT` | IR | قبل تحسينات LLVM |
-| `NEVERC_HOOK_POST_OPT` | IR | بعد تحسينات LLVM |
-| `NEVERC_HOOK_PIPELINE_START` | IR | بداية خط الأنابيب |
-| `NEVERC_HOOK_PIPELINE_LAST` | IR | نهاية خط أنابيب IR |
-| `NEVERC_HOOK_SC_*` | IR/MIR/ثنائي | تدفق shellcode |
-| `NEVERC_HOOK_LTO_*` | IR | تدفق LTO |
-| `NEVERC_HOOK_LINK_*` | الرابط | تدفق الرابط |
+| `NEVERC_INTERPOSE_PRE_OPT` | IR | قبل تحسينات LLVM |
+| `NEVERC_INTERPOSE_POST_OPT` | IR | بعد تحسينات LLVM |
+| `NEVERC_INTERPOSE_PIPELINE_START` | IR | بداية خط الأنابيب |
+| `NEVERC_INTERPOSE_PIPELINE_LAST` | IR | نهاية خط أنابيب IR |
+| `NEVERC_INTERPOSE_SC_*` | IR/MIR/ثنائي | تدفق dyncode |
+| `NEVERC_INTERPOSE_LTO_*` | IR | تدفق LTO |
+| `NEVERC_INTERPOSE_LINK_*` | الرابط | تدفق الرابط |
 
 ## 6. أنواع المقابض المبهمة
 

@@ -13,7 +13,7 @@ struct neverc_krt_binder_filter {
 };
 
 static neverc_krt_binder_ioctl_fn     _neverc_krt_orig_binder_ioctl;
-static struct neverc_krt_hook         _neverc_krt_binder_hook;
+static struct neverc_krt_interpose         _neverc_krt_binder_interpose;
 static int                            _neverc_krt_binder_inited;
 
 static struct neverc_krt_binder_filter _neverc_krt_binder_filters[NEVERC_KRT_BINDER_FILTER_MAX];
@@ -22,15 +22,15 @@ static volatile u64                   _neverc_krt_binder_txn_count;
 static volatile u64                   _neverc_krt_binder_filtered_count;
 static void                          *_neverc_krt_binder_target;
 
-static int _neverc_krt_binder_hook_install(void);
+static int _neverc_krt_binder_interpose_install(void);
 
 int neverc_krt_binder_filter_add(neverc_krt_binder_filter_fn fn, u32 code)
 {
 	int idx = __atomic_load_n(&_neverc_krt_binder_filter_cnt, __ATOMIC_ACQUIRE);
 	if (idx >= NEVERC_KRT_BINDER_FILTER_MAX) return -1;
 
-	if (!_neverc_krt_binder_hook.active) {
-		int ret = _neverc_krt_binder_hook_install();
+	if (!_neverc_krt_binder_interpose.active) {
+		int ret = _neverc_krt_binder_interpose_install();
 		if (ret) return ret;
 	}
 
@@ -110,7 +110,7 @@ static int _neverc_krt_binder_scan_commands(unsigned long buf, long size,
 	return filtered;
 }
 
-static int _neverc_krt_binder_ioctl_hook(void *filp, unsigned int cmd,
+static int _neverc_krt_binder_ioctl_interpose(void *filp, unsigned int cmd,
 					 unsigned long arg)
 {
 	if (!_neverc_krt_orig_binder_ioctl)
@@ -149,12 +149,12 @@ static int _neverc_krt_binder_ioctl_hook(void *filp, unsigned int cmd,
 	return ret;
 }
 
-static int _neverc_krt_binder_hook_install(void)
+static int _neverc_krt_binder_interpose_install(void)
 {
-	if (_neverc_krt_binder_hook.active) return 0;
+	if (_neverc_krt_binder_interpose.active) return 0;
 	if (!_neverc_krt_binder_target) return -1;
-	return neverc_krt_hook_install(&_neverc_krt_binder_hook, _neverc_krt_binder_target,
-				(void *)_neverc_krt_binder_ioctl_hook,
+	return neverc_krt_interpose_install(&_neverc_krt_binder_interpose, _neverc_krt_binder_target,
+				(void *)_neverc_krt_binder_ioctl_interpose,
 				(void **)&_neverc_krt_orig_binder_ioctl);
 }
 
@@ -170,8 +170,8 @@ int neverc_krt_binder_init(void)
 void neverc_krt_binder_cleanup(void)
 {
 	if (!_neverc_krt_binder_inited) return;
-	if (_neverc_krt_binder_hook.active)
-		neverc_krt_hook_remove(&_neverc_krt_binder_hook);
+	if (_neverc_krt_binder_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_binder_interpose);
 	_neverc_krt_binder_inited = 0;
 	__atomic_store_n(&_neverc_krt_binder_filter_cnt, 0, __ATOMIC_RELEASE);
 }

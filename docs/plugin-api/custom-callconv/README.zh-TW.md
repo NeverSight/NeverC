@@ -104,7 +104,7 @@ int msfunc(int a) { return a; }
 
 ## LTO 支援
 
-外掛程式同時註冊 `NEVERC_HOOK_POST_OPT` 與 `NEVERC_HOOK_LTO_POST_OPT`，確保 LTO 合併翻譯單元後仍能套用自訂慣例。
+外掛程式同時註冊 `NEVERC_INTERPOSE_POST_OPT` 與 `NEVERC_INTERPOSE_LTO_POST_OPT`，確保 LTO 合併翻譯單元後仍能套用自訂慣例。
 
 ## 外掛程式 API
 

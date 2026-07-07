@@ -1,8 +1,8 @@
-/*===---- string.h - NeverC shellcode-oriented string.h shim -------------===*\
+/*===---- string.h - NeverC dyncode-oriented string.h shim -------------===*\
 |*
 |* Plain `string.h` shim.  In normal compilation mode we forward to the
 |* host toolchain's `<string.h>` so user code sees the full libc surface.
-|* In shellcode mode (`__NEVERC_SHELLCODE__`) we expose just the subset
+|* In dyncode mode (`__NEVERC_DYNCODE__`) we expose just the subset
 |* that `MemIntrinPass` can lower to inline byte-loop helpers
 |* (`__sc_mem*` / `__sc_str*`).  Users can keep writing ordinary
 |* `#include <string.h>` code — no extern declarations, no custom length
@@ -18,7 +18,7 @@
 |*     helper's `i64` slot disagrees with the user-declared width.
 |*
 |*   * No state-ful helpers (`strtok` / `strerror` / ...) appear here:
-|*     they need runtime state the shellcode pipeline cannot materialise.
+|*     they need runtime state the dyncode pipeline cannot materialise.
 |*     User code that pulls those in still gets the original "unresolved
 |*     external" diagnostic with a hint pointing at the inline
 |*     alternative (see `ExtractorCommon::printExternHint`).
@@ -28,7 +28,7 @@
 #ifndef _NEVERC_STRING_SHIM_H_
 #define _NEVERC_STRING_SHIM_H_
 
-#if !defined(__NEVERC_SHELLCODE__)
+#if !defined(__NEVERC_DYNCODE__)
 #include_next <string.h>
 #else
 
@@ -66,5 +66,5 @@ char *strrchr(const char *s, int c);
 }
 #endif
 
-#endif /* __NEVERC_SHELLCODE__ */
+#endif /* __NEVERC_DYNCODE__ */
 #endif /* _NEVERC_STRING_SHIM_H_ */

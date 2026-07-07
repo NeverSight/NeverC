@@ -45,7 +45,7 @@ A strong report helps us reproduce and fix faster:
 1. **Summary** — what breaks, and the impact (e.g. heap overflow in the
    driver, miscompiled bounds check, crash on malformed IR).
 2. **Affected component** — compiler frontend, linker (COFF / ELF / Mach-O),
-   shellcode pipeline, driver, etc.
+   dyncode pipeline, driver, etc.
 3. **NeverC version or commit** — output of `neverc --version` or the git SHA.
 4. **Host platform** — OS, architecture, and how `neverc` was built.
 5. **Minimal reproduction** — smallest source file, flags, and command line.
@@ -70,7 +70,7 @@ Reports we treat as security issues include, but are not limited to:
 |------|----------|
 | **Compiler / linker crashes** | Memory corruption, stack overflow, or UAF when parsing or linking **untrusted** inputs (malformed source, object files, archives, linker scripts). |
 | **Incorrect codegen** | The compiler or linker emits code that violates the language ABI or documented semantics for **valid** input, in a way that could plausibly weaken memory safety or control flow without the user opting into unsafe behavior. |
-| **Shellcode pipeline integrity** | Bypass of documented constraints (e.g. `-fshellcode-bad-bytes`, documented PIC rules) that causes the tool to **accept** output that violates those checks, or silent corruption of the emitted binary. |
+| **DynCode pipeline integrity** | Bypass of documented constraints (e.g. `-fdyncode-bad-bytes`, documented PIC rules) that causes the tool to **accept** output that violates those checks, or silent corruption of the emitted binary. |
 | **Path and file handling** | Directory traversal, arbitrary file read/write, or unsafe symlink behavior in the driver when given attacker-controlled paths or response files. |
 | **Supply chain / build** | Compromise of official release artifacts, reproducible-build breaks that hide tampering, or critical secrets embedded in distributed binaries. |
 | **Dependency issues** | Vulnerabilities in bundled third-party code **as shipped in NeverC releases**, when exploitable through normal `neverc` use. |
@@ -81,13 +81,13 @@ Reports we treat as security issues include, but are not limited to:
 
 The following are generally **not** treated as security vulnerabilities:
 
-- **Intended research features** — generating shellcode, syscall stubs, PEB
-  import tables, kernel-mode shellcode, or cross-platform binaries when the
+- **Intended research features** — generating dyncode, syscall stubs, PEB
+  import tables, kernel-mode dyncode, or cross-platform binaries when the
   user explicitly requests them.
 - **User-controlled malicious source** — compiling attacker-written C that
   deliberately exploits itself or others; that is expected capability.
 - **Missing mitigations in user output** — e.g. no stack canaries or ASLR
-  in a minimal `-fshellcode` blob unless NeverC documented that it would
+  in a minimal `-fdyncode` blob unless NeverC documented that it would
   provide them and failed to do so.
 - **Denial of service** via extremely large inputs without a plausible
   security impact (still welcome as regular bugs).
@@ -146,7 +146,7 @@ NeverC is a powerful toolchain. Operators should:
 - Verify release artifacts against tagged sources when reproducibility
   matters.
 - Do not run `neverc` with elevated privileges unless required.
-- Review generated shellcode and linked binaries before deployment in
+- Review generated dyncode and linked binaries before deployment in
   sensitive environments.
 
 ---

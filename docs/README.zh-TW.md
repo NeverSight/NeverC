@@ -2,7 +2,7 @@
 
 [← NeverC 專案主頁](i18n/README.zh-TW.md)
 
-> **Tip:** Use the language bar above; links on this page point to the same locale (shellcode README and breadcrumbs).
+> **Tip:** Use the language bar above; links on this page point to the same locale (dyncode README and breadcrumbs).
 
 # NeverC 文件
 
@@ -10,24 +10,24 @@
 
 ---
 
-## Shellcode 編譯器
+## DynCode 編譯器
 
-Shellcode 編譯管線是 NeverC 的核心研究方向。架構、CLI 選項、平台矩陣與範例見：
+DynCode 編譯管線是 NeverC 的核心研究方向。架構、CLI 選項、平台矩陣與範例見：
 
-**[Shellcode 編譯器 →](shellcode-compiler/README.zh-TW.md)**
+**[DynCode 編譯器 →](dyncode-compiler/README.zh-TW.md)**
 
 | 文件 | 說明 |
 |------|------|
-| [README](shellcode-compiler/README.zh-TW.md) | 概述、快速開始、支援的目標 |
-| [Pipeline & PIC](shellcode-compiler/pipeline-and-pic/README.zh-TW.md) | IR → 物件檔 → 擷取設計 |
-| [IR Pass Design](shellcode-compiler/ir-pass-design/README.zh-TW.md) | 各 IR pass 的設計 rationale |
-| [MIR Pass Design](shellcode-compiler/mir-pass-design/README.zh-TW.md) | 後端 MIR pass |
-| [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.zh-TW.md) | Ring-0 編譯 |
-| [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.zh-TW.md) | `TargetDesc` 與擷取器 |
-| [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.zh-TW.md) | 新增目標平台 |
-| [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.zh-TW.md) | 從 shellcode 角度講解 ARM64 指令 |
-| [Roadmap](shellcode-compiler/roadmap/README.zh-TW.md) | 計畫中的工作 |
-| [Progress](shellcode-compiler/progress/README.zh-TW.md) | 實作進度 |
+| [README](dyncode-compiler/README.zh-TW.md) | 概述、快速開始、支援的目標 |
+| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic/README.zh-TW.md) | IR → 物件檔 → 擷取設計 |
+| [IR Pass Design](dyncode-compiler/ir-pass-design/README.zh-TW.md) | 各 IR pass 的設計 rationale |
+| [MIR Pass Design](dyncode-compiler/mir-pass-design/README.zh-TW.md) | 後端 MIR pass |
+| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode/README.zh-TW.md) | Ring-0 編譯 |
+| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture/README.zh-TW.md) | `TargetDesc` 與擷取器 |
+| [Platform Extension Guide](dyncode-compiler/platform-extension-guide/README.zh-TW.md) | 新增目標平台 |
+| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial/README.zh-TW.md) | 從 dyncode 角度講解 ARM64 指令 |
+| [Roadmap](dyncode-compiler/roadmap/README.zh-TW.md) | 計畫中的工作 |
+| [Progress](dyncode-compiler/progress/README.zh-TW.md) | 實作進度 |
 
 ---
 
@@ -72,7 +72,7 @@ NeverC 專案的主要規劃方向：標準函式庫、EVM 智慧合約後端和
 | 標準函式庫 (`std`) | Go 風格開箱即用套件：`fmt`、`os`、`io`、`net`、`crypto`、`encoding`、`sync` 等 |
 | 混淆外掛套件 (`neverc-obfuscation`) | 第一方 VM、MBA、控制流平坦化、多態引擎和反竄改外掛 |
 | UI 元件庫 (`neverc-ui`) | 類 Qt 跨平台 UI，HTML/JS/CSS 渲染器，拖曳式設計器，AI 原生工作流 |
-| IDE 與語言工具 (`neverc-ide`) | `.nc` 檔案的 VSCode 擴充 + 獨立 IDE，支援智慧補全、偵錯和 shellcode 管線視覺化 |
+| IDE 與語言工具 (`neverc-ide`) | `.nc` 檔案的 VSCode 擴充 + 獨立 IDE，支援智慧補全、偵錯和 dyncode 管線視覺化 |
 | EVM 智慧合約 | 把 C 編譯為 EVM 位元組碼——用 C 取代 Solidity 撰寫智慧合約 |
 | Solana eBPF | 把 C 編譯為 Solana eBPF 位元組碼——用 C 開發鏈上程式 |
 

@@ -6,24 +6,24 @@
 
 **El compilador C23 compatible con IA para investigación en seguridad, construido sobre LLVM**
 
-Enlazador integrado · Pipeline shellcode · Runtimes integrados (`string` · `mimalloc` · `xorstr`)
+Enlazador integrado · Pipeline dyncode · Runtimes integrados (`string` · `mimalloc` · `xorstr`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#características)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#compilación-cruzada-a-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#características)
 
-[Documentación](../README.es.md) · [Guía shellcode](../shellcode-compiler/README.es.md) · [Runtimes integrados](../builtins/README.es.md) · [API de Plugins](../plugin-api/README.es.md) · [Hoja de ruta](../roadmap/README.es.md)
+[Documentación](../README.es.md) · [Guía dyncode](../dyncode-compiler/README.es.md) · [Runtimes integrados](../builtins/README.es.md) · [API de Plugins](../plugin-api/README.es.md) · [Hoja de ruta](../roadmap/README.es.md)
 
 </div>
 
 ---
 
-> **Nota:** GitHub siempre muestra `README.md` (inglés) como página principal del repositorio (sin detección automática de idioma). Use los enlaces de idioma arriba; en la [documentación](../README.es.md) y la [guía shellcode](../shellcode-compiler/README.es.md), mantenga el mismo idioma con la barra de idioma y las migas de pan.
+> **Nota:** GitHub siempre muestra `README.md` (inglés) como página principal del repositorio (sin detección automática de idioma). Use los enlaces de idioma arriba; en la [documentación](../README.es.md) y la [guía dyncode](../dyncode-compiler/README.es.md), mantenga el mismo idioma con la barra de idioma y las migas de pan.
 
 ## Descripción general
 
-NeverC compila C estándar en binarios alojados, ejecutables freestanding y shellcode independiente de la posición, todo desde una única cadena de herramientas. Apunta a **x86_64** y **AArch64** (solo little-endian). Futuras versiones añadirán **EVM** (contratos inteligentes Ethereum) y **Solana eBPF** (programas on-chain) como objetivos de compilación.
+NeverC compila C estándar en binarios alojados, ejecutables freestanding y dyncode independiente de la posición, todo desde una única cadena de herramientas. Apunta a **x86_64** y **AArch64** (solo little-endian). Futuras versiones añadirán **EVM** (contratos inteligentes Ethereum) y **Solana eBPF** (programas on-chain) como objetivos de compilación.
 
 ## ¿Por qué NeverC?
 
@@ -34,13 +34,13 @@ C ya es el lenguaje de sistemas más simple. NeverC lo hace aún más simple:
 - **Sin excepciones** — El manejo de errores es siempre explícito. Sin desenrollado de pila, sin sorpresas de rendimiento.
 - **Binario único** — Compilador + enlazador + runtimes en un solo ejecutable. Cero dependencias externas.
 - **Compatible con LLM** — Gramática mínima y semántica determinista hacen que el código NeverC generado por IA compile correctamente con más frecuencia que las alternativas en C++.
-- **Verdadera compilación cruzada** — Compile Windows PE, Linux ELF, macOS Mach-O, Android ELF y shellcode desde macOS o Linux — sin VM, sin arranque dual, sin buscar SDKs. Los SDK de plataforma vienen integrados en el compilador.
+- **Verdadera compilación cruzada** — Compile Windows PE, Linux ELF, macOS Mach-O, Android ELF y dyncode desde macOS o Linux — sin VM, sin arranque dual, sin buscar SDKs. Los SDK de plataforma vienen integrados en el compilador.
 - **Extensible sin fricción** — Un solo encabezado C, 20+ puntos de enganche, y tienes un [plugin de compilador](../plugin-api/README.es.md) capaz de intervenir en cualquier etapa — desde la optimización IR hasta la salida binaria final — sin conocer LLVM.
-- **Investigación en seguridad integrada** — Compilación de shellcode, cifrado de cadenas en tiempo de compilación y generación PE multiplataforma están integrados nativamente en el compilador — no parches añadidos con scripts externos.
+- **Investigación en seguridad integrada** — Compilación de dyncode, cifrado de cadenas en tiempo de compilación y generación PE multiplataforma están integrados nativamente en el compilador — no parches añadidos con scripts externos.
 
 ## Características
 
-- **[Compilador de shellcode](../shellcode-compiler/README.es.md)** — pipeline IR/MIR multietapa, extracción multiplataforma, resolución de importaciones/syscalls, modo kernel, auditoría de bytes prohibidos, arquitectura de plugins
+- **[Compilador de dyncode](../dyncode-compiler/README.es.md)** — pipeline IR/MIR multietapa, extracción multiplataforma, resolución de importaciones/syscalls, modo kernel, auditoría de bytes prohibidos, arquitectura de plugins
 - **Enlazador integrado** — COFF, ELF y Mach-O en un solo binario; sin `ld` o `link.exe` externos
 - **Compilación cruzada** — Windows PE, Linux ELF, macOS Mach-O y Android ELF desde cualquier host con SDKs de plataforma integrados
 - **[Runtimes integrados](../builtins/README.es.md)** — runtimes LLVM bitcode integrados en el compilador: [`string`](../builtins/string/README.es.md) (string con semántica de valor, gestión automática de memoria), [`mimalloc`](../builtins/mimalloc/README.es.md) (reemplazo transparente de asignador de alto rendimiento) y [`xorstr`](../builtins/xorstr/README.es.md) (cifrado de cadenas en tiempo de compilación con descifrado anti-firma)
@@ -73,27 +73,27 @@ int main(void) {
 }
 ```
 
-> **Nota:** El tipo **`string`** integrado requiere **`-fbuiltin-string`** para archivos `.c`. Se habilita automáticamente para [**archivos `.nc`**](../nc-extension/README.es.md) y en modo **`-fshellcode`**.
+> **Nota:** El tipo **`string`** integrado requiere **`-fbuiltin-string`** para archivos `.c`. Se habilita automáticamente para [**archivos `.nc`**](../nc-extension/README.es.md) y en modo **`-fdyncode`**.
 
 ```bash
 # macOS arm64 / x86_64
-neverc -fshellcode -target arm64-apple-macos hello.c -o hello.bin
-neverc -fshellcode -target x86_64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target x86_64-apple-macos hello.c -o hello.bin
 
 # iOS arm64
-neverc -fshellcode -target arm64-apple-ios hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-ios hello.c -o hello.bin
 
 # Linux x86_64 / arm64
-neverc -fshellcode -target x86_64-linux-gnu hello.c -o hello.bin
-neverc -fshellcode -target aarch64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-gnu hello.c -o hello.bin
 
 # Android arm64 / x86_64
-neverc -fshellcode -target aarch64-linux-android hello.c -o hello.bin
-neverc -fshellcode -target x86_64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-android hello.c -o hello.bin
 
 # Windows x86_64 / arm64
-neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
-neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
 Consulte el **[índice de documentación](../README.es.md)** para diseño detallado, matriz de plataformas, referencia CLI y ejemplos. Ejemplos compilables completos: **[examples](../examples/README.es.md)**.

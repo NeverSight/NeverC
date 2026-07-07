@@ -4,19 +4,19 @@
 
 /* ---- watchdog internals ---- */
 
-#define NEVERC_KRT_WD_MAX_HOOKS 16
+#define NEVERC_KRT_WD_MAX_INTERPOSES 16
 
 struct neverc_krt_watchdog_entry {
-	struct neverc_krt_hook *hook;
-	u32              sealed_orig[NEVERC_KRT_HOOK_MAX_PATCH];
-	u32              sealed_expect[NEVERC_KRT_HOOK_MAX_PATCH];
+	struct neverc_krt_interpose *interpose;
+	u32              sealed_orig[NEVERC_KRT_INTERPOSE_MAX_PATCH];
+	u32              sealed_expect[NEVERC_KRT_INTERPOSE_MAX_PATCH];
 	u32              tramp_crc;
 	int              tramp_len;
 	int              patch_count;
 };
 
 struct neverc_krt_watchdog {
-	struct neverc_krt_watchdog_entry entries[NEVERC_KRT_WD_MAX_HOOKS];
+	struct neverc_krt_watchdog_entry entries[NEVERC_KRT_WD_MAX_INTERPOSES];
 	int                       count;
 	volatile u64              check_count;
 	volatile u64              violation_count;
@@ -211,13 +211,13 @@ int neverc_krt_anti_detect_kprobe_on(void *addr)
 	return 0;
 }
 
-int neverc_krt_anti_detect_hook_on(void *addr)
+int neverc_krt_anti_detect_interpose_on(void *addr)
 {
-	return neverc_krt_anti_detect_hook_ex(addr, (void *)0, 0);
+	return neverc_krt_anti_detect_interpose_ex(addr, (void *)0, 0);
 }
 
-int neverc_krt_anti_detect_hook_ex(void *addr,
-				   struct neverc_krt_hook *own_hooks,
+int neverc_krt_anti_detect_interpose_ex(void *addr,
+				   struct neverc_krt_interpose *own_interposes,
 				   int own_count)
 {
 	u32 insn;
@@ -233,11 +233,11 @@ int neverc_krt_anti_detect_hook_ex(void *addr,
 	if (!is_ldr_x16 && !is_ldr_x16_next)
 		return 0;
 
-	if (own_hooks && own_count > 0) {
+	if (own_interposes && own_count > 0) {
 		int i;
 		for (i = 0; i < own_count; i++) {
-			if (own_hooks[i].active &&
-			    own_hooks[i].target == addr)
+			if (own_interposes[i].active &&
+			    own_interposes[i].target == addr)
 				return 0;
 		}
 	}
@@ -416,18 +416,18 @@ static u32 _neverc_krt_wd_crc32(const void *data, int len)
 	return crc ^ 0xFFFFFFFF;
 }
 
-int neverc_krt_wd_register(struct neverc_krt_hook *h)
+int neverc_krt_wd_register(struct neverc_krt_interpose *h)
 {
 	int idx, i;
 
 	if (!h || !h->active) return -1;
-	if (_neverc_krt_wd.count >= NEVERC_KRT_WD_MAX_HOOKS) return -2;
+	if (_neverc_krt_wd.count >= NEVERC_KRT_WD_MAX_INTERPOSES) return -2;
 
 	if (!_neverc_krt_wd_seal_key)
 		_neverc_krt_wd_seal_key = _neverc_krt_wd_gen_key();
 
 	idx = _neverc_krt_wd.count;
-	_neverc_krt_wd.entries[idx].hook = h;
+	_neverc_krt_wd.entries[idx].interpose = h;
 	_neverc_krt_wd.entries[idx].patch_count = h->patch_count;
 
 	u32 *target = (u32 *)h->target;
@@ -438,12 +438,12 @@ int neverc_krt_wd_register(struct neverc_krt_hook *h)
 		if (neverc_krt_mem_read(&cur, &target[i], 4))
 			cur = h->orig_insns[i];
 		_neverc_krt_wd.entries[idx].sealed_expect[i] =
-			_neverc_krt_wd_seal(cur, i + NEVERC_KRT_HOOK_MAX_PATCH);
+			_neverc_krt_wd_seal(cur, i + NEVERC_KRT_INTERPOSE_MAX_PATCH);
 	}
 
 	if (h->trampoline) {
 		int tlen = 0;
-		while (tlen < NEVERC_KRT_HOOK_TRAMP_CAP) {
+		while (tlen < NEVERC_KRT_INTERPOSE_TRAMP_CAP) {
 			u32 insn;
 			if (neverc_krt_mem_read(&insn, &h->trampoline[tlen], 4))
 				break;
@@ -466,7 +466,7 @@ int neverc_krt_wd_check(void)
 
 	for (i = 0; i < _neverc_krt_wd.count; i++) {
 		struct neverc_krt_watchdog_entry *e = &_neverc_krt_wd.entries[i];
-		struct neverc_krt_hook *h = e->hook;
+		struct neverc_krt_interpose *h = e->interpose;
 
 		if (!h || !h->active) continue;
 
@@ -476,7 +476,7 @@ int neverc_krt_wd_check(void)
 			if (neverc_krt_mem_read(&cur, &target[j], 4))
 				continue;
 			u32 expected = _neverc_krt_wd_unseal(
-				e->sealed_expect[j], j + NEVERC_KRT_HOOK_MAX_PATCH);
+				e->sealed_expect[j], j + NEVERC_KRT_INTERPOSE_MAX_PATCH);
 			if (cur != expected) {
 				violations++;
 				__atomic_fetch_add(&_neverc_krt_wd.violation_count,
@@ -504,17 +504,17 @@ int neverc_krt_wd_repair(void)
 
 	for (i = 0; i < _neverc_krt_wd.count; i++) {
 		struct neverc_krt_watchdog_entry *e = &_neverc_krt_wd.entries[i];
-		struct neverc_krt_hook *h = e->hook;
+		struct neverc_krt_interpose *h = e->interpose;
 
 		if (!h || !h->active) continue;
 
 		u32 *target = (u32 *)h->target;
-		u32 expected[NEVERC_KRT_HOOK_MAX_PATCH];
+		u32 expected[NEVERC_KRT_INTERPOSE_MAX_PATCH];
 		int dirty = 0;
 
 		for (j = 0; j < e->patch_count; j++) {
 			expected[j] = _neverc_krt_wd_unseal(
-				e->sealed_expect[j], j + NEVERC_KRT_HOOK_MAX_PATCH);
+				e->sealed_expect[j], j + NEVERC_KRT_INTERPOSE_MAX_PATCH);
 			u32 cur;
 			if (neverc_krt_mem_read(&cur, &target[j], 4))
 				continue;
@@ -530,11 +530,11 @@ int neverc_krt_wd_repair(void)
 	return repaired;
 }
 
-void neverc_krt_wd_unregister(struct neverc_krt_hook *h)
+void neverc_krt_wd_unregister(struct neverc_krt_interpose *h)
 {
 	int i;
 	for (i = 0; i < _neverc_krt_wd.count; i++) {
-		if (_neverc_krt_wd.entries[i].hook == h) {
+		if (_neverc_krt_wd.entries[i].interpose == h) {
 			_neverc_krt_wd.entries[i] =
 				_neverc_krt_wd.entries[--_neverc_krt_wd.count];
 			return;

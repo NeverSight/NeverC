@@ -27,7 +27,7 @@ void nvk_gen_layout_offsets(void)
 	NVK_EMIT(PROC_OPS_SIZE, sizeof(struct proc_ops));
 	NVK_EMIT(SKB_DATA, offsetof(struct sk_buff, data));
 	NVK_EMIT(SKB_HEAD, offsetof(struct sk_buff, head));
-	NVK_EMIT(NF_HOOK_OPS_SIZE, sizeof(struct nf_hook_ops));
+	NVK_EMIT(NF_INTERPOSE_OPS_SIZE, sizeof(struct nf_interpose_ops));
 	NVK_EMIT(FOPS_SIZE, sizeof(struct file_operations));
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 	NVK_EMIT(FOPS_MMAP_PREPARE, offsetof(struct file_operations, mmap_prepare));

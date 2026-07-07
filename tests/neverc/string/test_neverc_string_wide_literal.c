@@ -20,7 +20,7 @@
 //      (CreateFileW, MessageBoxW, ...).  Pair every non-NULL return
 //      with `neverc_string_wfree(buf)` to release; the buffer is sized
 //      `(unit_count + 1) * 2` bytes and routes through
-//      `NEVERC_STRING_ALLOC` so shellcode mode reuses the arena
+//      `NEVERC_STRING_ALLOC` so dyncode mode reuses the arena
 //      without a separate whitelist entry.
 //
 // Loader runs `main` and prints `ALL PASSED` on success; any failure
@@ -367,7 +367,7 @@ int main(void) {
     /* --- 24. wfree absorbs every pointer type via void * --------------- */
     /*        (uint16, uint32, wchar_t).  The free helper takes void *,   */
     /*        so any object pointer implicitly converts and is released   */
-    /*        through the same allocator hook.                            */
+    /*        through the same allocator callback.                         */
     {
         __UINT16_TYPE__ *w16 = u8"abc".to_utf16_owned();
         __UINT32_TYPE__ *w32 = u8"abc".to_utf32_owned();

@@ -63,26 +63,26 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 |-------|---------|-------|
 | `-fno-builtin` | يكبت mimalloc | لا سيناريو تجاوز CRT |
 | `-mkernel` | يكبت mimalloc | لا كومة مساحة المستخدم في النواة |
-| `-fshellcode-mode` | يكبت mimalloc | يُستبدل بـ HeapArenaPass (قائم على الساحة) |
+| `-fdyncode-mode` | يكبت mimalloc | يُستبدل بـ HeapArenaPass (قائم على الساحة) |
 | `-ffreestanding` | يكبت mimalloc | لا libc للتجاوز |
 
 المكوّن المدمج `string` له منطق كبت خاص به (إعادة كتابة الساحة في خط أنابيب الشلكود تستبدل تخصيص الكومة).
 
 ### HeapArenaPass (تخصيص كومة الشلكود)
 
-عند تفعيل `-fshellcode-mode`، يُكبت `mimalloc` لكن استدعاءات `malloc`/`free`/`calloc`/`realloc` تُعاد كتابتها تلقائياً بواسطة `HeapArenaPass` (مفعّل افتراضياً). يستخدم هذا التمرير استراتيجية هجينة:
+عند تفعيل `-fdyncode-mode`، يُكبت `mimalloc` لكن استدعاءات `malloc`/`free`/`calloc`/`realloc` تُعاد كتابتها تلقائياً بواسطة `HeapArenaPass` (مفعّل افتراضياً). يستخدم هذا التمرير استراتيجية هجينة:
 
 - **التخصيصات الصغيرة (≤ 64 كيلوبايت)**: تُخدم من ساحة مقيمة على المكدس مشتركة مع وقت تشغيل `string` المدمج (مخصص bump + إعادة استخدام قائمة حرة).
 - **التخصيصات الكبيرة (> 64 كيلوبايت) أو نفاد ساحة**: التراجع إلى مخصص نظام التشغيل:
-  - **Windows**: `malloc`/`free` تُحلّ من `msvcrt.dll` عبر PEB walk (`-mshellcode-win-peb-import`).
-  - **Linux / macOS / Android**: `mmap`/`munmap` تُضمّن كاستدعاءات نظام أصلية (`-mshellcode-syscall`).
+  - **Windows**: `malloc`/`free` تُحلّ من `msvcrt.dll` عبر PEB walk (`-mdyncode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap` تُضمّن كاستدعاءات نظام أصلية (`-mdyncode-syscall`).
   - **لا تمرير استيراد مفعّل**: ساحة فقط؛ نفاد الذاكرة يُرجع `NULL`.
 
 التحكم عبر أعلام المشغّل:
 
 ```bash
-neverc -fshellcode test.c -o test.bin                     # HeapArenaPass مفعّل (افتراضي)
-neverc -fshellcode -fno-shellcode-heap-arena test.c       # HeapArenaPass معطّل (السلوك الأصلي)
+neverc -fdyncode test.c -o test.bin                     # HeapArenaPass مفعّل (افتراضي)
+neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass معطّل (السلوك الأصلي)
 ```
 
 ---

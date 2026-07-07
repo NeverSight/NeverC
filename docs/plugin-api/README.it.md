@@ -23,7 +23,7 @@ static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
 }
 
 static void registerPasses(const NevercHostAPI *API, void *Reg) {
-    API->RegisterModulePass(Reg, NEVERC_HOOK_PRE_OPT, myPass, NULL, "my-pass");
+    API->RegisterModulePass(Reg, NEVERC_INTERPOSE_PRE_OPT, myPass, NULL, "my-pass");
 }
 
 NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
@@ -86,15 +86,15 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 
 ## 5. Punti di aggancio
 
-| Hook | Livello | Descrizione |
+| Interpose | Livello | Descrizione |
 |------|---------|-------------|
-| `NEVERC_HOOK_PRE_OPT` | IR | Prima dell'ottimizzazione LLVM |
-| `NEVERC_HOOK_POST_OPT` | IR | Dopo l'ottimizzazione LLVM |
-| `NEVERC_HOOK_PIPELINE_START` | IR | Inizio della pipeline |
-| `NEVERC_HOOK_PIPELINE_LAST` | IR | Fine della pipeline IR |
-| `NEVERC_HOOK_SC_*` | IR/MIR/Binario | Flusso shellcode |
-| `NEVERC_HOOK_LTO_*` | IR | Flusso LTO |
-| `NEVERC_HOOK_LINK_*` | Linker | Flusso del linker |
+| `NEVERC_INTERPOSE_PRE_OPT` | IR | Prima dell'ottimizzazione LLVM |
+| `NEVERC_INTERPOSE_POST_OPT` | IR | Dopo l'ottimizzazione LLVM |
+| `NEVERC_INTERPOSE_PIPELINE_START` | IR | Inizio della pipeline |
+| `NEVERC_INTERPOSE_PIPELINE_LAST` | IR | Fine della pipeline IR |
+| `NEVERC_INTERPOSE_SC_*` | IR/MIR/Binario | Flusso dyncode |
+| `NEVERC_INTERPOSE_LTO_*` | IR | Flusso LTO |
+| `NEVERC_INTERPOSE_LINK_*` | Linker | Flusso del linker |
 
 ## 6. Tipi di handle opachi
 

@@ -23,7 +23,7 @@ static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
 }
 
 static void registerPasses(const NevercHostAPI *API, void *Reg) {
-    API->RegisterModulePass(Reg, NEVERC_HOOK_PRE_OPT, myPass, NULL, "my-pass");
+    API->RegisterModulePass(Reg, NEVERC_INTERPOSE_PRE_OPT, myPass, NULL, "my-pass");
 }
 
 NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
@@ -124,7 +124,7 @@ Returns non-zero if the module was modified.
 
 Register with:
 ```c
-API->RegisterModulePass(Registrar, hook, callback, userData, "pass-name");
+API->RegisterModulePass(Registrar, interpose, callback, userData, "pass-name");
 ```
 
 ### 4.2 Machine Pass (MIR)
@@ -139,12 +139,12 @@ typedef int (*NevercMachinePassFn)(NevercMachineFuncRef MF,
 
 Register with:
 ```c
-API->RegisterMachinePass(Registrar, hook, callback, userData, "pass-name");
+API->RegisterMachinePass(Registrar, interpose, callback, userData, "pass-name");
 ```
 
 ### 4.3 Binary Pass
 
-Operates on raw bytes (shellcode extraction, binary patching).
+Operates on raw bytes (dyncode extraction, binary patching).
 
 ```c
 typedef int (*NevercBinaryPassFn)(uint8_t **Data, uint64_t *Len,
@@ -157,7 +157,7 @@ Can resize the buffer via `API->BinaryResize()`.
 
 Register with:
 ```c
-API->RegisterBinaryPass(Registrar, hook, callback, userData, "pass-name");
+API->RegisterBinaryPass(Registrar, interpose, callback, userData, "pass-name");
 ```
 
 ### 4.4 Linker Pass
@@ -170,54 +170,54 @@ typedef int (*NevercLinkerPassFn)(const NevercHostAPI *API, void *UserData);
 
 Register with:
 ```c
-API->RegisterLinkerPass(Registrar, hook, callback, userData, "pass-name");
+API->RegisterLinkerPass(Registrar, interpose, callback, userData, "pass-name");
 ```
 
-## 5. Hook Points
+## 5. Interpose Points
 
-Hooks determine **when** a pass runs in the pipeline. Each hook fires exactly once at its designated moment.
+Interposes determine **when** a pass runs in the pipeline. Each interpose fires exactly once at its designated moment.
 
 ### Normal Flow
 
-| Hook | Level | Description |
+| Interpose | Level | Description |
 |------|-------|-------------|
-| `NEVERC_HOOK_PRE_OPT` | IR | Before LLVM optimization passes |
-| `NEVERC_HOOK_POST_OPT` | IR | After LLVM optimization passes |
-| `NEVERC_HOOK_PIPELINE_START` | IR | Very beginning of the pipeline |
-| `NEVERC_HOOK_PIPELINE_LAST` | IR | Very end of the IR pipeline |
-| `NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT` | MIR | Before pre-emit machine passes |
-| `NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR` | MIR | After all machine passes |
+| `NEVERC_INTERPOSE_PRE_OPT` | IR | Before LLVM optimization passes |
+| `NEVERC_INTERPOSE_POST_OPT` | IR | After LLVM optimization passes |
+| `NEVERC_INTERPOSE_PIPELINE_START` | IR | Very beginning of the pipeline |
+| `NEVERC_INTERPOSE_PIPELINE_LAST` | IR | Very end of the IR pipeline |
+| `NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT` | MIR | Before pre-emit machine passes |
+| `NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR` | MIR | After all machine passes |
 
-### Shellcode Flow
+### DynCode Flow
 
-| Hook | Level | Description |
+| Interpose | Level | Description |
 |------|-------|-------------|
-| `NEVERC_HOOK_SC_BEFORE_PREP` | IR | Before shellcode IR preparation |
-| `NEVERC_HOOK_SC_AFTER_PREP` | IR | After PIC preparation |
-| `NEVERC_HOOK_SC_BEFORE_INLINING` | IR | Before always-inliner |
-| `NEVERC_HOOK_SC_AFTER_INLINING` | IR | After inlining + stackify |
-| `NEVERC_HOOK_SC_AFTER_STACKIFY` | IR | After stack transformation |
-| `NEVERC_HOOK_SC_AFTER_FINAL_IR` | IR | Final IR before code generation |
-| `NEVERC_HOOK_SC_BEFORE_PREEMIT` | MIR | Before MIR preparation |
-| `NEVERC_HOOK_SC_AFTER_PREEMIT` | MIR | After MIR preparation |
-| `NEVERC_HOOK_SC_AFTER_FINAL_MIR` | MIR | Final MIR before emission |
-| `NEVERC_HOOK_SC_POST_EXTRACT` | Binary | After byte extraction |
-| `NEVERC_HOOK_SC_POST_FINALIZE` | Binary | After all finalization |
+| `NEVERC_INTERPOSE_SC_BEFORE_PREP` | IR | Before dyncode IR preparation |
+| `NEVERC_INTERPOSE_SC_AFTER_PREP` | IR | After PIC preparation |
+| `NEVERC_INTERPOSE_SC_BEFORE_INLINING` | IR | Before always-inliner |
+| `NEVERC_INTERPOSE_SC_AFTER_INLINING` | IR | After inlining + stackify |
+| `NEVERC_INTERPOSE_SC_AFTER_STACKIFY` | IR | After stack transformation |
+| `NEVERC_INTERPOSE_SC_AFTER_FINAL_IR` | IR | Final IR before code generation |
+| `NEVERC_INTERPOSE_SC_BEFORE_PREEMIT` | MIR | Before MIR preparation |
+| `NEVERC_INTERPOSE_SC_AFTER_PREEMIT` | MIR | After MIR preparation |
+| `NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR` | MIR | Final MIR before emission |
+| `NEVERC_INTERPOSE_SC_POST_EXTRACT` | Binary | After byte extraction |
+| `NEVERC_INTERPOSE_SC_POST_FINALIZE` | Binary | After all finalization |
 
 ### LTO Flow
 
-| Hook | Level | Description |
+| Interpose | Level | Description |
 |------|-------|-------------|
-| `NEVERC_HOOK_LTO_PRE_OPT` | IR | Before LTO optimization |
-| `NEVERC_HOOK_LTO_POST_OPT` | IR | After LTO optimization |
+| `NEVERC_INTERPOSE_LTO_PRE_OPT` | IR | Before LTO optimization |
+| `NEVERC_INTERPOSE_LTO_POST_OPT` | IR | After LTO optimization |
 
 ### Linker Flow
 
-| Hook | Level | Description |
+| Interpose | Level | Description |
 |------|-------|-------------|
-| `NEVERC_HOOK_LINK_PRE_LAYOUT` | Linker | Before section layout |
-| `NEVERC_HOOK_LINK_POST_LAYOUT` | Linker | After section layout |
-| `NEVERC_HOOK_LINK_POST_EMIT` | Linker | After binary emission |
+| `NEVERC_INTERPOSE_LINK_PRE_LAYOUT` | Linker | Before section layout |
+| `NEVERC_INTERPOSE_LINK_POST_LAYOUT` | Linker | After section layout |
+| `NEVERC_INTERPOSE_LINK_POST_EMIT` | Linker | After binary emission |
 
 ## 6. Opaque Handle Types
 
@@ -377,8 +377,8 @@ int64_t limit = API->PluginGetArgInt64("max-fns", -1);   // default -1
 | `NEVERC_VALUESET_NEW(api, cap)` | Create ValueSet with initial capacity |
 | `NEVERC_API_HAS(api, field)` | Check vtable field existence (layout only) |
 | `NEVERC_API_FN(api, field)` | Check vtable entry existence + non-NULL |
-| `NEVERC_HOOK_UD(hook)` | Cast hook enum to `void*` UserData |
-| `NEVERC_HOOK_NAME(api, ud)` | Resolve hook name from UserData |
+| `NEVERC_INTERPOSE_UD(interpose)` | Cast interpose enum to `void*` UserData |
+| `NEVERC_INTERPOSE_NAME(api, ud)` | Resolve interpose name from UserData |
 | `NEVERC_STR_OR(s, def)` | Return `s` if non-NULL and non-empty, else `def` |
 | `NEVERC_NPOS` | Sentinel value for "not found" (`(uint64_t)-1`) |
 | `NEVERC_MIN(a, b)` / `NEVERC_MAX(a, b)` | Compile-time min/max |
@@ -416,7 +416,7 @@ pluginsdk/
 |---|---|---|
 | **CrtShimPlugin.c** | Minimal | Zero CRT dependency — routes all memory, I/O, and string ops through the host vtable. Proves plugins can be built with _any_ CRT (or none) and remain compatible. |
 | **BenchPlugin.c** | Low | HostAPI throughput micro-benchmarks: heap/arena allocator, StrFormat, StrMap, DynArray, and vtable call overhead. Quantifies API performance. |
-| **ExamplePlugin.c** | Comprehensive | Full API coverage: IR reading/mutation, MIR analysis, binary patching, LTO/Linker hooks, use-def chains, dominator trees, loop info, SCEV, call graph, function cloning, arena collections, and more. |
+| **ExamplePlugin.c** | Comprehensive | Full API coverage: IR reading/mutation, MIR analysis, binary patching, LTO/Linker interposes, use-def chains, dominator trees, loop info, SCEV, call graph, function cloning, arena collections, and more. |
 | **CustomCallConvPlugin.c** | Advanced | Data-driven custom calling conventions: assigns arbitrary physical registers to function arguments/returns, with LTO support. The backend executes the spec — no `.td`/`.inc` changes needed. |
 
 ## 14. Custom Calling Conventions

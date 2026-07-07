@@ -23,7 +23,7 @@ static int myPass(NevercModuleRef M, const NevercHostAPI *API, void *UD) {
 }
 
 static void registerPasses(const NevercHostAPI *API, void *Reg) {
-    API->RegisterModulePass(Reg, NEVERC_HOOK_PRE_OPT, myPass, NULL, "my-pass");
+    API->RegisterModulePass(Reg, NEVERC_INTERPOSE_PRE_OPT, myPass, NULL, "my-pass");
 }
 
 NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void) {
@@ -94,16 +94,16 @@ NEVERC_EXPORT NevercPluginInfo nevercGetPluginInfo(void);
 
 | 훅 | 레벨 | 설명 |
 |----|------|------|
-| `NEVERC_HOOK_PRE_OPT` | IR | LLVM 최적화 패스 전 |
-| `NEVERC_HOOK_POST_OPT` | IR | LLVM 최적화 패스 후 |
-| `NEVERC_HOOK_PIPELINE_START` | IR | 파이프라인 시작 |
-| `NEVERC_HOOK_PIPELINE_LAST` | IR | IR 파이프라인 끝 |
-| `NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT` | MIR | pre-emit 머신 패스 전 |
-| `NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR` | MIR | 모든 머신 패스 후 |
+| `NEVERC_INTERPOSE_PRE_OPT` | IR | LLVM 최적화 패스 전 |
+| `NEVERC_INTERPOSE_POST_OPT` | IR | LLVM 최적화 패스 후 |
+| `NEVERC_INTERPOSE_PIPELINE_START` | IR | 파이프라인 시작 |
+| `NEVERC_INTERPOSE_PIPELINE_LAST` | IR | IR 파이프라인 끝 |
+| `NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT` | MIR | pre-emit 머신 패스 전 |
+| `NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR` | MIR | 모든 머신 패스 후 |
 
 ### 쉘코드 / LTO / 링커 흐름
 
-쉘코드 훅은 `NEVERC_HOOK_SC_*`, LTO 훅은 `NEVERC_HOOK_LTO_*`, 링커 훅은 `NEVERC_HOOK_LINK_*` 접두사를 사용합니다.
+쉘코드 훅은 `NEVERC_INTERPOSE_SC_*`, LTO 훅은 `NEVERC_INTERPOSE_LTO_*`, 링커 훅은 `NEVERC_INTERPOSE_LINK_*` 접두사를 사용합니다.
 
 ## 6. 불투명 핸들 타입
 

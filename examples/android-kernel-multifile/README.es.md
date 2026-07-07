@@ -6,7 +6,7 @@ Modulo kernel NeverC multi-archivo. Puntos clave:
 
 - **Bootstrap unico**: `NEVERC_KRT_BOOTSTRAP()` solo se llama una vez en `module_init`
 - **Estado compartido**: el compilador promueve todo el estado `neverc_krt_*` a linkage `weak_odr`, todos los `.c` comparten el mismo resolver, cache y estado
-- **Arquitectura dividida**: `main.c` (init/exit), `hooks.c` (logica de hook), `utils.c` (helpers)
+- **Arquitectura dividida**: `main.c` (init/exit), `interposes.c` (logica de interpose), `utils.c` (helpers)
 
 ## Compilar
 

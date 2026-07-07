@@ -1,12 +1,12 @@
-/*===---- stdlib.h - NeverC shellcode-oriented stdlib.h shim --------------===*\
+/*===---- stdlib.h - NeverC dyncode-oriented stdlib.h shim --------------===*\
 |*
-|* Forward to the system `<stdlib.h>` in normal builds.  In shellcode
-|* mode (`__NEVERC_SHELLCODE__`) expose `exit` (lowered to the target's
+|* Forward to the system `<stdlib.h>` in normal builds.  In dyncode
+|* mode (`__NEVERC_DYNCODE__`) expose `exit` (lowered to the target's
 |* native exit syscall or ExitProcess via PEB) plus the integer utility
 |* subset that MemIntrinPass can lower to inline helpers.
 |*
 |* Allocation primitives (`malloc` / `free` / `calloc` / `realloc`)
-|* are not provided; shellcode has no runtime heap.  Use `mmap` on
+|* are not provided; dyncode has no runtime heap.  Use `mmap` on
 |* POSIX targets or `VirtualAlloc` on Windows targets instead.
 |*
 \*===----------------------------------------------------------------------===*/
@@ -14,7 +14,7 @@
 #ifndef _NEVERC_STDLIB_SHIM_H_
 #define _NEVERC_STDLIB_SHIM_H_
 
-#if !defined(__NEVERC_SHELLCODE__)
+#if !defined(__NEVERC_DYNCODE__)
 #include_next <stdlib.h>
 #else
 
@@ -46,5 +46,5 @@ long long llabs(long long x);
 }
 #endif
 
-#endif /* __NEVERC_SHELLCODE__ */
+#endif /* __NEVERC_DYNCODE__ */
 #endif /* _NEVERC_STDLIB_SHIM_H_ */

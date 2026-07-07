@@ -11,9 +11,9 @@
 #include <linux/types.h>
 #include <linux/compiler.h>
 #include <linux/sched.h>
-#include <nvk_hook_internal.h>
+#include <nvk_interpose_internal.h>
 
-/* ---- ARM64 instruction constants (used by nvk_hook.c, nvk_anti.c) ---- */
+/* ---- ARM64 instruction constants (used by nvk_interpose.c, nvk_anti.c) ---- */
 
 #define NEVERC_KRT_A64_NOP       0xD503201FU
 #define NEVERC_KRT_A64_BTI_C     0xD503245FU
@@ -24,10 +24,10 @@
 #define NEVERC_KRT_A64_RET_X16   0xD65F0200U
 #define NEVERC_KRT_A64_RET_X17   0xD65F0220U
 
-/* ---- Hook engine constants (used by nvk_hook.c, nvk_anti.c) ---- */
+/* ---- Interpose engine constants (used by nvk_interpose.c, nvk_anti.c) ---- */
 
-#define NEVERC_KRT_HOOK_TRAMP_CAP  64
-#define NEVERC_KRT_HOOK_STUB_CAP  128
+#define NEVERC_KRT_INTERPOSE_TRAMP_CAP  64
+#define NEVERC_KRT_INTERPOSE_STUB_CAP  128
 
 /* ---- Shared typedefs (used across multiple .c files) ---- */
 
@@ -75,7 +75,7 @@ extern unsigned long _neverc_krt_off_uid;
 
 volatile int *_neverc_krt_se_probe_state(void *se_state);
 
-/* ---- nvk_hook.c ---- */
+/* ---- nvk_interpose.c ---- */
 
 int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
 

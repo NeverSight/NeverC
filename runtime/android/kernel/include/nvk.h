@@ -3,7 +3,7 @@
 #define NEVERC_KRT_H
 
 #include <nvkmod.h>
-#include <nvk_hook_internal.h>
+#include <nvk_interpose_internal.h>
 #include <nvk_mem.h>
 #include <nvk_syscall.h>
 #include <nvk_process.h>
@@ -40,7 +40,7 @@
 #define NEVERC_KRT_SUB_SELINUX   7
 #define NEVERC_KRT_SUB_THREAD    8
 #define NEVERC_KRT_SUB_NETLINK   9
-#define NEVERC_KRT_SUB_HOOK     10
+#define NEVERC_KRT_SUB_INTERPOSE     10
 #define NEVERC_KRT_SUB_SYSCALL  11
 #define NEVERC_KRT_SUB_KSYMS    12
 #define NEVERC_KRT_SUB_INJECT   13
@@ -62,31 +62,31 @@ void neverc_krt_cleanup_all(void);
 int neverc_krt_init_ftrace(void);
 const struct neverc_krt_state *neverc_krt_get_state(void);
 
-/* ---- Symbol-name hook helpers ---- */
+/* ---- Symbol-name interpose helpers ---- */
 
 /*
- * Internal: called by the neverc_krt_hook_*_by_sym() macros only.
+ * Internal: called by the neverc_krt_interpose_*_by_sym() macros only.
  * NC_XORSTR() must expand at the call site, so these cannot be static.
  * Do NOT call directly — use the macros below.
  */
-int _neverc_krt_hook_by_sym(struct neverc_krt_hook *h, const char *sym_name,
+int _neverc_krt_interpose_by_sym(struct neverc_krt_interpose *h, const char *sym_name,
 			    void *replace, void **orig);
-int _neverc_krt_hook_ctx_by_sym(struct neverc_krt_hook_ctx *h,
+int _neverc_krt_interpose_ctx_by_sym(struct neverc_krt_interpose_ctx *h,
 				const char *sym_name,
 				neverc_krt_ctx_handler_t handler,
 				void **call_orig);
-int _neverc_krt_hook_auto_by_sym(struct neverc_krt_hook *h,
+int _neverc_krt_interpose_auto_by_sym(struct neverc_krt_interpose *h,
 				 const char *sym_name,
 				 void *replace, void **orig,
-				 struct neverc_krt_ftrace_hook *ft);
+				 struct neverc_krt_ftrace_interpose *ft);
 
-#define neverc_krt_hook_by_sym(h, sym, replace, orig) \
-	_neverc_krt_hook_by_sym((h), NC_XORSTR(sym), (replace), (orig))
+#define neverc_krt_interpose_by_sym(h, sym, replace, orig) \
+	_neverc_krt_interpose_by_sym((h), NC_XORSTR(sym), (replace), (orig))
 
-#define neverc_krt_hook_ctx_by_sym(h, sym, handler, call_orig) \
-	_neverc_krt_hook_ctx_by_sym((h), NC_XORSTR(sym), (handler), (call_orig))
+#define neverc_krt_interpose_ctx_by_sym(h, sym, handler, call_orig) \
+	_neverc_krt_interpose_ctx_by_sym((h), NC_XORSTR(sym), (handler), (call_orig))
 
-#define neverc_krt_hook_auto_by_sym(h, sym, replace, orig, ft) \
-	_neverc_krt_hook_auto_by_sym((h), NC_XORSTR(sym), (replace), (orig), (ft))
+#define neverc_krt_interpose_auto_by_sym(h, sym, replace, orig, ft) \
+	_neverc_krt_interpose_auto_by_sym((h), NC_XORSTR(sym), (replace), (orig), (ft))
 
 #endif /* NEVERC_KRT_H */

@@ -50,8 +50,8 @@ NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 
 |------|------|---------|
 | [커널 Hello](../../examples/android-kernel-hello/README.ko.md) | 최소 `.ko` 모듈 | kprobe 기반 kallsyms 부트스트랩, 최소 insmod 검증 |
 | [커널 드라이버 템플릿](../../examples/android-kernel-driver/README.ko.md) | 동적 심볼 해석 템플릿 | `kallsyms_lookup_name`, GKI 안정 ABI, 5.10–6.12 |
-| [커널 인라인 훅](../../examples/android-kernel-inline-hook/README.ko.md) | `do_faccessat` 인라인 훅 | BTI/PAC 안전 패치, 컨텍스트 훅 모드, PC 상대 재배치 |
-| [커널 Syscall 훅](../../examples/android-kernel-syscall-hook/README.ko.md) | syscall 테이블 / inline / context hook | `sys_call_table` 교체, 인라인 훅, 컨텍스트 훅 |
+| [커널 인라인 훅](../../examples/android-kernel-inline-interpose/README.ko.md) | `do_faccessat` 인라인 훅 | BTI/PAC 안전 패치, 컨텍스트 훅 모드, PC 상대 재배치 |
+| [커널 Syscall 훅](../../examples/android-kernel-syscall-interpose/README.ko.md) | syscall 테이블 / inline / context interpose | `sys_call_table` 교체, 인라인 훅, 컨텍스트 훅 |
 | [커널 스텔스](../../examples/android-kernel-stealth/README.ko.md) | 모듈 숨김 | list/sysfs/proc 숨김, root 부여, SELinux permissive |
 | [커널 Full SDK](../../examples/android-kernel-full/README.ko.md) | 완전 SDK 통합 | Netlink IPC, 훅, 자격 증명, 숨김, SELinux, VMA, 파일 I/O |
 | [커널 Chardev](../../examples/android-kernel-chardev/README.ko.md) | 문자 장치 + ioctl | `misc_register`, ioctl 디스패치, `/proc` seq_file |

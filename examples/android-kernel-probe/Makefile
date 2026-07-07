@@ -1,6 +1,6 @@
 # Android GKI kernel probe demo (.ko)
 #
-# Demonstrates neverc_krt_probe_register — arbitrary-point hook with ctx mode.
+# Demonstrates neverc_krt_probe_register — arbitrary-point interpose with ctx mode.
 #
 # Usage:
 #   neverc make                   (default KERNEL=510)

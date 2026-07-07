@@ -2,7 +2,7 @@
 
 [← NeverC project](../README.md)
 
-> Same locale: use the language bar above; sub-pages (shellcode guide) are linked in that language from this index.
+> Same locale: use the language bar above; sub-pages (dyncode guide) are linked in that language from this index.
 
 # NeverC Documentation
 
@@ -10,24 +10,24 @@ Design notes, API reference, and guides for every NeverC subsystem.
 
 ---
 
-## Shellcode Compiler
+## DynCode Compiler
 
-The shellcode compilation pipeline is NeverC's primary research focus. For architecture, CLI options, platform matrix, and examples, see:
+The dyncode compilation pipeline is NeverC's primary research focus. For architecture, CLI options, platform matrix, and examples, see:
 
-**[Shellcode Compiler →](shellcode-compiler/README.md)**
+**[DynCode Compiler →](dyncode-compiler/README.md)**
 
 | Document | Description |
 |----------|-------------|
-| [README](shellcode-compiler/README.md) | Overview, quick start, supported targets |
-| [Pipeline & PIC](shellcode-compiler/pipeline-and-pic/README.md) | IR → object → extraction design |
-| [IR Pass Design](shellcode-compiler/ir-pass-design/README.md) | Rationale for each IR pass |
-| [MIR Pass Design](shellcode-compiler/mir-pass-design/README.md) | Backend MIR passes |
-| [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.md) | Ring-0 compilation |
-| [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.md) | `TargetDesc` and extractors |
-| [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.md) | Adding new targets |
-| [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.md) | ARM64 instructions from a shellcode perspective |
-| [Roadmap](shellcode-compiler/roadmap/README.md) | Planned work |
-| [Progress](shellcode-compiler/progress/README.md) | Implementation status |
+| [README](dyncode-compiler/README.md) | Overview, quick start, supported targets |
+| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic/README.md) | IR → object → extraction design |
+| [IR Pass Design](dyncode-compiler/ir-pass-design/README.md) | Rationale for each IR pass |
+| [MIR Pass Design](dyncode-compiler/mir-pass-design/README.md) | Backend MIR passes |
+| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode/README.md) | Ring-0 compilation |
+| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture/README.md) | `TargetDesc` and extractors |
+| [Platform Extension Guide](dyncode-compiler/platform-extension-guide/README.md) | Adding new targets |
+| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial/README.md) | ARM64 instructions from a dyncode perspective |
+| [Roadmap](dyncode-compiler/roadmap/README.md) | Planned work |
+| [Progress](dyncode-compiler/progress/README.md) | Implementation status |
 
 ---
 
@@ -55,7 +55,7 @@ NeverC extends standard C with opt-in built-in runtimes embedded as LLVM bitcode
 
 ## Plugin API
 
-NeverC provides a pure C ABI for out-of-tree pass plugins. A plugin is a shared library (`.dll` / `.so` / `.dylib`) that registers custom passes at designated pipeline hook points. The plugin compiles against a single header with zero LLVM or CRT dependencies.
+NeverC provides a pure C ABI for out-of-tree pass plugins. A plugin is a shared library (`.dll` / `.so` / `.dylib`) that registers custom passes at designated pipeline extension points. The plugin compiles against a single header with zero LLVM or CRT dependencies.
 
 **[Plugin API →](plugin-api/README.md)**
 
@@ -72,7 +72,7 @@ Major planned directions for the NeverC project: standard library, EVM smart con
 | Standard Library (`std`) | Go-style batteries-included packages: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync`, and more |
 | Obfuscation Plugin Suite (`neverc-obfuscation`) | First-party VM, MBA, control flow flattening, polymorphic engine, and anti-tamper plugins |
 | UI Component Library (`neverc-ui`) | Qt-inspired cross-platform UI with HTML/JS/CSS renderer, drag-and-drop designer, AI-native workflow |
-| IDE & Language Tooling (`neverc-ide`) | VSCode extension + standalone IDE for `.nc` files with IntelliSense, debugging, and shellcode pipeline visualization |
+| IDE & Language Tooling (`neverc-ide`) | VSCode extension + standalone IDE for `.nc` files with IntelliSense, debugging, and dyncode pipeline visualization |
 | EVM Smart Contracts | Compile C to EVM bytecode — write smart contracts in C instead of Solidity |
 | Solana eBPF | Compile C to Solana eBPF bytecode — on-chain program development in C |
 

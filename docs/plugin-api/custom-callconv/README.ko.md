@@ -88,7 +88,7 @@ int msfunc(int a) { return a; }
 
 ## LTO 지원
 
-플러그인은 `NEVERC_HOOK_POST_OPT`와 `NEVERC_HOOK_LTO_POST_OPT` 모두에 등록됩니다. LTO로 번역 단위가 병합된 후에도 커스텀 규약을 적용할 수 있습니다.
+플러그인은 `NEVERC_INTERPOSE_POST_OPT`와 `NEVERC_INTERPOSE_LTO_POST_OPT` 모두에 등록됩니다. LTO로 번역 단위가 병합된 후에도 커스텀 규약을 적용할 수 있습니다.
 
 ## 플러그인 API
 

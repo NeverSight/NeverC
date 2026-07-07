@@ -176,7 +176,7 @@ static inline NevercArenaRef wrapArena(ArenaImpl *A) {
 //  Shared state -- defined in HostAPIBridge.cpp
 // ===----------------------------------------------------------------------===
 
-extern bool gShellcodeModeEnabled;
+extern bool gDynCodeModeEnabled;
 
 // ===----------------------------------------------------------------------===
 //  Shared bridge functions -- defined in HostAPIBridge.cpp, used across files

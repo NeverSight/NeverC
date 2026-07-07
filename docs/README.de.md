@@ -2,7 +2,7 @@
 
 [← NeverC-Projekt](i18n/README.de.md)
 
-> **Tip:** Use the language bar above; links on this page point to the same locale (shellcode README and breadcrumbs).
+> **Tip:** Use the language bar above; links on this page point to the same locale (dyncode README and breadcrumbs).
 
 # NeverC-Dokumentation
 
@@ -10,24 +10,24 @@ Designnotizen, API-Referenz und Leitfäden für jedes NeverC-Subsystem.
 
 ---
 
-## Shellcode-Compiler
+## DynCode-Compiler
 
-Die Shellcode-Kompilierungspipeline ist NeverCs Hauptforschungsschwerpunkt. Architektur, CLI-Optionen, Plattformmatrix und Beispiele:
+Die DynCode-Kompilierungspipeline ist NeverCs Hauptforschungsschwerpunkt. Architektur, CLI-Optionen, Plattformmatrix und Beispiele:
 
-**[Shellcode-Compiler →](shellcode-compiler/README.de.md)**
+**[DynCode-Compiler →](dyncode-compiler/README.de.md)**
 
 | Dokument | Beschreibung |
 |----------|--------------|
-| [README](shellcode-compiler/README.de.md) | Überblick, Schnellstart, unterstützte Ziele |
-| [Pipeline & PIC](shellcode-compiler/pipeline-and-pic/README.de.md) | Design IR → Objekt → Extraktion |
-| [IR Pass Design](shellcode-compiler/ir-pass-design/README.de.md) | Begründung jeder IR-Pass |
-| [MIR Pass Design](shellcode-compiler/mir-pass-design/README.de.md) | Backend-MIR-Passes |
-| [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.de.md) | Ring-0-Kompilierung |
-| [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.de.md) | `TargetDesc` und Extraktoren |
-| [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.de.md) | Neue Plattform hinzufügen |
-| [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.de.md) | ARM64-Befehle aus Shellcode-Perspektive |
-| [Roadmap](shellcode-compiler/roadmap/README.de.md) | Geplante Arbeit |
-| [Progress](shellcode-compiler/progress/README.de.md) | Implementierungsstand |
+| [README](dyncode-compiler/README.de.md) | Überblick, Schnellstart, unterstützte Ziele |
+| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic/README.de.md) | Design IR → Objekt → Extraktion |
+| [IR Pass Design](dyncode-compiler/ir-pass-design/README.de.md) | Begründung jeder IR-Pass |
+| [MIR Pass Design](dyncode-compiler/mir-pass-design/README.de.md) | Backend-MIR-Passes |
+| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode/README.de.md) | Ring-0-Kompilierung |
+| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture/README.de.md) | `TargetDesc` und Extraktoren |
+| [Platform Extension Guide](dyncode-compiler/platform-extension-guide/README.de.md) | Neue Plattform hinzufügen |
+| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial/README.de.md) | ARM64-Befehle aus DynCode-Perspektive |
+| [Roadmap](dyncode-compiler/roadmap/README.de.md) | Geplante Arbeit |
+| [Progress](dyncode-compiler/progress/README.de.md) | Implementierungsstand |
 
 ---
 
@@ -55,7 +55,7 @@ NeverC erweitert Standard-C mit integrierten Laufzeiten als LLVM-Bitcode. Jede w
 
 ## Plugin-API
 
-NeverC bietet eine reine C-ABI für Out-of-Tree-Pass-Plugins. Ein Plugin ist eine Shared Library (`.dll` / `.so` / `.dylib`), die benutzerdefinierte Passes an festgelegten Hook-Punkten der Pipeline registriert. Nur ein Header, null LLVM/CRT-Abhängigkeiten.
+NeverC bietet eine reine C-ABI für Out-of-Tree-Pass-Plugins. Ein Plugin ist eine Shared Library (`.dll` / `.so` / `.dylib`), die benutzerdefinierte Passes an festgelegten Extension-Punkten der Pipeline registriert. Nur ein Header, null LLVM/CRT-Abhängigkeiten.
 
 **[Plugin-API →](plugin-api/README.de.md)**
 
@@ -72,7 +72,7 @@ Wichtigste geplante Richtungen des NeverC-Projekts: Standardbibliothek, EVM-Smar
 | Standardbibliothek (`std`) | Go-ähnliche Batterien-inklusive-Pakete: `fmt`, `os`, `io`, `net`, `crypto`, `encoding`, `sync` und mehr |
 | Obfuskations-Plugin-Suite (`neverc-obfuscation`) | Erstanbieter VM, MBA, Kontrollflussverflachung, polymorphe Engine, Anti-Tamper-Plugins |
 | UI-Komponentenbibliothek (`neverc-ui`) | Qt-inspirierte plattformübergreifende UI, HTML/JS/CSS-Renderer, Drag-and-Drop-Designer, KI-nativer Workflow |
-| IDE & Sprachwerkzeuge (`neverc-ide`) | VSCode-Erweiterung + Standalone-IDE für `.nc`-Dateien, IntelliSense, Debugging, Shellcode-Pipeline-Visualisierung |
+| IDE & Sprachwerkzeuge (`neverc-ide`) | VSCode-Erweiterung + Standalone-IDE für `.nc`-Dateien, IntelliSense, Debugging, DynCode-Pipeline-Visualisierung |
 | EVM-Smart-Contracts | C zu EVM-Bytecode kompilieren — Smart Contracts in C statt Solidity |
 | Solana eBPF | C zu Solana-eBPF-Bytecode kompilieren — On-Chain-Programmentwicklung in C |
 

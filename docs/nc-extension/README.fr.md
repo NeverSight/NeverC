@@ -62,7 +62,7 @@ Par sécurité, le frontend vérifie également les extensions des fichiers d'en
 
 - Les fichiers `.nc` sont traités comme du code source C — le langage est toujours C (C23 par défaut), pas un nouveau langage
 - Tous les drapeaux C standard (`-std=c11`, `-O2`, `-g`, `-Wall`, etc.) fonctionnent de manière identique
-- `-fshellcode` se combine naturellement avec `.nc` : le mode shellcode active déjà `string`, et `.nc` s'assure que `neverc-types` est aussi actif
+- `-fdyncode` se combine naturellement avec `.nc` : le mode dyncode active déjà `string`, et `.nc` s'assure que `neverc-types` est aussi actif
 - La compilation croisée (`-target aarch64-linux-gnu`, etc.) fonctionne de la même manière
 - Les fichiers `.c` ne sont pas affectés — ils se comportent exactement comme avant sauf si vous passez les drapeaux explicitement
 
@@ -72,5 +72,5 @@ Par sécurité, le frontend vérifie également les extensions des fichiers d'en
 |----------|---------------|
 | Nouveau projet NeverC utilisant `string` et les types Rust | Utiliser `.nc` |
 | Base de code C existante à garder compatible avec d'autres compilateurs | Utiliser `.c` + drapeaux explicites |
-| Projet shellcode | Les deux conviennent — `-fshellcode` active `string` dans tous les cas |
+| Projet dyncode | Les deux conviennent — `-fdyncode` active `string` dans tous les cas |
 | Base de code mixte | `.nc` pour les fichiers NeverC, `.c` pour le code portable |

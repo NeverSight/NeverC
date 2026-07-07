@@ -237,7 +237,7 @@ static void registerPasses(const NevercHostAPI *API, void *Registrar) {
   /* PRE_OPT runs once per module before the optimization pipeline -- the
      ideal place for a one-shot benchmark that doesn't want to interleave
      with optimizer-reported timings. */
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT, benchPass, NULL,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT, benchPass, NULL,
                           "bench");
 }
 

@@ -140,7 +140,7 @@ rotate13:
 ## Compilatore vs bin2bin: chi è compatibile con CET?
 
 CET traccia una linea netta tra i **compilatori a livello sorgente** e gli
-**strumenti bin2bin** (packer, offuscatori, hooker, dump+rebuild). Lo
+**strumenti bin2bin** (packer, offuscatori, patcher, dump+rebuild). Lo
 Shadow Stack hardware impone tre regole che rimodellano l'intera industria
 della protezione / offuscamento:
 
@@ -192,7 +192,7 @@ del kernel. Il compilatore **non può** raggiungere lo shadow stack:
 | **Stack pivoting** (catene di gadget ROP) | Lo shadow stack non può seguire il pivot |
 | **Codice auto-modificante** | HVCI blocca le scritture sulle pagine eseguibili |
 | **Generazione di codice a runtime** | Stesso — violazione HVCI W^X |
-| **Hook inline basati su trampolino** | Modificare il prologo della funzione attiva HVCI; anche bypassando HVCI, lo shadow stack si rompe sul RET del trampolino |
+| **Patch inline basati su trampolino** | Modificare il prologo della funzione attiva HVCI; anche bypassando HVCI, lo shadow stack si rompe sul RET del trampolino |
 
 ### Perché gli strumenti bin2bin hanno uno svantaggio strutturale
 
@@ -219,7 +219,7 @@ bin2bin deve **riscoprire** la semantica dai byte compilati:
 
 I driver anti-cheat (EAC, BattlEye, FACEIT AC, Vanguard) vengono spediti con
 `--cetcompat` impostato, quindi funzionano puliti su macchine con KCET
-abilitato. I driver di cheat — tipicamente impacchettati, hookati o iniettati
+abilitato. I driver di cheat — tipicamente impacchettati, patchati o iniettati
 con trampolino tramite tooling bin2bin — faticano a rimanere conformi a CET.
 KCET + HVCI formano un **muro hardware "amico del compilatore, ostile al
 bin2bin"** che favorisce asimmetricamente il software di sicurezza ben

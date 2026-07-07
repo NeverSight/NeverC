@@ -56829,7 +56829,7 @@ bool X86TargetLowering::hasInlineStackProbe(const MachineFunction &MF) const {
     return false;
 
   // If the function specifically requests inline stack probes, emit them.
-  // This deliberately runs before the Windows check so that shellcode (or
+  // This deliberately runs before the Windows check so that dyncode (or
   // any other consumer that cannot call __chkstk) can opt into inline probes
   // on Windows via "probe-stack"="inline-asm".
   if (MF.getFunction().hasFnAttribute("probe-stack"))

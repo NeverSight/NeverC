@@ -7,9 +7,9 @@ set(NEVERC_TEST_SOURCES
   LinkerTests.cpp
   OverrideTests.cpp
   ConformanceTests.cpp
-  ShellcodeTests.cpp
-  ShellcodeStressTests.cpp
-  ShellcodeCrossTargetTests.cpp
+  DynCodeTests.cpp
+  DynCodeStressTests.cpp
+  DynCodeCrossTargetTests.cpp
   DebugTests.cpp
   BenchmarkTests.cpp
   MimallocTests.cpp

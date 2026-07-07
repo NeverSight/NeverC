@@ -50,10 +50,10 @@ Kein Kernel-Quellbaum erforderlich — NeverC kompiliert gegen die integrierte m
 |----------|-------------|--------------|
 | [Kernel Hello](../../examples/android-kernel-hello/README.de.md) | Minimales `.ko`-Modul | kallsyms-Bootstrap via kprobe, einfachste insmod-Validierung |
 | [Kernel-Treibervorlage](../../examples/android-kernel-driver/README.de.md) | Dynamische Symbolauflösung | `kallsyms_lookup_name`, GKI-stabiles ABI, 5.10–6.12 |
-| [Kernel Inline Hook](../../examples/android-kernel-inline-hook/README.de.md) | Inline-Hook auf `do_faccessat` | BTI/PAC-sicherer Patch, Context-Hook-Modus, PC-relative Relokation |
-| [Kernel Syscall Hook](../../examples/android-kernel-syscall-hook/README.de.md) | Syscall-Tabelle / Inline / Context Hook | `sys_call_table`-Austausch, Inline-Hook, Context-Hook |
+| [Kernel Inline Interpose](../../examples/android-kernel-inline-interpose/README.de.md) | Inline-Interpose auf `do_faccessat` | BTI/PAC-sicherer Patch, Context-Interpose-Modus, PC-relative Relokation |
+| [Kernel Syscall Interpose](../../examples/android-kernel-syscall-interpose/README.de.md) | Syscall-Tabelle / Inline / Context Interpose | `sys_call_table`-Austausch, Inline-Interpose, Context-Interpose |
 | [Kernel Stealth](../../examples/android-kernel-stealth/README.de.md) | Modulverbergung | list/sysfs/proc-Verbergung, Root-Gewährung, SELinux permissive |
-| [Kernel Full SDK](../../examples/android-kernel-full/README.de.md) | Vollständige SDK-Integration | Netlink IPC, Hooks, Anmeldedaten, Verbergung, SELinux, VMA, Datei-I/O |
+| [Kernel Full SDK](../../examples/android-kernel-full/README.de.md) | Vollständige SDK-Integration | Netlink IPC, Interposes, Anmeldedaten, Verbergung, SELinux, VMA, Datei-I/O |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.de.md) | Zeichengerät + ioctl | `misc_register`, ioctl-Dispatch, `/proc` seq_file |
 | [Kernel Netlink](../../examples/android-kernel-netlink/README.de.md) | Bidirektionales Netlink IPC | PING/VERSION/ECHO-Befehle, `nvk_nl_open`/`nvk_nl_reply` |
 

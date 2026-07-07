@@ -19,7 +19,7 @@
 |*   - Strings returned by StrDup/StrNDup/StrConcat/StrSubstring/StrReplace/ *|
 |*     StrFormat/IntToStr/ValuePrintToString/etc. are host-allocated;        *|
 |*     caller frees via Free.  DiagNoteF/DiagWarningF/DiagErrorF do NOT      *|
-|*     require Free.  HookPointGetName returns a static string.              *|
+|*     require Free.  InterposePointGetName returns a static string.              *|
 |*   - NevercDynArrayRef / NevercStrMapRef / NevercIntMapRef /               *|
 |*     NevercStrBuilderRef created by DynArrayCreate / StrMapCreate /       *|
 |*     IntMapCreate / StrBuilderCreate must be freed via the corresponding  *|
@@ -260,46 +260,46 @@ typedef struct NevercOpaqueArena         *NevercArenaRef;
 typedef struct NevercOpaqueValueSet      *NevercValueSetRef;
 
 /* -------------------------------------------------------------------------- */
-/*  Hook points                                                               */
+/*  Interpose points                                                               */
 /* -------------------------------------------------------------------------- */
 
 typedef enum {
   /* ---- Normal flow -- IR (BackendUtil.cpp optimization pipeline) ---- */
-  NEVERC_HOOK_PRE_OPT        = 0x0001,
-  NEVERC_HOOK_POST_OPT       = 0x0002,
-  NEVERC_HOOK_PIPELINE_START = 0x0003,
-  NEVERC_HOOK_PIPELINE_LAST  = 0x0004,
+  NEVERC_INTERPOSE_PRE_OPT        = 0x0001,
+  NEVERC_INTERPOSE_POST_OPT       = 0x0002,
+  NEVERC_INTERPOSE_PIPELINE_START = 0x0003,
+  NEVERC_INTERPOSE_PIPELINE_LAST  = 0x0004,
 
   /* ---- Normal flow -- MIR (code generation pipeline) ---- */
-  NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT  = 0x0010,
-  NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR = 0x0011,
+  NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT  = 0x0010,
+  NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR = 0x0011,
 
-  /* ---- Shellcode flow -- IR hooks ---- */
-  NEVERC_HOOK_SC_BEFORE_PREP     = 0x0100,
-  NEVERC_HOOK_SC_AFTER_PREP      = 0x0101,
-  NEVERC_HOOK_SC_BEFORE_INLINING = 0x0102,
-  NEVERC_HOOK_SC_AFTER_INLINING  = 0x0103,
-  NEVERC_HOOK_SC_AFTER_STACKIFY  = 0x0104,
-  NEVERC_HOOK_SC_AFTER_FINAL_IR  = 0x0105,
+  /* ---- DynCode flow -- IR interposes ---- */
+  NEVERC_INTERPOSE_SC_BEFORE_PREP     = 0x0100,
+  NEVERC_INTERPOSE_SC_AFTER_PREP      = 0x0101,
+  NEVERC_INTERPOSE_SC_BEFORE_INLINING = 0x0102,
+  NEVERC_INTERPOSE_SC_AFTER_INLINING  = 0x0103,
+  NEVERC_INTERPOSE_SC_AFTER_STACKIFY  = 0x0104,
+  NEVERC_INTERPOSE_SC_AFTER_FINAL_IR  = 0x0105,
 
-  /* ---- Shellcode flow -- MIR hooks ---- */
-  NEVERC_HOOK_SC_BEFORE_PREEMIT  = 0x0200,
-  NEVERC_HOOK_SC_AFTER_PREEMIT   = 0x0201,
-  NEVERC_HOOK_SC_AFTER_FINAL_MIR = 0x0202,
+  /* ---- DynCode flow -- MIR interposes ---- */
+  NEVERC_INTERPOSE_SC_BEFORE_PREEMIT  = 0x0200,
+  NEVERC_INTERPOSE_SC_AFTER_PREEMIT   = 0x0201,
+  NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR = 0x0202,
 
-  /* ---- Shellcode flow -- binary hooks ---- */
-  NEVERC_HOOK_SC_POST_EXTRACT    = 0x0300,
-  NEVERC_HOOK_SC_POST_FINALIZE   = 0x0301,
+  /* ---- DynCode flow -- binary interposes ---- */
+  NEVERC_INTERPOSE_SC_POST_EXTRACT    = 0x0300,
+  NEVERC_INTERPOSE_SC_POST_FINALIZE   = 0x0301,
 
-  /* ---- LTO flow -- IR hooks (inside LTO optimization pipeline) ---- */
-  NEVERC_HOOK_LTO_PRE_OPT        = 0x0400,
-  NEVERC_HOOK_LTO_POST_OPT       = 0x0401,
+  /* ---- LTO flow -- IR interposes (inside LTO optimization pipeline) ---- */
+  NEVERC_INTERPOSE_LTO_PRE_OPT        = 0x0400,
+  NEVERC_INTERPOSE_LTO_POST_OPT       = 0x0401,
 
-  /* ---- Linker flow -- object-level hooks ---- */
-  NEVERC_HOOK_LINK_PRE_LAYOUT    = 0x0500,
-  NEVERC_HOOK_LINK_POST_LAYOUT   = 0x0501,
-  NEVERC_HOOK_LINK_POST_EMIT     = 0x0502
-} NevercHookPoint;
+  /* ---- Linker flow -- object-level interposes ---- */
+  NEVERC_INTERPOSE_LINK_PRE_LAYOUT    = 0x0500,
+  NEVERC_INTERPOSE_LINK_POST_LAYOUT   = 0x0501,
+  NEVERC_INTERPOSE_LINK_POST_EMIT     = 0x0502
+} NevercInterposePoint;
 
 /* -------------------------------------------------------------------------- */
 /*  Comparison predicates (matches CmpInst::Predicate numeric values)         */
@@ -419,7 +419,7 @@ typedef int (*NevercBinaryPassFn)(uint8_t **Data, uint64_t *Len,
                                   const struct NevercHostAPI *API,
                                   void *UserData);
 
-/* Linker-level pass (object-level hooks).
+/* Linker-level pass (object-level interposes).
  * Called during linking for symbol/section inspection and manipulation.
  * Context is an opaque handle to backend-specific linker state. */
 typedef int (*NevercLinkerPassFn)(const struct NevercHostAPI *API,
@@ -609,7 +609,7 @@ typedef struct NevercHostAPI {
   NevercMetadataRef (*InstGetMetadata)(NevercValueRef Inst, unsigned KindID);
   unsigned (*MDKindGetID)(NevercContextRef C, const char *Name);
 
-  /* ---- MIR ops (for shellcode MIR hooks) ---- */
+  /* ---- MIR ops (for dyncode MIR interposes) ---- */
   NevercMachineBBRef (*MFuncGetFirstBB)(NevercMachineFuncRef MF);
   NevercMachineBBRef (*MFuncGetNextBB)(NevercMachineBBRef MBB);
   NevercMachineInstrRef (*MBBGetFirstInst)(NevercMachineBBRef MBB);
@@ -619,17 +619,17 @@ typedef struct NevercHostAPI {
   void (*MInstEraseFromParent)(NevercMachineInstrRef MI);
 
   /* ---- Pass registration (only valid inside RegisterPasses callback) ---- */
-  void (*RegisterModulePass)(void *Registrar, NevercHookPoint Hook,
+  void (*RegisterModulePass)(void *Registrar, NevercInterposePoint Interpose,
                              NevercModulePassFn Fn, void *UserData,
                              const char *PassName);
-  void (*RegisterMachinePass)(void *Registrar, NevercHookPoint Hook,
+  void (*RegisterMachinePass)(void *Registrar, NevercInterposePoint Interpose,
                               NevercMachinePassFn Fn, void *UserData,
                               const char *PassName);
-  void (*RegisterBinaryPass)(void *Registrar, NevercHookPoint Hook,
+  void (*RegisterBinaryPass)(void *Registrar, NevercInterposePoint Interpose,
                              NevercBinaryPassFn Fn, void *UserData,
                              const char *PassName);
 
-  /* ---- Binary buffer ops (for shellcode binary hooks) ---- */
+  /* ---- Binary buffer ops (for dyncode binary interposes) ---- */
   int (*BinaryResize)(uint8_t **Data, uint64_t *Len, uint64_t *Capacity,
                       uint64_t NewLen);
 
@@ -1047,16 +1047,16 @@ typedef struct NevercHostAPI {
   int (*ValueIsConstantExpr)(NevercValueRef V);
   int (*ValueIsAlias)(NevercValueRef V);
 
-  /* ---- Compilation mode queries (avoid breaking shellcode extraction) ----
+  /* ---- Compilation mode queries (avoid breaking dyncode extraction) ----
      Returns 1 when the current compilation is producing position-independent
-     shellcode (via -fshellcode).  Plugin passes that introduce external
-     symbols, relocations, or other shellcode-unfriendly constructs should
-     check this and skip themselves when shellcode mode is active.        */
-  int (*HostIsShellcodeMode)(void);
-  /* The configured shellcode entry symbol (or empty string if not set or
-     shellcode mode is off).  The returned string is host-owned and valid
+     dyncode (via -fdyncode).  Plugin passes that introduce external
+     symbols, relocations, or other dyncode-unfriendly constructs should
+     check this and skip themselves when dyncode mode is active.        */
+  int (*HostIsDynCodeMode)(void);
+  /* The configured dyncode entry symbol (or empty string if not set or
+     dyncode mode is off).  The returned string is host-owned and valid
      while the host process is alive.                                      */
-  const char *(*HostGetShellcodeEntrySymbol)(void);
+  const char *(*HostGetDynCodeEntrySymbol)(void);
 
   /* ---- Intrinsic lookup (find LLVM intrinsic function declarations) ----
      IntrinsicID uses LLVM's Intrinsic::ID numbering.  Pass 0 OverloadTys
@@ -1107,7 +1107,7 @@ typedef struct NevercHostAPI {
 
   /* ---- Memory intrinsic builders (memcpy, memset, memmove) ----
      These generate LLVM intrinsic calls rather than libc calls, so they
-     remain valid in shellcode mode where libc is unavailable.
+     remain valid in dyncode mode where libc is unavailable.
      Align is in bytes (0 = unaligned).  IsVolatile controls the volatile
      flag on the generated memory access.                                 */
   NevercValueRef (*BuildMemCpy)(NevercBuilderRef B,
@@ -1303,11 +1303,11 @@ typedef struct NevercHostAPI {
   unsigned (*MFuncGetBBCount)(NevercMachineFuncRef MF);
 
   /* ---- Linker pass registration ---- */
-  void (*RegisterLinkerPass)(void *Registrar, NevercHookPoint Hook,
+  void (*RegisterLinkerPass)(void *Registrar, NevercInterposePoint Interpose,
                              NevercLinkerPassFn Fn, void *UserData,
                              const char *PassName);
 
-  /* ---- Linker symbol queries (valid during LINK_* hooks) ----
+  /* ---- Linker symbol queries (valid during LINK_* interposes) ----
      Symbol iteration returns NULL at end of list.  Names point to
      internal storage valid for the duration of the linker pass.    */
   NevercLinkerSymbolRef (*LinkGetFirstSymbol)(void);
@@ -1322,7 +1322,7 @@ typedef struct NevercHostAPI {
   void (*LinkSymbolSetVisibilityHidden)(NevercLinkerSymbolRef S,
                                         int IsHidden);
 
-  /* ---- Linker section queries (valid during LINK_* hooks) ---- */
+  /* ---- Linker section queries (valid during LINK_* interposes) ---- */
   NevercLinkerSectionRef (*LinkGetFirstSection)(void);
   NevercLinkerSectionRef (*LinkGetNextSection)(NevercLinkerSectionRef S);
   NevercLinkerSectionRef (*LinkFindSection)(const char *Name);
@@ -1389,8 +1389,8 @@ typedef struct NevercHostAPI {
          StrFindChar (single char) and StrContains (bool). ---- */
   uint64_t (*StrFindStr)(const char *Haystack, const char *Needle);
 
-  /* ---- Hook-point name lookup (returns a static string, never NULL) ---- */
-  const char *(*HookPointGetName)(unsigned Hook);
+  /* ---- Interpose-point name lookup (returns a static string, never NULL) ---- */
+  const char *(*InterposePointGetName)(unsigned Interpose);
 
   /* ---- Memory duplicate: allocate Len bytes and copy Src into it.
          Returns NULL on allocation failure.  Caller frees via Free. ---- */
@@ -1698,7 +1698,7 @@ typedef struct NevercHostAPI {
      binary-pass BinaryResize).  Returns NEVERC_NPOS when not found
      or on any NULL/empty input.  An empty needle is treated as not
      found to avoid the libc divergence around memmem("", 0).  Useful
-     for binary passes scanning shellcode for byte signatures. */
+     for binary passes scanning dyncode for byte signatures. */
   uint64_t (*MemFind)(const void *Haystack, uint64_t HaystackLen,
                       const void *Needle, uint64_t NeedleLen);
 
@@ -1755,7 +1755,7 @@ typedef struct NevercHostAPI {
      swap, no temporary buffer), or (2) Dst and Src ranges fully
      disjoint.  Partial overlap is undefined behaviour and treated as
      a no-op, mirroring memcpy's contract.  Useful for endianness
-     flips on big-endian fields embedded in shellcode. */
+     flips on big-endian fields embedded in dyncode. */
   void (*MemReverse)(void *Dst, const void *Src, uint64_t Len);
 
   /* ---- DynArray order-preserving mutation ----
@@ -2411,19 +2411,19 @@ neverc_internal_NextDefFn_(const NevercHostAPI *API, NevercValueRef F) {
   return F;
 }
 
-/* ---- Convenience: cast a NevercHookPoint to a void* UserData value ----
- * Plugins often store the hook-point enum as UserData so that a single
+/* ---- Convenience: cast a NevercInterposePoint to a void* UserData value ----
+ * Plugins often store the interpose-point enum as UserData so that a single
  * callback can identify which stage it was invoked from.  This macro
  * makes the cast explicit and avoids platform width warnings. */
-#define NEVERC_HOOK_UD(hook) ((void *)(uintptr_t)(hook))
+#define NEVERC_INTERPOSE_UD(interpose) ((void *)(uintptr_t)(interpose))
 
-/* ---- Convenience: resolve a hook name from a UserData that was set
- *      via NEVERC_HOOK_UD.  Falls back to "<unknown>" when the host
- *      is too old to provide HookPointGetName.  The returned pointer
+/* ---- Convenience: resolve a interpose name from a UserData that was set
+ *      via NEVERC_INTERPOSE_UD.  Falls back to "<unknown>" when the host
+ *      is too old to provide InterposePointGetName.  The returned pointer
  *      is a static string -- never free it. ---- */
-#define NEVERC_HOOK_NAME(api, ud) \
-    (NEVERC_API_FN(api, HookPointGetName) \
-     ? (api)->HookPointGetName((unsigned)(uintptr_t)(ud)) \
+#define NEVERC_INTERPOSE_NAME(api, ud) \
+    (NEVERC_API_FN(api, InterposePointGetName) \
+     ? (api)->InterposePointGetName((unsigned)(uintptr_t)(ud)) \
      : "<unknown>")
 
 /* ---- Convenience: create a StrMap/IntMap with optional pre-allocation ----
@@ -2586,7 +2586,7 @@ typedef struct NevercPluginInfo {
  *   }
  *
  *   static void registerPasses(const NevercHostAPI *API, void *Reg) {
- *       API->RegisterModulePass(Reg, NEVERC_HOOK_POST_OPT,
+ *       API->RegisterModulePass(Reg, NEVERC_INTERPOSE_POST_OPT,
  *                               myModulePass, NULL, "my-pass");
  *   }
  *

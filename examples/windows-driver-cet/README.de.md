@@ -139,7 +139,7 @@ rotate13:
 ## Compiler vs bin2bin: Wer ist CET-freundlich?
 
 CET zieht eine klare Linie zwischen **Compilern auf Quellcode-Ebene** und
-**bin2bin-Tools** (Packer, Obfuskatoren, Hooker, dump+rebuild). Der
+**bin2bin-Tools** (Packer, Obfuskatoren, Patcher, dump+rebuild). Der
 Hardware-Shadow-Stack erzwingt drei Regeln, die die gesamte Schutz- /
 Obfuskationsindustrie umgestalten:
 
@@ -191,7 +191,7 @@ und der Kernel bugcheckt. Der Compiler **kann den Shadow Stack nicht erreichen**
 | **Stack-Pivoting** (ROP-Gadget-Ketten) | Shadow Stack kann dem Pivot nicht folgen |
 | **Selbstmodifizierender Code** | HVCI blockiert Schreibvorgänge auf ausführbare Seiten |
 | **Laufzeit-Codegenerierung** | Dasselbe — HVCI W^X-Verletzung |
-| **Trampolin-basierte Inline-Hooks** | Funktionsprolog-Modifikation löst HVCI aus; selbst bei HVCI-Umgehung bricht der Shadow Stack beim Trampolin-RET |
+| **Trampolin-basierte Inline-Patches** | Funktionsprolog-Modifikation löst HVCI aus; selbst bei HVCI-Umgehung bricht der Shadow Stack beim Trampolin-RET |
 
 ### Warum bin2bin-Tools einen strukturellen Nachteil haben
 

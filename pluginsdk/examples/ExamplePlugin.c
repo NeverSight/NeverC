@@ -11,8 +11,8 @@
  *   - StrBuilder -- opaque incremental string construction
  *   - MIR-level analysis with batch collection
  *   - Binary-level inspection and patching (BinaryResize + NOP sled)
- *   - LTO pipeline hooks (LTO_PRE_OPT / LTO_POST_OPT)
- *   - Linker hooks (LINK_PRE_LAYOUT / POST_LAYOUT / POST_EMIT)
+ *   - LTO pipeline interposes (LTO_PRE_OPT / LTO_POST_OPT)
+ *   - Linker interposes (LINK_PRE_LAYOUT / POST_LAYOUT / POST_EMIT)
  *   - Use-def chain traversal (NEVERC_FOR_EACH_USE, UseGetUser)
  *   - FunctionGetInstructionCount (single-call instruction census)
  *   - DominatorTree / PostDominatorTree (on-demand CFG dominance analysis)
@@ -30,7 +30,7 @@
  *   - Sort (host-routed qsort -- no cross-DLL CRT calls)
  *   - Formatted diagnostics via DiagNoteF -- no manual StrFormat/Free dance
  *   - Plugin command-line arguments via PluginGetArg / PluginHasArg
- *   - HookPointGetName for runtime hook-name resolution
+ *   - InterposePointGetName for runtime interpose-name resolution
  *   - NEVERC_ALLOC_ARRAY / NEVERC_COLLECT_* convenience macros
  *   - NEVERC_COLLECT_OPCODES (batch opcode collection without Value handles)
  *   - NEVERC_FOR_EACH_{FUNCTION,DEFINED_FUNCTION,GLOBAL,ALIAS,BB,INST,...}
@@ -46,7 +46,7 @@
  *   - ArenaStrConcat / ArenaStrFormat (formatted strings into Arena)
  *   - PluginGetArgBool / PluginGetArgInt64 / PluginGetArgUInt64
  *   - ModuleGetDefinedFunctionCount (zero-allocation census)
- *   - NEVERC_HOOK_UD / NEVERC_HOOK_NAME / NEVERC_STRMAP_NEW / NEVERC_INTMAP_NEW
+ *   - NEVERC_INTERPOSE_UD / NEVERC_INTERPOSE_NAME / NEVERC_STRMAP_NEW / NEVERC_INTMAP_NEW
  *   - NEVERC_STR_OR (null/empty string default -- zero allocation, no vtable)
  *   - ModuleForEachFunction / ModuleForEachDefinedFunction /
  *     ModuleForEachInstruction / ModuleForEachGlobal / FunctionForEachBB /
@@ -101,16 +101,16 @@ static int functionCounterPass(NevercModuleRef M, const NevercHostAPI *API,
  *   declare void @__neverc_plugin_trace(ptr %fn_name)
  *
  * Shows: type creation, ModuleAddFunction, BuilderCreate, BuildGlobalStringPtr,
- *        BuildCall, HostIsShellcodeMode guard,
+ *        BuildCall, HostIsDynCodeMode guard,
  *        NEVERC_FOR_EACH_DEFINED_FUNCTION (zero-allocation iteration).
  *
- * Skips when shellcode mode is active (external symbols are forbidden).
+ * Skips when dyncode mode is active (external symbols are forbidden).
  */
 static int functionEntryInstrPass(NevercModuleRef M, const NevercHostAPI *API,
                                   void *UserData) {
   (void)UserData;
-  if (API->HostIsShellcodeMode()) {
-    API->DiagNoteF(PLUGIN_TAG "Shellcode mode -- skipping trace "
+  if (API->HostIsDynCodeMode()) {
+    API->DiagNoteF(PLUGIN_TAG "DynCode mode -- skipping trace "
                    "instrumentation");
     return 0;
   }
@@ -217,11 +217,11 @@ static int deadFunctionRemovalPass(NevercModuleRef M, const NevercHostAPI *API,
  * Pipeline stage tracker -- reports function/BB counts at a specific stage.
  *
  * Registered at PIPELINE_START and PIPELINE_LAST so users can see the
- * optimizer's impact.  UserData carries NevercHookPoint as (void*).
+ * optimizer's impact.  UserData carries NevercInterposePoint as (void*).
  *
  * Shows: ModuleForEachDefinedFunction (zero-alloc callback iteration --
  *        one vtable call replaces N GetNext calls; fastest path),
- *        NEVERC_HOOK_NAME (resolve UserData -> name).
+ *        NEVERC_INTERPOSE_NAME (resolve UserData -> name).
  */
 
 struct PipelineStageCtx {
@@ -241,7 +241,7 @@ static int pipelineStageVisitor(NevercValueRef F, void *Ctx) {
 
 static int pipelineStagePass(NevercModuleRef M, const NevercHostAPI *API,
                              void *UserData) {
-  const char *Stage = NEVERC_HOOK_NAME(API, UserData);
+  const char *Stage = NEVERC_INTERPOSE_NAME(API, UserData);
 
   struct PipelineStageCtx Ctx;
   Ctx.API = API;
@@ -1212,9 +1212,9 @@ static int mirAnalysisPass(NevercMachineFuncRef MF, const NevercHostAPI *API,
 /* ======================================================================== */
 
 /*
- * Report extracted shellcode size and scan for stray int3 (0xCC) bytes,
+ * Report extracted dyncode size and scan for stray int3 (0xCC) bytes,
  * a common debug-build leftover that has no business living in finalized
- * shellcode.  Demonstrates:
+ * dyncode.  Demonstrates:
  *   - MemFindByte: single-byte search returning an offset (not a pointer)
  *     so the result stays valid across BinaryResize relocation.  Simpler
  *     than MemFind when the needle is a single byte.
@@ -1263,11 +1263,11 @@ static int binaryNopSledPass(uint8_t **Data, uint64_t *Len, uint64_t *Capacity,
 /* LTO pipeline tracker -- reports defined function count.
  *
  * Shows: ModuleGetDefinedFunctionCount (zero-allocation census),
- *        NEVERC_HOOK_NAME (resolve hook enum from UserData).
+ *        NEVERC_INTERPOSE_NAME (resolve interpose enum from UserData).
  */
 static int ltoInfoPass(NevercModuleRef M, const NevercHostAPI *API,
                        void *UserData) {
-  const char *Stage = NEVERC_HOOK_NAME(API, UserData);
+  const char *Stage = NEVERC_INTERPOSE_NAME(API, UserData);
   unsigned Defined = API->ModuleGetDefinedFunctionCount(M);
   API->DiagNoteF(PLUGIN_TAG "%s: %u defined functions", Stage, Defined);
   return 0;
@@ -1277,9 +1277,9 @@ static int ltoInfoPass(NevercModuleRef M, const NevercHostAPI *API,
 /*  Linker Pass                                                             */
 /* ======================================================================== */
 
-/* Symbol and section census -- linker hook demo. */
+/* Symbol and section census -- linker interpose demo. */
 static int linkerCensusPass(const NevercHostAPI *API, void *UserData) {
-  const char *Stage = NEVERC_HOOK_NAME(API, UserData);
+  const char *Stage = NEVERC_INTERPOSE_NAME(API, UserData);
   unsigned Defined = 0, Undefined = 0;
 
   NEVERC_FOR_EACH_SYMBOL(API, Sym) {
@@ -1301,13 +1301,13 @@ static int linkerCensusPass(const NevercHostAPI *API, void *UserData) {
 }
 
 /* ======================================================================== */
-/*  Stage Trackers -- verify all hook points are wired correctly             */
+/*  Stage Trackers -- verify all interpose points are wired correctly             */
 /* ======================================================================== */
 
 static int stageTrackerModulePass(NevercModuleRef M, const NevercHostAPI *API,
                                   void *UserData) {
   (void)M;
-  API->DiagNoteF(PLUGIN_TAG "Stage: %s", NEVERC_HOOK_NAME(API, UserData));
+  API->DiagNoteF(PLUGIN_TAG "Stage: %s", NEVERC_INTERPOSE_NAME(API, UserData));
   return 0;
 }
 
@@ -1315,7 +1315,7 @@ static int stageTrackerMachinePass(NevercMachineFuncRef MF,
                                    const NevercHostAPI *API, void *UserData) {
   const char *FnName = API->MFuncGetName(MF);
   API->DiagNoteF(PLUGIN_TAG "Stage: %s (MF=%s)",
-                 NEVERC_HOOK_NAME(API, UserData),
+                 NEVERC_INTERPOSE_NAME(API, UserData),
                  NEVERC_STR_OR(FnName, "?"));
   return 0;
 }
@@ -1326,7 +1326,7 @@ static int stageTrackerBinaryPass(uint8_t **Data, uint64_t *Len,
   (void)Data;
   (void)Capacity;
   API->DiagNoteF(PLUGIN_TAG "Stage: %s (binary=%" PRIu64 " bytes)",
-                 NEVERC_HOOK_NAME(API, UserData), *Len);
+                 NEVERC_INTERPOSE_NAME(API, UserData), *Len);
   return 0;
 }
 
@@ -1336,135 +1336,135 @@ static int stageTrackerBinaryPass(uint8_t **Data, uint64_t *Len,
 
 static void registerPasses(const NevercHostAPI *API, void *Registrar) {
 
-  /* Normal flow -- IR hooks */
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT, pluginArgDemoPass,
+  /* Normal flow -- IR interposes */
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT, pluginArgDemoPass,
                           NULL, "example-args");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT, functionCounterPass,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT, functionCounterPass,
                           NULL, "example-counter");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           functionEntryInstrPass, NULL, "example-instrument");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           intrinsicHistogramPass, NULL,
                           "example-intrinsic-histogram");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           opcodeHistogramPass, NULL,
                           "example-opcode-histogram");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           sortedFuncAnalysisPass, NULL,
                           "example-sorted-analysis");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT, sourceInfoPass,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT, sourceInfoPass,
                           NULL, "example-source-info");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           callSiteAnalysisPass, NULL,
                           "example-call-sites");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           uniqueCallTargetsPass, NULL,
                           "example-unique-targets");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           cfgAnalysisPass, NULL,
                           "example-cfg-analysis");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           arenaCollectAnalysisPass, NULL,
                           "example-arena-collect");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           cloneDemoPass, NULL,
                           "example-clone");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           loopTripCountPass, NULL,
                           "example-loop-trip-count");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PRE_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PRE_OPT,
                           callGraphAnalysisPass, NULL,
                           "example-call-graph");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_POST_OPT,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_POST_OPT,
                           deadFunctionRemovalPass, NULL, "example-dead-remove");
 
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PIPELINE_START,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PIPELINE_START,
                           pipelineStagePass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_PIPELINE_START),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_PIPELINE_START),
                           "example-pipeline-start");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_PIPELINE_LAST,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_PIPELINE_LAST,
                           pipelineStagePass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_PIPELINE_LAST),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_PIPELINE_LAST),
                           "example-pipeline-last");
 
-  /* Normal flow -- MIR hooks */
-  API->RegisterMachinePass(Registrar, NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT,
+  /* Normal flow -- MIR interposes */
+  API->RegisterMachinePass(Registrar, NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT,
                            stageTrackerMachinePass,
-                           NEVERC_HOOK_UD(NEVERC_HOOK_BEFORE_CODEGEN_PREEMIT),
+                           NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT),
                            "example-stage-codegen-preemit");
-  API->RegisterMachinePass(Registrar, NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR,
+  API->RegisterMachinePass(Registrar, NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR,
                            stageTrackerMachinePass,
-                           NEVERC_HOOK_UD(NEVERC_HOOK_AFTER_CODEGEN_FINAL_MIR),
+                           NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR),
                            "example-stage-codegen-final-mir");
 
-  /* Shellcode flow -- IR hooks */
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_BEFORE_PREP,
+  /* DynCode flow -- IR interposes */
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_SC_BEFORE_PREP,
                           stageTrackerModulePass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_BEFORE_PREP),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_SC_BEFORE_PREP),
                           "example-stage-sc-before-prep");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_PREP,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_SC_AFTER_PREP,
                           stageTrackerModulePass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_PREP),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_SC_AFTER_PREP),
                           "example-stage-sc-after-prep");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_BEFORE_INLINING,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_SC_BEFORE_INLINING,
                           stageTrackerModulePass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_BEFORE_INLINING),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_SC_BEFORE_INLINING),
                           "example-stage-sc-before-inlining");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_INLINING,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_SC_AFTER_INLINING,
                           stageTrackerModulePass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_INLINING),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_SC_AFTER_INLINING),
                           "example-stage-sc-after-inlining");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_STACKIFY,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_SC_AFTER_STACKIFY,
                           stageTrackerModulePass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_STACKIFY),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_SC_AFTER_STACKIFY),
                           "example-stage-sc-after-stackify");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_SC_AFTER_FINAL_IR,
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_SC_AFTER_FINAL_IR,
                           stageTrackerModulePass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_FINAL_IR),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_SC_AFTER_FINAL_IR),
                           "example-stage-sc-after-final-ir");
 
-  /* Shellcode flow -- MIR hooks */
-  API->RegisterMachinePass(Registrar, NEVERC_HOOK_SC_BEFORE_PREEMIT,
+  /* DynCode flow -- MIR interposes */
+  API->RegisterMachinePass(Registrar, NEVERC_INTERPOSE_SC_BEFORE_PREEMIT,
                            mirAnalysisPass, NULL, "example-mir-analysis");
-  API->RegisterMachinePass(Registrar, NEVERC_HOOK_SC_AFTER_PREEMIT,
+  API->RegisterMachinePass(Registrar, NEVERC_INTERPOSE_SC_AFTER_PREEMIT,
                            stageTrackerMachinePass,
-                           NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_PREEMIT),
+                           NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_SC_AFTER_PREEMIT),
                            "example-stage-sc-after-preemit");
-  API->RegisterMachinePass(Registrar, NEVERC_HOOK_SC_AFTER_FINAL_MIR,
+  API->RegisterMachinePass(Registrar, NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR,
                            stageTrackerMachinePass,
-                           NEVERC_HOOK_UD(NEVERC_HOOK_SC_AFTER_FINAL_MIR),
+                           NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR),
                            "example-stage-sc-after-final-mir");
 
-  /* Shellcode flow -- binary hooks */
-  API->RegisterBinaryPass(Registrar, NEVERC_HOOK_SC_POST_EXTRACT,
+  /* DynCode flow -- binary interposes */
+  API->RegisterBinaryPass(Registrar, NEVERC_INTERPOSE_SC_POST_EXTRACT,
                           binaryInfoPass, NULL, "example-binary-info");
-  API->RegisterBinaryPass(Registrar, NEVERC_HOOK_SC_POST_EXTRACT,
+  API->RegisterBinaryPass(Registrar, NEVERC_INTERPOSE_SC_POST_EXTRACT,
                           binaryNopSledPass, NULL, "example-nop-sled");
-  API->RegisterBinaryPass(Registrar, NEVERC_HOOK_SC_POST_FINALIZE,
+  API->RegisterBinaryPass(Registrar, NEVERC_INTERPOSE_SC_POST_FINALIZE,
                           stageTrackerBinaryPass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_SC_POST_FINALIZE),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_SC_POST_FINALIZE),
                           "example-stage-sc-post-finalize");
 
   /* LTO flow */
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_LTO_PRE_OPT, ltoInfoPass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_LTO_PRE_OPT),
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_LTO_PRE_OPT, ltoInfoPass,
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_LTO_PRE_OPT),
                           "example-lto-pre-opt");
-  API->RegisterModulePass(Registrar, NEVERC_HOOK_LTO_POST_OPT, ltoInfoPass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_LTO_POST_OPT),
+  API->RegisterModulePass(Registrar, NEVERC_INTERPOSE_LTO_POST_OPT, ltoInfoPass,
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_LTO_POST_OPT),
                           "example-lto-post-opt");
 
   /* Linker flow */
-  API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_PRE_LAYOUT,
+  API->RegisterLinkerPass(Registrar, NEVERC_INTERPOSE_LINK_PRE_LAYOUT,
                           linkerCensusPass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_LINK_PRE_LAYOUT),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_LINK_PRE_LAYOUT),
                           "example-link-pre-layout");
-  API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_POST_LAYOUT,
+  API->RegisterLinkerPass(Registrar, NEVERC_INTERPOSE_LINK_POST_LAYOUT,
                           linkerCensusPass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_LINK_POST_LAYOUT),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_LINK_POST_LAYOUT),
                           "example-link-post-layout");
-  API->RegisterLinkerPass(Registrar, NEVERC_HOOK_LINK_POST_EMIT,
+  API->RegisterLinkerPass(Registrar, NEVERC_INTERPOSE_LINK_POST_EMIT,
                           linkerCensusPass,
-                          NEVERC_HOOK_UD(NEVERC_HOOK_LINK_POST_EMIT),
+                          NEVERC_INTERPOSE_UD(NEVERC_INTERPOSE_LINK_POST_EMIT),
                           "example-link-post-emit");
 }
 

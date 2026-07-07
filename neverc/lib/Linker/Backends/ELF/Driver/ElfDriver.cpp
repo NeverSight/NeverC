@@ -140,7 +140,7 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   config->progName = args[0];
 
   // Load neverc out-of-tree C-ABI plugins so their linker passes can fire at
-  // the LINK_* hook points during image emission.  Idempotent with the LTO
+  // the LINK_* callback points during image emission.  Idempotent with the LTO
   // path (loadPlugin dedups by path); doing it here also covers pure
   // object-file links that never build an LTO config.
   for (const std::string &Path : driverCfg.nevercPluginPaths) {

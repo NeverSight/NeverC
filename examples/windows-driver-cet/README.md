@@ -182,7 +182,7 @@ per function since IBT is not enforced, but it causes no harm.
 ## Compiler vs bin2bin: who is friendly to CET?
 
 CET draws a sharp line between **source-level compilers** and **bin2bin tools**
-(packers, obfuscators, hookers, dump+rebuild). Hardware Shadow Stack enforces
+(packers, obfuscators, patchers, dump+rebuild). Hardware Shadow Stack enforces
 two rules that reshape the whole protection / obfuscation industry:
 
 > 1. **Don't modify return addresses.**
@@ -233,7 +233,7 @@ compiler **cannot** reach the shadow stack:
 | **Stack pivoting** (ROP gadget chains) | Shadow stack cannot follow the pivot |
 | **Self-modifying code** | HVCI blocks writes to executable pages |
 | **Runtime code generation** | Same — HVCI W^X violation |
-| **Trampoline-based inline hooks** | Modifying function prologue triggers HVCI; even bypassing HVCI, shadow stack breaks on the trampoline RET |
+| **Trampoline-based inline patches** | Modifying function prologue triggers HVCI; even bypassing HVCI, shadow stack breaks on the trampoline RET |
 
 ### Why bin2bin tools have a structural disadvantage
 
@@ -260,7 +260,7 @@ A compiler emits CET-correct code from semantic IR. A bin2bin tool must
 
 Anti-cheat drivers (EAC, BattlEye, FACEIT AC, Vanguard) ship with
 `--cetcompat` set, so they run cleanly on KCET-enabled machines.
-Cheat drivers — typically packed, hooked, or trampoline-injected via
+Cheat drivers — typically packed, patched, or trampoline-injected via
 bin2bin tooling — struggle to remain CET-compliant. KCET + HVCI form a
 **"compiler-friendly, bin2bin-hostile" hardware wall** that asymmetrically
 benefits well-engineered security software over malware-style code.

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvkmod.h>
-#include <nvk_hook.h>
+#include <nvk_interpose.h>
 #include <nvk_hide.h>
 #include <nvk_process.h>
 #include <nvk_cred.h>
@@ -28,7 +28,7 @@ enum neverc_krt_full_cmd {
 	CMD_UNHIDE     = 5,
 	CMD_SELINUX    = 6,
 	CMD_PROC_LIST  = 7,
-	CMD_HOOK_STATS = 8,
+	CMD_INTERPOSE_STATS = 8,
 	CMD_ENV_CHECK  = 9,
 	CMD_FILE_READ  = 10,
 	CMD_PROC_VMA   = 11,
@@ -39,7 +39,7 @@ struct status_reply {
 	u32 kernel_minor;
 	u32 android_ver;
 	u32 hidden;
-	u32 hooks_active;
+	u32 interposes_active;
 	u32 selinux_enforcing;
 	u32 thread_count;
 	u32 has_pac;
@@ -52,11 +52,11 @@ static struct neverc_krt_nl_sock nl_sock;
 static struct task_struct *worker_thread;
 static volatile int worker_running;
 
-#ifdef NEVERC_KRT_CONTEXT_HOOK
+#ifdef NEVERC_KRT_CONTEXT_INTERPOSE
 
-static struct neverc_krt_hook_ctx faccessat_ctx;
+static struct neverc_krt_interpose_ctx faccessat_ctx;
 
-static void hook_faccessat_ctx(neverc_krt_reg_ctx *ctx)
+static void interpose_faccessat_ctx(neverc_krt_reg_ctx *ctx)
 {
 	(void)ctx;
 }
@@ -65,17 +65,17 @@ static void hook_faccessat_ctx(neverc_krt_reg_ctx *ctx)
 
 typedef long (*faccessat_fn)(int dfd, const char __user *filename,
 			     int mode, int flags);
-static struct neverc_krt_hook faccessat_hook;
+static struct neverc_krt_interpose faccessat_interpose;
 static faccessat_fn orig_do_faccessat;
 
-static long hook_do_faccessat(int dfd, const char __user *filename,
+static long interpose_do_faccessat(int dfd, const char __user *filename,
 			      int mode, int flags)
 {
-	if (!neverc_krt_hook_enter(&faccessat_hook))
+	if (!neverc_krt_interpose_enter(&faccessat_interpose))
 		return orig_do_faccessat(dfd, filename, mode, flags);
 
 	long ret = orig_do_faccessat(dfd, filename, mode, flags);
-	neverc_krt_hook_leave(&faccessat_hook);
+	neverc_krt_interpose_leave(&faccessat_interpose);
 	return ret;
 }
 
@@ -109,10 +109,10 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 		sr.kernel_minor = ki->minor;
 		sr.android_ver = ki->android_version;
 		sr.hidden = neverc_krt_mod_is_hidden(&hide_state);
-#ifdef NEVERC_KRT_CONTEXT_HOOK
-		sr.hooks_active = faccessat_ctx.base.active;
+#ifdef NEVERC_KRT_CONTEXT_INTERPOSE
+		sr.interposes_active = faccessat_ctx.base.active;
 #else
-		sr.hooks_active = faccessat_hook.active;
+		sr.interposes_active = faccessat_interpose.active;
 #endif
 		sr.selinux_enforcing = neverc_krt_selinux_is_enforcing();
 		sr.thread_count = neverc_krt_thread_active_count();
@@ -142,7 +142,7 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 		break;
 
 	case CMD_UNHIDE:
-		neverc_krt_hide_remove_hooks();
+		neverc_krt_hide_remove_interposes();
 		neverc_krt_mod_show(&hide_state, &__this_module);
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
 		neverc_krt_log_info("visible\n");
@@ -162,11 +162,11 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 		break;
 	}
 
-	case CMD_HOOK_STATS: {
-#ifdef NEVERC_KRT_CONTEXT_HOOK
-		u64 hits = neverc_krt_hook_hits(&faccessat_ctx.base);
+	case CMD_INTERPOSE_STATS: {
+#ifdef NEVERC_KRT_CONTEXT_INTERPOSE
+		u64 hits = neverc_krt_interpose_hits(&faccessat_ctx.base);
 #else
-		u64 hits = neverc_krt_hook_hits(&faccessat_hook);
+		u64 hits = neverc_krt_interpose_hits(&faccessat_interpose);
 #endif
 		neverc_krt_nl_reply(ns, pid, seq, &hits, sizeof(hits));
 		break;
@@ -254,9 +254,9 @@ static int neverc_krt_full_init(void)
 	neverc_krt_compat_init();
 	neverc_krt_file_init();
 
-	ret = neverc_krt_hook_init();
+	ret = neverc_krt_interpose_init();
 	if (ret) {
-		neverc_krt_log_err("hook init: %d\n", ret);
+		neverc_krt_log_err("interpose init: %d\n", ret);
 		return ret;
 	}
 
@@ -264,16 +264,16 @@ static int neverc_krt_full_init(void)
 
 	target = NEVERC_KRT_LOOKUP("do_faccessat");
 	if (target) {
-#ifdef NEVERC_KRT_CONTEXT_HOOK
-		ret = neverc_krt_hook_install_ctx(&faccessat_ctx, target,
-					    hook_faccessat_ctx, (void *)0);
+#ifdef NEVERC_KRT_CONTEXT_INTERPOSE
+		ret = neverc_krt_interpose_install_ctx(&faccessat_ctx, target,
+					    interpose_faccessat_ctx, (void *)0);
 #else
-		ret = neverc_krt_hook_install(&faccessat_hook, target,
-				       (void *)hook_do_faccessat,
+		ret = neverc_krt_interpose_install(&faccessat_interpose, target,
+				       (void *)interpose_do_faccessat,
 				       (void **)&orig_do_faccessat);
 #endif
 		if (ret == 0)
-			neverc_krt_log_info("faccessat hooked\n");
+			neverc_krt_log_info("faccessat interposed\n");
 	}
 
 	neverc_krt_selinux_init();
@@ -310,15 +310,15 @@ static void neverc_krt_full_exit(void)
 	if (worker_thread)
 		neverc_krt_thread_stop(worker_thread);
 
-#ifdef NEVERC_KRT_CONTEXT_HOOK
+#ifdef NEVERC_KRT_CONTEXT_INTERPOSE
 	if (faccessat_ctx.base.active)
-		neverc_krt_hook_remove_ctx(&faccessat_ctx);
+		neverc_krt_interpose_remove_ctx(&faccessat_ctx);
 #else
-	if (faccessat_hook.active)
-		neverc_krt_hook_remove(&faccessat_hook);
+	if (faccessat_interpose.active)
+		neverc_krt_interpose_remove(&faccessat_interpose);
 #endif
 
-	neverc_krt_hide_remove_hooks();
+	neverc_krt_hide_remove_interposes();
 	neverc_krt_mod_show(&hide_state, &__this_module);
 
 	neverc_krt_log_info("unloaded\n");

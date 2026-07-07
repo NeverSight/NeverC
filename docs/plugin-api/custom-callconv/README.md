@@ -129,7 +129,7 @@ Source attributes and plugin arguments work together. A function with a `custom_
 
 ## LTO Support
 
-The plugin registers at both `NEVERC_HOOK_POST_OPT` (normal compilation) and `NEVERC_HOOK_LTO_POST_OPT` (after the LTO optimization pipeline). This ensures custom conventions are applied even when Link-Time Optimization merges translation units — enabling cross-TU call-site synchronization with full module visibility.
+The plugin registers at both `NEVERC_INTERPOSE_POST_OPT` (normal compilation) and `NEVERC_INTERPOSE_LTO_POST_OPT` (after the LTO optimization pipeline). This ensures custom conventions are applied even when Link-Time Optimization merges translation units — enabling cross-TU call-site synchronization with full module visibility.
 
 ## Plugin API
 

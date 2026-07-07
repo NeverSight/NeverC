@@ -2,7 +2,7 @@
 
 [← NeverC プロジェクト](i18n/README.ja.md)
 
-> **Tip:** Use the language bar above; links on this page point to the same locale (shellcode README and breadcrumbs).
+> **Tip:** Use the language bar above; links on this page point to the same locale (dyncode README and breadcrumbs).
 
 # NeverC ドキュメント
 
@@ -10,24 +10,24 @@
 
 ---
 
-## Shellcode コンパイラ
+## DynCode コンパイラ
 
-Shellcode コンパイルパイプラインは NeverC の主要な研究領域です。アーキテクチャ、CLI オプション、プラットフォームマトリクス、例は次を参照：
+DynCode コンパイルパイプラインは NeverC の主要な研究領域です。アーキテクチャ、CLI オプション、プラットフォームマトリクス、例は次を参照：
 
-**[Shellcode コンパイラ →](shellcode-compiler/README.ja.md)**
+**[DynCode コンパイラ →](dyncode-compiler/README.ja.md)**
 
 | ドキュメント | 説明 |
 |-------------|------|
-| [README](shellcode-compiler/README.ja.md) | 概要、クイックスタート、サポートターゲット |
-| [Pipeline & PIC](shellcode-compiler/pipeline-and-pic/README.ja.md) | IR → オブジェクト → 抽出の設計 |
-| [IR Pass Design](shellcode-compiler/ir-pass-design/README.ja.md) | 各 IR パスの設計意図 |
-| [MIR Pass Design](shellcode-compiler/mir-pass-design/README.ja.md) | バックエンド MIR パス |
-| [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.ja.md) | Ring-0 コンパイル |
-| [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.ja.md) | `TargetDesc` と抽出器 |
-| [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.ja.md) | 新プラットフォームの追加 |
-| [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.ja.md) | shellcode の観点から見た ARM64 命令 |
-| [Roadmap](shellcode-compiler/roadmap/README.ja.md) | 予定作業 |
-| [Progress](shellcode-compiler/progress/README.ja.md) | 実装状況 |
+| [README](dyncode-compiler/README.ja.md) | 概要、クイックスタート、サポートターゲット |
+| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic/README.ja.md) | IR → オブジェクト → 抽出の設計 |
+| [IR Pass Design](dyncode-compiler/ir-pass-design/README.ja.md) | 各 IR パスの設計意図 |
+| [MIR Pass Design](dyncode-compiler/mir-pass-design/README.ja.md) | バックエンド MIR パス |
+| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode/README.ja.md) | Ring-0 コンパイル |
+| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture/README.ja.md) | `TargetDesc` と抽出器 |
+| [Platform Extension Guide](dyncode-compiler/platform-extension-guide/README.ja.md) | 新プラットフォームの追加 |
+| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial/README.ja.md) | dyncode の観点から見た ARM64 命令 |
+| [Roadmap](dyncode-compiler/roadmap/README.ja.md) | 予定作業 |
+| [Progress](dyncode-compiler/progress/README.ja.md) | 実装状況 |
 
 ---
 
@@ -72,7 +72,7 @@ NeverC プロジェクトの主要な計画方向：標準ライブラリ、EVM 
 | 標準ライブラリ (`std`) | Go スタイルのバッテリー同梱パッケージ：`fmt`、`os`、`io`、`net`、`crypto`、`encoding`、`sync` など |
 | 難読化プラグインスイート (`neverc-obfuscation`) | ファーストパーティ VM、MBA、制御フロー平坦化、ポリモーフィックエンジン、アンチタンパープラグイン |
 | UI コンポーネントライブラリ (`neverc-ui`) | Qt 風クロスプラットフォーム UI、HTML/JS/CSS レンダラー、ドラッグ＆ドロップデザイナー、AI ネイティブワークフロー |
-| IDE & 言語ツール (`neverc-ide`) | `.nc` ファイル用 VSCode 拡張 + スタンドアロン IDE、IntelliSense、デバッグ、shellcode パイプライン可視化 |
+| IDE & 言語ツール (`neverc-ide`) | `.nc` ファイル用 VSCode 拡張 + スタンドアロン IDE、IntelliSense、デバッグ、dyncode パイプライン可視化 |
 | EVM スマートコントラクト | C を EVM バイトコードにコンパイル——Solidity の代わりに C でスマートコントラクトを記述 |
 | Solana eBPF | C を Solana eBPF バイトコードにコンパイル——C でオンチェーンプログラム開発 |
 

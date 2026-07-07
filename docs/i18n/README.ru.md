@@ -6,24 +6,24 @@
 
 **ИИ-дружественный компилятор C23 для исследований безопасности — на базе LLVM**
 
-Встроенный линкер · Конвейер shellcode · Встроенные среды выполнения (`string` · `mimalloc` · `xorstr`)
+Встроенный линкер · Конвейер dyncode · Встроенные среды выполнения (`string` · `mimalloc` · `xorstr`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#возможности)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#кросс-компиляция-под-windows)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#возможности)
 
-[Документация](../README.ru.md) · [Руководство shellcode](../shellcode-compiler/README.ru.md) · [Встроенные среды выполнения](../builtins/README.ru.md) · [API плагинов](../plugin-api/README.ru.md) · [Дорожная карта](../roadmap/README.ru.md)
+[Документация](../README.ru.md) · [Руководство dyncode](../dyncode-compiler/README.ru.md) · [Встроенные среды выполнения](../builtins/README.ru.md) · [API плагинов](../plugin-api/README.ru.md) · [Дорожная карта](../roadmap/README.ru.md)
 
 </div>
 
 ---
 
-> **Примечание:** GitHub всегда показывает на главной репозитория `README.md` (английский), без автоопределения языка браузера. Используйте ссылки языков выше; в [документации](../README.ru.md) и [руководстве shellcode](../shellcode-compiler/README.ru.md) сохраняйте ту же локаль через языковую панель и хлебные крошки.
+> **Примечание:** GitHub всегда показывает на главной репозитория `README.md` (английский), без автоопределения языка браузера. Используйте ссылки языков выше; в [документации](../README.ru.md) и [руководстве dyncode](../dyncode-compiler/README.ru.md) сохраняйте ту же локаль через языковую панель и хлебные крошки.
 
 ## Обзор
 
-NeverC компилирует стандартный C в hosted-бинарники, freestanding-исполняемые файлы и позиционно-независимый shellcode — всё из одной цепочки инструментов. Поддерживаются **x86_64** и **AArch64** (только little-endian). В будущих версиях будут добавлены **EVM** (смарт-контракты Ethereum) и **Solana eBPF** (ончейн-программы) как цели компиляции.
+NeverC компилирует стандартный C в hosted-бинарники, freestanding-исполняемые файлы и позиционно-независимый dyncode — всё из одной цепочки инструментов. Поддерживаются **x86_64** и **AArch64** (только little-endian). В будущих версиях будут добавлены **EVM** (смарт-контракты Ethereum) и **Solana eBPF** (ончейн-программы) как цели компиляции.
 
 ## Почему NeverC?
 
@@ -34,13 +34,13 @@ C уже является простейшим системным языком. 
 - **Никаких исключений** — Обработка ошибок всегда явная. Никакой раскрутки стека, никаких сюрпризов производительности.
 - **Единый бинарник** — Компилятор + линкер + среды выполнения в одном исполняемом файле. Ноль внешних зависимостей.
 - **Дружественный к LLM** — Минимальная грамматика и детерминированная семантика означают, что ИИ-сгенерированный код NeverC компилируется корректно чаще, чем альтернативы на C++.
-- **Настоящая кросс-компиляция** — Собирайте Windows PE, Linux ELF, macOS Mach-O, Android ELF и shellcode из macOS или Linux — без VM, без двойной загрузки, без поиска SDK. SDK платформ встроены в компилятор.
+- **Настоящая кросс-компиляция** — Собирайте Windows PE, Linux ELF, macOS Mach-O, Android ELF и dyncode из macOS или Linux — без VM, без двойной загрузки, без поиска SDK. SDK платформ встроены в компилятор.
 - **Расширяемый без порога вхождения** — Единственный C-заголовок, 20+ точек подключения — и у вас [плагин компилятора](../plugin-api/README.ru.md), способный вмешаться на любом этапе от оптимизации IR до финального бинарного вывода — без знания LLVM.
-- **Исследование безопасности встроено** — Компиляция shellcode, шифрование строк во время компиляции и кроссплатформенная генерация PE нативно встроены в компилятор, а не прикручены постфактум внешними скриптами.
+- **Исследование безопасности встроено** — Компиляция dyncode, шифрование строк во время компиляции и кроссплатформенная генерация PE нативно встроены в компилятор, а не прикручены постфактум внешними скриптами.
 
 ## Возможности
 
-- **[Компилятор shellcode](../shellcode-compiler/README.ru.md)** — многоступенчатый конвейер IR/MIR, кроссплатформенное извлечение, разрешение импортов/syscall, режим ядра, аудит запрещённых байт, архитектура плагинов
+- **[Компилятор dyncode](../dyncode-compiler/README.ru.md)** — многоступенчатый конвейер IR/MIR, кроссплатформенное извлечение, разрешение импортов/syscall, режим ядра, аудит запрещённых байт, архитектура плагинов
 - **Интегрированный линкер** — COFF, ELF и Mach-O в одном бинарнике; внешние `ld` и `link.exe` не нужны
 - **Кросс-компиляция** — Windows PE, Linux ELF, macOS Mach-O и Android ELF с любого хоста со встроенными SDK платформ
 - **[Встроенные среды выполнения](../builtins/README.ru.md)** — встроенные в компилятор LLVM bitcode среды: [`string`](../builtins/string/README.ru.md) (строковый тип с семантикой значения, автоуправление памятью), [`mimalloc`](../builtins/mimalloc/README.ru.md) (прозрачная замена аллокатора высокой производительности) и [`xorstr`](../builtins/xorstr/README.ru.md) (шифрование строк во время компиляции с дешифровкой против сигнатур)
@@ -73,27 +73,27 @@ int main(void) {
 }
 ```
 
-> **Примечание:** Встроенный тип **`string`** требует **`-fbuiltin-string`** для файлов `.c`. Он автоматически включается для [**файлов `.nc`**](../nc-extension/README.ru.md) и в режиме **`-fshellcode`**.
+> **Примечание:** Встроенный тип **`string`** требует **`-fbuiltin-string`** для файлов `.c`. Он автоматически включается для [**файлов `.nc`**](../nc-extension/README.ru.md) и в режиме **`-fdyncode`**.
 
 ```bash
 # macOS arm64 / x86_64
-neverc -fshellcode -target arm64-apple-macos hello.c -o hello.bin
-neverc -fshellcode -target x86_64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target x86_64-apple-macos hello.c -o hello.bin
 
 # iOS arm64
-neverc -fshellcode -target arm64-apple-ios hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-ios hello.c -o hello.bin
 
 # Linux x86_64 / arm64
-neverc -fshellcode -target x86_64-linux-gnu hello.c -o hello.bin
-neverc -fshellcode -target aarch64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-gnu hello.c -o hello.bin
 
 # Android arm64 / x86_64
-neverc -fshellcode -target aarch64-linux-android hello.c -o hello.bin
-neverc -fshellcode -target x86_64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-android hello.c -o hello.bin
 
 # Windows x86_64 / arm64
-neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
-neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
 Подробности: **[индекс документации](../README.ru.md)** — дизайн, матрица платформ, справочник CLI, примеры. Полные собираемые примеры: **[examples](../examples/README.ru.md)**.

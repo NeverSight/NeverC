@@ -52,10 +52,10 @@
 |------|-------|-----------------|
 | [Kernel Hello](../../examples/android-kernel-hello/README.ar.md) | وحدة `.ko` أدنى | تمهيد kallsyms عبر kprobe، أبسط تحقق insmod |
 | [قالب تعريف النواة](../../examples/android-kernel-driver/README.ar.md) | قالب حل الرموز الديناميكي | `kallsyms_lookup_name`، ABI مستقر GKI، 5.10–6.12 |
-| [Kernel Inline Hook](../../examples/android-kernel-inline-hook/README.ar.md) | Hook مضمّن على `do_faccessat` | تصحيح آمن BTI/PAC، وضع context hook، إعادة تموضع PC-نسبي |
-| [Kernel Syscall Hook](../../examples/android-kernel-syscall-hook/README.ar.md) | جدول syscall / inline / context hook | استبدال `sys_call_table`، hook مضمّن، context hook |
+| [Kernel Inline Interpose](../../examples/android-kernel-inline-interpose/README.ar.md) | Interpose مضمّن على `do_faccessat` | تصحيح آمن BTI/PAC، وضع context interpose، إعادة تموضع PC-نسبي |
+| [Kernel Syscall Interpose](../../examples/android-kernel-syscall-interpose/README.ar.md) | جدول syscall / inline / context interpose | استبدال `sys_call_table`، interpose مضمّن، context interpose |
 | [Kernel Stealth](../../examples/android-kernel-stealth/README.ar.md) | إخفاء الوحدة | إخفاء list/sysfs/proc، منح root، SELinux permissive |
-| [Kernel Full SDK](../../examples/android-kernel-full/README.ar.md) | تكامل SDK كامل | Netlink IPC، hooks، بيانات اعتماد، إخفاء، SELinux، VMA، ملفات |
+| [Kernel Full SDK](../../examples/android-kernel-full/README.ar.md) | تكامل SDK كامل | Netlink IPC، interposes، بيانات اعتماد، إخفاء، SELinux، VMA، ملفات |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.ar.md) | جهاز حرفي + ioctl | `misc_register`، إرسال ioctl، `/proc` seq_file |
 | [Kernel Netlink](../../examples/android-kernel-netlink/README.ar.md) | IPC netlink ثنائي الاتجاه | أوامر PING/VERSION/ECHO، `nvk_nl_open`/`nvk_nl_reply` |
 

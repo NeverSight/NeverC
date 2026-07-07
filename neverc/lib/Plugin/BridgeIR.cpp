@@ -106,7 +106,7 @@ static NevercValueRef bridgeModuleAddFunction(NevercModuleRef M,
   if (LLVM_UNLIKELY(!FT))
     return nullptr;
   auto *Fn = Function::Create(FT, GlobalValue::ExternalLinkage, Name, Mod);
-  if (gShellcodeModeEnabled)
+  if (gDynCodeModeEnabled)
     Fn->addFnAttr("no-stack-arg-probe");
   return wrapV(Fn);
 }

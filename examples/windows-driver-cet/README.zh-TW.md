@@ -173,7 +173,7 @@ rotate13:
 
 ## 編譯器 vs bin2bin：誰對 CET 友善？
 
-CET 在**原始碼級編譯器**和 **bin2bin 工具**（加殼、混淆、hook、dump+rebuild）
+CET 在**原始碼級編譯器**和 **bin2bin 工具**（加殼、混淆、interpose、dump+rebuild）
 之間畫了一道清晰的紅線。硬體 Shadow Stack 強制三條規則，重塑整個防護 /
 混淆產業：
 
@@ -223,7 +223,7 @@ BUGCHECK 核心。編譯器**無法**觸及影子堆疊：
 | **Stack pivoting**（ROP gadget chain） | 影子堆疊無法跟隨 pivot |
 | **自我修改程式碼** | HVCI 阻止對可執行頁的寫入 |
 | **執行期程式碼產生** | 同上 —— HVCI W^X 違規 |
-| **基於 trampoline 的 inline hook** | 修改函式 prologue 觸發 HVCI；即使繞過 HVCI，trampoline RET 處的影子堆疊也會出問題 |
+| **基於 trampoline 的 inline patch** | 修改函式 prologue 觸發 HVCI；即使繞過 HVCI，trampoline RET 處的影子堆疊也會出問題 |
 
 ### 為何 bin2bin 工具有結構性劣勢
 
@@ -250,7 +250,7 @@ BUGCHECK 核心。編譯器**無法**觸及影子堆疊：
 
 反作弊驅動（EAC、BattlEye、FACEIT AC、Vanguard）出廠時設定了 `--cetcompat`，
 因此可以在啟用 KCET 的機器上正常執行。
-作弊驅動——通常透過 bin2bin 工具加殼、hook 或 trampoline 注入——很難保持
+作弊驅動——通常透過 bin2bin 工具加殼、interpose 或 trampoline 注入——很難保持
 CET 合規。KCET + HVCI 形成一道**「編譯器友善、bin2bin 敵對」的硬體壁壘**，
 不對稱地有利於工程化良好的安全軟體，而非惡意程式碼風格的程式。
 

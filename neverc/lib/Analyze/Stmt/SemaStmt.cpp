@@ -2004,13 +2004,13 @@ StmtResult Sema::OnSEHTryBlock(SourceLocation TryLoc, Stmt *TryBlock,
   if (!Context.getTargetInfo().isSEHTrySupported())
     Diag(TryLoc, diag::err_seh_try_unsupported);
 
-  // Reject __try under -fshellcode.  Even on Windows targets where SEH is
-  // normally supported, the shellcode pipeline cannot link the personality
+  // Reject __try under -fdyncode.  Even on Windows targets where SEH is
+  // normally supported, the dyncode pipeline cannot link the personality
   // helpers and unwind tables SEH expands into.  Catching this in Sema gives
   // the user a precise error rather than a confusing late-stage failure
   // (missing __C_specific_handler, stripped .pdata/.xdata, runtime crash).
-  if (getLangOpts().ShellcodeMode)
-    Diag(TryLoc, diag::err_seh_try_unsupported_shellcode);
+  if (getLangOpts().DynCodeMode)
+    Diag(TryLoc, diag::err_seh_try_unsupported_dyncode);
 
   if (getLangOpts().IgnoreExceptions)
     Diag(TryLoc, diag::err_seh_try_disabled_ignore_exceptions);

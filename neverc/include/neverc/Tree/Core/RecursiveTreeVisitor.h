@@ -25,7 +25,7 @@ using llvm::isa;
 
 // A helper macro to implement short-circuiting when recursing.  It invokes
 // CALL_EXPR on the derived visitor so users can override the Traverse*/Visit*
-// hook named in CALL_EXPR.
+// callback named in CALL_EXPR.
 #define TRY_TO(CALL_EXPR)                                                      \
   do {                                                                         \
     if (!getDerived().CALL_EXPR)                                               \

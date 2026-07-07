@@ -6,7 +6,7 @@
 
 - **单次引导**：`NEVERC_KRT_BOOTSTRAP()` 只需在 `module_init` 中调用一次
 - **共享状态**：编译器将所有 `neverc_krt_*` 状态提升为 `weak_odr` 链接，所有 `.c` 文件共享同一符号解析器、缓存和子系统状态
-- **分文件架构**：`main.c`（初始化/退出）、`hooks.c`（hook 逻辑）、`utils.c`（辅助函数）
+- **分文件架构**：`main.c`（初始化/退出）、`interposes.c`（interpose 逻辑）、`utils.c`（辅助函数）
 
 ## 构建
 

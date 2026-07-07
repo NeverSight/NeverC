@@ -62,7 +62,7 @@ Driver 在建構編譯器呼叫之前檢查每個輸入檔案的副檔名。對�
 
 - `.nc` 檔案被視為 C 原始碼 — 語言仍然是 C（預設 C23），不是新語言
 - 所有標準 C 旗標（`-std=c11`、`-O2`、`-g`、`-Wall` 等）的行為完全相同
-- `-fshellcode` 與 `.nc` 自然結合：shellcode 模式本身已啟用 `string`，`.nc` 確保 `neverc-types` 也處於活動狀態
+- `-fdyncode` 與 `.nc` 自然結合：dyncode 模式本身已啟用 `string`，`.nc` 確保 `neverc-types` 也處於活動狀態
 - 交叉編譯（`-target aarch64-linux-gnu` 等）以相同方式運作
 - `.c` 檔案不受影響 — 除非明確傳遞旗標，否則行為與之前完全相同
 
@@ -72,5 +72,5 @@ Driver 在建構編譯器呼叫之前檢查每個輸入檔案的副檔名。對�
 |------|------|
 | 使用 `string` 和 Rust 風格型別的新 NeverC 專案 | 使用 `.nc` |
 | 希望保持與其他編譯器相容的現有 C 程式碼庫 | 使用 `.c` + 明確旗標 |
-| Shellcode 專案 | 兩者均可 — `-fshellcode` 無論如何都會啟用 `string` |
+| DynCode 專案 | 兩者均可 — `-fdyncode` 無論如何都會啟用 `string` |
 | 混合程式碼庫 | NeverC 專用檔案使用 `.nc`，可攜式程式碼使用 `.c` |

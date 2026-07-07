@@ -75,12 +75,12 @@ void PluginModulePassAdaptor::printPipeline(
   OS << Name;
 }
 
-void addPluginModulePasses(ModulePassManager &MPM, NevercHookPoint Hook,
+void addPluginModulePasses(ModulePassManager &MPM, NevercInterposePoint Interpose,
                            PluginLoader &Loader) {
   if (!Loader.hasPlugins())
     return;
 
-  for (const auto *P : Loader.getModulePasses(Hook)) {
+  for (const auto *P : Loader.getModulePasses(Interpose)) {
     MPM.addPass(PluginModulePassAdaptor(P->Fn, &Loader.getHostAPI(),
                                         P->UserData, P->PassName,
                                         P->PluginPath));
@@ -124,12 +124,12 @@ bool PluginMachineFunctionPassAdaptor::runOnMachineFunction(
   return Changed != 0;
 }
 
-void addPluginMachinePasses(TargetPassConfig &TPC, NevercHookPoint Hook,
+void addPluginMachinePasses(TargetPassConfig &TPC, NevercInterposePoint Interpose,
                             PluginLoader &Loader) {
   if (!Loader.hasPlugins())
     return;
 
-  for (const auto *P : Loader.getMachinePasses(Hook)) {
+  for (const auto *P : Loader.getMachinePasses(Interpose)) {
     TPC.addExternalPass(new PluginMachineFunctionPassAdaptor(
         P->Fn, &Loader.getHostAPI(), P->UserData, P->PassName,
         P->PluginPath));

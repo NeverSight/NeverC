@@ -6,24 +6,24 @@
 
 **AI 친화적인 보안 연구용 C23 컴파일러 — LLVM 기반**
 
-통합 링커 · Shellcode 파이프라인 · 내장 런타임（`string` · `mimalloc` · `xorstr`）
+통합 링커 · DynCode 파이프라인 · 내장 런타임（`string` · `mimalloc` · `xorstr`）
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#기능)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#windows로-크로스-컴파일)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#기능)
 
-[문서 색인](../README.ko.md) · [Shellcode 가이드](../shellcode-compiler/README.ko.md) · [내장 런타임](../builtins/README.ko.md) · [플러그인 API](../plugin-api/README.ko.md) · [로드맵](../roadmap/README.ko.md)
+[문서 색인](../README.ko.md) · [DynCode 가이드](../dyncode-compiler/README.ko.md) · [내장 런타임](../builtins/README.ko.md) · [플러그인 API](../plugin-api/README.ko.md) · [로드맵](../roadmap/README.ko.md)
 
 </div>
 
 ---
 
-> **참고:** GitHub는 저장소 홈에 항상 영어 `README.md`를 표시합니다(브라우저 언어 자동 전환 없음). 상단 언어 링크를 사용하고, [문서](../README.ko.md)·[shellcode 가이드](../shellcode-compiler/README.ko.md)에서는 페이지 언어 링크와 breadcrumb으로 같은 언어를 유지하세요.
+> **참고:** GitHub는 저장소 홈에 항상 영어 `README.md`를 표시합니다(브라우저 언어 자동 전환 없음). 상단 언어 링크를 사용하고, [문서](../README.ko.md)·[dyncode 가이드](../dyncode-compiler/README.ko.md)에서는 페이지 언어 링크와 breadcrumb으로 같은 언어를 유지하세요.
 
 ## 개요
 
-NeverC는 표준 C를 호스트 바이너리, 프리스탠딩 실행 파일, 위치 독립 shellcode로 컴파일합니다——모두 단일 툴체인에서 처리합니다. **x86_64** 및 **AArch64**(리틀 엔디안만)를 대상으로 합니다. 향후 릴리스에서 **EVM**(이더리움 스마트 컨트랙트)과 **Solana eBPF**(온체인 프로그램) 컴파일 타겟이 추가될 예정입니다.
+NeverC는 표준 C를 호스트 바이너리, 프리스탠딩 실행 파일, 위치 독립 dyncode로 컴파일합니다——모두 단일 툴체인에서 처리합니다. **x86_64** 및 **AArch64**(리틀 엔디안만)를 대상으로 합니다. 향후 릴리스에서 **EVM**(이더리움 스마트 컨트랙트)과 **Solana eBPF**(온체인 프로그램) 컴파일 타겟이 추가될 예정입니다.
 
 ## 왜 NeverC인가?
 
@@ -34,13 +34,13 @@ C는 이미 가장 단순한 시스템 프로그래밍 언어입니다. NeverC�
 - **예외 없음** — 에러 처리는 항상 명시적. 스택 해제 없음, 예측 불가능한 성능 저하 없음.
 - **단일 바이너리** — 컴파일러 + 링커 + 런타임이 하나의 실행 파일에. 외부 의존성 제로.
 - **LLM 친화적** — 최소한의 문법과 결정론적 의미론 덕분에 AI가 생성한 NeverC 코드가 C++보다 올바르게 컴파일될 확률이 높습니다.
-- **진정한 크로스 컴파일** — macOS나 Linux에서 Windows PE, Linux ELF, macOS Mach-O, Android ELF, shellcode를 빌드——VM 불필요, 듀얼 부팅 불필요, SDK 찾기 불필요. 각 플랫폼 SDK가 컴파일러에 내장되어 있습니다.
+- **진정한 크로스 컴파일** — macOS나 Linux에서 Windows PE, Linux ELF, macOS Mach-O, Android ELF, dyncode를 빌드——VM 불필요, 듀얼 부팅 불필요, SDK 찾기 불필요. 각 플랫폼 SDK가 컴파일러에 내장되어 있습니다.
 - **제로 프릭션 확장** — 단 하나의 C 헤더와 20+ 훅 포인트로 IR 최적화부터 최종 바이너리 출력까지 모든 단계에 개입하는 [컴파일러 플러그인](../plugin-api/README.ko.md)을 작성 가능——LLVM 지식 불필요.
-- **보안 연구 내장** — Shellcode 컴파일, 컴파일 타임 문자열 암호화, 크로스 플랫폼 PE 생성이 컴파일러에 네이티브 통합——외부 스크립트로 덧붙인 것이 아닙니다.
+- **보안 연구 내장** — DynCode 컴파일, 컴파일 타임 문자열 암호화, 크로스 플랫폼 PE 생성이 컴파일러에 네이티브 통합——외부 스크립트로 덧붙인 것이 아닙니다.
 
 ## 기능
 
-- **[Shellcode 컴파일러](../shellcode-compiler/README.ko.md)** — 다단계 IR/MIR 파이프라인, 크로스 플랫폼 추출, 임포트/시스템 콜 저하, 커널 모드, 배드 바이트 감사, 플러그인 아키텍처
+- **[DynCode 컴파일러](../dyncode-compiler/README.ko.md)** — 다단계 IR/MIR 파이프라인, 크로스 플랫폼 추출, 임포트/시스템 콜 저하, 커널 모드, 배드 바이트 감사, 플러그인 아키텍처
 - **통합 링커** — 단일 바이너리에서 COFF, ELF, Mach-O; 외부 `ld` / `link.exe` 불필요
 - **크로스 컴파일** — 모든 호스트에서 Windows PE, Linux ELF, macOS Mach-O, Android ELF 빌드 (플랫폼 SDK 내장)
 - **[내장 런타임](../builtins/README.ko.md)** — 컴파일러 임베디드 LLVM bitcode 런타임: [`string`](../builtins/string/README.ko.md) (값 의미론 문자열, 자동 메모리 관리), [`mimalloc`](../builtins/mimalloc/README.ko.md) (투명 고성능 할당자 오버라이드) 및 [`xorstr`](../builtins/xorstr/README.ko.md) (컴파일 타임 문자열 암호화, 시그니처 우회 복호화)
@@ -73,27 +73,27 @@ int main(void) {
 }
 ```
 
-> **참고:** 내장 **`string`** 타입은 `.c` 파일에서 **`-fbuiltin-string`** 이 필요합니다. [**`.nc` 파일**](../nc-extension/README.ko.md) 또는 **`-fshellcode`** 모드에서는 자동으로 활성화됩니다.
+> **참고:** 내장 **`string`** 타입은 `.c` 파일에서 **`-fbuiltin-string`** 이 필요합니다. [**`.nc` 파일**](../nc-extension/README.ko.md) 또는 **`-fdyncode`** 모드에서는 자동으로 활성화됩니다.
 
 ```bash
 # macOS arm64 / x86_64
-neverc -fshellcode -target arm64-apple-macos hello.c -o hello.bin
-neverc -fshellcode -target x86_64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target x86_64-apple-macos hello.c -o hello.bin
 
 # iOS arm64
-neverc -fshellcode -target arm64-apple-ios hello.c -o hello.bin
+neverc -fdyncode -target arm64-apple-ios hello.c -o hello.bin
 
 # Linux x86_64 / arm64
-neverc -fshellcode -target x86_64-linux-gnu hello.c -o hello.bin
-neverc -fshellcode -target aarch64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-gnu hello.c -o hello.bin
 
 # Android arm64 / x86_64
-neverc -fshellcode -target aarch64-linux-android hello.c -o hello.bin
-neverc -fshellcode -target x86_64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-android hello.c -o hello.bin
 
 # Windows x86_64 / arm64
-neverc -fshellcode -target x86_64-pc-windows-msvc hello.c -o hello.bin
-neverc -fshellcode -target aarch64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
 상세 설계, 플랫폼 매트릭스, CLI 참조, 예제는 **[문서 색인](../README.ko.md)** 을 참조하세요. 빌드 가능한 샘플은 **[examples](../examples/README.ko.md)** 참조.

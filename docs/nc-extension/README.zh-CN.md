@@ -62,7 +62,7 @@ Driver 在构建编译器调用之前检查每个输入文件的扩展名。对�
 
 - `.nc` 文件被视为 C 源代码 — 语言仍然是 C（默认 C23），不是新语言
 - 所有标准 C 标志（`-std=c11`、`-O2`、`-g`、`-Wall` 等）的行为完全相同
-- `-fshellcode` 与 `.nc` 自然结合：shellcode 模式本身已启用 `string`，`.nc` 确保 `neverc-types` 也处于活动状态
+- `-fdyncode` 与 `.nc` 自然结合：dyncode 模式本身已启用 `string`，`.nc` 确保 `neverc-types` 也处于活动状态
 - 交叉编译（`-target aarch64-linux-gnu` 等）以相同方式工作
 - `.c` 文件不受影响 — 除非显式传递标志，否则行为与之前完全相同
 
@@ -72,5 +72,5 @@ Driver 在构建编译器调用之前检查每个输入文件的扩展名。对�
 |------|------|
 | 使用 `string` 和 Rust 风格类型的新 NeverC 项目 | 使用 `.nc` |
 | 希望保持与其他编译器兼容的现有 C 代码库 | 使用 `.c` + 显式标志 |
-| Shellcode 项目 | 两者均可 — `-fshellcode` 无论如何都会启用 `string` |
+| DynCode 项目 | 两者均可 — `-fdyncode` 无论如何都会启用 `string` |
 | 混合代码库 | NeverC 专用文件使用 `.nc`，可移植代码使用 `.c` |

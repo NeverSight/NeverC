@@ -140,7 +140,7 @@ rotate13:
 ## Compilador vs bin2bin: ¿quién es amigable con CET?
 
 CET traza una línea clara entre los **compiladores a nivel de código fuente**
-y las **herramientas bin2bin** (empaquetadores, ofuscadores, hookers,
+y las **herramientas bin2bin** (empaquetadores, ofuscadores, patchers,
 dump+rebuild). El Shadow Stack por hardware impone tres reglas que
 remodelan toda la industria de protección / ofuscación:
 
@@ -192,7 +192,7 @@ El compilador **no puede** alcanzar el shadow stack:
 | **Stack pivoting** (cadenas de gadgets ROP) | Shadow stack no puede seguir el pivote |
 | **Código auto-modificable** | HVCI bloquea escrituras en páginas ejecutables |
 | **Generación de código en tiempo de ejecución** | Igual — violación HVCI W^X |
-| **Hooks inline basados en trampolín** | Modificar el prólogo de función dispara HVCI; incluso eludiendo HVCI, el shadow stack se rompe en el RET del trampolín |
+| **Patches inline basados en trampolín** | Modificar el prólogo de función dispara HVCI; incluso eludiendo HVCI, el shadow stack se rompe en el RET del trampolín |
 
 ### Por qué las herramientas bin2bin tienen una desventaja estructural
 
@@ -220,7 +220,7 @@ bin2bin debe **redescubrir** la semántica desde bytes compilados:
 Los controladores anti-trampa (EAC, BattlEye, FACEIT AC, Vanguard) salen con
 `--cetcompat` configurado, por lo que funcionan limpiamente en máquinas con
 KCET activado. Los controladores de trampa — típicamente empaquetados,
-hookeados o inyectados con trampolín vía herramientas bin2bin — luchan por
+parcheados o inyectados con trampolín vía herramientas bin2bin — luchan por
 mantenerse conformes con CET. KCET + HVCI forman una **muralla de hardware
 "amigable con compiladores, hostil a bin2bin"** que beneficia asimétricamente
 al software de seguridad bien diseñado frente al código de estilo malware.

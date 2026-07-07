@@ -332,7 +332,7 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
   // ltoPartitions > 1 enables our ParallelCodeGenHook / ParallelOptCodeGenHook
   // in the LTO backend.  The hooks auto-detect the actual partition count
   // internally via hardware_concurrency(), so we only need the minimum value
-  // that triggers the hook path.  This also minimizes buf.resize(maxTasks)
+  // that triggers the callback path.  This also minimizes buf.resize(maxTasks)
   // allocation in compile() — only 2 SmallVector<char,0> instead of N.
   Cfg.ltoPartitions = 2;
 

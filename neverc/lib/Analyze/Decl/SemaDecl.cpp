@@ -3786,7 +3786,7 @@ NamedDecl *Sema::OnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       Diag(VDS.getThreadStorageClassSpecLoc(), diag::err_thread_non_global)
           << DeclSpec::getSpecifierName(TSCS);
     else if (!Context.getTargetInfo().isTLSSupported() &&
-             !getLangOpts().ShellcodeMode)
+             !getLangOpts().DynCodeMode)
       Diag(VDS.getThreadStorageClassSpecLoc(), diag::err_thread_unsupported);
     else
       NewVD->setTSCSpec(TSCS);

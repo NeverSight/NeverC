@@ -4,7 +4,7 @@
 
 [← مشروع NeverC](i18n/README.ar.md)
 
-> **Tip:** Use the language bar above; links on this page point to the same locale (shellcode README and breadcrumbs).
+> **Tip:** Use the language bar above; links on this page point to the same locale (dyncode README and breadcrumbs).
 
 # توثيق NeverC
 
@@ -12,24 +12,24 @@
 
 ---
 
-## مُجمِّع shellcode
+## مُجمِّع dyncode
 
-مسار تجميع shellcode هو محور أبحاث NeverC الأساسي. للبنية وخيارات CLI ومصفوفة المنصات والأمثلة:
+مسار تجميع dyncode هو محور أبحاث NeverC الأساسي. للبنية وخيارات CLI ومصفوفة المنصات والأمثلة:
 
-**[مُجمِّع shellcode →](shellcode-compiler/README.ar.md)**
+**[مُجمِّع dyncode →](dyncode-compiler/README.ar.md)**
 
 | المستند | الوصف |
 |---------|--------|
-| [README](shellcode-compiler/README.ar.md) | نظرة عامة، بدء سريع، الأهداف المدعومة |
-| [Pipeline & PIC](shellcode-compiler/pipeline-and-pic/README.ar.md) | تصميم IR → كائن → استخراج |
-| [IR Pass Design](shellcode-compiler/ir-pass-design/README.ar.md) | مبررات كل مرور IR |
-| [MIR Pass Design](shellcode-compiler/mir-pass-design/README.ar.md) | مرورات MIR للخلفية |
-| [Kernel-Mode Shellcode](shellcode-compiler/kernel-mode-shellcode/README.ar.md) | تجميع Ring-0 |
-| [Cross-Platform Architecture](shellcode-compiler/cross-platform-architecture/README.ar.md) | `TargetDesc` والمستخرجات |
-| [Platform Extension Guide](shellcode-compiler/platform-extension-guide/README.ar.md) | إضافة منصة |
-| [ARM64 Assembly Tutorial](shellcode-compiler/arm64-assembly-tutorial/README.ar.md) | تعليمات ARM64 من منظور shellcode |
-| [Roadmap](shellcode-compiler/roadmap/README.ar.md) | العمل المخطط |
-| [Progress](shellcode-compiler/progress/README.ar.md) | حالة التنفيذ |
+| [README](dyncode-compiler/README.ar.md) | نظرة عامة، بدء سريع، الأهداف المدعومة |
+| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic/README.ar.md) | تصميم IR → كائن → استخراج |
+| [IR Pass Design](dyncode-compiler/ir-pass-design/README.ar.md) | مبررات كل مرور IR |
+| [MIR Pass Design](dyncode-compiler/mir-pass-design/README.ar.md) | مرورات MIR للخلفية |
+| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode/README.ar.md) | تجميع Ring-0 |
+| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture/README.ar.md) | `TargetDesc` والمستخرجات |
+| [Platform Extension Guide](dyncode-compiler/platform-extension-guide/README.ar.md) | إضافة منصة |
+| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial/README.ar.md) | تعليمات ARM64 من منظور dyncode |
+| [Roadmap](dyncode-compiler/roadmap/README.ar.md) | العمل المخطط |
+| [Progress](dyncode-compiler/progress/README.ar.md) | حالة التنفيذ |
 
 ---
 
@@ -74,7 +74,7 @@
 | المكتبة القياسية (`std`) | حزم على طراز Go: `fmt`، `os`، `io`، `net`، `crypto`، `encoding`، `sync` والمزيد |
 | حزمة إضافات التشويش (`neverc-obfuscation`) | VM، MBA، تسطيح تدفق التحكم، محرك متعدد الأشكال، مضاد للتلاعب — إضافات من الطرف الأول |
 | مكتبة مكونات واجهة المستخدم (`neverc-ui`) | واجهة مستخدم متعددة المنصات بأسلوب Qt، عارض HTML/JS/CSS، مصمم سحب وإفلات، سير عمل أصلي للذكاء الاصطناعي |
-| بيئة التطوير وأدوات اللغة (`neverc-ide`) | إضافة VSCode + بيئة تطوير مستقلة لملفات `.nc`، IntelliSense، تصحيح الأخطاء، تصور مسار shellcode |
+| بيئة التطوير وأدوات اللغة (`neverc-ide`) | إضافة VSCode + بيئة تطوير مستقلة لملفات `.nc`، IntelliSense، تصحيح الأخطاء، تصور مسار dyncode |
 | عقود EVM الذكية | تجميع C إلى بايت كود EVM — كتابة العقود بلغة C بدلاً من Solidity |
 | Solana eBPF | تجميع C إلى بايت كود eBPF لـ Solana — تطوير برامج على السلسلة بلغة C |
 

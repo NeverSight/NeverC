@@ -138,7 +138,7 @@ rotate13:
 ## Compilateur vs bin2bin : qui est compatible avec CET ?
 
 CET trace une ligne nette entre les **compilateurs au niveau source** et
-les **outils bin2bin** (packers, obfuscateurs, hookeurs, dump+rebuild).
+les **outils bin2bin** (packers, obfuscateurs, patcheurs, dump+rebuild).
 Le Shadow Stack matériel impose trois règles qui remodèlent toute
 l'industrie de la protection / obfuscation :
 
@@ -190,7 +190,7 @@ Le compilateur **ne peut pas** atteindre le shadow stack :
 | **Stack pivoting** (chaînes ROP) | Le shadow stack ne peut pas suivre le pivot |
 | **Code auto-modifiant** | HVCI bloque les écritures sur les pages exécutables |
 | **Génération de code à l'exécution** | Idem — violation HVCI W^X |
-| **Hooks inline à base de trampoline** | Modifier le prologue de fonction déclenche HVCI ; même en contournant HVCI, le shadow stack casse sur le RET du trampoline |
+| **Patches inline à base de trampoline** | Modifier le prologue de fonction déclenche HVCI ; même en contournant HVCI, le shadow stack casse sur le RET du trampoline |
 
 ### Pourquoi les outils bin2bin ont un désavantage structurel
 
@@ -217,7 +217,7 @@ bin2bin doit **redécouvrir** la sémantique depuis les octets compilés :
 
 Les pilotes anti-triche (EAC, BattlEye, FACEIT AC, Vanguard) sortent avec
 `--cetcompat` activé, ils s'exécutent donc proprement sur les machines à KCET
-activé. Les pilotes de triche — typiquement packés, hookés ou injectés par
+activé. Les pilotes de triche — typiquement packés, patchés ou injectés par
 trampoline via outillage bin2bin — peinent à rester CET-conformes. KCET + HVCI
 forment un **mur matériel « ami du compilateur, hostile au bin2bin »** qui
 favorise asymétriquement les logiciels de sécurité bien conçus par rapport

@@ -14,8 +14,8 @@ This skill covers mobile security resources from the awesome-game-security colle
 - `Cheat > Magisk`
 - `Cheat > Xposed`
 - `Cheat > Frida`
-- `Cheat > Hook ART(android)`
-- `Cheat > Hook syscall(android)`
+- `Cheat > Intercept ART(android)`
+- `Cheat > Intercept syscall(android)`
 - `Cheat > Android Terminal Emulator`
 - `Cheat > Android File Explorer`
 - `Cheat > Android Memory Explorer`
@@ -75,7 +75,7 @@ apkid game.apk
 1. Extract libil2cpp.so from APK
 2. Use IL2CPP Dumper to generate headers
 3. Analyze with IDA/Ghidra
-4. Hook using Frida or native hooks
+4. Intercept using Frida or native patches
 ```
 
 #### Native Games
@@ -83,7 +83,7 @@ apkid game.apk
 1. Identify target libraries (.so files)
 2. Analyze with reverse engineering tools
 3. Pattern scan for functions
-4. Apply hooks/patches
+4. Apply intercepts/patches
 ```
 
 ### Memory Manipulation
@@ -101,11 +101,11 @@ pread64(fd, buffer, size, address);
 pwrite64(fd, buffer, size, address);
 ```
 
-### Hooking Frameworks
+### Interception Frameworks
 
 #### Frida
 ```javascript
-// Basic function hook
+// Basic function intercept
 Interceptor.attach(Module.findExportByName("libgame.so", "function_name"), {
     onEnter: function(args) {
         console.log("Called with: " + args[0]);
@@ -116,11 +116,11 @@ Interceptor.attach(Module.findExportByName("libgame.so", "function_name"), {
 });
 ```
 
-#### Native Hooks
-- **Substrate**: Inline hooking framework
-- **And64InlineHook**: ARM64 inline hooks
-- **xHook**: PLT hook library
-- **Dobby**: Multi-platform hook framework
+#### Native Intercepts
+- **Substrate**: Inline interception framework
+- **And64InlineHook**: ARM64 inline intercepts
+- **xHook**: PLT intercept library
+- **Dobby**: Multi-platform intercept framework
 
 ### Modern Root Solutions
 
@@ -162,7 +162,7 @@ Methodology (KSU/Magisk module + single binary engine):
   boot_completed to avoid zygote/module startup contention
 
 Injection modes:
-- Attach: ptrace into running process, inject bootstrap shellcode,
+- Attach: ptrace into running process, inject bootstrap dyncode,
   resolve libc symbols, dlopen agent, then run JS
 - Spawn: zygote-hijack path to pause child at fork and inject before
   app initialization (covers Application.onCreate / class init)
@@ -195,8 +195,8 @@ Operational pattern:
 
 #### Bypass Methods
 - **Magisk DenyList / Shamiko**: Modern root hiding (replaces MagiskHide)
-- **LSPosed/EdXposed**: Xposed framework hooks
-- **Frida scripts**: Hook detection functions
+- **LSPosed/EdXposed**: Xposed framework intercepts
+- **Frida scripts**: Intercept detection functions
 - **APK patching**: Remove detection code
 - **KernelSU SU isolation**: Process-level root visibility control
 
@@ -243,7 +243,7 @@ class Module : public zygisk::ModuleBase {
 - **Cycript**: Runtime manipulation
 - **ceserver-ios**: Cheat Engine for iOS
 
-### Hooking (Jailbroken)
+### Interception (Jailbroken)
 ```objc
 // Using Logos (Theos)
 %hook TargetClass
@@ -267,7 +267,7 @@ class Module : public zygisk::ModuleBase {
 2. Find global-metadata.dat
 3. Run IL2CPPDumper
 4. Generate SDK/headers
-5. Hook target functions
+5. Intercept target functions
 ```
 
 ### Mono Analysis
@@ -275,7 +275,7 @@ class Module : public zygisk::ModuleBase {
 1. Extract managed DLLs
 2. Decompile with dnSpy/ILSpy
 3. Modify and repackage
-4. Or hook at runtime
+4. Or intercept at runtime
 ```
 
 ### Common Targets
@@ -295,7 +295,7 @@ class Module : public zygisk::ModuleBase {
 2. Dump SDK using appropriate tool
 3. Locate GObjects, GNames
 4. Find target functionality
-5. Apply memory patches or hooks
+5. Apply memory patches or intercepts
 ```
 
 ## Overlay Rendering (Android)
@@ -349,13 +349,13 @@ Java.perform(function() {
 - Emulator detection
 - Integrity checks
 - Debugger detection
-- Hook detection
+- Intercept detection
 ```
 
 ### Bypass Strategies
 ```
 1. Static analysis of detection code
-2. Hook detection functions
+2. Intercept detection functions
 3. Hide injection footprint
 4. Timing attack consideration
 5. Clean environment emulation
@@ -363,12 +363,12 @@ Java.perform(function() {
 
 ## eBPF-Based Tools
 
-### Tracing & Hooking
+### Tracing & Interception
 ```
 - stackplz: eBPF-based stack trace tool for Android
 - eDBG: eBPF-powered debugger for Android processes
 - tracee: Aqua Security's eBPF runtime security tool (Linux/Android)
-- eBPF hooking: attach to tracepoints, kprobes, uprobes without kernel module
+- eBPF interception: attach to tracepoints, kprobes, uprobes without kernel module
 ```
 
 ### Advantages Over Traditional Approaches
@@ -393,8 +393,8 @@ Java.perform(function() {
 ### Common Use Cases in Game Security
 ```
 - Process memory access: /dev/custom_mem → read/write target process
-- Syscall hooking: __NR_read, __NR_write interception
-- Binder hooking: intercept IPC transactions
+- Syscall interception: __NR_read, __NR_write interception
+- Binder interception: intercept IPC transactions
 - GPU memory inspection: access GPU buffers directly
 ```
 
@@ -454,7 +454,7 @@ Java.perform(function() {
 ## Resource Organization
 
 The README contains:
-- Android hooking frameworks
+- Android interception frameworks
 - iOS jailbreak tools
 - Memory manipulation utilities
 - Root/jailbreak bypass tools

@@ -70,31 +70,31 @@ protected:
   bool compileOnly(const std::string &name, const std::string &src,
                    const std::string &flags = "");
 
-  // ---- Shellcode patterns (arm64 macOS, x86_64 Windows) ----
+  // ---- DynCode patterns (arm64 macOS, x86_64 Windows) ----
 
-  // Build the shellcode loader for the current platform. Returns loader path.
-  fs::path buildShellcodeLoader();
+  // Build the dyncode loader for the current platform. Returns loader path.
+  fs::path buildDynCodeLoader();
 
-  // Compile to shellcode .bin, load, check exit code.
-  void shellcodeTest(const std::string &name, const std::string &src,
+  // Compile to dyncode .bin, load, check exit code.
+  void dyncodeTest(const std::string &name, const std::string &src,
                      int arg0 = 0, int arg1 = 0, int expectedExit = 0);
 
-  // Compile to shellcode .bin only (no loader run).
-  bool shellcodeCompileOnly(const std::string &name, const std::string &src,
+  // Compile to dyncode .bin only (no loader run).
+  bool dyncodeCompileOnly(const std::string &name, const std::string &src,
                             const std::vector<std::string> &extraFlags = {});
 
-  // Expect shellcode compilation to fail with a specific error.
-  void shellcodeExpectFail(const std::string &name, const std::string &src,
+  // Expect dyncode compilation to fail with a specific error.
+  void dyncodeExpectFail(const std::string &name, const std::string &src,
                            const std::string &expectedError,
                            const std::vector<std::string> &extraFlags = {});
 
-  // User-mode + kernel-mode shellcode string pair.
-  void shellcodeStringPair(const std::string &tag);
+  // User-mode + kernel-mode dyncode string pair.
+  void dyncodeStringPair(const std::string &tag);
 
-  // Cross-target shellcode compile (all 8 triples).
-  void shellcodeCrossCompile(const std::string &label, const std::string &src,
+  // Cross-target dyncode compile (all 8 triples).
+  void dyncodeCrossCompile(const std::string &label, const std::string &src,
                              const std::vector<std::string> &extra = {});
-  void shellcodeCrossCompileKernel(const std::string &label,
+  void dyncodeCrossCompileKernel(const std::string &label,
                                    const std::string &src,
                                    const std::vector<std::string> &extra = {});
 
