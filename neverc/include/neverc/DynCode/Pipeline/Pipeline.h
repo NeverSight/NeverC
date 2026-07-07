@@ -18,8 +18,8 @@ void registerDynCodePasses(llvm::PassBuilder &PB,
 void registerDynCodeMachinePasses(const DynCodeOptions &Opts);
 const DynCodeOptions &getCurrentDynCodeOptions();
 
-void applyPostExtractObfuscationHook(llvm::SmallVectorImpl<uint8_t> &Bytes);
-void applyPostFinalizeObfuscationHook(llvm::SmallVectorImpl<uint8_t> &Bytes);
+void applyPostExtractObfuscationInterpose(llvm::SmallVectorImpl<uint8_t> &Bytes);
+void applyPostFinalizeObfuscationInterpose(llvm::SmallVectorImpl<uint8_t> &Bytes);
 
 }
 }
