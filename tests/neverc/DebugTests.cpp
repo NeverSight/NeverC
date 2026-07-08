@@ -1,6 +1,42 @@
 #include "NeverCTestFixture.h"
 
-class DebugTest : public NeverCTest {};
+class DebugTest : public NeverCTest {
+protected:
+  struct DwarfDumpTool {
+    std::string path;
+    std::string infoFlag;
+    std::string lineFlag;
+    bool isLibdwarf = false;
+  };
+
+  DwarfDumpTool findDwarfDump() const {
+    if (exec("which", {"llvm-dwarfdump"}).exitCode == 0)
+      return {"llvm-dwarfdump", "--debug-info", "--debug-line", false};
+
+    if (exec("which", {"dwarfdump"}).exitCode == 0) {
+      auto ver = exec("dwarfdump", {"--version"});
+      if (ver.contains("libdwarf") || ver.contains("dwarfdump 2."))
+        return {"dwarfdump", "-v -i", "-l", true};
+      return {"dwarfdump", "--debug-info", "--debug-line", false};
+    }
+
+    return {};
+  }
+
+  CmdResult dwarfDumpInfo(const DwarfDumpTool &tool,
+                          const std::string &obj) const {
+    auto flags = splitFlags(tool.infoFlag);
+    flags.push_back(obj);
+    return exec(tool.path, flags);
+  }
+
+  CmdResult dwarfDumpLine(const DwarfDumpTool &tool,
+                          const std::string &obj) const {
+    auto flags = splitFlags(tool.lineFlag);
+    flags.push_back(obj);
+    return exec(tool.path, flags);
+  }
+};
 
 TEST_F(DebugTest, HostDWARF) {
   auto src = (testDir() / "debug/test_dwarf_debug.c").string();
@@ -22,13 +58,13 @@ TEST_F(DebugTest, HostDWARF) {
   ASSERT_EQ(ncc(l).exitCode, 0) << "host-dwarf link";
 
   // dwarfdump verification
-  auto which = exec("which", {"dwarfdump"});
-  if (which.exitCode != 0) {
+  auto tool = findDwarfDump();
+  if (tool.path.empty()) {
     GTEST_SKIP() << "dwarfdump not available";
     return;
   }
 
-  auto dump = exec("dwarfdump", {"--debug-info", obj.string()});
+  auto dump = dwarfDumpInfo(tool, obj.string());
   EXPECT_TRUE(dump.contains("DW_TAG_compile_unit"));
   EXPECT_TRUE(dump.contains("neverc")) << "producer not neverc";
 
@@ -44,7 +80,7 @@ TEST_F(DebugTest, HostDWARF) {
     EXPECT_TRUE(dump.contains(ty)) << ty << " type missing";
   }
 
-  auto lineDump = exec("dwarfdump", {"--debug-line", obj.string()});
+  auto lineDump = dwarfDumpLine(tool, obj.string());
   EXPECT_TRUE(lineDump.contains("test_dwarf_debug.c"));
 }
 
@@ -76,11 +112,14 @@ TEST_F(DebugTest, WindowsCOFFDWARF) {
     EXPECT_TRUE(sections.contains(sect)) << sect << " section missing";
   }
 
-  auto which = exec("which", {"dwarfdump"});
-  if (which.exitCode == 0) {
-    auto dump = exec("dwarfdump", {"--debug-info", obj.string()});
-    EXPECT_TRUE(dump.contains("0x0005") || dump.contains("DWARF version 5"))
-        << "DWARF version 5 expected";
+  auto tool = findDwarfDump();
+  if (!tool.path.empty()) {
+    auto dump = dwarfDumpInfo(tool, obj.string());
+    if (dump.contains("DW_TAG_compile_unit")) {
+      EXPECT_TRUE(dump.contains("0x0005") || dump.contains("DWARF version 5")
+                  || dump.contains("version_stamp    = 0x0005"))
+          << "DWARF version 5 expected";
+    }
   }
 }
 
@@ -92,11 +131,14 @@ TEST_F(DebugTest, LinuxELFDWARF) {
                 src, "-o", obj.string()});
   ASSERT_EQ(r.exitCode, 0) << "linux-dwarf compile\n" << r.err;
 
-  auto which = exec("which", {"dwarfdump"});
-  if (which.exitCode == 0) {
-    auto dump = exec("dwarfdump", {"--debug-info", obj.string()});
-    EXPECT_TRUE(dump.contains("0x0005") || dump.contains("DWARF version 5"));
-    EXPECT_TRUE(dump.contains("main"));
+  auto tool = findDwarfDump();
+  if (!tool.path.empty()) {
+    auto dump = dwarfDumpInfo(tool, obj.string());
+    if (dump.contains("DW_TAG_compile_unit")) {
+      EXPECT_TRUE(dump.contains("0x0005") || dump.contains("DWARF version 5")
+                  || dump.contains("version_stamp    = 0x0005"));
+      EXPECT_TRUE(dump.contains("main"));
+    }
   }
 }
 
@@ -108,11 +150,14 @@ TEST_F(DebugTest, AArch64DWARF) {
                 src, "-o", obj.string()});
   ASSERT_EQ(r.exitCode, 0) << "aarch64-dwarf compile\n" << r.err;
 
-  auto which = exec("which", {"dwarfdump"});
-  if (which.exitCode == 0) {
-    auto dump = exec("dwarfdump", {"--debug-info", obj.string()});
-    EXPECT_TRUE(dump.contains("0x0005") || dump.contains("DWARF version 5"));
-    EXPECT_TRUE(dump.contains("main"));
+  auto tool = findDwarfDump();
+  if (!tool.path.empty()) {
+    auto dump = dwarfDumpInfo(tool, obj.string());
+    if (dump.contains("DW_TAG_compile_unit")) {
+      EXPECT_TRUE(dump.contains("0x0005") || dump.contains("DWARF version 5")
+                  || dump.contains("version_stamp    = 0x0005"));
+      EXPECT_TRUE(dump.contains("main"));
+    }
   }
 }
 

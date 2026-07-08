@@ -121,10 +121,21 @@ TEST_F(StrHashTest, CustomHash_NoBuiltinCallInIR) {
   auto src = strHashDir() / "nc_strhash_custom_hash.c";
   if (!fs::exists(src))
     GTEST_SKIP() << src << " not found";
-  auto ir = emitIR(src.string(), "custom_hash_ir", "-O1 -fstrhash-fold");
-  if (ir.empty())
-    return;
-  EXPECT_EQ(ir.find("neverc_fnv"), std::string::npos)
+
+  auto ir = tmpFile("custom_hash_ir.ll");
+  std::vector<std::string> args = {"-S", "-emit-llvm", "-O1", "-fstrhash-fold"};
+  for (auto &f : sysrootFlags())
+    args.push_back(f);
+  for (auto &f : archFlags())
+    args.push_back(f);
+  args.push_back(src.string());
+  args.push_back("-o");
+  args.push_back(ir.string());
+  auto r = ncc(args);
+  ASSERT_EQ(r.exitCode, 0) << "custom hash emit-llvm failed\n" << r.err;
+
+  auto irContent = readFile(ir);
+  EXPECT_EQ(irContent.find("neverc_fnv"), std::string::npos)
       << "custom hash should not call neverc_fnv functions";
 }
 

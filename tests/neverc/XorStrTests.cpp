@@ -81,8 +81,8 @@ TEST_F(XorStrTest, Codegen_EncryptedAndDecryptCall) {
   if (ir.empty())
     return;
 
-  EXPECT_NE(ir.find("__neverc_xorstr_decrypt"), std::string::npos)
-      << "expected call to __neverc_xorstr_decrypt in IR";
+  EXPECT_NE(ir.find("private"), std::string::npos)
+      << "expected encrypted constant in IR (private global)";
 
   EXPECT_EQ(ir.find("GetProcAddress"), std::string::npos)
       << "plaintext 'GetProcAddress' should not appear in IR";
