@@ -830,7 +830,7 @@ TEST_F(LTOTest, AndroidKernelMultifileMergeSectionOffsets) {
       "-o",
       ko.string(),
       (exDir / "main.c").string(),
-      (exDir / "hooks.c").string(),
+      (exDir / "interposes.c").string(),
       (exDir / "utils.c").string(),
   };
   auto link = ncc(args);
