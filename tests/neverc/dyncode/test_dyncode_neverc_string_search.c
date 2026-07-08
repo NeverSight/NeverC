@@ -14,21 +14,21 @@ int main(int a, int b) {
     string s = "dyncode";
 
     /* find_first_of / find_last_of */
-    if (s.find_first_of("lc") != 3)        /* 'l' at index 3 */
+    if (s.find_first_of("lc") != 3)        /* 'c' at index 3 */
         return 1;
-    if (s.find_first_of("xyz") != NEVERC_STRING_NPOS)
+    if (s.find_first_of("xwz") != NEVERC_STRING_NPOS)
         return 2;
-    if (s.find_last_of("lc") != 5)         /* 'c' at index 5 */
+    if (s.find_last_of("lc") != 3)         /* 'c' at index 3 */
         return 3;
     if (s.find_last_of("z") != NEVERC_STRING_NPOS)
         return 4;
 
     /* find_first_not_of / find_last_not_of */
-    if (s.find_first_not_of("she") != 3)   /* 'l' at index 3 */
+    if (s.find_first_not_of("dyn") != 3)   /* 'c' at index 3 */
         return 5;
     if (s.find_first_not_of("dyncode") != NEVERC_STRING_NPOS)
         return 6;
-    if (s.find_last_not_of("oe") != 7)     /* 'd' at index 7 */
+    if (s.find_last_not_of("oe") != 5)     /* 'd' at index 5 */
         return 7;
     if (s.find_last_not_of("dyncode") != NEVERC_STRING_NPOS)
         return 8;
@@ -40,7 +40,7 @@ int main(int a, int b) {
         return 10;
     if (s.find_last_of("") != NEVERC_STRING_NPOS)
         return 11;
-    if (s.find_last_not_of("") != 8)       /* last index in "dyncode" */
+    if (s.find_last_not_of("") != 6)       /* last index in "dyncode" */
         return 12;
 
     /* Free-standing call form hammered in a loop so the arena must

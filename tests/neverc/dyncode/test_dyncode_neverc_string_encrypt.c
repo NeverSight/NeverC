@@ -12,16 +12,16 @@ int main(int a, int b) {
     string secret = "dyncode_secret".encrypt();
     if (secret != "dyncode_secret".encrypt())
         return 1;
-    if (secret.len != 16)
+    if (secret.len != 14)
         return 2;
 
-    if (!secret.starts_with("shell".encrypt()))
+    if (!secret.starts_with("dyncode".encrypt()))
         return 3;
     if (!secret.ends_with("secret".encrypt()))
         return 4;
     if (!secret.contains("code".encrypt()))
         return 5;
-    if (secret.find("secret".encrypt()) != 10)
+    if (secret.find("secret".encrypt()) != 8)
         return 6;
 
     string keys[] = {"admin".encrypt(), "root".encrypt(), "user".encrypt()};

@@ -135,7 +135,7 @@ int main(int a, int b) {
         if (forged.len != 1)
             return 19;
     }
-    if (!neverc_string_eq(joined, "dyncode"))
+    if (!neverc_string_eq(joined, "protocode"))
         return 18;
 
     const char *freed_block = 0;

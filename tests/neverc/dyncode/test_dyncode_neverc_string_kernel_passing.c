@@ -105,7 +105,7 @@ int dyncode_entry(int seed) {
 
     /* Pipeline of user helper + builtin runtime. */
     {
-        string s = "shell" + "code";
+        string s = "dyn" + "code";
         string upper = echo_uppercase(s);
         if (!neverc_string_eq(upper, "DYNCODE"))
             return seed + 10;

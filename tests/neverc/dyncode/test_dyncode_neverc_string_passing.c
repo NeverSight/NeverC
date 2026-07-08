@@ -139,7 +139,7 @@ int main(int a, int b) {
     /* (11) Pipeline of user helper + builtin runtime: the upper-cased
        result must come back owned and survive a contains check. */
     {
-        string s = "shell" + "code";
+        string s = "dyn" + "code";
         string upper = echo_uppercase(s);
         if (!neverc_string_eq(upper, "DYNCODE"))
             return 17;
