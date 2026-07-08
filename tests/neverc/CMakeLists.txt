@@ -17,6 +17,7 @@ set(NEVERC_TEST_SOURCES
   SEHTests.cpp
   X86PrivilegedIntrinTests.cpp
   StrHashTests.cpp
+  XorStrTests.cpp
 )
 
 # NEVERC_EXTERNAL_BINARY: spawn a prebuilt neverc (e.g. downloaded from CI) instead
