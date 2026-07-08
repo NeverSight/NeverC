@@ -102,6 +102,7 @@ add_neverc_library(nevercEmit
   nevercCompiler
   nevercScan
   nevercMerge
+  nevercStrHash
   nevercXorStr
   nevercPlugin
   )

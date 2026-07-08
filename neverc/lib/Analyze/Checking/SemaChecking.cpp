@@ -1114,6 +1114,8 @@ ExprResult Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl,
     break;
   case Builtin::BI__builtin_neverc_xorstr:
     return semaBuiltinNeverCXorstr(*this, TheCall);
+  case Builtin::BI__builtin_neverc_strhash:
+    return semaBuiltinNeverCStrHash(*this, TheCall);
   case Builtin::BI__builtin_neverc_random_u64:
     return semaBuiltinNeverCRandomU64(*this, TheCall);
   case Builtin::BI__builtin_function_start:

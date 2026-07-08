@@ -1,5 +1,6 @@
 #include "SemaCheckingUtils.h"
 #include "neverc/Analyze/Initialization.h"
+#include "neverc/Transforms/StrHash/StrHashCompute.h"
 #include "neverc/Analyze/ScopeInfo.h"
 #include "neverc/Foundation/Builtin/TargetBuiltins.h"
 #include "neverc/Foundation/Core/SyncScope.h"
@@ -166,6 +167,39 @@ ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
 
   Expr *Args[] = {EncSL, LenLit, KeyLit, BufLit};
   return S.FormCallExpr(nullptr, DeclRef.get(), Loc, Args, EndLoc);
+}
+
+ExprResult semaBuiltinNeverCStrHash(Sema &S, CallExpr *TheCall) {
+  if (checkArgCount(S, TheCall, 1))
+    return ExprError();
+
+  Expr *Arg = TheCall->getArg(0)->IgnoreParenCasts();
+  StringLiteral *SL = dyn_cast<StringLiteral>(Arg);
+  if (!SL) {
+    S.Diag(Arg->getBeginLoc(), diag::err_expr_not_string_literal)
+        << Arg->getSourceRange();
+    return ExprError();
+  }
+
+  if (SL->getKind() != StringLiteralKind::Ordinary &&
+      SL->getKind() != StringLiteralKind::UTF8) {
+    StringLiteral *Folded = foldNeverCStringWideLiteralToUtf8(S, SL);
+    if (Folded)
+      SL = Folded;
+  }
+
+  llvm::StringRef Bytes = SL->getBytes();
+  unsigned Algo = S.getLangOpts().StrHashAlgo;
+  uint64_t Hash = neverc::strhash::computeStrHash(Bytes, Algo);
+
+  SourceLocation Loc = TheCall->getBeginLoc();
+  QualType Ty = S.Context.UnsignedLongLongTy;
+  unsigned Bits = S.Context.getTypeSize(Ty);
+  IntegerLiteral *Result = IntegerLiteral::Create(
+      S.Context, llvm::APInt(Bits, Hash), Ty, Loc);
+
+  TheCall->setType(Ty);
+  return Result;
 }
 
 ExprResult semaBuiltinNeverCRandomU64(Sema &S, CallExpr *TheCall) {

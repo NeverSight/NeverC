@@ -225,6 +225,12 @@ LANGOPT(EncryptCallStrings, 1, 0, "auto-encrypt string literals in call argument
 VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
               "maximum string length for auto-encryption (0 = no limit)")
 
+VALUE_LANGOPT(StrHashAlgo, 32, 2,
+              "compile-time string hash algorithm "
+              "(1=fnv32a, 2=fnv64a, 3=xxhash64)")
+LANGOPT(StrHashFold, 1, 0,
+        "auto-fold runtime hash calls with constant args to compile-time constants")
+
 LANGOPT(DynCodeMode, 1, 0, "dyncode pipeline marker injected by the "
         "-fdyncode driver; used by Sema to reject features whose runtime "
         "the dyncode pipeline cannot link (e.g. SEH __try/__except/__finally)")

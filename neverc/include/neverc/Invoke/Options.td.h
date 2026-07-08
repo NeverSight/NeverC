@@ -1712,6 +1712,9 @@ OPTION(prefix_1, "-fno-standalone-debug", fno_standalone_debug, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Limit debug information produced to reduce size of debug binary",
        nullptr, nullptr)
+OPTION(prefix_1, "-fno-strhash-fold", fno_strhash_fold, Flag, f_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Disable -fstrhash-fold", nullptr, nullptr)
 OPTION(prefix_1, "-fno-strict-aliasing", fno_strict_aliasing, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Disable optimizations based on strict aliasing rules", nullptr, nullptr)
@@ -2019,6 +2022,16 @@ OPTION(prefix_1, "-fstandalone-debug", fstandalone_debug, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Emit full debug info for all types used by the program", nullptr,
        nullptr)
+OPTION(prefix_1, "-fstrhash-algo=", fstrhash_algo_EQ, Joined, f_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Select the hash algorithm used by __builtin_neverc_strhash and the "
+       "strhash fold IR pass (fnv32a, fnv64a, xxhash64; default: fnv64a)",
+       "<algo>", nullptr)
+OPTION(prefix_1, "-fstrhash-fold", fstrhash_fold, Flag, f_Group, INVALID,
+       nullptr, NoXarchOption, DefaultVis, 0,
+       "Auto-fold runtime hash calls with constant arguments to "
+       "compile-time constants via an IR pass",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fstrict-aliasing", fstrict_aliasing, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Enable optimizations based on strict aliasing rules", nullptr, nullptr)
@@ -4814,6 +4827,17 @@ LANG_OPTION_WITH_MARSHALLING(
     "using stack-allocated XOR decryption at runtime",
     nullptr, nullptr, true, 0, LangOpts->EncryptCallStrings, false, false,
     false, makeBooleanOptionNormalizer(true, false, OPT_fno_encrypt_call_strings),
+    makeBooleanOptionDenormalizer(true), mergeForwardValue,
+    extractForwardValue, -1)
+#endif // LANG_OPTION_WITH_MARSHALLING
+#ifdef LANG_OPTION_WITH_MARSHALLING
+LANG_OPTION_WITH_MARSHALLING(
+    prefix_1, "-fstrhash-fold", fstrhash_fold, Flag, f_Group, INVALID,
+    nullptr, NoXarchOption, DefaultVis, 0,
+    "Auto-fold runtime hash calls with constant arguments to "
+    "compile-time constants via an IR pass",
+    nullptr, nullptr, true, 0, LangOpts->StrHashFold, false, false,
+    false, makeBooleanOptionNormalizer(true, false, OPT_fno_strhash_fold),
     makeBooleanOptionDenormalizer(true), mergeForwardValue,
     extractForwardValue, -1)
 #endif // LANG_OPTION_WITH_MARSHALLING

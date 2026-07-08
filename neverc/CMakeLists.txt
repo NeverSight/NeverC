@@ -414,6 +414,7 @@ neverc_target_link_libraries(neverc
   nevercRuntime
   nevercEmit
   nevercDynCode
+  nevercStrHash
   nevercXorStr
   )
 

@@ -335,6 +335,16 @@
         "ieee": "neverc_crc32_ieee"
       }
     },
+    "hash/xxhash": {
+      "header": "include/neverc/std/hash/xxhash.h",
+      "description": "xxHash64 extremely fast non-cryptographic hash function",
+      "symbols": {
+        "neverc_xxhash64": "src/hash/xxhash/xxhash.c"
+      },
+      "dot_methods": {
+        "hash64": "neverc_xxhash64"
+      }
+    },
     "hash/crc64": {
       "header": "include/neverc/hash/crc64.h",
       "description": "CRC-64 checksum with ISO and ECMA polynomials (mirrors Go hash/crc64 package)",

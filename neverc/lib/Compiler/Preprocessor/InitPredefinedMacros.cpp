@@ -227,6 +227,9 @@ void neverc::initializePredefinedMacros(const TargetInfo &TI,
                       "\"" NEVERC_VERSION_STRING " " +
                           getNeverCFullRepositoryVersion() + "\"");
 
+  Builder.defineMacro("__NEVERC_STRHASH_ALGO__",
+                      llvm::Twine(LangOpts.StrHashAlgo));
+
   if (LangOpts.GNUCVersion != 0) {
     unsigned GNUCMajor = LangOpts.GNUCVersion / 100 / 100;
     unsigned GNUCMinor = LangOpts.GNUCVersion / 100 % 100;

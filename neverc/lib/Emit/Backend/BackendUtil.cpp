@@ -6,6 +6,7 @@
 #include "Backend/StdRuntimeLinker.h"
 #include "Backend/StringRuntimeLinker.h"
 #include "Core/AndroidKernelEmitter.h"
+#include "neverc/Transforms/StrHash/StrHashFoldPass.h"
 #include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
 #include "neverc/Transforms/XorStr/XorStrCleanupPass.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
@@ -655,6 +656,10 @@ void GenAssemblyHelper::runOptimizationPipeline(
 
   // Post pass — runs after the optimization pipeline.
   {
+    if (LangOpts.StrHashFold) {
+      MPM.addPass(neverc::strhash::StrHashFoldPass());
+    }
+
     if (LangOpts.EncryptCallStrings) {
       MPM.addPass(
           neverc::xorstr::EncryptCallStringsPass(LangOpts.EncryptCallStringsMaxLen));

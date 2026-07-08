@@ -537,5 +537,18 @@ bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
   if (const Arg *A = Args.getLastArg(OPT_frandomize_layout_seed_EQ))
     Opts.RandstructSeed = A->getValue(0);
 
+  if (const Arg *A = Args.getLastArg(OPT_fstrhash_algo_EQ)) {
+    llvm::StringRef Algo = A->getValue();
+    if (Algo == "fnv32a")
+      Opts.StrHashAlgo = 1;
+    else if (Algo == "fnv64a")
+      Opts.StrHashAlgo = 2;
+    else if (Algo == "xxhash64")
+      Opts.StrHashAlgo = 3;
+    else
+      Diags.Report(diag::err_drv_invalid_value)
+          << A->getAsString(Args) << A->getValue();
+  }
+
   return Diags.getNumErrors() == NumErrorsBefore;
 }
