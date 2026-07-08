@@ -854,16 +854,16 @@ TEST_F(LTOTest, AndroidKernelMultifileMergeSectionOffsets) {
     return 0;
   };
 
-  uint64_t hooksInit = parseOffset("hooks_init");
-  uint64_t hooksCleanup = parseOffset("hooks_cleanup");
+  uint64_t interposesInit = parseOffset("interposes_init");
+  uint64_t interposesCleanup = parseOffset("interposes_cleanup");
   uint64_t initMod = parseOffset("init_module");
   uint64_t cleanupMod = parseOffset("cleanup_module");
-  ASSERT_NE(hooksInit, 0u) << "hooks_init collapsed to .text+0 (SecOff regression)";
-  ASSERT_NE(hooksCleanup, 0u);
+  ASSERT_NE(interposesInit, 0u) << "interposes_init collapsed to .text+0 (SecOff regression)";
+  ASSERT_NE(interposesCleanup, 0u);
   ASSERT_NE(initMod, 0u);
   ASSERT_NE(cleanupMod, 0u);
-  EXPECT_NE(hooksInit, hooksCleanup);
-  EXPECT_NE(hooksInit, initMod);
+  EXPECT_NE(interposesInit, interposesCleanup);
+  EXPECT_NE(interposesInit, initMod);
   EXPECT_NE(initMod, cleanupMod);
 }
 
