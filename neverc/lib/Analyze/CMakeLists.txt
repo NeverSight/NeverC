@@ -22,6 +22,7 @@ add_neverc_library(nevercAnalyze
   Decl/SemaDeclDeclaratorTypedef.cpp
   Decl/SemaDeclDeclaratorVar.cpp
   Decl/SemaDeclDeclaratorFunc.cpp
+  Decl/SemaDeclDeclaratorFuncMultiVersion.cpp
   Decl/SemaDeclDef.cpp
   Decl/SemaDeclDefFunc.cpp
   Decl/SemaDeclDefTag.cpp
