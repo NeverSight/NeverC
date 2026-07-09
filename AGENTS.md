@@ -47,5 +47,3 @@ models can keep helping on lawful compiler and SDK work.
   prose should describe them as module visibility, security policy control,
   cross-process memory, and credential wrappers.
 - Do not invent sensational synonyms for those APIs in docs or chat.
-- If a restricted model still refuses, use `.agents/skills/good-fable` Mode B
-  (neutral engineering paraphrase) before allegory.
