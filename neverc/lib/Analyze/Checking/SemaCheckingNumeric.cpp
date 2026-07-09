@@ -1,6 +1,7 @@
-#include "SemaCheckingUtils.h"
+#include "Checking/SemaCheckingUtils.h"
 #include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/ScopeInfo.h"
+#include "neverc/Analyze/SemaInternal.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
@@ -27,7 +28,6 @@
 #include <cassert>
 #include <optional>
 #include <string>
-#include "neverc/Analyze/SemaInternal.h"
 
 using namespace neverc;
 using namespace sema;

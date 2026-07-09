@@ -176,4 +176,4 @@ public: // These are internal details of CGT that shouldn't be used externally.
 } // end namespace Emit
 } // end namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_CORE_TYPEEMITTER_H

@@ -1,5 +1,6 @@
 #include "neverc/Scan/SourceScanner.h"
 #include "neverc/Foundation/Core/CharInfo.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Foundation/Core/IdentifierTable.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
@@ -9,12 +10,11 @@
 #include "neverc/Scan/PrepEngine.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/ADT/bit.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/Unicode.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
-#include "llvm/ADT/bit.h"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -35,7 +35,7 @@
 
 using namespace neverc;
 
-#include "SourceScannerSIMDHelpers.inc"
+#include "Lexer/SourceScannerSIMDHelpers.inc"
 
 // ===----------------------------------------------------------------------===
 // Construction & initialization

@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_AST_FORMATSTRINGPARSING_H
-#define NEVERC_LIB_AST_FORMATSTRINGPARSING_H
+#ifndef NEVERC_LIB_TREE_FORMAT_FORMATSTRINGPARSING_H
+#define NEVERC_LIB_TREE_FORMAT_FORMATSTRINGPARSING_H
 
 #include "neverc/Tree/Core/TreeContext.h"
 #include "neverc/Tree/Format/FormatString.h"
@@ -66,4 +66,4 @@ public:
 } // namespace analyze_format_string
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_TREE_FORMAT_FORMATSTRINGPARSING_H

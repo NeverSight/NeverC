@@ -183,4 +183,4 @@ template <> struct DenseMapInfo<neverc::Emit::TBAAAccessInfo> {
 
 } // end namespace llvm
 
-#endif
+#endif // NEVERC_LIB_EMIT_CORE_TBAAEMITTER_H

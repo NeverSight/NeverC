@@ -1,6 +1,5 @@
 #include "neverc/Emit/Decl/ConstantInitBuilder.h"
 #include "Core/ModuleEmitter.h"
-
 using namespace neverc;
 using namespace Emit;
 

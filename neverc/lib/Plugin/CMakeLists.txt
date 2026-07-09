@@ -7,16 +7,18 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_neverc_library(nevercPlugin
-  BridgeAnalysis.cpp
-  BridgeDataStructures.cpp
-  BridgeIR.cpp
-  BridgeIRBuilder.cpp
-  BridgeLinker.cpp
-  BridgeMIR.cpp
-  BridgeString.cpp
-  HostAPIBridge.cpp
-  PluginLoader.cpp
-  PluginPassAdaptor.cpp
+  Core/PluginLoader.cpp
+  Core/PluginPassAdaptor.cpp
+
+  Host/HostAPIBridge.cpp
+
+  Bridge/BridgeAnalysis.cpp
+  Bridge/BridgeDataStructures.cpp
+  Bridge/BridgeIR.cpp
+  Bridge/BridgeIRBuilder.cpp
+  Bridge/BridgeLinker.cpp
+  Bridge/BridgeMIR.cpp
+  Bridge/BridgeString.cpp
 
   LINK_LIBS
   nevercFoundation

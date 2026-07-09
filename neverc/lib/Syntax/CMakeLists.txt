@@ -29,3 +29,8 @@ add_neverc_library(nevercSyntax
   DEPENDS
   NeverCDriverOptions
   )
+
+target_include_directories(nevercSyntax
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+  )

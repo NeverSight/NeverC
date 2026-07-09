@@ -5,10 +5,6 @@ set(LLVM_LINK_COMPONENTS
   TargetParser
   )
 
-set(AST_INTERP_SOURCES
-  Interp/State.cpp
-)
-
 add_neverc_library(nevercTree
   Core/TreeConsumer.cpp
   Core/TreeContext.cpp
@@ -42,7 +38,7 @@ add_neverc_library(nevercTree
   Format/PrintfFormatString.cpp
   Format/ScanfFormatString.cpp
 
-  ${AST_INTERP_SOURCES}
+  Interp/State.cpp
 
   LINK_LIBS
   nevercFoundation

@@ -1,11 +1,12 @@
 #include "neverc/Foundation/Attr/AttributeCommonInfo.h"
 #include "neverc/Foundation/Attr/Attributes.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
+#include "neverc/Scan/LexDiag.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Scan/MacroArgStorage.h"
 #include "neverc/Scan/PrepEngine.h"
-#include "neverc/Scan/LexDiag.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
@@ -13,7 +14,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO/MSVCMacroRebuilding.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
 #include <cassert>
 #include <cstddef>
 #include <ctime>

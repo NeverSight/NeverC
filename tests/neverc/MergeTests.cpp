@@ -2163,7 +2163,7 @@ TEST(MergeELFSemantic, RandomizedNobitsProgbitsMixNoCollapse) {
 
 TEST(MergeELFSemantic, HugeNobitsSizeRefusedNotMaterialized) {
   // Regression for the merge fuzzer's allocation-size-too-big abort at
-  // MergerELF.cpp's NOBITS materialization: a SHT_NOBITS section declares an
+  // ELF/MergerELF.cpp's NOBITS materialization: a SHT_NOBITS section declares an
   // sh_size backed by *no* file bytes, so a 64-byte section header can claim a
   // ~7.6 EB size.  When that section folds into a same-named PROGBITS output the
   // NOBITS contribution must be materialized as real zero bytes, and an

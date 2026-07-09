@@ -1,6 +1,7 @@
-#include "SemaCheckingUtils.h"
+#include "Checking/SemaCheckingUtils.h"
 #include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/ScopeInfo.h"
+#include "neverc/Analyze/SemaInternal.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Core/SyncScope.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
@@ -24,7 +25,6 @@
 #include "llvm/Support/SaveAndRestore.h"
 #include <cassert>
 #include <optional>
-#include "neverc/Analyze/SemaInternal.h"
 
 using namespace neverc;
 using namespace sema;

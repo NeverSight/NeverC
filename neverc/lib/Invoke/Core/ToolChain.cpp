@@ -30,7 +30,6 @@
 #include <cassert>
 #include <cstddef>
 #include <string>
-
 using namespace neverc;
 using namespace driver;
 using namespace tools;

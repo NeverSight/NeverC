@@ -1,9 +1,9 @@
 #include "Stmt/VarBypassDetector.h"
 
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Tree/Expr/Expr.h"
 #include "neverc/Tree/Stmt/Stmt.h"
 #include "llvm/Support/Compiler.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
 
 using namespace neverc;
 using namespace Emit;

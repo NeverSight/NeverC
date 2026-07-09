@@ -458,4 +458,4 @@ struct EHPersonality {
 } // namespace Emit
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_STMT_CLEANUPEMITTERINFO_H

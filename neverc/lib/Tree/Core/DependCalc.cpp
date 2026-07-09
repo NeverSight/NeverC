@@ -1,11 +1,10 @@
 #include "neverc/Tree/Core/DependCalc.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Tree/Core/Attr.h"
 #include "neverc/Tree/Expr/Expr.h"
 #include "neverc/Tree/Type/DependenceFlags.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Compiler.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
-
 using namespace neverc;
 
 ExprDependence neverc::computeDependence(FullExpr *E) {

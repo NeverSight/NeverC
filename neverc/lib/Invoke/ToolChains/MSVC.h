@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_DRIVER_TOOLCHAINS_MSVC_H
-#define NEVERC_LIB_DRIVER_TOOLCHAINS_MSVC_H
+#ifndef NEVERC_LIB_INVOKE_TOOLCHAINS_MSVC_H
+#define NEVERC_LIB_INVOKE_TOOLCHAINS_MSVC_H
 
 #include "neverc/Invoke/Compilation.h"
 #include "neverc/Invoke/Tool.h"
@@ -105,4 +105,4 @@ private:
 } // end namespace driver
 } // end namespace neverc
 
-#endif // NEVERC_LIB_DRIVER_TOOLCHAINS_MSVC_H
+#endif // NEVERC_LIB_INVOKE_TOOLCHAINS_MSVC_H

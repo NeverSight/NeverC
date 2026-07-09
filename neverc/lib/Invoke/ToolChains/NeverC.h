@@ -1,7 +1,7 @@
-#ifndef NEVERC_LIB_DRIVER_TOOLCHAINS_NEVERC_H
-#define NEVERC_LIB_DRIVER_TOOLCHAINS_NEVERC_H
+#ifndef NEVERC_LIB_INVOKE_TOOLCHAINS_NEVERC_H
+#define NEVERC_LIB_INVOKE_TOOLCHAINS_NEVERC_H
 
-#include "MSVC.h"
+#include "ToolChains/MSVC.h"
 #include "neverc/Invoke/Driver.h"
 #include "neverc/Invoke/Tool.h"
 #include "neverc/Invoke/Types.h"
@@ -91,4 +91,4 @@ DwarfFissionKind getDebugFissionKind(const Driver &D,
 } // end namespace driver
 } // end namespace neverc
 
-#endif // NEVERC_LIB_DRIVER_TOOLCHAINS_NEVERC_H
+#endif // NEVERC_LIB_INVOKE_TOOLCHAINS_NEVERC_H

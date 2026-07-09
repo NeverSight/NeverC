@@ -8,10 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "NeverC.h"
-#include "Arch/AArch64.h"
-#include "Arch/X86.h"
-#include "CommonArgs.h"
+#include "ToolChains/NeverC.h"
+#include "ToolChains/Arch/AArch64.h"
+#include "ToolChains/Arch/X86.h"
+#include "ToolChains/CommonArgs.h"
 #include "neverc/Compiler/FrontendOptions.h"
 #include "neverc/Config/config.h"
 #include "neverc/Foundation/Core/MakeSupport.h"
@@ -40,7 +40,6 @@
 #include "llvm/TargetParser/AArch64TargetParser.h"
 #include "llvm/TargetParser/Host.h"
 #include <cctype>
-
 using namespace neverc::driver;
 using namespace neverc::driver::tools;
 using namespace neverc;

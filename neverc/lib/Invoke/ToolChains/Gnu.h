@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_DRIVER_TOOLCHAINS_GNU_H
-#define NEVERC_LIB_DRIVER_TOOLCHAINS_GNU_H
+#ifndef NEVERC_LIB_INVOKE_TOOLCHAINS_GNU_H
+#define NEVERC_LIB_INVOKE_TOOLCHAINS_GNU_H
 
 #include "neverc/Invoke/Tool.h"
 #include "neverc/Invoke/ToolChain.h"
@@ -220,4 +220,4 @@ public:
 } // end namespace driver
 } // end namespace neverc
 
-#endif // NEVERC_LIB_DRIVER_TOOLCHAINS_GNU_H
+#endif // NEVERC_LIB_INVOKE_TOOLCHAINS_GNU_H

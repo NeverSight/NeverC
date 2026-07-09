@@ -78,4 +78,4 @@ public:
 } // end namespace Emit
 } // end namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_ABI_ABIINFO_H

@@ -287,7 +287,7 @@ llvm::StringRef BuiltinString::getBuiltinStringPrelude() {
 namespace {
 
 constexpr llvm::StringLiteral kThinHeaderExtra =
-#include "BuiltinStringThinHeaderPrologue.inc"
+#include "Builtin/BuiltinStringThinHeaderPrologue.inc"
     ;
 
 constexpr llvm::StringLiteral kThinHeaderDecls =

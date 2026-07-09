@@ -1,12 +1,12 @@
 #include "neverc/Analyze/IdentifierResolver.h"
 #include "neverc/Analyze/Scope.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Foundation/Core/IdentifierTable.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Scan/PrepEngine.h"
 #include "neverc/Tree/Decl/Decl.h"
 #include "neverc/Tree/Decl/DeclarationName.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
 #include <cassert>
 #include <cstdint>
 

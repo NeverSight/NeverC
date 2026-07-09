@@ -1,5 +1,5 @@
 #include "neverc/DynCode/Import/SyscallStub.h"
-#include "ExtractorCommon.h"
+#include "Extractor/ExtractorCommon.h"
 #include "neverc/DynCode/Import/SyscallTables.h"
 #include "neverc/DynCode/Pipeline/DynCodeIRHelperNames.h"
 #include "llvm/ADT/DenseMap.h"
@@ -13,7 +13,6 @@
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
-
 using namespace llvm;
 
 namespace neverc {

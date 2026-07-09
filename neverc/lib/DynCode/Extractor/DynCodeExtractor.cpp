@@ -1,8 +1,7 @@
 #include "neverc/DynCode/Extractor/DynCodeExtractor.h"
-#include "ExtractorCommon.h"
+#include "Extractor/ExtractorCommon.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/raw_ostream.h"
-
 using namespace llvm;
 
 namespace neverc {

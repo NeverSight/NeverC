@@ -84,7 +84,7 @@ struct Options {
   /// Cost is one extra O(output) pass; merge is a tiny fraction of link
   /// time, so this is on by default.  Enforced for all three formats
   /// (ELF/COFF/MachO) by the format-specific content anchors in
-  /// MergerVerify.cpp; the Mach-O check additionally skips byte windows that
+  /// Verify/MergerVerify.cpp; the Mach-O check additionally skips byte windows that
   /// overlap a relocation site, because the Mach-O merger rewrites those bytes
   /// in place (so they legitimately differ from the input).
   bool verify = true;

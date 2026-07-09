@@ -9,11 +9,12 @@ set(LLVM_LINK_COMPONENTS
   )
 
 set(NEVERC_COMPILER_SOURCES
-  Compiler/CompilerInstance.cpp
-  Compiler/CompilerInvocation.cpp
-  Compiler/CompilerInvocationCodeGen.cpp
-  Compiler/CompilerInvocationLang.cpp
-  Compiler/FrontendOptions.cpp
+  Core/CompilerInstance.cpp
+  Core/CompilerInvocation.cpp
+  Core/CompilerInvocationCodeGen.cpp
+  Core/CompilerInvocationLang.cpp
+  Core/ExecuteCompilerInvocation.cpp
+  Core/FrontendOptions.cpp
 
   Action/FrontendAction.cpp
   Action/FrontendActions.cpp
@@ -23,6 +24,7 @@ set(NEVERC_COMPILER_SOURCES
   Diagnostic/TextDiagnosticSnippet.cpp
   Diagnostic/TextDiagnosticBuffer.cpp
   Diagnostic/TextDiagnosticPrinter.cpp
+
   Consumer/MultiplexConsumer.cpp
 
   Preprocessor/InitPreprocessor.cpp
@@ -32,10 +34,7 @@ set(NEVERC_COMPILER_SOURCES
   Preprocessor/PrintPPOutputTokens.cpp
   Preprocessor/HeaderIncludeGen.cpp
   Preprocessor/DependencyFile.cpp
-
-  Compiler/ExecuteCompilerInvocation.cpp
   )
-
 
 add_neverc_library(nevercCompiler
   ${NEVERC_COMPILER_SOURCES}
@@ -51,4 +50,9 @@ add_neverc_library(nevercCompiler
   nevercScan
   nevercSyntax
   nevercAnalyze
+  )
+
+target_include_directories(nevercCompiler
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
   )

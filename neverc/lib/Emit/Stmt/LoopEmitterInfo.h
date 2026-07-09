@@ -208,4 +208,4 @@ private:
 } // end namespace Emit
 } // end namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_STMT_LOOPEMITTERINFO_H

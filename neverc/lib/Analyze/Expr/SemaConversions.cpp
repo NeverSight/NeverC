@@ -1,4 +1,4 @@
-#include "TreeTransform.h"
+#include "Expr/TreeTransform.h"
 #include "Type/TypeLocBuilder.h"
 #include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/Overload.h"
@@ -1734,8 +1734,8 @@ bool Sema::checkAddressOfFunctionIsAvailable(const FunctionDecl *Function,
   return ::checkAddressOfFunctionIsAvailable(*this, Function, Complain, Loc);
 }
 
-// C23 Auto Type Deduction (uses TreeTransform.h; kept here to limit include
-// surface of TreeTransform.h)
+// C23 Auto Type Deduction (uses Expr/TreeTransform.h; kept here to limit include
+// surface of Expr/TreeTransform.h)
 
 namespace {
 

@@ -20,4 +20,4 @@ public:
 
 } // namespace llvm
 
-#endif
+#endif // NEVERC_LIB_EMIT_BACKEND_LINKINMODULESPASS_H

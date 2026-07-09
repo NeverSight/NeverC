@@ -1,5 +1,5 @@
-#ifndef NEVERC_TREE_INTERP_FRAME_H
-#define NEVERC_TREE_INTERP_FRAME_H
+#ifndef NEVERC_LIB_TREE_INTERP_FRAME_H
+#define NEVERC_LIB_TREE_INTERP_FRAME_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "llvm/Support/raw_ostream.h"
@@ -25,4 +25,4 @@ public:
 } // namespace interp
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_TREE_INTERP_FRAME_H

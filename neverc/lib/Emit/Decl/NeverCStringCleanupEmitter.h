@@ -1,5 +1,5 @@
-#ifndef NEVERC_EMIT_DECL_STRING_CLEANUP_H
-#define NEVERC_EMIT_DECL_STRING_CLEANUP_H
+#ifndef NEVERC_LIB_EMIT_DECL_NEVERCSTRINGCLEANUPEMITTER_H
+#define NEVERC_LIB_EMIT_DECL_NEVERCSTRINGCLEANUPEMITTER_H
 
 #include "Core/FunctionEmitter.h"
 #include "Stmt/CleanupEmitterInfo.h"
@@ -55,4 +55,4 @@ struct NeverCStringCompositeCleanup final : EHScopeStack::Cleanup {
 } // namespace Emit
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_DECL_NEVERCSTRINGCLEANUPEMITTER_H

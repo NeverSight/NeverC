@@ -8,8 +8,8 @@
 // Functions live in the global namespace to match their original definitions
 // (only the ``static`` storage class was removed).
 
-#ifndef NEVERC_LIB_SEMA_SEMACHECKINGUTILS_H
-#define NEVERC_LIB_SEMA_SEMACHECKINGUTILS_H
+#ifndef NEVERC_LIB_ANALYZE_CHECKING_SEMACHECKINGUTILS_H
+#define NEVERC_LIB_ANALYZE_CHECKING_SEMACHECKINGUTILS_H
 
 #include "neverc/Analyze/Sema.h"
 #include "neverc/Foundation/Builtin/TargetBuiltins.h"
@@ -72,4 +72,4 @@ bool checkFPMathBuiltinElementType(::neverc::Sema &S,
                                   ::neverc::TreeContext &Context,
                                   bool IsPolyUnsigned, bool IsInt64Long);
 
-#endif // NEVERC_LIB_SEMA_SEMACHECKINGUTILS_H
+#endif // NEVERC_LIB_ANALYZE_CHECKING_SEMACHECKINGUTILS_H

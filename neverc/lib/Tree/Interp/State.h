@@ -1,5 +1,5 @@
-#ifndef NEVERC_TREE_INTERP_STATE_H
-#define NEVERC_TREE_INTERP_STATE_H
+#ifndef NEVERC_LIB_TREE_INTERP_STATE_H
+#define NEVERC_LIB_TREE_INTERP_STATE_H
 
 #include "neverc/Tree/Core/TreeDiag.h"
 #include "neverc/Tree/Expr/Expr.h"
@@ -88,4 +88,4 @@ private:
 } // namespace interp
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_TREE_INTERP_STATE_H

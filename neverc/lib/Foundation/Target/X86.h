@@ -1,7 +1,7 @@
-#ifndef NEVERC_LIB_BASIC_TARGET_X86_H
-#define NEVERC_LIB_BASIC_TARGET_X86_H
+#ifndef NEVERC_LIB_FOUNDATION_TARGET_X86_H
+#define NEVERC_LIB_FOUNDATION_TARGET_X86_H
 
-#include "OSTargets.h"
+#include "Target/OSTargets.h"
 #include "neverc/Foundation/Core/BitmaskEnum.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Foundation/Target/TargetOptions.h"
@@ -551,4 +551,4 @@ public:
 
 } // namespace targets
 } // namespace neverc
-#endif // NEVERC_LIB_BASIC_TARGET_X86_H
+#endif // NEVERC_LIB_FOUNDATION_TARGET_X86_H

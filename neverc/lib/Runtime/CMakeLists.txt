@@ -3,5 +3,10 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_neverc_library(nevercRuntime
-  RuntimeManager.cpp
+  Core/RuntimeManager.cpp
+  )
+
+target_include_directories(nevercRuntime
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
   )

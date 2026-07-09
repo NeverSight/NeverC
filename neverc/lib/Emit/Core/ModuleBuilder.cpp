@@ -9,7 +9,6 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include <memory>
-
 using namespace neverc;
 using namespace Emit;
 

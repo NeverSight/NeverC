@@ -34,15 +34,19 @@ add_neverc_library(nevercInvoke
   Action/Job.cpp
   Action/Phases.cpp
   Action/Tool.cpp
+
   Core/Compilation.cpp
   Core/Driver.cpp
   Core/InMemoryFileStore.cpp
   Core/ToolChain.cpp
+
   Multilib/Multilib.cpp
   Multilib/MultilibBuilder.cpp
+
   Option/DriverOptions.cpp
   Option/OptionUtils.cpp
   Option/Types.cpp
+
   ${NEVERC_INVOKE_ARCH_SOURCES}
   ${NEVERC_INVOKE_TOOLCHAIN_SOURCES}
 

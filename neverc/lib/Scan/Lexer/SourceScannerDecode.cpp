@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <optional>
 
-#include "UnicodeCharRanges.inc"
+#include "Lexer/UnicodeCharRanges.inc"
 
 using namespace neverc;
 

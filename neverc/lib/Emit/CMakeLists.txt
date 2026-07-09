@@ -38,8 +38,8 @@ if(MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES Clang
 endif()
 
 set(NEVERC_EMIT_TARGET_SOURCES
-  Targets/AArch64.cpp
-  Targets/X86.cpp
+  Target/AArch64.cpp
+  Target/X86.cpp
   )
 
 add_neverc_library(nevercEmit
@@ -55,6 +55,7 @@ add_neverc_library(nevercEmit
   ABI/ABIInfoImpl.cpp
   ABI/CABISupport.cpp
   ABI/TargetInfo.cpp
+
   ${NEVERC_EMIT_TARGET_SOURCES}
 
   Expr/ExprEmitter.cpp
@@ -87,10 +88,11 @@ add_neverc_library(nevercEmit
   Backend/BackendUtil.cpp
   Backend/ParallelCodeGenMerge.cpp
   Backend/LinkInModulesPass.cpp
-  Backend/StringRuntimeLinker.cpp
-  Backend/MimallocRuntimeLinker.cpp
-  Backend/StdRuntimeLinker.cpp
-  Backend/NvkKernelRuntimeLinker.cpp
+
+  Backend/Runtime/StringRuntimeLinker.cpp
+  Backend/Runtime/MimallocRuntimeLinker.cpp
+  Backend/Runtime/StdRuntimeLinker.cpp
+  Backend/Runtime/NvkKernelRuntimeLinker.cpp
 
   DEPENDS
   intrinsics_gen

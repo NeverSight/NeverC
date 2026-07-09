@@ -123,4 +123,4 @@ template <class U> inline bool isa(Emit::Address addr) {
 
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_CORE_ADDRESS_H

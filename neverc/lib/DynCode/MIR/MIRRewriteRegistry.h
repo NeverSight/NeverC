@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_DYNCODE_MIRREWRITEREGISTRY_H
-#define NEVERC_LIB_DYNCODE_MIRREWRITEREGISTRY_H
+#ifndef NEVERC_LIB_DYNCODE_MIR_MIRREWRITEREGISTRY_H
+#define NEVERC_LIB_DYNCODE_MIR_MIRREWRITEREGISTRY_H
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
@@ -45,4 +45,4 @@ inline unsigned lookupMIRRewriteOpcode(const llvm::TargetInstrInfo &TII,
 } // namespace dyncode
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_DYNCODE_MIR_MIRREWRITEREGISTRY_H

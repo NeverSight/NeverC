@@ -1,13 +1,12 @@
 #include "neverc/Scan/MacroArgStorage.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Scan/LexDiag.h"
 #include "neverc/Scan/MacroRecord.h"
 #include "neverc/Scan/PrepEngine.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Compiler.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include <algorithm>
-
 using namespace neverc;
 
 // ===----------------------------------------------------------------------===

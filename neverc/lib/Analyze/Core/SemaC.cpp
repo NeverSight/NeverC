@@ -3,7 +3,7 @@
 // Out-of-line `Sema` actions that are intrinsic to C-language semantics
 // rather than to any conversion / overload / standard-conversion path.
 //
-// Public entry points (declared in `Sema/Sema.h`):
+// Public entry points (declared in `neverc/Analyze/Sema.h`):
 //   * `Sema::OnEmptyDeclaration`             bare `;` declaration.
 //   * `Sema::OnStaticAssertDeclaration`      C11 `_Static_assert`.
 //   * `Sema::EvaluateStaticAssertMessageAsString`

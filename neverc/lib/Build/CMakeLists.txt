@@ -3,17 +3,25 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_neverc_library(nevercBuild
-  BuildDriver.cpp
-  Lexer.cpp
-  Parser.cpp
-  VariableEnv.cpp
-  Function.cpp
-  RuleDB.cpp
-  DepGraph.cpp
-  JobScheduler.cpp
-  Platform.cpp
-  StringUtils.cpp
+  Core/BuildDriver.cpp
+  Core/VariableEnv.cpp
+  Core/Function.cpp
+  Core/StringUtils.cpp
+
+  Parse/Lexer.cpp
+  Parse/Parser.cpp
+
+  Graph/RuleDB.cpp
+  Graph/DepGraph.cpp
+  Graph/JobScheduler.cpp
+
+  Platform/Platform.cpp
 
   LINK_LIBS
   nevercFoundation
+  )
+
+target_include_directories(nevercBuild
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
   )

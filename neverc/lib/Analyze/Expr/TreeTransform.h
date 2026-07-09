@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_SEMA_TREETRANSFORM_H
-#define NEVERC_LIB_SEMA_TREETRANSFORM_H
+#ifndef NEVERC_LIB_ANALYZE_EXPR_TREETRANSFORM_H
+#define NEVERC_LIB_ANALYZE_EXPR_TREETRANSFORM_H
 
 #include "Type/TypeLocBuilder.h"
 #include "neverc/Analyze/Designator.h"
@@ -3250,4 +3250,4 @@ QualType TreeTransform<Derived>::RebuildBitIntType(bool IsUnsigned,
 
 } // end namespace neverc
 
-#endif // NEVERC_LIB_SEMA_TREETRANSFORM_H
+#endif // NEVERC_LIB_ANALYZE_EXPR_TREETRANSFORM_H

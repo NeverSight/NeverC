@@ -42,3 +42,8 @@ add_neverc_library(nevercScan
   LINK_LIBS
   nevercFoundation
   )
+
+target_include_directories(nevercScan
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+  )

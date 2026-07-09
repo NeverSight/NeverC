@@ -1,5 +1,5 @@
 #include "neverc/DynCode/Import/WinPEBImport.h"
-#include "ExtractorCommon.h"
+#include "Extractor/ExtractorCommon.h"
 #include "neverc/DynCode/Import/PtrCacheHelpers.h"
 #include "neverc/DynCode/Import/WinImportTables.h"
 #include "neverc/DynCode/Pipeline/DynCodeIRHelperNames.h"
@@ -16,7 +16,6 @@
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
 #include <random>
-
 using namespace llvm;
 
 namespace neverc {

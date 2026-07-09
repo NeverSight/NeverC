@@ -1,7 +1,7 @@
-#ifndef NEVERC_LIB_BASIC_TARGET_OSTARGETS_H
-#define NEVERC_LIB_BASIC_TARGET_OSTARGETS_H
+#ifndef NEVERC_LIB_FOUNDATION_TARGET_OSTARGETS_H
+#define NEVERC_LIB_FOUNDATION_TARGET_OSTARGETS_H
 
-#include "Targets.h"
+#include "Target/Targets.h"
 
 namespace neverc {
 namespace targets {
@@ -122,4 +122,4 @@ public:
 
 } // namespace targets
 } // namespace neverc
-#endif // NEVERC_LIB_BASIC_TARGET_OSTARGETS_H
+#endif // NEVERC_LIB_FOUNDATION_TARGET_OSTARGETS_H

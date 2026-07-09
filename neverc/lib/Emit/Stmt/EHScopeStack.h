@@ -305,4 +305,4 @@ public:
 } // namespace Emit
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_STMT_EHSCOPESTACK_H

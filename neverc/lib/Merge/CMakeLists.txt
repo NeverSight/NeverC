@@ -5,13 +5,13 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_neverc_library(nevercMerge
-  MergerDispatch.cpp
-  MergerELF.cpp
-  MergerMachO.cpp
-  MergerCOFF.cpp
-  MergerVerify.cpp
+  Core/MergerDispatch.cpp
 
-  LINK_LIBS
+  ELF/MergerELF.cpp
+  MachO/MergerMachO.cpp
+  COFF/MergerCOFF.cpp
+
+  Verify/MergerVerify.cpp
   )
 
 target_include_directories(nevercMerge

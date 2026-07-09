@@ -1,6 +1,6 @@
 #include "neverc/DynCode/MIR/MIRPrepPass.h"
-#include "ExtractorCommon.h"
-#include "MIRRewriteRegistry.h"
+#include "Extractor/ExtractorCommon.h"
+#include "MIR/MIRRewriteRegistry.h"
 #include "neverc/DynCode/Pipeline/Diagnostics.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
@@ -32,7 +32,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Triple.h"
-
 using namespace llvm;
 
 namespace neverc {

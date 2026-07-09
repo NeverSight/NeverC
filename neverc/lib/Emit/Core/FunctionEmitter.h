@@ -2050,4 +2050,4 @@ llvm::fp::ExceptionBehavior
 ToConstrainedExceptMD(LangOptions::FPExceptionModeKind Kind);
 } // end namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_CORE_FUNCTIONEMITTER_H

@@ -28,4 +28,4 @@ public:
 } // namespace Emit
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_ABI_EMITTERABI_H

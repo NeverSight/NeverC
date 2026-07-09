@@ -16,4 +16,4 @@ llvm::Constant *initializationPatternFor(ModuleEmitter &, llvm::Type *);
 } // end namespace Emit
 } // end namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_DECL_PATTERNINIT_H

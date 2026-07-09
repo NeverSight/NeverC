@@ -35,7 +35,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-
 using namespace neverc;
 
 // ===----------------------------------------------------------------------===

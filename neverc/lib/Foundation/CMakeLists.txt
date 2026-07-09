@@ -300,9 +300,12 @@ add_neverc_library(nevercFoundation
   Core/FileManager.cpp
   Core/IdentifierTable.cpp
   Core/LangOptions.cpp
+  Core/Version.cpp
+
   Builtin/BuiltinString.cpp
   Builtin/BuiltinMimalloc.cpp
   Builtin/BuiltinNvkKernel.cpp
+
   Std/StdModule.cpp
   Std/BuiltinStd.cpp
 
@@ -311,7 +314,6 @@ add_neverc_library(nevercFoundation
   Target/X86.cpp
   Target/OSDefines.cpp
 
-  Core/Version.cpp
   ${version_inc}
   ${BUILTIN_STRING_THIN_DECLS}
   ${BUILTIN_STRING_BITCODE_H}
@@ -323,11 +325,9 @@ add_neverc_library(nevercFoundation
   NeverCDriverOptions
   )
 
-
 target_include_directories(nevercFoundation
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/Target
     ${CMAKE_CURRENT_BINARY_DIR}
   )
 

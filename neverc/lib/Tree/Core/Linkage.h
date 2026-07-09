@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_AST_CORE_LINKAGE_H
-#define NEVERC_LIB_AST_CORE_LINKAGE_H
+#ifndef NEVERC_LIB_TREE_CORE_LINKAGE_H
+#define NEVERC_LIB_TREE_CORE_LINKAGE_H
 
 #include "neverc/Tree/Core/TreeFwd.h"
 #include "neverc/Tree/Decl/Decl.h"
@@ -107,4 +107,4 @@ public:
 };
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_TREE_CORE_LINKAGE_H

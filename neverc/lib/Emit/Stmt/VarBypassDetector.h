@@ -43,4 +43,4 @@ private:
 } // namespace Emit
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_STMT_VARBYPASSDETECTOR_H

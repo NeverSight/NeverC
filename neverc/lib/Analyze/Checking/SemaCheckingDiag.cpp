@@ -1,7 +1,9 @@
-#include "SemaCheckingUtils.h"
+#include "Checking/SemaCheckingUtils.h"
 #include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/ScopeInfo.h"
+#include "neverc/Analyze/SemaInternal.h"
 #include "neverc/Foundation/Builtin/TargetBuiltins.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Tree/Core/APValue.h"
@@ -18,8 +20,6 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
-#include "neverc/Analyze/SemaInternal.h"
-#include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
 
 using namespace neverc;
 using namespace sema;

@@ -1,13 +1,10 @@
 #include "neverc/Invoke/Driver.h"
-#include "neverc/Config/config.h"
-
 #include "ToolChains/Darwin.h"
 #include "ToolChains/Gnu.h"
 #include "ToolChains/Linux.h"
 #include "ToolChains/MSVC.h"
 #include "ToolChains/NeverC.h"
-#include "llvm/Config/llvm-config.h"
-
+#include "neverc/Config/config.h"
 #include "neverc/Foundation/Core/Version.h"
 #include "neverc/Invoke/Action.h"
 #include "neverc/Invoke/Compilation.h"
@@ -25,6 +22,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"

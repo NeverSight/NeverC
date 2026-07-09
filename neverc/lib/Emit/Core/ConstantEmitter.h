@@ -135,4 +135,4 @@ private:
 } // namespace Emit
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_CORE_CONSTANTEMITTER_H

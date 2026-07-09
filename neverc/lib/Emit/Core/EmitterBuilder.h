@@ -319,4 +319,4 @@ public:
 } // end namespace Emit
 } // end namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_CORE_EMITTERBUILDER_H

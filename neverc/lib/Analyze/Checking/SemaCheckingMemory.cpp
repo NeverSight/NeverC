@@ -1,5 +1,6 @@
 #include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/ScopeInfo.h"
+#include "neverc/Analyze/SemaInternal.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Scan/SourceScanner.h"
@@ -16,7 +17,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <string>
-#include "neverc/Analyze/SemaInternal.h"
 
 using namespace neverc;
 using namespace sema;

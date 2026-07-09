@@ -1,8 +1,8 @@
 #include "neverc/Foundation/Target/TargetInfo.h"
-#include "AArch64.h"
-#include "OSTargets.h"
-#include "Targets.h"
-#include "X86.h"
+#include "Target/AArch64.h"
+#include "Target/OSTargets.h"
+#include "Target/Targets.h"
+#include "Target/X86.h"
 #include "neverc/Config/config.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
 #include "neverc/Foundation/Core/AddressSpaces.h"
@@ -29,7 +29,6 @@
 #include <limits>
 #include <optional>
 #include <vector>
-
 using namespace neverc;
 
 // ===----------------------------------------------------------------------===

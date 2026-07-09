@@ -1,13 +1,13 @@
 //===- X86.cpp -- X86 / X86_64 TargetInfo implementations -----------------===//
 //
 // Out-of-line method definitions for `X86TargetInfo` and `X86_64TargetInfo`
-// declared in `X86.h`. Cross-platform predefined macros used by the X86
-// `TargetInfo` family live in `OSDefines.cpp`.
+// declared in `Target/X86.h`. Cross-platform predefined macros used by the X86
+// `TargetInfo` family live in `Target/OSDefines.cpp`.
 //
 
-#include "X86.h"
-#include "OSTargets.h"
-#include "Targets.h"
+#include "Target/X86.h"
+#include "Target/OSTargets.h"
+#include "Target/Targets.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
 #include "neverc/Foundation/Builtin/TargetBuiltins.h"
 #include "neverc/Foundation/Core/MacroBuilder.h"
@@ -24,7 +24,6 @@
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/TargetParser/X86TargetParser.h"
 #include <cstdlib>
-
 using namespace neverc;
 using namespace neverc::targets;
 

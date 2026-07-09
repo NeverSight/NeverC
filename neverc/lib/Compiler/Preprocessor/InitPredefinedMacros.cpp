@@ -7,7 +7,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/DerivedTypes.h"
-#include "neverc/Foundation/Target/TargetOSMacros.def"
+
 using namespace neverc;
 
 namespace neverc {
@@ -570,7 +570,7 @@ void neverc::initializePredefinedMacros(const TargetInfo &TI,
     const llvm::Triple &Triple = TI.getTriple();
 #define TARGET_OS(Name, Predicate)                                             \
   Builder.defineMacro(#Name, (Predicate) ? "1" : "0");
-#undef TARGET_OS
+#include "neverc/Foundation/Target/TargetOSMacros.def"
   }
 
   TI.getTargetDefines(LangOpts, Builder);

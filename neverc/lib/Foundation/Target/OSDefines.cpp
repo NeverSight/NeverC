@@ -1,9 +1,9 @@
 //===- OSDefines.cpp -- platform predefined macros (Darwin / Windows) -----===//
 //
 // Cross-target OS predefined-macro emitters, shared by every per-arch
-// translation unit (`TargetsAArch64.cpp`, `TargetsX86.cpp`, ...).
+// translation unit (`Target/AArch64.cpp`, `Target/X86.cpp`, ...).
 //
-// Public entry points (declared in `Targets/OSTargets.h`):
+// Public entry points (declared in `Target/OSTargets.h`):
 //   * `getDarwinDefines`   used by `DarwinTargetInfo<T>::getOSDefines`.
 //   * `addWindowsDefines`  used by `WindowsTargetInfo<T>::getOSDefines`.
 //
@@ -13,8 +13,8 @@
 // Split out of the historical `TargetsX86AndOS.cpp`.
 //
 
-#include "OSTargets.h"
-#include "Targets.h"
+#include "Target/OSTargets.h"
+#include "Target/Targets.h"
 #include "neverc/Foundation/Core/MacroBuilder.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetInfo.h"

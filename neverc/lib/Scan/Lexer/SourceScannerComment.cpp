@@ -1,4 +1,5 @@
 #include "neverc/Foundation/Core/CharInfo.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 #include "neverc/Scan/LexDiag.h"
@@ -12,7 +13,6 @@
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/Unicode.h"
 #include "llvm/Support/UnicodeCharRanges.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
 #include <cassert>
 #include <cstdint>
 #include <optional>
@@ -31,11 +31,11 @@
 #include <arm_neon.h>
 #endif
 
-#include "UnicodeCharRanges.inc"
+#include "Lexer/UnicodeCharRanges.inc"
 
 using namespace neverc;
 
-#include "SourceScannerSIMDHelpers.inc"
+#include "Lexer/SourceScannerSIMDHelpers.inc"
 
 namespace {
 inline CharSourceRange buildCharRange(SourceScanner &L, const char *Begin,

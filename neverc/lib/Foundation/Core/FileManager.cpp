@@ -1,5 +1,6 @@
 #include "neverc/Foundation/Core/FileManager.h"
 #include "neverc/Foundation/Core/CharInfo.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Foundation/Core/MakeSupport.h"
 #include "neverc/Foundation/Core/PrettyStackTrace.h"
 #include "neverc/Foundation/Core/SourceLocation.h"
@@ -18,6 +19,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/ADT/bit.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Capacity.h"
@@ -29,8 +31,6 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
-#include "llvm/ADT/bit.h"
 #include <algorithm>
 #include <cassert>
 #include <climits>

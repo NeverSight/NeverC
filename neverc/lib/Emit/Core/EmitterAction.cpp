@@ -1,10 +1,10 @@
 #include "neverc/Emit/Core/EmitterAction.h"
-#include "neverc/Emit/Core/EmitterFactory.h"
 #include "Backend/BackendConsumer.h"
 #include "Core/ModuleEmitter.h"
 #include "Stmt/CallEmitterInfo.h"
 #include "neverc/Compiler/CompilerInstance.h"
 #include "neverc/Emit/Backend/BackendUtil.h"
+#include "neverc/Emit/Core/EmitterFactory.h"
 #include "neverc/Emit/Core/ModuleBuilder.h"
 #include "neverc/Foundation/Core/FileManager.h"
 #include "neverc/Foundation/Core/SourceManager.h"
@@ -36,7 +36,6 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Transforms/IPO/Internalize.h"
 #include "llvm/Transforms/Utils/Cloning.h"
-
 #include <optional>
 using namespace neverc;
 using namespace llvm;

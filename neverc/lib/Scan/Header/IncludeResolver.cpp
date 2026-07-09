@@ -1,10 +1,11 @@
 #include "neverc/Scan/IncludeResolver.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Foundation/Core/FileManager.h"
 #include "neverc/Foundation/Core/IdentifierTable.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 #include "neverc/Scan/HeaderIndexOptions.h"
-#include "neverc/Scan/PrepEngine.h"
 #include "neverc/Scan/LexDiag.h"
+#include "neverc/Scan/PrepEngine.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
@@ -13,7 +14,6 @@
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Capacity.h"
 #include "llvm/Support/Errc.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/VirtualFileSystem.h"
@@ -23,7 +23,6 @@
 #include <string>
 #include <system_error>
 #include <utility>
-
 using namespace neverc;
 
 #define DEBUG_TYPE "file-search"

@@ -128,4 +128,4 @@ public:
 };
 
 } // namespace neverc
-#endif
+#endif // NEVERC_LIB_EMIT_BACKEND_BACKENDCONSUMER_H

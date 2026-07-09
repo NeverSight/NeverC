@@ -1,13 +1,12 @@
 #include "neverc/Scan/MacroRecord.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Scan/PrepEngine.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <utility>
-
 using namespace neverc;
 
 namespace {

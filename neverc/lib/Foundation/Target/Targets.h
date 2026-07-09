@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_BASIC_TARGET_TARGETS_H
-#define NEVERC_LIB_BASIC_TARGET_TARGETS_H
+#ifndef NEVERC_LIB_FOUNDATION_TARGET_TARGETS_H
+#define NEVERC_LIB_FOUNDATION_TARGET_TARGETS_H
 
 #include "neverc/Foundation/Core/MacroBuilder.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
@@ -23,4 +23,4 @@ void defineCPUMacros(neverc::MacroBuilder &Builder, llvm::StringRef CPUName,
 
 } // namespace targets
 } // namespace neverc
-#endif // NEVERC_LIB_BASIC_TARGET_TARGETS_H
+#endif // NEVERC_LIB_FOUNDATION_TARGET_TARGETS_H

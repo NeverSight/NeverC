@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_DYNCODE_EXTRACTORCOMMON_H
-#define NEVERC_LIB_DYNCODE_EXTRACTORCOMMON_H
+#ifndef NEVERC_LIB_DYNCODE_EXTRACTOR_EXTRACTORCOMMON_H
+#define NEVERC_LIB_DYNCODE_EXTRACTOR_EXTRACTORCOMMON_H
 
 #include "neverc/DynCode/Pipeline/DynCodeOptions.h"
 #include "neverc/DynCode/Pipeline/TargetDesc.h"
@@ -87,4 +87,4 @@ bool isCompilerRtRuntimeHelperName(llvm::StringRef Bare);
 } // namespace dyncode
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_DYNCODE_EXTRACTOR_EXTRACTORCOMMON_H

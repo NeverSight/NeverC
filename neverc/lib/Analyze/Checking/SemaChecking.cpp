@@ -1,9 +1,11 @@
-#include "SemaCheckingUtils.h"
+#include "Checking/SemaCheckingUtils.h"
 #include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/ScopeInfo.h"
+#include "neverc/Analyze/SemaInternal.h"
 #include "neverc/Foundation/Builtin/TargetBuiltins.h"
 #include "neverc/Foundation/Core/SyncScope.h"
 #include "neverc/Foundation/Core/TokenKinds.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Scan/SourceScanner.h"
@@ -35,13 +37,11 @@
 #include "llvm/TargetParser/Triple.h"
 #include <algorithm>
 #include <cassert>
-#include <optional>
 #include <ctime>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
-#include "neverc/Analyze/SemaInternal.h"
-#include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
 
 using namespace neverc;
 using namespace sema;

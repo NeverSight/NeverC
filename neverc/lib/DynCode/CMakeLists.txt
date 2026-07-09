@@ -115,6 +115,6 @@ add_neverc_library(nevercDynCode
 
 target_include_directories(nevercDynCode
   PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/Extractor
+    ${CMAKE_CURRENT_SOURCE_DIR}
   )
 

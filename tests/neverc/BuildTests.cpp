@@ -12,7 +12,7 @@ using namespace neverc::build;
 
 // ---------------------------------------------------------------------------
 // Helper: lex + parse a Makefile string and process the AST into Env/Rules.
-// Mirrors the processAST logic in BuildDriver.cpp.
+// Mirrors the processAST logic in Core/BuildDriver.cpp.
 // ---------------------------------------------------------------------------
 namespace {
 

@@ -1,4 +1,5 @@
 #include "neverc/Scan/ExpansionLexer.h"
+#include "neverc/Foundation/Core/CompilerCompat.h"
 #include "neverc/Scan/LexDiag.h"
 #include "neverc/Scan/MacroArgStorage.h"
 #include "neverc/Scan/PrepEngine.h"
@@ -9,11 +10,9 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Compiler.h"
-#include "neverc/Foundation/Core/CompilerCompat.h"
 #include <cassert>
 #include <cstring>
 #include <optional>
-
 #ifdef __SSE2__
 #include <emmintrin.h>
 #endif

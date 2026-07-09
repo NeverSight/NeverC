@@ -1,6 +1,5 @@
-#include "NeverCStringCleanupEmitter.h"
+#include "Decl/NeverCStringCleanupEmitter.h"
 #include "Core/ModuleEmitter.h"
-
 namespace neverc {
 namespace Emit {
 

@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_SEMA_TYPE_TYPELOCBUILDER_H
-#define NEVERC_LIB_SEMA_TYPE_TYPELOCBUILDER_H
+#ifndef NEVERC_LIB_ANALYZE_TYPE_TYPELOCBUILDER_H
+#define NEVERC_LIB_ANALYZE_TYPE_TYPELOCBUILDER_H
 
 #include "neverc/Tree/Core/TreeContext.h"
 #include "neverc/Tree/Type/TypeLoc.h"
@@ -112,4 +112,4 @@ private:
 
 } // namespace neverc
 
-#endif
+#endif // NEVERC_LIB_ANALYZE_TYPE_TYPELOCBUILDER_H

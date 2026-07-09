@@ -100,4 +100,4 @@ struct TypeEmitterCache {
 } // end namespace Emit
 } // end namespace neverc
 
-#endif
+#endif // NEVERC_LIB_EMIT_CORE_TYPEEMITTERCACHE_H

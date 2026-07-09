@@ -24,7 +24,6 @@
 #include <cstdint>
 #include <optional>
 #include <type_traits>
-
 using namespace neverc;
 
 // ===----------------------------------------------------------------------===

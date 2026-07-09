@@ -1,5 +1,5 @@
-#ifndef NEVERC_LIB_DRIVER_TOOLCHAINS_ARCH_X86_H
-#define NEVERC_LIB_DRIVER_TOOLCHAINS_ARCH_X86_H
+#ifndef NEVERC_LIB_INVOKE_TOOLCHAINS_ARCH_X86_H
+#define NEVERC_LIB_INVOKE_TOOLCHAINS_ARCH_X86_H
 
 #include "neverc/Invoke/Driver.h"
 #include "llvm/ADT/StringRef.h"
@@ -25,4 +25,4 @@ void getX86TargetFeatures(const Driver &D, const llvm::Triple &Triple,
 } // end namespace driver
 } // end namespace neverc
 
-#endif // NEVERC_LIB_DRIVER_TOOLCHAINS_ARCH_X86_H
+#endif // NEVERC_LIB_INVOKE_TOOLCHAINS_ARCH_X86_H
