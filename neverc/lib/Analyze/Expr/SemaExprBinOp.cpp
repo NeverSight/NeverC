@@ -363,9 +363,9 @@ bool isValidBoolVectorBinOp(BinaryOperatorKind Opc) {
 }
 } // namespace
 
-inline QualType Sema::CheckBitwiseOperands(ExprResult &LHS, ExprResult &RHS,
-                                           SourceLocation Loc,
-                                           BinaryOperatorKind Opc) {
+QualType Sema::CheckBitwiseOperands(ExprResult &LHS, ExprResult &RHS,
+                                    SourceLocation Loc,
+                                    BinaryOperatorKind Opc) {
   bool IsCompAssign =
       Opc == BO_AndAssign || Opc == BO_OrAssign || Opc == BO_XorAssign;
 
@@ -425,9 +425,9 @@ inline QualType Sema::CheckBitwiseOperands(ExprResult &LHS, ExprResult &RHS,
 }
 
 // C99 6.5.[13,14]
-inline QualType Sema::CheckLogicalOperands(ExprResult &LHS, ExprResult &RHS,
-                                           SourceLocation Loc,
-                                           BinaryOperatorKind Opc) {
+QualType Sema::CheckLogicalOperands(ExprResult &LHS, ExprResult &RHS,
+                                    SourceLocation Loc,
+                                    BinaryOperatorKind Opc) {
   if (LHS.get()->getType()->isVectorType() ||
       RHS.get()->getType()->isVectorType())
     return CheckVectorLogicalOperands(LHS, RHS, Loc);
