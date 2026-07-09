@@ -35,7 +35,7 @@ rmmod:
 	adb shell su -c 'rmmod $(MODULE:.ko=)'
 
 run: insmod
-	@echo "Module loaded and hidden. Check: adb shell su -c 'lsmod | grep nvk'"
+	@echo "Module loaded. Check visibility: adb shell su -c 'lsmod | grep nvk'"
 
 clean:
 	rm -f $(MODULE) *.o

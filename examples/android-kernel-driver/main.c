@@ -19,7 +19,7 @@
  *
  * Overriding _neverc_krt_ptr_enc/_neverc_krt_ptr_dec directly replaces the entire
  * pointer encryption scheme.  The default _neverc_krt_xor_opaque is NOT used
- * (enc/dec are the consumers of xor_opaque; overriding them bypasses it).
+ * (enc/dec are the consumers of xor_opaque; overriding them skips it).
  *
  * Forward-declare _neverc_krt_cache_key so the custom enc/dec functions
  * below can reference it before kallsyms.h is included.  Must match

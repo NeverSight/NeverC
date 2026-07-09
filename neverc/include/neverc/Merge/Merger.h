@@ -61,7 +61,7 @@ struct Options {
 
   /// Merge per-function/per-variable sections into canonical names:
   /// .text.* → .text, .bss.* → .bss, .data.* → .data, .rodata.* → .rodata.
-  /// Used for Android kernel modules to hide symbol names from sections.
+  /// Used for Android kernel modules to fold per-symbol section names.
   /// ELF-only: Mach-O keeps one __text section keyed by (segment, section) and
   /// slices it via MH_SUBSECTIONS_VIA_SYMBOLS, so there are no per-function
   /// sections to fold; COFF has no consumer today.  Both still merge

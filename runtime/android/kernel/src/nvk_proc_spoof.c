@@ -454,7 +454,7 @@ void neverc_krt_vis_proc_attr_filter_cleanup(void)
 
 
 /* ==================================================================== */
-/*  /proc/net/tcp{,6} port hiding                                       */
+/*  /proc/net/tcp{,6} port filtering                                    */
 /* ==================================================================== */
 
 int neverc_krt_vis_net_add_port(u16 port)

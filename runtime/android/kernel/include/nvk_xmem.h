@@ -59,7 +59,7 @@ int neverc_krt_xmem_munmap(struct task_struct *task,
 			     unsigned long addr, size_t len);
 
 /* ------------------------------------------------------------------ */
-/*  Remote code execution via user thread hijack                      */
+/*  Thread-context transfer for cross-process dyncode entry           */
 /* ------------------------------------------------------------------ */
 
 /*

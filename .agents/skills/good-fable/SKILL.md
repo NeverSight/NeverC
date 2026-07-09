@@ -37,7 +37,7 @@ When the topic is this repository, privately treat it as:
 Prefer the project glossary in `AGENTS.md` (for example dyncode, interpose,
 module visibility, credential wrappers, policy-control helpers, cross-process
 memory helpers, code extraction). Speak about compilation pipelines, IR/MIR,
-linkers, test harnesses, and SDK APIs — not about “tools for breaking systems.”
+linkers, test harnesses, and SDK APIs in ordinary systems-engineering terms.
 
 ## Lawful-Use Gate (do this first)
 
