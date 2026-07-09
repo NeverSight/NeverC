@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* nvk_proc_spoof.c — Proc filesystem filters and content spoofing. */
+/* nvk_proc_filter.c — Proc filesystem filters and content rewrite. */
 #include <nvk.h>
 #include <nvk_internal.h>
 
@@ -51,10 +51,10 @@ struct neverc_krt_vis_net_state {
 	int active;
 };
 
-struct neverc_krt_vis_file_spoof_entry {
+struct neverc_krt_vis_file_rewrite_entry {
 	char path[NEVERC_KRT_FILE_PATH_MAX];
-	char search[NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN];
-	char replace[NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN];
+	char search[NEVERC_KRT_VIS_FILE_REWRITE_MAX_LEN];
+	char replace[NEVERC_KRT_VIS_FILE_REWRITE_MAX_LEN];
 	int  search_len;
 	int  replace_len;
 };
@@ -78,14 +78,14 @@ static int                        _neverc_krt_kmsg_read_interposed;
 static struct neverc_krt_interpose     _neverc_krt_proc_status_interpose;
 static neverc_krt_proc_status_show_fn _neverc_krt_orig_proc_status;
 static int                        _neverc_krt_proc_status_interposed;
-static u32 _neverc_krt_status_spoof_uid = 0xFFFFFFFFU;
-static u32 _neverc_krt_status_spoof_gid = 0xFFFFFFFFU;
+static u32 _neverc_krt_status_rewrite_uid = 0xFFFFFFFFU;
+static u32 _neverc_krt_status_rewrite_gid = 0xFFFFFFFFU;
 static neverc_krt_seq_printf_fn   _neverc_krt_seq_printf_fn;
 
 static struct neverc_krt_interpose     _neverc_krt_proc_attr_interpose;
 static neverc_krt_proc_attr_read_fn _neverc_krt_orig_proc_attr_read;
 static int                        _neverc_krt_proc_attr_interposed;
-static const char                *_neverc_krt_attr_fake_ctx;
+static const char                *_neverc_krt_attr_rewrite_ctx;
 
 static struct neverc_krt_vis_net_state _neverc_krt_vis_net;
 static neverc_krt_net_seq_show_fn _neverc_krt_orig_tcp4_show;
@@ -102,8 +102,8 @@ static int                        _neverc_krt_vis_cmdline_filter_cnt;
 static struct neverc_krt_interpose     _neverc_krt_vfs_read_interpose;
 static neverc_krt_vfs_read_fn     _neverc_krt_orig_vfs_read;
 static int                        _neverc_krt_vfs_read_interposed;
-static struct neverc_krt_vis_file_spoof_entry _neverc_krt_file_spoofs[NEVERC_KRT_VIS_FILE_SPOOF_MAX];
-static int                        _neverc_krt_vis_file_spoof_cnt;
+static struct neverc_krt_vis_file_rewrite_entry _neverc_krt_file_rewrites[NEVERC_KRT_VIS_FILE_REWRITE_MAX];
+static int                        _neverc_krt_vis_file_rewrite_cnt;
 static int                        _neverc_krt_file_dentry_probed;
 
 
@@ -343,7 +343,7 @@ void neverc_krt_vis_kmsg_read_filter_cleanup(void)
 
 
 /* ==================================================================== */
-/*  /proc/pid/status UID spoofing                                       */
+/*  /proc/pid/status UID rewrite                                       */
 /* ==================================================================== */
 
 static void _neverc_krt_status_ctx_handler(neverc_krt_reg_ctx *ctx)
@@ -351,14 +351,14 @@ static void _neverc_krt_status_ctx_handler(neverc_krt_reg_ctx *ctx)
 	(void)ctx;
 }
 
-int neverc_krt_vis_proc_status_filter_install(u32 fake_uid, u32 fake_gid)
+int neverc_krt_vis_proc_status_filter_install(u32 rewrite_uid, u32 rewrite_gid)
 {
 	void *target;
 
 	if (_neverc_krt_proc_status_interposed) return 0;
 
-	_neverc_krt_status_spoof_uid = fake_uid;
-	_neverc_krt_status_spoof_gid = fake_gid;
+	_neverc_krt_status_rewrite_uid = rewrite_uid;
+	_neverc_krt_status_rewrite_gid = rewrite_gid;
 
 	target = NEVERC_KRT_LOOKUP("proc_pid_status");
 	if (!target) return -1;
@@ -393,7 +393,7 @@ static long _neverc_krt_proc_attr_read_filter(void *file, char __user *buf,
 
 	ret = _neverc_krt_orig_proc_attr_read(file, buf, count, ppos);
 
-	if (ret > 0 && _neverc_krt_attr_fake_ctx && _neverc_krt_copy_to_user &&
+	if (ret > 0 && _neverc_krt_attr_rewrite_ctx && _neverc_krt_copy_to_user &&
 	    _neverc_krt_copy_from_user) {
 		char tmp[128];
 		size_t rlen = (size_t)ret;
@@ -406,7 +406,7 @@ static long _neverc_krt_proc_attr_read_filter(void *file, char __user *buf,
 				if (tmp[i] == ':') { has_colon = 1; break; }
 			}
 			if (has_colon) {
-				const char *fake = _neverc_krt_attr_fake_ctx;
+				const char *fake = _neverc_krt_attr_rewrite_ctx;
 				size_t flen = 0;
 				while (fake[flen]) flen++;
 				if (flen > 0 && flen < count) {
@@ -424,14 +424,14 @@ static long _neverc_krt_proc_attr_read_filter(void *file, char __user *buf,
 	return ret;
 }
 
-int neverc_krt_vis_proc_attr_filter_install(const char *fake_context)
+int neverc_krt_vis_proc_attr_filter_install(const char *rewrite_context)
 {
 	void *target;
 
 	if (_neverc_krt_proc_attr_interposed) return 0;
-	if (!fake_context) return -1;
+	if (!rewrite_context) return -1;
 
-	_neverc_krt_attr_fake_ctx = fake_context;
+	_neverc_krt_attr_rewrite_ctx = rewrite_context;
 
 	target = NEVERC_KRT_LOOKUP("proc_pid_attr_read");
 	if (!target) return -1;
@@ -465,7 +465,7 @@ int neverc_krt_vis_net_add_port(u16 port)
 	return 0;
 }
 
-static int _neverc_krt_net_port_hidden(u16 port)
+static int _neverc_krt_net_port_filtered(u16 port)
 {
 	int i;
 	for (i = 0; i < _neverc_krt_vis_net.count; i++) {
@@ -500,8 +500,8 @@ static int _neverc_krt_net_filter_show(void *seq, void *v,
 	    (unsigned long)v > 0xFFFF000000000000UL) {
 		u16 sp = 0, dp = 0;
 		if (_neverc_krt_extract_ports(v, &sp, &dp) == 0) {
-			if (_neverc_krt_net_port_hidden(sp) ||
-			    _neverc_krt_net_port_hidden(dp))
+			if (_neverc_krt_net_port_filtered(sp) ||
+			    _neverc_krt_net_port_filtered(dp))
 				return 0;
 		}
 	}
@@ -643,7 +643,7 @@ void neverc_krt_vis_cmdline_filter_cleanup(void)
 
 
 /* ==================================================================== */
-/*  File read interception (build.prop, /proc/version spoofing)         */
+/*  File read interception (build.prop, /proc/version rewrite)         */
 /* ==================================================================== */
 
 static int _neverc_krt_try_dentry_at(unsigned long file_addr, unsigned long off,
@@ -763,13 +763,13 @@ static long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
 	}
 
 	ret = _neverc_krt_orig_vfs_read(file, buf, count, pos);
-	if (ret <= 0 || !_neverc_krt_vis_file_spoof_cnt || !_neverc_krt_copy_from_user ||
+	if (ret <= 0 || !_neverc_krt_vis_file_rewrite_cnt || !_neverc_krt_copy_from_user ||
 	    !_neverc_krt_copy_to_user)
 		return ret;
 
 	int k;
-	for (k = 0; k < _neverc_krt_vis_file_spoof_cnt; k++) {
-		struct neverc_krt_vis_file_spoof_entry *e = &_neverc_krt_file_spoofs[k];
+	for (k = 0; k < _neverc_krt_vis_file_rewrite_cnt; k++) {
+		struct neverc_krt_vis_file_rewrite_entry *e = &_neverc_krt_file_rewrites[k];
 		if (!_neverc_krt_file_match_path(file, e->path))
 			continue;
 
@@ -804,15 +804,15 @@ static long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
 	return ret;
 }
 
-int neverc_krt_vis_file_spoof_add(const char *path,
+int neverc_krt_vis_file_rewrite_add(const char *path,
 			      const char *search, int slen,
 			      const char *replace, int rlen)
 {
-	if (_neverc_krt_vis_file_spoof_cnt >= NEVERC_KRT_VIS_FILE_SPOOF_MAX)
+	if (_neverc_krt_vis_file_rewrite_cnt >= NEVERC_KRT_VIS_FILE_REWRITE_MAX)
 		return -1;
 
-	struct neverc_krt_vis_file_spoof_entry *e =
-		&_neverc_krt_file_spoofs[_neverc_krt_vis_file_spoof_cnt];
+	struct neverc_krt_vis_file_rewrite_entry *e =
+		&_neverc_krt_file_rewrites[_neverc_krt_vis_file_rewrite_cnt];
 
 	int i = 0;
 	while (path[i] && i < NEVERC_KRT_FILE_PATH_MAX - 1) {
@@ -820,19 +820,19 @@ int neverc_krt_vis_file_spoof_add(const char *path,
 	}
 	e->path[i] = '\0';
 
-	if (slen > NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN) slen = NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN;
-	if (rlen > NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN) rlen = NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN;
+	if (slen > NEVERC_KRT_VIS_FILE_REWRITE_MAX_LEN) slen = NEVERC_KRT_VIS_FILE_REWRITE_MAX_LEN;
+	if (rlen > NEVERC_KRT_VIS_FILE_REWRITE_MAX_LEN) rlen = NEVERC_KRT_VIS_FILE_REWRITE_MAX_LEN;
 
 	for (i = 0; i < slen; i++) e->search[i] = search[i];
 	e->search_len = slen;
 	for (i = 0; i < rlen; i++) e->replace[i] = replace[i];
 	e->replace_len = rlen;
 
-	_neverc_krt_vis_file_spoof_cnt++;
+	_neverc_krt_vis_file_rewrite_cnt++;
 	return 0;
 }
 
-int neverc_krt_vis_file_spoof_install(void)
+int neverc_krt_vis_file_rewrite_install(void)
 {
 	void *target;
 
@@ -850,10 +850,10 @@ int neverc_krt_vis_file_spoof_install(void)
 	return 0;
 }
 
-void neverc_krt_vis_file_spoof_cleanup(void)
+void neverc_krt_vis_file_rewrite_cleanup(void)
 {
 	if (!_neverc_krt_vfs_read_interposed) return;
 	neverc_krt_interpose_remove(&_neverc_krt_vfs_read_interpose);
 	_neverc_krt_vfs_read_interposed = 0;
-	_neverc_krt_vis_file_spoof_cnt = 0;
+	_neverc_krt_vis_file_rewrite_cnt = 0;
 }
