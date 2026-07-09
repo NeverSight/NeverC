@@ -72,6 +72,7 @@ add_neverc_library(nevercEmit
   Decl/PatternInit.cpp
 
   Stmt/StmtEmitter.cpp
+  Stmt/AsmEmitter.cpp
   Stmt/CallEmitter.cpp
   Stmt/CleanupEmitter.cpp
   Stmt/ExceptionEmitter.cpp

@@ -10,12 +10,19 @@ add_neverc_library(nevercSyntax
   Core/RunParser.cpp
 
   Decl/DeclParser.cpp
+  Decl/DeclParserDecl.cpp
   Decl/DeclParserSpec.cpp
+  Decl/DeclParserDeclarator.cpp
+  Decl/DeclParserType.cpp
+  Decl/DeclParserAttr.cpp
 
   Expr/ExprParser.cpp
+  Expr/ExprParserLiteral.cpp
   Expr/InitParser.cpp
 
   Stmt/StmtParser.cpp
+  Stmt/StmtParserCompound.cpp
+  Stmt/StmtParserControl.cpp
   Stmt/AsmParser.cpp
 
   Pragma/PragmaParser.cpp

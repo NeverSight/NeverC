@@ -16,7 +16,17 @@ add_neverc_library(nevercAnalyze
   Core/SemaFixItUtils.cpp
 
   Decl/SemaDecl.cpp
+  Decl/SemaDeclMerge.cpp
+  Decl/SemaDeclMergeRedecl.cpp
+  Decl/SemaDeclDeclarator.cpp
+  Decl/SemaDeclDeclaratorTypedef.cpp
+  Decl/SemaDeclDeclaratorVar.cpp
+  Decl/SemaDeclDeclaratorFunc.cpp
   Decl/SemaDeclDef.cpp
+  Decl/SemaDeclDefFunc.cpp
+  Decl/SemaDeclDefTag.cpp
+  Decl/SemaDeclDefField.cpp
+  Decl/SemaDeclDefEnum.cpp
   Decl/SemaDeclAttr.cpp
   Decl/DeclSpec.cpp
   Decl/ParsedAttr.cpp
@@ -25,14 +35,30 @@ add_neverc_library(nevercAnalyze
 
   Expr/SemaExpr.cpp
   Expr/SemaExprBinOp.cpp
+  Expr/SemaExprBinOpArithmetic.cpp
+  Expr/SemaExprBinOpAssign.cpp
+  Expr/SemaExprBinOpCompare.cpp
+  Expr/SemaExprBinOpVector.cpp
+  Expr/SemaExprCall.cpp
+  Expr/SemaExprCallArgs.cpp
+  Expr/SemaExprConditional.cpp
+  Expr/SemaExprEval.cpp
+  Expr/SemaExprLiteral.cpp
+  Expr/SemaExprTrait.cpp
+  Expr/SemaExprSubscript.cpp
+  Expr/SemaExprType.cpp
   Expr/SemaExprUnaryOp.cpp
   Expr/SemaExprMember.cpp
   Expr/SemaNeverCString.cpp
   Expr/SemaCast.cpp
   Expr/SemaConversions.cpp
+  Expr/SemaConversionsStandard.cpp
   Expr/SemaInit.cpp
 
   Stmt/SemaStmt.cpp
+  Stmt/SemaStmtControl.cpp
+  Stmt/SemaStmtLoop.cpp
+  Stmt/SemaStmtJump.cpp
   Stmt/SemaStmtAsm.cpp
   Stmt/SemaStmtAttr.cpp
   Stmt/JumpDiagnostics.cpp
@@ -49,6 +75,7 @@ add_neverc_library(nevercAnalyze
   Checking/SemaCheckingFormat.cpp
   Checking/SemaCheckingMemory.cpp
   Checking/SemaCheckingNumeric.cpp
+  Checking/SemaCheckingSequence.cpp
   Checking/SemaCheckingStmt.cpp
   Checking/SemaCheckingTargetARM.cpp
   Checking/SemaCheckingTargetX86.cpp

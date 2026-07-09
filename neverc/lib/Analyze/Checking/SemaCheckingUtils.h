@@ -3,8 +3,8 @@
 // Internal header that exposes a small set of helpers originally defined as
 // file-scope ``static`` functions inside SemaChecking.cpp. Splitting the
 // translation unit into per-topic files (SemaCheckingFormat / Memory / Numeric
-// / Stmt / Array / Builtin* / TargetARM / TargetX86) requires these helpers to
-// be visible across the resulting TUs.
+// / Sequence / Stmt / Array / Builtin* / TargetARM / TargetX86) requires these
+// helpers to be visible across the resulting TUs.
 //
 // Functions live in the global namespace to match their original definitions
 // (only the ``static`` storage class was removed).
