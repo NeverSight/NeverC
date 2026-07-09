@@ -40,6 +40,9 @@ add_neverc_library(nevercAnalyze
   Checking/SemaChecking.cpp
   Checking/SemaCheckingAtomic.cpp
   Checking/SemaCheckingBuiltin.cpp
+  Checking/SemaCheckingBuiltinMisc.cpp
+  Checking/SemaCheckingBuiltinNeverC.cpp
+  Checking/SemaCheckingBuiltinOverflow.cpp
   Checking/SemaCheckingDiag.cpp
   Checking/SemaCheckingFormat.cpp
   Checking/SemaCheckingMemory.cpp

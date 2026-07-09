@@ -3,7 +3,8 @@
 // Internal header that exposes a small set of helpers originally defined as
 // file-scope ``static`` functions inside SemaChecking.cpp. Splitting the
 // translation unit into per-topic files (SemaCheckingFormat / Memory / Numeric
-// / Stmt) requires these helpers to be visible across the resulting TUs.
+// / Stmt / Builtin*) requires these helpers to be visible across the resulting
+// TUs.
 //
 // Functions live in the global namespace to match their original definitions
 // (only the ``static`` storage class was removed).
@@ -35,21 +36,25 @@ bool convertArgumentToType(::neverc::Sema &S, ::neverc::Expr *&Value,
 bool checkBuiltinArgument(::neverc::Sema &S, ::neverc::CallExpr *E,
                           unsigned ArgIndex);
 
-// Individual builtin semantic checks (SemaCheckingBuiltin.cpp)
-bool semaBuiltinAnnotation(::neverc::Sema &S, ::neverc::CallExpr *TheCall);
+// --- SemaCheckingBuiltinNeverC.cpp ---
 ::neverc::ExprResult semaBuiltinNeverCXorstr(::neverc::Sema &S,
                                              ::neverc::CallExpr *TheCall);
 ::neverc::ExprResult semaBuiltinNeverCStrHash(::neverc::Sema &S,
                                               ::neverc::CallExpr *TheCall);
 ::neverc::ExprResult semaBuiltinNeverCRandomU64(::neverc::Sema &S,
                                                 ::neverc::CallExpr *TheCall);
+
+// --- SemaCheckingBuiltinOverflow.cpp ---
+bool semaBuiltinAlignment(::neverc::Sema &S, ::neverc::CallExpr *TheCall,
+                          unsigned ID);
+bool semaBuiltinOverflow(::neverc::Sema &S, ::neverc::CallExpr *TheCall,
+                         unsigned BuiltinID);
+
+// --- SemaCheckingBuiltinMisc.cpp ---
+bool semaBuiltinAnnotation(::neverc::Sema &S, ::neverc::CallExpr *TheCall);
 bool semaBuiltinMSVCAnnotation(::neverc::Sema &S, ::neverc::CallExpr *TheCall);
 bool semaBuiltinFunctionStart(::neverc::Sema &S, ::neverc::CallExpr *TheCall);
 bool semaBuiltinPreserveAI(::neverc::Sema &S, ::neverc::CallExpr *TheCall);
-bool semaBuiltinAlignment(::neverc::Sema &S, ::neverc::CallExpr *TheCall,
-                           unsigned ID);
-bool semaBuiltinOverflow(::neverc::Sema &S, ::neverc::CallExpr *TheCall,
-                          unsigned BuiltinID);
 ::neverc::ExprResult semaBuiltinDumpStruct(::neverc::Sema &S,
                                            ::neverc::CallExpr *TheCall);
 bool semaBuiltinCallWithStaticChain(::neverc::Sema &S,
