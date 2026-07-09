@@ -17,6 +17,12 @@
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <string>
+#include "Checking/SemaCheckingUtils.h"
+#include "neverc/Tree/Format/FormatString.h"
+#include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/SmallVector.h"
+#include <algorithm>
+#include <optional>
 
 using namespace neverc;
 using namespace sema;
@@ -24,8 +30,8 @@ using namespace sema;
 // === Split from SemaChecking.cpp ===
 // Memory-function checks: checkMemorySizeofForComparison, checkMemaccessSize,
 // Sema::CheckMemaccessArguments, Sema::CheckStrlcpycatArguments,
-// Sema::CheckStrncatArguments, Sema::CheckFreeArguments and the local
-// anonymous-namespace CheckFreeArguments* helpers.
+// Sema::CheckStrncatArguments, Sema::CheckFreeArguments,
+// Sema::checkFortifiedBuiltinMemoryFunction (+ local format-size helpers).
 
 //===--- CHECK: Standard memory functions ---------------------------------===//
 
@@ -591,4 +597,599 @@ void Sema::CheckFreeArguments(const CallExpr *E) {
   // Maybe the cast was important, check after the other cases.
   if (const auto *Cast = dyn_cast<CastExpr>(E->getArg(0)))
     return CheckFreeArgumentsCast(*this, CalleeName, Cast);
+}
+
+// ===----------------------------------------------------------------------===
+// Fortified memory function checking (moved from SemaChecking.cpp)
+// ===----------------------------------------------------------------------===
+
+class ScanfDiagnosticFormatHandler
+    : public analyze_format_string::FormatStringHandler {
+  // Accepts the argument index (relative to the first destination index) of the
+  // argument whose size we want.
+  using ComputeSizeFunction =
+      llvm::function_ref<std::optional<llvm::APSInt>(unsigned)>;
+
+  // Accepts the argument index (relative to the first destination index), the
+  // destination size, and the source size).
+  using DiagnoseFunction =
+      llvm::function_ref<void(unsigned, unsigned, unsigned)>;
+
+  ComputeSizeFunction ComputeSizeArgument;
+  DiagnoseFunction Diagnose;
+
+public:
+  ScanfDiagnosticFormatHandler(ComputeSizeFunction ComputeSizeArgument,
+                               DiagnoseFunction Diagnose)
+      : ComputeSizeArgument(ComputeSizeArgument), Diagnose(Diagnose) {}
+
+  bool HandleScanfSpecifier(const analyze_scanf::ScanfSpecifier &FS,
+                            const char *StartSpecifier,
+                            unsigned specifierLen) override {
+    if (!FS.consumesDataArgument())
+      return true;
+
+    unsigned NulByte = 0;
+    switch ((FS.getConversionSpecifier().getKind())) {
+    default:
+      return true;
+    case analyze_format_string::ConversionSpecifier::sArg:
+    case analyze_format_string::ConversionSpecifier::ScanListArg:
+      NulByte = 1;
+      break;
+    case analyze_format_string::ConversionSpecifier::cArg:
+      break;
+    }
+
+    analyze_format_string::OptionalAmount FW = FS.getFieldWidth();
+    if (FW.getHowSpecified() !=
+        analyze_format_string::OptionalAmount::HowSpecified::Constant)
+      return true;
+
+    unsigned SourceSize = FW.getConstantAmount() + NulByte;
+
+    std::optional<llvm::APSInt> DestSizeAPS =
+        ComputeSizeArgument(FS.getArgIndex());
+    if (!DestSizeAPS)
+      return true;
+
+    unsigned DestSize = DestSizeAPS->getZExtValue();
+
+    if (DestSize < SourceSize)
+      Diagnose(FS.getArgIndex(), DestSize, SourceSize);
+
+    return true;
+  }
+};
+
+class EstimateSizeFormatHandler
+    : public analyze_format_string::FormatStringHandler {
+  size_t Size;
+
+public:
+  EstimateSizeFormatHandler(llvm::StringRef Format)
+      : Size(std::min(Format.find(0), Format.size()) +
+             1 /* null byte always written by sprintf */) {}
+
+  bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier &FS,
+                             const char *, unsigned SpecifierLen,
+                             const TargetInfo &) override {
+
+    const size_t FieldWidth = computeFieldWidth(FS);
+    const size_t Precision = computePrecision(FS);
+
+    // The actual format.
+    switch (FS.getConversionSpecifier().getKind()) {
+    // Just a char.
+    case analyze_format_string::ConversionSpecifier::cArg:
+    case analyze_format_string::ConversionSpecifier::CArg:
+      Size += std::max(FieldWidth, (size_t)1);
+      break;
+    // Just an integer.
+    case analyze_format_string::ConversionSpecifier::dArg:
+    case analyze_format_string::ConversionSpecifier::DArg:
+    case analyze_format_string::ConversionSpecifier::iArg:
+    case analyze_format_string::ConversionSpecifier::oArg:
+    case analyze_format_string::ConversionSpecifier::OArg:
+    case analyze_format_string::ConversionSpecifier::uArg:
+    case analyze_format_string::ConversionSpecifier::UArg:
+    case analyze_format_string::ConversionSpecifier::xArg:
+    case analyze_format_string::ConversionSpecifier::XArg:
+      Size += std::max(FieldWidth, Precision);
+      break;
+
+    // %g style conversion switches between %f or %e style dynamically.
+    // %g removes trailing zeros, and does not print decimal point if there are
+    // no digits that follow it. Thus %g can print a single digit.
+    // If it is alternative form:
+    // For g and G conversions, trailing zeros are not removed from the result.
+    case analyze_format_string::ConversionSpecifier::gArg:
+    case analyze_format_string::ConversionSpecifier::GArg:
+      Size += 1;
+      break;
+
+    // Floating point number in the form '[+]ddd.ddd'.
+    case analyze_format_string::ConversionSpecifier::fArg:
+    case analyze_format_string::ConversionSpecifier::FArg:
+      Size += std::max(FieldWidth, 1 /* integer part */ +
+                                       (Precision ? 1 + Precision
+                                                  : 0) /* period + decimal */);
+      break;
+
+    // Floating point number in the form '[-]d.ddde[+-]dd'.
+    case analyze_format_string::ConversionSpecifier::eArg:
+    case analyze_format_string::ConversionSpecifier::EArg:
+      Size +=
+          std::max(FieldWidth,
+                   1 /* integer part */ +
+                       (Precision ? 1 + Precision : 0) /* period + decimal */ +
+                       1 /* e or E letter */ + 2 /* exponent */);
+      break;
+
+    // Floating point number in the form '[-]0xh.hhhhp±dd'.
+    case analyze_format_string::ConversionSpecifier::aArg:
+    case analyze_format_string::ConversionSpecifier::AArg:
+      Size +=
+          std::max(FieldWidth,
+                   2 /* 0x */ + 1 /* integer part */ +
+                       (Precision ? 1 + Precision : 0) /* period + decimal */ +
+                       1 /* p or P letter */ + 1 /* + or - */ + 1 /* value */);
+      break;
+
+    // Just a string.
+    case analyze_format_string::ConversionSpecifier::sArg:
+    case analyze_format_string::ConversionSpecifier::SArg:
+      Size += FieldWidth;
+      break;
+
+    // Just a pointer in the form '0xddd'.
+    case analyze_format_string::ConversionSpecifier::pArg:
+      Size += std::max(FieldWidth, 2 /* leading 0x */ + Precision);
+      break;
+
+    // A plain percent.
+    case analyze_format_string::ConversionSpecifier::PercentArg:
+      Size += 1;
+      break;
+
+    default:
+      break;
+    }
+
+    Size += FS.hasPlusPrefix() || FS.hasSpacePrefix();
+
+    if (FS.hasAlternativeForm()) {
+      switch (FS.getConversionSpecifier().getKind()) {
+      // For o conversion, it increases the precision, if and only if necessary,
+      // to force the first digit of the result to be a zero
+      // (if the value and precision are both 0, a single 0 is printed)
+      case analyze_format_string::ConversionSpecifier::oArg:
+      // For b conversion, a nonzero result has 0b prefixed to it.
+      case analyze_format_string::ConversionSpecifier::bArg:
+      // For x (or X) conversion, a nonzero result has 0x (or 0X) prefixed to
+      // it.
+      case analyze_format_string::ConversionSpecifier::xArg:
+      case analyze_format_string::ConversionSpecifier::XArg:
+        // Note: even when the prefix is added, if
+        // (prefix_width <= FieldWidth - formatted_length) holds,
+        // the prefix does not increase the format
+        // size. e.g.(("%#3x", 0xf) is "0xf")
+
+        // If the result is zero, o, b, x, X adds nothing.
+        break;
+      // For a, A, e, E, f, F, g, and G conversions,
+      // the result of converting a floating-point number always contains a
+      // decimal-point
+      case analyze_format_string::ConversionSpecifier::aArg:
+      case analyze_format_string::ConversionSpecifier::AArg:
+      case analyze_format_string::ConversionSpecifier::eArg:
+      case analyze_format_string::ConversionSpecifier::EArg:
+      case analyze_format_string::ConversionSpecifier::fArg:
+      case analyze_format_string::ConversionSpecifier::FArg:
+      case analyze_format_string::ConversionSpecifier::gArg:
+      case analyze_format_string::ConversionSpecifier::GArg:
+        Size += (Precision ? 0 : 1);
+        break;
+      // For other conversions, the behavior is undefined.
+      default:
+        break;
+      }
+    }
+    assert(SpecifierLen <= Size && "no underflow");
+    Size -= SpecifierLen;
+    return true;
+  }
+
+  size_t getSizeLowerBound() const { return Size; }
+
+private:
+  static size_t computeFieldWidth(const analyze_printf::PrintfSpecifier &FS) {
+    const analyze_format_string::OptionalAmount &FW = FS.getFieldWidth();
+    size_t FieldWidth = 0;
+    if (FW.getHowSpecified() == analyze_format_string::OptionalAmount::Constant)
+      FieldWidth = FW.getConstantAmount();
+    return FieldWidth;
+  }
+
+  static size_t computePrecision(const analyze_printf::PrintfSpecifier &FS) {
+    const analyze_format_string::OptionalAmount &FW = FS.getPrecision();
+    size_t Precision = 0;
+
+    // See man 3 printf for default precision value based on the specifier.
+    switch (FW.getHowSpecified()) {
+    case analyze_format_string::OptionalAmount::NotSpecified:
+      switch (FS.getConversionSpecifier().getKind()) {
+      default:
+        break;
+      case analyze_format_string::ConversionSpecifier::dArg: // %d
+      case analyze_format_string::ConversionSpecifier::DArg: // %D
+      case analyze_format_string::ConversionSpecifier::iArg: // %i
+        Precision = 1;
+        break;
+      case analyze_format_string::ConversionSpecifier::oArg: // %d
+      case analyze_format_string::ConversionSpecifier::OArg: // %D
+      case analyze_format_string::ConversionSpecifier::uArg: // %d
+      case analyze_format_string::ConversionSpecifier::UArg: // %D
+      case analyze_format_string::ConversionSpecifier::xArg: // %d
+      case analyze_format_string::ConversionSpecifier::XArg: // %D
+        Precision = 1;
+        break;
+      case analyze_format_string::ConversionSpecifier::fArg: // %f
+      case analyze_format_string::ConversionSpecifier::FArg: // %F
+      case analyze_format_string::ConversionSpecifier::eArg: // %e
+      case analyze_format_string::ConversionSpecifier::EArg: // %E
+      case analyze_format_string::ConversionSpecifier::gArg: // %g
+      case analyze_format_string::ConversionSpecifier::GArg: // %G
+        Precision = 6;
+        break;
+      case analyze_format_string::ConversionSpecifier::pArg: // %d
+        Precision = 1;
+        break;
+      }
+      break;
+    case analyze_format_string::OptionalAmount::Constant:
+      Precision = FW.getConstantAmount();
+      break;
+    default:
+      break;
+    }
+    return Precision;
+  }
+};
+
+
+bool processFormatStringLiteral(const Expr *FormatExpr,
+                                llvm::StringRef &FormatStrRef, size_t &StrLen,
+                                TreeContext &Context) {
+  if (const auto *Format = dyn_cast<StringLiteral>(FormatExpr);
+      Format && (Format->isOrdinary() || Format->isUTF8())) {
+    FormatStrRef = Format->getString();
+    const ConstantArrayType *T =
+        Context.getAsConstantArrayType(Format->getType());
+    assert(T && "String literal not of constant array type!");
+    size_t TypeSize = T->getSize().getZExtValue();
+    // In case there's a null byte somewhere.
+    StrLen = std::min(std::max(TypeSize, size_t(1)) - 1, FormatStrRef.find(0));
+    return true;
+  }
+  return false;
+}
+
+
+// ===----------------------------------------------------------------------===
+// Fortified memory function checking
+// ===----------------------------------------------------------------------===
+
+void Sema::checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD,
+                                               CallExpr *TheCall) {
+  if (isConstantEvaluatedContext())
+    return;
+
+  bool UseDABAttr = false;
+  const FunctionDecl *UseDecl = FD;
+
+  const auto *DABAttr = FD->getAttr<DiagnoseAsBuiltinAttr>();
+  if (DABAttr) {
+    UseDecl = DABAttr->getFunction();
+    assert(UseDecl && "Missing FunctionDecl in DiagnoseAsBuiltin attribute!");
+    UseDABAttr = true;
+  }
+
+  unsigned BuiltinID = UseDecl->getBuiltinID(/*ConsiderWrappers=*/true);
+
+  if (!BuiltinID)
+    return;
+
+  const TargetInfo &TI = getTreeContext().getTargetInfo();
+  unsigned SizeTypeWidth = TI.getTypeWidth(TI.getSizeType());
+
+  auto TranslateIndex = [&](unsigned Index) -> std::optional<unsigned> {
+    // If we refer to a diagnose_as_builtin attribute, we need to change the
+    // argument index to refer to the arguments of the called function. Unless
+    // the index is out of bounds, which presumably means it's a variadic
+    // function.
+    if (!UseDABAttr)
+      return Index;
+    unsigned DABIndices = DABAttr->argIndices_size();
+    unsigned NewIndex = Index < DABIndices
+                            ? DABAttr->argIndices_begin()[Index]
+                            : Index - DABIndices + FD->getNumParams();
+    if (NewIndex >= TheCall->getNumArgs())
+      return std::nullopt;
+    return NewIndex;
+  };
+
+  auto ComputeExplicitObjectSizeArgument =
+      [&](unsigned Index) -> std::optional<llvm::APSInt> {
+    std::optional<unsigned> IndexOptional = TranslateIndex(Index);
+    if (!IndexOptional)
+      return std::nullopt;
+    unsigned NewIndex = *IndexOptional;
+    Expr::EvalResult Result;
+    Expr *SizeArg = TheCall->getArg(NewIndex);
+    if (!SizeArg->EvaluateAsInt(Result, getTreeContext()))
+      return std::nullopt;
+    llvm::APSInt Integer = Result.Val.getInt();
+    Integer.setIsUnsigned(true);
+    return Integer;
+  };
+
+  auto ComputeSizeArgument =
+      [&](unsigned Index) -> std::optional<llvm::APSInt> {
+    // If the parameter has a pass_object_size attribute, then we should use its
+    // (potentially) more strict checking mode. Otherwise, conservatively assume
+    // type 0.
+    int BOSType = 0;
+    // This check can fail for variadic functions.
+    if (Index < FD->getNumParams()) {
+      if (const auto *POS =
+              FD->getParamDecl(Index)->getAttr<PassObjectSizeAttr>())
+        BOSType = POS->getType();
+    }
+
+    std::optional<unsigned> IndexOptional = TranslateIndex(Index);
+    if (!IndexOptional)
+      return std::nullopt;
+    unsigned NewIndex = *IndexOptional;
+
+    if (NewIndex >= TheCall->getNumArgs())
+      return std::nullopt;
+
+    const Expr *ObjArg = TheCall->getArg(NewIndex);
+    uint64_t Result;
+    if (!ObjArg->tryEvaluateObjectSize(Result, getTreeContext(), BOSType))
+      return std::nullopt;
+    return llvm::APSInt::getUnsigned(Result).extOrTrunc(SizeTypeWidth);
+  };
+
+  auto ComputeStrLenArgument =
+      [&](unsigned Index) -> std::optional<llvm::APSInt> {
+    std::optional<unsigned> IndexOptional = TranslateIndex(Index);
+    if (!IndexOptional)
+      return std::nullopt;
+    unsigned NewIndex = *IndexOptional;
+
+    const Expr *ObjArg = TheCall->getArg(NewIndex);
+    uint64_t Result;
+    if (!ObjArg->tryEvaluateStrLen(Result, getTreeContext()))
+      return std::nullopt;
+    // Add 1 for null byte.
+    return llvm::APSInt::getUnsigned(Result + 1).extOrTrunc(SizeTypeWidth);
+  };
+
+  std::optional<llvm::APSInt> SourceSize;
+  std::optional<llvm::APSInt> DestinationSize;
+  unsigned DiagID = 0;
+  bool IsChkVariant = false;
+
+  auto GetFunctionName = [&]() {
+    llvm::StringRef FunctionName =
+        getTreeContext().BuiltinInfo.getName(BuiltinID);
+    // Skim off the details of whichever builtin was called to produce a better
+    // diagnostic, as it's unlikely that the user wrote the __builtin
+    // explicitly.
+    if (IsChkVariant) {
+      FunctionName = FunctionName.drop_front(std::strlen("__builtin___"));
+      FunctionName = FunctionName.drop_back(std::strlen("_chk"));
+    } else {
+      FunctionName.consume_front("__builtin_");
+    }
+    return FunctionName;
+  };
+
+  switch (BuiltinID) {
+  default:
+    return;
+  case Builtin::BI__builtin_strcpy:
+  case Builtin::BIstrcpy: {
+    DiagID = diag::warn_fortify_strlen_overflow;
+    SourceSize = ComputeStrLenArgument(1);
+    DestinationSize = ComputeSizeArgument(0);
+    break;
+  }
+
+  case Builtin::BI__builtin___strcpy_chk: {
+    DiagID = diag::warn_fortify_strlen_overflow;
+    SourceSize = ComputeStrLenArgument(1);
+    DestinationSize = ComputeExplicitObjectSizeArgument(2);
+    IsChkVariant = true;
+    break;
+  }
+
+  case Builtin::BIscanf:
+  case Builtin::BIfscanf:
+  case Builtin::BIsscanf: {
+    unsigned FormatIndex = 1;
+    unsigned DataIndex = 2;
+    if (BuiltinID == Builtin::BIscanf) {
+      FormatIndex = 0;
+      DataIndex = 1;
+    }
+
+    const auto *FormatExpr =
+        TheCall->getArg(FormatIndex)->IgnoreParenImpCasts();
+
+    llvm::StringRef FormatStrRef;
+    size_t StrLen;
+    if (!processFormatStringLiteral(FormatExpr, FormatStrRef, StrLen, Context))
+      return;
+
+    auto Diagnose = [&](unsigned ArgIndex, unsigned DestSize,
+                        unsigned SourceSize) {
+      DiagID = diag::warn_fortify_scanf_overflow;
+      unsigned Index = ArgIndex + DataIndex;
+      llvm::StringRef FunctionName = GetFunctionName();
+      DiagRuntimeBehavior(TheCall->getArg(Index)->getBeginLoc(), TheCall,
+                          PDiag(DiagID) << FunctionName << (Index + 1)
+                                        << DestSize << SourceSize);
+    };
+
+    auto ShiftedComputeSizeArgument = [&](unsigned Index) {
+      return ComputeSizeArgument(Index + DataIndex);
+    };
+    ScanfDiagnosticFormatHandler H(ShiftedComputeSizeArgument, Diagnose);
+    const char *FormatBytes = FormatStrRef.data();
+    analyze_format_string::ParseScanfString(H, FormatBytes,
+                                            FormatBytes + StrLen, getLangOpts(),
+                                            Context.getTargetInfo());
+
+    // Unlike the other cases, in this one we have already issued the diagnostic
+    // here, so no need to continue (because unlike the other cases, here the
+    // diagnostic refers to the argument number).
+    return;
+  }
+
+  case Builtin::BIsprintf:
+  case Builtin::BI__builtin___sprintf_chk: {
+    size_t FormatIndex = BuiltinID == Builtin::BIsprintf ? 1 : 3;
+    auto *FormatExpr = TheCall->getArg(FormatIndex)->IgnoreParenImpCasts();
+
+    llvm::StringRef FormatStrRef;
+    size_t StrLen;
+    if (processFormatStringLiteral(FormatExpr, FormatStrRef, StrLen, Context)) {
+      EstimateSizeFormatHandler H(FormatStrRef);
+      const char *FormatBytes = FormatStrRef.data();
+      if (!analyze_format_string::ParsePrintfString(
+              H, FormatBytes, FormatBytes + StrLen, getLangOpts(),
+              Context.getTargetInfo())) {
+        DiagID = diag::warn_format_overflow;
+        SourceSize = llvm::APSInt::getUnsigned(H.getSizeLowerBound())
+                         .extOrTrunc(SizeTypeWidth);
+        if (BuiltinID == Builtin::BI__builtin___sprintf_chk) {
+          DestinationSize = ComputeExplicitObjectSizeArgument(2);
+          IsChkVariant = true;
+        } else {
+          DestinationSize = ComputeSizeArgument(0);
+        }
+        break;
+      }
+    }
+    return;
+  }
+  case Builtin::BI__builtin___memcpy_chk:
+  case Builtin::BI__builtin___memmove_chk:
+  case Builtin::BI__builtin___memset_chk:
+  case Builtin::BI__builtin___strlcat_chk:
+  case Builtin::BI__builtin___strlcpy_chk:
+  case Builtin::BI__builtin___strncat_chk:
+  case Builtin::BI__builtin___strncpy_chk:
+  case Builtin::BI__builtin___stpncpy_chk:
+  case Builtin::BI__builtin___memccpy_chk:
+  case Builtin::BI__builtin___mempcpy_chk: {
+    DiagID = diag::warn_builtin_chk_overflow;
+    SourceSize = ComputeExplicitObjectSizeArgument(TheCall->getNumArgs() - 2);
+    DestinationSize =
+        ComputeExplicitObjectSizeArgument(TheCall->getNumArgs() - 1);
+    IsChkVariant = true;
+    break;
+  }
+
+  case Builtin::BI__builtin___snprintf_chk:
+  case Builtin::BI__builtin___vsnprintf_chk: {
+    DiagID = diag::warn_builtin_chk_overflow;
+    SourceSize = ComputeExplicitObjectSizeArgument(1);
+    DestinationSize = ComputeExplicitObjectSizeArgument(3);
+    IsChkVariant = true;
+    break;
+  }
+
+  case Builtin::BIstrncat:
+  case Builtin::BI__builtin_strncat:
+  case Builtin::BIstrncpy:
+  case Builtin::BI__builtin_strncpy:
+  case Builtin::BIstpncpy:
+  case Builtin::BI__builtin_stpncpy: {
+    // Whether these functions overflow depends on the runtime strlen of the
+    // string, not just the buffer size, so emitting the "always overflow"
+    // diagnostic isn't quite right. We should still diagnose passing a buffer
+    // size larger than the destination buffer though; this is a runtime abort
+    // in _FORTIFY_SOURCE mode, and is quite suspicious otherwise.
+    DiagID = diag::warn_fortify_source_size_mismatch;
+    SourceSize = ComputeExplicitObjectSizeArgument(TheCall->getNumArgs() - 1);
+    DestinationSize = ComputeSizeArgument(0);
+    break;
+  }
+
+  case Builtin::BImemcpy:
+  case Builtin::BI__builtin_memcpy:
+  case Builtin::BImemmove:
+  case Builtin::BI__builtin_memmove:
+  case Builtin::BImemset:
+  case Builtin::BI__builtin_memset:
+  case Builtin::BImempcpy:
+  case Builtin::BI__builtin_mempcpy: {
+    DiagID = diag::warn_fortify_source_overflow;
+    SourceSize = ComputeExplicitObjectSizeArgument(TheCall->getNumArgs() - 1);
+    DestinationSize = ComputeSizeArgument(0);
+    break;
+  }
+  case Builtin::BIsnprintf:
+  case Builtin::BI__builtin_snprintf:
+  case Builtin::BIvsnprintf:
+  case Builtin::BI__builtin_vsnprintf: {
+    DiagID = diag::warn_fortify_source_size_mismatch;
+    SourceSize = ComputeExplicitObjectSizeArgument(1);
+    const auto *FormatExpr = TheCall->getArg(2)->IgnoreParenImpCasts();
+    llvm::StringRef FormatStrRef;
+    size_t StrLen;
+    if (SourceSize &&
+        processFormatStringLiteral(FormatExpr, FormatStrRef, StrLen, Context)) {
+      EstimateSizeFormatHandler H(FormatStrRef);
+      const char *FormatBytes = FormatStrRef.data();
+      if (!analyze_format_string::ParsePrintfString(
+              H, FormatBytes, FormatBytes + StrLen, getLangOpts(),
+              Context.getTargetInfo())) {
+        llvm::APSInt FormatSize =
+            llvm::APSInt::getUnsigned(H.getSizeLowerBound())
+                .extOrTrunc(SizeTypeWidth);
+        if (FormatSize > *SourceSize && *SourceSize != 0) {
+          unsigned TruncationDiagID = diag::warn_format_truncation;
+          llvm::SmallString<16> SpecifiedSizeStr;
+          llvm::SmallString<16> FormatSizeStr;
+          SourceSize->toString(SpecifiedSizeStr, /*Radix=*/10);
+          FormatSize.toString(FormatSizeStr, /*Radix=*/10);
+          DiagRuntimeBehavior(TheCall->getBeginLoc(), TheCall,
+                              PDiag(TruncationDiagID)
+                                  << GetFunctionName() << SpecifiedSizeStr
+                                  << FormatSizeStr);
+        }
+      }
+    }
+    DestinationSize = ComputeSizeArgument(0);
+  }
+  }
+
+  if (!SourceSize || !DestinationSize ||
+      llvm::APSInt::compareValues(*SourceSize, *DestinationSize) <= 0)
+    return;
+
+  llvm::StringRef FunctionName = GetFunctionName();
+
+  llvm::SmallString<16> DestinationStr;
+  llvm::SmallString<16> SourceStr;
+  DestinationSize->toString(DestinationStr, /*Radix=*/10);
+  SourceSize->toString(SourceStr, /*Radix=*/10);
+  DiagRuntimeBehavior(TheCall->getBeginLoc(), TheCall,
+                      PDiag(DiagID)
+                          << FunctionName << DestinationStr << SourceStr);
 }

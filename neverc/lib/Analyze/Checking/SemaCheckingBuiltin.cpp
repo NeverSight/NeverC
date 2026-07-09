@@ -775,4 +775,3 @@ bool Sema::SemaBuiltinSetjmp(CallExpr *TheCall) {
            << SourceRange(TheCall->getBeginLoc(), TheCall->getEndLoc());
   return false;
 }
-

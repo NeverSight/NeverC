@@ -38,8 +38,10 @@ add_neverc_library(nevercAnalyze
   Stmt/JumpDiagnostics.cpp
 
   Checking/SemaChecking.cpp
+  Checking/SemaCheckingArray.cpp
   Checking/SemaCheckingAtomic.cpp
   Checking/SemaCheckingBuiltin.cpp
+  Checking/SemaCheckingBuiltinMath.cpp
   Checking/SemaCheckingBuiltinMisc.cpp
   Checking/SemaCheckingBuiltinNeverC.cpp
   Checking/SemaCheckingBuiltinOverflow.cpp
@@ -48,7 +50,8 @@ add_neverc_library(nevercAnalyze
   Checking/SemaCheckingMemory.cpp
   Checking/SemaCheckingNumeric.cpp
   Checking/SemaCheckingStmt.cpp
-  Checking/SemaCheckingTarget.cpp
+  Checking/SemaCheckingTargetARM.cpp
+  Checking/SemaCheckingTargetX86.cpp
 
   Type/SemaType.cpp
   Type/TypeLocBuilder.cpp

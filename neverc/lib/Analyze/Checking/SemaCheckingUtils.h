@@ -3,8 +3,8 @@
 // Internal header that exposes a small set of helpers originally defined as
 // file-scope ``static`` functions inside SemaChecking.cpp. Splitting the
 // translation unit into per-topic files (SemaCheckingFormat / Memory / Numeric
-// / Stmt / Builtin*) requires these helpers to be visible across the resulting
-// TUs.
+// / Stmt / Array / Builtin* / TargetARM / TargetX86) requires these helpers to
+// be visible across the resulting TUs.
 //
 // Functions live in the global namespace to match their original definitions
 // (only the ``static`` storage class was removed).
@@ -64,7 +64,7 @@ bool semaBuiltinCallWithStaticChain(::neverc::Sema &S,
 void checkNonNullArgument(::neverc::Sema &S, const ::neverc::Expr *ArgExpr,
                           ::neverc::SourceLocation CallSiteLoc);
 
-// Used by SemaCheckingDiag.cpp
+// Used by SemaCheckingBuiltinMath.cpp / SemaCheckingDiag.cpp
 bool checkMathBuiltinElementType(::neverc::Sema &S,
                                   ::neverc::SourceLocation Loc,
                                   ::neverc::QualType Ty);
@@ -72,7 +72,7 @@ bool checkFPMathBuiltinElementType(::neverc::Sema &S,
                                     ::neverc::SourceLocation Loc,
                                     ::neverc::QualType Ty, int ArgIndex);
 
-// Used by SemaCheckingTarget.cpp
+// Used by SemaCheckingTargetARM.cpp
 ::neverc::QualType getNeonEltType(::neverc::NeonTypeFlags Flags,
                                   ::neverc::TreeContext &Context,
                                   bool IsPolyUnsigned, bool IsInt64Long);
