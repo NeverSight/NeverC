@@ -1,8 +1,8 @@
 **Langues**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# Module furtif noyau Android
+# Gestion de visibilité module noyau Android
 
-Démo de dissimulation de module. Drapeaux : aucun=masquage liste basique, `-DNVK_LOWVIS_HIDE`=masquage complet (liste+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=étendu (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=accorder root, `-DNVK_LOWVIS_SELINUX`=mode permissif.
+Démo de gestion de visibilité de module. Drapeaux : aucun=visibilité liste basique, `-DNVK_LOWVIS_HIDE`=filtre de visibilité complet (liste+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=étendu (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=démo wrappers d'identifiants (`struct cred`), `-DNVK_LOWVIS_SELINUX`=démo état d'application SELinux (permissive).
 
 ## Construction
 

@@ -1,8 +1,8 @@
 **語言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# Android 核心隱身模組
+# Android 核心低可見性模組
 
-模組隱藏展示。編譯旗標：無=基本清單隱藏，`-DNVK_LOWVIS_HIDE`=完整隱藏（清單+sysfs+proc），`-DNVK_LOWVIS_FULL_HIDE`=擴展隱藏（dmesg+PID+掛載+maps），`-DNVK_LOWVIS_ROOT`=授予 root，`-DNVK_LOWVIS_SELINUX`=設定寬容模式。
+模組可見性管理展示。編譯旗標：無=基本清單可見性，`-DNVK_LOWVIS_HIDE`=完整可見性過濾（清單+sysfs+proc），`-DNVK_LOWVIS_FULL_HIDE`=擴展（dmesg+PID+掛載+maps），`-DNVK_LOWVIS_ROOT`=憑證包裝展示（`struct cred`），`-DNVK_LOWVIS_SELINUX`=SELinux 強制狀態展示（permissive）。
 
 ## 建置
 

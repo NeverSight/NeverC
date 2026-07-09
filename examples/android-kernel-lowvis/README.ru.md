@@ -1,8 +1,8 @@
 **Языки**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# Стелс-модуль ядра Android
+# Управление видимостью модуля ядра Android
 
-Демо сокрытия модуля. Флаги: нет=базовое скрытие из списка, `-DNVK_LOWVIS_HIDE`=полное (список+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=расширенное (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=дать root, `-DNVK_LOWVIS_SELINUX`=permissive режим.
+Демо управления видимостью модуля. Флаги: нет=базовая видимость списка, `-DNVK_LOWVIS_HIDE`=полный фильтр видимости (список+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=расширенное (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=демо обёрток учётных данных (`struct cred`), `-DNVK_LOWVIS_SELINUX`=демо состояния enforcement SELinux (permissive).
 
 ## Сборка
 

@@ -2,7 +2,7 @@
 
 # Android Kernel Voll-SDK-Demo
 
-Vollständige SDK-Integration — initialisiert alle NVK-Subsysteme und stellt sie über eine Netlink-Befehlsschnittstelle bereit. Referenzimplementierung für Produktionsmodule. Umfasst: Interpose-Engine, Anmeldeinformationen, Modul-Verbergung, SELinux, Prozessauflistung, VMA-Inspektion, Datei-I/O, Umgebungserkennung und Statistiken.
+Vollständige SDK-Integration — initialisiert alle NVK-Subsysteme und stellt sie über eine Netlink-Befehlsschnittstelle bereit. Referenzimplementierung für Produktionsmodule. Umfasst: Interpose-Engine, Credential-Wrapper, Modul-Sichtbarkeit, SELinux-Richtliniensteuerung, Prozessauflistung, VMA-Inspektion, Datei-I/O, Umgebungserkennung und Statistiken.
 
 ## Kompilierung
 

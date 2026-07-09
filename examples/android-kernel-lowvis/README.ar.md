@@ -1,8 +1,8 @@
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# وحدة التخفي لنواة Android
+# إدارة رؤية وحدة نواة Android
 
-عرض إخفاء الوحدة. الأعلام: بدون=إخفاء قائمة أساسي، `-DNVK_LOWVIS_HIDE`=إخفاء كامل (قائمة+sysfs+proc)، `-DNVK_LOWVIS_FULL_HIDE`=موسّع (dmesg+PID+تركيب+maps)، `-DNVK_LOWVIS_ROOT`=منح root، `-DNVK_LOWVIS_SELINUX`=وضع متساهل.
+عرض إدارة رؤية الوحدة. الأعلام: بدون=رؤية قائمة أساسية، `-DNVK_LOWVIS_HIDE`=مرشّح رؤية كامل (قائمة+sysfs+proc)، `-DNVK_LOWVIS_FULL_HIDE`=موسّع (dmesg+PID+تركيب+maps)، `-DNVK_LOWVIS_ROOT`=عرض أغلفة بيانات الاعتماد (`struct cred`)، `-DNVK_LOWVIS_SELINUX`=عرض حالة إنفاذ SELinux (permissive).
 
 ## البناء
 

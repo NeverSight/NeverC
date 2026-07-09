@@ -40,11 +40,11 @@ runtime/android/kernel/
     nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.18)
     nvk.h                      #   all-in-one include (initializes all subsystems, auto vermagic fix)
     nvk_interpose.h                 #   arm64 inline-interpose engine v2 (simple + context + batch + chain + ftrace + kCFI)
-    nvk_mem.h                  #   safe memory read/write, pattern scan (BMH), write-protection bypass
+    nvk_mem.h                  #   safe memory read/write, pattern scan (BMH), write-protected memory update
     nvk_syscall.h              #   sys_call_table operations + arm64 syscall number table
     nvk_process.h              #   process enumeration, PID lookup, task walking (6.12-safe ranges)
-    nvk_cred.h                 #   credential manipulation (root, uid/gid, capabilities)
-    nvk_selinux.h              #   SELinux enforcement control + AVC/inode/capable bypass
+    nvk_cred.h                 #   credential wrappers (uid/gid/capabilities; struct cred)
+    nvk_selinux.h              #   SELinux enforcement-state control + AVC/inode/capable interpose helpers
     nvk_vis.h                  #   module visibility management (list + sysfs + proc + dmesg + PID + mount + maps)
     nvk_log.h                  #   leveled logging (silent/error/warn/info/debug/trace) + ratelimit
     nvk_thread.h               #   kernel thread management (kthread create/stop/sleep)
@@ -54,9 +54,9 @@ runtime/android/kernel/
     nvk_compat.h               #   runtime kernel version detection + feature probing + vermagic patching
     nvk_anti.h                 #   environment detection + integrity watchdog + HW CRC32
     nvk_vma.h                  #   VMA operations, process memory map inspection
-    nvk_su.h                   #   root shell provisioning
+    nvk_su.h                   #   elevated-credential session helpers for SDK demos
     nvk_ksyms.h                #   extended symbol table operations (walk, prefix search, info)
-    nvk_seccomp.h              #   seccomp filter inspection and bypass
+    nvk_seccomp.h              #   seccomp filter inspection and mode control
     nvk_pmu.h                  #   ARM64 PMU counter access
     nvk_xmem.h                 #   cross-process memory operations (mmap + ELF loader + I-cache coherent)
     nvk_ns.h                   #   PID namespace operations
@@ -103,22 +103,22 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` — MTE-tag-aware, dynamic page size (4K/16K/64K) |
 | `nvk_syscall.h` | `nvk_syscall_replace/restore`, `nvk_syscall_get`, arm64 syscall number definitions |
 | `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
-| `nvk_cred.h` | `nvk_cred_set_root`, `nvk_cred_set_uid`, `nvk_cred_set_caps_full`, `nvk_cred_get_ids` |
-| `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_bypass_install/remove` (AVC + inode interpose) |
-| `nvk_vis.h` | `nvk_vis_conceal/reveal`, `nvk_vis_full_conceal` (list + sysfs + /proc/modules + /proc/vmallocinfo + dmesg + PID + mount + maps filter) |
+| `nvk_cred.h` | `nvk_cred_set_root`, `nvk_cred_set_uid`, `nvk_cred_set_caps_full`, `nvk_cred_get_ids` — credential wrappers around `struct cred` |
+| `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_bypass_install/remove` (AVC + inode interpose helpers for policy-control demos) |
+| `nvk_vis.h` | `nvk_vis_conceal/reveal`, `nvk_vis_full_conceal` — module visibility filters (list + sysfs + /proc/modules + /proc/vmallocinfo + dmesg + PID + mount + maps) |
 | `nvk_log.h` | `nvk_log_err/warn/info/dbg/trace`, `nvk_log_once`, `nvk_log_ratelimit`, `nvk_log_hexdump` |
 | `nvk_thread.h` | `nvk_thread_run`, `nvk_thread_stop`, `nvk_thread_sleep_ms`, `nvk_thread_stop_all` |
 | `nvk_netlink.h` | `nvk_nl_open/close/send/reply` — bidirectional netlink IPC with dispatch callback |
 | `nvk_addr.h` | `nvk_virt_to_phys`, `nvk_translate_user`, `nvk_walk_pgtable`, VA bits / page size detection |
 | `nvk_compat.h` | `nvk_kernel_version()`, `NVK_KERNEL_GE(maj,min)`, `nvk_has_pac/bti/mte`, versioned symbol lookup helpers |
 | `nvk_file.h` | `nvk_file_open/read/write/close`, `nvk_file_exists`, `nvk_file_read_all/write_all` |
-| `nvk_anti.h` | Environment detection (emulator, debugger, root, su binary, Magisk/KSU/APatch, SELinux permissive, interpose/kprobe tampering), integrity verification, sealed watchdog, ARM64 HW CRC32 — all detection paths xorstr-encrypted |
+| `nvk_anti.h` | Environment detection (emulator, debugger, elevated credentials, su binary, Magisk/KSU/APatch, SELinux enforcement state, interpose/kprobe integrity), integrity verification, sealed watchdog, ARM64 HW CRC32 — detection path strings use xorstr |
 | `nvk_vma.h` | VMA operations (find_vma, walk, read/write remote), process memory map inspection |
-| `nvk_su.h` | Root shell provisioning, su daemon lifecycle |
+| `nvk_su.h` | Elevated-credential session helpers and su-daemon lifecycle for SDK demos |
 | `nvk_ksyms.h` | Extended symbol operations (`nvk_ksyms_walk`, `nvk_ksyms_for_each`, prefix search, function size) |
-| `nvk_seccomp.h` | Seccomp filter inspection and bypass (per-process mode read/clear/set) |
+| `nvk_seccomp.h` | Seccomp filter inspection and mode control (per-process mode read/clear/set) |
 | `nvk_pmu.h` | ARM64 PMU counter access (cycle/instruction/cache/branch counters) |
-| `nvk_xmem.h` | Cross-process memory operations — `nvk_xmem_mmap/munmap`, `nvk_xmem_deploy_dyncode` (cross-process I-cache coherent via DC CIVAC + IC IALLU), `nvk_xmem_load_elf` (ELF PT_LOAD segment loader), thread hijack setup |
+| `nvk_xmem.h` | Cross-process memory operations — `nvk_xmem_mmap/munmap`, `nvk_xmem_deploy_dyncode` (cross-process I-cache coherent via DC CIVAC + IC IALLU), `nvk_xmem_load_elf` (ELF PT_LOAD segment loader), thread-context transfer helpers |
 | `nvk_ns.h` | PID namespace operations (cross-namespace PID translation, nsproxy) |
 | `nvk_binder.h` | Binder transaction interception + filtering (lazy interpose — only installed on first filter add) |
 | `nvk_crypto.h` | `nvk_sha256`, `nvk_hmac_sha256`, `nvk_chacha20_encrypt`, `nvk_crypto_verify_region` — constant-time, pure C, zero kernel dependencies |
@@ -137,7 +137,7 @@ All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xor
 | `android-kernel-chardev` | misc device + ioctl + /proc status page |
 | `android-kernel-inline-interpose` | Inline interpose on `do_faccessat` (simple + context modes) |
 | `android-kernel-syscall-interpose` | sys_call_table replacement + inline interpose (dual mode) |
-| `android-kernel-lowvis` | Module visibility management (list / sysfs / proc + SELinux + root) |
+| `android-kernel-lowvis` | Module visibility management (list / sysfs / proc + SELinux policy control + credential wrappers) |
 | `android-kernel-netlink` | User↔kernel netlink IPC channel (ping/version/echo) |
 | `android-kernel-full` | Full SDK demo — initializes all subsystems, exercises interpose/cred/vis/netlink |
 

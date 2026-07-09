@@ -52,8 +52,8 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 | [カーネルドライバテンプレート](../../examples/android-kernel-driver/README.ja.md) | 動的シンボル解決テンプレート | `kallsyms_lookup_name`、GKI 安定 ABI、5.10–6.12 |
 | [カーネルインラインフック](../../examples/android-kernel-inline-interpose/README.ja.md) | `do_faccessat` のインラインフック | BTI/PAC セーフパッチ、コンテキストフックモード、PC 相対リロケーション |
 | [カーネル Syscall フック](../../examples/android-kernel-syscall-interpose/README.ja.md) | syscall テーブル / inline / context interpose | `sys_call_table` 置換、インラインフック、コンテキストフック |
-| [カーネル低可視性](../../examples/android-kernel-lowvis/README.ja.md) | モジュール可視性管理 | list/sysfs/proc 可視性、root 付与、SELinux permissive |
-| [カーネル Full SDK](../../examples/android-kernel-full/README.ja.md) | 完全 SDK 統合 | Netlink IPC、フック、資格情報、隠蔽、SELinux、VMA、ファイル I/O |
+| [カーネル低可視性](../../examples/android-kernel-lowvis/README.ja.md) | モジュール可視性管理 | list/sysfs/proc 可視性、資格情報ラッパー、SELinux 強制状態 |
+| [カーネル Full SDK](../../examples/android-kernel-full/README.ja.md) | 完全 SDK 統合 | Netlink IPC、interpose、資格情報ラッパー、モジュール可視性、SELinux ポリシー制御、VMA、ファイル I/O |
 | [カーネル Chardev](../../examples/android-kernel-chardev/README.ja.md) | キャラクタデバイス + ioctl | `misc_register`、ioctl ディスパッチ、`/proc` seq_file |
 | [カーネル Netlink](../../examples/android-kernel-netlink/README.ja.md) | 双方向 netlink IPC | PING/VERSION/ECHO コマンド、`nvk_nl_open`/`nvk_nl_reply` |
 

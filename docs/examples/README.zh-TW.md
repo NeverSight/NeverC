@@ -52,8 +52,8 @@
 | [核心驅動模板](../../examples/android-kernel-driver/README.zh-TW.md) | 動態符號解析模板 | `kallsyms_lookup_name`，GKI 穩定 ABI，5.10–6.12 |
 | [核心 Inline Interpose](../../examples/android-kernel-inline-interpose/README.zh-TW.md) | `do_faccessat` 的 inline interpose | BTI/PAC 安全補丁，context interpose 模式，PC 相對重定位 |
 | [核心 Syscall Interpose](../../examples/android-kernel-syscall-interpose/README.zh-TW.md) | 系統呼叫表 / inline / context interpose | `sys_call_table` 替換、inline interpose、context interpose 三種模式 |
-| [核心低可見性](../../examples/android-kernel-lowvis/README.zh-TW.md) | 模組可見性管理 | list/sysfs/proc 可見性，root 提權，SELinux permissive |
-| [核心全功能 SDK](../../examples/android-kernel-full/README.zh-TW.md) | 完整 SDK 整合 | Netlink IPC、interpose、憑證、隱藏、SELinux、VMA、檔案 I/O |
+| [核心低可見性](../../examples/android-kernel-lowvis/README.zh-TW.md) | 模組可見性管理 | list/sysfs/proc 可見性，憑證包裝，SELinux 強制狀態 |
+| [核心全功能 SDK](../../examples/android-kernel-full/README.zh-TW.md) | 完整 SDK 整合 | Netlink IPC、interpose、憑證包裝、模組可見性、SELinux 策略控制、VMA、檔案 I/O |
 | [核心字元裝置](../../examples/android-kernel-chardev/README.zh-TW.md) | 字元裝置 + ioctl | `misc_register`，ioctl 分派，`/proc` seq_file |
 | [核心 Netlink](../../examples/android-kernel-netlink/README.zh-TW.md) | 雙向 netlink IPC | PING/VERSION/ECHO 命令，`nvk_nl_open`/`nvk_nl_reply` |
 

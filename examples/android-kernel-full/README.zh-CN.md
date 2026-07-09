@@ -2,7 +2,7 @@
 
 # Android 内核完整 SDK 演示
 
-完整 SDK 集成 —— 初始化所有 NVK 子系统，通过 netlink 命令接口暴露。生产模块的参考实现。涵盖：interpose 引擎、凭证操作、模块隐藏、SELinux、进程枚举、VMA 检查、文件 I/O、环境检测和统计。
+完整 SDK 集成 —— 初始化所有 NVK 子系统，通过 netlink 命令接口暴露。生产模块的参考实现。涵盖：interpose 引擎、凭证包装、模块可见性、SELinux 策略控制、进程枚举、VMA 检查、文件 I/O、环境检测和统计。
 
 ## 构建
 

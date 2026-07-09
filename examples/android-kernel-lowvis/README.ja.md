@@ -1,8 +1,8 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# Android カーネル ステルス
+# Android カーネル低可視性
 
-モジュール隠蔽デモ。コンパイルフラグ：なし=基本リスト非表示、`-DNVK_LOWVIS_HIDE`=完全非表示（リスト+sysfs+proc）、`-DNVK_LOWVIS_FULL_HIDE`=拡張（dmesg+PID+マウント+maps）、`-DNVK_LOWVIS_ROOT`=root権限付与、`-DNVK_LOWVIS_SELINUX`=permissive設定。
+モジュール可視性管理デモ。コンパイルフラグ：なし=基本リスト可視性、`-DNVK_LOWVIS_HIDE`=完全可視性フィルタ（リスト+sysfs+proc）、`-DNVK_LOWVIS_FULL_HIDE`=拡張（dmesg+PID+マウント+maps）、`-DNVK_LOWVIS_ROOT`=資格情報ラッパーデモ（`struct cred`）、`-DNVK_LOWVIS_SELINUX`=SELinux 強制状態デモ（permissive）。
 
 ## ビルド
 

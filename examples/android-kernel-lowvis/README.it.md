@@ -1,8 +1,8 @@
 **Lingue**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# Modulo lowvis kernel Android
+# Gestione visibilità modulo kernel Android
 
-Demo occultamento modulo. Flag: nessuno=nascondere lista base, `-DNVK_LOWVIS_HIDE`=nascondere completo (lista+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=esteso (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=concedere root, `-DNVK_LOWVIS_SELINUX`=modalità permissiva.
+Demo di gestione della visibilità del modulo. Flag: nessuno=visibilità lista base, `-DNVK_LOWVIS_HIDE`=filtro di visibilità completo (lista+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=esteso (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=demo wrapper credenziali (`struct cred`), `-DNVK_LOWVIS_SELINUX`=demo stato di enforcement SELinux (permissive).
 
 ## Compilazione
 

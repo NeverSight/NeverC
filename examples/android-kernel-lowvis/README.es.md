@@ -1,8 +1,8 @@
 **Idiomas**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# Módulo sigiloso kernel Android
+# Gestión de visibilidad módulo kernel Android
 
-Demo de ocultación de módulo. Flags: ninguno=ocultar lista básica, `-DNVK_LOWVIS_HIDE`=ocultar completo (lista+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=extendido (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=conceder root, `-DNVK_LOWVIS_SELINUX`=modo permisivo.
+Demo de gestión de visibilidad de módulo. Flags: ninguno=visibilidad de lista básica, `-DNVK_LOWVIS_HIDE`=filtro de visibilidad completo (lista+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=extendido (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=demo de wrappers de credenciales (`struct cred`), `-DNVK_LOWVIS_SELINUX`=demo de estado de aplicación SELinux (permissive).
 
 ## Compilación
 

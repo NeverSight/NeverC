@@ -52,8 +52,8 @@ No se necesita árbol de fuentes del kernel — NeverC compila contra el runtime
 | [Plantilla driver kernel](../../examples/android-kernel-driver/README.es.md) | Plantilla de resolución dinámica de símbolos | `kallsyms_lookup_name`, ABI estable GKI, 5.10–6.12 |
 | [Kernel Inline Interpose](../../examples/android-kernel-inline-interpose/README.es.md) | Interpose inline en `do_faccessat` | Parche seguro BTI/PAC, modo context interpose, reubicación PC-relativa |
 | [Kernel Syscall Interpose](../../examples/android-kernel-syscall-interpose/README.es.md) | Tabla syscall / inline / context interpose | Reemplazo `sys_call_table`, interpose inline, context interpose |
-| [Kernel Lowvis](../../examples/android-kernel-lowvis/README.es.md) | Gestión de visibilidad de módulo | Visibilidad list/sysfs/proc, otorgar root, SELinux permissive |
-| [Kernel Full SDK](../../examples/android-kernel-full/README.es.md) | Integración SDK completa | Netlink IPC, interposes, credenciales, ocultación, SELinux, VMA, archivos |
+| [Kernel Lowvis](../../examples/android-kernel-lowvis/README.es.md) | Gestión de visibilidad de módulo | Visibilidad list/sysfs/proc, wrappers de credenciales, estado de aplicación SELinux |
+| [Kernel Full SDK](../../examples/android-kernel-full/README.es.md) | Integración SDK completa | Netlink IPC, interposes, wrappers de credenciales, visibilidad de módulo, control de política SELinux, VMA, archivos |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.es.md) | Dispositivo carácter + ioctl | `misc_register`, despacho ioctl, `/proc` seq_file |
 | [Kernel Netlink](../../examples/android-kernel-netlink/README.es.md) | IPC netlink bidireccional | Comandos PING/VERSION/ECHO, `nvk_nl_open`/`nvk_nl_reply` |
 

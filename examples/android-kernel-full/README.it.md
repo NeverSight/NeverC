@@ -2,7 +2,7 @@
 
 # Demo completa SDK kernel Android
 
-Integrazione completa SDK — inizializza tutti i sottosistemi NVK e li espone tramite interfaccia comandi netlink. Implementazione di riferimento per moduli in produzione. Include: motore interpose, credenziali, occultamento moduli, SELinux, enumerazione processi, ispezione VMA, I/O file, rilevamento ambiente e statistiche.
+Integrazione completa SDK — inizializza tutti i sottosistemi NVK e li espone tramite interfaccia comandi netlink. Implementazione di riferimento per moduli in produzione. Include: motore interpose, wrapper credenziali, visibilità moduli, controllo policy SELinux, enumerazione processi, ispezione VMA, I/O file, rilevamento ambiente e statistiche.
 
 ## Compilazione
 
