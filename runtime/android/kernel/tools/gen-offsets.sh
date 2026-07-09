@@ -60,7 +60,7 @@ else
 fi
 
 # 3) Compile the probe and print results.  neverc presents as old GCC without
-#    __clang__, so spoof a modern GCC and use gnu11 for the kernel headers.
+#    __clang__, so emulate a modern GCC and use gnu11 for the kernel headers.
 "$NEVERC" --target=aarch64-linux-android -fno-lto -nostdlibinc -std=gnu11 \
   -D__KERNEL__ -DNVK_GEN_KSRC=1 \
   -U__GNUC__ -D__GNUC__=12 -U__GNUC_MINOR__ -D__GNUC_MINOR__=0 \

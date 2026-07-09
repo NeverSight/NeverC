@@ -2,7 +2,7 @@
 
 # Android Kernel Lowvis-Modul
 
-Modul-Sichtbarkeitsverwaltungs-Demo. Flags: keine=grundlegende Listen-Sichtbarkeit, `-DNVK_LOWVIS_HIDE`=vollständiger Sichtbarkeitsfilter (Liste+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=erweitert (dmesg+PID+Mount+Maps), `-DNVK_LOWVIS_ROOT`=Credential-Wrapper-Demo (`struct cred`), `-DNVK_LOWVIS_SELINUX`=SELinux-Enforcement-State-Demo (permissive).
+Modul-Sichtbarkeitsverwaltungs-Demo. Flags: keine=grundlegende Listen-Sichtbarkeit, `-DNVK_LOWVIS_FILTER`=vollständiger Sichtbarkeitsfilter (Liste+sysfs+proc), `-DNVK_LOWVIS_FILTER_FULL`=erweitert (dmesg+PID+Mount+Maps), `-DNVK_LOWVIS_CRED`=Credential-Wrapper-Demo (`struct cred`), `-DNVK_LOWVIS_SELINUX`=SELinux-Enforcement-State-Demo (permissive).
 
 ## Kompilierung
 

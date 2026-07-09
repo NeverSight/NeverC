@@ -205,7 +205,7 @@ static long _neverc_krt_return_zero(void)
 	return 0;
 }
 
-int neverc_krt_selinux_bypass_install(struct neverc_krt_selinux_bypass *state)
+int neverc_krt_selinux_policy_install(struct neverc_krt_selinux_policy *state)
 {
 	void *target;
 	int ret;
@@ -257,7 +257,7 @@ int neverc_krt_selinux_bypass_install(struct neverc_krt_selinux_bypass *state)
 	return (state->avc_interposed || state->inode_interposed) ? 0 : -1;
 }
 
-int neverc_krt_selinux_patch_state(struct neverc_krt_selinux_bypass *state)
+int neverc_krt_selinux_patch_state(struct neverc_krt_selinux_policy *state)
 {
 	if (!_neverc_krt_selinux_enforcing) return -1;
 
@@ -274,7 +274,7 @@ int neverc_krt_selinux_patch_state(struct neverc_krt_selinux_bypass *state)
 	return 0;
 }
 
-void neverc_krt_selinux_restore_state(struct neverc_krt_selinux_bypass *state)
+void neverc_krt_selinux_restore_state(struct neverc_krt_selinux_policy *state)
 {
 	if (!state->state_patched) return;
 	if (!_neverc_krt_se_patched_addr) return;
@@ -285,11 +285,11 @@ void neverc_krt_selinux_restore_state(struct neverc_krt_selinux_bypass *state)
 	_neverc_krt_se_patched_addr = 0;
 }
 
-int neverc_krt_selinux_full_bypass(struct neverc_krt_selinux_bypass *state)
+int neverc_krt_selinux_policy_full(struct neverc_krt_selinux_policy *state)
 {
 	int ret;
 
-	ret = neverc_krt_selinux_bypass_install(state);
+	ret = neverc_krt_selinux_policy_install(state);
 
 	neverc_krt_selinux_set_permissive();
 
@@ -298,7 +298,7 @@ int neverc_krt_selinux_full_bypass(struct neverc_krt_selinux_bypass *state)
 	return ret;
 }
 
-void neverc_krt_selinux_bypass_remove(struct neverc_krt_selinux_bypass *state)
+void neverc_krt_selinux_policy_remove(struct neverc_krt_selinux_policy *state)
 {
 	if (state->state_patched)
 		neverc_krt_selinux_restore_state(state);

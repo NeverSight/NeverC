@@ -80,7 +80,7 @@ static __always_inline u32 _neverc_krt_wd_unseal(u32 val, int slot)
 	return _neverc_krt_wd_seal(val, slot);
 }
 
-int neverc_krt_anti_is_root(void)
+int neverc_krt_anti_is_uid0(void)
 {
 	if (!_neverc_krt_mem_inited) return -1;
 
@@ -637,7 +637,7 @@ void neverc_krt_anti_full_scan(struct neverc_krt_anti_full_env *env)
 {
 	if (!env) return;
 	neverc_krt_anti_full_check(&env->base);
-	env->is_rooted = neverc_krt_anti_is_root();
+	env->is_uid0 = neverc_krt_anti_is_uid0();
 	env->su_binaries = neverc_krt_anti_detect_su_binary();
 	env->magisk_detected = neverc_krt_anti_detect_magisk();
 	env->selinux_permissive = neverc_krt_anti_detect_selinux_permissive();

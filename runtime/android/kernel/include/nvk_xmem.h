@@ -73,7 +73,7 @@ int neverc_krt_xmem_munmap(struct task_struct *task,
 #define NEVERC_KRT_PTREGS_SP_OFF     248
 #define NEVERC_KRT_PTREGS_LR_OFF     240
 
-struct neverc_krt_thread_hijack {
+struct neverc_krt_thread_xfer {
 	unsigned long saved_pc;
 	unsigned long saved_sp;
 	unsigned long saved_lr;
@@ -83,7 +83,7 @@ struct neverc_krt_thread_hijack {
 	int           active;
 };
 
-int neverc_krt_xmem_hijack_setup(struct neverc_krt_thread_hijack *hj,
+int neverc_krt_xmem_xfer_setup(struct neverc_krt_thread_xfer *hj,
 				   struct task_struct *task,
 				   const struct neverc_krt_dyncode *sc);
 

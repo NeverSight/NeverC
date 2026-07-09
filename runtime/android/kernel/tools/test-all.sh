@@ -23,9 +23,9 @@ DEMOS=(
 EXTRA_MODES=(
   "android-kernel-inline-interpose:-DNVK_CONTEXT_INTERPOSE"
   "android-kernel-syscall-interpose:-DNVK_SYSCALL_INLINE_INTERPOSE"
-  "android-kernel-lowvis:-DNVK_LOWVIS_HIDE"
-  "android-kernel-lowvis:-DNVK_LOWVIS_FULL_HIDE"
-  "android-kernel-lowvis:-DNVK_LOWVIS_ROOT"
+  "android-kernel-lowvis:-DNVK_LOWVIS_FILTER"
+  "android-kernel-lowvis:-DNVK_LOWVIS_FILTER_FULL"
+  "android-kernel-lowvis:-DNVK_LOWVIS_CRED"
   "android-kernel-lowvis:-DNVK_LOWVIS_SELINUX"
 )
 

@@ -103,9 +103,9 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_mem.h` | `nvk_mem_read/write`, `nvk_mem_read_user`, `nvk_mem_scan`, `nvk_mem_scan_mask`, `nvk_mem_write_protected` — MTE-tag-aware, dynamic page size (4K/16K/64K) |
 | `nvk_syscall.h` | `nvk_syscall_replace/restore`, `nvk_syscall_get`, arm64 syscall number definitions |
 | `nvk_process.h` | `nvk_current_pid`, `nvk_find_task_by_name`, `nvk_for_each_task`, task comm/pid resolution |
-| `nvk_cred.h` | `nvk_cred_set_root`, `nvk_cred_set_uid`, `nvk_cred_set_caps_full`, `nvk_cred_get_ids` — credential wrappers around `struct cred` |
-| `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_bypass_install/remove` (AVC + inode interpose helpers for policy-control demos) |
-| `nvk_vis.h` | `nvk_vis_conceal/reveal`, `nvk_vis_full_conceal` — module visibility filters (list + sysfs + /proc/modules + /proc/vmallocinfo + dmesg + PID + mount + maps) |
+| `nvk_cred.h` | `nvk_cred_set_uid0`, `nvk_cred_set_uid`, `nvk_cred_set_caps_full`, `nvk_cred_get_ids` — credential wrappers around `struct cred` |
+| `nvk_selinux.h` | `nvk_selinux_set_permissive/enforcing`, `nvk_selinux_policy_install/remove` (AVC + inode interpose helpers for policy-control demos) |
+| `nvk_vis.h` | `nvk_vis_filter/restore`, `nvk_vis_filter_full` — module visibility filters (list + sysfs + /proc/modules + /proc/vmallocinfo + dmesg + PID + mount + maps) |
 | `nvk_log.h` | `nvk_log_err/warn/info/dbg/trace`, `nvk_log_once`, `nvk_log_ratelimit`, `nvk_log_hexdump` |
 | `nvk_thread.h` | `nvk_thread_run`, `nvk_thread_stop`, `nvk_thread_sleep_ms`, `nvk_thread_stop_all` |
 | `nvk_netlink.h` | `nvk_nl_open/close/send/reply` — bidirectional netlink IPC with dispatch callback |

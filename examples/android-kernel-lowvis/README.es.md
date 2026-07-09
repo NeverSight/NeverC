@@ -2,7 +2,7 @@
 
 # Gestión de visibilidad módulo kernel Android
 
-Demo de gestión de visibilidad de módulo. Flags: ninguno=visibilidad de lista básica, `-DNVK_LOWVIS_HIDE`=filtro de visibilidad completo (lista+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=extendido (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=demo de wrappers de credenciales (`struct cred`), `-DNVK_LOWVIS_SELINUX`=demo de estado de aplicación SELinux (permissive).
+Demo de gestión de visibilidad de módulo. Flags: ninguno=visibilidad de lista básica, `-DNVK_LOWVIS_FILTER`=filtro de visibilidad completo (lista+sysfs+proc), `-DNVK_LOWVIS_FILTER_FULL`=extendido (dmesg+PID+mount+maps), `-DNVK_LOWVIS_CRED`=demo de wrappers de credenciales (`struct cred`), `-DNVK_LOWVIS_SELINUX`=demo de estado de aplicación SELinux (permissive).
 
 ## Compilación
 

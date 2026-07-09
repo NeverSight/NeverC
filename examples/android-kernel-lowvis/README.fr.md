@@ -2,7 +2,7 @@
 
 # Gestion de visibilité module noyau Android
 
-Démo de gestion de visibilité de module. Drapeaux : aucun=visibilité liste basique, `-DNVK_LOWVIS_HIDE`=filtre de visibilité complet (liste+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=étendu (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=démo wrappers d'identifiants (`struct cred`), `-DNVK_LOWVIS_SELINUX`=démo état d'application SELinux (permissive).
+Démo de gestion de visibilité de module. Drapeaux : aucun=visibilité liste basique, `-DNVK_LOWVIS_FILTER`=filtre de visibilité complet (liste+sysfs+proc), `-DNVK_LOWVIS_FILTER_FULL`=étendu (dmesg+PID+mount+maps), `-DNVK_LOWVIS_CRED`=démo wrappers d'identifiants (`struct cred`), `-DNVK_LOWVIS_SELINUX`=démo état d'application SELinux (permissive).
 
 ## Construction
 

@@ -38,7 +38,7 @@ struct status_reply {
 	u32 kernel_major;
 	u32 kernel_minor;
 	u32 android_ver;
-	u32 concealed;
+	u32 filtered;
 	u32 interposes_active;
 	u32 selinux_enforcing;
 	u32 thread_count;
@@ -108,7 +108,7 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 		sr.kernel_major = ki->major;
 		sr.kernel_minor = ki->minor;
 		sr.android_ver = ki->android_version;
-		sr.concealed = neverc_krt_vis_is_concealed(&vis_state);
+		sr.filtered = neverc_krt_vis_is_filtered(&vis_state);
 #ifdef NEVERC_KRT_CONTEXT_INTERPOSE
 		sr.interposes_active = faccessat_ctx.base.active;
 #else
@@ -124,7 +124,7 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 	}
 
 	case CMD_CRED_SET:
-		neverc_krt_cred_set_root();
+		neverc_krt_cred_set_uid0();
 		neverc_krt_cred_clear_securebits();
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
 		neverc_krt_log_info("credential wrapper applied for pid=%u\n", pid);
@@ -136,14 +136,14 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 		break;
 
 	case CMD_VIS_FILTER:
-		neverc_krt_vis_full_conceal(&vis_state, &__this_module, "neverc_krt_full");
+		neverc_krt_vis_filter_full(&vis_state, &__this_module, "neverc_krt_full");
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
 		neverc_krt_log_info("visibility filter applied\n");
 		break;
 
 	case CMD_VIS_RESTORE:
 		neverc_krt_vis_remove_interposes();
-		neverc_krt_vis_reveal(&vis_state, &__this_module);
+		neverc_krt_vis_restore(&vis_state, &__this_module);
 		neverc_krt_nl_reply(ns, pid, seq, "ok", 3);
 		neverc_krt_log_info("visibility restored\n");
 		break;
@@ -319,7 +319,7 @@ static void neverc_krt_full_exit(void)
 #endif
 
 	neverc_krt_vis_remove_interposes();
-	neverc_krt_vis_reveal(&vis_state, &__this_module);
+	neverc_krt_vis_restore(&vis_state, &__this_module);
 
 	neverc_krt_log_info("unloaded\n");
 }

@@ -87,15 +87,15 @@ void neverc_krt_cleanup_all(void)
 	__asm__ __volatile__("dsb ish" ::: "memory");
 
 	neverc_krt_binder_cleanup();
-	neverc_krt_file_spoof_cleanup();
-	neverc_krt_cmdline_filter_cleanup();
+	neverc_krt_vis_file_rewrite_cleanup();
+	neverc_krt_vis_cmdline_filter_cleanup();
 	neverc_krt_vis_net_cleanup();
-	neverc_krt_dmesg_suppress_cleanup();
-	neverc_krt_kmsg_read_filter_cleanup();
+	neverc_krt_vis_dmesg_suppress_cleanup();
+	neverc_krt_vis_kmsg_read_filter_cleanup();
 	neverc_krt_vis_pid_cleanup();
-	neverc_krt_mount_filter_cleanup();
-	neverc_krt_maps_filter_clear();
-	neverc_krt_proc_attr_filter_cleanup();
+	neverc_krt_vis_mount_filter_cleanup();
+	neverc_krt_vis_maps_filter_clear();
+	neverc_krt_vis_proc_attr_filter_cleanup();
 	neverc_krt_se_selective_cleanup();
 
 	neverc_krt_selinux_remove_interposes();

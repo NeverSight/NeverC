@@ -6,7 +6,7 @@
 #include <linux/compiler.h>
 #include <nvk_interpose.h>
 
-int neverc_krt_anti_is_root(void);
+int neverc_krt_anti_is_uid0(void);
 int neverc_krt_anti_check_caller_comm(const char *expected);
 int neverc_krt_anti_check_caller_uid(u32 expected_uid);
 
@@ -14,7 +14,7 @@ enum neverc_krt_env_type {
 	NEVERC_KRT_ENV_NORMAL   = 0,
 	NEVERC_KRT_ENV_EMULATOR = 1,
 	NEVERC_KRT_ENV_DEBUGGER = 2,
-	NEVERC_KRT_ENV_ROOTED   = 3,
+	NEVERC_KRT_ENV_UID0   = 3,
 };
 
 int neverc_krt_anti_detect_emulator(void);
@@ -67,7 +67,7 @@ int neverc_krt_anti_detect_selinux_permissive(void);
 
 struct neverc_krt_anti_full_env {
 	struct neverc_krt_anti_env base;
-	int is_rooted;
+	int is_uid0;
 	int su_binaries;
 	int magisk_detected;
 	int selinux_permissive;

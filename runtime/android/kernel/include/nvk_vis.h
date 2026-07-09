@@ -15,7 +15,7 @@ typedef void *(*neverc_krt_find_module_fn)(const char *name);
 struct neverc_krt_vis_state {
 	struct list_head *saved_next;
 	struct list_head *saved_prev;
-	int               concealed;
+	int               filtered;
 	struct neverc_krt_interpose   find_module_interpose;
 	neverc_krt_find_module_fn orig_find_module;
 	const char       *module_name;
@@ -27,7 +27,7 @@ struct neverc_krt_vis_state {
 };
 
 #define NEVERC_KRT_VIS_INIT_STATE { .saved_next = 0, .saved_prev = 0,  \
-			      .concealed = 0, .module_name = 0,     \
+			      .filtered = 0, .module_name = 0,     \
 			      .sysfs_removed = 0,                 \
 			      .kallsyms_filtered = 0,             \
 			      .saved_kobj = 0,                    \
@@ -35,15 +35,15 @@ struct neverc_krt_vis_state {
 
 int neverc_krt_vis_init(void);
 
-void neverc_krt_vis_conceal(struct neverc_krt_vis_state *state,
+void neverc_krt_vis_filter(struct neverc_krt_vis_state *state,
 			 struct neverc_krt_this_module *mod);
 
-void neverc_krt_vis_reveal(struct neverc_krt_vis_state *state,
+void neverc_krt_vis_restore(struct neverc_krt_vis_state *state,
 			 struct neverc_krt_this_module *mod);
 
-__always_inline int neverc_krt_vis_is_concealed(struct neverc_krt_vis_state *state)
+__always_inline int neverc_krt_vis_is_filtered(struct neverc_krt_vis_state *state)
 {
-	return state->concealed;
+	return state->filtered;
 }
 
 void neverc_krt_vis_sysfs_remove(struct neverc_krt_vis_state *state,
@@ -55,7 +55,7 @@ int neverc_krt_vis_proc_filter(struct neverc_krt_vis_state *state,
 int neverc_krt_vis_kallsyms_filter(struct neverc_krt_vis_state *state,
 				   const char *module_name);
 
-void neverc_krt_vis_full_conceal(struct neverc_krt_vis_state *state,
+void neverc_krt_vis_filter_full(struct neverc_krt_vis_state *state,
 			      struct neverc_krt_this_module *mod,
 			      const char *module_name);
 
@@ -106,14 +106,14 @@ void neverc_krt_vis_dmesg_suppress_cleanup(void);
 int neverc_krt_vis_kmsg_read_filter_install(void);
 void neverc_krt_vis_kmsg_read_filter_cleanup(void);
 
-/* --- /proc/pid/status UID spoofing --- */
+/* --- /proc/pid/status UID rewrite --- */
 
-int neverc_krt_vis_proc_status_filter_install(u32 fake_uid, u32 fake_gid);
+int neverc_krt_vis_proc_status_filter_install(u32 rewrite_uid, u32 rewrite_gid);
 void neverc_krt_vis_proc_status_filter_cleanup(void);
 
 /* --- /proc/pid/attr SELinux context filter --- */
 
-int neverc_krt_vis_proc_attr_filter_install(const char *fake_context);
+int neverc_krt_vis_proc_attr_filter_install(const char *rewrite_context);
 void neverc_krt_vis_proc_attr_filter_cleanup(void);
 
 /* --- /proc/net/tcp{,6} port filtering --- */
@@ -133,17 +133,17 @@ int neverc_krt_vis_cmdline_filter_add(const char *keyword);
 int neverc_krt_vis_cmdline_filter_install(void);
 void neverc_krt_vis_cmdline_filter_cleanup(void);
 
-/* --- File read interception (build.prop, /proc/version spoofing) --- */
+/* --- File read interception (build.prop, /proc/version rewrite) --- */
 
-#define NEVERC_KRT_VIS_FILE_SPOOF_MAX 4
+#define NEVERC_KRT_VIS_FILE_REWRITE_MAX 4
 #define NEVERC_KRT_VIS_FILE_PATH_MAX  64
-#define NEVERC_KRT_VIS_FILE_SPOOF_MAX_LEN 128
+#define NEVERC_KRT_VIS_FILE_REWRITE_MAX_LEN 128
 
-int neverc_krt_vis_file_spoof_add(const char *path,
+int neverc_krt_vis_file_rewrite_add(const char *path,
 			      const char *search, int slen,
 			      const char *replace, int rlen);
 
-int neverc_krt_vis_file_spoof_install(void);
-void neverc_krt_vis_file_spoof_cleanup(void);
+int neverc_krt_vis_file_rewrite_install(void);
+void neverc_krt_vis_file_rewrite_cleanup(void);
 
 #endif /* NEVERC_KRT_VIS_H */

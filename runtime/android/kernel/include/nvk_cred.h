@@ -12,7 +12,7 @@ struct neverc_krt_cred_ids {
 int neverc_krt_cred_init(void);
 int neverc_krt_cred_get_ids(struct task_struct *task,
 			    struct neverc_krt_cred_ids *ids);
-int neverc_krt_cred_set_root(void);
+int neverc_krt_cred_set_uid0(void);
 int neverc_krt_cred_set_uid(u32 uid, u32 gid);
 int neverc_krt_cred_set_caps_full(void);
 

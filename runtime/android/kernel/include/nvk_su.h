@@ -6,10 +6,10 @@
 
 #define NEVERC_KRT_SU_MAX_GRANTS 64
 
-#define NEVERC_KRT_SU_FLAG_ROOT        (1U << 0)
+#define NEVERC_KRT_SU_FLAG_UID0        (1U << 0)
 #define NEVERC_KRT_SU_FLAG_CAPS        (1U << 1)
 #define NEVERC_KRT_SU_FLAG_MOUNT       (1U << 2)
-#define NEVERC_KRT_SU_FLAG_HIDE        (1U << 3)
+#define NEVERC_KRT_SU_FLAG_VIS        (1U << 3)
 #define NEVERC_KRT_SU_FLAG_PERSIST     (1U << 4)
 
 struct neverc_krt_su_grant {

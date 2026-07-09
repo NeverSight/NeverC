@@ -2,7 +2,7 @@
 
 # إدارة رؤية وحدة نواة Android
 
-عرض إدارة رؤية الوحدة. الأعلام: بدون=رؤية قائمة أساسية، `-DNVK_LOWVIS_HIDE`=مرشّح رؤية كامل (قائمة+sysfs+proc)، `-DNVK_LOWVIS_FULL_HIDE`=موسّع (dmesg+PID+تركيب+maps)، `-DNVK_LOWVIS_ROOT`=عرض أغلفة بيانات الاعتماد (`struct cred`)، `-DNVK_LOWVIS_SELINUX`=عرض حالة إنفاذ SELinux (permissive).
+عرض إدارة رؤية الوحدة. الأعلام: بدون=رؤية قائمة أساسية، `-DNVK_LOWVIS_FILTER`=مرشّح رؤية كامل (قائمة+sysfs+proc)، `-DNVK_LOWVIS_FILTER_FULL`=موسّع (dmesg+PID+تركيب+maps)، `-DNVK_LOWVIS_CRED`=عرض أغلفة بيانات الاعتماد (`struct cred`)، `-DNVK_LOWVIS_SELINUX`=عرض حالة إنفاذ SELinux (permissive).
 
 ## البناء
 

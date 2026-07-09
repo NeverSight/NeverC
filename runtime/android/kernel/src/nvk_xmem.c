@@ -194,7 +194,7 @@ int neverc_krt_xmem_munmap(struct task_struct *task,
 	return ret;
 }
 
-int neverc_krt_xmem_hijack_setup(struct neverc_krt_thread_hijack *hj,
+int neverc_krt_xmem_xfer_setup(struct neverc_krt_thread_xfer *hj,
 				   struct task_struct *task,
 				   const struct neverc_krt_dyncode *sc)
 {

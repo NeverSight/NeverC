@@ -2,7 +2,7 @@
 
 # Управление видимостью модуля ядра Android
 
-Демо управления видимостью модуля. Флаги: нет=базовая видимость списка, `-DNVK_LOWVIS_HIDE`=полный фильтр видимости (список+sysfs+proc), `-DNVK_LOWVIS_FULL_HIDE`=расширенное (dmesg+PID+mount+maps), `-DNVK_LOWVIS_ROOT`=демо обёрток учётных данных (`struct cred`), `-DNVK_LOWVIS_SELINUX`=демо состояния enforcement SELinux (permissive).
+Демо управления видимостью модуля. Флаги: нет=базовая видимость списка, `-DNVK_LOWVIS_FILTER`=полный фильтр видимости (список+sysfs+proc), `-DNVK_LOWVIS_FILTER_FULL`=расширенное (dmesg+PID+mount+maps), `-DNVK_LOWVIS_CRED`=демо обёрток учётных данных (`struct cred`), `-DNVK_LOWVIS_SELINUX`=демо состояния enforcement SELinux (permissive).
 
 ## Сборка
 

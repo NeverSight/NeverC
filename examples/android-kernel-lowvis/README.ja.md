@@ -2,7 +2,7 @@
 
 # Android カーネル低可視性
 
-モジュール可視性管理デモ。コンパイルフラグ：なし=基本リスト可視性、`-DNVK_LOWVIS_HIDE`=完全可視性フィルタ（リスト+sysfs+proc）、`-DNVK_LOWVIS_FULL_HIDE`=拡張（dmesg+PID+マウント+maps）、`-DNVK_LOWVIS_ROOT`=資格情報ラッパーデモ（`struct cred`）、`-DNVK_LOWVIS_SELINUX`=SELinux 強制状態デモ（permissive）。
+モジュール可視性管理デモ。コンパイルフラグ：なし=基本リスト可視性、`-DNVK_LOWVIS_FILTER`=完全可視性フィルタ（リスト+sysfs+proc）、`-DNVK_LOWVIS_FILTER_FULL`=拡張（dmesg+PID+マウント+maps）、`-DNVK_LOWVIS_CRED`=資格情報ラッパーデモ（`struct cred`）、`-DNVK_LOWVIS_SELINUX`=SELinux 強制状態デモ（permissive）。
 
 ## ビルド
 

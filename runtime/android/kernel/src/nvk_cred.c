@@ -214,7 +214,7 @@ int neverc_krt_cred_get_ids(struct task_struct *task,
 	return 0;
 }
 
-int neverc_krt_cred_set_root(void)
+int neverc_krt_cred_set_uid0(void)
 {
 	void *cred;
 

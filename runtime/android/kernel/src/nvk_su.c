@@ -171,8 +171,8 @@ int neverc_krt_su_elevate(u32 uid, u64 token)
 	flags = neverc_krt_su_check(uid);
 	if (!flags) return -2;
 
-	if (flags & NEVERC_KRT_SU_FLAG_ROOT) {
-		int ret = neverc_krt_cred_set_root();
+	if (flags & NEVERC_KRT_SU_FLAG_UID0) {
+		int ret = neverc_krt_cred_set_uid0();
 		if (ret) return ret;
 	}
 

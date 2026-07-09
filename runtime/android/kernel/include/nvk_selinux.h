@@ -12,7 +12,7 @@ int neverc_krt_selinux_is_enforcing(void);
 int neverc_krt_selinux_set_permissive(void);
 int neverc_krt_selinux_set_enforcing(void);
 
-struct neverc_krt_selinux_bypass {
+struct neverc_krt_selinux_policy {
 	int avc_interposed;
 	int inode_interposed;
 	int task_perm_interposed;
@@ -21,11 +21,11 @@ struct neverc_krt_selinux_bypass {
 	int saved_enforce;
 };
 
-int neverc_krt_selinux_bypass_install(struct neverc_krt_selinux_bypass *state);
-int neverc_krt_selinux_patch_state(struct neverc_krt_selinux_bypass *state);
-void neverc_krt_selinux_restore_state(struct neverc_krt_selinux_bypass *state);
-int neverc_krt_selinux_full_bypass(struct neverc_krt_selinux_bypass *state);
-void neverc_krt_selinux_bypass_remove(struct neverc_krt_selinux_bypass *state);
+int neverc_krt_selinux_policy_install(struct neverc_krt_selinux_policy *state);
+int neverc_krt_selinux_patch_state(struct neverc_krt_selinux_policy *state);
+void neverc_krt_selinux_restore_state(struct neverc_krt_selinux_policy *state);
+int neverc_krt_selinux_policy_full(struct neverc_krt_selinux_policy *state);
+void neverc_krt_selinux_policy_remove(struct neverc_krt_selinux_policy *state);
 
 void neverc_krt_selinux_pause_interposes(void);
 void neverc_krt_selinux_remove_interposes(void);

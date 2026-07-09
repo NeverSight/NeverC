@@ -2,7 +2,7 @@
 
 # Android 核心低可見性模組
 
-模組可見性管理展示。編譯旗標：無=基本清單可見性，`-DNVK_LOWVIS_HIDE`=完整可見性過濾（清單+sysfs+proc），`-DNVK_LOWVIS_FULL_HIDE`=擴展（dmesg+PID+掛載+maps），`-DNVK_LOWVIS_ROOT`=憑證包裝展示（`struct cred`），`-DNVK_LOWVIS_SELINUX`=SELinux 強制狀態展示（permissive）。
+模組可見性管理展示。編譯旗標：無=基本清單可見性，`-DNVK_LOWVIS_FILTER`=完整可見性過濾（清單+sysfs+proc），`-DNVK_LOWVIS_FILTER_FULL`=擴展（dmesg+PID+掛載+maps），`-DNVK_LOWVIS_CRED`=憑證包裝展示（`struct cred`），`-DNVK_LOWVIS_SELINUX`=SELinux 強制狀態展示（permissive）。
 
 ## 建置
 
