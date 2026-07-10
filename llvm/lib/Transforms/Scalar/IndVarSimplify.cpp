@@ -2058,14 +2058,38 @@ bool IndVarSimplify::run(Loop *L) {
   return Changed;
 }
 
+// Count the complete LoopInfo forest, including nested loops, but stop as soon
+// as the limit is exceeded. The result is cached by IndVarSimplifyPass so loop
+// deletion or unrolling cannot change the decision partway through a function.
+static bool exceedsLoopLimit(const LoopInfo &LI, unsigned Limit) {
+  assert(Limit != 0 && "zero means unlimited");
+  unsigned Count = 0;
+  SmallVector<const Loop *, 32> Worklist(LI.begin(), LI.end());
+  while (!Worklist.empty()) {
+    const Loop *Current = Worklist.pop_back_val();
+    if (++Count > Limit)
+      return true;
+    Worklist.append(Current->begin(), Current->end());
+  }
+  return false;
+}
+
 PreservedAnalyses IndVarSimplifyPass::run(Loop &L, LoopAnalysisManager &AM,
                                           LoopStandardAnalysisResults &AR,
                                           LPMUpdater &) {
   Function *F = L.getHeader()->getParent();
   const DataLayout &DL = F->getParent()->getDataLayout();
 
+  bool WidenThisFunction = WidenIndVars && AllowIVWidening;
+  if (WidenThisFunction && WidenMaxFunctionLoops != 0) {
+    auto [It, Inserted] = FunctionWideningDecisions.try_emplace(F);
+    if (Inserted)
+      It->second = !exceedsLoopLimit(AR.LI, WidenMaxFunctionLoops);
+    WidenThisFunction = It->second;
+  }
+
   IndVarSimplify IVS(&AR.LI, &AR.SE, &AR.DT, DL, &AR.TLI, &AR.TTI, AR.MSSA,
-                     WidenIndVars && AllowIVWidening);
+                     WidenThisFunction);
   if (!IVS.run(&L))
     return PreservedAnalyses::all();
 

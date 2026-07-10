@@ -2,10 +2,14 @@
 
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 
+#include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <optional>
 #include <sstream>
+#include <utility>
 
 // MSVC has no POSIX setenv/unsetenv; _putenv_s keeps the CRT and Win32
 // environment blocks in sync so spawned neverc children inherit the value.
@@ -25,7 +29,90 @@ static void unsetEnvVar(const char *Name) {
 #endif
 }
 
-class LTOTest : public NeverCTest {};
+class ScopedEnvVar {
+  std::string Name;
+  std::optional<std::string> OldValue;
+
+public:
+  ScopedEnvVar(const char *Name, const char *Value) : Name(Name) {
+    if (const char *Old = std::getenv(Name))
+      OldValue = Old;
+    setEnvVar(Name, Value);
+  }
+
+  ScopedEnvVar(const ScopedEnvVar &) = delete;
+  ScopedEnvVar &operator=(const ScopedEnvVar &) = delete;
+
+  ~ScopedEnvVar() {
+    if (OldValue)
+      setEnvVar(Name.c_str(), OldValue->c_str());
+    else
+      unsetEnvVar(Name.c_str());
+  }
+};
+
+static double medianSeconds(std::vector<double> Values) {
+  assert(!Values.empty());
+  std::sort(Values.begin(), Values.end());
+  return Values[Values.size() / 2];
+}
+
+class LTOTest : public NeverCTest {
+protected:
+  std::vector<std::string>
+  writeAutoLtoLoopDenseProject(const std::string &Stem, bool RuntimeSeed) {
+    constexpr int NFiles = 12;
+    constexpr int NFuncsPerFile = 12;
+    auto SrcDir = tmpFile(Stem);
+    fs::create_directories(SrcDir);
+
+    std::vector<std::string> Names;
+    std::vector<std::string> Sources;
+    for (int FI = 0; FI < NFiles; ++FI) {
+      std::string Src = "#include <stdint.h>\n";
+      for (int FJ = 0; FJ < NFuncsPerFile; ++FJ) {
+        std::string Name =
+            "fn_" + std::to_string(FI) + "_" + std::to_string(FJ);
+        Names.push_back(Name);
+        unsigned C1 =
+            (2654435761u * unsigned(FI * 131 + FJ + 1)) | 1u;
+        unsigned C2 =
+            (40503u * unsigned(FI + 7) +
+             2246822519u * unsigned(FJ + 3)) |
+            1u;
+        unsigned C3 =
+            (2166136261u ^ (16777619u * unsigned(FI * 17 + FJ))) | 1u;
+        Src += "uint64_t " + Name + "(uint64_t x){ uint64_t a=x^" +
+               std::to_string(C1) +
+               "ULL; for(int i=0;i<7;i++){ a=a*" + std::to_string(C2) +
+               "ULL+(a>>13)+i; if(a&1) a^=" + std::to_string(C3) +
+               "ULL; } return a; }\n";
+      }
+      auto Path = SrcDir / ("m" + std::to_string(FI) + ".c");
+      writeFile(Path, Src);
+      Sources.push_back(Path.string());
+    }
+
+    std::string Main = "#include <stdint.h>\n#include <stdio.h>\n";
+    for (const auto &Name : Names)
+      Main += "uint64_t " + Name + "(uint64_t);\n";
+    if (RuntimeSeed)
+      Main += "int main(int argc, char **argv){ (void)argv; "
+              "uint64_t acc=(uint64_t)argc;\n";
+    else
+      Main += "int main(void){ uint64_t acc=1;\n";
+    Main += "for(int r=0;r<3;r++){\n";
+    for (const auto &Name : Names)
+      Main += "acc=acc*1000003ULL+" + Name + "(acc);\n";
+    Main += "}\nprintf(\"CK=%llu\\n\",(unsigned long long)acc);"
+            " return 0; }\n";
+
+    auto MainPath = SrcDir / "main.c";
+    writeFile(MainPath, Main);
+    Sources.push_back(MainPath.string());
+    return Sources;
+  }
+};
 
 TEST_F(LTOTest, HelloLTO) {
   auto src = (testDir() / "lto/hello_lto.c").string();
@@ -147,7 +234,8 @@ TEST_F(LTOTest, MllvmReachesLinkJob) {
 TEST_F(LTOTest, LtoLinkCache) {
   auto ltoDir = testDir() / "lto";
   auto cacheDir = tmpFile("ltocache_dir");
-  setEnvVar(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
+  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar,
+                        cacheDir.string().c_str());
 
   std::vector<std::string> base = {"-std=c11"};
   for (auto &f : sysrootFlags()) base.push_back(f);
@@ -190,11 +278,13 @@ TEST_F(LTOTest, LtoLinkCache) {
 
   // Disabled: no entries may be written.
   auto exeOff = tmpFile("ltocache_off");
-  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
-  auto off = link;
-  off.insert(off.end(), {"-o", exeOff.string()});
-  ASSERT_EQ(ncc(off).exitCode, 0);
-  unsetEnvVar(linker::ltoCacheEnvVar);
+  {
+    ScopedEnvVar Disabled(linker::ltoCacheEnvVar,
+                          linker::ltoCacheDisableValue);
+    auto off = link;
+    off.insert(off.end(), {"-o", exeOff.string()});
+    ASSERT_EQ(ncc(off).exitCode, 0);
+  }
   EXPECT_EQ(countEntries(), 0u);
 
   // Cold link populates the cache; warm link must be bit-identical.
@@ -220,8 +310,6 @@ TEST_F(LTOTest, LtoLinkCache) {
   l2.insert(l2.end(), {"-O0", "-o", exeO0.string()});
   ASSERT_EQ(ncc(l2).exitCode, 0);
   EXPECT_GT(countEntries(), afterCold) << "flag change must be a cache miss";
-
-  unsetEnvVar(linker::ltoCacheDirEnvVar);
 }
 
 // Per-partition object cache (LTOCache.cpp + ParallelCodeGenMerge.cpp):
@@ -232,7 +320,8 @@ TEST_F(LTOTest, LtoLinkCache) {
 // must be byte-identical to a cache-disabled clean relink.
 TEST_F(LTOTest, LtoPartitionCache) {
   auto cacheDir = tmpFile("pcache_dir");
-  setEnvVar(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
+  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar,
+                        cacheDir.string().c_str());
 
   // Generate a project that crosses the partitioned-codegen thresholds
   // (>= 8 surviving functions, >= 10000 merged IR instructions) and
@@ -341,9 +430,11 @@ TEST_F(LTOTest, LtoPartitionCache) {
   std::string mixed = readFile(exe);
 
   // The mixed cached/fresh link must equal a cache-disabled clean link.
-  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
-  ASSERT_EQ(ncc(link).exitCode, 0);
-  unsetEnvVar(linker::ltoCacheEnvVar);
+  {
+    ScopedEnvVar Disabled(linker::ltoCacheEnvVar,
+                          linker::ltoCacheDisableValue);
+    ASSERT_EQ(ncc(link).exitCode, 0);
+  }
   std::string clean = readFile(exe);
   EXPECT_TRUE(mixed == clean)
       << "cached-partition relink differs from clean relink";
@@ -352,8 +443,6 @@ TEST_F(LTOTest, LtoPartitionCache) {
   EXPECT_EQ(r2.exitCode, 0);
   EXPECT_TRUE(r2.contains("CK=")) << r2.out;
   EXPECT_NE(r1.out, r2.out) << "edit must change the checksum";
-
-  unsetEnvVar(linker::ltoCacheDirEnvVar);
 }
 
 // Auto-LTO compile-time cliff guard for the two cooperating valves that tame
@@ -380,8 +469,10 @@ TEST_F(LTOTest, LtoPartitionCache) {
 TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
   // Cold, comparable links: disable both cache layers so neither timing is a
   // cache hit of the other.
-  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
-  setEnvVar(linker::ltoPartitionCacheEnvVar, linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
+                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
+                                linker::ltoCacheDisableValue);
 
   constexpr int NFiles = 15, NFuncsPerFile = 10; // 150 single-call leaves
   auto srcDir = tmpFile("cliff_src");
@@ -491,9 +582,192 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
       << "loop-density caps gave no link-time benefit (tOn=" << tOn
       << "s tOff=" << tOff << "s): NevercInlineMaxCallerLoops or "
          "NevercFullUnrollMaxLoopsPerFunc may have regressed";
+}
 
-  unsetEnvVar(linker::ltoPartitionCacheEnvVar);
-  unsetEnvVar(linker::ltoCacheEnvVar);
+// Each auto-LTO compile-cost control must be independently overrideable without
+// changing observable program behavior. Keep this normal regression free of
+// wall-clock assertions: timing acceptance is covered by the explicitly
+// enabled benchmark below.
+TEST_F(LTOTest, AutoLtoBoundedIndVarWideningSemanticsPreserved) {
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
+                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
+                                linker::ltoCacheDisableValue);
+
+  const auto Sources =
+      writeAutoLtoLoopDenseProject("bounded_indvars_src", false);
+
+  struct BuildArm {
+    const char *Tag;
+    std::vector<std::string> Extra;
+  };
+  const std::vector<BuildArm> Arms = {
+      {"default", {}},
+      {"bounded_widening",
+       {"-mllvm",
+        "-neverc-auto-lto-indvars-widen-max-function-loops=31"}},
+      {"former_behavior",
+       {"-mllvm", "-neverc-auto-lto-scev-huge-expr-threshold=512"}},
+      {"bounded_old_scev",
+       {"-mllvm",
+        "-neverc-auto-lto-indvars-widen-max-function-loops=31",
+        "-mllvm",
+        "-neverc-auto-lto-scev-huge-expr-threshold=512"}},
+  };
+
+  auto build = [&](const std::string &Tag,
+                   const std::vector<std::string> &Extra) {
+    fs::path Output = tmpFile("bounded_indvars_" + Tag);
+    std::vector<std::string> Args = {"-O2", "-std=c11"};
+    for (const auto &Flag : sysrootFlags())
+      Args.push_back(Flag);
+    for (const auto &Flag : archFlags())
+      Args.push_back(Flag);
+    Args.insert(Args.end(), Extra.begin(), Extra.end());
+    Args.insert(Args.end(), Sources.begin(), Sources.end());
+    if (isWindows())
+      Args.push_back("-mno-incremental-linker-compatible");
+    Args.insert(Args.end(), {"-o", Output.string()});
+
+    CmdResult Result = ncc(Args);
+    return std::make_pair(std::move(Result), std::move(Output));
+  };
+
+  {
+    ScopedEnvVar Debug("NEVERC_PCG_DEBUG", "1");
+    auto [Result, Output] = build("probe", {});
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    EXPECT_TRUE(Result.stderrContains("[pcg] p-opt engaged")) << Result.err;
+  }
+
+  std::vector<fs::path> Outputs;
+  for (const BuildArm &Arm : Arms) {
+    auto [Result, Output] = build(Arm.Tag, Arm.Extra);
+    ASSERT_EQ(Result.exitCode, 0) << Arm.Tag << ":\n" << Result.err;
+    Outputs.push_back(std::move(Output));
+  }
+
+  std::optional<std::string> ExpectedOutput;
+  for (size_t I = 0; I < Arms.size(); ++I) {
+    CmdResult Run = exec(Outputs[I].string(), {});
+    ASSERT_EQ(Run.exitCode, 0) << Arms[I].Tag << ":\n" << Run.err;
+    EXPECT_TRUE(Run.contains("CK=")) << Arms[I].Tag << ":\n" << Run.out;
+    if (!ExpectedOutput)
+      ExpectedOutput = Run.out;
+    else
+      EXPECT_EQ(Run.out, *ExpectedOutput) << Arms[I].Tag;
+  }
+
+  ASSERT_EQ(Outputs.size(), 4u);
+  EXPECT_LE(fileSize(Outputs[0]),
+            static_cast<size_t>(fileSize(Outputs[2]) * 1.01) + 1);
+}
+
+// Keep the quantitative 25% target for explicitly bounded widening as an
+// acceptance benchmark rather than a normal unit-test gate. This pathological
+// mode is intentionally not the production default. Run with
+// NEVERC_RUN_PERF_BENCHMARKS=1.
+TEST_F(LTOTest, AutoLtoBoundedIndVarWideningCompileBenchmark) {
+  const char *RunBenchmarks = std::getenv("NEVERC_RUN_PERF_BENCHMARKS");
+  if (!RunBenchmarks || std::string(RunBenchmarks) == "0")
+    GTEST_SKIP() << "set NEVERC_RUN_PERF_BENCHMARKS=1 to run timing acceptance";
+
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
+                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
+                                linker::ltoCacheDisableValue);
+
+  const auto Sources =
+      writeAutoLtoLoopDenseProject("bounded_indvars_bench_src", false);
+
+  struct TimedBuild {
+    CmdResult Result;
+    double Seconds;
+    fs::path Output;
+  };
+  auto build = [&](const std::string &Tag, unsigned Run,
+                   const std::vector<std::string> &Extra) {
+    fs::path Output =
+        tmpFile("bounded_indvars_bench_" + Tag + "_" + std::to_string(Run));
+    std::vector<std::string> Args = {"-O2", "-std=c11"};
+    for (const auto &Flag : sysrootFlags())
+      Args.push_back(Flag);
+    for (const auto &Flag : archFlags())
+      Args.push_back(Flag);
+    Args.insert(Args.end(), Extra.begin(), Extra.end());
+    Args.insert(Args.end(), Sources.begin(), Sources.end());
+    if (isWindows())
+      Args.push_back("-mno-incremental-linker-compatible");
+    Args.insert(Args.end(), {"-o", Output.string()});
+
+    auto Start = std::chrono::steady_clock::now();
+    CmdResult Result = ncc(Args);
+    double Seconds = std::chrono::duration<double>(
+                         std::chrono::steady_clock::now() - Start)
+                         .count();
+    return TimedBuild{std::move(Result), Seconds, std::move(Output)};
+  };
+
+  const std::vector<std::string> BoundedBehavior = {
+      "-mllvm",
+      "-neverc-auto-lto-indvars-widen-max-function-loops=31"};
+  const std::vector<std::string> OldBehavior = {
+      "-mllvm",
+      "-neverc-auto-lto-indvars-widen-max-function-loops=0",
+      "-mllvm",
+      "-neverc-auto-lto-scev-huge-expr-threshold=512"};
+
+  std::vector<double> BoundedTimes;
+  std::vector<double> FormerTimes;
+  fs::path BoundedOutput;
+  fs::path FormerOutput;
+  for (unsigned Run = 0; Run < 5; ++Run) {
+    auto runBounded = [&] {
+      TimedBuild Build = build("bounded", Run, BoundedBehavior);
+      if (Build.Result.exitCode != 0) {
+        ADD_FAILURE() << Build.Result.err;
+        return false;
+      }
+      BoundedTimes.push_back(Build.Seconds);
+      BoundedOutput = std::move(Build.Output);
+      return true;
+    };
+    auto runFormer = [&] {
+      TimedBuild Build = build("former", Run, OldBehavior);
+      if (Build.Result.exitCode != 0) {
+        ADD_FAILURE() << Build.Result.err;
+        return false;
+      }
+      FormerTimes.push_back(Build.Seconds);
+      FormerOutput = std::move(Build.Output);
+      return true;
+    };
+
+    if ((Run & 1) == 0) {
+      ASSERT_TRUE(runBounded());
+      ASSERT_TRUE(runFormer());
+    } else {
+      ASSERT_TRUE(runFormer());
+      ASSERT_TRUE(runBounded());
+    }
+  }
+
+  const double BoundedMedian = medianSeconds(BoundedTimes);
+  const double FormerMedian = medianSeconds(FormerTimes);
+  RecordProperty("bounded_median_seconds", BoundedMedian);
+  RecordProperty("former_median_seconds", FormerMedian);
+  EXPECT_LE(BoundedMedian, FormerMedian * 0.75)
+      << "explicit bounded IV widening must improve the interleaved complete "
+         "cold-build median by at least 25%";
+
+  CmdResult BoundedRun = exec(BoundedOutput.string(), {});
+  CmdResult FormerRun = exec(FormerOutput.string(), {});
+  ASSERT_EQ(BoundedRun.exitCode, 0) << BoundedRun.err;
+  ASSERT_EQ(FormerRun.exitCode, 0) << FormerRun.err;
+  EXPECT_TRUE(BoundedRun.contains("CK=")) << BoundedRun.out;
+  EXPECT_EQ(BoundedRun.out, FormerRun.out);
+  EXPECT_LE(fileSize(BoundedOutput),
+            static_cast<size_t>(fileSize(FormerOutput) * 1.01) + 1);
 }
 
 // Auto-LTO determinism contract: the parallel-codegen + merge pipeline must be a
@@ -516,8 +790,10 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
   // Disable both cache layers so every link genuinely re-runs parallel codegen
   // rather than restoring a previous link's stored object (which would make the
   // comparison trivially pass without exercising codegen at all).
-  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
-  setEnvVar(linker::ltoPartitionCacheEnvVar, linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
+                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
+                                linker::ltoCacheDisableValue);
 
   // 128 loop-bearing leaves: well above the parallel-codegen engagement floors
   // (>= 8 functions, >= 56 loops) so the path is exercised, and enough loops
@@ -571,7 +847,7 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
 
   // Relocatable (`-r`) merge under a given worker-thread count.
   auto mergeWithThreads = [&](const char *threads) -> std::string {
-    setEnvVar("NEVERC_PCG_THREADS", threads);
+    ScopedEnvVar WorkerThreads("NEVERC_PCG_THREADS", threads);
     std::vector<std::string> l;
     for (auto &f : sysrootFlags()) l.push_back(f);
     for (auto &f : archFlags()) l.push_back(f);
@@ -595,7 +871,6 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
   std::string o1 = mergeWithThreads("1");
   std::string o4 = mergeWithThreads("4");
   std::string o16 = mergeWithThreads("16");
-  unsetEnvVar("NEVERC_PCG_THREADS");
 
   ASSERT_FALSE(o1.empty()) << "relocatable merge produced no object";
   EXPECT_EQ(o1, o4) << "auto-LTO object differs between 1 and 4 worker threads "
@@ -603,9 +878,6 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
                        "(non-reproducible build)";
   EXPECT_EQ(o1, o16) << "auto-LTO object differs between 1 and 16 worker threads "
                         "-- execution parallelism leaked into the emitted bytes";
-
-  unsetEnvVar(linker::ltoPartitionCacheEnvVar);
-  unsetEnvVar(linker::ltoCacheEnvVar);
 }
 
 // The auto-LTO loop-density inline cap (Inliner.cpp's
@@ -618,8 +890,10 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
 // program *output*: the cap may only trade code shape / compile time, never
 // results.
 TEST_F(LTOTest, AutoLtoInlineCapSemanticsPreserved) {
-  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
-  setEnvVar(linker::ltoPartitionCacheEnvVar, linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
+                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
+                                linker::ltoCacheDisableValue);
 
   constexpr int NFiles = 10, NFuncsPerFile = 8; // 80 single-call leaves
   auto srcDir = tmpFile("inlinecap_src");
@@ -696,9 +970,6 @@ TEST_F(LTOTest, AutoLtoInlineCapSemanticsPreserved) {
   EXPECT_EQ(outCap.out, outNoCap.out)
       << "the loop-density inline cap changed program output -- it must be "
          "purely an optimization withdrawal, never a semantic change";
-
-  unsetEnvVar(linker::ltoPartitionCacheEnvVar);
-  unsetEnvVar(linker::ltoCacheEnvVar);
 }
 
 // The auto-LTO SCEV huge-expression bound (ParallelCodeGenMerge's
@@ -712,8 +983,10 @@ TEST_F(LTOTest, AutoLtoInlineCapSemanticsPreserved) {
 // ScalarEvolution), and require byte-identical program output.  This is a timing
 // -free invariant, so it can never flake.
 TEST_F(LTOTest, AutoLtoScevHugeThresholdSemanticsPreserved) {
-  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
-  setEnvVar(linker::ltoPartitionCacheEnvVar, linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
+                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
+                                linker::ltoCacheDisableValue);
 
   constexpr int NFiles = 10, NFuncsPerFile = 8; // 80 loop+select leaves
   auto srcDir = tmpFile("scevsem_src");
@@ -793,9 +1066,6 @@ TEST_F(LTOTest, AutoLtoScevHugeThresholdSemanticsPreserved) {
   EXPECT_EQ(outTiny.out, outOff.out)
       << "the auto-LTO SCEV huge-expression bound changed program output -- it "
          "must only withdraw simplification, never change a result";
-
-  unsetEnvVar(linker::ltoPartitionCacheEnvVar);
-  unsetEnvVar(linker::ltoCacheEnvVar);
 }
 
 // Real auto-LTO + mergeSections E2E: compile the in-tree Android kernel multifile
@@ -894,154 +1164,112 @@ TEST_F(LTOTest, AndroidKernel618PresetFromNvkKernel) {
       << "618 preset vermagic missing; NVK_KERNEL may not map to NEVERC_KRT_KERNEL";
 }
 
-// Auto-LTO vs clang full-LTO cold-link regression gate.  neverc's auto-LTO link
-// (whole-program IPO with the loop-density inline cap + SCEV bound, then
-// PARTITIONED PARALLEL codegen, then in-process merge) must stay at least as
-// fast as clang's monolithic full-LTO link (serial codegen) on the multi-file
-// loop-dense C that is auto-LTO's whole reason to exist -- and must produce a
-// program with byte-identical observable output.  This welds the headline
-// compile-speed balance shut against silent regression: if a future change makes
-// neverc's link slower than a stock full-LTO link, or diverges its result, this
-// goes red.
-//
-// Only the LINK (LTO codegen) step is timed -- both toolchains compile the same
-// sources to bitcode first -- so the comparison is purely parallel-vs-serial LTO
-// codegen on identical input, with no parallel-frontend fairness caveat.
-//
-// Robust by construction: if no comparison clang is found, or it cannot
-// compile/link the workload in this environment (different sysroot, no LTO
-// plugin, ...), the test SKIPS rather than failing -- it can only go red on a
-// genuine neverc regression.  Set NEVERC_BENCH_CLANG to pin the comparator
-// (e.g. a real clang-22); otherwise PATH `clang` is used.
-TEST_F(LTOTest, AutoLtoLinkBeatsClangFullLTO) {
-  std::string clang = "clang";
-  if (const char *e = getenv("NEVERC_BENCH_CLANG"); e && *e)
-    clang = e;
-  if (exec(clang, {"--version"}).exitCode != 0)
-    GTEST_SKIP() << "no usable comparison clang (set NEVERC_BENCH_CLANG)";
+// Compare complete cold builds from matching C sources. This benchmark is
+// explicitly opt-in because it depends on an external clang-22 installation
+// and takes long enough to be inappropriate for the normal unit-test suite.
+TEST_F(LTOTest, AutoLtoCompleteBuildBeatsClang22FullLTO) {
+  const char *ClangPath = std::getenv("NEVERC_BENCH_CLANG");
+  if (!ClangPath || !*ClangPath)
+    GTEST_SKIP() << "set NEVERC_BENCH_CLANG to a clang-22 executable";
 
-  // Many small single-call loop leaves: last-call-to-static inlining folds them
-  // into main, the shape that makes a naive full-LTO link go SCEV-superlinear.
-  // Integer-only (uint64 xorshift) so the checksum is bit-identical across
-  // compilers -- no FP contraction/reassociation to legitimately diverge.
-  constexpr int NFiles = 12, NFuncsPerFile = 12; // 144 leaves
-  auto srcDir = tmpFile("clangcmp_src");
-  fs::create_directories(srcDir);
-  std::vector<std::string> names;
-  for (int fi = 0; fi < NFiles; ++fi) {
-    std::string src = "#include <stdint.h>\n";
-    for (int fj = 0; fj < NFuncsPerFile; ++fj) {
-      std::string nm = "fn_" + std::to_string(fi) + "_" + std::to_string(fj);
-      names.push_back(nm);
-      unsigned c1 = (2654435761u * unsigned(fi * 131 + fj + 1)) | 1u;
-      unsigned c2 =
-          (40503u * unsigned(fi + 7) + 2246822519u * unsigned(fj + 3)) | 1u;
-      unsigned c3 = (2166136261u ^ (16777619u * unsigned(fi * 17 + fj))) | 1u;
-      src += "uint64_t " + nm + "(uint64_t x){ uint64_t a=x^" +
-             std::to_string(c1) + "ULL; for(int i=0;i<7;i++){ a=a*" +
-             std::to_string(c2) + "ULL+(a>>13)+i; if(a&1) a^=" +
-             std::to_string(c3) + "ULL; } return a; }\n";
+  const std::string Clang = ClangPath;
+  CmdResult Version = exec(Clang, {"--version"});
+  if (Version.exitCode != 0)
+    GTEST_SKIP() << "comparison clang is not executable: " << Version.err;
+  const std::string VersionText = Version.out + Version.err;
+  if (VersionText.find("clang version 22") == std::string::npos)
+    GTEST_SKIP() << "comparison compiler is not clang-22: " << VersionText;
+
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
+                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
+                                linker::ltoCacheDisableValue);
+
+  const auto Sources =
+      writeAutoLtoLoopDenseProject("clang22_complete_src", true);
+
+  struct TimedBuild {
+    CmdResult Result;
+    double Seconds;
+    fs::path Output;
+  };
+  auto build = [&](bool UseNeverc, const std::string &Tag, unsigned Run) {
+    fs::path Output =
+        tmpFile("clang22_complete_" + Tag + "_" + std::to_string(Run));
+    std::vector<std::string> Args = {"-O2", "-std=c11"};
+    if (!UseNeverc)
+      Args.push_back("-flto=full");
+    for (const auto &Flag : sysrootFlags())
+      Args.push_back(Flag);
+    for (const auto &Flag : archFlags())
+      Args.push_back(Flag);
+    Args.insert(Args.end(), Sources.begin(), Sources.end());
+    if (UseNeverc && isWindows())
+      Args.push_back("-mno-incremental-linker-compatible");
+    Args.insert(Args.end(), {"-o", Output.string()});
+
+    auto Start = std::chrono::steady_clock::now();
+    CmdResult Result = UseNeverc ? ncc(Args) : exec(Clang, Args);
+    double Seconds = std::chrono::duration<double>(
+                         std::chrono::steady_clock::now() - Start)
+                         .count();
+    return TimedBuild{std::move(Result), Seconds, std::move(Output)};
+  };
+
+  TimedBuild NevercProbe = build(true, "neverc_probe", 0);
+  ASSERT_EQ(NevercProbe.Result.exitCode, 0) << NevercProbe.Result.err;
+  TimedBuild ClangProbe = build(false, "clang_probe", 0);
+  if (ClangProbe.Result.exitCode != 0)
+    GTEST_SKIP() << "clang-22 cannot build the comparison workload: "
+                 << ClangProbe.Result.err;
+
+  std::vector<double> NevercTimes;
+  std::vector<double> ClangTimes;
+  fs::path NevercOutput;
+  fs::path ClangOutput;
+  for (unsigned Run = 0; Run < 5; ++Run) {
+    auto runNeverc = [&] {
+      TimedBuild Build = build(true, "neverc", Run);
+      if (Build.Result.exitCode != 0) {
+        ADD_FAILURE() << Build.Result.err;
+        return false;
+      }
+      NevercTimes.push_back(Build.Seconds);
+      NevercOutput = std::move(Build.Output);
+      return true;
+    };
+    auto runClang = [&] {
+      TimedBuild Build = build(false, "clang", Run);
+      if (Build.Result.exitCode != 0) {
+        ADD_FAILURE() << Build.Result.err;
+        return false;
+      }
+      ClangTimes.push_back(Build.Seconds);
+      ClangOutput = std::move(Build.Output);
+      return true;
+    };
+
+    if ((Run & 1) == 0) {
+      ASSERT_TRUE(runNeverc());
+      ASSERT_TRUE(runClang());
+    } else {
+      ASSERT_TRUE(runClang());
+      ASSERT_TRUE(runNeverc());
     }
-    writeFile(srcDir / ("m" + std::to_string(fi) + ".c"), src);
-  }
-  {
-    std::string m = "#include <stdint.h>\n#include <stdio.h>\n";
-    for (auto &n : names)
-      m += "uint64_t " + n + "(uint64_t);\n";
-    m += "int main(void){ uint64_t acc=1;\n for(int r=0;r<3;r++){\n";
-    for (auto &n : names)
-      m += "  acc=acc*1000003ULL+" + n + "(acc);\n";
-    m += " }\n printf(\"CK=%llu\\n\",(unsigned long long)acc); return 0; }\n";
-    writeFile(srcDir / "main.c", m);
   }
 
-  std::vector<std::string> units;
-  for (int fi = 0; fi < NFiles; ++fi)
-    units.push_back("m" + std::to_string(fi));
-  units.push_back("main");
+  const double NevercMedian = medianSeconds(NevercTimes);
+  const double ClangMedian = medianSeconds(ClangTimes);
+  RecordProperty("neverc_complete_median_seconds", NevercMedian);
+  RecordProperty("clang22_complete_median_seconds", ClangMedian);
+  EXPECT_LT(NevercMedian, ClangMedian);
 
-  std::vector<std::string> base = {"-std=c11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
-
-  // Compile each unit to bitcode with both toolchains (not timed).  A clang
-  // compile failure means a toolchain/sysroot mismatch on this host, not a
-  // neverc bug -> skip.
-  std::vector<std::string> nvObjs, clObjs;
-  for (auto &u : units) {
-    auto srcp = (srcDir / (u + ".c")).string();
-    auto nvo = (srcDir / (u + ".nv.o")).string();
-    auto c = base;
-    c.insert(c.end(), {"-c", srcp, "-o", nvo});
-    ASSERT_EQ(ncc(c).exitCode, 0) << "neverc compile " << u;
-    nvObjs.push_back(nvo);
-
-    auto clo = (srcDir / (u + ".cl.o")).string();
-    auto cr = exec(clang, {"-O2", "-flto", "-c", srcp, "-o", clo});
-    if (cr.exitCode != 0)
-      GTEST_SKIP() << "comparison clang cannot compile workload: " << cr.err;
-    clObjs.push_back(clo);
-  }
-
-  // Cold neverc link: disable both cache layers so the timing is real codegen,
-  // not a restored prior object.  Set late (after the clang work above that can
-  // skip) and restored on every exit path below.
-  setEnvVar(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
-  setEnvVar(linker::ltoPartitionCacheEnvVar, linker::ltoCacheDisableValue);
-
-  // Time neverc auto-LTO link (IPO + partitioned parallel codegen + merge).
-  auto nvExe = tmpFile("clangcmp_nv");
-  std::vector<std::string> nvLink;
-  for (auto &f : sysrootFlags()) nvLink.push_back(f);
-  for (auto &f : archFlags()) nvLink.push_back(f);
-  for (auto &o : nvObjs) nvLink.push_back(o);
-  if (isWindows())
-    nvLink.push_back("-mno-incremental-linker-compatible");
-  nvLink.insert(nvLink.end(), {"-o", nvExe.string()});
-  auto a0 = std::chrono::steady_clock::now();
-  auto rNv = ncc(nvLink);
-  auto a1 = std::chrono::steady_clock::now();
-  double tNv = std::chrono::duration<double>(a1 - a0).count();
-  ASSERT_EQ(rNv.exitCode, 0) << rNv.err;
-
-  // Time clang monolithic full-LTO link (serial codegen).
-  auto clExe = tmpFile("clangcmp_cl");
-  std::vector<std::string> clLink = {"-O2", "-flto"};
-  for (auto &o : clObjs) clLink.push_back(o);
-  clLink.insert(clLink.end(), {"-o", clExe.string()});
-  auto b0 = std::chrono::steady_clock::now();
-  auto rCl = exec(clang, clLink);
-  auto b1 = std::chrono::steady_clock::now();
-  double tCl = std::chrono::duration<double>(b1 - b0).count();
-  if (rCl.exitCode != 0) {
-    unsetEnvVar(linker::ltoPartitionCacheEnvVar);
-    unsetEnvVar(linker::ltoCacheEnvVar);
-    GTEST_SKIP() << "comparison clang cannot link workload: " << rCl.err;
-  }
-
-  // (1) Identical observable result: neverc's parallel/merged LTO must agree
-  // with a monolithic full-LTO compile of the same C, bit-for-bit on stdout.
-  auto outNv = exec(nvExe.string(), {});
-  auto outCl = exec(clExe.string(), {});
-  EXPECT_EQ(outNv.exitCode, 0) << outNv.err;
-  EXPECT_EQ(outCl.exitCode, 0) << outCl.err;
-  EXPECT_TRUE(outNv.contains("CK=")) << outNv.out;
-  EXPECT_EQ(outNv.out, outCl.out)
-      << "neverc auto-LTO output diverged from clang full-LTO on identical C";
-
-  // (2) Balance: neverc's auto-LTO link must not be slower than clang's
-  // monolithic full-LTO link.  Asserted only once clang's link is clearly above
-  // the per-invocation noise floor (a host that links this trivially fast on
-  // both sides checks correctness only and never flakes); where it does engage,
-  // neverc's measured margin is large (~5-25x), so the bare `<` is wide.
-  if (tCl > 0.8)
-    EXPECT_LT(tNv, tCl)
-        << "neverc auto-LTO link (" << tNv
-        << "s) is slower than clang full-LTO (" << tCl
-        << "s) on loop-dense multi-file C -- the compile-speed balance regressed";
-
-  unsetEnvVar(linker::ltoPartitionCacheEnvVar);
-  unsetEnvVar(linker::ltoCacheEnvVar);
+  CmdResult NevercRun = exec(NevercOutput.string(), {});
+  CmdResult ClangRun = exec(ClangOutput.string(), {});
+  ASSERT_EQ(NevercRun.exitCode, 0) << NevercRun.err;
+  ASSERT_EQ(ClangRun.exitCode, 0) << ClangRun.err;
+  EXPECT_TRUE(NevercRun.contains("CK=")) << NevercRun.out;
+  EXPECT_EQ(NevercRun.out, ClangRun.out);
 }
 
 TEST_F(LTOTest, InlineAsmLTO) {

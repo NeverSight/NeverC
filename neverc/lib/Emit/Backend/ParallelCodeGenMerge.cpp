@@ -104,23 +104,32 @@ static llvm::cl::opt<unsigned> PcgCgMaxParts(
                    "across machines; execution parallelism is bounded "
                    "separately by the worker pool"));
 
-// Auto-LTO SCEV cost bound.  Full-LTO post-link inlining folds many loop-bearing
+// Auto-LTO IV-widening cost bound. Whole-program inlining can concentrate
+// dozens of loops in one partition-straggler function; widening every IV in
+// that shape repeatedly drives expensive ScalarEvolution reasoning. Keep all
+// other IndVarSimplify work, but withdraw widening once the function's initial
+// LoopInfo forest exceeds this limit. The production default keeps unlimited
+// widening because real-project ablation did not justify applying the bound
+// universally. Setting 31 is the diagnosed pathological-workload mode: the
+// inliner stops at 32 loops, so 32 is the first shape it must cover.
+static llvm::cl::opt<unsigned> PcgIndVarWidenMaxFunctionLoops(
+    "neverc-auto-lto-indvars-widen-max-function-loops", llvm::cl::init(0),
+    llvm::cl::Hidden,
+    llvm::cl::desc(
+        "Auto-LTO only: disable IndVarSimplify IV widening for functions "
+        "whose initial loop count exceeds this limit (0 = unlimited)"));
+
+// Auto-LTO SCEV cost bound. Full-LTO post-link inlining folds many loop-bearing
 // leaves into one body, so post-IPO functions are far larger than any single
-// TU's; their SCEV expressions blow past ScalarEvolution's default
-// HugeExprThreshold and trigger getAddExpr/getMulExpr's superlinear
-// simplification (reached from IndVarSimplify), profiled as ~99% of a loop-dense
-// auto-LTO link.  Tightening the threshold for the duration of per-partition
-// optimization makes those huge expressions fall back to their conservative,
-// already-correct unsimplified form sooner -- the same withdrawal MaxArithDepth
-// performs -- cutting worst-case link time ~10x (bench_b 11.5s -> 1.1s) with no
-// measured runtime regression (Lua 5.4 / bench_a equal-or-better, output
-// byte-identical).  It is a pure compile-cost knob: SCEV stays correct, the
-// merge verifier + serial fallback are untouched, and the value never feeds the
-// partition count or assignment, so the emitted object is byte-identical
-// regardless of it (the determinism oracle still holds).  0 = leave
-// ScalarEvolution's own default.
+// TU's. Tightening the threshold during per-partition optimization makes huge
+// expressions fall back to their conservative, already-correct unsimplified
+// form sooner. The default is the lowest sweep value that preserved ordinary
+// project code shape while retaining the pathological compile-cost benefit.
+// Different thresholds may legitimately change optimization opportunities and
+// code shape, but a fixed setting remains deterministic and never affects
+// partition count or assignment. Zero leaves ScalarEvolution's own default.
 static llvm::cl::opt<unsigned> PcgScevHugeExprThreshold(
-    "neverc-auto-lto-scev-huge-expr-threshold", llvm::cl::init(512),
+    "neverc-auto-lto-scev-huge-expr-threshold", llvm::cl::init(64),
     llvm::cl::Hidden,
     llvm::cl::desc("Auto-LTO only: SCEV huge-expression node threshold applied "
                    "during per-partition optimization to bound superlinear "
@@ -957,6 +966,8 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
   SharedPTO.SLPVectorization = OptLevel >= 2;
   SharedPTO.CallGraphProfile = false;
   SharedPTO.NevercFastIPO = true;
+  SharedPTO.NevercIndVarWidenMaxFunctionLoops =
+      PcgIndVarWidenMaxFunctionLoops;
 
   // Bound SCEV's huge-expression cost for every partition's optimization (see
   // PcgScevHugeExprThreshold).  Established here, before any worker starts, and

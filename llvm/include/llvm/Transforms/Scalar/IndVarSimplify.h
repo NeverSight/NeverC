@@ -14,11 +14,13 @@
 #ifndef LLVM_TRANSFORMS_SCALAR_INDVARSIMPLIFY_H
 #define LLVM_TRANSFORMS_SCALAR_INDVARSIMPLIFY_H
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/IR/PassManager.h"
 
 namespace llvm {
 
+class Function;
 class Loop;
 class LPMUpdater;
 
@@ -26,8 +28,19 @@ class IndVarSimplifyPass : public PassInfoMixin<IndVarSimplifyPass> {
   /// Perform IV widening during the pass.
   bool WidenIndVars;
 
+  /// Disable IV widening when a function initially contains more loops than
+  /// this limit. Zero keeps upstream's unlimited behavior.
+  unsigned WidenMaxFunctionLoops;
+
+  /// Pin the loop-density decision for the lifetime of this pass instance.
+  /// Earlier loops may be deleted or unrolled before later loops are visited.
+  DenseMap<const Function *, bool> FunctionWideningDecisions;
+
 public:
-  IndVarSimplifyPass(bool WidenIndVars = true) : WidenIndVars(WidenIndVars) {}
+  IndVarSimplifyPass(bool WidenIndVars = true,
+                     unsigned WidenMaxFunctionLoops = 0)
+      : WidenIndVars(WidenIndVars),
+        WidenMaxFunctionLoops(WidenMaxFunctionLoops) {}
   PreservedAnalyses run(Loop &L, LoopAnalysisManager &AM,
                         LoopStandardAnalysisResults &AR, LPMUpdater &U);
 };

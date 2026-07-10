@@ -99,6 +99,11 @@ public:
   // making the dropped passes redundant.
   bool NevercFastIPO = false;
 
+  // NeverC: in auto-LTO's per-partition post-link optimization, disable IV
+  // widening for functions whose initial LoopInfo forest exceeds this limit.
+  // Zero preserves upstream's unlimited widening.
+  unsigned NevercIndVarWidenMaxFunctionLoops = 0;
+
   // NeverC: when true, the per-SCC function simplification pipeline that
   // runs *inside* the CGSCC inliner (during LTO simplify-only) is trimmed
   // to a lightweight cleanup pass set.  The expensive passes that are
