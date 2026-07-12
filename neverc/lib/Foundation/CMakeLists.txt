@@ -198,6 +198,21 @@ if(TARGET mimalloc-static)
     set(_mi_bitcode_h
         "${CMAKE_CURRENT_BINARY_DIR}/BuiltinMimallocBitcode_${_mi_os}.h")
 
+    set(_mi_extra_flags)
+    set(_mi_depends neverc "${_mi_runtime_c}")
+    if(_mi_os STREQUAL "win")
+      # Bundled MSVC um/ lacks winternl.h; provide a tiny stub on the include
+      # path. Newer UCRT macros used by mimalloc's MSVC override path are also
+      # absent from the bundled CRT — define them empty for IR emission.
+      set(_mi_win_stub_dir
+          "${BUILTIN_MIMALLOC_SCRIPT_DIR}/mimalloc_win_stubs")
+      list(APPEND _mi_extra_flags
+          "-I${_mi_win_stub_dir}"
+          "-D_CRT_HYBRIDPATCHABLE="
+          "-D_CRT_NOEXCEPT=")
+      list(APPEND _mi_depends "${_mi_win_stub_dir}/winternl.h")
+    endif()
+
     add_custom_command(
       OUTPUT "${_mi_runtime_c}"
       COMMAND ${Python3_EXECUTABLE}
@@ -217,6 +232,7 @@ if(TARGET mimalloc-static)
               --target=${_mi_triple}
               -I "${_MI_SRC_ROOT}/include"
               -I "${_MI_SRC_ROOT}/src"
+              ${_mi_extra_flags}
               -w
               "${_mi_runtime_c}"
               -o "${_mi_runtime_bc}"
@@ -227,7 +243,7 @@ if(TARGET mimalloc-static)
               --name "kMimallocBitcode_${_mi_os}"
       COMMAND ${CMAKE_COMMAND} -E touch
               "${CMAKE_CURRENT_SOURCE_DIR}/Builtin/BuiltinMimalloc.cpp"
-      DEPENDS neverc "${_mi_runtime_c}"
+      DEPENDS ${_mi_depends}
       COMMENT "[NeverC] Bootstrap: compiling mimalloc for ${_mi_os} (${_mi_triple})"
     )
   endforeach()
