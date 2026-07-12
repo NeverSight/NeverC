@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* neverc_krt_file.c — kernel file I/O operations. */
 #include <nvk.h>
+#include "nvk_internal.h"
 
 /* ---- internal types ---- */
 
@@ -155,18 +156,6 @@ int neverc_krt_file_exists(const char *path)
 
 #define _NEVERC_KRT_AT_FDCWD (-100)
 
-/*
- * Minimal kstat field offsets (GKI arm64 5.10-6.18):
- *   [4]  mode   (u16)
- *   [48] uid    (u32, inside kuid_t)
- *   [52] gid    (u32, inside kgid_t)
- *   [56] size   (s64)
- */
-#define _NEVERC_KRT_KSTAT_MODE_OFF   4
-#define _NEVERC_KRT_KSTAT_UID_OFF   48
-#define _NEVERC_KRT_KSTAT_GID_OFF   52
-#define _NEVERC_KRT_KSTAT_SIZE_OFF  56
-
 static int _neverc_krt_do_stat(const char *path, unsigned char *buf, int bufsz)
 {
 	__builtin_memset(buf, 0, bufsz);
@@ -179,6 +168,7 @@ static int _neverc_krt_do_stat(const char *path, unsigned char *buf, int bufsz)
 
 int neverc_krt_file_stat(const char *path, struct neverc_krt_file_stat *out)
 {
+	const struct neverc_krt_gki_layout *layout;
 	unsigned char kstat_buf[256];
 
 	if (!out || !path) return -1;
@@ -189,13 +179,26 @@ int neverc_krt_file_stat(const char *path, struct neverc_krt_file_stat *out)
 	out->gid = 0;
 
 	if (_neverc_krt_vfs_fstatat || _neverc_krt_vfs_stat) {
+		layout = _neverc_krt_get_gki_layout();
+		if (!layout->kstat_size ||
+		    layout->kstat_size > sizeof(kstat_buf))
+			return -1;
+
 		int ret = _neverc_krt_do_stat(path, kstat_buf, sizeof(kstat_buf));
 		if (ret) return ret;
 
-		out->mode = *(u16 *)(kstat_buf + _NEVERC_KRT_KSTAT_MODE_OFF);
-		out->uid  = *(u32 *)(kstat_buf + _NEVERC_KRT_KSTAT_UID_OFF);
-		out->gid  = *(u32 *)(kstat_buf + _NEVERC_KRT_KSTAT_GID_OFF);
-		out->size = *(long long *)(kstat_buf + _NEVERC_KRT_KSTAT_SIZE_OFF);
+		__builtin_memcpy(&out->mode,
+				 kstat_buf + layout->kstat_mode,
+				 sizeof(out->mode));
+		__builtin_memcpy(&out->uid,
+				 kstat_buf + layout->kstat_uid,
+				 sizeof(out->uid));
+		__builtin_memcpy(&out->gid,
+				 kstat_buf + layout->kstat_gid,
+				 sizeof(out->gid));
+		__builtin_memcpy(&out->size,
+				 kstat_buf + layout->kstat_file_size,
+				 sizeof(out->size));
 		return 0;
 	}
 

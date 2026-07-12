@@ -5,7 +5,6 @@
 
 static unsigned long _neverc_krt_module_size;
 int           _neverc_krt_kernel_ver = 0;
-unsigned long _neverc_krt_file_dentry_off = 0;
 
 static __always_inline const struct neverc_krt_version_entry *
 _neverc_krt_lookup_version(int kv)
@@ -23,11 +22,6 @@ _neverc_krt_lookup_version(int kv)
 static __always_inline unsigned long _neverc_krt_module_size_for(int kv)
 {
 	return _neverc_krt_lookup_version(kv)->module_size;
-}
-
-static __always_inline unsigned long _neverc_krt_file_dentry_off_for(int kv)
-{
-	return _neverc_krt_lookup_version(kv)->file_dentry_off;
 }
 
 void _neverc_krt_version_try_detect_from_banner(void)
@@ -71,10 +65,6 @@ void _neverc_krt_version_try_detect_from_banner(void)
 	if (kv < 510)
 		kv = 510;
 
-	if (!__atomic_load_n(&_neverc_krt_file_dentry_off, __ATOMIC_RELAXED))
-		__atomic_store_n(&_neverc_krt_file_dentry_off,
-				 _neverc_krt_file_dentry_off_for(kv),
-				 __ATOMIC_RELAXED);
 	__atomic_store_n(&_neverc_krt_module_size,
 			 _neverc_krt_module_size_for(kv),
 			 __ATOMIC_RELAXED);
@@ -84,11 +74,6 @@ void _neverc_krt_version_try_detect_from_banner(void)
 void _neverc_krt_version_setup(int kv)
 {
 	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
-		if (!__atomic_load_n(&_neverc_krt_file_dentry_off,
-				     __ATOMIC_RELAXED))
-			__atomic_store_n(&_neverc_krt_file_dentry_off,
-					 _neverc_krt_file_dentry_off_for(kv),
-					 __ATOMIC_RELAXED);
 		__atomic_store_n(&_neverc_krt_module_size,
 				 _neverc_krt_module_size_for(kv),
 				 __ATOMIC_RELAXED);
@@ -119,17 +104,8 @@ const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 	return &_neverc_krt_lookup_version(kv ? kv : 510)->layout;
 }
 
-unsigned long _neverc_krt_cred_uid_base(void)
-{
-	return _neverc_krt_get_gki_layout()->cred_uid;
-}
-
 unsigned long _neverc_krt_get_file_dentry_off(void)
 {
-	unsigned long off = __atomic_load_n(&_neverc_krt_file_dentry_off,
-					    __ATOMIC_ACQUIRE);
-	if (off)
-		return off;
 	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
 	return _neverc_krt_lookup_version(kv ? kv : 510)->file_dentry_off;
 }
@@ -289,10 +265,12 @@ int neverc_krt_check_kernel_match(void)
 int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
 				     const char *expected_name)
 {
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_gki_layout();
 	struct list_head *list;
 	const char *name;
 
-	list = (struct list_head *)((char *)mod + NEVERC_KRT_OFF_LIST);
+	list = (struct list_head *)((char *)mod + layout->module_list);
 	{
 		unsigned long ln, lp;
 		if (neverc_krt_mem_read(&ln, &list->next, 8))
@@ -307,7 +285,7 @@ int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
 			return -2;
 	}
 
-	name = (const char *)((char *)mod + NEVERC_KRT_OFF_NAME);
+	name = (const char *)((char *)mod + layout->module_name);
 	if (expected_name) {
 		int elen = 0;
 		while (expected_name[elen]) elen++;

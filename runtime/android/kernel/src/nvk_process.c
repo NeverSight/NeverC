@@ -19,6 +19,12 @@ typedef int   (*neverc_krt_send_sig_info_fn)(int sig, void *info,
 typedef void (*neverc_krt_rcu_lock_fn)(void);
 typedef void (*neverc_krt_rcu_unlock_fn)(void);
 
+struct _neverc_krt_task_offsets {
+	unsigned long tasks;
+	unsigned long usage;
+	volatile int resolved;
+};
+
 /* ---- file-local state ---- */
 
 static neverc_krt_task_pid_nr_fn    _neverc_krt_task_pid_nr;
@@ -31,7 +37,7 @@ static neverc_krt_put_task_struct_fn _neverc_krt_put_task_struct;
 static neverc_krt_send_sig_info_fn  _neverc_krt_send_sig_info;
 static struct task_struct          *_neverc_krt_init_task;
 static int                          _neverc_krt_proc_inited;
-static struct neverc_krt_task_offsets _neverc_krt_toff;
+static struct _neverc_krt_task_offsets _neverc_krt_toff;
 static neverc_krt_rcu_lock_fn       _neverc_krt_rcu_read_lock;
 static neverc_krt_rcu_unlock_fn     _neverc_krt_rcu_read_unlock;
 
@@ -39,6 +45,8 @@ static neverc_krt_rcu_unlock_fn     _neverc_krt_rcu_read_unlock;
 unsigned long _neverc_krt_off_comm = 0;
 
 /* ---- implementation ---- */
+
+static const struct _neverc_krt_task_offsets *_neverc_krt_task_offsets(void);
 
 static void _neverc_krt_ensure_pid_ops(void)
 {
@@ -118,12 +126,8 @@ static void _neverc_krt_resolve_task_offsets(void)
 		return;
 
 	layout = _neverc_krt_get_gki_layout();
-	_neverc_krt_toff.comm = layout->task_comm;
 	_neverc_krt_toff.tasks = layout->task_tasks;
 	_neverc_krt_toff.usage = layout->task_usage;
-	_neverc_krt_toff.cred = layout->task_cred;
-	_neverc_krt_toff.mm = layout->task_mm;
-	_neverc_krt_toff.pid_field = layout->task_pid;
 	__atomic_store_n(&_neverc_krt_off_comm, layout->task_comm,
 			 __ATOMIC_RELEASE);
 
@@ -137,14 +141,14 @@ static int _neverc_krt_task_get(struct task_struct *task)
 
 	if (!task)
 		return -1;
-	usage_off = neverc_krt_task_offsets()->usage;
+	usage_off = _neverc_krt_task_offsets()->usage;
 	if (!usage_off)
 		return -1;
 	usage = (refcount_t *)((unsigned long)task + usage_off);
 	return refcount_inc_not_zero(usage) ? 0 : -1;
 }
 
-const struct neverc_krt_task_offsets *neverc_krt_task_offsets(void)
+static const struct _neverc_krt_task_offsets *_neverc_krt_task_offsets(void)
 {
 	if (!__atomic_load_n(&_neverc_krt_toff.resolved, __ATOMIC_ACQUIRE))
 		_neverc_krt_resolve_task_offsets();
@@ -223,7 +227,7 @@ void neverc_krt_put_task(struct task_struct *task)
 	_neverc_krt_ensure_task_lookup();
 	if (!_neverc_krt_put_task_struct)
 		return;
-	usage_off = neverc_krt_task_offsets()->usage;
+	usage_off = _neverc_krt_task_offsets()->usage;
 	if (!usage_off)
 		return;
 
@@ -244,7 +248,7 @@ int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
 	_neverc_krt_ensure_init_task();
 	if (!_neverc_krt_init_task) return -1;
 	init = _neverc_krt_init_task;
-	tasks_off = neverc_krt_task_offsets()->tasks;
+	tasks_off = _neverc_krt_task_offsets()->tasks;
 	if (!tasks_off) return -1;
 
 	if (_neverc_krt_rcu_read_lock) _neverc_krt_rcu_read_lock();
@@ -330,43 +334,12 @@ int neverc_krt_send_signal(int pid, int sig)
 
 int neverc_krt_is_current_root(void)
 {
+	struct neverc_krt_cred_ids ids;
+
 	if (!_neverc_krt_proc_inited) return -1;
-
-	unsigned char *task = (unsigned char *)current;
-
-	if (_neverc_krt_off_cred) {
-		unsigned long cv;
-		if (neverc_krt_mem_read(&cv, task + _neverc_krt_off_cred, 8))
-			return -1;
-		if (cv < 0xFFFF000000000000UL || cv >= 0xFFFFFFFFFFFFF000UL)
-			return -1;
-		unsigned long base = _neverc_krt_off_uid ? _neverc_krt_off_uid
-					  : _neverc_krt_cred_uid_base();
-		u32 uid;
-		if (neverc_krt_mem_read(&uid, (void *)(cv + base), 4))
-			return -1;
-		return uid == 0 ? 1 : 0;
-	}
-
-	unsigned long uid_off = _neverc_krt_cred_uid_base();
-	unsigned long i;
-	for (i = 0x400; i < 0xE00; i += 8) {
-		unsigned long v;
-		if (neverc_krt_mem_read(&v, task + i, 8)) continue;
-		if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {
-			u32 refcnt;
-			if (neverc_krt_mem_read(&refcnt, (void *)v, 4))
-				continue;
-			if (refcnt < 1 || refcnt > 10000) continue;
-			u32 ids[3];
-			if (neverc_krt_mem_read(ids,
-					(void *)(v + uid_off), sizeof(ids)))
-				continue;
-			if (ids[0] == 0 && ids[1] == 0 && ids[2] == 0)
-				return 1;
-		}
-	}
-	return 0;
+	if (neverc_krt_cred_get_ids(current, &ids))
+		return -1;
+	return ids.uid == 0 ? 1 : 0;
 }
 
 int neverc_krt_task_comm_safe(struct task_struct *task, char *buf, int bufsz)

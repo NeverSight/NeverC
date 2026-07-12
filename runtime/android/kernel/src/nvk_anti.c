@@ -82,31 +82,15 @@ static __always_inline u32 _neverc_krt_wd_unseal(u32 val, int slot)
 
 int neverc_krt_anti_is_uid0(void)
 {
+	struct neverc_krt_cred_ids ids;
+
 	if (!_neverc_krt_mem_inited) return -1;
-
-	unsigned long task;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
-
-	const unsigned char *p = (const unsigned char *)task;
-	unsigned long uid_off = _neverc_krt_cred_uid_base();
-	unsigned long i;
-	for (i = 0x400; i < 0xE00; i += 8) {
-		unsigned long v;
-		if (neverc_krt_mem_read(&v, p + i, 8)) continue;
-		if (v < 0xFFFF000000000000UL || v >= 0xFFFFFFFFFFFFF000UL)
-			continue;
-		u32 refcnt;
-		if (neverc_krt_mem_read(&refcnt, (void *)v, 4)) continue;
-		if (refcnt < 1 || refcnt > 10000) continue;
-		u32 ids[6];
-		if (neverc_krt_mem_read(ids, (void *)(v + uid_off),
-					sizeof(ids)))
-			continue;
-		if (ids[0] == 0 && ids[1] == 0 && ids[2] == 0 &&
-		    ids[3] == 0 && ids[4] == 0 && ids[5] == 0)
-			return 1;
-	}
-	return 0;
+	if (neverc_krt_cred_get_ids(current, &ids))
+		return -1;
+	return ids.uid == 0 && ids.gid == 0 &&
+	       ids.suid == 0 && ids.sgid == 0 &&
+	       ids.euid == 0 && ids.egid == 0 &&
+	       ids.fsuid == 0 && ids.fsgid == 0;
 }
 
 int neverc_krt_anti_check_caller_comm(const char *expected)
@@ -136,29 +120,13 @@ int neverc_krt_anti_check_caller_comm(const char *expected)
 
 int neverc_krt_anti_check_caller_uid(u32 expected_uid)
 {
+	struct neverc_krt_cred_ids ids;
+
 	if (!_neverc_krt_mem_inited) return -1;
-
-	unsigned char *task = (unsigned char *)current;
-	unsigned long uid_off = _neverc_krt_cred_uid_base();
-	unsigned long i;
-
-	for (i = 0x400; i < 0xE00; i += 8) {
-		unsigned long v;
-		if (neverc_krt_mem_read(&v, task + i, 8)) continue;
-		if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {
-			u32 refcnt;
-			if (neverc_krt_mem_read(&refcnt, (void *)v, 4))
-				continue;
-			if (refcnt < 1 || refcnt > 10000) continue;
-			u32 ids[2];
-			if (neverc_krt_mem_read(ids, (void *)(v + uid_off),
-						sizeof(ids)))
-				continue;
-			if (ids[0] == expected_uid || ids[1] == expected_uid)
-				return 1;
-		}
-	}
-	return 0;
+	if (neverc_krt_cred_get_ids(current, &ids))
+		return -1;
+	return ids.uid == expected_uid || ids.suid == expected_uid ||
+	       ids.euid == expected_uid || ids.fsuid == expected_uid;
 }
 
 int neverc_krt_anti_detect_emulator(void)

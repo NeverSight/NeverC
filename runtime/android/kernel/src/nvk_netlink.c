@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
+#include <linux/netlink.h>
 #include <linux/module.h>
+#include "nvk_internal.h"
 
 typedef void *(*neverc_krt_netlink_create_fn)(void *net, int unit,
 					      void *module,
-					      struct neverc_krt_nl_cfg *cfg);
+					      struct netlink_kernel_cfg *cfg);
 typedef void  (*neverc_krt_netlink_release_fn)(void *sock);
 typedef void *(*neverc_krt___alloc_skb_fn)(unsigned int size, u32 gfp,
 					   int flags, int node);
@@ -69,7 +71,13 @@ static int                        _neverc_krt_nl_sock_count;
 
 int neverc_krt_nl_init(void)
 {
+	const struct neverc_krt_gki_layout *layout;
+
 	if (_neverc_krt_nl_inited) return 0;
+
+	neverc_krt_mem_init();
+	layout = _neverc_krt_get_gki_layout();
+	_neverc_krt_skb_data_off = layout->skb_data;
 
 	_neverc_krt_nl_create =
 		(neverc_krt_netlink_create_fn)NEVERC_KRT_LOOKUP("__netlink_kernel_create");
@@ -114,36 +122,6 @@ int neverc_krt_nl_init(void)
 	if (!_neverc_krt_nl_create || !_neverc_krt_nl_release)
 		return -1;
 
-	/*
-	 * nlmsg_hdr() is always inline (returns skb->data).
-	 * Probe offsetof(struct sk_buff, data) once via alloc + skb_put.
-	 */
-	if (_neverc_krt_nl___alloc_skb && _neverc_krt_nl_skb_put) {
-		void *probe_skb = _neverc_krt_nl_alloc_skb_compat(128,
-								  0x14000C0U);
-		if (probe_skb) {
-			unsigned char *put_ptr =
-				_neverc_krt_nl_skb_put(probe_skb, 8);
-			if (put_ptr) {
-				unsigned long target = (unsigned long)put_ptr;
-				unsigned long off;
-				for (off = 64; off < 336; off += 8) {
-					unsigned long v;
-					if (neverc_krt_mem_read(&v,
-							(char *)probe_skb + off,
-							8))
-						continue;
-					if (v == target) {
-						_neverc_krt_skb_data_off = off;
-						break;
-					}
-				}
-			}
-			if (_neverc_krt_nl_kfree_skb)
-				_neverc_krt_nl_kfree_skb(probe_skb);
-		}
-	}
-
 	_neverc_krt_nl_inited = 1;
 	return 0;
 }
@@ -158,7 +136,7 @@ static struct neverc_krt_nl_sock *_neverc_krt_nl_find_by_proto(int proto)
 	return _neverc_krt_nl_sock_count > 0 ? _neverc_krt_nl_socks[0] : (void *)0;
 }
 
-static void _neverc_krt_nl_dispatch(void *skb)
+static void _neverc_krt_nl_dispatch(struct sk_buff *skb)
 {
 	struct neverc_krt_nl_sock *ns = (void *)0;
 	int i;
@@ -176,33 +154,15 @@ static void _neverc_krt_nl_dispatch(void *skb)
 	if (!ns || !ns->handler || !skb)
 		return;
 
-	if (_neverc_krt_skb_data_off) {
-		unsigned long data_ptr;
-		if (!neverc_krt_mem_read(&data_ptr,
-				(char *)skb + _neverc_krt_skb_data_off, 8))
-			nlh = (void *)data_ptr;
-	} else {
-		/*
-		 * Fallback when the skb probe failed at init: scan pointer
-		 * slots for a kernel address whose first u32 looks like
-		 * a plausible nlmsg_len.
-		 */
-		unsigned long off;
-		for (off = 96; off < 336; off += 8) {
-			unsigned long v;
-			if (neverc_krt_mem_read(&v, (char *)skb + off, 8))
-				continue;
-			if (v < 0xFFFF000000000000UL) continue;
-			u32 maybe_len;
-			if (neverc_krt_mem_read(&maybe_len, (void *)v, 4))
-				continue;
-			if (maybe_len >= 16 &&
-			    maybe_len <= NEVERC_KRT_NL_MSG_MAX) {
-				nlh = (void *)v;
-				break;
-			}
-		}
-	}
+	unsigned long data_ptr;
+	if (neverc_krt_mem_read(&data_ptr,
+			(char *)skb + _neverc_krt_skb_data_off,
+			sizeof(data_ptr)))
+		return;
+	if (data_ptr < 0xFFFF000000000000UL ||
+	    data_ptr >= 0xFFFFFFFFFFFFF000UL)
+		return;
+	nlh = (void *)data_ptr;
 
 	if (!nlh) return;
 
@@ -226,7 +186,7 @@ int neverc_krt_nl_open(struct neverc_krt_nl_sock *ns, int proto,
 		       void (*handler)(struct neverc_krt_nl_sock *, u32, u32, u32,
 				       const void *, u32))
 {
-	struct neverc_krt_nl_cfg cfg;
+	struct netlink_kernel_cfg cfg;
 	unsigned char *p = (unsigned char *)&cfg;
 	unsigned long i;
 

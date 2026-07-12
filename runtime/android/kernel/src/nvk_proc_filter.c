@@ -104,7 +104,6 @@ static neverc_krt_vfs_read_fn     _neverc_krt_orig_vfs_read;
 static int                        _neverc_krt_vfs_read_interposed;
 static struct neverc_krt_vis_file_rewrite_entry _neverc_krt_file_rewrites[NEVERC_KRT_VIS_FILE_REWRITE_MAX];
 static int                        _neverc_krt_vis_file_rewrite_cnt;
-static int                        _neverc_krt_file_dentry_probed;
 
 
 /* ==================================================================== */
@@ -477,13 +476,17 @@ static int _neverc_krt_net_port_filtered(u16 port)
 
 static int _neverc_krt_extract_ports(void *sk, u16 *sport, u16 *dport)
 {
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_gki_layout();
 	if (!sk) return -1;
 	const unsigned char *p = (const unsigned char *)sk;
 	u16 dp_be, sp_host;
 
-	if (neverc_krt_mem_read(&dp_be, p + NEVERC_KRT_SKC_DPORT_OFF, 2))
+	if (neverc_krt_mem_read(
+		    &dp_be, p + layout->sock_dport, sizeof(dp_be)))
 		return -1;
-	if (neverc_krt_mem_read(&sp_host, p + NEVERC_KRT_SKC_NUM_OFF, 2))
+	if (neverc_krt_mem_read(
+		    &sp_host, p + layout->sock_num, sizeof(sp_host)))
 		return -1;
 
 	*dport = ((dp_be >> 8) & 0xFF) | ((dp_be & 0xFF) << 8);
@@ -646,76 +649,11 @@ void neverc_krt_vis_cmdline_filter_cleanup(void)
 /*  File content rewrite (build.prop, /proc/version)                   */
 /* ==================================================================== */
 
-static int _neverc_krt_try_dentry_at(unsigned long file_addr, unsigned long off,
-				     unsigned long *out_dentry)
-{
-	unsigned long dentry = 0, name_ptr = 0;
-	if (neverc_krt_mem_read(&dentry, (void *)(file_addr + off), 8))
-		return 0;
-	dentry &= ~(0xFFUL << 56);
-	if (dentry < 0xFFFF000000000000UL ||
-	    dentry >= 0xFFFFFFFFFFFFF000UL)
-		return 0;
-	if (neverc_krt_mem_read(&name_ptr,
-			 (void *)(dentry + NEVERC_KRT_DENTRY_DNAME_OFF),
-			 8))
-		return 0;
-	name_ptr &= ~(0xFFUL << 56);
-	if (name_ptr < 0xFFFF000000000000UL)
-		return 0;
-	unsigned char ch;
-	if (neverc_krt_mem_read(&ch, (void *)name_ptr, 1))
-		return 0;
-	if (ch < 0x20 || ch > 0x7E)
-		return 0;
-	*out_dentry = dentry;
-	return 1;
-}
-
-static int _neverc_krt_probe_file_dentry_off(void *file)
-{
-	unsigned long addr = (unsigned long)file;
-	unsigned long dentry;
-	unsigned long off;
-
-	unsigned long hint = _neverc_krt_get_file_dentry_off();
-	if (_neverc_krt_try_dentry_at(addr, hint, &dentry)) {
-		__atomic_store_n(&_neverc_krt_file_dentry_off, hint,
-				 __ATOMIC_RELEASE);
-		return 0;
-	}
-
-	static const unsigned long candidates[] = {
-		0x18, 0x48, 0xA0, 0x98, 0x50, 0x40, 0x58, 0x60,
-		0x68, 0x70, 0x78, 0x80, 0x88, 0x90, 0xA8, 0xB0
-	};
-	int i;
-	for (i = 0; i < (int)(sizeof(candidates)/sizeof(candidates[0])); i++) {
-		off = candidates[i];
-		if (off == hint)
-			continue;
-		if (_neverc_krt_try_dentry_at(addr, off, &dentry)) {
-			__atomic_store_n(&_neverc_krt_file_dentry_off, off,
-					 __ATOMIC_RELEASE);
-			return 0;
-		}
-	}
-
-	__atomic_store_n(&_neverc_krt_file_dentry_off, hint,
-			 __ATOMIC_RELEASE);
-	return -1;
-}
-
 static int _neverc_krt_file_match_path(void *file, const char *target)
 {
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_gki_layout();
 	unsigned long dentry = 0, name_ptr = 0;
-
-	if (!__atomic_load_n(&_neverc_krt_file_dentry_probed,
-			     __ATOMIC_ACQUIRE) && file) {
-		if (!__atomic_exchange_n(&_neverc_krt_file_dentry_probed, 1,
-					__ATOMIC_ACQ_REL))
-			_neverc_krt_probe_file_dentry_off(file);
-	}
 
 	unsigned long off = _neverc_krt_get_file_dentry_off();
 
@@ -728,7 +666,7 @@ static int _neverc_krt_file_match_path(void *file, const char *target)
 		return 0;
 
 	if (neverc_krt_mem_read(&name_ptr,
-			 (void *)(dentry + NEVERC_KRT_DENTRY_DNAME_OFF), 8))
+			 (void *)(dentry + layout->dentry_name), 8))
 		return 0;
 	name_ptr &= ~(0xFFUL << 56);
 	if (name_ptr < 0xFFFF000000000000UL) return 0;
@@ -754,13 +692,6 @@ static long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
 {
 	long ret;
 	if (!_neverc_krt_orig_vfs_read) return -1;
-
-	if (!__atomic_load_n(&_neverc_krt_file_dentry_probed,
-			     __ATOMIC_ACQUIRE) && file) {
-		if (!__atomic_exchange_n(&_neverc_krt_file_dentry_probed, 1,
-					__ATOMIC_ACQ_REL))
-			_neverc_krt_probe_file_dentry_off(file);
-	}
 
 	ret = _neverc_krt_orig_vfs_read(file, buf, count, pos);
 	if (ret <= 0 || !_neverc_krt_vis_file_rewrite_cnt || !_neverc_krt_copy_from_user ||

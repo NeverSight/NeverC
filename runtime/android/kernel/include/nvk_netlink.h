@@ -8,28 +8,6 @@
 #define NEVERC_KRT_NL_MSG_MAX     4096
 #define NEVERC_KRT_NL_GRP_DEFAULT 1
 
-struct neverc_krt_nl_msg_hdr {
-	u32 type;
-	u32 seq;
-	u32 len;
-	u32 pid;
-};
-
-#define NEVERC_KRT_NL_HDR_SIZE  sizeof(struct neverc_krt_nl_msg_hdr)
-
-struct neverc_krt_nl_cfg {
-	u32 groups;
-	u32 flags;
-	void (*input)(void *skb);
-	/*
-	 * Padding to cover the kernel's struct netlink_kernel_cfg tail:
-	 *   5.10-6.6: cb_mutex(8) + bind(8) + unbind(8) + compare/release(8) = 32
-	 *   6.12-6.18: bind(8) + unbind(8) + release(8)                      = 24
-	 * Must be zeroed before passing to __netlink_kernel_create.
-	 */
-	unsigned char __pad[32];
-};
-
 int neverc_krt_nl_init(void);
 
 struct neverc_krt_nl_sock {

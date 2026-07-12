@@ -6,6 +6,15 @@
 typedef int (*neverc_krt_binder_ioctl_fn)(void *filp, unsigned int cmd,
 					  unsigned long arg);
 
+struct neverc_krt_binder_write_read {
+	long write_size;
+	long write_consumed;
+	unsigned long write_buffer;
+	long read_size;
+	long read_consumed;
+	unsigned long read_buffer;
+};
+
 struct neverc_krt_binder_filter {
 	neverc_krt_binder_filter_fn fn;
 	u32                  target_code;

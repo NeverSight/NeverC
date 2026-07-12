@@ -15,15 +15,6 @@
 #define NEVERC_KRT_BC_TRANSACTION       0x40407300U
 #define NEVERC_KRT_BC_REPLY             0x40407301U
 
-struct neverc_krt_binder_write_read {
-	long write_size;
-	long write_consumed;
-	unsigned long write_buffer;
-	long read_size;
-	long read_consumed;
-	unsigned long read_buffer;
-};
-
 struct neverc_krt_binder_txn_data {
 	u32 target_handle;
 	u32 cookie_lo;

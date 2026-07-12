@@ -36,8 +36,6 @@ static neverc_krt_mmap_read_unlock_fn  _neverc_krt_mmap_read_unlock;
 neverc_krt_get_task_mm_fn              _neverc_krt_get_task_mm = (void *)0;
 neverc_krt_mmput_fn                    _neverc_krt_mmput = (void *)0;
 static int                             _neverc_krt_vma_inited;
-static unsigned long                   _neverc_krt_off_mm;
-static unsigned long                   _neverc_krt_off_vm_flags;
 
 /* ---- internal types (continued) ---- */
 
@@ -50,8 +48,8 @@ struct _neverc_krt_find_map_ctx {
 
 /* ---- internal helpers ---- */
 
-static void *_neverc_krt_task_mm(struct task_struct *task);
-static void _neverc_krt_detect_vm_flags_off(const void *vma);
+static void *_neverc_krt_task_mm(struct task_struct *task, int *referenced);
+static void _neverc_krt_task_mm_put(void *mm, int referenced);
 static void _neverc_krt_read_vma_info(const void *vma, struct neverc_krt_vma_info *info);
 static int _neverc_krt_find_map_cb(const struct neverc_krt_vma_info *vma, void *data);
 
@@ -93,147 +91,78 @@ int neverc_krt_vma_init(void)
 	       (_neverc_krt_access_task_vm || _neverc_krt_access_mm_vm) ? 0 : -1;
 }
 
-static void *_neverc_krt_task_mm(struct task_struct *task)
+static void *_neverc_krt_task_mm(struct task_struct *task, int *referenced)
 {
+	const struct neverc_krt_gki_layout *layout;
+	unsigned long mm;
+
+	*referenced = 0;
 	if (!task) return (void *)0;
 
-	if (__atomic_load_n(&_neverc_krt_off_mm, __ATOMIC_ACQUIRE) == 0) {
-		/*
-		 * Method 1 (6.1+safe): ask the kernel for mm, then scan
-		 * task_struct to discover at which offset the pointer lives.
-		 * Works regardless of mm_struct layout changes (5.10 mmap
-		 * pointer vs 6.1+ maple_tree first field).
-		 */
-		if (_neverc_krt_get_task_mm && _neverc_krt_mmput) {
-			void *mm = _neverc_krt_get_task_mm(task);
-			if (mm) {
-				const unsigned char *p =
-					(const unsigned char *)task;
-				unsigned long i;
-				for (i = 0x100; i < 0xE00; i += 8) {
-					unsigned long v;
-					if (neverc_krt_mem_read(&v, p + i, 8))
-						continue;
-					if (v == (unsigned long)mm) {
-						__atomic_store_n(
-							&_neverc_krt_off_mm,
-							i, __ATOMIC_RELEASE);
-						break;
-					}
-				}
-				_neverc_krt_mmput(mm);
-			}
-		}
+	if (_neverc_krt_get_task_mm && _neverc_krt_mmput) {
+		void *result = _neverc_krt_get_task_mm(task);
 
-		/*
-		 * Method 2 (fallback): heuristic scan if get_task_mm was
-		 * not available.  Checks that the first 8 bytes of the
-		 * candidate struct look like a kernel pointer — only
-		 * reliable on 5.10/5.15 where mm_struct starts with the
-		 * mmap VMA pointer.
-		 */
-		if (__atomic_load_n(&_neverc_krt_off_mm, __ATOMIC_ACQUIRE)
-		    == 0) {
-			const unsigned char *p =
-				(const unsigned char *)task;
-			unsigned long i;
-			for (i = 0x200; i < 0xE00; i += 8) {
-				unsigned long v;
-				if (neverc_krt_mem_read(&v, p + i, 8))
-					continue;
-				if (v < 0xFFFF000000000000UL || v == 0)
-					continue;
-				unsigned long first;
-				if (neverc_krt_mem_read(&first,
-						       (void *)v, 8))
-					continue;
-				if (first > 0xFFFF000000000000UL) {
-					unsigned long second;
-					if (neverc_krt_mem_read(
-						    &second,
-						    (void *)(v + 8), 8))
-						continue;
-					if (second > 0xFFFF000000000000UL ||
-					    second == 0) {
-						__atomic_store_n(
-							&_neverc_krt_off_mm,
-							i,
-							__ATOMIC_RELEASE);
-						break;
-					}
-				}
-			}
+		if (result) {
+			*referenced = 1;
+			return result;
 		}
 	}
 
-	if (!_neverc_krt_off_mm) return (void *)0;
-	unsigned long mm_val;
-	if (neverc_krt_mem_read(&mm_val,
-			(void *)((unsigned long)task + _neverc_krt_off_mm), 8))
+	layout = _neverc_krt_get_gki_layout();
+	if (neverc_krt_mem_read(&mm,
+			(const char *)task + layout->task_mm, sizeof(mm)))
 		return (void *)0;
-	return (void *)mm_val;
+	if (mm < 0xFFFF000000000000UL ||
+	    mm >= 0xFFFFFFFFFFFFF000UL)
+		return (void *)0;
+	return (void *)mm;
 }
 
-static void _neverc_krt_detect_vm_flags_off(const void *vma)
+static void _neverc_krt_task_mm_put(void *mm, int referenced)
 {
-	if (__atomic_load_n(&_neverc_krt_off_vm_flags, __ATOMIC_ACQUIRE))
-		return;
-
-	unsigned long start, end;
-	if (neverc_krt_mem_read(&start, vma, 8))
-		return;
-	if (neverc_krt_mem_read(&end, (const char *)vma + 8, 8))
-		return;
-	if (end <= start || start == 0) return;
-
-	unsigned long i;
-	for (i = 2; i < 16; i++) {
-		unsigned long val;
-		if (neverc_krt_mem_read(&val, (const char *)vma + i * 8, 8))
-			continue;
-		if (val == 0 || val >= 0xFFFF000000000000UL) continue;
-		if (val > 0x100000) continue;
-		if (val & NEVERC_KRT_VM_READ) {
-			__atomic_store_n(&_neverc_krt_off_vm_flags, i * 8,
-					 __ATOMIC_RELEASE);
-			return;
-		}
-	}
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (kv >= 601)
-		__atomic_store_n(&_neverc_krt_off_vm_flags, 32, __ATOMIC_RELEASE);
-	else
-		__atomic_store_n(&_neverc_krt_off_vm_flags, 80, __ATOMIC_RELEASE);
+	if (mm && referenced && _neverc_krt_mmput)
+		_neverc_krt_mmput(mm);
 }
 
-static void _neverc_krt_read_vma_info(const void *vma, struct neverc_krt_vma_info *info)
+static void _neverc_krt_read_vma_info(const void *vma,
+				      struct neverc_krt_vma_info *info)
 {
-	if (neverc_krt_mem_read(&info->start, vma, 8)) {
-		info->start = 0; info->end = 0; info->flags = 0;
-		info->pgoff = 0; return;
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_gki_layout();
+	unsigned long raw_flags = 0;
+
+	__builtin_memset(info, 0, sizeof(*info));
+	if (neverc_krt_mem_read(&info->start,
+			(const char *)vma + layout->vma_start,
+			sizeof(info->start)))
+		return;
+	if (neverc_krt_mem_read(&info->end,
+			(const char *)vma + layout->vma_end,
+			sizeof(info->end))) {
+		info->end = 0;
+		return;
 	}
-	if (neverc_krt_mem_read(&info->end, (const char *)vma + 8, 8)) {
-		info->end = 0; info->flags = 0; info->pgoff = 0; return;
-	}
-	_neverc_krt_detect_vm_flags_off(vma);
-	unsigned long raw_flags;
 	if (neverc_krt_mem_read(&raw_flags,
-			(const char *)vma + _neverc_krt_off_vm_flags, 8))
+			(const char *)vma + layout->vma_flags,
+			sizeof(raw_flags)))
 		raw_flags = 0;
+	if (neverc_krt_mem_read(&info->pgoff,
+			(const char *)vma + layout->vma_pgoff,
+			sizeof(info->pgoff)))
+		info->pgoff = 0;
 	info->flags = raw_flags & 0xFFFF;
-	info->pgoff = 0;
 }
 
 int neverc_krt_vma_find(struct task_struct *task, unsigned long addr,
 			struct neverc_krt_vma_info *info)
 {
 	void *mm, *vma;
-	int locked = 0;
+	int locked = 0, mm_referenced = 0;
 
 	if (!_neverc_krt_find_vma || !info)
 		return -1;
 
-	mm = _neverc_krt_task_mm(task);
+	mm = _neverc_krt_task_mm(task, &mm_referenced);
 	if (!mm) return -2;
 
 	if (_neverc_krt_mmap_read_lock) {
@@ -244,12 +173,14 @@ int neverc_krt_vma_find(struct task_struct *task, unsigned long addr,
 	vma = _neverc_krt_find_vma(mm, addr);
 	if (!vma) {
 		if (locked) _neverc_krt_mmap_read_unlock(mm);
+		_neverc_krt_task_mm_put(mm, mm_referenced);
 		return -3;
 	}
 
 	_neverc_krt_read_vma_info(vma, info);
 
 	if (locked) _neverc_krt_mmap_read_unlock(mm);
+	_neverc_krt_task_mm_put(mm, mm_referenced);
 
 	if (addr < info->start)
 		return -3;
@@ -261,12 +192,12 @@ int neverc_krt_vma_walk(struct task_struct *task,
 			neverc_krt_vma_callback_t callback, void *data)
 {
 	void *mm;
-	int count = 0, locked = 0;
+	int count = 0, locked = 0, mm_referenced = 0;
 
 	if (!_neverc_krt_find_vma || !callback)
 		return -1;
 
-	mm = _neverc_krt_task_mm(task);
+	mm = _neverc_krt_task_mm(task, &mm_referenced);
 	if (!mm) return -2;
 
 	if (_neverc_krt_mmap_read_lock) {
@@ -296,6 +227,7 @@ int neverc_krt_vma_walk(struct task_struct *task,
 	}
 
 	if (locked) _neverc_krt_mmap_read_unlock(mm);
+	_neverc_krt_task_mm_put(mm, mm_referenced);
 	return count;
 }
 
@@ -307,9 +239,14 @@ long neverc_krt_vma_read_remote(struct task_struct *task,
 		return _neverc_krt_access_task_vm(task, addr, buf, (int)len, 0);
 
 	if (_neverc_krt_access_mm_vm) {
-		void *mm = _neverc_krt_task_mm(task);
+		int mm_referenced = 0;
+		long ret;
+		void *mm = _neverc_krt_task_mm(task, &mm_referenced);
+
 		if (!mm) return -1;
-		return _neverc_krt_access_mm_vm(mm, addr, buf, (int)len, 0);
+		ret = _neverc_krt_access_mm_vm(mm, addr, buf, (int)len, 0);
+		_neverc_krt_task_mm_put(mm, mm_referenced);
+		return ret;
 	}
 
 	unsigned long pa = neverc_krt_translate_user(addr);
@@ -330,10 +267,15 @@ long neverc_krt_vma_write_remote(struct task_struct *task,
 					   (int)len, 1);
 
 	if (_neverc_krt_access_mm_vm) {
-		void *mm = _neverc_krt_task_mm(task);
+		int mm_referenced = 0;
+		long ret;
+		void *mm = _neverc_krt_task_mm(task, &mm_referenced);
+
 		if (!mm) return -1;
-		return _neverc_krt_access_mm_vm(mm, addr, (void *)buf,
-					 (int)len, 1);
+		ret = _neverc_krt_access_mm_vm(mm, addr, (void *)buf,
+					      (int)len, 1);
+		_neverc_krt_task_mm_put(mm, mm_referenced);
+		return ret;
 	}
 
 	unsigned long pa = neverc_krt_translate_user(addr);

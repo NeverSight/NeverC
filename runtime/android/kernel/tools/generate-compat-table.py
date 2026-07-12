@@ -26,13 +26,27 @@ LAYOUT_FIELDS = (
     ("task_usage", "task_struct", "usage"),
     ("task_mm", "task_struct", "mm"),
     ("task_pid", "task_struct", "pid"),
+    ("task_thread_pid", "task_struct", "thread_pid"),
     ("task_group_leader", "task_struct", "group_leader"),
     ("task_real_cred", "task_struct", "real_cred"),
     ("task_cred", "task_struct", "cred"),
     ("task_comm", "task_struct", "comm"),
+    ("task_nsproxy", "task_struct", "nsproxy"),
+    ("task_seccomp", "task_struct", "seccomp"),
     ("cred_uid", "cred", "uid"),
+    ("cred_gid", "cred", "gid"),
+    ("cred_suid", "cred", "suid"),
+    ("cred_sgid", "cred", "sgid"),
+    ("cred_euid", "cred", "euid"),
+    ("cred_egid", "cred", "egid"),
+    ("cred_fsuid", "cred", "fsuid"),
+    ("cred_fsgid", "cred", "fsgid"),
     ("cred_securebits", "cred", "securebits"),
     ("cred_cap_inheritable", "cred", "cap_inheritable"),
+    ("cred_cap_permitted", "cred", "cap_permitted"),
+    ("cred_cap_effective", "cred", "cap_effective"),
+    ("cred_cap_bset", "cred", "cap_bset"),
+    ("cred_cap_ambient", "cred", "cap_ambient"),
     ("vma_start", "vm_area_struct", "vm_start"),
     ("vma_end", "vm_area_struct", "vm_end"),
     ("vma_mm", "vm_area_struct", "vm_mm"),
@@ -42,6 +56,30 @@ LAYOUT_FIELDS = (
     ("vma_file", "vm_area_struct", "vm_file"),
     ("vmap_va_start", "vmap_area", "va_start"),
     ("vmap_va_end", "vmap_area", "va_end"),
+    ("module_list", "module", "list"),
+    ("module_name", "module", "name"),
+    (
+        "module_kobj",
+        (("module", "mkobj"), ("module_kobject", "kobj")),
+        None,
+    ),
+    ("kobject_name", "kobject", "name"),
+    ("skb_data", "sk_buff", "data"),
+    ("sock_dport", "sock_common", "skc_dport"),
+    ("sock_num", "sock_common", "skc_num"),
+    ("nsproxy_mnt_ns", "nsproxy", "mnt_ns"),
+    ("nsproxy_net_ns", "nsproxy", "net_ns"),
+    ("seccomp_mode", "seccomp", "mode"),
+    ("kstat_size", "kstat", None),
+    ("kstat_mode", "kstat", "mode"),
+    ("kstat_uid", "kstat", "uid"),
+    ("kstat_gid", "kstat", "gid"),
+    ("kstat_file_size", "kstat", "size"),
+    (
+        "dentry_name",
+        (("dentry", "d_name"), ("qstr", "name")),
+        None,
+    ),
 )
 
 
@@ -52,6 +90,22 @@ def member(layouts, structure, field):
         raise ValueError(
             f"manifest lacks {structure}.{field}"
         ) from error
+
+
+def layout_value(layouts, structure, field):
+    if isinstance(structure, tuple):
+        return sum(
+            member(layouts, nested_structure, nested_field)
+            for nested_structure, nested_field in structure
+        )
+    if field is None:
+        try:
+            return layouts[structure]["size"]
+        except KeyError as error:
+            raise ValueError(
+                f"manifest lacks sizeof({structure})"
+            ) from error
+    return member(layouts, structure, field)
 
 
 def load_profiles(root):
@@ -117,7 +171,7 @@ def render_table(profiles):
         for output_name, structure, field in LAYOUT_FIELDS:
             lines.append(
                 f"\t\t\t.{output_name} = "
-                f"{member(layouts, structure, field)},"
+                f"{layout_value(layouts, structure, field)},"
             )
         lines.extend(["\t\t},", "\t},"])
 

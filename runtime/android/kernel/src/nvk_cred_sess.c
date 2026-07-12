@@ -230,19 +230,25 @@ int neverc_krt_cred_set_ids_pid(int pid, u32 target_uid, u32 target_gid)
 		       target_uid, target_gid, target_uid, target_gid };
 	int ret;
 
+	layout = _neverc_krt_get_gki_layout();
+	base = layout->cred_uid;
+	if (layout->cred_gid != base + 4 ||
+	    layout->cred_suid != base + 8 ||
+	    layout->cred_sgid != base + 12 ||
+	    layout->cred_euid != base + 16 ||
+	    layout->cred_egid != base + 20 ||
+	    layout->cred_fsuid != base + 24 ||
+	    layout->cred_fsgid != base + 28)
+		return -2;
+
 	task = neverc_krt_find_task(pid);
 	if (!task)
 		return -1;
-	if (!_neverc_krt_off_cred)
-		_neverc_krt_cred_find_uid_offset();
-	if (!_neverc_krt_off_cred) {
-		ret = -2;
-		goto out;
-	}
 
 	if (neverc_krt_mem_read(&cred_raw,
 			(void *)((unsigned long)task +
-				 _neverc_krt_off_cred), 8)) {
+				 layout->task_real_cred),
+			sizeof(cred_raw))) {
 		ret = -3;
 		goto out;
 	}
@@ -259,9 +265,6 @@ int neverc_krt_cred_set_ids_pid(int pid, u32 target_uid, u32 target_gid)
 		goto out;
 	}
 
-	base = _neverc_krt_off_uid ? _neverc_krt_off_uid
-				    : _neverc_krt_cred_uid_base();
-
 	ret = neverc_krt_mem_write_protected(cred_addr + base, ids, sizeof(ids));
 	if (ret)
 		goto out;
@@ -271,7 +274,6 @@ int neverc_krt_cred_set_ids_pid(int pid, u32 target_uid, u32 target_gid)
 	 * real_cred.  Both task offsets come from the selected GKI manifest;
 	 * do not infer their relationship from a particular kernel version.
 	 */
-	layout = _neverc_krt_get_gki_layout();
 	eff_off = layout->task_cred;
 	if (neverc_krt_mem_read(&eff_cred_ptr,
 			(void *)((unsigned long)task + eff_off), 8)) {

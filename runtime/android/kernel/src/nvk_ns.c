@@ -1,19 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
+#include "nvk_internal.h"
 
 typedef void *(*neverc_krt_task_active_pid_ns_fn)(struct task_struct *);
 typedef int   (*neverc_krt_pid_nr_ns_fn)(void *pid, void *ns);
 typedef void *(*neverc_krt_task_pid_fn)(struct task_struct *);
-typedef int   (*neverc_krt_pid_vnr_fn)(void *pid);
-typedef void *(*neverc_krt_get_nsproxy_fn)(struct task_struct *);
 
 static neverc_krt_task_active_pid_ns_fn _neverc_krt_task_pid_ns;
 static neverc_krt_pid_nr_ns_fn          _neverc_krt_pid_nr_ns;
 static neverc_krt_task_pid_fn           _neverc_krt_task_pid_struct;
-static neverc_krt_pid_vnr_fn            _neverc_krt_pid_vnr;
 static int                              _neverc_krt_ns_inited;
-static unsigned long                    _neverc_krt_off_nsproxy;
-static unsigned long                    _neverc_krt_off_thread_pid;
 
 int neverc_krt_ns_init(void)
 {
@@ -27,8 +23,6 @@ int neverc_krt_ns_init(void)
 		(neverc_krt_pid_nr_ns_fn)NEVERC_KRT_LOOKUP("pid_nr_ns");
 	_neverc_krt_task_pid_struct =
 		(neverc_krt_task_pid_fn)NEVERC_KRT_LOOKUP("task_pid");
-	_neverc_krt_pid_vnr =
-		(neverc_krt_pid_vnr_fn)NEVERC_KRT_LOOKUP("pid_vnr");
 
 	_neverc_krt_ns_inited = 1;
 	return 0;
@@ -50,50 +44,31 @@ int neverc_krt_ns_same_pidns(struct task_struct *a, struct task_struct *b)
 	return ns_a == ns_b ? 1 : 0;
 }
 
-/*
- * 6.18+: task_pid() was inlined.  Probe for the thread_pid field
- * by scanning task_struct for a kernel pointer where pid_vnr()
- * returns the expected PID of the current task.
- */
-static void *_neverc_krt_task_pid_probe(struct task_struct *task)
+static void *_neverc_krt_task_pid_ptr(struct task_struct *task)
 {
+	const struct neverc_krt_gki_layout *layout;
+	unsigned long pid;
+
+	if (!task)
+		return (void *)0;
 	if (_neverc_krt_task_pid_struct)
 		return _neverc_krt_task_pid_struct(task);
 
-	if (!_neverc_krt_pid_vnr) return (void *)0;
-
-	if (!_neverc_krt_off_thread_pid) {
-		int cur_pid = neverc_krt_current_pid();
-		if (cur_pid <= 0) return (void *)0;
-		const unsigned char *p = (const unsigned char *)current;
-		unsigned long i;
-		for (i = 0x300; i < 0xC00; i += 8) {
-			unsigned long v;
-			if (neverc_krt_mem_read(&v, p + i, 8)) continue;
-			if (v < 0xFFFF000000000000UL ||
-			    v >= 0xFFFFFFFFFFFFF000UL)
-				continue;
-			int nr = _neverc_krt_pid_vnr((void *)v);
-			if (nr == cur_pid) {
-				_neverc_krt_off_thread_pid = i;
-				break;
-			}
-		}
-	}
-
-	if (!_neverc_krt_off_thread_pid) return (void *)0;
-
-	unsigned long v;
-	if (neverc_krt_mem_read(&v,
-			(const char *)task + _neverc_krt_off_thread_pid, 8))
+	layout = _neverc_krt_get_gki_layout();
+	if (neverc_krt_mem_read(&pid,
+			(const char *)task + layout->task_thread_pid,
+			sizeof(pid)))
 		return (void *)0;
-	return (void *)v;
+	if (pid < 0xFFFF000000000000UL ||
+	    pid >= 0xFFFFFFFFFFFFF000UL)
+		return (void *)0;
+	return (void *)pid;
 }
 
 int neverc_krt_ns_pid_in_ns(struct task_struct *task, void *target_ns)
 {
 	if (!_neverc_krt_pid_nr_ns) return -1;
-	void *pid = _neverc_krt_task_pid_probe(task);
+	void *pid = _neverc_krt_task_pid_ptr(task);
 	if (!pid) return -1;
 	return _neverc_krt_pid_nr_ns(pid, target_ns);
 }
@@ -116,38 +91,26 @@ int neverc_krt_ns_in_root_ns(void)
 
 static void *_neverc_krt_get_nsproxy(struct task_struct *task)
 {
+	const struct neverc_krt_gki_layout *layout;
+	unsigned long nsproxy;
+
 	if (!task) return (void *)0;
 
-	if (_neverc_krt_off_nsproxy) {
-		unsigned long v;
-		if (neverc_krt_mem_read(&v,
-				(void *)((unsigned long)task +
-					 _neverc_krt_off_nsproxy), 8))
-			return (void *)0;
-		return (void *)v;
-	}
-
-	const unsigned char *p = (const unsigned char *)task;
-	unsigned long i;
-	for (i = 0x400; i < 0xC00; i += 8) {
-		unsigned long v;
-		if (neverc_krt_mem_read(&v, p + i, 8)) continue;
-		if (v < 0xFFFF000000000000UL || v == 0) continue;
-
-		unsigned long first, second;
-		if (neverc_krt_mem_read(&first, (void *)v, 8)) continue;
-		if (first < 1 || first > 1000) continue;
-		if (neverc_krt_mem_read(&second, (void *)(v + 8), 8)) continue;
-		if (second > 0xFFFF000000000000UL) {
-			_neverc_krt_off_nsproxy = i;
-			return (void *)v;
-		}
-	}
-	return (void *)0;
+	layout = _neverc_krt_get_gki_layout();
+	if (neverc_krt_mem_read(&nsproxy,
+			(const char *)task + layout->task_nsproxy,
+			sizeof(nsproxy)))
+		return (void *)0;
+	if (nsproxy < 0xFFFF000000000000UL ||
+	    nsproxy >= 0xFFFFFFFFFFFFF000UL)
+		return (void *)0;
+	return (void *)nsproxy;
 }
 
 int neverc_krt_ns_get_info(struct task_struct *task, struct neverc_krt_ns_info *info)
 {
+	const struct neverc_krt_gki_layout *layout;
+
 	if (!task || !info) return -1;
 
 	unsigned char *p = (unsigned char *)info;
@@ -159,16 +122,16 @@ int neverc_krt_ns_get_info(struct task_struct *task, struct neverc_krt_ns_info *
 
 	void *nsproxy = _neverc_krt_get_nsproxy(task);
 	if (nsproxy) {
-		/* struct nsproxy layout (stable 5.10-6.18):
-		 *   [0] count(4)+pad(4)  [1] uts_ns  [2] ipc_ns
-		 *   [3] mnt_ns  [4] pid_ns_for_children  [5] net_ns */
 		unsigned long mnt_val, net_val;
+		layout = _neverc_krt_get_gki_layout();
 		if (!neverc_krt_mem_read(&mnt_val,
-				(const char *)nsproxy + 3 * 8, 8) &&
+				(const char *)nsproxy + layout->nsproxy_mnt_ns,
+				sizeof(mnt_val)) &&
 		    mnt_val > 0xFFFF000000000000UL)
 			info->mnt_ns = (void *)mnt_val;
 		if (!neverc_krt_mem_read(&net_val,
-				(const char *)nsproxy + 5 * 8, 8) &&
+				(const char *)nsproxy + layout->nsproxy_net_ns,
+				sizeof(net_val)) &&
 		    net_val > 0xFFFF000000000000UL)
 			info->net_ns = (void *)net_val;
 	}

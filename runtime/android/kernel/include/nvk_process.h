@@ -5,19 +5,7 @@
 #include <linux/types.h>
 #include <linux/sched.h>
 
-struct neverc_krt_task_offsets {
-	unsigned long comm;
-	unsigned long tasks;
-	unsigned long usage;
-	unsigned long cred;
-	unsigned long mm;
-	unsigned long pid_field;
-	volatile int  resolved;
-};
-
 int neverc_krt_process_init(void);
-
-const struct neverc_krt_task_offsets *neverc_krt_task_offsets(void);
 
 int neverc_krt_current_pid(void);
 

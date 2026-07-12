@@ -21,6 +21,12 @@ BARE_ALWAYS_INLINE = re.compile(r"^\s*__always_inline\b")
 VERSION_BRANCH = re.compile(
     r"^\s*#\s*(?:if|elif)\b.*\bNEVERC_KRT_KERNEL\b"
 )
+COMPILE_TIME_LAYOUT_OFFSET = re.compile(
+    r"\bNEVERC_KRT_(?:"
+    r"OFF_LIST|OFF_NAME|FILE_DENTRY_OFF|DENTRY_DNAME_OFF|"
+    r"SKC_DPORT_OFF|SKC_NUM_OFF|MODULE_SIZE|TASK_CPU"
+    r")\b"
+)
 RAW_PRIVATE_ASM_REFERENCE = re.compile(
     r'"\s*(?:b|bl|adr|adrp|ldr)\s+_neverc_krt_[A-Za-z0-9_]+'
 )
@@ -178,6 +184,15 @@ def check_source(path):
             violations.append(
                 (path, line_number,
                  "source must use compatibility APIs, not version branches")
+            )
+        if COMPILE_TIME_LAYOUT_OFFSET.search(line):
+            violations.append(
+                (
+                    path,
+                    line_number,
+                    "source must use generated runtime layout data, not "
+                    "caller-profile offset macros",
+                )
             )
         if RAW_PRIVATE_ASM_REFERENCE.search(line):
             violations.append(
