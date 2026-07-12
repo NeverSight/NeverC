@@ -13,6 +13,7 @@ NeverC estende il C standard con runtime integrati opzionali, incorporati dirett
 | [**`string`**](string/README.it.md) | `-fbuiltin-string` | Disattivato | Tipo stringa con semantica di valore, metodi con sintassi a punto, gestione automatica della memoria e UTF-8 nativo |
 | [**`mimalloc`**](mimalloc/README.it.md) | `-fbuiltin-mimalloc` | **Attivato** | Allocatore di memoria ad alte prestazioni che sostituisce trasparentemente `malloc`/`free`/`calloc`/`realloc` |
 | [**`xorstr`**](xorstr/README.it.md) | `-fencrypt-call-strings` | Disattivato | Crittografia delle stringhe a tempo di compilazione, decrittazione XOR su stack, algoritmo anti-firma |
+| [**`strhash`**](strhash/README.it.md) | `-fstrhash-algo` / `-fstrhash-fold` | Disattivato | Hash di stringhe a tempo di compilazione, stesso algoritmo a runtime, fold IR opzionale |
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -40,6 +41,9 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 ```
 
 > **Nota:** `xorstr` non usa il modello di bitcode incorporato. La macro esplicita [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.it.md) viene abbassata dal layer Sema (handler `semaBuiltinNeverCXorstr` in `SemaChecking.cpp`), mentre la cifratura automatica opzionale `-fencrypt-call-strings` è eseguita dal pass di trasformazione IR `EncryptCallStringsPass` registrato in **OptimizerLast** (con `XorStrCleanupPass` che azzera i buffer di stack in chiaro tramite `volatile memset`). Vedere la [documentazione xorstr](xorstr/README.it.md) per i dettagli.
+
+> **Nota:** `strhash` non usa il modello di bitcode incorporato. [`NC_STRHASH(s)`](strhash/README.it.md) si riduce a una costante in Sema; `-fstrhash-fold` abilita `StrHashFoldPass`. Vedi la [documentazione strhash](strhash/README.it.md).
+
 
 ---
 
@@ -103,14 +107,17 @@ neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass disattivo 
 neverc/
 ├── include/neverc/Foundation/Builtin/
 │   ├── BuiltinString.h / BuiltinMimalloc.h
-│   └── Builtins.def                      # __builtin_neverc_xorstr
+│   └── Builtins.def                      # __builtin_neverc_xorstr / strhash
 ├── include/neverc/Transforms/XorStr/
 │   └── EncryptCallStringsPass.h / XorStrCleanupPass.h
+├── include/neverc/Transforms/StrHash/    # strhash
+│   └── StrHashFoldPass.h / StrHashCompute.h
 ├── lib/Foundation/Builtin/
 │   ├── BuiltinString.cpp / BuiltinMimalloc.cpp
 │   └── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
 ├── lib/Headers/neverc/
-│   └── xorstr.h / xorstr_impl.inc        # macro NC_XORSTR / NEVERC_XORSTR
+│   ├── xorstr.h / xorstr_impl.inc        # macro NC_XORSTR / NEVERC_XORSTR
+│   └── strhash.h / strhash_impl.inc        # macro NC_STRHASH / NC_STRHASH_AUTO
 ├── lib/Analyze/Checking/SemaChecking.cpp # semaBuiltinNeverCXorstr
 ├── lib/Transforms/XorStr/
 │   └── EncryptCallStringsPass.cpp / XorStrCleanupPass.cpp

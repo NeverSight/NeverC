@@ -13,6 +13,7 @@
 | [**`string`**](string/README.ar.md) | `-fbuiltin-string` | معطل | نوع سلسلة نصية بدلالة القيمة مع أساليب النقطة، إدارة تلقائية للذاكرة ودعم UTF-8 أصلي |
 | [**`mimalloc`**](mimalloc/README.ar.md) | `-fbuiltin-mimalloc` | **مفعّل** | مخصص ذاكرة عالي الأداء يستبدل بشفافية `malloc`/`free`/`calloc`/`realloc` |
 | [**`xorstr`**](xorstr/README.ar.md) | `-fencrypt-call-strings` | معطّل | تشفير السلاسل في وقت التجميع، فك تشفير XOR على المكدس، خوارزمية مضادة للتوقيع |
+| [**`strhash`**](strhash/README.ar.md) | `-fstrhash-algo` / `-fstrhash-fold` | معطّل | تجزئة السلاسل وقت الترجمة بنفس الخوارزمية وقت التشغيل، طي IR اختياري |
 
 ```bash
 neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
@@ -40,6 +41,9 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 ```
 
 > **ملاحظة:** لا يستخدم `xorstr` نموذج bitcode المُضمّن. الماكرو الصريح [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.ar.md) يُخفض في طبقة Sema (المعالج `semaBuiltinNeverCXorstr` في `SemaChecking.cpp`)، والتشفير التلقائي الاختياري `-fencrypt-call-strings` يُنفذ بواسطة تمرير تحويل IR `EncryptCallStringsPass` المسجل في **OptimizerLast** (مع `XorStrCleanupPass` الذي يصفر مخازن النص الواضح في المكدس عبر `volatile memset`). انظر [وثائق xorstr](xorstr/README.ar.md) للتفاصيل.
+
+> **ملاحظة:** `strhash` لا يستخدم أيضاً نموذج bitcode المضمّن. [`NC_STRHASH(s)`](strhash/README.ar.md) يُطوى إلى ثابت في Sema؛ `-fstrhash-fold` يفعّل `StrHashFoldPass`. انظر [وثائق strhash](strhash/README.ar.md).
+
 
 ---
 
@@ -103,14 +107,17 @@ neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass معطّل
 neverc/
 ├── include/neverc/Foundation/Builtin/
 │   ├── BuiltinString.h / BuiltinMimalloc.h
-│   └── Builtins.def                      # __builtin_neverc_xorstr
+│   └── Builtins.def                      # __builtin_neverc_xorstr / strhash
 ├── include/neverc/Transforms/XorStr/
 │   └── EncryptCallStringsPass.h / XorStrCleanupPass.h
+├── include/neverc/Transforms/StrHash/    # strhash
+│   └── StrHashFoldPass.h / StrHashCompute.h
 ├── lib/Foundation/Builtin/
 │   ├── BuiltinString.cpp / BuiltinMimalloc.cpp
 │   └── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
 ├── lib/Headers/neverc/
-│   └── xorstr.h / xorstr_impl.inc        # ماكرو NC_XORSTR / NEVERC_XORSTR
+│   ├── xorstr.h / xorstr_impl.inc        # ماكرو NC_XORSTR / NEVERC_XORSTR
+│   └── strhash.h / strhash_impl.inc        # ماكرو NC_STRHASH / NC_STRHASH_AUTO
 ├── lib/Analyze/Checking/SemaChecking.cpp # semaBuiltinNeverCXorstr
 ├── lib/Transforms/XorStr/
 │   └── EncryptCallStringsPass.cpp / XorStrCleanupPass.cpp

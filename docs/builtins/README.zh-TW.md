@@ -13,6 +13,7 @@ NeverC 透過可選的內建執行時擴展標準 C，這些執行時以 LLVM bi
 | [**`string`**](string/README.zh-TW.md) | `-fbuiltin-string` | 關閉 | 值語義字串型別，支援點呼叫方法、自動記憶體管理和原生 UTF-8 |
 | [**`mimalloc`**](mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | **開啟** | 高效能記憶體配置器，透明替換 `malloc`/`free`/`calloc`/`realloc` |
 | [**`xorstr`**](xorstr/README.zh-TW.md) | `-fencrypt-call-strings` | 關閉 | 編譯期字串加密，堆疊分配 XOR 解密，反簽名偵測演算法 |
+| [**`strhash`**](strhash/README.zh-TW.md) | `-fstrhash-algo` / `-fstrhash-fold` | 關閉 | 編譯期字串雜湊，執行時演算法一致，可選 IR 常數摺疊 |
 
 `string` 內建需要明確啟用；`mimalloc` 對所有 hosted 建置預設開啟（核心、dyncode 和 freestanding 模式下自動抑制）。可以組合使用：
 
@@ -73,6 +74,8 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 每個內建功能在 `neverc/Foundation/Builtin/` 中有一對標頭檔和實作檔。API 提供 `getEmbeddedBitcode()` 和 `isSupported()`。
 
 > **說明：** `xorstr` 不走嵌入式 bitcode 模型。顯式巨集 [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.zh-TW.md) 由 Sema 層降級（處理函式 `semaBuiltinNeverCXorstr` 位於 `SemaChecking.cpp`），可選的 `-fencrypt-call-strings` 自動加密由 IR 變換 Pass `EncryptCallStringsPass` 完成（配套 `XorStrCleanupPass` 負責清零堆疊上明文）。完整分層設計見 [xorstr 文件](xorstr/README.zh-TW.md)。
+
+> **說明：** `strhash` 同樣不走嵌入式 bitcode 模型。[`NC_STRHASH(s)`](strhash/README.zh-TW.md) 在 Sema 摺疊為整數常數；`-fstrhash-fold` 啟用 `StrHashFoldPass`。詳見 [strhash 文件](strhash/README.zh-TW.md)。
 
 ### 第三層：CMake 引導基礎設施
 
@@ -172,6 +175,8 @@ neverc/
 │   ├── EncryptCallStringsPass.h
 │   └── XorStrCleanupPass.h
 │
+├── include/neverc/Transforms/StrHash/    # strhash
+│   └── StrHashFoldPass.h / StrHashCompute.h
 ├── lib/Foundation/
 │   ├── CMakeLists.txt                    # 所有內建功能的引導目標
 │   └── Builtin/
@@ -182,15 +187,18 @@ neverc/
 │       └── gen_mimalloc_source.py        # mimalloc 原始碼產生器
 │
 ├── lib/Headers/neverc/
-│   ├── xorstr.h                          # NC_XORSTR / NEVERC_XORSTR 巨集
-│   └── xorstr_impl.inc                   # __neverc_xorstr_decrypt 輔助函式
+│   ├── xorstr.h / xorstr_impl.inc        # NC_XORSTR / NEVERC_XORSTR
+│   └── strhash.h / strhash_impl.inc      # NC_STRHASH / NC_STRHASH_AUTO
 │
 ├── lib/Analyze/Checking/
-│   └── SemaChecking.cpp                  # semaBuiltinNeverCXorstr 處理函式
+│   └── SemaChecking.cpp                  # xorstr / strhash Sema 處理
 │
 ├── lib/Transforms/XorStr/                # xorstr IR 變換 Pass
 │   ├── EncryptCallStringsPass.cpp        # 自動加密 call 參數中的字串字面量
 │   └── XorStrCleanupPass.cpp             # 清零堆疊上明文緩衝區
+│
+├── lib/Transforms/StrHash/               # strhash IR 變換 Pass
+│   └── StrHashFoldPass.cpp
 │
 ├── lib/Emit/Backend/
 │   ├── BackendUtil.cpp                   # PipelineStartEP + 後置 Pass 註冊

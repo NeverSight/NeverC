@@ -13,6 +13,7 @@ NeverC는 옵트인 방식의 내장 런타임으로 표준 C를 확장합니다
 | [**`string`**](string/README.ko.md) | `-fbuiltin-string` | 꺼짐 | 값 의미론 문자열 타입. 도트 호출 메서드, 자동 메모리 관리, 네이티브 UTF-8 |
 | [**`mimalloc`**](mimalloc/README.ko.md) | `-fbuiltin-mimalloc` | **켜짐** | 고성능 메모리 할당자. `malloc`/`free`/`calloc`/`realloc` 투명 대체 |
 | [**`xorstr`**](xorstr/README.ko.md) | `-fencrypt-call-strings` | 꺼짐 | 컴파일 타임 문자열 암호화, 스택 할당 XOR 복호화, 안티 시그니처 알고리즘 |
+| [**`strhash`**](strhash/README.ko.md) | `-fstrhash-algo` / `-fstrhash-fold` | 꺼짐 | 컴파일 타임 문자열 해시, 런타임과 동일 알고리즘, 선택적 IR 접힘 |
 
 두 내장 기능은 기본적으로 비활성화되며 명시적 옵트인이 필요합니다. 조합 사용 가능:
 
@@ -42,6 +43,8 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 ```
 
 > **참고:** `xorstr`는 임베디드 bitcode 모델을 사용하지 않습니다. 명시적 매크로 [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.ko.md)는 Sema 레이어(`SemaChecking.cpp`의 `semaBuiltinNeverCXorstr` 핸들러)에서 로어링되며, 선택적 `-fencrypt-call-strings` 자동 암호화는 IR 변환 패스 `EncryptCallStringsPass`가 **OptimizerLast** 위치에서 수행합니다(`XorStrCleanupPass`가 스택의 평문을 memset으로 0으로 지움). 자세한 계층 설계는 [xorstr 문서](xorstr/README.ko.md) 참조.
+
+> **참고:** `strhash`도 임베디드 bitcode 모델을 사용하지 않습니다. [`NC_STRHASH(s)`](strhash/README.ko.md)는 Sema에서 정수 상수로 접히며, `-fstrhash-fold`는 `StrHashFoldPass`를 켭니다. [strhash 문서](strhash/README.ko.md) 참조.
 
 ---
 
@@ -117,6 +120,8 @@ neverc/
 │   ├── EncryptCallStringsPass.h
 │   └── XorStrCleanupPass.h
 │
+├── include/neverc/Transforms/StrHash/    # strhash
+│   └── StrHashFoldPass.h / StrHashCompute.h
 ├── lib/Foundation/
 │   ├── CMakeLists.txt                    # 모든 내장의 부트스트랩 타겟
 │   └── Builtin/
@@ -127,15 +132,18 @@ neverc/
 │       └── gen_mimalloc_source.py        # mimalloc 소스 생성기
 │
 ├── lib/Headers/neverc/
-│   ├── xorstr.h                          # NC_XORSTR / NEVERC_XORSTR 매크로
-│   └── xorstr_impl.inc                   # __neverc_xorstr_decrypt 헬퍼
+│   ├── xorstr.h / xorstr_impl.inc        # NC_XORSTR / NEVERC_XORSTR
+│   └── strhash.h / strhash_impl.inc      # NC_STRHASH / NC_STRHASH_AUTO
 │
 ├── lib/Analyze/Checking/
-│   └── SemaChecking.cpp                  # semaBuiltinNeverCXorstr 핸들러
+│   └── SemaChecking.cpp                  # xorstr / strhash Sema 핸들러
 │
 ├── lib/Transforms/XorStr/                # xorstr IR 변환 패스
 │   ├── EncryptCallStringsPass.cpp        # 호출 인자의 문자열 리터럴 자동 암호화
 │   └── XorStrCleanupPass.cpp             # 스택의 평문 버퍼 영점화
+│
+├── lib/Transforms/StrHash/               # strhash IR 변환 패스
+│   └── StrHashFoldPass.cpp
 │
 ├── lib/Emit/Backend/
 │   ├── BackendUtil.cpp                   # PipelineStartEP + 후속 패스 등록

@@ -14,6 +14,7 @@ NeverC extends standard C with opt-in built-in runtimes that are embedded direct
 | [**`string`**](string/README.md) | `-fbuiltin-string`   | Off     | Value-semantic string type with dot-call methods, automatic memory management, and native UTF-8   |
 | [**`mimalloc`**](mimalloc/README.md) | `-fbuiltin-mimalloc` | **On**  | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
 | [**`xorstr`**](xorstr/README.md) | `-fencrypt-call-strings` | Off  | Compile-time string encryption with stack-allocated XOR decryption and anti-signature algorithm   |
+| [**`strhash`**](strhash/README.md) | `-fstrhash-algo` / `-fstrhash-fold` | Off | Compile-time string hashing with matching runtime and optional IR constant folding |
 
 The `string` built-in requires explicit opt-in; `mimalloc` is enabled by default for all hosted builds (automatically suppressed in kernel, dyncode, and freestanding modes). They can be combined:
 
@@ -79,11 +80,14 @@ Each built-in has a header + implementation pair in `neverc/Foundation/Builtin/`
 | `string`   | `BuiltinString.h`                               | `BuiltinString.cpp`                               |
 | `mimalloc` | `BuiltinMimalloc.h`                             | `BuiltinMimalloc.cpp`                             |
 | `xorstr`   | `lib/Headers/neverc/xorstr/xorstr.h` *(user-facing)*   | `lib/Transforms/XorStr/EncryptCallStringsPass.cpp` |
+| `strhash`   | `lib/Headers/neverc/strhash/strhash.h` *(user-facing)* | `lib/Transforms/StrHash/StrHashFoldPass.cpp` |
 
 
 The API provides `getEmbeddedBitcode()` to retrieve the precompiled LLVM bitcode blob, and `isSupported()` to check platform availability.
 
 > **Note:** `xorstr` does not use the embedded-bitcode model. The explicit macro [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.md) is lowered by the Sema layer (handler `semaBuiltinNeverCXorstr` in `SemaChecking.cpp`), and the optional `-fencrypt-call-strings` auto-encryption is performed by the IR transform pass `EncryptCallStringsPass` (with a `XorStrCleanupPass` companion that zeroes plaintext stack buffers). See [xorstr documentation](xorstr/README.md) for the full layered design.
+
+> **Note:** `strhash` likewise does not use the embedded-bitcode model. [`NC_STRHASH(s)` / `NEVERC_STRHASH(s)`](strhash/README.md) folds to an integer constant in Sema (`semaBuiltinNeverCStrHash`); runtime hashing uses NeverC std (`neverc_fnv_sum*` / `neverc_xxhash64`) via `neverc_strhash_rt`. Optional `-fstrhash-fold` enables `StrHashFoldPass` to constant-fold runtime hash calls with literal arguments. See [strhash documentation](strhash/README.md).
 
 ### Layer 3: CMake Bootstrap Infrastructure
 
@@ -117,9 +121,12 @@ if (LangOpts.BuiltinMimalloc) {
 
 The pass parses the embedded bitcode, merges it into the user module via `llvm::Linker::linkModules()`, internalizes helper symbols (keeping only the public API external), and cleans up `llvm.used` / `llvm.compiler.used`.
 
-`xorstr`'s obfuscation passes register at the **post-pass** position (after all optimizations) so that the optimizer cannot constant-fold or undo the encryption:
+`xorstr`'s obfuscation passes and optional `strhash` folding register at the **post-pass** position (after all optimizations) — so encryption is not undone by the optimizer, and constant-arg hash calls can still be folded:
 
 ```cpp
+if (LangOpts.StrHashFold) {
+    MPM.addPass(neverc::strhash::StrHashFoldPass());
+}
 if (LangOpts.EncryptCallStrings) {
     MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
                     LangOpts.EncryptCallStringsMaxLen));
@@ -203,7 +210,7 @@ neverc/
 │   └── Builtin/
 │       ├── BuiltinString.h               # string API
 │       ├── BuiltinMimalloc.h             # mimalloc API
-│       ├── Builtins.def                  # __builtin_neverc_xorstr registration
+│       ├── Builtins.def                  # __builtin_neverc_xorstr / __builtin_neverc_strhash
 │       └── ...
 │
 ├── include/neverc/Invoke/
@@ -212,6 +219,10 @@ neverc/
 ├── include/neverc/Transforms/XorStr/     # xorstr IR pass headers
 │   ├── EncryptCallStringsPass.h
 │   └── XorStrCleanupPass.h
+│
+├── include/neverc/Transforms/StrHash/    # strhash IR pass headers
+│   ├── StrHashCompute.h
+│   └── StrHashFoldPass.h
 │
 ├── lib/Foundation/
 │   ├── CMakeLists.txt                    # Bootstrap targets for all built-ins
@@ -223,15 +234,23 @@ neverc/
 │       └── gen_mimalloc_source.py        # mimalloc source generator
 │
 ├── lib/Headers/neverc/
-│   ├── xorstr.h                          # NC_XORSTR / NEVERC_XORSTR macros
-│   └── xorstr_impl.inc                   # __neverc_xorstr_decrypt helper
+│   ├── xorstr/
+│   │   ├── xorstr.h                      # NC_XORSTR / NEVERC_XORSTR macros
+│   │   └── xorstr_impl.inc               # __neverc_xorstr_decrypt helper
+│   └── strhash/
+│       ├── strhash.h                     # NC_STRHASH / NC_STRHASH_AUTO macros
+│       └── strhash_impl.inc              # neverc_strhash_rt inline dispatch
 │
 ├── lib/Analyze/Checking/
-│   └── SemaChecking.cpp                  # semaBuiltinNeverCXorstr handler
+│   ├── SemaChecking.cpp                  # builtin dispatch
+│   └── SemaCheckingBuiltinNeverC.cpp  # semaBuiltinNeverCXorstr / StrHash
 │
 ├── lib/Transforms/XorStr/                # xorstr IR transform passes
 │   ├── EncryptCallStringsPass.cpp        # auto-encrypts call-string literals
 │   └── XorStrCleanupPass.cpp             # zeroes plaintext stack buffers
+│
+├── lib/Transforms/StrHash/               # strhash IR transform passes
+│   └── StrHashFoldPass.cpp               # folds constant-arg runtime hash calls
 │
 ├── lib/Emit/Backend/
 │   ├── BackendUtil.cpp                   # PipelineStartEP + post-pass registration

@@ -13,6 +13,7 @@ NeverC 通过可选的内置运行时扩展标准 C，这些运行时以 LLVM bi
 | [**`string`**](string/README.zh-CN.md) | `-fbuiltin-string` | 关闭 | 值语义字符串类型，支持点调用方法、自动内存管理和原生 UTF-8 |
 | [**`mimalloc`**](mimalloc/README.zh-CN.md) | `-fbuiltin-mimalloc` | **开启** | 高性能内存分配器，透明替换 `malloc`/`free`/`calloc`/`realloc` |
 | [**`xorstr`**](xorstr/README.zh-CN.md) | `-fencrypt-call-strings` | 关闭 | 编译期字符串加密，栈分配 XOR 解密，反签名检测算法 |
+| [**`strhash`**](strhash/README.zh-CN.md) | `-fstrhash-algo` / `-fstrhash-fold` | 关闭 | 编译期字符串哈希，运行时算法一致，可选 IR 常量折叠 |
 
 `string` 内置需要显式启用；`mimalloc` 对所有 hosted 构建默认开启（内核、dyncode 和 freestanding 模式下自动抑制）。可以组合使用：
 
@@ -77,10 +78,13 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 | `string` | `BuiltinString.h` | `BuiltinString.cpp` |
 | `mimalloc` | `BuiltinMimalloc.h` | `BuiltinMimalloc.cpp` |
 | `xorstr` | `lib/Headers/neverc/xorstr/xorstr.h` *(用户头文件)* | `lib/Transforms/XorStr/EncryptCallStringsPass.cpp` |
+| `strhash` | `lib/Headers/neverc/strhash/strhash.h` *(用户头文件)* | `lib/Transforms/StrHash/StrHashFoldPass.cpp` |
 
 API 提供 `getEmbeddedBitcode()` 用于获取预编译的 LLVM bitcode，以及 `isSupported()` 用于检查平台可用性。
 
 > **说明：** `xorstr` 不走嵌入式 bitcode 模型。显式宏 [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.zh-CN.md) 由 Sema 层降级（处理函数 `semaBuiltinNeverCXorstr` 位于 `SemaChecking.cpp`），可选的 `-fencrypt-call-strings` 自动加密由 IR 变换 Pass `EncryptCallStringsPass` 完成（配套 `XorStrCleanupPass` 负责清零栈上明文）。完整分层设计见 [xorstr 文档](xorstr/README.zh-CN.md)。
+
+> **说明：** `strhash` 同样不走嵌入式 bitcode 模型。[`NC_STRHASH(s)` / `NEVERC_STRHASH(s)`](strhash/README.zh-CN.md) 在 Sema 中折叠为整数常量（`semaBuiltinNeverCStrHash`）；运行时哈希经 `neverc_strhash_rt` 调用 NeverC std（`neverc_fnv_sum*` / `neverc_xxhash64`）。可选 `-fstrhash-fold` 启用 `StrHashFoldPass`，将字面量参数的运行时哈希调用折叠为常量。完整设计见 [strhash 文档](strhash/README.zh-CN.md)。
 
 ### 第三层：CMake 引导基础设施
 
@@ -114,9 +118,12 @@ if (LangOpts.BuiltinMimalloc) {
 
 该 Pass 解析嵌入的 bitcode，通过 `llvm::Linker::linkModules()` 合并到用户模块，内部化辅助符号（仅保留公共 API 的外部链接），并清理 `llvm.used` / `llvm.compiler.used`。
 
-`xorstr` 的混淆 Pass 注册在**后置位置**（所有优化之后），确保优化器不会常量折叠或还原加密：
+`xorstr` 的混淆 Pass 与可选的 `strhash` 折叠注册在**后置位置**（所有优化之后）——既避免优化器还原加密，也能折叠常量参数的哈希调用：
 
 ```cpp
+if (LangOpts.StrHashFold) {
+    MPM.addPass(neverc::strhash::StrHashFoldPass());
+}
 if (LangOpts.EncryptCallStrings) {
     MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
                     LangOpts.EncryptCallStringsMaxLen));
@@ -196,7 +203,7 @@ neverc/
 │   └── Builtin/
 │       ├── BuiltinString.h               # string API
 │       ├── BuiltinMimalloc.h             # mimalloc API
-│       ├── Builtins.def                  # __builtin_neverc_xorstr 注册
+│       ├── Builtins.def                  # __builtin_neverc_xorstr / __builtin_neverc_strhash
 │       └── ...
 │
 ├── include/neverc/Invoke/
@@ -205,6 +212,10 @@ neverc/
 ├── include/neverc/Transforms/XorStr/     # xorstr IR pass 头文件
 │   ├── EncryptCallStringsPass.h
 │   └── XorStrCleanupPass.h
+│
+├── include/neverc/Transforms/StrHash/    # strhash IR pass 头文件
+│   ├── StrHashCompute.h
+│   └── StrHashFoldPass.h
 │
 ├── lib/Foundation/
 │   ├── CMakeLists.txt                    # 所有内置功能的引导目标
@@ -216,15 +227,23 @@ neverc/
 │       └── gen_mimalloc_source.py        # mimalloc 源码生成器
 │
 ├── lib/Headers/neverc/
-│   ├── xorstr.h                          # NC_XORSTR / NEVERC_XORSTR 宏
-│   └── xorstr_impl.inc                   # __neverc_xorstr_decrypt 辅助函数
+│   ├── xorstr/
+│   │   ├── xorstr.h                      # NC_XORSTR / NEVERC_XORSTR 宏
+│   │   └── xorstr_impl.inc               # __neverc_xorstr_decrypt 辅助函数
+│   └── strhash/
+│       ├── strhash.h                     # NC_STRHASH / NC_STRHASH_AUTO 宏
+│       └── strhash_impl.inc              # neverc_strhash_rt 内联分发
 │
 ├── lib/Analyze/Checking/
-│   └── SemaChecking.cpp                  # semaBuiltinNeverCXorstr 处理函数
+│   ├── SemaChecking.cpp                  # builtin 分发
+│   └── SemaCheckingBuiltinNeverC.cpp  # xorstr / strhash Sema 处理
 │
 ├── lib/Transforms/XorStr/                # xorstr IR 变换 Pass
 │   ├── EncryptCallStringsPass.cpp        # 自动加密 call 参数中的字符串字面量
 │   └── XorStrCleanupPass.cpp             # 清零栈上明文缓冲区
+│
+├── lib/Transforms/StrHash/               # strhash IR 变换 Pass
+│   └── StrHashFoldPass.cpp               # 折叠常量参数的运行时哈希调用
 │
 ├── lib/Emit/Backend/
 │   ├── BackendUtil.cpp                   # PipelineStartEP + 后置 Pass 注册

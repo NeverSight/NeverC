@@ -50,6 +50,7 @@ NeverC расширяет стандартный C встроенными сре
 | [Встроенная строка](builtins/string/README.ru.md) | `-fbuiltin-string` | Тип `string` с семантикой значения, методы через точку, автоуправление памятью, нативный UTF-8 |
 | [Встроенный mimalloc](builtins/mimalloc/README.ru.md) | `-fbuiltin-mimalloc` | Прозрачная замена аллокатора `mimalloc` высокой производительности `malloc`/`free`/`calloc`/`realloc` |
 | [Шифрование строк (xorstr)](builtins/xorstr/README.ru.md) | `-fencrypt-call-strings` | Шифрование строк на этапе компиляции, стековая XOR-дешифрация, антисигнатура |
+| [Хеширование строк (strhash)](builtins/strhash/README.ru.md) | `-fstrhash-algo` / `-fstrhash-fold` | Хеширование строк на этапе компиляции, тот же алгоритм во время выполнения, опциональный IR-fold |
 
 ---
 

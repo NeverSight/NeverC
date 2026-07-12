@@ -6,7 +6,7 @@
 
 **ИИ-дружественный компилятор C23 для исследований безопасности — на базе LLVM**
 
-Встроенный линкер · Конвейер dyncode · Встроенные среды выполнения (`string` · `mimalloc` · `xorstr`)
+Встроенный линкер · Конвейер dyncode · Встроенные среды выполнения (`string` · `mimalloc` · `xorstr` · `strhash`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#возможности)
@@ -43,7 +43,7 @@ C уже является простейшим системным языком. 
 - **[Компилятор dyncode](../dyncode-compiler/README.ru.md)** — многоступенчатый конвейер IR/MIR, кроссплатформенное извлечение, разрешение импортов/syscall, режим ядра, аудит запрещённых байт, архитектура плагинов
 - **Интегрированный линкер** — COFF, ELF и Mach-O в одном бинарнике; внешние `ld` и `link.exe` не нужны
 - **Кросс-компиляция** — Windows PE, Linux ELF, macOS Mach-O и Android ELF с любого хоста со встроенными SDK платформ
-- **[Встроенные среды выполнения](../builtins/README.ru.md)** — встроенные в компилятор LLVM bitcode среды: [`string`](../builtins/string/README.ru.md) (строковый тип с семантикой значения, автоуправление памятью), [`mimalloc`](../builtins/mimalloc/README.ru.md) (прозрачная замена аллокатора высокой производительности) и [`xorstr`](../builtins/xorstr/README.ru.md) (шифрование строк во время компиляции с дешифровкой против сигнатур)
+- **[Встроенные среды выполнения](../builtins/README.ru.md)** — встроенные в компилятор LLVM bitcode среды: [`string`](../builtins/string/README.ru.md) (строковый тип с семантикой значения, автоуправление памятью), [`mimalloc`](../builtins/mimalloc/README.ru.md) (прозрачная замена аллокатора высокой производительности), [`xorstr`](../builtins/xorstr/README.ru.md) (шифрование строк во время компиляции с дешифровкой против сигнатур) и [`strhash`](../builtins/strhash/README.ru.md) (хеширование строк на этапе компиляции с тем же алгоритмом во время выполнения)
 - **[API плагинов](../plugin-api/README.ru.md)** — чистый C ABI для внедеревных pass-плагинов; SDK с одним заголовком, ноль зависимостей LLVM/CRT, точки подключения IR, MIR, Binary и Linker
 - **[Расширение `.nc`](../nc-extension/README.ru.md)** — используйте `.nc` для автоматического включения всех возможностей NeverC (`string`, целочисленные типы в стиле Rust) без дополнительных флагов
 - **Облегчённая сборка LLVM** — только бэкенды x86_64 / AArch64; пути C++/ObjC/OpenMP удалены

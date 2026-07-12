@@ -50,6 +50,7 @@ NeverC は LLVM bitcode として埋め込まれた組み込みランタイム�
 | [組み込み文字列](builtins/string/README.ja.md) | `-fbuiltin-string` | 値セマンティクス `string` 型、ドットコールメソッド、自動メモリ管理、ネイティブ UTF-8 |
 | [組み込み mimalloc](builtins/mimalloc/README.ja.md) | `-fbuiltin-mimalloc` | `malloc`/`free`/`calloc`/`realloc` の透過的 `mimalloc` 高性能アロケータオーバーライド |
 | [文字列暗号化 (xorstr)](builtins/xorstr/README.ja.md) | `-fencrypt-call-strings` | コンパイル時文字列暗号化、スタック割り当て XOR 復号、アンチシグネチャ |
+| [文字列ハッシュ (strhash)](builtins/strhash/README.ja.md) | `-fstrhash-algo` / `-fstrhash-fold` | コンパイル時文字列ハッシュ、実行時と同一アルゴリズム、任意 IR 畳み込み |
 
 ---
 

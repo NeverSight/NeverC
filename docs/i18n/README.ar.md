@@ -8,7 +8,7 @@
 
 **مُجمِّع C23 صديق للذكاء الاصطناعي لأبحاث الأمن — مبني على LLVM**
 
-مُرابط مدمج · مسار dyncode · أوقات تشغيل مدمجة (`string` · `mimalloc` · `xorstr`)
+مُرابط مدمج · مسار dyncode · أوقات تشغيل مدمجة (`string` · `mimalloc` · `xorstr` · `strhash`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#الميزات)
@@ -45,7 +45,7 @@
 - **[مُجمِّع dyncode](../dyncode-compiler/README.ar.md)** — مسار IR/MIR متعدد المراحل، استخراج متعدد المنصات، حل الاستيراد/استدعاءات النظام، وضع النواة، تدقيق البايتات المحظورة، بنية إضافات
 - **مُرابط مدمج** — COFF وELF وMach-O في ثنائي واحد؛ دون `ld` أو `link.exe` خارجي
 - **تجميع متقاطع** — Windows PE و Linux ELF و macOS Mach-O و Android ELF من أي مضيف مع SDK مدمجة لكل منصة
-- **[أوقات التشغيل المدمجة](../builtins/README.ar.md)** — أوقات تشغيل LLVM bitcode مدمجة في المترجم: [`string`](../builtins/string/README.ar.md) (سلسلة بدلالة القيمة، إدارة ذاكرة تلقائية) و[`mimalloc`](../builtins/mimalloc/README.ar.md) (تجاوز مخصص ذاكرة عالي الأداء شفاف) و[`xorstr`](../builtins/xorstr/README.ar.md) (تشفير السلاسل وقت الترجمة مع فك تشفير مضاد للبصمات)
+- **[أوقات التشغيل المدمجة](../builtins/README.ar.md)** — أوقات تشغيل LLVM bitcode مدمجة في المترجم: [`string`](../builtins/string/README.ar.md) (سلسلة بدلالة القيمة، إدارة ذاكرة تلقائية) و[`mimalloc`](../builtins/mimalloc/README.ar.md) (تجاوز مخصص ذاكرة عالي الأداء شفاف) و[`xorstr`](../builtins/xorstr/README.ar.md) (تشفير السلاسل وقت الترجمة مع فك تشفير مضاد للبصمات) و[`strhash`](../builtins/strhash/README.ar.md) (تجزئة السلاسل وقت الترجمة بنفس الخوارزمية وقت التشغيل)
 - **[واجهة الإضافات API](../plugin-api/README.ar.md)** — واجهة C ABI خالصة لإضافات المرور خارج الشجرة؛ SDK بملف رأس واحد، صفر تبعيات LLVM/CRT، نقاط ربط IR وMIR وBinary وLinker
 - **[امتداد `.nc`](../nc-extension/README.ar.md)** — استخدم `.nc` لتفعيل جميع ميزات NeverC تلقائيًا (`string`، أنواع الأعداد بأسلوب Rust) بدون أعلام إضافية
 - **بناء LLVM خفيف** — خلفية x86_64 / AArch64 فقط؛ إزالة مسارات C++/ObjC/OpenMP

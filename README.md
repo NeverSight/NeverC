@@ -6,7 +6,7 @@
 
 **The AI-friendly C23 compiler for security research, built on LLVM**
 
-Integrated linker · DynCode pipeline · Built-in runtimes (`string` · `mimalloc` · `xorstr`)
+Integrated linker · DynCode pipeline · Built-in runtimes (`string` · `mimalloc` · `xorstr` · `strhash`)
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#features)
@@ -43,7 +43,7 @@ C is already the simplest systems language. NeverC makes it even simpler:
 - **[DynCode compiler](docs/dyncode-compiler/README.md)** — multi-stage IR/MIR pipeline, cross-platform extraction, import/syscall lowering, kernel-mode support, bad-byte auditing, and a plugin architecture
 - **Integrated linker** — COFF, ELF, and Mach-O in one binary; no external `ld` or `link.exe`
 - **Cross-compilation** — build Windows PE, Linux ELF, macOS Mach-O, and Android ELF from any host with bundled platform SDKs
-- **[Built-in runtimes](docs/builtins/README.md)** — opt-in LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string/README.md) (value-semantic string with dot-call methods and automatic memory management), [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override), and [`xorstr`](docs/builtins/xorstr/README.md) (compile-time string encryption with anti-signature decryption)
+- **[Built-in runtimes](docs/builtins/README.md)** — opt-in LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string/README.md) (value-semantic string with dot-call methods and automatic memory management), [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override), [`xorstr`](docs/builtins/xorstr/README.md) (compile-time string encryption with anti-signature decryption), and [`strhash`](docs/builtins/strhash/README.md) (compile-time string hashing with matching runtime)
 - **[Plugin API](docs/plugin-api/README.md)** — pure C ABI for out-of-tree pass plugins; single-header SDK with zero LLVM/CRT dependencies, supporting IR, MIR, binary, and linker interpose points
 - **[`.nc` extension](docs/nc-extension/README.md)** — use `.nc` as file extension to auto-enable all NeverC features (`string`, Rust-style integer types) without extra flags
 - **Lean LLVM build** — only x86_64 and AArch64 backends; C++/ObjC/OpenMP paths stripped

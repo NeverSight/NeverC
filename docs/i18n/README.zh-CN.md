@@ -6,7 +6,7 @@
 
 **AI 友好的安全研究 C23 编译器，基于 LLVM 构建**
 
-集成链接器 · DynCode 流水线 · 内置运行时（`string` · `mimalloc` · `xorstr`）
+集成链接器 · DynCode 流水线 · 内置运行时（`string` · `mimalloc` · `xorstr` · `strhash`）
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#特性)
@@ -43,7 +43,7 @@ C 已经是最简单的系统编程语言。NeverC 让它更简单：
 - **[DynCode 编译器](../dyncode-compiler/README.zh-CN.md)** — 多阶段 IR/MIR 流水线、跨平台提取、导入/系统调用降级、内核模式、坏字节审计与插件架构
 - **集成链接器** — 单一二进制内完成 COFF、ELF、Mach-O 链接，无需外部 `ld` 或 `link.exe`
 - **交叉编译** — 从任意宿主构建 Windows PE、Linux ELF、macOS Mach-O 和 Android ELF，内置各平台 SDK
-- **[内置运行时](../builtins/README.zh-CN.md)** — 嵌入编译器的 LLVM bitcode 运行时：[`string`](../builtins/string/README.zh-CN.md)（值语义字符串，自动内存管理）、[`mimalloc`](../builtins/mimalloc/README.zh-CN.md)（透明高性能分配器覆盖）和 [`xorstr`](../builtins/xorstr/README.zh-CN.md)（编译期字符串加密，反特征码解密）
+- **[内置运行时](../builtins/README.zh-CN.md)** — 嵌入编译器的 LLVM bitcode 运行时：[`string`](../builtins/string/README.zh-CN.md)（值语义字符串，自动内存管理）、[`mimalloc`](../builtins/mimalloc/README.zh-CN.md)（透明高性能分配器覆盖）、[`xorstr`](../builtins/xorstr/README.zh-CN.md)（编译期字符串加密，反特征码解密）和 [`strhash`](../builtins/strhash/README.zh-CN.md)（编译期字符串哈希，与运行时算法一致）
 - **[插件 API](../plugin-api/README.zh-CN.md)** — 纯 C ABI 的树外 pass 插件接口；单头文件 SDK，零 LLVM/CRT 依赖，支持 IR、MIR、Binary、Linker 钩子点
 - **[`.nc` 扩展名](../nc-extension/README.zh-CN.md)** — 使用 `.nc` 文件扩展名自动启用所有 NeverC 功能（`string`、Rust 风格整数类型），无需额外标志
 - **精简 LLVM 构建** — 仅 x86_64 / AArch64 后端；剥离 C++/ObjC/OpenMP 等路径
