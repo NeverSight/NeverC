@@ -279,6 +279,36 @@
       },
       "size": 4
     },
+    "kstat": {
+      "members": {
+        "atime": 64,
+        "atomic_write_segments_max": 176,
+        "atomic_write_unit_max": 172,
+        "atomic_write_unit_min": 168,
+        "attributes": 16,
+        "attributes_mask": 24,
+        "blksize": 12,
+        "blocks": 128,
+        "btime": 112,
+        "change_cookie": 152,
+        "ctime": 96,
+        "dev": 40,
+        "dio_mem_align": 144,
+        "dio_offset_align": 148,
+        "gid": 52,
+        "ino": 32,
+        "mnt_id": 136,
+        "mode": 4,
+        "mtime": 80,
+        "nlink": 8,
+        "rdev": 44,
+        "result_mask": 0,
+        "size": 56,
+        "subvol": 160,
+        "uid": 48
+      },
+      "size": 184
+    },
     "miscdevice": {
       "members": {
         "fops": 16,
@@ -440,6 +470,20 @@
         "priority": 16
       },
       "size": 24
+    },
+    "nsproxy": {
+      "members": {
+        "cgroup_ns": 64,
+        "count": 0,
+        "ipc_ns": 16,
+        "mnt_ns": 24,
+        "net_ns": 40,
+        "pid_ns_for_children": 32,
+        "time_ns": 48,
+        "time_ns_for_children": 56,
+        "uts_ns": 8
+      },
+      "size": 72
     },
     "optimistic_spin_queue": {
       "members": {
@@ -612,6 +656,14 @@
         "page_link": 0
       },
       "size": 32
+    },
+    "seccomp": {
+      "members": {
+        "filter": 8,
+        "filter_count": 4,
+        "mode": 0
+      },
+      "size": 16
     },
     "semaphore": {
       "members": {
