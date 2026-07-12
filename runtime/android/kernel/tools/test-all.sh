@@ -6,6 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 NEVERC="${1:-$REPO_ROOT/build-neverc/bin/neverc}"
+USER_COPY_CHECKER="$SCRIPT_DIR/check-user-copy-backend.py"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -168,6 +169,18 @@ check_elf() {
   if [ "$kosize" -gt 524288 ]; then
     echo "  WARN: $name — unusually large ($kosize bytes)"
   fi
+
+  case "$name" in
+    android-kernel-chardev@*)
+      local user_copy_check
+      if ! user_copy_check=$(python3 "$USER_COPY_CHECKER" \
+          --artifact "$ko" --nm "$NM" 2>&1); then
+        echo "  FAIL: $name — unsafe or stale user-copy runtime"
+        printf '%s\n' "$user_copy_check" | awk '{ print "    " $0 }'
+        return 1
+      fi
+      ;;
+  esac
 
   return 0
 }

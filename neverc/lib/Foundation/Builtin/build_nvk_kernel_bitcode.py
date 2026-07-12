@@ -152,6 +152,9 @@ def main():
     user_copy_checker = os.path.join(
         args.runtime_dir, "tools", "check-user-copy-backend.py"
     )
+    user_copy_behavior_test = os.path.join(
+        args.runtime_dir, "tools", "test-user-copy-adapter.py"
+    )
 
     sources = sorted(glob.glob(os.path.join(src_dir, "*.c")))
 
@@ -171,6 +174,10 @@ def main():
         print(f"error: user-copy checker not found: {user_copy_checker}",
               file=sys.stderr)
         sys.exit(1)
+    if not os.path.isfile(user_copy_behavior_test):
+        print("error: user-copy behavior test not found: "
+              f"{user_copy_behavior_test}", file=sys.stderr)
+        sys.exit(1)
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
 
@@ -187,6 +194,14 @@ def main():
         subprocess.check_call([sys.executable, user_copy_checker])
     except subprocess.CalledProcessError as e:
         print(f"error: user-copy check failed (exit {e.returncode})",
+              file=sys.stderr)
+        sys.exit(1)
+
+    print("  [test] user-copy adapter", file=sys.stderr)
+    try:
+        subprocess.check_call([sys.executable, user_copy_behavior_test])
+    except subprocess.CalledProcessError as e:
+        print(f"error: user-copy adapter test failed (exit {e.returncode})",
               file=sys.stderr)
         sys.exit(1)
 

@@ -111,6 +111,9 @@ extern int                  _neverc_krt_mem_inited;
 extern neverc_krt_pte_rw_fn _neverc_krt_pte_make_rw;
 extern neverc_krt_pte_rw_fn _neverc_krt_pte_make_ro;
 
+/* ---- nvk_usercopy.c ---- */
+
+void _neverc_krt_usercopy_init(void);
 unsigned long _neverc_krt_mem_copy_from_user_compat(
 	void *to, const void __user *from, unsigned long n);
 unsigned long _neverc_krt_mem_copy_to_user_compat(
