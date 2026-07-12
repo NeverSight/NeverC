@@ -3,6 +3,7 @@
 #define _NEVERC_KRT_LINUX_SPINLOCK_H
 
 #include <linux/types.h>
+#include <linux/compiler.h>
 
 /*
  * Lock opaque blob sizes — GKI 5.10–6.18 (arm64, production):
@@ -13,19 +14,22 @@
  *
  * GKI defconfigs do NOT enable CONFIG_DEBUG_SPINLOCK,
  * CONFIG_DEBUG_LOCK_ALLOC, or CONFIG_PREEMPT_RT.
- * 8 bytes per lock gives comfortable headroom.
+ * These types are embedded in public kernel structures, so their size must be
+ * exact rather than a maximum-capacity opaque buffer.
  */
-typedef struct { unsigned char __opaque[8]; } spinlock_t;
-typedef struct { unsigned char __opaque[8]; } raw_spinlock_t;
-typedef struct { unsigned char __opaque[8]; } rwlock_t;
+typedef struct { unsigned int val; } spinlock_t;
+typedef struct { unsigned int val; } raw_spinlock_t;
+typedef struct { unsigned int val; } rwlock_t;
 
-_Static_assert(sizeof(spinlock_t) >= 4,
-	       "spinlock_t too small for arm64 qspinlock");
-_Static_assert(sizeof(rwlock_t) >= 4,
-	       "rwlock_t too small for arm64 qrwlock");
+_Static_assert(sizeof(spinlock_t) == 4,
+	       "spinlock_t must match the arm64 qspinlock");
+_Static_assert(sizeof(raw_spinlock_t) == 4,
+	       "raw_spinlock_t must match the arm64 qspinlock");
+_Static_assert(sizeof(rwlock_t) == 4,
+	       "rwlock_t must match the arm64 qrwlock");
 
-#define DEFINE_SPINLOCK(x) spinlock_t x = { { 0 } }
-#define __SPIN_LOCK_UNLOCKED(x) { { 0 } }
+#define DEFINE_SPINLOCK(x) spinlock_t x = { 0 }
+#define __SPIN_LOCK_UNLOCKED(x) { 0 }
 
 /*
  * spin_lock / spin_unlock etc. are always inline wrappers in all GKI
@@ -68,7 +72,7 @@ int _raw_spin_trylock(raw_spinlock_t *lock);
 #define spin_unlock_irqrestore(lock, flags) \
 	_raw_spin_unlock_irqrestore((raw_spinlock_t *)(lock), flags)
 
-__always_inline int spin_is_locked(spinlock_t *lock)
+static __always_inline int spin_is_locked(spinlock_t *lock)
 {
 	return __atomic_load_n((int *)lock, __ATOMIC_RELAXED) != 0;
 }

@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
-#include <nvk_internal.h>
-#include <nvk_compat_table.inc>
+#include "nvk_internal.h"
+#include "nvk_compat_table.inc"
 
-unsigned long _neverc_krt_module_size = 0;
+static unsigned long _neverc_krt_module_size;
 int           _neverc_krt_kernel_ver = 0;
 unsigned long _neverc_krt_file_dentry_off = 0;
 
@@ -81,7 +81,7 @@ void _neverc_krt_version_try_detect_from_banner(void)
 	__atomic_store_n(&_neverc_krt_kernel_ver, kv, __ATOMIC_RELEASE);
 }
 
-void _neverc_krt_version_setup_impl(int kv)
+void _neverc_krt_version_setup(int kv)
 {
 	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
 		if (!__atomic_load_n(&_neverc_krt_file_dentry_off,
@@ -105,12 +105,23 @@ unsigned long _neverc_krt_get_module_size(void)
 		NEVERC_KRT_VERSION_TABLE_LEN - 1].module_size;
 }
 
-unsigned long _neverc_krt_cred_uid_base(void)
+unsigned long _neverc_krt_get_kimage_vaddr_base(void)
 {
 	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (kv > 0)
-		return _neverc_krt_lookup_version(kv)->cred_uid_base;
-	return _neverc_krt_version_table[0].cred_uid_base;
+
+	return _neverc_krt_lookup_version(kv ? kv : 510)->kimage_vaddr;
+}
+
+const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
+{
+	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+
+	return &_neverc_krt_lookup_version(kv ? kv : 510)->layout;
+}
+
+unsigned long _neverc_krt_cred_uid_base(void)
+{
+	return _neverc_krt_get_gki_layout()->cred_uid;
 }
 
 unsigned long _neverc_krt_get_file_dentry_off(void)
@@ -257,6 +268,7 @@ int neverc_krt_has_cfi(void)
 
 int neverc_krt_check_kernel_match(void)
 {
+	neverc_krt_compat_init();
 	if (!_neverc_krt_kinfo.detected)
 		return NEVERC_KRT_VER_UNKNOWN;
 
@@ -495,17 +507,20 @@ void *neverc_krt_lookup_module_free(void)
 
 const struct neverc_krt_kernel_info *neverc_krt_kernel_version(void)
 {
+	neverc_krt_compat_init();
 	return &_neverc_krt_kinfo;
 }
 
 u32 neverc_krt_kernel_code(void)
 {
+	neverc_krt_compat_init();
 	return _neverc_krt_kinfo.major * 10000 + _neverc_krt_kinfo.minor * 100
 	       + _neverc_krt_kinfo.patch;
 }
 
 int neverc_krt_kernel_ge(u32 maj, u32 min)
 {
+	neverc_krt_compat_init();
 	return _neverc_krt_kinfo.major > maj ||
 	       (_neverc_krt_kinfo.major == maj && _neverc_krt_kinfo.minor >= min);
 }

@@ -9,6 +9,9 @@ namespace BuiltinNvkKernel {
 /// Return the pre-merged NVK kernel runtime bitcode (empty before bootstrap).
 llvm::StringRef getEmbeddedBitcode();
 
+/// Return true when \p Name is defined by the embedded runtime module.
+bool hasEmbeddedSymbol(llvm::StringRef Name);
+
 } // namespace BuiltinNvkKernel
 } // namespace neverc
 

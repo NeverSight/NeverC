@@ -5,6 +5,7 @@ NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = aarch64-linux-android
 MODULE  = nvk_chardev.ko
+MODNAME = neverc_krt_chardev
 SRCS    = main.c
 
 # -DNVK_KERNEL=510|515|601|606|612|618 selects the target kernel preset.
@@ -28,10 +29,10 @@ insmod: push
 	adb shell su -c 'insmod /data/local/tests/$(MODULE)'
 
 rmmod:
-	adb shell su -c 'rmmod $(MODULE:.ko=)'
+	adb shell su -c 'rmmod $(MODNAME)'
 
 run: insmod
-	adb shell su -c 'cat /proc/nvk_chardev'
+	adb shell su -c 'cat /proc/$(MODNAME)'
 
 clean:
 	rm -f $(MODULE) *.o

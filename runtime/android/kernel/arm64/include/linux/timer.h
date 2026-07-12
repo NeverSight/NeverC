@@ -6,23 +6,30 @@
 #include <linux/jiffies.h>
 #include <nvkmod_version.h>
 
-/*
- * Minimal timer_list — core fields are stable across GKI 5.10–6.18.
- * 5.10–6.6 append ANDROID_KABI_RESERVE(1)+(2) (16 bytes) but the kernel
- * never accesses those reserves through external APIs, so the 40-byte
- * minimal layout is safe on all versions.
- */
+/* Exact timer_list layout for the official arm64 GKI configurations. */
 struct timer_list {
 	struct hlist_node entry;
 	unsigned long expires;
 	void (*function)(struct timer_list *);
 	u32 flags;
 	u32 _pad;
+#if NEVERC_KRT_KERNEL < 612
+	u64 __kabi_reserved1;
+	u64 __kabi_reserved2;
+#endif
 };
 
+#if NEVERC_KRT_KERNEL < 612
+_Static_assert(sizeof(struct timer_list) == 56,
+	       "unexpected GKI 5.10-6.6 timer_list layout");
+#else
+_Static_assert(sizeof(struct timer_list) == 40,
+	       "unexpected GKI 6.12+ timer_list layout");
+#endif
+
 #define TIMER_IRQSAFE       0x00200000
-#define TIMER_DEFERRABLE     0x00080000
-#define TIMER_PINNED         0x00040000
+#define TIMER_PINNED        0x00100000
+#define TIMER_DEFERRABLE    0x00080000
 
 #define __TIMER_INITIALIZER(_function, _flags) {                              \
 		.entry = { .next = (void *)0 },                               \
@@ -33,16 +40,27 @@ struct timer_list {
 #define DEFINE_TIMER(_name, _function)                                        \
 	struct timer_list _name = __TIMER_INITIALIZER(_function, 0)
 
-__always_inline void
-timer_setup(struct timer_list *timer,
-	    void (*callback)(struct timer_list *), unsigned int flags)
-{
-	timer->entry.next = (void *)0;
-	timer->entry.pprev = (void *)0;
-	timer->function = callback;
-	timer->flags = flags;
-	timer->expires = 0;
-}
+/*
+ * timer_setup is a macro around the exported init helper.  Calling the helper
+ * is required: it records the current CPU in timer->flags and initializes
+ * debug-object state when enabled.
+ */
+struct lock_class_key;
+#if NEVERC_KRT_KERNEL >= 618
+void timer_init_key(struct timer_list *timer,
+		    void (*callback)(struct timer_list *), unsigned int flags,
+		    const char *name, struct lock_class_key *key);
+#define timer_setup(timer, callback, flags)                                   \
+	timer_init_key((timer), (callback), (flags), #timer,                  \
+		       (struct lock_class_key *)0)
+#else
+void init_timer_key(struct timer_list *timer,
+		    void (*callback)(struct timer_list *), unsigned int flags,
+		    const char *name, struct lock_class_key *key);
+#define timer_setup(timer, callback, flags)                                   \
+	init_timer_key((timer), (callback), (flags), #timer,                   \
+		       (struct lock_class_key *)0)
+#endif
 
 int mod_timer(struct timer_list *timer, unsigned long expires);
 void add_timer(struct timer_list *timer);
@@ -63,7 +81,7 @@ int del_timer(struct timer_list *timer);
 int del_timer_sync(struct timer_list *timer);
 #endif
 
-__always_inline int timer_pending(const struct timer_list *timer)
+static __always_inline int timer_pending(const struct timer_list *timer)
 {
 	return timer->entry.pprev != (void *)0;
 }

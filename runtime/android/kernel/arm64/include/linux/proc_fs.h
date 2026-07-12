@@ -3,6 +3,7 @@
 #define _NEVERC_KRT_LINUX_PROC_FS_H
 
 #include <linux/types.h>
+#include <linux/compiler.h>
 #include <stddef.h>
 
 struct proc_dir_entry; /* opaque */
@@ -80,7 +81,7 @@ struct proc_dir_entry *proc_create_seq_private(const char *name, umode_t mode,
 					       unsigned int state_size,
 					       void *data);
 
-__always_inline struct proc_dir_entry *
+static __always_inline struct proc_dir_entry *
 proc_create_seq(const char *name, umode_t mode,
 		struct proc_dir_entry *parent,
 		const struct seq_operations *ops)

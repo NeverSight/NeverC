@@ -2,14 +2,17 @@
 #ifndef _NEVERC_KRT_LINUX_VMALLOC_H
 #define _NEVERC_KRT_LINUX_VMALLOC_H
 
-#include <linux/types.h>
-#include <linux/gfp.h>
+#include <linux/slab.h>
 
-void *vmalloc(unsigned long size);
-void *vzalloc(unsigned long size);
+#if NEVERC_KRT_KERNEL >= 612
+void *vmalloc_user_noprof(unsigned long size);
+void *__vmalloc_noprof(unsigned long size, gfp_t gfp_mask);
+
+#define vmalloc_user(size) vmalloc_user_noprof(size)
+#define __vmalloc(size, flags) __vmalloc_noprof((size), (flags))
+#else
 void *vmalloc_user(unsigned long size);
-void vfree(const void *addr);
-
 void *__vmalloc(unsigned long size, gfp_t gfp_mask);
+#endif
 
 #endif /* _NEVERC_KRT_LINUX_VMALLOC_H */

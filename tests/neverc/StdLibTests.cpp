@@ -52,6 +52,142 @@ protected:
   }
 };
 
+TEST_F(StdLibTest, EmbeddedFunctionOnlyConsumer) {
+  auto src = tmpFile("std_function_only.c");
+  writeFile(src,
+            "extern double neverc_math_sqrt(double);\n"
+            "int main(void) { return neverc_math_sqrt(81.0) != 9.0; }\n");
+  compileRunAndCheck("std_function_only", src.string(),
+                     "-std=c11 -fbuiltin-std", 0);
+}
+
+TEST_F(StdLibTest, EmbeddedRuntimePreservesUserLocalProvenance) {
+  auto src = tmpFile("std_user_local.c");
+  auto ir = tmpFile("std_user_local.ll");
+  writeFile(src,
+            "typedef unsigned long long u64;\n"
+            "__attribute__((used, noinline))\n"
+            "static u64 neverc_rand_seed(void) { return 7; }\n"
+            "extern u64 neverc_rand_uint64(void);\n"
+            "u64 read_user_seed(void) {\n"
+            "  return neverc_rand_seed() + neverc_rand_uint64();\n"
+            "}\n");
+
+  std::vector<std::string> args = {
+      "-std=c11", "-fbuiltin-std", "-flto=full", "-O0",
+      "-S", "-emit-llvm", src.string(), "-o", ir.string(),
+  };
+  for (auto &f : sysrootFlags())
+    args.push_back(f);
+  for (auto &f : archFlags())
+    args.push_back(f);
+
+  auto r = ncc(args);
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+  EXPECT_NE(readFile(ir).find("define internal i64 @neverc_rand_seed()"),
+            std::string::npos)
+      << "the embedded runtime must not change a user-local symbol's linkage";
+}
+
+TEST_F(StdLibTest, EmbeddedRuntimeSharesStateAcrossTranslationUnits) {
+  auto owner = tmpFile("std_state_owner.c");
+  auto consumer = tmpFile("std_state_consumer.c");
+  writeFile(owner,
+            "typedef unsigned long long u64;\n"
+            "extern void neverc_rand_seed(u64);\n"
+            "extern u64 neverc_rand_uint64(void);\n"
+            "extern u64 consume_next(void);\n"
+            "int main(void) {\n"
+            "  neverc_rand_seed(1);\n"
+            "  u64 from_consumer = consume_next();\n"
+            "  neverc_rand_seed(1);\n"
+            "  return from_consumer != neverc_rand_uint64();\n"
+            "}\n");
+  writeFile(consumer,
+            "typedef unsigned long long u64;\n"
+            "extern u64 neverc_rand_uint64(void);\n"
+            "u64 consume_next(void) { return neverc_rand_uint64(); }\n");
+
+  for (const char *mode : {"", "-flto=full", "-fno-lto"}) {
+    SCOPED_TRACE(mode[0] ? mode : "auto-lto");
+    auto exe = tmpFile(std::string("std_state_") +
+                       (mode[0] ? mode + 1 : "auto"));
+    std::vector<std::string> args = {"-std=c11", "-fbuiltin-std"};
+    if (mode[0])
+      args.push_back(mode);
+    for (auto &f : sysrootFlags())
+      args.push_back(f);
+    for (auto &f : archFlags())
+      args.push_back(f);
+    args.insert(args.end(),
+                {owner.string(), consumer.string(), "-o", exe.string()});
+
+    auto compile = ncc(args);
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+    auto run = exec(exe.string(), {});
+    EXPECT_EQ(run.exitCode, 0) << run.out << run.err;
+  }
+}
+
+TEST_F(StdLibTest, EmbeddedRuntimeKeepsModuleLocalsDistinct) {
+  auto owner = tmpFile("std_local_owner.c");
+  auto base32 = tmpFile("std_local_base32.c");
+  auto base64 = tmpFile("std_local_base64.c");
+  writeFile(owner,
+            "extern int check_base32(void);\n"
+            "extern int check_base64(void);\n"
+            "int main(void) { return check_base32() || check_base64(); }\n");
+  writeFile(base32,
+            "typedef __SIZE_TYPE__ size_t;\n"
+            "typedef unsigned char u8;\n"
+            "extern size_t neverc_base32_encode(char *, const u8 *, size_t);\n"
+            "int check_base32(void) {\n"
+            "  const u8 input[3] = {'f', 'o', 'o'};\n"
+            "  char output[9];\n"
+            "  size_t n = neverc_base32_encode(output, input, 3);\n"
+            "  const char expected[8] = {'M','Z','X','W','6','=','=','='};\n"
+            "  if (n != 8) return 1;\n"
+            "  for (size_t i = 0; i < 8; ++i)\n"
+            "    if (output[i] != expected[i]) return 2;\n"
+            "  return 0;\n"
+            "}\n");
+  writeFile(base64,
+            "typedef __SIZE_TYPE__ size_t;\n"
+            "typedef unsigned char u8;\n"
+            "extern size_t neverc_base64_encode(char *, const u8 *, size_t);\n"
+            "int check_base64(void) {\n"
+            "  const u8 input[3] = {'f', 'o', 'o'};\n"
+            "  char output[5];\n"
+            "  size_t n = neverc_base64_encode(output, input, 3);\n"
+            "  const char expected[4] = {'Z','m','9','v'};\n"
+            "  if (n != 4) return 1;\n"
+            "  for (size_t i = 0; i < 4; ++i)\n"
+            "    if (output[i] != expected[i]) return 2;\n"
+            "  return 0;\n"
+            "}\n");
+
+  for (const char *mode : {"", "-flto=full", "-fno-lto"}) {
+    SCOPED_TRACE(mode[0] ? mode : "auto-lto");
+    auto exe = tmpFile(std::string("std_local_symbols_") +
+                       (mode[0] ? mode + 1 : "auto"));
+    std::vector<std::string> args = {"-std=c11", "-fbuiltin-std"};
+    if (mode[0])
+      args.push_back(mode);
+    for (auto &f : sysrootFlags())
+      args.push_back(f);
+    for (auto &f : archFlags())
+      args.push_back(f);
+    args.insert(args.end(),
+                {owner.string(), base32.string(), base64.string(),
+                 "-o", exe.string()});
+
+    auto compile = ncc(args);
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+    auto run = exec(exe.string(), {});
+    EXPECT_EQ(run.exitCode, 0) << run.out << run.err;
+  }
+}
+
 #define STD_TEST(name, ...)                                     \
   TEST_F(StdLibTest, name) {                                    \
     auto r = compileAndRunStdTest(#name, {__VA_ARGS__});         \

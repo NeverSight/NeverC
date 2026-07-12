@@ -28,6 +28,8 @@ struct task_struct;
 
 int send_sig(int sig, struct task_struct *t, int priv);
 int send_sig_info(int sig, void *info, struct task_struct *t);
-int force_sig(int sig);
+#ifdef NEVERC_KRT_NON_KMI_API
+void force_sig(int sig);
+#endif
 
 #endif /* _NEVERC_KRT_LINUX_SIGNAL_H */

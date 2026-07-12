@@ -2,7 +2,7 @@
 /*
  * Minimal struct kprobe shim — compatible across GKI 5.10–6.18.
  *
- * Only the fields needed by neverc_krt_kprobe_lookup() are laid out
+ * Only the fields needed by the runtime's kprobe lookup helper are laid out
  * explicitly; the rest is an opaque tail blob.  The field offsets
  * have been verified against all supported GKI trees:
  *
@@ -19,15 +19,22 @@
 #define _NEVERC_KRT_LINUX_KPROBES_H
 
 #include <linux/types.h>
+#include <nvkmod_version.h>
 
 /*
- * Max sizeof(struct kprobe) across GKI arm64 5.10–6.18:
+ * sizeof(struct kprobe) in the official arm64 GKI configurations:
  *   5.10  = 136 bytes (0x88) — has fault_handler field
- *   5.15+ = 128 bytes (0x80) — fault_handler removed
- * 0x90 (144) covers all versions with headroom.
+ *   5.15–6.12 = 128 bytes (0x80) — fault_handler removed
+ *   6.18  = 120 bytes (0x78) — trailing KABI reserve removed
  */
 #ifndef NEVERC_KRT_KP_SIZE
-#define NEVERC_KRT_KP_SIZE 0x90
+#if NEVERC_KRT_KERNEL == 510
+#define NEVERC_KRT_KP_SIZE 136
+#elif NEVERC_KRT_KERNEL >= 618
+#define NEVERC_KRT_KP_SIZE 120
+#else
+#define NEVERC_KRT_KP_SIZE 128
+#endif
 #endif
 
 struct kprobe {

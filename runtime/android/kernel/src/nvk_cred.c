@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
-#include <nvk_internal.h>
+#include "nvk_internal.h"
 
 unsigned long _neverc_krt_off_cred = 0;
 unsigned long _neverc_krt_off_uid = 0;
@@ -16,50 +16,12 @@ static int                    _neverc_krt_cred_inited;
 static unsigned long          _neverc_krt_cred_cap_off;
 static unsigned long          _neverc_krt_cred_sb_off;
 
-static void _neverc_krt_cred_probe_cap_offset(const void *cred)
-{
-	if (_neverc_krt_cred_cap_off) return;
-
-	const unsigned char *p = (const unsigned char *)cred;
-	unsigned long uid_base = _neverc_krt_off_uid ? _neverc_krt_off_uid
-						  : _neverc_krt_cred_uid_base();
-
-	
-	unsigned long scan_start = uid_base + 32;
-	unsigned long scan_end = uid_base + 128;
-	unsigned long off;
-
-	for (off = scan_start; off < scan_end; off += 4) {
-		int plausible = 1;
-		int j;
-		for (j = 0; j < 5; j++) {
-			u32 lo, hi;
-			if (neverc_krt_mem_read(&lo, p + off + j * 8, 4)) {
-				plausible = 0; break;
-			}
-			if (neverc_krt_mem_read(&hi, p + off + j * 8 + 4, 4)) {
-				plausible = 0; break;
-			}
-			if (lo == 0 && hi == 0 && j < 3) {
-				plausible = 0; break;
-			}
-		}
-		if (plausible) {
-			_neverc_krt_cred_cap_off = off - uid_base;
-			_neverc_krt_cred_sb_off = _neverc_krt_cred_cap_off - 4;
-			return;
-		}
-	}
-
-	_neverc_krt_cred_cap_off = 36;
-	_neverc_krt_cred_sb_off = 32;
-}
-
 int neverc_krt_cred_init(void)
 {
 	if (_neverc_krt_cred_inited) return 0;
 
 	neverc_krt_process_init();
+	_neverc_krt_cred_find_uid_offset();
 
 	_neverc_krt_cred_put =
 		(neverc_krt_put_cred_fn)NEVERC_KRT_LOOKUP("put_cred");
@@ -74,64 +36,19 @@ int neverc_krt_cred_init(void)
 	return 0;
 }
 
-static int _neverc_krt_cred_find_uid_offset(void)
+int _neverc_krt_cred_find_uid_offset(void)
 {
-	if (_neverc_krt_off_uid) return 0;
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_gki_layout();
 
-	/*
-	 * struct cred layout change:
-	 *   5.10-6.1: atomic_t   usage (4 bytes) → uid at offset 4
-	 *   6.6+:     atomic_long_t usage (8 bytes) → uid at offset 8
-	 * Scanning must start AFTER the usage field to avoid a false
-	 * match when the upper half of an 8-byte refcount is zero and
-	 * the current process is root (all UIDs/GIDs are 0).
-	 */
-	unsigned long scan_start = _neverc_krt_cred_uid_base();
-
-	const void *cred = (void *)0;
-	int cred_ref = 0;
-	unsigned long task;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
-
-	if (_neverc_krt_off_cred) {
-		unsigned long cv;
-		if (neverc_krt_mem_read(&cv,
-				(void *)((unsigned long)task +
-					 _neverc_krt_off_cred), 8))
-			cv = 0;
-		cred = (const void *)cv;
-	} else if (_neverc_krt_get_task_cred && _neverc_krt_cred_put) {
-		cred = _neverc_krt_get_task_cred((struct task_struct *)task);
-		if (cred) cred_ref = 1;
-	}
-
-	if (!cred) {
-		_neverc_krt_off_uid = scan_start;
-		return 0;
-	}
-
-	const unsigned char *p = (const unsigned char *)cred;
-
-	for (unsigned long i = scan_start; i + 24 < 128; i += 4) {
-		u32 ids[6];
-		if (neverc_krt_mem_read(ids, p + i, sizeof(ids)))
-			continue;
-		u32 uid = ids[0], gid = ids[1], suid = ids[2];
-		u32 sgid = ids[3], euid = ids[4], egid = ids[5];
-
-		if (uid == suid && suid == euid &&
-		    gid == sgid && sgid == egid &&
-		    uid < 65536 && gid < 65536) {
-			_neverc_krt_off_uid = i;
-			break;
-		}
-	}
-
-	if (cred_ref)
-		_neverc_krt_cred_put(cred);
-
-	if (!_neverc_krt_off_uid)
-		_neverc_krt_off_uid = scan_start;
+	__atomic_store_n(&_neverc_krt_off_cred, layout->task_real_cred,
+			 __ATOMIC_RELEASE);
+	__atomic_store_n(&_neverc_krt_off_uid, layout->cred_uid,
+			 __ATOMIC_RELEASE);
+	_neverc_krt_cred_sb_off =
+		layout->cred_securebits - layout->cred_uid;
+	_neverc_krt_cred_cap_off =
+		layout->cred_cap_inheritable - layout->cred_uid;
 	return 0;
 }
 
@@ -143,53 +60,8 @@ int neverc_krt_cred_get_ids(struct task_struct *task,
 
 	if (!task || !ids) return -1;
 
-	if (!__atomic_load_n(&_neverc_krt_off_cred, __ATOMIC_ACQUIRE)) {
-		const unsigned char *tp = (const unsigned char *)task;
-		unsigned long uid_off = _neverc_krt_cred_uid_base();
-		unsigned long i;
-		for (i = 0x400; i < 0xE00; i += 8) {
-			unsigned long v1, v2;
-			if (neverc_krt_mem_read(&v1, tp + i, 8)) continue;
-			if (neverc_krt_mem_read(&v2, tp + i + 8, 8)) continue;
-			if (v1 <= 0xFFFF000000000000UL ||
-			    v1 >= 0xFFFFFFFFFFFFF000UL)
-				continue;
-			if (v2 <= 0xFFFF000000000000UL ||
-			    v2 >= 0xFFFFFFFFFFFFF000UL)
-				continue;
-
-			u32 refcnt;
-			if (neverc_krt_mem_read(&refcnt, (void *)v1, 4))
-				continue;
-			if (refcnt < 1 || refcnt > 10000)
-				continue;
-
-			u32 uid_buf[8];
-			if (neverc_krt_mem_read(uid_buf,
-					(void *)(v1 + uid_off),
-					sizeof(uid_buf)))
-				continue;
-			int match = 1;
-			for (int j = 0; j < 8; j++) {
-				if (uid_buf[j] > 65535) { match = 0; break; }
-			}
-			if (match) {
-				/*
-				 * task_struct layout: ptracer_cred (usually
-				 * NULL) / real_cred / cred.  NULL fails the
-				 * range check so `i` is real_cred's offset.
-				 * We store this as _neverc_krt_off_cred; all
-				 * readers get the same UIDs (real_cred and
-				 * cred point to the same struct normally).
-				 * neverc_krt_su_elevate_pid patches both
-				 * off_cred (real_cred) and off_cred+8 (cred).
-				 */
-				__atomic_store_n(&_neverc_krt_off_cred, i,
-						 __ATOMIC_RELEASE);
-				break;
-			}
-		}
-	}
+	if (!__atomic_load_n(&_neverc_krt_off_cred, __ATOMIC_ACQUIRE))
+		_neverc_krt_cred_find_uid_offset();
 
 	if (!_neverc_krt_off_cred) return -1;
 
@@ -225,7 +97,6 @@ int neverc_krt_cred_set_uid0(void)
 	if (!cred) return -1;
 
 	_neverc_krt_cred_find_uid_offset();
-	_neverc_krt_cred_probe_cap_offset(cred);
 
 	/*
 	 * Raw writes are safe here: prepare_creds() returns a freshly

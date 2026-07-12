@@ -74,7 +74,7 @@ set(BUILTIN_STRING_SCRIPT_DIR
 
 # Collect all .inc fragment paths for dependency tracking.
 set(BUILTIN_STRING_INC_FRAGMENTS)
-foreach(stem Type Allocation Accessors Capacity Compare Search
+foreach(stem Type EncryptDecrypt Allocation Accessors Capacity Compare Search
              Mutation Utility Encoding WebCodec Format)
   list(APPEND BUILTIN_STRING_INC_FRAGMENTS
        "${BUILTIN_STRING_PRELUDE_DIR}/${stem}.inc")
@@ -127,9 +127,12 @@ endif()
 
 set(BUILTIN_STRING_RUNTIME_BC
     "${CMAKE_CURRENT_BINARY_DIR}/neverc_string_runtime.bc")
+# Keep the embedded call graph unoptimized for link-time selection while
+# allowing the consumer module's optimization pipeline to inline it.
 add_custom_target(neverc-bootstrap-string-bc
   COMMAND $<TARGET_FILE:neverc>
           -c -emit-llvm -O0 -fno-builtin-string -fno-lto
+          -disable-O0-optnone -finline-functions
           -ffreestanding -std=gnu11
           -Wno-invalid-noreturn
           "${BUILTIN_STRING_RUNTIME_C}"
@@ -173,7 +176,11 @@ endforeach()
 # resets data layout & triple at merge time, and strips host-specific
 # attributes, so cross-arch usage works for the same OS.
 if(TARGET mimalloc-static)
-  set(_MI_SRC_ROOT "${mimalloc_SOURCE_DIR}")
+  get_target_property(_MI_SRC_ROOT mimalloc-static SOURCE_DIR)
+  if(NOT _MI_SRC_ROOT)
+    message(FATAL_ERROR
+      "NeverC: unable to locate mimalloc source directory for bitcode bootstrap")
+  endif()
 
   foreach(_mi_os linux darwin win)
     if(_mi_os STREQUAL "linux")
@@ -271,8 +278,17 @@ add_custom_target(neverc-bootstrap-std-bc
 set(BUILTIN_NVK_KERNEL_SCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Builtin")
 set(BUILTIN_NVK_KERNEL_RUNTIME_DIR
     "${NEVERC_SOURCE_DIR}/../runtime/android/kernel")
-set(BUILTIN_NVK_KERNEL_SRC
-    "${BUILTIN_NVK_KERNEL_RUNTIME_DIR}/src/nvk_runtime_bc.c")
+file(GLOB_RECURSE BUILTIN_NVK_KERNEL_SOURCES CONFIGURE_DEPENDS
+    "${BUILTIN_NVK_KERNEL_RUNTIME_DIR}/src/*.c")
+file(GLOB_RECURSE BUILTIN_NVK_KERNEL_HEADERS CONFIGURE_DEPENDS
+    "${BUILTIN_NVK_KERNEL_RUNTIME_DIR}/src/*.h"
+    "${BUILTIN_NVK_KERNEL_RUNTIME_DIR}/src/*.inc"
+    "${BUILTIN_NVK_KERNEL_RUNTIME_DIR}/include/*.h"
+    "${BUILTIN_NVK_KERNEL_RUNTIME_DIR}/arm64/include/*.h")
+set(BUILTIN_NVK_KERNEL_INPUTS
+    ${BUILTIN_NVK_KERNEL_SOURCES}
+    ${BUILTIN_NVK_KERNEL_HEADERS}
+    "${BUILTIN_NVK_KERNEL_SCRIPT_DIR}/build_nvk_kernel_bitcode.py")
 
 set(BUILTIN_NVK_KERNEL_BITCODE_H
     "${CMAKE_CURRENT_BINARY_DIR}/BuiltinNvkKernelBitcode.h")
@@ -280,7 +296,9 @@ if(NOT EXISTS "${BUILTIN_NVK_KERNEL_BITCODE_H}")
   file(WRITE "${BUILTIN_NVK_KERNEL_BITCODE_H}"
     "/* Empty placeholder — run 'ninja neverc-bootstrap-nvk-kernel-bc' to populate. */\n"
     "static const unsigned char kNvkKernelBC[] = {0};\n"
-    "static const unsigned int kNvkKernelBCLen = 0;\n")
+    "static const unsigned int kNvkKernelBCLen = 0;\n"
+    "static const char *const kNvkKernelSymbols[] = {nullptr};\n"
+    "static const unsigned int kNvkKernelSymbolCount = 0;\n")
 endif()
 
 add_custom_target(neverc-bootstrap-nvk-kernel-bc
@@ -291,7 +309,7 @@ add_custom_target(neverc-bootstrap-nvk-kernel-bc
           -o "${BUILTIN_NVK_KERNEL_BITCODE_H}"
   COMMAND ${CMAKE_COMMAND} -E touch
           "${CMAKE_CURRENT_SOURCE_DIR}/Builtin/BuiltinNvkKernel.cpp"
-  DEPENDS neverc "${BUILTIN_NVK_KERNEL_SRC}"
+  DEPENDS neverc ${BUILTIN_NVK_KERNEL_INPUTS}
   COMMENT "[NeverC] Bootstrap: compiling NVK kernel runtime to embedded bitcode"
 )
 

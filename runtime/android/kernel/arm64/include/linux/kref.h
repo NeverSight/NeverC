@@ -7,13 +7,13 @@
 
 struct kref { atomic_t refcount; };
 
-__always_inline void kref_init(struct kref *kref)
+static __always_inline void kref_init(struct kref *kref)
 { kref->refcount.counter = 1; }
 
-__always_inline void kref_get(struct kref *kref)
+static __always_inline void kref_get(struct kref *kref)
 { __atomic_add_fetch(&kref->refcount.counter, 1, __ATOMIC_RELAXED); }
 
-__always_inline int kref_put(struct kref *kref,
+static __always_inline int kref_put(struct kref *kref,
 				    void (*release)(struct kref *))
 {
 	if (__atomic_sub_fetch(&kref->refcount.counter, 1,

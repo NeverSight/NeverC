@@ -3,6 +3,7 @@ set(NEVERC_TEST_SOURCES
   BasicTests.cpp
   HostTests.cpp
   DriverTests.cpp
+  AndroidKernelRuntimeTests.cpp
   LTOTests.cpp
   LinkerTests.cpp
   OverrideTests.cpp

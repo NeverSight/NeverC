@@ -5,6 +5,7 @@
 #include <linux/types.h>
 #include <linux/list.h>
 #include <linux/compiler.h>
+#include <linux/sched.h>
 
 /* ---- wait_queue_head -------------------------------------------------- */
 
@@ -23,7 +24,7 @@ _Static_assert(sizeof(wait_queue_head_t) == 24,
 		.head = LIST_HEAD_INIT(name.head),                            \
 	}
 
-__always_inline void init_waitqueue_head(wait_queue_head_t *wq)
+static __always_inline void init_waitqueue_head(wait_queue_head_t *wq)
 {
 	wq->__lock = 0;
 	INIT_LIST_HEAD(&wq->head);
@@ -40,6 +41,11 @@ struct wait_queue_entry {
 	struct list_head entry;
 };
 typedef struct wait_queue_entry wait_queue_entry_t;
+
+_Static_assert(sizeof(wait_queue_entry_t) == 40,
+	       "unexpected arm64 GKI wait_queue_entry layout");
+_Static_assert(__builtin_offsetof(wait_queue_entry_t, entry) == 24,
+	       "unexpected arm64 GKI wait_queue_entry.entry offset");
 
 /* Exported helpers used by wait_event expansion. */
 void prepare_to_wait(wait_queue_head_t *wq_head,
@@ -70,11 +76,11 @@ void __wake_up(wait_queue_head_t *wq_head, unsigned int mode,
 
 void schedule(void);
 
-__always_inline void
+static __always_inline void
 init_wait_entry(wait_queue_entry_t *wq_entry, int flags)
 {
 	wq_entry->flags = flags;
-	wq_entry->private = (void *)0;  /* set to current by prepare_to_wait */
+	wq_entry->private = current;
 	wq_entry->func = autoremove_wake_function;
 	INIT_LIST_HEAD(&wq_entry->entry);
 }
@@ -123,6 +129,11 @@ struct completion {
 	struct wait_queue_head wait;
 };
 
+_Static_assert(sizeof(struct completion) == 32,
+	       "unexpected arm64 GKI completion layout");
+_Static_assert(__builtin_offsetof(struct completion, wait) == 8,
+	       "unexpected arm64 GKI completion.wait offset");
+
 #define DECLARE_COMPLETION(work)                                              \
 	struct completion work = {                                            \
 		.done = 0,                                                    \
@@ -130,15 +141,15 @@ struct completion {
 			  .head = LIST_HEAD_INIT((work).wait.head) },         \
 	}
 
-__always_inline void init_completion(struct completion *x)
+static __always_inline void init_completion(struct completion *x)
 {
 	x->done = 0;
 	init_waitqueue_head(&x->wait);
 }
 
-__always_inline void reinit_completion(struct completion *x)
+static __always_inline void reinit_completion(struct completion *x)
 {
-	x->done = 0;
+	WRITE_ONCE(x->done, 0);
 }
 
 void wait_for_completion(struct completion *x);

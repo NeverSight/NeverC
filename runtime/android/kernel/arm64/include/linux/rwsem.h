@@ -7,14 +7,14 @@
 /*
  * GKI 5.10-6.18: count(8) + owner(8) + osq(4) + lock(4) + wait_list(16)
  *                + ANDROID_VENDOR_DATA(8) + ANDROID_OEM_DATA_ARRAY(16)
- *                → ~64 bytes.  Round up to 72 for safety.
+ *                = 64 bytes in the official arm64 configurations.
  */
 struct rw_semaphore {
-	unsigned char __opaque[72];
+	unsigned char __opaque[64];
 };
 
-_Static_assert(sizeof(struct rw_semaphore) >= 64,
-	       "struct rw_semaphore too small for GKI with ANDROID_VENDOR_OEM_DATA");
+_Static_assert(sizeof(struct rw_semaphore) == 64,
+	       "unexpected GKI rw_semaphore layout");
 
 void __init_rwsem(struct rw_semaphore *sem, const char *name, void *key);
 #define init_rwsem(sem) __init_rwsem(sem, "?", (void *)0)

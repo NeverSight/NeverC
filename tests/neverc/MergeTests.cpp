@@ -270,6 +270,7 @@ struct SymSpec {
   int SecIdx;     // 0-based index into the SecSpec list; -1 => undefined
   uint64_t Value; // section-relative value for defined symbols
   bool Global = true;
+  bool Weak = false;
 };
 
 struct RelSpec {
@@ -342,7 +343,8 @@ SmallVector<char, 0> buildSectionedELF(ArrayRef<SecSpec> Secs,
       E.st_shndx = 1 + S.SecIdx;
       E.st_value = S.Value;
     }
-    E.st_info = ((S.Global ? STB_GLOBAL : STB_LOCAL) << 4) | STT_FUNC;
+    uint8_t Binding = S.Weak ? STB_WEAK : (S.Global ? STB_GLOBAL : STB_LOCAL);
+    E.st_info = (Binding << 4) | STT_FUNC;
     SymIndex[S.Name] = OutSyms.size();
     OutSyms.push_back(E);
   };
@@ -677,6 +679,46 @@ bool patchSymValue(SmallVectorImpl<char> &Buf, StringRef Name,
         Sy[k].st_value = NewVal;
         return true;
       }
+  }
+  return false;
+}
+
+bool corruptSymbolContentByte(SmallVectorImpl<char> &Buf, StringRef Name) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *H = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (H->e_shoff + (uint64_t)H->e_shnum * sizeof(Elf64_Shdr) > Buf.size())
+    return false;
+  auto *Secs = reinterpret_cast<Elf64_Shdr *>(Buf.data() + H->e_shoff);
+  for (unsigned I = 0; I < H->e_shnum; ++I) {
+    if (Secs[I].sh_type != SHT_SYMTAB ||
+        Secs[I].sh_link >= H->e_shnum ||
+        Secs[I].sh_offset + Secs[I].sh_size > Buf.size())
+      continue;
+    const Elf64_Shdr &StrSec = Secs[Secs[I].sh_link];
+    if (StrSec.sh_offset + StrSec.sh_size > Buf.size())
+      continue;
+    const char *StrData = Buf.data() + StrSec.sh_offset;
+    auto *Symbols =
+        reinterpret_cast<Elf64_Sym *>(Buf.data() + Secs[I].sh_offset);
+    unsigned Count = Secs[I].sh_size / sizeof(Elf64_Sym);
+    for (unsigned K = 0; K < Count; ++K) {
+      if (Symbols[K].st_name >= StrSec.sh_size ||
+          Name != StrData + Symbols[K].st_name ||
+          Symbols[K].st_shndx == SHN_UNDEF ||
+          Symbols[K].st_shndx >= H->e_shnum)
+        continue;
+      const Elf64_Shdr &DataSec = Secs[Symbols[K].st_shndx];
+      if (DataSec.sh_type == SHT_NOBITS ||
+          Symbols[K].st_value >= DataSec.sh_size)
+        return false;
+      uint64_t Offset = DataSec.sh_offset + Symbols[K].st_value;
+      if (Offset >= Buf.size())
+        return false;
+      Buf[(size_t)Offset] ^= 0x5a;
+      return true;
+    }
   }
   return false;
 }
@@ -1997,6 +2039,41 @@ TEST(MergeELFSemantic, KernelModuleAllFamiliesFoldOffsets) {
   EXPECT_EQ(V.Syms[V.Relas[0].Sym].Name, std::string("g0"));
 }
 
+TEST(MergeELFSemantic, KernelModuleKeepsMergeableRodataDistinct) {
+  using namespace ELF;
+  // Clang emits string literals into SHF_MERGE|SHF_STRINGS sections such as
+  // .rodata.str1.1.  Kernel-module folding must not rename such a section to
+  // .rodata: its flags are intentionally incompatible with ordinary rodata,
+  // so doing so creates two output sections with the same name.  Linux exposes
+  // module sections in sysfs by name and reports EEXIST for that malformed
+  // shape during insmod.
+  SecSpec Regular{".rodata.value", 0x20, 8, SHT_PROGBITS, SHF_ALLOC, 0xAA};
+  SecSpec String{".rodata.str1.1", 0x18, 1, SHT_PROGBITS,
+                 SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 0xBB};
+  SymSpec Value{"value", 0, 0, true};
+  auto Obj = buildSectionedELF({Regular, String}, {Value}, {});
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  Options Opts;
+  Opts.mergeSections = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  unsigned PlainRodata = 0;
+  unsigned MergeableRodata = 0;
+  for (const ParsedSec &S : V.Secs) {
+    if (S.Name == ".rodata")
+      ++PlainRodata;
+    if (S.Name == ".rodata.str1.1")
+      ++MergeableRodata;
+  }
+  EXPECT_EQ(PlainRodata, 1u);
+  EXPECT_EQ(MergeableRodata, 1u);
+}
+
 TEST(MergeELFSemantic, DistinctNotesConcatenatedIdenticalDeduped) {
   using namespace ELF;
   // This merger is also the linker's general `-r` path over arbitrary user
@@ -2537,6 +2614,40 @@ TEST(MergeELFVerify, AcceptsGoodMergeRejectsCollapse) {
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
                            ArrayRef<char>(OOB), Format::ELF64LE, {}, &Err))
       << "verifier accepted an out-of-bounds symbol value";
+}
+
+TEST(MergeELFVerify, AcceptsCoalescedWeakSymbolInMergedSection) {
+  using namespace ELF;
+  // CFI-enabled translation units each carry a weak __cfi_check definition in
+  // the same .text section as ordinary functions. The weak symbol legitimately
+  // resolves to one output definition; it therefore does not share the
+  // per-input section shift of the ordinary function in later inputs.
+  SecSpec S0{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xAA};
+  SecSpec S1{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xAA};
+  SymSpec F0{"f0", 0, 0x10};
+  SymSpec F1{"f1", 0, 0x10};
+  SymSpec Cfi0{"__cfi_check", 0, 0, /*Global=*/true, /*Weak=*/true};
+  SymSpec Cfi1{"__cfi_check", 0, 0, /*Global=*/true, /*Weak=*/true};
+
+  auto O0 = buildSectionedELF({S0}, {F0, Cfi0}, {});
+  auto O1 = buildSectionedELF({S1}, {F1, Cfi1}, {});
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(std::move(O0));
+  Bufs.push_back(std::move(O1));
+
+  auto [OK, Out] = mergeELF(Bufs);
+  ASSERT_TRUE(OK);
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::ELF64LE, {}, &Err))
+      << Err;
+
+  auto Corrupt = Out;
+  ASSERT_TRUE(corruptSymbolContentByte(Corrupt, "__cfi_check"));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Corrupt), Format::ELF64LE, {}, &Err))
+      << "verifier accepted a corrupted surviving weak definition";
 }
 
 TEST(MergeELFVerify, CatchesCollapsedDuplicateNamedSymbol) {

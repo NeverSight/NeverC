@@ -35,8 +35,8 @@ with `-DNVK_KERNEL=510|515|601|606|612|618` (default `510` = android12-5.10).
 
 ```
 runtime/android/kernel/
-  include/                     # NeverC kernel SDK (28 headers)
-    nvkmod.h                   #   module entry point, kprobe bootstrap, NVK_BOOTSTRAP()
+  include/                     # public NeverC kernel SDK headers
+    nvkmod.h                   #   module entry point and NEVERC_KRT_BOOTSTRAP()
     nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.18)
     nvk.h                      #   all-in-one include (initializes all subsystems, auto vermagic fix)
     nvk_interpose.h                 #   arm64 inline-interpose engine v2 (simple + context + batch + chain + ftrace + kCFI)
@@ -66,22 +66,30 @@ runtime/android/kernel/
     nvk_power.h                #   PM notifier (suspend/resume) + reboot notifier
     nvk_cpu.h                  #   CPU topology, online enumeration, per-CPU data, SMP calls
   arm64/
-    include/                   # minimal kernel headers (107 total)
-      linux/*.h                #   99 headers: types, kernel, printk, list, slab, fs, ...
-      asm/*.h                  #   8 headers: barrier, current, page, ptrace, syscall, ...
+    include/                   # minimal cross-version kernel compatibility headers
+      linux/*.h                #   types, kernel, printk, list, slab, fs, ...
+      asm/*.h                  #   barrier, current, page, ptrace, syscall, ...
     lib/                       # optional libclang_rt.builtins-aarch64.a
+  src/
+    nvk_internal.h             # private interfaces shared only by runtime C files
+    *.c                        # runtime implementations and file-local helpers
   tools/
     gen_struct_module_offsets.c # regenerate exact struct module offsets per kernel
     gen_fops_offsets.c           # file_operations offsetof/size probe
-    gen_layout_offsets.c       # proc_ops / sk_buff / nf_interpose_ops layout probe
-    test-all.sh                # full verification: 8 demos × 6 kernels × extra modes = 84 configs
+    gen_layout_offsets.c       # proc_ops / sk_buff / nf_hook_ops layout probe
+    extract-btf-layouts.py     # extract authoritative layouts from GKI BTF
+    check-source-boundaries.py # enforce public/private source boundaries
+    test-sdk-layouts.sh        # compile layout-sensitive headers for every GKI
+    test-runtime-linkage.sh    # focused multi-TU auto/full/no-LTO checks
+    test-all.sh                # full demo × kernel-profile × linkage-mode matrix
 ```
 
 `neverc -fandroid-kernel-driver-mode` automatically:
 
 - swaps the bionic sysroot for the kernel include roots above
   (`include/` + `arm64/include/`),
-- disables auto-LTO (emits real ELF, not bitcode),
+- enables auto-LTO by default for multi-file modules; explicit `-flto=full` and
+  `-fno-lto` builds are both supported and covered by the runtime matrix,
 - adds `-D__KERNEL__ -DMODULE -ffreestanding`, direct external-data access
   (the arm64 module loader has no GOT), reserved `x18`, and disables outline
   atomics and CFI checks,
@@ -91,6 +99,12 @@ runtime/android/kernel/
   self-contained with **zero** compiler-rt dependency,
 - emits the empty `.plt` / `.init.plt` / `.text.ftrace_trampoline` sections the
   arm64 loader requires (`CONFIG_ARM64_MODULE_PLTS`) — no external `module.lds`.
+
+Public headers contain declarations, macros, compatibility types, and only
+small forced-inline helpers. Every header-defined function uses
+`static __always_inline`; implementation-private cross-file declarations live
+in `src/nvk_internal.h`, while file-local helpers remain `static` in their C
+file.
 
 You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 
@@ -126,7 +140,8 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_power.h` | `nvk_pm_register/unregister`, `nvk_reboot_register/unregister` — suspend/resume/shutdown awareness |
 | `nvk_cpu.h` | `nvk_cpu_id/cluster/midr`, `nvk_for_each_online_cpu`, `NVK_DEFINE_PER_CPU`, `nvk_smp_on_each`, CPU feature detection (CRC32/SHA/AES/LSE/SVE) |
 
-All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xorstr.
+All symbol lookups go through `NEVERC_KRT_LOOKUP()` which auto-encrypts
+string literals via xorstr.
 
 ## Examples
 
@@ -135,7 +150,7 @@ All symbol lookups go through `NVK_LOOKUP()` which auto-encrypts strings via xor
 | `android-kernel-hello` | Zero-import minimal module (load test) |
 | `android-kernel-driver` | Dynamic kallsyms template |
 | `android-kernel-chardev` | misc device + ioctl + /proc status page |
-| `android-kernel-inline-interpose` | Inline interpose on `do_faccessat` (simple + context modes) |
+| `android-kernel-inline-interpose` | High-level function interpose on `do_faccessat` |
 | `android-kernel-syscall-interpose` | sys_call_table replacement + inline interpose (dual mode) |
 | `android-kernel-lowvis` | Module visibility management (list / sysfs / proc + SELinux policy control + credential wrappers) |
 | `android-kernel-netlink` | User↔kernel netlink IPC channel (ping/version/echo) |
@@ -167,7 +182,7 @@ OEM ships a different config, regenerate them for that kernel before loading:
 ```
 # On a prepared tree (Linux: make ARCH=arm64 LLVM=1 gki_defconfig modules_prepare):
 runtime/android/kernel/tools/gen-offsets.sh <path-to-GKI>/common
-# prints:  #  define NVK_OFF_INIT ...  etc. -> paste into nvkmod_version.h
+# prints:  #  define NEVERC_KRT_OFF_INIT ...  etc. -> paste into nvkmod_version.h
 ```
 
 `tools/gen-offsets.sh` drives `tools/gen_struct_module_offsets.c` (a no-run
@@ -195,10 +210,12 @@ docker run --rm -v <repo>/local_docs:/work -v <repo>/runtime/android/kernel/tool
 ```
 
 You can also override per build with
-`-DNVK_OFF_INIT=… -DNVK_OFF_EXIT=… -DNVK_MODULE_SIZE=…`.
+`-DNEVERC_KRT_OFF_INIT=… -DNEVERC_KRT_OFF_EXIT=…`
+`-DNEVERC_KRT_MODULE_SIZE=…`.
 
-`vermagic` is likewise device-specific; override with `-DNVK_VERMAGIC='"…"'` to
-match your target (`cat /proc/version` / `modinfo` of an existing module).
+`vermagic` is likewise device-specific; override with
+`-DNEVERC_KRT_VERMAGIC='"…"'` to match your target (`cat /proc/version` /
+`modinfo` of an existing module).
 
 ## Linux 6.18 (android17-6.18) notes
 

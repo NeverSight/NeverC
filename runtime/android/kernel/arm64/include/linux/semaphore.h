@@ -3,34 +3,43 @@
 #define _NEVERC_KRT_LINUX_SEMAPHORE_H
 
 #include <linux/types.h>
+#include <linux/list.h>
 #include <linux/compiler.h>
+#include <nvkmod_version.h>
 
 /*
- * GKI 5.10–6.18 (arm64, no debug):
+ * GKI 5.10–6.12 (arm64):
  *   raw_spinlock_t lock      4 bytes
  *   unsigned int count       4 bytes
  *   struct list_head wait    16 bytes
- *   Total = 24 bytes.  32 gives headroom.
+ * GKI 6.18 appends last_holder (8 bytes).
  */
 struct semaphore {
-	unsigned char __opaque[32];
+	u32 lock;
+	unsigned int count;
+	struct list_head wait_list;
+#if NEVERC_KRT_KERNEL >= 618
+	unsigned long last_holder;
+#endif
 };
 
-_Static_assert(sizeof(struct semaphore) >= 24,
-	       "struct semaphore too small for GKI arm64");
+#if NEVERC_KRT_KERNEL >= 618
+_Static_assert(sizeof(struct semaphore) == 32,
+	       "unexpected GKI 6.18 semaphore layout");
+#else
+_Static_assert(sizeof(struct semaphore) == 24,
+	       "unexpected GKI 5.10-6.12 semaphore layout");
+#endif
 
 /*
  * sema_init is always inline in GKI.
  * Layout: lock(4) + count(4) + wait_list(16).
  */
-__always_inline void sema_init(struct semaphore *sem, int val)
+static __always_inline void sema_init(struct semaphore *sem, int val)
 {
 	__builtin_memset(sem, 0, sizeof(*sem));
-	*(unsigned int *)((char *)sem + 4) = val;
-	/* init wait_list head (self-referencing) at offset 8 */
-	void **head = (void **)((char *)sem + 8);
-	head[0] = head;  /* next = self */
-	head[1] = head;  /* prev = self */
+	sem->count = (unsigned int)val;
+	INIT_LIST_HEAD(&sem->wait_list);
 }
 void down(struct semaphore *sem);
 int down_interruptible(struct semaphore *sem);

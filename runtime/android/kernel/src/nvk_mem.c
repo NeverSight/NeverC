@@ -1,6 +1,66 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
-#include <nvk_internal.h>
+#include "nvk_internal.h"
+
+#define NEVERC_KRT_MEM_FORCE_INLINE __attribute__((always_inline))
+
+/* ---- public forced-inline atomic operations ---- */
+
+NEVERC_KRT_MEM_FORCE_INLINE u64
+neverc_krt_mem_atomic_read64(const volatile u64 *addr)
+{
+	u64 value;
+
+	__asm__ __volatile__("ldar %0, [%1]"
+			     : "=r"(value)
+			     : "r"(addr)
+			     : "memory");
+	return value;
+}
+
+NEVERC_KRT_MEM_FORCE_INLINE void
+neverc_krt_mem_atomic_write64(volatile u64 *addr, u64 value)
+{
+	__asm__ __volatile__("stlr %1, [%0]"
+			     :
+			     : "r"(addr), "r"(value)
+			     : "memory");
+}
+
+NEVERC_KRT_MEM_FORCE_INLINE u64
+neverc_krt_mem_xchg64(volatile u64 *addr, u64 new_value)
+{
+	u64 old_value;
+	u32 status;
+
+	__asm__ __volatile__(
+		"1: ldaxr %0, [%2]\n"
+		"   stlxr %w1, %3, [%2]\n"
+		"   cbnz  %w1, 1b\n"
+		: "=&r"(old_value), "=&r"(status)
+		: "r"(addr), "r"(new_value)
+		: "memory");
+	return old_value;
+}
+
+NEVERC_KRT_MEM_FORCE_INLINE int
+neverc_krt_mem_cas64(volatile u64 *addr, u64 expected, u64 desired)
+{
+	u64 old_value;
+	u32 status;
+
+	__asm__ __volatile__(
+		"1: ldaxr %0, [%2]\n"
+		"   cmp   %0, %3\n"
+		"   b.ne  2f\n"
+		"   stlxr %w1, %4, [%2]\n"
+		"   cbnz  %w1, 1b\n"
+		"2:\n"
+		: "=&r"(old_value), "=&r"(status)
+		: "r"(addr), "r"(expected), "r"(desired)
+		: "memory", "cc");
+	return old_value == expected;
+}
 
 /* ---- file-local typedefs ---- */
 
@@ -107,16 +167,10 @@ int neverc_krt_mem_init(void)
 		(neverc_krt_insn_patch_text_fn)NEVERC_KRT_LOOKUP("aarch64_insn_patch_text");
 
 	/*
-	 * Auto-detect kernel version from linux_banner.  This is the
-	 * primary detection path: the bitcode is compiled once with
-	 * NEVERC_KRT_KERNEL=510, so any inline _neverc_krt_version_setup()
-	 * called from within the bitcode would always pass 510 regardless
-	 * of the actual running kernel.  Runtime detection from
-	 * linux_banner is the only reliable mechanism.
-	 *
-	 * If the user called _neverc_krt_version_setup() explicitly from
-	 * their module code (where NEVERC_KRT_KERNEL is correct), this
-	 * block is skipped (kernel_ver already set).
+	 * NEVERC_KRT_BOOTSTRAP() records the caller's profile before this
+	 * function runs.  neverc_krt_init_all() is part of the neutral
+	 * embedded bitcode, so it cannot carry a compile-time profile and
+	 * reaches this banner-based fallback instead.
 	 */
 	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE))
 		_neverc_krt_version_try_detect_from_banner();
@@ -591,4 +645,6 @@ void *neverc_krt_mem_scan_mask_safe(const void *start, size_t region_len,
 	}
 	return (void *)0;
 }
+
+#undef NEVERC_KRT_MEM_FORCE_INLINE
 

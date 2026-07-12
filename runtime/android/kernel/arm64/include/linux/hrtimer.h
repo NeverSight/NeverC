@@ -33,21 +33,34 @@ enum hrtimer_restart {
 	HRTIMER_RESTART   = 1,
 };
 
+struct hrtimer;
+typedef enum hrtimer_restart (*hrtimer_func_t)(struct hrtimer *);
+
 /*
- * Opaque hrtimer storage — GKI arm64 (production, no debug):
+ * Exact opaque hrtimer storage for the official arm64 GKI configurations:
  *   timerqueue_node(32) + _softexpires(8) + function(8) + base(8) + 4×u8(4) + pad(4)
  *   5.10–6.6: + ANDROID_KABI_RESERVE(1) = u64(8)  → 72 bytes
  *   6.12–6.18: KABI_RESERVE removed                → 64 bytes
- * 128 bytes covers all versions with generous headroom.
  */
 struct hrtimer {
-	unsigned char __opaque[128];
+	unsigned char __before_function[40];
+	hrtimer_func_t function;
+#if NEVERC_KRT_KERNEL < 612
+	unsigned char __after_function[24];
+#else
+	unsigned char __after_function[16];
+#endif
 };
 
-_Static_assert(sizeof(struct hrtimer) >= 72,
-	       "struct hrtimer too small for GKI 5.10+ arm64");
-
-typedef enum hrtimer_restart (*hrtimer_func_t)(struct hrtimer *);
+_Static_assert(__builtin_offsetof(struct hrtimer, function) == 40,
+	       "unexpected GKI hrtimer function offset");
+#if NEVERC_KRT_KERNEL < 612
+_Static_assert(sizeof(struct hrtimer) == 72,
+	       "unexpected GKI 5.10-6.6 hrtimer layout");
+#else
+_Static_assert(sizeof(struct hrtimer) == 64,
+	       "unexpected GKI 6.12+ hrtimer layout");
+#endif
 
 /*
  * hrtimer API evolution:
@@ -69,7 +82,7 @@ void hrtimer_init(struct hrtimer *timer, int which_clock,
 void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t time,
 			    u64 delta_ns, const enum hrtimer_mode mode);
 
-__always_inline void hrtimer_start(struct hrtimer *timer, ktime_t time,
+static __always_inline void hrtimer_start(struct hrtimer *timer, ktime_t time,
 				   const enum hrtimer_mode mode)
 {
 	hrtimer_start_range_ns(timer, time, 0, mode);
@@ -80,7 +93,7 @@ int hrtimer_try_to_cancel(struct hrtimer *timer);
 u64 hrtimer_forward(struct hrtimer *timer, ktime_t now, ktime_t interval);
 
 /* ktime helpers. */
-__always_inline ktime_t ktime_set(const s64 secs, const unsigned long nsecs)
+static __always_inline ktime_t ktime_set(const s64 secs, const unsigned long nsecs)
 {
 	return secs * 1000000000LL + (s64)nsecs;
 }

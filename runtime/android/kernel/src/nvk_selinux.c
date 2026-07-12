@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
-#include <nvk_internal.h>
+#include "nvk_internal.h"
 
 static volatile int *_neverc_krt_selinux_enforcing;
 

@@ -3,9 +3,12 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalObject.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -62,15 +65,47 @@ inline void linkModuleOrFail(llvm::Module &M,
     llvm::report_fatal_error(llvm::Twine("Failed to link ") + Label);
 }
 
-inline void captureDefinitionNames(const llvm::Module &Mod,
-                                   llvm::StringSet<> &FnNames,
-                                   llvm::StringSet<> &GlobalNames) {
-  for (const llvm::Function &F : Mod)
+// ===----------------------------------------------------------------------===//
+// Runtime-definition provenance
+// ===----------------------------------------------------------------------===//
+
+inline void tagRuntimeDefinitions(llvm::Module &Mod,
+                                  llvm::StringRef MetadataKind) {
+  llvm::MDNode *Tag = llvm::MDNode::get(Mod.getContext(), {});
+  for (llvm::Function &F : Mod)
     if (!F.isDeclaration())
-      FnNames.insert(F.getName());
-  for (const llvm::GlobalVariable &GV : Mod.globals())
+      F.setMetadata(MetadataKind, Tag);
+  for (llvm::GlobalVariable &GV : Mod.globals())
     if (!GV.isDeclaration())
-      GlobalNames.insert(GV.getName());
+      GV.setMetadata(MetadataKind, Tag);
+}
+
+inline bool hasRuntimeDefinitionTag(const llvm::GlobalObject &GO,
+                                    llvm::StringRef MetadataKind) {
+  return GO.getMetadata(MetadataKind) != nullptr;
+}
+
+inline void clearRuntimeDefinitionTags(llvm::Module &Mod,
+                                       llvm::StringRef MetadataKind) {
+  for (llvm::Function &F : Mod)
+    if (hasRuntimeDefinitionTag(F, MetadataKind))
+      F.setMetadata(MetadataKind, nullptr);
+  for (llvm::GlobalVariable &GV : Mod.globals())
+    if (hasRuntimeDefinitionTag(GV, MetadataKind))
+      GV.setMetadata(MetadataKind, nullptr);
+}
+
+/// Give runtime-private definitions stable names before linking them into a
+/// consumer module. Without this step, a colliding user-local symbol can make
+/// LLVM append a TU-specific suffix, preventing runtime copies from coalescing
+/// consistently at the later LTO or native link.
+inline void namespaceRuntimeLocals(llvm::Module &Mod, llvm::StringRef Prefix) {
+  for (llvm::Function &F : Mod)
+    if (!F.isDeclaration() && F.hasLocalLinkage())
+      F.setName((llvm::Twine(Prefix) + F.getName()).str());
+  for (llvm::GlobalVariable &GV : Mod.globals())
+    if (!GV.isDeclaration() && GV.hasLocalLinkage())
+      GV.setName((llvm::Twine(Prefix) + GV.getName()).str());
 }
 
 // ===----------------------------------------------------------------------===//

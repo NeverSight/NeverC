@@ -44,17 +44,17 @@ KEEP_INLINE = frozenset([
 
 _BLOCK_SIG_RE = re.compile(
     r'^static\s+(?:__inline__\s+)?'
-    r'(.+?)'
+    r'([^{};]+?)'
     r'((?:neverc_string|__neverc_string)_\w+)'
-    r'\s*\(([^)]*)\)',
+    r'\s*\(([^)]*)\)\s*\{',
     re.DOTALL,
 )
 
 
 def strip_prelude_wrapper(text: str) -> str:
     """Remove the R\"prelude(...)prelude\" raw-string-literal wrapper."""
-    m = re.search(r'R"prelude\((.*?)\)prelude"', text, re.DOTALL)
-    return m.group(1) if m else text
+    bodies = re.findall(r'R"prelude\((.*?)\)prelude"', text, re.DOTALL)
+    return "\n".join(bodies) if bodies else text
 
 
 def extract_signatures(prelude_dir: str):

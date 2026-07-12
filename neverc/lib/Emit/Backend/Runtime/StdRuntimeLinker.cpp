@@ -13,6 +13,20 @@ using namespace neverc;
 
 namespace {
 
+constexpr StringLiteral StdRuntimeMetadata = "neverc.std.runtime";
+
+/// C source files may legitimately reuse file-local names such as
+/// `std_table` or `encode_with_table`. Retained runtime definitions are made
+/// linkonce_odr later, so give each local definition a stable module-qualified
+/// identity before independently selected modules are merged into consumer
+/// TUs. Otherwise different module subsets can publish unrelated definitions
+/// under the same linker name.
+void namespaceModuleLocals(Module &Mod, StringRef ModuleName) {
+  const std::string Prefix =
+      (Twine("__neverc_std_local.") + ModuleName + ".").str();
+  namespaceRuntimeLocals(Mod, Prefix);
+}
+
 /// On-demand module resolution for std runtime: lazy-parse all 180+
 /// modules to extract export name sets, then only fully parse and merge
 /// modules whose exports are transitively needed by the user module.
@@ -58,10 +72,10 @@ std::unique_ptr<Module> mergeNeededModules(Module &UserMod) {
         continue;
       }
       for (Function &F : **LazyMod)
-        if (!F.isDeclaration())
+        if (!F.isDeclaration() && !F.hasLocalLinkage())
           Mods[I].Exports.push_back(F.getName().str());
       for (GlobalVariable &GV : (*LazyMod)->globals())
-        if (!GV.isDeclaration())
+        if (!GV.isDeclaration() && !GV.hasLocalLinkage())
           Mods[I].Exports.push_back(GV.getName().str());
     }
   }
@@ -82,6 +96,7 @@ std::unique_ptr<Module> mergeNeededModules(Module &UserMod) {
 
       std::string Label = ("neverc std: " + Mods[I].Name).str();
       auto Mod = parseBitcodeAndPrepare(Mods[I].Data, UserMod, Label);
+      namespaceModuleLocals(*Mod, Mods[I].Name);
 
       for (Function &F : *Mod)
         if (F.isDeclaration() && !F.use_empty())
@@ -127,9 +142,6 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   auto StdMod = mergeNeededModules(M);
   if (!StdMod)
     return PreservedAnalyses::all();
-
-  StringSet<> StdFnNames, StdGlobalNames;
-  captureDefinitionNames(*StdMod, StdFnNames, StdGlobalNames);
 
   // Call-graph + data-graph prune.
   SmallPtrSet<Function *, 32> Needed;
@@ -187,31 +199,30 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     poisonAndErase(GV);
   }
 
+  tagRuntimeDefinitions(*StdMod, StdRuntimeMetadata);
   linkModuleOrFail(M, std::move(StdMod), "neverc std runtime");
 
-  auto IsStdFn = [&](const Function &F) {
-    return StdFnNames.count(F.getName()) != 0;
+  auto IsStdFn = [](const Function &F) {
+    return hasRuntimeDefinitionTag(F, StdRuntimeMetadata);
   };
-  auto IsStdGlobal = [&](const GlobalVariable &GV) {
-    return StdGlobalNames.count(GV.getName()) != 0;
+  auto IsStdGlobal = [](const GlobalVariable &GV) {
+    return hasRuntimeDefinitionTag(GV, StdRuntimeMetadata);
   };
 
-  GlobalValue::LinkageTypes NewLinkage = IsPreLink
-      ? GlobalValue::LinkOnceODRLinkage
-      : GlobalValue::InternalLinkage;
+  // Every consumer TU may independently request the same std module. Keep
+  // retained definitions coalescible until either LTO or the native linker
+  // combines them, including explicit -fno-lto builds.
+  auto MakeCoalescible = [](GlobalObject &GO) {
+    GO.setLinkage(GlobalValue::LinkOnceODRLinkage);
+    GO.setVisibility(GlobalValue::HiddenVisibility);
+  };
 
   for (Function &F : M)
-    if (IsStdFn(F)) {
-      F.setLinkage(NewLinkage);
-      if (IsPreLink)
-        F.setVisibility(GlobalValue::HiddenVisibility);
-    }
+    if (IsStdFn(F))
+      MakeCoalescible(F);
   for (GlobalVariable &GV : M.globals())
-    if (!GV.isDeclaration() && IsStdGlobal(GV)) {
-      GV.setLinkage(NewLinkage);
-      if (IsPreLink)
-        GV.setVisibility(GlobalValue::HiddenVisibility);
-    }
+    if (!GV.isDeclaration() && IsStdGlobal(GV))
+      MakeCoalescible(GV);
 
   if (IsPreLink) {
     removeFromUsedLists(M, [&](Constant *C) {
@@ -219,10 +230,12 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
         return true;
       return false;
     });
+    clearRuntimeDefinitionTags(M, StdRuntimeMetadata);
     return PreservedAnalyses::none();
   }
 
-  // Non-LTO path: full mark-and-sweep DCE for internalized symbols.
+  // Non-LTO path: full mark-and-sweep DCE while retained definitions remain
+  // linkonce_odr for the later native link.
   SmallPtrSet<GlobalValue *, 32> Live;
   SmallVector<GlobalValue *, 32> ReachWorklist;
 
@@ -278,5 +291,6 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     return false;
   });
 
+  clearRuntimeDefinitionTags(M, StdRuntimeMetadata);
   return PreservedAnalyses::none();
 }

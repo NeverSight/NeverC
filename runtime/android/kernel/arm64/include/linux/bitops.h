@@ -3,6 +3,7 @@
 #define _NEVERC_KRT_LINUX_BITOPS_H
 
 #include <linux/types.h>
+#include <linux/compiler.h>
 
 #define BIT(nr)          (1UL << (nr))
 #define BIT_ULL(nr)      (1ULL << (nr))
@@ -17,57 +18,57 @@
 #define GENMASK_ULL(h, l) \
 	(((~0ULL) - (1ULL << (l)) + 1) & (~0ULL >> (63 - (h))))
 
-__always_inline int fls(unsigned int x)
+static __always_inline int fls(unsigned int x)
 {
 	return x ? 32 - __builtin_clz(x) : 0;
 }
 
-__always_inline int fls64(u64 x)
+static __always_inline int fls64(u64 x)
 {
 	return x ? 64 - __builtin_clzll(x) : 0;
 }
 
-__always_inline int ffs(int x)
+static __always_inline int ffs(int x)
 {
 	return __builtin_ffs(x);
 }
 
-__always_inline unsigned long __ffs(unsigned long word)
+static __always_inline unsigned long __ffs(unsigned long word)
 {
 	return __builtin_ctzl(word);
 }
 
-__always_inline unsigned long __fls(unsigned long word)
+static __always_inline unsigned long __fls(unsigned long word)
 {
 	return 63 - __builtin_clzl(word);
 }
 
-__always_inline int hweight32(u32 w)
+static __always_inline int hweight32(u32 w)
 {
 	return __builtin_popcount(w);
 }
 
-__always_inline int hweight64(u64 w)
+static __always_inline int hweight64(u64 w)
 {
 	return __builtin_popcountll(w);
 }
 
 #define hweight_long(w) hweight64(w)
 
-__always_inline unsigned long
+static __always_inline unsigned long
 __set_bit(unsigned long nr, volatile unsigned long *addr)
 {
 	addr[nr / BITS_PER_LONG] |= BIT_MASK(nr);
 	return 0;
 }
 
-__always_inline void
+static __always_inline void
 __clear_bit(unsigned long nr, volatile unsigned long *addr)
 {
 	addr[nr / BITS_PER_LONG] &= ~BIT_MASK(nr);
 }
 
-__always_inline int
+static __always_inline int
 test_bit(unsigned long nr, const volatile unsigned long *addr)
 {
 	return 1UL & (addr[nr / BITS_PER_LONG] >> (nr % BITS_PER_LONG));

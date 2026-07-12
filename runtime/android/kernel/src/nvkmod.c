@@ -1,9 +1,23 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* nvkmod.c — implementations extracted from nvkmod.h. */
 #include <nvk.h>
+#include <linux/kprobes.h>
+#include "nvk_internal.h"
 
+#define _NEVERC_KRT_SYM_KALLSYMS_LOOKUP "kallsyms_lookup_name"
+#define _NEVERC_KRT_SYM_PRINTK_PRIMARY  "_printk"
+#define _NEVERC_KRT_SYM_PRINTK_FALLBACK "printk"
+
+static int _neverc_krt_kp_stub(struct kprobe *p, void *regs);
+static void *_neverc_krt_kprobe_lookup(const char *name);
+static unsigned long _neverc_krt_kprobe_resolve_sym(const char *name);
+static int _neverc_krt_is_stub(void *addr);
+static int _neverc_krt_ksym_bootstrap(int cfi);
+static int _neverc_krt_log_bootstrap(void);
+
+static
 __attribute__((naked))
-int neverc_krt_kp_stub(struct kprobe *p, void *regs)
+static int _neverc_krt_kp_stub(struct kprobe *p, void *regs)
 {
 	__asm__ __volatile__(
 		"hint #34\n"
@@ -12,7 +26,7 @@ int neverc_krt_kp_stub(struct kprobe *p, void *regs)
 	);
 }
 
-void *neverc_krt_kprobe_lookup(const char *name)
+static void *_neverc_krt_kprobe_lookup(const char *name)
 {
 	struct kprobe kp;
 	unsigned char *p = (unsigned char *)&kp;
@@ -24,7 +38,7 @@ void *neverc_krt_kprobe_lookup(const char *name)
 
 	kp.symbol_name = name;
 	kp.offset = 0;
-	kp.pre_handler = neverc_krt_kp_stub;
+	kp.pre_handler = _neverc_krt_kp_stub;
 
 	ret = register_kprobe(&kp);
 	if (ret == 0) {
@@ -35,50 +49,57 @@ void *neverc_krt_kprobe_lookup(const char *name)
 	return (void *)kp.addr;
 }
 
+static
 __attribute__((naked))
-unsigned long neverc_krt_kprobe_resolve_sym(const char *name)
+static unsigned long _neverc_krt_kprobe_resolve_sym(const char *name)
 {
 	__asm__ __volatile__(
 		"hint #34\n"
 		"stp x29, x30, [sp, #-16]!\n"
 		"mov x29, sp\n"
-		"bl neverc_krt_kprobe_lookup\n"
+		"bl %c0\n"
 		"ldp x29, x30, [sp], #16\n"
 		"ret\n"
+		:
+		: "S"(_neverc_krt_kprobe_lookup)
 	);
 }
 
-int neverc_krt_is_stub(void *addr)
+static int _neverc_krt_is_stub(void *addr)
 {
 	u32 *p = (u32 *)addr;
 	int off = 0;
 
-	if (p[0] == 0xD65F03C0u) /* RET */
+	if (p[0] == NEVERC_KRT_A64_RET)
 		return 1;
 
-	if (p[0] == 0xD503245Fu) /* BTI C */
+	if (p[0] == NEVERC_KRT_A64_BTI_C)
 		off = 1;
 
 	/* [bti c;] paciasp; autiasp; ret */
-	if (p[off] == 0xD503233Fu && p[off+1] == 0xD50323BFu &&
-	    p[off+2] == 0xD65F03C0u)
+	if (p[off] == NEVERC_KRT_A64_PACIASP &&
+	    p[off + 1] == NEVERC_KRT_A64_AUTIASP &&
+	    p[off + 2] == NEVERC_KRT_A64_RET)
 		return 1;
 
 	/* [bti c;] paciasp; mov x0,#0|xzr; autiasp; ret */
-	if (p[off] == 0xD503233Fu &&
-	    (p[off+1] == 0xD2800000u || p[off+1] == 0xAA1F03E0u) &&
-	    p[off+2] == 0xD50323BFu && p[off+3] == 0xD65F03C0u)
+	if (p[off] == NEVERC_KRT_A64_PACIASP &&
+	    (p[off + 1] == NEVERC_KRT_A64_MOV_X0_0 ||
+	     p[off + 1] == NEVERC_KRT_A64_MOV_X0_XZR) &&
+	    p[off + 2] == NEVERC_KRT_A64_AUTIASP &&
+	    p[off + 3] == NEVERC_KRT_A64_RET)
 		return 1;
 
 	/* [bti c;] mov x0,#0|xzr; ret  (no PAC) */
-	if ((p[off] == 0xD2800000u || p[off] == 0xAA1F03E0u) &&
-	    p[off+1] == 0xD65F03C0u)
+	if ((p[off] == NEVERC_KRT_A64_MOV_X0_0 ||
+	     p[off] == NEVERC_KRT_A64_MOV_X0_XZR) &&
+	    p[off + 1] == NEVERC_KRT_A64_RET)
 		return 1;
 
 	return 0;
 }
 
-int neverc_krt_ksym_bootstrap(int cfi)
+static int _neverc_krt_ksym_bootstrap(int cfi)
 {
 	neverc_krt_kallsyms_lookup_name_fn resolved;
 
@@ -88,27 +109,42 @@ int neverc_krt_ksym_bootstrap(int cfi)
 	_neverc_krt_cache_key_init();
 
 	if (!cfi) {
-		resolved = (neverc_krt_kallsyms_lookup_name_fn)NEVERC_KRT_KPROBE_LOOKUP(
-				"kallsyms_lookup_name");
-		if (resolved && !neverc_krt_is_stub((void *)resolved)) {
-			neverc_krt_kallsyms_lookup_name = resolved;
+		resolved = (neverc_krt_kallsyms_lookup_name_fn)
+			_neverc_krt_kprobe_lookup(NC_XORSTR(
+				_NEVERC_KRT_SYM_KALLSYMS_LOOKUP));
+		if (resolved && !_neverc_krt_is_stub((void *)resolved)) {
 			_neverc_krt_sym_resolver = resolved;
 			return 0;
 		}
 	}
 
-	neverc_krt_kallsyms_lookup_name = neverc_krt_kprobe_resolve_sym;
-	_neverc_krt_sym_resolver = neverc_krt_kprobe_resolve_sym;
+	_neverc_krt_sym_resolver = _neverc_krt_kprobe_resolve_sym;
 	return 0;
 }
 
-int neverc_krt_log_bootstrap(void)
+static int _neverc_krt_log_bootstrap(void)
 {
 	if (neverc_krt_printk)
 		return 0;
-	neverc_krt_printk = (neverc_krt_printk_fn)NEVERC_KRT_KPROBE_LOOKUP("_printk");
+	neverc_krt_printk = (neverc_krt_printk_fn)
+		_neverc_krt_kprobe_lookup(NC_XORSTR(
+			_NEVERC_KRT_SYM_PRINTK_PRIMARY));
 	if (!neverc_krt_printk)
-		neverc_krt_printk = (neverc_krt_printk_fn)NEVERC_KRT_KPROBE_LOOKUP("printk");
+		neverc_krt_printk = (neverc_krt_printk_fn)
+			_neverc_krt_kprobe_lookup(NC_XORSTR(
+				_NEVERC_KRT_SYM_PRINTK_FALLBACK));
 	return neverc_krt_printk ? 0 : -1;
 }
 
+int neverc_krt_bootstrap(int cfi, int kernel_profile)
+{
+	int ret;
+
+	if (kernel_profile)
+		_neverc_krt_version_setup(kernel_profile);
+
+	ret = _neverc_krt_ksym_bootstrap(cfi);
+	if (!ret)
+		ret = _neverc_krt_log_bootstrap();
+	return ret;
+}

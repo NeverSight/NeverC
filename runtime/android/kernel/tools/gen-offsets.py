@@ -10,7 +10,7 @@ Usage:
 If the tree is already prepared (has include/generated/autoconf.h),
 pass the source root as both arguments.
 
-Output: NVK_OFF_* values ready for nvkmod_version.h.
+Output: NEVERC_KRT_* values ready for nvkmod_version.h.
 """
 import os
 import re

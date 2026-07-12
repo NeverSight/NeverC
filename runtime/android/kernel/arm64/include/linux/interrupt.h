@@ -3,6 +3,7 @@
 #define _NEVERC_KRT_LINUX_INTERRUPT_H
 
 #include <linux/types.h>
+#include <linux/compiler.h>
 
 /* IRQ return values. */
 typedef int irqreturn_t;
@@ -28,7 +29,7 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 			 irq_handler_t thread_fn, unsigned long flags,
 			 const char *name, void *dev);
 
-__always_inline int
+static __always_inline int
 request_irq(unsigned int irq, irq_handler_t handler,
 	    unsigned long flags, const char *name, void *dev)
 {
@@ -45,11 +46,15 @@ void disable_irq_nosync(unsigned int irq);
  * Tasklets — opaque blob sized for GKI 5.10-6.18.
  * Real layout: next(8) + state(8) + count(4) + use_callback(1) + pad(3)
  *              + func/callback union(8) + data(8) = 40.
- * Round up to 48 for KABI safety.
+ * This type may be embedded in caller-owned structures, so its size must be
+ * exact; over-allocation would shift every following member.
  */
 struct tasklet_struct {
-	unsigned char __opaque[48];
+	unsigned char __opaque[40];
 };
+
+_Static_assert(sizeof(struct tasklet_struct) == 40,
+	       "unexpected GKI tasklet_struct layout");
 
 void tasklet_init(struct tasklet_struct *t, void (*func)(unsigned long),
 		  unsigned long data);
@@ -64,13 +69,13 @@ void __tasklet_hi_schedule(struct tasklet_struct *t);
 void tasklet_kill(struct tasklet_struct *t);
 
 /* Local IRQ control. */
-__always_inline void local_irq_disable(void)
+static __always_inline void local_irq_disable(void)
 { __asm__ volatile("msr daifset, #3" ::: "memory"); }
 
-__always_inline void local_irq_enable(void)
+static __always_inline void local_irq_enable(void)
 { __asm__ volatile("msr daifclr, #3" ::: "memory"); }
 
-__always_inline unsigned long local_irq_save(void)
+static __always_inline unsigned long local_irq_save(void)
 {
 	unsigned long flags;
 	__asm__ volatile("mrs %0, daif\n\tmsr daifset, #3"
@@ -78,7 +83,7 @@ __always_inline unsigned long local_irq_save(void)
 	return flags;
 }
 
-__always_inline void local_irq_restore(unsigned long flags)
+static __always_inline void local_irq_restore(unsigned long flags)
 { __asm__ volatile("msr daif, %0" :: "r"(flags) : "memory"); }
 
 #endif /* _NEVERC_KRT_LINUX_INTERRUPT_H */

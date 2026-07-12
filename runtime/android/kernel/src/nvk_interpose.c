@@ -2,14 +2,87 @@
 #include <nvk.h>
 #include <linux/string.h>
 
-#include <nvk_internal.h>
+#include "nvk_internal.h"
+
+#define NEVERC_KRT_INTERPOSE_FORCE_INLINE __attribute__((always_inline))
+
+NEVERC_KRT_INTERPOSE_FORCE_INLINE long
+_neverc_krt_sext(long value, int bits)
+{
+	long sign = 1L << (bits - 1);
+
+	return (value ^ sign) - sign;
+}
+
+/*
+ * These public hot-path helpers live in the embedded runtime rather than the
+ * public header.  The runtime is linked before optimization, so always_inline
+ * still produces the same caller-side code without exposing implementation.
+ */
+NEVERC_KRT_INTERPOSE_FORCE_INLINE int
+neverc_krt_interpose_enter(struct neverc_krt_interpose *interpose)
+{
+	unsigned long task;
+	unsigned long previous;
+
+	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+	previous = __atomic_exchange_n(&interpose->guard, task, __ATOMIC_ACQUIRE);
+	if (previous == task)
+		return 0;
+	NEVERC_KRT_INTERPOSE_COUNT(interpose);
+	return 1;
+}
+
+NEVERC_KRT_INTERPOSE_FORCE_INLINE void
+neverc_krt_interpose_leave(struct neverc_krt_interpose *interpose)
+{
+	__atomic_store_n(&interpose->guard, 0, __ATOMIC_RELEASE);
+}
+
+NEVERC_KRT_INTERPOSE_FORCE_INLINE int
+neverc_krt_interpose_enter_safe(struct neverc_krt_interpose *interpose)
+{
+	if (unlikely(!READ_ONCE(interpose->enabled)))
+		return 0;
+	return neverc_krt_interpose_enter(interpose);
+}
+
+NEVERC_KRT_INTERPOSE_FORCE_INLINE u64
+neverc_krt_interpose_hits(struct neverc_krt_interpose *interpose)
+{
+	return __atomic_load_n(&interpose->hit_count, __ATOMIC_RELAXED);
+}
+
+NEVERC_KRT_INTERPOSE_FORCE_INLINE void
+neverc_krt_interpose_reset_stats(struct neverc_krt_interpose *interpose)
+{
+	__atomic_store_n(&interpose->hit_count, 0, __ATOMIC_RELAXED);
+}
+
+NEVERC_KRT_INTERPOSE_FORCE_INLINE int
+neverc_krt_interpose_is_enabled(struct neverc_krt_interpose *interpose)
+{
+	return READ_ONCE(interpose->enabled);
+}
+
+NEVERC_KRT_INTERPOSE_FORCE_INLINE void
+neverc_krt_interpose_enable(struct neverc_krt_interpose *interpose)
+{
+	WRITE_ONCE(interpose->enabled, 1);
+}
+
+NEVERC_KRT_INTERPOSE_FORCE_INLINE void
+neverc_krt_interpose_disable(struct neverc_krt_interpose *interpose)
+{
+	WRITE_ONCE(interpose->enabled, 0);
+}
 
 /* ---- internal ftrace constants (only used in this file) ---- */
 
-#define NEVERC_KRT_FTRACE_FL_SAVE_REGS     0x0002UL
-#define NEVERC_KRT_FTRACE_FL_SAVE_REGS_IF  0x0004UL
-#define NEVERC_KRT_FTRACE_FL_RECURSION     0x0008UL
-#define NEVERC_KRT_FTRACE_FL_IPMODIFY      0x0040UL
+#define NEVERC_KRT_FTRACE_FL_SAVE_REGS     (1UL << 2)
+#define NEVERC_KRT_FTRACE_FL_SAVE_REGS_IF  (1UL << 3)
+#define NEVERC_KRT_FTRACE_FL_RECURSION     (1UL << 4)
+#define NEVERC_KRT_FTRACE_FL_IPMODIFY      (1UL << 12)
 
 /* ---- internal kprobe interpose type (only used in this file) ---- */
 
@@ -41,6 +114,8 @@ struct neverc_krt_interpose_chain {
 
 typedef long (*neverc_krt_chain_handler_t)(void *orig, void *a0, void *a1,
 					   void *a2, void *a3, void *a4, void *a5);
+typedef long (*neverc_krt_chain_orig_t)(void *a0, void *a1, void *a2,
+					void *a3, void *a4, void *a5);
 
 /* ---- internal interpose stats (only used in this file) ---- */
 
@@ -62,9 +137,12 @@ struct neverc_krt_interpose_stats {
 
 /* ---- forward declarations ---- */
 
-static long _neverc_krt_chain_run(struct neverc_krt_interpose_chain *chain,
-				  void *a0, void *a1, void *a2,
-				  void *a3, void *a4, void *a5);
+static long _neverc_krt_chain_call(
+	struct neverc_krt_interpose_chain *chain, int index, void *next,
+	void *a0, void *a1, void *a2, void *a3, void *a4, void *a5);
+static long _neverc_krt_chain_call_orig(
+	struct neverc_krt_interpose_chain *chain,
+	void *a0, void *a1, void *a2, void *a3, void *a4, void *a5);
 static u64 neverc_krt_pool_alloc_count(void);
 static u64 neverc_krt_pool_alloc_bytes(void);
 static int neverc_krt_pool_page_count(void);
@@ -248,8 +326,7 @@ static __always_inline int neverc_krt_a64_is_scs_push(u32 insn)
 
 static __always_inline int neverc_krt_a64_is_interpose_patch(u32 insn)
 {
-	if (insn == NEVERC_KRT_A64_BRK_KPROBE) return 1;
-	if (insn == 0x58000050U) return 1;
+	if (insn == NEVERC_KRT_A64_LDR_X16_PC8) return 1;
 	return 0;
 }
 
@@ -556,7 +633,8 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 	case NEVERC_KRT_PC_ADRP: {
 		int immlo = (insn >> 29) & 3;
 		long immhi = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
-		target = (old_pc & ~0xFFFUL) + (((immhi << 2) | immlo) << 12);
+		long displacement = (immhi * 4 + immlo) * 4096;
+		target = (old_pc & ~0xFFFUL) + displacement;
 		int rd = insn & 0x1F;
 		n = neverc_krt_a64_gen_mov64(out, rd, target);
 		return n;
@@ -565,14 +643,14 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 	case NEVERC_KRT_PC_ADR: {
 		int immlo = (insn >> 29) & 3;
 		long immhi = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
-		target = old_pc + ((immhi << 2) | immlo);
+		target = old_pc + immhi * 4 + immlo;
 		int rd = insn & 0x1F;
 		return neverc_krt_a64_gen_mov64(out, rd, target);
 	}
 
 	case NEVERC_KRT_PC_B: {
 		long imm26 = _neverc_krt_sext(insn & 0x3FFFFFF, 26);
-		target = old_pc + (imm26 << 2);
+		target = old_pc + imm26 * 4;
 		n = neverc_krt_a64_gen_mov64(out, 17, target);
 		out[n++] = NEVERC_KRT_A64_RET_X17;
 		return n;
@@ -580,7 +658,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 
 	case NEVERC_KRT_PC_BL: {
 		long imm26 = _neverc_krt_sext(insn & 0x3FFFFFF, 26);
-		target = old_pc + (imm26 << 2);
+		target = old_pc + imm26 * 4;
 		n = neverc_krt_a64_gen_mov64(out, 17, target);
 		out[n++] = 0xD63F0220U;  /* BLR X17 */
 		return n;
@@ -588,16 +666,15 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 
 	case NEVERC_KRT_PC_BCOND: {
 		long imm19 = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
-		target = old_pc + (imm19 << 2);
+		target = old_pc + imm19 * 4;
 		u32 inv = (insn & 0xFF00000FU) ^ 1U;  /* invert LSB of cond */
-		int skip_n = 1 + 3 + 1;  /* worst case: MOVZ+2MOVK+RET = 4/5 */
+		int skip_n;
 		/* We'll fix the skip offset after emitting the jump. */
 		int cond_slot = n;
 		out[n++] = 0; /* placeholder */
-		int jump_start = n;
 		n += neverc_krt_a64_gen_mov64(&out[n], 17, target);
 		out[n++] = NEVERC_KRT_A64_RET_X17;
-		skip_n = n - jump_start;
+		skip_n = n - cond_slot;
 		/* B.!cond skip:  imm19 = skip_n, shifted left 5 */
 		out[cond_slot] = inv | (((u32)skip_n & 0x7FFFF) << 5);
 		return n;
@@ -605,39 +682,37 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 
 	case NEVERC_KRT_PC_CBZ: {
 		long imm19 = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
-		target = old_pc + (imm19 << 2);
+		target = old_pc + imm19 * 4;
 		/* Invert CBZ<->CBNZ: toggle bit 24 */
 		u32 inv = insn ^ 0x01000000U;
 		inv &= ~(0x7FFFFU << 5);  /* clear imm19 */
 		int cond_slot = n;
 		out[n++] = 0; /* placeholder */
-		int jump_start = n;
 		n += neverc_krt_a64_gen_mov64(&out[n], 17, target);
 		out[n++] = NEVERC_KRT_A64_RET_X17;
-		int skip_n = n - jump_start;
+		int skip_n = n - cond_slot;
 		out[cond_slot] = inv | (((u32)skip_n & 0x7FFFF) << 5);
 		return n;
 	}
 
 	case NEVERC_KRT_PC_TBZ: {
 		long imm14 = _neverc_krt_sext((insn >> 5) & 0x3FFF, 14);
-		target = old_pc + (imm14 << 2);
+		target = old_pc + imm14 * 4;
 		/* Invert TBZ<->TBNZ: toggle bit 24 */
 		u32 inv = insn ^ 0x01000000U;
 		inv &= ~(0x3FFFU << 5);  /* clear imm14 */
 		int cond_slot = n;
 		out[n++] = 0; /* placeholder */
-		int jump_start = n;
 		n += neverc_krt_a64_gen_mov64(&out[n], 17, target);
 		out[n++] = NEVERC_KRT_A64_RET_X17;
-		int skip_n = n - jump_start;
+		int skip_n = n - cond_slot;
 		out[cond_slot] = inv | (((u32)skip_n & 0x3FFFU) << 5);
 		return n;
 	}
 
 	case NEVERC_KRT_PC_LDR_LIT: {
 		long imm19 = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
-		target = old_pc + (imm19 << 2);
+		target = old_pc + imm19 * 4;
 		int rt = insn & 0x1F;
 		int opc = (insn >> 30) & 3;
 		int is_simd = (insn >> 26) & 1;
@@ -662,7 +737,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 
 	case NEVERC_KRT_PC_LDRSW_LIT: {
 		long imm19 = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
-		target = old_pc + (imm19 << 2);
+		target = old_pc + imm19 * 4;
 		int rt = insn & 0x1F;
 		n = neverc_krt_a64_gen_mov64(out, 17, target);
 		out[n++] = 0xB9800000U | (17 << 5) | rt; /* LDRSW Xt, [X17] */
@@ -671,7 +746,7 @@ static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out)
 
 	case NEVERC_KRT_PC_PRFM_LIT: {
 		long imm19 = _neverc_krt_sext((insn >> 5) & 0x7FFFF, 19);
-		target = old_pc + (imm19 << 2);
+		target = old_pc + imm19 * 4;
 		int rt = insn & 0x1F;
 		n = neverc_krt_a64_gen_mov64(out, 17, target);
 		out[n++] = 0xF9800000U | (17 << 5) | rt; /* PRFM type, [X17] */
@@ -842,7 +917,9 @@ int neverc_krt_interpose_init(void)
 static unsigned long _neverc_krt_fn_size(void *addr)
 {
 	unsigned long sz = 0, off = 0;
-	if (_neverc_krt_ksize && _neverc_krt_ksize((unsigned long)addr, &sz, &off))
+	if (_neverc_krt_ksize &&
+	    _neverc_krt_ksize((unsigned long)addr, &sz, &off) &&
+	    off <= sz)
 		return sz - off;
 	return 0;
 }
@@ -944,22 +1021,23 @@ enum neverc_krt_scan_result neverc_krt_interpose_scan(void *target)
 	if (neverc_krt_mem_read(scan_buf, code, sizeof(scan_buf)))
 		return NEVERC_KRT_SCAN_TOO_SHORT;
 
-	if (neverc_krt_a64_is_interpose_patch(scan_buf[0]))
+	int entry = neverc_krt_a64_is_bti(scan_buf[0]) ? 1 : 0;
+	if (neverc_krt_a64_is_interpose_patch(scan_buf[entry]))
 		return NEVERC_KRT_SCAN_ALREADY_INTERPOSEED;
 
-	if (neverc_krt_a64_is_kprobe_bp(scan_buf[0]))
+	if (neverc_krt_a64_is_kprobe_bp(scan_buf[entry]))
 		return NEVERC_KRT_SCAN_KPROBE_ACTIVE;
 
 	if (neverc_krt_a64_is_ftrace_site(code))
 		return NEVERC_KRT_SCAN_FTRACE_ACTIVE;
 
+	_neverc_krt_scan_entry(scan_buf, &skip, &patch_count);
 	if (_neverc_krt_ksize) {
 		unsigned long fn_sz = _neverc_krt_fn_size(target);
-		if (fn_sz > 0 && fn_sz < NEVERC_KRT_INTERPOSE_MAX_PATCH * 4)
+		if (fn_sz > 0 &&
+		    fn_sz < (unsigned long)patch_count * sizeof(u32))
 			return NEVERC_KRT_SCAN_TOO_SHORT;
 	}
-
-	_neverc_krt_scan_entry(scan_buf, &skip, &patch_count);
 
 	for (i = 0; i < patch_count; i++) {
 		u32 insn = scan_buf[i];
@@ -976,148 +1054,16 @@ enum neverc_krt_scan_result neverc_krt_interpose_scan(void *target)
 	return NEVERC_KRT_SCAN_OK;
 }
 
+static int  _neverc_krt_ll_install(struct neverc_krt_interpose *h, void *target,
+				   void *replace, void **orig);
+static void _neverc_krt_ll_remove(struct neverc_krt_interpose *h);
+static int  _neverc_krt_ll_replace(struct neverc_krt_interpose *h,
+				   void *new_replace, void **new_orig);
+
 int neverc_krt_interpose_install(struct neverc_krt_interpose *h, void *target,
 			    void *replace, void **orig)
 {
-	target = (void *)neverc_krt_strip_pac((unsigned long)target);
-	u32 *code = (u32 *)target;
-	u32  tramp[NEVERC_KRT_INTERPOSE_TRAMP_CAP];
-	int  tidx = 0, skip, patch_count, i;
-	u32  patch[NEVERC_KRT_INTERPOSE_MAX_PATCH];
-	int  use_short_b = 0;
-
-	if (!_neverc_krt_inited) return NEVERC_KRT_INTERPOSE_E_NOINIT;
-	if (!target || !replace || !orig) return NEVERC_KRT_INTERPOSE_E_SHORT;
-	if (((unsigned long)target & 3) != 0) return NEVERC_KRT_INTERPOSE_E_SHORT;
-	if (!_neverc_krt_is_kern_ptr((unsigned long)target))
-		return NEVERC_KRT_INTERPOSE_E_SHORT;
-
-	u32 ibuf[NEVERC_KRT_INTERPOSE_MAX_PATCH];
-	if (neverc_krt_mem_read(ibuf, code, sizeof(ibuf)))
-		return NEVERC_KRT_INTERPOSE_E_SHORT;
-
-	if (neverc_krt_a64_is_kprobe_bp(ibuf[0]))
-		return NEVERC_KRT_INTERPOSE_E_CONFLICT;
-
-	h->target = target;
-	h->replace = replace;
-	h->trampoline = (void *)0;
-	h->active = 0;
-	h->short_b = 0;
-	__atomic_store_n(&h->hit_count, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&h->guard, 0, __ATOMIC_RELAXED);
-
-	{
-		int chained = neverc_krt_a64_is_interpose_patch(ibuf[0]);
-
-		_neverc_krt_scan_entry(ibuf, &skip, &patch_count);
-
-		if (!chained) {
-			unsigned long fn_sz = _neverc_krt_fn_size(target);
-			if (fn_sz > 0 &&
-			    fn_sz < (unsigned long)patch_count * 4) {
-				int min_pc = skip + 1;
-				long b_off = (long)(unsigned long)replace -
-					(long)(unsigned long)&code[skip];
-				if (fn_sz >= (unsigned long)min_pc * 4 &&
-				    neverc_krt_a64_b_in_range(b_off)) {
-					use_short_b = 1;
-					patch_count = min_pc;
-				} else {
-					return NEVERC_KRT_INTERPOSE_E_SHORT;
-				}
-			}
-		}
-
-		h->patch_count = patch_count;
-		h->short_b = use_short_b;
-		for (i = 0; i < patch_count; i++)
-			h->orig_insns[i] = ibuf[i];
-
-		tramp[tidx++] = NEVERC_KRT_A64_BTI_JC;
-
-		if (chained) {
-			int qoff = 0;
-			if (neverc_krt_a64_is_bti(ibuf[0])) qoff = 1;
-			unsigned long prev;
-			if (neverc_krt_mem_read(&prev, &code[qoff + 2], 8))
-				return NEVERC_KRT_INTERPOSE_E_SHORT;
-			tidx += neverc_krt_a64_gen_mov64(&tramp[tidx], 17, prev);
-			tramp[tidx++] = NEVERC_KRT_A64_RET_X17;
-		} else {
-			for (i = 0; i < patch_count; i++) {
-				u32 insn = ibuf[i];
-				if (neverc_krt_a64_is_bti(insn) ||
-				    insn == NEVERC_KRT_A64_NOP)
-					continue;
-				if (neverc_krt_a64_is_pac_sign(insn)) {
-					tramp[tidx++] = insn;
-					continue;
-				}
-				if (neverc_krt_a64_is_hazardous(insn))
-					return NEVERC_KRT_INTERPOSE_E_RELOC;
-				unsigned long insn_pc =
-					(unsigned long)&code[i];
-				int n = neverc_krt_a64_relocate_abs(
-					insn, insn_pc, &tramp[tidx]);
-				if (n == 0) return NEVERC_KRT_INTERPOSE_E_RELOC;
-				tidx += n;
-				if (tidx >= NEVERC_KRT_INTERPOSE_TRAMP_CAP - 8)
-					return NEVERC_KRT_INTERPOSE_E_RELOC;
-			}
-			unsigned long back =
-				(unsigned long)target + patch_count * 4;
-			tidx += neverc_krt_a64_gen_mov64(&tramp[tidx], 17, back);
-			tramp[tidx++] = NEVERC_KRT_A64_RET_X17;
-		}
-	}
-
-	h->trampoline = _neverc_krt_pool_alloc(tidx * 4);
-	if (!h->trampoline) return NEVERC_KRT_INTERPOSE_E_ALLOC;
-
-	for (i = 0; i < tidx; i++)
-		h->trampoline[i] = tramp[i];
-	_neverc_krt_dcache_clean((unsigned long)h->trampoline,
-			  (unsigned long)&h->trampoline[tidx]);
-	if (_neverc_krt_flushic)
-		_neverc_krt_flushic((unsigned long)h->trampoline,
-			     (unsigned long)&h->trampoline[tidx]);
-	else
-		_neverc_krt_icache_inval((unsigned long)h->trampoline,
-				  (unsigned long)&h->trampoline[tidx]);
-
-	*orig = (void *)h->trampoline;
-
-	for (i = 0; i < patch_count; i++)
-		patch[i] = NEVERC_KRT_A64_NOP;
-	{
-		int jmp = 0;
-		if (neverc_krt_a64_is_bti(ibuf[0])) {
-			patch[0] = ibuf[0];
-			jmp = 1;
-		}
-		if (use_short_b) {
-			long b_off = (long)(unsigned long)replace -
-				(long)(unsigned long)&code[jmp];
-			patch[jmp] = neverc_krt_a64_gen_b(b_off);
-		} else {
-			patch[jmp + 0] = 0x58000050U;
-			patch[jmp + 1] = 0xD61F0200U;
-			*(unsigned long *)&patch[jmp + 2] =
-				(unsigned long)replace;
-		}
-	}
-
-	if (_neverc_krt_patch_multi(code, patch, patch_count) != 0) {
-		_neverc_krt_pool_free(h->trampoline);
-		h->trampoline = (void *)0;
-		return NEVERC_KRT_INTERPOSE_E_PATCH;
-	}
-
-	h->active = 1;
-	WRITE_ONCE(h->enabled, 1);
-	__atomic_fetch_add(&_neverc_krt_interpose_install_cnt, 1, __ATOMIC_RELAXED);
-	return NEVERC_KRT_INTERPOSE_OK;
+	return _neverc_krt_ll_install(h, target, replace, orig);
 }
 
 static void _neverc_krt_patch_mov64(u32 *page, int slot, int rd, u64 addr)
@@ -1139,7 +1085,9 @@ int neverc_krt_interpose_install_ctx(struct neverc_krt_interpose_ctx *h, void *t
 	u32 *page;
 
 	if (!_neverc_krt_inited) return NEVERC_KRT_INTERPOSE_E_NOINIT;
-	if (!target || !handler) return NEVERC_KRT_INTERPOSE_E_SHORT;
+	if (!h || !target || !handler) return NEVERC_KRT_INTERPOSE_E_SHORT;
+	if (READ_ONCE(h->base.active))
+		return NEVERC_KRT_INTERPOSE_E_CONFLICT;
 	if (((unsigned long)target & 3) != 0) return NEVERC_KRT_INTERPOSE_E_SHORT;
 	if (!_neverc_krt_is_kern_ptr((unsigned long)target))
 		return NEVERC_KRT_INTERPOSE_E_SHORT;
@@ -1148,18 +1096,29 @@ int neverc_krt_interpose_install_ctx(struct neverc_krt_interpose_ctx *h, void *t
 	if (neverc_krt_mem_read(ibuf, code, sizeof(ibuf)))
 		return NEVERC_KRT_INTERPOSE_E_SHORT;
 
-	if (neverc_krt_a64_is_kprobe_bp(ibuf[0]))
-		return NEVERC_KRT_INTERPOSE_E_CONFLICT;
+	{
+		int entry = neverc_krt_a64_is_bti(ibuf[0]) ? 1 : 0;
+		if (neverc_krt_a64_is_kprobe_bp(ibuf[entry]))
+			return NEVERC_KRT_INTERPOSE_E_CONFLICT;
+	}
 
 	h->base.target = target;
 	h->base.replace = (void *)handler;
 	h->base.trampoline = (void *)0;
 	h->base.active = 0;
+	h->base.enabled = 0;
+	h->base.short_b = 0;
+	__atomic_store_n(&h->base.hit_count, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&h->base.guard, 0, __ATOMIC_RELAXED);
 	h->stub = (void *)0;
+	h->tramp_code = (void *)0;
 	h->guard_task = 0;
 
 	{
-		int chained = neverc_krt_a64_is_interpose_patch(ibuf[0]);
+		int qoff = neverc_krt_a64_is_bti(ibuf[0]) ? 1 : 0;
+		int chained =
+			ibuf[qoff] == NEVERC_KRT_A64_LDR_X16_PC8 &&
+			ibuf[qoff + 1] == NEVERC_KRT_A64_BR_X16;
 
 		_neverc_krt_scan_entry(ibuf, &skip, &patch_count);
 
@@ -1177,8 +1136,6 @@ int neverc_krt_interpose_install_ctx(struct neverc_krt_interpose_ctx *h, void *t
 		tramp[tidx++] = NEVERC_KRT_A64_BTI_JC;
 
 		if (chained) {
-			int qoff = 0;
-			if (neverc_krt_a64_is_bti(ibuf[0])) qoff = 1;
 			unsigned long prev;
 			if (neverc_krt_mem_read(&prev, &code[qoff + 2], 8))
 				return NEVERC_KRT_INTERPOSE_E_SHORT;
@@ -1254,9 +1211,6 @@ int neverc_krt_interpose_install_ctx(struct neverc_krt_interpose_ctx *h, void *t
 	if (_neverc_krt_set_memory_x)
 		_neverc_krt_set_memory_x((unsigned long)page, 1);
 
-	if (call_orig)
-		*call_orig = (void *)h->tramp_code;
-
 	for (i = 0; i < patch_count; i++)
 		patch[i] = NEVERC_KRT_A64_NOP;
 	{
@@ -1265,21 +1219,203 @@ int neverc_krt_interpose_install_ctx(struct neverc_krt_interpose_ctx *h, void *t
 			patch[0] = ibuf[0];
 			jmp = 1;
 		}
-		patch[jmp + 0] = 0x58000050U;  /* LDR X16, [PC, #8] */
-		patch[jmp + 1] = 0xD61F0200U;  /* BR  X16 */
-		*(unsigned long *)&patch[jmp + 2] = (unsigned long)h->stub;
+		patch[jmp + 0] = NEVERC_KRT_A64_LDR_X16_PC8;
+		patch[jmp + 1] = NEVERC_KRT_A64_BR_X16;
+		patch[jmp + 2] = (u32)(unsigned long)h->stub;
+		patch[jmp + 3] =
+			(u32)((unsigned long)h->stub >> 32);
 	}
 
 	if (_neverc_krt_patch_multi(code, patch, patch_count) != 0) {
 		if (_neverc_krt_modfree) _neverc_krt_modfree(page);
 		h->stub = (void *)0;
+		h->tramp_code = (void *)0;
+		h->base.trampoline = (void *)0;
+		h->base.target = (void *)0;
+		h->base.replace = (void *)0;
+		h->base.patch_count = 0;
+		WRITE_ONCE(h->base.enabled, 0);
 		return NEVERC_KRT_INTERPOSE_E_PATCH;
 	}
 
 	h->base.active = 1;
 	WRITE_ONCE(h->base.enabled, 1);
+	if (call_orig)
+		*call_orig = (void *)h->tramp_code;
 	__atomic_fetch_add(&_neverc_krt_interpose_install_cnt, 1, __ATOMIC_RELAXED);
 	return NEVERC_KRT_INTERPOSE_OK;
+}
+
+/*
+ * Low-level neverc_krt_interpose_install() is backed by install_ctx so every
+ * hook — SDK internals and advanced callers — lands on the BTI-safe stub path.
+ */
+#define NEVERC_KRT_LL_MAX 32
+
+struct neverc_krt_ll_slot {
+	struct neverc_krt_interpose     *owner;
+	struct neverc_krt_interpose_ctx  ctx;
+	unsigned int                     used;
+};
+
+static struct neverc_krt_ll_slot _neverc_krt_ll[NEVERC_KRT_LL_MAX];
+
+static void _neverc_krt_ll_invoke(int slot, neverc_krt_reg_ctx *ctx)
+{
+	struct neverc_krt_interpose *h =
+		READ_ONCE(_neverc_krt_ll[slot].owner);
+	void *destination = (void *)0;
+
+	/*
+	 * Redirect only after the context stub restores the original register
+	 * state.  Calling replacement through a fixed C prototype would silently
+	 * drop X6/X7, indirect-result state in X8, and non-scalar return values.
+	 */
+	if (h && READ_ONCE(h->enabled))
+		destination = READ_ONCE(h->replace);
+	if (!destination)
+		destination = READ_ONCE(_neverc_krt_ll[slot].ctx.tramp_code);
+
+	if (destination)
+		NEVERC_KRT_CTX_FORCE_JUMP(ctx, destination);
+	else
+		NEVERC_KRT_CTX_SKIP_VOID(ctx);
+}
+
+#include "nvk_interpose_ll_handlers.inc"
+
+static int _neverc_krt_ll_alloc_slot(void)
+{
+	int i;
+	for (i = 0; i < NEVERC_KRT_LL_MAX; i++) {
+		unsigned int expected = 0;
+		if (__atomic_compare_exchange_n(&_neverc_krt_ll[i].used,
+						&expected, 1, 0,
+						__ATOMIC_ACQ_REL,
+						__ATOMIC_RELAXED))
+			return i;
+	}
+	return -1;
+}
+
+static int _neverc_krt_ll_find_slot(struct neverc_krt_interpose *h)
+{
+	int i;
+	for (i = 0; i < NEVERC_KRT_LL_MAX; i++) {
+		if (__atomic_load_n(&_neverc_krt_ll[i].used, __ATOMIC_ACQUIRE) &&
+		    READ_ONCE(_neverc_krt_ll[i].owner) == h)
+			return i;
+	}
+	return -1;
+}
+
+static void _neverc_krt_ll_release_slot(int slot)
+{
+	WRITE_ONCE(_neverc_krt_ll[slot].owner, (void *)0);
+	__atomic_store_n(&_neverc_krt_ll[slot].used, 0, __ATOMIC_RELEASE);
+}
+
+static void _neverc_krt_ll_sync_from_ctx(struct neverc_krt_interpose *h,
+					 struct neverc_krt_interpose_ctx *c,
+					 void *replace)
+{
+	int i;
+
+	h->target = c->base.target;
+	h->replace = replace;
+	h->trampoline = (u32 *)c->tramp_code;
+	h->patch_count = c->base.patch_count;
+	h->short_b = 0;
+	h->active = c->base.active;
+	for (i = 0; i < c->base.patch_count; i++)
+		h->orig_insns[i] = c->base.orig_insns[i];
+}
+
+static int _neverc_krt_ll_install(struct neverc_krt_interpose *h, void *target,
+				  void *replace, void **orig)
+{
+	int slot, ret;
+
+	if (!_neverc_krt_inited) return NEVERC_KRT_INTERPOSE_E_NOINIT;
+	if (!h || !target || !replace || !orig) return NEVERC_KRT_INTERPOSE_E_SHORT;
+	if (h->active) return NEVERC_KRT_INTERPOSE_E_CONFLICT;
+
+	slot = _neverc_krt_ll_alloc_slot();
+	if (slot < 0) return NEVERC_KRT_INTERPOSE_E_ALLOC;
+
+	WRITE_ONCE(_neverc_krt_ll[slot].owner, h);
+
+	h->target = (void *)neverc_krt_strip_pac((unsigned long)target);
+	h->replace = replace;
+	h->trampoline = (void *)0;
+	h->active = 0;
+	h->short_b = 0;
+	WRITE_ONCE(h->enabled, 1);
+	__atomic_store_n(&h->hit_count, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&h->guard, 0, __ATOMIC_RELAXED);
+
+	ret = neverc_krt_interpose_install_ctx(&_neverc_krt_ll[slot].ctx,
+					       h->target,
+					       _neverc_krt_ll_handlers[slot],
+					       orig);
+	if (ret != NEVERC_KRT_INTERPOSE_OK) {
+		_neverc_krt_ll_release_slot(slot);
+		h->target = (void *)0;
+		h->replace = (void *)0;
+		h->trampoline = (void *)0;
+		h->patch_count = 0;
+		h->active = 0;
+		WRITE_ONCE(h->enabled, 0);
+		return ret;
+	}
+
+	_neverc_krt_ll_sync_from_ctx(h, &_neverc_krt_ll[slot].ctx, replace);
+	return NEVERC_KRT_INTERPOSE_OK;
+}
+
+static void _neverc_krt_ll_remove(struct neverc_krt_interpose *h)
+{
+	int slot;
+
+	if (!h || !h->active)
+		return;
+
+	slot = _neverc_krt_ll_find_slot(h);
+	if (slot < 0)
+		return;
+
+	WRITE_ONCE(h->enabled, 0);
+	neverc_krt_interpose_remove_ctx(&_neverc_krt_ll[slot].ctx);
+	if (_neverc_krt_ll[slot].ctx.base.active) {
+		WRITE_ONCE(h->enabled, 1);
+		return;
+	}
+	__atomic_store_n(&h->guard, 0, __ATOMIC_RELEASE);
+	_neverc_krt_ll_release_slot(slot);
+	h->active = 0;
+	h->trampoline = (void *)0;
+}
+
+static int _neverc_krt_ll_replace(struct neverc_krt_interpose *h,
+				  void *new_replace, void **new_orig)
+{
+	int slot;
+
+	if (!h || !h->active || !new_replace)
+		return -1;
+
+	slot = _neverc_krt_ll_find_slot(h);
+	if (slot < 0)
+		return -1;
+
+	WRITE_ONCE(h->enabled, 0);
+	_neverc_krt_full_barrier();
+	_neverc_krt_quiesce_deep();
+	WRITE_ONCE(h->replace, new_replace);
+	if (new_orig)
+		*new_orig = (void *)_neverc_krt_ll[slot].ctx.tramp_code;
+	WRITE_ONCE(h->enabled, 1);
+	return 0;
 }
 
 static void _neverc_krt_full_barrier(void)
@@ -1315,7 +1451,7 @@ void neverc_krt_interpose_pause(struct neverc_krt_interpose *h)
 	_neverc_krt_full_barrier();
 }
 
-void neverc_krt_interpose_resume(struct neverc_krt_interpose *h)
+static void neverc_krt_interpose_resume(struct neverc_krt_interpose *h)
 {
 	_neverc_krt_full_barrier();
 	WRITE_ONCE(h->enabled, 1);
@@ -1335,100 +1471,25 @@ static void _neverc_krt_poison_tramp(u32 *tramp, int max_words)
 	if (_neverc_krt_flushic)
 		_neverc_krt_flushic((unsigned long)tramp,
 			     (unsigned long)&tramp[i]);
+	else
+		_neverc_krt_icache_inval((unsigned long)tramp,
+				  (unsigned long)&tramp[i]);
 }
 
 void neverc_krt_interpose_remove(struct neverc_krt_interpose *h)
 {
-	if (!h->active) return;
-
-	WRITE_ONCE(h->enabled, 0);
-	__atomic_store_n(&h->guard, 0, __ATOMIC_RELEASE);
-	_neverc_krt_full_barrier();
-	__asm__ __volatile__("sev" ::: "memory");
-
-	_neverc_krt_quiesce_deep();
-
-	u32 *code = (u32 *)h->target;
-	_neverc_krt_patch_multi(code, h->orig_insns, h->patch_count);
-	_neverc_krt_tlbi_range((unsigned long)code,
-			(unsigned long)&code[h->patch_count]);
-
-	_neverc_krt_quiesce_deep();
-
-	if (h->trampoline) {
-		_neverc_krt_poison_tramp(h->trampoline, NEVERC_KRT_INTERPOSE_TRAMP_CAP);
-		_neverc_krt_quiesce();
-		_neverc_krt_pool_free(h->trampoline);
-		h->trampoline = (void *)0;
-	}
-	h->active = 0;
-	__atomic_fetch_add(&_neverc_krt_interpose_remove_cnt, 1, __ATOMIC_RELAXED);
+	_neverc_krt_ll_remove(h);
 }
 
 int neverc_krt_interpose_replace(struct neverc_krt_interpose *h, void *new_replace,
 			    void **new_orig)
 {
-	u32 patch[NEVERC_KRT_INTERPOSE_MAX_PATCH];
-	u32 *code;
-	int i, jmp;
-
-	if (!h->active) return -1;
-
-	code = (u32 *)h->target;
-
-	{
-		int tampered = 0;
-		u32 cur;
-		int vslot = neverc_krt_a64_is_bti(h->orig_insns[0]) ? 1 : 0;
-		if (!neverc_krt_mem_read(&cur, &code[vslot], 4)) {
-			if (cur != 0x58000050U) {
-				long b_off = (long)(unsigned long)h->replace -
-					(long)(unsigned long)&code[vslot];
-				u32 expected_b = neverc_krt_a64_gen_b(b_off);
-				if (cur != expected_b) tampered = 1;
-			}
-		}
-		if (tampered) return -2;
-	}
-
-	WRITE_ONCE(h->enabled, 0);
-	_neverc_krt_full_barrier();
-	_neverc_krt_quiesce_deep();
-
-	h->replace = new_replace;
-
-	for (i = 0; i < h->patch_count; i++)
-		patch[i] = NEVERC_KRT_A64_NOP;
-	jmp = 0;
-	if (neverc_krt_a64_is_bti(h->orig_insns[0])) {
-		patch[0] = h->orig_insns[0];
-		jmp = 1;
-	}
-	if (h->short_b) {
-		long b_off = (long)(unsigned long)new_replace -
-			(long)(unsigned long)&code[jmp];
-		if (!neverc_krt_a64_b_in_range(b_off))
-			return -1;
-		patch[jmp] = neverc_krt_a64_gen_b(b_off);
-	} else {
-		patch[jmp + 0] = 0x58000050U;
-		patch[jmp + 1] = 0xD61F0200U;
-		*(unsigned long *)&patch[jmp + 2] =
-			(unsigned long)new_replace;
-	}
-
-	_neverc_krt_patch_multi(code, patch, h->patch_count);
-	_neverc_krt_full_barrier();
-
-	if (new_orig)
-		*new_orig = (void *)h->trampoline;
-	WRITE_ONCE(h->enabled, 1);
-	return 0;
+	return _neverc_krt_ll_replace(h, new_replace, new_orig);
 }
 
 void neverc_krt_interpose_remove_ctx(struct neverc_krt_interpose_ctx *h)
 {
-	if (!h->base.active) return;
+	if (!h || !h->base.active) return;
 
 	WRITE_ONCE(h->base.enabled, 0);
 	WRITE_ONCE(h->guard_task, 0);
@@ -1438,7 +1499,11 @@ void neverc_krt_interpose_remove_ctx(struct neverc_krt_interpose_ctx *h)
 	_neverc_krt_quiesce_deep();
 
 	u32 *code = (u32 *)h->base.target;
-	_neverc_krt_patch_multi(code, h->base.orig_insns, h->base.patch_count);
+	if (_neverc_krt_patch_multi(code, h->base.orig_insns,
+				    h->base.patch_count) != 0) {
+		WRITE_ONCE(h->base.enabled, 1);
+		return;
+	}
 	_neverc_krt_tlbi_range((unsigned long)code,
 			(unsigned long)&code[h->base.patch_count]);
 
@@ -1462,11 +1527,11 @@ void neverc_krt_interpose_remove_ctx(struct neverc_krt_interpose_ctx *h)
 int neverc_krt_interpose_replace_ctx(struct neverc_krt_interpose_ctx *h,
 				neverc_krt_ctx_handler_t new_handler)
 {
-	if (!h->base.active || !h->stub) return -1;
+	if (!h || !h->base.active || !h->stub || !new_handler) return -1;
 	WRITE_ONCE(h->base.enabled, 0);
 	_neverc_krt_full_barrier();
 	_neverc_krt_quiesce_deep();
-	h->base.replace = (void *)new_handler;
+	WRITE_ONCE(h->base.replace, (void *)new_handler);
 	_neverc_krt_patch_mov64(h->stub, _CTX_HANDLER_SLOT, 3,
 			 (u64)(unsigned long)new_handler);
 	_neverc_krt_dcache_clean((unsigned long)&h->stub[_CTX_HANDLER_SLOT],
@@ -1522,36 +1587,6 @@ int neverc_krt_interpose_install_batch(struct neverc_krt_interpose_batch *batch,
 	return ok == count ? 0 : -1;
 }
 
-void neverc_krt_interpose_cleanup(void)
-{
-	int i;
-	unsigned long flags;
-
-	_neverc_krt_full_barrier();
-
-	if (_neverc_krt_syncrcu) _neverc_krt_syncrcu();
-	_neverc_krt_full_barrier();
-	if (_neverc_krt_syncrcu) _neverc_krt_syncrcu();
-
-	if (_neverc_krt_msleep) _neverc_krt_msleep(100);
-
-	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_pool_lock);
-	for (i = 0; i < _neverc_krt_pool_count; i++) {
-		if (_neverc_krt_pool[i].base && _neverc_krt_modfree &&
-		    _neverc_krt_pool[i].magic == _NEVERC_KRT_POOL_MAGIC)
-			_neverc_krt_modfree(_neverc_krt_pool[i].base);
-		_neverc_krt_pool[i].base = (void *)0;
-		_neverc_krt_pool[i].used = 0;
-		_neverc_krt_pool[i].refcnt = 0;
-		_neverc_krt_pool[i].magic = 0;
-	}
-	_neverc_krt_pool_count = 0;
-	__atomic_store_n(&_neverc_krt_pool_alloc_total, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&_neverc_krt_pool_alloc_bytes, 0, __ATOMIC_RELAXED);
-	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_pool_lock, flags);
-	_neverc_krt_inited = 0;
-}
-
 int neverc_krt_cfi_make_thunk(struct neverc_krt_cfi_thunk *thunk,
 			      void *orig_func, void *new_func)
 {
@@ -1577,8 +1612,9 @@ int neverc_krt_fptr_replace(struct neverc_krt_fptr_interpose *h,
 {
 	void **slot;
 	void *orig;
+	int ret;
 
-	if (!h || !struct_addr) return -1;
+	if (!h || !struct_addr || !new_fn) return -1;
 	if (!_neverc_krt_inited) return NEVERC_KRT_INTERPOSE_E_NOINIT;
 
 	slot = (void **)((unsigned long)struct_addr + field_off);
@@ -1591,7 +1627,9 @@ int neverc_krt_fptr_replace(struct neverc_krt_fptr_interpose *h,
 	h->active = 0;
 
 	if (neverc_krt_cfi_has_tag(orig)) {
-		neverc_krt_cfi_make_thunk(&h->thunk, orig, new_fn);
+		ret = neverc_krt_cfi_make_thunk(&h->thunk, orig, new_fn);
+		if (ret)
+			return ret;
 		h->thunk_page = _neverc_krt_pool_alloc(sizeof(h->thunk));
 		if (!h->thunk_page) return NEVERC_KRT_INTERPOSE_E_ALLOC;
 		unsigned char *dst = (unsigned char *)h->thunk_page;
@@ -1609,12 +1647,19 @@ int neverc_krt_fptr_replace(struct neverc_krt_fptr_interpose *h,
 				(unsigned long)h->thunk_page,
 				(unsigned long)h->thunk_page + sizeof(h->thunk));
 		void *entry = (void *)((unsigned long)h->thunk_page + 4);
-		neverc_krt_mem_write_protected((unsigned long)slot, &entry,
-					sizeof(entry));
+		ret = neverc_krt_mem_write_protected(
+			(unsigned long)slot, &entry, sizeof(entry));
+		if (ret) {
+			_neverc_krt_pool_free(h->thunk_page);
+			h->thunk_page = (void *)0;
+			return ret;
+		}
 	} else {
 		h->thunk_page = (void *)0;
-		neverc_krt_mem_write_protected((unsigned long)slot, &new_fn,
-					sizeof(new_fn));
+		ret = neverc_krt_mem_write_protected(
+			(unsigned long)slot, &new_fn, sizeof(new_fn));
+		if (ret)
+			return ret;
 	}
 
 	h->active = 1;
@@ -1627,8 +1672,9 @@ void neverc_krt_fptr_restore(struct neverc_krt_fptr_interpose *h)
 	if (!h || !h->active) return;
 
 	slot = (void **)((unsigned long)h->struct_addr + h->field_off);
-	neverc_krt_mem_write_protected((unsigned long)slot, &h->orig_fn,
-				sizeof(h->orig_fn));
+	if (neverc_krt_mem_write_protected(
+		    (unsigned long)slot, &h->orig_fn, sizeof(h->orig_fn)))
+		return;
 
 	if (h->thunk_page)
 		_neverc_krt_pool_free(h->thunk_page);
@@ -1680,7 +1726,7 @@ int neverc_krt_ftrace_interpose_install(struct neverc_krt_ftrace_interpose *h,
 	int ret;
 
 	if (!_neverc_krt_ftrace_avail) return -1;
-	if (!target || !replace) return -2;
+	if (!h || !target || !replace) return -2;
 
 	h->target = target;
 	h->replace = replace;
@@ -1707,7 +1753,11 @@ int neverc_krt_ftrace_interpose_install(struct neverc_krt_ftrace_interpose *h,
 	if (ret) return ret;
 
 	ret = _neverc_krt_register_ftrace(h->_ops_storage);
-	if (ret) return ret;
+	if (ret) {
+		_neverc_krt_ftrace_set_filter(
+			h->_ops_storage, (unsigned long)target, 1, 0);
+		return ret;
+	}
 
 	if (orig) *orig = h->orig;
 	h->active = 1;
@@ -1719,6 +1769,9 @@ void neverc_krt_ftrace_interpose_remove(struct neverc_krt_ftrace_interpose *h)
 	if (!h || !h->active) return;
 	if (_neverc_krt_unregister_ftrace)
 		_neverc_krt_unregister_ftrace(h->_ops_storage);
+	if (_neverc_krt_ftrace_set_filter)
+		_neverc_krt_ftrace_set_filter(
+			h->_ops_storage, (unsigned long)h->target, 1, 0);
 	h->active = 0;
 }
 
@@ -1727,11 +1780,14 @@ int neverc_krt_interpose_auto(struct neverc_krt_interpose *h, void *target,
 			 struct neverc_krt_ftrace_interpose *ft_fallback)
 {
 	enum neverc_krt_scan_result scan = neverc_krt_interpose_scan(target);
+	int inline_ret = NEVERC_KRT_INTERPOSE_E_RELOC;
 	int ret;
 
 	if (scan == NEVERC_KRT_SCAN_OK) {
-		ret = neverc_krt_interpose_install(h, target, replace, orig);
-		if (ret == NEVERC_KRT_INTERPOSE_OK) return ret;
+		inline_ret =
+			neverc_krt_interpose_install(h, target, replace, orig);
+		if (inline_ret == NEVERC_KRT_INTERPOSE_OK)
+			return inline_ret;
 	}
 
 	if (ft_fallback && _neverc_krt_ftrace_avail) {
@@ -1741,12 +1797,12 @@ int neverc_krt_interpose_auto(struct neverc_krt_interpose *h, void *target,
 	}
 
 	if (scan == NEVERC_KRT_SCAN_OK)
-		return neverc_krt_interpose_install(h, target, replace, orig);
+		return inline_ret;
 
 	return NEVERC_KRT_INTERPOSE_E_RELOC;
 }
 
-int neverc_krt_kprobe_interpose_init(void)
+static int neverc_krt_kprobe_interpose_init(void)
 {
 	if (_neverc_krt_reg_kprobe) return 0;
 	_neverc_krt_reg_kprobe =
@@ -1781,29 +1837,42 @@ static int neverc_krt_pool_usage(int *total_used, int *total_cap)
 	return _neverc_krt_pool_count;
 }
 
-static long _neverc_krt_chain_run(struct neverc_krt_interpose_chain *chain,
-				    void *a0, void *a1, void *a2,
-				    void *a3, void *a4, void *a5)
+static long _neverc_krt_chain_call_orig(
+	struct neverc_krt_interpose_chain *chain,
+	void *a0, void *a1, void *a2, void *a3, void *a4, void *a5)
 {
-	int i, cnt;
-	long ret = 0;
-	struct neverc_krt_interpose_chain_entry snap[NEVERC_KRT_CHAIN_MAX];
-	if (unlikely(!chain)) return 0;
-	cnt = __atomic_load_n(&chain->count, __ATOMIC_ACQUIRE);
-	if (unlikely(cnt > NEVERC_KRT_CHAIN_MAX)) cnt = NEVERC_KRT_CHAIN_MAX;
-	for (i = 0; i < cnt; i++) {
-		snap[i].handler  = (void *)__atomic_load_n(
-			(unsigned long *)&chain->entries[i].handler, __ATOMIC_ACQUIRE);
-		snap[i].active   = __atomic_load_n(&chain->entries[i].active,
-						    __ATOMIC_RELAXED);
-	}
-	for (i = 0; i < cnt; i++) {
-		if (unlikely(!snap[i].active || !snap[i].handler)) continue;
-		neverc_krt_chain_handler_t h = (neverc_krt_chain_handler_t)snap[i].handler;
-		ret = h(chain->orig_fn, a0, a1, a2, a3, a4, a5);
-		if (ret != 0) return ret;
-	}
-	return ret;
+	neverc_krt_chain_orig_t orig;
+
+	if (unlikely(!chain))
+		return 0;
+	orig = (neverc_krt_chain_orig_t)__atomic_load_n(
+		(unsigned long *)&chain->orig_fn, __ATOMIC_ACQUIRE);
+	return orig ? orig(a0, a1, a2, a3, a4, a5) : 0;
+}
+
+static long _neverc_krt_chain_call(
+	struct neverc_krt_interpose_chain *chain, int index, void *next,
+	void *a0, void *a1, void *a2, void *a3, void *a4, void *a5)
+{
+	neverc_krt_chain_handler_t handler;
+	neverc_krt_chain_orig_t next_fn = (neverc_krt_chain_orig_t)next;
+	int count;
+	int active;
+
+	if (unlikely(!chain || !next_fn))
+		return 0;
+	count = __atomic_load_n(&chain->count, __ATOMIC_ACQUIRE);
+	if (index < 0 || index >= count || index >= NEVERC_KRT_CHAIN_MAX)
+		return next_fn(a0, a1, a2, a3, a4, a5);
+
+	handler = (neverc_krt_chain_handler_t)__atomic_load_n(
+		(unsigned long *)&chain->entries[index].handler,
+		__ATOMIC_ACQUIRE);
+	active = __atomic_load_n(
+		&chain->entries[index].active, __ATOMIC_ACQUIRE);
+	if (!active || !handler)
+		return next_fn(a0, a1, a2, a3, a4, a5);
+	return handler(next, a0, a1, a2, a3, a4, a5);
 }
 
 static int neverc_krt_chain_init(struct neverc_krt_interpose_chain *chain)
@@ -1874,6 +1943,9 @@ static int neverc_krt_chain_remove(struct neverc_krt_interpose_chain *chain, voi
 			__asm__ __volatile__("dmb ish" ::: "memory");
 			for (; i < chain->count - 1; i++)
 				chain->entries[i] = chain->entries[i + 1];
+			chain->entries[chain->count - 1].handler = (void *)0;
+			chain->entries[chain->count - 1].priority = 0;
+			chain->entries[chain->count - 1].active = 0;
 			__asm__ __volatile__("dmb ish" ::: "memory");
 			WRITE_ONCE(chain->count, chain->count - 1);
 			return 0;
@@ -1910,6 +1982,7 @@ static struct {
 	void                        *target;
 	struct neverc_krt_interpose_chain chain;
 	int                          used;
+	int                          transitioning;
 } _neverc_krt_registry[NEVERC_KRT_REGISTRY_MAX];
 
 static struct neverc_krt_interpose_ctx _neverc_krt_reg_ctxs[NEVERC_KRT_REGISTRY_MAX]
@@ -1917,11 +1990,30 @@ static struct neverc_krt_interpose_ctx _neverc_krt_reg_ctxs[NEVERC_KRT_REGISTRY_
 
 static volatile int _neverc_krt_registry_lock;
 
+#define _NKR_ARGS_DECL                                                         \
+	void *a0, void *a1, void *a2, void *a3, void *a4, void *a5
+#define _NKR_ARGS a0, a1, a2, a3, a4, a5
+#define _NKR_CHAIN_NEXT(n, index, next_index)                                 \
+	static long _neverc_krt_reg_next_##n##_##index(_NKR_ARGS_DECL)         \
+	{                                                                      \
+		return _neverc_krt_chain_call(                                 \
+			&_neverc_krt_registry[n].chain, index,                 \
+			(void *)_neverc_krt_reg_next_##n##_##next_index,       \
+			_NKR_ARGS);                                             \
+	}
 #define _NKR_CTX_DISPATCH(n)                                                   \
+	static long _neverc_krt_reg_next_##n##_4(_NKR_ARGS_DECL)               \
+	{                                                                      \
+		return _neverc_krt_chain_call_orig(                            \
+			&_neverc_krt_registry[n].chain, _NKR_ARGS);            \
+	}                                                                      \
+	_NKR_CHAIN_NEXT(n, 3, 4)                                               \
+	_NKR_CHAIN_NEXT(n, 2, 3)                                               \
+	_NKR_CHAIN_NEXT(n, 1, 2)                                               \
+	_NKR_CHAIN_NEXT(n, 0, 1)                                               \
 	static void _neverc_krt_reg_ctx_dispatch_##n(neverc_krt_reg_ctx *ctx)  \
 	{                                                                      \
-		long ret = _neverc_krt_chain_run(                              \
-			&_neverc_krt_registry[n].chain,                        \
+		long ret = _neverc_krt_reg_next_##n##_0(                       \
 			(void *)ctx->regs[0], (void *)ctx->regs[1],           \
 			(void *)ctx->regs[2], (void *)ctx->regs[3],           \
 			(void *)ctx->regs[4], (void *)ctx->regs[5]);          \
@@ -1933,6 +2025,11 @@ _NKR_CTX_DISPATCH(0)  _NKR_CTX_DISPATCH(1)  _NKR_CTX_DISPATCH(2)  _NKR_CTX_DISPA
 _NKR_CTX_DISPATCH(4)  _NKR_CTX_DISPATCH(5)  _NKR_CTX_DISPATCH(6)  _NKR_CTX_DISPATCH(7)
 _NKR_CTX_DISPATCH(8)  _NKR_CTX_DISPATCH(9)  _NKR_CTX_DISPATCH(10) _NKR_CTX_DISPATCH(11)
 _NKR_CTX_DISPATCH(12) _NKR_CTX_DISPATCH(13) _NKR_CTX_DISPATCH(14) _NKR_CTX_DISPATCH(15)
+
+#undef _NKR_CTX_DISPATCH
+#undef _NKR_CHAIN_NEXT
+#undef _NKR_ARGS
+#undef _NKR_ARGS_DECL
 
 static neverc_krt_ctx_handler_t _neverc_krt_reg_ctx_dispatchers[NEVERC_KRT_REGISTRY_MAX] = {
 	_neverc_krt_reg_ctx_dispatch_0,  _neverc_krt_reg_ctx_dispatch_1,
@@ -1974,11 +2071,27 @@ int neverc_krt_interpose_register(void *target, void *handler, int priority,
 
 	if (!target || !handler || !ref)
 		return -1;
+	if (!_neverc_krt_inited)
+		return NEVERC_KRT_INTERPOSE_E_NOINIT;
 
 	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_registry_lock);
 
 	slot = _neverc_krt_reg_find_target(target);
 	if (slot >= 0) {
+		if (_neverc_krt_registry[slot].transitioning) {
+			_neverc_krt_spin_unlock_irqrestore(
+				&_neverc_krt_registry_lock, flags);
+			return NEVERC_KRT_INTERPOSE_E_CONFLICT;
+		}
+		_neverc_krt_registry[slot].transitioning = 1;
+		WRITE_ONCE(_neverc_krt_reg_ctxs[slot].base.enabled, 0);
+		_neverc_krt_spin_unlock_irqrestore(
+			&_neverc_krt_registry_lock, flags);
+		_neverc_krt_full_barrier();
+		_neverc_krt_quiesce_deep();
+
+		flags = _neverc_krt_spin_lock_irqsave(
+			&_neverc_krt_registry_lock);
 		ret = neverc_krt_chain_add(&_neverc_krt_registry[slot].chain,
 					   handler, priority);
 		if (ret == 0) {
@@ -1987,6 +2100,9 @@ int neverc_krt_interpose_register(void *target, void *handler, int priority,
 			ref->slot = slot;
 			ref->handler = handler;
 		}
+		_neverc_krt_registry[slot].transitioning = 0;
+		_neverc_krt_full_barrier();
+		WRITE_ONCE(_neverc_krt_reg_ctxs[slot].base.enabled, 1);
 		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
 						   flags);
 		return ret;
@@ -1996,11 +2112,12 @@ int neverc_krt_interpose_register(void *target, void *handler, int priority,
 	if (slot < 0) {
 		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
 						   flags);
-		return -4;
+		return NEVERC_KRT_INTERPOSE_E_ALLOC;
 	}
 
 	_neverc_krt_registry[slot].target = target;
 	_neverc_krt_registry[slot].used = 1;
+	_neverc_krt_registry[slot].transitioning = 1;
 	neverc_krt_chain_init(&_neverc_krt_registry[slot].chain);
 	neverc_krt_chain_add(&_neverc_krt_registry[slot].chain,
 			     handler, priority);
@@ -2015,11 +2132,16 @@ int neverc_krt_interpose_register(void *target, void *handler, int priority,
 		flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_registry_lock);
 		_neverc_krt_registry[slot].chain.count = 0;
 		_neverc_krt_registry[slot].used = 0;
+		_neverc_krt_registry[slot].transitioning = 0;
 		_neverc_krt_registry[slot].target = (void *)0;
 		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
 						   flags);
 		return ret;
 	}
+
+	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_registry_lock);
+	_neverc_krt_registry[slot].transitioning = 0;
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock, flags);
 
 	if (orig)
 		*orig = _neverc_krt_registry[slot].chain.orig_fn;
@@ -2049,33 +2171,67 @@ int neverc_krt_interpose_unregister(struct neverc_krt_interpose_ref *ref)
 		return -2;
 	}
 
-	ret = neverc_krt_chain_remove(&_neverc_krt_registry[slot].chain,
-				      ref->handler);
-	if (ret != 0) {
+	if (_neverc_krt_registry[slot].transitioning) {
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
+						   flags);
+		return NEVERC_KRT_INTERPOSE_E_CONFLICT;
+	}
+
+	if (_neverc_krt_registry[slot].chain.count > 1) {
+		_neverc_krt_registry[slot].transitioning = 1;
+		WRITE_ONCE(_neverc_krt_reg_ctxs[slot].base.enabled, 0);
+		_neverc_krt_spin_unlock_irqrestore(
+			&_neverc_krt_registry_lock, flags);
+		_neverc_krt_full_barrier();
+		_neverc_krt_quiesce_deep();
+
+		flags = _neverc_krt_spin_lock_irqsave(
+			&_neverc_krt_registry_lock);
+		ret = neverc_krt_chain_remove(&_neverc_krt_registry[slot].chain,
+					      ref->handler);
+		if (ret == 0) {
+			ref->slot = -1;
+			ref->handler = (void *)0;
+		}
+		_neverc_krt_registry[slot].transitioning = 0;
+		_neverc_krt_full_barrier();
+		WRITE_ONCE(_neverc_krt_reg_ctxs[slot].base.enabled, 1);
 		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
 						   flags);
 		return ret;
 	}
 
-	{
-		int need_uninstall = (_neverc_krt_registry[slot].chain.count == 0);
-		ref->slot = -1;
-		ref->handler = (void *)0;
-
+	if (_neverc_krt_registry[slot].chain.count != 1 ||
+	    _neverc_krt_registry[slot].chain.entries[0].handler != ref->handler) {
 		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
 						   flags);
-
-		if (need_uninstall) {
-			neverc_krt_interpose_remove_ctx(&_neverc_krt_reg_ctxs[slot]);
-			flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_registry_lock);
-			_neverc_krt_registry[slot].used = 0;
-			_neverc_krt_registry[slot].target = (void *)0;
-			_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
-							   flags);
-		}
+		return -2;
 	}
 
-	return 0;
+	_neverc_krt_registry[slot].transitioning = 1;
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock, flags);
+
+	neverc_krt_interpose_remove_ctx(&_neverc_krt_reg_ctxs[slot]);
+
+	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_registry_lock);
+	if (_neverc_krt_reg_ctxs[slot].base.active) {
+		_neverc_krt_registry[slot].transitioning = 0;
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock,
+						   flags);
+		return NEVERC_KRT_INTERPOSE_E_PATCH;
+	}
+
+	ret = neverc_krt_chain_remove(&_neverc_krt_registry[slot].chain,
+				      ref->handler);
+	if (ret == 0) {
+		ref->slot = -1;
+		ref->handler = (void *)0;
+		_neverc_krt_registry[slot].used = 0;
+		_neverc_krt_registry[slot].target = (void *)0;
+	}
+	_neverc_krt_registry[slot].transitioning = 0;
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_registry_lock, flags);
+	return ret;
 }
 
 int neverc_krt_interpose_registry_count(void *target)
@@ -2253,7 +2409,7 @@ static void _neverc_krt_probe_ctx_chain_run(neverc_krt_reg_ctx *ctx,
 struct _neverc_krt_probe_slot {
 	void                            *addr;
 	int                              used;
-	int                              _pad;
+	int                              transitioning;
 	struct _neverc_krt_probe_chain   chain;
 };
 
@@ -2348,6 +2504,9 @@ static int _neverc_krt_probe_chain_remove(struct _neverc_krt_probe_chain *chain,
 			__asm__ __volatile__("dmb ish" ::: "memory");
 			for (; i < chain->count - 1; i++)
 				chain->entries[i] = chain->entries[i + 1];
+			chain->entries[chain->count - 1].handler = (void *)0;
+			chain->entries[chain->count - 1].priority = 0;
+			chain->entries[chain->count - 1].active = 0;
 			__asm__ __volatile__("dmb ish" ::: "memory");
 			WRITE_ONCE(chain->count, chain->count - 1);
 			return 0;
@@ -2400,6 +2559,20 @@ int neverc_krt_probe_register(void *addr,
 
 	slot = _neverc_krt_probe_find_addr(addr);
 	if (slot >= 0) {
+		if (_neverc_krt_probes[slot].transitioning) {
+			_neverc_krt_spin_unlock_irqrestore(
+				&_neverc_krt_probe_lock, flags);
+			return NEVERC_KRT_INTERPOSE_E_CONFLICT;
+		}
+		_neverc_krt_probes[slot].transitioning = 1;
+		WRITE_ONCE(_neverc_krt_probe_ctxs[slot].base.enabled, 0);
+		_neverc_krt_spin_unlock_irqrestore(
+			&_neverc_krt_probe_lock, flags);
+		_neverc_krt_full_barrier();
+		_neverc_krt_quiesce_deep();
+
+		flags = _neverc_krt_spin_lock_irqsave(
+			&_neverc_krt_probe_lock);
 		ret = _neverc_krt_probe_chain_add(
 			&_neverc_krt_probes[slot].chain,
 			(void *)handler, priority);
@@ -2407,6 +2580,9 @@ int neverc_krt_probe_register(void *addr,
 			ref->slot = slot;
 			ref->handler = (void *)handler;
 		}
+		_neverc_krt_probes[slot].transitioning = 0;
+		_neverc_krt_full_barrier();
+		WRITE_ONCE(_neverc_krt_probe_ctxs[slot].base.enabled, 1);
 		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
 						   flags);
 		return ret;
@@ -2416,7 +2592,7 @@ int neverc_krt_probe_register(void *addr,
 	if (slot < 0) {
 		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
 						   flags);
-		return -4;
+		return NEVERC_KRT_INTERPOSE_E_ALLOC;
 	}
 
 	/* Initialize slot */
@@ -2429,6 +2605,7 @@ int neverc_krt_probe_register(void *addr,
 
 	_neverc_krt_probes[slot].addr = addr;
 	_neverc_krt_probes[slot].used = 1;
+	_neverc_krt_probes[slot].transitioning = 1;
 
 	_neverc_krt_probe_chain_add(&_neverc_krt_probes[slot].chain,
 				    (void *)handler, priority);
@@ -2446,11 +2623,16 @@ int neverc_krt_probe_register(void *addr,
 		flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_probe_lock);
 		_neverc_krt_probes[slot].chain.count = 0;
 		_neverc_krt_probes[slot].used = 0;
+		_neverc_krt_probes[slot].transitioning = 0;
 		_neverc_krt_probes[slot].addr = (void *)0;
 		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
 						   flags);
 		return ret;
 	}
+
+	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_probe_lock);
+	_neverc_krt_probes[slot].transitioning = 0;
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock, flags);
 
 	ref->slot = slot;
 	ref->handler = (void *)handler;
@@ -2461,7 +2643,7 @@ int neverc_krt_probe_register(void *addr,
 int neverc_krt_probe_unregister(struct neverc_krt_probe_ref *ref)
 {
 	unsigned long flags;
-	int slot, ret, need_remove = 0;
+	int slot, ret;
 
 	if (!ref)
 		return -1;
@@ -2477,37 +2659,67 @@ int neverc_krt_probe_unregister(struct neverc_krt_probe_ref *ref)
 						   flags);
 		return -2;
 	}
+	if (_neverc_krt_probes[slot].transitioning) {
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
+						   flags);
+		return NEVERC_KRT_INTERPOSE_E_CONFLICT;
+	}
 
-	ret = _neverc_krt_probe_chain_remove(&_neverc_krt_probes[slot].chain,
-					     ref->handler);
-	if (ret != 0) {
+	if (_neverc_krt_probes[slot].chain.count > 1) {
+		_neverc_krt_probes[slot].transitioning = 1;
+		WRITE_ONCE(_neverc_krt_probe_ctxs[slot].base.enabled, 0);
+		_neverc_krt_spin_unlock_irqrestore(
+			&_neverc_krt_probe_lock, flags);
+		_neverc_krt_full_barrier();
+		_neverc_krt_quiesce_deep();
+
+		flags = _neverc_krt_spin_lock_irqsave(
+			&_neverc_krt_probe_lock);
+		ret = _neverc_krt_probe_chain_remove(
+			&_neverc_krt_probes[slot].chain, ref->handler);
+		if (ret == 0) {
+			ref->slot = -1;
+			ref->handler = (void *)0;
+		}
+		_neverc_krt_probes[slot].transitioning = 0;
+		_neverc_krt_full_barrier();
+		WRITE_ONCE(_neverc_krt_probe_ctxs[slot].base.enabled, 1);
 		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
 						   flags);
 		return ret;
 	}
 
-	if (_neverc_krt_probes[slot].chain.count == 0)
-		need_remove = 1;
-
-	ref->slot = -1;
-	ref->handler = (void *)0;
-
-	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock, flags);
-
-	/*
-	 * Remove slot outside the spinlock: _neverc_krt_probe_remove_slot
-	 * calls _neverc_krt_patch_multi which may use stop_machine.
-	 */
-	if (need_remove) {
-		_neverc_krt_probe_remove_slot(slot);
-		flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_probe_lock);
-		_neverc_krt_probes[slot].used = 0;
-		_neverc_krt_probes[slot].addr = (void *)0;
+	if (_neverc_krt_probes[slot].chain.count != 1 ||
+	    _neverc_krt_probes[slot].chain.entries[0].handler != ref->handler) {
 		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
 						   flags);
+		return -2;
 	}
 
-	return 0;
+	_neverc_krt_probes[slot].transitioning = 1;
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock, flags);
+
+	_neverc_krt_probe_remove_slot(slot);
+
+	flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_probe_lock);
+	if (_neverc_krt_probe_ctxs[slot].base.active) {
+		_neverc_krt_probes[slot].transitioning = 0;
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock,
+						   flags);
+		return NEVERC_KRT_INTERPOSE_E_PATCH;
+	}
+
+	ret = _neverc_krt_probe_chain_remove(
+		&_neverc_krt_probes[slot].chain, ref->handler);
+	if (ret == 0) {
+		ref->slot = -1;
+		ref->handler = (void *)0;
+		_neverc_krt_probes[slot].used = 0;
+		_neverc_krt_probes[slot].addr = (void *)0;
+	}
+	_neverc_krt_probes[slot].transitioning = 0;
+	_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_probe_lock, flags);
+	return ret;
 }
 
 int neverc_krt_probe_count(void *addr)
@@ -2565,6 +2777,8 @@ unsigned long neverc_krt_strip_pac(unsigned long addr)
 	unsigned long tcr, va_bits, mask;
 	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
 	va_bits = 64 - ((tcr >> 16) & 0x3FUL);
+	if (va_bits >= 64)
+		return addr;
 	mask = (1UL << va_bits) - 1;
 
 	int is_kernel = (addr >> 63) & 1;
@@ -2591,7 +2805,11 @@ static int neverc_krt_a64_is_ftrace_site(u32 *code)
 u32 neverc_krt_cfi_read_tag(void *func)
 {
 	u32 tag = 0;
+	if (!func)
+		return 0;
 	unsigned long addr = neverc_krt_strip_pac((unsigned long)func);
+	if (!_neverc_krt_is_kern_ptr(addr) || addr < sizeof(tag))
+		return 0;
 	neverc_krt_mem_read(&tag, (void *)(addr - 4), 4);
 	return tag;
 }
@@ -2616,4 +2834,96 @@ static int neverc_krt_pool_page_count(void)
 {
 	return _neverc_krt_pool_count;
 }
+
+void neverc_krt_interpose_cleanup(void)
+{
+	int i;
+	int cleanup_failed = 0;
+	unsigned long flags;
+
+	WRITE_ONCE(_neverc_krt_inited, 0);
+	_neverc_krt_full_barrier();
+
+	for (i = 0; i < NEVERC_KRT_REGISTRY_MAX; i++) {
+		if (!_neverc_krt_registry[i].used)
+			continue;
+		neverc_krt_interpose_remove_ctx(&_neverc_krt_reg_ctxs[i]);
+		if (_neverc_krt_reg_ctxs[i].base.active) {
+			cleanup_failed = 1;
+			continue;
+		}
+		_neverc_krt_registry[i].chain.count = 0;
+		_neverc_krt_registry[i].target = (void *)0;
+		_neverc_krt_registry[i].used = 0;
+		_neverc_krt_registry[i].transitioning = 0;
+	}
+
+	for (i = 0; i < NEVERC_KRT_PROBE_MAX; i++) {
+		if (!_neverc_krt_probes[i].used)
+			continue;
+		_neverc_krt_probe_remove_slot(i);
+		if (_neverc_krt_probe_ctxs[i].base.active) {
+			cleanup_failed = 1;
+			continue;
+		}
+		_neverc_krt_probes[i].chain.count = 0;
+		_neverc_krt_probes[i].addr = (void *)0;
+		_neverc_krt_probes[i].used = 0;
+		_neverc_krt_probes[i].transitioning = 0;
+	}
+
+	for (i = 0; i < NEVERC_KRT_LL_MAX; i++) {
+		struct neverc_krt_interpose *owner;
+
+		if (!__atomic_load_n(&_neverc_krt_ll[i].used, __ATOMIC_ACQUIRE))
+			continue;
+		owner = READ_ONCE(_neverc_krt_ll[i].owner);
+		if (owner)
+			_neverc_krt_ll_remove(owner);
+		if (__atomic_load_n(&_neverc_krt_ll[i].used, __ATOMIC_ACQUIRE))
+			cleanup_failed = 1;
+	}
+
+	if (cleanup_failed) {
+		WRITE_ONCE(_neverc_krt_inited, 1);
+		return;
+	}
+
+	if (_neverc_krt_syncrcu) _neverc_krt_syncrcu();
+	_neverc_krt_full_barrier();
+	if (_neverc_krt_syncrcu) _neverc_krt_syncrcu();
+
+	if (_neverc_krt_msleep) _neverc_krt_msleep(100);
+
+	for (;;) {
+		void *base;
+		int magic;
+
+		flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_pool_lock);
+		if (_neverc_krt_pool_count == 0) {
+			__atomic_store_n(&_neverc_krt_pool_alloc_total, 0,
+					 __ATOMIC_RELAXED);
+			__atomic_store_n(&_neverc_krt_pool_alloc_bytes, 0,
+					 __ATOMIC_RELAXED);
+			_neverc_krt_spin_unlock_irqrestore(
+				&_neverc_krt_pool_lock, flags);
+			break;
+		}
+
+		i = --_neverc_krt_pool_count;
+		base = _neverc_krt_pool[i].base;
+		magic = _neverc_krt_pool[i].magic;
+		_neverc_krt_pool[i].base = (void *)0;
+		_neverc_krt_pool[i].used = 0;
+		_neverc_krt_pool[i].refcnt = 0;
+		_neverc_krt_pool[i].magic = 0;
+		_neverc_krt_spin_unlock_irqrestore(&_neverc_krt_pool_lock, flags);
+
+		if (base && _neverc_krt_modfree &&
+		    magic == _NEVERC_KRT_POOL_MAGIC)
+			_neverc_krt_modfree(base);
+	}
+}
+
+#undef NEVERC_KRT_INTERPOSE_FORCE_INLINE
 

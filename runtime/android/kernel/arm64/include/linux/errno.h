@@ -23,6 +23,7 @@
 #define EINVAL 22
 #define ENFILE 23
 #define EMFILE 24
+#define ENOTTY 25
 #define ENOSPC 28
 #define ESPIPE 29
 #define EROFS 30

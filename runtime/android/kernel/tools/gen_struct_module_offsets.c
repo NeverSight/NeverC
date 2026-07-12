@@ -27,16 +27,17 @@
  *     -S -o - gen_struct_module_offsets.c | grep '==NVK=='
  *
  * Then drop the values into nvkmod_version.h (or pass them via
- * -DNVK_OFF_INIT=.. -DNVK_OFF_EXIT=.. -DNVK_MODULE_SIZE=..).
+ * -DNEVERC_KRT_OFF_INIT=.. -DNEVERC_KRT_OFF_EXIT=..
+ * -DNEVERC_KRT_MODULE_SIZE=..).
  */
 #ifdef NVK_GEN_KSRC
 #include <linux/module.h>
 #include <linux/stddef.h>
 #include <linux/fs.h>
 #include <linux/dcache.h>
-#include <linux/sched.h>
-#include <linux/mm_types.h>
+#ifdef NVK_GEN_SOCK_OFFSETS
 #include <net/sock.h>
+#endif
 
 #define NVK_EMIT(name, val)                                                    \
 	__asm__ __volatile__("\n.ascii \"==NVK== " #name " %0 ==\"\n"           \
@@ -45,25 +46,23 @@
 
 void nvk_gen_offsets(void)
 {
-	NVK_EMIT(NVK_OFF_NAME, offsetof(struct module, name));
-	NVK_EMIT(NVK_OFF_INIT, offsetof(struct module, init));
-	NVK_EMIT(NVK_OFF_EXIT, offsetof(struct module, exit));
-	NVK_EMIT(NVK_MODULE_SIZE, sizeof(struct module));
+	NVK_EMIT(NEVERC_KRT_OFF_NAME, offsetof(struct module, name));
+	NVK_EMIT(NEVERC_KRT_OFF_INIT, offsetof(struct module, init));
+	NVK_EMIT(NEVERC_KRT_OFF_EXIT, offsetof(struct module, exit));
+	NVK_EMIT(NEVERC_KRT_MODULE_SIZE, sizeof(struct module));
 
-	NVK_EMIT(NVK_FILE_PATH_DENTRY,
+	NVK_EMIT(NEVERC_KRT_FILE_DENTRY_OFF,
 		  offsetof(struct file, f_path) +
 		  offsetof(struct path, dentry));
-	NVK_EMIT(NVK_DENTRY_DNAME_NAME,
+	NVK_EMIT(NEVERC_KRT_DENTRY_DNAME_OFF,
 		  offsetof(struct dentry, d_name) +
 		  offsetof(struct qstr, name));
-	NVK_EMIT(NVK_SKC_DPORT,
+#ifdef NVK_GEN_SOCK_OFFSETS
+	NVK_EMIT(NEVERC_KRT_SKC_DPORT_OFF,
 		  offsetof(struct sock_common, skc_dport));
-	NVK_EMIT(NVK_SKC_NUM,
+	NVK_EMIT(NEVERC_KRT_SKC_NUM_OFF,
 		  offsetof(struct sock_common, skc_num));
-
-	NVK_EMIT(NVK_TASK_MM, offsetof(struct task_struct, mm));
-	NVK_EMIT(NVK_TASK_ACTIVE_MM, offsetof(struct task_struct, active_mm));
-	NVK_EMIT(NVK_VMA_VM_FLAGS, offsetof(struct vm_area_struct, vm_flags));
+#endif
 }
 #else
 const unsigned long nvk_gen_placeholder = 0; /* compile with -DNVK_GEN_KSRC=1 */

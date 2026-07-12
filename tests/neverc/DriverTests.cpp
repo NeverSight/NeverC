@@ -203,6 +203,21 @@ TEST_F(DriverTest, RejectDriverModes) {
   }
 }
 
+TEST_F(DriverTest, O0RuntimeBitcodeCanRemainOptimizable) {
+  auto src = (testDir() / "test_basic.c").string();
+  auto r = ncc({"-###", "-c", "-O0", "-disable-O0-optnone",
+                "-finline-functions", src});
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+
+  const std::string all = r.err + r.out;
+  EXPECT_NE(all.find("\"-disable-O0-optnone\""), std::string::npos)
+      << "the driver must forward the cc1 optimization attribute control\n"
+      << all;
+  EXPECT_NE(all.find("\"-finline-functions\""), std::string::npos)
+      << "runtime bitcode must not gain implicit noinline attributes\n"
+      << all;
+}
+
 // Windows MSVC default runtime
 TEST_F(DriverTest, WindowsMSVCDefaultRuntime) {
   auto src = (testDir() / "test_basic.c").string();

@@ -2,14 +2,15 @@
 #ifndef _NEVERC_KRT_ASM_PAGE_H
 #define _NEVERC_KRT_ASM_PAGE_H
 
+#include <nvkmod_version.h>
+
 /*
- * Compile-time default for struct sizing only.
- * GKI builds use 4K pages (PAGE_SHIFT=12) on all supported arm64 targets.
+ * Compile-time profile fact for ABI sizing.
  * Use neverc_krt_page_size() / neverc_krt_page_shift() from nvk_addr.h
- * for the runtime-correct value — some vendor kernels use 16K.
+ * when inspecting the running kernel.
  */
 #ifndef PAGE_SHIFT
-#define PAGE_SHIFT 12
+#define PAGE_SHIFT NEVERC_KRT_PAGE_SHIFT
 #endif
 #define PAGE_SIZE  (1UL << PAGE_SHIFT)
 #define PAGE_MASK  (~(PAGE_SIZE - 1))

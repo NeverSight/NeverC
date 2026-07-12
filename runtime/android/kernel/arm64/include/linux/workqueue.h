@@ -5,52 +5,101 @@
 #include <linux/types.h>
 #include <linux/list.h>
 #include <linux/compiler.h>
+#include <linux/timer.h>
 #include <nvkmod_version.h>
 
 struct workqueue_struct; /* opaque */
+struct work_struct;
 
 typedef void (*work_func_t)(struct work_struct *work);
 
 /*
- * Minimal work_struct layout — stable core fields across GKI 5.10–6.18.
+ * Exact work_struct layout for the official arm64 GKI configurations.
  *
  *   GKI version    sizeof(struct work_struct)
  *   ──────────────────────────────────────────
  *   5.10–6.6       48 bytes (core 32 + ANDROID_KABI_RESERVE(1)+(2) = 16)
  *   6.12–6.18      32 bytes (KABI reserves removed from work_struct)
- *
- * CONFIG_LOCKDEP is disabled in GKI production builds, so lockdep_map
- * is never present.  The kernel only accesses data/entry/func through
- * pointer — never copies work_struct by value — so 32 bytes is safe
- * for queue_work / cancel_work_sync on all GKI versions.
  */
 struct work_struct {
 	unsigned long data;
 	struct list_head entry;
 	work_func_t func;
+#if NEVERC_KRT_KERNEL < 612
+	u64 __kabi_reserved1;
+	u64 __kabi_reserved2;
+#endif
 };
 
 /*
- * delayed_work layout varies across GKI versions because both
- * work_struct KABI padding and timer_list size differ.
- * Use opaque storage sized for the largest variant (5.10 with KABI).
- *
- * Prefer neverc_krt_timer from nvk_timer.h for cross-version portable
- * timer functionality.
+ * timer follows work immediately, so delayed_work cannot be an opaque
+ * maximum-sized blob: queue_delayed_work_on() uses the target profile's
+ * compile-time timer offset.
  */
 struct delayed_work {
-	unsigned char __opaque[192];
+	struct work_struct work;
+	struct timer_list timer;
+	struct workqueue_struct *wq;
+	int cpu;
+	u32 __pad;
+	u64 __kabi_reserved1;
+	u64 __kabi_reserved2;
 };
 
+#if NEVERC_KRT_KERNEL < 612
+_Static_assert(sizeof(struct work_struct) == 48,
+	       "unexpected GKI 5.10-6.6 work_struct layout");
+_Static_assert(__builtin_offsetof(struct delayed_work, timer) == 48,
+	       "unexpected GKI 5.10-6.6 delayed_work timer offset");
+_Static_assert(sizeof(struct delayed_work) == 136,
+	       "unexpected GKI 5.10-6.6 delayed_work layout");
+#else
+_Static_assert(sizeof(struct work_struct) == 32,
+	       "unexpected GKI 6.12+ work_struct layout");
+_Static_assert(__builtin_offsetof(struct delayed_work, timer) == 32,
+	       "unexpected GKI 6.12+ delayed_work timer offset");
+_Static_assert(sizeof(struct delayed_work) == 104,
+	       "unexpected GKI 6.12+ delayed_work layout");
+#endif
+
 /*
- * WORK_DATA_INIT: clear data field.  The kernel encodes flags and pool info
- * in the data field; zero is safe for static/stack-allocated work items
- * that have never been queued.
+ * Upstream initializes an unqueued work item with WORK_STRUCT_NO_POOL, not
+ * zero.  `data` is represented as unsigned long here because atomic_long_t has
+ * the same arm64 layout; queueing helpers still perform atomic accesses.
  */
-#define WORK_DATA_INIT() 0
+#define WORK_STRUCT_FLAG_BITS   4
+#define WORK_STRUCT_COLOR_SHIFT WORK_STRUCT_FLAG_BITS
+#define WORK_STRUCT_COLOR_BITS  4
+#define WORK_STRUCT_PWQ_SHIFT \
+	(WORK_STRUCT_COLOR_SHIFT + WORK_STRUCT_COLOR_BITS)
+#define WORK_OFFQ_FLAG_BITS 1
+#if NEVERC_KRT_KERNEL < 612
+#define WORK_OFFQ_POOL_SHIFT \
+	(WORK_STRUCT_COLOR_SHIFT + WORK_OFFQ_FLAG_BITS)
+#else
+#define WORK_OFFQ_DISABLE_BITS 16
+#define WORK_OFFQ_POOL_SHIFT \
+	(WORK_STRUCT_COLOR_SHIFT + WORK_OFFQ_FLAG_BITS + \
+	 WORK_OFFQ_DISABLE_BITS)
+#endif
+#define WORK_OFFQ_POOL_BITS 31
+#define WORK_OFFQ_POOL_NONE ((1UL << WORK_OFFQ_POOL_BITS) - 1)
+#define WORK_STRUCT_NO_POOL (WORK_OFFQ_POOL_NONE << WORK_OFFQ_POOL_SHIFT)
+#define WORK_DATA_INIT() WORK_STRUCT_NO_POOL
+
+_Static_assert(WORK_DATA_INIT() != 0,
+	       "work_struct must start in the no-pool state");
+#if NEVERC_KRT_KERNEL < 612
+_Static_assert(WORK_OFFQ_POOL_SHIFT == 5,
+	       "unexpected GKI 5.10-6.6 off-queue work encoding");
+#else
+_Static_assert(WORK_OFFQ_POOL_SHIFT == 21,
+	       "unexpected GKI 6.12+ off-queue work encoding");
+#endif
 
 #define __INIT_WORK(_work, _func)                                             \
 	do {                                                                  \
+		__builtin_memset((_work), 0, sizeof(*(_work)));               \
 		(_work)->data = WORK_DATA_INIT();                             \
 		INIT_LIST_HEAD(&(_work)->entry);                              \
 		(_work)->func = (_func);                                      \
@@ -63,6 +112,33 @@ struct delayed_work {
 		.data = WORK_DATA_INIT(),                                     \
 		.entry = LIST_HEAD_INIT(n.entry),                             \
 		.func = (f),                                                  \
+	}
+
+void delayed_work_timer_fn(struct timer_list *timer);
+
+#define __INIT_DELAYED_WORK(_work, _func, _timer_flags)                       \
+	do {                                                                  \
+		__builtin_memset((_work), 0, sizeof(*(_work)));               \
+		INIT_WORK(&(_work)->work, (_func));                            \
+		timer_setup(&(_work)->timer, delayed_work_timer_fn,            \
+			    (_timer_flags) | TIMER_IRQSAFE);                   \
+	} while (0)
+
+#define INIT_DELAYED_WORK(_work, _func)                                       \
+	__INIT_DELAYED_WORK((_work), (_func), 0)
+
+#define INIT_DEFERRABLE_WORK(_work, _func)                                    \
+	__INIT_DELAYED_WORK((_work), (_func), TIMER_DEFERRABLE)
+
+#define DECLARE_DELAYED_WORK(name, _func)                                     \
+	struct delayed_work name = {                                         \
+		.work = {                                                     \
+			.data = WORK_DATA_INIT(),                             \
+			.entry = LIST_HEAD_INIT((name).work.entry),           \
+			.func = (_func),                                      \
+		},                                                             \
+		.timer = __TIMER_INITIALIZER(delayed_work_timer_fn,            \
+					     TIMER_IRQSAFE),                    \
 	}
 
 /* WQ flags for alloc_workqueue. */
@@ -99,13 +175,22 @@ void destroy_workqueue(struct workqueue_struct *wq);
  * mod_delayed_work are inline wrappers in ALL GKI kernels (5.10–6.18).
  * Only the *_on variants are real exports.
  *
- * WORK_CPU_UNBOUND = NR_CPUS in the kernel.  Any value >= nr_cpu_ids
- * triggers the unbound path in __queue_work.  8192 is safe for all
- * GKI configs (NR_CPUS ≤ 256 on 5.10–6.12, ≤ 32 on 6.18).
+ * WORK_CPU_UNBOUND is compared for exact equality inside __queue_work().
+ * All supported official arm64 GKI profiles use CONFIG_NR_CPUS=32.  A vendor
+ * kernel built with another value can override NEVERC_KRT_GKI_NR_CPUS.
  */
-#define _NEVERC_KRT_WORK_CPU_UNBOUND 8192
+#ifndef NEVERC_KRT_GKI_NR_CPUS
+#define NEVERC_KRT_GKI_NR_CPUS 32
+#endif
+#define WORK_CPU_UNBOUND NEVERC_KRT_GKI_NR_CPUS
 
+#if NEVERC_KRT_KERNEL >= 618
+extern struct workqueue_struct *system_percpu_wq;
+#define NEVERC_KRT_SYSTEM_WORKQUEUE system_percpu_wq
+#else
 extern struct workqueue_struct *system_wq;
+#define NEVERC_KRT_SYSTEM_WORKQUEUE system_wq
+#endif
 
 bool queue_work_on(int cpu, struct workqueue_struct *wq,
 		   struct work_struct *work);
@@ -114,44 +199,44 @@ bool queue_delayed_work_on(int cpu, struct workqueue_struct *wq,
 bool mod_delayed_work_on(int cpu, struct workqueue_struct *wq,
 			 struct delayed_work *dwork, unsigned long delay);
 
-__always_inline bool
+static __always_inline bool
 queue_work(struct workqueue_struct *wq, struct work_struct *work)
 {
-	return queue_work_on(_NEVERC_KRT_WORK_CPU_UNBOUND, wq, work);
+	return queue_work_on(WORK_CPU_UNBOUND, wq, work);
 }
 
-__always_inline bool schedule_work(struct work_struct *work)
+static __always_inline bool schedule_work(struct work_struct *work)
 {
-	return queue_work_on(_NEVERC_KRT_WORK_CPU_UNBOUND, system_wq, work);
+	return queue_work_on(WORK_CPU_UNBOUND, NEVERC_KRT_SYSTEM_WORKQUEUE, work);
 }
 
-__always_inline bool
+static __always_inline bool
 queue_delayed_work(struct workqueue_struct *wq,
 		   struct delayed_work *dwork, unsigned long delay)
 {
-	return queue_delayed_work_on(_NEVERC_KRT_WORK_CPU_UNBOUND,
+	return queue_delayed_work_on(WORK_CPU_UNBOUND,
 				     wq, dwork, delay);
 }
 
-__always_inline bool
+static __always_inline bool
 schedule_delayed_work(struct delayed_work *dwork, unsigned long delay)
 {
-	return queue_delayed_work_on(_NEVERC_KRT_WORK_CPU_UNBOUND,
-				     system_wq, dwork, delay);
+	return queue_delayed_work_on(WORK_CPU_UNBOUND,
+				     NEVERC_KRT_SYSTEM_WORKQUEUE, dwork, delay);
 }
 
-__always_inline bool
+static __always_inline bool
 mod_delayed_work(struct workqueue_struct *wq,
 		 struct delayed_work *dwork, unsigned long delay)
 {
-	return mod_delayed_work_on(_NEVERC_KRT_WORK_CPU_UNBOUND,
+	return mod_delayed_work_on(WORK_CPU_UNBOUND,
 				   wq, dwork, delay);
 }
 
 bool cancel_work_sync(struct work_struct *work);
 bool cancel_delayed_work(struct delayed_work *dwork);
 bool cancel_delayed_work_sync(struct delayed_work *dwork);
-void flush_work(struct work_struct *work);
+bool flush_work(struct work_struct *work);
 
 /*
  * 5.10–5.15: flush_workqueue exported directly.

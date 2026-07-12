@@ -15,7 +15,6 @@
 #define NEVERC_KRT_INTERPOSE_H
 
 #include <linux/types.h>
-#include <linux/compiler.h>
 
 /* ====================================================================
  * Register context (used by probe handlers)
@@ -180,9 +179,8 @@ enum neverc_krt_interpose_err {
  * Low-level interpose structure
  *
  * Users who need fine-grained control (manual install/remove without
- * auto-chaining) allocate this struct directly and pass it to
- * neverc_krt_interpose_install().  The high-level API (interpose_register) manages
- * these internally.
+ * auto-chaining) use the advanced SDK API in <nvk_interpose_advanced.h>.
+ * The high-level API (interpose_register) manages these internally.
  * ==================================================================== */
 
 #define NEVERC_KRT_INTERPOSE_MAX_PATCH   6
@@ -324,22 +322,7 @@ int neverc_krt_probe_count(void *addr);
 unsigned long neverc_krt_strip_pac(unsigned long addr);
 
 /* ====================================================================
- * Low-level install / remove API
- *
- * For users who allocate struct neverc_krt_interpose directly and manage
- * lifetime manually (no auto-chaining).
- * ==================================================================== */
-
-int neverc_krt_interpose_install(struct neverc_krt_interpose *h, void *target,
-			    void *replace, void **orig);
-void neverc_krt_interpose_pause(struct neverc_krt_interpose *h);
-void neverc_krt_interpose_resume(struct neverc_krt_interpose *h);
-void neverc_krt_interpose_remove(struct neverc_krt_interpose *h);
-int neverc_krt_interpose_replace(struct neverc_krt_interpose *h, void *new_replace,
-			    void **new_orig);
-
-/* ====================================================================
- * Re-entry guard (inline — must be in header for user code)
+ * Re-entry guard
  *
  * Prevents recursive interpose invocations on the same task.
  * Usage:
@@ -351,43 +334,13 @@ int neverc_krt_interpose_replace(struct neverc_krt_interpose *h, void *new_repla
 #define NEVERC_KRT_INTERPOSE_COUNT(h) \
 	__atomic_fetch_add(&(h)->hit_count, 1, __ATOMIC_RELAXED)
 
-__always_inline int neverc_krt_interpose_enter(struct neverc_krt_interpose *h)
-{
-	unsigned long task;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
-	unsigned long prev = __atomic_exchange_n(&h->guard, task,
-						 __ATOMIC_ACQUIRE);
-	if (prev == task)
-		return 0;
-	NEVERC_KRT_INTERPOSE_COUNT(h);
-	return 1;
-}
-
-__always_inline void neverc_krt_interpose_leave(struct neverc_krt_interpose *h)
-{
-	__atomic_store_n(&h->guard, 0, __ATOMIC_RELEASE);
-}
-
-__always_inline int neverc_krt_interpose_enter_safe(struct neverc_krt_interpose *h)
-{
-	if (unlikely(!READ_ONCE(h->enabled)))
-		return 0;
-	return neverc_krt_interpose_enter(h);
-}
-
-__always_inline u64 neverc_krt_interpose_hits(struct neverc_krt_interpose *h)
-{ return __atomic_load_n(&h->hit_count, __ATOMIC_RELAXED); }
-
-__always_inline void neverc_krt_interpose_reset_stats(struct neverc_krt_interpose *h)
-{ __atomic_store_n(&h->hit_count, 0, __ATOMIC_RELAXED); }
-
-__always_inline int neverc_krt_interpose_is_enabled(struct neverc_krt_interpose *h)
-{ return READ_ONCE(h->enabled); }
-
-__always_inline void neverc_krt_interpose_enable(struct neverc_krt_interpose *h)
-{ WRITE_ONCE(h->enabled, 1); }
-
-__always_inline void neverc_krt_interpose_disable(struct neverc_krt_interpose *h)
-{ WRITE_ONCE(h->enabled, 0); }
+int neverc_krt_interpose_enter(struct neverc_krt_interpose *h);
+void neverc_krt_interpose_leave(struct neverc_krt_interpose *h);
+int neverc_krt_interpose_enter_safe(struct neverc_krt_interpose *h);
+u64 neverc_krt_interpose_hits(struct neverc_krt_interpose *h);
+void neverc_krt_interpose_reset_stats(struct neverc_krt_interpose *h);
+int neverc_krt_interpose_is_enabled(struct neverc_krt_interpose *h);
+void neverc_krt_interpose_enable(struct neverc_krt_interpose *h);
+void neverc_krt_interpose_disable(struct neverc_krt_interpose *h);
 
 #endif /* NEVERC_KRT_INTERPOSE_H */

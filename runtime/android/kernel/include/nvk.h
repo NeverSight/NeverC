@@ -3,7 +3,7 @@
 #define NEVERC_KRT_H
 
 #include <nvkmod.h>
-#include <nvk_interpose_internal.h>
+#include <nvk_interpose_advanced.h>
 #include <nvk_mem.h>
 #include <nvk_syscall.h>
 #include <nvk_process.h>
@@ -64,29 +64,27 @@ const struct neverc_krt_state *neverc_krt_get_state(void);
 
 /* ---- Symbol-name interpose helpers ---- */
 
-/*
- * Internal: called by the neverc_krt_interpose_*_by_sym() macros only.
- * NC_XORSTR() must expand at the call site, so these cannot be static.
- * Do NOT call directly — use the macros below.
- */
-int _neverc_krt_interpose_by_sym(struct neverc_krt_interpose *h, const char *sym_name,
-			    void *replace, void **orig);
-int _neverc_krt_interpose_ctx_by_sym(struct neverc_krt_interpose_ctx *h,
-				const char *sym_name,
-				neverc_krt_ctx_handler_t handler,
-				void **call_orig);
-int _neverc_krt_interpose_auto_by_sym(struct neverc_krt_interpose *h,
-				 const char *sym_name,
-				 void *replace, void **orig,
-				 struct neverc_krt_ftrace_interpose *ft);
+int neverc_krt_interpose_by_name(struct neverc_krt_interpose *h,
+				 const char *symbol_name,
+				 void *replace, void **orig);
+int neverc_krt_interpose_ctx_by_name(struct neverc_krt_interpose_ctx *h,
+				     const char *symbol_name,
+				     neverc_krt_ctx_handler_t handler,
+				     void **call_orig);
+int neverc_krt_interpose_auto_by_name(struct neverc_krt_interpose *h,
+				      const char *symbol_name,
+				      void *replace, void **orig,
+				      struct neverc_krt_ftrace_interpose *ft);
 
 #define neverc_krt_interpose_by_sym(h, sym, replace, orig) \
-	_neverc_krt_interpose_by_sym((h), NC_XORSTR(sym), (replace), (orig))
+	neverc_krt_interpose_by_name((h), NC_XORSTR(sym), (replace), (orig))
 
 #define neverc_krt_interpose_ctx_by_sym(h, sym, handler, call_orig) \
-	_neverc_krt_interpose_ctx_by_sym((h), NC_XORSTR(sym), (handler), (call_orig))
+	neverc_krt_interpose_ctx_by_name((h), NC_XORSTR(sym), (handler), \
+					 (call_orig))
 
 #define neverc_krt_interpose_auto_by_sym(h, sym, replace, orig, ft) \
-	_neverc_krt_interpose_auto_by_sym((h), NC_XORSTR(sym), (replace), (orig), (ft))
+	neverc_krt_interpose_auto_by_name((h), NC_XORSTR(sym), (replace), \
+					  (orig), (ft))
 
 #endif /* NEVERC_KRT_H */

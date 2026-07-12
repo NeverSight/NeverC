@@ -16,11 +16,11 @@
  * Stubs provided here for source compatibility; the preempt counter
  * returned is always 0 (process context).
  */
-__always_inline void preempt_disable(void)  { __asm__ volatile("" ::: "memory"); }
-__always_inline void preempt_enable(void)   { __asm__ volatile("" ::: "memory"); }
-__always_inline int  preempt_count(void)    { return 0; }
-__always_inline void preempt_count_add(int val) { (void)val; }
-__always_inline void preempt_count_sub(int val) { (void)val; }
+static __always_inline void preempt_disable(void)  { __asm__ volatile("" ::: "memory"); }
+static __always_inline void preempt_enable(void)   { __asm__ volatile("" ::: "memory"); }
+static __always_inline int  preempt_count(void)    { return 0; }
+static __always_inline void preempt_count_add(int val) { (void)val; }
+static __always_inline void preempt_count_sub(int val) { (void)val; }
 
 #define in_interrupt()  0
 #define in_softirq()    0

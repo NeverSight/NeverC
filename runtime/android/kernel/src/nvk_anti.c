@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
-#include <nvk_internal.h>
+#include "nvk_internal.h"
 
 /* ---- watchdog internals ---- */
 
@@ -224,11 +224,11 @@ int neverc_krt_anti_detect_interpose_ex(void *addr,
 	if (neverc_krt_mem_read(&insn, addr, 4))
 		return -1;
 
-	int is_ldr_x16 = (insn == 0x58000050U);
+	int is_ldr_x16 = (insn == NEVERC_KRT_A64_LDR_X16_PC8);
 	int is_ldr_x16_next = 0;
 	u32 insn2;
 	if (!neverc_krt_mem_read(&insn2, (char *)addr + 4, 4))
-		is_ldr_x16_next = (insn2 == 0x58000050U);
+		is_ldr_x16_next = (insn2 == NEVERC_KRT_A64_LDR_X16_PC8);
 
 	if (!is_ldr_x16 && !is_ldr_x16_next)
 		return 0;
@@ -372,10 +372,11 @@ int neverc_krt_anti_check_fn_patched(void *addr, int insn_count)
 			return 1;
 		if ((insn & 0xFFE0001FU) == 0xD4200000U)
 			return 1;
-		if (insn == 0x58000050U && i + 3 < insn_count) {
+		if (insn == NEVERC_KRT_A64_LDR_X16_PC8 &&
+		    i + 3 < insn_count) {
 			u32 next;
 			if (!neverc_krt_mem_read(&next, &code[i + 1], 4) &&
-			    next == 0xD61F0200U)
+			    next == NEVERC_KRT_A64_BR_X16)
 				return 1;
 		}
 	}

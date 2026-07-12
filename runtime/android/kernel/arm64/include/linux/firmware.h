@@ -11,6 +11,12 @@ struct firmware {
 };
 
 struct device;
+struct module;
+
+_Static_assert(sizeof(struct firmware) == 24,
+	       "unexpected arm64 GKI firmware layout");
+_Static_assert(__builtin_offsetof(struct firmware, data) == 8,
+	       "unexpected arm64 GKI firmware.data offset");
 
 int request_firmware(const struct firmware **fw, const char *name,
 		     struct device *device);

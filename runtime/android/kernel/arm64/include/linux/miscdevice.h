@@ -22,6 +22,13 @@ struct miscdevice {
 	umode_t mode;
 };
 
+_Static_assert(sizeof(struct miscdevice) == 80,
+	       "unexpected arm64 GKI miscdevice layout");
+_Static_assert(__builtin_offsetof(struct miscdevice, fops) == 16,
+	       "unexpected arm64 GKI miscdevice.fops offset");
+_Static_assert(__builtin_offsetof(struct miscdevice, groups) == 56,
+	       "unexpected arm64 GKI miscdevice.groups offset");
+
 int misc_register(struct miscdevice *misc);
 void misc_deregister(struct miscdevice *misc);
 

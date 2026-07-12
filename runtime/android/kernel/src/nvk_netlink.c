@@ -25,7 +25,7 @@ static neverc_krt_skb_put_fn            _neverc_krt_nl_skb_put;
 static neverc_krt_nlmsg_put_fn          _neverc_krt_nl_nlmsg_put;
 static neverc_krt_netlink_unicast_fn    _neverc_krt_nl_unicast;
 static neverc_krt_netlink_broadcast_fn  _neverc_krt_nl_broadcast;
-static void                            **_neverc_krt_nl_init_net;
+static void                             *_neverc_krt_nl_init_net;
 static int                              _neverc_krt_nl_inited;
 static unsigned long                    _neverc_krt_skb_data_off;
 
@@ -109,7 +109,7 @@ int neverc_krt_nl_init(void)
 	 * and send paths, so no lookup is needed.
 	 */
 	_neverc_krt_nl_init_net =
-		(void **)NEVERC_KRT_LOOKUP("init_net");
+		(void *)NEVERC_KRT_LOOKUP("init_net");
 
 	if (!_neverc_krt_nl_create || !_neverc_krt_nl_release)
 		return -1;
@@ -241,7 +241,7 @@ int neverc_krt_nl_open(struct neverc_krt_nl_sock *ns, int proto,
 	ns->proto = proto;
 	ns->handler = handler;
 
-	ns->sock = _neverc_krt_nl_create(*_neverc_krt_nl_init_net, proto,
+	ns->sock = _neverc_krt_nl_create(_neverc_krt_nl_init_net, proto,
 				       THIS_MODULE, &cfg);
 	if (!ns->sock)
 		return -3;

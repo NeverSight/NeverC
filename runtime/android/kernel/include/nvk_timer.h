@@ -3,7 +3,6 @@
 #define NEVERC_KRT_TIMER_H
 
 #include <linux/types.h>
-#include <linux/compiler.h>
 
 /* ------------------------------------------------------------------ */
 /*  Opaque timer structure sized to fit all GKI 5.10–6.18             */
@@ -34,6 +33,10 @@ int neverc_krt_timer_init(void);
 #define NEVERC_KRT_CLOCK_MONOTONIC 1
 #define NEVERC_KRT_HRTIMER_ABS     0
 #define NEVERC_KRT_HRTIMER_REL     1
+#define NEVERC_KRT_NSEC_PER_SEC    1000000000ULL
+#define NEVERC_KRT_NSEC_PER_MSEC   1000000LL
+#define NEVERC_KRT_NSEC_PER_USEC   1000LL
+#define NEVERC_KRT_USEC_PER_SEC    1000000ULL
 
 int neverc_krt_timer_setup(struct neverc_krt_timer *t,
 			   void (*cb)(struct neverc_krt_timer *));
@@ -49,20 +52,8 @@ int neverc_krt_timer_cancel(struct neverc_krt_timer *t);
 u64 neverc_krt_ktime_get_ns(void);
 u64 neverc_krt_ktime_get_boot_ns(void);
 
-__always_inline u64 neverc_krt_arch_counter(void)
-{
-	u64 cnt;
-	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(cnt));
-	return cnt;
-}
-
-__always_inline u32 neverc_krt_arch_counter_freq(void)
-{
-	u64 freq;
-	__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(freq));
-	return (u32)freq;
-}
-
+u64 neverc_krt_arch_counter(void);
+u32 neverc_krt_arch_counter_freq(void);
 u64 neverc_krt_arch_counter_to_ns(u64 ticks);
 void neverc_krt_udelay(unsigned int us);
 

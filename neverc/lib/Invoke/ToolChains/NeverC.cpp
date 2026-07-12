@@ -3296,6 +3296,7 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
       A->render(Args, CmdArgs);
     }
   }
+  Args.AddLastArg(CmdArgs, options::OPT_disable_O0_optnone);
 
   claimNoWarnArgs(Args);
 

@@ -3,6 +3,7 @@
 #define _NEVERC_KRT_LINUX_INPUT_H
 
 #include <linux/types.h>
+#include <linux/compiler.h>
 
 struct input_dev; /* opaque */
 
@@ -12,7 +13,6 @@ int input_register_device(struct input_dev *dev);
 void input_unregister_device(struct input_dev *dev);
 void input_event(struct input_dev *dev, unsigned int type,
 		 unsigned int code, int value);
-void input_sync(struct input_dev *dev);
 
 /* Event types. */
 #define EV_SYN 0x00
@@ -23,6 +23,11 @@ void input_sync(struct input_dev *dev);
 /* Sync codes. */
 #define SYN_REPORT    0
 #define SYN_MT_REPORT 2
+
+static __always_inline void input_sync(struct input_dev *dev)
+{
+	input_event(dev, EV_SYN, SYN_REPORT, 0);
+}
 
 void input_set_capability(struct input_dev *dev, unsigned int type,
 			  unsigned int code);

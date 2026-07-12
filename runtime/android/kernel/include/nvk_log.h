@@ -24,17 +24,8 @@ enum neverc_krt_log_level {
 #define NEVERC_KRT_LOG_DEFAULT_LEVEL NEVERC_KRT_LOG_INFO
 #endif
 
-extern volatile int _neverc_krt_log_level;
-
-__always_inline void neverc_krt_log_set_level(int level)
-{
-	__atomic_store_n(&_neverc_krt_log_level, level, __ATOMIC_RELEASE);
-}
-
-__always_inline int neverc_krt_log_get_level(void)
-{
-	return __atomic_load_n(&_neverc_krt_log_level, __ATOMIC_ACQUIRE);
-}
+void neverc_krt_log_set_level(int level);
+int neverc_krt_log_get_level(void);
 
 #ifdef NEVERC_KRT_LOG_STRIP
 #define neverc_krt_log_err(...)    ((void)0)

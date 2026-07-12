@@ -45,6 +45,122 @@ TEST_F(BasicTest, SwarTokenBoundaries) {
 static const char *kStrFlags = "-std=c23 -fbuiltin-string";
 static const char *kStrGFlags = "-std=c23 -fbuiltin-string -g";
 
+TEST_F(BasicTest, BuiltinStringFunctionOnlyConsumer) {
+  auto src = tmpFile("neverc_string_function_only.c");
+  writeFile(src,
+            "int main(void) {\n"
+            "  string s = \"runtime\";\n"
+            "  return neverc_string_len(s) != 7;\n"
+            "}\n");
+  compileRunAndCheck("neverc_string_function_only", src.string(), kStrFlags, 0);
+}
+
+TEST_F(BasicTest, BuiltinStringRuntimeWorksAcrossTranslationUnits) {
+  auto owner = tmpFile("neverc_string_owner.c");
+  auto consumer = tmpFile("neverc_string_consumer.c");
+  writeFile(owner,
+            "extern __SIZE_TYPE__ consume_length(string);\n"
+            "int main(void) {\n"
+            "  string first = \"runtime\";\n"
+            "  string second = \"owner\";\n"
+            "  return consume_length(first) != 7 ||\n"
+            "         neverc_string_len(second) != 5;\n"
+            "}\n");
+  writeFile(consumer,
+            "__SIZE_TYPE__ consume_length(string value) {\n"
+            "  return neverc_string_len(value);\n"
+            "}\n");
+
+  for (const char *mode : {"", "-flto=full", "-fno-lto"}) {
+    SCOPED_TRACE(mode[0] ? mode : "auto-lto");
+    auto exe = tmpFile(std::string("neverc_string_multitu_") +
+                       (mode[0] ? mode + 1 : "auto"));
+    std::vector<std::string> args = {
+        "-std=c23", "-fbuiltin-string", owner.string(), consumer.string(),
+        "-o", exe.string(),
+    };
+    if (mode[0])
+      args.insert(args.begin() + 2, mode);
+    for (auto &flag : sysrootFlags())
+      args.push_back(flag);
+    for (auto &flag : archFlags())
+      args.push_back(flag);
+
+    auto compile = ncc(args);
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+    auto run = exec(exe.string(), {});
+    EXPECT_EQ(run.exitCode, 0) << run.out << run.err;
+
+    if (!isWindows() && std::string(mode) == "-fno-lto") {
+      auto nm = exec("nm", {"-a", exe.string()});
+      ASSERT_EQ(nm.exitCode, 0) << nm.err;
+
+      unsigned copies = 0;
+      std::istringstream lines(nm.out);
+      for (std::string line; std::getline(lines, line);) {
+        auto pos = line.find_last_of(" \t");
+        std::string name =
+            pos == std::string::npos ? line : line.substr(pos + 1);
+        if (isDarwin() && !name.empty() && name.front() == '_')
+          name.erase(name.begin());
+        if (name == "neverc_string_len")
+          ++copies;
+      }
+      EXPECT_EQ(copies, 1u)
+          << "non-LTO multi-TU output must coalesce string runtime code";
+    }
+  }
+}
+
+TEST_F(BasicTest, BuiltinStringRuntimeRemainsOptimizableAfterEmbedding) {
+  auto src = tmpFile("neverc_string_optimizable.c");
+  auto ir = tmpFile("neverc_string_optimizable.ll");
+  writeFile(src,
+            "__attribute__((noinline))\n"
+            "__SIZE_TYPE__ measured_length(string value) {\n"
+            "  return neverc_string_len(value);\n"
+            "}\n"
+            "int main(void) { return measured_length(\"runtime\") != 7; }\n");
+
+  std::vector<std::string> args = {
+      "-std=c23", "-fbuiltin-string", "-O2", "-fno-lto",
+      "-S", "-emit-llvm", src.string(), "-o", ir.string(),
+  };
+  for (auto &flag : sysrootFlags())
+    args.push_back(flag);
+  for (auto &flag : archFlags())
+    args.push_back(flag);
+
+  auto compile = ncc(args);
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+
+  const std::string text = readFile(ir);
+  const size_t definition = text.find("@neverc_string_len(");
+  ASSERT_NE(definition, std::string::npos);
+  const size_t hash = text.find('#', definition);
+  const size_t body = text.find('{', definition);
+  ASSERT_NE(hash, std::string::npos);
+  ASSERT_NE(body, std::string::npos);
+  ASSERT_LT(hash, body);
+
+  size_t groupEnd = hash + 1;
+  while (groupEnd < body && text[groupEnd] >= '0' && text[groupEnd] <= '9')
+    ++groupEnd;
+  const std::string group = text.substr(hash + 1, groupEnd - hash - 1);
+  const std::string marker = "attributes #" + group + " = {";
+  const size_t attributes = text.find(marker);
+  ASSERT_NE(attributes, std::string::npos);
+  const size_t lineEnd = text.find('\n', attributes);
+  const std::string attributeLine =
+      text.substr(attributes, lineEnd - attributes);
+  EXPECT_EQ(attributeLine.find("optnone"), std::string::npos);
+  EXPECT_EQ(attributeLine.find("noinline"), std::string::npos);
+  EXPECT_EQ(text.find("@llvm.used"), std::string::npos)
+      << "synthetic used roots must not pin embedded runtime definitions";
+  EXPECT_EQ(text.find("@llvm.compiler.used"), std::string::npos)
+      << "synthetic compiler.used roots must not pin runtime definitions";
+}
+
 TEST_F(BasicTest, BuiltinString) {
   compileRunAndCheck("test_neverc_string",
                      (testDir() / "string" / "test_neverc_string.c").string(),

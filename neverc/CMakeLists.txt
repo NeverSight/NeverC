@@ -348,6 +348,30 @@ if(LLVM_ENABLE_MODULES)
   list(APPEND LLVM_COMMON_DEPENDS intrinsics_gen)
 endif()
 
+# mimalloc high-performance allocator
+#
+# Fetch it before adding lib/Foundation: that directory defines the bootstrap
+# targets which compile mimalloc into the embedded per-OS bitcode blobs.
+option(NEVERC_ENABLE_MIMALLOC
+  "Replace the system allocator with mimalloc (static)." ON)
+# mimalloc's MI_OVERRIDE=ON replaces malloc/free/new/delete process-wide,
+# which causes ASan's malloc interceptor to flag every free originating
+# from the libc++ side as bad-free. Auto-disable mimalloc when an asan
+# build is detected.
+if(NEVERC_ENABLE_MIMALLOC AND
+   (LLVM_USE_SANITIZER MATCHES "Address" OR
+    "${CMAKE_CXX_FLAGS}" MATCHES "fsanitize=address" OR
+    "${CMAKE_C_FLAGS}" MATCHES "fsanitize=address"))
+  message(STATUS
+    "NeverC: AddressSanitizer detected; disabling mimalloc to avoid "
+    "MI_OVERRIDE conflicts with ASan's malloc interceptor.")
+  set(NEVERC_ENABLE_MIMALLOC OFF)
+endif()
+if(NEVERC_ENABLE_MIMALLOC)
+  include(AddMimalloc)
+  neverc_fetch_mimalloc()
+endif()
+
 add_subdirectory(lib)
 # The linker lives under lib/Linker/ as a NeverC subproject; its static
 # libraries are consumed by the `neverc` executable below.
@@ -368,28 +392,6 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../pluginsdk
 option(NEVERC_ENABLE_BENCH "Build NeverC microbenchmarks" OFF)
 if(NEVERC_ENABLE_BENCH)
   add_subdirectory(bench)
-endif()
-
-
-# mimalloc high-performance allocator
-option(NEVERC_ENABLE_MIMALLOC
-  "Replace the system allocator with mimalloc (static)." ON)
-# mimalloc's MI_OVERRIDE=ON replaces malloc/free/new/delete process-wide,
-# which causes ASan's malloc interceptor to flag every free originating
-# from the libc++ side as bad-free. Auto-disable mimalloc when an asan
-# build is detected.
-if(NEVERC_ENABLE_MIMALLOC AND
-   (LLVM_USE_SANITIZER MATCHES "Address" OR
-    "${CMAKE_CXX_FLAGS}" MATCHES "fsanitize=address" OR
-    "${CMAKE_C_FLAGS}" MATCHES "fsanitize=address"))
-  message(STATUS
-    "NeverC: AddressSanitizer detected; disabling mimalloc to avoid "
-    "MI_OVERRIDE conflicts with ASan's malloc interceptor.")
-  set(NEVERC_ENABLE_MIMALLOC OFF)
-endif()
-if(NEVERC_ENABLE_MIMALLOC)
-  include(AddMimalloc)
-  neverc_fetch_mimalloc()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -514,6 +516,9 @@ if(NEVERC_PLUGIN_SUPPORT)
 endif()
 
 add_dependencies(neverc neverc-resource-headers)
+if(TARGET neverc-runtime-android-kernel)
+  add_dependencies(neverc neverc-runtime-android-kernel)
+endif()
 
 if(NEVERC_ORDER_FILE AND
     (LLVM_LINKER_IS_LD64 OR LLVM_LINKER_IS_GOLD OR LLVM_LINKER_IS_LLD))

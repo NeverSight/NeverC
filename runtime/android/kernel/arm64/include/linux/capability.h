@@ -7,6 +7,8 @@
 
 bool capable(int cap);
 bool ns_capable(void *ns, int cap);
+#ifdef NEVERC_KRT_NON_KMI_API
 bool file_ns_capable(const struct file *file, void *ns, int cap);
+#endif
 
 #endif /* _NEVERC_KRT_LINUX_CAPABILITY_H */

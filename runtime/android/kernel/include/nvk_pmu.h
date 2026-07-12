@@ -3,7 +3,6 @@
 #define NEVERC_KRT_PMU_H
 
 #include <linux/types.h>
-#include <linux/compiler.h>
 #include <nvk_timer.h>
 
 #define NEVERC_KRT_PMU_EVT_SW_INCR        0x00
@@ -26,94 +25,17 @@
 #define NEVERC_KRT_PMU_EVT_STALL_FRONTEND 0x23
 #define NEVERC_KRT_PMU_EVT_STALL_BACKEND  0x24
 
-__always_inline void neverc_krt_pmu_enable(void)
-{
-	u64 val;
-	__asm__ __volatile__("mrs %0, pmcr_el0" : "=r"(val));
-	val |= 1UL;
-	__asm__ __volatile__("msr pmcr_el0, %0" : : "r"(val));
-	__asm__ __volatile__("isb");
-}
-
-__always_inline void neverc_krt_pmu_disable(void)
-{
-	u64 val;
-	__asm__ __volatile__("mrs %0, pmcr_el0" : "=r"(val));
-	val &= ~1UL;
-	__asm__ __volatile__("msr pmcr_el0, %0" : : "r"(val));
-	__asm__ __volatile__("isb");
-}
-
-__always_inline void neverc_krt_pmu_reset(void)
-{
-	u64 val;
-	__asm__ __volatile__("mrs %0, pmcr_el0" : "=r"(val));
-	val |= (1UL << 1) | (1UL << 2);
-	__asm__ __volatile__("msr pmcr_el0, %0" : : "r"(val));
-	__asm__ __volatile__("isb");
-}
-
-__always_inline u64 neverc_krt_pmu_cycle_count(void)
-{
-	u64 val;
-	__asm__ __volatile__("mrs %0, pmccntr_el0" : "=r"(val));
-	return val;
-}
-
-__always_inline void neverc_krt_pmu_cycle_enable(void)
-{
-	u64 val = (1UL << 31);
-	__asm__ __volatile__("msr pmcntenset_el0, %0" : : "r"(val));
-	__asm__ __volatile__("isb");
-}
-
-__always_inline void neverc_krt_pmu_cycle_disable(void)
-{
-	u64 val = (1UL << 31);
-	__asm__ __volatile__("msr pmcntenclr_el0, %0" : : "r"(val));
-	__asm__ __volatile__("isb");
-}
-
-__always_inline int neverc_krt_pmu_counter_count(void)
-{
-	u64 pmcr;
-	__asm__ __volatile__("mrs %0, pmcr_el0" : "=r"(pmcr));
-	return (int)((pmcr >> 11) & 0x1F);
-}
-
-__always_inline void neverc_krt_pmu_counter_setup(int idx, u32 event)
-{
-	u64 sel = (u64)idx;
-	__asm__ __volatile__("msr pmselr_el0, %0" : : "r"(sel));
-	__asm__ __volatile__("isb");
-	u64 evt = (u64)event;
-	__asm__ __volatile__("msr pmxevtyper_el0, %0" : : "r"(evt));
-	__asm__ __volatile__("isb");
-}
-
-__always_inline void neverc_krt_pmu_counter_enable(int idx)
-{
-	u64 val = (1UL << idx);
-	__asm__ __volatile__("msr pmcntenset_el0, %0" : : "r"(val));
-	__asm__ __volatile__("isb");
-}
-
-__always_inline void neverc_krt_pmu_counter_disable(int idx)
-{
-	u64 val = (1UL << idx);
-	__asm__ __volatile__("msr pmcntenclr_el0, %0" : : "r"(val));
-	__asm__ __volatile__("isb");
-}
-
-__always_inline u64 neverc_krt_pmu_counter_read(int idx)
-{
-	u64 sel = (u64)idx;
-	__asm__ __volatile__("msr pmselr_el0, %0" : : "r"(sel));
-	__asm__ __volatile__("isb");
-	u64 val;
-	__asm__ __volatile__("mrs %0, pmxevcntr_el0" : "=r"(val));
-	return val;
-}
+void neverc_krt_pmu_enable(void);
+void neverc_krt_pmu_disable(void);
+void neverc_krt_pmu_reset(void);
+u64 neverc_krt_pmu_cycle_count(void);
+void neverc_krt_pmu_cycle_enable(void);
+void neverc_krt_pmu_cycle_disable(void);
+int neverc_krt_pmu_counter_count(void);
+void neverc_krt_pmu_counter_setup(int idx, u32 event);
+void neverc_krt_pmu_counter_enable(int idx);
+void neverc_krt_pmu_counter_disable(int idx);
+u64 neverc_krt_pmu_counter_read(int idx);
 
 struct neverc_krt_pmu_session {
 	u64 start_cycles;

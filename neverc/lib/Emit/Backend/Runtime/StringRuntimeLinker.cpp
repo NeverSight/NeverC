@@ -129,25 +129,26 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     return RuntimeGlobalNames.count(GV.getName()) != 0;
   };
 
-  GlobalValue::LinkageTypes NewLinkage = IsPreLink
-      ? GlobalValue::LinkOnceODRLinkage
-      : GlobalValue::InternalLinkage;
-
+  // A no-LTO build embeds runtime code independently in every consumer TU.
+  // Keep retained definitions hidden but coalescible so the native link emits
+  // one copy instead of one internal copy per TU.
   for (Function &F : M)
     if (IsRuntimeFn(F)) {
-      F.setLinkage(NewLinkage);
-      if (IsPreLink)
-        F.setVisibility(GlobalValue::HiddenVisibility);
+      F.setLinkage(GlobalValue::LinkOnceODRLinkage);
+      F.setVisibility(GlobalValue::HiddenVisibility);
     }
   for (GlobalVariable &GV : M.globals())
     if (!GV.isDeclaration() && IsRuntimeGlobal(GV)) {
-      GV.setLinkage(NewLinkage);
-      if (IsPreLink)
-        GV.setVisibility(GlobalValue::HiddenVisibility);
+      GV.setLinkage(GlobalValue::LinkOnceODRLinkage);
+      GV.setVisibility(GlobalValue::HiddenVisibility);
     }
 
   if (IsPreLink) {
     removeFromUsedLists(M, [&](Constant *C) {
+      if (auto *F = dyn_cast<Function>(C->stripPointerCasts()))
+        return IsRuntimeFn(*F);
+      if (auto *GVar = dyn_cast<GlobalVariable>(C->stripPointerCasts()))
+        return IsRuntimeGlobal(*GVar);
       if (isa<PoisonValue>(C) || isa<UndefValue>(C))
         return true;
       return false;

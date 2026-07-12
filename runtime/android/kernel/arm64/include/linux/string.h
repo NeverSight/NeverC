@@ -20,7 +20,7 @@ char *strncpy(char *dest, const char *src, size_t n);
  * strcat was removed from GKI ksymtab in 6.18.
  * Provide inline fallback; prefer strncat in new code.
  */
-__always_inline char *strcat(char *dest, const char *src)
+static __always_inline char *strcat(char *dest, const char *src)
 {
 	char *d = dest;
 	while (*d) d++;
@@ -39,7 +39,7 @@ int scnprintf(char *buf, size_t size, const char *fmt, ...) __printf(3, 4);
  * Provide an inline fallback for cross-version compat.
  */
 #if NEVERC_KRT_KERNEL >= 612
-__always_inline size_t strlcpy(char *dest, const char *src, size_t size)
+static __always_inline size_t strlcpy(char *dest, const char *src, size_t size)
 {
 	size_t ret = strlen(src);
 	if (size) {
@@ -62,7 +62,7 @@ size_t strlcpy(char *dest, const char *src, size_t size);
 #define __neverc_krt_strncmp __builtin_strncmp
 #define __neverc_krt_strcpy  __builtin_strcpy
 
-__always_inline void neverc_krt_memzero(void *s, size_t n)
+static __always_inline void neverc_krt_memzero(void *s, size_t n)
 {
 	unsigned char *p = (unsigned char *)s;
 	while (n--) *p++ = 0;

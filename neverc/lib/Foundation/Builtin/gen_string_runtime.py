@@ -16,14 +16,14 @@ import re
 import sys
 
 FRAGMENT_ORDER = [
-    "Type", "Allocation", "Accessors", "Capacity", "Compare",
+    "Type", "EncryptDecrypt", "Allocation", "Accessors", "Capacity", "Compare",
     "Search", "Mutation", "Utility", "Encoding", "WebCodec", "Format",
 ]
 
 
 def strip_prelude_wrapper(text: str) -> str:
-    m = re.search(r'R"prelude\((.*?)\)prelude"', text, re.DOTALL)
-    return m.group(1) if m else text
+    bodies = re.findall(r'R"prelude\((.*?)\)prelude"', text, re.DOTALL)
+    return "\n".join(bodies) if bodies else text
 
 
 def main():

@@ -5,12 +5,12 @@
 #include <linux/types.h>
 #include <linux/bitops.h>
 
-__always_inline int is_power_of_2(unsigned long n)
+static __always_inline int is_power_of_2(unsigned long n)
 {
 	return n != 0 && (n & (n - 1)) == 0;
 }
 
-__always_inline unsigned int ilog2(unsigned long v)
+static __always_inline unsigned int ilog2(unsigned long v)
 {
 	return fls64(v) - 1;
 }
@@ -18,13 +18,13 @@ __always_inline unsigned int ilog2(unsigned long v)
 #define order_base_2(n)                                                       \
 	((n) > 1 ? ilog2((n) - 1) + 1 : 0)
 
-__always_inline unsigned long roundup_pow_of_two(unsigned long n)
+static __always_inline unsigned long roundup_pow_of_two(unsigned long n)
 {
 	if (n <= 1) return 1;
 	return 1UL << (ilog2(n - 1) + 1);
 }
 
-__always_inline unsigned long rounddown_pow_of_two(unsigned long n)
+static __always_inline unsigned long rounddown_pow_of_two(unsigned long n)
 {
 	return 1UL << ilog2(n);
 }

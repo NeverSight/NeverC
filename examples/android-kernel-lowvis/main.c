@@ -1,13 +1,17 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvkmod.h>
 #include <nvk_interpose.h>
+#ifdef NEVERC_KRT_CONTEXT_INTERPOSE
+#include <nvk_interpose_advanced.h>
+#endif
 #include <nvk_vis.h>
 #include <nvk_process.h>
 #include <nvk_cred.h>
 #include <nvk_mem.h>
 #include <nvk_selinux.h>
 
-#define NEVERC_KRT_LOG_TAG "neverc_krt_lowvis"
+#define NEVERC_KRT_LOWVIS_NAME "neverc_krt_lowvis"
+#define NEVERC_KRT_LOG_TAG NEVERC_KRT_LOWVIS_NAME
 #include <nvk_log.h>
 
 static struct neverc_krt_vis_state vis_state = NEVERC_KRT_VIS_INIT_STATE;
@@ -29,20 +33,31 @@ static void interpose_find_module_ctx(neverc_krt_reg_ctx *ctx)
 {
 	const char *name = (const char *)NEVERC_KRT_CTX_ARG(ctx, 0);
 
-	if (name && neverc_krt_str_eq(name, "neverc_krt_lowvis"))
+	if (name && neverc_krt_str_eq(name, NEVERC_KRT_LOWVIS_NAME))
 		NEVERC_KRT_CTX_SKIP(ctx, 0);
 }
 
 #else
 
 typedef void *(*find_module_fn)(const char *name);
-static find_module_fn orig_find_module;
+static void *orig_find_module;
+static struct neverc_krt_interpose_ref find_module_ref;
+static int find_module_registered;
 
-static void *interpose_find_module(const char *name)
+static long interpose_find_module(void *orig, void *a0, void *a1, void *a2,
+				  void *a3, void *a4, void *a5)
 {
-	if (name && neverc_krt_str_eq(name, "neverc_krt_lowvis"))
-		return (void *)0;
-	return orig_find_module(name);
+	const char *name = (const char *)a0;
+
+	(void)a1;
+	(void)a2;
+	(void)a3;
+	(void)a4;
+	(void)a5;
+
+	if (name && neverc_krt_str_eq(name, NEVERC_KRT_LOWVIS_NAME))
+		return 0;
+	return (long)((find_module_fn)orig)(name);
 }
 
 #endif
@@ -75,9 +90,11 @@ static int neverc_krt_lowvis_init(void)
 		ret = neverc_krt_interpose_install_ctx(&find_module_ctx, target,
 					    interpose_find_module_ctx, (void *)0);
 #else
-		ret = neverc_krt_interpose_install(&vis_state.find_module_interpose,
-				       target, (void *)interpose_find_module,
-				       (void **)&orig_find_module);
+		ret = neverc_krt_interpose_register(target,
+				       (void *)interpose_find_module, 0,
+				       &orig_find_module, &find_module_ref);
+		if (ret == 0)
+			find_module_registered = 1;
 #endif
 		if (ret)
 			neverc_krt_log_warn("find_module interpose: %d\n", ret);
@@ -86,7 +103,8 @@ static int neverc_krt_lowvis_init(void)
 	}
 
 #ifdef NVK_LOWVIS_FILTER_FULL
-	neverc_krt_vis_filter_full(&vis_state, &__this_module, "neverc_krt_lowvis");
+	neverc_krt_vis_filter_full(&vis_state, &__this_module,
+				   NEVERC_KRT_LOWVIS_NAME);
 	neverc_krt_log_info("visibility filter: list+sysfs+proc\n");
 #elif defined(NVK_LOWVIS_FILTER)
 	neverc_krt_vis_filter(&vis_state, &__this_module);
@@ -126,6 +144,9 @@ static void neverc_krt_lowvis_exit(void)
 #endif
 #ifdef NEVERC_KRT_CONTEXT_INTERPOSE
 	neverc_krt_interpose_remove_ctx(&find_module_ctx);
+#else
+	if (find_module_registered)
+		neverc_krt_interpose_unregister(&find_module_ref);
 #endif
 	neverc_krt_vis_remove_interposes();
 	neverc_krt_vis_restore(&vis_state, &__this_module);
@@ -139,4 +160,4 @@ MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("NeverC");
 MODULE_DESCRIPTION("NeverC lowvis demo");
 
-NEVERC_KRT_DEFINE_MODULE("neverc_krt_lowvis");
+NEVERC_KRT_DEFINE_MODULE(NEVERC_KRT_LOWVIS_NAME);

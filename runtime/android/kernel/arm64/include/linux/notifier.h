@@ -15,6 +15,11 @@ struct notifier_block {
 	int priority;
 };
 
+_Static_assert(sizeof(struct notifier_block) == 24,
+	       "unexpected arm64 GKI notifier_block layout");
+_Static_assert(__builtin_offsetof(struct notifier_block, priority) == 16,
+	       "unexpected arm64 GKI notifier_block.priority offset");
+
 #define NOTIFY_DONE    0x0000
 #define NOTIFY_OK      0x0001
 #define NOTIFY_STOP_MASK 0x8000

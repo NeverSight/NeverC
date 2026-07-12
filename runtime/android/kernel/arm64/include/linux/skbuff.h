@@ -3,9 +3,11 @@
 #define _NEVERC_KRT_LINUX_SKBUFF_H
 
 #include <linux/types.h>
+#include <linux/gfp.h>
 #include <nvkmod_version.h>
 
 struct sk_buff; /* opaque (layout is extremely version-dependent) */
+struct net_device;
 
 /*
  * alloc_skb is always an inline wrapper.  __alloc_skb is the real
@@ -14,19 +16,20 @@ struct sk_buff; /* opaque (layout is extremely version-dependent) */
 struct sk_buff *__alloc_skb(unsigned int size, gfp_t priority,
 			    int flags, int node);
 
-__always_inline struct sk_buff *alloc_skb(unsigned int size, gfp_t priority)
+static __always_inline struct sk_buff *alloc_skb(unsigned int size, gfp_t priority)
 {
 	return __alloc_skb(size, priority, 0, -1);
 }
 
 /*
- * dev_alloc_skb is always an inline wrapper in all GKI kernels.
- * It calls alloc_skb with NET_SKB_PAD + NET_IP_ALIGN headroom.
- * GKI arm64: NET_SKB_PAD=128, NET_IP_ALIGN=0 → reserve 128 after alloc.
+ * __netdev_alloc_skb performs both allocation and skb_reserve().  Merely
+ * adding NET_SKB_PAD to alloc_skb() leaves skb->data at the wrong offset.
  */
-__always_inline struct sk_buff *dev_alloc_skb(unsigned int length)
+struct sk_buff *__netdev_alloc_skb(struct net_device *dev,
+				   unsigned int length, gfp_t priority);
+static __always_inline struct sk_buff *dev_alloc_skb(unsigned int length)
 {
-	return alloc_skb(length + 128, GFP_ATOMIC);
+	return __netdev_alloc_skb((struct net_device *)0, length, GFP_ATOMIC);
 }
 
 /*

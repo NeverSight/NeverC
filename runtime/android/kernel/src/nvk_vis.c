@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* nvk_vis.c — Module visibility management (list, sysfs, proc, kallsyms, vmalloc). */
 #include <nvk.h>
-#include <nvk_internal.h>
+#include "nvk_internal.h"
 
 static __always_inline int _neverc_krt_str_starts_with(const char *str,
 						       const char *prefix)
@@ -49,7 +49,7 @@ struct _neverc_krt_vmap_area {
 
 /* ---- internal variables ---- */
 
-static struct neverc_krt_vis_maps_filter_region _neverc_krt_maps_regions[NEVERC_KRT_MAPS_FILTER_MAX];
+static struct neverc_krt_vis_maps_filter_region _neverc_krt_maps_regions[NEVERC_KRT_VIS_MAPS_FILTER_MAX];
 static int _neverc_krt_maps_region_count;
 
 static neverc_krt_mutex_lock_fn   _neverc_krt_vis_mutex_lock;
@@ -167,6 +167,11 @@ void neverc_krt_vis_restore(struct neverc_krt_vis_state *state,
 		_neverc_krt_vis_mutex_unlock(_neverc_krt_module_mutex);
 
 	state->filtered = 0;
+}
+
+int neverc_krt_vis_is_filtered(const struct neverc_krt_vis_state *state)
+{
+	return state->filtered;
 }
 
 /* ==================================================================== */
@@ -320,7 +325,7 @@ void neverc_krt_vis_filter_full(struct neverc_krt_vis_state *state,
 
 int neverc_krt_vis_maps_filter_add(unsigned long start, unsigned long end)
 {
-	if (_neverc_krt_maps_region_count >= NEVERC_KRT_MAPS_FILTER_MAX)
+	if (_neverc_krt_maps_region_count >= NEVERC_KRT_VIS_MAPS_FILTER_MAX)
 		return -1;
 	int idx = _neverc_krt_maps_region_count++;
 	_neverc_krt_maps_regions[idx].start = start;

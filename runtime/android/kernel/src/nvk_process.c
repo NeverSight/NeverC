@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
-#include <nvk_internal.h>
+#include "nvk_internal.h"
 
 /* ---- file-local typedefs ---- */
 
@@ -13,6 +13,7 @@ typedef int   (*neverc_krt_send_sig_info_fn)(int sig, void *info,
 					     struct task_struct *p, int type);
 typedef void (*neverc_krt_rcu_lock_fn)(void);
 typedef void (*neverc_krt_rcu_unlock_fn)(void);
+typedef void *(*neverc_krt_get_task_cred_fn)(struct task_struct *);
 
 /* ---- file-local state ---- */
 
@@ -23,31 +24,109 @@ static neverc_krt_find_task_fn      _neverc_krt_find_task_by_vpid;
 static neverc_krt_send_sig_info_fn  _neverc_krt_send_sig_info;
 static struct task_struct          *_neverc_krt_init_task;
 static int                          _neverc_krt_proc_inited;
-static unsigned long                _neverc_krt_off_tasks;
 static struct neverc_krt_task_offsets _neverc_krt_toff;
 static neverc_krt_rcu_lock_fn       _neverc_krt_rcu_read_lock;
 static neverc_krt_rcu_unlock_fn     _neverc_krt_rcu_read_unlock;
+static neverc_krt_get_task_cred_fn  _neverc_krt_get_task_cred;
 
 /*
  * Cross-file variables — referenced by nvk_cred.c and nvk_anti.c.
  * Non-static so they are visible across the unity TU.
  */
 unsigned long               _neverc_krt_off_comm = 0;
-neverc_krt_get_task_cred_fn _neverc_krt_get_task_cred = (void *)0;
 neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds = (void *)0;
 neverc_krt_commit_creds_fn  _neverc_krt_commit_creds = (void *)0;
 
 /* ---- implementation ---- */
 
+static void _neverc_krt_ensure_pid_ops(void)
+{
+	if (_neverc_krt_task_pid_nr || _neverc_krt_task_pid_nr_ns)
+		return;
+	if (!_neverc_krt_proc_inited)
+		neverc_krt_process_init();
+
+	_neverc_krt_task_pid_nr =
+		(neverc_krt_task_pid_nr_fn)NEVERC_KRT_LOOKUP("task_pid_nr");
+	_neverc_krt_task_tgid_nr =
+		(neverc_krt_task_tgid_nr_fn)NEVERC_KRT_LOOKUP("task_tgid_nr");
+	if (!_neverc_krt_task_pid_nr || !_neverc_krt_task_tgid_nr)
+		_neverc_krt_task_pid_nr_ns =
+			(neverc_krt_task_pid_nr_ns_fn)NEVERC_KRT_LOOKUP(
+				"__task_pid_nr_ns");
+}
+
+static void _neverc_krt_ensure_task_lookup(void)
+{
+	if (_neverc_krt_find_task_by_vpid)
+		return;
+	if (!_neverc_krt_proc_inited)
+		neverc_krt_process_init();
+
+	_neverc_krt_find_task_by_vpid =
+		(neverc_krt_find_task_fn)NEVERC_KRT_LOOKUP("find_task_by_vpid");
+	_neverc_krt_rcu_read_lock =
+		(neverc_krt_rcu_lock_fn)NEVERC_KRT_LOOKUP("rcu_read_lock");
+	if (!_neverc_krt_rcu_read_lock)
+		_neverc_krt_rcu_read_lock =
+			(neverc_krt_rcu_lock_fn)NEVERC_KRT_LOOKUP("__rcu_read_lock");
+	_neverc_krt_rcu_read_unlock =
+		(neverc_krt_rcu_unlock_fn)NEVERC_KRT_LOOKUP("rcu_read_unlock");
+	if (!_neverc_krt_rcu_read_unlock)
+		_neverc_krt_rcu_read_unlock =
+			(neverc_krt_rcu_unlock_fn)NEVERC_KRT_LOOKUP("__rcu_read_unlock");
+}
+
+static void _neverc_krt_ensure_init_task(void)
+{
+	if (_neverc_krt_init_task)
+		return;
+	if (!_neverc_krt_proc_inited)
+		neverc_krt_process_init();
+
+	_neverc_krt_ensure_task_lookup();
+	_neverc_krt_init_task =
+		(struct task_struct *)NEVERC_KRT_LOOKUP("init_task");
+}
+
+static void _neverc_krt_ensure_get_task_cred(void)
+{
+	if (_neverc_krt_get_task_cred)
+		return;
+	if (!_neverc_krt_proc_inited)
+		neverc_krt_process_init();
+
+	_neverc_krt_get_task_cred =
+		(neverc_krt_get_task_cred_fn)NEVERC_KRT_LOOKUP("get_task_cred");
+}
+
+static void _neverc_krt_ensure_send_sig(void)
+{
+	if (_neverc_krt_send_sig_info)
+		return;
+	if (!_neverc_krt_proc_inited)
+		neverc_krt_process_init();
+
+	_neverc_krt_ensure_task_lookup();
+	_neverc_krt_send_sig_info =
+		(neverc_krt_send_sig_info_fn)NEVERC_KRT_LOOKUP("send_sig_info");
+}
+
 static void _neverc_krt_resolve_task_offsets(void)
 {
+	const struct neverc_krt_gki_layout *layout;
+
 	if (__atomic_load_n(&_neverc_krt_toff.resolved, __ATOMIC_ACQUIRE))
 		return;
 
-	if (_neverc_krt_off_comm)
-		_neverc_krt_toff.comm = _neverc_krt_off_comm;
-	if (_neverc_krt_off_tasks)
-		_neverc_krt_toff.tasks = _neverc_krt_off_tasks;
+	layout = _neverc_krt_get_gki_layout();
+	_neverc_krt_toff.comm = layout->task_comm;
+	_neverc_krt_toff.tasks = layout->task_tasks;
+	_neverc_krt_toff.cred = layout->task_cred;
+	_neverc_krt_toff.mm = layout->task_mm;
+	_neverc_krt_toff.pid_field = layout->task_pid;
+	__atomic_store_n(&_neverc_krt_off_comm, layout->task_comm,
+			 __ATOMIC_RELEASE);
 
 	__atomic_store_n(&_neverc_krt_toff.resolved, 1, __ATOMIC_RELEASE);
 }
@@ -64,37 +143,12 @@ int neverc_krt_process_init(void)
 	if (_neverc_krt_proc_inited) return 0;
 
 	neverc_krt_mem_init();
+	_neverc_krt_resolve_task_offsets();
 
-	_neverc_krt_task_pid_nr =
-		(neverc_krt_task_pid_nr_fn)NEVERC_KRT_LOOKUP("task_pid_nr");
-	_neverc_krt_task_tgid_nr =
-		(neverc_krt_task_tgid_nr_fn)NEVERC_KRT_LOOKUP("task_tgid_nr");
-	if (!_neverc_krt_task_pid_nr || !_neverc_krt_task_tgid_nr)
-		_neverc_krt_task_pid_nr_ns =
-			(neverc_krt_task_pid_nr_ns_fn)NEVERC_KRT_LOOKUP(
-				"__task_pid_nr_ns");
-	_neverc_krt_find_task_by_vpid =
-		(neverc_krt_find_task_fn)NEVERC_KRT_LOOKUP("find_task_by_vpid");
-	_neverc_krt_get_task_cred =
-		(neverc_krt_get_task_cred_fn)NEVERC_KRT_LOOKUP("get_task_cred");
 	_neverc_krt_prepare_creds =
 		(neverc_krt_prepare_creds_fn)NEVERC_KRT_LOOKUP("prepare_creds");
 	_neverc_krt_commit_creds =
 		(neverc_krt_commit_creds_fn)NEVERC_KRT_LOOKUP("commit_creds");
-	_neverc_krt_send_sig_info =
-		(neverc_krt_send_sig_info_fn)NEVERC_KRT_LOOKUP("send_sig_info");
-	_neverc_krt_init_task =
-		(struct task_struct *)NEVERC_KRT_LOOKUP("init_task");
-	_neverc_krt_rcu_read_lock =
-		(neverc_krt_rcu_lock_fn)NEVERC_KRT_LOOKUP("rcu_read_lock");
-	if (!_neverc_krt_rcu_read_lock)
-		_neverc_krt_rcu_read_lock =
-			(neverc_krt_rcu_lock_fn)NEVERC_KRT_LOOKUP("__rcu_read_lock");
-	_neverc_krt_rcu_read_unlock =
-		(neverc_krt_rcu_unlock_fn)NEVERC_KRT_LOOKUP("rcu_read_unlock");
-	if (!_neverc_krt_rcu_read_unlock)
-		_neverc_krt_rcu_read_unlock =
-			(neverc_krt_rcu_unlock_fn)NEVERC_KRT_LOOKUP("__rcu_read_unlock");
 
 	_neverc_krt_proc_inited = 1;
 	return 0;
@@ -102,6 +156,7 @@ int neverc_krt_process_init(void)
 
 int neverc_krt_current_pid(void)
 {
+	_neverc_krt_ensure_pid_ops();
 	if (_neverc_krt_task_pid_nr)
 		return _neverc_krt_task_pid_nr(current);
 	if (_neverc_krt_task_pid_nr_ns)
@@ -112,6 +167,7 @@ int neverc_krt_current_pid(void)
 
 int neverc_krt_current_tgid(void)
 {
+	_neverc_krt_ensure_pid_ops();
 	if (_neverc_krt_task_tgid_nr)
 		return _neverc_krt_task_tgid_nr(current);
 	if (_neverc_krt_task_pid_nr_ns)
@@ -122,6 +178,7 @@ int neverc_krt_current_tgid(void)
 
 int neverc_krt_task_pid(struct task_struct *task)
 {
+	_neverc_krt_ensure_pid_ops();
 	if (_neverc_krt_task_pid_nr && task)
 		return _neverc_krt_task_pid_nr(task);
 	if (_neverc_krt_task_pid_nr_ns && task)
@@ -133,6 +190,8 @@ int neverc_krt_task_pid(struct task_struct *task)
 struct task_struct *neverc_krt_find_task(int pid)
 {
 	struct task_struct *t;
+
+	_neverc_krt_ensure_task_lookup();
 	if (!_neverc_krt_find_task_by_vpid) return (void *)0;
 	if (_neverc_krt_rcu_read_lock) _neverc_krt_rcu_read_lock();
 	t = _neverc_krt_find_task_by_vpid(pid);
@@ -142,6 +201,7 @@ struct task_struct *neverc_krt_find_task(int pid)
 
 void *neverc_krt_task_get_cred(struct task_struct *task)
 {
+	_neverc_krt_ensure_get_task_cred();
 	if (_neverc_krt_get_task_cred && task)
 		return _neverc_krt_get_task_cred(task);
 	return (void *)0;
@@ -167,42 +227,18 @@ int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
 	struct task_struct *task;
 	struct list_head *pos;
 	struct list_head *head;
+	unsigned long tasks_off;
 	int count = 0;
 
+	_neverc_krt_ensure_init_task();
 	if (!_neverc_krt_init_task) return -1;
 	init = _neverc_krt_init_task;
-
-	if (__atomic_load_n(&_neverc_krt_off_tasks, __ATOMIC_ACQUIRE) == 0) {
-		const unsigned char *p = (const unsigned char *)init;
-		unsigned long i;
-		for (i = 0x200; i < 0xE00; i += 8) {
-			unsigned long next, prev;
-			if (neverc_krt_mem_read(&next, p + i, 8))
-				continue;
-			if (neverc_krt_mem_read(&prev, p + i + 8, 8))
-				continue;
-			if (next <= 0xFFFF000000000000UL ||
-			    prev <= 0xFFFF000000000000UL)
-				continue;
-			if (next == (unsigned long)(p + i))
-				continue;
-			unsigned long peer_prev;
-			if (neverc_krt_mem_read(&peer_prev,
-					 (void *)(next + 8), 8))
-				continue;
-			if (peer_prev == (unsigned long)(p + i)) {
-				__atomic_store_n(&_neverc_krt_off_tasks, i,
-						 __ATOMIC_RELEASE);
-				break;
-			}
-		}
-	}
-
-	if (!_neverc_krt_off_tasks) return -1;
+	tasks_off = neverc_krt_task_offsets()->tasks;
+	if (!tasks_off) return -1;
 
 	if (_neverc_krt_rcu_read_lock) _neverc_krt_rcu_read_lock();
 
-	head = (struct list_head *)((unsigned long)init + _neverc_krt_off_tasks);
+	head = (struct list_head *)((unsigned long)init + tasks_off);
 	if (neverc_krt_mem_read(&pos, &head->next, sizeof(pos))) {
 		if (_neverc_krt_rcu_read_unlock) _neverc_krt_rcu_read_unlock();
 		return -1;
@@ -214,7 +250,7 @@ int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
 		if ((unsigned long)pos < 0xFFFF000000000000UL)
 			break;
 		task = (struct task_struct *)
-			((unsigned long)pos - _neverc_krt_off_tasks);
+			((unsigned long)pos - tasks_off);
 		if (callback(task, data))
 			break;
 		count++;
@@ -257,6 +293,7 @@ static int _neverc_krt_find_by_name_cb(struct task_struct *task, void *data)
 struct task_struct *neverc_krt_find_task_by_name(const char *name)
 {
 	struct _neverc_krt_find_ctx ctx = { .target = name, .result = (void *)0 };
+	_neverc_krt_ensure_init_task();
 	if (_neverc_krt_init_task)
 		neverc_krt_task_comm(_neverc_krt_init_task);
 	neverc_krt_for_each_task(_neverc_krt_find_by_name_cb, &ctx);
@@ -267,6 +304,7 @@ int neverc_krt_send_signal(int pid, int sig)
 {
 	struct task_struct *task;
 
+	_neverc_krt_ensure_send_sig();
 	if (!_neverc_krt_send_sig_info || !_neverc_krt_find_task_by_vpid)
 		return -1;
 
@@ -347,29 +385,16 @@ int neverc_krt_task_comm_safe(struct task_struct *task, char *buf, int bufsz)
 
 const char *neverc_krt_task_comm(struct task_struct *task)
 {
+	unsigned long off;
+
 	if (!task) return "";
 
-	if (__atomic_load_n(&_neverc_krt_off_comm, __ATOMIC_ACQUIRE) == 0 &&
-	    _neverc_krt_init_task) {
-		struct task_struct *init = _neverc_krt_init_task;
-		const unsigned char *p = (const unsigned char *)init;
-		unsigned long i;
-		for (i = 0x200; i + 8 <= 0x1400; i++) {
-			unsigned char sw[8];
-			if (neverc_krt_mem_read(sw, p + i, 8))
-				continue;
-			if (sw[0] == 's' && sw[1] == 'w' &&
-			    sw[2] == 'a' && sw[3] == 'p' &&
-			    sw[4] == 'p' && sw[5] == 'e' &&
-			    sw[6] == 'r' && sw[7] == '\0') {
-				__atomic_store_n(&_neverc_krt_off_comm, i,
-						 __ATOMIC_RELEASE);
-				break;
-			}
-		}
+	off = __atomic_load_n(&_neverc_krt_off_comm, __ATOMIC_ACQUIRE);
+	if (!off) {
+		_neverc_krt_resolve_task_offsets();
+		off = __atomic_load_n(&_neverc_krt_off_comm, __ATOMIC_ACQUIRE);
 	}
-
-	if (_neverc_krt_off_comm)
-		return (const char *)((unsigned long)task + _neverc_krt_off_comm);
+	if (off)
+		return (const char *)((unsigned long)task + off);
 	return "";
 }

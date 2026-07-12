@@ -8,9 +8,12 @@
 #include <linux/mutex.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/errno.h>
 #include <nvk_mem.h>
 
-#define NEVERC_KRT_LOG_TAG "neverc_krt_chardev"
+#define NEVERC_KRT_CHARDEV_NAME "neverc_krt_chardev"
+#define NEVERC_KRT_CHARDEV_PROC_PATH "/proc/" NEVERC_KRT_CHARDEV_NAME
+#define NEVERC_KRT_LOG_TAG NEVERC_KRT_CHARDEV_NAME
 #include <nvk_log.h>
 
 #define NEVERC_KRT_IOC_MAGIC 'N'
@@ -37,25 +40,26 @@ static struct {
 	struct neverc_krt_stats stats;
 } dev_state;
 
-static struct { unsigned char __opaque[8]; } dev_lock;
+static struct mutex dev_lock;
 
-typedef void (*mutex_init_fn)(void *);
-typedef void (*mutex_lock_fn)(void *);
-typedef void (*mutex_unlock_fn)(void *);
+typedef void (*mutex_init_fn)(struct mutex *, const char *, void *);
+typedef void (*mutex_lock_fn)(struct mutex *);
+typedef void (*mutex_unlock_fn)(struct mutex *);
 
 static mutex_init_fn   fn_mutex_init;
 static mutex_lock_fn   fn_mutex_lock;
 static mutex_unlock_fn fn_mutex_unlock;
+static int             dev_lock_inited;
 
 static void dev_lock_acquire(void)
 {
-	if (fn_mutex_lock)
+	if (dev_lock_inited && fn_mutex_lock)
 		fn_mutex_lock(&dev_lock);
 }
 
 static void dev_lock_release(void)
 {
-	if (fn_mutex_unlock)
+	if (dev_lock_inited && fn_mutex_unlock)
 		fn_mutex_unlock(&dev_lock);
 }
 
@@ -76,7 +80,8 @@ static int neverc_krt_release(struct inode *inode, struct file *filp)
 static ssize_t neverc_krt_read(struct file *filp, char __user *buf, size_t count,
 			loff_t *ppos)
 {
-	static const char greeting[] = "neverc_krt_chardev: hello from kernel!\n";
+	static const char greeting[] =
+		NEVERC_KRT_CHARDEV_NAME ": hello from kernel!\n";
 	char local[NEVERC_KRT_BUF_SIZE];
 	unsigned int len;
 
@@ -103,7 +108,7 @@ static ssize_t neverc_krt_read(struct file *filp, char __user *buf, size_t count
 		count = len - (unsigned int)*ppos;
 
 	if (neverc_krt_mem_write_user(buf, local + *ppos, count))
-		return -14; /* -EFAULT */
+		return -EFAULT;
 	*ppos += count;
 	return count;
 }
@@ -121,7 +126,7 @@ static ssize_t neverc_krt_write(struct file *filp, const char __user *buf,
 
 	if (neverc_krt_mem_read_user(dev_state.buf, buf, count)) {
 		dev_lock_release();
-		return -14; /* -EFAULT */
+		return -EFAULT;
 	}
 	dev_state.buf[count] = '\0';
 	dev_state.len = count;
@@ -148,13 +153,13 @@ static long neverc_krt_ioctl(struct file *filp, unsigned int cmd, unsigned long 
 		val = NEVERC_KRT_CHARDEV_VERSION;
 		dev_lock_release();
 		if (neverc_krt_mem_write_user((void __user *)arg, &val, sizeof(val)))
-			return -14;
+			return -EFAULT;
 		return 0;
 
 	case NEVERC_KRT_IOC_SET_VALUE:
 		dev_lock_release();
 		if (neverc_krt_mem_read_user(&val, (void __user *)arg, sizeof(val)))
-			return -14;
+			return -EFAULT;
 		dev_lock_acquire();
 		dev_state.value = val;
 		dev_lock_release();
@@ -165,14 +170,14 @@ static long neverc_krt_ioctl(struct file *filp, unsigned int cmd, unsigned long 
 		val = dev_state.value;
 		dev_lock_release();
 		if (neverc_krt_mem_write_user((void __user *)arg, &val, sizeof(val)))
-			return -14;
+			return -EFAULT;
 		return 0;
 
 	case NEVERC_KRT_IOC_GET_STATS:
 		st = dev_state.stats;
 		dev_lock_release();
 		if (neverc_krt_mem_write_user((void __user *)arg, &st, sizeof(st)))
-			return -14;
+			return -EFAULT;
 		return 0;
 
 	case NEVERC_KRT_IOC_RESET:
@@ -187,7 +192,7 @@ static long neverc_krt_ioctl(struct file *filp, unsigned int cmd, unsigned long 
 
 	default:
 		dev_lock_release();
-		return -25; /* -ENOTTY */
+		return -ENOTTY;
 	}
 }
 
@@ -201,22 +206,42 @@ static const struct file_operations neverc_krt_fops = {
 };
 
 static struct miscdevice neverc_krt_misc = {
-	.minor = 255, /* MISC_DYNAMIC_MINOR */
-	.name  = "neverc_krt_chardev",
+	.minor = MISC_DYNAMIC_MINOR,
+	.name  = NEVERC_KRT_CHARDEV_NAME,
 	.fops  = &neverc_krt_fops,
 };
 
-typedef struct proc_dir_entry *(*proc_create_fn)(
+typedef struct proc_dir_entry *(*proc_create_seq_private_fn)(
 	const char *name, umode_t mode, struct proc_dir_entry *parent,
-	const struct proc_ops *ops);
+	const struct seq_operations *ops, unsigned int state_size, void *data);
 typedef void (*proc_remove_fn)(struct proc_dir_entry *);
 
-static proc_create_fn fn_proc_create;
+static proc_create_seq_private_fn fn_proc_create_seq;
 static proc_remove_fn fn_proc_remove;
 static struct proc_dir_entry *proc_entry;
 
 typedef void (*seq_printf_fn)(struct seq_file *, const char *, ...);
 static seq_printf_fn fn_seq_printf;
+
+static void *neverc_krt_proc_start(struct seq_file *m, loff_t *pos)
+{
+	(void)m;
+	return (*pos == 0) ? (void *)1 : (void *)0;
+}
+
+static void neverc_krt_proc_stop(struct seq_file *m, void *v)
+{
+	(void)m;
+	(void)v;
+}
+
+static void *neverc_krt_proc_next(struct seq_file *m, void *v, loff_t *pos)
+{
+	(void)m;
+	(void)v;
+	++*pos;
+	return (void *)0;
+}
 
 static int neverc_krt_proc_show(struct seq_file *m, void *v)
 {
@@ -225,9 +250,12 @@ static int neverc_krt_proc_show(struct seq_file *m, void *v)
 	if (!fn_seq_printf)
 		return 0;
 
-	dev_lock_acquire();
-
-	fn_seq_printf(m, "neverc_krt_chardev status\n");
+	/*
+	 * Proc is read-only diagnostics.  Avoid mutex here: if mutex_init was
+	 * unavailable at module load, dev_lock_acquire() would spin forever on
+	 * an uninitialized lock and trip the SoC watchdog during cat(1).
+	 */
+	fn_seq_printf(m, NEVERC_KRT_CHARDEV_NAME " status\n");
 	fn_seq_printf(m, "  kernel:  %s\n", NEVERC_KRT_KERNEL_STR);
 	fn_seq_printf(m, "  version: 0x%08x\n", NEVERC_KRT_CHARDEV_VERSION);
 	fn_seq_printf(m, "  value:   %u\n", dev_state.value);
@@ -235,64 +263,35 @@ static int neverc_krt_proc_show(struct seq_file *m, void *v)
 	fn_seq_printf(m, "  reads:   %u\n", dev_state.stats.reads);
 	fn_seq_printf(m, "  writes:  %u\n", dev_state.stats.writes);
 	fn_seq_printf(m, "  ioctls:  %u\n", dev_state.stats.ioctls);
-
-	dev_lock_release();
 	return 0;
 }
 
-typedef int (*single_open_fn)(struct file *, int (*)(struct seq_file *, void *),
-			      void *);
-static single_open_fn fn_single_open;
-
-static int neverc_krt_proc_open(struct inode *inode, struct file *file)
-{
-	(void)inode;
-	if (fn_single_open)
-		return fn_single_open(file, neverc_krt_proc_show, (void *)0);
-	return -1;
-}
-
-typedef ssize_t (*seq_read_fn)(struct file *, char __user *, size_t, loff_t *);
-typedef loff_t (*seq_lseek_fn)(struct file *, loff_t, int);
-typedef int (*single_release_fn)(struct inode *, struct file *);
-
-static seq_read_fn       fn_seq_read;
-static seq_lseek_fn      fn_seq_lseek;
-static single_release_fn fn_single_release;
-
-static struct proc_ops neverc_krt_proc_ops;
+static const struct seq_operations neverc_krt_proc_seq_ops = {
+	.start = neverc_krt_proc_start,
+	.stop = neverc_krt_proc_stop,
+	.next = neverc_krt_proc_next,
+	.show = neverc_krt_proc_show,
+};
 
 static void setup_proc(void)
 {
-	fn_proc_create =
-		(proc_create_fn)NEVERC_KRT_LOOKUP("proc_create");
+	fn_proc_create_seq =
+		(proc_create_seq_private_fn)NEVERC_KRT_LOOKUP(
+			"proc_create_seq_private");
 	fn_proc_remove =
 		(proc_remove_fn)NEVERC_KRT_LOOKUP("proc_remove");
 	fn_seq_printf =
 		(seq_printf_fn)NEVERC_KRT_LOOKUP("seq_printf");
-	fn_single_open =
-		(single_open_fn)NEVERC_KRT_LOOKUP("single_open");
-	fn_seq_read =
-		(seq_read_fn)NEVERC_KRT_LOOKUP("seq_read");
-	fn_seq_lseek =
-		(seq_lseek_fn)NEVERC_KRT_LOOKUP("seq_lseek");
-	fn_single_release =
-		(single_release_fn)NEVERC_KRT_LOOKUP("single_release");
 
-	if (!fn_proc_create || !fn_single_open || !fn_seq_read) {
-		neverc_krt_log_warn("proc helpers not found, skipping /proc entry\n");
+	if (!fn_proc_create_seq || !fn_seq_printf) {
+		neverc_krt_log_warn("proc seq helpers not found, skipping /proc entry\n");
 		return;
 	}
 
-	neverc_krt_proc_ops.proc_open = neverc_krt_proc_open;
-	neverc_krt_proc_ops.proc_read = fn_seq_read;
-	neverc_krt_proc_ops.proc_lseek = fn_seq_lseek;
-	neverc_krt_proc_ops.proc_release = fn_single_release;
-
-	proc_entry = fn_proc_create("neverc_krt_chardev", 0444,
-				    (void *)0, &neverc_krt_proc_ops);
+	proc_entry = fn_proc_create_seq(NEVERC_KRT_CHARDEV_NAME, 0444, (void *)0,
+					&neverc_krt_proc_seq_ops, 0, (void *)0);
 	if (proc_entry)
-		neverc_krt_log_info("/proc/neverc_krt_chardev created\n");
+		neverc_krt_log_info(NEVERC_KRT_CHARDEV_PROC_PATH " created\n");
 }
 
 typedef int  (*misc_register_fn)(struct miscdevice *);
@@ -315,8 +314,13 @@ static int neverc_krt_chardev_init(void)
 	fn_mutex_lock = (mutex_lock_fn)NEVERC_KRT_LOOKUP("mutex_lock");
 	fn_mutex_unlock = (mutex_unlock_fn)NEVERC_KRT_LOOKUP("mutex_unlock");
 
-	if (fn_mutex_init)
-		fn_mutex_init(&dev_lock);
+	dev_lock_inited = 0;
+	if (fn_mutex_init && fn_mutex_lock && fn_mutex_unlock) {
+		fn_mutex_init(&dev_lock, NEVERC_KRT_CHARDEV_NAME, (void *)0);
+		dev_lock_inited = 1;
+	} else {
+		neverc_krt_log_warn("mutex helpers not found; chardev runs unlocked\n");
+	}
 
 	do_misc_register =
 		(misc_register_fn)NEVERC_KRT_LOOKUP("misc_register");
@@ -324,7 +328,7 @@ static int neverc_krt_chardev_init(void)
 		(misc_deregister_fn)NEVERC_KRT_LOOKUP("misc_deregister");
 
 	if (!do_misc_register || !do_misc_deregister) {
-		neverc_krt_log_err("misc_register not found\n");
+		neverc_krt_log_err("miscdevice helpers not found\n");
 		return -1;
 	}
 
@@ -336,7 +340,8 @@ static int neverc_krt_chardev_init(void)
 
 	setup_proc();
 
-	neverc_krt_log_info("loaded on %s, /dev/neverc_krt_chardev ready\n",
+	neverc_krt_log_info("loaded on %s, /dev/" NEVERC_KRT_CHARDEV_NAME
+			    " ready\n",
 		     NEVERC_KRT_KERNEL_STR);
 	return 0;
 }
@@ -357,4 +362,4 @@ MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("NeverC");
 MODULE_DESCRIPTION("NeverC chardev + ioctl + proc demo");
 
-NEVERC_KRT_DEFINE_MODULE("neverc_krt_chardev");
+NEVERC_KRT_DEFINE_MODULE(NEVERC_KRT_CHARDEV_NAME);

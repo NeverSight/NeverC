@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvkmod.h>
 #include <nvk_interpose.h>
+#ifdef NEVERC_KRT_CONTEXT_INTERPOSE
+#include <nvk_interpose_advanced.h>
+#endif
 #include <nvk_vis.h>
 #include <nvk_process.h>
 #include <nvk_cred.h>
@@ -58,25 +61,22 @@ static struct neverc_krt_interpose_ctx faccessat_ctx;
 
 static void interpose_faccessat_ctx(neverc_krt_reg_ctx *ctx)
 {
+	NEVERC_KRT_INTERPOSE_COUNT(&faccessat_ctx.base);
 	(void)ctx;
 }
 
 #else
 
-typedef long (*faccessat_fn)(int dfd, const char __user *filename,
-			     int mode, int flags);
-static struct neverc_krt_interpose faccessat_interpose;
-static faccessat_fn orig_do_faccessat;
+static struct neverc_krt_interpose_ref faccessat_ref;
+static void *orig_do_faccessat;
+static void *faccessat_target;
+static int faccessat_registered;
 
-static long interpose_do_faccessat(int dfd, const char __user *filename,
-			      int mode, int flags)
+static long interpose_do_faccessat(void *orig, void *a0, void *a1,
+				   void *a2, void *a3, void *a4, void *a5)
 {
-	if (!neverc_krt_interpose_enter(&faccessat_interpose))
-		return orig_do_faccessat(dfd, filename, mode, flags);
-
-	long ret = orig_do_faccessat(dfd, filename, mode, flags);
-	neverc_krt_interpose_leave(&faccessat_interpose);
-	return ret;
+	typedef long (*fn_t)(void *, void *, void *, void *, void *, void *);
+	return ((fn_t)orig)(a0, a1, a2, a3, a4, a5);
 }
 
 #endif
@@ -112,7 +112,7 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 #ifdef NEVERC_KRT_CONTEXT_INTERPOSE
 		sr.interposes_active = faccessat_ctx.base.active;
 #else
-		sr.interposes_active = faccessat_interpose.active;
+		sr.interposes_active = faccessat_registered;
 #endif
 		sr.selinux_enforcing = neverc_krt_selinux_is_enforcing();
 		sr.thread_count = neverc_krt_thread_active_count();
@@ -166,7 +166,8 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 #ifdef NEVERC_KRT_CONTEXT_INTERPOSE
 		u64 hits = neverc_krt_interpose_hits(&faccessat_ctx.base);
 #else
-		u64 hits = neverc_krt_interpose_hits(&faccessat_interpose);
+		u64 hits = faccessat_target ?
+			(u64)neverc_krt_interpose_registry_count(faccessat_target) : 0;
 #endif
 		neverc_krt_nl_reply(ns, pid, seq, &hits, sizeof(hits));
 		break;
@@ -263,17 +264,24 @@ static int neverc_krt_full_init(void)
 	neverc_krt_vma_init();
 
 	target = NEVERC_KRT_LOOKUP("do_faccessat");
+#ifndef NEVERC_KRT_CONTEXT_INTERPOSE
+	faccessat_target = target;
+#endif
 	if (target) {
 #ifdef NEVERC_KRT_CONTEXT_INTERPOSE
 		ret = neverc_krt_interpose_install_ctx(&faccessat_ctx, target,
 					    interpose_faccessat_ctx, (void *)0);
 #else
-		ret = neverc_krt_interpose_install(&faccessat_interpose, target,
-				       (void *)interpose_do_faccessat,
-				       (void **)&orig_do_faccessat);
+		ret = neverc_krt_interpose_register(target,
+				       (void *)interpose_do_faccessat, 0,
+				       &orig_do_faccessat, &faccessat_ref);
 #endif
-		if (ret == 0)
+		if (ret == 0) {
+#ifndef NEVERC_KRT_CONTEXT_INTERPOSE
+			faccessat_registered = 1;
+#endif
 			neverc_krt_log_info("faccessat interposed\n");
+		}
 	}
 
 	neverc_krt_selinux_init();
@@ -314,8 +322,8 @@ static void neverc_krt_full_exit(void)
 	if (faccessat_ctx.base.active)
 		neverc_krt_interpose_remove_ctx(&faccessat_ctx);
 #else
-	if (faccessat_interpose.active)
-		neverc_krt_interpose_remove(&faccessat_interpose);
+	if (faccessat_registered)
+		neverc_krt_interpose_unregister(&faccessat_ref);
 #endif
 
 	neverc_krt_vis_remove_interposes();

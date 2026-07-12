@@ -7,26 +7,30 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 NEVERC="${1:-$REPO_ROOT/build-neverc/bin/neverc}"
 TMPDIR=$(mktemp -d)
-trap "rm -rf $TMPDIR" EXIT
+trap 'rm -rf "$TMPDIR"' EXIT
 
 KERNELS=(510 515 601 606 612 618)
-DEMOS=(
-  "android-kernel-hello"
-  "android-kernel-driver"
-  "android-kernel-chardev"
-  "android-kernel-inline-interpose"
-  "android-kernel-syscall-interpose"
-  "android-kernel-lowvis"
-  "android-kernel-netlink"
-  "android-kernel-full"
+DEMO_SPECS=(
+  "android-kernel-hello:main.c"
+  "android-kernel-driver:main.c"
+  "android-kernel-chardev:main.c"
+  "android-kernel-inline-interpose:main.c"
+  "android-kernel-syscall-interpose:main.c"
+  "android-kernel-lowvis:main.c"
+  "android-kernel-netlink:main.c"
+  "android-kernel-full:main.c"
+  "android-kernel-multifile:main.c interposes.c utils.c"
+  "android-kernel-probe:main.c"
 )
+LINKAGE_MODES=("auto:" "full:-flto=full" "none:-fno-lto")
 EXTRA_MODES=(
-  "android-kernel-inline-interpose:-DNVK_CONTEXT_INTERPOSE"
-  "android-kernel-syscall-interpose:-DNVK_SYSCALL_INLINE_INTERPOSE"
-  "android-kernel-lowvis:-DNVK_LOWVIS_FILTER"
-  "android-kernel-lowvis:-DNVK_LOWVIS_FILTER_FULL"
-  "android-kernel-lowvis:-DNVK_LOWVIS_CRED"
-  "android-kernel-lowvis:-DNVK_LOWVIS_SELINUX"
+  "android-kernel-full:-DNEVERC_KRT_CONTEXT_INTERPOSE:main.c"
+  "android-kernel-lowvis:-DNEVERC_KRT_CONTEXT_INTERPOSE:main.c"
+  "android-kernel-syscall-interpose:-DNVK_SYSCALL_INLINE_INTERPOSE:main.c"
+  "android-kernel-lowvis:-DNVK_LOWVIS_FILTER:main.c"
+  "android-kernel-lowvis:-DNVK_LOWVIS_FILTER_FULL:main.c"
+  "android-kernel-lowvis:-DNVK_LOWVIS_CRED:main.c"
+  "android-kernel-lowvis:-DNVK_LOWVIS_SELINUX:main.c"
 )
 
 PASS=0
@@ -34,6 +38,7 @@ FAIL=0
 TOTAL=0
 
 OBJDUMP="${OBJDUMP:-objdump}"
+NM="${NM:-nm}"
 
 check_elf() {
   local ko="$1"
@@ -76,6 +81,36 @@ check_elf() {
       ;;
   esac
 
+  local symbols
+  local unresolved
+  symbols=$("$NM" -a "$ko" 2>/dev/null || true)
+  unresolved=$(printf '%s\n' "$symbols" | awk \
+    '$NF ~ /^_?neverc_krt_/ && $(NF - 1) ~ /^[Uu]$/ { print }')
+  if [ -n "$unresolved" ]; then
+    echo "  FAIL: $name — unresolved embedded-runtime symbols"
+    printf '%s\n' "$unresolved"
+    return 1
+  fi
+
+  local state_symbol
+  local state_count
+  local -a runtime_state_symbols=(
+    _neverc_krt_sym_resolver
+    __neverc_nvk_local._neverc_krt_sym_cache
+    __neverc_nvk_local._neverc_krt_cache_key
+    __neverc_nvk_local._neverc_krt_cache_epoch
+    __neverc_nvk_local._neverc_krt_log_level
+  )
+  for state_symbol in "${runtime_state_symbols[@]}"; do
+    state_count=$(printf '%s\n' "$symbols" | awk -v symbol="$state_symbol" \
+      '$NF == symbol && $(NF - 1) !~ /^[Uu]$/ { count++ }
+       END { print count + 0 }')
+    if [ "$state_count" -gt 1 ]; then
+      echo "  FAIL: $name — duplicate runtime state $state_symbol ($state_count)"
+      return 1
+    fi
+  done
+
   # Verify init/exit relocations exist
   local relocs
   relocs=$("$OBJDUMP" -r "$ko" 2>/dev/null || true)
@@ -89,7 +124,9 @@ check_elf() {
 
   # Verify no compiler-rt / libgcc symbol references
   local rtlibs
-  rtlibs=$(echo "$relocs" | grep -c '__udivti3\|__umodti3\|__divti3\|__modti3\|__multi3\|__ashlti3\|__lshrti3' || true)
+  rtlibs=$(printf '%s\n' "$relocs" | awk \
+    '/__(u?div|u?mod|mul|ashl|lshr)ti3/ { count++ }
+     END { print count + 0 }')
   if [ "$rtlibs" -gt 0 ]; then
     echo "  FAIL: $name — references compiler-rt builtins ($rtlibs symbols)"
     return 1
@@ -97,7 +134,9 @@ check_elf() {
 
   # Verify no outline atomics references (kernel doesn't export them)
   local oatom
-  oatom=$(echo "$relocs" | grep -c '__aarch64_cas\|__aarch64_swp\|__aarch64_ldadd\|__aarch64_ldset\|__aarch64_ldclr' || true)
+  oatom=$(printf '%s\n' "$relocs" | awk \
+    '/__aarch64_(cas|swp|ldadd|ldset|ldclr)/ { count++ }
+     END { print count + 0 }')
   if [ "$oatom" -gt 0 ]; then
     echo "  FAIL: $name — references outline atomics ($oatom symbols)"
     return 1
@@ -105,7 +144,10 @@ check_elf() {
 
   # Verify no leaked kernel symbol names (xorstr check)
   local leaked
-  leaked=$(strings "$ko" 2>/dev/null | grep -xc "kallsyms_lookup_name\|module_alloc\|flush_icache_range\|_printk\|sys_call_table\|selinux_enforcing\|prepare_creds\|commit_creds\|find_task_by_vpid\|update_mapping_prot" || true)
+  leaked=$(strings "$ko" 2>/dev/null | awk \
+    '/^(kallsyms_lookup_name|module_alloc|flush_icache_range|_printk|sys_call_table|selinux_enforcing|prepare_creds|commit_creds|find_task_by_vpid|update_mapping_prot)$/ {
+       count++
+     } END { print count + 0 }')
   if [ "$leaked" -gt 0 ]; then
     echo "  FAIL: $name — $leaked unencrypted kernel symbol names found"
     return 1
@@ -113,7 +155,8 @@ check_elf() {
 
   # Verify vermagic string exists in binary
   local vmcount
-  vmcount=$(strings "$ko" 2>/dev/null | grep -c "^vermagic=" || true)
+  vmcount=$(strings "$ko" 2>/dev/null | awk \
+    '/^vermagic=/ { count++ } END { print count + 0 }')
   if [ "$vmcount" -eq 0 ]; then
     echo "  FAIL: $name — missing vermagic string"
     return 1
@@ -129,54 +172,86 @@ check_elf() {
   return 0
 }
 
+run_case() {
+  local name="$1"
+  local out="$2"
+  local kernel="$3"
+  local linkage_flag="$4"
+  local extra_flag="$5"
+  shift 5
+
+  local log="${out}.log"
+  local -a compiler_args=(
+    --target=aarch64-linux-android
+    -fandroid-kernel-driver-mode
+    -DNVK_KERNEL="$kernel"
+  )
+  if [ -n "$linkage_flag" ]; then
+    compiler_args+=("$linkage_flag")
+  fi
+  if [ -n "$extra_flag" ]; then
+    compiler_args+=("$extra_flag")
+  fi
+  compiler_args+=(-Wall -Wno-unused -r -nostdlib -o "$out")
+  compiler_args+=("$@")
+
+  if ! "$NEVERC" "${compiler_args[@]}" >"$log" 2>&1; then
+    echo "  FAIL: $name — compilation error"
+    awk '{ print "    " $0 }' "$log"
+    return 1
+  fi
+  check_elf "$out" "$name"
+}
+
 echo "=== NeverC Android Kernel Module Test Suite ==="
 echo "Compiler: $NEVERC"
 echo "Kernels:  ${KERNELS[*]}"
 echo ""
 
-for demo in "${DEMOS[@]}"; do
-  for k in "${KERNELS[@]}"; do
-    TOTAL=$((TOTAL+1))
-    name="${demo}@${k}"
-    out="$TMPDIR/${demo}_${k}.ko"
-    src="$REPO_ROOT/examples/$demo/main.c"
+for spec in "${DEMO_SPECS[@]}"; do
+  demo="${spec%%:*}"
+  source_names="${spec#*:}"
+  sources=()
+  for source_name in $source_names; do
+    sources+=("$REPO_ROOT/examples/$demo/$source_name")
+  done
 
-    if "$NEVERC" --target=aarch64-linux-android \
-       -fandroid-kernel-driver-mode -DNVK_KERNEL=$k \
-       -Wall -Wno-unused -r -nostdlib \
-       -o "$out" "$src" 2>/dev/null; then
-      if check_elf "$out" "$name"; then
+  for k in "${KERNELS[@]}"; do
+    for linkage_spec in "${LINKAGE_MODES[@]}"; do
+      linkage="${linkage_spec%%:*}"
+      linkage_flag="${linkage_spec#*:}"
+      TOTAL=$((TOTAL+1))
+      name="${demo}@${k}[${linkage}]"
+      out="$TMPDIR/${demo}_${k}_${linkage}.ko"
+
+      if run_case "$name" "$out" "$k" "$linkage_flag" "" \
+           "${sources[@]}"; then
         PASS=$((PASS+1))
       else
         FAIL=$((FAIL+1))
       fi
-    else
-      echo "  FAIL: $name — compilation error"
-      FAIL=$((FAIL+1))
-    fi
+    done
   done
 done
 
 for entry in "${EXTRA_MODES[@]}"; do
   demo="${entry%%:*}"
-  extra="${entry##*:}"
+  rest="${entry#*:}"
+  extra="${rest%%:*}"
+  source_names="${rest#*:}"
+  sources=()
+  for source_name in $source_names; do
+    sources+=("$REPO_ROOT/examples/$demo/$source_name")
+  done
+
   for k in "${KERNELS[@]}"; do
     TOTAL=$((TOTAL+1))
     name="${demo}[${extra}]@${k}"
-    out="$TMPDIR/${demo}_${extra}_${k}.ko"
-    src="$REPO_ROOT/examples/$demo/main.c"
+    out="$TMPDIR/${demo}_${extra#-D}_${k}.ko"
 
-    if "$NEVERC" --target=aarch64-linux-android \
-       -fandroid-kernel-driver-mode -DNVK_KERNEL=$k \
-       $extra -Wall -Wno-unused -r -nostdlib \
-       -o "$out" "$src" 2>/dev/null; then
-      if check_elf "$out" "$name"; then
-        PASS=$((PASS+1))
-      else
-        FAIL=$((FAIL+1))
-      fi
+    if run_case "$name" "$out" "$k" "" "$extra" "${sources[@]}"; then
+      PASS=$((PASS+1))
     else
-      echo "  FAIL: $name — compilation error"
       FAIL=$((FAIL+1))
     fi
   done

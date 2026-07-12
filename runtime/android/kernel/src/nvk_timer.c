@@ -1,5 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
+#include <linux/hrtimer.h>
+
+#define NEVERC_KRT_TIMER_FORCE_INLINE __attribute__((always_inline))
 
 /* ---- internal inline helpers ---- */
 
@@ -12,12 +15,16 @@ _neverc_krt_timer_from_storage(void *hrt)
 
 /* ---- internal typedefs ---- */
 
-typedef void (*neverc_krt_hrt_init_fn)(void *timer, int clock_id, int mode);
-typedef void (*neverc_krt_hrt_setup_fn)(void *timer, void *function,
-					int clock_id, int mode);
-typedef int  (*neverc_krt_hrt_start_range_fn)(void *timer, s64 tim,
-					      u64 delta_ns, int mode);
-typedef int  (*neverc_krt_hrt_cancel_fn)(void *timer);
+typedef void (*neverc_krt_hrt_init_fn)(struct hrtimer *timer, int clock_id,
+				       enum hrtimer_mode mode);
+typedef void (*neverc_krt_hrt_setup_fn)(struct hrtimer *timer,
+					hrtimer_func_t function,
+					int clock_id,
+					enum hrtimer_mode mode);
+typedef void (*neverc_krt_hrt_start_range_fn)(struct hrtimer *timer,
+					      ktime_t tim, u64 delta_ns,
+					      enum hrtimer_mode mode);
+typedef int  (*neverc_krt_hrt_cancel_fn)(struct hrtimer *timer);
 typedef u64  (*neverc_krt_ktime_get_fn)(void);
 typedef s64  (*neverc_krt_ktime_get_offset_fn)(int offs);
 
@@ -30,12 +37,30 @@ static neverc_krt_ktime_get_fn       _neverc_krt_ktime_get;
 static neverc_krt_ktime_get_fn       _neverc_krt_ktime_get_boot;
 static neverc_krt_ktime_get_offset_fn _neverc_krt_ktime_get_offset;
 
-static int _neverc_krt_hrt_trampoline(void *hrt)
+static enum hrtimer_restart
+_neverc_krt_hrt_trampoline(struct hrtimer *hrt)
 {
 	struct neverc_krt_timer *t = _neverc_krt_timer_from_storage(hrt);
+	t->armed = 0;
 	if (t->callback)
 		t->callback(t);
-	return 0;  /* HRTIMER_NORESTART */
+	return HRTIMER_NORESTART;
+}
+
+NEVERC_KRT_TIMER_FORCE_INLINE u64 neverc_krt_arch_counter(void)
+{
+	u64 value;
+
+	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(value));
+	return value;
+}
+
+NEVERC_KRT_TIMER_FORCE_INLINE u32 neverc_krt_arch_counter_freq(void)
+{
+	u64 value;
+
+	__asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(value));
+	return (u32)value;
 }
 
 int neverc_krt_timer_init(void)
@@ -67,37 +92,12 @@ int neverc_krt_timer_init(void)
 		_neverc_krt_ktime_get_offset =
 			(neverc_krt_ktime_get_offset_fn)NEVERC_KRT_LOOKUP("ktime_get_with_offset");
 
+	if ((!_neverc_krt_hrtimer_init && !_neverc_krt_hrtimer_setup) ||
+	    !_neverc_krt_hrtimer_start_range || !_neverc_krt_hrtimer_cancel)
+		return -1;
+
 	_neverc_krt_timer_inited = 1;
 	return 0;
-}
-
-static int _neverc_krt_hrt_patch_fn(u8 *storage, unsigned long fn)
-{
-	/*
-	 * After hrtimer_init (which does memset(0) + sets base pointer):
-	 *   [0]  __rb_parent_color  (self-pointer, non-zero)
-	 *   [8]  rb_right           (0)
-	 *   [16] rb_left            (0)
-	 *   [24] expires            (0)
-	 *   [32] _softexpires       (0)
-	 *   [40] function           (0)   ← target
-	 *   [48] base               (kernel ptr, non-zero) ← landmark
-	 *
-	 * Find `base` (first kernel pointer after offset 16), then write
-	 * fn one slot before it.  Stable across GKI 5.10–6.18.
-	 * On 6.18+ (hrtimer_setup), the function is set by the kernel —
-	 * this helper is only called as a fallback for pre-6.18 kernels.
-	 */
-	int off;
-	for (off = 24; off <= 96; off += 8) {
-		unsigned long val;
-		if (neverc_krt_mem_read(&val, storage + off, 8))
-			continue;
-		if (val > 0xFFFF000000000000UL &&
-		    val < 0xFFFFFFFFFFFFF000UL)
-			return neverc_krt_mem_write(storage + off - 8, &fn, 8);
-	}
-	return neverc_krt_mem_write(storage + 40, &fn, 8);
 }
 
 int neverc_krt_timer_setup(struct neverc_krt_timer *t,
@@ -109,16 +109,16 @@ int neverc_krt_timer_setup(struct neverc_krt_timer *t,
 	__builtin_memset(t, 0, sizeof(*t));
 	t->callback = cb;
 	if (_neverc_krt_hrtimer_setup) {
-		_neverc_krt_hrtimer_setup(t->storage,
-					  (void *)_neverc_krt_hrt_trampoline,
+		_neverc_krt_hrtimer_setup((struct hrtimer *)t->storage,
+					  _neverc_krt_hrt_trampoline,
 					  NEVERC_KRT_CLOCK_MONOTONIC,
 					  NEVERC_KRT_HRTIMER_REL);
 	} else {
-		_neverc_krt_hrtimer_init(t->storage,
+		struct hrtimer *timer = (struct hrtimer *)t->storage;
+		_neverc_krt_hrtimer_init(timer,
 					 NEVERC_KRT_CLOCK_MONOTONIC,
 					 NEVERC_KRT_HRTIMER_REL);
-		_neverc_krt_hrt_patch_fn(t->storage,
-					 (unsigned long)_neverc_krt_hrt_trampoline);
+		timer->function = _neverc_krt_hrt_trampoline;
 	}
 	t->armed = 0;
 	return 0;
@@ -128,25 +128,28 @@ int neverc_krt_timer_start_ns(struct neverc_krt_timer *t, s64 nsecs)
 {
 	if (!t || !_neverc_krt_hrtimer_start_range) return -1;
 	t->armed = 1;
-	return _neverc_krt_hrtimer_start_range(t->storage, nsecs,
-					       0, NEVERC_KRT_HRTIMER_REL);
+	_neverc_krt_hrtimer_start_range((struct hrtimer *)t->storage, nsecs,
+					0, NEVERC_KRT_HRTIMER_REL);
+	return 0;
 }
 
 int neverc_krt_timer_start_ms(struct neverc_krt_timer *t, unsigned int ms)
 {
-	return neverc_krt_timer_start_ns(t, (s64)ms * 1000000LL);
+	return neverc_krt_timer_start_ns(
+		t, (s64)ms * NEVERC_KRT_NSEC_PER_MSEC);
 }
 
 int neverc_krt_timer_start_us(struct neverc_krt_timer *t, unsigned int us)
 {
-	return neverc_krt_timer_start_ns(t, (s64)us * 1000LL);
+	return neverc_krt_timer_start_ns(
+		t, (s64)us * NEVERC_KRT_NSEC_PER_USEC);
 }
 
 int neverc_krt_timer_cancel(struct neverc_krt_timer *t)
 {
 	if (!t || !_neverc_krt_hrtimer_cancel) return -1;
 	t->armed = 0;
-	return _neverc_krt_hrtimer_cancel(t->storage);
+	return _neverc_krt_hrtimer_cancel((struct hrtimer *)t->storage);
 }
 
 u64 neverc_krt_ktime_get_ns(void)
@@ -167,15 +170,17 @@ u64 neverc_krt_arch_counter_to_ns(u64 ticks)
 {
 	u32 freq = neverc_krt_arch_counter_freq();
 	if (!freq) return 0;
-	return ticks * 1000000000ULL / freq;
+	return (ticks / freq) * NEVERC_KRT_NSEC_PER_SEC +
+	       (ticks % freq) * NEVERC_KRT_NSEC_PER_SEC / freq;
 }
 
 void neverc_krt_udelay(unsigned int us)
 {
 	u64 start = neverc_krt_arch_counter();
 	u32 freq = neverc_krt_arch_counter_freq();
-	u64 target = (u64)us * freq / 1000000ULL;
+	u64 target = (u64)us * freq / NEVERC_KRT_USEC_PER_SEC;
 	while (neverc_krt_arch_counter() - start < target)
 		__asm__ __volatile__("yield" ::: "memory");
 }
 
+#undef NEVERC_KRT_TIMER_FORCE_INLINE

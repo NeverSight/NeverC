@@ -1,0 +1,1490 @@
+{
+  "config": {
+    "CONFIG_ARM64_16K_PAGES": false,
+    "CONFIG_ARM64_4K_PAGES": true,
+    "CONFIG_ARM64_64K_PAGES": false,
+    "CONFIG_ARM64_PA_BITS": 48,
+    "CONFIG_ARM64_VA_BITS": 39,
+    "CONFIG_CFI_CLANG": true,
+    "CONFIG_COMPAT": true,
+    "CONFIG_DEBUG_INFO_BTF_MODULES": true,
+    "CONFIG_DEBUG_LOCK_ALLOC": false,
+    "CONFIG_DEBUG_SPINLOCK": false,
+    "CONFIG_MMU": true,
+    "CONFIG_MODULE_UNLOAD": true,
+    "CONFIG_NR_CPUS": 32,
+    "CONFIG_PGTABLE_LEVELS": 3,
+    "CONFIG_PREEMPT_RT": false,
+    "CONFIG_SECCOMP": true,
+    "PAGE_SHIFT": 12
+  },
+  "evidence": {
+    "config_sha256": "3427d7527b9ea042e7ee18925513e909309b969a02ef6aa9cab74456419c184f",
+    "layout_format": "BTF",
+    "layout_sha256": "1fe21ec9aa923ecd3fa422b8f73897ddfaa28c66837def476f49b1ddda0063c8",
+    "symvers_sha256": "9bddc12983770677b919509d28fb489ccc34eb0e49e771dd3e9ee4183b5d5b3e",
+    "vmlinux_build_id": null
+  },
+  "kernel_name": "android13-5.15",
+  "layouts": {
+    "attribute": {
+      "members": {
+        "mode": 8,
+        "name": 0
+      },
+      "size": 16
+    },
+    "attribute_group": {
+      "members": {
+        "attrs": 24,
+        "bin_attrs": 32,
+        "is_bin_visible": 16,
+        "is_visible": 8,
+        "name": 0
+      },
+      "size": 40
+    },
+    "callback_head": {
+      "members": {
+        "func": 8,
+        "next": 0
+      },
+      "size": 16
+    },
+    "completion": {
+      "members": {
+        "done": 0,
+        "wait": 8
+      },
+      "size": 32
+    },
+    "cpumask": {
+      "members": {
+        "bits": 0
+      },
+      "size": 8
+    },
+    "cred": {
+      "members": {
+        "cap_ambient": 72,
+        "cap_bset": 64,
+        "cap_effective": 56,
+        "cap_inheritable": 40,
+        "cap_permitted": 48,
+        "egid": 24,
+        "euid": 20,
+        "fsgid": 32,
+        "fsuid": 28,
+        "gid": 8,
+        "group_info": 152,
+        "jit_keyring": 80,
+        "non_rcu": 160,
+        "process_keyring": 96,
+        "rcu": 160,
+        "request_key_auth": 112,
+        "securebits": 36,
+        "security": 120,
+        "session_keyring": 88,
+        "sgid": 16,
+        "suid": 12,
+        "thread_keyring": 104,
+        "ucounts": 144,
+        "uid": 4,
+        "usage": 0,
+        "user": 128,
+        "user_ns": 136
+      },
+      "size": 176
+    },
+    "delayed_work": {
+      "members": {
+        "android_kabi_reserved1": 120,
+        "android_kabi_reserved2": 128,
+        "cpu": 112,
+        "timer": 48,
+        "work": 0,
+        "wq": 104
+      },
+      "size": 136
+    },
+    "dentry": {
+      "members": {
+        "android_kabi_reserved1": 192,
+        "android_kabi_reserved2": 200,
+        "d_child": 144,
+        "d_flags": 0,
+        "d_fsdata": 120,
+        "d_hash": 8,
+        "d_iname": 56,
+        "d_inode": 48,
+        "d_lockref": 88,
+        "d_lru": 128,
+        "d_name": 32,
+        "d_op": 96,
+        "d_parent": 24,
+        "d_sb": 104,
+        "d_seq": 4,
+        "d_subdirs": 160,
+        "d_time": 112,
+        "d_u": 176,
+        "d_wait": 128
+      },
+      "size": 208
+    },
+    "dev_pm_ops": {
+      "members": {
+        "android_kabi_reserved1": 184,
+        "complete": 8,
+        "freeze": 32,
+        "freeze_late": 80,
+        "freeze_noirq": 128,
+        "poweroff": 48,
+        "poweroff_late": 96,
+        "poweroff_noirq": 144,
+        "prepare": 0,
+        "restore": 56,
+        "restore_early": 104,
+        "restore_noirq": 152,
+        "resume": 24,
+        "resume_early": 72,
+        "resume_noirq": 120,
+        "runtime_idle": 176,
+        "runtime_resume": 168,
+        "runtime_suspend": 160,
+        "suspend": 16,
+        "suspend_late": 64,
+        "suspend_noirq": 112,
+        "thaw": 40,
+        "thaw_early": 88,
+        "thaw_noirq": 136
+      },
+      "size": 192
+    },
+    "file": {
+      "members": {
+        "android_kabi_reserved1": 248,
+        "android_kabi_reserved2": 256,
+        "f_count": 56,
+        "f_cred": 160,
+        "f_ep": 224,
+        "f_flags": 64,
+        "f_inode": 32,
+        "f_lock": 48,
+        "f_mapping": 232,
+        "f_mode": 68,
+        "f_op": 40,
+        "f_owner": 128,
+        "f_path": 16,
+        "f_pos": 120,
+        "f_pos_lock": 72,
+        "f_ra": 168,
+        "f_sb_err": 244,
+        "f_security": 208,
+        "f_u": 0,
+        "f_version": 200,
+        "f_wb_err": 240,
+        "f_write_hint": 52,
+        "private_data": 216
+      },
+      "size": 264
+    },
+    "file_operations": {
+      "members": {
+        "android_kabi_reserved1": 256,
+        "android_kabi_reserved2": 264,
+        "android_kabi_reserved3": 272,
+        "android_kabi_reserved4": 280,
+        "check_flags": 176,
+        "compat_ioctl": 88,
+        "copy_file_range": 232,
+        "fadvise": 248,
+        "fallocate": 216,
+        "fasync": 144,
+        "flock": 184,
+        "flush": 120,
+        "fsync": 136,
+        "get_unmapped_area": 168,
+        "iopoll": 48,
+        "iterate": 56,
+        "iterate_shared": 64,
+        "llseek": 8,
+        "lock": 152,
+        "mmap": 96,
+        "mmap_supported_flags": 104,
+        "open": 112,
+        "owner": 0,
+        "poll": 72,
+        "read": 16,
+        "read_iter": 32,
+        "release": 128,
+        "remap_file_range": 240,
+        "sendpage": 160,
+        "setlease": 208,
+        "show_fdinfo": 224,
+        "splice_read": 200,
+        "splice_write": 192,
+        "unlocked_ioctl": 80,
+        "write": 24,
+        "write_iter": 40
+      },
+      "size": 288
+    },
+    "firmware": {
+      "members": {
+        "data": 8,
+        "priv": 16,
+        "size": 0
+      },
+      "size": 24
+    },
+    "hrtimer": {
+      "members": {
+        "_softexpires": 32,
+        "android_kabi_reserved1": 64,
+        "base": 48,
+        "function": 40,
+        "is_hard": 59,
+        "is_rel": 57,
+        "is_soft": 58,
+        "node": 0,
+        "state": 56
+      },
+      "size": 72
+    },
+    "idr": {
+      "members": {
+        "idr_base": 16,
+        "idr_next": 20,
+        "idr_rt": 0
+      },
+      "size": 24
+    },
+    "kprobe": {
+      "members": {
+        "addr": 40,
+        "ainsn": 88,
+        "flags": 120,
+        "hlist": 0,
+        "list": 16,
+        "nmissed": 32,
+        "offset": 56,
+        "opcode": 80,
+        "post_handler": 72,
+        "pre_handler": 64,
+        "symbol_name": 48
+      },
+      "size": 128
+    },
+    "kref": {
+      "members": {
+        "refcount": 0
+      },
+      "size": 4
+    },
+    "miscdevice": {
+      "members": {
+        "fops": 16,
+        "groups": 56,
+        "list": 24,
+        "minor": 0,
+        "mode": 72,
+        "name": 8,
+        "nodename": 64,
+        "parent": 40,
+        "this_device": 48
+      },
+      "size": 80
+    },
+    "module": {
+      "members": {
+        "android_kabi_reserved1": 920,
+        "android_kabi_reserved2": 928,
+        "android_kabi_reserved3": 936,
+        "android_kabi_reserved4": 944,
+        "arch": 544,
+        "args": 672,
+        "async_probe_requested": 362,
+        "bpf_raw_events": 744,
+        "btf_data": 760,
+        "btf_data_size": 752,
+        "bug_list": 592,
+        "bug_table": 608,
+        "cfi_check": 272,
+        "core_kallsyms": 624,
+        "core_layout": 384,
+        "crcs": 256,
+        "ei_funcs": 904,
+        "exit": 888,
+        "extable": 368,
+        "gpl_crcs": 352,
+        "gpl_syms": 344,
+        "holders_dir": 240,
+        "init": 376,
+        "init_layout": 464,
+        "jump_entries": 768,
+        "kallsyms": 616,
+        "kp": 328,
+        "kprobe_blacklist": 840,
+        "kprobes_text_size": 832,
+        "kprobes_text_start": 824,
+        "list": 8,
+        "mkobj": 80,
+        "modinfo_attrs": 208,
+        "name": 24,
+        "noinstr_text_size": 704,
+        "noinstr_text_start": 696,
+        "notes_attrs": 664,
+        "num_bpf_raw_events": 736,
+        "num_bugs": 584,
+        "num_ei_funcs": 912,
+        "num_exentries": 364,
+        "num_gpl_syms": 340,
+        "num_jump_entries": 776,
+        "num_kp": 336,
+        "num_kprobe_blacklist": 848,
+        "num_srcu_structs": 720,
+        "num_syms": 264,
+        "num_trace_bprintk_fmt": 780,
+        "num_trace_evals": 816,
+        "num_trace_events": 800,
+        "num_tracepoints": 708,
+        "param_lock": 280,
+        "percpu": 680,
+        "percpu_size": 688,
+        "refcnt": 896,
+        "scmversion": 232,
+        "sect_attrs": 656,
+        "sig_ok": 361,
+        "source_list": 856,
+        "srcu_struct_ptrs": 728,
+        "srcversion": 224,
+        "state": 0,
+        "syms": 248,
+        "taints": 576,
+        "target_list": 872,
+        "trace_bprintk_fmt_start": 784,
+        "trace_evals": 808,
+        "trace_events": 792,
+        "tracepoints_ptrs": 712,
+        "using_gplonly_symbols": 360,
+        "version": 216
+      },
+      "size": 960
+    },
+    "mutex": {
+      "members": {
+        "android_oem_data1": 32,
+        "osq": 12,
+        "owner": 0,
+        "wait_list": 16,
+        "wait_lock": 8
+      },
+      "size": 48
+    },
+    "netlink_kernel_cfg": {
+      "members": {
+        "bind": 24,
+        "cb_mutex": 16,
+        "compare": 40,
+        "flags": 4,
+        "groups": 0,
+        "input": 8,
+        "unbind": 32
+      },
+      "size": 48
+    },
+    "nf_hook_ops": {
+      "bitfields": {
+        "hook_ops_type": {
+          "bit_offset": 200,
+          "bit_size": 8
+        }
+      },
+      "members": {
+        "dev": 8,
+        "hook": 0,
+        "hooknum": 28,
+        "pf": 24,
+        "priority": 32,
+        "priv": 16
+      },
+      "size": 40
+    },
+    "nf_hook_state": {
+      "members": {
+        "hook": 0,
+        "in": 8,
+        "net": 32,
+        "okfn": 40,
+        "out": 16,
+        "pf": 1,
+        "sk": 24
+      },
+      "size": 48
+    },
+    "nlmsghdr": {
+      "members": {
+        "nlmsg_flags": 6,
+        "nlmsg_len": 0,
+        "nlmsg_pid": 12,
+        "nlmsg_seq": 8,
+        "nlmsg_type": 4
+      },
+      "size": 16
+    },
+    "notifier_block": {
+      "members": {
+        "next": 8,
+        "notifier_call": 0,
+        "priority": 16
+      },
+      "size": 24
+    },
+    "optimistic_spin_queue": {
+      "members": {
+        "tail": 0
+      },
+      "size": 4
+    },
+    "path": {
+      "members": {
+        "dentry": 8,
+        "mnt": 0
+      },
+      "size": 16
+    },
+    "proc_ops": {
+      "members": {
+        "proc_compat_ioctl": 72,
+        "proc_flags": 0,
+        "proc_get_unmapped_area": 88,
+        "proc_ioctl": 64,
+        "proc_lseek": 40,
+        "proc_mmap": 80,
+        "proc_open": 8,
+        "proc_poll": 56,
+        "proc_read": 16,
+        "proc_read_iter": 24,
+        "proc_release": 48,
+        "proc_write": 32
+      },
+      "size": 96
+    },
+    "pt_regs": {
+      "members": {
+        "exit_rcu": 328,
+        "lockdep_hardirqs": 320,
+        "orig_x0": 272,
+        "pc": 256,
+        "pmr_save": 296,
+        "pstate": 264,
+        "regs": 0,
+        "sdei_ttbr1": 288,
+        "sp": 248,
+        "stackframe": 304,
+        "syscallno": 280,
+        "unused2": 284,
+        "user_regs": 0
+      },
+      "size": 336
+    },
+    "qstr": {
+      "members": {
+        "hash": 0,
+        "hash_len": 0,
+        "len": 4,
+        "name": 8
+      },
+      "size": 16
+    },
+    "rb_node": {
+      "members": {
+        "__rb_parent_color": 0,
+        "rb_left": 16,
+        "rb_right": 8
+      },
+      "size": 24
+    },
+    "rb_root": {
+      "members": {
+        "rb_node": 0
+      },
+      "size": 8
+    },
+    "regmap_config": {
+      "members": {
+        "android_kabi_reserved1": 280,
+        "cache_type": 196,
+        "can_multi_write": 236,
+        "can_sleep": 272,
+        "disable_locking": 72,
+        "fast_io": 128,
+        "hwlock_id": 264,
+        "hwlock_mode": 268,
+        "lock": 80,
+        "lock_arg": 96,
+        "max_register": 132,
+        "name": 0,
+        "num_ranges": 256,
+        "num_reg_defaults": 192,
+        "num_reg_defaults_raw": 208,
+        "pad_bits": 16,
+        "precious_reg": 48,
+        "precious_table": 160,
+        "ranges": 248,
+        "rd_noinc_table": 176,
+        "rd_table": 144,
+        "read_flag_mask": 216,
+        "readable_noinc_reg": 64,
+        "readable_reg": 32,
+        "reg_bits": 8,
+        "reg_defaults": 184,
+        "reg_defaults_raw": 200,
+        "reg_format_endian": 240,
+        "reg_read": 104,
+        "reg_stride": 12,
+        "reg_update_bits": 120,
+        "reg_write": 112,
+        "unlock": 88,
+        "use_hwlock": 260,
+        "use_raw_spinlock": 261,
+        "use_relaxed_mmio": 235,
+        "use_single_read": 233,
+        "use_single_write": 234,
+        "val_bits": 20,
+        "val_format_endian": 244,
+        "volatile_reg": 40,
+        "volatile_table": 152,
+        "wr_noinc_table": 168,
+        "wr_table": 136,
+        "write_flag_mask": 224,
+        "writeable_noinc_reg": 56,
+        "writeable_reg": 24,
+        "zero_flag_mask": 232
+      },
+      "size": 288
+    },
+    "resource": {
+      "members": {
+        "android_kabi_reserved1": 64,
+        "android_kabi_reserved2": 72,
+        "android_kabi_reserved3": 80,
+        "android_kabi_reserved4": 88,
+        "child": 56,
+        "desc": 32,
+        "end": 8,
+        "flags": 24,
+        "name": 16,
+        "parent": 40,
+        "sibling": 48,
+        "start": 0
+      },
+      "size": 96
+    },
+    "rw_semaphore": {
+      "members": {
+        "android_oem_data1": 48,
+        "android_vendor_data1": 40,
+        "count": 0,
+        "osq": 16,
+        "owner": 8,
+        "wait_list": 24,
+        "wait_lock": 20
+      },
+      "size": 64
+    },
+    "scatterlist": {
+      "members": {
+        "dma_address": 16,
+        "dma_length": 24,
+        "length": 12,
+        "offset": 8,
+        "page_link": 0
+      },
+      "size": 32
+    },
+    "semaphore": {
+      "members": {
+        "count": 4,
+        "lock": 0,
+        "wait_list": 8
+      },
+      "size": 24
+    },
+    "seq_operations": {
+      "members": {
+        "next": 16,
+        "show": 24,
+        "start": 0,
+        "stop": 8
+      },
+      "size": 32
+    },
+    "sg_table": {
+      "members": {
+        "nents": 8,
+        "orig_nents": 12,
+        "sgl": 0
+      },
+      "size": 16
+    },
+    "sk_buff": {
+      "bitfields": {
+        "cloned": {
+          "bit_offset": 1008,
+          "bit_size": 1
+        },
+        "csum_complete_sw": {
+          "bit_offset": 1041,
+          "bit_size": 1
+        },
+        "csum_level": {
+          "bit_offset": 1042,
+          "bit_size": 2
+        },
+        "csum_not_inet": {
+          "bit_offset": 1044,
+          "bit_size": 1
+        },
+        "csum_valid": {
+          "bit_offset": 1039,
+          "bit_size": 1
+        },
+        "dst_pending_confirm": {
+          "bit_offset": 1045,
+          "bit_size": 1
+        },
+        "encap_hdr_csum": {
+          "bit_offset": 1038,
+          "bit_size": 1
+        },
+        "encapsulation": {
+          "bit_offset": 1037,
+          "bit_size": 1
+        },
+        "fclone": {
+          "bit_offset": 1010,
+          "bit_size": 2
+        },
+        "from_ingress": {
+          "bit_offset": 1054,
+          "bit_size": 1
+        },
+        "head_frag": {
+          "bit_offset": 1013,
+          "bit_size": 1
+        },
+        "ignore_df": {
+          "bit_offset": 1027,
+          "bit_size": 1
+        },
+        "inner_protocol_type": {
+          "bit_offset": 1049,
+          "bit_size": 1
+        },
+        "ip_summed": {
+          "bit_offset": 1029,
+          "bit_size": 2
+        },
+        "ipvs_property": {
+          "bit_offset": 1048,
+          "bit_size": 1
+        },
+        "l4_hash": {
+          "bit_offset": 1032,
+          "bit_size": 1
+        },
+        "ndisc_nodetype": {
+          "bit_offset": 1046,
+          "bit_size": 2
+        },
+        "nf_trace": {
+          "bit_offset": 1028,
+          "bit_size": 1
+        },
+        "no_fcs": {
+          "bit_offset": 1036,
+          "bit_size": 1
+        },
+        "nohdr": {
+          "bit_offset": 1009,
+          "bit_size": 1
+        },
+        "ooo_okay": {
+          "bit_offset": 1031,
+          "bit_size": 1
+        },
+        "peeked": {
+          "bit_offset": 1012,
+          "bit_size": 1
+        },
+        "pfmemalloc": {
+          "bit_offset": 1014,
+          "bit_size": 1
+        },
+        "pkt_type": {
+          "bit_offset": 1024,
+          "bit_size": 3
+        },
+        "pp_recycle": {
+          "bit_offset": 1015,
+          "bit_size": 1
+        },
+        "redirected": {
+          "bit_offset": 1053,
+          "bit_size": 1
+        },
+        "remcsum_offload": {
+          "bit_offset": 1050,
+          "bit_size": 1
+        },
+        "scm_io_uring": {
+          "bit_offset": 1472,
+          "bit_size": 1
+        },
+        "slow_gro": {
+          "bit_offset": 1055,
+          "bit_size": 1
+        },
+        "sw_hash": {
+          "bit_offset": 1033,
+          "bit_size": 1
+        },
+        "tc_at_ingress": {
+          "bit_offset": 1052,
+          "bit_size": 1
+        },
+        "tc_skip_classify": {
+          "bit_offset": 1051,
+          "bit_size": 1
+        },
+        "vlan_present": {
+          "bit_offset": 1040,
+          "bit_size": 1
+        },
+        "wifi_acked": {
+          "bit_offset": 1035,
+          "bit_size": 1
+        },
+        "wifi_acked_valid": {
+          "bit_offset": 1034,
+          "bit_size": 1
+        }
+      },
+      "members": {
+        "__cloned_offset": 126,
+        "__pkt_type_offset": 128,
+        "__pkt_vlan_present_offset": 130,
+        "_nfct": 104,
+        "_sk_redir": 88,
+        "_skb_refdst": 88,
+        "active_extensions": 127,
+        "android_kabi_reserved1": 184,
+        "android_kabi_reserved1_padding1": 185,
+        "android_kabi_reserved1_padding2": 186,
+        "android_kabi_reserved1_padding3": 188,
+        "android_kabi_reserved2": 192,
+        "cb": 40,
+        "csum": 136,
+        "csum_offset": 138,
+        "csum_start": 136,
+        "data": 216,
+        "data_len": 116,
+        "destructor": 96,
+        "dev": 16,
+        "dev_scratch": 16,
+        "end": 204,
+        "extensions": 232,
+        "hash": 148,
+        "hdr_len": 122,
+        "head": 208,
+        "headers_end": 184,
+        "headers_start": 128,
+        "inner_ipproto": 168,
+        "inner_mac_header": 174,
+        "inner_network_header": 172,
+        "inner_protocol": 168,
+        "inner_transport_header": 170,
+        "ip_defrag_offset": 24,
+        "len": 112,
+        "list": 0,
+        "mac_header": 182,
+        "mac_len": 120,
+        "mark": 164,
+        "napi_id": 156,
+        "network_header": 180,
+        "next": 0,
+        "prev": 8,
+        "priority": 140,
+        "protocol": 176,
+        "queue_mapping": 124,
+        "rbnode": 0,
+        "reserved_tailroom": 164,
+        "secmark": 160,
+        "sender_cpu": 156,
+        "sk": 24,
+        "skb_iif": 144,
+        "skb_mstamp_ns": 32,
+        "tail": 200,
+        "tc_index": 132,
+        "tcp_tsorted_anchor": 88,
+        "transport_header": 178,
+        "truesize": 224,
+        "tstamp": 32,
+        "users": 228,
+        "vlan_proto": 152,
+        "vlan_tci": 154
+      },
+      "size": 240
+    },
+    "task_struct": {
+      "bitfields": {
+        "frozen": {
+          "bit_offset": 11398,
+          "bit_size": 1
+        },
+        "in_eventfd_signal": {
+          "bit_offset": 11402,
+          "bit_size": 1
+        },
+        "in_execve": {
+          "bit_offset": 11393,
+          "bit_size": 1
+        },
+        "in_iowait": {
+          "bit_offset": 11394,
+          "bit_size": 1
+        },
+        "in_lru_fault": {
+          "bit_offset": 11396,
+          "bit_size": 1
+        },
+        "in_memstall": {
+          "bit_offset": 11400,
+          "bit_size": 1
+        },
+        "in_page_owner": {
+          "bit_offset": 11401,
+          "bit_size": 1
+        },
+        "in_user_fault": {
+          "bit_offset": 11395,
+          "bit_size": 1
+        },
+        "no_cgroup_migration": {
+          "bit_offset": 11397,
+          "bit_size": 1
+        },
+        "sched_contributes_to_load": {
+          "bit_offset": 11361,
+          "bit_size": 1
+        },
+        "sched_migrated": {
+          "bit_offset": 11362,
+          "bit_size": 1
+        },
+        "sched_psi_wake_requeue": {
+          "bit_offset": 11363,
+          "bit_size": 1
+        },
+        "sched_remote_wakeup": {
+          "bit_offset": 11392,
+          "bit_size": 1
+        },
+        "sched_reset_on_fork": {
+          "bit_offset": 11360,
+          "bit_size": 1
+        },
+        "use_memdelay": {
+          "bit_offset": 11399,
+          "bit_size": 1
+        }
+      },
+      "members": {
+        "__state": 40,
+        "acct_rss_mem1": 2376,
+        "acct_timexpd": 2392,
+        "acct_vm_mem1": 2384,
+        "active_memcg": 2744,
+        "active_mm": 1320,
+        "alloc_lock": 2176,
+        "android_kabi_reserved1": 3448,
+        "android_kabi_reserved2": 3456,
+        "android_kabi_reserved3": 3464,
+        "android_kabi_reserved4": 3472,
+        "android_kabi_reserved5": 3480,
+        "android_kabi_reserved6": 3488,
+        "android_kabi_reserved7": 3496,
+        "android_kabi_reserved8": 3504,
+        "android_oem_data1": 3392,
+        "android_vendor_data1": 2880,
+        "atomic_flags": 1432,
+        "audit_context": 2128,
+        "backing_dev_info": 2264,
+        "bio_list": 2240,
+        "blocked": 2048,
+        "bpf_ctx": 2872,
+        "bpf_storage": 2864,
+        "cached_requested_key": 1952,
+        "capture_control": 2280,
+        "cg_list": 2432,
+        "cgroups": 2424,
+        "children": 1528,
+        "clear_child_tid": 1720,
+        "comm": 1960,
+        "compat_robust_list": 2456,
+        "cpu": 88,
+        "cpus_mask": 1080,
+        "cpus_ptr": 1064,
+        "cpuset_mem_spread_rotor": 2412,
+        "cpuset_slab_spread_rotor": 2416,
+        "cred": 1944,
+        "default_timer_slack_ns": 2688,
+        "dirty_paused_when": 2672,
+        "dl": 784,
+        "exit_code": 1392,
+        "exit_signal": 1396,
+        "exit_state": 1388,
+        "files": 2008,
+        "flags": 60,
+        "fs": 2000,
+        "futex_exit_mutex": 2488,
+        "futex_state": 2536,
+        "group_leader": 1560,
+        "gtime": 1752,
+        "io_context": 2272,
+        "io_uring": 2016,
+        "ioac": 2304,
+        "jobctl": 1408,
+        "journal_info": 2232,
+        "kmap_ctrl": 2768,
+        "kretprobe_instances": 3440,
+        "kunit_test": 2696,
+        "last_siginfo": 2296,
+        "last_switch_count": 1984,
+        "last_switch_time": 1992,
+        "last_wakee": 104,
+        "loginuid": 2136,
+        "maj_flt": 1840,
+        "max_state": 1768,
+        "memcg_in_oom": 2720,
+        "memcg_nr_pages_over_high": 2736,
+        "memcg_oom_gfp_mask": 2728,
+        "memcg_oom_order": 2732,
+        "mems_allowed": 2400,
+        "mems_allowed_seq": 2408,
+        "migration_disabled": 1096,
+        "migration_flags": 1098,
+        "migration_pending": 1088,
+        "min_flt": 1832,
+        "mm": 1312,
+        "nameidata": 1976,
+        "nivcsw": 1808,
+        "normal_prio": 132,
+        "nr_cpus_allowed": 1060,
+        "nr_dirtied": 2664,
+        "nr_dirtied_pause": 2668,
+        "nsproxy": 2024,
+        "nvcsw": 1800,
+        "on_cpu": 68,
+        "on_rq": 120,
+        "oom_reaper_list": 2776,
+        "oom_reaper_timer": 2784,
+        "pagefault_disabled": 2768,
+        "parent": 1520,
+        "parent_exec_id": 2160,
+        "pdeath_signal": 1400,
+        "pending": 2072,
+        "perf_event_ctxp": 2544,
+        "perf_event_list": 2608,
+        "perf_event_mutex": 2560,
+        "personality": 1416,
+        "pf_io_worker": 1728,
+        "pi_blocked_on": 2224,
+        "pi_lock": 2180,
+        "pi_state_cache": 2480,
+        "pi_state_list": 2464,
+        "pi_top_task": 2216,
+        "pi_waiters": 2200,
+        "pid": 1496,
+        "pid_links": 1608,
+        "plug": 2248,
+        "policy": 1056,
+        "posix_cputimers": 1848,
+        "preempt_notifiers": 1048,
+        "prev_cputime": 1776,
+        "prio": 124,
+        "psi_flags": 2368,
+        "ptrace": 64,
+        "ptrace_entry": 1584,
+        "ptrace_message": 2288,
+        "ptraced": 1568,
+        "ptracer_cred": 1928,
+        "pushable_dl_tasks": 1288,
+        "pushable_tasks": 1248,
+        "rcu": 2624,
+        "rcu_blocked_node": 1128,
+        "rcu_node_entry": 1112,
+        "rcu_read_lock_nesting": 1100,
+        "rcu_read_unlock_special": 1104,
+        "rcu_tasks_holdout": 1144,
+        "rcu_tasks_holdout_list": 1152,
+        "rcu_tasks_idle_cpu": 1148,
+        "rcu_tasks_idx": 1145,
+        "rcu_tasks_nvcsw": 1136,
+        "rcu_users": 2624,
+        "real_blocked": 2056,
+        "real_cred": 1936,
+        "real_parent": 1512,
+        "recent_used_cpu": 112,
+        "reclaim_state": 2256,
+        "restart_block": 1440,
+        "robust_list": 2448,
+        "rss_stat": 1368,
+        "rt": 704,
+        "rt_priority": 136,
+        "sas_ss_flags": 2112,
+        "sas_ss_size": 2104,
+        "sas_ss_sp": 2096,
+        "saved_sigmask": 2064,
+        "sched_class": 144,
+        "sched_info": 1200,
+        "sched_task_group": 1024,
+        "se": 192,
+        "seccomp": 2144,
+        "security": 2856,
+        "self_exec_id": 2168,
+        "sessionid": 2140,
+        "set_child_tid": 1712,
+        "sibling": 1544,
+        "sighand": 2040,
+        "signal": 2032,
+        "splice_pipe": 2640,
+        "stack": 48,
+        "stack_canary": 1504,
+        "stack_refcount": 2848,
+        "stack_vm_area": 2840,
+        "start_boottime": 1824,
+        "start_time": 1816,
+        "static_prio": 128,
+        "stime": 1744,
+        "syscall_dispatch": 2160,
+        "task_frag": 2648,
+        "task_works": 2120,
+        "tasks": 1232,
+        "tgid": 1500,
+        "thread": 3520,
+        "thread_group": 1672,
+        "thread_info": 0,
+        "thread_node": 1688,
+        "thread_pid": 1600,
+        "throttle_queue": 2752,
+        "time_in_state": 1760,
+        "timer_slack_ns": 2680,
+        "tlb_ubc": 2624,
+        "trace": 2704,
+        "trace_recursion": 2712,
+        "trc_holdout_list": 1184,
+        "trc_ipi_to_cpu": 1172,
+        "trc_reader_checked": 1180,
+        "trc_reader_nesting": 1168,
+        "trc_reader_special": 1176,
+        "uclamp": 1040,
+        "uclamp_req": 1032,
+        "usage": 56,
+        "user_cpus_ptr": 1072,
+        "utask": 2760,
+        "utime": 1736,
+        "vfork_done": 1704,
+        "vmacache": 1328,
+        "wake_cpu": 116,
+        "wake_entry": 72,
+        "wake_q": 2184,
+        "wake_q_count": 2192,
+        "wakee_flip_decay_ts": 96,
+        "wakee_flips": 92
+      },
+      "size": 4608
+    },
+    "tasklet_struct": {
+      "members": {
+        "callback": 24,
+        "count": 16,
+        "data": 32,
+        "func": 24,
+        "next": 0,
+        "state": 8,
+        "use_callback": 20
+      },
+      "size": 40
+    },
+    "thread_info": {
+      "members": {
+        "flags": 0,
+        "preempt": 16,
+        "preempt_count": 16,
+        "scs_base": 24,
+        "scs_sp": 32,
+        "ttbr0": 8
+      },
+      "size": 40
+    },
+    "timer_list": {
+      "members": {
+        "android_kabi_reserved1": 40,
+        "android_kabi_reserved2": 48,
+        "entry": 0,
+        "expires": 16,
+        "flags": 32,
+        "function": 24
+      },
+      "size": 56
+    },
+    "timespec64": {
+      "members": {
+        "tv_nsec": 8,
+        "tv_sec": 0
+      },
+      "size": 16
+    },
+    "vm_area_struct": {
+      "members": {
+        "android_kabi_reserved1": 200,
+        "android_kabi_reserved2": 208,
+        "android_kabi_reserved3": 216,
+        "android_kabi_reserved4": 224,
+        "anon_name": 88,
+        "anon_vma": 136,
+        "anon_vma_chain": 120,
+        "file_ref_count": 192,
+        "rb_subtree_gap": 56,
+        "shared": 88,
+        "swap_readahead_info": 176,
+        "vm_end": 8,
+        "vm_file": 160,
+        "vm_flags": 80,
+        "vm_mm": 64,
+        "vm_next": 16,
+        "vm_ops": 144,
+        "vm_page_prot": 72,
+        "vm_pgoff": 152,
+        "vm_prev": 24,
+        "vm_private_data": 168,
+        "vm_rb": 32,
+        "vm_rcu": 0,
+        "vm_start": 0,
+        "vm_userfaultfd_ctx": 184
+      },
+      "size": 232
+    },
+    "vmap_area": {
+      "members": {
+        "list": 40,
+        "rb_node": 16,
+        "subtree_max_size": 56,
+        "va_end": 8,
+        "va_start": 0,
+        "vm": 56
+      },
+      "size": 64
+    },
+    "wait_queue_entry": {
+      "members": {
+        "entry": 24,
+        "flags": 0,
+        "func": 16,
+        "private": 8
+      },
+      "size": 40
+    },
+    "wait_queue_head": {
+      "members": {
+        "head": 8,
+        "lock": 0
+      },
+      "size": 24
+    },
+    "work_struct": {
+      "members": {
+        "android_kabi_reserved1": 32,
+        "android_kabi_reserved2": 40,
+        "data": 0,
+        "entry": 8,
+        "func": 24
+      },
+      "size": 48
+    }
+  },
+  "profile": 515,
+  "schema": 1,
+  "sdk_exports": [
+    "__alloc_skb",
+    "__const_udelay",
+    "__cpu_online_mask",
+    "__cpu_possible_mask",
+    "__devm_regmap_init_mmio_clk",
+    "__init_rwsem",
+    "__kmalloc",
+    "__mutex_init",
+    "__netdev_alloc_skb",
+    "__netlink_kernel_create",
+    "__num_online_cpus",
+    "__platform_driver_register",
+    "__put_cred",
+    "__rcu_read_lock",
+    "__rcu_read_unlock",
+    "__release_region",
+    "__request_region",
+    "__tasklet_hi_schedule",
+    "__tasklet_schedule",
+    "__vmalloc",
+    "__wake_up",
+    "_raw_read_lock",
+    "_raw_read_unlock",
+    "_raw_spin_lock",
+    "_raw_spin_lock_bh",
+    "_raw_spin_lock_irq",
+    "_raw_spin_lock_irqsave",
+    "_raw_spin_trylock",
+    "_raw_spin_unlock",
+    "_raw_spin_unlock_bh",
+    "_raw_spin_unlock_irq",
+    "_raw_spin_unlock_irqrestore",
+    "_raw_write_lock",
+    "_raw_write_unlock",
+    "add_timer",
+    "alloc_chrdev_region",
+    "alloc_workqueue",
+    "atomic_notifier_call_chain",
+    "atomic_notifier_chain_register",
+    "atomic_notifier_chain_unregister",
+    "autoremove_wake_function",
+    "blocking_notifier_call_chain",
+    "blocking_notifier_chain_register",
+    "blocking_notifier_chain_unregister",
+    "bsearch",
+    "call_rcu",
+    "cancel_delayed_work",
+    "cancel_delayed_work_sync",
+    "cancel_work_sync",
+    "capable",
+    "complete",
+    "complete_all",
+    "completion_done",
+    "consume_skb",
+    "cpu_number",
+    "debugfs_create_bool",
+    "debugfs_create_dir",
+    "debugfs_create_file",
+    "debugfs_create_u32",
+    "debugfs_create_u64",
+    "debugfs_remove",
+    "del_timer",
+    "del_timer_sync",
+    "delayed_work_timer_fn",
+    "destroy_workqueue",
+    "disable_irq",
+    "disable_irq_nosync",
+    "dma_alloc_attrs",
+    "dma_free_attrs",
+    "dma_map_page_attrs",
+    "dma_set_coherent_mask",
+    "dma_set_mask",
+    "dma_unmap_page_attrs",
+    "down",
+    "down_interruptible",
+    "down_read",
+    "down_read_trylock",
+    "down_timeout",
+    "down_trylock",
+    "down_write",
+    "down_write_trylock",
+    "downgrade_write",
+    "enable_irq",
+    "fd_install",
+    "fget",
+    "filp_close",
+    "find_task_by_vpid",
+    "finish_wait",
+    "flush_work",
+    "flush_workqueue",
+    "fput",
+    "free_irq",
+    "get_random_bytes",
+    "get_random_u32",
+    "get_random_u64",
+    "get_unused_fd_flags",
+    "hrtimer_cancel",
+    "hrtimer_forward",
+    "hrtimer_init",
+    "hrtimer_start_range_ns",
+    "hrtimer_try_to_cancel",
+    "idr_alloc",
+    "idr_destroy",
+    "idr_find",
+    "idr_get_next",
+    "idr_remove",
+    "init_timer_key",
+    "input_allocate_device",
+    "input_event",
+    "input_free_device",
+    "input_register_device",
+    "input_set_capability",
+    "input_unregister_device",
+    "iomem_resource",
+    "iounmap",
+    "irq_of_parse_and_map",
+    "irq_set_irq_type",
+    "jiffies",
+    "kernel_bind",
+    "kernel_connect",
+    "kernel_kobj",
+    "kernel_recvmsg",
+    "kernel_sendmsg",
+    "kfree",
+    "kobject_create_and_add",
+    "kobject_del",
+    "kobject_init_and_add",
+    "kobject_put",
+    "krealloc",
+    "kthread_create_on_node",
+    "kthread_park",
+    "kthread_parkme",
+    "kthread_should_park",
+    "kthread_should_stop",
+    "kthread_stop",
+    "kthread_unpark",
+    "ktime_get",
+    "ktime_get_real_ts64",
+    "ktime_get_ts64",
+    "ktime_get_with_offset",
+    "kvfree",
+    "kvmalloc_node",
+    "memcmp",
+    "memcpy",
+    "memdup_user",
+    "memmove",
+    "memset",
+    "misc_deregister",
+    "misc_register",
+    "mod_delayed_work_on",
+    "mod_timer",
+    "msleep",
+    "msleep_interruptible",
+    "mutex_lock",
+    "mutex_lock_interruptible",
+    "mutex_trylock",
+    "mutex_unlock",
+    "netlink_broadcast",
+    "netlink_kernel_release",
+    "netlink_unicast",
+    "nf_register_net_hook",
+    "nf_register_net_hooks",
+    "nf_unregister_net_hook",
+    "nf_unregister_net_hooks",
+    "nr_cpu_ids",
+    "ns_capable",
+    "of_find_compatible_node",
+    "of_find_node_by_name",
+    "of_find_node_opts_by_path",
+    "of_find_property",
+    "of_property_count_elems_of_size",
+    "of_property_read_string",
+    "of_property_read_u64",
+    "of_property_read_variable_u32_array",
+    "platform_driver_unregister",
+    "platform_get_irq",
+    "platform_get_resource",
+    "prepare_to_wait",
+    "prepare_to_wait_event",
+    "proc_create",
+    "proc_create_data",
+    "proc_create_seq_private",
+    "proc_mkdir",
+    "proc_remove",
+    "put_unused_fd",
+    "queue_delayed_work_on",
+    "queue_work_on",
+    "rb_erase",
+    "rb_first",
+    "rb_first_postorder",
+    "rb_insert_color",
+    "rb_last",
+    "rb_next",
+    "rb_next_postorder",
+    "rb_prev",
+    "rb_replace_node",
+    "rcu_barrier",
+    "register_chrdev_region",
+    "register_kprobe",
+    "register_reboot_notifier",
+    "regmap_read",
+    "regmap_update_bits_base",
+    "regmap_write",
+    "release_firmware",
+    "remove_proc_entry",
+    "request_firmware",
+    "request_firmware_nowait",
+    "request_threaded_irq",
+    "schedule",
+    "schedule_timeout",
+    "scnprintf",
+    "send_sig",
+    "send_sig_info",
+    "seq_lseek",
+    "seq_open",
+    "seq_printf",
+    "seq_putc",
+    "seq_read",
+    "seq_release",
+    "seq_write",
+    "sg_alloc_table",
+    "sg_free_table",
+    "sg_init_one",
+    "sg_init_table",
+    "single_open",
+    "single_release",
+    "skb_clone",
+    "skb_copy",
+    "skb_pull",
+    "skb_push",
+    "skb_put",
+    "snprintf",
+    "sock_create_kern",
+    "sock_release",
+    "sort",
+    "strchr",
+    "strcmp",
+    "strcpy",
+    "strlcpy",
+    "strlen",
+    "strncat",
+    "strncmp",
+    "strncpy",
+    "strnlen",
+    "strstr",
+    "synchronize_rcu",
+    "sysfs_create_file_ns",
+    "sysfs_create_group",
+    "sysfs_remove_file_ns",
+    "sysfs_remove_group",
+    "system_wq",
+    "tasklet_init",
+    "tasklet_kill",
+    "try_wait_for_completion",
+    "unregister_chrdev_region",
+    "unregister_kprobe",
+    "unregister_reboot_notifier",
+    "up",
+    "up_read",
+    "up_write",
+    "vfree",
+    "vmalloc",
+    "vmalloc_user",
+    "vzalloc",
+    "wait_for_completion",
+    "wait_for_completion_interruptible",
+    "wait_for_completion_timeout",
+    "wake_up_process"
+  ]
+}

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* neverc_krt_vma.c — virtual memory area operations. */
 #include <nvk.h>
-#include <nvk_internal.h>
+#include "nvk_internal.h"
 
 /* ---- internal types ---- */
 

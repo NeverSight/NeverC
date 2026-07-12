@@ -169,6 +169,11 @@
 #  ifndef NEVERC_KRT_FOPS_SIZE
 #    define NEVERC_KRT_FOPS_SIZE 264
 #  endif
+/* offsetof(struct task_struct, thread_info.cpu) — verified from GKI 6.12
+ * asm-offsets.h (TSK_TI_CPU) and BTF layout evidence. */
+#  ifndef NEVERC_KRT_TASK_CPU
+#    define NEVERC_KRT_TASK_CPU 40
+#  endif
 
 #elif NEVERC_KRT_KERNEL == 618
 /* Android 17, Linux 6.18 (GKI android17-6.18, launched 2025-11-30, KMI gen 5).
@@ -178,7 +183,8 @@
  *
  * vermagic is device-specific: stock GKI uses "6.18.24-android17-5 …".
  * OEM kernels may set CONFIG_LOCALVERSION (e.g. "-4k") — use
- * neverc_krt_patch_vermagic() at runtime or -DNVK_VERMAGIC='"…"' at build. */
+ * neverc_krt_patch_vermagic() at runtime or
+ * -DNEVERC_KRT_VERMAGIC='"…"' at build. */
 #  ifndef NEVERC_KRT_VERMAGIC
 #    define NEVERC_KRT_VERMAGIC                                                        \
        "6.18.24-android17-5 SMP preempt mod_unload modversions aarch64"
@@ -201,10 +207,43 @@
 #  ifndef NEVERC_KRT_FOPS_SIZE
 #    define NEVERC_KRT_FOPS_SIZE 272 /* mmap_prepare added in 6.18 */
 #  endif
+/* offsetof(struct task_struct, thread_info.cpu) — verified from GKI 6.18
+ * asm-offsets.h (TSK_TI_CPU) and BTF layout evidence. */
+#  ifndef NEVERC_KRT_TASK_CPU
+#    define NEVERC_KRT_TASK_CPU 40
+#  endif
 
 #else
 #  error                                                                        \
       "Unknown NEVERC_KRT_KERNEL; use 510 / 515 / 601 / 606 / 612 / 618 or define presets manually"
+#endif
+
+/*
+ * Configuration facts shared by the prepared official arm64 GKI outputs for
+ * Android 12 through Android 17.  These values were read from each output's
+ * generated autoconf.h/.config, not inferred from the kernel version:
+ *
+ *   CONFIG_NR_CPUS=32, CONFIG_ARM64_4K_PAGES=y,
+ *   CONFIG_ARM64_VA_BITS=39, CONFIG_ARM64_PA_BITS=48,
+ *   CONFIG_PGTABLE_LEVELS=3.
+ *
+ * An OEM profile with a different configuration must override the relevant
+ * NEVERC_KRT_* value explicitly before including SDK headers.
+ */
+#ifndef NEVERC_KRT_NR_CPUS
+#define NEVERC_KRT_NR_CPUS 32
+#endif
+#ifndef NEVERC_KRT_PAGE_SHIFT
+#define NEVERC_KRT_PAGE_SHIFT 12
+#endif
+#ifndef NEVERC_KRT_VA_BITS
+#define NEVERC_KRT_VA_BITS 39
+#endif
+#ifndef NEVERC_KRT_PA_BITS
+#define NEVERC_KRT_PA_BITS 48
+#endif
+#ifndef NEVERC_KRT_PGTABLE_LEVELS
+#define NEVERC_KRT_PGTABLE_LEVELS 3
 #endif
 
 /*
@@ -246,18 +285,13 @@
  * for all paths (including neverc_krt_init_all()) without depending
  * on compile-time constants.
  *
- * Optional override: if the user calls _neverc_krt_version_setup()
- * from their own module code BEFORE neverc_krt_mem_init(), the
- * user's compile-time NEVERC_KRT_KERNEL takes precedence.
+ * NEVERC_KRT_BOOTSTRAP() passes the caller's compile-time
+ * NEVERC_KRT_KERNEL into the runtime before subsystem initialization.
+ * Code that enters through neverc_krt_init_all() instead falls back to
+ * banner detection in neverc_krt_mem_init().
  *
  * Safe default: if never set (0), callers fall back to the maximum
  * struct module size across 5.10-6.18 (0x680 = 1664).
  */
-void _neverc_krt_version_setup_impl(int kv);
-
-__always_inline void _neverc_krt_version_setup(void)
-{
-	_neverc_krt_version_setup_impl(NEVERC_KRT_KERNEL);
-}
 
 #endif /* NVKMOD_VERSION_H */

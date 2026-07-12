@@ -1,7 +1,17 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
-volatile int _neverc_krt_log_level = NEVERC_KRT_LOG_DEFAULT_LEVEL;
+static volatile int _neverc_krt_log_level = NEVERC_KRT_LOG_DEFAULT_LEVEL;
+
+void neverc_krt_log_set_level(int level)
+{
+	__atomic_store_n(&_neverc_krt_log_level, level, __ATOMIC_RELEASE);
+}
+
+int neverc_krt_log_get_level(void)
+{
+	return __atomic_load_n(&_neverc_krt_log_level, __ATOMIC_ACQUIRE);
+}
 
 void neverc_krt_log_hexdump(const char *prefix, const void *buf, size_t len)
 {

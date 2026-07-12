@@ -3,22 +3,12 @@
 #define _NEVERC_KRT_LINUX_MM_H
 
 #include <linux/types.h>
+#include <asm/page.h>
 
 struct vm_area_struct; /* opaque */
 struct page;           /* opaque */
 struct mm_struct;      /* opaque */
 
-/*
- * Page size varies across GKI kernels (4K or 16K on ARM64).
- * Use neverc_krt_page_size() / neverc_krt_page_shift() from nvk_addr.h
- * for the runtime-correct value.  These compile-time constants default
- * to 4K for struct sizing only.
- */
-#ifndef PAGE_SHIFT
-#define PAGE_SHIFT 12
-#endif
-#define PAGE_SIZE (1UL << PAGE_SHIFT)
-#define PAGE_MASK (~(PAGE_SIZE - 1))
 #define PAGE_ALIGN(addr) (((addr) + PAGE_SIZE - 1) & PAGE_MASK)
 
 void *memdup_user(const void __user *src, size_t len);

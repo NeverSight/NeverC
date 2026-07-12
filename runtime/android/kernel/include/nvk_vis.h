@@ -41,10 +41,7 @@ void neverc_krt_vis_filter(struct neverc_krt_vis_state *state,
 void neverc_krt_vis_restore(struct neverc_krt_vis_state *state,
 			 struct neverc_krt_this_module *mod);
 
-__always_inline int neverc_krt_vis_is_filtered(struct neverc_krt_vis_state *state)
-{
-	return state->filtered;
-}
+int neverc_krt_vis_is_filtered(const struct neverc_krt_vis_state *state);
 
 void neverc_krt_vis_sysfs_remove(struct neverc_krt_vis_state *state,
 				 struct neverc_krt_this_module *mod);

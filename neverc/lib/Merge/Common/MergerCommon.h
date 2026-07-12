@@ -13,6 +13,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <csetjmp>
@@ -28,12 +29,16 @@ namespace neverc::merge::detail {
 /// applies it to predict where a symbol should land (Verify/MergerVerify.cpp); keeping
 /// them as two hand-synced copies risked one drifting from the other and either
 /// false-rejecting a good merge or masking a real offset bug.  When
-/// \p MergeSections is false, or the name is empty, or it is in \p Preserved,
-/// the name is returned unchanged.
+/// \p MergeSections is false, the name is empty, it is in \p Preserved, or the
+/// section has SHF_MERGE semantics, the name is returned unchanged.  Mergeable
+/// constant/string sections (for example `.rodata.str1.1`) must retain their
+/// distinct names and flags; folding them onto ordinary `.rodata` would create
+/// duplicate output section names because those flag sets are incompatible.
 inline llvm::StringRef
-canonicalELFSectionName(llvm::StringRef Name, bool MergeSections,
+canonicalELFSectionName(llvm::StringRef Name, uint64_t Flags,
+                        bool MergeSections,
                         llvm::ArrayRef<llvm::StringRef> Preserved) {
-  if (!MergeSections || Name.empty())
+  if (!MergeSections || Name.empty() || (Flags & llvm::ELF::SHF_MERGE))
     return Name;
   for (llvm::StringRef P : Preserved)
     if (Name == P)

@@ -17,7 +17,7 @@ const struct neverc_krt_state *neverc_krt_get_state(void)
 
 int neverc_krt_init_all(void)
 {
-	int ret = NEVERC_KRT_BOOTSTRAP();
+	int ret = neverc_krt_bootstrap(1, 0);
 	if (ret) return ret;
 
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_MEM]     = neverc_krt_mem_init();
@@ -49,27 +49,31 @@ int neverc_krt_init_all(void)
 	return _neverc_krt_state.sub_status[NEVERC_KRT_SUB_INTERPOSE];
 }
 
-int _neverc_krt_interpose_by_sym(struct neverc_krt_interpose *h, const char *sym_name,
-			    void *replace, void **orig)
+int neverc_krt_interpose_by_name(struct neverc_krt_interpose *h,
+				 const char *symbol_name,
+				 void *replace, void **orig)
 {
-	void *target = (void *)kallsyms_lookup_name(sym_name);
+	void *target = (void *)kallsyms_lookup_name(symbol_name);
 	if (!target) return -1;
 	return neverc_krt_interpose_install(h, target, replace, orig);
 }
 
-int _neverc_krt_interpose_ctx_by_sym(struct neverc_krt_interpose_ctx *h, const char *sym_name,
-				neverc_krt_ctx_handler_t handler, void **call_orig)
+int neverc_krt_interpose_ctx_by_name(struct neverc_krt_interpose_ctx *h,
+				     const char *symbol_name,
+				     neverc_krt_ctx_handler_t handler,
+				     void **call_orig)
 {
-	void *target = (void *)kallsyms_lookup_name(sym_name);
+	void *target = (void *)kallsyms_lookup_name(symbol_name);
 	if (!target) return -1;
 	return neverc_krt_interpose_install_ctx(h, target, handler, call_orig);
 }
 
-int _neverc_krt_interpose_auto_by_sym(struct neverc_krt_interpose *h, const char *sym_name,
-				 void *replace, void **orig,
-				 struct neverc_krt_ftrace_interpose *ft)
+int neverc_krt_interpose_auto_by_name(struct neverc_krt_interpose *h,
+				      const char *symbol_name,
+				      void *replace, void **orig,
+				      struct neverc_krt_ftrace_interpose *ft)
 {
-	void *target = (void *)kallsyms_lookup_name(sym_name);
+	void *target = (void *)kallsyms_lookup_name(symbol_name);
 	if (!target) return -1;
 	return neverc_krt_interpose_auto(h, target, replace, orig, ft);
 }

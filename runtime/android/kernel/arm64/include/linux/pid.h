@@ -22,9 +22,11 @@ enum pid_type {
  * neverc_krt_find_task (NEVERC_KRT_LOOKUP-based) instead.
  */
 struct task_struct *find_task_by_vpid(pid_t vpid);
+#ifdef NEVERC_KRT_NON_KMI_API
 pid_t pid_vnr(struct pid *pid);
 void put_pid(struct pid *pid);
 pid_t task_pid_nr(struct task_struct *tsk);
 pid_t task_tgid_nr(struct task_struct *tsk);
+#endif
 
 #endif /* _NEVERC_KRT_LINUX_PID_H */

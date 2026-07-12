@@ -9,7 +9,7 @@ struct task_struct; /* opaque */
 struct mm_struct;   /* opaque */
 struct pid;         /* opaque */
 
-__always_inline struct task_struct *get_current(void)
+static __always_inline struct task_struct *get_current(void)
 {
 	unsigned long sp_el0;
 	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(sp_el0));

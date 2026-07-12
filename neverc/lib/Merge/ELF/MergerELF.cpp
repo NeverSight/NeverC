@@ -380,7 +380,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         if (S.sh_link != 0 && S.sh_link < Secs.size()) {
           if (auto LN = EF.getSectionName(Secs[S.sh_link]))
             LinkTargetName = detail::canonicalELFSectionName(
-                *LN, Opts.mergeSections, Opts.preservedSections);
+                *LN, Secs[S.sh_link].sh_flags, Opts.mergeSections,
+                Opts.preservedSections);
           else
             consumeError(LN.takeError());
         }
@@ -388,7 +389,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       // Canonicalize per-symbol sections (.text.foo -> .text, ...) via the
       // single shared helper the verifier also uses, so the two never drift.
-      SecName = detail::canonicalELFSectionName(SecName, Opts.mergeSections,
+      SecName = detail::canonicalELFSectionName(SecName, S.sh_flags,
+                                                Opts.mergeSections,
                                                 Opts.preservedSections);
 
       if (Opts.dropDebugInfo &&

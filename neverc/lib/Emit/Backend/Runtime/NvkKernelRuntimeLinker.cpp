@@ -4,7 +4,6 @@
 #include "neverc/Foundation/Builtin/BuiltinNvkKernelNames.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Module.h"
 #include "llvm/TargetParser/Triple.h"
@@ -12,6 +11,13 @@
 
 using namespace llvm;
 using namespace neverc;
+
+namespace {
+
+constexpr StringLiteral NvkRuntimeMetadata = "neverc.nvk.runtime";
+constexpr StringLiteral NvkRuntimeLocalPrefix = "__neverc_nvk_local.";
+
+} // namespace
 
 PreservedAnalyses
 NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
@@ -27,9 +33,7 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     return PreservedAnalyses::all();
 
   auto NvkMod = parseBitcodeAndPrepare(Embedded, M, "nvk kernel runtime");
-
-  StringSet<> NvkFnNames, NvkGlobalNames;
-  captureDefinitionNames(*NvkMod, NvkFnNames, NvkGlobalNames);
+  namespaceRuntimeLocals(*NvkMod, NvkRuntimeLocalPrefix);
 
   // Call-graph + data-graph prune: keep only symbols transitively
   // reachable from user references (walks both function bodies AND
@@ -89,36 +93,30 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     poisonAndErase(GV);
   }
 
+  tagRuntimeDefinitions(*NvkMod, NvkRuntimeMetadata);
   linkModuleOrFail(M, std::move(NvkMod), "nvk kernel runtime");
 
-  auto IsNvkFn = [&](const Function &F) {
-    return NvkFnNames.count(F.getName()) != 0;
+  auto IsNvkFn = [](const Function &F) {
+    return hasRuntimeDefinitionTag(F, NvkRuntimeMetadata);
   };
-  auto IsNvkGlobal = [&](const GlobalVariable &GV) {
-    return NvkGlobalNames.count(GV.getName()) != 0;
+  auto IsNvkGlobal = [](const GlobalVariable &GV) {
+    return hasRuntimeDefinitionTag(GV, NvkRuntimeMetadata);
   };
 
-  // In pre-link (auto-lto) mode, use LinkOnceODR so that multiple TUs
-  // sharing the same runtime symbols get merged correctly at LTO link
-  // time.  With InternalLinkage, each TU would get an independent copy
-  // of runtime globals (like _neverc_krt_mem_inited), breaking shared
-  // state across TUs.
-  GlobalValue::LinkageTypes NewLinkage = IsPreLink
-      ? GlobalValue::LinkOnceODRLinkage
-      : GlobalValue::InternalLinkage;
+  // Every consumer TU may independently request the same runtime definition.
+  // Keep those copies coalescible through both LTO and native -r links so
+  // mutable runtime state remains shared in explicit -fno-lto builds too.
+  auto MakeCoalescible = [](GlobalObject &GO) {
+    GO.setLinkage(GlobalValue::LinkOnceODRLinkage);
+    GO.setVisibility(GlobalValue::HiddenVisibility);
+  };
 
   for (Function &F : M)
-    if (IsNvkFn(F)) {
-      F.setLinkage(NewLinkage);
-      if (IsPreLink)
-        F.setVisibility(GlobalValue::HiddenVisibility);
-    }
+    if (IsNvkFn(F))
+      MakeCoalescible(F);
   for (GlobalVariable &GV : M.globals())
-    if (!GV.isDeclaration() && IsNvkGlobal(GV)) {
-      GV.setLinkage(NewLinkage);
-      if (IsPreLink)
-        GV.setVisibility(GlobalValue::HiddenVisibility);
-    }
+    if (!GV.isDeclaration() && IsNvkGlobal(GV) && !GV.hasAppendingLinkage())
+      MakeCoalescible(GV);
 
   if (IsPreLink) {
     // Pre-link: skip DCE. The LTO optimizer will internalize and DCE
@@ -129,10 +127,12 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
         return true;
       return false;
     });
+    clearRuntimeDefinitionTags(M, NvkRuntimeMetadata);
     return PreservedAnalyses::none();
   }
 
-  // Non-LTO path: full mark-and-sweep DCE for internalized symbols.
+  // Non-LTO path: full mark-and-sweep DCE while retained definitions remain
+  // linkonce_odr for the later native link.
   SmallPtrSet<GlobalValue *, 32> Live;
   SmallVector<GlobalValue *, 32> ReachWorklist;
 
@@ -188,5 +188,6 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     return false;
   });
 
+  clearRuntimeDefinitionTags(M, NvkRuntimeMetadata);
   return PreservedAnalyses::none();
 }

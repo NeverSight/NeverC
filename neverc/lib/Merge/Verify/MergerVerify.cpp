@@ -79,6 +79,10 @@ struct RawSym {
   uint8_t type() const { return Info & 0xf; }
 };
 
+bool isCoalescibleDefinition(const RawSym &S) {
+  return S.bind() == ELF::STB_WEAK || S.bind() == ELF::STB_GNU_UNIQUE;
+}
+
 struct RawRela {
   unsigned TargetSec = 0; // section the relocation applies to (sh_info)
   uint64_t Offset = 0;
@@ -248,8 +252,8 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
 // Common/MergerCommon.h that ELF/MergerELF.cpp's Phase-1 renaming also calls — so the
 // verifier predicts exactly the output section name the merger produced, with
 // no second copy to drift out of sync.
-StringRef mergedSectionName(StringRef SecName, const Options &Opts) {
-  return detail::canonicalELFSectionName(SecName, Opts.mergeSections,
+StringRef mergedSectionName(const RawSec &Sec, const Options &Opts) {
+  return detail::canonicalELFSectionName(Sec.Name, Sec.Flags, Opts.mergeSections,
                                          Opts.preservedSections);
 }
 
@@ -556,6 +560,8 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
   // input section, grouped by the merged output section it folded into, checked
   // for overlap/overflow after every input is processed.
   DenseMap<unsigned, SmallVector<OutSecRange, 0>> SecRanges;
+  std::set<std::string> CoalescibleDecidable;
+  std::set<std::string> CoalescibleMatched;
 
   for (unsigned p = 0; p < Inputs.size(); ++p) {
     if (Inputs[p].empty())
@@ -585,7 +591,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       const RawSec &TS = In.Secs[R.TargetSec];
       if (!(TS.Flags & SHF_LINK_ORDER) || isExcludedInputSection(TS, Opts))
         continue;
-      InLinkOrderRelCount[mergedSectionName(TS.Name, Opts).str()]++;
+      InLinkOrderRelCount[mergedSectionName(TS, Opts).str()]++;
     }
 
     for (const RawSym &S : In.Syms) {
@@ -604,6 +610,44 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if (It == OutByName.end())
         return fail(Err, "verify: defined input symbol '" + S.Name +
                              "' missing from merged output");
+      if (isCoalescibleDefinition(S)) {
+        // A weak/unique definition may legitimately resolve to a different
+        // input's copy. It is therefore not an offset anchor for this input
+        // section. Still require the surviving output body to match at least
+        // one of the input definitions whenever bytes are available.
+        bool HasDefinition = false;
+        auto MIt = OutByNameMulti.find(S.Name);
+        if (MIt != OutByNameMulti.end())
+          for (int Idx : MIt->second) {
+            const RawSym &Cand = Out.Syms[(unsigned)Idx];
+            if (Cand.Shndx != 0 && Cand.Shndx < SHN_LORESERVE &&
+                Cand.Shndx < Out.Secs.size()) {
+              HasDefinition = true;
+              const RawSec &CandSec = Out.Secs[Cand.Shndx];
+              StringRef Expected = mergedSectionName(InSec, Opts);
+              if (InSec.Type == SHT_NOBITS || CandSec.Type == SHT_NOBITS ||
+                  CandSec.Name != Expected || S.Value > InSec.Size ||
+                  Cand.Value > CandSec.Size)
+                continue;
+              ArrayRef<uint8_t> InData = In.secData(S.Shndx);
+              ArrayRef<uint8_t> OutData = Out.secData(Cand.Shndx);
+              uint64_t Avail =
+                  std::min(InSec.Size - S.Value, CandSec.Size - Cand.Value);
+              uint64_t W = std::min<uint64_t>(16, Avail);
+              if (W == 0 || S.Value + W > InData.size() ||
+                  Cand.Value + W > OutData.size())
+                continue;
+              CoalescibleDecidable.insert(S.Name.str());
+              if (memcmp(InData.data() + S.Value,
+                         OutData.data() + Cand.Value, W) == 0)
+                CoalescibleMatched.insert(S.Name.str());
+            }
+          }
+        if (!HasDefinition)
+          return fail(Err, "verify: coalescible input symbol '" + S.Name +
+                               "' has no definition in merged output");
+        continue;
+      }
       if (It->second < 0) {
         // Name is not unique in the output (e.g. two file-local statics that
         // share a name).  The unique-name anchor below can't be used, but a
@@ -616,7 +660,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         if (InSec.Type == SHT_NOBITS || S.Value > InSec.Size)
           continue;
         ArrayRef<uint8_t> InData = In.secData(S.Shndx);
-        StringRef Expected = mergedSectionName(InSec.Name, Opts);
+        StringRef Expected = mergedSectionName(InSec, Opts);
         bool AnyDecidable = false, AnyMatch = false;
         auto MIt = OutByNameMulti.find(S.Name);
         if (MIt == OutByNameMulti.end())
@@ -664,7 +708,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                              "' points at an out-of-range section in the output");
       const RawSec &OutSec = Out.Secs[OutSym.Shndx];
 
-      StringRef Expected = mergedSectionName(InSec.Name, Opts);
+      StringRef Expected = mergedSectionName(InSec, Opts);
       if (OutSec.Name != Expected)
         return fail(Err, "verify: symbol '" + S.Name + "' landed in section '" +
                              OutSec.Name + "' but expected '" + Expected + "'");
@@ -704,6 +748,8 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       DenseMap<unsigned, SecShift> Shift;
       for (const RawSym &S : In.Syms) {
         if (S.Name.empty() || S.type() == STT_SECTION)
+          continue;
+        if (isCoalescibleDefinition(S))
           continue;
         if (S.Shndx == 0 || S.Shndx >= SHN_LORESERVE || S.Shndx >= In.Secs.size())
           continue;
@@ -748,6 +794,8 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       for (const RawSym &S : In.Syms) {
         if (S.Name.empty() || S.type() == STT_SECTION)
           continue;
+        if (isCoalescibleDefinition(S))
+          continue;
         if (S.Shndx == 0 || S.Shndx >= SHN_LORESERVE ||
             S.Shndx >= In.Secs.size())
           continue;
@@ -789,6 +837,8 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     for (const RawSym &S : In.Syms) {
       if (S.Name.empty() || S.type() == STT_SECTION)
         continue;
+      if (isCoalescibleDefinition(S))
+        continue;
       if (S.Shndx == 0 || S.Shndx >= SHN_LORESERVE || S.Shndx >= In.Secs.size())
         continue;
       auto It = OutByName.find(S.Name);
@@ -828,9 +878,9 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         continue;
       uint64_t Expected =
           Out.Syms[(unsigned)OIt->second].Value + (R.Offset - Best->first);
-      StringRef MergedSec = mergedSectionName(T.Name, Opts);
+      StringRef MergedSec = mergedSectionName(T, Opts);
       if (IsSecTarget) {
-        StringRef TgtSec = mergedSectionName(In.Secs[Tgt.Shndx].Name, Opts);
+        StringRef TgtSec = mergedSectionName(In.Secs[Tgt.Shndx], Opts);
         auto MIt = OutSecRelocs.find(
             (MergedSec + "\x01" + TgtSec + "\x01" + Twine(R.Type)).str());
         if (MIt == OutSecRelocs.end() || !MIt->second.count(Expected))
@@ -866,6 +916,12 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                              "corrupted)");
     }
   }
+
+  for (const std::string &Name : CoalescibleDecidable)
+    if (!CoalescibleMatched.count(Name))
+      return fail(Err, "verify: coalescible symbol '" + Name +
+                           "' has no surviving definition whose content "
+                           "matches any input copy");
 
   // Count half of the SHF_LINK_ORDER conservation check: every input
   // contribution must survive into the merged section (the distinct-offset half

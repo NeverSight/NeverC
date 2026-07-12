@@ -6,27 +6,33 @@
 #include <linux/compiler.h>
 #include <asm/barrier.h>
 
-/* ioremap / iounmap (resolve dynamically for cross-version safety). */
-void __iomem *ioremap(phys_addr_t phys_addr, size_t size);
+/* ioremap is not in the GKI KMI; the embedded runtime resolves it lazily. */
+void *neverc_krt_ioremap(phys_addr_t phys_addr, size_t size);
 void iounmap(volatile void __iomem *addr);
 
+static __always_inline void __iomem *
+ioremap(phys_addr_t phys_addr, size_t size)
+{
+	return (void __iomem *)neverc_krt_ioremap(phys_addr, size);
+}
+
 /* Raw MMIO accessors (no barrier). */
-__always_inline u8  __raw_readb(const volatile void __iomem *addr)
+static __always_inline u8  __raw_readb(const volatile void __iomem *addr)
 { return *(const volatile u8 *)addr; }
-__always_inline u16 __raw_readw(const volatile void __iomem *addr)
+static __always_inline u16 __raw_readw(const volatile void __iomem *addr)
 { return *(const volatile u16 *)addr; }
-__always_inline u32 __raw_readl(const volatile void __iomem *addr)
+static __always_inline u32 __raw_readl(const volatile void __iomem *addr)
 { return *(const volatile u32 *)addr; }
-__always_inline u64 __raw_readq(const volatile void __iomem *addr)
+static __always_inline u64 __raw_readq(const volatile void __iomem *addr)
 { return *(const volatile u64 *)addr; }
 
-__always_inline void __raw_writeb(u8 val, volatile void __iomem *addr)
+static __always_inline void __raw_writeb(u8 val, volatile void __iomem *addr)
 { *(volatile u8 *)addr = val; }
-__always_inline void __raw_writew(u16 val, volatile void __iomem *addr)
+static __always_inline void __raw_writew(u16 val, volatile void __iomem *addr)
 { *(volatile u16 *)addr = val; }
-__always_inline void __raw_writel(u32 val, volatile void __iomem *addr)
+static __always_inline void __raw_writel(u32 val, volatile void __iomem *addr)
 { *(volatile u32 *)addr = val; }
-__always_inline void __raw_writeq(u64 val, volatile void __iomem *addr)
+static __always_inline void __raw_writeq(u64 val, volatile void __iomem *addr)
 { *(volatile u64 *)addr = val; }
 
 /* Ordered MMIO accessors (with barriers). */

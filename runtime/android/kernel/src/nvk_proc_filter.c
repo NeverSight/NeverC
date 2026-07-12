@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* nvk_proc_filter.c — Proc filesystem filters and content rewrite. */
 #include <nvk.h>
-#include <nvk_internal.h>
+#include "nvk_internal.h"
 
 static __always_inline int _neverc_krt_str_contains(const char *haystack,
 						    const char *needle)
@@ -52,7 +52,7 @@ struct neverc_krt_vis_net_state {
 };
 
 struct neverc_krt_vis_file_rewrite_entry {
-	char path[NEVERC_KRT_FILE_PATH_MAX];
+	char path[NEVERC_KRT_VIS_FILE_PATH_MAX];
 	char search[NEVERC_KRT_VIS_FILE_REWRITE_MAX_LEN];
 	char replace[NEVERC_KRT_VIS_FILE_REWRITE_MAX_LEN];
 	int  search_len;
@@ -815,7 +815,7 @@ int neverc_krt_vis_file_rewrite_add(const char *path,
 		&_neverc_krt_file_rewrites[_neverc_krt_vis_file_rewrite_cnt];
 
 	int i = 0;
-	while (path[i] && i < NEVERC_KRT_FILE_PATH_MAX - 1) {
+	while (path[i] && i < NEVERC_KRT_VIS_FILE_PATH_MAX - 1) {
 		e->path[i] = path[i]; i++;
 	}
 	e->path[i] = '\0';

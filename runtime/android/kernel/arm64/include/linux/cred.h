@@ -3,6 +3,7 @@
 #define _NEVERC_KRT_LINUX_CRED_H
 
 #include <linux/types.h>
+#include <linux/compiler.h>
 #include <nvkmod_version.h>
 
 /*
@@ -55,8 +56,18 @@ typedef struct {
 #define CAP_NET_ADMIN      12
 #define CAP_NET_RAW        13
 
-struct cred *prepare_creds(void);
-int commit_creds(struct cred *new_cred);
+void *neverc_krt_prepare_creds(void);
+int neverc_krt_commit_creds(void *cred);
+
+static __always_inline struct cred *prepare_creds(void)
+{
+	return (struct cred *)neverc_krt_prepare_creds();
+}
+
+static __always_inline int commit_creds(struct cred *new_cred)
+{
+	return neverc_krt_commit_creds(new_cred);
+}
 
 /*
  * Cred helper export status (verified from System.map __ksymtab):
@@ -78,7 +89,8 @@ void __put_cred(struct cred *cred);
 #define abort_creds(cred) __put_cred(cred)
 #endif
 
-#if NEVERC_KRT_KERNEL >= 515 && NEVERC_KRT_KERNEL < 618
+#if defined(NEVERC_KRT_NON_KMI_API) && NEVERC_KRT_KERNEL >= 515 && \
+	NEVERC_KRT_KERNEL < 618
 const struct cred *override_creds(const struct cred *new_cred);
 void revert_creds(const struct cred *old);
 #endif

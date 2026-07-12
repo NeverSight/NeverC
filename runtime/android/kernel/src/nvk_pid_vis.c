@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* nvk_pid_vis.c — /proc/pid directory filtering via readdir interception. */
 #include <nvk.h>
-#include <nvk_internal.h>
+#include "nvk_internal.h"
 
 /* ---- internal typedefs ---- */
 
