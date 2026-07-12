@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* nvk_proc_filter.c — Proc filesystem filters and content rewrite. */
 #include <nvk.h>
+#include <linux/errno.h>
 #include "nvk_internal.h"
 
 static __always_inline int _neverc_krt_str_contains(const char *haystack,
@@ -298,11 +299,10 @@ static long _neverc_krt_kmsg_read_filter(void *filp, char __user *buf,
 	if (ret <= 0 || !_neverc_krt_dmesg_filter_cnt)
 		return ret;
 
-	if (_neverc_krt_copy_from_user && _neverc_krt_copy_to_user && ret < 512) {
+	if (ret < 512) {
 		char tmp[512];
-		unsigned long missed =
-			_neverc_krt_copy_from_user(tmp, buf, (unsigned long)ret);
-		if (!missed) {
+		if (!neverc_krt_mem_read_user(
+			    tmp, buf, (size_t)ret)) {
 			tmp[ret < 511 ? ret : 511] = '\0';
 			if (_neverc_krt_dmesg_should_suppress(tmp)) {
 				if (ppos && *ppos >= ret)
@@ -392,12 +392,11 @@ static long _neverc_krt_proc_attr_read_filter(void *file, char __user *buf,
 
 	ret = _neverc_krt_orig_proc_attr_read(file, buf, count, ppos);
 
-	if (ret > 0 && _neverc_krt_attr_rewrite_ctx && _neverc_krt_copy_to_user &&
-	    _neverc_krt_copy_from_user) {
+	if (ret > 0 && _neverc_krt_attr_rewrite_ctx) {
 		char tmp[128];
 		size_t rlen = (size_t)ret;
 		if (rlen > sizeof(tmp) - 1) rlen = sizeof(tmp) - 1;
-		if (!_neverc_krt_copy_from_user(tmp, buf, rlen)) {
+		if (!neverc_krt_mem_read_user(tmp, buf, rlen)) {
 			tmp[rlen] = '\0';
 			int has_colon = 0;
 			size_t i;
@@ -409,12 +408,13 @@ static long _neverc_krt_proc_attr_read_filter(void *file, char __user *buf,
 				size_t flen = 0;
 				while (fake[flen]) flen++;
 				if (flen > 0 && flen < count) {
-					_neverc_krt_copy_to_user(buf, fake, flen);
 					char nl = '\n';
-					if (flen + 1 < count)
-						_neverc_krt_copy_to_user(
-							(char __user *)buf + flen,
-							&nl, 1);
+					if (neverc_krt_mem_write_user(
+						    buf, fake, flen) ||
+					    neverc_krt_mem_write_user(
+						    (char __user *)buf + flen,
+						    &nl, 1))
+						return -EFAULT;
 					ret = (long)(flen + 1);
 				}
 			}
@@ -601,11 +601,10 @@ static long _neverc_krt_cmdline_read_filter(void *file, char __user *buf,
 	if (ret <= 0 || !_neverc_krt_vis_cmdline_filter_cnt)
 		return ret;
 
-	if (_neverc_krt_copy_from_user && ret < 256) {
+	if (ret < 256) {
 		char tmp[256];
-		unsigned long missed =
-			_neverc_krt_copy_from_user(tmp, buf, (unsigned long)ret);
-		if (!missed) {
+		if (!neverc_krt_mem_read_user(
+			    tmp, buf, (size_t)ret)) {
 			tmp[ret < 255 ? ret : 255] = '\0';
 			int k;
 			for (k = 0; k < _neverc_krt_vis_cmdline_filter_cnt; k++) {
@@ -694,8 +693,7 @@ static long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
 	if (!_neverc_krt_orig_vfs_read) return -1;
 
 	ret = _neverc_krt_orig_vfs_read(file, buf, count, pos);
-	if (ret <= 0 || !_neverc_krt_vis_file_rewrite_cnt || !_neverc_krt_copy_from_user ||
-	    !_neverc_krt_copy_to_user)
+	if (ret <= 0 || !_neverc_krt_vis_file_rewrite_cnt)
 		return ret;
 
 	int k;
@@ -707,9 +705,8 @@ static long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
 		if (ret > 512 || e->search_len <= 0) continue;
 
 		char tmp[512];
-		unsigned long missed =
-			_neverc_krt_copy_from_user(tmp, buf, (unsigned long)ret);
-		if (missed) continue;
+		if (neverc_krt_mem_read_user(tmp, buf, (size_t)ret))
+			continue;
 
 		int j;
 		for (j = 0; j <= (int)ret - e->search_len; j++) {
@@ -726,8 +723,9 @@ static long _neverc_krt_vfs_read_filter(void *file, char __user *buf,
 				for (q = e->replace_len;
 				     q < e->search_len; q++)
 					tmp[j + q] = ' ';
-				_neverc_krt_copy_to_user(buf, tmp,
-						  (unsigned long)ret);
+				if (neverc_krt_mem_write_user(
+					    buf, tmp, (size_t)ret))
+					return -EFAULT;
 				break;
 			}
 		}

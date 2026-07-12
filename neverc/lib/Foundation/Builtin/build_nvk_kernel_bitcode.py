@@ -149,6 +149,9 @@ def main():
     boundary_checker = os.path.join(
         args.runtime_dir, "tools", "check-source-boundaries.py"
     )
+    user_copy_checker = os.path.join(
+        args.runtime_dir, "tools", "check-user-copy-backend.py"
+    )
 
     sources = sorted(glob.glob(os.path.join(src_dir, "*.c")))
 
@@ -164,6 +167,10 @@ def main():
         print(f"error: boundary checker not found: {boundary_checker}",
               file=sys.stderr)
         sys.exit(1)
+    if not os.path.isfile(user_copy_checker):
+        print(f"error: user-copy checker not found: {user_copy_checker}",
+              file=sys.stderr)
+        sys.exit(1)
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
 
@@ -172,6 +179,14 @@ def main():
         subprocess.check_call([sys.executable, boundary_checker])
     except subprocess.CalledProcessError as e:
         print(f"error: source-boundary check failed (exit {e.returncode})",
+              file=sys.stderr)
+        sys.exit(1)
+
+    print("  [check] user-copy backend", file=sys.stderr)
+    try:
+        subprocess.check_call([sys.executable, user_copy_checker])
+    except subprocess.CalledProcessError as e:
+        print(f"error: user-copy check failed (exit {e.returncode})",
               file=sys.stderr)
         sys.exit(1)
 

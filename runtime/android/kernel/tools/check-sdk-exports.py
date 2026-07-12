@@ -4,6 +4,7 @@
 import argparse
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -53,7 +54,22 @@ def ast_declarations(node, declarations):
         ast_declarations(child, declarations)
 
 
+def resolve_ast_compiler(compiler):
+    """Return a compiler that supports Clang's JSON AST dump."""
+    name = Path(compiler).name
+    if "neverc" in name:
+        clang = shutil.which("clang")
+        if clang is None:
+            raise RuntimeError(
+                f"{compiler} does not support -Xclang -ast-dump=json; "
+                "install clang or pass --compiler clang"
+            )
+        return clang
+    return compiler
+
+
 def sdk_declarations(compiler, kernel):
+    compiler = resolve_ast_compiler(compiler)
     builtin_include = find_builtin_include(compiler)
     command = [
         compiler,

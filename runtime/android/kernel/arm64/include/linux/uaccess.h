@@ -5,11 +5,10 @@
 #include <linux/types.h>
 
 /*
- * GKI kernels do NOT export copy_{from,to}_user directly.
- * Resolve via NEVERC_KRT_LOOKUP("_copy_from_user") at runtime.
- * Type signatures for function pointers:
- *   unsigned long (*)(void *, const void __user *, unsigned long)
- *   unsigned long (*)(void __user *, const void *, unsigned long)
+ * ARM64 copy_{from,to}_user implementations are inline and may become
+ * translation-unit-local ThinLTO/CFI clones.  They are not callable symbol
+ * ABIs and must not be resolved by name.  Runtime and SDK code should use
+ * neverc_krt_mem_read_user() and neverc_krt_mem_write_user().
  */
 
 #endif /* _NEVERC_KRT_LINUX_UACCESS_H */

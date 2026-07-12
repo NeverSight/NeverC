@@ -37,12 +37,6 @@
 
 /* ---- Shared typedefs (used across multiple .c files) ---- */
 
-typedef unsigned long (*neverc_krt_copy_from_user_fn)(void *to,
-						      const void __user *from,
-						      unsigned long n);
-typedef unsigned long (*neverc_krt_copy_to_user_fn)(void __user *to,
-						    const void *from,
-						    unsigned long n);
 typedef int  (*neverc_krt_pte_rw_fn)(unsigned long addr);
 typedef void *(*neverc_krt_get_task_mm_fn)(struct task_struct *task);
 typedef void  (*neverc_krt_mmput_fn)(void *mm);
@@ -113,11 +107,14 @@ void _neverc_krt_cache_key_init(void);
 
 /* ---- nvk_mem.c ---- */
 
-extern int                          _neverc_krt_mem_inited;
-extern neverc_krt_copy_from_user_fn _neverc_krt_copy_from_user;
-extern neverc_krt_copy_to_user_fn   _neverc_krt_copy_to_user;
-extern neverc_krt_pte_rw_fn         _neverc_krt_pte_make_rw;
-extern neverc_krt_pte_rw_fn         _neverc_krt_pte_make_ro;
+extern int                  _neverc_krt_mem_inited;
+extern neverc_krt_pte_rw_fn _neverc_krt_pte_make_rw;
+extern neverc_krt_pte_rw_fn _neverc_krt_pte_make_ro;
+
+unsigned long _neverc_krt_mem_copy_from_user_compat(
+	void *to, const void __user *from, unsigned long n);
+unsigned long _neverc_krt_mem_copy_to_user_compat(
+	void __user *to, const void *from, unsigned long n);
 
 /* ---- nvk_vma.c (shared with nvk_xmem.c) ---- */
 

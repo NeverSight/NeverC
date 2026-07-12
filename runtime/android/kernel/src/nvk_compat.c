@@ -440,18 +440,14 @@ void *neverc_krt_lookup_printk(void)
 
 void *neverc_krt_lookup_copy_from_user(void)
 {
-	void *sym = NEVERC_KRT_LOOKUP("_copy_from_user");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("raw_copy_from_user");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("copy_from_user");
-	return sym;
+	neverc_krt_mem_init();
+	return (void *)_neverc_krt_mem_copy_from_user_compat;
 }
 
 void *neverc_krt_lookup_copy_to_user(void)
 {
-	void *sym = NEVERC_KRT_LOOKUP("_copy_to_user");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("raw_copy_to_user");
-	if (!sym) sym = NEVERC_KRT_LOOKUP("copy_to_user");
-	return sym;
+	neverc_krt_mem_init();
+	return (void *)_neverc_krt_mem_copy_to_user_compat;
 }
 
 void *neverc_krt_lookup_probe_read(void)
