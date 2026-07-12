@@ -516,34 +516,26 @@ if(NEVERC_PLUGIN_SUPPORT)
 endif()
 
 add_dependencies(neverc neverc-resource-headers)
-
-# Bundled SDK trees staged under <build>/runtime.  A targeted build
-# (`--target neverc` / `--target neverc-embed-runtime-bitcode`) does not
-# build ALL custom targets, so these must be explicit dependencies —
-# otherwise mimalloc/std bootstrap cross-compiles fail with missing
-# system headers (e.g. <wchar.h>) on a fresh CI tree.
-#
-# Shared MSVC headers are needed on every host (Win / Linux / Darwin
-# bootstrap of the win mimalloc bitcode).  Host-arch MSVC libs are only
-# required when linking on Windows itself.
-set(_neverc_full_runtime_deps neverc-runtime-shared-msvc)
-if(CMAKE_HOST_WIN32)
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
-    list(APPEND _neverc_full_runtime_deps neverc-runtime-arm64-msvc)
-  else()
-    list(APPEND _neverc_full_runtime_deps neverc-runtime-x64-msvc)
-  endif()
+if(TARGET neverc-runtime-android-kernel)
+  # Stage the kernel SDK next to the binary so -fandroid-kernel-driver-mode
+  # finds headers/libs relative to InstalledDir without a full SDK copy.
+  add_dependencies(neverc neverc-runtime-android-kernel)
 endif()
-foreach(_rt_tgt neverc-runtime-linux-x64
-                neverc-runtime-linux-arm64
-                neverc-runtime-android-arm64
-                neverc-runtime-android-kernel
-                neverc-runtime-macos-arm64)
-  if(TARGET ${_rt_tgt})
-    list(APPEND _neverc_full_runtime_deps ${_rt_tgt})
-  endif()
-endforeach()
-add_dependencies(neverc ${_neverc_full_runtime_deps})
+
+# Mimalloc per-OS bootstrap cross-compiles need the matching bundled
+# sysroot headers (e.g. <wchar.h>).  runtime/ is add_subdirectory'd after
+# lib/, so these edges cannot be declared in Foundation/CMakeLists.txt —
+# wire them here once both sides of the graph exist.
+#
+# darwin uses the host Apple SDK; no bundled macos sysroot required.
+# A targeted `--target neverc-embed-runtime-bitcode` then pulls only what
+# bootstrap actually needs (~linux + win headers), not the full SDK set.
+if(TARGET neverc-bootstrap-mimalloc-bc-linux AND TARGET neverc-runtime-linux-x64)
+  add_dependencies(neverc-bootstrap-mimalloc-bc-linux neverc-runtime-linux-x64)
+endif()
+if(TARGET neverc-bootstrap-mimalloc-bc-win)
+  add_dependencies(neverc-bootstrap-mimalloc-bc-win neverc-runtime-shared-msvc)
+endif()
 
 # Stage-2 neverc: embed bootstrapped runtime bitcode into the compiler.
 #
@@ -553,11 +545,6 @@ add_dependencies(neverc ${_neverc_full_runtime_deps})
 # `neverc-embed-runtime-bitcode` (or `check-neverc`, which depends on it)
 # over a bare `neverc` whenever embedded string / mimalloc / std / NVK
 # runtimes must be present.
-#
-# Full SDK staging is listed again here so a direct
-# `--target neverc-embed-runtime-bitcode` is self-contained; attaching the
-# same deps to `neverc` above also orders them before bootstrap (bootstrap
-# depends on neverc), avoiding a race with the runtime copy targets.
 if(NEVERC_BUILT_STANDALONE)
   set(_NEVERC_TOP_BUILD_DIR "${CMAKE_BINARY_DIR}")
 else()
@@ -576,7 +563,6 @@ add_custom_target(neverc-embed-runtime-bitcode
   COMMAND ${CMAKE_COMMAND} --build "${_NEVERC_TOP_BUILD_DIR}"
           --config $<CONFIG> --parallel --target neverc
   DEPENDS ${_NEVERC_RUNTIME_BOOTSTRAP_TARGETS}
-          ${_neverc_full_runtime_deps}
   COMMENT "[NeverC] Relinking neverc with embedded runtime bitcode"
   USES_TERMINAL
 )
@@ -674,21 +660,52 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
 
   # The suite compiles & links real programs with the freshly-built neverc,
   # which finds its system headers/libraries from the bundled SDK staged under
-  # <build>/runtime.  neverc-embed-runtime-bitcode (and neverc) already pull
-  # ${_neverc_full_runtime_deps}; list them again so a plain
-  # `--target check-neverc` stays self-contained if that graph changes.
+  # <build>/runtime. Those copy targets are ALL-targets, so a plain
+  # `--target check-neverc` would otherwise skip them and every compile/link
+  # test would fail (no <stdio.h>, no CRT). Depend on them explicitly so the
+  # suite is self-contained.  (neverc-embed-runtime-bitcode only pulls the
+  # narrower sysroots needed for mimalloc bootstrap — not this full set.)
   #
-  # Shared MSVC headers cover WinArm64IntrinTest cross-compiles to
-  # aarch64-pc-windows-msvc.  Linux/Android sysroots cover CrossAArch64 /
-  # CrossAndroid.  The bundled macOS sysroot is required on macos-15+ runners
-  # whose host SDK (macOS 26 / reported 16.0) is rejected by the embedded
-  # MachO linker ("incompatible with arm64 (macOS16.0.0)").
+  # Shared MSVC headers are needed on every host: WinArm64IntrinTest does
+  # cross-compiles to aarch64-pc-windows-msvc and #includes <windows.h>.
+  set(_neverc_check_runtime_deps neverc-runtime-shared-msvc)
+  if(CMAKE_HOST_WIN32)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+      list(APPEND _neverc_check_runtime_deps neverc-runtime-arm64-msvc)
+    else()
+      list(APPEND _neverc_check_runtime_deps neverc-runtime-x64-msvc)
+    endif()
+  endif()
+  # Cross-compilation tests (CrossAArch64, CrossAndroid) need the bundled
+  # Linux/Android sysroots copied into the build tree.
+  if(TARGET neverc-runtime-linux-x64)
+    list(APPEND _neverc_check_runtime_deps neverc-runtime-linux-x64)
+  endif()
+  if(TARGET neverc-runtime-linux-arm64)
+    list(APPEND _neverc_check_runtime_deps neverc-runtime-linux-arm64)
+  endif()
+  if(TARGET neverc-runtime-android-arm64)
+    list(APPEND _neverc_check_runtime_deps neverc-runtime-android-arm64)
+  endif()
+  if(TARGET neverc-runtime-android-kernel)
+    list(APPEND _neverc_check_runtime_deps neverc-runtime-android-kernel)
+  endif()
+  # On macOS the *native* compile/link tests need the bundled macOS sysroot
+  # staged too: getBundledMacOSSysroot() looks for <build>/runtime/macos/<arch>
+  # and only falls back to the host Xcode SDK when it is missing.  That fallback
+  # used to work, but the macos-latest runner now ships macOS 26 (SDK reports
+  # itself as macOS 16.0), whose libSystem.tbd the embedded MachO linker rejects
+  # as "incompatible with arm64 (macOS16.0.0)".  Staging the hermetic bundled
+  # sysroot keeps the suite self-contained and independent of the host SDK.
+  if(TARGET neverc-runtime-macos-arm64)
+    list(APPEND _neverc_check_runtime_deps neverc-runtime-macos-arm64)
+  endif()
   add_custom_target(check-neverc
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG>
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
     DEPENDS neverc-embed-runtime-bitcode
             neverc-tests neverc-build-tests neverc-merge-tests neverc-std-tests
-            ${_neverc_full_runtime_deps}
+            ${_neverc_check_runtime_deps}
     USES_TERMINAL
     COMMENT "Running NeverC test suite (GoogleTest + CTest)")
 
@@ -696,7 +713,7 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG> -R "StdLibTest[.]"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
     DEPENDS neverc-embed-runtime-bitcode neverc-std-tests
-            ${_neverc_full_runtime_deps}
+            ${_neverc_check_runtime_deps}
     USES_TERMINAL
     COMMENT "Running NeverC stdlib tests")
 endif()
