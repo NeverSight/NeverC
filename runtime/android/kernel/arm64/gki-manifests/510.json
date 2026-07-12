@@ -260,6 +260,27 @@
       },
       "size": 24
     },
+    "kobject": {
+      "members": {
+        "android_kabi_reserved1": 64,
+        "android_kabi_reserved2": 72,
+        "android_kabi_reserved3": 80,
+        "android_kabi_reserved4": 88,
+        "entry": 8,
+        "kref": 56,
+        "kset": 32,
+        "ktype": 40,
+        "name": 0,
+        "parent": 24,
+        "sd": 48,
+        "state_add_uevent_sent": 60,
+        "state_in_sysfs": 60,
+        "state_initialized": 60,
+        "state_remove_uevent_sent": 60,
+        "uevent_suppress": 60
+      },
+      "size": 96
+    },
     "kprobe": {
       "members": {
         "addr": 40,
@@ -396,6 +417,16 @@
         "version": 216
       },
       "size": 1024
+    },
+    "module_kobject": {
+      "members": {
+        "drivers_dir": 104,
+        "kobj": 0,
+        "kobj_completion": 120,
+        "mod": 96,
+        "mp": 112
+      },
+      "size": 128
     },
     "mutex": {
       "members": {
@@ -765,6 +796,49 @@
         "wifi_acked_valid": 129
       },
       "size": 240
+    },
+    "sock_common": {
+      "members": {
+        "skc_addrpair": 0,
+        "skc_bind_node": 24,
+        "skc_bound_dev_if": 20,
+        "skc_cookie": 88,
+        "skc_daddr": 0,
+        "skc_dontcopy_begin": 104,
+        "skc_dontcopy_end": 132,
+        "skc_dport": 12,
+        "skc_family": 16,
+        "skc_flags": 96,
+        "skc_hash": 8,
+        "skc_incoming_cpu": 124,
+        "skc_ipv6only": 19,
+        "skc_listener": 96,
+        "skc_net": 48,
+        "skc_net_refcnt": 19,
+        "skc_node": 104,
+        "skc_nulls_node": 104,
+        "skc_num": 14,
+        "skc_portaddr_node": 24,
+        "skc_portpair": 12,
+        "skc_prot": 40,
+        "skc_rcv_saddr": 4,
+        "skc_rcv_wnd": 124,
+        "skc_refcnt": 128,
+        "skc_reuse": 19,
+        "skc_reuseport": 19,
+        "skc_rx_queue_mapping": 122,
+        "skc_rxhash": 132,
+        "skc_state": 18,
+        "skc_tw_dr": 96,
+        "skc_tw_rcv_nxt": 124,
+        "skc_tw_snd_nxt": 132,
+        "skc_tx_queue_mapping": 120,
+        "skc_u16hashes": 8,
+        "skc_v6_daddr": 56,
+        "skc_v6_rcv_saddr": 72,
+        "skc_window_clamp": 132
+      },
+      "size": 136
     },
     "task_struct": {
       "members": {
