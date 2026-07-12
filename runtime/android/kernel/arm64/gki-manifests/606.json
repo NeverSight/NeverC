@@ -23,7 +23,7 @@
     "layout_format": "BTF",
     "layout_sha256": "4c4bcc8266da74b84e24258656d0542f52965b7708a2b3cd305c978c49ed26c3",
     "symvers_sha256": "d48f67ddb2391469ca11ca9e1b08b9404fc016449562a4c69479ae3b2e04fba1",
-    "vmlinux_build_id": null
+    "vmlinux_build_id": "c8217a07b30c199c79ee075785a9e5419a13860e"
   },
   "kernel_name": "android15-6.6",
   "layouts": {
@@ -1391,6 +1391,7 @@
     "platform_driver_unregister",
     "platform_get_irq",
     "platform_get_resource",
+    "preempt_schedule",
     "prepare_to_wait",
     "prepare_to_wait_event",
     "proc_create",

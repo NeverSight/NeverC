@@ -46,8 +46,6 @@ typedef unsigned long (*neverc_krt_copy_to_user_fn)(void __user *to,
 typedef int  (*neverc_krt_pte_rw_fn)(unsigned long addr);
 typedef void *(*neverc_krt_get_task_mm_fn)(struct task_struct *task);
 typedef void  (*neverc_krt_mmput_fn)(void *mm);
-typedef void *(*neverc_krt_prepare_creds_fn)(void);
-typedef int   (*neverc_krt_commit_creds_fn)(void *);
 typedef unsigned long (*_neverc_krt_sym_resolver_fn)(const char *name);
 
 /*
@@ -57,6 +55,7 @@ typedef unsigned long (*_neverc_krt_sym_resolver_fn)(const char *name);
  */
 struct neverc_krt_gki_layout {
 	unsigned long task_tasks;
+	unsigned long task_usage;
 	unsigned long task_mm;
 	unsigned long task_pid;
 	unsigned long task_group_leader;
@@ -99,9 +98,7 @@ unsigned long _neverc_krt_mem_get_page_size(void);
 
 /* ---- nvk_process.c ---- */
 
-extern unsigned long               _neverc_krt_off_comm;
-extern neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds;
-extern neverc_krt_commit_creds_fn  _neverc_krt_commit_creds;
+extern unsigned long _neverc_krt_off_comm;
 
 /* ---- nvk_cred.c ---- */
 

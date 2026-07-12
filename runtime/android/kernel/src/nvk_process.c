@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
+#include <linux/refcount.h>
 #include "nvk_internal.h"
 
 /* ---- file-local typedefs ---- */
@@ -8,34 +9,34 @@ typedef int  (*neverc_krt_task_pid_nr_fn)(struct task_struct *);
 typedef int  (*neverc_krt_task_tgid_nr_fn)(struct task_struct *);
 typedef int  (*neverc_krt_task_pid_nr_ns_fn)(struct task_struct *, int type,
 					     void *ns);
-typedef struct task_struct *(*neverc_krt_find_task_fn)(int pid);
+typedef struct pid *(*neverc_krt_find_get_pid_fn)(int pid);
+typedef struct task_struct *(*neverc_krt_get_pid_task_fn)(struct pid *pid,
+							  int type);
+typedef void (*neverc_krt_put_pid_fn)(struct pid *pid);
+typedef void (*neverc_krt_put_task_struct_fn)(struct task_struct *task);
 typedef int   (*neverc_krt_send_sig_info_fn)(int sig, void *info,
 					     struct task_struct *p, int type);
 typedef void (*neverc_krt_rcu_lock_fn)(void);
 typedef void (*neverc_krt_rcu_unlock_fn)(void);
-typedef void *(*neverc_krt_get_task_cred_fn)(struct task_struct *);
 
 /* ---- file-local state ---- */
 
 static neverc_krt_task_pid_nr_fn    _neverc_krt_task_pid_nr;
 static neverc_krt_task_tgid_nr_fn   _neverc_krt_task_tgid_nr;
 static neverc_krt_task_pid_nr_ns_fn _neverc_krt_task_pid_nr_ns;
-static neverc_krt_find_task_fn      _neverc_krt_find_task_by_vpid;
+static neverc_krt_find_get_pid_fn   _neverc_krt_find_get_pid;
+static neverc_krt_get_pid_task_fn   _neverc_krt_get_pid_task;
+static neverc_krt_put_pid_fn        _neverc_krt_put_pid;
+static neverc_krt_put_task_struct_fn _neverc_krt_put_task_struct;
 static neverc_krt_send_sig_info_fn  _neverc_krt_send_sig_info;
 static struct task_struct          *_neverc_krt_init_task;
 static int                          _neverc_krt_proc_inited;
 static struct neverc_krt_task_offsets _neverc_krt_toff;
 static neverc_krt_rcu_lock_fn       _neverc_krt_rcu_read_lock;
 static neverc_krt_rcu_unlock_fn     _neverc_krt_rcu_read_unlock;
-static neverc_krt_get_task_cred_fn  _neverc_krt_get_task_cred;
 
-/*
- * Cross-file variables — referenced by nvk_cred.c and nvk_anti.c.
- * Non-static so they are visible across the unity TU.
- */
-unsigned long               _neverc_krt_off_comm = 0;
-neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds = (void *)0;
-neverc_krt_commit_creds_fn  _neverc_krt_commit_creds = (void *)0;
+/* Shared with nvk_anti.c through the private runtime interface. */
+unsigned long _neverc_krt_off_comm = 0;
 
 /* ---- implementation ---- */
 
@@ -58,13 +59,21 @@ static void _neverc_krt_ensure_pid_ops(void)
 
 static void _neverc_krt_ensure_task_lookup(void)
 {
-	if (_neverc_krt_find_task_by_vpid)
+	if (_neverc_krt_find_get_pid && _neverc_krt_get_pid_task &&
+	    _neverc_krt_put_pid && _neverc_krt_put_task_struct)
 		return;
 	if (!_neverc_krt_proc_inited)
 		neverc_krt_process_init();
 
-	_neverc_krt_find_task_by_vpid =
-		(neverc_krt_find_task_fn)NEVERC_KRT_LOOKUP("find_task_by_vpid");
+	_neverc_krt_find_get_pid =
+		(neverc_krt_find_get_pid_fn)NEVERC_KRT_LOOKUP("find_get_pid");
+	_neverc_krt_get_pid_task =
+		(neverc_krt_get_pid_task_fn)NEVERC_KRT_LOOKUP("get_pid_task");
+	_neverc_krt_put_pid =
+		(neverc_krt_put_pid_fn)NEVERC_KRT_LOOKUP("put_pid");
+	_neverc_krt_put_task_struct =
+		(neverc_krt_put_task_struct_fn)NEVERC_KRT_LOOKUP(
+			"__put_task_struct");
 	_neverc_krt_rcu_read_lock =
 		(neverc_krt_rcu_lock_fn)NEVERC_KRT_LOOKUP("rcu_read_lock");
 	if (!_neverc_krt_rcu_read_lock)
@@ -89,17 +98,6 @@ static void _neverc_krt_ensure_init_task(void)
 		(struct task_struct *)NEVERC_KRT_LOOKUP("init_task");
 }
 
-static void _neverc_krt_ensure_get_task_cred(void)
-{
-	if (_neverc_krt_get_task_cred)
-		return;
-	if (!_neverc_krt_proc_inited)
-		neverc_krt_process_init();
-
-	_neverc_krt_get_task_cred =
-		(neverc_krt_get_task_cred_fn)NEVERC_KRT_LOOKUP("get_task_cred");
-}
-
 static void _neverc_krt_ensure_send_sig(void)
 {
 	if (_neverc_krt_send_sig_info)
@@ -122,6 +120,7 @@ static void _neverc_krt_resolve_task_offsets(void)
 	layout = _neverc_krt_get_gki_layout();
 	_neverc_krt_toff.comm = layout->task_comm;
 	_neverc_krt_toff.tasks = layout->task_tasks;
+	_neverc_krt_toff.usage = layout->task_usage;
 	_neverc_krt_toff.cred = layout->task_cred;
 	_neverc_krt_toff.mm = layout->task_mm;
 	_neverc_krt_toff.pid_field = layout->task_pid;
@@ -129,6 +128,20 @@ static void _neverc_krt_resolve_task_offsets(void)
 			 __ATOMIC_RELEASE);
 
 	__atomic_store_n(&_neverc_krt_toff.resolved, 1, __ATOMIC_RELEASE);
+}
+
+static int _neverc_krt_task_get(struct task_struct *task)
+{
+	unsigned long usage_off;
+	refcount_t *usage;
+
+	if (!task)
+		return -1;
+	usage_off = neverc_krt_task_offsets()->usage;
+	if (!usage_off)
+		return -1;
+	usage = (refcount_t *)((unsigned long)task + usage_off);
+	return refcount_inc_not_zero(usage) ? 0 : -1;
 }
 
 const struct neverc_krt_task_offsets *neverc_krt_task_offsets(void)
@@ -144,11 +157,6 @@ int neverc_krt_process_init(void)
 
 	neverc_krt_mem_init();
 	_neverc_krt_resolve_task_offsets();
-
-	_neverc_krt_prepare_creds =
-		(neverc_krt_prepare_creds_fn)NEVERC_KRT_LOOKUP("prepare_creds");
-	_neverc_krt_commit_creds =
-		(neverc_krt_commit_creds_fn)NEVERC_KRT_LOOKUP("commit_creds");
 
 	_neverc_krt_proc_inited = 1;
 	return 0;
@@ -189,36 +197,39 @@ int neverc_krt_task_pid(struct task_struct *task)
 
 struct task_struct *neverc_krt_find_task(int pid)
 {
+	struct pid *pid_ref;
 	struct task_struct *t;
 
 	_neverc_krt_ensure_task_lookup();
-	if (!_neverc_krt_find_task_by_vpid) return (void *)0;
-	if (_neverc_krt_rcu_read_lock) _neverc_krt_rcu_read_lock();
-	t = _neverc_krt_find_task_by_vpid(pid);
-	if (_neverc_krt_rcu_read_unlock) _neverc_krt_rcu_read_unlock();
+	if (!_neverc_krt_find_get_pid || !_neverc_krt_get_pid_task ||
+	    !_neverc_krt_put_pid)
+		return (void *)0;
+
+	pid_ref = _neverc_krt_find_get_pid(pid);
+	if (!pid_ref)
+		return (void *)0;
+	t = _neverc_krt_get_pid_task(pid_ref, 0 /* PIDTYPE_PID */);
+	_neverc_krt_put_pid(pid_ref);
 	return t;
 }
 
-void *neverc_krt_task_get_cred(struct task_struct *task)
+void neverc_krt_put_task(struct task_struct *task)
 {
-	_neverc_krt_ensure_get_task_cred();
-	if (_neverc_krt_get_task_cred && task)
-		return _neverc_krt_get_task_cred(task);
-	return (void *)0;
-}
+	unsigned long usage_off;
+	refcount_t *usage;
 
-void *neverc_krt_prepare_creds(void)
-{
-	if (_neverc_krt_prepare_creds)
-		return _neverc_krt_prepare_creds();
-	return (void *)0;
-}
+	if (!task)
+		return;
+	_neverc_krt_ensure_task_lookup();
+	if (!_neverc_krt_put_task_struct)
+		return;
+	usage_off = neverc_krt_task_offsets()->usage;
+	if (!usage_off)
+		return;
 
-int neverc_krt_commit_creds(void *cred)
-{
-	if (_neverc_krt_commit_creds && cred)
-		return _neverc_krt_commit_creds(cred);
-	return -1;
+	usage = (refcount_t *)((unsigned long)task + usage_off);
+	if (refcount_dec_and_test(usage))
+		_neverc_krt_put_task_struct(task);
 }
 
 int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
@@ -284,8 +295,10 @@ static int _neverc_krt_find_by_name_cb(struct task_struct *task, void *data)
 	const char *b = ctx->target;
 	while (*a && *b && *a == *b) { a++; b++; }
 	if (*a == *b) {
-		ctx->result = task;
-		return 1;
+		if (!_neverc_krt_task_get(task)) {
+			ctx->result = task;
+			return 1;
+		}
 	}
 	return 0;
 }
@@ -294,8 +307,6 @@ struct task_struct *neverc_krt_find_task_by_name(const char *name)
 {
 	struct _neverc_krt_find_ctx ctx = { .target = name, .result = (void *)0 };
 	_neverc_krt_ensure_init_task();
-	if (_neverc_krt_init_task)
-		neverc_krt_task_comm(_neverc_krt_init_task);
 	neverc_krt_for_each_task(_neverc_krt_find_by_name_cb, &ctx);
 	return ctx.result;
 }
@@ -303,20 +314,17 @@ struct task_struct *neverc_krt_find_task_by_name(const char *name)
 int neverc_krt_send_signal(int pid, int sig)
 {
 	struct task_struct *task;
+	int ret;
 
 	_neverc_krt_ensure_send_sig();
-	if (!_neverc_krt_send_sig_info || !_neverc_krt_find_task_by_vpid)
+	if (!_neverc_krt_send_sig_info)
 		return -1;
 
-	if (_neverc_krt_rcu_read_lock) _neverc_krt_rcu_read_lock();
-	task = _neverc_krt_find_task_by_vpid(pid);
-	if (!task) {
-		if (_neverc_krt_rcu_read_unlock) _neverc_krt_rcu_read_unlock();
+	task = neverc_krt_find_task(pid);
+	if (!task)
 		return -3;
-	}
-
-	int ret = _neverc_krt_send_sig_info(sig, (void *)0, task, 0);
-	if (_neverc_krt_rcu_read_unlock) _neverc_krt_rcu_read_unlock();
+	ret = _neverc_krt_send_sig_info(sig, (void *)0, task, 0);
+	neverc_krt_put_task(task);
 	return ret;
 }
 

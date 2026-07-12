@@ -34,6 +34,7 @@ static int _neverc_krt_pm_trampoline(void *nb_ptr, unsigned long event, void *un
 	struct neverc_krt_pm_notifier *pm = (struct neverc_krt_pm_notifier *)(
 		(char *)nb_ptr -
 		__builtin_offsetof(struct neverc_krt_pm_notifier, nb));
+	(void)unused;
 	if (pm->callback)
 		pm->callback(event);
 	return NEVERC_KRT_NOTIFY_DONE;
@@ -70,6 +71,7 @@ static int _neverc_krt_reboot_trampoline(void *nb_ptr, unsigned long event,
 	struct neverc_krt_reboot_notifier *rn = (struct neverc_krt_reboot_notifier *)(
 		(char *)nb_ptr -
 		__builtin_offsetof(struct neverc_krt_reboot_notifier, nb));
+	(void)unused;
 	if (rn->callback)
 		rn->callback(event);
 	return NEVERC_KRT_NOTIFY_DONE;

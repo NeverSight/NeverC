@@ -643,7 +643,7 @@ void neverc_krt_vis_cmdline_filter_cleanup(void)
 
 
 /* ==================================================================== */
-/*  File read interception (build.prop, /proc/version rewrite)         */
+/*  File content rewrite (build.prop, /proc/version)                   */
 /* ==================================================================== */
 
 static int _neverc_krt_try_dentry_at(unsigned long file_addr, unsigned long off,

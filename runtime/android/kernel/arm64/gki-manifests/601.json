@@ -23,7 +23,7 @@
     "layout_format": "BTF",
     "layout_sha256": "2ea4cdfb9973e3503012bf3383eeab204785cd30b7010ec1ef2e8b307225da6f",
     "symvers_sha256": "b5704806be6dee30d939f18ed2977850f0181c58dd62452d3d8c6f15221d6f35",
-    "vmlinux_build_id": null
+    "vmlinux_build_id": "677592b1b59ce497208c298eb8557306d5f2c9ba"
   },
   "kernel_name": "android14-6.1",
   "layouts": {
@@ -1407,6 +1407,7 @@
     "platform_driver_unregister",
     "platform_get_irq",
     "platform_get_resource",
+    "preempt_schedule",
     "prepare_to_wait",
     "prepare_to_wait_event",
     "proc_create",

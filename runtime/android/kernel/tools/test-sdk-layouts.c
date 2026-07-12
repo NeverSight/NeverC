@@ -16,6 +16,7 @@
 #include <linux/netlink.h>
 #include <linux/platform_device.h>
 #include <linux/pm.h>
+#include <linux/preempt.h>
 #include <linux/regmap.h>
 #include <linux/rwsem.h>
 #include <linux/semaphore.h>
@@ -130,8 +131,12 @@ int nvk_test_sdk_layouts(void)
 	cpumask_t cpumask = { 0 };
 	void *mapping;
 	int cpu;
+	int saved_preempt_count;
 
 	mapping = ioremap((phys_addr_t)0, PAGE_SIZE);
+	saved_preempt_count = preempt_count();
+	preempt_disable();
+	preempt_enable();
 	INIT_DELAYED_WORK(&delayed, nvk_test_work_callback);
 	sema_init(&semaphore, 1);
 	mutex_init(&mutex);
@@ -149,5 +154,5 @@ int nvk_test_sdk_layouts(void)
 	       (int)netlink.groups + (int)hrtimer.function(&hrtimer) +
 	       (int)sizeof(tasklet) + (int)idr.__idr_base +
 	       (sysfs_group.attrs == (void *)0) + (mapping == (void *)0) +
-	       (int)sizeof(cpumask);
+	       (int)sizeof(cpumask) + saved_preempt_count;
 }

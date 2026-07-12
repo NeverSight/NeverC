@@ -15,8 +15,6 @@
 #include <linux/printk.h>
 #include <linux/kallsyms.h>
 
-#define NEVERC_KRT_PRINTK_STORAGE neverc_krt_printk_fn neverc_krt_printk = (void *)0
-
 /*
  * Initialize symbol resolution and logging for the selected GKI profile.
  * Prefer NEVERC_KRT_BOOTSTRAP() so the caller's NEVERC_KRT_KERNEL value is
@@ -35,7 +33,6 @@ int neverc_krt_bootstrap(int cfi, int kernel_profile);
 	MODULE_INFO(name, modname);                                           \
 	MODULE_INFO(vermagic, NEVERC_KRT_VERMAGIC);                                  \
 	MODULE_INFO(depends, "");                                             \
-	NEVERC_KRT_PRINTK_STORAGE;                                                   \
 	__attribute__((section(".gnu.linkonce.this_module"), used,            \
 		       aligned(64)))                                          \
 	struct neverc_krt_this_module __this_module = {                              \

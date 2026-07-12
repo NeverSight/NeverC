@@ -18,7 +18,7 @@
 #include <nvk_compat.h>
 #include <nvk_anti.h>
 #include <nvk_vma.h>
-#include <nvk_su.h>
+#include <nvk_cred_sess.h>
 #include <nvk_ksyms.h>
 #include <nvk_seccomp.h>
 #include <nvk_pmu.h>

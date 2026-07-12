@@ -61,16 +61,16 @@ u64 neverc_krt_wd_tramp_violations(void);
 
 int neverc_krt_anti_scan_for_brk(const void *start, size_t len);
 int neverc_krt_anti_check_stack_depth(void);
-int neverc_krt_anti_detect_su_binary(void);
-int neverc_krt_anti_detect_magisk(void);
-int neverc_krt_anti_detect_selinux_permissive(void);
+int neverc_krt_anti_detect_admin_cli(void);
+int neverc_krt_anti_detect_mgr_paths(void);
+int neverc_krt_anti_detect_policy_permissive(void);
 
 struct neverc_krt_anti_full_env {
 	struct neverc_krt_anti_env base;
 	int is_uid0;
-	int su_binaries;
-	int magisk_detected;
-	int selinux_permissive;
+	int admin_cli_hits;
+	int mgr_path_hits;
+	int policy_permissive;
 	int kprobe_on_self;
 };
 

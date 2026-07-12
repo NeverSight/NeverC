@@ -25,9 +25,16 @@ import tempfile
 FUNCTION_DEFINITION_RE = re.compile(
     r'^\s*define\b.*?@("?[A-Za-z_.$-][A-Za-z0-9_.$-]*"?)\s*\('
 )
+FUNCTION_DECLARATION_RE = re.compile(
+    r'^\s*declare\b.*?@("?[A-Za-z_.$-][A-Za-z0-9_.$-]*"?)\s*\('
+)
 GLOBAL_DEFINITION_RE = re.compile(
     r'^\s*@("?[A-Za-z_.$-][A-Za-z0-9_.$-]*"?)\s*=\s*'
     r'(?!external\b|extern_weak\b)'
+)
+GLOBAL_DECLARATION_RE = re.compile(
+    r'^\s*@("?[A-Za-z_.$-][A-Za-z0-9_.$-]*"?)\s*=\s*'
+    r'(?:external|extern_weak)\b'
 )
 ALIAS_DEFINITION_RE = re.compile(
     r'^\s*@("?[A-Za-z_.$-][A-Za-z0-9_.$-]*"?)\s*=.*\balias\b'
@@ -75,11 +82,20 @@ def validate_runtime_ir(ir_path):
     attribute_groups = {}
     function_groups = {}
     has_optnone = False
+    unresolved_runtime_symbols = set()
 
     with open(ir_path, encoding="utf-8") as ir_file:
         for line in ir_file:
             if re.search(r"\boptnone\b", line):
                 has_optnone = True
+
+            declaration_match = FUNCTION_DECLARATION_RE.match(line)
+            if declaration_match is None:
+                declaration_match = GLOBAL_DECLARATION_RE.match(line)
+            if declaration_match is not None:
+                name = declaration_match.group(1).strip('"')
+                if name.startswith(("neverc_krt_", "_neverc_krt_")):
+                    unresolved_runtime_symbols.add(name)
 
             attribute_match = ATTRIBUTE_GROUP_RE.match(line)
             if attribute_match:
@@ -100,6 +116,11 @@ def validate_runtime_ir(ir_path):
     errors = []
     if has_optnone:
         errors.append("embedded runtime IR contains optnone")
+    if unresolved_runtime_symbols:
+        errors.append(
+            "embedded runtime IR has undefined runtime symbols: "
+            + ", ".join(sorted(unresolved_runtime_symbols))
+        )
 
     for symbol in sorted(OPTIMIZABLE_RUNTIME_SYMBOLS):
         group = function_groups.get(symbol)
@@ -168,7 +189,7 @@ def main():
         f"-fdebug-prefix-map={src_dir_abs}=runtime/android/kernel/src",
         f"-fdebug-prefix-map={inc_kern_abs}=runtime/android/kernel/arm64/include",
         f"-fdebug-prefix-map={inc_nvk_abs}=runtime/android/kernel/include",
-        "-w",
+        "-Wall", "-Wextra", "-Werror",
     ]
 
     syntax_cmd = [

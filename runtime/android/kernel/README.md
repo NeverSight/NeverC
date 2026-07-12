@@ -54,13 +54,13 @@ runtime/android/kernel/
     nvk_compat.h               #   runtime kernel version detection + feature probing + vermagic patching
     nvk_anti.h                 #   environment detection + integrity watchdog + HW CRC32
     nvk_vma.h                  #   VMA operations, process memory map inspection
-    nvk_su.h                   #   elevated-credential session helpers for SDK demos
+    nvk_cred_sess.h            #   credential session helpers for SDK demos
     nvk_ksyms.h                #   extended symbol table operations (walk, prefix search, info)
     nvk_seccomp.h              #   seccomp filter inspection and mode control
     nvk_pmu.h                  #   ARM64 PMU counter access
     nvk_xmem.h                 #   cross-process memory operations (mmap + ELF loader + I-cache coherent)
     nvk_ns.h                   #   PID namespace operations
-    nvk_binder.h               #   Binder transaction interception + filtering (lazy interpose)
+    nvk_binder.h               #   Binder transaction filter helpers (lazy interpose)
     nvk_crypto.h               #   SHA-256, HMAC-SHA256, ChaCha20, integrity verification
     nvk_timer.h                #   hrtimer, timestamps (ktime/arch counter), busy-wait
     nvk_power.h                #   PM notifier (suspend/resume) + reboot notifier
@@ -126,15 +126,15 @@ You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
 | `nvk_addr.h` | `nvk_virt_to_phys`, `nvk_translate_user`, `nvk_walk_pgtable`, VA bits / page size detection |
 | `nvk_compat.h` | `nvk_kernel_version()`, `NVK_KERNEL_GE(maj,min)`, `nvk_has_pac/bti/mte`, versioned symbol lookup helpers |
 | `nvk_file.h` | `nvk_file_open/read/write/close`, `nvk_file_exists`, `nvk_file_read_all/write_all` |
-| `nvk_anti.h` | Environment detection (emulator, debugger, elevated credentials, su binary, Magisk/KSU/APatch, SELinux enforcement state, interpose/kprobe integrity), integrity verification, sealed watchdog, ARM64 HW CRC32 — detection path strings use xorstr |
+| `nvk_anti.h` | Host environment probes (emulator, debugger, credential state, admin CLI / mgr path markers, SELinux policy state, interpose/kprobe integrity), integrity verification, sealed watchdog, ARM64 HW CRC32 — probe path strings use xorstr |
 | `nvk_vma.h` | VMA operations (find_vma, walk, read/write remote), process memory map inspection |
-| `nvk_su.h` | Elevated-credential session helpers and su-daemon lifecycle for SDK demos |
+| `nvk_cred_sess.h` | Credential session helpers (allow/query/apply) for SDK demos |
 | `nvk_ksyms.h` | Extended symbol operations (`nvk_ksyms_walk`, `nvk_ksyms_for_each`, prefix search, function size) |
 | `nvk_seccomp.h` | Seccomp filter inspection and mode control (per-process mode read/clear/set) |
 | `nvk_pmu.h` | ARM64 PMU counter access (cycle/instruction/cache/branch counters) |
 | `nvk_xmem.h` | Cross-process memory operations — `nvk_xmem_mmap/munmap`, `nvk_xmem_deploy_dyncode` (cross-process I-cache coherent via DC CIVAC + IC IALLU), `nvk_xmem_load_elf` (ELF PT_LOAD segment loader), thread-context transfer helpers |
 | `nvk_ns.h` | PID namespace operations (cross-namespace PID translation, nsproxy) |
-| `nvk_binder.h` | Binder transaction interception + filtering (lazy interpose — only installed on first filter add) |
+| `nvk_binder.h` | Binder transaction filter helpers (lazy interpose — only installed on first filter add) |
 | `nvk_crypto.h` | `nvk_sha256`, `nvk_hmac_sha256`, `nvk_chacha20_encrypt`, `nvk_crypto_verify_region` — constant-time, pure C, zero kernel dependencies |
 | `nvk_timer.h` | `nvk_timer_start_ms/us/ns`, `nvk_ktime_get_ns`, `nvk_arch_counter`, `nvk_udelay` — hrtimer wrapper + ARM64 generic timer |
 | `nvk_power.h` | `nvk_pm_register/unregister`, `nvk_reboot_register/unregister` — suspend/resume/shutdown awareness |

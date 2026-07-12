@@ -7,10 +7,16 @@ unsigned long _neverc_krt_off_uid = 0;
 
 /* ---- internal typedefs ---- */
 
+typedef void *(*neverc_krt_prepare_creds_fn)(void);
+typedef int   (*neverc_krt_commit_creds_fn)(void *);
 typedef void  (*neverc_krt_put_cred_fn)(const void *);
+typedef void *(*neverc_krt_get_task_cred_fn)(struct task_struct *);
 
 #define _NEVERC_KRT_CRED_CAP_SIZE  8
 
+static neverc_krt_prepare_creds_fn _neverc_krt_prepare_creds;
+static neverc_krt_commit_creds_fn  _neverc_krt_commit_creds;
+static neverc_krt_get_task_cred_fn _neverc_krt_get_task_cred;
 static neverc_krt_put_cred_fn _neverc_krt_cred_put;
 static int                    _neverc_krt_cred_inited;
 static unsigned long          _neverc_krt_cred_cap_off;
@@ -23,17 +29,73 @@ int neverc_krt_cred_init(void)
 	neverc_krt_process_init();
 	_neverc_krt_cred_find_uid_offset();
 
+	_neverc_krt_prepare_creds =
+		(neverc_krt_prepare_creds_fn)NEVERC_KRT_LOOKUP("prepare_creds");
+	_neverc_krt_commit_creds =
+		(neverc_krt_commit_creds_fn)NEVERC_KRT_LOOKUP("commit_creds");
+	_neverc_krt_get_task_cred =
+		(neverc_krt_get_task_cred_fn)NEVERC_KRT_LOOKUP("get_task_cred");
 	_neverc_krt_cred_put =
-		(neverc_krt_put_cred_fn)NEVERC_KRT_LOOKUP("put_cred");
-	if (!_neverc_krt_cred_put)
-		_neverc_krt_cred_put =
-			(neverc_krt_put_cred_fn)NEVERC_KRT_LOOKUP("__put_cred");
+		(neverc_krt_put_cred_fn)NEVERC_KRT_LOOKUP("__put_cred");
 
 	if (!_neverc_krt_prepare_creds || !_neverc_krt_commit_creds)
 		return -1;
 
 	_neverc_krt_cred_inited = 1;
 	return 0;
+}
+
+void *neverc_krt_prepare_creds(void)
+{
+	if (!_neverc_krt_cred_inited && neverc_krt_cred_init())
+		return (void *)0;
+	return _neverc_krt_prepare_creds();
+}
+
+int neverc_krt_commit_creds(void *cred)
+{
+	if (!cred)
+		return -1;
+	if (!_neverc_krt_cred_inited && neverc_krt_cred_init())
+		return -1;
+	return _neverc_krt_commit_creds(cred);
+}
+
+void *neverc_krt_task_get_cred(struct task_struct *task)
+{
+	if (!task)
+		return (void *)0;
+	if (!_neverc_krt_cred_inited && neverc_krt_cred_init())
+		return (void *)0;
+	if (!_neverc_krt_get_task_cred)
+		return (void *)0;
+	return _neverc_krt_get_task_cred(task);
+}
+
+void neverc_krt_task_put_cred(void *cred)
+{
+	unsigned long uid_off;
+
+	if (!cred)
+		return;
+	if (!_neverc_krt_cred_inited)
+		neverc_krt_cred_init();
+	if (!_neverc_krt_cred_put)
+		return;
+
+	uid_off = _neverc_krt_off_uid ? _neverc_krt_off_uid
+				       : _neverc_krt_cred_uid_base();
+	if (uid_off >= sizeof(long)) {
+		long *usage = (long *)cred;
+
+		if (__atomic_sub_fetch(usage, 1, __ATOMIC_ACQ_REL) == 0)
+			_neverc_krt_cred_put(cred);
+	} else {
+		int *usage = (int *)cred;
+
+		if (__atomic_sub_fetch(usage, 1, __ATOMIC_ACQ_REL) == 0)
+			_neverc_krt_cred_put(cred);
+	}
 }
 
 int _neverc_krt_cred_find_uid_offset(void)
@@ -157,7 +219,6 @@ int neverc_krt_cred_set_caps_full(void)
 	if (!cred) return -1;
 
 	_neverc_krt_cred_find_uid_offset();
-	_neverc_krt_cred_probe_cap_offset(cred);
 
 	unsigned char *p = (unsigned char *)cred;
 	unsigned long cap_off = (_neverc_krt_off_uid ? _neverc_krt_off_uid : _neverc_krt_cred_uid_base())
@@ -182,7 +243,6 @@ int neverc_krt_cred_set_cap(int cap, int set_type)
 	if (!cred) return -1;
 
 	_neverc_krt_cred_find_uid_offset();
-	_neverc_krt_cred_probe_cap_offset(cred);
 
 	unsigned char *p = (unsigned char *)cred;
 	unsigned long cap_base = (_neverc_krt_off_uid ? _neverc_krt_off_uid : _neverc_krt_cred_uid_base())
@@ -210,7 +270,6 @@ int neverc_krt_cred_clear_cap(int cap, int set_type)
 	if (!cred) return -1;
 
 	_neverc_krt_cred_find_uid_offset();
-	_neverc_krt_cred_probe_cap_offset(cred);
 
 	unsigned char *p = (unsigned char *)cred;
 	unsigned long cap_base = (_neverc_krt_off_uid ? _neverc_krt_off_uid : _neverc_krt_cred_uid_base())
@@ -244,8 +303,6 @@ int neverc_krt_cred_has_cap(struct task_struct *task, int cap, int set_type)
 	if (!cred) return -1;
 
 	p = (const unsigned char *)cred;
-	if (!_neverc_krt_cred_cap_off)
-		_neverc_krt_cred_probe_cap_offset(cred);
 	unsigned long cap_base = (_neverc_krt_off_uid ? _neverc_krt_off_uid : _neverc_krt_cred_uid_base())
 				 + _neverc_krt_cred_cap_off;
 	unsigned long set_off = cap_base + set_type * _NEVERC_KRT_CRED_CAP_SIZE;
@@ -269,7 +326,6 @@ int neverc_krt_cred_clear_securebits(void)
 	if (!cred) return -1;
 
 	_neverc_krt_cred_find_uid_offset();
-	_neverc_krt_cred_probe_cap_offset(cred);
 
 	unsigned char *p = (unsigned char *)cred;
 	unsigned long sb_off = (_neverc_krt_off_uid ? _neverc_krt_off_uid : _neverc_krt_cred_uid_base())

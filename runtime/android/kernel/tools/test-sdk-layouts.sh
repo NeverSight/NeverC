@@ -5,6 +5,7 @@ set -eu
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$HERE/../../../.." && pwd)
+KERNEL_ROOT=$(CDPATH= cd -- "$HERE/.." && pwd)
 NEVERC="${1:-$REPO_ROOT/build-neverc/bin/neverc}"
 
 for kernel in 510 515 601 606 612 618; do
@@ -12,6 +13,8 @@ for kernel in 510 515 601 606 612 618; do
 		--target=aarch64-linux-android \
 		-fandroid-kernel-driver-mode \
 		-DNVK_KERNEL="$kernel" \
+		-I"$KERNEL_ROOT/arm64/include" \
+		-I"$KERNEL_ROOT/include" \
 		-std=gnu11 \
 		-Wall \
 		-Werror \

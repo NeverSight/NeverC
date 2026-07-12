@@ -1320,8 +1320,9 @@ static void _neverc_krt_ll_sync_from_ctx(struct neverc_krt_interpose *h,
 					 void *replace)
 {
 	int i;
+	void *target = c->base.target;
 
-	h->target = c->base.target;
+	h->target = target;
 	h->replace = replace;
 	h->trampoline = (u32 *)c->tramp_code;
 	h->patch_count = c->base.patch_count;
@@ -1710,6 +1711,8 @@ int neverc_krt_ftrace_init(void)
 static void _neverc_krt_ftrace_thunk(unsigned long ip, unsigned long parent_ip,
 				     void *ops, void *regs)
 {
+	(void)ip;
+	(void)parent_ip;
 	if (!ops || !regs) return;
 	struct neverc_krt_ftrace_interpose *h = (struct neverc_krt_ftrace_interpose *)(
 		(char *)ops - __builtin_offsetof(struct neverc_krt_ftrace_interpose, _ops_storage));
@@ -2254,121 +2257,6 @@ int neverc_krt_interpose_registry_count(void *target)
  * multi-handler support on top.
  * ================================================================ */
 
-/* probe stub template is no longer used; we reuse the ctx stub */
-static const u32 _neverc_krt_probe_stub_unused[] = {
-	/* --- re-entrance guard (uses X16/X17 before full save) --- */
-	/*  0 */ NEVERC_KRT_A64_BTI_JC,
-	/*  1 */ _A64E_STP_PRE16(16, 17),
-	/*  2 */ _A64E_MRS_SP_EL0(16),
-	/*  3 */ _A64E_MOVZ(17, 0),
-	/*  4 */ _A64E_MOVK16(17),
-	/*  5 */ _A64E_MOVK32(17),
-	/*  6 */ _A64E_MOVK48(17),
-	/*  7 */ _A64E_LDR_XREG(17, 17),
-	/*  8 */ _A64E_CMP_REG(16, 17),
-	/*  9 */ _A64E_BEQ_FWD(99-9),
-	/* 10 */ _A64E_LDP_POST16(16, 17),
-	/* --- full register save --- */
-	/* 11 */ _A64E_SUB_SP_I(_CTX_SIZE),
-	/* 12 */ _A64E_STP_SP( 0,  1,   0),
-	/* 13 */ _A64E_STP_SP( 2,  3,  16),
-	/* 14 */ _A64E_STP_SP( 4,  5,  32),
-	/* 15 */ _A64E_STP_SP( 6,  7,  48),
-	/* 16 */ _A64E_STP_SP( 8,  9,  64),
-	/* 17 */ _A64E_STP_SP(10, 11,  80),
-	/* 18 */ _A64E_STP_SP(12, 13,  96),
-	/* 19 */ _A64E_STP_SP(14, 15, 112),
-	/* 20 */ _A64E_STP_SP(16, 17, 128),
-	/* 21 */ _A64E_STP_SP(18, 19, 144),
-	/* 22 */ _A64E_STP_SP(20, 21, 160),
-	/* 23 */ _A64E_STP_SP(22, 23, 176),
-	/* 24 */ _A64E_STP_SP(24, 25, 192),
-	/* 25 */ _A64E_STP_SP(26, 27, 208),
-	/* 26 */ _A64E_STP_SP(28, 29, 224),
-	/* 27 */ _A64E_STP_SP(30, 31, 240),
-	/* 28 */ _A64E_MRS_NZCV(1),
-	/* 29 */ _A64E_STR_SP(1,  _CTX_NZCV),
-	/* 30 */ _A64E_MRS_FPCR(1),
-	/* 31 */ _A64E_STR_SP(1,  _CTX_FPCR),
-	/* 32 */ _A64E_MRS_FPSR(1),
-	/* 33 */ _A64E_STR_SP(1,  _CTX_FPSR),
-	/* 34 */ _A64E_STR_SP(31, _CTX_FORCE),
-	/* --- set guard (store current task into guard_task) --- */
-	/* 35 */ _A64E_MRS_SP_EL0(0),
-	/* 36 */ _A64E_MOVZ(19, 0),
-	/* 37 */ _A64E_MOVK16(19),
-	/* 38 */ _A64E_MOVK32(19),
-	/* 39 */ _A64E_MOVK48(19),
-	/* 40 */ _A64E_STR_XREG(0, 19),
-	/* --- call dispatcher --- */
-	/* 41 */ _A64E_MOV_FROM_SP(0),
-	/* 42 */ _A64E_MOVZ(3, 0),
-	/* 43 */ _A64E_MOVK16(3),
-	/* 44 */ _A64E_MOVK32(3),
-	/* 45 */ _A64E_MOVK48(3),
-	/* 46 */ 0xD63F0060U,                    /* BLR X3 */
-	/* --- clear guard --- */
-	/* 47 */ _A64E_STR_XREG(31, 19),
-	/* 48 */ _A64E_LDR_SP(1, _CTX_FORCE),
-	/* 49 */ _A64E_CBNZ_FWD(1, 74-49),      /* -> force_jump path */
-	/* --- normal path: restore all, B to trampoline --- */
-	/* 50 */ _A64E_LDR_SP(2, _CTX_FPCR),
-	/* 51 */ _A64E_MSR_FPCR(2),
-	/* 52 */ _A64E_LDR_SP(2, _CTX_FPSR),
-	/* 53 */ _A64E_MSR_FPSR(2),
-	/* 54 */ _A64E_LDR_SP(2, _CTX_NZCV),
-	/* 55 */ _A64E_MSR_NZCV(2),
-	/* 56 */ _A64E_LDP_SP( 2,  3,  16),
-	/* 57 */ _A64E_LDP_SP( 4,  5,  32),
-	/* 58 */ _A64E_LDP_SP( 6,  7,  48),
-	/* 59 */ _A64E_LDP_SP( 8,  9,  64),
-	/* 60 */ _A64E_LDP_SP(10, 11,  80),
-	/* 61 */ _A64E_LDP_SP(12, 13,  96),
-	/* 62 */ _A64E_LDP_SP(14, 15, 112),
-	/* 63 */ _A64E_LDP_SP(16, 17, 128),
-	/* 64 */ _A64E_LDP_SP(18, 19, 144),
-	/* 65 */ _A64E_LDP_SP(20, 21, 160),
-	/* 66 */ _A64E_LDP_SP(22, 23, 176),
-	/* 67 */ _A64E_LDP_SP(24, 25, 192),
-	/* 68 */ _A64E_LDP_SP(26, 27, 208),
-	/* 69 */ _A64E_LDP_SP(28, 29, 224),
-	/* 70 */ _A64E_LDP_SP(30, 31, 240),
-	/* 71 */ _A64E_LDP_SP( 0,  1,   0),
-	/* 72 */ _A64E_ADD_SP_I(_CTX_SIZE),
-	/* 73 */ NEVERC_KRT_A64_NOP,             /* patched: B to trampoline */
-	/* --- force_jump path --- */
-	/* 74 */ _A64E_LDR_SP(16, 128),
-	/* 75 */ _A64E_MOV_REG(17, 1),
-	/* 76 */ _A64E_LDR_SP(2, _CTX_FPCR),
-	/* 77 */ _A64E_MSR_FPCR(2),
-	/* 78 */ _A64E_LDR_SP(2, _CTX_FPSR),
-	/* 79 */ _A64E_MSR_FPSR(2),
-	/* 80 */ _A64E_LDR_SP(2, _CTX_NZCV),
-	/* 81 */ _A64E_MSR_NZCV(2),
-	/* 82 */ _A64E_LDP_SP( 2,  3,  16),
-	/* 83 */ _A64E_LDP_SP( 4,  5,  32),
-	/* 84 */ _A64E_LDP_SP( 6,  7,  48),
-	/* 85 */ _A64E_LDP_SP( 8,  9,  64),
-	/* 86 */ _A64E_LDP_SP(10, 11,  80),
-	/* 87 */ _A64E_LDP_SP(12, 13,  96),
-	/* 88 */ _A64E_LDP_SP(14, 15, 112),
-	/* 89 */ _A64E_LDP_SP(18, 19, 144),
-	/* 90 */ _A64E_LDP_SP(20, 21, 160),
-	/* 91 */ _A64E_LDP_SP(22, 23, 176),
-	/* 92 */ _A64E_LDP_SP(24, 25, 192),
-	/* 93 */ _A64E_LDP_SP(26, 27, 208),
-	/* 94 */ _A64E_LDP_SP(28, 29, 224),
-	/* 95 */ _A64E_LDR_SP(30, 240),
-	/* 96 */ _A64E_LDP_SP( 0,  1,   0),
-	/* 97a*/ _A64E_ADD_SP_I(_CTX_SIZE),
-	/* 98 */ NEVERC_KRT_A64_RET_X17,
-	/* --- re-entrance skip: pop X16/X17, go to trampoline --- */
-	/* 99 */ _A64E_LDP_POST16(16, 17),
-	/*100 */ NEVERC_KRT_A64_NOP,             /* patched: B to trampoline */
-};
-
-/* probe stub template is unused; all defines below are vestigial */
-
 /* --- probe ctx chain (handlers receive neverc_krt_reg_ctx *) --- */
 
 #define _PROBE_CHAIN_MAX NEVERC_KRT_CHAIN_MAX
@@ -2897,7 +2785,7 @@ void neverc_krt_interpose_cleanup(void)
 
 	for (;;) {
 		void *base;
-		int magic;
+		u32 magic;
 
 		flags = _neverc_krt_spin_lock_irqsave(&_neverc_krt_pool_lock);
 		if (_neverc_krt_pool_count == 0) {

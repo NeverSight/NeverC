@@ -8,25 +8,32 @@
 static __always_inline void list_add_rcu(struct list_head *n,
 					 struct list_head *head)
 {
-	n->next = head->next;
+	struct list_head *next = READ_ONCE(head->next);
+
+	n->next = next;
 	n->prev = head;
-	rcu_assign_pointer(head->next->prev, n);
+	rcu_assign_pointer(next->prev, n);
 	rcu_assign_pointer(head->next, n);
 }
 
 static __always_inline void list_add_tail_rcu(struct list_head *n,
 					      struct list_head *head)
 {
+	struct list_head *prev = READ_ONCE(head->prev);
+
 	n->next = head;
-	n->prev = head->prev;
-	rcu_assign_pointer(head->prev->next, n);
+	n->prev = prev;
+	rcu_assign_pointer(prev->next, n);
 	rcu_assign_pointer(head->prev, n);
 }
 
 static __always_inline void list_del_rcu(struct list_head *entry)
 {
-	entry->prev->next = entry->next;
-	entry->next->prev = entry->prev;
+	struct list_head *prev = entry->prev;
+	struct list_head *next = entry->next;
+
+	rcu_assign_pointer(prev->next, next);
+	WRITE_ONCE(next->prev, prev);
 }
 
 #define list_for_each_entry_rcu(pos, head, member)                            \

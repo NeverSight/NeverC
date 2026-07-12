@@ -219,6 +219,19 @@
 #endif
 
 /*
+ * offsetof(struct task_struct, thread_info.preempt_count), verified from each
+ * configured profile's BTF/DWARF manifest.  Android 12's thread_info still
+ * contains addr_limit; it was removed before Android 13.
+ */
+#ifndef NEVERC_KRT_TASK_PREEMPT_COUNT
+#  if NEVERC_KRT_KERNEL == 510
+#    define NEVERC_KRT_TASK_PREEMPT_COUNT 24
+#  else
+#    define NEVERC_KRT_TASK_PREEMPT_COUNT 16
+#  endif
+#endif
+
+/*
  * Configuration facts shared by the prepared official arm64 GKI outputs for
  * Android 12 through Android 17.  These values were read from each output's
  * generated autoconf.h/.config, not inferred from the kernel version:

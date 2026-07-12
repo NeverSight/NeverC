@@ -35,10 +35,16 @@ static __always_inline void list_add_tail(struct list_head *n,
 	__list_add(n, head->prev, head);
 }
 
+static __always_inline void __list_del(struct list_head *prev,
+				       struct list_head *next)
+{
+	next->prev = prev;
+	prev->next = next;
+}
+
 static __always_inline void list_del(struct list_head *entry)
 {
-	entry->prev->next = entry->next;
-	entry->next->prev = entry->prev;
+	__list_del(entry->prev, entry->next);
 	entry->next = entry->prev = entry;
 }
 

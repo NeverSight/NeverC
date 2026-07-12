@@ -142,6 +142,44 @@ def read_config(path):
     return values
 
 
+def gnu_build_id(elf):
+    """Return the GNU build ID from any ELF note section or segment."""
+
+    def build_id_from_notes(notes):
+        for note in notes:
+            name = note["n_name"]
+            if isinstance(name, bytes):
+                name = name.rstrip(b"\0").decode("ascii", errors="replace")
+            else:
+                name = str(name).rstrip("\0")
+            if name != "GNU":
+                continue
+            if note["n_type"] not in ("NT_GNU_BUILD_ID", 3):
+                continue
+
+            value = note["n_desc"]
+            if isinstance(value, bytes):
+                return value.hex()
+            return str(value)
+        return None
+
+    for section in elf.iter_sections():
+        if section["sh_type"] != "SHT_NOTE":
+            continue
+        build_id = build_id_from_notes(section.iter_notes())
+        if build_id is not None:
+            return build_id
+
+    # Some stripped ELF files retain PT_NOTE while omitting note sections.
+    for segment in elf.iter_segments():
+        if segment["p_type"] != "PT_NOTE":
+            continue
+        build_id = build_id_from_notes(segment.iter_notes())
+        if build_id is not None:
+            return build_id
+    return None
+
+
 def elf_evidence(path):
     with path.open("rb") as stream:
         elf = ELFFile(stream)
@@ -167,16 +205,7 @@ def elf_evidence(path):
         else:
             raise ValueError(f"{path}: ELF has no BTF or DWARF evidence")
 
-        build_id = None
-        notes = elf.get_section_by_name(".note.gnu.build-id")
-        if notes is not None:
-            for note in notes.iter_notes():
-                if note["n_type"] == "NT_GNU_BUILD_ID":
-                    value = note["n_desc"]
-                    build_id = (
-                        value.hex() if isinstance(value, bytes) else str(value)
-                    )
-                    break
+        build_id = gnu_build_id(elf)
     return {
         "layout_format": layout_format,
         "layout_sha256": layout_sha256,

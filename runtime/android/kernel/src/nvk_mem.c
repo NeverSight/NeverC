@@ -121,7 +121,7 @@ unsigned long _neverc_krt_mem_get_page_size(void)
 #define _NEVERC_KRT_PTE_AF         (1UL << 10)
 #define _NEVERC_KRT_PTE_SH_IS      (3UL << 8)
 #define _NEVERC_KRT_PTE_RDONLY     (1UL << 7)
-#define _NEVERC_KRT_PTE_ATTRINDX(x) ((unsigned long)(x) << 2)
+#define _NEVERC_KRT_PTE_ATTRINDX(t) ((unsigned long)(t) << 2)
 #define _NEVERC_KRT_PTE_UXN        (1UL << 54)
 #define _NEVERC_KRT_PAGE_KERNEL     (_NEVERC_KRT_PTE_TYPE_PAGE | _NEVERC_KRT_PTE_AF | \
 			      _NEVERC_KRT_PTE_SH_IS | _NEVERC_KRT_PTE_ATTRINDX(0) | \

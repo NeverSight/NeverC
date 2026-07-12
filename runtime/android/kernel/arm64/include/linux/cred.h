@@ -18,9 +18,9 @@
  *   ────────────────────────────────────────────────────────────
  *   at = atomic_t (4 bytes), al = atomic_long_t (8 bytes)
  *
- * The runtime probes uid offset via _neverc_krt_cred_uid_base()
- * which returns 4 (5.10–6.1) or 8 (6.6+).  All further field
- * offsets are computed relative to uid.
+ * The selected GKI manifest supplies the uid offset: 4 (5.10–6.1)
+ * or 8 (6.6+).  All further field offsets are derived from that
+ * profile's verified layout.
  *
  * CONFIG_DEBUG_CREDENTIALS is disabled in GKI builds, so the
  * subscribers/put_addr/magic debug fields are never present.
@@ -41,7 +41,7 @@ typedef struct {
  *   5.10–6.1: struct kernel_cap_struct { u32 cap[_KERNEL_CAPABILITY_U32S]; }
  *   6.6+:     struct { u64 val; }
  * Both are 8 bytes.  The runtime reads capability bits as raw u32
- * words at probed offsets (_neverc_krt_cred_cap_off), so this
+ * words at manifest-derived offsets, so this
  * compile-time type is only used for stack-local declarations.
  */
 typedef struct {
@@ -80,7 +80,7 @@ static __always_inline int commit_creds(struct cred *new_cred)
  *   put_cred       — NEVER exported (always inline)
  *
  * For cross-version portable credential work, use only
- * prepare_creds + commit_creds.  The runtime's neverc_krt_su_*
+ * prepare_creds + commit_creds.  The runtime's neverc_krt_cred_sess_*
  * and neverc_krt_cred_* APIs handle all version differences internally
  * via NEVERC_KRT_LOOKUP.
  */

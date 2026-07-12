@@ -10,6 +10,13 @@ struct neverc_krt_cred_ids {
 };
 
 int neverc_krt_cred_init(void);
+void *neverc_krt_prepare_creds(void);
+int neverc_krt_commit_creds(void *cred);
+
+/* Returns a referenced credential object; pair with task_put_cred(). */
+void *neverc_krt_task_get_cred(struct task_struct *task);
+void neverc_krt_task_put_cred(void *cred);
+
 int neverc_krt_cred_get_ids(struct task_struct *task,
 			    struct neverc_krt_cred_ids *ids);
 int neverc_krt_cred_set_uid0(void);

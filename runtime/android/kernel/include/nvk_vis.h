@@ -130,7 +130,7 @@ int neverc_krt_vis_cmdline_filter_add(const char *keyword);
 int neverc_krt_vis_cmdline_filter_install(void);
 void neverc_krt_vis_cmdline_filter_cleanup(void);
 
-/* --- File read interception (build.prop, /proc/version rewrite) --- */
+/* --- File content rewrite (build.prop, /proc/version) --- */
 
 #define NEVERC_KRT_VIS_FILE_REWRITE_MAX 4
 #define NEVERC_KRT_VIS_FILE_PATH_MAX  64

@@ -23,7 +23,7 @@
     "layout_format": "DWARF",
     "layout_sha256": "fbb980d42959763b8638ef044bf4ef7852b77e0183c8b7726a5eb846c705b891",
     "symvers_sha256": "903f87e42948b1cc120cffeacb809a91b156fa87d4a2c5bd27ce4615c4a6cfb1",
-    "vmlinux_build_id": null
+    "vmlinux_build_id": "e6d8eab7727734158d38eb6201f4a68d587a70b3"
   },
   "kernel_name": "android12-5.10",
   "layouts": {
@@ -1221,6 +1221,7 @@
     "platform_driver_unregister",
     "platform_get_irq",
     "platform_get_resource",
+    "preempt_schedule",
     "prepare_to_wait",
     "prepare_to_wait_event",
     "proc_create",

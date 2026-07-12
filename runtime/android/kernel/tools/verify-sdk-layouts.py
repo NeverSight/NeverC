@@ -10,44 +10,18 @@ import tempfile
 
 
 TOOLS_ROOT = Path(__file__).resolve().parent
+RUNTIME_ROOT = TOOLS_ROOT.parent
 REPO_ROOT = TOOLS_ROOT.parents[3]
 DEFAULT_MANIFEST_ROOT = (
     REPO_ROOT / "runtime/android/kernel/arm64/gki-manifests"
 )
 PROFILES = (510, 515, 601, 606, 612, 618)
-
-INCLUDES = (
-    "asm/ptrace.h",
-    "linux/cpumask.h",
-    "linux/firmware.h",
-    "linux/fs.h",
-    "linux/hrtimer.h",
-    "linux/idr.h",
-    "linux/interrupt.h",
-    "linux/ioport.h",
-    "linux/kprobes.h",
-    "linux/kref.h",
-    "linux/miscdevice.h",
-    "linux/module.h",
-    "linux/mutex.h",
-    "linux/netfilter.h",
-    "linux/netlink.h",
-    "linux/notifier.h",
-    "linux/pm.h",
-    "linux/proc_fs.h",
-    "linux/rbtree.h",
-    "linux/rcupdate.h",
-    "linux/regmap.h",
-    "linux/rwsem.h",
-    "linux/scatterlist.h",
-    "linux/semaphore.h",
-    "linux/seq_file.h",
-    "linux/sysfs.h",
-    "linux/time.h",
-    "linux/timer.h",
-    "linux/wait.h",
-    "linux/workqueue.h",
-)
+ARM64_INCLUDE_ROOT = RUNTIME_ROOT / "arm64" / "include"
+PUBLIC_INCLUDE_ROOT = RUNTIME_ROOT / "include"
+SDK_INCLUDES = tuple(
+    path.relative_to(ARM64_INCLUDE_ROOT).as_posix()
+    for path in sorted(ARM64_INCLUDE_ROOT.rglob("*.h"))
+) + tuple(path.name for path in sorted(PUBLIC_INCLUDE_ROOT.glob("*.h")))
 
 # Each concrete SDK type that is passed to the kernel by value or embeds
 # kernel-owned fields must match the selected configured GKI layout exactly.
@@ -296,7 +270,7 @@ def c_assert(expression, expected, label):
 
 def generate_source(manifest):
     layouts = manifest["layouts"]
-    lines = [f"#include <{name}>" for name in INCLUDES]
+    lines = [f"#include <{name}>" for name in SDK_INCLUDES]
     lines.append("")
 
     for layout_name, (c_type, fields) in CONTRACTS.items():
@@ -353,6 +327,10 @@ def generate_source(manifest):
         layouts["dentry"]["members"]["d_name"]
         + layouts["qstr"]["members"]["name"]
     )
+    task_preempt_count = (
+        layouts["task_struct"]["members"]["thread_info"]
+        + layouts["thread_info"]["members"]["preempt_count"]
+    )
     lines.extend(
         [
             c_assert(
@@ -390,6 +368,11 @@ def generate_source(manifest):
                 manifest["config"]["CONFIG_PGTABLE_LEVELS"],
                 "NEVERC_KRT_PGTABLE_LEVELS",
             ),
+            c_assert(
+                "NEVERC_KRT_TASK_PREEMPT_COUNT",
+                task_preempt_count,
+                "NEVERC_KRT_TASK_PREEMPT_COUNT",
+            ),
         ]
     )
 
@@ -410,11 +393,36 @@ def generate_source(manifest):
     return "\n".join(lines) + "\n"
 
 
+def verify_manifest_evidence(manifest_path, manifest):
+    evidence = manifest.get("evidence")
+    if not isinstance(evidence, dict):
+        raise ValueError(f"{manifest_path}: missing evidence object")
+
+    for name in ("config_sha256", "layout_sha256", "symvers_sha256"):
+        value = evidence.get(name)
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(char not in "0123456789abcdef" for char in value)
+        ):
+            raise ValueError(f"{manifest_path}: invalid {name}")
+
+    build_id = evidence.get("vmlinux_build_id")
+    if (
+        not isinstance(build_id, str)
+        or not build_id
+        or len(build_id) % 2
+        or any(char not in "0123456789abcdef" for char in build_id)
+    ):
+        raise ValueError(f"{manifest_path}: invalid vmlinux_build_id")
+
+
 def verify_profile(compiler, manifest_path):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     profile = manifest["profile"]
     if profile not in PROFILES:
         raise ValueError(f"{manifest_path}: unsupported profile {profile}")
+    verify_manifest_evidence(manifest_path, manifest)
 
     source = generate_source(manifest)
     with tempfile.TemporaryDirectory(prefix=f"nvk-layout-{profile}-") as temp:
@@ -425,6 +433,8 @@ def verify_profile(compiler, manifest_path):
             "--target=aarch64-linux-android",
             "-fandroid-kernel-driver-mode",
             f"-DNVK_KERNEL={profile}",
+            f"-I{ARM64_INCLUDE_ROOT}",
+            f"-I{PUBLIC_INCLUDE_ROOT}",
             "-std=gnu11",
             "-Wall",
             "-Werror",

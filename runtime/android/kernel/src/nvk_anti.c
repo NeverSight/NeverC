@@ -572,7 +572,7 @@ static int _neverc_krt_try_open_path(void *(*fopen)(const char *, int, u16),
 	return 0;
 }
 
-int neverc_krt_anti_detect_su_binary(void)
+int neverc_krt_anti_detect_admin_cli(void)
 {
 	if (!_neverc_krt_mem_inited) return -1;
 
@@ -593,7 +593,7 @@ int neverc_krt_anti_detect_su_binary(void)
 	return found;
 }
 
-int neverc_krt_anti_detect_magisk(void)
+int neverc_krt_anti_detect_mgr_paths(void)
 {
 	if (!_neverc_krt_mem_inited) return -1;
 
@@ -612,7 +612,7 @@ int neverc_krt_anti_detect_magisk(void)
 	return found;
 }
 
-int neverc_krt_anti_detect_selinux_permissive(void)
+int neverc_krt_anti_detect_policy_permissive(void)
 {
 	int val;
 	int *enforcing = (int *)NEVERC_KRT_LOOKUP("selinux_enforcing");
@@ -639,9 +639,9 @@ void neverc_krt_anti_full_scan(struct neverc_krt_anti_full_env *env)
 	if (!env) return;
 	neverc_krt_anti_full_check(&env->base);
 	env->is_uid0 = neverc_krt_anti_is_uid0();
-	env->su_binaries = neverc_krt_anti_detect_su_binary();
-	env->magisk_detected = neverc_krt_anti_detect_magisk();
-	env->selinux_permissive = neverc_krt_anti_detect_selinux_permissive();
+	env->admin_cli_hits = neverc_krt_anti_detect_admin_cli();
+	env->mgr_path_hits = neverc_krt_anti_detect_mgr_paths();
+	env->policy_permissive = neverc_krt_anti_detect_policy_permissive();
 	env->kprobe_on_self = 0;
 }
 

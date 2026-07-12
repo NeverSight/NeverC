@@ -64,7 +64,7 @@ static int _neverc_krt_binder_run_filters(int pid,
 }
 
 static int _neverc_krt_binder_scan_commands(unsigned long buf, long size,
-					    int pid, int incoming)
+					    int pid)
 {
 	unsigned long pos = 0;
 	int filtered = 0;
@@ -126,7 +126,7 @@ static int _neverc_krt_binder_ioctl_interpose(void *filp, unsigned int cmd,
 			if (bwr.write_size > 0 && bwr.write_buffer)
 				_neverc_krt_binder_scan_commands(
 					bwr.write_buffer, bwr.write_size,
-					pid, 0);
+					pid);
 		}
 	}
 
@@ -142,7 +142,7 @@ static int _neverc_krt_binder_ioctl_interpose(void *filp, unsigned int cmd,
 			if (bwr.read_consumed > 0 && bwr.read_buffer)
 				_neverc_krt_binder_scan_commands(
 					bwr.read_buffer, bwr.read_consumed,
-					pid, 1);
+					pid);
 		}
 	}
 

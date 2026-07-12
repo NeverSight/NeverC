@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
+neverc_krt_printk_fn neverc_krt_printk = (void *)0;
+
 static volatile int _neverc_krt_log_level = NEVERC_KRT_LOG_DEFAULT_LEVEL;
 
 void neverc_krt_log_set_level(int level)

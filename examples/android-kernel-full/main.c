@@ -219,6 +219,7 @@ static void nl_handler(struct neverc_krt_nl_sock *ns, u32 pid,
 		}
 		struct neverc_krt_vma_info vinfo;
 		int ret = neverc_krt_vma_find_exec(task, 0x1000, &vinfo);
+		neverc_krt_put_task(task);
 		if (ret == 0) {
 			struct { u64 start; u64 end; u64 flags; } vr;
 			vr.start = vinfo.start;

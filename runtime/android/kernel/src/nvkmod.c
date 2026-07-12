@@ -15,9 +15,8 @@ static int _neverc_krt_is_stub(void *addr);
 static int _neverc_krt_ksym_bootstrap(int cfi);
 static int _neverc_krt_log_bootstrap(void);
 
-static
-__attribute__((naked))
-static int _neverc_krt_kp_stub(struct kprobe *p, void *regs)
+static __attribute__((naked))
+int _neverc_krt_kp_stub(struct kprobe *p, void *regs)
 {
 	__asm__ __volatile__(
 		"hint #34\n"
@@ -49,9 +48,8 @@ static void *_neverc_krt_kprobe_lookup(const char *name)
 	return (void *)kp.addr;
 }
 
-static
-__attribute__((naked))
-static unsigned long _neverc_krt_kprobe_resolve_sym(const char *name)
+static __attribute__((naked))
+unsigned long _neverc_krt_kprobe_resolve_sym(const char *name)
 {
 	__asm__ __volatile__(
 		"hint #34\n"
