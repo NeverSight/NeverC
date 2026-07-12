@@ -25,12 +25,27 @@ cmake --build build-neverc --target neverc
 
 `ccache` / `sccache` viene rilevato e attivato automaticamente se presente.
 
+`--target neverc` è la build quotidiana stage-1 (runtime incorporati vuoti) ed
+è sufficiente per la maggior parte del lavoro locale. Per incorporare string /
+mimalloc / std / NVK nel binario (o allinearsi alla CI), eseguire il target
+ombrello stage-2:
+
+```bash
+cmake --build build-neverc --target neverc-embed-runtime-bitcode
+```
+
+I dettagli del bootstrap a due fasi sono in [Builtins](../builtins/README.it.md).
+
 ### Compilazione con test
 
 ```bash
 cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake -DNEVERC_INCLUDE_TESTS=ON
 cmake --build build-neverc --target check-neverc
 ```
+
+`check-neverc` dipende da `neverc-embed-runtime-bitcode`, quindi la prima
+esecuzione dei test esegue automaticamente bootstrap e rilink. Non serve
+invocare a mano il target embed.
 
 ---
 

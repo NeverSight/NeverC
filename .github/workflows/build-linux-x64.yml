@@ -56,7 +56,7 @@ jobs:
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
         -C neverc/neverc/cmake/caches/NeverC.cmake \
         neverc/llvm
-        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
 
     # Package + upload neverc immediately after the compiler links, before the
     # plugin-SDK / test / debug steps below (which may crash). Guarantees the

@@ -46,7 +46,7 @@ jobs:
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
         -C neverc/neverc/cmake/caches/NeverC.cmake \
         neverc/llvm
-        cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
 
     - name: Build bundled Windows runtime
       shell: bash

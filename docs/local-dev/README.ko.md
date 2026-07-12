@@ -25,12 +25,27 @@ cmake --build build-neverc --target neverc
 
 `ccache` / `sccache`가 감지되면 자동으로 활성화됩니다.
 
+`--target neverc`는 일상적인 stage-1 빌드(임베디드 runtime은 빈 플레이스홀더)이며,
+대부분의 로컬 컴파일/디버그에 충분합니다. 바이너리 자체에 string / mimalloc /
+std / NVK runtime을 넣거나 CI와 같은 컴파일러가 필요하면 stage-2 우산 타깃을
+실행하세요:
+
+```bash
+cmake --build build-neverc --target neverc-embed-runtime-bitcode
+```
+
+2단계 부트스트랩 세부 사항은 [Builtins](../builtins/README.ko.md)를 참고하세요.
+
 ### 테스트 포함 빌드
 
 ```bash
 cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake -DNEVERC_INCLUDE_TESTS=ON
 cmake --build build-neverc --target check-neverc
 ```
+
+`check-neverc`는 `neverc-embed-runtime-bitcode`에 의존하므로, 첫 테스트 실행 전에
+부트스트랩과 컴파일러 재링크가 자동으로 수행됩니다. embed 타깃을 직접 실행할
+필요는 없습니다.
 
 ---
 

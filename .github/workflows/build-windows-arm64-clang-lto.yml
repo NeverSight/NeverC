@@ -88,7 +88,7 @@ jobs:
             -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
             -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
             -DCMAKE_EXE_LINKER_FLAGS=""
-          cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
+          cmake --build build --target neverc-embed-runtime-bitcode --parallel $NUMBER_OF_PROCESSORS
 
       - name: Show sccache stats
         if: always()

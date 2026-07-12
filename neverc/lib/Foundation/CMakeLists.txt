@@ -292,14 +292,28 @@ set(BUILTIN_NVK_KERNEL_INPUTS
 
 set(BUILTIN_NVK_KERNEL_BITCODE_H
     "${CMAKE_CURRENT_BINARY_DIR}/BuiltinNvkKernelBitcode.h")
-if(NOT EXISTS "${BUILTIN_NVK_KERNEL_BITCODE_H}")
+# Bracket form so embedded semicolons are not treated as CMake list separators.
+set(_NEVERC_NVK_KERNEL_BITCODE_PLACEHOLDER
+[=[/* Empty placeholder — run 'ninja neverc-bootstrap-nvk-kernel-bc' to populate. */
+static const unsigned char kNvkKernelBC[] = {0};
+static const unsigned int kNvkKernelBCLen = 0;
+static const char *const kNvkKernelSymbols[] = {nullptr};
+static const unsigned int kNvkKernelSymbolCount = 0;
+]=])
+if(EXISTS "${BUILTIN_NVK_KERNEL_BITCODE_H}")
+  file(READ "${BUILTIN_NVK_KERNEL_BITCODE_H}" _NEVERC_NVK_KERNEL_BITCODE_CONTENTS)
+  if(NOT _NEVERC_NVK_KERNEL_BITCODE_CONTENTS MATCHES "kNvkKernelSymbols")
+    message(STATUS
+      "NeverC: resetting stale NVK bitcode header without symbol index")
+    file(WRITE "${BUILTIN_NVK_KERNEL_BITCODE_H}"
+         "${_NEVERC_NVK_KERNEL_BITCODE_PLACEHOLDER}")
+  endif()
+  unset(_NEVERC_NVK_KERNEL_BITCODE_CONTENTS)
+else()
   file(WRITE "${BUILTIN_NVK_KERNEL_BITCODE_H}"
-    "/* Empty placeholder — run 'ninja neverc-bootstrap-nvk-kernel-bc' to populate. */\n"
-    "static const unsigned char kNvkKernelBC[] = {0};\n"
-    "static const unsigned int kNvkKernelBCLen = 0;\n"
-    "static const char *const kNvkKernelSymbols[] = {nullptr};\n"
-    "static const unsigned int kNvkKernelSymbolCount = 0;\n")
+       "${_NEVERC_NVK_KERNEL_BITCODE_PLACEHOLDER}")
 endif()
+unset(_NEVERC_NVK_KERNEL_BITCODE_PLACEHOLDER)
 
 add_custom_target(neverc-bootstrap-nvk-kernel-bc
   COMMAND ${Python3_EXECUTABLE}

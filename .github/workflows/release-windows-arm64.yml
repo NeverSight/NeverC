@@ -57,7 +57,7 @@ jobs:
             -DNEVERC_ENABLE_LTO=ON \
             -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS
+          cmake --build build --target neverc-embed-runtime-bitcode --parallel $NUMBER_OF_PROCESSORS
 
       - name: Build bundled Windows runtime
         shell: bash

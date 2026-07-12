@@ -25,12 +25,25 @@ cmake --build build-neverc --target neverc
 
 如果检测到 `ccache` / `sccache` 会自动启用。
 
+`--target neverc` 是日常的 stage-1 构建（嵌入式 runtime 为占位空 blob），
+多数本地编译/调试够用。若需要编译器二进制内嵌 string / mimalloc / std / NVK
+runtime（或对齐 CI 制品），再跑 stage-2 伞目标：
+
+```bash
+cmake --build build-neverc --target neverc-embed-runtime-bitcode
+```
+
+两阶段 bootstrap 细节见 [Builtins](../builtins/README.zh-CN.md)。
+
 ### 带测试构建
 
 ```bash
 cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake -DNEVERC_INCLUDE_TESTS=ON
 cmake --build build-neverc --target check-neverc
 ```
+
+`check-neverc` 依赖 `neverc-embed-runtime-bitcode`，首次跑测试前会自动
+bootstrap 并重链编译器，无需手写 embed 目标。
 
 ---
 

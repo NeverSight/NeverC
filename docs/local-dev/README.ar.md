@@ -25,12 +25,25 @@ cmake --build build-neverc --target neverc
 
 يتم اكتشاف `ccache` / `sccache` وتفعيلهما تلقائيًا إن وُجدا.
 
+`--target neverc` هو بناء stage-1 اليومي (الـ runtime المضمّنة فارغة) ويكفي لمعظم
+العمل المحلي. لتضمين string / mimalloc / std / NVK داخل الثنائي نفسه (أو محاذاة
+CI)، شغّل هدف المظلة stage-2:
+
+```bash
+cmake --build build-neverc --target neverc-embed-runtime-bitcode
+```
+
+تفاصيل الإقلاع على مرحلتين في [Builtins](../builtins/README.ar.md).
+
 ### البناء مع الاختبارات
 
 ```bash
 cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake -DNEVERC_INCLUDE_TESTS=ON
 cmake --build build-neverc --target check-neverc
 ```
+
+يعتمد `check-neverc` على `neverc-embed-runtime-bitcode`، لذا يُنفَّذ الإقلاع
+وإعادة الربط تلقائيًا قبل أول تشغيل للاختبارات. لا حاجة لاستدعاء هدف embed يدويًا.
 
 ---
 

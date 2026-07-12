@@ -70,7 +70,7 @@ jobs:
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
         -C neverc/neverc/cmake/caches/NeverC.cmake \
         neverc/llvm
-        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
 
     - name: Install neverc
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
