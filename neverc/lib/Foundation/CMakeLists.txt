@@ -212,8 +212,8 @@ if(TARGET mimalloc-static)
           "-D_CRT_NOEXCEPT=")
       list(APPEND _mi_depends "${_mi_win_stub_dir}/winternl.h")
     endif()
-    # Sysroot staging deps (linux-x64 / shared-msvc) are wired from
-    # neverc/CMakeLists.txt after runtime/ is added — lib/ configures first.
+    # Per-target sysroot staging deps are wired from neverc/CMakeLists.txt
+    # after runtime/ is added — lib/ configures first.
 
     add_custom_command(
       OUTPUT "${_mi_runtime_c}"

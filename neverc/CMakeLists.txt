@@ -527,14 +527,42 @@ endif()
 # lib/, so these edges cannot be declared in Foundation/CMakeLists.txt —
 # wire them here once both sides of the graph exist.
 #
-# darwin uses the host Apple SDK; no bundled macos sysroot required.
-# A targeted `--target neverc-embed-runtime-bitcode` then pulls only what
-# bootstrap actually needs (~linux + win headers), not the full SDK set.
+# A targeted `--target neverc-embed-runtime-bitcode` then pulls only the
+# sysroots each bootstrap actually needs, not the full SDK set.
 if(TARGET neverc-bootstrap-mimalloc-bc-linux AND TARGET neverc-runtime-linux-x64)
   add_dependencies(neverc-bootstrap-mimalloc-bc-linux neverc-runtime-linux-x64)
 endif()
+if(TARGET neverc-bootstrap-mimalloc-bc-darwin AND TARGET neverc-runtime-macos-arm64)
+  add_dependencies(neverc-bootstrap-mimalloc-bc-darwin neverc-runtime-macos-arm64)
+endif()
 if(TARGET neverc-bootstrap-mimalloc-bc-win)
   add_dependencies(neverc-bootstrap-mimalloc-bc-win neverc-runtime-shared-msvc)
+endif()
+
+# The std bootstrap does not pass --target: it compiles for the build host and
+# includes that host's libc headers.  Order it after only the matching staged
+# sysroot so parallel check-neverc builds cannot remove/copy the tree
+# mid-compile.
+if(TARGET neverc-bootstrap-std-bc)
+  set(_neverc_std_runtime_dep)
+  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+    set(_neverc_std_runtime_dep neverc-runtime-shared-msvc)
+  elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
+         CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64|arm64")
+    set(_neverc_std_runtime_dep neverc-runtime-macos-arm64)
+  elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64|arm64")
+      set(_neverc_std_runtime_dep neverc-runtime-linux-arm64)
+    else()
+      set(_neverc_std_runtime_dep neverc-runtime-linux-x64)
+    endif()
+  endif()
+  if(_neverc_std_runtime_dep)
+    if(TARGET ${_neverc_std_runtime_dep})
+      add_dependencies(neverc-bootstrap-std-bc ${_neverc_std_runtime_dep})
+    endif()
+  endif()
+  unset(_neverc_std_runtime_dep)
 endif()
 
 # Stage-2 neverc: embed bootstrapped runtime bitcode into the compiler.

@@ -1,6 +1,21 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #define __builtin_neverc_xorstr(s) (s)
 
+#include <linux/types.h>
+
+typedef ssize_t (*test_read_backend_fn)(
+	void __user *to, size_t count, loff_t *ppos,
+	const void *from, size_t available);
+typedef ssize_t (*test_write_backend_fn)(
+	void *to, size_t available, loff_t *ppos,
+	const void __user *from, size_t count);
+
+static test_read_backend_fn test_lookup_read_backend(const char *name);
+static test_write_backend_fn test_lookup_write_backend(const char *name);
+
+#define NEVERC_KRT_USERCOPY_TEST 1
+#define NEVERC_KRT_USERCOPY_READ_BACKEND(sym) test_lookup_read_backend(sym)
+#define NEVERC_KRT_USERCOPY_WRITE_BACKEND(sym) test_lookup_write_backend(sym)
 #include "../src/nvk_usercopy.c"
 
 #define TEST_BACKEND_READ  (1U << 0)
@@ -79,20 +94,23 @@ static ssize_t test_simple_write_to_buffer(
 	return test_write_result;
 }
 
-unsigned long neverc_krt_lookup_name(const char *name)
+static test_read_backend_fn test_lookup_read_backend(const char *name)
 {
-	if (test_streq(name, "simple_read_from_buffer")) {
-		test_read_lookups++;
-		if (test_backend_mask & TEST_BACKEND_READ)
-			return (unsigned long)(uintptr_t)test_simple_read_from_buffer;
+	if (!test_streq(name, "simple_read_from_buffer"))
 		return 0;
-	}
-	if (test_streq(name, "simple_write_to_buffer")) {
-		test_write_lookups++;
-		if (test_backend_mask & TEST_BACKEND_WRITE)
-			return (unsigned long)(uintptr_t)test_simple_write_to_buffer;
+	test_read_lookups++;
+	if (test_backend_mask & TEST_BACKEND_READ)
+		return test_simple_read_from_buffer;
+	return 0;
+}
+
+static test_write_backend_fn test_lookup_write_backend(const char *name)
+{
+	if (!test_streq(name, "simple_write_to_buffer"))
 		return 0;
-	}
+	test_write_lookups++;
+	if (test_backend_mask & TEST_BACKEND_WRITE)
+		return test_simple_write_to_buffer;
 	return 0;
 }
 

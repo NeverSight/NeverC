@@ -1,7 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#include <nvk.h>
 #include <linux/errno.h>
+#include <linux/kallsyms.h>
+#include <nvk_mem.h>
+/* Host behavior tests inject typed backends without importing all ARM64 APIs. */
+#ifndef NEVERC_KRT_USERCOPY_TEST
 #include "nvk_internal.h"
+#endif
 
 typedef ssize_t (*neverc_krt_simple_read_from_buffer_fn)(
 	void __user *to, size_t count, loff_t *ppos,
@@ -9,6 +13,15 @@ typedef ssize_t (*neverc_krt_simple_read_from_buffer_fn)(
 typedef ssize_t (*neverc_krt_simple_write_to_buffer_fn)(
 	void *to, size_t available, loff_t *ppos,
 	const void __user *from, size_t count);
+
+#ifndef NEVERC_KRT_USERCOPY_READ_BACKEND
+#define NEVERC_KRT_USERCOPY_READ_BACKEND(sym) \
+	((neverc_krt_simple_read_from_buffer_fn)NEVERC_KRT_LOOKUP(sym))
+#endif
+#ifndef NEVERC_KRT_USERCOPY_WRITE_BACKEND
+#define NEVERC_KRT_USERCOPY_WRITE_BACKEND(sym) \
+	((neverc_krt_simple_write_to_buffer_fn)NEVERC_KRT_LOOKUP(sym))
+#endif
 
 static neverc_krt_simple_read_from_buffer_fn
 	_neverc_krt_simple_read_from_buffer;
@@ -18,11 +31,9 @@ static neverc_krt_simple_write_to_buffer_fn
 void _neverc_krt_usercopy_init(void)
 {
 	_neverc_krt_simple_read_from_buffer =
-		(neverc_krt_simple_read_from_buffer_fn)
-		NEVERC_KRT_LOOKUP("simple_read_from_buffer");
+		NEVERC_KRT_USERCOPY_READ_BACKEND("simple_read_from_buffer");
 	_neverc_krt_simple_write_to_buffer =
-		(neverc_krt_simple_write_to_buffer_fn)
-		NEVERC_KRT_LOOKUP("simple_write_to_buffer");
+		NEVERC_KRT_USERCOPY_WRITE_BACKEND("simple_write_to_buffer");
 }
 
 static size_t _neverc_krt_usercopy_copied(
