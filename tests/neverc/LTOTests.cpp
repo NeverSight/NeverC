@@ -445,6 +445,121 @@ TEST_F(LTOTest, LtoPartitionCache) {
   EXPECT_NE(r1.out, r2.out) << "edit must change the checksum";
 }
 
+TEST_F(LTOTest, ParallelCodegenPreservesAliasUsers) {
+  auto cacheDir = tmpFile("pcg_alias_cache");
+  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar,
+                        cacheDir.string().c_str());
+  ScopedEnvVar Strict("NEVERC_PCG_STRICT", "1");
+  ScopedEnvVar Debug("NEVERC_PCG_DEBUG", "1");
+
+  auto buildAndRun = [&](const std::string &Tag,
+                         bool DisablePartitionCache) {
+    auto src = tmpFile("pcg_alias_" + Tag + ".c");
+    auto obj = tmpFile("pcg_alias_" + Tag + ".o");
+    std::string code =
+        "typedef unsigned long long u64;\n"
+        "__attribute__((noinline)) u64 alias_target(u64 x) {\n"
+        "  return x * 3ULL + 1ULL;\n"
+        "}\n"
+        "extern u64 public_alias(u64) "
+        "__attribute__((alias(\"alias_target\")));\n";
+    for (unsigned I = 0; I < 32; ++I)
+      code += "__attribute__((noinline)) u64 alias_user_" +
+              std::to_string(I) +
+              "(u64 x) { return public_alias(x + " + std::to_string(I) +
+              "ULL); }\n";
+    code += "int main(void) {\n";
+    for (unsigned I = 0; I < 32; ++I)
+      code += "  if (alias_user_" + std::to_string(I) +
+              "(1) != ((1ULL + " + std::to_string(I) +
+              "ULL) * 3ULL + 1ULL)) return " + std::to_string(I + 1) + ";\n";
+    code += "  return 0;\n}\n";
+    writeFile(src, code);
+
+    std::vector<std::string> args = {
+        "--target=x86_64-unknown-linux-gnu",
+        "-O0",
+        "-std=gnu11",
+        "-fno-lto",
+        "-c",
+        "-mllvm",
+        "-neverc-pcg-min-funcs=2",
+        "-mllvm",
+        "-neverc-pcg-weight-floor=1",
+        "-mllvm",
+        "-neverc-pcg-cg-weight-div=1",
+    };
+    args.insert(args.end(), {src.string(), "-o", obj.string()});
+
+    std::optional<ScopedEnvVar> PartitionCache;
+    if (DisablePartitionCache)
+      PartitionCache.emplace(linker::ltoPartitionCacheEnvVar,
+                             linker::ltoCacheDisableValue);
+    else
+      PartitionCache.emplace(linker::ltoPartitionCacheEnvVar, "1");
+
+    CmdResult compile = ncc(args);
+    ASSERT_EQ(compile.exitCode, 0) << Tag << ":\n" << compile.err;
+    EXPECT_TRUE(compile.stderrContains("[pcg] SUCCESS"))
+        << Tag << " did not exercise merged parallel codegen:\n"
+        << compile.err;
+    EXPECT_FALSE(readFile(obj).empty()) << Tag << " emitted an empty object";
+  };
+
+  buildAndRun("cached", false);
+  buildAndRun("uncached", true);
+}
+
+TEST_F(LTOTest, ParallelCodegenPreservesLinkerOptionsExactlyOnce) {
+  auto src = tmpFile("pcg_linker_options.c");
+  auto obj = tmpFile("pcg_linker_options.obj");
+  std::string code =
+      "#pragma comment(lib, \"advapi32.lib\")\n"
+      "#pragma comment(linker, \"/INCLUDE:pcg_metadata_anchor\")\n"
+      "int pcg_metadata_anchor(void) { return 7; }\n";
+  for (unsigned I = 0; I < 32; ++I)
+    code += "__attribute__((noinline)) int pcg_metadata_user_" +
+            std::to_string(I) + "(int x) { return x * " +
+            std::to_string(I + 3) + " + pcg_metadata_anchor(); }\n";
+  writeFile(src, code);
+
+  ScopedEnvVar Strict("NEVERC_PCG_STRICT", "1");
+  ScopedEnvVar Debug("NEVERC_PCG_DEBUG", "1");
+  std::vector<std::string> args = {
+      "--target=x86_64-pc-windows-msvc",
+      "-O0",
+      "-std=gnu11",
+      "-fno-lto",
+      "-c",
+      "-mllvm",
+      "-neverc-pcg-min-funcs=2",
+      "-mllvm",
+      "-neverc-pcg-weight-floor=1",
+      "-mllvm",
+      "-neverc-pcg-cg-weight-div=1",
+      src.string(),
+      "-o",
+      obj.string(),
+  };
+  CmdResult compile = ncc(args);
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  ASSERT_TRUE(compile.stderrContains("[pcg] SUCCESS"))
+      << "test did not exercise merged parallel codegen:\n"
+      << compile.err;
+
+  const std::string bytes = readFile(obj);
+  auto count = [&](const std::string &needle) {
+    size_t result = 0;
+    for (size_t pos = 0;
+         (pos = bytes.find(needle, pos)) != std::string::npos;
+         pos += needle.size())
+      ++result;
+    return result;
+  };
+  EXPECT_EQ(count("--defaultlib=advapi32.lib"), 1u);
+  EXPECT_EQ(count("/INCLUDE:pcg_metadata_anchor"), 1u);
+}
+
 // Auto-LTO compile-time cliff guard for the two cooperating valves that tame
 // it: the inline cap (Inliner.cpp's NevercInlineMaxCallerLoops) and the
 // full-unroll cap (LoopUnrollPass.cpp's NevercFullUnrollMaxLoopsPerFunc).  When

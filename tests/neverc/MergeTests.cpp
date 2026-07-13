@@ -1546,6 +1546,60 @@ bool patchAllMachoSymValues(SmallVectorImpl<char> &Buf, StringRef Name,
   return Any;
 }
 
+bool corruptMachoSymbolContentByte(SmallVectorImpl<char> &Buf,
+                                   StringRef Name) {
+  namespace MO = llvm::MachO;
+  if (Buf.size() < sizeof(MO::mach_header_64))
+    return false;
+  auto *MH = reinterpret_cast<MO::mach_header_64 *>(Buf.data());
+  MO::segment_command_64 *Seg = nullptr;
+  MO::symtab_command *Symtab = nullptr;
+  uint64_t Cmd = sizeof(MO::mach_header_64);
+  for (unsigned C = 0; C < MH->ncmds; ++C) {
+    if (Cmd + sizeof(MO::load_command) > Buf.size())
+      return false;
+    auto *LC = reinterpret_cast<MO::load_command *>(Buf.data() + Cmd);
+    if (LC->cmdsize == 0 || Cmd + LC->cmdsize > Buf.size())
+      return false;
+    if (LC->cmd == MO::LC_SEGMENT_64)
+      Seg = reinterpret_cast<MO::segment_command_64 *>(LC);
+    else if (LC->cmd == MO::LC_SYMTAB)
+      Symtab = reinterpret_cast<MO::symtab_command *>(LC);
+    Cmd += LC->cmdsize;
+  }
+  if (!Seg || !Symtab ||
+      (uint64_t)Symtab->stroff + Symtab->strsize > Buf.size() ||
+      (uint64_t)Symtab->symoff +
+              (uint64_t)Symtab->nsyms * sizeof(MO::nlist_64) >
+          Buf.size())
+    return false;
+
+  const char *Strings = Buf.data() + Symtab->stroff;
+  auto *Sections = reinterpret_cast<MO::section_64 *>(
+      reinterpret_cast<char *>(Seg) + sizeof(MO::segment_command_64));
+  for (unsigned I = 0; I < Symtab->nsyms; ++I) {
+    auto *NL = reinterpret_cast<MO::nlist_64 *>(
+        Buf.data() + Symtab->symoff + I * sizeof(MO::nlist_64));
+    if (NL->n_strx >= Symtab->strsize ||
+        Name != StringRef(Strings + NL->n_strx,
+                          strnlen(Strings + NL->n_strx,
+                                  Symtab->strsize - NL->n_strx)))
+      continue;
+    if ((NL->n_type & MO::N_TYPE) != MO::N_SECT || NL->n_sect == 0 ||
+        NL->n_sect > Seg->nsects)
+      return false;
+    const MO::section_64 &S = Sections[NL->n_sect - 1];
+    if (NL->n_value < S.addr)
+      return false;
+    uint64_t Rel = NL->n_value - S.addr;
+    if (Rel >= S.size || (uint64_t)S.offset + Rel >= Buf.size())
+      return false;
+    Buf[S.offset + Rel] ^= 0xFF;
+    return true;
+  }
+  return false;
+}
+
 /// Force every Mach-O relocation's r_address to NewVal — simulates the reloc
 /// half of the offset-collapse bug for the Mach-O verifier.
 bool patchAllMachoRelocAddrs(SmallVectorImpl<char> &Buf, uint32_t NewVal) {
@@ -4644,6 +4698,44 @@ TEST(MergeMachOVerify, AcceptsGoodMergeRejectsCollapse) {
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
                            ArrayRef<char>(OOB), Format::MachO64, {}, &Err))
       << "Mach-O verifier accepted an out-of-bounds symbol value";
+}
+
+TEST(MergeMachOVerify, AcceptsIndependentlyCoalescedWeakDefinitions) {
+  namespace MO = llvm::MachO;
+  // Every weak definition is coalesced independently.  The output may select
+  // _weak_a and _weak_b from one input while another input placed those names
+  // at different relative offsets in the same section.  Both surviving bodies
+  // are byte-equivalent, but they cannot serve as fixed section-shift anchors.
+  MachoSecSpec S{"__TEXT", "__const", 0x40, 4, MO::S_REGULAR, 0xA5};
+  uint8_t DefWeak = MO::N_SECT | MO::N_EXT | MO::N_PEXT;
+  uint16_t WeakDesc = MO::N_WEAK_DEF;
+  MachoSymSpec A0{"_weak_a", DefWeak, 1, 0x00, WeakDesc};
+  MachoSymSpec B0{"_weak_b", DefWeak, 1, 0x20, WeakDesc};
+  MachoSymSpec A1{"_weak_a", DefWeak, 1, 0x10, WeakDesc};
+  MachoSymSpec B1{"_weak_b", DefWeak, 1, 0x20, WeakDesc};
+  auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S},
+                       {A0, B0});
+  auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S},
+                       {A1, B1});
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(std::move(O0));
+  Bufs.push_back(std::move(O1));
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  ASSERT_TRUE(mergeObjects(Bufs, OS, Format::MachO64));
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::MachO64, {}, &Err))
+      << Err;
+
+  auto Corrupt = Out;
+  ASSERT_TRUE(corruptMachoSymbolContentByte(Corrupt, "_weak_a"));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Corrupt), Format::MachO64, {}, &Err))
+      << "verifier accepted a corrupted surviving weak definition";
 }
 
 TEST(MergeMachOVerify, CatchesCollapsedDuplicateNamedSymbol) {
