@@ -5,6 +5,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
 using namespace llvm;
@@ -121,7 +122,7 @@ void prepareRuntimeStructors(Module &M, StringRef GlobalName, StringRef Role,
 PreservedAnalyses
 MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   Triple TT(M.getTargetTriple());
-  StringRef Embedded = BuiltinMimalloc::getEmbeddedBitcode(TT.getOS());
+  StringRef Embedded = BuiltinMimalloc::getEmbeddedBitcode(TT);
   if (Embedded.empty())
     return PreservedAnalyses::all();
 
@@ -142,6 +143,32 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   tagRuntimeDefinitions(*MimallocMod, MimallocRuntimeMetadata);
   linkModuleOrFail(M, std::move(MimallocMod), "neverc mimalloc runtime");
 
+  // mimalloc's Windows path calls OpenProcessToken / AdjustTokenPrivileges /
+  // LookupPrivilegeValueA.  Re-add the advapi32 defaultlib after
+  // parseBitcodeAndPrepare strips host linker.options, and independently of
+  // whether PCG later preserves .drectve from partition 0.
+  if (TT.isOSBinFormatCOFF()) {
+    auto *NMD = M.getOrInsertNamedMetadata("llvm.linker.options");
+    bool HasAdvapi = false;
+    for (const MDNode *Op : NMD->operands()) {
+      for (const MDOperand &Piece : Op->operands()) {
+        if (auto *S = dyn_cast<MDString>(Piece)) {
+          if (S->getString().contains_insensitive("advapi32")) {
+            HasAdvapi = true;
+            break;
+          }
+        }
+      }
+      if (HasAdvapi)
+        break;
+    }
+    if (!HasAdvapi) {
+      LLVMContext &Ctx = M.getContext();
+      Metadata *Ops[] = {MDString::get(Ctx, "/DEFAULTLIB:advapi32.lib")};
+      NMD->addOperand(MDNode::get(Ctx, Ops));
+    }
+  }
+
   auto IsMimallocFn = [](const Function &F) {
     return hasRuntimeDefinitionTag(F, MimallocRuntimeMetadata);
   };
@@ -161,19 +188,19 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     }
   }
 
+  // mimalloc exposes many allocator overrides as aliases (malloc/free,
+  // __libc_*, strdup, C++ operator new/delete, ...).  Updating only Function
+  // linkage — or only the small malloc-family name list — leaves the rest as
+  // strong aliases on ELF, so every non-LTO consumer TU contributes another
+  // definition and the native link reports duplicates.  Aliases cannot own
+  // COMDAT groups; weak ODR linkage is the coalescing mechanism for them.
   for (GlobalAlias &GA : M.aliases()) {
-    if (!isMallocOverrideSymbol(GA.getName()))
+    if (GA.hasLocalLinkage())
       continue;
     GlobalObject *Aliasee = GA.getAliaseeObject();
     if (!Aliasee ||
         !hasRuntimeDefinitionTag(*Aliasee, MimallocRuntimeMetadata))
       continue;
-
-    // mimalloc exposes several allocator overrides as aliases rather than
-    // functions.  Updating only Function linkage leaves these aliases strong
-    // on ELF, so every non-LTO consumer TU contributes another malloc/free
-    // definition.  Aliases cannot own COMDAT groups; weak ODR linkage is the
-    // native coalescing mechanism for them.
     GA.setLinkage(GlobalValue::WeakODRLinkage);
     GA.setVisibility(GlobalValue::DefaultVisibility);
   }

@@ -149,18 +149,31 @@ add_custom_target(neverc-bootstrap-string-bc
 )
 
 # ---------------------------------------------------------------------------
-# BuiltinMimalloc precompiled bitcode (per-OS)
+# BuiltinMimalloc precompiled bitcode (per-OS + per-arch)
 # ---------------------------------------------------------------------------
 set(BUILTIN_MIMALLOC_SCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Builtin")
 
-# Per-OS placeholder headers — written once, overwritten by bootstrap.
-foreach(_mi_os linux darwin win)
-  set(_mi_hdr "${CMAKE_CURRENT_BINARY_DIR}/BuiltinMimallocBitcode_${_mi_os}.h")
+# Placeholders — written once, overwritten by bootstrap.
+# Keys are the bin2c / header suffix. mimalloc IR embeds arch-specific inline
+# asm, so every supported OS/arch pair needs its own blob.
+set(_MI_VARIANTS
+  "linux_x64:linux:x86_64-unknown-linux-gnu"
+  "linux_arm64:linux:aarch64-unknown-linux-gnu"
+  "darwin_x64:darwin:x86_64-apple-macosx11.0"
+  "darwin_arm64:darwin:arm64-apple-macosx11.0"
+  "win_x64:win:x86_64-pc-windows-msvc"
+  "win_arm64:win:aarch64-pc-windows-msvc"
+)
+
+foreach(_mi_spec IN LISTS _MI_VARIANTS)
+  string(REPLACE ":" ";" _mi_parts "${_mi_spec}")
+  list(GET _mi_parts 0 _mi_tag)
+  set(_mi_hdr "${CMAKE_CURRENT_BINARY_DIR}/BuiltinMimallocBitcode_${_mi_tag}.h")
   if(NOT EXISTS "${_mi_hdr}")
     file(WRITE "${_mi_hdr}"
       "/* Empty placeholder — run 'ninja neverc-bootstrap-mimalloc-bc' to populate. */\n"
-      "static const unsigned char kMimallocBitcode_${_mi_os}[] = {0};\n"
-      "static const unsigned int kMimallocBitcode_${_mi_os}_len = 0;\n")
+      "static const unsigned char kMimallocBitcode_${_mi_tag}[] = {0};\n"
+      "static const unsigned int kMimallocBitcode_${_mi_tag}_len = 0;\n")
   endif()
   list(APPEND BUILTIN_MIMALLOC_BITCODE_HDRS "${_mi_hdr}")
 endforeach()
@@ -168,13 +181,12 @@ endforeach()
 # Bootstrap targets — require a first-stage neverc build and mimalloc source.
 # Usage:
 #   ninja neverc                          # stage 1
-#   ninja neverc-bootstrap-mimalloc-bc    # compile per-OS bitcode
+#   ninja neverc-bootstrap-mimalloc-bc    # compile per-OS+arch bitcode
 #   ninja neverc                          # stage 2 (embeds bitcode)
 #
-# The bitcode is compiled per-OS using the host triple (same approach as
-# BuiltinString).  mimalloc's source is arch-neutral C — the IR pass
-# resets data layout & triple at merge time, and strips host-specific
-# attributes, so cross-arch usage works for the same OS.
+# The IR pass still resets data layout & triple at merge time and strips
+# host-specific attributes, but arch-specific inline asm cannot be retargeted,
+# so each OS/arch pair gets its own blob.
 if(TARGET mimalloc-static)
   get_target_property(_MI_SRC_ROOT mimalloc-static SOURCE_DIR)
   if(NOT _MI_SRC_ROOT)
@@ -182,25 +194,31 @@ if(TARGET mimalloc-static)
       "NeverC: unable to locate mimalloc source directory for bitcode bootstrap")
   endif()
 
-  foreach(_mi_os linux darwin win)
-    if(_mi_os STREQUAL "linux")
-      set(_mi_triple "x86_64-unknown-linux-gnu")
-    elseif(_mi_os STREQUAL "darwin")
-      set(_mi_triple "arm64-apple-macosx11.0")
-    elseif(_mi_os STREQUAL "win")
-      set(_mi_triple "x86_64-pc-windows-msvc")
-    endif()
+  set(_MI_BOOTSTRAP_TARGETS)
+  foreach(_mi_spec IN LISTS _MI_VARIANTS)
+    string(REPLACE ":" ";" _mi_parts "${_mi_spec}")
+    list(GET _mi_parts 0 _mi_tag)
+    list(GET _mi_parts 1 _mi_os)
+    list(GET _mi_parts 2 _mi_triple)
 
+    # Shared generated C wrapper per OS (defines differ by OS, not arch).
     set(_mi_runtime_c
         "${CMAKE_CURRENT_BINARY_DIR}/MimallocRuntime_${_mi_os}.c")
     set(_mi_runtime_bc
-        "${CMAKE_CURRENT_BINARY_DIR}/neverc_mimalloc_${_mi_os}.bc")
+        "${CMAKE_CURRENT_BINARY_DIR}/neverc_mimalloc_${_mi_tag}.bc")
     set(_mi_bitcode_h
-        "${CMAKE_CURRENT_BINARY_DIR}/BuiltinMimallocBitcode_${_mi_os}.h")
+        "${CMAKE_CURRENT_BINARY_DIR}/BuiltinMimallocBitcode_${_mi_tag}.h")
 
     set(_mi_extra_flags)
     set(_mi_depends neverc "${_mi_runtime_c}")
-    if(_mi_os STREQUAL "win")
+    if(_mi_os STREQUAL "darwin")
+      # The bundled macOS SDK is universal even though it is staged under the
+      # native arm64 directory. Point both bootstrap variants at it explicitly
+      # so Darwin x64 bitcode can also be generated on Linux/Windows hosts.
+      list(APPEND _mi_extra_flags
+          "-isysroot"
+          "${LLVM_LIBRARY_OUTPUT_INTDIR}/../runtime/macos/arm64")
+    elseif(_mi_os STREQUAL "win")
       # Bundled MSVC um/ lacks winternl.h; provide a tiny stub on the include
       # path. Newer UCRT macros used by mimalloc's MSVC override path are also
       # absent from the bundled CRT — define them empty for IR emission.
@@ -212,21 +230,23 @@ if(TARGET mimalloc-static)
           "-D_CRT_NOEXCEPT=")
       list(APPEND _mi_depends "${_mi_win_stub_dir}/winternl.h")
     endif()
-    # Per-target sysroot staging deps are wired from neverc/CMakeLists.txt
-    # after runtime/ is added — lib/ configures first.
 
-    add_custom_command(
-      OUTPUT "${_mi_runtime_c}"
-      COMMAND ${Python3_EXECUTABLE}
-              "${BUILTIN_MIMALLOC_SCRIPT_DIR}/gen_mimalloc_source.py"
-              "${_MI_SRC_ROOT}"
-              -o "${_mi_runtime_c}"
-              --os ${_mi_os}
-      DEPENDS "${BUILTIN_MIMALLOC_SCRIPT_DIR}/gen_mimalloc_source.py"
-      COMMENT "[NeverC] Generating MimallocRuntime_${_mi_os}.c"
-    )
+    if(NOT TARGET neverc-gen-mimalloc-src-${_mi_os})
+      add_custom_command(
+        OUTPUT "${_mi_runtime_c}"
+        COMMAND ${Python3_EXECUTABLE}
+                "${BUILTIN_MIMALLOC_SCRIPT_DIR}/gen_mimalloc_source.py"
+                "${_MI_SRC_ROOT}"
+                -o "${_mi_runtime_c}"
+                --os ${_mi_os}
+        DEPENDS "${BUILTIN_MIMALLOC_SCRIPT_DIR}/gen_mimalloc_source.py"
+        COMMENT "[NeverC] Generating MimallocRuntime_${_mi_os}.c"
+      )
+      add_custom_target(neverc-gen-mimalloc-src-${_mi_os}
+        DEPENDS "${_mi_runtime_c}")
+    endif()
 
-    add_custom_target(neverc-bootstrap-mimalloc-bc-${_mi_os}
+    add_custom_target(neverc-bootstrap-mimalloc-bc-${_mi_tag}
       COMMAND $<TARGET_FILE:neverc>
               -c -emit-llvm -O2
               -fno-builtin-mimalloc -fno-lto
@@ -242,19 +262,29 @@ if(TARGET mimalloc-static)
               "${BUILTIN_MIMALLOC_SCRIPT_DIR}/bin2c.py"
               "${_mi_runtime_bc}"
               -o "${_mi_bitcode_h}"
-              --name "kMimallocBitcode_${_mi_os}"
+              --name "kMimallocBitcode_${_mi_tag}"
       COMMAND ${CMAKE_COMMAND} -E touch
               "${CMAKE_CURRENT_SOURCE_DIR}/Builtin/BuiltinMimalloc.cpp"
-      DEPENDS ${_mi_depends}
-      COMMENT "[NeverC] Bootstrap: compiling mimalloc for ${_mi_os} (${_mi_triple})"
+      DEPENDS ${_mi_depends} neverc-gen-mimalloc-src-${_mi_os}
+      COMMENT "[NeverC] Bootstrap: compiling mimalloc for ${_mi_tag} (${_mi_triple})"
     )
+    list(APPEND _MI_BOOTSTRAP_TARGETS neverc-bootstrap-mimalloc-bc-${_mi_tag})
   endforeach()
 
+  # Compatibility aliases used by callers that select variants by OS.
+  add_custom_target(neverc-bootstrap-mimalloc-bc-linux
+    DEPENDS neverc-bootstrap-mimalloc-bc-linux_x64
+            neverc-bootstrap-mimalloc-bc-linux_arm64)
+  add_custom_target(neverc-bootstrap-mimalloc-bc-darwin
+    DEPENDS neverc-bootstrap-mimalloc-bc-darwin_x64
+            neverc-bootstrap-mimalloc-bc-darwin_arm64)
+  add_custom_target(neverc-bootstrap-mimalloc-bc-win
+    DEPENDS neverc-bootstrap-mimalloc-bc-win_x64
+            neverc-bootstrap-mimalloc-bc-win_arm64)
+
   add_custom_target(neverc-bootstrap-mimalloc-bc
-    DEPENDS neverc-bootstrap-mimalloc-bc-linux
-            neverc-bootstrap-mimalloc-bc-darwin
-            neverc-bootstrap-mimalloc-bc-win
-    COMMENT "[NeverC] Bootstrap: all mimalloc per-OS bitcode targets"
+    DEPENDS ${_MI_BOOTSTRAP_TARGETS}
+    COMMENT "[NeverC] Bootstrap: all mimalloc per-OS+arch bitcode targets"
   )
 endif()
 

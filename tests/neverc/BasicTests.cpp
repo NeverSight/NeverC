@@ -215,6 +215,38 @@ TEST_F(BasicTest, BuiltinStringFuzz) {
                      "test_neverc_string_fuzz: ALL PASSED");
 }
 
+TEST_F(BasicTest, BuiltinStringCrossCompilesWithPcgOnCOFF) {
+  const auto src =
+      (testDir() / "string" / "test_neverc_string_fuzz.c").string();
+
+  for (const char *triple : {"x86_64-pc-windows-msvc",
+                             "aarch64-pc-windows-msvc"}) {
+    SCOPED_TRACE(triple);
+    auto obj = tmpFile(std::string("string_pcg_") + triple + ".obj");
+    auto r = ncc({
+        std::string("--target=") + triple,
+        "-O0",
+        "-std=c23",
+        "-fbuiltin-string",
+        "-fno-lto",
+        "-c",
+        "-mllvm",
+        "-neverc-pcg-min-funcs=2",
+        "-mllvm",
+        "-neverc-pcg-weight-floor=1",
+        "-mllvm",
+        "-neverc-pcg-cg-weight-div=1",
+        src,
+        "-o",
+        obj.string(),
+    });
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+    EXPECT_TRUE(fs::exists(obj) && fileSize(obj) > 0);
+    EXPECT_NE(readFile(obj).find(".__pcg"), std::string::npos)
+        << "the regression must exercise merged parallel codegen";
+  }
+}
+
 TEST_F(BasicTest, BuiltinStringFormat) {
   auto src = (testDir() / "string" / "test_neverc_string_format.c").string();
   compileRunAndCheck("test_neverc_string_format", src, kStrFlags, 0,

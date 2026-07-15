@@ -39,6 +39,12 @@ def main():
         "linux": [
             "#define _GNU_SOURCE 1",
             "#define _DEFAULT_SOURCE 1",
+            # Mimalloc otherwise falls back to an x86 FS-segment inline-asm
+            # memory operand. NeverC materializes that operand as a load from
+            # address zero before entering the asm, so every allocation
+            # crashes. The LLVM thread-pointer intrinsic is the upstream
+            # preferred implementation and works for both Linux variants.
+            "#define MI_USE_BUILTIN_THREAD_POINTER 1",
         ],
         "darwin": [
             "#define _GNU_SOURCE 1",

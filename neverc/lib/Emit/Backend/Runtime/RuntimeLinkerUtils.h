@@ -2,7 +2,6 @@
 #define NEVERC_LIB_EMIT_BACKEND_RUNTIME_RUNTIMELINKERUTILS_H
 
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Comdat.h"
@@ -48,6 +47,14 @@ parseBitcodeAndPrepare(llvm::StringRef Embedded, llvm::Module &M,
     llvm::report_fatal_error(llvm::Twine("Failed to parse ") + Label + ": " +
                              llvm::toString(ExpectedMod.takeError()));
   auto Mod = std::move(*ExpectedMod);
+  const llvm::Triple EmbeddedTT(Mod->getTargetTriple());
+  const llvm::Triple ConsumerTT(M.getTargetTriple());
+  const auto EmbeddedFormat = EmbeddedTT.getObjectFormat();
+  const bool LinkerMetadataIsCompatible =
+      EmbeddedFormat != llvm::Triple::UnknownObjectFormat &&
+      EmbeddedFormat == ConsumerTT.getObjectFormat() &&
+      EmbeddedTT.getOS() == ConsumerTT.getOS() &&
+      EmbeddedTT.getEnvironment() == ConsumerTT.getEnvironment();
 
   stripHostTargetAttributes(*Mod);
   Mod->setDataLayout(M.getDataLayout());
@@ -55,6 +62,25 @@ parseBitcodeAndPrepare(llvm::StringRef Embedded, llvm::Module &M,
 
   if (auto *Flags = Mod->getModuleFlagsMetadata())
     Flags->clearOperands();
+
+  // Embedded runtimes may have been bootstrapped for another object format
+  // (e.g. a Windows-hosted string runtime retargeted to Linux). COFF encodes
+  // llvm.linker.options as one "/DEFAULTLIB:..." string, while ELF requires
+  // option/value pairs and otherwise fatals with "invalid llvm.linker.options".
+  // Preserve directives only when object format, OS, and ABI environment
+  // match: they can carry real target dependencies, but ELF alone is not
+  // enough to make (for example) GNU/Linux and Android libraries compatible.
+  // Mimalloc still adds advapi32 below if its source metadata did not contain
+  // it.
+  if (!LinkerMetadataIsCompatible)
+    for (llvm::StringRef MDName :
+         {"llvm.linker.options", "llvm.dependent-libraries"})
+      if (auto *NMD = Mod->getNamedMetadata(MDName))
+        Mod->eraseNamedMetadata(NMD);
+
+  // Do not attribute embedded runtime implementation units to user objects.
+  if (auto *NMD = Mod->getNamedMetadata("llvm.ident"))
+    Mod->eraseNamedMetadata(NMD);
 
   return Mod;
 }

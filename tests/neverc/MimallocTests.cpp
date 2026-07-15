@@ -1,5 +1,6 @@
 #include "NeverCTestFixture.h"
 #include <sstream>
+#include <string_view>
 
 class MimallocTest : public NeverCTest {};
 
@@ -66,6 +67,93 @@ TEST_F(MimallocTest, RuntimeOverrideAliasesRemainCoalescibleOnELF) {
   EXPECT_NE(text.find("@free = weak_odr"), std::string::npos)
       << "the free override alias must remain weak across native multi-TU "
          "links";
+  EXPECT_NE(text.find("@__libc_malloc = weak_odr"), std::string::npos)
+      << "libc interceptor aliases must also be weak; strong aliases duplicate "
+         "across -fno-lto TUs";
+  EXPECT_NE(text.find("@strdup = weak_odr"), std::string::npos)
+      << "strdup must be a weak alias, not a strong external definition";
+}
+
+TEST_F(MimallocTest, RuntimeUsesSafeThreadPointerOnLinux) {
+  auto src = tmpFile("mimalloc_thread_pointer.c");
+  writeFile(src, "typedef __SIZE_TYPE__ size_t;\n"
+                 "extern void *malloc(size_t);\n"
+                 "void *allocate(void) { return malloc(32); }\n");
+
+  for (const char *triple :
+       {"x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"}) {
+    SCOPED_TRACE(triple);
+    auto ir = tmpFile(std::string("mimalloc_thread_pointer_") + triple + ".ll");
+    auto r = ncc({std::string("--target=") + triple, "-std=c11",
+                  "-fbuiltin-mimalloc", "-fno-lto", "-O0", "-S", "-emit-llvm",
+                  src.string(), "-o", ir.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string text = readFile(ir);
+    EXPECT_NE(text.find("@llvm.thread.pointer()"), std::string::npos)
+        << "the Linux runtime must use LLVM's thread-pointer intrinsic";
+    EXPECT_EQ(text.find("load ptr, ptr null"), std::string::npos)
+        << "the FS-slot asm fallback eagerly dereferences address zero";
+    if (std::string_view(triple).substr(0, 7) == "aarch64")
+      EXPECT_EQ(text.find("={di}"), std::string::npos)
+          << "the ARM64 runtime must not contain x86 register constraints";
+  }
+}
+
+TEST_F(MimallocTest, RuntimeUsesMatchingDarwinArchitecture) {
+  auto src = tmpFile("mimalloc_darwin_arch.c");
+  writeFile(src, "typedef __SIZE_TYPE__ size_t;\n"
+                 "extern void *malloc(size_t);\n"
+                 "void *allocate(void) { return malloc(32); }\n");
+
+  for (const char *triple :
+       {"x86_64-apple-macosx11.0", "arm64-apple-macosx11.0"}) {
+    SCOPED_TRACE(triple);
+    auto ir = tmpFile(std::string("mimalloc_darwin_arch_") + triple + ".ll");
+    auto r = ncc({std::string("--target=") + triple, "-std=c11",
+                  "-fbuiltin-mimalloc", "-fno-lto", "-O0", "-S", "-emit-llvm",
+                  src.string(), "-o", ir.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string text = readFile(ir);
+    EXPECT_NE(text.find("@mi_malloc"), std::string::npos)
+        << "the target must receive an embedded mimalloc runtime";
+    if (std::string_view(triple).substr(0, 6) == "x86_64")
+      EXPECT_NE(text.find("={di}"), std::string::npos)
+          << "the x64 runtime must contain x86 register constraints";
+    else
+      EXPECT_EQ(text.find("={di}"), std::string::npos)
+          << "the ARM64 runtime must not contain x86 register constraints";
+  }
+}
+
+TEST_F(MimallocTest, RuntimeCrossCompilesWithPcgOnCOFF) {
+  const auto src =
+      (testDir() / "string" / "test_neverc_string_fuzz.c").string();
+
+  for (const char *triple :
+       {"x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"}) {
+    SCOPED_TRACE(triple);
+    auto obj = tmpFile(std::string("mimalloc_pcg_") + triple + ".obj");
+    auto r =
+        ncc({std::string("--target=") + triple, "-std=c23", "-fbuiltin-string",
+             "-fbuiltin-mimalloc", "-fno-lto", "-O0", "-c", "-mllvm",
+             "-neverc-pcg-min-funcs=2", "-mllvm", "-neverc-pcg-weight-floor=1",
+             "-mllvm", "-neverc-pcg-cg-weight-div=1", src, "-o", obj.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string bytes = readFile(obj);
+    EXPECT_FALSE(bytes.empty());
+    EXPECT_NE(bytes.find(".__pcg"), std::string::npos)
+        << "the regression must exercise merged parallel codegen";
+    size_t count = 0;
+    for (size_t pos = 0; (pos = bytes.find("/DEFAULTLIB:advapi32.lib", pos)) !=
+                         std::string::npos;
+         pos += sizeof("/DEFAULTLIB:advapi32.lib") - 1)
+      ++count;
+    EXPECT_EQ(count, 1u)
+        << "the embedded runtime dependency must survive PCG exactly once";
+  }
 }
 
 TEST_F(MimallocTest, RuntimePreservesUserLocalProvenance) {

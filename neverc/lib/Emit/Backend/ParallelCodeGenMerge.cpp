@@ -13,8 +13,10 @@
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Comdat.h"
 #include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/GlobalIFunc.h"
+#include "llvm/IR/GlobalObject.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -567,13 +569,18 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
                        : unsigned(xxh3_64bits(Name) % NumPartitions);
       Bins[B].push_back(Name.str());
     }
-    // Drop empty bins (possible at small function counts).  Bin 0 keeps
-    // its slot whenever it is non-empty, so alias/ifunc targets stay in
-    // the partition that retains aliases and global initializers.
+    // Always retain slot 0 for module-level metadata (llvm.linker.options,
+    // llvm.global_ctors, aliases pinned above).  Dropping an empty bin 0 used
+    // to renumber a former non-zero bin into partition 0 — that bin still kept
+    // named metadata, but on some COFF hosts the resulting .drectve was lost
+    // during merge when partition 0 had no "real" ownership of the metadata
+    // relative to how codegen ordered sections.  Keeping a (possibly empty)
+    // partition 0 makes "metadata lives in p0" a stable invariant.
     Assignments.clear();
-    for (auto &Bin : Bins)
-      if (!Bin.empty())
-        Assignments.push_back(std::move(Bin));
+    Assignments.push_back(std::move(Bins[0]));
+    for (unsigned i = 1, e = Bins.size(); i != e; ++i)
+      if (!Bins[i].empty())
+        Assignments.push_back(std::move(Bins[i]));
     NumPartitions = Assignments.size();
     Results.resize(NumPartitions);
     for (unsigned p = 0; p < NumPartitions; ++p)
@@ -705,6 +712,21 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
           continue;
         F.deleteBody();
         F.setComdat(nullptr);
+      }
+      // externalizeAndSerialize renames symbols with a ".__pcg" suffix, but
+      // Comdat keys keep their pre-rename names.  COFF lowering then looks up
+      // the Comdat name as a GlobalValue and fatals with "Associative COMDAT
+      // symbol 'X' does not exist" (Windows -fbuiltin-string under PCG).  Drop
+      // every Comdat whose key no longer resolves to a GV that still owns it.
+      // Within a single TU, linkonce_odr coalescing is already done; the
+      // native multi-TU link sees the merged object.
+      for (GlobalObject &GO : MPart.global_objects()) {
+        Comdat *C = GO.getComdat();
+        if (!C)
+          continue;
+        GlobalValue *Key = MPart.getNamedValue(C->getName());
+        if (!Key || Key->getComdat() != C)
+          GO.setComdat(nullptr);
       }
       if (p != 0) {
         // Aliases / ifuncs are retained only in partition 0 (with their
