@@ -4,6 +4,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -11,6 +12,9 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/GlobalAlias.h"
+#include "llvm/IR/GlobalIFunc.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -578,16 +582,12 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
   }
 
   Mod.dropTriviallyDeadConstantArrays();
-  for (StringRef MDName :
-       {"llvm.ident", "llvm.linker.options", "llvm.dependent-libraries"})
-    if (auto *NMD = Mod.getNamedMetadata(MDName)) {
-      SavedNamedMD S;
-      S.Name = MDName.str();
-      for (unsigned i = 0; i < NMD->getNumOperands(); ++i)
-        S.Operands.push_back(NMD->getOperand(i));
-      SavedMD.push_back(std::move(S));
-      Mod.eraseNamedMetadata(NMD);
-    }
+  // Keep llvm.ident / linker.options / dependent-libraries on the module
+  // through bitcode serialization so partition 0 still emits them exactly
+  // once.  They are stripped from the mother module *after* WriteBitcodeToFile
+  // (so a serial fallback via restoreLinkage can put them back), and dropped
+  // from every non-zero partition in preparePartitions (so a merge never
+  // concatenates N copies of .drectve / DT_NEEDED).
   for (Function &F : Mod) {
     if (F.isDeclaration())
       continue;
@@ -603,6 +603,17 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
     raw_svector_ostream BCOS(FullBC);
     WriteBitcodeToFile(Mod, BCOS, false);
   }
+
+  for (StringRef MDName :
+       {"llvm.ident", "llvm.linker.options", "llvm.dependent-libraries"})
+    if (auto *NMD = Mod.getNamedMetadata(MDName)) {
+      SavedNamedMD S;
+      S.Name = MDName.str();
+      for (unsigned i = 0; i < NMD->getNumOperands(); ++i)
+        S.Operands.push_back(NMD->getOperand(i));
+      SavedMD.push_back(std::move(S));
+      Mod.eraseNamedMetadata(NMD);
+    }
 }
 
 void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
@@ -660,6 +671,14 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
       if (Failed)
         continue;
       if (p != 0) {
+        // Module-level linker metadata lives only in partition 0 (serialized
+        // into FullBC above).  Drop it here so the object merge does not
+        // concatenate N copies of .drectve / dependent-libraries.
+        for (StringRef MDName : {"llvm.ident", "llvm.linker.options",
+                                 "llvm.dependent-libraries"})
+          if (auto *NMD = MPart.getNamedMetadata(MDName))
+            MPart.eraseNamedMetadata(NMD);
+
         for (GlobalVariable &GV : make_early_inc_range(MPart.globals())) {
           if (GV.isDeclaration())
             continue;
@@ -688,10 +707,44 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
         F.setComdat(nullptr);
       }
       if (p != 0) {
+        // Aliases / ifuncs are retained only in partition 0 (with their
+        // targets pinned there).  Other partitions still contain call sites
+        // that named the alias; eraseFromParent() would leave dangling uses
+        // and crash codegen.  Replace each with an external declaration of
+        // the same name/type so cross-partition references stay resolvable
+        // at object-merge / native-link time.  Preserve visibility /
+        // DLL-storage / dso_local so the replacement emits the same reloc
+        // form the alias would have.
+        auto ReplaceIndirectWithExternal = [](GlobalValue &Old) {
+          Type *Ty = Old.getValueType();
+          unsigned AS = Old.getAddressSpace();
+          Module *M = Old.getParent();
+          GlobalValue *Repl = nullptr;
+          if (auto *FTy = dyn_cast<FunctionType>(Ty))
+            Repl = Function::Create(FTy, GlobalValue::ExternalLinkage, AS,
+                                    /*Name=*/"", M);
+          else
+            Repl = new GlobalVariable(
+                *M, Ty, /*isConstant=*/false, GlobalValue::ExternalLinkage,
+                /*Init=*/nullptr, /*Name=*/"", /*InsertBefore=*/nullptr,
+                GlobalValue::NotThreadLocal, AS);
+          Repl->setVisibility(Old.getVisibility());
+          Repl->setDLLStorageClass(Old.getDLLStorageClass());
+          Repl->setUnnamedAddr(Old.getUnnamedAddr());
+          Repl->setDSOLocal(Old.isDSOLocal());
+          Repl->setLinkage(GlobalValue::ExternalLinkage);
+          Repl->takeName(&Old);
+          if (Repl->getType() != Old.getType())
+            Old.replaceAllUsesWith(
+                ConstantExpr::getPointerCast(Repl, Old.getType()));
+          else
+            Old.replaceAllUsesWith(Repl);
+          Old.eraseFromParent();
+        };
         for (GlobalAlias &GA : make_early_inc_range(MPart.aliases()))
-          GA.eraseFromParent();
-        for (GlobalIFunc &IF : make_early_inc_range(MPart.ifuncs()))
-          IF.eraseFromParent();
+          ReplaceIndirectWithExternal(GA);
+        for (GlobalIFunc &GI : make_early_inc_range(MPart.ifuncs()))
+          ReplaceIndirectWithExternal(GI);
       }
 
       PP->PTM.reset(TheTarget->createTargetMachine(

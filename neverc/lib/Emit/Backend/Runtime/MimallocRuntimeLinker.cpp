@@ -3,6 +3,7 @@
 #include "neverc/Foundation/Builtin/BuiltinMimalloc.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
@@ -154,19 +155,33 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     if (!F.hasLocalLinkage() && isMallocOverrideSymbol(F.getName())) {
       // Keep allocator entry points externally visible, but make independently
       // embedded copies coalescible across auto/full/no-LTO translation units.
-      F.setLinkage(GlobalValue::WeakODRLinkage);
-      F.setVisibility(GlobalValue::DefaultVisibility);
+      makeWeakODR(F, GlobalValue::DefaultVisibility);
     } else {
-      F.setLinkage(GlobalValue::LinkOnceODRLinkage);
-      F.setVisibility(GlobalValue::HiddenVisibility);
+      makeLinkOnceODR(F);
     }
+  }
+
+  for (GlobalAlias &GA : M.aliases()) {
+    if (!isMallocOverrideSymbol(GA.getName()))
+      continue;
+    GlobalObject *Aliasee = GA.getAliaseeObject();
+    if (!Aliasee ||
+        !hasRuntimeDefinitionTag(*Aliasee, MimallocRuntimeMetadata))
+      continue;
+
+    // mimalloc exposes several allocator overrides as aliases rather than
+    // functions.  Updating only Function linkage leaves these aliases strong
+    // on ELF, so every non-LTO consumer TU contributes another malloc/free
+    // definition.  Aliases cannot own COMDAT groups; weak ODR linkage is the
+    // native coalescing mechanism for them.
+    GA.setLinkage(GlobalValue::WeakODRLinkage);
+    GA.setVisibility(GlobalValue::DefaultVisibility);
   }
 
   for (GlobalVariable &GV : M.globals()) {
     if (!GV.isDeclaration() && IsMimallocGlobal(GV) &&
         !GV.hasAppendingLinkage()) {
-      GV.setLinkage(GlobalValue::LinkOnceODRLinkage);
-      GV.setVisibility(GlobalValue::HiddenVisibility);
+      makeLinkOnceODR(GV);
     }
   }
 

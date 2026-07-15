@@ -42,6 +42,32 @@ TEST_F(MimallocTest, FunctionOnlyConsumer) {
                      "-std=c11 -fbuiltin-mimalloc", 0);
 }
 
+TEST_F(MimallocTest, RuntimeOverrideAliasesRemainCoalescibleOnELF) {
+  auto src = tmpFile("mimalloc_weak_aliases.c");
+  auto ir = tmpFile("mimalloc_weak_aliases.ll");
+  writeFile(src,
+            "typedef __SIZE_TYPE__ size_t;\n"
+            "extern void *malloc(size_t);\n"
+            "extern void free(void *);\n"
+            "void use_allocator(void) {\n"
+            "  void *p = malloc(32);\n"
+            "  free(p);\n"
+            "}\n");
+
+  auto r = ncc({"--target=x86_64-unknown-linux-gnu", "-std=c11",
+                "-fbuiltin-mimalloc", "-fno-lto", "-O0", "-S",
+                "-emit-llvm", src.string(), "-o", ir.string()});
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+
+  const std::string text = readFile(ir);
+  EXPECT_NE(text.find("@malloc = weak_odr"), std::string::npos)
+      << "the malloc override alias must remain weak across native multi-TU "
+         "links";
+  EXPECT_NE(text.find("@free = weak_odr"), std::string::npos)
+      << "the free override alias must remain weak across native multi-TU "
+         "links";
+}
+
 TEST_F(MimallocTest, RuntimePreservesUserLocalProvenance) {
   auto src = tmpFile("mimalloc_user_local.c");
   auto ir = tmpFile("mimalloc_user_local.ll");

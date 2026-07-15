@@ -106,10 +106,7 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   // Every consumer TU may independently request the same runtime definition.
   // Keep those copies coalescible through both LTO and native -r links so
   // mutable runtime state remains shared in explicit -fno-lto builds too.
-  auto MakeCoalescible = [](GlobalObject &GO) {
-    GO.setLinkage(GlobalValue::LinkOnceODRLinkage);
-    GO.setVisibility(GlobalValue::HiddenVisibility);
-  };
+  auto MakeCoalescible = [](GlobalObject &GO) { makeLinkOnceODR(GO); };
 
   for (Function &F : M)
     if (IsNvkFn(F))

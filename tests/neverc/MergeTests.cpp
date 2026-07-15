@@ -4704,18 +4704,20 @@ TEST(MergeMachOVerify, AcceptsIndependentlyCoalescedWeakDefinitions) {
   namespace MO = llvm::MachO;
   // Every weak definition is coalesced independently.  The output may select
   // _weak_a and _weak_b from one input while another input placed those names
-  // at different relative offsets in the same section.  Both surviving bodies
-  // are byte-equivalent, but they cannot serve as fixed section-shift anchors.
-  MachoSecSpec S{"__TEXT", "__const", 0x40, 4, MO::S_REGULAR, 0xA5};
+  // at different relative offsets in the same section.  Weak definitions need
+  // not have identical bodies; the survivor only has to match one input copy,
+  // and no weak copy can serve as a fixed section-shift anchor.
+  MachoSecSpec S0{"__TEXT", "__const", 0x40, 4, MO::S_REGULAR, 0xA5};
+  MachoSecSpec S1{"__TEXT", "__const", 0x40, 4, MO::S_REGULAR, 0x3C};
   uint8_t DefWeak = MO::N_SECT | MO::N_EXT | MO::N_PEXT;
   uint16_t WeakDesc = MO::N_WEAK_DEF;
   MachoSymSpec A0{"_weak_a", DefWeak, 1, 0x00, WeakDesc};
   MachoSymSpec B0{"_weak_b", DefWeak, 1, 0x20, WeakDesc};
   MachoSymSpec A1{"_weak_a", DefWeak, 1, 0x10, WeakDesc};
   MachoSymSpec B1{"_weak_b", DefWeak, 1, 0x20, WeakDesc};
-  auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S},
+  auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0},
                        {A0, B0});
-  auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S},
+  auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1},
                        {A1, B1});
 
   SmallVector<SmallVector<char, 0>, 2> Bufs;

@@ -1486,7 +1486,17 @@ struct RawMachoSym {
   StringRef Name;
   uint8_t Type = 0;
   uint8_t Sect = 0;
+  uint16_t Desc = 0;
   uint64_t Value = 0;
+  // N_WEAK_DEF may be coalesced independently across inputs, so it cannot
+  // serve as a fixed section-shift anchor (mirrors ELF
+  // isCoalescibleDefinition).  N_WEAK_REF only marks weak *undef* references
+  // and never reaches this defined-in-section path; keep the predicate to the
+  // definition flag alone.  Content anchors still audit the survivor.
+  bool isCoalescible() const {
+    namespace MO = llvm::MachO;
+    return (Desc & MO::N_WEAK_DEF) != 0;
+  }
 };
 struct RawMachoRel {
   unsigned SecIdx0 = 0; // 0-based section the relocation applies to
@@ -1635,6 +1645,7 @@ bool parseRawMachO(ArrayRef<char> Buf, RawMacho &Out) {
                               strnlen(Str + NL.n_strx, SC.strsize - NL.n_strx));
         PS.Type = NL.n_type;
         PS.Sect = NL.n_sect;
+        PS.Desc = NL.n_desc;
         PS.Value = NL.n_value;
         Out.Syms.push_back(PS);
       }
@@ -1792,6 +1803,11 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
   // so each section-relative offset is n_value - section addr; the input
   // section's [base, size) within its merged section follows as in ELF/COFF.
   DenseMap<unsigned, SmallVector<OutSecRange, 0>> SecRanges;
+  // Weak definitions may resolve to a different input's copy.  Accumulate
+  // across all inputs (mirrors ELF CoalescibleDecidable/Matched): the survivor
+  // must match at least one decidable input body, not every input body.
+  std::set<std::string> CoalescibleDecidable;
+  std::set<std::string> CoalescibleMatched;
 
   for (unsigned p = 0; p < Inputs.size(); ++p) {
     if (Inputs[p].empty())
@@ -1829,6 +1845,56 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if (It == OutByName.end())
         return fail(Err, "verify: defined input symbol '" + S.Name +
                              "' missing from merged output");
+      if (S.isCoalescible()) {
+        // A weak definition may legitimately resolve to a different input's
+        // copy, so it is not a per-input offset/content anchor.  Still require
+        // the surviving output body to match at least one input definition
+        // whenever bytes are decidable (and not rewritten by a reloc).
+        bool HasDefinition = false;
+        auto MIt = OutByNameMulti.find(S.Name);
+        if (MIt != OutByNameMulti.end())
+          for (int Idx : MIt->second) {
+            const RawMachoSym &Cand = Out.Syms[(unsigned)Idx];
+            if ((Cand.Type & MO::N_TYPE) != MO::N_SECT || Cand.Sect == 0 ||
+                Cand.Sect > Out.Secs.size())
+              continue;
+            HasDefinition = true;
+            if (In.isZerofill(InIdx) || Out.isZerofill(Cand.Sect - 1) ||
+                InRel > InSec.Size || Cand.Value < Out.Secs[Cand.Sect - 1].Addr)
+              continue;
+            const RawMachoSec &CandSec = Out.Secs[Cand.Sect - 1];
+            StringRef WantSect = expectedSect(InSec.Seg, InSec.Sect);
+            if (CandSec.Seg != InSec.Seg || CandSec.Sect != WantSect)
+              continue;
+            uint64_t COff = Cand.Value - CandSec.Addr;
+            if (COff > CandSec.Size)
+              continue;
+            ArrayRef<uint8_t> InData = In.secData(InIdx);
+            ArrayRef<uint8_t> OutData = Out.secData(Cand.Sect - 1);
+            uint64_t Avail =
+                std::min<uint64_t>(InSec.Size - InRel, CandSec.Size - COff);
+            uint64_t W = std::min<uint64_t>(16, Avail);
+            if (W == 0 || InRel + W > InData.size() || COff + W > OutData.size())
+              continue;
+            SmallVector<std::pair<uint64_t, uint64_t>, 8> Sites;
+            Out.relocSites(Cand.Sect - 1, Sites);
+            bool Overlaps = false;
+            for (auto &Site : Sites)
+              if (Site.first < COff + W && COff < Site.first + Site.second) {
+                Overlaps = true;
+                break;
+              }
+            if (Overlaps)
+              continue;
+            CoalescibleDecidable.insert(S.Name.str());
+            if (memcmp(InData.data() + InRel, OutData.data() + COff, W) == 0)
+              CoalescibleMatched.insert(S.Name.str());
+          }
+        if (!HasDefinition)
+          return fail(Err, "verify: coalescible input symbol '" + S.Name +
+                               "' has no definition in merged output");
+        continue;
+      }
       if (It->second < 0) {
         // Ambiguous name: require at least one same-named output symbol that
         // lands in the expected (segment,section) with a byte-matching window,
@@ -1954,6 +2020,8 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     // merged section — covering S_ZEROFILL (__bss) symbols the content anchor
     // skips.  Literal sections (cstring / N-byte / pointer literals) are
     // excluded: a real -r linker may coalesce their members non-uniformly.
+    // Weak definitions are excluded for the same reason (independently
+    // coalesced survivors need not preserve a single section shift).
     {
       DenseMap<unsigned, SecShift> Shift;
       for (const RawMachoSym &S : In.Syms) {
@@ -1961,6 +2029,8 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
           continue;
         if ((S.Type & MO::N_TYPE) != MO::N_SECT || S.Sect == 0 ||
             S.Sect > In.Secs.size())
+          continue;
+        if (S.isCoalescible())
           continue;
         const RawMachoSec &InSec = In.Secs[S.Sect - 1];
         uint32_t InT = InSec.Flags & MO::SECTION_TYPE;
@@ -2004,8 +2074,8 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     }
 
     // Disjoint-range invariant (singleton- and zerofill-safe; see OutSecRange).
-    // Literal sections are excluded for the same reason as the relative-distance
-    // invariant above: a real -r linker may coalesce their members.
+    // Literal sections and weak definitions are excluded for the same reason as
+    // the relative-distance invariant above.
     {
       DenseMap<unsigned, char> SeenInputSec; // input section number -> recorded
       for (const RawMachoSym &S : In.Syms) {
@@ -2013,6 +2083,8 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
           continue;
         if ((S.Type & MO::N_TYPE) != MO::N_SECT || S.Sect == 0 ||
             S.Sect > In.Secs.size())
+          continue;
+        if (S.isCoalescible())
           continue;
         const RawMachoSec &InSec = In.Secs[S.Sect - 1];
         uint32_t InT = InSec.Flags & MO::SECTION_TYPE;
@@ -2227,6 +2299,12 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
           },
           Err))
     return false;
+
+  for (const std::string &Name : CoalescibleDecidable)
+    if (!CoalescibleMatched.count(Name))
+      return fail(Err, "verify: coalescible symbol '" + Name +
+                           "' has no surviving definition whose content "
+                           "matches any input copy");
 
   return true;
 }

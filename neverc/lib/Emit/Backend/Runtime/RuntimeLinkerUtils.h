@@ -5,6 +5,7 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/IR/Comdat.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalObject.h"
@@ -13,6 +14,7 @@
 #include "llvm/Linker/Linker.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/TargetParser/Triple.h"
 
 namespace neverc {
 
@@ -93,6 +95,35 @@ inline void clearRuntimeDefinitionTags(llvm::Module &Mod,
   for (llvm::GlobalVariable &GV : Mod.globals())
     if (hasRuntimeDefinitionTag(GV, MetadataKind))
       GV.setMetadata(MetadataKind, nullptr);
+}
+
+/// Attach a COMDAT group on COFF so linkonce_odr / weak_odr survive a native
+/// multi-TU link.  ELF/Mach-O emit weak/coalesced symbols from the linkage
+/// alone; COFF requires an explicit selection kind or the symbols become
+/// ordinary strong definitions and the link reports duplicates.
+inline void ensureCoalescibleComdat(llvm::GlobalObject &GO) {
+  if (GO.hasComdat())
+    return;
+  llvm::Module *M = GO.getParent();
+  if (!M || !llvm::Triple(M->getTargetTriple()).isOSBinFormatCOFF())
+    return;
+  llvm::Comdat *C = M->getOrInsertComdat(GO.getName());
+  C->setSelectionKind(llvm::Comdat::Any);
+  GO.setComdat(C);
+}
+
+inline void makeLinkOnceODR(llvm::GlobalObject &GO) {
+  GO.setLinkage(llvm::GlobalValue::LinkOnceODRLinkage);
+  GO.setVisibility(llvm::GlobalValue::HiddenVisibility);
+  ensureCoalescibleComdat(GO);
+}
+
+inline void makeWeakODR(llvm::GlobalObject &GO,
+                        llvm::GlobalValue::VisibilityTypes Vis =
+                            llvm::GlobalValue::DefaultVisibility) {
+  GO.setLinkage(llvm::GlobalValue::WeakODRLinkage);
+  GO.setVisibility(Vis);
+  ensureCoalescibleComdat(GO);
 }
 
 /// Give runtime-private definitions stable names before linking them into a

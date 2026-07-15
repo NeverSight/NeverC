@@ -212,17 +212,12 @@ StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   // Every consumer TU may independently request the same std module. Keep
   // retained definitions coalescible until either LTO or the native linker
   // combines them, including explicit -fno-lto builds.
-  auto MakeCoalescible = [](GlobalObject &GO) {
-    GO.setLinkage(GlobalValue::LinkOnceODRLinkage);
-    GO.setVisibility(GlobalValue::HiddenVisibility);
-  };
-
   for (Function &F : M)
     if (IsStdFn(F))
-      MakeCoalescible(F);
+      makeLinkOnceODR(F);
   for (GlobalVariable &GV : M.globals())
     if (!GV.isDeclaration() && IsStdGlobal(GV))
-      MakeCoalescible(GV);
+      makeLinkOnceODR(GV);
 
   if (IsPreLink) {
     removeFromUsedLists(M, [&](Constant *C) {

@@ -133,15 +133,11 @@ StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   // Keep retained definitions hidden but coalescible so the native link emits
   // one copy instead of one internal copy per TU.
   for (Function &F : M)
-    if (IsRuntimeFn(F)) {
-      F.setLinkage(GlobalValue::LinkOnceODRLinkage);
-      F.setVisibility(GlobalValue::HiddenVisibility);
-    }
+    if (IsRuntimeFn(F))
+      makeLinkOnceODR(F);
   for (GlobalVariable &GV : M.globals())
-    if (!GV.isDeclaration() && IsRuntimeGlobal(GV)) {
-      GV.setLinkage(GlobalValue::LinkOnceODRLinkage);
-      GV.setVisibility(GlobalValue::HiddenVisibility);
-    }
+    if (!GV.isDeclaration() && IsRuntimeGlobal(GV))
+      makeLinkOnceODR(GV);
 
   if (IsPreLink) {
     removeFromUsedLists(M, [&](Constant *C) {
