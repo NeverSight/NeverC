@@ -6,12 +6,12 @@ using namespace neverc;
 
 // Per-OS+arch bitcode blobs produced by bin2c.py during the bootstrap build.
 // Initial builds use empty placeholders (len == 0).
-#include "BuiltinMimallocBitcode_linux_x64.h"
-#include "BuiltinMimallocBitcode_linux_arm64.h"
-#include "BuiltinMimallocBitcode_darwin_x64.h"
 #include "BuiltinMimallocBitcode_darwin_arm64.h"
-#include "BuiltinMimallocBitcode_win_x64.h"
+#include "BuiltinMimallocBitcode_darwin_x64.h"
+#include "BuiltinMimallocBitcode_linux_arm64.h"
+#include "BuiltinMimallocBitcode_linux_x64.h"
 #include "BuiltinMimallocBitcode_win_arm64.h"
+#include "BuiltinMimallocBitcode_win_x64.h"
 
 namespace {
 

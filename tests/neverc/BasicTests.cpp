@@ -219,8 +219,8 @@ TEST_F(BasicTest, BuiltinStringCrossCompilesWithPcgOnCOFF) {
   const auto src =
       (testDir() / "string" / "test_neverc_string_fuzz.c").string();
 
-  for (const char *triple : {"x86_64-pc-windows-msvc",
-                             "aarch64-pc-windows-msvc"}) {
+  for (const char *triple :
+       {"x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"}) {
     SCOPED_TRACE(triple);
     auto obj = tmpFile(std::string("string_pcg_") + triple + ".obj");
     auto r = ncc({

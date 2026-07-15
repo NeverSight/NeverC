@@ -651,7 +651,7 @@ void NeverCTest::writeFile(const fs::path &path, const std::string &content) {
 }
 
 std::string NeverCTest::readFile(const fs::path &path) const {
-  std::ifstream f(path);
+  std::ifstream f(path, std::ios::binary);
   return {std::istreambuf_iterator<char>(f), {}};
 }
 
