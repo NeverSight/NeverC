@@ -1,8 +1,9 @@
 #ifndef NEVERC_INVOKE_LLVMCOMMANDLINE_H
 #define NEVERC_INVOKE_LLVMCOMMANDLINE_H
 
+#include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 #include "llvm/Support/CommandLine.h"
-#include <mutex>
+#include "llvm/Support/ErrorHandling.h"
 
 namespace neverc {
 
@@ -14,8 +15,16 @@ namespace neverc {
 /// are safe only when preceded by ResetAllOptionOccurrences, which removes the
 /// default options before they are re-added.
 inline void parseLLVMCommandLineOptions(int argc, const char *const *argv) {
-  static std::mutex ParseMutex;
-  std::lock_guard<std::mutex> Lock(ParseMutex);
+  if (plugin::pluginLLVMOptionGateHeldSharedByCurrentThread() &&
+      !plugin::pluginLLVMOptionGateHeldExclusivelyByCurrentThread())
+    llvm::report_fatal_error(
+        "cannot mutate LLVM options under a shared option lease");
+  if (plugin::pluginLLVMOptionGateHeldExclusivelyByCurrentThread()) {
+    llvm::cl::ResetAllOptionOccurrences();
+    llvm::cl::ParseCommandLineOptions(argc, argv);
+    return;
+  }
+  plugin::PluginLLVMOptionExclusiveLease Lock(plugin::pluginLLVMOptionGate());
   llvm::cl::ResetAllOptionOccurrences();
   llvm::cl::ParseCommandLineOptions(argc, argv);
 }

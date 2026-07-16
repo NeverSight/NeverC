@@ -1,11 +1,13 @@
 #ifndef NEVERC_INVOKE_COMPILATION_H
 #define NEVERC_INVOKE_COMPILATION_H
 
+#include "neverc/Foundation/Core/OutputCoordinator.h"
 #include "neverc/Invoke/Action.h"
 #include "neverc/Invoke/Job.h"
 #include "neverc/Invoke/Util.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Option/Option.h"
@@ -26,10 +28,17 @@ class InputArgList;
 } // namespace llvm
 
 namespace neverc {
+namespace plugin {
+class PluginSession;
+}
 namespace driver {
 
 class Driver;
 class ToolChain;
+class Tool;
+class DriverJobExecutionPlan;
+class DriverJobExecutionRuntime;
+struct DriverJobGraphNode;
 
 class Compilation {
 
@@ -46,6 +55,16 @@ class Compilation {
   ActionList Actions;
 
   JobList Jobs;
+  std::unique_ptr<Tool> PluginCommandCreator;
+  std::unique_ptr<DriverJobExecutionPlan> PluginJobExecutionPlan;
+  std::unique_ptr<DriverJobExecutionRuntime> PluginJobExecutionRuntime;
+  std::shared_ptr<plugin::PluginSession> PluginSession;
+  OutputCoordinator Outputs;
+  llvm::DenseSet<const JobAction *>
+      PluginTransactionProtectedResultActions;
+  llvm::DenseSet<const JobAction *> PreexistingResultActions;
+
+  void configurePluginSession(Command &C);
 
   struct TCArgsKey final {
     const ToolChain *TC = nullptr;
@@ -110,7 +129,18 @@ public:
   JobList &getJobs() { return Jobs; }
   const JobList &getJobs() const { return Jobs; }
 
-  void addCommand(std::unique_ptr<Command> C) { Jobs.addJob(std::move(C)); }
+  void addCommand(std::unique_ptr<Command> C);
+  Tool &getPluginCommandTool();
+  void setPluginJobExecutionPlan(
+      std::unique_ptr<DriverJobExecutionPlan> Plan);
+  const DriverJobExecutionPlan *getPluginJobExecutionPlan() const;
+  void setPluginJobExecutionRuntime(
+      std::unique_ptr<DriverJobExecutionRuntime> Runtime);
+  void setPluginSession(std::shared_ptr<plugin::PluginSession> Session);
+  const std::shared_ptr<plugin::PluginSession> &getPluginSession() const {
+    return PluginSession;
+  }
+  void propagatePluginSessionToJobs();
 
   llvm::opt::ArgStringList &getTempFiles() { return TempFiles; }
   const llvm::opt::ArgStringList &getTempFiles() const { return TempFiles; }
@@ -119,6 +149,11 @@ public:
 
   const ArgStringMap &getFailureResultFiles() const {
     return FailureResultFiles;
+  }
+
+  bool shouldCleanupResultFilesOnFailure(const JobAction *JA) const {
+    return !PluginTransactionProtectedResultActions.contains(JA) &&
+           !PreexistingResultActions.contains(JA);
   }
 
   void setPostCallback(const std::function<void(const Command &, int)> &CB) {
@@ -135,10 +170,7 @@ public:
     return Name;
   }
 
-  const char *addResultFile(const char *Name, const JobAction *JA) {
-    ResultFiles[JA] = Name;
-    return Name;
-  }
+  const char *addResultFile(const char *Name, const JobAction *JA);
 
   const char *addFailureResultFile(const char *Name, const JobAction *JA) {
     FailureResultFiles[JA] = Name;
@@ -162,7 +194,8 @@ public:
                       bool IssueErrors = false) const;
 
   int ExecuteCommand(const Command &C, const Command *&FailingCommand,
-                     llvm::sys::ProcessInfo &PI, bool LogOnly = false);
+                     llvm::sys::ProcessInfo &PI, bool LogOnly = false,
+                     const DriverJobGraphNode *PluginRequest = nullptr);
 
   void ExecuteJobs(
       const JobList &Jobs,

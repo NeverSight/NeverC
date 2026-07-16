@@ -285,6 +285,11 @@ class Option {
   uint16_t AdditionalVals;       // Greater than 0 for multi-valued option.
 
 public:
+  struct OccurrenceState {
+    unsigned NumOccurrences;
+    unsigned Position;
+  };
+
   StringRef ArgStr;   // The argument string itself (ex: "help", "o")
   StringRef HelpStr;  // The descriptive text message for -help
   StringRef ValueStr; // String describing what the value of this option is
@@ -405,6 +410,23 @@ public:
 
   inline int getNumOccurrences() const { return NumOccurrences; }
   void reset();
+
+  /// Capture a callback that restores this option's current process-global
+  /// value and occurrence metadata. This is used by in-process clients that
+  /// must isolate command-line mutations made by extension callbacks.
+  virtual std::function<void()> createStateRestorer() {
+    OccurrenceState State = captureOccurrenceState();
+    return [this, State] { restoreOccurrenceState(State); };
+  }
+
+protected:
+  OccurrenceState captureOccurrenceState() const {
+    return {NumOccurrences, Position};
+  }
+  void restoreOccurrenceState(OccurrenceState State) {
+    NumOccurrences = State.NumOccurrences;
+    Position = State.Position;
+  }
 };
 
 //===----------------------------------------------------------------------===//
@@ -1480,6 +1502,20 @@ class opt
 
   void setDefault() override { setDefaultImpl<DataType>(); }
 
+  std::function<void()> createStateRestorer() override {
+    if constexpr (std::is_copy_constructible_v<DataType> &&
+                  std::is_copy_assignable_v<DataType>) {
+      typename Option::OccurrenceState Occurrences =
+          this->captureOccurrenceState();
+      DataType Value = this->getValue();
+      return [this, Occurrences, Value = std::move(Value)] {
+        this->setValue(Value);
+        this->restoreOccurrenceState(Occurrences);
+      };
+    }
+    return Option::createStateRestorer();
+  }
+
   void done() {
     addArgument();
     Parser.initialize();
@@ -1561,7 +1597,20 @@ public:
 
   void assignDefault() { DefaultAssigned = true; }
   void overwriteDefault() { DefaultAssigned = false; }
-  bool isDefaultAssigned() { return DefaultAssigned; }
+  bool isDefaultAssigned() const { return DefaultAssigned; }
+  void setDefaultAssigned(bool Assigned) { DefaultAssigned = Assigned; }
+
+  std::function<void()> createStorageRestorer() {
+    if (!Location)
+      return [] {};
+    if constexpr (std::is_copy_constructible_v<StorageClass> &&
+                  std::is_copy_assignable_v<StorageClass>) {
+      StorageClass *Target = Location;
+      StorageClass Value = *Location;
+      return [Target, Value = std::move(Value)] { *Target = Value; };
+    }
+    return [] {};
+  }
 };
 
 // Define how to hold a class type object, such as a string.
@@ -1649,7 +1698,17 @@ public:
 
   void assignDefault() { DefaultAssigned = true; }
   void overwriteDefault() { DefaultAssigned = false; }
-  bool isDefaultAssigned() { return DefaultAssigned; }
+  bool isDefaultAssigned() const { return DefaultAssigned; }
+  void setDefaultAssigned(bool Assigned) { DefaultAssigned = Assigned; }
+
+  std::function<void()> createStorageRestorer() {
+    if constexpr (std::is_copy_constructible_v<DataType> &&
+                  std::is_copy_assignable_v<DataType>) {
+      std::vector<DataType> Value = Storage;
+      return [this, Value = std::move(Value)] { Storage = Value; };
+    }
+    return [] {};
+  }
 };
 
 //===----------------------------------------------------------------------===//
@@ -1704,6 +1763,23 @@ class list : public Option, public list_storage<DataType, StorageClass> {
     list_storage<DataType, StorageClass>::clear();
     for (auto &Val : list_storage<DataType, StorageClass>::getDefault())
       list_storage<DataType, StorageClass>::addValue(Val.getValue());
+  }
+
+  std::function<void()> createStateRestorer() override {
+    typename Option::OccurrenceState Occurrences =
+        this->captureOccurrenceState();
+    std::function<void()> RestoreStorage =
+        this->createStorageRestorer();
+    std::vector<unsigned> SavedPositions = Positions;
+    bool DefaultAssigned = this->isDefaultAssigned();
+    return [this, Occurrences,
+            RestoreStorage = std::move(RestoreStorage),
+            SavedPositions = std::move(SavedPositions), DefaultAssigned] {
+      RestoreStorage();
+      Positions = SavedPositions;
+      this->setDefaultAssigned(DefaultAssigned);
+      this->restoreOccurrenceState(Occurrences);
+    };
   }
 
   void done() {
@@ -1799,6 +1875,10 @@ public:
   }
 
   unsigned getBits() { return *Location; }
+  void setBits(unsigned Value) {
+    assert(Location && "cl::location(...) not specified");
+    *Location = Value;
+  }
 
   void clear() {
     if (Location)
@@ -1827,6 +1907,7 @@ public:
   template <class T> void addValue(const T &V) { Bits |= Bit(V); }
 
   unsigned getBits() { return Bits; }
+  void setBits(unsigned Value) { Bits = Value; }
 
   void clear() { Bits = 0; }
 
@@ -1877,6 +1958,19 @@ class bits : public Option, public bits_storage<DataType, Storage> {
   }
 
   void setDefault() override { bits_storage<DataType, Storage>::clear(); }
+
+  std::function<void()> createStateRestorer() override {
+    typename Option::OccurrenceState Occurrences =
+        this->captureOccurrenceState();
+    unsigned SavedBits = this->getBits();
+    std::vector<unsigned> SavedPositions = Positions;
+    return [this, Occurrences, SavedBits,
+            SavedPositions = std::move(SavedPositions)] {
+      this->setBits(SavedBits);
+      Positions = SavedPositions;
+      this->restoreOccurrenceState(Occurrences);
+    };
+  }
 
   void done() {
     addArgument();

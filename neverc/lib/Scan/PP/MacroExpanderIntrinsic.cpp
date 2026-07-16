@@ -7,6 +7,7 @@
 #include "neverc/Scan/MacroArgStorage.h"
 #include "neverc/Scan/PrepEngine.h"
 #include "neverc/Scan/PrepOptions.h"
+#include "neverc/Scan/PrepPluginHooks.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
@@ -187,7 +188,19 @@ bool probeIncludeFile(Token &Tok, IdentifierInfo *II, PrepEngine &PP,
     Callbacks->HasInclude(FilenameLoc, Filename, isAngled, File, FileType);
   }
 
-  return File.has_value();
+  const bool BuiltinResult = File.has_value();
+  PrepPluginHooks *Hooks = PP.getPluginHooks();
+  if (!Hooks || !Hooks->hasFeatureQueryInterceptor())
+    return BuiltinResult;
+  PrepFeatureQueryHook Hook;
+  Hook.Location = FilenameLoc;
+  Hook.Query = II->isStr("__has_include_next")
+                   ? PrepFeatureQueryHook::Kind::HasIncludeNext
+                   : PrepFeatureQueryHook::Kind::HasInclude;
+  Hook.Name = Filename;
+  Hook.BuiltinValue = BuiltinResult;
+  Hook.Value = BuiltinResult;
+  return Hooks->interceptFeatureQuery(Hook) ? Hook.Value : BuiltinResult;
 }
 } // namespace
 
@@ -211,7 +224,8 @@ namespace {
 void evaluateBuiltinCheck(
     llvm::raw_svector_ostream &OS, Token &Tok, IdentifierInfo *II,
     PrepEngine &PP, bool ExpandArgs,
-    llvm::function_ref<int(Token &Tok, bool &HasLexedNextTok)> Op) {
+    llvm::function_ref<int(Token &Tok, bool &HasLexedNextTok)> Op,
+    std::optional<PrepFeatureQueryHook::Kind> PluginQuery = std::nullopt) {
   PP.LexWithoutExpansion(Tok);
   if (Tok.isNot(tok::l_paren)) {
     PP.Diag(Tok.getLocation(), diag::err_pp_expected_after)
@@ -290,6 +304,19 @@ void evaluateBuiltinCheck(
       bool HasLexedNextToken = false;
       Result = Op(Tok, HasLexedNextToken);
       ResultTok = Tok;
+      if (PluginQuery && Tok.getIdentifierInfo()) {
+        if (PrepPluginHooks *Hooks = PP.getPluginHooks();
+            Hooks && Hooks->hasFeatureQueryInterceptor()) {
+          PrepFeatureQueryHook Hook;
+          Hook.Location = Tok.getLocation();
+          Hook.Query = *PluginQuery;
+          Hook.Name = Tok.getIdentifierInfo()->getName();
+          Hook.BuiltinValue = *Result != 0;
+          Hook.Value = Hook.BuiltinValue;
+          if (Hooks->interceptFeatureQuery(Hook))
+            Result = Hook.Value ? 1 : 0;
+        }
+      }
       if (HasLexedNextToken)
         goto already_lexed;
       continue;
@@ -522,22 +549,25 @@ void PrepEngine::ExpandIntrinsicMacro(Token &Tok) {
     break;
 
   case IntrinsicMacroKind::IMK_HasFeature:
-    evaluateBuiltinCheck(OS, Tok, II, *this, false,
-                         [this](Token &Tok, bool &HasLexedNextToken) -> int {
-                           IdentifierInfo *II = expectAndConsumeIdent(
-                               Tok, *this, diag::err_feature_check_malformed);
-                           return II &&
-                                  isLangFeatureEnabled(*this, II->getName());
-                         });
+    evaluateBuiltinCheck(
+        OS, Tok, II, *this, false,
+        [this](Token &Tok, bool &HasLexedNextToken) -> int {
+          IdentifierInfo *II = expectAndConsumeIdent(
+              Tok, *this, diag::err_feature_check_malformed);
+          return II && isLangFeatureEnabled(*this, II->getName());
+        },
+        PrepFeatureQueryHook::Kind::HasFeature);
     break;
 
   case IntrinsicMacroKind::IMK_HasExtension:
-    evaluateBuiltinCheck(OS, Tok, II, *this, false,
-                         [this](Token &Tok, bool &HasLexedNextToken) -> int {
-                           IdentifierInfo *II = expectAndConsumeIdent(
-                               Tok, *this, diag::err_feature_check_malformed);
-                           return II && isLangExtEnabled(*this, II->getName());
-                         });
+    evaluateBuiltinCheck(
+        OS, Tok, II, *this, false,
+        [this](Token &Tok, bool &HasLexedNextToken) -> int {
+          IdentifierInfo *II = expectAndConsumeIdent(
+              Tok, *this, diag::err_feature_check_malformed);
+          return II && isLangExtEnabled(*this, II->getName());
+        },
+        PrepFeatureQueryHook::Kind::HasExtension);
     break;
 
   case IntrinsicMacroKind::IMK_HasBuiltin:
@@ -568,7 +598,8 @@ void PrepEngine::ExpandIntrinsicMacro(Token &Tok) {
                 .Case("__is_target_environment", true)
                 .Default(false);
           }
-        });
+        },
+        PrepFeatureQueryHook::Kind::HasBuiltin);
     break;
 
   case IntrinsicMacroKind::IMK_HasConstexprBuiltin:

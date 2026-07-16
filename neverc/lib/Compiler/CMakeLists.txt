@@ -47,6 +47,8 @@ add_neverc_library(nevercCompiler
   nevercTree
   nevercFoundation
   nevercInvoke
+  nevercPluginCore
+  nevercPluginIO
   nevercScan
   nevercSyntax
   nevercAnalyze

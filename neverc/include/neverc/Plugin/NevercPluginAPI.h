@@ -71,7 +71,7 @@ extern "C" {
 /*  Version                                                                   */
 /* -------------------------------------------------------------------------- */
 
-#define NEVERC_PLUGIN_API_VERSION 2
+#define NEVERC_PLUGIN_API_VERSION 1
 
 /* Check at runtime whether the host vtable includes a specific field.
  * Usage: if (NEVERC_API_HAS(API, BuildSwitch)) { API->BuildSwitch(...); }  */
@@ -2362,7 +2362,7 @@ typedef struct NevercHostAPI {
       NevercValueRef F,
       int (*Fn)(NevercValueRef I, void *Ctx), void *Ctx);
 
-  /* ---- NeverC data-driven custom calling convention (API v2) ----
+  /* ---- NeverC data-driven custom calling convention ----
    *
    * Give F an arbitrary physical-register calling convention
    * (CallingConv::NeverC_Custom) described by Spec, which uses the

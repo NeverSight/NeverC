@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "phase_schema": "neverc/include/neverc/Plugin/Schema/PhaseSchema.json",
+  "phases": [
+    {
+      "phase": "neverc.driver.raw_arguments",
+      "input_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000001"
+      ],
+      "output_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000001"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginArgumentPhaseTest.RawInterceptorRewritesEffectiveArguments"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginArgumentPhaseTest.RawInterceptorRewritesEffectiveArguments",
+      "default_executor_test": "PluginArgumentPhaseTest.RawArgumentsPreserveConfigAndCommandOrigins",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.driver.verify_raw_arguments",
+        "positive_test": "PluginArgumentPhaseTest.RawArgumentsPreserveConfigAndCommandOrigins",
+        "negative_test": "PluginArgumentPhaseTest.InvalidRawMutationPreservesOriginalArguments"
+      }
+    },
+    {
+      "phase": "neverc.driver.parsed_arguments",
+      "input_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000002"
+      ],
+      "output_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000002"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginPhaseExecutionTest.RunsObserversInterceptorsProviderAndAtomicPublishInOrder"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginArgumentPhaseTest.ParsedInterceptorRewritesStructuredOccurrences",
+      "default_executor_test": "PluginArgumentPhaseTest.ParsedInterceptorRewritesStructuredOccurrences",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.driver.verify_parsed_arguments",
+        "positive_test": "PluginArgumentPhaseTest.ParsedInterceptorRewritesStructuredOccurrences",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.driver.select_toolchain",
+      "input_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000003"
+      ],
+      "output_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000004"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginPhaseExecutionTest.RunsObserversInterceptorsProviderAndAtomicPublishInOrder"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginToolChainTest.InterceptorRewritesToolChainRequest",
+      "default_executor_test": "PluginToolChainTest.InterceptorForwardsCPUAndFeatures",
+      "replacement_test": "PluginToolChainTest.ReplacementPublishesBuiltinSelection",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.driver.verify_toolchain_selection",
+        "positive_test": "PluginToolChainTest.InterceptorForwardsCPUAndFeatures",
+        "negative_test": "PluginToolChainTest.UnknownTripleIsRejectedBySelectionVerifier"
+      }
+    },
+    {
+      "phase": "neverc.driver.build_actions",
+      "input_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000005"
+      ],
+      "output_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000006"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginActionGraphTest.ObserverSeesRealCompileLinkGraph"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginActionGraphTest.InterceptorReplacesLinkRootWithObjectRoot",
+      "default_executor_test": "PluginActionGraphTest.ObserverSeesRealCompileLinkGraph",
+      "replacement_test": "PluginActionGraphTest.ProviderBuildsObjectGraphWithoutBuiltin",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.driver.verify_action_graph",
+        "positive_test": "PluginActionGraphTest.ObserverSeesRealCompileLinkGraph",
+        "negative_test": "PluginActionGraphTest.RejectsCycleAtomically"
+      }
+    },
+    {
+      "phase": "neverc.driver.build_jobs",
+      "input_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000006"
+      ],
+      "output_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000008"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginPhaseExecutionTest.RunsObserversInterceptorsProviderAndAtomicPublishInOrder"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginJobGraphTest.InterceptorInsertsPluginJob",
+      "default_executor_test": "PluginJobGraphTest.InterceptorInsertsPluginJob",
+      "replacement_test": "PluginJobGraphTest.ReplacementBuildsPlanWithoutBuiltinJobGeneration",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.driver.verify_job_graph",
+        "positive_test": "PluginJobGraphTest.InterceptorInsertsPluginJob",
+        "negative_test": "PluginJobGraphTest.RejectsDependencyCycleAtomically"
+      }
+    },
+    {
+      "phase": "neverc.driver.execute_job",
+      "input_artifact": [
+        "0x4e43415244525601",
+        "0x0000000000000009"
+      ],
+      "output_artifact": [
+        "0x4e43415244525601",
+        "0x000000000000000a"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginPhaseExecutionTest.RunsObserversInterceptorsProviderAndAtomicPublishInOrder"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginSDKExampleTest.DriverTraceUsesOptionStateObserverAndSingleNextInterceptor",
+      "default_executor_test": "PluginSDKExampleTest.DriverTraceUsesOptionStateObserverAndSingleNextInterceptor",
+      "replacement_test": "PluginJobExecutionTest.ReplacementBypassesBuiltinFrontendForNoOutputJob",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.driver.verify_job_result",
+        "positive_test": "PluginSDKExampleTest.DriverTraceUsesOptionStateObserverAndSingleNextInterceptor",
+        "negative_test": "PluginJobExecutionTest.RejectsSuccessfulReplacementForOutputProducingJob"
+      }
+    }
+  ]
+}

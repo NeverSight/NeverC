@@ -4,15 +4,16 @@
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Scan/ExpansionLexer.h"
 #include "neverc/Scan/IncludeResolver.h"
+#include "neverc/Scan/LexDiag.h"
 #include "neverc/Scan/LexerCore.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Scan/MacroArgStorage.h"
 #include "neverc/Scan/MacroRecord.h"
 #include "neverc/Scan/PragmaDispatch.h"
 #include "neverc/Scan/PrepOptions.h"
+#include "neverc/Scan/PrepPluginHooks.h"
 #include "neverc/Scan/SourceScanner.h"
 #include "neverc/Scan/TokenScratch.h"
-#include "neverc/Scan/LexDiag.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -363,6 +364,13 @@ void PrepEngine::InitMainInput() {
   setPredefinesFileID(FID);
 
   PushSourceFile(FID, nullptr, SourceLocation());
+  if (InitialTokenStream) {
+    const unsigned TokenCount = InitialTokenCount;
+    InitialTokenCount = 0;
+    PushTokenStream(std::move(InitialTokenStream), TokenCount,
+                    /*DisableMacroExpansion=*/true,
+                    /*IsReinject=*/true);
+  }
 }
 
 void PrepEngine::FiniMainInput() {
@@ -472,13 +480,57 @@ void PrepEngine::LexSlow(Token &Result) {
 
   unsigned CurLevel = --LexLevel;
   bool NotReinjected = !Result.getFlag(Token::IsReinjected);
+  bool DeferFinalization = CurLevel == 0 && DeferTopLevelTokenFinalization;
 
-  if (LLVM_LIKELY(CurLevel == 0) && LLVM_LIKELY(NotReinjected))
+  if (LLVM_LIKELY(CurLevel == 0) && LLVM_LIKELY(NotReinjected) &&
+      LLVM_LIKELY(!DeferFinalization))
     ++TokenCount;
 
   if (LLVM_UNLIKELY(OnToken) && NotReinjected &&
-      (LLVM_LIKELY(CurLevel == 0) || LLVM_UNLIKELY(PreprocessToken)))
+      (LLVM_LIKELY(CurLevel == 0) || LLVM_UNLIKELY(PreprocessToken)) &&
+      !DeferFinalization)
     OnToken(Result);
+}
+
+void PrepEngine::LexWithPlugin(Token &Result) {
+  for (;;) {
+    if (!PluginTokenQueue.empty()) {
+      Result = PluginTokenQueue.pop_back_val();
+    } else {
+      {
+        SaveAndRestore<bool> Defer(DeferTopLevelTokenFinalization, true);
+        Lex(Result);
+      }
+      if (Result.getFlag(Token::IsReinjected))
+        return;
+
+      llvm::SmallVector<Token, 8> Replacement;
+      bool Replaced = false;
+      if (!PluginHooks->interceptToken(Result, Replacement, Replaced)) {
+        SourceLocation FailureLocation = Result.getLocation();
+        Result.startToken();
+        Result.setKind(tok::eof);
+        Result.setLocation(FailureLocation);
+        Result.setFlag(Token::IsReinjected);
+      } else if (Replaced) {
+        for (Token &Value : Replacement)
+          Value.setFlag(Token::IsReinjected);
+        if (IsCaching() && IsLastCachedToken(Result))
+          ReplaceLastCachedToken(Replacement);
+        if (Replacement.empty())
+          continue;
+        for (size_t I = Replacement.size(); I > 1; --I) {
+          PluginTokenQueue.push_back(Replacement[I - 1]);
+        }
+        Result = Replacement.front();
+      }
+    }
+
+    ++TokenCount;
+    if (LLVM_UNLIKELY(OnToken))
+      OnToken(Result);
+    return;
+  }
 }
 
 void PrepEngine::ConsumeAllTokens(std::vector<Token> *Tokens) {

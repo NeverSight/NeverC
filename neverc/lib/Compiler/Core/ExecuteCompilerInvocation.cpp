@@ -12,6 +12,8 @@
 #include "neverc/Invoke/DirectInvocationOpts.h"
 #include "neverc/Invoke/LLVMCommandLine.h"
 #include "neverc/Invoke/Options.h"
+#include "neverc/Plugin/Host/PluginSession.h"
+#include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Scan/HeaderIndexOptions.h"
 #include "neverc/Scan/PrepOptions.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -26,6 +28,9 @@
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Target/TargetMachine.h"
+#include <optional>
+#include <string>
+#include <vector>
 
 using namespace neverc;
 using namespace llvm::opt;
@@ -109,6 +114,33 @@ void directLLVMErrorHandler(void *UserData, const char *Message,
   llvm::sys::Process::Exit(GenCrashDiag ? 70 : 1);
 }
 
+bool finishFrontendPluginTasks(
+    CompilerInstance *CI,
+    std::unique_ptr<plugin::PluginTaskContext> &InvocationTask) {
+  llvm::Error CleanupErrors = llvm::Error::success();
+  if (CI) {
+    std::unique_ptr<plugin::PluginTaskContext> TranslationUnitTask =
+        CI->takePluginTaskContext();
+    if (TranslationUnitTask)
+      CleanupErrors = llvm::joinErrors(
+          std::move(CleanupErrors), TranslationUnitTask->end());
+  }
+  if (InvocationTask) {
+    CleanupErrors = llvm::joinErrors(
+        std::move(CleanupErrors), InvocationTask->end());
+    InvocationTask.reset();
+  }
+  if (!CleanupErrors)
+    return true;
+  if (CI && CI->hasDiagnostics())
+    CI->getDiagnostics().Report(diag::err_drv_plugin_phase)
+        << ("failed to end frontend plugin tasks: " +
+            llvm::toString(std::move(CleanupErrors)).str().str());
+  else
+    llvm::consumeError(std::move(CleanupErrors));
+  return false;
+}
+
 } // namespace
 int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
                           void *MainAddr,
@@ -117,10 +149,29 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
   // frontend argv that CreateFromArgs parses here; DirectInvocationOpts
   // overlays domains ConstructJob already resolved canonically.
   bool parallelSafe = DirectOpts && DirectOpts->ParallelSafe;
-  if (!parallelSafe)
-    llvm::cl::ResetAllOptionOccurrences();
+  std::optional<plugin::PluginLLVMOptionExclusiveLease> LLVMOptionWriteLease;
+  std::optional<plugin::PluginLLVMOptionSharedLease> LLVMOptionReadLease;
 
+  std::unique_ptr<plugin::PluginTaskContext> PluginInvocationTask;
   std::unique_ptr<CompilerInstance> CI(new CompilerInstance());
+  if (DirectOpts && DirectOpts->Outputs)
+    CI->setOutputCoordinator(*DirectOpts->Outputs);
+  if (DirectOpts && DirectOpts->PluginSession) {
+    auto Invocation =
+        DirectOpts->PluginSession->createTask(NEVERC_TASK_INVOCATION);
+    if (!Invocation) {
+      llvm::consumeError(Invocation.takeError());
+      return 1;
+    }
+    PluginInvocationTask = std::move(*Invocation);
+    auto TranslationUnit = DirectOpts->PluginSession->createTask(
+        NEVERC_TASK_TRANSLATION_UNIT, PluginInvocationTask.get());
+    if (!TranslationUnit) {
+      llvm::consumeError(TranslationUnit.takeError());
+      return 1;
+    }
+    CI->setPluginTaskContext(std::move(*TranslationUnit));
+  }
   llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
 
   llvm::IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts =
@@ -158,6 +209,31 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
       CI->getCodeGenOpts().DiscardValueNames = true;
       CI->getCodeGenOpts().EmitVersionIdentMetadata = false;
     }
+  }
+
+  // A frontend with no LLVM options only reads the process-global registry
+  // and can share the gate with other parallel-safe invocations. An invocation
+  // that must install -mllvm state owns the gate through the entire frontend
+  // action. Parse it here and clear the deferred list so
+  // ExecuteCompilerInvocation does not recursively acquire the same gate.
+  auto &LLVMArgs = CI->getFrontendOpts().LLVMArgs;
+  bool MutatesLLVMOptions = !LLVMArgs.empty() ||
+                            !CI->getCodeGenOpts().DebugPass.empty() ||
+                            !CI->getCodeGenOpts().LimitFloatPrecision.empty();
+  if (!parallelSafe || MutatesLLVMOptions) {
+    LLVMOptionWriteLease.emplace(plugin::pluginLLVMOptionGate());
+    if (!LLVMArgs.empty()) {
+      std::vector<const char *> Args;
+      Args.reserve(LLVMArgs.size() + 1);
+      Args.push_back("neverc (LLVM option parsing)");
+      for (const std::string &Argument : LLVMArgs)
+        Args.push_back(Argument.c_str());
+      parseLLVMCommandLineOptions(Args.size(), Args.data());
+      LLVMArgs.clear();
+    } else
+      llvm::cl::ResetAllOptionOccurrences();
+  } else {
+    LLVMOptionReadLease.emplace(plugin::pluginLLVMOptionGate());
   }
 
   if (!parallelSafe && !CI->getFrontendOpts().TimeTracePath.empty())
@@ -224,11 +300,15 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
   }
 
   if (CI->getFrontendOpts().DisableFree) {
+    bool PluginTasksEnded =
+        finishFrontendPluginTasks(CI.get(), PluginInvocationTask);
     llvm::BuryPointer(std::move(CI));
-    return !Success;
+    return !Success || !PluginTasksEnded;
   }
 
-  return !Success;
+  bool PluginTasksEnded =
+      finishFrontendPluginTasks(CI.get(), PluginInvocationTask);
+  return !Success || !PluginTasksEnded;
 }
 
 } // namespace neverc

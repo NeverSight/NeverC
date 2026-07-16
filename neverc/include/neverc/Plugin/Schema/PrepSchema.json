@@ -1,0 +1,2238 @@
+{
+  "schema_version": 1,
+  "capability": {
+    "major": 1,
+    "minor": 0
+  },
+  "stable_schema_digest": "9e286b1b696ed55715a978ff5cfad5c0908995d5cc5de5025aadde0a739a3eeb",
+  "token_kinds": [
+    {
+      "internal": "unknown",
+      "symbol": "UNKNOWN",
+      "category": "special",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000001"
+    },
+    {
+      "internal": "eof",
+      "symbol": "EOF",
+      "category": "special",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000002"
+    },
+    {
+      "internal": "eod",
+      "symbol": "EOD",
+      "category": "special",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000003"
+    },
+    {
+      "internal": "comment",
+      "symbol": "COMMENT",
+      "category": "comment",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000004"
+    },
+    {
+      "internal": "identifier",
+      "symbol": "IDENTIFIER",
+      "category": "identifier",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000005"
+    },
+    {
+      "internal": "raw_identifier",
+      "symbol": "RAW_IDENTIFIER",
+      "category": "identifier",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000006"
+    },
+    {
+      "internal": "numeric_constant",
+      "symbol": "NUMERIC_CONSTANT",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000007"
+    },
+    {
+      "internal": "char_constant",
+      "symbol": "CHAR_CONSTANT",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000008"
+    },
+    {
+      "internal": "wide_char_constant",
+      "symbol": "WIDE_CHAR_CONSTANT",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000009"
+    },
+    {
+      "internal": "utf8_char_constant",
+      "symbol": "UTF8_CHAR_CONSTANT",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x1000000a"
+    },
+    {
+      "internal": "utf16_char_constant",
+      "symbol": "UTF16_CHAR_CONSTANT",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x1000000b"
+    },
+    {
+      "internal": "utf32_char_constant",
+      "symbol": "UTF32_CHAR_CONSTANT",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x1000000c"
+    },
+    {
+      "internal": "string_literal",
+      "symbol": "STRING_LITERAL",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x1000000d"
+    },
+    {
+      "internal": "wide_string_literal",
+      "symbol": "WIDE_STRING_LITERAL",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x1000000e"
+    },
+    {
+      "internal": "header_name",
+      "symbol": "HEADER_NAME",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x1000000f"
+    },
+    {
+      "internal": "utf8_string_literal",
+      "symbol": "UTF8_STRING_LITERAL",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000010"
+    },
+    {
+      "internal": "utf16_string_literal",
+      "symbol": "UTF16_STRING_LITERAL",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000011"
+    },
+    {
+      "internal": "utf32_string_literal",
+      "symbol": "UTF32_STRING_LITERAL",
+      "category": "literal",
+      "constructible": true,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x10000012"
+    },
+    {
+      "internal": "l_square",
+      "symbol": "L_SQUARE",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "[",
+      "pragma_annotation": false,
+      "id": "0x10000013"
+    },
+    {
+      "internal": "r_square",
+      "symbol": "R_SQUARE",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "]",
+      "pragma_annotation": false,
+      "id": "0x10000014"
+    },
+    {
+      "internal": "l_paren",
+      "symbol": "L_PAREN",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "(",
+      "pragma_annotation": false,
+      "id": "0x10000015"
+    },
+    {
+      "internal": "r_paren",
+      "symbol": "R_PAREN",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": ")",
+      "pragma_annotation": false,
+      "id": "0x10000016"
+    },
+    {
+      "internal": "l_brace",
+      "symbol": "L_BRACE",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "{",
+      "pragma_annotation": false,
+      "id": "0x10000017"
+    },
+    {
+      "internal": "r_brace",
+      "symbol": "R_BRACE",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "}",
+      "pragma_annotation": false,
+      "id": "0x10000018"
+    },
+    {
+      "internal": "period",
+      "symbol": "PERIOD",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": ".",
+      "pragma_annotation": false,
+      "id": "0x10000019"
+    },
+    {
+      "internal": "ellipsis",
+      "symbol": "ELLIPSIS",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "...",
+      "pragma_annotation": false,
+      "id": "0x1000001a"
+    },
+    {
+      "internal": "amp",
+      "symbol": "AMP",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "&",
+      "pragma_annotation": false,
+      "id": "0x1000001b"
+    },
+    {
+      "internal": "ampamp",
+      "symbol": "AMPAMP",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "&&",
+      "pragma_annotation": false,
+      "id": "0x1000001c"
+    },
+    {
+      "internal": "ampequal",
+      "symbol": "AMPEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "&=",
+      "pragma_annotation": false,
+      "id": "0x1000001d"
+    },
+    {
+      "internal": "star",
+      "symbol": "STAR",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "*",
+      "pragma_annotation": false,
+      "id": "0x1000001e"
+    },
+    {
+      "internal": "starequal",
+      "symbol": "STAREQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "*=",
+      "pragma_annotation": false,
+      "id": "0x1000001f"
+    },
+    {
+      "internal": "plus",
+      "symbol": "PLUS",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "+",
+      "pragma_annotation": false,
+      "id": "0x10000020"
+    },
+    {
+      "internal": "plusplus",
+      "symbol": "PLUSPLUS",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "++",
+      "pragma_annotation": false,
+      "id": "0x10000021"
+    },
+    {
+      "internal": "plusequal",
+      "symbol": "PLUSEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "+=",
+      "pragma_annotation": false,
+      "id": "0x10000022"
+    },
+    {
+      "internal": "minus",
+      "symbol": "MINUS",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "-",
+      "pragma_annotation": false,
+      "id": "0x10000023"
+    },
+    {
+      "internal": "arrow",
+      "symbol": "ARROW",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "->",
+      "pragma_annotation": false,
+      "id": "0x10000024"
+    },
+    {
+      "internal": "minusminus",
+      "symbol": "MINUSMINUS",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "--",
+      "pragma_annotation": false,
+      "id": "0x10000025"
+    },
+    {
+      "internal": "minusequal",
+      "symbol": "MINUSEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "-=",
+      "pragma_annotation": false,
+      "id": "0x10000026"
+    },
+    {
+      "internal": "tilde",
+      "symbol": "TILDE",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "~",
+      "pragma_annotation": false,
+      "id": "0x10000027"
+    },
+    {
+      "internal": "exclaim",
+      "symbol": "EXCLAIM",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "!",
+      "pragma_annotation": false,
+      "id": "0x10000028"
+    },
+    {
+      "internal": "exclaimequal",
+      "symbol": "EXCLAIMEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "!=",
+      "pragma_annotation": false,
+      "id": "0x10000029"
+    },
+    {
+      "internal": "slash",
+      "symbol": "SLASH",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "/",
+      "pragma_annotation": false,
+      "id": "0x1000002a"
+    },
+    {
+      "internal": "slashequal",
+      "symbol": "SLASHEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "/=",
+      "pragma_annotation": false,
+      "id": "0x1000002b"
+    },
+    {
+      "internal": "percent",
+      "symbol": "PERCENT",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "%",
+      "pragma_annotation": false,
+      "id": "0x1000002c"
+    },
+    {
+      "internal": "percentequal",
+      "symbol": "PERCENTEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "%=",
+      "pragma_annotation": false,
+      "id": "0x1000002d"
+    },
+    {
+      "internal": "less",
+      "symbol": "LESS",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "<",
+      "pragma_annotation": false,
+      "id": "0x1000002e"
+    },
+    {
+      "internal": "lessless",
+      "symbol": "LESSLESS",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "<<",
+      "pragma_annotation": false,
+      "id": "0x1000002f"
+    },
+    {
+      "internal": "lessequal",
+      "symbol": "LESSEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "<=",
+      "pragma_annotation": false,
+      "id": "0x10000030"
+    },
+    {
+      "internal": "lesslessequal",
+      "symbol": "LESSLESSEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "<<=",
+      "pragma_annotation": false,
+      "id": "0x10000031"
+    },
+    {
+      "internal": "greater",
+      "symbol": "GREATER",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": ">",
+      "pragma_annotation": false,
+      "id": "0x10000032"
+    },
+    {
+      "internal": "greatergreater",
+      "symbol": "GREATERGREATER",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": ">>",
+      "pragma_annotation": false,
+      "id": "0x10000033"
+    },
+    {
+      "internal": "greaterequal",
+      "symbol": "GREATEREQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": ">=",
+      "pragma_annotation": false,
+      "id": "0x10000034"
+    },
+    {
+      "internal": "greatergreaterequal",
+      "symbol": "GREATERGREATEREQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": ">>=",
+      "pragma_annotation": false,
+      "id": "0x10000035"
+    },
+    {
+      "internal": "caret",
+      "symbol": "CARET",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "^",
+      "pragma_annotation": false,
+      "id": "0x10000036"
+    },
+    {
+      "internal": "caretequal",
+      "symbol": "CARETEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "^=",
+      "pragma_annotation": false,
+      "id": "0x10000037"
+    },
+    {
+      "internal": "pipe",
+      "symbol": "PIPE",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "|",
+      "pragma_annotation": false,
+      "id": "0x10000038"
+    },
+    {
+      "internal": "pipepipe",
+      "symbol": "PIPEPIPE",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "||",
+      "pragma_annotation": false,
+      "id": "0x10000039"
+    },
+    {
+      "internal": "pipeequal",
+      "symbol": "PIPEEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "|=",
+      "pragma_annotation": false,
+      "id": "0x1000003a"
+    },
+    {
+      "internal": "question",
+      "symbol": "QUESTION",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "?",
+      "pragma_annotation": false,
+      "id": "0x1000003b"
+    },
+    {
+      "internal": "colon",
+      "symbol": "COLON",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": ":",
+      "pragma_annotation": false,
+      "id": "0x1000003c"
+    },
+    {
+      "internal": "semi",
+      "symbol": "SEMI",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": ";",
+      "pragma_annotation": false,
+      "id": "0x1000003d"
+    },
+    {
+      "internal": "equal",
+      "symbol": "EQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "=",
+      "pragma_annotation": false,
+      "id": "0x1000003e"
+    },
+    {
+      "internal": "equalequal",
+      "symbol": "EQUALEQUAL",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "==",
+      "pragma_annotation": false,
+      "id": "0x1000003f"
+    },
+    {
+      "internal": "comma",
+      "symbol": "COMMA",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": ",",
+      "pragma_annotation": false,
+      "id": "0x10000040"
+    },
+    {
+      "internal": "hash",
+      "symbol": "HASH",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "#",
+      "pragma_annotation": false,
+      "id": "0x10000041"
+    },
+    {
+      "internal": "hashhash",
+      "symbol": "HASHHASH",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "##",
+      "pragma_annotation": false,
+      "id": "0x10000042"
+    },
+    {
+      "internal": "hashat",
+      "symbol": "HASHAT",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "#@",
+      "pragma_annotation": false,
+      "id": "0x10000043"
+    },
+    {
+      "internal": "coloncolon",
+      "symbol": "COLONCOLON",
+      "category": "punctuator",
+      "constructible": true,
+      "spelling": "::",
+      "pragma_annotation": false,
+      "id": "0x10000044"
+    },
+    {
+      "internal": "kw_auto",
+      "symbol": "KW_AUTO",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "auto",
+      "pragma_annotation": false,
+      "id": "0x10000045"
+    },
+    {
+      "internal": "kw_break",
+      "symbol": "KW_BREAK",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "break",
+      "pragma_annotation": false,
+      "id": "0x10000046"
+    },
+    {
+      "internal": "kw_case",
+      "symbol": "KW_CASE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "case",
+      "pragma_annotation": false,
+      "id": "0x10000047"
+    },
+    {
+      "internal": "kw_char",
+      "symbol": "KW_CHAR",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "char",
+      "pragma_annotation": false,
+      "id": "0x10000048"
+    },
+    {
+      "internal": "kw_const",
+      "symbol": "KW_CONST",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "const",
+      "pragma_annotation": false,
+      "id": "0x10000049"
+    },
+    {
+      "internal": "kw_continue",
+      "symbol": "KW_CONTINUE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "continue",
+      "pragma_annotation": false,
+      "id": "0x1000004a"
+    },
+    {
+      "internal": "kw_default",
+      "symbol": "KW_DEFAULT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "default",
+      "pragma_annotation": false,
+      "id": "0x1000004b"
+    },
+    {
+      "internal": "kw_do",
+      "symbol": "KW_DO",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "do",
+      "pragma_annotation": false,
+      "id": "0x1000004c"
+    },
+    {
+      "internal": "kw_double",
+      "symbol": "KW_DOUBLE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "double",
+      "pragma_annotation": false,
+      "id": "0x1000004d"
+    },
+    {
+      "internal": "kw_else",
+      "symbol": "KW_ELSE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "else",
+      "pragma_annotation": false,
+      "id": "0x1000004e"
+    },
+    {
+      "internal": "kw_enum",
+      "symbol": "KW_ENUM",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "enum",
+      "pragma_annotation": false,
+      "id": "0x1000004f"
+    },
+    {
+      "internal": "kw_extern",
+      "symbol": "KW_EXTERN",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "extern",
+      "pragma_annotation": false,
+      "id": "0x10000050"
+    },
+    {
+      "internal": "kw_float",
+      "symbol": "KW_FLOAT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "float",
+      "pragma_annotation": false,
+      "id": "0x10000051"
+    },
+    {
+      "internal": "kw_for",
+      "symbol": "KW_FOR",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "for",
+      "pragma_annotation": false,
+      "id": "0x10000052"
+    },
+    {
+      "internal": "kw_goto",
+      "symbol": "KW_GOTO",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "goto",
+      "pragma_annotation": false,
+      "id": "0x10000053"
+    },
+    {
+      "internal": "kw_if",
+      "symbol": "KW_IF",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "if",
+      "pragma_annotation": false,
+      "id": "0x10000054"
+    },
+    {
+      "internal": "kw_int",
+      "symbol": "KW_INT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "int",
+      "pragma_annotation": false,
+      "id": "0x10000055"
+    },
+    {
+      "internal": "kw__ExtInt",
+      "symbol": "KW__EXTINT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_ExtInt",
+      "pragma_annotation": false,
+      "id": "0x10000056"
+    },
+    {
+      "internal": "kw__BitInt",
+      "symbol": "KW__BITINT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_BitInt",
+      "pragma_annotation": false,
+      "id": "0x10000057"
+    },
+    {
+      "internal": "kw_long",
+      "symbol": "KW_LONG",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "long",
+      "pragma_annotation": false,
+      "id": "0x10000058"
+    },
+    {
+      "internal": "kw_register",
+      "symbol": "KW_REGISTER",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "register",
+      "pragma_annotation": false,
+      "id": "0x10000059"
+    },
+    {
+      "internal": "kw_return",
+      "symbol": "KW_RETURN",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "return",
+      "pragma_annotation": false,
+      "id": "0x1000005a"
+    },
+    {
+      "internal": "kw_short",
+      "symbol": "KW_SHORT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "short",
+      "pragma_annotation": false,
+      "id": "0x1000005b"
+    },
+    {
+      "internal": "kw_signed",
+      "symbol": "KW_SIGNED",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "signed",
+      "pragma_annotation": false,
+      "id": "0x1000005c"
+    },
+    {
+      "internal": "kw_sizeof",
+      "symbol": "KW_SIZEOF",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "sizeof",
+      "pragma_annotation": false,
+      "id": "0x1000005d"
+    },
+    {
+      "internal": "kw_static",
+      "symbol": "KW_STATIC",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "static",
+      "pragma_annotation": false,
+      "id": "0x1000005e"
+    },
+    {
+      "internal": "kw_struct",
+      "symbol": "KW_STRUCT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "struct",
+      "pragma_annotation": false,
+      "id": "0x1000005f"
+    },
+    {
+      "internal": "kw_switch",
+      "symbol": "KW_SWITCH",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "switch",
+      "pragma_annotation": false,
+      "id": "0x10000060"
+    },
+    {
+      "internal": "kw_typedef",
+      "symbol": "KW_TYPEDEF",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "typedef",
+      "pragma_annotation": false,
+      "id": "0x10000061"
+    },
+    {
+      "internal": "kw_union",
+      "symbol": "KW_UNION",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "union",
+      "pragma_annotation": false,
+      "id": "0x10000062"
+    },
+    {
+      "internal": "kw_unsigned",
+      "symbol": "KW_UNSIGNED",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "unsigned",
+      "pragma_annotation": false,
+      "id": "0x10000063"
+    },
+    {
+      "internal": "kw_void",
+      "symbol": "KW_VOID",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "void",
+      "pragma_annotation": false,
+      "id": "0x10000064"
+    },
+    {
+      "internal": "kw_volatile",
+      "symbol": "KW_VOLATILE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "volatile",
+      "pragma_annotation": false,
+      "id": "0x10000065"
+    },
+    {
+      "internal": "kw_while",
+      "symbol": "KW_WHILE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "while",
+      "pragma_annotation": false,
+      "id": "0x10000066"
+    },
+    {
+      "internal": "kw__Alignas",
+      "symbol": "KW__ALIGNAS",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Alignas",
+      "pragma_annotation": false,
+      "id": "0x10000067"
+    },
+    {
+      "internal": "kw__Alignof",
+      "symbol": "KW__ALIGNOF",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Alignof",
+      "pragma_annotation": false,
+      "id": "0x10000068"
+    },
+    {
+      "internal": "kw__Atomic",
+      "symbol": "KW__ATOMIC",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Atomic",
+      "pragma_annotation": false,
+      "id": "0x10000069"
+    },
+    {
+      "internal": "kw__Bool",
+      "symbol": "KW__BOOL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Bool",
+      "pragma_annotation": false,
+      "id": "0x1000006a"
+    },
+    {
+      "internal": "kw__Complex",
+      "symbol": "KW__COMPLEX",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Complex",
+      "pragma_annotation": false,
+      "id": "0x1000006b"
+    },
+    {
+      "internal": "kw__Generic",
+      "symbol": "KW__GENERIC",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Generic",
+      "pragma_annotation": false,
+      "id": "0x1000006c"
+    },
+    {
+      "internal": "kw__Imaginary",
+      "symbol": "KW__IMAGINARY",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Imaginary",
+      "pragma_annotation": false,
+      "id": "0x1000006d"
+    },
+    {
+      "internal": "kw__Noreturn",
+      "symbol": "KW__NORETURN",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Noreturn",
+      "pragma_annotation": false,
+      "id": "0x1000006e"
+    },
+    {
+      "internal": "kw__Static_assert",
+      "symbol": "KW__STATIC_ASSERT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Static_assert",
+      "pragma_annotation": false,
+      "id": "0x1000006f"
+    },
+    {
+      "internal": "kw__Thread_local",
+      "symbol": "KW__THREAD_LOCAL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Thread_local",
+      "pragma_annotation": false,
+      "id": "0x10000070"
+    },
+    {
+      "internal": "kw___func__",
+      "symbol": "KW___FUNC__",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__func__",
+      "pragma_annotation": false,
+      "id": "0x10000071"
+    },
+    {
+      "internal": "kw_asm",
+      "symbol": "KW_ASM",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "asm",
+      "pragma_annotation": false,
+      "id": "0x10000072"
+    },
+    {
+      "internal": "kw_bool",
+      "symbol": "KW_BOOL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "bool",
+      "pragma_annotation": false,
+      "id": "0x10000073"
+    },
+    {
+      "internal": "kw_false",
+      "symbol": "KW_FALSE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "false",
+      "pragma_annotation": false,
+      "id": "0x10000074"
+    },
+    {
+      "internal": "kw_true",
+      "symbol": "KW_TRUE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "true",
+      "pragma_annotation": false,
+      "id": "0x10000075"
+    },
+    {
+      "internal": "kw_wchar_t",
+      "symbol": "KW_WCHAR_T",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "wchar_t",
+      "pragma_annotation": false,
+      "id": "0x10000076"
+    },
+    {
+      "internal": "kw_restrict",
+      "symbol": "KW_RESTRICT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "restrict",
+      "pragma_annotation": false,
+      "id": "0x10000077"
+    },
+    {
+      "internal": "kw_inline",
+      "symbol": "KW_INLINE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "inline",
+      "pragma_annotation": false,
+      "id": "0x10000078"
+    },
+    {
+      "internal": "kw_alignas",
+      "symbol": "KW_ALIGNAS",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "alignas",
+      "pragma_annotation": false,
+      "id": "0x10000079"
+    },
+    {
+      "internal": "kw_alignof",
+      "symbol": "KW_ALIGNOF",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "alignof",
+      "pragma_annotation": false,
+      "id": "0x1000007a"
+    },
+    {
+      "internal": "kw_constexpr",
+      "symbol": "KW_CONSTEXPR",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "constexpr",
+      "pragma_annotation": false,
+      "id": "0x1000007b"
+    },
+    {
+      "internal": "kw_nullptr",
+      "symbol": "KW_NULLPTR",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "nullptr",
+      "pragma_annotation": false,
+      "id": "0x1000007c"
+    },
+    {
+      "internal": "kw_static_assert",
+      "symbol": "KW_STATIC_ASSERT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "static_assert",
+      "pragma_annotation": false,
+      "id": "0x1000007d"
+    },
+    {
+      "internal": "kw_thread_local",
+      "symbol": "KW_THREAD_LOCAL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "thread_local",
+      "pragma_annotation": false,
+      "id": "0x1000007e"
+    },
+    {
+      "internal": "kw_char8_t",
+      "symbol": "KW_CHAR8_T",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "char8_t",
+      "pragma_annotation": false,
+      "id": "0x1000007f"
+    },
+    {
+      "internal": "kw__Float16",
+      "symbol": "KW__FLOAT16",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Float16",
+      "pragma_annotation": false,
+      "id": "0x10000080"
+    },
+    {
+      "internal": "kw_typeof",
+      "symbol": "KW_TYPEOF",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "typeof",
+      "pragma_annotation": false,
+      "id": "0x10000081"
+    },
+    {
+      "internal": "kw_typeof_unqual",
+      "symbol": "KW_TYPEOF_UNQUAL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "typeof_unqual",
+      "pragma_annotation": false,
+      "id": "0x10000082"
+    },
+    {
+      "internal": "kw__Accum",
+      "symbol": "KW__ACCUM",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Accum",
+      "pragma_annotation": false,
+      "id": "0x10000083"
+    },
+    {
+      "internal": "kw__Fract",
+      "symbol": "KW__FRACT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Fract",
+      "pragma_annotation": false,
+      "id": "0x10000084"
+    },
+    {
+      "internal": "kw__Sat",
+      "symbol": "KW__SAT",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Sat",
+      "pragma_annotation": false,
+      "id": "0x10000085"
+    },
+    {
+      "internal": "kw__Decimal32",
+      "symbol": "KW__DECIMAL32",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Decimal32",
+      "pragma_annotation": false,
+      "id": "0x10000086"
+    },
+    {
+      "internal": "kw__Decimal64",
+      "symbol": "KW__DECIMAL64",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Decimal64",
+      "pragma_annotation": false,
+      "id": "0x10000087"
+    },
+    {
+      "internal": "kw__Decimal128",
+      "symbol": "KW__DECIMAL128",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Decimal128",
+      "pragma_annotation": false,
+      "id": "0x10000088"
+    },
+    {
+      "internal": "kw___alignof",
+      "symbol": "KW___ALIGNOF",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__alignof",
+      "pragma_annotation": false,
+      "id": "0x10000089"
+    },
+    {
+      "internal": "kw___attribute",
+      "symbol": "KW___ATTRIBUTE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__attribute",
+      "pragma_annotation": false,
+      "id": "0x1000008a"
+    },
+    {
+      "internal": "kw___builtin_choose_expr",
+      "symbol": "KW___BUILTIN_CHOOSE_EXPR",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_choose_expr",
+      "pragma_annotation": false,
+      "id": "0x1000008b"
+    },
+    {
+      "internal": "kw___builtin_offsetof",
+      "symbol": "KW___BUILTIN_OFFSETOF",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_offsetof",
+      "pragma_annotation": false,
+      "id": "0x1000008c"
+    },
+    {
+      "internal": "kw___builtin_FILE",
+      "symbol": "KW___BUILTIN_FILE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_FILE",
+      "pragma_annotation": false,
+      "id": "0x1000008d"
+    },
+    {
+      "internal": "kw___builtin_FILE_NAME",
+      "symbol": "KW___BUILTIN_FILE_NAME",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_FILE_NAME",
+      "pragma_annotation": false,
+      "id": "0x1000008e"
+    },
+    {
+      "internal": "kw___builtin_FUNCTION",
+      "symbol": "KW___BUILTIN_FUNCTION",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_FUNCTION",
+      "pragma_annotation": false,
+      "id": "0x1000008f"
+    },
+    {
+      "internal": "kw___builtin_FUNCSIG",
+      "symbol": "KW___BUILTIN_FUNCSIG",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_FUNCSIG",
+      "pragma_annotation": false,
+      "id": "0x10000090"
+    },
+    {
+      "internal": "kw___builtin_LINE",
+      "symbol": "KW___BUILTIN_LINE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_LINE",
+      "pragma_annotation": false,
+      "id": "0x10000091"
+    },
+    {
+      "internal": "kw___builtin_COLUMN",
+      "symbol": "KW___BUILTIN_COLUMN",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_COLUMN",
+      "pragma_annotation": false,
+      "id": "0x10000092"
+    },
+    {
+      "internal": "kw___builtin_types_compatible_p",
+      "symbol": "KW___BUILTIN_TYPES_COMPATIBLE_P",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_types_compatible_p",
+      "pragma_annotation": false,
+      "id": "0x10000093"
+    },
+    {
+      "internal": "kw___builtin_va_arg",
+      "symbol": "KW___BUILTIN_VA_ARG",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_va_arg",
+      "pragma_annotation": false,
+      "id": "0x10000094"
+    },
+    {
+      "internal": "kw___extension__",
+      "symbol": "KW___EXTENSION__",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__extension__",
+      "pragma_annotation": false,
+      "id": "0x10000095"
+    },
+    {
+      "internal": "kw___float128",
+      "symbol": "KW___FLOAT128",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__float128",
+      "pragma_annotation": false,
+      "id": "0x10000096"
+    },
+    {
+      "internal": "kw___fp16",
+      "symbol": "KW___FP16",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__fp16",
+      "pragma_annotation": false,
+      "id": "0x10000097"
+    },
+    {
+      "internal": "kw___imag",
+      "symbol": "KW___IMAG",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__imag",
+      "pragma_annotation": false,
+      "id": "0x10000098"
+    },
+    {
+      "internal": "kw___int128",
+      "symbol": "KW___INT128",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__int128",
+      "pragma_annotation": false,
+      "id": "0x10000099"
+    },
+    {
+      "internal": "kw___label__",
+      "symbol": "KW___LABEL__",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__label__",
+      "pragma_annotation": false,
+      "id": "0x1000009a"
+    },
+    {
+      "internal": "kw___real",
+      "symbol": "KW___REAL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__real",
+      "pragma_annotation": false,
+      "id": "0x1000009b"
+    },
+    {
+      "internal": "kw___thread",
+      "symbol": "KW___THREAD",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__thread",
+      "pragma_annotation": false,
+      "id": "0x1000009c"
+    },
+    {
+      "internal": "kw___FUNCTION__",
+      "symbol": "KW___FUNCTION__",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__FUNCTION__",
+      "pragma_annotation": false,
+      "id": "0x1000009d"
+    },
+    {
+      "internal": "kw___PRETTY_FUNCTION__",
+      "symbol": "KW___PRETTY_FUNCTION__",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__PRETTY_FUNCTION__",
+      "pragma_annotation": false,
+      "id": "0x1000009e"
+    },
+    {
+      "internal": "kw___auto_type",
+      "symbol": "KW___AUTO_TYPE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__auto_type",
+      "pragma_annotation": false,
+      "id": "0x1000009f"
+    },
+    {
+      "internal": "kw___FUNCDNAME__",
+      "symbol": "KW___FUNCDNAME__",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__FUNCDNAME__",
+      "pragma_annotation": false,
+      "id": "0x100000a0"
+    },
+    {
+      "internal": "kw___FUNCSIG__",
+      "symbol": "KW___FUNCSIG__",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__FUNCSIG__",
+      "pragma_annotation": false,
+      "id": "0x100000a1"
+    },
+    {
+      "internal": "kw_L__FUNCTION__",
+      "symbol": "KW_L__FUNCTION__",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "L__FUNCTION__",
+      "pragma_annotation": false,
+      "id": "0x100000a2"
+    },
+    {
+      "internal": "kw_L__FUNCSIG__",
+      "symbol": "KW_L__FUNCSIG__",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "L__FUNCSIG__",
+      "pragma_annotation": false,
+      "id": "0x100000a3"
+    },
+    {
+      "internal": "kw___private_extern__",
+      "symbol": "KW___PRIVATE_EXTERN__",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__private_extern__",
+      "pragma_annotation": false,
+      "id": "0x100000a4"
+    },
+    {
+      "internal": "kw___declspec",
+      "symbol": "KW___DECLSPEC",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__declspec",
+      "pragma_annotation": false,
+      "id": "0x100000a5"
+    },
+    {
+      "internal": "kw___cdecl",
+      "symbol": "KW___CDECL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__cdecl",
+      "pragma_annotation": false,
+      "id": "0x100000a6"
+    },
+    {
+      "internal": "kw_cdecl",
+      "symbol": "KW_CDECL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "cdecl",
+      "pragma_annotation": false,
+      "id": "0x100000a7"
+    },
+    {
+      "internal": "kw___stdcall",
+      "symbol": "KW___STDCALL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__stdcall",
+      "pragma_annotation": false,
+      "id": "0x100000a8"
+    },
+    {
+      "internal": "kw___fastcall",
+      "symbol": "KW___FASTCALL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__fastcall",
+      "pragma_annotation": false,
+      "id": "0x100000a9"
+    },
+    {
+      "internal": "kw___regcall",
+      "symbol": "KW___REGCALL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__regcall",
+      "pragma_annotation": false,
+      "id": "0x100000aa"
+    },
+    {
+      "internal": "kw___vectorcall",
+      "symbol": "KW___VECTORCALL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__vectorcall",
+      "pragma_annotation": false,
+      "id": "0x100000ab"
+    },
+    {
+      "internal": "kw___forceinline",
+      "symbol": "KW___FORCEINLINE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__forceinline",
+      "pragma_annotation": false,
+      "id": "0x100000ac"
+    },
+    {
+      "internal": "kw___unaligned",
+      "symbol": "KW___UNALIGNED",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__unaligned",
+      "pragma_annotation": false,
+      "id": "0x100000ad"
+    },
+    {
+      "internal": "kw___bf16",
+      "symbol": "KW___BF16",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__bf16",
+      "pragma_annotation": false,
+      "id": "0x100000ae"
+    },
+    {
+      "internal": "kw__Nonnull",
+      "symbol": "KW__NONNULL",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Nonnull",
+      "pragma_annotation": false,
+      "id": "0x100000af"
+    },
+    {
+      "internal": "kw__Nullable",
+      "symbol": "KW__NULLABLE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Nullable",
+      "pragma_annotation": false,
+      "id": "0x100000b0"
+    },
+    {
+      "internal": "kw__Null_unspecified",
+      "symbol": "KW__NULL_UNSPECIFIED",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "_Null_unspecified",
+      "pragma_annotation": false,
+      "id": "0x100000b1"
+    },
+    {
+      "internal": "kw___ptr64",
+      "symbol": "KW___PTR64",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__ptr64",
+      "pragma_annotation": false,
+      "id": "0x100000b2"
+    },
+    {
+      "internal": "kw___ptr32",
+      "symbol": "KW___PTR32",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__ptr32",
+      "pragma_annotation": false,
+      "id": "0x100000b3"
+    },
+    {
+      "internal": "kw___sptr",
+      "symbol": "KW___SPTR",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__sptr",
+      "pragma_annotation": false,
+      "id": "0x100000b4"
+    },
+    {
+      "internal": "kw___uptr",
+      "symbol": "KW___UPTR",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__uptr",
+      "pragma_annotation": false,
+      "id": "0x100000b5"
+    },
+    {
+      "internal": "kw___w64",
+      "symbol": "KW___W64",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__w64",
+      "pragma_annotation": false,
+      "id": "0x100000b6"
+    },
+    {
+      "internal": "kw___uuidof",
+      "symbol": "KW___UUIDOF",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__uuidof",
+      "pragma_annotation": false,
+      "id": "0x100000b7"
+    },
+    {
+      "internal": "kw___try",
+      "symbol": "KW___TRY",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__try",
+      "pragma_annotation": false,
+      "id": "0x100000b8"
+    },
+    {
+      "internal": "kw___finally",
+      "symbol": "KW___FINALLY",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__finally",
+      "pragma_annotation": false,
+      "id": "0x100000b9"
+    },
+    {
+      "internal": "kw___leave",
+      "symbol": "KW___LEAVE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__leave",
+      "pragma_annotation": false,
+      "id": "0x100000ba"
+    },
+    {
+      "internal": "kw___int64",
+      "symbol": "KW___INT64",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__int64",
+      "pragma_annotation": false,
+      "id": "0x100000bb"
+    },
+    {
+      "internal": "kw___if_exists",
+      "symbol": "KW___IF_EXISTS",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__if_exists",
+      "pragma_annotation": false,
+      "id": "0x100000bc"
+    },
+    {
+      "internal": "kw___if_not_exists",
+      "symbol": "KW___IF_NOT_EXISTS",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__if_not_exists",
+      "pragma_annotation": false,
+      "id": "0x100000bd"
+    },
+    {
+      "internal": "kw_i8",
+      "symbol": "KW_I8",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "i8",
+      "pragma_annotation": false,
+      "id": "0x100000be"
+    },
+    {
+      "internal": "kw_i16",
+      "symbol": "KW_I16",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "i16",
+      "pragma_annotation": false,
+      "id": "0x100000bf"
+    },
+    {
+      "internal": "kw_i32",
+      "symbol": "KW_I32",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "i32",
+      "pragma_annotation": false,
+      "id": "0x100000c0"
+    },
+    {
+      "internal": "kw_i64",
+      "symbol": "KW_I64",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "i64",
+      "pragma_annotation": false,
+      "id": "0x100000c1"
+    },
+    {
+      "internal": "kw_i128",
+      "symbol": "KW_I128",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "i128",
+      "pragma_annotation": false,
+      "id": "0x100000c2"
+    },
+    {
+      "internal": "kw_u8",
+      "symbol": "KW_U8",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "u8",
+      "pragma_annotation": false,
+      "id": "0x100000c3"
+    },
+    {
+      "internal": "kw_u16",
+      "symbol": "KW_U16",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "u16",
+      "pragma_annotation": false,
+      "id": "0x100000c4"
+    },
+    {
+      "internal": "kw_u32",
+      "symbol": "KW_U32",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "u32",
+      "pragma_annotation": false,
+      "id": "0x100000c5"
+    },
+    {
+      "internal": "kw_u64",
+      "symbol": "KW_U64",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "u64",
+      "pragma_annotation": false,
+      "id": "0x100000c6"
+    },
+    {
+      "internal": "kw_u128",
+      "symbol": "KW_U128",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "u128",
+      "pragma_annotation": false,
+      "id": "0x100000c7"
+    },
+    {
+      "internal": "kw_isize",
+      "symbol": "KW_ISIZE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "isize",
+      "pragma_annotation": false,
+      "id": "0x100000c8"
+    },
+    {
+      "internal": "kw_usize",
+      "symbol": "KW_USIZE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "usize",
+      "pragma_annotation": false,
+      "id": "0x100000c9"
+    },
+    {
+      "internal": "kw___builtin_convertvector",
+      "symbol": "KW___BUILTIN_CONVERTVECTOR",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_convertvector",
+      "pragma_annotation": false,
+      "id": "0x100000ca"
+    },
+    {
+      "internal": "kw___builtin_vectorelements",
+      "symbol": "KW___BUILTIN_VECTORELEMENTS",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_vectorelements",
+      "pragma_annotation": false,
+      "id": "0x100000cb"
+    },
+    {
+      "internal": "kw___builtin_bit_cast",
+      "symbol": "KW___BUILTIN_BIT_CAST",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_bit_cast",
+      "pragma_annotation": false,
+      "id": "0x100000cc"
+    },
+    {
+      "internal": "kw___builtin_available",
+      "symbol": "KW___BUILTIN_AVAILABLE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__builtin_available",
+      "pragma_annotation": false,
+      "id": "0x100000cd"
+    },
+    {
+      "internal": "kw___arm_locally_streaming",
+      "symbol": "KW___ARM_LOCALLY_STREAMING",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__arm_locally_streaming",
+      "pragma_annotation": false,
+      "id": "0x100000ce"
+    },
+    {
+      "internal": "kw___arm_new_za",
+      "symbol": "KW___ARM_NEW_ZA",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__arm_new_za",
+      "pragma_annotation": false,
+      "id": "0x100000cf"
+    },
+    {
+      "internal": "kw___arm_preserves_za",
+      "symbol": "KW___ARM_PRESERVES_ZA",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__arm_preserves_za",
+      "pragma_annotation": false,
+      "id": "0x100000d0"
+    },
+    {
+      "internal": "kw___arm_shared_za",
+      "symbol": "KW___ARM_SHARED_ZA",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__arm_shared_za",
+      "pragma_annotation": false,
+      "id": "0x100000d1"
+    },
+    {
+      "internal": "kw___arm_streaming",
+      "symbol": "KW___ARM_STREAMING",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__arm_streaming",
+      "pragma_annotation": false,
+      "id": "0x100000d2"
+    },
+    {
+      "internal": "kw___arm_streaming_compatible",
+      "symbol": "KW___ARM_STREAMING_COMPATIBLE",
+      "category": "keyword",
+      "constructible": false,
+      "spelling": "__arm_streaming_compatible",
+      "pragma_annotation": false,
+      "id": "0x100000d3"
+    },
+    {
+      "internal": "annot_typename",
+      "symbol": "ANNOT_TYPENAME",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": false,
+      "id": "0x100000d4"
+    },
+    {
+      "internal": "annot_pragma_unused",
+      "symbol": "ANNOT_PRAGMA_UNUSED",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000d5"
+    },
+    {
+      "internal": "annot_pragma_vis",
+      "symbol": "ANNOT_PRAGMA_VIS",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000d6"
+    },
+    {
+      "internal": "annot_pragma_pack",
+      "symbol": "ANNOT_PRAGMA_PACK",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000d7"
+    },
+    {
+      "internal": "annot_pragma_parser_crash",
+      "symbol": "ANNOT_PRAGMA_PARSER_CRASH",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000d8"
+    },
+    {
+      "internal": "annot_pragma_dump",
+      "symbol": "ANNOT_PRAGMA_DUMP",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000d9"
+    },
+    {
+      "internal": "annot_pragma_msstruct",
+      "symbol": "ANNOT_PRAGMA_MSSTRUCT",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000da"
+    },
+    {
+      "internal": "annot_pragma_align",
+      "symbol": "ANNOT_PRAGMA_ALIGN",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000db"
+    },
+    {
+      "internal": "annot_pragma_weak",
+      "symbol": "ANNOT_PRAGMA_WEAK",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000dc"
+    },
+    {
+      "internal": "annot_pragma_weakalias",
+      "symbol": "ANNOT_PRAGMA_WEAKALIAS",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000dd"
+    },
+    {
+      "internal": "annot_pragma_fp_contract",
+      "symbol": "ANNOT_PRAGMA_FP_CONTRACT",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000de"
+    },
+    {
+      "internal": "annot_pragma_fenv_access",
+      "symbol": "ANNOT_PRAGMA_FENV_ACCESS",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000df"
+    },
+    {
+      "internal": "annot_pragma_fenv_access_ms",
+      "symbol": "ANNOT_PRAGMA_FENV_ACCESS_MS",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000e0"
+    },
+    {
+      "internal": "annot_pragma_fenv_round",
+      "symbol": "ANNOT_PRAGMA_FENV_ROUND",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000e1"
+    },
+    {
+      "internal": "annot_pragma_cx_limited_range",
+      "symbol": "ANNOT_PRAGMA_CX_LIMITED_RANGE",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000e2"
+    },
+    {
+      "internal": "annot_pragma_float_control",
+      "symbol": "ANNOT_PRAGMA_FLOAT_CONTROL",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000e3"
+    },
+    {
+      "internal": "annot_pragma_ms_pragma",
+      "symbol": "ANNOT_PRAGMA_MS_PRAGMA",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000e4"
+    },
+    {
+      "internal": "annot_pragma_fp",
+      "symbol": "ANNOT_PRAGMA_FP",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000e5"
+    },
+    {
+      "internal": "annot_pragma_attribute",
+      "symbol": "ANNOT_PRAGMA_ATTRIBUTE",
+      "category": "annotation",
+      "constructible": false,
+      "spelling": null,
+      "pragma_annotation": true,
+      "id": "0x100000e6"
+    }
+  ],
+  "pp_keywords": [
+    {
+      "internal": "pp_not_keyword",
+      "symbol": "NOT_KEYWORD",
+      "spelling": "not_keyword",
+      "id": "0x20000001"
+    },
+    {
+      "internal": "pp_if",
+      "symbol": "IF",
+      "spelling": "if",
+      "id": "0x20000002"
+    },
+    {
+      "internal": "pp_ifdef",
+      "symbol": "IFDEF",
+      "spelling": "ifdef",
+      "id": "0x20000003"
+    },
+    {
+      "internal": "pp_ifndef",
+      "symbol": "IFNDEF",
+      "spelling": "ifndef",
+      "id": "0x20000004"
+    },
+    {
+      "internal": "pp_elif",
+      "symbol": "ELIF",
+      "spelling": "elif",
+      "id": "0x20000005"
+    },
+    {
+      "internal": "pp_elifdef",
+      "symbol": "ELIFDEF",
+      "spelling": "elifdef",
+      "id": "0x20000006"
+    },
+    {
+      "internal": "pp_elifndef",
+      "symbol": "ELIFNDEF",
+      "spelling": "elifndef",
+      "id": "0x20000007"
+    },
+    {
+      "internal": "pp_else",
+      "symbol": "ELSE",
+      "spelling": "else",
+      "id": "0x20000008"
+    },
+    {
+      "internal": "pp_endif",
+      "symbol": "ENDIF",
+      "spelling": "endif",
+      "id": "0x20000009"
+    },
+    {
+      "internal": "pp_defined",
+      "symbol": "DEFINED",
+      "spelling": "defined",
+      "id": "0x2000000a"
+    },
+    {
+      "internal": "pp_include",
+      "symbol": "INCLUDE",
+      "spelling": "include",
+      "id": "0x2000000b"
+    },
+    {
+      "internal": "pp___include_macros",
+      "symbol": "__INCLUDE_MACROS",
+      "spelling": "__include_macros",
+      "id": "0x2000000c"
+    },
+    {
+      "internal": "pp_define",
+      "symbol": "DEFINE",
+      "spelling": "define",
+      "id": "0x2000000d"
+    },
+    {
+      "internal": "pp_undef",
+      "symbol": "UNDEF",
+      "spelling": "undef",
+      "id": "0x2000000e"
+    },
+    {
+      "internal": "pp_line",
+      "symbol": "LINE",
+      "spelling": "line",
+      "id": "0x2000000f"
+    },
+    {
+      "internal": "pp_error",
+      "symbol": "ERROR",
+      "spelling": "error",
+      "id": "0x20000010"
+    },
+    {
+      "internal": "pp_pragma",
+      "symbol": "PRAGMA",
+      "spelling": "pragma",
+      "id": "0x20000011"
+    },
+    {
+      "internal": "pp_import",
+      "symbol": "IMPORT",
+      "spelling": "import",
+      "id": "0x20000012"
+    },
+    {
+      "internal": "pp_include_next",
+      "symbol": "INCLUDE_NEXT",
+      "spelling": "include_next",
+      "id": "0x20000013"
+    },
+    {
+      "internal": "pp_warning",
+      "symbol": "WARNING",
+      "spelling": "warning",
+      "id": "0x20000014"
+    },
+    {
+      "internal": "pp_ident",
+      "symbol": "IDENT",
+      "spelling": "ident",
+      "id": "0x20000015"
+    },
+    {
+      "internal": "pp_sccs",
+      "symbol": "SCCS",
+      "spelling": "sccs",
+      "id": "0x20000016"
+    },
+    {
+      "internal": "pp_assert",
+      "symbol": "ASSERT",
+      "spelling": "assert",
+      "id": "0x20000017"
+    },
+    {
+      "internal": "pp_unassert",
+      "symbol": "UNASSERT",
+      "spelling": "unassert",
+      "id": "0x20000018"
+    },
+    {
+      "internal": "pp___public_macro",
+      "symbol": "__PUBLIC_MACRO",
+      "spelling": "__public_macro",
+      "id": "0x20000019"
+    },
+    {
+      "internal": "pp___private_macro",
+      "symbol": "__PRIVATE_MACRO",
+      "spelling": "__private_macro",
+      "id": "0x2000001a"
+    }
+  ]
+}

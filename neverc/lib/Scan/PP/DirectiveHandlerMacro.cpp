@@ -1,8 +1,9 @@
+#include "neverc/Scan/LexDiag.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Scan/PragmaDispatch.h"
 #include "neverc/Scan/PrepEngine.h"
+#include "neverc/Scan/PrepPluginHooks.h"
 #include "neverc/Scan/VarArgExpansion.h"
-#include "neverc/Scan/LexDiag.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
@@ -374,6 +375,17 @@ void PrepEngine::ExecDefine(Token &DefineTok,
       WarnUnusedMacroLocs.erase(OtherMI->getDefinitionLoc());
   }
 
+  if (PluginHooks && PluginHooks->hasMacroInterceptor()) {
+    PrepMacroHook Hook;
+    Hook.Kind = PrepMacroHook::Operation::Define;
+    Hook.NameToken = MacroNameTok;
+    Hook.Name = II;
+    Hook.Definition = MI;
+    if (!PluginHooks->interceptMacro(Hook) ||
+        Hook.Result == PrepMacroHook::Action::Suppress)
+      return;
+  }
+
   DefMacroDirective *MD = appendDefMacroDirective(II, MI);
 
   assert(!MI->isUsed());
@@ -423,6 +435,17 @@ void PrepEngine::ExecUndef() {
   auto *II = MacroNameTok.getIdentifierInfo();
   auto MD = getMacroDefinition(II);
   UndefMacroDirective *Undef = nullptr;
+
+  if (PluginHooks && PluginHooks->hasMacroInterceptor()) {
+    PrepMacroHook Hook;
+    Hook.Kind = PrepMacroHook::Operation::Undefine;
+    Hook.NameToken = MacroNameTok;
+    Hook.Name = II;
+    Hook.Definition = const_cast<MacroRecord *>(MD.getMacroRecord());
+    if (!PluginHooks->interceptMacro(Hook) ||
+        Hook.Result == PrepMacroHook::Action::Suppress)
+      return;
+  }
 
   if (II->isFinal())
     warnFinalMacro(MacroNameTok, /*IsUndef=*/true);

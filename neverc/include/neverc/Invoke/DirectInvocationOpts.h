@@ -9,8 +9,12 @@
 namespace neverc {
 
 class HeaderIndexOptions;
+class OutputCoordinator;
 class PrepOptions;
 class FrontendOptions;
+namespace plugin {
+class PluginSession;
+}
 
 namespace driver {
 
@@ -21,6 +25,8 @@ struct DirectInvocationOpts {
   std::shared_ptr<HeaderIndexOptions> HeaderIdxOpts;
   std::shared_ptr<PrepOptions> PPOpts;
   std::shared_ptr<FrontendOptions> FrontendOpts;
+  std::shared_ptr<plugin::PluginSession> PluginSession;
+  OutputCoordinator *Outputs = nullptr;
 
   // True when this cc1 invocation is part of a compile+link pipeline where
   // the linker runs in the same process.  LTO bitcode output stays in
@@ -36,7 +42,7 @@ struct DirectInvocationOpts {
 
 inline bool hasAnyDirectOpts(const DirectInvocationOpts &D) {
   return D.TargetOpts || D.LangOpts || D.CodeGenOpts || D.HeaderIdxOpts ||
-         D.PPOpts || D.FrontendOpts;
+         D.PPOpts || D.FrontendOpts || D.PluginSession || D.Outputs;
 }
 
 } // namespace driver

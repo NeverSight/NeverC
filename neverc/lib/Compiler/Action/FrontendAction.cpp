@@ -1,11 +1,13 @@
 #include "neverc/Compiler/FrontendAction.h"
 #include "neverc/Compiler/CompilerInstance.h"
+#include "neverc/Compiler/FrontendDiag.h"
 #include "neverc/Compiler/Utils.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
 #include "neverc/Foundation/Core/Stack.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticOptions.h"
 #include "neverc/Foundation/LangOpts/LangStandard.h"
+#include "neverc/Plugin/Host/FrontendPluginBridge.h"
 #include "neverc/Scan/IncludeResolver.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Scan/PrepEngine.h"
@@ -98,6 +100,7 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
     if (HasBegunSourceFile)
       CI.getDiagnosticClient().EndSourceFile();
     CI.setTreeConsumer(nullptr);
+    CI.clearPluginSourcePhaseRuntime();
     CI.clearOutputFiles(/*EraseFiles=*/true);
     setCurrentInput(FrontendInputFile());
     setCompilerInstance(nullptr);
@@ -140,8 +143,46 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
                                            &CI.getPrepEngine());
   HasBegunSourceFile = true;
 
-  if (!CI.InitializeSourceManager(Input))
+  if (plugin::PluginTaskContext *Task =
+          CI.getPluginTaskContext()) {
+    auto Runtime = plugin::PluginSourcePhaseRuntime::create(
+        *Task, CI.getSourceManager(), CI.getLangOpts());
+    if (!Runtime) {
+      CI.getDiagnostics().Report(diag::err_fe_error_backend)
+          << llvm::toString(Runtime.takeError());
+      return false;
+    }
+    plugin::PluginSourceInput SourceInput;
+    SourceInput.Path =
+        Input.isFile() ? Input.getFile()
+                       : Input.getBuffer().getBufferIdentifier();
+    if (Input.isBuffer()) {
+      llvm::StringRef Buffer = Input.getBuffer().getBuffer();
+      SourceInput.Buffer = llvm::ArrayRef<uint8_t>(
+          reinterpret_cast<const uint8_t *>(Buffer.data()),
+          Buffer.size());
+      SourceInput.HasBuffer = true;
+    }
+    SourceInput.Language =
+        static_cast<uint32_t>(Input.getKind().getLanguage());
+    SourceInput.System = Input.isSystem();
+    SourceInput.Preprocessed = Input.isPreprocessed();
+    if (llvm::Error E = (*Runtime)->initialize(
+            SourceInput, [&]() -> llvm::Error {
+              if (CI.InitializeSourceManager(Input))
+                return llvm::Error::success();
+              return llvm::createStringError(
+                  llvm::inconvertibleErrorCode(),
+                  "builtin source opening failed");
+            })) {
+      CI.getDiagnostics().Report(diag::err_fe_error_backend)
+          << llvm::toString(std::move(E));
+      return false;
+    }
+    CI.setPluginSourcePhaseRuntime(std::move(*Runtime));
+  } else if (!CI.InitializeSourceManager(Input)) {
     return false;
+  }
 
   if (CI.hasPrepEngine() && !usesPreprocessorOnly()) {
     PrepEngine &PP = CI.getPrepEngine();

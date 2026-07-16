@@ -17,11 +17,9 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/FunctionExtras.h"
-#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Casting.h"
@@ -58,6 +56,7 @@ class MacroArgStorage;
 class PragmaDispatch;
 class PragmaRegistry;
 class LexerCore;
+class PrepPluginHooks;
 class PrepOptions;
 class TokenScratch;
 class TargetInfo;
@@ -256,6 +255,12 @@ private:
   unsigned LexLevel = 0;
 
   unsigned TokenCount = 0;
+  PrepPluginHooks *PluginHooks = nullptr;
+  bool PluginTokenHookActive = false;
+  llvm::SmallVector<Token, 8> PluginTokenQueue;
+  bool DeferTopLevelTokenFinalization = false;
+  std::unique_ptr<Token[]> InitialTokenStream;
+  unsigned InitialTokenCount = 0;
 
   bool PreprocessToken = false;
 
@@ -390,11 +395,16 @@ private:
   unsigned MacroArgCacheSize = 0;
 
   static unsigned getArgBucketIndex(unsigned NumTokens) {
-    if (NumTokens <= 1) return 0;
-    if (NumTokens <= 3) return 1;
-    if (NumTokens <= 7) return 2;
-    if (NumTokens <= 15) return 3;
-    if (NumTokens <= 31) return 4;
+    if (NumTokens <= 1)
+      return 0;
+    if (NumTokens <= 3)
+      return 1;
+    if (NumTokens <= 7)
+      return 2;
+    if (NumTokens <= 15)
+      return 3;
+    if (NumTokens <= 31)
+      return 4;
     return 5;
   }
 
@@ -539,6 +549,24 @@ public:
 
   void setTokenWatcher(llvm::unique_function<void(const neverc::Token &)> F) {
     OnToken = std::move(F);
+  }
+
+  void setPluginHooks(PrepPluginHooks *Hooks, bool InterceptTokens = true) {
+    PluginHooks = Hooks;
+    PluginTokenHookActive = Hooks && InterceptTokens;
+    if (!PluginTokenHookActive)
+      PluginTokenQueue.clear();
+  }
+  PrepPluginHooks *getPluginHooks() const { return PluginHooks; }
+
+  bool setInitialTokenStream(std::unique_ptr<Token[]> Tokens,
+                             unsigned TokenCount) {
+    if (!Tokens || TokenCount == 0 || InitialTokenStream ||
+        NumEnteredSourceFiles != 0)
+      return false;
+    InitialTokenStream = std::move(Tokens);
+    InitialTokenCount = TokenCount;
+    return true;
   }
 
   void setPreprocessToken(bool Preprocess) { PreprocessToken = Preprocess; }
@@ -711,11 +739,18 @@ public:
   bool isBacktrackEnabled() const { return !BacktrackPositions.empty(); }
 
   void LexSlow(Token &Result);
+  void LexWithPlugin(Token &Result);
 
   LLVM_ATTRIBUTE_ALWAYS_INLINE void Lex(Token &Result) {
+    if (LLVM_UNLIKELY(PluginTokenHookActive && LexLevel == 0 &&
+                      !DeferTopLevelTokenFinalization)) {
+      LexWithPlugin(Result);
+      return;
+    }
     if (LLVM_LIKELY(CurLexerCallback == &DispatchFile &&
                     CurLexer->Lex(Result))) {
-      if (LLVM_LIKELY(LexLevel == 0)) {
+      if (LLVM_LIKELY(LexLevel == 0) &&
+          LLVM_LIKELY(!DeferTopLevelTokenFinalization)) {
         ++TokenCount;
         if (LLVM_UNLIKELY(OnToken))
           OnToken(Result);

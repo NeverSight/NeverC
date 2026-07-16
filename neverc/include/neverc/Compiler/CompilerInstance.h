@@ -3,6 +3,7 @@
 
 #include "neverc/Compiler/CompilerInvocation.h"
 #include "neverc/Compiler/Utils.h"
+#include "neverc/Foundation/Core/OutputTransaction.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
@@ -42,6 +43,10 @@ class PrepEngine;
 class Sema;
 class SourceManager;
 class TargetInfo;
+namespace plugin {
+class PluginSourcePhaseRuntime;
+class PluginTaskContext;
+}
 
 class CompilerInstance {
   std::shared_ptr<CompilerInvocation> Invocation;
@@ -66,6 +71,16 @@ class CompilerInstance {
 
   std::unique_ptr<llvm::Timer> FrontendTimer;
 
+  OutputCoordinator OwnedOutputCoordinator;
+  OutputCoordinator *ConfiguredOutputCoordinator =
+      &OwnedOutputCoordinator;
+  OutputCoordinator *OutputCoordinatorState =
+      &OwnedOutputCoordinator;
+
+  std::unique_ptr<plugin::PluginTaskContext> PluginTask;
+  std::unique_ptr<plugin::PluginSourcePhaseRuntime>
+      PluginSourcePhases;
+
   std::vector<std::shared_ptr<DependencyCollector>> DependencyCollectors;
 
   std::unique_ptr<llvm::raw_ostream> OwnedVerboseOutputStream;
@@ -75,10 +90,13 @@ class CompilerInstance {
   struct OutputFile {
     std::string Filename;
     std::optional<llvm::sys::fs::TempFile> File;
+    std::shared_ptr<OutputTransaction> Transaction;
 
     OutputFile(std::string filename,
-               std::optional<llvm::sys::fs::TempFile> file)
-        : Filename(std::move(filename)), File(std::move(file)) {}
+               std::optional<llvm::sys::fs::TempFile> file,
+               std::shared_ptr<OutputTransaction> transaction = {})
+        : Filename(std::move(filename)), File(std::move(file)),
+          Transaction(std::move(transaction)) {}
   };
 
   std::list<OutputFile> OutputFiles;
@@ -105,6 +123,21 @@ public:
   std::shared_ptr<CompilerInvocation> getInvocationPtr() { return Invocation; }
 
   void setInvocation(std::shared_ptr<CompilerInvocation> Value);
+
+  plugin::PluginTaskContext *getPluginTaskContext() const {
+    return PluginTask.get();
+  }
+  void setPluginTaskContext(
+      std::unique_ptr<plugin::PluginTaskContext> Value);
+  std::unique_ptr<plugin::PluginTaskContext> takePluginTaskContext();
+  void setPluginSourcePhaseRuntime(
+      std::unique_ptr<plugin::PluginSourcePhaseRuntime> Value);
+  void clearPluginSourcePhaseRuntime();
+  void setOutputCoordinator(OutputCoordinator &Value) {
+    ConfiguredOutputCoordinator = &Value;
+    if (!PluginTask)
+      OutputCoordinatorState = &Value;
+  }
 
   CodeGenOptions &getCodeGenOpts() { return Invocation->getCodeGenOpts(); }
   const CodeGenOptions &getCodeGenOpts() const {

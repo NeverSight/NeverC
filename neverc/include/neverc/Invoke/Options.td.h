@@ -1847,6 +1847,10 @@ OPTION(prefix_1, "-fpie", fpie, Flag, f_Group, INVALID, nullptr, Ignored,
        DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-fplt", fplt, Flag, f_Group, INVALID, nullptr, 0, DefaultVis,
        0, "", nullptr, nullptr)
+OPTION(prefix_1, "-fplugin-arg=", fplugin_arg_EQ, Joined, f_Group, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Pass a namespaced value to a NeverC plugin option.",
+       "<plugin-id:key=value>", nullptr)
 OPTION(prefix_1, "-fplugin-pass-arg=", fplugin_pass_arg_EQ, Joined, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Pass a key=value argument to neverc C-ABI pass plugins.",
@@ -1855,6 +1859,14 @@ OPTION(prefix_1, "-fplugin-pass=", fplugin_pass_EQ, Joined, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Load a neverc C-ABI out-of-tree pass plugin from a shared library.",
        "<dsopath>", nullptr)
+OPTION(prefix_1, "-fplugin-provider=", fplugin_provider_EQ, Joined, f_Group,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Select a plugin Provider for a phase.",
+       "<phase>:<plugin-id>", nullptr)
+OPTION(prefix_1, "-fplugin=", fplugin_EQ, Joined, f_Group, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Load a NeverC full-toolchain plugin from a shared library.",
+       "<path>", nullptr)
 OPTION(prefix_1, "-fpreserve-as-comments", fpreserve_as_comments, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0, "", nullptr, nullptr)
 OPTION(prefix_1, "-fprint-arguments", fprint_arguments, Flag, f_Group, INVALID,

@@ -4,6 +4,13 @@
 #include "ToolChains/Linux.h"
 #include "ToolChains/MSVC.h"
 #include "ToolChains/NeverC.h"
+#include "Plugin/ActionGraph.h"
+#include "Plugin/DriverAPIBridge.h"
+#include "Plugin/DriverArtifacts.h"
+#include "Plugin/JobExecutionBridge.h"
+#include "Plugin/JobGraph.h"
+#include "Plugin/PluginBootstrap.h"
+#include "Plugin/ToolChainPluginBridge.h"
 #include "neverc/Config/config.h"
 #include "neverc/Foundation/Core/Version.h"
 #include "neverc/Invoke/Action.h"
@@ -16,7 +23,16 @@
 #include "neverc/Invoke/Tool.h"
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Invoke/Types.h"
+#include "neverc/Plugin/Host/FrontendPluginBridge.h"
+#include "neverc/Plugin/Host/PluginHandleArena.h"
+#include "neverc/Plugin/Host/PluginIOBridge.h"
+#include "neverc/Plugin/Host/PluginProcessServices.h"
+#include "neverc/Plugin/Host/PluginPhaseExecutor.h"
+#include "neverc/Plugin/Host/PluginPhaseGraph.h"
+#include "neverc/Plugin/Host/PluginSession.h"
+#include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -45,8 +61,10 @@
 #include <cstdlib> // ::getenv
 #include <map>
 #include <memory>
+#include <new>
 #include <optional>
 #include <set>
+#include <tuple>
 #include <utility>
 #if LLVM_ON_UNIX
 #include <unistd.h> // getpid
@@ -128,6 +146,8 @@ Driver::Driver(llvm::StringRef NeverCExecutable, llvm::StringRef TargetTriple,
   ResourceDir = GetResourcesPath(NeverCExecutable, NEVERC_RESOURCE_DIR);
 }
 
+Driver::~Driver() = default;
+
 InputArgList Driver::ParseArgStrings(llvm::ArrayRef<const char *> ArgStrings,
                                      bool &ContainsError) {
   llvm::PrettyStackTraceString CrashInfo("Command line argument parsing");
@@ -137,7 +157,17 @@ InputArgList Driver::ParseArgStrings(llvm::ArrayRef<const char *> ArgStrings,
   unsigned MissingArgIndex, MissingArgCount;
   InputArgList Args = getOpts().ParseArgs(ArgStrings, MissingArgIndex,
                                           MissingArgCount, VisibilityMask);
+  diagnoseParsedArgs(ArgStrings, Args, MissingArgIndex, MissingArgCount,
+                     ContainsError);
+  return Args;
+}
 
+void Driver::diagnoseParsedArgs(llvm::ArrayRef<const char *> ArgStrings,
+                                const InputArgList &Args,
+                                unsigned MissingArgIndex,
+                                unsigned MissingArgCount,
+                                bool &ContainsError) {
+  llvm::opt::Visibility VisibilityMask = getOptionVisibilityMask();
   if (MissingArgCount) {
     Diag(diag::err_drv_missing_argument)
         << Args.getArgString(MissingArgIndex) << MissingArgCount;
@@ -190,8 +220,6 @@ InputArgList Driver::ParseArgStrings(llvm::ArrayRef<const char *> ArgStrings,
       Diags.Report(diag::warn_drv_potentially_misspelled_joined_argument)
           << A->getAsString(Args) << Nearest;
   }
-
-  return Args;
 }
 
 // Determine which compilation mode we are in. We look for options which
@@ -381,22 +409,6 @@ void Driver::setLTOMode(const llvm::opt::ArgList &Args) {
   }
 }
 
-namespace {
-void addSingleArg(InputArgList &Args, const Arg *Opt, const Arg *BaseArg) {
-  // Config file args belong to different InputArgList objects than Args.
-  // Copy the Arg so ownership transfers into Args.
-  unsigned Index = Args.MakeIndex(Opt->getSpelling());
-  Arg *Copy = new llvm::opt::Arg(Opt->getOption(), Args.getArgString(Index),
-                                 Index, BaseArg);
-  Copy->getValues() = Opt->getValues();
-  if (Opt->isClaimed())
-    Copy->claim();
-  Copy->setOwnsValues(Opt->getOwnsValues());
-  Opt->setOwnsValues(false);
-  Args.append(Copy);
-}
-} // namespace
-
 bool Driver::readConfigFile(llvm::StringRef FileName,
                             llvm::cl::ExpansionContext &ExpCtx) {
   // Try opening the given file.
@@ -420,31 +432,13 @@ bool Driver::readConfigFile(llvm::StringRef FileName,
     return true;
   }
 
-  // Read options from config file.
+  // Preserve raw config tokens. They are parsed only after every plugin from
+  // command-line and config origins has registered its formal options.
   llvm::SmallString<128> CfgFileName(FileName);
   llvm::sys::path::native(CfgFileName);
-  bool ContainErrors;
-  std::unique_ptr<InputArgList> NewOptions = std::make_unique<InputArgList>(
-      ParseArgStrings(NewCfgArgs, ContainErrors));
-  if (ContainErrors)
-    return true;
-
-  // Claim all arguments that come from a configuration file so that the driver
-  // does not warn on any that is unused.
-  for (Arg *A : *NewOptions)
-    A->claim();
-
-  if (!CfgOptions)
-    CfgOptions = std::move(NewOptions);
-  else {
-    // If this is a subsequent config file, append options to the previous one.
-    for (auto *Opt : *NewOptions) {
-      const Arg *BaseArg = &Opt->getBaseArg();
-      if (BaseArg == Opt)
-        BaseArg = nullptr;
-      addSingleArg(*CfgOptions, Opt, BaseArg);
-    }
-  }
+  for (size_t I = 0; I != NewCfgArgs.size(); ++I)
+    RawConfigTokens.push_back(
+        {NewCfgArgs[I], CfgFileName.str().str(), I});
   ConfigFiles.push_back(std::string(CfgFileName));
   return false;
 }
@@ -625,34 +619,1241 @@ bool isArchLinkedInLLVM(const llvm::Triple &T,
   std::string Err;
   return llvm::TargetRegistry::lookupTarget(T.getTriple(), Err) != nullptr;
 }
+
+llvm::StringRef builtinToolChainID(const llvm::Triple &Target) {
+  switch (Target.getOS()) {
+  case llvm::Triple::Darwin:
+  case llvm::Triple::MacOSX:
+  case llvm::Triple::IOS:
+    return NEVERC_TOOLCHAIN_ID_DARWIN;
+  case llvm::Triple::Linux:
+    return NEVERC_TOOLCHAIN_ID_LINUX;
+  case llvm::Triple::Win32:
+    if (Target.getEnvironment() == llvm::Triple::MSVC ||
+        Target.getEnvironment() == llvm::Triple::UnknownEnvironment)
+      return NEVERC_TOOLCHAIN_ID_MSVC;
+    break;
+  default:
+    break;
+  }
+  if (Target.isOSBinFormatELF())
+    return NEVERC_TOOLCHAIN_ID_GENERIC_ELF;
+  if (Target.isOSBinFormatMachO())
+    return NEVERC_TOOLCHAIN_ID_MACHO;
+  return NEVERC_TOOLCHAIN_ID_GENERIC_GCC;
+}
+
+llvm::StringRef objectFormatName(const llvm::Triple &Target) {
+  if (Target.isOSBinFormatELF())
+    return "elf";
+  if (Target.isOSBinFormatMachO())
+    return "macho";
+  if (Target.isOSBinFormatCOFF())
+    return "coff";
+  return "unknown";
+}
+
+llvm::Error verifyToolChainSelection(
+    const DriverToolChainSelectionArtifact &Selection) {
+  if (!neverc_handle_is_null(Selection.Provider))
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "toolchain provider exists but target capability is missing");
+
+  llvm::Triple Target(Selection.TargetTriple);
+  if (!isTargetArchSupported(Target))
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "unknown or unsupported toolchain target triple '%s'",
+        Selection.TargetTriple.c_str());
+  llvm::StringRef CMakeTargetName;
+  if (!isArchLinkedInLLVM(Target, CMakeTargetName))
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "toolchain target backend '%s' is not linked",
+        CMakeTargetName.str().c_str());
+  if (Selection.TargetKey != Target.str())
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "toolchain target key does not match the canonical target triple");
+  llvm::StringRef ExpectedID = builtinToolChainID(Target);
+  if (Selection.ToolChainID != ExpectedID)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "toolchain ID '%s' does not match target '%s' (expected '%s')",
+        Selection.ToolChainID.c_str(), Selection.TargetTriple.c_str(),
+        ExpectedID.str().c_str());
+  return llvm::Error::success();
+}
+
+llvm::Expected<DriverToolChainSelectionArtifact>
+executeToolChainPhase(DriverAPIBridge &Bridge,
+                      plugin::PluginSession &Session,
+                      plugin::PluginTaskContext &Task,
+                      DriverToolChainRequestData Request) {
+  DriverToolChainRequestArtifact RequestArtifact(std::move(Request));
+  if (llvm::Error E = RequestArtifact.verify())
+    return std::move(E);
+
+  auto GraphOrError = plugin::PluginPhaseGraph::createBuiltinDriverGraph();
+  if (!GraphOrError)
+    return GraphOrError.takeError();
+  plugin::PluginPhaseGraph Graph = std::move(*GraphOrError);
+  plugin::PluginArtifactRegistry Artifacts;
+  auto Types = registerDriverToolChainArtifacts(
+      Artifacts, verifyToolChainSelection);
+  if (!Types)
+    return Types.takeError();
+  if (llvm::Error E = Artifacts.freeze())
+    return std::move(E);
+
+  plugin::PluginArtifactSlot OutputSlot(Types->Selection);
+  plugin::PluginPhaseExecutor Executor(Graph, Artifacts);
+  if (llvm::Error E = Executor.importSessionRegistrations(Session))
+    return std::move(E);
+  if (llvm::Error E = Executor.setBuiltinProvider(
+          driverSelectToolChainPhaseID(),
+          [&](const NevercPhaseFrame *Frame, NevercPhaseResult *Result) {
+            const void *Payload = nullptr;
+            NevercStatus Status = Executor.resolveArtifactPayload(
+                Task, Frame->Input, driverToolChainRequestArtifactID(),
+                &Payload);
+            if (Status.Code != NEVERC_STATUS_OK)
+              return Status;
+            DriverToolChainRequestData EffectiveRequest =
+                static_cast<const DriverToolChainRequestArtifact *>(Payload)
+                    ->snapshot();
+            llvm::Triple Target(EffectiveRequest.ComputedTriple);
+            auto *Selection =
+                new (std::nothrow) DriverToolChainSelectionArtifact();
+            if (!Selection) {
+              Status = neverc_status_ok();
+              Status.Code = NEVERC_STATUS_RESOURCE_EXHAUSTED;
+              return Status;
+            }
+            Selection->set(
+                builtinToolChainID(Target).str(), Target.str(),
+                Target.str(), std::move(EffectiveRequest.CPU),
+                std::move(EffectiveRequest.Features), {}, true);
+            auto Candidate = Executor.createCandidate(
+                Task, driverToolChainSelectionArtifactID(), Selection);
+            if (!Candidate) {
+              llvm::consumeError(Candidate.takeError());
+              Status = neverc_status_ok();
+              Status.Code = NEVERC_STATUS_PLUGIN_FAILURE;
+              return Status;
+            }
+            Result->Action = NEVERC_PHASE_REPLACE;
+            Result->Output = *Candidate;
+            return neverc_status_ok();
+          }))
+    return std::move(E);
+  if (llvm::Error E = Executor.freeze())
+    return std::move(E);
+
+  auto Input = Executor.createArtifactView(
+      Task, driverToolChainRequestArtifactID(), &RequestArtifact, 1);
+  if (!Input)
+    return Input.takeError();
+  bool InputReleased = false;
+  auto ReleaseInput = llvm::make_scope_exit([&] {
+    if (!InputReleased)
+      (void)Task.handles().release(
+          *Input, plugin::PluginArtifactHandleKind);
+  });
+  if (llvm::Error E = Bridge.bind(Executor, Task))
+    return std::move(E);
+  auto Unbind = llvm::make_scope_exit([&] { Bridge.unbind(); });
+
+  DriverToolChainRequestData RouteRequest = RequestArtifact.snapshot();
+  std::string RouteFeatures = llvm::join(RouteRequest.Features, ",");
+  llvm::Triple RouteTarget(RouteRequest.ComputedTriple);
+  std::string RouteObjectFormat = objectFormatName(RouteTarget).str();
+  NevercPhaseRoute Route{};
+  Route.Header = {sizeof(Route), NEVERC_PLUGIN_ABI_MAJOR,
+                  NEVERC_PLUGIN_ABI_MINOR, 0};
+  Route.TargetTriple = {RouteRequest.ComputedTriple.data(),
+                        RouteRequest.ComputedTriple.size()};
+  Route.CPU = {RouteRequest.CPU.data(), RouteRequest.CPU.size()};
+  Route.Features = {RouteFeatures.data(), RouteFeatures.size()};
+  Route.ObjectFormat = {RouteObjectFormat.data(),
+                        RouteObjectFormat.size()};
+  Route.ExecutionLevel = RouteRequest.ExecutionLevel;
+
+  if (llvm::Error E =
+          Executor.execute(Session, Task, driverSelectToolChainPhaseID(),
+                           Route, *Input, OutputSlot))
+    return std::move(E);
+  NevercStatus ReleaseStatus = Task.handles().release(
+      *Input, plugin::PluginArtifactHandleKind);
+  InputReleased = true;
+  if (ReleaseStatus.Code != NEVERC_STATUS_OK)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "failed to retire toolchain request artifact");
+  const auto *Published =
+      static_cast<const DriverToolChainSelectionArtifact *>(
+          OutputSlot.payload());
+  if (!Published)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "toolchain selection phase published no output");
+  return DriverToolChainSelectionArtifact(*Published);
+}
+
+llvm::Expected<std::vector<DriverArgumentToken>>
+executeRawArgumentPhase(DriverAPIBridge &Bridge,
+                        plugin::PluginSession &Session,
+                        plugin::PluginTaskContext &Task,
+                        std::vector<DriverArgumentToken> Tokens) {
+  auto GraphOrError = plugin::PluginPhaseGraph::createBuiltinDriverGraph();
+  if (!GraphOrError)
+    return GraphOrError.takeError();
+  plugin::PluginPhaseGraph Graph = std::move(*GraphOrError);
+
+  plugin::PluginArtifactRegistry Artifacts;
+  auto RawType = registerDriverRawArgumentsArtifact(Artifacts);
+  if (!RawType)
+    return RawType.takeError();
+  if (llvm::Error E = Artifacts.freeze())
+    return std::move(E);
+
+  DriverRawArgumentsArtifact RawArguments(std::move(Tokens));
+  if (llvm::Error E = RawArguments.verify())
+    return std::move(E);
+  plugin::PluginArtifactSlot OutputSlot(*RawType);
+  plugin::PluginPhaseExecutor Executor(Graph, Artifacts);
+  if (llvm::Error E = Executor.importSessionRegistrations(Session))
+    return std::move(E);
+  if (llvm::Error E = Executor.setBuiltinProvider(
+          driverRawArgumentsPhaseID(),
+          [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+            auto *Payload = new (std::nothrow)
+                DriverRawArgumentsArtifact(RawArguments);
+            if (!Payload) {
+              NevercStatus Status = neverc_status_ok();
+              Status.Code = NEVERC_STATUS_RESOURCE_EXHAUSTED;
+              return Status;
+            }
+            auto Candidate = Executor.createCandidate(
+                Task, driverRawArgumentsArtifactID(), Payload);
+            if (!Candidate) {
+              llvm::consumeError(Candidate.takeError());
+              NevercStatus Status = neverc_status_ok();
+              Status.Code = NEVERC_STATUS_PLUGIN_FAILURE;
+              return Status;
+            }
+            Result->Action = NEVERC_PHASE_REPLACE;
+            Result->Output = *Candidate;
+            return neverc_status_ok();
+          }))
+    return std::move(E);
+  if (llvm::Error E = Executor.freeze())
+    return std::move(E);
+
+  auto Input = Executor.createArtifactView(
+      Task, driverRawArgumentsArtifactID(), &RawArguments, 1);
+  if (!Input)
+    return Input.takeError();
+  bool InputReleased = false;
+  auto ReleaseInput = llvm::make_scope_exit([&] {
+    if (!InputReleased)
+      (void)Task.handles().release(*Input,
+                                   plugin::PluginArtifactHandleKind);
+  });
+  if (llvm::Error E = Bridge.bind(Executor, Task))
+    return std::move(E);
+  auto Unbind = llvm::make_scope_exit([&] { Bridge.unbind(); });
+
+  NevercPhaseRoute Route{};
+  Route.Header = {sizeof(Route), NEVERC_PLUGIN_ABI_MAJOR,
+                  NEVERC_PLUGIN_ABI_MINOR, 0};
+  if (llvm::Error E =
+          Executor.execute(Session, Task, driverRawArgumentsPhaseID(),
+                           Route, *Input, OutputSlot))
+    return std::move(E);
+  NevercStatus ReleaseStatus = Task.handles().release(
+      *Input, plugin::PluginArtifactHandleKind);
+  InputReleased = true;
+  if (ReleaseStatus.Code != NEVERC_STATUS_OK)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "failed to retire raw argument input artifact");
+
+  const auto *Published =
+      static_cast<const DriverRawArgumentsArtifact *>(OutputSlot.payload());
+  if (!Published)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "raw argument phase published no output");
+  return std::vector<DriverArgumentToken>(
+      Published->tokens().begin(), Published->tokens().end());
+}
+
+llvm::Expected<std::vector<DriverArgumentToken>>
+renderDriverOption(const llvm::opt::OptTable &Options,
+                   llvm::opt::Visibility VisibilityMask,
+                   llvm::StringRef Spelling,
+                   llvm::ArrayRef<llvm::StringRef> Values) {
+  if (Spelling.empty() ||
+      isProtectedDriverBootstrapArgument(Spelling))
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "parsed argument mutation used a reserved option spelling");
+  auto tryRender =
+      [&](std::vector<std::string> Candidate)
+      -> std::optional<std::vector<DriverArgumentToken>> {
+    llvm::SmallVector<const char *, 4> Pointers;
+    for (const std::string &Token : Candidate)
+      Pointers.push_back(Token.c_str());
+    unsigned MissingIndex = 0;
+    unsigned MissingCount = 0;
+    llvm::opt::InputArgList Parsed = Options.ParseArgs(
+        Pointers, MissingIndex, MissingCount, VisibilityMask);
+    if (MissingCount != 0 || Parsed.size() != 1)
+      return std::nullopt;
+    const llvm::opt::Arg &Argument = **Parsed.begin();
+    Option::OptionClass Kind = Argument.getOption().getKind();
+    if (Kind == Option::InputClass || Kind == Option::UnknownClass ||
+        Kind == Option::GroupClass)
+      return std::nullopt;
+    if (!Values.empty() &&
+        (Argument.getSpelling() != Spelling ||
+         Argument.getNumValues() != Values.size()))
+      return std::nullopt;
+    for (size_t Index = 0; Index != Values.size(); ++Index)
+      if (Argument.getValue(Index) != Values[Index])
+        return std::nullopt;
+    std::vector<DriverArgumentToken> Rendered;
+    Rendered.reserve(Candidate.size());
+    for (std::string &Value : Candidate) {
+      DriverArgumentToken Token;
+      Token.Value = std::move(Value);
+      Token.Origin = NEVERC_ARGUMENT_ORIGIN_PLUGIN;
+      Token.Source = "plugin";
+      Rendered.push_back(std::move(Token));
+    }
+    return Rendered;
+  };
+
+  if (Values.empty()) {
+    if (auto Rendered = tryRender({Spelling.str()}))
+      return std::move(*Rendered);
+  } else {
+    std::vector<std::string> Joined;
+    Joined.push_back((llvm::Twine(Spelling) + Values.front()).str());
+    for (llvm::StringRef Value : Values.drop_front())
+      Joined.push_back(Value.str());
+    if (auto Rendered = tryRender(std::move(Joined)))
+      return std::move(*Rendered);
+
+    std::vector<std::string> Separate;
+    Separate.push_back(Spelling.str());
+    for (llvm::StringRef Value : Values)
+      Separate.push_back(Value.str());
+    if (auto Rendered = tryRender(std::move(Separate)))
+      return std::move(*Rendered);
+
+    llvm::SmallVector<llvm::StringRef, 4> Parts(
+        Values.begin(), Values.end());
+    if (auto Rendered = tryRender(
+            {(llvm::Twine(Spelling) + llvm::join(Parts, ",")).str()}))
+      return std::move(*Rendered);
+  }
+  return llvm::createStringError(
+      llvm::inconvertibleErrorCode(),
+      "parsed argument mutation referenced an unknown or malformed option");
+}
+
+llvm::Expected<std::vector<DriverParsedOptionOccurrence>>
+snapshotParsedOccurrences(
+    const llvm::opt::InputArgList &Args,
+    llvm::ArrayRef<DriverArgumentToken> Tokens) {
+  std::vector<const llvm::opt::Arg *> ParsedArgs;
+  for (const llvm::opt::Arg *Argument : Args)
+    ParsedArgs.push_back(Argument);
+  llvm::sort(ParsedArgs, [](const llvm::opt::Arg *Left,
+                           const llvm::opt::Arg *Right) {
+    return Left->getIndex() < Right->getIndex();
+  });
+
+  std::vector<DriverParsedOptionOccurrence> Occurrences;
+  uint64_t NextID = 1;
+  for (size_t Index = 0; Index != ParsedArgs.size(); ++Index) {
+    const llvm::opt::Arg &Argument = *ParsedArgs[Index];
+    size_t Start = static_cast<size_t>(Argument.getIndex()) + 1;
+    size_t End =
+        Index + 1 == ParsedArgs.size()
+            ? Tokens.size()
+            : static_cast<size_t>(ParsedArgs[Index + 1]->getIndex()) + 1;
+    if (Start >= End || End > Tokens.size())
+      return llvm::createStringError(
+          llvm::inconvertibleErrorCode(),
+          "parsed argument has an invalid token range");
+    Option::OptionClass Kind = Argument.getOption().getKind();
+    if (Kind == Option::InputClass || Kind == Option::UnknownClass)
+      continue;
+    DriverParsedOptionOccurrence Occurrence;
+    Occurrence.ID = NextID++;
+    Occurrence.Spelling = Argument.getSpelling().str();
+    Occurrence.Origin = Tokens[Start].Origin;
+    Occurrence.Start = Start;
+    Occurrence.End = End;
+    for (unsigned Value = 0; Value != Argument.getNumValues(); ++Value)
+      Occurrence.Values.emplace_back(Argument.getValue(Value));
+    Occurrence.rebuildValueViews();
+    Occurrences.push_back(std::move(Occurrence));
+  }
+  return Occurrences;
+}
+
+llvm::Expected<std::vector<DriverArgumentToken>>
+executeParsedArgumentPhase(
+    DriverAPIBridge &Bridge, plugin::PluginSession &Session,
+    plugin::PluginTaskContext &Task,
+    std::vector<DriverArgumentToken> Tokens,
+    const llvm::opt::InputArgList &Args,
+    const llvm::opt::OptTable &Options,
+    llvm::opt::Visibility VisibilityMask) {
+  auto Occurrences = snapshotParsedOccurrences(Args, Tokens);
+  if (!Occurrences)
+    return Occurrences.takeError();
+  DriverParsedArgumentsArtifact::RenderOption Render =
+      [&Options, VisibilityMask](
+          llvm::StringRef Spelling,
+          llvm::ArrayRef<llvm::StringRef> Values) {
+        return renderDriverOption(Options, VisibilityMask, Spelling,
+                                  Values);
+      };
+  DriverParsedArgumentsArtifact ParsedArguments(
+      std::move(Tokens), std::move(*Occurrences), std::move(Render));
+  if (llvm::Error E = ParsedArguments.verify())
+    return std::move(E);
+
+  auto GraphOrError = plugin::PluginPhaseGraph::createBuiltinDriverGraph();
+  if (!GraphOrError)
+    return GraphOrError.takeError();
+  plugin::PluginPhaseGraph Graph = std::move(*GraphOrError);
+  plugin::PluginArtifactRegistry Artifacts;
+  auto ParsedType = registerDriverParsedArgumentsArtifact(Artifacts);
+  if (!ParsedType)
+    return ParsedType.takeError();
+  if (llvm::Error E = Artifacts.freeze())
+    return std::move(E);
+  plugin::PluginArtifactSlot OutputSlot(*ParsedType);
+  plugin::PluginPhaseExecutor Executor(Graph, Artifacts);
+  if (llvm::Error E = Executor.importSessionRegistrations(Session))
+    return std::move(E);
+  if (llvm::Error E = Executor.setBuiltinProvider(
+          driverParsedArgumentsPhaseID(),
+          [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+            auto *Payload = new (std::nothrow)
+                DriverParsedArgumentsArtifact(ParsedArguments);
+            if (!Payload) {
+              NevercStatus Status = neverc_status_ok();
+              Status.Code = NEVERC_STATUS_RESOURCE_EXHAUSTED;
+              return Status;
+            }
+            auto Candidate = Executor.createCandidate(
+                Task, driverParsedArgumentsArtifactID(), Payload);
+            if (!Candidate) {
+              llvm::consumeError(Candidate.takeError());
+              NevercStatus Status = neverc_status_ok();
+              Status.Code = NEVERC_STATUS_PLUGIN_FAILURE;
+              return Status;
+            }
+            Result->Action = NEVERC_PHASE_REPLACE;
+            Result->Output = *Candidate;
+            return neverc_status_ok();
+          }))
+    return std::move(E);
+  if (llvm::Error E = Executor.freeze())
+    return std::move(E);
+  auto Input = Executor.createArtifactView(
+      Task, driverParsedArgumentsArtifactID(), &ParsedArguments, 1);
+  if (!Input)
+    return Input.takeError();
+  bool InputReleased = false;
+  auto ReleaseInput = llvm::make_scope_exit([&] {
+    if (!InputReleased)
+      (void)Task.handles().release(*Input,
+                                   plugin::PluginArtifactHandleKind);
+  });
+  if (llvm::Error E = Bridge.bind(Executor, Task))
+    return std::move(E);
+  auto Unbind = llvm::make_scope_exit([&] { Bridge.unbind(); });
+
+  NevercPhaseRoute Route{};
+  Route.Header = {sizeof(Route), NEVERC_PLUGIN_ABI_MAJOR,
+                  NEVERC_PLUGIN_ABI_MINOR, 0};
+  if (llvm::Error E =
+          Executor.execute(Session, Task,
+                           driverParsedArgumentsPhaseID(), Route,
+                           *Input, OutputSlot))
+    return std::move(E);
+  NevercStatus ReleaseStatus = Task.handles().release(
+      *Input, plugin::PluginArtifactHandleKind);
+  InputReleased = true;
+  if (ReleaseStatus.Code != NEVERC_STATUS_OK)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "failed to retire parsed argument input artifact");
+  const auto *Published =
+      static_cast<const DriverParsedArgumentsArtifact *>(
+          OutputSlot.payload());
+  if (!Published)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "parsed argument phase published no output");
+  return std::vector<DriverArgumentToken>(
+      Published->tokens().begin(), Published->tokens().end());
+}
+
+llvm::Expected<std::unique_ptr<DriverActionGraphArtifact>>
+executeActionGraphPhase(
+    DriverAPIBridge &Bridge, plugin::PluginSession &Session,
+    plugin::PluginTaskContext &Task, const Driver &DriverValue,
+    Compilation &CompilationValue, const Driver::InputList &Inputs) {
+  DriverActionGraphRequestArtifact Request;
+  for (const Driver::InputTy &Input : Inputs) {
+    if (!Input.second)
+      return llvm::createStringError(
+          llvm::inconvertibleErrorCode(),
+          "driver action input has no originating argument");
+    auto InputID = Request.addInput(Input.first, *Input.second);
+    if (!InputID)
+      return InputID.takeError();
+  }
+  if (llvm::Error E = Request.verify())
+    return E;
+
+  auto GraphOrError = plugin::PluginPhaseGraph::createBuiltinDriverGraph();
+  if (!GraphOrError)
+    return GraphOrError.takeError();
+  plugin::PluginPhaseGraph Graph = std::move(*GraphOrError);
+  plugin::PluginArtifactRegistry Artifacts;
+  auto Types = registerDriverActionGraphArtifacts(Artifacts);
+  if (!Types)
+    return Types.takeError();
+  if (llvm::Error E = Artifacts.freeze())
+    return E;
+
+  plugin::PluginArtifactSlot OutputSlot(Types->Graph);
+  plugin::PluginPhaseExecutor Executor(Graph, Artifacts);
+  if (llvm::Error E = Executor.importSessionRegistrations(Session))
+    return E;
+  std::string BuiltinFailure;
+  if (llvm::Error E = Executor.setBuiltinProvider(
+          driverBuildActionsPhaseID(),
+          [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+            if (CompilationValue.getDefaultToolChain()
+                    .getTriple()
+                    .isOSBinFormatMachO())
+              DriverValue.FormUniversalActions(
+                  CompilationValue,
+                  CompilationValue.getDefaultToolChain(), Inputs);
+            else
+              DriverValue.FormActions(
+                  CompilationValue, CompilationValue.getArgs(), Inputs,
+                  CompilationValue.getActions());
+
+            auto Snapshot = snapshotDriverActionGraph(
+                Request, CompilationValue.getActions());
+            if (!Snapshot) {
+              BuiltinFailure =
+                  llvm::toString(Snapshot.takeError()).str().str();
+              NevercStatus Status = neverc_status_ok();
+              Status.Code = NEVERC_STATUS_PLUGIN_FAILURE;
+              return Status;
+            }
+            DriverActionGraphArtifact *Payload = Snapshot->release();
+            auto Candidate = Executor.createCandidate(
+                Task, driverActionGraphArtifactID(), Payload);
+            if (!Candidate) {
+              BuiltinFailure =
+                  llvm::toString(Candidate.takeError()).str().str();
+              NevercStatus Status = neverc_status_ok();
+              Status.Code = NEVERC_STATUS_RESOURCE_EXHAUSTED;
+              return Status;
+            }
+            Result->Action = NEVERC_PHASE_REPLACE;
+            Result->Output = *Candidate;
+            return neverc_status_ok();
+          }))
+    return E;
+  if (llvm::Error E = Executor.freeze())
+    return E;
+
+  auto Input = Executor.createArtifactView(
+      Task, driverActionGraphRequestArtifactID(), &Request, 1);
+  if (!Input)
+    return Input.takeError();
+  bool InputReleased = false;
+  auto ReleaseInput = llvm::make_scope_exit([&] {
+    if (!InputReleased)
+      (void)Task.handles().release(
+          *Input, plugin::PluginArtifactHandleKind);
+  });
+  if (llvm::Error E = Bridge.bind(Executor, Task))
+    return E;
+  auto Unbind = llvm::make_scope_exit([&] { Bridge.unbind(); });
+
+  std::string TargetTriple =
+      CompilationValue.getDefaultToolChain().getTriple().str();
+  std::string ObjectFormat =
+      objectFormatName(CompilationValue.getDefaultToolChain().getTriple())
+          .str();
+  NevercPhaseRoute Route{};
+  Route.Header = {sizeof(Route), NEVERC_PLUGIN_ABI_MAJOR,
+                  NEVERC_PLUGIN_ABI_MINOR, 0};
+  Route.TargetTriple = {TargetTriple.data(), TargetTriple.size()};
+  Route.ObjectFormat = {ObjectFormat.data(), ObjectFormat.size()};
+  Route.ExecutionLevel = NEVERC_EXECUTION_LEVEL_USER;
+  if (const llvm::opt::Arg *Context =
+          CompilationValue.getArgs().getLastArg(
+              options::OPT_mdyncode_context_EQ))
+    if (llvm::StringRef(Context->getValue()) == "kernel")
+      Route.ExecutionLevel = NEVERC_EXECUTION_LEVEL_KERNEL;
+
+  if (llvm::Error E = Executor.execute(
+          Session, Task, driverBuildActionsPhaseID(), Route, *Input,
+          OutputSlot)) {
+    if (!BuiltinFailure.empty()) {
+      llvm::consumeError(std::move(E));
+      return llvm::createStringError(
+          llvm::inconvertibleErrorCode(), "%s", BuiltinFailure.c_str());
+    }
+    return E;
+  }
+  NevercStatus ReleaseStatus = Task.handles().release(
+      *Input, plugin::PluginArtifactHandleKind);
+  InputReleased = true;
+  if (ReleaseStatus.Code != NEVERC_STATUS_OK)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "failed to retire action graph request artifact");
+
+  const auto *Published =
+      static_cast<const DriverActionGraphArtifact *>(OutputSlot.payload());
+  if (!Published)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "action graph phase published no output");
+  auto Materialized =
+      std::make_unique<DriverActionGraphArtifact>(*Published);
+  if (llvm::Error E = materializeDriverActionGraph(
+          CompilationValue, Request, *Materialized))
+    return std::move(E);
+  return std::move(Materialized);
+}
+
+llvm::Error executeJobGraphPhase(
+    DriverAPIBridge &Bridge,
+    std::shared_ptr<plugin::PluginSession> Session,
+    plugin::PluginTaskContext &Task, const Driver &DriverValue,
+    Compilation &CompilationValue,
+    DriverActionGraphArtifact &ActionGraph) {
+  if (!Session)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "job graph phase has no plugin session");
+  auto GraphOrError = plugin::PluginPhaseGraph::createBuiltinDriverGraph();
+  if (!GraphOrError)
+    return GraphOrError.takeError();
+  plugin::PluginPhaseGraph Graph = std::move(*GraphOrError);
+  plugin::PluginArtifactRegistry Artifacts;
+  auto ActionTypes = registerDriverActionGraphArtifacts(Artifacts);
+  if (!ActionTypes)
+    return ActionTypes.takeError();
+  auto JobTypes = registerDriverJobGraphArtifacts(Artifacts);
+  if (!JobTypes)
+    return JobTypes.takeError();
+  if (llvm::Error E = Artifacts.freeze())
+    return E;
+
+  plugin::PluginArtifactSlot OutputSlot(JobTypes->Graph);
+  plugin::PluginPhaseExecutor Executor(Graph, Artifacts);
+  if (llvm::Error E = Executor.importSessionRegistrations(*Session))
+    return E;
+  std::string BuiltinFailure;
+  if (llvm::Error E = Executor.setBuiltinProvider(
+          driverBuildJobsPhaseID(),
+          [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+            DriverValue.GenerateJobs(CompilationValue);
+            auto Snapshot = snapshotDriverJobGraph(
+                CompilationValue, ActionGraph);
+            if (!Snapshot) {
+              BuiltinFailure =
+                  llvm::toString(Snapshot.takeError()).str().str();
+              NevercStatus Status = neverc_status_ok();
+              Status.Code = NEVERC_STATUS_PLUGIN_FAILURE;
+              return Status;
+            }
+            DriverJobGraphArtifact *Payload = Snapshot->release();
+            auto Candidate = Executor.createCandidate(
+                Task, driverJobGraphArtifactID(), Payload);
+            if (!Candidate) {
+              BuiltinFailure =
+                  llvm::toString(Candidate.takeError()).str().str();
+              NevercStatus Status = neverc_status_ok();
+              Status.Code = NEVERC_STATUS_RESOURCE_EXHAUSTED;
+              return Status;
+            }
+            Result->Action = NEVERC_PHASE_REPLACE;
+            Result->Output = *Candidate;
+            return neverc_status_ok();
+          }))
+    return E;
+  if (llvm::Error E = Executor.freeze())
+    return E;
+
+  auto Input = Executor.createArtifactView(
+      Task, driverActionGraphArtifactID(), &ActionGraph, 1);
+  if (!Input)
+    return Input.takeError();
+  bool InputReleased = false;
+  auto ReleaseInput = llvm::make_scope_exit([&] {
+    if (!InputReleased)
+      (void)Task.handles().release(
+          *Input, plugin::PluginArtifactHandleKind);
+  });
+  if (llvm::Error E = Bridge.bind(Executor, Task))
+    return E;
+  auto Unbind = llvm::make_scope_exit([&] { Bridge.unbind(); });
+
+  std::string TargetTriple =
+      CompilationValue.getDefaultToolChain().getTriple().str();
+  std::string ObjectFormat =
+      objectFormatName(CompilationValue.getDefaultToolChain().getTriple())
+          .str();
+  NevercPhaseRoute Route{};
+  Route.Header = {sizeof(Route), NEVERC_PLUGIN_ABI_MAJOR,
+                  NEVERC_PLUGIN_ABI_MINOR, 0};
+  Route.TargetTriple = {TargetTriple.data(), TargetTriple.size()};
+  Route.ObjectFormat = {ObjectFormat.data(), ObjectFormat.size()};
+  Route.ExecutionLevel = NEVERC_EXECUTION_LEVEL_USER;
+  if (const llvm::opt::Arg *Context =
+          CompilationValue.getArgs().getLastArg(
+              options::OPT_mdyncode_context_EQ))
+    if (llvm::StringRef(Context->getValue()) == "kernel")
+      Route.ExecutionLevel = NEVERC_EXECUTION_LEVEL_KERNEL;
+
+  if (llvm::Error E = Executor.execute(
+          *Session, Task, driverBuildJobsPhaseID(), Route, *Input,
+          OutputSlot)) {
+    if (!BuiltinFailure.empty()) {
+      llvm::consumeError(std::move(E));
+      return llvm::createStringError(
+          llvm::inconvertibleErrorCode(), "%s", BuiltinFailure.c_str());
+    }
+    return E;
+  }
+  NevercStatus ReleaseStatus = Task.handles().release(
+      *Input, plugin::PluginArtifactHandleKind);
+  InputReleased = true;
+  if (ReleaseStatus.Code != NEVERC_STATUS_OK)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "failed to retire job graph input artifact");
+
+  const auto *Published =
+      static_cast<const DriverJobGraphArtifact *>(OutputSlot.payload());
+  if (!Published)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "job graph phase published no output");
+  auto Plan = materializeDriverJobGraph(
+      CompilationValue, *Published, Session);
+  if (!Plan)
+    return Plan.takeError();
+  CompilationValue.setPluginJobExecutionRuntime(
+      std::make_unique<DriverJobExecutionRuntime>(
+          Bridge, Session, Task, std::move(TargetTriple),
+          std::move(ObjectFormat), Route.ExecutionLevel));
+  CompilationValue.setPluginJobExecutionPlan(std::move(*Plan));
+  return llvm::Error::success();
+}
 } // namespace
+
+namespace {
+
+void flushPluginDiagnostics(plugin::PluginSession &Session,
+                            DiagnosticsEngine &Diags) {
+  for (plugin::PluginDiagnosticRecord &Record :
+       Session.diagnostics().takeSorted()) {
+    unsigned DiagnosticID = diag::err_drv_plugin;
+    switch (Record.Severity) {
+    case NEVERC_DIAGNOSTIC_NOTE:
+      DiagnosticID = diag::note_drv_plugin;
+      break;
+    case NEVERC_DIAGNOSTIC_REMARK:
+      DiagnosticID = diag::remark_drv_plugin;
+      break;
+    case NEVERC_DIAGNOSTIC_WARNING:
+      DiagnosticID = diag::warn_drv_plugin;
+      break;
+    case NEVERC_DIAGNOSTIC_ERROR:
+      DiagnosticID = diag::err_drv_plugin;
+      break;
+    case NEVERC_DIAGNOSTIC_FATAL:
+      DiagnosticID = diag::fatal_drv_plugin;
+      break;
+    }
+
+    std::string Prefix = "plugin '" + Record.PluginID + "'";
+    if (!Record.PhaseID.empty())
+      Prefix += " in phase '" + Record.PhaseID + "'";
+    if (Record.Code != 0)
+      Prefix += " [plugin-" + llvm::utostr(Record.Code) + "]";
+    Diags.Report(DiagnosticID) << Prefix + ": " + Record.Message;
+    for (const std::string &Note : Record.Notes)
+      Diags.Report(diag::note_drv_plugin) << Note;
+  }
+}
+
+unsigned pluginDiscoveryDiagnosticID(llvm::StringRef Message) {
+  if (Message.starts_with("cannot resolve plugin path") ||
+      Message.starts_with("cannot identify plugin") ||
+      Message.starts_with("cannot load plugin") ||
+      Message.starts_with("cannot revalidate plugin identity") ||
+      Message.starts_with("plugin file identity changed"))
+    return diag::err_drv_plugin_load;
+  return diag::err_drv_plugin_negotiation;
+}
+
+} // namespace
+
+llvm::Error Driver::finishPluginRuntime(
+    std::unique_ptr<Compilation> &CompilationState) {
+  llvm::Error CleanupErrors = llvm::Error::success();
+  if (PluginInvocationTask) {
+    CleanupErrors = llvm::joinErrors(
+        std::move(CleanupErrors), PluginInvocationTask->end());
+    PluginInvocationTask.reset();
+  }
+  if (PluginSessionState) {
+    CleanupErrors = llvm::joinErrors(
+        std::move(CleanupErrors), PluginSessionState->end());
+    flushPluginDiagnostics(*PluginSessionState, Diags);
+  }
+
+  CompilationState.reset();
+  PluginSessionState.reset();
+
+  if (PluginBootstrapState)
+    CleanupErrors = llvm::joinErrors(
+        std::move(CleanupErrors), PluginBootstrapState->shutdown());
+  PluginBootstrapState.reset();
+  PluginDriverAPIBridgeState.reset();
+  return CleanupErrors;
+}
+
+llvm::Expected<llvm::SmallVector<const char *, 32>>
+Driver::prepareDirectPluginInvocation(
+    llvm::ArrayRef<const char *> Arguments) {
+  PluginInvocationTask.reset();
+  PluginSessionState.reset();
+  PluginBootstrapState.reset();
+  PluginDriverAPIBridgeState.reset();
+  FinalArgumentStorage.clear();
+
+  bool HasPluginBootstrap = llvm::any_of(
+      Arguments, [](const char *Argument) {
+        return PluginBootstrap::isReservedBootstrapToken(Argument);
+      });
+  if (!HasPluginBootstrap)
+    return llvm::SmallVector<const char *, 32>(Arguments.begin(),
+                                               Arguments.end());
+
+  auto BuildPointers = [&] {
+    llvm::SmallVector<const char *, 32> Result;
+    Result.reserve(FinalArgumentStorage.size());
+    for (const std::string &Argument : FinalArgumentStorage)
+      Result.push_back(Argument.c_str());
+    return Result;
+  };
+
+  FinalArgumentStorage.reserve(Arguments.size());
+  std::vector<PluginBootstrapToken> BootstrapTokens;
+  BootstrapTokens.reserve(Arguments.size());
+  for (size_t I = 0; I != Arguments.size(); ++I) {
+    FinalArgumentStorage.emplace_back(Arguments[I]);
+    BootstrapTokens.push_back(
+        {Arguments[I], PluginArgumentOrigin::CommandLine,
+         "direct -cc1 command line", I + 1});
+  }
+
+  PluginDriverAPIBridgeState = std::make_unique<DriverAPIBridge>();
+  PluginBootstrapState = std::make_unique<PluginBootstrap>(
+      getNeverCFullVersion(), LLVM_VERSION_MAJOR,
+      PluginBootstrap::collectStaticOptionSpellings(getOpts()));
+  if (llvm::Error E = PluginBootstrapState->discoverAndActivate(
+          BootstrapTokens,
+          [&](plugin::PluginProcessServices &Services) {
+            if (llvm::Error E =
+                    plugin::registerPluginIOInterface(Services))
+              return E;
+            if (llvm::Error E =
+                    plugin::registerPluginFrontendInterface(Services))
+              return E;
+            return PluginDriverAPIBridgeState->registerInterface(
+                Services.interfaces());
+          })) {
+    std::string Message = toString(std::move(E)).str().str();
+    Diag(pluginDiscoveryDiagnosticID(Message)) << Message;
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   Message);
+  }
+
+  llvm::SmallVector<llvm::StringRef, 32> ArgumentViews;
+  ArgumentViews.reserve(FinalArgumentStorage.size());
+  for (const std::string &Argument : FinalArgumentStorage)
+    ArgumentViews.push_back(Argument);
+
+  std::string EffectiveTarget = TargetTriple;
+  for (size_t I = 0; I != ArgumentViews.size(); ++I) {
+    if (ArgumentViews[I] == "-triple" && I + 1 != ArgumentViews.size()) {
+      EffectiveTarget = ArgumentViews[I + 1].str();
+      ++I;
+    } else if (ArgumentViews[I].starts_with("-triple=")) {
+      EffectiveTarget =
+          ArgumentViews[I].drop_front(sizeof("-triple=") - 1).str();
+    }
+  }
+
+  auto Parsed = PluginBootstrapState->parsePluginOptions(
+      ArgumentViews, EffectiveTarget);
+  if (!Parsed) {
+    std::string Message =
+        toString(Parsed.takeError()).str().str();
+    Diag(diag::err_drv_plugin_negotiation) << Message;
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   Message);
+  }
+  FinalArgumentStorage.assign(Parsed->remainingArguments().begin(),
+                              Parsed->remainingArguments().end());
+  auto Session =
+      PluginBootstrapState->createSession(std::move(*Parsed));
+  if (!Session) {
+    std::string Message =
+        toString(Session.takeError()).str().str();
+    Diag(diag::err_drv_plugin_phase) << Message;
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   Message);
+  }
+  PluginSessionState = std::move(*Session);
+  return BuildPointers();
+}
 
 Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
   llvm::PrettyStackTraceString CrashInfo("Compilation construction");
 
-  // Arguments specified in command line.
-  bool ContainsError;
+  PluginInvocationTask.reset();
+  PluginSessionState.reset();
+  PluginBootstrapState.reset();
+  PluginDriverAPIBridgeState.reset();
+  RawConfigTokens.clear();
+  ConfigFiles.clear();
+  FinalArgumentStorage.clear();
+
+  llvm::ArrayRef<const char *> CommandArguments =
+      ArgList.empty() ? llvm::ArrayRef<const char *>()
+                      : ArgList.slice(1);
+  unsigned MissingArgIndex = 0;
+  unsigned MissingArgCount = 0;
   CommandLineOptions = std::make_unique<InputArgList>(
-      ParseArgStrings(ArgList.slice(1), ContainsError));
+      getOpts().ParseArgs(CommandArguments, MissingArgIndex,
+                          MissingArgCount, getOptionVisibilityMask()));
 
-  // Try parsing configuration file.
-  if (!ContainsError)
-    ContainsError = loadConfigFiles();
-  bool HasConfigFile = !ContainsError && (CfgOptions.get() != nullptr);
-
-  // All arguments, from both config file and command line.
-  InputArgList Args = std::move(HasConfigFile ? std::move(*CfgOptions)
-                                              : std::move(*CommandLineOptions));
-
-  if (HasConfigFile)
-    for (auto *Opt : *CommandLineOptions) {
-      if (Opt->getOption().matches(options::OPT_config))
-        continue;
-      const Arg *BaseArg = &Opt->getBaseArg();
-      if (BaseArg == Opt)
-        BaseArg = nullptr;
-      addSingleArg(Args, Opt, BaseArg);
+  bool ContainsError = loadConfigFiles();
+  bool HasPluginBootstrap =
+      llvm::any_of(RawConfigTokens, [](const RawConfigToken &Token) {
+        return PluginBootstrap::isReservedBootstrapToken(Token.Value);
+      }) ||
+      llvm::any_of(CommandArguments, [](const char *Argument) {
+        return PluginBootstrap::isReservedBootstrapToken(Argument);
+      });
+  bool UseFastNoPluginPath =
+      !HasPluginBootstrap && RawConfigTokens.empty();
+  std::vector<NevercArgumentOrigin> FinalOrigins;
+  std::vector<std::string> FinalSources;
+  std::vector<uint64_t> FinalPositions;
+  std::vector<PluginBootstrapToken> BootstrapTokens;
+  if (!UseFastNoPluginPath) {
+    size_t ArgumentCount =
+        RawConfigTokens.size() + CommandArguments.size();
+    FinalArgumentStorage.reserve(ArgumentCount);
+    FinalOrigins.reserve(ArgumentCount);
+    FinalSources.reserve(ArgumentCount);
+    FinalPositions.reserve(ArgumentCount);
+    if (HasPluginBootstrap)
+      BootstrapTokens.reserve(ArgumentCount);
+    for (const RawConfigToken &Token : RawConfigTokens) {
+      FinalArgumentStorage.push_back(Token.Value);
+      FinalOrigins.push_back(NEVERC_ARGUMENT_ORIGIN_CONFIGURATION);
+      FinalSources.push_back(Token.Source);
+      FinalPositions.push_back(Token.Position);
+      if (HasPluginBootstrap)
+        BootstrapTokens.push_back(
+            {Token.Value, PluginArgumentOrigin::Configuration,
+             Token.Source, Token.Position});
     }
+    for (size_t I = 0; I != CommandArguments.size(); ++I) {
+      FinalArgumentStorage.emplace_back(CommandArguments[I]);
+      FinalOrigins.push_back(NEVERC_ARGUMENT_ORIGIN_COMMAND_LINE);
+      FinalSources.emplace_back("command line");
+      FinalPositions.push_back(I + 1);
+      if (HasPluginBootstrap)
+        BootstrapTokens.push_back(
+            {CommandArguments[I], PluginArgumentOrigin::CommandLine,
+             "command line", I + 1});
+    }
+  }
+
+  std::optional<plugin::PluginOptionParseResult> ParsedPluginOptions;
+  if (HasPluginBootstrap) {
+    PluginDriverAPIBridgeState =
+        std::make_unique<DriverAPIBridge>();
+    PluginBootstrapState = std::make_unique<PluginBootstrap>(
+        getNeverCFullVersion(), LLVM_VERSION_MAJOR,
+        PluginBootstrap::collectStaticOptionSpellings(getOpts()));
+    if (llvm::Error E =
+            PluginBootstrapState->discoverAndActivate(
+                BootstrapTokens,
+                [&](plugin::PluginProcessServices &Services) {
+                  if (llvm::Error E =
+                          plugin::registerPluginIOInterface(Services))
+                    return E;
+                  if (llvm::Error E =
+                          plugin::registerPluginFrontendInterface(
+                              Services))
+                    return E;
+                  return PluginDriverAPIBridgeState->registerInterface(
+                      Services.interfaces());
+                })) {
+      std::string Message = toString(std::move(E)).str().str();
+      Diag(pluginDiscoveryDiagnosticID(Message)) << Message;
+      ContainsError = true;
+    } else if (PluginBootstrapState->isActive()) {
+      llvm::SmallVector<llvm::StringRef, 64> EffectiveArguments;
+      llvm::SmallVector<const char *, 64> EffectiveArgumentPointers;
+      for (const std::string &Argument : FinalArgumentStorage) {
+        EffectiveArguments.push_back(Argument);
+        EffectiveArgumentPointers.push_back(Argument.c_str());
+      }
+
+      unsigned BootstrapMissingIndex = 0;
+      unsigned BootstrapMissingCount = 0;
+      InputArgList BootstrapStaticArgs = getOpts().ParseArgs(
+          EffectiveArgumentPointers, BootstrapMissingIndex,
+          BootstrapMissingCount, getOptionVisibilityMask());
+      std::string EffectiveTarget =
+          computeTargetTriple(*this, TargetTriple, BootstrapStaticArgs)
+              .str();
+      auto Parsed = PluginBootstrapState->parsePluginOptions(
+          EffectiveArguments, EffectiveTarget);
+      if (!Parsed) {
+        std::string Message =
+            toString(Parsed.takeError()).str().str();
+        Diag(diag::err_drv_plugin_negotiation) << Message;
+        ContainsError = true;
+      } else {
+        std::vector<std::string> RemainingStorage;
+        std::vector<NevercArgumentOrigin> RemainingOrigins;
+        std::vector<std::string> RemainingSources;
+        std::vector<uint64_t> RemainingPositions;
+        RemainingStorage.reserve(Parsed->remainingArguments().size());
+        RemainingOrigins.reserve(Parsed->remainingArguments().size());
+        RemainingSources.reserve(Parsed->remainingArguments().size());
+        RemainingPositions.reserve(Parsed->remainingArguments().size());
+        for (size_t I = 0; I != Parsed->remainingArguments().size(); ++I) {
+          uint64_t OriginalIndex =
+              Parsed->remainingArgumentIndices()[I];
+          if (OriginalIndex >= FinalOrigins.size() ||
+              OriginalIndex >= FinalSources.size() ||
+              OriginalIndex >= FinalPositions.size()) {
+            Diag(diag::err_drv_plugin_negotiation)
+                << "plugin option parser returned an invalid argument index";
+            ContainsError = true;
+            break;
+          }
+          RemainingStorage.push_back(
+              Parsed->remainingArguments()[I]);
+          RemainingOrigins.push_back(FinalOrigins[OriginalIndex]);
+          RemainingSources.push_back(FinalSources[OriginalIndex]);
+          RemainingPositions.push_back(FinalPositions[OriginalIndex]);
+        }
+        if (!ContainsError) {
+          FinalArgumentStorage = std::move(RemainingStorage);
+          FinalOrigins = std::move(RemainingOrigins);
+          FinalSources = std::move(RemainingSources);
+          FinalPositions = std::move(RemainingPositions);
+          ParsedPluginOptions.emplace(std::move(*Parsed));
+        }
+      }
+    }
+  }
+
+  if (ParsedPluginOptions && !ContainsError) {
+    auto Session = PluginBootstrapState->createSession(
+        std::move(*ParsedPluginOptions));
+    if (!Session) {
+      std::string Message =
+          toString(Session.takeError()).str().str();
+      Diag(diag::err_drv_plugin_phase) << Message;
+      ContainsError = true;
+    } else {
+      PluginSessionState = std::move(*Session);
+      auto Task =
+          PluginSessionState->createTask(NEVERC_TASK_INVOCATION);
+      if (!Task) {
+        std::string Message =
+            toString(Task.takeError()).str().str();
+        Diag(diag::err_drv_plugin_phase) << Message;
+        ContainsError = true;
+      } else {
+        PluginInvocationTask = std::move(*Task);
+      }
+    }
+  }
+
+  if (PluginInvocationTask && !ContainsError) {
+    std::vector<DriverArgumentToken> RawArguments;
+    RawArguments.reserve(FinalArgumentStorage.size() + 1);
+    DriverArgumentToken ProgramName;
+    ProgramName.Value =
+        ArgList.empty() ? Name : std::string(ArgList.front());
+    ProgramName.Origin = NEVERC_ARGUMENT_ORIGIN_COMMAND_LINE;
+    ProgramName.Source = "command line";
+    ProgramName.Protected = true;
+    RawArguments.push_back(std::move(ProgramName));
+    for (size_t I = 0; I != FinalArgumentStorage.size(); ++I) {
+      DriverArgumentToken Token;
+      Token.Value = FinalArgumentStorage[I];
+      Token.Origin = FinalOrigins[I];
+      Token.Source = FinalSources[I];
+      Token.Position = FinalPositions[I];
+      Token.Protected =
+          isProtectedDriverBootstrapArgument(Token.Value);
+      Token.EndOfOptions = Token.Value == "--";
+      Token.Protected |= Token.EndOfOptions;
+      RawArguments.push_back(std::move(Token));
+    }
+
+    auto Rewritten = executeRawArgumentPhase(
+        *PluginDriverAPIBridgeState, *PluginSessionState,
+        *PluginInvocationTask, std::move(RawArguments));
+    if (!Rewritten) {
+      std::string Message =
+          toString(Rewritten.takeError()).str().str();
+      Diag(diag::err_drv_plugin_phase) << Message;
+      ContainsError = true;
+    } else {
+      FinalArgumentStorage.clear();
+      FinalOrigins.clear();
+      FinalSources.clear();
+      FinalPositions.clear();
+      FinalArgumentStorage.reserve(Rewritten->size() - 1);
+      FinalOrigins.reserve(Rewritten->size() - 1);
+      FinalSources.reserve(Rewritten->size() - 1);
+      FinalPositions.reserve(Rewritten->size() - 1);
+      for (size_t I = 1; I != Rewritten->size(); ++I) {
+        const DriverArgumentToken &Token = (*Rewritten)[I];
+        FinalArgumentStorage.push_back(Token.Value);
+        FinalOrigins.push_back(Token.Origin);
+        FinalSources.push_back(Token.Source);
+        FinalPositions.push_back(Token.Position);
+      }
+    }
+  }
+
+  llvm::SmallVector<const char *, 64> FinalArgumentPointers;
+  auto BuildEffectiveArgs = [&]() -> InputArgList {
+    if (UseFastNoPluginPath) {
+      diagnoseParsedArgs(CommandArguments, *CommandLineOptions,
+                         MissingArgIndex, MissingArgCount, ContainsError);
+      return std::move(*CommandLineOptions);
+    }
+    FinalArgumentPointers.reserve(FinalArgumentStorage.size());
+    for (const std::string &Argument : FinalArgumentStorage)
+      FinalArgumentPointers.push_back(Argument.c_str());
+    bool StaticParseError = false;
+    InputArgList Parsed =
+        ParseArgStrings(FinalArgumentPointers, StaticParseError);
+    ContainsError |= StaticParseError;
+    return Parsed;
+  };
+  InputArgList Args = BuildEffectiveArgs();
+
+  if (PluginInvocationTask && !ContainsError) {
+    std::vector<DriverArgumentToken> ParsedArgumentTokens;
+    ParsedArgumentTokens.reserve(FinalArgumentStorage.size() + 1);
+    DriverArgumentToken ProgramName;
+    ProgramName.Value =
+        ArgList.empty() ? Name : std::string(ArgList.front());
+    ProgramName.Origin = NEVERC_ARGUMENT_ORIGIN_COMMAND_LINE;
+    ProgramName.Source = "command line";
+    ProgramName.Protected = true;
+    ParsedArgumentTokens.push_back(std::move(ProgramName));
+    for (size_t I = 0; I != FinalArgumentStorage.size(); ++I) {
+      DriverArgumentToken Token;
+      Token.Value = FinalArgumentStorage[I];
+      Token.Origin = FinalOrigins[I];
+      Token.Source = FinalSources[I];
+      Token.Position = FinalPositions[I];
+      Token.Protected =
+          isProtectedDriverBootstrapArgument(Token.Value);
+      Token.EndOfOptions = Token.Value == "--";
+      Token.Protected |= Token.EndOfOptions;
+      ParsedArgumentTokens.push_back(std::move(Token));
+    }
+    auto Rewritten = executeParsedArgumentPhase(
+        *PluginDriverAPIBridgeState, *PluginSessionState,
+        *PluginInvocationTask, std::move(ParsedArgumentTokens), Args,
+        getOpts(), getOptionVisibilityMask());
+    if (!Rewritten) {
+      std::string Message =
+          toString(Rewritten.takeError()).str().str();
+      Diag(diag::err_drv_plugin_phase) << Message;
+      ContainsError = true;
+    } else {
+      FinalArgumentStorage.clear();
+      FinalOrigins.clear();
+      FinalSources.clear();
+      FinalPositions.clear();
+      FinalArgumentStorage.reserve(Rewritten->size() - 1);
+      FinalOrigins.reserve(Rewritten->size() - 1);
+      FinalSources.reserve(Rewritten->size() - 1);
+      FinalPositions.reserve(Rewritten->size() - 1);
+      for (size_t I = 1; I != Rewritten->size(); ++I) {
+        const DriverArgumentToken &Token = (*Rewritten)[I];
+        FinalArgumentStorage.push_back(Token.Value);
+        FinalOrigins.push_back(Token.Origin);
+        FinalSources.push_back(Token.Source);
+        FinalPositions.push_back(Token.Position);
+      }
+      FinalArgumentPointers.clear();
+      FinalArgumentPointers.reserve(FinalArgumentStorage.size());
+      for (const std::string &Argument : FinalArgumentStorage)
+        FinalArgumentPointers.push_back(Argument.c_str());
+      bool ReparseError = false;
+      Args = ParseArgStrings(FinalArgumentPointers, ReparseError);
+      ContainsError |= ReparseError;
+    }
+  }
+
+  for (Arg *A : Args)
+    if (A->getIndex() < FinalOrigins.size() &&
+        FinalOrigins[A->getIndex()] ==
+            NEVERC_ARGUMENT_ORIGIN_CONFIGURATION)
+      A->claim();
+  Args.ClaimAllArgs(options::OPT_fplugin_EQ);
+  Args.ClaimAllArgs(options::OPT_fplugin_arg_EQ);
+  Args.ClaimAllArgs(options::OPT_fplugin_provider_EQ);
+  Args.ClaimAllArgs(options::OPT_config);
+  Args.ClaimAllArgs(options::OPT_config_system_dir_EQ);
+  Args.ClaimAllArgs(options::OPT_config_user_dir_EQ);
+  Args.ClaimAllArgs(options::OPT_no_default_config);
 
   if (Arg *WD = Args.getLastArg(options::OPT_working_directory))
     if (VFS->setCurrentWorkingDirectory(WD->getValue()))
@@ -722,7 +1923,51 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
 
   llvm::Triple ComputedTarget =
       computeTargetTriple(*this, TargetTriple, *UArgs);
-  if (!isTargetArchSupported(ComputedTarget)) {
+  if (PluginInvocationTask && !ContainsError) {
+    DriverToolChainRequestData Request;
+    Request.RequestedTriple = RequestedTargetTriple.str();
+    Request.ComputedTriple = ComputedTarget.str();
+    Request.SysRoot = SysRoot;
+    Request.ResourceDir = ResourceDir;
+    if (const Arg *A = UArgs->getLastArg(options::OPT_mcpu_EQ))
+      Request.CPU = A->getValue();
+    for (const Arg *A :
+         UArgs->filtered(options::OPT_target_feature))
+      Request.Features.emplace_back(A->getValue());
+    Request.DynamicCodeProfile =
+        UArgs->hasFlag(options::OPT_fdyncode,
+                       options::OPT_fno_dyncode, false) ||
+        UArgs->hasArg(options::OPT_fdyncode_mode);
+    Request.ExecutionLevel = NEVERC_EXECUTION_LEVEL_USER;
+    if (const Arg *A =
+            UArgs->getLastArg(options::OPT_mdyncode_context_EQ))
+      if (llvm::StringRef(A->getValue()) == "kernel")
+        Request.ExecutionLevel = NEVERC_EXECUTION_LEVEL_KERNEL;
+
+    auto Selection = executeToolChainPhase(
+        *PluginDriverAPIBridgeState, *PluginSessionState,
+        *PluginInvocationTask, std::move(Request));
+    if (!Selection) {
+      std::string Message =
+          toString(Selection.takeError()).str().str();
+      Diag(diag::err_drv_plugin_phase) << Message;
+      ContainsError = true;
+    } else {
+      ComputedTarget = llvm::Triple(Selection->TargetTriple);
+      TargetTriple = Selection->TargetTriple;
+      TranslatedArgs->AddSeparateArg(
+          nullptr, getOpts().getOption(options::OPT_target),
+          Selection->TargetTriple);
+      if (!Selection->CPU.empty())
+        TranslatedArgs->AddJoinedArg(
+            nullptr, getOpts().getOption(options::OPT_mcpu_EQ),
+            Selection->CPU);
+      for (const std::string &Feature : Selection->Features)
+        TranslatedArgs->AddSeparateArg(
+            nullptr, getOpts().getOption(options::OPT_target_feature),
+            Feature);
+    }
+  } else if (!isTargetArchSupported(ComputedTarget)) {
     if (ComputedTarget.getArch() == llvm::Triple::UnknownArch) {
       if (const Arg *A = UArgs->getLastArg(options::OPT_arch))
         Diag(diag::err_drv_invalid_arch_name) << A->getValue();
@@ -735,7 +1980,7 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
     }
     ContainsError = true;
   }
-  if (!ContainsError) {
+  if (!PluginInvocationTask && !ContainsError) {
     llvm::StringRef CMakeTargetName;
     if (!isArchLinkedInLLVM(ComputedTarget, CMakeTargetName)) {
       Diag(diag::err_drv_target_backend_not_built)
@@ -744,7 +1989,11 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
     }
   }
 
-  const ToolChain &TC = getToolChain(*UArgs, ComputedTarget);
+  const llvm::opt::ArgList &ToolChainArgs =
+      PluginInvocationTask
+          ? static_cast<const llvm::opt::ArgList &>(*TranslatedArgs)
+          : static_cast<const llvm::opt::ArgList &>(*UArgs);
+  const ToolChain &TC = getToolChain(ToolChainArgs, ComputedTarget);
 
   // A common user mistake is specifying aarch64-none-eabi instead of
   // aarch64-none-elf.
@@ -766,6 +2015,8 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
   // The compilation takes ownership of Args.
   Compilation *C = new Compilation(*this, TC, UArgs.release(), TranslatedArgs,
                                    ContainsError);
+  if (PluginSessionState)
+    C->setPluginSession(PluginSessionState);
 
   if (!ProcessImmediateArgs(*C))
     return C;
@@ -774,19 +2025,44 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
   InputList Inputs;
   FormInputs(C->getDefaultToolChain(), *TranslatedArgs, Inputs);
 
-  // Construct the list of abstract actions to perform for this compilation. On
-  // MachO targets this uses the driver-driver and universal actions.
-  if (TC.getTriple().isOSBinFormatMachO())
+  // Construct the list of abstract actions to perform for this compilation.
+  // The plugin route snapshots and materializes a stable graph; the no-plugin
+  // route keeps the existing allocation-free behavior.
+  std::unique_ptr<DriverActionGraphArtifact> PluginActionGraph;
+  if (PluginInvocationTask && !C->containsError()) {
+    auto ActionGraph = executeActionGraphPhase(
+        *PluginDriverAPIBridgeState, *PluginSessionState,
+        *PluginInvocationTask, *this, *C, Inputs);
+    if (!ActionGraph) {
+      std::string Message =
+          toString(ActionGraph.takeError()).str().str();
+      Diag(diag::err_drv_plugin_phase) << Message;
+      C->setContainsError();
+      return C;
+    }
+    PluginActionGraph = std::move(*ActionGraph);
+  } else if (TC.getTriple().isOSBinFormatMachO()) {
     FormUniversalActions(*C, C->getDefaultToolChain(), Inputs);
-  else
+  } else {
     FormActions(*C, C->getArgs(), Inputs, C->getActions());
+  }
 
   if (CCCPrintPhases) {
     PrintActions(*C);
     return C;
   }
 
-  GenerateJobs(*C);
+  if (PluginInvocationTask && PluginActionGraph) {
+    if (llvm::Error E = executeJobGraphPhase(
+            *PluginDriverAPIBridgeState, PluginSessionState,
+            *PluginInvocationTask, *this, *C, *PluginActionGraph)) {
+      std::string Message = toString(std::move(E)).str().str();
+      Diag(diag::err_drv_plugin_phase) << Message;
+      C->setContainsError();
+    }
+  } else {
+    GenerateJobs(*C);
+  }
 
   return C;
 }
@@ -1183,7 +2459,8 @@ int Driver::ExecuteCompilation(
 
     if (!isSaveTempsEnabled()) {
       const JobAction *JA = cast<JobAction>(&FailingCommand->getSource());
-      C.CleanupFileMap(C.getResultFiles(), JA, true);
+      if (C.shouldCleanupResultFilesOnFailure(JA))
+        C.CleanupFileMap(C.getResultFiles(), JA, true);
 
       // Failure result files are valid unless we crashed.
       if (CommandRes < 0)
@@ -1228,6 +2505,35 @@ void Driver::PrintHelp(bool ShowHidden) const {
   std::string Usage = llvm::formatv("{0} [options] file...", Name).str();
   getOpts().printHelp(llvm::outs(), Usage.c_str(), DriverTitle.c_str(),
                       ShowHidden, /*ShowAllAliases=*/false, VisibilityMask);
+  if (!PluginBootstrapState || !PluginBootstrapState->isActive())
+    return;
+
+  std::vector<const plugin::OwnedPluginOption *> PluginOptions;
+  for (const plugin::OwnedPluginOption &Option :
+       PluginBootstrapState->services()->options().options())
+    if (ShowHidden || !Option.Hidden)
+      PluginOptions.push_back(&Option);
+  llvm::sort(PluginOptions, [](const auto *Left, const auto *Right) {
+    return std::tie(Left->PluginID, Left->Spelling) <
+           std::tie(Right->PluginID, Right->Spelling);
+  });
+  std::string CurrentPlugin;
+  for (const plugin::OwnedPluginOption *Option : PluginOptions) {
+    if (CurrentPlugin != Option->PluginID) {
+      CurrentPlugin = Option->PluginID;
+      llvm::outs() << "\nPLUGIN OPTIONS [" << CurrentPlugin << "]:\n";
+    }
+    llvm::outs() << "  " << Option->Spelling;
+    if (!Option->Metavar.empty())
+      llvm::outs() << " " << Option->Metavar;
+    if (!Option->Aliases.empty()) {
+      llvm::outs() << " (aliases:";
+      for (const std::string &Alias : Option->Aliases)
+        llvm::outs() << " " << Alias;
+      llvm::outs() << ")";
+    }
+    llvm::outs() << "\n      " << Option->Help << "\n";
+  }
 }
 
 void Driver::PrintVersion(const Compilation &C, llvm::raw_ostream &OS) const {
@@ -1322,6 +2628,16 @@ void Driver::ProcessAutocompletions(llvm::StringRef PassedFlags) const {
     for (llvm::StringRef S : DiagnosticIDs::getDiagnosticFlags())
       if (S.starts_with(Cur))
         SuggestedCompletions.push_back(std::string(S));
+    if (PluginBootstrapState && PluginBootstrapState->isActive())
+      for (const plugin::OwnedPluginOption &Option :
+           PluginBootstrapState->services()->options().options()) {
+        if (!Option.Hidden &&
+            llvm::StringRef(Option.Spelling).starts_with(Cur))
+          SuggestedCompletions.push_back(Option.Spelling);
+        for (const std::string &Alias : Option.Aliases)
+          if (!Option.Hidden && llvm::StringRef(Alias).starts_with(Cur))
+            SuggestedCompletions.push_back(Alias);
+      }
   }
 
   // Sort the autocomplete candidates so that shells print them out in a
@@ -1333,6 +2649,10 @@ void Driver::ProcessAutocompletions(llvm::StringRef PassedFlags) const {
       return X < 0;
     return A.compare(B) > 0;
   });
+  SuggestedCompletions.erase(
+      std::unique(SuggestedCompletions.begin(),
+                  SuggestedCompletions.end()),
+      SuggestedCompletions.end());
 
   llvm::outs() << llvm::join(SuggestedCompletions, "\n") << '\n';
 }

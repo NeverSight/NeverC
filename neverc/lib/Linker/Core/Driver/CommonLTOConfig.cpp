@@ -176,6 +176,8 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
 }
 
 void linker::parseMllvmOptions(const LinkerDriverConfig &Cfg) {
+  neverc::plugin::PluginLLVMOptionExclusiveLease Lock(
+      neverc::plugin::pluginLLVMOptionGate());
   if (Cfg.mllvmOpts.empty()) {
     auto &Opts = cl::getRegisteredOptions();
     if (auto *O = Opts.lookup("enable-linkonceodr-outlining"))
@@ -191,5 +193,6 @@ void linker::parseMllvmOptions(const LinkerDriverConfig &Cfg) {
   Argv.push_back("-enable-linkonceodr-outlining");
   for (const auto &Opt : Cfg.mllvmOpts)
     Argv.push_back(Opt.c_str());
-  neverc::parseLLVMCommandLineOptions(Argv.size(), Argv.data());
+  llvm::cl::ResetAllOptionOccurrences();
+  llvm::cl::ParseCommandLineOptions(Argv.size(), Argv.data());
 }

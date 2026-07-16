@@ -13,7 +13,12 @@
 namespace neverc {
 namespace driver {
 
+class FrontendCommand;
+
 namespace tools {
+
+llvm::Error rebuildDirectInvocationOptsForFrontendJob(
+    FrontendCommand &Command);
 
 class LLVM_LIBRARY_VISIBILITY NeverC : public Tool {
   // Indicates whether this instance has integrated backend using

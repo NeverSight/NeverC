@@ -1,8 +1,9 @@
+#include "neverc/Scan/LexDiag.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Scan/MacroGuardValidator.h"
 #include "neverc/Scan/PragmaDispatch.h"
 #include "neverc/Scan/PrepEngine.h"
-#include "neverc/Scan/LexDiag.h"
+#include "neverc/Scan/PrepPluginHooks.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
@@ -72,6 +73,38 @@ void PragmaRegistry::ProcessPragma(PrepEngine &PP, PragmaIntroducer Introducer,
       FindHandler(Tok.getIdentifierInfo() ? Tok.getIdentifierInfo()->getName()
                                           : llvm::StringRef(),
                   /*IgnoreNull=*/false);
+  if ((!Handler || !Handler->getIfNamespace()) && PP.getPluginHooks() &&
+      PP.getPluginHooks()->hasPragmaInterceptor()) {
+    PrepPragmaHook Hook;
+    Hook.Location = Introducer.Loc;
+    Hook.Introducer = Introducer.Kind;
+    Hook.Namespace = getName();
+    Hook.Name = Tok.getIdentifierInfo() ? Tok.getIdentifierInfo()->getName()
+                                        : llvm::StringRef();
+    Hook.Tokens = llvm::ArrayRef<Token>(&Tok, 1);
+    if (!PP.getPluginHooks()->interceptPragma(Hook) ||
+        Hook.Result == PrepPragmaHook::Action::Handled)
+      return;
+    if (Hook.Result == PrepPragmaHook::Action::ReplaceTokens) {
+      if (Hook.ReplacementTokens.empty())
+        return;
+      Tok = Hook.ReplacementTokens.front();
+      if (Hook.ReplacementTokens.size() > 1) {
+        auto Rest =
+            std::make_unique<Token[]>(Hook.ReplacementTokens.size() - 1);
+        std::copy(Hook.ReplacementTokens.begin() + 1,
+                  Hook.ReplacementTokens.end(), Rest.get());
+        PP.PushTokenStream(std::move(Rest), Hook.ReplacementTokens.size() - 1,
+                           /*DisableMacroExpansion=*/false,
+                           /*IsReinject=*/true);
+      }
+      Handler =
+          FindHandler(Tok.getIdentifierInfo()
+                          ? Tok.getIdentifierInfo()->getName()
+                          : llvm::StringRef(),
+                      /*IgnoreNull=*/false);
+    }
+  }
   if (!Handler) {
 #ifndef _WIN32
     PP.Diag(Tok, diag::warn_pragma_ignored);

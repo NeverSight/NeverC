@@ -25,6 +25,7 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -40,12 +41,19 @@ class ExpansionContext;
 
 namespace neverc {
 
+namespace plugin {
+class PluginSession;
+class PluginTaskContext;
+} // namespace plugin
+
 using llvm::cast;
 using llvm::dyn_cast;
 using llvm::isa;
 
 namespace driver {
 
+class PluginBootstrap;
+class DriverAPIBridge;
 class Command;
 class Compilation;
 struct DirectInvocationOpts;
@@ -125,9 +133,19 @@ private:
 
   llvm::StringSaver Saver;
 
-  std::unique_ptr<llvm::opt::InputArgList> CfgOptions;
-
   std::unique_ptr<llvm::opt::InputArgList> CommandLineOptions;
+
+  struct RawConfigToken {
+    std::string Value;
+    std::string Source;
+    uint64_t Position = 0;
+  };
+  std::vector<RawConfigToken> RawConfigTokens;
+  std::vector<std::string> FinalArgumentStorage;
+  std::unique_ptr<DriverAPIBridge> PluginDriverAPIBridgeState;
+  std::unique_ptr<PluginBootstrap> PluginBootstrapState;
+  std::shared_ptr<plugin::PluginSession> PluginSessionState;
+  std::unique_ptr<plugin::PluginTaskContext> PluginInvocationTask;
 
   const char *PrependArg;
 
@@ -170,6 +188,7 @@ public:
   Driver(llvm::StringRef NeverCExecutable, llvm::StringRef TargetTriple,
          DiagnosticsEngine &Diags, std::string Title = "neverc C compiler",
          llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS = nullptr);
+  ~Driver();
 
   const std::string &getCCCGenericGCCName() const { return CCCGenericGCCName; }
 
@@ -212,9 +231,21 @@ public:
   bool isSaveTempsObj() const { return SaveTemps == SaveTempsObj; }
 
   Compilation *CreateCompilation(llvm::ArrayRef<const char *> Args);
+  llvm::Expected<llvm::SmallVector<const char *, 32>>
+  prepareDirectPluginInvocation(llvm::ArrayRef<const char *> Args);
+  llvm::Error
+  finishPluginRuntime(std::unique_ptr<Compilation> &CompilationState);
+  std::shared_ptr<plugin::PluginSession> getPluginSession() const {
+    return PluginSessionState;
+  }
 
   llvm::opt::InputArgList ParseArgStrings(llvm::ArrayRef<const char *> Args,
                                           bool &ContainsError);
+  void diagnoseParsedArgs(llvm::ArrayRef<const char *> ArgStrings,
+                          const llvm::opt::InputArgList &Args,
+                          unsigned MissingArgIndex,
+                          unsigned MissingArgCount,
+                          bool &ContainsError);
 
   void FormInputs(const ToolChain &TC, llvm::opt::DerivedArgList &Args,
                   InputList &Inputs) const;

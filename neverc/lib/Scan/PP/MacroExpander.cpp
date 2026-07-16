@@ -7,6 +7,7 @@
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Scan/MacroArgStorage.h"
 #include "neverc/Scan/PrepEngine.h"
+#include "neverc/Scan/PrepPluginHooks.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
@@ -220,8 +221,8 @@ bool PrepEngine::ProbeLeftParen() {
   return Val == 1;
 }
 
-NEVERC_HOT bool
-PrepEngine::BeginMacroExpansion(Token &Identifier, const MacroDefinition &M) {
+NEVERC_HOT bool PrepEngine::BeginMacroExpansion(Token &Identifier,
+                                                const MacroDefinition &M) {
   checkMacroWarnings(Identifier);
 
   MacroRecord *MI = M.getMacroRecord();
@@ -233,6 +234,31 @@ PrepEngine::BeginMacroExpansion(Token &Identifier, const MacroDefinition &M) {
     if (Callbacks)
       Callbacks->MacroExpands(Identifier, M, Identifier.getLocation(),
                               /*Args=*/nullptr);
+    if (PluginHooks && PluginHooks->hasMacroInterceptor()) {
+      PrepMacroHook Hook;
+      Hook.Kind = PrepMacroHook::Operation::ExpandBuiltin;
+      Hook.NameToken = Identifier;
+      Hook.Name = Identifier.getIdentifierInfo();
+      Hook.Definition = MI;
+      if (!PluginHooks->interceptMacro(Hook))
+        return true;
+      if (Hook.Result == PrepMacroHook::Action::Suppress)
+        return true;
+      if (Hook.Result == PrepMacroHook::Action::ReplaceTokens) {
+        if (Hook.ReplacementTokens.empty()) {
+          Identifier.setFlag(Token::LeadingEmptyMacro);
+          CarryLineFlags(Identifier);
+          return false;
+        }
+        auto Tokens = std::make_unique<Token[]>(Hook.ReplacementTokens.size());
+        std::copy(Hook.ReplacementTokens.begin(), Hook.ReplacementTokens.end(),
+                  Tokens.get());
+        PushTokenStream(std::move(Tokens), Hook.ReplacementTokens.size(),
+                        /*DisableMacroExpansion=*/false,
+                        /*IsReinject=*/true);
+        return false;
+      }
+    }
     ExpandIntrinsicMacro(Identifier);
     return true;
   }
@@ -275,6 +301,41 @@ PrepEngine::BeginMacroExpansion(Token &Identifier, const MacroDefinition &M) {
         }
         DelayedMacroExpandsCallbacks.clear();
       }
+    }
+  }
+
+  if (PluginHooks && PluginHooks->hasMacroInterceptor()) {
+    PrepMacroHook Hook;
+    Hook.Kind = PrepMacroHook::Operation::Expand;
+    Hook.NameToken = Identifier;
+    Hook.Name = Identifier.getIdentifierInfo();
+    Hook.Definition = MI;
+    Hook.Arguments = Args;
+    if (!PluginHooks->interceptMacro(Hook)) {
+      if (Args)
+        Args->destroy(*this);
+      return true;
+    }
+    if (Hook.Result == PrepMacroHook::Action::Suppress) {
+      if (Args)
+        Args->destroy(*this);
+      return true;
+    }
+    if (Hook.Result == PrepMacroHook::Action::ReplaceTokens) {
+      if (Args)
+        Args->destroy(*this);
+      if (Hook.ReplacementTokens.empty()) {
+        Identifier.setFlag(Token::LeadingEmptyMacro);
+        CarryLineFlags(Identifier);
+        return false;
+      }
+      auto Tokens = std::make_unique<Token[]>(Hook.ReplacementTokens.size());
+      std::copy(Hook.ReplacementTokens.begin(), Hook.ReplacementTokens.end(),
+                Tokens.get());
+      PushTokenStream(std::move(Tokens), Hook.ReplacementTokens.size(),
+                      /*DisableMacroExpansion=*/false,
+                      /*IsReinject=*/true);
+      return false;
     }
   }
 

@@ -1,5 +1,5 @@
-#include "neverc/Scan/PrepEngine.h"
 #include "neverc/Foundation/Core/CompilerCompat.h"
+#include "neverc/Scan/PrepEngine.h"
 #include "llvm/Support/Compiler.h"
 using namespace neverc;
 
@@ -138,6 +138,11 @@ bool PrepEngine::IsLastCachedToken(const Token &Tok) const {
 void PrepEngine::ReplaceLastCachedToken(llvm::ArrayRef<Token> NewToks) {
   assert(CachedLexPos != 0 && "Expected to have some cached tokens");
   const size_t ReplaceIdx = CachedLexPos - 1;
+  if (LLVM_UNLIKELY(NewToks.empty())) {
+    CachedTokens.erase(CachedTokens.begin() + ReplaceIdx);
+    --CachedLexPos;
+    return;
+  }
 
   if (LLVM_LIKELY(NewToks.size() == 1)) {
     CachedTokens[ReplaceIdx] = NewToks[0];

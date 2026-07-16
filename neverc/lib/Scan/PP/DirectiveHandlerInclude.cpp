@@ -1,10 +1,11 @@
 #include "neverc/Foundation/Core/CharInfo.h"
 #include "neverc/Foundation/Core/DirectoryEntry.h"
+#include "neverc/Scan/LexDiag.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Scan/PragmaDispatch.h"
 #include "neverc/Scan/PrepEngine.h"
+#include "neverc/Scan/PrepPluginHooks.h"
 #include "neverc/Scan/VarArgExpansion.h"
-#include "neverc/Scan/LexDiag.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
@@ -585,10 +586,38 @@ void PrepEngine::ExecHeaderImport(SourceLocation HashLoc, Token &IncludeTok,
     BackslashStyle = llvm::sys::path::Style::windows;
   }
 
-  OptionalFileEntryRef File = FindIncludeTarget(
-      &CurDir, Filename, FilenameLoc, FilenameRange, FilenameTok,
-      IsFrameworkFound, IsMapped, LookupFrom, LookupFromFile,
-      ResolveIncludename, RelativePath, SearchPath, isAngled);
+  bool PluginSkipped = false;
+  std::string PluginFilename;
+  if (PluginHooks && PluginHooks->hasIncludeInterceptor()) {
+    PrepIncludeHook Hook;
+    Hook.Location = FilenameLoc;
+    Hook.IncludeToken = IncludeTok;
+    Hook.Filename = Filename;
+    Hook.SearchPath = SearchPath;
+    Hook.RelativePath = RelativePath;
+    Hook.IsAngled = isAngled;
+    Hook.IsImport =
+        IncludeTok.getIdentifierInfo()->getPPKeywordID() == tok::pp_import;
+    Hook.IsIncludeNext = IncludeTok.getIdentifierInfo()->getPPKeywordID() ==
+                         tok::pp_include_next;
+    if (!PluginHooks->interceptInclude(Hook))
+      return;
+    if (Hook.Result == PrepIncludeHook::Action::Skip) {
+      PluginSkipped = true;
+    } else if (Hook.Result == PrepIncludeHook::Action::Redirect) {
+      PluginFilename = std::move(Hook.ReplacementFilename);
+      Filename = PluginFilename;
+      ResolveIncludename = Filename;
+      isAngled = Hook.ReplacementIsAngled;
+    }
+  }
+
+  OptionalFileEntryRef File;
+  if (!PluginSkipped)
+    File = FindIncludeTarget(&CurDir, Filename, FilenameLoc, FilenameRange,
+                             FilenameTok, IsFrameworkFound, IsMapped,
+                             LookupFrom, LookupFromFile, ResolveIncludename,
+                             RelativePath, SearchPath, isAngled);
 
   // Should we enter the source file? Set to Skip if either the source file is
   // known to have no effect beyond its effect on module visibility -- that is,
@@ -598,7 +627,12 @@ void PrepEngine::ExecHeaderImport(SourceLocation HashLoc, Token &IncludeTok,
   // Modular headers: replacing #include with import is only allowed in limited
   // contexts (e.g. global module fragment), not throughout named-module code.
 
-  enum { Enter, Import, Skip, IncludeLimitReached } Action = Enter;
+  enum {
+    Enter,
+    Import,
+    Skip,
+    IncludeLimitReached
+  } Action = PluginSkipped ? Skip : Enter;
 
   // If we've reached the max allowed include depth, it is usually due to an
   // include cycle. Don't enter already processed files again as it can lead to

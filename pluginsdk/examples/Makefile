@@ -5,6 +5,7 @@
 #   CrtShimPlugin.c        -> CrtShimPlugin.{dll,dylib,so}
 #   BenchPlugin.c          -> BenchPlugin.{dll,dylib,so}
 #   CustomCallConvPlugin.c -> CustomCallConvPlugin.{dll,dylib,so}
+#   DriverTracePlugin.c    -> DriverTracePlugin.{dll,dylib,so}
 #
 # Usage:
 #   neverc make                        # build all plugins
@@ -15,7 +16,8 @@
 NEVERC ?= ../../build-neverc/bin/neverc
 
 # Each entry becomes a separate shared library (one .c -> one plugin).
-PLUGINS = ExamplePlugin CrtShimPlugin BenchPlugin CustomCallConvPlugin
+PLUGINS = ExamplePlugin CrtShimPlugin BenchPlugin CustomCallConvPlugin \
+          DriverTracePlugin
 
 # Auto-detect host platform for shared library suffix and target triple.
 UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)

@@ -569,3 +569,19 @@ __DRIVERSTART = DIAG_START_DRIVER,
                                                                                     true,
                                                                                     false,
                                                                                     0)
+DIAG(err_drv_plugin_load, CLASS_ERROR, (unsigned)diag::Severity::Error,
+     "plugin load failed: %0", 0, false, true, true, false, 0)
+DIAG(err_drv_plugin_negotiation, CLASS_ERROR, (unsigned)diag::Severity::Error,
+     "plugin ABI negotiation failed: %0", 0, false, true, true, false, 0)
+DIAG(err_drv_plugin_phase, CLASS_ERROR, (unsigned)diag::Severity::Error,
+     "plugin phase failed: %0", 0, false, true, true, false, 0)
+DIAG(note_drv_plugin, CLASS_NOTE, (unsigned)diag::Severity::Fatal,
+     "%0", 0, false, true, true, false, 0)
+DIAG(remark_drv_plugin, CLASS_REMARK, (unsigned)diag::Severity::Remark,
+     "%0", 0, false, true, true, false, 0)
+DIAG(warn_drv_plugin, CLASS_WARNING, (unsigned)diag::Severity::Warning,
+     "%0", 0, false, true, true, false, 0)
+DIAG(err_drv_plugin, CLASS_ERROR, (unsigned)diag::Severity::Error,
+     "%0", 0, false, true, true, false, 0)
+DIAG(fatal_drv_plugin, CLASS_ERROR, (unsigned)diag::Severity::Fatal,
+     "%0", 0, false, true, true, false, 0)

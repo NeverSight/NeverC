@@ -9,9 +9,14 @@
 #include "neverc/Foundation/Core/FileManager.h"
 #include "neverc/Foundation/Core/Stack.h"
 #include "neverc/Foundation/Core/Version.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticDriver.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticOptions.h"
 #include "neverc/Foundation/LangOpts/LangStandard.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
+#include "neverc/Plugin/Host/FrontendPluginBridge.h"
+#include "neverc/Plugin/Host/PluginIOBridge.h"
+#include "neverc/Plugin/Host/PluginProcessServices.h"
+#include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Scan/IncludeResolver.h"
 #include "neverc/Scan/PrepEngine.h"
 #include "neverc/Scan/PrepOptions.h"
@@ -28,10 +33,66 @@
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <utility>
 
 using namespace neverc;
+
+namespace {
+
+class OutputTransactionStream final : public llvm::raw_pwrite_stream {
+public:
+  explicit OutputTransactionStream(
+      std::shared_ptr<OutputTransaction> TransactionValue)
+      : Transaction(std::move(TransactionValue)) {}
+
+  ~OutputTransactionStream() override { flush(); }
+
+private:
+  void write_impl(const char *Data, size_t Size) override {
+    OutputTransactionResult Result = Transaction->write(
+        llvm::ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(Data), Size));
+    Position += Size;
+    if (Result != OutputTransactionResult::Success)
+      (void)Transaction->abort();
+  }
+
+  void pwrite_impl(const char *Data, size_t Size, uint64_t Offset) override {
+    flush();
+    OutputTransactionResult Result = Transaction->writeAt(
+        Offset,
+        llvm::ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(Data), Size));
+    if (Result != OutputTransactionResult::Success)
+      (void)Transaction->abort();
+  }
+
+  uint64_t current_pos() const override { return Position; }
+
+  std::shared_ptr<OutputTransaction> Transaction;
+  uint64_t Position = 0;
+};
+
+llvm::StringRef outputTransactionResultName(OutputTransactionResult Result) {
+  switch (Result) {
+  case OutputTransactionResult::Success:
+    return "success";
+  case OutputTransactionResult::InvalidArgument:
+    return "invalid argument";
+  case OutputTransactionResult::InvalidState:
+    return "invalid state";
+  case OutputTransactionResult::ResourceExhausted:
+    return "resource limit exceeded";
+  case OutputTransactionResult::IOFailure:
+    return "I/O failure";
+  case OutputTransactionResult::FailedPartial:
+    return "partial failure requiring recovery";
+  }
+  return "unknown failure";
+}
+
+} // namespace
 
 CompilerInstance::CompilerInstance() : Invocation(new CompilerInvocation()) {}
 
@@ -46,6 +107,44 @@ CompilerInstance::~CompilerInstance() {
 void CompilerInstance::setInvocation(
     std::shared_ptr<CompilerInvocation> Value) {
   Invocation = std::move(Value);
+}
+
+void CompilerInstance::setPluginTaskContext(
+    std::unique_ptr<plugin::PluginTaskContext> Value) {
+  PluginSourcePhases.reset();
+  PluginTask = std::move(Value);
+  OutputCoordinatorState =
+      PluginTask ? &PluginTask->processServices().outputCoordinator()
+                 : ConfiguredOutputCoordinator;
+}
+
+std::unique_ptr<plugin::PluginTaskContext>
+CompilerInstance::takePluginTaskContext() {
+  PluginSourcePhases.reset();
+  std::unique_ptr<plugin::PluginTaskContext> Result = std::move(PluginTask);
+  OutputCoordinatorState = ConfiguredOutputCoordinator;
+  return Result;
+}
+
+void CompilerInstance::setPluginSourcePhaseRuntime(
+    std::unique_ptr<plugin::PluginSourcePhaseRuntime> Value) {
+  if (Value && PP) {
+    if (llvm::Error E = Value->attachPrepEngine(*PP)) {
+      std::string Message = llvm::toString(std::move(E)).str().str();
+      getDiagnostics().Report(diag::err_drv_plugin_phase) << Message;
+    }
+  }
+  if (Value && Context) {
+    if (llvm::Error E = Value->attachTreeContext(*Context)) {
+      std::string Message = llvm::toString(std::move(E)).str().str();
+      getDiagnostics().Report(diag::err_drv_plugin_phase) << Message;
+    }
+  }
+  PluginSourcePhases = std::move(Value);
+}
+
+void CompilerInstance::clearPluginSourcePhaseRuntime() {
+  PluginSourcePhases.reset();
 }
 
 void CompilerInstance::setDiagnostics(DiagnosticsEngine *Value) {
@@ -158,11 +257,22 @@ llvm::IntrusiveRefCntPtr<DiagnosticsEngine> CompilerInstance::createDiagnostics(
 
 FileManager *CompilerInstance::createFileManager(
     llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS) {
+  bool HadFileManager = FileMgr != nullptr;
   if (!VFS)
     VFS = FileMgr ? &FileMgr->getVirtualFileSystem()
                   : createVFSFromCompilerInvocation(getInvocation(),
                                                     getDiagnostics());
   assert(VFS && "FileManager has no VFS?");
+  if (PluginTask && !HadFileManager) {
+    auto PluginVFS =
+        plugin::createPluginFileSystem(*PluginTask, std::move(VFS));
+    if (!PluginVFS) {
+      std::string Message = llvm::toString(PluginVFS.takeError()).str().str();
+      getDiagnostics().Report(diag::err_drv_plugin_phase) << Message;
+      return nullptr;
+    }
+    VFS = std::move(*PluginVFS);
+  }
   FileMgr = new FileManager(getFileSystemOpts(), std::move(VFS));
   return FileMgr.get();
 }
@@ -221,6 +331,12 @@ void CompilerInstance::createPrepEngine() {
                            /*ShowAllHeaders=*/true, /*OutputPath=*/"",
                            /*ShowDepth=*/true, /*MSStyle=*/true);
   }
+  if (PluginSourcePhases) {
+    if (llvm::Error E = PluginSourcePhases->attachPrepEngine(*PP)) {
+      std::string Message = llvm::toString(std::move(E)).str().str();
+      getDiagnostics().Report(diag::err_drv_plugin_phase) << Message;
+    }
+  }
 }
 
 // TreeContext
@@ -231,6 +347,12 @@ void CompilerInstance::createTreeContext() {
                                   PP.getIdentifierTable(), PP.getBuiltinInfo());
   Context->InitBuiltinTypes(getTarget());
   setTreeContext(Context);
+  if (PluginSourcePhases) {
+    if (llvm::Error E = PluginSourcePhases->attachTreeContext(*Context)) {
+      std::string Message = llvm::toString(std::move(E)).str().str();
+      getDiagnostics().Report(diag::err_drv_plugin_phase) << Message;
+    }
+  }
 }
 
 void CompilerInstance::createFrontendTimer() {
@@ -251,6 +373,32 @@ void CompilerInstance::createSema() {
 void CompilerInstance::clearOutputFiles(bool EraseFiles) {
   assert(!hasTreeConsumer() && "TreeConsumer should be reset");
   for (OutputFile &OF : OutputFiles) {
+    if (OF.Transaction) {
+      if (EraseFiles) {
+        OutputTransactionResult Result = OF.Transaction->abort();
+        if (Result == OutputTransactionResult::FailedPartial)
+          getDiagnostics().Report(diag::err_unable_to_rename_temp)
+              << "<output transaction>" << OF.Filename
+              << createStringError(llvm::inconvertibleErrorCode(),
+                                   outputTransactionResultName(Result));
+        continue;
+      }
+
+      OutputTransactionResult FinishResult = OF.Transaction->finish();
+      if (FinishResult != OutputTransactionResult::Success) {
+        getDiagnostics().Report(diag::err_unable_to_rename_temp)
+            << "<output transaction>" << OF.Filename
+            << createStringError(llvm::inconvertibleErrorCode(),
+                                 outputTransactionResultName(FinishResult));
+        continue;
+      }
+      auto Committed = OF.Transaction->commit();
+      if (!Committed)
+        getDiagnostics().Report(diag::err_unable_to_rename_temp)
+            << "<output transaction>" << OF.Filename << Committed.takeError();
+      continue;
+    }
+
     if (EraseFiles) {
       if (OF.File)
         consumeError(OF.File->discard());
@@ -355,6 +503,47 @@ CompilerInstance::createOutputFileImpl(llvm::StringRef OutputPath, bool Binary,
     auto &Buf = InMemoryFileStore::instance().create(OutputPath, Hint);
     OutputFiles.emplace_back(OutputPath.str(), std::nullopt);
     return std::make_unique<llvm::raw_svector_ostream>(Buf);
+  }
+
+  bool IsTransactionalFile = OutputPath != "-";
+  if (IsTransactionalFile) {
+    llvm::sys::fs::file_status Status;
+    std::error_code StatusError = llvm::sys::fs::status(OutputPath, Status);
+    if (!StatusError && llvm::sys::fs::exists(Status)) {
+      if (!llvm::sys::fs::can_write(OutputPath))
+        return llvm::errorCodeToError(
+            make_error_code(llvm::errc::operation_not_permitted));
+      IsTransactionalFile = llvm::sys::fs::is_regular_file(Status);
+    }
+  }
+
+  if (IsTransactionalFile) {
+    if (CreateMissingDirectories) {
+      llvm::StringRef Parent = llvm::sys::path::parent_path(OutputPath);
+      if (!Parent.empty()) {
+        std::error_code DirectoryError =
+            llvm::sys::fs::create_directories(Parent);
+        if (DirectoryError)
+          return llvm::errorCodeToError(DirectoryError);
+      }
+    }
+
+    OutputLeaseOwner LeaseOwner{
+        UINT64_MAX, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this))};
+    if (PluginTask)
+      LeaseOwner = {PluginTask->handle().Owner, PluginTask->handle().Value};
+    auto Transaction = OutputTransaction::createFile(
+        *OutputCoordinatorState, OutputPath,
+        std::numeric_limits<uint64_t>::max(),
+        [Task = PluginTask.get()] {
+          return Task && Task->checkCancelled().Code == NEVERC_STATUS_CANCELLED;
+        },
+        {}, LeaseOwner);
+    if (!Transaction)
+      return Transaction.takeError();
+
+    OutputFiles.emplace_back(OutputPath.str(), std::nullopt, *Transaction);
+    return std::make_unique<OutputTransactionStream>(std::move(*Transaction));
   }
 
   std::unique_ptr<llvm::raw_fd_ostream> OS;

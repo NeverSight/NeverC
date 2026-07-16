@@ -5,8 +5,13 @@
 #include "neverc/Invoke/InMemoryFileStore.h"
 #include "neverc/Invoke/Job.h"
 #include "neverc/Invoke/Options.h"
+#include "neverc/Invoke/Tool.h"
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Invoke/Util.h"
+#include "Plugin/JobExecutionBridge.h"
+#include "Plugin/JobGraph.h"
+#include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptSpecifier.h"
@@ -51,6 +56,64 @@ Compilation::~Compilation() {
   for (auto Arg : TCArgs)
     if (Arg.second != TranslatedArgs)
       delete Arg.second;
+}
+
+void Compilation::configurePluginSession(Command &C) {
+  if (C.getKind() == Command::CK_FrontendCommand) {
+    DirectInvocationOpts &DirectOpts =
+        static_cast<FrontendCommand &>(C).getDirectOpts();
+    DirectOpts.Outputs = &Outputs;
+    if (PluginSession)
+      DirectOpts.PluginSession = PluginSession;
+  } else if (PluginSession &&
+             C.getKind() == Command::CK_LinkerCommand) {
+    static_cast<LinkerCommand &>(C).getDriverConfig().pluginSession =
+        PluginSession;
+  }
+}
+
+void Compilation::addCommand(std::unique_ptr<Command> C) {
+  if (C)
+    configurePluginSession(*C);
+  Jobs.addJob(std::move(C));
+}
+
+const char *Compilation::addResultFile(const char *Name,
+                                       const JobAction *JA) {
+  ResultFiles[JA] = Name;
+  if (Name && Name[0] != '\0' && llvm::sys::fs::exists(Name))
+    PreexistingResultActions.insert(JA);
+  else
+    PreexistingResultActions.erase(JA);
+  return Name;
+}
+
+void Compilation::setPluginSession(
+    std::shared_ptr<plugin::PluginSession> Session) {
+  PluginSession = std::move(Session);
+  propagatePluginSessionToJobs();
+}
+
+void Compilation::propagatePluginSessionToJobs() {
+  if (!PluginSession)
+    return;
+  for (Command &Job : Jobs)
+    configurePluginSession(Job);
+}
+
+void Compilation::setPluginJobExecutionPlan(
+    std::unique_ptr<DriverJobExecutionPlan> Plan) {
+  PluginJobExecutionPlan = std::move(Plan);
+}
+
+const DriverJobExecutionPlan *
+Compilation::getPluginJobExecutionPlan() const {
+  return PluginJobExecutionPlan.get();
+}
+
+void Compilation::setPluginJobExecutionRuntime(
+    std::unique_ptr<DriverJobExecutionRuntime> Runtime) {
+  PluginJobExecutionRuntime = std::move(Runtime);
 }
 
 const DerivedArgList &
@@ -131,7 +194,8 @@ bool Compilation::CleanupFileMap(const ArgStringMap &Files, const JobAction *JA,
 
 int Compilation::ExecuteCommand(const Command &C,
                                 const Command *&FailingCommand,
-                                llvm::sys::ProcessInfo &PI, bool LogOnly) {
+                                llvm::sys::ProcessInfo &PI, bool LogOnly,
+                                const DriverJobGraphNode *PluginRequest) {
   if (getArgs().hasArg(options::OPT_v) && !getDriver().CCGenDiagnostics)
     C.Print(llvm::errs(), "\n", /*Quote=*/false);
 
@@ -141,13 +205,37 @@ int Compilation::ExecuteCommand(const Command &C,
   }
 
   llvm::SmallString<256> Error;
-  bool ExecutionFailed;
-  int Res = C.Execute(Redirects, &Error, &ExecutionFailed, PI);
+  bool ExecutionFailed = false;
+  int Res = 0;
+  if (PluginJobExecutionRuntime && PluginRequest) {
+    bool BuiltinProviderInvoked = false;
+    auto Outcome = PluginJobExecutionRuntime->execute(
+        *PluginRequest, C, Redirects, BuiltinProviderInvoked);
+    if (!BuiltinProviderInvoked)
+      PluginTransactionProtectedResultActions.insert(
+          llvm::cast<JobAction>(&C.getSource()));
+    if (!Outcome) {
+      std::string Message =
+          llvm::toString(Outcome.takeError()).str().str();
+      Error.assign(Message.begin(), Message.end());
+      ExecutionFailed = true;
+      Res = 1;
+    } else {
+      Res = Outcome->ExitCode;
+      ExecutionFailed = Outcome->ExecutionFailed;
+      Error.assign(Outcome->ErrorMessage.begin(),
+                   Outcome->ErrorMessage.end());
+    }
+  } else {
+    Res = C.Execute(Redirects, &Error, &ExecutionFailed, PI);
+  }
   if (PostCallback)
     PostCallback(C, Res);
   if (!Error.empty()) {
     assert(Res && "Error string set with 0 result code!");
-    getDriver().Diag(diag::err_drv_command_failure) << llvm::StringRef(Error);
+    getDriver().Diag(PluginRequest ? diag::err_drv_plugin_phase
+                                   : diag::err_drv_command_failure)
+        << llvm::StringRef(Error);
   }
 
   if (Res)
@@ -183,6 +271,69 @@ bool inputsOk(const Command &C, const FailingCommandList &FailingCommands) {
 void Compilation::ExecuteJobs(const JobList &Jobs,
                               FailingCommandList &FailingCommands,
                               bool LogOnly) {
+  if (PluginJobExecutionPlan) {
+    enum class JobState : uint8_t {
+      Pending,
+      Succeeded,
+      Failed,
+      Skipped,
+    };
+    llvm::DenseMap<NevercJobID, JobState> States;
+    for (const DriverJobExecutionPlanNode &Node :
+         PluginJobExecutionPlan->nodes())
+      States[Node.ID] = JobState::Pending;
+
+    size_t Remaining = PluginJobExecutionPlan->nodes().size();
+    while (Remaining != 0) {
+      bool Progress = false;
+      for (const DriverJobExecutionPlanNode &Node :
+           PluginJobExecutionPlan->nodes()) {
+        if (States.lookup(Node.ID) != JobState::Pending)
+          continue;
+        bool Ready = true;
+        bool DependencyFailed = false;
+        for (NevercJobID Dependency : Node.Dependencies) {
+          JobState State = States.lookup(Dependency);
+          if (State == JobState::Pending) {
+            Ready = false;
+            break;
+          }
+          if (State == JobState::Failed || State == JobState::Skipped)
+            DependencyFailed = true;
+        }
+        if (!Ready)
+          continue;
+        Progress = true;
+        --Remaining;
+        if (DependencyFailed) {
+          States[Node.ID] = JobState::Skipped;
+          continue;
+        }
+        const Command *FailingCommand = nullptr;
+        llvm::sys::ProcessInfo PI;
+        int Result = ExecuteCommand(
+            *Node.Job, FailingCommand, PI, LogOnly, &Node.Request);
+        if (Result != 0) {
+          States[Node.ID] = JobState::Failed;
+          FailingCommands.push_back({Result, FailingCommand});
+        } else {
+          States[Node.ID] = JobState::Succeeded;
+        }
+      }
+      if (!Progress) {
+        getDriver().Diag(diag::err_drv_plugin_phase)
+            << "plugin job plan contains an unschedulable dependency";
+        break;
+      }
+    }
+    return;
+  }
+
+  if (PluginSession) {
+    ExecuteJobsSingle(Jobs, FailingCommands, LogOnly);
+    return;
+  }
+
   if (LogOnly)
     return ExecuteJobsSingle(Jobs, FailingCommands, LogOnly);
 
@@ -237,7 +388,11 @@ void Compilation::ExecuteJobs(const JobList &Jobs,
     // In-process parallel compilation: bitcode stays in InMemoryFileStore.
     // LLVM cl options are reset once before threading; each worker skips
     // global-state operations via ParallelSafe flag.
-    llvm::cl::ResetAllOptionOccurrences();
+    {
+      plugin::PluginLLVMOptionExclusiveLease Lock(
+          plugin::pluginLLVMOptionGate());
+      llvm::cl::ResetAllOptionOccurrences();
+    }
 
     for (const auto *Job : CompileJobs) {
       auto *FC = const_cast<FrontendCommand *>(
@@ -354,6 +509,9 @@ void Compilation::initCompilationForDiagnostics() {
   Actions.clear();
   AllActions.clear();
   Jobs.clear();
+  PluginJobExecutionPlan.reset();
+  PluginJobExecutionRuntime.reset();
+  PluginCommandCreator.reset();
 
   // Remove temporary files.
   if (!TheDriver.isSaveTempsEnabled() && !ForceKeepTempFiles)

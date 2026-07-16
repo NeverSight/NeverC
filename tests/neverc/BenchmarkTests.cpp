@@ -1,5 +1,9 @@
 #include "NeverCTestFixture.h"
+#include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstdint>
+#include <regex>
 #include <sstream>
 
 class BenchmarkTest : public NeverCTest {
@@ -170,5 +174,114 @@ TEST_F(BenchmarkTest, PerformanceMeasurement) {
   // Not a hard assertion — just record the measurement
   if (parallelMs < serialMs) {
     RecordProperty("speedup", "parallel_faster");
+  }
+}
+
+TEST_F(BenchmarkTest, PluginFastPathMedianCompileTime) {
+  using Clock = std::chrono::steady_clock;
+  using Microseconds = std::chrono::microseconds;
+  struct BenchmarkCase {
+    const char *Name;
+    const char *Plugin;
+  };
+  const std::array<BenchmarkCase, 3> Cases = {{
+      {"no_plugin", nullptr},
+      {"empty_plugin", NEVERC_TEST_EMPTY_PLUGIN},
+      {"argument_observer", NEVERC_TEST_ARGUMENT_OBSERVER_PLUGIN},
+  }};
+  constexpr size_t SampleCount = 7;
+  const fs::path Source = tmpFile("plugin_fast_path.c");
+  writeFile(Source, "int plugin_fast_path(int value) { return value + 1; }\n");
+
+  auto ArgumentsFor = [&](const BenchmarkCase &Current) {
+    std::vector<std::string> Arguments = {
+        "--no-default-config", "-fsyntax-only", Source.string()};
+    if (Current.Plugin != nullptr)
+      Arguments.insert(Arguments.begin(),
+                       std::string("-fplugin=") + Current.Plugin);
+    return Arguments;
+  };
+  auto Run = [&](const BenchmarkCase &Current) {
+    std::vector<std::string> Arguments = ArgumentsFor(Current);
+    const auto Start = Clock::now();
+    CmdResult Result = ncc(Arguments);
+    const auto Elapsed =
+        std::chrono::duration_cast<Microseconds>(Clock::now() - Start).count();
+    EXPECT_EQ(Result.exitCode, 0) << Current.Name << ": " << Result.err;
+    return static_cast<int64_t>(Elapsed);
+  };
+
+  for (const BenchmarkCase &Current : Cases)
+    (void)Run(Current);
+
+  std::array<std::vector<int64_t>, Cases.size()> Samples;
+  for (size_t Round = 0; Round != SampleCount; ++Round)
+    for (size_t Slot = 0; Slot != Cases.size(); ++Slot) {
+      const size_t CaseIndex = (Round + Slot) % Cases.size();
+      Samples[CaseIndex].push_back(Run(Cases[CaseIndex]));
+    }
+
+  std::array<int64_t, Cases.size()> Medians{};
+  for (size_t Index = 0; Index != Cases.size(); ++Index) {
+    for (size_t Sample = 0; Sample != Samples[Index].size(); ++Sample)
+      RecordProperty(std::string(Cases[Index].Name) + "_sample_" +
+                         std::to_string(Sample) + "_us",
+                     static_cast<int>(Samples[Index][Sample]));
+    std::sort(Samples[Index].begin(), Samples[Index].end());
+    Medians[Index] = Samples[Index][SampleCount / 2];
+    RecordProperty(std::string(Cases[Index].Name) + "_median_us",
+                   static_cast<int>(Medians[Index]));
+  }
+
+  ASSERT_GT(Medians[0], 0);
+  RecordProperty(
+      "empty_plugin_overhead_basis_points",
+      static_cast<int>((Medians[1] - Medians[0]) * 10000 / Medians[0]));
+  RecordProperty(
+      "argument_observer_overhead_basis_points",
+      static_cast<int>((Medians[2] - Medians[0]) * 10000 / Medians[0]));
+
+  if ((isDarwin() || isLinux()) && fs::exists("/usr/bin/time")) {
+    constexpr size_t MemorySampleCount = 5;
+    std::array<std::vector<uint64_t>, Cases.size()> PeakMemorySamples;
+    const std::regex DarwinPeak(
+        R"(([0-9]+)[[:space:]]+maximum resident set size)");
+    const std::regex LinuxPeak(
+        R"(Maximum resident set size \(kbytes\):[[:space:]]*([0-9]+))");
+    for (size_t Round = 0; Round != MemorySampleCount; ++Round)
+      for (size_t Slot = 0; Slot != Cases.size(); ++Slot) {
+        const size_t CaseIndex = (Round + Slot) % Cases.size();
+        std::vector<std::string> Arguments;
+        Arguments.push_back(isDarwin() ? "-l" : "-v");
+        Arguments.push_back(neverc().string());
+        std::vector<std::string> CompilerArguments =
+            ArgumentsFor(Cases[CaseIndex]);
+        Arguments.insert(Arguments.end(), CompilerArguments.begin(),
+                         CompilerArguments.end());
+        CmdResult Result = exec("/usr/bin/time", Arguments);
+        ASSERT_EQ(Result.exitCode, 0)
+            << Cases[CaseIndex].Name << ": " << Result.err;
+        std::smatch Match;
+        ASSERT_TRUE(std::regex_search(
+            Result.err, Match, isDarwin() ? DarwinPeak : LinuxPeak))
+            << Result.err;
+        uint64_t Peak = std::stoull(Match[1].str());
+        if (isLinux())
+          Peak *= 1024;
+        PeakMemorySamples[CaseIndex].push_back(Peak);
+      }
+
+    for (size_t Index = 0; Index != Cases.size(); ++Index) {
+      for (size_t Sample = 0;
+           Sample != PeakMemorySamples[Index].size(); ++Sample)
+        RecordProperty(std::string(Cases[Index].Name) + "_sample_" +
+                           std::to_string(Sample) + "_peak_bytes",
+                       std::to_string(PeakMemorySamples[Index][Sample]));
+      std::sort(PeakMemorySamples[Index].begin(),
+                PeakMemorySamples[Index].end());
+      RecordProperty(
+          std::string(Cases[Index].Name) + "_median_peak_bytes",
+          std::to_string(PeakMemorySamples[Index][MemorySampleCount / 2]));
+    }
   }
 }

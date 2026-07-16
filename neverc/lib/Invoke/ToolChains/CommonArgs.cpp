@@ -278,6 +278,11 @@ void tools::getTargetFeatures(const Driver &D, const llvm::Triple &Triple,
     break;
   }
 
+  for (const Arg *A : Args.filtered(options::OPT_target_feature)) {
+    A->claim();
+    Features.push_back(A->getValue());
+  }
+
   for (auto Feature : unifyTargetFeatures(Features)) {
     CmdArgs.push_back("-target-feature");
     CmdArgs.push_back(Feature.data());

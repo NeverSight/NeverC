@@ -616,6 +616,39 @@ void renderDebugInfoCompressionArgs(const ArgList &Args, ArgStringList &CmdArgs,
 
 } // namespace
 
+llvm::Error neverc::driver::tools::rebuildDirectInvocationOptsForFrontendJob(
+    FrontendCommand &Command) {
+  const auto *JA = llvm::dyn_cast<JobAction>(&Command.getSource());
+  if (!JA)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "frontend command source is not a job action");
+
+  const DirectInvocationOpts &Old = Command.getDirectOpts();
+  std::string Triple =
+      Old.TargetOpts ? Old.TargetOpts->Triple
+                     : Command.getCreator().getToolChain().getTriple().str();
+  std::string CPU = Old.TargetOpts ? Old.TargetOpts->CPU : std::string();
+  bool InMemoryLTOOutput = Old.InMemoryLTOOutput;
+  bool ParallelSafe = Old.ParallelSafe;
+
+  const auto &InputRecords = Command.getInputInfos();
+  const char *BaseInput =
+      InputRecords.empty() ? nullptr : InputRecords.front().getBaseInput();
+  InputInfo Output(JA, BaseInput);
+  if (!Command.getOutputFilenames().empty())
+    Output = InputInfo(JA, Command.getOutputFilenames().front().c_str(),
+                       BaseInput);
+
+  DirectInvocationOpts Rebuilt;
+  populateDirectInvocationOptsForFrontendJob(
+      Rebuilt, *JA, Output, InputRecords, Command.getArguments(), Triple, CPU);
+  Rebuilt.InMemoryLTOOutput = InMemoryLTOOutput;
+  Rebuilt.ParallelSafe = ParallelSafe;
+  Command.getDirectOpts() = std::move(Rebuilt);
+  return llvm::Error::success();
+}
+
 // ===----------------------------------------------------------------------===
 // Preprocessing options
 // ===----------------------------------------------------------------------===

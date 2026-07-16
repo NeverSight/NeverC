@@ -380,6 +380,10 @@ add_neverc_library(nevercFoundation
   Core/FileManager.cpp
   Core/IdentifierTable.cpp
   Core/LangOptions.cpp
+  Core/OutputCoordinator.cpp
+  Core/OutputPathLease.cpp
+  Core/OutputPlatform.cpp
+  Core/OutputTransaction.cpp
   Core/Version.cpp
 
   Builtin/BuiltinString.cpp

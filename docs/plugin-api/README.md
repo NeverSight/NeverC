@@ -1,8 +1,47 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# NeverC Out-of-Tree Plugin API
+# NeverC Plugin ABI v1
 
-NeverC provides a **pure C ABI** for out-of-tree pass plugins. A plugin is a shared library (`.dll` / `.so` / `.dylib`) that registers custom passes to run at designated points in the compilation pipeline. The plugin compiles against a **single header** (`NevercPluginAPI.h`) with **zero** LLVM or CRT dependencies — all functionality is routed through a host-provided vtable.
+The first public ABI is a pure C, phase-based plugin system. Driver plugins
+include `PluginCore.h` and `PluginDriver.h`, export `neverc_plugin_entry`, and
+are loaded with:
+
+```bash
+neverc -fplugin=/path/to/DriverTracePlugin.so \
+       --driver-trace -c input.c
+```
+
+The complete buildable example is
+[`pluginsdk/examples/DriverTracePlugin.c`](../../pluginsdk/examples/DriverTracePlugin.c).
+It demonstrates a formal CLI option, Session/Task state, a read-only arguments
+Observer, and an `execute_job` Interceptor that calls `InvokeNext` exactly once.
+The SDK Makefile builds it together with the other examples.
+
+Phase coverage is tracked in [`coverage.json`](coverage.json) and checked
+against the central phase schema and the CTest inventory.
+
+## Migration window
+
+- `-fplugin=<path>` loads ABI v1 plugins and participates in the v1
+  Session/Task and phase graph.
+- `-fplugin-pass=<path>` temporarily loads only the unpublished prototype pass
+  ABI described below. It is not an alias and does not load a v1 plugin.
+- A library must not be passed through both loaders.
+- Volume 3 removes the prototype loader after source migration and turns
+  `-fplugin-pass=` into a compatibility alias for `-fplugin=`.
+
+Only ABI v1 will be part of the eventual public release.
+
+---
+
+# Legacy prototype pass API (temporary)
+
+The remainder of this document describes the unpublished
+`NevercPluginAPI.h` prototype retained only for in-tree migration. NeverC
+provides this pure C ABI for out-of-tree pass plugins. A plugin is a shared
+library (`.dll` / `.so` / `.dylib`) that registers custom passes to run at
+designated points in the compilation pipeline. The plugin compiles against a
+single header with zero LLVM or CRT dependencies.
 
 ## 1. Quick Start
 

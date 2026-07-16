@@ -114,7 +114,8 @@ public:
     CK_Command,
     CK_FrontendCommand,
     CK_LinkerCommand,
-    CK_ArchiveCommand
+    CK_ArchiveCommand,
+    CK_PluginCommand
   };
 
   Command(const Action &Source, const Tool &Creator,
@@ -139,7 +140,7 @@ public:
 
   const Tool &getCreator() const { return Creator; }
 
-  const ResponseFileSupport &getResponseFileSupport() {
+  const ResponseFileSupport &getResponseFileSupport() const {
     return ResponseSupport;
   }
 
@@ -161,8 +162,14 @@ public:
   void replaceExecutable(const char *Exe) { Executable = Exe; }
 
   const char *getExecutable() const { return Executable; }
+  const char *getPrependArg() const { return PrependArg; }
 
   const llvm::opt::ArgStringList &getArguments() const { return Arguments; }
+  llvm::ArrayRef<const char *> getEnvironment() const {
+    if (!Environment.empty() && Environment.back() == nullptr)
+      return llvm::ArrayRef<const char *>(Environment).drop_back();
+    return Environment;
+  }
 
   const std::vector<InputInfo> &getInputInfos() const { return InputInfoList; }
 
@@ -276,6 +283,8 @@ public:
   void clear();
 
   const list_type &getJobs() const { return Jobs; }
+  list_type takeJobs() { return std::move(Jobs); }
+  void replaceJobs(list_type NewJobs) { Jobs = std::move(NewJobs); }
 
   bool empty() const { return Jobs.empty(); }
   size_type size() const { return Jobs.size(); }

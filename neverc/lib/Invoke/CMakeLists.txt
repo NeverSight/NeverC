@@ -47,6 +47,17 @@ add_neverc_library(nevercInvoke
   Option/OptionUtils.cpp
   Option/Types.cpp
 
+  Plugin/ActionGraph.cpp
+  Plugin/ActionGraphBridge.cpp
+  Plugin/DriverAPIBridge.cpp
+  Plugin/DriverArtifacts.cpp
+  Plugin/JobExecutionBridge.cpp
+  Plugin/JobGraph.cpp
+  Plugin/JobGraphBridge.cpp
+  Plugin/PluginBootstrap.cpp
+  Plugin/PluginCommand.cpp
+  Plugin/ToolChainPluginBridge.cpp
+
   ${NEVERC_INVOKE_ARCH_SOURCES}
   ${NEVERC_INVOKE_TOOLCHAIN_SOURCES}
 
@@ -55,6 +66,9 @@ add_neverc_library(nevercInvoke
 
   LINK_LIBS
   nevercFoundation
+  nevercPluginCore
+  nevercPluginFrontend
+  nevercPluginIO
   ${system_libs}
   )
 

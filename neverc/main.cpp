@@ -10,8 +10,11 @@
 #include "neverc/Invoke/Compilation.h"
 #include "neverc/Invoke/DirectInvocationOpts.h"
 #include "neverc/Invoke/Driver.h"
+#include "neverc/Invoke/DriverDiagnostic.h"
 #include "neverc/Invoke/Options.h"
 #include "neverc/Invoke/ToolChain.h"
+#include "neverc/Plugin/Host/PluginSession.h"
+#include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Build/BuildDriver.h"
 #include "neverc/Runtime/RuntimeManager.h"
 #include "neverc/DynCode/Pipeline/DriverIntegration.h"
@@ -202,6 +205,14 @@ void configureDriverCallbacks(Driver &TheDriver) {
   TheDriver.LinkerMain = [](SmallVectorImpl<const char *> &ArgV,
                             LinkerFlavor Flavor,
                             const linker::LinkerDriverConfig &DriverCfg) {
+    std::unique_ptr<plugin::PluginTaskContext> LinkTask;
+    if (DriverCfg.pluginSession) {
+      auto Created =
+          DriverCfg.pluginSession->createTask(NEVERC_TASK_LINK);
+      if (!Created)
+        return 1;
+      LinkTask = std::move(*Created);
+    }
     auto It =
         llvm::find_if(EnabledLinkerDrivers, [=](const linker::DriverDef &D) {
           return D.f == Flavor;
@@ -215,6 +226,10 @@ void configureDriverCallbacks(Driver &TheDriver) {
     bool Ok = It->d(Args, llvm::outs(), llvm::errs(),
                     /*exitEarly=*/false, /*disableOutput=*/false, DriverCfg);
     linker::CommonLinkerContext::destroy();
+    if (LinkTask) {
+      if (llvm::Error E = LinkTask->end())
+        Ok = false;
+    }
     return Ok ? 0 : 1;
   };
 }
@@ -283,6 +298,22 @@ CompilationResult runCompilation(Driver &TheDriver, Compilation &C) {
   return Result;
 }
 
+int finishPluginRuntime(Driver &TheDriver,
+                        std::unique_ptr<Compilation> &CompilationState,
+                        int ExitStatus) {
+  if (llvm::Error E =
+          TheDriver.finishPluginRuntime(CompilationState)) {
+    TheDriver.getDiags().Report(diag::err_drv_plugin_phase)
+        << ("plugin runtime cleanup failed: " +
+            llvm::toString(std::move(E)).str().str());
+    if (ExitStatus == 0)
+      ExitStatus = 1;
+  }
+  if (ExitStatus == 0 && TheDriver.getDiags().hasErrorOccurred())
+    ExitStatus = 1;
+  return ExitStatus;
+}
+
 } // namespace
 
 // ===----------------------------------------------------------------------===
@@ -301,12 +332,6 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
     return 1;
 
   initializeLLVMTargets();
-
-  if (Argc > 1 && StringRef(Argv[1]) == "-cc1") {
-    void *VP = (void *)(intptr_t)GetExecutablePath;
-    ArrayRef<const char *> CC1Args(Argv + 2, Argv + Argc);
-    return neverc::ExecuteFrontendDirect(CC1Args, Argv[0], VP);
-  }
 
   if (Argc > 1 && (StringRef(Argv[1]) == "build" ||
                     StringRef(Argv[1]) == "make")) {
@@ -345,6 +370,34 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   // --- Driver ---
   Driver TheDriver(Path, llvm::sys::getDefaultTargetTriple(), Diags);
   setInstallDir(Args, TheDriver, CanonicalPrefixes);
+  if (Args.size() > 1 && StringRef(Args[1]) == "-cc1") {
+    std::unique_ptr<Compilation> NoCompilation;
+    auto DirectArguments =
+        TheDriver.prepareDirectPluginInvocation(ArrayRef(Args).slice(2));
+    if (!DirectArguments) {
+      llvm::consumeError(DirectArguments.takeError());
+      int ExitStatus =
+          finishPluginRuntime(TheDriver, NoCompilation, 1);
+      Diags.getClient()->finish();
+      llvm::outs().flush();
+      llvm::errs().flush();
+      return ExitStatus;
+    }
+    DirectInvocationOpts DirectOpts;
+    DirectOpts.PluginSession = TheDriver.getPluginSession();
+    const DirectInvocationOpts *Opts =
+        DirectOpts.PluginSession ? &DirectOpts : nullptr;
+    void *VP = (void *)(intptr_t)GetExecutablePath;
+    int ExitStatus = neverc::ExecuteFrontendDirect(
+        *DirectArguments, Args[0], VP, Opts);
+    DirectOpts.PluginSession.reset();
+    ExitStatus =
+        finishPluginRuntime(TheDriver, NoCompilation, ExitStatus);
+    Diags.getClient()->finish();
+    llvm::outs().flush();
+    llvm::errs().flush();
+    return ExitStatus;
+  }
   auto TargetPrefix = ToolChain::getTargetPrefixFromProgramName(ProgName);
   TheDriver.setTargetPrefixFromProgramName(TargetPrefix);
   if (ToolContext.NeedsPrependArg || CanonicalPrefixes)
@@ -362,8 +415,13 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   std::unique_ptr<Compilation> C(TheDriver.CreateCompilation(Args));
 
   auto MaybeReproLevel = parseReproLevel(*C);
-  if (!MaybeReproLevel)
-    return 1;
+  if (!MaybeReproLevel) {
+    int ExitStatus = finishPluginRuntime(TheDriver, C, 1);
+    Diags.getClient()->finish();
+    llvm::outs().flush();
+    llvm::errs().flush();
+    return ExitStatus;
+  }
   Driver::ReproLevel ReproLevel = *MaybeReproLevel;
 
   CompilationResult CR = runCompilation(TheDriver, *C);
@@ -371,40 +429,41 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   if (DynCode.enabled()) {
     CR.ExitCode =
         neverc::dyncode::finalizeCompilation(DynCode, CR.ExitCode);
-    if (CR.ExitCode == 0)
-      return 0;
   }
 
-  if (CR.ExitCode == 0 && !CR.IsCrash) {
-    Diags.getClient()->finish();
-    llvm::outs().flush();
-    llvm::errs().flush();
-#ifdef NEVERC_PGO_TRAINING
-    return 0;
-#else
-    _exit(0);
-#endif
-  }
+  if (CR.ExitCode != 0 || CR.IsCrash) {
+    // Crash/reproducer diagnostics still require the live Compilation.
+    if (CR.FailingCommand != nullptr &&
+        TheDriver.maybeGenerateCompilationDiagnostics(
+            CR.Status, ReproLevel, *C, *CR.FailingCommand))
+      CR.ExitCode = 1;
 
-  // --- Post-compilation (error/crash path only) ---
-  if (CR.FailingCommand != nullptr &&
-      TheDriver.maybeGenerateCompilationDiagnostics(CR.Status, ReproLevel, *C,
-                                                    *CR.FailingCommand))
-    CR.ExitCode = 1;
-
-  Diags.getClient()->finish();
-
-  if (CR.IsCrash) {
-    llvm::BuryPointer(llvm::TimerGroup::aquireDefaultGroup());
-  } else {
-    llvm::TimerGroup::printAll(llvm::errs());
-    llvm::TimerGroup::clearAll();
+    if (CR.IsCrash) {
+      llvm::BuryPointer(llvm::TimerGroup::aquireDefaultGroup());
+    } else {
+      llvm::TimerGroup::printAll(llvm::errs());
+      llvm::TimerGroup::clearAll();
+    }
   }
 
 #ifdef _WIN32
   if (CR.ExitCode < 0)
     CR.ExitCode = 1;
 #endif
+
+  CR.ExitCode =
+      finishPluginRuntime(TheDriver, C, CR.ExitCode);
+  Diags.getClient()->finish();
+  llvm::outs().flush();
+  llvm::errs().flush();
+
+  if (CR.ExitCode == 0 && !CR.IsCrash) {
+#ifdef NEVERC_PGO_TRAINING
+    return 0;
+#else
+    _exit(0);
+#endif
+  }
 
   return CR.ExitCode;
 }

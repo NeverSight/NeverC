@@ -961,6 +961,9 @@ add_subdirectory(lib EXCLUDE_FROM_ALL)
 
 # NeverC is the only supported tool project in this tree. Wire it directly
 # instead of traversing llvm/tools and generating generic LLVM tool options.
+if(NEVERC_INCLUDE_TESTS)
+  enable_testing()
+endif()
 add_llvm_external_project(neverc)
 
 if( LLVM_INCLUDE_EXAMPLES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples" )

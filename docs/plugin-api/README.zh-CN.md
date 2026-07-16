@@ -1,8 +1,42 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-# NeverC Out-of-Tree 插件 API
+# NeverC 插件 ABI 首版
 
-NeverC 提供一套**纯 C ABI** 用于 out-of-tree pass 插件。插件是一个共享库（`.dll` / `.so` / `.dylib`），在编译流水线的指定位置注册自定义 pass。插件只需编译依赖**一个头文件**（`NevercPluginAPI.h`），**零** LLVM 或 CRT 依赖 — 所有功能通过宿主提供的 vtable 路由。
+首个公开 ABI 是基于阶段的纯 C 插件系统。Driver 插件包含
+`PluginCore.h` 和 `PluginDriver.h`，导出 `neverc_plugin_entry`，并这样加载：
+
+```bash
+neverc -fplugin=/path/to/DriverTracePlugin.so \
+       --driver-trace -c input.c
+```
+
+完整且可构建的示例位于
+[`pluginsdk/examples/DriverTracePlugin.c`](../../pluginsdk/examples/DriverTracePlugin.c)。
+它演示正式 CLI option、Session/Task state、只读 arguments Observer，以及只调用
+一次 `InvokeNext` 的 `execute_job` Interceptor。SDK Makefile 会与其他示例一起构建它。
+
+稳定阶段的覆盖情况记录在 [`coverage.json`](coverage.json)，并根据中央阶段 schema
+和 CTest inventory 自动校验。
+
+## 迁移窗口
+
+- `-fplugin=<path>` 加载首版插件，并进入首版 Session/Task 与阶段图。
+- `-fplugin-pass=<path>` 暂时只加载下文所述、尚未发布的原型 Pass ABI；它不是
+  `-fplugin` 的别名，也不能加载首版插件。
+- 同一动态库不能同时交给两种 Loader。
+- 第 3 卷完成源码迁移并删除原型 Loader 后，`-fplugin-pass=` 才会成为
+  `-fplugin=` 的兼容别名。
+
+最终公开发布只包含首版 ABI。
+
+---
+
+# 旧原型 Pass API（临时保留）
+
+本文余下内容描述仅为仓内迁移保留、尚未发布的 `NevercPluginAPI.h` 原型。
+NeverC 用这套纯 C ABI 支持 out-of-tree pass 插件；插件是共享库
+（`.dll` / `.so` / `.dylib`），在编译流水线的指定位置注册自定义 pass。
+它只依赖单个聚合头，不依赖 LLVM 或 CRT。
 
 ## 1. 快速开始
 

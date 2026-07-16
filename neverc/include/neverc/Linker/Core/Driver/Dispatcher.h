@@ -16,8 +16,13 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/raw_ostream.h"
+#include <memory>
 #include <string>
 #include <vector>
+
+namespace neverc::plugin {
+class PluginSession;
+}
 
 namespace linker {
 
@@ -87,6 +92,7 @@ struct LinkerDriverConfig {
 
   // Neverc C-ABI out-of-tree plugin paths for LTO and linker hooks.
   std::vector<std::string> nevercPluginPaths;
+  std::shared_ptr<neverc::plugin::PluginSession> pluginSession;
 
   // Linker-level options now controlled by the neverc driver.
   // Backends use these as defaults; explicit -Wl, overrides still apply.
