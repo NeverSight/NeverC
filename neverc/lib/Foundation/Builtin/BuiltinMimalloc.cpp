@@ -62,8 +62,8 @@ const unsigned char *lookupBlob(const llvm::Triple &TT, unsigned &Len) {
 } // namespace
 
 bool BuiltinMimalloc::isSupported(const llvm::Triple &TT) {
-  unsigned Len;
-  return lookupBlob(TT, Len) != nullptr;
+  unsigned Len = 0;
+  return lookupBlob(TT, Len) != nullptr && Len != 0;
 }
 
 llvm::StringRef BuiltinMimalloc::getEmbeddedBitcode(const llvm::Triple &TT) {
