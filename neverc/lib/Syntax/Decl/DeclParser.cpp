@@ -7,6 +7,7 @@
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Syntax/ParserGuards.h"
+#include "neverc/Syntax/ParserPluginHooks.h"
 #include "neverc/Syntax/SyntaxParser.h"
 #include "neverc/Tree/Core/TreeContext.h"
 #include "neverc/Tree/Decl/PrettyDeclStackTrace.h"
@@ -24,6 +25,25 @@ using namespace neverc;
 TypeResult Parser::ParseTypeName(SourceRange *Range, DeclaratorContext Context,
                                  AccessSpecifier AS, Decl **OwnedType,
                                  ParsedAttributes *Attrs) {
+  if (PluginHooks) {
+    const SourceLocation Start = Tok.getLocation();
+    QualType Extension;
+    switch (PluginHooks->parseTypeName(*this, Extension)) {
+    case ParserPluginOutcome::Handled:
+      if (Range)
+        *Range = SourceRange(Start, PrevTokLocation);
+      if (OwnedType)
+        *OwnedType = nullptr;
+      return ParsedType::make(Extension);
+    case ParserPluginOutcome::Error:
+      if (!Tok.is(tok::eof))
+        ConsumeAnyToken();
+      return TypeError();
+    case ParserPluginOutcome::NotHandled:
+      break;
+    }
+  }
+
   DeclSpecContext DSC = getDeclSpecContextFromDeclaratorContext(Context);
   if (DSC == DeclSpecContext::DSC_normal)
     DSC = DeclSpecContext::DSC_type_specifier;

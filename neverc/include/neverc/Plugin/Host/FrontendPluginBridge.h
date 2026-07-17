@@ -4,6 +4,7 @@
 #include "neverc/Foundation/Core/SourceLocation.h"
 #include "neverc/Plugin/PluginAST.h"
 #include "neverc/Plugin/PluginPrep.h"
+#include "neverc/Plugin/PluginSema.h"
 #include "neverc/Plugin/PluginSource.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
@@ -15,11 +16,17 @@
 namespace neverc {
 class LangOptions;
 class IdentifierInfo;
+class Decl;
+class Expr;
 class MacroArgStorage;
 class MacroDirective;
 class MacroRecord;
+class ParserPluginHooks;
 class PrepEngine;
+class QualType;
+class Sema;
 class SourceManager;
+class Stmt;
 class Token;
 class TreeContext;
 } // namespace neverc
@@ -44,6 +51,11 @@ public:
                                      NevercSourceRange Range,
                                      CharSourceRange *OutRange) {
     return resolveRange(Task, Range, OutRange);
+  }
+  NevercStatus resolvePublishedLocation(NevercTaskHandle Task,
+                                        NevercSourceLocation Location,
+                                        SourceLocation *OutLocation) {
+    return resolveLocation(Task, Location, OutLocation);
   }
 
   const NevercSourceLocationAPI &sourceLocationAPI() const {
@@ -126,6 +138,91 @@ public:
 
   llvm::Error attachProcessInterface();
   const NevercASTAPI &astAPI() const;
+  NevercStatus resolvePublishedNode(NevercTaskHandle Task,
+                                    NevercASTNodeHandle Node,
+                                    NevercASTSchemaDomain ExpectedDomain,
+                                    const void **OutNode);
+  NevercStatus resolvePublishedType(NevercTaskHandle Task,
+                                    NevercTypeHandle Type, QualType *OutType);
+  llvm::Expected<NevercDeclHandle> publishDecl(const Decl *Declaration);
+  llvm::Expected<NevercStmtHandle> publishStmt(const Stmt *Statement);
+  llvm::Expected<NevercExprHandle> publishExpr(const Expr *Expression);
+  llvm::Expected<NevercTypeHandle> publishType(QualType Type);
+
+private:
+  void detachProcessInterface();
+
+  struct Impl;
+  std::unique_ptr<Impl> State;
+  bool AttachedToProcess = false;
+};
+
+class PluginSemaExtensionAPI {
+public:
+  virtual ~PluginSemaExtensionAPI() = default;
+
+  virtual NevercStatus getExpressionExtensionInput(
+      const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercSemaExpressionExtensionInput *OutInput) = 0;
+  virtual NevercStatus createExpressionExtensionOutput(
+      const NevercPhaseFrame *Frame,
+      const NevercPhaseContinuation *Continuation,
+      const NevercSemaExpressionExtensionOutput *Descriptor,
+      NevercArtifactHandle *OutOutput) = 0;
+  virtual NevercStatus getStatementExtensionInput(
+      const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercSemaStatementExtensionInput *OutInput) = 0;
+  virtual NevercStatus createStatementExtensionOutput(
+      const NevercPhaseFrame *Frame,
+      const NevercPhaseContinuation *Continuation,
+      const NevercSemaStatementExtensionOutput *Descriptor,
+      NevercArtifactHandle *OutOutput) = 0;
+  virtual NevercStatus getDeclarationExtensionInput(
+      const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercSemaDeclarationExtensionInput *OutInput) = 0;
+  virtual NevercStatus createDeclarationExtensionOutput(
+      const NevercPhaseFrame *Frame,
+      const NevercPhaseContinuation *Continuation,
+      const NevercSemaDeclarationExtensionOutput *Descriptor,
+      NevercArtifactHandle *OutOutput) = 0;
+  virtual NevercStatus getTypeExtensionInput(
+      const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercSemaTypeExtensionInput *OutInput) = 0;
+  virtual NevercStatus createTypeExtensionOutput(
+      const NevercPhaseFrame *Frame,
+      const NevercPhaseContinuation *Continuation,
+      const NevercSemaTypeExtensionOutput *Descriptor,
+      NevercArtifactHandle *OutOutput) = 0;
+  virtual NevercStatus getLookupExtensionInput(
+      const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercSemaLookupExtensionInput *OutInput) = 0;
+  virtual NevercStatus createLookupExtensionOutput(
+      const NevercPhaseFrame *Frame,
+      const NevercPhaseContinuation *Continuation,
+      const NevercSemaLookupExtensionOutput *Descriptor,
+      NevercArtifactHandle *OutOutput) = 0;
+  virtual NevercStatus getConversionExtensionInput(
+      const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercSemaConversionExtensionInput *OutInput) = 0;
+  virtual NevercStatus createConversionExtensionOutput(
+      const NevercPhaseFrame *Frame,
+      const NevercPhaseContinuation *Continuation,
+      const NevercSemaConversionExtensionOutput *Descriptor,
+      NevercArtifactHandle *OutOutput) = 0;
+};
+
+class PluginSemaBridge {
+public:
+  PluginSemaBridge(PluginTaskContext &Task, Sema &SemanticAnalyzer,
+                   PluginASTBridge &AST, FrontendPluginBridge &Locations);
+  ~PluginSemaBridge();
+
+  PluginSemaBridge(const PluginSemaBridge &) = delete;
+  PluginSemaBridge &operator=(const PluginSemaBridge &) = delete;
+
+  llvm::Error attachProcessInterface();
+  const NevercSemaAPI &semaAPI() const;
+  void setExtensionAPI(PluginSemaExtensionAPI *ExtensionAPI);
 
 private:
   void detachProcessInterface();
@@ -352,6 +449,9 @@ public:
                          BuiltinOpen OpenBuiltin);
   llvm::Error attachPrepEngine(PrepEngine &Prep);
   llvm::Error attachTreeContext(TreeContext &Context);
+  llvm::Error attachSema(Sema &SemanticAnalyzer);
+  llvm::Error runParserPhase(Sema &SemanticAnalyzer, bool PrintStats);
+  ParserPluginHooks *parserPluginHooks() const;
 
 private:
   explicit PluginSourcePhaseRuntime(std::unique_ptr<Impl> State);
@@ -361,6 +461,7 @@ private:
 
 llvm::Error registerPluginFrontendInterface(PluginProcessServices &Services);
 llvm::Error registerPluginPrepInterface(PluginProcessServices &Services);
+llvm::Error registerPluginSemaInterface(PluginProcessServices &Services);
 
 } // namespace neverc::plugin
 

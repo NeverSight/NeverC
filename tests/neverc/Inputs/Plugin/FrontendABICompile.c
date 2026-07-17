@@ -16,6 +16,8 @@ _Static_assert(NEVERC_SOURCE_API_MAJOR == 1,
 _Static_assert(NEVERC_PREP_API_MAJOR == 1,
                "preprocessor ABI must start at major one");
 _Static_assert(NEVERC_AST_API_MAJOR == 1, "AST ABI must start at major one");
+_Static_assert(NEVERC_PARSER_API_MAJOR == 1,
+               "Parser ABI must start at major one");
 _Static_assert(NEVERC_SEMA_API_MAJOR == 1, "Sema ABI must start at major one");
 _Static_assert(NEVERC_PREP_SCHEMA_CAPABILITY_MAJOR == NEVERC_PREP_API_MAJOR,
                "Prep schema must track the Prep ABI major");
@@ -31,6 +33,8 @@ _Static_assert(sizeof(NevercTokenStreamBuilderHandle) == sizeof(NevercHandle),
                "token stream builder must remain opaque");
 _Static_assert(sizeof(NevercASTNodeHandle) == sizeof(NevercHandle),
                "AST node must remain opaque");
+_Static_assert(sizeof(NevercParserTokenCursorHandle) == sizeof(NevercHandle),
+               "Parser token cursor must remain opaque");
 _Static_assert(sizeof(NevercSemaScopeHandle) == sizeof(NevercHandle),
                "Sema scope must remain opaque");
 _Static_assert(offsetof(NevercSourceLocationAPI, Header) == 0,
@@ -47,6 +51,10 @@ _Static_assert(
     "token stream provider functions must extend the Prep table prefix");
 _Static_assert(offsetof(NevercASTAPI, Header) == 0,
                "AST table must begin with ABI header");
+_Static_assert(offsetof(NevercParserAPI, Header) == 0,
+               "Parser table must begin with ABI header");
+_Static_assert(offsetof(NevercParserParsedAttributeDescriptor, Header) == 0,
+               "Parser attribute descriptor must begin with ABI header");
 _Static_assert(offsetof(NevercSemaAPI, Header) == 0,
                "Sema table must begin with ABI header");
 _Static_assert(offsetof(NevercFrontendCallerPackProbe, Value) == 1,

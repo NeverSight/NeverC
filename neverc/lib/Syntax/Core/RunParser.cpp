@@ -75,7 +75,8 @@ void ParserStackTrace::print(llvm::raw_ostream &OS) const {
 // Top-level parsing entry point
 // ===----------------------------------------------------------------------===
 
-void neverc::RunParser(Sema &S, bool PrintStats) {
+void neverc::RunParser(Sema &S, ParserPluginHooks *PluginHooks,
+                       bool PrintStats, bool InputAlreadyInitialized) {
   if (PrintStats) {
     Decl::EnableStatistics();
     Stmt::EnableStatistics();
@@ -83,7 +84,8 @@ void neverc::RunParser(Sema &S, bool PrintStats) {
 
   TreeConsumer *Consumer = &S.getTreeConsumer();
 
-  std::unique_ptr<Parser> ParseOP(new Parser(S.getPrepEngine(), S));
+  std::unique_ptr<Parser> ParseOP(
+      new Parser(S.getPrepEngine(), S, PluginHooks));
   Parser &P = *ParseOP.get();
 
   llvm::CrashRecoveryContextCleanupRegistrar<const void, StackStateGuard>
@@ -94,9 +96,10 @@ void neverc::RunParser(Sema &S, bool PrintStats) {
       ParseOP.get());
 
   PrepEngine &PP = S.getPrepEngine();
-  PP.InitMainInput();
+  if (!InputAlreadyInitialized)
+    PP.InitMainInput();
 
-  bool HaveLexer = PP.getCurrentLexer();
+  bool HaveLexer = InputAlreadyInitialized || PP.getCurrentLexer();
 
   if (HaveLexer) {
     llvm::TimeTraceScope TimeScope("Frontend");

@@ -35,6 +35,14 @@ constexpr PluginHandleKind PluginTokenStreamBuilderHandleKind = 36;
 constexpr PluginHandleKind PluginASTEntityHandleKind = 37;
 constexpr PluginHandleKind PluginASTBuilderHandleKind = 38;
 constexpr PluginHandleKind PluginASTMutationHandleKind = 39;
+constexpr PluginHandleKind PluginParserCursorHandleKind = 40;
+constexpr PluginHandleKind PluginParserCheckpointHandleKind = 41;
+constexpr PluginHandleKind PluginParsedAttributeHandleKind = 42;
+constexpr PluginHandleKind PluginSemaScopeHandleKind = 43;
+constexpr PluginHandleKind PluginSemaLookupResultHandleKind = 44;
+constexpr PluginHandleKind PluginSemaMutationLeaseHandleKind = 45;
+constexpr PluginHandleKind PluginSemaConversionSequenceHandleKind = 46;
+constexpr PluginHandleKind PluginSemaConstantValueHandleKind = 47;
 
 class PluginHandleArena {
 public:

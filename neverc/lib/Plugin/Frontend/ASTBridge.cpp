@@ -311,6 +311,7 @@ public:
     API.CommitASTMutation = CommitASTMutation;
     API.AbortASTMutation = AbortASTMutation;
     API.DestroyASTMutation = DestroyASTMutation;
+    API.GetBuiltinType = GetBuiltinType;
   }
 
   const NevercASTAPI &api() const { return API; }
@@ -533,6 +534,10 @@ private:
                      (void *Context, NevercTaskHandle Task,
                       NevercASTMutationHandle Mutation),
                      Task, Mutation)
+  NEVERC_FORWARD_AST(GetBuiltinType,
+                     (void *Context, NevercTaskHandle Task,
+                      NevercBuiltinTypeKind Kind, NevercTypeHandle *OutType),
+                     Task, Kind, OutType)
 
 #undef NEVERC_FORWARD_AST
 
@@ -653,6 +658,7 @@ struct PluginASTBridge::Impl {
     API.CommitASTMutation = commitASTMutation;
     API.AbortASTMutation = abortASTMutation;
     API.DestroyASTMutation = destroyASTMutation;
+    API.GetBuiltinType = getBuiltinType;
     indexDecl(Context.getTranslationUnitDecl());
   }
 
@@ -753,6 +759,41 @@ struct PluginASTBridge::Impl {
     if (Status.Code != NEVERC_STATUS_OK)
       return Status;
     *Out = static_cast<Entity *>(Payload);
+    return neverc_status_ok();
+  }
+
+  NevercStatus resolvePublishedNode(NevercTaskHandle TaskHandle,
+                                    NevercASTNodeHandle Handle,
+                                    NevercASTSchemaDomain ExpectedDomain,
+                                    const void **OutNode) {
+    if (!OutNode)
+      return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    *OutNode = nullptr;
+    Entity *Value = nullptr;
+    NevercStatus Status = resolve(TaskHandle, Handle, &Value);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+
+    NevercASTSchemaDomain ActualDomain = 0;
+    switch (Value->Kind) {
+    case Domain::Decl:
+      ActualDomain = NEVERC_AST_SCHEMA_DOMAIN_DECL;
+      break;
+    case Domain::Stmt:
+      ActualDomain = NEVERC_AST_SCHEMA_DOMAIN_STMT;
+      break;
+    case Domain::Type:
+      ActualDomain = NEVERC_AST_SCHEMA_DOMAIN_TYPE;
+      break;
+    case Domain::Attr:
+      ActualDomain = NEVERC_AST_SCHEMA_DOMAIN_ATTR;
+      break;
+    }
+    if (ActualDomain != ExpectedDomain)
+      return astStatus(NEVERC_STATUS_WRONG_TYPE);
+    *OutNode = Value->Kind == Domain::Type
+                   ? Value->QualifiedType.getAsOpaquePtr()
+                   : Value->Pointer;
     return neverc_status_ok();
   }
 
@@ -1614,34 +1655,58 @@ struct PluginASTBridge::Impl {
     if (Builder.Committed)
       return astStatus(NEVERC_STATUS_INVALID_STATE);
 
-    const auto TypeProperty =
-        Builder.Properties.find(NEVERC_AST_PROPERTY_STMT_EXPR_TYPE);
     const auto RangeProperty =
         Builder.Properties.find(NEVERC_AST_PROPERTY_AST_SOURCE_RANGE);
-    if (TypeProperty == Builder.Properties.end() ||
-        TypeProperty->second.Type != NEVERC_AST_VALUE_TYPE ||
-        neverc_handle_is_null(TypeProperty->second.NodeValue) ||
-        RangeProperty == Builder.Properties.end() ||
+    if (RangeProperty == Builder.Properties.end() ||
         RangeProperty->second.Type != NEVERC_AST_VALUE_SOURCE_RANGE ||
         neverc_handle_is_null(RangeProperty->second.SourceRangeValue))
       return astStatus(NEVERC_STATUS_VERIFICATION_FAILED);
 
-    Entity *TypeEntity = nullptr;
-    NevercStatus Status =
-        resolve(TaskHandle, TypeProperty->second.NodeValue, &TypeEntity);
-    if (Status.Code != NEVERC_STATUS_OK)
-      return Status;
-    if (TypeEntity->Kind != Domain::Type)
-      return astStatus(NEVERC_STATUS_WRONG_TYPE);
-    const QualType LiteralType = TypeEntity->QualifiedType;
-
     CharSourceRange NativeRange;
-    Status = Locations.resolvePublishedRange(
+    NevercStatus Status = Locations.resolvePublishedRange(
         TaskHandle, RangeProperty->second.SourceRangeValue, &NativeRange);
     if (Status.Code != NEVERC_STATUS_OK)
       return Status;
     if (NativeRange.isInvalid())
       return astStatus(NEVERC_STATUS_VERIFICATION_FAILED);
+
+    if (Builder.Kind == NEVERC_DECL_KIND_EMPTY) {
+      TranslationUnitDecl *TranslationUnit = Context.getTranslationUnitDecl();
+      EmptyDecl *Created =
+          EmptyDecl::Create(Context, TranslationUnit, NativeRange.getBegin());
+      TranslationUnit->addDecl(Created);
+      Status = publish(createDecl(Created), OutNode);
+      if (Status.Code == NEVERC_STATUS_OK)
+        indexDecl(Created);
+      if (Status.Code == NEVERC_STATUS_OK)
+        Builder.Committed = true;
+      return Status;
+    }
+
+    if (Builder.Kind == NEVERC_STMT_KIND_NULL_STMT) {
+      Stmt *Created = new (Context) NullStmt(NativeRange.getBegin());
+      Status = publish(createStmt(Created), OutNode);
+      if (Status.Code == NEVERC_STATUS_OK)
+        indexStmt(Created, nullptr, nullptr);
+      if (Status.Code == NEVERC_STATUS_OK)
+        Builder.Committed = true;
+      return Status;
+    }
+
+    const auto TypeProperty =
+        Builder.Properties.find(NEVERC_AST_PROPERTY_STMT_EXPR_TYPE);
+    if (TypeProperty == Builder.Properties.end() ||
+        TypeProperty->second.Type != NEVERC_AST_VALUE_TYPE ||
+        neverc_handle_is_null(TypeProperty->second.NodeValue))
+      return astStatus(NEVERC_STATUS_VERIFICATION_FAILED);
+
+    Entity *TypeEntity = nullptr;
+    Status = resolve(TaskHandle, TypeProperty->second.NodeValue, &TypeEntity);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+    if (TypeEntity->Kind != Domain::Type)
+      return astStatus(NEVERC_STATUS_WRONG_TYPE);
+    const QualType LiteralType = TypeEntity->QualifiedType;
 
     Stmt *Created = nullptr;
     if (Builder.Kind == NEVERC_STMT_KIND_INTEGER_LITERAL) {
@@ -1773,6 +1838,71 @@ struct PluginASTBridge::Impl {
     return neverc_status_ok();
   }
 
+  NevercStatus fillBuiltinType(NevercTaskHandle TaskHandle,
+                               NevercBuiltinTypeKind Kind,
+                               NevercTypeHandle *OutType) {
+    if (!OutType)
+      return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    *OutType = {};
+    if (!validTask(TaskHandle))
+      return astStatus(NEVERC_STATUS_WRONG_SCOPE);
+
+    QualType Type;
+    switch (Kind) {
+    case NEVERC_BUILTIN_TYPE_VOID:
+      Type = Context.VoidTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_BOOL:
+      Type = Context.BoolTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_CHAR:
+      Type = Context.CharTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_SIGNED_CHAR:
+      Type = Context.SignedCharTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_UNSIGNED_CHAR:
+      Type = Context.UnsignedCharTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_SHORT:
+      Type = Context.ShortTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_UNSIGNED_SHORT:
+      Type = Context.UnsignedShortTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_INT:
+      Type = Context.IntTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_UNSIGNED_INT:
+      Type = Context.UnsignedIntTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_LONG:
+      Type = Context.LongTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_UNSIGNED_LONG:
+      Type = Context.UnsignedLongTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_LONG_LONG:
+      Type = Context.LongLongTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_UNSIGNED_LONG_LONG:
+      Type = Context.UnsignedLongLongTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_FLOAT:
+      Type = Context.FloatTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_DOUBLE:
+      Type = Context.DoubleTy;
+      break;
+    case NEVERC_BUILTIN_TYPE_LONG_DOUBLE:
+      Type = Context.LongDoubleTy;
+      break;
+    default:
+      return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    }
+    return publish(createType(Type), OutType);
+  }
+
   static Impl *impl(void *Context) { return static_cast<Impl *>(Context); }
 
   static NevercStatus NEVERC_CALL getTranslationUnit(
@@ -1784,6 +1914,15 @@ struct PluginASTBridge::Impl {
       return astStatus(NEVERC_STATUS_WRONG_SCOPE);
     return Bridge.publish(
         Bridge.createDecl(Bridge.Context.getTranslationUnitDecl()), OutDecl);
+  }
+
+  static NevercStatus NEVERC_CALL getBuiltinType(void *Context,
+                                                 NevercTaskHandle Task,
+                                                 NevercBuiltinTypeKind Kind,
+                                                 NevercTypeHandle *OutType) {
+    if (!Context)
+      return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    return impl(Context)->fillBuiltinType(Task, Kind, OutType);
   }
 
   static NevercStatus NEVERC_CALL getNodeInfo(void *Context,
@@ -2176,7 +2315,8 @@ struct PluginASTBridge::Impl {
     Impl &Bridge = *impl(Context);
     if (!Bridge.validTask(Task))
       return astStatus(NEVERC_STATUS_WRONG_SCOPE);
-    if (Kind != NEVERC_STMT_KIND_INTEGER_LITERAL &&
+    if (Kind != NEVERC_DECL_KIND_EMPTY && Kind != NEVERC_STMT_KIND_NULL_STMT &&
+        Kind != NEVERC_STMT_KIND_INTEGER_LITERAL &&
         Kind != NEVERC_STMT_KIND_BINARY_OPERATOR)
       return astStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
     auto *Payload = new (std::nothrow) BuilderPayload;
@@ -2465,6 +2605,47 @@ PluginASTBridge::PluginASTBridge(PluginTaskContext &Task, TreeContext &Context,
 PluginASTBridge::~PluginASTBridge() { detachProcessInterface(); }
 
 const NevercASTAPI &PluginASTBridge::astAPI() const { return State->API; }
+
+NevercStatus PluginASTBridge::resolvePublishedNode(
+    NevercTaskHandle Task, NevercASTNodeHandle Node,
+    NevercASTSchemaDomain ExpectedDomain, const void **OutNode) {
+  return State->resolvePublishedNode(Task, Node, ExpectedDomain, OutNode);
+}
+
+NevercStatus PluginASTBridge::resolvePublishedType(NevercTaskHandle Task,
+                                                   NevercTypeHandle Type,
+                                                   QualType *OutType) {
+  if (!OutType)
+    return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  *OutType = {};
+  Impl::Entity *Value = nullptr;
+  NevercStatus Status = State->resolve(Task, Type, &Value);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  if (Value->Kind != Impl::Domain::Type)
+    return astStatus(NEVERC_STATUS_WRONG_TYPE);
+  *OutType = Value->QualifiedType;
+  return neverc_status_ok();
+}
+
+Expected<NevercDeclHandle>
+PluginASTBridge::publishDecl(const Decl *Declaration) {
+  return State->createDecl(Declaration);
+}
+
+Expected<NevercStmtHandle>
+PluginASTBridge::publishStmt(const Stmt *Statement) {
+  return State->createStmt(Statement);
+}
+
+Expected<NevercExprHandle>
+PluginASTBridge::publishExpr(const Expr *Expression) {
+  return State->createStmt(Expression);
+}
+
+Expected<NevercTypeHandle> PluginASTBridge::publishType(QualType Type) {
+  return State->createType(Type);
+}
 
 Error PluginASTBridge::attachProcessInterface() {
   if (AttachedToProcess)

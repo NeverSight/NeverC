@@ -132,6 +132,9 @@ public:
   std::unique_ptr<plugin::PluginTaskContext> takePluginTaskContext();
   void setPluginSourcePhaseRuntime(
       std::unique_ptr<plugin::PluginSourcePhaseRuntime> Value);
+  plugin::PluginSourcePhaseRuntime *getPluginSourcePhaseRuntime() const {
+    return PluginSourcePhases.get();
+  }
   void clearPluginSourcePhaseRuntime();
   void setOutputCoordinator(OutputCoordinator &Value) {
     ConfiguredOutputCoordinator = &Value;

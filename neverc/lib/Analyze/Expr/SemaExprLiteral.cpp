@@ -12,6 +12,7 @@
 #include "neverc/Analyze/ScopeInfo.h"
 #include "neverc/Analyze/SemaFixItUtils.h"
 #include "neverc/Analyze/SemaInternal.h"
+#include "neverc/Analyze/SemaPluginHooks.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
@@ -556,6 +557,24 @@ Sema::OnIdExpression(Scope *S, UnqualifiedId &Id, bool HasTrailingLParen,
   }
 
   assert(!R.empty());
+
+  if (PluginHooks && R.isSingleResult()) {
+    NamedDecl *Replacement = nullptr;
+    switch (PluginHooks->analyzeDeclarationReference(
+        *this, NameLoc, R.getFoundDecl(), Replacement)) {
+    case SemaPluginOutcome::NotHandled:
+      break;
+    case SemaPluginOutcome::Handled:
+      if (!Replacement)
+        return ExprError();
+      R.clear();
+      R.addDecl(Replacement);
+      R.resolveKind();
+      break;
+    case SemaPluginOutcome::Error:
+      return ExprError();
+    }
+  }
 
   return FormDeclarationNameExpr(R);
 }

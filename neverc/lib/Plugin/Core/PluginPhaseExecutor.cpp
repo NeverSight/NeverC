@@ -262,7 +262,7 @@ bool validateCallbackStatus(PluginPhaseExecutor::ChainContext &Context,
     return false;
   }
   if (Status.Code < NEVERC_STATUS_INVALID_ARGUMENT ||
-      Status.Code > NEVERC_STATUS_REENTRANCY_DENIED) {
+      Status.Code > NEVERC_STATUS_NOT_FOUND) {
     failChain(Context, NEVERC_STATUS_INVALID_DESCRIPTOR,
               Kind + " callback for plugin '" + PluginID +
                   "' returned an unknown status");

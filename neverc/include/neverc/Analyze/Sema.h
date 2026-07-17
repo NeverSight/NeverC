@@ -63,6 +63,7 @@ class NamedDecl;
 class ParmVarDecl;
 class PrepEngine;
 class QualType;
+class SemaPluginHooks;
 class StandardConversionSequence;
 class Stmt;
 class StringLiteral;
@@ -125,6 +126,8 @@ public:
 class Sema final {
   Sema(const Sema &) = delete;
   void operator=(const Sema &) = delete;
+
+  SemaPluginHooks *PluginHooks = nullptr;
 
   static bool mightHaveNonExternalLinkage(const DeclaratorDecl *FD);
 
@@ -686,6 +689,8 @@ public:
   PrepEngine &getPrepEngine() const { return PP; }
   TreeContext &getTreeContext() const { return Context; }
   TreeConsumer &getTreeConsumer() const { return Consumer; }
+  SemaPluginHooks *getPluginHooks() const { return PluginHooks; }
+  void setPluginHooks(SemaPluginHooks *Hooks) { PluginHooks = Hooks; }
 
   void warnStackExhausted(SourceLocation Loc);
 

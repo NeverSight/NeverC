@@ -19,6 +19,10 @@ NevercInterfaceID astPluginInterfaceID() {
   return {NEVERC_INTERFACE_AST_HIGH, NEVERC_INTERFACE_AST_LOW};
 }
 
+NevercInterfaceID parserPluginInterfaceID() {
+  return {NEVERC_INTERFACE_PARSER_HIGH, NEVERC_INTERFACE_PARSER_LOW};
+}
+
 NevercInterfaceID semaPluginInterfaceID() {
   return {NEVERC_INTERFACE_SEMA_HIGH, NEVERC_INTERFACE_SEMA_LOW};
 }

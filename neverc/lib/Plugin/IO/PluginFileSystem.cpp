@@ -75,6 +75,8 @@ std::error_code statusError(NevercStatus Status) {
     return std::make_error_code(std::errc::operation_canceled);
   case NEVERC_STATUS_RESOURCE_EXHAUSTED:
     return make_error_code(errc::not_enough_memory);
+  case NEVERC_STATUS_NOT_FOUND:
+    return make_error_code(errc::no_such_file_or_directory);
   case NEVERC_STATUS_REENTRANCY_DENIED:
     return make_error_code(errc::resource_deadlock_would_occur);
   case NEVERC_STATUS_INVALID_ARGUMENT:

@@ -251,7 +251,28 @@ Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinSourceGraph() {
       NEVERC_PHASE_##Symbol##_BUILTIN_FALLBACK),
   const PluginPhaseDefinition Builtins[] = {
       NEVERC_FOR_EACH_BUILTIN_SOURCE_PHASE(NEVERC_BUILD_BUILTIN_PHASE)
-          NEVERC_FOR_EACH_BUILTIN_PREP_PHASE(NEVERC_BUILD_BUILTIN_PHASE)};
+          NEVERC_FOR_EACH_BUILTIN_PREP_PHASE(NEVERC_BUILD_BUILTIN_PHASE)
+              NEVERC_BUILD_BUILTIN_PHASE(SYNTAX_PARSE)
+                  NEVERC_BUILD_BUILTIN_PHASE(SYNTAX_EXTENSION_DECLARATION)
+                  NEVERC_BUILD_BUILTIN_PHASE(SYNTAX_EXTENSION_STATEMENT)
+                      NEVERC_BUILD_BUILTIN_PHASE(SYNTAX_EXTENSION_EXPRESSION)
+                          NEVERC_BUILD_BUILTIN_PHASE(SYNTAX_EXTENSION_TYPE_NAME)
+                              NEVERC_BUILD_BUILTIN_PHASE(
+                                  SYNTAX_EXTENSION_ATTRIBUTE)
+                                  NEVERC_BUILD_BUILTIN_PHASE(
+                                      SYNTAX_EXTENSION_KEYWORD)
+                                      NEVERC_BUILD_BUILTIN_PHASE(
+                                          SEMA_EXTENSION_EXPRESSION)
+                                          NEVERC_BUILD_BUILTIN_PHASE(
+                                              SEMA_EXTENSION_STATEMENT)
+                                              NEVERC_BUILD_BUILTIN_PHASE(
+                                                  SEMA_EXTENSION_DECLARATION)
+                                                  NEVERC_BUILD_BUILTIN_PHASE(
+                                                      SEMA_EXTENSION_TYPE)
+                                                      NEVERC_BUILD_BUILTIN_PHASE(
+                                                          SEMA_EXTENSION_LOOKUP)
+                                                          NEVERC_BUILD_BUILTIN_PHASE(
+                                                              SEMA_EXTENSION_CONVERSION)};
 #undef NEVERC_BUILD_BUILTIN_PHASE
   for (const PluginPhaseDefinition &Phase : Builtins)
     if (Error E = Graph.addPhase(Phase))

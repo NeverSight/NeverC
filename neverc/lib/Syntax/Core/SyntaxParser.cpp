@@ -2,6 +2,7 @@
 #include "neverc/Foundation/Core/TokenKinds.h"
 #include "neverc/Syntax/ParseDiag.h"
 #include "neverc/Syntax/ParserGuards.h"
+#include "neverc/Syntax/ParserPluginHooks.h"
 #include "neverc/Tree/Core/TreeConsumer.h"
 #include "neverc/Tree/Core/TreeContext.h"
 #include "llvm/Support/TimeProfiler.h"
@@ -18,9 +19,9 @@ IdentifierInfo *Parser::getSEHExceptKeyword() {
   return Ident__except;
 }
 
-Parser::Parser(PrepEngine &pp, Sema &actions)
-    : PP(pp), Actions(actions), Diags(PP.getDiagnostics()),
-      ColonIsSacred(false) {
+Parser::Parser(PrepEngine &pp, Sema &actions, ParserPluginHooks *pluginHooks)
+    : PP(pp), Actions(actions), PluginHooks(pluginHooks),
+      Diags(PP.getDiagnostics()), ColonIsSacred(false) {
   Tok.startToken();
   Tok.setKind(tok::eof);
   Actions.CurScope = nullptr;
@@ -28,6 +29,36 @@ Parser::Parser(PrepEngine &pp, Sema &actions)
 
   initializePragmaHandlers();
 }
+
+ParserPluginHooks::CursorState ParserPluginHooks::saveCursor(Parser &P) {
+  P.PP.SaveLexState();
+  CursorState State;
+  State.CurrentToken = P.Tok;
+  State.PreviousTokenLocation = P.PrevTokLocation;
+  State.ParenCount = P.ParenCount;
+  State.BracketCount = P.BracketCount;
+  State.BraceCount = P.BraceCount;
+  return State;
+}
+
+void ParserPluginHooks::commitCursor(Parser &P) { P.PP.DropSavedState(); }
+
+void ParserPluginHooks::restoreCursor(Parser &P, const CursorState &State) {
+  P.PP.RestoreLexState();
+  P.Tok = State.CurrentToken;
+  P.PrevTokLocation = State.PreviousTokenLocation;
+  P.ParenCount = State.ParenCount;
+  P.BracketCount = State.BracketCount;
+  P.BraceCount = State.BraceCount;
+}
+
+const Token &ParserPluginHooks::peekCursor(const Parser &P, unsigned Offset) {
+  if (Offset == 0)
+    return P.Tok;
+  return P.PP.LookAhead(Offset - 1);
+}
+
+void ParserPluginHooks::consumeCursor(Parser &P) { P.ConsumeAnyToken(); }
 
 DiagnosticBuilder Parser::Diag(SourceLocation Loc, unsigned DiagID) {
   return Diags.Report(Loc, DiagID);
@@ -399,6 +430,22 @@ Parser::ParseExternalDeclaration(ParsedAttributes &Attrs,
                                  ParsedAttributes &DeclSpecAttrs,
                                  ParsingDeclSpec *DS) {
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
+
+  if (PluginHooks) {
+    Decl *Extension = nullptr;
+    switch (PluginHooks->parseDeclaration(*this, Extension)) {
+    case ParserPluginOutcome::Handled:
+      return Actions.WrapDeclAsGroup(Extension);
+    case ParserPluginOutcome::Error:
+      // Extension callbacks restore the cursor on failure. Skip forward so the
+      // top-level parse loop cannot re-enter the same token forever.
+      SkipUntil(tok::semi, StopBeforeMatch);
+      TryConsumeToken(tok::semi);
+      return nullptr;
+    case ParserPluginOutcome::NotHandled:
+      break;
+    }
+  }
 
   Decl *SingleDecl = nullptr;
   switch (Tok.getKind()) {

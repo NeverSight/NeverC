@@ -2,6 +2,7 @@
 #include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/ScopeInfo.h"
 #include "neverc/Analyze/SemaInternal.h"
+#include "neverc/Analyze/SemaPluginHooks.h"
 #include "neverc/Foundation/Core/TokenKinds.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Scan/PrepEngine.h"
@@ -255,6 +256,19 @@ sema::CompoundScopeInfo &Sema::getCurCompoundScope() const {
 
 StmtResult Sema::OnCompoundStmt(SourceLocation L, SourceLocation R,
                                 llvm::ArrayRef<Stmt *> Elts, bool isStmtExpr) {
+  if (PluginHooks) {
+    Stmt *Replacement = nullptr;
+    switch (
+        PluginHooks->analyzeCompoundStatement(*this, L, R, Elts, Replacement)) {
+    case SemaPluginOutcome::NotHandled:
+      break;
+    case SemaPluginOutcome::Handled:
+      return Replacement ? StmtResult(Replacement) : StmtError();
+    case SemaPluginOutcome::Error:
+      return StmtError();
+    }
+  }
+
   const unsigned NumElts = Elts.size();
 
   // If we're in C mode, check that we don't have any decls after stmts.  If

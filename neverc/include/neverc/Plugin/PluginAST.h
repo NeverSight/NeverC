@@ -5,7 +5,7 @@
 
 #include "neverc/Plugin/PluginCore.h"
 #include "neverc/Plugin/PluginPhaseSchema.h" /* IWYU pragma: export */
-#include "neverc/Plugin/PluginSource.h"
+#include "neverc/Plugin/PluginPrep.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,6 +33,11 @@ typedef uint32_t NevercTypeQualifierFlags;
 typedef uint32_t NevercTypeFlags;
 typedef uint32_t NevercTypeAddressSpaceKind;
 typedef uint32_t NevercBinaryOperatorKind;
+typedef uint32_t NevercBuiltinTypeKind;
+typedef uint32_t NevercParserResultKind;
+typedef uint32_t NevercParserExtensionDisposition;
+typedef uint32_t NevercParserAttributeForm;
+typedef uint32_t NevercASTUnitSemanticState;
 
 #define NEVERC_AST_NODE_KIND_INVALID UINT32_C(0)
 #define NEVERC_DECL_KIND_INVALID UINT32_C(0)
@@ -132,6 +137,47 @@ typedef uint32_t NevercBinaryOperatorKind;
 #define NEVERC_BINARY_OPERATOR_OR_ASSIGN UINT32_C(29)
 #define NEVERC_BINARY_OPERATOR_COMMA UINT32_C(30)
 
+#define NEVERC_BUILTIN_TYPE_VOID UINT32_C(1)
+#define NEVERC_BUILTIN_TYPE_BOOL UINT32_C(2)
+#define NEVERC_BUILTIN_TYPE_CHAR UINT32_C(3)
+#define NEVERC_BUILTIN_TYPE_SIGNED_CHAR UINT32_C(4)
+#define NEVERC_BUILTIN_TYPE_UNSIGNED_CHAR UINT32_C(5)
+#define NEVERC_BUILTIN_TYPE_SHORT UINT32_C(6)
+#define NEVERC_BUILTIN_TYPE_UNSIGNED_SHORT UINT32_C(7)
+#define NEVERC_BUILTIN_TYPE_INT UINT32_C(8)
+#define NEVERC_BUILTIN_TYPE_UNSIGNED_INT UINT32_C(9)
+#define NEVERC_BUILTIN_TYPE_LONG UINT32_C(10)
+#define NEVERC_BUILTIN_TYPE_UNSIGNED_LONG UINT32_C(11)
+#define NEVERC_BUILTIN_TYPE_LONG_LONG UINT32_C(12)
+#define NEVERC_BUILTIN_TYPE_UNSIGNED_LONG_LONG UINT32_C(13)
+#define NEVERC_BUILTIN_TYPE_FLOAT UINT32_C(14)
+#define NEVERC_BUILTIN_TYPE_DOUBLE UINT32_C(15)
+#define NEVERC_BUILTIN_TYPE_LONG_DOUBLE UINT32_C(16)
+
+#define NEVERC_PARSER_API_MAJOR UINT16_C(1)
+#define NEVERC_PARSER_API_MINOR UINT16_C(0)
+#define NEVERC_INTERFACE_PARSER_HIGH UINT64_C(0x4e43504152534501)
+#define NEVERC_INTERFACE_PARSER_LOW UINT64_C(0x0000000000000001)
+
+#define NEVERC_PARSER_RESULT_DECL UINT32_C(1)
+#define NEVERC_PARSER_RESULT_STMT UINT32_C(2)
+#define NEVERC_PARSER_RESULT_EXPR UINT32_C(3)
+#define NEVERC_PARSER_RESULT_TYPE UINT32_C(4)
+#define NEVERC_PARSER_RESULT_ATTRIBUTE UINT32_C(5)
+
+#define NEVERC_PARSER_EXTENSION_UNHANDLED UINT32_C(0)
+#define NEVERC_PARSER_EXTENSION_HANDLED UINT32_C(1)
+
+#define NEVERC_PARSER_ATTRIBUTE_GNU UINT32_C(1)
+#define NEVERC_PARSER_ATTRIBUTE_C23 UINT32_C(2)
+#define NEVERC_PARSER_ATTRIBUTE_DECLSPEC UINT32_C(3)
+
+#define NEVERC_AST_PRODUCT_STANDARD_HIGH UINT64_C(0x4e43504153545001)
+#define NEVERC_AST_PRODUCT_STANDARD_LOW UINT64_C(0x0000000000000001)
+
+#define NEVERC_AST_UNIT_UNANALYZED UINT32_C(0)
+#define NEVERC_AST_UNIT_SEMANTICALLY_ANALYZED UINT32_C(1)
+
 #include "neverc/Plugin/Schema/PluginASTSchema.inc"
 
 #if NEVERC_AST_SCHEMA_CAPABILITY_MAJOR != NEVERC_AST_API_MAJOR
@@ -152,6 +198,8 @@ typedef NevercHandle NevercTypeLocHandle;
 typedef NevercHandle NevercASTUnitHandle;
 typedef NevercHandle NevercASTBuilderHandle;
 typedef NevercHandle NevercASTMutationHandle;
+typedef NevercHandle NevercParserTokenCursorHandle;
+typedef NevercHandle NevercParserCheckpointHandle;
 
 typedef struct NevercASTValue {
   NevercABITableHeader Header;
@@ -277,6 +325,53 @@ typedef struct NevercIntegerLiteralInfo {
   uint32_t BitWidth;
   uint32_t Reserved;
 } NevercIntegerLiteralInfo;
+
+typedef struct NevercParserExtensionInput {
+  NevercABITableHeader Header;
+  NevercParserTokenCursorHandle Cursor;
+  NevercParserResultKind ExpectedResult;
+  uint32_t Reserved;
+} NevercParserExtensionInput;
+
+typedef struct NevercParserExtensionOutput {
+  NevercABITableHeader Header;
+  NevercParserExtensionDisposition Disposition;
+  NevercParserResultKind ResultKind;
+  NevercASTNodeHandle Node;
+  uint32_t Reserved[2];
+} NevercParserExtensionOutput;
+
+typedef struct NevercParserParsedAttributeDescriptor {
+  NevercABITableHeader Header;
+  NevercStringView Name;
+  NevercSourceRange Range;
+  NevercParserAttributeForm Form;
+  uint32_t Reserved;
+} NevercParserParsedAttributeDescriptor;
+
+typedef struct NevercParserPhaseInput {
+  NevercABITableHeader Header;
+  NevercTokenStreamHandle TokenStream;
+  NevercDeclHandle TranslationUnit;
+  uint32_t Reserved[2];
+} NevercParserPhaseInput;
+
+typedef struct NevercParserASTUnitDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Product;
+  NevercDeclHandle TranslationUnit;
+  uint32_t Reserved[2];
+} NevercParserASTUnitDescriptor;
+
+typedef struct NevercParserASTUnitInfo {
+  NevercABITableHeader Header;
+  NevercInterfaceID Product;
+  NevercDeclHandle TranslationUnit;
+  NevercASTUnitSemanticState SemanticState;
+  uint32_t Reserved;
+  NevercStringView SourceIdentity;
+  NevercByteView SourceDigest;
+} NevercParserASTUnitInfo;
 
 typedef struct NevercASTAPI {
   NevercABITableHeader Header;
@@ -409,7 +504,58 @@ typedef struct NevercASTAPI {
                                               NevercASTMutationHandle Mutation);
   NevercStatus(NEVERC_CALL *DestroyASTMutation)(
       void *Context, NevercTaskHandle Task, NevercASTMutationHandle Mutation);
+  NevercStatus(NEVERC_CALL *GetBuiltinType)(void *Context,
+                                            NevercTaskHandle Task,
+                                            NevercBuiltinTypeKind Kind,
+                                            NevercTypeHandle *OutType);
 } NevercASTAPI;
+
+typedef struct NevercParserAPI {
+  NevercABITableHeader Header;
+  void *Context;
+  NevercStatus(NEVERC_CALL *GetExtensionInput)(
+      void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercParserExtensionInput *OutInput);
+  NevercStatus(NEVERC_CALL *CursorPeek)(void *Context, NevercTaskHandle Task,
+                                        NevercParserTokenCursorHandle Cursor,
+                                        uint64_t Offset,
+                                        NevercTokenHandle *OutToken);
+  NevercStatus(NEVERC_CALL *CursorConsume)(void *Context, NevercTaskHandle Task,
+                                           NevercParserTokenCursorHandle Cursor,
+                                           NevercTokenHandle *OutToken);
+  NevercStatus(NEVERC_CALL *CursorCheckpoint)(
+      void *Context, NevercTaskHandle Task,
+      NevercParserTokenCursorHandle Cursor,
+      NevercParserCheckpointHandle *OutCheckpoint);
+  NevercStatus(NEVERC_CALL *CursorCommit)(
+      void *Context, NevercTaskHandle Task,
+      NevercParserTokenCursorHandle Cursor,
+      NevercParserCheckpointHandle Checkpoint);
+  NevercStatus(NEVERC_CALL *CursorRollback)(
+      void *Context, NevercTaskHandle Task,
+      NevercParserTokenCursorHandle Cursor,
+      NevercParserCheckpointHandle Checkpoint);
+  NevercStatus(NEVERC_CALL *CreateExtensionOutput)(
+      void *Context, const NevercPhaseFrame *Frame,
+      NevercPhaseContinuation *Continuation,
+      const NevercParserExtensionOutput *Descriptor,
+      NevercArtifactHandle *OutOutput);
+  NevercStatus(NEVERC_CALL *CreateParsedAttribute)(
+      void *Context, NevercTaskHandle Task,
+      NevercParserTokenCursorHandle Cursor,
+      const NevercParserParsedAttributeDescriptor *Descriptor,
+      NevercAttrHandle *OutAttribute);
+  NevercStatus(NEVERC_CALL *GetParsePhaseInput)(
+      void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercParserPhaseInput *OutInput);
+  NevercStatus(NEVERC_CALL *CreateASTUnit)(
+      void *Context, const NevercPhaseFrame *Frame,
+      const NevercParserASTUnitDescriptor *Descriptor,
+      NevercArtifactHandle *OutOutput);
+  NevercStatus(NEVERC_CALL *GetASTUnitInfo)(
+      void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Unit,
+      NevercParserASTUnitInfo *OutInfo);
+} NevercParserAPI;
 
 NEVERC_ABI_PACK_END
 

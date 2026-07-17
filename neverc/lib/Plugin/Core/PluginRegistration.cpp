@@ -629,7 +629,7 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
           Callback + "' returned an invalid success status");
     }
     if (StatusValue.Code < NEVERC_STATUS_INVALID_ARGUMENT ||
-        StatusValue.Code > NEVERC_STATUS_REENTRANCY_DENIED)
+        StatusValue.Code > NEVERC_STATUS_NOT_FOUND)
       return registrationError(
           "plugin '" + Module.descriptor().PluginID + "' callback '" +
           Callback + "' returned an unknown status code");

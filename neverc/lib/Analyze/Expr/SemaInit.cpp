@@ -1,6 +1,7 @@
 #include "neverc/Analyze/Designator.h"
 #include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/SemaInternal.h"
+#include "neverc/Analyze/SemaPluginHooks.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Tree/Expr/IgnoreExpr.h"
@@ -3568,6 +3569,26 @@ ExprResult InitializationSequence::Perform(Sema &S,
 
       // Save off the initial CurInit in case we need to emit a diagnostic
       ExprResult InitialCurInit = CurInit;
+      if (SemaPluginHooks *Hooks = S.getPluginHooks()) {
+        Expr *Replacement = nullptr;
+        switch (Hooks->analyzeImplicitConversion(
+            S, InitialCurInit.get(), Step->Type,
+            static_cast<unsigned>(getAssignmentAction(Entity, true)),
+            Replacement)) {
+        case SemaPluginOutcome::NotHandled:
+          break;
+        case SemaPluginOutcome::Handled:
+          if (!Replacement)
+            return ExprError();
+          CurInit = Replacement;
+          break;
+        case SemaPluginOutcome::Error:
+          return ExprError();
+        }
+        if (Replacement)
+          break;
+      }
+
       ExprResult Result = CurInit;
       Sema::AssignConvertType ConvTy =
           S.CheckSingleAssignmentConstraints(Step->Type, Result);

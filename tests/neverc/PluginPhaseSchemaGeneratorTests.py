@@ -34,15 +34,17 @@ class PhaseSchemaGeneratorTests(unittest.TestCase):
 
     def test_accepts_committed_schema(self):
         phases, families = self.validate(self.document)
-        self.assertEqual(len(phases), 17)
+        self.assertEqual(len(phases), 29)
         self.assertEqual(len(families), 4)
         self.assertEqual(
-            {phase["name"] for phase in phases[-4:]},
+            {phase["name"] for phase in phases[-6:]},
             {
-                "neverc.prep.include.intercept",
-                "neverc.prep.macro.intercept",
-                "neverc.prep.pragma.intercept",
-                "neverc.prep.feature_query.intercept",
+                "neverc.sema.extension.expression",
+                "neverc.sema.extension.statement",
+                "neverc.sema.extension.declaration",
+                "neverc.sema.extension.type",
+                "neverc.sema.extension.lookup",
+                "neverc.sema.extension.conversion",
             },
         )
 

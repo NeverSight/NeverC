@@ -2,6 +2,7 @@
 #include "neverc/Foundation/Core/TokenKinds.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Syntax/ParserGuards.h"
+#include "neverc/Syntax/ParserPluginHooks.h"
 #include "neverc/Syntax/SyntaxParser.h"
 #include "neverc/Tree/Decl/PrettyDeclStackTrace.h"
 #include "llvm/ADT/STLExtras.h"
@@ -28,6 +29,20 @@ NEVERC_HOT StmtResult Parser::ParseStatementOrDeclaration(
     SourceLocation *TrailingElseLoc) {
 
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
+
+  if (PluginHooks) {
+    Stmt *Extension = nullptr;
+    switch (PluginHooks->parseStatement(*this, Extension)) {
+    case ParserPluginOutcome::Handled:
+      return Extension;
+    case ParserPluginOutcome::Error:
+      SkipUntil(tok::semi, StopBeforeMatch);
+      TryConsumeToken(tok::semi);
+      return StmtError();
+    case ParserPluginOutcome::NotHandled:
+      break;
+    }
+  }
 
   ParsedAttributes BracketAttrs(AttrFactory);
   MaybeParseBracketAttributes(BracketAttrs);

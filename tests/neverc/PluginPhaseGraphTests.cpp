@@ -46,6 +46,20 @@ TEST(PluginPhaseGraphTest, BuildsStableBuiltinDriverOrder) {
             "neverc.driver.verify_raw_arguments");
 }
 
+TEST(PluginPhaseGraphTest, IncludesParserProviderAndFineGrainedExtensionSlots) {
+  auto Graph = PluginPhaseGraph::createBuiltinSourceGraph();
+  ASSERT_TRUE(static_cast<bool>(Graph)) << takeErrorMessage(Graph.takeError());
+  EXPECT_EQ(Graph->size(), 22U);
+  EXPECT_NE(Graph->find("neverc.syntax.parse"), nullptr);
+  EXPECT_NE(Graph->find("neverc.syntax.extension.declaration"), nullptr);
+  EXPECT_NE(Graph->find("neverc.syntax.extension.statement"), nullptr);
+  EXPECT_NE(Graph->find("neverc.syntax.extension.expression"), nullptr);
+  EXPECT_NE(Graph->find("neverc.syntax.extension.type_name"), nullptr);
+  EXPECT_NE(Graph->find("neverc.syntax.extension.attribute"), nullptr);
+  EXPECT_NE(Graph->find("neverc.syntax.extension.keyword"), nullptr);
+  EXPECT_NE(Graph->find("neverc.sema.extension.conversion"), nullptr);
+}
+
 TEST(PluginPhaseGraphTest, RejectsDuplicatesAndInvalidSealedPolicy) {
   PluginPhaseGraph Graph;
   ASSERT_FALSE(Graph.addPhase(phase(1, "test.phase.one")));

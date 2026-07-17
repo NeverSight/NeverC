@@ -1,9 +1,10 @@
 #include "neverc/Analyze/EnterExpressionEvaluationContext.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
-#include "neverc/Foundation/Std/StdModule.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
+#include "neverc/Foundation/Std/StdModule.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Syntax/ParserGuards.h"
+#include "neverc/Syntax/ParserPluginHooks.h"
 #include "neverc/Syntax/SyntaxParser.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Compiler.h"
@@ -283,6 +284,44 @@ ExprResult Parser::ParseParenExpression(ParenParseOption &ExprType,
   ExprResult Result(true);
   bool isAmbiguousTypeId;
   CastTy = nullptr;
+
+  if (!(ExprType >= CompoundStmt && Tok.is(tok::l_brace)) &&
+      ExprType >= CompoundLiteral && PluginHooks) {
+    QualType Extension;
+    ParserPluginOutcome Outcome = PluginHooks->parseTypeName(*this, Extension);
+    if (Outcome == ParserPluginOutcome::Error)
+      return ExprError();
+    if (Outcome == ParserPluginOutcome::Handled) {
+      if (T.consumeClose())
+        return ExprError();
+      ColonProtection.restore();
+      RParenLoc = T.getCloseLocation();
+      CastTy = ParsedType::make(Extension);
+
+      if (Tok.is(tok::l_brace)) {
+        ExprType = CompoundLiteral;
+        return ParseCompoundLiteralExpression(CastTy, OpenLoc, RParenLoc);
+      }
+      if (ExprType == CastExpr) {
+        if (stopIfCastExpr)
+          return ExprResult();
+        Result = ParseCastExpression(/*isUnaryExpression=*/AnyCastExpr,
+                                     /*isAddressOfOperand=*/false,
+                                     /*isTypeCast=*/IsTypeCast);
+        if (!Result.isInvalid()) {
+          TypeSourceInfo *TypeInfo =
+              Actions.getTreeContext().getTrivialTypeSourceInfo(Extension,
+                                                                OpenLoc);
+          Result = Actions.FormCStyleCastExpr(OpenLoc, TypeInfo, RParenLoc,
+                                              Result.get());
+        }
+        return Result;
+      }
+
+      Diag(Tok, diag::err_expected_lbrace_in_compound_literal);
+      return ExprError();
+    }
+  }
 
   // None of these cases should fall through with an invalid Result
   // unless they've already reported an error.

@@ -5,6 +5,7 @@
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
 #include "neverc/Foundation/Core/Stack.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticDriver.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticOptions.h"
 #include "neverc/Foundation/LangOpts/LangStandard.h"
 #include "neverc/Plugin/Host/FrontendPluginBridge.h"
@@ -18,6 +19,7 @@
 #include "neverc/Tree/Decl/DeclGroup.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/BuryPointer.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
@@ -314,7 +316,17 @@ void ASTFrontendAction::ExecuteAction() {
   if (!CI.hasSema())
     CI.createSema();
 
-  RunParser(CI.getSema(), CI.getFrontendOpts().ShowStats);
+  plugin::PluginSourcePhaseRuntime *PluginRuntime =
+      CI.getPluginSourcePhaseRuntime();
+  if (!PluginRuntime) {
+    RunParser(CI.getSema(), nullptr, CI.getFrontendOpts().ShowStats);
+    return;
+  }
+  if (llvm::Error E = PluginRuntime->runParserPhase(
+          CI.getSema(), CI.getFrontendOpts().ShowStats)) {
+    std::string Message = llvm::toString(std::move(E)).str().str();
+    CI.getDiagnostics().Report(diag::err_drv_plugin_phase) << Message;
+  }
 }
 
 std::unique_ptr<TreeConsumer>

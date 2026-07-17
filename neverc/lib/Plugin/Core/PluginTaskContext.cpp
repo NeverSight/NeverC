@@ -37,7 +37,7 @@ Error validateTaskCallbackStatus(const PluginModule &Module,
                      "' returned an invalid success status");
   }
   if (Status.Code < NEVERC_STATUS_INVALID_ARGUMENT ||
-      Status.Code > NEVERC_STATUS_REENTRANCY_DENIED)
+      Status.Code > NEVERC_STATUS_NOT_FOUND)
     return taskError("plugin '" + Module.descriptor().PluginID +
                      "' callback '" + Callback +
                      "' returned an unknown status code");

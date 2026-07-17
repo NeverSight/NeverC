@@ -140,6 +140,12 @@ void CompilerInstance::setPluginSourcePhaseRuntime(
       getDiagnostics().Report(diag::err_drv_plugin_phase) << Message;
     }
   }
+  if (Value && TheSema) {
+    if (llvm::Error E = Value->attachSema(*TheSema)) {
+      std::string Message = llvm::toString(std::move(E)).str().str();
+      getDiagnostics().Report(diag::err_drv_plugin_phase) << Message;
+    }
+  }
   PluginSourcePhases = std::move(Value);
 }
 
@@ -364,6 +370,12 @@ void CompilerInstance::createFrontendTimer() {
 
 void CompilerInstance::createSema() {
   TheSema.reset(new Sema(getPrepEngine(), getTreeContext(), getTreeConsumer()));
+  if (PluginSourcePhases) {
+    if (llvm::Error E = PluginSourcePhases->attachSema(*TheSema)) {
+      std::string Message = llvm::toString(std::move(E)).str().str();
+      getDiagnostics().Report(diag::err_drv_plugin_phase) << Message;
+    }
+  }
 }
 
 // ===----------------------------------------------------------------------===

@@ -3,6 +3,7 @@
 #include "neverc/Analyze/Initialization.h"
 #include "neverc/Analyze/ScopeInfo.h"
 #include "neverc/Analyze/SemaInternal.h"
+#include "neverc/Analyze/SemaPluginHooks.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
@@ -179,6 +180,22 @@ ParsedType Sema::getTypeName(const IdentifierInfo &II, SourceLocation NameLoc,
                              Scope *S, bool HasTrailingDot,
                              bool WantNontrivialTypeSourceInfo,
                              IdentifierInfo **CorrectedII) {
+  if (PluginHooks) {
+    QualType Replacement;
+    switch (PluginHooks->analyzeTypeName(*this, NameLoc, II.getName(),
+                                         Replacement)) {
+    case SemaPluginOutcome::NotHandled:
+      break;
+    case SemaPluginOutcome::Handled:
+      if (Replacement.isNull())
+        return nullptr;
+      return buildNamedType(*this, Replacement, NameLoc,
+                            WantNontrivialTypeSourceInfo);
+    case SemaPluginOutcome::Error:
+      return nullptr;
+    }
+  }
+
   LookupResult Result(*this, &II, NameLoc, ResolveOrdinary);
   ResolveName(Result, S);
 

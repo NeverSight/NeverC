@@ -1,6 +1,7 @@
 #include "neverc/Analyze/DeclSpec.h"
 #include "neverc/Analyze/ScopeInfo.h"
 #include "neverc/Analyze/SemaInternal.h"
+#include "neverc/Analyze/SemaPluginHooks.h"
 #include "neverc/Foundation/Core/FileManager.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Scan/IncludeResolver.h"
@@ -512,6 +513,26 @@ NEVERC_HOT bool Sema::LookupQualifiedName(LookupResult &R,
 
 NEVERC_HOT bool Sema::LookupParsedName(LookupResult &R, Scope *S,
                                                  bool AllowBuiltinCreation) {
+  if (PluginHooks) {
+    if (IdentifierInfo *Identifier =
+            R.getLookupName().getAsIdentifierInfo()) {
+      llvm::SmallVector<NamedDecl *, 4> Candidates;
+      switch (PluginHooks->analyzeLookup(
+          *this, R.getNameLoc(), Identifier->getName(), Candidates)) {
+      case SemaPluginOutcome::NotHandled:
+        break;
+      case SemaPluginOutcome::Handled:
+        R.clear();
+        for (NamedDecl *Candidate : Candidates)
+          R.addDecl(Candidate);
+        R.resolveKind();
+        return !R.empty();
+      case SemaPluginOutcome::Error:
+        R.clear();
+        return false;
+      }
+    }
+  }
   return ResolveName(R, S, AllowBuiltinCreation);
 }
 

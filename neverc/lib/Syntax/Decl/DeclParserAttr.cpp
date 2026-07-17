@@ -7,6 +7,7 @@
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Syntax/ParserGuards.h"
+#include "neverc/Syntax/ParserPluginHooks.h"
 #include "neverc/Syntax/SyntaxParser.h"
 #include "neverc/Tree/Core/TreeContext.h"
 #include "neverc/Tree/Decl/PrettyDeclStackTrace.h"
@@ -217,6 +218,17 @@ void Parser::ParseBracketAttributeSpecifierInternal(ParsedAttributes &Attrs,
 }
 
 void Parser::ParseBracketAttributes(ParsedAttributes &Attrs) {
+  if (PluginHooks) {
+    const ParserPluginOutcome Outcome =
+        PluginHooks->parseAttribute(*this, Attrs);
+    if (Outcome == ParserPluginOutcome::Handled)
+      return;
+    if (Outcome == ParserPluginOutcome::Error) {
+      SkipUntil(tok::r_square, StopBeforeMatch);
+      return;
+    }
+  }
+
   SourceLocation StartLoc = Tok.getLocation();
   SourceLocation EndLoc = StartLoc;
   do {

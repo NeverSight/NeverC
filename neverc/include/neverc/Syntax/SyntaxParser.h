@@ -15,12 +15,14 @@ class CorrectionCandidateCallback;
 class DeclGroupRef;
 class DiagnosticBuilder;
 class Parser;
+class ParserPluginHooks;
 class ParsingDeclSpec;
 class ParsingDeclarator;
 class ParsingFieldDeclarator;
 class ColonProtectionRAIIObject;
 
 class Parser {
+  friend class ParserPluginHooks;
   friend class ColonProtectionRAIIObject;
   friend class OffsetOfStateRAIIObject;
   friend class ParenBraceBracketBalancer;
@@ -33,6 +35,7 @@ class Parser {
   unsigned short ParenCount = 0, BracketCount = 0, BraceCount = 0;
 
   Sema &Actions;
+  ParserPluginHooks *PluginHooks;
 
   DiagnosticsEngine &Diags;
 
@@ -110,7 +113,8 @@ class Parser {
   StmtResult finalizeExprStmt(ExprResult E, ParsedStmtContext StmtCtx);
 
 public:
-  Parser(PrepEngine &PP, Sema &Actions);
+  Parser(PrepEngine &PP, Sema &Actions,
+         ParserPluginHooks *PluginHooks = nullptr);
   ~Parser();
 
   const LangOptions &getLangOpts() const { return PP.getLangOpts(); }

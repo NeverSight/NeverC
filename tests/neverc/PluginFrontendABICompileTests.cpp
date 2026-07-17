@@ -15,11 +15,13 @@ TEST(PluginFrontendABITest, PublishesIndependentStableInterfacePrefixes) {
   static_assert(std::is_standard_layout_v<NevercSourceLocationAPI>);
   static_assert(std::is_standard_layout_v<NevercPrepAPI>);
   static_assert(std::is_standard_layout_v<NevercASTAPI>);
+  static_assert(std::is_standard_layout_v<NevercParserAPI>);
   static_assert(std::is_standard_layout_v<NevercSemaAPI>);
   static_assert(offsetof(NevercIOAPI, Header) == 0);
   static_assert(offsetof(NevercSourceLocationAPI, Header) == 0);
   static_assert(offsetof(NevercPrepAPI, Header) == 0);
   static_assert(offsetof(NevercASTAPI, Header) == 0);
+  static_assert(offsetof(NevercParserAPI, Header) == 0);
   static_assert(offsetof(NevercSemaAPI, Header) == 0);
 
   const auto IDs = neverc::test::frontendInterfaceIDs();
@@ -31,7 +33,7 @@ TEST(PluginFrontendABITest, PublishesIndependentStableInterfacePrefixes) {
 }
 
 TEST(PluginFrontendABITest, PublishesFixedFrontendPhasePolicies) {
-  static_assert(NEVERC_BUILTIN_PHASE_COUNT == 17);
+  static_assert(NEVERC_BUILTIN_PHASE_COUNT == 29);
   static_assert(NEVERC_EXTENSION_FAMILY_COUNT == 4);
 
   EXPECT_EQ(NEVERC_PHASE_SOURCE_RESOLVE_INPUT_POLICY,
@@ -52,6 +54,23 @@ TEST(PluginFrontendABITest, PublishesFixedFrontendPhasePolicies) {
             NEVERC_PHASE_PREP_TOKEN_POLICY);
   EXPECT_EQ(NEVERC_PHASE_SYNTAX_PARSE_POLICY, NEVERC_PHASE_PREP_TOKEN_POLICY);
   EXPECT_EQ(NEVERC_PHASE_SEMA_ANALYZE_POLICY, NEVERC_PHASE_PREP_TOKEN_POLICY);
+  constexpr NevercPhasePolicy ParserExtensionPolicy =
+      NEVERC_PHASE_OBSERVABLE | NEVERC_PHASE_INTERCEPTABLE |
+      NEVERC_PHASE_REPLACEABLE;
+  EXPECT_EQ(NEVERC_PHASE_SYNTAX_EXTENSION_DECLARATION_POLICY,
+            ParserExtensionPolicy);
+  EXPECT_EQ(NEVERC_PHASE_SYNTAX_EXTENSION_STATEMENT_POLICY,
+            ParserExtensionPolicy);
+  EXPECT_EQ(NEVERC_PHASE_SYNTAX_EXTENSION_EXPRESSION_POLICY,
+            ParserExtensionPolicy);
+  EXPECT_EQ(NEVERC_PHASE_SYNTAX_EXTENSION_TYPE_NAME_POLICY,
+            ParserExtensionPolicy);
+  EXPECT_EQ(NEVERC_PHASE_SYNTAX_EXTENSION_ATTRIBUTE_POLICY,
+            ParserExtensionPolicy);
+  EXPECT_EQ(NEVERC_PHASE_SYNTAX_EXTENSION_KEYWORD_POLICY,
+            ParserExtensionPolicy);
+  EXPECT_EQ(NEVERC_PHASE_SEMA_EXTENSION_CONVERSION_POLICY,
+            ParserExtensionPolicy);
 
   EXPECT_EQ(NEVERC_PHASE_SOURCE_AFTER_OPEN_KIND, NEVERC_PHASE_KIND_EVENT);
   EXPECT_EQ(NEVERC_PHASE_SOURCE_OPEN_KIND, NEVERC_PHASE_KIND_TRANSITION);

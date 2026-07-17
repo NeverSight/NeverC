@@ -9,6 +9,7 @@
 #include "neverc/Analyze/ScopeInfo.h"
 #include "neverc/Analyze/SemaFixItUtils.h"
 #include "neverc/Analyze/SemaInternal.h"
+#include "neverc/Analyze/SemaPluginHooks.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
@@ -1150,6 +1151,18 @@ NEVERC_HOT ExprResult Sema::OnBinOp(Scope *S, SourceLocation TokLoc,
   BinaryOperatorKind Opc = ConvertTokenKindToBinaryOpcode(Kind);
   assert(LHSExpr && "OnBinOp(): missing left expression");
   assert(RHSExpr && "OnBinOp(): missing right expression");
+  if (SemaPluginHooks *Hooks = getPluginHooks()) {
+    Expr *Replacement = nullptr;
+    switch (Hooks->analyzeBinaryExpression(*this, TokLoc, Kind, LHSExpr,
+                                           RHSExpr, Replacement)) {
+    case SemaPluginOutcome::NotHandled:
+      break;
+    case SemaPluginOutcome::Handled:
+      return Replacement ? ExprResult(Replacement) : ExprError();
+    case SemaPluginOutcome::Error:
+      return ExprError();
+    }
+  }
 
   // Only bitwise, logical-or and shift operators can trigger precedence
   // warnings.  Skip the noinline diagnoseBinOpPrecedence call for the

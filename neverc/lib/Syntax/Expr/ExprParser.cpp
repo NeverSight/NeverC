@@ -1,9 +1,10 @@
 #include "neverc/Analyze/EnterExpressionEvaluationContext.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
-#include "neverc/Foundation/Std/StdModule.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
+#include "neverc/Foundation/Std/StdModule.h"
 #include "neverc/Scan/LiteralParser.h"
 #include "neverc/Syntax/ParserGuards.h"
+#include "neverc/Syntax/ParserPluginHooks.h"
 #include "neverc/Syntax/SyntaxParser.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Compiler.h"
@@ -299,9 +300,42 @@ Parser::ParseCastExpression(CastParseKind ParseKind, bool isAddressOfOperand,
                             bool &NotCastExpr, TypeCastState isTypeCast,
                             bool isVectorLiteral, bool *NotPrimaryExpression) {
   ExprResult Res;
-  tok::TokenKind SavedKind = Tok.getKind();
   NotCastExpr = false;
 
+  if (PluginHooks && ParseKind == AnyCastExpr) {
+    Expr *Extension = nullptr;
+    ParserPluginOutcome Outcome =
+        PluginHooks->parseExpression(*this, Extension);
+    if (Outcome == ParserPluginOutcome::Error) {
+      // Cursor is restored on failure; advance once to avoid retry loops.
+      if (!Tok.is(tok::eof))
+        ConsumeAnyToken();
+      return ExprError();
+    }
+    if (Outcome == ParserPluginOutcome::Handled) {
+      Res = Extension;
+      if (!isPostfixExpressionSuffixStart())
+        return Res;
+      return ParsePostfixExpressionSuffix(Res);
+    }
+
+    if (Tok.is(tok::identifier)) {
+      Outcome = PluginHooks->parseKeyword(*this, Extension);
+      if (Outcome == ParserPluginOutcome::Error) {
+        if (!Tok.is(tok::eof))
+          ConsumeAnyToken();
+        return ExprError();
+      }
+      if (Outcome == ParserPluginOutcome::Handled) {
+        Res = Extension;
+        if (!isPostfixExpressionSuffixStart())
+          return Res;
+        return ParsePostfixExpressionSuffix(Res);
+      }
+    }
+  }
+
+  tok::TokenKind SavedKind = Tok.getKind();
   if (LLVM_LIKELY(SavedKind == tok::numeric_constant)) {
     Res = Actions.OnNumericConstant(Tok);
     ConsumeToken();

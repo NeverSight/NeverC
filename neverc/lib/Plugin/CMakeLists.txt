@@ -131,13 +131,20 @@ set(LLVM_LINK_COMPONENTS Support)
 
 add_neverc_library(nevercPluginFrontend
   Frontend/ASTBridge.cpp
+  Frontend/ASTUnitArtifact.cpp
   Frontend/FrontendPluginInterfaces.cpp
   Frontend/MacroBridge.cpp
+  Frontend/ParserPluginHooks.cpp
   Frontend/PrepBridge.cpp
   Frontend/PrepHookBridge.cpp
   Frontend/PrepPluginHooks.cpp
   Frontend/PluginPrepObserver.cpp
   Frontend/PluginTokenLexer.cpp
+  Frontend/SemaBridge.cpp
+  Frontend/SemaConstEvalBridge.cpp
+  Frontend/SemaLookupBridge.cpp
+  Frontend/SemaPluginHooks.cpp
+  Frontend/SemaTypeBridge.cpp
   Frontend/SourceLocationBridge.cpp
   Frontend/SourcePhases.cpp
   Frontend/TokenBridge.cpp

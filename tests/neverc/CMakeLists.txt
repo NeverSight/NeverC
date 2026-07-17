@@ -15,6 +15,9 @@ set(NEVERC_TEST_SOURCES
   PluginSourcePhaseTests.cpp
   PluginTokenInterceptorTests.cpp
   PluginPrepHookInterceptorTests.cpp
+  PluginParserInterceptorTests.cpp
+  PluginParserProviderTests.cpp
+  PluginSemaInterceptorTests.cpp
   PluginPreprocessorProviderTests.cpp
   PluginVFSIntegrationTests.cpp
   AndroidKernelRuntimeTests.cpp
@@ -315,6 +318,53 @@ target_compile_features(
 )
 set_target_properties(
   neverc-test-plugin-prep-hooks PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-parser-interceptor MODULE
+  Inputs/Plugin/ParserInterceptorPlugin.c
+)
+target_include_directories(neverc-test-plugin-parser-interceptor PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-parser-interceptor PRIVATE c_std_11
+)
+set_target_properties(
+  neverc-test-plugin-parser-interceptor PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-sema-interceptor MODULE
+  Inputs/Plugin/SemaInterceptorPlugin.c
+)
+target_include_directories(neverc-test-plugin-sema-interceptor PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-sema-interceptor PRIVATE c_std_11
+)
+set_target_properties(
+  neverc-test-plugin-sema-interceptor PROPERTIES PREFIX ""
+)
+function(add_neverc_parser_provider_fixture target)
+  add_library(${target} MODULE
+    Inputs/Plugin/ParserProviderPlugin.c
+  )
+  target_include_directories(${target} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  )
+  target_compile_features(${target} PRIVATE c_std_11)
+  set_target_properties(${target} PROPERTIES PREFIX "")
+endfunction()
+add_neverc_parser_provider_fixture(neverc-test-plugin-parser-provider)
+add_neverc_parser_provider_fixture(neverc-test-plugin-parser-phase-interceptor)
+target_compile_definitions(
+  neverc-test-plugin-parser-phase-interceptor PRIVATE
+  NEVERC_TEST_PARSER_PHASE_INTERCEPTOR=1
+)
+add_neverc_parser_provider_fixture(
+  neverc-test-plugin-parser-provider-missing-root
+)
+target_compile_definitions(
+  neverc-test-plugin-parser-provider-missing-root PRIVATE
+  NEVERC_TEST_PARSER_PROVIDER_MISSING_ROOT=1
 )
 function(add_neverc_prep_provider_fixture target)
   add_library(${target} MODULE
@@ -738,6 +788,7 @@ add_executable(neverc-plugin-frontend-tests
   PluginMacroTests.cpp
   PluginPrepObserverTests.cpp
   PluginPrepSchemaTests.cpp
+  PluginSemaAPITests.cpp
   PluginSourceTests.cpp
   PluginTokenInterceptorUnitTests.cpp
   PluginTokenTests.cpp
@@ -904,6 +955,11 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_TEST_SOURCE_PHASE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-source-phase>"
   NEVERC_TEST_TOKEN_REWRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-token-rewrite>"
   NEVERC_TEST_PREP_HOOK_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-hooks>"
+  NEVERC_TEST_PARSER_INTERCEPTOR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parser-interceptor>"
+  NEVERC_TEST_SEMA_INTERCEPTOR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-sema-interceptor>"
+  NEVERC_TEST_PARSER_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parser-provider>"
+  NEVERC_TEST_PARSER_PROVIDER_MISSING_ROOT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parser-provider-missing-root>"
+  NEVERC_TEST_PARSER_PHASE_INTERCEPTOR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parser-phase-interceptor>"
   NEVERC_TEST_PREP_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-provider>"
   NEVERC_TEST_PREP_PROVIDER_MISSING_EOF_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-provider-missing-eof>"
   NEVERC_TEST_PREP_PROVIDER_UNMAPPED_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-provider-unmapped>"
@@ -947,6 +1003,11 @@ add_dependencies(neverc-tests
   neverc-test-plugin-source-phase
   neverc-test-plugin-token-rewrite
   neverc-test-plugin-prep-hooks
+  neverc-test-plugin-parser-interceptor
+  neverc-test-plugin-sema-interceptor
+  neverc-test-plugin-parser-provider
+  neverc-test-plugin-parser-provider-missing-root
+  neverc-test-plugin-parser-phase-interceptor
   neverc-test-plugin-prep-provider
   neverc-test-plugin-prep-provider-missing-eof
   neverc-test-plugin-prep-provider-unmapped

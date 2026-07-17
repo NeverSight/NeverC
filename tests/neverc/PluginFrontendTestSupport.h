@@ -24,7 +24,7 @@ class PluginTaskContext;
 
 namespace test {
 
-std::array<NevercInterfaceID, 5> frontendInterfaceIDs();
+std::array<NevercInterfaceID, 6> frontendInterfaceIDs();
 
 class PluginPrepTest : public testing::Test {
 protected:
