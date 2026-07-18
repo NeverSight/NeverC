@@ -139,12 +139,15 @@ add_neverc_library(nevercPluginFrontend
   Frontend/PrepHookBridge.cpp
   Frontend/PrepPluginHooks.cpp
   Frontend/PluginPrepObserver.cpp
+  Frontend/PluginTreeConsumer.cpp
   Frontend/PluginTokenLexer.cpp
   Frontend/SemaBridge.cpp
   Frontend/SemaConstEvalBridge.cpp
   Frontend/SemaLookupBridge.cpp
   Frontend/SemaPluginHooks.cpp
+  Frontend/SemaProvider.cpp
   Frontend/SemaTypeBridge.cpp
+  Frontend/SemanticUnitArtifact.cpp
   Frontend/SourceLocationBridge.cpp
   Frontend/SourcePhases.cpp
   Frontend/TokenBridge.cpp

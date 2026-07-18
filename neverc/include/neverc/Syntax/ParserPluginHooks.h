@@ -33,6 +33,7 @@ public:
   virtual ParserPluginOutcome parseAttribute(Parser &Parser,
                                              ParsedAttributes &Result) = 0;
   virtual ParserPluginOutcome parseKeyword(Parser &Parser, Expr *&Result) = 0;
+  virtual bool isCancelled() const { return false; }
 
 protected:
   struct CursorState {

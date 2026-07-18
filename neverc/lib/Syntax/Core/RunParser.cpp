@@ -3,6 +3,7 @@
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Core/TokenKinds.h"
 #include "neverc/Scan/PrepEngine.h"
+#include "neverc/Syntax/ParserPluginHooks.h"
 #include "neverc/Syntax/SyntaxParser.h"
 #include "neverc/Tree/Core/TreeConsumer.h"
 #include "neverc/Tree/Core/TreeContext.h"
@@ -102,17 +103,28 @@ void neverc::RunParser(Sema &S, ParserPluginHooks *PluginHooks,
   bool HaveLexer = InputAlreadyInitialized || PP.getCurrentLexer();
 
   if (HaveLexer) {
+    auto IsCancelled = [&] {
+      return PluginHooks && PluginHooks->isCancelled();
+    };
+    if (IsCancelled())
+      return;
     llvm::TimeTraceScope TimeScope("Frontend");
     P.Initialize();
     Parser::DeclGroupPtrTy ADecl;
     EnterExpressionEvaluationContext PotentiallyEvaluated(
         S, Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
 
-    for (bool AtEOF = P.ParseFirstTopLevelDecl(ADecl); !AtEOF;
-         AtEOF = P.ParseTopLevelDecl(ADecl)) {
+    for (bool AtEOF = P.ParseFirstTopLevelDecl(ADecl); !AtEOF;) {
+      if (IsCancelled())
+        return;
       if (ADecl && !Consumer->ProcessTopLevelDecl(ADecl.get()))
         return;
+      if (IsCancelled())
+        return;
+      AtEOF = P.ParseTopLevelDecl(ADecl);
     }
+    if (IsCancelled())
+      return;
   }
 
   for (Decl *D : S.WeakTopLevelDecls())

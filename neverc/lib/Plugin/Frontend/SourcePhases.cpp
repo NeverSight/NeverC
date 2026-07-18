@@ -1,7 +1,10 @@
 #include "ASTUnitArtifact.h"
 #include "FrontendPluginInterfaces.h"
+#include "PluginTreeConsumer.h"
 #include "PluginTokenLexer.h"
 #include "PrepBridgeInternal.h"
+#include "SemaProvider.h"
+#include "SemanticUnitArtifact.h"
 #include "TokenStream.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
@@ -233,6 +236,7 @@ struct PluginSourcePhaseRuntime::Impl {
   std::unique_ptr<PluginPrepBridge> PrepBridge;
   std::unique_ptr<PluginASTBridge> ASTBridge;
   std::unique_ptr<PluginSemaBridge> SemaBridge;
+  std::unique_ptr<PluginSemaProviderRuntime> SemaProvider;
   std::unique_ptr<SemaPluginHooks> SemaHooks;
   std::unique_ptr<PrepPluginHooks> PrepHooks;
   std::unique_ptr<ParserPluginHooks> ParserHooks;
@@ -244,6 +248,7 @@ struct PluginSourcePhaseRuntime::Impl {
   std::unique_ptr<PluginArtifactSlot> SourceUnit;
   std::unique_ptr<PluginArtifactSlot> TokenStream;
   std::unique_ptr<PluginArtifactSlot> ASTUnit;
+  std::unique_ptr<PluginArtifactSlot> SemanticUnit;
   Sema *AttachedSema = nullptr;
   Sema *ActiveSema = nullptr;
   bool ActivePrintStats = false;
@@ -279,6 +284,8 @@ struct PluginSourcePhaseRuntime::Impl {
                                NevercPhaseResult *Result);
   NevercStatus parserBuiltin(const NevercPhaseFrame *Frame,
                              NevercPhaseResult *Result);
+  NevercStatus semaBuiltin(const NevercPhaseFrame *Frame,
+                           NevercPhaseResult *Result);
   Error installAndVerify(SourceUnitArtifact &Unit);
   Error recordAndVerifyDependency(const SourceUnitArtifact &Unit);
 };
@@ -847,6 +854,13 @@ NevercStatus PluginSourcePhaseRuntime::Impl::parserBuiltin(
   return neverc_status_ok();
 }
 
+NevercStatus PluginSourcePhaseRuntime::Impl::semaBuiltin(
+    const NevercPhaseFrame *Frame, NevercPhaseResult *Result) {
+  if (!SemaProvider)
+    return sourceStatus(NEVERC_STATUS_INVALID_STATE);
+  return SemaProvider->builtinProvider(Frame, Result);
+}
+
 Error PluginSourcePhaseRuntime::Impl::recordAndVerifyDependency(
     const SourceUnitArtifact &Unit) {
   auto Query = Task.processServices().interfaces().query(
@@ -928,6 +942,10 @@ PluginSourcePhaseRuntime::PluginSourcePhaseRuntime(
     : State(std::move(StateValue)) {}
 
 PluginSourcePhaseRuntime::~PluginSourcePhaseRuntime() {
+  if (State && State->SemaBridge)
+    State->SemaBridge->setPhaseAPI(nullptr);
+  if (State && State->SemaProvider)
+    State->SemaProvider->detach();
   if (State && State->AttachedSema &&
       State->AttachedSema->getPluginHooks() == State->SemaHooks.get())
     State->AttachedSema->setPluginHooks(nullptr);
@@ -997,11 +1015,15 @@ PluginSourcePhaseRuntime::create(PluginTaskContext &Task,
     return std::move(E);
   if (Error E = registerASTUnitArtifactType(State->Artifacts))
     return std::move(E);
+  if (Error E = registerSemanticUnitArtifactType(State->Artifacts))
+    return std::move(E);
   if (Error E = State->Artifacts.freeze())
     return std::move(E);
 
   State->Executor =
       std::make_unique<PluginPhaseExecutor>(State->Graph, State->Artifacts);
+  State->SemaProvider = std::make_unique<PluginSemaProviderRuntime>(
+      Task, State->Artifacts, *State->Executor);
   if (Error E = State->Executor->importSessionRegistrations(Task.session()))
     return std::move(E);
   Impl *Raw = State.get();
@@ -1042,6 +1064,12 @@ PluginSourcePhaseRuntime::create(PluginTaskContext &Task,
           syntaxParsePhaseID(),
           [Raw](const NevercPhaseFrame *Frame, NevercPhaseResult *Result) {
             return Raw->parserBuiltin(Frame, Result);
+          }))
+    return std::move(E);
+  if (Error E = State->Executor->setBuiltinProvider(
+          semaAnalyzePhaseID(),
+          [Raw](const NevercPhaseFrame *Frame, NevercPhaseResult *Result) {
+            return Raw->semaBuiltin(Frame, Result);
           }))
     return std::move(E);
   if (Error E = registerParserBuiltinProviders(Task, *State->Executor))
@@ -1208,19 +1236,16 @@ Error PluginSourcePhaseRuntime::attachTreeContext(TreeContext &Context) {
   if (Error E = Bridge->attachProcessInterface())
     return E;
   State->ASTBridge = std::move(Bridge);
-  if (State->Executor->hasBindings(syntaxParsePhaseID()) ||
-      hasParserExtensionBindings(*State->Executor)) {
-    if (!State->PrepBridge)
-      return createStringError(
-          inconvertibleErrorCode(),
-          "preprocessor bridge is unavailable for parser extensions");
-    auto Hooks = createParserPluginHooks(State->Task, State->Artifacts,
-                                         *State->Executor, *State->PrepBridge,
-                                         *State->ASTBridge, *State->Locations);
-    if (!Hooks)
-      return Hooks.takeError();
-    State->ParserHooks = std::move(*Hooks);
-  }
+  if (!State->PrepBridge)
+    return createStringError(
+        inconvertibleErrorCode(),
+        "preprocessor bridge is unavailable for parser execution");
+  auto Hooks = createParserPluginHooks(State->Task, State->Artifacts,
+                                       *State->Executor, *State->PrepBridge,
+                                       *State->ASTBridge, *State->Locations);
+  if (!Hooks)
+    return Hooks.takeError();
+  State->ParserHooks = std::move(*Hooks);
   return Error::success();
 }
 
@@ -1233,6 +1258,10 @@ Error PluginSourcePhaseRuntime::attachSema(Sema &SemanticAnalyzer) {
   if (State->AttachedSema &&
       State->AttachedSema->getPluginHooks() == State->SemaHooks.get())
     State->AttachedSema->setPluginHooks(nullptr);
+  if (State->SemaBridge)
+    State->SemaBridge->setPhaseAPI(nullptr);
+  if (State->SemaProvider)
+    State->SemaProvider->detach();
   State->SemaHooks.reset();
   State->SemaBridge.reset();
   State->AttachedSema = nullptr;
@@ -1240,6 +1269,9 @@ Error PluginSourcePhaseRuntime::attachSema(Sema &SemanticAnalyzer) {
       State->Task, SemanticAnalyzer, *State->ASTBridge, *State->Locations);
   if (Error E = Bridge->attachProcessInterface())
     return E;
+  if (!State->SemaProvider)
+    return createStringError(inconvertibleErrorCode(),
+                             "Sema provider runtime is unavailable");
   std::unique_ptr<SemaPluginHooks> Hooks;
   if (hasSemaExtensionBindings(*State->Executor)) {
     auto Created = createSemaPluginHooks(
@@ -1250,6 +1282,8 @@ Error PluginSourcePhaseRuntime::attachSema(Sema &SemanticAnalyzer) {
     Hooks = std::move(*Created);
     SemanticAnalyzer.setPluginHooks(Hooks.get());
   }
+  State->SemaProvider->attach(SemanticAnalyzer, *State->ASTBridge);
+  Bridge->setPhaseAPI(State->SemaProvider.get());
   State->AttachedSema = &SemanticAnalyzer;
   State->SemaBridge = std::move(Bridge);
   State->SemaHooks = std::move(Hooks);
@@ -1351,23 +1385,75 @@ Error PluginSourcePhaseRuntime::runParserPhase(Sema &SemanticAnalyzer,
     return createStringError(inconvertibleErrorCode(),
                              "parser AST unit belongs to another tree context");
 
+  auto ASTView = State->Executor->createArtifactView(
+      State->Task, astUnitArtifactID(), Published.Payload,
+      Published.Generation);
+  if (!ASTView)
+    return ASTView.takeError();
+  auto ReleaseAST = make_scope_exit([&] {
+    (void)State->Task.handles().release(*ASTView, PluginArtifactHandleKind);
+  });
+  auto SemanticUnit = std::make_unique<PluginArtifactSlot>(
+      State->Artifacts.find(semanticUnitArtifactID()));
+  if (!State->SemaProvider)
+    return createStringError(inconvertibleErrorCode(),
+                             "Sema provider runtime is unavailable");
+  State->SemaProvider->clearFailureMessage();
+  if (Error E = State->Executor->execute(
+          State->Task.session(), State->Task, semaAnalyzePhaseID(), Route,
+          *ASTView, *SemanticUnit)) {
+    if (!State->SemaProvider->failureMessage().empty())
+      return joinErrors(
+          std::move(E),
+          createStringError(inconvertibleErrorCode(),
+                            State->SemaProvider->failureMessage()));
+    return E;
+  }
+  PluginArtifactSlot::Snapshot Semantic = SemanticUnit->snapshot();
+  if (!Semantic.Payload)
+    return createStringError(inconvertibleErrorCode(),
+                             "Sema phase published no semantic unit");
+  const auto &Analyzed =
+      *static_cast<const SemanticUnitArtifact *>(Semantic.Payload);
+  if (Analyzed.Context != AST.Context ||
+      Analyzed.TranslationUnit != AST.TranslationUnit)
+    return createStringError(
+        inconvertibleErrorCode(),
+        "semantic unit belongs to another parser AST unit");
+  if (!samePluginInterfaceID(Analyzed.Product, standardSemanticProductID()))
+    return createStringError(
+        inconvertibleErrorCode(),
+        "semantic product has no matching downstream IR provider");
+  if (Analyzed.DiagnosticState != NEVERC_SEMANTIC_DIAGNOSTICS_CLEAN)
+    return createStringError(inconvertibleErrorCode(),
+                             "semantic unit contains compilation errors");
+
   if (!AST.ConsumerNotified) {
     TreeConsumer &Consumer = SemanticAnalyzer.getTreeConsumer();
     for (Decl *Declaration : AST.TranslationUnit->decls())
       if (!Consumer.ProcessTopLevelDecl(DeclGroupRef(Declaration))) {
         AST.ConsumerNotified = true;
         State->ASTUnit = std::move(Unit);
+        State->SemanticUnit = std::move(SemanticUnit);
         return Error::success();
       }
     Consumer.ProcessTranslationUnit(*AST.Context);
     AST.ConsumerNotified = true;
   }
   State->ASTUnit = std::move(Unit);
+  State->SemanticUnit = std::move(SemanticUnit);
   return Error::success();
 }
 
 ParserPluginHooks *PluginSourcePhaseRuntime::parserPluginHooks() const {
   return State ? State->ParserHooks.get() : nullptr;
+}
+
+std::unique_ptr<TreeConsumer>
+PluginSourcePhaseRuntime::createTreeConsumer() {
+  if (!State || !State->ASTBridge)
+    return nullptr;
+  return std::make_unique<PluginTreeConsumer>(*State->ASTBridge);
 }
 
 Error registerPluginFrontendInterface(PluginProcessServices &Services) {

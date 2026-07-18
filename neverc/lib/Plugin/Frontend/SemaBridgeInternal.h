@@ -79,6 +79,7 @@ struct PluginSemaBridge::Impl {
   PluginASTBridge &AST;
   FrontendPluginBridge &Locations;
   PluginSemaExtensionAPI *Extensions = nullptr;
+  PluginSemaPhaseAPI *Phases = nullptr;
   NevercSemaAPI API{};
   llvm::DenseMap<const DeclContext *, NevercSemaScopeHandle> ScopeHandles;
   bool MutationLeaseActive = false;
@@ -258,6 +259,16 @@ struct PluginSemaBridge::Impl {
       const NevercPhaseContinuation *Continuation,
       const NevercSemaConversionExtensionOutput *Descriptor,
       NevercArtifactHandle *OutOutput);
+  static NevercStatus NEVERC_CALL getAnalyzePhaseInput(
+      void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercSemaPhaseInput *OutInput);
+  static NevercStatus NEVERC_CALL createSemanticUnit(
+      void *Context, const NevercPhaseFrame *Frame,
+      const NevercSemanticUnitDescriptor *Descriptor,
+      NevercArtifactHandle *OutOutput);
+  static NevercStatus NEVERC_CALL getSemanticUnitInfo(
+      void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Unit,
+      NevercSemanticUnitInfo *OutInfo);
 };
 
 } // namespace neverc::plugin

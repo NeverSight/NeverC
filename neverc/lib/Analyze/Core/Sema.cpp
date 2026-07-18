@@ -278,8 +278,11 @@ void Sema::addImplicitTypedef(llvm::StringRef Name, QualType T) {
 }
 
 void Sema::Initialize() {
-  if (SemaConsumer *SC = dyn_cast<SemaConsumer>(&Consumer))
-    SC->InitializeSema(*this);
+  if (!SemaConsumerInitialized)
+    if (SemaConsumer *SC = dyn_cast<SemaConsumer>(&Consumer)) {
+      SemaConsumerInitialized = true;
+      SC->InitializeSema(*this);
+    }
 
   VAListTagName = PP.getIdentifierInfo("__va_list_tag");
 
@@ -328,13 +331,19 @@ Sema::~Sema() {
   for (sema::FunctionScopeInfo *FSI : FunctionScopes)
     delete FSI;
 
-  // Tell the SemaConsumer to forget about us; we're going out of scope.
-  if (SemaConsumer *SC = dyn_cast<SemaConsumer>(&Consumer))
-    SC->ForgetSema();
+  ForgetSemaConsumer();
 
   // Detach from the PP callback handler which outlives Sema since it's owned
   // by the preprocessor.
   SemaObserverHandler->reset();
+}
+
+void Sema::ForgetSemaConsumer() {
+  if (!SemaConsumerInitialized)
+    return;
+  SemaConsumerInitialized = false;
+  if (SemaConsumer *SC = dyn_cast<SemaConsumer>(&Consumer))
+    SC->ForgetSema();
 }
 
 void Sema::warnStackExhausted(SourceLocation Loc) {

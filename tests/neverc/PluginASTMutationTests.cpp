@@ -11,6 +11,7 @@
 #include "neverc/Scan/PrepEngine.h"
 #include "neverc/Syntax/RunParser.h"
 #include "neverc/Tree/Core/TreeConsumer.h"
+#include "neverc/Tree/Core/TreeMutationListener.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
@@ -30,6 +31,23 @@ using namespace neverc::plugin;
 std::string takeErrorMessage(Error ErrorValue) {
   return toString(std::move(ErrorValue)).str().str();
 }
+
+class RecordingMutationListener final : public TreeMutationListener {
+public:
+  void ReplacedDeclarationInitializer(const VarDecl *Declaration,
+                                      const Expr *Previous,
+                                      const Expr *Replacement) override {
+    ++ReplacementCount;
+    LastDeclaration = Declaration;
+    LastPrevious = Previous;
+    LastReplacement = Replacement;
+  }
+
+  unsigned ReplacementCount = 0;
+  const VarDecl *LastDeclaration = nullptr;
+  const Expr *LastPrevious = nullptr;
+  const Expr *LastReplacement = nullptr;
+};
 
 class PluginASTMutationTest : public testing::Test {
 protected:
@@ -116,6 +134,7 @@ int value(void) { return global; }
 
   PluginTaskContext &task() { return *Task; }
   const NevercASTAPI &api() const { return *API; }
+  TreeContext &context() { return Compiler->getTreeContext(); }
 
   NevercDeclHandle findGlobal() {
     NevercDeclHandle Root{};
@@ -461,6 +480,8 @@ TEST_F(PluginASTMutationTest, BuildsBinaryExpressionFromSchemaChildSlots) {
 }
 
 TEST_F(PluginASTMutationTest, CommitsVariableInitializerReplacementAtomically) {
+  RecordingMutationListener Listener;
+  context().setTreeMutationListener(&Listener);
   const NevercDeclHandle Global = findGlobal();
   const NevercExprHandle Replacement = buildIntegerForGlobal(42);
   ASSERT_FALSE(neverc_handle_is_null(Global));
@@ -511,12 +532,17 @@ TEST_F(PluginASTMutationTest, CommitsVariableInitializerReplacementAtomically) {
                 .Code,
             NEVERC_STATUS_OK);
   EXPECT_EQ(Word, 42U);
+  EXPECT_EQ(Listener.ReplacementCount, 1U);
+  EXPECT_NE(Listener.LastDeclaration, nullptr);
+  EXPECT_NE(Listener.LastPrevious, nullptr);
+  EXPECT_NE(Listener.LastReplacement, nullptr);
   EXPECT_EQ(
       api().CommitASTMutation(api().Context, task().handle(), Mutation).Code,
       NEVERC_STATUS_INVALID_STATE);
   EXPECT_EQ(
       api().DestroyASTMutation(api().Context, task().handle(), Mutation).Code,
       NEVERC_STATUS_OK);
+  context().setTreeMutationListener(nullptr);
 }
 
 } // namespace

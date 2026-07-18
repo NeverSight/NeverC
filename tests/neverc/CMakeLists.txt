@@ -18,6 +18,8 @@ set(NEVERC_TEST_SOURCES
   PluginParserInterceptorTests.cpp
   PluginParserProviderTests.cpp
   PluginSemaInterceptorTests.cpp
+  PluginSemaProviderTests.cpp
+  PluginFrontendLifecycleTests.cpp
   PluginPreprocessorProviderTests.cpp
   PluginVFSIntegrationTests.cpp
   AndroidKernelRuntimeTests.cpp
@@ -354,6 +356,11 @@ function(add_neverc_parser_provider_fixture target)
   set_target_properties(${target} PROPERTIES PREFIX "")
 endfunction()
 add_neverc_parser_provider_fixture(neverc-test-plugin-parser-provider)
+add_neverc_parser_provider_fixture(neverc-test-plugin-parser-provider-binary)
+target_compile_definitions(
+  neverc-test-plugin-parser-provider-binary PRIVATE
+  NEVERC_TEST_PARSER_PROVIDER_BINARY_REPLAY=1
+)
 add_neverc_parser_provider_fixture(neverc-test-plugin-parser-phase-interceptor)
 target_compile_definitions(
   neverc-test-plugin-parser-phase-interceptor PRIVATE
@@ -365,6 +372,32 @@ add_neverc_parser_provider_fixture(
 target_compile_definitions(
   neverc-test-plugin-parser-provider-missing-root PRIVATE
   NEVERC_TEST_PARSER_PROVIDER_MISSING_ROOT=1
+)
+function(add_neverc_sema_provider_fixture target)
+  add_library(${target} MODULE
+    Inputs/Plugin/SemaProviderPlugin.c
+  )
+  target_include_directories(${target} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  )
+  target_compile_features(${target} PRIVATE c_std_11)
+  set_target_properties(${target} PROPERTIES PREFIX "")
+endfunction()
+add_neverc_sema_provider_fixture(neverc-test-plugin-sema-provider)
+add_neverc_sema_provider_fixture(neverc-test-plugin-sema-provider-custom)
+target_compile_definitions(
+  neverc-test-plugin-sema-provider-custom PRIVATE
+  NEVERC_TEST_SEMA_PROVIDER_CUSTOM_PRODUCT=1
+)
+add_library(neverc-test-plugin-frontend-lifecycle MODULE
+  Inputs/Plugin/FrontendLifecyclePlugin.c
+)
+target_include_directories(neverc-test-plugin-frontend-lifecycle PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-frontend-lifecycle PRIVATE c_std_11)
+set_target_properties(
+  neverc-test-plugin-frontend-lifecycle PROPERTIES PREFIX ""
 )
 function(add_neverc_prep_provider_fixture target)
   add_library(${target} MODULE
@@ -805,6 +838,11 @@ target_include_directories(neverc-plugin-frontend-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
 target_compile_features(neverc-plugin-frontend-tests PRIVATE cxx_std_17)
+if(LLVM_ENABLE_RTTI)
+  target_compile_options(neverc-plugin-frontend-tests PRIVATE -frtti)
+else()
+  target_compile_options(neverc-plugin-frontend-tests PRIVATE -fno-rtti)
+endif()
 target_compile_definitions(neverc-plugin-frontend-tests PRIVATE
   NEVERC_TEST_MINIMAL_PLUGIN="$<TARGET_FILE:neverc-test-plugin-minimal>"
 )
@@ -958,8 +996,12 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_TEST_PARSER_INTERCEPTOR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parser-interceptor>"
   NEVERC_TEST_SEMA_INTERCEPTOR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-sema-interceptor>"
   NEVERC_TEST_PARSER_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parser-provider>"
+  NEVERC_TEST_PARSER_PROVIDER_BINARY_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parser-provider-binary>"
   NEVERC_TEST_PARSER_PROVIDER_MISSING_ROOT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parser-provider-missing-root>"
   NEVERC_TEST_PARSER_PHASE_INTERCEPTOR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parser-phase-interceptor>"
+  NEVERC_TEST_SEMA_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-sema-provider>"
+  NEVERC_TEST_SEMA_PROVIDER_CUSTOM_PLUGIN="$<TARGET_FILE:neverc-test-plugin-sema-provider-custom>"
+  NEVERC_TEST_FRONTEND_LIFECYCLE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-frontend-lifecycle>"
   NEVERC_TEST_PREP_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-provider>"
   NEVERC_TEST_PREP_PROVIDER_MISSING_EOF_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-provider-missing-eof>"
   NEVERC_TEST_PREP_PROVIDER_UNMAPPED_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-provider-unmapped>"
@@ -1006,8 +1048,12 @@ add_dependencies(neverc-tests
   neverc-test-plugin-parser-interceptor
   neverc-test-plugin-sema-interceptor
   neverc-test-plugin-parser-provider
+  neverc-test-plugin-parser-provider-binary
   neverc-test-plugin-parser-provider-missing-root
   neverc-test-plugin-parser-phase-interceptor
+  neverc-test-plugin-sema-provider
+  neverc-test-plugin-sema-provider-custom
+  neverc-test-plugin-frontend-lifecycle
   neverc-test-plugin-prep-provider
   neverc-test-plugin-prep-provider-missing-eof
   neverc-test-plugin-prep-provider-unmapped

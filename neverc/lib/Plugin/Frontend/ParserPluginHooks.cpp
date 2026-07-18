@@ -475,6 +475,10 @@ public:
 
   const NevercParserAPI &parserAPI() const override { return API; }
 
+  bool isCancelled() const override {
+    return Task.checkCancelled().Code != NEVERC_STATUS_OK;
+  }
+
   ParserPluginOutcome parseDeclaration(Parser &P, Decl *&Result) override {
     const void *Native = nullptr;
     ParserPluginOutcome Outcome =

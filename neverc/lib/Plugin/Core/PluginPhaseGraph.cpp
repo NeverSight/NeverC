@@ -253,6 +253,7 @@ Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinSourceGraph() {
       NEVERC_FOR_EACH_BUILTIN_SOURCE_PHASE(NEVERC_BUILD_BUILTIN_PHASE)
           NEVERC_FOR_EACH_BUILTIN_PREP_PHASE(NEVERC_BUILD_BUILTIN_PHASE)
               NEVERC_BUILD_BUILTIN_PHASE(SYNTAX_PARSE)
+                  NEVERC_BUILD_BUILTIN_PHASE(SEMA_ANALYZE)
                   NEVERC_BUILD_BUILTIN_PHASE(SYNTAX_EXTENSION_DECLARATION)
                   NEVERC_BUILD_BUILTIN_PHASE(SYNTAX_EXTENSION_STATEMENT)
                       NEVERC_BUILD_BUILTIN_PHASE(SYNTAX_EXTENSION_EXPRESSION)
@@ -280,6 +281,11 @@ Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinSourceGraph() {
   for (size_t I = 1; I != NEVERC_BUILTIN_SOURCE_PHASE_COUNT; ++I)
     if (Error E = Graph.addEdge(Builtins[I - 1].ID, Builtins[I].ID, true))
       return std::move(E);
+  if (Error E = Graph.addEdge(
+          {NEVERC_PHASE_SYNTAX_PARSE_HIGH, NEVERC_PHASE_SYNTAX_PARSE_LOW},
+          {NEVERC_PHASE_SEMA_ANALYZE_HIGH, NEVERC_PHASE_SEMA_ANALYZE_LOW},
+          true))
+    return std::move(E);
   if (Error E = Graph.finalize())
     return std::move(E);
   return Graph;

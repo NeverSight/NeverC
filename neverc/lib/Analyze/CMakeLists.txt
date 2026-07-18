@@ -8,6 +8,7 @@ set(LLVM_LINK_COMPONENTS
 add_neverc_library(nevercAnalyze
   Core/Sema.cpp
   Core/SemaC.cpp
+  Core/SemaReplay.cpp
   Core/Scope.cpp
   Core/ScopeInfo.cpp
   Core/SemaLookup.cpp

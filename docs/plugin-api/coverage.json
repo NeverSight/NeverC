@@ -175,8 +175,504 @@
         "kind": "verifier",
         "id": "neverc.driver.verify_job_result",
         "positive_test": "PluginSDKExampleTest.DriverTraceUsesOptionStateObserverAndSingleNextInterceptor",
-        "negative_test": "PluginJobExecutionTest.RejectsSuccessfulReplacementForOutputProducingJob"
+        "negative_test": "PluginJobExecutionTest.ReplacementCannotClaimAStalePreexistingOutputWithoutSeal"
+      }
+    },
+    {
+      "phase": "neverc.source.resolve_input",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000001001"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000001001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSourcePhaseTest.ReplacementPublishesVerifiedMemorySourceAndAfterOpenEvent"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginSourcePhaseTest.ReplacementPublishesVerifiedMemorySourceAndAfterOpenEvent",
+      "default_executor_test": "PluginSourcePhaseTest.ReplacementPublishesVerifiedMemorySourceAndAfterOpenEvent",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.source.verify_input_request",
+        "positive_test": "PluginSourcePhaseTest.ReplacementPublishesVerifiedMemorySourceAndAfterOpenEvent",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.source.open",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000001001"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000001002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSourcePhaseTest.ReplacementPublishesVerifiedMemorySourceAndAfterOpenEvent"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginFrontendLifecycleTest.EmitsStableTreeAndSemaLifecycleForAValidTranslationUnit",
+      "default_executor_test": "PluginFrontendLifecycleTest.EmitsStableTreeAndSemaLifecycleForAValidTranslationUnit",
+      "replacement_test": "PluginSourcePhaseTest.ReplacementPublishesVerifiedMemorySourceAndAfterOpenEvent",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.source.verify_unit",
+        "positive_test": "PluginSourcePhaseTest.ReplacementPublishesVerifiedMemorySourceAndAfterOpenEvent",
+        "negative_test": "PluginSourceTest.RejectsCrossFileSourceTextRanges"
+      }
+    },
+    {
+      "phase": "neverc.source.after_open",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000001002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000001002"],
+      "policies": ["OBSERVABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSourcePhaseTest.ReplacementPublishesVerifiedMemorySourceAndAfterOpenEvent"
+      },
+      "provider_available": false,
+      "default_executor_test": "PluginSourcePhaseTest.ReplacementPublishesVerifiedMemorySourceAndAfterOpenEvent",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.source.verify_after_open_event",
+        "positive_test": "PluginSourcePhaseTest.ReplacementPublishesVerifiedMemorySourceAndAfterOpenEvent",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.prep.token",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000002001"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000002001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginTokenInterceptorTest.ReplacesDeletesAndExpandsFinalPreprocessorTokens"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginTokenInterceptorTest.ReplacesDeletesAndExpandsFinalPreprocessorTokens",
+      "default_executor_test": "PluginTokenInterceptorTest.ReplacesDeletesAndExpandsFinalPreprocessorTokens",
+      "replacement_test": "PluginTokenInterceptorTest.ReplacesDeletesAndExpandsFinalPreprocessorTokens",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.prep.verify_token_sequence",
+        "positive_test": "PluginTokenInterceptorTest.ReplacesDeletesAndExpandsFinalPreprocessorTokens",
+        "negative_test": "PluginTokenInterceptorTest.EnforcesExpansionBudget"
+      }
+    },
+    {
+      "phase": "neverc.prep.build_token_stream",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000001002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000002002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginPreprocessorProviderTest.ProviderReplacesInvalidSourceWithVerifiedTokenStream"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginPhaseExecutionTest.RunsObserversInterceptorsProviderAndAtomicPublishInOrder",
+      "default_executor_test": "PluginTokenInterceptorTest.ReplacesDeletesAndExpandsFinalPreprocessorTokens",
+      "replacement_test": "PluginPreprocessorProviderTest.ProviderReplacesInvalidSourceWithVerifiedTokenStream",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.prep.verify_token_stream",
+        "positive_test": "PluginPreprocessorProviderTest.ProviderReplacesInvalidSourceWithVerifiedTokenStream",
+        "negative_test": "PluginPreprocessorProviderTest.ProviderOutputWithoutEOFIsRejected"
+      }
+    },
+    {
+      "phase": "neverc.syntax.parse",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000002002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000003001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginParserProviderTest.InterceptorInspectsTokensAndForwardsToBuiltinParser"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginParserProviderTest.InterceptorInspectsTokensAndForwardsToBuiltinParser",
+      "default_executor_test": "PluginParserProviderTest.InterceptorInspectsTokensAndForwardsToBuiltinParser",
+      "replacement_test": "PluginParserProviderTest.ReplacesBuiltinParserAndPublishesASTUnit",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.syntax.verify_ast_unit",
+        "positive_test": "PluginParserProviderTest.ReplaysPluginASTAndPublishesItToDownstreamIRGeneration",
+        "negative_test": "PluginParserProviderTest.RejectsASTUnitWithoutTranslationUnitRoot"
+      }
+    },
+    {
+      "phase": "neverc.sema.analyze",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000003001"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000004001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSemaProviderTest.PluginProviderPublishesSemanticUnitWithoutBuiltinReplay"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginSemaProviderTest.PluginProviderPublishesSemanticUnitWithoutBuiltinReplay",
+      "default_executor_test": "PluginParserProviderTest.ReplaysPluginASTAndPublishesItToDownstreamIRGeneration",
+      "replacement_test": "PluginSemaProviderTest.PluginProviderPublishesSemanticUnitWithoutBuiltinReplay",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.sema.verify_semantic_unit",
+        "positive_test": "PluginSemaProviderTest.PluginProviderPublishesSemanticUnitWithoutBuiltinReplay",
+        "negative_test": "PluginSemaProviderTest.BuiltinReplayRejectsAnExplicitlyUnsupportedASTKind"
+      }
+    },
+    {
+      "phase": "neverc.prep.include.intercept",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000002101"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000002101"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "default_executor_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "replacement_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.prep.verify_include_result",
+        "positive_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+        "negative_test": "PluginPrepHookInterceptorTest.RejectsMalformedIncludeReplacement"
+      }
+    },
+    {
+      "phase": "neverc.prep.macro.intercept",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000002201"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000002201"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "default_executor_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "replacement_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.prep.verify_macro_result",
+        "positive_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.prep.pragma.intercept",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000002301"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000002301"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "default_executor_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "replacement_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.prep.verify_pragma_result",
+        "positive_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.prep.feature_query.intercept",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000002401"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000002401"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "default_executor_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "replacement_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.prep.verify_feature_query_result",
+        "positive_test": "PluginPrepHookInterceptorTest.InterceptsIncludeMacroPragmaAndFeatureQueries",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.syntax.extension.declaration",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+      "default_executor_test": "PluginParserInterceptorTest.RollsBackSpeculativeCursorWhenInterceptorDoesNotHandle",
+      "replacement_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.syntax.verify_declaration_extension",
+        "positive_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+        "negative_test": "PluginParserInterceptorTest.RestoresParserStateAfterHalfConsumedInterceptorFailure"
+      }
+    },
+    {
+      "phase": "neverc.syntax.extension.statement",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+      "default_executor_test": "PluginParserInterceptorTest.RollsBackSpeculativeCursorWhenInterceptorDoesNotHandle",
+      "replacement_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.syntax.verify_statement_extension",
+        "positive_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+        "negative_test": "PluginParserInterceptorTest.RestoresParserStateAfterHalfConsumedInterceptorFailure"
+      }
+    },
+    {
+      "phase": "neverc.syntax.extension.expression",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+      "default_executor_test": "PluginParserInterceptorTest.RollsBackSpeculativeCursorWhenInterceptorDoesNotHandle",
+      "replacement_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.syntax.verify_expression_extension",
+        "positive_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+        "negative_test": "PluginParserInterceptorTest.RestoresParserStateAfterHalfConsumedInterceptorFailure"
+      }
+    },
+    {
+      "phase": "neverc.syntax.extension.type_name",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+      "default_executor_test": "PluginParserInterceptorTest.RollsBackSpeculativeCursorWhenInterceptorDoesNotHandle",
+      "replacement_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.syntax.verify_type_name_extension",
+        "positive_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+        "negative_test": "PluginParserInterceptorTest.RestoresParserStateAfterHalfConsumedInterceptorFailure"
+      }
+    },
+    {
+      "phase": "neverc.syntax.extension.attribute",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginParserInterceptorTest.ConvertsNamespacedAttributeIntoHostParsedAttribute"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginParserInterceptorTest.ConvertsNamespacedAttributeIntoHostParsedAttribute",
+      "default_executor_test": "PluginParserInterceptorTest.RollsBackSpeculativeCursorWhenInterceptorDoesNotHandle",
+      "replacement_test": "PluginParserInterceptorTest.ConvertsNamespacedAttributeIntoHostParsedAttribute",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.syntax.verify_attribute_extension",
+        "positive_test": "PluginParserInterceptorTest.ConvertsNamespacedAttributeIntoHostParsedAttribute",
+        "negative_test": "PluginParserInterceptorTest.RestoresParserStateAfterHalfConsumedInterceptorFailure"
+      }
+    },
+    {
+      "phase": "neverc.syntax.extension.keyword",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000003002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+      "default_executor_test": "PluginParserInterceptorTest.RollsBackSpeculativeCursorWhenInterceptorDoesNotHandle",
+      "replacement_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.syntax.verify_keyword_extension",
+        "positive_test": "PluginParserInterceptorTest.ExtendsDeclarationStatementExpressionTypeAndKeywordSyntax",
+        "negative_test": "PluginParserInterceptorTest.RestoresParserStateAfterHalfConsumedInterceptorFailure"
+      }
+    },
+    {
+      "phase": "neverc.sema.extension.expression",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSemaInterceptorTest.ExpressionReplacementBypassesBuiltinBinaryAnalysis"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginSemaInterceptorTest.ExpressionReplacementBypassesBuiltinBinaryAnalysis",
+      "default_executor_test": "PluginSemaInterceptorTest.ExpressionReplacementBypassesBuiltinBinaryAnalysis",
+      "replacement_test": "PluginSemaInterceptorTest.ExpressionReplacementBypassesBuiltinBinaryAnalysis",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.sema.verify_expression_extension",
+        "positive_test": "PluginSemaInterceptorTest.ExpressionReplacementBypassesBuiltinBinaryAnalysis",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.sema.extension.statement",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSemaInterceptorTest.StatementReplacementBypassesBuiltinCompoundAnalysis"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginSemaInterceptorTest.StatementReplacementBypassesBuiltinCompoundAnalysis",
+      "default_executor_test": "PluginSemaInterceptorTest.StatementReplacementBypassesBuiltinCompoundAnalysis",
+      "replacement_test": "PluginSemaInterceptorTest.StatementReplacementBypassesBuiltinCompoundAnalysis",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.sema.verify_statement_extension",
+        "positive_test": "PluginSemaInterceptorTest.StatementReplacementBypassesBuiltinCompoundAnalysis",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.sema.extension.declaration",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSemaInterceptorTest.DeclarationReplacementRedirectsReferenceBinding"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginSemaInterceptorTest.DeclarationReplacementRedirectsReferenceBinding",
+      "default_executor_test": "PluginSemaInterceptorTest.DeclarationReplacementRedirectsReferenceBinding",
+      "replacement_test": "PluginSemaInterceptorTest.DeclarationReplacementRedirectsReferenceBinding",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.sema.verify_declaration_extension",
+        "positive_test": "PluginSemaInterceptorTest.DeclarationReplacementRedirectsReferenceBinding",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.sema.extension.type",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSemaInterceptorTest.TypeReplacementResolvesPluginTypeName"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginSemaInterceptorTest.TypeReplacementResolvesPluginTypeName",
+      "default_executor_test": "PluginSemaInterceptorTest.TypeReplacementResolvesPluginTypeName",
+      "replacement_test": "PluginSemaInterceptorTest.TypeReplacementResolvesPluginTypeName",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.sema.verify_type_extension",
+        "positive_test": "PluginSemaInterceptorTest.TypeReplacementResolvesPluginTypeName",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.sema.extension.lookup",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSemaInterceptorTest.LookupReplacementResolvesPluginAlias"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginSemaInterceptorTest.LookupReplacementResolvesPluginAlias",
+      "default_executor_test": "PluginSemaInterceptorTest.LookupReplacementResolvesPluginAlias",
+      "replacement_test": "PluginSemaInterceptorTest.LookupReplacementResolvesPluginAlias",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.sema.verify_lookup_extension",
+        "positive_test": "PluginSemaInterceptorTest.LookupReplacementResolvesPluginAlias",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
+      }
+    },
+    {
+      "phase": "neverc.sema.extension.conversion",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "output_artifact": ["0x4e43415246524e01", "0x0000000000004002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSemaInterceptorTest.ConversionReplacementMakesReturnConversionExplicit"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginSemaInterceptorTest.ConversionReplacementMakesReturnConversionExplicit",
+      "default_executor_test": "PluginSemaInterceptorTest.ConversionReplacementMakesReturnConversionExplicit",
+      "replacement_test": "PluginSemaInterceptorTest.ConversionReplacementMakesReturnConversionExplicit",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.sema.verify_conversion_extension",
+        "positive_test": "PluginSemaInterceptorTest.ConversionReplacementMakesReturnConversionExplicit",
+        "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
       }
     }
-  ]
+  ],
+  "semantic_replay": {
+    "ast_product": [
+      "0x4e43504153545001",
+      "0x0000000000000001"
+    ],
+    "semantic_product": [
+      "0x4e435053454d5001",
+      "0x0000000000000001"
+    ],
+    "supported_concrete_kinds": [
+      {
+        "kind": "FunctionDecl",
+        "positive_test": "PluginParserProviderTest.ReplaysPluginASTAndPublishesItToDownstreamIRGeneration"
+      },
+      {
+        "kind": "CompoundStmt",
+        "positive_test": "PluginParserProviderTest.ReplaysPluginASTAndPublishesItToDownstreamIRGeneration"
+      },
+      {
+        "kind": "NullStmt",
+        "positive_test": "PluginParserProviderTest.ReplaysPluginASTAndPublishesItToDownstreamIRGeneration"
+      },
+      {
+        "kind": "ReturnStmt",
+        "positive_test": "PluginParserProviderTest.ReplaysPluginASTAndPublishesItToDownstreamIRGeneration"
+      },
+      {
+        "kind": "IntegerLiteral",
+        "positive_test": "PluginParserProviderTest.ReplaysPluginASTAndPublishesItToDownstreamIRGeneration"
+      }
+    ],
+    "unsupported_kind_policy": {
+      "status": "NEVERC_STATUS_CAPABILITY_UNAVAILABLE",
+      "negative_test": "PluginSemaProviderTest.BuiltinReplayRejectsAnExplicitlyUnsupportedASTKind",
+      "representative_kind": "BinaryOperator"
+    },
+    "plugin_sema_provider_test": "PluginSemaProviderTest.PluginProviderPublishesSemanticUnitWithoutBuiltinReplay",
+    "unmatched_custom_product_test": "PluginSemaProviderTest.RejectsCustomSemanticProductWithoutMatchingIRProvider"
+  }
 }

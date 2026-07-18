@@ -37,6 +37,8 @@ _Static_assert(sizeof(NevercParserTokenCursorHandle) == sizeof(NevercHandle),
                "Parser token cursor must remain opaque");
 _Static_assert(sizeof(NevercSemaScopeHandle) == sizeof(NevercHandle),
                "Sema scope must remain opaque");
+_Static_assert(sizeof(NevercSemanticUnitHandle) == sizeof(NevercHandle),
+               "semantic unit must remain opaque");
 _Static_assert(offsetof(NevercSourceLocationAPI, Header) == 0,
                "source-location table must begin with ABI header");
 _Static_assert(offsetof(NevercIOAPI, Header) == 0,
@@ -51,12 +53,22 @@ _Static_assert(
     "token stream provider functions must extend the Prep table prefix");
 _Static_assert(offsetof(NevercASTAPI, Header) == 0,
                "AST table must begin with ABI header");
+_Static_assert(offsetof(NevercASTLifecycleEvent, Header) == 0,
+               "AST lifecycle event must begin with ABI header");
+_Static_assert(offsetof(NevercASTAPI, RegisterLifecycleObserver) >
+                   offsetof(NevercASTAPI, GetBuiltinType),
+               "lifecycle observer must extend the AST table prefix");
 _Static_assert(offsetof(NevercParserAPI, Header) == 0,
                "Parser table must begin with ABI header");
 _Static_assert(offsetof(NevercParserParsedAttributeDescriptor, Header) == 0,
                "Parser attribute descriptor must begin with ABI header");
 _Static_assert(offsetof(NevercSemaAPI, Header) == 0,
                "Sema table must begin with ABI header");
+_Static_assert(offsetof(NevercSemanticUnitDescriptor, Header) == 0,
+               "semantic unit descriptor must begin with ABI header");
+_Static_assert(offsetof(NevercSemaAPI, GetAnalyzePhaseInput) >
+                   offsetof(NevercSemaAPI, EmitDiagnostic),
+               "Sema Provider functions must extend the Sema table prefix");
 _Static_assert(offsetof(NevercFrontendCallerPackProbe, Value) == 1,
                "frontend headers did not restore caller packing");
 

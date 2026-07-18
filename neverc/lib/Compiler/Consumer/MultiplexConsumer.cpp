@@ -17,6 +17,9 @@ public:
   void DeclarationMarkedUsed(const Decl *D) override;
   void AddedAttributeToRecord(const Attr *Attr,
                               const RecordDecl *Record) override;
+  void ReplacedDeclarationInitializer(const VarDecl *Declaration,
+                                      const Expr *Previous,
+                                      const Expr *Replacement) override;
 
 private:
   std::vector<TreeMutationListener *> Listeners;
@@ -48,6 +51,13 @@ void MultiplexASTMutationListener::AddedAttributeToRecord(
     L->AddedAttributeToRecord(Attr, Record);
 }
 
+void MultiplexASTMutationListener::ReplacedDeclarationInitializer(
+    const VarDecl *Declaration, const Expr *Previous,
+    const Expr *Replacement) {
+  for (auto *L : Listeners)
+    L->ReplacedDeclarationInitializer(Declaration, Previous, Replacement);
+}
+
 } // end namespace neverc
 
 MultiplexConsumer::MultiplexConsumer(
@@ -74,7 +84,8 @@ void MultiplexConsumer::Initialize(TreeContext &Context) {
 bool MultiplexConsumer::ProcessTopLevelDecl(DeclGroupRef D) {
   bool Continue = true;
   for (auto &Consumer : Consumers)
-    Continue = Continue && Consumer->ProcessTopLevelDecl(D);
+    if (!Consumer->ProcessTopLevelDecl(D))
+      Continue = false;
   return Continue;
 }
 

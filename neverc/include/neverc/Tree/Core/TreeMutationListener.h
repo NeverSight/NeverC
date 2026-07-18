@@ -5,8 +5,10 @@ namespace neverc {
 class Attr;
 class Decl;
 class DeclContext;
+class Expr;
 class RecordDecl;
 class TagDecl;
+class VarDecl;
 
 class TreeMutationListener {
 public:
@@ -20,6 +22,10 @@ public:
 
   virtual void AddedAttributeToRecord(const Attr *Attr,
                                       const RecordDecl *Record) {}
+
+  virtual void ReplacedDeclarationInitializer(const VarDecl *Declaration,
+                                              const Expr *Previous,
+                                              const Expr *Replacement) {}
 
   // NOTE: If new methods are added they should also be added to
   // MultiplexASTMutationListener.

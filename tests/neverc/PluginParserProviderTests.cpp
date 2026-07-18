@@ -17,6 +17,20 @@ TEST_F(PluginParserProviderTest, ReplacesBuiltinParserAndPublishesASTUnit) {
   EXPECT_EQ(Replaced.exitCode, 0) << Replaced.err;
 }
 
+TEST_F(PluginParserProviderTest,
+       ReplaysPluginASTAndPublishesItToDownstreamIRGeneration) {
+  const fs::path Source = tmpFile("parser_provider_ir.c");
+  const fs::path IRPath = tmpFile("parser_provider_ir.ll");
+  writeFile(Source, "this input must never reach the builtin parser\n");
+
+  CmdResult Result =
+      ncc({std::string("-fplugin=") + NEVERC_TEST_PARSER_PROVIDER_PLUGIN,
+           "-std=c11", "-Werror", "-O2", "-S", "-emit-llvm", Source.string(),
+           "-o", IRPath.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_NE(readFile(IRPath).find("ret i32 42"), std::string::npos);
+}
+
 TEST_F(PluginParserProviderTest, RejectsASTUnitWithoutTranslationUnitRoot) {
   const fs::path Source = tmpFile("parser_provider_missing_root.c");
   writeFile(Source, "int ignored_by_provider;\n");

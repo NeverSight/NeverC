@@ -1142,6 +1142,8 @@ Error PluginPhaseExecutor::execute(PluginSession &Session,
     return executionError(Context.Failure.empty()
                               ? "phase callback chain failed"
                               : Context.Failure);
+  if (Task.checkCancelled().Code != NEVERC_STATUS_OK)
+    return executionError("phase task was cancelled during execution");
   if (Result.Action == NEVERC_PHASE_SKIP) {
     if (!nonnull(Result.Output) || !nonnull(Result.Proof) ||
         !nonnull(ExistingOutput) ||

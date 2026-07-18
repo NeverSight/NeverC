@@ -15,6 +15,8 @@ extern "C" {
 #define NEVERC_SEMA_API_MINOR UINT16_C(0)
 #define NEVERC_INTERFACE_SEMA_HIGH UINT64_C(0x4e435053454d0001)
 #define NEVERC_INTERFACE_SEMA_LOW UINT64_C(0x0000000000000001)
+#define NEVERC_SEMANTIC_PRODUCT_STANDARD_HIGH UINT64_C(0x4e435053454d5001)
+#define NEVERC_SEMANTIC_PRODUCT_STANDARD_LOW UINT64_C(0x0000000000000001)
 
 typedef uint64_t NevercSemaScopeFlags;
 typedef uint32_t NevercSemaLookupKind;
@@ -26,6 +28,7 @@ typedef uint32_t NevercSemaConstantKind;
 typedef uint64_t NevercSemaBuiltinFlags;
 typedef uint32_t NevercSemaDiagnosticLevel;
 typedef uint32_t NevercSemaExtensionDisposition;
+typedef uint32_t NevercSemanticDiagnosticState;
 
 #define NEVERC_SEMA_SCOPE_FILE UINT64_C(1)
 #define NEVERC_SEMA_SCOPE_FUNCTION UINT64_C(2)
@@ -97,6 +100,9 @@ typedef uint32_t NevercSemaExtensionDisposition;
 
 #define NEVERC_SEMA_EXTENSION_UNHANDLED UINT32_C(1)
 #define NEVERC_SEMA_EXTENSION_HANDLED UINT32_C(2)
+
+#define NEVERC_SEMANTIC_DIAGNOSTICS_CLEAN UINT32_C(0)
+#define NEVERC_SEMANTIC_DIAGNOSTICS_HAS_ERROR UINT32_C(1)
 
 NEVERC_ABI_PACK_BEGIN
 
@@ -272,6 +278,35 @@ typedef struct NevercSemaConversionExtensionOutput {
   NevercExprHandle Expression;
 } NevercSemaConversionExtensionOutput;
 
+typedef struct NevercSemaPhaseInput {
+  NevercABITableHeader Header;
+  NevercArtifactHandle ASTUnit;
+  NevercInterfaceID ASTProduct;
+  NevercDeclHandle TranslationUnit;
+  NevercASTUnitSemanticState SemanticState;
+  uint32_t Reserved;
+} NevercSemaPhaseInput;
+
+typedef struct NevercSemanticUnitDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Product;
+  NevercDeclHandle TranslationUnit;
+  NevercBool SemanticComplete;
+  uint32_t Reserved[3];
+} NevercSemanticUnitDescriptor;
+
+typedef struct NevercSemanticUnitInfo {
+  NevercABITableHeader Header;
+  NevercInterfaceID Product;
+  NevercDeclHandle TranslationUnit;
+  NevercSemanticDiagnosticState DiagnosticState;
+  NevercBool Replayed;
+  uint32_t Reserved[2];
+  NevercStringView VerifierSummary;
+  NevercStringView SourceIdentity;
+  NevercByteView SourceDigest;
+} NevercSemanticUnitInfo;
+
 typedef struct NevercSemaAPI {
   NevercABITableHeader Header;
   void *Context;
@@ -428,6 +463,16 @@ typedef struct NevercSemaAPI {
       const NevercPhaseContinuation *Continuation,
       const NevercSemaConversionExtensionOutput *Descriptor,
       NevercArtifactHandle *OutOutput);
+  NevercStatus(NEVERC_CALL *GetAnalyzePhaseInput)(
+      void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercSemaPhaseInput *OutInput);
+  NevercStatus(NEVERC_CALL *CreateSemanticUnit)(
+      void *Context, const NevercPhaseFrame *Frame,
+      const NevercSemanticUnitDescriptor *Descriptor,
+      NevercArtifactHandle *OutOutput);
+  NevercStatus(NEVERC_CALL *GetSemanticUnitInfo)(
+      void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Unit,
+      NevercSemanticUnitInfo *OutInfo);
 } NevercSemaAPI;
 
 NEVERC_ABI_PACK_END

@@ -1,6 +1,8 @@
 #include "neverc/Compiler/FrontendAction.h"
+#include "neverc/Analyze/Sema.h"
 #include "neverc/Compiler/CompilerInstance.h"
 #include "neverc/Compiler/FrontendDiag.h"
+#include "neverc/Compiler/MultiplexConsumer.h"
 #include "neverc/Compiler/Utils.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
@@ -41,7 +43,19 @@ void FrontendAction::setCurrentInput(const FrontendInputFile &CurrentInput) {
 std::unique_ptr<TreeConsumer>
 FrontendAction::CreateWrappedConsumer(CompilerInstance &CI,
                                       llvm::StringRef InFile) {
-  return CreateTreeConsumer(CI, InFile);
+  std::unique_ptr<TreeConsumer> Consumer = CreateTreeConsumer(CI, InFile);
+  plugin::PluginSourcePhaseRuntime *Runtime =
+      CI.getPluginSourcePhaseRuntime();
+  if (!Consumer || !Runtime)
+    return Consumer;
+  std::unique_ptr<TreeConsumer> PluginConsumer =
+      Runtime->createTreeConsumer();
+  if (!PluginConsumer)
+    return Consumer;
+  std::vector<std::unique_ptr<TreeConsumer>> Consumers;
+  Consumers.push_back(std::move(Consumer));
+  Consumers.push_back(std::move(PluginConsumer));
+  return std::make_unique<MultiplexConsumer>(std::move(Consumers));
 }
 
 namespace {
@@ -101,8 +115,12 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
   auto FailureCleanup = llvm::make_scope_exit([&]() {
     if (HasBegunSourceFile)
       CI.getDiagnosticClient().EndSourceFile();
-    CI.setTreeConsumer(nullptr);
+    if (CI.hasSema())
+      CI.getSema().ForgetSemaConsumer();
     CI.clearPluginSourcePhaseRuntime();
+    CI.setSema(nullptr);
+    CI.setTreeConsumer(nullptr);
+    CI.setTreeContext(nullptr);
     CI.clearOutputFiles(/*EraseFiles=*/true);
     setCurrentInput(FrontendInputFile());
     setCompilerInstance(nullptr);
@@ -270,14 +288,17 @@ void FrontendAction::EndSourceFile() {
   // Sema references the ast consumer, so reset sema first.
   //
   bool DisableFree = CI.getFrontendOpts().DisableFree;
+  if (CI.hasSema())
+    CI.getSema().ForgetSemaConsumer();
+  CI.clearPluginSourcePhaseRuntime();
   if (DisableFree) {
     CI.resetAndLeakSema();
+    llvm::BuryPointer(CI.takeTreeConsumer().release());
     CI.resetAndLeakTreeContext();
-    llvm::BuryPointer(CI.takeTreeConsumer().get());
   } else {
     CI.setSema(nullptr);
-    CI.setTreeContext(nullptr);
     CI.setTreeConsumer(nullptr);
+    CI.setTreeContext(nullptr);
   }
 
   if (CI.getFrontendOpts().ShowStats) {

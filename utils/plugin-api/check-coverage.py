@@ -261,10 +261,27 @@ def validate_coverage(schema, manifest, test_names):
         isinstance(schema.get("phases"), list),
         "phase schema must contain phases",
     )
-    require_object(
-        manifest,
-        "coverage manifest",
-        {"schema_version", "phase_schema", "phases"},
+    require(isinstance(manifest, dict), "coverage manifest must be an object")
+    required_manifest_fields = {"schema_version", "phase_schema", "phases"}
+    missing_manifest_fields = required_manifest_fields - manifest.keys()
+    require(
+        not missing_manifest_fields,
+        "coverage manifest is missing "
+        f"{sorted(missing_manifest_fields)[0]}"
+        if missing_manifest_fields
+        else "",
+    )
+    extra_manifest_fields = (
+        manifest.keys()
+        - required_manifest_fields
+        - {"semantic_replay"}
+    )
+    require(
+        not extra_manifest_fields,
+        "coverage manifest contains unknown field "
+        f"{sorted(extra_manifest_fields)[0]}"
+        if extra_manifest_fields
+        else "",
     )
     require(
         manifest["schema_version"] == 1,
@@ -279,6 +296,54 @@ def validate_coverage(schema, manifest, test_names):
         isinstance(manifest["phases"], list),
         "coverage manifest phases must be an array",
     )
+    if "semantic_replay" in manifest:
+        replay = manifest["semantic_replay"]
+        require_object(
+            replay,
+            "semantic_replay",
+            {
+                "ast_product",
+                "semantic_product",
+                "supported_concrete_kinds",
+                "unsupported_kind_policy",
+                "plugin_sema_provider_test",
+                "unmatched_custom_product_test",
+            },
+        )
+        for product_name in ("ast_product", "semantic_product"):
+            require(
+                isinstance(replay[product_name], list)
+                and len(replay[product_name]) == 2
+                and all(
+                    isinstance(component, str) and component
+                    for component in replay[product_name]
+                ),
+                f"semantic_replay.{product_name} must be a two-part ID",
+            )
+        kinds = replay["supported_concrete_kinds"]
+        require(
+            isinstance(kinds, list) and kinds,
+            "semantic_replay must list supported concrete kinds",
+        )
+        seen_kinds = set()
+        for index, kind in enumerate(kinds):
+            require_object(
+                kind,
+                f"semantic_replay.supported_concrete_kinds[{index}]",
+                {"kind", "positive_test"},
+            )
+            require(
+                isinstance(kind["kind"], str)
+                and kind["kind"]
+                and kind["kind"] not in seen_kinds,
+                "semantic_replay concrete kinds must be named and unique",
+            )
+            seen_kinds.add(kind["kind"])
+        require_object(
+            replay["unsupported_kind_policy"],
+            "semantic_replay.unsupported_kind_policy",
+            {"status", "negative_test", "representative_kind"},
+        )
 
     stable_phases = [
         phase for phase in schema["phases"]

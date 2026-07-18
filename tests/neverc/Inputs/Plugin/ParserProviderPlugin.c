@@ -1,5 +1,6 @@
 #include "neverc/Plugin/PluginAST.h"
 #include "neverc/Plugin/PluginPrep.h"
+#include "neverc/Plugin/PluginSema.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -9,6 +10,7 @@
 static const NevercASTAPI *ASTAPI;
 static const NevercParserAPI *ParserAPI;
 static const NevercPrepAPI *PrepAPI;
+static const NevercSemaAPI *SemaAPI;
 static int ProcessState;
 
 static NevercStatus failure(NevercStatusCode Code) {
@@ -17,12 +19,224 @@ static NevercStatus failure(NevercStatusCode Code) {
   return Status;
 }
 
+static NevercStatus set_range(NevercTaskHandle Task,
+                              NevercASTBuilderHandle Builder,
+                              NevercSourceRange Range) {
+  NevercASTValue Value;
+  memset(&Value, 0, sizeof(Value));
+  Value.Header = (NevercABITableHeader){sizeof(Value), NEVERC_AST_API_MAJOR,
+                                        NEVERC_AST_API_MINOR, 0};
+  Value.Type = NEVERC_AST_VALUE_SOURCE_RANGE;
+  Value.SourceRangeValue = Range;
+  return ASTAPI->ASTBuilderSetProperty(
+      ASTAPI->Context, Task, Builder, NEVERC_AST_PROPERTY_AST_SOURCE_RANGE,
+      &Value);
+}
+
+static NevercStatus set_node_property(NevercTaskHandle Task,
+                                      NevercASTBuilderHandle Builder,
+                                      NevercASTPropertyID Property,
+                                      NevercASTValueType Type,
+                                      NevercASTNodeHandle Node) {
+  NevercASTValue Value;
+  memset(&Value, 0, sizeof(Value));
+  Value.Header = (NevercABITableHeader){sizeof(Value), NEVERC_AST_API_MAJOR,
+                                        NEVERC_AST_API_MINOR, 0};
+  Value.Type = Type;
+  Value.NodeValue = Node;
+  return ASTAPI->ASTBuilderSetProperty(ASTAPI->Context, Task, Builder, Property,
+                                       &Value);
+}
+
+static NevercStatus finish_builder(NevercTaskHandle Task,
+                                   NevercASTBuilderHandle Builder,
+                                   NevercASTNodeHandle *OutNode) {
+  NevercStatus Status =
+      ASTAPI->ASTBuilderCommit(ASTAPI->Context, Task, Builder, OutNode);
+  NevercStatus Destroy =
+      ASTAPI->DestroyASTBuilder(ASTAPI->Context, Task, Builder);
+  return Status.Code == NEVERC_STATUS_OK ? Destroy : Status;
+}
+
+static NevercStatus build_integer(NevercTaskHandle Task,
+                                  NevercSourceRange Range,
+                                  NevercTypeHandle IntType, uint32_t BitWidth,
+                                  uint64_t IntegerValue,
+                                  NevercExprHandle *OutExpression) {
+  NevercASTBuilderHandle Builder = {0, 0};
+  NevercAPIntView Integer;
+  uint64_t Word = IntegerValue;
+  NevercStatus Status = ASTAPI->CreateASTBuilder(
+      ASTAPI->Context, Task, NEVERC_STMT_KIND_INTEGER_LITERAL, &Builder);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = set_range(Task, Builder, Range);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = set_node_property(Task, Builder,
+                               NEVERC_AST_PROPERTY_STMT_EXPR_TYPE,
+                               NEVERC_AST_VALUE_TYPE, IntType);
+  memset(&Integer, 0, sizeof(Integer));
+  Integer.Header = (NevercABITableHeader){
+      sizeof(Integer), NEVERC_AST_API_MAJOR, NEVERC_AST_API_MINOR, 0};
+  Integer.Words = &Word;
+  Integer.WordCount = 1;
+  Integer.BitWidth = BitWidth;
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = ASTAPI->ASTBuilderSetIntegerValue(ASTAPI->Context, Task, Builder,
+                                               &Integer);
+  if (Status.Code != NEVERC_STATUS_OK) {
+    (void)ASTAPI->DestroyASTBuilder(ASTAPI->Context, Task, Builder);
+    return Status;
+  }
+  return finish_builder(Task, Builder, OutExpression);
+}
+
+static NevercStatus build_binary_add(NevercTaskHandle Task,
+                                     NevercSourceRange Range,
+                                     NevercTypeHandle IntType,
+                                     NevercExprHandle Left,
+                                     NevercExprHandle Right,
+                                     NevercExprHandle *OutExpression) {
+  NevercASTBuilderHandle Builder = {0, 0};
+  NevercStatus Status = ASTAPI->CreateASTBuilder(
+      ASTAPI->Context, Task, NEVERC_STMT_KIND_BINARY_OPERATOR, &Builder);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = set_range(Task, Builder, Range);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = set_node_property(Task, Builder,
+                               NEVERC_AST_PROPERTY_STMT_EXPR_TYPE,
+                               NEVERC_AST_VALUE_TYPE, IntType);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = ASTAPI->ASTBuilderSetBinaryOperatorKind(
+        ASTAPI->Context, Task, Builder, NEVERC_BINARY_OPERATOR_ADD);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = ASTAPI->ASTBuilderSetChild(
+        ASTAPI->Context, Task, Builder,
+        NEVERC_AST_CHILD_SLOT_STMT_BINARY_OPERATOR_LHS, 0, Left);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = ASTAPI->ASTBuilderSetChild(
+        ASTAPI->Context, Task, Builder,
+        NEVERC_AST_CHILD_SLOT_STMT_BINARY_OPERATOR_RHS, 0, Right);
+  if (Status.Code != NEVERC_STATUS_OK) {
+    (void)ASTAPI->DestroyASTBuilder(ASTAPI->Context, Task, Builder);
+    return Status;
+  }
+  return finish_builder(Task, Builder, OutExpression);
+}
+
+static NevercStatus build_return(NevercTaskHandle Task, NevercSourceRange Range,
+                                 NevercExprHandle Expression,
+                                 NevercStmtHandle *OutStatement) {
+  NevercASTBuilderHandle Builder = {0, 0};
+  NevercStatus Status = ASTAPI->CreateASTBuilder(
+      ASTAPI->Context, Task, NEVERC_STMT_KIND_RETURN_STMT, &Builder);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = set_range(Task, Builder, Range);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = ASTAPI->ASTBuilderSetChild(
+        ASTAPI->Context, Task, Builder,
+        NEVERC_AST_CHILD_SLOT_STMT_RETURN_STMT_VALUE, 0, Expression);
+  if (Status.Code != NEVERC_STATUS_OK) {
+    (void)ASTAPI->DestroyASTBuilder(ASTAPI->Context, Task, Builder);
+    return Status;
+  }
+  return finish_builder(Task, Builder, OutStatement);
+}
+
+static NevercStatus build_null(NevercTaskHandle Task, NevercSourceRange Range,
+                               NevercStmtHandle *OutStatement) {
+  NevercASTBuilderHandle Builder = {0, 0};
+  NevercStatus Status = ASTAPI->CreateASTBuilder(
+      ASTAPI->Context, Task, NEVERC_STMT_KIND_NULL_STMT, &Builder);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = set_range(Task, Builder, Range);
+  if (Status.Code != NEVERC_STATUS_OK) {
+    (void)ASTAPI->DestroyASTBuilder(ASTAPI->Context, Task, Builder);
+    return Status;
+  }
+  return finish_builder(Task, Builder, OutStatement);
+}
+
+static NevercStatus build_compound(NevercTaskHandle Task,
+                                   NevercSourceRange Range,
+                                   NevercStmtHandle First,
+                                   NevercStmtHandle Second,
+                                   NevercStmtHandle *OutCompound) {
+  NevercASTBuilderHandle Builder = {0, 0};
+  NevercStatus Status = ASTAPI->CreateASTBuilder(
+      ASTAPI->Context, Task, NEVERC_STMT_KIND_COMPOUND_STMT, &Builder);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = set_range(Task, Builder, Range);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = ASTAPI->ASTBuilderSetChild(
+        ASTAPI->Context, Task, Builder,
+        NEVERC_AST_CHILD_SLOT_STMT_COMPOUND_STMT_BODY, 0, First);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = ASTAPI->ASTBuilderSetChild(
+        ASTAPI->Context, Task, Builder,
+        NEVERC_AST_CHILD_SLOT_STMT_COMPOUND_STMT_BODY, 1, Second);
+  if (Status.Code != NEVERC_STATUS_OK) {
+    (void)ASTAPI->DestroyASTBuilder(ASTAPI->Context, Task, Builder);
+    return Status;
+  }
+  return finish_builder(Task, Builder, OutCompound);
+}
+
+static NevercStatus build_main(NevercTaskHandle Task, NevercSourceRange Range,
+                               NevercIdentifierHandle MainIdentifier,
+                               NevercTypeHandle FunctionType,
+                               NevercStmtHandle Body,
+                               NevercDeclHandle *OutFunction) {
+  NevercASTBuilderHandle Builder = {0, 0};
+  NevercStatus Status = ASTAPI->CreateASTBuilder(
+      ASTAPI->Context, Task, NEVERC_DECL_KIND_FUNCTION, &Builder);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = set_range(Task, Builder, Range);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = set_node_property(Task, Builder, NEVERC_AST_PROPERTY_DECL_NAME,
+                               NEVERC_AST_VALUE_IDENTIFIER, MainIdentifier);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = set_node_property(Task, Builder, NEVERC_AST_PROPERTY_DECL_TYPE,
+                               NEVERC_AST_VALUE_TYPE, FunctionType);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = ASTAPI->ASTBuilderSetChild(
+        ASTAPI->Context, Task, Builder,
+        NEVERC_AST_CHILD_SLOT_DECL_FUNCTION_BODY, 0, Body);
+  if (Status.Code != NEVERC_STATUS_OK) {
+    (void)ASTAPI->DestroyASTBuilder(ASTAPI->Context, Task, Builder);
+    return Status;
+  }
+  return finish_builder(Task, Builder, OutFunction);
+}
+
 static NevercStatus NEVERC_CALL
 provide_ast_unit(const NevercPhaseFrame *Frame, NevercPhaseResult *OutResult,
                  void *UserData) {
   NevercParserPhaseInput Input;
   NevercParserASTUnitDescriptor Descriptor;
   NevercTokenViewList Tokens;
+  NevercTokenHandle FirstToken = {0, 0};
+  NevercTokenInfo FirstTokenInfo;
+  NevercIdentifierHandle MainIdentifier = {0, 0};
+  NevercTypeHandle IntType = {0, 0};
+  NevercTypeHandle FunctionType = {0, 0};
+  NevercTypeInfo IntTypeInfo;
+  NevercSemaMutationLeaseHandle Lease = {0, 0};
+  NevercSemaFunctionTypeDescriptor FunctionDescriptor;
+  NevercExprHandle Integer = {0, 0};
+#if defined(NEVERC_TEST_PARSER_PROVIDER_BINARY_REPLAY)
+  NevercExprHandle RightInteger = {0, 0};
+#endif
+  NevercExprHandle ReturnValue = {0, 0};
+  NevercStmtHandle Null = {0, 0};
+  NevercStmtHandle Return = {0, 0};
+  NevercStmtHandle Body = {0, 0};
+  NevercDeclHandle MainFunction = {0, 0};
   NevercDeclHandle TranslationUnit = {0, 0};
   NevercArtifactHandle Output = {0, 0};
   NevercStatus Status;
@@ -52,6 +266,93 @@ provide_ast_unit(const NevercPhaseFrame *Frame, NevercPhaseResult *OutResult,
                : Status;
 
 #if !defined(NEVERC_TEST_PARSER_PROVIDER_MISSING_ROOT)
+  Status = PrepAPI->GetTokenStreamToken(PrepAPI->Context, Frame->Task,
+                                        Input.TokenStream, 0, &FirstToken);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  memset(&FirstTokenInfo, 0, sizeof(FirstTokenInfo));
+  FirstTokenInfo.Header = (NevercABITableHeader){
+      sizeof(FirstTokenInfo), NEVERC_PREP_API_MAJOR, NEVERC_PREP_API_MINOR, 0};
+  Status = PrepAPI->GetTokenInfo(PrepAPI->Context, Frame->Task, FirstToken,
+                                 &FirstTokenInfo);
+  if (Status.Code != NEVERC_STATUS_OK ||
+      neverc_handle_is_null(FirstTokenInfo.Range))
+    return Status.Code == NEVERC_STATUS_OK
+               ? failure(NEVERC_STATUS_VERIFICATION_FAILED)
+               : Status;
+
+  Status = PrepAPI->GetOrCreateIdentifier(
+      PrepAPI->Context, Frame->Task, STRING_VIEW("main"), &MainIdentifier);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = ASTAPI->GetBuiltinType(ASTAPI->Context, Frame->Task,
+                                  NEVERC_BUILTIN_TYPE_INT, &IntType);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  memset(&IntTypeInfo, 0, sizeof(IntTypeInfo));
+  IntTypeInfo.Header = (NevercABITableHeader){
+      sizeof(IntTypeInfo), NEVERC_AST_API_MAJOR, NEVERC_AST_API_MINOR, 0};
+  Status = ASTAPI->GetTypeInfo(ASTAPI->Context, Frame->Task, IntType,
+                               &IntTypeInfo);
+  if (Status.Code != NEVERC_STATUS_OK || IntTypeInfo.SizeInBits == 0 ||
+      IntTypeInfo.SizeInBits > 64)
+    return Status.Code == NEVERC_STATUS_OK
+               ? failure(NEVERC_STATUS_CAPABILITY_UNAVAILABLE)
+               : Status;
+
+  Status = SemaAPI->AcquireMutationLease(SemaAPI->Context, Frame->Task, &Lease);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  memset(&FunctionDescriptor, 0, sizeof(FunctionDescriptor));
+  FunctionDescriptor.Header = (NevercABITableHeader){
+      sizeof(FunctionDescriptor), NEVERC_SEMA_API_MAJOR, NEVERC_SEMA_API_MINOR,
+      0};
+  FunctionDescriptor.ResultType = IntType;
+  FunctionDescriptor.Variadic = NEVERC_FALSE;
+  Status = SemaAPI->CreateFunctionType(SemaAPI->Context, Frame->Task, Lease,
+                                       &FunctionDescriptor, &FunctionType);
+  {
+    NevercStatus Release =
+        SemaAPI->ReleaseMutationLease(SemaAPI->Context, Frame->Task, Lease);
+    if (Status.Code == NEVERC_STATUS_OK)
+      Status = Release;
+  }
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  Status = build_integer(Frame->Task, FirstTokenInfo.Range, IntType,
+                         (uint32_t)IntTypeInfo.SizeInBits,
+#if defined(NEVERC_TEST_PARSER_PROVIDER_BINARY_REPLAY)
+                         UINT64_C(40),
+#else
+                         UINT64_C(42),
+#endif
+                         &Integer);
+#if defined(NEVERC_TEST_PARSER_PROVIDER_BINARY_REPLAY)
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = build_integer(Frame->Task, FirstTokenInfo.Range, IntType,
+                           (uint32_t)IntTypeInfo.SizeInBits, UINT64_C(2),
+                           &RightInteger);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = build_binary_add(Frame->Task, FirstTokenInfo.Range, IntType,
+                              Integer, RightInteger, &ReturnValue);
+#else
+  ReturnValue = Integer;
+#endif
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = build_null(Frame->Task, FirstTokenInfo.Range, &Null);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status =
+        build_return(Frame->Task, FirstTokenInfo.Range, ReturnValue, &Return);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status =
+        build_compound(Frame->Task, FirstTokenInfo.Range, Null, Return, &Body);
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = build_main(Frame->Task, FirstTokenInfo.Range, MainIdentifier,
+                        FunctionType, Body, &MainFunction);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
   Status = ASTAPI->GetTranslationUnit(ASTAPI->Context, Frame->Task,
                                       &TranslationUnit);
   if (Status.Code != NEVERC_STATUS_OK)
@@ -219,8 +520,8 @@ NEVERC_EXPORT NevercStatus NEVERC_CALL neverc_plugin_entry(
       Bootstrap,
       (NevercInterfaceID){NEVERC_INTERFACE_AST_HIGH, NEVERC_INTERFACE_AST_LOW},
       NEVERC_AST_API_MAJOR, NEVERC_AST_API_MINOR,
-      offsetof(NevercASTAPI, GetTranslationUnit) +
-          sizeof(((NevercASTAPI *)0)->GetTranslationUnit),
+      offsetof(NevercASTAPI, GetBuiltinType) +
+          sizeof(((NevercASTAPI *)0)->GetBuiltinType),
       &Table);
   if (Status.Code != NEVERC_STATUS_OK)
     return Status;
@@ -245,12 +546,24 @@ NEVERC_EXPORT NevercStatus NEVERC_CALL neverc_plugin_entry(
       (NevercInterfaceID){NEVERC_INTERFACE_PREP_HIGH,
                           NEVERC_INTERFACE_PREP_LOW},
       NEVERC_PREP_API_MAJOR, NEVERC_PREP_API_MINOR,
-      offsetof(NevercPrepAPI, GetTokenStreamView) +
-          sizeof(((NevercPrepAPI *)0)->GetTokenStreamView),
+      offsetof(NevercPrepAPI, GetOrCreateIdentifier) +
+          sizeof(((NevercPrepAPI *)0)->GetOrCreateIdentifier),
       &Table);
   if (Status.Code != NEVERC_STATUS_OK)
     return Status;
   PrepAPI = (const NevercPrepAPI *)Table;
+
+  Table = NULL;
+  Status = query_interface(
+      Bootstrap,
+      (NevercInterfaceID){NEVERC_INTERFACE_SEMA_HIGH, NEVERC_INTERFACE_SEMA_LOW},
+      NEVERC_SEMA_API_MAJOR, NEVERC_SEMA_API_MINOR,
+      offsetof(NevercSemaAPI, CreateFunctionType) +
+          sizeof(((NevercSemaAPI *)0)->CreateFunctionType),
+      &Table);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  SemaAPI = (const NevercSemaAPI *)Table;
 
   Capacity = OutPlugin->Header.StructSize;
   memset(&Descriptor, 0, sizeof(Descriptor));

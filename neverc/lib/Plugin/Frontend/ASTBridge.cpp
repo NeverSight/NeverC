@@ -2,16 +2,21 @@
 #include "neverc/Plugin/Host/FrontendPluginBridge.h"
 #include "neverc/Plugin/Host/PluginHandleArena.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
+#include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Tree/Core/Attr.h"
 #include "neverc/Tree/Core/TreeContext.h"
+#include "neverc/Tree/Core/TreeMutationListener.h"
 #include "neverc/Tree/Decl/Decl.h"
 #include "neverc/Tree/Expr/Expr.h"
 #include "neverc/Tree/Stmt/Stmt.h"
 #include "neverc/Tree/Type/Type.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -271,7 +276,8 @@ NevercBinaryOperatorKind stableBinaryOperatorKind(BinaryOperatorKind Kind) {
 
 class PluginASTProcessBridge final : public PluginHostService {
 public:
-  PluginASTProcessBridge() {
+  explicit PluginASTProcessBridge(PluginProcessServices &ServicesValue)
+      : Services(ServicesValue) {
     API.Header = {sizeof(API), NEVERC_AST_API_MAJOR, NEVERC_AST_API_MINOR, 0};
     API.Context = this;
     API.GetTranslationUnit = GetTranslationUnit;
@@ -312,6 +318,7 @@ public:
     API.AbortASTMutation = AbortASTMutation;
     API.DestroyASTMutation = DestroyASTMutation;
     API.GetBuiltinType = GetBuiltinType;
+    API.RegisterLifecycleObserver = RegisterLifecycleObserver;
   }
 
   const NevercASTAPI &api() const { return API; }
@@ -319,30 +326,113 @@ public:
   Error attach(PluginTaskContext &Task, PluginASTBridge &Bridge) {
     const auto Key = std::make_pair(Task.handle().Owner, Task.handle().Value);
     std::lock_guard<std::mutex> Lock(Mutex);
-    auto [It, Inserted] = Tasks.try_emplace(Key, &Bridge);
-    if (!Inserted && It->second != &Bridge)
+    TaskBinding &Binding = Tasks[Key];
+    if (Binding.Bridge && Binding.Bridge != &Bridge)
       return createStringError(inconvertibleErrorCode(),
                                "plugin AST task is already attached");
+    Binding.Bridge = &Bridge;
     return Error::success();
   }
 
   void detach(NevercTaskHandle Task) {
     std::lock_guard<std::mutex> Lock(Mutex);
-    Tasks.erase(std::make_pair(Task.Owner, Task.Value));
+    auto It = Tasks.find(std::make_pair(Task.Owner, Task.Value));
+    if (It != Tasks.end())
+      It->second.Bridge = nullptr;
   }
 
   void taskScopeUnregistered(NevercTaskHandle Task) noexcept override {
-    detach(Task);
+    std::lock_guard<std::mutex> Lock(Mutex);
+    Tasks.erase(std::make_pair(Task.Owner, Task.Value));
+  }
+
+  NevercStatus registerObserver(
+      NevercTaskHandle TaskHandle,
+      const NevercASTLifecycleObserverDescriptor *Descriptor) {
+    if (!Descriptor || Descriptor->Header.StructSize < sizeof(*Descriptor) ||
+        Descriptor->Header.Major != NEVERC_AST_API_MAJOR ||
+        Descriptor->Header.Minor > NEVERC_AST_API_MINOR ||
+        Descriptor->Header.Flags != 0 || !Descriptor->Callback ||
+        Descriptor->Events == 0 ||
+        (Descriptor->Events & ~NEVERC_AST_LIFECYCLE_EVENT_MASK_ALL) != 0)
+      return astStatus(NEVERC_STATUS_INVALID_DESCRIPTOR);
+    PluginTaskContext *Task = Services.findTaskScope(TaskHandle);
+    if (!Task)
+      return astStatus(NEVERC_STATUS_STALE_HANDLE);
+    if (Task->isEnded())
+      return astStatus(NEVERC_STATUS_INVALID_STATE);
+    StringRef PluginID = Task->session().currentCallbackPluginID();
+    if (PluginID.empty())
+      return astStatus(NEVERC_STATUS_REENTRANCY_DENIED);
+
+    std::lock_guard<std::mutex> Lock(Mutex);
+    TaskBinding &Binding =
+        Tasks[std::make_pair(TaskHandle.Owner, TaskHandle.Value)];
+    Binding.Observers.push_back(
+        {PluginID.str(), Descriptor->Events, Descriptor->Callback,
+         Descriptor->UserData});
+    return neverc_status_ok();
+  }
+
+  NevercStatus dispatch(PluginTaskContext &Task,
+                        const NevercASTLifecycleEvent &Event) {
+    if (Event.Kind == 0 || Event.Kind > NEVERC_AST_LIFECYCLE_EVENT_COUNT)
+      return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    std::vector<ObserverRegistration> Observers;
+    PluginASTBridge *Bound = nullptr;
+    {
+      std::lock_guard<std::mutex> Lock(Mutex);
+      auto It =
+          Tasks.find(std::make_pair(Task.handle().Owner, Task.handle().Value));
+      if (It == Tasks.end() || !It->second.Bridge)
+        return astStatus(NEVERC_STATUS_STALE_HANDLE);
+      Bound = It->second.Bridge;
+      Observers = It->second.Observers;
+    }
+    const NevercASTLifecycleEventMask EventMask =
+        NEVERC_AST_LIFECYCLE_EVENT_MASK(Event.Kind);
+    for (const ObserverRegistration &Observer : Observers) {
+      if ((Observer.Events & EventMask) == 0)
+        continue;
+      Bound->enterReadOnlyLifecycleCallback();
+      auto LeaveReadOnly = make_scope_exit(
+          [&] { Bound->leaveReadOnlyLifecycleCallback(); });
+      auto Result =
+          Task.invokeCallback(Observer.PluginID, "ASTLifecycleObserver", [&] {
+            return Observer.Callback(Task.handle(), &Event, Observer.UserData);
+          }, Event.Kind != NEVERC_AST_LIFECYCLE_SEMA_END);
+      if (!Result) {
+        consumeError(Result.takeError());
+        return astStatus(NEVERC_STATUS_PLUGIN_EXCEPTION);
+      }
+      if (Result->Code == NEVERC_STATUS_CANCELLED)
+        Task.session().cancel();
+      if (Result->Code != NEVERC_STATUS_OK)
+        return *Result;
+    }
+    return neverc_status_ok();
   }
 
 private:
+  struct ObserverRegistration {
+    std::string PluginID;
+    NevercASTLifecycleEventMask Events = 0;
+    NevercASTLifecycleObserverFn Callback = nullptr;
+    void *UserData = nullptr;
+  };
+
+  struct TaskBinding {
+    PluginASTBridge *Bridge = nullptr;
+    std::vector<ObserverRegistration> Observers;
+  };
+
   template <typename CallbackT>
   NevercStatus forward(NevercTaskHandle Task, CallbackT &&Callback) {
     std::lock_guard<std::mutex> Lock(Mutex);
     auto It = Tasks.find(std::make_pair(Task.Owner, Task.Value));
-    if (It == Tasks.end() || !It->second)
+    if (It == Tasks.end() || !It->second.Bridge)
       return astStatus(NEVERC_STATUS_STALE_HANDLE);
-    return Callback(It->second->astAPI());
+    return Callback(It->second.Bridge->astAPI());
   }
 
   static PluginASTProcessBridge *bridge(void *Context) {
@@ -541,9 +631,18 @@ private:
 
 #undef NEVERC_FORWARD_AST
 
+  static NevercStatus NEVERC_CALL RegisterLifecycleObserver(
+      void *Context, NevercTaskHandle Task,
+      const NevercASTLifecycleObserverDescriptor *Descriptor) {
+    if (!Context)
+      return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    return bridge(Context)->registerObserver(Task, Descriptor);
+  }
+
+  PluginProcessServices &Services;
   NevercASTAPI API{};
   std::mutex Mutex;
-  std::map<std::pair<uint64_t, uint64_t>, PluginASTBridge *> Tasks;
+  std::map<std::pair<uint64_t, uint64_t>, TaskBinding> Tasks;
 };
 
 std::shared_ptr<PluginASTProcessBridge>
@@ -614,6 +713,7 @@ struct PluginASTBridge::Impl {
   DenseMap<const Stmt *, const Decl *> StmtDeclParents;
   DenseMap<const Attr *, const Decl *> AttrParents;
   std::mutex MutationMutex;
+  std::atomic<uint32_t> ReadOnlyLifecycleDepth{0};
 
   Impl(PluginTaskContext &TaskValue, TreeContext &ContextValue,
        FrontendPluginBridge &LocationsValue, PluginPrepBridge *IdentifiersValue)
@@ -659,11 +759,16 @@ struct PluginASTBridge::Impl {
     API.AbortASTMutation = abortASTMutation;
     API.DestroyASTMutation = destroyASTMutation;
     API.GetBuiltinType = getBuiltinType;
+    API.RegisterLifecycleObserver = registerLifecycleObserver;
     indexDecl(Context.getTranslationUnitDecl());
   }
 
   bool validTask(NevercTaskHandle Handle) const {
     return !Task.isEnded() && sameHandle(Handle, Task.handle());
+  }
+
+  bool inReadOnlyLifecycleCallback() const {
+    return ReadOnlyLifecycleDepth.load(std::memory_order_acquire) != 0;
   }
 
   Expected<NevercHandle> createEntity(Domain Kind, const void *Pointer,
@@ -1693,6 +1798,132 @@ struct PluginASTBridge::Impl {
       return Status;
     }
 
+    if (Builder.Kind == NEVERC_STMT_KIND_RETURN_STMT) {
+      const auto ValueChildren =
+          Builder.Children.find(NEVERC_AST_CHILD_SLOT_STMT_RETURN_STMT_VALUE);
+      if (ValueChildren == Builder.Children.end() ||
+          ValueChildren->second.size() != 1)
+        return astStatus(NEVERC_STATUS_VERIFICATION_FAILED);
+      Entity *ValueEntity = nullptr;
+      Status =
+          resolve(TaskHandle, ValueChildren->second.front(), &ValueEntity);
+      if (Status.Code != NEVERC_STATUS_OK)
+        return Status;
+      if (ValueEntity->Kind != Domain::Stmt)
+        return astStatus(NEVERC_STATUS_WRONG_TYPE);
+      auto *Value = dyn_cast<Expr>(
+          const_cast<Stmt *>(static_cast<const Stmt *>(ValueEntity->Pointer)));
+      if (!Value || StmtParents.count(Value) != 0 ||
+          StmtDeclParents.count(Value) != 0)
+        return astStatus(NEVERC_STATUS_VERIFICATION_FAILED);
+      Stmt *Created =
+          ReturnStmt::Create(Context, NativeRange.getBegin(), Value, nullptr);
+      Status = publish(createStmt(Created), OutNode);
+      if (Status.Code == NEVERC_STATUS_OK)
+        indexStmt(Created, nullptr, nullptr);
+      if (Status.Code == NEVERC_STATUS_OK)
+        Builder.Committed = true;
+      return Status;
+    }
+
+    if (Builder.Kind == NEVERC_STMT_KIND_COMPOUND_STMT) {
+      SmallVector<Stmt *, 8> Statements;
+      if (const auto Body = Builder.Children.find(
+              NEVERC_AST_CHILD_SLOT_STMT_COMPOUND_STMT_BODY);
+          Body != Builder.Children.end()) {
+        Statements.reserve(Body->second.size());
+        SmallPtrSet<const Stmt *, 8> Unique;
+        for (NevercASTNodeHandle Child : Body->second) {
+          Entity *ChildEntity = nullptr;
+          Status = resolve(TaskHandle, Child, &ChildEntity);
+          if (Status.Code != NEVERC_STATUS_OK)
+            return Status;
+          if (ChildEntity->Kind != Domain::Stmt)
+            return astStatus(NEVERC_STATUS_WRONG_TYPE);
+          auto *Statement = const_cast<Stmt *>(
+              static_cast<const Stmt *>(ChildEntity->Pointer));
+          if (!Unique.insert(Statement).second ||
+              StmtParents.count(Statement) != 0 ||
+              StmtDeclParents.count(Statement) != 0)
+            return astStatus(NEVERC_STATUS_VERIFICATION_FAILED);
+          Statements.push_back(Statement);
+        }
+      }
+      Stmt *Created =
+          CompoundStmt::Create(Context, Statements, FPOptionsOverride(),
+                               NativeRange.getBegin(), NativeRange.getEnd());
+      Status = publish(createStmt(Created), OutNode);
+      if (Status.Code == NEVERC_STATUS_OK)
+        indexStmt(Created, nullptr, nullptr);
+      if (Status.Code == NEVERC_STATUS_OK)
+        Builder.Committed = true;
+      return Status;
+    }
+
+    if (Builder.Kind == NEVERC_DECL_KIND_FUNCTION) {
+      const auto NameProperty =
+          Builder.Properties.find(NEVERC_AST_PROPERTY_DECL_NAME);
+      const auto FunctionTypeProperty =
+          Builder.Properties.find(NEVERC_AST_PROPERTY_DECL_TYPE);
+      const auto BodyChildren =
+          Builder.Children.find(NEVERC_AST_CHILD_SLOT_DECL_FUNCTION_BODY);
+      if (!Identifiers || NameProperty == Builder.Properties.end() ||
+          NameProperty->second.Type != NEVERC_AST_VALUE_IDENTIFIER ||
+          neverc_handle_is_null(NameProperty->second.NodeValue) ||
+          FunctionTypeProperty == Builder.Properties.end() ||
+          FunctionTypeProperty->second.Type != NEVERC_AST_VALUE_TYPE ||
+          neverc_handle_is_null(FunctionTypeProperty->second.NodeValue) ||
+          BodyChildren == Builder.Children.end() ||
+          BodyChildren->second.size() != 1)
+        return astStatus(NEVERC_STATUS_VERIFICATION_FAILED);
+
+      IdentifierInfo *Identifier = nullptr;
+      Status = Identifiers->resolveIdentifier(
+          TaskHandle, NameProperty->second.NodeValue, &Identifier);
+      if (Status.Code != NEVERC_STATUS_OK)
+        return Status;
+      Entity *FunctionTypeEntity = nullptr;
+      Entity *BodyEntity = nullptr;
+      Status = resolve(TaskHandle, FunctionTypeProperty->second.NodeValue,
+                       &FunctionTypeEntity);
+      if (Status.Code != NEVERC_STATUS_OK)
+        return Status;
+      Status =
+          resolve(TaskHandle, BodyChildren->second.front(), &BodyEntity);
+      if (Status.Code != NEVERC_STATUS_OK)
+        return Status;
+      if (!Identifier || FunctionTypeEntity->Kind != Domain::Type ||
+          BodyEntity->Kind != Domain::Stmt)
+        return astStatus(NEVERC_STATUS_WRONG_TYPE);
+      QualType FunctionType = FunctionTypeEntity->QualifiedType;
+      auto *Body = dyn_cast<CompoundStmt>(
+          const_cast<Stmt *>(static_cast<const Stmt *>(BodyEntity->Pointer)));
+      if (FunctionType.isNull() || !FunctionType->isFunctionType() || !Body ||
+          StmtParents.count(Body) != 0 ||
+          StmtDeclParents.count(Body) != 0)
+        return astStatus(NEVERC_STATUS_VERIFICATION_FAILED);
+      if (const auto *Prototype = FunctionType->getAs<FunctionProtoType>();
+          Prototype && Prototype->getNumParams() != 0)
+        return astStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
+
+      TranslationUnitDecl *TranslationUnit = Context.getTranslationUnitDecl();
+      FunctionDecl *Created = FunctionDecl::Create(
+          Context, TranslationUnit, NativeRange.getBegin(),
+          NativeRange.getBegin(), Identifier, FunctionType,
+          /*TInfo=*/nullptr, SC_None,
+          /*UsesFPIntrin=*/false, /*isInlineSpecified=*/false,
+          FunctionType->isFunctionProtoType());
+      Created->setBody(Body);
+      Created->setRangeEnd(NativeRange.getEnd());
+      TranslationUnit->addDecl(Created);
+      Status = publish(createDecl(Created), OutNode);
+      if (Status.Code == NEVERC_STATUS_OK)
+        indexDecl(Created);
+      if (Status.Code == NEVERC_STATUS_OK)
+        Builder.Committed = true;
+      return Status;
+    }
+
     const auto TypeProperty =
         Builder.Properties.find(NEVERC_AST_PROPERTY_STMT_EXPR_TYPE);
     if (TypeProperty == Builder.Properties.end() ||
@@ -1782,7 +2013,7 @@ struct PluginASTBridge::Impl {
     SmallVector<ResolvedReplacement, 4> Resolved;
     Resolved.reserve(Mutation.Replacements.size());
 
-    std::lock_guard<std::mutex> Lock(MutationMutex);
+    std::unique_lock<std::mutex> Lock(MutationMutex);
     for (size_t OperationIndex = 0;
          OperationIndex != Mutation.Replacements.size(); ++OperationIndex) {
       const ReplaceChildOperation &Operation =
@@ -1835,6 +2066,11 @@ struct PluginASTBridge::Impl {
       StmtDeclParents[Operation.Replacement] = Operation.Parent;
     }
     Mutation.State = MutationState::Committed;
+    Lock.unlock();
+    if (TreeMutationListener *Listener = Context.getTreeMutationListener())
+      for (const ResolvedReplacement &Operation : Resolved)
+        Listener->ReplacedDeclarationInitializer(
+            Operation.Parent, Operation.Previous, Operation.Replacement);
     return neverc_status_ok();
   }
 
@@ -2315,7 +2551,13 @@ struct PluginASTBridge::Impl {
     Impl &Bridge = *impl(Context);
     if (!Bridge.validTask(Task))
       return astStatus(NEVERC_STATUS_WRONG_SCOPE);
-    if (Kind != NEVERC_DECL_KIND_EMPTY && Kind != NEVERC_STMT_KIND_NULL_STMT &&
+    if (Bridge.inReadOnlyLifecycleCallback())
+      return astStatus(NEVERC_STATUS_INVALID_STATE);
+    if (Kind != NEVERC_DECL_KIND_EMPTY &&
+        Kind != NEVERC_DECL_KIND_FUNCTION &&
+        Kind != NEVERC_STMT_KIND_NULL_STMT &&
+        Kind != NEVERC_STMT_KIND_RETURN_STMT &&
+        Kind != NEVERC_STMT_KIND_COMPOUND_STMT &&
         Kind != NEVERC_STMT_KIND_INTEGER_LITERAL &&
         Kind != NEVERC_STMT_KIND_BINARY_OPERATOR)
       return astStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
@@ -2345,6 +2587,8 @@ struct PluginASTBridge::Impl {
         Value->Reserved != 0)
       return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     Impl &Bridge = *impl(Context);
+    if (Bridge.inReadOnlyLifecycleCallback())
+      return astStatus(NEVERC_STATUS_INVALID_STATE);
     BuilderPayload *Builder = nullptr;
     NevercStatus Status = Bridge.resolveBuilder(Task, BuilderHandle, &Builder);
     if (Status.Code != NEVERC_STATUS_OK)
@@ -2352,7 +2596,19 @@ struct PluginASTBridge::Impl {
     if (Builder->Committed)
       return astStatus(NEVERC_STATUS_INVALID_STATE);
     if (Property == NEVERC_AST_PROPERTY_STMT_EXPR_TYPE) {
-      if (Value->Type != NEVERC_AST_VALUE_TYPE ||
+      if ((Builder->Kind != NEVERC_STMT_KIND_INTEGER_LITERAL &&
+           Builder->Kind != NEVERC_STMT_KIND_BINARY_OPERATOR) ||
+          Value->Type != NEVERC_AST_VALUE_TYPE ||
+          neverc_handle_is_null(Value->NodeValue))
+        return astStatus(NEVERC_STATUS_WRONG_TYPE);
+    } else if (Property == NEVERC_AST_PROPERTY_DECL_NAME) {
+      if (Builder->Kind != NEVERC_DECL_KIND_FUNCTION ||
+          Value->Type != NEVERC_AST_VALUE_IDENTIFIER ||
+          neverc_handle_is_null(Value->NodeValue))
+        return astStatus(NEVERC_STATUS_WRONG_TYPE);
+    } else if (Property == NEVERC_AST_PROPERTY_DECL_TYPE) {
+      if (Builder->Kind != NEVERC_DECL_KIND_FUNCTION ||
+          Value->Type != NEVERC_AST_VALUE_TYPE ||
           neverc_handle_is_null(Value->NodeValue))
         return astStatus(NEVERC_STATUS_WRONG_TYPE);
     } else if (Property == NEVERC_AST_PROPERTY_AST_SOURCE_RANGE) {
@@ -2387,6 +2643,8 @@ struct PluginASTBridge::Impl {
       return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
 
     Impl &Bridge = *impl(Context);
+    if (Bridge.inReadOnlyLifecycleCallback())
+      return astStatus(NEVERC_STATUS_INVALID_STATE);
     BuilderPayload *Builder = nullptr;
     NevercStatus Status = Bridge.resolveBuilder(Task, BuilderHandle, &Builder);
     if (Status.Code != NEVERC_STATUS_OK)
@@ -2411,6 +2669,8 @@ struct PluginASTBridge::Impl {
     if (!nativeBinaryOperatorKind(Kind, &NativeKind))
       return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     Impl &Bridge = *impl(Context);
+    if (Bridge.inReadOnlyLifecycleCallback())
+      return astStatus(NEVERC_STATUS_INVALID_STATE);
     BuilderPayload *Builder = nullptr;
     NevercStatus Status = Bridge.resolveBuilder(Task, BuilderHandle, &Builder);
     if (Status.Code != NEVERC_STATUS_OK)
@@ -2431,31 +2691,61 @@ struct PluginASTBridge::Impl {
     if (!Context || neverc_handle_is_null(Child))
       return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     Impl &Bridge = *impl(Context);
+    if (Bridge.inReadOnlyLifecycleCallback())
+      return astStatus(NEVERC_STATUS_INVALID_STATE);
     BuilderPayload *Builder = nullptr;
     NevercStatus Status = Bridge.resolveBuilder(Task, BuilderHandle, &Builder);
     if (Status.Code != NEVERC_STATUS_OK)
       return Status;
     if (Builder->Committed)
       return astStatus(NEVERC_STATUS_INVALID_STATE);
-    if (Builder->Kind != NEVERC_STMT_KIND_BINARY_OPERATOR ||
-        (Slot != NEVERC_AST_CHILD_SLOT_STMT_BINARY_OPERATOR_LHS &&
-         Slot != NEVERC_AST_CHILD_SLOT_STMT_BINARY_OPERATOR_RHS))
-      return astStatus(NEVERC_STATUS_WRONG_TYPE);
-    if (Index != 0)
-      return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
 
     Entity *ChildEntity = nullptr;
     Status = Bridge.resolve(Task, Child, &ChildEntity);
     if (Status.Code != NEVERC_STATUS_OK)
       return Status;
-    if (ChildEntity->Kind != Domain::Stmt ||
-        !isa<Expr>(static_cast<const Stmt *>(ChildEntity->Pointer)))
+
+    bool Many = false;
+    if (Builder->Kind == NEVERC_STMT_KIND_BINARY_OPERATOR &&
+        (Slot == NEVERC_AST_CHILD_SLOT_STMT_BINARY_OPERATOR_LHS ||
+         Slot == NEVERC_AST_CHILD_SLOT_STMT_BINARY_OPERATOR_RHS)) {
+      if (ChildEntity->Kind != Domain::Stmt ||
+          !isa<Expr>(static_cast<const Stmt *>(ChildEntity->Pointer)))
+        return astStatus(NEVERC_STATUS_WRONG_TYPE);
+    } else if (Builder->Kind == NEVERC_STMT_KIND_RETURN_STMT &&
+               Slot == NEVERC_AST_CHILD_SLOT_STMT_RETURN_STMT_VALUE) {
+      if (ChildEntity->Kind != Domain::Stmt ||
+          !isa<Expr>(static_cast<const Stmt *>(ChildEntity->Pointer)))
+        return astStatus(NEVERC_STATUS_WRONG_TYPE);
+    } else if (Builder->Kind == NEVERC_STMT_KIND_COMPOUND_STMT &&
+               Slot == NEVERC_AST_CHILD_SLOT_STMT_COMPOUND_STMT_BODY) {
+      if (ChildEntity->Kind != Domain::Stmt)
+        return astStatus(NEVERC_STATUS_WRONG_TYPE);
+      Many = true;
+    } else if (Builder->Kind == NEVERC_DECL_KIND_FUNCTION &&
+               Slot == NEVERC_AST_CHILD_SLOT_DECL_FUNCTION_BODY) {
+      if (ChildEntity->Kind != Domain::Stmt ||
+          !isa<CompoundStmt>(static_cast<const Stmt *>(ChildEntity->Pointer)))
+        return astStatus(NEVERC_STATUS_WRONG_TYPE);
+    } else {
       return astStatus(NEVERC_STATUS_WRONG_TYPE);
+    }
+
     auto &Children = Builder->Children[Slot];
-    if (Children.empty())
+    if (Many) {
+      if (Index > Children.size())
+        return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+      if (Index == Children.size())
+        Children.push_back(Child);
+      else
+        Children[static_cast<size_t>(Index)] = Child;
+    } else if (Index != 0) {
+      return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    } else if (Children.empty()) {
       Children.push_back(Child);
-    else
+    } else {
       Children.front() = Child;
+    }
     return neverc_status_ok();
   }
 
@@ -2466,6 +2756,8 @@ struct PluginASTBridge::Impl {
       return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     *OutNode = {};
     Impl &Bridge = *impl(Context);
+    if (Bridge.inReadOnlyLifecycleCallback())
+      return astStatus(NEVERC_STATUS_INVALID_STATE);
     BuilderPayload *Builder = nullptr;
     NevercStatus Status = Bridge.resolveBuilder(Task, BuilderHandle, &Builder);
     if (Status.Code != NEVERC_STATUS_OK)
@@ -2496,6 +2788,8 @@ struct PluginASTBridge::Impl {
     Impl &Bridge = *impl(Context);
     if (!Bridge.validTask(Task))
       return astStatus(NEVERC_STATUS_WRONG_SCOPE);
+    if (Bridge.inReadOnlyLifecycleCallback())
+      return astStatus(NEVERC_STATUS_INVALID_STATE);
     auto *Payload = new (std::nothrow) MutationPayload;
     if (!Payload)
       return astStatus(NEVERC_STATUS_RESOURCE_EXHAUSTED);
@@ -2521,6 +2815,8 @@ struct PluginASTBridge::Impl {
         neverc_handle_is_null(Replacement))
       return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     Impl &Bridge = *impl(Context);
+    if (Bridge.inReadOnlyLifecycleCallback())
+      return astStatus(NEVERC_STATUS_INVALID_STATE);
     MutationPayload *Mutation = nullptr;
     NevercStatus Status =
         Bridge.resolveMutation(Task, MutationHandle, &Mutation);
@@ -2555,6 +2851,8 @@ struct PluginASTBridge::Impl {
     if (!Context)
       return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     Impl &Bridge = *impl(Context);
+    if (Bridge.inReadOnlyLifecycleCallback())
+      return astStatus(NEVERC_STATUS_INVALID_STATE);
     MutationPayload *Mutation = nullptr;
     NevercStatus Status =
         Bridge.resolveMutation(Task, MutationHandle, &Mutation);
@@ -2594,6 +2892,21 @@ struct PluginASTBridge::Impl {
       return Status;
     return Bridge.Task.handles().release(MutationHandle,
                                          PluginASTMutationHandleKind);
+  }
+
+  static NevercStatus NEVERC_CALL registerLifecycleObserver(
+      void *Context, NevercTaskHandle TaskHandle,
+      const NevercASTLifecycleObserverDescriptor *Descriptor) {
+    if (!Context)
+      return astStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    Impl &Bridge = *impl(Context);
+    if (!sameHandle(TaskHandle, Bridge.Task.handle()))
+      return astStatus(NEVERC_STATUS_WRONG_SCOPE);
+    auto ProcessBridge =
+        findASTProcessBridge(Bridge.Task.processServices());
+    if (!ProcessBridge)
+      return astStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
+    return ProcessBridge->registerObserver(TaskHandle, Descriptor);
   }
 };
 
@@ -2647,6 +2960,24 @@ Expected<NevercTypeHandle> PluginASTBridge::publishType(QualType Type) {
   return State->createType(Type);
 }
 
+NevercStatus PluginASTBridge::dispatchLifecycleEvent(
+    const NevercASTLifecycleEvent &Event) {
+  auto ProcessBridge = findASTProcessBridge(State->Task.processServices());
+  if (!ProcessBridge)
+    return astStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
+  return ProcessBridge->dispatch(State->Task, Event);
+}
+
+void PluginASTBridge::enterReadOnlyLifecycleCallback() {
+  State->ReadOnlyLifecycleDepth.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void PluginASTBridge::leaveReadOnlyLifecycleCallback() {
+  uint32_t Previous =
+      State->ReadOnlyLifecycleDepth.fetch_sub(1, std::memory_order_acq_rel);
+  assert(Previous != 0 && "unbalanced AST lifecycle callback scope");
+}
+
 Error PluginASTBridge::attachProcessInterface() {
   if (AttachedToProcess)
     return Error::success();
@@ -2673,7 +3004,7 @@ Error registerPluginASTInterface(PluginProcessServices &Services) {
     return createStringError(
         inconvertibleErrorCode(),
         "cannot register plugin AST interface after interface freeze");
-  auto Bridge = std::make_shared<PluginASTProcessBridge>();
+  auto Bridge = std::make_shared<PluginASTProcessBridge>(Services);
   if (Error E = Services.registerHostService(astPluginInterfaceID(), Bridge))
     return E;
   return Services.interfaces().registerInterface(

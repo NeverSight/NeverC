@@ -28,6 +28,7 @@ class Sema;
 class SourceManager;
 class Stmt;
 class Token;
+class TreeConsumer;
 class TreeContext;
 } // namespace neverc
 
@@ -148,6 +149,10 @@ public:
   llvm::Expected<NevercStmtHandle> publishStmt(const Stmt *Statement);
   llvm::Expected<NevercExprHandle> publishExpr(const Expr *Expression);
   llvm::Expected<NevercTypeHandle> publishType(QualType Type);
+  NevercStatus
+  dispatchLifecycleEvent(const NevercASTLifecycleEvent &Event);
+  void enterReadOnlyLifecycleCallback();
+  void leaveReadOnlyLifecycleCallback();
 
 private:
   void detachProcessInterface();
@@ -211,6 +216,22 @@ public:
       NevercArtifactHandle *OutOutput) = 0;
 };
 
+class PluginSemaPhaseAPI {
+public:
+  virtual ~PluginSemaPhaseAPI() = default;
+
+  virtual NevercStatus getAnalyzePhaseInput(
+      const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercSemaPhaseInput *OutInput) = 0;
+  virtual NevercStatus createSemanticUnit(
+      const NevercPhaseFrame *Frame,
+      const NevercSemanticUnitDescriptor *Descriptor,
+      NevercArtifactHandle *OutOutput) = 0;
+  virtual NevercStatus getSemanticUnitInfo(
+      const NevercPhaseFrame *Frame, NevercArtifactHandle Unit,
+      NevercSemanticUnitInfo *OutInfo) = 0;
+};
+
 class PluginSemaBridge {
 public:
   PluginSemaBridge(PluginTaskContext &Task, Sema &SemanticAnalyzer,
@@ -223,6 +244,7 @@ public:
   llvm::Error attachProcessInterface();
   const NevercSemaAPI &semaAPI() const;
   void setExtensionAPI(PluginSemaExtensionAPI *ExtensionAPI);
+  void setPhaseAPI(PluginSemaPhaseAPI *PhaseAPI);
 
 private:
   void detachProcessInterface();
@@ -452,6 +474,7 @@ public:
   llvm::Error attachSema(Sema &SemanticAnalyzer);
   llvm::Error runParserPhase(Sema &SemanticAnalyzer, bool PrintStats);
   ParserPluginHooks *parserPluginHooks() const;
+  std::unique_ptr<TreeConsumer> createTreeConsumer();
 
 private:
   explicit PluginSourcePhaseRuntime(std::unique_ptr<Impl> State);

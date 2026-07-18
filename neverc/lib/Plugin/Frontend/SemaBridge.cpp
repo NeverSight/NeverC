@@ -73,6 +73,9 @@ public:
     API.CreateLookupExtensionOutput = CreateLookupExtensionOutput;
     API.GetConversionExtensionInput = GetConversionExtensionInput;
     API.CreateConversionExtensionOutput = CreateConversionExtensionOutput;
+    API.GetAnalyzePhaseInput = GetAnalyzePhaseInput;
+    API.CreateSemanticUnit = CreateSemanticUnit;
+    API.GetSemanticUnitInfo = GetSemanticUnitInfo;
   }
 
   const NevercSemaAPI &api() const { return API; }
@@ -433,6 +436,42 @@ private:
         });
   }
 
+  static NevercStatus NEVERC_CALL GetAnalyzePhaseInput(
+      void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+      NevercSemaPhaseInput *OutInput) {
+    if (!Context || !Frame)
+      return semaStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    return bridge(Context)->forward(
+        Frame->Task, [&](const NevercSemaAPI &Local) {
+          return Local.GetAnalyzePhaseInput(Local.Context, Frame, Input,
+                                            OutInput);
+        });
+  }
+
+  static NevercStatus NEVERC_CALL CreateSemanticUnit(
+      void *Context, const NevercPhaseFrame *Frame,
+      const NevercSemanticUnitDescriptor *Descriptor,
+      NevercArtifactHandle *OutOutput) {
+    if (!Context || !Frame)
+      return semaStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    return bridge(Context)->forward(
+        Frame->Task, [&](const NevercSemaAPI &Local) {
+          return Local.CreateSemanticUnit(Local.Context, Frame, Descriptor,
+                                          OutOutput);
+        });
+  }
+
+  static NevercStatus NEVERC_CALL GetSemanticUnitInfo(
+      void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Unit,
+      NevercSemanticUnitInfo *OutInfo) {
+    if (!Context || !Frame)
+      return semaStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    return bridge(Context)->forward(
+        Frame->Task, [&](const NevercSemaAPI &Local) {
+          return Local.GetSemanticUnitInfo(Local.Context, Frame, Unit, OutInfo);
+        });
+  }
+
   NevercSemaAPI API{};
   std::mutex Mutex;
   std::map<std::pair<uint64_t, uint64_t>, PluginSemaBridge *> Tasks;
@@ -522,6 +561,9 @@ PluginSemaBridge::Impl::Impl(PluginTaskContext &TaskValue,
   API.CreateLookupExtensionOutput = createLookupExtensionOutput;
   API.GetConversionExtensionInput = getConversionExtensionInput;
   API.CreateConversionExtensionOutput = createConversionExtensionOutput;
+  API.GetAnalyzePhaseInput = getAnalyzePhaseInput;
+  API.CreateSemanticUnit = createSemanticUnit;
+  API.GetSemanticUnitInfo = getSemanticUnitInfo;
 }
 
 bool PluginSemaBridge::Impl::validTask(NevercTaskHandle Handle) const {
@@ -1018,6 +1060,40 @@ NevercStatus NEVERC_CALL PluginSemaBridge::Impl::createConversionExtensionOutput
       Frame, Continuation, Descriptor, OutOutput);
 }
 
+NevercStatus NEVERC_CALL PluginSemaBridge::Impl::getAnalyzePhaseInput(
+    void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Input,
+    NevercSemaPhaseInput *OutInput) {
+  if (!Context)
+    return semaStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  Impl &Bridge = *static_cast<Impl *>(Context);
+  if (!Bridge.Phases)
+    return semaStatus(NEVERC_STATUS_INVALID_STATE);
+  return Bridge.Phases->getAnalyzePhaseInput(Frame, Input, OutInput);
+}
+
+NevercStatus NEVERC_CALL PluginSemaBridge::Impl::createSemanticUnit(
+    void *Context, const NevercPhaseFrame *Frame,
+    const NevercSemanticUnitDescriptor *Descriptor,
+    NevercArtifactHandle *OutOutput) {
+  if (!Context)
+    return semaStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  Impl &Bridge = *static_cast<Impl *>(Context);
+  if (!Bridge.Phases)
+    return semaStatus(NEVERC_STATUS_INVALID_STATE);
+  return Bridge.Phases->createSemanticUnit(Frame, Descriptor, OutOutput);
+}
+
+NevercStatus NEVERC_CALL PluginSemaBridge::Impl::getSemanticUnitInfo(
+    void *Context, const NevercPhaseFrame *Frame, NevercArtifactHandle Unit,
+    NevercSemanticUnitInfo *OutInfo) {
+  if (!Context)
+    return semaStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  Impl &Bridge = *static_cast<Impl *>(Context);
+  if (!Bridge.Phases)
+    return semaStatus(NEVERC_STATUS_INVALID_STATE);
+  return Bridge.Phases->getSemanticUnitInfo(Frame, Unit, OutInfo);
+}
+
 PluginSemaBridge::PluginSemaBridge(PluginTaskContext &Task,
                                    Sema &SemanticAnalyzer,
                                    PluginASTBridge &AST,
@@ -1031,6 +1107,10 @@ const NevercSemaAPI &PluginSemaBridge::semaAPI() const { return State->API; }
 void PluginSemaBridge::setExtensionAPI(
     PluginSemaExtensionAPI *ExtensionAPI) {
   State->Extensions = ExtensionAPI;
+}
+
+void PluginSemaBridge::setPhaseAPI(PluginSemaPhaseAPI *PhaseAPI) {
+  State->Phases = PhaseAPI;
 }
 
 Error PluginSemaBridge::attachProcessInterface() {

@@ -49,8 +49,9 @@ TEST(PluginPhaseGraphTest, BuildsStableBuiltinDriverOrder) {
 TEST(PluginPhaseGraphTest, IncludesParserProviderAndFineGrainedExtensionSlots) {
   auto Graph = PluginPhaseGraph::createBuiltinSourceGraph();
   ASSERT_TRUE(static_cast<bool>(Graph)) << takeErrorMessage(Graph.takeError());
-  EXPECT_EQ(Graph->size(), 22U);
+  EXPECT_EQ(Graph->size(), 23U);
   EXPECT_NE(Graph->find("neverc.syntax.parse"), nullptr);
+  EXPECT_NE(Graph->find("neverc.sema.analyze"), nullptr);
   EXPECT_NE(Graph->find("neverc.syntax.extension.declaration"), nullptr);
   EXPECT_NE(Graph->find("neverc.syntax.extension.statement"), nullptr);
   EXPECT_NE(Graph->find("neverc.syntax.extension.expression"), nullptr);

@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 #define NEVERC_AST_API_MAJOR UINT16_C(1)
-#define NEVERC_AST_API_MINOR UINT16_C(0)
+#define NEVERC_AST_API_MINOR UINT16_C(1)
 #define NEVERC_INTERFACE_AST_HIGH UINT64_C(0x4e43504153540001)
 #define NEVERC_INTERFACE_AST_LOW UINT64_C(0x0000000000000001)
 
@@ -38,6 +38,8 @@ typedef uint32_t NevercParserResultKind;
 typedef uint32_t NevercParserExtensionDisposition;
 typedef uint32_t NevercParserAttributeForm;
 typedef uint32_t NevercASTUnitSemanticState;
+typedef uint32_t NevercASTLifecycleEventKind;
+typedef uint64_t NevercASTLifecycleEventMask;
 
 #define NEVERC_AST_NODE_KIND_INVALID UINT32_C(0)
 #define NEVERC_DECL_KIND_INVALID UINT32_C(0)
@@ -177,6 +179,25 @@ typedef uint32_t NevercASTUnitSemanticState;
 
 #define NEVERC_AST_UNIT_UNANALYZED UINT32_C(0)
 #define NEVERC_AST_UNIT_SEMANTICALLY_ANALYZED UINT32_C(1)
+#define NEVERC_AST_REQUIRES_SEMA_REPLAY NEVERC_AST_UNIT_UNANALYZED
+
+#define NEVERC_AST_LIFECYCLE_TREE_INITIALIZE UINT32_C(1)
+#define NEVERC_AST_LIFECYCLE_SEMA_BEGIN UINT32_C(2)
+#define NEVERC_AST_LIFECYCLE_TOP_LEVEL_DECL UINT32_C(3)
+#define NEVERC_AST_LIFECYCLE_INLINE_FUNCTION_DEFINITION UINT32_C(4)
+#define NEVERC_AST_LIFECYCLE_INTERESTING_DECL UINT32_C(5)
+#define NEVERC_AST_LIFECYCLE_TAG_DEFINITION UINT32_C(6)
+#define NEVERC_AST_LIFECYCLE_TAG_REQUIRED_DEFINITION UINT32_C(7)
+#define NEVERC_AST_LIFECYCLE_TENTATIVE_DEFINITION UINT32_C(8)
+#define NEVERC_AST_LIFECYCLE_EXTERNAL_DECLARATION UINT32_C(9)
+#define NEVERC_AST_LIFECYCLE_TRANSLATION_UNIT UINT32_C(10)
+#define NEVERC_AST_LIFECYCLE_SEMA_END UINT32_C(11)
+#define NEVERC_AST_LIFECYCLE_EVENT_COUNT UINT32_C(11)
+
+#define NEVERC_AST_LIFECYCLE_EVENT_MASK(EventKind)                            \
+  (UINT64_C(1) << ((EventKind) - UINT32_C(1)))
+#define NEVERC_AST_LIFECYCLE_EVENT_MASK_ALL                                   \
+  ((UINT64_C(1) << NEVERC_AST_LIFECYCLE_EVENT_COUNT) - UINT64_C(1))
 
 #include "neverc/Plugin/Schema/PluginASTSchema.inc"
 
@@ -200,6 +221,31 @@ typedef NevercHandle NevercASTBuilderHandle;
 typedef NevercHandle NevercASTMutationHandle;
 typedef NevercHandle NevercParserTokenCursorHandle;
 typedef NevercHandle NevercParserCheckpointHandle;
+
+typedef struct NevercASTLifecycleEvent {
+  NevercABITableHeader Header;
+  NevercASTLifecycleEventKind Kind;
+  uint32_t Reserved;
+  NevercDeclHandle TranslationUnit;
+  NevercDeclHandle Declaration;
+  const NevercDeclHandle *Declarations;
+  uint64_t DeclarationCount;
+} NevercASTLifecycleEvent;
+
+/*
+ * Lifecycle events are read-only. Event records, declaration arrays and all
+ * contained views are borrowed for the callback. Handles remain task-scoped.
+ */
+typedef NevercStatus(NEVERC_CALL *NevercASTLifecycleObserverFn)(
+    NevercTaskHandle Task, const NevercASTLifecycleEvent *Event,
+    void *UserData);
+
+typedef struct NevercASTLifecycleObserverDescriptor {
+  NevercABITableHeader Header;
+  NevercASTLifecycleEventMask Events;
+  NevercASTLifecycleObserverFn Callback;
+  void *UserData;
+} NevercASTLifecycleObserverDescriptor;
 
 typedef struct NevercASTValue {
   NevercABITableHeader Header;
@@ -508,6 +554,9 @@ typedef struct NevercASTAPI {
                                             NevercTaskHandle Task,
                                             NevercBuiltinTypeKind Kind,
                                             NevercTypeHandle *OutType);
+  NevercStatus(NEVERC_CALL *RegisterLifecycleObserver)(
+      void *Context, NevercTaskHandle Task,
+      const NevercASTLifecycleObserverDescriptor *Descriptor);
 } NevercASTAPI;
 
 typedef struct NevercParserAPI {

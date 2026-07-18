@@ -161,6 +161,7 @@ public:
   PrepEngine &PP;
   TreeContext &Context;
   TreeConsumer &Consumer;
+  bool SemaConsumerInitialized = false;
   DiagnosticsEngine &Diags;
   SourceManager &SourceMgr;
 
@@ -678,6 +679,7 @@ public:
   ~Sema();
 
   void Initialize();
+  void ForgetSemaConsumer();
 
   virtual void anchor();
 
