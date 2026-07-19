@@ -45,11 +45,12 @@ enum ID {
 };
 
 struct Info {
-  llvm::StringLiteral Name;
+  llvm::StringRef Name;
   const char *Type, *Attributes;
   const char *Features;
   HeaderDesc Header;
   LanguageID Langs;
+  const char *CustomHeaderName = nullptr;
 };
 
 class Context {
@@ -131,7 +132,9 @@ public:
   }
 
   const char *getHeaderName(unsigned ID) const {
-    return getRecord(ID).Header.getName();
+    const Info &Record = getRecord(ID);
+    return Record.CustomHeaderName ? Record.CustomHeaderName
+                                   : Record.Header.getName();
   }
 
   bool isPrintfLike(unsigned ID, unsigned &FormatIdx, bool &HasVAListArg);

@@ -189,8 +189,11 @@ ParsedType Sema::getTypeName(const IdentifierInfo &II, SourceLocation NameLoc,
     case SemaPluginOutcome::Handled:
       if (Replacement.isNull())
         return nullptr;
-      return buildNamedType(*this, Replacement, NameLoc,
-                            WantNontrivialTypeSourceInfo);
+      if (!WantNontrivialTypeSourceInfo)
+        return ParsedType::make(Replacement);
+      return CreateParsedType(
+          Replacement,
+          Context.getTrivialTypeSourceInfo(Replacement, NameLoc));
     case SemaPluginOutcome::Error:
       return nullptr;
     }

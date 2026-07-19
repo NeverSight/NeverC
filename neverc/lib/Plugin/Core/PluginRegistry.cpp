@@ -560,6 +560,12 @@ PluginRegistry::load(StringRef Path) {
     return pluginError("plugin file identity changed while it was loading");
 
   void *Address = Library.getAddressOfSymbol(NEVERC_PLUGIN_ENTRY_POINT);
+  if (!Address &&
+      Library.getAddressOfSymbol("nevercGetPluginInfo"))
+    return pluginError(
+        "plugin exports the removed 'nevercGetPluginInfo' prototype ABI; "
+        "migrate it to the first public descriptor ABI and export "
+        "'neverc_plugin_entry'");
   if (!Address)
     return pluginError("plugin has no '" NEVERC_PLUGIN_ENTRY_POINT "' entry");
   auto Entry = reinterpret_cast<NevercPluginEntryFn>(Address);

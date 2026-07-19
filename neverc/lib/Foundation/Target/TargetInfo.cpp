@@ -1052,6 +1052,14 @@ TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
     Diags.Report(diag::err_target_unknown_triple) << Triple.str();
     return nullptr;
   }
+  return CreateTargetInfo(Diags, Opts, std::move(Target));
+}
+
+TargetInfo *
+TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
+                             const std::shared_ptr<TargetOptions> &Opts,
+                             std::unique_ptr<TargetInfo> Target) {
+  assert(Target && "TargetInfo factory requires a target");
   Target->TargetOpts = Opts;
 
   if (!Opts->CPU.empty() && !Target->setCPU(Opts->CPU)) {

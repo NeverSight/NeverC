@@ -4,6 +4,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/PassManager.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <functional>
@@ -11,6 +12,7 @@
 
 namespace llvm {
 class Module;
+class PassBuilder;
 class TargetMachine;
 } // namespace llvm
 
@@ -34,6 +36,12 @@ struct PartitionCacheHooks {
   bool enabled() const { return Lookup && Store; }
 };
 
+struct ParallelOptimizationHooks {
+  std::function<void(llvm::PassBuilder &)> ConfigurePassBuilder;
+  std::function<void(llvm::ModulePassManager &)> PreOpt;
+  std::function<void(llvm::ModulePassManager &)> PostOpt;
+};
+
 /// Run parallel codegen on an already-optimized module.
 /// Splits the module into \p NumPartitions, runs codegen in parallel,
 /// then merges the resulting object files using `neverc::merge`.
@@ -48,7 +56,8 @@ bool runParallelCodeGen(llvm::Module &Mod, llvm::TargetMachine &TM,
 bool runParallelOptAndCodeGen(llvm::Module &Mod, llvm::TargetMachine &TM,
                               llvm::raw_pwrite_stream &OS,
                               unsigned NumPartitions, unsigned OptLevel,
-                              const PartitionCacheHooks *Cache = nullptr);
+                              const PartitionCacheHooks *Cache = nullptr,
+                              const ParallelOptimizationHooks *Hooks = nullptr);
 
 } // namespace neverc
 

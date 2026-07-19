@@ -223,8 +223,10 @@ void configureDriverCallbacks(Driver &TheDriver) {
       return 1;
     }
     ArrayRef<const char *> Args(ArgV.data(), ArgV.size());
+    linker::LinkerDriverConfig EffectiveCfg = DriverCfg;
+    EffectiveCfg.pluginTask = LinkTask.get();
     bool Ok = It->d(Args, llvm::outs(), llvm::errs(),
-                    /*exitEarly=*/false, /*disableOutput=*/false, DriverCfg);
+                    /*exitEarly=*/false, /*disableOutput=*/false, EffectiveCfg);
     linker::CommonLinkerContext::destroy();
     if (LinkTask) {
       if (llvm::Error E = LinkTask->end())

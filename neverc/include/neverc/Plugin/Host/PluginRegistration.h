@@ -2,7 +2,12 @@
 #define NEVERC_PLUGIN_HOST_PLUGINREGISTRATION_H
 
 #include "neverc/Plugin/Host/PluginRegistry.h"
+#include "neverc/Plugin/PluginIR.h"
+#include "neverc/Plugin/PluginMC.h"
+#include "neverc/Plugin/PluginMIR.h"
+#include "neverc/Plugin/PluginObject.h"
 #include "neverc/Plugin/PluginSource.h"
+#include "neverc/Plugin/PluginTarget.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
@@ -24,6 +29,23 @@ enum class PluginRegistrationKind : uint8_t {
   Interceptor,
   Provider,
   VFSProvider,
+  IRPass,
+  IRAnalysis,
+  MIRPass,
+  Target,
+  TargetABI,
+  CallingConvention,
+  MCSchema,
+  ObjectFormat,
+  CodeGenEdge,
+};
+
+struct OwnedTargetTripleMatcher {
+  std::string Architecture;
+  std::string Vendor;
+  std::string OperatingSystem;
+  std::string Environment;
+  uint32_t Priority = 0;
 };
 
 struct PluginRegistrationRecord {
@@ -48,13 +70,33 @@ struct PluginRegistrationRecord {
   NevercInterceptorDescriptor Interceptor{};
   NevercProviderDescriptor Provider{};
   NevercVFSProviderDescriptor VFSProvider{};
+  NevercIRPassDescriptor IRPass{};
+  NevercIRAnalysisDescriptor IRAnalysis{};
+  NevercMIRPassDescriptor MIRPass{};
+  NevercTargetDescriptor Target{};
+  NevercTargetABIDescriptor TargetABI{};
+  NevercCallingConventionDescriptor CallingConvention{};
+  NevercMCSchemaDescriptor MCSchema{};
+  NevercObjectFormatDescriptor ObjectFormatDescriptor{};
+  NevercCodeGenEdgeDescriptor CodeGenEdge{};
   std::string CanonicalName;
   std::string ProviderID;
+  std::string PassID;
+  std::string AnalysisName;
   std::string RoutePrefix;
   std::string TargetTriple;
   std::string CPU;
   std::string Features;
   std::string ObjectFormat;
+  std::string SchemaDigest;
+  std::string DefaultExtension;
+  std::vector<std::string> Aliases;
+  std::vector<OwnedTargetTripleMatcher> TargetMatchers;
+  std::vector<NevercInterfaceID> TargetReferences;
+  std::vector<NevercInterfaceID> RequiredAnalyses;
+  std::vector<uint8_t> IRExternalDependencyDigest;
+  std::vector<NevercMIRBuiltinAnalysis> MIRRequiredAnalyses;
+  std::vector<NevercMIRBuiltinAnalysis> MIRPreservedAnalyses;
   void *OwnedUserData = nullptr;
   NevercDestroyUserDataFn DestroyUserData = nullptr;
 };
@@ -119,6 +161,24 @@ bool dependencyVersionMatches(const OwnedPluginDependency &Dependency,
                               const PluginDescriptorRecord &Candidate);
 NevercStatus registerPluginVFSProvider(
     void *Registrar, const NevercVFSProviderDescriptor *Descriptor);
+NevercStatus registerPluginIRPass(
+    void *Registrar, const NevercIRPassDescriptor *Descriptor);
+NevercStatus registerPluginIRAnalysis(
+    void *Registrar, const NevercIRAnalysisDescriptor *Descriptor);
+NevercStatus registerPluginMIRPass(
+    void *Registrar, const NevercMIRPassDescriptor *Descriptor);
+NevercStatus registerPluginTarget(
+    void *Registrar, const NevercTargetDescriptor *Descriptor);
+NevercStatus registerPluginTargetABI(
+    void *Registrar, const NevercTargetABIDescriptor *Descriptor);
+NevercStatus registerPluginCallingConvention(
+    void *Registrar, const NevercCallingConventionDescriptor *Descriptor);
+NevercStatus registerPluginMCSchema(
+    void *Registrar, const NevercMCSchemaDescriptor *Descriptor);
+NevercStatus registerPluginObjectFormat(
+    void *Registrar, const NevercObjectFormatDescriptor *Descriptor);
+NevercStatus registerPluginCodeGenEdge(
+    void *Registrar, const NevercCodeGenEdgeDescriptor *Descriptor);
 
 } // namespace neverc::plugin
 

@@ -61,6 +61,25 @@ TEST(PluginPhaseGraphTest, IncludesParserProviderAndFineGrainedExtensionSlots) {
   EXPECT_NE(Graph->find("neverc.sema.extension.conversion"), nullptr);
 }
 
+TEST(PluginPhaseGraphTest, BuildsCompleteBuiltinIRRoute) {
+  auto Graph = PluginPhaseGraph::createBuiltinIRGraph();
+  ASSERT_TRUE(static_cast<bool>(Graph)) << takeErrorMessage(Graph.takeError());
+  ASSERT_EQ(Graph->size(), 8U);
+  const char *Expected[] = {
+      "neverc.ir.generate",
+      "neverc.ir.pass.pre_opt",
+      "neverc.ir.pass.pipeline_start",
+      "neverc.ir.optimize",
+      "neverc.ir.pass.optimizer_last",
+      "neverc.ir.pass.post_opt",
+      "neverc.ir.pass.pre_codegen",
+      "neverc.ir.final_verify",
+  };
+  ASSERT_EQ(Graph->order().size(), std::size(Expected));
+  for (size_t I = 0; I != std::size(Expected); ++I)
+    EXPECT_EQ(Graph->phaseAt(Graph->order()[I]).CanonicalName, Expected[I]);
+}
+
 TEST(PluginPhaseGraphTest, RejectsDuplicatesAndInvalidSealedPolicy) {
   PluginPhaseGraph Graph;
   ASSERT_FALSE(Graph.addPhase(phase(1, "test.phase.one")));

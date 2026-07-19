@@ -37,7 +37,8 @@ bool opt(const Config &Conf, TargetMachine *TM, unsigned Task, Module &Mod,
 /// Runs the LTO backend (optimization + code generation).
 Error backend(const Config &C, AddStreamFn AddStream,
               unsigned ParallelCodeGenParallelismLevel, Module &M,
-              ModuleSummaryIndex &CombinedIndex);
+              ModuleSummaryIndex &CombinedIndex,
+              bool SkipOptimization = false);
 
 Error finalizeOptimizationRemarks(
     std::unique_ptr<ToolOutputFile> DiagOutputFile);

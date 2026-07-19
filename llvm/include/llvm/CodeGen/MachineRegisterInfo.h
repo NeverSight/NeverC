@@ -776,6 +776,10 @@ public:
   /// getNumVirtRegs - Return the number of virtual registers created.
   unsigned getNumVirtRegs() const { return VRegInfo.size(); }
 
+  /// Discard virtual registers created at or after FirstIndex. The discarded
+  /// registers must be unnamed and have no remaining operands.
+  void discardVirtualRegisters(unsigned FirstIndex);
+
   /// clearVirtRegs - Remove all virtual registers (after physreg assignment).
   void clearVirtRegs();
 
@@ -976,6 +980,9 @@ public:
   void addLiveIn(MCRegister Reg, Register vreg = Register()) {
     LiveIns.push_back(std::make_pair(Reg, vreg));
   }
+
+  /// Remove the live-in entry for Reg. Returns whether an entry was removed.
+  bool removeLiveIn(MCRegister Reg);
 
   // Iteration support for the live-ins set.  It's kept in sorted order
   // by register number.

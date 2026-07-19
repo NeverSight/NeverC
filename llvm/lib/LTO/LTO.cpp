@@ -649,10 +649,18 @@ Error LTO::runRegularLTO(AddStreamFn AddStream) {
   }
 
   if (!RegularLTO.EmptyCombinedModule || Conf.AlwaysEmitRegularLTOObj) {
+    bool SkipBuiltinOptimization = false;
+    if (Conf.ModuleOptimizeHook &&
+        !Conf.ModuleOptimizeHook(RegularLTO.CombinedModule,
+                                 SkipBuiltinOptimization))
+      return createStringError(inconvertibleErrorCode(),
+                               "host LTO optimization transition failed");
     if (Error Err =
-            backend(Conf, AddStream, RegularLTO.ParallelCodeGenParallelismLevel,
-                    *RegularLTO.CombinedModule, CombinedIndex))
-      return Err;
+            backend(Conf, AddStream,
+                    RegularLTO.ParallelCodeGenParallelismLevel,
+                    *RegularLTO.CombinedModule, CombinedIndex,
+                    SkipBuiltinOptimization))
+      return std::move(Err);
   }
 
   return finalizeOptimizationRemarks(std::move(DiagnosticOutputFile));

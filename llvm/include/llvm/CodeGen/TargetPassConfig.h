@@ -16,13 +16,13 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/CodeGen.h"
 #include <cassert>
-#include <functional>
+#include <cstdint>
 #include <string>
-#include <vector>
 
 namespace llvm {
 
 class LLVMTargetMachine;
+class TargetPassConfig;
 struct MachineSchedContext;
 class PassConfigImpl;
 class ScheduleDAGInstrs;
@@ -37,6 +37,30 @@ class PassManagerBase;
 } // end namespace legacy
 
 using legacy::PassManagerBase;
+
+/// Stable, per-TargetMachine extension points for the legacy machine pipeline.
+///
+/// The hook object is owned by the LLVMTargetMachine that builds the pipeline.
+/// This deliberately avoids process-global callback registries so independent
+/// compilations can install different extensions safely.
+enum class MachinePipelineHookPoint : uint8_t {
+  PostLegalize,
+  PostISel,
+  PreScheduler,
+  PostScheduler,
+  PreRegAlloc,
+  PostRegAlloc,
+  PostPrologEpilog,
+  PreEmit,
+  Final,
+};
+
+class MachinePipelineHooks {
+public:
+  virtual ~MachinePipelineHooks() = default;
+  virtual void addPasses(TargetPassConfig &TPC,
+                         MachinePipelineHookPoint Point) = 0;
+};
 
 /// Discriminated union of Pass ID types.
 ///
@@ -159,6 +183,9 @@ public:
   void setInitialized() { Initialized = true; }
 
   CodeGenOptLevel getOptLevel() const;
+
+  /// Invoke the extension object attached to this pipeline's TargetMachine.
+  void runMachinePipelineHook(MachinePipelineHookPoint Point);
 
   /// Returns true if one of the `-start-after`, `-start-before`, `-stop-after`
   /// or `-stop-before` options is set.
@@ -439,56 +466,15 @@ protected:
 
 public:
   /// Public entry point mirroring the protected `addPass(Pass *P)`.
-  /// Intended for callback-based extension of the legacy machine-code
-  /// pipeline via `ListRegisterTargetPassConfigCallbacks`: since the
-  /// callbacks only receive a `TargetPassConfig &` and cannot subclass
-  /// TargetPassConfig they need a way to append passes from the
-  /// outside.  Semantics identical to the protected overload: the
-  /// pipeline takes ownership of `P` and honours StartAfter/StopAfter
-  /// filtering.
+  /// Per-TargetMachine extension objects use this to append passes without
+  /// subclassing TargetPassConfig. Semantics are identical to the protected
+  /// overload: the pipeline takes ownership of `P` and honours
+  /// StartAfter/StopAfter filtering.
   void addExternalPass(Pass *P) { addPass(P); }
 };
 
 void registerCodeGenCallback(PassInstrumentationCallbacks &PIC,
                              LLVMTargetMachine &);
-
-/// Callback hook for extending the legacy machine-code pipeline.
-///
-/// Callers can append functions to `ListRegisterTargetPassConfigCallbacks`.
-/// Each callback is invoked from `TargetPassConfig::addMachinePasses` right
-/// before `addPreEmitPass`, where it may inject additional `MachineFunction`
-/// passes via `TargetPassConfig::addPass`.
-using RegisterTargetPassConfigCallbackFn =
-    std::function<void(TargetPassConfig &)>;
-
-extern std::vector<RegisterTargetPassConfigCallbackFn>
-    ListRegisterTargetPassConfigCallbacks;
-
-/// Late-pipeline counterpart of `RegisterTargetPassConfigCallbackFn`.
-///
-/// Callbacks appended to `ListRegisterTargetPassConfigPostPreEmitCallbacks`
-/// fire from `TargetPassConfig::addMachinePasses` AFTER
-/// `addPreEmitPass2()` returns and immediately before
-/// `AddingMachinePasses` is cleared.  At that point every standard
-/// late MIR pass has already executed: `addPreEmitPass`, FuncletLayout,
-/// LiveDebugValues, MachineOutliner, BasicBlockSections /
-/// MachineFunctionSplitter, CFIFixup, StackFrameLayoutAnalysis and
-/// `addPreEmitPass2` itself.  AsmPrinter is wired up by
-/// `LLVMTargetMachine::addPassesToEmitFile` AFTER `addMachinePasses`
-/// returns, so this hook is the LAST machine-pass injection slot before
-/// the AsmPrinter materialises bytes.
-///
-/// Use this slot when an obfuscator / instrumentation pass must observe
-/// the truly final MIR shape -- for example, instruction-level
-/// transformations that have to run AFTER LLVM's own branch relaxation
-/// and NOP padding finish.  Hooks are global, so the typical pattern is
-/// to gate them behind a process-wide options snapshot to keep them
-/// inert for unrelated codegen.
-using RegisterTargetPassConfigPostPreEmitCallbackFn =
-    std::function<void(TargetPassConfig &)>;
-
-extern std::vector<RegisterTargetPassConfigPostPreEmitCallbackFn>
-    ListRegisterTargetPassConfigPostPreEmitCallbacks;
 
 } // end namespace llvm
 

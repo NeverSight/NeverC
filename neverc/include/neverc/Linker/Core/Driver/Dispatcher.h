@@ -22,6 +22,7 @@
 
 namespace neverc::plugin {
 class PluginSession;
+class PluginTaskContext;
 }
 
 namespace linker {
@@ -93,6 +94,7 @@ struct LinkerDriverConfig {
   // Neverc C-ABI out-of-tree plugin paths for LTO and linker hooks.
   std::vector<std::string> nevercPluginPaths;
   std::shared_ptr<neverc::plugin::PluginSession> pluginSession;
+  neverc::plugin::PluginTaskContext *pluginTask = nullptr;
 
   // Linker-level options now controlled by the neverc driver.
   // Backends use these as defaults; explicit -Wl, overrides still apply.

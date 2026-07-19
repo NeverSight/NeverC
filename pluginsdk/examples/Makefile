@@ -6,6 +6,10 @@
 #   BenchPlugin.c          -> BenchPlugin.{dll,dylib,so}
 #   CustomCallConvPlugin.c -> CustomCallConvPlugin.{dll,dylib,so}
 #   DriverTracePlugin.c    -> DriverTracePlugin.{dll,dylib,so}
+#   VirtualHeaderPlugin.c  -> VirtualHeaderPlugin.{dll,dylib,so}
+#   ASTRewritePlugin.c     -> ASTRewritePlugin.{dll,dylib,so}
+#   FunctionPass.c         -> FunctionPass.{dll,dylib,so}
+#   MachinePass.c          -> MachinePass.{dll,dylib,so}
 #
 # Usage:
 #   neverc make                        # build all plugins
@@ -17,7 +21,8 @@ NEVERC ?= ../../build-neverc/bin/neverc
 
 # Each entry becomes a separate shared library (one .c -> one plugin).
 PLUGINS = ExamplePlugin CrtShimPlugin BenchPlugin CustomCallConvPlugin \
-          DriverTracePlugin
+          DriverTracePlugin VirtualHeaderPlugin ASTRewritePlugin \
+          FunctionPass MachinePass
 
 # Auto-detect host platform for shared library suffix and target triple.
 UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
@@ -58,7 +63,7 @@ else
 endif
 
 # -shared: produce a loadable plugin library
-# -I: SDK header include path (single-header, zero LLVM/CRT dependencies)
+# -I: SDK header include path (modular pure-C headers, zero LLVM dependencies)
 FLAGS = --target=$(HOST_TARGET) -shared -I$(INCLUDE_DIR)
 
 OUTPUTS = $(addsuffix $(SHARED_EXT),$(PLUGINS))

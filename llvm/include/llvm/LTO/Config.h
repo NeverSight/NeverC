@@ -25,6 +25,7 @@
 #include "llvm/Target/TargetOptions.h"
 
 #include <functional>
+#include <memory>
 #include <optional>
 
 namespace llvm {
@@ -32,6 +33,7 @@ namespace llvm {
 class Error;
 class Module;
 class ModuleSummaryIndex;
+class MachinePipelineHooks;
 class raw_pwrite_stream;
 
 namespace lto {
@@ -72,6 +74,19 @@ struct Config {
   /// These are non-const (unlike ModuleHookFn) and allow IR modification.
   std::function<void(ModulePassManager &)> PreOptPassHook;
   std::function<void(ModulePassManager &)> PostOptPassHook;
+  /// Optional per-config PassBuilder customization. Unlike process-global
+  /// callback registries, this is scoped to one LTO task.
+  std::function<void(PassBuilder &)> PassBuilderHook;
+  std::shared_ptr<MachinePipelineHooks> MachinePassHooks;
+  /// Opaque host-owned lifetime token retained until this configuration and
+  /// all callbacks copied from it are destroyed.
+  std::shared_ptr<void> HostContext;
+  /// Optional host transition that may replace the merged module and suppress
+  /// the built-in LTO optimization pipeline.
+  std::function<bool(std::unique_ptr<Module> &, bool &)> ModuleOptimizeHook;
+  /// Called after the backend has completed optimization and code generation,
+  /// including all early-return paths.
+  std::function<void()> BackendDoneHook;
 
   std::optional<CodeModel::Model> CodeModel;
   CodeGenOptLevel CGOptLevel = CodeGenOptLevel::Default;

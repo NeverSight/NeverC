@@ -385,10 +385,6 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../std
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../runtime
                  ${CMAKE_CURRENT_BINARY_DIR}/runtime)
 
-# Out-of-tree plugin SDK (header + examples + build template).
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../pluginsdk
-                 ${CMAKE_CURRENT_BINARY_DIR}/pluginsdk)
-
 option(NEVERC_ENABLE_BENCH "Build NeverC microbenchmarks" OFF)
 if(NEVERC_ENABLE_BENCH)
   add_subdirectory(bench)
@@ -627,6 +623,11 @@ if(NEVERC_ORDER_FILE AND
   endif()
 endif()
 
+# Out-of-tree plugin SDK (header + examples + build template). Keep this after
+# the compiler target so SDK examples can also be built with the new NeverC.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../pluginsdk
+                 ${CMAKE_CURRENT_BINARY_DIR}/pluginsdk)
+
 option(NEVERC_ENABLE_ORDER_FILE
   "Generate and validate a Darwin order file for neverc." OFF)
 if(APPLE AND NEVERC_ENABLE_ORDER_FILE)
@@ -753,6 +754,13 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
             ${_neverc_check_runtime_deps}
     USES_TERMINAL
     COMMENT "Running NeverC stdlib tests")
+endif()
+
+option(NEVERC_ENABLE_PLUGIN_FUZZERS
+  "Build the Clang/libFuzzer plugin ABI targets" OFF)
+if(NEVERC_ENABLE_PLUGIN_FUZZERS)
+  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../fuzz"
+                   "${CMAKE_CURRENT_BINARY_DIR}/fuzz")
 endif()
 
 set(NEVERC_INSTALL_LIBDIR_BASENAME "lib${NEVERC_LIBDIR_SUFFIX}")

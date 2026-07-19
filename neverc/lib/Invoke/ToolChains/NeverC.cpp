@@ -2596,7 +2596,9 @@ void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
       Args.hasArg(options::OPT_mkernel) ||
       Args.hasArg(options::OPT_fdyncode_mode) ||
       Args.hasArg(options::OPT_ffreestanding);
-  if (!SuppressMimalloc)
+  if (SuppressMimalloc)
+    CmdArgs.push_back("-fno-builtin-mimalloc");
+  else
     Args.addOptInFlag(CmdArgs, options::OPT_fbuiltin_mimalloc,
                       options::OPT_fno_builtin_mimalloc);
 
@@ -2604,6 +2606,8 @@ void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
       !Args.hasArg(options::OPT_ffreestanding) &&
       !Args.hasArg(options::OPT_fno_builtin_std))
     CmdArgs.push_back("-fbuiltin-std");
+  else
+    CmdArgs.push_back("-fno-builtin-std");
 }
 
 /// Optionally embed the invocation command line into DWARF or a section.
@@ -3887,20 +3891,6 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddLastArg(CmdArgs, options::OPT_dI);
 
   Args.AddLastArg(CmdArgs, options::OPT_fmax_tokens_EQ);
-
-  // Forward -fplugin-pass=name.so to the frontend.
-  for (const Arg *A : Args.filtered(options::OPT_fplugin_pass_EQ)) {
-    CmdArgs.push_back(
-        Args.MakeArgString(llvm::Twine("-fplugin-pass=") + A->getValue()));
-    A->claim();
-  }
-
-  // Forward -fplugin-pass-arg=key=value to the frontend.
-  for (const Arg *A : Args.filtered(options::OPT_fplugin_pass_arg_EQ)) {
-    CmdArgs.push_back(Args.MakeArgString(
-        llvm::Twine("-fplugin-pass-arg=") + A->getValue()));
-    A->claim();
-  }
 
   // Forward --vfsoverlay to the frontend.
   for (const Arg *A : Args.filtered(options::OPT_vfsoverlay)) {

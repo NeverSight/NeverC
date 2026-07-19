@@ -122,6 +122,11 @@ addPassesToGenerateCode(LLVMTargetMachine &TM, PassManagerBase &PM,
 
   if (PassConfig->addISelPasses())
     return nullptr;
+  // SelectionDAG and GlobalISel expose legalization at different target-owned
+  // locations.  Publish the portable post-legalize slot after the complete
+  // selector has established a valid MachineFunction, followed by post-isel.
+  PassConfig->runMachinePipelineHook(MachinePipelineHookPoint::PostLegalize);
+  PassConfig->runMachinePipelineHook(MachinePipelineHookPoint::PostISel);
   PassConfig->addMachinePasses();
   PassConfig->setInitialized();
   return PassConfig;

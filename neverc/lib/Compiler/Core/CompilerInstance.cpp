@@ -16,6 +16,9 @@
 #include "neverc/Plugin/Host/FrontendPluginBridge.h"
 #include "neverc/Plugin/Host/PluginIOBridge.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
+#include "neverc/Plugin/Host/PluginSession.h"
+#include "neverc/Plugin/Host/PluginTargetInfo.h"
+#include "neverc/Plugin/Host/PluginTargetRegistry.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Scan/IncludeResolver.h"
 #include "neverc/Scan/PrepEngine.h"
@@ -171,8 +174,34 @@ void CompilerInstance::setVerboseOutputStream(
 void CompilerInstance::setTarget(TargetInfo *Value) { Target = Value; }
 
 bool CompilerInstance::createTarget() {
-  setTarget(TargetInfo::CreateTargetInfo(getDiagnostics(),
-                                         getInvocation().TargetOpts));
+  std::unique_ptr<TargetInfo> PluginTarget;
+  if (PluginTask) {
+    std::shared_ptr<const plugin::PluginTargetSnapshot> Snapshot =
+        plugin::findPluginTargetSnapshot(
+            PluginTask->processServices(),
+            PluginTask->session().handle());
+    if (Snapshot) {
+      const plugin::PluginTargetSnapshot::TargetRecord *Record =
+          Snapshot->matchTarget(getInvocation().TargetOpts->Triple);
+      if (Record) {
+        const auto *ABI = Snapshot->findABI(Record->DefaultABI);
+        const auto *CallingConvention =
+            Snapshot->findCallingConvention(
+                Record->DefaultCallingConvention);
+        PluginTarget = std::make_unique<plugin::PluginTargetInfo>(
+            *Record, getInvocation().TargetOpts->Triple, ABI,
+            CallingConvention, PluginTask.get());
+      }
+    }
+  }
+
+  if (PluginTarget)
+    setTarget(TargetInfo::CreateTargetInfo(
+        getDiagnostics(), getInvocation().TargetOpts,
+        std::move(PluginTarget)));
+  else
+    setTarget(TargetInfo::CreateTargetInfo(
+        getDiagnostics(), getInvocation().TargetOpts));
   if (!hasTarget())
     return false;
 

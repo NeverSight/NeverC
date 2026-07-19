@@ -833,7 +833,11 @@ struct PluginASTBridge::Impl {
   }
 
   Expected<NevercHandle> createDecl(const Decl *Value) {
-    return createEntity(Domain::Decl, Value);
+    const bool FirstPublication = !DeclHandles.contains(Value);
+    auto Handle = createEntity(Domain::Decl, Value);
+    if (Handle && FirstPublication)
+      indexDecl(Value);
+    return Handle;
   }
 
   Expected<NevercHandle> createStmt(const Stmt *Value) {

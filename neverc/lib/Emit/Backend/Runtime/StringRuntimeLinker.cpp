@@ -26,7 +26,8 @@ void markAllAsRuntime(Module &Mod) {
 
 PreservedAnalyses
 StringRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
-  StringRef Embedded = BuiltinString::getEmbeddedStringBitcode();
+  StringRef Embedded =
+      BuiltinString::getEmbeddedStringBitcode(M.getTargetTriple());
   if (Embedded.empty())
     return PreservedAnalyses::all();
 

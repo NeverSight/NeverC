@@ -24,6 +24,7 @@
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Invoke/Types.h"
 #include "neverc/Plugin/Host/FrontendPluginBridge.h"
+#include "neverc/Plugin/Host/IRGenProvider.h"
 #include "neverc/Plugin/Host/PluginHandleArena.h"
 #include "neverc/Plugin/Host/PluginIOBridge.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
@@ -31,6 +32,7 @@
 #include "neverc/Plugin/Host/PluginPhaseGraph.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
+#include "neverc/Plugin/Host/PluginTargetRegistry.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/STLExtras.h"
@@ -654,11 +656,26 @@ llvm::StringRef objectFormatName(const llvm::Triple &Target) {
 }
 
 llvm::Error verifyToolChainSelection(
-    const DriverToolChainSelectionArtifact &Selection) {
+    const DriverToolChainSelectionArtifact &Selection,
+    const plugin::PluginTargetSnapshot *PluginTargets) {
   if (!neverc_handle_is_null(Selection.Provider))
     return llvm::createStringError(
         llvm::inconvertibleErrorCode(),
         "toolchain provider exists but target capability is missing");
+
+  if (PluginTargets)
+    if (const auto *PluginTarget =
+            PluginTargets->matchTarget(Selection.TargetTriple)) {
+      if (Selection.ToolChainID != "neverc.plugin-target")
+        return llvm::createStringError(
+            llvm::inconvertibleErrorCode(),
+            "plugin Target toolchain selection has an invalid toolchain ID");
+      if (Selection.TargetKey != PluginTarget->CanonicalName)
+        return llvm::createStringError(
+            llvm::inconvertibleErrorCode(),
+            "plugin Target toolchain selection has an invalid target key");
+      return llvm::Error::success();
+    }
 
   llvm::Triple Target(Selection.TargetTriple);
   if (!isTargetArchSupported(Target))
@@ -699,9 +716,17 @@ executeToolChainPhase(DriverAPIBridge &Bridge,
   if (!GraphOrError)
     return GraphOrError.takeError();
   plugin::PluginPhaseGraph Graph = std::move(*GraphOrError);
+  std::shared_ptr<const plugin::PluginTargetSnapshot> PluginTargets =
+      plugin::findPluginTargetSnapshot(
+          Task.processServices(), Session.handle());
   plugin::PluginArtifactRegistry Artifacts;
   auto Types = registerDriverToolChainArtifacts(
-      Artifacts, verifyToolChainSelection);
+      Artifacts,
+      [PluginTargets](const DriverToolChainSelectionArtifact
+                          &Selection) {
+        return verifyToolChainSelection(Selection,
+                                        PluginTargets.get());
+      });
   if (!Types)
     return Types.takeError();
   if (llvm::Error E = Artifacts.freeze())
@@ -723,6 +748,12 @@ executeToolChainPhase(DriverAPIBridge &Bridge,
             DriverToolChainRequestData EffectiveRequest =
                 static_cast<const DriverToolChainRequestArtifact *>(Payload)
                     ->snapshot();
+            const plugin::PluginTargetSnapshot::TargetRecord
+                *PluginTarget =
+                    PluginTargets
+                        ? PluginTargets->matchTarget(
+                              EffectiveRequest.RequestedTriple)
+                        : nullptr;
             llvm::Triple Target(EffectiveRequest.ComputedTriple);
             auto *Selection =
                 new (std::nothrow) DriverToolChainSelectionArtifact();
@@ -731,10 +762,18 @@ executeToolChainPhase(DriverAPIBridge &Bridge,
               Status.Code = NEVERC_STATUS_RESOURCE_EXHAUSTED;
               return Status;
             }
-            Selection->set(
-                builtinToolChainID(Target).str(), Target.str(),
-                Target.str(), std::move(EffectiveRequest.CPU),
-                std::move(EffectiveRequest.Features), {}, true);
+            if (PluginTarget)
+              Selection->set(
+                  "neverc.plugin-target",
+                  PluginTarget->CanonicalName,
+                  PluginTarget->CanonicalName,
+                  std::move(EffectiveRequest.CPU),
+                  std::move(EffectiveRequest.Features), {}, true);
+            else
+              Selection->set(
+                  builtinToolChainID(Target).str(), Target.str(),
+                  Target.str(), std::move(EffectiveRequest.CPU),
+                  std::move(EffectiveRequest.Features), {}, true);
             auto Candidate = Executor.createCandidate(
                 Task, driverToolChainSelectionArtifactID(), Selection);
             if (!Candidate) {
@@ -1496,6 +1535,12 @@ Driver::prepareDirectPluginInvocation(
             if (llvm::Error E =
                     plugin::registerPluginFrontendInterface(Services))
               return E;
+            if (llvm::Error E =
+                    plugin::registerPluginIRInterface(Services))
+              return E;
+            if (llvm::Error E =
+                    plugin::registerPluginTargetInterfaces(Services))
+              return E;
             return PluginDriverAPIBridgeState->registerInterface(
                 Services.interfaces());
           })) {
@@ -1627,6 +1672,12 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
                   if (llvm::Error E =
                           plugin::registerPluginFrontendInterface(
                               Services))
+                    return E;
+                  if (llvm::Error E =
+                          plugin::registerPluginIRInterface(Services))
+                    return E;
+                  if (llvm::Error E =
+                          plugin::registerPluginTargetInterfaces(Services))
                     return E;
                   return PluginDriverAPIBridgeState->registerInterface(
                       Services.interfaces());
@@ -1849,6 +1900,8 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
       A->claim();
   Args.ClaimAllArgs(options::OPT_fplugin_EQ);
   Args.ClaimAllArgs(options::OPT_fplugin_arg_EQ);
+  Args.ClaimAllArgs(options::OPT_fplugin_pass_EQ);
+  Args.ClaimAllArgs(options::OPT_fplugin_pass_arg_EQ);
   Args.ClaimAllArgs(options::OPT_fplugin_provider_EQ);
   Args.ClaimAllArgs(options::OPT_config);
   Args.ClaimAllArgs(options::OPT_config_system_dir_EQ);

@@ -30,6 +30,7 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
 
 using namespace llvm;
@@ -189,6 +190,24 @@ Register MachineRegisterInfo::createGenericVirtualRegister(LLT Ty,
   setType(Reg, Ty);
   noteNewVirtualRegister(Reg);
   return Reg;
+}
+
+void MachineRegisterInfo::discardVirtualRegisters(unsigned FirstIndex) {
+  assert(FirstIndex <= getNumVirtRegs() && "Invalid virtual register index");
+  for (unsigned I = FirstIndex, E = getNumVirtRegs(); I != E; ++I) {
+    Register Reg = Register::index2VirtReg(I);
+    assert(VRegInfo[Reg].second == nullptr &&
+           "Cannot discard a virtual register with operands");
+    StringRef Name = getVRegName(Reg);
+    assert(Name.empty() && "Cannot discard a named virtual register");
+    (void)Name;
+  }
+  VRegInfo.resize(FirstIndex);
+  RegAllocHints.resize(FirstIndex);
+  if (VRegToType.size() > FirstIndex)
+    VRegToType.resize(FirstIndex);
+  if (VReg2Name.size() > FirstIndex)
+    VReg2Name.resize(FirstIndex);
 }
 
 void MachineRegisterInfo::clearVirtRegTypes() { VRegToType.clear(); }
@@ -440,6 +459,17 @@ bool MachineRegisterInfo::isLiveIn(Register Reg) const {
     if ((Register)LI.first == Reg || LI.second == Reg)
       return true;
   return false;
+}
+
+bool MachineRegisterInfo::removeLiveIn(MCRegister Reg) {
+  auto It = std::find_if(LiveIns.begin(), LiveIns.end(),
+                         [Reg](const auto &Entry) {
+                           return Entry.first == Reg;
+                         });
+  if (It == LiveIns.end())
+    return false;
+  LiveIns.erase(It);
+  return true;
 }
 
 /// getLiveInPhysReg - If VReg is a live-in virtual register, return the

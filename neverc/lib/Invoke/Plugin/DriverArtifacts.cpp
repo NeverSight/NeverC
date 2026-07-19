@@ -564,7 +564,10 @@ registerDriverParsedArgumentsArtifact(
 }
 
 bool isProtectedDriverBootstrapArgument(StringRef Value) {
-  return Value.starts_with("-fplugin=") || Value.starts_with("-fplugin-arg=") ||
+  return Value.starts_with("-fplugin=") ||
+         Value.starts_with("-fplugin-pass=") ||
+         Value.starts_with("-fplugin-arg=") ||
+         Value.starts_with("-fplugin-pass-arg=") ||
          Value.starts_with("-fplugin-provider=");
 }
 

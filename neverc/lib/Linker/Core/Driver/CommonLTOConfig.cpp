@@ -5,11 +5,16 @@
 #include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
-#include "neverc/Plugin/PluginLoader.h"
+#include "neverc/Plugin/Host/IRPassPlugin.h"
+#include "neverc/Plugin/Host/IROptimizationProvider.h"
+#include "neverc/Plugin/Host/MIRPassPlugin.h"
+#include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
+#include "neverc/Plugin/Host/PluginSession.h"
+#include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/CodeGen/CommandFlags.h"
-#include "neverc/Invoke/LLVMCommandLine.h"
 #include "llvm/Support/CommandLine.h"
+#include <mutex>
 
 using namespace llvm;
 
@@ -23,6 +28,46 @@ static std::optional<BasicBlockSection> bbSectionsKeywordMode(StringRef BBS) {
       .Case("none", BasicBlockSection::None)
       .Default(std::nullopt);
 }
+
+namespace {
+
+struct LTOPluginContext {
+  std::shared_ptr<neverc::plugin::PluginTaskContext> Task;
+  std::shared_ptr<neverc::plugin::IRPassPlan> IRPasses;
+  std::shared_ptr<neverc::plugin::MIRPassPlan> MIRPasses;
+  std::shared_ptr<neverc::ParallelOptimizationHooks> ParallelHooks;
+  std::mutex FinishMutex;
+  bool Finished = false;
+
+  void finish() {
+    std::lock_guard<std::mutex> Lock(FinishMutex);
+    if (Finished)
+      return;
+    Finished = true;
+    IRPasses.reset();
+    if (Task) {
+      if (Error E = Task->end())
+        linker::error("failed to end LTO plugin task: " +
+                      toString(std::move(E)));
+      Task.reset();
+    }
+  }
+};
+
+NevercIROptimizationLevel pluginOptimizationLevel(unsigned Level) {
+  switch (Level) {
+  case 0:
+    return NEVERC_IR_OPTIMIZATION_O0;
+  case 1:
+    return NEVERC_IR_OPTIMIZATION_O1;
+  case 2:
+    return NEVERC_IR_OPTIMIZATION_O2;
+  default:
+    return NEVERC_IR_OPTIMIZATION_O3;
+  }
+}
+
+} // namespace
 
 bool linker::ltoBasicBlockSectionsIsListFile(StringRef BBS) {
   return !BBS.empty() && !bbSectionsKeywordMode(BBS).has_value();
@@ -85,13 +130,132 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
   c.PTO.LoopVectorization = OptLevel > 1;
   c.PTO.SLPVectorization = OptLevel > 1;
 
+  std::shared_ptr<LTOPluginContext> PluginContext;
+  if (Cfg.pluginSession) {
+    auto Task =
+        Cfg.pluginSession->createTask(NEVERC_TASK_LTO, Cfg.pluginTask);
+    if (!Task) {
+      error("failed to create LTO plugin task: " +
+            toString(Task.takeError()));
+    } else {
+      PluginContext = std::make_shared<LTOPluginContext>();
+      PluginContext->Task =
+          std::shared_ptr<neverc::plugin::PluginTaskContext>(std::move(*Task));
+
+      auto IRPlan =
+          neverc::plugin::IRPassPlan::create(*PluginContext->Task);
+      if (!IRPlan) {
+        error("failed to create LTO IR pass plan: " +
+              toString(IRPlan.takeError()));
+      } else {
+        PluginContext->IRPasses =
+            std::shared_ptr<neverc::plugin::IRPassPlan>(
+                std::move(*IRPlan));
+      }
+
+      auto MIRPlan =
+          neverc::plugin::MIRPassPlan::create(*PluginContext->Task);
+      if (!MIRPlan) {
+        error("failed to create LTO MIR pass plan: " +
+              toString(MIRPlan.takeError()));
+      } else {
+        PluginContext->MIRPasses = std::move(*MIRPlan);
+        if (!PluginContext->MIRPasses->empty())
+          c.MachinePassHooks = PluginContext->MIRPasses;
+      }
+      c.HostContext = PluginContext;
+      c.ModuleOptimizeHook =
+          [PluginContext, OptLevel](std::unique_ptr<Module> &ModuleValue,
+                                    bool &SkipBuiltin) {
+            auto Runtime =
+                neverc::plugin::PluginIROptimizationProviderRuntime::create(
+                    *PluginContext->Task, *ModuleValue, OptLevel,
+                    /*DisableLLVMPasses=*/false,
+                    [](Module &) { return Error::success(); });
+            if (!Runtime) {
+              linker::error("failed to create LTO optimization transition: " +
+                            toString(Runtime.takeError()));
+              return false;
+            }
+            if (Error E = (*Runtime)->execute()) {
+              linker::error("LTO optimization transition failed: " +
+                            toString(std::move(E)));
+              return false;
+            }
+            SkipBuiltin = !(*Runtime)->ranBuiltinPipeline();
+            if ((*Runtime)->ownsModule())
+              ModuleValue = (*Runtime)->releaseOwnedModule();
+            return ModuleValue != nullptr;
+          };
+      c.BackendDoneHook = [PluginContext] { PluginContext->finish(); };
+      c.DisableVerify = false;
+    }
+  }
+
+  NevercIROptimizationLevel PluginLevel =
+      pluginOptimizationLevel(OptLevel);
+  if (PluginContext && PluginContext->IRPasses &&
+      !PluginContext->IRPasses->empty()) {
+    neverc::plugin::IRPassPlan *IRPasses =
+        PluginContext->IRPasses.get();
+    auto AddPreOpt = [IRPasses, PluginLevel](ModulePassManager &MPM) {
+      IRPasses->addPasses(
+          MPM,
+          {NEVERC_PHASE_IR_PASS_PRE_OPT_HIGH,
+           NEVERC_PHASE_IR_PASS_PRE_OPT_LOW},
+          PluginLevel);
+      IRPasses->addPasses(
+          MPM,
+          {NEVERC_PHASE_IR_PASS_PIPELINE_START_HIGH,
+           NEVERC_PHASE_IR_PASS_PIPELINE_START_LOW},
+          PluginLevel);
+    };
+    auto AddPostOpt = [IRPasses, PluginLevel](ModulePassManager &MPM) {
+      IRPasses->addPasses(
+          MPM,
+          {NEVERC_PHASE_IR_PASS_POST_OPT_HIGH,
+           NEVERC_PHASE_IR_PASS_POST_OPT_LOW},
+          PluginLevel);
+      IRPasses->addPasses(
+          MPM,
+          {NEVERC_PHASE_IR_PASS_PRE_CODEGEN_HIGH,
+           NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW},
+          PluginLevel);
+    };
+    auto ConfigurePassBuilder =
+        [IRPasses, PluginLevel](PassBuilder &PB) {
+          PB.registerOptimizerLastEPCallback(
+              [IRPasses, PluginLevel](ModulePassManager &MPM,
+                                      OptimizationLevel) {
+                IRPasses->addPasses(
+                    MPM,
+                    {NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_HIGH,
+                     NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_LOW},
+                    PluginLevel);
+              });
+        };
+    c.PreOptPassHook = AddPreOpt;
+    c.PostOptPassHook = AddPostOpt;
+    c.PassBuilderHook = ConfigurePassBuilder;
+    PluginContext->ParallelHooks =
+        std::make_shared<neverc::ParallelOptimizationHooks>();
+    PluginContext->ParallelHooks->ConfigurePassBuilder =
+        ConfigurePassBuilder;
+    PluginContext->ParallelHooks->PreOpt = AddPreOpt;
+    PluginContext->ParallelHooks->PostOpt = AddPostOpt;
+  }
+
   // Per-partition object cache: with stable partition assignment, an
   // incremental relink re-runs optimization + codegen only for the
   // partitions whose post-IPO bitcode actually changed.  The hooks own
   // the storage and the configuration digest; the partitioner only sees
   // content-addressed Lookup/Store callbacks.
   std::shared_ptr<neverc::PartitionCacheHooks> pcgCache;
-  if (ltoPartitionCacheUsable(Cfg)) {
+  bool HasMutatingPluginPasses =
+      PluginContext &&
+      ((PluginContext->IRPasses && !PluginContext->IRPasses->empty()) ||
+       (PluginContext->MIRPasses && !PluginContext->MIRPasses->empty()));
+  if (!HasMutatingPluginPasses && ltoPartitionCacheUsable(Cfg)) {
     pcgCache = std::make_shared<neverc::PartitionCacheHooks>();
     pcgCache->Lookup = [salt = ltoPartitionCacheSalt(Cfg, EmitAddrsig)](
                            StringRef pipeTag, StringRef bitcode,
@@ -100,14 +264,27 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     };
     pcgCache->Store = ltoPartitionCacheStore;
   }
-  c.ParallelCodeGenHook = [pcgCache](Module &M, TargetMachine &TM,
-                                     raw_pwrite_stream &OS, unsigned NP) {
+  c.ParallelCodeGenHook = [pcgCache, PluginContext](
+                              Module &M, TargetMachine &TM,
+                              raw_pwrite_stream &OS, unsigned NP) {
+    if (PluginContext && PluginContext->MIRPasses &&
+        PluginContext->MIRPasses->requiresSerialCodeGen())
+      return false;
     return neverc::runParallelCodeGen(M, TM, OS, NP, pcgCache.get());
   };
-  c.ParallelOptCodeGenHook = [pcgCache](Module &M, TargetMachine &TM,
-                                        raw_pwrite_stream &OS, unsigned NP,
-                                        unsigned OL) {
-    return neverc::runParallelOptAndCodeGen(M, TM, OS, NP, OL, pcgCache.get());
+  c.ParallelOptCodeGenHook = [pcgCache, PluginContext](
+                                 Module &M, TargetMachine &TM,
+                                 raw_pwrite_stream &OS, unsigned NP,
+                                 unsigned OL) {
+    if (PluginContext && PluginContext->MIRPasses &&
+        PluginContext->MIRPasses->requiresSerialCodeGen())
+      return false;
+    const neverc::ParallelOptimizationHooks *Hooks =
+        PluginContext && PluginContext->ParallelHooks
+            ? PluginContext->ParallelHooks.get()
+            : nullptr;
+    return neverc::runParallelOptAndCodeGen(M, TM, OS, NP, OL,
+                                            pcgCache.get(), Hooks);
   };
   c.LTOParallelOpt = true;
 
@@ -125,32 +302,6 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     unsigned long long Val;
     if (!StringRef(Cfg.optRemarksHotnessThreshold).getAsInteger(10, Val))
       c.RemarksHotnessThreshold = Val;
-  }
-
-  if (!Cfg.nevercPluginPaths.empty()) {
-    auto &PL = neverc::plugin::getGlobalPluginLoader();
-    for (const auto &Path : Cfg.nevercPluginPaths) {
-      std::string Err;
-      if (!PL.loadPlugin(Path, Err))
-        error("failed to load neverc plugin: " + Err);
-    }
-    // Wire plugin module passes into the LTO optimization pipeline through the
-    // Config hooks.  Keeping core LLVM LTO decoupled from neverc: the backend
-    // only sees std::function hooks, never the plugin loader.  The lambdas
-    // capture nothing and re-fetch the singleton, so they stay valid for the
-    // lifetime of the Config regardless of copies.
-    if (PL.hasPlugins()) {
-      c.PreOptPassHook = [](ModulePassManager &MPM) {
-        neverc::plugin::addPluginModulePasses(
-            MPM, NEVERC_INTERPOSE_LTO_PRE_OPT,
-            neverc::plugin::getGlobalPluginLoader());
-      };
-      c.PostOptPassHook = [](ModulePassManager &MPM) {
-        neverc::plugin::addPluginModulePasses(
-            MPM, NEVERC_INTERPOSE_LTO_POST_OPT,
-            neverc::plugin::getGlobalPluginLoader());
-      };
-    }
   }
 
   if (!Cfg.ltoBasicBlockSections.empty()) {

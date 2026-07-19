@@ -318,6 +318,12 @@ typedef NevercStatus(NEVERC_CALL *NevercGetSessionStateFn)(
 typedef NevercStatus(NEVERC_CALL *NevercGetTaskStateFn)(
     void *Context, NevercTaskHandle Task, NevercStringView PluginID,
     void **OutState);
+typedef NevercStatus(NEVERC_CALL *NevercGetPluginOptionValueCountFn)(
+    void *Context, NevercSessionHandle Session, NevercStringView PluginID,
+    NevercStringView Spelling, uint64_t *OutCount);
+typedef NevercStatus(NEVERC_CALL *NevercGetPluginOptionValueFn)(
+    void *Context, NevercSessionHandle Session, NevercStringView PluginID,
+    NevercStringView Spelling, uint64_t Index, NevercStringView *OutValue);
 
 typedef struct NevercBootstrapAPI {
   NevercABITableHeader Header;
@@ -339,6 +345,8 @@ typedef struct NevercCoreAPI {
   NevercCheckCancelledFn CheckCancelled;
   NevercGetSessionStateFn GetSessionState;
   NevercGetTaskStateFn GetTaskState;
+  NevercGetPluginOptionValueCountFn GetPluginOptionValueCount;
+  NevercGetPluginOptionValueFn GetPluginOptionValue;
 } NevercCoreAPI;
 
 typedef NevercStatus(NEVERC_CALL *NevercInvokeNextFn)(

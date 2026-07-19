@@ -71,8 +71,7 @@ TEST(PluginBootstrapTest, KeepsNoPluginPathAllocationFree) {
   PluginBootstrap Bootstrap("neverc-plugin-bootstrap-tests",
                             LLVM_VERSION_MAJOR, {});
   std::vector<PluginBootstrapToken> Tokens = {
-      {"-fplugin-pass=legacy.so", PluginArgumentOrigin::CommandLine,
-       "command line", 1},
+      {"-fsyntax-only", PluginArgumentOrigin::CommandLine, "command line", 1},
   };
   EXPECT_FALSE(Bootstrap.discoverAndActivate(Tokens));
   EXPECT_FALSE(Bootstrap.isActive());

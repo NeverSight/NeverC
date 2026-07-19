@@ -70,6 +70,16 @@ TEST(PluginRegistryTest, RejectsMissingEntryPoint) {
             std::string::npos);
 }
 
+TEST(PluginRegistryTest, RejectsRemovedPrototypeBinaryWithMigrationDiagnostic) {
+  auto Registry = makeRegistry();
+  auto Loaded = Registry.load(NEVERC_TEST_REMOVED_PROTOTYPE_PLUGIN);
+  ASSERT_FALSE(static_cast<bool>(Loaded));
+  std::string Message = takeErrorMessage(Loaded);
+  EXPECT_NE(Message.find("removed 'nevercGetPluginInfo' prototype ABI"),
+            std::string::npos);
+  EXPECT_NE(Message.find("export 'neverc_plugin_entry'"), std::string::npos);
+}
+
 TEST(PluginRegistryTest, RejectsMissingFile) {
   auto Registry = makeRegistry();
   auto Loaded = Registry.load("/neverc/this/plugin/does/not/exist");

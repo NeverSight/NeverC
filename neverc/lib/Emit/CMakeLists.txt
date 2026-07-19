@@ -54,6 +54,7 @@ add_neverc_library(nevercEmit
   ABI/ABIInfo.cpp
   ABI/ABIInfoImpl.cpp
   ABI/CABISupport.cpp
+  ABI/PluginABIInfo.cpp
   ABI/TargetInfo.cpp
 
   ${NEVERC_EMIT_TARGET_SOURCES}
@@ -107,7 +108,9 @@ add_neverc_library(nevercEmit
   nevercMerge
   nevercStrHash
   nevercXorStr
-  nevercPlugin
+  nevercDynCode
+  nevercPluginIR
+  nevercPluginTarget
   )
 
 target_include_directories(nevercEmit

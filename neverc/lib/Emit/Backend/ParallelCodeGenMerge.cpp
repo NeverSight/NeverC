@@ -394,7 +394,7 @@ struct ParallelCGContext {
 
   bool init(Module &Mod, TargetMachine &TM);
   bool resolvePartitions(unsigned WeightDiv, unsigned LoopDiv, unsigned MaxParts);
-  void externalizeAndSerialize(Module &Mod);
+  bool externalizeAndSerialize(Module &Mod);
   void preparePartitions(StringRef BCRef, TargetMachine &TM);
   bool finalizeResults(Module &Mod, raw_pwrite_stream &OS);
   void restoreLinkage(Module &Mod);
@@ -486,7 +486,15 @@ bool ParallelCGContext::resolvePartitions(unsigned WeightDiv, unsigned LoopDiv,
   return true;
 }
 
-void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
+bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
+  // The LTO reader may hand this path a lazy module.  The transformations
+  // below inspect use-lists (for example while dropping dead constants), which
+  // are incomplete until the module materializer has been drained.
+  if (Error Err = Mod.materializeAll()) {
+    consumeError(std::move(Err));
+    return false;
+  }
+
   SmallString<32> PCGSuffix;
   {
     auto H = hash_value(Mod.getModuleIdentifier());
@@ -621,6 +629,7 @@ void ParallelCGContext::externalizeAndSerialize(Module &Mod) {
       SavedMD.push_back(std::move(S));
       Mod.eraseNamedMetadata(NMD);
     }
+  return true;
 }
 
 void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
@@ -713,6 +722,15 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
         F.deleteBody();
         F.setComdat(nullptr);
       }
+      // Assigned bodies are materialized and unassigned bodies have been
+      // dropped, so draining the remaining module tail is cheap.  It must
+      // happen before any use-list operation or optimization pass: LLVM
+      // deliberately rejects use-list queries while a module still owns a
+      // materializer because those lists may be incomplete.
+      if (Error Err = MPart.materializeAll()) {
+        consumeError(std::move(Err));
+        continue;
+      }
       // externalizeAndSerialize renames symbols with a ".__pcg" suffix, but
       // Comdat keys keep their pre-rename names.  COFF lowering then looks up
       // the Comdat name as a GlobalValue and fatals with "Associative COMDAT
@@ -774,17 +792,14 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
           SharedCM, SharedOptLevel));
       if (!PP->PTM)
         continue;
+      static_cast<LLVMTargetMachine *>(PP->PTM.get())
+          ->setMachinePipelineHooks(
+              static_cast<LLVMTargetMachine &>(TM).getMachinePipelineHooks());
       MPart.setDataLayout(PP->PTM->createDataLayout());
 
       if (Cache && Cache->enabled()) {
         // Key = this partition's exact post-IPO bitcode.  Serializing it
-        // requires releasing the lazy materializer (assigned bodies are
-        // already parsed, every other body was dropped, so this only
-        // drains the module tail).  On failure fall through uncached.
-        if (Error Err = MPart.materializeAll()) {
-          consumeError(std::move(Err));
-          continue;
-        }
+        // is now safe because the lazy materializer was drained above.
         stripUnreferencedDeclarations(MPart);
         SmallString<0> PartBC;
         {
@@ -925,7 +940,8 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
                              /*MaxParts=*/PcgCgMaxParts))
     return false;
 
-  Ctx.externalizeAndSerialize(Mod);
+  if (!Ctx.externalizeAndSerialize(Mod))
+    return false;
   StringRef BCRef(Ctx.FullBC.data(), Ctx.FullBC.size());
   Ctx.preparePartitions(BCRef, TM);
 
@@ -984,7 +1000,8 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
 bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
                               raw_pwrite_stream &OS, unsigned /*NumPartitions*/,
                               unsigned OptLevel,
-                              const PartitionCacheHooks *Cache) {
+                              const PartitionCacheHooks *Cache,
+                              const ParallelOptimizationHooks *Hooks) {
   if (OptLevel == 0)
     return false;
 
@@ -1017,7 +1034,8 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
            << " NumPartitions=" << Ctx.NumPartitions
            << " WorkerThreadCap=" << Ctx.WorkerThreadCap << "\n";
 
-  Ctx.externalizeAndSerialize(Mod);
+  if (!Ctx.externalizeAndSerialize(Mod))
+    return false;
   StringRef BCRef(Ctx.FullBC.data(), Ctx.FullBC.size());
   Ctx.preparePartitions(BCRef, TM);
 
@@ -1079,6 +1097,8 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
           StandardInstrumentations SI(MPart.getContext(), false, false);
           SI.registerCallbacks(PIC, &MAM);
           PassBuilder PB(PP.PTM.get(), SharedPTO, std::nullopt, &PIC);
+          if (Hooks && Hooks->ConfigurePassBuilder)
+            Hooks->ConfigurePassBuilder(PB);
           FAM.registerPass(
               [&] { return TargetLibraryAnalysis(*Ctx.SharedTLII); });
           PB.registerModuleAnalyses(MAM);
@@ -1088,8 +1108,12 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
           PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
           ModulePassManager MPM;
+          if (Hooks && Hooks->PreOpt)
+            Hooks->PreOpt(MPM);
           MPM.addPass(PB.buildModuleOptimizationPipeline(
               OL, ThinOrFullLTOPhase::FullLTOPostLink));
+          if (Hooks && Hooks->PostOpt)
+            Hooks->PostOpt(MPM);
           MPM.run(MPart, MAM);
         }
 

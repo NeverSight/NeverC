@@ -146,6 +146,14 @@ Error PluginSession::initialize() {
   RegisteredScope = true;
   HandleArena = std::make_unique<PluginHandleArena>(
       ProcessServices, Handle.Owner, Handle.Owner);
+  if (Error E = ProcessServices.prepareSessionScope(Handle, *this)) {
+    HandleArena->invalidateAll();
+    ProcessServices.unregisterSessionScope(Handle);
+    RegisteredScope = false;
+    Snapshot.reset();
+    SessionLease.reset();
+    return E;
+  }
 
   for (auto &State : PluginStates) {
     const PluginDescriptorRecord &Descriptor = State->Module->descriptor();

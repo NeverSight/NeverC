@@ -76,34 +76,34 @@ cd pluginsdk/examples && make CustomCallConvPlugin.dylib   # 或 .so / .dll
 **属性模式**（默认）—— 只影响有 `custom_attr` 源码标注的函数：
 
 ```bash
-neverc -fplugin-pass=./CustomCallConvPlugin.dylib input.c -o output.o
+neverc -fplugin=./CustomCallConvPlugin.dylib input.c -o output.o
 ```
 
 **全局模式** —— 给所有函数套用指定约定（需显式 `cc-all=1`）：
 
 ```bash
-neverc -fplugin-pass=./CustomCallConvPlugin.dylib \
-       -fplugin-pass-arg=cc-all=1 \
-       -fplugin-pass-arg=ccspec="gpr:r10,r11,rsi;ret:rdx" \
+neverc -fplugin=./CustomCallConvPlugin.dylib \
+       -fplugin-arg=org.neverc.example.custom-callconv:cc-all \
+       -fplugin-arg=org.neverc.example.custom-callconv:ccspec="gpr:r10,r11,rsi;ret:rdx" \
        input.c -o output.o
 ```
 
 **按名称前缀过滤：**
 
 ```bash
-neverc -fplugin-pass=./CustomCallConvPlugin.dylib \
-       -fplugin-pass-arg=cc-all=1 \
-       -fplugin-pass-arg=ccprefix=secret_ \
-       -fplugin-pass-arg=ccspec="gpr:r9,r8;ret:rax" \
+neverc -fplugin=./CustomCallConvPlugin.dylib \
+       -fplugin-arg=org.neverc.example.custom-callconv:cc-all \
+       -fplugin-arg=org.neverc.example.custom-callconv:ccprefix=secret_ \
+       -fplugin-arg=org.neverc.example.custom-callconv:ccspec="gpr:r9,r8;ret:rax" \
        input.c -o output.o
 ```
 
 **多样化** —— 每个函数使用不同布局（反逆向工程）：
 
 ```bash
-neverc -fplugin-pass=./CustomCallConvPlugin.dylib \
-       -fplugin-pass-arg=cc-all=1 \
-       -fplugin-pass-arg=ccshuffle=1 \
+neverc -fplugin=./CustomCallConvPlugin.dylib \
+       -fplugin-arg=org.neverc.example.custom-callconv:cc-all \
+       -fplugin-arg=org.neverc.example.custom-callconv:ccshuffle \
        input.c -o output.o
 ```
 

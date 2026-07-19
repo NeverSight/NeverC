@@ -22,6 +22,7 @@ class DiagnosticsEngine;
 class GlobalDecl;
 class HeaderIndexOptions;
 class PrepOptions;
+class TreeContext;
 
 namespace Emit {
 class ModuleEmitter;
@@ -47,6 +48,8 @@ public:
   llvm::Constant *addrOfGlobal(GlobalDecl decl, bool isForDefinition);
 
   llvm::Module *startModule(llvm::StringRef ModuleName, llvm::LLVMContext &C);
+
+  llvm::Module *generateTranslationUnit(TreeContext &Context);
 };
 
 IRGenerator *

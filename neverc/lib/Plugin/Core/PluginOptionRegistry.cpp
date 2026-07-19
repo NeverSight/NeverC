@@ -410,8 +410,12 @@ PluginOptionRegistry::parse(ArrayRef<StringRef> Arguments,
 
   for (size_t I = 0; I != Arguments.size(); ++I) {
     StringRef Argument = Arguments[I];
-    if (Argument.starts_with("-fplugin-arg=")) {
-      StringRef Payload = Argument.drop_front(strlen("-fplugin-arg="));
+    if (Argument.starts_with("-fplugin-arg=") ||
+        Argument.starts_with("-fplugin-pass-arg=")) {
+      StringRef Payload =
+          Argument.starts_with("-fplugin-arg=")
+              ? Argument.drop_front(strlen("-fplugin-arg="))
+              : Argument.drop_front(strlen("-fplugin-pass-arg="));
       auto PluginAndValue = Payload.split(':');
       StringRef PluginID;
       StringRef KeyValue;

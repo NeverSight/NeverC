@@ -34,7 +34,9 @@ PluginBootstrap::~PluginBootstrap() {
 
 bool PluginBootstrap::isReservedBootstrapToken(StringRef Token) {
   return Token.starts_with("-fplugin=") ||
+         Token.starts_with("-fplugin-pass=") ||
          Token.starts_with("-fplugin-arg=") ||
+         Token.starts_with("-fplugin-pass-arg=") ||
          Token.starts_with("-fplugin-provider=");
 }
 
@@ -63,15 +65,20 @@ Error PluginBootstrap::discoverAndActivate(
   bool HasPluginControlArgument = false;
   for (const PluginBootstrapToken &Token : Tokens) {
     StringRef Argument = Token.Value;
-    if (Argument == "-fplugin")
+    if (Argument == "-fplugin" || Argument == "-fplugin-pass")
       return bootstrapError("-fplugin requires '=path'");
-    if (!Argument.starts_with("-fplugin=")) {
+    StringRef Path;
+    if (Argument.starts_with("-fplugin="))
+      Path = Argument.drop_front(strlen("-fplugin="));
+    else if (Argument.starts_with("-fplugin-pass="))
+      Path = Argument.drop_front(strlen("-fplugin-pass="));
+    else {
       HasPluginControlArgument |=
           Argument.starts_with("-fplugin-arg=") ||
+          Argument.starts_with("-fplugin-pass-arg=") ||
           Argument.starts_with("-fplugin-provider=");
       continue;
     }
-    StringRef Path = Argument.drop_front(strlen("-fplugin="));
     if (Path.empty())
       return bootstrapError("-fplugin path must not be empty");
     Paths.push_back(Path);

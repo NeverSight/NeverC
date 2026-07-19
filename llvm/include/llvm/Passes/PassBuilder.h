@@ -748,10 +748,6 @@ bool parseAnalysisUtilityPasses(
   return false;
 }
 
-//! List of pass builder callbacks to be applied, in addition to those imported
-//! from plugins or LLVM extensions.
-extern SmallVector<std::function<void(PassBuilder &)>>
-    ListRegisterPassBuilderCallbacks;
 } // namespace llvm
 
 #endif

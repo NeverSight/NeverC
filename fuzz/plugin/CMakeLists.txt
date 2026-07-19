@@ -6,8 +6,8 @@ endif()
 add_custom_target(neverc-plugin-fuzzers)
 set_target_properties(neverc-plugin-fuzzers PROPERTIES FOLDER "Fuzzers")
 
-function(add_neverc_plugin_fuzzer target source)
-  add_executable(${target}
+function(add_neverc_plugin_fuzzer target source smoke_name)
+  add_executable(${target} EXCLUDE_FROM_ALL
     ${source}
     PluginFrontendFuzzSupport.cpp
   )
@@ -26,9 +26,35 @@ function(add_neverc_plugin_fuzzer target source)
   )
   add_dependencies(neverc-plugin-fuzzers ${target})
   set_target_properties(${target} PROPERTIES FOLDER "Fuzzers/Plugin")
+
+  if(NEVERC_INCLUDE_TESTS)
+    add_test(NAME "PluginFuzzSmoke.${smoke_name}"
+      COMMAND $<TARGET_FILE:${target}>
+        -runs=256
+        -max_len=4096
+        -print_funcs=0
+    )
+    set_tests_properties("PluginFuzzSmoke.${smoke_name}" PROPERTIES
+      LABELS "plugin;fuzz;smoke"
+      TIMEOUT 60
+    )
+  endif()
 endfunction()
 
-add_neverc_plugin_fuzzer(neverc-plugin-token-builder-fuzzer
-  TokenBuilderFuzzer.cpp)
-add_neverc_plugin_fuzzer(neverc-plugin-ast-mutation-fuzzer
-  ASTMutationFuzzer.cpp)
+add_neverc_plugin_fuzzer(plugin-prep-token-builder-fuzzer
+  PrepTokenBuilderFuzzer.cpp Prep)
+add_neverc_plugin_fuzzer(plugin-ast-mutation-fuzzer
+  ASTMutationFuzzer.cpp AST)
+add_neverc_plugin_fuzzer(plugin-ir-builder-fuzzer
+  IRBuilderFuzzer.cpp IR)
+target_link_libraries(plugin-ir-builder-fuzzer PRIVATE
+  nevercPluginIR
+)
+add_neverc_plugin_fuzzer(plugin-mir-builder-fuzzer
+  MIRBuilderFuzzer.cpp MIR)
+target_link_libraries(plugin-mir-builder-fuzzer PRIVATE
+  LLVM${LLVM_NATIVE_ARCH}CodeGen
+  LLVM${LLVM_NATIVE_ARCH}Desc
+  LLVM${LLVM_NATIVE_ARCH}Info
+  nevercPluginIR
+)

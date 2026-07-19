@@ -2,6 +2,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/TargetParser/Triple.h"
 #include <cstddef>
 #include <cstring>
 #include <string>
@@ -310,11 +311,50 @@ llvm::StringRef BuiltinString::getBuiltinStringThinHeader() {
   return CachedThinHeader;
 }
 
-#include "BuiltinStringBitcode.h"
+#include "BuiltinStringBitcode_darwin_arm64.h"
+#include "BuiltinStringBitcode_darwin_x64.h"
+#include "BuiltinStringBitcode_linux_arm64.h"
+#include "BuiltinStringBitcode_linux_x64.h"
+#include "BuiltinStringBitcode_win_arm64.h"
+#include "BuiltinStringBitcode_win_x64.h"
 
-llvm::StringRef BuiltinString::getEmbeddedStringBitcode() {
-  if (kStringRuntimeBitcode_len == 0)
+llvm::StringRef
+BuiltinString::getEmbeddedStringBitcode(llvm::StringRef TargetTriple) {
+  const llvm::Triple Triple(TargetTriple);
+  const unsigned char *Data = nullptr;
+  unsigned Length = 0;
+
+  auto Select = [&](const unsigned char *CandidateData,
+                    unsigned CandidateLength) {
+    Data = CandidateData;
+    Length = CandidateLength;
+  };
+  const bool IsArm64 = Triple.getArch() == llvm::Triple::aarch64;
+  const bool IsX64 = Triple.getArch() == llvm::Triple::x86_64;
+  if (Triple.isOSDarwin()) {
+    if (IsArm64)
+      Select(kStringRuntimeBitcode_darwin_arm64,
+             kStringRuntimeBitcode_darwin_arm64_len);
+    else if (IsX64)
+      Select(kStringRuntimeBitcode_darwin_x64,
+             kStringRuntimeBitcode_darwin_x64_len);
+  } else if (Triple.isOSWindows()) {
+    if (IsArm64)
+      Select(kStringRuntimeBitcode_win_arm64,
+             kStringRuntimeBitcode_win_arm64_len);
+    else if (IsX64)
+      Select(kStringRuntimeBitcode_win_x64,
+             kStringRuntimeBitcode_win_x64_len);
+  } else if (Triple.isOSLinux()) {
+    if (IsArm64)
+      Select(kStringRuntimeBitcode_linux_arm64,
+             kStringRuntimeBitcode_linux_arm64_len);
+    else if (IsX64)
+      Select(kStringRuntimeBitcode_linux_x64,
+             kStringRuntimeBitcode_linux_x64_len);
+  }
+
+  if (!Data || Length == 0)
     return {};
-  return llvm::StringRef(reinterpret_cast<const char *>(kStringRuntimeBitcode),
-                         kStringRuntimeBitcode_len);
+  return llvm::StringRef(reinterpret_cast<const char *>(Data), Length);
 }

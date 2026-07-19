@@ -595,6 +595,16 @@ Error PluginPhaseExecutor::importSessionRegistrations(
         break;
       case PluginRegistrationKind::Interface:
       case PluginRegistrationKind::Option:
+      case PluginRegistrationKind::VFSProvider:
+      case PluginRegistrationKind::IRPass:
+      case PluginRegistrationKind::IRAnalysis:
+      case PluginRegistrationKind::MIRPass:
+      case PluginRegistrationKind::Target:
+      case PluginRegistrationKind::TargetABI:
+      case PluginRegistrationKind::CallingConvention:
+      case PluginRegistrationKind::MCSchema:
+      case PluginRegistrationKind::ObjectFormat:
+      case PluginRegistrationKind::CodeGenEdge:
         break;
       }
     }

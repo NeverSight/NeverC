@@ -19,6 +19,10 @@ NI int  spill5(int a,int b,int c,int d,int e) { return a+b+c+d+e; }
 int caller3(void) { return add3(10, 20, 30); }
 )C";
 
+std::string pluginArg(const std::string &Value) {
+  return "-fplugin-arg=org.neverc.example.custom-callconv:" + Value;
+}
+
 std::string detab(std::string s) {
   for (char &c : s)
     if (c == '\t')
@@ -57,13 +61,13 @@ protected:
   }
 
   // Compile the cases to x86-64 assembly under `spec`; return the (de-tabbed)
-  // assembly text. `extraArg` allows passing another -fplugin-pass-arg.
+  // assembly text. `extraArg` allows passing another namespaced plugin option.
   std::string asmForTriple(const std::string &triple, const std::string &spec,
                            const std::string &extraArg = "") {
     fs::path out = tmpFile("out.s");
-    std::vector<std::string> args = {"-fplugin-pass=" + plugin_.string(),
-                                     "-fplugin-pass-arg=cc-all=1",
-                                     "-fplugin-pass-arg=ccspec=" + spec};
+    std::vector<std::string> args = {"-fplugin=" + plugin_.string(),
+                                     pluginArg("cc-all=1"),
+                                     pluginArg("ccspec=" + spec)};
     if (!extraArg.empty())
       args.push_back(extraArg);
     args.push_back("-S");
@@ -134,7 +138,7 @@ TEST_F(CustomCallConvTest, I64UsesWideRegister) {
 // No function matches the plugin's prefix -> standard SysV convention is kept.
 TEST_F(CustomCallConvTest, FallbackToStandard) {
   std::string s =
-      asmFor("gpr:rcx,rdx,r8;ret:rax", "-fplugin-pass-arg=ccprefix=nomatch_");
+      asmFor("gpr:rcx,rdx,r8;ret:rax", pluginArg("ccprefix=nomatch_"));
   EXPECT_TRUE(has(s, "$10, %edi"));   // standard 1st integer arg register
   EXPECT_FALSE(has(s, "$30, %r8d"));  // custom layout must NOT appear
 }
@@ -202,7 +206,7 @@ TEST_F(CustomCallConvTest, AArch64CalleeSavedCsr) {
             "__attribute__((noinline)) int work(int a){return a*a;}\n"
             "int caller(int x,int y){int w=work(x);return w+y;}\n");
   std::string s = asmForTriple(kA64, "gpr:x9;ret:x0;csr:x28",
-                               "-fplugin-pass-arg=ccprefix=work");
+                               pluginArg("ccprefix=work"));
   EXPECT_TRUE(has(s, "w9, w0"));   // x passed to work in the custom arg reg w9
   EXPECT_TRUE(has(s, "w28, w1"));  // y kept in x28 (work's only preserved reg)
   EXPECT_TRUE(has(s, "w0, w28"));  // and read back from x28 after the call
@@ -220,7 +224,7 @@ TEST_F(CustomCallConvTest, AArch64MixedSpecCrossCall) {
       "__attribute__((custom_attr(\"neverc-callconv\",\"gpr:x12,x13;ret:x0\")))"
       " int caller(int x,int y){return callee(x)+y;}\n");
   fs::path out = tmpFile("mix.s");
-  CmdResult r = ncc({"-fplugin-pass=" + plugin_.string(), "-S", "-O2",
+  CmdResult r = ncc({"-fplugin=" + plugin_.string(), "-S", "-O2",
                      "--target=aarch64-unknown-linux-gnu", casesSrc_.string(),
                      "-o", out.string()});
   ASSERT_TRUE(r.ok()) << r.err;
@@ -273,7 +277,7 @@ TEST_F(CustomCallConvTest, CustomAttrEndToEnd) {
             "int add3(int a,int b,int c){return a+b+c;}\n"
             "int caller(void){return add3(10,20,30);}\n");
   fs::path out = tmpFile("e2e.s");
-  CmdResult r = ncc({"-fplugin-pass=" + plugin_.string(), "-S", "-O2",
+  CmdResult r = ncc({"-fplugin=" + plugin_.string(), "-S", "-O2",
                      "--target=x86_64-unknown-linux-gnu", src.string(), "-o",
                      out.string()});
   ASSERT_TRUE(r.ok()) << r.err;
@@ -294,7 +298,7 @@ TEST_F(CustomCallConvTest, CalleeSavedCsr) {
             "__attribute__((noinline)) int work(int a){return a*a;}\n"
             "int caller(int x,int y){int w=work(x);return w+y;}\n");
   std::string s =
-      asmFor("gpr:rcx;ret:rax;csr:r12", "-fplugin-pass-arg=ccprefix=work");
+      asmFor("gpr:rcx;ret:rax;csr:r12", pluginArg("ccprefix=work"));
   EXPECT_TRUE(has(s, "%esi, %r12d")); // y kept in r12 across the call to work
   EXPECT_TRUE(has(s, "%r12d, %eax")); // and read back from r12 afterwards
 }
@@ -308,10 +312,10 @@ TEST_F(CustomCallConvTest, VarArgRejected) {
             "int sum(int n,...){va_list ap;va_start(ap,n);int s=0;"
             "for(int i=0;i<n;i++)s+=va_arg(ap,int);va_end(ap);return s;}\n");
   fs::path out = tmpFile("va.s");
-  CmdResult r = ncc({"-fplugin-pass=" + plugin_.string(),
-                     "-fplugin-pass-arg=cc-all=1",
-                     "-fplugin-pass-arg=ccspec=gpr:rcx,rdx;ret:rax",
-                     "-fplugin-pass-arg=ccprefix=sum", "-S", "-O2",
+  CmdResult r = ncc({"-fplugin=" + plugin_.string(),
+                     pluginArg("cc-all=1"),
+                     pluginArg("ccspec=gpr:rcx,rdx;ret:rax"),
+                     pluginArg("ccprefix=sum"), "-S", "-O2",
                      "--target=x86_64-unknown-linux-gnu", casesSrc_.string(),
                      "-o", out.string()});
   EXPECT_FALSE(r.ok()); // compilation must fail
@@ -327,10 +331,10 @@ TEST_F(CustomCallConvTest, VarArgRejectedAArch64) {
             "int sum(int n,...){va_list ap;va_start(ap,n);int s=0;"
             "for(int i=0;i<n;i++)s+=va_arg(ap,int);va_end(ap);return s;}\n");
   fs::path out = tmpFile("va_a64.s");
-  CmdResult r = ncc({"-fplugin-pass=" + plugin_.string(),
-                     "-fplugin-pass-arg=cc-all=1",
-                     "-fplugin-pass-arg=ccspec=gpr:x9,x10;ret:x0",
-                     "-fplugin-pass-arg=ccprefix=sum", "-S", "-O2",
+  CmdResult r = ncc({"-fplugin=" + plugin_.string(),
+                     pluginArg("cc-all=1"),
+                     pluginArg("ccspec=gpr:x9,x10;ret:x0"),
+                     pluginArg("ccprefix=sum"), "-S", "-O2",
                      "--target=aarch64-unknown-linux-gnu", casesSrc_.string(),
                      "-o", out.string()});
   EXPECT_FALSE(r.ok()); // compilation must fail
@@ -347,10 +351,10 @@ TEST_F(CustomCallConvTest, IndirectAddressTakenWarns) {
             "fn_t get(void){return target;}\n"
             "int call_indirect(fn_t fp,int x){return fp(x);}\n");
   fs::path out = tmpFile("ind.s");
-  CmdResult r = ncc({"-fplugin-pass=" + plugin_.string(),
-                     "-fplugin-pass-arg=cc-all=1",
-                     "-fplugin-pass-arg=ccspec=gpr:rcx;ret:rax",
-                     "-fplugin-pass-arg=ccprefix=target", "-S", "-O2",
+  CmdResult r = ncc({"-fplugin=" + plugin_.string(),
+                     pluginArg("cc-all=1"),
+                     pluginArg("ccspec=gpr:rcx;ret:rax"),
+                     pluginArg("ccprefix=target"), "-S", "-O2",
                      "--target=x86_64-unknown-linux-gnu", casesSrc_.string(),
                      "-o", out.string()});
   EXPECT_TRUE(r.ok()) << r.err;                      // must not crash
@@ -375,10 +379,10 @@ TEST_F(CustomCallConvTest, CsrConflictWarns) {
             "__attribute__((noinline)) int work(int a){return a*a;}\n"
             "int caller(int x){return work(x);}\n");
   fs::path out = tmpFile("conf.s");
-  CmdResult r = ncc({"-fplugin-pass=" + plugin_.string(),
-                     "-fplugin-pass-arg=cc-all=1",
-                     "-fplugin-pass-arg=ccspec=gpr:rcx;ret:rax;csr:rax",
-                     "-fplugin-pass-arg=ccprefix=work", "-S", "-O2",
+  CmdResult r = ncc({"-fplugin=" + plugin_.string(),
+                     pluginArg("cc-all=1"),
+                     pluginArg("ccspec=gpr:rcx;ret:rax;csr:rax"),
+                     pluginArg("ccprefix=work"), "-S", "-O2",
                      "--target=x86_64-unknown-linux-gnu", casesSrc_.string(),
                      "-o", out.string()});
   EXPECT_TRUE(r.ok()) << r.err;                       // still compiles

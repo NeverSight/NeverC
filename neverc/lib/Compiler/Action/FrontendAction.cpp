@@ -213,7 +213,8 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
           NewPredefines.find("NEVERC_STRING_FREE") != std::string::npos;
       bool UseFullPrelude =
           HasAllocOverride ||
-          BuiltinString::getEmbeddedStringBitcode().empty();
+          BuiltinString::getEmbeddedStringBitcode(CI.getTargetOpts().Triple)
+              .empty();
       if (UseFullPrelude) {
         NewPredefines += BuiltinString::getBuiltinStringPrelude().str();
       } else {

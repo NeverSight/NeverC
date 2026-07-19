@@ -11,6 +11,9 @@
 #include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
 #include "neverc/Foundation/LangOpts/LangStandard.h"
 #include "neverc/Invoke/DriverDiagnostic.h"
+#include "neverc/Plugin/Host/FrontendPluginBridge.h"
+#include "neverc/Plugin/Host/IRGenProvider.h"
+#include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Scan/PrepEngine.h"
 #include "neverc/Tree/Core/TreeConsumer.h"
 #include "neverc/Tree/Core/TreeContext.h"
@@ -148,13 +151,72 @@ EmitterConsumer::EmitterConsumer(
   llvm::TimePassesPerRun = CodeGenOpts.TimePassesPerRun;
 }
 
-llvm::Module *EmitterConsumer::getModule() const { return Gen->getModule(); }
+EmitterConsumer::~EmitterConsumer() = default;
+
+Error EmitterConsumer::enablePluginIRGen(
+    plugin::PluginTaskContext &Task,
+    plugin::PluginSourcePhaseRuntime &SourcePhases, StringRef TargetTriple,
+    StringRef DataLayout) {
+  if (PluginIRGen)
+    return createStringError(inconvertibleErrorCode(),
+                             "plugin IRGen is already enabled");
+  auto Created = plugin::PluginIRGenProviderRuntime::create(
+      Task, Gen->getModule()->getContext(), TargetTriple, DataLayout,
+      [this]() { return generateBuiltinIRModule(); });
+  if (!Created)
+    return Created.takeError();
+  if (Error E = SourcePhases.setSemanticUnitReadyCallback(
+          [this]() { completePluginIRGen(); }))
+    return E;
+  PluginTask = &Task;
+  PluginSourcePhases = &SourcePhases;
+  PluginIRGen = std::move(*Created);
+  return Error::success();
+}
+
+llvm::Module *EmitterConsumer::getModule() const {
+  return PluginGeneratedModule ? PluginGeneratedModule.get()
+                               : Gen->getModule();
+}
 
 std::unique_ptr<llvm::Module> EmitterConsumer::takeModule() {
+  if (PluginGeneratedModule)
+    return std::move(PluginGeneratedModule);
   return std::unique_ptr<llvm::Module>(Gen->releaseModule());
 }
 
 IRGenerator *EmitterConsumer::getCodeGenerator() { return Gen.get(); }
+
+Expected<llvm::Module *> EmitterConsumer::generateBuiltinIRModule() {
+  if (!Context)
+    return createStringError(inconvertibleErrorCode(),
+                             "builtin IRGen has no tree context");
+  if (BuiltinIRGenFinished)
+    return createStringError(inconvertibleErrorCode(),
+                             "builtin IRGen was invoked more than once");
+  BuiltinIRGenFinished = true;
+  llvm::Module *Module = Gen->generateTranslationUnit(*Context);
+  if (!Module)
+    return createStringError(inconvertibleErrorCode(),
+                             "builtin IRGen produced no module");
+  return Module;
+}
+
+void EmitterConsumer::completePluginIRGen() {
+  if (!Context) {
+    Diags.Report(diag::err_drv_plugin_phase)
+        << "plugin IRGen has no tree context";
+    return;
+  }
+  if (IRGenFinished) {
+    Diags.Report(diag::err_drv_plugin_phase)
+        << "plugin IRGen completion was invoked more than once";
+    return;
+  }
+  PluginSemanticUnitReady = true;
+  ProcessTranslationUnit(*Context);
+  PluginSemanticUnitReady = false;
+}
 
 // ===----------------------------------------------------------------------===
 // AST processing callbacks
@@ -175,6 +237,8 @@ void EmitterConsumer::Initialize(TreeContext &Ctx) {
 }
 
 bool EmitterConsumer::ProcessTopLevelDecl(DeclGroupRef D) {
+  if (PluginIRGen)
+    return true;
 #if ENABLE_CRASH_OVERRIDES
   PrettyStackTraceDecl CrashInfo(*D.begin(), SourceLocation(),
                                  Context->getSourceManager(),
@@ -199,6 +263,8 @@ bool EmitterConsumer::ProcessTopLevelDecl(DeclGroupRef D) {
 }
 
 void EmitterConsumer::ProcessInlineFunctionDefinition(FunctionDecl *D) {
+  if (PluginIRGen)
+    return;
 #if ENABLE_CRASH_OVERRIDES
   PrettyStackTraceDecl CrashInfo(D, SourceLocation(),
                                  Context->getSourceManager(),
@@ -214,6 +280,8 @@ void EmitterConsumer::ProcessInlineFunctionDefinition(FunctionDecl *D) {
 }
 
 void EmitterConsumer::ProcessInterestingDecl(DeclGroupRef D) {
+  if (PluginIRGen)
+    return;
   // Ignore interesting decls from the AST reader after IRGen is finished.
   if (!IRGenFinished)
     ProcessTopLevelDecl(D);
@@ -275,6 +343,9 @@ bool EmitterConsumer::LinkInModules(llvm::Module *M, bool ShouldLinkFiles) {
 }
 
 void EmitterConsumer::ProcessTranslationUnit(TreeContext &C) {
+  if (PluginIRGen && !PluginSemanticUnitReady)
+    return;
+  bool IRGenFailed = false;
   {
     llvm::TimeTraceScope TimeScope("Frontend");
     PrettyStackTraceString CrashInfo("Per-file LLVM IR generation");
@@ -284,7 +355,30 @@ void EmitterConsumer::ProcessTranslationUnit(TreeContext &C) {
         LLVMIRGeneration.startTimer();
     }
 
-    Gen->ProcessTranslationUnit(C);
+    if (PluginIRGen) {
+      if (!PluginSourcePhases) {
+        Diags.Report(diag::err_drv_plugin_phase)
+            << "plugin IRGen has no source phase runtime";
+        IRGenFailed = true;
+      } else if (Error E = PluginIRGen->execute(*PluginSourcePhases)) {
+        Diags.Report(diag::err_drv_plugin_phase)
+            << toString(std::move(E));
+        IRGenFailed = true;
+      } else if (PluginIRGen->ownsModule()) {
+        PluginGeneratedModule = PluginIRGen->releaseOwnedModule();
+        if (!PluginGeneratedModule) {
+          Diags.Report(diag::err_drv_plugin_phase)
+              << "plugin IRGen failed to transfer module ownership";
+          IRGenFailed = true;
+        }
+      } else if (!PluginIRGen->module()) {
+        Diags.Report(diag::err_drv_plugin_phase)
+            << "plugin IRGen published no module";
+        IRGenFailed = true;
+      }
+    } else {
+      Gen->ProcessTranslationUnit(C);
+    }
 
     if (TimerIsEnabled) {
       LLVMIRGenerationRefCount -= 1;
@@ -294,6 +388,8 @@ void EmitterConsumer::ProcessTranslationUnit(TreeContext &C) {
 
     IRGenFinished = true;
   }
+  if (IRGenFailed)
+    return;
 
   // Silently ignore if we weren't initialized for some reason.
   if (!getModule())
@@ -339,7 +435,7 @@ void EmitterConsumer::ProcessTranslationUnit(TreeContext &C) {
 
   genBackendOutput(Diags, HeaderIdxOpts, CodeGenOpts, TargetOpts, LangOpts,
                    C.getTargetInfo().getDataLayoutString(), getModule(), Action,
-                   FS, std::move(AsmOutStream), this);
+                   FS, std::move(AsmOutStream), this, PluginTask);
 
   Ctx.setDiagnosticHandler(std::move(OldDiagnosticHandler));
 
@@ -348,6 +444,8 @@ void EmitterConsumer::ProcessTranslationUnit(TreeContext &C) {
 }
 
 void EmitterConsumer::ProcessTagDeclDefinition(TagDecl *D) {
+  if (PluginIRGen)
+    return;
 #if ENABLE_CRASH_OVERRIDES
   PrettyStackTraceDecl CrashInfo(D, SourceLocation(),
                                  Context->getSourceManager(),
@@ -357,14 +455,20 @@ void EmitterConsumer::ProcessTagDeclDefinition(TagDecl *D) {
 }
 
 void EmitterConsumer::ProcessTagDeclRequiredDefinition(const TagDecl *D) {
+  if (PluginIRGen)
+    return;
   Gen->ProcessTagDeclRequiredDefinition(D);
 }
 
 void EmitterConsumer::FinalizeTentativeDefinition(VarDecl *D) {
+  if (PluginIRGen)
+    return;
   Gen->FinalizeTentativeDefinition(D);
 }
 
 void EmitterConsumer::FinalizeExternalDeclaration(VarDecl *D) {
+  if (PluginIRGen)
+    return;
   Gen->FinalizeExternalDeclaration(D);
 }
 
@@ -884,6 +988,23 @@ EmitterAction::CreateTreeConsumer(CompilerInstance &CI,
       CI.getHeaderIdxOpts(), CI.getPrepOpts(), CI.getCodeGenOpts(),
       CI.getTargetOpts(), CI.getLangOpts(), std::string(InFile),
       std::move(LinkModules), std::move(OS), *VMContext));
+  if (plugin::PluginTaskContext *Task = CI.getPluginTaskContext()) {
+    plugin::PluginSourcePhaseRuntime *SourcePhases =
+        CI.getPluginSourcePhaseRuntime();
+    if (!SourcePhases) {
+      CI.getDiagnostics().Report(diag::err_fe_error_backend)
+          << "plugin IRGen requires the translation unit source runtime";
+      return nullptr;
+    }
+    const TargetInfo &Target = CI.getTreeContext().getTargetInfo();
+    if (Error E = Result->enablePluginIRGen(
+            *Task, *SourcePhases, Target.getTriple().getTriple(),
+            Target.getDataLayoutString())) {
+      CI.getDiagnostics().Report(diag::err_fe_error_backend)
+          << toString(std::move(E));
+      return nullptr;
+    }
+  }
   BEConsumer = Result.get();
 
   return std::move(Result);
@@ -1021,7 +1142,8 @@ void EmitterAction::ExecuteAction() {
   genBackendOutput(
       Diagnostics, CI.getHeaderIdxOpts(), CodeGenOpts, TargetOpts,
       CI.getLangOpts(), CI.getTarget().getDataLayoutString(), TheModule.get(),
-      BA, CI.getFileManager().getVirtualFileSystemPtr(), std::move(OS));
+      BA, CI.getFileManager().getVirtualFileSystemPtr(), std::move(OS),
+      nullptr, CI.getPluginTaskContext());
   if (OptRecordFile)
     OptRecordFile->keep();
 }

@@ -254,7 +254,7 @@ NEVERC_HOT bool PrepEngine::BeginMacroExpansion(Token &Identifier,
         std::copy(Hook.ReplacementTokens.begin(), Hook.ReplacementTokens.end(),
                   Tokens.get());
         PushTokenStream(std::move(Tokens), Hook.ReplacementTokens.size(),
-                        /*DisableMacroExpansion=*/false,
+                        /*DisableMacroExpansion=*/true,
                         /*IsReinject=*/true);
         return false;
       }
@@ -333,7 +333,7 @@ NEVERC_HOT bool PrepEngine::BeginMacroExpansion(Token &Identifier,
       std::copy(Hook.ReplacementTokens.begin(), Hook.ReplacementTokens.end(),
                 Tokens.get());
       PushTokenStream(std::move(Tokens), Hook.ReplacementTokens.size(),
-                      /*DisableMacroExpansion=*/false,
+                      /*DisableMacroExpansion=*/true,
                       /*IsReinject=*/true);
       return false;
     }

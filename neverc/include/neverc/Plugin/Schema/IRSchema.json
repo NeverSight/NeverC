@@ -1,0 +1,2042 @@
+{
+  "schema_version": 1,
+  "capability": {
+    "major": 1,
+    "minor": 0
+  },
+  "stable_schema_digest": "4302919d3dce8bd8d73e983e353a1c007aad7a4e568ba4501b56de5feb98b9b5",
+  "type_kinds": [
+    {
+      "internal": "HalfTyID",
+      "symbol": "HALF",
+      "llvm_value": 0,
+      "id": "0x41000001"
+    },
+    {
+      "internal": "BFloatTyID",
+      "symbol": "B_FLOAT",
+      "llvm_value": 1,
+      "id": "0x41000002"
+    },
+    {
+      "internal": "FloatTyID",
+      "symbol": "FLOAT",
+      "llvm_value": 2,
+      "id": "0x41000003"
+    },
+    {
+      "internal": "DoubleTyID",
+      "symbol": "DOUBLE",
+      "llvm_value": 3,
+      "id": "0x41000004"
+    },
+    {
+      "internal": "X86_FP80TyID",
+      "symbol": "X86_FP80",
+      "llvm_value": 4,
+      "id": "0x41000005"
+    },
+    {
+      "internal": "FP128TyID",
+      "symbol": "FP128",
+      "llvm_value": 5,
+      "id": "0x41000006"
+    },
+    {
+      "internal": "PPC_FP128TyID",
+      "symbol": "PPC_FP128",
+      "llvm_value": 6,
+      "id": "0x41000007"
+    },
+    {
+      "internal": "VoidTyID",
+      "symbol": "VOID",
+      "llvm_value": 7,
+      "id": "0x41000008"
+    },
+    {
+      "internal": "LabelTyID",
+      "symbol": "LABEL",
+      "llvm_value": 8,
+      "id": "0x41000009"
+    },
+    {
+      "internal": "MetadataTyID",
+      "symbol": "METADATA",
+      "llvm_value": 9,
+      "id": "0x4100000a"
+    },
+    {
+      "internal": "X86_MMXTyID",
+      "symbol": "X86_MMX",
+      "llvm_value": 10,
+      "id": "0x4100000b"
+    },
+    {
+      "internal": "X86_AMXTyID",
+      "symbol": "X86_AMX",
+      "llvm_value": 11,
+      "id": "0x4100000c"
+    },
+    {
+      "internal": "TokenTyID",
+      "symbol": "TOKEN",
+      "llvm_value": 12,
+      "id": "0x4100000d"
+    },
+    {
+      "internal": "IntegerTyID",
+      "symbol": "INTEGER",
+      "llvm_value": 13,
+      "id": "0x4100000e"
+    },
+    {
+      "internal": "FunctionTyID",
+      "symbol": "FUNCTION",
+      "llvm_value": 14,
+      "id": "0x4100000f"
+    },
+    {
+      "internal": "PointerTyID",
+      "symbol": "POINTER",
+      "llvm_value": 15,
+      "id": "0x41000010"
+    },
+    {
+      "internal": "StructTyID",
+      "symbol": "STRUCT",
+      "llvm_value": 16,
+      "id": "0x41000011"
+    },
+    {
+      "internal": "ArrayTyID",
+      "symbol": "ARRAY",
+      "llvm_value": 17,
+      "id": "0x41000012"
+    },
+    {
+      "internal": "FixedVectorTyID",
+      "symbol": "FIXED_VECTOR",
+      "llvm_value": 18,
+      "id": "0x41000013"
+    },
+    {
+      "internal": "ScalableVectorTyID",
+      "symbol": "SCALABLE_VECTOR",
+      "llvm_value": 19,
+      "id": "0x41000014"
+    },
+    {
+      "internal": "TypedPointerTyID",
+      "symbol": "TYPED_POINTER",
+      "llvm_value": 20,
+      "id": "0x41000015"
+    },
+    {
+      "internal": "TargetExtTyID",
+      "symbol": "TARGET_EXT",
+      "llvm_value": 21,
+      "id": "0x41000016"
+    }
+  ],
+  "value_kinds": [
+    {
+      "internal": "FunctionVal",
+      "symbol": "FUNCTION",
+      "llvm_value": 0,
+      "category": "global",
+      "id": "0x42000001"
+    },
+    {
+      "internal": "GlobalAliasVal",
+      "symbol": "GLOBAL_ALIAS",
+      "llvm_value": 1,
+      "category": "global",
+      "id": "0x42000002"
+    },
+    {
+      "internal": "GlobalIFuncVal",
+      "symbol": "GLOBAL_I_FUNC",
+      "llvm_value": 2,
+      "category": "global",
+      "id": "0x42000003"
+    },
+    {
+      "internal": "GlobalVariableVal",
+      "symbol": "GLOBAL_VARIABLE",
+      "llvm_value": 3,
+      "category": "global",
+      "id": "0x42000004"
+    },
+    {
+      "internal": "BlockAddressVal",
+      "symbol": "BLOCK_ADDRESS",
+      "llvm_value": 4,
+      "category": "constant",
+      "id": "0x42000005"
+    },
+    {
+      "internal": "ConstantExprVal",
+      "symbol": "CONSTANT_EXPR",
+      "llvm_value": 5,
+      "category": "constant",
+      "id": "0x42000006"
+    },
+    {
+      "internal": "DSOLocalEquivalentVal",
+      "symbol": "DSO_LOCAL_EQUIVALENT",
+      "llvm_value": 6,
+      "category": "constant",
+      "id": "0x42000007"
+    },
+    {
+      "internal": "NoCFIValueVal",
+      "symbol": "NO_CFI_VALUE",
+      "llvm_value": 7,
+      "category": "constant",
+      "id": "0x42000008"
+    },
+    {
+      "internal": "ConstantArrayVal",
+      "symbol": "CONSTANT_ARRAY",
+      "llvm_value": 8,
+      "category": "constant",
+      "id": "0x42000009"
+    },
+    {
+      "internal": "ConstantStructVal",
+      "symbol": "CONSTANT_STRUCT",
+      "llvm_value": 9,
+      "category": "constant",
+      "id": "0x4200000a"
+    },
+    {
+      "internal": "ConstantVectorVal",
+      "symbol": "CONSTANT_VECTOR",
+      "llvm_value": 10,
+      "category": "constant",
+      "id": "0x4200000b"
+    },
+    {
+      "internal": "UndefValueVal",
+      "symbol": "UNDEF_VALUE",
+      "llvm_value": 11,
+      "category": "constant",
+      "id": "0x4200000c"
+    },
+    {
+      "internal": "PoisonValueVal",
+      "symbol": "POISON_VALUE",
+      "llvm_value": 12,
+      "category": "constant",
+      "id": "0x4200000d"
+    },
+    {
+      "internal": "ConstantAggregateZeroVal",
+      "symbol": "CONSTANT_AGGREGATE_ZERO",
+      "llvm_value": 13,
+      "category": "constant",
+      "id": "0x4200000e"
+    },
+    {
+      "internal": "ConstantDataArrayVal",
+      "symbol": "CONSTANT_DATA_ARRAY",
+      "llvm_value": 14,
+      "category": "constant",
+      "id": "0x4200000f"
+    },
+    {
+      "internal": "ConstantDataVectorVal",
+      "symbol": "CONSTANT_DATA_VECTOR",
+      "llvm_value": 15,
+      "category": "constant",
+      "id": "0x42000010"
+    },
+    {
+      "internal": "ConstantIntVal",
+      "symbol": "CONSTANT_INT",
+      "llvm_value": 16,
+      "category": "constant",
+      "id": "0x42000011"
+    },
+    {
+      "internal": "ConstantFPVal",
+      "symbol": "CONSTANT_FP",
+      "llvm_value": 17,
+      "category": "constant",
+      "id": "0x42000012"
+    },
+    {
+      "internal": "ConstantTargetNoneVal",
+      "symbol": "CONSTANT_TARGET_NONE",
+      "llvm_value": 18,
+      "category": "constant",
+      "id": "0x42000013"
+    },
+    {
+      "internal": "ConstantPointerNullVal",
+      "symbol": "CONSTANT_POINTER_NULL",
+      "llvm_value": 19,
+      "category": "constant",
+      "id": "0x42000014"
+    },
+    {
+      "internal": "ConstantTokenNoneVal",
+      "symbol": "CONSTANT_TOKEN_NONE",
+      "llvm_value": 20,
+      "category": "constant",
+      "id": "0x42000015"
+    },
+    {
+      "internal": "ArgumentVal",
+      "symbol": "ARGUMENT",
+      "llvm_value": 21,
+      "category": "value",
+      "id": "0x42000016"
+    },
+    {
+      "internal": "BasicBlockVal",
+      "symbol": "BASIC_BLOCK",
+      "llvm_value": 22,
+      "category": "value",
+      "id": "0x42000017"
+    },
+    {
+      "internal": "MetadataAsValueVal",
+      "symbol": "METADATA_AS_VALUE",
+      "llvm_value": 23,
+      "category": "metadata",
+      "id": "0x42000018"
+    },
+    {
+      "internal": "InlineAsmVal",
+      "symbol": "INLINE_ASM",
+      "llvm_value": 24,
+      "category": "inline_asm",
+      "id": "0x42000019"
+    },
+    {
+      "internal": "MemoryUseVal",
+      "symbol": "MEMORY_USE",
+      "llvm_value": 25,
+      "category": "memory_ssa",
+      "id": "0x4200001a"
+    },
+    {
+      "internal": "MemoryDefVal",
+      "symbol": "MEMORY_DEF",
+      "llvm_value": 26,
+      "category": "memory_ssa",
+      "id": "0x4200001b"
+    },
+    {
+      "internal": "MemoryPhiVal",
+      "symbol": "MEMORY_PHI",
+      "llvm_value": 27,
+      "category": "memory_ssa",
+      "id": "0x4200001c"
+    },
+    {
+      "internal": "InstructionVal",
+      "symbol": "INSTRUCTION",
+      "llvm_value": 28,
+      "category": "instruction",
+      "id": "0x4200001d"
+    }
+  ],
+  "opcodes": [
+    {
+      "internal": "Ret",
+      "symbol": "RET",
+      "llvm_value": 1,
+      "class_name": "ReturnInst",
+      "category": "term",
+      "minimum_operands": 0,
+      "maximum_operands": 1,
+      "result_constraint": "void",
+      "terminator": true,
+      "side_effects": "never",
+      "writable_properties": [],
+      "id": "0x43000001"
+    },
+    {
+      "internal": "Br",
+      "symbol": "BR",
+      "llvm_value": 2,
+      "class_name": "BranchInst",
+      "category": "term",
+      "minimum_operands": 1,
+      "maximum_operands": 3,
+      "result_constraint": "void",
+      "terminator": true,
+      "side_effects": "never",
+      "writable_properties": [],
+      "id": "0x43000002"
+    },
+    {
+      "internal": "Switch",
+      "symbol": "SWITCH",
+      "llvm_value": 3,
+      "class_name": "SwitchInst",
+      "category": "term",
+      "minimum_operands": 2,
+      "maximum_operands": null,
+      "result_constraint": "void",
+      "terminator": true,
+      "side_effects": "never",
+      "writable_properties": [],
+      "id": "0x43000003"
+    },
+    {
+      "internal": "IndirectBr",
+      "symbol": "INDIRECT_BR",
+      "llvm_value": 4,
+      "class_name": "IndirectBrInst",
+      "category": "term",
+      "minimum_operands": 1,
+      "maximum_operands": null,
+      "result_constraint": "void",
+      "terminator": true,
+      "side_effects": "never",
+      "writable_properties": [],
+      "id": "0x43000004"
+    },
+    {
+      "internal": "Invoke",
+      "symbol": "INVOKE",
+      "llvm_value": 5,
+      "class_name": "InvokeInst",
+      "category": "term",
+      "minimum_operands": 3,
+      "maximum_operands": null,
+      "result_constraint": "declared_type",
+      "terminator": true,
+      "side_effects": "conditional",
+      "writable_properties": [
+        "attributes",
+        "calling_convention",
+        "name"
+      ],
+      "id": "0x43000005"
+    },
+    {
+      "internal": "Resume",
+      "symbol": "RESUME",
+      "llvm_value": 6,
+      "class_name": "ResumeInst",
+      "category": "term",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "void",
+      "terminator": true,
+      "side_effects": "always",
+      "writable_properties": [],
+      "id": "0x43000006"
+    },
+    {
+      "internal": "Unreachable",
+      "symbol": "UNREACHABLE",
+      "llvm_value": 7,
+      "class_name": "UnreachableInst",
+      "category": "term",
+      "minimum_operands": 0,
+      "maximum_operands": 0,
+      "result_constraint": "void",
+      "terminator": true,
+      "side_effects": "never",
+      "writable_properties": [],
+      "id": "0x43000007"
+    },
+    {
+      "internal": "CleanupRet",
+      "symbol": "CLEANUP_RET",
+      "llvm_value": 8,
+      "class_name": "CleanupReturnInst",
+      "category": "term",
+      "minimum_operands": 1,
+      "maximum_operands": 2,
+      "result_constraint": "void",
+      "terminator": true,
+      "side_effects": "never",
+      "writable_properties": [],
+      "id": "0x43000008"
+    },
+    {
+      "internal": "CatchRet",
+      "symbol": "CATCH_RET",
+      "llvm_value": 9,
+      "class_name": "CatchReturnInst",
+      "category": "term",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "void",
+      "terminator": true,
+      "side_effects": "never",
+      "writable_properties": [],
+      "id": "0x43000009"
+    },
+    {
+      "internal": "CatchSwitch",
+      "symbol": "CATCH_SWITCH",
+      "llvm_value": 10,
+      "class_name": "CatchSwitchInst",
+      "category": "term",
+      "minimum_operands": 2,
+      "maximum_operands": null,
+      "result_constraint": "token",
+      "terminator": true,
+      "side_effects": "conditional",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300000a"
+    },
+    {
+      "internal": "CallBr",
+      "symbol": "CALL_BR",
+      "llvm_value": 11,
+      "class_name": "CallBrInst",
+      "category": "term",
+      "minimum_operands": 2,
+      "maximum_operands": null,
+      "result_constraint": "declared_type",
+      "terminator": true,
+      "side_effects": "conditional",
+      "writable_properties": [
+        "attributes",
+        "calling_convention",
+        "name"
+      ],
+      "id": "0x4300000b"
+    },
+    {
+      "internal": "FNeg",
+      "symbol": "F_NEG",
+      "llvm_value": 12,
+      "class_name": "UnaryOperator",
+      "category": "unary",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "fast_math_flags",
+        "name"
+      ],
+      "id": "0x4300000c"
+    },
+    {
+      "internal": "Add",
+      "symbol": "ADD",
+      "llvm_value": 13,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name",
+        "nsw",
+        "nuw"
+      ],
+      "id": "0x4300000d"
+    },
+    {
+      "internal": "FAdd",
+      "symbol": "F_ADD",
+      "llvm_value": 14,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "fast_math_flags",
+        "name"
+      ],
+      "id": "0x4300000e"
+    },
+    {
+      "internal": "Sub",
+      "symbol": "SUB",
+      "llvm_value": 15,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name",
+        "nsw",
+        "nuw"
+      ],
+      "id": "0x4300000f"
+    },
+    {
+      "internal": "FSub",
+      "symbol": "F_SUB",
+      "llvm_value": 16,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "fast_math_flags",
+        "name"
+      ],
+      "id": "0x43000010"
+    },
+    {
+      "internal": "Mul",
+      "symbol": "MUL",
+      "llvm_value": 17,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name",
+        "nsw",
+        "nuw"
+      ],
+      "id": "0x43000011"
+    },
+    {
+      "internal": "FMul",
+      "symbol": "F_MUL",
+      "llvm_value": 18,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "fast_math_flags",
+        "name"
+      ],
+      "id": "0x43000012"
+    },
+    {
+      "internal": "UDiv",
+      "symbol": "U_DIV",
+      "llvm_value": 19,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "exact",
+        "name"
+      ],
+      "id": "0x43000013"
+    },
+    {
+      "internal": "SDiv",
+      "symbol": "S_DIV",
+      "llvm_value": 20,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "exact",
+        "name"
+      ],
+      "id": "0x43000014"
+    },
+    {
+      "internal": "FDiv",
+      "symbol": "F_DIV",
+      "llvm_value": 21,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "fast_math_flags",
+        "name"
+      ],
+      "id": "0x43000015"
+    },
+    {
+      "internal": "URem",
+      "symbol": "U_REM",
+      "llvm_value": 22,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000016"
+    },
+    {
+      "internal": "SRem",
+      "symbol": "S_REM",
+      "llvm_value": 23,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000017"
+    },
+    {
+      "internal": "FRem",
+      "symbol": "F_REM",
+      "llvm_value": 24,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "fast_math_flags",
+        "name"
+      ],
+      "id": "0x43000018"
+    },
+    {
+      "internal": "Shl",
+      "symbol": "SHL",
+      "llvm_value": 25,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name",
+        "nsw",
+        "nuw"
+      ],
+      "id": "0x43000019"
+    },
+    {
+      "internal": "LShr",
+      "symbol": "L_SHR",
+      "llvm_value": 26,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "exact",
+        "name"
+      ],
+      "id": "0x4300001a"
+    },
+    {
+      "internal": "AShr",
+      "symbol": "A_SHR",
+      "llvm_value": 27,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "exact",
+        "name"
+      ],
+      "id": "0x4300001b"
+    },
+    {
+      "internal": "And",
+      "symbol": "AND",
+      "llvm_value": 28,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300001c"
+    },
+    {
+      "internal": "Or",
+      "symbol": "OR",
+      "llvm_value": 29,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "disjoint",
+        "name"
+      ],
+      "id": "0x4300001d"
+    },
+    {
+      "internal": "Xor",
+      "symbol": "XOR",
+      "llvm_value": 30,
+      "class_name": "BinaryOperator",
+      "category": "binary",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300001e"
+    },
+    {
+      "internal": "Alloca",
+      "symbol": "ALLOCA",
+      "llvm_value": 31,
+      "class_name": "AllocaInst",
+      "category": "memory",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "pointer",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "alignment",
+        "allocated_type",
+        "name"
+      ],
+      "id": "0x4300001f"
+    },
+    {
+      "internal": "Load",
+      "symbol": "LOAD",
+      "llvm_value": 32,
+      "class_name": "LoadInst",
+      "category": "memory",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "conditional",
+      "writable_properties": [
+        "alignment",
+        "atomic_ordering",
+        "name",
+        "sync_scope",
+        "volatile"
+      ],
+      "id": "0x43000020"
+    },
+    {
+      "internal": "Store",
+      "symbol": "STORE",
+      "llvm_value": 33,
+      "class_name": "StoreInst",
+      "category": "memory",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "void",
+      "terminator": false,
+      "side_effects": "always",
+      "writable_properties": [
+        "alignment",
+        "atomic_ordering",
+        "sync_scope",
+        "volatile"
+      ],
+      "id": "0x43000021"
+    },
+    {
+      "internal": "GetElementPtr",
+      "symbol": "GET_ELEMENT_PTR",
+      "llvm_value": 34,
+      "class_name": "GetElementPtrInst",
+      "category": "memory",
+      "minimum_operands": 2,
+      "maximum_operands": null,
+      "result_constraint": "pointer",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "inbounds",
+        "name",
+        "nusw",
+        "nuw",
+        "source_element_type"
+      ],
+      "id": "0x43000022"
+    },
+    {
+      "internal": "Fence",
+      "symbol": "FENCE",
+      "llvm_value": 35,
+      "class_name": "FenceInst",
+      "category": "memory",
+      "minimum_operands": 0,
+      "maximum_operands": 0,
+      "result_constraint": "void",
+      "terminator": false,
+      "side_effects": "always",
+      "writable_properties": [
+        "atomic_ordering",
+        "sync_scope"
+      ],
+      "id": "0x43000023"
+    },
+    {
+      "internal": "AtomicCmpXchg",
+      "symbol": "ATOMIC_CMP_XCHG",
+      "llvm_value": 36,
+      "class_name": "AtomicCmpXchgInst",
+      "category": "memory",
+      "minimum_operands": 3,
+      "maximum_operands": 3,
+      "result_constraint": "aggregate",
+      "terminator": false,
+      "side_effects": "always",
+      "writable_properties": [
+        "alignment",
+        "failure_ordering",
+        "name",
+        "success_ordering",
+        "sync_scope",
+        "volatile",
+        "weak"
+      ],
+      "id": "0x43000024"
+    },
+    {
+      "internal": "AtomicRMW",
+      "symbol": "ATOMIC_RMW",
+      "llvm_value": 37,
+      "class_name": "AtomicRMWInst",
+      "category": "memory",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "always",
+      "writable_properties": [
+        "alignment",
+        "atomic_ordering",
+        "name",
+        "sync_scope",
+        "volatile"
+      ],
+      "id": "0x43000025"
+    },
+    {
+      "internal": "Trunc",
+      "symbol": "TRUNC",
+      "llvm_value": 38,
+      "class_name": "TruncInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000026"
+    },
+    {
+      "internal": "ZExt",
+      "symbol": "Z_EXT",
+      "llvm_value": 39,
+      "class_name": "ZExtInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000027"
+    },
+    {
+      "internal": "SExt",
+      "symbol": "S_EXT",
+      "llvm_value": 40,
+      "class_name": "SExtInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000028"
+    },
+    {
+      "internal": "FPToUI",
+      "symbol": "FP_TO_UI",
+      "llvm_value": 41,
+      "class_name": "FPToUIInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000029"
+    },
+    {
+      "internal": "FPToSI",
+      "symbol": "FP_TO_SI",
+      "llvm_value": 42,
+      "class_name": "FPToSIInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300002a"
+    },
+    {
+      "internal": "UIToFP",
+      "symbol": "UI_TO_FP",
+      "llvm_value": 43,
+      "class_name": "UIToFPInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300002b"
+    },
+    {
+      "internal": "SIToFP",
+      "symbol": "SI_TO_FP",
+      "llvm_value": 44,
+      "class_name": "SIToFPInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300002c"
+    },
+    {
+      "internal": "FPTrunc",
+      "symbol": "FP_TRUNC",
+      "llvm_value": 45,
+      "class_name": "FPTruncInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300002d"
+    },
+    {
+      "internal": "FPExt",
+      "symbol": "FP_EXT",
+      "llvm_value": 46,
+      "class_name": "FPExtInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300002e"
+    },
+    {
+      "internal": "PtrToInt",
+      "symbol": "PTR_TO_INT",
+      "llvm_value": 47,
+      "class_name": "PtrToIntInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300002f"
+    },
+    {
+      "internal": "IntToPtr",
+      "symbol": "INT_TO_PTR",
+      "llvm_value": 48,
+      "class_name": "IntToPtrInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000030"
+    },
+    {
+      "internal": "BitCast",
+      "symbol": "BIT_CAST",
+      "llvm_value": 49,
+      "class_name": "BitCastInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000031"
+    },
+    {
+      "internal": "AddrSpaceCast",
+      "symbol": "ADDR_SPACE_CAST",
+      "llvm_value": 50,
+      "class_name": "AddrSpaceCastInst",
+      "category": "cast",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000032"
+    },
+    {
+      "internal": "CleanupPad",
+      "symbol": "CLEANUP_PAD",
+      "llvm_value": 51,
+      "class_name": "CleanupPadInst",
+      "category": "funcletpad",
+      "minimum_operands": 1,
+      "maximum_operands": null,
+      "result_constraint": "token",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000033"
+    },
+    {
+      "internal": "CatchPad",
+      "symbol": "CATCH_PAD",
+      "llvm_value": 52,
+      "class_name": "CatchPadInst",
+      "category": "funcletpad",
+      "minimum_operands": 1,
+      "maximum_operands": null,
+      "result_constraint": "token",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000034"
+    },
+    {
+      "internal": "ICmp",
+      "symbol": "I_CMP",
+      "llvm_value": 53,
+      "class_name": "ICmpInst",
+      "category": "other",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "i1",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name",
+        "predicate"
+      ],
+      "id": "0x43000035"
+    },
+    {
+      "internal": "FCmp",
+      "symbol": "F_CMP",
+      "llvm_value": 54,
+      "class_name": "FCmpInst",
+      "category": "other",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "i1",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "fast_math_flags",
+        "name",
+        "predicate"
+      ],
+      "id": "0x43000036"
+    },
+    {
+      "internal": "PHI",
+      "symbol": "PHI",
+      "llvm_value": 55,
+      "class_name": "PHINode",
+      "category": "other",
+      "minimum_operands": 0,
+      "maximum_operands": null,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000037"
+    },
+    {
+      "internal": "Call",
+      "symbol": "CALL",
+      "llvm_value": 56,
+      "class_name": "CallInst",
+      "category": "other",
+      "minimum_operands": 1,
+      "maximum_operands": null,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "conditional",
+      "writable_properties": [
+        "attributes",
+        "calling_convention",
+        "fast_math_flags",
+        "name",
+        "tail_call_kind"
+      ],
+      "id": "0x43000038"
+    },
+    {
+      "internal": "Select",
+      "symbol": "SELECT",
+      "llvm_value": 57,
+      "class_name": "SelectInst",
+      "category": "other",
+      "minimum_operands": 3,
+      "maximum_operands": 3,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000039"
+    },
+    {
+      "internal": "UserOp1",
+      "symbol": "USER_OP1",
+      "llvm_value": 58,
+      "class_name": "Instruction",
+      "category": "user",
+      "minimum_operands": 0,
+      "maximum_operands": null,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300003a"
+    },
+    {
+      "internal": "UserOp2",
+      "symbol": "USER_OP2",
+      "llvm_value": 59,
+      "class_name": "Instruction",
+      "category": "user",
+      "minimum_operands": 0,
+      "maximum_operands": null,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300003b"
+    },
+    {
+      "internal": "VAArg",
+      "symbol": "VA_ARG",
+      "llvm_value": 60,
+      "class_name": "VAArgInst",
+      "category": "other",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "conditional",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300003c"
+    },
+    {
+      "internal": "ExtractElement",
+      "symbol": "EXTRACT_ELEMENT",
+      "llvm_value": 61,
+      "class_name": "ExtractElementInst",
+      "category": "other",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300003d"
+    },
+    {
+      "internal": "InsertElement",
+      "symbol": "INSERT_ELEMENT",
+      "llvm_value": 62,
+      "class_name": "InsertElementInst",
+      "category": "other",
+      "minimum_operands": 3,
+      "maximum_operands": 3,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300003e"
+    },
+    {
+      "internal": "ShuffleVector",
+      "symbol": "SHUFFLE_VECTOR",
+      "llvm_value": 63,
+      "class_name": "ShuffleVectorInst",
+      "category": "other",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x4300003f"
+    },
+    {
+      "internal": "ExtractValue",
+      "symbol": "EXTRACT_VALUE",
+      "llvm_value": 64,
+      "class_name": "ExtractValueInst",
+      "category": "other",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "indices",
+        "name"
+      ],
+      "id": "0x43000040"
+    },
+    {
+      "internal": "InsertValue",
+      "symbol": "INSERT_VALUE",
+      "llvm_value": 65,
+      "class_name": "InsertValueInst",
+      "category": "other",
+      "minimum_operands": 2,
+      "maximum_operands": 2,
+      "result_constraint": "declared_type",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "indices",
+        "name"
+      ],
+      "id": "0x43000041"
+    },
+    {
+      "internal": "LandingPad",
+      "symbol": "LANDING_PAD",
+      "llvm_value": 66,
+      "class_name": "LandingPadInst",
+      "category": "other",
+      "minimum_operands": 0,
+      "maximum_operands": null,
+      "result_constraint": "aggregate",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "cleanup",
+        "name"
+      ],
+      "id": "0x43000042"
+    },
+    {
+      "internal": "Freeze",
+      "symbol": "FREEZE",
+      "llvm_value": 67,
+      "class_name": "FreezeInst",
+      "category": "other",
+      "minimum_operands": 1,
+      "maximum_operands": 1,
+      "result_constraint": "same_as_operand_0",
+      "terminator": false,
+      "side_effects": "never",
+      "writable_properties": [
+        "name"
+      ],
+      "id": "0x43000043"
+    }
+  ],
+  "predicates": [
+    {
+      "internal": "FCMP_FALSE",
+      "symbol": "FCMP_FALSE",
+      "llvm_value": 0,
+      "category": "float",
+      "id": "0x44000001"
+    },
+    {
+      "internal": "FCMP_OEQ",
+      "symbol": "FCMP_OEQ",
+      "llvm_value": 1,
+      "category": "float",
+      "id": "0x44000002"
+    },
+    {
+      "internal": "FCMP_OGT",
+      "symbol": "FCMP_OGT",
+      "llvm_value": 2,
+      "category": "float",
+      "id": "0x44000003"
+    },
+    {
+      "internal": "FCMP_OGE",
+      "symbol": "FCMP_OGE",
+      "llvm_value": 3,
+      "category": "float",
+      "id": "0x44000004"
+    },
+    {
+      "internal": "FCMP_OLT",
+      "symbol": "FCMP_OLT",
+      "llvm_value": 4,
+      "category": "float",
+      "id": "0x44000005"
+    },
+    {
+      "internal": "FCMP_OLE",
+      "symbol": "FCMP_OLE",
+      "llvm_value": 5,
+      "category": "float",
+      "id": "0x44000006"
+    },
+    {
+      "internal": "FCMP_ONE",
+      "symbol": "FCMP_ONE",
+      "llvm_value": 6,
+      "category": "float",
+      "id": "0x44000007"
+    },
+    {
+      "internal": "FCMP_ORD",
+      "symbol": "FCMP_ORD",
+      "llvm_value": 7,
+      "category": "float",
+      "id": "0x44000008"
+    },
+    {
+      "internal": "FCMP_UNO",
+      "symbol": "FCMP_UNO",
+      "llvm_value": 8,
+      "category": "float",
+      "id": "0x44000009"
+    },
+    {
+      "internal": "FCMP_UEQ",
+      "symbol": "FCMP_UEQ",
+      "llvm_value": 9,
+      "category": "float",
+      "id": "0x4400000a"
+    },
+    {
+      "internal": "FCMP_UGT",
+      "symbol": "FCMP_UGT",
+      "llvm_value": 10,
+      "category": "float",
+      "id": "0x4400000b"
+    },
+    {
+      "internal": "FCMP_UGE",
+      "symbol": "FCMP_UGE",
+      "llvm_value": 11,
+      "category": "float",
+      "id": "0x4400000c"
+    },
+    {
+      "internal": "FCMP_ULT",
+      "symbol": "FCMP_ULT",
+      "llvm_value": 12,
+      "category": "float",
+      "id": "0x4400000d"
+    },
+    {
+      "internal": "FCMP_ULE",
+      "symbol": "FCMP_ULE",
+      "llvm_value": 13,
+      "category": "float",
+      "id": "0x4400000e"
+    },
+    {
+      "internal": "FCMP_UNE",
+      "symbol": "FCMP_UNE",
+      "llvm_value": 14,
+      "category": "float",
+      "id": "0x4400000f"
+    },
+    {
+      "internal": "FCMP_TRUE",
+      "symbol": "FCMP_TRUE",
+      "llvm_value": 15,
+      "category": "float",
+      "id": "0x44000010"
+    },
+    {
+      "internal": "ICMP_EQ",
+      "symbol": "ICMP_EQ",
+      "llvm_value": 32,
+      "category": "integer",
+      "id": "0x44000011"
+    },
+    {
+      "internal": "ICMP_NE",
+      "symbol": "ICMP_NE",
+      "llvm_value": 33,
+      "category": "integer",
+      "id": "0x44000012"
+    },
+    {
+      "internal": "ICMP_UGT",
+      "symbol": "ICMP_UGT",
+      "llvm_value": 34,
+      "category": "integer",
+      "id": "0x44000013"
+    },
+    {
+      "internal": "ICMP_UGE",
+      "symbol": "ICMP_UGE",
+      "llvm_value": 35,
+      "category": "integer",
+      "id": "0x44000014"
+    },
+    {
+      "internal": "ICMP_ULT",
+      "symbol": "ICMP_ULT",
+      "llvm_value": 36,
+      "category": "integer",
+      "id": "0x44000015"
+    },
+    {
+      "internal": "ICMP_ULE",
+      "symbol": "ICMP_ULE",
+      "llvm_value": 37,
+      "category": "integer",
+      "id": "0x44000016"
+    },
+    {
+      "internal": "ICMP_SGT",
+      "symbol": "ICMP_SGT",
+      "llvm_value": 38,
+      "category": "integer",
+      "id": "0x44000017"
+    },
+    {
+      "internal": "ICMP_SGE",
+      "symbol": "ICMP_SGE",
+      "llvm_value": 39,
+      "category": "integer",
+      "id": "0x44000018"
+    },
+    {
+      "internal": "ICMP_SLT",
+      "symbol": "ICMP_SLT",
+      "llvm_value": 40,
+      "category": "integer",
+      "id": "0x44000019"
+    },
+    {
+      "internal": "ICMP_SLE",
+      "symbol": "ICMP_SLE",
+      "llvm_value": 41,
+      "category": "integer",
+      "id": "0x4400001a"
+    }
+  ],
+  "linkages": [
+    {
+      "internal": "ExternalLinkage",
+      "symbol": "EXTERNAL",
+      "llvm_value": 0,
+      "id": "0x45000001"
+    },
+    {
+      "internal": "AvailableExternallyLinkage",
+      "symbol": "AVAILABLE_EXTERNALLY",
+      "llvm_value": 1,
+      "id": "0x45000002"
+    },
+    {
+      "internal": "LinkOnceAnyLinkage",
+      "symbol": "LINK_ONCE_ANY",
+      "llvm_value": 2,
+      "id": "0x45000003"
+    },
+    {
+      "internal": "LinkOnceODRLinkage",
+      "symbol": "LINK_ONCE_ODR",
+      "llvm_value": 3,
+      "id": "0x45000004"
+    },
+    {
+      "internal": "WeakAnyLinkage",
+      "symbol": "WEAK_ANY",
+      "llvm_value": 4,
+      "id": "0x45000005"
+    },
+    {
+      "internal": "WeakODRLinkage",
+      "symbol": "WEAK_ODR",
+      "llvm_value": 5,
+      "id": "0x45000006"
+    },
+    {
+      "internal": "AppendingLinkage",
+      "symbol": "APPENDING",
+      "llvm_value": 6,
+      "id": "0x45000007"
+    },
+    {
+      "internal": "InternalLinkage",
+      "symbol": "INTERNAL",
+      "llvm_value": 7,
+      "id": "0x45000008"
+    },
+    {
+      "internal": "PrivateLinkage",
+      "symbol": "PRIVATE",
+      "llvm_value": 8,
+      "id": "0x45000009"
+    },
+    {
+      "internal": "ExternalWeakLinkage",
+      "symbol": "EXTERNAL_WEAK",
+      "llvm_value": 9,
+      "id": "0x4500000a"
+    },
+    {
+      "internal": "CommonLinkage",
+      "symbol": "COMMON",
+      "llvm_value": 10,
+      "id": "0x4500000b"
+    }
+  ],
+  "visibilities": [
+    {
+      "internal": "DefaultVisibility",
+      "symbol": "DEFAULT",
+      "llvm_value": 0,
+      "id": "0x46000001"
+    },
+    {
+      "internal": "HiddenVisibility",
+      "symbol": "HIDDEN",
+      "llvm_value": 1,
+      "id": "0x46000002"
+    },
+    {
+      "internal": "ProtectedVisibility",
+      "symbol": "PROTECTED",
+      "llvm_value": 2,
+      "id": "0x46000003"
+    }
+  ],
+  "calling_conventions": [
+    {
+      "internal": "C",
+      "symbol": "C",
+      "llvm_value": 0,
+      "id": "0x47000001"
+    },
+    {
+      "internal": "Fast",
+      "symbol": "FAST",
+      "llvm_value": 8,
+      "id": "0x47000002"
+    },
+    {
+      "internal": "Cold",
+      "symbol": "COLD",
+      "llvm_value": 9,
+      "id": "0x47000003"
+    },
+    {
+      "internal": "AnyReg",
+      "symbol": "ANY_REG",
+      "llvm_value": 13,
+      "id": "0x47000004"
+    },
+    {
+      "internal": "PreserveMost",
+      "symbol": "PRESERVE_MOST",
+      "llvm_value": 14,
+      "id": "0x47000005"
+    },
+    {
+      "internal": "PreserveAll",
+      "symbol": "PRESERVE_ALL",
+      "llvm_value": 15,
+      "id": "0x47000006"
+    },
+    {
+      "internal": "Tail",
+      "symbol": "TAIL",
+      "llvm_value": 18,
+      "id": "0x47000007"
+    },
+    {
+      "internal": "CFGuard_Check",
+      "symbol": "CF_GUARD_CHECK",
+      "llvm_value": 19,
+      "id": "0x47000008"
+    },
+    {
+      "internal": "X86_StdCall",
+      "symbol": "X86_STD_CALL",
+      "llvm_value": 64,
+      "id": "0x47000009"
+    },
+    {
+      "internal": "X86_FastCall",
+      "symbol": "X86_FAST_CALL",
+      "llvm_value": 65,
+      "id": "0x4700000a"
+    },
+    {
+      "internal": "X86_ThisCall",
+      "symbol": "X86_THIS_CALL",
+      "llvm_value": 70,
+      "id": "0x4700000b"
+    },
+    {
+      "internal": "X86_64_SysV",
+      "symbol": "X86_64_SYS_V",
+      "llvm_value": 78,
+      "id": "0x4700000c"
+    },
+    {
+      "internal": "Win64",
+      "symbol": "WIN64",
+      "llvm_value": 79,
+      "id": "0x4700000d"
+    },
+    {
+      "internal": "X86_VectorCall",
+      "symbol": "X86_VECTOR_CALL",
+      "llvm_value": 80,
+      "id": "0x4700000e"
+    },
+    {
+      "internal": "X86_INTR",
+      "symbol": "X86_INTR",
+      "llvm_value": 83,
+      "id": "0x4700000f"
+    },
+    {
+      "internal": "X86_RegCall",
+      "symbol": "X86_REG_CALL",
+      "llvm_value": 92,
+      "id": "0x47000010"
+    },
+    {
+      "internal": "AArch64_VectorCall",
+      "symbol": "A_ARCH64_VECTOR_CALL",
+      "llvm_value": 97,
+      "id": "0x47000011"
+    },
+    {
+      "internal": "AArch64_SVE_VectorCall",
+      "symbol": "A_ARCH64_SVE_VECTOR_CALL",
+      "llvm_value": 98,
+      "id": "0x47000012"
+    },
+    {
+      "internal": "AArch64_SME_ABI_Support_Routines_PreserveMost_From_X0",
+      "symbol": "A_ARCH64_SME_ABI_SUPPORT_ROUTINES_PRESERVE_MOST_FROM_X0",
+      "llvm_value": 102,
+      "id": "0x47000013"
+    },
+    {
+      "internal": "AArch64_SME_ABI_Support_Routines_PreserveMost_From_X2",
+      "symbol": "A_ARCH64_SME_ABI_SUPPORT_ROUTINES_PRESERVE_MOST_FROM_X2",
+      "llvm_value": 103,
+      "id": "0x47000014"
+    },
+    {
+      "internal": "NeverC_Custom",
+      "symbol": "NEVER_C_CUSTOM",
+      "llvm_value": 1000,
+      "id": "0x47000015"
+    }
+  ],
+  "attribute_locations": [
+    {
+      "internal": "Return",
+      "symbol": "RETURN",
+      "id": "0x48000001"
+    },
+    {
+      "internal": "Function",
+      "symbol": "FUNCTION",
+      "id": "0x48000002"
+    },
+    {
+      "internal": "Parameter",
+      "symbol": "PARAMETER",
+      "id": "0x48000003"
+    }
+  ],
+  "properties": [
+    {
+      "internal": "name",
+      "symbol": "NAME",
+      "value_type": "string",
+      "flag": "0x0000000000000001",
+      "id": "0x49000001"
+    },
+    {
+      "internal": "fast_math_flags",
+      "symbol": "FAST_MATH_FLAGS",
+      "value_type": "flags",
+      "flag": "0x0000000000000002",
+      "id": "0x49000002"
+    },
+    {
+      "internal": "nuw",
+      "symbol": "NUW",
+      "value_type": "bool",
+      "flag": "0x0000000000000004",
+      "id": "0x49000003"
+    },
+    {
+      "internal": "nsw",
+      "symbol": "NSW",
+      "value_type": "bool",
+      "flag": "0x0000000000000008",
+      "id": "0x49000004"
+    },
+    {
+      "internal": "exact",
+      "symbol": "EXACT",
+      "value_type": "bool",
+      "flag": "0x0000000000000010",
+      "id": "0x49000005"
+    },
+    {
+      "internal": "disjoint",
+      "symbol": "DISJOINT",
+      "value_type": "bool",
+      "flag": "0x0000000000000020",
+      "id": "0x49000006"
+    },
+    {
+      "internal": "volatile",
+      "symbol": "VOLATILE",
+      "value_type": "bool",
+      "flag": "0x0000000000000040",
+      "id": "0x49000007"
+    },
+    {
+      "internal": "alignment",
+      "symbol": "ALIGNMENT",
+      "value_type": "u64",
+      "flag": "0x0000000000000080",
+      "id": "0x49000008"
+    },
+    {
+      "internal": "atomic_ordering",
+      "symbol": "ATOMIC_ORDERING",
+      "value_type": "enum",
+      "flag": "0x0000000000000100",
+      "id": "0x49000009"
+    },
+    {
+      "internal": "sync_scope",
+      "symbol": "SYNC_SCOPE",
+      "value_type": "string",
+      "flag": "0x0000000000000200",
+      "id": "0x4900000a"
+    },
+    {
+      "internal": "predicate",
+      "symbol": "PREDICATE",
+      "value_type": "enum",
+      "flag": "0x0000000000000400",
+      "id": "0x4900000b"
+    },
+    {
+      "internal": "calling_convention",
+      "symbol": "CALLING_CONVENTION",
+      "value_type": "enum",
+      "flag": "0x0000000000000800",
+      "id": "0x4900000c"
+    },
+    {
+      "internal": "tail_call_kind",
+      "symbol": "TAIL_CALL_KIND",
+      "value_type": "enum",
+      "flag": "0x0000000000001000",
+      "id": "0x4900000d"
+    },
+    {
+      "internal": "indices",
+      "symbol": "INDICES",
+      "value_type": "u32_array",
+      "flag": "0x0000000000002000",
+      "id": "0x4900000e"
+    },
+    {
+      "internal": "weak",
+      "symbol": "WEAK",
+      "value_type": "bool",
+      "flag": "0x0000000000004000",
+      "id": "0x4900000f"
+    },
+    {
+      "internal": "success_ordering",
+      "symbol": "SUCCESS_ORDERING",
+      "value_type": "enum",
+      "flag": "0x0000000000008000",
+      "id": "0x49000010"
+    },
+    {
+      "internal": "failure_ordering",
+      "symbol": "FAILURE_ORDERING",
+      "value_type": "enum",
+      "flag": "0x0000000000010000",
+      "id": "0x49000011"
+    },
+    {
+      "internal": "inbounds",
+      "symbol": "INBOUNDS",
+      "value_type": "bool",
+      "flag": "0x0000000000020000",
+      "id": "0x49000012"
+    },
+    {
+      "internal": "source_element_type",
+      "symbol": "SOURCE_ELEMENT_TYPE",
+      "value_type": "type",
+      "flag": "0x0000000000040000",
+      "id": "0x49000013"
+    },
+    {
+      "internal": "allocated_type",
+      "symbol": "ALLOCATED_TYPE",
+      "value_type": "type",
+      "flag": "0x0000000000080000",
+      "id": "0x49000014"
+    },
+    {
+      "internal": "attributes",
+      "symbol": "ATTRIBUTES",
+      "value_type": "attribute_set",
+      "flag": "0x0000000000100000",
+      "id": "0x49000015"
+    },
+    {
+      "internal": "cleanup",
+      "symbol": "CLEANUP",
+      "value_type": "bool",
+      "flag": "0x0000000000200000",
+      "id": "0x49000016"
+    },
+    {
+      "internal": "nusw",
+      "symbol": "NUSW",
+      "value_type": "bool",
+      "flag": "0x0000000000400000",
+      "id": "0x49000017"
+    }
+  ]
+}

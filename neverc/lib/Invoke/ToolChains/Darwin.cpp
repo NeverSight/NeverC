@@ -1540,14 +1540,13 @@ DerivedArgList *Darwin::TranslateArgs(const DerivedArgList &Args,
   // First get the generic Apple args, before moving onto Darwin-specific ones.
   DerivedArgList *DAL = MachO::TranslateArgs(Args, BoundArch);
 
+  // Deployment target initialization is required even when a plugin-authored
+  // action graph does not contain an architecture binding.
+  AddDeploymentTarget(*DAL);
+
   // If no architecture is bound, none of the translations here are relevant.
   if (BoundArch.empty())
     return DAL;
-
-  // Add an explicit version min argument for the deployment target. We do this
-  // after argument translation because -Xarch_ arguments may add a version min
-  // argument.
-  AddDeploymentTarget(*DAL);
 
   // For iOS 6, undo the translation to add -static for -mkernel.
   if (isTargetIOSBased() && !isIPhoneOSVersionLT(6, 0)) {

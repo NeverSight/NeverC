@@ -6,6 +6,7 @@
 #include "neverc/Foundation/Core/SourceLocation.h"
 
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -20,6 +21,12 @@ using llvm::raw_pwrite_stream;
 class TreeContext;
 class EmitterAction;
 class PrepOptions;
+
+namespace plugin {
+class PluginIRGenProviderRuntime;
+class PluginSourcePhaseRuntime;
+class PluginTaskContext;
+} // namespace plugin
 
 class EmitterConsumer : public TreeConsumer {
   using LinkModule = EmitterAction::LinkModule;
@@ -43,6 +50,12 @@ class EmitterConsumer : public TreeConsumer {
   bool TimerIsEnabled = false;
 
   std::unique_ptr<IRGenerator> Gen;
+  std::unique_ptr<plugin::PluginIRGenProviderRuntime> PluginIRGen;
+  plugin::PluginTaskContext *PluginTask = nullptr;
+  plugin::PluginSourcePhaseRuntime *PluginSourcePhases = nullptr;
+  std::unique_ptr<llvm::Module> PluginGeneratedModule;
+  bool BuiltinIRGenFinished = false;
+  bool PluginSemanticUnitReady = false;
 
   llvm::SmallVector<LinkModule, 4> LinkModules;
 
@@ -59,6 +72,9 @@ class EmitterConsumer : public TreeConsumer {
   // This is here so that the diagnostic printer knows the module a diagnostic
   // refers to.
   llvm::Module *CurLinkModule = nullptr;
+
+  llvm::Expected<llvm::Module *> generateBuiltinIRModule();
+  void completePluginIRGen();
 
 public:
   EmitterConsumer(BackendAction Action, DiagnosticsEngine &Diags,
@@ -81,6 +97,12 @@ public:
                   llvm::Module *Module,
                   llvm::SmallVector<LinkModule, 4> LinkModules,
                   llvm::LLVMContext &C);
+  ~EmitterConsumer() override;
+
+  llvm::Error
+  enablePluginIRGen(plugin::PluginTaskContext &Task,
+                    plugin::PluginSourcePhaseRuntime &SourcePhases,
+                    llvm::StringRef TargetTriple, llvm::StringRef DataLayout);
 
   llvm::Module *getModule() const;
   std::unique_ptr<llvm::Module> takeModule();

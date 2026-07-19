@@ -7,6 +7,7 @@
 #include "Backend/Runtime/StringRuntimeLinker.h"
 #include "Core/AndroidKernelEmitter.h"
 #include "neverc/Compiler/Utils.h"
+#include "neverc/DynCode/Pipeline/Pipeline.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
@@ -14,15 +15,19 @@
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetOptions.h"
 #include "neverc/Invoke/LLVMCommandLine.h"
-#include "neverc/Plugin/PluginLoader.h"
+#include "neverc/Plugin/Host/IRPassPlugin.h"
+#include "neverc/Plugin/Host/IROptimizationProvider.h"
+#include "neverc/Plugin/Host/MIRPassPlugin.h"
 #include "neverc/Scan/HeaderIndexOptions.h"
 #include "neverc/Transforms/StrHash/StrHashFoldPass.h"
 #include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
 #include "neverc/Transforms/XorStr/XorStrCleanupPass.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Bitcode/BitcodeAutoGeneratorPass.h"
 #include "llvm/Bitcode/BitcodeWriterPass.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
@@ -60,6 +65,7 @@
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include <memory>
 #include <optional>
+#include <vector>
 using namespace neverc;
 using namespace llvm;
 
@@ -77,6 +83,22 @@ namespace {
 // Default filename used for profile generation.
 std::string getDefaultProfileGenName() { return "default_%m.profraw"; }
 
+class CompositeMachinePipelineHooks final : public MachinePipelineHooks {
+public:
+  explicit CompositeMachinePipelineHooks(
+      std::vector<std::shared_ptr<MachinePipelineHooks>> HooksValue)
+      : Hooks(std::move(HooksValue)) {}
+
+  void addPasses(TargetPassConfig &TPC,
+                 MachinePipelineHookPoint Point) override {
+    for (const auto &Hook : Hooks)
+      Hook->addPasses(TPC, Point);
+  }
+
+private:
+  std::vector<std::shared_ptr<MachinePipelineHooks>> Hooks;
+};
+
 class GenAssemblyHelper {
   DiagnosticsEngine &Diags;
   const HeaderIndexOptions &HSOpts;
@@ -85,6 +107,11 @@ class GenAssemblyHelper {
   const LangOptions &LangOpts;
   llvm::Module *TheModule;
   llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS;
+  plugin::PluginTaskContext *PluginTask;
+  std::unique_ptr<plugin::PluginIROptimizationProviderRuntime>
+      OptimizationRuntime;
+  std::shared_ptr<plugin::MIRPassPlan> MachinePasses;
+  bool MachinePassesPrepared = false;
 
   Timer CodeGenerationTime;
 
@@ -103,6 +130,7 @@ class GenAssemblyHelper {
 
   bool addEmitPasses(legacy::PassManager &CodeGenPasses, BackendAction Action,
                      raw_pwrite_stream &OS, raw_pwrite_stream *DwoOS);
+  bool prepareMachinePasses();
 
   std::unique_ptr<llvm::ToolOutputFile> openOutputFile(llvm::StringRef Path) {
     std::error_code EC;
@@ -115,9 +143,13 @@ class GenAssemblyHelper {
     return F;
   }
 
-  void runOptimizationPipeline(BackendAction Action,
+  llvm::Error runBuiltinOptimizationPipeline(BackendAction Action,
+                                             EmitterConsumer *BC);
+  bool runOptimizationPipeline(BackendAction Action,
                                std::unique_ptr<raw_pwrite_stream> &OS,
                                EmitterConsumer *BC);
+  void emitOptimizedIR(BackendAction Action,
+                       std::unique_ptr<raw_pwrite_stream> &OS);
   void runCodegenPipeline(BackendAction Action,
                           std::unique_ptr<raw_pwrite_stream> &OS,
                           std::unique_ptr<llvm::ToolOutputFile> &DwoOS);
@@ -133,9 +165,11 @@ public:
                     const CodeGenOptions &CGOpts,
                     const neverc::TargetOptions &TOpts,
                     const LangOptions &LOpts, llvm::Module *M,
-                    llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS)
+                    llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS,
+                    plugin::PluginTaskContext *PluginTaskValue)
       : Diags(_Diags), HSOpts(HeaderIdxOpts), CodeGenOpts(CGOpts),
         TargetOpts(TOpts), LangOpts(LOpts), TheModule(M), VFS(std::move(VFS)),
+        PluginTask(PluginTaskValue),
         CodeGenerationTime("codegen", "Code Generation Time"),
         TargetTriple(TheModule->getTargetTriple()) {}
 
@@ -382,12 +416,45 @@ bool GenAssemblyHelper::addEmitPasses(legacy::PassManager &CodeGenPasses,
 
   CodeGenFileType CGFT = getCodeGenFileType(Action);
 
+  if (!prepareMachinePasses())
+    return false;
+
   if (TM->addPassesToEmitFile(CodeGenPasses, OS, DwoOS, CGFT,
                               /*DisableVerify=*/!CodeGenOpts.VerifyModule)) {
     Diags.Report(diag::err_fe_unable_to_interface_with_target);
     return false;
   }
 
+  return true;
+}
+
+bool GenAssemblyHelper::prepareMachinePasses() {
+  if (MachinePassesPrepared)
+    return true;
+  MachinePassesPrepared = true;
+
+  std::vector<std::shared_ptr<MachinePipelineHooks>> Hooks;
+  if (PluginTask) {
+    auto Plan = plugin::MIRPassPlan::create(*PluginTask);
+    if (!Plan) {
+      Diags.Report(diag::err_fe_error_backend) << toString(Plan.takeError());
+      return false;
+    }
+    MachinePasses = std::move(*Plan);
+    if (!MachinePasses->empty())
+      Hooks.push_back(MachinePasses);
+  }
+
+  if (auto DynCodeHooks = dyncode::createDynCodeMachinePipelineHooks(
+          dyncode::getCurrentDynCodeOptions()))
+    Hooks.push_back(std::move(DynCodeHooks));
+
+  std::shared_ptr<MachinePipelineHooks> Combined;
+  if (!Hooks.empty())
+    Combined =
+        std::make_shared<CompositeMachinePipelineHooks>(std::move(Hooks));
+  static_cast<LLVMTargetMachine *>(TM.get())
+      ->setMachinePipelineHooks(std::move(Combined));
   return true;
 }
 
@@ -422,15 +489,29 @@ OptimizationLevel mapToLevel(const CodeGenOptions &Opts) {
     return OptimizationLevel::O3;
   }
 }
+
+NevercIROptimizationLevel
+toPluginOptimizationLevel(OptimizationLevel Level) {
+  if (Level == OptimizationLevel::O0)
+    return NEVERC_IR_OPTIMIZATION_O0;
+  if (Level == OptimizationLevel::O1)
+    return NEVERC_IR_OPTIMIZATION_O1;
+  if (Level == OptimizationLevel::O3)
+    return NEVERC_IR_OPTIMIZATION_O3;
+  if (Level == OptimizationLevel::Os)
+    return NEVERC_IR_OPTIMIZATION_OS;
+  if (Level == OptimizationLevel::Oz)
+    return NEVERC_IR_OPTIMIZATION_OZ;
+  return NEVERC_IR_OPTIMIZATION_O2;
+}
 } // namespace
 
 // ===----------------------------------------------------------------------===
 // Optimization & codegen pipelines
 // ===----------------------------------------------------------------------===
 
-void GenAssemblyHelper::runOptimizationPipeline(
-    BackendAction Action, std::unique_ptr<raw_pwrite_stream> &OS,
-    EmitterConsumer *BC) {
+Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
+    BackendAction Action, EmitterConsumer *BC) {
   std::optional<PGOOptions> PGOOpt;
 
   PipelineTuningOptions PTO;
@@ -460,6 +541,32 @@ void GenAssemblyHelper::runOptimizationPipeline(
       CodeGenOpts.VerifyEach, PrintPassOpts);
   SI.registerCallbacks(PIC, &MAM);
   PassBuilder PB(TM.get(), PTO, PGOOpt, &PIC);
+
+  std::unique_ptr<plugin::IRPassPlan> PluginPasses;
+  if (PluginTask) {
+    auto Plan = plugin::IRPassPlan::create(*PluginTask);
+    if (!Plan)
+      return Plan.takeError();
+    PluginPasses = std::move(*Plan);
+    if (!PluginPasses->empty()) {
+      PB.registerPipelineStartEPCallback(
+          [&](ModulePassManager &MPM, OptimizationLevel Level) {
+            PluginPasses->addPasses(
+                MPM,
+                {NEVERC_PHASE_IR_PASS_PIPELINE_START_HIGH,
+                 NEVERC_PHASE_IR_PASS_PIPELINE_START_LOW},
+                toPluginOptimizationLevel(Level));
+          });
+      PB.registerOptimizerLastEPCallback(
+          [&](ModulePassManager &MPM, OptimizationLevel Level) {
+            PluginPasses->addPasses(
+                MPM,
+                {NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_HIGH,
+                 NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_LOW},
+                toPluginOptimizationLevel(Level));
+          });
+    }
+  }
 
   if (LangOpts.BuiltinString) {
     bool IsPreLinkStr = CodeGenOpts.PrepareForLTO;
@@ -532,52 +639,9 @@ void GenAssemblyHelper::runOptimizationPipeline(
     Debugify.registerCallbacks(PIC, MAM);
   }
   // Set plugin arguments before loading so they're available during registration.
-  if (!CodeGenOpts.NevercPassPluginArgs.empty())
-    neverc::plugin::setPluginArgs(CodeGenOpts.NevercPassPluginArgs);
-  // Load neverc C-ABI out-of-tree pass plugins.
-  for (const auto &PluginPath : CodeGenOpts.NevercPassPlugins) {
-    std::string Err;
-    if (!neverc::plugin::getGlobalPluginLoader().loadPlugin(PluginPath, Err))
-      Diags.Report(diag::err_fe_unable_to_load_plugin) << PluginPath << Err;
-  }
   for (const auto &PassCallback : CodeGenOpts.PassBuilderCallbacks)
     PassCallback(PB);
-  for (auto PassCallback : ListRegisterPassBuilderCallbacks) {
-    PassCallback(PB);
-  }
-
-  if (neverc::plugin::getGlobalPluginLoader().hasPlugins()) {
-    PB.registerPipelineStartEPCallback(
-        [](ModulePassManager &MPM, OptimizationLevel) {
-          auto &PL = neverc::plugin::getGlobalPluginLoader();
-          neverc::plugin::addPluginModulePasses(
-              MPM, NEVERC_INTERPOSE_PIPELINE_START, PL);
-        });
-    PB.registerOptimizerLastEPCallback(
-        [](ModulePassManager &MPM, OptimizationLevel) {
-          auto &PL = neverc::plugin::getGlobalPluginLoader();
-          neverc::plugin::addPluginModulePasses(
-              MPM, NEVERC_INTERPOSE_PIPELINE_LAST, PL);
-        });
-
-    auto &PL = neverc::plugin::getGlobalPluginLoader();
-    if (PL.hasPassesForInterpose(NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT)) {
-      ListRegisterTargetPassConfigCallbacks.push_back(
-          [](TargetPassConfig &TPC) {
-            auto &PL = neverc::plugin::getGlobalPluginLoader();
-            neverc::plugin::addPluginMachinePasses(
-                TPC, NEVERC_INTERPOSE_BEFORE_CODEGEN_PREEMIT, PL);
-          });
-    }
-    if (PL.hasPassesForInterpose(NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR)) {
-      ListRegisterTargetPassConfigPostPreEmitCallbacks.push_back(
-          [](TargetPassConfig &TPC) {
-            auto &PL = neverc::plugin::getGlobalPluginLoader();
-            neverc::plugin::addPluginMachinePasses(
-                TPC, NEVERC_INTERPOSE_AFTER_CODEGEN_FINAL_MIR, PL);
-          });
-    }
-  }
+  dyncode::registerDynCodePasses(PB, dyncode::getCurrentDynCodeOptions());
 
   // Register the target library analysis directly and give it a customized
   // preset TLI.
@@ -593,6 +657,8 @@ void GenAssemblyHelper::runOptimizationPipeline(
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
   ModulePassManager MPM;
+  NevercIROptimizationLevel PluginOptimizationLevel =
+      toPluginOptimizationLevel(mapToLevel(CodeGenOpts));
 #ifndef NDEBUG
   if (CodeGenOpts.VerifyModule)
     MPM.addPass(VerifierPass());
@@ -613,9 +679,12 @@ void GenAssemblyHelper::runOptimizationPipeline(
     if (CodeGenOpts.AutoGenerateIR)
       MPM.addPassToFront(IRAutoGeneratorPrePass(true, "IRAutoGeneratorPre"));
 
-    neverc::plugin::addPluginModulePasses(
-        MPM, NEVERC_INTERPOSE_PRE_OPT,
-        neverc::plugin::getGlobalPluginLoader());
+    if (PluginPasses)
+      PluginPasses->addPasses(
+          MPM,
+          {NEVERC_PHASE_IR_PASS_PRE_OPT_HIGH,
+           NEVERC_PHASE_IR_PASS_PRE_OPT_LOW},
+          PluginOptimizationLevel);
   }
 
   if (!CodeGenOpts.DisableLLVMPasses) {
@@ -667,9 +736,12 @@ void GenAssemblyHelper::runOptimizationPipeline(
           neverc::xorstr::XorStrCleanupPass()));
     }
 
-    neverc::plugin::addPluginModulePasses(
-        MPM, NEVERC_INTERPOSE_POST_OPT,
-        neverc::plugin::getGlobalPluginLoader());
+    if (PluginPasses)
+      PluginPasses->addPasses(
+          MPM,
+          {NEVERC_PHASE_IR_PASS_POST_OPT_HIGH,
+           NEVERC_PHASE_IR_PASS_POST_OPT_LOW},
+          PluginOptimizationLevel);
 
     if (CodeGenOpts.AutoGenerateIR)
       MPM.addPass(IRAutoGeneratorPostPass(true, "IRAutoGeneratorPost"));
@@ -679,14 +751,16 @@ void GenAssemblyHelper::runOptimizationPipeline(
           BitcodeAutoGeneratorPostPass(true, "BitcodeAutoGeneratorPost"));
   }
 
-  if (Action == Backend_EmitBC || Action == Backend_EmitLL) {
-    if (Action == Backend_EmitBC)
-      MPM.addPass(
-          BitcodeWriterPass(*OS, CodeGenOpts.EmitLLVMUseLists, EmitLTOSummary));
-    else
-      MPM.addPass(PrintModulePass(*OS, "", CodeGenOpts.EmitLLVMUseLists,
-                                  EmitLTOSummary));
-  }
+  if (PluginPasses)
+    PluginPasses->addPasses(
+        MPM,
+        {NEVERC_PHASE_IR_PASS_PRE_CODEGEN_HIGH,
+         NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW},
+        PluginOptimizationLevel);
+
+  if (PluginTask)
+    MPM.addPass(VerifierPass());
+
   // Print a textual, '-passes=' compatible, representation of pipeline if
   // requested.
   if (PrintPipelinePasses) {
@@ -695,7 +769,7 @@ void GenAssemblyHelper::runOptimizationPipeline(
       return PassName.empty() ? ClassName : PassName;
     });
     outs() << "\n";
-    return;
+    return Error::success();
   }
 
   // Now that we have all of the passes ready, run them.
@@ -704,6 +778,58 @@ void GenAssemblyHelper::runOptimizationPipeline(
     llvm::TimeTraceScope TimeScope("Optimizer");
     MPM.run(*TheModule, MAM);
   }
+  return Error::success();
+}
+
+bool GenAssemblyHelper::runOptimizationPipeline(
+    BackendAction Action, std::unique_ptr<raw_pwrite_stream> &OS,
+    EmitterConsumer *BC) {
+  auto RunBuiltin = [this, Action, BC](Module &Candidate) -> Error {
+    Module *Previous = TheModule;
+    TheModule = &Candidate;
+    auto Restore = make_scope_exit([&] { TheModule = Previous; });
+    return runBuiltinOptimizationPipeline(Action, BC);
+  };
+
+  if (PluginTask) {
+    auto Created = plugin::PluginIROptimizationProviderRuntime::create(
+        *PluginTask, *TheModule,
+        toPluginOptimizationLevel(mapToLevel(CodeGenOpts)),
+        CodeGenOpts.DisableLLVMPasses, RunBuiltin);
+    if (!Created) {
+      Diags.Report(diag::err_fe_error_backend)
+          << toString(Created.takeError());
+      return false;
+    }
+    OptimizationRuntime = std::move(*Created);
+    if (Error E = OptimizationRuntime->execute()) {
+      Diags.Report(diag::err_fe_error_backend) << toString(std::move(E));
+      return false;
+    }
+    TheModule = OptimizationRuntime->module();
+    if (!TheModule) {
+      Diags.Report(diag::err_fe_error_backend)
+          << "IR optimization provider published no module";
+      return false;
+    }
+  } else if (Error E = RunBuiltin(*TheModule)) {
+    Diags.Report(diag::err_fe_error_backend) << toString(std::move(E));
+    return false;
+  }
+
+  emitOptimizedIR(Action, OS);
+  return true;
+}
+
+void GenAssemblyHelper::emitOptimizedIR(
+    BackendAction Action, std::unique_ptr<raw_pwrite_stream> &OS) {
+  if (PrintPipelinePasses || (Action != Backend_EmitBC &&
+                              Action != Backend_EmitLL))
+    return;
+  if (Action == Backend_EmitBC)
+    WriteBitcodeToFile(*TheModule, *OS, CodeGenOpts.EmitLLVMUseLists);
+  else
+    TheModule->print(*OS, nullptr, CodeGenOpts.EmitLLVMUseLists);
 }
 
 void GenAssemblyHelper::runCodegenPipeline(
@@ -756,6 +882,8 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
     return;
   if (TM)
     TheModule->setDataLayout(TM->createDataLayout());
+  if (RequiresCodeGen && !prepareMachinePasses())
+    return;
 
   cl::PrintOptionValues();
 
@@ -764,7 +892,9 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   // no need to scan the module here.
   unsigned ParallelN = CodeGenOpts.ParallelCodeGen;
   bool UseParallel = RequiresCodeGen && Action == Backend_EmitObj &&
-                     !CodeGenOpts.PrepareForLTO && ParallelN != 1;
+                     !CodeGenOpts.PrepareForLTO && ParallelN != 1 &&
+                     (!MachinePasses ||
+                      !MachinePasses->requiresSerialCodeGen());
 
   std::unique_ptr<llvm::ToolOutputFile> DwoOS;
 
@@ -773,7 +903,8 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   // global-state contention (PassBuilder pipeline construction, cl::opt
   // reads, ManagedStatic init), so we complete all optimization on the
   // main thread and only parallelize codegen.
-  runOptimizationPipeline(Action, OS, BC);
+  if (!runOptimizationPipeline(Action, OS, BC))
+    return;
 
   if (UseParallel) {
     if (!neverc::runParallelCodeGen(*TheModule, *TM, *OS, ParallelN))
@@ -795,11 +926,13 @@ void neverc::genBackendOutput(
     const CodeGenOptions &CGOpts, const neverc::TargetOptions &TOpts,
     const LangOptions &LOpts, llvm::StringRef TDesc, llvm::Module *M,
     BackendAction Action, llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS,
-    std::unique_ptr<raw_pwrite_stream> OS, EmitterConsumer *BC) {
+    std::unique_ptr<raw_pwrite_stream> OS, EmitterConsumer *BC,
+    plugin::PluginTaskContext *PluginTask) {
 
   llvm::TimeTraceScope TimeScope("Backend");
 
-  GenAssemblyHelper AsmHelper(Diags, HeaderOpts, CGOpts, TOpts, LOpts, M, VFS);
+  GenAssemblyHelper AsmHelper(Diags, HeaderOpts, CGOpts, TOpts, LOpts, M, VFS,
+                              PluginTask);
   AsmHelper.genAssembly(Action, std::move(OS), BC);
 
   if (AsmHelper.TM) {

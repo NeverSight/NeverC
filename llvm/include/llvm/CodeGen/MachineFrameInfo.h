@@ -401,6 +401,24 @@ public:
   /// Return the number of objects.
   unsigned getNumObjects() const { return Objects.size(); }
 
+  /// Discard the most recently created fixed or non-fixed object. This is
+  /// intended for transaction rollback before frame layout begins.
+  void discardLastObject(int ObjectIdx, Align PreviousMaxAlignment,
+                         bool PreviouslyHadVarSizedObjects) {
+    if (ObjectIdx < 0) {
+      assert(ObjectIdx == getObjectIndexBegin() &&
+             "Can only discard the newest fixed object");
+      Objects.erase(Objects.begin());
+      --NumFixedObjects;
+    } else {
+      assert(ObjectIdx + 1 == getObjectIndexEnd() &&
+             "Can only discard the newest stack object");
+      Objects.pop_back();
+    }
+    MaxAlignment = PreviousMaxAlignment;
+    HasVarSizedObjects = PreviouslyHadVarSizedObjects;
+  }
+
   /// Map a frame index into the local object block
   void mapLocalFrameObject(int ObjectIndex, int64_t Offset) {
     LocalFrameObjects.push_back(std::pair<int, int64_t>(ObjectIndex, Offset));
@@ -588,6 +606,9 @@ public:
 
   /// Make sure the function is at least Align bytes aligned.
   void ensureMaxAlignment(Align Alignment);
+
+  /// Restore a previously captured maximum alignment during rollback.
+  void restoreMaxAlignment(Align Alignment) { MaxAlignment = Alignment; }
 
   /// Return true if this function adjusts the stack -- e.g.,
   /// when calling another function. This is only valid during and after

@@ -52,6 +52,7 @@ public:
 
   static llvm::Expected<PluginPhaseGraph> createBuiltinDriverGraph();
   static llvm::Expected<PluginPhaseGraph> createBuiltinSourceGraph();
+  static llvm::Expected<PluginPhaseGraph> createBuiltinIRGraph();
 
 private:
   struct Edge {

@@ -31,6 +31,22 @@ set(NEVERC_ATTRIBUTE_DEFINITIONS
     "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Foundation/AttrList.td.h")
 set(NEVERC_ATTRIBUTE_CLASS_DEFINITIONS
     "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Tree/Attrs.td.h")
+set(NEVERC_PLUGIN_IR_SCHEMA_GENERATOR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/gen-ir-schema.py")
+set(NEVERC_PLUGIN_IR_SCHEMA
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/IRSchema.json")
+set(NEVERC_PLUGIN_IR_SCHEMA_TEMPLATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginIRSchema.inc.in")
+set(NEVERC_PLUGIN_IR_SCHEMA_OUTPUT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginIRSchema.inc")
+set(NEVERC_PLUGIN_MIR_SCHEMA_GENERATOR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/gen-mir-schema.py")
+set(NEVERC_PLUGIN_MIR_SCHEMA
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/MIRSchema.json")
+set(NEVERC_PLUGIN_MIR_SCHEMA_TEMPLATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginMIRSchema.inc.in")
+set(NEVERC_PLUGIN_MIR_SCHEMA_OUTPUT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginMIRSchema.inc")
 
 add_custom_target(nevercPluginPrepSchema
   COMMAND ${Python3_EXECUTABLE}
@@ -62,6 +78,41 @@ add_custom_target(nevercPluginASTSchema
     ${NEVERC_ATTRIBUTE_DEFINITIONS}
     ${NEVERC_ATTRIBUTE_CLASS_DEFINITIONS}
   COMMENT "Checking NeverC plugin AST schema"
+  VERBATIM
+  )
+
+add_custom_target(nevercPluginIRSchema
+  COMMAND ${Python3_EXECUTABLE}
+          ${NEVERC_PLUGIN_IR_SCHEMA_GENERATOR}
+          --check
+  DEPENDS
+    ${NEVERC_PLUGIN_IR_SCHEMA_GENERATOR}
+    ${NEVERC_PLUGIN_IR_SCHEMA}
+    ${NEVERC_PLUGIN_IR_SCHEMA_TEMPLATE}
+    ${NEVERC_PLUGIN_IR_SCHEMA_OUTPUT}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/IR/Instruction.def"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/IR/Value.def"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/IR/Type.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/IR/InstrTypes.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/IR/GlobalValue.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/IR/CallingConv.h"
+  COMMENT "Checking NeverC plugin IR schema"
+  VERBATIM
+  )
+
+add_custom_target(nevercPluginMIRSchema
+  COMMAND ${Python3_EXECUTABLE}
+          ${NEVERC_PLUGIN_MIR_SCHEMA_GENERATOR}
+          --check
+  DEPENDS
+    ${NEVERC_PLUGIN_MIR_SCHEMA_GENERATOR}
+    ${NEVERC_PLUGIN_MIR_SCHEMA}
+    ${NEVERC_PLUGIN_MIR_SCHEMA_TEMPLATE}
+    ${NEVERC_PLUGIN_MIR_SCHEMA_OUTPUT}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/CodeGen/MachineOperand.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/CodeGen/MachineFunction.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/Support/TargetOpcodes.def"
+  COMMENT "Checking NeverC plugin MIR schema"
   VERBATIM
   )
 
@@ -169,35 +220,93 @@ add_dependencies(nevercPluginFrontend
 
 set(LLVM_LINK_COMPONENTS
   Analysis
+  BitReader
+  BitWriter
   CodeGen
   Core
   Support
-  TransformUtils
   )
 
-add_neverc_library(nevercPlugin
-  Core/PluginLoader.cpp
-  Core/PluginPassAdaptor.cpp
-
-  Host/HostAPIBridge.cpp
-
-  Bridge/BridgeAnalysis.cpp
-  Bridge/BridgeDataStructures.cpp
-  Bridge/BridgeIR.cpp
-  Bridge/BridgeIRBuilder.cpp
-  Bridge/BridgeLinker.cpp
-  Bridge/BridgeMIR.cpp
-  Bridge/BridgeString.cpp
+add_neverc_library(nevercPluginIR
+  IR/IRAttributeBridge.cpp
+  IR/IRBuilderBridge.cpp
+  IR/IRConstantBridge.cpp
+  IR/IRContextBridge.cpp
+  IR/IRCoreAPI.cpp
+  IR/IRFunctionBridge.cpp
+  IR/IRGenProvider.cpp
+  IR/IRHandleBridge.cpp
+  IR/IRInstructionBridge.cpp
+  IR/IRMetadataBridge.cpp
+  IR/IRModuleArtifact.cpp
+  IR/IRModuleBridge.cpp
+  IR/IROptimizationProvider.cpp
+  IR/IRPassPlugin.cpp
+  IR/IRPluginInterfaces.cpp
+  IR/IRSerialization.cpp
+  IR/IRTypeBridge.cpp
+  IR/IRValueBridge.cpp
+  MIR/MIRBuilderBridge.cpp
+  MIR/MIRConstantPoolBridge.cpp
+  MIR/MIRFrameBridge.cpp
+  MIR/MIRHandleBridge.cpp
+  MIR/MIRCoreBridge.cpp
+  MIR/MIRMemoryBridge.cpp
+  MIR/MIRMutation.cpp
+  MIR/MIROperandBridge.cpp
+  MIR/MIRPassPlugin.cpp
+  MIR/MIRPropertyBridge.cpp
+  MIR/MIRRegisterBridge.cpp
+  MIR/MIRSchemaBridge.cpp
+  MIR/MIRVerifier.cpp
 
   LINK_LIBS
-  nevercFoundation
   nevercPluginCore
-
-  DEPENDS
-  NeverCDriverOptions
+  nevercPluginFrontend
+  )
+add_dependencies(nevercPluginIR
+  nevercPluginIRSchema
+  nevercPluginMIRSchema
   )
 
-target_include_directories(nevercPlugin
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
+set(LLVM_LINK_COMPONENTS
+  CodeGen
+  Core
+  MC
+  Support
+  Target
+  )
+
+add_neverc_library(nevercPluginTarget
+  Target/PluginABILowering.cpp
+  Target/PluginTargetInfo.cpp
+  Target/PluginTargetRegistry.cpp
+  Target/TargetDescriptorVerifier.cpp
+  Target/TargetKey.cpp
+  Target/TargetPluginInterfaces.cpp
+  Target/TargetRegistration.cpp
+
+  LINK_LIBS
+  nevercPluginCore
+  nevercFoundation
+  )
+
+set(LLVM_LINK_COMPONENTS
+  CodeGen
+  MC
+  Object
+  Support
+  )
+
+add_neverc_library(nevercPluginMCObject
+  MCObject/MCBridge.cpp
+  MCObject/MCMutation.cpp
+  MCObject/MCObjectPluginInterfaces.cpp
+
+  LINK_LIBS
+  nevercPluginCore
+  nevercPluginIO
+  nevercPluginIR
+  nevercPluginTarget
+  nevercFoundation
   )

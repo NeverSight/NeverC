@@ -3,17 +3,21 @@
 
 #include "neverc/Plugin/PluginAST.h"
 #include "neverc/Plugin/PluginPrep.h"
+#include "neverc/Scan/Token.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Error.h"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace neverc {
 class CompilerInstance;
+class PrepEngine;
 
 namespace plugin {
 class FrontendPluginBridge;
+class PluginActivationPlan;
 class PluginASTBridge;
 class PluginPrepBridge;
 class PluginProcessServices;
@@ -54,7 +58,7 @@ private:
   PluginFuzzRuntime();
 
   std::unique_ptr<plugin::PluginProcessServices> Services;
-  std::unique_ptr<class PluginActivationPlanStorage> PlanStorage;
+  std::unique_ptr<plugin::PluginActivationPlan> Plan;
   std::unique_ptr<plugin::PluginSession> Session;
 };
 
@@ -77,6 +81,8 @@ public:
   plugin::PluginASTBridge *astBridge() const;
   const NevercASTAPI *astAPI() const;
   llvm::Expected<NevercSourceLocation> anchorLocation() const;
+  PrepEngine &prepEngine() const;
+  std::vector<Token> lexAllTokens();
 
 private:
   explicit PluginFrontendFuzzIteration(PluginFuzzRuntime &Runtime);

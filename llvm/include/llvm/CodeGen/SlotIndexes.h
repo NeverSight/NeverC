@@ -110,6 +110,9 @@ public:
   /// Construct an invalid index.
   SlotIndex() = default;
 
+  /// Stable numeric representation for external analysis adapters.
+  unsigned getRawIndex() const { return getIndex(); }
+
   // Creates a SlotIndex from an IndexListEntry and a slot. Generally should
   // not be used. This method is only public to facilitate writing certain
   // unit tests.

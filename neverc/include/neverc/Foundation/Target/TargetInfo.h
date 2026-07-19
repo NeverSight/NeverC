@@ -21,6 +21,7 @@
 #include "llvm/Support/VersionTuple.h"
 #include "llvm/TargetParser/Triple.h"
 #include <cassert>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -34,6 +35,9 @@ class DiagnosticsEngine;
 class LangOptions;
 class CodeGenOptions;
 class MacroBuilder;
+namespace plugin {
+class PluginTargetInfo;
+}
 
 struct ParsedTargetAttr {
   std::vector<std::string> Features;
@@ -211,8 +215,16 @@ public:
   static TargetInfo *
   CreateTargetInfo(DiagnosticsEngine &Diags,
                    const std::shared_ptr<TargetOptions> &Opts);
+  static TargetInfo *
+  CreateTargetInfo(DiagnosticsEngine &Diags,
+                   const std::shared_ptr<TargetOptions> &Opts,
+                   std::unique_ptr<TargetInfo> Target);
 
   virtual ~TargetInfo();
+
+  virtual const plugin::PluginTargetInfo *getPluginTargetInfo() const {
+    return nullptr;
+  }
 
   TargetOptions &getTargetOpts() const {
     assert(TargetOpts && "Missing target options");

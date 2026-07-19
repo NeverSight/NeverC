@@ -25,6 +25,16 @@ set(PLUGIN_AST_HEADER
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginAST.h")
 set(PLUGIN_SEMA_HEADER
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginSema.h")
+set(PLUGIN_IR_HEADER
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginIR.h")
+set(PLUGIN_MIR_HEADER
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginMIR.h")
+set(PLUGIN_TARGET_HEADER
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginTarget.h")
+set(PLUGIN_MC_HEADER
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginMC.h")
+set(PLUGIN_OBJECT_HEADER
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginObject.h")
 set(PLUGIN_PHASE_SCHEMA_HEADER
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginPhaseSchema.h")
 set(PLUGIN_PHASE_SCHEMA_INC
@@ -37,6 +47,14 @@ set(PLUGIN_AST_SCHEMA_JSON
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/ASTSchema.json")
 set(PLUGIN_AST_SCHEMA_INC
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc")
+set(PLUGIN_IR_SCHEMA_JSON
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/IRSchema.json")
+set(PLUGIN_IR_SCHEMA_INC
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc")
+set(PLUGIN_MIR_SCHEMA_JSON
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/MIRSchema.json")
+set(PLUGIN_MIR_SCHEMA_INC
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc")
 
 # All files shipped in the examples/ directory (add new plugins here).
 set(EXAMPLE_FILES
@@ -45,7 +63,9 @@ set(EXAMPLE_FILES
     CrtShimPlugin.c
     BenchPlugin.c
     CustomCallConvPlugin.c
-    DriverTracePlugin.c)
+    DriverTracePlugin.c
+    VirtualHeaderPlugin.c
+    ASTRewritePlugin.c)
 
 list(TRANSFORM EXAMPLE_FILES
      PREPEND "${PLUGINSDK_SRC}/examples/"
@@ -84,6 +104,21 @@ add_custom_command(
       "${PLUGIN_SEMA_HEADER}"
       "${PLUGINSDK_DST}/include/neverc/Plugin/PluginSema.h"
   COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_IR_HEADER}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/PluginIR.h"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_MIR_HEADER}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/PluginMIR.h"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_TARGET_HEADER}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/PluginTarget.h"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_MC_HEADER}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/PluginMC.h"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_OBJECT_HEADER}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/PluginObject.h"
+  COMMAND "${CMAKE_COMMAND}" -E copy
       "${PLUGIN_PHASE_SCHEMA_HEADER}"
       "${PLUGINSDK_DST}/include/neverc/Plugin/PluginPhaseSchema.h"
   COMMAND "${CMAKE_COMMAND}" -E copy
@@ -101,6 +136,18 @@ add_custom_command(
   COMMAND "${CMAKE_COMMAND}" -E copy
       "${PLUGIN_AST_SCHEMA_INC}"
       "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/PluginASTSchema.inc"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_IR_SCHEMA_JSON}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/IRSchema.json"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_IR_SCHEMA_INC}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/PluginIRSchema.inc"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_MIR_SCHEMA_JSON}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/MIRSchema.json"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_MIR_SCHEMA_INC}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/PluginMIRSchema.inc"
   COMMAND "${CMAKE_COMMAND}" -E rm -rf "${PLUGINSDK_DST}/examples"
   COMMAND "${CMAKE_COMMAND}" -E copy_directory
       "${PLUGINSDK_SRC}/examples"
@@ -114,28 +161,89 @@ add_custom_command(
       "${PLUGIN_PREP_HEADER}"
       "${PLUGIN_AST_HEADER}"
       "${PLUGIN_SEMA_HEADER}"
+      "${PLUGIN_IR_HEADER}"
+      "${PLUGIN_MIR_HEADER}"
+      "${PLUGIN_TARGET_HEADER}"
+      "${PLUGIN_MC_HEADER}"
+      "${PLUGIN_OBJECT_HEADER}"
       "${PLUGIN_PHASE_SCHEMA_HEADER}"
       "${PLUGIN_PHASE_SCHEMA_INC}"
       "${PLUGIN_PREP_SCHEMA_JSON}"
       "${PLUGIN_PREP_SCHEMA_INC}"
       "${PLUGIN_AST_SCHEMA_JSON}"
       "${PLUGIN_AST_SCHEMA_INC}"
+      "${PLUGIN_IR_SCHEMA_JSON}"
+      "${PLUGIN_IR_SCHEMA_INC}"
+      "${PLUGIN_MIR_SCHEMA_JSON}"
+      "${PLUGIN_MIR_SCHEMA_INC}"
       ${_example_abs}
   COMMENT "Copying pluginsdk to build tree..."
 )
 
-add_library(neverc-plugin-example-driver-trace MODULE
-            "${PLUGINSDK_SRC}/examples/DriverTracePlugin.c")
-target_include_directories(neverc-plugin-example-driver-trace
-                           PRIVATE "${PLUGINSDK_SRC}/../neverc/include")
-target_compile_features(neverc-plugin-example-driver-trace PRIVATE c_std_11)
-set_target_properties(neverc-plugin-example-driver-trace PROPERTIES
-                      PREFIX ""
-                      LIBRARY_OUTPUT_DIRECTORY
-                        "${CMAKE_CURRENT_BINARY_DIR}/examples")
+function(add_neverc_pluginsdk_example target source)
+  get_filename_component(_name "${source}" NAME_WE)
+  set(_source "${PLUGINSDK_SRC}/examples/${source}")
 
-add_custom_target(neverc-pluginsdk ALL
-                  DEPENDS "${_stamp}" neverc-plugin-example-driver-trace)
+  # Build once with the independent C compiler selected by CMake.
+  add_library(${target} MODULE "${_source}")
+  target_compile_features(${target} PRIVATE c_std_11)
+  target_include_directories(${target}
+                             PRIVATE "${PLUGINSDK_SRC}/../neverc/include")
+  set_target_properties(${target}
+                        PROPERTIES PREFIX ""
+                                   OUTPUT_NAME "${_name}"
+                                   LIBRARY_OUTPUT_DIRECTORY
+                                     "${CMAKE_CURRENT_BINARY_DIR}/examples/host")
+
+  # Build the same source with the freshly-built NeverC compiler.
+  set(_neverc_output
+      "${CMAKE_CURRENT_BINARY_DIR}/examples/neverc/${_name}${CMAKE_SHARED_MODULE_SUFFIX}")
+  add_custom_command(
+    OUTPUT "${_neverc_output}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "${CMAKE_CURRENT_BINARY_DIR}/examples/neverc"
+    COMMAND "$<TARGET_FILE:neverc>" --no-default-config -shared
+            "-I${PLUGINSDK_SRC}/../neverc/include"
+            -o "${_neverc_output}" "${_source}"
+    DEPENDS neverc "${_source}"
+    COMMENT "Building ${_name} with NeverC"
+    VERBATIM)
+
+  set(NEVERC_PLUGINSDK_HOST_EXAMPLES
+      ${NEVERC_PLUGINSDK_HOST_EXAMPLES} ${target}
+      PARENT_SCOPE)
+  set(NEVERC_PLUGINSDK_NEVERC_EXAMPLES
+      ${NEVERC_PLUGINSDK_NEVERC_EXAMPLES} "${_neverc_output}"
+      PARENT_SCOPE)
+endfunction()
+
+add_neverc_pluginsdk_example(neverc-plugin-example-driver-trace
+                             DriverTracePlugin.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-virtual-header
+                             VirtualHeaderPlugin.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-ast-rewrite
+                             ASTRewritePlugin.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-ir-overview
+                             ExamplePlugin.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-crt-shim
+                             CrtShimPlugin.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-abi-bench
+                             BenchPlugin.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-custom-callconv
+                             CustomCallConvPlugin.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-function-pass
+                             FunctionPass.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-machine-pass
+                             MachinePass.c)
+
+add_custom_target(neverc-pluginsdk-examples
+                  DEPENDS ${NEVERC_PLUGINSDK_HOST_EXAMPLES}
+                          ${NEVERC_PLUGINSDK_NEVERC_EXAMPLES})
+set_target_properties(neverc-pluginsdk-examples
+                      PROPERTIES FOLDER "NeverC/Plugin SDK")
+
+add_custom_target(neverc-pluginsdk ALL DEPENDS "${_stamp}")
+add_dependencies(neverc-pluginsdk neverc-pluginsdk-examples)
 
 # ---------------------------------------------------------------------------
 # Install
@@ -148,6 +256,11 @@ install(FILES
         "${PLUGIN_PREP_HEADER}"
         "${PLUGIN_AST_HEADER}"
         "${PLUGIN_SEMA_HEADER}"
+        "${PLUGIN_IR_HEADER}"
+        "${PLUGIN_MIR_HEADER}"
+        "${PLUGIN_TARGET_HEADER}"
+        "${PLUGIN_MC_HEADER}"
+        "${PLUGIN_OBJECT_HEADER}"
         "${PLUGIN_PHASE_SCHEMA_HEADER}"
         DESTINATION "pluginsdk/include/neverc/Plugin"
         COMPONENT neverc-pluginsdk)
@@ -156,6 +269,10 @@ install(FILES "${PLUGIN_PHASE_SCHEMA_INC}"
               "${PLUGIN_PREP_SCHEMA_INC}"
               "${PLUGIN_AST_SCHEMA_JSON}"
               "${PLUGIN_AST_SCHEMA_INC}"
+              "${PLUGIN_IR_SCHEMA_JSON}"
+              "${PLUGIN_IR_SCHEMA_INC}"
+              "${PLUGIN_MIR_SCHEMA_JSON}"
+              "${PLUGIN_MIR_SCHEMA_INC}"
         DESTINATION "pluginsdk/include/neverc/Plugin/Schema"
         COMPONENT neverc-pluginsdk)
 

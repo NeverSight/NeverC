@@ -25,12 +25,31 @@ PluginRegistrationRecord::PluginRegistrationRecord(
       Option(std::move(Other.Option)), Phase(Other.Phase),
       Observer(Other.Observer), Interceptor(Other.Interceptor),
       Provider(Other.Provider), VFSProvider(Other.VFSProvider),
+      IRPass(Other.IRPass), IRAnalysis(Other.IRAnalysis),
+      MIRPass(Other.MIRPass), Target(Other.Target),
+      TargetABI(Other.TargetABI),
+      CallingConvention(Other.CallingConvention),
+      MCSchema(Other.MCSchema),
+      ObjectFormatDescriptor(Other.ObjectFormatDescriptor),
+      CodeGenEdge(Other.CodeGenEdge),
       CanonicalName(std::move(Other.CanonicalName)),
       ProviderID(std::move(Other.ProviderID)),
+      PassID(std::move(Other.PassID)),
+      AnalysisName(std::move(Other.AnalysisName)),
       RoutePrefix(std::move(Other.RoutePrefix)),
       TargetTriple(std::move(Other.TargetTriple)), CPU(std::move(Other.CPU)),
       Features(std::move(Other.Features)),
       ObjectFormat(std::move(Other.ObjectFormat)),
+      SchemaDigest(std::move(Other.SchemaDigest)),
+      DefaultExtension(std::move(Other.DefaultExtension)),
+      Aliases(std::move(Other.Aliases)),
+      TargetMatchers(std::move(Other.TargetMatchers)),
+      TargetReferences(std::move(Other.TargetReferences)),
+      RequiredAnalyses(std::move(Other.RequiredAnalyses)),
+      IRExternalDependencyDigest(
+          std::move(Other.IRExternalDependencyDigest)),
+      MIRRequiredAnalyses(std::move(Other.MIRRequiredAnalyses)),
+      MIRPreservedAnalyses(std::move(Other.MIRPreservedAnalyses)),
       OwnedUserData(Other.OwnedUserData),
       DestroyUserData(Other.DestroyUserData) {
   Other.OwnedUserData = nullptr;
@@ -405,6 +424,84 @@ registerOption(void *Registrar, const NevercOptionDescriptor *Descriptor) {
   });
 }
 
+bool copyStringArray(NevercStringArrayView View,
+                     std::vector<std::string> &Destination) {
+  if (View.Count > 1024 ||
+      (View.Count != 0 &&
+       (!View.Data || View.ElementStride < sizeof(NevercStringView) ||
+        View.ElementStride > std::numeric_limits<size_t>::max() ||
+        View.ElementStride >
+            std::numeric_limits<size_t>::max() / View.Count)))
+    return false;
+  const auto *Bytes = reinterpret_cast<const uint8_t *>(View.Data);
+  Destination.reserve(static_cast<size_t>(View.Count));
+  for (uint64_t I = 0; I != View.Count; ++I) {
+    const auto *Item = reinterpret_cast<const NevercStringView *>(
+        Bytes + static_cast<size_t>(I * View.ElementStride));
+    std::string Value;
+    if (!copyString(*Item, Value, false) ||
+        llvm::is_contained(Destination, Value))
+      return false;
+    Destination.push_back(std::move(Value));
+  }
+  return true;
+}
+
+bool copyInterfaceIDs(NevercInterfaceIDArrayView View,
+                      std::vector<NevercInterfaceID> &Destination) {
+  if (View.Count > 1024 ||
+      (View.Count != 0 &&
+       (!View.Data || View.ElementStride < sizeof(NevercInterfaceID) ||
+        View.ElementStride > std::numeric_limits<size_t>::max() ||
+        View.ElementStride >
+            std::numeric_limits<size_t>::max() / View.Count)))
+    return false;
+  const auto *Bytes = reinterpret_cast<const uint8_t *>(View.Data);
+  Destination.reserve(static_cast<size_t>(View.Count));
+  for (uint64_t I = 0; I != View.Count; ++I) {
+    const auto *Item = reinterpret_cast<const NevercInterfaceID *>(
+        Bytes + static_cast<size_t>(I * View.ElementStride));
+    if (!nonzero(*Item) ||
+        llvm::any_of(Destination, [&](NevercInterfaceID Existing) {
+          return Existing.High == Item->High && Existing.Low == Item->Low;
+        }))
+      return false;
+    Destination.push_back(*Item);
+  }
+  return true;
+}
+
+bool copyTargetMatchers(
+    NevercStructArrayView View,
+    std::vector<OwnedTargetTripleMatcher> &Destination) {
+  constexpr uint64_t Required =
+      offsetof(NevercTargetTripleMatcher, Reserved) +
+      sizeof(NevercTargetTripleMatcher::Reserved);
+  if (View.Count > 1024 ||
+      (View.Count != 0 &&
+       (!View.Data || View.ElementStride < Required ||
+        View.ElementStride > std::numeric_limits<size_t>::max() ||
+        View.ElementStride >
+            std::numeric_limits<size_t>::max() / View.Count)))
+    return false;
+  const auto *Bytes = static_cast<const uint8_t *>(View.Data);
+  Destination.reserve(static_cast<size_t>(View.Count));
+  for (uint64_t I = 0; I != View.Count; ++I) {
+    const auto *Item = reinterpret_cast<const NevercTargetTripleMatcher *>(
+        Bytes + static_cast<size_t>(I * View.ElementStride));
+    OwnedTargetTripleMatcher Matcher;
+    if (!validHeader(Item->Header, Required) || Item->Reserved != 0 ||
+        !copyString(Item->Architecture, Matcher.Architecture, true) ||
+        !copyString(Item->Vendor, Matcher.Vendor, true) ||
+        !copyString(Item->OperatingSystem, Matcher.OperatingSystem, true) ||
+        !copyString(Item->Environment, Matcher.Environment, true))
+      return false;
+    Matcher.Priority = Item->Priority;
+    Destination.push_back(std::move(Matcher));
+  }
+  return true;
+}
+
 } // namespace
 
 NevercStatus registerPluginVFSProvider(
@@ -442,6 +539,490 @@ NevercStatus registerPluginVFSProvider(
 
     Record.VFSProvider.ProviderID = {};
     Record.VFSProvider.RoutePrefix = {};
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginIRPass(
+    void *Registrar, const NevercIRPassDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercIRPassDescriptor, DestroyUserData) +
+        sizeof(NevercIRPassDescriptor::DestroyUserData);
+    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+        !llvm::all_of(Descriptor->Reserved,
+                      [](uint8_t Value) { return Value == 0; }) ||
+        !Descriptor->Run ||
+        Descriptor->RequiredAnalysisCount > 1024 ||
+        Descriptor->ExternalDependencyDigest.Length > 4096 ||
+        (Descriptor->ExternalDependencyDigest.Length != 0 &&
+         !Descriptor->ExternalDependencyDigest.Data) ||
+        (Descriptor->RequiredAnalysisCount != 0 &&
+         !Descriptor->RequiredAnalyses) ||
+        (Descriptor->Deterministic != NEVERC_FALSE &&
+         Descriptor->Deterministic != NEVERC_TRUE) ||
+        (Descriptor->Cacheable != NEVERC_FALSE &&
+         Descriptor->Cacheable != NEVERC_TRUE) ||
+        (Descriptor->Level != NEVERC_IR_PASS_LEVEL_MODULE &&
+         Descriptor->Level != NEVERC_IR_PASS_LEVEL_CGSCC &&
+         Descriptor->Level != NEVERC_IR_PASS_LEVEL_FUNCTION &&
+         Descriptor->Level != NEVERC_IR_PASS_LEVEL_LOOP))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    const auto IsPhase = [&](uint64_t High, uint64_t Low) {
+      return Descriptor->Phase.High == High && Descriptor->Phase.Low == Low;
+    };
+    if (!IsPhase(NEVERC_PHASE_IR_PASS_PRE_OPT_HIGH,
+                 NEVERC_PHASE_IR_PASS_PRE_OPT_LOW) &&
+        !IsPhase(NEVERC_PHASE_IR_PASS_PIPELINE_START_HIGH,
+                 NEVERC_PHASE_IR_PASS_PIPELINE_START_LOW) &&
+        !IsPhase(NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_HIGH,
+                 NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_LOW) &&
+        !IsPhase(NEVERC_PHASE_IR_PASS_POST_OPT_HIGH,
+                 NEVERC_PHASE_IR_PASS_POST_OPT_LOW) &&
+        !IsPhase(NEVERC_PHASE_IR_PASS_PRE_CODEGEN_HIGH,
+                 NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::IRPass;
+    Record.Interface = Descriptor->Phase;
+    Record.IRPass = *Descriptor;
+    if (Descriptor->ExternalDependencyDigest.Length != 0)
+      Record.IRExternalDependencyDigest.assign(
+          Descriptor->ExternalDependencyDigest.Data,
+          Descriptor->ExternalDependencyDigest.Data +
+              Descriptor->ExternalDependencyDigest.Length);
+    for (uint64_t I = 0; I != Descriptor->RequiredAnalysisCount; ++I) {
+      NevercInterfaceID Analysis = Descriptor->RequiredAnalyses[I];
+      if (!nonzero(Analysis) ||
+          llvm::any_of(Record.RequiredAnalyses,
+                       [&](NevercInterfaceID Existing) {
+                         return Existing.High == Analysis.High &&
+                                Existing.Low == Analysis.Low;
+                       }))
+        return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+      Record.RequiredAnalyses.push_back(Analysis);
+    }
+    if (!copyString(Descriptor->PassID, Record.PassID, false) ||
+        !canonicalName(Record.PassID) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind == PluginRegistrationKind::IRPass &&
+                              Existing.PassID == Record.PassID;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.IRPass.PassID = {};
+    Record.IRPass.ExternalDependencyDigest = {};
+    Record.IRPass.RequiredAnalyses = nullptr;
+    Record.IRPass.RequiredAnalysisCount = 0;
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginIRAnalysis(
+    void *Registrar, const NevercIRAnalysisDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercIRAnalysisDescriptor, DestroyUserData) +
+        sizeof(NevercIRAnalysisDescriptor::DestroyUserData);
+    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+        !nonzero(Descriptor->AnalysisID) || Descriptor->Reserved != 0 ||
+        !Descriptor->Compute || !Descriptor->Query ||
+        !Descriptor->Invalidate || !Descriptor->Destroy ||
+        Descriptor->DependencyCount > 1024 ||
+        (Descriptor->DependencyCount != 0 && !Descriptor->Dependencies) ||
+        (Descriptor->Level != NEVERC_IR_PASS_LEVEL_MODULE &&
+         Descriptor->Level != NEVERC_IR_PASS_LEVEL_CGSCC &&
+         Descriptor->Level != NEVERC_IR_PASS_LEVEL_FUNCTION &&
+         Descriptor->Level != NEVERC_IR_PASS_LEVEL_LOOP))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::IRAnalysis;
+    Record.Interface = Descriptor->AnalysisID;
+    Record.IRAnalysis = *Descriptor;
+    for (uint64_t I = 0; I != Descriptor->DependencyCount; ++I) {
+      NevercInterfaceID Dependency = Descriptor->Dependencies[I];
+      if (!nonzero(Dependency) ||
+          (Dependency.High == Descriptor->AnalysisID.High &&
+           Dependency.Low == Descriptor->AnalysisID.Low) ||
+          llvm::any_of(Record.RequiredAnalyses,
+                       [&](NevercInterfaceID Existing) {
+                         return Existing.High == Dependency.High &&
+                                Existing.Low == Dependency.Low;
+                       }))
+        return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+      Record.RequiredAnalyses.push_back(Dependency);
+    }
+    if (!copyString(Descriptor->Name, Record.AnalysisName, false) ||
+        !canonicalName(Record.AnalysisName) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::IRAnalysis &&
+                              Existing.Interface.High ==
+                                  Record.Interface.High &&
+                              Existing.Interface.Low == Record.Interface.Low;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+    Record.IRAnalysis.Name = {};
+    Record.IRAnalysis.Dependencies = nullptr;
+    Record.IRAnalysis.DependencyCount = 0;
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginMIRPass(
+    void *Registrar, const NevercMIRPassDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercMIRPassDescriptor, DestroyUserData) +
+        sizeof(NevercMIRPassDescriptor::DestroyUserData);
+    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+        !Descriptor->Run || Descriptor->RequiredAnalysisCount > 64 ||
+        Descriptor->PreservedAnalysisCount > 64 ||
+        (Descriptor->RequiredAnalysisCount != 0 &&
+         !Descriptor->RequiredAnalyses) ||
+        (Descriptor->PreservedAnalysisCount != 0 &&
+         !Descriptor->PreservedAnalyses) ||
+        (Descriptor->Deterministic != NEVERC_FALSE &&
+         Descriptor->Deterministic != NEVERC_TRUE) ||
+        !llvm::all_of(Descriptor->Reserved,
+                      [](uint8_t Value) { return Value == 0; }) ||
+        (Descriptor->Level != NEVERC_MIR_PASS_LEVEL_MODULE &&
+         Descriptor->Level != NEVERC_MIR_PASS_LEVEL_FUNCTION &&
+         Descriptor->Level != NEVERC_MIR_PASS_LEVEL_BASIC_BLOCK))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    const auto IsPhase = [&](uint64_t High, uint64_t Low) {
+      return Descriptor->Phase.High == High && Descriptor->Phase.Low == Low;
+    };
+    if (!IsPhase(NEVERC_PHASE_MIR_PASS_POST_ISEL_HIGH,
+                 NEVERC_PHASE_MIR_PASS_POST_ISEL_LOW) &&
+        !IsPhase(NEVERC_PHASE_MIR_PASS_POST_LEGALIZE_HIGH,
+                 NEVERC_PHASE_MIR_PASS_POST_LEGALIZE_LOW) &&
+        !IsPhase(NEVERC_PHASE_MIR_PASS_PRE_SCHEDULER_HIGH,
+                 NEVERC_PHASE_MIR_PASS_PRE_SCHEDULER_LOW) &&
+        !IsPhase(NEVERC_PHASE_MIR_PASS_POST_SCHEDULER_HIGH,
+                 NEVERC_PHASE_MIR_PASS_POST_SCHEDULER_LOW) &&
+        !IsPhase(NEVERC_PHASE_MIR_PASS_PRE_REGALLOC_HIGH,
+                 NEVERC_PHASE_MIR_PASS_PRE_REGALLOC_LOW) &&
+        !IsPhase(NEVERC_PHASE_MIR_PASS_POST_REGALLOC_HIGH,
+                 NEVERC_PHASE_MIR_PASS_POST_REGALLOC_LOW) &&
+        !IsPhase(NEVERC_PHASE_MIR_PASS_POST_PROLOG_EPILOG_HIGH,
+                 NEVERC_PHASE_MIR_PASS_POST_PROLOG_EPILOG_LOW) &&
+        !IsPhase(NEVERC_PHASE_MIR_PASS_PREEMIT_HIGH,
+                 NEVERC_PHASE_MIR_PASS_PREEMIT_LOW) &&
+        !IsPhase(NEVERC_PHASE_MIR_PASS_FINAL_HIGH,
+                 NEVERC_PHASE_MIR_PASS_FINAL_LOW))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    auto ValidAnalysis = [](NevercMIRBuiltinAnalysis Analysis) {
+      return Analysis >= NEVERC_MIR_ANALYSIS_LIVE_INTERVALS &&
+             Analysis <= NEVERC_MIR_ANALYSIS_REGISTER_PRESSURE;
+    };
+    bool SupportsIndexedLiveness =
+        Descriptor->Level != NEVERC_MIR_PASS_LEVEL_MODULE &&
+        (IsPhase(NEVERC_PHASE_MIR_PASS_PRE_SCHEDULER_HIGH,
+                 NEVERC_PHASE_MIR_PASS_PRE_SCHEDULER_LOW) ||
+         IsPhase(NEVERC_PHASE_MIR_PASS_POST_SCHEDULER_HIGH,
+                 NEVERC_PHASE_MIR_PASS_POST_SCHEDULER_LOW) ||
+         IsPhase(NEVERC_PHASE_MIR_PASS_PRE_REGALLOC_HIGH,
+                 NEVERC_PHASE_MIR_PASS_PRE_REGALLOC_LOW));
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::MIRPass;
+    Record.Interface = Descriptor->Phase;
+    Record.MIRPass = *Descriptor;
+    for (uint64_t I = 0; I != Descriptor->RequiredAnalysisCount; ++I) {
+      NevercMIRBuiltinAnalysis Analysis = Descriptor->RequiredAnalyses[I];
+      if (!ValidAnalysis(Analysis) ||
+          ((Analysis == NEVERC_MIR_ANALYSIS_LIVE_INTERVALS ||
+            Analysis == NEVERC_MIR_ANALYSIS_SLOT_INDEXES) &&
+           !SupportsIndexedLiveness) ||
+          llvm::is_contained(Record.MIRRequiredAnalyses, Analysis))
+        return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+      Record.MIRRequiredAnalyses.push_back(Analysis);
+    }
+    for (uint64_t I = 0; I != Descriptor->PreservedAnalysisCount; ++I) {
+      NevercMIRBuiltinAnalysis Analysis = Descriptor->PreservedAnalyses[I];
+      if (!ValidAnalysis(Analysis) ||
+          llvm::is_contained(Record.MIRPreservedAnalyses, Analysis))
+        return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+      Record.MIRPreservedAnalyses.push_back(Analysis);
+    }
+    if (!copyString(Descriptor->PassID, Record.PassID, false) ||
+        !canonicalName(Record.PassID) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::MIRPass &&
+                              Existing.PassID == Record.PassID;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.MIRPass.PassID = {};
+    Record.MIRPass.RequiredAnalyses = nullptr;
+    Record.MIRPass.RequiredAnalysisCount = 0;
+    Record.MIRPass.PreservedAnalyses = nullptr;
+    Record.MIRPass.PreservedAnalysisCount = 0;
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginTarget(
+    void *Registrar, const NevercTargetDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercTargetDescriptor, DestroyUserData) +
+        sizeof(NevercTargetDescriptor::DestroyUserData);
+    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+        !nonzero(Descriptor->TargetID) || Descriptor->Flags != 0)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::Target;
+    Record.Interface = Descriptor->TargetID;
+    Record.Target = *Descriptor;
+    if (!copyString(Descriptor->CanonicalName, Record.CanonicalName, false) ||
+        !canonicalName(Record.CanonicalName) ||
+        !copyStringArray(Descriptor->Aliases, Record.Aliases) ||
+        !copyTargetMatchers(Descriptor->TripleMatchers,
+                            Record.TargetMatchers) ||
+        llvm::is_contained(Record.Aliases, Record.CanonicalName) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind == PluginRegistrationKind::Target &&
+                              Existing.Interface.High ==
+                                  Record.Interface.High &&
+                              Existing.Interface.Low == Record.Interface.Low;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.Target.CanonicalName = {};
+    Record.Target.Aliases = {};
+    Record.Target.TripleMatchers = {};
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginTargetABI(
+    void *Registrar, const NevercTargetABIDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercTargetABIDescriptor, DestroyUserData) +
+        sizeof(NevercTargetABIDescriptor::DestroyUserData);
+    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+        !nonzero(Descriptor->ABIID) || !nonzero(Descriptor->TargetID) ||
+        Descriptor->Flags != 0)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::TargetABI;
+    Record.Interface = Descriptor->ABIID;
+    Record.TargetABI = *Descriptor;
+    if (!copyString(Descriptor->CanonicalName, Record.CanonicalName, false) ||
+        !canonicalName(Record.CanonicalName) ||
+        !copyInterfaceIDs(Descriptor->Dependencies,
+                          Record.TargetReferences) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::TargetABI &&
+                              Existing.Interface.High ==
+                                  Record.Interface.High &&
+                              Existing.Interface.Low == Record.Interface.Low;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.TargetABI.CanonicalName = {};
+    Record.TargetABI.Dependencies = {};
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginCallingConvention(
+    void *Registrar, const NevercCallingConventionDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercCallingConventionDescriptor, DestroyUserData) +
+        sizeof(NevercCallingConventionDescriptor::DestroyUserData);
+    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+        !nonzero(Descriptor->CallingConventionID) ||
+        !nonzero(Descriptor->TargetID) || Descriptor->Flags != 0)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::CallingConvention;
+    Record.Interface = Descriptor->CallingConventionID;
+    Record.CallingConvention = *Descriptor;
+    if (!copyString(Descriptor->CanonicalName, Record.CanonicalName, false) ||
+        !canonicalName(Record.CanonicalName) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::CallingConvention &&
+                              Existing.Interface.High ==
+                                  Record.Interface.High &&
+                              Existing.Interface.Low == Record.Interface.Low;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.CallingConvention.CanonicalName = {};
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginMCSchema(
+    void *Registrar, const NevercMCSchemaDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercMCSchemaDescriptor, DestroyUserData) +
+        sizeof(NevercMCSchemaDescriptor::DestroyUserData);
+    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+        !nonzero(Descriptor->SchemaID) || !nonzero(Descriptor->TargetID) ||
+        Descriptor->Flags != 0)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::MCSchema;
+    Record.Interface = Descriptor->SchemaID;
+    Record.MCSchema = *Descriptor;
+    if (!copyString(Descriptor->CanonicalName, Record.CanonicalName, false) ||
+        !canonicalName(Record.CanonicalName) ||
+        !copyString(Descriptor->Digest, Record.SchemaDigest, false) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::MCSchema &&
+                              Existing.Interface.High ==
+                                  Record.Interface.High &&
+                              Existing.Interface.Low == Record.Interface.Low;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.MCSchema.CanonicalName = {};
+    Record.MCSchema.Digest = {};
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginObjectFormat(
+    void *Registrar, const NevercObjectFormatDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercObjectFormatDescriptor, DestroyUserData) +
+        sizeof(NevercObjectFormatDescriptor::DestroyUserData);
+    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+        !nonzero(Descriptor->FormatID) || Descriptor->Flags != 0)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::ObjectFormat;
+    Record.Interface = Descriptor->FormatID;
+    Record.ObjectFormatDescriptor = *Descriptor;
+    if (!copyString(Descriptor->CanonicalName, Record.CanonicalName, false) ||
+        !canonicalName(Record.CanonicalName) ||
+        !copyStringArray(Descriptor->Aliases, Record.Aliases) ||
+        !copyInterfaceIDs(Descriptor->SupportedTargets,
+                          Record.TargetReferences) ||
+        !copyString(Descriptor->DefaultExtension, Record.DefaultExtension,
+                    true) ||
+        llvm::is_contained(Record.Aliases, Record.CanonicalName) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::ObjectFormat &&
+                              Existing.Interface.High ==
+                                  Record.Interface.High &&
+                              Existing.Interface.Low == Record.Interface.Low;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.ObjectFormatDescriptor.CanonicalName = {};
+    Record.ObjectFormatDescriptor.Aliases = {};
+    Record.ObjectFormatDescriptor.SupportedTargets = {};
+    Record.ObjectFormatDescriptor.DefaultExtension = {};
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginCodeGenEdge(
+    void *Registrar, const NevercCodeGenEdgeDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercCodeGenEdgeDescriptor, DestroyUserData) +
+        sizeof(NevercCodeGenEdgeDescriptor::DestroyUserData);
+    const auto ValidProduct = [](NevercCodeGenProductKind Kind) {
+      return (Kind >= NEVERC_CODEGEN_PRODUCT_IR &&
+              Kind <= NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE) ||
+             Kind >= NEVERC_CODEGEN_PRODUCT_CUSTOM;
+    };
+    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+        !nonzero(Descriptor->EdgeID) || !nonzero(Descriptor->TargetID) ||
+        !ValidProduct(Descriptor->InputKind) ||
+        !ValidProduct(Descriptor->OutputKind) ||
+        Descriptor->InputKind == Descriptor->OutputKind ||
+        Descriptor->Flags != 0)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::CodeGenEdge;
+    Record.Interface = Descriptor->EdgeID;
+    Record.CodeGenEdge = *Descriptor;
+    if (!copyString(Descriptor->CanonicalName, Record.CanonicalName, false) ||
+        !canonicalName(Record.CanonicalName) ||
+        !copyInterfaceIDs(Descriptor->Dependencies,
+                          Record.TargetReferences) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::CodeGenEdge &&
+                              Existing.Interface.High ==
+                                  Record.Interface.High &&
+                              Existing.Interface.Low == Record.Interface.Low;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.CodeGenEdge.CanonicalName = {};
+    Record.CodeGenEdge.Dependencies = {};
     Record.OwnedUserData = Descriptor->UserData;
     Record.DestroyUserData = Descriptor->DestroyUserData;
     Transaction->Records.push_back(std::move(Record));
@@ -743,8 +1324,27 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
       if (Record.Option)
         PendingOptions.push_back(*Record.Option);
 
+  for (auto &Pending : PendingRegistrations)
+    Pending.first->publishRegistration(
+        std::make_unique<PluginPublishedRegistration>(
+            std::move(Pending.second->Records)));
+  const auto ClearPendingRegistrations = [&] {
+    for (auto &Pending : PendingRegistrations)
+      Pending.first->clearRegistration();
+  };
+
+  if (Error E =
+          ProcessServices.validatePluginRegistrations(
+              Plan.Snapshot->modules())) {
+    ClearPendingRegistrations();
+    PendingRegistrations.clear();
+    destroyBegun();
+    return E;
+  }
+
   if (!PendingOptions.empty()) {
     if (!Registry.Options) {
+      ClearPendingRegistrations();
       PendingRegistrations.clear();
       destroyBegun();
       return registrationError(
@@ -752,17 +1352,13 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
     }
     if (Error E =
             Registry.Options->registerBatch(std::move(PendingOptions))) {
+      ClearPendingRegistrations();
       PendingRegistrations.clear();
       destroyBegun();
       return std::move(E);
     }
   }
 
-  for (auto &Pending : PendingRegistrations) {
-    Pending.first->publishRegistration(
-        std::make_unique<PluginPublishedRegistration>(
-            std::move(Pending.second->Records)));
-  }
   for (const auto &Module : NewlyBegun)
     Registry.InitializedModules.push_back(Module);
   return Error::success();

@@ -254,6 +254,8 @@ struct PluginSourcePhaseRuntime::Impl {
   bool ActivePrintStats = false;
   bool ActiveParserInputInitialized = false;
   BuiltinOpen OpenBuiltin;
+  SemanticUnitReady OnSemanticUnitReady;
+  bool SemanticUnitReadyNotified = false;
   std::string BuiltinFailure;
 
   Impl(PluginTaskContext &TaskValue, SourceManager &SourceMgrValue,
@@ -1290,6 +1292,18 @@ Error PluginSourcePhaseRuntime::attachSema(Sema &SemanticAnalyzer) {
   return Error::success();
 }
 
+Error PluginSourcePhaseRuntime::setSemanticUnitReadyCallback(
+    SemanticUnitReady Callback) {
+  if (!State || !Callback)
+    return createStringError(inconvertibleErrorCode(),
+                             "semantic-unit callback is invalid");
+  if (State->OnSemanticUnitReady)
+    return createStringError(inconvertibleErrorCode(),
+                             "semantic-unit callback is already registered");
+  State->OnSemanticUnitReady = std::move(Callback);
+  return Error::success();
+}
+
 Error PluginSourcePhaseRuntime::runParserPhase(Sema &SemanticAnalyzer,
                                                bool PrintStats) {
   if (!State || !State->Executor || !State->TokenStream || !State->ASTBridge)
@@ -1420,28 +1434,27 @@ Error PluginSourcePhaseRuntime::runParserPhase(Sema &SemanticAnalyzer,
     return createStringError(
         inconvertibleErrorCode(),
         "semantic unit belongs to another parser AST unit");
-  if (!samePluginInterfaceID(Analyzed.Product, standardSemanticProductID()))
-    return createStringError(
-        inconvertibleErrorCode(),
-        "semantic product has no matching downstream IR provider");
   if (Analyzed.DiagnosticState != NEVERC_SEMANTIC_DIAGNOSTICS_CLEAN)
     return createStringError(inconvertibleErrorCode(),
                              "semantic unit contains compilation errors");
 
-  if (!AST.ConsumerNotified) {
-    TreeConsumer &Consumer = SemanticAnalyzer.getTreeConsumer();
-    for (Decl *Declaration : AST.TranslationUnit->decls())
-      if (!Consumer.ProcessTopLevelDecl(DeclGroupRef(Declaration))) {
-        AST.ConsumerNotified = true;
-        State->ASTUnit = std::move(Unit);
-        State->SemanticUnit = std::move(SemanticUnit);
-        return Error::success();
-      }
-    Consumer.ProcessTranslationUnit(*AST.Context);
-    AST.ConsumerNotified = true;
-  }
   State->ASTUnit = std::move(Unit);
   State->SemanticUnit = std::move(SemanticUnit);
+  if (!AST.ConsumerNotified) {
+    TreeConsumer &Consumer = SemanticAnalyzer.getTreeConsumer();
+    bool Continue = true;
+    for (Decl *Declaration : AST.TranslationUnit->decls())
+      if (Continue &&
+          !Consumer.ProcessTopLevelDecl(DeclGroupRef(Declaration)))
+        Continue = false;
+    if (Continue)
+      Consumer.ProcessTranslationUnit(*AST.Context);
+    AST.ConsumerNotified = true;
+  }
+  if (State->OnSemanticUnitReady && !State->SemanticUnitReadyNotified) {
+    State->SemanticUnitReadyNotified = true;
+    State->OnSemanticUnitReady();
+  }
   return Error::success();
 }
 
@@ -1454,6 +1467,15 @@ PluginSourcePhaseRuntime::createTreeConsumer() {
   if (!State || !State->ASTBridge)
     return nullptr;
   return std::make_unique<PluginTreeConsumer>(*State->ASTBridge);
+}
+
+const void *PluginSourcePhaseRuntime::semanticUnitPayload() const {
+  return State && State->SemanticUnit ? State->SemanticUnit->payload()
+                                      : nullptr;
+}
+
+uint64_t PluginSourcePhaseRuntime::semanticUnitGeneration() const {
+  return State && State->SemanticUnit ? State->SemanticUnit->generation() : 0;
 }
 
 Error registerPluginFrontendInterface(PluginProcessServices &Services) {

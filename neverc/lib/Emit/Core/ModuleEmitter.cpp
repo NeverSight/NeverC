@@ -16,6 +16,7 @@
 #include "neverc/Foundation/OverrideNames.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Core/Version.h"
+#include "neverc/Plugin/Host/PluginTargetInfo.h"
 #include "neverc/Tree/Core/CharUnits.h"
 #include "neverc/Tree/Core/Mangle.h"
 #include "neverc/Tree/Core/RecursiveTreeVisitor.h"
@@ -61,6 +62,10 @@ std::unique_ptr<CGABI> constructABI(ModuleEmitter &ME) {
 std::unique_ptr<TargetCodeGenInfo> createTargetCodeGenInfo(ModuleEmitter &ME) {
   const TargetInfo &Target = ME.getTarget();
   const llvm::Triple &Triple = Target.getTriple();
+  if (const auto *PluginTarget = Target.getPluginTargetInfo())
+    if (PluginTarget->abi() &&
+        PluginTarget->abi()->ClassifyFunction)
+      return createPluginTargetCodeGenInfo(ME, *PluginTarget);
 
   switch (Triple.getArch()) {
   default:

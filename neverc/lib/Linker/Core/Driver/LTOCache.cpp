@@ -143,6 +143,8 @@ bool linker::ltoCacheUsable(const LinkerDriverConfig &cfg) {
     return false;
   if (!cfg.nevercPluginPaths.empty())
     return false;
+  if (cfg.pluginSession)
+    return false;
   // A basic-block-sections list file is read by createLTOConfig; its
   // contents are not covered by the key.
   if (ltoBasicBlockSectionsIsListFile(cfg.ltoBasicBlockSections))

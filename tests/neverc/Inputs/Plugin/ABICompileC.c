@@ -12,7 +12,7 @@ typedef struct CallerPackOneProbe {
 _Static_assert(NEVERC_PLUGIN_ABI_MAJOR == 1, "initial ABI major must be one");
 _Static_assert(NEVERC_BUILTIN_DRIVER_PHASE_COUNT == 6,
                "bad builtin driver phase schema");
-_Static_assert(NEVERC_BUILTIN_PHASE_COUNT == 29,
+_Static_assert(NEVERC_BUILTIN_PHASE_COUNT == 76,
                "bad complete builtin phase schema");
 _Static_assert(sizeof(NevercABITableHeader) == 16, "bad ABI header size");
 _Static_assert(_Alignof(NevercABITableHeader) == 8, "bad ABI header alignment");

@@ -9,7 +9,6 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
-#include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Signals.h"
@@ -208,20 +207,6 @@ bool applyBadByteProfile(const llvm::opt::Arg *A, DynCodeOptions &Out) {
                << "'. Supported profiles: null, c-string, http-newline, "
                   "line, whitespace, ascii-control\n";
   return false;
-}
-
-bool &passBuilderCallbackInstalled() {
-  static bool Installed = false;
-  return Installed;
-}
-
-void ensurePassBuilderCallbackInstalled() {
-  if (passBuilderCallbackInstalled())
-    return;
-  passBuilderCallbackInstalled() = true;
-  llvm::ListRegisterPassBuilderCallbacks.push_back([](llvm::PassBuilder &PB) {
-    registerDynCodePasses(PB, getCurrentDynCodeOptions());
-  });
 }
 
 const char *const CommonInjectFlags[] = {
@@ -484,7 +469,6 @@ int configureCompilation(SmallVectorImpl<const char *> &Args,
 
   rewriteArgs(Parsed, Argv0, State.Opts.Target, State, Args);
 
-  ensurePassBuilderCallbackInstalled();
   registerDynCodeMachinePasses(State.Opts);
 
   return 0;

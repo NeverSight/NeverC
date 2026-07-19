@@ -23,6 +23,7 @@
 #include "llvm/Target/CGPassBuilderOption.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Triple.h"
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -35,6 +36,7 @@ using ModulePassManager = PassManager<Module>;
 class Function;
 class GlobalValue;
 class MachineModuleInfoWrapperPass;
+class MachinePipelineHooks;
 class Mangler;
 class MCAsmInfo;
 class MCContext;
@@ -344,6 +346,8 @@ public:
 ///
 class LLVMTargetMachine : public TargetMachine {
 protected: // Can only create subclasses.
+  std::shared_ptr<MachinePipelineHooks> PipelineHooks;
+
   LLVMTargetMachine(const Target &T, StringRef DataLayoutString,
                     const Triple &TT, StringRef CPU, StringRef FS,
                     const TargetOptions &Options, CodeModel::Model CM,
@@ -352,6 +356,15 @@ protected: // Can only create subclasses.
   void initAsmInfo();
 
 public:
+  void setMachinePipelineHooks(std::shared_ptr<MachinePipelineHooks> Hooks) {
+    PipelineHooks = std::move(Hooks);
+  }
+
+  const std::shared_ptr<MachinePipelineHooks> &
+  getMachinePipelineHooks() const {
+    return PipelineHooks;
+  }
+
   /// Get a TargetTransformInfo implementation for the target.
   ///
   /// The TTI returned uses the common code generator to answer queries about

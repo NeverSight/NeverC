@@ -23,6 +23,9 @@ class CodeGenOptions;
 class TargetOptions;
 class LangOptions;
 class EmitterConsumer;
+namespace plugin {
+class PluginTaskContext;
+}
 
 enum BackendAction {
   Backend_EmitAssembly, ///< Emit native assembly files
@@ -39,7 +42,8 @@ void genBackendOutput(DiagnosticsEngine &Diags, const HeaderIndexOptions &,
                       llvm::Module *M, BackendAction Action,
                       llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS,
                       std::unique_ptr<llvm::raw_pwrite_stream> OS,
-                      EmitterConsumer *BC = nullptr);
+                      EmitterConsumer *BC = nullptr,
+                      plugin::PluginTaskContext *PluginTask = nullptr);
 
 } // namespace neverc
 

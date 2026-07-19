@@ -150,6 +150,11 @@ protected:
 std::unique_ptr<TargetCodeGenInfo>
 createDefaultTargetCodeGenInfo(ModuleEmitter &ME);
 
+std::unique_ptr<TargetCodeGenInfo>
+createPluginTargetCodeGenInfo(
+    ModuleEmitter &ME,
+    const plugin::PluginTargetInfo &PluginTarget);
+
 enum class AArch64ABIKind {
   AAPCS = 0,
   DarwinPCS,

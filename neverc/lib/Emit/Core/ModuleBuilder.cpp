@@ -3,6 +3,8 @@
 #include "Debug/DebugEmitterInfo.h"
 #include "neverc/Foundation/LangOpts/CodeGenOptions.h"
 #include "neverc/Tree/Core/TreeContext.h"
+#include "neverc/Tree/Decl/Decl.h"
+#include "neverc/Tree/Decl/DeclGroup.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/LLVMContext.h"
@@ -229,6 +231,14 @@ llvm::Module *IRGenerator::getModule() {
 
 llvm::Module *IRGenerator::releaseModule() {
   return static_cast<CodeGeneratorImpl *>(this)->releaseModule();
+}
+
+llvm::Module *IRGenerator::generateTranslationUnit(TreeContext &Context) {
+  for (Decl *Declaration : Context.getTranslationUnitDecl()->decls())
+    if (!ProcessTopLevelDecl(DeclGroupRef(Declaration)))
+      return nullptr;
+  ProcessTranslationUnit(Context);
+  return getModule();
 }
 
 DebugEmitter *IRGenerator::getDebugEmitter() {

@@ -255,6 +255,111 @@ def validate_phase_entry(entry, schema_phase):
             )
 
 
+def validate_named_coverage(entries, path, name_key, expected_names):
+    require(isinstance(entries, list), f"{path} must be an array")
+    seen = set()
+    for index, entry in enumerate(entries):
+        require_object(
+            entry,
+            f"{path}[{index}]",
+            {name_key, "coverage_test"},
+        )
+        name = entry[name_key]
+        require(
+            isinstance(name, str) and name and name not in seen,
+            f"{path} names must be non-empty and unique",
+        )
+        seen.add(name)
+    missing = expected_names - seen
+    extra = seen - expected_names
+    require(
+        not missing and not extra,
+        f"{path} coverage disagrees with the public inventory"
+        + (f"; missing {sorted(missing)[0]}" if missing else "")
+        + (f"; unknown {sorted(extra)[0]}" if extra else ""),
+    )
+
+
+def validate_ir_mir_coverage(section):
+    require_object(
+        section,
+        "ir_mir",
+        {
+            "ir_schema",
+            "mir_schema",
+            "ir_pass_levels",
+            "mir_pass_levels",
+            "ir_analyses",
+            "mir_analyses",
+            "providers",
+            "sealed_verifiers",
+        },
+    )
+    require_object(
+        section["ir_schema"],
+        "ir_mir.ir_schema",
+        {"path", "inventory_test", "contract_test"},
+    )
+    require_object(
+        section["mir_schema"],
+        "ir_mir.mir_schema",
+        {"path", "inventory_test", "stable_id_test"},
+    )
+    require_object(
+        section["providers"],
+        "ir_mir.providers",
+        {
+            "ir_generation_replacement_test",
+            "ir_optimization_replacement_test",
+        },
+    )
+    require_object(
+        section["sealed_verifiers"],
+        "ir_mir.sealed_verifiers",
+        {"ir_bypass_negative_test", "mir_bypass_negative_test"},
+    )
+    validate_named_coverage(
+        section["ir_pass_levels"],
+        "ir_mir.ir_pass_levels",
+        "level",
+        {"module", "cgscc", "function", "loop"},
+    )
+    validate_named_coverage(
+        section["mir_pass_levels"],
+        "ir_mir.mir_pass_levels",
+        "level",
+        {"machine_module", "machine_function", "machine_basic_block"},
+    )
+    validate_named_coverage(
+        section["ir_analyses"],
+        "ir_mir.ir_analyses",
+        "analysis",
+        {
+            "call_graph",
+            "dominator_tree",
+            "post_dominator_tree",
+            "loop_info",
+            "scalar_evolution",
+            "memory_ssa",
+            "alias",
+            "custom",
+        },
+    )
+    validate_named_coverage(
+        section["mir_analyses"],
+        "ir_mir.mir_analyses",
+        "analysis",
+        {
+            "live_variables",
+            "live_intervals",
+            "slot_indexes",
+            "dominator_tree",
+            "loop_info",
+            "register_pressure",
+        },
+    )
+
+
 def validate_coverage(schema, manifest, test_names):
     require(isinstance(schema, dict), "phase schema must be an object")
     require(
@@ -262,7 +367,12 @@ def validate_coverage(schema, manifest, test_names):
         "phase schema must contain phases",
     )
     require(isinstance(manifest, dict), "coverage manifest must be an object")
-    required_manifest_fields = {"schema_version", "phase_schema", "phases"}
+    required_manifest_fields = {
+        "schema_version",
+        "phase_schema",
+        "phases",
+        "ir_mir",
+    }
     missing_manifest_fields = required_manifest_fields - manifest.keys()
     require(
         not missing_manifest_fields,
@@ -344,6 +454,7 @@ def validate_coverage(schema, manifest, test_names):
             "semantic_replay.unsupported_kind_policy",
             {"status", "negative_test", "representative_kind"},
         )
+    validate_ir_mir_coverage(manifest["ir_mir"])
 
     stable_phases = [
         phase for phase in schema["phases"]

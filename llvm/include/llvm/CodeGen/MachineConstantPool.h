@@ -18,6 +18,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/MC/SectionKind.h"
 #include "llvm/Support/Alignment.h"
+#include <cassert>
 #include <climits>
 #include <vector>
 
@@ -144,6 +145,55 @@ public:
 
   const std::vector<MachineConstantPoolEntry> &getConstants() const {
     return Constants;
+  }
+
+  unsigned getNumConstants() const { return Constants.size(); }
+
+  /// Restore an entry alignment captured before a transactional update.
+  void restoreEntryAlignment(unsigned Index, Align Alignment) {
+    assert(Index < Constants.size() && "Invalid constant pool index");
+    Constants[Index].Alignment = Alignment;
+  }
+
+  /// Truncate trailing IR constants and restore the pool alignment. Machine
+  /// specific entries own heap objects and cannot be discarded this way.
+  void truncateNonMachineConstants(unsigned Count, Align Alignment) {
+    assert(Count <= Constants.size() && "Invalid constant pool size");
+    for (unsigned I = Count, E = Constants.size(); I != E; ++I)
+      assert(!Constants[I].isMachineConstantPoolEntry() &&
+             "Cannot transactionally discard a machine constant");
+    Constants.erase(Constants.begin() + Count, Constants.end());
+    PoolAlignment = Alignment;
+  }
+
+  /// Restore the pool alignment captured before a transactional update.
+  void restoreConstantPoolAlignment(Align Alignment) {
+    PoolAlignment = Alignment;
+  }
+
+  /// Remove a non-target-specific entry and recompute the pool alignment.
+  MachineConstantPoolEntry removeNonMachineConstant(unsigned Index) {
+    assert(Index < Constants.size() && "Invalid constant pool index");
+    assert(!Constants[Index].isMachineConstantPoolEntry() &&
+           "Cannot remove a machine constant through the generic API");
+    MachineConstantPoolEntry Removed = Constants[Index];
+    Constants.erase(Constants.begin() + Index);
+    PoolAlignment = Align(1);
+    for (const MachineConstantPoolEntry &Entry : Constants)
+      if (Entry.getAlign() > PoolAlignment)
+        PoolAlignment = Entry.getAlign();
+    return Removed;
+  }
+
+  /// Reinsert an entry removed by a transactional update.
+  void restoreNonMachineConstant(unsigned Index,
+                                 MachineConstantPoolEntry Entry,
+                                 Align Alignment) {
+    assert(Index <= Constants.size() && "Invalid constant pool index");
+    assert(!Entry.isMachineConstantPoolEntry() &&
+           "Cannot restore a machine constant through the generic API");
+    Constants.insert(Constants.begin() + Index, Entry);
+    PoolAlignment = Alignment;
   }
 
   /// print - Used by the MachineFunction printer to print information about

@@ -48,7 +48,7 @@ MethodReceiverKind getMethodReceiverKind(llvm::StringRef Name);
 llvm::StringRef getBuiltinStringPrelude();
 
 llvm::StringRef getBuiltinStringThinHeader();
-llvm::StringRef getEmbeddedStringBitcode();
+llvm::StringRef getEmbeddedStringBitcode(llvm::StringRef TargetTriple);
 
 } // namespace BuiltinString
 } // namespace neverc

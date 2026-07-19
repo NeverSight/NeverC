@@ -95,7 +95,7 @@ void PragmaRegistry::ProcessPragma(PrepEngine &PP, PragmaIntroducer Introducer,
         std::copy(Hook.ReplacementTokens.begin() + 1,
                   Hook.ReplacementTokens.end(), Rest.get());
         PP.PushTokenStream(std::move(Rest), Hook.ReplacementTokens.size() - 1,
-                           /*DisableMacroExpansion=*/false,
+                           /*DisableMacroExpansion=*/true,
                            /*IsReinject=*/true);
       }
       Handler =

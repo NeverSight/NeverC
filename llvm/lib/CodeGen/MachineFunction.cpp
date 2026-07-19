@@ -276,6 +276,14 @@ MachineFunction::getOrCreateJumpTableInfo(unsigned EntryKind) {
   return JumpTableInfo;
 }
 
+void MachineFunction::discardEmptyJumpTableInfo() {
+  assert(JumpTableInfo && JumpTableInfo->isEmpty() &&
+         "Can only discard empty jump table info");
+  JumpTableInfo->~MachineJumpTableInfo();
+  Allocator.Deallocate(JumpTableInfo);
+  JumpTableInfo = nullptr;
+}
+
 DenormalMode
 MachineFunction::getDenormalMode(const fltSemantics &FPType) const {
   return F.getDenormalMode(FPType);

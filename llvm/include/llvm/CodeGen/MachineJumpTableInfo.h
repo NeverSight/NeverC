@@ -109,6 +109,19 @@ public:
     return JumpTables;
   }
 
+  /// Discard jump tables appended after Count during transaction rollback.
+  void truncateJumpTables(unsigned Count) {
+    assert(Count <= JumpTables.size() && "Invalid jump table count");
+    JumpTables.erase(JumpTables.begin() + Count, JumpTables.end());
+  }
+
+  /// Restore the destinations of a jump table changed transactionally.
+  void restoreJumpTable(unsigned Idx,
+                        const std::vector<MachineBasicBlock *> &Destinations) {
+    assert(Idx < JumpTables.size() && "Invalid jump table index");
+    JumpTables[Idx].MBBs = Destinations;
+  }
+
   /// RemoveJumpTable - Mark the specific index as being dead.  This will
   /// prevent it from being emitted.
   void RemoveJumpTable(unsigned Idx) { JumpTables[Idx].MBBs.clear(); }

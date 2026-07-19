@@ -91,6 +91,40 @@ Error PluginProcessServices::registerSessionScope(NevercSessionHandle Handle,
   return Error::success();
 }
 
+Error PluginProcessServices::prepareSessionScope(
+    NevercSessionHandle Handle, PluginSession &Session) {
+  std::vector<std::shared_ptr<PluginHostService>> Services;
+  {
+    std::lock_guard<std::mutex> Lock(HostServiceMutex);
+    for (const auto &Entry : HostServices)
+      Services.push_back(Entry.second);
+  }
+  size_t Prepared = 0;
+  for (; Prepared != Services.size(); ++Prepared) {
+    if (Error E =
+            Services[Prepared]->sessionScopeRegistered(Handle, Session)) {
+      while (Prepared != 0)
+        Services[--Prepared]->sessionScopeUnregistered(Handle);
+      return E;
+    }
+  }
+  return Error::success();
+}
+
+Error PluginProcessServices::validatePluginRegistrations(
+    ArrayRef<std::shared_ptr<const PluginModule>> Modules) {
+  std::vector<std::shared_ptr<PluginHostService>> Services;
+  {
+    std::lock_guard<std::mutex> Lock(HostServiceMutex);
+    for (const auto &Entry : HostServices)
+      Services.push_back(Entry.second);
+  }
+  for (const auto &Service : Services)
+    if (Error E = Service->validatePluginRegistrations(Modules))
+      return E;
+  return Error::success();
+}
+
 void PluginProcessServices::unregisterSessionScope(
     NevercSessionHandle Handle) {
   bool Removed = false;
@@ -203,6 +237,53 @@ NevercStatus PluginProcessServices::queryTaskState(NevercTaskHandle Handle,
   if (Scope->Task != It->second)
     return scopeStatus(NEVERC_STATUS_WRONG_SCOPE);
   return It->second->queryState(PluginID, OutState);
+}
+
+NevercStatus PluginProcessServices::queryPluginOptionValueCount(
+    NevercSessionHandle Handle, StringRef PluginID, StringRef Spelling,
+    uint64_t *OutCount) {
+  if (!OutCount || PluginID.empty() || Spelling.empty())
+    return scopeStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  *OutCount = 0;
+  std::lock_guard<std::mutex> Lock(ScopeMutex);
+  auto It = Sessions.find(Handle.Owner);
+  if (It == Sessions.end() || It->second->handle().Value != Handle.Value)
+    return scopeStatus(NEVERC_STATUS_STALE_HANDLE);
+  const CallbackScope *Scope = currentCallbackScope(*this);
+  if (!Scope)
+    return scopeStatus(NEVERC_STATUS_INVALID_STATE);
+  if (Scope->Session != It->second)
+    return scopeStatus(NEVERC_STATUS_WRONG_SESSION);
+  const ParsedPluginOption *Option =
+      It->second->options().find(PluginID, Spelling);
+  if (!Option)
+    return scopeStatus(NEVERC_STATUS_NOT_FOUND);
+  *OutCount = Option->Values.size();
+  return neverc_status_ok();
+}
+
+NevercStatus PluginProcessServices::queryPluginOptionValue(
+    NevercSessionHandle Handle, StringRef PluginID, StringRef Spelling,
+    uint64_t Index, NevercStringView *OutValue) {
+  if (!OutValue || PluginID.empty() || Spelling.empty())
+    return scopeStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  *OutValue = {};
+  std::lock_guard<std::mutex> Lock(ScopeMutex);
+  auto It = Sessions.find(Handle.Owner);
+  if (It == Sessions.end() || It->second->handle().Value != Handle.Value)
+    return scopeStatus(NEVERC_STATUS_STALE_HANDLE);
+  const CallbackScope *Scope = currentCallbackScope(*this);
+  if (!Scope)
+    return scopeStatus(NEVERC_STATUS_INVALID_STATE);
+  if (Scope->Session != It->second)
+    return scopeStatus(NEVERC_STATUS_WRONG_SESSION);
+  const ParsedPluginOption *Option =
+      It->second->options().find(PluginID, Spelling);
+  if (!Option || Index >= Option->Values.size())
+    return scopeStatus(NEVERC_STATUS_NOT_FOUND);
+  const std::string &Value = Option->Values[static_cast<size_t>(Index)];
+  *OutValue = {Value.data(), Value.size()};
+  return neverc_status_ok();
 }
 
 NevercStatus

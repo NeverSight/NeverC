@@ -54,12 +54,6 @@
 
 using namespace llvm;
 
-std::vector<RegisterTargetPassConfigCallbackFn>
-    llvm::ListRegisterTargetPassConfigCallbacks;
-
-std::vector<RegisterTargetPassConfigPostPreEmitCallbackFn>
-    llvm::ListRegisterTargetPassConfigPostPreEmitCallbacks;
-
 static cl::opt<bool>
     DisablePostRASched("disable-post-ra", cl::Hidden,
                        cl::desc("Disable Post Regalloc Scheduler"));
@@ -530,6 +524,12 @@ CodeGenOptLevel TargetPassConfig::getOptLevel() const {
   return TM->getOptLevel();
 }
 
+void TargetPassConfig::runMachinePipelineHook(
+    MachinePipelineHookPoint Point) {
+  if (const auto &Hooks = TM->getMachinePipelineHooks())
+    Hooks->addPasses(*this, Point);
+}
+
 /// Insert InsertedPassID pass after TargetPassID.
 void TargetPassConfig::insertPass(AnalysisID TargetPassID,
                                   IdentifyingPassPtr InsertedPassID) {
@@ -900,6 +900,8 @@ void TargetPassConfig::addMachinePasses() {
   else
     addFastRegAlloc();
 
+  runMachinePipelineHook(MachinePipelineHookPoint::PostRegAlloc);
+
   // Run post-ra passes.
   addPostRegAlloc();
 
@@ -915,6 +917,8 @@ void TargetPassConfig::addMachinePasses() {
   // do so if it hasn't been disabled, substituted, or overridden.
   if (!isPassSubstitutedOrOverridden(&PrologEpilogCodeInserterID))
     addPass(createPrologEpilogInserterPass());
+
+  runMachinePipelineHook(MachinePipelineHookPoint::PostPrologEpilog);
 
   /// Add passes that optimize machine instructions after register allocation.
   if (getOptLevel() != CodeGenOptLevel::None)
@@ -945,8 +949,7 @@ void TargetPassConfig::addMachinePasses() {
 
   addPass(&PatchableFunctionID);
 
-  for (auto &Callback : ListRegisterTargetPassConfigCallbacks)
-    Callback(*this);
+  runMachinePipelineHook(MachinePipelineHookPoint::PreEmit);
 
   addPreEmitPass();
 
@@ -993,18 +996,10 @@ void TargetPassConfig::addMachinePasses() {
   // Add passes that directly emit MI after all other MI passes.
   addPreEmitPass2();
 
-  // Late callback hook: fires AFTER every standard late MIR pass
-  // (`addPreEmitPass`, FuncletLayout, LiveDebugValues, MachineOutliner,
-  // BasicBlockSections / MachineFunctionSplitter, CFIFixup,
-  // StackFrameLayoutAnalysis and `addPreEmitPass2`) has been queued,
-  // and immediately before `AddingMachinePasses` is cleared.  Anything
-  // injected here is the last MIR-level transformation the pipeline
-  // schedules before `LLVMTargetMachine::addPassesToEmitFile` wires in
-  // the AsmPrinter, so this is the truly final injection slot at the
-  // MIR level.  See the doc comment on
-  // `RegisterTargetPassConfigPostPreEmitCallbackFn` for usage notes.
-  for (auto &Callback : ListRegisterTargetPassConfigPostPreEmitCallbacks)
-    Callback(*this);
+  runMachinePipelineHook(MachinePipelineHookPoint::Final);
+  if (TM->getMachinePipelineHooks())
+    addPass(createMachineVerifierPass(
+        "after the NeverC MIR final verifier gate"));
 
   AddingMachinePasses = false;
 }
@@ -1157,9 +1152,13 @@ bool TargetPassConfig::usingDefaultRegAlloc() const {
 /// Add the minimum set of target-independent passes that are required for
 /// register allocation. No coalescing or scheduling.
 void TargetPassConfig::addFastRegAlloc() {
+  runMachinePipelineHook(MachinePipelineHookPoint::PreScheduler);
+  runMachinePipelineHook(MachinePipelineHookPoint::PostScheduler);
+
   addPass(&PHIEliminationID);
   addPass(&TwoAddressInstructionPassID);
 
+  runMachinePipelineHook(MachinePipelineHookPoint::PreRegAlloc);
   addRegAssignAndRewriteFast();
 }
 
@@ -1201,8 +1200,11 @@ void TargetPassConfig::addOptimizedRegAlloc() {
   addPass(&RenameIndependentSubregsID);
 
   // PreRA instruction scheduling.
+  runMachinePipelineHook(MachinePipelineHookPoint::PreScheduler);
   addPass(&MachineSchedulerID);
+  runMachinePipelineHook(MachinePipelineHookPoint::PostScheduler);
 
+  runMachinePipelineHook(MachinePipelineHookPoint::PreRegAlloc);
   if (addRegAssignAndRewriteOptimized()) {
     // Perform stack slot coloring and post-ra machine LICM.
     addPass(&StackSlotColoringID);

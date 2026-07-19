@@ -19,6 +19,12 @@ set(NEVERC_TEST_SOURCES
   PluginParserProviderTests.cpp
   PluginSemaInterceptorTests.cpp
   PluginSemaProviderTests.cpp
+  PluginIRGenProviderTests.cpp
+  PluginIRPipelineTests.cpp
+  PluginIRPassTests.cpp
+  PluginLTOIRPassTests.cpp
+  PluginMIRPassTests.cpp
+  PluginABILoweringDriverTests.cpp
   PluginFrontendLifecycleTests.cpp
   PluginPreprocessorProviderTests.cpp
   PluginVFSIntegrationTests.cpp
@@ -108,6 +114,86 @@ target_include_directories(neverc-plugin-frontend-abi-compile-c23 PRIVATE
 )
 target_compile_features(neverc-plugin-frontend-abi-compile-c23 PRIVATE c_std_23)
 
+add_library(neverc-plugin-ir-abi-compile-c11 OBJECT
+  Inputs/Plugin/IRABICompile.c
+)
+target_include_directories(neverc-plugin-ir-abi-compile-c11 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-ir-abi-compile-c11 PRIVATE c_std_11)
+
+add_library(neverc-plugin-ir-abi-compile-c23 OBJECT
+  Inputs/Plugin/IRABICompile.c
+)
+target_include_directories(neverc-plugin-ir-abi-compile-c23 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-ir-abi-compile-c23 PRIVATE c_std_23)
+
+add_library(neverc-plugin-mir-abi-compile-c11 OBJECT
+  Inputs/Plugin/MIRABICompile.c
+)
+target_include_directories(neverc-plugin-mir-abi-compile-c11 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-mir-abi-compile-c11 PRIVATE c_std_11)
+
+add_library(neverc-plugin-mir-abi-compile-c23 OBJECT
+  Inputs/Plugin/MIRABICompile.c
+)
+target_include_directories(neverc-plugin-mir-abi-compile-c23 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-mir-abi-compile-c23 PRIVATE c_std_23)
+
+add_library(neverc-plugin-target-abi-compile-c11 OBJECT
+  Inputs/Plugin/TargetABICompile.c
+)
+target_include_directories(neverc-plugin-target-abi-compile-c11 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-target-abi-compile-c11 PRIVATE c_std_11)
+
+add_library(neverc-plugin-target-abi-compile-c23 OBJECT
+  Inputs/Plugin/TargetABICompile.c
+)
+target_include_directories(neverc-plugin-target-abi-compile-c23 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-target-abi-compile-c23 PRIVATE c_std_23)
+
+add_library(neverc-plugin-mc-abi-compile-c11 OBJECT
+  Inputs/Plugin/MCABICompile.c
+)
+target_include_directories(neverc-plugin-mc-abi-compile-c11 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-mc-abi-compile-c11 PRIVATE c_std_11)
+
+add_library(neverc-plugin-mc-abi-compile-c23 OBJECT
+  Inputs/Plugin/MCABICompile.c
+)
+target_include_directories(neverc-plugin-mc-abi-compile-c23 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-mc-abi-compile-c23 PRIVATE c_std_23)
+
+add_library(neverc-plugin-object-abi-compile-c11 OBJECT
+  Inputs/Plugin/ObjectABICompile.c
+)
+target_include_directories(neverc-plugin-object-abi-compile-c11 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-object-abi-compile-c11 PRIVATE c_std_11)
+
+add_library(neverc-plugin-object-abi-compile-c23 OBJECT
+  Inputs/Plugin/ObjectABICompile.c
+)
+target_include_directories(neverc-plugin-object-abi-compile-c23 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-object-abi-compile-c23 PRIVATE c_std_23)
+
 function(add_neverc_registry_fixture target)
   add_library(${target} MODULE Inputs/Plugin/RegistryFixturePlugin.c)
   target_include_directories(${target} PRIVATE
@@ -118,6 +204,36 @@ function(add_neverc_registry_fixture target)
 endfunction()
 
 add_neverc_registry_fixture(neverc-test-plugin-minimal)
+add_neverc_registry_fixture(neverc-test-plugin-target-valid)
+target_compile_definitions(neverc-test-plugin-target-valid PRIVATE
+  NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-valid"
+  NEVERC_TEST_REGISTER_TARGET=1
+)
+add_neverc_registry_fixture(neverc-test-plugin-target-indirect)
+target_compile_definitions(neverc-test-plugin-target-indirect PRIVATE
+  NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-indirect"
+  NEVERC_TEST_REGISTER_TARGET=1
+  NEVERC_TEST_TARGET_ID_LOW=2
+  NEVERC_TEST_TARGET_NAME="test.fixture-target-indirect"
+  NEVERC_TEST_ABI_FORCE_INDIRECT_ARGUMENTS=1
+)
+add_neverc_registry_fixture(neverc-test-plugin-target-unknown-format)
+target_compile_definitions(neverc-test-plugin-target-unknown-format PRIVATE
+  NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-unknown-format"
+  NEVERC_TEST_REGISTER_TARGET=1
+  NEVERC_TEST_TARGET_UNKNOWN_FORMAT=1
+)
+add_neverc_registry_fixture(neverc-test-plugin-target-registration-failure)
+target_compile_definitions(neverc-test-plugin-target-registration-failure PRIVATE
+  NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-registration-failure"
+  NEVERC_TEST_REGISTER_TARGET=1
+  NEVERC_TEST_TARGET_REGISTRATION_FAILURE=1
+)
+add_library(neverc-test-plugin-removed-prototype MODULE
+  Inputs/Plugin/RemovedPrototypePlugin.c
+)
+target_compile_features(neverc-test-plugin-removed-prototype PRIVATE c_std_11)
+set_target_properties(neverc-test-plugin-removed-prototype PROPERTIES PREFIX "")
 add_neverc_registry_fixture(neverc-test-plugin-duplicate-id)
 add_neverc_registry_fixture(neverc-test-plugin-other)
 target_compile_definitions(neverc-test-plugin-other PRIVATE
@@ -388,6 +504,231 @@ add_neverc_sema_provider_fixture(neverc-test-plugin-sema-provider-custom)
 target_compile_definitions(
   neverc-test-plugin-sema-provider-custom PRIVATE
   NEVERC_TEST_SEMA_PROVIDER_CUSTOM_PRODUCT=1
+)
+add_library(neverc-test-plugin-irgen-provider MODULE
+  Inputs/Plugin/IRGenProvider.c
+)
+target_include_directories(neverc-test-plugin-irgen-provider PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-irgen-provider PRIVATE c_std_11)
+set_target_properties(
+  neverc-test-plugin-irgen-provider PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-optimization-provider MODULE
+  Inputs/Plugin/IROptimizationProvider.c
+)
+target_include_directories(
+  neverc-test-plugin-ir-optimization-provider PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-optimization-provider PRIVATE c_std_11
+)
+set_target_properties(
+  neverc-test-plugin-ir-optimization-provider PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-optimization-invalid MODULE
+  Inputs/Plugin/IROptimizationProvider.c
+)
+target_include_directories(
+  neverc-test-plugin-ir-optimization-invalid PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-optimization-invalid PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-ir-optimization-invalid PRIVATE
+  NEVERC_TEST_IR_OPTIMIZATION_INVALID=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-optimization-invalid PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-pass MODULE
+  Inputs/Plugin/IRPassPlugin.c
+)
+target_include_directories(neverc-test-plugin-ir-pass PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-ir-pass PRIVATE c_std_11)
+set_target_properties(
+  neverc-test-plugin-ir-pass PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-pass-invalid MODULE
+  Inputs/Plugin/IRPassPlugin.c
+)
+target_include_directories(neverc-test-plugin-ir-pass-invalid PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-ir-pass-invalid PRIVATE c_std_11)
+target_compile_definitions(neverc-test-plugin-ir-pass-invalid PRIVATE
+  NEVERC_TEST_IR_PASS_INVALID_PRESERVE=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-pass-invalid PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-analysis-cycle MODULE
+  Inputs/Plugin/IRPassPlugin.c
+)
+target_include_directories(neverc-test-plugin-ir-analysis-cycle PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-ir-analysis-cycle PRIVATE c_std_11)
+target_compile_definitions(neverc-test-plugin-ir-analysis-cycle PRIVATE
+  NEVERC_TEST_IR_ANALYSIS_CYCLE=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-analysis-cycle PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-analysis-recursive MODULE
+  Inputs/Plugin/IRPassPlugin.c
+)
+target_include_directories(neverc-test-plugin-ir-analysis-recursive PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-analysis-recursive PRIVATE c_std_11
+)
+target_compile_definitions(neverc-test-plugin-ir-analysis-recursive PRIVATE
+  NEVERC_TEST_IR_ANALYSIS_RECURSIVE=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-analysis-recursive PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-analysis-error MODULE
+  Inputs/Plugin/IRPassPlugin.c
+)
+target_include_directories(neverc-test-plugin-ir-analysis-error PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-ir-analysis-error PRIVATE c_std_11)
+target_compile_definitions(neverc-test-plugin-ir-analysis-error PRIVATE
+  NEVERC_TEST_IR_ANALYSIS_ERROR=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-analysis-error PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-analysis-destroy-order MODULE
+  Inputs/Plugin/IRPassPlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-ir-analysis-destroy-order PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-analysis-destroy-order PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-ir-analysis-destroy-order PRIVATE
+  NEVERC_TEST_IR_ANALYSIS_DESTROY_ORDER=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-analysis-destroy-order PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-analysis-mutation MODULE
+  Inputs/Plugin/IRPassPlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-ir-analysis-mutation PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-analysis-mutation PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-ir-analysis-mutation PRIVATE
+  NEVERC_TEST_IR_ANALYSIS_MUTATION=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-analysis-mutation PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-analysis-concurrent MODULE
+  Inputs/Plugin/IRConcurrentAnalysisPlugin.cpp
+)
+target_include_directories(neverc-test-plugin-ir-analysis-concurrent PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-analysis-concurrent PRIVATE cxx_std_17
+)
+set_target_properties(
+  neverc-test-plugin-ir-analysis-concurrent PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-lto-ir-pass MODULE
+  Inputs/Plugin/IRLTOPlugin.c
+)
+target_include_directories(neverc-test-plugin-lto-ir-pass PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-lto-ir-pass PRIVATE c_std_11)
+target_compile_definitions(neverc-test-plugin-lto-ir-pass PRIVATE
+  NEVERC_TEST_LTO_REQUIRE_PARTITIONS=1
+)
+set_target_properties(
+  neverc-test-plugin-lto-ir-pass PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-lto-ir-pass-error MODULE
+  Inputs/Plugin/IRLTOPlugin.c
+)
+target_include_directories(neverc-test-plugin-lto-ir-pass-error PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-lto-ir-pass-error PRIVATE c_std_11)
+target_compile_definitions(neverc-test-plugin-lto-ir-pass-error PRIVATE
+  NEVERC_TEST_LTO_PLUGIN_ERROR=1
+)
+set_target_properties(
+  neverc-test-plugin-lto-ir-pass-error PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-mir-pass MODULE
+  Inputs/Plugin/MIRPassPlugin.c
+)
+target_include_directories(neverc-test-plugin-mir-pass PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-mir-pass PRIVATE c_std_11)
+set_target_properties(
+  neverc-test-plugin-mir-pass PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-mir-pass-invalid MODULE
+  Inputs/Plugin/MIRPassPlugin.c
+)
+target_include_directories(neverc-test-plugin-mir-pass-invalid PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-mir-pass-invalid PRIVATE c_std_11)
+target_compile_definitions(neverc-test-plugin-mir-pass-invalid PRIVATE
+  NEVERC_TEST_MIR_INVALID_PRESERVE=1
+)
+set_target_properties(
+  neverc-test-plugin-mir-pass-invalid PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-mir-pass-module MODULE
+  Inputs/Plugin/MIRPassPlugin.c
+)
+target_include_directories(neverc-test-plugin-mir-pass-module PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-mir-pass-module PRIVATE c_std_11)
+target_compile_definitions(neverc-test-plugin-mir-pass-module PRIVATE
+  NEVERC_TEST_MIR_MODULE_LEVEL=1
+)
+set_target_properties(
+  neverc-test-plugin-mir-pass-module PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-mir-pass-basic-block MODULE
+  Inputs/Plugin/MIRPassPlugin.c
+)
+target_include_directories(neverc-test-plugin-mir-pass-basic-block PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-mir-pass-basic-block PRIVATE c_std_11)
+target_compile_definitions(neverc-test-plugin-mir-pass-basic-block PRIVATE
+  NEVERC_TEST_MIR_BASIC_BLOCK_LEVEL=1
+)
+set_target_properties(
+  neverc-test-plugin-mir-pass-basic-block PROPERTIES PREFIX ""
 )
 add_library(neverc-test-plugin-frontend-lifecycle MODULE
   Inputs/Plugin/FrontendLifecyclePlugin.c
@@ -742,6 +1083,7 @@ target_include_directories(neverc-plugin-core-tests PRIVATE
 target_compile_features(neverc-plugin-core-tests PRIVATE cxx_std_17)
 target_compile_definitions(neverc-plugin-core-tests PRIVATE
   NEVERC_TEST_MINIMAL_PLUGIN="$<TARGET_FILE:neverc-test-plugin-minimal>"
+  NEVERC_TEST_REMOVED_PROTOTYPE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-removed-prototype>"
   NEVERC_TEST_DUPLICATE_ID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-duplicate-id>"
   NEVERC_TEST_OTHER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-other>"
   NEVERC_TEST_WRONG_ABI_PLUGIN="$<TARGET_FILE:neverc-test-plugin-wrong-abi>"
@@ -774,6 +1116,7 @@ target_compile_definitions(neverc-plugin-core-tests PRIVATE
 )
 add_dependencies(neverc-plugin-core-tests
   neverc-test-plugin-minimal
+  neverc-test-plugin-removed-prototype
   neverc-test-plugin-duplicate-id
   neverc-test-plugin-other
   neverc-test-plugin-wrong-abi
@@ -852,6 +1195,105 @@ add_dependencies(neverc-plugin-frontend-tests
   neverc-test-plugin-minimal
 )
 gtest_discover_tests(neverc-plugin-frontend-tests
+  PROPERTIES
+    TIMEOUT 60
+    DISCOVERY_TIMEOUT 30
+)
+
+add_executable(neverc-plugin-ir-tests
+  PluginIRABICompileTests.cpp
+  PluginIRBuilderTests.cpp
+  PluginIRCoreTests.cpp
+  PluginIRDataTests.cpp
+  PluginIRHandleTests.cpp
+  PluginIRSchemaTests.cpp
+  PluginIRSerializationTests.cpp
+  PluginMIRBuilderTests.cpp
+  PluginMIRHandleTests.cpp
+  PluginMIRCoreTests.cpp
+  PluginMIRSchemaTests.cpp
+  PluginMIRStateTests.cpp
+)
+target_link_libraries(neverc-plugin-ir-tests PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  LLVMBitReader
+  LLVMBitWriter
+  LLVM${LLVM_NATIVE_ARCH}CodeGen
+  LLVM${LLVM_NATIVE_ARCH}Desc
+  LLVM${LLVM_NATIVE_ARCH}Info
+  nevercPluginCore
+  nevercPluginIR
+)
+target_include_directories(neverc-plugin-ir-tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Plugin/IR
+)
+target_compile_features(neverc-plugin-ir-tests PRIVATE cxx_std_17)
+add_dependencies(neverc-plugin-ir-tests
+  neverc-plugin-ir-abi-compile-c11
+  neverc-plugin-ir-abi-compile-c23
+  neverc-plugin-mir-abi-compile-c11
+  neverc-plugin-mir-abi-compile-c23
+)
+gtest_discover_tests(neverc-plugin-ir-tests
+  PROPERTIES
+    TIMEOUT 60
+    DISCOVERY_TIMEOUT 30
+)
+
+add_executable(neverc-plugin-target-mc-tests
+  PluginABILoweringTests.cpp
+  PluginMCBridgeTests.cpp
+  PluginTargetInfoTests.cpp
+  PluginTargetMCABICompileTests.cpp
+  PluginTargetDescriptorTests.cpp
+  PluginTargetRegistryTests.cpp
+)
+target_link_libraries(neverc-plugin-target-mc-tests PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  LLVMTarget
+  nevercCompiler
+  nevercPluginMCObject
+  nevercPluginTarget
+)
+if("AArch64" IN_LIST LLVM_TARGETS_TO_BUILD)
+  target_link_libraries(neverc-plugin-target-mc-tests PRIVATE
+    LLVMAArch64CodeGen
+    LLVMAArch64Desc
+    LLVMAArch64Info
+    LLVMAArch64Utils
+  )
+endif()
+if("X86" IN_LIST LLVM_TARGETS_TO_BUILD)
+  target_link_libraries(neverc-plugin-target-mc-tests PRIVATE
+    LLVMX86CodeGen
+    LLVMX86Desc
+    LLVMX86Info
+  )
+endif()
+target_include_directories(neverc-plugin-target-mc-tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-target-mc-tests PRIVATE cxx_std_17)
+target_compile_definitions(neverc-plugin-target-mc-tests PRIVATE
+  NEVERC_TEST_TARGET_VALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-valid>"
+  NEVERC_TEST_TARGET_UNKNOWN_FORMAT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-unknown-format>"
+  NEVERC_TEST_TARGET_REGISTRATION_FAILURE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-registration-failure>"
+)
+add_dependencies(neverc-plugin-target-mc-tests
+  neverc-plugin-target-abi-compile-c11
+  neverc-plugin-target-abi-compile-c23
+  neverc-plugin-mc-abi-compile-c11
+  neverc-plugin-mc-abi-compile-c23
+  neverc-plugin-object-abi-compile-c11
+  neverc-plugin-object-abi-compile-c23
+  neverc-test-plugin-target-valid
+  neverc-test-plugin-target-unknown-format
+  neverc-test-plugin-target-registration-failure
+)
+gtest_discover_tests(neverc-plugin-target-mc-tests
   PROPERTIES
     TIMEOUT 60
     DISCOVERY_TIMEOUT 30
@@ -1001,6 +1443,25 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_TEST_PARSER_PHASE_INTERCEPTOR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parser-phase-interceptor>"
   NEVERC_TEST_SEMA_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-sema-provider>"
   NEVERC_TEST_SEMA_PROVIDER_CUSTOM_PLUGIN="$<TARGET_FILE:neverc-test-plugin-sema-provider-custom>"
+  NEVERC_TEST_IRGEN_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-irgen-provider>"
+  NEVERC_TEST_IR_OPTIMIZATION_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-optimization-provider>"
+  NEVERC_TEST_IR_OPTIMIZATION_INVALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-optimization-invalid>"
+  NEVERC_TEST_IR_PASS_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-pass>"
+  NEVERC_TEST_IR_PASS_INVALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-pass-invalid>"
+  NEVERC_TEST_IR_ANALYSIS_CYCLE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-analysis-cycle>"
+  NEVERC_TEST_IR_ANALYSIS_RECURSIVE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-analysis-recursive>"
+  NEVERC_TEST_IR_ANALYSIS_ERROR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-analysis-error>"
+  NEVERC_TEST_IR_ANALYSIS_DESTROY_ORDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-analysis-destroy-order>"
+  NEVERC_TEST_IR_ANALYSIS_MUTATION_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-analysis-mutation>"
+  NEVERC_TEST_IR_ANALYSIS_CONCURRENT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-analysis-concurrent>"
+  NEVERC_TEST_LTO_IR_PASS_PLUGIN="$<TARGET_FILE:neverc-test-plugin-lto-ir-pass>"
+  NEVERC_TEST_LTO_IR_PASS_ERROR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-lto-ir-pass-error>"
+  NEVERC_TEST_MIR_PASS_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mir-pass>"
+  NEVERC_TEST_MIR_PASS_INVALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mir-pass-invalid>"
+  NEVERC_TEST_MIR_PASS_MODULE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mir-pass-module>"
+  NEVERC_TEST_MIR_PASS_BASIC_BLOCK_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mir-pass-basic-block>"
+  NEVERC_TEST_TARGET_VALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-valid>"
+  NEVERC_TEST_TARGET_INDIRECT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-indirect>"
   NEVERC_TEST_FRONTEND_LIFECYCLE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-frontend-lifecycle>"
   NEVERC_TEST_PREP_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-provider>"
   NEVERC_TEST_PREP_PROVIDER_MISSING_EOF_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-provider-missing-eof>"
@@ -1053,6 +1514,25 @@ add_dependencies(neverc-tests
   neverc-test-plugin-parser-phase-interceptor
   neverc-test-plugin-sema-provider
   neverc-test-plugin-sema-provider-custom
+  neverc-test-plugin-irgen-provider
+  neverc-test-plugin-ir-optimization-provider
+  neverc-test-plugin-ir-optimization-invalid
+  neverc-test-plugin-ir-pass
+  neverc-test-plugin-ir-pass-invalid
+  neverc-test-plugin-ir-analysis-cycle
+  neverc-test-plugin-ir-analysis-recursive
+  neverc-test-plugin-ir-analysis-error
+  neverc-test-plugin-ir-analysis-destroy-order
+  neverc-test-plugin-ir-analysis-mutation
+  neverc-test-plugin-ir-analysis-concurrent
+  neverc-test-plugin-lto-ir-pass
+  neverc-test-plugin-lto-ir-pass-error
+  neverc-test-plugin-mir-pass
+  neverc-test-plugin-mir-pass-invalid
+  neverc-test-plugin-mir-pass-module
+  neverc-test-plugin-mir-pass-basic-block
+  neverc-test-plugin-target-valid
+  neverc-test-plugin-target-indirect
   neverc-test-plugin-frontend-lifecycle
   neverc-test-plugin-prep-provider
   neverc-test-plugin-prep-provider-missing-eof

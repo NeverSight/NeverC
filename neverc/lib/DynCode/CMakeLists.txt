@@ -107,7 +107,6 @@ add_neverc_library(nevercDynCode
 
   LINK_LIBS
   nevercFoundation
-  nevercPlugin
 
   DEPENDS
   NeverCDriverOptions

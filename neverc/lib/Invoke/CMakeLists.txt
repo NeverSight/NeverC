@@ -68,7 +68,9 @@ add_neverc_library(nevercInvoke
   nevercFoundation
   nevercPluginCore
   nevercPluginFrontend
+  nevercPluginIR
   nevercPluginIO
+  nevercPluginTarget
   ${system_libs}
   )
 

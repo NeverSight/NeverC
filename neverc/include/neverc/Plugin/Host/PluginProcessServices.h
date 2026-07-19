@@ -24,6 +24,14 @@ class PluginTaskContext;
 class PluginHostService {
 public:
   virtual ~PluginHostService() = default;
+  virtual llvm::Error validatePluginRegistrations(
+      llvm::ArrayRef<std::shared_ptr<const PluginModule>>) {
+    return llvm::Error::success();
+  }
+  virtual llvm::Error sessionScopeRegistered(NevercSessionHandle,
+                                             PluginSession &) {
+    return llvm::Error::success();
+  }
   virtual llvm::Error taskScopeEnding(NevercTaskHandle) {
     return llvm::Error::success();
   }
@@ -68,6 +76,10 @@ public:
 
   llvm::Error registerSessionScope(NevercSessionHandle Handle,
                                    PluginSession &Session);
+  llvm::Error prepareSessionScope(NevercSessionHandle Handle,
+                                  PluginSession &Session);
+  llvm::Error validatePluginRegistrations(
+      llvm::ArrayRef<std::shared_ptr<const PluginModule>> Modules);
   void unregisterSessionScope(NevercSessionHandle Handle);
   llvm::Error registerTaskScope(NevercTaskHandle Handle,
                                 PluginTaskContext &Task);
@@ -78,6 +90,12 @@ public:
                                  void **OutState);
   NevercStatus queryTaskState(NevercTaskHandle Handle,
                               llvm::StringRef PluginID, void **OutState);
+  NevercStatus queryPluginOptionValueCount(
+      NevercSessionHandle Handle, llvm::StringRef PluginID,
+      llvm::StringRef Spelling, uint64_t *OutCount);
+  NevercStatus queryPluginOptionValue(
+      NevercSessionHandle Handle, llvm::StringRef PluginID,
+      llvm::StringRef Spelling, uint64_t Index, NevercStringView *OutValue);
   NevercStatus checkCancelled(NevercTaskHandle Handle);
   NevercStatus emitDiagnostic(
       const NevercDiagnosticDescriptor &Descriptor,

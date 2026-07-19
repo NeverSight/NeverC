@@ -153,6 +153,38 @@ NevercStatus NEVERC_CALL getTaskState(void *Context, NevercTaskHandle Task,
       OutState);
 }
 
+NevercStatus NEVERC_CALL getPluginOptionValueCount(
+    void *Context, NevercSessionHandle Session, NevercStringView PluginID,
+    NevercStringView Spelling, uint64_t *OutCount) {
+  if (!Context || !OutCount || !validStringView(PluginID, false) ||
+      !validStringView(Spelling, false))
+    return makeStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  return static_cast<PluginProcessServices *>(Context)
+      ->queryPluginOptionValueCount(
+          Session,
+          llvm::StringRef(PluginID.Data ? PluginID.Data : "",
+                          static_cast<size_t>(PluginID.Length)),
+          llvm::StringRef(Spelling.Data ? Spelling.Data : "",
+                          static_cast<size_t>(Spelling.Length)),
+          OutCount);
+}
+
+NevercStatus NEVERC_CALL getPluginOptionValue(
+    void *Context, NevercSessionHandle Session, NevercStringView PluginID,
+    NevercStringView Spelling, uint64_t Index, NevercStringView *OutValue) {
+  if (!Context || !OutValue || !validStringView(PluginID, false) ||
+      !validStringView(Spelling, false))
+    return makeStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  return static_cast<PluginProcessServices *>(Context)
+      ->queryPluginOptionValue(
+          Session,
+          llvm::StringRef(PluginID.Data ? PluginID.Data : "",
+                          static_cast<size_t>(PluginID.Length)),
+          llvm::StringRef(Spelling.Data ? Spelling.Data : "",
+                          static_cast<size_t>(Spelling.Length)),
+          Index, OutValue);
+}
+
 } // namespace
 
 void initializeCoreAPI(NevercCoreAPI &API,
@@ -169,6 +201,8 @@ void initializeCoreAPI(NevercCoreAPI &API,
   API.CheckCancelled = checkCancelled;
   API.GetSessionState = getSessionState;
   API.GetTaskState = getTaskState;
+  API.GetPluginOptionValueCount = getPluginOptionValueCount;
+  API.GetPluginOptionValue = getPluginOptionValue;
 }
 
 } // namespace neverc::plugin

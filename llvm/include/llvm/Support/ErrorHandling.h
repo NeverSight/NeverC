@@ -190,15 +190,15 @@ void PrintStackTrace(raw_ostream &OS, int Depth);
 #include <unistd.h>
 #endif
 
-inline static llvm::fatal_error_handler_t ErrorHandler = 0;
-inline static void *ErrorHandlerUserData = 0;
+inline llvm::fatal_error_handler_t ErrorHandler = 0;
+inline void *ErrorHandlerUserData = 0;
 
-inline static llvm::fatal_error_handler_t BadAllocErrorHandler = 0;
-inline static void *BadAllocErrorHandlerUserData = 0;
+inline llvm::fatal_error_handler_t BadAllocErrorHandler = 0;
+inline void *BadAllocErrorHandlerUserData = 0;
 
 #if LLVM_ENABLE_THREADS == 1
-inline static LLVM_MUTEX_T ErrorHandlerMutex;
-inline static LLVM_MUTEX_T BadAllocErrorHandlerMutex;
+inline LLVM_MUTEX_T ErrorHandlerMutex;
+inline LLVM_MUTEX_T BadAllocErrorHandlerMutex;
 #endif
 
 namespace llvm {

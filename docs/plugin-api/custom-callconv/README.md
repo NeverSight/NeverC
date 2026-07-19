@@ -76,34 +76,34 @@ cd pluginsdk/examples && make CustomCallConvPlugin.dylib   # or .so / .dll
 **Attribute mode** (default) — only functions with `custom_attr` source annotations are affected:
 
 ```bash
-neverc -fplugin-pass=./CustomCallConvPlugin.dylib input.c -o output.o
+neverc -fplugin=./CustomCallConvPlugin.dylib input.c -o output.o
 ```
 
 **Global mode** — apply a spec to every defined function (requires explicit `cc-all=1`):
 
 ```bash
-neverc -fplugin-pass=./CustomCallConvPlugin.dylib \
-       -fplugin-pass-arg=cc-all=1 \
-       -fplugin-pass-arg=ccspec="gpr:r10,r11,rsi;ret:rdx" \
+neverc -fplugin=./CustomCallConvPlugin.dylib \
+       -fplugin-arg=org.neverc.example.custom-callconv:cc-all \
+       -fplugin-arg=org.neverc.example.custom-callconv:ccspec="gpr:r10,r11,rsi;ret:rdx" \
        input.c -o output.o
 ```
 
 **Filter by name prefix:**
 
 ```bash
-neverc -fplugin-pass=./CustomCallConvPlugin.dylib \
-       -fplugin-pass-arg=cc-all=1 \
-       -fplugin-pass-arg=ccprefix=secret_ \
-       -fplugin-pass-arg=ccspec="gpr:r9,r8;ret:rax" \
+neverc -fplugin=./CustomCallConvPlugin.dylib \
+       -fplugin-arg=org.neverc.example.custom-callconv:cc-all \
+       -fplugin-arg=org.neverc.example.custom-callconv:ccprefix=secret_ \
+       -fplugin-arg=org.neverc.example.custom-callconv:ccspec="gpr:r9,r8;ret:rax" \
        input.c -o output.o
 ```
 
 **Diversify** — each function gets a different layout (anti-reverse-engineering):
 
 ```bash
-neverc -fplugin-pass=./CustomCallConvPlugin.dylib \
-       -fplugin-pass-arg=cc-all=1 \
-       -fplugin-pass-arg=ccshuffle=1 \
+neverc -fplugin=./CustomCallConvPlugin.dylib \
+       -fplugin-arg=org.neverc.example.custom-callconv:cc-all \
+       -fplugin-arg=org.neverc.example.custom-callconv:ccshuffle \
        input.c -o output.o
 ```
 

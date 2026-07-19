@@ -731,6 +731,9 @@ public:
   /// does already exist, allocate one.
   MachineJumpTableInfo *getOrCreateJumpTableInfo(unsigned JTEntryKind);
 
+  /// Destroy an empty jump table info created by an abandoned transaction.
+  void discardEmptyJumpTableInfo();
+
   /// getConstantPool - Return the constant pool object for the current
   /// function.
   MachineConstantPool *getConstantPool() { return ConstantPool; }

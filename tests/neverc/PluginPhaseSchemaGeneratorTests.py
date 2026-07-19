@@ -34,18 +34,28 @@ class PhaseSchemaGeneratorTests(unittest.TestCase):
 
     def test_accepts_committed_schema(self):
         phases, families = self.validate(self.document)
-        self.assertEqual(len(phases), 29)
-        self.assertEqual(len(families), 4)
+        self.assertEqual(len(phases), 76)
+        self.assertEqual(len(families), 6)
         self.assertEqual(
-            {phase["name"] for phase in phases[-6:]},
-            {
-                "neverc.sema.extension.expression",
-                "neverc.sema.extension.statement",
-                "neverc.sema.extension.declaration",
-                "neverc.sema.extension.type",
-                "neverc.sema.extension.lookup",
-                "neverc.sema.extension.conversion",
-            },
+            sum(phase["stability"] == "stable" for phase in phases), 47
+        )
+        self.assertEqual(
+            sum(phase["domain"] == "ir" for phase in phases), 8
+        )
+        self.assertEqual(
+            sum(phase["domain"] == "mir" for phase in phases), 10
+        )
+        self.assertEqual(
+            sum(phase["domain"] == "codegen" for phase in phases), 4
+        )
+        self.assertEqual(
+            sum(phase["domain"] == "mc" for phase in phases), 13
+        )
+        self.assertEqual(
+            sum(phase["domain"] == "assembly" for phase in phases), 4
+        )
+        self.assertEqual(
+            sum(phase["domain"] == "object" for phase in phases), 8
         )
 
     def test_rejects_duplicate_phase_id(self):

@@ -1,5 +1,6 @@
 #include "neverc/Plugin/PluginCore.h"
 #include "neverc/Plugin/PluginDriver.h"
+#include "neverc/Plugin/PluginTarget.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -223,6 +224,238 @@ static void NEVERC_CALL destroy_fixture_userdata(void *UserData) {
   trace_event((const char *)UserData);
 }
 
+#if defined(NEVERC_TEST_REGISTER_TARGET)
+#ifndef NEVERC_TEST_TARGET_ID_LOW
+#define NEVERC_TEST_TARGET_ID_LOW UINT64_C(1)
+#endif
+#ifndef NEVERC_TEST_TARGET_NAME
+#define NEVERC_TEST_TARGET_NAME "test.fixture-target"
+#endif
+
+static const NevercTargetID FixtureTargetID = {
+    UINT64_C(0x4e43545445535401), NEVERC_TEST_TARGET_ID_LOW};
+static const NevercTargetABIID FixtureABIID = {
+    UINT64_C(0x4e43544142495401), NEVERC_TEST_TARGET_ID_LOW};
+static const NevercCallingConventionID FixtureCallingConventionID = {
+    UINT64_C(0x4e43544343495401), NEVERC_TEST_TARGET_ID_LOW};
+
+static void classify_fixture_argument(
+    const NevercABITypeDescriptor *Type,
+    NevercABIArgumentClassification *Classification,
+    int IsReturnValue) {
+  if (Type->Kind == NEVERC_ABI_TYPE_VOID) {
+    Classification->Kind = NEVERC_ABI_ARGUMENT_IGNORE;
+#if defined(NEVERC_TEST_ABI_FORCE_INDIRECT_ARGUMENTS)
+  } else if (!IsReturnValue) {
+    Classification->Kind = NEVERC_ABI_ARGUMENT_INDIRECT;
+    Classification->Alignment =
+        Type->Alignment == 0 ? UINT32_C(1) : Type->Alignment;
+    Classification->Flags = NEVERC_ABI_ARGUMENT_BYVAL;
+#endif
+  } else if ((Type->Flags & NEVERC_ABI_TYPE_AGGREGATE) != 0) {
+    Classification->Kind = NEVERC_ABI_ARGUMENT_INDIRECT;
+    Classification->Alignment =
+        Type->Alignment == 0 ? UINT32_C(1) : Type->Alignment;
+    Classification->Flags = NEVERC_ABI_ARGUMENT_BYVAL;
+  } else if ((Type->Kind == NEVERC_ABI_TYPE_BOOLEAN ||
+              Type->Kind == NEVERC_ABI_TYPE_INTEGER ||
+              Type->Kind == NEVERC_ABI_TYPE_ENUM) &&
+             Type->BitWidth < UINT32_C(32)) {
+    Classification->Kind = NEVERC_ABI_ARGUMENT_EXTEND;
+    if ((Type->Flags & NEVERC_ABI_TYPE_SIGNED) != 0)
+      Classification->Flags = NEVERC_ABI_ARGUMENT_SIGN_EXTEND;
+  } else {
+    Classification->Kind = NEVERC_ABI_ARGUMENT_DIRECT;
+  }
+}
+
+static NevercStatus NEVERC_CALL classify_fixture_function(
+    void *UserData, const NevercABIFunctionQuery *Query,
+    NevercABIArgumentClassification *ReturnValue,
+    NevercABIArgumentClassificationArray *Arguments) {
+  uint64_t Index;
+  (void)UserData;
+  if (Query == NULL || ReturnValue == NULL || Arguments == NULL ||
+      Query->Parameters.Count != Arguments->Count ||
+      Query->Parameters.ElementStride <
+          sizeof(NevercABITypeDescriptor) ||
+      Arguments->ElementStride <
+          sizeof(NevercABIArgumentClassification))
+    return failed_status();
+  classify_fixture_argument(&Query->ReturnType, ReturnValue, 1);
+  for (Index = 0; Index != Arguments->Count; ++Index) {
+    const NevercABITypeDescriptor *Type =
+        (const NevercABITypeDescriptor *)(
+            (const uint8_t *)Query->Parameters.Data +
+            Index * Query->Parameters.ElementStride);
+    NevercABIArgumentClassification *Classification =
+        (NevercABIArgumentClassification *)(
+            (uint8_t *)Arguments->Data +
+            Index * Arguments->ElementStride);
+    classify_fixture_argument(Type, Classification, 0);
+  }
+  return neverc_status_ok();
+}
+
+static NevercStatus register_fixture_target(
+    const NevercCoreAPI *Core, void *RegistrarContext) {
+  const NevercTargetAPI *TargetAPI = NULL;
+  const NevercTargetABIAPI *ABIAPI = NULL;
+  const NevercCallingConventionAPI *CallingConventionAPI = NULL;
+  const void *Table = NULL;
+  NevercTargetDescriptor Target;
+  NevercTargetABIDescriptor ABI;
+  NevercCallingConventionDescriptor CallingConvention;
+  NevercStatus Status;
+  uint16_t Minor = 0;
+  uint64_t StructSize = 0;
+
+  Status = Core->QueryInterface(
+      Core->Context,
+      (NevercInterfaceID){NEVERC_INTERFACE_TARGET_HIGH,
+                          NEVERC_INTERFACE_TARGET_LOW},
+      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, &Table, &Minor,
+      &StructSize);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  if (Table == NULL || StructSize < sizeof(NevercTargetAPI))
+    return failed_status();
+  TargetAPI = (const NevercTargetAPI *)Table;
+  if (TargetAPI->RegisterTarget == NULL)
+    return failed_status();
+
+  memset(&Target, 0, sizeof(Target));
+  Target.Header.StructSize = sizeof(Target);
+  Target.Header.Major = NEVERC_TARGET_API_MAJOR;
+  Target.Header.Minor = NEVERC_TARGET_API_MINOR;
+  Target.TargetID = FixtureTargetID;
+  Target.CanonicalName =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW(NEVERC_TEST_TARGET_NAME);
+  Target.Machine.Header.StructSize = sizeof(Target.Machine);
+  Target.Machine.Header.Major = NEVERC_TARGET_API_MAJOR;
+  Target.Machine.Header.Minor = NEVERC_TARGET_API_MINOR;
+  Target.Machine.RawTriple =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("test-unknown-none-none");
+  Target.Machine.Architecture =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("test");
+  Target.Machine.DataLayout = (NevercStringView)NEVERC_TEST_STRING_VIEW(
+      "e-p:64:64-i64:64-n32:64-S128");
+  Target.Machine.DefaultCPU =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("generic");
+  Target.Machine.SchemaDigest = (NevercStringView)NEVERC_TEST_STRING_VIEW(
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+  Target.Machine.SupportedRelocationModels =
+      NEVERC_TARGET_RELOCATION_MASK_STATIC;
+  Target.Machine.SupportedCodeModels =
+      NEVERC_TARGET_CODE_MODEL_MASK_SMALL;
+  Target.Machine.DefaultRelocationModel =
+      NEVERC_TARGET_RELOCATION_STATIC;
+  Target.Machine.DefaultCodeModel = NEVERC_TARGET_CODE_MODEL_SMALL;
+  Target.Machine.ExceptionModel = NEVERC_TARGET_EXCEPTION_NONE;
+  Target.Machine.UnwindModel = NEVERC_TARGET_UNWIND_NONE;
+  Target.Machine.Endianness = NEVERC_TARGET_ENDIAN_LITTLE;
+  Target.Machine.PointerWidth = 64;
+  Target.Machine.IntWidth = 32;
+  Target.Machine.LongWidth = 64;
+  Target.Machine.LongLongWidth = 64;
+  Target.Machine.StackAlignment = 128;
+  Target.Machine.MaximumAtomicWidth = 64;
+  Target.Machine.MaximumVectorAlignment = 128;
+  Target.Machine.BuiltinVaListKind =
+      NEVERC_TARGET_VA_LIST_VOID_POINTER;
+  Target.Machine.ExecutionLevels = NEVERC_TARGET_EXECUTION_USER;
+  Target.Machine.DefaultExecutionLevel =
+      NEVERC_TARGET_EXECUTION_USER;
+  Target.Machine.TLSSupported = NEVERC_TRUE;
+  Target.DefaultABI = FixtureABIID;
+  Target.DefaultCallingConvention = FixtureCallingConventionID;
+  Target.Machine.ABIs.Data = &FixtureABIID;
+  Target.Machine.ABIs.Count = 1;
+  Target.Machine.ABIs.ElementStride = sizeof(FixtureABIID);
+  Target.Machine.CallingConventions.Data =
+      &FixtureCallingConventionID;
+  Target.Machine.CallingConventions.Count = 1;
+  Target.Machine.CallingConventions.ElementStride =
+      sizeof(FixtureCallingConventionID);
+#if defined(NEVERC_TEST_TARGET_UNKNOWN_FORMAT)
+  Target.DefaultObjectFormatID.High = UINT64_C(0xdeadbeef);
+  Target.DefaultObjectFormatID.Low = UINT64_C(0xbadf00d);
+#endif
+  Target.UserData = (void *)"target_userdata_destroy";
+  Target.DestroyUserData = destroy_fixture_userdata;
+  Status = TargetAPI->RegisterTarget(TargetAPI->Context, RegistrarContext,
+                                     &Target);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+#if defined(NEVERC_TEST_TARGET_REGISTRATION_FAILURE)
+  Target.CanonicalName =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("test.duplicate-target");
+  return TargetAPI->RegisterTarget(TargetAPI->Context, RegistrarContext,
+                                   &Target);
+#else
+  Table = NULL;
+  Status = Core->QueryInterface(
+      Core->Context,
+      (NevercInterfaceID){NEVERC_INTERFACE_TARGET_ABI_HIGH,
+                          NEVERC_INTERFACE_TARGET_ABI_LOW},
+      NEVERC_TARGET_ABI_API_MAJOR, NEVERC_TARGET_ABI_API_MINOR,
+      &Table, &Minor, &StructSize);
+  if (Status.Code != NEVERC_STATUS_OK || Table == NULL ||
+      StructSize < sizeof(NevercTargetABIAPI))
+    return failed_status();
+  ABIAPI = (const NevercTargetABIAPI *)Table;
+  memset(&ABI, 0, sizeof(ABI));
+  ABI.Header.StructSize = sizeof(ABI);
+  ABI.Header.Major = NEVERC_TARGET_ABI_API_MAJOR;
+  ABI.Header.Minor = NEVERC_TARGET_ABI_API_MINOR;
+  ABI.ABIID = FixtureABIID;
+  ABI.TargetID = FixtureTargetID;
+  ABI.CanonicalName =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("test.fixture-abi");
+  ABI.ClassifyFunction = classify_fixture_function;
+  ABI.VAArg.Header.StructSize = sizeof(ABI.VAArg);
+  ABI.VAArg.Header.Major = NEVERC_TARGET_ABI_API_MAJOR;
+  ABI.VAArg.Header.Minor = NEVERC_TARGET_ABI_API_MINOR;
+  ABI.VAArg.Kind = NEVERC_ABI_VA_ARG_LLVM;
+  Status = ABIAPI->RegisterABI(ABIAPI->Context, RegistrarContext,
+                               &ABI);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  Table = NULL;
+  Status = Core->QueryInterface(
+      Core->Context,
+      (NevercInterfaceID){
+          NEVERC_INTERFACE_CALLING_CONVENTION_HIGH,
+          NEVERC_INTERFACE_CALLING_CONVENTION_LOW},
+      NEVERC_CALLING_CONVENTION_API_MAJOR,
+      NEVERC_CALLING_CONVENTION_API_MINOR, &Table, &Minor,
+      &StructSize);
+  if (Status.Code != NEVERC_STATUS_OK || Table == NULL ||
+      StructSize < sizeof(NevercCallingConventionAPI))
+    return failed_status();
+  CallingConventionAPI =
+      (const NevercCallingConventionAPI *)Table;
+  memset(&CallingConvention, 0, sizeof(CallingConvention));
+  CallingConvention.Header.StructSize = sizeof(CallingConvention);
+  CallingConvention.Header.Major =
+      NEVERC_CALLING_CONVENTION_API_MAJOR;
+  CallingConvention.Header.Minor =
+      NEVERC_CALLING_CONVENTION_API_MINOR;
+  CallingConvention.CallingConventionID =
+      FixtureCallingConventionID;
+  CallingConvention.TargetID = FixtureTargetID;
+  CallingConvention.CanonicalName =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW(
+          "test.fixture-calling-convention");
+  CallingConvention.LLVMCallingConvention = 0;
+  return CallingConventionAPI->RegisterCallingConvention(
+      CallingConventionAPI->Context, RegistrarContext,
+      &CallingConvention);
+#endif
+}
+#endif
+
 #if defined(NEVERC_TEST_REGISTER_OPTION)
 static NevercStatus register_fixture_option(const NevercRegistrarAPI *Registrar,
                                             void *RegistrarContext) {
@@ -252,6 +485,14 @@ register_plugin(const NevercCoreAPI *Core, const NevercRegistrarAPI *Registrar,
   (void)RegistrarContext;
   (void)ProcessState;
   trace_event("register");
+#if defined(NEVERC_TEST_REGISTER_TARGET)
+  {
+    NevercStatus Status =
+        register_fixture_target(Core, RegistrarContext);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+  }
+#endif
 #if defined(NEVERC_TEST_REGISTER_USERDATA)
   {
     NevercObserverDescriptor Observer;

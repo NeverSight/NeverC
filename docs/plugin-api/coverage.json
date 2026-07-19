@@ -634,6 +634,362 @@
         "positive_test": "PluginSemaInterceptorTest.ConversionReplacementMakesReturnConversionExplicit",
         "negative_test": "PluginPhaseExecutionTest.RejectsMalformedResultsAndCrossThreadContinuationCalls"
       }
+    },
+    {
+      "phase": "neverc.ir.generate",
+      "input_artifact": ["0x4e43415246524e01", "0x0000000000004001"],
+      "output_artifact": ["0x4e43415249520001", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginIRGenProviderTest.ProviderBypassesBuiltinIRGenAndPublishesExecutableModule"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginPhaseExecutionTest.RunsObserversInterceptorsProviderAndAtomicPublishInOrder",
+      "default_executor_test": "PluginParserProviderTest.ReplaysPluginASTAndPublishesItToDownstreamIRGeneration",
+      "replacement_test": "PluginIRGenProviderTest.ProviderBypassesBuiltinIRGenAndPublishesExecutableModule",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.ir.verify_generated_module",
+        "positive_test": "PluginIRGenProviderTest.ProviderBypassesBuiltinIRGenAndPublishesExecutableModule",
+        "negative_test": "PluginIRSerializationTest.RejectsMalformedAndTargetIncompatibleBitcodeWithoutReplacingModule"
+      }
+    },
+    {
+      "phase": "neverc.ir.optimize",
+      "input_artifact": ["0x4e43415249520001", "0x0000000000000001"],
+      "output_artifact": ["0x4e43415249520001", "0x0000000000000002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE", "REPLACEABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginIRPipelineTest.ReplacementBypassesBuiltinPipelineAndChangesProgramBehavior"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginPhaseExecutionTest.RunsObserversInterceptorsProviderAndAtomicPublishInOrder",
+      "default_executor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "replacement_test": "PluginIRPipelineTest.ReplacementBypassesBuiltinPipelineAndChangesProgramBehavior",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.ir.verify_optimized_module",
+        "positive_test": "PluginIRPipelineTest.ReplacementBypassesBuiltinPipelineAndChangesProgramBehavior",
+        "negative_test": "PluginIRPipelineTest.SealedVerifierRejectsInvalidReplacement"
+      }
+    },
+    {
+      "phase": "neverc.ir.pass.pre_opt",
+      "input_artifact": ["0x4e43415249520001", "0x0000000000000001"],
+      "output_artifact": ["0x4e43415249520001", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "default_executor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.ir.verify_pass_slot",
+        "positive_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+        "negative_test": "PluginIRPassTest.RejectsPreserveAllAfterMutation"
+      }
+    },
+    {
+      "phase": "neverc.ir.pass.pipeline_start",
+      "input_artifact": ["0x4e43415249520001", "0x0000000000000001"],
+      "output_artifact": ["0x4e43415249520001", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "default_executor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.ir.verify_pass_slot",
+        "positive_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+        "negative_test": "PluginIRPassTest.RejectsPreserveAllAfterMutation"
+      }
+    },
+    {
+      "phase": "neverc.ir.pass.optimizer_last",
+      "input_artifact": ["0x4e43415249520001", "0x0000000000000002"],
+      "output_artifact": ["0x4e43415249520001", "0x0000000000000002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "default_executor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.ir.verify_pass_slot",
+        "positive_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+        "negative_test": "PluginIRPassTest.RejectsPreserveAllAfterMutation"
+      }
+    },
+    {
+      "phase": "neverc.ir.pass.post_opt",
+      "input_artifact": ["0x4e43415249520001", "0x0000000000000002"],
+      "output_artifact": ["0x4e43415249520001", "0x0000000000000002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "default_executor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.ir.verify_pass_slot",
+        "positive_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+        "negative_test": "PluginIRPassTest.RejectsPreserveAllAfterMutation"
+      }
+    },
+    {
+      "phase": "neverc.ir.pass.pre_codegen",
+      "input_artifact": ["0x4e43415249520001", "0x0000000000000002"],
+      "output_artifact": ["0x4e43415249520001", "0x0000000000000002"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "default_executor_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.ir.verify_pass_slot",
+        "positive_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors",
+        "negative_test": "PluginIRPassTest.RejectsPreserveAllAfterMutation"
+      }
+    },
+    {
+      "phase": "neverc.ir.final_verify",
+      "input_artifact": ["0x4e43415249520001", "0x0000000000000002"],
+      "output_artifact": ["0x4e43415249520001", "0x0000000000000002"],
+      "policies": ["OBSERVABLE", "SEALED_HOST_GATE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginIRPipelineTest.ReplacementBypassesBuiltinPipelineAndChangesProgramBehavior"
+      },
+      "provider_available": false,
+      "verification": {
+        "kind": "gate",
+        "id": "sealed_verifier",
+        "positive_test": "PluginIRPipelineTest.ReplacementBypassesBuiltinPipelineAndChangesProgramBehavior",
+        "negative_test": "PluginIRPipelineTest.SealedVerifierRejectsInvalidReplacement"
+      },
+      "sealed_gate": {
+        "host_private": true,
+        "provider_available": false,
+        "interceptor_available": false,
+        "skip_available": false,
+        "host_executor_test": "PluginIRPipelineTest.ReplacementBypassesBuiltinPipelineAndChangesProgramBehavior",
+        "bypass_negative_test": "PluginIRPipelineTest.SealedVerifierRejectsInvalidReplacement"
+      }
+    },
+    {
+      "phase": "neverc.mir.pass.post_isel",
+      "input_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "output_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "default_executor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.mir.verify_pass_slot",
+        "positive_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "negative_test": "PluginMIRPassTest.RejectsPreserveAllAfterMachineMutation"
+      }
+    },
+    {
+      "phase": "neverc.mir.pass.post_legalize",
+      "input_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "output_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "default_executor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.mir.verify_pass_slot",
+        "positive_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "negative_test": "PluginMIRPassTest.RejectsPreserveAllAfterMachineMutation"
+      }
+    },
+    {
+      "phase": "neverc.mir.pass.pre_scheduler",
+      "input_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "output_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "default_executor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.mir.verify_pass_slot",
+        "positive_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "negative_test": "PluginMIRPassTest.RejectsPreserveAllAfterMachineMutation"
+      }
+    },
+    {
+      "phase": "neverc.mir.pass.post_scheduler",
+      "input_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "output_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "default_executor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.mir.verify_pass_slot",
+        "positive_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "negative_test": "PluginMIRPassTest.RejectsPreserveAllAfterMachineMutation"
+      }
+    },
+    {
+      "phase": "neverc.mir.pass.pre_regalloc",
+      "input_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "output_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "default_executor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.mir.verify_pass_slot",
+        "positive_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "negative_test": "PluginMIRPassTest.RejectsPreserveAllAfterMachineMutation"
+      }
+    },
+    {
+      "phase": "neverc.mir.pass.post_regalloc",
+      "input_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "output_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "default_executor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.mir.verify_pass_slot",
+        "positive_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "negative_test": "PluginMIRPassTest.RejectsPreserveAllAfterMachineMutation"
+      }
+    },
+    {
+      "phase": "neverc.mir.pass.post_prolog_epilog",
+      "input_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "output_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "default_executor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.mir.verify_pass_slot",
+        "positive_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "negative_test": "PluginMIRPassTest.RejectsPreserveAllAfterMachineMutation"
+      }
+    },
+    {
+      "phase": "neverc.mir.pass.preemit",
+      "input_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "output_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "default_executor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.mir.verify_pass_slot",
+        "positive_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "negative_test": "PluginMIRPassTest.RejectsPreserveAllAfterMachineMutation"
+      }
+    },
+    {
+      "phase": "neverc.mir.pass.final",
+      "input_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "output_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "INTERCEPTABLE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "default_executor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.mir.verify_pass_slot",
+        "positive_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "negative_test": "PluginMIRPassTest.RejectsPreserveAllAfterMachineMutation"
+      }
+    },
+    {
+      "phase": "neverc.mir.final_verify",
+      "input_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "output_artifact": ["0x4e4341524d495201", "0x0000000000000001"],
+      "policies": ["OBSERVABLE", "SEALED_HOST_GATE"],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      "provider_available": false,
+      "verification": {
+        "kind": "gate",
+        "id": "sealed_verifier",
+        "positive_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "negative_test": "PluginMIRBuilderTest.CommitVerifierRejectsAndRollsBackInvalidMIR"
+      },
+      "sealed_gate": {
+        "host_private": true,
+        "provider_available": false,
+        "interceptor_available": false,
+        "skip_available": false,
+        "host_executor_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook",
+        "bypass_negative_test": "PluginMIRBuilderTest.CommitVerifierRejectsAndRollsBackInvalidMIR"
+      }
     }
   ],
   "semantic_replay": {
@@ -674,5 +1030,117 @@
     },
     "plugin_sema_provider_test": "PluginSemaProviderTest.PluginProviderPublishesSemanticUnitWithoutBuiltinReplay",
     "unmatched_custom_product_test": "PluginSemaProviderTest.RejectsCustomSemanticProductWithoutMatchingIRProvider"
+  },
+  "ir_mir": {
+    "ir_schema": {
+      "path": "neverc/include/neverc/Plugin/Schema/IRSchema.json",
+      "inventory_test": "PluginIRSchemaTest.CoversEveryLLVMTypeValueOpcodeAndEnum",
+      "contract_test": "PluginIRSchemaTest.PublishesOperandResultAndMutationContracts"
+    },
+    "mir_schema": {
+      "path": "neverc/include/neverc/Plugin/Schema/MIRSchema.json",
+      "inventory_test": "PluginMIRSchemaTest.CoversLLVMOperandOpcodeAndPropertyInventories",
+      "stable_id_test": "PluginMIRSchemaTest.KeepsStableIDsSeparateFromLLVMNumbers"
+    },
+    "ir_pass_levels": [
+      {
+        "level": "module",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      {
+        "level": "cgscc",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      {
+        "level": "function",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      {
+        "level": "loop",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      }
+    ],
+    "mir_pass_levels": [
+      {
+        "level": "machine_module",
+        "coverage_test": "PluginMIRPassTest.SerializesModuleLevelPassesAtPipelineBarriers"
+      },
+      {
+        "level": "machine_function",
+        "coverage_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      {
+        "level": "machine_basic_block",
+        "coverage_test": "PluginMIRPassTest.RunsBasicBlockPassForEveryLiveBlock"
+      }
+    ],
+    "ir_analyses": [
+      {
+        "analysis": "call_graph",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      {
+        "analysis": "dominator_tree",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      {
+        "analysis": "post_dominator_tree",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      {
+        "analysis": "loop_info",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      {
+        "analysis": "scalar_evolution",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      {
+        "analysis": "memory_ssa",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      {
+        "analysis": "alias",
+        "coverage_test": "PluginIRPassTest.RunsModuleCGSCCFunctionAndLoopAdaptors"
+      },
+      {
+        "analysis": "custom",
+        "coverage_test": "PluginCustomAnalysisTest.ComputesRequiredResultOncePerInvocation"
+      }
+    ],
+    "mir_analyses": [
+      {
+        "analysis": "live_variables",
+        "coverage_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      {
+        "analysis": "live_intervals",
+        "coverage_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      {
+        "analysis": "slot_indexes",
+        "coverage_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      {
+        "analysis": "dominator_tree",
+        "coverage_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      {
+        "analysis": "loop_info",
+        "coverage_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      },
+      {
+        "analysis": "register_pressure",
+        "coverage_test": "PluginMIRPassTest.RunsEveryStableMachinePipelineHook"
+      }
+    ],
+    "providers": {
+      "ir_generation_replacement_test": "PluginIRGenProviderTest.ProviderBypassesBuiltinIRGenAndPublishesExecutableModule",
+      "ir_optimization_replacement_test": "PluginIRPipelineTest.ReplacementBypassesBuiltinPipelineAndChangesProgramBehavior"
+    },
+    "sealed_verifiers": {
+      "ir_bypass_negative_test": "PluginIRPipelineTest.SealedVerifierRejectsInvalidReplacement",
+      "mir_bypass_negative_test": "PluginMIRBuilderTest.CommitVerifierRejectsAndRollsBackInvalidMIR"
+    }
   }
 }

@@ -143,9 +143,6 @@ Error PluginPhaseGraph::finalize() {
         Phase.Gate != PluginPhaseGateKind::SealedCommit)
       return phaseError("phase '" + Phase.CanonicalName +
                         "' exposes after-commit outside a sealed commit");
-    if (Sealed && !Phase.HasBuiltinFallback)
-      return phaseError("sealed phase '" + Phase.CanonicalName +
-                        "' has no host implementation");
     if ((Phase.Policy & NEVERC_PHASE_REPLACEABLE) != 0 &&
         !Phase.HasBuiltinFallback)
       return phaseError("replaceable phase '" + Phase.CanonicalName +
@@ -286,6 +283,47 @@ Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinSourceGraph() {
           {NEVERC_PHASE_SEMA_ANALYZE_HIGH, NEVERC_PHASE_SEMA_ANALYZE_LOW},
           true))
     return std::move(E);
+  if (Error E = Graph.finalize())
+    return std::move(E);
+  return Graph;
+}
+
+Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinIRGraph() {
+  PluginPhaseGraph Graph;
+#define NEVERC_BUILD_BUILTIN_PHASE(Symbol)                                     \
+  builtinPhase(                                                                \
+      NEVERC_PHASE_##Symbol##_NAME, NEVERC_PHASE_##Symbol##_DOMAIN,            \
+      NEVERC_PHASE_##Symbol##_VERIFIER, NEVERC_PHASE_##Symbol##_HIGH,          \
+      NEVERC_PHASE_##Symbol##_LOW, NEVERC_PHASE_##Symbol##_INPUT_HIGH,         \
+      NEVERC_PHASE_##Symbol##_INPUT_LOW, NEVERC_PHASE_##Symbol##_OUTPUT_HIGH,  \
+      NEVERC_PHASE_##Symbol##_OUTPUT_LOW, NEVERC_PHASE_##Symbol##_POLICY,      \
+      NEVERC_PHASE_##Symbol##_OBSERVER_POINTS, NEVERC_PHASE_##Symbol##_GATE,   \
+      NEVERC_PHASE_##Symbol##_STABILITY,                                       \
+      NEVERC_PHASE_##Symbol##_BUILTIN_FALLBACK),
+  const PluginPhaseDefinition Builtins[] = {
+      NEVERC_FOR_EACH_BUILTIN_IR_PHASE(NEVERC_BUILD_BUILTIN_PHASE)};
+#undef NEVERC_BUILD_BUILTIN_PHASE
+  for (const PluginPhaseDefinition &Phase : Builtins)
+    if (Error E = Graph.addPhase(Phase))
+      return std::move(E);
+
+  const NevercInterfaceID Order[] = {
+      {NEVERC_PHASE_IR_GENERATE_HIGH, NEVERC_PHASE_IR_GENERATE_LOW},
+      {NEVERC_PHASE_IR_PASS_PRE_OPT_HIGH, NEVERC_PHASE_IR_PASS_PRE_OPT_LOW},
+      {NEVERC_PHASE_IR_PASS_PIPELINE_START_HIGH,
+       NEVERC_PHASE_IR_PASS_PIPELINE_START_LOW},
+      {NEVERC_PHASE_IR_OPTIMIZE_HIGH, NEVERC_PHASE_IR_OPTIMIZE_LOW},
+      {NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_HIGH,
+       NEVERC_PHASE_IR_PASS_OPTIMIZER_LAST_LOW},
+      {NEVERC_PHASE_IR_PASS_POST_OPT_HIGH,
+       NEVERC_PHASE_IR_PASS_POST_OPT_LOW},
+      {NEVERC_PHASE_IR_PASS_PRE_CODEGEN_HIGH,
+       NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW},
+      {NEVERC_PHASE_IR_FINAL_VERIFY_HIGH,
+       NEVERC_PHASE_IR_FINAL_VERIFY_LOW}};
+  for (size_t I = 1; I != std::size(Order); ++I)
+    if (Error E = Graph.addEdge(Order[I - 1], Order[I], true))
+      return std::move(E);
   if (Error E = Graph.finalize())
     return std::move(E);
   return Graph;

@@ -17,6 +17,7 @@
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/Analysis/ModuleSummaryAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/PassManager.h"
@@ -205,10 +206,6 @@ Error Config::addSaveTemps(std::string OutputFileName, bool UseInputModulePath,
 
 static void RegisterPassPlugins(ArrayRef<std::string> PassPlugins,
                                 PassBuilder &PB) {
-  for (auto PassCallback : ListRegisterPassBuilderCallbacks) {
-    PassCallback(PB);
-  }
-
   // Load requested pass plugins and let them register pass builder callbacks
   for (auto &PluginFN : PassPlugins) {
     auto PassPlugin = PassPlugin::Load(PluginFN);
@@ -241,6 +238,9 @@ createTargetMachine(const Config &Conf, const Target *TheTarget, Module &M) {
                                      Conf.Options, CodeModel, Conf.CGOptLevel));
 
   assert(TM && "Failed to create target machine");
+  if (Conf.MachinePassHooks)
+    static_cast<LLVMTargetMachine *>(TM.get())
+        ->setMachinePipelineHooks(Conf.MachinePassHooks);
 
   if (std::optional<uint64_t> LargeDataThreshold = M.getLargeDataThreshold())
     TM->setLargeDataThreshold(*LargeDataThreshold);
@@ -284,6 +284,8 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
   PassBuilder PB(TM, LocalPTO, /*PGOOpt=*/std::nullopt, &PIC);
 
   RegisterPassPlugins(Conf.PassPlugins, PB);
+  if (Conf.PassBuilderHook)
+    Conf.PassBuilderHook(PB);
 
   std::unique_ptr<TargetLibraryInfoImpl> TLII(
       new TargetLibraryInfoImpl(Triple(TM->getTargetTriple())));
@@ -427,15 +429,21 @@ Error lto::finalizeOptimizationRemarks(
 
 Error lto::backend(const Config &C, AddStreamFn AddStream,
                    unsigned ParallelCodeGenParallelismLevel, Module &Mod,
-                   ModuleSummaryIndex &CombinedIndex) {
+                   ModuleSummaryIndex &CombinedIndex,
+                   bool SkipOptimization) {
+  auto BackendDone = make_scope_exit([&] {
+    if (C.BackendDoneHook)
+      C.BackendDoneHook();
+  });
   Expected<const Target *> TOrErr = initAndLookupTarget(C, Mod);
   if (!TOrErr)
     return TOrErr.takeError();
 
   std::unique_ptr<TargetMachine> TM = createTargetMachine(C, *TOrErr, Mod);
+  bool CodeGenOnly = C.CodeGenOnly || SkipOptimization;
 
   LLVM_DEBUG(dbgs() << "Running regular LTO\n");
-  if (!C.CodeGenOnly) {
+  if (!CodeGenOnly) {
     if (!opt(C, TM.get(), 0, Mod, /*ExportSummary=*/&CombinedIndex))
       return Error::success();
   }
@@ -496,7 +504,7 @@ Error lto::backend(const Config &C, AddStreamFn AddStream,
         return Error::success();
     }
 
-    if (C.LTOParallelOpt && !C.CodeGenOnly) {
+    if (C.LTOParallelOpt && !CodeGenOnly) {
       RunDeferredFuncOpt();
       DeferredFuncOptDone = true;
     }
@@ -506,7 +514,7 @@ Error lto::backend(const Config &C, AddStreamFn AddStream,
       return Error::success();
   }
 
-  if (C.LTOParallelOpt && !C.CodeGenOnly && !DeferredFuncOptDone)
+  if (C.LTOParallelOpt && !CodeGenOnly && !DeferredFuncOptDone)
     RunDeferredFuncOpt();
 
   codegen(C, TM.get(), AddStream, 0, Mod, CombinedIndex);

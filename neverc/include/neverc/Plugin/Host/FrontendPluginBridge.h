@@ -456,6 +456,7 @@ struct PluginSourceInput {
 class PluginSourcePhaseRuntime {
 public:
   using BuiltinOpen = std::function<llvm::Error()>;
+  using SemanticUnitReady = std::function<void()>;
   struct Impl;
 
   static llvm::Expected<std::unique_ptr<PluginSourcePhaseRuntime>>
@@ -472,9 +473,12 @@ public:
   llvm::Error attachPrepEngine(PrepEngine &Prep);
   llvm::Error attachTreeContext(TreeContext &Context);
   llvm::Error attachSema(Sema &SemanticAnalyzer);
+  llvm::Error setSemanticUnitReadyCallback(SemanticUnitReady Callback);
   llvm::Error runParserPhase(Sema &SemanticAnalyzer, bool PrintStats);
   ParserPluginHooks *parserPluginHooks() const;
   std::unique_ptr<TreeConsumer> createTreeConsumer();
+  const void *semanticUnitPayload() const;
+  uint64_t semanticUnitGeneration() const;
 
 private:
   explicit PluginSourcePhaseRuntime(std::unique_ptr<Impl> State);
