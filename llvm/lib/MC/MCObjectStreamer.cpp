@@ -13,6 +13,7 @@
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDwarf.h"
+#include "llvm/MC/MCEmissionObserver.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCObjectWriter.h"
@@ -408,16 +409,38 @@ bool MCObjectStreamer::mayHaveInstructions(MCSection &Sec) const {
 
 void MCObjectStreamer::emitInstruction(const MCInst &Inst,
                                        const MCSubtargetInfo &STI) {
+  MCInst Effective = Inst;
+  if (MCEmissionObserver *Observer =
+          getContext().getEmissionObserver()) {
+    auto Replacement =
+        Observer->notifyPreInstruction(*this, Inst, STI);
+    if (!Replacement) {
+      getContext().reportError(Inst.getLoc(),
+                               toString(Replacement.takeError()));
+      return;
+    }
+    Effective = std::move(*Replacement);
+  }
+
   const MCSection &Sec = *getCurrentSectionOnly();
   if (Sec.isVirtualSection()) {
-    getContext().reportError(Inst.getLoc(), Twine(Sec.getVirtualSectionKind()) +
-                                                " section '" + Sec.getName() +
-                                                "' cannot have instructions");
+    getContext().reportError(
+        Effective.getLoc(), Twine(Sec.getVirtualSectionKind()) +
+                                " section '" + Sec.getName() +
+                                "' cannot have instructions");
     return;
   }
-  getAssembler().getBackend().emitInstructionBegin(*this, Inst, STI);
-  emitInstructionImpl(Inst, STI);
-  getAssembler().getBackend().emitInstructionEnd(*this, Inst);
+  getAssembler().getBackend().emitInstructionBegin(*this, Effective, STI);
+  emitInstructionImpl(Effective, STI);
+  getAssembler().getBackend().emitInstructionEnd(*this, Effective);
+  if (getContext().hadError())
+    return;
+  if (MCEmissionObserver *Observer =
+          getContext().getEmissionObserver())
+    if (Error E =
+            Observer->notifyPostInstruction(*this, Effective, STI))
+      getContext().reportError(Effective.getLoc(),
+                               toString(std::move(E)));
 }
 
 void MCObjectStreamer::emitInstructionImpl(const MCInst &Inst,

@@ -1,5 +1,6 @@
 #include "neverc/Compiler/CompilerInstance.h"
 #include "neverc/Compiler/CompilerInvocation.h"
+#include "neverc/Compiler/AssembleAction.h"
 #include "neverc/Compiler/FrontendActions.h"
 #include "neverc/Compiler/FrontendDiag.h"
 #include "neverc/Compiler/FrontendOptions.h"
@@ -49,6 +50,8 @@ std::unique_ptr<FrontendAction> CreateFrontendAction(CompilerInstance &CI) {
     return EmitAction;
 
   switch (Action) {
+  case Assemble:
+    return std::make_unique<AssembleAction>();
   case ParseSyntaxOnly:
     return std::make_unique<SyntaxOnlyAction>();
   case PrintPreprocessedInput:
@@ -179,8 +182,12 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
   TextDiagnosticBuffer *DiagsBuffer = new TextDiagnosticBuffer;
   DiagnosticsEngine Diags(DiagID, &*DiagOpts, DiagsBuffer);
 
-  bool Success = CompilerInvocation::CreateFromArgs(CI->getInvocation(), Argv,
-                                                    Diags, Argv0);
+  llvm::ArrayRef<const char *> InvocationArgs = Argv;
+  if (DirectOpts && DirectOpts->FrontendOpts &&
+      DirectOpts->FrontendOpts->ProgramAction == frontend::Assemble)
+    InvocationArgs = {};
+  bool Success = CompilerInvocation::CreateFromArgs(
+      CI->getInvocation(), InvocationArgs, Diags, Argv0);
 
   // NeverC always uses the integrated assembler; ignore -fno-integrated-as.
   CI->getInvocation().getCodeGenOpts().DisableIntegratedAS = false;

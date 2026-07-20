@@ -266,6 +266,23 @@ bool actionFailed(const Action *A, const FailingCommandList &FailingCommands) {
 bool inputsOk(const Command &C, const FailingCommandList &FailingCommands) {
   return !actionFailed(&C.getSource(), FailingCommands);
 }
+
+bool actionDependsOn(const Action *A, const Action *Dependency) {
+  for (const Action *Input : A->inputs()) {
+    if (Input == Dependency || actionDependsOn(Input, Dependency))
+      return true;
+  }
+  return false;
+}
+
+bool haveInterdependentJobs(llvm::ArrayRef<const Command *> Jobs) {
+  for (size_t I = 0; I != Jobs.size(); ++I)
+    for (size_t J = 0; J != Jobs.size(); ++J)
+      if (I != J &&
+          actionDependsOn(&Jobs[I]->getSource(), &Jobs[J]->getSource()))
+        return true;
+  return false;
+}
 } // namespace
 
 void Compilation::ExecuteJobs(const JobList &Jobs,
@@ -365,7 +382,7 @@ void Compilation::ExecuteJobs(const JobList &Jobs,
     }
   }
 
-  if (CompileJobs.size() < 2)
+  if (CompileJobs.size() < 2 || haveInterdependentJobs(CompileJobs))
     return ExecuteJobsSingle(Jobs, FailingCommands, LogOnly);
 
   unsigned NumThreads = std::min(llvm::thread::hardware_concurrency(),

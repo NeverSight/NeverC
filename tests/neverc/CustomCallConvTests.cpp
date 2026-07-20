@@ -286,6 +286,57 @@ TEST_F(CustomCallConvTest, CustomAttrEndToEnd) {
   EXPECT_TRUE(has(s, "$30, %r8d"));
 }
 
+TEST_F(CustomCallConvTest, LegacySpecMaterializesVersionedPlan) {
+  fs::path out = tmpFile("materialized.ll");
+  CmdResult r = ncc(
+      {"-fplugin=" + plugin_.string(), pluginArg("cc-all=1"),
+       pluginArg("ccspec=gpr:rcx,rdx,r8;ret:rax;csr:r12"),
+       "-emit-llvm", "-S", "-O2",
+       "--target=x86_64-unknown-linux-gnu", casesSrc_.string(),
+       "-o", out.string()});
+  ASSERT_TRUE(r.ok()) << r.err;
+  const std::string IR = readFile(out);
+  EXPECT_NE(IR.find("\"neverc-cc-plan-v1\"="), std::string::npos);
+  EXPECT_NE(IR.find("neverc-cc-plan-v1;schema="), std::string::npos);
+  EXPECT_EQ(IR.find("\"neverc-callconv\"="), std::string::npos);
+}
+
+TEST_F(CustomCallConvTest, MalformedMaterializedPlanIsRejected) {
+  writeFile(
+      casesSrc_,
+      "__attribute__((custom_attr(\"neverc-callconv\","
+      "\"gpr:rcx;ret:rax\")))\n"
+      "__attribute__((custom_attr(\"neverc-cc-plan-v1\","
+      "\"not-a-plan\"))) int malformed(int value) { return value; }\n");
+  fs::path out = tmpFile("malformed-plan.s");
+  CmdResult r = ncc(
+      {"-fplugin=" + plugin_.string(), "-S", "-O2",
+       "--target=x86_64-unknown-linux-gnu", casesSrc_.string(),
+       "-o", out.string()});
+  EXPECT_FALSE(r.ok());
+  EXPECT_TRUE(r.stderrContains(
+      "malformed NeverC calling convention plan"));
+}
+
+TEST_F(CustomCallConvTest, ForeignSchemaPlanIsRejected) {
+  writeFile(
+      casesSrc_,
+      "__attribute__((custom_attr(\"neverc-callconv\","
+      "\"gpr:rcx;ret:rax\")))\n"
+      "__attribute__((custom_attr(\"neverc-cc-plan-v1\","
+      "\"neverc-cc-plan-v1;schema=foreign;target=0:0;cc=0:0;"
+      "stack=16;returns=r,0,0,4,4,51,0,0;"
+      "arguments=r,0,0,4,4,54,0,0;callee-saved=\")))\n"
+      "int foreign_schema(int value) { return value; }\n");
+  fs::path out = tmpFile("foreign-schema-plan.s");
+  CmdResult r = ncc(
+      {"-fplugin=" + plugin_.string(), "-S", "-O2",
+       "--target=x86_64-unknown-linux-gnu", casesSrc_.string(),
+       "-o", out.string()});
+  EXPECT_FALSE(r.ok());
+  EXPECT_TRUE(r.stderrContains("foreign target schema"));
+}
+
 //===----------------------------------------------------------------------===//
 // Hardening: configurable callee-saved (csr), varargs rejection, indirect calls.
 //===----------------------------------------------------------------------===//

@@ -386,6 +386,7 @@ const auto &getFrontendActionTable() {
       {frontend::GenBC, OPT_emit_llvm_bc},
       {frontend::GenLLVM, OPT_emit_llvm},
       {frontend::GenObj, OPT_emit_obj},
+      {frontend::Assemble, OPT_emit_obj},
       {frontend::ParseSyntaxOnly, OPT_fsyntax_only},
       {frontend::PrintPreprocessedInput, OPT_E},
       {frontend::RunPreprocessorOnly, OPT_Eonly},
@@ -547,6 +548,7 @@ bool parseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
 
 bool isStrictlyPreprocessorAction(frontend::ActionKind Action) {
   switch (Action) {
+  case frontend::Assemble:
   case frontend::GenAssembly:
   case frontend::GenBC:
   case frontend::GenLLVM:

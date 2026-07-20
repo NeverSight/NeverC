@@ -1784,6 +1784,10 @@ OPTION(prefix_1, "-fno-wrapv", fno_wrapv, Flag, f_Group, INVALID, nullptr, 0,
 OPTION(prefix_1, "-fno-zero-initialized-in-bss", fno_zero_initialized_in_bss,
        Flag, f_Group, INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
        "Don't place zero initialized data in BSS", nullptr, nullptr)
+OPTION(prefix_1, "-fobject-format=", fobject_format_EQ, Joined, f_Group,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Select the target object format by canonical name or alias", "<format>",
+       nullptr)
 OPTION(prefix_1, "-fomit-frame-pointer", fomit_frame_pointer, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Omit the frame pointer from functions that don't need it. Some stack "
@@ -7145,6 +7149,15 @@ CODEGEN_OPTION_WITH_MARSHALLING(
     makeBooleanOptionDenormalizer(false), mergeForwardValue,
     extractForwardValue, -1)
 #endif // CODEGEN_OPTION_WITH_MARSHALLING
+#ifdef TARGET_OPTION_WITH_MARSHALLING
+TARGET_OPTION_WITH_MARSHALLING(
+    prefix_1, "-fobject-format=", fobject_format_EQ, Joined, f_Group, INVALID,
+    nullptr, 0, DefaultVis, 0,
+    "Select the target object format by canonical name or alias", "<format>",
+    nullptr, true, 0, TargetOpts->ObjectFormat, std::string(), false,
+    std::string(), normalizeString, denormalizeString, mergeForwardValue,
+    extractForwardValue, -1)
+#endif // TARGET_OPTION_WITH_MARSHALLING
 #ifdef FILE_SYSTEM_OPTION_WITH_MARSHALLING
 FILE_SYSTEM_OPTION_WITH_MARSHALLING(
     prefix_1, "-working-directory", working_directory, Separate, INVALID,

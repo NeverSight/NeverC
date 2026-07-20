@@ -39,10 +39,30 @@ Expected<std::string> copyString(NevercStringView View, StringRef Field,
   return Text.str();
 }
 
-bool validHeader(const NevercABITableHeader &Header, size_t Required) {
+bool validHeader(
+    const NevercABITableHeader &Header, size_t Required,
+    uint16_t ExpectedMajor = NEVERC_TARGET_API_MAJOR,
+    uint16_t MaximumMinor = NEVERC_TARGET_API_MINOR) {
   return Header.StructSize >= Required &&
-         Header.Major == NEVERC_TARGET_API_MAJOR &&
-         Header.Minor <= NEVERC_TARGET_API_MINOR && Header.Flags == 0;
+         Header.Major == ExpectedMajor &&
+         Header.Minor <= MaximumMinor && Header.Flags == 0;
+}
+
+bool validCIdentifier(StringRef Value) {
+  if (Value.empty() ||
+      !(std::isalpha(static_cast<unsigned char>(Value.front())) ||
+        Value.front() == '_'))
+    return false;
+  return llvm::all_of(Value.drop_front(), [](char C) {
+    return std::isalnum(static_cast<unsigned char>(C)) || C == '_';
+  });
+}
+
+bool validMacroReplacement(StringRef Value) {
+  return llvm::none_of(Value, [](char C) {
+    const unsigned char Byte = static_cast<unsigned char>(C);
+    return C == '\r' || C == '\n' || (Byte < 0x20 && C != '\t');
+  });
 }
 
 std::string normalizeComponent(StringRef Value) {
@@ -176,6 +196,11 @@ copyMacros(NevercStructArrayView Values) {
       return Name.takeError();
     if (!Value)
       return Value.takeError();
+    if (!validCIdentifier(*Name) || !validMacroReplacement(*Value) ||
+        ((Macro->Flags & NEVERC_TARGET_MACRO_UNDEFINE) != 0 &&
+         !Value->empty()))
+      return createStringError(inconvertibleErrorCode(),
+                               "Target macro descriptor has invalid tokens");
     if (!Names.insert(*Name).second)
       return createStringError(inconvertibleErrorCode(),
                                "duplicate Target macro '" + *Name + "'");
@@ -189,8 +214,8 @@ copyMacros(NevercStructArrayView Values) {
 Expected<std::vector<VerifiedTargetBuiltin>>
 copyBuiltins(NevercStructArrayView Values) {
   constexpr size_t Required =
-      offsetof(NevercTargetBuiltinDescriptor, Reserved) +
-      sizeof(NevercTargetBuiltinDescriptor::Reserved);
+      offsetof(NevercTargetBuiltinDescriptor, Lower) +
+      sizeof(NevercTargetBuiltinDescriptor::Lower);
   constexpr uint32_t KnownLanguages =
       NEVERC_TARGET_BUILTIN_LANGUAGE_GNU |
       NEVERC_TARGET_BUILTIN_LANGUAGE_C |
@@ -207,7 +232,8 @@ copyBuiltins(NevercStructArrayView Values) {
         Bytes + static_cast<size_t>(I * Values.ElementStride));
     if (!validHeader(Builtin->Header, Required) ||
         Builtin->Reserved != 0 || Builtin->Languages == 0 ||
-        (Builtin->Languages & ~KnownLanguages) != 0)
+        (Builtin->Languages & ~KnownLanguages) != 0 ||
+        Builtin->Lower == nullptr)
       return createStringError(inconvertibleErrorCode(),
                                "Target builtin descriptor is invalid");
     auto Name = copyString(Builtin->Name, "Target builtin name");
@@ -236,7 +262,7 @@ copyBuiltins(NevercStructArrayView Values) {
     Result.push_back(
         {std::move(*Name), std::move(*Type), std::move(*Attributes),
          std::move(*Features), std::move(*Header),
-         Builtin->Languages});
+         Builtin->Languages, Builtin->Lower});
   }
   return Result;
 }
@@ -257,11 +283,16 @@ copyRegisters(NevercStructArrayView Values) {
         const NevercTargetRegisterDescriptor *>(
         Bytes + static_cast<size_t>(I * Values.ElementStride));
     if (!validHeader(Register->Header, Required) ||
-        Register->Flags != 0 ||
+        Register->Reserved != 0 || Register->Flags != 0 ||
         Register->Aliases.Count > 4 ||
         (Register->Aliases.Count != 0 &&
          (!Register->Aliases.Data ||
           Register->Aliases.ElementStride <
+              sizeof(NevercStringView))) ||
+        Register->AdditionalNames.Count > 5 ||
+        (Register->AdditionalNames.Count != 0 &&
+         (!Register->AdditionalNames.Data ||
+          Register->AdditionalNames.ElementStride <
               sizeof(NevercStringView))))
       return createStringError(inconvertibleErrorCode(),
                                "Target register descriptor is invalid");
@@ -292,6 +323,28 @@ copyRegisters(NevercStructArrayView Values) {
             "duplicate Target register name or alias '" + *Text + "'");
       Verified.Aliases.push_back(std::move(*Text));
     }
+    const auto *AdditionalNameBytes = reinterpret_cast<const uint8_t *>(
+        Register->AdditionalNames.Data);
+    for (uint64_t AdditionalIndex = 0;
+         AdditionalIndex != Register->AdditionalNames.Count;
+         ++AdditionalIndex) {
+      const auto *AdditionalName =
+          reinterpret_cast<const NevercStringView *>(
+              AdditionalNameBytes +
+              static_cast<size_t>(
+                  AdditionalIndex *
+                  Register->AdditionalNames.ElementStride));
+      auto Text =
+          copyString(*AdditionalName, "additional Target register name");
+      if (!Text)
+        return Text.takeError();
+      if (!Names.insert(*Text).second)
+        return createStringError(
+            inconvertibleErrorCode(),
+            "duplicate Target register name or alias '" + *Text + "'");
+      Verified.AdditionalNames.push_back(std::move(*Text));
+    }
+    Verified.RegisterNumber = Register->RegisterNumber;
     Result.push_back(std::move(Verified));
   }
   return Result;
@@ -319,6 +372,16 @@ copyConstraints(NevercStructArrayView Values) {
     if (!validHeader(Constraint->Header, Required) ||
         Constraint->Reserved != 0 || Constraint->Flags == 0 ||
         (Constraint->Flags & ~KnownFlags) != 0 ||
+        Constraint->MatchingOperand < -1 ||
+        (Constraint->RegisterClassID != 0 &&
+         (Constraint->Flags &
+          NEVERC_TARGET_CONSTRAINT_ALLOWS_REGISTER) == 0) ||
+        Constraint->ImmediateValues.Count > 64 ||
+        (Constraint->ImmediateValues.Count != 0 &&
+         (!Constraint->ImmediateValues.Data ||
+          Constraint->ImmediateValues.ElementStride < sizeof(int32_t))) ||
+        (Constraint->ImmediateValues.Count != 0 &&
+         (Constraint->Flags & NEVERC_TARGET_CONSTRAINT_IMMEDIATE) == 0) ||
         ((Constraint->Flags & NEVERC_TARGET_CONSTRAINT_IMMEDIATE) !=
              0 &&
          Constraint->ImmediateMinimum >
@@ -337,10 +400,31 @@ copyConstraints(NevercStructArrayView Values) {
       return createStringError(
           inconvertibleErrorCode(),
           "duplicate Target constraint '" + *Spelling + "'");
-    Result.push_back(
-        {std::move(*Spelling), Constraint->Flags,
-         Constraint->ImmediateMinimum, Constraint->ImmediateMaximum,
-         std::move(*Converted)});
+    std::vector<int32_t> ImmediateValues;
+    const auto *ImmediateBytes = reinterpret_cast<const uint8_t *>(
+        Constraint->ImmediateValues.Data);
+    for (uint64_t ValueIndex = 0;
+         ValueIndex != Constraint->ImmediateValues.Count; ++ValueIndex) {
+      const auto *Value = reinterpret_cast<const int32_t *>(
+          ImmediateBytes +
+          static_cast<size_t>(
+              ValueIndex * Constraint->ImmediateValues.ElementStride));
+      ImmediateValues.push_back(*Value);
+    }
+    if (!llvm::is_sorted(ImmediateValues) ||
+        std::adjacent_find(ImmediateValues.begin(),
+                           ImmediateValues.end()) != ImmediateValues.end())
+      return createStringError(
+          inconvertibleErrorCode(),
+          "Target constraint immediate set must be sorted and unique");
+    Result.push_back({std::move(*Spelling),
+                      Constraint->Flags,
+                      Constraint->ImmediateMinimum,
+                      Constraint->ImmediateMaximum,
+                      std::move(ImmediateValues),
+                      Constraint->RegisterClassID,
+                      Constraint->MatchingOperand,
+                      std::move(*Converted)});
   }
   llvm::sort(Result, [](const VerifiedTargetConstraint &Left,
                         const VerifiedTargetConstraint &Right) {
@@ -624,6 +708,28 @@ PluginTargetSnapshot::findMCSchema(NevercInterfaceID ID) const {
   return nullptr;
 }
 
+const PluginTargetSnapshot::ObjectFormatRecord *
+PluginTargetSnapshot::findObjectFormat(NevercObjectFormatID ID) const {
+  for (const ObjectFormatRecord &Format : ObjectFormats)
+    if (sameID(Format.ID, ID))
+      return &Format;
+  return nullptr;
+}
+
+size_t PluginTargetSnapshot::builtinTargetCount() const {
+  return builtinTargetRoutes().size();
+}
+
+ArrayRef<BuiltinTargetRoute>
+PluginTargetSnapshot::builtinTargets() const {
+  return builtinTargetRoutes();
+}
+
+const BuiltinTargetRoute *
+PluginTargetSnapshot::matchBuiltinTarget(StringRef Selector) const {
+  return findBuiltinTargetRoute(Selector);
+}
+
 const PluginTargetSnapshot::TargetRecord *
 PluginTargetSnapshot::matchTarget(StringRef Selector) const {
   const std::string Requested = normalizeComponent(Selector);
@@ -684,6 +790,16 @@ PluginTargetRegistry::freeze(
             inconvertibleErrorCode(),
             "plugin '" + Registration.PluginID +
                 "' has an invalid Target descriptor");
+      const bool HasAnyCPUCallback =
+          Descriptor.ValidateCPU || Descriptor.CanonicalizeCPU ||
+          Descriptor.ListCPUs;
+      if (HasAnyCPUCallback &&
+          (!Descriptor.ValidateCPU || !Descriptor.CanonicalizeCPU ||
+           !Descriptor.ListCPUs))
+        return createStringError(
+            inconvertibleErrorCode(),
+            "plugin '" + Registration.PluginID +
+                "' must provide the complete Target CPU callback set");
 
       auto Name = copyString(Descriptor.CanonicalName, "Target name");
       if (!Name)
@@ -754,6 +870,10 @@ PluginTargetRegistry::freeze(
       Target.Constraints = std::move(*Constraints);
       Target.Clobbers = std::move(*Clobbers);
       Target.Flags = Descriptor.Flags;
+      Target.ValidateCPU = Descriptor.ValidateCPU;
+      Target.CanonicalizeCPU = Descriptor.CanonicalizeCPU;
+      Target.ListCPUs = Descriptor.ListCPUs;
+      Target.ResolveFeatures = Descriptor.ResolveFeatures;
       Target.CreateTargetMachine = Descriptor.CreateTargetMachine;
       Target.DestroyTargetMachine = Descriptor.DestroyTargetMachine;
       Target.TargetUserData = Descriptor.UserData;
@@ -864,7 +984,9 @@ PluginTargetRegistry::freeze(
       constexpr size_t Required =
           offsetof(NevercCallingConventionDescriptor, DestroyUserData) +
           sizeof(NevercCallingConventionDescriptor::DestroyUserData);
-      if (!validHeader(Descriptor.Header, Required) ||
+      if (!validHeader(Descriptor.Header, Required,
+                       NEVERC_CALLING_CONVENTION_API_MAJOR,
+                       NEVERC_CALLING_CONVENTION_API_MINOR) ||
           !nonzero(Descriptor.CallingConventionID) ||
           !nonzero(Descriptor.TargetID))
         return createStringError(
@@ -881,7 +1003,9 @@ PluginTargetRegistry::freeze(
       if (!CalleeSaved)
         return CalleeSaved.takeError();
       if (Descriptor.Reserved != 0 ||
-          Descriptor.LLVMCallingConvention > UINT8_MAX)
+          Descriptor.LLVMCallingConvention > UINT8_MAX ||
+          (Descriptor.PlanCallingConvention &&
+           Descriptor.LLVMCallingConvention != 0))
         return createStringError(
             inconvertibleErrorCode(),
             "plugin '" + Registration.PluginID +
@@ -904,6 +1028,8 @@ PluginTargetRegistry::freeze(
           std::move(*CalleeSaved);
       CallingConvention.LLVMCallingConvention =
           Descriptor.LLVMCallingConvention;
+      CallingConvention.PlanCallingConvention =
+          Descriptor.PlanCallingConvention;
       CallingConvention.Flags = Descriptor.Flags;
       CallingConvention.CallbackUserData = Descriptor.UserData;
       Snapshot->CallingConventions.push_back(
@@ -987,6 +1113,22 @@ PluginTargetRegistry::freeze(
             inconvertibleErrorCode(),
             "plugin '" + Registration.PluginID +
                 "' has an invalid object Format descriptor");
+      constexpr uint64_t KnownFormatFlags =
+          NEVERC_OBJECT_FORMAT_CAN_PROBE |
+          NEVERC_OBJECT_FORMAT_CAN_READ |
+          NEVERC_OBJECT_FORMAT_CAN_WRITE;
+      if ((Descriptor.Flags & ~KnownFormatFlags) != 0 ||
+          (((Descriptor.Flags & NEVERC_OBJECT_FORMAT_CAN_PROBE) != 0) !=
+           (Descriptor.Probe != nullptr)) ||
+          (((Descriptor.Flags & NEVERC_OBJECT_FORMAT_CAN_READ) != 0) !=
+           (Descriptor.Reader != nullptr)) ||
+          (((Descriptor.Flags & NEVERC_OBJECT_FORMAT_CAN_WRITE) != 0) !=
+           (Descriptor.Writer != nullptr)) ||
+          (Descriptor.Reader != nullptr && Descriptor.Probe == nullptr))
+        return createStringError(
+            inconvertibleErrorCode(),
+            "plugin '" + Registration.PluginID +
+                "' has inconsistent object Format capabilities");
       auto Name = copyString(Descriptor.CanonicalName, "object Format name");
       auto Aliases = copyStrings(Descriptor.Aliases, "object Format alias");
       auto Targets =
@@ -1018,6 +1160,10 @@ PluginTargetRegistry::freeze(
       Format.SupportedTargets.assign(Targets->begin(), Targets->end());
       Format.DefaultExtension = std::move(*Extension);
       Format.Flags = Descriptor.Flags;
+      Format.Probe = Descriptor.Probe;
+      Format.Reader = Descriptor.Reader;
+      Format.Writer = Descriptor.Writer;
+      Format.CallbackUserData = Descriptor.UserData;
       Snapshot->ObjectFormats.push_back(std::move(Format));
     }
   }
@@ -1040,10 +1186,29 @@ PluginTargetRegistry::freeze(
       auto Name = copyString(Descriptor.CanonicalName, "codegen edge name");
       auto Dependencies =
           copyIDs(Descriptor.Dependencies, "codegen edge dependency");
+      auto CompatibilityKey = copyString(
+          Descriptor.CompatibilityKey, "codegen compatibility key", true);
+      auto ProviderID =
+          copyString(Descriptor.ProviderID, "codegen provider ID", true);
       if (!Name)
         return Name.takeError();
       if (!Dependencies)
         return Dependencies.takeError();
+      if (!CompatibilityKey)
+        return CompatibilityKey.takeError();
+      if (!ProviderID)
+        return ProviderID.takeError();
+      constexpr NevercCodeGenEdgeFlags KnownEdgeFlags =
+          NEVERC_CODEGEN_EDGE_COARSE | NEVERC_CODEGEN_EDGE_BUILTIN;
+      if ((Descriptor.Flags & ~KnownEdgeFlags) != 0 ||
+          ((Descriptor.Flags & NEVERC_CODEGEN_EDGE_COARSE) != 0 &&
+           (Descriptor.Flags & NEVERC_CODEGEN_EDGE_BUILTIN) != 0) ||
+          (Descriptor.CoarseLower &&
+           (Descriptor.Flags & NEVERC_CODEGEN_EDGE_COARSE) == 0))
+        return createStringError(
+            inconvertibleErrorCode(),
+            "plugin '" + Registration.PluginID +
+                "' has invalid codegen edge flags or callbacks");
       for (const PluginTargetSnapshot::CodeGenEdgeRecord &Existing :
            Snapshot->CodeGenEdges)
         if (sameID(Existing.ID, Descriptor.EdgeID))
@@ -1062,6 +1227,15 @@ PluginTargetRegistry::freeze(
       Edge.Flags = Descriptor.Flags;
       Edge.InputKind = Descriptor.InputKind;
       Edge.OutputKind = Descriptor.OutputKind;
+      Edge.ProductID =
+          nonzero(Descriptor.ProductID) ? Descriptor.ProductID
+                                        : Descriptor.EdgeID;
+      Edge.CompatibilityKey = std::move(*CompatibilityKey);
+      Edge.ProviderID = ProviderID->empty() ? Edge.CanonicalName
+                                            : std::move(*ProviderID);
+      Edge.CoarseLower = Descriptor.CoarseLower;
+      Edge.VerifyProduct = Descriptor.VerifyProduct;
+      Edge.CallbackUserData = Descriptor.UserData;
       Snapshot->CodeGenEdges.push_back(std::move(Edge));
     }
   }
@@ -1684,6 +1858,9 @@ PluginTargetRegistry::freeze(
       case PluginRegistrationKind::CodeGenEdge: {
         NevercCodeGenEdgeDescriptor Descriptor = Record.CodeGenEdge;
         Descriptor.CanonicalName = StringView(Record.CanonicalName);
+        Descriptor.CompatibilityKey =
+            StringView(Record.CodeGenCompatibilityKey);
+        Descriptor.ProviderID = StringView(Record.ProviderID);
         Descriptor.Dependencies = {
             Record.TargetReferences.data(),
             static_cast<uint64_t>(Record.TargetReferences.size()),
@@ -1701,6 +1878,9 @@ PluginTargetRegistry::freeze(
       case PluginRegistrationKind::IRPass:
       case PluginRegistrationKind::IRAnalysis:
       case PluginRegistrationKind::MIRPass:
+      case PluginRegistrationKind::MCEncoder:
+      case PluginRegistrationKind::MCDecoder:
+      case PluginRegistrationKind::MCAsmBackend:
         break;
       }
     }

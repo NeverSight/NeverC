@@ -14,6 +14,7 @@
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCEmissionObserver.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCFixupKindInfo.h"
 #include "llvm/MC/MCInst.h"
@@ -2026,30 +2027,49 @@ void MCAsmStreamer::emitInstruction(const MCInst &Inst,
   assert(getCurrentSectionOnly() &&
          "Cannot emit contents before setting section!");
 
+  MCInst Effective = Inst;
+  if (MCEmissionObserver *Observer =
+          getContext().getEmissionObserver()) {
+    auto Replacement =
+        Observer->notifyPreInstruction(*this, Inst, STI);
+    if (!Replacement) {
+      getContext().reportError(Inst.getLoc(),
+                               toString(Replacement.takeError()));
+      return;
+    }
+    Effective = std::move(*Replacement);
+  }
+
   if (!MAI->usesDwarfFileAndLocDirectives())
     // Now that a machine instruction has been assembled into this section, make
     // a line entry for any .loc directive that has been seen.
     MCDwarfLineEntry::make(this, getCurrentSectionOnly());
 
   // Show the encoding in a comment if we have a code emitter.
-  AddEncodingComment(Inst, STI);
+  AddEncodingComment(Effective, STI);
 
   // Show the MCInst if enabled.
   if (ShowInst) {
-    Inst.dump_pretty(getCommentOS(), InstPrinter.get(), "\n ");
+    Effective.dump_pretty(getCommentOS(), InstPrinter.get(), "\n ");
     getCommentOS() << "\n";
   }
 
   if (getTargetStreamer())
-    getTargetStreamer()->prettyPrintAsm(*InstPrinter, 0, Inst, STI, OS);
+    getTargetStreamer()->prettyPrintAsm(*InstPrinter, 0, Effective, STI, OS);
   else
-    InstPrinter->printInst(&Inst, 0, "", STI, OS);
+    InstPrinter->printInst(&Effective, 0, "", STI, OS);
 
   StringRef Comments = CommentToEmit;
   if (Comments.size() && Comments.back() != '\n')
     getCommentOS() << "\n";
 
   EmitEOL();
+  if (MCEmissionObserver *Observer =
+          getContext().getEmissionObserver())
+    if (Error E =
+            Observer->notifyPostInstruction(*this, Effective, STI))
+      getContext().reportError(Effective.getLoc(),
+                               toString(std::move(E)));
 }
 
 void MCAsmStreamer::emitPseudoProbe(uint64_t Guid, uint64_t Index,

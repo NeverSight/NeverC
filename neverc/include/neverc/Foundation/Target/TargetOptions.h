@@ -21,6 +21,8 @@ public:
 
   std::string ABI;
 
+  std::string ObjectFormat;
+
   std::string LinkerVersion;
 
   std::vector<std::string> FeaturesAsWritten;

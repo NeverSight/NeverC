@@ -15,6 +15,7 @@ Session 与 Task 作用域中运行。
 - [AST 与语义 API](ast-sema.md)
 - [IR API](ir.md)
 - [MIR API](mir.md)
+- [Target、MC、汇编与目标文件 API](../zh/plugin-api/target-mc-object.md)
 - [阶段覆盖证据](coverage.json)
 - [自定义调用约定](custom-callconv/README.zh-CN.md)
 
@@ -63,7 +64,8 @@ cmake --build build-neverc --target neverc-pluginsdk-examples
 ```
 
 SDK 在 `pluginsdk/examples` 中提供 Driver tracing、虚拟源码、AST
-重写、IR/MIR pass、自定义调用约定、无 CRT 示例和 ABI 调用微基准。
+重写、IR/MIR pass、自定义调用约定、MC 发射观察、事务式 ObjectGraph 改写、
+无 CRT 示例和 ABI 调用微基准。
 
 `neverc/include/neverc/Plugin/Schema/PhaseSchema.json` 是内建阶段 ID、
 policy、stability 与 verifier gate 的规范事实源。

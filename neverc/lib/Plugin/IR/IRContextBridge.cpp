@@ -180,6 +180,11 @@ const NevercIRBuilderAPI &IRPluginBridge::builderAPI() const {
   return BuilderBridge->api();
 }
 
+NevercStatus IRPluginBridge::commitInProgressFunctionMutation(
+    NevercIRMutationHandle Mutation) {
+  return BuilderBridge->commitInProgressFunctionMutation(Mutation);
+}
+
 void IRPluginBridge::invalidateHandles() {
   invalidateModuleHandles();
   for (const auto &Entry : AttributeHandles)

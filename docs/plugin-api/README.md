@@ -16,6 +16,7 @@ recompile their source against the public headers.
 - [AST and semantic API](ast-sema.md)
 - [IR API](ir.md)
 - [MIR API](mir.md)
+- [Target, MC, assembly, and object APIs](target-mc-object.md)
 - [Phase coverage evidence](coverage.json)
 - [Custom calling conventions](custom-callconv/README.md)
 
@@ -72,8 +73,9 @@ cmake --build build-neverc --target neverc-pluginsdk-examples
 ```
 
 The SDK includes driver tracing, virtual source, AST rewrite, IR and MIR
-passes, custom calling conventions, a no-CRT example, and an ABI call
-microbenchmark under `pluginsdk/examples`.
+passes, custom calling conventions, MC emission observation, transactional
+ObjectGraph rewriting, a no-CRT example, and an ABI call microbenchmark under
+`pluginsdk/examples`.
 
 The phase schema in
 `neverc/include/neverc/Plugin/Schema/PhaseSchema.json` is the normative source

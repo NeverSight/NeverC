@@ -13,6 +13,8 @@ _Static_assert(NEVERC_TARGET_ABI_API_MAJOR == 1,
                "target ABI description must start at major one");
 _Static_assert(NEVERC_CALLING_CONVENTION_API_MAJOR == 1,
                "calling-convention ABI must start at major one");
+_Static_assert(NEVERC_CALLING_CONVENTION_API_MINOR == 1,
+               "calling-convention plan requires API minor one");
 _Static_assert(sizeof(NevercTargetHandle) == sizeof(NevercHandle),
                "target handle must remain opaque");
 _Static_assert(sizeof(NevercTargetSnapshotHandle) == sizeof(NevercHandle),
@@ -37,8 +39,16 @@ _Static_assert(offsetof(NevercABITypeDescriptor, Header) == 0,
                "ABI type descriptor must begin with ABI header");
 _Static_assert(offsetof(NevercABIArgumentClassification, Header) == 0,
                "ABI classification must begin with ABI header");
+_Static_assert(offsetof(NevercABICoercionElement, Header) == 0,
+               "ABI coercion element must begin with ABI header");
 _Static_assert(offsetof(NevercABIFunctionQuery, Header) == 0,
                "ABI function query must begin with ABI header");
+_Static_assert(offsetof(NevercCallingConventionLocation, Header) == 0,
+               "CC location must begin with ABI header");
+_Static_assert(offsetof(NevercCallingConventionQuery, Header) == 0,
+               "CC query must begin with ABI header");
+_Static_assert(offsetof(NevercCallingConventionPlan, Header) == 0,
+               "CC plan must begin with ABI header");
 _Static_assert(offsetof(NevercTargetVAArgDescriptor, Header) == 0,
                "ABI va_arg descriptor must begin with ABI header");
 _Static_assert(NEVERC_TARGET_VA_LIST_VOID_POINTER == 2,
@@ -47,10 +57,18 @@ _Static_assert(NEVERC_TARGET_CONSTRAINT_ALLOWS_REGISTER == 2,
                "Target constraint flags must remain stable");
 _Static_assert(NEVERC_ABI_ARGUMENT_INDIRECT == 3,
                "ABI argument kinds must remain stable");
+_Static_assert(NEVERC_ABI_ARGUMENT_INDIRECT_ALIASED == 6,
+               "ABI indirect-aliased kind must remain stable");
+_Static_assert(NEVERC_ABI_ARGUMENT_COERCE_AND_EXPAND == 7,
+               "ABI coerce-and-expand kind must remain stable");
 _Static_assert(NEVERC_ABI_ARGUMENT_BYVAL == 1,
                "ABI argument flags must remain stable");
 _Static_assert(NEVERC_ABI_COERCE_POINTER == 3,
                "ABI coercion kinds must remain stable");
+_Static_assert(NEVERC_CC_LOCATION_REGISTER == 1,
+               "CC location kinds must remain stable");
+_Static_assert(NEVERC_CC_LOCATION_BYVAL == 2,
+               "CC location flags must remain stable");
 _Static_assert(offsetof(NevercTargetCallerPackProbe, Value) == 1,
                "Target header did not restore caller packing");
 

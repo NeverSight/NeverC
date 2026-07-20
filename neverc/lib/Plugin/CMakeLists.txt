@@ -47,6 +47,22 @@ set(NEVERC_PLUGIN_MIR_SCHEMA_TEMPLATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginMIRSchema.inc.in")
 set(NEVERC_PLUGIN_MIR_SCHEMA_OUTPUT
     "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginMIRSchema.inc")
+set(NEVERC_PLUGIN_MC_SCHEMA_GENERATOR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/gen-mc-schema.py")
+set(NEVERC_PLUGIN_MC_SCHEMA
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/MCSchema.json")
+set(NEVERC_PLUGIN_MC_SCHEMA_TEMPLATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginMCSchema.inc.in")
+set(NEVERC_PLUGIN_MC_SCHEMA_OUTPUT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginMCSchema.inc")
+set(NEVERC_PLUGIN_OBJECT_SCHEMA_GENERATOR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/gen-object-schema.py")
+set(NEVERC_PLUGIN_OBJECT_SCHEMA
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/ObjectSchema.json")
+set(NEVERC_PLUGIN_OBJECT_SCHEMA_TEMPLATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginObjectSchema.inc.in")
+set(NEVERC_PLUGIN_OBJECT_SCHEMA_OUTPUT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginObjectSchema.inc")
 
 add_custom_target(nevercPluginPrepSchema
   COMMAND ${Python3_EXECUTABLE}
@@ -113,6 +129,36 @@ add_custom_target(nevercPluginMIRSchema
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/CodeGen/MachineFunction.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/Support/TargetOpcodes.def"
   COMMENT "Checking NeverC plugin MIR schema"
+  VERBATIM
+  )
+
+add_custom_target(nevercPluginMCSchema
+  COMMAND ${Python3_EXECUTABLE}
+          ${NEVERC_PLUGIN_MC_SCHEMA_GENERATOR}
+          --check
+  DEPENDS
+    ${NEVERC_PLUGIN_MC_SCHEMA_GENERATOR}
+    ${NEVERC_PLUGIN_MC_SCHEMA}
+    ${NEVERC_PLUGIN_MC_SCHEMA_TEMPLATE}
+    ${NEVERC_PLUGIN_MC_SCHEMA_OUTPUT}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/MC/MCInst.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/MC/MCExpr.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/MC/MCFragment.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../llvm/include/llvm/MC/MCFixup.h"
+  COMMENT "Checking NeverC plugin MC schema"
+  VERBATIM
+  )
+
+add_custom_target(nevercPluginObjectSchema
+  COMMAND ${Python3_EXECUTABLE}
+          ${NEVERC_PLUGIN_OBJECT_SCHEMA_GENERATOR}
+          --check
+  DEPENDS
+    ${NEVERC_PLUGIN_OBJECT_SCHEMA_GENERATOR}
+    ${NEVERC_PLUGIN_OBJECT_SCHEMA}
+    ${NEVERC_PLUGIN_OBJECT_SCHEMA_TEMPLATE}
+    ${NEVERC_PLUGIN_OBJECT_SCHEMA_OUTPUT}
+  COMMENT "Checking NeverC plugin object schema"
   VERBATIM
   )
 
@@ -246,12 +292,14 @@ add_neverc_library(nevercPluginIR
   IR/IRSerialization.cpp
   IR/IRTypeBridge.cpp
   IR/IRValueBridge.cpp
+  MIR/IRToMIRProvider.cpp
   MIR/MIRBuilderBridge.cpp
   MIR/MIRConstantPoolBridge.cpp
   MIR/MIRFrameBridge.cpp
   MIR/MIRHandleBridge.cpp
   MIR/MIRCoreBridge.cpp
   MIR/MIRMemoryBridge.cpp
+  MIR/MIRModuleArtifact.cpp
   MIR/MIRMutation.cpp
   MIR/MIROperandBridge.cpp
   MIR/MIRPassPlugin.cpp
@@ -278,18 +326,58 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_neverc_library(nevercPluginTarget
+  Target/BuiltinLLVMTargetProvider.cpp
+  Target/BuiltinNeverCTargetInfoProvider.cpp
+  Target/BuiltinTargetSchema.cpp
+  Target/BuiltinTargetRoutes.cpp
+  Target/CallingConventionMaterializePass.cpp
+  Target/CallingConventionPlan.cpp
+  Target/CodeGenArtifacts.cpp
+  Target/CodeGenRoutePlanner.cpp
   Target/PluginABILowering.cpp
   Target/PluginTargetInfo.cpp
   Target/PluginTargetRegistry.cpp
+  Target/TargetAsmConstraintBridge.cpp
   Target/TargetDescriptorVerifier.cpp
+  Target/TargetFeatureBridge.cpp
   Target/TargetKey.cpp
+  Target/TargetLanguageBridge.cpp
   Target/TargetPluginInterfaces.cpp
   Target/TargetRegistration.cpp
+  Target/TargetSchemaDigest.cpp
 
   LINK_LIBS
   nevercPluginCore
   nevercFoundation
   )
+
+set(_neverc_target_schema_gen_libs LLVMSupport LLVMMC LLVMTarget)
+if("X86" IN_LIST LLVM_TARGETS_TO_BUILD)
+  list(APPEND _neverc_target_schema_gen_libs
+    LLVMX86CodeGen
+    LLVMX86Desc
+    LLVMX86Info
+  )
+endif()
+if("AArch64" IN_LIST LLVM_TARGETS_TO_BUILD)
+  list(APPEND _neverc_target_schema_gen_libs
+    LLVMAArch64CodeGen
+    LLVMAArch64Desc
+    LLVMAArch64Info
+    LLVMAArch64Utils
+  )
+endif()
+
+add_executable(neverc-plugin-target-schema-gen
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/TargetSchemaGen.cpp
+)
+target_link_libraries(neverc-plugin-target-schema-gen PRIVATE
+  ${_neverc_target_schema_gen_libs}
+)
+target_compile_features(neverc-plugin-target-schema-gen PRIVATE cxx_std_17)
+set_target_properties(neverc-plugin-target-schema-gen PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${LLVM_RUNTIME_OUTPUT_INTDIR}"
+)
 
 set(LLVM_LINK_COMPONENTS
   CodeGen
@@ -299,9 +387,44 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_neverc_library(nevercPluginMCObject
+  MC/AssemblyArtifacts.cpp
+  MC/AssemblyProviderPipeline.cpp
+  MC/BuiltinLLVMAsmParser.cpp
+  MC/LLVMComponentProviderBridge.cpp
+  MC/MCAsmParserProvider.cpp
+  MC/MCAsmPrinterProvider.cpp
+  MC/MCBuilder.cpp
+  MC/MCEmissionBridge.cpp
+  MC/MCEmissionPlan.cpp
+  MC/MCEncoderRegistry.cpp
+  MC/MCHandleBridge.cpp
+  MC/MCInstBuilder.cpp
+  MC/MCLayoutEngine.cpp
+  MC/MachineEmissionBridge.cpp
+  MC/MCSchemaBridge.cpp
+  MC/MCUnit.cpp
+  MC/MCUnitBridge.cpp
+  MC/MCVerifier.cpp
+  MC/MIRToMCProvider.cpp
+  MIR/MIRPipelineHooks.cpp
   MCObject/MCBridge.cpp
   MCObject/MCMutation.cpp
   MCObject/MCObjectPluginInterfaces.cpp
+  Object/BuiltinLLVMObjectReader.cpp
+  Object/BuiltinLLVMObjectWriter.cpp
+  Object/MutableBinaryBuilder.cpp
+  Object/ObjectBuilder.cpp
+  Object/ObjectFormatRegistry.cpp
+  Object/ObjectGraph.cpp
+  Object/ObjectHandleBridge.cpp
+  Object/ObjectImage.cpp
+  Object/ObjectMutation.cpp
+  Object/ObjectPhaseBridge.cpp
+  Object/ObjectPhaseHooks.cpp
+  Object/ObjectProbe.cpp
+  Object/ObjectReaderProvider.cpp
+  Object/ObjectVerifier.cpp
+  Object/ObjectWriterProvider.cpp
 
   LINK_LIBS
   nevercPluginCore
@@ -310,3 +433,20 @@ add_neverc_library(nevercPluginMCObject
   nevercPluginTarget
   nevercFoundation
   )
+add_dependencies(nevercPluginMCObject
+  nevercPluginMCSchema
+  nevercPluginObjectSchema
+  )
+if(MSVC)
+  set_source_files_properties(
+    MC/MCEncoderRegistry.cpp
+    MC/MCLayoutEngine.cpp
+    PROPERTIES COMPILE_OPTIONS "/EHsc"
+    )
+else()
+  set_source_files_properties(
+    MC/MCEncoderRegistry.cpp
+    MC/MCLayoutEngine.cpp
+    PROPERTIES COMPILE_OPTIONS "-fexceptions;-funwind-tables"
+    )
+endif()

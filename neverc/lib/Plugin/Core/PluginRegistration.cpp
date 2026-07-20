@@ -6,6 +6,7 @@
 #include "llvm/Support/JSON.h"
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <limits>
 #include <new>
 #include <set>
@@ -30,6 +31,8 @@ PluginRegistrationRecord::PluginRegistrationRecord(
       TargetABI(Other.TargetABI),
       CallingConvention(Other.CallingConvention),
       MCSchema(Other.MCSchema),
+      MCEncoder(Other.MCEncoder), MCDecoder(Other.MCDecoder),
+      MCAsmBackend(Other.MCAsmBackend),
       ObjectFormatDescriptor(Other.ObjectFormatDescriptor),
       CodeGenEdge(Other.CodeGenEdge),
       CanonicalName(std::move(Other.CanonicalName)),
@@ -41,6 +44,8 @@ PluginRegistrationRecord::PluginRegistrationRecord(
       Features(std::move(Other.Features)),
       ObjectFormat(std::move(Other.ObjectFormat)),
       SchemaDigest(std::move(Other.SchemaDigest)),
+      CodeGenCompatibilityKey(
+          std::move(Other.CodeGenCompatibilityKey)),
       DefaultExtension(std::move(Other.DefaultExtension)),
       Aliases(std::move(Other.Aliases)),
       TargetMatchers(std::move(Other.TargetMatchers)),
@@ -192,10 +197,13 @@ bool copyString(NevercStringView View, std::string &Destination,
   return true;
 }
 
-bool validHeader(const NevercABITableHeader &Header, uint64_t RequiredSize) {
+bool validHeader(
+    const NevercABITableHeader &Header, uint64_t RequiredSize,
+    uint16_t ExpectedMajor = NEVERC_PLUGIN_ABI_MAJOR,
+    uint16_t MaximumMinor = NEVERC_PLUGIN_ABI_MINOR) {
   return Header.StructSize >= RequiredSize &&
-         Header.Major == NEVERC_PLUGIN_ABI_MAJOR &&
-         Header.Minor <= NEVERC_PLUGIN_ABI_MINOR && Header.Flags == 0;
+         Header.Major == ExpectedMajor &&
+         Header.Minor <= MaximumMinor && Header.Flags == 0;
 }
 
 bool nonzero(NevercInterfaceID ID) {
@@ -747,6 +755,10 @@ NevercStatus registerPluginMIRPass(
     Record.Kind = PluginRegistrationKind::MIRPass;
     Record.Interface = Descriptor->Phase;
     Record.MIRPass = *Descriptor;
+    if (Descriptor->RequiredTargetSchemaDigest.Length > 4096 ||
+        !copyString(Descriptor->RequiredTargetSchemaDigest,
+                    Record.SchemaDigest, true))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
     for (uint64_t I = 0; I != Descriptor->RequiredAnalysisCount; ++I) {
       NevercMIRBuiltinAnalysis Analysis = Descriptor->RequiredAnalyses[I];
       if (!ValidAnalysis(Analysis) ||
@@ -779,6 +791,7 @@ NevercStatus registerPluginMIRPass(
     Record.MIRPass.RequiredAnalysisCount = 0;
     Record.MIRPass.PreservedAnalyses = nullptr;
     Record.MIRPass.PreservedAnalysisCount = 0;
+    Record.MIRPass.RequiredTargetSchemaDigest = {};
     Record.OwnedUserData = Descriptor->UserData;
     Record.DestroyUserData = Descriptor->DestroyUserData;
     Transaction->Records.push_back(std::move(Record));
@@ -793,7 +806,9 @@ NevercStatus registerPluginTarget(
     constexpr uint64_t Required =
         offsetof(NevercTargetDescriptor, DestroyUserData) +
         sizeof(NevercTargetDescriptor::DestroyUserData);
-    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR) ||
         !nonzero(Descriptor->TargetID) || Descriptor->Flags != 0)
       return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
 
@@ -833,7 +848,10 @@ NevercStatus registerPluginTargetABI(
     constexpr uint64_t Required =
         offsetof(NevercTargetABIDescriptor, DestroyUserData) +
         sizeof(NevercTargetABIDescriptor::DestroyUserData);
-    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_TARGET_ABI_API_MAJOR,
+                     NEVERC_TARGET_ABI_API_MINOR) ||
         !nonzero(Descriptor->ABIID) || !nonzero(Descriptor->TargetID) ||
         Descriptor->Flags != 0)
       return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
@@ -872,7 +890,10 @@ NevercStatus registerPluginCallingConvention(
     constexpr uint64_t Required =
         offsetof(NevercCallingConventionDescriptor, DestroyUserData) +
         sizeof(NevercCallingConventionDescriptor::DestroyUserData);
-    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_CALLING_CONVENTION_API_MAJOR,
+                     NEVERC_CALLING_CONVENTION_API_MINOR) ||
         !nonzero(Descriptor->CallingConventionID) ||
         !nonzero(Descriptor->TargetID) || Descriptor->Flags != 0)
       return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
@@ -880,7 +901,10 @@ NevercStatus registerPluginCallingConvention(
     PluginRegistrationRecord Record;
     Record.Kind = PluginRegistrationKind::CallingConvention;
     Record.Interface = Descriptor->CallingConventionID;
-    Record.CallingConvention = *Descriptor;
+    std::memcpy(
+        &Record.CallingConvention, Descriptor,
+        std::min<size_t>(Descriptor->Header.StructSize,
+                         sizeof(Record.CallingConvention)));
     if (!copyString(Descriptor->CanonicalName, Record.CanonicalName, false) ||
         !canonicalName(Record.CanonicalName) ||
         llvm::any_of(Transaction->Records,
@@ -908,7 +932,9 @@ NevercStatus registerPluginMCSchema(
     constexpr uint64_t Required =
         offsetof(NevercMCSchemaDescriptor, DestroyUserData) +
         sizeof(NevercMCSchemaDescriptor::DestroyUserData);
-    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_MC_API_MAJOR, NEVERC_MC_API_MINOR) ||
         !nonzero(Descriptor->SchemaID) || !nonzero(Descriptor->TargetID) ||
         Descriptor->Flags != 0)
       return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
@@ -939,6 +965,129 @@ NevercStatus registerPluginMCSchema(
   });
 }
 
+NevercStatus registerPluginMCEncoder(
+    void *Registrar, const NevercMCEncoderDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercMCEncoderDescriptor, DestroyUserData) +
+        sizeof(NevercMCEncoderDescriptor::DestroyUserData);
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_MC_API_MAJOR, NEVERC_MC_API_MINOR) ||
+        !nonzero(Descriptor->ProviderID) ||
+        !nonzero(Descriptor->TargetID) ||
+        !nonzero(Descriptor->SchemaID) ||
+        Descriptor->MaximumInstructionLength == 0 ||
+        Descriptor->MaximumInstructionLength > 4096 ||
+        Descriptor->Reserved != 0 || Descriptor->Flags != 0 ||
+        !Descriptor->EncodeInstruction)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::MCEncoder;
+    Record.Interface = Descriptor->ProviderID;
+    Record.MCEncoder = *Descriptor;
+    if (llvm::any_of(
+            Transaction->Records,
+            [&](const PluginRegistrationRecord &Existing) {
+              return Existing.Kind == PluginRegistrationKind::MCEncoder &&
+                     Existing.Interface.High == Record.Interface.High &&
+                     Existing.Interface.Low == Record.Interface.Low;
+            }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginMCDecoder(
+    void *Registrar, const NevercMCDecoderDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercMCDecoderDescriptor, DestroyUserData) +
+        sizeof(NevercMCDecoderDescriptor::DestroyUserData);
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_MC_API_MAJOR, NEVERC_MC_API_MINOR) ||
+        !nonzero(Descriptor->ProviderID) ||
+        !nonzero(Descriptor->TargetID) ||
+        !nonzero(Descriptor->SchemaID) ||
+        Descriptor->MaximumInstructionLength == 0 ||
+        Descriptor->MaximumInstructionLength > 4096 ||
+        Descriptor->Reserved != 0 || Descriptor->Flags != 0 ||
+        !Descriptor->DecodeInstruction)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::MCDecoder;
+    Record.Interface = Descriptor->ProviderID;
+    Record.MCDecoder = *Descriptor;
+    if (llvm::any_of(
+            Transaction->Records,
+            [&](const PluginRegistrationRecord &Existing) {
+              return Existing.Kind == PluginRegistrationKind::MCDecoder &&
+                     Existing.Interface.High == Record.Interface.High &&
+                     Existing.Interface.Low == Record.Interface.Low;
+            }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginMCAsmBackend(
+    void *Registrar, const NevercMCAsmBackendDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercMCAsmBackendDescriptor, DestroyUserData) +
+        sizeof(NevercMCAsmBackendDescriptor::DestroyUserData);
+    const bool ValidAlignment =
+        Descriptor && Descriptor->MinimumInstructionAlignment != 0 &&
+        Descriptor->MinimumInstructionAlignment <= 4096 &&
+        (Descriptor->MinimumInstructionAlignment &
+         (Descriptor->MinimumInstructionAlignment - 1)) == 0;
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_MC_API_MAJOR, NEVERC_MC_API_MINOR) ||
+        !nonzero(Descriptor->ProviderID) ||
+        !nonzero(Descriptor->TargetID) ||
+        !nonzero(Descriptor->SchemaID) ||
+        Descriptor->MaximumLayoutIterations == 0 ||
+        Descriptor->MaximumLayoutIterations > 64 || !ValidAlignment ||
+        Descriptor->Flags != 0 || !Descriptor->GetFixupKindInfo ||
+        !Descriptor->MapRelocation ||
+        !Descriptor->ShouldRelaxFixup ||
+        !Descriptor->RelaxFragment || !Descriptor->ApplyFixup ||
+        !Descriptor->WriteNops)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::MCAsmBackend;
+    Record.Interface = Descriptor->ProviderID;
+    Record.MCAsmBackend = *Descriptor;
+    if (llvm::any_of(
+            Transaction->Records,
+            [&](const PluginRegistrationRecord &Existing) {
+              return Existing.Kind ==
+                         PluginRegistrationKind::MCAsmBackend &&
+                     Existing.Interface.High == Record.Interface.High &&
+                     Existing.Interface.Low == Record.Interface.Low;
+            }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
 NevercStatus registerPluginObjectFormat(
     void *Registrar, const NevercObjectFormatDescriptor *Descriptor) {
   auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
@@ -946,8 +1095,23 @@ NevercStatus registerPluginObjectFormat(
     constexpr uint64_t Required =
         offsetof(NevercObjectFormatDescriptor, DestroyUserData) +
         sizeof(NevercObjectFormatDescriptor::DestroyUserData);
-    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
-        !nonzero(Descriptor->FormatID) || Descriptor->Flags != 0)
+    constexpr NevercObjectFormatFlags KnownFlags =
+        NEVERC_OBJECT_FORMAT_CAN_PROBE |
+        NEVERC_OBJECT_FORMAT_CAN_READ |
+        NEVERC_OBJECT_FORMAT_CAN_WRITE;
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_OBJECT_FORMAT_API_MAJOR,
+                     NEVERC_OBJECT_FORMAT_API_MINOR) ||
+        !nonzero(Descriptor->FormatID) ||
+        (Descriptor->Flags & ~KnownFlags) != 0 ||
+        (((Descriptor->Flags & NEVERC_OBJECT_FORMAT_CAN_PROBE) != 0) !=
+         (Descriptor->Probe != nullptr)) ||
+        (((Descriptor->Flags & NEVERC_OBJECT_FORMAT_CAN_READ) != 0) !=
+         (Descriptor->Reader != nullptr)) ||
+        (((Descriptor->Flags & NEVERC_OBJECT_FORMAT_CAN_WRITE) != 0) !=
+         (Descriptor->Writer != nullptr)) ||
+        (Descriptor->Reader != nullptr && Descriptor->Probe == nullptr))
       return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
 
     PluginRegistrationRecord Record;
@@ -995,12 +1159,20 @@ NevercStatus registerPluginCodeGenEdge(
               Kind <= NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE) ||
              Kind >= NEVERC_CODEGEN_PRODUCT_CUSTOM;
     };
-    if (!Descriptor || !validHeader(Descriptor->Header, Required) ||
+    constexpr NevercCodeGenEdgeFlags KnownFlags =
+        NEVERC_CODEGEN_EDGE_COARSE | NEVERC_CODEGEN_EDGE_BUILTIN;
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR) ||
         !nonzero(Descriptor->EdgeID) || !nonzero(Descriptor->TargetID) ||
         !ValidProduct(Descriptor->InputKind) ||
         !ValidProduct(Descriptor->OutputKind) ||
         Descriptor->InputKind == Descriptor->OutputKind ||
-        Descriptor->Flags != 0)
+        (Descriptor->Flags & ~KnownFlags) != 0 ||
+        ((Descriptor->Flags & NEVERC_CODEGEN_EDGE_COARSE) != 0 &&
+         (Descriptor->Flags & NEVERC_CODEGEN_EDGE_BUILTIN) != 0) ||
+        (Descriptor->CoarseLower &&
+         (Descriptor->Flags & NEVERC_CODEGEN_EDGE_COARSE) == 0))
       return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
 
     PluginRegistrationRecord Record;
@@ -1009,6 +1181,11 @@ NevercStatus registerPluginCodeGenEdge(
     Record.CodeGenEdge = *Descriptor;
     if (!copyString(Descriptor->CanonicalName, Record.CanonicalName, false) ||
         !canonicalName(Record.CanonicalName) ||
+        !copyString(Descriptor->CompatibilityKey,
+                    Record.CodeGenCompatibilityKey, true) ||
+        !copyString(Descriptor->ProviderID, Record.ProviderID, true) ||
+        (!Record.ProviderID.empty() &&
+         !canonicalName(Record.ProviderID)) ||
         !copyInterfaceIDs(Descriptor->Dependencies,
                           Record.TargetReferences) ||
         llvm::any_of(Transaction->Records,
@@ -1023,6 +1200,8 @@ NevercStatus registerPluginCodeGenEdge(
 
     Record.CodeGenEdge.CanonicalName = {};
     Record.CodeGenEdge.Dependencies = {};
+    Record.CodeGenEdge.CompatibilityKey = {};
+    Record.CodeGenEdge.ProviderID = {};
     Record.OwnedUserData = Descriptor->UserData;
     Record.DestroyUserData = Descriptor->DestroyUserData;
     Transaction->Records.push_back(std::move(Record));

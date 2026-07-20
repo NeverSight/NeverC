@@ -2,6 +2,7 @@
 #include "neverc/Plugin/Host/PluginTargetRegistry.h"
 #include "llvm/Support/Error.h"
 #include "gtest/gtest.h"
+#include <array>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -76,6 +77,83 @@ NevercStatus NEVERC_CALL classifyInvalidDirect(
   return neverc_status_ok();
 }
 
+NevercStatus NEVERC_CALL classifyIndirectAliased(
+    void *, const NevercABIFunctionQuery *,
+    NevercABIArgumentClassification *ReturnValue,
+    NevercABIArgumentClassificationArray *Arguments) {
+  ReturnValue->Kind = NEVERC_ABI_ARGUMENT_DIRECT;
+  auto *Argument =
+      static_cast<NevercABIArgumentClassification *>(Arguments->Data);
+  Argument->Kind = NEVERC_ABI_ARGUMENT_INDIRECT_ALIASED;
+  Argument->Alignment = 8;
+  Argument->AddressSpace = 3;
+  Argument->PaddingCoercion = NEVERC_ABI_COERCE_INTEGER;
+  Argument->PaddingBitWidth = 32;
+  Argument->Flags = NEVERC_ABI_ARGUMENT_REALIGN |
+                    NEVERC_ABI_ARGUMENT_PADDING_INREG;
+  return neverc_status_ok();
+}
+
+const std::array<NevercABICoercionElement, 2> &
+coerceAndExpandElements() {
+  static const auto Elements = [] {
+    std::array<NevercABICoercionElement, 2> Result{};
+    for (NevercABICoercionElement &Element : Result)
+      Element.Header = {sizeof(Element), NEVERC_TARGET_ABI_API_MAJOR,
+                        NEVERC_TARGET_ABI_API_MINOR, 0};
+    Result[0].Coercion = NEVERC_ABI_COERCE_INTEGER;
+    Result[0].BitWidth = 32;
+    Result[0].Offset = 0;
+    Result[1].Coercion = NEVERC_ABI_COERCE_FLOAT;
+    Result[1].BitWidth = 32;
+    Result[1].Offset = 8;
+    return Result;
+  }();
+  return Elements;
+}
+
+NevercStatus NEVERC_CALL classifyCoerceAndExpand(
+    void *, const NevercABIFunctionQuery *,
+    NevercABIArgumentClassification *ReturnValue,
+    NevercABIArgumentClassificationArray *Arguments) {
+  ReturnValue->Kind = NEVERC_ABI_ARGUMENT_DIRECT;
+  auto *Argument =
+      static_cast<NevercABIArgumentClassification *>(Arguments->Data);
+  const auto &Elements = coerceAndExpandElements();
+  Argument->Kind = NEVERC_ABI_ARGUMENT_COERCE_AND_EXPAND;
+  Argument->CoerceAndExpandSize = 12;
+  Argument->CoerceAndExpandElements = {
+      Elements.data(), Elements.size(),
+      sizeof(NevercABICoercionElement)};
+  return neverc_status_ok();
+}
+
+NevercStatus NEVERC_CALL classifyOverlappingCoerceAndExpand(
+    void *, const NevercABIFunctionQuery *,
+    NevercABIArgumentClassification *ReturnValue,
+    NevercABIArgumentClassificationArray *Arguments) {
+  static const auto Elements = [] {
+    std::array<NevercABICoercionElement, 2> Result{};
+    for (NevercABICoercionElement &Element : Result) {
+      Element.Header = {sizeof(Element), NEVERC_TARGET_ABI_API_MAJOR,
+                        NEVERC_TARGET_ABI_API_MINOR, 0};
+      Element.Coercion = NEVERC_ABI_COERCE_INTEGER;
+      Element.BitWidth = 64;
+    }
+    Result[1].Offset = 4;
+    return Result;
+  }();
+  ReturnValue->Kind = NEVERC_ABI_ARGUMENT_DIRECT;
+  auto *Argument =
+      static_cast<NevercABIArgumentClassification *>(Arguments->Data);
+  Argument->Kind = NEVERC_ABI_ARGUMENT_COERCE_AND_EXPAND;
+  Argument->CoerceAndExpandSize = 16;
+  Argument->CoerceAndExpandElements = {
+      Elements.data(), Elements.size(),
+      sizeof(NevercABICoercionElement)};
+  return neverc_status_ok();
+}
+
 NevercABITypeDescriptor type(NevercABITypeKind Kind,
                               uint32_t Width,
                               uint32_t Alignment) {
@@ -85,6 +163,10 @@ NevercABITypeDescriptor type(NevercABITypeKind Kind,
   Type.Kind = Kind;
   Type.BitWidth = Width;
   Type.Alignment = Alignment;
+  if (Kind == NEVERC_ABI_TYPE_RECORD ||
+      Kind == NEVERC_ABI_TYPE_UNION ||
+      Kind == NEVERC_ABI_TYPE_ARRAY)
+    Type.Flags |= NEVERC_ABI_TYPE_AGGREGATE;
   return Type;
 }
 
@@ -206,6 +288,59 @@ TEST(PluginABILoweringTest, RejectsInconsistentClassification) {
 
   ASSERT_FALSE(static_cast<bool>(Result));
   EXPECT_NE(errorText(Result.takeError()).find("indirect flags"),
+            std::string::npos);
+}
+
+TEST(PluginABILoweringTest, AcceptsIndirectAliasedWithPadding) {
+  PluginTargetSnapshot::NamedRecord ABI;
+  ABI.CanonicalName = "test.indirect-aliased";
+  ABI.ClassifyFunction = classifyIndirectAliased;
+
+  auto Result = PluginABILowering(ABI, nullptr)
+                    .classify(type(NEVERC_ABI_TYPE_VOID, 0, 0),
+                              {type(NEVERC_ABI_TYPE_RECORD, 64, 8)},
+                              false, 1);
+
+  ASSERT_TRUE(static_cast<bool>(Result))
+      << errorText(Result.takeError());
+  ASSERT_EQ(Result->Arguments.size(), 1U);
+  EXPECT_EQ(Result->Arguments[0].Kind,
+            NEVERC_ABI_ARGUMENT_INDIRECT_ALIASED);
+  EXPECT_EQ(Result->Arguments[0].AddressSpace, 3U);
+  EXPECT_EQ(Result->Arguments[0].PaddingCoercion,
+            NEVERC_ABI_COERCE_INTEGER);
+}
+
+TEST(PluginABILoweringTest, AcceptsCoerceAndExpandLayout) {
+  PluginTargetSnapshot::NamedRecord ABI;
+  ABI.CanonicalName = "test.coerce-and-expand";
+  ABI.ClassifyFunction = classifyCoerceAndExpand;
+
+  auto Result = PluginABILowering(ABI, nullptr)
+                    .classify(type(NEVERC_ABI_TYPE_VOID, 0, 0),
+                              {type(NEVERC_ABI_TYPE_RECORD, 96, 4)},
+                              false, 1);
+
+  ASSERT_TRUE(static_cast<bool>(Result))
+      << errorText(Result.takeError());
+  ASSERT_EQ(Result->Arguments.size(), 1U);
+  EXPECT_EQ(Result->Arguments[0].Kind,
+            NEVERC_ABI_ARGUMENT_COERCE_AND_EXPAND);
+  EXPECT_EQ(Result->Arguments[0].CoerceAndExpandElements.Count, 2U);
+}
+
+TEST(PluginABILoweringTest, RejectsOverlappingCoerceAndExpandLayout) {
+  PluginTargetSnapshot::NamedRecord ABI;
+  ABI.CanonicalName = "test.overlapping-coerce-and-expand";
+  ABI.ClassifyFunction = classifyOverlappingCoerceAndExpand;
+
+  auto Result = PluginABILowering(ABI, nullptr)
+                    .classify(type(NEVERC_ABI_TYPE_VOID, 0, 0),
+                              {type(NEVERC_ABI_TYPE_RECORD, 128, 8)},
+                              false, 1);
+
+  ASSERT_FALSE(static_cast<bool>(Result));
+  EXPECT_NE(errorText(Result.takeError()).find("overlap"),
             std::string::npos);
 }
 

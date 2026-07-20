@@ -25,8 +25,11 @@ set(NEVERC_TEST_SOURCES
   PluginLTOIRPassTests.cpp
   PluginMIRPassTests.cpp
   PluginABILoweringDriverTests.cpp
+  PluginBuiltinTargetProviderDriverTests.cpp
+  PluginNewBackendTests.cpp
   PluginFrontendLifecycleTests.cpp
   PluginPreprocessorProviderTests.cpp
+  PluginAssemblerTests.cpp
   PluginVFSIntegrationTests.cpp
   AndroidKernelRuntimeTests.cpp
   LTOTests.cpp
@@ -209,6 +212,61 @@ target_compile_definitions(neverc-test-plugin-target-valid PRIVATE
   NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-valid"
   NEVERC_TEST_REGISTER_TARGET=1
 )
+add_neverc_registry_fixture(PluginTestTarget)
+target_compile_definitions(PluginTestTarget PRIVATE
+  NEVERC_TEST_PLUGIN_ID="org.neverc.test.new-backend"
+  NEVERC_TEST_PLUGIN_DISPLAY_NAME="NeverC Test Target Backend"
+  NEVERC_TEST_REGISTER_TARGET=1
+  NEVERC_TEST_REGISTER_NOBJ_BACKEND=1
+  NEVERC_TEST_TARGET_ID_LOW=42
+  NEVERC_TEST_TARGET_NAME="neverc-test"
+  NEVERC_TEST_TARGET_RAW_TRIPLE="neverc-test-none"
+  NEVERC_TEST_TARGET_ARCHITECTURE="neverc"
+  NEVERC_TEST_CONCURRENCY=NEVERC_CONCURRENCY_THREAD_SAFE
+)
+
+add_library(neverc-test-plugin-target-language MODULE
+  Inputs/Plugin/TargetLanguagePlugin.c
+)
+target_include_directories(neverc-test-plugin-target-language PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-target-language PRIVATE c_std_11)
+set_target_properties(neverc-test-plugin-target-language PROPERTIES PREFIX "")
+
+add_library(neverc-test-plugin-assembly-provider MODULE
+  Inputs/Plugin/AssemblyProviderPlugin.c
+)
+target_include_directories(neverc-test-plugin-assembly-provider PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-assembly-provider PRIVATE c_std_11)
+set_target_properties(neverc-test-plugin-assembly-provider PROPERTIES PREFIX "")
+
+add_library(neverc-test-plugin-mc-emission-hook MODULE
+  Inputs/Plugin/MCEmissionHookPlugin.c
+)
+target_include_directories(neverc-test-plugin-mc-emission-hook PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-mc-emission-hook PRIVATE c_std_11)
+set_target_properties(
+  neverc-test-plugin-mc-emission-hook PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-post-write MODULE
+  Inputs/Plugin/ObjectPostWritePlugin.c
+)
+target_include_directories(neverc-test-plugin-object-post-write PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-post-write PRIVATE c_std_11
+)
+set_target_properties(
+  neverc-test-plugin-object-post-write PROPERTIES PREFIX ""
+)
+
 add_neverc_registry_fixture(neverc-test-plugin-target-indirect)
 target_compile_definitions(neverc-test-plugin-target-indirect PRIVATE
   NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-indirect"
@@ -216,6 +274,40 @@ target_compile_definitions(neverc-test-plugin-target-indirect PRIVATE
   NEVERC_TEST_TARGET_ID_LOW=2
   NEVERC_TEST_TARGET_NAME="test.fixture-target-indirect"
   NEVERC_TEST_ABI_FORCE_INDIRECT_ARGUMENTS=1
+)
+add_neverc_registry_fixture(neverc-test-plugin-target-coerce-expand)
+target_compile_definitions(neverc-test-plugin-target-coerce-expand PRIVATE
+  NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-coerce-expand"
+  NEVERC_TEST_REGISTER_TARGET=1
+  NEVERC_TEST_TARGET_ID_LOW=3
+  NEVERC_TEST_TARGET_NAME="test.fixture-target-coerce-expand"
+  NEVERC_TEST_ABI_COERCE_AND_EXPAND_ARGUMENTS=1
+)
+add_neverc_registry_fixture(neverc-test-plugin-target-ms-va)
+target_compile_definitions(neverc-test-plugin-target-ms-va PRIVATE
+  NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-ms-va"
+  NEVERC_TEST_REGISTER_TARGET=1
+  NEVERC_TEST_TARGET_ID_LOW=4
+  NEVERC_TEST_TARGET_NAME="test.fixture-target-ms-va"
+  NEVERC_TEST_HAS_MS_VA_LIST=1
+)
+add_neverc_registry_fixture(neverc-test-plugin-target-indirect-aliased)
+target_compile_definitions(neverc-test-plugin-target-indirect-aliased PRIVATE
+  NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-indirect-aliased"
+  NEVERC_TEST_REGISTER_TARGET=1
+  NEVERC_TEST_TARGET_ID_LOW=5
+  NEVERC_TEST_TARGET_NAME="test.fixture-target-indirect-aliased"
+  NEVERC_TEST_ABI_INDIRECT_ALIASED_ARGUMENTS=1
+)
+add_neverc_registry_fixture(neverc-test-plugin-target-cc-plan)
+target_compile_definitions(neverc-test-plugin-target-cc-plan PRIVATE
+  NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-cc-plan"
+  NEVERC_TEST_REGISTER_TARGET=1
+  NEVERC_TEST_TARGET_ID_LOW=6
+  NEVERC_TEST_TARGET_NAME="test.fixture-target-cc-plan"
+  NEVERC_TEST_TARGET_RAW_TRIPLE="x86_64-unknown-linux-gnu"
+  NEVERC_TEST_TARGET_ARCHITECTURE="x86_64"
+  NEVERC_TEST_CC_PLAN_X86=1
 )
 add_neverc_registry_fixture(neverc-test-plugin-target-unknown-format)
 target_compile_definitions(neverc-test-plugin-target-unknown-format PRIVATE
@@ -1244,22 +1336,44 @@ gtest_discover_tests(neverc-plugin-ir-tests
 
 add_executable(neverc-plugin-target-mc-tests
   PluginABILoweringTests.cpp
+  PluginAssemblyProviderTests.cpp
+  PluginBuiltinTargetProviderTests.cpp
+  PluginCallingConventionTests.cpp
+  PluginCodeGenRouteTests.cpp
+  PluginIRToMIRProviderTests.cpp
+  PluginMIRToMCProviderTests.cpp
+  PluginBuiltinObjectFormatTests.cpp
   PluginMCBridgeTests.cpp
+  PluginMCBuilderTests.cpp
+  PluginMCComponentProviderTests.cpp
+  PluginMCEmissionHookTests.cpp
+  PluginMCEncodeDecodeTests.cpp
+  PluginMCHandleTests.cpp
+  PluginMCLayoutTests.cpp
+  PluginMCSchemaTests.cpp
+  PluginObjectBuilderTests.cpp
+  PluginObjectReaderTests.cpp
+  PluginObjectSchemaTests.cpp
+  PluginObjectWriterTests.cpp
   PluginTargetInfoTests.cpp
+  PluginTargetLanguageTests.cpp
   PluginTargetMCABICompileTests.cpp
   PluginTargetDescriptorTests.cpp
   PluginTargetRegistryTests.cpp
+  PluginTargetSchemaTests.cpp
 )
 target_link_libraries(neverc-plugin-target-mc-tests PRIVATE
   GTest::gtest
   GTest::gtest_main
   LLVMTarget
   nevercCompiler
+  nevercEmit
   nevercPluginMCObject
   nevercPluginTarget
 )
 if("AArch64" IN_LIST LLVM_TARGETS_TO_BUILD)
   target_link_libraries(neverc-plugin-target-mc-tests PRIVATE
+    LLVMAArch64AsmParser
     LLVMAArch64CodeGen
     LLVMAArch64Desc
     LLVMAArch64Info
@@ -1268,6 +1382,7 @@ if("AArch64" IN_LIST LLVM_TARGETS_TO_BUILD)
 endif()
 if("X86" IN_LIST LLVM_TARGETS_TO_BUILD)
   target_link_libraries(neverc-plugin-target-mc-tests PRIVATE
+    LLVMX86AsmParser
     LLVMX86CodeGen
     LLVMX86Desc
     LLVMX86Info
@@ -1277,8 +1392,32 @@ target_include_directories(neverc-plugin-target-mc-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
 target_compile_features(neverc-plugin-target-mc-tests PRIVATE cxx_std_17)
+if(MSVC)
+  set_source_files_properties(
+    PluginMCComponentProviderTests.cpp
+    PluginMCEmissionHookTests.cpp
+    PluginMCEncodeDecodeTests.cpp
+    PROPERTIES COMPILE_OPTIONS "/GR-"
+    )
+else()
+  set_source_files_properties(
+    PluginMCComponentProviderTests.cpp
+    PluginMCEmissionHookTests.cpp
+    PluginMCEncodeDecodeTests.cpp
+    PROPERTIES COMPILE_OPTIONS "-fno-rtti"
+    )
+endif()
 target_compile_definitions(neverc-plugin-target-mc-tests PRIVATE
+  NEVERC_SOURCE_DIR="${CMAKE_SOURCE_DIR}/.."
+  NEVERC_PLUGIN_TARGET_SCHEMA_ROOT="${CMAKE_SOURCE_DIR}/../pluginsdk/schemas/targets"
+  NEVERC_PLUGIN_TARGET_SCHEMA_GENERATOR="$<TARGET_FILE:neverc-plugin-target-schema-gen>"
+  NEVERC_TEST_MINIMAL_PLUGIN="$<TARGET_FILE:neverc-test-plugin-minimal>"
   NEVERC_TEST_TARGET_VALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-valid>"
+  NEVERC_TEST_TARGET_LANGUAGE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-language>"
+  NEVERC_TEST_ASSEMBLY_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-assembly-provider>"
+  NEVERC_TEST_MC_EMISSION_HOOK_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mc-emission-hook>"
+  NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-post-write>"
+  NEVERC_TEST_NEW_BACKEND_PLUGIN="$<TARGET_FILE:PluginTestTarget>"
   NEVERC_TEST_TARGET_UNKNOWN_FORMAT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-unknown-format>"
   NEVERC_TEST_TARGET_REGISTRATION_FAILURE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-registration-failure>"
 )
@@ -1289,9 +1428,16 @@ add_dependencies(neverc-plugin-target-mc-tests
   neverc-plugin-mc-abi-compile-c23
   neverc-plugin-object-abi-compile-c11
   neverc-plugin-object-abi-compile-c23
+  neverc-test-plugin-minimal
   neverc-test-plugin-target-valid
+  neverc-test-plugin-target-language
+  neverc-test-plugin-assembly-provider
+  neverc-test-plugin-mc-emission-hook
+  neverc-test-plugin-object-post-write
+  PluginTestTarget
   neverc-test-plugin-target-unknown-format
   neverc-test-plugin-target-registration-failure
+  neverc-plugin-target-schema-gen
 )
 gtest_discover_tests(neverc-plugin-target-mc-tests
   PROPERTIES
@@ -1461,7 +1607,15 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_TEST_MIR_PASS_MODULE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mir-pass-module>"
   NEVERC_TEST_MIR_PASS_BASIC_BLOCK_PLUGIN="$<TARGET_FILE:neverc-test-plugin-mir-pass-basic-block>"
   NEVERC_TEST_TARGET_VALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-valid>"
+  NEVERC_TEST_TARGET_LANGUAGE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-language>"
+  NEVERC_TEST_ASSEMBLY_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-assembly-provider>"
+  NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-post-write>"
+  NEVERC_TEST_NEW_BACKEND_PLUGIN="$<TARGET_FILE:PluginTestTarget>"
   NEVERC_TEST_TARGET_INDIRECT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-indirect>"
+  NEVERC_TEST_TARGET_COERCE_EXPAND_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-coerce-expand>"
+  NEVERC_TEST_TARGET_MS_VA_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-ms-va>"
+  NEVERC_TEST_TARGET_INDIRECT_ALIASED_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-indirect-aliased>"
+  NEVERC_TEST_TARGET_CC_PLAN_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-cc-plan>"
   NEVERC_TEST_FRONTEND_LIFECYCLE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-frontend-lifecycle>"
   NEVERC_TEST_PREP_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-provider>"
   NEVERC_TEST_PREP_PROVIDER_MISSING_EOF_PLUGIN="$<TARGET_FILE:neverc-test-plugin-prep-provider-missing-eof>"
@@ -1532,7 +1686,15 @@ add_dependencies(neverc-tests
   neverc-test-plugin-mir-pass-module
   neverc-test-plugin-mir-pass-basic-block
   neverc-test-plugin-target-valid
+  neverc-test-plugin-target-language
+  neverc-test-plugin-assembly-provider
+  neverc-test-plugin-object-post-write
+  PluginTestTarget
   neverc-test-plugin-target-indirect
+  neverc-test-plugin-target-coerce-expand
+  neverc-test-plugin-target-ms-va
+  neverc-test-plugin-target-indirect-aliased
+  neverc-test-plugin-target-cc-plan
   neverc-test-plugin-frontend-lifecycle
   neverc-test-plugin-prep-provider
   neverc-test-plugin-prep-provider-missing-eof

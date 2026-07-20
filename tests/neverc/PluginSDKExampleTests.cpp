@@ -121,3 +121,37 @@ TEST_F(PluginSDKExampleTest, StableIRAndMIRPassExamplesRun) {
     EXPECT_TRUE(fs::exists(Object));
   }
 }
+
+TEST_F(PluginSDKExampleTest, MCObserverExampleRunsDuringObjectEmission) {
+  const fs::path Plugin = buildSDKExample("MCObserverPlugin");
+  ASSERT_TRUE(fs::exists(Plugin));
+  const fs::path Source = tmpFile("mc_observer_example.c");
+  const fs::path Object = tmpFile("mc_observer_example.o");
+  writeFile(Source, "int mc_observer_example(void) { return 42; }\n");
+
+  CmdResult Result =
+      ncc({std::string("-fplugin=") + Plugin.string(), "--no-default-config",
+           "-fno-lto", "-c", Source.string(), "-o", Object.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_TRUE(fs::exists(Object));
+  EXPECT_NE(Result.err.find("MCObserverPlugin observed an instruction"),
+            std::string::npos)
+      << Result.err;
+}
+
+TEST_F(PluginSDKExampleTest,
+       ObjectRewriteExampleAddsSectionThroughTransactionalPipeline) {
+  const fs::path Plugin = buildSDKExample("ObjectRewritePlugin");
+  ASSERT_TRUE(fs::exists(Plugin));
+  const fs::path Source = tmpFile("object_rewrite_example.c");
+  const fs::path Object = tmpFile("object_rewrite_example.o");
+  writeFile(Source, "int object_rewrite_example(void) { return 42; }\n");
+
+  CmdResult Result =
+      ncc({std::string("-fplugin=") + Plugin.string(), "--no-default-config",
+           "-fno-lto", "-c", Source.string(), "-o", Object.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  ASSERT_TRUE(fs::exists(Object));
+  EXPECT_NE(readFile(Object).find("NeverC object rewrite example"),
+            std::string::npos);
+}

@@ -120,6 +120,24 @@ registerMCSchema(void *, void *RegistrarContext,
 }
 
 NevercStatus NEVERC_CALL
+registerMCEncoder(void *, void *RegistrarContext,
+                  const NevercMCEncoderDescriptor *Descriptor) {
+  return registerPluginMCEncoder(RegistrarContext, Descriptor);
+}
+
+NevercStatus NEVERC_CALL
+registerMCDecoder(void *, void *RegistrarContext,
+                  const NevercMCDecoderDescriptor *Descriptor) {
+  return registerPluginMCDecoder(RegistrarContext, Descriptor);
+}
+
+NevercStatus NEVERC_CALL
+registerMCAsmBackend(void *, void *RegistrarContext,
+                     const NevercMCAsmBackendDescriptor *Descriptor) {
+  return registerPluginMCAsmBackend(RegistrarContext, Descriptor);
+}
+
+NevercStatus NEVERC_CALL
 registerObjectFormat(void *, void *RegistrarContext,
                      const NevercObjectFormatDescriptor *Descriptor) {
   return registerPluginObjectFormat(RegistrarContext, Descriptor);
@@ -148,11 +166,17 @@ const NevercCallingConventionAPI CallingConventionAPI = {
     registerCallingConvention,
 };
 
-const NevercMCAPI MCAPI = {
-    {sizeof(NevercMCAPI), NEVERC_MC_API_MAJOR, NEVERC_MC_API_MINOR, 0},
-    nullptr,
-    registerMCSchema,
-};
+NevercMCAPI makeMCAPI() {
+  NevercMCAPI API{};
+  API.Header = {sizeof(API), NEVERC_MC_API_MAJOR, NEVERC_MC_API_MINOR, 0};
+  API.RegisterSchema = registerMCSchema;
+  API.RegisterEncoder = registerMCEncoder;
+  API.RegisterDecoder = registerMCDecoder;
+  API.RegisterAsmBackend = registerMCAsmBackend;
+  return API;
+}
+
+const NevercMCAPI MCAPI = makeMCAPI();
 
 const NevercObjectAPI ObjectAPI = {
     {sizeof(NevercObjectAPI), NEVERC_OBJECT_API_MAJOR,

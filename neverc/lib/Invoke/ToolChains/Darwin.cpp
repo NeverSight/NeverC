@@ -448,13 +448,7 @@ Darwin::Darwin(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
     : MachO(D, Triple, Args), TargetInitialized(false) {}
 
 types::ID MachO::LookupTypeForExtension(llvm::StringRef Ext) const {
-  types::ID Ty = ToolChain::LookupTypeForExtension(Ext);
-
-  // Darwin always preprocesses assembly files (unless -x is used explicitly).
-  if (Ty == types::TY_PP_Asm)
-    return types::TY_Asm;
-
-  return Ty;
+  return ToolChain::LookupTypeForExtension(Ext);
 }
 
 bool MachO::HasNativeLLVMSupport() const { return true; }

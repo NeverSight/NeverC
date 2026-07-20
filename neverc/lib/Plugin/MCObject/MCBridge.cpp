@@ -1,9 +1,7 @@
 #include "neverc/Plugin/Host/MCPluginBridge.h"
 #include "neverc/Plugin/Host/PluginHandleArena.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/MC/MCExpr.h"
 #include "llvm/Support/Error.h"
-#include <algorithm>
 #include <cstddef>
 
 using namespace llvm;
@@ -136,6 +134,20 @@ NevercStatus NEVERC_CALL GetNextInstruction(
     return writeHandle(Bridge->wrapInstruction(**It),
                        OutInstruction);
   }
+  for (auto &Section : Unit->sections()) {
+    for (auto &Fragment : Section->Fragments) {
+      for (auto It = Fragment->Instructions.begin();
+           It != Fragment->Instructions.end(); ++It) {
+        if (It->get() != Resolved)
+          continue;
+        ++It;
+        if (It == Fragment->Instructions.end())
+          return mcStatus(NEVERC_STATUS_NOT_FOUND);
+        return writeHandle(Bridge->wrapInstruction(**It),
+                           OutInstruction);
+      }
+    }
+  }
   return mcStatus(NEVERC_STATUS_STALE_HANDLE);
 }
 
@@ -157,6 +169,12 @@ NevercStatus NEVERC_CALL GetInstructionInfo(
     consumeError(Opcode.takeError());
     return mcStatus(NEVERC_STATUS_NOT_FOUND);
   }
+  auto SchemaToken = Bridge->schemaToken();
+  if (!SchemaToken) {
+    consumeError(SchemaToken.takeError());
+    return mcStatus(NEVERC_STATUS_NOT_FOUND);
+  }
+  OutInfo->SchemaToken = *SchemaToken;
   OutInfo->Opcode = *Opcode;
   OutInfo->Flags = Resolved->getFlags();
   OutInfo->OperandCount = Resolved->getNumOperands();
@@ -199,13 +217,20 @@ NevercStatus NEVERC_CALL GetOperandValue(
   const MCOperand &Value =
       Reference->Instruction->getOperand(Reference->Index);
   OutValue->Reserved = 0;
+  OutValue->SchemaToken = {};
   if (Value.isReg()) {
     auto Register = Bridge->stableRegister(Value.getReg());
     if (!Register) {
       consumeError(Register.takeError());
       return mcStatus(NEVERC_STATUS_NOT_FOUND);
     }
+    auto SchemaToken = Bridge->schemaToken();
+    if (!SchemaToken) {
+      consumeError(SchemaToken.takeError());
+      return mcStatus(NEVERC_STATUS_NOT_FOUND);
+    }
     OutValue->Kind = NEVERC_MC_OPERAND_REGISTER;
+    OutValue->SchemaToken = *SchemaToken;
     OutValue->Payload.Register = *Register;
   } else if (Value.isImm()) {
     OutValue->Kind = NEVERC_MC_OPERAND_IMMEDIATE;
@@ -217,13 +242,7 @@ NevercStatus NEVERC_CALL GetOperandValue(
     OutValue->Kind = NEVERC_MC_OPERAND_DOUBLE_FLOAT;
     OutValue->Payload.DoubleFloatBits = Value.getDFPImm();
   } else if (Value.isExpr()) {
-    OutValue->Kind = NEVERC_MC_OPERAND_EXPRESSION;
-    auto Expression = Bridge->wrapExpression(*Value.getExpr());
-    if (!Expression) {
-      consumeError(Expression.takeError());
-      return mcStatus(NEVERC_STATUS_RESOURCE_EXHAUSTED);
-    }
-    OutValue->Payload.Expression = *Expression;
+    return mcStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
   } else if (Value.isInst()) {
     OutValue->Kind = NEVERC_MC_OPERAND_INSTRUCTION;
     auto Instruction =
@@ -242,14 +261,19 @@ NevercStatus NEVERC_CALL GetOperandValue(
 
 NevercStatus NEVERC_CALL CreateInstruction(
     void *Context, NevercTaskHandle Task,
-    NevercMCMutationHandle Mutation, uint32_t Opcode,
+    NevercMCMutationHandle Mutation,
+    NevercMCSchemaTokenHandle SchemaToken, uint32_t Opcode,
     NevercMCInstHandle *OutInstruction) {
   NevercStatus Status;
   MCPluginBridge *Bridge = bridge(Context, Task, Status);
-  return Bridge ? writeHandle(
-                      Bridge->createInstruction(Mutation, Opcode),
-                      OutInstruction)
-                : Status;
+  if (!Bridge)
+    return Status;
+  Status = Bridge->checkSchemaToken(SchemaToken);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  return writeHandle(
+      Bridge->createInstruction(Mutation, SchemaToken, Opcode),
+      OutInstruction);
 }
 
 NevercStatus NEVERC_CALL AppendOperand(
@@ -313,9 +337,12 @@ NevercStatus NEVERC_CALL EraseInstruction(
 
 MCPluginBridge::MCPluginBridge(
     PluginTaskContext &TaskValue, PluginMCUnit &UnitValue,
-    const PluginTargetSnapshot::NamedRecord *Schema)
-    : Task(TaskValue), Unit(UnitValue) {
+    const PluginTargetSnapshot::NamedRecord *SchemaValue,
+    bool AllowMutationValue)
+    : Task(TaskValue), Unit(UnitValue), Schema(SchemaValue),
+      MutationAllowed(AllowMutationValue) {
   if (Schema) {
+    Unit.setTargetIdentity(Schema->TargetID, Schema->Digest);
     for (const auto &Value : Schema->Opcodes) {
       StableToBackendOpcodes[Value.StableID] = Value.BackendValue;
       BackendToStableOpcodes[Value.BackendValue] = Value.StableID;
@@ -327,8 +354,13 @@ MCPluginBridge::MCPluginBridge(
   }
   API.Header = {sizeof(API), NEVERC_MC_API_MAJOR,
                 NEVERC_MC_API_MINOR, 0};
-  API.Context = this;
+  initializeMCSchemaAPI(API, *this);
+  initializeMCBuilderAPI(API, *this);
+  initializeMCExpressionAPI(API, *this);
   API.RegisterSchema = nullptr;
+  API.RegisterEncoder = nullptr;
+  API.RegisterDecoder = nullptr;
+  API.RegisterAsmBackend = nullptr;
   API.BeginMutation = BeginMutation;
   API.CommitMutation = CommitMutation;
   API.AbandonMutation = AbandonMutation;
@@ -351,125 +383,7 @@ MCPluginBridge::~MCPluginBridge() {
     (void)Task.handles().release(MutationHandle,
                                  PluginMCMutationHandleKind);
   }
-  finishBorrowedHandles();
-  for (const auto &Entry : InstructionHandles)
-    (void)Task.handles().release(
-        Entry.first, PluginMCInstructionHandleKind);
-  if (!neverc_handle_is_null(UnitHandle))
-    (void)Task.handles().release(UnitHandle, PluginMCUnitHandleKind);
-}
-
-Expected<NevercMCUnitHandle> MCPluginBridge::unit() {
-  if (!neverc_handle_is_null(UnitHandle))
-    return UnitHandle;
-  auto Handle = Task.handles().create(PluginMCUnitHandleKind, &Unit);
-  if (!Handle)
-    return Handle.takeError();
-  UnitHandle = *Handle;
-  return UnitHandle;
-}
-
-Expected<NevercMCInstHandle>
-MCPluginBridge::wrapInstruction(MCInst &Instruction) {
-  for (const auto &Entry : InstructionHandles)
-    if (Entry.second == &Instruction)
-      return Entry.first;
-  auto Handle = Task.handles().create(PluginMCInstructionHandleKind,
-                                      &Instruction);
-  if (!Handle)
-    return Handle.takeError();
-  InstructionHandles.push_back({*Handle, &Instruction});
-  return *Handle;
-}
-
-Expected<NevercMCOperandHandle>
-MCPluginBridge::wrapOperand(MCInst &Instruction, uint64_t Index) {
-  auto *Reference = new (std::nothrow)
-      OperandReference{&Instruction, Index};
-  if (!Reference)
-    return createStringError(inconvertibleErrorCode(),
-                             "failed to allocate MC operand reference");
-  auto Handle = Task.handles().create(
-      PluginMCOperandHandleKind, Reference,
-      [](void *Value) { delete static_cast<OperandReference *>(Value); });
-  if (!Handle) {
-    delete Reference;
-    return Handle.takeError();
-  }
-  BorrowedOperandHandles.push_back(*Handle);
-  return *Handle;
-}
-
-Expected<NevercMCExprHandle>
-MCPluginBridge::wrapExpression(const MCExpr &Expression) {
-  auto Handle = Task.handles().create(
-      PluginMCExpressionHandleKind,
-      const_cast<MCExpr *>(&Expression));
-  if (!Handle)
-    return Handle.takeError();
-  BorrowedExpressionHandles.push_back(*Handle);
-  return *Handle;
-}
-
-NevercStatus MCPluginBridge::resolveUnit(
-    NevercMCUnitHandle Handle, PluginMCUnit **OutUnit) const {
-  if (!OutUnit)
-    return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
-  void *Payload = nullptr;
-  NevercStatus Status =
-      Task.handles().resolve(Handle, PluginMCUnitHandleKind, &Payload);
-  if (Status.Code != NEVERC_STATUS_OK)
-    return Status;
-  if (Payload != &Unit)
-    return mcStatus(NEVERC_STATUS_WRONG_SCOPE);
-  *OutUnit = &Unit;
-  return neverc_status_ok();
-}
-
-NevercStatus MCPluginBridge::resolveInstruction(
-    NevercMCInstHandle Handle, MCInst **OutInstruction) const {
-  if (!OutInstruction)
-    return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
-  void *Payload = nullptr;
-  NevercStatus Status = Task.handles().resolve(
-      Handle, PluginMCInstructionHandleKind, &Payload);
-  if (Status.Code != NEVERC_STATUS_OK)
-    return Status;
-  auto *Instruction = static_cast<MCInst *>(Payload);
-  if (!containsInstruction(Instruction))
-    return mcStatus(NEVERC_STATUS_STALE_HANDLE);
-  *OutInstruction = Instruction;
-  return neverc_status_ok();
-}
-
-NevercStatus MCPluginBridge::resolveOperand(
-    NevercMCOperandHandle Handle,
-    OperandReference **OutOperand) const {
-  if (!OutOperand)
-    return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
-  void *Payload = nullptr;
-  NevercStatus Status = Task.handles().resolve(
-      Handle, PluginMCOperandHandleKind, &Payload);
-  if (Status.Code != NEVERC_STATUS_OK)
-    return Status;
-  auto *Reference = static_cast<OperandReference *>(Payload);
-  if (!containsInstruction(Reference->Instruction))
-    return mcStatus(NEVERC_STATUS_STALE_HANDLE);
-  *OutOperand = Reference;
-  return neverc_status_ok();
-}
-
-NevercStatus MCPluginBridge::resolveExpression(
-    NevercMCExprHandle Handle, const MCExpr **OutExpression) const {
-  if (!OutExpression)
-    return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
-  void *Payload = nullptr;
-  NevercStatus Status = Task.handles().resolve(
-      Handle, PluginMCExpressionHandleKind, &Payload);
-  if (Status.Code != NEVERC_STATUS_OK)
-    return Status;
-  *OutExpression = static_cast<const MCExpr *>(Payload);
-  return neverc_status_ok();
+  advanceUnitGeneration();
 }
 
 Expected<uint32_t>
@@ -523,15 +437,20 @@ bool MCPluginBridge::containsInstruction(
       return Value.get() == Instruction;
     });
   };
-  return Contains(Unit.instructions()) || Contains(Detached);
+  return Unit.contains(Instruction) || Contains(Detached);
 }
 
 Expected<NevercMCInstHandle> MCPluginBridge::createInstruction(
-    NevercMCMutationHandle Mutation, uint32_t Opcode) {
+    NevercMCMutationHandle Mutation,
+    NevercMCSchemaTokenHandle SchemaToken, uint32_t Opcode) {
   NevercStatus Status = checkMutation(Mutation);
   if (Status.Code != NEVERC_STATUS_OK)
     return createStringError(inconvertibleErrorCode(),
                              "invalid MC mutation handle");
+  Status = checkSchemaToken(SchemaToken);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return createStringError(inconvertibleErrorCode(),
+                             "invalid MC target schema token");
   auto Backend = backendOpcode(Opcode);
   if (!Backend)
     return Backend.takeError();
@@ -558,6 +477,9 @@ NevercStatus MCPluginBridge::appendOperand(
   MCOperand Operand;
   switch (Value.Kind) {
   case NEVERC_MC_OPERAND_REGISTER: {
+    Status = checkSchemaToken(Value.SchemaToken);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
     auto Register = backendRegister(Value.Payload.Register);
     if (!Register) {
       consumeError(Register.takeError());
@@ -567,24 +489,37 @@ NevercStatus MCPluginBridge::appendOperand(
     break;
   }
   case NEVERC_MC_OPERAND_IMMEDIATE:
+    if (!neverc_handle_is_null(Value.SchemaToken))
+      return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     Operand = MCOperand::createImm(Value.Payload.Immediate);
     break;
   case NEVERC_MC_OPERAND_SINGLE_FLOAT:
+    if (!neverc_handle_is_null(Value.SchemaToken))
+      return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     Operand = MCOperand::createSFPImm(Value.Payload.SingleFloatBits);
     break;
   case NEVERC_MC_OPERAND_DOUBLE_FLOAT:
+    if (!neverc_handle_is_null(Value.SchemaToken))
+      return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     Operand = MCOperand::createDFPImm(Value.Payload.DoubleFloatBits);
     break;
   case NEVERC_MC_OPERAND_EXPRESSION: {
-    const MCExpr *Expression = nullptr;
-    Status =
-        resolveExpression(Value.Payload.Expression, &Expression);
+    PluginMCExpression *Expression = nullptr;
+    Status = resolveExpression(Value.Payload.Expression, &Expression);
     if (Status.Code != NEVERC_STATUS_OK)
       return Status;
-    Operand = MCOperand::createExpr(Expression);
-    break;
+    if (Expression->Kind == NEVERC_MC_EXPRESSION_TARGET_VARIANT) {
+      Status = checkSchemaToken(Value.SchemaToken);
+      if (Status.Code != NEVERC_STATUS_OK)
+        return Status;
+    } else if (!neverc_handle_is_null(Value.SchemaToken)) {
+      return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    }
+    return mcStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
   }
   case NEVERC_MC_OPERAND_INSTRUCTION: {
+    if (!neverc_handle_is_null(Value.SchemaToken))
+      return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     MCInst *Nested = nullptr;
     Status =
         resolveInstruction(Value.Payload.Instruction, &Nested);
@@ -619,25 +554,42 @@ NevercStatus MCPluginBridge::insertInstructionBefore(
   Status = resolveInstruction(Instruction, &InstructionValue);
   if (Status.Code != NEVERC_STATUS_OK)
     return Status;
-  auto PositionIt = llvm::find_if(
-      Unit.instructions(), [PositionValue](const auto &Value) {
-        return Value.get() == PositionValue;
-      });
+  PluginMCUnit::InstructionStorage *Storage = nullptr;
+  if (Unit.contains(PositionValue)) {
+    auto It = llvm::find_if(
+        Unit.instructions(), [PositionValue](const auto &Value) {
+          return Value.get() == PositionValue;
+        });
+    if (It != Unit.instructions().end())
+      Storage = &Unit.instructions();
+    if (!Storage)
+      for (auto &Section : Unit.sections())
+        for (auto &Fragment : Section->Fragments)
+          if (llvm::any_of(
+                  Fragment->Instructions,
+                  [PositionValue](const auto &Value) {
+                    return Value.get() == PositionValue;
+                  }))
+            Storage = &Fragment->Instructions;
+  }
   auto InstructionIt =
       llvm::find_if(Detached, [InstructionValue](const auto &Value) {
         return Value.get() == InstructionValue;
       });
-  if (PositionIt == Unit.instructions().end() ||
-      InstructionIt == Detached.end())
+  if (!Storage || InstructionIt == Detached.end())
     return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
-  Unit.instructions().splice(PositionIt, Detached, InstructionIt);
-  UndoActions.push_back([this, InstructionValue] {
+  auto PositionIt =
+      llvm::find_if(*Storage, [PositionValue](const auto &Value) {
+        return Value.get() == PositionValue;
+      });
+  Storage->splice(PositionIt, Detached, InstructionIt);
+  UndoActions.push_back([this, Storage, InstructionValue] {
     auto It = llvm::find_if(
-        Unit.instructions(), [InstructionValue](const auto &Value) {
+        *Storage, [InstructionValue](const auto &Value) {
           return Value.get() == InstructionValue;
         });
-    if (It != Unit.instructions().end())
-      Detached.splice(Detached.end(), Unit.instructions(), It);
+    if (It != Storage->end())
+      Detached.splice(Detached.end(), *Storage, It);
   });
   return neverc_status_ok();
 }
@@ -689,32 +641,44 @@ NevercStatus MCPluginBridge::replaceInstruction(
   Status = resolveInstruction(Replacement, &New);
   if (Status.Code != NEVERC_STATUS_OK)
     return Status;
-  auto OldIt = llvm::find_if(Unit.instructions(), [Old](const auto &Value) {
-    return Value.get() == Old;
-  });
+  PluginMCUnit::InstructionStorage *Storage = nullptr;
+  if (llvm::any_of(Unit.instructions(), [Old](const auto &Value) {
+        return Value.get() == Old;
+      }))
+    Storage = &Unit.instructions();
+  if (!Storage)
+    for (auto &Section : Unit.sections())
+      for (auto &Fragment : Section->Fragments)
+        if (llvm::any_of(Fragment->Instructions,
+                         [Old](const auto &Value) {
+                           return Value.get() == Old;
+                         }))
+          Storage = &Fragment->Instructions;
   auto NewIt = llvm::find_if(Detached, [New](const auto &Value) {
     return Value.get() == New;
   });
-  if (OldIt == Unit.instructions().end() || NewIt == Detached.end())
+  if (!Storage || NewIt == Detached.end())
     return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  auto OldIt = llvm::find_if(*Storage, [Old](const auto &Value) {
+    return Value.get() == Old;
+  });
   auto Next = std::next(OldIt);
   MCInst *NextValue =
-      Next == Unit.instructions().end() ? nullptr : Next->get();
-  Removed.splice(Removed.end(), Unit.instructions(), OldIt);
+      Next == Storage->end() ? nullptr : Next->get();
+  Removed.splice(Removed.end(), *Storage, OldIt);
   auto InsertAt = NextValue
-                      ? llvm::find_if(
-                            Unit.instructions(),
-                            [NextValue](const auto &Value) {
-                              return Value.get() == NextValue;
-                            })
-                      : Unit.instructions().end();
-  Unit.instructions().splice(InsertAt, Detached, NewIt);
-  UndoActions.push_back([this, Old, New, NextValue] {
-    auto NewIt = llvm::find_if(Unit.instructions(), [New](const auto &Value) {
+                      ? llvm::find_if(*Storage,
+                                      [NextValue](const auto &Value) {
+                                        return Value.get() == NextValue;
+                                      })
+                      : Storage->end();
+  Storage->splice(InsertAt, Detached, NewIt);
+  UndoActions.push_back([this, Storage, Old, New, NextValue] {
+    auto NewIt = llvm::find_if(*Storage, [New](const auto &Value) {
       return Value.get() == New;
     });
-    if (NewIt != Unit.instructions().end())
-      Detached.splice(Detached.end(), Unit.instructions(), NewIt);
+    if (NewIt != Storage->end())
+      Detached.splice(Detached.end(), *Storage, NewIt);
     auto OldIt = llvm::find_if(Removed, [Old](const auto &Value) {
       return Value.get() == Old;
     });
@@ -722,13 +686,13 @@ NevercStatus MCPluginBridge::replaceInstruction(
       return;
     auto Position =
         NextValue
-            ? llvm::find_if(
-                  Unit.instructions(), [NextValue](const auto &Value) {
+            ? llvm::find_if(*Storage, [NextValue](const auto &Value) {
                     return Value.get() == NextValue;
                   })
-            : Unit.instructions().end();
-    Unit.instructions().splice(Position, Removed, OldIt);
+            : Storage->end();
+    Storage->splice(Position, Removed, OldIt);
   });
+  invalidateInstruction(Old);
   return neverc_status_ok();
 }
 
@@ -741,16 +705,29 @@ NevercStatus MCPluginBridge::eraseInstruction(
   Status = resolveInstruction(Instruction, &Value);
   if (Status.Code != NEVERC_STATUS_OK)
     return Status;
-  auto It = llvm::find_if(Unit.instructions(), [Value](const auto &Entry) {
+  PluginMCUnit::InstructionStorage *Storage = nullptr;
+  if (llvm::any_of(Unit.instructions(), [Value](const auto &Entry) {
+        return Entry.get() == Value;
+      }))
+    Storage = &Unit.instructions();
+  if (!Storage)
+    for (auto &Section : Unit.sections())
+      for (auto &Fragment : Section->Fragments)
+        if (llvm::any_of(Fragment->Instructions,
+                         [Value](const auto &Entry) {
+                           return Entry.get() == Value;
+                         }))
+          Storage = &Fragment->Instructions;
+  if (!Storage)
+    return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  auto It = llvm::find_if(*Storage, [Value](const auto &Entry) {
     return Entry.get() == Value;
   });
-  if (It == Unit.instructions().end())
-    return mcStatus(NEVERC_STATUS_INVALID_ARGUMENT);
   auto Next = std::next(It);
   MCInst *NextValue =
-      Next == Unit.instructions().end() ? nullptr : Next->get();
-  Removed.splice(Removed.end(), Unit.instructions(), It);
-  UndoActions.push_back([this, Value, NextValue] {
+      Next == Storage->end() ? nullptr : Next->get();
+  Removed.splice(Removed.end(), *Storage, It);
+  UndoActions.push_back([this, Storage, Value, NextValue] {
     auto RemovedIt = llvm::find_if(Removed, [Value](const auto &Entry) {
       return Entry.get() == Value;
     });
@@ -758,51 +735,14 @@ NevercStatus MCPluginBridge::eraseInstruction(
       return;
     auto Position =
         NextValue
-            ? llvm::find_if(
-                  Unit.instructions(), [NextValue](const auto &Entry) {
+            ? llvm::find_if(*Storage, [NextValue](const auto &Entry) {
                     return Entry.get() == NextValue;
                   })
-            : Unit.instructions().end();
-    Unit.instructions().splice(Position, Removed, RemovedIt);
+            : Storage->end();
+    Storage->splice(Position, Removed, RemovedIt);
   });
+  invalidateInstruction(Value);
   return neverc_status_ok();
-}
-
-void MCPluginBridge::finishBorrowedHandles() {
-  for (NevercMCOperandHandle Handle : BorrowedOperandHandles)
-    (void)Task.handles().release(Handle, PluginMCOperandHandleKind);
-  BorrowedOperandHandles.clear();
-  for (NevercMCExprHandle Handle : BorrowedExpressionHandles)
-    (void)Task.handles().release(Handle, PluginMCExpressionHandleKind);
-  BorrowedExpressionHandles.clear();
-}
-
-void MCPluginBridge::invalidateInstruction(MCInst *Instruction) {
-  for (auto It = BorrowedOperandHandles.begin();
-       It != BorrowedOperandHandles.end();) {
-    void *Payload = nullptr;
-    NevercStatus Status = Task.handles().resolve(
-        *It, PluginMCOperandHandleKind, &Payload);
-    auto *Reference =
-        Status.Code == NEVERC_STATUS_OK
-            ? static_cast<OperandReference *>(Payload)
-            : nullptr;
-    if (Reference && Reference->Instruction == Instruction) {
-      (void)Task.handles().release(*It, PluginMCOperandHandleKind);
-      It = BorrowedOperandHandles.erase(It);
-    } else {
-      ++It;
-    }
-  }
-  for (auto It = InstructionHandles.begin();
-       It != InstructionHandles.end(); ++It) {
-    if (It->second != Instruction)
-      continue;
-    (void)Task.handles().release(
-        It->first, PluginMCInstructionHandleKind);
-    InstructionHandles.erase(It);
-    break;
-  }
 }
 
 } // namespace neverc::plugin

@@ -240,18 +240,18 @@ X86RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   // NeverC custom calling convention: an optional "csr" spec segment overrides
   // the callee-saved set. Build the (null-terminated) list lazily per function.
   if (CC == CallingConv::NeverC_Custom &&
-      F.hasFnAttribute(neverc::CallConvAttrName)) {
-    neverc::CustomCCSpec Spec;
-    neverc::parseCustomCCSpec(
-        F.getFnAttribute(neverc::CallConvAttrName).getValueAsString(), Spec);
-    if (!Spec.CalleeSaved.empty()) {
+      F.hasFnAttribute(neverc::CallConvPlanAttrName)) {
+    neverc::CustomCCPlan Plan;
+    if (neverc::parseCustomCCPlan(
+            F.getFnAttribute(neverc::CallConvPlanAttrName)
+                .getValueAsString(),
+            Plan) &&
+        !Plan.CalleeSaved.empty()) {
       auto &Info = *MF->getInfo<X86MachineFunctionInfo>();
       Info.NeverCCSRSaveList.clear();
-      for (StringRef Name : Spec.CalleeSaved) {
-        MCRegister R = neverCParseX86Reg(Name);
-        if (R.isValid())
-          Info.NeverCCSRSaveList.push_back(R);
-      }
+      for (uint32_t Register : Plan.CalleeSaved)
+        if (Register < getNumRegs())
+          Info.NeverCCSRSaveList.push_back(Register);
       Info.NeverCCSRSaveList.push_back(0); // null terminator
       return Info.NeverCCSRSaveList.data();
     }

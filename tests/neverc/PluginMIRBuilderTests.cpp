@@ -374,7 +374,7 @@ TEST(PluginMIRBuilderTest, CommitPreflightSafelyRejectsMalformedOperands) {
   BuilderTestState State;
   ASSERT_TRUE(State.initialize(0));
   MachineFunction &MF = *State.Machine.MF;
-  MIRPluginBridge Bridge(State.Scope.task(), MF, 1, false,
+  MIRPluginBridge Bridge(State.Scope.task(), MF, 1, {}, {},
                          "org.neverc.test.mir-builder");
   const NevercMIRAPI &API = Bridge.api();
   auto Function = Bridge.machineFunction();
@@ -581,7 +581,8 @@ TEST(PluginMIRBuilderTest, AppendsEveryPublicOperandKind) {
   Source->addOperand(MF, MachineOperand::CreateShuffleMask(ShuffleMask));
   Source->addOperand(MF, MachineOperand::CreateDbgInstrRef(12, 13));
 
-  MIRPluginBridge Bridge(State.Scope.task(), MF, 1, true);
+  MIRPluginBridge Bridge(State.Scope.task(), MF, 1, "test-schema",
+                         "test-schema");
   const NevercMIRAPI &API = Bridge.api();
   auto Function = Bridge.machineFunction();
   auto WrappedSource = Bridge.wrapInstruction(*Source);
@@ -730,7 +731,35 @@ TEST(PluginMIRBuilderTest, RequiresNegotiationForTargetOpcodes) {
           .Code,
       NEVERC_STATUS_OK);
 
-  MIRPluginBridge EnabledBridge(State.Scope.task(), *State.Machine.MF, 1, true);
+  MIRPluginBridge MismatchedBridge(State.Scope.task(), *State.Machine.MF, 1,
+                                   "host-schema", "plugin-schema");
+  const NevercMIRAPI &MismatchedAPI = MismatchedBridge.api();
+  auto MismatchedFunction = MismatchedBridge.machineFunction();
+  auto MismatchedBlock =
+      MismatchedBridge.wrapBasicBlock(*State.Machine.Blocks[0]);
+  ASSERT_TRUE(MismatchedFunction && MismatchedBlock);
+  Mutation = {};
+  ASSERT_EQ(MismatchedAPI
+                .BeginMutation(MismatchedAPI.Context,
+                               State.Scope.task().handle(),
+                               *MismatchedFunction, &Mutation)
+                .Code,
+            NEVERC_STATUS_OK);
+  EXPECT_EQ(MismatchedAPI
+                .CreateInstruction(
+                    MismatchedAPI.Context, State.Scope.task().handle(),
+                    Mutation, *MismatchedBlock, {}, TargetOpcode,
+                    &Instruction)
+                .Code,
+            NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
+  EXPECT_EQ(MismatchedAPI
+                .AbortMutation(MismatchedAPI.Context,
+                               State.Scope.task().handle(), Mutation)
+                .Code,
+            NEVERC_STATUS_OK);
+
+  MIRPluginBridge EnabledBridge(State.Scope.task(), *State.Machine.MF, 1,
+                                "test-schema", "test-schema");
   const NevercMIRAPI &EnabledAPI = EnabledBridge.api();
   auto EnabledFunction = EnabledBridge.machineFunction();
   auto EnabledBlock = EnabledBridge.wrapBasicBlock(*State.Machine.Blocks[0]);

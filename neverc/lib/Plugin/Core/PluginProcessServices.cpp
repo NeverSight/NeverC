@@ -373,6 +373,13 @@ std::shared_ptr<PluginHostService> PluginProcessServices::findHostService(
   return It == HostServices.end() ? nullptr : It->second;
 }
 
+bool PluginProcessServices::currentCallbackHasSuffix(
+    const PluginTaskContext &Task, StringRef Suffix) const {
+  const CallbackScope *Scope = currentCallbackScope(*this);
+  return Scope && Scope->Task == &Task &&
+         StringRef(Scope->CallbackName).ends_with(Suffix);
+}
+
 void PluginProcessServices::enterCallbackScope(PluginSession &Session,
                                                PluginTaskContext *Task,
                                                StringRef PluginID,

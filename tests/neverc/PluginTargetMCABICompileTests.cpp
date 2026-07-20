@@ -14,12 +14,14 @@ TEST(PluginTargetMCABITest, PublishesIndependentFirstVersionPrefixes) {
   static_assert(std::is_standard_layout_v<NevercTargetABIAPI>);
   static_assert(std::is_standard_layout_v<NevercCallingConventionAPI>);
   static_assert(std::is_standard_layout_v<NevercMCAPI>);
+  static_assert(std::is_standard_layout_v<NevercAssemblyProviderAPI>);
   static_assert(std::is_standard_layout_v<NevercObjectAPI>);
   static_assert(std::is_standard_layout_v<NevercObjectFormatAPI>);
   static_assert(offsetof(NevercTargetAPI, Header) == 0);
   static_assert(offsetof(NevercTargetABIAPI, Header) == 0);
   static_assert(offsetof(NevercCallingConventionAPI, Header) == 0);
   static_assert(offsetof(NevercMCAPI, Header) == 0);
+  static_assert(offsetof(NevercAssemblyProviderAPI, Header) == 0);
   static_assert(offsetof(NevercObjectAPI, Header) == 0);
   static_assert(offsetof(NevercObjectFormatAPI, Header) == 0);
 
@@ -27,6 +29,7 @@ TEST(PluginTargetMCABITest, PublishesIndependentFirstVersionPrefixes) {
   static_assert(NEVERC_TARGET_ABI_API_MAJOR == 1);
   static_assert(NEVERC_CALLING_CONVENTION_API_MAJOR == 1);
   static_assert(NEVERC_MC_API_MAJOR == 1);
+  static_assert(NEVERC_ASSEMBLY_PROVIDER_API_MAJOR == 1);
   static_assert(NEVERC_OBJECT_API_MAJOR == 1);
   static_assert(NEVERC_OBJECT_FORMAT_API_MAJOR == 1);
   EXPECT_EQ(NEVERC_TARGET_INTERFACE_STABILITY, NEVERC_INTERFACE_STABLE);
@@ -41,12 +44,14 @@ TEST(PluginTargetMCABITest, PublishesIndependentFirstVersionPrefixes) {
 }
 
 TEST(PluginTargetMCABITest, AssignsUniqueNonzeroDomainInterfaceIDs) {
-  constexpr std::array<NevercInterfaceID, 6> IDs = {{
+  constexpr std::array<NevercInterfaceID, 7> IDs = {{
       {NEVERC_INTERFACE_TARGET_HIGH, NEVERC_INTERFACE_TARGET_LOW},
       {NEVERC_INTERFACE_TARGET_ABI_HIGH, NEVERC_INTERFACE_TARGET_ABI_LOW},
       {NEVERC_INTERFACE_CALLING_CONVENTION_HIGH,
        NEVERC_INTERFACE_CALLING_CONVENTION_LOW},
       {NEVERC_INTERFACE_MC_HIGH, NEVERC_INTERFACE_MC_LOW},
+      {NEVERC_INTERFACE_ASSEMBLY_PROVIDER_HIGH,
+       NEVERC_INTERFACE_ASSEMBLY_PROVIDER_LOW},
       {NEVERC_INTERFACE_OBJECT_HIGH, NEVERC_INTERFACE_OBJECT_LOW},
       {NEVERC_INTERFACE_OBJECT_FORMAT_HIGH,
        NEVERC_INTERFACE_OBJECT_FORMAT_LOW},

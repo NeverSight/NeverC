@@ -17,6 +17,8 @@ _Static_assert(sizeof(NevercMCFixupHandle) == sizeof(NevercHandle),
                "MC fixup handle must remain opaque");
 _Static_assert(offsetof(NevercMCAPI, Header) == 0,
                "MC table must begin with ABI header");
+_Static_assert(offsetof(NevercAssemblyProviderAPI, Header) == 0,
+               "assembly provider table must begin with ABI header");
 _Static_assert(offsetof(NevercMCCallerPackProbe, Value) == 1,
                "MC header did not restore caller packing");
 
@@ -24,7 +26,9 @@ int neverc_plugin_mc_c_compile_fixture(void) {
   NevercMCUnitHandle Unit = {0, 0};
   NevercMCInstHandle Instruction = {0, 0};
   NevercMCFixupHandle Fixup = {0, 0};
+  NevercAssemblySourceCursorHandle Cursor = {0, 0};
   return neverc_handle_is_null(Unit) == NEVERC_TRUE &&
          neverc_handle_is_null(Instruction) == NEVERC_TRUE &&
-         neverc_handle_is_null(Fixup) == NEVERC_TRUE;
+         neverc_handle_is_null(Fixup) == NEVERC_TRUE &&
+         neverc_handle_is_null(Cursor) == NEVERC_TRUE;
 }

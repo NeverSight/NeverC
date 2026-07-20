@@ -1,5 +1,7 @@
 #include "neverc/Plugin/PluginCore.h"
 #include "neverc/Plugin/PluginDriver.h"
+#include "neverc/Plugin/PluginMC.h"
+#include "neverc/Plugin/PluginObject.h"
 #include "neverc/Plugin/PluginTarget.h"
 #include <stddef.h>
 #include <stdio.h>
@@ -231,6 +233,12 @@ static void NEVERC_CALL destroy_fixture_userdata(void *UserData) {
 #ifndef NEVERC_TEST_TARGET_NAME
 #define NEVERC_TEST_TARGET_NAME "test.fixture-target"
 #endif
+#ifndef NEVERC_TEST_TARGET_RAW_TRIPLE
+#define NEVERC_TEST_TARGET_RAW_TRIPLE "test-unknown-none-none"
+#endif
+#ifndef NEVERC_TEST_TARGET_ARCHITECTURE
+#define NEVERC_TEST_TARGET_ARCHITECTURE "test"
+#endif
 
 static const NevercTargetID FixtureTargetID = {
     UINT64_C(0x4e43545445535401), NEVERC_TEST_TARGET_ID_LOW};
@@ -238,6 +246,523 @@ static const NevercTargetABIID FixtureABIID = {
     UINT64_C(0x4e43544142495401), NEVERC_TEST_TARGET_ID_LOW};
 static const NevercCallingConventionID FixtureCallingConventionID = {
     UINT64_C(0x4e43544343495401), NEVERC_TEST_TARGET_ID_LOW};
+
+#if defined(NEVERC_TEST_REGISTER_NOBJ_BACKEND)
+static const NevercObjectFormatID FixtureNObjFormatID = {
+    UINT64_C(0x4e434e4f424a0001), NEVERC_TEST_TARGET_ID_LOW};
+static const NevercInterfaceID FixtureNObjEdgeID = {
+    UINT64_C(0x4e434e4f424a4544), NEVERC_TEST_TARGET_ID_LOW};
+static const NevercInterfaceID FixtureNObjProductID = {
+    UINT64_C(0x4e434e4f424a5052), NEVERC_TEST_TARGET_ID_LOW};
+static const NevercInterfaceID FixtureNObjSchemaID = {
+    UINT64_C(0x4e434e4f424a5343), NEVERC_TEST_TARGET_ID_LOW};
+static const char FixtureNObjSchemaDigest[] =
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+static NevercStatus NEVERC_CALL parse_fixture_nobj_assembly(
+    const NevercPhaseFrame *Frame, NevercPhaseResult *OutResult,
+    void *UserData) {
+  const NevercAssemblyProviderAPI *Assembly =
+      (const NevercAssemblyProviderAPI *)UserData;
+  static const char SourceText[] = ".nobj_answer\n";
+  static const uint8_t Code[] = {UINT8_C(0x2a), UINT8_C(0xc3)};
+  NevercAssemblyParseInputInfo Input;
+  const NevercMCAPI *MC = NULL;
+  NevercMCUnitHandle Unit = {0, 0};
+  NevercMCMutationHandle Mutation = {0, 0};
+  NevercMCSectionHandle Section = {0, 0};
+  NevercMCFragmentHandle Fragment = {0, 0};
+  NevercMCSymbolHandle Symbol = {0, 0};
+  NevercArtifactHandle Output = {0, 0};
+  NevercMCSectionDescriptor SectionDescriptor;
+  NevercMCFragmentDescriptor FragmentDescriptor;
+  NevercMCSymbolDescriptor SymbolDescriptor;
+  NevercStatus Status;
+
+  if (Frame == NULL || OutResult == NULL || Assembly == NULL)
+    return failed_status();
+  memset(&Input, 0, sizeof(Input));
+  Input.Header = (NevercABITableHeader){
+      sizeof(Input), NEVERC_ASSEMBLY_PROVIDER_API_MAJOR,
+      NEVERC_ASSEMBLY_PROVIDER_API_MINOR, 0};
+  Status = Assembly->GetParseInput(
+      Assembly->Context, Frame, Frame->Input, &Input);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  if (Input.Source.Buffer.Data == NULL ||
+      Input.Source.Buffer.Length != sizeof(SourceText) - 1 ||
+      memcmp(Input.Source.Buffer.Data, SourceText,
+             sizeof(SourceText) - 1) != 0)
+    return failed_status();
+
+  Status = Assembly->GetParseMCBuilder(
+      Assembly->Context, Frame, &MC, &Unit);
+  if (Status.Code != NEVERC_STATUS_OK || MC == NULL)
+    return failed_status();
+  Status = MC->BeginMutation(
+      MC->Context, Frame->Task, Unit, &Mutation);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  memset(&SectionDescriptor, 0, sizeof(SectionDescriptor));
+  SectionDescriptor.Header = (NevercABITableHeader){
+      sizeof(SectionDescriptor), NEVERC_MC_API_MAJOR,
+      NEVERC_MC_API_MINOR, 0};
+  SectionDescriptor.Name =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW(".text");
+  SectionDescriptor.Alignment = 1;
+  SectionDescriptor.Flags =
+      NEVERC_MC_SECTION_ALLOCATED | NEVERC_MC_SECTION_EXECUTABLE;
+  Status = MC->CreateSection(
+      MC->Context, Frame->Task, Mutation, &SectionDescriptor, &Section);
+  if (Status.Code != NEVERC_STATUS_OK)
+    goto abandon;
+
+  memset(&FragmentDescriptor, 0, sizeof(FragmentDescriptor));
+  FragmentDescriptor.Header = (NevercABITableHeader){
+      sizeof(FragmentDescriptor), NEVERC_MC_API_MAJOR,
+      NEVERC_MC_API_MINOR, 0};
+  FragmentDescriptor.Kind = NEVERC_MC_FRAGMENT_DATA;
+  FragmentDescriptor.ExplicitOffset = 0;
+  FragmentDescriptor.Alignment = 1;
+  FragmentDescriptor.Contents =
+      (NevercByteView){Code, sizeof(Code)};
+  Status = MC->CreateFragment(
+      MC->Context, Frame->Task, Mutation, Section,
+      &FragmentDescriptor, &Fragment);
+  if (Status.Code != NEVERC_STATUS_OK)
+    goto abandon;
+
+  memset(&SymbolDescriptor, 0, sizeof(SymbolDescriptor));
+  SymbolDescriptor.Header = (NevercABITableHeader){
+      sizeof(SymbolDescriptor), NEVERC_MC_API_MAJOR,
+      NEVERC_MC_API_MINOR, 0};
+  SymbolDescriptor.Name =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("answer");
+  SymbolDescriptor.Binding = NEVERC_MC_SYMBOL_BINDING_GLOBAL;
+  SymbolDescriptor.Visibility = NEVERC_MC_SYMBOL_VISIBILITY_DEFAULT;
+  SymbolDescriptor.Type = NEVERC_MC_SYMBOL_TYPE_FUNCTION;
+  SymbolDescriptor.Definition = NEVERC_MC_SYMBOL_DEFINITION_SECTION;
+  SymbolDescriptor.Section = Section;
+  SymbolDescriptor.Size = sizeof(Code);
+  SymbolDescriptor.Alignment = 1;
+  Status = MC->CreateSymbol(
+      MC->Context, Frame->Task, Mutation, &SymbolDescriptor, &Symbol);
+  if (Status.Code != NEVERC_STATUS_OK)
+    goto abandon;
+
+  Status = MC->CommitMutation(MC->Context, Frame->Task, Mutation);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = Assembly->PublishParsedMCUnit(
+      Assembly->Context, Frame, &Output);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  memset(OutResult, 0, sizeof(*OutResult));
+  OutResult->Header = (NevercABITableHeader){
+      sizeof(*OutResult), NEVERC_PLUGIN_ABI_MAJOR,
+      NEVERC_PLUGIN_ABI_MINOR, 0};
+  OutResult->Action = NEVERC_PHASE_REPLACE;
+  OutResult->Output = Output;
+  return neverc_status_ok();
+
+abandon:
+  (void)MC->AbandonMutation(
+      MC->Context, Frame->Task, Mutation);
+  return Status;
+}
+
+static uint32_t read_u32_le(const uint8_t *Data) {
+  return (uint32_t)Data[0] | ((uint32_t)Data[1] << 8) |
+         ((uint32_t)Data[2] << 16) | ((uint32_t)Data[3] << 24);
+}
+
+static void write_u32_le(uint8_t *Data, uint32_t Value) {
+  Data[0] = (uint8_t)Value;
+  Data[1] = (uint8_t)(Value >> 8);
+  Data[2] = (uint8_t)(Value >> 16);
+  Data[3] = (uint8_t)(Value >> 24);
+}
+
+static NevercStatus NEVERC_CALL probe_fixture_nobj(
+    void *UserData, const NevercObjectProbeRequest *Request,
+    NevercObjectProbeResult *Result) {
+  (void)UserData;
+  if (Request == NULL || Result == NULL)
+    return failed_status();
+  Result->Confidence = 0;
+  Result->ArtifactKind = NEVERC_OBJECT_ARTIFACT_UNKNOWN;
+  Result->ConsumedMinimum = 4;
+  if (Request->Input.Length >= 4 &&
+      memcmp(Request->Input.Data, "NOBJ", 4) == 0) {
+    Result->Confidence = NEVERC_OBJECT_PROBE_MAX_CONFIDENCE;
+    Result->ArtifactKind = NEVERC_OBJECT_ARTIFACT_RELOCATABLE;
+  }
+  return neverc_status_ok();
+}
+
+static NevercStatus NEVERC_CALL read_fixture_nobj(
+    void *UserData, const NevercObjectReadRequest *Request) {
+  NevercObjectSectionDescriptor Section;
+  NevercObjectSymbolDescriptor Symbol;
+  NevercObjectSectionHandle SectionHandle;
+  NevercObjectSymbolHandle SymbolHandle;
+  NevercStatus Status;
+  uint32_t TextSize;
+  (void)UserData;
+
+  if (Request == NULL || Request->Object == NULL ||
+      Request->Input.Length < 19 ||
+      memcmp(Request->Input.Data, "NOBJ", 4) != 0 ||
+      read_u32_le(Request->Input.Data + 4) != 1)
+    return failed_status();
+  TextSize = read_u32_le(Request->Input.Data + 8);
+  if (TextSize == 0 ||
+      Request->Input.Length < (uint64_t)12 + TextSize + 7 ||
+      memcmp(Request->Input.Data + 12 + TextSize, "answer", 7) != 0)
+    return failed_status();
+
+  memset(&Section, 0, sizeof(Section));
+  Section.Header.StructSize = sizeof(Section);
+  Section.Header.Major = NEVERC_OBJECT_API_MAJOR;
+  Section.Header.Minor = NEVERC_OBJECT_API_MINOR;
+  Section.Name = (NevercStringView)NEVERC_TEST_STRING_VIEW(".text");
+  Section.Kind = NEVERC_OBJECT_SECTION_KIND_TEXT;
+  Section.Flags =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_EXECUTABLE;
+  Section.Alignment = 1;
+  Section.Data.Data = Request->Input.Data + 12;
+  Section.Data.Length = TextSize;
+  Status = Request->Object->CreateSection(
+      Request->Object->Context, Request->Task, Request->Mutation,
+      &Section, &SectionHandle);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  memset(&Symbol, 0, sizeof(Symbol));
+  Symbol.Header.StructSize = sizeof(Symbol);
+  Symbol.Header.Major = NEVERC_OBJECT_API_MAJOR;
+  Symbol.Header.Minor = NEVERC_OBJECT_API_MINOR;
+  Symbol.Name = (NevercStringView)NEVERC_TEST_STRING_VIEW("answer");
+  Symbol.Binding = NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL;
+  Symbol.Visibility = NEVERC_OBJECT_SYMBOL_VISIBILITY_DEFAULT;
+  Symbol.Type = NEVERC_OBJECT_SYMBOL_TYPE_FUNCTION;
+  Symbol.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED;
+  Symbol.Section = SectionHandle;
+  Symbol.Size = TextSize;
+  Symbol.Alignment = 1;
+  Symbol.Flags = NEVERC_OBJECT_SYMBOL_EXPORTED;
+  return Request->Object->CreateSymbol(
+      Request->Object->Context, Request->Task, Request->Mutation,
+      &Symbol, &SymbolHandle);
+}
+
+static NevercStatus NEVERC_CALL write_fixture_nobj(
+    void *UserData, const NevercObjectWriteRequest *Request) {
+  NevercObjectSectionHandle Section;
+  NevercObjectSectionInfo Info;
+  NevercStatus Status;
+  uint8_t Header[12] = {'N', 'O', 'B', 'J'};
+  static const uint8_t Name[] = "answer";
+  (void)UserData;
+
+  if (Request == NULL || Request->Object == NULL ||
+      Request->Binary == NULL)
+    return failed_status();
+  Status = Request->Object->GetFirstSection(
+      Request->Object->Context, Request->Task, Request->Graph, &Section);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  memset(&Info, 0, sizeof(Info));
+  Info.Header.StructSize = sizeof(Info);
+  Info.Header.Major = NEVERC_OBJECT_API_MAJOR;
+  Info.Header.Minor = NEVERC_OBJECT_API_MINOR;
+  Status = Request->Object->GetSectionInfo(
+      Request->Object->Context, Request->Task, Section, &Info);
+  if (Status.Code != NEVERC_STATUS_OK || Info.Data.Length > UINT32_MAX)
+    return failed_status();
+
+  write_u32_le(Header + 4, 1);
+  write_u32_le(Header + 8, (uint32_t)Info.Data.Length);
+  Status = Request->Binary->Write(
+      Request->Binary->Context, Request->Task, Request->Builder,
+      (NevercByteView){Header, sizeof(Header)});
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = Request->Binary->Write(
+      Request->Binary->Context, Request->Task, Request->Builder,
+      Info.Data);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  return Request->Binary->Write(
+      Request->Binary->Context, Request->Task, Request->Builder,
+      (NevercByteView){Name, sizeof(Name)});
+}
+
+static NevercStatus NEVERC_CALL lower_fixture_nobj(
+    void *UserData, NevercTaskHandle Task,
+    const NevercCodeGenRequest *Request,
+    NevercCodeGenProductCandidate *OutCandidate) {
+  const NevercIOAPI *IO = (const NevercIOAPI *)UserData;
+  static const uint8_t Image[] = {
+      'N', 'O', 'B', 'J', 1, 0, 0, 0, 2, 0, 0, 0,
+      UINT8_C(0x2a), UINT8_C(0xc3),
+      'a', 'n', 's', 'w', 'e', 'r', 0};
+  NevercOutputSinkHandle Sink;
+  NevercOutputSeal Seal;
+  NevercStatus Status;
+  char Name[96];
+  int NameLength;
+
+  if (IO == NULL || Request == NULL || OutCandidate == NULL)
+    return failed_status();
+  NameLength = snprintf(Name, sizeof(Name), "test-target-%llu.nobj",
+                        (unsigned long long)Task.Value);
+  if (NameLength <= 0 || (size_t)NameLength >= sizeof(Name))
+    return failed_status();
+  Status = IO->BeginMemoryOutput(
+      IO->Context, Task,
+      (NevercStringView){Name, (uint64_t)NameLength}, 4096, &Sink);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = IO->OutputWrite(
+      IO->Context, Task, Sink,
+      (NevercByteView){Image, sizeof(Image)});
+  if (Status.Code != NEVERC_STATUS_OK) {
+    (void)IO->OutputAbort(IO->Context, Task, Sink);
+    return Status;
+  }
+  memset(&Seal, 0, sizeof(Seal));
+  Seal.Header.StructSize = sizeof(Seal);
+  Status = IO->OutputFinish(IO->Context, Task, Sink, &Seal);
+  if (Status.Code != NEVERC_STATUS_OK) {
+    (void)IO->OutputAbort(IO->Context, Task, Sink);
+    return Status;
+  }
+
+  memset(OutCandidate, 0, sizeof(*OutCandidate));
+  OutCandidate->Header.StructSize = sizeof(*OutCandidate);
+  OutCandidate->Header.Major = NEVERC_TARGET_API_MAJOR;
+  OutCandidate->Header.Minor = NEVERC_TARGET_API_MINOR;
+  OutCandidate->Kind = NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE;
+  OutCandidate->Artifact = Seal.Handle;
+  OutCandidate->ProductID = FixtureNObjProductID;
+  return neverc_status_ok();
+}
+
+static NevercStatus NEVERC_CALL verify_fixture_nobj_product(
+    void *UserData, NevercTaskHandle Task,
+    const NevercCodeGenRequest *Request,
+    const NevercCodeGenProductCandidate *Candidate,
+    NevercCodeGenVerificationObligations Obligations) {
+  (void)UserData;
+  (void)Task;
+  (void)Obligations;
+  if (Request == NULL || Candidate == NULL ||
+      Candidate->Kind != NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE ||
+      neverc_handle_is_null(Candidate->Artifact) ||
+      Candidate->ProductID.High != FixtureNObjProductID.High ||
+      Candidate->ProductID.Low != FixtureNObjProductID.Low)
+    return failed_status();
+  return neverc_status_ok();
+}
+
+static NevercStatus register_fixture_nobj_backend(
+    const NevercCoreAPI *Core, const NevercRegistrarAPI *Registrar,
+    void *RegistrarContext) {
+  const NevercAssemblyProviderAPI *AssemblyAPI;
+  const NevercMCAPI *MCAPI;
+  const NevercObjectFormatAPI *FormatAPI;
+  const NevercTargetAPI *TargetAPI;
+  const NevercIOAPI *IO;
+  const void *Table = NULL;
+  uint16_t Minor = 0;
+  uint64_t StructSize = 0;
+  NevercObjectFormatDescriptor Format;
+  NevercCodeGenEdgeDescriptor Edge;
+  NevercMCSchemaDescriptor Schema;
+  NevercProviderDescriptor Provider;
+  NevercStatus Status;
+
+  Status = Core->QueryInterface(
+      Core->Context,
+      (NevercInterfaceID){NEVERC_INTERFACE_OBJECT_FORMAT_HIGH,
+                          NEVERC_INTERFACE_OBJECT_FORMAT_LOW},
+      NEVERC_OBJECT_FORMAT_API_MAJOR, NEVERC_OBJECT_FORMAT_API_MINOR,
+      &Table, &Minor, &StructSize);
+  if (Status.Code != NEVERC_STATUS_OK || Table == NULL ||
+      StructSize < sizeof(NevercObjectFormatAPI))
+    return failed_status();
+  FormatAPI = (const NevercObjectFormatAPI *)Table;
+  memset(&Format, 0, sizeof(Format));
+  Format.Header.StructSize = sizeof(Format);
+  Format.Header.Major = NEVERC_OBJECT_FORMAT_API_MAJOR;
+  Format.Header.Minor = NEVERC_OBJECT_FORMAT_API_MINOR;
+  Format.FormatID = FixtureNObjFormatID;
+  Format.CanonicalName =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("nobj");
+  Format.DefaultExtension =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW(".nobj");
+  Format.SupportedTargets.Data = &FixtureTargetID;
+  Format.SupportedTargets.Count = 1;
+  Format.SupportedTargets.ElementStride = sizeof(FixtureTargetID);
+  Format.Flags = NEVERC_OBJECT_FORMAT_CAN_PROBE |
+                 NEVERC_OBJECT_FORMAT_CAN_READ |
+                 NEVERC_OBJECT_FORMAT_CAN_WRITE;
+  Format.Probe = probe_fixture_nobj;
+  Format.Reader = read_fixture_nobj;
+  Format.Writer = write_fixture_nobj;
+  Status = FormatAPI->RegisterFormat(
+      FormatAPI->Context, RegistrarContext, &Format);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  Table = NULL;
+  Status = Core->QueryInterface(
+      Core->Context,
+      (NevercInterfaceID){NEVERC_INTERFACE_MC_HIGH,
+                          NEVERC_INTERFACE_MC_LOW},
+      NEVERC_MC_API_MAJOR, NEVERC_MC_API_MINOR, &Table, &Minor,
+      &StructSize);
+  if (Status.Code != NEVERC_STATUS_OK || Table == NULL ||
+      StructSize < sizeof(NevercMCAPI))
+    return failed_status();
+  MCAPI = (const NevercMCAPI *)Table;
+  memset(&Schema, 0, sizeof(Schema));
+  Schema.Header = (NevercABITableHeader){
+      sizeof(Schema), NEVERC_MC_API_MAJOR, NEVERC_MC_API_MINOR, 0};
+  Schema.SchemaID = FixtureNObjSchemaID;
+  Schema.TargetID = FixtureTargetID;
+  Schema.CanonicalName =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("nobj.mc");
+  Schema.Digest =
+      (NevercStringView){FixtureNObjSchemaDigest,
+                         sizeof(FixtureNObjSchemaDigest) - 1};
+  Status = MCAPI->RegisterSchema(
+      MCAPI->Context, RegistrarContext, &Schema);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  Table = NULL;
+  Status = Core->QueryInterface(
+      Core->Context,
+      (NevercInterfaceID){NEVERC_INTERFACE_ASSEMBLY_PROVIDER_HIGH,
+                          NEVERC_INTERFACE_ASSEMBLY_PROVIDER_LOW},
+      NEVERC_ASSEMBLY_PROVIDER_API_MAJOR,
+      NEVERC_ASSEMBLY_PROVIDER_API_MINOR, &Table, &Minor, &StructSize);
+  if (Status.Code != NEVERC_STATUS_OK || Table == NULL ||
+      StructSize < sizeof(NevercAssemblyProviderAPI))
+    return failed_status();
+  AssemblyAPI = (const NevercAssemblyProviderAPI *)Table;
+  memset(&Provider, 0, sizeof(Provider));
+  Provider.Header = (NevercABITableHeader){
+      sizeof(Provider), NEVERC_PLUGIN_ABI_MAJOR,
+      NEVERC_PLUGIN_ABI_MINOR, 0};
+  Provider.Phase = (NevercInterfaceID){
+      NEVERC_PHASE_ASSEMBLY_PARSE_HIGH,
+      NEVERC_PHASE_ASSEMBLY_PARSE_LOW};
+  Provider.ProviderID =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("test.nobj.parser");
+  Provider.Route.Header = (NevercABITableHeader){
+      sizeof(Provider.Route), NEVERC_PLUGIN_ABI_MAJOR,
+      NEVERC_PLUGIN_ABI_MINOR, 0};
+  Provider.Deterministic = NEVERC_TRUE;
+  Provider.Callback = parse_fixture_nobj_assembly;
+  Provider.UserData = (void *)AssemblyAPI;
+  Status = Registrar->RegisterProvider(RegistrarContext, &Provider);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  Table = NULL;
+  Status = Core->QueryInterface(
+      Core->Context,
+      (NevercInterfaceID){NEVERC_INTERFACE_IO_HIGH,
+                          NEVERC_INTERFACE_IO_LOW},
+      NEVERC_IO_API_MAJOR, NEVERC_IO_API_MINOR, &Table, &Minor,
+      &StructSize);
+  if (Status.Code != NEVERC_STATUS_OK || Table == NULL ||
+      StructSize < sizeof(NevercIOAPI))
+    return failed_status();
+  IO = (const NevercIOAPI *)Table;
+
+  Table = NULL;
+  Status = Core->QueryInterface(
+      Core->Context,
+      (NevercInterfaceID){NEVERC_INTERFACE_TARGET_HIGH,
+                          NEVERC_INTERFACE_TARGET_LOW},
+      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, &Table, &Minor,
+      &StructSize);
+  if (Status.Code != NEVERC_STATUS_OK || Table == NULL ||
+      StructSize < sizeof(NevercTargetAPI))
+    return failed_status();
+  TargetAPI = (const NevercTargetAPI *)Table;
+  memset(&Edge, 0, sizeof(Edge));
+  Edge.Header.StructSize = sizeof(Edge);
+  Edge.Header.Major = NEVERC_TARGET_API_MAJOR;
+  Edge.Header.Minor = NEVERC_TARGET_API_MINOR;
+  Edge.EdgeID = FixtureNObjEdgeID;
+  Edge.CanonicalName =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("test.ir-to-nobj");
+  Edge.TargetID = FixtureTargetID;
+  Edge.InputKind = NEVERC_CODEGEN_PRODUCT_IR;
+  Edge.OutputKind = NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE;
+  Edge.Flags = NEVERC_CODEGEN_EDGE_COARSE;
+  Edge.UserData = (void *)IO;
+  Edge.CompatibilityKey =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("test-nobj-v1");
+  Edge.ProviderID =
+      (NevercStringView)NEVERC_TEST_STRING_VIEW("test.coarse-nobj");
+  Edge.ProductID = FixtureNObjProductID;
+  Edge.CoarseLower = lower_fixture_nobj;
+  Edge.VerifyProduct = verify_fixture_nobj_product;
+  return TargetAPI->RegisterCodeGenEdge(
+      TargetAPI->Context, RegistrarContext, &Edge);
+}
+#endif
+
+#if defined(NEVERC_TEST_CC_PLAN_X86)
+static const NevercTargetRegisterDescriptor FixtureCCRegisters[] = {
+    {
+        .Header = {sizeof(NevercTargetRegisterDescriptor),
+                   NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
+        .Name = NEVERC_TEST_STRING_VIEW("rax"),
+        .RegisterNumber = 51,
+    },
+    {
+        .Header = {sizeof(NevercTargetRegisterDescriptor),
+                   NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
+        .Name = NEVERC_TEST_STRING_VIEW("rcx"),
+        .RegisterNumber = 54,
+    },
+    {
+        .Header = {sizeof(NevercTargetRegisterDescriptor),
+                   NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
+        .Name = NEVERC_TEST_STRING_VIEW("r12"),
+        .RegisterNumber = 123,
+    },
+};
+#endif
+
+#if defined(NEVERC_TEST_ABI_COERCE_AND_EXPAND_ARGUMENTS)
+static const NevercABICoercionElement FixtureCoerceAndExpandElements[] = {
+    {
+        .Header = {sizeof(NevercABICoercionElement),
+                   NEVERC_TARGET_ABI_API_MAJOR,
+                   NEVERC_TARGET_ABI_API_MINOR, 0},
+        .Coercion = NEVERC_ABI_COERCE_INTEGER,
+        .BitWidth = 32,
+        .Offset = 0,
+    },
+    {
+        .Header = {sizeof(NevercABICoercionElement),
+                   NEVERC_TARGET_ABI_API_MAJOR,
+                   NEVERC_TARGET_ABI_API_MINOR, 0},
+        .Coercion = NEVERC_ABI_COERCE_FLOAT,
+        .BitWidth = 64,
+        .Offset = 8,
+    },
+};
+#endif
 
 static void classify_fixture_argument(
     const NevercABITypeDescriptor *Type,
@@ -251,6 +776,29 @@ static void classify_fixture_argument(
     Classification->Alignment =
         Type->Alignment == 0 ? UINT32_C(1) : Type->Alignment;
     Classification->Flags = NEVERC_ABI_ARGUMENT_BYVAL;
+#endif
+#if defined(NEVERC_TEST_ABI_COERCE_AND_EXPAND_ARGUMENTS)
+  } else if (!IsReturnValue &&
+             (Type->Flags & NEVERC_ABI_TYPE_AGGREGATE) != 0 &&
+             Type->BitWidth == UINT32_C(128)) {
+    Classification->Kind =
+        NEVERC_ABI_ARGUMENT_COERCE_AND_EXPAND;
+    Classification->CoerceAndExpandSize = UINT32_C(16);
+    Classification->CoerceAndExpandElements.Data =
+        FixtureCoerceAndExpandElements;
+    Classification->CoerceAndExpandElements.Count =
+        sizeof(FixtureCoerceAndExpandElements) /
+        sizeof(FixtureCoerceAndExpandElements[0]);
+    Classification->CoerceAndExpandElements.ElementStride =
+        sizeof(FixtureCoerceAndExpandElements[0]);
+#endif
+#if defined(NEVERC_TEST_ABI_INDIRECT_ALIASED_ARGUMENTS)
+  } else if (!IsReturnValue &&
+             (Type->Flags & NEVERC_ABI_TYPE_AGGREGATE) != 0) {
+    Classification->Kind =
+        NEVERC_ABI_ARGUMENT_INDIRECT_ALIASED;
+    Classification->Alignment =
+        Type->Alignment == 0 ? UINT32_C(1) : Type->Alignment;
 #endif
   } else if ((Type->Flags & NEVERC_ABI_TYPE_AGGREGATE) != 0) {
     Classification->Kind = NEVERC_ABI_ARGUMENT_INDIRECT;
@@ -297,6 +845,81 @@ static NevercStatus NEVERC_CALL classify_fixture_function(
   return neverc_status_ok();
 }
 
+#if defined(NEVERC_TEST_CC_PLAN_X86)
+static NevercStatus NEVERC_CALL plan_fixture_calling_convention(
+    void *UserData, const NevercCallingConventionQuery *Query,
+    NevercCallingConventionPlan *Plan) {
+  static NevercCallingConventionLocation ReturnLocations[1];
+  static NevercCallingConventionLocation ArgumentLocations[32];
+  static const uint32_t CalleeSavedRegisters[] = {123};
+  uint32_t StackOffset = 0;
+  uint64_t Index;
+  (void)UserData;
+  if (Query == NULL || Plan == NULL ||
+      Query->Function.Parameters.Count > 32 ||
+      Query->Function.Parameters.ElementStride <
+          sizeof(NevercABITypeDescriptor))
+    return failed_status();
+
+  memset(ReturnLocations, 0, sizeof(ReturnLocations));
+  memset(ArgumentLocations, 0, sizeof(ArgumentLocations));
+  if (Query->Function.ReturnType.Kind != NEVERC_ABI_TYPE_VOID) {
+    ReturnLocations[0].Header =
+        (NevercABITableHeader){sizeof(ReturnLocations[0]),
+                              NEVERC_CALLING_CONVENTION_API_MAJOR,
+                              NEVERC_CALLING_CONVENTION_API_MINOR, 0};
+    ReturnLocations[0].Kind = NEVERC_CC_LOCATION_REGISTER;
+    ReturnLocations[0].Size =
+        (Query->Function.ReturnType.BitWidth + 7) / 8;
+    ReturnLocations[0].Alignment =
+        Query->Function.ReturnType.Alignment;
+    ReturnLocations[0].RegisterNumber = 51;
+    Plan->ReturnLocations =
+        (NevercStructArrayView){ReturnLocations, 1,
+                                sizeof(ReturnLocations[0])};
+  } else {
+    Plan->ReturnLocations = (NevercStructArrayView){0};
+  }
+
+  for (Index = 0; Index != Query->Function.Parameters.Count; ++Index) {
+    const NevercABITypeDescriptor *Type =
+        (const NevercABITypeDescriptor *)(
+            (const unsigned char *)Query->Function.Parameters.Data +
+            Index * Query->Function.Parameters.ElementStride);
+    NevercCallingConventionLocation *Location =
+        &ArgumentLocations[Index];
+    uint32_t Size = (Type->BitWidth + 7) / 8;
+    Location->Header =
+        (NevercABITableHeader){sizeof(*Location),
+                              NEVERC_CALLING_CONVENTION_API_MAJOR,
+                              NEVERC_CALLING_CONVENTION_API_MINOR, 0};
+    Location->ValueIndex = (uint32_t)Index;
+    Location->Size = Size;
+    Location->Alignment = Type->Alignment;
+    if (Index == 0) {
+      Location->Kind = NEVERC_CC_LOCATION_REGISTER;
+      Location->RegisterNumber = 54;
+    } else {
+      Location->Kind = NEVERC_CC_LOCATION_STACK;
+      StackOffset =
+          (StackOffset + Location->Alignment - 1) &
+          ~(Location->Alignment - 1);
+      Location->StackOffset = StackOffset;
+      StackOffset += Size;
+    }
+  }
+  Plan->ArgumentLocations =
+      (NevercStructArrayView){ArgumentLocations,
+                              Query->Function.Parameters.Count,
+                              sizeof(ArgumentLocations[0])};
+  Plan->CalleeSavedRegisters =
+      (NevercUInt32ArrayView){CalleeSavedRegisters, 1,
+                              sizeof(CalleeSavedRegisters[0])};
+  Plan->StackAlignment = 16;
+  return neverc_status_ok();
+}
+#endif
+
 static NevercStatus register_fixture_target(
     const NevercCoreAPI *Core, void *RegistrarContext) {
   const NevercTargetAPI *TargetAPI = NULL;
@@ -335,11 +958,19 @@ static NevercStatus register_fixture_target(
   Target.Machine.Header.Major = NEVERC_TARGET_API_MAJOR;
   Target.Machine.Header.Minor = NEVERC_TARGET_API_MINOR;
   Target.Machine.RawTriple =
-      (NevercStringView)NEVERC_TEST_STRING_VIEW("test-unknown-none-none");
+      (NevercStringView)NEVERC_TEST_STRING_VIEW(
+          NEVERC_TEST_TARGET_RAW_TRIPLE);
   Target.Machine.Architecture =
-      (NevercStringView)NEVERC_TEST_STRING_VIEW("test");
+      (NevercStringView)NEVERC_TEST_STRING_VIEW(
+          NEVERC_TEST_TARGET_ARCHITECTURE);
+#if defined(NEVERC_TEST_CC_PLAN_X86)
+  Target.Machine.DataLayout = (NevercStringView)NEVERC_TEST_STRING_VIEW(
+      "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-"
+      "f80:128-n8:16:32:64-S128");
+#else
   Target.Machine.DataLayout = (NevercStringView)NEVERC_TEST_STRING_VIEW(
       "e-p:64:64-i64:64-n32:64-S128");
+#endif
   Target.Machine.DefaultCPU =
       (NevercStringView)NEVERC_TEST_STRING_VIEW("generic");
   Target.Machine.SchemaDigest = (NevercStringView)NEVERC_TEST_STRING_VIEW(
@@ -361,8 +992,13 @@ static NevercStatus register_fixture_target(
   Target.Machine.StackAlignment = 128;
   Target.Machine.MaximumAtomicWidth = 64;
   Target.Machine.MaximumVectorAlignment = 128;
+#if defined(NEVERC_TEST_HAS_MS_VA_LIST)
+  Target.Machine.BuiltinVaListKind =
+      NEVERC_TARGET_VA_LIST_X86_64;
+#else
   Target.Machine.BuiltinVaListKind =
       NEVERC_TARGET_VA_LIST_VOID_POINTER;
+#endif
   Target.Machine.ExecutionLevels = NEVERC_TARGET_EXECUTION_USER;
   Target.Machine.DefaultExecutionLevel =
       NEVERC_TARGET_EXECUTION_USER;
@@ -377,6 +1013,20 @@ static NevercStatus register_fixture_target(
   Target.Machine.CallingConventions.Count = 1;
   Target.Machine.CallingConventions.ElementStride =
       sizeof(FixtureCallingConventionID);
+#if defined(NEVERC_TEST_REGISTER_NOBJ_BACKEND)
+  Target.DefaultObjectFormatID = FixtureNObjFormatID;
+  Target.MCSchemaID = FixtureNObjSchemaID;
+  Target.Machine.ObjectFormats.Data = &FixtureNObjFormatID;
+  Target.Machine.ObjectFormats.Count = 1;
+  Target.Machine.ObjectFormats.ElementStride =
+      sizeof(FixtureNObjFormatID);
+#endif
+#if defined(NEVERC_TEST_CC_PLAN_X86)
+  Target.Registers.Data = FixtureCCRegisters;
+  Target.Registers.Count =
+      sizeof(FixtureCCRegisters) / sizeof(FixtureCCRegisters[0]);
+  Target.Registers.ElementStride = sizeof(FixtureCCRegisters[0]);
+#endif
 #if defined(NEVERC_TEST_TARGET_UNKNOWN_FORMAT)
   Target.DefaultObjectFormatID.High = UINT64_C(0xdeadbeef);
   Target.DefaultObjectFormatID.Low = UINT64_C(0xbadf00d);
@@ -449,6 +1099,10 @@ static NevercStatus register_fixture_target(
       (NevercStringView)NEVERC_TEST_STRING_VIEW(
           "test.fixture-calling-convention");
   CallingConvention.LLVMCallingConvention = 0;
+#if defined(NEVERC_TEST_CC_PLAN_X86)
+  CallingConvention.PlanCallingConvention =
+      plan_fixture_calling_convention;
+#endif
   return CallingConventionAPI->RegisterCallingConvention(
       CallingConventionAPI->Context, RegistrarContext,
       &CallingConvention);
@@ -489,6 +1143,15 @@ register_plugin(const NevercCoreAPI *Core, const NevercRegistrarAPI *Registrar,
   {
     NevercStatus Status =
         register_fixture_target(Core, RegistrarContext);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+  }
+#endif
+#if defined(NEVERC_TEST_REGISTER_NOBJ_BACKEND)
+  {
+    NevercStatus Status =
+        register_fixture_nobj_backend(Core, Registrar,
+                                      RegistrarContext);
     if (Status.Code != NEVERC_STATUS_OK)
       return Status;
   }

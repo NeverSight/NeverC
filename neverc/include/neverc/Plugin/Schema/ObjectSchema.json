@@ -1,0 +1,284 @@
+{
+  "schema_version": 1,
+  "capability": {
+    "major": 1,
+    "minor": 0
+  },
+  "stable_schema_digest": "832b65f3035734e93cc28656955b1b424d070365ecb5dda6e0ef153880a8b505",
+  "entities": [
+    {
+      "symbol": "GRAPH",
+      "name": "graph",
+      "id": "0x71000001"
+    },
+    {
+      "symbol": "SECTION",
+      "name": "section",
+      "id": "0x71000002"
+    },
+    {
+      "symbol": "SYMBOL",
+      "name": "symbol",
+      "id": "0x71000003"
+    },
+    {
+      "symbol": "RELOCATION",
+      "name": "relocation",
+      "id": "0x71000004"
+    },
+    {
+      "symbol": "COMDAT",
+      "name": "comdat",
+      "id": "0x71000005"
+    },
+    {
+      "symbol": "EXTENSION",
+      "name": "extension",
+      "id": "0x71000006"
+    },
+    {
+      "symbol": "LAYOUT_PROOF",
+      "name": "layout-proof",
+      "id": "0x71000007"
+    }
+  ],
+  "section_kinds": [
+    {
+      "symbol": "TEXT",
+      "name": "text",
+      "id": "0x72000001"
+    },
+    {
+      "symbol": "READ_ONLY_DATA",
+      "name": "read-only-data",
+      "id": "0x72000002"
+    },
+    {
+      "symbol": "DATA",
+      "name": "data",
+      "id": "0x72000003"
+    },
+    {
+      "symbol": "ZERO_FILL",
+      "name": "zero-fill",
+      "id": "0x72000004"
+    },
+    {
+      "symbol": "TLS_DATA",
+      "name": "tls-data",
+      "id": "0x72000005"
+    },
+    {
+      "symbol": "TLS_ZERO_FILL",
+      "name": "tls-zero-fill",
+      "id": "0x72000006"
+    },
+    {
+      "symbol": "DEBUG",
+      "name": "debug",
+      "id": "0x72000007"
+    },
+    {
+      "symbol": "UNWIND",
+      "name": "unwind",
+      "id": "0x72000008"
+    },
+    {
+      "symbol": "FORMAT_EXTENSION",
+      "name": "format-extension",
+      "id": "0x72000009"
+    }
+  ],
+  "symbol_bindings": [
+    {
+      "symbol": "LOCAL",
+      "name": "local",
+      "id": "0x73000001"
+    },
+    {
+      "symbol": "GLOBAL",
+      "name": "global",
+      "id": "0x73000002"
+    },
+    {
+      "symbol": "WEAK",
+      "name": "weak",
+      "id": "0x73000003"
+    },
+    {
+      "symbol": "UNIQUE",
+      "name": "unique",
+      "id": "0x73000004"
+    },
+    {
+      "symbol": "FORMAT_EXTENSION",
+      "name": "format-extension",
+      "id": "0x73000005"
+    }
+  ],
+  "symbol_visibilities": [
+    {
+      "symbol": "DEFAULT",
+      "name": "default",
+      "id": "0x73100001"
+    },
+    {
+      "symbol": "HIDDEN",
+      "name": "hidden",
+      "id": "0x73100002"
+    },
+    {
+      "symbol": "PROTECTED",
+      "name": "protected",
+      "id": "0x73100003"
+    },
+    {
+      "symbol": "INTERNAL",
+      "name": "internal",
+      "id": "0x73100004"
+    },
+    {
+      "symbol": "FORMAT_EXTENSION",
+      "name": "format-extension",
+      "id": "0x73100005"
+    }
+  ],
+  "symbol_types": [
+    {
+      "symbol": "NO_TYPE",
+      "name": "no-type",
+      "id": "0x73200001"
+    },
+    {
+      "symbol": "OBJECT",
+      "name": "object",
+      "id": "0x73200002"
+    },
+    {
+      "symbol": "FUNCTION",
+      "name": "function",
+      "id": "0x73200003"
+    },
+    {
+      "symbol": "SECTION",
+      "name": "section",
+      "id": "0x73200004"
+    },
+    {
+      "symbol": "TLS",
+      "name": "tls",
+      "id": "0x73200005"
+    },
+    {
+      "symbol": "FILE",
+      "name": "file",
+      "id": "0x73200006"
+    },
+    {
+      "symbol": "INDIRECT_FUNCTION",
+      "name": "indirect-function",
+      "id": "0x73200007"
+    },
+    {
+      "symbol": "FORMAT_EXTENSION",
+      "name": "format-extension",
+      "id": "0x73200008"
+    }
+  ],
+  "symbol_definitions": [
+    {
+      "symbol": "UNDEFINED",
+      "name": "undefined",
+      "id": "0x73300001"
+    },
+    {
+      "symbol": "DEFINED",
+      "name": "defined",
+      "id": "0x73300002"
+    },
+    {
+      "symbol": "COMMON",
+      "name": "common",
+      "id": "0x73300003"
+    },
+    {
+      "symbol": "ABSOLUTE",
+      "name": "absolute",
+      "id": "0x73300004"
+    }
+  ],
+  "relocation_kinds": [
+    {
+      "symbol": "ABSOLUTE",
+      "name": "absolute",
+      "id": "0x74000001"
+    },
+    {
+      "symbol": "PC_RELATIVE",
+      "name": "pc-relative",
+      "id": "0x74000002"
+    },
+    {
+      "symbol": "SECTION_RELATIVE",
+      "name": "section-relative",
+      "id": "0x74000003"
+    },
+    {
+      "symbol": "GOT_RELATIVE",
+      "name": "got-relative",
+      "id": "0x74000004"
+    },
+    {
+      "symbol": "PLT_RELATIVE",
+      "name": "plt-relative",
+      "id": "0x74000005"
+    },
+    {
+      "symbol": "TLS",
+      "name": "tls",
+      "id": "0x74000006"
+    },
+    {
+      "symbol": "IMAGE_RELATIVE",
+      "name": "image-relative",
+      "id": "0x74000007"
+    },
+    {
+      "symbol": "TARGET_EXTENSION",
+      "name": "target-extension",
+      "id": "0x74000008"
+    }
+  ],
+  "comdat_selections": [
+    {
+      "symbol": "ANY",
+      "name": "any",
+      "id": "0x75000001"
+    },
+    {
+      "symbol": "EXACT_MATCH",
+      "name": "exact-match",
+      "id": "0x75000002"
+    },
+    {
+      "symbol": "SAME_SIZE",
+      "name": "same-size",
+      "id": "0x75000003"
+    },
+    {
+      "symbol": "NO_DUPLICATES",
+      "name": "no-duplicates",
+      "id": "0x75000004"
+    },
+    {
+      "symbol": "LARGEST",
+      "name": "largest",
+      "id": "0x75000005"
+    },
+    {
+      "symbol": "ASSOCIATIVE",
+      "name": "associative",
+      "id": "0x75000006"
+    }
+  ]
+}

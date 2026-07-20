@@ -1,0 +1,58 @@
+#ifndef NEVERC_PLUGIN_HOST_OBJECTPHASEHOOKS_H
+#define NEVERC_PLUGIN_HOST_OBJECTPHASEHOOKS_H
+
+#include "neverc/Plugin/Host/ObjectWriterProvider.h"
+#include "neverc/Plugin/PluginCore.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include <memory>
+
+namespace neverc::plugin {
+
+class PluginProcessServices;
+class PluginTaskContext;
+
+class ObjectPhasePipeline {
+public:
+  static llvm::Expected<std::unique_ptr<ObjectPhasePipeline>>
+  create(PluginTaskContext &Task,
+         std::shared_ptr<const PluginTargetSnapshot> Snapshot);
+
+  ~ObjectPhasePipeline();
+
+  ObjectPhasePipeline(const ObjectPhasePipeline &) = delete;
+  ObjectPhasePipeline &operator=(const ObjectPhasePipeline &) = delete;
+
+  llvm::Error addObserver(llvm::StringRef PluginID,
+                          const NevercObserverDescriptor &Descriptor);
+  llvm::Error addInterceptor(
+      llvm::StringRef PluginID,
+      const NevercInterceptorDescriptor &Descriptor);
+  bool hasPluginBindings() const;
+  llvm::Error freeze();
+
+  llvm::Expected<std::shared_ptr<PluginObjectImage>>
+  execute(const PluginObjectGraph &Graph,
+          const ObjectOutputDestination &Destination);
+  llvm::Expected<std::shared_ptr<PluginObjectImage>>
+  executeNative(const PluginObjectGraph &Graph,
+                llvm::ArrayRef<uint8_t> NativeImage,
+                const ObjectOutputDestination &Destination);
+  llvm::Expected<std::shared_ptr<PluginObjectImage>>
+  verifyAndCommitFinished(
+      NevercTargetKey Target,
+      std::shared_ptr<PluginObjectImage> Image);
+
+private:
+  struct Impl;
+  explicit ObjectPhasePipeline(std::unique_ptr<Impl> State);
+  std::unique_ptr<Impl> State;
+};
+
+llvm::Error
+registerPluginObjectPhaseInterface(PluginProcessServices &Services);
+
+} // namespace neverc::plugin
+
+#endif

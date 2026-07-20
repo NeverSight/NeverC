@@ -10,7 +10,9 @@ add_llvm_component_library(LLVMMC
   MCAsmStreamer.cpp
   MCAssembler.cpp
   MCCodeEmitter.cpp
+  MCComponentProvider.cpp
   MCContext.cpp
+  MCEmissionObserver.cpp
   MCDwarf.cpp
   MCELFObjectTargetWriter.cpp
   MCELFStreamer.cpp

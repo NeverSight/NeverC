@@ -31,7 +31,8 @@ class MIRPluginBridge {
 public:
   MIRPluginBridge(PluginTaskContext &Task, llvm::MachineFunction &Function,
                   uint64_t FunctionGeneration = 1,
-                  bool TargetSchemaEnabled = false,
+                  llvm::StringRef ActiveTargetSchemaDigest = {},
+                  llvm::StringRef RequiredTargetSchemaDigest = {},
                   llvm::StringRef PluginID = {});
   ~MIRPluginBridge();
 
@@ -71,7 +72,13 @@ public:
   NevercTaskHandle taskHandle() const;
   uint64_t functionGeneration() const { return FunctionGeneration; }
   uint64_t mutationGeneration() const { return MutationGeneration; }
-  bool targetSchemaEnabled() const { return TargetSchemaEnabled; }
+  bool targetSchemaEnabled() const {
+    return !RequiredTargetSchemaDigest.empty() &&
+           ActiveTargetSchemaDigest == RequiredTargetSchemaDigest;
+  }
+  llvm::StringRef targetSchemaDigest() const {
+    return ActiveTargetSchemaDigest;
+  }
   llvm::StringRef pluginID() const { return PluginID; }
 
   llvm::Expected<NevercMIRMutationHandle> beginMutation();
@@ -133,7 +140,8 @@ private:
   llvm::MachineFunction &Function;
   uint64_t FunctionGeneration;
   uint64_t MutationGeneration;
-  bool TargetSchemaEnabled;
+  std::string ActiveTargetSchemaDigest;
+  std::string RequiredTargetSchemaDigest;
   std::string PluginID;
   NevercMIRAPI API{};
   NevercMachineFunctionHandle FunctionHandle{};

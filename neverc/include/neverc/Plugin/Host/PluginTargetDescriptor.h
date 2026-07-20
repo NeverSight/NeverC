@@ -95,11 +95,14 @@ struct VerifiedTargetBuiltin {
   std::string RequiredFeatures;
   std::string HeaderName;
   uint32_t Languages = 0;
+  NevercLowerTargetBuiltinFn Lower = nullptr;
 };
 
 struct VerifiedTargetRegister {
   std::string Name;
   std::vector<std::string> Aliases;
+  std::vector<std::string> AdditionalNames;
+  uint32_t RegisterNumber = 0;
 };
 
 struct VerifiedTargetConstraint {
@@ -107,6 +110,9 @@ struct VerifiedTargetConstraint {
   uint64_t Flags = 0;
   int32_t ImmediateMinimum = 0;
   int32_t ImmediateMaximum = 0;
+  std::vector<int32_t> ImmediateValues;
+  uint32_t RegisterClassID = 0;
+  int32_t MatchingOperand = -1;
   std::string ConvertedConstraint;
 };
 

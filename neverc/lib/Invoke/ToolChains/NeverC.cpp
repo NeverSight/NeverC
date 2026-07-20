@@ -104,6 +104,10 @@ void populateDirectInvocationOptsForFrontendJob(
     FEO->ProgramAction = Output.getType() == types::TY_Dependencies
                              ? frontend::RunPreprocessorOnly
                              : frontend::PrintPreprocessedInput;
+  } else if (isa<AssembleJobAction>(JA) && FrontendInputs.size() == 1 &&
+             (FrontendInputs.front().getType() == types::TY_Asm ||
+              FrontendInputs.front().getType() == types::TY_PP_Asm)) {
+    FEO->ProgramAction = frontend::Assemble;
   } else if (JA.getType() == types::TY_Nothing) {
     FEO->ProgramAction = frontend::ParseSyntaxOnly;
   } else if (JA.getType() == types::TY_LLVM_IR ||
@@ -130,6 +134,9 @@ void populateDirectInvocationOptsForFrontendJob(
       TO->TuneCPU = CmdArgs[++i];
     else if (A == "-target-abi" && i + 1 < e)
       TO->ABI = CmdArgs[++i];
+    else if (A.starts_with("-fobject-format="))
+      TO->ObjectFormat =
+          A.drop_front(sizeof("-fobject-format=") - 1).str();
 
     else if (A == "-isysroot" && i + 1 < e)
       HSO->Sysroot = CmdArgs[++i];
@@ -3178,6 +3185,7 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-target-cpu");
     CmdArgs.push_back(Args.MakeArgString(CPU));
   }
+  Args.AddLastArg(CmdArgs, options::OPT_fobject_format_EQ);
 
   RenderTargetOptions(Triple, Args, Kernel, CmdArgs);
 

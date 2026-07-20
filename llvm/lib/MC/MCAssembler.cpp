@@ -19,6 +19,7 @@
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDwarf.h"
+#include "llvm/MC/MCEmissionObserver.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCFixupKindInfo.h"
@@ -769,6 +770,11 @@ MCAssembler::handleFixup(const MCAsmLayout &Layout, MCFragment &F,
 
 void MCAssembler::layout(MCAsmLayout &Layout) {
   assert(getBackendPtr() && "Expected assembler backend");
+  if (MCEmissionObserver *Observer = getContext().getEmissionObserver())
+    if (Error E = Observer->notifyPreLayout(*this)) {
+      getContext().reportError(SMLoc(), toString(std::move(E)));
+      return;
+    }
   DEBUG_WITH_TYPE("mc-dump", {
     errs() << "assembler backend - pre-layout\n--\n";
     dump();
@@ -795,10 +801,29 @@ void MCAssembler::layout(MCAsmLayout &Layout) {
       Frag.setLayoutOrder(FragmentIndex++);
   }
 
-  // Layout until everything fits.
-  while (layoutOnce(Layout)) {
+  // Layout until everything fits. Keep a hard bound so a broken backend or
+  // observer-requested relayout cannot spin forever.
+  constexpr unsigned MaximumRelaxationRounds = 64;
+  unsigned RelaxationRound = 0;
+  while (true) {
+    const bool Changed = layoutOnce(Layout);
+    ++RelaxationRound;
+    if (MCEmissionObserver *Observer =
+            getContext().getEmissionObserver())
+      if (Error E = Observer->notifyRelaxationRound(
+              *this, Layout, RelaxationRound, Changed)) {
+        getContext().reportError(SMLoc(), toString(std::move(E)));
+        return;
+      }
+    if (!Changed)
+      break;
     if (getContext().hadError())
       return;
+    if (RelaxationRound == MaximumRelaxationRounds) {
+      getContext().reportError(
+          SMLoc(), "MC layout exceeded the relaxation round limit");
+      return;
+    }
     // Size of fragments in one section can depend on the size of fragments in
     // another. If any fragment has changed size, we have to re-layout (and
     // as a result possibly further relax) all.
@@ -891,15 +916,35 @@ void MCAssembler::layout(MCAsmLayout &Layout) {
             handleFixup(Layout, Frag, Fixup, STI);
         getBackend().applyFixup(*this, Fixup, Target, Contents, FixedValue,
                                 IsResolved, STI);
+        if (MCEmissionObserver *Observer =
+                getContext().getEmissionObserver())
+          if (Error E = Observer->notifyFixup(
+                  *this, Layout, Frag, Fixup, FixedValue, IsResolved)) {
+            getContext().reportError(Fixup.getLoc(),
+                                     toString(std::move(E)));
+            return;
+          }
       }
     }
   }
+  if (MCEmissionObserver *Observer = getContext().getEmissionObserver())
+    if (Error E = Observer->notifyPostLayout(*this, Layout))
+      getContext().reportError(SMLoc(), toString(std::move(E)));
 }
 
 void MCAssembler::Finish() {
   // Create the layout object.
   MCAsmLayout Layout(*this);
   layout(Layout);
+  if (getContext().hadError())
+    return;
+  if (MCEmissionObserver *Observer = getContext().getEmissionObserver())
+    if (Error E = Observer->notifyPreObjectWrite(*this, Layout)) {
+      getContext().reportError(SMLoc(), toString(std::move(E)));
+      return;
+    }
+  if (getContext().hadError())
+    return;
 
   // Write the object file.
   stats::ObjectBytes += getWriter().writeObject(*this, Layout);

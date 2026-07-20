@@ -237,12 +237,13 @@ static bool neverCRegIsXMM(MCRegister R) {
 /// layout. Callee side (LowerFormalArguments/LowerReturn): nothing was injected,
 /// so read the spec from the function's own attribute. The injection flag keeps
 /// the caller side from ever reading the *caller's* attribute by mistake.
-static StringRef neverCGetSpecString(CCState &State) {
+static StringRef neverCGetPlanString(CCState &State) {
   if (State.isNeverCSpecInjected())
     return State.getNeverCCustomSpec();
   const Function &F = State.getMachineFunction().getFunction();
-  if (F.hasFnAttribute(neverc::CallConvAttrName))
-    return F.getFnAttribute(neverc::CallConvAttrName).getValueAsString();
+  if (F.hasFnAttribute(neverc::CallConvPlanAttrName))
+    return F.getFnAttribute(neverc::CallConvPlanAttrName)
+        .getValueAsString();
   return StringRef();
 }
 
@@ -307,6 +308,47 @@ static void neverCAssignStack(unsigned ValNo, MVT ValVT, MVT LocVT,
   State.addLoc(CCValAssign::getMem(ValNo, ValVT, Offset, LocVT, LocInfo));
 }
 
+static bool neverCAssignPlanLocation(
+    unsigned ValNo, MVT ValVT, MVT LocVT,
+    CCValAssign::LocInfo LocInfo, CCState &State,
+    const neverc::CCPlanLocation &Location) {
+  if (Location.Kind == neverc::CCPlanLocationKind::Register) {
+    MCRegister Register(Location.RegisterNumber);
+    if (LocVT == MVT::i32 || LocVT == MVT::i64) {
+      if (neverCRegIsXMM(Register))
+        return false;
+      Register = getX86SubSuperRegister(
+          Register, LocVT == MVT::i32 ? 32 : 64);
+    } else if (neverCIsXMMType(LocVT)) {
+      if (!neverCRegIsXMM(Register))
+        return false;
+    } else {
+      return false;
+    }
+    if (!Register.isValid() || State.isAllocated(Register))
+      return false;
+    State.AllocateReg(Register);
+    State.addLoc(CCValAssign::getReg(
+        ValNo, ValVT, Register, LocVT, LocInfo));
+    return true;
+  }
+
+  if (Location.Kind != neverc::CCPlanLocationKind::Stack ||
+      Location.StackOffset < State.getStackSize())
+    return false;
+  if (Location.StackOffset > State.getStackSize())
+    State.AllocateStack(
+        Location.StackOffset - State.getStackSize(), Align(1));
+  const int64_t Offset =
+      State.AllocateStack(Location.Size, Align(Location.Alignment));
+  if (Offset < 0 ||
+      static_cast<uint64_t>(Offset) != Location.StackOffset)
+    return false;
+  State.addLoc(CCValAssign::getMem(
+      ValNo, ValVT, static_cast<unsigned>(Offset), LocVT, LocInfo));
+  return true;
+}
+
 /// Positional argument allocator: argument number \p ValNo uses
 /// Spec.Args[ValNo], which is either a register name or the stack keyword. The
 /// stack keyword, running past the end of the list, a type-mismatched register
@@ -352,42 +394,34 @@ bool llvm::CC_X86_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
                          CCValAssign::LocInfo LocInfo, ISD::ArgFlagsTy ArgFlags,
                          CCState &State) {
   if (State.getCallingConv() == CallingConv::NeverC_Custom) {
-    StringRef SpecStr = neverCGetSpecString(State);
-    if (!SpecStr.empty()) {
-      neverc::CustomCCSpec Spec;
-      neverc::parseCustomCCSpec(SpecStr, Spec);
-      if (Spec.hasAnyArgs()) {
-        // NeverC custom CC has no defined vararg ABI: reject variadic functions
-        // with a clean backend diagnostic (routed through clang as a normal
-        // error) instead of a fatal abort. Emit it once, on the first value,
-        // then fall through and assign normally so CCState stays well-formed --
-        // the resulting code is discarded because an error was recorded.
-        if (State.isVarArg() && ValNo == 0) {
-          const Function &F = State.getMachineFunction().getFunction();
+    StringRef PlanText = neverCGetPlanString(State);
+    if (!PlanText.empty()) {
+      neverc::CustomCCPlan Plan;
+      const bool ValidPlan =
+          neverc::parseCustomCCPlan(PlanText, Plan);
+      const Function &F = State.getMachineFunction().getFunction();
+      if (!ValidPlan) {
+        if (ValNo == 0)
+          F.getContext().diagnose(DiagnosticInfoUnsupported(
+              F, "malformed NeverC calling convention plan"));
+      } else if (const neverc::CCPlanLocation *Location =
+                     Plan.findArgument(ValNo)) {
+        if (State.isVarArg() && ValNo == 0)
           F.getContext().diagnose(DiagnosticInfoUnsupported(
               F,
               "NeverC custom calling convention does not support variadic "
               "functions: '" +
                   F.getName() + "'"));
-        }
         MVT UseVT = LocVT;
         CCValAssign::LocInfo UseLI = LocInfo;
         neverCPromoteSmallInt(UseVT, UseLI, ArgFlags);
-
-        // Positional mode wins: each argument is placed explicitly (register or
-        // stack) by its position -- the only way to force an arg onto the stack
-        // even when registers are still free.
-        if (Spec.hasPositionalArgs()) {
-          neverCAssignPositional(ValNo, ValVT, UseVT, UseLI, State, Spec);
+        if (neverCAssignPlanLocation(
+                ValNo, ValVT, UseVT, UseLI, State, *Location))
           return false;
-        }
-
-        // Pool mode: consume the register lists in order, spill on exhaustion.
-        if (neverCAssignReg(ValNo, ValVT, UseVT, UseLI, State, Spec.ArgGPR,
-                            Spec.ArgXMM))
-          return false;
-        neverCAssignStack(ValNo, ValVT, UseVT, UseLI, State);
-        return false;
+        if (ValNo == 0)
+          F.getContext().diagnose(DiagnosticInfoUnsupported(
+              F, "NeverC calling convention plan cannot be "
+                 "materialized by the X86 backend"));
       }
     }
   }
@@ -398,20 +432,19 @@ bool llvm::RetCC_X86_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
                             CCValAssign::LocInfo LocInfo,
                             ISD::ArgFlagsTy ArgFlags, CCState &State) {
   if (State.getCallingConv() == CallingConv::NeverC_Custom) {
-    StringRef SpecStr = neverCGetSpecString(State);
-    if (!SpecStr.empty()) {
-      neverc::CustomCCSpec Spec;
-      neverc::parseCustomCCSpec(SpecStr, Spec);
-      if (Spec.hasRetRegs()) {
+    StringRef PlanText = neverCGetPlanString(State);
+    if (!PlanText.empty()) {
+      neverc::CustomCCPlan Plan;
+      if (neverc::parseCustomCCPlan(PlanText, Plan))
+        if (const neverc::CCPlanLocation *Location =
+                Plan.findReturn(ValNo)) {
         MVT UseVT = LocVT;
         CCValAssign::LocInfo UseLI = LocInfo;
         neverCPromoteSmallInt(UseVT, UseLI, ArgFlags);
-        if (neverCAssignReg(ValNo, ValVT, UseVT, UseLI, State, Spec.RetGPR,
-                            Spec.RetXMM))
-          return false; // handled: assigned a return register
-        // No listed return register fit: fall back to the standard convention
-        // below using the original (un-promoted) value.
-      }
+        if (neverCAssignPlanLocation(
+                ValNo, ValVT, UseVT, UseLI, State, *Location))
+          return false;
+        }
     }
   }
   return RetCC_X86(ValNo, ValVT, LocVT, LocInfo, ArgFlags, State);

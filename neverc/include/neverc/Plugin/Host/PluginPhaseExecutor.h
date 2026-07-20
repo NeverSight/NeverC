@@ -48,6 +48,7 @@ public:
   llvm::Error freeze();
   bool isFrozen() const;
   bool hasBindings(NevercInterfaceID Phase) const;
+  bool hasProvider(NevercInterfaceID Phase) const;
   std::vector<std::string> fallbackProvenance() const;
   llvm::Error setProofVerifier(ProofVerifier Verifier);
 

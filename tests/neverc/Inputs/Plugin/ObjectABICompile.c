@@ -11,6 +11,8 @@ _Static_assert(NEVERC_OBJECT_API_MAJOR == 1,
                "Object ABI must start at major one");
 _Static_assert(NEVERC_OBJECT_FORMAT_API_MAJOR == 1,
                "object-format ABI must start at major one");
+_Static_assert(NEVERC_OBJECT_PHASE_API_MAJOR == 1,
+               "object-phase ABI must start at major one");
 _Static_assert(sizeof(NevercObjectGraphHandle) == sizeof(NevercHandle),
                "object graph handle must remain opaque");
 _Static_assert(sizeof(NevercObjectImageHandle) == sizeof(NevercHandle),
@@ -21,6 +23,12 @@ _Static_assert(offsetof(NevercObjectAPI, Header) == 0,
                "Object table must begin with ABI header");
 _Static_assert(offsetof(NevercObjectFormatAPI, Header) == 0,
                "object-format table must begin with ABI header");
+_Static_assert(offsetof(NevercMutableBinaryAPI, Header) == 0,
+               "mutable-binary table must begin with ABI header");
+_Static_assert(offsetof(NevercObjectPhaseAPI, Header) == 0,
+               "object-phase table must begin with ABI header");
+_Static_assert(offsetof(NevercObjectWriteRequest, Header) == 0,
+               "object writer request must begin with ABI header");
 _Static_assert(offsetof(NevercObjectCallerPackProbe, Value) == 1,
                "Object header did not restore caller packing");
 

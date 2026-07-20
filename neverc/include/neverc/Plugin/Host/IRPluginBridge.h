@@ -57,6 +57,8 @@ public:
   NevercStatus checkMutationAllowed() const;
   const NevercIRCoreAPI &coreAPI() const { return CoreAPI; }
   const NevercIRBuilderAPI &builderAPI() const;
+  NevercStatus commitInProgressFunctionMutation(
+      NevercIRMutationHandle Mutation);
   NevercIRContextHandle contextHandle() const { return ContextHandle; }
   NevercIRModuleHandle moduleHandle() const { return ModuleHandle; }
   NevercStatus importModule(NevercIRSerializationFormat Format,

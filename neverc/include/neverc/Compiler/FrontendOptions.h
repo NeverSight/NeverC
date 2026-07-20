@@ -20,6 +20,8 @@ namespace neverc {
 namespace frontend {
 
 enum ActionKind {
+  Assemble,
+
   GenAssembly,
 
   GenBC,

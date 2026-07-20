@@ -20,7 +20,10 @@
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeEmitter.h"
+#include "llvm/MC/MCComponentProvider.h"
 #include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCEmissionObserver.h"
+#include "llvm/MC/MCInstPrinter.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCRegisterInfo.h"
@@ -167,13 +170,40 @@ Expected<std::unique_ptr<MCStreamer>> LLVMTargetMachine::createMCStreamer(
 
   switch (FileType) {
   case CodeGenFileType::AssemblyFile: {
-    MCInstPrinter *InstPrinter = getTarget().createMCInstPrinter(
-        getTargetTriple(), MAI.getAssemblerDialect(), MAI, MII, MRI);
+    std::unique_ptr<MCInstPrinter> InstPrinter(
+        getTarget().createMCInstPrinter(
+            getTargetTriple(), MAI.getAssemblerDialect(), MAI, MII, MRI));
+    if (MCComponentProvider *Provider = Context.getComponentProvider()) {
+      auto Provided = Provider->provideInstPrinter(
+          Context, std::move(InstPrinter));
+      if (!Provided)
+        return Provided.takeError();
+      InstPrinter = std::move(*Provided);
+      if (!InstPrinter)
+        return make_error<StringError>(
+            "MC component provider returned no instruction printer",
+            inconvertibleErrorCode());
+    }
 
     // Create a code emitter if asked to show the encoding.
     std::unique_ptr<MCCodeEmitter> MCE;
-    if (Options.MCOptions.ShowMCEncoding)
+    if (Options.MCOptions.ShowMCEncoding ||
+        Context.getEmissionObserver())
       MCE.reset(getTarget().createMCCodeEmitter(MII, Context));
+    if (MCE)
+      if (MCComponentProvider *Provider =
+              Context.getComponentProvider()) {
+        auto Provided = Provider->provideCodeEmitter(
+            Context, std::move(MCE));
+        if (!Provided)
+          return Provided.takeError();
+        MCE = std::move(*Provided);
+        if (!MCE)
+          return make_error<StringError>(
+              "MC component provider returned no code emitter",
+              inconvertibleErrorCode());
+      }
+    MCE = createMCEmissionCodeEmitter(Context, std::move(MCE));
 
     bool UseDwarfDirectory = false;
     switch (Options.MCOptions.MCUseDwarfDirectory) {
@@ -190,10 +220,24 @@ Expected<std::unique_ptr<MCStreamer>> LLVMTargetMachine::createMCStreamer(
 
     std::unique_ptr<MCAsmBackend> MAB(
         getTarget().createMCAsmBackend(STI, MRI, Options.MCOptions));
+    if (MAB)
+      if (MCComponentProvider *Provider =
+              Context.getComponentProvider()) {
+        auto Provided = Provider->provideAsmBackend(
+            Context, std::move(MAB));
+        if (!Provided)
+          return Provided.takeError();
+        MAB = std::move(*Provided);
+        if (!MAB)
+          return make_error<StringError>(
+              "MC component provider returned no assembly backend",
+              inconvertibleErrorCode());
+      }
     auto FOut = std::make_unique<formatted_raw_ostream>(Out);
     MCStreamer *S = getTarget().createAsmStreamer(
         Context, std::move(FOut), Options.MCOptions.AsmVerbose,
-        UseDwarfDirectory, InstPrinter, std::move(MCE), std::move(MAB),
+        UseDwarfDirectory, InstPrinter.release(), std::move(MCE),
+        std::move(MAB),
         Options.MCOptions.ShowMCInst);
     AsmStreamer.reset(S);
     break;
@@ -201,22 +245,61 @@ Expected<std::unique_ptr<MCStreamer>> LLVMTargetMachine::createMCStreamer(
   case CodeGenFileType::ObjectFile: {
     // Create the code emitter for the target if it exists.  If not, .o file
     // emission fails.
-    MCCodeEmitter *MCE = getTarget().createMCCodeEmitter(MII, Context);
+    std::unique_ptr<MCCodeEmitter> MCE(
+        getTarget().createMCCodeEmitter(MII, Context));
     if (!MCE)
       return make_error<StringError>("createMCCodeEmitter failed",
                                      inconvertibleErrorCode());
-    MCAsmBackend *MAB =
-        getTarget().createMCAsmBackend(STI, MRI, Options.MCOptions);
+    if (MCComponentProvider *Provider = Context.getComponentProvider()) {
+      auto Provided = Provider->provideCodeEmitter(
+          Context, std::move(MCE));
+      if (!Provided)
+        return Provided.takeError();
+      MCE = std::move(*Provided);
+      if (!MCE)
+        return make_error<StringError>(
+            "MC component provider returned no code emitter",
+            inconvertibleErrorCode());
+    }
+    MCE = createMCEmissionCodeEmitter(Context, std::move(MCE));
+    std::unique_ptr<MCAsmBackend> MAB(
+        getTarget().createMCAsmBackend(STI, MRI, Options.MCOptions));
     if (!MAB)
       return make_error<StringError>("createMCAsmBackend failed",
                                      inconvertibleErrorCode());
+    if (MCComponentProvider *Provider = Context.getComponentProvider()) {
+      auto Provided = Provider->provideAsmBackend(
+          Context, std::move(MAB));
+      if (!Provided)
+        return Provided.takeError();
+      MAB = std::move(*Provided);
+      if (!MAB)
+        return make_error<StringError>(
+            "MC component provider returned no assembly backend",
+            inconvertibleErrorCode());
+    }
 
     Triple T(getTargetTriple().str());
-    AsmStreamer.reset(getTarget().createMCObjectStreamer(
-        T, Context, std::unique_ptr<MCAsmBackend>(MAB),
+    std::unique_ptr<MCObjectWriter> ObjectWriter =
         DwoOut ? MAB->createDwoObjectWriter(Out, *DwoOut)
-               : MAB->createObjectWriter(Out),
-        std::unique_ptr<MCCodeEmitter>(MCE), STI, Options.MCOptions.MCRelaxAll,
+               : MAB->createObjectWriter(Out);
+    if (!ObjectWriter)
+      return make_error<StringError>("createObjectWriter failed",
+                                     inconvertibleErrorCode());
+    if (MCComponentProvider *Provider = Context.getComponentProvider()) {
+      auto Provided = Provider->provideObjectWriter(
+          Context, std::move(ObjectWriter));
+      if (!Provided)
+        return Provided.takeError();
+      ObjectWriter = std::move(*Provided);
+      if (!ObjectWriter)
+        return make_error<StringError>(
+            "MC component provider returned no object writer",
+            inconvertibleErrorCode());
+    }
+    AsmStreamer.reset(getTarget().createMCObjectStreamer(
+        T, Context, std::move(MAB), std::move(ObjectWriter),
+        std::move(MCE), STI, Options.MCOptions.MCRelaxAll,
         Options.MCOptions.MCIncrementalLinkerCompatible,
         /*DWARFMustBeAtTheEnd*/ true));
     break;
@@ -238,13 +321,26 @@ bool LLVMTargetMachine::addPassesToEmitFile(
   // Add common CodeGen passes.
   if (!MMIWP)
     MMIWP = new MachineModuleInfoWrapperPass(this);
-  TargetPassConfig *PassConfig =
-      addPassesToGenerateCode(*this, PM, DisableVerify, *MMIWP);
-  if (!PassConfig)
-    return true;
+  if (const MachinePipelineFactory &Factory =
+          getMachinePipelineFactory()) {
+    PM.add(MMIWP);
+    if (Factory(*this, PM, *MMIWP, DisableVerify))
+      return true;
+  } else {
+    TargetPassConfig *PassConfig =
+        addPassesToGenerateCode(*this, PM, DisableVerify, *MMIWP);
+    if (!PassConfig)
+      return true;
+  }
 
-  if (addAsmPrinter(PM, Out, DwoOut, FileType, MMIWP->getMMI().getContext()))
+  if (const MachineEmissionFactory &Factory =
+          getMachineEmissionFactory()) {
+    if (Factory(*this, PM, Out, DwoOut, FileType, *MMIWP))
+      return true;
+  } else if (addAsmPrinter(PM, Out, DwoOut, FileType,
+                           MMIWP->getMMI().getContext())) {
     return true;
+  }
 
   PM.add(createFreeMachineFunctionPass());
   return false;

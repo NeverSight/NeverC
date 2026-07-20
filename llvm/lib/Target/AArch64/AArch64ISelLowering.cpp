@@ -6518,11 +6518,13 @@ bool AArch64TargetLowering::isReassocProfitable(SelectionDAG &DAG, SDValue N0,
 static StringRef getNeverCCalleeSpec(const CallBase *CB) {
   if (!CB)
     return StringRef();
-  if (CB->hasFnAttr(neverc::CallConvAttrName))
-    return CB->getFnAttr(neverc::CallConvAttrName).getValueAsString();
+  if (CB->hasFnAttr(neverc::CallConvPlanAttrName))
+    return CB->getFnAttr(neverc::CallConvPlanAttrName)
+        .getValueAsString();
   if (const Function *F = CB->getCalledFunction())
-    if (F->hasFnAttribute(neverc::CallConvAttrName))
-      return F->getFnAttribute(neverc::CallConvAttrName).getValueAsString();
+    if (F->hasFnAttribute(neverc::CallConvPlanAttrName))
+      return F->getFnAttribute(neverc::CallConvPlanAttrName)
+          .getValueAsString();
   return StringRef();
 }
 
@@ -6538,9 +6540,9 @@ buildNeverCA64PreservedMask(MachineFunction &MF, const AArch64RegisterInfo *TRI,
   StringRef SpecStr = getNeverCCalleeSpec(CB);
   if (SpecStr.empty())
     return nullptr;
-  neverc::CustomCCSpec Spec;
-  neverc::parseCustomCCSpec(SpecStr, Spec);
-  if (Spec.CalleeSaved.empty())
+  neverc::CustomCCPlan Plan;
+  if (!neverc::parseCustomCCPlan(SpecStr, Plan) ||
+      Plan.CalleeSaved.empty())
     return nullptr;
 
   const uint32_t *Base = TRI->getNoPreservedMask();
@@ -6548,9 +6550,9 @@ buildNeverCA64PreservedMask(MachineFunction &MF, const AArch64RegisterInfo *TRI,
   unsigned Size = MachineOperand::getRegMaskSize(TRI->getNumRegs());
   for (unsigned I = 0; I < Size; ++I)
     Mask[I] = Base[I];
-  for (StringRef Name : Spec.CalleeSaved) {
-    MCRegister R = neverCParseA64Reg(Name);
-    if (!R.isValid())
+  for (uint32_t Register : Plan.CalleeSaved) {
+    MCRegister R(Register);
+    if (!R.isValid() || R.id() >= TRI->getNumRegs())
       continue;
     for (MCRegAliasIterator AI(R, TRI, /*IncludeSelf=*/true); AI.isValid(); ++AI)
       Mask[(*AI) / 32] |= 1u << ((*AI) % 32);

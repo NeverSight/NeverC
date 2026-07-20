@@ -1,0 +1,482 @@
+{
+  "schema_version": 1,
+  "capability": {
+    "major": 1,
+    "minor": 0
+  },
+  "stable_schema_digest": "baae41320577a2e75fd2267dd9f31e652874f6118478e11bb321bc650a3eae49",
+  "entities": [
+    {
+      "internal": "MCUnit",
+      "symbol": "MC_UNIT",
+      "llvm_value": 0,
+      "requires_target_schema": false,
+      "id": "0x61000001"
+    },
+    {
+      "internal": "MCSection",
+      "symbol": "SECTION",
+      "llvm_value": 1,
+      "requires_target_schema": false,
+      "id": "0x61000002"
+    },
+    {
+      "internal": "MCFragment",
+      "symbol": "FRAGMENT",
+      "llvm_value": 2,
+      "requires_target_schema": false,
+      "id": "0x61000003"
+    },
+    {
+      "internal": "MCInst",
+      "symbol": "INST",
+      "llvm_value": 3,
+      "requires_target_schema": false,
+      "id": "0x61000004"
+    },
+    {
+      "internal": "MCOperand",
+      "symbol": "OPERAND",
+      "llvm_value": 4,
+      "requires_target_schema": false,
+      "id": "0x61000005"
+    },
+    {
+      "internal": "MCExpr",
+      "symbol": "EXPR",
+      "llvm_value": 5,
+      "requires_target_schema": false,
+      "id": "0x61000006"
+    },
+    {
+      "internal": "MCSymbol",
+      "symbol": "SYMBOL",
+      "llvm_value": 6,
+      "requires_target_schema": false,
+      "id": "0x61000007"
+    },
+    {
+      "internal": "MCFixup",
+      "symbol": "FIXUP",
+      "llvm_value": 7,
+      "requires_target_schema": false,
+      "id": "0x61000008"
+    },
+    {
+      "internal": "SourceLoc",
+      "symbol": "SOURCE_LOC",
+      "llvm_value": 8,
+      "requires_target_schema": false,
+      "id": "0x61000009"
+    },
+    {
+      "internal": "LayoutState",
+      "symbol": "LAYOUT_STATE",
+      "llvm_value": 9,
+      "requires_target_schema": false,
+      "id": "0x6100000a"
+    }
+  ],
+  "operand_kinds": [
+    {
+      "internal": "kInvalid",
+      "symbol": "INVALID",
+      "llvm_value": 0,
+      "requires_target_schema": false,
+      "id": "0x62000001"
+    },
+    {
+      "internal": "kRegister",
+      "symbol": "REGISTER",
+      "llvm_value": 1,
+      "requires_target_schema": false,
+      "id": "0x62000002"
+    },
+    {
+      "internal": "kImmediate",
+      "symbol": "IMMEDIATE",
+      "llvm_value": 2,
+      "requires_target_schema": false,
+      "id": "0x62000003"
+    },
+    {
+      "internal": "kSFPImmediate",
+      "symbol": "SINGLE_FLOAT",
+      "llvm_value": 3,
+      "requires_target_schema": false,
+      "id": "0x62000004"
+    },
+    {
+      "internal": "kDFPImmediate",
+      "symbol": "DOUBLE_FLOAT",
+      "llvm_value": 4,
+      "requires_target_schema": false,
+      "id": "0x62000005"
+    },
+    {
+      "internal": "kExpr",
+      "symbol": "EXPRESSION",
+      "llvm_value": 5,
+      "requires_target_schema": false,
+      "id": "0x62000006"
+    },
+    {
+      "internal": "kInst",
+      "symbol": "INSTRUCTION",
+      "llvm_value": 6,
+      "requires_target_schema": false,
+      "id": "0x62000007"
+    },
+    {
+      "internal": "TargetExtension",
+      "symbol": "TARGET_EXTENSION",
+      "llvm_value": 4294967295,
+      "requires_target_schema": true,
+      "id": "0x62000008"
+    }
+  ],
+  "expression_kinds": [
+    {
+      "internal": "Binary",
+      "symbol": "BINARY",
+      "llvm_value": 0,
+      "requires_target_schema": false,
+      "id": "0x63000001"
+    },
+    {
+      "internal": "Constant",
+      "symbol": "CONSTANT",
+      "llvm_value": 1,
+      "requires_target_schema": false,
+      "id": "0x63000002"
+    },
+    {
+      "internal": "SymbolRef",
+      "symbol": "SYMBOL_REF",
+      "llvm_value": 2,
+      "requires_target_schema": false,
+      "id": "0x63000003"
+    },
+    {
+      "internal": "Unary",
+      "symbol": "UNARY",
+      "llvm_value": 3,
+      "requires_target_schema": false,
+      "id": "0x63000004"
+    },
+    {
+      "internal": "Target",
+      "symbol": "TARGET_VARIANT",
+      "llvm_value": 4,
+      "requires_target_schema": true,
+      "id": "0x63000005"
+    }
+  ],
+  "fragment_kinds": [
+    {
+      "internal": "FT_Align",
+      "symbol": "ALIGN",
+      "llvm_value": 0,
+      "requires_target_schema": false,
+      "id": "0x64000001"
+    },
+    {
+      "internal": "FT_Data",
+      "symbol": "DATA",
+      "llvm_value": 1,
+      "requires_target_schema": false,
+      "id": "0x64000002"
+    },
+    {
+      "internal": "FT_CompactEncodedInst",
+      "symbol": "ENCODED_WITH_FIXUPS",
+      "llvm_value": 2,
+      "requires_target_schema": false,
+      "id": "0x64000003"
+    },
+    {
+      "internal": "FT_Fill",
+      "symbol": "FILL",
+      "llvm_value": 3,
+      "requires_target_schema": false,
+      "id": "0x64000004"
+    },
+    {
+      "internal": "FT_Nops",
+      "symbol": "NOP",
+      "llvm_value": 4,
+      "requires_target_schema": false,
+      "id": "0x64000005"
+    },
+    {
+      "internal": "FT_Relaxable",
+      "symbol": "RELAXABLE",
+      "llvm_value": 5,
+      "requires_target_schema": false,
+      "id": "0x64000006"
+    },
+    {
+      "internal": "FT_Org",
+      "symbol": "ORG",
+      "llvm_value": 6,
+      "requires_target_schema": false,
+      "id": "0x64000007"
+    },
+    {
+      "internal": "FT_Dwarf",
+      "symbol": "DEBUG",
+      "llvm_value": 7,
+      "requires_target_schema": false,
+      "id": "0x64000008"
+    },
+    {
+      "internal": "FT_DwarfFrame",
+      "symbol": "CFI",
+      "llvm_value": 8,
+      "requires_target_schema": false,
+      "id": "0x64000009"
+    },
+    {
+      "internal": "FT_LEB",
+      "symbol": "LEB",
+      "llvm_value": 9,
+      "requires_target_schema": false,
+      "id": "0x6400000a"
+    },
+    {
+      "internal": "FT_BoundaryAlign",
+      "symbol": "BOUNDARY_ALIGN",
+      "llvm_value": 10,
+      "requires_target_schema": false,
+      "id": "0x6400000b"
+    },
+    {
+      "internal": "FT_SymbolId",
+      "symbol": "SYMBOL_ID",
+      "llvm_value": 11,
+      "requires_target_schema": false,
+      "id": "0x6400000c"
+    },
+    {
+      "internal": "FT_PseudoProbe",
+      "symbol": "PSEUDO_PROBE",
+      "llvm_value": 12,
+      "requires_target_schema": false,
+      "id": "0x6400000d"
+    },
+    {
+      "internal": "FT_Dummy",
+      "symbol": "DUMMY",
+      "llvm_value": 13,
+      "requires_target_schema": false,
+      "id": "0x6400000e"
+    },
+    {
+      "internal": "FormatExtension",
+      "symbol": "FORMAT_EXTENSION",
+      "llvm_value": 4294967295,
+      "requires_target_schema": true,
+      "id": "0x6400000f"
+    }
+  ],
+  "fixup_kinds": [
+    {
+      "internal": "FK_NONE",
+      "symbol": "NONE",
+      "llvm_value": 0,
+      "requires_target_schema": false,
+      "id": "0x65000001"
+    },
+    {
+      "internal": "FK_Data_1",
+      "symbol": "DATA_1",
+      "llvm_value": 1,
+      "requires_target_schema": false,
+      "id": "0x65000002"
+    },
+    {
+      "internal": "FK_Data_2",
+      "symbol": "DATA_2",
+      "llvm_value": 2,
+      "requires_target_schema": false,
+      "id": "0x65000003"
+    },
+    {
+      "internal": "FK_Data_4",
+      "symbol": "DATA_4",
+      "llvm_value": 3,
+      "requires_target_schema": false,
+      "id": "0x65000004"
+    },
+    {
+      "internal": "FK_Data_8",
+      "symbol": "DATA_8",
+      "llvm_value": 4,
+      "requires_target_schema": false,
+      "id": "0x65000005"
+    },
+    {
+      "internal": "FK_Data_leb128",
+      "symbol": "DATA_LEB128",
+      "llvm_value": 5,
+      "requires_target_schema": false,
+      "id": "0x65000006"
+    },
+    {
+      "internal": "FK_PCRel_1",
+      "symbol": "PC_REL_1",
+      "llvm_value": 6,
+      "requires_target_schema": false,
+      "id": "0x65000007"
+    },
+    {
+      "internal": "FK_PCRel_2",
+      "symbol": "PC_REL_2",
+      "llvm_value": 7,
+      "requires_target_schema": false,
+      "id": "0x65000008"
+    },
+    {
+      "internal": "FK_PCRel_4",
+      "symbol": "PC_REL_4",
+      "llvm_value": 8,
+      "requires_target_schema": false,
+      "id": "0x65000009"
+    },
+    {
+      "internal": "FK_PCRel_8",
+      "symbol": "PC_REL_8",
+      "llvm_value": 9,
+      "requires_target_schema": false,
+      "id": "0x6500000a"
+    },
+    {
+      "internal": "FK_GPRel_1",
+      "symbol": "GP_REL_1",
+      "llvm_value": 10,
+      "requires_target_schema": false,
+      "id": "0x6500000b"
+    },
+    {
+      "internal": "FK_GPRel_2",
+      "symbol": "GP_REL_2",
+      "llvm_value": 11,
+      "requires_target_schema": false,
+      "id": "0x6500000c"
+    },
+    {
+      "internal": "FK_GPRel_4",
+      "symbol": "GP_REL_4",
+      "llvm_value": 12,
+      "requires_target_schema": false,
+      "id": "0x6500000d"
+    },
+    {
+      "internal": "FK_GPRel_8",
+      "symbol": "GP_REL_8",
+      "llvm_value": 13,
+      "requires_target_schema": false,
+      "id": "0x6500000e"
+    },
+    {
+      "internal": "FK_DTPRel_4",
+      "symbol": "DTP_REL_4",
+      "llvm_value": 14,
+      "requires_target_schema": false,
+      "id": "0x6500000f"
+    },
+    {
+      "internal": "FK_DTPRel_8",
+      "symbol": "DTP_REL_8",
+      "llvm_value": 15,
+      "requires_target_schema": false,
+      "id": "0x65000010"
+    },
+    {
+      "internal": "FK_TPRel_4",
+      "symbol": "TP_REL_4",
+      "llvm_value": 16,
+      "requires_target_schema": false,
+      "id": "0x65000011"
+    },
+    {
+      "internal": "FK_TPRel_8",
+      "symbol": "TP_REL_8",
+      "llvm_value": 17,
+      "requires_target_schema": false,
+      "id": "0x65000012"
+    },
+    {
+      "internal": "FK_SecRel_1",
+      "symbol": "SEC_REL_1",
+      "llvm_value": 18,
+      "requires_target_schema": false,
+      "id": "0x65000013"
+    },
+    {
+      "internal": "FK_SecRel_2",
+      "symbol": "SEC_REL_2",
+      "llvm_value": 19,
+      "requires_target_schema": false,
+      "id": "0x65000014"
+    },
+    {
+      "internal": "FK_SecRel_4",
+      "symbol": "SEC_REL_4",
+      "llvm_value": 20,
+      "requires_target_schema": false,
+      "id": "0x65000015"
+    },
+    {
+      "internal": "FK_SecRel_8",
+      "symbol": "SEC_REL_8",
+      "llvm_value": 21,
+      "requires_target_schema": false,
+      "id": "0x65000016"
+    },
+    {
+      "internal": "TargetExtension",
+      "symbol": "TARGET_EXTENSION",
+      "llvm_value": 4294967295,
+      "requires_target_schema": true,
+      "id": "0x65000017"
+    }
+  ],
+  "layout_states": [
+    {
+      "internal": "Building",
+      "symbol": "BUILDING",
+      "llvm_value": 0,
+      "requires_target_schema": false,
+      "id": "0x66000001"
+    },
+    {
+      "internal": "Encoding",
+      "symbol": "ENCODING",
+      "llvm_value": 1,
+      "requires_target_schema": false,
+      "id": "0x66000002"
+    },
+    {
+      "internal": "Relaxing",
+      "symbol": "RELAXING",
+      "llvm_value": 2,
+      "requires_target_schema": false,
+      "id": "0x66000003"
+    },
+    {
+      "internal": "LaidOut",
+      "symbol": "LAID_OUT",
+      "llvm_value": 3,
+      "requires_target_schema": false,
+      "id": "0x66000004"
+    },
+    {
+      "internal": "Committed",
+      "symbol": "COMMITTED",
+      "llvm_value": 4,
+      "requires_target_schema": false,
+      "id": "0x66000005"
+    }
+  ]
+}

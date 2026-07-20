@@ -5,6 +5,7 @@
 #include "neverc/Plugin/Host/PluginRegistration.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
+#include "neverc/Plugin/Host/PluginTargetRegistry.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -717,6 +718,7 @@ const NevercMIRAnalysisAPI ProcessAnalysisAPI = {
 struct PassBinding {
   std::string PluginID;
   std::string PassID;
+  std::string RequiredTargetSchemaDigest;
   NevercMIRPassDescriptor Descriptor{};
   std::vector<NevercMIRBuiltinAnalysis> RequiredAnalyses;
   std::vector<NevercMIRBuiltinAnalysis> PreservedAnalyses;
@@ -784,10 +786,26 @@ void emitPassError(MachineFunction &Function, const PassBinding &Binding,
 } // namespace
 
 struct MIRPassPlan::Impl {
-  explicit Impl(PluginTaskContext &TaskValue) : Task(TaskValue) {}
+  explicit Impl(PluginTaskContext &TaskValue) : Task(TaskValue) {
+    std::shared_ptr<const PluginTargetSnapshot> Snapshot =
+        findPluginTargetSnapshot(Task.processServices(),
+                                 Task.session().handle());
+    if (Snapshot && Snapshot->selectedTarget())
+      ActiveTargetSchemaDigest =
+          Snapshot->selectedTarget()->Machine.SchemaDigest;
+  }
 
   bool runOne(const PassBinding &Binding, MachineFunction &Function,
               MachineBasicBlock *Block, AnalysisAccess Access) {
+    if (!Binding.RequiredTargetSchemaDigest.empty() &&
+        Binding.RequiredTargetSchemaDigest != ActiveTargetSchemaDigest) {
+      emitPassError(Function, Binding,
+                    "requires target schema digest '" +
+                        Binding.RequiredTargetSchemaDigest +
+                        "', but the active route provides '" +
+                        ActiveTargetSchemaDigest + "'");
+      return false;
+    }
     uint64_t FunctionGeneration = 1;
     {
       std::lock_guard<std::mutex> Lock(GenerationMutex);
@@ -795,7 +813,9 @@ struct MIRPassPlan::Impl {
       if (FunctionGeneration == 0)
         FunctionGeneration = 1;
     }
-    MIRPluginBridge Core(Task, Function, FunctionGeneration, true,
+    MIRPluginBridge Core(Task, Function, FunctionGeneration,
+                         ActiveTargetSchemaDigest,
+                         Binding.RequiredTargetSchemaDigest,
                          Binding.PluginID);
     AnalysisInvocationBridge Analyses(Task, Core, Function, Access);
     auto FunctionHandle = Core.machineFunction();
@@ -828,6 +848,8 @@ struct MIRPassPlan::Impl {
     Invocation.BasicBlock = BlockHandle;
     Invocation.Core = &Core.api();
     Invocation.Analyses = &Analyses.api();
+    Invocation.TargetSchemaDigest = {
+        ActiveTargetSchemaDigest.data(), ActiveTargetSchemaDigest.size()};
 
     NevercMIRPreservedAnalyses Preserved{};
     Preserved.Header = {sizeof(Preserved), NEVERC_MIR_PASS_API_MAJOR,
@@ -904,6 +926,7 @@ struct MIRPassPlan::Impl {
   }
 
   PluginTaskContext &Task;
+  std::string ActiveTargetSchemaDigest;
   std::vector<PassBinding> Bindings;
   std::mutex GenerationMutex;
   DenseMap<MachineFunction *, uint64_t> Generations;
@@ -1033,6 +1056,7 @@ MIRPassPlan::create(PluginTaskContext &Task) {
       PassBinding Binding;
       Binding.PluginID = Module->descriptor().PluginID;
       Binding.PassID = Record.PassID;
+      Binding.RequiredTargetSchemaDigest = Record.SchemaDigest;
       Binding.Descriptor = Record.MIRPass;
       Binding.Descriptor.PassID = {};
       Binding.RequiredAnalyses = Record.MIRRequiredAnalyses;

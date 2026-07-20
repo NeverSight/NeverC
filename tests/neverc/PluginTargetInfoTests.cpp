@@ -53,10 +53,11 @@ PluginTargetSnapshot::TargetRecord makeTargetRecord() {
   Record.Macros.push_back({"__NOVEL_TARGET__", "7", false});
   Record.Macros.push_back({"__REMOVE_ME__", "", true});
   Record.Builtins.push_back(
-      {"__builtin_novel_add", "iii", "nc", "simd", "", 2});
-  Record.Registers.push_back({"r0", {"zero"}});
+      {"__builtin_novel_add", "iii", "nc", "simd", "", 2, nullptr});
+  Record.Registers.push_back({"r0", {"zero"}, {}, 0});
   Record.Constraints.push_back(
-      {"r", NEVERC_TARGET_CONSTRAINT_ALLOWS_REGISTER, 0, 0, "r"});
+      {"r", NEVERC_TARGET_CONSTRAINT_ALLOWS_REGISTER, 0, 0, {}, 0, -1,
+       "r"});
   Record.Clobbers = "~{flags}";
   Record.Machine.Features.push_back({"simd", {}, {}, true});
   return Record;

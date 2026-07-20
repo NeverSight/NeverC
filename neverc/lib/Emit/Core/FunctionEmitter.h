@@ -1673,6 +1673,8 @@ public:
 
   llvm::Value *genTargetBuiltinExpr(unsigned BuiltinID, const CallExpr *E,
                                     ReturnValueSlot ReturnValue);
+  llvm::Value *genPluginTargetBuiltinExpr(unsigned BuiltinID,
+                                          const CallExpr *E);
 
   llvm::Value *genAArch64CompareBuiltinExpr(llvm::Value *Op, llvm::Type *Ty,
                                             const llvm::CmpInst::Predicate Fp,

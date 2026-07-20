@@ -109,6 +109,9 @@ public:
                                   std::shared_ptr<PluginHostService> Service);
   std::shared_ptr<PluginHostService>
   findHostService(NevercInterfaceID Interface) const;
+  bool currentCallbackHasSuffix(
+      const PluginTaskContext &Task,
+      llvm::StringRef Suffix) const;
   void enterCallbackScope(PluginSession &Session,
                           PluginTaskContext *Task,
                           llvm::StringRef PluginID,

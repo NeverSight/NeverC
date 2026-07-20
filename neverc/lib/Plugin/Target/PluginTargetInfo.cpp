@@ -34,6 +34,17 @@ TargetInfo::GCCRegAlias makeRegisterAlias(
           Register.Name.c_str()};
 }
 
+TargetInfo::AddlRegName makeAdditionalRegisterName(
+    const VerifiedTargetRegister &Register) {
+  const auto Name = [&](size_t Index) -> const char * {
+    return Index < Register.AdditionalNames.size()
+               ? Register.AdditionalNames[Index].c_str()
+               : nullptr;
+  };
+  return {{Name(0), Name(1), Name(2), Name(3), Name(4)},
+          Register.RegisterNumber};
+}
+
 } // namespace
 
 PluginTargetInfo::PluginTargetInfo(
@@ -94,6 +105,9 @@ PluginTargetInfo::PluginTargetInfo(
       static_cast<unsigned char>(Machine.MaximumAtomicWidth);
   MaxVectorAlign = Machine.MaximumVectorAlignment;
   TLSSupported = Machine.TLSSupported;
+  HasBuiltinMSVaList =
+      Machine.BuiltinVaListKind == NEVERC_TARGET_VA_LIST_AARCH64 ||
+      Machine.BuiltinVaListKind == NEVERC_TARGET_VA_LIST_X86_64;
 
   SizeType = UnsignedTypeForWidth(Machine.PointerWidth);
   PtrDiffType = SignedTypeForWidth(Machine.PointerWidth);
@@ -124,10 +138,14 @@ PluginTargetInfo::PluginTargetInfo(
 
   RegisterNames.reserve(Record.Registers.size());
   RegisterAliases.reserve(Record.Registers.size());
+  RegisterAdditionalNames.reserve(Record.Registers.size());
   for (const VerifiedTargetRegister &Register : Record.Registers) {
     RegisterNames.push_back(Register.Name.c_str());
     if (!Register.Aliases.empty())
       RegisterAliases.push_back(makeRegisterAlias(Register));
+    if (!Register.AdditionalNames.empty())
+      RegisterAdditionalNames.push_back(
+          makeAdditionalRegisterName(Register));
   }
 
   for (const VerifiedTargetFeature &Feature : Machine.Features)
@@ -136,24 +154,6 @@ PluginTargetInfo::PluginTargetInfo(
 
   resetDataLayout(Machine.DataLayout,
                   Record.Machine.GlobalLabelPrefix.c_str());
-}
-
-void PluginTargetInfo::getTargetDefines(const LangOptions &,
-                                        MacroBuilder &Builder) const {
-  for (const VerifiedTargetMacro &Macro : Record.Macros) {
-    if (Macro.Undefine) {
-      Builder.undefineMacro(Macro.Name);
-      continue;
-    }
-    if (Macro.Value.empty())
-      Builder.defineMacro(Macro.Name);
-    else
-      Builder.defineMacro(Macro.Name, Macro.Value);
-  }
-}
-
-ArrayRef<Builtin::Info> PluginTargetInfo::getTargetBuiltins() const {
-  return BuiltinInfos;
 }
 
 TargetInfo::BuiltinVaListKind
@@ -169,158 +169,6 @@ PluginTargetInfo::getBuiltinVaListKind() const {
   default:
     return VoidPtrBuiltinVaList;
   }
-}
-
-bool PluginTargetInfo::validateAsmConstraint(
-    const char *&Name, ConstraintInfo &Info) const {
-  const StringRef Input(Name);
-  for (const VerifiedTargetConstraint &Constraint :
-       Record.Constraints) {
-    if (!Input.starts_with(Constraint.Spelling))
-      continue;
-    if ((Constraint.Flags &
-         NEVERC_TARGET_CONSTRAINT_ALLOWS_MEMORY) != 0)
-      Info.setAllowsMemory();
-    if ((Constraint.Flags &
-         NEVERC_TARGET_CONSTRAINT_ALLOWS_REGISTER) != 0)
-      Info.setAllowsRegister();
-    if ((Constraint.Flags & NEVERC_TARGET_CONSTRAINT_IMMEDIATE) != 0)
-      Info.setRequiresImmediate(Constraint.ImmediateMinimum,
-                                Constraint.ImmediateMaximum);
-    Name += Constraint.Spelling.size() - 1;
-    return true;
-  }
-  return false;
-}
-
-std::string PluginTargetInfo::convertConstraint(
-    const char *&ConstraintValue) const {
-  const StringRef Input(ConstraintValue);
-  for (const VerifiedTargetConstraint &Constraint :
-       Record.Constraints) {
-    if (!Input.starts_with(Constraint.Spelling))
-      continue;
-    ConstraintValue += Constraint.Spelling.size() - 1;
-    return Constraint.ConvertedConstraint.empty()
-               ? Constraint.Spelling
-               : Constraint.ConvertedConstraint;
-  }
-  return TargetInfo::convertConstraint(ConstraintValue);
-}
-
-std::string_view PluginTargetInfo::getClobbers() const {
-  return Record.Clobbers;
-}
-
-bool PluginTargetInfo::setCPU(const std::string &Name) {
-  if (!isValidCPUName(Name))
-    return false;
-  CPU = Name;
-  return true;
-}
-
-bool PluginTargetInfo::isValidCPUName(StringRef Name) const {
-  if (Name.empty())
-    return false;
-  if (Record.Machine.CPUs.empty())
-    return true;
-  return std::binary_search(Record.Machine.CPUs.begin(),
-                            Record.Machine.CPUs.end(), Name);
-}
-
-bool PluginTargetInfo::isValidTuneCPUName(StringRef Name) const {
-  return isValidCPUName(Name);
-}
-
-void PluginTargetInfo::fillValidCPUList(
-    SmallVectorImpl<StringRef> &Values) const {
-  if (Record.Machine.CPUs.empty()) {
-    Values.push_back(Record.Machine.DefaultCPU);
-    return;
-  }
-  for (const std::string &Name : Record.Machine.CPUs)
-    Values.push_back(Name);
-}
-
-void PluginTargetInfo::fillValidTuneCPUList(
-    SmallVectorImpl<StringRef> &Values) const {
-  fillValidCPUList(Values);
-}
-
-bool PluginTargetInfo::initFeatureMap(
-    StringMap<bool> &Features, DiagnosticsEngine &Diags,
-    StringRef CPUValue,
-    const std::vector<std::string> &FeatureVec) const {
-  for (const VerifiedTargetFeature &Feature : Record.Machine.Features)
-    if (Feature.EnabledByDefault)
-      Features[Feature.Name] = true;
-  for (const std::string &Spelling : FeatureVec) {
-    StringRef Value(Spelling);
-    if (Value.size() < 2 ||
-        (Value.front() != '+' && Value.front() != '-') ||
-        !isValidFeatureName(Value.drop_front())) {
-      Diags.Report(diag::warn_fe_backend_invalid_feature_flag)
-          << Value;
-      return false;
-    }
-  }
-  if (!TargetInfo::initFeatureMap(Features, Diags, CPUValue,
-                                  FeatureVec))
-    return false;
-
-  bool Changed = true;
-  while (Changed) {
-    Changed = false;
-    for (const VerifiedTargetFeature &Feature : Record.Machine.Features) {
-      if (!Features.lookup(Feature.Name))
-        continue;
-      for (const std::string &Implied : Feature.Implies)
-        if (!Features.lookup(Implied)) {
-          Features[Implied] = true;
-          Changed = true;
-        }
-    }
-  }
-  for (const VerifiedTargetFeature &Feature : Record.Machine.Features) {
-    if (!Features.lookup(Feature.Name))
-      continue;
-    for (const std::string &Conflict : Feature.Conflicts)
-      if (Features.lookup(Conflict)) {
-        Diags.Report(diag::warn_invalid_feature_combination)
-            << (Feature.Name + " " + Conflict);
-        return false;
-      }
-  }
-  return true;
-}
-
-bool PluginTargetInfo::isValidFeatureName(StringRef Feature) const {
-  const auto It = std::lower_bound(
-      Record.Machine.Features.begin(), Record.Machine.Features.end(),
-      Feature,
-      [](const VerifiedTargetFeature &Entry, StringRef Value) {
-        return Entry.Name < Value;
-      });
-  return It != Record.Machine.Features.end() && It->Name == Feature;
-}
-
-bool PluginTargetInfo::handleTargetFeatures(
-    std::vector<std::string> &Features, DiagnosticsEngine &) {
-  ActiveFeatures.clear();
-  for (const std::string &Spelling : Features) {
-    StringRef Value(Spelling);
-    if (Value.size() < 2)
-      continue;
-    if (Value.front() == '+')
-      ActiveFeatures.insert(Value.drop_front());
-    else if (Value.front() == '-')
-      ActiveFeatures.erase(Value.drop_front());
-  }
-  return true;
-}
-
-bool PluginTargetInfo::hasFeature(StringRef Feature) const {
-  return ActiveFeatures.contains(Feature);
 }
 
 uint64_t PluginTargetInfo::getMaxPointerWidth() const {
@@ -354,15 +202,6 @@ uint64_t PluginTargetInfo::getPointerAlignV(
   const VerifiedTargetAddressSpace *Entry =
       findAddressSpace(AddressSpace);
   return Entry ? Entry->ABIAlignment : PointerAlign;
-}
-
-ArrayRef<const char *> PluginTargetInfo::getGCCRegNames() const {
-  return RegisterNames;
-}
-
-ArrayRef<TargetInfo::GCCRegAlias>
-PluginTargetInfo::getGCCRegAliases() const {
-  return RegisterAliases;
 }
 
 } // namespace neverc::plugin

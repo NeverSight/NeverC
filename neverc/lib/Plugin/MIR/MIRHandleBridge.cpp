@@ -19,12 +19,14 @@ bool sameHandle(NevercHandle Left, NevercHandle Right) {
 MIRPluginBridge::MIRPluginBridge(PluginTaskContext &Task,
                                  llvm::MachineFunction &Function,
                                  uint64_t FunctionGeneration,
-                                 bool TargetSchemaEnabled,
+                                 llvm::StringRef ActiveTargetSchemaDigest,
+                                 llvm::StringRef RequiredTargetSchemaDigest,
                                  llvm::StringRef PluginID)
     : Task(Task), Function(Function),
       FunctionGeneration(FunctionGeneration ? FunctionGeneration : 1),
       MutationGeneration(this->FunctionGeneration),
-      TargetSchemaEnabled(TargetSchemaEnabled),
+      ActiveTargetSchemaDigest(ActiveTargetSchemaDigest.str()),
+      RequiredTargetSchemaDigest(RequiredTargetSchemaDigest.str()),
       PluginID(PluginID.empty() ? "neverc.host.mir" : PluginID.str()) {
   initializeMIRSchemaAPI(API, this);
   initializeMIRCoreAPI(API);

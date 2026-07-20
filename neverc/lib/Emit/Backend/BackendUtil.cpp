@@ -15,9 +15,24 @@
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetOptions.h"
 #include "neverc/Invoke/LLVMCommandLine.h"
+#include "neverc/Plugin/Host/BuiltinTargetProvider.h"
+#include "neverc/Plugin/Host/CodeGenRoutePlanner.h"
+#include "neverc/Plugin/Host/IRPluginBridge.h"
 #include "neverc/Plugin/Host/IRPassPlugin.h"
 #include "neverc/Plugin/Host/IROptimizationProvider.h"
+#include "neverc/Plugin/Host/LLVMComponentProviderBridge.h"
+#include "neverc/Plugin/Host/MCEmissionPlan.h"
 #include "neverc/Plugin/Host/MIRPassPlugin.h"
+#include "neverc/Plugin/Host/CallingConventionMaterialize.h"
+#include "neverc/Plugin/Host/ObjectPhaseHooks.h"
+#include "neverc/Plugin/Host/ObjectReaderProvider.h"
+#include "neverc/Plugin/Host/PluginCodeGenPipeline.h"
+#include "neverc/Plugin/Host/PluginCodeGenProvider.h"
+#include "neverc/Plugin/Host/PluginIOBridge.h"
+#include "neverc/Plugin/Host/PluginSession.h"
+#include "neverc/Plugin/Host/PluginTargetDescriptor.h"
+#include "neverc/Plugin/Host/PluginTargetRegistry.h"
+#include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Scan/HeaderIndexOptions.h"
 #include "neverc/Transforms/StrHash/StrHashFoldPass.h"
 #include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
@@ -30,6 +45,7 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Bitcode/BitcodeAutoGeneratorPass.h"
 #include "llvm/Bitcode/BitcodeWriterPass.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/Frontend/Driver/CodeGenOptions.h"
@@ -42,6 +58,7 @@
 #include "llvm/IRPrinter/IRAutoGeneratorPass.h"
 #include "llvm/IRPrinter/IRPrintingPasses.h"
 #include "llvm/LTO/LTOBackend.h"
+#include "llvm/MC/MCContext.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
@@ -111,6 +128,10 @@ class GenAssemblyHelper {
   std::unique_ptr<plugin::PluginIROptimizationProviderRuntime>
       OptimizationRuntime;
   std::shared_ptr<plugin::MIRPassPlan> MachinePasses;
+  std::shared_ptr<plugin::PluginCodeGenPipelineRuntime> CodeGenPipeline;
+  std::unique_ptr<plugin::LLVMComponentProviderBridge>
+      MCComponentProvider;
+  std::unique_ptr<plugin::MCEmissionPlan> MCEmissionHooks;
   bool MachinePassesPrepared = false;
 
   Timer CodeGenerationTime;
@@ -153,6 +174,11 @@ class GenAssemblyHelper {
   void runCodegenPipeline(BackendAction Action,
                           std::unique_ptr<raw_pwrite_stream> &OS,
                           std::unique_ptr<llvm::ToolOutputFile> &DwoOS);
+  const plugin::PluginTargetSnapshot::CodeGenEdgeRecord *
+  findCoarseObjectEdge() const;
+  bool runCoarseObjectCodeGen(raw_pwrite_stream &Output);
+  bool runPluginObjectPipeline(ArrayRef<char> Input,
+                               raw_pwrite_stream &Output);
 
   // NeverC always uses Full LTO (auto-lto); the linker loads each bitcode
   // module in its entirety via parseModule(), so the per-file module summary
@@ -380,12 +406,40 @@ void setCommandLineOpts(const CodeGenOptions &CodeGenOpts) {
 // ===----------------------------------------------------------------------===
 
 void GenAssemblyHelper::createTargetMachine(bool MustCreateTM) {
-  std::string Error;
+  std::string ErrorMessage;
   std::string Triple = TheModule->getTargetTriple();
-  const llvm::Target *TheTarget = TargetRegistry::lookupTarget(Triple, Error);
+  const llvm::Target *TheTarget = nullptr;
+  const plugin::BuiltinTargetRoute *BuiltinRoute = nullptr;
+  bool UseBuiltinProvider = false;
+  if (PluginTask) {
+    auto Snapshot = plugin::findPluginTargetSnapshot(
+        PluginTask->processServices(), PluginTask->session().handle());
+    UseBuiltinProvider =
+        Snapshot &&
+        (Snapshot->targetCount() != 0 || Snapshot->mcSchemaCount() != 0 ||
+         Snapshot->objectFormatCount() != 0);
+  }
+
+  if (UseBuiltinProvider) {
+    BuiltinRoute = plugin::findBuiltinTargetRoute(Triple);
+    if (!BuiltinRoute) {
+      ErrorMessage =
+          "selected plugin target has no built-in LLVM target route; "
+          "a plugin codegen provider is required";
+    } else {
+      auto Lookup = plugin::lookupBuiltinLLVMTarget(*BuiltinRoute);
+      if (!Lookup)
+        ErrorMessage = toString(Lookup.takeError()).str().str();
+      else
+        TheTarget = *Lookup;
+    }
+  } else {
+    TheTarget = TargetRegistry::lookupTarget(Triple, ErrorMessage);
+  }
   if (!TheTarget) {
     if (MustCreateTM)
-      Diags.Report(diag::err_fe_unable_to_create_target) << Error;
+      Diags.Report(diag::err_fe_unable_to_create_target)
+          << ErrorMessage;
     return;
   }
 
@@ -403,6 +457,20 @@ void GenAssemblyHelper::createTargetMachine(bool MustCreateTM) {
     return;
   TM.reset(TheTarget->createTargetMachine(Triple, TargetOpts.CPU, FeaturesStr,
                                           Options, CM, OptLevel));
+  if (!TM) {
+    if (MustCreateTM)
+      Diags.Report(diag::err_fe_unable_to_create_target)
+          << "target machine factory returned null";
+    return;
+  }
+  if (BuiltinRoute)
+    if (Error E = plugin::validateBuiltinTargetPipeline(
+            *BuiltinRoute, *TheModule, *TM, TargetOpts.CPU, FeaturesStr)) {
+      Diags.Report(diag::err_fe_unable_to_create_target)
+          << toString(std::move(E));
+      TM.reset();
+      return;
+    }
   TM->setLargeDataThreshold(CodeGenOpts.LargeDataThreshold);
 }
 
@@ -419,8 +487,17 @@ bool GenAssemblyHelper::addEmitPasses(legacy::PassManager &CodeGenPasses,
   if (!prepareMachinePasses())
     return false;
 
+  auto *MMI = new MachineModuleInfoWrapperPass(
+      static_cast<LLVMTargetMachine *>(TM.get()));
+  if (MCComponentProvider)
+    MMI->getMMI().getContext().setComponentProvider(
+        MCComponentProvider.get());
+  if (MCEmissionHooks)
+    MMI->getMMI().getContext().setEmissionObserver(
+        MCEmissionHooks.get());
   if (TM->addPassesToEmitFile(CodeGenPasses, OS, DwoOS, CGFT,
-                              /*DisableVerify=*/!CodeGenOpts.VerifyModule)) {
+                              /*DisableVerify=*/!CodeGenOpts.VerifyModule,
+                              MMI)) {
     Diags.Report(diag::err_fe_unable_to_interface_with_target);
     return false;
   }
@@ -455,6 +532,43 @@ bool GenAssemblyHelper::prepareMachinePasses() {
         std::make_shared<CompositeMachinePipelineHooks>(std::move(Hooks));
   static_cast<LLVMTargetMachine *>(TM.get())
       ->setMachinePipelineHooks(std::move(Combined));
+
+  if (PluginTask) {
+    auto Emission = plugin::MCEmissionPlan::create(*PluginTask);
+    if (!Emission) {
+      Diags.Report(diag::err_fe_error_backend)
+          << toString(Emission.takeError());
+      return false;
+    }
+    if (!(*Emission)->empty())
+      MCEmissionHooks = std::move(*Emission);
+
+    auto Snapshot = plugin::findPluginTargetSnapshot(
+        PluginTask->processServices(), PluginTask->session().handle());
+    if (Snapshot && Snapshot->selectedTarget()) {
+      auto Components =
+          plugin::LLVMComponentProviderBridge::create(
+              *PluginTask, Snapshot);
+      if (!Components) {
+        Diags.Report(diag::err_fe_error_backend)
+            << toString(Components.takeError());
+        return false;
+      }
+      if ((*Components)->hasReplacements())
+        MCComponentProvider = std::move(*Components);
+      auto Runtime = plugin::PluginCodeGenPipelineRuntime::create(
+          *PluginTask, std::move(Snapshot));
+      if (!Runtime) {
+        Diags.Report(diag::err_fe_error_backend)
+            << toString(Runtime.takeError());
+        return false;
+      }
+      CodeGenPipeline = std::move(*Runtime);
+      CodeGenPipeline->install(
+          *static_cast<LLVMTargetMachine *>(TM.get()),
+          CodeGenOpts.VerifyModule);
+    }
+  }
   return true;
 }
 
@@ -817,6 +931,14 @@ bool GenAssemblyHelper::runOptimizationPipeline(
     return false;
   }
 
+  if (TM)
+    if (Error E = plugin::materializeCallingConventionPlans(
+            *TheModule, *TM, PluginTask)) {
+      Diags.Report(diag::err_fe_error_backend)
+          << toString(std::move(E));
+      return false;
+    }
+
   emitOptimizedIR(Action, OS);
   return true;
 }
@@ -869,6 +991,312 @@ void GenAssemblyHelper::runCodegenPipeline(
   }
 }
 
+const plugin::PluginTargetSnapshot::CodeGenEdgeRecord *
+GenAssemblyHelper::findCoarseObjectEdge() const {
+  if (!PluginTask)
+    return nullptr;
+  auto Snapshot = plugin::findPluginTargetSnapshot(
+      PluginTask->processServices(), PluginTask->session().handle());
+  if (!Snapshot)
+    return nullptr;
+  const auto *Selected = Snapshot->selectedTarget();
+  if (!Selected)
+    Selected = Snapshot->matchTarget(TargetOpts.Triple);
+  if (!Selected)
+    Selected = Snapshot->matchTarget(TheModule->getTargetTriple());
+  if (!Selected)
+    return nullptr;
+  for (const auto &Edge : Snapshot->codeGenEdges())
+    if (Edge.TargetID.High == Selected->ID.High &&
+        Edge.TargetID.Low == Selected->ID.Low &&
+        Edge.InputKind == NEVERC_CODEGEN_PRODUCT_IR &&
+        Edge.OutputKind == NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE &&
+        (Edge.Flags & NEVERC_CODEGEN_EDGE_COARSE) != 0 &&
+        Edge.CoarseLower && Edge.VerifyProduct)
+      return &Edge;
+  return nullptr;
+}
+
+bool GenAssemblyHelper::runCoarseObjectCodeGen(
+    raw_pwrite_stream &Output) {
+  const auto *Edge = findCoarseObjectEdge();
+  auto Snapshot = plugin::findPluginTargetSnapshot(
+      PluginTask->processServices(), PluginTask->session().handle());
+  if (!Edge || !Snapshot)
+    return false;
+  const auto *Selected = Snapshot->selectedTarget();
+  if (!Selected)
+    Selected = Snapshot->matchTarget(TargetOpts.Triple);
+  if (!Selected)
+    Selected = Snapshot->matchTarget(TheModule->getTargetTriple());
+  if (!Selected)
+    return false;
+
+  const auto &Machine = Selected->Machine;
+  plugin::TargetKeyBuilder KeyBuilder;
+  KeyBuilder
+      .setTargetID(Selected->ID)
+      .setTriple(TargetOpts.Triple.empty() ? Machine.RawTriple
+                                           : TargetOpts.Triple,
+                 Machine.Architecture, Machine.Vendor,
+                 Machine.OperatingSystem, Machine.Environment)
+      .setCPU(TargetOpts.CPU.empty() ? Machine.DefaultCPU : TargetOpts.CPU,
+              TargetOpts.TuneCPU.empty() ? Machine.TuneCPU
+                                          : TargetOpts.TuneCPU)
+      .setFeatures(TargetOpts.Features)
+      .setABI(Selected->DefaultABI)
+      .setCallingConvention(Selected->DefaultCallingConvention)
+      .setObjectFormat(Selected->DefaultObjectFormatID)
+      .setCodeGeneration(Machine.DefaultRelocationModel,
+                         Machine.DefaultCodeModel)
+      .setExecution(Machine.DefaultExecutionLevel, Machine.PointerWidth,
+                    Machine.Endianness)
+      .setSchemaDigest(Machine.SchemaDigest);
+  auto OwnedKey = KeyBuilder.build();
+  if (!OwnedKey) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(OwnedKey.takeError());
+    return false;
+  }
+  NevercTargetKey Target = OwnedKey->view();
+
+  plugin::CodeGenRouteRequest RouteRequest;
+  RouteRequest.TargetID = Target.TargetID;
+  RouteRequest.InputKind = NEVERC_CODEGEN_PRODUCT_IR;
+  RouteRequest.OutputKind = NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE;
+  RouteRequest.CompatibilityKey = Edge->CompatibilityKey;
+  auto Route =
+      plugin::CodeGenRoutePlanner::plan(*Snapshot, RouteRequest);
+  if (!Route) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Route.takeError());
+    return false;
+  }
+
+  auto Bridge =
+      plugin::IRPluginBridge::borrow(*PluginTask, *TheModule);
+  if (!Bridge) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Bridge.takeError());
+    return false;
+  }
+  auto ModuleHandle = (*Bridge)->wrapModule(*TheModule);
+  if (!ModuleHandle) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(ModuleHandle.takeError());
+    return false;
+  }
+
+  plugin::CodeGenExecutionRequest Request;
+  Request.TaskContext = PluginTask;
+  Request.Task = PluginTask->handle();
+  Request.Target = Target;
+  Request.Input = *ModuleHandle;
+  Request.InputKind = NEVERC_CODEGEN_PRODUCT_IR;
+  Request.OutputKind = NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE;
+  Request.CompatibilityKey = Edge->CompatibilityKey;
+  Request.HasFinalIRProof = true;
+  Request.OptimizationLevel =
+      CodeGenOpts.OptimizationLevel == 0
+          ? NEVERC_CODEGEN_OPT_NONE
+          : CodeGenOpts.OptimizationLevel == 1
+                ? NEVERC_CODEGEN_OPT_LESS
+                : CodeGenOpts.OptimizationLevel == 2
+                      ? NEVERC_CODEGEN_OPT_DEFAULT
+                      : NEVERC_CODEGEN_OPT_AGGRESSIVE;
+  auto Product = plugin::PluginCodeGenProviderRuntime::execute(
+      *Route, Request, {});
+  if (!Product) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Product.takeError());
+    return false;
+  }
+
+  auto Staged = plugin::inspectPluginOutputSeal(
+      *PluginTask, Product->Candidate.Artifact);
+  if (!Staged) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Staged.takeError());
+    return false;
+  }
+  if (Staged->State != NEVERC_OUTPUT_FINISHED ||
+      Staged->Kind != NEVERC_OUTPUT_MEMORY) {
+    Diags.Report(diag::err_fe_error_backend)
+        << "coarse object Provider must publish a finished memory output";
+    return false;
+  }
+
+  NevercOutputSeal Seal{};
+  Seal.Header = {sizeof(Seal), NEVERC_IO_API_MAJOR,
+                 NEVERC_IO_API_MINOR, 0};
+  Seal.Handle = Product->Candidate.Artifact;
+  Seal.Kind = Staged->Kind;
+  Seal.Size = Staged->Size;
+  std::copy(Staged->Digest.begin(), Staged->Digest.end(),
+            Seal.Digest);
+  NevercObjectLayoutProofInfo LayoutReport{};
+  LayoutReport.Header = {sizeof(LayoutReport), NEVERC_OBJECT_API_MAJOR,
+                         NEVERC_OBJECT_API_MINOR, 0};
+  LayoutReport.GraphGeneration = 1;
+  LayoutReport.TargetID = Target.TargetID;
+  LayoutReport.FormatID = Target.ObjectFormatID;
+  const std::string Provenance =
+      "coarse:" + Edge->PluginID + ":" + Edge->ProviderID;
+  auto Image = plugin::PluginObjectImage::create(
+      *PluginTask, Target.ObjectFormatID, Target.TargetID, 1, Seal,
+      Provenance, LayoutReport);
+  if (!Image) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Image.takeError());
+    return false;
+  }
+  auto Pipeline =
+      plugin::ObjectPhasePipeline::create(*PluginTask, Snapshot);
+  if (!Pipeline) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Pipeline.takeError());
+    return false;
+  }
+  auto Committed = (*Pipeline)->verifyAndCommitFinished(
+      Target, std::shared_ptr<plugin::PluginObjectImage>(
+                  std::move(*Image)));
+  if (!Committed) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Committed.takeError());
+    return false;
+  }
+  auto Result = plugin::findPluginMemoryOutput(
+      *PluginTask, Staged->Destination);
+  if (!Result) {
+    Diags.Report(diag::err_fe_error_backend)
+        << "coarse object Provider committed no memory output";
+    return false;
+  }
+  Output.write(reinterpret_cast<const char *>(Result->Bytes.data()),
+               Result->Bytes.size());
+  return true;
+}
+
+bool GenAssemblyHelper::runPluginObjectPipeline(
+    ArrayRef<char> Input, raw_pwrite_stream &Output) {
+  auto Snapshot = plugin::findPluginTargetSnapshot(
+      PluginTask->processServices(), PluginTask->session().handle());
+  if (!Snapshot) {
+    Output.write(Input.data(), Input.size());
+    return true;
+  }
+  auto Pipeline =
+      plugin::ObjectPhasePipeline::create(*PluginTask, Snapshot);
+  if (!Pipeline) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Pipeline.takeError());
+    return false;
+  }
+  if (!(*Pipeline)->hasPluginBindings()) {
+    Output.write(Input.data(), Input.size());
+    return true;
+  }
+
+  std::optional<plugin::OwnedTargetKey> BuiltinTargetKey;
+  const plugin::OwnedTargetKey *TargetKey = Snapshot->targetKey();
+  if (!TargetKey) {
+    const plugin::BuiltinTargetRoute *BuiltinRoute =
+        plugin::findBuiltinTargetRoute(TheModule->getTargetTriple());
+    if (!BuiltinRoute) {
+      Output.write(Input.data(), Input.size());
+      return true;
+    }
+    Triple Parsed(TheModule->getTargetTriple());
+    plugin::TargetKeyBuilder Builder;
+    auto Built = Builder
+                     .setTargetID(BuiltinRoute->TargetID)
+                     .setTriple(
+                         TheModule->getTargetTriple(),
+                         Parsed.getArchName().str(),
+                         Parsed.getVendorName().str(),
+                         Parsed.getOSName().str(),
+                         Parsed.getEnvironmentName().str())
+                     .setCPU(
+                         TargetOpts.CPU.empty()
+                             ? BuiltinRoute->DefaultCPU.str()
+                             : TargetOpts.CPU,
+                         TargetOpts.CPU.empty()
+                             ? BuiltinRoute->DefaultCPU.str()
+                             : TargetOpts.CPU)
+                     .setFeatures(TargetOpts.Features)
+                     .setABI(BuiltinRoute->ABIID)
+                     .setCallingConvention(
+                         {UINT64_C(0x4e43504243430001),
+                          BuiltinRoute->TargetID.Low})
+                     .setObjectFormat(BuiltinRoute->ObjectFormatID)
+                     .setCodeGeneration(
+                         NEVERC_TARGET_RELOCATION_PIC,
+                         NEVERC_TARGET_CODE_MODEL_SMALL)
+                     .setExecution(
+                         NEVERC_TARGET_EXECUTION_USER, 64,
+                         NEVERC_TARGET_ENDIAN_LITTLE)
+                     .setSchemaDigest(std::string(64, '0'))
+                     .build();
+    if (!Built) {
+      Diags.Report(diag::err_fe_error_backend)
+          << toString(Built.takeError());
+      return false;
+    }
+    BuiltinTargetKey.emplace(std::move(*Built));
+    TargetKey = &*BuiltinTargetKey;
+  }
+
+  auto Reader = plugin::ObjectReaderProvider::create(Snapshot);
+  if (!Reader) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Reader.takeError());
+    return false;
+  }
+
+  NevercTargetKey Target = TargetKey->view();
+  std::optional<NevercObjectFormatID> RequiredFormat;
+  if (Target.ObjectFormatID.High != 0 || Target.ObjectFormatID.Low != 0)
+    RequiredFormat = Target.ObjectFormatID;
+  ArrayRef<uint8_t> Bytes(
+      reinterpret_cast<const uint8_t *>(Input.data()), Input.size());
+  auto Graph = (*Reader)->read(
+      *PluginTask, Bytes, "<neverc-native-object>",
+      *TargetKey, RequiredFormat);
+  if (!Graph) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Graph.takeError());
+    return false;
+  }
+
+  std::string LogicalName =
+      (Twine("neverc-backend-object-") +
+       Twine(PluginTask->handle().Owner) + "-" +
+       Twine(PluginTask->handle().Value))
+          .str();
+  uint64_t Budget =
+      std::max<uint64_t>(uint64_t(Input.size()) * 16,
+                         UINT64_C(64) * 1024 * 1024);
+  auto Image = (*Pipeline)->executeNative(
+      **Graph, Bytes,
+      plugin::ObjectOutputDestination::memory(LogicalName, Budget));
+  if (!Image) {
+    Diags.Report(diag::err_fe_error_backend)
+        << toString(Image.takeError());
+    return false;
+  }
+
+  auto Result =
+      plugin::findPluginMemoryOutput(*PluginTask, LogicalName);
+  if (!Result) {
+    Diags.Report(diag::err_fe_error_backend)
+        << "object pipeline committed no memory output";
+    return false;
+  }
+  Output.write(reinterpret_cast<const char *>(Result->Bytes.data()),
+               Result->Bytes.size());
+  return true;
+}
+
 void GenAssemblyHelper::genAssembly(BackendAction Action,
                                     std::unique_ptr<raw_pwrite_stream> OS,
                                     EmitterConsumer *BC) {
@@ -876,13 +1304,17 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   setCommandLineOpts(CodeGenOpts);
 
   bool RequiresCodeGen = actionRequiresCodeGen(Action);
-  createTargetMachine(RequiresCodeGen);
+  const bool UseCoarseObjectProvider =
+      RequiresCodeGen && Action == Backend_EmitObj &&
+      findCoarseObjectEdge();
+  createTargetMachine(RequiresCodeGen && !UseCoarseObjectProvider);
 
-  if (RequiresCodeGen && !TM)
+  if (RequiresCodeGen && !TM && !UseCoarseObjectProvider)
     return;
   if (TM)
     TheModule->setDataLayout(TM->createDataLayout());
-  if (RequiresCodeGen && !prepareMachinePasses())
+  if (RequiresCodeGen && !UseCoarseObjectProvider &&
+      !prepareMachinePasses())
     return;
 
   cl::PrintOptionValues();
@@ -891,8 +1323,11 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   // The threshold/partition logic lives inside runParallelCodeGen() —
   // no need to scan the module here.
   unsigned ParallelN = CodeGenOpts.ParallelCodeGen;
-  bool UseParallel = RequiresCodeGen && Action == Backend_EmitObj &&
+  bool UseParallel = RequiresCodeGen && !UseCoarseObjectProvider &&
+                     Action == Backend_EmitObj &&
                      !CodeGenOpts.PrepareForLTO && ParallelN != 1 &&
+                     !MCComponentProvider &&
+                     !MCEmissionHooks &&
                      (!MachinePasses ||
                       !MachinePasses->requiresSerialCodeGen());
 
@@ -906,11 +1341,29 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   if (!runOptimizationPipeline(Action, OS, BC))
     return;
 
+  if (UseCoarseObjectProvider) {
+    (void)runCoarseObjectCodeGen(*OS);
+    return;
+  }
+
+  std::unique_ptr<raw_pwrite_stream> FinalOutput;
+  SmallVector<char, 0> NativeObject;
+  if (Action == Backend_EmitObj && PluginTask) {
+    FinalOutput = std::move(OS);
+    OS = std::make_unique<raw_svector_ostream>(NativeObject);
+  }
+
   if (UseParallel) {
     if (!neverc::runParallelCodeGen(*TheModule, *TM, *OS, ParallelN))
       runCodegenPipeline(Action, OS, DwoOS);
   } else {
     runCodegenPipeline(Action, OS, DwoOS);
+  }
+
+  if (FinalOutput) {
+    OS->flush();
+    if (!runPluginObjectPipeline(NativeObject, *FinalOutput))
+      return;
   }
 
   if (DwoOS)

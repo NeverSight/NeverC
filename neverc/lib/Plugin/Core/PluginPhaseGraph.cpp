@@ -329,4 +329,100 @@ Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinIRGraph() {
   return Graph;
 }
 
+Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinCodeGenGraph() {
+  PluginPhaseGraph Graph;
+#define NEVERC_BUILD_BUILTIN_PHASE(Symbol)                                    \
+  builtinPhase(                                                               \
+      NEVERC_PHASE_##Symbol##_NAME, NEVERC_PHASE_##Symbol##_DOMAIN,           \
+      NEVERC_PHASE_##Symbol##_VERIFIER, NEVERC_PHASE_##Symbol##_HIGH,         \
+      NEVERC_PHASE_##Symbol##_LOW, NEVERC_PHASE_##Symbol##_INPUT_HIGH,        \
+      NEVERC_PHASE_##Symbol##_INPUT_LOW, NEVERC_PHASE_##Symbol##_OUTPUT_HIGH, \
+      NEVERC_PHASE_##Symbol##_OUTPUT_LOW, NEVERC_PHASE_##Symbol##_POLICY,     \
+      NEVERC_PHASE_##Symbol##_OBSERVER_POINTS, NEVERC_PHASE_##Symbol##_GATE,  \
+      NEVERC_PHASE_##Symbol##_STABILITY,                                      \
+      NEVERC_PHASE_##Symbol##_BUILTIN_FALLBACK),
+  const PluginPhaseDefinition Builtins[] = {
+      NEVERC_FOR_EACH_BUILTIN_CODEGEN_PHASE(NEVERC_BUILD_BUILTIN_PHASE)};
+#undef NEVERC_BUILD_BUILTIN_PHASE
+  for (const PluginPhaseDefinition &Phase : Builtins)
+    if (Error E = Graph.addPhase(Phase))
+      return std::move(E);
+  if (Error E = Graph.addEdge(
+          {NEVERC_PHASE_CODEGEN_IR_TO_MIR_HIGH,
+           NEVERC_PHASE_CODEGEN_IR_TO_MIR_LOW},
+          {NEVERC_PHASE_CODEGEN_MIR_TO_MC_HIGH,
+           NEVERC_PHASE_CODEGEN_MIR_TO_MC_LOW},
+          true))
+    return std::move(E);
+  if (Error E = Graph.finalize())
+    return std::move(E);
+  return Graph;
+}
+
+Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinMCGraph() {
+  PluginPhaseGraph Graph;
+#define NEVERC_BUILD_BUILTIN_PHASE(Symbol)                                    \
+  builtinPhase(                                                               \
+      NEVERC_PHASE_##Symbol##_NAME, NEVERC_PHASE_##Symbol##_DOMAIN,           \
+      NEVERC_PHASE_##Symbol##_VERIFIER, NEVERC_PHASE_##Symbol##_HIGH,         \
+      NEVERC_PHASE_##Symbol##_LOW, NEVERC_PHASE_##Symbol##_INPUT_HIGH,        \
+      NEVERC_PHASE_##Symbol##_INPUT_LOW, NEVERC_PHASE_##Symbol##_OUTPUT_HIGH, \
+      NEVERC_PHASE_##Symbol##_OUTPUT_LOW, NEVERC_PHASE_##Symbol##_POLICY,     \
+      NEVERC_PHASE_##Symbol##_OBSERVER_POINTS, NEVERC_PHASE_##Symbol##_GATE,  \
+      NEVERC_PHASE_##Symbol##_STABILITY,                                      \
+      NEVERC_PHASE_##Symbol##_BUILTIN_FALLBACK),
+  const PluginPhaseDefinition Builtins[] = {
+      NEVERC_FOR_EACH_BUILTIN_MC_PHASE(NEVERC_BUILD_BUILTIN_PHASE)};
+#undef NEVERC_BUILD_BUILTIN_PHASE
+  for (const PluginPhaseDefinition &Phase : Builtins)
+    if (Error E = Graph.addPhase(Phase))
+      return std::move(E);
+  if (Error E = Graph.finalize())
+    return std::move(E);
+  return Graph;
+}
+
+Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinObjectGraph() {
+  PluginPhaseGraph Graph;
+#define NEVERC_BUILD_BUILTIN_PHASE(Symbol)                                    \
+  builtinPhase(                                                               \
+      NEVERC_PHASE_##Symbol##_NAME, NEVERC_PHASE_##Symbol##_DOMAIN,           \
+      NEVERC_PHASE_##Symbol##_VERIFIER, NEVERC_PHASE_##Symbol##_HIGH,         \
+      NEVERC_PHASE_##Symbol##_LOW, NEVERC_PHASE_##Symbol##_INPUT_HIGH,        \
+      NEVERC_PHASE_##Symbol##_INPUT_LOW, NEVERC_PHASE_##Symbol##_OUTPUT_HIGH, \
+      NEVERC_PHASE_##Symbol##_OUTPUT_LOW, NEVERC_PHASE_##Symbol##_POLICY,     \
+      NEVERC_PHASE_##Symbol##_OBSERVER_POINTS, NEVERC_PHASE_##Symbol##_GATE,  \
+      NEVERC_PHASE_##Symbol##_STABILITY,                                      \
+      NEVERC_PHASE_##Symbol##_BUILTIN_FALLBACK),
+  const PluginPhaseDefinition Builtins[] = {
+      NEVERC_FOR_EACH_BUILTIN_OBJECT_PHASE(NEVERC_BUILD_BUILTIN_PHASE)};
+#undef NEVERC_BUILD_BUILTIN_PHASE
+  for (const PluginPhaseDefinition &Phase : Builtins)
+    if (Error E = Graph.addPhase(Phase))
+      return std::move(E);
+
+  const NevercInterfaceID Ordered[] = {
+      {NEVERC_PHASE_OBJECT_PROBE_HIGH, NEVERC_PHASE_OBJECT_PROBE_LOW},
+      {NEVERC_PHASE_OBJECT_READ_HIGH, NEVERC_PHASE_OBJECT_READ_LOW},
+      {NEVERC_PHASE_OBJECT_PRE_WRITE_HIGH,
+       NEVERC_PHASE_OBJECT_PRE_WRITE_LOW},
+      {NEVERC_PHASE_OBJECT_POST_LAYOUT_HIGH,
+       NEVERC_PHASE_OBJECT_POST_LAYOUT_LOW},
+      {NEVERC_PHASE_OBJECT_WRITE_HIGH, NEVERC_PHASE_OBJECT_WRITE_LOW},
+      {NEVERC_PHASE_OBJECT_POST_WRITE_HIGH,
+       NEVERC_PHASE_OBJECT_POST_WRITE_LOW},
+      {NEVERC_PHASE_OBJECT_FINAL_VERIFY_HIGH,
+       NEVERC_PHASE_OBJECT_FINAL_VERIFY_LOW},
+      {NEVERC_PHASE_OBJECT_COMMIT_HIGH, NEVERC_PHASE_OBJECT_COMMIT_LOW},
+  };
+  for (size_t Index = 1; Index != std::size(Ordered); ++Index)
+    if (Error E = Graph.addEdge(
+            Ordered[Index - 1], Ordered[Index],
+            Index >= 2))
+      return std::move(E);
+  if (Error E = Graph.finalize())
+    return std::move(E);
+  return Graph;
+}
+
 } // namespace neverc::plugin

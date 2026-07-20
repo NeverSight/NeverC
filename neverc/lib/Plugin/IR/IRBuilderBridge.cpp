@@ -138,6 +138,52 @@ bool IRBuilderPluginBridge::hasActiveMutation() const {
   return false;
 }
 
+NevercStatus IRBuilderPluginBridge::commitInProgressFunctionMutation(
+    NevercIRMutationHandle MutationHandle) {
+  Mutation *Value = nullptr;
+  NevercStatus Status = resolveMutation(MutationHandle, &Value);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  if (Value->CurrentState != Mutation::State::Active)
+    return IRPluginBridge::makeStatus(
+        NEVERC_STATUS_INVALID_STATE,
+        "IR mutation lease is not active");
+  if (Value->Scope != NEVERC_IR_MUTATION_SCOPE_FUNCTION ||
+      Value->FunctionScope == nullptr)
+    return IRPluginBridge::makeStatus(
+        NEVERC_STATUS_WRONG_SCOPE,
+        "deferred verification requires a function mutation");
+
+  // Builtin lowering runs while IRGen is still constructing the function, so
+  // verifyFunction would reject its intentionally unterminated blocks. The
+  // typed builder has already validated each operation; ensure every created
+  // value is still attached to the leased function and leave full structural
+  // verification to the mandatory completed-module verifier.
+  for (const WeakTrackingVH &Tracked : Value->CreatedValues) {
+    llvm::Value *Created = Tracked;
+    const bool InScope =
+        Created != nullptr &&
+        ((isa<Instruction>(Created) &&
+          cast<Instruction>(Created)->getFunction() ==
+              Value->FunctionScope) ||
+         (isa<BasicBlock>(Created) &&
+          cast<BasicBlock>(Created)->getParent() ==
+              Value->FunctionScope));
+    if (!InScope) {
+      rollback(*Value);
+      return IRPluginBridge::makeStatus(
+          NEVERC_STATUS_VERIFICATION_FAILED,
+          "IR builtin lowering created a detached or foreign value");
+    }
+  }
+
+  Value->CurrentState = Mutation::State::Committed;
+  if (!Value->CreatedValues.empty() ||
+      !Value->PhiIncomingEdits.empty())
+    Bridge.noteMutation();
+  return IRPluginBridge::successStatus();
+}
+
 Error IRBuilderPluginBridge::initialize() {
   API.Header = {sizeof(API), NEVERC_IR_BUILDER_API_MAJOR,
                 NEVERC_IR_BUILDER_API_MINOR, 0};

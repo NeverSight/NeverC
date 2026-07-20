@@ -177,6 +177,14 @@ class MCStreamer {
   /// discussion for future inclusion.
   bool AllowAutoPadding = false;
 
+  bool EmissionUnitStarted = false;
+  bool EmissionUnitEnded = false;
+
+  bool beginEmissionUnit();
+  void notifyEmissionSectionChange(MCSection &Section,
+                                   const MCExpr *Subsection);
+  void endEmissionUnit();
+
 protected:
   MCStreamer(MCContext &Ctx);
 
@@ -344,9 +352,12 @@ public:
     --I;
     MCSectionSubPair NewSection = I->first;
 
-    if (NewSection.first && OldSection != NewSection)
+    const bool Changed = NewSection.first && OldSection != NewSection;
+    if (Changed)
       changeSection(NewSection.first, NewSection.second);
     SectionStack.pop_back();
+    if (Changed)
+      notifyEmissionSectionChange(*NewSection.first, NewSection.second);
     return true;
   }
 

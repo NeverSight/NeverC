@@ -41,6 +41,8 @@
 namespace llvm {
 
 class MCAsmInfo;
+class MCComponentProvider;
+class MCEmissionObserver;
 class MCInst;
 class MCLabel;
 class MCObjectFileInfo;
@@ -98,6 +100,12 @@ private:
 
   /// The MCSubtargetInfo for this target.
   const MCSubtargetInfo *MSTI = nullptr;
+
+  /// Optional non-owning component provider scoped to this MC pipeline.
+  MCComponentProvider *ComponentProvider = nullptr;
+
+  /// Optional non-owning emission observer scoped to this MC pipeline.
+  MCEmissionObserver *EmissionObserver = nullptr;
 
   /// Allocator object used for creating machine code objects.
   ///
@@ -360,6 +368,20 @@ public:
   const MCObjectFileInfo *getObjectFileInfo() const { return MOFI; }
 
   const MCSubtargetInfo *getSubtargetInfo() const { return MSTI; }
+
+  void setComponentProvider(MCComponentProvider *Provider) {
+    ComponentProvider = Provider;
+  }
+  MCComponentProvider *getComponentProvider() const {
+    return ComponentProvider;
+  }
+
+  void setEmissionObserver(MCEmissionObserver *Observer) {
+    EmissionObserver = Observer;
+  }
+  MCEmissionObserver *getEmissionObserver() const {
+    return EmissionObserver;
+  }
 
   void setAllowTemporaryLabels(bool Value) { AllowTemporaryLabels = Value; }
   void setUseNamesOnTempLabels(bool Value) { UseNamesOnTempLabels = Value; }

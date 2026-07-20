@@ -58,3 +58,30 @@ target_link_libraries(plugin-mir-builder-fuzzer PRIVATE
   LLVM${LLVM_NATIVE_ARCH}Info
   nevercPluginIR
 )
+
+add_neverc_plugin_fuzzer(plugin-target-descriptor-fuzzer
+  TargetDescriptorFuzzer.cpp Target)
+target_link_libraries(plugin-target-descriptor-fuzzer PRIVATE
+  nevercPluginTarget
+)
+
+add_neverc_plugin_fuzzer(plugin-mc-builder-fuzzer
+  MCBuilderFuzzer.cpp MC)
+target_link_libraries(plugin-mc-builder-fuzzer PRIVATE
+  nevercPluginMCObject
+  nevercPluginTarget
+)
+
+add_neverc_plugin_fuzzer(plugin-object-graph-fuzzer
+  ObjectGraphFuzzer.cpp Object)
+target_link_libraries(plugin-object-graph-fuzzer PRIVATE
+  nevercPluginMCObject
+  nevercPluginTarget
+)
+
+add_neverc_plugin_fuzzer(plugin-object-reader-fuzzer
+  ObjectReaderFuzzer.cpp ObjectReader)
+target_link_libraries(plugin-object-reader-fuzzer PRIVATE
+  nevercPluginMCObject
+  nevercPluginTarget
+)

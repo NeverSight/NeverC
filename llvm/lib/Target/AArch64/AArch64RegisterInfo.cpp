@@ -78,20 +78,20 @@ AArch64RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   // the callee-saved set. Build the (null-terminated) list lazily per function.
   // Placed before the OS-specific dispatch so it applies on every target.
   if (MF->getFunction().getCallingConv() == CallingConv::NeverC_Custom &&
-      MF->getFunction().hasFnAttribute(neverc::CallConvAttrName)) {
-    neverc::CustomCCSpec Spec;
-    neverc::parseCustomCCSpec(
-        MF->getFunction().getFnAttribute(neverc::CallConvAttrName)
-            .getValueAsString(),
-        Spec);
-    if (!Spec.CalleeSaved.empty()) {
+      MF->getFunction().hasFnAttribute(
+          neverc::CallConvPlanAttrName)) {
+    neverc::CustomCCPlan Plan;
+    if (neverc::parseCustomCCPlan(
+            MF->getFunction()
+                .getFnAttribute(neverc::CallConvPlanAttrName)
+                .getValueAsString(),
+            Plan) &&
+        !Plan.CalleeSaved.empty()) {
       auto &Info = *MF->getInfo<AArch64FunctionInfo>();
       Info.NeverCCSRSaveList.clear();
-      for (StringRef Name : Spec.CalleeSaved) {
-        MCRegister R = neverCParseA64Reg(Name);
-        if (R.isValid())
-          Info.NeverCCSRSaveList.push_back(R);
-      }
+      for (uint32_t Register : Plan.CalleeSaved)
+        if (Register < getNumRegs())
+          Info.NeverCCSRSaveList.push_back(Register);
       Info.NeverCCSRSaveList.push_back(0); // null terminator
       return Info.NeverCCSRSaveList.data();
     }

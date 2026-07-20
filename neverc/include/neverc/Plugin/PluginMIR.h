@@ -3,8 +3,9 @@
 #ifndef NEVERC_PLUGIN_PLUGINMIR_H
 #define NEVERC_PLUGIN_PLUGINMIR_H
 
-#include "neverc/Plugin/PluginCore.h"
+#include "neverc/Plugin/PluginIR.h"
 #include "neverc/Plugin/PluginPhaseSchema.h" /* IWYU pragma: export */
+#include "neverc/Plugin/PluginTarget.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,12 @@ extern "C" {
 #define NEVERC_INTERFACE_MIR_PASS_HIGH UINT64_C(0x4e43504d49525001)
 #define NEVERC_INTERFACE_MIR_PASS_LOW UINT64_C(0x0000000000000001)
 #define NEVERC_MIR_PASS_INTERFACE_STABILITY NEVERC_INTERFACE_STABLE
+
+#define NEVERC_MIR_PROVIDER_API_MAJOR UINT16_C(1)
+#define NEVERC_MIR_PROVIDER_API_MINOR UINT16_C(0)
+#define NEVERC_INTERFACE_MIR_PROVIDER_HIGH UINT64_C(0x4e43504d49525002)
+#define NEVERC_INTERFACE_MIR_PROVIDER_LOW UINT64_C(0x0000000000000001)
+#define NEVERC_MIR_PROVIDER_INTERFACE_STABILITY NEVERC_INTERFACE_STABLE
 
 typedef NevercHandle NevercMIRModuleHandle;
 typedef NevercHandle NevercMachineFunctionHandle;
@@ -450,6 +457,41 @@ typedef struct NevercMIRRegisterPressureInfo {
 typedef struct NevercMIRAnalysisAPI NevercMIRAnalysisAPI;
 typedef struct NevercMIRAPI NevercMIRAPI;
 
+typedef struct NevercIRToMIRInputInfo {
+  NevercABITableHeader Header;
+  NevercIRModuleHandle Module;
+  const NevercIRCoreAPI *IR;
+  NevercTargetID TargetID;
+  NevercStringView CompatibilityKey;
+  NevercStringView TargetSchemaDigest;
+  uint64_t DefinedFunctionCount;
+} NevercIRToMIRInputInfo;
+
+typedef struct NevercMIRModuleCoverageDescriptor {
+  NevercABITableHeader Header;
+  NevercBool HandlesGlobals;
+  NevercBool HandlesConstructors;
+  NevercBool HandlesDebugInfo;
+  NevercBool HandlesUnwind;
+  uint32_t Reserved;
+} NevercMIRModuleCoverageDescriptor;
+
+typedef struct NevercMIRProviderAPI {
+  NevercABITableHeader Header;
+  void *Context;
+  NevercStatus(NEVERC_CALL *GetIRToMIRInput)(
+      void *Context, const NevercPhaseFrame *Frame,
+      NevercArtifactHandle Input, NevercIRToMIRInputInfo *OutInfo);
+  NevercStatus(NEVERC_CALL *GetOrCreateMachineFunction)(
+      void *Context, const NevercPhaseFrame *Frame,
+      NevercIRValueHandle Function, const NevercMIRAPI **OutMIR,
+      NevercMachineFunctionHandle *OutFunction);
+  NevercStatus(NEVERC_CALL *PublishMIRModule)(
+      void *Context, const NevercPhaseFrame *Frame,
+      const NevercMIRModuleCoverageDescriptor *Coverage,
+      NevercArtifactHandle *OutModule);
+} NevercMIRProviderAPI;
+
 typedef struct NevercMIRPassInvocation {
   NevercABITableHeader Header;
   NevercTaskHandle Task;
@@ -461,6 +503,7 @@ typedef struct NevercMIRPassInvocation {
   NevercMachineBasicBlockHandle BasicBlock;
   const NevercMIRAPI *Core;
   const NevercMIRAnalysisAPI *Analyses;
+  NevercStringView TargetSchemaDigest;
   uint64_t ReservedWords[2];
 } NevercMIRPassInvocation;
 
@@ -487,6 +530,7 @@ typedef struct NevercMIRPassDescriptor {
   uint64_t RequiredAnalysisCount;
   const NevercMIRBuiltinAnalysis *PreservedAnalyses;
   uint64_t PreservedAnalysisCount;
+  NevercStringView RequiredTargetSchemaDigest;
   NevercMIRPassRunFn Run;
   void *UserData;
   NevercDestroyUserDataFn DestroyUserData;

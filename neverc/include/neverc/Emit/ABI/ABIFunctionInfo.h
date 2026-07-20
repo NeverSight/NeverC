@@ -121,11 +121,12 @@ public:
 
   // ABIArgInfo will record the argument as being extended based on the sign
   // of its type.
-  static ABIArgInfo getExtend(QualType Ty, llvm::Type *T = nullptr) {
+  static ABIArgInfo getExtend(QualType Ty, llvm::Type *T = nullptr,
+                              llvm::Type *Padding = nullptr) {
     assert(Ty->isIntegralOrEnumerationType() && "Unexpected QualType");
     auto AI = ABIArgInfo(Extend);
     AI.setCoerceToType(T);
-    AI.setPaddingType(nullptr);
+    AI.setPaddingType(Padding);
     AI.setDirectOffset(0);
     AI.setDirectAlign(0);
     AI.setSignExt(Ty->hasSignedIntegerRepresentation());
@@ -145,9 +146,29 @@ public:
     return AI;
   }
 
-  static ABIArgInfo getExpand() {
+  static ABIArgInfo getIndirectAliased(CharUnits Alignment,
+                                       unsigned AddressSpace,
+                                       bool Realign = false,
+                                       llvm::Type *Padding = nullptr) {
+    auto AI = ABIArgInfo(IndirectAliased);
+    AI.IndirectAttr.Align = Alignment.getQuantity();
+    AI.IndirectAttr.AddrSpace = AddressSpace;
+    AI.setIndirectRealign(Realign);
+    AI.setPaddingType(Padding);
+    return AI;
+  }
+
+  static ABIArgInfo getExpand(llvm::Type *Padding = nullptr) {
     auto AI = ABIArgInfo(Expand);
-    AI.setPaddingType(nullptr);
+    AI.setPaddingType(Padding);
+    return AI;
+  }
+
+  static ABIArgInfo getCoerceAndExpand(
+      llvm::StructType *CoerceType, llvm::Type *UnpaddedCoerceType) {
+    auto AI = ABIArgInfo(CoerceAndExpand);
+    AI.TypeData = CoerceType;
+    AI.UnpaddedCoerceAndExpandType = UnpaddedCoerceType;
     return AI;
   }
 
@@ -374,7 +395,9 @@ class ABIFunctionInfo final
 
   unsigned CallingConvention : 8;
 
-  unsigned EffectiveCallingConvention : 8;
+  // LLVM calling-convention IDs occupy ten bits (MaxID == 1023). Keep the
+  // full value so the host-only NeverC_Custom ID is not truncated.
+  unsigned EffectiveCallingConvention : 10;
 
   unsigned ASTCallingConvention : 6;
 

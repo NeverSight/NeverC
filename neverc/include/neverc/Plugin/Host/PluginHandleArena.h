@@ -55,6 +55,7 @@ constexpr PluginHandleKind PluginIRBuilderHandleKind = 68;
 constexpr PluginHandleKind PluginIRMutationHandleKind = 69;
 constexpr PluginHandleKind PluginIRSerializedBufferHandleKind = 70;
 constexpr PluginHandleKind PluginIRAnalysisResultHandleKind = 71;
+constexpr PluginHandleKind PluginMIRModuleHandleKind = 79;
 constexpr PluginHandleKind PluginMIRFunctionHandleKind = 80;
 constexpr PluginHandleKind PluginMIRBasicBlockHandleKind = 81;
 constexpr PluginHandleKind PluginMIRInstructionHandleKind = 82;
@@ -75,6 +76,21 @@ constexpr PluginHandleKind PluginMCFixupHandleKind = 107;
 constexpr PluginHandleKind PluginMCBuilderHandleKind = 108;
 constexpr PluginHandleKind PluginMCMutationHandleKind = 109;
 constexpr PluginHandleKind PluginMCLayoutHandleKind = 110;
+constexpr PluginHandleKind PluginMCSchemaTokenHandleKind = 111;
+constexpr PluginHandleKind PluginAssemblySourceCursorHandleKind = 112;
+constexpr PluginHandleKind PluginObjectGraphHandleKind = 120;
+constexpr PluginHandleKind PluginObjectSectionHandleKind = 121;
+constexpr PluginHandleKind PluginObjectSymbolHandleKind = 122;
+constexpr PluginHandleKind PluginObjectRelocationHandleKind = 123;
+constexpr PluginHandleKind PluginObjectComdatHandleKind = 124;
+constexpr PluginHandleKind PluginObjectExtensionHandleKind = 125;
+constexpr PluginHandleKind PluginObjectBuilderHandleKind = 126;
+constexpr PluginHandleKind PluginObjectMutationHandleKind = 127;
+constexpr PluginHandleKind PluginObjectImageHandleKind = 128;
+constexpr PluginHandleKind PluginObjectFormatHandleKind = 129;
+constexpr PluginHandleKind PluginObjectProbeHandleKind = 130;
+constexpr PluginHandleKind PluginObjectLayoutProofHandleKind = 131;
+constexpr PluginHandleKind PluginMutableBinaryBuilderHandleKind = 132;
 
 class PluginHandleArena {
 public:

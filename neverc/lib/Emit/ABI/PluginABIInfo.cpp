@@ -6,6 +6,8 @@
 #include "neverc/Plugin/Host/PluginABILowering.h"
 #include "neverc/Plugin/Host/PluginTargetInfo.h"
 #include "neverc/Tree/Core/TreeContext.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/Support/Error.h"
 
@@ -64,20 +66,18 @@ NevercABITypeDescriptor describeType(TreeContext &Context,
   return Result;
 }
 
-Expected<llvm::Type *>
-coercionType(LLVMContext &Context,
-             const NevercABIArgumentClassification &Classification) {
-  switch (Classification.Coercion) {
+Expected<llvm::Type *> coercionType(
+    LLVMContext &Context, NevercABICoercionKind Kind,
+    uint32_t BitWidth, uint32_t AddressSpace) {
+  switch (Kind) {
   case NEVERC_ABI_COERCE_NONE:
     return nullptr;
   case NEVERC_ABI_COERCE_INTEGER:
-    return IntegerType::get(Context,
-                            Classification.CoercionBitWidth);
+    return IntegerType::get(Context, BitWidth);
   case NEVERC_ABI_COERCE_POINTER:
-    return llvm::PointerType::get(Context,
-                                  Classification.AddressSpace);
+    return llvm::PointerType::get(Context, AddressSpace);
   case NEVERC_ABI_COERCE_FLOAT:
-    switch (Classification.CoercionBitWidth) {
+    switch (BitWidth) {
     case 16:
       return llvm::Type::getHalfTy(Context);
     case 32:
@@ -98,50 +98,159 @@ coercionType(LLVMContext &Context,
   }
 }
 
+Expected<llvm::Type *> coercionType(
+    LLVMContext &Context,
+    const NevercABIArgumentClassification &Classification) {
+  return coercionType(Context, Classification.Coercion,
+                      Classification.CoercionBitWidth,
+                      Classification.AddressSpace);
+}
+
+Expected<llvm::Type *> paddingType(
+    LLVMContext &Context,
+    const NevercABIArgumentClassification &Classification) {
+  return coercionType(Context, Classification.PaddingCoercion,
+                      Classification.PaddingBitWidth,
+                      Classification.PaddingAddressSpace);
+}
+
+Expected<ABIArgInfo> coerceAndExpandClassification(
+    LLVMContext &Context, const DataLayout &Layout,
+    const NevercABIArgumentClassification &Classification) {
+  SmallVector<llvm::Type *, 8> PaddedTypes;
+  SmallVector<llvm::Type *, 8> UnpaddedTypes;
+  uint64_t CurrentOffset = 0;
+  const auto *Bytes = static_cast<const uint8_t *>(
+      Classification.CoerceAndExpandElements.Data);
+  for (uint64_t I = 0;
+       I != Classification.CoerceAndExpandElements.Count; ++I) {
+    const auto *Element =
+        reinterpret_cast<const NevercABICoercionElement *>(
+            Bytes + I *
+                        Classification.CoerceAndExpandElements
+                            .ElementStride);
+    if (Element->Offset > CurrentOffset)
+      PaddedTypes.push_back(llvm::ArrayType::get(
+          llvm::Type::getInt8Ty(Context),
+          Element->Offset - CurrentOffset));
+    auto ElementType =
+        coercionType(Context, Element->Coercion,
+                     Element->BitWidth, Element->AddressSpace);
+    if (!ElementType)
+      return ElementType.takeError();
+    const TypeSize AllocationSize =
+        Layout.getTypeAllocSize(*ElementType);
+    if (AllocationSize.isScalable())
+      return createStringError(
+          inconvertibleErrorCode(),
+          "plugin ABI coerce-and-expand element is scalable");
+    const uint64_t ElementEnd =
+        static_cast<uint64_t>(Element->Offset) +
+        AllocationSize.getFixedValue();
+    if (ElementEnd >
+        Classification.CoerceAndExpandSize)
+      return createStringError(
+          inconvertibleErrorCode(),
+          "plugin ABI coerce-and-expand element exceeds its source type");
+    PaddedTypes.push_back(*ElementType);
+    UnpaddedTypes.push_back(*ElementType);
+    CurrentOffset = ElementEnd;
+  }
+  if (CurrentOffset < Classification.CoerceAndExpandSize)
+    PaddedTypes.push_back(llvm::ArrayType::get(
+        llvm::Type::getInt8Ty(Context),
+        Classification.CoerceAndExpandSize - CurrentOffset));
+
+  auto *Padded = StructType::get(Context, PaddedTypes,
+                                 /*isPacked=*/true);
+  const TypeSize PaddedSize = Layout.getTypeAllocSize(Padded);
+  if (PaddedSize.isScalable() ||
+      PaddedSize.getFixedValue() !=
+          Classification.CoerceAndExpandSize)
+    return createStringError(
+        inconvertibleErrorCode(),
+        "plugin ABI coerce-and-expand layout size is inconsistent");
+  llvm::Type *Unpadded =
+      UnpaddedTypes.size() == 1
+          ? UnpaddedTypes.front()
+          : static_cast<llvm::Type *>(
+                StructType::get(Context, UnpaddedTypes,
+                                /*isPacked=*/false));
+  return ABIArgInfo::getCoerceAndExpand(Padded, Unpadded);
+}
+
 Expected<ABIArgInfo>
 convertClassification(
-    LLVMContext &Context, QualType Type,
+    LLVMContext &Context, const DataLayout &Layout, QualType Type,
     const NevercABIArgumentClassification &Classification) {
   auto Coercion = coercionType(Context, Classification);
   if (!Coercion)
     return Coercion.takeError();
+  auto Padding = paddingType(Context, Classification);
+  if (!Padding)
+    return Padding.takeError();
   ABIArgInfo Result;
   switch (Classification.Kind) {
   case NEVERC_ABI_ARGUMENT_DIRECT:
     Result = ABIArgInfo::getDirect(
-        *Coercion, Classification.DirectOffset, nullptr,
+        *Coercion, Classification.DirectOffset, *Padding,
         (Classification.Flags &
          NEVERC_ABI_ARGUMENT_CAN_BE_FLATTENED) != 0,
         Classification.Alignment);
     if (Classification.Flags & NEVERC_ABI_ARGUMENT_INREG)
       Result.setInReg(true);
+    Result.setPaddingInReg(
+        (Classification.Flags &
+         NEVERC_ABI_ARGUMENT_PADDING_INREG) != 0);
     return Result;
   case NEVERC_ABI_ARGUMENT_EXTEND:
-    Result = ABIArgInfo::getExtend(Type, *Coercion);
+    Result = ABIArgInfo::getExtend(Type, *Coercion, *Padding);
     Result.setSignExt(
         (Classification.Flags &
          NEVERC_ABI_ARGUMENT_SIGN_EXTEND) != 0);
     if (Classification.Flags & NEVERC_ABI_ARGUMENT_INREG)
       Result.setInReg(true);
+    Result.setPaddingInReg(
+        (Classification.Flags &
+         NEVERC_ABI_ARGUMENT_PADDING_INREG) != 0);
     return Result;
   case NEVERC_ABI_ARGUMENT_INDIRECT:
     Result = ABIArgInfo::getIndirect(
         CharUnits::fromQuantity(Classification.Alignment),
         (Classification.Flags & NEVERC_ABI_ARGUMENT_BYVAL) != 0,
-        (Classification.Flags & NEVERC_ABI_ARGUMENT_REALIGN) != 0);
+        (Classification.Flags & NEVERC_ABI_ARGUMENT_REALIGN) != 0,
+        *Padding);
     if (Classification.Flags & NEVERC_ABI_ARGUMENT_INREG)
       Result.setInReg(true);
     Result.setSRetAfterThis(
         (Classification.Flags &
          NEVERC_ABI_ARGUMENT_SRET_AFTER_THIS) != 0);
+    Result.setPaddingInReg(
+        (Classification.Flags &
+         NEVERC_ABI_ARGUMENT_PADDING_INREG) != 0);
     return Result;
+  case NEVERC_ABI_ARGUMENT_INDIRECT_ALIASED:
+    Result = ABIArgInfo::getIndirectAliased(
+        CharUnits::fromQuantity(Classification.Alignment),
+        Classification.AddressSpace,
+        (Classification.Flags & NEVERC_ABI_ARGUMENT_REALIGN) != 0,
+        *Padding);
+    break;
   case NEVERC_ABI_ARGUMENT_IGNORE:
     return ABIArgInfo::getIgnore();
   case NEVERC_ABI_ARGUMENT_EXPAND:
-    return ABIArgInfo::getExpand();
+    Result = ABIArgInfo::getExpand(*Padding);
+    break;
+  case NEVERC_ABI_ARGUMENT_COERCE_AND_EXPAND:
+    return coerceAndExpandClassification(
+        Context, Layout, Classification);
   default:
     llvm_unreachable("validated ABI argument kind");
   }
+  Result.setPaddingInReg(
+      (Classification.Flags &
+       NEVERC_ABI_ARGUMENT_PADDING_INREG) != 0);
+  return Result;
 }
 
 class PluginABIInfo final : public DefaultABIInfo {
@@ -174,7 +283,7 @@ public:
     }
 
     auto ReturnInfo = convertClassification(
-        getVMContext(), FI.getReturnType(),
+        getVMContext(), getDataLayout(), FI.getReturnType(),
         Classification->ReturnValue);
     if (!ReturnInfo) {
       reportError(ReturnInfo.takeError());
@@ -185,7 +294,7 @@ public:
     ArgumentInfos.reserve(FI.arg_size());
     for (size_t I = 0; I != FI.arg_size(); ++I) {
       auto ArgumentInfo = convertClassification(
-          getVMContext(), FI.arguments()[I].type,
+          getVMContext(), getDataLayout(), FI.arguments()[I].type,
           Classification->Arguments[I]);
       if (!ArgumentInfo) {
         reportError(ArgumentInfo.takeError());
@@ -218,7 +327,8 @@ public:
       return DefaultABIInfo::genVAArg(FE, VAListAddr, Type);
     }
     auto ArgumentInfo = convertClassification(
-        getVMContext(), Type, Classification->Arguments.front());
+        getVMContext(), getDataLayout(), Type,
+        Classification->Arguments.front());
     if (!ArgumentInfo) {
       reportError(ArgumentInfo.takeError());
       return DefaultABIInfo::genVAArg(FE, VAListAddr, Type);
@@ -241,6 +351,11 @@ public:
       return DefaultABIInfo::genVAArg(FE, VAListAddr, Type);
     }
     return genVAArgInstr(FE, VAListAddr, Type, *ArgumentInfo);
+  }
+
+  Address genMSVAArg(FunctionEmitter &FE, Address VAListAddr,
+                     QualType Type) const override {
+    return genVAArg(FE, VAListAddr, Type);
   }
 
 private:

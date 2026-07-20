@@ -41,11 +41,13 @@ STATISTIC(NumTailCalls, "Number of tail calls");
 static StringRef getNeverCCalleeSpec(const CallBase *CB) {
   if (!CB)
     return StringRef();
-  if (CB->hasFnAttr(neverc::CallConvAttrName))
-    return CB->getFnAttr(neverc::CallConvAttrName).getValueAsString();
+  if (CB->hasFnAttr(neverc::CallConvPlanAttrName))
+    return CB->getFnAttr(neverc::CallConvPlanAttrName)
+        .getValueAsString();
   if (const Function *F = CB->getCalledFunction())
-    if (F->hasFnAttribute(neverc::CallConvAttrName))
-      return F->getFnAttribute(neverc::CallConvAttrName).getValueAsString();
+    if (F->hasFnAttribute(neverc::CallConvPlanAttrName))
+      return F->getFnAttribute(neverc::CallConvPlanAttrName)
+          .getValueAsString();
   return StringRef();
 }
 
@@ -61,17 +63,17 @@ static const uint32_t *buildNeverCPreservedMask(MachineFunction &MF,
   StringRef SpecStr = getNeverCCalleeSpec(CB);
   if (SpecStr.empty())
     return nullptr;
-  neverc::CustomCCSpec Spec;
-  neverc::parseCustomCCSpec(SpecStr, Spec);
-  if (Spec.CalleeSaved.empty())
+  neverc::CustomCCPlan Plan;
+  if (!neverc::parseCustomCCPlan(SpecStr, Plan) ||
+      Plan.CalleeSaved.empty())
     return nullptr;
 
   uint32_t *Mask = MF.allocateRegMask();
   unsigned Size = MachineOperand::getRegMaskSize(TRI->getNumRegs());
   std::memcpy(Mask, TRI->getNoPreservedMask(), Size * sizeof(uint32_t));
-  for (StringRef Name : Spec.CalleeSaved) {
-    MCRegister R = neverCParseX86Reg(Name);
-    if (!R.isValid())
+  for (uint32_t Register : Plan.CalleeSaved) {
+    MCRegister R(Register);
+    if (!R.isValid() || R.id() >= TRI->getNumRegs())
       continue;
     for (MCRegAliasIterator AI(R, TRI, /*IncludeSelf=*/true); AI.isValid(); ++AI)
       Mask[(*AI) / 32] |= 1u << ((*AI) % 32);

@@ -99,11 +99,13 @@ std::unique_ptr<MCInst> instruction(uint32_t Opcode) {
   return Result;
 }
 
-NevercMCOperandValue registerOperand(uint32_t Register) {
+NevercMCOperandValue registerOperand(NevercMCSchemaTokenHandle SchemaToken,
+                                     uint32_t Register) {
   NevercMCOperandValue Value{};
   Value.Header = {sizeof(Value), NEVERC_MC_API_MAJOR,
                   NEVERC_MC_API_MINOR, 0};
   Value.Kind = NEVERC_MC_OPERAND_REGISTER;
+  Value.SchemaToken = SchemaToken;
   Value.Payload.Register = Register;
   return Value;
 }
@@ -159,6 +161,8 @@ TEST(PluginMCBridgeTest, TraversesStableSchemaInstructionsAndOperands) {
             NEVERC_STATUS_OK);
   EXPECT_EQ(Value.Kind, NEVERC_MC_OPERAND_REGISTER);
   EXPECT_EQ(Value.Payload.Register, 20U);
+  EXPECT_TRUE(Value.SchemaToken.Owner == Info.SchemaToken.Owner &&
+              Value.SchemaToken.Value == Info.SchemaToken.Value);
 }
 
 TEST(PluginMCBridgeTest, CommitsConstructedInstructionAtomically) {
@@ -171,6 +175,11 @@ TEST(PluginMCBridgeTest, CommitsConstructedInstructionAtomically) {
   const NevercMCAPI &API = Bridge.api();
   auto UnitHandle = Bridge.unit();
   ASSERT_TRUE(static_cast<bool>(UnitHandle));
+  NevercMCSchemaTokenHandle SchemaToken{};
+  ASSERT_EQ(API.GetSchemaToken(API.Context, Scope.task().handle(), *UnitHandle,
+                               &SchemaToken)
+                .Code,
+            NEVERC_STATUS_OK);
   NevercMCInstHandle First{};
   ASSERT_EQ(API.GetFirstInstruction(
                 API.Context, Scope.task().handle(), *UnitHandle, &First)
@@ -183,10 +192,10 @@ TEST(PluginMCBridgeTest, CommitsConstructedInstructionAtomically) {
             NEVERC_STATUS_OK);
   NevercMCInstHandle Created{};
   ASSERT_EQ(API.CreateInstruction(API.Context, Scope.task().handle(),
-                                  Mutation, 11, &Created)
+                                  Mutation, SchemaToken, 11, &Created)
                 .Code,
             NEVERC_STATUS_OK);
-  NevercMCOperandValue Register = registerOperand(20);
+  NevercMCOperandValue Register = registerOperand(SchemaToken, 20);
   NevercMCOperandValue Immediate = immediateOperand(9);
   ASSERT_EQ(API.AppendOperand(API.Context, Scope.task().handle(),
                               Mutation, Created, &Register)
@@ -223,6 +232,11 @@ TEST(PluginMCBridgeTest, AbandonAndFailedCommitRestoreOriginalUnit) {
   const NevercMCAPI &API = Bridge.api();
   auto UnitHandle = Bridge.unit();
   ASSERT_TRUE(static_cast<bool>(UnitHandle));
+  NevercMCSchemaTokenHandle SchemaToken{};
+  ASSERT_EQ(API.GetSchemaToken(API.Context, Scope.task().handle(), *UnitHandle,
+                               &SchemaToken)
+                .Code,
+            NEVERC_STATUS_OK);
 
   NevercMCMutationHandle Mutation{};
   ASSERT_EQ(API.BeginMutation(API.Context, Scope.task().handle(),
@@ -231,7 +245,7 @@ TEST(PluginMCBridgeTest, AbandonAndFailedCommitRestoreOriginalUnit) {
             NEVERC_STATUS_OK);
   NevercMCInstHandle Detached{};
   ASSERT_EQ(API.CreateInstruction(API.Context, Scope.task().handle(),
-                                  Mutation, 11, &Detached)
+                                  Mutation, SchemaToken, 11, &Detached)
                 .Code,
             NEVERC_STATUS_OK);
   EXPECT_EQ(API.CommitMutation(API.Context, Scope.task().handle(),
@@ -361,11 +375,13 @@ TEST(PluginMCBridgeTest,
             NEVERC_STATUS_OK);
   NevercMCInstHandle Created{};
   ASSERT_EQ(API.CreateInstruction(API.Context, Scope.task().handle(),
-                                  Mutation, Info.Opcode, &Created)
+                                  Mutation, Info.SchemaToken, Info.Opcode,
+                                  &Created)
                 .Code,
             NEVERC_STATUS_OK);
   if (ReturnRegister != 0) {
-    NevercMCOperandValue Register = registerOperand(20);
+    NevercMCOperandValue Register =
+        registerOperand(Info.SchemaToken, 20);
     ASSERT_EQ(API.AppendOperand(API.Context, Scope.task().handle(),
                                 Mutation, Created, &Register)
                   .Code,

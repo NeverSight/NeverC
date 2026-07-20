@@ -4,6 +4,7 @@
 #define NEVERC_PLUGIN_PLUGINTARGET_H
 
 #include "neverc/Plugin/PluginCore.h"
+#include "neverc/Plugin/PluginIR.h"
 #include "neverc/Plugin/PluginPhaseSchema.h" /* IWYU pragma: export */
 
 #ifdef __cplusplus
@@ -11,7 +12,7 @@ extern "C" {
 #endif
 
 #define NEVERC_TARGET_API_MAJOR UINT16_C(1)
-#define NEVERC_TARGET_API_MINOR UINT16_C(0)
+#define NEVERC_TARGET_API_MINOR UINT16_C(1)
 #define NEVERC_INTERFACE_TARGET_HIGH UINT64_C(0x4e43505447540001)
 #define NEVERC_INTERFACE_TARGET_LOW UINT64_C(0x0000000000000001)
 #define NEVERC_TARGET_INTERFACE_STABILITY NEVERC_INTERFACE_STABLE
@@ -23,7 +24,7 @@ extern "C" {
 #define NEVERC_TARGET_ABI_INTERFACE_STABILITY NEVERC_INTERFACE_STABLE
 
 #define NEVERC_CALLING_CONVENTION_API_MAJOR UINT16_C(1)
-#define NEVERC_CALLING_CONVENTION_API_MINOR UINT16_C(0)
+#define NEVERC_CALLING_CONVENTION_API_MINOR UINT16_C(1)
 #define NEVERC_INTERFACE_CALLING_CONVENTION_HIGH \
   UINT64_C(0x4e43505443430001)
 #define NEVERC_INTERFACE_CALLING_CONVENTION_LOW \
@@ -52,6 +53,17 @@ typedef uint32_t NevercCodeGenProductKind;
 #define NEVERC_CODEGEN_PRODUCT_OBJECT_GRAPH UINT32_C(5)
 #define NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE UINT32_C(6)
 #define NEVERC_CODEGEN_PRODUCT_CUSTOM UINT32_C(0x10000)
+
+typedef uint64_t NevercCodeGenEdgeFlags;
+#define NEVERC_CODEGEN_EDGE_COARSE UINT64_C(1)
+#define NEVERC_CODEGEN_EDGE_BUILTIN UINT64_C(2)
+
+typedef uint64_t NevercCodeGenVerificationObligations;
+#define NEVERC_CODEGEN_VERIFY_FINAL_IR UINT64_C(1)
+#define NEVERC_CODEGEN_VERIFY_TARGET_KEY UINT64_C(2)
+#define NEVERC_CODEGEN_VERIFY_PRODUCT_KIND UINT64_C(4)
+#define NEVERC_CODEGEN_VERIFY_PRODUCT_ID UINT64_C(8)
+#define NEVERC_CODEGEN_VERIFY_STRUCTURE UINT64_C(16)
 
 typedef uint32_t NevercTargetEndianness;
 #define NEVERC_TARGET_ENDIAN_LITTLE UINT32_C(1)
@@ -153,6 +165,8 @@ typedef uint32_t NevercABIArgumentKind;
 #define NEVERC_ABI_ARGUMENT_INDIRECT UINT32_C(3)
 #define NEVERC_ABI_ARGUMENT_IGNORE UINT32_C(4)
 #define NEVERC_ABI_ARGUMENT_EXPAND UINT32_C(5)
+#define NEVERC_ABI_ARGUMENT_INDIRECT_ALIASED UINT32_C(6)
+#define NEVERC_ABI_ARGUMENT_COERCE_AND_EXPAND UINT32_C(7)
 
 typedef uint32_t NevercABICoercionKind;
 #define NEVERC_ABI_COERCE_NONE UINT32_C(0)
@@ -167,10 +181,19 @@ typedef uint64_t NevercABIArgumentFlags;
 #define NEVERC_ABI_ARGUMENT_SRET_AFTER_THIS UINT64_C(8)
 #define NEVERC_ABI_ARGUMENT_CAN_BE_FLATTENED UINT64_C(16)
 #define NEVERC_ABI_ARGUMENT_SIGN_EXTEND UINT64_C(32)
+#define NEVERC_ABI_ARGUMENT_PADDING_INREG UINT64_C(64)
 
 typedef uint32_t NevercABIVAArgKind;
 #define NEVERC_ABI_VA_ARG_LLVM UINT32_C(1)
 #define NEVERC_ABI_VA_ARG_VOID_POINTER UINT32_C(2)
+
+typedef uint32_t NevercCallingConventionLocationKind;
+#define NEVERC_CC_LOCATION_REGISTER UINT32_C(1)
+#define NEVERC_CC_LOCATION_STACK UINT32_C(2)
+
+typedef uint64_t NevercCallingConventionLocationFlags;
+#define NEVERC_CC_LOCATION_INDIRECT UINT64_C(1)
+#define NEVERC_CC_LOCATION_BYVAL UINT64_C(2)
 
 NEVERC_ABI_PACK_BEGIN
 
@@ -186,6 +209,18 @@ typedef struct NevercInterfaceIDArrayView {
   uint64_t ElementStride;
 } NevercInterfaceIDArrayView;
 
+typedef struct NevercInt32ArrayView {
+  const int32_t *Data;
+  uint64_t Count;
+  uint64_t ElementStride;
+} NevercInt32ArrayView;
+
+typedef struct NevercUInt32ArrayView {
+  const uint32_t *Data;
+  uint64_t Count;
+  uint64_t ElementStride;
+} NevercUInt32ArrayView;
+
 typedef struct NevercABITypeDescriptor {
   NevercABITableHeader Header;
   NevercABITypeKind Kind;
@@ -194,6 +229,15 @@ typedef struct NevercABITypeDescriptor {
   uint32_t AddressSpace;
   NevercABITypeFlags Flags;
 } NevercABITypeDescriptor;
+
+typedef struct NevercABICoercionElement {
+  NevercABITableHeader Header;
+  NevercABICoercionKind Coercion;
+  uint32_t BitWidth;
+  uint32_t AddressSpace;
+  uint32_t Offset;
+  uint64_t Reserved;
+} NevercABICoercionElement;
 
 typedef struct NevercABIArgumentClassification {
   NevercABITableHeader Header;
@@ -204,6 +248,12 @@ typedef struct NevercABIArgumentClassification {
   uint32_t AddressSpace;
   uint32_t DirectOffset;
   NevercABIArgumentFlags Flags;
+  NevercABICoercionKind PaddingCoercion;
+  uint32_t PaddingBitWidth;
+  uint32_t PaddingAddressSpace;
+  uint32_t CoerceAndExpandSize;
+  NevercStructArrayView CoerceAndExpandElements;
+  uint64_t Reserved[2];
 } NevercABIArgumentClassification;
 
 typedef struct NevercABIArgumentClassificationArray {
@@ -235,6 +285,43 @@ typedef NevercStatus(NEVERC_CALL *NevercClassifyABIFunctionFn)(
     NevercABIArgumentClassification *ReturnValue,
     NevercABIArgumentClassificationArray *Arguments);
 
+typedef struct NevercCallingConventionLocation {
+  NevercABITableHeader Header;
+  NevercCallingConventionLocationKind Kind;
+  uint32_t ValueIndex;
+  uint32_t PieceOffset;
+  uint32_t Size;
+  uint32_t Alignment;
+  uint32_t RegisterNumber;
+  uint32_t StackOffset;
+  NevercCallingConventionLocationFlags Flags;
+  uint64_t Reserved;
+} NevercCallingConventionLocation;
+
+typedef struct NevercCallingConventionQuery {
+  NevercABITableHeader Header;
+  NevercTargetID TargetID;
+  NevercCallingConventionID CallingConventionID;
+  NevercStringView SchemaDigest;
+  NevercABIFunctionQuery Function;
+  uint64_t Reserved;
+} NevercCallingConventionQuery;
+
+typedef struct NevercCallingConventionPlan {
+  NevercABITableHeader Header;
+  NevercStructArrayView ReturnLocations;
+  NevercStructArrayView ArgumentLocations;
+  NevercUInt32ArrayView CalleeSavedRegisters;
+  uint32_t StackAlignment;
+  uint32_t Reserved32;
+  uint64_t Flags;
+  uint64_t Reserved[2];
+} NevercCallingConventionPlan;
+
+typedef NevercStatus(NEVERC_CALL *NevercPlanCallingConventionFn)(
+    void *UserData, const NevercCallingConventionQuery *Query,
+    NevercCallingConventionPlan *Plan);
+
 typedef struct NevercTargetTripleMatcher {
   NevercABITableHeader Header;
   NevercStringView Architecture;
@@ -254,12 +341,52 @@ typedef struct NevercTargetFeatureDescriptor {
   uint32_t Reserved;
 } NevercTargetFeatureDescriptor;
 
+typedef struct NevercTargetFeatureState {
+  NevercABITableHeader Header;
+  NevercStringView Name;
+  NevercBool Enabled;
+  uint8_t Reserved[7];
+} NevercTargetFeatureState;
+
+typedef NevercStatus(NEVERC_CALL *NevercTargetValidateCPUFn)(
+    NevercTaskHandle Task, NevercStringView CPU, void *UserData,
+    NevercBool *OutValid);
+typedef NevercStatus(NEVERC_CALL *NevercTargetCanonicalizeCPUFn)(
+    NevercTaskHandle Task, NevercStringView CPU, void *UserData,
+    NevercStringView *OutCanonicalCPU);
+typedef NevercStatus(NEVERC_CALL *NevercTargetListCPUsFn)(
+    NevercTaskHandle Task, void *UserData, NevercStringArrayView *OutCPUs);
+typedef NevercStatus(NEVERC_CALL *NevercTargetResolveFeaturesFn)(
+    NevercTaskHandle Task, NevercStringView CPU,
+    NevercStringArrayView RequestedFeatures, void *UserData,
+    NevercStructArrayView *OutFeatureStates);
+
 typedef struct NevercTargetMacroDescriptor {
   NevercABITableHeader Header;
   NevercStringView Name;
   NevercStringView Value;
   NevercTargetMacroFlags Flags;
 } NevercTargetMacroDescriptor;
+
+typedef struct NevercTargetBuiltinLoweringInvocation {
+  NevercABITableHeader Header;
+  NevercTaskHandle Task;
+  NevercStringView BuiltinName;
+  uint32_t BuiltinIndex;
+  uint32_t Reserved;
+  const NevercIRCoreAPI *Core;
+  const NevercIRBuilderAPI *Builder;
+  NevercIRMutationHandle Mutation;
+  NevercIRBuilderHandle IRBuilder;
+  NevercIRTypeHandle ResultType;
+  const NevercIRValueHandle *Arguments;
+  uint64_t ArgumentCount;
+} NevercTargetBuiltinLoweringInvocation;
+
+typedef NevercStatus(NEVERC_CALL *NevercLowerTargetBuiltinFn)(
+    void *UserData,
+    const NevercTargetBuiltinLoweringInvocation *Invocation,
+    NevercIRValueHandle *OutResult);
 
 typedef struct NevercTargetBuiltinDescriptor {
   NevercABITableHeader Header;
@@ -270,12 +397,16 @@ typedef struct NevercTargetBuiltinDescriptor {
   NevercStringView HeaderName;
   NevercTargetBuiltinLanguages Languages;
   uint32_t Reserved;
+  NevercLowerTargetBuiltinFn Lower;
 } NevercTargetBuiltinDescriptor;
 
 typedef struct NevercTargetRegisterDescriptor {
   NevercABITableHeader Header;
   NevercStringView Name;
   NevercStringArrayView Aliases;
+  NevercStringArrayView AdditionalNames;
+  uint32_t RegisterNumber;
+  uint32_t Reserved;
   uint64_t Flags;
 } NevercTargetRegisterDescriptor;
 
@@ -286,6 +417,9 @@ typedef struct NevercTargetConstraintDescriptor {
   NevercTargetConstraintFlags Flags;
   int32_t ImmediateMinimum;
   int32_t ImmediateMaximum;
+  NevercInt32ArrayView ImmediateValues;
+  uint32_t RegisterClassID;
+  int32_t MatchingOperand;
   uint64_t Reserved;
 } NevercTargetConstraintDescriptor;
 
@@ -359,6 +493,38 @@ typedef struct NevercTargetKey {
   NevercStringView SchemaDigest;
 } NevercTargetKey;
 
+typedef struct NevercCodeGenRequest {
+  NevercABITableHeader Header;
+  NevercTargetKey Target;
+  NevercArtifactHandle Input;
+  NevercCodeGenProductKind InputKind;
+  NevercCodeGenProductKind OutputKind;
+  NevercCodeGenOptimizationLevel OptimizationLevel;
+  NevercBool HasFinalIRProof;
+  uint64_t Reserved;
+} NevercCodeGenRequest;
+
+typedef struct NevercCodeGenProductCandidate {
+  NevercABITableHeader Header;
+  NevercCodeGenProductKind Kind;
+  uint32_t Reserved;
+  NevercArtifactHandle Artifact;
+  NevercInterfaceID ProductID;
+  NevercProofHandle Proof;
+  uint64_t Flags;
+} NevercCodeGenProductCandidate;
+
+typedef NevercStatus(NEVERC_CALL *NevercCoarseCodeGenLowerFn)(
+    void *UserData, NevercTaskHandle Task,
+    const NevercCodeGenRequest *Request,
+    NevercCodeGenProductCandidate *OutCandidate);
+
+typedef NevercStatus(NEVERC_CALL *NevercVerifyCodeGenProductFn)(
+    void *UserData, NevercTaskHandle Task,
+    const NevercCodeGenRequest *Request,
+    const NevercCodeGenProductCandidate *Candidate,
+    NevercCodeGenVerificationObligations Obligations);
+
 typedef struct NevercTargetMachineCreateRequest {
   NevercABITableHeader Header;
   NevercStringView RawTriple;
@@ -392,6 +558,10 @@ typedef struct NevercTargetDescriptor {
   NevercStructArrayView Constraints;
   NevercStringView Clobbers;
   uint64_t Flags;
+  NevercTargetValidateCPUFn ValidateCPU;
+  NevercTargetCanonicalizeCPUFn CanonicalizeCPU;
+  NevercTargetListCPUsFn ListCPUs;
+  NevercTargetResolveFeaturesFn ResolveFeatures;
   NevercCreateTargetMachineFn CreateTargetMachine;
   NevercDestroyTargetMachineFn DestroyTargetMachine;
   void *UserData;
@@ -422,6 +592,7 @@ typedef struct NevercCallingConventionDescriptor {
   uint64_t Flags;
   void *UserData;
   NevercDestroyUserDataFn DestroyUserData;
+  NevercPlanCallingConventionFn PlanCallingConvention;
 } NevercCallingConventionDescriptor;
 
 typedef struct NevercCodeGenEdgeDescriptor {
@@ -435,6 +606,11 @@ typedef struct NevercCodeGenEdgeDescriptor {
   uint64_t Flags;
   void *UserData;
   NevercDestroyUserDataFn DestroyUserData;
+  NevercStringView CompatibilityKey;
+  NevercStringView ProviderID;
+  NevercInterfaceID ProductID;
+  NevercCoarseCodeGenLowerFn CoarseLower;
+  NevercVerifyCodeGenProductFn VerifyProduct;
 } NevercCodeGenEdgeDescriptor;
 
 typedef struct NevercTargetAPI {

@@ -4433,6 +4433,8 @@ Value *genTargetArchBuiltinExpr(FunctionEmitter *FE, unsigned BuiltinID,
 Value *FunctionEmitter::genTargetBuiltinExpr(unsigned BuiltinID,
                                              const CallExpr *E,
                                              ReturnValueSlot ReturnValue) {
+  if (getTarget().getPluginTargetInfo())
+    return genPluginTargetBuiltinExpr(BuiltinID, E);
   return genTargetArchBuiltinExpr(this, BuiltinID, E, ReturnValue,
                                   getTarget().getTriple().getArch());
 }

@@ -21,6 +21,7 @@ set(NEVERC_INVOKE_TOOLCHAIN_SOURCES
   ToolChains/Linux.cpp
   ToolChains/MSVC.cpp
   ToolChains/NeverC.cpp
+  ToolChains/Plugin.cpp
 )
 
 # Only X86, AArch64.
@@ -70,6 +71,7 @@ add_neverc_library(nevercInvoke
   nevercPluginFrontend
   nevercPluginIR
   nevercPluginIO
+  nevercPluginMCObject
   nevercPluginTarget
   ${system_libs}
   )

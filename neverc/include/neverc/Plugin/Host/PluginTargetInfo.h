@@ -32,6 +32,10 @@ public:
     return CallingConvention ? &*CallingConvention : nullptr;
   }
   PluginTaskContext *task() const { return Task; }
+  llvm::StringRef selectedCPU() const { return CPU; }
+  const VerifiedTargetBuiltin *getPluginBuiltin(unsigned BuiltinID) const;
+  const VerifiedTargetConstraint *
+  findPluginConstraint(llvm::StringRef Spelling) const;
   const PluginTargetInfo *getPluginTargetInfo() const override {
     return this;
   }
@@ -68,6 +72,7 @@ protected:
   uint64_t getPointerAlignV(LangAS AddressSpace) const override;
   llvm::ArrayRef<const char *> getGCCRegNames() const override;
   llvm::ArrayRef<GCCRegAlias> getGCCRegAliases() const override;
+  llvm::ArrayRef<AddlRegName> getGCCAddlRegNames() const override;
 
 private:
   const VerifiedTargetAddressSpace *
@@ -82,6 +87,9 @@ private:
   std::vector<Builtin::Info> BuiltinInfos;
   std::vector<const char *> RegisterNames;
   std::vector<GCCRegAlias> RegisterAliases;
+  std::vector<AddlRegName> RegisterAdditionalNames;
+  mutable std::vector<std::string> CallbackCPUs;
+  mutable bool CallbackCPUsLoaded = false;
   llvm::StringSet<> ActiveFeatures;
   uint64_t MaximumPointerWidth = 0;
 };

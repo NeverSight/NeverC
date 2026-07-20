@@ -55,6 +55,14 @@ set(PLUGIN_MIR_SCHEMA_JSON
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/MIRSchema.json")
 set(PLUGIN_MIR_SCHEMA_INC
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc")
+set(PLUGIN_MC_SCHEMA_JSON
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/MCSchema.json")
+set(PLUGIN_MC_SCHEMA_INC
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/PluginMCSchema.inc")
+set(PLUGIN_OBJECT_SCHEMA_JSON
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/ObjectSchema.json")
+set(PLUGIN_OBJECT_SCHEMA_INC
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/Schema/PluginObjectSchema.inc")
 
 # All files shipped in the examples/ directory (add new plugins here).
 set(EXAMPLE_FILES
@@ -65,7 +73,11 @@ set(EXAMPLE_FILES
     CustomCallConvPlugin.c
     DriverTracePlugin.c
     VirtualHeaderPlugin.c
-    ASTRewritePlugin.c)
+    ASTRewritePlugin.c
+    FunctionPass.c
+    MachinePass.c
+    MCObserverPlugin.c
+    ObjectRewritePlugin.c)
 
 list(TRANSFORM EXAMPLE_FILES
      PREPEND "${PLUGINSDK_SRC}/examples/"
@@ -148,6 +160,18 @@ add_custom_command(
   COMMAND "${CMAKE_COMMAND}" -E copy
       "${PLUGIN_MIR_SCHEMA_INC}"
       "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/PluginMIRSchema.inc"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_MC_SCHEMA_JSON}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/MCSchema.json"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_MC_SCHEMA_INC}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/PluginMCSchema.inc"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_OBJECT_SCHEMA_JSON}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/ObjectSchema.json"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_OBJECT_SCHEMA_INC}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/PluginObjectSchema.inc"
   COMMAND "${CMAKE_COMMAND}" -E rm -rf "${PLUGINSDK_DST}/examples"
   COMMAND "${CMAKE_COMMAND}" -E copy_directory
       "${PLUGINSDK_SRC}/examples"
@@ -176,6 +200,10 @@ add_custom_command(
       "${PLUGIN_IR_SCHEMA_INC}"
       "${PLUGIN_MIR_SCHEMA_JSON}"
       "${PLUGIN_MIR_SCHEMA_INC}"
+      "${PLUGIN_MC_SCHEMA_JSON}"
+      "${PLUGIN_MC_SCHEMA_INC}"
+      "${PLUGIN_OBJECT_SCHEMA_JSON}"
+      "${PLUGIN_OBJECT_SCHEMA_INC}"
       ${_example_abs}
   COMMENT "Copying pluginsdk to build tree..."
 )
@@ -235,6 +263,10 @@ add_neverc_pluginsdk_example(neverc-plugin-example-function-pass
                              FunctionPass.c)
 add_neverc_pluginsdk_example(neverc-plugin-example-machine-pass
                              MachinePass.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-mc-observer
+                             MCObserverPlugin.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-object-rewrite
+                             ObjectRewritePlugin.c)
 
 add_custom_target(neverc-pluginsdk-examples
                   DEPENDS ${NEVERC_PLUGINSDK_HOST_EXAMPLES}
@@ -273,8 +305,17 @@ install(FILES "${PLUGIN_PHASE_SCHEMA_INC}"
               "${PLUGIN_IR_SCHEMA_INC}"
               "${PLUGIN_MIR_SCHEMA_JSON}"
               "${PLUGIN_MIR_SCHEMA_INC}"
+              "${PLUGIN_MC_SCHEMA_JSON}"
+              "${PLUGIN_MC_SCHEMA_INC}"
+              "${PLUGIN_OBJECT_SCHEMA_JSON}"
+              "${PLUGIN_OBJECT_SCHEMA_INC}"
         DESTINATION "pluginsdk/include/neverc/Plugin/Schema"
         COMPONENT neverc-pluginsdk)
+
+install(DIRECTORY "${PLUGINSDK_SRC}/schemas/targets"
+        DESTINATION "pluginsdk/schemas"
+        COMPONENT neverc-pluginsdk
+        FILES_MATCHING PATTERN "*.json")
 
 install(FILES ${_example_abs}
         DESTINATION "pluginsdk/examples"

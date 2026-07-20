@@ -240,12 +240,13 @@ MCRegister llvm::neverCParseA64Reg(StringRef Name) {
   return MCRegister();
 }
 
-static StringRef neverCA64GetSpecString(CCState &State) {
+static StringRef neverCA64GetPlanString(CCState &State) {
   if (State.isNeverCSpecInjected())
     return State.getNeverCCustomSpec();
   const Function &F = State.getMachineFunction().getFunction();
-  if (F.hasFnAttribute(neverc::CallConvAttrName))
-    return F.getFnAttribute(neverc::CallConvAttrName).getValueAsString();
+  if (F.hasFnAttribute(neverc::CallConvPlanAttrName))
+    return F.getFnAttribute(neverc::CallConvPlanAttrName)
+        .getValueAsString();
   return StringRef();
 }
 
@@ -292,6 +293,31 @@ static MCRegister neverCA64RegForToken(StringRef Tok, MVT LocVT) {
   return MCRegister();
 }
 
+static MCRegister neverCA64RegForPlan(MCRegister Register, MVT LocVT) {
+  if (LocVT == MVT::i32 || LocVT == MVT::i64) {
+#define NEVERC_A64_GPR(NAME, XR, WR)                                            \
+  if (Register == AArch64::XR || Register == AArch64::WR)                       \
+    return LocVT == MVT::i64 ? AArch64::XR : AArch64::WR;
+#include "AArch64NeverCRegNames.def"
+    return MCRegister();
+  }
+  if (neverCA64IsFP(LocVT)) {
+#define NEVERC_A64_VEC(NAME, QR, DR, SR, HR)                                    \
+  if (Register == AArch64::QR || Register == AArch64::DR ||                     \
+      Register == AArch64::SR || Register == AArch64::HR) {                     \
+    if (LocVT == MVT::f16)                                                       \
+      return AArch64::HR;                                                        \
+    if (LocVT == MVT::f32)                                                       \
+      return AArch64::SR;                                                        \
+    if (LocVT == MVT::f64)                                                       \
+      return AArch64::DR;                                                        \
+    return AArch64::QR;                                                          \
+  }
+#include "AArch64NeverCRegNames.def"
+  }
+  return MCRegister();
+}
+
 static bool neverCA64AssignReg(unsigned ValNo, MVT ValVT, MVT LocVT,
                                CCValAssign::LocInfo LocInfo, CCState &State,
                                ArrayRef<StringRef> GPRs,
@@ -316,6 +342,36 @@ static void neverCA64AssignStack(unsigned ValNo, MVT ValVT, MVT LocVT,
   State.addLoc(CCValAssign::getMem(ValNo, ValVT, Off, LocVT, LocInfo));
 }
 
+static bool neverCA64AssignPlanLocation(
+    unsigned ValNo, MVT ValVT, MVT LocVT,
+    CCValAssign::LocInfo LocInfo, CCState &State,
+    const neverc::CCPlanLocation &Location) {
+  if (Location.Kind == neverc::CCPlanLocationKind::Register) {
+    MCRegister Register =
+        neverCA64RegForPlan(MCRegister(Location.RegisterNumber), LocVT);
+    if (!Register.isValid() || State.isAllocated(Register))
+      return false;
+    State.AllocateReg(Register);
+    State.addLoc(CCValAssign::getReg(
+        ValNo, ValVT, Register, LocVT, LocInfo));
+    return true;
+  }
+  if (Location.Kind != neverc::CCPlanLocationKind::Stack ||
+      Location.StackOffset < State.getStackSize())
+    return false;
+  if (Location.StackOffset > State.getStackSize())
+    State.AllocateStack(
+        Location.StackOffset - State.getStackSize(), Align(1));
+  const int64_t Offset =
+      State.AllocateStack(Location.Size, Align(Location.Alignment));
+  if (Offset < 0 ||
+      static_cast<uint64_t>(Offset) != Location.StackOffset)
+    return false;
+  State.addLoc(CCValAssign::getMem(
+      ValNo, ValVT, static_cast<unsigned>(Offset), LocVT, LocInfo));
+  return true;
+}
+
 static void neverCA64AssignPositional(unsigned ValNo, MVT ValVT, MVT LocVT,
                                       CCValAssign::LocInfo LocInfo,
                                       CCState &State,
@@ -337,58 +393,55 @@ static void neverCA64AssignPositional(unsigned ValNo, MVT ValVT, MVT LocVT,
 bool llvm::CC_AArch64_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
                              CCValAssign::LocInfo LocInfo,
                              ISD::ArgFlagsTy ArgFlags, CCState &State) {
-  StringRef SpecStr = neverCA64GetSpecString(State);
-  if (!SpecStr.empty()) {
-    neverc::CustomCCSpec Spec;
-    neverc::parseCustomCCSpec(SpecStr, Spec);
-    if (Spec.hasAnyArgs()) {
-      // NeverC custom CC has no defined vararg ABI: reject variadic functions
-      // with a clean backend diagnostic (routed through clang as a normal
-      // error) instead of a fatal abort. Emit it once, on the first value,
-      // then fall through and assign normally so CCState stays well-formed --
-      // the resulting code is discarded because an error was recorded.
-      if (State.isVarArg() && ValNo == 0) {
-        const Function &F = State.getMachineFunction().getFunction();
+  StringRef PlanText = neverCA64GetPlanString(State);
+  if (!PlanText.empty()) {
+    neverc::CustomCCPlan Plan;
+    const bool ValidPlan =
+        neverc::parseCustomCCPlan(PlanText, Plan);
+    const Function &F = State.getMachineFunction().getFunction();
+    if (!ValidPlan) {
+      if (ValNo == 0)
+        F.getContext().diagnose(DiagnosticInfoUnsupported(
+            F, "malformed NeverC calling convention plan"));
+    } else if (const neverc::CCPlanLocation *Location =
+                   Plan.findArgument(ValNo)) {
+      if (State.isVarArg() && ValNo == 0)
         F.getContext().diagnose(DiagnosticInfoUnsupported(
             F,
             "NeverC custom calling convention does not support variadic "
             "functions: '" +
                 F.getName() + "'"));
-      }
       MVT UseVT = LocVT;
       CCValAssign::LocInfo UseLI = LocInfo;
       neverCA64PromoteSmallInt(UseVT, UseLI, ArgFlags);
-
-      if (Spec.hasPositionalArgs()) {
-        neverCA64AssignPositional(ValNo, ValVT, UseVT, UseLI, State, Spec);
+      if (neverCA64AssignPlanLocation(
+              ValNo, ValVT, UseVT, UseLI, State, *Location))
         return false;
-      }
-      if (neverCA64AssignReg(ValNo, ValVT, UseVT, UseLI, State, Spec.ArgGPR,
-                             Spec.ArgXMM))
-        return false;
-      neverCA64AssignStack(ValNo, ValVT, UseVT, UseLI, State);
-      return false;
+      if (ValNo == 0)
+        F.getContext().diagnose(DiagnosticInfoUnsupported(
+            F, "NeverC calling convention plan cannot be "
+               "materialized by the AArch64 backend"));
     }
   }
-  // No (usable) spec: fall back to the standard AAPCS convention.
   return CC_AArch64_AAPCS(ValNo, ValVT, LocVT, LocInfo, ArgFlags, State);
 }
 
 bool llvm::RetCC_AArch64_NeverC(unsigned ValNo, MVT ValVT, MVT LocVT,
                                 CCValAssign::LocInfo LocInfo,
                                 ISD::ArgFlagsTy ArgFlags, CCState &State) {
-  StringRef SpecStr = neverCA64GetSpecString(State);
-  if (!SpecStr.empty()) {
-    neverc::CustomCCSpec Spec;
-    neverc::parseCustomCCSpec(SpecStr, Spec);
-    if (Spec.hasRetRegs()) {
+  StringRef PlanText = neverCA64GetPlanString(State);
+  if (!PlanText.empty()) {
+    neverc::CustomCCPlan Plan;
+    if (neverc::parseCustomCCPlan(PlanText, Plan))
+      if (const neverc::CCPlanLocation *Location =
+              Plan.findReturn(ValNo)) {
       MVT UseVT = LocVT;
       CCValAssign::LocInfo UseLI = LocInfo;
       neverCA64PromoteSmallInt(UseVT, UseLI, ArgFlags);
-      if (neverCA64AssignReg(ValNo, ValVT, UseVT, UseLI, State, Spec.RetGPR,
-                             Spec.RetXMM))
+      if (neverCA64AssignPlanLocation(
+              ValNo, ValVT, UseVT, UseLI, State, *Location))
         return false;
-    }
+      }
   }
   return RetCC_AArch64_AAPCS(ValNo, ValVT, LocVT, LocInfo, ArgFlags, State);
 }

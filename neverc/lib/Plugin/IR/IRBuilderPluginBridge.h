@@ -28,6 +28,8 @@ public:
 
   const NevercIRBuilderAPI &api() const { return API; }
   bool hasActiveMutation() const;
+  NevercStatus commitInProgressFunctionMutation(
+      NevercIRMutationHandle Mutation);
 
 private:
   struct Mutation;

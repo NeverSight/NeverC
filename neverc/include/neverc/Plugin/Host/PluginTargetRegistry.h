@@ -1,6 +1,7 @@
 #ifndef NEVERC_PLUGIN_HOST_PLUGINTARGETREGISTRY_H
 #define NEVERC_PLUGIN_HOST_PLUGINTARGETREGISTRY_H
 
+#include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/PluginTargetDescriptor.h"
 #include "neverc/Plugin/PluginMC.h"
 #include "neverc/Plugin/PluginObject.h"
@@ -80,6 +81,10 @@ public:
     std::vector<VerifiedTargetConstraint> Constraints;
     std::string Clobbers;
     uint64_t Flags = 0;
+    NevercTargetValidateCPUFn ValidateCPU = nullptr;
+    NevercTargetCanonicalizeCPUFn CanonicalizeCPU = nullptr;
+    NevercTargetListCPUsFn ListCPUs = nullptr;
+    NevercTargetResolveFeaturesFn ResolveFeatures = nullptr;
     NevercCreateTargetMachineFn CreateTargetMachine = nullptr;
     NevercDestroyTargetMachineFn DestroyTargetMachine = nullptr;
     void *TargetUserData = nullptr;
@@ -97,6 +102,7 @@ public:
     NevercTargetVAArgDescriptor VAArg{};
     std::vector<std::string> CalleeSavedRegisters;
     uint32_t LLVMCallingConvention = 0;
+    NevercPlanCallingConventionFn PlanCallingConvention = nullptr;
     std::vector<MCSchemaValueRecord> Opcodes;
     std::vector<MCSchemaValueRecord> SchemaRegisters;
     std::vector<MCSchemaValueRecord> OperandKinds;
@@ -115,11 +121,20 @@ public:
     std::vector<NevercTargetID> SupportedTargets;
     std::string DefaultExtension;
     uint64_t Flags = 0;
+    NevercObjectProbeFn Probe = nullptr;
+    NevercObjectReaderFn Reader = nullptr;
+    NevercObjectWriterFn Writer = nullptr;
+    void *CallbackUserData = nullptr;
   };
 
   struct CodeGenEdgeRecord : NamedRecord {
     NevercCodeGenProductKind InputKind = 0;
     NevercCodeGenProductKind OutputKind = 0;
+    NevercInterfaceID ProductID{};
+    std::string CompatibilityKey;
+    std::string ProviderID;
+    NevercCoarseCodeGenLowerFn CoarseLower = nullptr;
+    NevercVerifyCodeGenProductFn VerifyProduct = nullptr;
   };
 
   size_t targetCount() const { return Targets.size(); }
@@ -128,14 +143,26 @@ public:
   size_t mcSchemaCount() const { return MCSchemas.size(); }
   size_t objectFormatCount() const { return ObjectFormats.size(); }
   size_t codeGenEdgeCount() const { return CodeGenEdges.size(); }
+  size_t builtinTargetCount() const;
 
   const TargetRecord *findTarget(NevercTargetID ID) const;
   const NamedRecord *findABI(NevercTargetABIID ID) const;
   const NamedRecord *
   findCallingConvention(NevercCallingConventionID ID) const;
   const NamedRecord *findMCSchema(NevercInterfaceID ID) const;
+  const ObjectFormatRecord *
+  findObjectFormat(NevercObjectFormatID ID) const;
   const TargetRecord *matchTarget(llvm::StringRef Selector) const;
+  llvm::ArrayRef<BuiltinTargetRoute> builtinTargets() const;
+  const BuiltinTargetRoute *
+  matchBuiltinTarget(llvm::StringRef Selector) const;
   llvm::ArrayRef<TargetRecord> targets() const { return Targets; }
+  llvm::ArrayRef<CodeGenEdgeRecord> codeGenEdges() const {
+    return CodeGenEdges;
+  }
+  llvm::ArrayRef<ObjectFormatRecord> objectFormats() const {
+    return ObjectFormats;
+  }
   const TargetRecord *selectedTarget() const { return SelectedTarget; }
   const OwnedTargetKey *targetKey() const { return SelectedKey.get(); }
   llvm::ArrayRef<const CodeGenEdgeRecord *> route() const { return Route; }

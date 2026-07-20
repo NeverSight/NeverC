@@ -16,6 +16,7 @@ set(NEVERC_COMPILER_SOURCES
   Core/ExecuteCompilerInvocation.cpp
   Core/FrontendOptions.cpp
 
+  Action/AssembleAction.cpp
   Action/FrontendAction.cpp
   Action/FrontendActions.cpp
 

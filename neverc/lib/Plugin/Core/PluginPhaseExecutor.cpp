@@ -535,6 +535,13 @@ bool PluginPhaseExecutor::hasBindings(NevercInterfaceID Phase) const {
          });
 }
 
+bool PluginPhaseExecutor::hasProvider(NevercInterfaceID Phase) const {
+  std::lock_guard<std::mutex> ConfigurationLock(ConfigurationMutex);
+  return llvm::any_of(Providers, [&](const ProviderBinding &Binding) {
+    return samePluginInterfaceID(Binding.Descriptor.Phase, Phase);
+  });
+}
+
 std::vector<std::string> PluginPhaseExecutor::fallbackProvenance() const {
   std::lock_guard<std::mutex> ProvenanceLock(ProvenanceMutex);
   return FallbackProvenance;
@@ -603,6 +610,9 @@ Error PluginPhaseExecutor::importSessionRegistrations(
       case PluginRegistrationKind::TargetABI:
       case PluginRegistrationKind::CallingConvention:
       case PluginRegistrationKind::MCSchema:
+      case PluginRegistrationKind::MCEncoder:
+      case PluginRegistrationKind::MCDecoder:
+      case PluginRegistrationKind::MCAsmBackend:
       case PluginRegistrationKind::ObjectFormat:
       case PluginRegistrationKind::CodeGenEdge:
         break;

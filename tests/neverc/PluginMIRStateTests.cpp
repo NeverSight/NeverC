@@ -389,7 +389,8 @@ TEST(PluginMIRStateTest,
      CalleeSavedStateUsesTargetSchemaAndRollsBackWithItsFrameMutation) {
   MIRStateTestState State;
   ASSERT_TRUE(State.initialize());
-  MIRPluginBridge Bridge(State.Scope.task(), *State.Machine.MF, 1, true);
+  MIRPluginBridge Bridge(State.Scope.task(), *State.Machine.MF, 1,
+                         "test-schema", "test-schema");
   const NevercMIRAPI &API = Bridge.api();
   ASSERT_NE(API.GetCalleeSavedCount, nullptr);
   ASSERT_NE(API.GetCalleeSaved, nullptr);
@@ -448,7 +449,8 @@ TEST(PluginMIRStateTest,
      FunctionAndBlockLiveInsCanBeAddedRemovedAndQueried) {
   MIRStateTestState State;
   ASSERT_TRUE(State.initialize());
-  MIRPluginBridge Bridge(State.Scope.task(), *State.Machine.MF, 1, true);
+  MIRPluginBridge Bridge(State.Scope.task(), *State.Machine.MF, 1,
+                         "test-schema", "test-schema");
   const NevercMIRAPI &API = Bridge.api();
   auto Function = Bridge.machineFunction();
   auto Block = Bridge.wrapBasicBlock(*State.Machine.Block);

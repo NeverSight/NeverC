@@ -46,6 +46,21 @@ NevercStatus NEVERC_CALL classifyDirectABI(
   return neverc_status_ok();
 }
 
+NevercStatus NEVERC_CALL lowerTestBuiltin(
+    void *, const NevercTargetBuiltinLoweringInvocation *,
+    NevercIRValueHandle *OutResult) {
+  if (OutResult)
+    *OutResult = {};
+  return neverc_status_ok();
+}
+
+NevercStatus NEVERC_CALL validateTestCPU(
+    NevercTaskHandle, NevercStringView, void *, NevercBool *OutValid) {
+  if (OutValid)
+    *OutValid = NEVERC_TRUE;
+  return neverc_status_ok();
+}
+
 NevercTargetDescriptor target(NevercTargetID ID, const char *Name) {
   NevercTargetDescriptor Descriptor{};
   Descriptor.Header = {sizeof(Descriptor), NEVERC_TARGET_API_MAJOR,
@@ -181,6 +196,12 @@ TEST(PluginTargetRegistryTest, PublishesSixIndependentRegistrarInterfaces) {
                 ->RegisterCallingConvention,
             nullptr);
   EXPECT_NE(static_cast<const NevercMCAPI *>(MC->Table)->RegisterSchema,
+            nullptr);
+  EXPECT_NE(static_cast<const NevercMCAPI *>(MC->Table)->RegisterEncoder,
+            nullptr);
+  EXPECT_NE(static_cast<const NevercMCAPI *>(MC->Table)->RegisterDecoder,
+            nullptr);
+  EXPECT_NE(static_cast<const NevercMCAPI *>(MC->Table)->RegisterAsmBackend,
             nullptr);
   EXPECT_EQ(static_cast<const NevercObjectAPI *>(Object->Table)->Context,
             nullptr);
@@ -360,6 +381,7 @@ TEST(PluginTargetRegistryTest, OwnsLanguageAndAsmExtensionDescriptors) {
   Builtin.TypeEncoding = view("ii");
   Builtin.Attributes = view("nc");
   Builtin.Languages = NEVERC_TARGET_BUILTIN_LANGUAGE_C;
+  Builtin.Lower = lowerTestBuiltin;
 
   NevercStringView RegisterAliases[] = {view(RegisterAlias)};
   NevercTargetRegisterDescriptor Register{};
@@ -433,6 +455,68 @@ TEST(PluginTargetRegistryTest,
 
   ASSERT_FALSE(static_cast<bool>(Frozen));
   EXPECT_NE(errorText(Frozen.takeError()).find("macro array"),
+            std::string::npos);
+}
+
+TEST(PluginTargetRegistryTest, RejectsMacroTokenInjection) {
+  NevercTargetMacroDescriptor Macro{};
+  Macro.Header = {sizeof(Macro), NEVERC_TARGET_API_MAJOR,
+                  NEVERC_TARGET_API_MINOR, 0};
+  Macro.Name = view("__BROKEN__");
+  Macro.Value = view("1\n#error injected");
+  NevercTargetDescriptor Target =
+      target({UINT64_C(0x1000), UINT64_C(6)},
+             "test.macro-token-injection");
+  Target.Macros = {&Macro, 1, sizeof(Macro)};
+  PluginTargetRegistrationView Plugin;
+  Plugin.PluginID = "org.neverc.test.target-macro-token-injection";
+  Plugin.Targets = ArrayRef<NevercTargetDescriptor>(Target);
+
+  auto Frozen = PluginTargetRegistry::freeze(
+      ArrayRef<PluginTargetRegistrationView>(Plugin),
+      PluginTargetRequest{});
+  ASSERT_FALSE(static_cast<bool>(Frozen));
+  EXPECT_NE(errorText(Frozen.takeError()).find("invalid tokens"),
+            std::string::npos);
+}
+
+TEST(PluginTargetRegistryTest, RejectsBuiltinWithoutLoweringProvider) {
+  NevercTargetBuiltinDescriptor Builtin{};
+  Builtin.Header = {sizeof(Builtin), NEVERC_TARGET_API_MAJOR,
+                    NEVERC_TARGET_API_MINOR, 0};
+  Builtin.Name = view("__builtin_missing_lowering");
+  Builtin.TypeEncoding = view("ii");
+  Builtin.Languages = NEVERC_TARGET_BUILTIN_LANGUAGE_C;
+  NevercTargetDescriptor Target =
+      target({UINT64_C(0x1000), UINT64_C(7)},
+             "test.builtin-missing-lowering");
+  Target.Builtins = {&Builtin, 1, sizeof(Builtin)};
+  PluginTargetRegistrationView Plugin;
+  Plugin.PluginID = "org.neverc.test.target-builtin-missing-lowering";
+  Plugin.Targets = ArrayRef<NevercTargetDescriptor>(Target);
+
+  auto Frozen = PluginTargetRegistry::freeze(
+      ArrayRef<PluginTargetRegistrationView>(Plugin),
+      PluginTargetRequest{});
+  ASSERT_FALSE(static_cast<bool>(Frozen));
+  EXPECT_NE(errorText(Frozen.takeError()).find("builtin descriptor"),
+            std::string::npos);
+}
+
+TEST(PluginTargetRegistryTest, RejectsIncompleteCPUCallbackSet) {
+  NevercTargetDescriptor Target =
+      target({UINT64_C(0x1000), UINT64_C(8)},
+             "test.incomplete-cpu-callbacks");
+  Target.ValidateCPU = validateTestCPU;
+  PluginTargetRegistrationView Plugin;
+  Plugin.PluginID = "org.neverc.test.target-incomplete-cpu-callbacks";
+  Plugin.Targets = ArrayRef<NevercTargetDescriptor>(Target);
+
+  auto Frozen = PluginTargetRegistry::freeze(
+      ArrayRef<PluginTargetRegistrationView>(Plugin),
+      PluginTargetRequest{});
+  ASSERT_FALSE(static_cast<bool>(Frozen));
+  EXPECT_NE(errorText(Frozen.takeError()).find("complete Target CPU"),
             std::string::npos);
 }
 
@@ -656,6 +740,7 @@ TEST(PluginTargetRegistryTest, FreezesSelectedTargetAndProviderRoute) {
   Edges[0].TargetID = TargetID;
   Edges[0].InputKind = NEVERC_CODEGEN_PRODUCT_IR;
   Edges[0].OutputKind = NEVERC_CODEGEN_PRODUCT_MIR;
+  Edges[0].Flags = NEVERC_CODEGEN_EDGE_BUILTIN;
   Edges[1].Header = {sizeof(Edges[1]), NEVERC_TARGET_API_MAJOR,
                      NEVERC_TARGET_API_MINOR, 0};
   Edges[1].EdgeID = SecondEdgeID;
@@ -707,6 +792,8 @@ TEST(PluginTargetRegistryTest, FreezesSelectedTargetAndProviderRoute) {
   ASSERT_EQ((*Frozen)->route().size(), 2U);
   EXPECT_EQ((*Frozen)->route()[0]->CanonicalName,
             "test.route.ir-to-mir");
+  EXPECT_EQ((*Frozen)->route()[0]->Flags,
+            NEVERC_CODEGEN_EDGE_BUILTIN);
   EXPECT_EQ((*Frozen)->route()[1]->CanonicalName,
             "test.route.mir-to-mc");
 

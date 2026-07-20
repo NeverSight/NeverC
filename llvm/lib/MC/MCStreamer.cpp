@@ -16,6 +16,7 @@
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDwarf.h"
+#include "llvm/MC/MCEmissionObserver.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstPrinter.h"
@@ -888,18 +889,56 @@ void MCStreamer::emitWindowsUnwindTables() {}
 
 void MCStreamer::emitWindowsUnwindTables(WinEH::FrameInfo *Frame) {}
 
+bool MCStreamer::beginEmissionUnit() {
+  if (EmissionUnitStarted)
+    return true;
+  EmissionUnitStarted = true;
+  if (MCEmissionObserver *Observer = Context.getEmissionObserver())
+    if (Error E = Observer->notifyUnitBegin(*this)) {
+      Context.reportError(SMLoc(), toString(std::move(E)));
+      return false;
+    }
+  return true;
+}
+
+void MCStreamer::notifyEmissionSectionChange(
+    MCSection &Section, const MCExpr *Subsection) {
+  if (!beginEmissionUnit())
+    return;
+  if (MCEmissionObserver *Observer = Context.getEmissionObserver())
+    if (Error E =
+            Observer->notifySectionChange(*this, Section, Subsection))
+      Context.reportError(SMLoc(), toString(std::move(E)));
+}
+
+void MCStreamer::endEmissionUnit() {
+  if (EmissionUnitEnded)
+    return;
+  (void)beginEmissionUnit();
+  EmissionUnitEnded = true;
+  if (MCEmissionObserver *Observer = Context.getEmissionObserver())
+    if (Error E = Observer->notifyUnitEnd(*this))
+      Context.reportError(SMLoc(), toString(std::move(E)));
+}
+
 void MCStreamer::finish(SMLoc EndLoc) {
   if ((!DwarfFrameInfos.empty() && !DwarfFrameInfos.back().End) ||
       (!WinFrameInfos.empty() && !WinFrameInfos.back()->End)) {
     getContext().reportError(EndLoc, "Unfinished frame!");
+    endEmissionUnit();
     return;
   }
 
-  MCTargetStreamer *TS = getTargetStreamer();
-  if (TS)
-    TS->finish();
+  (void)beginEmissionUnit();
+  if (!Context.hadError()) {
+    MCTargetStreamer *TS = getTargetStreamer();
+    if (TS)
+      TS->finish();
 
-  finishImpl();
+    if (!Context.hadError())
+      finishImpl();
+  }
+  endEmissionUnit();
 }
 
 void MCStreamer::maybeEmitDwarf64Mark() {
@@ -1088,11 +1127,14 @@ void MCStreamer::emitBundleUnlock() {}
 
 void MCStreamer::switchSection(MCSection *Section, const MCExpr *Subsection) {
   assert(Section && "Cannot switch to a null section!");
+  if (!beginEmissionUnit())
+    return;
   MCSectionSubPair curSection = SectionStack.back().first;
   SectionStack.back().second = curSection;
   if (MCSectionSubPair(Section, Subsection) != curSection) {
     changeSection(Section, Subsection);
     SectionStack.back().first = MCSectionSubPair(Section, Subsection);
+    notifyEmissionSectionChange(*Section, Subsection);
     assert(!Section->hasEnded() && "Section already ended");
     MCSymbol *Sym = Section->getBeginSymbol();
     if (Sym && !Sym->isInSection())

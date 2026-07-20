@@ -16,6 +16,7 @@
 #include "neverc/Foundation/OverrideNames.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Core/Version.h"
+#include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/PluginTargetInfo.h"
 #include "neverc/Tree/Core/CharUnits.h"
 #include "neverc/Tree/Core/Mangle.h"
@@ -61,43 +62,37 @@ std::unique_ptr<CGABI> constructABI(ModuleEmitter &ME) {
 
 std::unique_ptr<TargetCodeGenInfo> createTargetCodeGenInfo(ModuleEmitter &ME) {
   const TargetInfo &Target = ME.getTarget();
-  const llvm::Triple &Triple = Target.getTriple();
   if (const auto *PluginTarget = Target.getPluginTargetInfo())
     if (PluginTarget->abi() &&
         PluginTarget->abi()->ClassifyFunction)
       return createPluginTargetCodeGenInfo(ME, *PluginTarget);
 
-  switch (Triple.getArch()) {
-  default:
+  const auto *Route =
+      neverc::plugin::selectBuiltinNeverCTargetRoute(Target);
+  if (!Route)
     return createDefaultTargetCodeGenInfo(ME);
 
-  case llvm::Triple::aarch64: {
-    AArch64ABIKind Kind = AArch64ABIKind::AAPCS;
-    if (Target.getABI() == "darwinpcs")
-      Kind = AArch64ABIKind::DarwinPCS;
-
-    switch (Triple.getOS()) {
-    case llvm::Triple::Win32:
-      return createWindowsAArch64TargetCodeGenInfo(ME, Kind);
-    default:
-      return createAArch64TargetCodeGenInfo(ME, Kind);
-    }
-  }
-
-  case llvm::Triple::x86_64: {
+  switch (Route->ABI) {
+  case neverc::plugin::BuiltinTargetABIKind::X86_64SysV:
+  case neverc::plugin::BuiltinTargetABIKind::X86_64Win64: {
     llvm::StringRef ABI = Target.getABI();
     X86AVXABILevel AVXLevel = (ABI == "avx512" ? X86AVXABILevel::AVX512
                                : ABI == "avx"  ? X86AVXABILevel::AVX
                                                : X86AVXABILevel::None);
-
-    switch (Triple.getOS()) {
-    case llvm::Triple::Win32:
+    if (Route->ABI ==
+        neverc::plugin::BuiltinTargetABIKind::X86_64Win64)
       return createWinX86_64TargetCodeGenInfo(ME, AVXLevel);
-    default:
-      return createX86_64TargetCodeGenInfo(ME, AVXLevel);
-    }
+    return createX86_64TargetCodeGenInfo(ME, AVXLevel);
   }
+  case neverc::plugin::BuiltinTargetABIKind::AArch64AAPCS:
+    return createAArch64TargetCodeGenInfo(ME, AArch64ABIKind::AAPCS);
+  case neverc::plugin::BuiltinTargetABIKind::AArch64DarwinPCS:
+    return createAArch64TargetCodeGenInfo(ME, AArch64ABIKind::DarwinPCS);
+  case neverc::plugin::BuiltinTargetABIKind::AArch64Win64:
+    return createWindowsAArch64TargetCodeGenInfo(
+        ME, AArch64ABIKind::AAPCS);
   }
+  llvm_unreachable("unknown built-in target ABI route");
 }
 
 } // namespace
@@ -1425,7 +1420,10 @@ void ModuleEmitter::setCommonAttributes(GlobalDecl GD, llvm::GlobalValue *GV) {
 bool ModuleEmitter::getCPUAndFeaturesAttributes(GlobalDecl GD,
                                                 llvm::AttrBuilder &Attrs,
                                                 bool SetTargetFeatures) {
-  llvm::StringRef TargetCPU = getTarget().getTargetOpts().CPU;
+  const auto *PluginTarget = getTarget().getPluginTargetInfo();
+  llvm::StringRef TargetCPU =
+      PluginTarget ? PluginTarget->selectedCPU()
+                   : getTarget().getTargetOpts().CPU;
   llvm::StringRef TuneCPU = getTarget().getTargetOpts().TuneCPU;
   const auto *FD = dyn_cast_or_null<FunctionDecl>(GD.getDecl());
   FD = FD ? FD->getMostRecentDecl() : FD;

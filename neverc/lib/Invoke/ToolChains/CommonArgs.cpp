@@ -253,6 +253,10 @@ std::string tools::getCPUName(const Driver &D, const ArgList &Args,
 
   switch (T.getArch()) {
   default:
+    if (Arg *CPU = Args.getLastArg(options::OPT_mcpu_EQ)) {
+      CPU->claim();
+      return CPU->getValue();
+    }
     return "";
 
   case llvm::Triple::aarch64:

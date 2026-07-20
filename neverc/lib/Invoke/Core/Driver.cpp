@@ -4,6 +4,7 @@
 #include "ToolChains/Linux.h"
 #include "ToolChains/MSVC.h"
 #include "ToolChains/NeverC.h"
+#include "ToolChains/Plugin.h"
 #include "Plugin/ActionGraph.h"
 #include "Plugin/DriverAPIBridge.h"
 #include "Plugin/DriverArtifacts.h"
@@ -27,6 +28,9 @@
 #include "neverc/Plugin/Host/IRGenProvider.h"
 #include "neverc/Plugin/Host/PluginHandleArena.h"
 #include "neverc/Plugin/Host/PluginIOBridge.h"
+#include "neverc/Plugin/Host/PluginCodeGenPipeline.h"
+#include "neverc/Plugin/Host/PluginAssemblyPipeline.h"
+#include "neverc/Plugin/Host/ObjectPhaseHooks.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
 #include "neverc/Plugin/Host/PluginPhaseExecutor.h"
 #include "neverc/Plugin/Host/PluginPhaseGraph.h"
@@ -1477,6 +1481,7 @@ llvm::Error Driver::finishPluginRuntime(
   }
 
   CompilationState.reset();
+  ToolChains.clear();
   PluginSessionState.reset();
 
   if (PluginBootstrapState)
@@ -1540,6 +1545,15 @@ Driver::prepareDirectPluginInvocation(
               return E;
             if (llvm::Error E =
                     plugin::registerPluginTargetInterfaces(Services))
+              return E;
+            if (llvm::Error E =
+                    plugin::registerPluginCodeGenProviderInterfaces(Services))
+              return E;
+            if (llvm::Error E =
+                    plugin::registerPluginObjectPhaseInterface(Services))
+              return E;
+            if (llvm::Error E =
+                    plugin::registerPluginAssemblyProviderInterface(Services))
               return E;
             return PluginDriverAPIBridgeState->registerInterface(
                 Services.interfaces());
@@ -1678,6 +1692,18 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
                     return E;
                   if (llvm::Error E =
                           plugin::registerPluginTargetInterfaces(Services))
+                    return E;
+                  if (llvm::Error E =
+                          plugin::registerPluginCodeGenProviderInterfaces(
+                              Services))
+                    return E;
+                  if (llvm::Error E =
+                          plugin::registerPluginObjectPhaseInterface(
+                              Services))
+                    return E;
+                  if (llvm::Error E =
+                          plugin::registerPluginAssemblyProviderInterface(
+                              Services))
                     return E;
                   return PluginDriverAPIBridgeState->registerInterface(
                       Services.interfaces());
@@ -1982,8 +2008,10 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
     Request.ComputedTriple = ComputedTarget.str();
     Request.SysRoot = SysRoot;
     Request.ResourceDir = ResourceDir;
-    if (const Arg *A = UArgs->getLastArg(options::OPT_mcpu_EQ))
+    if (Arg *A = UArgs->getLastArg(options::OPT_mcpu_EQ)) {
       Request.CPU = A->getValue();
+      A->claim();
+    }
     for (const Arg *A :
          UArgs->filtered(options::OPT_target_feature))
       Request.Features.emplace_back(A->getValue());
@@ -3956,7 +3984,9 @@ const char *Driver::CreateTempFile(Compilation &C, llvm::StringRef Prefix,
   // InMemoryFileStore, so no disk file is needed.  Use a cheap synthetic path
   // (no system_temp_directory syscall) and skip TempFiles registration —
   // CleanupFileList would just waste syscalls on non-existent paths.
-  if (isUsingLTO() && !CCGenDiagnostics && !isSaveTempsEnabled()) {
+  if (isUsingLTO() && !CCGenDiagnostics && !isSaveTempsEnabled() &&
+      !C.getArgs().hasArg(options::OPT_c, options::OPT_S,
+                          options::OPT_E, options::OPT_fsyntax_only)) {
     static std::atomic<unsigned> InMemSeq{0};
     unsigned N = InMemSeq.fetch_add(1, std::memory_order_relaxed);
     TmpName = "<inmem>/";
@@ -4310,6 +4340,19 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
                                       const llvm::Triple &Target) const {
 
   auto &TC = ToolChains[Target.str()];
+  if (!TC) {
+    if (PluginInvocationTask && PluginSessionState) {
+      auto Snapshot = plugin::findPluginTargetSnapshot(
+          PluginInvocationTask->processServices(),
+          PluginSessionState->handle());
+      if (Snapshot)
+        if (const auto *PluginTarget =
+                Snapshot->matchTarget(Target.str()))
+          TC = std::make_unique<toolchains::Plugin>(
+              *this, Target, Args, std::move(Snapshot),
+              PluginTarget->ID);
+    }
+  }
   if (!TC) {
     switch (Target.getOS()) {
     case llvm::Triple::Darwin:

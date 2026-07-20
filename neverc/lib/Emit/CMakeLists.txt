@@ -57,6 +57,9 @@ add_neverc_library(nevercEmit
   ABI/PluginABIInfo.cpp
   ABI/TargetInfo.cpp
 
+  Plugin/PluginCodeGenProvider.cpp
+  Plugin/PluginTargetBuiltinLowering.cpp
+
   ${NEVERC_EMIT_TARGET_SOURCES}
 
   Expr/ExprEmitter.cpp
@@ -110,6 +113,7 @@ add_neverc_library(nevercEmit
   nevercXorStr
   nevercDynCode
   nevercPluginIR
+  nevercPluginMCObject
   nevercPluginTarget
   )
 

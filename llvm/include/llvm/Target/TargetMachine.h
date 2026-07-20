@@ -23,6 +23,7 @@
 #include "llvm/Target/CGPassBuilderOption.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Triple.h"
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -345,8 +346,18 @@ public:
 /// target-independent code generator.
 ///
 class LLVMTargetMachine : public TargetMachine {
+public:
+  using MachinePipelineFactory = std::function<bool(
+      LLVMTargetMachine &, PassManagerBase &, MachineModuleInfoWrapperPass &,
+      bool DisableVerify)>;
+  using MachineEmissionFactory = std::function<bool(
+      LLVMTargetMachine &, PassManagerBase &, raw_pwrite_stream &,
+      raw_pwrite_stream *, CodeGenFileType, MachineModuleInfoWrapperPass &)>;
+
 protected: // Can only create subclasses.
   std::shared_ptr<MachinePipelineHooks> PipelineHooks;
+  MachinePipelineFactory PipelineFactory;
+  MachineEmissionFactory EmissionFactory;
 
   LLVMTargetMachine(const Target &T, StringRef DataLayoutString,
                     const Triple &TT, StringRef CPU, StringRef FS,
@@ -363,6 +374,22 @@ public:
   const std::shared_ptr<MachinePipelineHooks> &
   getMachinePipelineHooks() const {
     return PipelineHooks;
+  }
+
+  void setMachinePipelineFactory(MachinePipelineFactory Factory) {
+    PipelineFactory = std::move(Factory);
+  }
+
+  void setMachineEmissionFactory(MachineEmissionFactory Factory) {
+    EmissionFactory = std::move(Factory);
+  }
+
+  const MachinePipelineFactory &getMachinePipelineFactory() const {
+    return PipelineFactory;
+  }
+
+  const MachineEmissionFactory &getMachineEmissionFactory() const {
+    return EmissionFactory;
   }
 
   /// Get a TargetTransformInfo implementation for the target.

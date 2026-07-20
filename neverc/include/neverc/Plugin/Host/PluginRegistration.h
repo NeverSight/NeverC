@@ -36,6 +36,9 @@ enum class PluginRegistrationKind : uint8_t {
   TargetABI,
   CallingConvention,
   MCSchema,
+  MCEncoder,
+  MCDecoder,
+  MCAsmBackend,
   ObjectFormat,
   CodeGenEdge,
 };
@@ -77,6 +80,9 @@ struct PluginRegistrationRecord {
   NevercTargetABIDescriptor TargetABI{};
   NevercCallingConventionDescriptor CallingConvention{};
   NevercMCSchemaDescriptor MCSchema{};
+  NevercMCEncoderDescriptor MCEncoder{};
+  NevercMCDecoderDescriptor MCDecoder{};
+  NevercMCAsmBackendDescriptor MCAsmBackend{};
   NevercObjectFormatDescriptor ObjectFormatDescriptor{};
   NevercCodeGenEdgeDescriptor CodeGenEdge{};
   std::string CanonicalName;
@@ -89,6 +95,7 @@ struct PluginRegistrationRecord {
   std::string Features;
   std::string ObjectFormat;
   std::string SchemaDigest;
+  std::string CodeGenCompatibilityKey;
   std::string DefaultExtension;
   std::vector<std::string> Aliases;
   std::vector<OwnedTargetTripleMatcher> TargetMatchers;
@@ -175,6 +182,12 @@ NevercStatus registerPluginCallingConvention(
     void *Registrar, const NevercCallingConventionDescriptor *Descriptor);
 NevercStatus registerPluginMCSchema(
     void *Registrar, const NevercMCSchemaDescriptor *Descriptor);
+NevercStatus registerPluginMCEncoder(
+    void *Registrar, const NevercMCEncoderDescriptor *Descriptor);
+NevercStatus registerPluginMCDecoder(
+    void *Registrar, const NevercMCDecoderDescriptor *Descriptor);
+NevercStatus registerPluginMCAsmBackend(
+    void *Registrar, const NevercMCAsmBackendDescriptor *Descriptor);
 NevercStatus registerPluginObjectFormat(
     void *Registrar, const NevercObjectFormatDescriptor *Descriptor);
 NevercStatus registerPluginCodeGenEdge(
