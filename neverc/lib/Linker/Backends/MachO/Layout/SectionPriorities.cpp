@@ -14,14 +14,13 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <numeric>
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::MachO;
 using namespace llvm::sys;
 using namespace linker;
 using namespace linker::macho;
-
-PriorityBuilder macho::priorityBuilder;
 
 // ===----------------------------------------------------------------------===
 // Data structures: edges, clusters, sort driver

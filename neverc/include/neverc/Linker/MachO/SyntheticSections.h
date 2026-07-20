@@ -743,8 +743,8 @@ struct InStruct {
   ChainedFixupsSection *chainedFixups = nullptr;
 };
 
-extern InStruct in;
-extern std::vector<SyntheticSection *> syntheticSections;
+InStruct &machoIn();
+std::vector<SyntheticSection *> &machoSyntheticSections();
 
 void createSyntheticSymbols();
 

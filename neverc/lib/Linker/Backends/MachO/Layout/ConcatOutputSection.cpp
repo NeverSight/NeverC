@@ -1,4 +1,5 @@
 #include "Linker/MachO/ConcatOutputSection.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/MachO/Config.h"
 #include "Linker/MachO/OutputSegment.h"
@@ -7,8 +8,8 @@
 #include "Linker/MachO/SyntheticSections.h"
 #include "Linker/MachO/Target.h"
 #include "llvm/BinaryFormat/MachO.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/ScopedPrinter.h"
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::MachO;
@@ -18,8 +19,6 @@ using namespace linker::macho;
 // ===----------------------------------------------------------------------===
 // Output section merging
 // ===----------------------------------------------------------------------===
-
-MapVector<NamePair, ConcatOutputSection *> macho::concatOutputSections;
 
 void ConcatOutputSection::addInput(ConcatInputSection *input) {
   assert(input->parent == this);
@@ -51,8 +50,6 @@ void ConcatOutputSection::addInput(ConcatInputSection *input) {
 // * ConcatInputSection::finalize() and ConcatInputSection::writeTo() merge
 //   the inputs and thunks vectors (both ordered by ascending address), which
 //   is simple and cheap.
-
-DenseMap<Symbol *, ThunkInfo> linker::macho::thunkMap;
 
 // Determine whether we need thunks, which depends on the target arch -- AArch64
 // needs them because it has limited-range branch/call instructions, whereas

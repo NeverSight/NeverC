@@ -19,6 +19,8 @@
 #include "neverc/Plugin/PluginTarget.h"
 #include "neverc/Plugin/PluginMC.h"
 #include "neverc/Plugin/PluginObject.h"
+#include "neverc/Plugin/PluginLink.h"
+#include "neverc/Plugin/PluginLTO.h"
 #include "neverc/Plugin/PluginPhaseSchema.h"
 
 #endif /* NEVERC_PLUGIN_NEVERCPLUGINAPI_H */

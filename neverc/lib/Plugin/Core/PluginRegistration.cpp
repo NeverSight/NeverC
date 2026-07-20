@@ -35,6 +35,10 @@ PluginRegistrationRecord::PluginRegistrationRecord(
       MCAsmBackend(Other.MCAsmBackend),
       ObjectFormatDescriptor(Other.ObjectFormatDescriptor),
       CodeGenEdge(Other.CodeGenEdge),
+      LinkerProvider(Other.LinkerProvider),
+      ObjectMergeProvider(Other.ObjectMergeProvider),
+      BinaryImageVerifier(Other.BinaryImageVerifier),
+      LTOProvider(Other.LTOProvider),
       CanonicalName(std::move(Other.CanonicalName)),
       ProviderID(std::move(Other.ProviderID)),
       PassID(std::move(Other.PassID)),
@@ -46,6 +50,7 @@ PluginRegistrationRecord::PluginRegistrationRecord(
       SchemaDigest(std::move(Other.SchemaDigest)),
       CodeGenCompatibilityKey(
           std::move(Other.CodeGenCompatibilityKey)),
+      LinkCompatibilityKey(std::move(Other.LinkCompatibilityKey)),
       DefaultExtension(std::move(Other.DefaultExtension)),
       Aliases(std::move(Other.Aliases)),
       TargetMatchers(std::move(Other.TargetMatchers)),
@@ -1202,6 +1207,183 @@ NevercStatus registerPluginCodeGenEdge(
     Record.CodeGenEdge.Dependencies = {};
     Record.CodeGenEdge.CompatibilityKey = {};
     Record.CodeGenEdge.ProviderID = {};
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginLinkerProvider(
+    void *Registrar, const NevercLinkerProviderDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercLinkerProviderDescriptor, DestroyUserData) +
+        sizeof(NevercLinkerProviderDescriptor::DestroyUserData);
+    constexpr NevercLinkProviderFlags KnownFlags =
+        NEVERC_LINK_PROVIDER_DETERMINISTIC |
+        NEVERC_LINK_PROVIDER_CACHEABLE |
+        NEVERC_LINK_PROVIDER_REPLAY_REQUIRED;
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_LINK_API_MAJOR, NEVERC_LINK_API_MINOR) ||
+        (Descriptor->OutputKind != 0 &&
+         (Descriptor->OutputKind < NEVERC_LINK_OUTPUT_EXECUTABLE ||
+          Descriptor->OutputKind > NEVERC_LINK_OUTPUT_BUNDLE)) ||
+        (Descriptor->Flags & ~KnownFlags) != 0 ||
+        !nonzero(Descriptor->ProductID) || !Descriptor->Link ||
+        !Descriptor->VerifyImage)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::LinkerProvider;
+    Record.Interface = Descriptor->ProductID;
+    Record.LinkerProvider = *Descriptor;
+    if (!copyString(Descriptor->ProviderID, Record.ProviderID, false) ||
+        !canonicalName(Record.ProviderID) ||
+        !copyString(Descriptor->CompatibilityKey,
+                    Record.LinkCompatibilityKey, true) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::LinkerProvider &&
+                              Existing.ProviderID == Record.ProviderID;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.LinkerProvider.ProviderID = {};
+    Record.LinkerProvider.CompatibilityKey = {};
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginObjectMergeProvider(
+    void *Registrar,
+    const NevercObjectMergeProviderDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercObjectMergeProviderDescriptor, DestroyUserData) +
+        sizeof(NevercObjectMergeProviderDescriptor::DestroyUserData);
+    constexpr NevercLinkProviderFlags KnownFlags =
+        NEVERC_LINK_PROVIDER_DETERMINISTIC |
+        NEVERC_LINK_PROVIDER_CACHEABLE |
+        NEVERC_LINK_PROVIDER_REPLAY_REQUIRED;
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_LINK_API_MAJOR, NEVERC_LINK_API_MINOR) ||
+        (Descriptor->Flags & ~KnownFlags) != 0 ||
+        !nonzero(Descriptor->ProductID) || !Descriptor->Merge)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::ObjectMergeProvider;
+    Record.Interface = Descriptor->ProductID;
+    Record.ObjectMergeProvider = *Descriptor;
+    if (!copyString(Descriptor->ProviderID, Record.ProviderID, false) ||
+        !canonicalName(Record.ProviderID) ||
+        !copyString(Descriptor->CompatibilityKey,
+                    Record.LinkCompatibilityKey, true) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::ObjectMergeProvider &&
+                              Existing.ProviderID == Record.ProviderID;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.ObjectMergeProvider.ProviderID = {};
+    Record.ObjectMergeProvider.CompatibilityKey = {};
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginBinaryImageVerifier(
+    void *Registrar,
+    const NevercBinaryImageVerifierDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercBinaryImageVerifierDescriptor, DestroyUserData) +
+        sizeof(NevercBinaryImageVerifierDescriptor::DestroyUserData);
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_LINK_API_MAJOR, NEVERC_LINK_API_MINOR) ||
+        (Descriptor->OutputKind != 0 &&
+         (Descriptor->OutputKind < NEVERC_LINK_OUTPUT_EXECUTABLE ||
+          Descriptor->OutputKind > NEVERC_LINK_OUTPUT_BUNDLE)) ||
+        !Descriptor->Verify)
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::BinaryImageVerifier;
+    Record.BinaryImageVerifier = *Descriptor;
+    if (!copyString(Descriptor->VerifierID, Record.ProviderID, false) ||
+        !canonicalName(Record.ProviderID) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::BinaryImageVerifier &&
+                              Existing.ProviderID == Record.ProviderID;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.BinaryImageVerifier.VerifierID = {};
+    Record.OwnedUserData = Descriptor->UserData;
+    Record.DestroyUserData = Descriptor->DestroyUserData;
+    Transaction->Records.push_back(std::move(Record));
+    return neverc_status_ok();
+  });
+}
+
+NevercStatus registerPluginLTOProvider(
+    void *Registrar, const NevercLTOProviderDescriptor *Descriptor) {
+  auto *Transaction = static_cast<RegistrationTransaction *>(Registrar);
+  return protectRegistrar(Transaction, [&] {
+    constexpr uint64_t Required =
+        offsetof(NevercLTOProviderDescriptor, DestroyUserData) +
+        sizeof(NevercLTOProviderDescriptor::DestroyUserData);
+    constexpr NevercLTOProviderFlags KnownFlags =
+        NEVERC_LTO_PROVIDER_FULL | NEVERC_LTO_PROVIDER_THIN |
+        NEVERC_LTO_PROVIDER_DETERMINISTIC |
+        NEVERC_LTO_PROVIDER_CACHEABLE |
+        NEVERC_LTO_PROVIDER_REPLAY_REQUIRED;
+    if (!Descriptor ||
+        !validHeader(Descriptor->Header, Required,
+                     NEVERC_LTO_API_MAJOR, NEVERC_LTO_API_MINOR) ||
+        (Descriptor->Flags & ~KnownFlags) != 0 ||
+        (Descriptor->Flags &
+         (NEVERC_LTO_PROVIDER_FULL | NEVERC_LTO_PROVIDER_THIN)) == 0 ||
+        !nonzero(Descriptor->ProductID) || !Descriptor->Codegen ||
+        ((Descriptor->Flags & NEVERC_LTO_PROVIDER_CACHEABLE) != 0 &&
+         !Descriptor->BuildCacheKey))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    PluginRegistrationRecord Record;
+    Record.Kind = PluginRegistrationKind::LTOProvider;
+    Record.Interface = Descriptor->ProductID;
+    Record.LTOProvider = *Descriptor;
+    if (!copyString(Descriptor->ProviderID, Record.ProviderID, false) ||
+        !canonicalName(Record.ProviderID) ||
+        !copyString(Descriptor->CompatibilityKey,
+                    Record.LinkCompatibilityKey, true) ||
+        llvm::any_of(Transaction->Records,
+                     [&](const PluginRegistrationRecord &Existing) {
+                       return Existing.Kind ==
+                                  PluginRegistrationKind::LTOProvider &&
+                              Existing.ProviderID == Record.ProviderID;
+                     }))
+      return fail(Transaction, NEVERC_STATUS_INVALID_DESCRIPTOR);
+
+    Record.LTOProvider.ProviderID = {};
+    Record.LTOProvider.CompatibilityKey = {};
     Record.OwnedUserData = Descriptor->UserData;
     Record.DestroyUserData = Descriptor->DestroyUserData;
     Transaction->Records.push_back(std::move(Record));

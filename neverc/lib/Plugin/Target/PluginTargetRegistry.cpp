@@ -1881,6 +1881,10 @@ PluginTargetRegistry::freeze(
       case PluginRegistrationKind::MCEncoder:
       case PluginRegistrationKind::MCDecoder:
       case PluginRegistrationKind::MCAsmBackend:
+      case PluginRegistrationKind::LinkerProvider:
+      case PluginRegistrationKind::ObjectMergeProvider:
+      case PluginRegistrationKind::BinaryImageVerifier:
+      case PluginRegistrationKind::LTOProvider:
         break;
       }
     }

@@ -33,8 +33,8 @@ TEST(PluginFrontendABITest, PublishesIndependentStableInterfacePrefixes) {
 }
 
 TEST(PluginFrontendABITest, PublishesFixedFrontendPhasePolicies) {
-  static_assert(NEVERC_BUILTIN_PHASE_COUNT == 76);
-  static_assert(NEVERC_EXTENSION_FAMILY_COUNT == 6);
+  static_assert(NEVERC_BUILTIN_PHASE_COUNT == 96);
+  static_assert(NEVERC_EXTENSION_FAMILY_COUNT == 7);
 
   EXPECT_EQ(NEVERC_PHASE_SOURCE_RESOLVE_INPUT_POLICY,
             NEVERC_PHASE_OBSERVABLE | NEVERC_PHASE_INTERCEPTABLE);

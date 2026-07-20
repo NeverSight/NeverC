@@ -14,15 +14,14 @@
 #include "Linker/MachO/UnwindInfoSection.h"
 
 #include "Linker/Core/Driver/Dispatcher.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Chunks.h"
 #include "Linker/Core/Support/FileIO.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/LEB128.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/xxhash.h"
 
@@ -30,6 +29,7 @@
 #if defined(__unix__) || defined(__APPLE__)
 #include <unistd.h>
 #endif
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 namespace llvm_macho = llvm::MachO;
@@ -66,7 +66,7 @@ public:
 
   template <class LP> void run();
 
-  ThreadPool workers;
+  LinkerTaskGroup workers;
   std::unique_ptr<FileOutputBuffer> &buffer;
   uint64_t addr = 0;
   uint64_t fileOff = 0;
@@ -330,7 +330,7 @@ public:
           uint32_t compatibilityVersion = 0, uint32_t currentVersion = 0)
       : type(type), path(path), compatibilityVersion(compatibilityVersion),
         currentVersion(currentVersion) {
-    instanceCount++;
+    ++machoLCDylibCount();
   }
 
   uint32_t getSize() const override {
@@ -353,18 +353,15 @@ public:
     buf[path.size()] = '\0';
   }
 
-  static uint32_t getInstanceCount() { return instanceCount; }
-  static void resetInstanceCount() { instanceCount = 0; }
+  static uint32_t getInstanceCount() { return machoLCDylibCount(); }
+  static void resetInstanceCount() { machoLCDylibCount() = 0; }
 
 private:
   LoadCommandType type;
   StringRef path;
   uint32_t compatibilityVersion;
   uint32_t currentVersion;
-  static uint32_t instanceCount;
 };
-
-uint32_t LCDylib::instanceCount = 0;
 
 class LCLoadDylinker final : public LoadCommand {
 public:
@@ -775,7 +772,7 @@ void OutputWriter::computeSymbolLayout() {
   static constexpr size_t kParallelObjFileThreshold = 32;
   static constexpr size_t kParallelSymbolCountThreshold = 50000;
   bool shouldParallelCanonicalize =
-      parallel::strategy.ThreadsRequested != 1 &&
+      parallelEnabled() &&
       (objFiles.size() >= kParallelObjFileThreshold ||
        totalObjSymbolCount >= kParallelSymbolCountThreshold);
   if (!shouldParallelCanonicalize) {
@@ -944,7 +941,7 @@ void sortSegmentsAndSections() {
             });
       };
       bool shouldParallelSort =
-          parallel::strategy.ThreadsRequested != 1 &&
+          parallelEnabled() &&
           mergedSections.size() >= kParallelInputSortSectionThreshold &&
           mergedInputCount >= kParallelInputSortCountThreshold;
       if (shouldParallelSort)
@@ -1054,7 +1051,7 @@ void OutputWriter::assignSegmentAddresses() {
           concatSections.push_back(cs);
   }
 
-  if (concatSections.size() >= 8 && parallel::strategy.ThreadsRequested != 1)
+  if (concatSections.size() >= 8 && parallelEnabled())
     parallelForEach(concatSections,
                     [](ConcatOutputSection *cs) { cs->finalizeContents(); });
   else
@@ -1238,9 +1235,9 @@ void OutputWriter::writeImage() {
   bool hasHints =
       config->arch() == AK_arm64 && !config->ignoreOptimizationHints;
   if (hasHints && config->emitChainedFixups) {
-    workers.async([this] { applyARM64Hints(); });
+    workers.spawn([this] { applyARM64Hints(); });
     patchFixupChains();
-    workers.wait();
+    workers.sync();
   } else {
     applyARM64Hints();
     patchFixupChains();
@@ -1282,7 +1279,7 @@ template <class LP> void OutputWriter::run() {
 
   // Phase 3: finalize and emit. Map file runs concurrently with LINKEDIT.
   if (!config->mapFile.empty()) {
-    workers.async([&] {
+    workers.spawn([&] {
       if (LLVM_ENABLE_THREADS && config->driverCfg->timeTraceEnabled)
         timeTraceProfilerInitialize(config->driverCfg->timeTraceGranularity,
                                     "mapFile");
@@ -1333,7 +1330,5 @@ void macho::createSyntheticSections() {
       /*align=*/target->wordSize);
   in.imageLoaderCache->live = true;
 }
-
-OutputSection *macho::firstTLVDataSection = nullptr;
 
 template void macho::writeOutput<LP64>();

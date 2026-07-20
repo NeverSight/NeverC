@@ -14,6 +14,7 @@
 #ifndef LINKER_CORE_DRIVER_DISPATCHER_H
 #define LINKER_CORE_DRIVER_DISPATCHER_H
 
+#include "neverc/Linker/Core/Driver/LinkExecutionHooks.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
@@ -26,6 +27,8 @@ class PluginTaskContext;
 }
 
 namespace linker {
+
+class LinkerExecutionContext;
 
 enum class Flavor : unsigned {
   Invalid = 0,
@@ -40,6 +43,10 @@ enum class Flavor : unsigned {
 /// link(); backends read it during initialization instead of parsing
 /// the equivalent standalone linker options.
 struct LinkerDriverConfig {
+  std::shared_ptr<const LinkExecutionRequest> executionRequest;
+  std::shared_ptr<LinkExecutionHooks> executionHooks;
+  LinkerExecutionContext *executionContext = nullptr;
+
   bool saveTemps = false;
   bool timeTraceEnabled = false;
   unsigned timeTraceGranularity = 500;
@@ -179,6 +186,11 @@ struct DriverDef {
   Flavor f;
   Driver d;
 };
+
+int dispatchLink(llvm::ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
+                 llvm::ArrayRef<const char *> Args,
+                 llvm::raw_ostream &Stdout, llvm::raw_ostream &Stderr,
+                 const LinkerDriverConfig &Config);
 
 } // namespace linker
 

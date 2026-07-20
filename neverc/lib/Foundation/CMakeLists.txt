@@ -407,6 +407,7 @@ add_neverc_library(nevercFoundation
   Core/FileManager.cpp
   Core/IdentifierTable.cpp
   Core/LangOptions.cpp
+  Core/OutputBundleTransaction.cpp
   Core/OutputCoordinator.cpp
   Core/OutputPathLease.cpp
   Core/OutputPlatform.cpp

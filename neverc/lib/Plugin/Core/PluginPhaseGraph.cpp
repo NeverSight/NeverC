@@ -425,4 +425,92 @@ Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinObjectGraph() {
   return Graph;
 }
 
+Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinLinkGraph() {
+  PluginPhaseGraph Graph;
+#define NEVERC_BUILD_BUILTIN_PHASE(Symbol)                                    \
+  builtinPhase(                                                               \
+      NEVERC_PHASE_##Symbol##_NAME, NEVERC_PHASE_##Symbol##_DOMAIN,           \
+      NEVERC_PHASE_##Symbol##_VERIFIER, NEVERC_PHASE_##Symbol##_HIGH,         \
+      NEVERC_PHASE_##Symbol##_LOW, NEVERC_PHASE_##Symbol##_INPUT_HIGH,        \
+      NEVERC_PHASE_##Symbol##_INPUT_LOW, NEVERC_PHASE_##Symbol##_OUTPUT_HIGH, \
+      NEVERC_PHASE_##Symbol##_OUTPUT_LOW, NEVERC_PHASE_##Symbol##_POLICY,     \
+      NEVERC_PHASE_##Symbol##_OBSERVER_POINTS, NEVERC_PHASE_##Symbol##_GATE,  \
+      NEVERC_PHASE_##Symbol##_STABILITY,                                      \
+      NEVERC_PHASE_##Symbol##_BUILTIN_FALLBACK),
+  const PluginPhaseDefinition Builtins[] = {
+      NEVERC_FOR_EACH_BUILTIN_LINK_PHASE(NEVERC_BUILD_BUILTIN_PHASE)};
+#undef NEVERC_BUILD_BUILTIN_PHASE
+  for (const PluginPhaseDefinition &Phase : Builtins)
+    if (Error E = Graph.addPhase(Phase))
+      return std::move(E);
+
+  const NevercInterfaceID Transitions[] = {
+      {NEVERC_PHASE_LINK_INPUT_PROBE_HIGH,
+       NEVERC_PHASE_LINK_INPUT_PROBE_LOW},
+      {NEVERC_PHASE_LINK_READ_INPUTS_HIGH,
+       NEVERC_PHASE_LINK_READ_INPUTS_LOW},
+      {NEVERC_PHASE_LINK_LTO_RESOLVE_HIGH,
+       NEVERC_PHASE_LINK_LTO_RESOLVE_LOW},
+      {NEVERC_PHASE_LINK_LTO_GENERATE_HIGH,
+       NEVERC_PHASE_LINK_LTO_GENERATE_LOW},
+      {NEVERC_PHASE_LINK_RESOLVE_SYMBOLS_HIGH,
+       NEVERC_PHASE_LINK_RESOLVE_SYMBOLS_LOW},
+      {NEVERC_PHASE_LINK_SELECT_COMDAT_HIGH,
+       NEVERC_PHASE_LINK_SELECT_COMDAT_LOW},
+      {NEVERC_PHASE_LINK_GC_HIGH, NEVERC_PHASE_LINK_GC_LOW},
+      {NEVERC_PHASE_LINK_ICF_HIGH, NEVERC_PHASE_LINK_ICF_LOW},
+      {NEVERC_PHASE_LINK_SYNTHESIZE_HIGH,
+       NEVERC_PHASE_LINK_SYNTHESIZE_LOW},
+      {NEVERC_PHASE_LINK_RELAX_THUNKS_HIGH,
+       NEVERC_PHASE_LINK_RELAX_THUNKS_LOW},
+      {NEVERC_PHASE_LINK_LAYOUT_HIGH, NEVERC_PHASE_LINK_LAYOUT_LOW},
+      {NEVERC_PHASE_LINK_RELOCATE_HIGH, NEVERC_PHASE_LINK_RELOCATE_LOW},
+      {NEVERC_PHASE_LINK_EMIT_IMAGE_HIGH,
+       NEVERC_PHASE_LINK_EMIT_IMAGE_LOW},
+  };
+  for (size_t Index = 1; Index != std::size(Transitions); ++Index)
+    if (Error E =
+            Graph.addEdge(Transitions[Index - 1], Transitions[Index], true))
+      return std::move(E);
+
+  if (Error E = Graph.addEdge(
+          {NEVERC_PHASE_LINK_READ_INPUTS_HIGH,
+           NEVERC_PHASE_LINK_READ_INPUTS_LOW},
+          {NEVERC_PHASE_LINK_OBJECT_MERGE_HIGH,
+           NEVERC_PHASE_LINK_OBJECT_MERGE_LOW},
+          true))
+    return std::move(E);
+  if (Error E = Graph.addEdge(
+          {NEVERC_PHASE_LINK_EMIT_IMAGE_HIGH,
+           NEVERC_PHASE_LINK_EMIT_IMAGE_LOW},
+          {NEVERC_PHASE_LINK_POST_EMIT_HIGH,
+           NEVERC_PHASE_LINK_POST_EMIT_LOW},
+          true))
+    return std::move(E);
+  if (Error E = Graph.addEdge(
+          {NEVERC_PHASE_LINK_FULL_HIGH, NEVERC_PHASE_LINK_FULL_LOW},
+          {NEVERC_PHASE_LINK_POST_EMIT_HIGH,
+           NEVERC_PHASE_LINK_POST_EMIT_LOW},
+          true))
+    return std::move(E);
+
+  const NevercInterfaceID Gates[] = {
+      {NEVERC_PHASE_LINK_POST_EMIT_HIGH,
+       NEVERC_PHASE_LINK_POST_EMIT_LOW},
+      {NEVERC_PHASE_LINK_IMAGE_VERIFY_HIGH,
+       NEVERC_PHASE_LINK_IMAGE_VERIFY_LOW},
+      {NEVERC_PHASE_LINK_SIDE_OUTPUTS_VERIFY_HIGH,
+       NEVERC_PHASE_LINK_SIDE_OUTPUTS_VERIFY_LOW},
+      {NEVERC_PHASE_LINK_COMMIT_HIGH, NEVERC_PHASE_LINK_COMMIT_LOW},
+      {NEVERC_PHASE_LINK_AFTER_COMMIT_HIGH,
+       NEVERC_PHASE_LINK_AFTER_COMMIT_LOW},
+  };
+  for (size_t Index = 1; Index != std::size(Gates); ++Index)
+    if (Error E = Graph.addEdge(Gates[Index - 1], Gates[Index], true))
+      return std::move(E);
+  if (Error E = Graph.finalize())
+    return std::move(E);
+  return Graph;
+}
+
 } // namespace neverc::plugin

@@ -31,6 +31,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #endif
+#include "Linker/Core/Runtime/LinkerParallel.h"
 
 using namespace llvm;
 using namespace llvm::COFF;

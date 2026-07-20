@@ -7,10 +7,12 @@
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include <memory>
 #include <optional>
 
 #include <set>
 #include <type_traits>
+#include <utility>
 
 namespace linker::macho {
 
@@ -95,7 +97,18 @@ private:
   std::set<std::string> notFounds;
 };
 
-extern std::unique_ptr<DependencyTracker> depTracker;
+std::unique_ptr<DependencyTracker> &machoDependencyTracker();
+
+struct DependencyTrackerAccessor {
+  DependencyTracker *operator->() const {
+    return machoDependencyTracker().get();
+  }
+  void operator=(std::unique_ptr<DependencyTracker> Value) const {
+    machoDependencyTracker() = std::move(Value);
+  }
+};
+
+inline constexpr DependencyTrackerAccessor depTracker;
 
 } // namespace linker::macho
 

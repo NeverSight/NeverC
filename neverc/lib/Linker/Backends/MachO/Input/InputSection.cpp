@@ -12,6 +12,7 @@
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "llvm/Support/xxhash.h"
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::MachO;
@@ -26,8 +27,6 @@ static_assert(sizeof(void *) != 8 ||
                   sizeof(ConcatInputSection) == sizeof(std::vector<Reloc>) + 88,
               "Try to minimize ConcatInputSection's size, we create many "
               "instances of it");
-
-std::vector<ConcatInputSection *> macho::inputSections;
 
 // ===----------------------------------------------------------------------===
 // InputSection: trivial accessors

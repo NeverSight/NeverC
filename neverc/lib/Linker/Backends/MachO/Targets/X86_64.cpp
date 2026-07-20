@@ -7,6 +7,7 @@
 #include "mach-o/compact_unwind_encoding.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/Support/Endian.h"
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm::MachO;
 using namespace llvm::support::endian;

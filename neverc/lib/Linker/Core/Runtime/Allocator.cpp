@@ -17,13 +17,22 @@ using namespace llvm;
 using namespace linker;
 
 SpecificAllocBase *
-linker::SpecificAllocBase::getOrCreate(void *tag, size_t size, size_t align,
+linker::SpecificAllocBase::getOrCreate(const void *tag, size_t size,
+                                       size_t align,
                                        SpecificAllocBase *(&creator)(void *)) {
-  auto &instances = context().instances;
+  CommonLinkerContext &Context = context();
+  auto &instances = Context.instances;
   auto &instance = instances[tag];
   if (instance == nullptr) {
-    void *storage = context().bAlloc.Allocate(size, align);
+    void *storage = Context.bAlloc.Allocate(size, align);
     instance = creator(storage);
+    Context.instanceOrder.push_back(instance);
   }
   return instance;
+}
+
+SpecificAllocBase *linker::SpecificAllocBase::getOrCreateWorker(
+    const void *tag, size_t size, size_t align,
+    SpecificAllocBase *(&creator)(void *)) {
+  return context().getOrCreateWorkerAllocator(tag, size, align, creator);
 }

@@ -26,6 +26,7 @@
 #include "neverc/Invoke/Types.h"
 #include "neverc/Plugin/Host/FrontendPluginBridge.h"
 #include "neverc/Plugin/Host/IRGenProvider.h"
+#include "neverc/Plugin/Host/LinkPluginInterfaces.h"
 #include "neverc/Plugin/Host/PluginHandleArena.h"
 #include "neverc/Plugin/Host/PluginIOBridge.h"
 #include "neverc/Plugin/Host/PluginCodeGenPipeline.h"
@@ -1555,6 +1556,9 @@ Driver::prepareDirectPluginInvocation(
             if (llvm::Error E =
                     plugin::registerPluginAssemblyProviderInterface(Services))
               return E;
+            if (llvm::Error E =
+                    plugin::registerPluginLinkInterfaces(Services))
+              return E;
             return PluginDriverAPIBridgeState->registerInterface(
                 Services.interfaces());
           })) {
@@ -1704,6 +1708,9 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
                   if (llvm::Error E =
                           plugin::registerPluginAssemblyProviderInterface(
                               Services))
+                    return E;
+                  if (llvm::Error E =
+                          plugin::registerPluginLinkInterfaces(Services))
                     return E;
                   return PluginDriverAPIBridgeState->registerInterface(
                       Services.interfaces());

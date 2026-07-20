@@ -57,7 +57,7 @@ private:
   std::vector<OutputSection *> sections;
 };
 
-extern std::vector<OutputSegment *> outputSegments;
+std::vector<OutputSegment *> &machoOutputSegments();
 
 void sortOutputSegments();
 void resetOutputSegments();

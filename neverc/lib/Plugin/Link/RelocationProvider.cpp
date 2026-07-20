@@ -1,0 +1,151 @@
+#include "RelocationProvider.h"
+#include "RelocationVerifier.h"
+#include "llvm/Support/Errc.h"
+#include <algorithm>
+
+using namespace llvm;
+
+namespace neverc::plugin {
+namespace {
+
+Error relocationError(const Twine &Message) {
+  return createStringError(errc::invalid_argument,
+                           "link relocation provider: " + Message);
+}
+
+uint64_t imageBase(const PluginLinkGraph &Graph) {
+  uint64_t Result = UINT64_MAX;
+  for (const PluginLinkSection &Section : Graph.sections())
+    if ((Section.Flags & NEVERC_OBJECT_SECTION_ALLOCATED) != 0)
+      Result = std::min(Result, Section.Address);
+  return Result == UINT64_MAX ? 0 : Result;
+}
+
+uint64_t widthMask(uint32_t Width) {
+  return Width >= 64 ? UINT64_MAX : (UINT64_C(1) << Width) - 1;
+}
+
+bool fitsValue(__int128 Value, uint32_t Width, bool Signed) {
+  if (Width == 0 || Width > 64)
+    return false;
+  if (Signed) {
+    const __int128 Minimum = -((__int128)1 << (Width - 1));
+    const __int128 Maximum = ((__int128)1 << (Width - 1)) - 1;
+    return Value >= Minimum && Value <= Maximum;
+  }
+  const unsigned __int128 Maximum =
+      Width == 64
+          ? static_cast<unsigned __int128>(UINT64_MAX)
+          : (static_cast<unsigned __int128>(1) << Width) - 1;
+  return Value >= 0 &&
+         static_cast<unsigned __int128>(Value) <= Maximum;
+}
+
+} // namespace
+
+Expected<LinkRelocationValue>
+evaluateLinkRelocation(const PluginLinkGraph &Graph,
+                       const PluginLinkEdge &Edge) {
+  const PluginLinkAtom *Source = Graph.findAtom(Edge.SourceAtomID);
+  if (!Source)
+    return relocationError("source atom is missing");
+  if (Edge.Width == 0 || Edge.Width > 64 ||
+      Edge.Width % 8 != 0 ||
+      Edge.Offset > Source->Content.size() ||
+      Edge.Width / 8 > Source->Content.size() - Edge.Offset)
+    return relocationError("fixup is outside initialized source bytes");
+
+  LinkRelocationValue Result;
+  Result.Place = Source->Address + Edge.Offset;
+  const PluginLinkSymbol *TargetSymbol =
+      Graph.findSymbol(Edge.TargetSymbolID);
+  const PluginLinkAtom *TargetAtom =
+      Edge.TargetAtomID != 0
+          ? Graph.findAtom(Edge.TargetAtomID)
+          : TargetSymbol
+                ? Graph.findAtom(TargetSymbol->AtomID)
+                : nullptr;
+  if ((TargetSymbol &&
+       (TargetSymbol->Definition == NEVERC_LINK_SYMBOL_UNDEFINED ||
+        TargetSymbol->IsImported)) ||
+      Edge.RelocationKind == NEVERC_OBJECT_RELOCATION_TLS ||
+      Edge.RelocationKind ==
+          NEVERC_OBJECT_RELOCATION_TARGET_EXTENSION) {
+    Result.Dynamic = true;
+    return Result;
+  }
+  if (!TargetAtom)
+    return relocationError("relocation target is missing");
+  Result.Target = TargetAtom->Address;
+  if (TargetSymbol)
+    Result.Target += TargetSymbol->Value;
+
+  __int128 Value =
+      static_cast<__int128>(Result.Target) + Edge.Addend;
+  if (Edge.RelocationKind ==
+          NEVERC_OBJECT_RELOCATION_PC_RELATIVE ||
+      Edge.IsPCRelative)
+    Value -= Result.Place;
+  else if (Edge.RelocationKind ==
+           NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE) {
+    const PluginLinkSection *Section =
+        Graph.findSection(TargetAtom->SectionID);
+    if (!Section)
+      return relocationError("target section is missing");
+    Value -= Section->Address;
+  } else if (Edge.RelocationKind ==
+             NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE)
+    Value -= imageBase(Graph);
+
+  if (!fitsValue(Value, Edge.Width, Edge.IsSigned))
+    return relocationError("relocation value overflows its field");
+  Result.EncodedValue =
+      static_cast<uint64_t>(Value) & widthMask(Edge.Width);
+  return Result;
+}
+
+Expected<std::vector<LinkRelocationRecord>>
+applyLinkRelocations(PluginLinkGraph &Graph) {
+  if (Graph.state() < NEVERC_LINK_STATE_LAYOUT_COMPLETE)
+    return relocationError("layout is not complete");
+  if (Graph.state() > NEVERC_LINK_STATE_RELOCATIONS_APPLIED)
+    return relocationError(
+        "later phases must be invalidated before relocation");
+
+  std::vector<LinkRelocationRecord> Records;
+  const bool LittleEndian =
+      Graph.targetKey().Endianness == NEVERC_TARGET_ENDIAN_LITTLE;
+  for (PluginLinkEdge &Edge : Graph.edges()) {
+    if (Edge.Kind != NEVERC_LINK_EDGE_RELOCATION)
+      continue;
+    auto Value = evaluateLinkRelocation(Graph, Edge);
+    if (!Value)
+      return Value.takeError();
+    LinkRelocationRecord Record;
+    Record.EdgeID = Edge.ID;
+    Record.Place = Value->Place;
+    Record.Target = Value->Target;
+    Record.EncodedValue = Value->EncodedValue;
+    Record.Width = Edge.Width;
+    Record.Dynamic = Value->Dynamic;
+    if (!Value->Dynamic) {
+      PluginLinkAtom *Source = Graph.findAtom(Edge.SourceAtomID);
+      const uint32_t ByteCount = Edge.Width / 8;
+      for (uint32_t Index = 0; Index != ByteCount; ++Index) {
+        const uint32_t Shift =
+            LittleEndian ? Index * 8 : (ByteCount - Index - 1) * 8;
+        Source->Content[Edge.Offset + Index] =
+            static_cast<uint8_t>(Value->EncodedValue >> Shift);
+      }
+      Record.Applied = true;
+    }
+    Records.push_back(Record);
+  }
+  Graph.advanceGeneration();
+  Graph.setState(NEVERC_LINK_STATE_RELOCATIONS_APPLIED);
+  if (Error E = verifyLinkRelocations(Graph))
+    return std::move(E);
+  return Records;
+}
+
+} // namespace neverc::plugin

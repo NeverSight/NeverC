@@ -21,6 +21,7 @@
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace linker::elf {
@@ -334,7 +335,17 @@ struct ConfigWrapper {
   Config *operator->() { return &c; }
 };
 
-LLVM_LIBRARY_VISIBILITY extern ConfigWrapper config;
+ConfigWrapper &elfConfig();
+
+struct ConfigAccessor {
+  ConfigWrapper &operator->() const { return elfConfig(); }
+  operator ConfigWrapper &() const { return elfConfig(); }
+  void operator=(ConfigWrapper Value) const {
+    elfConfig() = std::move(Value);
+  }
+};
+
+inline constexpr ConfigAccessor config;
 
 struct DuplicateSymbol {
   const Symbol *sym;
@@ -389,7 +400,7 @@ struct Ctx {
   llvm::raw_fd_ostream openAuxiliaryFile(llvm::StringRef, std::error_code &);
 };
 
-LLVM_LIBRARY_VISIBILITY extern Ctx ctx;
+Ctx &elfState();
 
 // The first two elements of versionDefinitions represent VER_NDX_LOCAL and
 // VER_NDX_GLOBAL. This helper returns other elements.

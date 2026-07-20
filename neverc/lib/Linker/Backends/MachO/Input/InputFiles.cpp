@@ -15,6 +15,7 @@
 #include "neverc/Foundation/OverrideNames.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
 
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Dwarf.h"
 #include "llvm/ADT/iterator.h"
@@ -24,7 +25,6 @@
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/TextAPI/Architecture.h"
@@ -33,6 +33,7 @@
 #include <mutex>
 #include <optional>
 #include <type_traits>
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 namespace llvm_macho = llvm::MachO;
@@ -63,9 +64,6 @@ std::string linker::toString(const InputFile *f) {
 std::string linker::toString(const Section &sec) {
   return (toString(sec.file) + ":(" + sec.name + ")").str();
 }
-
-SetVector<InputFile *> macho::inputFiles;
-int InputFile::idCount = 0;
 
 namespace {
 VersionTuple decodeVersion(uint32_t version) {
@@ -162,10 +160,6 @@ bool compatWithTargetArch(const InputFile *file, const Header *hdr) {
 // level, and other files like the filelist that are only read once.
 // Theoretically this caching could be more efficient by hoisting it, but that
 // would require altering many callers to track the state.
-DenseMap<CachedHashStringRef, MemoryBufferRef> macho::cachedReads;
-namespace {
-std::mutex cachedReadsMu;
-} // namespace
 std::optional<MemoryBufferRef> macho::readFile(StringRef path,
                                                bool reportError) {
   if (auto mb = neverc::InMemoryFileStore::instance().tryGet(path))
@@ -256,7 +250,8 @@ std::optional<MemoryBufferRef> macho::readFile(StringRef path,
 }
 
 InputFile::InputFile(Kind kind, const InterfaceFile &interface)
-    : id(idCount++), fileKind(kind), name(saver().save(interface.getPath())) {}
+    : id(machoInputFileIdCount()++), fileKind(kind),
+      name(saver().save(interface.getPath())) {}
 
 // Some sections comprise of fixed-size records, so instead of splitting them at
 // symbol boundaries, we split them based on size. Records are distinct from
@@ -421,7 +416,7 @@ void ObjFile::parseSections(ArrayRef<SectionHeader> sectionHeaders) {
   static constexpr size_t kParallelCStringSectionThreshold = 4;
   static constexpr uint64_t kParallelCStringBytesThreshold = 64 * 1024;
   bool shouldParallelizeCStrings =
-      parallel::strategy.ThreadsRequested != 1 &&
+      parallelEnabled() &&
       cstringSections.size() >= kParallelCStringSectionThreshold &&
       cstringBytes >= kParallelCStringBytesThreshold;
   if (shouldParallelizeCStrings) {
@@ -1057,7 +1052,6 @@ void ObjFile::parseLinkerOptions(SmallVectorImpl<StringRef> &LCLinkerOptions) {
   }
 }
 
-SmallVector<StringRef> macho::unprocessedLCLinkerOptions;
 ObjFile::ObjFile(MemoryBufferRef mb, uint32_t modTime, StringRef archiveName,
                  bool lazy, bool forceHidden, bool compatArch,
                  bool builtFromBitcode)

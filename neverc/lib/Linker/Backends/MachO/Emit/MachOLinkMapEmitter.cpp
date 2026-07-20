@@ -1,4 +1,5 @@
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/MachO/ConcatOutputSection.h"
 #include "Linker/MachO/Config.h"
 #include "Linker/MachO/InputFiles.h"
@@ -9,8 +10,8 @@
 #include "Linker/MachO/SyntheticSections.h"
 #include "Linker/MachO/Target.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/TimeProfiler.h"
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::sys;

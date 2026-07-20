@@ -18,7 +18,7 @@ public:
   COFFLinkerContext();
   COFFLinkerContext(const COFFLinkerContext &) = delete;
   COFFLinkerContext &operator=(const COFFLinkerContext &) = delete;
-  ~COFFLinkerContext() = default;
+  ~COFFLinkerContext() override;
 
   LinkerDriver driver;
   SymbolTable symtab;

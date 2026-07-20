@@ -103,7 +103,7 @@ inline void writeStub(uint8_t *buf8, const uint32_t stubCode[3],
   constexpr size_t stubCodeSize = 3 * sizeof(uint32_t);
   SymbolDiagnostic d = {&sym, "stub"};
   uint64_t pcPageBits =
-      pageBits(in.stubs->addr + sym.stubsIndex * stubCodeSize);
+      pageBits(machoIn().stubs->addr + sym.stubsIndex * stubCodeSize);
   encodePage21(&buf32[0], d, stubCode[0], pageBits(pointerVA) - pcPageBits);
   encodePageOff12(&buf32[1], d, stubCode[1], pointerVA);
   buf32[2] = stubCode[2];
@@ -114,16 +114,17 @@ inline void writeStubHelperHeader(uint8_t *buf8,
                                   const uint32_t stubHelperHeaderCode[6]) {
   auto *buf32 = reinterpret_cast<uint32_t *>(buf8);
   auto pcPageBits = [](int i) {
-    return pageBits(in.stubHelper->addr + i * sizeof(uint32_t));
+    return pageBits(machoIn().stubHelper->addr + i * sizeof(uint32_t));
   };
-  uint64_t loaderVA = in.imageLoaderCache->getVA();
+  uint64_t loaderVA = machoIn().imageLoaderCache->getVA();
   SymbolDiagnostic d = {nullptr, "stub header helper"};
   encodePage21(&buf32[0], d, stubHelperHeaderCode[0],
                pageBits(loaderVA) - pcPageBits(0));
   encodePageOff12(&buf32[1], d, stubHelperHeaderCode[1], loaderVA);
   buf32[2] = stubHelperHeaderCode[2];
   uint64_t binderVA =
-      in.got->addr + in.stubHelper->stubBinder->gotIndex * LP::wordSize;
+      machoIn().got->addr +
+      machoIn().stubHelper->stubBinder->gotIndex * LP::wordSize;
   encodePage21(&buf32[3], d, stubHelperHeaderCode[3],
                pageBits(binderVA) - pcPageBits(3));
   encodePageOff12(&buf32[4], d, stubHelperHeaderCode[4], binderVA);
@@ -135,7 +136,7 @@ inline void writeStubHelperEntry(uint8_t *buf8,
                                  const Symbol &sym, uint64_t entryVA) {
   auto *buf32 = reinterpret_cast<uint32_t *>(buf8);
   auto pcVA = [entryVA](int i) { return entryVA + i * sizeof(uint32_t); };
-  uint64_t stubHelperHeaderVA = in.stubHelper->addr;
+  uint64_t stubHelperHeaderVA = machoIn().stubHelper->addr;
   buf32[0] = stubHelperEntryCode[0];
   encodeBranch26(&buf32[1], {&sym, "stub helper"}, stubHelperEntryCode[1],
                  stubHelperHeaderVA - pcVA(1));

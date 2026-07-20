@@ -1,5 +1,6 @@
 #include "Linker/ELF/OutputSections.h"
 #include "Linker/Core/Runtime/Allocator.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Support/Chunks.h"
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/InputFiles.h"
@@ -10,7 +11,6 @@
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Config/llvm-config.h" // LLVM_ENABLE_ZLIB
 #include "llvm/Support/Compression.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TimeProfiler.h"
 #if LLVM_ENABLE_ZLIB
@@ -21,6 +21,7 @@
 #if LLVM_ENABLE_ZSTD
 #include <zstd.h>
 #endif
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::dwarf;
@@ -33,16 +34,6 @@ using namespace linker::elf;
 // ===----------------------------------------------------------------------===
 // Output section management
 // ===----------------------------------------------------------------------===
-
-uint8_t *Out::bufferStart;
-PhdrEntry *Out::tlsPhdr;
-OutputSection *Out::elfHeader;
-OutputSection *Out::programHeaders;
-OutputSection *Out::preinitArray;
-OutputSection *Out::initArray;
-OutputSection *Out::finiArray;
-
-SmallVector<OutputSection *, 0> elf::outputSections;
 
 uint32_t OutputSection::getPhdrFlags() const {
   uint32_t ret = 0;
@@ -211,22 +202,22 @@ void OutputSection::finalizeInputSections() {
 }
 
 namespace {
-void sortByOrder(MutableArrayRef<InputSection *> in,
+void sortByOrder(MutableArrayRef<InputSection *> sections,
                  llvm::function_ref<int(InputSectionBase *s)> order) {
   std::vector<std::pair<int, InputSection *>> v;
-  for (InputSection *s : in)
+  for (InputSection *s : sections)
     v.emplace_back(order(s), s);
   llvm::stable_sort(v, less_first());
 
   for (size_t i = 0; i < v.size(); ++i)
-    in[i] = v[i].second;
+    sections[i] = v[i].second;
 }
 } // namespace
 
 uint64_t elf::getHeaderSize() {
   if (config->oFormatBinary)
     return 0;
-  return Out::elfHeader->size + Out::programHeaders->size;
+  return elfOut().elfHeader->size + elfOut().programHeaders->size;
 }
 
 void OutputSection::sort(llvm::function_ref<int(InputSectionBase *s)> order) {
@@ -314,7 +305,7 @@ template <class ELFT> void OutputSection::maybeCompress() {
   auto buf = std::make_unique<uint8_t[]>(size);
   // Write uncompressed data to a temporary zero-initialized buffer.
   {
-    parallel::TaskGroup tg;
+    LinkerTaskGroup tg;
     writeTo<ELFT>(buf.get(), tg);
   }
 
@@ -333,7 +324,7 @@ template <class ELFT> void OutputSection::maybeCompress() {
     ZSTD_CCtx *cctx = ZSTD_createCCtx();
     // Ignore error if zstd was not built with ZSTD_MULTITHREAD.
     (void)ZSTD_CCtx_setParameter(cctx, ZSTD_c_nbWorkers,
-                                 parallel::strategy.compute_thread_count());
+                                 parallelThreadCount());
     ZSTD_outBuffer zob = {out.data(), out.size(), 0};
     ZSTD_EndDirective directive = ZSTD_e_continue;
     const size_t blockSize = ZSTD_CStreamInSize();
@@ -421,7 +412,7 @@ void writeInt(uint8_t *buf, uint64_t data, uint64_t size) {
 } // namespace
 
 template <class ELFT>
-void OutputSection::writeTo(uint8_t *buf, parallel::TaskGroup &tg) {
+void OutputSection::writeTo(uint8_t *buf, LinkerTaskGroup &tg) {
   llvm::TimeTraceScope timeScope("Write sections", name);
   if (type == SHT_NOBITS)
     return;
@@ -510,7 +501,7 @@ void OutputSection::writeTo(uint8_t *buf, parallel::TaskGroup &tg) {
     taskSize += sections[i]->getSize();
     bool done = ++i == numSections;
     if (done || taskSize >= taskSizeLimit) {
-      tg.spawn([=] { fn(begin, i); });
+      tg.spawn(bindLinkerContext([=] { fn(begin, i); }));
       if (done)
         break;
       begin = i;
@@ -733,10 +724,8 @@ void OutputSection::checkDynRelAddends(const uint8_t *bufStart) {
 template void OutputSection::writeHeaderTo<ELF64LE>(ELF64LE::Shdr *Shdr);
 template void OutputSection::writeHeaderTo<ELF64BE>(ELF64BE::Shdr *Shdr);
 
-template void OutputSection::writeTo<ELF64LE>(uint8_t *,
-                                              llvm::parallel::TaskGroup &);
-template void OutputSection::writeTo<ELF64BE>(uint8_t *,
-                                              llvm::parallel::TaskGroup &);
+template void OutputSection::writeTo<ELF64LE>(uint8_t *, LinkerTaskGroup &);
+template void OutputSection::writeTo<ELF64BE>(uint8_t *, LinkerTaskGroup &);
 
 template void OutputSection::maybeCompress<ELF64LE>();
 template void OutputSection::maybeCompress<ELF64BE>();

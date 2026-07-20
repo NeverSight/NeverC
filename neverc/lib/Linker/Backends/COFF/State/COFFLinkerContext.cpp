@@ -18,4 +18,6 @@ COFFLinkerContext::COFFLinkerContext()
       symbolGatherTimer("Gather Symbols", totalMapTimer),
       symbolStringsTimer("Build Symbol Strings", totalMapTimer),
       writeTimer("Write to File", totalMapTimer) {}
+
+COFFLinkerContext::~COFFLinkerContext() { finalizeOwnedState(); }
 } // namespace linker::coff

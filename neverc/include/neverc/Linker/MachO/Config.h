@@ -15,6 +15,8 @@
 #include "llvm/TextAPI/Platform.h"
 #include "llvm/TextAPI/Target.h"
 
+#include <memory>
+#include <utility>
 #include <vector>
 
 namespace llvm {
@@ -205,7 +207,20 @@ struct Configuration {
   llvm::DenseMap<llvm::StringRef, const InputFile *> overrideSymbols;
 };
 
-extern std::unique_ptr<Configuration> config;
+std::unique_ptr<Configuration> &machoConfig();
+
+struct ConfigurationAccessor {
+  Configuration *operator->() const { return machoConfig().get(); }
+  Configuration &operator*() const { return *machoConfig(); }
+  explicit operator bool() const {
+    return static_cast<bool>(machoConfig());
+  }
+  void operator=(std::unique_ptr<Configuration> Value) const {
+    machoConfig() = std::move(Value);
+  }
+};
+
+inline constexpr ConfigurationAccessor config;
 
 } // namespace macho
 } // namespace linker

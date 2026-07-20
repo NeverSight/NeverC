@@ -6,12 +6,13 @@
 #include "Linker/MachO/UnwindInfoSection.h"
 
 #include "Linker/Core/Runtime/Diagnostic.h"
-#include "llvm/Support/Parallel.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "llvm/Support/TimeProfiler.h"
 
 #include "mach-o/compact_unwind_encoding.h"
 
 #include <algorithm>
+#include "Linker/MachO/MachOContextAccess.h"
 
 namespace linker::macho {
 
@@ -25,7 +26,7 @@ using namespace llvm::MachO;
 namespace {
 size_t getParallelThreshold(size_t multiplier = 256, size_t lo = 512,
                             size_t hi = 8192) {
-  unsigned threads = std::max(1U, parallel::strategy.compute_thread_count());
+  unsigned threads = parallelThreadCount();
   size_t threshold = static_cast<size_t>(threads) * multiplier;
   return std::clamp<size_t>(threshold, lo, hi);
 }
@@ -184,7 +185,7 @@ void MarkLiveImpl<RecordWhyLive>::markTransitively() {
     const size_t parallelThreshold =
         RecordWhyLive ? SIZE_MAX : getParallelThreshold();
     const bool canParallelize =
-        !RecordWhyLive && parallel::strategy.ThreadsRequested != 1;
+        !RecordWhyLive && parallelEnabled();
     while (!worklist.empty()) {
       // Keep -why_live on the existing serial path to preserve its output
       // stability, while accelerating the default mark-live traversal.
@@ -310,8 +311,7 @@ void markLive() {
 
   size_t parallelRootScanThreshold = getParallelThreshold();
   static constexpr size_t kRootScanChunkSize = 2048;
-  if (parallel::strategy.ThreadsRequested != 1 &&
-      symbols.size() >= parallelRootScanThreshold) {
+  if (parallelEnabled() && symbols.size() >= parallelRootScanThreshold) {
     size_t numChunks =
         (symbols.size() + kRootScanChunkSize - 1) / kRootScanChunkSize;
     std::vector<SmallVector<Symbol *, 0>> rootsByChunk(numChunks);
@@ -353,7 +353,7 @@ void markLive() {
   };
   size_t parallelRootSectionScanThreshold = getParallelThreshold();
   static constexpr size_t kRootSectionScanChunkSize = 2048;
-  if (parallel::strategy.ThreadsRequested != 1 &&
+  if (parallelEnabled() &&
       inputSections.size() >= parallelRootSectionScanThreshold) {
     size_t numChunks = (inputSections.size() + kRootSectionScanChunkSize - 1) /
                        kRootSectionScanChunkSize;

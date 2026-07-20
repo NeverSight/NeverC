@@ -146,7 +146,17 @@ struct LP64 {
   static constexpr size_t wordSize = 8;
 };
 
-extern TargetInfo *target;
+TargetInfo *&machoTarget();
+
+struct TargetAccessor {
+  TargetInfo *operator->() const { return machoTarget(); }
+  TargetInfo &operator*() const { return *machoTarget(); }
+  operator TargetInfo *() const { return machoTarget(); }
+  explicit operator bool() const { return machoTarget() != nullptr; }
+  void operator=(TargetInfo *Value) const { machoTarget() = Value; }
+};
+
+inline constexpr TargetAccessor target;
 
 } // namespace linker::macho
 

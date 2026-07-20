@@ -21,6 +21,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 #include <optional>
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -30,9 +31,6 @@ using namespace llvm::sys::fs;
 using namespace llvm::support::endian;
 using namespace linker;
 using namespace linker::elf;
-
-bool InputFile::isInGroup;
-uint32_t InputFile::nextGroupId;
 
 // ===----------------------------------------------------------------------===
 // File identification & parsing
@@ -88,11 +86,11 @@ ELFKind getELFKind(MemoryBufferRef mb, StringRef archiveName) {
 } // namespace
 
 InputFile::InputFile(Kind k, MemoryBufferRef m)
-    : mb(m), groupId(nextGroupId), fileKind(k) {
+    : mb(m), groupId(elfNextGroupId()), fileKind(k) {
   // All files within the same --{start,end}-group get the same group ID.
   // Otherwise, a new file will get a new group ID.
-  if (!isInGroup)
-    ++nextGroupId;
+  if (!elfInputFileIsInGroup())
+    ++elfNextGroupId();
 }
 
 std::optional<MemoryBufferRef> elf::readFile(StringRef path) {
@@ -1133,8 +1131,6 @@ template <class ELFT> void ObjFile<ELFT>::postParse() {
 // demands them) or keep them as undefined until full resolution finishes
 // and then upgrade. The choice is mostly a compatibility one and either
 // behaviour can be selected via --[no-]fortran-common.
-
-unsigned SharedFile::vernauxNum;
 
 SharedFile::SharedFile(MemoryBufferRef m, StringRef defaultSoName)
     : ELFFileBase(SharedKind, getELFKind(m, ""), m), soName(defaultSoName),

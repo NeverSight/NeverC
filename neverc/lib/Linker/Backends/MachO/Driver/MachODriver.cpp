@@ -19,6 +19,8 @@
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Runtime/LinkerExecutionContext.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringExtras.h"
@@ -30,7 +32,6 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/TimeProfiler.h"
@@ -39,6 +40,8 @@
 #include "neverc/Merge/Merger.h"
 #include <algorithm>
 #include <vector>
+#include "Linker/MachO/MachOContextAccess.h"
+#include "Linker/MachO/MachOLinkerContext.h"
 
 using namespace llvm;
 using namespace llvm::MachO;
@@ -47,9 +50,6 @@ using namespace llvm::opt;
 using namespace llvm::sys;
 using namespace linker;
 using namespace linker::macho;
-
-std::unique_ptr<Configuration> macho::config;
-std::unique_ptr<DependencyTracker> macho::depTracker;
 
 namespace {
 
@@ -63,7 +63,6 @@ HeaderFileType getOutputType(const LinkerDriverConfig &driverCfg) {
   return MH_EXECUTE;
 }
 
-DenseMap<CachedHashStringRef, StringRef> resolvedLibraries;
 std::optional<StringRef> findLibrary(StringRef name) {
   CachedHashStringRef key(name);
   auto entry = resolvedLibraries.find(key);
@@ -90,7 +89,6 @@ std::optional<StringRef> findLibrary(StringRef name) {
   return path;
 }
 
-DenseMap<CachedHashStringRef, StringRef> resolvedFrameworks;
 std::optional<StringRef> findFramework(StringRef name) {
   CachedHashStringRef key(name);
   auto entry = resolvedFrameworks.find(key);
@@ -206,13 +204,6 @@ enum class LoadType {
   LCLinkerOption,   // Library was passed via LC_LINKER_OPTIONS
 };
 
-struct ArchiveFileInfo {
-  ArchiveFile *file;
-  bool isCommandLineLoad;
-};
-
-DenseMap<StringRef, ArchiveFileInfo> loadedArchives;
-
 InputFile *addFile(StringRef path, LoadType loadType, bool isLazy = false,
                    bool isExplicit = true, bool isBundleLoader = false,
                    bool isForceHidden = false) {
@@ -313,7 +304,6 @@ InputFile *addFile(StringRef path, LoadType loadType, bool isLazy = false,
   return newFile;
 }
 
-std::vector<StringRef> missingAutolinkWarnings;
 void addLibrary(StringRef name, bool isNeeded, bool isWeak, bool isReexport,
                 bool isHidden, bool isExplicit, LoadType loadType) {
   if (std::optional<StringRef> path = findLibrary(name)) {
@@ -339,7 +329,6 @@ void addLibrary(StringRef name, bool isNeeded, bool isWeak, bool isReexport,
   error("library not found for -l" + name);
 }
 
-DenseSet<StringRef> loadedObjectFrameworks;
 void addFramework(StringRef name, bool isNeeded, bool isWeak, bool isReexport,
                   bool isExplicit, LoadType loadType) {
   if (std::optional<StringRef> path = findFramework(name)) {
@@ -499,7 +488,7 @@ void prefetchInputFiles(const InputArgList &args) {
     if (seen.insert(path).second)
       uniquePaths.push_back(path);
 
-  if (parallel::strategy.ThreadsRequested == 1 || uniquePaths.size() < 8) {
+  if (!parallelEnabled() || uniquePaths.size() < 8) {
     for (StringRef path : uniquePaths)
       (void)readFile(path, /*reportError=*/false);
     return;
@@ -1226,10 +1215,17 @@ namespace macho {
 bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
           const LinkerDriverConfig &driverCfg) {
-  auto *ctx = new CommonLinkerContext;
+  LinkerExecutionContext LocalExecution;
+  LinkerExecutionContext &Execution =
+      driverCfg.executionContext ? *driverCfg.executionContext
+                                 : LocalExecution;
+  MachOLinkerContext &Backend =
+      Execution.createBackend<MachOLinkerContext>();
+  CommonLinkerContext &Common = Backend;
+  Common.configureParallel(driverCfg.threadCount);
 
-  ctx->e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
-  ctx->e.cleanupCallback = []() {
+  Common.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
+  Common.e.cleanupCallback = []() {
     resolvedFrameworks.clear();
     resolvedLibraries.clear();
     cachedReads.clear();
@@ -1252,17 +1248,18 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     InputFile::resetIdCount();
   };
 
-  ctx->e.logName = args::getFilenameWithoutExe(argsArr[0]);
+  Common.e.logName = args::getFilenameWithoutExe(argsArr[0]);
 
   MachOOptTable parser;
   InputArgList args = parser.parse(argsArr.slice(1));
 
-  ctx->e.errorLimitExceededMsg = "too many errors emitted, stopping now "
-                                 "(use -ferror-limit=0 to see all errors)";
-  ctx->e.errorLimit = driverCfg.errorLimit;
-  ctx->e.verbose = driverCfg.verbose;
-  ctx->e.fatalWarnings = driverCfg.fatalWarnings;
-  ctx->e.suppressWarnings = driverCfg.suppressWarnings;
+  Common.e.errorLimitExceededMsg =
+      "too many errors emitted, stopping now "
+      "(use -ferror-limit=0 to see all errors)";
+  Common.e.errorLimit = driverCfg.errorLimit;
+  Common.e.verbose = driverCfg.verbose;
+  Common.e.fatalWarnings = driverCfg.fatalWarnings;
+  Common.e.suppressWarnings = driverCfg.suppressWarnings;
 
   config = std::make_unique<Configuration>();
   symtab = std::make_unique<SymbolTable>();
@@ -1310,10 +1307,6 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->deadStrip = driverCfg.gcSections;
 
   config->systemLibraryRoots = getSystemLibraryRoots(driverCfg);
-
-  if (driverCfg.threadCount) {
-    parallel::strategy = hardware_concurrency(driverCfg.threadCount);
-  }
 
   for (const Arg *arg : args.filtered(OPT_u)) {
     config->explicitUndefineds.push_back(symtab->addUndefined(

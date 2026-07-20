@@ -8,6 +8,7 @@
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
 #include "llvm/Support/Compiler.h"
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::object;
@@ -53,19 +54,6 @@ std::string linker::toString(const elf::Symbol &sym) {
     ret += suffix;
   return ret;
 }
-
-Defined *ElfSym::bss;
-Defined *ElfSym::etext1;
-Defined *ElfSym::etext2;
-Defined *ElfSym::edata1;
-Defined *ElfSym::edata2;
-Defined *ElfSym::end1;
-Defined *ElfSym::end2;
-Defined *ElfSym::globalOffsetTable;
-Defined *ElfSym::relaIpltStart;
-Defined *ElfSym::relaIpltEnd;
-Defined *ElfSym::tlsModuleBase;
-SmallVector<SymbolAux, 0> elf::symAux;
 
 namespace {
 uint64_t getSymVA(const Symbol &sym, int64_t addend) {
@@ -116,10 +104,10 @@ uint64_t getSymVA(const Symbol &sym, int64_t addend) {
       // after sections are finalized. (e.g. Measuring the size of .rela.dyn
       // for Android relocation packing requires knowing TLS symbol addresses
       // during section finalization.)
-      if (!Out::tlsPhdr || !Out::tlsPhdr->firstSec)
+      if (!elfOut().tlsPhdr || !elfOut().tlsPhdr->firstSec)
         fatal(toString(d.file) +
               " has an STT_TLS symbol but doesn't have an SHF_TLS section");
-      return va - Out::tlsPhdr->firstSec->addr;
+      return va - elfOut().tlsPhdr->firstSec->addr;
     }
     return va;
   }

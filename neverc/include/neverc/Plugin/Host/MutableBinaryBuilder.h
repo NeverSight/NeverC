@@ -2,6 +2,7 @@
 #define NEVERC_PLUGIN_HOST_MUTABLEBINARYBUILDER_H
 
 #include "neverc/Plugin/PluginObject.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Error.h"
 #include <memory>
 #include <vector>
@@ -23,6 +24,7 @@ public:
 
   const NevercMutableBinaryAPI &api() const { return API; }
   NevercMutableBinaryBuilderHandle handle() const { return Handle; }
+  llvm::ArrayRef<uint8_t> bytes() const { return Bytes; }
 
   llvm::Expected<NevercOutputSummary> summary() const;
   llvm::Expected<NevercOutputSeal> finish();

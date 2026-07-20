@@ -53,7 +53,19 @@ struct SymbolAux {
   uint32_t tlsGdIdx = -1;
 };
 
-LLVM_LIBRARY_VISIBILITY extern SmallVector<SymbolAux, 0> symAux;
+SmallVector<SymbolAux, 0> &elfSymbolAux();
+
+struct SymbolAuxAccessor {
+  size_t size() const { return elfSymbolAux().size(); }
+  void clear() const { elfSymbolAux().clear(); }
+  void emplace_back() const { elfSymbolAux().emplace_back(); }
+  SymbolAux &back() const { return elfSymbolAux().back(); }
+  SymbolAux &operator[](size_t Index) const {
+    return elfSymbolAux()[Index];
+  }
+};
+
+inline constexpr SymbolAuxAccessor symAux;
 
 // The base class for real symbol classes.
 class Symbol {
@@ -474,34 +486,36 @@ public:
 
 // Some linker-generated symbols need to be created as
 // Defined symbols.
-struct ElfSym {
+struct ElfSymbolState {
   // __bss_start
-  static Defined *bss;
+  Defined *bss = nullptr;
 
   // etext and _etext
-  static Defined *etext1;
-  static Defined *etext2;
+  Defined *etext1 = nullptr;
+  Defined *etext2 = nullptr;
 
   // edata and _edata
-  static Defined *edata1;
-  static Defined *edata2;
+  Defined *edata1 = nullptr;
+  Defined *edata2 = nullptr;
 
   // end and _end
-  static Defined *end1;
-  static Defined *end2;
+  Defined *end1 = nullptr;
+  Defined *end2 = nullptr;
 
   // The _GLOBAL_OFFSET_TABLE_ symbol is defined by target convention to
   // be at some offset from the base of the .got section, usually 0 or
   // the end of the .got.
-  static Defined *globalOffsetTable;
+  Defined *globalOffsetTable = nullptr;
 
   // __rel{,a}_iplt_{start,end} symbols.
-  static Defined *relaIpltStart;
-  static Defined *relaIpltEnd;
+  Defined *relaIpltStart = nullptr;
+  Defined *relaIpltEnd = nullptr;
 
   // _TLS_MODULE_BASE_ on targets that support TLSDESC.
-  static Defined *tlsModuleBase;
+  Defined *tlsModuleBase = nullptr;
 };
+
+ElfSymbolState &elfSym();
 
 // A buffer class that is large enough to hold any Symbol-derived
 // object. We allocate memory using this class and instantiate a symbol

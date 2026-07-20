@@ -66,7 +66,7 @@ private:
   llvm::MapVector<SectionPair, uint64_t> callGraphProfile;
 };
 
-extern PriorityBuilder priorityBuilder;
+PriorityBuilder &machoPriorityBuilder();
 } // namespace linker::macho
 
 #endif

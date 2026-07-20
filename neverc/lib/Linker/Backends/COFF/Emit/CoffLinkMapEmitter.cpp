@@ -9,6 +9,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/raw_ostream.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 
 using namespace llvm;
 using namespace llvm::object;

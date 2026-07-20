@@ -1,6 +1,7 @@
 #include "Linker/MachO/Symbols.h"
 #include "Linker/MachO/InputFiles.h"
 #include "Linker/MachO/SyntheticSections.h"
+#include "Linker/MachO/MachOContextAccess.h"
 using namespace llvm;
 using namespace linker;
 using namespace linker::macho;

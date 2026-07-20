@@ -7,6 +7,7 @@
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/MathExtras.h"
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::object;

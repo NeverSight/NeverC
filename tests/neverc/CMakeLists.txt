@@ -197,6 +197,64 @@ target_include_directories(neverc-plugin-object-abi-compile-c23 PRIVATE
 )
 target_compile_features(neverc-plugin-object-abi-compile-c23 PRIVATE c_std_23)
 
+add_library(neverc-plugin-link-abi-compile-c11 OBJECT
+  Inputs/Plugin/LinkABICompile.c
+)
+target_include_directories(neverc-plugin-link-abi-compile-c11 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-link-abi-compile-c11 PRIVATE c_std_11)
+
+add_library(neverc-plugin-link-abi-compile-c23 OBJECT
+  Inputs/Plugin/LinkABICompile.c
+)
+target_include_directories(neverc-plugin-link-abi-compile-c23 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-link-abi-compile-c23 PRIVATE c_std_23)
+
+add_library(neverc-plugin-lto-abi-compile-c11 OBJECT
+  Inputs/Plugin/LTOABICompile.c
+)
+target_include_directories(neverc-plugin-lto-abi-compile-c11 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-lto-abi-compile-c11 PRIVATE c_std_11)
+
+add_library(neverc-plugin-lto-abi-compile-c23 OBJECT
+  Inputs/Plugin/LTOABICompile.c
+)
+target_include_directories(neverc-plugin-lto-abi-compile-c23 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-lto-abi-compile-c23 PRIVATE c_std_23)
+
+add_library(neverc-test-plugin-link-route MODULE
+  Inputs/Plugin/LinkRoutePlugin.c
+)
+target_include_directories(neverc-test-plugin-link-route PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-link-route PRIVATE c_std_11)
+set_target_properties(neverc-test-plugin-link-route PROPERTIES
+  PREFIX ""
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib"
+)
+
+add_library(neverc-test-plugin-object-merge MODULE
+  Inputs/Plugin/ObjectMergePlugin.c
+)
+target_include_directories(neverc-test-plugin-object-merge PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-merge PRIVATE c_std_11
+)
+set_target_properties(neverc-test-plugin-object-merge PROPERTIES
+  PREFIX ""
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib"
+)
+
 function(add_neverc_registry_fixture target)
   add_library(${target} MODULE Inputs/Plugin/RegistryFixturePlugin.c)
   target_include_directories(${target} PRIVATE
@@ -493,6 +551,14 @@ add_neverc_vfs_fixture(
   neverc-test-plugin-vfs
   org.neverc.test.vfs
 )
+add_library(neverc-test-plugin-virtual-archive MODULE
+  Inputs/Plugin/VirtualArchivePlugin.c
+)
+target_include_directories(neverc-test-plugin-virtual-archive PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-virtual-archive PRIVATE c_std_11)
+set_target_properties(neverc-test-plugin-virtual-archive PROPERTIES PREFIX "")
 add_library(neverc-test-plugin-source-phase MODULE
   Inputs/Plugin/SourcePhasePlugin.c
 )
@@ -1440,6 +1506,140 @@ add_dependencies(neverc-plugin-target-mc-tests
   neverc-plugin-target-schema-gen
 )
 gtest_discover_tests(neverc-plugin-target-mc-tests
+  PROPERTIES
+    TIMEOUT 60
+    DISCOVERY_TIMEOUT 30
+)
+
+add_executable(neverc-plugin-link-tests
+  Inputs/Plugin/GCICFPlugin.c
+  Inputs/Plugin/InvalidLinkMutationPlugin.c
+  Inputs/Plugin/LinkLayoutPlugin.c
+  Inputs/Plugin/LinkPhaseTracePlugin.c
+  Inputs/Plugin/PostEmitPlugin.c
+  Inputs/Plugin/SymbolResolutionPlugin.c
+  Inputs/Plugin/SyntheticLinkPlugin.c
+  PluginCOFFContextIsolationTests.cpp
+  PluginBinaryImageTests.cpp
+  PluginELFContextIsolationTests.cpp
+  PluginLinkABICompileTests.cpp
+  PluginLinkContextTests.cpp
+  PluginLinkGraphTests.cpp
+  PluginLinkGCICFTests.cpp
+  PluginLinkInputTests.cpp
+  PluginLinkLayoutTests.cpp
+  PluginLinkMutationTests.cpp
+  PluginMachOContextIsolationTests.cpp
+  PluginParallelLinkTests.cpp
+  PluginLinkPhaseTests.cpp
+  PluginLinkRouteTests.cpp
+  PluginLinkSynthesisTests.cpp
+  PluginLinkVerifierTests.cpp
+  PluginSymbolResolutionTests.cpp
+)
+target_link_libraries(neverc-plugin-link-tests PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  linkerCOFF
+  linkerCore
+  linkerELF
+  linkerMachO
+  nevercPluginIO
+  nevercPluginLink
+)
+target_include_directories(neverc-plugin-link-tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include/neverc
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Plugin
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Linker/Backends/COFF
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Linker/Backends/ELF
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Linker/Backends/MachO
+)
+target_compile_features(neverc-plugin-link-tests PRIVATE cxx_std_17)
+target_compile_definitions(neverc-plugin-link-tests PRIVATE
+  NEVERC_TEST_LINK_ROUTE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-link-route>"
+  NEVERC_TEST_VIRTUAL_ARCHIVE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-virtual-archive>"
+)
+add_dependencies(neverc-plugin-link-tests
+  neverc-plugin-link-abi-compile-c11
+  neverc-plugin-link-abi-compile-c23
+  neverc-plugin-lto-abi-compile-c11
+  neverc-plugin-lto-abi-compile-c23
+  neverc-test-plugin-link-route
+  neverc-test-plugin-virtual-archive
+)
+gtest_discover_tests(neverc-plugin-link-tests
+  PROPERTIES
+    TIMEOUT 60
+    DISCOVERY_TIMEOUT 30
+)
+
+add_executable(neverc-plugin-object-merge-tests
+  PluginObjectMergeTests.cpp
+)
+target_link_libraries(neverc-plugin-object-merge-tests PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  nevercPluginCore
+  nevercPluginLink
+  nevercPluginMCObject
+)
+if("AArch64" IN_LIST LLVM_TARGETS_TO_BUILD)
+  target_link_libraries(neverc-plugin-object-merge-tests PRIVATE
+    LLVMAArch64AsmParser
+    LLVMAArch64CodeGen
+    LLVMAArch64Desc
+    LLVMAArch64Info
+    LLVMAArch64Utils
+  )
+endif()
+if("X86" IN_LIST LLVM_TARGETS_TO_BUILD)
+  target_link_libraries(neverc-plugin-object-merge-tests PRIVATE
+    LLVMX86AsmParser
+    LLVMX86CodeGen
+    LLVMX86Desc
+    LLVMX86Info
+  )
+endif()
+target_include_directories(neverc-plugin-object-merge-tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Plugin
+)
+target_compile_features(
+  neverc-plugin-object-merge-tests PRIVATE cxx_std_17
+)
+target_compile_definitions(neverc-plugin-object-merge-tests PRIVATE
+  NEVERC_TEST_OBJECT_MERGE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-merge>"
+)
+add_dependencies(neverc-plugin-object-merge-tests
+  neverc-test-plugin-object-merge
+)
+gtest_discover_tests(neverc-plugin-object-merge-tests
+  PROPERTIES
+    TIMEOUT 60
+    DISCOVERY_TIMEOUT 30
+)
+
+add_executable(neverc-plugin-lto-input-tests
+  PluginLTOInputTests.cpp
+)
+target_link_libraries(neverc-plugin-lto-input-tests PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  LLVMBitWriter
+  LLVMCore
+  nevercPluginCore
+  nevercPluginLink
+  nevercPluginMCObject
+)
+target_include_directories(neverc-plugin-lto-input-tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Plugin
+)
+target_compile_features(
+  neverc-plugin-lto-input-tests PRIVATE cxx_std_17
+)
+gtest_discover_tests(neverc-plugin-lto-input-tests
   PROPERTIES
     TIMEOUT 60
     DISCOVERY_TIMEOUT 30

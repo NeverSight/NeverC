@@ -10,6 +10,7 @@
 #include "Linker/Core/Driver/ArgList.h"
 #include "Linker/Core/Driver/CommonLTOConfig.h"
 #include "Linker/Core/Driver/Dispatcher.h"
+#include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
 #include "Linker/Core/Support/FileIO.h"
@@ -50,15 +51,20 @@ namespace linker::coff {
 bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
           const LinkerDriverConfig &driverCfg) {
-  auto *ctx = new COFFLinkerContext;
+  LinkerExecutionContext LocalExecution;
+  LinkerExecutionContext &Execution =
+      driverCfg.executionContext ? *driverCfg.executionContext
+                                 : LocalExecution;
+  COFFLinkerContext &ctx = Execution.createBackend<COFFLinkerContext>();
+  ctx.configureParallel(driverCfg.threadCount);
 
-  ctx->e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
-  ctx->e.errorLimit = driverCfg.errorLimit;
-  ctx->e.logName = args::getFilenameWithoutExe(args[0]);
-  ctx->e.errorLimitExceededMsg = "too many errors emitted, stopping now"
-                                 " (use -ferror-limit=0 to see all errors)";
+  ctx.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
+  ctx.e.errorLimit = driverCfg.errorLimit;
+  ctx.e.logName = args::getFilenameWithoutExe(args[0]);
+  ctx.e.errorLimitExceededMsg = "too many errors emitted, stopping now"
+                                " (use -ferror-limit=0 to see all errors)";
 
-  ctx->driver.run(args, driverCfg);
+  ctx.driver.run(args, driverCfg);
 
   return errorCount() == 0;
 }
@@ -1021,10 +1027,6 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   parseMllvmOptions(driverCfg);
 
   config->vfs = getVFS(args);
-
-  if (driverCfg.threadCount) {
-    parallel::strategy = hardware_concurrency(driverCfg.threadCount);
-  }
 
   config->showSummary = args.hasArg(OPT_summary);
 

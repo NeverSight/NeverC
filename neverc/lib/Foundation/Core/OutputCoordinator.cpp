@@ -2,6 +2,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
+#include <algorithm>
 #include <chrono>
 #include <system_error>
 
@@ -56,6 +57,60 @@ OutputCoordinator::acquire(StringRef Path,
         std::make_error_code(std::errc::operation_canceled));
   ActivePaths.emplace(*Canonical, LeaseOwner);
   return OutputPathLease(*this, std::move(*Canonical));
+}
+
+Expected<std::vector<OutputPathLease>>
+OutputCoordinator::acquireAll(ArrayRef<StringRef> Paths,
+                              CancellationCheck IsCancelled,
+                              OutputLeaseOwner LeaseOwner) {
+  if (Paths.empty())
+    return createStringError(inconvertibleErrorCode(),
+                             "output lease set is empty");
+  std::vector<std::string> CanonicalPaths;
+  CanonicalPaths.reserve(Paths.size());
+  for (StringRef Path : Paths) {
+    auto Canonical = canonicalize(Path);
+    if (!Canonical)
+      return Canonical.takeError();
+    CanonicalPaths.push_back(std::move(*Canonical));
+  }
+  std::sort(CanonicalPaths.begin(), CanonicalPaths.end());
+  if (std::adjacent_find(CanonicalPaths.begin(), CanonicalPaths.end()) !=
+      CanonicalPaths.end())
+    return errorCodeToError(
+        std::make_error_code(std::errc::file_exists));
+
+  std::unique_lock<std::mutex> Lock(Mutex);
+  for (;;) {
+    bool AvailableAsGroup = true;
+    for (const std::string &Path : CanonicalPaths) {
+      auto Active = ActivePaths.find(Path);
+      if (Active == ActivePaths.end())
+        continue;
+      if (LeaseOwner && Active->second == LeaseOwner)
+        return errorCodeToError(
+            std::make_error_code(std::errc::file_exists));
+      AvailableAsGroup = false;
+      break;
+    }
+    if (AvailableAsGroup)
+      break;
+    if (IsCancelled && IsCancelled())
+      return errorCodeToError(
+          std::make_error_code(std::errc::operation_canceled));
+    Available.wait_for(Lock, std::chrono::milliseconds(10));
+  }
+  if (IsCancelled && IsCancelled())
+    return errorCodeToError(
+        std::make_error_code(std::errc::operation_canceled));
+
+  for (const std::string &Path : CanonicalPaths)
+    ActivePaths.emplace(Path, LeaseOwner);
+  std::vector<OutputPathLease> Leases;
+  Leases.reserve(CanonicalPaths.size());
+  for (std::string &Path : CanonicalPaths)
+    Leases.push_back(OutputPathLease(*this, std::move(Path)));
+  return Leases;
 }
 
 void OutputCoordinator::release(StringRef CanonicalPath) {

@@ -174,7 +174,17 @@ static inline std::string getErrorLocation(const uint8_t *loc) {
 uint64_t getAArch64Page(uint64_t expr);
 void createTaggedSymbols(const SmallVector<ELFFileBase *, 0> &files);
 
-LLVM_LIBRARY_VISIBILITY extern const TargetInfo *target;
+const TargetInfo *&elfTarget();
+
+struct TargetAccessor {
+  const TargetInfo *operator->() const { return elfTarget(); }
+  const TargetInfo &operator*() const { return *elfTarget(); }
+  operator const TargetInfo *() const { return elfTarget(); }
+  explicit operator bool() const { return elfTarget() != nullptr; }
+  void operator=(const TargetInfo *Value) const { elfTarget() = Value; }
+};
+
+inline constexpr TargetAccessor target;
 TargetInfo *getTarget();
 
 void reportRangeError(uint8_t *loc, const Relocation &rel, const Twine &v,

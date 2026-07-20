@@ -6,13 +6,12 @@
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/Symbols.h"
 #include "llvm/ADT/STLExtras.h"
+#include "Linker/ELF/ELFContextAccess.h"
 using namespace llvm;
 using namespace llvm::object;
 using namespace llvm::ELF;
 using namespace linker;
 using namespace linker::elf;
-
-SymbolTable elf::symtab;
 
 // ===----------------------------------------------------------------------===
 // Wrap & redirect (--wrap)

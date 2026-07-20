@@ -1,3 +1,4 @@
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Chunks.h"
 #include "Linker/Core/Support/FileIO.h"
@@ -19,7 +20,6 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/BLAKE3.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/RandomNumberGenerator.h"
 #include <random>
 #include "llvm/Support/TimeProfiler.h"
@@ -28,6 +28,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #endif
+#include "Linker/ELF/ELFContextAccess.h"
 
 #define DEBUG_TYPE "linker-elf"
 
@@ -159,28 +160,28 @@ void elf::addReservedSymbols() {
     }
 
     s->resolve(Defined{/*file=*/nullptr, StringRef(), STB_GLOBAL, STV_HIDDEN,
-                       STT_NOTYPE, 0, /*size=*/0, Out::elfHeader});
-    ElfSym::globalOffsetTable = cast<Defined>(s);
+                       STT_NOTYPE, 0, /*size=*/0, elfOut().elfHeader});
+    elfSym().globalOffsetTable = cast<Defined>(s);
   }
 
-  addOptionalRegular("__ehdr_start", Out::elfHeader, 0, STV_HIDDEN);
-  addOptionalRegular("__executable_start", Out::elfHeader, 0, STV_HIDDEN);
-  addOptionalRegular("__dso_handle", Out::elfHeader, 0, STV_HIDDEN);
+  addOptionalRegular("__ehdr_start", elfOut().elfHeader, 0, STV_HIDDEN);
+  addOptionalRegular("__executable_start", elfOut().elfHeader, 0, STV_HIDDEN);
+  addOptionalRegular("__dso_handle", elfOut().elfHeader, 0, STV_HIDDEN);
 
   if (script->hasSectionsCommand)
     return;
 
   auto add = [](StringRef s, int64_t pos) {
-    return addOptionalRegular(s, Out::elfHeader, pos, STV_DEFAULT);
+    return addOptionalRegular(s, elfOut().elfHeader, pos, STV_DEFAULT);
   };
 
-  ElfSym::bss = add("__bss_start", 0);
-  ElfSym::end1 = add("end", -1);
-  ElfSym::end2 = add("_end", -1);
-  ElfSym::etext1 = add("etext", -1);
-  ElfSym::etext2 = add("_etext", -1);
-  ElfSym::edata1 = add("edata", -1);
-  ElfSym::edata2 = add("_edata", -1);
+  elfSym().bss = add("__bss_start", 0);
+  elfSym().end1 = add("end", -1);
+  elfSym().end2 = add("_end", -1);
+  elfSym().etext1 = add("etext", -1);
+  elfSym().etext2 = add("_etext", -1);
+  elfSym().edata1 = add("edata", -1);
+  elfSym().edata2 = add("_edata", -1);
 }
 
 void demoteDefined(Defined &sym, DenseMap<SectionBase *, size_t> &map) {
@@ -247,10 +248,10 @@ OutputSection *findSection(StringRef name, unsigned partition = 1) {
 }
 
 template <class ELFT> void elf::createSyntheticSections() {
-  Out::tlsPhdr = nullptr;
-  Out::preinitArray = nullptr;
-  Out::initArray = nullptr;
-  Out::finiArray = nullptr;
+  elfOut().tlsPhdr = nullptr;
+  elfOut().preinitArray = nullptr;
+  elfOut().initArray = nullptr;
+  elfOut().finiArray = nullptr;
 
   if (needsInterpSection()) {
     for (size_t i = 1; i <= partitions.size(); ++i) {
@@ -264,8 +265,8 @@ template <class ELFT> void elf::createSyntheticSections() {
 
   in.shStrTab = std::make_unique<StringTableSection>(".shstrtab", false);
 
-  Out::programHeaders = make<OutputSection>("", 0, SHF_ALLOC);
-  Out::programHeaders->addralign = config->wordsize;
+  elfOut().programHeaders = make<OutputSection>("", 0, SHF_ALLOC);
+  elfOut().programHeaders->addralign = config->wordsize;
 
   if (config->strip != StripPolicy::All) {
     in.strTab = std::make_unique<StringTableSection>(".strtab", false);
@@ -286,7 +287,7 @@ template <class ELFT> void elf::createSyntheticSections() {
 
   StringRef relaDynName = config->isRela ? ".rela.dyn" : ".rel.dyn";
 
-  const unsigned threadCount = config->threadCount;
+  const unsigned threadCount = commonContext().parallelShardCount();
   for (Partition &part : partitions) {
     auto add = [&](SyntheticSection &sec) {
       sec.partition = part.getNumber();
@@ -408,7 +409,7 @@ template <class ELFT> void elf::createSyntheticSections() {
 
   // _GLOBAL_OFFSET_TABLE_ is defined relative to either .got.plt or .got. Treat
   // it as a relocation and ensure the referenced section is created.
-  if (ElfSym::globalOffsetTable) {
+  if (elfSym().globalOffsetTable) {
     if (target->gotBaseSymInGotPlt)
       in.gotPlt->hasGotPltOffRel = true;
     else
@@ -796,27 +797,27 @@ template <class ELFT> void OutputWriter<ELFT>::addRelIpltSymbols() {
   if (config->isPic)
     return;
 
-  ElfSym::relaIpltStart = addOptionalRegular(
-      config->isRela ? "__rela_iplt_start" : "__rel_iplt_start", Out::elfHeader,
-      0, STV_HIDDEN);
+  elfSym().relaIpltStart = addOptionalRegular(
+      config->isRela ? "__rela_iplt_start" : "__rel_iplt_start",
+      elfOut().elfHeader, 0, STV_HIDDEN);
 
-  ElfSym::relaIpltEnd =
+  elfSym().relaIpltEnd =
       addOptionalRegular(config->isRela ? "__rela_iplt_end" : "__rel_iplt_end",
-                         Out::elfHeader, 0, STV_HIDDEN);
+                         elfOut().elfHeader, 0, STV_HIDDEN);
 }
 
 template <class ELFT> void OutputWriter<ELFT>::setReservedSymbolSections() {
-  if (ElfSym::globalOffsetTable) {
+  if (elfSym().globalOffsetTable) {
     InputSection *sec = target->gotBaseSymInGotPlt
                             ? in.gotPlt.get()
                             : cast<InputSection>(in.got.get());
-    ElfSym::globalOffsetTable->section = sec;
+    elfSym().globalOffsetTable->section = sec;
   }
 
-  if (ElfSym::relaIpltStart && in.relaIplt->isNeeded()) {
-    ElfSym::relaIpltStart->section = in.relaIplt.get();
-    ElfSym::relaIpltEnd->section = in.relaIplt.get();
-    ElfSym::relaIpltEnd->value = in.relaIplt->getSize();
+  if (elfSym().relaIpltStart && in.relaIplt->isNeeded()) {
+    elfSym().relaIpltStart->section = in.relaIplt.get();
+    elfSym().relaIpltEnd->section = in.relaIplt.get();
+    elfSym().relaIpltEnd->value = in.relaIplt->getSize();
   }
 
   PhdrEntry *last = nullptr;
@@ -834,10 +835,10 @@ template <class ELFT> void OutputWriter<ELFT>::setReservedSymbolSections() {
 
   if (lastRO) {
     // _etext is the first location after the last read-only loadable segment.
-    if (ElfSym::etext1)
-      ElfSym::etext1->section = lastRO->lastSec;
-    if (ElfSym::etext2)
-      ElfSym::etext2->section = lastRO->lastSec;
+    if (elfSym().etext1)
+      elfSym().etext1->section = lastRO->lastSec;
+    if (elfSym().etext2)
+      elfSym().etext2->section = lastRO->lastSec;
   }
 
   if (last) {
@@ -850,20 +851,20 @@ template <class ELFT> void OutputWriter<ELFT>::setReservedSymbolSections() {
         break;
     }
 
-    if (ElfSym::edata1)
-      ElfSym::edata1->section = edata;
-    if (ElfSym::edata2)
-      ElfSym::edata2->section = edata;
+    if (elfSym().edata1)
+      elfSym().edata1->section = edata;
+    if (elfSym().edata2)
+      elfSym().edata2->section = edata;
 
     // _end is the first location after the uninitialized data region.
-    if (ElfSym::end1)
-      ElfSym::end1->section = last->lastSec;
-    if (ElfSym::end2)
-      ElfSym::end2->section = last->lastSec;
+    if (elfSym().end1)
+      elfSym().end1->section = last->lastSec;
+    if (elfSym().end2)
+      elfSym().end2->section = last->lastSec;
   }
 
-  if (ElfSym::bss)
-    ElfSym::bss->section = findSection(".bss");
+  if (elfSym().bss)
+    elfSym().bss->section = findSection(".bss");
 }
 
 // We want to find how similar two ranks are.
@@ -1480,9 +1481,9 @@ void removeUnusedSyntheticSections() {
 // Create output section objects and add them to OutputSections.
 template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
   {
-    Out::preinitArray = findSection(".preinit_array");
-    Out::initArray = findSection(".init_array");
-    Out::finiArray = findSection(".fini_array");
+    elfOut().preinitArray = findSection(".preinit_array");
+    elfOut().initArray = findSection(".init_array");
+    elfOut().finiArray = findSection(".fini_array");
 
     addStartEndSymbols();
     for (SectionCommand *cmd : script->sectionCommands)
@@ -1504,7 +1505,7 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
         s->resolve(Defined{/*file=*/nullptr, StringRef(), STB_GLOBAL,
                            STV_HIDDEN, STT_TLS, /*value=*/0, 0,
                            /*section=*/nullptr});
-        ElfSym::tlsModuleBase = cast<Defined>(s);
+        elfSym().tlsModuleBase = cast<Defined>(s);
       }
     }
 
@@ -1626,8 +1627,8 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
   // This is a bit of a hack. A value of 0 means undef, so we set it
   // to 1 to make __ehdr_start defined. The section number is not
   // particularly relevant.
-  Out::elfHeader->sectionIndex = 1;
-  Out::elfHeader->size = sizeof(typename ELFT::Ehdr);
+  elfOut().elfHeader->sectionIndex = 1;
+  elfOut().elfHeader->size = sizeof(typename ELFT::Ehdr);
 
   // Binary and relocatable output does not have PHDRS.
   // The headers have to be created before finalize as that can influence the
@@ -1637,7 +1638,7 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
       part.phdrs = script->hasPhdrsCommands() ? script->createPhdrs()
                                               : buildSegmentMap(part);
     }
-    Out::programHeaders->size = sizeof(Elf_Phdr) * mainPart->phdrs.size();
+    elfOut().programHeaders->size = sizeof(Elf_Phdr) * mainPart->phdrs.size();
 
     // Find the TLS segment. This happens before the section layout loop so that
     // Android relocation packing can look up TLS symbol addresses. We only need
@@ -1645,7 +1646,7 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
     // to the main partition (see MarkLive.cpp).
     for (PhdrEntry *p : mainPart->phdrs)
       if (p->p_type == PT_TLS)
-        Out::tlsPhdr = p;
+        elfOut().tlsPhdr = p;
   }
 
   // Some symbols are defined in term of program headers. Now that we
@@ -1657,10 +1658,11 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
 
     // Finalize independent synthetic sections in parallel.
     {
-      parallel::TaskGroup tg;
+      LinkerTaskGroup tg;
       auto finPar = [&](SyntheticSection *s) {
         if (s)
-          tg.spawn([s] { finalizeSynthetic(s); });
+          tg.spawn(
+              bindLinkerContext([s] { finalizeSynthetic(s); }));
       };
       finPar(in.bss.get());
       finPar(in.bssRelRo.get());
@@ -1693,10 +1695,11 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
       finalizeSynthetic(part.dynSymTab.get());
 
       {
-        parallel::TaskGroup tg;
+        LinkerTaskGroup tg;
         auto finPar = [&](SyntheticSection *s) {
           if (s)
-            tg.spawn([s] { finalizeSynthetic(s); });
+            tg.spawn(
+                bindLinkerContext([s] { finalizeSynthetic(s); }));
         };
         finPar(part.gnuHashTab.get());
         finPar(part.hashTab.get());
@@ -1780,7 +1783,7 @@ template <class ELFT> void OutputWriter<ELFT>::addStartEndSymbols() {
   // Fall back to .text (or ELF header) when a section is absent.
   OutputSection *Default = findSection(".text");
   if (!Default)
-    Default = Out::elfHeader;
+    Default = elfOut().elfHeader;
 
   auto define = [=](StringRef start, StringRef end, OutputSection *os) {
     if (os && !script->isDiscarded(os)) {
@@ -1792,9 +1795,10 @@ template <class ELFT> void OutputWriter<ELFT>::addStartEndSymbols() {
     }
   };
 
-  define("__preinit_array_start", "__preinit_array_end", Out::preinitArray);
-  define("__init_array_start", "__init_array_end", Out::initArray);
-  define("__fini_array_start", "__fini_array_end", Out::finiArray);
+  define("__preinit_array_start", "__preinit_array_end",
+         elfOut().preinitArray);
+  define("__init_array_start", "__init_array_end", elfOut().initArray);
+  define("__fini_array_start", "__fini_array_end", elfOut().finiArray);
 }
 
 template <class ELFT>
@@ -1844,7 +1848,7 @@ OutputWriter<ELFT>::buildSegmentMap(Partition &part) {
 
   if (!config->nmagic && !config->omagic) {
     if (isMain)
-      addHdr(PT_PHDR, PF_R)->add(Out::programHeaders);
+      addHdr(PT_PHDR, PF_R)->add(elfOut().programHeaders);
     else
       addHdr(PT_PHDR, PF_R)->add(part.programHeaders->getParent());
 
@@ -1853,8 +1857,8 @@ OutputWriter<ELFT>::buildSegmentMap(Partition &part) {
 
     if (isMain) {
       load = addHdr(PT_LOAD, flags);
-      load->add(Out::elfHeader);
-      load->add(Out::programHeaders);
+      load->add(elfOut().elfHeader);
+      load->add(elfOut().programHeaders);
     }
   }
 
@@ -1896,7 +1900,7 @@ OutputWriter<ELFT>::buildSegmentMap(Partition &part) {
         load && !sec->lmaExpr && sec->lmaRegion == load->firstSec->lmaRegion;
     if (!(load && newFlags == flags && sec != relroEnd &&
           sec->memRegion == load->firstSec->memRegion &&
-          (sameLMARegion || load->lastSec == Out::programHeaders) &&
+          (sameLMARegion || load->lastSec == elfOut().programHeaders) &&
           (script->hasSectionsCommand || sec->type == SHT_NOBITS ||
            load->lastSec->type != SHT_NOBITS))) {
       load = addHdr(PT_LOAD, newFlags);
@@ -2016,11 +2020,12 @@ template <class ELFT> void OutputWriter<ELFT>::fixSectionAlignments() {
       // p_align for dynamic TLS blocks (PR/24606), musl (TLS Variant 1
       // architectures) before 1.1.23 handled TLS blocks correctly. We need to
       // keep the workaround for a while.
-      else if (Out::tlsPhdr && Out::tlsPhdr->firstSec == p->firstSec)
+      else if (elfOut().tlsPhdr &&
+               elfOut().tlsPhdr->firstSec == p->firstSec)
         cmd->addrExpr = [] {
           return alignToPowerOf2(script->getDot(), config->maxPageSize) +
                  alignToPowerOf2(script->getDot() % config->maxPageSize,
-                                 Out::tlsPhdr->p_align);
+                                 elfOut().tlsPhdr->p_align);
         };
       else
         cmd->addrExpr = [] {
@@ -2052,7 +2057,8 @@ uint64_t computeFileOffset(OutputSection *os, uint64_t off) {
   // File offsets are not significant for .bss sections other than the first one
   // in a PT_LOAD/PT_TLS. By convention, we keep section offsets monotonically
   // increasing rather than setting to zero.
-  if (os->type == SHT_NOBITS && (!Out::tlsPhdr || Out::tlsPhdr->firstSec != os))
+  if (os->type == SHT_NOBITS &&
+      (!elfOut().tlsPhdr || elfOut().tlsPhdr->firstSec != os))
     return off;
 
   // If the section is not in a PT_LOAD, we just have to align it.
@@ -2092,8 +2098,8 @@ std::string rangeToString(uint64_t addr, uint64_t len) {
 
 // Assign file offsets to output sections.
 template <class ELFT> void OutputWriter<ELFT>::computeFileLayout() {
-  Out::programHeaders->offset = Out::elfHeader->size;
-  uint64_t off = Out::elfHeader->size + Out::programHeaders->size;
+  elfOut().programHeaders->offset = elfOut().elfHeader->size;
+  uint64_t off = elfOut().elfHeader->size + elfOut().programHeaders->size;
 
   PhdrEntry *lastRX = nullptr;
   for (Partition &part : partitions)
@@ -2265,16 +2271,17 @@ uint16_t getELFType() {
 }
 
 template <class ELFT> void OutputWriter<ELFT>::writeHeader() {
-  writeEhdr<ELFT>(Out::bufferStart, *mainPart);
-  writePhdrs<ELFT>(Out::bufferStart + sizeof(Elf_Ehdr), *mainPart);
+  writeEhdr<ELFT>(elfOut().bufferStart, *mainPart);
+  writePhdrs<ELFT>(elfOut().bufferStart + sizeof(Elf_Ehdr), *mainPart);
 
-  auto *eHdr = reinterpret_cast<Elf_Ehdr *>(Out::bufferStart);
+  auto *eHdr = reinterpret_cast<Elf_Ehdr *>(elfOut().bufferStart);
   eHdr->e_type = getELFType();
   eHdr->e_entry = getEntryAddr();
   eHdr->e_shoff = sectionHeaderOff;
 
   // Overflow: use SHdrs[0] sentinel for large section counts.
-  auto *sHdrs = reinterpret_cast<Elf_Shdr *>(Out::bufferStart + eHdr->e_shoff);
+  auto *sHdrs =
+      reinterpret_cast<Elf_Shdr *>(elfOut().bufferStart + eHdr->e_shoff);
   size_t num = outputSections.size() + 1;
   if (num >= SHN_LORESERVE)
     sHdrs->sh_size = num;
@@ -2324,16 +2331,16 @@ template <class ELFT> void OutputWriter<ELFT>::allocateOutputBuffer() {
     return;
   }
   buffer = std::move(*bufferOrErr);
-  Out::bufferStart = buffer->getBufferStart();
+  elfOut().bufferStart = buffer->getBufferStart();
 
-  prefaultBuffer(Out::bufferStart, fileSize);
+  prefaultBuffer(elfOut().bufferStart, fileSize);
 }
 
 template <class ELFT> void OutputWriter<ELFT>::writeSectionsBinary() {
-  parallel::TaskGroup tg;
+  LinkerTaskGroup tg;
   for (OutputSection *sec : outputSections)
     if (sec->flags & SHF_ALLOC)
-      sec->writeTo<ELFT>(Out::bufferStart + sec->offset, tg);
+      sec->writeTo<ELFT>(elfOut().bufferStart + sec->offset, tg);
 }
 
 void fillTrap(uint8_t *i, uint8_t *end) {
@@ -2347,9 +2354,9 @@ template <class ELFT> void OutputWriter<ELFT>::writeTrapInstr() {
     // Fill the last page.
     for (PhdrEntry *p : part.phdrs)
       if (p->p_type == PT_LOAD && (p->p_flags & PF_X))
-        fillTrap(Out::bufferStart +
+        fillTrap(elfOut().bufferStart +
                      alignDown(p->firstSec->offset + p->p_filesz, 4),
-                 Out::bufferStart +
+                 elfOut().bufferStart +
                      alignToPowerOf2(p->firstSec->offset + p->p_filesz,
                                      config->maxPageSize));
 
@@ -2375,9 +2382,9 @@ template <class ELFT> void OutputWriter<ELFT>::writeSections() {
   // patch relocated content in-place, requiring reloc sections to
   // complete first.
   if (config->isRela) {
-    parallel::TaskGroup tg;
+    LinkerTaskGroup tg;
     for (OutputSection *sec : outputSections)
-      sec->writeTo<ELFT>(Out::bufferStart + sec->offset, tg);
+      sec->writeTo<ELFT>(elfOut().bufferStart + sec->offset, tg);
   } else {
     bool hasRelocSec = false;
     for (OutputSection *sec : outputSections)
@@ -2386,23 +2393,23 @@ template <class ELFT> void OutputWriter<ELFT>::writeSections() {
         break;
       }
     if (hasRelocSec) {
-      parallel::TaskGroup tg;
+      LinkerTaskGroup tg;
       for (OutputSection *sec : outputSections)
         if (sec->type == SHT_REL)
-          sec->writeTo<ELFT>(Out::bufferStart + sec->offset, tg);
+          sec->writeTo<ELFT>(elfOut().bufferStart + sec->offset, tg);
     }
     {
-      parallel::TaskGroup tg;
+      LinkerTaskGroup tg;
       for (OutputSection *sec : outputSections)
         if (sec->type != SHT_REL)
-          sec->writeTo<ELFT>(Out::bufferStart + sec->offset, tg);
+          sec->writeTo<ELFT>(elfOut().bufferStart + sec->offset, tg);
     }
   }
 
   if (config->checkDynamicRelocs && config->writeAddends) {
     for (OutputSection *sec : outputSections)
       if (sec->type == SHT_REL || sec->type == SHT_RELA)
-        sec->checkDynRelAddends(Out::bufferStart);
+        sec->checkDynRelAddends(elfOut().bufferStart);
   }
 }
 
@@ -2464,7 +2471,7 @@ template <class ELFT> void OutputWriter<ELFT>::computeContentHash() {
   size_t hashSize = mainPart->buildId->hashSize;
   std::unique_ptr<uint8_t[]> buildId(new uint8_t[hashSize]);
   MutableArrayRef<uint8_t> output(buildId.get(), hashSize);
-  llvm::ArrayRef<uint8_t> input{Out::bufferStart, size_t(fileSize)};
+  llvm::ArrayRef<uint8_t> input{elfOut().bufferStart, size_t(fileSize)};
 
   switch (config->buildId) {
   case BuildIdStyle::Fast:

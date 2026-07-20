@@ -6,13 +6,13 @@
 #include "llvm/Support/TimeProfiler.h"
 #include <algorithm>
 #include <vector>
+#include "Linker/Core/Runtime/LinkerParallel.h"
 
 namespace linker::coff {
 
 namespace {
 size_t getParallelWorklistThreshold() {
-  unsigned threads =
-      std::max(1U, llvm::parallel::strategy.compute_thread_count());
+  unsigned threads = parallelThreadCount();
   size_t threshold = static_cast<size_t>(threads) * 2048;
   return std::clamp<size_t>(threshold, 4096, 65536);
 }
@@ -59,7 +59,7 @@ void markLive(COFFLinkerContext &ctx) {
     addSym(b);
 
   const size_t parallelThreshold = getParallelWorklistThreshold();
-  const bool canParallelize = llvm::parallel::strategy.ThreadsRequested != 1;
+  const bool canParallelize = parallelEnabled();
   while (!worklist.empty()) {
     if (canParallelize && worklist.size() >= parallelThreshold) {
       struct PendingRefs {
@@ -74,7 +74,7 @@ void markLive(COFFLinkerContext &ctx) {
         batch.push_back(worklist.pop_back_val());
 
       std::vector<PendingRefs> pending(batch.size());
-      llvm::parallelFor(0, batch.size(), [&](size_t i) {
+      parallelFor(0, batch.size(), [&](size_t i) {
         SectionChunk *sc = batch[i];
         assert(sc->live && "We mark as live when pushing onto the worklist!");
         PendingRefs &refs = pending[i];

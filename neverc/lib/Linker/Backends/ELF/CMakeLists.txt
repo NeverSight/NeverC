@@ -45,6 +45,9 @@ linker_declare_backend(
     Input/InputSection.cpp
     LTO/LTO.cpp
 
+    # Task-local backend ownership.
+    State/ELFLinkerContext.cpp
+
     # Output layout, scripts, sections and relocations.
     Layout/LinkerScript.cpp
     Layout/OutputSections.cpp

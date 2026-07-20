@@ -6,6 +6,7 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "llvm/Object/ELF.h"
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::object;
@@ -13,10 +14,8 @@ using namespace llvm::ELF;
 using namespace linker;
 using namespace linker::elf;
 
-const TargetInfo *elf::target;
-
 std::string linker::toString(RelType type) {
-  StringRef s = getELFRelocationTypeName(elf::config->emachine, type);
+  StringRef s = getELFRelocationTypeName(elfConfig()->emachine, type);
   if (s == "Unknown")
     return ("Unknown (" + Twine(type) + ")").str();
   return std::string(s);
@@ -42,8 +41,9 @@ ErrorPlace elf::getErrorPlace(const uint8_t *loc) {
       continue;
 
     const uint8_t *isecLoc =
-        Out::bufferStart
-            ? (Out::bufferStart + isec->getParent()->offset + isec->outSecOff)
+        elfOut().bufferStart
+            ? (elfOut().bufferStart + isec->getParent()->offset +
+               isec->outSecOff)
             : isec->contentMaybeDecompress().data();
     if (isecLoc == nullptr) {
       assert(isa<SyntheticSection>(isec) && "No data but not synthetic?");

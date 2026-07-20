@@ -69,7 +69,7 @@ private:
   SmallVector<Symbol *, 0> symVector;
 };
 
-LLVM_LIBRARY_VISIBILITY extern SymbolTable symtab;
+SymbolTable &elfSymtab();
 
 } // namespace linker::elf
 

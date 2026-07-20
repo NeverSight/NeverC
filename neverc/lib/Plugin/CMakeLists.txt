@@ -1,6 +1,12 @@
 set(LLVM_LINK_COMPONENTS Support)
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(NEVERC_PLUGIN_PHASE_SCHEMA_GENERATOR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/gen-phase-schema.py")
+set(NEVERC_PLUGIN_PHASE_SCHEMA
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PhaseSchema.json")
+set(NEVERC_PLUGIN_PHASE_SCHEMA_OUTPUT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginPhaseSchema.inc")
 set(NEVERC_PLUGIN_PREP_SCHEMA_GENERATOR
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/gen-prep-schema.py")
 set(NEVERC_PLUGIN_PREP_SCHEMA
@@ -63,6 +69,18 @@ set(NEVERC_PLUGIN_OBJECT_SCHEMA_TEMPLATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginObjectSchema.inc.in")
 set(NEVERC_PLUGIN_OBJECT_SCHEMA_OUTPUT
     "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginObjectSchema.inc")
+
+add_custom_target(nevercPluginPhaseSchema
+  COMMAND ${Python3_EXECUTABLE}
+          ${NEVERC_PLUGIN_PHASE_SCHEMA_GENERATOR}
+          --check
+  DEPENDS
+    ${NEVERC_PLUGIN_PHASE_SCHEMA_GENERATOR}
+    ${NEVERC_PLUGIN_PHASE_SCHEMA}
+    ${NEVERC_PLUGIN_PHASE_SCHEMA_OUTPUT}
+  COMMENT "Checking NeverC plugin phase schema"
+  VERBATIM
+  )
 
 add_custom_target(nevercPluginPrepSchema
   COMMAND ${Python3_EXECUTABLE}
@@ -450,3 +468,65 @@ else()
     PROPERTIES COMPILE_OPTIONS "-fexceptions;-funwind-tables"
     )
 endif()
+
+set(LLVM_LINK_COMPONENTS
+  Support
+  )
+
+add_neverc_library(nevercPluginLink
+  Link/ArchiveGraph.cpp
+  Link/BinaryImage.cpp
+  Link/BinaryImageCAPI.cpp
+  Link/BuiltinObjectMergeAdapter.cpp
+  Link/ComdatSelectionProvider.cpp
+  Link/ICFProvider.cpp
+  Link/LinkExecutionHooksBridge.cpp
+  Link/LinkGraph.cpp
+  Link/LinkGraphCAPI.cpp
+  Link/LinkInputReader.cpp
+  Link/LinkInvalidation.cpp
+  Link/LinkLayoutProvider.cpp
+  Link/LinkRelaxationProvider.cpp
+  Link/LayoutVerifier.cpp
+  Link/LivenessVerifier.cpp
+  Link/LinkerScriptProvider.cpp
+  Link/LinkMutation.cpp
+  Link/LinkOutputBundle.cpp
+  Link/LinkPhaseCAPI.cpp
+  Link/LinkPhaseExecutor.cpp
+  Link/LinkPhaseRegistry.cpp
+  Link/ObjectGraphImporter.cpp
+  Link/ObjectMergeProvider.cpp
+  Link/LinkProvenance.cpp
+  Link/LinkRequest.cpp
+  Link/LinkRoutePlanner.cpp
+  Link/LinkPluginInterfaces.cpp
+  Link/LinkVerifier.cpp
+  Link/PluginLinkRegistry.cpp
+  Link/SharedLibraryGraph.cpp
+  Link/ResolutionVerifier.cpp
+  Link/RelaxationExecutor.cpp
+  Link/RelocationProvider.cpp
+  Link/RelocationVerifier.cpp
+  Link/SectionGCProvider.cpp
+  Link/SymbolResolutionProvider.cpp
+  Link/SynthesisVerifier.cpp
+  Link/SyntheticSectionProvider.cpp
+  Link/ThunkStubProvider.cpp
+  LTO/LTOInputSet.cpp
+
+  LINK_LIBS
+  LLVMBitReader
+  LLVMCore
+  LLVMLTO
+  nevercPluginCore
+  nevercPluginIO
+  nevercPluginIR
+  nevercPluginTarget
+  nevercPluginMCObject
+  nevercFoundation
+  nevercMerge
+  )
+add_dependencies(nevercPluginLink
+  nevercPluginPhaseSchema
+  )

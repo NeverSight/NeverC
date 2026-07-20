@@ -615,6 +615,10 @@ Error PluginPhaseExecutor::importSessionRegistrations(
       case PluginRegistrationKind::MCAsmBackend:
       case PluginRegistrationKind::ObjectFormat:
       case PluginRegistrationKind::CodeGenEdge:
+      case PluginRegistrationKind::LinkerProvider:
+      case PluginRegistrationKind::ObjectMergeProvider:
+      case PluginRegistrationKind::BinaryImageVerifier:
+      case PluginRegistrationKind::LTOProvider:
         break;
       }
     }
@@ -1009,6 +1013,7 @@ NevercStatus NEVERC_CALL PluginPhaseExecutor::invokeNext(
     return Status;
   State->DownstreamResult = NextResult;
   State->HasDownstreamResult = true;
+  Context.Frame.CurrentOutput = NextResult.Output;
   return writeResult(OutResult, NextResult);
 }
 

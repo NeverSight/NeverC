@@ -7,6 +7,8 @@
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Object/Archive.h"
+#include <memory>
+#include <utility>
 
 namespace linker::macho {
 
@@ -71,7 +73,20 @@ void treatUndefinedSymbol(const Undefined &, StringRef source);
 void treatUndefinedSymbol(const Undefined &, const InputSection *,
                           uint64_t offset);
 
-extern std::unique_ptr<SymbolTable> symtab;
+std::unique_ptr<SymbolTable> &machoSymtab();
+
+struct SymbolTableAccessor {
+  SymbolTable *operator->() const { return machoSymtab().get(); }
+  SymbolTable &operator*() const { return *machoSymtab(); }
+  explicit operator bool() const {
+    return static_cast<bool>(machoSymtab());
+  }
+  void operator=(std::unique_ptr<SymbolTable> Value) const {
+    machoSymtab() = std::move(Value);
+  }
+};
+
+inline constexpr SymbolTableAccessor symtab;
 
 } // namespace linker::macho
 

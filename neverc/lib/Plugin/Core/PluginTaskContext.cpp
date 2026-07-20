@@ -235,9 +235,9 @@ Error PluginTaskContext::end() {
     Ending = true;
   }
 
-  Error CleanupErrors = Error::success();
-  if (RegisteredScope)
-    CleanupErrors = ProcessServices.prepareTaskScopeEnd(Handle);
+  Error CleanupErrors =
+      RegisteredScope ? ProcessServices.prepareTaskScopeEnd(Handle)
+                      : Error::success();
   CleanupErrors =
       joinErrors(std::move(CleanupErrors), rollbackBegunPlugins());
   if (HandleArena)

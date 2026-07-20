@@ -91,6 +91,33 @@ constexpr PluginHandleKind PluginObjectFormatHandleKind = 129;
 constexpr PluginHandleKind PluginObjectProbeHandleKind = 130;
 constexpr PluginHandleKind PluginObjectLayoutProofHandleKind = 131;
 constexpr PluginHandleKind PluginMutableBinaryBuilderHandleKind = 132;
+constexpr PluginHandleKind PluginLinkGraphHandleKind = 140;
+constexpr PluginHandleKind PluginLinkInputHandleKind = 141;
+constexpr PluginHandleKind PluginLinkArchiveMemberHandleKind = 142;
+constexpr PluginHandleKind PluginLinkSectionHandleKind = 143;
+constexpr PluginHandleKind PluginLinkAtomHandleKind = 144;
+constexpr PluginHandleKind PluginLinkSymbolHandleKind = 145;
+constexpr PluginHandleKind PluginLinkEdgeHandleKind = 146;
+constexpr PluginHandleKind PluginLinkComdatHandleKind = 147;
+constexpr PluginHandleKind PluginLinkImportHandleKind = 148;
+constexpr PluginHandleKind PluginLinkExportHandleKind = 149;
+constexpr PluginHandleKind PluginLinkSyntheticHandleKind = 150;
+constexpr PluginHandleKind PluginLinkConstraintHandleKind = 151;
+constexpr PluginHandleKind PluginLinkMutationHandleKind = 152;
+constexpr PluginHandleKind PluginLinkProofHandleKind = 153;
+constexpr PluginHandleKind PluginBinaryImageHandleKind = 154;
+constexpr PluginHandleKind PluginOutputBundleHandleKind = 155;
+constexpr PluginHandleKind PluginLinkArchiveHandleKind = 156;
+constexpr PluginHandleKind PluginLinkSharedLibraryHandleKind = 157;
+constexpr PluginHandleKind PluginLinkBitcodeModuleHandleKind = 158;
+constexpr PluginHandleKind PluginLinkUnwindHandleKind = 159;
+constexpr PluginHandleKind PluginObjectMergeSerializationHandleKind = 160;
+constexpr PluginHandleKind PluginLTORequestHandleKind = 161;
+constexpr PluginHandleKind PluginLTOInputModuleHandleKind = 162;
+constexpr PluginHandleKind PluginLTOSummaryHandleKind = 163;
+constexpr PluginHandleKind PluginLTOResolutionHandleKind = 164;
+constexpr PluginHandleKind PluginBinarySegmentHandleKind = 165;
+constexpr PluginHandleKind PluginBinarySectionHandleKind = 166;
 
 class PluginHandleArena {
 public:

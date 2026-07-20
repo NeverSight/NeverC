@@ -16,6 +16,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/TextAPI/InterfaceFile.h"
 #include "llvm/TextAPI/TextAPIReader.h"
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::MachO;
@@ -104,10 +105,6 @@ std::optional<StringRef> macho::resolveDylibPath(StringRef dylibPath) {
 
 // It's not uncommon to have multiple attempts to load a single dylib,
 // especially if it's a commonly re-exported core library.
-namespace {
-DenseMap<CachedHashStringRef, DylibFile *> loadedDylibs;
-} // namespace
-
 // ===----------------------------------------------------------------------===
 // Dylib loading & caching
 // ===----------------------------------------------------------------------===
@@ -252,8 +249,8 @@ void macho::DependencyTracker::write(const SetVector<InputFile *> &inputs,
     inputNames.push_back(f->getName());
   llvm::sort(inputNames);
 
-  for (const StringRef &in : inputNames)
-    addDep(DepOpCode::Input, in);
+  for (const StringRef &InputName : inputNames)
+    addDep(DepOpCode::Input, InputName);
 
   for (const std::string &f : notFounds)
     addDep(DepOpCode::NotFound, f);

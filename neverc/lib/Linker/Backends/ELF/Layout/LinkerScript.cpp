@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cassert>
 #include <string>
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -25,8 +26,6 @@ using namespace llvm::object;
 using namespace llvm::support::endian;
 using namespace linker;
 using namespace linker::elf;
-
-std::unique_ptr<LinkerScript> elf::script;
 
 // ===----------------------------------------------------------------------===
 // Helpers
@@ -1271,8 +1270,8 @@ void LinkerScript::allocateHeaders(SmallVector<PhdrEntry *, 0> &phdrs) {
   if ((paged || hasExplicitHeaders) &&
       headerSize <= min - computeBase(min, hasExplicitHeaders)) {
     min = alignDown(min - headerSize, config->maxPageSize);
-    Out::elfHeader->addr = min;
-    Out::programHeaders->addr = min + Out::elfHeader->size;
+    elfOut().elfHeader->addr = min;
+    elfOut().programHeaders->addr = min + elfOut().elfHeader->size;
     return;
   }
 
@@ -1280,8 +1279,8 @@ void LinkerScript::allocateHeaders(SmallVector<PhdrEntry *, 0> &phdrs) {
   if (hasExplicitHeaders)
     error("could not allocate headers");
 
-  Out::elfHeader->ptLoad = nullptr;
-  Out::programHeaders->ptLoad = nullptr;
+  elfOut().elfHeader->ptLoad = nullptr;
+  elfOut().programHeaders->ptLoad = nullptr;
   firstPTLoad->firstSec = findFirstSection(firstPTLoad);
 
   llvm::erase_if(phdrs,
@@ -1308,8 +1307,8 @@ const Defined *LinkerScript::assignAddresses() {
   } else {
     // Assign addresses to headers right now.
     dot = target->getImageBase();
-    Out::elfHeader->addr = dot;
-    Out::programHeaders->addr = dot + Out::elfHeader->size;
+    elfOut().elfHeader->addr = dot;
+    elfOut().programHeaders->addr = dot + elfOut().elfHeader->size;
     dot += getHeaderSize();
   }
 
@@ -1344,9 +1343,9 @@ SmallVector<PhdrEntry *, 0> LinkerScript::createPhdrs() {
     PhdrEntry *phdr = make<PhdrEntry>(cmd.type, cmd.flags.value_or(PF_R));
 
     if (cmd.hasFilehdr)
-      phdr->add(Out::elfHeader);
+      phdr->add(elfOut().elfHeader);
     if (cmd.hasPhdrs)
-      phdr->add(Out::programHeaders);
+      phdr->add(elfOut().programHeaders);
 
     if (cmd.lmaExpr) {
       phdr->p_paddr = cmd.lmaExpr().getValue();

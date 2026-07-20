@@ -2,5 +2,3 @@
 
 using namespace linker;
 using namespace linker::macho;
-
-TargetInfo *macho::target = nullptr;

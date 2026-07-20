@@ -1,6 +1,7 @@
 #ifndef LINKER_ELF_SYNTHETIC_SECTIONS_H
 #define LINKER_ELF_SYNTHETIC_SECTIONS_H
 
+#include "Linker/Core/Runtime/Session.h"
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/InputSection.h"
 #include "Linker/ELF/Symbols.h"
@@ -10,8 +11,9 @@
 #include "llvm/MC/StringTableBuilder.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Endian.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/Threading.h"
+#include <utility>
+#include <vector>
 
 namespace linker::elf {
 class Defined;
@@ -247,7 +249,7 @@ public:
   /// address/the address of the corresponding GOT entry/etc.
   int64_t computeAddend() const;
 
-  void computeRaw(SymbolTableBaseSection *symtab);
+  void computeRaw(SymbolTableBaseSection *symbolTable);
 
   Symbol *sym;
   const OutputSection *outputSec = nullptr;
@@ -352,7 +354,7 @@ protected:
 
 template <>
 inline void RelocationBaseSection::addReloc<true>(const DynamicReloc &reloc) {
-  relocsVec[llvm::parallel::getThreadIndex()].push_back(reloc);
+  relocsVec[currentLinkerWorkerSlot()].push_back(reloc);
 }
 
 template <class ELFT>
@@ -901,10 +903,45 @@ struct Partition {
   std::unique_ptr<SyntheticSection> verNeed;
   std::unique_ptr<VersionTableSection> verSym;
 
-  unsigned getNumber() const { return this - &partitions[0] + 1; }
+  unsigned getNumber() const;
 };
 
-LLVM_LIBRARY_VISIBILITY extern Partition *mainPart;
+std::vector<Partition> &elfPartitions();
+
+struct PartitionsAccessor {
+  auto begin() const { return elfPartitions().begin(); }
+  auto end() const { return elfPartitions().end(); }
+  size_t size() const { return elfPartitions().size(); }
+  bool empty() const { return elfPartitions().empty(); }
+  Partition *data() const { return elfPartitions().data(); }
+  void clear() const { elfPartitions().clear(); }
+  template <typename... Args> Partition &emplace_back(Args &&...Arguments) const {
+    return elfPartitions().emplace_back(
+        std::forward<Args>(Arguments)...);
+  }
+  Partition &back() const { return elfPartitions().back(); }
+  Partition &operator[](size_t Index) const {
+    return elfPartitions()[Index];
+  }
+  operator std::vector<Partition> &() const { return elfPartitions(); }
+};
+
+inline constexpr PartitionsAccessor partitions;
+
+Partition *&elfMainPart();
+
+struct MainPartitionAccessor {
+  Partition *operator->() const { return elfMainPart(); }
+  Partition &operator*() const { return *elfMainPart(); }
+  operator Partition *() const { return elfMainPart(); }
+  void operator=(Partition *Value) const { elfMainPart() = Value; }
+};
+
+inline constexpr MainPartitionAccessor mainPart;
+
+inline unsigned Partition::getNumber() const {
+  return this - &partitions[0] + 1;
+}
 
 inline Partition &SectionBase::getPartition() const {
   assert(isLive());
@@ -936,7 +973,7 @@ struct InStruct {
   void reset();
 };
 
-LLVM_LIBRARY_VISIBILITY extern InStruct in;
+InStruct &elfIn();
 
 } // namespace linker::elf
 

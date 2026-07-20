@@ -34,6 +34,7 @@ enum class ErrorTag { LibNotFound, SymbolNotFound };
 class ErrorHandler {
 public:
   ~ErrorHandler();
+  void runCleanup() noexcept;
 
   void initialize(llvm::raw_ostream &stdoutOS, llvm::raw_ostream &stderrOS,
                   bool exitEarly, bool disableOutput);

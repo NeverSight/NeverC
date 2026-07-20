@@ -372,7 +372,20 @@ public:
   SmallVector<const InputSectionBase *, 0> orphanSections;
 };
 
-LLVM_LIBRARY_VISIBILITY extern std::unique_ptr<LinkerScript> script;
+std::unique_ptr<LinkerScript> &elfScript();
+
+struct LinkerScriptAccessor {
+  LinkerScript *operator->() const { return elfScript().get(); }
+  LinkerScript &operator*() const { return *elfScript(); }
+  explicit operator bool() const {
+    return static_cast<bool>(elfScript());
+  }
+  void operator=(std::unique_ptr<LinkerScript> Value) const {
+    elfScript() = std::move(Value);
+  }
+};
+
+inline constexpr LinkerScriptAccessor script;
 
 } // end namespace linker::elf
 

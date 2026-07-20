@@ -18,11 +18,11 @@
 
 #include "Linker/Core/Support/FileIO.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/FileOutputBuffer.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/thread.h"
 
@@ -143,7 +143,7 @@ void linker::unlinkAsync(StringRef path) {
   }
   sys::fs::remove(path);
 #else
-  if (parallel::strategy.ThreadsRequested == 1)
+  if (!parallelEnabled())
     return;
 
   // We cannot just remove `path` from a different thread, because the

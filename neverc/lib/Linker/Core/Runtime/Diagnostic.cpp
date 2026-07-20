@@ -32,9 +32,14 @@ StringRef getSeparator(const Twine &msg) {
 }
 } // namespace
 
-linker::ErrorHandler::~ErrorHandler() {
-  if (cleanupCallback)
-    cleanupCallback();
+linker::ErrorHandler::~ErrorHandler() { runCleanup(); }
+
+void linker::ErrorHandler::runCleanup() noexcept {
+  if (!cleanupCallback)
+    return;
+  auto Cleanup = std::move(cleanupCallback);
+  cleanupCallback = nullptr;
+  Cleanup();
 }
 
 void linker::ErrorHandler::initialize(llvm::raw_ostream &stdoutOS,

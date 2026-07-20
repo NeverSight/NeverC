@@ -96,9 +96,10 @@ NamePair maybeRenameSection(NamePair key);
 
 // Output sections are added to output segments in iteration order
 // of ConcatOutputSection, so must have deterministic iteration order.
-extern llvm::MapVector<NamePair, ConcatOutputSection *> concatOutputSections;
+llvm::MapVector<NamePair, ConcatOutputSection *> &
+machoConcatOutputSections();
 
-extern llvm::DenseMap<Symbol *, ThunkInfo> thunkMap;
+llvm::DenseMap<Symbol *, ThunkInfo> &machoThunkMap();
 
 } // namespace linker::macho
 

@@ -20,8 +20,13 @@ namespace linker {
 // per-type arenas can be found through a single dense map.
 struct SpecificAllocBase {
   virtual ~SpecificAllocBase() = default;
-  static SpecificAllocBase *getOrCreate(void *tag, size_t size, size_t align,
+  virtual void destroy() noexcept = 0;
+  static SpecificAllocBase *getOrCreate(const void *tag, size_t size,
+                                        size_t align,
                                         SpecificAllocBase *(&creator)(void *));
+  static SpecificAllocBase *
+  getOrCreateWorker(const void *tag, size_t size, size_t align,
+                    SpecificAllocBase *(&creator)(void *));
 };
 
 // Arena of specific type `T`, created on-demand by `getOrCreate`.
@@ -29,13 +34,14 @@ template <class T> struct SpecificAlloc : public SpecificAllocBase {
   static SpecificAllocBase *create(void *storage) {
     return new (storage) SpecificAlloc<T>();
   }
+  void destroy() noexcept override { this->~SpecificAlloc(); }
   llvm::SpecificBumpPtrAllocator<T> alloc;
-  static int tag;
+  static const unsigned char tag;
 };
 
 // The address of this static member is only used as the key inside
 // `CommonLinkerContext::instances`.  Its value does not matter.
-template <class T> int SpecificAlloc<T>::tag = 0;
+template <class T> const unsigned char SpecificAlloc<T>::tag = 0;
 
 // Look up (and create on the first call) the arena backing type `T`.
 template <typename T>
@@ -46,32 +52,31 @@ inline llvm::SpecificBumpPtrAllocator<T> &getSpecificAllocSingleton() {
   return ((SpecificAlloc<T> *)instance)->alloc;
 }
 
-// Construct a `T` inside the context arena.  The instance is destroyed when
-// the backend's `link()` returns (and `CommonLinkerContext::destroy()` runs).
+// Construct a `T` inside the context arena. The instance is destroyed when
+// its owning LinkerExecutionContext leaves scope.
 template <typename T, typename... U> T *make(U &&...args) {
   return new (getSpecificAllocSingleton<T>().Allocate())
       T(std::forward<U>(args)...);
 }
 
-// Thread-local variant of `make<T>()`.  Used by parallel input-section
-// initialisation where the callers guarantee that the allocated value
-// outlives the enclosing `parallelForEach`.  Some backends (ELF) avoid
-// the context indirection on perf-sensitive paths and reach for this
-// version directly.
+// Worker-sharded variant of `make<T>()`. Each arena belongs to the active
+// LinkerExecutionContext and is destroyed after all task workers join.
 template <typename T>
 inline llvm::SpecificBumpPtrAllocator<T> &
-getSpecificAllocSingletonThreadLocal() {
-  thread_local SpecificAlloc<T> instance;
-  return instance.alloc;
+getTaskWorkerSpecificAlloc() {
+  SpecificAllocBase *Instance = SpecificAllocBase::getOrCreateWorker(
+      &SpecificAlloc<T>::tag, sizeof(SpecificAlloc<T>),
+      alignof(SpecificAlloc<T>), SpecificAlloc<T>::create);
+  return static_cast<SpecificAlloc<T> *>(Instance)->alloc;
 }
 
 template <typename T, typename... U> T *makeThreadLocal(U &&...args) {
-  return new (getSpecificAllocSingletonThreadLocal<T>().Allocate())
+  return new (getTaskWorkerSpecificAlloc<T>().Allocate())
       T(std::forward<U>(args)...);
 }
 
 template <typename T> T *makeThreadLocalN(size_t n) {
-  return new (getSpecificAllocSingletonThreadLocal<T>().Allocate(n)) T[n];
+  return new (getTaskWorkerSpecificAlloc<T>().Allocate(n)) T[n];
 }
 
 } // namespace linker

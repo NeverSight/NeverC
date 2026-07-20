@@ -17,6 +17,7 @@
 #include <mutex>
 #include <optional>
 #include <vector>
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -375,7 +376,7 @@ void InputSection::copyRelocations(uint8_t *buf) {
 template <class ELFT, class RelTy, class RelIt>
 void InputSection::copyRelocations(uint8_t *buf,
                                    llvm::iterator_range<RelIt> rels) {
-  const TargetInfo &target = *elf::target;
+  const TargetInfo &target = *elfTarget();
   InputSectionBase *sec = getRelocatedSection();
   (void)sec->contentMaybeDecompress(); // uncompress if needed
 
@@ -469,7 +470,7 @@ uint64_t getAArch64UndefinedRelativeWeakVA(uint64_t type, uint64_t p) {
 // target-specific adjustment to produce a thread-pointer-relative offset.
 int64_t getTlsTpOffset(const Symbol &s) {
   // On targets that support TLSDESC, _TLS_MODULE_BASE_@tpoff = 0.
-  if (&s == ElfSym::tlsModuleBase)
+  if (&s == elfSym().tlsModuleBase)
     return 0;
 
   // There are 2 TLS layouts. Among targets we support, x86 uses TLS Variant 2
@@ -484,7 +485,7 @@ int64_t getTlsTpOffset(const Symbol &s) {
   // before TP. The alignment padding is added so that (TP - padding -
   // p_memsz) is congruent to p_vaddr modulo p_align.
   // x86_64 (Variant 2), AArch64 (Variant 1) only.
-  PhdrEntry *tls = Out::tlsPhdr;
+  PhdrEntry *tls = elfOut().tlsPhdr;
   switch (config->emachine) {
   case EM_X86_64:
     return s.getVA(0) - tls->p_memsz -
@@ -616,7 +617,7 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
 template <class ELFT, class RelTy>
 void InputSection::relocateNonAlloc(uint8_t *buf, ArrayRef<RelTy> rels) {
   const unsigned bits = sizeof(typename ELFT::uint) * 8;
-  const TargetInfo &target = *elf::target;
+  const TargetInfo &target = *elfTarget();
   const auto emachine = config->emachine;
   const bool isDebug = isDebugSection(*this);
   const bool isDebugLine = isDebug && name == ".debug_line";

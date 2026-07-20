@@ -2,10 +2,10 @@
 #define LINKER_ELF_OUTPUT_SECTIONS_H
 
 #include "Linker/Core/Support/LlvmAliases.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/ELF/InputSection.h"
 #include "Linker/ELF/LinkerScript.h"
 #include "llvm/Support/Compiler.h"
-#include "llvm/Support/Parallel.h"
 
 #include <array>
 
@@ -99,7 +99,7 @@ public:
 
   void finalize();
   template <class ELFT>
-  void writeTo(uint8_t *buf, llvm::parallel::TaskGroup &tg);
+  void writeTo(uint8_t *buf, LinkerTaskGroup &tg);
   // Check that the addends for dynamic relocations were written correctly.
   void checkDynRelAddends(const uint8_t *bufStart);
   template <class ELFT> void maybeCompress();
@@ -134,23 +134,42 @@ llvm::ArrayRef<InputSection *>
 getInputSections(const OutputSection &os,
                  SmallVector<InputSection *, 0> &storage);
 
-// All output sections that are handled by the linker specially are
-// globally accessible. The image emitter initializes them, so don't use them
-// until emission setup is complete.
-struct Out {
-  static uint8_t *bufferStart;
-  static PhdrEntry *tlsPhdr;
-  static OutputSection *elfHeader;
-  static OutputSection *programHeaders;
-  static OutputSection *preinitArray;
-  static OutputSection *initArray;
-  static OutputSection *finiArray;
+// Output sections owned by one ELF link task. The image emitter initializes
+// them, so don't use them until emission setup is complete.
+struct ElfOutputState {
+  uint8_t *bufferStart = nullptr;
+  PhdrEntry *tlsPhdr = nullptr;
+  OutputSection *elfHeader = nullptr;
+  OutputSection *programHeaders = nullptr;
+  OutputSection *preinitArray = nullptr;
+  OutputSection *initArray = nullptr;
+  OutputSection *finiArray = nullptr;
 };
 
+ElfOutputState &elfOut();
 uint64_t getHeaderSize();
 
-LLVM_LIBRARY_VISIBILITY extern llvm::SmallVector<OutputSection *, 0>
-    outputSections;
+llvm::SmallVector<OutputSection *, 0> &elfOutputSections();
+
+struct OutputSectionsAccessor {
+  auto begin() const { return elfOutputSections().begin(); }
+  auto end() const { return elfOutputSections().end(); }
+  size_t size() const { return elfOutputSections().size(); }
+  bool empty() const { return elfOutputSections().empty(); }
+  OutputSection **data() const { return elfOutputSections().data(); }
+  void clear() const { elfOutputSections().clear(); }
+  void push_back(OutputSection *Section) const {
+    elfOutputSections().push_back(Section);
+  }
+  OutputSection *&operator[](size_t Index) const {
+    return elfOutputSections()[Index];
+  }
+  operator llvm::ArrayRef<OutputSection *>() const {
+    return elfOutputSections();
+  }
+};
+
+inline constexpr OutputSectionsAccessor outputSections;
 } // namespace linker::elf
 
 #endif

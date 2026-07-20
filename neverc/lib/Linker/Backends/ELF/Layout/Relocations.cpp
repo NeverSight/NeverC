@@ -14,6 +14,7 @@
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Support/Endian.h"
 #include <algorithm>
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -702,7 +703,7 @@ void addRelativeReloc(InputSectionBase &isec, uint64_t offsetInSec, Symbol &sym,
   if (part.relrDyn && isec.addralign >= 2 && offsetInSec % 2 == 0) {
     isec.addReloc({expr, type, offsetInSec, addend, &sym});
     if (shard)
-      part.relrDyn->relocsVec[parallel::getThreadIndex()].push_back(
+      part.relrDyn->relocsVec[currentLinkerWorkerSlot()].push_back(
           {&isec, offsetInSec});
     else
       part.relrDyn->relocs.push_back({&isec, offsetInSec});
@@ -1191,7 +1192,7 @@ template <class ELFT> void elf::scanRelocations() {
   // Deterministic parallellism needs sorting relocations which is unsuitable
   // for -z nocombreloc.
   bool serial = !config->zCombreloc;
-  parallel::TaskGroup tg;
+  LinkerTaskGroup tg;
   for (ELFFileBase *f : ctx.objectFiles) {
     auto fn = [f]() {
       RelocationScanner scanner;
@@ -1201,16 +1202,16 @@ template <class ELFT> void elf::scanRelocations() {
           scanner.template scanSection<ELFT>(*s);
       }
     };
-    tg.spawn(fn, serial);
+    tg.spawn(bindLinkerContext(std::move(fn)), serial);
   }
 
-  tg.spawn([] {
+  tg.spawn(bindLinkerContext([] {
     RelocationScanner scanner;
     for (Partition &part : partitions) {
       for (EhInputSection *sec : part.ehFrame->sections)
         scanner.template scanSection<ELFT>(*sec);
     }
-  });
+  }));
 }
 
 namespace {

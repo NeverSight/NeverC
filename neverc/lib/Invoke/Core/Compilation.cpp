@@ -11,6 +11,7 @@
 #include "Plugin/JobExecutionBridge.h"
 #include "Plugin/JobGraph.h"
 #include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
+#include "neverc/Plugin/Host/LinkExecutionHooksBridge.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Option/ArgList.h"
@@ -18,6 +19,7 @@
 #include "llvm/Option/Option.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/thread.h"
@@ -65,10 +67,60 @@ void Compilation::configurePluginSession(Command &C) {
     DirectOpts.Outputs = &Outputs;
     if (PluginSession)
       DirectOpts.PluginSession = PluginSession;
-  } else if (PluginSession &&
-             C.getKind() == Command::CK_LinkerCommand) {
-    static_cast<LinkerCommand &>(C).getDriverConfig().pluginSession =
-        PluginSession;
+  } else if (C.getKind() == Command::CK_LinkerCommand) {
+    auto &Linker = static_cast<LinkerCommand &>(C);
+    ::linker::LinkerDriverConfig &Config = Linker.getDriverConfig();
+    auto Request = std::make_shared<::linker::LinkExecutionRequest>();
+    Request->TargetTriple = DefaultToolChain.getTripleString();
+    Request->OutputURI = Config.outputFile;
+    Request->OutputKind =
+        Config.relocatable
+            ? ::linker::LinkExecutionOutputKind::Relocatable
+            : (Config.shared
+                   ? ::linker::LinkExecutionOutputKind::SharedLibrary
+                   : (Config.bundle
+                          ? ::linker::LinkExecutionOutputKind::Bundle
+                          : ::linker::LinkExecutionOutputKind::Executable));
+    Request->Inputs.reserve(C.getInputInfos().size());
+    for (const InputInfo &Input : C.getInputInfos()) {
+      std::string Path;
+      if (Input.isFilename())
+        Path = Input.getFilename();
+      else if (Input.isInputArg())
+        Path = Input.getInputArg().getValue();
+      else
+        continue;
+
+      ::linker::LinkExecutionInput LinkInput;
+      LinkInput.Ordinal = Request->Inputs.size();
+      LinkInput.LogicalURI = Path;
+      const auto Extension =
+          llvm::sys::path::extension(Path).lower();
+      if (Extension == ".a" || Extension == ".lib")
+        LinkInput.Kind = ::linker::LinkExecutionInputKind::Archive;
+      else if (Extension == ".so" || Extension == ".dylib" ||
+               Extension == ".dll")
+        LinkInput.Kind =
+            ::linker::LinkExecutionInputKind::SharedLibrary;
+      else if (Extension == ".bc" ||
+               Input.getType() == types::TY_LLVM_BC ||
+               Input.getType() == types::TY_LTO_BC)
+        LinkInput.Kind = ::linker::LinkExecutionInputKind::Bitcode;
+      else
+        LinkInput.Kind = ::linker::LinkExecutionInputKind::Object;
+      Request->Inputs.push_back(std::move(LinkInput));
+    }
+    Request->ArgumentProvenance.reserve(C.getArguments().size());
+    for (const char *Argument : C.getArguments())
+      Request->ArgumentProvenance.emplace_back(Argument ? Argument : "");
+    Config.executionRequest = std::move(Request);
+
+    if (PluginSession) {
+      Config.pluginSession = PluginSession;
+      Config.executionHooks =
+          std::make_shared<plugin::LinkExecutionHooksBridge>(
+              PluginSession, Outputs);
+    }
   }
 }
 

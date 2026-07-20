@@ -28,11 +28,13 @@ set(linker_core_driver
   Driver/ArgList.cpp
   Driver/CodegenFlags.cpp
   Driver/CommonLTOConfig.cpp
+  Driver/Dispatcher.cpp
   Driver/LTOCache.cpp)
 
 set(linker_core_runtime
   Runtime/Allocator.cpp
   Runtime/Diagnostic.cpp
+  Runtime/LinkerExecutionContext.cpp
   Runtime/Session.cpp
   Runtime/Stopwatch.cpp)
 

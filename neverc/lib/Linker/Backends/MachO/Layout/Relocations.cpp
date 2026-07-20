@@ -5,6 +5,7 @@
 #include "Linker/MachO/Target.h"
 
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 using namespace linker;

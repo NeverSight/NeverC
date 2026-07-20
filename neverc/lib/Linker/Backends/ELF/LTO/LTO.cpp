@@ -1,6 +1,7 @@
 #include "Linker/ELF/LTO.h"
 #include "Linker/Core/Driver/CommonLTOConfig.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Support/Strings.h"
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/InputFiles.h"
@@ -9,10 +10,10 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/LTO/LTO.h"
-#include "llvm/Support/Parallel.h"
 #include <cstddef>
 #include <memory>
 #include <vector>
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;

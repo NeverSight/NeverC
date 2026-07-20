@@ -39,6 +39,7 @@ class Defined;
 class AliasSymbol;
 struct Reloc;
 enum class RefState : uint8_t;
+int &machoInputFileIdCount();
 
 // If .subsections_via_symbols is set, each InputSection will be split along
 // symbol boundaries. The field offset represents the offset of the subsection
@@ -103,7 +104,7 @@ public:
   virtual ~InputFile() = default;
   Kind kind() const { return fileKind; }
   StringRef getName() const { return name; }
-  static void resetIdCount() { idCount = 0; }
+  static void resetIdCount() { machoInputFileIdCount() = 0; }
 
   MemoryBufferRef mb;
 
@@ -122,7 +123,7 @@ public:
 
 protected:
   InputFile(Kind kind, MemoryBufferRef mb, bool lazy = false)
-      : mb(mb), id(idCount++), lazy(lazy), fileKind(kind),
+      : mb(mb), id(machoInputFileIdCount()++), lazy(lazy), fileKind(kind),
         name(mb.getBufferIdentifier()) {}
 
   InputFile(Kind, const llvm::MachO::InterfaceFile &);
@@ -133,8 +134,6 @@ protected:
 private:
   const Kind fileKind;
   const StringRef name;
-
-  static int idCount;
 };
 
 struct FDE {
@@ -316,9 +315,10 @@ private:
   void parseLazy();
 };
 
-extern llvm::SetVector<InputFile *> inputFiles;
-extern llvm::DenseMap<llvm::CachedHashStringRef, MemoryBufferRef> cachedReads;
-extern llvm::SmallVector<StringRef> unprocessedLCLinkerOptions;
+llvm::SetVector<InputFile *> &machoInputFiles();
+llvm::DenseMap<llvm::CachedHashStringRef, MemoryBufferRef> &
+machoCachedReads();
+llvm::SmallVector<StringRef> &machoUnprocessedLCLinkerOptions();
 
 std::optional<MemoryBufferRef> readFile(StringRef path,
                                         bool reportError = true);

@@ -1,4 +1,5 @@
 #include "Linker/ELF/MarkLive.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Strings.h"
 #include "Linker/ELF/InputFiles.h"
@@ -9,10 +10,10 @@
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
 #include "llvm/Object/ELF.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <algorithm>
 #include <vector>
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -27,7 +28,7 @@ using namespace linker::elf;
 
 namespace {
 size_t getParallelWorklistThreshold() {
-  unsigned threads = std::max(1U, parallel::strategy.compute_thread_count());
+  unsigned threads = parallelThreadCount();
   size_t threshold = static_cast<size_t>(threads) * 2048;
   return std::clamp<size_t>(threshold, 4096, 65536);
 }
@@ -292,7 +293,7 @@ template <class ELFT> void MarkLive<ELFT>::run() {
 
 template <class ELFT> void MarkLive<ELFT>::mark() {
   const size_t parallelThreshold = getParallelWorklistThreshold();
-  const bool canParallelize = parallel::strategy.ThreadsRequested != 1;
+  const bool canParallelize = parallelEnabled();
   // Mark all reachable sections.
   while (!queue.empty()) {
     if (canParallelize && queue.size() >= parallelThreshold) {

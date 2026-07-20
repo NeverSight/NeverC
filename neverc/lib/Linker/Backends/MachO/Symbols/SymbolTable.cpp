@@ -7,6 +7,7 @@
 #include "Linker/MachO/InputSection.h"
 #include "Linker/MachO/Symbols.h"
 #include "Linker/MachO/SyntheticSections.h"
+#include "Linker/MachO/MachOContextAccess.h"
 using namespace llvm;
 using namespace linker;
 using namespace linker::macho;
@@ -685,5 +686,3 @@ void macho::treatUndefinedSymbol(const Undefined &sym, const InputSection *isec,
 
   undefs[&sym].codeReferences.push_back({isec, offset});
 }
-
-std::unique_ptr<SymbolTable> macho::symtab;

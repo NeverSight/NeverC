@@ -6,16 +6,17 @@
 #include "Linker/ELF/SymbolTable.h"
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELF.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/xxhash.h"
 #include <algorithm>
 #include <atomic>
 #include <vector>
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -345,7 +346,7 @@ template <class ELFT>
 void ICF<ELFT>::forEachClass(llvm::function_ref<void(size_t, size_t)> fn) {
   // If threading is disabled or the number of sections are
   // too small to use threading, call Fn sequentially.
-  if (parallel::strategy.ThreadsRequested == 1 || sections.size() < 1024) {
+  if (!parallelEnabled() || sections.size() < 1024) {
     forEachClassRange(0, sections.size(), fn);
     ++cnt;
     return;
@@ -359,7 +360,7 @@ void ICF<ELFT>::forEachClass(llvm::function_ref<void(size_t, size_t)> fn) {
   // so that Fn can modify the Chunks in its shard without causing data
   // races.
   size_t numShards =
-      std::max<size_t>(1, parallel::strategy.compute_thread_count() * 4);
+      std::max<size_t>(1, parallelThreadCount() * 4);
   numShards = std::min<size_t>(numShards, 256);
   numShards = std::min<size_t>(numShards, sections.size());
   if (numShards <= 1) {
@@ -547,10 +548,10 @@ template <class ELFT> void ICF<ELFT>::run() {
     const unsigned nextSlot = (hashPass + 1) % 2;
     bool changedAny = false;
     static constexpr size_t kParallelHashPassThreshold = 1024;
-    if (parallel::strategy.ThreadsRequested != 1 &&
+    if (parallelEnabled() &&
         sections.size() >= kParallelHashPassThreshold) {
       size_t numChunks =
-          std::max<size_t>(1, parallel::strategy.compute_thread_count() * 4);
+          std::max<size_t>(1, parallelThreadCount() * 4);
       numChunks = std::min<size_t>(numChunks, sections.size());
       std::vector<uint8_t> changedByChunk(numChunks, 0);
       parallelFor(0, numChunks, [&](size_t chunkIdx) {

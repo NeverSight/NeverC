@@ -3,6 +3,8 @@
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Runtime/LinkerExecutionContext.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/FileIO.h"
 #include "Linker/Core/Support/Strings.h"
@@ -32,13 +34,14 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/GlobPattern.h"
 #include "llvm/Support/LEB128.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/raw_ostream.h"
 #include <tuple>
 #include <utility>
+#include "Linker/ELF/ELFContextAccess.h"
+#include "Linker/ELF/ELFLinkerContext.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -47,9 +50,6 @@ using namespace llvm::sys;
 using namespace llvm::support;
 using namespace linker;
 using namespace linker::elf;
-
-ConfigWrapper elf::config;
-Ctx elf::ctx;
 
 // ===----------------------------------------------------------------------===
 // Initialization & link entry point
@@ -105,13 +105,19 @@ namespace elf {
 bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
           const LinkerDriverConfig &driverCfg) {
-  // Freed by CommonLinkerContext::destroy() after link() returns.
-  auto *ctx = new CommonLinkerContext;
+  LinkerExecutionContext LocalExecution;
+  LinkerExecutionContext &Execution =
+      driverCfg.executionContext ? *driverCfg.executionContext
+                                 : LocalExecution;
+  ELFLinkerContext &Backend =
+      Execution.createBackend<ELFLinkerContext>();
+  CommonLinkerContext &Common = Backend;
+  Common.configureParallel(driverCfg.threadCount, 16);
 
-  ctx->e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
-  ctx->e.errorLimit = driverCfg.errorLimit;
-  ctx->e.cleanupCallback = []() {
-    elf::ctx.reset();
+  Common.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
+  Common.e.errorLimit = driverCfg.errorLimit;
+  Common.e.cleanupCallback = []() {
+    elfState().reset();
     symtab = SymbolTable();
 
     outputSections.clear();
@@ -122,11 +128,12 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
     partitions.clear();
     partitions.emplace_back();
 
-    SharedFile::vernauxNum = 0;
+    elfVernauxNum() = 0;
   };
-  ctx->e.logName = args::getFilenameWithoutExe(args[0]);
-  ctx->e.errorLimitExceededMsg = "too many errors emitted, stopping now (use "
-                                 "-ferror-limit=0 to see all errors)";
+  Common.e.logName = args::getFilenameWithoutExe(args[0]);
+  Common.e.errorLimitExceededMsg =
+      "too many errors emitted, stopping now (use "
+      "-ferror-limit=0 to see all errors)";
 
   config = ConfigWrapper();
   script = std::make_unique<LinkerScript>();
@@ -138,7 +145,7 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
 
   config->progName = args[0];
 
-  elf::ctx.driver.run(args, driverCfg);
+  elfState().driver.run(args, driverCfg);
 
   return errorCount() == 0;
 }
@@ -249,8 +256,8 @@ void LinkerDriver::addFile(StringRef path, bool withLOption) {
     //
     // All files within the archive get the same group ID to allow mutual
     // references for --warn-backrefs.
-    bool saved = InputFile::isInGroup;
-    InputFile::isInGroup = true;
+    bool saved = elfInputFileIsInGroup();
+    elfInputFileIsInGroup() = true;
     for (const std::pair<MemoryBufferRef, uint64_t> &p : members) {
       auto magic = identify_magic(p.first.getBuffer());
       if (magic == file_magic::elf_relocatable) {
@@ -261,9 +268,9 @@ void LinkerDriver::addFile(StringRef path, bool withLOption) {
         warn(path + ": archive member '" + p.first.getBufferIdentifier() +
              "' is neither ET_REL nor LLVM bitcode");
     }
-    InputFile::isInGroup = saved;
+    elfInputFileIsInGroup() = saved;
     if (!saved)
-      ++InputFile::nextGroupId;
+      ++elfNextGroupId();
     return;
   }
   case file_magic::elf_shared_object: {
@@ -1222,13 +1229,7 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
 
   parseMllvmOptions(driverCfg);
 
-  if (driverCfg.threadCount) {
-    parallel::strategy = hardware_concurrency(driverCfg.threadCount);
-  } else if (parallel::strategy.compute_thread_count() > 16) {
-    log("set maximum concurrency to 16");
-    parallel::strategy = hardware_concurrency(16);
-  }
-  config->threadCount = parallel::strategy.compute_thread_count();
+  config->threadCount = commonContext().parallelThreadCount();
 
   // ltoPartitions is set to 2 by the driver — just enough to enable
   // the parallel codegen hooks.  The hooks auto-detect internally.
@@ -1387,7 +1388,7 @@ void LinkerDriver::createFiles(opt::InputArgList &args) {
   std::vector<std::tuple<bool, bool, bool>> stack;
 
   // Iterate over argv to process input files and positional arguments.
-  InputFile::isInGroup = false;
+  elfInputFileIsInGroup() = false;
   bool hasInput = false;
   for (auto *arg : args) {
     switch (arg->getOption().getID()) {
@@ -1447,30 +1448,30 @@ void LinkerDriver::createFiles(opt::InputArgList &args) {
       }
       break;
     case OPT_start_group:
-      if (InputFile::isInGroup)
+      if (elfInputFileIsInGroup())
         error("nested --start-group");
-      InputFile::isInGroup = true;
+      elfInputFileIsInGroup() = true;
       break;
     case OPT_end_group:
-      if (!InputFile::isInGroup)
+      if (!elfInputFileIsInGroup())
         error("stray --end-group");
-      InputFile::isInGroup = false;
-      ++InputFile::nextGroupId;
+      elfInputFileIsInGroup() = false;
+      ++elfNextGroupId();
       break;
     case OPT_start_lib:
       if (inLib)
         error("nested --start-lib");
-      if (InputFile::isInGroup)
+      if (elfInputFileIsInGroup())
         error("may not nest --start-lib in --start-group");
       inLib = true;
-      InputFile::isInGroup = true;
+      elfInputFileIsInGroup() = true;
       break;
     case OPT_end_lib:
       if (!inLib)
         error("stray --end-lib");
       inLib = false;
-      InputFile::isInGroup = false;
-      ++InputFile::nextGroupId;
+      elfInputFileIsInGroup() = false;
+      ++elfNextGroupId();
       break;
     case OPT_push_state:
       stack.emplace_back(config->asNeeded, config->isStatic, inWholeArchive);
@@ -2324,7 +2325,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   if (args.hasArg(OPT_exclude_libs))
     excludeLibs(args);
 
-  Out::elfHeader = make<OutputSection>("", 0, SHF_ALLOC);
+  elfOut().elfHeader = make<OutputSection>("", 0, SHF_ALLOC);
 
   if (!config->relocatable)
     addReservedSymbols();

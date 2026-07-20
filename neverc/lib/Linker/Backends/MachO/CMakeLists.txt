@@ -42,6 +42,9 @@ linker_declare_backend(
     Input/InputSection.cpp
     LTO/LTO.cpp
 
+    # Task-local backend ownership.
+    State/MachOLinkerContext.cpp
+
     # Output sections, segments and relocations.
     Layout/ConcatOutputSection.cpp
     Layout/OutputSection.cpp

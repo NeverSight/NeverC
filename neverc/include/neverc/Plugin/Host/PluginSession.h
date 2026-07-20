@@ -77,6 +77,7 @@ public:
   }
   PluginHandleArena &handles() { return *HandleArena; }
   const PluginHandleArena &handles() const { return *HandleArena; }
+  PluginProcessServices &processServices() const { return ProcessServices; }
   PluginDiagnostics &diagnostics() { return Diagnostics; }
   const PluginDiagnostics &diagnostics() const { return Diagnostics; }
 

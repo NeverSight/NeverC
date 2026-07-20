@@ -8,6 +8,7 @@
 #include "Linker/MachO/SymbolTable.h"
 #include "Linker/MachO/Symbols.h"
 
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -15,7 +16,6 @@
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/LEB128.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/xxhash.h"
 
 #if defined(__APPLE__)
@@ -26,6 +26,7 @@
 #else
 #include "llvm/Support/SHA256.h"
 #endif
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 namespace llvm_macho = llvm::MachO;
@@ -39,7 +40,7 @@ namespace {
 template <typename T, typename Compare>
 void sortMaybeParallel(std::vector<T> &v, Compare comp,
                        size_t parallelThreshold) {
-  if (parallel::strategy.ThreadsRequested == 1 || v.size() < parallelThreshold)
+  if (!parallelEnabled() || v.size() < parallelThreshold)
     llvm::sort(v, comp);
   else
     parallelSort(v, comp);
@@ -56,9 +57,6 @@ void sha256(const uint8_t *data, size_t len, uint8_t *output) {
 #endif
 }
 } // namespace
-
-InStruct macho::in;
-std::vector<SyntheticSection *> macho::syntheticSections;
 
 SyntheticSection::SyntheticSection(const char *segname, const char *name)
     : OutputSection(SyntheticKind, name) {
@@ -1019,7 +1017,7 @@ void FunctionStartsSection::finalizeContents() {
   for (auto &v : perFileAddrs)
     addrs.insert(addrs.end(), v.begin(), v.end());
 
-  if (addrs.size() > 4096 && parallel::strategy.ThreadsRequested != 1)
+  if (addrs.size() > 4096 && parallelEnabled())
     parallelSort(addrs.begin(), addrs.end());
   else
     llvm::sort(addrs);

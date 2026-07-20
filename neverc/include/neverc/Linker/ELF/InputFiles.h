@@ -89,8 +89,6 @@ public:
   // --{start,end}-lib get the same group ID. Otherwise, each file gets a new
   // group ID. For more info, see checkDependency() in SymbolTable.cpp.
   uint32_t groupId;
-  static bool isInGroup;
-  static uint32_t nextGroupId;
 
   // If this is an architecture-specific file, the following members
   // have ELF type (i.e. ELF{32,64}{LE,BE}) and target machine type.
@@ -310,8 +308,6 @@ public:
   // a vector of Elf_Vernaux version identifiers that map onto the entries in
   // Verdefs, otherwise it is empty.
   SmallVector<uint32_t, 0> vernauxs;
-
-  static unsigned vernauxNum;
 
   SmallVector<StringRef, 0> dtNeeded;
   StringRef soName;

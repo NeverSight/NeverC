@@ -3,6 +3,8 @@
 
 #include "neverc/Plugin/Host/PluginRegistry.h"
 #include "neverc/Plugin/PluginIR.h"
+#include "neverc/Plugin/PluginLTO.h"
+#include "neverc/Plugin/PluginLink.h"
 #include "neverc/Plugin/PluginMC.h"
 #include "neverc/Plugin/PluginMIR.h"
 #include "neverc/Plugin/PluginObject.h"
@@ -41,6 +43,10 @@ enum class PluginRegistrationKind : uint8_t {
   MCAsmBackend,
   ObjectFormat,
   CodeGenEdge,
+  LinkerProvider,
+  ObjectMergeProvider,
+  BinaryImageVerifier,
+  LTOProvider,
 };
 
 struct OwnedTargetTripleMatcher {
@@ -85,6 +91,10 @@ struct PluginRegistrationRecord {
   NevercMCAsmBackendDescriptor MCAsmBackend{};
   NevercObjectFormatDescriptor ObjectFormatDescriptor{};
   NevercCodeGenEdgeDescriptor CodeGenEdge{};
+  NevercLinkerProviderDescriptor LinkerProvider{};
+  NevercObjectMergeProviderDescriptor ObjectMergeProvider{};
+  NevercBinaryImageVerifierDescriptor BinaryImageVerifier{};
+  NevercLTOProviderDescriptor LTOProvider{};
   std::string CanonicalName;
   std::string ProviderID;
   std::string PassID;
@@ -96,6 +106,7 @@ struct PluginRegistrationRecord {
   std::string ObjectFormat;
   std::string SchemaDigest;
   std::string CodeGenCompatibilityKey;
+  std::string LinkCompatibilityKey;
   std::string DefaultExtension;
   std::vector<std::string> Aliases;
   std::vector<OwnedTargetTripleMatcher> TargetMatchers;
@@ -192,6 +203,14 @@ NevercStatus registerPluginObjectFormat(
     void *Registrar, const NevercObjectFormatDescriptor *Descriptor);
 NevercStatus registerPluginCodeGenEdge(
     void *Registrar, const NevercCodeGenEdgeDescriptor *Descriptor);
+NevercStatus registerPluginLinkerProvider(
+    void *Registrar, const NevercLinkerProviderDescriptor *Descriptor);
+NevercStatus registerPluginObjectMergeProvider(
+    void *Registrar, const NevercObjectMergeProviderDescriptor *Descriptor);
+NevercStatus registerPluginBinaryImageVerifier(
+    void *Registrar, const NevercBinaryImageVerifierDescriptor *Descriptor);
+NevercStatus registerPluginLTOProvider(
+    void *Registrar, const NevercLTOProviderDescriptor *Descriptor);
 
 } // namespace neverc::plugin
 

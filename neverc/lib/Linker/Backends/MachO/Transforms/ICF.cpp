@@ -6,16 +6,17 @@
 #include "Linker/MachO/Symbols.h"
 #include "Linker/MachO/UnwindInfoSection.h"
 
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/LEB128.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/xxhash.h"
 
 #include <atomic>
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 using namespace linker;
@@ -256,8 +257,7 @@ void ICF::forEachClassRange(size_t begin, size_t end,
 void ICF::forEachClass(llvm::function_ref<void(size_t, size_t)> func) {
   // Only use threads when the benefits outweigh the overhead.
   const size_t threadingThreshold = 1024;
-  if (parallel::strategy.ThreadsRequested == 1 ||
-      icfInputs.size() < threadingThreshold) {
+  if (!parallelEnabled() || icfInputs.size() < threadingThreshold) {
     forEachClassRange(0, icfInputs.size(), func);
     ++icfPass;
     return;
@@ -267,7 +267,7 @@ void ICF::forEachClass(llvm::function_ref<void(size_t, size_t)> func) {
   // sharding must be completed before any calls to FUNC are made so that FUNC
   // can modify the InputSection in its shard without causing data races.
   size_t shards =
-      std::max<size_t>(1, parallel::strategy.compute_thread_count() * 4);
+      std::max<size_t>(1, parallelThreadCount() * 4);
   shards = std::min<size_t>(shards, 256);
   shards = std::min<size_t>(shards, icfInputs.size());
   if (shards <= 1) {
@@ -341,10 +341,10 @@ void ICF::run() {
 
     bool changedAny = false;
     static constexpr size_t kParallelHashPassThreshold = 1024;
-    if (parallel::strategy.ThreadsRequested != 1 &&
+    if (parallelEnabled() &&
         icfInputs.size() >= kParallelHashPassThreshold) {
       size_t numChunks =
-          std::max<size_t>(1, parallel::strategy.compute_thread_count() * 4);
+          std::max<size_t>(1, parallelThreadCount() * 4);
       numChunks = std::min<size_t>(numChunks, icfInputs.size());
       std::vector<uint8_t> changedByChunk(numChunks, 0);
       parallelFor(0, numChunks, [&](size_t chunkIdx) {

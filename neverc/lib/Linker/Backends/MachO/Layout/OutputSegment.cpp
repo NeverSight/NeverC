@@ -8,6 +8,7 @@
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/BinaryFormat/MachO.h"
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::MachO;
@@ -177,8 +178,6 @@ void macho::sortOutputSegments() {
 namespace {
 DenseMap<StringRef, OutputSegment *> nameToOutputSegment;
 } // namespace
-std::vector<OutputSegment *> macho::outputSegments;
-
 void macho::resetOutputSegments() {
   outputSegments.clear();
   nameToOutputSegment.clear();

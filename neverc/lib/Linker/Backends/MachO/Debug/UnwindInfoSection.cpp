@@ -10,14 +10,15 @@
 
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/BinaryFormat/MachO.h"
-#include "llvm/Support/Parallel.h"
 
 #include "mach-o/compact_unwind_encoding.h"
 
 #include <numeric>
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::MachO;
@@ -162,7 +163,7 @@ namespace {
 template <typename T, typename Compare>
 void sortMaybeParallel(std::vector<T> &v, Compare comp,
                        size_t parallelThreshold) {
-  if (parallel::strategy.ThreadsRequested == 1 || v.size() < parallelThreshold)
+  if (!parallelEnabled() || v.size() < parallelThreshold)
     llvm::sort(v, comp);
   else
     parallelSort(v, comp);

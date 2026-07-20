@@ -9,6 +9,7 @@
 #include "Linker/Core/Support/Strings.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Support/Parallel.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 
 using namespace linker;
 using namespace linker::macho;

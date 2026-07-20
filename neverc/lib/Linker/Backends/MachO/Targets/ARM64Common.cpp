@@ -2,6 +2,7 @@
 
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "llvm/Support/Endian.h"
+#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm::MachO;
 using namespace llvm::support::endian;

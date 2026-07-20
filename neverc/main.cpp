@@ -1,5 +1,5 @@
 #include "Linker/Core/Driver/Dispatcher.h"
-#include "Linker/Core/Runtime/Session.h"
+#include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "neverc/Compiler/CompilerInvocation.h"
 #include "neverc/Compiler/FrontendTool.h"
 #include "neverc/Compiler/TextDiagnosticPrinter.h"
@@ -213,26 +213,20 @@ void configureDriverCallbacks(Driver &TheDriver) {
         return 1;
       LinkTask = std::move(*Created);
     }
-    auto It =
-        llvm::find_if(EnabledLinkerDrivers, [=](const linker::DriverDef &D) {
-          return D.f == Flavor;
-        });
-    if (It == std::end(EnabledLinkerDrivers)) {
-      llvm::errs() << "neverc: error: linker backend for this target "
-                      "was not enabled at build time\n";
-      return 1;
-    }
     ArrayRef<const char *> Args(ArgV.data(), ArgV.size());
+    linker::LinkerExecutionContext Execution;
     linker::LinkerDriverConfig EffectiveCfg = DriverCfg;
     EffectiveCfg.pluginTask = LinkTask.get();
-    bool Ok = It->d(Args, llvm::outs(), llvm::errs(),
-                    /*exitEarly=*/false, /*disableOutput=*/false, EffectiveCfg);
-    linker::CommonLinkerContext::destroy();
+    EffectiveCfg.executionContext = &Execution;
+    int Result = linker::dispatchLink(
+        EnabledLinkerDrivers, Flavor, Args, llvm::outs(), llvm::errs(),
+        EffectiveCfg);
+    bool Ok = Result == 0;
     if (LinkTask) {
       if (llvm::Error E = LinkTask->end())
         Ok = false;
     }
-    return Ok ? 0 : 1;
+    return Ok ? 0 : (Result == 0 ? 1 : Result);
   };
 }
 

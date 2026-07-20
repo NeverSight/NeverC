@@ -22,6 +22,7 @@
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <cassert>
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -369,12 +370,12 @@ void ScriptParser::readExtern() {
 }
 
 void ScriptParser::readGroup() {
-  bool orig = InputFile::isInGroup;
-  InputFile::isInGroup = true;
+  bool orig = elfInputFileIsInGroup();
+  elfInputFileIsInGroup() = true;
   readInput();
-  InputFile::isInGroup = orig;
+  elfInputFileIsInGroup() = orig;
   if (!orig)
-    ++InputFile::nextGroupId;
+    ++elfNextGroupId();
 }
 
 void ScriptParser::readInclude() {

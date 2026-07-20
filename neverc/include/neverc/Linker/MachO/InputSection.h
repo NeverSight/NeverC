@@ -291,7 +291,7 @@ bool isCfStringSection(const InputSection *);
 bool isEhFrameSection(const InputSection *);
 bool isGccExceptTabSection(const InputSection *);
 
-extern std::vector<ConcatInputSection *> inputSections;
+std::vector<ConcatInputSection *> &machoInputSections();
 
 namespace section_names {
 

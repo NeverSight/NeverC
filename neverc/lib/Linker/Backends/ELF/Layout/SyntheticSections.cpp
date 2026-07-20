@@ -1,4 +1,5 @@
 #include "Linker/ELF/SyntheticSections.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Dwarf.h"
 #include "Linker/Core/Support/Strings.h"
@@ -21,9 +22,9 @@
 #include "llvm/DebugInfo/DWARF/DWARFDebugPubTable.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/LEB128.h"
-#include "llvm/Support/Parallel.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <cstdlib>
+#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::dwarf;
@@ -310,7 +311,7 @@ void EhFrameSection::finalizeContents() {
 // to get an FDE from an address to which FDE is applied. This function
 // returns a list of such pairs.
 SmallVector<EhFrameSection::FdeData, 0> EhFrameSection::getFdeData() const {
-  uint8_t *buf = Out::bufferStart + getParent()->offset + outSecOff;
+  uint8_t *buf = elfOut().bufferStart + getParent()->offset + outSecOff;
   SmallVector<FdeData, 0> ret;
 
   uint64_t va = getPartition().ehFrameHdr->getVA();
@@ -778,17 +779,17 @@ DynamicSection<ELFT>::computeContents() {
     addInSec(DT_HASH, *part.hashTab);
 
   if (isMain) {
-    if (Out::preinitArray) {
-      addInt(DT_PREINIT_ARRAY, Out::preinitArray->addr);
-      addInt(DT_PREINIT_ARRAYSZ, Out::preinitArray->size);
+    if (elfOut().preinitArray) {
+      addInt(DT_PREINIT_ARRAY, elfOut().preinitArray->addr);
+      addInt(DT_PREINIT_ARRAYSZ, elfOut().preinitArray->size);
     }
-    if (Out::initArray) {
-      addInt(DT_INIT_ARRAY, Out::initArray->addr);
-      addInt(DT_INIT_ARRAYSZ, Out::initArray->size);
+    if (elfOut().initArray) {
+      addInt(DT_INIT_ARRAY, elfOut().initArray->addr);
+      addInt(DT_INIT_ARRAYSZ, elfOut().initArray->size);
     }
-    if (Out::finiArray) {
-      addInt(DT_FINI_ARRAY, Out::finiArray->addr);
-      addInt(DT_FINI_ARRAYSZ, Out::finiArray->size);
+    if (elfOut().finiArray) {
+      addInt(DT_FINI_ARRAY, elfOut().finiArray->addr);
+      addInt(DT_FINI_ARRAYSZ, elfOut().finiArray->size);
     }
 
     if (Symbol *b = symtab.find(config->init))
@@ -939,9 +940,9 @@ void RelocationBaseSection::finalizeContents() {
   }
 }
 
-void DynamicReloc::computeRaw(SymbolTableBaseSection *symtab) {
+void DynamicReloc::computeRaw(SymbolTableBaseSection *symbolTable) {
   r_offset = getOffset();
-  r_sym = getSymIndex(symtab);
+  r_sym = getSymIndex(symbolTable);
   addend = computeAddend();
   kind = AddendOnly; // Catch errors
 }
@@ -2210,7 +2211,7 @@ void EhFrameHeader::writeTo(uint8_t *buf) {
 // the starting PC from where FDEs covers, and the FDE's address.
 // It is sorted by PC.
 void EhFrameHeader::write() {
-  uint8_t *buf = Out::bufferStart + getParent()->offset + outSecOff;
+  uint8_t *buf = elfOut().bufferStart + getParent()->offset + outSecOff;
   using FdeData = EhFrameSection::FdeData;
   SmallVector<FdeData, 0> fdes = getPartition().ehFrame->getFdeData();
 
@@ -2346,7 +2347,7 @@ void elf::addVerneed(Symbol *ss) {
   // [1..getVerDefNum()]; this causes the vernaux identifiers to start from
   // getVerDefNum()+1.
   if (file.vernauxs[ss->versionId] == 0)
-    file.vernauxs[ss->versionId] = ++SharedFile::vernauxNum + getVerDefNum();
+    file.vernauxs[ss->versionId] = ++elfVernauxNum() + getVerDefNum();
 
   ss->versionId = file.vernauxs[ss->versionId];
 }
@@ -2379,7 +2380,7 @@ template <class ELFT> void VersionNeedSection<ELFT>::finalizeContents() {
     if (isGlibc2) {
       const char *ver = "GLIBC_ABI_DT_RELR";
       vn.vernauxs.push_back({hashSysV(ver),
-                             ++SharedFile::vernauxNum + getVerDefNum(),
+                             ++elfVernauxNum() + getVerDefNum(),
                              getPartition().dynStrTab->addString(ver)});
     }
   }
@@ -2421,11 +2422,11 @@ template <class ELFT> void VersionNeedSection<ELFT>::writeTo(uint8_t *buf) {
 
 template <class ELFT> size_t VersionNeedSection<ELFT>::getSize() const {
   return verneeds.size() * sizeof(Elf_Verneed) +
-         SharedFile::vernauxNum * sizeof(Elf_Vernaux);
+         elfVernauxNum() * sizeof(Elf_Vernaux);
 }
 
 template <class ELFT> bool VersionNeedSection<ELFT>::isNeeded() const {
-  return isLive() && SharedFile::vernauxNum != 0;
+  return isLive() && elfVernauxNum() != 0;
 }
 
 void MergeSyntheticSection::addSection(MergeInputSection *ms) {
@@ -2831,11 +2832,6 @@ void MemtagDescriptors::writeTo(uint8_t *buf) {
 size_t MemtagDescriptors::getSize() const {
   return createMemtagDescriptors(symbols);
 }
-
-InStruct elf::in;
-
-std::vector<Partition> elf::partitions;
-Partition *elf::mainPart;
 
 template GdbIndexSection *GdbIndexSection::create<ELF64LE>();
 template GdbIndexSection *GdbIndexSection::create<ELF64BE>();
