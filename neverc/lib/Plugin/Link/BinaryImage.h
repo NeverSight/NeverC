@@ -8,6 +8,8 @@
 #include "llvm/Support/Error.h"
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,6 +32,7 @@ struct PluginBinarySegment {
 struct PluginBinarySection {
   NevercBinarySectionHandle Handle{};
   NevercBinarySegmentHandle Segment{};
+  size_t SegmentIndex = std::numeric_limits<size_t>::max();
   std::string Name;
   NevercObjectSectionKind Kind = NEVERC_OBJECT_SECTION_KIND_DATA;
   NevercObjectSectionFlags Flags = 0;
@@ -46,8 +49,28 @@ struct PluginBinaryDirectory {
   uint64_t Size = 0;
 };
 
+struct PluginBinaryImageData {
+  NevercLinkOutputKind OutputKind = NEVERC_LINK_OUTPUT_EXECUTABLE;
+  NevercTargetID TargetID{};
+  NevercObjectFormatID FormatID{};
+  uint64_t EntryAddress = 0;
+  uint64_t ImageBase = 0;
+  uint64_t ImportCount = 0;
+  uint64_t ExportCount = 0;
+  uint64_t DynamicRelocationCount = 0;
+  std::vector<PluginBinarySegment> Segments;
+  std::vector<PluginBinarySection> Sections;
+  std::vector<PluginBinaryDirectory> Directories;
+  std::vector<uint8_t> Bytes;
+  std::function<llvm::Error(llvm::ArrayRef<uint8_t>)> FormatVerifier;
+};
+
 class PluginBinaryImage {
 public:
+  static llvm::Expected<std::shared_ptr<PluginBinaryImage>>
+  import(PluginTaskContext &Task, const NevercIOAPI &IO,
+         NevercOutputSinkHandle Sink, PluginBinaryImageData Data);
+
   static llvm::Expected<std::shared_ptr<PluginBinaryImage>>
   emit(PluginTaskContext &Task, const NevercIOAPI &IO,
        NevercOutputSinkHandle Sink, const PluginLinkGraph &Graph,
@@ -107,6 +130,8 @@ private:
                     std::vector<PluginBinarySegment> Segments,
                     std::vector<PluginBinarySection> Sections,
                     std::vector<PluginBinaryDirectory> Directories,
+                    std::function<llvm::Error(
+                        llvm::ArrayRef<uint8_t>)> FormatVerifier,
                     std::unique_ptr<MutableBinaryBuilder> Builder);
   llvm::Error initializeHandles();
 
@@ -122,6 +147,7 @@ private:
   std::vector<PluginBinarySegment> Segments;
   std::vector<PluginBinarySection> Sections;
   std::vector<PluginBinaryDirectory> Directories;
+  std::function<llvm::Error(llvm::ArrayRef<uint8_t>)> FormatVerifier;
   std::unique_ptr<MutableBinaryBuilder> Builder;
   NevercBinaryImageHandle Handle{};
   NevercLinkAPI API{};

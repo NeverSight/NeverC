@@ -165,6 +165,16 @@ Error OutputBundleTransaction::prepare() {
       consumeError(Temporary->discard());
       return bundleError("could not write staged output");
     }
+    if (EntryValue.Output.Executable) {
+      const sys::fs::perms Permissions =
+          sys::fs::all_read | sys::fs::owner_write |
+          sys::fs::all_exe;
+      if (std::error_code EC =
+              sys::fs::setPermissions(Temporary->FD, Permissions)) {
+        consumeError(Temporary->discard());
+        return errorCodeToError(EC);
+      }
+    }
     if (std::error_code Injected =
             fault(OutputBundleOperation::SyncStaging,
                   EntryValue.CanonicalPath)) {

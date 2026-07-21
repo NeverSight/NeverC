@@ -1,10 +1,12 @@
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
+#include "neverc/Build/BuildDriver.h"
 #include "neverc/Compiler/CompilerInvocation.h"
 #include "neverc/Compiler/FrontendTool.h"
 #include "neverc/Compiler/TextDiagnosticPrinter.h"
 #include "neverc/Compiler/Utils.h"
 #include "neverc/Config/config.h"
+#include "neverc/DynCode/Pipeline/DriverIntegration.h"
 #include "neverc/Foundation/Core/Stack.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticOptions.h"
 #include "neverc/Invoke/Compilation.h"
@@ -15,9 +17,7 @@
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
-#include "neverc/Build/BuildDriver.h"
 #include "neverc/Runtime/RuntimeManager.h"
-#include "neverc/DynCode/Pipeline/DriverIntegration.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallString.h"
@@ -207,8 +207,7 @@ void configureDriverCallbacks(Driver &TheDriver) {
                             const linker::LinkerDriverConfig &DriverCfg) {
     std::unique_ptr<plugin::PluginTaskContext> LinkTask;
     if (DriverCfg.pluginSession) {
-      auto Created =
-          DriverCfg.pluginSession->createTask(NEVERC_TASK_LINK);
+      auto Created = DriverCfg.pluginSession->createTask(NEVERC_TASK_LINK);
       if (!Created)
         return 1;
       LinkTask = std::move(*Created);
@@ -218,13 +217,15 @@ void configureDriverCallbacks(Driver &TheDriver) {
     linker::LinkerDriverConfig EffectiveCfg = DriverCfg;
     EffectiveCfg.pluginTask = LinkTask.get();
     EffectiveCfg.executionContext = &Execution;
-    int Result = linker::dispatchLink(
-        EnabledLinkerDrivers, Flavor, Args, llvm::outs(), llvm::errs(),
-        EffectiveCfg);
+    int Result = linker::dispatchLink(EnabledLinkerDrivers, Flavor, Args,
+                                      llvm::outs(), llvm::errs(), EffectiveCfg);
     bool Ok = Result == 0;
     if (LinkTask) {
-      if (llvm::Error E = LinkTask->end())
+      if (llvm::Error E = LinkTask->end()) {
+        llvm::errs() << "neverc: error: linker task finalization failed: "
+                     << llvm::toString(std::move(E)) << "\n";
         Ok = false;
+      }
     }
     return Ok ? 0 : (Result == 0 ? 1 : Result);
   };
@@ -297,8 +298,7 @@ CompilationResult runCompilation(Driver &TheDriver, Compilation &C) {
 int finishPluginRuntime(Driver &TheDriver,
                         std::unique_ptr<Compilation> &CompilationState,
                         int ExitStatus) {
-  if (llvm::Error E =
-          TheDriver.finishPluginRuntime(CompilationState)) {
+  if (llvm::Error E = TheDriver.finishPluginRuntime(CompilationState)) {
     TheDriver.getDiags().Report(diag::err_drv_plugin_phase)
         << ("plugin runtime cleanup failed: " +
             llvm::toString(std::move(E)).str().str());
@@ -329,13 +329,15 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
 
   initializeLLVMTargets();
 
-  if (Argc > 1 && (StringRef(Argv[1]) == "build" ||
-                    StringRef(Argv[1]) == "make")) {
-    return neverc::build::runBuild(Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
+  if (Argc > 1 &&
+      (StringRef(Argv[1]) == "build" || StringRef(Argv[1]) == "make")) {
+    return neverc::build::runBuild(
+        Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
   }
 
   if (Argc > 1 && StringRef(Argv[1]) == "runtime") {
-    return neverc::runtime::runRuntime(Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
+    return neverc::runtime::runRuntime(
+        Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
   }
 
   llvm::BumpPtrAllocator A;
@@ -372,8 +374,7 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
         TheDriver.prepareDirectPluginInvocation(ArrayRef(Args).slice(2));
     if (!DirectArguments) {
       llvm::consumeError(DirectArguments.takeError());
-      int ExitStatus =
-          finishPluginRuntime(TheDriver, NoCompilation, 1);
+      int ExitStatus = finishPluginRuntime(TheDriver, NoCompilation, 1);
       Diags.getClient()->finish();
       llvm::outs().flush();
       llvm::errs().flush();
@@ -384,11 +385,10 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
     const DirectInvocationOpts *Opts =
         DirectOpts.PluginSession ? &DirectOpts : nullptr;
     void *VP = (void *)(intptr_t)GetExecutablePath;
-    int ExitStatus = neverc::ExecuteFrontendDirect(
-        *DirectArguments, Args[0], VP, Opts);
+    int ExitStatus =
+        neverc::ExecuteFrontendDirect(*DirectArguments, Args[0], VP, Opts);
     DirectOpts.PluginSession.reset();
-    ExitStatus =
-        finishPluginRuntime(TheDriver, NoCompilation, ExitStatus);
+    ExitStatus = finishPluginRuntime(TheDriver, NoCompilation, ExitStatus);
     Diags.getClient()->finish();
     llvm::outs().flush();
     llvm::errs().flush();
@@ -423,15 +423,14 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   CompilationResult CR = runCompilation(TheDriver, *C);
 
   if (DynCode.enabled()) {
-    CR.ExitCode =
-        neverc::dyncode::finalizeCompilation(DynCode, CR.ExitCode);
+    CR.ExitCode = neverc::dyncode::finalizeCompilation(DynCode, CR.ExitCode);
   }
 
   if (CR.ExitCode != 0 || CR.IsCrash) {
     // Crash/reproducer diagnostics still require the live Compilation.
     if (CR.FailingCommand != nullptr &&
-        TheDriver.maybeGenerateCompilationDiagnostics(
-            CR.Status, ReproLevel, *C, *CR.FailingCommand))
+        TheDriver.maybeGenerateCompilationDiagnostics(CR.Status, ReproLevel, *C,
+                                                      *CR.FailingCommand))
       CR.ExitCode = 1;
 
     if (CR.IsCrash) {
@@ -447,8 +446,7 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
     CR.ExitCode = 1;
 #endif
 
-  CR.ExitCode =
-      finishPluginRuntime(TheDriver, C, CR.ExitCode);
+  CR.ExitCode = finishPluginRuntime(TheDriver, C, CR.ExitCode);
   Diags.getClient()->finish();
   llvm::outs().flush();
   llvm::errs().flush();

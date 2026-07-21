@@ -1,9 +1,9 @@
 #include "LinkPhaseExecutor.h"
 #include "ComdatSelectionProvider.h"
 #include "ICFProvider.h"
-#include "LinkPhaseCAPI.h"
-#include "LinkLayoutProvider.h"
 #include "LayoutVerifier.h"
+#include "LinkLayoutProvider.h"
+#include "LinkPhaseCAPI.h"
 #include "LivenessVerifier.h"
 #include "RelaxationExecutor.h"
 #include "RelocationProvider.h"
@@ -46,8 +46,7 @@ bool sameHandle(NevercHandle Left, NevercHandle Right) {
   return Left.Owner == Right.Owner && Left.Value == Right.Value;
 }
 
-template <typename T>
-NevercStatus writeRecord(T *OutValue, const T &Value) {
+template <typename T> NevercStatus writeRecord(T *OutValue, const T &Value) {
   if (!OutValue)
     return phaseStatus(NEVERC_STATUS_INVALID_ARGUMENT);
   const uint32_t Capacity = OutValue->Header.StructSize;
@@ -56,9 +55,8 @@ NevercStatus writeRecord(T *OutValue, const T &Value) {
   const size_t Writable = std::min<size_t>(Capacity, sizeof(Value));
   std::memset(OutValue, 0, Writable);
   std::memcpy(OutValue, &Value, Writable);
-  return Capacity < sizeof(Value)
-             ? phaseStatus(NEVERC_STATUS_ABI_MISMATCH)
-             : neverc_status_ok();
+  return Capacity < sizeof(Value) ? phaseStatus(NEVERC_STATUS_ABI_MISMATCH)
+                                  : neverc_status_ok();
 }
 
 Error verifyGraphArtifact(const void *Payload) {
@@ -116,6 +114,7 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
   std::map<std::pair<uint64_t, uint64_t>,
            LinkPhasePipeline::BuiltinGraphProvider>
       GraphProviders;
+  std::string LastNativeProviderError;
 
   Impl(PluginTaskContext &TaskValue,
        std::shared_ptr<LinkPhaseProcessService> ServiceValue,
@@ -128,17 +127,14 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
   Error initialize() {
     std::set<std::pair<uint64_t, uint64_t>> Registered;
     for (size_t Index = 0; Index != Registry.graph().size(); ++Index) {
-      const PluginPhaseDefinition &Phase =
-          Registry.graph().phaseAt(Index);
-      for (NevercInterfaceID ID :
-           {Phase.InputArtifact, Phase.OutputArtifact}) {
+      const PluginPhaseDefinition &Phase = Registry.graph().phaseAt(Index);
+      for (NevercInterfaceID ID : {Phase.InputArtifact, Phase.OutputArtifact}) {
         if (!Registered.insert(idKey(ID)).second)
           continue;
         PluginArtifactTypeDescriptor Descriptor;
         Descriptor.ID = ID;
-        Descriptor.Name =
-            "link.product." + std::to_string(ID.High) + "." +
-            std::to_string(ID.Low);
+        Descriptor.Name = "link.product." + std::to_string(ID.High) + "." +
+                          std::to_string(ID.Low);
         Descriptor.Ownership = PluginArtifactOwnership::Owned;
         Descriptor.Destroy = [](void *Payload) {
           delete static_cast<LinkGraphArtifact *>(Payload);
@@ -156,13 +152,11 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
         std::make_unique<PluginPhaseExecutor>(Registry.graph(), Artifacts);
     if (Error E = Executor->importSessionRegistrations(Task.session()))
       return E;
-    for (const LinkTransitionDefinition &Transition :
-         Registry.transitions()) {
+    for (const LinkTransitionDefinition &Transition : Registry.transitions()) {
       if (Error E = Executor->setBuiltinProvider(
               Transition.Phase,
-              [this, Phase = Transition.Phase](
-                  const NevercPhaseFrame *Frame,
-                  NevercPhaseResult *Result) {
+              [this, Phase = Transition.Phase](const NevercPhaseFrame *Frame,
+                                               NevercPhaseResult *Result) {
                 return runBuiltin(Phase, Frame, Result);
               }))
         return E;
@@ -185,16 +179,13 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
                         Target.RawTriple.Length);
     CPU.assign(Target.CPU.Data ? Target.CPU.Data : "", Target.CPU.Length);
     Features.clear();
-    const auto *Bytes =
-        reinterpret_cast<const uint8_t *>(Target.Features.Data);
-    for (uint64_t Index = 0;
-         Bytes && Index != Target.Features.Count; ++Index) {
+    const auto *Bytes = reinterpret_cast<const uint8_t *>(Target.Features.Data);
+    for (uint64_t Index = 0; Bytes && Index != Target.Features.Count; ++Index) {
       const auto *Feature = reinterpret_cast<const NevercStringView *>(
           Bytes + Index * Target.Features.ElementStride);
       if (!Features.empty())
         Features.push_back(',');
-      Features.append(Feature->Data ? Feature->Data : "",
-                      Feature->Length);
+      Features.append(Feature->Data ? Feature->Data : "", Feature->Length);
     }
     NevercPhaseRoute Route{};
     Route.Header = {sizeof(Route), NEVERC_PLUGIN_ABI_MAJOR,
@@ -227,13 +218,12 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
     ActivePhase = {};
   }
 
-  Expected<const LinkGraphArtifact *>
-  resolve(const NevercPhaseFrame *Frame, NevercArtifactHandle Handle) {
+  Expected<const LinkGraphArtifact *> resolve(const NevercPhaseFrame *Frame,
+                                              NevercArtifactHandle Handle) {
     if (!validFrame(Frame))
       return createStringError(errc::invalid_argument,
                                "Link phase frame is out of scope");
-    const PluginPhaseDefinition *Phase =
-        Registry.graph().find(Frame->Phase);
+    const PluginPhaseDefinition *Phase = Registry.graph().find(Frame->Phase);
     if (!Phase)
       return createStringError(errc::invalid_argument,
                                "Link phase is not registered");
@@ -255,8 +245,7 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
   }
 
   NevercStatus publish(std::shared_ptr<PluginLinkGraph> Graph,
-                       NevercInterfaceID Type,
-                       NevercPhaseResult *Result) {
+                       NevercInterfaceID Type, NevercPhaseResult *Result) {
     if (!Graph || !Result)
       return phaseStatus(NEVERC_STATUS_INVALID_ARGUMENT);
     auto *Artifact = new LinkGraphArtifact{std::move(Graph)};
@@ -274,12 +263,10 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
   NevercStatus runBuiltin(NevercInterfaceID PhaseID,
                           const NevercPhaseFrame *Frame,
                           NevercPhaseResult *Result) {
-    auto Input = resolve(Frame, Frame ? Frame->Input
-                                     : NevercArtifactHandle{});
+    auto Input = resolve(Frame, Frame ? Frame->Input : NevercArtifactHandle{});
     const LinkTransitionDefinition *Transition =
         Registry.findTransition(PhaseID);
-    const PluginPhaseDefinition *Definition =
-        Registry.graph().find(PhaseID);
+    const PluginPhaseDefinition *Definition = Registry.graph().find(PhaseID);
     if (!Input || !Transition || !Definition) {
       if (!Input)
         consumeError(Input.takeError());
@@ -290,7 +277,7 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
     if (Native != GraphProviders.end()) {
       auto Provided = Native->second(*(*Input)->Graph);
       if (!Provided) {
-        consumeError(Provided.takeError());
+        LastNativeProviderError = toString(Provided.takeError()).str().str();
         return phaseStatus(NEVERC_STATUS_PLUGIN_FAILURE);
       }
       Copy = std::move(*Provided);
@@ -305,50 +292,43 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
     }
     if (Native != GraphProviders.end()) {
       // The native provider has already produced the transition output.
-    } else if (Transition->OutputState ==
-        NEVERC_LINK_STATE_SYMBOLS_RESOLVED) {
+    } else if (Transition->OutputState == NEVERC_LINK_STATE_SYMBOLS_RESOLVED) {
       auto Records = resolveLinkSymbols(*Copy);
       if (!Records) {
         consumeError(Records.takeError());
         return phaseStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
-    } else if (Transition->OutputState ==
-               NEVERC_LINK_STATE_COMDAT_SELECTED) {
+    } else if (Transition->OutputState == NEVERC_LINK_STATE_COMDAT_SELECTED) {
       auto Records = selectLinkComdats(*Copy);
       if (!Records) {
         consumeError(Records.takeError());
         return phaseStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
-    } else if (Transition->OutputState ==
-               NEVERC_LINK_STATE_GC_COMPLETE) {
+    } else if (Transition->OutputState == NEVERC_LINK_STATE_GC_COMPLETE) {
       auto Records = markLiveLinkAtoms(*Copy);
       if (!Records) {
         consumeError(Records.takeError());
         return phaseStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
-    } else if (Transition->OutputState ==
-               NEVERC_LINK_STATE_ICF_COMPLETE) {
+    } else if (Transition->OutputState == NEVERC_LINK_STATE_ICF_COMPLETE) {
       auto Records = foldIdenticalLinkAtoms(*Copy);
       if (!Records) {
         consumeError(Records.takeError());
         return phaseStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
-    } else if (Transition->OutputState ==
-               NEVERC_LINK_STATE_SYNTHETICS_READY) {
+    } else if (Transition->OutputState == NEVERC_LINK_STATE_SYNTHETICS_READY) {
       auto Records = materializeLinkSynthetics(*Copy);
       if (!Records) {
         consumeError(Records.takeError());
         return phaseStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
-    } else if (Transition->OutputState ==
-               NEVERC_LINK_STATE_THUNKS_RELAXED) {
+    } else if (Transition->OutputState == NEVERC_LINK_STATE_THUNKS_RELAXED) {
       auto Relaxed = executeLinkRelaxation(*Copy);
       if (!Relaxed) {
         consumeError(Relaxed.takeError());
         return phaseStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
-    } else if (Transition->OutputState ==
-               NEVERC_LINK_STATE_LAYOUT_COMPLETE) {
+    } else if (Transition->OutputState == NEVERC_LINK_STATE_LAYOUT_COMPLETE) {
       auto Layout = layoutLinkGraph(*Copy);
       if (!Layout) {
         consumeError(Layout.takeError());
@@ -376,8 +356,8 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
       return createStringError(errc::invalid_argument,
                                "Link transition is not registered");
     LinkGraphArtifact View{Input};
-    auto InputHandle = Executor->createArtifactView(
-        Task, Phase->InputArtifact, &View, Input->generation());
+    auto InputHandle = Executor->createArtifactView(Task, Phase->InputArtifact,
+                                                    &View, Input->generation());
     if (!InputHandle)
       return InputHandle.takeError();
     NevercArtifactHandle Handle = *InputHandle;
@@ -388,9 +368,8 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
     if (Error E = beginPhase(Transition.Phase))
       return std::move(E);
     auto End = make_scope_exit([&] { endPhase(); });
-    if (Error E = Executor->execute(
-            Task.session(), Task, Transition.Phase, route(*Input), Handle,
-            Output))
+    if (Error E = Executor->execute(Task.session(), Task, Transition.Phase,
+                                    route(*Input), Handle, Output))
       return std::move(E);
     const auto *Published =
         static_cast<const LinkGraphArtifact *>(Output.payload());
@@ -400,17 +379,16 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
     return Published->Graph;
   }
 
-  NevercStatus getGraph(
-      const NevercPhaseFrame *Frame, NevercArtifactHandle Artifact,
-      NevercLinkPhaseGraphInfo *OutInfo) override {
+  NevercStatus getGraph(const NevercPhaseFrame *Frame,
+                        NevercArtifactHandle Artifact,
+                        NevercLinkPhaseGraphInfo *OutInfo) override {
     auto Payload = resolve(Frame, Artifact);
     if (!Payload) {
       consumeError(Payload.takeError());
       return phaseStatus(NEVERC_STATUS_WRONG_SCOPE);
     }
     const bool MutationAllowed =
-        Task.processServices().currentCallbackHasSuffix(
-            Task, "/interceptor") ||
+        Task.processServices().currentCallbackHasSuffix(Task, "/interceptor") ||
         Task.processServices().currentCallbackHasSuffix(Task, "/provider");
     if (ActiveArtifact != *Payload ||
         ActiveMutationAllowed != MutationAllowed) {
@@ -436,12 +414,10 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
           Registry.graph().find(Frame->Phase);
       NevercInterfaceID ArtifactType{};
       if (Definition)
-        ArtifactType =
-            sameHandle(Artifact, Frame->Input)
-                ? Definition->InputArtifact
-                : Definition->OutputArtifact;
-      auto Proof =
-          ActiveBridge->issueProof(Value.State, ArtifactType);
+        ArtifactType = sameHandle(Artifact, Frame->Input)
+                           ? Definition->InputArtifact
+                           : Definition->OutputArtifact;
+      auto Proof = ActiveBridge->issueProof(Value.State, ArtifactType);
       if (!Proof) {
         consumeError(Proof.takeError());
         return phaseStatus(NEVERC_STATUS_VERIFICATION_FAILED);
@@ -451,9 +427,9 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
     return writeRecord(OutInfo, Value);
   }
 
-  NevercStatus publishGraph(
-      const NevercPhaseFrame *Frame, NevercLinkGraphHandle Graph,
-      NevercArtifactHandle *OutArtifact) override {
+  NevercStatus publishGraph(const NevercPhaseFrame *Frame,
+                            NevercLinkGraphHandle Graph,
+                            NevercArtifactHandle *OutArtifact) override {
     if (!validFrame(Frame) || !OutArtifact || !ActiveBridge ||
         ActiveBridge->hasActiveMutation() || !ActiveMutationAllowed)
       return phaseStatus(NEVERC_STATUS_INVALID_STATE);
@@ -472,8 +448,8 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
     if (Copy->state() == Transition->InputState)
       Copy->setState(Transition->OutputState);
     auto *Artifact = new LinkGraphArtifact{std::move(Copy)};
-    auto Candidate = Executor->createCandidate(
-        Task, Definition->OutputArtifact, Artifact);
+    auto Candidate =
+        Executor->createCandidate(Task, Definition->OutputArtifact, Artifact);
     if (!Candidate) {
       delete Artifact;
       consumeError(Candidate.takeError());
@@ -483,9 +459,8 @@ struct LinkPhasePipeline::Impl final : LinkPhaseRuntimeAccess {
     return neverc_status_ok();
   }
 
-  NevercStatus getImage(
-      const NevercPhaseFrame *, NevercArtifactHandle,
-      NevercLinkPhaseImageInfo *) override {
+  NevercStatus getImage(const NevercPhaseFrame *, NevercArtifactHandle,
+                        NevercLinkPhaseImageInfo *) override {
     return phaseStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
   }
 };
@@ -499,14 +474,13 @@ Expected<std::unique_ptr<LinkPhasePipeline>>
 LinkPhasePipeline::create(PluginTaskContext &Task) {
   auto Service = findLinkPhaseProcessService(Task.processServices());
   if (!Service)
-    return createStringError(
-        errc::not_supported,
-        "Link phase interface is not registered");
+    return createStringError(errc::not_supported,
+                             "Link phase interface is not registered");
   auto Registry = LinkPhaseRegistry::create();
   if (!Registry)
     return Registry.takeError();
-  auto State = std::make_unique<Impl>(
-      Task, std::move(Service), std::move(*Registry));
+  auto State =
+      std::make_unique<Impl>(Task, std::move(Service), std::move(*Registry));
   if (Error E = State->initialize())
     return std::move(E);
   return std::unique_ptr<LinkPhasePipeline>(
@@ -534,8 +508,7 @@ Error LinkPhasePipeline::selectProvider(NevercInterfaceID Phase,
 }
 
 Error LinkPhasePipeline::setBuiltinProvider(
-    NevercInterfaceID Phase,
-    PluginPhaseExecutor::BuiltinProvider Provider) {
+    NevercInterfaceID Phase, PluginPhaseExecutor::BuiltinProvider Provider) {
   return State->Executor->setBuiltinProvider(Phase, std::move(Provider));
 }
 
@@ -582,9 +555,17 @@ LinkPhasePipeline::execute(std::shared_ptr<PluginLinkGraph> Input,
       return createStringError(
           errc::invalid_argument,
           "Link transition did not converge within its rerun budget");
+    State->LastNativeProviderError.clear();
     auto Output = State->executePhase(*Transition, Current);
-    if (!Output)
-      return Output.takeError();
+    if (!Output) {
+      Error ExecutionError = Output.takeError();
+      if (State->LastNativeProviderError.empty())
+        return std::move(ExecutionError);
+      return joinErrors(std::move(ExecutionError),
+                        createStringError(errc::invalid_argument,
+                                          "native LinkGraph Provider failed: " +
+                                              State->LastNativeProviderError));
+    }
     if ((*Output)->state() > Transition->OutputState)
       return createStringError(
           errc::invalid_argument,
@@ -604,9 +585,7 @@ const LinkPhaseRegistry &LinkPhasePipeline::registry() const {
 
 uint32_t LinkPhasePipeline::rerunCount(NevercInterfaceID Phase) const {
   auto It = State->Executions.find(idKey(Phase));
-  return It == State->Executions.end() || It->second == 0
-             ? 0
-             : It->second - 1;
+  return It == State->Executions.end() || It->second == 0 ? 0 : It->second - 1;
 }
 
 } // namespace neverc::plugin

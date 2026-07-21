@@ -17,7 +17,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/VirtualFileSystem.h"
-#include "llvm/TargetParser/Triple.h"
 #include <limits>
 
 using namespace llvm;
@@ -25,16 +24,13 @@ using namespace llvm;
 namespace neverc::plugin {
 namespace {
 
-bool nonzero(linker::LinkExecutionID ID) {
-  return ID.High != 0 || ID.Low != 0;
-}
+bool nonzero(linker::LinkExecutionID ID) { return ID.High != 0 || ID.Low != 0; }
 
 NevercInterfaceID interfaceID(linker::LinkExecutionID ID) {
   return {ID.High, ID.Low};
 }
 
-NevercLinkOutputKind outputKind(
-    linker::LinkExecutionOutputKind Kind) {
+NevercLinkOutputKind outputKind(linker::LinkExecutionOutputKind Kind) {
   return static_cast<NevercLinkOutputKind>(Kind);
 }
 
@@ -43,40 +39,15 @@ Error bridgeError(const Twine &Message) {
 }
 
 Expected<OwnedTargetKey>
-buildBuiltinTargetKey(const BuiltinTargetRoute &Route,
-                      StringRef TripleText,
-                      const linker::LinkerDriverConfig &Config) {
-  Triple Parsed(Triple::normalize(TripleText));
-  std::string CPU =
-      Config.cpu.empty() ? Route.DefaultCPU.str() : Config.cpu;
-  return TargetKeyBuilder()
-      .setTargetID(Route.TargetID)
-      .setTriple(TripleText.str(), Parsed.getArchName().str(),
-                 Parsed.getVendorName().str(), Parsed.getOSName().str(),
-                 Parsed.getEnvironmentName().str())
-      .setCPU(CPU, CPU)
-      .setFeatures({})
-      .setABI(Route.ABIID)
-      .setCallingConvention(
-          {UINT64_C(0x4e43504243430001), Route.TargetID.Low})
-      .setObjectFormat(Route.ObjectFormatID)
-      .setCodeGeneration(
-          Config.pie ? NEVERC_TARGET_RELOCATION_PIC
-                     : NEVERC_TARGET_RELOCATION_STATIC,
-          NEVERC_TARGET_CODE_MODEL_SMALL)
-      .setExecution(NEVERC_TARGET_EXECUTION_USER, 64,
-                    NEVERC_TARGET_ENDIAN_LITTLE)
-      .setSchemaDigest(std::string(64, '0'))
-      .build();
-}
-
-Expected<OwnedTargetKey>
 resolveTargetKey(PluginSession &Session,
                  const linker::LinkExecutionRequest &Request,
                  const linker::LinkerDriverConfig &Config) {
   if (const BuiltinTargetRoute *Route =
           findBuiltinTargetRoute(Request.TargetTriple))
-    return buildBuiltinTargetKey(*Route, Request.TargetTriple, Config);
+    return createBuiltinTargetKey(*Route, Request.TargetTriple, Config.cpu,
+                                  Config.pie || Config.shared
+                                      ? NEVERC_TARGET_RELOCATION_PIC
+                                      : NEVERC_TARGET_RELOCATION_STATIC);
 
   PluginTargetRequest TargetRequest;
   TargetRequest.Triple = Request.TargetTriple;
@@ -115,10 +86,10 @@ LinkExecutionHooksBridge::LinkExecutionHooksBridge(
 
 LinkExecutionHooksBridge::~LinkExecutionHooksBridge() = default;
 
-Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
-    const linker::LinkExecutionRequest &Request,
-    const linker::LinkerDriverConfig &Config, raw_ostream &,
-    raw_ostream &) {
+Expected<linker::LinkHookResult>
+LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
+                                  const linker::LinkerDriverConfig &Config,
+                                  raw_ostream &, raw_ostream &) {
   if (Active || Completed)
     return bridgeError("Link execution hooks cannot be re-entered");
   Active = true;
@@ -127,14 +98,13 @@ Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
   std::shared_ptr<const PluginLinkSnapshot> Snapshot =
       findPluginLinkSnapshot(Session->processServices(), Session->handle());
   if (!Snapshot)
-    return linker::LinkHookResult{
-        linker::LinkHookDisposition::ContinueBuiltin, 0};
-  if (Request.OutputKind !=
-          linker::LinkExecutionOutputKind::Relocatable &&
+    return linker::LinkHookResult{linker::LinkHookDisposition::ContinueBuiltin,
+                                  0};
+  if (Request.OutputKind != linker::LinkExecutionOutputKind::Relocatable &&
       Snapshot->linkerProviders().empty() &&
       Snapshot->objectMergeProviders().empty())
-    return linker::LinkHookResult{
-        linker::LinkHookDisposition::ContinueBuiltin, 0};
+    return linker::LinkHookResult{linker::LinkHookDisposition::ContinueBuiltin,
+                                  0};
 
   auto Target = resolveTargetKey(*Session, Request, Config);
   if (!Target)
@@ -145,14 +115,12 @@ Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
   if (Config.pluginTask)
     Data.Task = Config.pluginTask->handle();
   Data.Target = std::move(*Target);
-  Data.InputFormat =
-      nonzero(Request.InputFormat)
-          ? interfaceID(Request.InputFormat)
-          : TargetView.ObjectFormatID;
-  Data.OutputFormat =
-      nonzero(Request.OutputFormat)
-          ? interfaceID(Request.OutputFormat)
-          : TargetView.ObjectFormatID;
+  Data.InputFormat = nonzero(Request.InputFormat)
+                         ? interfaceID(Request.InputFormat)
+                         : TargetView.ObjectFormatID;
+  Data.OutputFormat = nonzero(Request.OutputFormat)
+                          ? interfaceID(Request.OutputFormat)
+                          : TargetView.ObjectFormatID;
   Data.OutputKind = outputKind(Request.OutputKind);
   Data.OutputURI = Request.OutputURI;
   Data.Options = options(Config);
@@ -175,8 +143,7 @@ Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
       (*FrozenRequest)->inputFormat();
   const NevercObjectFormatID FrozenOutputFormat =
       (*FrozenRequest)->outputFormat();
-  const NevercLinkOutputKind FrozenOutputKind =
-      (*FrozenRequest)->outputKind();
+  const NevercLinkOutputKind FrozenOutputKind = (*FrozenRequest)->outputKind();
 
   std::vector<PluginLinkSnapshot::LinkerProviderRecord> Linkers(
       Snapshot->linkerProviders().begin(), Snapshot->linkerProviders().end());
@@ -184,8 +151,7 @@ Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
       Snapshot->objectMergeProviders().begin(),
       Snapshot->objectMergeProviders().end());
 
-  if (Request.OutputKind ==
-      linker::LinkExecutionOutputKind::Relocatable) {
+  if (Request.OutputKind == linker::LinkExecutionOutputKind::Relocatable) {
     PluginLinkSnapshot::ObjectMergeProviderRecord Builtin;
     Builtin.PluginID = "neverc.builtin";
     Builtin.ProviderID = "neverc.builtin.object-merge";
@@ -210,11 +176,9 @@ Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
   RouteRequest.InputFormat = FrozenInputFormat;
   RouteRequest.OutputFormat = FrozenOutputFormat;
   RouteRequest.OutputKind = FrozenOutputKind;
-  RouteRequest.CompatibilityKey =
-      std::string(FrozenTarget.SchemaDigest.Data
-                      ? FrozenTarget.SchemaDigest.Data
-                      : "",
-                  static_cast<size_t>(FrozenTarget.SchemaDigest.Length));
+  RouteRequest.CompatibilityKey = std::string(
+      FrozenTarget.SchemaDigest.Data ? FrozenTarget.SchemaDigest.Data : "",
+      static_cast<size_t>(FrozenTarget.SchemaDigest.Length));
   auto Plan = LinkRoutePlanner::plan(Linkers, Mergers, RouteRequest);
   if (!Plan)
     return Plan.takeError();
@@ -232,8 +196,8 @@ Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
     auto ObjectReader = ObjectReaderProvider::create(*TargetSnapshot);
     if (!ObjectReader)
       return ObjectReader.takeError();
-    auto FileSystem = createPluginFileSystem(
-        *Config.pluginTask, vfs::getRealFileSystem());
+    auto FileSystem =
+        createPluginFileSystem(*Config.pluginTask, vfs::getRealFileSystem());
     if (!FileSystem)
       return FileSystem.takeError();
 
@@ -255,9 +219,8 @@ Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
                   (*FrozenRequest)->ownedTarget(), Objects,
                   (*FrozenRequest)->options().Flags)
             : executeObjectMergeProvider(
-                  *Config.pluginTask, Provider,
-                  (*FrozenRequest)->ownedTarget(), Objects,
-                  (*FrozenRequest)->options().Flags);
+                  *Config.pluginTask, Provider, (*FrozenRequest)->ownedTarget(),
+                  Objects, (*FrozenRequest)->options().Flags);
     if (!Merged)
       return Merged.takeError();
 
@@ -265,20 +228,19 @@ Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
         ObjectPhasePipeline::create(*Config.pluginTask, *TargetSnapshot);
     if (!OutputPipeline)
       return OutputPipeline.takeError();
-    auto Output = (*OutputPipeline)->execute(
-        *Merged->Object,
-        ObjectOutputDestination::file(
-            (*FrozenRequest)->outputURI(),
-            std::numeric_limits<uint64_t>::max()));
+    auto Output = (*OutputPipeline)
+                      ->execute(*Merged->Object,
+                                ObjectOutputDestination::file(
+                                    (*FrozenRequest)->outputURI(),
+                                    std::numeric_limits<uint64_t>::max()));
     if (!Output)
       return Output.takeError();
-    return linker::LinkHookResult{
-        linker::LinkHookDisposition::Completed, 0};
+    return linker::LinkHookResult{linker::LinkHookDisposition::Completed, 0};
   }
 
   if (Plan->linkerProvider()->Builtin)
-    return linker::LinkHookResult{
-        linker::LinkHookDisposition::ContinueBuiltin, 0};
+    return linker::LinkHookResult{linker::LinkHookDisposition::ContinueBuiltin,
+                                  0};
 
   if (!Config.pluginTask)
     return bridgeError("plugin LinkerProvider has no LinkTask");
@@ -287,12 +249,10 @@ Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
   Candidate.Header = {sizeof(Candidate), NEVERC_LINK_API_MAJOR,
                       NEVERC_LINK_API_MINOR, 0};
   auto Invoked = Config.pluginTask->invokeCallback(
-      Provider.PluginID, "LinkerProvider",
-      [&] {
-        return Provider.Link(
-            Provider.UserData, Config.pluginTask->handle(),
-            &(*FrozenRequest)->cView(),
-            &(*FrozenRequest)->cView().RawInputs, &Candidate);
+      Provider.PluginID, "LinkerProvider", [&] {
+        return Provider.Link(Provider.UserData, Config.pluginTask->handle(),
+                             &(*FrozenRequest)->cView(),
+                             &(*FrozenRequest)->cView().RawInputs, &Candidate);
       });
   if (!Invoked)
     return Invoked.takeError();
@@ -305,8 +265,7 @@ Expected<linker::LinkHookResult> LinkExecutionHooksBridge::execute(
     return bridgeError("plugin LinkerProvider returned an invalid product");
 
   auto Verified = Config.pluginTask->invokeCallback(
-      Provider.PluginID, "BinaryImageVerifier",
-      [&] {
+      Provider.PluginID, "BinaryImageVerifier", [&] {
         return Provider.VerifyImage(
             Provider.UserData, Config.pluginTask->handle(),
             &(*FrozenRequest)->cView(), Candidate.Image);

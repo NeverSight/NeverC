@@ -7,6 +7,7 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
+#include "ELF/ELFLinkGraphAdapter.h"
 
 namespace linker::elf {
 
@@ -23,6 +24,7 @@ struct ELFLinkerContext::Impl {
   const TargetInfo *Target = nullptr;
   ElfSymbolState GeneratedSymbols;
   ElfOutputState Output;
+  std::unique_ptr<ELFLinkGraphAdapter> PluginLinkAdapter;
   bool InputFileIsInGroup = false;
   uint32_t NextGroupId = 0;
   unsigned VernauxNum = 0;
@@ -59,6 +61,9 @@ ElfSymbolState &elfSym() {
   return elfContext().state().GeneratedSymbols;
 }
 ElfOutputState &elfOut() { return elfContext().state().Output; }
+std::unique_ptr<ELFLinkGraphAdapter> &elfPluginLinkAdapter() {
+  return elfContext().state().PluginLinkAdapter;
+}
 bool &elfInputFileIsInGroup() {
   return elfContext().state().InputFileIsInGroup;
 }

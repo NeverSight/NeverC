@@ -26,6 +26,8 @@ set(NEVERC_TEST_SOURCES
   PluginMIRPassTests.cpp
   PluginABILoweringDriverTests.cpp
   PluginBuiltinTargetProviderDriverTests.cpp
+  PluginCOFFLinkAdapterTests.cpp
+  PluginELFLinkAdapterTests.cpp
   PluginNewBackendTests.cpp
   PluginFrontendLifecycleTests.cpp
   PluginPreprocessorProviderTests.cpp

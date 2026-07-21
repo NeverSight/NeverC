@@ -38,10 +38,22 @@ linker_declare_backend(
     Symbols/SymbolTable.cpp
     Symbols/Symbols.cpp
 
+    # NeverC C-ABI LinkGraph, phase, and BinaryImage adapters. These sources
+    # stay in the native backend so the dependency remains one-way.
+    ${NEVERC_SOURCE_DIR}/lib/Plugin/Link/COFF/COFFLinkGraphAdapter.cpp
+    ${NEVERC_SOURCE_DIR}/lib/Plugin/Link/COFF/COFFPhaseProviders.cpp
+    ${NEVERC_SOURCE_DIR}/lib/Plugin/Link/COFF/COFFBinaryImageAdapter.cpp
+
   EXTRA_COMPONENTS
 
   EXTRA_LIBS
+    nevercPluginLink
     ${LLVM_ATOMIC_LIB}
+)
+
+target_include_directories(linkerCOFF PRIVATE
+  ${NEVERC_SOURCE_DIR}/lib/Plugin
+  ${NEVERC_SOURCE_DIR}/lib/Plugin/Link
 )
 
 # Work around a stack-use-after-scope false positive in the COFF linker

@@ -10,8 +10,11 @@
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
 #include "llvm/ADT/DenseSet.h"
+#include <memory>
 
 namespace linker::coff {
+
+class COFFLinkGraphAdapter;
 
 class COFFLinkerContext : public CommonLinkerContext {
 public:
@@ -60,6 +63,8 @@ public:
   Timer writeTimer;
 
   Configuration config;
+
+  std::unique_ptr<COFFLinkGraphAdapter> pluginLinkAdapter;
 
   // Symbols marked with __attribute__((override)) or --override=<sym>.
   // Maps symbol name → originating InputFile (nullptr for /override: flag).

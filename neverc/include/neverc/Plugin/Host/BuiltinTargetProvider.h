@@ -1,6 +1,7 @@
 #ifndef NEVERC_PLUGIN_HOST_BUILTINTARGETPROVIDER_H
 #define NEVERC_PLUGIN_HOST_BUILTINTARGETPROVIDER_H
 
+#include "neverc/Plugin/Host/PluginTargetDescriptor.h"
 #include "neverc/Plugin/PluginTarget.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
@@ -54,6 +55,15 @@ llvm::ArrayRef<BuiltinTargetRoute> builtinTargetRoutes();
 /// boundaries (for example macOS versus iOS, and Linux versus Android).
 const BuiltinTargetRoute *findBuiltinTargetRoute(llvm::StringRef Triple);
 
+/// Builds the canonical TargetKey for an in-tree target route. Native
+/// backends use this instead of asking the out-of-tree plugin registry to
+/// synthesize a built-in route.
+llvm::Expected<OwnedTargetKey> createBuiltinTargetKey(
+    const BuiltinTargetRoute &Route, llvm::StringRef Triple,
+    llvm::StringRef CPU, NevercTargetRelocationModel RelocationModel,
+    NevercTargetCodeModel CodeModel = NEVERC_TARGET_CODE_MODEL_SMALL,
+    NevercTargetExecutionLevel ExecutionLevel = NEVERC_TARGET_EXECUTION_USER);
+
 /// Read-only adapter over LLVM's process-global target registry.
 llvm::Expected<const llvm::Target *>
 lookupBuiltinLLVMTarget(const BuiltinTargetRoute &Route);
@@ -64,10 +74,11 @@ selectBuiltinNeverCTargetRoute(const neverc::TargetInfo &Target);
 
 /// Cross-validates the frontend/module selection against the LLVM target
 /// machine before code generation writes output.
-llvm::Error validateBuiltinTargetPipeline(
-    const BuiltinTargetRoute &Route, const llvm::Module &Module,
-    const llvm::TargetMachine &Machine, llvm::StringRef RequestedCPU,
-    llvm::StringRef RequestedFeatures);
+llvm::Error validateBuiltinTargetPipeline(const BuiltinTargetRoute &Route,
+                                          const llvm::Module &Module,
+                                          const llvm::TargetMachine &Machine,
+                                          llvm::StringRef RequestedCPU,
+                                          llvm::StringRef RequestedFeatures);
 
 } // namespace plugin
 } // namespace neverc

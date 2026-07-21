@@ -1,3 +1,4 @@
+#include "COFF/COFFLinkGraphAdapter.h"
 #include "Linker/COFF/COFFLinkerContext.h"
 #include "Linker/COFF/Config.h"
 #include "Linker/COFF/Driver.h"
@@ -53,8 +54,7 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           const LinkerDriverConfig &driverCfg) {
   LinkerExecutionContext LocalExecution;
   LinkerExecutionContext &Execution =
-      driverCfg.executionContext ? *driverCfg.executionContext
-                                 : LocalExecution;
+      driverCfg.executionContext ? *driverCfg.executionContext : LocalExecution;
   COFFLinkerContext &ctx = Execution.createBackend<COFFLinkerContext>();
   ctx.configureParallel(driverCfg.threadCount);
 
@@ -1774,8 +1774,38 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   if (!driverCfg.printSymbolOrder.empty())
     config->printSymbolOrder = saver().save(driverCfg.printSymbolOrder);
 
+  if (config->driverCfg && config->driverCfg->pluginTask) {
+    StringRef Triple;
+    if (config->driverCfg->executionRequest)
+      Triple = config->driverCfg->executionRequest->TargetTriple;
+    if (Triple.empty())
+      Triple = config->machine == ARM64 ? "aarch64-pc-windows-msvc"
+                                        : "x86_64-pc-windows-msvc";
+    auto Adapter = COFFLinkGraphAdapter::create(
+        *config->driverCfg->pluginTask, ctx, Triple, config->driverCfg->cpu,
+        config->dynamicBase || config->dll ? NEVERC_TARGET_RELOCATION_PIC
+                                           : NEVERC_TARGET_RELOCATION_STATIC);
+    if (!Adapter) {
+      error("could not initialize COFF plugin adapter: " +
+            toString(Adapter.takeError()));
+      return;
+    }
+    ctx.pluginLinkAdapter = std::move(*Adapter);
+    if (Error e = ctx.pluginLinkAdapter->advanceTo(
+            NEVERC_LINK_STATE_COMDAT_SELECTED)) {
+      error("COFF plugin input phases failed: " + toString(std::move(e)));
+      return;
+    }
+  }
+
   if (config->doGC)
     markLive(ctx);
+  if (ctx.pluginLinkAdapter)
+    if (Error e =
+            ctx.pluginLinkAdapter->advanceTo(NEVERC_LINK_STATE_GC_COMPLETE)) {
+      error("COFF plugin GC phase failed: " + toString(std::move(e)));
+      return;
+    }
 
   convertResources();
 
@@ -1783,6 +1813,12 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
     findKeepUniqueSections(ctx);
     doICF(ctx);
   }
+  if (ctx.pluginLinkAdapter)
+    if (Error e =
+            ctx.pluginLinkAdapter->advanceTo(NEVERC_LINK_STATE_ICF_COMPLETE)) {
+      error("COFF plugin ICF phase failed: " + toString(std::move(e)));
+      return;
+    }
 
   writeOutput(ctx);
 

@@ -17,6 +17,7 @@
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
 #include "neverc/Merge/Merger.h"
+#include "ELF/ELFLinkGraphAdapter.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/BLAKE3.h"
@@ -462,6 +463,13 @@ template <class ELFT> void elf::createSyntheticSections() {
 
 template <class ELFT> void OutputWriter<ELFT>::run() {
   prepareLayout();
+  if (elfPluginLinkAdapter())
+    if (Error E = elfPluginLinkAdapter()->advanceTo(
+            NEVERC_LINK_STATE_THUNKS_RELAXED)) {
+      error("ELF plugin relaxation phase failed: " +
+            toString(std::move(E)));
+      return;
+    }
   checkExecuteOnly();
 
   parallelForEach(outputSections,
@@ -480,6 +488,14 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
 
   for (Partition &part : partitions)
     commitSegmentHeaders(part);
+
+  if (elfPluginLinkAdapter())
+    if (Error E = elfPluginLinkAdapter()->advanceTo(
+            NEVERC_LINK_STATE_LAYOUT_COMPLETE)) {
+      error("ELF plugin layout phase failed: " +
+            toString(std::move(E)));
+      return;
+    }
 
   writeMapAndCref();
 
@@ -515,6 +531,14 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
       writeSectionsBinary();
     }
 
+    if (elfPluginLinkAdapter())
+      if (Error E = elfPluginLinkAdapter()->advanceTo(
+              NEVERC_LINK_STATE_RELOCATIONS_APPLIED)) {
+        error("ELF plugin relocation phase failed: " +
+              toString(std::move(E)));
+        return;
+      }
+
     // Hash can run while the OS flushes dirty pages from the
     // section pass — parallelFor inside computeContentHash keeps
     // all cores busy while the kernel writes back.
@@ -522,9 +546,26 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
     if (errorCount())
       return;
 
-    if (auto e = buffer->commit())
+    if (elfPluginLinkAdapter()) {
+      if (Error E = elfPluginLinkAdapter()->advanceTo(
+              NEVERC_LINK_STATE_IMAGE_EMITTED)) {
+        error("ELF plugin image phase failed: " +
+              toString(std::move(E)));
+        return;
+      }
+      std::vector<uint8_t> Bytes(elfOut().bufferStart,
+                                 elfOut().bufferStart + fileSize);
+      buffer.reset();
+      elfOut().bufferStart = nullptr;
+      if (Error E = elfPluginLinkAdapter()->publishImage(Bytes)) {
+        error("failed to publish ELF plugin output: " +
+              toString(std::move(E)));
+        return;
+      }
+    } else if (auto e = buffer->commit()) {
       fatal("failed to write output '" + buffer->getPath() +
             "': " + toString(std::move(e)));
+    }
   }
 
 }

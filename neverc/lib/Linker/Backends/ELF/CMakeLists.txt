@@ -48,6 +48,13 @@ linker_declare_backend(
     # Task-local backend ownership.
     State/ELFLinkerContext.cpp
 
+    # NeverC C-ABI LinkGraph, phase, and BinaryImage adapters. These sources
+    # are intentionally compiled into the native backend, not the generic
+    # plugin library, so the dependency remains one-way.
+    ${NEVERC_SOURCE_DIR}/lib/Plugin/Link/ELF/ELFLinkGraphAdapter.cpp
+    ${NEVERC_SOURCE_DIR}/lib/Plugin/Link/ELF/ELFPhaseProviders.cpp
+    ${NEVERC_SOURCE_DIR}/lib/Plugin/Link/ELF/ELFBinaryImageAdapter.cpp
+
     # Output layout, scripts, sections and relocations.
     Layout/LinkerScript.cpp
     Layout/OutputSections.cpp
@@ -77,5 +84,11 @@ linker_declare_backend(
 
   EXTRA_LIBS
     nevercMerge
+    nevercPluginLink
     ${linker_elf_optional_libs}
+)
+
+target_include_directories(linkerELF PRIVATE
+  ${NEVERC_SOURCE_DIR}/lib/Plugin
+  ${NEVERC_SOURCE_DIR}/lib/Plugin/Link
 )

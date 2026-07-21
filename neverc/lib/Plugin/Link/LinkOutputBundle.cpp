@@ -72,7 +72,7 @@ LinkOutputBundle::create(
       {"main", MainPath.str(),
        std::vector<uint8_t>(Image->bytes().begin(),
                             Image->bytes().end()),
-       true});
+         true, true});
   Names.insert("main");
   for (const PluginLinkSideOutput &Side : SideOutputs) {
     if (Side.Name.empty() || Side.Path.empty() ||

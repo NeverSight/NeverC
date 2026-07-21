@@ -52,6 +52,7 @@ PluginBinaryImage::PluginBinaryImage(
     std::vector<PluginBinarySegment> SegmentsValue,
     std::vector<PluginBinarySection> SectionsValue,
     std::vector<PluginBinaryDirectory> DirectoriesValue,
+    std::function<Error(ArrayRef<uint8_t>)> FormatVerifierValue,
     std::unique_ptr<MutableBinaryBuilder> BuilderValue)
     : Task(TaskValue), OutputKind(OutputKindValue),
       TargetID(TargetIDValue), FormatID(FormatIDValue),
@@ -61,8 +62,42 @@ PluginBinaryImage::PluginBinaryImage(
       Segments(std::move(SegmentsValue)),
       Sections(std::move(SectionsValue)),
       Directories(std::move(DirectoriesValue)),
+      FormatVerifier(std::move(FormatVerifierValue)),
       Builder(std::move(BuilderValue)) {
   initializeBinaryImageAPI(API, *this);
+}
+
+Expected<std::shared_ptr<PluginBinaryImage>>
+PluginBinaryImage::import(PluginTaskContext &Task, const NevercIOAPI &IO,
+                          NevercOutputSinkHandle Sink,
+                          PluginBinaryImageData Data) {
+  if (Data.OutputKind != NEVERC_LINK_OUTPUT_EXECUTABLE &&
+      Data.OutputKind != NEVERC_LINK_OUTPUT_SHARED_LIBRARY &&
+      Data.OutputKind != NEVERC_LINK_OUTPUT_BUNDLE)
+    return imageError("imported output kind is not a final image");
+  auto Builder = MutableBinaryBuilder::create(Task, IO, Sink);
+  if (!Builder)
+    return Builder.takeError();
+  if (!Data.Bytes.empty()) {
+    NevercStatus Status = (*Builder)->api().Write(
+        (*Builder)->api().Context, Task.handle(), (*Builder)->handle(),
+        {Data.Bytes.data(), Data.Bytes.size()});
+    if (!neverc_status_is_ok(Status)) {
+      (void)(*Builder)->abort();
+      return imageError("output budget rejected imported image");
+    }
+  }
+  auto Image = std::shared_ptr<PluginBinaryImage>(
+      new PluginBinaryImage(
+          Task, Data.OutputKind, Data.TargetID, Data.FormatID,
+          Data.EntryAddress, Data.ImageBase, Data.ImportCount,
+          Data.ExportCount, Data.DynamicRelocationCount,
+          std::move(Data.Segments), std::move(Data.Sections),
+          std::move(Data.Directories), std::move(Data.FormatVerifier),
+          std::move(*Builder)));
+  if (Error E = Image->initializeHandles())
+    return std::move(E);
+  return Image;
 }
 
 Expected<std::shared_ptr<PluginBinaryImage>>
@@ -119,6 +154,7 @@ PluginBinaryImage::emit(PluginTaskContext &Task, const NevercIOAPI &IO,
     BinarySection.FileOffset = Section.FileOffset;
     BinarySection.FileSize = FileSize;
     BinarySection.Alignment = Section.Alignment;
+    BinarySection.SegmentIndex = Segments.size() - 1;
     Sections.push_back(std::move(BinarySection));
   }
   if (ImageBase == UINT64_MAX)
@@ -171,6 +207,7 @@ PluginBinaryImage::emit(PluginTaskContext &Task, const NevercIOAPI &IO,
           EntryAddress, ImageBase, Graph.imports().size(),
           Graph.exports().size(), DynamicRelocations,
           std::move(Segments), std::move(Sections), {},
+          {},
           std::move(*Builder)));
   if (Error E = Image->initializeHandles())
     return std::move(E);
@@ -189,9 +226,10 @@ Error PluginBinaryImage::initializeHandles() {
     if (!SegmentHandle)
       return SegmentHandle.takeError();
     Segments[Index].Handle = *SegmentHandle;
-    Sections[Index].Segment = *SegmentHandle;
   }
   for (PluginBinarySection &Section : Sections) {
+    if (Section.SegmentIndex < Segments.size())
+      Section.Segment = Segments[Section.SegmentIndex].Handle;
     auto SectionHandle = Task.handles().create(
         PluginBinarySectionHandleKind, &Section);
     if (!SectionHandle)
@@ -294,6 +332,10 @@ Error PluginBinaryImage::verify() {
     return Error::success();
   if (State != NEVERC_BINARY_IMAGE_CANDIDATE)
     return imageError("only a candidate image can be verified");
+  if (FormatVerifier)
+    if (Error E = FormatVerifier(Builder->bytes()))
+      return joinErrors(imageError("format verifier rejected image"),
+                        std::move(E));
   if (Error E = verifyBinaryImage(*this))
     return E;
   auto Seal = Builder->finish();

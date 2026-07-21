@@ -7,6 +7,8 @@
 
 namespace linker::elf {
 
+class ELFLinkGraphAdapter;
+
 class ELFLinkerContext final : public CommonLinkerContext {
 public:
   struct Impl;
@@ -22,6 +24,7 @@ private:
 };
 
 ELFLinkerContext &elfContext();
+std::unique_ptr<ELFLinkGraphAdapter> &elfPluginLinkAdapter();
 bool &elfInputFileIsInGroup();
 uint32_t &elfNextGroupId();
 unsigned &elfVernauxNum();

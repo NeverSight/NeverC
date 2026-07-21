@@ -44,6 +44,7 @@ struct OutputBundleFile {
   std::string Path;
   std::vector<uint8_t> Bytes;
   bool Main = false;
+  bool Executable = false;
 };
 
 struct OutputBundleSummary {

@@ -1,3 +1,4 @@
+#include "COFF/COFFLinkGraphAdapter.h"
 #include "Linker/COFF/COFFLinkerContext.h"
 #include "Linker/COFF/CallGraphSort.h"
 #include "Linker/COFF/Config.h"
@@ -701,11 +702,29 @@ void OutputWriter::run() {
     createExportTable();
     mergeSections();
     removeUnusedSections();
+    if (ctx.pluginLinkAdapter)
+      if (Error e = ctx.pluginLinkAdapter->advanceTo(
+              NEVERC_LINK_STATE_SYNTHETICS_READY)) {
+        error("COFF plugin synthetic phase failed: " + toString(std::move(e)));
+        return;
+      }
     assignSegmentAddresses();
     removeEmptySections();
     assignOutputSectionIndices();
     setSectionPermissions();
     createSymbolAndStringTable();
+    if (ctx.pluginLinkAdapter) {
+      if (Error e = ctx.pluginLinkAdapter->advanceTo(
+              NEVERC_LINK_STATE_THUNKS_RELAXED)) {
+        error("COFF plugin relaxation phase failed: " + toString(std::move(e)));
+        return;
+      }
+      if (Error e = ctx.pluginLinkAdapter->advanceTo(
+              NEVERC_LINK_STATE_LAYOUT_COMPLETE)) {
+        error("COFF plugin layout phase failed: " + toString(std::move(e)));
+        return;
+      }
+    }
 
     if (fileSize > UINT32_MAX)
       fatal("image size (" + Twine(fileSize) + ") " +
@@ -721,6 +740,13 @@ void OutputWriter::run() {
     // if a specific alignment value is needed
     if (tlsAlignment)
       fixTlsAlignment();
+
+    if (ctx.pluginLinkAdapter)
+      if (Error e = ctx.pluginLinkAdapter->advanceTo(
+              NEVERC_LINK_STATE_RELOCATIONS_APPLIED)) {
+        error("COFF plugin relocation phase failed: " + toString(std::move(e)));
+        return;
+      }
   }
 
   computeContentHash();
@@ -731,13 +757,28 @@ void OutputWriter::run() {
     return;
 
   commitPreFixes();
+  if (ctx.pluginLinkAdapter) {
+    if (Error e =
+            ctx.pluginLinkAdapter->advanceTo(NEVERC_LINK_STATE_IMAGE_EMITTED)) {
+      error("COFF plugin image phase failed: " + toString(std::move(e)));
+      return;
+    }
+    std::vector<uint8_t> Bytes(buffer->getBufferStart(),
+                               buffer->getBufferStart() + fileSize);
+    buffer.reset();
+    if (Error e = ctx.pluginLinkAdapter->publishImage(Bytes)) {
+      error("failed to publish COFF plugin output: " + toString(std::move(e)));
+      return;
+    }
+    commitPostFixes();
+    return;
+  }
   llvm::TimeTraceScope timeScope("Commit PE to disk");
   ScopedTimer t2(ctx.outputCommitTimer);
   if (auto e = buffer->commit())
     fatal("failed to write output '" + buffer->getPath() +
           "': " + toString(std::move(e)));
   commitPostFixes();
-
 }
 
 namespace {
@@ -2117,26 +2158,25 @@ void OutputWriter::sortExceptionTables() {
 
       if (funcRVA < textRVA || funcRVA >= textEnd) {
         linker::errs() << "neverc: .pdata[" << i << "] begin RVA 0x"
-                        << Twine::utohexstr(funcRVA) << " outside .text [0x"
-                        << Twine::utohexstr(textRVA) << ", 0x"
-                        << Twine::utohexstr(textEnd) << ")\n";
+                       << Twine::utohexstr(funcRVA) << " outside .text [0x"
+                       << Twine::utohexstr(textRVA) << ", 0x"
+                       << Twine::utohexstr(textEnd) << ")\n";
         ++issues;
       }
       bool unwindInRdata = unwindRVA >= rdataRVA && unwindRVA < rdataEnd;
       bool isPacked = (unwindRVA & 0x3) != 0;
       if (!unwindInRdata && !isPacked) {
         linker::errs() << "neverc: .pdata[" << i << "] unwind RVA 0x"
-                        << Twine::utohexstr(unwindRVA)
-                        << " not in .rdata and not packed\n";
+                       << Twine::utohexstr(unwindRVA)
+                       << " not in .rdata and not packed\n";
         ++issues;
       }
       if (i > 0 && entries[i].begin < entries[i - 1].begin) {
-        linker::errs() << "neverc: .pdata[" << i
-                        << "] not sorted: 0x"
-                        << Twine::utohexstr((uint32_t)entries[i].begin)
-                        << " < 0x"
-                        << Twine::utohexstr((uint32_t)entries[i - 1].begin)
-                        << "\n";
+        linker::errs() << "neverc: .pdata[" << i << "] not sorted: 0x"
+                       << Twine::utohexstr((uint32_t)entries[i].begin)
+                       << " < 0x"
+                       << Twine::utohexstr((uint32_t)entries[i - 1].begin)
+                       << "\n";
         ++issues;
       }
     }

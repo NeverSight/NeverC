@@ -1,6 +1,8 @@
+#include "ELF/ELFLinkGraphAdapter.h"
 #include "Linker/Core/Driver/ArgList.h"
 #include "Linker/Core/Driver/CommonLTOConfig.h"
 #include "Linker/Core/Driver/Dispatcher.h"
+#include "Linker/Core/Driver/LinkExecutionHooks.h"
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
@@ -10,6 +12,8 @@
 #include "Linker/Core/Support/Strings.h"
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/Driver.h"
+#include "Linker/ELF/ELFContextAccess.h"
+#include "Linker/ELF/ELFLinkerContext.h"
 #include "Linker/ELF/Emit.h"
 #include "Linker/ELF/ICF.h"
 #include "Linker/ELF/InputFiles.h"
@@ -40,8 +44,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include <tuple>
 #include <utility>
-#include "Linker/ELF/ELFContextAccess.h"
-#include "Linker/ELF/ELFLinkerContext.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -107,10 +109,8 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           const LinkerDriverConfig &driverCfg) {
   LinkerExecutionContext LocalExecution;
   LinkerExecutionContext &Execution =
-      driverCfg.executionContext ? *driverCfg.executionContext
-                                 : LocalExecution;
-  ELFLinkerContext &Backend =
-      Execution.createBackend<ELFLinkerContext>();
+      driverCfg.executionContext ? *driverCfg.executionContext : LocalExecution;
+  ELFLinkerContext &Backend = Execution.createBackend<ELFLinkerContext>();
   CommonLinkerContext &Common = Backend;
   Common.configureParallel(driverCfg.threadCount, 16);
 
@@ -131,9 +131,8 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
     elfVernauxNum() = 0;
   };
   Common.e.logName = args::getFilenameWithoutExe(args[0]);
-  Common.e.errorLimitExceededMsg =
-      "too many errors emitted, stopping now (use "
-      "-ferror-limit=0 to see all errors)";
+  Common.e.errorLimitExceededMsg = "too many errors emitted, stopping now (use "
+                                   "-ferror-limit=0 to see all errors)";
 
   config = ConfigWrapper();
   script = std::make_unique<LinkerScript>();
@@ -1964,11 +1963,17 @@ void markBuffersAsDontNeed() {
 
 template <class ELFT> void LinkerDriver::compileBitcodeFiles() {
   llvm::TimeTraceScope timeScope("LTO");
+  // Creating BitcodeCompiler also creates the plugin LTO child task.  With no
+  // bitcode inputs there is no backend run (and therefore no BackendDoneHook)
+  // to finish that child, which prevents the parent LinkTask from ending.
+  if (ctx.bitcodeFiles.empty()) {
+    lto.reset();
+    return;
+  }
   lto.reset(new BitcodeCompiler);
   lto->addBatch(ctx.bitcodeFiles);
 
-  if (!ctx.bitcodeFiles.empty())
-    markBuffersAsDontNeed();
+  markBuffersAsDontNeed();
 
   auto Compiled = lto->compile();
 
@@ -2367,10 +2372,8 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     if (config->androidKernelModule) {
       mergeOpts.mergeSections = true;
       mergeOpts.preservedSections = {
-          ".modinfo",         "__versions",
-          ".gnu.linkonce.this_module",
-          ".plt",             ".init.plt",
-          ".text.ftrace_trampoline",
+          ".modinfo", "__versions", ".gnu.linkonce.this_module",
+          ".plt",     ".init.plt",  ".text.ftrace_trampoline",
       };
     }
 
@@ -2466,8 +2469,38 @@ void LinkerDriver::execute(opt::InputArgList &args) {
 
   config->imageBase = getImageBase(args);
 
+  if (config->driverCfg && config->driverCfg->pluginTask) {
+    StringRef Triple;
+    if (config->driverCfg->executionRequest)
+      Triple = config->driverCfg->executionRequest->TargetTriple;
+    if (Triple.empty())
+      Triple = config->emachine == EM_AARCH64 ? "aarch64-unknown-linux-gnu"
+                                              : "x86_64-unknown-linux-gnu";
+    auto Adapter = ELFLinkGraphAdapter::create(
+        *config->driverCfg->pluginTask, Triple, config->driverCfg->cpu,
+        config->shared || config->pie ? NEVERC_TARGET_RELOCATION_PIC
+                                      : NEVERC_TARGET_RELOCATION_STATIC);
+    if (!Adapter) {
+      error("could not initialize ELF plugin adapter: " +
+            toString(Adapter.takeError()));
+      return;
+    }
+    elfPluginLinkAdapter() = std::move(*Adapter);
+    if (Error E = elfPluginLinkAdapter()->advanceTo(
+            NEVERC_LINK_STATE_COMDAT_SELECTED)) {
+      error("ELF plugin input phases failed: " + toString(std::move(E)));
+      return;
+    }
+  }
+
   dispatchByFormat(splitSections, );
   dispatchByFormat(markLive, );
+  if (elfPluginLinkAdapter())
+    if (Error E =
+            elfPluginLinkAdapter()->advanceTo(NEVERC_LINK_STATE_GC_COMPLETE)) {
+      error("ELF plugin GC phase failed: " + toString(std::move(E)));
+      return;
+    }
   copySectionsIntoPartitions();
 
   if (canHaveMemtagGlobals()) {
@@ -2508,6 +2541,18 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   if (config->icf != ICFLevel::None) {
     dispatchByFormat(findKeepUniqueSections, args);
     dispatchByFormat(doIcf, );
+  }
+  if (elfPluginLinkAdapter()) {
+    if (Error E =
+            elfPluginLinkAdapter()->advanceTo(NEVERC_LINK_STATE_ICF_COMPLETE)) {
+      error("ELF plugin ICF phase failed: " + toString(std::move(E)));
+      return;
+    }
+    if (Error E = elfPluginLinkAdapter()->advanceTo(
+            NEVERC_LINK_STATE_SYNTHETICS_READY)) {
+      error("ELF plugin synthetic phase failed: " + toString(std::move(E)));
+      return;
+    }
   }
 
   if (config->callGraphProfileSort != CGProfileSortKind::None) {

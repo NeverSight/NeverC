@@ -1,4 +1,5 @@
 #include "Linker/COFF/COFFLinkerContext.h"
+#include "COFF/COFFLinkGraphAdapter.h"
 #include "Linker/COFF/Symbols.h"
 #include "Linker/Core/Runtime/Allocator.h"
 #include "llvm/BinaryFormat/COFF.h"

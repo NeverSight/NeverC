@@ -42,54 +42,70 @@ Error verifyLinkLayout(const PluginLinkGraph &Graph) {
     if (!isPowerOf2_64(Section.Alignment) ||
         Section.Address % Section.Alignment != 0 ||
         Section.FileOffset % Section.Alignment != 0)
-      return layoutError("section alignment is invalid: " +
-                         Section.Name);
+      return layoutError("section alignment is invalid: " + Section.Name);
     if (addOverflows(Section.Address, Section.Size))
-      return layoutError("section address range overflows: " +
-                         Section.Name);
-    const bool Writable =
-        (Section.Flags & NEVERC_OBJECT_SECTION_WRITABLE) != 0;
+      return layoutError("section address range overflows: " + Section.Name);
+    const bool Writable = (Section.Flags & NEVERC_OBJECT_SECTION_WRITABLE) != 0;
     const bool Executable =
         (Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0;
+    const bool Allocated =
+        (Section.Flags & NEVERC_OBJECT_SECTION_ALLOCATED) != 0;
     if (!AllowWX && Writable && Executable)
       return layoutError("writable-executable section is forbidden: " +
                          Section.Name);
-    if (Section.Size != 0)
-      AddressRanges.emplace_back(
-          Section.Address, Section.Address + Section.Size, Section.ID);
+    // Non-allocated sections (for example ELF .symtab/.strtab) have no
+    // runtime address. Multiple such sections legitimately use address zero,
+    // so only allocated sections participate in the virtual-address proof.
+    if (Allocated && Section.Size != 0)
+      AddressRanges.emplace_back(Section.Address,
+                                 Section.Address + Section.Size, Section.ID);
 
     uint64_t FileEnd = Section.FileOffset;
     for (const PluginLinkAtom &Atom : Graph.atoms()) {
       if (Atom.SectionID != Section.ID)
         continue;
-      const uint64_t MemorySize =
-          Atom.Content.size() + Atom.ZeroFillSize;
-      if (!isPowerOf2_64(Atom.Alignment) ||
-          Atom.Address % Atom.Alignment != 0 ||
-          Atom.Address < Section.Address ||
+      if ((Atom.Flags & NEVERC_LINK_ATOM_LIVE) == 0)
+        continue;
+      const uint64_t MemorySize = Atom.Content.size() + Atom.ZeroFillSize;
+      if (!isPowerOf2_64(Atom.Alignment))
+        return layoutError("atom alignment is invalid: " + Atom.Name);
+      if (Atom.Address % Atom.Alignment != 0)
+        return layoutError("atom address is misaligned: " + Atom.Name);
+      if (Atom.Address < Section.Address ||
           addOverflows(Atom.Address, MemorySize) ||
-          Atom.Address + MemorySize >
-              Section.Address + Section.Size)
-        return layoutError("atom is outside its section: " + Atom.Name);
+          Atom.Address + MemorySize > Section.Address + Section.Size)
+        return layoutError(Twine("atom '") + Atom.Name + "' at " +
+                           Twine(Atom.Address) + " with size " +
+                           Twine(MemorySize) + " is outside section '" +
+                           Section.Name + "' at " + Twine(Section.Address) +
+                           " with size " + Twine(Section.Size));
       if (!Atom.Content.empty()) {
         if (Atom.FileOffset < Section.FileOffset ||
             addOverflows(Atom.FileOffset, Atom.Content.size()))
           return layoutError("atom file range is invalid: " + Atom.Name);
-        FileEnd =
-            std::max(FileEnd, Atom.FileOffset + Atom.Content.size());
+        FileEnd = std::max(FileEnd, Atom.FileOffset + Atom.Content.size());
       }
     }
     if (FileEnd != Section.FileOffset)
       FileRanges.emplace_back(Section.FileOffset, FileEnd, Section.ID);
   }
 
-  auto CheckDisjoint = [&](std::vector<Range> Ranges,
-                           StringRef Kind) -> Error {
+  auto CheckDisjoint = [&](std::vector<Range> Ranges, StringRef Kind) -> Error {
     llvm::sort(Ranges);
-    for (size_t Index = 1; Index < Ranges.size(); ++Index)
-      if (std::get<0>(Ranges[Index]) <
-          std::get<1>(Ranges[Index - 1]))
-        return layoutError(Kind + " ranges overlap");
+    for (size_t Index = 1; Index < Ranges.size(); ++Index) {
+      const Range &Previous = Ranges[Index - 1];
+      const Range &Current = Ranges[Index];
+      if (std::get<0>(Current) >= std::get<1>(Previous))
+        continue;
+      const PluginLinkSection *PreviousSection =
+          Graph.findSection(std::get<2>(Previous));
+      const PluginLinkSection *CurrentSection =
+          Graph.findSection(std::get<2>(Current));
+      return layoutError(
+          Kind + " ranges overlap between '" +
+          (PreviousSection ? PreviousSection->Name : "<unknown>") + "' and '" +
+          (CurrentSection ? CurrentSection->Name : "<unknown>") + "'");
+    }
     return Error::success();
   };
   if (Error E = CheckDisjoint(std::move(AddressRanges), "address"))
