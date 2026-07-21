@@ -53,8 +53,10 @@ TEST_F(PluginCOFFLinkAdapterTest,
       const std::string Stem = "plugin-coff-" +
                                Target.substr(0, Target.find('-')) + "-" +
                                Output.Name;
-      const fs::path Baseline = tmpFile(Stem + "-baseline");
-      const fs::path WithPlugin = tmpFile(Stem + "-session");
+      // PE embeds the output module name in its export directory, so the two
+      // links must share one output path; otherwise the baseline and
+      // plugin images differ only by their file name, not the adapter.
+      const fs::path Output_ = tmpFile(Stem);
 
       std::vector<std::string> Common = {"--no-default-config",
                                          "--target=" + Target, "-O0",
@@ -64,21 +66,21 @@ TEST_F(PluginCOFFLinkAdapterTest,
 
       std::vector<std::string> BaselineArguments = Common;
       BaselineArguments.insert(BaselineArguments.end(),
-                               {"-o", Baseline.string()});
+                               {"-o", Output_.string()});
       CmdResult BaselineResult = ncc(BaselineArguments);
       ASSERT_EQ(BaselineResult.exitCode, 0) << BaselineResult.err;
+      const std::string BaselineBytes = readFile(Output_);
 
       std::vector<std::string> PluginArguments = Common;
       PluginArguments.insert(PluginArguments.begin() + 1,
                              std::string("-fplugin=") +
                                  NEVERC_TEST_TARGET_VALID_PLUGIN);
       PluginArguments.insert(PluginArguments.end(),
-                             {"-o", WithPlugin.string()});
+                             {"-o", Output_.string()});
       CmdResult PluginResult = ncc(PluginArguments);
       ASSERT_EQ(PluginResult.exitCode, 0) << PluginResult.err;
+      const std::string PluginBytes = readFile(Output_);
 
-      const std::string BaselineBytes = readFile(Baseline);
-      const std::string PluginBytes = readFile(WithPlugin);
       ASSERT_TRUE(hasPEMagic(PluginBytes));
       EXPECT_EQ(PluginBytes, BaselineBytes);
     }

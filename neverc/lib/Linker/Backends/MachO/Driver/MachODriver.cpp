@@ -529,12 +529,19 @@ void initLLVM() {
 bool compileBitcodeFiles() {
   TimeTraceScope timeScope("LTO");
 
-  auto *lto = make<BitcodeCompiler>();
   SmallVector<BitcodeFile *, 0> bcFiles;
   for (InputFile *file : inputFiles)
     if (auto *bitcodeFile = dyn_cast<BitcodeFile>(file))
       if (!file->lazy)
         bcFiles.push_back(bitcodeFile);
+  // Constructing BitcodeCompiler also creates the plugin LTO child task.  With
+  // no bitcode inputs there is no backend run (and therefore no
+  // BackendDoneHook) to finish that child, which would prevent the parent
+  // LinkTask from ending.  Skip LTO setup entirely when there is nothing to do.
+  if (bcFiles.empty())
+    return false;
+
+  auto *lto = make<BitcodeCompiler>();
   lto->addBatch(bcFiles);
 
   std::vector<ObjFile *> compiled = lto->compile();

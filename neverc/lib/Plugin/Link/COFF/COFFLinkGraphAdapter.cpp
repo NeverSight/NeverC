@@ -150,12 +150,13 @@ bool isPCRelativeRelocation(MachineTypes Machine, uint16_t Type) {
 }
 
 uint8_t relocationWidth(MachineTypes Machine, uint16_t Type) {
+  // The LinkGraph edge width is expressed in bits ({0,8,16,32,64}), not bytes.
   if (Machine == AMD64 && Type == IMAGE_REL_AMD64_ADDR64)
-    return 8;
+    return 64;
   if ((Machine == AMD64 && Type == IMAGE_REL_AMD64_SECTION) ||
       (Machine == ARM64 && Type == IMAGE_REL_ARM64_SECTION))
-    return 2;
-  return 4;
+    return 16;
+  return 32;
 }
 
 PluginLinkOriginData originFor(const DenseMap<const InputFile *, uint64_t> &IDs,
@@ -292,11 +293,26 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
     Section->Name = Native->name.empty() ? "<coff-output>" : Native->name.str();
     Section->Kind = sectionKind(Native->header.Characteristics, Native->name);
     Section->Flags = sectionFlags(Native->header.Characteristics);
-    Section->Alignment = Context.config.align == 0 ? 1 : Context.config.align;
     Section->Address =
         HasLayout ? Context.config.imageBase + Native->getRVA() : 0;
     Section->FileOffset = HasLayout ? Native->getFileOff() : 0;
     Section->Size = HasLayout ? Native->getVirtualSize() : 0;
+    // PE uses distinct memory (SectionAlignment) and disk (FileAlignment)
+    // alignments, so the generic verifier's requirement that the address and
+    // file offset both divide the reported alignment only holds for the largest
+    // power of two dividing both. Derive it from the frozen layout values.
+    if (HasLayout) {
+      const uint64_t AddrAlign =
+          Section->Address == 0 ? (UINT64_C(1) << 32)
+                                : (Section->Address & (0 - Section->Address));
+      const uint64_t OffsetAlign =
+          Section->FileOffset == 0
+              ? (UINT64_C(1) << 32)
+              : (Section->FileOffset & (0 - Section->FileOffset));
+      Section->Alignment = std::min(AddrAlign, OffsetAlign);
+    } else {
+      Section->Alignment = Context.config.align == 0 ? 1 : Context.config.align;
+    }
     Section->Origin.CreatedByProvider = "neverc.builtin.coff";
     std::vector<uint8_t> Payload;
     appendU32(Payload, Native->header.Characteristics);
@@ -330,6 +346,10 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       for (Chunk *ChunkValue : Section->chunks)
         AddChunk(ChunkValue);
 
+  // COMDAT sections that share a leader name form one selection group. Every
+  // same-named candidate must reference a single winning group ID, so collapse
+  // them into one canonical PluginLinkComdat instead of self-selecting each.
+  std::map<std::string, uint64_t> ComdatByName;
   const auto CaptureChunk = [&](Chunk *Native) -> uint64_t {
     if (!Native)
       return 0;
@@ -408,16 +428,26 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
 
     if (auto *Input = dyn_cast<SectionChunk>(Native);
         Input && Input->isCOMDAT() && Atom->ComdatID == 0) {
-      PluginLinkComdat Comdat;
-      Comdat.Name = Input->sym && !Input->sym->getName().empty()
-                        ? Input->sym->getName().str()
-                        : Section->Name;
-      Comdat.Selection = comdatSelection(Input->selection);
-      Comdat.Origin = Section->Origin;
-      PluginLinkComdat &Stored = Result->addComdat(std::move(Comdat));
-      Stored.SelectedID = Stored.ID;
-      Atom->ComdatID = Stored.ID;
-      Section->ComdatID = Stored.ID;
+      const std::string ComdatName =
+          Input->sym && !Input->sym->getName().empty()
+              ? Input->sym->getName().str()
+              : Section->Name;
+      auto Existing = ComdatByName.find(ComdatName);
+      uint64_t ComdatID;
+      if (Existing == ComdatByName.end()) {
+        PluginLinkComdat Comdat;
+        Comdat.Name = ComdatName;
+        Comdat.Selection = comdatSelection(Input->selection);
+        Comdat.Origin = Section->Origin;
+        PluginLinkComdat &Stored = Result->addComdat(std::move(Comdat));
+        Stored.SelectedID = Stored.ID;
+        ComdatID = Stored.ID;
+        ComdatByName.emplace(ComdatName, ComdatID);
+      } else {
+        ComdatID = Existing->second;
+      }
+      Atom->ComdatID = ComdatID;
+      Section->ComdatID = ComdatID;
     }
 
     if (HasLayout && chunkIsLive(Native) &&
@@ -488,8 +518,17 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       return 0;
     SymbolValue->Name = Native->getName().str();
     SymbolValue->Version.clear();
-    SymbolValue->Binding = Native->isWeak ? NEVERC_LINK_SYMBOL_BINDING_WEAK
-                                          : NEVERC_LINK_SYMBOL_BINDING_GLOBAL;
+    // Only the symbol the symbol table actually resolved to is the external
+    // winner for this name. Non-external file-local definitions (reached
+    // through relocations) share names across translation units, so binding
+    // them GLOBAL would make several appear as prevailing definitions of one
+    // name. Bind those as LOCAL, which the verifier keys per input/id.
+    const bool IsExternalWinner =
+        Context.symtab.find(Native->getName()) == Native;
+    SymbolValue->Binding = !IsExternalWinner
+                               ? NEVERC_LINK_SYMBOL_BINDING_LOCAL
+                           : Native->isWeak ? NEVERC_LINK_SYMBOL_BINDING_WEAK
+                                            : NEVERC_LINK_SYMBOL_BINDING_GLOBAL;
     SymbolValue->Visibility = NEVERC_LINK_SYMBOL_VISIBILITY_DEFAULT;
     SymbolValue->Type = NEVERC_OBJECT_SYMBOL_TYPE_NO_TYPE;
     SymbolValue->Definition = NEVERC_LINK_SYMBOL_UNDEFINED;
@@ -524,6 +563,13 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
         if (auto *Regular = dyn_cast<DefinedRegular>(DefinedValue))
           SymbolValue->Value = Regular->getValue();
       }
+      // Synthetic and local-import bodies are defined without an owning chunk,
+      // so no atom was captured for them. Represent such chunkless definitions
+      // as absolute values; otherwise the verifier rejects a defined symbol
+      // whose atom is missing from the graph.
+      if (SymbolValue->Definition == NEVERC_LINK_SYMBOL_DEFINED &&
+          SymbolValue->AtomID == 0)
+        SymbolValue->Definition = NEVERC_LINK_SYMBOL_ABSOLUTE;
       SymbolValue->IsPrevailing = true;
     }
 
@@ -617,6 +663,23 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
               TargetAtomID = CaptureChunk(TargetChunk);
         if (TargetSymbolID == 0 && TargetAtomID == 0)
           continue;
+        // Debug and metadata sections legitimately reference GC-eliminated
+        // code in COFF; the native linker relaxes those relocations. Recording
+        // such a live-source -> dead-target reference as a hard graph edge
+        // would violate the liveness invariant, so drop it from the projection.
+        uint64_t ResolvedTargetAtomID = TargetAtomID;
+        if (ResolvedTargetAtomID == 0 && TargetSymbolID != 0)
+          if (const PluginLinkSymbol *TargetSym =
+                  Result->findSymbol(TargetSymbolID))
+            ResolvedTargetAtomID = TargetSym->AtomID;
+        if (ResolvedTargetAtomID != 0)
+          if (const PluginLinkAtom *SourceAtom =
+                  Result->findAtom(SourceAtomID))
+            if (const PluginLinkAtom *TargetAtom =
+                    Result->findAtom(ResolvedTargetAtomID))
+              if ((SourceAtom->Flags & NEVERC_LINK_ATOM_LIVE) != 0 &&
+                  (TargetAtom->Flags & NEVERC_LINK_ATOM_LIVE) == 0)
+                continue;
         const auto Key =
             std::make_pair(static_cast<const SectionChunk *>(Section), Index);
         const uint64_t EdgeID =
@@ -663,10 +726,28 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       PluginLinkAtom *Atom = Result->findAtom(AtomID);
       if (!Input || !Atom)
         continue;
-      if (Input->repl != Input) {
-        Atom->FoldLeaderID = AtomIDs.lookup(Input->repl);
-        if (Atom->FoldLeaderID != 0)
-          Atom->Flags |= NEVERC_LINK_ATOM_FOLDED;
+      const uint64_t LeaderID =
+          Input->repl != Input ? AtomIDs.lookup(Input->repl) : 0;
+      PluginLinkAtom *Leader =
+          LeaderID != 0 ? Result->findAtom(LeaderID) : nullptr;
+      if (Leader) {
+        // ICF merged this follower into its leader. The canonical graph models
+        // a fold as a live follower that is byte-equivalent to and co-located
+        // with the leader, and is not an unwind/TLS/address-significant atom
+        // (the leader owns those roles). The native repl pointer stays the
+        // source of truth; this projection only has to satisfy the
+        // fold/liveness/layout verifiers, which require follower ≡ leader.
+        Leader->Flags |= NEVERC_LINK_ATOM_LIVE;
+        Atom->FoldLeaderID = LeaderID;
+        Atom->Flags |= NEVERC_LINK_ATOM_FOLDED | NEVERC_LINK_ATOM_LIVE;
+        Atom->Flags &= ~(NEVERC_LINK_ATOM_UNWIND | NEVERC_LINK_ATOM_TLS |
+                         NEVERC_LINK_ATOM_ADDRESS_SIGNIFICANT);
+        Atom->SectionID = Leader->SectionID;
+        Atom->Address = Leader->Address;
+        Atom->FileOffset = Leader->FileOffset;
+        Atom->Alignment = Leader->Alignment;
+        Atom->Content = Leader->Content;
+        Atom->ZeroFillSize = Leader->ZeroFillSize;
       } else {
         Atom->FoldLeaderID = 0;
         Atom->Flags &= ~NEVERC_LINK_ATOM_FOLDED;
@@ -709,7 +790,13 @@ Error COFFLinkGraphAdapter::applyDelta(const PluginLinkGraph &Before,
         Section->live = false;
       continue;
     }
-    if (Section)
+    // Push only the liveness change the plugin actually made. The captured
+    // LIVE flag folds native selection/fold state (chunkIsLive), so writing it
+    // back unconditionally would corrupt the native linker's own GC result on a
+    // no-op replay and discard sections it kept live.
+    if (Section && Old &&
+        ((Old->Flags & NEVERC_LINK_ATOM_LIVE) !=
+         (Current->Flags & NEVERC_LINK_ATOM_LIVE)))
       Section->live = (Current->Flags & NEVERC_LINK_ATOM_LIVE) != 0;
     if (Old && (Old->Content != Current->Content ||
                 Old->ZeroFillSize != Current->ZeroFillSize))
@@ -723,7 +810,8 @@ Error COFFLinkGraphAdapter::applyDelta(const PluginLinkGraph &Before,
         return adapterError("plugin requested an invalid COFF alignment");
       Native->setAlignment(static_cast<uint32_t>(Current->Alignment));
     }
-    if (Section && Current->FoldLeaderID != 0) {
+    if (Section && Current->FoldLeaderID != 0 &&
+        (!Old || Old->FoldLeaderID != Current->FoldLeaderID)) {
       auto It = NativeAtoms.find(Current->FoldLeaderID);
       auto *Leader = It == NativeAtoms.end()
                          ? nullptr
@@ -747,7 +835,8 @@ Error COFFLinkGraphAdapter::applyDelta(const PluginLinkGraph &Before,
     if (!Current)
       return adapterError(
           "removing native COFF symbols requires a graph rebuild");
-    Native->isGCRoot = Current->IsRoot;
+    if (!Old || Old->IsRoot != Current->IsRoot)
+      Native->isGCRoot = Current->IsRoot;
     if (Old && (Old->Definition != Current->Definition ||
                 Old->Binding != Current->Binding ||
                 Old->AtomID != Current->AtomID || Old->Value != Current->Value))

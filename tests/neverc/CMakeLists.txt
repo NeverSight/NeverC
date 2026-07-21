@@ -28,6 +28,7 @@ set(NEVERC_TEST_SOURCES
   PluginBuiltinTargetProviderDriverTests.cpp
   PluginCOFFLinkAdapterTests.cpp
   PluginELFLinkAdapterTests.cpp
+  PluginMachOLinkAdapterTests.cpp
   PluginNewBackendTests.cpp
   PluginFrontendLifecycleTests.cpp
   PluginPreprocessorProviderTests.cpp
