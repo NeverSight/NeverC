@@ -16,7 +16,12 @@
 
 #include "neverc/Linker/Core/Driver/LinkExecutionHooks.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/raw_ostream.h"
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -102,6 +107,20 @@ struct LinkerDriverConfig {
   std::vector<std::string> nevercPluginPaths;
   std::shared_ptr<neverc::plugin::PluginSession> pluginSession;
   neverc::plugin::PluginTaskContext *pluginTask = nullptr;
+
+  // Compiles the LTO/bitcode inputs of a relocatable (-r) plugin-mediated link
+  // into native relocatable object images, reusing the backend LTO pipeline
+  // (createLTOConfig + runLTOWithCache).  Set by the neverc driver, which links
+  // linkerCore; the plugin link bridge invokes it when it must merge bitcode
+  // inputs itself (a plugin registered an object-merge provider or an
+  // object-phase hook that has to run on the -r output).  Returns one native
+  // object image per LTO task.  Left null in contexts without an LTO backend
+  // (e.g. unit tests); the bridge then defers the link to the native driver.
+  std::function<llvm::Expected<std::vector<llvm::SmallString<0>>>(
+      const LinkerDriverConfig &Config,
+      llvm::ArrayRef<llvm::MemoryBufferRef> BitcodeBuffers,
+      llvm::StringRef BackendTag, bool EmitAddrsig)>
+      compileRelocatableLTO;
 
   // Linker-level options now controlled by the neverc driver.
   // Backends use these as defaults; explicit -Wl, overrides still apply.
@@ -191,6 +210,18 @@ int dispatchLink(llvm::ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
                  llvm::ArrayRef<const char *> Args,
                  llvm::raw_ostream &Stdout, llvm::raw_ostream &Stderr,
                  const LinkerDriverConfig &Config);
+
+/// Default `LinkerDriverConfig::compileRelocatableLTO` implementation (lives in
+/// linkerCore).  Parses the given bitcode buffers, computes relocatable-link
+/// symbol resolutions (every symbol is visible to regular objects; exactly one
+/// prevailing definition per name), and runs the shared LTO pipeline to emit
+/// native relocatable object images -- the same bitcode->object step the native
+/// `-r` link performs before merging.  \p BackendTag / \p EmitAddrsig select the
+/// object format specifics ("elf"/"coff"/"macho").
+llvm::Expected<std::vector<llvm::SmallString<0>>>
+runPluginRelocatableLTO(const LinkerDriverConfig &Config,
+                        llvm::ArrayRef<llvm::MemoryBufferRef> BitcodeBuffers,
+                        llvm::StringRef BackendTag, bool EmitAddrsig);
 
 } // namespace linker
 

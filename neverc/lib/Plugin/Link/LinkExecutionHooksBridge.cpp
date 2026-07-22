@@ -14,10 +14,16 @@
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTargetRegistry.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/VirtualFileSystem.h"
+#include "llvm/TargetParser/Triple.h"
 #include <limits>
+#include <memory>
+#include <vector>
 
 using namespace llvm;
 
@@ -212,30 +218,104 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
     if (!Inputs)
       return Inputs.takeError();
 
+    std::vector<PluginObjectGraph *> Objects = (*Inputs)->objectGraphs();
+    std::vector<ArrayRef<uint8_t>> InputImages =
+        (*Inputs)->objectGraphSourceBytes();
+
+    // Backing storage for LTO-lowered objects; must outlive the merge below.
+    std::vector<SmallString<0>> LTOObjectImages;
+    std::vector<std::unique_ptr<PluginObjectGraph>> LTOObjectGraphs;
+
     // LTO/bitcode inputs (e.g. `-fandroid-kernel-driver-mode`, which implies
     // `-flto=full`) arrive as bitcode modules, not native ObjectGraphs.  The
-    // built-in object merge only merges native objects; the native backend
-    // must first compile the bitcode to native objects -- running the loaded
-    // plugin's IR/MIR/optimization LTO hooks through the shared LTO config --
-    // before performing the identical relocatable merge.  Defer such links to
-    // the native driver instead of failing with "no materialized ObjectGraph
-    // inputs".  A plugin-supplied merge provider cannot consume bitcode either,
-    // so surface a precise error for that (currently unsupported) combination.
+    // native `-r` path lowers them to native objects (`compileBitcodeFiles`)
+    // before the byte merge; the plugin builtin merge only understands native
+    // objects.
     if (!(*Inputs)->graph().bitcodeModules().empty()) {
-      if (Plan->objectMergeProvider()->Builtin)
+      // Does a plugin actually need to process this relocatable output?  Only
+      // then must the bitcode be lowered here.  Otherwise defer the whole link
+      // to the native driver, which performs the identical LTO + merge (still
+      // running the plugin's LTO codegen hooks via the shared LTO config),
+      // keeping the output byte-identical to a native `-r` link.
+      auto GatePipeline =
+          ObjectPhasePipeline::create(*Config.pluginTask, TargetSnapshot);
+      if (!GatePipeline)
+        return GatePipeline.takeError();
+      const bool PluginMustHandleOutput =
+          !Plan->objectMergeProvider()->Builtin ||
+          (*GatePipeline)->hasPluginBindings();
+      if (!PluginMustHandleOutput)
         return linker::LinkHookResult{
             linker::LinkHookDisposition::ContinueBuiltin, 0};
-      return bridgeError(
-          "plugin ObjectMergeProvider cannot merge LTO/bitcode inputs; "
-          "relocatable LTO links require native bitcode compilation first");
+      if (!Config.compileRelocatableLTO) {
+        // No relocatable LTO backend wired (e.g. a unit-test harness): defer to
+        // the native driver when possible.
+        if (Plan->objectMergeProvider()->Builtin)
+          return linker::LinkHookResult{
+              linker::LinkHookDisposition::ContinueBuiltin, 0};
+        return bridgeError(
+            "plugin ObjectMergeProvider cannot merge LTO/bitcode inputs "
+            "without a relocatable LTO backend");
+      }
+
+      // Lower every bitcode module to native relocatable objects.
+      std::vector<MemoryBufferRef> BitcodeBuffers;
+      for (PluginLinkBitcodeModule &Module :
+           (*Inputs)->graph().bitcodeModules()) {
+        auto Buffer = (*Inputs)->bitcodeBufferForModule(Module.ID);
+        if (!Buffer)
+          return Buffer.takeError();
+        BitcodeBuffers.push_back(*Buffer);
+      }
+      StringRef BackendTag;
+      bool EmitAddrsig = true;
+      switch (Triple(Request.TargetTriple).getObjectFormat()) {
+      case Triple::ELF:
+        BackendTag = "elf";
+        break;
+      case Triple::COFF:
+        BackendTag = "coff";
+        break;
+      case Triple::MachO:
+        BackendTag = "macho";
+        EmitAddrsig = false;
+        break;
+      default:
+        return bridgeError(
+            "relocatable LTO is unsupported for this object format");
+      }
+      auto Compiled = Config.compileRelocatableLTO(Config, BitcodeBuffers,
+                                                   BackendTag, EmitAddrsig);
+      if (!Compiled)
+        return Compiled.takeError();
+      LTOObjectImages = std::move(*Compiled);
+
+      // Parse the lowered objects into ObjectGraphs and append them after the
+      // native object inputs, matching the native driver's object order.
+      for (size_t Index = 0; Index != LTOObjectImages.size(); ++Index) {
+        const ArrayRef<uint8_t> Bytes(
+            reinterpret_cast<const uint8_t *>(LTOObjectImages[Index].data()),
+            LTOObjectImages[Index].size());
+        auto Graph = (*ObjectReader)
+                         ->read(*Config.pluginTask, Bytes,
+                                ("<lto>/relocatable-" + Twine(Index)).str(),
+                                (*FrozenRequest)->ownedTarget(),
+                                FrozenInputFormat);
+        if (!Graph)
+          return Graph.takeError();
+        LTOObjectGraphs.push_back(std::move(*Graph));
+      }
+      for (size_t Index = 0; Index != LTOObjectGraphs.size(); ++Index) {
+        Objects.push_back(LTOObjectGraphs[Index].get());
+        InputImages.push_back(ArrayRef<uint8_t>(
+            reinterpret_cast<const uint8_t *>(LTOObjectImages[Index].data()),
+            LTOObjectImages[Index].size()));
+      }
     }
 
-    std::vector<PluginObjectGraph *> Objects = (*Inputs)->objectGraphs();
     if (Objects.empty())
       return bridgeError(
           "ObjectMergeProvider received no materialized ObjectGraph inputs");
-    std::vector<ArrayRef<uint8_t>> InputImages =
-        (*Inputs)->objectGraphSourceBytes();
 
     const auto &Provider = *Plan->objectMergeProvider();
     BuiltinObjectMergeConfig MergeConfig;

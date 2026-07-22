@@ -29,7 +29,8 @@ set(linker_core_driver
   Driver/CodegenFlags.cpp
   Driver/CommonLTOConfig.cpp
   Driver/Dispatcher.cpp
-  Driver/LTOCache.cpp)
+  Driver/LTOCache.cpp
+  Driver/RelocatableLTO.cpp)
 
 set(linker_core_runtime
   Runtime/Allocator.cpp

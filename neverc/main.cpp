@@ -217,6 +217,10 @@ void configureDriverCallbacks(Driver &TheDriver) {
     linker::LinkerDriverConfig EffectiveCfg = DriverCfg;
     EffectiveCfg.pluginTask = LinkTask.get();
     EffectiveCfg.executionContext = &Execution;
+    // Give the plugin link bridge a way to lower bitcode inputs of a
+    // relocatable link to native objects (reusing the shared LTO pipeline) so
+    // it can merge them; see LinkerDriverConfig::compileRelocatableLTO.
+    EffectiveCfg.compileRelocatableLTO = &linker::runPluginRelocatableLTO;
     int Result = linker::dispatchLink(EnabledLinkerDrivers, Flavor, Args,
                                       llvm::outs(), llvm::errs(), EffectiveCfg);
     bool Ok = Result == 0;

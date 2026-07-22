@@ -289,6 +289,30 @@ uint32_t relocationWidth(const ObjectFile &Object,
     if (Length <= 4)
       return (UINT32_C(1) << Length) * 8;
   }
+  // AArch64 ELF relocation names embed operand sizes that are not the field
+  // width: the architecture token "AARCH64" itself contains "64", and
+  // instruction-form relocations (ADR/ADD/LDST64/MOVW/CALL26/JUMP26/...) patch a
+  // fixed 32-bit instruction regardless of the size named in the mnemonic.  The
+  // name-based heuristic below would overestimate these as 64-bit and then
+  // spuriously reject a relocation that sits within 8 bytes of a section's end
+  // (e.g. a tail-call branch emitted by LTO).  Derive the width from the
+  // relocation type number instead; only ABS/PREL data relocations carry a raw
+  // field wider than the instruction.
+  if (const auto *ELFObject = dyn_cast<ELFObjectFileBase>(&Object)) {
+    if (ELFObject->getEMachine() == ELF::EM_AARCH64) {
+      switch (Relocation.getType()) {
+      case ELF::R_AARCH64_ABS64:
+      case ELF::R_AARCH64_PREL64:
+        return 64;
+      case ELF::R_AARCH64_ABS16:
+      case ELF::R_AARCH64_PREL16:
+        return 16;
+      default:
+        // ABS32/PREL32 and every instruction-form relocation are 32 bits wide.
+        return 32;
+      }
+    }
+  }
   const auto Lower = TypeName.lower();
   if (Lower.find("128") != std::string::npos)
     return 128;
