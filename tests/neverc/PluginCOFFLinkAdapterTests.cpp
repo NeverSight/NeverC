@@ -62,10 +62,22 @@ TEST_F(PluginCOFFLinkAdapterTest,
       // pulls an implicit runtimeobject.lib that is unavailable when
       // cross-linking off a Windows host, and it guarantees the image depends
       // only on the input object so the comparison stays host-independent.
+      //
+      // -mno-incremental-linker-compatible forces a reproducible PE image: the
+      // COFF/debug/export TimeDateStamps become a content hash instead of the
+      // wall-clock default, so the baseline and plugin links are byte-identical
+      // even when they straddle a one-second boundary.  Without it this exact
+      // comparison is flaky (the two links otherwise embed different clock
+      // timestamps); it does not weaken the check -- a plugin that perturbs the
+      // image changes the content, hence the hash, hence the bytes.
       std::vector<std::string> Common = {
-          "--no-default-config", "--target=" + Target,
-          "-O0",                 "-fno-lto",
-          "-nostdlib",           "-Wl,-nodefaultlib"};
+          "--no-default-config",
+          "--target=" + Target,
+          "-O0",
+          "-fno-lto",
+          "-nostdlib",
+          "-mno-incremental-linker-compatible",
+          "-Wl,-nodefaultlib"};
       Common.insert(Common.end(), Output.Flags.begin(), Output.Flags.end());
       Common.push_back(Source.string());
 
