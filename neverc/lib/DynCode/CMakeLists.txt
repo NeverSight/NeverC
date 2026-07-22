@@ -90,10 +90,14 @@ add_neverc_library(nevercDynCode
   IR/AllBlrPass.cpp
   IR/CompilerRtPass.cpp
   IR/Data2TextPass.cpp
+  IR/DynCodeIRStageSupport.cpp
+  IR/DynCodeIRVerifier.cpp
+  IR/DynCodePreparePass.cpp
   IR/ExternRewriter.cpp
   IR/HeapArenaPass.cpp
   IR/IndirectBrPass.cpp
   IR/MemIntrinPass.cpp
+  IR/StackifyPass.cpp
   IR/StringRuntimePass.cpp
   IR/ZeroRelocPass.cpp
 

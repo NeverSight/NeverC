@@ -1,5 +1,4 @@
 #include "neverc/DynCode/IR/Data2TextPass.h"
-#include "neverc/DynCode/IR/Data2TextABI.h"
 #include "neverc/DynCode/Pipeline/DynCodeIRHelperNames.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -731,32 +730,23 @@ bool hasGlobalDataRefs(Module &M) {
 PreservedAnalyses Data2TextPass::run(Module &M, ModuleAnalysisManager &) {
   bool Changed = false;
 
-  bool IsLatePhase =
-      M.getNamedMetadata(Data2TextABI::PipelinePhaseSentinel.data()) != nullptr;
-
-  if (!IsLatePhase) {
-    if (inlineConstantOperands(M))
-      Changed = true;
-    if (eliminateConstantGlobals(M))
-      Changed = true;
-    M.getOrInsertNamedMetadata(Data2TextABI::PipelinePhaseSentinel.data());
-    return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
-  }
-
+  // The dyncode phase (pre vs post) is an explicit input, not a named-metadata
+  // sentinel discovered at run time.  Both phases inline constant operands and
+  // eliminate constant globals; only the post phase additionally devectorizes
+  // constant stores.
   if (inlineConstantOperands(M))
     Changed = true;
-
   if (eliminateConstantGlobals(M))
     Changed = true;
+
+  if (!IsLate)
+    return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
 
   for (Function &F : M)
     if (!F.isDeclaration() && !F.getName().starts_with(ir::kScPrefix) &&
         !(F.hasInternalLinkage() && F.use_empty()))
       if (devectorizeConstantStores(F))
         Changed = true;
-
-  if (auto *N = M.getNamedMetadata(Data2TextABI::PipelinePhaseSentinel.data()))
-    N->eraseFromParent();
 
   (void)hasGlobalDataRefs(M);
 

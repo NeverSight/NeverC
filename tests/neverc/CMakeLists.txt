@@ -1555,10 +1555,13 @@ gtest_discover_tests(neverc-plugin-target-mc-tests
 add_executable(neverc-plugin-dyncode-tests
   PluginDynCodeRequestTests.cpp
   PluginDynCodePhaseTests.cpp
+  PluginDynCodeIRStageTests.cpp
+  PluginDynCodeIRProviderTests.cpp
 )
 target_link_libraries(neverc-plugin-dyncode-tests PRIVATE
   GTest::gtest
   GTest::gtest_main
+  LLVMCore
   nevercDynCode
   nevercPluginCore
   nevercPluginIO
@@ -1569,6 +1572,16 @@ target_include_directories(neverc-plugin-dyncode-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/DynCode/Plugin
 )
 target_compile_features(neverc-plugin-dyncode-tests PRIVATE cxx_std_17)
+# PluginDynCodeIRStageTests subclasses llvm::DiagnosticHandler; LLVM is built
+# without RTTI, so the file that derives from an LLVM polymorphic type must also
+# be compiled without RTTI to avoid an undefined base-class typeinfo at link.
+if(MSVC)
+  set_source_files_properties(PluginDynCodeIRStageTests.cpp
+    PROPERTIES COMPILE_OPTIONS "/GR-")
+else()
+  set_source_files_properties(PluginDynCodeIRStageTests.cpp
+    PROPERTIES COMPILE_OPTIONS "-fno-rtti")
+endif()
 target_compile_definitions(neverc-plugin-dyncode-tests PRIVATE
   NEVERC_TEST_DYNCODE_PHASE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-dyncode-phase>"
 )

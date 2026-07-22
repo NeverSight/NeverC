@@ -7,25 +7,12 @@
 namespace neverc {
 namespace dyncode {
 
-/// Trivial analysis whose sole purpose is to act as a "CompilerRtPass already
-/// ran" cache key.  When any subsequent pass returns PreservedAnalyses::none(),
-/// the analysis manager automatically invalidates this result, signalling that
-/// the next CompilerRtPass invocation must do real work.
-class CompilerRtStampAnalysis
-    : public llvm::AnalysisInfoMixin<CompilerRtStampAnalysis> {
-  friend llvm::AnalysisInfoMixin<CompilerRtStampAnalysis>;
-  static llvm::AnalysisKey Key;
-
-public:
-  struct Result {
-    bool invalidate(llvm::Module &, const llvm::PreservedAnalyses &PA,
-                    llvm::ModuleAnalysisManager::Invalidator &) {
-      return !PA.getChecker<CompilerRtStampAnalysis>().preserved();
-    }
-  };
-  Result run(llvm::Module &, llvm::ModuleAnalysisManager &) { return {}; }
-};
-
+// Volume 6 task 7: CompilerRtPass is a plain, idempotent transform.  It used to
+// carry a CompilerRtStampAnalysis cache key to skip redundant re-runs, but the
+// dyncode pipeline always runs the full optimizer between its CompilerRt phases
+// (compiler_rt.pre / compiler_rt.post / compiler_rt.final), so the stamp was
+// always invalidated and never actually skipped.  Each run now works purely from
+// the current module and is idempotent on re-entry.
 class CompilerRtPass : public llvm::PassInfoMixin<CompilerRtPass> {
 public:
   CompilerRtPass() = default;

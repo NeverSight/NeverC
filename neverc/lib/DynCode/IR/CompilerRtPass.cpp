@@ -20,10 +20,6 @@
 
 using namespace llvm;
 
-static cl::opt<bool> VerboseCompilerRt(
-    "neverc-compiler-rt-verbose", cl::Hidden,
-    cl::desc("Print CompilerRtPass stamp skip/run decisions"));
-
 namespace neverc {
 namespace dyncode {
 
@@ -621,19 +617,7 @@ bool rewriteCollectedOps(SmallVectorImpl<BinaryOperator *> &DivRemOps,
 
 } // namespace
 
-AnalysisKey CompilerRtStampAnalysis::Key;
-
-PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &MAM) {
-  if (MAM.getCachedResult<CompilerRtStampAnalysis>(M)) {
-    LLVM_DEBUG(dbgs() << "CompilerRtPass: stamp valid, skipping\n");
-    if (VerboseCompilerRt)
-      errs() << "CompilerRtPass: stamp valid, skipping\n";
-    return PreservedAnalyses::all();
-  }
-  LLVM_DEBUG(dbgs() << "CompilerRtPass: no stamp, running full pass\n");
-  if (VerboseCompilerRt)
-    errs() << "CompilerRtPass: no stamp, running full pass\n";
-
+PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &) {
   bool StampedProbe = false;
   const bool WantsInlineProbe = Target.OS == DynCodeOS::Windows &&
                                 Target.Level != ExecutionLevel::Kernel;
@@ -726,13 +710,8 @@ PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &MAM) {
 
   const bool AnyWideNeed =
       W_UDiv || W_SDiv || W_URem || W_SRem || W_Shl || W_LShr || W_AShr;
-  if (!AnyWideNeed && !HasExternDecls) {
-    (void)MAM.getResult<CompilerRtStampAnalysis>(M);
-    auto PA = StampedProbe ? PreservedAnalyses::none()
-                           : PreservedAnalyses::all();
-    PA.preserve<CompilerRtStampAnalysis>();
-    return PA;
-  }
+  if (!AnyWideNeed && !HasExternDecls)
+    return StampedProbe ? PreservedAnalyses::none() : PreservedAnalyses::all();
 
   CRTHelperBundle H = {};
   if (AnyWideNeed) {
@@ -784,11 +763,8 @@ PreservedAnalyses CompilerRtPass::run(Module &M, ModuleAnalysisManager &MAM) {
       Workhorse->eraseFromParent();
   }
 
-  (void)MAM.getResult<CompilerRtStampAnalysis>(M);
-  auto PA = (Changed || StampedProbe) ? PreservedAnalyses::none()
-                                      : PreservedAnalyses::all();
-  PA.preserve<CompilerRtStampAnalysis>();
-  return PA;
+  return (Changed || StampedProbe) ? PreservedAnalyses::none()
+                                   : PreservedAnalyses::all();
 }
 
 } // namespace dyncode

@@ -2,11 +2,13 @@
 #include "neverc/DynCode/IR/AllBlrPass.h"
 #include "neverc/DynCode/IR/CompilerRtPass.h"
 #include "neverc/DynCode/IR/Data2TextPass.h"
+#include "neverc/DynCode/IR/DynCodeIRVerifier.h"
+#include "neverc/DynCode/IR/DynCodePreparePass.h"
 #include "neverc/DynCode/IR/HeapArenaPass.h"
 #include "neverc/DynCode/IR/IndirectBrPass.h"
 #include "neverc/DynCode/IR/MemIntrinPass.h"
+#include "neverc/DynCode/IR/StackifyPass.h"
 #include "neverc/DynCode/IR/StringRuntimePass.h"
-#include "neverc/DynCode/IR/ZeroRelocPass.h"
 #include "neverc/DynCode/Import/KernelImportPass.h"
 #include "neverc/DynCode/Import/SyscallStub.h"
 #include "neverc/DynCode/Import/WinPEBImport.h"
@@ -58,10 +60,6 @@ void applyPostFinalizeObfuscationInterpose(llvm::SmallVectorImpl<uint8_t> &Bytes
 }
 
 void registerDynCodePasses(PassBuilder &PB, const DynCodeOptions &Opts) {
-  PB.registerAnalysisRegistrationCallback([](ModuleAnalysisManager &MAM) {
-    MAM.registerPass([] { return CompilerRtStampAnalysis(); });
-  });
-
   if (!Opts.Enabled)
     return;
 
@@ -70,7 +68,7 @@ void registerDynCodePasses(PassBuilder &PB, const DynCodeOptions &Opts) {
     if (!Opts.Enabled)
       return;
 
-    MPM.addPass(ZeroRelocPass(Opts.EntrySymbol, Opts.InlineAll));
+    MPM.addPass(DynCodePreparePass(Opts.EntrySymbol, Opts.InlineAll));
     MPM.addPass(IndirectBrPass());
     MPM.addPass(MemIntrinPass());
     bool DynArena = Opts.Target.Level != ExecutionLevel::Kernel;
@@ -96,7 +94,7 @@ void registerDynCodePasses(PassBuilder &PB, const DynCodeOptions &Opts) {
       MPM.addPass(WinPEBImportPass(Opts.Target));
     MPM.addPass(KernelImportPass(Opts));
 
-    MPM.addPass(Data2TextPass());
+    MPM.addPass(Data2TextPass(/*IsLate=*/false));
   });
 
   PB.registerOptimizerLastEPCallback(
@@ -107,8 +105,9 @@ void registerDynCodePasses(PassBuilder &PB, const DynCodeOptions &Opts) {
         MPM.addPass(CompilerRtPass(Opts.Target));
         MPM.addPass(StringRuntimeInlineFinalizePass());
         MPM.addPass(AlwaysInlinerPass());
-        MPM.addPass(Data2TextPass());
-        MPM.addPass(ZeroRelocPass(Opts.EntrySymbol, Opts.InlineAll));
+        MPM.addPass(Data2TextPass(/*IsLate=*/true));
+        MPM.addPass(StackifyPass(Opts.EntrySymbol, Opts.InlineAll));
+        MPM.addPass(DynCodeIRVerifier());
 
         if (Opts.AllBlr)
           MPM.addPass(AllBlrPass());
