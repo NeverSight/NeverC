@@ -1,0 +1,150 @@
+{
+  "_comment": "Allowlist for check-global-state.py. Each entry documents a thread-local or static object in the plugin/dyncode/linker trees that is NOT plugin-related process-global mutable *compilation* state. Only stack-scoped RAII facades, option-lease owner/depth/digest TLS (no option values), immutable-after-init lookup constants, sync primitives without compilation state, and address-only identity tokens are eligible. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER be allowlisted.",
+  "entries": [
+    {
+      "files": ["neverc/lib/Plugin/Core/PluginPhaseExecutor.cpp"],
+      "symbol": "ActivePhases",
+      "owner": "PluginPhaseExecutor",
+      "lifetime": "stack-scoped per callback dynamic extent",
+      "justification": "Callback ancestry / re-entrancy depth stack. Pushed/popped by RAII around each phase invocation; empty between invocations. Carries no Session/Task/artifact payload.",
+      "cleared_by_test": "PluginConcurrencyTests re-entrancy suite"
+    },
+    {
+      "files": ["neverc/lib/Plugin/Core/PluginProcessServices.cpp"],
+      "symbol": "CallbackScopes",
+      "owner": "PluginProcessServices",
+      "lifetime": "stack-scoped per callback dynamic extent",
+      "justification": "Callback scope stack used only to detect nested callback ancestry; RAII push/pop, empty at rest.",
+      "cleared_by_test": "PluginConcurrencyTests"
+    },
+    {
+      "files": ["neverc/lib/Plugin/Core/PluginSession.cpp"],
+      "symbol": "ActivePluginCallbacks",
+      "owner": "PluginSession",
+      "lifetime": "stack-scoped per callback dynamic extent",
+      "justification": "Active-plugin re-entrancy stack; RAII managed, empty at rest, no compilation payload.",
+      "cleared_by_test": "PluginConcurrencyTests"
+    },
+    {
+      "files": ["neverc/lib/Plugin/IO/PluginFileSystem.cpp"],
+      "symbol": "ActiveRoutes",
+      "owner": "PluginFileSystem",
+      "lifetime": "stack-scoped per VFS query dynamic extent",
+      "justification": "VFS route/recursion-budget frame; RAII push/pop, empty at rest, prevents infinite provider recursion. No cached FS state.",
+      "cleared_by_test": "PluginVFSTest.DeniesSamePathRecursiveRouting"
+    },
+    {
+      "files": ["neverc/lib/Linker/Core/Runtime/Session.cpp"],
+      "symbol": "ActiveLinkerContext",
+      "owner": "LinkerExecutionContext",
+      "lifetime": "stack-scoped RAII guard per LinkTask/worker scope",
+      "justification": "Volume 5 legacy allocator/diagnostic facade guard. Installed/restored by nestable RAII; cleared on worker join and thread-pool reuse. Never queried by plugin callbacks (they receive explicit task/context handles).",
+      "cleared_by_test": "PluginLinkContextTests"
+    },
+    {
+      "files": ["neverc/lib/Linker/Core/Runtime/Session.cpp"],
+      "symbol": "CurrentWorkerSlot",
+      "owner": "LinkerParallel",
+      "lifetime": "stack-scoped per worker scope",
+      "justification": "Worker-slot index for context-owned allocator shard selection; set/reset by worker wrapper, zero at rest. No link state.",
+      "cleared_by_test": "PluginParallelLinkTests"
+    },
+    {
+      "files": ["neverc/lib/Plugin/Core/PluginLLVMOptionSnapshot.cpp"],
+      "symbol": "GateOwnership",
+      "owner": "LLVMOptionLease",
+      "lifetime": "stack-scoped per option-lease dynamic extent",
+      "justification": "LLVMOptionLease owner/depth/digest bookkeeping only. Holds no actual cl::opt values; used to enforce shared-default / exclusive-nondefault nesting rules.",
+      "cleared_by_test": "PluginLLVMOptionIsolationTests"
+    },
+    {
+      "files": ["neverc/lib/Merge/Common/MergerCommon.h"],
+      "symbol": "FatalBuf",
+      "owner": "Merger",
+      "lifetime": "stack-scoped per merge invocation",
+      "justification": "Per-thread longjmp buffer for merge fatal-error recovery; installed/cleared around each merge, carries no cross-invocation compilation state.",
+      "cleared_by_test": "MergeTests"
+    }
+  ],
+  "_binary_symbols_comment": "Writable data symbols in the shipped `neverc` binary (build-dir/bin/neverc) whose demangled name is under neverc::plugin/neverc::dyncode but which are NOT process-global mutable compilation state. Eligible categories: (a) const interface/lookup tables that are immutable after a run-once initializer (so the compiler must place them in a writable section), (b) address-only LLVM legacy-pass identity tokens (`char Pass::ID`), and (c) synchronization primitives with no compilation state. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER appear here.",
+  "binary_symbols": [
+    {
+      "symbol": "neverc::dyncode::(anonymous namespace)::Incompats",
+      "owner": "dyncode DriverIntegration",
+      "kind": "immutable-after-init lookup table",
+      "justification": "`const Incompat Incompats[]` -- the fixed list of driver options incompatible with -fdyncode. Read-only after static init; carries no per-compile state."
+    },
+    {
+      "symbol": "kernelImportLabel",
+      "owner": "dyncode ExtractorCommon",
+      "kind": "immutable-after-init constant",
+      "justification": "`static const std::string GenericLabel` inside kernelImportLabel(); a fixed label string, read-only after first use."
+    },
+    {
+      "symbol": "neverc::dyncode::(anonymous namespace)::MIRPrepPass::ID",
+      "owner": "dyncode MIRPrepPass",
+      "kind": "legacy-pass identity token",
+      "justification": "`char MIRPrepPass::ID` -- LLVM legacy pass identity; only its address is taken, never its value written."
+    },
+    {
+      "symbol": "neverc::plugin::(anonymous namespace)::IRToMIRPipelinePass::ID",
+      "owner": "plugin MIRPipelineHooks",
+      "kind": "legacy-pass identity token",
+      "justification": "`char IRToMIRPipelinePass::ID` -- address-only LLVM legacy pass identity."
+    },
+    {
+      "symbol": "neverc::plugin::(anonymous namespace)::MIRToMCPipelinePass::ID",
+      "owner": "plugin MIRPipelineHooks",
+      "kind": "legacy-pass identity token",
+      "justification": "`char MIRToMCPipelinePass::ID` -- address-only LLVM legacy pass identity."
+    },
+    {
+      "symbol": "neverc::plugin::(anonymous namespace)::PluginMachinePass::ID",
+      "owner": "plugin MIRPassPlugin",
+      "kind": "legacy-pass identity token",
+      "justification": "`char PluginMachinePass::ID` -- address-only LLVM legacy pass identity."
+    },
+    {
+      "symbol": "neverc::plugin::(anonymous namespace)::PluginMachineModulePass::ID",
+      "owner": "plugin MIRPassPlugin",
+      "kind": "legacy-pass identity token",
+      "justification": "`char PluginMachineModulePass::ID` -- address-only LLVM legacy pass identity."
+    },
+    {
+      "symbol": "neverc::plugin::(anonymous namespace)::LinkAPI",
+      "owner": "plugin PluginLinkRegistry",
+      "kind": "immutable-after-init interface table",
+      "justification": "`const NevercLinkAPI LinkAPI = makeLinkAPI()` -- a const C ABI function table handed to plugins via QueryInterface. Written once by its initializer, then read-only; only writable-section because a runtime initializer builds it."
+    },
+    {
+      "symbol": "neverc::plugin::(anonymous namespace)::LinkRegistrarAPI",
+      "owner": "plugin PluginLinkRegistry",
+      "kind": "immutable-after-init interface table",
+      "justification": "`const NevercLinkRegistrarAPI LinkRegistrarAPI = makeLinkRegistrarAPI()` -- const C ABI table, read-only after init."
+    },
+    {
+      "symbol": "neverc::plugin::(anonymous namespace)::LTORegistrarAPI",
+      "owner": "plugin PluginLinkRegistry",
+      "kind": "immutable-after-init interface table",
+      "justification": "`const NevercLTORegistrarAPI LTORegistrarAPI = makeLTORegistrarAPI()` -- const C ABI table, read-only after init."
+    },
+    {
+      "symbol": "neverc::plugin::(anonymous namespace)::MCAPI",
+      "owner": "plugin MC bridge",
+      "kind": "immutable-after-init interface table",
+      "justification": "const NevercMCAPI function table handed to plugins via QueryInterface; read-only after its run-once initializer."
+    },
+    {
+      "symbol": "neverc::plugin::builtinLinkerScriptProvider()::Provider",
+      "owner": "plugin LinkerScriptProvider",
+      "kind": "immutable-after-init constant",
+      "justification": "`static const BuiltinLinkerScriptProvider Provider` -- a stateless const provider singleton; read-only after construction."
+    },
+    {
+      "symbol": "neverc::plugin::pluginLLVMOptionGate()::Gate",
+      "owner": "plugin PluginLLVMOptionSnapshot",
+      "kind": "synchronization primitive (no compilation state)",
+      "justification": "`static std::shared_mutex Gate` -- the process-serial gate guarding LLVM cl::opt install/restore. A lock, not compilation state; the spec explicitly permits sync primitives without compilation state."
+    }
+  ]
+}
