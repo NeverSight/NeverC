@@ -1557,6 +1557,7 @@ add_executable(neverc-plugin-dyncode-tests
   PluginDynCodePhaseTests.cpp
   PluginDynCodeIRStageTests.cpp
   PluginDynCodeIRProviderTests.cpp
+  PluginDynCodeImportTests.cpp
 )
 target_link_libraries(neverc-plugin-dyncode-tests PRIVATE
   GTest::gtest

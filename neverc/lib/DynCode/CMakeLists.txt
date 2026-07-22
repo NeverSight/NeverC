@@ -78,6 +78,7 @@ unset(_neverc_dyncode_tables)
 
 add_neverc_library(nevercDynCode
   Pipeline/DriverIntegration.cpp
+  Pipeline/ExternalReferenceLedger.cpp
   Pipeline/Pipeline.cpp
   Pipeline/TargetDesc.cpp
 
@@ -111,6 +112,7 @@ add_neverc_library(nevercDynCode
 
   Plugin/DynCodeRequest.cpp
   Plugin/DynCodeRegistry.cpp
+  Plugin/DynCodeImportRegistry.cpp
   Plugin/DynCodeTargetRegistry.cpp
   Plugin/DynCodePhaseRegistry.cpp
   Plugin/DynCodePhaseExecutor.cpp
