@@ -105,8 +105,13 @@ add_neverc_library(nevercDynCode
   Import/WinImportTables.cpp
   Import/WinPEBImport.cpp
 
+  Plugin/DynCodeRequest.cpp
+  Plugin/DynCodeRegistry.cpp
+  Plugin/DynCodeTargetRegistry.cpp
+
   LINK_LIBS
   nevercFoundation
+  nevercPluginTarget
 
   DEPENDS
   NeverCDriverOptions

@@ -232,6 +232,22 @@ target_include_directories(neverc-plugin-lto-abi-compile-c23 PRIVATE
 )
 target_compile_features(neverc-plugin-lto-abi-compile-c23 PRIVATE c_std_23)
 
+add_library(neverc-plugin-dyncode-abi-compile-c11 OBJECT
+  Inputs/Plugin/DynCodeABICompile.c
+)
+target_include_directories(neverc-plugin-dyncode-abi-compile-c11 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-dyncode-abi-compile-c11 PRIVATE c_std_11)
+
+add_library(neverc-plugin-dyncode-abi-compile-c23 OBJECT
+  Inputs/Plugin/DynCodeABICompile.c
+)
+target_include_directories(neverc-plugin-dyncode-abi-compile-c23 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-plugin-dyncode-abi-compile-c23 PRIVATE c_std_23)
+
 add_library(neverc-test-plugin-link-route MODULE
   Inputs/Plugin/LinkRoutePlugin.c
 )
@@ -1227,6 +1243,7 @@ add_executable(neverc-plugin-core-tests
   PluginPhaseExecutionTests.cpp
   PluginPhaseGraphTests.cpp
   PluginPhaseSchemaTests.cpp
+  PluginDynCodeABICompileTests.cpp
   PluginProcessServicesTests.cpp
   PluginRegistryTests.cpp
   PluginSessionTests.cpp
@@ -1236,6 +1253,10 @@ target_link_libraries(neverc-plugin-core-tests PRIVATE
   GTest::gtest_main
   nevercInvoke
   nevercPluginCore
+)
+add_dependencies(neverc-plugin-core-tests
+  neverc-plugin-dyncode-abi-compile-c11
+  neverc-plugin-dyncode-abi-compile-c23
 )
 target_include_directories(neverc-plugin-core-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
@@ -1509,6 +1530,26 @@ add_dependencies(neverc-plugin-target-mc-tests
   neverc-plugin-target-schema-gen
 )
 gtest_discover_tests(neverc-plugin-target-mc-tests
+  PROPERTIES
+    TIMEOUT 60
+    DISCOVERY_TIMEOUT 30
+)
+
+add_executable(neverc-plugin-dyncode-tests
+  PluginDynCodeRequestTests.cpp
+)
+target_link_libraries(neverc-plugin-dyncode-tests PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  nevercDynCode
+  nevercPluginTarget
+)
+target_include_directories(neverc-plugin-dyncode-tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/DynCode/Plugin
+)
+target_compile_features(neverc-plugin-dyncode-tests PRIVATE cxx_std_17)
+gtest_discover_tests(neverc-plugin-dyncode-tests
   PROPERTIES
     TIMEOUT 60
     DISCOVERY_TIMEOUT 30

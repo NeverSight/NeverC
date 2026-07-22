@@ -34,10 +34,16 @@ class PhaseSchemaGeneratorTests(unittest.TestCase):
 
     def test_accepts_committed_schema(self):
         phases, families = self.validate(self.document)
-        self.assertEqual(len(phases), 96)
-        self.assertEqual(len(families), 7)
+        self.assertEqual(len(phases), 130)
+        self.assertEqual(len(families), 8)
         self.assertEqual(
             sum(phase["stability"] == "stable" for phase in phases), 96
+        )
+        self.assertEqual(
+            sum(phase["stability"] == "experimental" for phase in phases), 34
+        )
+        self.assertEqual(
+            sum(phase["domain"] == "dyncode" for phase in phases), 34
         )
         self.assertEqual(
             sum(phase["domain"] == "ir" for phase in phases), 8

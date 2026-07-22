@@ -67,8 +67,8 @@ TEST(PluginIRMIRABITest, AssignsUniqueNonzeroDomainInterfaceIDs) {
 TEST(PluginIRMIRABITest, PublishesFirstVersionIRAndMIRPhasePolicies) {
   static_assert(NEVERC_BUILTIN_IR_PHASE_COUNT == 8);
   static_assert(NEVERC_BUILTIN_MIR_PHASE_COUNT == 10);
-  static_assert(NEVERC_BUILTIN_PHASE_COUNT == 96);
-  static_assert(NEVERC_EXTENSION_FAMILY_COUNT == 7);
+  static_assert(NEVERC_BUILTIN_PHASE_COUNT == 130);
+  static_assert(NEVERC_EXTENSION_FAMILY_COUNT == 8);
 
   constexpr NevercPhasePolicy Replacement =
       NEVERC_PHASE_OBSERVABLE | NEVERC_PHASE_INTERCEPTABLE |

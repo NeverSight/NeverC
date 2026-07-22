@@ -7,8 +7,9 @@ namespace {
 
 TEST(PluginPhaseSchemaTest, PublishesSixStableDriverPhases) {
   static_assert(NEVERC_BUILTIN_DRIVER_PHASE_COUNT == 6);
-  static_assert(NEVERC_BUILTIN_PHASE_COUNT == 96);
-  static_assert(NEVERC_EXTENSION_FAMILY_COUNT == 7);
+  static_assert(NEVERC_BUILTIN_PHASE_COUNT == 130);
+  static_assert(NEVERC_BUILTIN_DYNCODE_PHASE_COUNT == 34);
+  static_assert(NEVERC_EXTENSION_FAMILY_COUNT == 8);
   const std::array<uint64_t, 6> IDs = {
       NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_LOW,
       NEVERC_PHASE_DRIVER_PARSED_ARGUMENTS_LOW,

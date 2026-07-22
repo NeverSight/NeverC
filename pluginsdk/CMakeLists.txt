@@ -39,6 +39,8 @@ set(PLUGIN_LINK_HEADER
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginLink.h")
 set(PLUGIN_LTO_HEADER
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginLTO.h")
+set(PLUGIN_DYNCODE_HEADER
+    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginDynCode.h")
 set(PLUGIN_PHASE_SCHEMA_HEADER
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginPhaseSchema.h")
 set(PLUGIN_PHASE_SCHEMA_INC
@@ -141,6 +143,9 @@ add_custom_command(
       "${PLUGIN_LTO_HEADER}"
       "${PLUGINSDK_DST}/include/neverc/Plugin/PluginLTO.h"
   COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_DYNCODE_HEADER}"
+      "${PLUGINSDK_DST}/include/neverc/Plugin/PluginDynCode.h"
+  COMMAND "${CMAKE_COMMAND}" -E copy
       "${PLUGIN_PHASE_SCHEMA_HEADER}"
       "${PLUGINSDK_DST}/include/neverc/Plugin/PluginPhaseSchema.h"
   COMMAND "${CMAKE_COMMAND}" -E copy
@@ -202,6 +207,7 @@ add_custom_command(
       "${PLUGIN_OBJECT_HEADER}"
       "${PLUGIN_LINK_HEADER}"
       "${PLUGIN_LTO_HEADER}"
+      "${PLUGIN_DYNCODE_HEADER}"
       "${PLUGIN_PHASE_SCHEMA_HEADER}"
       "${PLUGIN_PHASE_SCHEMA_INC}"
       "${PLUGIN_PREP_SCHEMA_JSON}"
@@ -307,6 +313,7 @@ install(FILES
         "${PLUGIN_OBJECT_HEADER}"
         "${PLUGIN_LINK_HEADER}"
         "${PLUGIN_LTO_HEADER}"
+        "${PLUGIN_DYNCODE_HEADER}"
         "${PLUGIN_PHASE_SCHEMA_HEADER}"
         DESTINATION "pluginsdk/include/neverc/Plugin"
         COMPONENT neverc-pluginsdk)
