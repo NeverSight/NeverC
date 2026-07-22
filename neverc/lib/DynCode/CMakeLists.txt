@@ -108,9 +108,13 @@ add_neverc_library(nevercDynCode
   Plugin/DynCodeRequest.cpp
   Plugin/DynCodeRegistry.cpp
   Plugin/DynCodeTargetRegistry.cpp
+  Plugin/DynCodePhaseRegistry.cpp
+  Plugin/DynCodePhaseExecutor.cpp
+  Plugin/DynCodePhaseCAPI.cpp
 
   LINK_LIBS
   nevercFoundation
+  nevercPluginCore
   nevercPluginTarget
 
   DEPENDS

@@ -513,4 +513,36 @@ Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinLinkGraph() {
   return Graph;
 }
 
+Expected<PluginPhaseGraph> PluginPhaseGraph::createBuiltinDynCodeGraph() {
+  PluginPhaseGraph Graph;
+#define NEVERC_BUILD_BUILTIN_PHASE(Symbol)                                    \
+  builtinPhase(                                                               \
+      NEVERC_PHASE_##Symbol##_NAME, NEVERC_PHASE_##Symbol##_DOMAIN,           \
+      NEVERC_PHASE_##Symbol##_VERIFIER, NEVERC_PHASE_##Symbol##_HIGH,         \
+      NEVERC_PHASE_##Symbol##_LOW, NEVERC_PHASE_##Symbol##_INPUT_HIGH,        \
+      NEVERC_PHASE_##Symbol##_INPUT_LOW, NEVERC_PHASE_##Symbol##_OUTPUT_HIGH, \
+      NEVERC_PHASE_##Symbol##_OUTPUT_LOW, NEVERC_PHASE_##Symbol##_POLICY,     \
+      NEVERC_PHASE_##Symbol##_OBSERVER_POINTS, NEVERC_PHASE_##Symbol##_GATE,  \
+      NEVERC_PHASE_##Symbol##_STABILITY,                                      \
+      NEVERC_PHASE_##Symbol##_BUILTIN_FALLBACK),
+  const PluginPhaseDefinition Builtins[] = {
+      NEVERC_FOR_EACH_BUILTIN_DYNCODE_PHASE(NEVERC_BUILD_BUILTIN_PHASE)};
+#undef NEVERC_BUILD_BUILTIN_PHASE
+  for (const PluginPhaseDefinition &Phase : Builtins)
+    if (Error E = Graph.addPhase(Phase))
+      return std::move(E);
+
+  // The 34 dyncode phases form a single linear artifact chain: each phase
+  // consumes artifact N and produces artifact N+1 (section 2.4).  The generated
+  // FOR_EACH macro emits them in that canonical order, so consecutive phases
+  // connect with matching input/output artifacts (RequireCompatibleArtifacts).
+  for (size_t Index = 1; Index != std::size(Builtins); ++Index)
+    if (Error E = Graph.addEdge(Builtins[Index - 1].ID, Builtins[Index].ID,
+                                true))
+      return std::move(E);
+  if (Error E = Graph.finalize())
+    return std::move(E);
+  return Graph;
+}
+
 } // namespace neverc::plugin

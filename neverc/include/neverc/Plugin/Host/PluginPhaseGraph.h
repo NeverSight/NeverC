@@ -57,6 +57,7 @@ public:
   static llvm::Expected<PluginPhaseGraph> createBuiltinMCGraph();
   static llvm::Expected<PluginPhaseGraph> createBuiltinObjectGraph();
   static llvm::Expected<PluginPhaseGraph> createBuiltinLinkGraph();
+  static llvm::Expected<PluginPhaseGraph> createBuiltinDynCodeGraph();
 
 private:
   struct Edge {

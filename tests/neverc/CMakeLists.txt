@@ -265,6 +265,18 @@ set_target_properties(neverc-test-plugin-link-route PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib"
 )
 
+add_library(neverc-test-plugin-dyncode-phase MODULE
+  Inputs/Plugin/DynCodePhaseTracePlugin.c
+)
+target_include_directories(neverc-test-plugin-dyncode-phase PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-test-plugin-dyncode-phase PRIVATE c_std_11)
+set_target_properties(neverc-test-plugin-dyncode-phase PROPERTIES
+  PREFIX ""
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib"
+)
+
 add_library(neverc-test-plugin-object-merge MODULE
   Inputs/Plugin/ObjectMergePlugin.c
 )
@@ -1542,11 +1554,14 @@ gtest_discover_tests(neverc-plugin-target-mc-tests
 
 add_executable(neverc-plugin-dyncode-tests
   PluginDynCodeRequestTests.cpp
+  PluginDynCodePhaseTests.cpp
 )
 target_link_libraries(neverc-plugin-dyncode-tests PRIVATE
   GTest::gtest
   GTest::gtest_main
   nevercDynCode
+  nevercPluginCore
+  nevercPluginIO
   nevercPluginTarget
 )
 target_include_directories(neverc-plugin-dyncode-tests PRIVATE
@@ -1554,6 +1569,12 @@ target_include_directories(neverc-plugin-dyncode-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/DynCode/Plugin
 )
 target_compile_features(neverc-plugin-dyncode-tests PRIVATE cxx_std_17)
+target_compile_definitions(neverc-plugin-dyncode-tests PRIVATE
+  NEVERC_TEST_DYNCODE_PHASE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-dyncode-phase>"
+)
+add_dependencies(neverc-plugin-dyncode-tests
+  neverc-test-plugin-dyncode-phase
+)
 gtest_discover_tests(neverc-plugin-dyncode-tests
   PROPERTIES
     TIMEOUT 60
