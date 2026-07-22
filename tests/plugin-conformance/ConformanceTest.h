@@ -67,6 +67,35 @@ protected:
         << Error;
     return Path;
   }
+
+  // Build a fixture variant into an isolated subdirectory so a single test can
+  // build several configurations of the same source without name clashes.
+  std::string buildVariantOrFail(const std::string &Sub,
+                                 const std::string &Fixture,
+                                 const std::vector<std::string> &Defines) {
+    const std::string SubDir = (std::filesystem::path(Dir) / Sub).string();
+    std::error_code EC;
+    std::filesystem::create_directories(SubDir, EC);
+    std::string Error;
+    const std::string Path = Env.buildPlugin(SubDir, Fixture, Defines, Error);
+    EXPECT_FALSE(Path.empty())
+        << "system compiler could not build fixture " << Fixture << " ["
+        << Sub << "] against the staged SDK:\n"
+        << Error;
+    return Path;
+  }
+
+  std::string objectPath(const std::string &Name = "out.o") const {
+    return (std::filesystem::path(Dir) / Name).string();
+  }
+
+  // Read a produced artifact as raw bytes for black-box inspection.
+  std::string readBytes(const std::string &Path) const {
+    std::ifstream Stream(Path, std::ios::binary);
+    std::stringstream Buffer;
+    Buffer << Stream.rdbuf();
+    return Buffer.str();
+  }
 };
 
 } // namespace neverc::conformance

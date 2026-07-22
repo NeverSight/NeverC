@@ -68,12 +68,14 @@ Expected<NevercActionKind> toPublicActionKind(Action::ActionClass Kind) {
     return NEVERC_ACTION_DSYMUTIL;
   case Action::StaticLibJobClass:
     return NEVERC_ACTION_STATIC_LIB;
+  case Action::DynCodeJobClass:
+    return NEVERC_ACTION_DYNCODE;
   }
   return actionGraphError("unknown internal action kind");
 }
 
 bool validActionKind(NevercActionKind Kind) {
-  return Kind >= NEVERC_ACTION_INPUT && Kind <= NEVERC_ACTION_STATIC_LIB;
+  return Kind >= NEVERC_ACTION_INPUT && Kind <= NEVERC_ACTION_DYNCODE;
 }
 
 bool typeIs(NevercDriverType Type,
@@ -279,6 +281,15 @@ Error verifyActionGraph(
         return E;
       if (inputType(0) != NEVERC_DRIVER_TYPE_IMAGE ||
           Node.OutputType != NEVERC_DRIVER_TYPE_DSYM)
+        return actionGraphError("incompatible action graph edge");
+      break;
+    case NEVERC_ACTION_DYNCODE:
+      // -fdyncode lowers exactly one relocatable object into a raw image.
+      if (Error E = requireInputs(1))
+        return E;
+      if (!typeIs(inputType(0), {NEVERC_DRIVER_TYPE_OBJECT,
+                                 NEVERC_DRIVER_TYPE_LTO_BC}) ||
+          Node.OutputType != NEVERC_DRIVER_TYPE_IMAGE)
         return actionGraphError("incompatible action graph edge");
       break;
     default:
@@ -925,6 +936,9 @@ Error materializeDriverActionGraph(
       break;
     case NEVERC_ACTION_STATIC_LIB:
       Result = C.MakeAction<StaticLibJobAction>(Inputs, *InternalType);
+      break;
+    case NEVERC_ACTION_DYNCODE:
+      Result = C.MakeAction<DynCodeJobAction>(Inputs.front(), *InternalType);
       break;
     default:
       return actionGraphError("action graph node kind is invalid");

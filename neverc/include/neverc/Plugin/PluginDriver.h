@@ -258,6 +258,7 @@ typedef uint32_t NevercActionKind;
 #define NEVERC_ACTION_LIPO UINT32_C(8)
 #define NEVERC_ACTION_DSYMUTIL UINT32_C(9)
 #define NEVERC_ACTION_STATIC_LIB UINT32_C(10)
+#define NEVERC_ACTION_DYNCODE UINT32_C(11)
 
 typedef uint64_t NevercDriverInputID;
 typedef uint64_t NevercActionNodeID;
@@ -367,6 +368,7 @@ typedef uint32_t NevercJobKind;
 #define NEVERC_JOB_LINKER UINT32_C(3)
 #define NEVERC_JOB_ARCHIVE UINT32_C(4)
 #define NEVERC_JOB_PLUGIN UINT32_C(5)
+#define NEVERC_JOB_DYNCODE UINT32_C(6)
 
 typedef uint32_t NevercResponseFileKind;
 #define NEVERC_RESPONSE_FILE_NONE UINT32_C(0)

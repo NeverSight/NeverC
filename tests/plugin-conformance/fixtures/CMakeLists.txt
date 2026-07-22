@@ -6,6 +6,8 @@ install(FILES
   InvalidDescriptorPlugins.c
   LifecyclePlugin.c
   DependencyPlugins.c
+  DomainConformancePlugin.c
+  ReplacementConformancePlugin.c
   DESTINATION pluginsdk/conformance/fixtures
   COMPONENT neverc-pluginsdk
 )

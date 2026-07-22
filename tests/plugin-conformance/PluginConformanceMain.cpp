@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ConformanceEnvironment.h"
+#include "ConformanceSummary.h"
 
 #include "gtest/gtest.h"
 
@@ -26,5 +27,8 @@ int main(int argc, char **argv) {
     std::fprintf(stderr,
                  "neverc-plugin-conformance: environment incomplete: %s\n",
                  Env.whyUnusable().c_str());
-  return RUN_ALL_TESTS();
+  const int Result = RUN_ALL_TESTS();
+  if (neverc::conformance::writeConformanceSummary())
+    std::fprintf(stderr, "neverc-plugin-conformance: wrote capability summary\n");
+  return Result;
 }

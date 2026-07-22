@@ -22,8 +22,15 @@ endif()
 add_executable(neverc-plugin-conformance
   PluginConformanceMain.cpp
   ConformanceEnvironment.cpp
+  ConformanceSummary.cpp
   SDKABIConformanceTests.cpp
   LoaderLifecycleConformanceTests.cpp
+  DriverFrontendConformanceTests.cpp
+  IRMirConformanceTests.cpp
+  TargetObjectConformanceTests.cpp
+  LinkLTOConformanceTests.cpp
+  DynCodeConformanceTests.cpp
+  HandleFailureConformanceTests.cpp
 )
 target_include_directories(neverc-plugin-conformance PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
@@ -52,9 +59,17 @@ install(FILES
   PluginConformanceMain.cpp
   ConformanceEnvironment.cpp
   ConformanceEnvironment.h
+  ConformanceSummary.cpp
+  ConformanceSummary.h
   ConformanceTest.h
   SDKABIConformanceTests.cpp
   LoaderLifecycleConformanceTests.cpp
+  DriverFrontendConformanceTests.cpp
+  IRMirConformanceTests.cpp
+  TargetObjectConformanceTests.cpp
+  LinkLTOConformanceTests.cpp
+  DynCodeConformanceTests.cpp
+  HandleFailureConformanceTests.cpp
   DESTINATION pluginsdk/conformance
   COMPONENT neverc-pluginsdk
 )

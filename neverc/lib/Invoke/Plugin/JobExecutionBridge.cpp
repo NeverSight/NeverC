@@ -179,7 +179,7 @@ void DriverJobRequestArtifact::rebuildViews() {
 Error DriverJobRequestArtifact::verify() const {
   if (Job.ID == 0 || Job.SourceAction == 0)
     return jobExecutionError("job execution request identity is invalid");
-  if (Job.Kind < NEVERC_JOB_COMMAND || Job.Kind > NEVERC_JOB_PLUGIN)
+  if (Job.Kind < NEVERC_JOB_COMMAND || Job.Kind > NEVERC_JOB_DYNCODE)
     return jobExecutionError("job execution request kind is invalid");
   if (Job.Kind == NEVERC_JOB_PLUGIN) {
     if (!Job.InProcess || !Job.Callback ||

@@ -53,7 +53,7 @@ bool validText(StringRef Text, bool AllowEmpty) {
 }
 
 bool validJobKind(NevercJobKind Kind) {
-  return Kind >= NEVERC_JOB_COMMAND && Kind <= NEVERC_JOB_PLUGIN;
+  return Kind >= NEVERC_JOB_COMMAND && Kind <= NEVERC_JOB_DYNCODE;
 }
 
 Expected<NevercJobKind> toPublicJobKind(Command::CommandKind Kind) {
@@ -68,6 +68,8 @@ Expected<NevercJobKind> toPublicJobKind(Command::CommandKind Kind) {
     return NEVERC_JOB_ARCHIVE;
   case Command::CK_PluginCommand:
     return NEVERC_JOB_PLUGIN;
+  case Command::CK_DynCodeCommand:
+    return NEVERC_JOB_DYNCODE;
   }
   return jobGraphError("unknown internal job kind");
 }
@@ -895,6 +897,13 @@ materializeDriverJobGraph(
       Rebuilt = std::make_unique<ArchiveCommand>(
           *ActionRecord->Value, Creator, *Response, Executable,
           Arguments, Inputs, Outputs);
+      break;
+    case NEVERC_JOB_DYNCODE:
+      // The in-process dyncode command takes no response-file support or
+      // prepended arguments; it lowers one object into a raw image in-process.
+      Rebuilt = std::make_unique<DynCodeCommand>(
+          *ActionRecord->Value, Creator, Executable, Arguments, Inputs,
+          Outputs);
       break;
     case NEVERC_JOB_PLUGIN: {
       std::string CallbackKey =
