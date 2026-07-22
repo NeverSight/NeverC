@@ -15,6 +15,9 @@ class FrontendOptions;
 namespace plugin {
 class PluginSession;
 }
+namespace dyncode {
+class DynCodeExecutionContext;
+}
 
 namespace driver {
 
@@ -26,6 +29,9 @@ struct DirectInvocationOpts {
   std::shared_ptr<PrepOptions> PPOpts;
   std::shared_ptr<FrontendOptions> FrontendOpts;
   std::shared_ptr<plugin::PluginSession> PluginSession;
+  // Volume 6 task 4: frozen dyncode request for the in-process cc1 codegen,
+  // replacing the former process-global dyncode options singleton.
+  std::shared_ptr<const dyncode::DynCodeExecutionContext> DynCode;
   OutputCoordinator *Outputs = nullptr;
 
   // True when this cc1 invocation is part of a compile+link pipeline where
@@ -42,7 +48,7 @@ struct DirectInvocationOpts {
 
 inline bool hasAnyDirectOpts(const DirectInvocationOpts &D) {
   return D.TargetOpts || D.LangOpts || D.CodeGenOpts || D.HeaderIdxOpts ||
-         D.PPOpts || D.FrontendOpts || D.PluginSession || D.Outputs;
+         D.PPOpts || D.FrontendOpts || D.PluginSession || D.DynCode || D.Outputs;
 }
 
 } // namespace driver

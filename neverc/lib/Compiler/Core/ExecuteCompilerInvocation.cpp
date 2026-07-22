@@ -207,6 +207,11 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
     if (DirectOpts->FrontendOpts)
       CI->getInvocation().getFrontendOpts() = *DirectOpts->FrontendOpts;
 
+    // Volume 6 task 4: the frozen dyncode request travels task-locally instead
+    // of via a process-global singleton.
+    if (DirectOpts->DynCode)
+      CI->setDynCodeContext(DirectOpts->DynCode);
+
     // In-process cc1 shares the InMemoryFileStore with the linker, so
     // LTO bitcode can stay in memory instead of hitting the filesystem.
     // This is only set when the driver knows a linker step follows in

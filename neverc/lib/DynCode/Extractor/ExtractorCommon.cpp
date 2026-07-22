@@ -371,12 +371,12 @@ bool applyDynCodeSizing(SmallVectorImpl<uint8_t> &Bytes,
 
 int finalizeDynCodeBytes(SmallVectorImpl<uint8_t> &Bytes,
                            const DynCodeOptions &Opts) {
-  applyPostExtractObfuscationInterpose(Bytes);
+  applyPostExtractObfuscationInterpose(Bytes, Opts);
   if (!auditFinalBadBytes(Bytes, Opts))
     return 1;
   if (!applyDynCodeSizing(Bytes, Opts))
     return 1;
-  applyPostFinalizeObfuscationInterpose(Bytes);
+  applyPostFinalizeObfuscationInterpose(Bytes, Opts);
   return 0;
 }
 

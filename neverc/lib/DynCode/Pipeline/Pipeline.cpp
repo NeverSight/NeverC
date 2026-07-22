@@ -21,11 +21,6 @@ namespace neverc {
 namespace dyncode {
 
 namespace {
-DynCodeOptions &currentDynCodeOptionsStorage() {
-  static DynCodeOptions S;
-  return S;
-}
-
 class DynCodeMachinePipelineHooks final : public MachinePipelineHooks {
 public:
   explicit DynCodeMachinePipelineHooks(DynCodeOptions Options)
@@ -48,27 +43,21 @@ void registerNoLegacyBinaryInterposes(SmallVectorImpl<uint8_t> &) {
 }
 } // namespace
 
-const DynCodeOptions &getCurrentDynCodeOptions() {
-  return currentDynCodeOptionsStorage();
-}
-
-void applyPostExtractObfuscationInterpose(llvm::SmallVectorImpl<uint8_t> &Bytes) {
-  const DynCodeOptions &Opts = currentDynCodeOptionsStorage();
+void applyPostExtractObfuscationInterpose(llvm::SmallVectorImpl<uint8_t> &Bytes,
+                                          const DynCodeOptions &Opts) {
   if (!Opts.Enabled)
     return;
   registerNoLegacyBinaryInterposes(Bytes);
 }
 
-void applyPostFinalizeObfuscationInterpose(llvm::SmallVectorImpl<uint8_t> &Bytes) {
-  const DynCodeOptions &Opts = currentDynCodeOptionsStorage();
+void applyPostFinalizeObfuscationInterpose(llvm::SmallVectorImpl<uint8_t> &Bytes,
+                                           const DynCodeOptions &Opts) {
   if (!Opts.Enabled)
     return;
   registerNoLegacyBinaryInterposes(Bytes);
 }
 
 void registerDynCodePasses(PassBuilder &PB, const DynCodeOptions &Opts) {
-  currentDynCodeOptionsStorage() = Opts;
-
   PB.registerAnalysisRegistrationCallback([](ModuleAnalysisManager &MAM) {
     MAM.registerPass([] { return CompilerRtStampAnalysis(); });
   });
@@ -126,10 +115,6 @@ void registerDynCodePasses(PassBuilder &PB, const DynCodeOptions &Opts) {
 
         MPM.addPass(CompilerRtPass(Opts.Target));
       });
-}
-
-void registerDynCodeMachinePasses(const DynCodeOptions &Opts) {
-  currentDynCodeOptionsStorage() = Opts;
 }
 
 std::shared_ptr<MachinePipelineHooks>

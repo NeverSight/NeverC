@@ -125,6 +125,9 @@ class GenAssemblyHelper {
   llvm::Module *TheModule;
   llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS;
   plugin::PluginTaskContext *PluginTask;
+  // Frozen dyncode request for this codegen (volume 6 task 4); null for a plain
+  // compile.  Threaded task-locally instead of read from a process global.
+  const dyncode::DynCodeOptions *DynCodeOpts;
   std::unique_ptr<plugin::PluginIROptimizationProviderRuntime>
       OptimizationRuntime;
   std::shared_ptr<plugin::MIRPassPlan> MachinePasses;
@@ -192,10 +195,11 @@ public:
                     const neverc::TargetOptions &TOpts,
                     const LangOptions &LOpts, llvm::Module *M,
                     llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS,
-                    plugin::PluginTaskContext *PluginTaskValue)
+                    plugin::PluginTaskContext *PluginTaskValue,
+                    const dyncode::DynCodeOptions *DynCodeOptsValue)
       : Diags(_Diags), HSOpts(HeaderIdxOpts), CodeGenOpts(CGOpts),
         TargetOpts(TOpts), LangOpts(LOpts), TheModule(M), VFS(std::move(VFS)),
-        PluginTask(PluginTaskValue),
+        PluginTask(PluginTaskValue), DynCodeOpts(DynCodeOptsValue),
         CodeGenerationTime("codegen", "Code Generation Time"),
         TargetTriple(TheModule->getTargetTriple()) {}
 
@@ -522,8 +526,11 @@ bool GenAssemblyHelper::prepareMachinePasses() {
       Hooks.push_back(MachinePasses);
   }
 
-  if (auto DynCodeHooks = dyncode::createDynCodeMachinePipelineHooks(
-          dyncode::getCurrentDynCodeOptions()))
+  dyncode::DynCodeOptions DisabledDynCode;
+  const dyncode::DynCodeOptions &DynCodeOptsRef =
+      DynCodeOpts ? *DynCodeOpts : DisabledDynCode;
+  if (auto DynCodeHooks =
+          dyncode::createDynCodeMachinePipelineHooks(DynCodeOptsRef))
     Hooks.push_back(std::move(DynCodeHooks));
 
   std::shared_ptr<MachinePipelineHooks> Combined;
@@ -755,7 +762,9 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
   // Set plugin arguments before loading so they're available during registration.
   for (const auto &PassCallback : CodeGenOpts.PassBuilderCallbacks)
     PassCallback(PB);
-  dyncode::registerDynCodePasses(PB, dyncode::getCurrentDynCodeOptions());
+  dyncode::DynCodeOptions DisabledDynCode;
+  dyncode::registerDynCodePasses(
+      PB, DynCodeOpts ? *DynCodeOpts : DisabledDynCode);
 
   // Register the target library analysis directly and give it a customized
   // preset TLI.
@@ -1380,12 +1389,13 @@ void neverc::genBackendOutput(
     const LangOptions &LOpts, llvm::StringRef TDesc, llvm::Module *M,
     BackendAction Action, llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS,
     std::unique_ptr<raw_pwrite_stream> OS, EmitterConsumer *BC,
-    plugin::PluginTaskContext *PluginTask) {
+    plugin::PluginTaskContext *PluginTask,
+    const dyncode::DynCodeOptions *DynCodeOpts) {
 
   llvm::TimeTraceScope TimeScope("Backend");
 
   GenAssemblyHelper AsmHelper(Diags, HeaderOpts, CGOpts, TOpts, LOpts, M, VFS,
-                              PluginTask);
+                              PluginTask, DynCodeOpts);
   AsmHelper.genAssembly(Action, std::move(OS), BC);
 
   if (AsmHelper.TM) {

@@ -28,6 +28,10 @@ class PluginSourcePhaseRuntime;
 class PluginTaskContext;
 } // namespace plugin
 
+namespace dyncode {
+class DynCodeExecutionContext;
+} // namespace dyncode
+
 class EmitterConsumer : public TreeConsumer {
   using LinkModule = EmitterAction::LinkModule;
 
@@ -53,6 +57,9 @@ class EmitterConsumer : public TreeConsumer {
   std::unique_ptr<plugin::PluginIRGenProviderRuntime> PluginIRGen;
   plugin::PluginTaskContext *PluginTask = nullptr;
   plugin::PluginSourcePhaseRuntime *PluginSourcePhases = nullptr;
+  // Frozen dyncode request for this codegen (volume 6 task 4); null when not a
+  // dyncode compile.  Threaded task-locally from the CompilerInstance.
+  std::shared_ptr<const dyncode::DynCodeExecutionContext> DynCodeCtx;
   std::unique_ptr<llvm::Module> PluginGeneratedModule;
   bool BuiltinIRGenFinished = false;
   bool PluginSemanticUnitReady = false;
@@ -103,6 +110,11 @@ public:
   enablePluginIRGen(plugin::PluginTaskContext &Task,
                     plugin::PluginSourcePhaseRuntime &SourcePhases,
                     llvm::StringRef TargetTriple, llvm::StringRef DataLayout);
+
+  void setDynCodeContext(
+      std::shared_ptr<const dyncode::DynCodeExecutionContext> Value) {
+    DynCodeCtx = std::move(Value);
+  }
 
   llvm::Module *getModule() const;
   std::unique_ptr<llvm::Module> takeModule();

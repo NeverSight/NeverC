@@ -3,6 +3,7 @@
 #include "Core/ModuleEmitter.h"
 #include "Stmt/CallEmitterInfo.h"
 #include "neverc/Compiler/CompilerInstance.h"
+#include "neverc/DynCode/Pipeline/DynCodeExecutionContext.h"
 #include "neverc/Emit/Backend/BackendUtil.h"
 #include "neverc/Emit/Core/EmitterFactory.h"
 #include "neverc/Emit/Core/ModuleBuilder.h"
@@ -435,7 +436,8 @@ void EmitterConsumer::ProcessTranslationUnit(TreeContext &C) {
 
   genBackendOutput(Diags, HeaderIdxOpts, CodeGenOpts, TargetOpts, LangOpts,
                    C.getTargetInfo().getDataLayoutString(), getModule(), Action,
-                   FS, std::move(AsmOutStream), this, PluginTask);
+                   FS, std::move(AsmOutStream), this, PluginTask,
+                   DynCodeCtx ? &DynCodeCtx->options() : nullptr);
 
   Ctx.setDiagnosticHandler(std::move(OldDiagnosticHandler));
 
@@ -988,6 +990,7 @@ EmitterAction::CreateTreeConsumer(CompilerInstance &CI,
       CI.getHeaderIdxOpts(), CI.getPrepOpts(), CI.getCodeGenOpts(),
       CI.getTargetOpts(), CI.getLangOpts(), std::string(InFile),
       std::move(LinkModules), std::move(OS), *VMContext));
+  Result->setDynCodeContext(CI.getDynCodeContext());
   if (plugin::PluginTaskContext *Task = CI.getPluginTaskContext()) {
     plugin::PluginSourcePhaseRuntime *SourcePhases =
         CI.getPluginSourcePhaseRuntime();
@@ -1143,7 +1146,8 @@ void EmitterAction::ExecuteAction() {
       Diagnostics, CI.getHeaderIdxOpts(), CodeGenOpts, TargetOpts,
       CI.getLangOpts(), CI.getTarget().getDataLayoutString(), TheModule.get(),
       BA, CI.getFileManager().getVirtualFileSystemPtr(), std::move(OS),
-      nullptr, CI.getPluginTaskContext());
+      nullptr, CI.getPluginTaskContext(),
+      CI.getDynCodeContext() ? &CI.getDynCodeContext()->options() : nullptr);
   if (OptRecordFile)
     OptRecordFile->keep();
 }

@@ -8,6 +8,7 @@
 #include "neverc/Config/config.h"
 #include "neverc/DynCode/Extractor/DynCodeExtractor.h"
 #include "neverc/DynCode/Pipeline/DriverIntegration.h"
+#include "neverc/DynCode/Pipeline/DynCodeExecutionContext.h"
 #include "neverc/Foundation/Core/Stack.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticOptions.h"
 #include "neverc/Invoke/Compilation.h"
@@ -447,6 +448,11 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   if (DynCode.Enabled) {
     TheDriver.DynCodeEnabled = true;
     neverc::dyncode::DynCodeOptions Opts = DynCode.Opts;
+    // Volume 6 task 4: publish the frozen dyncode request as a task-local
+    // context shared with the in-process cc1 codegen (via DirectInvocationOpts)
+    // instead of a mutable process-global singleton.
+    TheDriver.DynCodeContext =
+        std::make_shared<const neverc::dyncode::DynCodeExecutionContext>(Opts);
     TheDriver.DynCodeMain = [Opts](llvm::StringRef InputObject,
                                    llvm::StringRef OutputImage) -> int {
       if (!Opts.KeepObjPath.empty()) {

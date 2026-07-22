@@ -47,6 +47,10 @@ class PluginSession;
 class PluginTaskContext;
 } // namespace plugin
 
+namespace dyncode {
+class DynCodeExecutionContext;
+} // namespace dyncode
+
 using llvm::cast;
 using llvm::dyn_cast;
 using llvm::isa;
@@ -135,6 +139,10 @@ public:
   using DynCodeToolFunc = std::function<int(llvm::StringRef InputObject,
                                             llvm::StringRef OutputImage)>;
   DynCodeToolFunc DynCodeMain = nullptr;
+
+  // Frozen dyncode request shared with the in-process cc1 codegen through
+  // DirectInvocationOpts (volume 6 task 4).  Null for non-dyncode compiles.
+  std::shared_ptr<const dyncode::DynCodeExecutionContext> DynCodeContext;
 
 private:
   std::string TargetTriple;

@@ -47,6 +47,9 @@ namespace plugin {
 class PluginSourcePhaseRuntime;
 class PluginTaskContext;
 }
+namespace dyncode {
+class DynCodeExecutionContext;
+}
 
 class CompilerInstance {
   std::shared_ptr<CompilerInvocation> Invocation;
@@ -80,6 +83,10 @@ class CompilerInstance {
   std::unique_ptr<plugin::PluginTaskContext> PluginTask;
   std::unique_ptr<plugin::PluginSourcePhaseRuntime>
       PluginSourcePhases;
+
+  // Frozen dyncode request for this in-process cc1 (volume 6 task 4), threaded
+  // from the driver via DirectInvocationOpts.  Null for non-dyncode compiles.
+  std::shared_ptr<const dyncode::DynCodeExecutionContext> DynCodeContext;
 
   std::vector<std::shared_ptr<DependencyCollector>> DependencyCollectors;
 
@@ -130,6 +137,15 @@ public:
   void setPluginTaskContext(
       std::unique_ptr<plugin::PluginTaskContext> Value);
   std::unique_ptr<plugin::PluginTaskContext> takePluginTaskContext();
+
+  const std::shared_ptr<const dyncode::DynCodeExecutionContext> &
+  getDynCodeContext() const {
+    return DynCodeContext;
+  }
+  void setDynCodeContext(
+      std::shared_ptr<const dyncode::DynCodeExecutionContext> Value) {
+    DynCodeContext = std::move(Value);
+  }
   void setPluginSourcePhaseRuntime(
       std::unique_ptr<plugin::PluginSourcePhaseRuntime> Value);
   plugin::PluginSourcePhaseRuntime *getPluginSourcePhaseRuntime() const {

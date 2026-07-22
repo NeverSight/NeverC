@@ -361,11 +361,8 @@ int prepareDriverDynCode(SmallVectorImpl<const char *> &Args,
 
   if (!collectOptions(Parsed, Setup.Opts))
     return 1;
-  if (!Setup.Opts.Enabled) {
-    // Keep the (disabled) process-global options coherent for plain compiles.
-    registerDynCodeMachinePasses(Setup.Opts);
+  if (!Setup.Opts.Enabled)
     return 0;
-  }
 
   llvm::Triple TT = resolveTriple(Parsed);
   Setup.Opts.Target = describeTriple(TT, Setup.Opts.Level);
@@ -393,10 +390,9 @@ int prepareDriverDynCode(SmallVectorImpl<const char *> &Args,
 
   appendInjectArgs(Setup, Args);
 
-  // In-process cc1 reads the frozen options from process-global storage.
-  // Volume 6 task 4 replaces this with a task-local execution context.
-  registerDynCodeMachinePasses(Setup.Opts);
-
+  // Volume 6 task 4: the frozen options now flow to the in-process cc1 as a
+  // task-local DynCodeExecutionContext threaded through the driver and
+  // DirectInvocationOpts, not through a mutable process-global singleton.
   Setup.Enabled = true;
   return 0;
 }

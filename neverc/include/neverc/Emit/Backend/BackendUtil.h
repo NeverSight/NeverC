@@ -26,6 +26,9 @@ class EmitterConsumer;
 namespace plugin {
 class PluginTaskContext;
 }
+namespace dyncode {
+struct DynCodeOptions;
+}
 
 enum BackendAction {
   Backend_EmitAssembly, ///< Emit native assembly files
@@ -43,7 +46,8 @@ void genBackendOutput(DiagnosticsEngine &Diags, const HeaderIndexOptions &,
                       llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS,
                       std::unique_ptr<llvm::raw_pwrite_stream> OS,
                       EmitterConsumer *BC = nullptr,
-                      plugin::PluginTaskContext *PluginTask = nullptr);
+                      plugin::PluginTaskContext *PluginTask = nullptr,
+                      const dyncode::DynCodeOptions *DynCodeOpts = nullptr);
 
 } // namespace neverc
 
