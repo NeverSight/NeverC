@@ -4381,3 +4381,30 @@ void NeverCAs::ConstructJob(Compilation &C, const JobAction &JA,
                                              Inputs, CmdArgs, TripleStr, CPU);
   C.addCommand(std::move(AsCmd));
 }
+
+void NeverCDynCode::ConstructJob(Compilation &C, const JobAction &JA,
+                                 const InputInfo &Output,
+                                 const InputInfoList &Inputs,
+                                 const ArgList &Args,
+                                 const char *LinkingOutput) const {
+  const Driver &D = getToolChain().getDriver();
+  ArgStringList CmdArgs;
+
+  // These arguments exist only so `-###`/`-v` render a deterministic, readable
+  // command line.  The in-process DynCodeCommand ignores them and uses the
+  // InputInfo/Output filenames directly.
+  CmdArgs.push_back("-dyncode-extract");
+
+  assert(Output.isFilename() && "Unexpected dyncode output.");
+  CmdArgs.push_back("-o");
+  CmdArgs.push_back(Output.getFilename());
+
+  for (const InputInfo &II : Inputs) {
+    assert(II.isFilename() && "Unexpected dyncode input.");
+    CmdArgs.push_back(II.getFilename());
+  }
+
+  const char *Exec = D.getNeverCProgramPath();
+  C.addCommand(std::make_unique<DynCodeCommand>(JA, *this, Exec, CmdArgs,
+                                                Inputs, Output));
+}

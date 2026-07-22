@@ -501,6 +501,67 @@ void LinkerCommand::setEnvironment(
       "The LinkerCommand doesn't support changing the environment vars!");
 }
 
+DynCodeCommand::DynCodeCommand(const Action &Source, const Tool &Creator,
+                               const char *Executable,
+                               const llvm::opt::ArgStringList &Arguments,
+                               llvm::ArrayRef<InputInfo> Inputs,
+                               llvm::ArrayRef<InputInfo> Outputs)
+    : Command(Source, Creator, ResponseFileSupport::None(), Executable,
+              Arguments, Inputs, Outputs) {
+  InProcess = true;
+}
+
+// ===----------------------------------------------------------------------===
+// DynCodeCommand
+// ===----------------------------------------------------------------------===
+
+void DynCodeCommand::Print(llvm::raw_ostream &OS, const char *Terminator,
+                           bool Quote, CrashReportInfo *CrashInfo) const {
+  OS << " (in-process)\n";
+  Command::Print(OS, Terminator, Quote, CrashInfo);
+}
+
+int DynCodeCommand::Execute(llvm::ArrayRef<llvm::StringRef> Redirects,
+                            llvm::SmallVectorImpl<char> *ErrMsg,
+                            bool *ExecutionFailed,
+                            llvm::sys::ProcessInfo &PI) const {
+  PrintFileNames();
+
+  if (ExecutionFailed)
+    *ExecutionFailed = false;
+
+  const Driver &D = getCreator().getToolChain().getDriver();
+  assert(D.DynCodeMain && "DynCodeMain callback must be set before Execute");
+
+  StringRef InputObject =
+      getInputInfos().empty()
+          ? StringRef()
+          : StringRef(getInputInfos().front().getFilename());
+  StringRef OutputImage =
+      getOutputFilenames().empty() ? StringRef()
+                                   : StringRef(getOutputFilenames().front());
+
+#if ENABLE_CRASH_OVERRIDES
+  llvm::CrashRecoveryContext CRC;
+  CRC.DumpStackAndCleanupOnFailure = true;
+  const void *PrettyState = llvm::SavePrettyStackState();
+  int R = 0;
+  if (!CRC.RunSafely([&]() { R = D.DynCodeMain(InputObject, OutputImage); })) {
+    llvm::RestorePrettyStackState(PrettyState);
+    return CRC.RetCode;
+  }
+  return R;
+#else
+  return D.DynCodeMain(InputObject, OutputImage);
+#endif
+}
+
+void DynCodeCommand::setEnvironment(
+    llvm::ArrayRef<const char *> NewEnvironment) {
+  llvm_unreachable(
+      "The DynCodeCommand doesn't support changing the environment vars!");
+}
+
 ArchiveCommand::ArchiveCommand(const Action &Source, const Tool &Creator,
                                ResponseFileSupport ResponseSupport,
                                const char *Executable,

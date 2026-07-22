@@ -284,6 +284,12 @@ Tool *ToolChain::getNeverCAs() const {
   return Assemble.get();
 }
 
+Tool *ToolChain::getDynCode() const {
+  if (!DynCode)
+    DynCode.reset(new tools::NeverCDynCode(*this));
+  return DynCode.get();
+}
+
 Tool *ToolChain::getLink() const {
   if (!Link)
     Link.reset(buildLinker());
@@ -306,6 +312,9 @@ Tool *ToolChain::getTool(Action::ActionClass AC) const {
 
   case Action::StaticLibJobClass:
     return getStaticLibTool();
+
+  case Action::DynCodeJobClass:
+    return getDynCode();
 
   case Action::InputClass:
   case Action::BindArchClass:

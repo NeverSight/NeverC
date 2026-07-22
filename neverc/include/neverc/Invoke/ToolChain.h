@@ -93,11 +93,13 @@ private:
   mutable std::unique_ptr<Tool> Assemble;
   mutable std::unique_ptr<Tool> Link;
   mutable std::unique_ptr<Tool> StaticLibTool;
+  mutable std::unique_ptr<Tool> DynCode;
   Tool *getNeverC() const;
   Tool *getAssemble() const;
   Tool *getLink() const;
   Tool *getStaticLibTool() const;
   Tool *getNeverCAs() const;
+  Tool *getDynCode() const;
 
   mutable llvm::Triple EffectiveTriple;
 

@@ -23,6 +23,7 @@
 #include "llvm/Support/StringSaver.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
@@ -121,6 +122,19 @@ public:
       llvm::SmallVectorImpl<const char *> &ArgV, LinkerFlavor Flavor,
       const ::linker::LinkerDriverConfig &DriverCfg)>;
   LinkerToolFunc LinkerMain = nullptr;
+
+  // Set when `-fdyncode` is active.  The driver then builds a DynCodeJobAction
+  // (instead of a link) that consumes the compiled relocatable object and
+  // produces the raw dyncode image.
+  bool DynCodeEnabled = false;
+
+  // In-process dyncode extraction callback: (relocatable object input, raw
+  // image output).  Owning std::function because the closure captures the
+  // frozen dyncode request.  Wired by the neverc entry point, mirroring how
+  // FrontendMain/LinkerMain are provided.
+  using DynCodeToolFunc = std::function<int(llvm::StringRef InputObject,
+                                            llvm::StringRef OutputImage)>;
+  DynCodeToolFunc DynCodeMain = nullptr;
 
 private:
   std::string TargetTriple;

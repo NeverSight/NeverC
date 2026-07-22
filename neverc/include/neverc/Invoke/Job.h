@@ -115,7 +115,8 @@ public:
     CK_FrontendCommand,
     CK_LinkerCommand,
     CK_ArchiveCommand,
-    CK_PluginCommand
+    CK_PluginCommand,
+    CK_DynCodeCommand
   };
 
   Command(const Action &Source, const Tool &Creator,
@@ -233,6 +234,30 @@ public:
   const ::linker::LinkerDriverConfig &getDriverConfig() const {
     return DriverCfg;
   }
+
+  void Print(llvm::raw_ostream &OS, const char *Terminator, bool Quote,
+             CrashReportInfo *CrashInfo = nullptr) const override;
+
+  int Execute(llvm::ArrayRef<llvm::StringRef> Redirects,
+              llvm::SmallVectorImpl<char> *ErrMsg, bool *ExecutionFailed,
+              llvm::sys::ProcessInfo &PI) const override;
+
+  void setEnvironment(llvm::ArrayRef<const char *> NewEnvironment) override;
+};
+
+/// In-process command that turns a compiled relocatable object into a raw
+/// dyncode image by invoking the driver's DynCodeMain callback.  Runs in the
+/// same process as the driver, so no separate temporary object file or
+/// post-compilation `main()` step is required.
+class DynCodeCommand : public Command {
+public:
+  DynCodeCommand(const Action &Source, const Tool &Creator,
+                 const char *Executable,
+                 const llvm::opt::ArgStringList &Arguments,
+                 llvm::ArrayRef<InputInfo> Inputs,
+                 llvm::ArrayRef<InputInfo> Outputs = std::nullopt);
+
+  CommandKind getKind() const override { return CK_DynCodeCommand; }
 
   void Print(llvm::raw_ostream &OS, const char *Terminator, bool Quote,
              CrashReportInfo *CrashInfo = nullptr) const override;

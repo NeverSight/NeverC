@@ -6,6 +6,7 @@
 #include "neverc/Compiler/TextDiagnosticPrinter.h"
 #include "neverc/Compiler/Utils.h"
 #include "neverc/Config/config.h"
+#include "neverc/DynCode/Extractor/DynCodeExtractor.h"
 #include "neverc/DynCode/Pipeline/DriverIntegration.h"
 #include "neverc/Foundation/Core/Stack.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticOptions.h"
@@ -407,9 +408,26 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   llvm::CrashRecoveryContext::Enable();
 
   // --- DynCode pipeline ---
-  neverc::dyncode::CompilationState DynCode;
-  if (int Rc = neverc::dyncode::configureCompilation(Args, DynCode))
+  // Parse -fdyncode once, then wire the driver so dyncode image extraction is
+  // a normal in-process Action/Job instead of an argv rewrite + temp-object
+  // round-trip + post-main() step.
+  neverc::dyncode::DynCodeDriverSetup DynCode;
+  if (int Rc = neverc::dyncode::prepareDriverDynCode(Args, DynCode))
     return Rc;
+  if (DynCode.Enabled) {
+    TheDriver.DynCodeEnabled = true;
+    neverc::dyncode::DynCodeOptions Opts = DynCode.Opts;
+    TheDriver.DynCodeMain = [Opts](llvm::StringRef InputObject,
+                                   llvm::StringRef OutputImage) -> int {
+      if (!Opts.KeepObjPath.empty()) {
+        if (std::error_code EC =
+                llvm::sys::fs::copy_file(InputObject, Opts.KeepObjPath))
+          llvm::errs() << "neverc: warning: cannot save dyncode object to '"
+                       << Opts.KeepObjPath << "': " << EC.message() << "\n";
+      }
+      return neverc::dyncode::extractDynCode(InputObject, OutputImage, Opts);
+    };
+  }
 
   // --- Build & execute ---
   std::unique_ptr<Compilation> C(TheDriver.CreateCompilation(Args));
@@ -425,10 +443,6 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   Driver::ReproLevel ReproLevel = *MaybeReproLevel;
 
   CompilationResult CR = runCompilation(TheDriver, *C);
-
-  if (DynCode.enabled()) {
-    CR.ExitCode = neverc::dyncode::finalizeCompilation(DynCode, CR.ExitCode);
-  }
 
   if (CR.ExitCode != 0 || CR.IsCrash) {
     // Crash/reproducer diagnostics still require the live Compilation.

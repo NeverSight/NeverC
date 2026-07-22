@@ -3088,7 +3088,10 @@ void Driver::FormUniversalActions(Compilation &C, const ToolChain &TC,
       // Debug info is still embedded directly in the output binary's DWARF
       // sections by the linker.
       bool skipDsymutil = isUsingLTO() && !isSaveTempsEnabled();
-      if (Act->getType() == types::TY_Image && !skipDsymutil) {
+      // A dyncode image is a raw position-independent blob, not a Mach-O
+      // executable, so it never gets a .dSYM bundle.
+      if (Act->getType() == types::TY_Image && !skipDsymutil &&
+          !DynCodeEnabled) {
         ActionList Inputs;
         Inputs.push_back(Actions.back());
         Actions.pop_back();
@@ -3235,6 +3238,48 @@ void Driver::handleArguments(Compilation &C, DerivedArgList &Args,
   // Claim it silently: Kbuild and many build systems pass -fuse-ld=lld,
   // and an unclaimed flag triggers -Wunused-command-line-argument / -Werror.
   Args.ClaimAllArgs(options::OPT_fuse_ld_EQ);
+
+  if (DynCodeEnabled) {
+    // Dyncode drives a single object through the compile pipeline and then a
+    // dyncode extraction "link"; it cannot stop early at -c/-S/-E.
+    if (FinalPhase != phases::Link) {
+      Diag(neverc::diag::err_drv_unsupported_opt_with_reason)
+          << "-fdyncode"
+          << "cannot be combined with -c/-S/-E; it always produces a raw "
+             "image";
+      return;
+    }
+    // These dyncode driver flags are consumed by the frozen request; claim
+    // them so they don't trip -Wunused-command-line-argument / -Werror.
+    static const llvm::opt::OptSpecifier DynCodeDriverOpts[] = {
+        options::OPT_fdyncode,
+        options::OPT_fno_dyncode,
+        options::OPT_fdyncode_mode,
+        options::OPT_fdyncode_all_blr,
+        options::OPT_mdyncode_syscall,
+        options::OPT_mdyncode_libsystem,
+        options::OPT_mdyncode_win_peb_import,
+        options::OPT_mdyncode_context_EQ,
+        options::OPT_fdyncode_keep_obj_EQ,
+        options::OPT_fdyncode_entry_EQ,
+        options::OPT_fdyncode_bad_bytes_EQ,
+        options::OPT_fdyncode_bad_byte_profile_EQ,
+        options::OPT_fdyncode_bad_byte_rewrite,
+        options::OPT_fno_dyncode_bad_byte_rewrite,
+        options::OPT_fdyncode_heap_arena,
+        options::OPT_fno_dyncode_heap_arena,
+        options::OPT_fdyncode_inline_all,
+        options::OPT_fno_dyncode_inline_all,
+        options::OPT_fdyncode_charset_EQ,
+        options::OPT_fdyncode_max_length_EQ,
+        options::OPT_fdyncode_align_EQ,
+        options::OPT_fdyncode_pad_EQ,
+        options::OPT_fdyncode_obfuscate_EQ,
+        options::OPT_fdyncode_mir_obfuscate_EQ,
+    };
+    for (llvm::opt::OptSpecifier Opt : DynCodeDriverOpts)
+      Args.ClaimAllArgs(Opt);
+  }
 
   if (FinalPhase == phases::Link) {
     if (Args.hasArg(options::OPT_emit_llvm))
@@ -3385,13 +3430,31 @@ void Driver::FormActions(Compilation &C, DerivedArgList &Args,
   }
 
   if (!LinkerInputs.empty()) {
-    Action *LA;
-    if (ShouldEmitStaticLibrary(Args)) {
-      LA = C.MakeAction<StaticLibJobAction>(LinkerInputs, types::TY_Image);
+    if (DynCodeEnabled) {
+      // -fdyncode replaces the final link with an in-process dyncode image
+      // extraction over exactly one relocatable object.  Reject inputs that
+      // cannot be expressed as a single native object with a stable
+      // capability-unavailable diagnostic (rather than deferring to the
+      // extractor or splicing bytes together).
+      if (LinkerInputs.size() != 1) {
+        Diag(neverc::diag::err_drv_unsupported_opt_with_reason)
+            << "-fdyncode"
+            << "exactly one translation unit is required; dyncode lowers a "
+               "single object into a raw image";
+      } else if (isUsingLTO()) {
+        Diag(neverc::diag::err_drv_unsupported_opt_with_reason)
+            << "-fdyncode" << "link-time optimization is not supported";
+      } else {
+        Actions.push_back(C.MakeAction<DynCodeJobAction>(LinkerInputs.front(),
+                                                         types::TY_Image));
+      }
+    } else if (ShouldEmitStaticLibrary(Args)) {
+      Actions.push_back(
+          C.MakeAction<StaticLibJobAction>(LinkerInputs, types::TY_Image));
     } else {
-      LA = C.MakeAction<LinkJobAction>(LinkerInputs, types::TY_Image);
+      Actions.push_back(
+          C.MakeAction<LinkJobAction>(LinkerInputs, types::TY_Image));
     }
-    Actions.push_back(LA);
   }
 
   if (Arg *A = Args.getLastArg(options::OPT_print_supported_cpus)) {

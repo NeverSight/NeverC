@@ -40,9 +40,10 @@ public:
     LipoJobClass,
     DsymutilJobClass,
     StaticLibJobClass,
+    DynCodeJobClass,
 
     JobClassFirst = PreprocessJobClass,
-    JobClassLast = StaticLibJobClass
+    JobClassLast = DynCodeJobClass
   };
 
   static const char *getClassName(ActionClass AC);
@@ -220,6 +221,21 @@ public:
 
   static bool classof(const Action *A) {
     return A->getKind() == StaticLibJobClass;
+  }
+};
+
+/// Consumes a single relocatable object produced by the normal compile
+/// pipeline and produces a raw position-independent dyncode image.  This is
+/// the in-process replacement for the prototype's `main()` post-processing
+/// step, so `-fdyncode` participates in the regular Action/Job/Artifact DAG.
+class DynCodeJobAction : public JobAction {
+  void anchor() override;
+
+public:
+  DynCodeJobAction(Action *Input, types::ID OutputType);
+
+  static bool classof(const Action *A) {
+    return A->getKind() == DynCodeJobClass;
   }
 };
 

@@ -85,6 +85,23 @@ public:
                     const char *LinkingOutput) const override;
 };
 
+// In-process dyncode image extractor.  Consumes the relocatable object emitted
+// by the normal compile pipeline and produces the raw dyncode image via the
+// driver's DynCodeMain callback.
+class LLVM_LIBRARY_VISIBILITY NeverCDynCode : public Tool {
+public:
+  NeverCDynCode(const ToolChain &TC)
+      : Tool("neverc::dyncode", "neverc dyncode extractor", TC) {}
+  bool hasIntegratedAssembler() const override { return false; }
+  bool hasIntegratedCPP() const override { return false; }
+  bool isLinkJob() const override { return false; }
+
+  void ConstructJob(Compilation &C, const JobAction &JA,
+                    const InputInfo &Output, const InputInfoList &Inputs,
+                    const llvm::opt::ArgList &TCArgs,
+                    const char *LinkingOutput) const override;
+};
+
 enum class DwarfFissionKind { None, Split, Single };
 
 DwarfFissionKind getDebugFissionKind(const Driver &D,

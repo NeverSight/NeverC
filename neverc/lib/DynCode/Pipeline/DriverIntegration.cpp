@@ -1,6 +1,5 @@
 #include "neverc/DynCode/Pipeline/DriverIntegration.h"
 #include "neverc/Invoke/Options.h"
-#include "neverc/DynCode/Extractor/DynCodeExtractor.h"
 #include "neverc/DynCode/Pipeline/Pipeline.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallString.h"
@@ -28,32 +27,6 @@ namespace neverc {
 namespace dyncode {
 
 namespace {
-
-constexpr unsigned DriverOnlyOpts[] = {
-    opts::OPT_fdyncode,
-    opts::OPT_fno_dyncode,
-    opts::OPT_fdyncode_all_blr,
-    opts::OPT_mdyncode_syscall,
-    opts::OPT_mdyncode_libsystem,
-    opts::OPT_mdyncode_win_peb_import,
-    opts::OPT_mdyncode_context_EQ,
-    opts::OPT_fdyncode_keep_obj_EQ,
-    opts::OPT_fdyncode_entry_EQ,
-    opts::OPT_fdyncode_bad_bytes_EQ,
-    opts::OPT_fdyncode_bad_byte_profile_EQ,
-    opts::OPT_fdyncode_bad_byte_rewrite,
-    opts::OPT_fno_dyncode_bad_byte_rewrite,
-    opts::OPT_fdyncode_heap_arena,
-    opts::OPT_fno_dyncode_heap_arena,
-    opts::OPT_fdyncode_inline_all,
-    opts::OPT_fno_dyncode_inline_all,
-    opts::OPT_fdyncode_charset_EQ,
-    opts::OPT_fdyncode_max_length_EQ,
-    opts::OPT_fdyncode_align_EQ,
-    opts::OPT_fdyncode_pad_EQ,
-    opts::OPT_fdyncode_obfuscate_EQ,
-    opts::OPT_fdyncode_mir_obfuscate_EQ,
-};
 
 struct Incompat {
   llvm::opt::OptSpecifier ID;
@@ -236,20 +209,6 @@ const char *saveCStr(std::set<std::string> &Pool, StringRef S) {
   return Pool.insert(std::string(S)).first->c_str();
 }
 
-bool isDroppedFromArgv(unsigned ID, bool DynCodeEnabled) {
-  if (llvm::is_contained(DriverOnlyOpts, ID))
-    return true;
-  switch (ID) {
-  case opts::OPT_o:
-  case opts::OPT_c:
-  case opts::OPT_S:
-  case opts::OPT_E:
-    return true;
-  default:
-    return false;
-  }
-}
-
 bool collectOptions(const llvm::opt::InputArgList &Args,
                     DynCodeOptions &Out) {
   Out.Enabled = Args.hasFlag(opts::OPT_fdyncode, opts::OPT_fno_dyncode,
@@ -372,66 +331,46 @@ llvm::Triple resolveTriple(const llvm::opt::InputArgList &Args) {
   return llvm::Triple(llvm::Triple::normalize(Str));
 }
 
-void rewriteArgs(const llvm::opt::InputArgList &Parsed, StringRef Argv0,
-                 const TargetDesc &Target, CompilationState &State,
-                 SmallVectorImpl<const char *> &Out) {
-  auto &Pool = State.StringPool;
-  SmallVector<const char *, 256> NewArgs;
-  NewArgs.push_back(saveCStr(Pool, Argv0));
-
-  llvm::opt::ArgStringList Rendered;
-  for (const llvm::opt::Arg *A : Parsed) {
-    if (isDroppedFromArgv(A->getOption().getID(), State.Opts.Enabled))
-      continue;
-    Rendered.clear();
-    A->render(Parsed, Rendered);
-    for (const char *S : Rendered)
-      NewArgs.push_back(saveCStr(Pool, S));
-  }
-
+// Append the dyncode codegen inject flags (driver-level flags that flow into
+// the cc1 compile) to the existing driver argv in place.  Unlike the prototype
+// this does not drop -o/-c/-S/-E or add a private temp object: the driver's
+// DAG produces the intermediate object and the DynCodeJobAction consumes it.
+void appendInjectArgs(DynCodeDriverSetup &Setup,
+                      SmallVectorImpl<const char *> &Args) {
+  auto &Pool = Setup.StringPool;
   for (const char *F : CommonInjectFlags)
-    NewArgs.push_back(saveCStr(Pool, F));
-  for (const char *F : perTargetInjectFlags(Target))
-    NewArgs.push_back(saveCStr(Pool, F));
-  NewArgs.push_back(saveCStr(Pool, "-c"));
-  NewArgs.push_back(saveCStr(Pool, "-o"));
-  NewArgs.push_back(saveCStr(Pool, State.TmpObj));
-
-  Out = std::move(NewArgs);
+    Args.push_back(saveCStr(Pool, F));
+  for (const char *F : perTargetInjectFlags(Setup.Opts.Target))
+    Args.push_back(saveCStr(Pool, F));
 }
 
 } // namespace
 
-int configureCompilation(SmallVectorImpl<const char *> &Args,
-                         CompilationState &State) {
+int prepareDriverDynCode(SmallVectorImpl<const char *> &Args,
+                         DynCodeDriverSetup &Setup) {
   const llvm::opt::OptTable &OptTbl = neverc::driver::getDriverOptTable();
   llvm::opt::Visibility VisMask(opts::NeverCOption);
   unsigned MissingIdx = 0, MissingCnt = 0;
   SmallVector<const char *, 256> PreParse;
   PreParse.reserve(Args.size());
-  StringRef Argv0 = Args.empty() ? StringRef() : StringRef(Args[0]);
   for (size_t I = 1, E = Args.size(); I < E; ++I)
     if (Args[I] != nullptr)
       PreParse.push_back(Args[I]);
   llvm::opt::InputArgList Parsed =
       OptTbl.ParseArgs(PreParse, MissingIdx, MissingCnt, VisMask);
 
-  State.PrintOnly = Parsed.hasArg(opts::OPT__HASH_HASH_HASH) ||
-                    Parsed.hasArg(opts::OPT_fdriver_only) ||
-                    Parsed.hasArg(opts::OPT_ccc_print_phases) ||
-                    Parsed.hasArg(opts::OPT_ccc_print_bindings);
-
-  if (!collectOptions(Parsed, State.Opts))
+  if (!collectOptions(Parsed, Setup.Opts))
     return 1;
-  if (!State.Opts.Enabled) {
-    registerDynCodeMachinePasses(State.Opts);
+  if (!Setup.Opts.Enabled) {
+    // Keep the (disabled) process-global options coherent for plain compiles.
+    registerDynCodeMachinePasses(Setup.Opts);
     return 0;
   }
 
   llvm::Triple TT = resolveTriple(Parsed);
-  State.Opts.Target = describeTriple(TT, State.Opts.Level);
-  if (State.Opts.Target.OS == DynCodeOS::Unknown ||
-      State.Opts.Target.Arch == DynCodeArch::Unknown) {
+  Setup.Opts.Target = describeTriple(TT, Setup.Opts.Level);
+  if (Setup.Opts.Target.OS == DynCodeOS::Unknown ||
+      Setup.Opts.Target.Arch == DynCodeArch::Unknown) {
     llvm::errs() << "neverc: error: -fdyncode does not support triple '"
                  << TT.str()
                  << "'. Supported: arm64-apple-macos, x86_64-apple-macos, "
@@ -441,7 +380,7 @@ int configureCompilation(SmallVectorImpl<const char *> &Args,
     return 1;
   }
 
-  applyImplicitDynCodeLowering(State.Opts);
+  applyImplicitDynCodeLowering(Setup.Opts);
 
   for (const Incompat &IC : Incompats) {
     if (auto *A = Parsed.getLastArg(IC.ID)) {
@@ -452,52 +391,14 @@ int configureCompilation(SmallVectorImpl<const char *> &Args,
     }
   }
 
-  State.OutputBin = "a.bin";
-  if (auto *A = Parsed.getLastArg(opts::OPT_o))
-    State.OutputBin = A->getValue();
+  appendInjectArgs(Setup, Args);
 
-  const char *Ext =
-      State.Opts.Target.Format == ObjectFormat::COFF ? "obj" : "o";
-  SmallString<128> TmpPath;
-  if (auto EC = llvm::sys::fs::createTemporaryFile("dyncode", Ext, TmpPath)) {
-    llvm::errs() << "neverc: error: cannot create temp file: " << EC.message()
-                 << "\n";
-    return 1;
-  }
-  State.TmpObj = std::string(TmpPath);
-  llvm::sys::RemoveFileOnSignal(State.TmpObj);
+  // In-process cc1 reads the frozen options from process-global storage.
+  // Volume 6 task 4 replaces this with a task-local execution context.
+  registerDynCodeMachinePasses(Setup.Opts);
 
-  rewriteArgs(Parsed, Argv0, State.Opts.Target, State, Args);
-
-  registerDynCodeMachinePasses(State.Opts);
-
+  Setup.Enabled = true;
   return 0;
-}
-
-int finalizeCompilation(const CompilationState &State, int CompilationRes) {
-  int Res = CompilationRes;
-  auto CleanupTmp = [&]() {
-    if (State.TmpObj.empty())
-      return;
-    llvm::sys::fs::remove(State.TmpObj);
-    llvm::sys::DontRemoveFileOnSignal(State.TmpObj);
-  };
-  if (State.PrintOnly) {
-    CleanupTmp();
-    return Res;
-  }
-  if (Res == 0) {
-    if (!State.Opts.KeepObjPath.empty()) {
-      if (std::error_code EC =
-              llvm::sys::fs::copy_file(State.TmpObj, State.Opts.KeepObjPath)) {
-        llvm::errs() << "neverc: warning: cannot save dyncode object to '"
-                     << State.Opts.KeepObjPath << "': " << EC.message() << "\n";
-      }
-    }
-    Res = extractDynCode(State.TmpObj, State.OutputBin, State.Opts);
-  }
-  CleanupTmp();
-  return Res;
 }
 
 } // namespace dyncode

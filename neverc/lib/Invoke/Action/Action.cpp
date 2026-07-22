@@ -30,6 +30,8 @@ const char *Action::getClassName(ActionClass AC) {
     return "dsymutil";
   case StaticLibJobClass:
     return "static-lib-linker";
+  case DynCodeJobClass:
+    return "dyncode";
   }
 
   llvm_unreachable("invalid class");
@@ -93,3 +95,8 @@ void StaticLibJobAction::anchor() {}
 
 StaticLibJobAction::StaticLibJobAction(ActionList &Inputs, types::ID Type)
     : JobAction(StaticLibJobClass, Inputs, Type) {}
+
+void DynCodeJobAction::anchor() {}
+
+DynCodeJobAction::DynCodeJobAction(Action *Input, types::ID OutputType)
+    : JobAction(DynCodeJobClass, Input, OutputType) {}
