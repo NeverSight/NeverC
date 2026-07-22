@@ -11,6 +11,7 @@ set(NEVERC_TEST_SOURCES
   PluginDriverDiagnosticTests.cpp
   PluginSDKExampleTests.cpp
   PluginSDKInstallTests.cpp
+  PluginCapabilityInventoryTests.cpp
   PluginSDKGenerationTests.cpp
   PluginSDKGenerationSingleHeader.cpp
   PluginArgumentPhaseTests.cpp

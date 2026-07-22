@@ -16,6 +16,7 @@
 #include "neverc/Invoke/DriverDiagnostic.h"
 #include "neverc/Invoke/Options.h"
 #include "neverc/Invoke/ToolChain.h"
+#include "neverc/Plugin/Host/PluginCapabilityInventory.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Runtime/RuntimeManager.h"
@@ -177,6 +178,33 @@ void handlePrintArguments(ArrayRef<const char *> Args) {
       return;
     }
   }
+}
+
+// Handle the read-only `--print-plugin-capabilities[=json]` query. It dumps the
+// host's compiled-in plugin capability inventory as JSON and returns an exit
+// code; it loads no plugins and builds no compilation. Returns std::nullopt if
+// the query was not requested so normal driver processing continues.
+std::optional<int> handlePluginCapabilityQuery(ArrayRef<const char *> Args) {
+  for (const char *Arg : Args) {
+    if (Arg == nullptr)
+      continue;
+    StringRef A(Arg);
+    if (A == "--print-plugin-capabilities" ||
+        A == "--print-plugin-capabilities=json") {
+      neverc::plugin::emitCapabilityInventoryJSON(llvm::outs());
+      llvm::outs().flush();
+      return 0;
+    }
+    if (A.starts_with("--print-plugin-capabilities=")) {
+      llvm::errs() << "neverc: error: unsupported --print-plugin-capabilities "
+                      "format '"
+                   << A.substr(StringRef("--print-plugin-capabilities=").size())
+                   << "'; only 'json' is supported\n";
+      llvm::errs().flush();
+      return 1;
+    }
+  }
+  return std::nullopt;
 }
 
 bool scanCanonicalPrefixes(ArrayRef<const char *> Args) {
@@ -357,6 +385,8 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   }
 
   handlePrintArguments(Args);
+  if (std::optional<int> ExitCode = handlePluginCapabilityQuery(Args))
+    return *ExitCode;
   bool CanonicalPrefixes = scanCanonicalPrefixes(Args);
   std::set<std::string> SavedStrings;
 

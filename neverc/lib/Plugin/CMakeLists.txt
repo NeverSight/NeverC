@@ -183,6 +183,7 @@ add_custom_target(nevercPluginObjectSchema
 add_neverc_library(nevercPluginCore
   Core/CoreAPIBridge.cpp
   Core/PluginArtifactRegistry.cpp
+  Core/PluginCapabilityInventory.cpp
   Core/PluginDiagnostics.cpp
   Core/PluginHandleArena.cpp
   Core/PluginInterfaceRegistry.cpp
