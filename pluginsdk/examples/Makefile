@@ -22,7 +22,8 @@ NEVERC ?= ../../build-neverc/bin/neverc
 # Each entry becomes a separate shared library (one .c -> one plugin).
 PLUGINS = ExamplePlugin CrtShimPlugin BenchPlugin CustomCallConvPlugin \
           DriverTracePlugin VirtualHeaderPlugin ASTRewritePlugin \
-          FunctionPass MachinePass
+          FunctionPass MachinePass MCObserverPlugin ObjectRewritePlugin \
+          DynCodeTracePlugin DynCodeEncoderPlugin
 
 # Auto-detect host platform for shared library suffix and target triple.
 UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)

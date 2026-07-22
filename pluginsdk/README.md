@@ -20,7 +20,53 @@ Notable examples:
 - `MCObserverPlugin.c`: read-only target-independent MC emission events.
 - `ObjectRewritePlugin.c`: transactional ObjectGraph mutation before layout.
 - `CustomCallConvPlugin.c`: schema-checked custom calling conventions.
+- `DynCodeTracePlugin.c`: observes the dyncode code-extraction pipeline.
+- `DynCodeEncoderPlugin.c`: intercepts the dyncode charset-encode transition.
 
 Plugins should include `neverc/Plugin/NevercPluginAPI.h` or only the capability
 headers they use. Do not link against LLVM or exchange C++ types across the
 plugin boundary.
+
+## Header forms
+
+The SDK ships two equivalent forms of the same pure-C ABI:
+
+- **Single header** `neverc/Plugin/NevercPluginAPI.h` — a self-contained,
+  generated aggregate (`utils/plugin-api/gen-single-header.py`) that needs no
+  side-by-side module headers. Ideal for dropping into an existing project.
+- **Modular headers** `neverc/Plugin/Plugin*.h` — include only the domains a
+  plugin uses to minimize its compile surface.
+
+`manifest/plugin.json` (`utils/plugin-api/gen-sdk-manifest.py`) records the ABI
+version, every public interface ID/version/stability, schema digests, and the
+supported targets, so a consumer can validate an SDK against a host.
+
+## Installing and consuming the SDK
+
+```sh
+cmake --build <build> --target neverc-pluginsdk
+cmake --install <build> --prefix <prefix> --component neverc-pluginsdk
+```
+
+The install tree under `<prefix>/pluginsdk` contains `include/`, `schemas/`,
+`manifest/`, `examples/`, `templates/`, a CMake package config
+(`cmake/NevercPluginSDKConfig.cmake`) and a pkg-config file
+(`pkgconfig/neverc-plugin.pc`).
+
+Build a plugin against the installed SDK with CMake:
+
+```cmake
+find_package(NevercPluginSDK REQUIRED)
+add_library(my_plugin MODULE my_plugin.c)
+target_link_libraries(my_plugin PRIVATE NevercPluginSDK::headers)
+```
+
+or with pkg-config:
+
+```sh
+cc -shared $(pkg-config --cflags neverc-plugin) -o my_plugin.so my_plugin.c
+```
+
+Copy `templates/minimal/` to scaffold a new plugin project. The consumer check
+`utils/plugin-api/test-installed-sdk.py --prefix <prefix>` builds fixtures and
+the template against an installed prefix with an independent compiler.

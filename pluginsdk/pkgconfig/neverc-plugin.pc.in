@@ -1,0 +1,8 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+includedir=${prefix}/pluginsdk/include
+datadir=${prefix}/pluginsdk
+
+Name: neverc-plugin
+Description: NeverC first-version pure-C plugin ABI SDK (headers only)
+Version: @NEVERC_PLUGIN_SDK_VERSION@
+Cflags: -I${includedir}

@@ -11,6 +11,10 @@
 set(PLUGINSDK_SRC "${CMAKE_CURRENT_SOURCE_DIR}")
 set(PLUGINSDK_DST "${LLVM_LIBRARY_OUTPUT_INTDIR}/../pluginsdk")
 
+# SDK package version tracks the public plugin ABI major.minor (see
+# NEVERC_PLUGIN_ABI_MAJOR/MINOR in PluginCore.h). Bump alongside the ABI.
+set(NEVERC_PLUGIN_SDK_VERSION "1.0.0")
+
 # The distributed aggregate is the generated, self-contained single header
 # (utils/plugin-api/gen-single-header.py), so the SDK ships one pure-C file that
 # needs no side-by-side module headers. The modular headers below are shipped
@@ -88,7 +92,9 @@ set(EXAMPLE_FILES
     FunctionPass.c
     MachinePass.c
     MCObserverPlugin.c
-    ObjectRewritePlugin.c)
+    ObjectRewritePlugin.c
+    DynCodeTracePlugin.c
+    DynCodeEncoderPlugin.c)
 
 list(TRANSFORM EXAMPLE_FILES
      PREPEND "${PLUGINSDK_SRC}/examples/"
@@ -296,6 +302,10 @@ add_neverc_pluginsdk_example(neverc-plugin-example-mc-observer
                              MCObserverPlugin.c)
 add_neverc_pluginsdk_example(neverc-plugin-example-object-rewrite
                              ObjectRewritePlugin.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-dyncode-trace
+                             DynCodeTracePlugin.c)
+add_neverc_pluginsdk_example(neverc-plugin-example-dyncode-encoder
+                             DynCodeEncoderPlugin.c)
 
 add_custom_target(neverc-pluginsdk-examples
                   DEPENDS ${NEVERC_PLUGINSDK_HOST_EXAMPLES}
@@ -355,6 +365,50 @@ install(FILES "${PLUGIN_MANIFEST}"
 
 install(FILES ${_example_abs}
         DESTINATION "pluginsdk/examples"
+        COMPONENT neverc-pluginsdk)
+
+# ---------------------------------------------------------------------------
+# CMake package config, pkg-config and scaffolding templates
+# ---------------------------------------------------------------------------
+include(CMakePackageConfigHelpers)
+
+# Install-tree relative locations resolved by the generated config.
+set(NEVERC_PLUGINSDK_INCLUDE_INSTALL_DIR "pluginsdk/include")
+set(NEVERC_PLUGINSDK_MANIFEST_INSTALL_FILE "pluginsdk/manifest/plugin.json")
+
+set(_pluginsdk_cmake_build "${CMAKE_CURRENT_BINARY_DIR}/cmake")
+configure_package_config_file(
+  "${PLUGINSDK_SRC}/cmake/NevercPluginSDKConfig.cmake.in"
+  "${_pluginsdk_cmake_build}/NevercPluginSDKConfig.cmake"
+  INSTALL_DESTINATION "pluginsdk/cmake"
+  PATH_VARS NEVERC_PLUGINSDK_INCLUDE_INSTALL_DIR
+            NEVERC_PLUGINSDK_MANIFEST_INSTALL_FILE)
+
+# Honor the hand-maintained SameMajorVersion template while keeping the
+# helper's argument validation.
+configure_file(
+  "${PLUGINSDK_SRC}/cmake/NevercPluginSDKConfigVersion.cmake.in"
+  "${_pluginsdk_cmake_build}/NevercPluginSDKConfigVersion.cmake"
+  @ONLY)
+
+configure_file(
+  "${PLUGINSDK_SRC}/pkgconfig/neverc-plugin.pc.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/pkgconfig/neverc-plugin.pc"
+  @ONLY)
+
+install(FILES
+        "${_pluginsdk_cmake_build}/NevercPluginSDKConfig.cmake"
+        "${_pluginsdk_cmake_build}/NevercPluginSDKConfigVersion.cmake"
+        DESTINATION "pluginsdk/cmake"
+        COMPONENT neverc-pluginsdk)
+
+install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/pkgconfig/neverc-plugin.pc"
+        DESTINATION "pluginsdk/pkgconfig"
+        COMPONENT neverc-pluginsdk)
+
+install(DIRECTORY "${PLUGINSDK_SRC}/templates"
+        DESTINATION "pluginsdk"
         COMPONENT neverc-pluginsdk)
 
 if(NOT LLVM_ENABLE_IDE)

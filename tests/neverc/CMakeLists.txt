@@ -10,6 +10,7 @@ set(NEVERC_TEST_SOURCES
   PluginShutdownTests.cpp
   PluginDriverDiagnosticTests.cpp
   PluginSDKExampleTests.cpp
+  PluginSDKInstallTests.cpp
   PluginSDKGenerationTests.cpp
   PluginSDKGenerationSingleHeader.cpp
   PluginArgumentPhaseTests.cpp
@@ -1817,6 +1818,10 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_PLUGINSDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk"
   NEVERC_NEVERC_INCLUDE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include"
   NEVERC_PLUGINSDK_SINGLE_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk/include/neverc/Plugin/NevercPluginAPI.h"
+  NEVERC_CMAKE_COMMAND="${CMAKE_COMMAND}"
+  NEVERC_BUILD_DIR="${CMAKE_BINARY_DIR}"
+  NEVERC_PYTHON="${Python3_EXECUTABLE}"
+  NEVERC_TEST_INSTALLED_SDK_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/test-installed-sdk.py"
   NEVERC_TEST_ARGUMENT_REWRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-argument-rewrite>"
   NEVERC_TEST_PARSED_ARGUMENT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parsed-argument-rewrite>"
   NEVERC_TEST_TOOLCHAIN_REWRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-toolchain-rewrite>"

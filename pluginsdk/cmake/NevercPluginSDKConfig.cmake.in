@@ -1,0 +1,29 @@
+# NevercPluginSDKConfig.cmake - CMake package for the NeverC plugin SDK.
+#
+# Provides a header-only interface target so an out-of-tree plugin can build
+# against the installed pure-C ABI headers without knowing the layout:
+#
+#   find_package(NevercPluginSDK REQUIRED)
+#   add_library(my_plugin MODULE my_plugin.c)
+#   target_link_libraries(my_plugin PRIVATE NevercPluginSDK::headers)
+#
+# The target only carries an include directory; the ABI is pure C and never
+# links against LLVM or the NeverC runtime.
+
+@PACKAGE_INIT@
+
+set(NevercPluginSDK_VERSION "@NEVERC_PLUGIN_SDK_VERSION@")
+set_and_check(NevercPluginSDK_INCLUDE_DIR
+              "@PACKAGE_NEVERC_PLUGINSDK_INCLUDE_INSTALL_DIR@")
+set_and_check(NevercPluginSDK_MANIFEST
+              "@PACKAGE_NEVERC_PLUGINSDK_MANIFEST_INSTALL_FILE@")
+set(NevercPluginSDK_SINGLE_HEADER
+    "${NevercPluginSDK_INCLUDE_DIR}/neverc/Plugin/NevercPluginAPI.h")
+
+if(NOT TARGET NevercPluginSDK::headers)
+  add_library(NevercPluginSDK::headers INTERFACE IMPORTED)
+  set_target_properties(NevercPluginSDK::headers PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${NevercPluginSDK_INCLUDE_DIR}")
+endif()
+
+check_required_components(NevercPluginSDK)
