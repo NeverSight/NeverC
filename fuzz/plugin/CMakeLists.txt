@@ -85,3 +85,13 @@ target_link_libraries(plugin-object-reader-fuzzer PRIVATE
   nevercPluginMCObject
   nevercPluginTarget
 )
+
+add_neverc_plugin_fuzzer(plugin-dyncode-request-fuzzer
+  PluginDynCodeRequestFuzzer.cpp DynCodeRequest)
+target_include_directories(plugin-dyncode-request-fuzzer PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/DynCode
+)
+target_link_libraries(plugin-dyncode-request-fuzzer PRIVATE
+  nevercDynCode
+  nevercPluginTarget
+)

@@ -1,0 +1,96 @@
+# Volume 6 task 23: ASan/UBSan and TSan coverage for the plugin runtime.
+#
+# The address/undefined job builds the plugin unit tests, the standalone
+# conformance suite and the fuzz smoke corpus under ASan+UBSan.  The thread job
+# builds the plugin unit tests and conformance suite under TSan to catch data
+# races in the multi-Session frontend / LTO / link / dyncode paths and in the
+# shared/exclusive LLVMOption lease.  Intentional LLVM leaks use a small,
+# commented suppression file rather than a blanket suppression.
+name: plugin-sanitizers
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 6 * * *"
+  pull_request:
+    paths:
+      - "neverc/lib/Plugin/**"
+      - "neverc/lib/DynCode/**"
+      - "neverc/lib/Linker/**"
+      - "neverc/include/neverc/Plugin/**"
+      - "tests/plugin-conformance/**"
+      - ".github/workflows/plugin-sanitizers.yml"
+
+jobs:
+  sanitize:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sanitizer: "Address;Undefined"
+            label: asan-ubsan
+            enable_fuzzers: "ON"
+          - sanitizer: "Thread"
+            label: tsan
+            enable_fuzzers: "OFF"
+    runs-on: ubuntu-22.04
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      LLVM_APT_VER: "22"
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Setup build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+
+      - name: Configure (${{ matrix.label }})
+        run: |
+          cmake -GNinja -Bbuild \
+            -DCMAKE_C_COMPILER=$CC \
+            -DCMAKE_CXX_COMPILER=$CXX \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
+            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+            -DLLVM_USE_SANITIZER="${{ matrix.sanitizer }}" \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_ENABLE_PLUGIN_FUZZERS=${{ matrix.enable_fuzzers }} \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -C neverc/neverc/cmake/caches/NeverC.cmake \
+            neverc/llvm
+
+      - name: Build plugin tests and conformance suite
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} --target \
+            neverc-plugin-core-tests \
+            neverc-plugin-io-tests \
+            neverc-plugin-frontend-tests \
+            neverc-plugin-ir-tests \
+            neverc-plugin-dyncode-tests \
+            neverc-plugin-conformance
+
+      - name: Run plugin tests under ${{ matrix.label }}
+        run: |
+          ctest --test-dir build \
+            -R 'Plugin|PluginConformance' --output-on-failure
+
+      - name: Build and smoke fuzzers under ${{ matrix.label }}
+        if: matrix.enable_fuzzers == 'ON'
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} \
+            --target neverc-plugin-fuzzers
+          ctest --test-dir build -R PluginFuzzSmoke --output-on-failure
