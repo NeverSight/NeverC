@@ -15,3 +15,4 @@ enable_testing()
 include(GoogleTest)
 
 add_subdirectory(neverc)
+add_subdirectory(plugin-conformance)

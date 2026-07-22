@@ -1,0 +1,62 @@
+# Standalone NeverC plugin conformance suite.
+#
+# This target links ONLY GoogleTest (plus the C++ standard library); it never
+# links or includes the host's private libraries or headers. At run time it
+# builds the fixtures under fixtures/ with the *system* C compiler against the
+# staged public SDK and drives the compiler-under-test through its public CLI.
+# A green run therefore proves the shipped ABI and SDK are self-sufficient for
+# an independent toolchain.
+#
+# The compiler-under-test and SDK can be overridden at run time with the
+# NEVERC_UNDER_TEST and NEVERC_PLUGIN_SDK_ROOT environment variables, so the
+# same binary can validate a released package.
+
+if(DEFINED NEVERC_EXTERNAL_BINARY AND NOT NEVERC_EXTERNAL_BINARY STREQUAL "")
+  set(_NEVERC_CONF_BINARY "${NEVERC_EXTERNAL_BINARY}")
+  set(_NEVERC_CONF_DEPENDS FALSE)
+else()
+  set(_NEVERC_CONF_BINARY "$<TARGET_FILE:neverc>")
+  set(_NEVERC_CONF_DEPENDS TRUE)
+endif()
+
+add_executable(neverc-plugin-conformance
+  PluginConformanceMain.cpp
+  ConformanceEnvironment.cpp
+  SDKABIConformanceTests.cpp
+  LoaderLifecycleConformanceTests.cpp
+)
+target_include_directories(neverc-plugin-conformance PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+)
+target_link_libraries(neverc-plugin-conformance PRIVATE GTest::gtest)
+target_compile_features(neverc-plugin-conformance PRIVATE cxx_std_17)
+target_compile_definitions(neverc-plugin-conformance PRIVATE
+  NEVERC_CONF_NEVERC="${_NEVERC_CONF_BINARY}"
+  NEVERC_CONF_CC="${CMAKE_C_COMPILER}"
+  NEVERC_CONF_SDK_INCLUDE="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk/include"
+  NEVERC_CONF_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+if(_NEVERC_CONF_DEPENDS AND TARGET neverc)
+  add_dependencies(neverc-plugin-conformance neverc)
+endif()
+
+include(GoogleTest)
+gtest_discover_tests(neverc-plugin-conformance
+  TEST_PREFIX "PluginConformance."
+  PROPERTIES LABELS plugin-conformance
+)
+
+# Ship the conformance harness sources so downstreams can build and run it
+# against their own installed host and SDK.
+install(FILES
+  PluginConformanceMain.cpp
+  ConformanceEnvironment.cpp
+  ConformanceEnvironment.h
+  ConformanceTest.h
+  SDKABIConformanceTests.cpp
+  LoaderLifecycleConformanceTests.cpp
+  DESTINATION pluginsdk/conformance
+  COMPONENT neverc-pluginsdk
+)
+
+add_subdirectory(fixtures)
