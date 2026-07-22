@@ -41,6 +41,10 @@ public:
   const PluginObjectGraph *objectGraphForInput(uint64_t InputID) const;
   std::vector<PluginObjectGraph *> objectGraphs();
   std::vector<const PluginObjectGraph *> objectGraphs() const;
+  /// Immutable source bytes for each object, parallel to objectGraphs().  An
+  /// entry is empty when the origin bytes are unavailable, in which case callers
+  /// must fall back to re-serializing the graph.
+  std::vector<llvm::ArrayRef<uint8_t>> objectGraphSourceBytes() const;
   llvm::Expected<llvm::MemoryBufferRef>
   bitcodeBufferForModule(uint64_t ModuleID);
   const LinkerScriptResult *scriptResultForInput(uint64_t InputID) const;

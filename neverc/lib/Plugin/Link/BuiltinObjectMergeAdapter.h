@@ -5,23 +5,43 @@
 #include "neverc/Plugin/Host/PluginTargetRegistry.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Error.h"
+#include <cstdint>
 #include <memory>
 
 namespace neverc::plugin {
 
+/// Driver-derived knobs that make the built-in merge byte-identical to the
+/// native relocatable link.  For `-r` the native drivers force strip to None,
+/// so debug info is never dropped; the only remaining divergence is the ELF
+/// Android-kernel-module section folding, mirrored here.
+struct BuiltinObjectMergeConfig {
+  /// Fold per-symbol ELF sections and preserve `.ko` metadata sections, matching
+  /// the native ELF driver's `-fandroid-kernel-driver-mode` `-r` behavior.
+  bool AndroidKernelModule = false;
+};
+
 /// Adapts the existing verified byte-oriented relocatable-object merger to the
 /// typed ObjectGraph provider contract:
 ///
-///   ObjectGraph[] -> built-in Writer -> byte merger -> built-in Reader
+///   ObjectGraph[] -> Writer/native passthrough -> byte merger -> built-in Reader
 ///
-/// The intermediate images are task-owned memory outputs. The returned graph
-/// is independently parsed and verified before it can be published.
+/// \p InputImages, when non-empty, supplies the original on-disk bytes for each
+/// object in \p Objects (parallel array).  Unmodified inputs are then serialized
+/// straight back to those bytes instead of through the lossy
+/// graph->assembly->object Writer, so the merge input is byte-identical to the
+/// native link.  A missing/empty entry falls back to the Writer.
+///
+/// The intermediate images are task-owned memory outputs. The returned graph is
+/// independently parsed and verified before it can be published, and its raw
+/// bytes are returned in ObjectMergeResult::MergedImage for lossless output.
 llvm::Expected<ObjectMergeResult>
 executeBuiltinObjectMergeAdapter(
     PluginTaskContext &Task,
     std::shared_ptr<const PluginTargetSnapshot> Snapshot,
     OwnedTargetKey Target, llvm::ArrayRef<PluginObjectGraph *> Objects,
-    NevercLinkOptionFlags Flags = NEVERC_LINK_OPTION_NONE);
+    llvm::ArrayRef<llvm::ArrayRef<uint8_t>> InputImages = {},
+    NevercLinkOptionFlags Flags = NEVERC_LINK_OPTION_NONE,
+    BuiltinObjectMergeConfig Config = {});
 
 } // namespace neverc::plugin
 

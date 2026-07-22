@@ -286,7 +286,10 @@ Error LinkInputSetImpl::materializeArchiveMember(uint64_t MemberID,
           archiveError(*ArchiveState.Blob,
                        "member is neither bitcode nor a readable object"),
           Object.takeError());
-    auto Handle = addObject(MemberID, std::move(*Object));
+    auto Handle = addObject(
+        MemberID, std::move(*Object),
+        ArrayRef<uint8_t>(
+            reinterpret_cast<const uint8_t *>(Bytes.data()), Bytes.size()));
     if (!Handle)
       return Handle.takeError();
     Member->Origin.ObjectGraph = *Handle;

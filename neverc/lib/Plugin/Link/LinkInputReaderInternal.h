@@ -27,6 +27,10 @@ struct LinkObjectStorage {
   uint64_t OriginID = 0;
   std::unique_ptr<PluginObjectGraph> Graph;
   std::unique_ptr<ObjectPluginBridge> Bridge;
+  /// View over the immutable bytes this object was parsed from.  The bytes are
+  /// owned for the LinkInputSet's lifetime by the input blob (top-level object)
+  /// or the archive member state (archive object), so this view stays valid.
+  llvm::ArrayRef<uint8_t> SourceBytes;
 };
 
 struct LinkArchiveMemberState {
@@ -60,7 +64,8 @@ public:
                    const LinkerScriptProvider &ScriptsValue);
 
   llvm::Expected<NevercObjectGraphHandle>
-  addObject(uint64_t OriginID, std::unique_ptr<PluginObjectGraph> Object);
+  addObject(uint64_t OriginID, std::unique_ptr<PluginObjectGraph> Object,
+            llvm::ArrayRef<uint8_t> SourceBytes = {});
   llvm::Expected<llvm::MemoryBufferRef>
   archiveMemberBuffer(LinkArchiveState &Archive,
                       LinkArchiveMemberState &Member);

@@ -58,9 +58,14 @@ TEST_F(PluginCOFFLinkAdapterTest,
       // plugin images differ only by their file name, not the adapter.
       const fs::path Output_ = tmpFile(Stem);
 
-      std::vector<std::string> Common = {"--no-default-config",
-                                         "--target=" + Target, "-O0",
-                                         "-fno-lto", "-nostdlib"};
+      // -nodefaultlib keeps the link fully self-contained: ARM64 otherwise
+      // pulls an implicit runtimeobject.lib that is unavailable when
+      // cross-linking off a Windows host, and it guarantees the image depends
+      // only on the input object so the comparison stays host-independent.
+      std::vector<std::string> Common = {
+          "--no-default-config", "--target=" + Target,
+          "-O0",                 "-fno-lto",
+          "-nostdlib",           "-Wl,-nodefaultlib"};
       Common.insert(Common.end(), Output.Flags.begin(), Output.Flags.end());
       Common.push_back(Source.string());
 

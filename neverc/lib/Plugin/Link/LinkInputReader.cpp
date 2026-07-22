@@ -113,10 +113,12 @@ LinkInputSetImpl::LinkInputSetImpl(
 
 Expected<NevercObjectGraphHandle>
 LinkInputSetImpl::addObject(uint64_t OriginID,
-                            std::unique_ptr<PluginObjectGraph> Object) {
+                            std::unique_ptr<PluginObjectGraph> Object,
+                            ArrayRef<uint8_t> SourceBytes) {
   LinkObjectStorage Storage;
   Storage.OriginID = OriginID;
   Storage.Graph = std::move(Object);
+  Storage.SourceBytes = SourceBytes;
   Storage.Bridge =
       std::make_unique<ObjectPluginBridge>(Task, *Storage.Graph);
   auto Handle = Storage.Bridge->graph();
@@ -178,6 +180,15 @@ std::vector<const PluginObjectGraph *> LinkInputSet::objectGraphs() const {
   Result.reserve(Impl->ObjectStorage.size());
   for (const LinkObjectStorage &Storage : Impl->ObjectStorage)
     Result.push_back(Storage.Graph.get());
+  return Result;
+}
+
+std::vector<ArrayRef<uint8_t>>
+LinkInputSet::objectGraphSourceBytes() const {
+  std::vector<ArrayRef<uint8_t>> Result;
+  Result.reserve(Impl->ObjectStorage.size());
+  for (const LinkObjectStorage &Storage : Impl->ObjectStorage)
+    Result.push_back(Storage.SourceBytes);
   return Result;
 }
 
@@ -347,7 +358,10 @@ LinkInputReader::read(const LinkRequest &Request) const {
           Request.inputFormat());
       if (!Object)
         return Object.takeError();
-      auto Handle = Impl->addObject(Stored.ID, std::move(*Object));
+      auto Handle = Impl->addObject(
+          Stored.ID, std::move(*Object),
+          ArrayRef<uint8_t>(
+              reinterpret_cast<const uint8_t *>(Bytes.data()), Bytes.size()));
       if (!Handle)
         return Handle.takeError();
       Stored.ObjectGraph = *Handle;

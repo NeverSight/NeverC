@@ -24,6 +24,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/thread.h"
 #include <cassert>
+#include <memory>
+#include <optional>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -254,6 +256,32 @@ int Compilation::ExecuteCommand(const Command &C,
   if (LogOnly) {
     PI.ReturnCode = 0;
     return 0;
+  }
+
+  // Before a plugin-mediated link runs, hand the plugin the bytes of any inputs
+  // that live only in the in-memory LTO store (synthetic "<inmem>/" paths). The
+  // plugin link bridge reads inputs through its own real-filesystem VFS and
+  // cannot see the store, so without this it fails with "No such file or
+  // directory" on an integrated compile+link (e.g. a `-r` Android kernel
+  // module, which implies LTO). Every compile job has finished by the time a
+  // link job executes, so all referenced buffers are present. Only the plugin
+  // bridge consumes AuthorizedBlob, so the native link path is left untouched.
+  if (C.getKind() == Command::CK_LinkerCommand) {
+    const auto &LinkerCfg =
+        static_cast<const LinkerCommand &>(C).getDriverConfig();
+    if (LinkerCfg.executionHooks && LinkerCfg.executionRequest) {
+      auto Request = std::const_pointer_cast<::linker::LinkExecutionRequest>(
+          LinkerCfg.executionRequest);
+      for (::linker::LinkExecutionInput &Input : Request->Inputs) {
+        if (!Input.AuthorizedBlob.empty())
+          continue;
+        if (std::optional<llvm::MemoryBufferRef> Buffer =
+                neverc::InMemoryFileStore::instance().tryGet(Input.LogicalURI)) {
+          llvm::StringRef Bytes = Buffer->getBuffer();
+          Input.AuthorizedBlob.assign(Bytes.bytes_begin(), Bytes.bytes_end());
+        }
+      }
+    }
   }
 
   llvm::SmallString<256> Error;

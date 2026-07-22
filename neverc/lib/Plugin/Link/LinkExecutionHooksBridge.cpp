@@ -187,13 +187,18 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
     if (!Config.pluginTask)
       return bridgeError("ObjectMergeProvider has no LinkTask");
 
-    PluginTargetRequest TargetRequest;
-    TargetRequest.Triple = Request.TargetTriple;
-    auto TargetSnapshot =
-        PluginTargetRegistry::freeze(Session->plugins(), TargetRequest);
+    // Reuse the session's frozen target snapshot instead of re-freezing by
+    // triple: the object-merge route also serves built-in targets, whose
+    // triples are not registered as plugin targets (freezing by triple then
+    // fails with "unknown target"). The snapshot's object-format registry
+    // always carries the built-in ELF/COFF/Mach-O readers and writers, which
+    // is all the merge path needs.
+    std::shared_ptr<const PluginTargetSnapshot> TargetSnapshot =
+        findPluginTargetSnapshot(Session->processServices(),
+                                 Session->handle());
     if (!TargetSnapshot)
-      return TargetSnapshot.takeError();
-    auto ObjectReader = ObjectReaderProvider::create(*TargetSnapshot);
+      return bridgeError("object-merge route has no frozen target snapshot");
+    auto ObjectReader = ObjectReaderProvider::create(TargetSnapshot);
     if (!ObjectReader)
       return ObjectReader.takeError();
     auto FileSystem =
@@ -210,14 +215,18 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
     if (Objects.empty())
       return bridgeError(
           "ObjectMergeProvider received no materialized ObjectGraph inputs");
+    std::vector<ArrayRef<uint8_t>> InputImages =
+        (*Inputs)->objectGraphSourceBytes();
 
     const auto &Provider = *Plan->objectMergeProvider();
+    BuiltinObjectMergeConfig MergeConfig;
+    MergeConfig.AndroidKernelModule = Config.androidKernelModule;
     Expected<ObjectMergeResult> Merged =
         Provider.Builtin
             ? executeBuiltinObjectMergeAdapter(
-                  *Config.pluginTask, *TargetSnapshot,
-                  (*FrozenRequest)->ownedTarget(), Objects,
-                  (*FrozenRequest)->options().Flags)
+                  *Config.pluginTask, TargetSnapshot,
+                  (*FrozenRequest)->ownedTarget(), Objects, InputImages,
+                  (*FrozenRequest)->options().Flags, MergeConfig)
             : executeObjectMergeProvider(
                   *Config.pluginTask, Provider, (*FrozenRequest)->ownedTarget(),
                   Objects, (*FrozenRequest)->options().Flags);
@@ -225,14 +234,21 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
       return Merged.takeError();
 
     auto OutputPipeline =
-        ObjectPhasePipeline::create(*Config.pluginTask, *TargetSnapshot);
+        ObjectPhasePipeline::create(*Config.pluginTask, TargetSnapshot);
     if (!OutputPipeline)
       return OutputPipeline.takeError();
+    // Write the merged object through the native-image passthrough: the merged
+    // graph was just parsed from these exact bytes, so unless a plugin output
+    // phase mutates it, the file is written verbatim (byte-identical to the
+    // native `-r` link) instead of via the lossy graph->assembly->object Writer.
+    const ArrayRef<uint8_t> MergedImage(
+        reinterpret_cast<const uint8_t *>(Merged->MergedImage.data()),
+        Merged->MergedImage.size());
     auto Output = (*OutputPipeline)
-                      ->execute(*Merged->Object,
-                                ObjectOutputDestination::file(
-                                    (*FrozenRequest)->outputURI(),
-                                    std::numeric_limits<uint64_t>::max()));
+                      ->executeNative(*Merged->Object, MergedImage,
+                                      ObjectOutputDestination::file(
+                                          (*FrozenRequest)->outputURI(),
+                                          std::numeric_limits<uint64_t>::max()));
     if (!Output)
       return Output.takeError();
     return linker::LinkHookResult{linker::LinkHookDisposition::Completed, 0};

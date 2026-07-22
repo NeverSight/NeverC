@@ -88,7 +88,8 @@ executeBuiltinObjectMergeAdapter(
     PluginTaskContext &Task,
     std::shared_ptr<const PluginTargetSnapshot> Snapshot,
     OwnedTargetKey Target, ArrayRef<PluginObjectGraph *> Objects,
-    NevercLinkOptionFlags Flags) {
+    ArrayRef<ArrayRef<uint8_t>> InputImages,
+    NevercLinkOptionFlags Flags, BuiltinObjectMergeConfig Config) {
   if (!Snapshot)
     return createStringError(
         errc::invalid_argument,
@@ -122,10 +123,20 @@ executeBuiltinObjectMergeAdapter(
   for (size_t Index = 0; Index != Objects.size(); ++Index) {
     const std::string Name =
         (Twine(Prefix) + ".input." + Twine(Index)).str();
-    auto Image = (*Pipeline)->execute(
-        *Objects[Index],
-        ObjectOutputDestination::memory(
-            Name, std::numeric_limits<uint64_t>::max()));
+    // Serialize the (possibly plugin-transformed) input graph back to bytes for
+    // the byte merger.  When the caller supplied the original on-disk image and
+    // no plugin phase mutated the graph, executeNative streams those exact bytes
+    // through (beginImage), so the merge input matches the native link; only a
+    // genuinely mutated graph falls back to the graph->assembly->object Writer.
+    const ArrayRef<uint8_t> NativeBytes =
+        Index < InputImages.size() ? InputImages[Index]
+                                   : ArrayRef<uint8_t>{};
+    auto Destination = ObjectOutputDestination::memory(
+        Name, std::numeric_limits<uint64_t>::max());
+    auto Image = NativeBytes.empty()
+                     ? (*Pipeline)->execute(*Objects[Index], Destination)
+                     : (*Pipeline)->executeNative(*Objects[Index],
+                                                  NativeBytes, Destination);
     if (!Image)
       return joinErrors(
           createStringError(errc::invalid_argument,
@@ -153,6 +164,18 @@ executeBuiltinObjectMergeAdapter(
   neverc::merge::Options MergeOptions;
   MergeOptions.pureC = true;
   MergeOptions.verify = true;
+  // Mirror the native relocatable link's merge knobs so the plugin `-r` path is
+  // byte-identical.  For `-r` the native drivers force strip to None, so debug
+  // info is always kept (dropDebugInfo stays false); the only ELF-specific
+  // divergence is Android kernel-module section folding.
+  if (*Format == neverc::merge::Format::ELF64LE &&
+      Config.AndroidKernelModule) {
+    MergeOptions.mergeSections = true;
+    MergeOptions.preservedSections = {
+        ".modinfo", "__versions", ".gnu.linkonce.this_module",
+        ".plt",     ".init.plt",  ".text.ftrace_trampoline",
+    };
+  }
   (void)Flags;
   if (!neverc::merge::mergeObjects(
           InputBytes, Output, *Format, MergeOptions))
@@ -193,6 +216,7 @@ executeBuiltinObjectMergeAdapter(
       MergedBytes.size()));
   Result.PluginID = "neverc.builtin";
   Result.ProviderID = "neverc.builtin.object-merge";
+  Result.MergedImage = std::move(MergedBytes);
   return Result;
 }
 
