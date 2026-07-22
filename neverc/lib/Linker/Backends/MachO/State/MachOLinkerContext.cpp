@@ -3,6 +3,7 @@
 #include "Linker/MachO/MachOContextAccess.h"
 #include "Linker/MachO/SymbolTable.h"
 #include "Linker/MachO/Target.h"
+#include "MachO/MachOLinkGraphAdapter.h"
 
 namespace linker::macho {
 
@@ -29,6 +30,7 @@ struct MachOLinkerContext::Impl {
   std::vector<StringRef> MissingAutolinkWarnings;
   llvm::DenseSet<StringRef> LoadedObjectFrameworks;
   llvm::DenseMap<llvm::CachedHashStringRef, DylibFile *> LoadedDylibs;
+  std::unique_ptr<MachOLinkGraphAdapter> PluginLinkAdapter;
   int NextInputFileId = 0;
   uint32_t LCDylibCount = 0;
 };
@@ -113,6 +115,9 @@ int &machoInputFileIdCount() {
 }
 uint32_t &machoLCDylibCount() {
   return machoContext().state().LCDylibCount;
+}
+std::unique_ptr<MachOLinkGraphAdapter> &machoPluginLinkAdapter() {
+  return machoContext().state().PluginLinkAdapter;
 }
 
 } // namespace linker::macho

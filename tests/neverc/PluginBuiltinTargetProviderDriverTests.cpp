@@ -147,12 +147,19 @@ TEST_F(PluginBuiltinTargetProviderDriverTest,
         tmpFile(std::string("native-baseline-") + Route.Triple + ".o");
     const fs::path WithPlugin =
         tmpFile(std::string("native-plugin-") + Route.Triple + ".o");
+    // MSVC-targeted COFF objects embed a wall-clock TimeDateStamp when
+    // -mincremental-linker-compatible is defaulted on (matching clang). That
+    // field is orthogonal to the seam invariant under test and makes a raw
+    // byte comparison depend on whether both compilations land in the same
+    // second, which is flaky under parallel test load. Force deterministic
+    // output so the comparison isolates the seam's byte transparency.
     CmdResult BaselineResult =
-        ncc({"--no-default-config", Target, "-O0", "-fno-lto", "-c",
-             Source.string(), "-o", Baseline.string()});
+        ncc({"--no-default-config", "-mno-incremental-linker-compatible",
+             Target, "-O0", "-fno-lto", "-c", Source.string(), "-o",
+             Baseline.string()});
     ASSERT_EQ(BaselineResult.exitCode, 0) << BaselineResult.err;
     CmdResult PluginResult = ncc(
-        {"--no-default-config",
+        {"--no-default-config", "-mno-incremental-linker-compatible",
          std::string("-fplugin=") + NEVERC_TEST_TARGET_VALID_PLUGIN,
          Target, "-O0", "-fno-lto", "-c", Source.string(), "-o",
          WithPlugin.string()});

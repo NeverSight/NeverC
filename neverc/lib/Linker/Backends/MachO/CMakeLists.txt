@@ -45,6 +45,13 @@ linker_declare_backend(
     # Task-local backend ownership.
     State/MachOLinkerContext.cpp
 
+    # NeverC C-ABI LinkGraph, phase, and BinaryImage adapters. These sources
+    # are intentionally compiled into the native backend, not the generic
+    # plugin library, so the dependency remains one-way.
+    ${NEVERC_SOURCE_DIR}/lib/Plugin/Link/MachO/MachOLinkGraphAdapter.cpp
+    ${NEVERC_SOURCE_DIR}/lib/Plugin/Link/MachO/MachOPhaseProviders.cpp
+    ${NEVERC_SOURCE_DIR}/lib/Plugin/Link/MachO/MachOBinaryImageAdapter.cpp
+
     # Output sections, segments and relocations.
     Layout/ConcatOutputSection.cpp
     Layout/OutputSection.cpp
@@ -73,4 +80,10 @@ linker_declare_backend(
 
   EXTRA_LIBS
     nevercMerge
+    nevercPluginLink
+)
+
+target_include_directories(linkerMachO PRIVATE
+  ${NEVERC_SOURCE_DIR}/lib/Plugin
+  ${NEVERC_SOURCE_DIR}/lib/Plugin/Link
 )
