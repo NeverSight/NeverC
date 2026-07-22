@@ -1,6 +1,7 @@
 #ifndef NEVERC_PLUGIN_HOST_PLUGINSESSION_H
 #define NEVERC_PLUGIN_HOST_PLUGINSESSION_H
 
+#include "neverc/Plugin/Host/PluginCallbackStats.h"
 #include "neverc/Plugin/Host/PluginDiagnostics.h"
 #include "neverc/Plugin/Host/PluginOptionRegistry.h"
 #include "neverc/Plugin/Host/PluginRegistration.h"
@@ -80,6 +81,8 @@ public:
   PluginProcessServices &processServices() const { return ProcessServices; }
   PluginDiagnostics &diagnostics() { return Diagnostics; }
   const PluginDiagnostics &diagnostics() const { return Diagnostics; }
+  PluginCallbackStats &callbackStats() { return CallbackStats; }
+  const PluginCallbackStats &callbackStats() const { return CallbackStats; }
 
   NevercStatus queryState(llvm::StringRef PluginID, void **OutState) const;
 
@@ -115,6 +118,7 @@ private:
   std::vector<uint64_t> AncestorSessionOwners;
   PluginOptionParseResult Options;
   PluginDiagnostics Diagnostics;
+  PluginCallbackStats CallbackStats;
   RegistrySnapshotLease Snapshot;
   RegistryActivityLease SessionLease;
   std::unique_ptr<PluginHandleArena> HandleArena;

@@ -1,0 +1,74 @@
+# Volume 6 task 24: no-plugin overhead gate for the first-version plugin ABI.
+# Builds the shipped compiler once and runs both the PluginPerformance unit
+# tests (per-plugin/phase callback statistics) and the out-of-process overhead
+# harness.  The strict <=1% median wall-time / peak-RSS regression budget is
+# enforced against a separately built, test-only fully-disabled baseline binary
+# via --baseline-compiler; without that baseline the harness reports overhead
+# only and stays green, so this workflow never fails on machine noise alone.
+name: plugin-performance
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "neverc/lib/Plugin/**"
+      - "neverc/include/neverc/Plugin/**"
+      - "tests/neverc/PluginPerformanceTests.cpp"
+      - "tests/neverc/BenchmarkTests.cpp"
+      - "utils/plugin-api/measure-plugin-overhead.py"
+      - ".github/workflows/plugin-performance.yml"
+
+jobs:
+  performance:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name != github.repository)
+    runs-on: macos-15
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Select latest stable Xcode (Apple Clang)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup build deps
+        run: brew install ninja cmake
+
+      - name: Build neverc and plugin-core tests
+        run: |
+          cmake -GNinja -Bbuild \
+            -DCMAKE_INSTALL_PREFIX=install \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+            -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0 \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_STRIP_BINARY=OFF \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -C neverc/neverc/cmake/caches/NeverC.cmake \
+            neverc/llvm
+          time cmake --build build --config ${{ env.BUILD_TYPE }} \
+            --target neverc neverc-plugin-core-tests
+
+      - name: Run PluginPerformance unit tests
+        run: |
+          ctest --test-dir build \
+            -R 'PluginPerformance|PluginCallbackStats' --output-on-failure
+
+      - name: Measure no-plugin overhead (report-only without a baseline build)
+        run: |
+          python3 neverc/utils/plugin-api/measure-plugin-overhead.py \
+            --compiler build/bin/neverc \
+            --iterations 31 \
+            --max-time-regression 0.01 \
+            --max-rss-regression 0.01

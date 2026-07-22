@@ -7,6 +7,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <algorithm>
+#include <chrono>
 #include <utility>
 
 using namespace llvm;
@@ -325,8 +326,18 @@ PluginSession::invokeCallback(StringRef PluginID, StringRef CallbackName,
   std::string TraceName =
       (Twine("plugin:") + PluginID + "/" + CallbackName).str();
   TimeTraceScope TimeScope(TraceName);
+  const auto CallbackStart = std::chrono::steady_clock::now();
+  auto RecordStats = [&](bool IsError) {
+    const auto Elapsed = std::chrono::steady_clock::now() - CallbackStart;
+    auto Nanos =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(Elapsed).count();
+    CallbackStats.record(PluginID, CallbackName,
+                         Nanos < 0 ? 0 : static_cast<uint64_t>(Nanos), IsError);
+  };
   try {
     NevercStatus Result = Callback();
+    RecordStats(Result.Code != NEVERC_STATUS_OK &&
+                Result.Code != NEVERC_STATUS_CANCELLED);
     if (Result.Code != NEVERC_STATUS_OK &&
         Result.Code != NEVERC_STATUS_CANCELLED) {
       bool DeferredRecoverable =
@@ -348,6 +359,7 @@ PluginSession::invokeCallback(StringRef PluginID, StringRef CallbackName,
     }
     return Result;
   } catch (...) {
+    RecordStats(/*IsError=*/true);
     Diagnostics.emitImplicit(
         *this, CurrentTask, PluginID, CallbackName,
         (Twine("plugin callback '") + CallbackName +

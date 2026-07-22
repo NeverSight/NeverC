@@ -1257,6 +1257,7 @@ add_executable(neverc-plugin-core-tests
   PluginLLVMOptionSnapshotTests.cpp
   PluginLifecycleTests.cpp
   PluginOptionTests.cpp
+  PluginPerformanceTests.cpp
   PluginPhaseExecutionTests.cpp
   PluginPhaseGraphTests.cpp
   PluginPhaseSchemaTests.cpp
