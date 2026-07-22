@@ -211,6 +211,25 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
     auto Inputs = InputReader.read(**FrozenRequest);
     if (!Inputs)
       return Inputs.takeError();
+
+    // LTO/bitcode inputs (e.g. `-fandroid-kernel-driver-mode`, which implies
+    // `-flto=full`) arrive as bitcode modules, not native ObjectGraphs.  The
+    // built-in object merge only merges native objects; the native backend
+    // must first compile the bitcode to native objects -- running the loaded
+    // plugin's IR/MIR/optimization LTO hooks through the shared LTO config --
+    // before performing the identical relocatable merge.  Defer such links to
+    // the native driver instead of failing with "no materialized ObjectGraph
+    // inputs".  A plugin-supplied merge provider cannot consume bitcode either,
+    // so surface a precise error for that (currently unsupported) combination.
+    if (!(*Inputs)->graph().bitcodeModules().empty()) {
+      if (Plan->objectMergeProvider()->Builtin)
+        return linker::LinkHookResult{
+            linker::LinkHookDisposition::ContinueBuiltin, 0};
+      return bridgeError(
+          "plugin ObjectMergeProvider cannot merge LTO/bitcode inputs; "
+          "relocatable LTO links require native bitcode compilation first");
+    }
+
     std::vector<PluginObjectGraph *> Objects = (*Inputs)->objectGraphs();
     if (Objects.empty())
       return bridgeError(
