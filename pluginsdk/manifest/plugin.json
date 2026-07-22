@@ -1,0 +1,426 @@
+{
+  "abi": {
+    "entry_point": "neverc_plugin_entry",
+    "major": 1,
+    "minor": 0
+  },
+  "generator": "utils/plugin-api/gen-sdk-manifest.py",
+  "manifest_version": 1,
+  "modules": [
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e6576657243436f",
+          "id_low": "0x7265415049000001",
+          "major": 1,
+          "minor": 0,
+          "name": "CORE",
+          "stability": null
+        }
+      ],
+      "name": "PluginCore.h",
+      "public": true
+    },
+    {
+      "interfaces": [],
+      "name": "PluginPhaseSchema.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e4350494f000001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "IO",
+          "stability": null
+        },
+        {
+          "id_high": "0x4e43505352430001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "SOURCE_LOCATION",
+          "stability": null
+        }
+      ],
+      "name": "PluginSource.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e65766572434472",
+          "id_low": "0x6976657241504901",
+          "major": 1,
+          "minor": 0,
+          "name": "DRIVER",
+          "stability": null
+        }
+      ],
+      "name": "PluginDriver.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e43505052450001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "PREP",
+          "stability": null
+        }
+      ],
+      "name": "PluginPrep.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e43504153540001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 1,
+          "name": "AST",
+          "stability": null
+        },
+        {
+          "id_high": "0x4e43504152534501",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "PARSER",
+          "stability": null
+        }
+      ],
+      "name": "PluginAST.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e435053454d0001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "SEMA",
+          "stability": null
+        }
+      ],
+      "name": "PluginSema.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e43504952410001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "IR_ANALYSIS",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504952420001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "IR_BUILDER",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504952430001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "IR_CORE",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504952470001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "IR_GEN",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e435049524f0001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "IR_OPTIMIZATION",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504952500001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "IR_PASS",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        }
+      ],
+      "name": "PluginIR.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e43505443430001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 1,
+          "name": "CALLING_CONVENTION",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43505447540001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 1,
+          "name": "TARGET",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43505441424901",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "TARGET_ABI",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        }
+      ],
+      "name": "PluginTarget.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e43504d49520001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "MIR",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504d49524101",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "MIR_ANALYSIS",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504d49525001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "MIR_PASS",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504d49525002",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "MIR_PROVIDER",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        }
+      ],
+      "name": "PluginMIR.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e435041534d5001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "ASSEMBLY_PROVIDER",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504d43000001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 1,
+          "name": "MC",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504d43454d01",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "MC_EMISSION",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504d43505201",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "MC_PROVIDER",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        }
+      ],
+      "name": "PluginMC.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e43504f424a0001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "OBJECT",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e4350464d540001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "OBJECT_FORMAT",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504f42504801",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "OBJECT_PHASE",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        }
+      ],
+      "name": "PluginObject.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e43504c494e4b01",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "LINK",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504c4e504801",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "LINK_PHASE",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504c4e4b5201",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "LINK_REGISTRAR",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        }
+      ],
+      "name": "PluginLink.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e43504c544f0001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "LTO",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504c544f5201",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "LTO_REGISTRAR",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        }
+      ],
+      "name": "PluginLTO.h",
+      "public": true
+    },
+    {
+      "interfaces": [
+        {
+          "id_high": "0x4e43504459430001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "DYNCODE",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504459500001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "DYNCODE_PHASE",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        },
+        {
+          "id_high": "0x4e43504459520001",
+          "id_low": "0x0000000000000001",
+          "major": 1,
+          "minor": 0,
+          "name": "DYNCODE_REGISTRAR",
+          "stability": "NEVERC_INTERFACE_STABLE"
+        }
+      ],
+      "name": "PluginDynCode.h",
+      "public": true
+    }
+  ],
+  "schemas": [
+    {
+      "digest": "cd9a8d6be288e7fe04232a431ef5e3fdd345df9e4640e8d01c11cc0f8c8ee3d6",
+      "name": "ASTSchema.json"
+    },
+    {
+      "digest": "e8e9d80d74d68b025dc979def65f925ac2678e5b766193afff01cc73213a1414",
+      "name": "IRSchema.json"
+    },
+    {
+      "digest": "298cf8f817bc761f3318aa08ffdfa30b01fa7d483fe7c9754d27a60917dca30b",
+      "name": "MCSchema.json"
+    },
+    {
+      "digest": "8b4dc28378c626448f505f88b3592460deea29afbdc4a99a2fcad6b9158b802f",
+      "name": "MIRSchema.json"
+    },
+    {
+      "digest": "32336ef918c4e275af1a172caff8cd258c7d540a13aca831d096490886fb8c3f",
+      "name": "ObjectSchema.json"
+    },
+    {
+      "digest": "ddbfd4b1d170940ed4c9f2352b5eaf2cd1f665cc6eed6442e68babca771b06fb",
+      "name": "PhaseSchema.json"
+    },
+    {
+      "digest": "d38d95f80a9daaf13c0ce86389fe385111e768754369516931487509615010e4",
+      "name": "PrepSchema.json"
+    }
+  ],
+  "single_header": {
+    "path": "pluginsdk/include/neverc/Plugin/NevercPluginAPI.h",
+    "source_digest": "67a1d8425f14aa11ba3e638b55a5e62a70194b6c948c49c887146fc6c81bf5ef"
+  },
+  "targets": [
+    "aarch64",
+    "x86_64"
+  ]
+}

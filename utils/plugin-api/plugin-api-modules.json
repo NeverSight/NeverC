@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "description": "Canonical NeverC first-version plugin ABI module manifest. Single source of truth for the modular header order, the source-tree aggregate entry, and the distributed single-header generator. Update this file (not the generated outputs) when adding or reordering a public module.",
+  "include_root": "neverc/include/neverc/Plugin",
+  "aggregate_header": "neverc/include/neverc/Plugin/NevercPluginAPI.h",
+  "single_header": "pluginsdk/include/neverc/Plugin/NevercPluginAPI.h",
+  "system_includes": [
+    "stddef.h",
+    "stdint.h"
+  ],
+  "modules": [
+    {
+      "name": "PluginCore.h",
+      "guard": "NEVERC_PLUGIN_PLUGINCORE_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": []
+    },
+    {
+      "name": "PluginPhaseSchema.h",
+      "guard": "NEVERC_PLUGIN_PLUGINPHASESCHEMA_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginCore.h"]
+    },
+    {
+      "name": "PluginSource.h",
+      "guard": "NEVERC_PLUGIN_PLUGINSOURCE_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginCore.h", "PluginPhaseSchema.h"]
+    },
+    {
+      "name": "PluginDriver.h",
+      "guard": "NEVERC_PLUGIN_PLUGINDRIVER_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginCore.h", "PluginPhaseSchema.h", "PluginSource.h"]
+    },
+    {
+      "name": "PluginPrep.h",
+      "guard": "NEVERC_PLUGIN_PLUGINPREP_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginCore.h", "PluginPhaseSchema.h", "PluginSource.h"]
+    },
+    {
+      "name": "PluginAST.h",
+      "guard": "NEVERC_PLUGIN_PLUGINAST_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginCore.h", "PluginPhaseSchema.h", "PluginPrep.h"]
+    },
+    {
+      "name": "PluginSema.h",
+      "guard": "NEVERC_PLUGIN_PLUGINSEMA_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginCore.h", "PluginPhaseSchema.h", "PluginAST.h"]
+    },
+    {
+      "name": "PluginIR.h",
+      "guard": "NEVERC_PLUGIN_PLUGINIR_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginCore.h", "PluginPhaseSchema.h"]
+    },
+    {
+      "name": "PluginTarget.h",
+      "guard": "NEVERC_PLUGIN_PLUGINTARGET_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginCore.h", "PluginPhaseSchema.h", "PluginIR.h"]
+    },
+    {
+      "name": "PluginMIR.h",
+      "guard": "NEVERC_PLUGIN_PLUGINMIR_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginPhaseSchema.h", "PluginIR.h", "PluginTarget.h"]
+    },
+    {
+      "name": "PluginMC.h",
+      "guard": "NEVERC_PLUGIN_PLUGINMC_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginTarget.h", "PluginMIR.h"]
+    },
+    {
+      "name": "PluginObject.h",
+      "guard": "NEVERC_PLUGIN_PLUGINOBJECT_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginSource.h", "PluginTarget.h", "PluginMC.h"]
+    },
+    {
+      "name": "PluginLink.h",
+      "guard": "NEVERC_PLUGIN_PLUGINLINK_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginObject.h"]
+    },
+    {
+      "name": "PluginLTO.h",
+      "guard": "NEVERC_PLUGIN_PLUGINLTO_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginLink.h"]
+    },
+    {
+      "name": "PluginDynCode.h",
+      "guard": "NEVERC_PLUGIN_PLUGINDYNCODE_H",
+      "public": true,
+      "single_header": true,
+      "depends_on": ["PluginIR.h", "PluginMIR.h", "PluginObject.h"]
+    }
+  ]
+}

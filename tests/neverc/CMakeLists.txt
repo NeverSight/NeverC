@@ -10,6 +10,8 @@ set(NEVERC_TEST_SOURCES
   PluginShutdownTests.cpp
   PluginDriverDiagnosticTests.cpp
   PluginSDKExampleTests.cpp
+  PluginSDKGenerationTests.cpp
+  PluginSDKGenerationSingleHeader.cpp
   PluginArgumentPhaseTests.cpp
   PluginToolChainTests.cpp
   PluginSourcePhaseTests.cpp
@@ -1770,6 +1772,23 @@ add_test(
           --ctest
           ${CMAKE_CTEST_COMMAND}
 )
+add_test(
+  NAME PluginSDKGenerationSingleHeaderCheck
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/gen-single-header.py
+          --check
+)
+add_test(
+  NAME PluginSDKGenerationManifestCheck
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/gen-sdk-manifest.py
+          --check
+)
+add_test(
+  NAME PluginSDKGenerationConsistency
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/check-single-header.py
+)
 set_tests_properties(
   PluginPhaseSchemaGeneratorTests
   PluginPrepSchemaGeneratorTests
@@ -1777,7 +1796,10 @@ set_tests_properties(
   PluginPrepObserverCoverageTests
   PluginCoverageManifestUnitTests
   PluginCoverageManifest
-  PROPERTIES TIMEOUT 30
+  PluginSDKGenerationSingleHeaderCheck
+  PluginSDKGenerationManifestCheck
+  PluginSDKGenerationConsistency
+  PROPERTIES TIMEOUT 60
 )
 
 # Dependency-free contract headers (e.g. LTOCacheContract.h) shared with
@@ -1794,6 +1816,7 @@ target_compile_definitions(neverc-tests PRIVATE
   TEST_C_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../C"
   NEVERC_PLUGINSDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk"
   NEVERC_NEVERC_INCLUDE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include"
+  NEVERC_PLUGINSDK_SINGLE_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk/include/neverc/Plugin/NevercPluginAPI.h"
   NEVERC_TEST_ARGUMENT_REWRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-argument-rewrite>"
   NEVERC_TEST_PARSED_ARGUMENT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parsed-argument-rewrite>"
   NEVERC_TEST_TOOLCHAIN_REWRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-toolchain-rewrite>"

@@ -11,8 +11,13 @@
 set(PLUGINSDK_SRC "${CMAKE_CURRENT_SOURCE_DIR}")
 set(PLUGINSDK_DST "${LLVM_LIBRARY_OUTPUT_INTDIR}/../pluginsdk")
 
+# The distributed aggregate is the generated, self-contained single header
+# (utils/plugin-api/gen-single-header.py), so the SDK ships one pure-C file that
+# needs no side-by-side module headers. The modular headers below are shipped
+# too for plugins that prefer a minimal compile surface.
 set(PLUGIN_HEADER
-    "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/NevercPluginAPI.h")
+    "${PLUGINSDK_SRC}/include/neverc/Plugin/NevercPluginAPI.h")
+set(PLUGIN_MANIFEST "${PLUGINSDK_SRC}/manifest/plugin.json")
 set(PLUGIN_CORE_HEADER
     "${PLUGINSDK_SRC}/../neverc/include/neverc/Plugin/PluginCore.h")
 set(PLUGIN_DRIVER_HEADER
@@ -187,6 +192,11 @@ add_custom_command(
   COMMAND "${CMAKE_COMMAND}" -E copy
       "${PLUGIN_OBJECT_SCHEMA_INC}"
       "${PLUGINSDK_DST}/include/neverc/Plugin/Schema/PluginObjectSchema.inc"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory
+      "${PLUGINSDK_DST}/manifest"
+  COMMAND "${CMAKE_COMMAND}" -E copy
+      "${PLUGIN_MANIFEST}"
+      "${PLUGINSDK_DST}/manifest/plugin.json"
   COMMAND "${CMAKE_COMMAND}" -E rm -rf "${PLUGINSDK_DST}/examples"
   COMMAND "${CMAKE_COMMAND}" -E copy_directory
       "${PLUGINSDK_SRC}/examples"
@@ -222,6 +232,7 @@ add_custom_command(
       "${PLUGIN_MC_SCHEMA_INC}"
       "${PLUGIN_OBJECT_SCHEMA_JSON}"
       "${PLUGIN_OBJECT_SCHEMA_INC}"
+      "${PLUGIN_MANIFEST}"
       ${_example_abs}
   COMMENT "Copying pluginsdk to build tree..."
 )
@@ -337,6 +348,10 @@ install(DIRECTORY "${PLUGINSDK_SRC}/schemas/targets"
         DESTINATION "pluginsdk/schemas"
         COMPONENT neverc-pluginsdk
         FILES_MATCHING PATTERN "*.json")
+
+install(FILES "${PLUGIN_MANIFEST}"
+        DESTINATION "pluginsdk/manifest"
+        COMPONENT neverc-pluginsdk)
 
 install(FILES ${_example_abs}
         DESTINATION "pluginsdk/examples"

@@ -1,0 +1,43 @@
+//===- PluginSDKGenerationValues.def - shared ABI probe list --------------===//
+//
+// X-macro list of ABI constants and struct sizes probed from both the modular
+// headers and the distributed single header. Included by
+// PluginSDKGenerationTests.cpp (modular) and PluginSDKGenerationSingleHeader.cpp
+// (single header). Every entry must be a macro or type available in both forms.
+//
+//===----------------------------------------------------------------------===//
+
+// Top-level ABI version and entry contract.
+NEVERC_ABI_VALUE(NEVERC_PLUGIN_ABI_MAJOR)
+NEVERC_ABI_VALUE(NEVERC_PLUGIN_ABI_MINOR)
+
+// Core interface identity and version.
+NEVERC_ABI_VALUE(NEVERC_CORE_API_MAJOR)
+NEVERC_ABI_VALUE(NEVERC_CORE_API_MINOR)
+NEVERC_ABI_VALUE(NEVERC_INTERFACE_CORE_HIGH)
+NEVERC_ABI_VALUE(NEVERC_INTERFACE_CORE_LOW)
+
+// IR domain (verifies PluginIR.h inlining).
+NEVERC_ABI_VALUE(NEVERC_IR_CORE_API_MAJOR)
+NEVERC_ABI_VALUE(NEVERC_INTERFACE_IR_CORE_HIGH)
+NEVERC_ABI_VALUE(NEVERC_INTERFACE_IR_CORE_LOW)
+
+// Target domain, including a backslash-continued interface macro.
+NEVERC_ABI_VALUE(NEVERC_INTERFACE_CALLING_CONVENTION_HIGH)
+NEVERC_ABI_VALUE(NEVERC_INTERFACE_CALLING_CONVENTION_LOW)
+
+// MC domain, including a backslash-continued interface macro.
+NEVERC_ABI_VALUE(NEVERC_INTERFACE_ASSEMBLY_PROVIDER_HIGH)
+NEVERC_ABI_VALUE(NEVERC_INTERFACE_ASSEMBLY_PROVIDER_LOW)
+
+// Link domain (verifies PluginLink.h inlining).
+NEVERC_ABI_VALUE(NEVERC_LINK_API_MAJOR)
+NEVERC_ABI_VALUE(NEVERC_INTERFACE_LINK_HIGH)
+NEVERC_ABI_VALUE(NEVERC_INTERFACE_LINK_LOW)
+
+// Generated phase schema fragment (verifies Schema/*.inc inlining).
+NEVERC_ABI_VALUE(NEVERC_BUILTIN_PHASE_COUNT)
+
+// Representative struct sizes shared by every domain.
+NEVERC_ABI_SIZE(NevercABITableHeader)
+NEVERC_ABI_SIZE(NevercInterfaceID)
