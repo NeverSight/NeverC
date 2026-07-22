@@ -1309,6 +1309,690 @@
       "provider_available": false,
       "verification": {"kind": "gate", "id": "sealed_commit", "positive_test": "PluginObjectWriterTest.ObjectPhasePipelineVerifiesAndCommitsOnlyAtSealedGate", "negative_test": "PluginObjectWriterTest.WriterFailureDiscardsStagingAndPreservesExistingFile"},
       "sealed_gate": {"host_private": true, "provider_available": false, "interceptor_available": false, "skip_available": false, "host_executor_test": "PluginObjectWriterTest.ObjectPhasePipelineVerifiesAndCommitsOnlyAtSealedGate", "bypass_negative_test": "PluginObjectWriterTest.WriterFailureDiscardsStagingAndPreservesExistingFile"}
+    },
+    {
+      "phase": "neverc.link.input_probe",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000001"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000002"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLinkInputTest.MaterializesPluginProvidedVirtualArchive"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkInputTest.LinkerScriptUsesTypedProvider",
+      "default_executor_test": "PluginLinkInputTest.ReadsELFArchiveWithBuiltinObjectReader",
+      "replacement_test": "PluginLinkInputTest.MaterializesPluginProvidedVirtualArchive",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_input_probe",
+        "positive_test": "PluginLinkInputTest.ReadsObjectThroughVFSAndFreezesDigestAndRoute",
+        "negative_test": "PluginLinkInputTest.KeepsDuplicateArchiveMembersLazyAndEnforcesBudget"
+      }
+    },
+    {
+      "phase": "neverc.link.read_inputs",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000002"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000003"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLinkInputTest.WholeArchiveMaterializesEveryMember"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkInputTest.ResolvesThinArchiveMembersThroughTaskVFS",
+      "default_executor_test": "PluginLinkInputTest.ReadsELFArchiveWithBuiltinObjectReader",
+      "replacement_test": "PluginLinkInputTest.MaterializesCOFFImportLibraryAsSharedDefinitions",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_inputs",
+        "positive_test": "PluginLinkInputTest.ArchiveSymbolExtractionReachesFixedPoint",
+        "negative_test": "PluginLinkInputTest.ArchiveMaterializationObservesCancellation"
+      }
+    },
+    {
+      "phase": "neverc.link.lto_resolve",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000003"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000004"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLTOInputTest.BuildsTypedModuleMetadataAndRegularSymbolResolutions"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkPhaseTest.PostInterceptorMutationInvalidatesAndRerunsFromEarliestPhase",
+      "default_executor_test": "PluginLinkPhaseTest.BuiltinPipelineExecutesAllTypedTransitions",
+      "replacement_test": "PluginLinkPhaseTest.SelectedCProviderPublishesTypedGraph",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_lto_resolution",
+        "positive_test": "PluginLTOInputTest.BuildsTypedModuleMetadataAndRegularSymbolResolutions",
+        "negative_test": "PluginLTOInputTest.ExposesCallerBufferedCAPIAndRejectsInvalidResolutionMutation"
+      }
+    },
+    {
+      "phase": "neverc.link.lto_generate",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000004"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000005"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLTOInputTest.ExposesCallerBufferedCAPIAndRejectsInvalidResolutionMutation"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkPhaseTest.PostInterceptorMutationInvalidatesAndRerunsFromEarliestPhase",
+      "default_executor_test": "PluginLinkPhaseTest.BuiltinPipelineExecutesAllTypedTransitions",
+      "replacement_test": "PluginLinkPhaseTest.SelectedCProviderPublishesTypedGraph",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_lto_products",
+        "positive_test": "PluginLTOInputTest.BuildsTypedModuleMetadataAndRegularSymbolResolutions",
+        "negative_test": "PluginLTOInputTest.RejectsIncompatibleBitcodeTarget"
+      }
+    },
+    {
+      "phase": "neverc.link.resolve_symbols",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000005"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000006"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSymbolResolutionTest.PureCInterceptorCanOverrideTheVerifiedResolutionOutcome"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginSymbolResolutionTest.PureCInterceptorCanOverrideTheVerifiedResolutionOutcome",
+      "default_executor_test": "PluginSymbolResolutionTest.BuiltinTypedPhaseSelectsStrongDefinitionAndRetargetsEdges",
+      "replacement_test": "PluginLinkPhaseTest.SelectedCProviderPublishesTypedGraph",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_symbol_resolution",
+        "positive_test": "PluginSymbolResolutionTest.BuiltinTypedPhaseSelectsStrongDefinitionAndRetargetsEdges",
+        "negative_test": "PluginSymbolResolutionTest.VerifierRejectsPluginWithMultiplePrevailingDefinitions"
+      }
+    },
+    {
+      "phase": "neverc.link.select_comdat",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000006"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000007"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginSymbolResolutionTest.ComdatTypedPhaseAppliesLargestSelectionRule"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkPhaseTest.PostInterceptorMutationInvalidatesAndRerunsFromEarliestPhase",
+      "default_executor_test": "PluginSymbolResolutionTest.ComdatTypedPhaseAppliesLargestSelectionRule",
+      "replacement_test": "PluginLinkPhaseTest.SelectedCProviderPublishesTypedGraph",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_comdat_selection",
+        "positive_test": "PluginSymbolResolutionTest.ComdatTypedPhaseAppliesLargestSelectionRule",
+        "negative_test": "PluginSymbolResolutionTest.VerifierRejectsPluginWithMultiplePrevailingDefinitions"
+      }
+    },
+    {
+      "phase": "neverc.link.gc",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000007"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000008"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLinkGCICFTest.PureCInterceptorCanKeepAnAdditionalAtomLive"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkGCICFTest.PureCInterceptorCanKeepAnAdditionalAtomLive",
+      "default_executor_test": "PluginLinkGCICFTest.BuiltinGCMarksRootsAndReachableAtomsButDropsDeadAtoms",
+      "replacement_test": "PluginLinkGCICFTest.ProvidersRecordKeepAndFoldProvenance",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_liveness",
+        "positive_test": "PluginLinkGCICFTest.BuiltinGCMarksRootsAndReachableAtomsButDropsDeadAtoms",
+        "negative_test": "PluginLinkGCICFTest.VerifierRejectsPluginThatDropsARequiredRoot"
+      }
+    },
+    {
+      "phase": "neverc.link.icf",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000008"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000009"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLinkGCICFTest.PureCInterceptorCanPreventAnEligibleFold"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkGCICFTest.PureCInterceptorCanPreventAnEligibleFold",
+      "default_executor_test": "PluginLinkGCICFTest.BuiltinICFFoldsEquivalentEligibleAtomsOnly",
+      "replacement_test": "PluginLinkGCICFTest.ProvidersRecordKeepAndFoldProvenance",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_icf",
+        "positive_test": "PluginLinkGCICFTest.BuiltinICFFoldsEquivalentEligibleAtomsOnly",
+        "negative_test": "PluginLinkGCICFTest.VerifierRejectsFoldingAnAddressSignificantAtom"
+      }
+    },
+    {
+      "phase": "neverc.link.synthesize",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000009"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000a"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLinkSynthesisTest.PureCInterceptorCanRegisterSyntheticMetadata"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkSynthesisTest.PureCInterceptorCanRegisterSyntheticMetadata",
+      "default_executor_test": "PluginLinkSynthesisTest.BuiltinProviderMarksMaterializedSyntheticAtoms",
+      "replacement_test": "PluginLinkPhaseTest.SelectedCProviderPublishesTypedGraph",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_synthetics",
+        "positive_test": "PluginLinkSynthesisTest.BuiltinProviderMarksMaterializedSyntheticAtoms",
+        "negative_test": "PluginLinkSynthesisTest.VerifierRejectsPluginSyntheticWithEmptyRole"
+      }
+    },
+    {
+      "phase": "neverc.link.relax_thunks",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000a"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000b"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLinkSynthesisTest.RelaxationConvergesAfterShrinkingNearBranchesAndAddingFarThunks"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkPhaseTest.PostInterceptorMutationInvalidatesAndRerunsFromEarliestPhase",
+      "default_executor_test": "PluginLinkSynthesisTest.RelaxationConvergesAfterShrinkingNearBranchesAndAddingFarThunks",
+      "replacement_test": "PluginLinkPhaseTest.SelectedCProviderPublishesTypedGraph",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_relaxation",
+        "positive_test": "PluginLinkSynthesisTest.RelaxationConvergesAfterShrinkingNearBranchesAndAddingFarThunks",
+        "negative_test": "PluginLinkSynthesisTest.RelaxationReportsNonConvergenceAtTheConfiguredLimit"
+      }
+    },
+    {
+      "phase": "neverc.link.layout",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000b"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000c"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+      "default_executor_test": "PluginLinkLayoutTest.BuiltinLayoutAssignsAlignedNonOverlappingRanges",
+      "replacement_test": "PluginLinkPhaseTest.SelectedCProviderPublishesTypedGraph",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_layout",
+        "positive_test": "PluginLinkLayoutTest.BuiltinLayoutAssignsAlignedNonOverlappingRanges",
+        "negative_test": "PluginLinkLayoutTest.LayoutRejectsOverlappingAndWritableExecutableRanges"
+      }
+    },
+    {
+      "phase": "neverc.link.relocate",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000c"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000d"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLinkLayoutTest.RelocationHandlesPCRelativeAndTLSDynamicPolicies"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkPhaseTest.PostInterceptorMutationInvalidatesAndRerunsFromEarliestPhase",
+      "default_executor_test": "PluginLinkLayoutTest.BuiltinRelocationWritesTargetAddressUsingTargetEndianness",
+      "replacement_test": "PluginLinkPhaseTest.SelectedCProviderPublishesTypedGraph",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_relocations",
+        "positive_test": "PluginLinkLayoutTest.BuiltinRelocationWritesTargetAddressUsingTargetEndianness",
+        "negative_test": "PluginLinkLayoutTest.RelocationRejectsThirtyTwoBitOverflow"
+      }
+    },
+    {
+      "phase": "neverc.link.emit_image",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000d"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000e"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE",
+        "SKIPPABLE_WITH_PROOF"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginBinaryImageTest.EmitsQueryableSegmentsSectionsAndStableBytes"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginBinaryImageTest.PostEmitPatchPrecedesSealedVerifyAndCommitIsReadOnly",
+      "default_executor_test": "PluginBinaryImageTest.EmitsQueryableSegmentsSectionsAndStableBytes",
+      "replacement_test": "PluginLinkPhaseTest.SelectedCProviderPublishesTypedGraph",
+      "skip_proof_tests": {
+        "valid_test": "PluginLinkLayoutTest.PureCInterceptorCanConstrainLayoutAndObserveProof",
+        "stale_test": "PluginLinkMutationTest.CommitBumpsGenerationInvalidatesProofAndTracksEarliestPhase",
+        "cross_session_test": "PluginLinkVerifierTest.ProofCannotCrossGraphEvenWithinOneTask"
+      },
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_image_candidate",
+        "positive_test": "PluginBinaryImageTest.EmitsQueryableSegmentsSectionsAndStableBytes",
+        "negative_test": "PluginBinaryImageTest.InvalidPostEmitGrowthPublishesNothing"
+      }
+    },
+    {
+      "phase": "neverc.link.full",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000001"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000e"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginLinkRouteTest.LinkRequestOwnsFrozenInputAndTargetData"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkRouteTest.ExactMatchBeatsHostDefinedFallback",
+      "default_executor_test": "PluginLinkPhaseTest.BuiltinPipelineExecutesAllTypedTransitions",
+      "replacement_test": "PluginLinkRouteTest.CompleteProviderRunsBeforeBackendSelection",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_linker_product",
+        "positive_test": "PluginLinkRouteTest.RepeatedPlansAreStableWithinSnapshot",
+        "negative_test": "PluginLinkRouteTest.RejectsEqualSpecificityConflict"
+      }
+    },
+    {
+      "phase": "neverc.link.object_merge",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000003"
+      ],
+      "output_artifact": [
+        "0x4e434152544d4f01",
+        "0x0000000000000009"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginObjectMergeProviderTest.ExposesEveryInputAndCommitsHostOwnedOutput"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginLinkPhaseTest.PostInterceptorMutationInvalidatesAndRerunsFromEarliestPhase",
+      "default_executor_test": "PluginObjectMergeProviderTest.BuiltinAdapterRoundTripsTypedGraphsThroughRelocatableMerge",
+      "replacement_test": "PluginObjectMergeProviderTest.DispatchesRegisteredPluginThroughPlannedRoute",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_merged_object",
+        "positive_test": "PluginObjectMergeProviderTest.BuiltinAdapterRoundTripsTypedGraphsThroughRelocatableMerge",
+        "negative_test": "PluginObjectMergeProviderTest.RejectsForeignOutputHandle"
+      }
+    },
+    {
+      "phase": "neverc.link.post_emit",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000e"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000e"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginBinaryImageTest.PostEmitPatchPrecedesSealedVerifyAndCommitIsReadOnly"
+      },
+      "provider_available": false,
+      "interceptor_test": "PluginBinaryImageTest.PostEmitPatchPrecedesSealedVerifyAndCommitIsReadOnly",
+      "default_executor_test": "PluginBinaryImageTest.EmitsQueryableSegmentsSectionsAndStableBytes",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_post_emit_image",
+        "positive_test": "PluginBinaryImageTest.PostEmitPatchPrecedesSealedVerifyAndCommitIsReadOnly",
+        "negative_test": "PluginBinaryImageTest.PostEmitBudgetOverflowPublishesNothing"
+      }
+    },
+    {
+      "phase": "neverc.link.image_verify",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000e"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000f"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "SEALED_HOST_GATE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginBinaryImageTest.PostEmitPatchPrecedesSealedVerifyAndCommitIsReadOnly"
+      },
+      "provider_available": false,
+      "sealed_gate": {
+        "host_private": true,
+        "provider_available": false,
+        "interceptor_available": false,
+        "skip_available": false,
+        "host_executor_test": "PluginBinaryImageTest.PostEmitPatchPrecedesSealedVerifyAndCommitIsReadOnly",
+        "bypass_negative_test": "PluginLinkPhaseTest.SealedGateRejectsReplacementProvider"
+      },
+      "verification": {
+        "kind": "gate",
+        "id": "sealed_verifier",
+        "positive_test": "PluginBinaryImageTest.PostEmitPatchPrecedesSealedVerifyAndCommitIsReadOnly",
+        "negative_test": "PluginBinaryImageTest.InvalidPostEmitGrowthPublishesNothing"
+      }
+    },
+    {
+      "phase": "neverc.link.side_outputs_verify",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x000000000000000f"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000010"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "SEALED_HOST_GATE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginBinaryImageTest.BundleRejectsCanonicalPathAliasesBeforePublication"
+      },
+      "provider_available": false,
+      "sealed_gate": {
+        "host_private": true,
+        "provider_available": false,
+        "interceptor_available": false,
+        "skip_available": false,
+        "host_executor_test": "PluginBinaryImageTest.EmitsQueryableSegmentsSectionsAndStableBytes",
+        "bypass_negative_test": "PluginLinkPhaseTest.SealedGateRejectsReplacementProvider"
+      },
+      "verification": {
+        "kind": "gate",
+        "id": "sealed_verifier",
+        "positive_test": "PluginBinaryImageTest.EmitsQueryableSegmentsSectionsAndStableBytes",
+        "negative_test": "PluginBinaryImageTest.BundleRejectsCanonicalPathAliasesBeforePublication"
+      }
+    },
+    {
+      "phase": "neverc.link.commit",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000010"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000011"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "SEALED_HOST_GATE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginBinaryImageTest.LateJournalFailureKeepsNewBundleAndFiresAfterCommit"
+      },
+      "provider_available": false,
+      "sealed_gate": {
+        "host_private": true,
+        "provider_available": false,
+        "interceptor_available": false,
+        "skip_available": false,
+        "host_executor_test": "PluginBinaryImageTest.LateJournalFailureKeepsNewBundleAndFiresAfterCommit",
+        "bypass_negative_test": "PluginLinkPhaseTest.SealedGateRejectsReplacementProvider"
+      },
+      "verification": {
+        "kind": "gate",
+        "id": "sealed_commit",
+        "positive_test": "PluginBinaryImageTest.LateJournalFailureKeepsNewBundleAndFiresAfterCommit",
+        "negative_test": "PluginBinaryImageTest.MainPublishFailureRestoresTheOldBundle"
+      }
+    },
+    {
+      "phase": "neverc.link.after_commit",
+      "input_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000011"
+      ],
+      "output_artifact": [
+        "0x4e4341524c4e4b01",
+        "0x0000000000000011"
+      ],
+      "policies": [
+        "OBSERVABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginBinaryImageTest.LateJournalFailureKeepsNewBundleAndFiresAfterCommit"
+      },
+      "provider_available": false,
+      "default_executor_test": "PluginBinaryImageTest.LateJournalFailureKeepsNewBundleAndFiresAfterCommit",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.link.verify_committed_event",
+        "positive_test": "PluginBinaryImageTest.LateJournalFailureKeepsNewBundleAndFiresAfterCommit",
+        "negative_test": "PluginBinaryImageTest.MainPublishFailureRestoresTheOldBundle"
+      }
     }
   ],
   "semantic_replay": {
