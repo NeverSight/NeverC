@@ -118,3 +118,48 @@ target_link_libraries(plugin-dyncode-image-fuzzer PRIVATE
   nevercDynCode
   nevercPluginTarget
 )
+
+add_neverc_plugin_fuzzer(plugin-link-graph-fuzzer
+  PluginLinkGraphMutationFuzzer.cpp Link)
+target_include_directories(plugin-link-graph-fuzzer PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Plugin
+)
+target_link_libraries(plugin-link-graph-fuzzer PRIVATE
+  nevercPluginLink
+  nevercPluginMCObject
+  nevercPluginTarget
+)
+
+add_neverc_plugin_fuzzer(plugin-archive-reader-fuzzer
+  PluginArchiveReaderFuzzer.cpp Archive)
+target_include_directories(plugin-archive-reader-fuzzer PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Plugin
+)
+target_link_libraries(plugin-archive-reader-fuzzer PRIVATE
+  nevercPluginLink
+  nevercPluginMCObject
+  nevercPluginTarget
+)
+
+add_neverc_plugin_fuzzer(plugin-binary-image-fuzzer
+  PluginBinaryImageFuzzer.cpp BinaryImage)
+target_include_directories(plugin-binary-image-fuzzer PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Plugin
+)
+target_link_libraries(plugin-binary-image-fuzzer PRIVATE
+  nevercPluginLink
+  nevercPluginMCObject
+  nevercPluginTarget
+  nevercPluginIO
+)
+
+add_neverc_plugin_fuzzer(plugin-lto-resolution-fuzzer
+  PluginLTOResolutionFuzzer.cpp LTO)
+target_include_directories(plugin-lto-resolution-fuzzer PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Plugin
+)
+target_link_libraries(plugin-lto-resolution-fuzzer PRIVATE
+  nevercPluginLink
+  nevercPluginMCObject
+  nevercPluginTarget
+)
