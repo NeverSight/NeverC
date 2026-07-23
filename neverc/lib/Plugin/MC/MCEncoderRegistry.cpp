@@ -52,29 +52,22 @@ Error callbackError(StringRef Kind, NevercStatus Status) {
                     Twine(static_cast<uint32_t>(Status.Code)));
 }
 
-const PluginTargetSnapshot::NamedRecord *
-validateTargetAndSchema(const PluginTargetSnapshot &Targets,
-                        NevercTargetID TargetID,
-                        NevercInterfaceID SchemaID, StringRef PluginID,
-                        StringRef Kind, Error &Failure) {
+Error validateTargetAndSchema(const PluginTargetSnapshot &Targets,
+                              NevercTargetID TargetID,
+                              NevercInterfaceID SchemaID, StringRef PluginID,
+                              StringRef Kind) {
   const auto *Target = Targets.findTarget(TargetID);
   const auto *Schema = Targets.findMCSchema(SchemaID);
-  if (!Target) {
-    Failure = codecError("plugin '" + PluginID + "' " + Kind +
-                         " references an unknown Target ID");
-    return nullptr;
-  }
-  if (!Schema || !sameID(Schema->TargetID, TargetID)) {
-    Failure = codecError("plugin '" + PluginID + "' " + Kind +
-                         " references an unknown MC schema ID");
-    return nullptr;
-  }
-  if (!sameID(Target->MCSchemaID, SchemaID)) {
-    Failure = codecError("plugin '" + PluginID + "' " + Kind +
-                         " does not use the Target's selected MC schema");
-    return nullptr;
-  }
-  return Schema;
+  if (!Target)
+    return codecError("plugin '" + PluginID + "' " + Kind +
+                      " references an unknown Target ID");
+  if (!Schema || !sameID(Schema->TargetID, TargetID))
+    return codecError("plugin '" + PluginID + "' " + Kind +
+                      " references an unknown MC schema ID");
+  if (!sameID(Target->MCSchemaID, SchemaID))
+    return codecError("plugin '" + PluginID + "' " + Kind +
+                      " does not use the Target's selected MC schema");
+  return Error::success();
 }
 
 Expected<std::vector<NevercStringView>>
@@ -232,10 +225,9 @@ MCEncoderRegistry::freeze(
           !Descriptor.EncodeInstruction)
         return codecError("plugin '" + Registration.PluginID +
                           "' has an invalid MC encoder descriptor");
-      Error Failure = Error::success();
-      if (!validateTargetAndSchema(
+      if (Error Failure = validateTargetAndSchema(
               Targets, Descriptor.TargetID, Descriptor.SchemaID,
-              Registration.PluginID, "MC encoder", Failure))
+              Registration.PluginID, "MC encoder"))
         return std::move(Failure);
       for (const EncoderRecord &Existing : Registry->Encoders) {
         if (sameID(Existing.ProviderID, Descriptor.ProviderID))
@@ -271,10 +263,9 @@ MCEncoderRegistry::freeze(
           !Descriptor.DecodeInstruction)
         return codecError("plugin '" + Registration.PluginID +
                           "' has an invalid MC decoder descriptor");
-      Error Failure = Error::success();
-      if (!validateTargetAndSchema(
+      if (Error Failure = validateTargetAndSchema(
               Targets, Descriptor.TargetID, Descriptor.SchemaID,
-              Registration.PluginID, "MC decoder", Failure))
+              Registration.PluginID, "MC decoder"))
         return std::move(Failure);
       for (const DecoderRecord &Existing : Registry->Decoders) {
         if (sameID(Existing.ProviderID, Descriptor.ProviderID))

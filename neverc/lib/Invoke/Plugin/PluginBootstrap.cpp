@@ -162,9 +162,7 @@ PluginBootstrap::createSession(
 
 Error PluginBootstrap::shutdown() {
   Plan.reset();
-  Error Cleanup = Error::success();
-  if (Services)
-    Cleanup = Services->shutdown();
+  Error Cleanup = Services ? Services->shutdown() : Error::success();
   Services.reset();
   LoadedPluginIDs.clear();
   Activated = false;

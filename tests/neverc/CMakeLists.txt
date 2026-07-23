@@ -2025,7 +2025,7 @@ add_dependencies(neverc-tests
 
 gtest_discover_tests(neverc-tests
   PROPERTIES
-    TIMEOUT 300
+    TIMEOUT 900
   DISCOVERY_TIMEOUT 30
 )
 

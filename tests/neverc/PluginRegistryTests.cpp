@@ -268,7 +268,7 @@ TEST(PluginRegistryTest, SessionAndCallbackActivityBlockMutation) {
 
   Callback.reset();
   EXPECT_EQ(Registry.activeCallbacks(), 0u);
-  Loaded = std::shared_ptr<const PluginModule>();
+  *Loaded = std::shared_ptr<const PluginModule>();
   EXPECT_FALSE(Registry.shutdown());
 }
 
@@ -277,7 +277,7 @@ TEST(PluginRegistryTest, ShutdownClearsModulesAndPreventsReload) {
   auto Loaded = Registry.load(NEVERC_TEST_MINIMAL_PLUGIN);
   if (!Loaded)
     FAIL() << takeErrorMessage(Loaded);
-  Loaded = std::shared_ptr<const PluginModule>();
+  *Loaded = std::shared_ptr<const PluginModule>();
 
   ASSERT_FALSE(Registry.shutdown());
   EXPECT_EQ(Registry.moduleCount(), 0u);

@@ -252,11 +252,11 @@ Error readSharedLibraryInput(LinkInputSetImpl &Set, LinkInputBlob &Blob,
   Library.Origin.InputID = Input.ID;
 
   const file_magic Magic = identify_magic(Blob.Buffer->getBuffer());
-  Error ParseError = Error::success();
-  if (Magic == file_magic::tapi_file) {
-    Input.ReaderRoute = "llvm-tapi";
-    ParseError = readTBD(Blob.Buffer->getMemBufferRef(), Library);
-  } else {
+  Error ParseError = [&]() -> Error {
+    if (Magic == file_magic::tapi_file) {
+      Input.ReaderRoute = "llvm-tapi";
+      return readTBD(Blob.Buffer->getMemBufferRef(), Library);
+    }
     auto Parsed = createBinary(Blob.Buffer->getMemBufferRef());
     if (!Parsed)
       return joinErrors(sharedError(Blob, "cannot parse input"),
@@ -264,21 +264,22 @@ Error readSharedLibraryInput(LinkInputSetImpl &Set, LinkInputBlob &Blob,
     Binary *BinaryValue = Parsed->get();
     if (auto *ELF = dyn_cast<ELFObjectFileBase>(BinaryValue)) {
       Input.ReaderRoute = "llvm-elf-shared";
-      ParseError = readELF(*ELF, Library);
-    } else if (auto *MachO = dyn_cast<MachOObjectFile>(BinaryValue)) {
-      Input.ReaderRoute = "llvm-macho-dylib";
-      ParseError = readMachO(*MachO, Library);
-    } else if (auto *Universal =
-                   dyn_cast<MachOUniversalBinary>(BinaryValue)) {
-      Input.ReaderRoute = "llvm-macho-universal-dylib";
-      ParseError = readUniversalMachO(*Universal, Set.Target, Library);
-    } else if (auto *COFF = dyn_cast<COFFObjectFile>(BinaryValue)) {
-      Input.ReaderRoute = "llvm-coff-image";
-      ParseError = readCOFF(*COFF, Library);
-    } else {
-      return sharedError(Blob, "unsupported shared-library container");
+      return readELF(*ELF, Library);
     }
-  }
+    if (auto *MachO = dyn_cast<MachOObjectFile>(BinaryValue)) {
+      Input.ReaderRoute = "llvm-macho-dylib";
+      return readMachO(*MachO, Library);
+    }
+    if (auto *Universal = dyn_cast<MachOUniversalBinary>(BinaryValue)) {
+      Input.ReaderRoute = "llvm-macho-universal-dylib";
+      return readUniversalMachO(*Universal, Set.Target, Library);
+    }
+    if (auto *COFF = dyn_cast<COFFObjectFile>(BinaryValue)) {
+      Input.ReaderRoute = "llvm-coff-image";
+      return readCOFF(*COFF, Library);
+    }
+    return sharedError(Blob, "unsupported shared-library container");
+  }();
   if (ParseError)
     return joinErrors(sharedError(Blob, "invalid metadata"),
                       std::move(ParseError));

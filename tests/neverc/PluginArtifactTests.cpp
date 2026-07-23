@@ -54,6 +54,8 @@ TEST(PluginArtifactRegistryTest, ValidatesAndFreezesTypeRegistry) {
       ownedType({}, "neverc.test.null", Destroyed);
   auto Invalid = Registry.registerType(std::move(NullID));
   ASSERT_FALSE(static_cast<bool>(Invalid));
+  EXPECT_NE(takeErrorMessage(Invalid.takeError()).find("nonzero"),
+            std::string::npos);
 
   EXPECT_FALSE(Registry.freeze());
   EXPECT_TRUE(Registry.isFrozen());
