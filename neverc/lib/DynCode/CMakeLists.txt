@@ -87,6 +87,7 @@ add_neverc_library(nevercDynCode
   Extractor/COFFExtractor.cpp
   Extractor/DynCodeExtractionPlan.cpp
   Extractor/DynCodeImage.cpp
+  Extractor/DynCodeRelocationExecutor.cpp
   Extractor/DynCodeReport.cpp
   Extractor/DynCodeSectionPlanner.cpp
   Extractor/DynCodeSymbolPlanner.cpp
