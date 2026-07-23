@@ -95,3 +95,26 @@ target_link_libraries(plugin-dyncode-request-fuzzer PRIVATE
   nevercDynCode
   nevercPluginTarget
 )
+
+add_neverc_plugin_fuzzer(plugin-descriptor-fuzzer
+  PluginDescriptorFuzzer.cpp Descriptor)
+
+add_neverc_plugin_fuzzer(plugin-dependency-graph-fuzzer
+  PluginDependencyGraphFuzzer.cpp DependencyGraph)
+
+add_neverc_plugin_fuzzer(plugin-single-header-fuzzer
+  PluginSingleHeaderFuzzer.cpp SingleHeader)
+
+add_neverc_plugin_fuzzer(plugin-dyncode-plan-fuzzer
+  PluginDynCodePlanFuzzer.cpp DynCodePlan)
+target_link_libraries(plugin-dyncode-plan-fuzzer PRIVATE
+  nevercDynCode
+  nevercPluginTarget
+)
+
+add_neverc_plugin_fuzzer(plugin-dyncode-image-fuzzer
+  PluginDynCodeImageFuzzer.cpp DynCodeImage)
+target_link_libraries(plugin-dyncode-image-fuzzer PRIVATE
+  nevercDynCode
+  nevercPluginTarget
+)

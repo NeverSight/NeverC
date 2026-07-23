@@ -229,6 +229,15 @@ private:
 
 bool isCanonicalPluginID(llvm::StringRef PluginID);
 
+/// Normalizes and validates a caller-provided C plugin descriptor into the
+/// host-owned record, applying the same ABI-header capacity/version negotiation,
+/// canonical-ID, interface, dependency and callback-pairing checks the loader
+/// runs.  Exposed for the descriptor/single-header ABI fuzzers; it never loads
+/// or executes native plugin code.
+llvm::Expected<PluginDescriptorRecord>
+copyAndValidateDescriptor(const NevercPluginDescriptor &Source,
+                          uint32_t HostLLVMMajor);
+
 } // namespace neverc::plugin
 
 #endif

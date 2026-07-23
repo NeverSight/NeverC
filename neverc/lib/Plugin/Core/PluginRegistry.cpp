@@ -242,6 +242,13 @@ NevercStatus NEVERC_CALL queryNoBootstrapInterfaces(
   return Result;
 }
 
+} // namespace
+
+// Normalizes and validates a caller-provided C plugin descriptor into the
+// host-owned record.  Exposed (rather than kept file-local) so the descriptor
+// and single-header ABI fuzzers can drive the exact validation the loader uses
+// without loading native plugin code.  The anonymous-namespace helpers above
+// remain visible to this definition within the same translation unit.
 Expected<PluginDescriptorRecord>
 copyAndValidateDescriptor(const NevercPluginDescriptor &Source,
                           uint32_t HostLLVMMajor) {
@@ -346,8 +353,6 @@ copyAndValidateDescriptor(const NevercPluginDescriptor &Source,
         "plugin descriptor must provide TaskBegin and TaskEnd together");
   return Result;
 }
-
-} // namespace
 
 struct PluginModule::Storage {
   std::string CanonicalPath;
