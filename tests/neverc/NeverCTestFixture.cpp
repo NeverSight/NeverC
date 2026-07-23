@@ -570,6 +570,12 @@ void NeverCTest::dyncodeExpectFail(
         << "dyncode " << name << ": missing '" << expectedError << "'\n"
         << r.err << r.out;
   }
+
+  // A failed dyncode build is atomic: the transactional output publish never
+  // leaves a partial or stale image at the requested path.
+  EXPECT_FALSE(fs::exists(bin))
+      << "dyncode " << name
+      << ": a failed build left an output image behind at " << bin.string();
 }
 
 void NeverCTest::dyncodeStringPair(const std::string &tag) {

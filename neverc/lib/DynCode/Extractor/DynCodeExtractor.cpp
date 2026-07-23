@@ -1,12 +1,13 @@
 #include "neverc/DynCode/Extractor/DynCodeExtractor.h"
 #include "Extractor/DynCodeObjectPipeline.h"
+#include "neverc/Foundation/Core/OutputBundleTransaction.h"
+#include "neverc/Foundation/Core/OutputCoordinator.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
-#include <chrono>
-#include <cstdlib>
+#include <cstdint>
+#include <vector>
 using namespace llvm;
 
 namespace neverc {
@@ -14,7 +15,8 @@ namespace dyncode {
 
 // Reads the relocatable object into a volume-4 ObjectGraph and runs the single
 // format-agnostic extraction pipeline (plan -> relocate -> binary phases ->
-// sealed verify), then writes the verified image.  This replaces the old
+// sealed verify), then atomically publishes the verified image (and optional
+// report) through the volume-5 OutputBundleTransaction.  This replaces the old
 // per-format extractELF / extractCOFF / extractMachO dispatch: nothing is read
 // from disk a second time and there is no hard-coded format switch.
 int extractDynCode(StringRef InputObj, StringRef OutputBin,
@@ -36,21 +38,20 @@ int extractDynCode(StringRef InputObj, StringRef OutputBin,
     return 1;
   }
 
-  std::error_code EC;
-  raw_fd_ostream Os(OutputBin, EC, sys::fs::OF_None);
-  if (EC) {
-    errs() << "dyncode-extractor: cannot write '" << OutputBin
-           << "': " << EC.message() << "\n";
-    return 1;
-  }
+  // Stage the verified image and its optional report side output, then publish
+  // them as one atomic bundle through the volume-5 OutputBundleTransaction.
+  // The sealed verify gate has already run, so nothing may mutate the bytes
+  // after this point; a failure anywhere during publication rolls back to any
+  // pre-existing content and leaves no partial file behind.
+  std::vector<OutputBundleFile> Outputs;
+
+  OutputBundleFile ImageFile;
+  ImageFile.Name = "image";
+  ImageFile.Path = OutputBin.str();
   ArrayRef<uint8_t> ImageBytes = Result->Image.bytes();
-  Os.write(reinterpret_cast<const char *>(ImageBytes.data()),
-           ImageBytes.size());
-  Os.close();
-  if (Os.has_error()) {
-    errs() << "dyncode-extractor: write error on '" << OutputBin << "'\n";
-    return 1;
-  }
+  ImageFile.Bytes.assign(ImageBytes.begin(), ImageBytes.end());
+  ImageFile.Main = true;
+  Outputs.push_back(std::move(ImageFile));
 
   if (!Opts.ReportPath.empty()) {
     auto Json = Result->Report.toCanonicalJSON();
@@ -58,14 +59,23 @@ int extractDynCode(StringRef InputObj, StringRef OutputBin,
       errs() << "neverc: error: " << toString(Json.takeError()) << "\n";
       return 1;
     }
-    std::error_code ReportEC;
-    raw_fd_ostream ReportOs(Opts.ReportPath, ReportEC, sys::fs::OF_Text);
-    if (ReportEC) {
-      errs() << "dyncode-extractor: cannot write report '" << Opts.ReportPath
-             << "': " << ReportEC.message() << "\n";
-      return 1;
-    }
-    ReportOs << *Json;
+    OutputBundleFile ReportFile;
+    ReportFile.Name = "report";
+    ReportFile.Path = Opts.ReportPath;
+    ReportFile.Bytes.assign(Json->begin(), Json->end());
+    Outputs.push_back(std::move(ReportFile));
+  }
+
+  OutputCoordinator Coordinator;
+  auto Transaction = OutputBundleTransaction::create(Coordinator, Outputs);
+  if (!Transaction) {
+    errs() << "neverc: error: " << toString(Transaction.takeError()) << "\n";
+    return 1;
+  }
+  if (auto Summary = (*Transaction)->commit(); !Summary) {
+    errs() << "neverc: error: dyncode output commit failed: "
+           << toString(Summary.takeError()) << "\n";
+    return 1;
   }
 
   return 0;
