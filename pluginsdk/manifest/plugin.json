@@ -407,7 +407,7 @@
       "name": "ObjectSchema.json"
     },
     {
-      "digest": "ddbfd4b1d170940ed4c9f2352b5eaf2cd1f665cc6eed6442e68babca771b06fb",
+      "digest": "d6447601ba6eb15c33177876def018bb108f33a55748ae050ec89707198e0ddb",
       "name": "PhaseSchema.json"
     },
     {
@@ -417,7 +417,7 @@
   ],
   "single_header": {
     "path": "pluginsdk/include/neverc/Plugin/NevercPluginAPI.h",
-    "source_digest": "679b7f5afc57ef89e8fdb374fe884599df675fc42cc5790a05a701be7c15ee51"
+    "source_digest": "921a370285d85de25c39c4fbffafa1a9e4e22592e2fcd0620001aa9ddbe67175"
   },
   "targets": [
     "aarch64",

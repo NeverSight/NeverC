@@ -37,10 +37,10 @@ class PhaseSchemaGeneratorTests(unittest.TestCase):
         self.assertEqual(len(phases), 130)
         self.assertEqual(len(families), 8)
         self.assertEqual(
-            sum(phase["stability"] == "stable" for phase in phases), 96
+            sum(phase["stability"] == "stable" for phase in phases), 130
         )
         self.assertEqual(
-            sum(phase["stability"] == "experimental" for phase in phases), 34
+            sum(phase["stability"] == "experimental" for phase in phases), 0
         )
         self.assertEqual(
             sum(phase["domain"] == "dyncode" for phase in phases), 34

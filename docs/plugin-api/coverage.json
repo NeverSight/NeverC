@@ -1993,6 +1993,1042 @@
         "positive_test": "PluginBinaryImageTest.LateJournalFailureKeepsNewBundleAndFiresAfterCommit",
         "negative_test": "PluginBinaryImageTest.MainPublishFailureRestoresTheOldBundle"
       }
+    },
+    {
+      "phase": "neverc.dyncode.request.freeze",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000001"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000002"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeRequestTest.FillsRequestInfoView",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_request_freeze",
+        "positive_test": "PluginDynCodeRequestTest.FreezeIsDeterministicAndSensitive",
+        "negative_test": "PluginDynCodeRequestTest.RejectsInconsistentOptions"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.prepare",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000002"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000003"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRStageTest.PrepareChoosesEntryAndNormalisesLinkage",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_prepare",
+        "positive_test": "PluginDynCodeIRStageTest.PrepareDemotesThreadLocalStorage",
+        "negative_test": "PluginDynCodeIRStageTest.PrepareRejectsGlobalConstructors"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.indirect_br",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000003"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000004"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.IRTransformPhasesAreDistinctReplaceable",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_indirect_br",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.mem_intrin.pre",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000004"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000005"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.IRTransformPhasesAreDistinctReplaceable",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_mem_intrin_pre",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.string_runtime",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000005"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000006"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.IRTransformPhasesAreDistinctReplaceable",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_string_runtime",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.heap_arena",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000006"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000007"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.IRTransformPhasesAreDistinctReplaceable",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_heap_arena",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.mem_intrin.post_heap",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000007"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000008"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.IRTransformPhasesAreDistinctReplaceable",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_mem_intrin_post_heap",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.compiler_rt.pre",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000008"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000009"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.CompilerRtLowersWideDivAndIsIdempotent",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_compiler_rt_pre",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.import.syscall",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000009"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000a"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "DynCodeImportRegistryTest.TargetAndLevelFilterProviders",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_import_syscall",
+        "positive_test": "DynCodeImportRegistryTest.ExactMatchBeatsWildcard",
+        "negative_test": "DynCodeImportRegistryTest.TwoExactMatchersConflict"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.import.peb",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000a"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000b"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "DynCodeImportRegistryTest.TargetAndLevelFilterProviders",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_import_peb",
+        "positive_test": "DynCodeImportRegistryTest.ExactMatchBeatsWildcard",
+        "negative_test": "DynCodeImportRegistryTest.NoProviderWhenNothingMatches"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.import.kernel",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000b"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000c"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "DynCodeImportRegistryTest.TargetAndLevelFilterProviders",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_import_kernel",
+        "positive_test": "DynCodeImportRegistryTest.ExactMatchBeatsWildcard",
+        "negative_test": "DynCodeImportRegistryTest.RejectsInvalidRegistrations"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.data_to_text.pre",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000c"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000d"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.Data2TextPreLeavesByteStoreUnchanged",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_data_to_text_pre",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.optimize_inline",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000d"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000e"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.IRTransformPhasesAreDistinctReplaceable",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_optimize_inline",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.compiler_rt.post",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000e"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000f"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.CompilerRtLowersWideDivAndIsIdempotent",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_compiler_rt_post",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.string_finalize",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000000f"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000010"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.IRTransformPhasesAreDistinctReplaceable",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_string_finalize",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.data_to_text.post",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000010"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000011"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.Data2TextPostDevectorizesWithoutSentinel",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_data_to_text_post",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.stackify",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000011"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000012"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRStageTest.StackifyMovesMutableGlobalIntoEntryAlloca",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_stackify",
+        "positive_test": "PluginDynCodeIRStageTest.FullIRStagePlacesEntryFirstAndStackifies",
+        "negative_test": "PluginDynCodeIRStageTest.VerifierRejectsBlockAddress"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.all_blr",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000012"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000013"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.IRTransformPhasesAreDistinctReplaceable",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_all_blr",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.compiler_rt.final",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000013"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000014"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeIRProviderTest.CompilerRtLowersWideDivAndIsIdempotent",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_ir_compiler_rt_final",
+        "positive_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.ir.final_verify",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000014"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000015"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "SEALED_HOST_GATE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodeIRStagePhasePolicy.FinalVerifyIsSealedPrepareAndStackifyAreNot"
+      },
+      "provider_available": false,
+      "verification": {
+        "kind": "gate",
+        "id": "sealed_verifier",
+        "positive_test": "PluginDynCodeIRStageTest.VerifierAcceptsCleanModule",
+        "negative_test": "PluginDynCodeIRStageTest.VerifierRejectsBlockAddress"
+      },
+      "sealed_gate": {
+        "host_private": true,
+        "provider_available": false,
+        "interceptor_available": false,
+        "skip_available": false,
+        "host_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "bypass_negative_test": "PluginDynCodeIRStagePhasePolicy.FinalVerifyIsSealedPrepareAndStackifyAreNot"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.mir.prepare",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000015"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000016"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeMIRProviderTest.TransformAndVerifierAreDistinctPasses",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_mir_prepare",
+        "positive_test": "PluginDynCodeMIRProviderTest.PrepareTransitionAcceptsInterceptor",
+        "negative_test": "PluginDynCodePhaseTest.ErrorAndCancellationDoNotComplete"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.mir.final_verify",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000016"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000017"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "SEALED_HOST_GATE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodeMIRProviderTest.FinalVerifyIsSealed"
+      },
+      "provider_available": false,
+      "verification": {
+        "kind": "gate",
+        "id": "sealed_verifier",
+        "positive_test": "PluginDynCodeMIRProviderTest.TransformAndVerifierAreDistinctPasses",
+        "negative_test": "PluginDynCodeMIRProviderTest.FinalVerifyIsSealed"
+      },
+      "sealed_gate": {
+        "host_private": true,
+        "provider_available": false,
+        "interceptor_available": false,
+        "skip_available": false,
+        "host_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "bypass_negative_test": "PluginDynCodeMIRProviderTest.FinalVerifyIsSealed"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.object.import",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000017"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000018"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeExtractorTest.SelectsCodeAndDiscardsForbiddenData",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_object_import",
+        "positive_test": "PluginDynCodeExtractorTest.RelocationWorklistAndExternalLedger",
+        "negative_test": "PluginDynCodeExtractorTest.RejectsUnverifiedGraph"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.extract.plan",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000018"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000019"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeExtractorTest.PlanReplacementMustPassVerifier",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_extract_plan",
+        "positive_test": "PluginDynCodeExtractorTest.EntryFunctionMovedToOffsetZero",
+        "negative_test": "PluginDynCodeExtractorTest.MissingEntryFails"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.extract.layout",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000019"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001a"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeExtractorTest.EntryFunctionMovedToOffsetZero",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_extract_layout",
+        "positive_test": "PluginDynCodeImageTest.ImageStateMachineGuardsMutation",
+        "negative_test": "PluginDynCodeImageTest.PlanRejectsOverlappingSelectedFragments"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.extract.relocate",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001a"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001b"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeRelocationTest.ExecuteWritesBackThroughImage",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_extract_relocate",
+        "positive_test": "PluginDynCodeRelocationTest.ResolveAndApplyPatchesIntraImageX86",
+        "negative_test": "PluginDynCodeRelocationTest.ResolveAndApplyRejectsUnresolved"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.extract.image",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001b"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001c"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeImageTest.DigestIsDeterministicAndRepublishBumpsGeneration",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_extract_image",
+        "positive_test": "PluginDynCodeImageTest.ReportCanonicalJSONIsStableAndSorted",
+        "negative_test": "PluginDynCodeImageTest.ImageBuilderBoundsAndBudgetChecked"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.binary.post_extract",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001c"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001d"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeBinaryTest.ExecutorRewritesThenVerifies",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_binary_post_extract",
+        "positive_test": "PluginDynCodeBinaryTest.VerifierAcceptsCleanRejectsBad",
+        "negative_test": "PluginDynCodeBinaryTest.FirstBadByteReportsOffset"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.binary.bad_byte_rewrite",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001d"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001e"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeBinaryTest.RewriteChainRunsInTopologicalOrder",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_binary_bad_byte_rewrite",
+        "positive_test": "PluginDynCodeBinaryTest.ExecutorRewritesThenVerifies",
+        "negative_test": "PluginDynCodeBinaryTest.RewriteChainRejectsCycle"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.binary.charset_encode",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001e"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001f"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeBinaryTest.CharsetRegistrySelectsByExactID",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_binary_charset_encode",
+        "positive_test": "PluginDynCodeBinaryTest.CharsetRegistrySelectsByExactID",
+        "negative_test": "PluginDynCodeBinaryTest.ExecutorUnknownCharsetFails"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.binary.size_align",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x000000000000001f"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000020"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeBinaryTest.ExecutorPadsToAlignmentAndMaxLength",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_binary_size_align",
+        "positive_test": "PluginDynCodeBinaryTest.RewriteChainEnforcesMaxGrowth",
+        "negative_test": "PluginDynCodeBinaryTest.ExecutorRejectsPadByteInBadSet"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.binary.pre_verify",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000020"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000021"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "INTERCEPTABLE",
+        "REPLACEABLE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.ObserverTracesTransition"
+      },
+      "provider_available": true,
+      "interceptor_test": "PluginDynCodePhaseTest.InterceptorRunsAndContinues",
+      "default_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+      "replacement_test": "PluginDynCodeBinaryTest.VerifierAcceptsCleanRejectsBad",
+      "verification": {
+        "kind": "verifier",
+        "id": "neverc.dyncode.verify_binary_pre_verify",
+        "positive_test": "PluginDynCodeBinaryTest.VerifierAcceptsCleanRejectsBad",
+        "negative_test": "PluginDynCodeBinaryTest.FirstBadByteReportsOffset"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.verify",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000021"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000022"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "SEALED_HOST_GATE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.SealedGateRejectsProviderAndInterceptor"
+      },
+      "provider_available": false,
+      "verification": {
+        "kind": "gate",
+        "id": "sealed_verifier",
+        "positive_test": "PluginDynCodeFinalizeTest.AcceptsWellFormedImage",
+        "negative_test": "PluginDynCodeFinalizeTest.RejectsForbiddenByte"
+      },
+      "sealed_gate": {
+        "host_private": true,
+        "provider_available": false,
+        "interceptor_available": false,
+        "skip_available": false,
+        "host_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "bypass_negative_test": "PluginDynCodePhaseTest.SealedGateRejectsProviderAndInterceptor"
+      }
+    },
+    {
+      "phase": "neverc.dyncode.commit",
+      "input_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000022"
+      ],
+      "output_artifact": [
+        "0x4e43415244594e01",
+        "0x0000000000000023"
+      ],
+      "policies": [
+        "OBSERVABLE",
+        "SEALED_HOST_GATE"
+      ],
+      "observer": {
+        "available": true,
+        "read_only_test": "PluginDynCodePhaseTest.SealedGateRejectsProviderAndInterceptor"
+      },
+      "provider_available": false,
+      "verification": {
+        "kind": "gate",
+        "id": "sealed_commit",
+        "positive_test": "PluginDynCodeFinalizeTest.AcceptsWellFormedImage",
+        "negative_test": "PluginDynCodeFinalizeTest.RejectsSurvivingExternal"
+      },
+      "sealed_gate": {
+        "host_private": true,
+        "provider_available": false,
+        "interceptor_available": false,
+        "skip_available": false,
+        "host_executor_test": "PluginDynCodePhaseTest.BuiltinPipelineRunsFullChain",
+        "bypass_negative_test": "PluginDynCodePhaseTest.SealedGateRejectsProviderAndInterceptor"
+      }
     }
   ],
   "semantic_replay": {

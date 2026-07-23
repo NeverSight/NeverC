@@ -96,10 +96,10 @@ TEST(PluginDynCodeABICompileTest, PublishesFixedDynCodePhasePolicies) {
   EXPECT_EQ(NEVERC_PHASE_DYNCODE_COMMIT_GATE,
             NEVERC_PHASE_GATE_SEALED_COMMIT);
 
-  // Dyncode phases are staged as experimental until their host executors and
-  // coverage entries land in the follow-up tasks.
+  // Dyncode phases are stable: their host executors run in-tree and every
+  // phase carries a coverage-manifest entry mapped to a real test.
   EXPECT_EQ(NEVERC_PHASE_DYNCODE_REQUEST_FREEZE_STABILITY,
-            NEVERC_PHASE_STABILITY_EXPERIMENTAL);
+            NEVERC_PHASE_STABILITY_STABLE);
   EXPECT_STREQ(NEVERC_PHASE_DYNCODE_REQUEST_FREEZE_DOMAIN, "dyncode");
   EXPECT_STREQ(NEVERC_EXTENSION_FAMILY_7_NAMESPACE,
                "neverc.dyncode.extension");
