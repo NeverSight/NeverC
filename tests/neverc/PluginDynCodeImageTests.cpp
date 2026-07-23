@@ -1,4 +1,4 @@
-// Volume 6 task 10: extraction plan, DynCodeImage and DynCodeReport.
+// Extraction plan, DynCodeImage and DynCodeReport.
 //
 // These tests exercise the typed host data structures directly: typed
 // generation handles (stale / wrong-kind), the bounded checked bytes builder

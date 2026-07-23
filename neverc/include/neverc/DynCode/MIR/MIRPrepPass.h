@@ -10,7 +10,7 @@ class FunctionPass;
 namespace neverc {
 namespace dyncode {
 
-// Volume 6 task 9: the dyncode MIR stage is split into a replaceable transform
+// The dyncode MIR stage is split into a replaceable transform
 // and a sealed final verifier.  Both passes only hold immutable target/request
 // data captured from the frozen DynCodeOptions; neither reads process-global
 // current options.

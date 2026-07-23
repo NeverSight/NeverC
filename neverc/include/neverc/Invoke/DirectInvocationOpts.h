@@ -29,7 +29,7 @@ struct DirectInvocationOpts {
   std::shared_ptr<PrepOptions> PPOpts;
   std::shared_ptr<FrontendOptions> FrontendOpts;
   std::shared_ptr<plugin::PluginSession> PluginSession;
-  // Volume 6 task 4: frozen dyncode request for the in-process cc1 codegen,
+  // Frozen dyncode request for the in-process cc1 codegen,
   // replacing the former process-global dyncode options singleton.
   std::shared_ptr<const dyncode::DynCodeExecutionContext> DynCode;
   OutputCoordinator *Outputs = nullptr;

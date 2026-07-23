@@ -8,7 +8,7 @@
 namespace neverc {
 namespace dyncode {
 
-// Volume 6 task 6: the late dyncode IR stage.  Re-normalises any functions or
+// The late dyncode IR stage.  Re-normalises any functions or
 // globals introduced by the intervening transforms (prepare), inlines the
 // non-entry users of mutable globals, stackifies mutable globals into entry
 // allocas and moves the entry to the front of the module.  Split out of the

@@ -8,7 +8,7 @@ namespace dyncode {
 
 /// Task-local dyncode execution state.
 ///
-/// Volume 6 task 4: replaces the former process-global mutable dyncode-options
+/// Replaces the former process-global mutable dyncode-options
 /// singleton.  The frozen \ref DynCodeOptions
 /// are owned by whichever task drives the dyncode compile -- the in-process cc1
 /// ``CompilerInstance`` for codegen and the ``DynCodeJobAction`` callback for
@@ -18,7 +18,7 @@ namespace dyncode {
 /// entries or options never observe each other's request.
 ///
 /// Later dyncode tasks extend this context with the typed phase state, proof
-/// journal and cancel token; task 4 only needs the immutable request.
+/// journal and cancel token; only the immutable request is needed here.
 class DynCodeExecutionContext {
 public:
   explicit DynCodeExecutionContext(DynCodeOptions Opts)

@@ -1,4 +1,4 @@
-// Volume 6 task 11: the section half of the format-agnostic extractor.
+// The section half of the format-agnostic extractor.
 //
 // planSections() selects the code sections out of the ObjectGraph, splits each
 // into function-granular fragments (so the entry function can be moved to

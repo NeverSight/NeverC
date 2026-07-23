@@ -6,7 +6,7 @@
 namespace neverc {
 namespace dyncode {
 
-// Volume 6 task 7: Data2TextPass runs at two distinct dyncode phases
+// Data2TextPass runs at two distinct dyncode phases
 // (data_to_text.pre and data_to_text.post).  The phase is now an explicit
 // constructor argument instead of a named-metadata "which run" sentinel: the
 // pre run only inlines constant operands and eliminates constant globals; the

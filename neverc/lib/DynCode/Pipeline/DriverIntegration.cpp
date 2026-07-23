@@ -390,7 +390,7 @@ int prepareDriverDynCode(SmallVectorImpl<const char *> &Args,
 
   appendInjectArgs(Setup, Args);
 
-  // Volume 6 task 4: the frozen options now flow to the in-process cc1 as a
+  // The frozen options now flow to the in-process cc1 as a
   // task-local DynCodeExecutionContext threaded through the driver and
   // DirectInvocationOpts, not through a mutable process-global singleton.
   Setup.Enabled = true;

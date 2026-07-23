@@ -1,5 +1,5 @@
-/* Minimal loaded plugin for the dyncode phase framework tests (Volume 6 task
- * 5).  It only establishes a stable plugin ID under which the tests register
+/* Minimal loaded plugin for the dyncode phase framework tests.  It only
+ * establishes a stable plugin ID under which the tests register
  * dyncode phase observers, interceptors and providers; it registers nothing on
  * its own.  The trace callbacks themselves live in PluginDynCodePhaseTests.cpp
  * so they can share the test-side trace buffer. */

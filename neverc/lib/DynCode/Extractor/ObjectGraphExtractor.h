@@ -1,7 +1,7 @@
 #ifndef NEVERC_LIB_DYNCODE_EXTRACTOR_OBJECTGRAPHEXTRACTOR_H
 #define NEVERC_LIB_DYNCODE_EXTRACTOR_OBJECTGRAPHEXTRACTOR_H
 
-// Volume 6 task 11: the format-agnostic dyncode code extractor.
+// The format-agnostic dyncode code extractor.
 //
 // The extractor consumes a verified plugin::PluginObjectGraph (the volume 4
 // in-memory object) and produces a typed DynCodeExtractionPlan plus a candidate
@@ -15,8 +15,8 @@
 // This task is the *planner*: it selects/orders/lays-out the code fragments,
 // builds the symbol output map, records the relocation worklist (disposition
 // left Pending) and the surviving external references, and assembles the
-// candidate bytes.  It does not apply relocations (task 12) or run byte-level
-// rewrites / the final verifier (tasks 13-14).
+// candidate bytes.  It does not apply relocations or run byte-level
+// rewrites / the final verifier.
 
 #include "neverc/DynCode/Extractor/DynCodeExtractionPlan.h"
 #include "neverc/DynCode/Extractor/DynCodeImage.h"

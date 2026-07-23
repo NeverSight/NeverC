@@ -1,7 +1,7 @@
 #ifndef NEVERC_LIB_DYNCODE_MIR_MIRPSEUDOCLASSIFY_H
 #define NEVERC_LIB_DYNCODE_MIR_MIRPSEUDOCLASSIFY_H
 
-// Volume 6 task 9: shared classifiers for the split dyncode MIR stage.  Both the
+// Shared classifiers for the split dyncode MIR stage.  Both the
 // builtin MIR transform provider (which strips these instructions at the PreEmit
 // hook) and the sealed final-MIR verifier gate (which rejects any that survive)
 // key off the same predicates so the transform/verify pair stays in lockstep.

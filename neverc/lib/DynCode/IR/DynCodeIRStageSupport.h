@@ -1,7 +1,7 @@
 #ifndef NEVERC_LIB_DYNCODE_IR_DYNCODEIRSTAGESUPPORT_H
 #define NEVERC_LIB_DYNCODE_IR_DYNCODEIRSTAGESUPPORT_H
 
-// Volume 6 task 6: shared helpers for the split dyncode IR-stage passes
+// Shared helpers for the split dyncode IR-stage passes
 // (DynCodePreparePass / StackifyPass / DynCodeIRVerifier).  These were factored
 // out of the monolithic ZeroRelocPass so the passes no longer key their
 // behaviour off a "which run is this" named-metadata sentinel.  The only

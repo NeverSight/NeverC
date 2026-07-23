@@ -1,4 +1,4 @@
-// Volume 6 task 9: the sealed dyncode final-MIR verifier gate.
+// The sealed dyncode final-MIR verifier gate.
 //
 // This is the read-only half of the old monolithic MIRPrepPass.  It runs at the
 // Final machine-pipeline hook (immediately before AsmPrinter) as the

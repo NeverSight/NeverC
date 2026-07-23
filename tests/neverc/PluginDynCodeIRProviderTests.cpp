@@ -1,4 +1,4 @@
-// Volume 6 task 7: the remaining builtin dyncode IR passes are plain, explicit
+// The remaining builtin dyncode IR passes are plain, explicit
 // typed transforms with no hidden per-run state.  CompilerRtPass no longer keys
 // off a CompilerRtStampAnalysis cache entry (it is idempotent on re-entry) and
 // Data2TextPass takes an explicit pre/post phase instead of a named-metadata

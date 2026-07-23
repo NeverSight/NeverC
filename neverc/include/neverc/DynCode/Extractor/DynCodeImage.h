@@ -1,7 +1,7 @@
 #ifndef NEVERC_DYNCODE_EXTRACTOR_DYNCODEIMAGE_H
 #define NEVERC_DYNCODE_EXTRACTOR_DYNCODEIMAGE_H
 
-// Volume 6 task 10: the candidate dyncode image and its bounded bytes builder.
+// The candidate dyncode image and its bounded bytes builder.
 //
 // A DynCodeImage owns the candidate code bytes plus the extraction metadata
 // (entry, alignment, padding) and a small state machine mirroring the C ABI

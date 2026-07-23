@@ -1,7 +1,7 @@
 #ifndef NEVERC_DYNCODE_EXTERNALREFERENCELEDGER_H
 #define NEVERC_DYNCODE_EXTERNALREFERENCELEDGER_H
 
-// Volume 6 task 8: the external-reference ledger is the typed record of every
+// The external-reference ledger is the typed record of every
 // symbol a dyncode translation unit still refers to but does not define.  It is
 // the single source of truth the (builtin and plugin) ImportProviders update and
 // the final verifier consults: request-allowed externals only mean "some

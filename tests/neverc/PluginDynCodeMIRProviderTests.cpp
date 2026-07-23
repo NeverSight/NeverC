@@ -1,4 +1,4 @@
-// Volume 6 task 9: the dyncode MIR stage is split into a replaceable transform
+// The dyncode MIR stage is split into a replaceable transform
 // (neverc.dyncode.mir.prepare, PreEmit hook) and a sealed final verifier
 // (neverc.dyncode.mir.final_verify, Final hook before AsmPrinter).  These tests
 // check the two passes are distinct and constructed from immutable options, the

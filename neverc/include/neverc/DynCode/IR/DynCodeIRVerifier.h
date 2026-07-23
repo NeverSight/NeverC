@@ -7,7 +7,7 @@
 namespace neverc {
 namespace dyncode {
 
-// Volume 6 task 6: the sealed dyncode IR final-verify gate (phase
+// The sealed dyncode IR final-verify gate (phase
 // dyncode.ir.final_verify).  Checks that no data-carrying global survived
 // stackify, that no BlockAddress / global-pointer initializer remains, and
 // clears the internal hard-error bookkeeping.  In the dyncode phase graph this

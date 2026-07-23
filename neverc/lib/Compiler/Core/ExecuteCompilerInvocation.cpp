@@ -207,7 +207,7 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
     if (DirectOpts->FrontendOpts)
       CI->getInvocation().getFrontendOpts() = *DirectOpts->FrontendOpts;
 
-    // Volume 6 task 4: the frozen dyncode request travels task-locally instead
+    // The frozen dyncode request travels task-locally instead
     // of via a process-global singleton.
     if (DirectOpts->DynCode)
       CI->setDynCodeContext(DirectOpts->DynCode);

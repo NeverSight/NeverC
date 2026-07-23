@@ -1,10 +1,10 @@
-// Volume 6 task 11: the symbol/relocation half of the format-agnostic
+// The symbol/relocation half of the format-agnostic
 // extractor.
 //
 // planSymbols() maps every defined symbol that landed in a selected code
 // fragment to its output offset; planRelocations() turns every relocation
 // whose site is in the image into a typed worklist entry (disposition left
-// Pending -- task 12 applies them) and records the surviving external
+// Pending; applied later) and records the surviving external
 // references as runtime-contract candidates.  Neither writes any bytes.
 
 #include "Extractor/ExtractorCommon.h"
@@ -99,7 +99,7 @@ llvm::Error ObjectGraphExtractor::planRelocations() {
         if (Target->Definition == NEVERC_OBJECT_SYMBOL_DEFINITION_UNDEFINED) {
           // An external reference the extractor cannot resolve in the image; it
           // must later be eliminated, resolved or turned into a runtime
-          // contract (tasks 8/12) or the final verifier fails.
+          // contract, or the final verifier fails.
           DynCodeExternalContract Contract;
           Contract.Symbol = Target->Name;
           Contract.Disposition = DynCodeExternalDisposition::Unresolved;

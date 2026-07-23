@@ -1,4 +1,4 @@
-// Volume 6 task 6: unit tests for the split dyncode IR stage.  ZeroRelocPass was
+// Unit tests for the split dyncode IR stage.  ZeroRelocPass was
 // broken into DynCodePreparePass (early), StackifyPass (late) and the sealed
 // DynCodeIRVerifier gate (dyncode.ir.final_verify), eliminating the run-count
 // named-metadata sentinel.  These tests fix the entry/linkage/TLS/ctor/mutable

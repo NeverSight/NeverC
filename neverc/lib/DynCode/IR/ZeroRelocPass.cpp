@@ -9,7 +9,7 @@ using namespace llvm;
 namespace neverc {
 namespace dyncode {
 
-// Volume 6 task 6: ZeroRelocPass is now a thin compatibility wrapper.  The
+// ZeroRelocPass is now a thin compatibility wrapper.  The
 // dyncode pipeline schedules DynCodePreparePass early and StackifyPass followed
 // by the sealed DynCodeIRVerifier gate late (see Pipeline.cpp).  A single
 // ZeroRelocPass run performs prepare, stackify and final IR verification in

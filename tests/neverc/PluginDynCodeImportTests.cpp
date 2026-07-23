@@ -1,4 +1,4 @@
-// Volume 6 task 8: the external-reference ledger records every symbol a dyncode
+// The external-reference ledger records every symbol a dyncode
 // unit still refers to but does not define, and tracks how each is dispositioned
 // by an ImportProvider.  These tests exercise the scan and claim logic on real
 // LLVM modules (this LLVM tree ships no AsmParser, so modules are built with the

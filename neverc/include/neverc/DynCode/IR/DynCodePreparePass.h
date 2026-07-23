@@ -8,7 +8,7 @@
 namespace neverc {
 namespace dyncode {
 
-// Volume 6 task 6: the early dyncode IR stage.  Chooses the single entry,
+// The early dyncode IR stage.  Chooses the single entry,
 // normalises linkage/attributes, rejects global ctors/dtors and external-weak
 // globals, demotes thread-local storage and strips llvm.used.  Split out of the
 // monolithic ZeroRelocPass so the run-count named-metadata sentinel is gone;

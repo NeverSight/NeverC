@@ -125,7 +125,7 @@ class GenAssemblyHelper {
   llvm::Module *TheModule;
   llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS;
   plugin::PluginTaskContext *PluginTask;
-  // Frozen dyncode request for this codegen (volume 6 task 4); null for a plain
+  // Frozen dyncode request for this codegen; null for a plain
   // compile.  Threaded task-locally instead of read from a process global.
   const dyncode::DynCodeOptions *DynCodeOpts;
   std::unique_ptr<plugin::PluginIROptimizationProviderRuntime>

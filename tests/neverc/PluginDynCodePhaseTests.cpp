@@ -1,4 +1,4 @@
-// Volume 6 task 5: dyncode phase registry, executor, proof and C callback
+// Dyncode phase registry, executor, proof and C callback
 // bridge.  These tests drive the 34-phase dyncode chain over the generic
 // PluginPhaseExecutor with a loaded test plugin, and check the full trace, a
 // single-phase interceptor, sealed-gate Provider/Interceptor rejection, illegal

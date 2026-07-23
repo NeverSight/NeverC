@@ -1,4 +1,4 @@
-// Volume 6 task 9: the builtin dyncode MIR transform provider.
+// The builtin dyncode MIR transform provider.
 //
 // This is the mutating half of the old monolithic MIRPrepPass.  It runs at the
 // PreEmit machine-pipeline hook as the default provider for the

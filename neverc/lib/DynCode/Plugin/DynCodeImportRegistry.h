@@ -1,7 +1,7 @@
 #ifndef NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEIMPORTREGISTRY_H
 #define NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEIMPORTREGISTRY_H
 
-// Volume 6 task 8: Session-scoped registry of dyncode ImportProviders.  Each
+// Session-scoped registry of dyncode ImportProviders.  Each
 // external reference in the ledger is offered to the providers whose declared
 // symbol matcher, target and execution level accept it.  Resolution is by host
 // matcher specificity (an exact symbol name beats a "*" wildcard); when two

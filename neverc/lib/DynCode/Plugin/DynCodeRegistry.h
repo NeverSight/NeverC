@@ -2,9 +2,9 @@
 #define NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEREGISTRY_H
 
 // Session-scoped dyncode registry, built-in target descriptor provider and the
-// owned host mirror of the public NevercDynCodeTargetDescriptor (Volume 6
-// task 2). There is no process-global registry; each PluginSession owns one
-// DynCodeRegistry seeded with the built-in target adapters.
+// owned host mirror of the public NevercDynCodeTargetDescriptor. There is no
+// process-global registry; each PluginSession owns one DynCodeRegistry seeded
+// with the built-in target adapters.
 
 #include "neverc/Plugin/Host/PluginTargetDescriptor.h"
 #include "neverc/Plugin/PluginDynCode.h"

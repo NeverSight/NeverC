@@ -267,7 +267,7 @@ struct DynCodePhasePipeline::Impl final : DynCodePhaseRuntimeAccess {
     // entirely inside the host: no plugin Provider/Interceptor/SKIP is possible
     // -- the core executor rejects those at registration by policy -- and no
     // full upstream replacement can bypass them because the host verifier runs
-    // on whatever value reaches the gate.  Task 5 performs the structural chain
+    // on whatever value reaches the gate.  The executor performs the structural chain
     // check and advances; later tasks attach the real IR/MIR/image verifiers and
     // issue the DynCodePhaseProof bound to this generation/route.
     if (!samePluginInterfaceID(Input->type(), Definition.InputArtifact))

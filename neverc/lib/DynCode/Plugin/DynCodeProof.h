@@ -1,7 +1,7 @@
 #ifndef NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEPROOF_H
 #define NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEPROOF_H
 
-// Host-issued proof for a dyncode phase output (Volume 6 task 5).
+// Host-issued proof for a dyncode phase output.
 //
 // Every dyncode phase output the host verifier accepts is bound to the exact
 // pipeline value generation, artifact type, request digest and provider route

@@ -1,4 +1,4 @@
-// Volume 6 task 3: -fdyncode participates in the normal Action/Job/Artifact
+// -fdyncode participates in the normal Action/Job/Artifact
 // DAG.  The dyncode image extraction is an in-process job (DynCodeJobAction /
 // DynCodeCommand) rather than a post-`main()` step over a private temp object.
 #include "NeverCTestFixture.h"

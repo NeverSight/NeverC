@@ -448,7 +448,7 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   if (DynCode.Enabled) {
     TheDriver.DynCodeEnabled = true;
     neverc::dyncode::DynCodeOptions Opts = DynCode.Opts;
-    // Volume 6 task 4: publish the frozen dyncode request as a task-local
+    // Publish the frozen dyncode request as a task-local
     // context shared with the in-process cc1 codegen (via DirectInvocationOpts)
     // instead of a mutable process-global singleton.
     TheDriver.DynCodeContext =

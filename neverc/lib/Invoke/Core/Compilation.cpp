@@ -69,7 +69,7 @@ void Compilation::configurePluginSession(Command &C) {
     DirectOpts.Outputs = &Outputs;
     if (PluginSession)
       DirectOpts.PluginSession = PluginSession;
-    // Volume 6 task 4: thread the frozen dyncode request to the in-process cc1
+    // Thread the frozen dyncode request to the in-process cc1
     // codegen instead of a process-global singleton.
     if (getDriver().DynCodeContext)
       DirectOpts.DynCode = getDriver().DynCodeContext;

@@ -1,7 +1,7 @@
 #ifndef NEVERC_DYNCODE_EXTRACTOR_DYNCODEEXTRACTIONPLAN_H
 #define NEVERC_DYNCODE_EXTRACTOR_DYNCODEEXTRACTIONPLAN_H
 
-// Volume 6 task 10: the typed dyncode extraction plan.
+// The typed dyncode extraction plan.
 //
 // The plan is the format-agnostic description of what the extractor will pull
 // out of a verified ObjectGraph: which section fragments become code, where each
@@ -10,7 +10,7 @@
 // by a typed generation handle so a plan replacement (or a rebuild of a table)
 // makes previously handed-out handles stale instead of silently aliasing a new
 // entity.  No bytes are written here -- the plan is pure metadata that the
-// ObjectGraph extractor (task 11) and relocation executor (task 12) consume.
+// ObjectGraph extractor and relocation executor consume.
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"

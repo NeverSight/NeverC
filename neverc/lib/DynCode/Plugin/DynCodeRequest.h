@@ -1,7 +1,7 @@
 #ifndef NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEREQUEST_H
 #define NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEREQUEST_H
 
-// Host-side normalized, frozen DynCodeRequest (Volume 6 task 2).
+// Host-side normalized, frozen DynCodeRequest.
 //
 // The driver parses -fdyncode options into a plain `DynCodeOptions`. Before any
 // task runs, `freezeDynCodeRequest` normalizes those options against a resolved

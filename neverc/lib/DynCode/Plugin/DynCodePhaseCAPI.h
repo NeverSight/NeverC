@@ -1,7 +1,7 @@
 #ifndef NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEPHASECAPI_H
 #define NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEPHASECAPI_H
 
-// C ABI bridge for the dyncode phase-frame accessor table (Volume 6 task 5).
+// C ABI bridge for the dyncode phase-frame accessor table.
 //
 // Mirrors the Link phase process service: a per-process host service publishes
 // the read-only NevercDynCodePhaseAPI, and the active DynCodePhasePipeline

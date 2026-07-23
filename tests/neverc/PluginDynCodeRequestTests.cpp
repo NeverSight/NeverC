@@ -1,4 +1,4 @@
-// Volume 6 task 2: Session-level dyncode registry, request freeze and target
+// Session-level dyncode registry, request freeze and target
 // descriptor. These tests exercise the built-in dyncode target adapters over
 // all eight first-version triples in both user and kernel contexts, the
 // registry conflict/validation rules, and deterministic request freezing.

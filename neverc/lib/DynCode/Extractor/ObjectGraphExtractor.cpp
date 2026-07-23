@@ -1,4 +1,4 @@
-// Volume 6 task 11: the format-agnostic dyncode extractor orchestrator.
+// The format-agnostic dyncode extractor orchestrator.
 //
 // run() validates the ObjectGraph, resolves the single entry from the request
 // policy, plans sections/symbols/relocations, assembles the candidate image and

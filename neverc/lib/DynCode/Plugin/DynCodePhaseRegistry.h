@@ -1,7 +1,7 @@
 #ifndef NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEPHASEREGISTRY_H
 #define NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEPHASEREGISTRY_H
 
-// Session/task-scoped dyncode phase registry (Volume 6 task 5).
+// Session/task-scoped dyncode phase registry.
 //
 // Wraps the generated 34-phase dyncode graph (section 2.4) and records, for
 // every phase, the linear input/output artifact edge, its policy gate and the

@@ -1,4 +1,4 @@
-// Volume 6 task 11: the format-agnostic dyncode extractor.
+// The format-agnostic dyncode extractor.
 //
 // These tests drive ObjectGraphExtractor directly over in-memory
 // plugin::PluginObjectGraph inputs (no file on disk, no per-format switch):

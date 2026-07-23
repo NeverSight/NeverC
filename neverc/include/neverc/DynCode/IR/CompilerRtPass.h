@@ -7,7 +7,7 @@
 namespace neverc {
 namespace dyncode {
 
-// Volume 6 task 7: CompilerRtPass is a plain, idempotent transform.  It used to
+// CompilerRtPass is a plain, idempotent transform.  It used to
 // carry a CompilerRtStampAnalysis cache key to skip redundant re-runs, but the
 // dyncode pipeline always runs the full optimizer between its CompilerRt phases
 // (compiler_rt.pre / compiler_rt.post / compiler_rt.final), so the stamp was

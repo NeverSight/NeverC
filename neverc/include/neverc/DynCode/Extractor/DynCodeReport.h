@@ -1,7 +1,7 @@
 #ifndef NEVERC_DYNCODE_EXTRACTOR_DYNCODEREPORT_H
 #define NEVERC_DYNCODE_EXTRACTOR_DYNCODEREPORT_H
 
-// Volume 6 task 10: the dyncode extraction report.
+// The dyncode extraction report.
 //
 // The report carries the summary counts and digests mirrored by the C ABI
 // NevercDynCodeReportInfo, plus a journal of per-phase/provider records.  On

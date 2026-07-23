@@ -1,4 +1,4 @@
-// Volume 6 task 24: per-plugin/phase callback statistics feeding the time-trace
+// Per-plugin/phase callback statistics feeding the time-trace
 // side summary and the no-plugin overhead gate.  These tests pin the pure
 // aggregation logic of PluginCallbackStats and prove the single PluginSession
 // callback gate records calls/time when a plugin callback runs.  The <=1%

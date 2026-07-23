@@ -1,7 +1,7 @@
 #ifndef NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEPHASEEXECUTOR_H
 #define NEVERC_LIB_DYNCODE_PLUGIN_DYNCODEPHASEEXECUTOR_H
 
-// Task-local dyncode phase pipeline (Volume 6 task 5).
+// Task-local dyncode phase pipeline.
 //
 // Drives the 34-phase dyncode chain over the generic PluginPhaseExecutor: each
 // ordinary transition runs pre-observer -> interceptor -> selected/default
@@ -10,8 +10,8 @@
 // host-only verifier and fire their read-only observers, and the core executor
 // rejects any Provider/Interceptor/SKIP against them by policy.
 //
-// Task 5 carries an opaque pipeline value through the chain; later tasks attach
-// the real IR module / MIR / ObjectGraph / DynCodeImage behind each artifact.
+// An opaque pipeline value flows through the chain; the real IR module / MIR /
+// ObjectGraph / DynCodeImage payloads attach behind each artifact.
 
 #include "DynCodePhaseRegistry.h"
 #include "neverc/Plugin/Host/PluginPhaseExecutor.h"

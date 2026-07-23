@@ -141,7 +141,7 @@ public:
   DynCodeToolFunc DynCodeMain = nullptr;
 
   // Frozen dyncode request shared with the in-process cc1 codegen through
-  // DirectInvocationOpts (volume 6 task 4).  Null for non-dyncode compiles.
+  // DirectInvocationOpts.  Null for non-dyncode compiles.
   std::shared_ptr<const dyncode::DynCodeExecutionContext> DynCodeContext;
 
 private:

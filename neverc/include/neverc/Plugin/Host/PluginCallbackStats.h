@@ -10,7 +10,7 @@
 namespace neverc::plugin {
 
 // Low-overhead aggregation of plugin callback activity, keyed by
-// (plugin ID, callback/phase name).  Volume 6 task 24: the single callback gate
+// (plugin ID, callback/phase name).  The single callback gate
 // in PluginSession feeds this so `-ftime-trace` side summaries and the
 // machine-readable overhead report can attribute call counts, wall time,
 // errors and cache hits per plugin/phase without maintaining a second

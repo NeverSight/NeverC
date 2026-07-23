@@ -57,7 +57,7 @@ class EmitterConsumer : public TreeConsumer {
   std::unique_ptr<plugin::PluginIRGenProviderRuntime> PluginIRGen;
   plugin::PluginTaskContext *PluginTask = nullptr;
   plugin::PluginSourcePhaseRuntime *PluginSourcePhases = nullptr;
-  // Frozen dyncode request for this codegen (volume 6 task 4); null when not a
+  // Frozen dyncode request for this codegen; null when not a
   // dyncode compile.  Threaded task-locally from the CompilerInstance.
   std::shared_ptr<const dyncode::DynCodeExecutionContext> DynCodeCtx;
   std::unique_ptr<llvm::Module> PluginGeneratedModule;

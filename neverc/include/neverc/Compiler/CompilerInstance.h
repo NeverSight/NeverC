@@ -84,7 +84,7 @@ class CompilerInstance {
   std::unique_ptr<plugin::PluginSourcePhaseRuntime>
       PluginSourcePhases;
 
-  // Frozen dyncode request for this in-process cc1 (volume 6 task 4), threaded
+  // Frozen dyncode request for this in-process cc1, threaded
   // from the driver via DirectInvocationOpts.  Null for non-dyncode compiles.
   std::shared_ptr<const dyncode::DynCodeExecutionContext> DynCodeContext;
 
