@@ -1,37 +1,38 @@
+// Volume 6 task 9: the builtin dyncode MIR transform provider.
+//
+// This is the mutating half of the old monolithic MIRPrepPass.  It runs at the
+// PreEmit machine-pipeline hook as the default provider for the
+// neverc.dyncode.mir.prepare transition (OBSERVABLE | INTERCEPTABLE |
+// REPLACEABLE): it strips dyncode/SEH pseudos and applies the target-specific
+// constant-pool rewrites that keep the emitted code position-independent.  The
+// pass instance only holds the immutable "enabled" bit captured from the frozen
+// DynCodeOptions; it never consults process-global current options.  The audit
+// and reject logic moved to the sealed DynCodeMIRVerifier gate (Final hook).
+
 #include "neverc/DynCode/MIR/MIRPrepPass.h"
-#include "Extractor/ExtractorCommon.h"
+#include "MIR/MIRPseudoClassify.h"
 #include "MIR/MIRRewriteRegistry.h"
 #include "neverc/DynCode/Pipeline/Diagnostics.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
-#include "llvm/ADT/SmallSet.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/LivePhysRegs.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
-#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
-#include "llvm/CodeGen/TargetOpcodes.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
-#include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/GlobalValue.h"
-#include "llvm/IR/GlobalVariable.h"
-#include "llvm/IR/Type.h"
-#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Triple.h"
+
 using namespace llvm;
 
 namespace neverc {
@@ -39,150 +40,6 @@ namespace dyncode {
 namespace {
 
 constexpr llvm::StringLiteral kDiagnosticPrefix = Diagnostics::MIRPrefix;
-
-bool isDynCodeStripPseudo(unsigned Opc) {
-  switch (Opc) {
-#define NEVERC_MIR_STRIP_PSEUDO(name, category) case TargetOpcode::name:
-#include "neverc/DynCode/Tables/MIRStripPseudoOpcodes.def"
-#include "neverc/DynCode/Tables/UserExtra_MIRStripPseudoOpcodes.def"
-#undef NEVERC_MIR_STRIP_PSEUDO
-    return true;
-  default:
-    return false;
-  }
-}
-
-bool isSEHPseudoByMnemonic(const MachineInstr &MI) {
-  unsigned Opc = MI.getOpcode();
-  const MachineFunction *MF = MI.getParent()->getParent();
-  if (!MF)
-    return false;
-  const TargetInstrInfo *TII = MF->getSubtarget().getInstrInfo();
-  if (!TII)
-    return false;
-  StringRef Name = TII->getName(Opc);
-  return Name.starts_with("SEH_");
-}
-
-std::string describeConstantForDiag(const Constant *C) {
-  if (!C)
-    return "<null>";
-  std::string S;
-  raw_string_ostream OS(S);
-  if (auto *CI = dyn_cast<ConstantInt>(C)) {
-    SmallString<40> HexStr;
-    CI->getValue().toString(HexStr, /*Radix=*/16, /*Signed=*/false);
-    OS << "i" << CI->getType()->getIntegerBitWidth() << " 0x" << HexStr;
-  } else if (auto *CFP = dyn_cast<ConstantFP>(C)) {
-    OS << "fp";
-    if (CFP->getType()->isFloatTy())
-      OS << "32";
-    else if (CFP->getType()->isDoubleTy())
-      OS << "64";
-    else if (CFP->getType()->isHalfTy())
-      OS << "16";
-    else
-      OS << "?";
-  } else if (auto *CDS = dyn_cast<ConstantDataSequential>(C)) {
-    OS << "seq<" << CDS->getNumElements() << " x " << *CDS->getElementType()
-       << ">";
-  } else if (isa<ConstantAggregateZero>(C)) {
-    OS << "zeroinitializer";
-  } else if (auto *CV = dyn_cast<ConstantVector>(C)) {
-    OS << "vec<" << CV->getType()->getNumElements() << " x "
-       << *CV->getType()->getElementType() << ">";
-  } else if (auto *CA = dyn_cast<ConstantArray>(C)) {
-    OS << "arr<" << CA->getType()->getNumElements() << " x "
-       << *CA->getType()->getElementType() << ">";
-  } else if (isa<ConstantStruct>(C)) {
-    OS << "struct";
-  } else {
-    OS << "constant(" << *C->getType() << ")";
-  }
-  OS.flush();
-  return S;
-}
-
-bool hasFeatureToken(StringRef Features, StringRef Tok) {
-  size_t Pos = Features.find(Tok);
-  while (Pos != StringRef::npos) {
-    bool LeftOK = (Pos == 0 || Features[Pos - 1] == ',');
-    size_t End = Pos + Tok.size();
-    bool RightOK = (End == Features.size() || Features[End] == ',');
-    if (LeftOK && RightOK)
-      return true;
-    Pos = Features.find(Tok, Pos + 1);
-  }
-  return false;
-}
-
-bool functionHasGeneralRegsOnly(const MachineFunction &MF) {
-  const Triple &TT = MF.getTarget().getTargetTriple();
-  if (TT.getArch() != Triple::aarch64)
-    return false;
-  const Function &F = MF.getFunction();
-  if (!F.hasFnAttribute("target-features"))
-    return false;
-  StringRef Features = F.getFnAttribute("target-features").getValueAsString();
-  return hasFeatureToken(Features, "+general-regs-only") ||
-         hasFeatureToken(Features, "-fp-armv8");
-}
-
-bool looksLikeInlineAsmTemplate(StringRef Name) {
-  if (Name == "syscall")
-    return true;
-  if (Name.starts_with("svc "))
-    return true;
-  if (Name.contains(' ') || Name.contains('#') || Name.contains('\t') ||
-      Name.contains('\n'))
-    return true;
-  return false;
-}
-
-unsigned auditExternalReferences(MachineFunction &MF,
-                                 const TargetDesc &Target) {
-  StringSet<> Reported;
-  StringRef FnName = MF.getName();
-  ExternalSymbolHintContext HintContext;
-  HintContext.FunctionHasGeneralRegsOnly = functionHasGeneralRegsOnly(MF);
-  for (const MachineBasicBlock &MBB : MF) {
-    for (const MachineInstr &MI : MBB) {
-      for (const MachineOperand &MO : MI.operands()) {
-        StringRef Name;
-        const char *Kind = "";
-        if (MO.isGlobal()) {
-          const GlobalValue *GV = MO.getGlobal();
-          if (!GV || !GV->isDeclaration())
-            continue;
-          if (isa<Function>(GV))
-            Kind = "external function";
-          else if (isa<GlobalVariable>(GV))
-            Kind = "external global";
-          else
-            Kind = "external value";
-          Name = GV->getName();
-        } else if (MO.isSymbol()) {
-          Name = MO.getSymbolName();
-          Kind = "external asm symbol";
-        } else {
-          continue;
-        }
-        if (Name.empty() || isDynCodeInternalRuntimeName(Name) ||
-            looksLikeInlineAsmTemplate(Name))
-          continue;
-        if (!Reported.insert(Name).second)
-          continue;
-        std::string Hint = getExternalSymbolHint(Name, Target, HintContext);
-        errs() << kDiagnosticPrefix << "function '" << FnName
-               << "' still references " << Kind << " '" << Name << "'";
-        if (!Hint.empty())
-          errs() << " -- " << Hint;
-        errs() << "\n";
-      }
-    }
-  }
-  return Reported.size();
-}
 
 bool encodeAArch64FmovImm32(const APInt &Bits, uint8_t &OutImm8) {
   uint32_t B = static_cast<uint32_t>(Bits.getZExtValue());
@@ -434,52 +291,19 @@ bool runMIRRewrites(MachineFunction &MF) {
   return Changed;
 }
 
-unsigned auditConstantPool(MachineFunction &MF) {
-  MachineConstantPool *CP = MF.getConstantPool();
-  if (!CP)
-    return 0;
-  const auto &Entries = CP->getConstants();
-  if (Entries.empty())
-    return 0;
-
-  SmallSet<unsigned, 8> LiveCPIs;
-  for (const MachineBasicBlock &MBB : MF) {
-    for (const MachineInstr &MI : MBB) {
-      for (const MachineOperand &MO : MI.operands()) {
-        if (MO.isCPI())
-          LiveCPIs.insert(MO.getIndex());
-      }
-    }
-  }
-  if (LiveCPIs.empty())
-    return 0;
-
-  StringRef FnName = MF.getName();
-  for (unsigned Idx : LiveCPIs) {
-    if (Idx >= Entries.size())
-      continue;
-    const auto &E = Entries[Idx];
-    const Constant *C =
-        E.isMachineConstantPoolEntry() ? nullptr : E.Val.ConstVal;
-    errs() << kDiagnosticPrefix << "function '" << FnName
-           << "' still references constant pool entry #" << Idx << " ("
-           << describeConstantForDiag(C) << ", align=" << E.getAlign().value()
-           << "); Data2TextPass should have stackified or inlined it."
-           << " Falling through to the extractor, which will reject the "
-              "resulting data section.\n";
-  }
-  return LiveCPIs.size();
-}
-
-class MIRPrepPass final : public MachineFunctionPass {
+/// Builtin provider for neverc.dyncode.mir.prepare: strips dyncode/SEH pseudos
+/// and applies the target constant-pool rewrites.  Holds only the immutable
+/// "enabled" bit; a replacement provider can substitute this whole transform.
+class DynCodeMIRTransformPass final : public MachineFunctionPass {
 public:
   static char ID;
 
-  explicit MIRPrepPass(const DynCodeOptions &Opts)
-      : MachineFunctionPass(ID), Enabled(Opts.Enabled), Target(Opts.Target),
-        EntrySymbol(Opts.EntrySymbol) {}
+  explicit DynCodeMIRTransformPass(const DynCodeOptions &Opts)
+      : MachineFunctionPass(ID), Enabled(Opts.Enabled) {}
 
-  StringRef getPassName() const override { return "NeverC DynCode MIR Prep"; }
+  StringRef getPassName() const override {
+    return "NeverC DynCode MIR Transform";
+  }
 
   bool runOnMachineFunction(MachineFunction &MF) override {
     if (!Enabled)
@@ -500,26 +324,19 @@ public:
     }
 
     Changed |= runMIRRewrites(MF);
-
-    (void)auditConstantPool(MF);
-
-    (void)auditExternalReferences(MF, Target);
-
     return Changed;
   }
 
 private:
   bool Enabled = false;
-  TargetDesc Target;
-  std::string EntrySymbol;
 };
 
 } // namespace
 
-char MIRPrepPass::ID = 0;
+char DynCodeMIRTransformPass::ID = 0;
 
-FunctionPass *createDynCodeMIRPrepPass(const DynCodeOptions &Opts) {
-  return new MIRPrepPass(Opts);
+FunctionPass *createDynCodeMIRTransformPass(const DynCodeOptions &Opts) {
+  return new DynCodeMIRTransformPass(Opts);
 }
 
 } // namespace dyncode

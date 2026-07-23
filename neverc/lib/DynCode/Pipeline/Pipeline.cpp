@@ -30,8 +30,15 @@ public:
 
   void addPasses(TargetPassConfig &TPC,
                  MachinePipelineHookPoint Point) override {
-    if (Options.Enabled && Point == MachinePipelineHookPoint::PreEmit)
-      TPC.addExternalPass(createDynCodeMIRPrepPass(Options));
+    if (!Options.Enabled)
+      return;
+    // neverc.dyncode.mir.prepare (transform) runs at PreEmit; the sealed
+    // neverc.dyncode.mir.final_verify gate runs at Final, immediately before
+    // AsmPrinter, so no byte is emitted with a forbidden pseudo still present.
+    if (Point == MachinePipelineHookPoint::PreEmit)
+      TPC.addExternalPass(createDynCodeMIRTransformPass(Options));
+    else if (Point == MachinePipelineHookPoint::Final)
+      TPC.addExternalPass(createDynCodeMIRVerifierPass(Options));
   }
 
 private:

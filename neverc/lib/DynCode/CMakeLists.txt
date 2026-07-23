@@ -77,12 +77,17 @@ unset(_neverc_tables_out_dir)
 unset(_neverc_dyncode_tables)
 
 add_neverc_library(nevercDynCode
+  Pipeline/BuiltinMIRTransformProvider.cpp
   Pipeline/DriverIntegration.cpp
+  Pipeline/DynCodeMIRVerifier.cpp
   Pipeline/ExternalReferenceLedger.cpp
   Pipeline/Pipeline.cpp
   Pipeline/TargetDesc.cpp
 
   Extractor/COFFExtractor.cpp
+  Extractor/DynCodeExtractionPlan.cpp
+  Extractor/DynCodeImage.cpp
+  Extractor/DynCodeReport.cpp
   Extractor/ELFExtractor.cpp
   Extractor/ExtractorCommon.cpp
   Extractor/MachOExtractor.cpp
@@ -101,8 +106,6 @@ add_neverc_library(nevercDynCode
   IR/StackifyPass.cpp
   IR/StringRuntimePass.cpp
   IR/ZeroRelocPass.cpp
-
-  MIR/MIRPrepPass.cpp
 
   Import/KernelImportPass.cpp
   Import/SyscallStub.cpp

@@ -1558,6 +1558,8 @@ add_executable(neverc-plugin-dyncode-tests
   PluginDynCodePhaseTests.cpp
   PluginDynCodeIRStageTests.cpp
   PluginDynCodeIRProviderTests.cpp
+  PluginDynCodeMIRProviderTests.cpp
+  PluginDynCodeImageTests.cpp
   PluginDynCodeImportTests.cpp
 )
 target_link_libraries(neverc-plugin-dyncode-tests PRIVATE
